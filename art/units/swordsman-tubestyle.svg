@@ -1,0 +1,74 @@
+<svg width="100%" viewBox="0 0 680 420" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>普通兵 - 管状结构 己方与敌方镜像对比</title>
+<desc>空心管状四肢结构的普通兵，左侧己方面朝右，右侧敌方为水平镜像面朝左</desc>
+<style>
+.a{stroke:#1C1C1C;stroke-linecap:round;fill:none}
+.b{stroke:#F2EDE2;stroke-linecap:round;fill:none}
+.j{fill:#F2EDE2;stroke:#1C1C1C}
+</style>
+<defs>
+<pattern id="p1" width="20" height="20" patternUnits="userSpaceOnUse">
+<path d="M20 0L0 0L0 20" fill="none" stroke="#BDD0DF" stroke-width="0.45"/>
+</pattern>
+<pattern id="p2" width="100" height="100" patternUnits="userSpaceOnUse">
+<rect width="100" height="100" fill="url(#p1)"/>
+<path d="M100 0L0 0L0 100" fill="none" stroke="#9FBDCE" stroke-width="0.85"/>
+</pattern>
+<g id="u">
+<line x1="-8" y1="-2" x2="-26" y2="46" class="a" stroke-width="18"/>
+<line x1="-8" y1="-2" x2="-26" y2="46" class="b" stroke-width="10"/>
+<line x1="-26" y1="46" x2="-40" y2="94" class="a" stroke-width="14"/>
+<line x1="-26" y1="46" x2="-40" y2="94" class="b" stroke-width="7"/>
+<line x1="-40" y1="94" x2="-20" y2="101" class="a" stroke-width="11"/>
+<line x1="-40" y1="94" x2="-20" y2="101" class="b" stroke-width="4"/>
+<line x1="-8" y1="-86" x2="-38" y2="-58" class="a" stroke-width="15"/>
+<line x1="-8" y1="-86" x2="-38" y2="-58" class="b" stroke-width="7"/>
+<line x1="-38" y1="-58" x2="-52" y2="-40" class="a" stroke-width="12"/>
+<line x1="-38" y1="-58" x2="-52" y2="-40" class="b" stroke-width="5"/>
+<line x1="10" y1="-86" x2="5" y2="-4" class="a" stroke-width="22"/>
+<line x1="10" y1="-86" x2="5" y2="-4" class="b" stroke-width="12"/>
+<line x1="12" y1="-98" x2="10" y2="-86" class="a" stroke-width="12"/>
+<line x1="12" y1="-98" x2="10" y2="-86" class="b" stroke-width="5"/>
+<line x1="12" y1="-2" x2="30" y2="44" class="a" stroke-width="18"/>
+<line x1="12" y1="-2" x2="30" y2="44" class="b" stroke-width="10"/>
+<line x1="30" y1="44" x2="42" y2="93" class="a" stroke-width="14"/>
+<line x1="30" y1="44" x2="42" y2="93" class="b" stroke-width="7"/>
+<line x1="42" y1="93" x2="64" y2="100" class="a" stroke-width="11"/>
+<line x1="42" y1="93" x2="64" y2="100" class="b" stroke-width="4"/>
+<line x1="22" y1="-86" x2="54" y2="-60" class="a" stroke-width="15"/>
+<line x1="22" y1="-86" x2="54" y2="-60" class="b" stroke-width="7"/>
+<line x1="54" y1="-60" x2="78" y2="-70" class="a" stroke-width="12"/>
+<line x1="54" y1="-60" x2="78" y2="-70" class="b" stroke-width="5"/>
+<circle cx="12" cy="-124" r="26" fill="#F2EDE2" stroke="#1C1C1C" stroke-width="4"/>
+<circle cx="22" cy="-120" r="4" fill="#1C1C1C"/>
+<circle cx="-8" cy="-2" r="8" class="j" stroke-width="2.5"/>
+<circle cx="-8" cy="-86" r="8" class="j" stroke-width="2.5"/>
+<circle cx="-38" cy="-58" r="7" class="j" stroke-width="2.3"/>
+<circle cx="-52" cy="-40" r="5.5" class="j" stroke-width="2"/>
+<circle cx="-26" cy="46" r="7" class="j" stroke-width="2.3"/>
+<circle cx="-40" cy="94" r="5.5" class="j" stroke-width="2"/>
+<circle cx="12" cy="-2" r="8" class="j" stroke-width="2.5"/>
+<circle cx="22" cy="-86" r="8" class="j" stroke-width="2.5"/>
+<circle cx="54" cy="-60" r="7" class="j" stroke-width="2.3"/>
+<circle cx="78" cy="-70" r="5.5" class="j" stroke-width="2"/>
+<circle cx="30" cy="44" r="7" class="j" stroke-width="2.3"/>
+<circle cx="42" cy="93" r="5.5" class="j" stroke-width="2"/>
+<line x1="78" y1="-70" x2="96" y2="-86" class="a" stroke-width="7"/>
+<line x1="78" y1="-70" x2="96" y2="-86" stroke="#F2EDE2" stroke-width="3" stroke-linecap="round" fill="none"/>
+<line x1="89" y1="-97" x2="103" y2="-76" class="a" stroke-width="3.5"/>
+<polygon points="97,-92 101,-76 152,-116" fill="#1C1C1C"/>
+</g>
+</defs>
+<rect width="680" height="420" fill="#F2EDE2"/>
+<rect width="680" height="420" fill="url(#p2)"/>
+<line x1="340" y1="20" x2="340" y2="345" stroke="#9FBDCE" stroke-width="0.9" stroke-dasharray="6,4" opacity="0.6" fill="none"/>
+<circle cx="160" cy="40" r="7" fill="#3B6FCC" opacity="0.9"/>
+<circle cx="520" cy="40" r="7" fill="#CC3B2A" opacity="0.9"/>
+<use href="#u" transform="translate(160,210)"/>
+<use href="#u" transform="translate(520,210) scale(-1,1)"/>
+<text x="160" y="333" text-anchor="middle" fill="#1C1C1C" font-family="sans-serif" font-size="15" font-weight="500">己方单位</text>
+<text x="160" y="352" text-anchor="middle" fill="#888" font-family="sans-serif" font-size="12">面朝右，向上推进</text>
+<text x="520" y="333" text-anchor="middle" fill="#1C1C1C" font-family="sans-serif" font-size="15" font-weight="500">敌方单位（镜像）</text>
+<text x="520" y="352" text-anchor="middle" fill="#888" font-family="sans-serif" font-size="12">水平翻转，向下推进</text>
+<text x="340" y="395" text-anchor="middle" fill="#aaa" font-family="sans-serif" font-size="11">同一套骨骼动画，代码层 scaleX: -1</text>
+</svg>
