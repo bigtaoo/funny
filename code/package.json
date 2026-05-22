@@ -1,0 +1,48 @@
+{
+  "name": "pixigame",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "webpack serve --mode development --open --port 8080",
+    "build:wechat": "rollup -c",
+    "format": "prettier --write ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@rollup/plugin-commonjs": "^29.0.2",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.1",
+    "@typescript-eslint/parser": "^8.59.1",
+    "brotli-webpack-plugin": "^1.1.0",
+    "copy-webpack-plugin": "^14.0.0",
+    "css-loader": "^7.1.4",
+    "eslint": "^10.2.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^4.2.5",
+    "file-loader": "^6.2.0",
+    "html-webpack-plugin": "^5.6.6",
+    "prettier": "^2.8.8",
+    "rollup": "^4.60.1",
+    "rollup-plugin-copy": "^3.5.0",
+    "rollup-plugin-polyfill-node": "^0.13.0",
+    "string-replace-loader": "^3.3.0",
+    "style-loader": "^4.0.0",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.3",
+    "webpack": "^5.105.4",
+    "webpack-cli": "^7.0.2",
+    "webpack-dev-server": "^5.2.3"
+  },
+  "dependencies": {
+    "@pixi/unsafe-eval": "^7.4.3",
+    "@rollup/plugin-json": "^6.1.0",
+    "pixi.js-legacy": "^7.4.3"
+  }
+}

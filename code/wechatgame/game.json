@@ -1,0 +1,12 @@
+{
+  "deviceOrientation": "portrait",
+  "showStatusBar": false,
+  "cloud": false,
+  "lockStepOptions": {
+    "gameTick": 20,
+    "offlineTimeLength": 15000,
+    "dataType": "String",
+    "UDPReliabilityStrategy": 3,
+    "heartBeatTick": 2000
+  }
+}
