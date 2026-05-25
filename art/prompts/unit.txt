@@ -1,0 +1,23 @@
+普通小兵：
+A rough hand-drawn stick figure soldier, side profile facing right. Limbs are hollow cylindrical tubes: two parallel black lines with white space between them, rounded ends. Joints are small white circles with thin black borders overlapping the tube ends. Head is a large empty circle (about 1/4 of body height) with a single black dot eye positioned toward the front. The soldier holds a simple straight sword in its right hand. The style is very sketchy with uneven, wobbly lines, like a quick pencil doodle in a notebook margin. Pure black line art, no fills, no shading. Transparent background.
+
+盾兵
+A rough hand-drawn stick figure guardian in defensive stance, side profile facing right. Limbs are thick hollow cylindrical tubes: two parallel vibrant royal blue lines with white space between them, rounded ends, legs are thicker and more solid than arms. Joints are small white circles with thin black borders. Head is a large empty circle (about 1/4 of body height) with a single very large cyclops-style black dot eye taking up most of the head space. The guardian holds a large round shield with a doodle-style skull in its left hand, and a short dagger in its right hand, raised in defensive position. A simple separate oval shadow appears below the feet. The style is very sketchy with uneven, wobbly lines, like a quick blue ballpoint pen doodle in a notebook margin. Vibrant blue line art, no shading. Transparent background.
+
+弓箭兵
+A lazy teenager's rough hand-drawn stick figure archer in standing stance, side profile facing right. Entirely monochromatic forest green. Limbs are thick hollow cylindrical tubes: two parallel forest green lines with white negative space between them, rounded ends. Joints are small forest green circles overlapping the tube ends. Head is a large empty forest green circle (about 1/4 of body height) with two small sharp forest green dot eyes. The archer has a single small feather doodle sticking up from its head, and holds a simple bow with a feather detail on it, pulled back as if ready to shoot. A simple forest green oval shadow appears below the feet. The style is very sketchy with uneven, wobbly lines, like a quick single-color forest green ballpoint pen doodle in a notebook margin. Only forest green lines, no other colors, no shading. Transparent background.
+
+背景图
+A used notebook paper background with a warm off-white/cream color (#F5F0E8). The paper has subtle texture with slight yellowing and light crease marks at the edges. The center area is softly blurred for game grid overlay. Sparse, careless hand-drawn doodles are scattered lazily near the edges: a half-finished star, a crooked arrow pointing nowhere, a lopsided sun with uneven rays, a random exclamation mark, and some crossed-out scribbles, all drawn with minimal effort and uneven lines. The overall style feels like a bored student's notebook page with doodles drawn absently during class, with most of the paper left blank.
+
+城堡
+A rough hand-drawn medieval European noble castle icon. The castle features a tall central tower with a conical roof, smaller side towers, battlements along the top, and a flag flying from the main tower. The entire drawing uses thick, uneven lines like a quick student doodle in a notebook margin. The outline is bold and simple, with a slightly wobbly, hand-sketch quality. The castle is drawn as a single connected shape without internal details. High resolution, 1024x1024 pixels. Transparent background.
+
+普通兵兵营
+A rough hand-drawn military tent icon for a 1x1 grid cell. The tent is a simple triangular shape with a small flag on top and a crossed swords symbol on the side. The entire drawing uses thick, uneven black lines like a quick pencil doodle in a notebook margin. High resolution, 1024x1024 pixels. Transparent background.
+
+盾兵兵营
+A rough hand-drawn shield barracks icon for a 1x1 grid cell. The building is a small square fort with a shield symbol on the front, battlements on top, and a small flag. The entire drawing uses thick, uneven vibrant royal blue lines like a quick ballpoint pen doodle in a notebook margin. High resolution, 1024x1024 pixels. Transparent background.
+
+弓箭兵营
+A monochromatic forest green hand-drawn archer barracks icon for a 1x1 grid cell. The entire scene uses ONLY forest green lines: a simple hut outline with a bow and arrow symbol on the front, a target symbol on the side, and surrounding trees. No other colors, no fill. Thick, uneven lines like a quick ballpoint pen doodle in a notebook margin. High resolution, 1024x1024 pixels. Transparent background.
