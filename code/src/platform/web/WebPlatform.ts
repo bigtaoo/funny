@@ -1,8 +1,12 @@
+import type * as PIXI from 'pixi.js-legacy';
 import { IPlatform, IStorage } from '../IPlatform';
 
 export class WebPlatform implements IPlatform {
   private canvas: HTMLCanvasElement;
   readonly storage: IStorage = localStorage;
+
+  /** Use window.devicePixelRatio for crisp rendering on HiDPI screens */
+  readonly devicePixelRatio: number = window.devicePixelRatio || 1;
 
   constructor(canvasId = 'game-canvas') {
     let canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
@@ -25,8 +29,18 @@ export class WebPlatform implements IPlatform {
     };
   }
 
+  /**
+   * Web: no-op.
+   * PIXI's EventSystem attaches PointerEvent listeners to the canvas element
+   * automatically during Application construction, so interactive containers
+   * already work out of the box.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  setupInput(_app: PIXI.Application): void {
+    // nothing to do
+  }
+
   onAppReady(): void {
-    // Lock to portrait on mobile via CSS
     this.canvas.style.display = 'block';
     this.canvas.style.touchAction = 'none';
     document.body.style.margin = '0';

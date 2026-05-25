@@ -14,9 +14,11 @@ async function main(): Promise<void> {
     width,
     height,
     canvas: platform.getCanvas(),
+    devicePixelRatio: platform.devicePixelRatio,
   });
 
   await renderer.init();
+  platform.setupInput(renderer.app);
   platform.onAppReady();
 
   engine.start();

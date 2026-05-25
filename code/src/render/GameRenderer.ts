@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { GameEngine } from '../game/GameEngine';
-import { GameEvent } from '../game/GameState';
+import { GameEvent, GameState } from '../game/GameState';
 import { BoardView } from './BoardView';
 import { BuildingView } from './BuildingView';
 import { HandView } from './HandView';
@@ -11,6 +11,7 @@ export interface GameRendererConfig {
   width: number;
   height: number;
   canvas?: HTMLCanvasElement;
+  devicePixelRatio?: number;
 }
 
 export class GameRenderer {
@@ -32,7 +33,7 @@ export class GameRenderer {
       backgroundColor: 0xf5f0e8, // notebook paper
       view: config.canvas,
       antialias: false,
-      resolution: window.devicePixelRatio || 1,
+      resolution: config.devicePixelRatio ?? 1,
       autoDensity: true,
     });
   }
@@ -93,7 +94,7 @@ export class GameRenderer {
     this.hudView.sync(state);
   };
 
-  private handleEvent(event: GameEvent, state: ReturnType<typeof this.engine.state.constructor.prototype.constructor>): void {
+  private handleEvent(event: GameEvent, state: GameState): void {
     switch (event.type) {
       case 'unit_attacked':
         this.unitView.playHitEffect(event.targetId);

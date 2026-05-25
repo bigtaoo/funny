@@ -12,5 +12,23 @@
     "rootDir": "./src"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/assetsManager",
+    "src/inputSystem",
+    "src/index.ts",
+    "src/wechatIndex.ts",
+    "src/game/gameScene.ts",
+    "src/game/grid.ts",
+    "src/game/numbers.ts",
+    "src/game/header.ts",
+    "src/game/display.ts",
+    "src/game/effectManager.ts",
+    "src/game/effect.ts",
+    "src/game/logic.ts",
+    "src/game/helper.ts",
+    "src/game/enums.ts",
+    "src/game/consts.ts"
+  ]
 }

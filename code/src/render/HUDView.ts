@@ -46,8 +46,8 @@ export class HUDView {
     text.anchor.set(0.5);
 
     overlay.addChild(bg, text);
-    overlay.x = this.container.parent?.width / 2 ?? 200;
-    overlay.y = this.container.parent?.height / 2 ?? 400;
+    overlay.x = (this.container.parent ? this.container.parent.width / 2 : 200);
+    overlay.y = (this.container.parent ? this.container.parent.height / 2 : 400);
     this.container.addChild(overlay);
     this.gameOverOverlay = overlay;
   }
