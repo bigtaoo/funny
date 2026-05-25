@@ -4,10 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "webpack serve --mode development --open --port 8080",
+    "start": "webpack serve --mode development --port 8080",
+    "build:web": "webpack --mode production",
     "build:wechat": "rollup -c",
-    "format": "prettier --write ."
+    "build:native": "npm run build:web && npx cap sync",
+    "cap:run:android": "npx cap run android",
+    "cap:run:ios": "npx cap run ios",
+    "format": "prettier --write .",
+    "lint": "eslint src --ext .ts"
   },
   "keywords": [],
   "author": "",

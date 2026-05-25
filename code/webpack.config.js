@@ -11,7 +11,7 @@ module.exports = (env, argv) => {
   return {
     target: 'web',
     mode: isProd ? 'production' : 'development',
-    entry: './src/index.ts',
+    entry: './src/entries/web.ts',
     devtool: isProd ? false : 'source-map',
     module: {
       rules: [

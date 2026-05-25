@@ -5,7 +5,7 @@ const polyfillNode = require('rollup-plugin-polyfill-node');
 const json = require('@rollup/plugin-json');
 
 module.exports = {
-  input: 'src/wechatIndex.ts',
+  input: 'src/entries/wechat.ts',
   output: {
     file: 'wechatgame/pixigame.js',
     format: 'iife',
