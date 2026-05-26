@@ -210,7 +210,8 @@ export function getCanvas(): HTMLCanvasElement {
   return app.view as HTMLCanvasElement;
 }
 
-/** Expose renderer size. */
+/** Expose renderer size in logical (CSS) pixels, accounting for devicePixelRatio. */
 export function getRendererSize(): { w: number; h: number } {
-  return { w: app.renderer.width, h: app.renderer.height };
+  const res = app.renderer.resolution || 1;
+  return { w: app.renderer.width / res, h: app.renderer.height / res };
 }
