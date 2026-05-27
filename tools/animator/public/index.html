@@ -131,13 +131,33 @@
 
     /* ── Right Panel ── */
     .right-panel {
-      width: 195px;
+      width: 210px;
       background: var(--surface);
       border-left: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       overflow-y: auto;
       flex-shrink: 0;
+    }
+
+    /* ── Atlas Panel ── */
+    #atlas-panel {
+      width: 190px;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .prop-input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-family: monospace;
     }
     #bone-info-area { padding: 8px; }
     .bone-name { font-size: 13px; font-weight: 600; color: var(--selected); margin-bottom: 8px; }
@@ -301,7 +321,7 @@
   </div>
 
   <div id="canvas-wrap">
-    <span id="canvas-hint">Click bone · Drag to rotate · Right-drag to pan</span>
+    <span id="canvas-hint">Click bone · Drag to rotate · Right-drag to pan · Tab = toggle mode</span>
   </div>
 
   <div class="right-panel">
@@ -315,6 +335,10 @@
       <label class="checkbox-row"><input type="checkbox" id="chk-onion"> Onion skin</label>
       <label class="checkbox-row"><input type="checkbox" id="chk-guide"> Guide lines</label>
     </div>
+  </div>
+
+  <div id="atlas-panel">
+    <div class="panel-header">Atlas</div>
   </div>
 </div>
 
