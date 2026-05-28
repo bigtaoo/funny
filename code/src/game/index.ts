@@ -1,0 +1,42 @@
+/**
+ * game-logic public API — single entry point.
+ *
+ * The render layer (game-client) ONLY imports from this file.
+ * Internal classes (GameEngineImpl, Unit, Building, Board, GameState, Player, …)
+ * are NOT exported here and remain invisible to the client.
+ *
+ * When the project is split into separate packages, the client tsconfig will be
+ * pointed at this file's .d.ts; TypeScript will enforce the boundary at compile time.
+ */
+
+// ── Factory + engine interface ────────────────────────────────────────────────
+export { createGameEngine } from './GameEngine';
+export type { IGameEngine } from './types';
+
+// ── Public types (needed by the render layer) ─────────────────────────────────
+export type {
+  GameConfig,
+  PlayerConfig,
+  PlayerCommand,
+  GameEvent,
+  OwnerId,
+  Vec2_fp,
+  Replay,
+  ReplayFrame,
+} from './types';
+
+export {
+  UnitType,
+  BuildingType,
+  SpellType,
+  CardType,
+  Side,
+  GamePhase,
+  UnitState,
+  sideToOwner,
+  ownerToSide,
+} from './types';
+
+// ── Fixed-point utilities (render layer needs fromFp to convert for display) ──
+export { FP_SCALE, TICK_RATE, fromFp } from './math/fixed';
+export type { Fp } from './math/fixed';

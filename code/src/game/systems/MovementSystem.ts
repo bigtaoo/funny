@@ -1,91 +1,191 @@
 import {
   BASE_COLS,
+  BASE_HP,
+  BOTTOM_BUILDING_ROW,
   BOTTOM_TRANSIT_ROW,
+  TOP_BUILDING_ROW,
   TOP_TRANSIT_ROW,
 } from '../config';
+import { addFp, mulFp, scaleFp, subFp, TICK_DT_FP, toFp, type Fp } from '../math/fixed';
 import { GameState } from '../GameState';
 import { Unit } from '../Unit';
 import { Side, UnitState } from '../types';
 
+/**
+ * MovementSystem — advances unit positions by one tick.
+ *
+ * All position arithmetic uses Fp helpers (addFp/subFp/mulFp/scaleFp).
+ * No floating-point operations.
+ */
 export class MovementSystem {
-  tick(state: GameState, dt: number): void {
+  tick(state: GameState): void {
     const board = state.board;
     const units = Array.from(board.units.values());
 
     for (const unit of units) {
       if (unit.isDead || unit.state === UnitState.Attacking) continue;
 
-      const oldRow = Math.round(unit.row);
+      const prevState = unit.state;
+      const prevRow   = unit.row;
 
       if (unit.state === UnitState.Crossing) {
-        this.moveCrossing(unit, dt, state);
+        this.moveCrossing(unit, state);
       } else {
-        this.moveForward(unit, dt, state, oldRow);
+        this.moveForward(unit, state);
       }
+
+      this.emitMoveEvents(unit, prevState, state);
+      board.updateUnitCell(unit, prevRow);
     }
 
-    // Remove dead units
+    // Remove dead units (guard against double-remove for crossing units)
     for (const unit of units) {
-      if (unit.isDead) {
+      if (unit.isDead && board.units.has(unit.id)) {
         board.removeUnit(unit);
       }
     }
   }
 
-  private moveForward(unit: Unit, dt: number, state: GameState, oldRow: number): void {
-    const board = state.board;
-    const transitRow = unit.side === Side.Bottom ? TOP_TRANSIT_ROW : BOTTOM_TRANSIT_ROW;
-    const direction = unit.side === Side.Bottom ? -1 : 1; // Bottom moves up (row-), Top moves down (row+)
+  // ─── Forward movement (along lane) ───────────────────────────────────────
 
-    const targetRow = Math.round(unit.row) + direction;
+  private moveForward(unit: Unit, state: GameState): void {
+    const board    = state.board;
+    const isBottom = unit.side === Side.Bottom;
+    // Bottom moves toward lower y (toward row 0); Top moves toward higher y.
+    const direction = isBottom ? -1 : 1;
+    const transitY_fp: Fp = isBottom ? toFp(TOP_TRANSIT_ROW) : toFp(BOTTOM_TRANSIT_ROW);
 
-    // Check if transit row reached
-    if (targetRow === transitRow || (direction === -1 && Math.round(unit.row) <= TOP_TRANSIT_ROW + 1)
-                                 || (direction === 1 && Math.round(unit.row) >= BOTTOM_TRANSIT_ROW - 1)) {
-      // Snap to transit row and switch to crossing mode
-      unit.row = transitRow;
-      unit.rowExact = transitRow;
+    // ── Transit threshold check ────────────────────────────────────────────
+    if (isBottom && unit.y_fp <= transitY_fp) {
+      unit.y_fp = transitY_fp;
       unit.state = UnitState.Crossing;
-      board.updateUnitCell(unit, oldRow);
+      return;
+    }
+    if (!isBottom && unit.y_fp >= transitY_fp) {
+      unit.y_fp = transitY_fp;
+      unit.state = UnitState.Crossing;
       return;
     }
 
-    // Check if next cell is blocked by friendly unit
-    if (board.isCellOccupiedByUnit(unit.col, targetRow)) {
-      const blocker = board.getUnitAt(unit.col, targetRow);
-      if (blocker && blocker.side === unit.side) {
+    // ── Friendly collision (radius-based) ──────────────────────────────────
+    const frontUnit = board.getFriendlyUnitAhead(unit);
+    if (frontUnit) {
+      // gap = distance between the two radii edges
+      // Bottom: gap = (unit.y_fp - unit.radius_fp) - (front.y_fp + front.radius_fp)
+      // Top:    gap = (front.y_fp - front.radius_fp) - (unit.y_fp  + unit.radius_fp)
+      const gapFp = isBottom
+        ? subFp(subFp(unit.y_fp, unit.radius_fp), addFp(frontUnit.y_fp, frontUnit.radius_fp))
+        : subFp(subFp(frontUnit.y_fp, frontUnit.radius_fp), addFp(unit.y_fp, unit.radius_fp));
+
+      if (gapFp <= 0) {
+        // Clamp to exactly touching — no overlap
+        unit.y_fp = isBottom
+          ? addFp(addFp(frontUnit.y_fp, frontUnit.radius_fp), unit.radius_fp)
+          : subFp(subFp(frontUnit.y_fp, frontUnit.radius_fp), unit.radius_fp);
         unit.state = UnitState.Waiting;
         return;
       }
     }
 
-    // Move
-    unit.row += direction * unit.speed * dt;
-    unit.rowExact = unit.row;
-    board.updateUnitCell(unit, oldRow);
-    unit.state = UnitState.Moving;
+    // ── Advance ────────────────────────────────────────────────────────────
+    const dy: Fp = mulFp(unit.speed_fp, TICK_DT_FP); // fp displacement this tick
+    unit.y_fp    = addFp(unit.y_fp, scaleFp(direction, dy));
+    unit.state   = UnitState.Moving;
+
+    // Clamp so we don't overshoot the transit row
+    if (isBottom && unit.y_fp < transitY_fp) unit.y_fp = transitY_fp;
+    if (!isBottom && unit.y_fp > transitY_fp) unit.y_fp = transitY_fp;
   }
 
-  private moveCrossing(unit: Unit, dt: number, state: GameState): void {
-    // Move horizontally toward base cols
-    const targetCol = BASE_COLS[0]; // move toward col 3 (leftmost base col)
-    const direction = unit.col < targetCol ? 1 : unit.col > BASE_COLS[1] ? -1 : 0;
+  // ─── Crossing (horizontal transit toward base) ────────────────────────────
 
-    if (direction === 0) {
-      // Reached base column — deal damage
+  private moveCrossing(unit: Unit, state: GameState): void {
+    const [targetColMin, targetColMax] = BASE_COLS; // cols 3–4
+
+    if (unit.col >= targetColMin && unit.col <= targetColMax) {
+      // Reached base column — deal damage and despawn
       const opponent = state.getOpponent(unit.side);
-      const damage = unit.attack;
-      opponent.takeDamage(damage);
-      state.pushEvent({ type: 'base_damaged', side: opponent.side, damage });
-      unit.hp = 0; // unit is consumed on base hit
+      opponent.takeDamage(unit.attack);
+
+      state.pushEvent({
+        type:   'base_hp_changed',
+        owner:  state.ownerOf(opponent.side),
+        hp:     opponent.baseHp,
+        maxHp:  BASE_HP,
+      });
+
+      unit.hp    = 0;
       unit.state = UnitState.Dead;
       state.board.removeUnit(unit);
-
-      if (opponent.isDead) {
-        state.pushEvent({ type: 'game_over', winner: unit.side });
-      }
     } else {
-      unit.col += direction; // snap movement (one cell per tick is fine for transit)
+      // Move one column per tick toward base (integer snap)
+      unit.col += unit.col < targetColMin ? 1 : -1;
     }
+  }
+
+  // ─── Move event emission ──────────────────────────────────────────────────
+
+  private emitMoveEvents(unit: Unit, prevState: UnitState, state: GameState): void {
+    const wasMoving = prevState === UnitState.Moving;
+    const isMoving  = unit.state === UnitState.Moving;
+
+    if (!wasMoving && isMoving) {
+      state.pushEvent({
+        type:     'unit_move_start',
+        unitId:   unit.id,
+        from:     { col: unit.col, y_fp: unit.y_fp },
+        to:       { col: unit.col, y_fp: this.predictStopY(unit, state) },
+        speed_fp: unit.speed_fp,
+      });
+    } else if (wasMoving && !isMoving) {
+      state.pushEvent({
+        type:   'unit_move_stop',
+        unitId: unit.id,
+        pos:    { col: unit.col, y_fp: unit.y_fp },
+      });
+    }
+  }
+
+  /**
+   * Best-effort prediction of where a unit will stop.
+   * Finds the nearest enemy unit/building ahead in the lane.
+   * Falls back to the transit row if nothing is in the way.
+   */
+  private predictStopY(unit: Unit, state: GameState): Fp {
+    const board     = state.board;
+    const isBottom  = unit.side === Side.Bottom;
+    const transitY_fp: Fp = isBottom ? toFp(TOP_TRANSIT_ROW) : toFp(BOTTOM_TRANSIT_ROW);
+    const rangeFp: Fp     = toFp(unit.range);
+
+    let stopY_fp: Fp = transitY_fp;
+
+    for (const enemy of board.units.values()) {
+      if (enemy.side === unit.side || enemy.col !== unit.col || enemy.isDead) continue;
+
+      if (isBottom && enemy.y_fp < unit.y_fp) {
+        // Unit will stop at: enemy.y_fp + enemy.radius + unit.radius + range
+        const candidate = addFp(addFp(addFp(enemy.y_fp, enemy.radius_fp), unit.radius_fp), rangeFp);
+        if (candidate > stopY_fp) stopY_fp = candidate;
+      } else if (!isBottom && enemy.y_fp > unit.y_fp) {
+        const candidate = subFp(subFp(subFp(enemy.y_fp, enemy.radius_fp), unit.radius_fp), rangeFp);
+        if (candidate < stopY_fp) stopY_fp = candidate;
+      }
+    }
+
+    // Check for enemy building ahead
+    const enemyBuildingRow = isBottom ? TOP_BUILDING_ROW : BOTTOM_BUILDING_ROW;
+    const enemyBuilding    = board.getBuildingAt(unit.col, enemyBuildingRow);
+    if (enemyBuilding && enemyBuilding.side !== unit.side && !enemyBuilding.isDead) {
+      const buildingY_fp: Fp = toFp(enemyBuildingRow);
+      if (isBottom) {
+        const candidate = addFp(buildingY_fp, rangeFp);
+        if (candidate > stopY_fp) stopY_fp = candidate;
+      } else {
+        const candidate = subFp(buildingY_fp, rangeFp);
+        if (candidate < stopY_fp) stopY_fp = candidate;
+      }
+    }
+
+    return stopY_fp;
   }
 }

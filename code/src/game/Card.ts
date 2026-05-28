@@ -1,20 +1,16 @@
 import { CARD_DEFINITIONS, HAND_SIZE } from './config';
+import { Prng } from './math/prng';
 import { CardDefinition } from './types';
-
-/** Shuffle array in-place using Fisher-Yates */
-function shuffle<T>(arr: T[]): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
 
 export class Deck {
   private cards: CardDefinition[];
 
-  constructor() {
-    this.cards = shuffle([...CARD_DEFINITIONS]);
+  /**
+   * @param prng  Seeded PRNG — deterministic shuffle across all clients.
+   *              Each player gets a separate PRNG instance derived from the game seed.
+   */
+  constructor(prng: Prng) {
+    this.cards = prng.shuffle([...CARD_DEFINITIONS]);
   }
 
   get remaining(): number {
@@ -33,27 +29,33 @@ export class Hand {
     this.cards = new Array(HAND_SIZE).fill(null);
   }
 
-  fill(deck: Deck): void {
+  /**
+   * Fill empty slots from deck.
+   * Returns an array of { index, card } for each slot that was filled.
+   */
+  fill(deck: Deck): Array<{ index: number; card: CardDefinition }> {
+    const drawn: Array<{ index: number; card: CardDefinition }> = [];
     for (let i = 0; i < this.cards.length; i++) {
       if (this.cards[i] === null && deck.remaining > 0) {
-        this.cards[i] = deck.draw();
+        const card = deck.draw()!;
+        this.cards[i] = card;
+        drawn.push({ index: i, card });
       }
     }
+    return drawn;
   }
 
-  /** Remove card at index and return it, or null if slot is empty */
+  /** Remove card at index and return it, or null if slot is empty. */
   play(index: number): CardDefinition | null {
     const card = this.cards[index] ?? null;
     this.cards[index] = null;
     return card;
   }
 
-  /** True if any card is available */
   hasCards(): boolean {
     return this.cards.some((c) => c !== null);
   }
 
-  /** Cards as flat list (excluding empty slots) */
   toArray(): CardDefinition[] {
     return this.cards.filter((c): c is CardDefinition => c !== null);
   }

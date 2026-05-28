@@ -1,7 +1,8 @@
-import { BUILDING_BLUEPRINTS } from './config';
-import { BuildingType, Side } from './types';
+import { toFp } from './math/fixed';
+import { BUILDING_BLUEPRINTS, TICK_RATE } from './config';
+import { BuildingType, Side, Vec2_fp } from './types';
 
-let nextId = 1000; // start above Unit IDs range to avoid collision
+let nextId = 1000; // start above Unit ID range to avoid accidental collision
 
 export class Building {
   readonly id: number;
@@ -11,40 +12,62 @@ export class Building {
   readonly row: number;
 
   hp: number;
-  maxHp: number;
-  attack: number;
-  attackInterval: number;
-  attackRange: number;
-  attackCooldown: number = 0;
+  readonly maxHp: number;
+  readonly attack: number;
+  readonly attackRange: number;
 
-  /** For barracks: seconds until next unit spawn */
-  spawnCooldown: number = 0;
+  /**
+   * Attack interval in integer ticks.
+   * Converted from seconds at construction: Math.round(attackInterval_s * TICK_RATE).
+   */
+  readonly attackIntervalTicks: number;
+
+  /**
+   * Ticks remaining until next attack.
+   * 0 = ready to attack immediately.
+   */
+  attackCooldownTicks: number = 0;
+
+  /**
+   * Ticks remaining until next unit spawn (barracks only).
+   * 0 = spawns on the very first tick after placement.
+   */
+  spawnCooldownTicks: number = 0;
 
   constructor(buildingType: BuildingType, side: Side, col: number, row: number) {
-    this.id = nextId++;
+    this.id           = nextId++;
     this.buildingType = buildingType;
-    this.side = side;
-    this.col = col;
-    this.row = row;
+    this.side         = side;
+    this.col          = col;
+    this.row          = row;
 
     const bp = BUILDING_BLUEPRINTS[buildingType];
-    this.hp = bp.hp;
-    this.maxHp = bp.hp;
-    this.attack = bp.attack ?? 0;
-    this.attackInterval = bp.attackInterval ?? Infinity;
+    this.hp          = bp.hp;
+    this.maxHp       = bp.hp;
+    this.attack      = bp.attack ?? 0;
     this.attackRange = bp.attackRange ?? 0;
+
+    // Convert seconds → ticks (integer, no float retained after construction)
+    this.attackIntervalTicks = bp.attackInterval !== undefined
+      ? Math.round(bp.attackInterval * TICK_RATE)
+      : Infinity;
   }
 
   get isDead(): boolean {
     return this.hp <= 0;
   }
 
-  get isAttacker(): boolean {
+  get isBarracks(): boolean {
     return this.buildingType === BuildingType.Barracks;
   }
 
   get isDefender(): boolean {
     return this.buildingType === BuildingType.ArrowTower;
+  }
+
+  /** Fixed-point position (for events). */
+  get pos(): Vec2_fp {
+    return { col: this.col, y_fp: toFp(this.row) };
   }
 
   takeDamage(amount: number): void {

@@ -1,46 +1,56 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Board } from '../game/Board';
 import { Unit } from '../game/Unit';
+import { FP_SCALE } from '../game/math/fixed';
 import { Side, UnitType } from '../game/types';
+import { BoardView } from './BoardView';
 
-/** Notebook aesthetic unit colors (art direction §3.2) */
+/** Notebook aesthetic unit colors */
 const UNIT_COLORS: Record<UnitType, number> = {
   [UnitType.Swordsman]: 0x222222, // pencil black
   [UnitType.Guardian]:  0x1a3a8a, // ballpoint blue
   [UnitType.Archer]:    0xcc2200, // red marker
 };
 
-const SIDE_MARKER: Record<Side, number> = {
-  [Side.Bottom]: 0x4488ff, // blue dot = player
-  [Side.Top]:    0xff6622, // orange dot = enemy
+const SIDE_TINT: Record<Side, number> = {
+  [Side.Bottom]: 0x4488ff, // player = blue ring
+  [Side.Top]:    0xff6622, // enemy  = orange ring
 };
+
+const RADIUS = 10; // circle radius in pixels (placeholder)
+const HP_BAR_WIDTH = 20;
+const HP_BAR_HEIGHT = 3;
 
 export class UnitView {
   readonly container: PIXI.Container;
 
-  /** Sprite (placeholder graphics) per unit id */
+  private readonly boardView: BoardView;
   private sprites: Map<number, PIXI.Container> = new Map();
 
-  constructor() {
+  constructor(boardView: BoardView) {
+    this.boardView = boardView;
     this.container = new PIXI.Container();
   }
 
-  /** Called every frame — adds/removes/moves sprites to match board state */
+  // ─── Per-frame sync ───────────────────────────────────────────────────────
+
   sync(board: Board): void {
     const seen = new Set<number>();
 
     for (const unit of board.units.values()) {
       seen.add(unit.id);
+
       let sprite = this.sprites.get(unit.id);
       if (!sprite) {
         sprite = this.createSprite(unit);
         this.sprites.set(unit.id, sprite);
         this.container.addChild(sprite);
       }
+
       this.updateSprite(sprite, unit);
     }
 
-    // Remove sprites for removed units
+    // Remove sprites for units no longer on the board
     for (const [id, sprite] of this.sprites) {
       if (!seen.has(id)) {
         this.container.removeChild(sprite);
@@ -50,11 +60,12 @@ export class UnitView {
     }
   }
 
+  // ─── Event-driven effects ─────────────────────────────────────────────────
+
   playHitEffect(unitId: number): void {
     const sprite = this.sprites.get(unitId);
     if (!sprite) return;
 
-    // Flash white briefly
     let frames = 6;
     const tick = (): void => {
       sprite.alpha = frames % 2 === 0 ? 0.3 : 1;
@@ -84,33 +95,53 @@ export class UnitView {
     PIXI.Ticker.shared.add(tick);
   }
 
+  // ─── Private helpers ──────────────────────────────────────────────────────
+
   private createSprite(unit: Unit): PIXI.Container {
     const c = new PIXI.Container();
 
-    // Placeholder: circle (tube-style body will replace this)
+    // Body circle
     const body = new PIXI.Graphics();
+    body.name = 'body';
     body.beginFill(UNIT_COLORS[unit.unitType]);
-    body.drawCircle(0, 0, 8);
+    body.drawCircle(0, 0, RADIUS);
     body.endFill();
 
-    // Side marker dot on top
-    const marker = new PIXI.Graphics();
-    marker.beginFill(SIDE_MARKER[unit.side]);
-    marker.drawCircle(0, -12, 3);
-    marker.endFill();
+    // Side ring (hollow circle showing player/enemy)
+    const ring = new PIXI.Graphics();
+    ring.lineStyle(2, SIDE_TINT[unit.side]);
+    ring.drawCircle(0, 0, RADIUS + 2);
 
-    c.addChild(body, marker);
+    // HP bar background
+    const hpBg = new PIXI.Graphics();
+    hpBg.name = 'hpBg';
+    hpBg.beginFill(0xcccccc, 0.7);
+    hpBg.drawRect(-HP_BAR_WIDTH / 2, -(RADIUS + 8), HP_BAR_WIDTH, HP_BAR_HEIGHT);
+    hpBg.endFill();
 
-    // Flip enemy units horizontally
-    if (unit.side === Side.Top) c.scale.x = -1;
+    // HP bar fill (will be redrawn each frame)
+    const hpFill = new PIXI.Graphics();
+    hpFill.name = 'hpFill';
 
+    c.addChild(body, ring, hpBg, hpFill);
     return c;
   }
 
   private updateSprite(sprite: PIXI.Container, unit: Unit): void {
-    // Position will be set by the BoardView coordinate mapping
-    // For now, use col × 48 + 24 and row × 47 + 24 (approximate)
-    sprite.x = unit.col * 48 + 24;
-    sprite.y = unit.row * 47 + 24;
+    // Smooth sub-row positioning using fixed-point y
+    const rowExact = unit.y_fp / FP_SCALE;
+    const { x, y } = this.boardView.gridToScreen(unit.col, rowExact);
+    sprite.x = x;
+    sprite.y = y;
+
+    // Update HP bar fill
+    const hpFill = sprite.getChildByName('hpFill') as PIXI.Graphics | null;
+    if (hpFill) {
+      hpFill.clear();
+      const ratio = Math.max(0, unit.hp / unit.maxHp);
+      hpFill.beginFill(ratio > 0.4 ? 0x44cc44 : 0xcc4444);
+      hpFill.drawRect(-HP_BAR_WIDTH / 2, -(RADIUS + 8), HP_BAR_WIDTH * ratio, HP_BAR_HEIGHT);
+      hpFill.endFill();
+    }
   }
 }

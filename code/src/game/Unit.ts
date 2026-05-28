@@ -1,5 +1,6 @@
-import { UNIT_BLUEPRINTS } from './config';
-import { GridPos, Side, UnitState, UnitType } from './types';
+import { fp, FP_SCALE, fromFp, toFp, type Fp } from './math/fixed';
+import { TICK_RATE, UNIT_BLUEPRINTS } from './config';
+import { Side, UnitState, UnitType } from './types';
 
 let nextId = 0;
 
@@ -8,49 +9,97 @@ export class Unit {
   readonly unitType: UnitType;
   readonly side: Side;
 
-  // Runtime stats
+  // Column index (integer, fixed for unit lifetime unless Crossing)
   col: number;
-  row: number;       // exact grid row (float during movement)
-  rowExact: number;  // sub-cell position for smooth movement
+
+  // ── Fixed-point position ───────────────────────────────────────────────────
+
+  /** Authoritative position along the lane in fp (row × 1000). */
+  y_fp: Fp;
+
+  /** Collision radius in fp. Two units don't overlap when radii don't intersect. */
+  readonly radius_fp: Fp;
+
+  // ── Stats ──────────────────────────────────────────────────────────────────
+
   hp: number;
-  maxHp: number;
-  attack: number;
-  attackInterval: number;
-  speed: number;     // grid cells per second (may be modified by haste)
-  baseSpeed: number; // original speed before modifiers
-  range: number;
+  readonly maxHp: number;
+  readonly attack: number;
+
+  /**
+   * Attack interval in integer ticks.
+   * Converted from seconds at construction: Math.round(attackInterval_s * TICK_RATE).
+   */
+  readonly attackIntervalTicks: number;
+
+  /** Attack range in integer grid cells (1 = melee). */
+  readonly range: number;
+
+  /** Current speed in fp/tick (may be modified by Haste spell). */
+  speed_fp: Fp;
+  /** Base speed before modifiers, in fp/tick. */
+  readonly baseSpeed_fp: Fp;
+
+  // ── Runtime state ──────────────────────────────────────────────────────────
 
   state: UnitState = UnitState.Moving;
-  attackCooldown: number = 0; // seconds until next attack
 
-  /** Target unit or building ID this unit is currently attacking */
+  /**
+   * Ticks remaining until the next attack is ready.
+   * Decremented each tick in CombatSystem. Attack fires when it reaches 0.
+   */
+  attackCooldownTicks: number = 0;
+
+  /** ID of the current attack target (unit or building), or null. */
   targetId: number | null = null;
 
   constructor(unitType: UnitType, side: Side, col: number, spawnRow: number) {
-    this.id = nextId++;
-    this.unitType = unitType;
-    this.side = side;
-    this.col = col;
-    this.row = spawnRow;
-    this.rowExact = spawnRow;
+    this.id        = nextId++;
+    this.unitType  = unitType;
+    this.side      = side;
+    this.col       = col;
+    this.y_fp      = toFp(spawnRow);
 
     const bp = UNIT_BLUEPRINTS[unitType];
-    this.hp = bp.hp;
-    this.maxHp = bp.hp;
-    this.attack = bp.attack;
-    this.attackInterval = bp.attackInterval;
-    this.speed = bp.speed;
-    this.baseSpeed = bp.speed;
-    this.range = bp.range;
+    this.hp       = bp.hp;
+    this.maxHp    = bp.hp;
+    this.attack   = bp.attack;
+    this.range    = bp.range;
+
+    // Convert seconds → ticks (integer, no float retained)
+    this.attackIntervalTicks = Math.round(bp.attackInterval * TICK_RATE);
+
+    // radius_fp in blueprint is already a pre-scaled integer constant
+    this.radius_fp = fp(bp.radius_fp);
+
+    // Convert grid/s → fp/tick using only integer arithmetic:
+    //   speed_fp_per_tick = round(speed_grid_per_s * FP_SCALE / TICK_RATE)
+    this.speed_fp    = toFp(bp.speed); // toFp converts grid/s → fp (same scale for 1/tick at 1Hz)
+    // Actually speed_fp here should be fp/s, and movement uses TICK_DT_FP to get fp/tick.
+    // toFp(bp.speed) = bp.speed * 1000, which is fp/s — correct, MovementSystem uses mulFp(speed_fp, TICK_DT_FP).
+    this.baseSpeed_fp = this.speed_fp;
+  }
+
+  // ── Derived / compatibility getters ───────────────────────────────────────
+
+  /** Integer grid row (snapped from fp position). */
+  get row(): number {
+    return Math.round(this.y_fp / FP_SCALE);
+  }
+
+  /**
+   * Fractional grid row for rendering (float).
+   * RENDER ONLY — never use in game logic.
+   */
+  get rowExact(): number {
+    return fromFp(this.y_fp);
   }
 
   get isDead(): boolean {
     return this.hp <= 0;
   }
 
-  get pos(): GridPos {
-    return { col: this.col, row: Math.round(this.row) };
-  }
+  // ── Mutation helpers ───────────────────────────────────────────────────────
 
   takeDamage(amount: number): void {
     this.hp = Math.max(0, this.hp - amount);
@@ -58,6 +107,6 @@ export class Unit {
   }
 
   resetSpeed(): void {
-    this.speed = this.baseSpeed;
+    this.speed_fp = this.baseSpeed_fp;
   }
 }

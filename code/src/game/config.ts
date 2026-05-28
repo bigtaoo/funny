@@ -1,3 +1,4 @@
+import { FP_SCALE, TICK_RATE } from './math/fixed';
 import {
   BuildingType,
   CardType,
@@ -18,35 +19,51 @@ export const TOP_TRANSIT_ROW = 0;
 /** Row 18: transit zone — top player's units reach here before hitting bottom base */
 export const BOTTOM_TRANSIT_ROW = 18;
 
-/** 0-indexed cols occupied by bases (cols 4–5 in 1-indexed notation) */
+/** 0-indexed cols occupied by bases */
 export const BASE_COLS = [3, 4] as const;
 
-/** 0-indexed attack lanes (cols 1-3 and 6-8 in 1-indexed notation) */
+/** 0-indexed attack lanes */
 export const ATTACK_LANES = [0, 1, 2, 5, 6, 7] as const;
 
-/** Building row for bottom player (row 2 in diagram) */
+/** Building row for bottom player */
 export const BOTTOM_BUILDING_ROW = 2;
-/** Building row for top player (row 16 in diagram) */
+/** Building row for top player */
 export const TOP_BUILDING_ROW = 16;
 
 /** Unit spawn row for bottom player (just above building row) */
 export const BOTTOM_SPAWN_ROW = 3;
-/** Unit spawn row for top player (just below enemy building row) */
+/** Unit spawn row for top player */
 export const TOP_SPAWN_ROW = 15;
 
 // ─── Resource ─────────────────────────────────────────────────────────────────
 
-export const COIN_REGEN_BASE = 2;      // coins per second
+export const COIN_REGEN_BASE = 2;      // coins / second (reference only)
 export const COIN_CAP = 30;
 export const BASE_UPGRADE_COSTS = [50, 100, 200] as const;
-export const BASE_UPGRADE_REGEN_BONUS = 1; // +1/s per upgrade level
+export const BASE_UPGRADE_REGEN_BONUS = 1; // +1 coin/s per upgrade level
 
-// ─── Time acceleration ────────────────────────────────────────────────────────
+// ─── Tick-based coin regen (integer fp per tick, no floats) ──────────────────
+//
+//  Normal  : COIN_REGEN_BASE coins/s           = trunc(2 * 1000 / 30)     =  66 fp/tick
+//  Accel×1.5: COIN_REGEN_BASE * 1.5 coins/s   = trunc(2 * 1000 * 3 / 60) = 100 fp/tick
+//  Accel×2  : COIN_REGEN_BASE * 2   coins/s   = trunc(2 * 1000 * 2 / 30) = 133 fp/tick
+//  Upgrade bonus: +1 coin/s per level          = trunc(1 * 1000 / 30)     =  33 fp/tick
+//
+// Regen fp/tick per coin/s of regen rate, at each acceleration phase.
+// Used to compute per-player regen: rate_per_tick * coinRegenRate(coins/s)
+// Normal  (×1  ): trunc(1 * 1000 / 30)         =  33 fp / (coin/s) / tick
+// Accel×1.5     : trunc(1 * 1000 * 3 / 60)     =  50 fp / (coin/s) / tick
+// Accel×2       : trunc(1 * 1000 * 2 / 30)     =  66 fp / (coin/s) / tick
+export const REGEN_FP_PER_COIN_PER_S_NORMAL = Math.trunc(FP_SCALE          / TICK_RATE);           // 33
+export const REGEN_FP_PER_COIN_PER_S_ACCEL1 = Math.trunc(FP_SCALE * 3      / (TICK_RATE * 2));     // 50
+export const REGEN_FP_PER_COIN_PER_S_ACCEL2 = Math.trunc(FP_SCALE * 2      / TICK_RATE);           // 66
 
-export const ACCEL_THRESHOLD_1 = 180; // 3 min → ×1.5
-export const ACCEL_THRESHOLD_2 = 360; // 6 min → ×2.0
-export const ACCEL_MULT_1 = 1.5;
-export const ACCEL_MULT_2 = 2.0;
+// ─── Time acceleration (tick thresholds) ─────────────────────────────────────
+
+export const ACCEL_THRESHOLD_1        = 180; // seconds (reference only)
+export const ACCEL_THRESHOLD_2        = 360; // seconds (reference only)
+export const ACCEL_THRESHOLD_1_TICKS  = ACCEL_THRESHOLD_1 * TICK_RATE; // 5400
+export const ACCEL_THRESHOLD_2_TICKS  = ACCEL_THRESHOLD_2 * TICK_RATE; // 10800
 
 // ─── Hand / deck ──────────────────────────────────────────────────────────────
 
@@ -56,6 +73,18 @@ export const HAND_SIZE = 6;
 
 export const BASE_HP = 100;
 
+// ─── Building tick intervals ──────────────────────────────────────────────────
+//
+//  Barracks spawn interval : 4 s   → 4 * 30 = 120 ticks
+//  Arrow tower attack      : 1.5 s → round(1.5 * 30) = 45 ticks
+//
+export const BARRACKS_SPAWN_INTERVAL_TICKS     = 4 * TICK_RATE;                   // 120
+export const ARROW_TOWER_ATTACK_INTERVAL_TICKS = Math.round(1.5 * TICK_RATE);     // 45
+
+// ─── Spell tick durations ─────────────────────────────────────────────────────
+
+export const HASTE_DURATION_TICKS = 5 * TICK_RATE;  // 150 ticks
+
 // ─── Unit blueprints ──────────────────────────────────────────────────────────
 
 export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
@@ -63,10 +92,11 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     type: UnitType.Swordsman,
     hp: 60,
     attack: 12,
-    attackInterval: 1.0,
-    speed: 1.0,
+    attackInterval: 1.0,  // seconds (converted to ticks in Unit constructor)
+    speed: 1.0,           // grid/s  (converted to fp in Unit constructor)
     range: 1,
     spawnCount: 2,
+    radius_fp: 400,
   },
   [UnitType.Guardian]: {
     type: UnitType.Guardian,
@@ -76,6 +106,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     speed: 0.6,
     range: 1,
     spawnCount: 1,
+    radius_fp: 450,
   },
   [UnitType.Archer]: {
     type: UnitType.Archer,
@@ -85,6 +116,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     speed: 0.8,
     range: 3,
     spawnCount: 1,
+    radius_fp: 350,
   },
 };
 
@@ -95,13 +127,13 @@ export const BUILDING_BLUEPRINTS: Record<BuildingType, BuildingBlueprint> = {
     type: BuildingType.Barracks,
     hp: 200,
     spawnUnit: UnitType.Swordsman,
-    spawnInterval: 4,
+    spawnInterval: 4,         // seconds (converted to ticks in Building constructor)
   },
   [BuildingType.ArrowTower]: {
     type: BuildingType.ArrowTower,
     hp: 120,
     attack: 15,
-    attackInterval: 1.5,
+    attackInterval: 1.5,      // seconds (converted to ticks in Building constructor)
     attackRange: 3,
   },
 };
@@ -125,6 +157,5 @@ export const CARD_DEFINITIONS: CardDefinition[] = [
 
 // ─── Spell parameters ─────────────────────────────────────────────────────────
 
-export const HASTE_DURATION = 5;     // seconds
-export const HASTE_SPEED_MULT = 2;
-export const METEOR_DAMAGE = 9999;   // clears a 2×2 area
+export const HASTE_SPEED_MULT = 2;    // integer multiplier — used with scaleFp()
+export const METEOR_DAMAGE    = 9999; // one-shots anything in 2×2 area

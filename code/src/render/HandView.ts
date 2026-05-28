@@ -2,63 +2,97 @@ import * as PIXI from 'pixi.js-legacy';
 import { Player } from '../game/Player';
 import { CardDefinition, CardType } from '../game/types';
 
-const CARD_WIDTH = 60;
-const CARD_HEIGHT = 80;
-const CARD_MARGIN = 8;
-const CARD_BG = 0xfaf6ee;
-const CARD_BORDER = 0x333333;
-const CARD_DISABLED_TINT = 0xaaaaaa;
+const CARD_WIDTH    = 60;
+const CARD_HEIGHT   = 80;
+const CARD_MARGIN   = 8;
+const CARD_BG       = 0xfaf6ee; // notebook paper
+const CARD_BORDER   = 0x333333;
+const CARD_SELECTED_BORDER = 0xffcc00; // yellow outline when selected
+const CARD_LIFT     = 14;        // px up when selected
 
 export class HandView {
   readonly container: PIXI.Container;
 
-  /** Callback when player selects a card and a target */
-  onCardPlayed: ((handIndex: number, col: number, row?: number) => void) | null = null;
+  /**
+   * Called when the player taps an affordable card.
+   * The renderer enters placement mode; the handIndex identifies which card to play.
+   */
+  onCardSelected: ((handIndex: number) => void) | null = null;
 
   private cards: PIXI.Container[] = [];
   private selectedIndex: number | null = null;
-  private readonly screenWidth: number;
+
+  private readonly screenWidth:  number;
   private readonly screenHeight: number;
 
   constructor(screenWidth: number, screenHeight: number) {
-    this.container = new PIXI.Container();
-    this.screenWidth = screenWidth;
+    this.container    = new PIXI.Container();
+    this.screenWidth  = screenWidth;
     this.screenHeight = screenHeight;
   }
 
+  // ─── Per-frame sync ───────────────────────────────────────────────────────
+
   sync(player: Player): void {
-    // Rebuild card display (simple approach — will optimise later)
     this.container.removeChildren();
     this.cards = [];
 
     const hand = player.hand.cards;
     const totalWidth = hand.length * (CARD_WIDTH + CARD_MARGIN) - CARD_MARGIN;
     const startX = (this.screenWidth - totalWidth) / 2;
-    const y = this.screenHeight - CARD_HEIGHT - 16;
+    const baseY  = this.screenHeight - CARD_HEIGHT - 16;
 
     hand.forEach((card, i) => {
-      const cardContainer = this.buildCard(card, i, player.coins);
+      const isSelected = this.selectedIndex === i;
+      const cardContainer = this.buildCard(card, i, player.coins, isSelected);
       cardContainer.x = startX + i * (CARD_WIDTH + CARD_MARGIN);
-      cardContainer.y = y;
+      cardContainer.y = baseY - (isSelected ? CARD_LIFT : 0);
       this.container.addChild(cardContainer);
       this.cards.push(cardContainer);
     });
   }
 
-  private buildCard(card: CardDefinition | null, index: number, coins: number): PIXI.Container {
-    const c = new PIXI.Container();
+  // ─── Public control ───────────────────────────────────────────────────────
+
+  /** Called by GameRenderer to apply or clear selection highlight. */
+  setSelectedCard(index: number | null): void {
+    this.selectedIndex = index;
+  }
+
+  clearSelection(): void {
+    this.selectedIndex = null;
+  }
+
+  // ─── Private helpers ──────────────────────────────────────────────────────
+
+  private buildCard(
+    card: CardDefinition | null,
+    index: number,
+    coins: number,
+    isSelected: boolean,
+  ): PIXI.Container {
+    const c   = new PIXI.Container();
     const gfx = new PIXI.Graphics();
 
     const canAfford = card !== null && coins >= card.cost;
+    const borderColor = isSelected ? CARD_SELECTED_BORDER : CARD_BORDER;
+    const borderWidth = isSelected ? 3 : 2;
 
     // Card background
-    gfx.lineStyle(2, CARD_BORDER);
+    gfx.lineStyle(borderWidth, borderColor);
     gfx.beginFill(CARD_BG);
     gfx.drawRoundedRect(0, 0, CARD_WIDTH, CARD_HEIGHT, 4);
     gfx.endFill();
     c.addChild(gfx);
 
     if (card) {
+      // Card type icon (tiny label top-left)
+      const typeLabel = this.cardTypeChar(card);
+      const typeText  = new PIXI.Text(typeLabel, { fontSize: 9, fill: 0x888888 });
+      typeText.x = 4;
+      typeText.y = 2;
+      c.addChild(typeText);
+
       // Card name
       const name = new PIXI.Text(card.name, {
         fontSize: 10,
@@ -68,52 +102,51 @@ export class HandView {
         align: 'center',
       });
       name.x = 4;
-      name.y = 8;
+      name.y = 14;
       c.addChild(name);
 
-      // Cost badge
+      // Cost badge (bottom-right circle)
+      const costBg = new PIXI.Graphics();
+      costBg.beginFill(canAfford ? 0x2244aa : 0xaa4422);
+      costBg.drawCircle(CARD_WIDTH - 14, CARD_HEIGHT - 14, 12);
+      costBg.endFill();
+
       const cost = new PIXI.Text(String(card.cost), {
         fontSize: 14,
         fill: 0xffffff,
         fontWeight: 'bold',
       });
-      const costBg = new PIXI.Graphics();
-      costBg.beginFill(canAfford ? 0x2244aa : 0xaa4422);
-      costBg.drawCircle(CARD_WIDTH - 14, CARD_HEIGHT - 14, 12);
-      costBg.endFill();
       cost.x = CARD_WIDTH - 14 - cost.width / 2;
       cost.y = CARD_HEIGHT - 14 - cost.height / 2;
       c.addChild(costBg, cost);
 
-      // Disabled overlay
+      // Grey overlay when can't afford
       if (!canAfford) {
         const overlay = new PIXI.Graphics();
-        overlay.beginFill(0xffffff, 0.5);
+        overlay.beginFill(0xffffff, 0.45);
         overlay.drawRoundedRect(0, 0, CARD_WIDTH, CARD_HEIGHT, 4);
         overlay.endFill();
         c.addChild(overlay);
       }
 
-      // Interaction
-      c.interactive = true;
-      c.cursor = canAfford ? 'pointer' : 'not-allowed';
-      c.on('pointertap', () => {
-        if (canAfford) this.onCardTap(index);
-      });
+      // Interaction (only tappable when affordable)
+      if (canAfford) {
+        c.interactive = true;
+        c.cursor = 'pointer';
+        c.on('pointertap', () => {
+          if (this.onCardSelected) this.onCardSelected(index);
+        });
+      }
     }
 
     return c;
   }
 
-  private onCardTap(index: number): void {
-    if (this.selectedIndex === index) {
-      // Deselect
-      this.selectedIndex = null;
-    } else {
-      this.selectedIndex = index;
-      // For unit/building cards, next board tap will provide the lane
-      // For now, emit with a default col — full interaction in next pass
-      // TODO: enter "placement mode" and intercept board taps
+  private cardTypeChar(card: CardDefinition): string {
+    switch (card.cardType) {
+      case CardType.Unit:     return 'U';
+      case CardType.Building: return 'B';
+      case CardType.Spell:    return 'S';
     }
   }
 }
