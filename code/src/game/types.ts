@@ -176,6 +176,22 @@ export interface IGameEngine {
    * @returns          All events produced this frame (drives rendering).
    */
   step(tick: number, commands: readonly PlayerCommand[]): readonly GameEvent[];
+
+  /**
+   * Called every render frame with wall-clock dt (seconds).
+   * Internally accumulates time and calls step() at TICK_RATE.
+   * The render layer calls this instead of step() directly.
+   */
+  tick(dt: number): void;
+
+  /** Current game state — read by the render layer after tick(). */
+  readonly state: import('./GameState').GameState;
+
+  /** Queue a play_card command for the local player (owner 0). */
+  playCard(handIndex: number, col: number, row?: number): void;
+
+  /** Queue an upgrade_base command for the local player (owner 0). */
+  upgradeBase(): void;
 }
 
 // ─── Game events (logic layer → render layer) ─────────────────────────────────

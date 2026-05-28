@@ -1,5 +1,5 @@
-import { fp, FP_SCALE, fromFp, toFp, type Fp } from './math/fixed';
-import { TICK_RATE, UNIT_BLUEPRINTS } from './config';
+import { fp, FP_SCALE, fromFp, toFp, TICK_RATE, type Fp } from './math/fixed';
+import { UNIT_BLUEPRINTS } from './config';
 import { Side, UnitState, UnitType } from './types';
 
 let nextId = 0;

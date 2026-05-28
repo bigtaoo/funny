@@ -44,7 +44,7 @@ export class HUDView {
     this.enemyCoinText.text = `${Math.floor(e.coins)}`;
     this.playerHpText.text  = `HP: ${p.baseHp}`;
     this.enemyHpText.text   = `${e.baseHp}`;
-    this.timerText.text     = this.formatTime(state.elapsedTime);
+    this.timerText.text     = this.formatTime(state.elapsedTicks / 30);
 
     // Upgrade button
     const cost = p.nextUpgradeCost;

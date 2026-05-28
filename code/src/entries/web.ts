@@ -1,4 +1,4 @@
-import { GameEngine } from '../game/GameEngine';
+import { createGameEngine } from '../game/GameEngine';
 import { WebPlatform } from '../platform/web/WebPlatform';
 import { GameRenderer } from '../render/GameRenderer';
 
@@ -6,7 +6,7 @@ async function main(): Promise<void> {
   const platform = new WebPlatform('game-canvas');
   const { width, height } = platform.getScreenSize();
 
-  const engine = new GameEngine();
+  const engine = createGameEngine({ seed: Date.now(), players: [{ id: 0 }, { id: 1 }] });
   const renderer = new GameRenderer(engine, {
     width,
     height,
@@ -18,7 +18,6 @@ async function main(): Promise<void> {
   platform.setupInput(renderer.app);
   platform.onAppReady();
 
-  engine.start();
 }
 
 main().catch(console.error);

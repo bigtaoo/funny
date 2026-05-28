@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
-import { GameEngine } from '../game/GameEngine';
+import { IGameEngine } from '../game/types';
 import { GameState } from '../game/GameState';
 import {
   ATTACK_LANES,
@@ -25,7 +25,7 @@ type PlacementMode = 'unit' | 'building' | 'spell_meteor' | null;
 
 export class GameRenderer {
   readonly app: PIXI.Application;
-  private readonly engine: GameEngine;
+  private readonly engine: IGameEngine;
 
   private boardView!:    BoardView;
   private unitView!:     UnitView;
@@ -37,7 +37,7 @@ export class GameRenderer {
   private placementMode:      PlacementMode = null;
   private selectedHandIndex:  number | null = null;
 
-  constructor(engine: GameEngine, config: GameRendererConfig) {
+  constructor(engine: IGameEngine, config: GameRendererConfig) {
     this.engine = engine;
 
     this.app = new PIXI.Application({

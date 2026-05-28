@@ -1,5 +1,5 @@
-import { toFp } from './math/fixed';
-import { BUILDING_BLUEPRINTS, TICK_RATE } from './config';
+import { toFp, TICK_RATE } from './math/fixed';
+import { BUILDING_BLUEPRINTS } from './config';
 import { BuildingType, Side, Vec2_fp } from './types';
 
 let nextId = 1000; // start above Unit ID range to avoid accidental collision

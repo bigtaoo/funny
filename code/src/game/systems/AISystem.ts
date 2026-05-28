@@ -1,4 +1,5 @@
-import { ATTACK_LANES, TICK_RATE, TOP_BUILDING_ROW } from '../config';
+import { ATTACK_LANES, TOP_BUILDING_ROW } from '../config';
+import { TICK_RATE } from '../math/fixed';
 import { GameState } from '../GameState';
 import { CardType, OwnerId, PlayerCommand, Side, SpellType } from '../types';
 

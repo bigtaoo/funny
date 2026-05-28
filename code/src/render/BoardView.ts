@@ -173,9 +173,9 @@ export class BoardView {
     this.overlay.interactive = false; // enabled only during placement mode
     this.overlay.cursor = 'crosshair';
 
-    this.overlay.on('pointertap', (e: PIXI.InteractionEvent) => {
+    this.overlay.on('pointertap', (e: PIXI.FederatedPointerEvent) => {
       if (!this.onCellTap) return;
-      const local = e.data.getLocalPosition(this.overlay);
+      const local = e.getLocalPosition(this.overlay);
       const { col, row } = this.screenToGrid(local.x, local.y);
       if (col >= 0 && col < BOARD_COLS && row >= 0 && row < BOARD_ROWS) {
         this.onCellTap(col, row);

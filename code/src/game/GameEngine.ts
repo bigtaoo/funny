@@ -7,7 +7,7 @@ import {
   TOP_SPAWN_ROW,
   UNIT_BLUEPRINTS,
 } from './config';
-import { fp, toFp } from './math/fixed';
+import { fp, toFp, TICK_RATE } from './math/fixed';
 import { Building } from './Building';
 import { Player } from './Player';
 import { Unit } from './Unit';
@@ -47,7 +47,7 @@ export function createGameEngine(config: GameConfig): IGameEngine {
 // ─── Implementation (not exported) ───────────────────────────────────────────
 
 class GameEngineImpl implements IGameEngine {
-  private readonly state: GameState;
+  readonly state: GameState;
 
   private readonly resource:   ResourceSystem;
   private readonly movement:   MovementSystem;
@@ -59,6 +59,13 @@ class GameEngineImpl implements IGameEngine {
   /** True until the first step() call. */
   private firstStep = true;
 
+  /** Accumulated wall-clock time (seconds) between ticks. */
+  private accumulatedTime = 0;
+  /** Monotonically increasing tick counter. */
+  private currentTick = 0;
+  /** Commands buffered by playCard()/upgradeBase() for the next tick. */
+  private pendingCommands: PlayerCommand[] = [];
+
   constructor(config: GameConfig) {
     // seed is required — no Date.now() fallback (would break determinism)
     this.state      = new GameState(config.seed);
@@ -68,6 +75,27 @@ class GameEngineImpl implements IGameEngine {
     this.spell      = new SpellSystem();
     this.production = new BuildingProductionSystem();
     this.ai         = new AISystem();
+  }
+
+  // ─── Render-facing API ───────────────────────────────────────────────────
+
+  tick(dt: number): void {
+    const tickDt = 1 / TICK_RATE;
+    this.accumulatedTime += dt;
+    while (this.accumulatedTime >= tickDt) {
+      this.accumulatedTime -= tickDt;
+      const cmds = this.pendingCommands;
+      this.pendingCommands = [];
+      this.step(this.currentTick++, cmds);
+    }
+  }
+
+  playCard(handIndex: number, col: number, row?: number): void {
+    this.pendingCommands.push({ type: 'play_card', owner: 0, tick: this.currentTick, handIndex, col, row });
+  }
+
+  upgradeBase(): void {
+    this.pendingCommands.push({ type: 'upgrade_base', owner: 0, tick: this.currentTick });
   }
 
   // ─── IGameEngine ─────────────────────────────────────────────────────────
