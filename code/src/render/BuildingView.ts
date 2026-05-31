@@ -3,17 +3,52 @@ import { Board } from '../game/Board';
 import { Building } from '../game/Building';
 import { BuildingType } from '../game/types';
 import { BoardView } from './BoardView';
+import { ObjectPool } from '../cache/ObjectPool';
 
 const BUILDING_COLORS: Record<BuildingType, number> = {
   [BuildingType.Barracks]:   0x2a6a2a, // green marker
   [BuildingType.ArrowTower]: 0x1a3a8a, // blue marker
 };
 
+// ─── Pool factory / resetter ──────────────────────────────────────────────────
+
+function createBuildingContainer(): PIXI.Container {
+  const c = new PIXI.Container();
+
+  const gfx    = new PIXI.Graphics(); gfx.name    = 'gfx';
+  const hpBg   = new PIXI.Graphics(); hpBg.name   = 'hpBg';
+  const hpFill = new PIXI.Graphics(); hpFill.name = 'hpFill';
+
+  hpBg.beginFill(0xcccccc, 0.7);
+  hpBg.drawRect(-16, 20, 32, 4);
+  hpBg.endFill();
+
+  c.addChild(gfx, hpBg, hpFill);
+  return c;
+}
+
+function resetBuildingContainer(c: PIXI.Container): void {
+  c.removeFromParent();
+  c.alpha    = 1;
+  c.angle    = 0;
+  c.scale.set(1);
+  c.visible  = false;
+  (c.getChildByName('gfx')    as PIXI.Graphics).clear();
+  (c.getChildByName('hpFill') as PIXI.Graphics).clear();
+}
+
+// ─── BuildingView ─────────────────────────────────────────────────────────────
+
 export class BuildingView {
   readonly container: PIXI.Container;
 
   private readonly boardView: BoardView;
   private sprites: Map<number, PIXI.Container> = new Map();
+  private readonly pool = new ObjectPool<PIXI.Container>(
+    createBuildingContainer,
+    resetBuildingContainer,
+    12, // prewarm — 6 lanes × 2 players
+  );
 
   constructor(boardView: BoardView) {
     this.boardView = boardView;
@@ -30,7 +65,7 @@ export class BuildingView {
 
       let sprite = this.sprites.get(building.id);
       if (!sprite) {
-        sprite = this.createSprite(building);
+        sprite = this.acquireSprite(building);
         this.sprites.set(building.id, sprite);
         this.container.addChild(sprite);
       }
@@ -40,9 +75,8 @@ export class BuildingView {
 
     for (const [id, sprite] of this.sprites) {
       if (!seen.has(id)) {
-        this.container.removeChild(sprite);
-        sprite.destroy();
         this.sprites.delete(id);
+        this.pool.release(sprite);
       }
     }
   }
@@ -53,15 +87,16 @@ export class BuildingView {
     const sprite = this.sprites.get(buildingId);
     if (!sprite) return;
 
+    // Remove from map immediately so sync() won't release it while animation runs
+    this.sprites.delete(buildingId);
+
     let frames = 20;
     const tick = (): void => {
       sprite.angle += 5;
-      sprite.alpha = frames / 20;
+      sprite.alpha  = frames / 20;
       if (--frames <= 0) {
         PIXI.Ticker.shared.remove(tick);
-        this.container.removeChild(sprite);
-        sprite.destroy();
-        this.sprites.delete(buildingId);
+        this.pool.release(sprite);
       }
     };
     PIXI.Ticker.shared.add(tick);
@@ -69,39 +104,26 @@ export class BuildingView {
 
   // ─── Private helpers ──────────────────────────────────────────────────────
 
-  private createSprite(building: Building): PIXI.Container {
-    const c = new PIXI.Container();
-    const gfx = new PIXI.Graphics();
+  private acquireSprite(building: Building): PIXI.Container {
+    const c     = this.pool.acquire();
+    c.visible   = true;
     const color = BUILDING_COLORS[building.buildingType];
+    const gfx   = c.getChildByName('gfx') as PIXI.Graphics;
+
+    gfx.clear();
+    gfx.lineStyle(3, color);
 
     if (building.buildingType === BuildingType.Barracks) {
-      // Simple house shape
-      gfx.lineStyle(3, color);
       gfx.drawRect(-16, -12, 32, 24);
-      // Flag
       gfx.moveTo(16, -12);
       gfx.lineTo(16, -24);
       gfx.lineTo(26, -18);
       gfx.lineTo(16, -12);
     } else {
-      // Arrow tower: trapezoid body
-      gfx.lineStyle(3, color);
       gfx.drawPolygon([-10, 16, 10, 16, 8, -8, -8, -8]);
-      // Triangle roof
       gfx.drawPolygon([-10, -8, 10, -8, 0, -22]);
     }
 
-    // HP bar background
-    const hpBg = new PIXI.Graphics();
-    hpBg.beginFill(0xcccccc, 0.7);
-    hpBg.drawRect(-16, 20, 32, 4);
-    hpBg.endFill();
-
-    // HP bar fill
-    const hpFill = new PIXI.Graphics();
-    hpFill.name = 'hpFill';
-
-    c.addChild(gfx, hpBg, hpFill);
     return c;
   }
 
@@ -110,13 +132,11 @@ export class BuildingView {
     sprite.x = x;
     sprite.y = y;
 
-    const hpFill = sprite.getChildByName('hpFill') as PIXI.Graphics | null;
-    if (hpFill) {
-      hpFill.clear();
-      const ratio = Math.max(0, building.hp / building.maxHp);
-      hpFill.beginFill(ratio > 0.4 ? 0x44cc44 : 0xcc4444);
-      hpFill.drawRect(-16, 20, 32 * ratio, 4);
-      hpFill.endFill();
-    }
+    const hpFill = sprite.getChildByName('hpFill') as PIXI.Graphics;
+    hpFill.clear();
+    const ratio = Math.max(0, building.hp / building.maxHp);
+    hpFill.beginFill(ratio > 0.4 ? 0x44cc44 : 0xcc4444);
+    hpFill.drawRect(-16, 20, 32 * ratio, 4);
+    hpFill.endFill();
   }
 }

@@ -1,35 +1,103 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Player } from '../game/Player';
 import { CardDefinition, CardType } from '../game/types';
+import { ObjectPool } from '../cache/ObjectPool';
 
 const CARD_WIDTH    = 60;
 const CARD_HEIGHT   = 80;
 const CARD_MARGIN   = 8;
-const CARD_BG       = 0xfaf6ee; // notebook paper
+const CARD_BG       = 0xfaf6ee;
 const CARD_BORDER   = 0x333333;
-const CARD_SELECTED_BORDER = 0xffcc00; // yellow outline when selected
-const CARD_LIFT     = 14;        // px up when selected
+const CARD_SELECTED_BORDER = 0xffcc00;
+const CARD_LIFT     = 14;
+
+// ─── Card slot structure ──────────────────────────────────────────────────────
+//
+// Each pooled Container always has the same fixed set of named children.
+// On acquire we configure them; on release we reset and return.
+//
+// Children (by name):
+//   'bg'      PIXI.Graphics  — rounded-rect border + fill
+//   'type'    PIXI.Text      — 'U' / 'B' / 'S'
+//   'name'    PIXI.Text      — card name
+//   'costBg'  PIXI.Graphics  — cost circle
+//   'cost'    PIXI.Text      — cost number
+//   'overlay' PIXI.Graphics  — grey tint when can't afford
+
+function createCardSlot(): PIXI.Container {
+  const c = new PIXI.Container();
+
+  const bg = new PIXI.Graphics();
+  bg.name = 'bg';
+
+  const typeText = new PIXI.Text('', { fontSize: 9, fill: 0x888888 });
+  typeText.name = 'type';
+  typeText.x = 4;
+  typeText.y = 2;
+
+  const nameText = new PIXI.Text('', {
+    fontSize: 10,
+    fill: 0x222222,
+    wordWrap: true,
+    wordWrapWidth: CARD_WIDTH - 8,
+    align: 'center',
+  });
+  nameText.name = 'name';
+  nameText.x = 4;
+  nameText.y = 14;
+
+  const costBg = new PIXI.Graphics();
+  costBg.name = 'costBg';
+
+  const costText = new PIXI.Text('', { fontSize: 14, fill: 0xffffff, fontWeight: 'bold' });
+  costText.name = 'cost';
+
+  const overlay = new PIXI.Graphics();
+  overlay.name = 'overlay';
+
+  c.addChild(bg, typeText, nameText, costBg, costText, overlay);
+  return c;
+}
+
+function resetCardSlot(c: PIXI.Container): void {
+  c.removeFromParent();
+  c.removeAllListeners();
+  c.interactive = false;
+  c.cursor      = 'default';
+  c.alpha       = 1;
+  c.y           = 0; // reset lift
+  (c.getChildByName('bg')      as PIXI.Graphics).clear();
+  (c.getChildByName('costBg')  as PIXI.Graphics).clear();
+  (c.getChildByName('overlay') as PIXI.Graphics).clear();
+  (c.getChildByName('type')    as PIXI.Text).text = '';
+  (c.getChildByName('name')    as PIXI.Text).text = '';
+  (c.getChildByName('cost')    as PIXI.Text).text = '';
+}
+
+// ─── HandView ─────────────────────────────────────────────────────────────────
 
 export class HandView {
   readonly container: PIXI.Container;
 
-  /**
-   * Called when the player taps an affordable card.
-   * The renderer enters placement mode; the handIndex identifies which card to play.
-   */
   onCardSelected: ((handIndex: number) => void) | null = null;
 
-  private cards: PIXI.Container[] = [];
+  private slots: PIXI.Container[] = [];
   private selectedIndex: number | null = null;
 
-  /** Cache key: serialized hand + coins + selectedIndex — rebuild only when changed. */
+  /** Cache key — rebuild only when hand/coins/selection actually change. */
   private lastSyncKey: string = '';
 
   private readonly screenWidth:  number;
   private readonly screenHeight: number;
 
+  private readonly pool = new ObjectPool<PIXI.Container>(
+    createCardSlot,
+    resetCardSlot,
+    6, // prewarm one full hand
+  );
+
   constructor(screenWidth: number, screenHeight: number) {
-    this.container    = new PIXI.Container();
+    this.container   = new PIXI.Container();
     this.screenWidth  = screenWidth;
     this.screenHeight = screenHeight;
   }
@@ -37,38 +105,38 @@ export class HandView {
   // ─── Per-frame sync ───────────────────────────────────────────────────────
 
   sync(player: Player): void {
-    const hand = player.hand.cards;
+    const hand    = player.hand.cards;
     const syncKey = `${player.coins}|${this.selectedIndex}|${hand.map(c => c?.id ?? 'x').join(',')}`;
-    if (syncKey === this.lastSyncKey) return; // nothing changed, skip rebuild
+    if (syncKey === this.lastSyncKey) return;
     this.lastSyncKey = syncKey;
 
-    // Destroy old card containers to release PIXI Text textures (prevents memory leak)
-    for (const card of this.cards) {
-      card.destroy({ children: true });
+    // Return existing slots to pool
+    for (const slot of this.slots) {
+      this.pool.release(slot);
     }
     this.container.removeChildren();
-    this.cards = [];
+    this.slots = [];
 
     const totalWidth = hand.length * (CARD_WIDTH + CARD_MARGIN) - CARD_MARGIN;
-    const startX = (this.screenWidth - totalWidth) / 2;
-    const baseY  = this.screenHeight - CARD_HEIGHT - 16;
+    const startX     = (this.screenWidth - totalWidth) / 2;
+    const baseY      = this.screenHeight - CARD_HEIGHT - 16;
 
     hand.forEach((card, i) => {
       const isSelected = this.selectedIndex === i;
-      const cardContainer = this.buildCard(card, i, player.coins, isSelected);
-      cardContainer.x = startX + i * (CARD_WIDTH + CARD_MARGIN);
-      cardContainer.y = baseY - (isSelected ? CARD_LIFT : 0);
-      this.container.addChild(cardContainer);
-      this.cards.push(cardContainer);
+      const slot = this.pool.acquire();
+      this.configureSlot(slot, card, i, player.coins, isSelected);
+      slot.x = startX + i * (CARD_WIDTH + CARD_MARGIN);
+      slot.y = baseY - (isSelected ? CARD_LIFT : 0);
+      this.container.addChild(slot);
+      this.slots.push(slot);
     });
   }
 
   // ─── Public control ───────────────────────────────────────────────────────
 
-  /** Called by GameRenderer to apply or clear selection highlight. */
   setSelectedCard(index: number | null): void {
     this.selectedIndex = index;
-    this.lastSyncKey = ''; // invalidate cache so next sync rebuilds
+    this.lastSyncKey = '';
   }
 
   clearSelection(): void {
@@ -78,81 +146,53 @@ export class HandView {
 
   // ─── Private helpers ──────────────────────────────────────────────────────
 
-  private buildCard(
+  private configureSlot(
+    c: PIXI.Container,
     card: CardDefinition | null,
     index: number,
     coins: number,
     isSelected: boolean,
-  ): PIXI.Container {
-    const c   = new PIXI.Container();
-    const gfx = new PIXI.Graphics();
-
-    const canAfford = card !== null && coins >= card.cost;
+  ): void {
+    const canAfford   = card !== null && coins >= card.cost;
     const borderColor = isSelected ? CARD_SELECTED_BORDER : CARD_BORDER;
     const borderWidth = isSelected ? 3 : 2;
 
-    // Card background
-    gfx.lineStyle(borderWidth, borderColor);
-    gfx.beginFill(CARD_BG);
-    gfx.drawRoundedRect(0, 0, CARD_WIDTH, CARD_HEIGHT, 4);
-    gfx.endFill();
-    c.addChild(gfx);
+    // Background / border
+    const bg = c.getChildByName('bg') as PIXI.Graphics;
+    bg.lineStyle(borderWidth, borderColor);
+    bg.beginFill(CARD_BG);
+    bg.drawRoundedRect(0, 0, CARD_WIDTH, CARD_HEIGHT, 4);
+    bg.endFill();
 
     if (card) {
-      // Card type icon (tiny label top-left)
-      const typeLabel = this.cardTypeChar(card);
-      const typeText  = new PIXI.Text(typeLabel, { fontSize: 9, fill: 0x888888 });
-      typeText.x = 4;
-      typeText.y = 2;
-      c.addChild(typeText);
+      (c.getChildByName('type') as PIXI.Text).text = this.cardTypeChar(card);
+      (c.getChildByName('name') as PIXI.Text).text = card.name;
 
-      // Card name
-      const name = new PIXI.Text(card.name, {
-        fontSize: 10,
-        fill: 0x222222,
-        wordWrap: true,
-        wordWrapWidth: CARD_WIDTH - 8,
-        align: 'center',
-      });
-      name.x = 4;
-      name.y = 14;
-      c.addChild(name);
-
-      // Cost badge (bottom-right circle)
-      const costBg = new PIXI.Graphics();
+      const costBg = c.getChildByName('costBg') as PIXI.Graphics;
       costBg.beginFill(canAfford ? 0x2244aa : 0xaa4422);
       costBg.drawCircle(CARD_WIDTH - 14, CARD_HEIGHT - 14, 12);
       costBg.endFill();
 
-      const cost = new PIXI.Text(String(card.cost), {
-        fontSize: 14,
-        fill: 0xffffff,
-        fontWeight: 'bold',
-      });
-      cost.x = CARD_WIDTH - 14 - cost.width / 2;
-      cost.y = CARD_HEIGHT - 14 - cost.height / 2;
-      c.addChild(costBg, cost);
+      const costText = c.getChildByName('cost') as PIXI.Text;
+      costText.text = String(card.cost);
+      costText.x    = CARD_WIDTH  - 14 - costText.width  / 2;
+      costText.y    = CARD_HEIGHT - 14 - costText.height / 2;
 
-      // Grey overlay when can't afford
       if (!canAfford) {
-        const overlay = new PIXI.Graphics();
+        const overlay = c.getChildByName('overlay') as PIXI.Graphics;
         overlay.beginFill(0xffffff, 0.45);
         overlay.drawRoundedRect(0, 0, CARD_WIDTH, CARD_HEIGHT, 4);
         overlay.endFill();
-        c.addChild(overlay);
       }
 
-      // Interaction (only tappable when affordable)
       if (canAfford) {
         c.interactive = true;
-        c.cursor = 'pointer';
+        c.cursor      = 'pointer';
         c.on('pointertap', () => {
           if (this.onCardSelected) this.onCardSelected(index);
         });
       }
     }
-
-    return c;
   }
 
   private cardTypeChar(card: CardDefinition): string {

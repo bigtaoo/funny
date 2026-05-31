@@ -9,13 +9,16 @@ export class Unit {
   readonly unitType: UnitType;
   readonly side: Side;
 
-  // Column index (integer, fixed for unit lifetime unless Crossing)
-  col: number;
+  // ── Fixed-point position ──────────────────────────────────────────────────
 
-  // ── Fixed-point position ───────────────────────────────────────────────────
+  /** Continuous horizontal position in fp (col × 1000). Updated every tick during Crossing. */
+  x_fp: Fp;
 
   /** Authoritative position along the lane in fp (row × 1000). */
   y_fp: Fp;
+
+  /** Integer column index — snapped from x_fp. Use colExact for smooth rendering. */
+  col: number;
 
   /** Collision radius in fp. Two units don't overlap when radii don't intersect. */
   readonly radius_fp: Fp;
@@ -53,17 +56,13 @@ export class Unit {
   /** ID of the current attack target (unit or building), or null. */
   targetId: number | null = null;
 
-  /**
-   * Ticks remaining until the next column step during Crossing.
-   * Decremented each tick; unit advances one column when it reaches 0.
-   */
-  crossingCooldownTicks: number = 0;
 
   constructor(unitType: UnitType, side: Side, col: number, spawnRow: number) {
     this.id        = nextId++;
     this.unitType  = unitType;
     this.side      = side;
     this.col       = col;
+    this.x_fp      = toFp(col);
     this.y_fp      = toFp(spawnRow);
 
     const bp = UNIT_BLUEPRINTS[unitType];
@@ -99,6 +98,15 @@ export class Unit {
    */
   get rowExact(): number {
     return fromFp(this.y_fp);
+  }
+
+  /**
+   * Fractional grid column for rendering (float).
+   * Equals col during normal movement; interpolates smoothly during Crossing.
+   * RENDER ONLY — never use in game logic.
+   */
+  get colExact(): number {
+    return fromFp(this.x_fp);
   }
 
   get isDead(): boolean {

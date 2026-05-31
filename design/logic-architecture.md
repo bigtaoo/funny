@@ -129,10 +129,10 @@ y 增大方向 = 向上（向敌方基地）
 行 16 ──── 玩家 1 建筑行
 行 17 ──── 玩家 1 基地行
 
-列 0..7（共 8 列）
-列 0,1,2   左侧进攻路线
-列 3,4     基地列（不作为进攻路线）
-列 5,6,7   右侧进攻路线
+列 0..11（共 12 列）
+列 0,1,2,3,4   左侧进攻路线
+列 5,6         基地列（不作为进攻路线）
+列 7,8,9,10,11 右侧进攻路线
 ```
 
 - 玩家 0 的单位 y 从 0 增大，向行 17 推进。
@@ -200,7 +200,7 @@ B.y_fp - B.radius_fp - (A.y_fp + A.radius_fp) >= 0
 ```
 
 - **InLane**：沿列垂直移动，检测前方碰撞（友方排队）和攻击范围（敌方）。
-- **Crossing**：已进入横移行，沿 x 轴向基地列（列 3/4）移动。
+- **Crossing**：已进入横移行，沿 x 轴向基地列（列 5/6）移动。
 - **Fighting**：停止移动，执行攻击循环。目标消灭后回到 InLane。
 - **AtBase**：到达基地列，对基地造成伤害，单位随即消失。
 
@@ -217,7 +217,7 @@ for each column:
       if y crosses crossing threshold → enter Crossing
     if state == Crossing:
       move along x axis toward base column
-      if reached base column → AtBase, deal damage, despawn
+      if reached base column (col 5 or 6) → AtBase, deal damage, despawn
 ```
 
 ---

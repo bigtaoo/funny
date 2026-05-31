@@ -3,11 +3,10 @@ import {
   BASE_HP,
   BOTTOM_BUILDING_ROW,
   BOTTOM_TRANSIT_ROW,
-  CROSSING_INTERVAL_TICKS,
   TOP_BUILDING_ROW,
   TOP_TRANSIT_ROW,
 } from '../config';
-import { addFp, mulFp, scaleFp, subFp, TICK_DT_FP, toFp, type Fp } from '../math/fixed';
+import { addFp, fromFp, mulFp, scaleFp, subFp, TICK_DT_FP, toFp, type Fp } from '../math/fixed';
 import { GameState } from '../GameState';
 import { Unit } from '../Unit';
 import { Side, UnitState } from '../types';
@@ -60,15 +59,11 @@ export class MovementSystem {
     if (isBottom && unit.y_fp <= transitY_fp) {
       unit.y_fp = transitY_fp;
       unit.state = UnitState.Crossing;
-      // Start cooldown so the first column step is rate-limited like all subsequent steps.
-      // Without this, crossingCooldownTicks = 0 would cause an immediate step next tick.
-      unit.crossingCooldownTicks = CROSSING_INTERVAL_TICKS;
       return;
     }
     if (!isBottom && unit.y_fp >= transitY_fp) {
       unit.y_fp = transitY_fp;
       unit.state = UnitState.Crossing;
-      unit.crossingCooldownTicks = CROSSING_INTERVAL_TICKS;
       return;
     }
 
@@ -105,31 +100,39 @@ export class MovementSystem {
   // ─── Crossing (horizontal transit toward base) ────────────────────────────
 
   private moveCrossing(unit: Unit, state: GameState): void {
-    const [targetColMin, targetColMax] = BASE_COLS; // cols 3–4
+    const [baseMin, baseMax] = BASE_COLS; // cols 3–4
+    const baseMinX_fp: Fp = toFp(baseMin);
+    const baseMaxX_fp: Fp = toFp(baseMax);
 
-    if (unit.col >= targetColMin && unit.col <= targetColMax) {
-      // Reached base column — deal damage and despawn
+    // Advance x_fp at unit's own speed (same speed_fp used for vertical movement)
+    const dx: Fp = mulFp(unit.speed_fp, TICK_DT_FP);
+
+    if (unit.x_fp < baseMinX_fp) {
+      // Moving right toward col 3
+      unit.x_fp = addFp(unit.x_fp, dx);
+      if (unit.x_fp > baseMinX_fp) unit.x_fp = baseMinX_fp; // clamp at entry
+    } else if (unit.x_fp > baseMaxX_fp) {
+      // Moving left toward col 4
+      unit.x_fp = subFp(unit.x_fp, dx);
+      if (unit.x_fp < baseMaxX_fp) unit.x_fp = baseMaxX_fp; // clamp at entry
+    }
+
+    // Snap integer col from continuous position (used by combat/board lookups)
+    unit.col = Math.round(fromFp(unit.x_fp));
+
+    // Reached base — deal damage and despawn
+    if (unit.x_fp >= baseMinX_fp && unit.x_fp <= baseMaxX_fp) {
       const opponent = state.getOpponent(unit.side);
       opponent.takeDamage(unit.attack);
-
       state.pushEvent({
-        type:   'base_hp_changed',
-        owner:  state.ownerOf(opponent.side),
-        hp:     opponent.baseHp,
-        maxHp:  BASE_HP,
+        type:  'base_hp_changed',
+        owner: state.ownerOf(opponent.side),
+        hp:    opponent.baseHp,
+        maxHp: BASE_HP,
       });
-
       unit.hp    = 0;
       unit.state = UnitState.Dead;
       state.board.removeUnit(unit);
-    } else {
-      // Rate-limited horizontal step: one column every CROSSING_INTERVAL_TICKS ticks
-      if (unit.crossingCooldownTicks > 0) {
-        unit.crossingCooldownTicks--;
-        return;
-      }
-      unit.col += unit.col < targetColMin ? 1 : -1;
-      unit.crossingCooldownTicks = CROSSING_INTERVAL_TICKS;
     }
   }
 

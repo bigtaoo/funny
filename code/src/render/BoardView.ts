@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '../game/config';
+import { ObjectPool } from '../cache/ObjectPool';
 
 /** Colors matching the art direction (notebook paper aesthetic) */
 const GRID_LINE_COLOR    = 0xc8d8e8;
@@ -23,6 +24,12 @@ export class BoardView {
 
   private readonly highlightLayer: PIXI.Graphics;
   private readonly overlay: PIXI.Graphics; // transparent interactive hit area
+
+  private readonly meteorPool = new ObjectPool<PIXI.Graphics>(
+    () => new PIXI.Graphics(),
+    (gfx) => { gfx.clear(); gfx.alpha = 1; gfx.removeFromParent(); },
+    3,
+  );
 
   constructor(screenWidth: number, screenHeight: number) {
     this.container = new PIXI.Container();
@@ -117,7 +124,7 @@ export class BoardView {
 
   playMeteorEffect(col: number, row: number): void {
     const pos = this.gridToScreen(col, row);
-    const gfx = new PIXI.Graphics();
+    const gfx = this.meteorPool.acquire();
     gfx.lineStyle(4, 0xff0000);
     gfx.drawRect(
       pos.x - this.cellWidth,
@@ -132,8 +139,7 @@ export class BoardView {
       gfx.alpha = frames / 30;
       if (--frames <= 0) {
         PIXI.Ticker.shared.remove(tick);
-        this.container.removeChild(gfx);
-        gfx.destroy();
+        this.meteorPool.release(gfx); // resetter calls removeFromParent + clear
       }
     };
     PIXI.Ticker.shared.add(tick);
