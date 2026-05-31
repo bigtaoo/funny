@@ -255,6 +255,13 @@ export type GameEvent =
   | { type: 'card_played';
       owner: OwnerId; handIndex: number }
 
+  // ── Phase changes ──────────────────────────────────────────────────────────
+  /** Emitted once when 15-min countdown starts (2 min left). */
+  | { type: 'game_countdown_start' }
+
   // ── Game over ──────────────────────────────────────────────────────────────
   | { type: 'game_over';
-      winner: OwnerId };
+      winner: OwnerId }
+
+  /** Emitted at 17 min when the game ends in a draw (both players survive). */
+  | { type: 'game_draw' };

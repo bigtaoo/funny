@@ -1,3 +1,4 @@
+import { ATTACK_MULT_LATE_GAME, ATTACK_MULT_THRESHOLD_TICKS, BOARD_ROWS } from '../config';
 import { GameState } from '../GameState';
 import { Unit } from '../Unit';
 import { Building } from '../Building';
@@ -16,6 +17,11 @@ export class CombatSystem {
   tick(state: GameState): void {
     const board = state.board;
 
+    // Late-game attack multiplier (applies after 13 min to all combatants)
+    const attackMult = state.elapsedTicks >= ATTACK_MULT_THRESHOLD_TICKS
+      ? ATTACK_MULT_LATE_GAME
+      : 1;
+
     // ── Units attack ───────────────────────────────────────────────────────
     for (const unit of board.units.values()) {
       if (unit.isDead || unit.state === UnitState.Crossing) continue;
@@ -30,7 +36,7 @@ export class CombatSystem {
           unit.state    = UnitState.Attacking;
         }
         if (unit.attackCooldownTicks === 0) {
-          this.performUnitAttack(unit, target, state);
+          this.performUnitAttack(unit, target, state, attackMult);
           unit.attackCooldownTicks = unit.attackIntervalTicks;
         }
       } else {
@@ -49,7 +55,7 @@ export class CombatSystem {
       if (building.attackCooldownTicks === 0) {
         const target = this.findTargetForBuilding(building, state);
         if (target) {
-          this.performBuildingAttack(building, target, state);
+          this.performBuildingAttack(building, target, state, attackMult);
           building.attackCooldownTicks = building.attackIntervalTicks;
         }
       }
@@ -80,7 +86,7 @@ export class CombatSystem {
 
     for (let dist = 1; dist <= unit.range; dist++) {
       const checkRow = unit.row + direction * dist;
-      if (checkRow < 0 || checkRow >= 20) break;
+      if (checkRow < 0 || checkRow >= BOARD_ROWS) break;
 
       const enemy = board.getUnitAt(unit.col, checkRow);
       if (enemy && enemy.side !== unit.side && !enemy.isDead) return enemy;
@@ -106,24 +112,36 @@ export class CombatSystem {
 
   // ─── Attack execution ─────────────────────────────────────────────────────
 
-  private performUnitAttack(attacker: Unit, target: Unit | Building, state: GameState): void {
-    target.takeDamage(attacker.attack);
+  private performUnitAttack(
+    attacker: Unit,
+    target: Unit | Building,
+    state: GameState,
+    attackMult: number,
+  ): void {
+    const damage = attacker.attack * attackMult;
+    target.takeDamage(damage);
     state.pushEvent({
       type:              'unit_attack_hit',
       unitId:            attacker.id,
       targetId:          target.id,
-      damage:            attacker.attack,
+      damage,
       targetHpRemaining: target.hp,
     });
   }
 
-  private performBuildingAttack(building: Building, target: Unit, state: GameState): void {
-    target.takeDamage(building.attack);
+  private performBuildingAttack(
+    building: Building,
+    target: Unit,
+    state: GameState,
+    attackMult: number,
+  ): void {
+    const damage = building.attack * attackMult;
+    target.takeDamage(damage);
     state.pushEvent({
       type:              'unit_attack_hit',
       unitId:            building.id,
       targetId:          target.id,
-      damage:            building.attack,
+      damage,
       targetHpRemaining: target.hp,
     });
   }

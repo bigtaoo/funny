@@ -3,6 +3,8 @@ import {
   BOTTOM_BUILDING_ROW,
   BOTTOM_SPAWN_ROW,
   BOTTOM_TRANSIT_ROW,
+  COUNTDOWN_THRESHOLD_TICKS,
+  FORCE_DRAW_THRESHOLD_TICKS,
   TOP_BUILDING_ROW,
   TOP_SPAWN_ROW,
   UNIT_BLUEPRINTS,
@@ -298,14 +300,34 @@ class GameEngineImpl implements IGameEngine {
   private checkWinCondition(): void {
     if (this.state.phase === GamePhase.GameOver) return;
 
+    // ── Base destruction ───────────────────────────────────────────────────
     if (this.state.bottomPlayer.isDead) {
       this.state.phase  = GamePhase.GameOver;
       this.state.winner = Side.Top;
       this.state.pushEvent({ type: 'game_over', winner: 1 });
-    } else if (this.state.topPlayer.isDead) {
+      return;
+    }
+    if (this.state.topPlayer.isDead) {
       this.state.phase  = GamePhase.GameOver;
       this.state.winner = Side.Bottom;
       this.state.pushEvent({ type: 'game_over', winner: 0 });
+      return;
+    }
+
+    // ── 17 min — force draw ────────────────────────────────────────────────
+    if (this.state.elapsedTicks >= FORCE_DRAW_THRESHOLD_TICKS) {
+      this.state.phase = GamePhase.GameOver;
+      this.state.pushEvent({ type: 'game_draw' });
+      return;
+    }
+
+    // ── 15 min — emit countdown start once ────────────────────────────────
+    if (
+      !this.state.countdownStarted &&
+      this.state.elapsedTicks >= COUNTDOWN_THRESHOLD_TICKS
+    ) {
+      this.state.countdownStarted = true;
+      this.state.pushEvent({ type: 'game_countdown_start' });
     }
   }
 

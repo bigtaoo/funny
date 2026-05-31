@@ -68,10 +68,15 @@ export class UnitView {
 
     let frames = 6;
     const tick = (): void => {
+      // Guard: sprite may have been destroyed by sync() if the unit died mid-flash
+      if (sprite.destroyed) {
+        PIXI.Ticker.shared.remove(tick);
+        return;
+      }
       sprite.alpha = frames % 2 === 0 ? 0.3 : 1;
       if (--frames <= 0) {
         PIXI.Ticker.shared.remove(tick);
-        sprite.alpha = 1;
+        if (!sprite.destroyed) sprite.alpha = 1;
       }
     };
     PIXI.Ticker.shared.add(tick);
@@ -81,15 +86,22 @@ export class UnitView {
     const sprite = this.sprites.get(unitId);
     if (!sprite) return;
 
+    // Remove from map immediately so sync() won't destroy it while the animation runs
+    this.sprites.delete(unitId);
+
     let frames = 20;
     const tick = (): void => {
+      // Guard: defensive check in case something else destroyed the sprite
+      if (sprite.destroyed) {
+        PIXI.Ticker.shared.remove(tick);
+        return;
+      }
       sprite.alpha = frames / 20;
       sprite.scale.set(1 + (1 - frames / 20) * 0.5);
       if (--frames <= 0) {
         PIXI.Ticker.shared.remove(tick);
         this.container.removeChild(sprite);
         sprite.destroy();
-        this.sprites.delete(unitId);
       }
     };
     PIXI.Ticker.shared.add(tick);

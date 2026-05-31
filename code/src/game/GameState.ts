@@ -19,6 +19,12 @@ export class GameState {
 
   winner: Side | null = null;
 
+  /**
+   * Set to true when the 15-min countdown event has been emitted.
+   * Prevents duplicate emission on every subsequent tick.
+   */
+  countdownStarted: boolean = false;
+
   /** Currently active spell effects. */
   activeSpells: ActiveSpell[] = [];
 

@@ -22,6 +22,9 @@ export class HandView {
   private cards: PIXI.Container[] = [];
   private selectedIndex: number | null = null;
 
+  /** Cache key: serialized hand + coins + selectedIndex — rebuild only when changed. */
+  private lastSyncKey: string = '';
+
   private readonly screenWidth:  number;
   private readonly screenHeight: number;
 
@@ -34,10 +37,18 @@ export class HandView {
   // ─── Per-frame sync ───────────────────────────────────────────────────────
 
   sync(player: Player): void {
+    const hand = player.hand.cards;
+    const syncKey = `${player.coins}|${this.selectedIndex}|${hand.map(c => c?.id ?? 'x').join(',')}`;
+    if (syncKey === this.lastSyncKey) return; // nothing changed, skip rebuild
+    this.lastSyncKey = syncKey;
+
+    // Destroy old card containers to release PIXI Text textures (prevents memory leak)
+    for (const card of this.cards) {
+      card.destroy({ children: true });
+    }
     this.container.removeChildren();
     this.cards = [];
 
-    const hand = player.hand.cards;
     const totalWidth = hand.length * (CARD_WIDTH + CARD_MARGIN) - CARD_MARGIN;
     const startX = (this.screenWidth - totalWidth) / 2;
     const baseY  = this.screenHeight - CARD_HEIGHT - 16;
@@ -57,10 +68,12 @@ export class HandView {
   /** Called by GameRenderer to apply or clear selection highlight. */
   setSelectedCard(index: number | null): void {
     this.selectedIndex = index;
+    this.lastSyncKey = ''; // invalidate cache so next sync rebuilds
   }
 
   clearSelection(): void {
     this.selectedIndex = null;
+    this.lastSyncKey = '';
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────

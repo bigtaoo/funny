@@ -287,6 +287,12 @@ export type GameEvent =
   | { type: 'game_over';
       winner: 0 | 1 }
 
+  /** 15 分钟时触发一次，提示 2 分钟倒计时开始。 */
+  | { type: 'game_countdown_start' }
+
+  /** 17 分钟强制结束，双方平局。 */
+  | { type: 'game_draw' }
+
   // ── 资源 ──────────────────────────────────────────
   | { type: 'resource_changed';
       owner: 0 | 1;
@@ -355,12 +361,24 @@ export type PlayerCommand =
 
 ```
 step(tick, commands):
-  1. 处理本帧所有指令（出牌、升级基地）
-  2. 更新资源（金币产出，检测上限）
-  3. 更新建筑（兵营产兵计时、箭塔攻击计时）
-  4. 更新所有单位（移动、碰撞、攻击）
-  5. 检测胜负
-  6. 返回本帧产生的 events[]
+  1. 初始事件（首帧：card_drawn × 手牌数、resource_changed × 2）
+  2. AI 决策 + 外部指令过滤（仅消费 tick 匹配的指令）
+  3. processCommand（出牌、升级基地）
+  4. ResourceSystem（金币产出，检测上限）
+     · 0–3 min   ×1.0（33 fp/(coin/s)/tick）
+     · 3–6 min   ×1.5（50 fp/(coin/s)/tick）
+     · 6–10 min  ×2.0（66 fp/(coin/s)/tick）
+     · 10 min+   ×4.0（133 fp/(coin/s)/tick）
+  5. BuildingProductionSystem（兵营产兵、箭塔攻击计时）
+  6. CombatSystem（攻击结算，读 elapsedTicks 决定是否应用 ×2 攻击倍率）
+     · ≥ 13 min（23400 ticks）：所有伤害 ×2
+  7. MovementSystem（前进、碰撞检测、横移）
+  8. SpellSystem（持续效果倒计时、到期移除）
+  9. checkWinCondition
+     · 任一基地 HP=0 → game_over
+     · ≥ 17 min（30600 ticks）→ game_draw
+     · ≥ 15 min（27000 ticks）且尚未触发 → game_countdown_start（仅一次）
+  10. 返回本帧产生的 events[]
 ```
 
 ---

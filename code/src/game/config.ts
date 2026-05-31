@@ -25,15 +25,15 @@ export const BASE_COLS = [3, 4] as const;
 /** 0-indexed attack lanes */
 export const ATTACK_LANES = [0, 1, 2, 5, 6, 7] as const;
 
-/** Building row for bottom player */
-export const BOTTOM_BUILDING_ROW = 2;
-/** Building row for top player */
-export const TOP_BUILDING_ROW = 16;
+/** Building row for bottom player (near row 18 = bottom of screen) */
+export const BOTTOM_BUILDING_ROW = 16;
+/** Building row for top player (near row 0 = top of screen) */
+export const TOP_BUILDING_ROW = 2;
 
-/** Unit spawn row for bottom player (just above building row) */
-export const BOTTOM_SPAWN_ROW = 3;
+/** Unit spawn row for bottom player (just inside building row, toward center) */
+export const BOTTOM_SPAWN_ROW = 15;
 /** Unit spawn row for top player */
-export const TOP_SPAWN_ROW = 15;
+export const TOP_SPAWN_ROW = 3;
 
 // ─── Resource ─────────────────────────────────────────────────────────────────
 
@@ -59,11 +59,43 @@ export const REGEN_FP_PER_COIN_PER_S_ACCEL1 = Math.trunc(FP_SCALE * 3      / (TI
 export const REGEN_FP_PER_COIN_PER_S_ACCEL2 = Math.trunc(FP_SCALE * 2      / TICK_RATE);           // 66
 
 // ─── Time acceleration (tick thresholds) ─────────────────────────────────────
+//
+//  0–3 min   normal     ×1.0
+//  3–6 min   accel 1    ×1.5
+//  6–10 min  accel 2    ×2.0
+//  10–13 min accel 3    ×4.0
+//  13 min+   all-unit attack ×2
+//  15 min    countdown starts
+//  17 min    force draw
 
 export const ACCEL_THRESHOLD_1        = 180; // seconds (reference only)
 export const ACCEL_THRESHOLD_2        = 360; // seconds (reference only)
+export const ACCEL_THRESHOLD_3        = 600; // seconds (reference only)
 export const ACCEL_THRESHOLD_1_TICKS  = ACCEL_THRESHOLD_1 * TICK_RATE; // 5400
 export const ACCEL_THRESHOLD_2_TICKS  = ACCEL_THRESHOLD_2 * TICK_RATE; // 10800
+export const ACCEL_THRESHOLD_3_TICKS  = ACCEL_THRESHOLD_3 * TICK_RATE; // 18000
+
+// Accel ×4.0: trunc(4 * 1000 / 30) = 133 fp / (coin/s) / tick
+export const REGEN_FP_PER_COIN_PER_S_ACCEL3 = Math.trunc(FP_SCALE * 4 / TICK_RATE); // 133
+
+export const ATTACK_MULT_THRESHOLD        = 780; // 13 min (seconds, reference only)
+export const ATTACK_MULT_THRESHOLD_TICKS  = ATTACK_MULT_THRESHOLD * TICK_RATE; // 23400
+/** All-unit attack multiplier applied after ATTACK_MULT_THRESHOLD_TICKS. */
+export const ATTACK_MULT_LATE_GAME        = 2;
+
+export const COUNTDOWN_THRESHOLD        = 900;  // 15 min (seconds, reference only)
+export const COUNTDOWN_THRESHOLD_TICKS  = COUNTDOWN_THRESHOLD * TICK_RATE; // 27000
+
+export const FORCE_DRAW_THRESHOLD        = 1020; // 17 min (seconds, reference only)
+export const FORCE_DRAW_THRESHOLD_TICKS  = FORCE_DRAW_THRESHOLD * TICK_RATE; // 30600
+
+// ─── Crossing (horizontal transit) ───────────────────────────────────────────
+//
+//  Units move 1 column every CROSSING_INTERVAL_TICKS ticks.
+//  CROSSING_COLS_PER_S = 2  →  interval = round(30 / 2) = 15 ticks/col
+
+export const CROSSING_COLS_PER_S      = 2;
+export const CROSSING_INTERVAL_TICKS  = Math.round(TICK_RATE / CROSSING_COLS_PER_S); // 15
 
 // ─── Hand / deck ──────────────────────────────────────────────────────────────
 

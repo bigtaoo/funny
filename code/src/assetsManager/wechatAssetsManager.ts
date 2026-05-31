@@ -2,8 +2,23 @@ import * as PIXI from 'pixi.js-legacy';
 import numbersJson from '../assets/numbers.json';
 import { IAssetsManager } from './IAssetsManager';
 
+type BundleLoader = () => Promise<void>;
+
 export class WechatAssetsManager implements IAssetsManager {
   private textures: Record<string, PIXI.Texture> = {};
+  private loadedBundles = new Set<string>();
+
+  private bundleLoaders: Record<string, BundleLoader> = {
+    ui: () => this.loadUI(),
+    effects: () => this.loadEffects(),
+  };
+
+  public async loadBundle(keys: string[]): Promise<void> {
+    const pending = keys.filter((k) => !this.loadedBundles.has(k));
+    if (pending.length === 0) return;
+    await Promise.all(pending.map((k) => this.bundleLoaders[k]?.()));
+    pending.forEach((k) => this.loadedBundles.add(k));
+  }
 
   private loadImageWX(src: string): Promise<any> {
     return new Promise((resolve, reject) => {
@@ -14,55 +29,50 @@ export class WechatAssetsManager implements IAssetsManager {
     });
   }
 
-  private loadJSONWX(): Promise<any> {
-    return Promise.resolve(numbersJson);
+  private createBaseTexture(img: any): PIXI.BaseTexture {
+    const resource = new PIXI.CanvasResource(img);
+    return new PIXI.BaseTexture(resource);
   }
 
-  private async createTexture(src: string): Promise<PIXI.Texture> {
-    const image = await this.loadImageWX(src);
-    const resource = new PIXI.CanvasResource(image);
-    const baseTexture = new PIXI.BaseTexture(resource);
-    const texture = new PIXI.Texture(baseTexture);
-
-    return texture;
-  }
-
-  public async loadAssets(): Promise<void> {
-    const [image, atlasData] = await Promise.all([
-      this.loadImageWX('assets/numbers.png'),
-      this.loadJSONWX(),
-    ]);
-    // console.log('image: w-', image.width);
-    // console.log('json', atlasData);
-
-    const resource = new PIXI.CanvasResource(image);
-    const baseTexture = new PIXI.BaseTexture(resource);
-
-    for (const frameName in atlasData.frames) {
-      const frame = atlasData.frames[frameName].frame;
-
-      const rect = new PIXI.Rectangle(frame.x, frame.y, frame.w, frame.h);
-
-      this.textures[frameName] = new PIXI.Texture(baseTexture, rect);
+  private parseAtlas(atlas: any, baseTexture: PIXI.BaseTexture): void {
+    for (const frameName in atlas.frames) {
+      const frame = atlas.frames[frameName].frame;
+      this.textures[frameName] = new PIXI.Texture(
+        baseTexture,
+        new PIXI.Rectangle(frame.x, frame.y, frame.w, frame.h),
+      );
     }
-
-    const background = await this.createTexture('assets/background.png');
-    this.textures['background.png'] = background;
   }
 
-  public GetSpriteFromNumberAtlas(key: string): PIXI.Sprite {
-    const texture = this.textures[key];
+  private async loadUI(): Promise<void> {
+    const img = await this.loadImageWX('assets/numbers.png');
+    const baseTexture = this.createBaseTexture(img);
+    this.parseAtlas(numbersJson, baseTexture);
 
-    if (!texture) {
-      throw new Error(`Missing texture: ${key}`);
-    }
+    const bgImg = await this.loadImageWX('assets/background.png');
+    const bgBase = this.createBaseTexture(bgImg);
+    this.textures['background.png'] = new PIXI.Texture(bgBase);
+  }
 
-    return new PIXI.Sprite(texture);
+  private async loadEffects(): Promise<void> {
+    // boom.json is not bundled for wechat — load via fetch or inline if needed
+    const res = await new Promise<any>((resolve, reject) => {
+      wx.request({
+        url: 'assets/boom.json',
+        success: (r: any) => resolve(r.data),
+        fail: reject,
+      });
+    });
+    const img = await this.loadImageWX('assets/boom.png');
+    const baseTexture = this.createBaseTexture(img);
+    this.parseAtlas(res, baseTexture);
   }
 
   public GetTexture(key: string): PIXI.Texture {
-    return this.textures[key];
+    const texture = this.textures[key];
+    if (!texture) {
+      throw new Error(`Missing texture: ${key}`);
+    }
+    return texture;
   }
 }
-
-// export const wechatAssetsManager = new WechatAssetsManager();

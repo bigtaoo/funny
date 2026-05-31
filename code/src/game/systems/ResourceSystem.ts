@@ -1,11 +1,13 @@
 import {
   ACCEL_THRESHOLD_1_TICKS,
   ACCEL_THRESHOLD_2_TICKS,
+  ACCEL_THRESHOLD_3_TICKS,
   COIN_REGEN_BASE,
   BASE_UPGRADE_REGEN_BONUS,
   REGEN_FP_PER_COIN_PER_S_NORMAL,
   REGEN_FP_PER_COIN_PER_S_ACCEL1,
   REGEN_FP_PER_COIN_PER_S_ACCEL2,
+  REGEN_FP_PER_COIN_PER_S_ACCEL3,
 } from '../config';
 import { GameState } from '../GameState';
 
@@ -47,6 +49,7 @@ export class ResourceSystem {
    * All returned values are pre-computed integer constants.
    */
   private regenFpPerCoinPerS(elapsedTicks: number): number {
+    if (elapsedTicks >= ACCEL_THRESHOLD_3_TICKS) return REGEN_FP_PER_COIN_PER_S_ACCEL3;
     if (elapsedTicks >= ACCEL_THRESHOLD_2_TICKS) return REGEN_FP_PER_COIN_PER_S_ACCEL2;
     if (elapsedTicks >= ACCEL_THRESHOLD_1_TICKS) return REGEN_FP_PER_COIN_PER_S_ACCEL1;
     return REGEN_FP_PER_COIN_PER_S_NORMAL;

@@ -18,11 +18,10 @@ export class Grid {
   public DrawGrids(): void {
     const w = grid_count_w();
     const h = grid_count_h();
-    // console.log('grid w: ', w, ' h: ', h);
     for (let i = 0; i < w; ++i) {
       for (let j = 0; j < h; ++j) {
         const c = index(i, j);
-        const s = AssetsManager().GetSpriteFromNumberAtlas('Blue.png');
+        const s = new PIXI.Sprite(AssetsManager().GetTexture('Blue.png'));
         s.x = i * grid_size() + offset_x();
         s.y = j * grid_size() + OFFSET_Y;
         s.width = grid_size();
@@ -30,15 +29,11 @@ export class Grid {
         this.Container.addChild(s);
         this.Grids.set(c, s);
 
-        var uiButton = new UIElement({
+        const uiButton = new UIElement({
           zIndex: 10,
           sprite: s,
           onTap: () => {
-            // console.log('clicked number: ', c);
-            if (!s.visible) {
-              // console.log('invisible grid.');
-              return;
-            }
+            if (!s.visible) return;
             display.OnClick(c);
           },
         });
@@ -49,7 +44,7 @@ export class Grid {
 
   public DrawSelectedImage(index: number): void {
     if (this.selectedImage === undefined) {
-      this.selectedImage = AssetsManager().GetSpriteFromNumberAtlas('select.png');
+      this.selectedImage = new PIXI.Sprite(AssetsManager().GetTexture('select.png'));
       this.selectedImage.width = grid_size();
       this.selectedImage.height = grid_size();
       this.Container.addChild(this.selectedImage);
@@ -59,11 +54,10 @@ export class Grid {
     const y = index - x * 1000;
     this.selectedImage.x = x * grid_size() + offset_x();
     this.selectedImage.y = y * grid_size() + OFFSET_Y;
-    // console.log('select image x: ', x, 'y:',y, 'self: ', this.selectedImage)
   }
 
   public HideSelctedImage(): void {
-    if (this.selectedImage != undefined) {
+    if (this.selectedImage !== undefined) {
       this.selectedImage.visible = false;
     }
   }

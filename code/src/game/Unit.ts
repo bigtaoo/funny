@@ -53,6 +53,12 @@ export class Unit {
   /** ID of the current attack target (unit or building), or null. */
   targetId: number | null = null;
 
+  /**
+   * Ticks remaining until the next column step during Crossing.
+   * Decremented each tick; unit advances one column when it reaches 0.
+   */
+  crossingCooldownTicks: number = 0;
+
   constructor(unitType: UnitType, side: Side, col: number, spawnRow: number) {
     this.id        = nextId++;
     this.unitType  = unitType;

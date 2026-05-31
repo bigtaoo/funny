@@ -6,17 +6,15 @@ export class Effect {
   private sprite: PIXI.Sprite;
   private time: number = 0;
   private nextTime: number = 0;
-  private frameTime: number = 0;
+  private readonly frameTime: number = 70;
   private spriteIndex: number = 0;
 
   constructor(sprite: PIXI.Sprite) {
     this.sprite = sprite;
 
     for (let i = 0; i < 7; ++i) {
-      const s = AssetsManager().GetTexture(`boom-${i}.png`);
-      this.atlasSprites.push(s);
+      this.atlasSprites.push(AssetsManager().GetTexture(`boom-${i}.png`));
     }
-    this.frameTime = 70;
   }
 
   public Play(x: number, y: number): void {
@@ -30,11 +28,9 @@ export class Effect {
   }
 
   public Update(delta: number): void {
-    // console.log('time: ', this.time, ' delta: ', delta);
     this.time += delta;
-    if (this.time < this.nextTime) {
-      return;
-    }
+    if (this.time < this.nextTime) return;
+
     this.nextTime += this.frameTime;
     this.spriteIndex++;
     if (this.spriteIndex >= this.atlasSprites.length) {
@@ -42,7 +38,13 @@ export class Effect {
       return;
     }
     this.sprite.texture = this.atlasSprites[this.spriteIndex];
-    // console.log('sprite: ', this.sprite)
+  }
+
+  public Reset(): void {
+    this.sprite.visible = false;
+    this.time = 0;
+    this.nextTime = 0;
+    this.spriteIndex = 0;
   }
 
   public IsVisible(): boolean {

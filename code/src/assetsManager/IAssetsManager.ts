@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 
 export interface IAssetsManager {
-  GetSpriteFromNumberAtlas(key: string): PIXI.Sprite;
+  loadBundle(keys: string[]): Promise<void>;
   GetTexture(key: string): PIXI.Texture;
 }

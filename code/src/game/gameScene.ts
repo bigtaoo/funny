@@ -13,6 +13,7 @@ export class GameScene extends PIXI.Container {
   private numbers: Numbers;
   private grids: Grid;
   private effectManager: EffectManager;
+  private background: PIXI.Sprite | undefined;
 
   constructor() {
     super();
@@ -44,7 +45,6 @@ export class GameScene extends PIXI.Container {
     this.scale.set(scale);
 
     console.log('window w: ', windowWidth, 'window h: ', windowHeight, 'scale: ', scale);
-    // console.log('w: ', this.width, ' h: ', config.Height, 'x: ', this.x, 'y: ', this.y);
   }
 
   public Draw(): void {
@@ -61,12 +61,13 @@ export class GameScene extends PIXI.Container {
   }
 
   private drawBackground(): void {
-    const background = AssetsManager().GetSpriteFromNumberAtlas('background.png');
-    background.width = config.Width;
-    background.height = config.Height;
-    background.x = this.x;
-    background.y = this.y;
-    this.addChild(background);
-    // console.log('background w: ', background.width, ' h: ', background.height, ' x: ', this.x, ' y: ', this.y);
+    if (!this.background) {
+      this.background = new PIXI.Sprite(AssetsManager().GetTexture('background.png'));
+      this.addChild(this.background);
+    }
+    this.background.width = config.Width;
+    this.background.height = config.Height;
+    this.background.x = 0;
+    this.background.y = 0;
   }
 }

@@ -17,7 +17,6 @@ export class Numbers {
 
     const w = grid_count_w();
     const h = grid_count_h();
-    // console.log('number w: ', w, 'h:',h);
     for (let i = 0; i < w; ++i) {
       for (let j = 0; j < h; ++j) {
         const n = logic.getNumber(i, j);
@@ -39,7 +38,7 @@ export class Numbers {
   }
 
   private drawNumber(num: number, x: number, y: number): PIXI.Sprite {
-    const picture = AssetsManager().GetSpriteFromNumberAtlas(num + '.png');
+    const picture = new PIXI.Sprite(AssetsManager().GetTexture(num + '.png'));
     picture.width = 80;
     picture.height = 80;
     picture.x = x + offset_x() + 20;

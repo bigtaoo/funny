@@ -3,6 +3,7 @@ import {
   BASE_HP,
   BOTTOM_BUILDING_ROW,
   BOTTOM_TRANSIT_ROW,
+  CROSSING_INTERVAL_TICKS,
   TOP_BUILDING_ROW,
   TOP_TRANSIT_ROW,
 } from '../config';
@@ -59,11 +60,15 @@ export class MovementSystem {
     if (isBottom && unit.y_fp <= transitY_fp) {
       unit.y_fp = transitY_fp;
       unit.state = UnitState.Crossing;
+      // Start cooldown so the first column step is rate-limited like all subsequent steps.
+      // Without this, crossingCooldownTicks = 0 would cause an immediate step next tick.
+      unit.crossingCooldownTicks = CROSSING_INTERVAL_TICKS;
       return;
     }
     if (!isBottom && unit.y_fp >= transitY_fp) {
       unit.y_fp = transitY_fp;
       unit.state = UnitState.Crossing;
+      unit.crossingCooldownTicks = CROSSING_INTERVAL_TICKS;
       return;
     }
 
@@ -118,8 +123,13 @@ export class MovementSystem {
       unit.state = UnitState.Dead;
       state.board.removeUnit(unit);
     } else {
-      // Move one column per tick toward base (integer snap)
+      // Rate-limited horizontal step: one column every CROSSING_INTERVAL_TICKS ticks
+      if (unit.crossingCooldownTicks > 0) {
+        unit.crossingCooldownTicks--;
+        return;
+      }
       unit.col += unit.col < targetColMin ? 1 : -1;
+      unit.crossingCooldownTicks = CROSSING_INTERVAL_TICKS;
     }
   }
 
