@@ -1,6 +1,2 @@
-import * as PIXI from 'pixi.js-legacy';
-
-export interface IAssetsManager {
-  loadBundle(keys: string[]): Promise<void>;
-  GetTexture(key: string): PIXI.Texture;
-}
+// Legacy module — dead code, not compiled by webpack. export {} keeps TS happy.
+export {};

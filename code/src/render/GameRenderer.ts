@@ -12,8 +12,8 @@ import {
   SpellType,
   OwnerId,
   PlayerStats,
-} from '../game/types';
-import { GameState } from '../game/GameState';
+  GameState,
+} from '../game';
 import { BoardView } from './BoardView';
 import { BuildingView } from './BuildingView';
 import { HandView } from './HandView';
@@ -50,6 +50,9 @@ export class GameRenderer {
 
   /** Called when game ends. winner=null means draw. */
   onGameEnd: ((winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) => void) | null = null;
+
+  /** Called when player exits to lobby via settings overlay. */
+  onExitToLobby: (() => void) | null = null;
 
   private readonly engine: IGameEngine;
   private readonly width: number;
@@ -156,9 +159,14 @@ export class GameRenderer {
       if (this.drag?.kind === 'card') this.commitCardDrag(col, row);
     };
 
-    // Settings button
+    // Settings button — toggle pause overlay
     this.hudView.onSettingsPressed = () => {
-      // TODO: open pause/settings overlay
+      if (this.hudView.isPaused) {
+        this.hudView.hidePause();
+      } else {
+        this.hudView.onExitToLobby = () => { this.onExitToLobby?.(); };
+        this.hudView.showPause();
+      }
     };
   }
 

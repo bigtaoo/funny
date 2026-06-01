@@ -1,10 +1,10 @@
 import { Scene } from './SceneManager';
 import { GameRenderer } from '../render/GameRenderer';
-import { createGameEngine } from '../game/GameEngine';
-import { OwnerId, PlayerStats } from '../game/types';
+import { createGameEngine, OwnerId, PlayerStats } from '../game';
 
 export interface GameSceneCallbacks {
   onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]): void;
+  onExitToLobby(): void;
 }
 
 /**
@@ -24,6 +24,7 @@ export class GameScene implements Scene {
     this.renderer = new GameRenderer(engine, w, h);
     this.renderer.init();
     this.renderer.onGameEnd = cb.onGameEnd;
+    this.renderer.onExitToLobby = cb.onExitToLobby;
 
     this.container = this.renderer.container;
   }

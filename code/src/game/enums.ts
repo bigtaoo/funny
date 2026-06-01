@@ -1,4 +1,2 @@
-export enum Orientation {
-  Landscape,
-  Portrait,
-}
+// Legacy file — dead code, not compiled by webpack. export {} keeps TS happy.
+export {};

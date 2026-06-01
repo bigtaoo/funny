@@ -1,3 +1,2 @@
-export const GAME_WIDTH = 1080;
-export const GAME_HEIGHT = 1920;
-export const OFFSET_Y = 300;
+// Legacy file — dead code, not compiled by webpack. export {} keeps TS happy.
+export {};

@@ -37,7 +37,14 @@ export class HUDView {
    * Provides the screen-space center of the button so GameRenderer can place the ghost.
    */
   onUpgradeDragStart: ((centerX: number, centerY: number) => void) | null = null;
+
+  /** Called when the settings (gear) button is tapped. Wired by GameRenderer. */
   onSettingsPressed: (() => void) | null = null;
+
+  /** Called when the player confirms "exit to lobby" from the pause overlay. */
+  onExitToLobby: (() => void) | null = null;
+
+  private pauseOverlay: PIXI.Container | null = null;
 
   private timerText!:    PIXI.Text;
   private coinText!:     PIXI.Text;
@@ -92,6 +99,117 @@ export class HUDView {
       this.upgradeBtnLabel.text = `↑ ${cost}g`;
       this.setUpgradeBtnEnabled(canAfford);
     }
+  }
+
+  /** Show the pause overlay. Idempotent. */
+  showPause(): void {
+    if (this.pauseOverlay) return;
+
+    const w = this.screenWidth;
+    const h = this.screenHeight;
+
+    const overlay = new PIXI.Container();
+
+    // Dim background
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.6);
+    dim.drawRect(0, 0, w, h);
+    dim.endFill();
+    dim.interactive = true; // block events to game below
+
+    // Panel
+    const panelW = Math.round(w * 0.68);
+    const panelH = Math.round(h * 0.28);
+    const panelX = (w - panelW) / 2;
+    const panelY = (h - panelH) / 2;
+
+    const panel = new PIXI.Graphics();
+    panel.beginFill(0xfaf6ee);
+    panel.lineStyle(2, 0x333333);
+    panel.drawRoundedRect(panelX, panelY, panelW, panelH, 8);
+    panel.endFill();
+
+    const title = new PIXI.Text('PAUSED', {
+      fontSize: Math.round(panelH * 0.22),
+      fill: 0x222222,
+      fontWeight: 'bold',
+      fontFamily: 'monospace',
+    });
+    title.anchor.set(0.5, 0);
+    title.x = w / 2;
+    title.y = panelY + panelH * 0.1;
+
+    // Resume button
+    const btnW  = Math.round(panelW * 0.72);
+    const btnH  = Math.round(panelH * 0.22);
+    const btnGap = Math.round(panelH * 0.07);
+    const btn1Y  = panelY + panelH * 0.42;
+    const btn2Y  = btn1Y + btnH + btnGap;
+    const btnX   = (w - btnW) / 2;
+
+    const resumeBg = this.makeBtn(btnX, btn1Y, btnW, btnH, 0x2c2c2a, 'RESUME', 0xffffff);
+    resumeBg.interactive = true;
+    resumeBg.cursor = 'pointer';
+    resumeBg.on('pointertap', () => this.hidePause());
+
+    // Exit button
+    const exitBg = this.makeBtn(btnX, btn2Y, btnW, btnH, 0xf0ece0, 'EXIT TO LOBBY', 0x444444, 0x888888);
+    exitBg.interactive = true;
+    exitBg.cursor = 'pointer';
+    exitBg.on('pointertap', () => {
+      this.hidePause();
+      this.onExitToLobby?.();
+    });
+
+    overlay.addChild(dim, panel, title, resumeBg, exitBg);
+    this.container.addChild(overlay);
+    this.pauseOverlay = overlay;
+  }
+
+  /** Hide the pause overlay. */
+  hidePause(): void {
+    if (!this.pauseOverlay) return;
+    this.container.removeChild(this.pauseOverlay);
+    this.pauseOverlay.destroy({ children: true });
+    this.pauseOverlay = null;
+  }
+
+  get isPaused(): boolean {
+    return this.pauseOverlay !== null;
+  }
+
+  private makeBtn(
+    x: number, y: number, w: number, h: number,
+    bgColor: number, label: string, textColor: number,
+    borderColor = 0x333333,
+  ): PIXI.Container {
+    const c = new PIXI.Container();
+
+    const bg = new PIXI.Graphics();
+    bg.beginFill(bgColor);
+    bg.lineStyle(1, borderColor);
+    bg.drawRoundedRect(0, 0, w, h, 6);
+    bg.endFill();
+
+    const txt = new PIXI.Text(label, {
+      fontSize: Math.round(h * 0.42),
+      fill: textColor,
+      fontWeight: 'bold',
+      fontFamily: 'monospace',
+    });
+    txt.anchor.set(0.5, 0.5);
+    txt.x = w / 2;
+    txt.y = h / 2;
+
+    c.addChild(bg, txt);
+    c.x = x;
+    c.y = y;
+
+    // Make the whole container interactive
+    bg.interactive = true;
+    bg.hitArea = new PIXI.Rectangle(0, 0, w, h);
+
+    return c;
   }
 
   /** winner=null means draw */

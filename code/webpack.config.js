@@ -33,7 +33,7 @@ module.exports = (env, argv) => {
       clean: true,
     },
     plugins: [
-      new HtmlWebpackPlugin({ template: './public/index.html' }),
+      new HtmlWebpackPlugin({ template: `./public/${targetPlatform}/index.html` }),
       new webpack.DefinePlugin({
         TARGET: JSON.stringify(targetPlatform),
       }),

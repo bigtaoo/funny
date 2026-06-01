@@ -20,6 +20,7 @@ export type {
   PlayerCommand,
   GameEvent,
   OwnerId,
+  PlayerStats,
   Vec2_fp,
   Replay,
   ReplayFrame,
@@ -40,3 +41,6 @@ export {
 // ── Fixed-point utilities (render layer needs fromFp to convert for display) ──
 export { FP_SCALE, TICK_RATE, fromFp } from './math/fixed';
 export type { Fp } from './math/fixed';
+
+// ── GameState — exposed as a type so the render layer can annotate parameters ──
+export type { GameState } from './GameState';

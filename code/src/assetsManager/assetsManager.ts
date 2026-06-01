@@ -1,14 +1,2 @@
-import { IAssetsManager } from './IAssetsManager';
-
-let instance: IAssetsManager;
-
-export function setAssetsManager(manager: IAssetsManager) {
-  instance = manager;
-}
-
-export function AssetsManager(): IAssetsManager {
-  if (!instance) {
-    throw new Error('AssetsManager not initialized');
-  }
-  return instance;
-}
+// Legacy module — dead code, not compiled by webpack. export {} keeps TS happy.
+export {};

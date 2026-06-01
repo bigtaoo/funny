@@ -47,6 +47,9 @@ export async function startApp(platform: IPlatform): Promise<void> {
       onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
         goResult(winner, stats);
       },
+      onExitToLobby() {
+        goLobby();
+      },
     }));
   }
 
