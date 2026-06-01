@@ -4,8 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "webpack serve --mode development --port 9090",
-    "build:web": "webpack --mode production",
+    "start": "webpack serve --mode development --port 9090 --env TARGET=web",
+    "start:crazygames": "webpack serve --mode development --port 9090 --env TARGET=crazygames",
+    "build:web": "webpack --mode production --env TARGET=web",
+    "build:crazygames": "webpack --mode production --env TARGET=crazygames",
     "build:wechat": "rollup -c",
     "build:native": "npm run build:web && npx cap sync",
     "cap:run:android": "npx cap run android",

@@ -95,7 +95,7 @@ export interface Vec2_fp {
 |---|---|---|
 | 普通兵移速 | 1.0 格/s | 1000_fp / s |
 | 盾兵移速 | 0.6 格/s | 600_fp / s |
-| 弓箭兵射程 | 3 格 | 3000_fp |
+| 弓箭兵射程 | 2 格 | 2000_fp |
 | tick 步长 | 1/30 s | dt = 33_fp（≈ 1000/30，整数截断） |
 
 > **注**：1000/30 = 33.33…，截断为 33_fp，每秒误差 1_fp（0.001 格）。所有客户端截断方式相同，误差一致，不影响确定性。
@@ -120,14 +120,14 @@ const dy_fp = speed_fp * dt_fp;
 
 ## 五、坐标系
 
-```
-y 增大方向 = 向上（向敌方基地）
+所有行列均从 **0 开始计数**。
 
-行 0  ──── 玩家 0 基地行（己方底部）
-行 1  ────── 玩家 0 建筑行
-行 2..16 ── 战斗区
-行 16 ──── 玩家 1 建筑行
-行 17 ──── 玩家 1 基地行
+```
+行 0   ── 玩家 0 建筑行（BOTTOM，己方底部）基地占列 5-6
+行 1   ── 玩家 0 出兵行
+行 2..15── 战斗区（14 行）
+行 16  ── 玩家 1 出兵行
+行 17  ── 玩家 1 建筑行（TOP，敌方顶部）基地占列 5-6
 
 列 0..11（共 12 列）
 列 0,1,2,3,4   左侧进攻路线
@@ -135,9 +135,9 @@ y 增大方向 = 向上（向敌方基地）
 列 7,8,9,10,11 右侧进攻路线
 ```
 
-- 玩家 0 的单位 y 从 0 增大，向行 17 推进。
-- 玩家 1 的单位 y 从 17000_fp 减小，向行 0 推进。
-- 横移区为行 0（玩家 1 单位抵达后横移）和行 17（玩家 0 单位抵达后横移），单位在横移区切换为 x 轴移动。
+- 玩家 0（BOTTOM）单位从 row 1 出生，y 增大，向 row 17 推进。
+- 玩家 1（TOP）单位从 row 16 出生，y 减小，向 row 0 推进。
+- 单位到达对方建筑行（row 0 或 row 17）后切换为横移模式，沿 x 轴向基地列（col 5/6）移动，抵达后对基地造成伤害并消失。
 
 ---
 
@@ -268,8 +268,12 @@ export type GameEvent =
       buildingType: BuildingType;
       col: number; row: number }
 
+  | { type: 'building_hp_changed';
+      buildingId: number;
+      hp: number; maxHp: number }
+
   | { type: 'building_destroyed';
-      buildingId: number; pos: Vec2_fp }
+      buildingId: number; col: number; row: number }
 
   | { type: 'building_spawned_unit';
       buildingId: number; unitId: number }  // 兵营产兵
@@ -300,10 +304,21 @@ export type GameEvent =
 
   // ── 手牌 ──────────────────────────────────────────
   | { type: 'card_drawn';
-      owner: 0 | 1; cardType: CardType; handIndex: number }
+      owner: 0 | 1; cardType: CardType; handIndex: number;
+      /** 本张牌的自动刷新倒计时总长（ticks），客户端据此驱动橡皮擦动效 */
+      refreshDurationTicks: number }
 
   | { type: 'card_played';
       owner: 0 | 1; handIndex: number }
+
+  | { type: 'card_expired';
+      /** 2 分钟未使用，逻辑层自动刷新，紧接着会发出新的 card_drawn */
+      owner: 0 | 1; handIndex: number }
+
+  // ── 结算统计 ──────────────────────────────────────
+  | { type: 'game_stats';
+      /** game_over / game_draw 同帧发出 */
+      stats: [PlayerStats, PlayerStats] }
 ```
 
 ### 7.3 移动事件与客户端 tween 的协作
@@ -437,4 +452,59 @@ Client A ──playerCmd──▶ Server ──broadcast (tick, [cmdA, cmdB])─
 
 ---
 
-*关联文档：core-gameplay-loop.md、art-direction.md*
+---
+
+## 十二、手牌刷新计时器
+
+手牌计时器在逻辑层维护，保证录像可完整重放。
+
+```typescript
+// 内部，每个手牌槽一个计时器
+interface HandSlot {
+  cardType: CardType;
+  remainingTicks: number;   // 倒计时，归零时自动刷新
+}
+```
+
+- 开局抽牌时，每个槽的 `remainingTicks` = `CARD_REFRESH_TICKS`（= 2 × 60 × 30 = 3600）加上初始随机偏移（PRNG 生成 0～1800 ticks，即 0～60 秒）。
+- 每 tick 递减。归零时发出 `card_expired`，随即抽新牌发出 `card_drawn`（含新的 `refreshDurationTicks`）。
+- 出牌后新抽的牌倒计时从 `CARD_REFRESH_TICKS` 重新开始（无随机偏移）。
+
+---
+
+## 十三、加权抽牌接口（占位）
+
+```typescript
+// 内部接口，规则待细化
+interface ICardDrawPolicy {
+  /** 根据当前游戏阶段和玩家状态，返回下一张牌的类型 */
+  draw(tick: number, playerState: InternalPlayerState): CardType;
+}
+```
+
+MVP 阶段暂用均匀随机实现。后期替换为加权策略（按阶段调整各等级权重、法术独立概率池、基地等级影响）时，只需替换此接口的实现，不改调用方。
+
+---
+
+## 十四、结算统计数据
+
+`game_stats` 与 `game_over` / `game_draw` 同帧发出，包含双方本局统计：
+
+```typescript
+interface PlayerStats {
+  owner: 0 | 1;
+  damageDealtToBase: number;    // 对敌方基地造成的总伤害 → 最佳输出
+  damageTakenByBase: number;    // 己方基地承受的总伤害   → 铁壁防线
+  unitsSent: number;            // 派出单位总数           → 兵海战术
+  unitsKilled: number;          // 消灭敌方单位数         → 以少胜多参考
+  spellHits: number;            // 法术命中单位总数        → 精准打击
+  buildingSurvivalTicks: number;// 建筑存活 tick 总和     → 建筑大师
+  goldSpent: number;            // 消耗金币总量           → 以少胜多参考
+}
+```
+
+客户端收到 `game_stats` 后根据各字段评定徽章，无需自行从事件流累加。
+
+---
+
+*关联文档：core-gameplay-loop.md、art-direction.md、ui-design.md*

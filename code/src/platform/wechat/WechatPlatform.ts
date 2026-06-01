@@ -125,6 +125,11 @@ export class WechatPlatform implements IPlatform {
     });
   }
 
+  async onLoadingComplete(): Promise<void> { /* no-op */ }
+  onGameplayStart(): void { /* no-op */ }
+  onGameplayStop(): void  { /* no-op */ }
+  async showMidgameAd(): Promise<void> { /* no-op */ }
+
   onAppReady(): void {
     try { wx.setPreferredFramesPerSecond(60); } catch { /* ignore */ }
   }

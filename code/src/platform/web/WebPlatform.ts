@@ -40,6 +40,11 @@ export class WebPlatform implements IPlatform {
     // nothing to do
   }
 
+  async onLoadingComplete(): Promise<void> { /* no-op */ }
+  onGameplayStart(): void { /* no-op */ }
+  onGameplayStop(): void  { /* no-op */ }
+  async showMidgameAd(): Promise<void> { /* no-op */ }
+
   onAppReady(): void {
     this.canvas.style.display = 'block';
     this.canvas.style.touchAction = 'none';

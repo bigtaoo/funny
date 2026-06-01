@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
-import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '../game/config';
+import { ATTACK_LANES, BASE_COLS, BOARD_COLS, BOARD_ROWS, BOTTOM_BUILDING_ROW } from '../game/config';
 import { ObjectPool } from '../cache/ObjectPool';
 
 /** Colors matching the art direction (notebook paper aesthetic) */
@@ -66,6 +66,49 @@ export class BoardView {
     };
   }
 
+  screenToCol(x: number): number {
+    return Math.floor((x - this.offsetX) / this.cellWidth);
+  }
+
+  screenToRow(y: number): number {
+    return Math.floor((y - this.offsetY) / this.cellHeight);
+  }
+
+  /**
+   * Returns the screen-space rect of the bottom player's base (cols 5-6, rows 0-1).
+   * Used by GameRenderer to detect upgrade drag drop target.
+   */
+  getPlayerBaseRect(): { x: number; y: number; w: number; h: number } {
+    const minCol = BASE_COLS[0];
+    const maxCol = BASE_COLS[1];
+    return {
+      x: this.offsetX + minCol * this.cellWidth,
+      y: this.offsetY + BOTTOM_BUILDING_ROW * this.cellHeight,
+      w: (maxCol - minCol + 1) * this.cellWidth,
+      h: 2 * this.cellHeight,
+    };
+  }
+
+  /** Highlight the player's base as an upgrade drop target (gold tint). */
+  showBaseUpgradeHighlight(active: boolean): void {
+    this.highlightLayer.clear();
+    if (!active) return;
+    const rect = this.getPlayerBaseRect();
+    this.highlightLayer.beginFill(0xffcc00, 0.3);
+    this.highlightLayer.lineStyle(2, 0xffcc00, 0.8);
+    this.highlightLayer.drawRect(rect.x, rect.y, rect.w, rect.h);
+    this.highlightLayer.endFill();
+  }
+
+  isOutsideBoard(x: number, y: number): boolean {
+    return (
+      x < this.offsetX ||
+      x > this.offsetX + BOARD_COLS * this.cellWidth ||
+      y < this.offsetY ||
+      y > this.offsetY + BOARD_ROWS * this.cellHeight
+    );
+  }
+
   // ─── Placement highlights ─────────────────────────────────────────────────
 
   /** Highlight all valid attack lane columns (blue). */
@@ -73,6 +116,35 @@ export class BoardView {
     this.highlightLayer.clear();
     for (const col of ATTACK_LANES) {
       this.highlightLayer.beginFill(HIGHLIGHT_LANE, HIGHLIGHT_ALPHA);
+      this.highlightLayer.drawRect(
+        this.offsetX + col * this.cellWidth,
+        this.offsetY,
+        this.cellWidth,
+        BOARD_ROWS * this.cellHeight,
+      );
+      this.highlightLayer.endFill();
+    }
+    this.overlay.interactive = true;
+  }
+
+  /**
+   * Highlight unit lane columns with per-column state:
+   * - blocked (spawn row occupied) → red
+   * - hovered → brighter blue
+   * - normal → standard blue
+   */
+  showUnitLaneHighlights(
+    lanes: number[],
+    blockedCols: Set<number>,
+    hoveredCol: number,
+  ): void {
+    this.highlightLayer.clear();
+    for (const col of lanes) {
+      const isBlocked = blockedCols.has(col);
+      const isHovered = col === hoveredCol;
+      const color = isBlocked ? 0xdd3333 : (isHovered ? 0x2266ff : HIGHLIGHT_LANE);
+      const alpha = isBlocked ? 0.28 : (isHovered ? 0.30 : HIGHLIGHT_ALPHA);
+      this.highlightLayer.beginFill(color, alpha);
       this.highlightLayer.drawRect(
         this.offsetX + col * this.cellWidth,
         this.offsetY,

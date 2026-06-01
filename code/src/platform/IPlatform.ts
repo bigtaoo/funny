@@ -2,7 +2,7 @@ import type * as PIXI from 'pixi.js-legacy';
 
 /**
  * IPlatform — abstraction layer for platform-specific capabilities.
- * Implemented by WebPlatform and WechatPlatform.
+ * Implemented per-platform: WebPlatform, WechatPlatform, CrazyGamesPlatform, …
  */
 export interface IPlatform {
   /** Returns the canvas element Pixi.js should render into */
@@ -24,14 +24,29 @@ export interface IPlatform {
   /**
    * Called once after the PIXI Application is created.
    * Web: no-op — PIXI EventSystem auto-attaches to DOM canvas events.
-   * WeChat: forwards wx.onTouch* events into PIXI's EventSystem so that
-   *         interactive containers (c.interactive / c.on('pointertap'))
-   *         work identically on both platforms.
+   * WeChat: forwards wx.onTouch* events into PIXI's EventSystem.
    */
   setupInput(app: PIXI.Application): void;
 
   /** Called after Pixi app is created — platform may set up orientation lock etc. */
   onAppReady(): void;
+
+  // ── SDK lifecycle (ads, analytics) ──────────────────────────────────────────
+
+  /** Called once after assets load — signals the platform that loading is done. */
+  onLoadingComplete(): Promise<void>;
+
+  /** Called when a gameplay session begins (match starts). */
+  onGameplayStart(): void;
+
+  /** Called when a gameplay session ends (game over / back to lobby). */
+  onGameplayStop(): void;
+
+  /**
+   * Show a platform mid-game ad. Resolves when the ad finishes or is skipped.
+   * No-op on platforms that don't support ads.
+   */
+  showMidgameAd(): Promise<void>;
 }
 
 export interface IStorage {
