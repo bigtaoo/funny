@@ -7,17 +7,14 @@ import { Side, UnitState } from '../types';
 /**
  * CombatSystem — tick-based attack cooldowns, no floating-point.
  *
- * Each tick:
- *   1. Decrement all cooldowns by 1 tick.
- *   2. Find targets for attacking units and arrow towers.
- *   3. Execute attacks when cooldown reaches 0.
- *   4. Emit unit_died / building_destroyed events and remove dead entities.
+ * Direction convention:
+ *   Bottom (+1): looks for targets at higher row numbers (rows above).
+ *   Top    (-1): looks for targets at lower  row numbers (rows below).
  */
 export class CombatSystem {
   tick(state: GameState): void {
     const board = state.board;
 
-    // Late-game attack multiplier (applies after 13 min to all combatants)
     const attackMult = state.elapsedTicks >= ATTACK_MULT_THRESHOLD_TICKS
       ? ATTACK_MULT_LATE_GAME
       : 1;
@@ -64,6 +61,10 @@ export class CombatSystem {
     // ── Remove dead units ──────────────────────────────────────────────────
     for (const unit of Array.from(board.units.values())) {
       if (unit.isDead) {
+        // Credit kill to the opponent
+        const killerOwner = state.ownerOf(unit.side === Side.Bottom ? Side.Top : Side.Bottom);
+        state.stats[killerOwner].unitsKilled++;
+
         state.pushEvent({ type: 'unit_died', unitId: unit.id, pos: { col: unit.col, y_fp: unit.y_fp } });
         board.removeUnit(unit);
       }
@@ -72,7 +73,12 @@ export class CombatSystem {
     // ── Remove destroyed buildings ─────────────────────────────────────────
     for (const building of Array.from(board.buildings.values())) {
       if (building.isDead) {
-        state.pushEvent({ type: 'building_destroyed', buildingId: building.id, pos: building.pos });
+        state.pushEvent({
+          type:       'building_destroyed',
+          buildingId: building.id,
+          col:        building.col,
+          row:        building.row,
+        });
         board.removeBuilding(building);
       }
     }
@@ -82,7 +88,8 @@ export class CombatSystem {
 
   private findTarget(unit: Unit, state: GameState): Unit | Building | null {
     const board     = state.board;
-    const direction = unit.side === Side.Bottom ? -1 : 1;
+    // Bottom attacks toward higher row; Top attacks toward lower row.
+    const direction = unit.side === Side.Bottom ? 1 : -1;
 
     for (let dist = 1; dist <= unit.range; dist++) {
       const checkRow = unit.row + direction * dist;
@@ -99,7 +106,8 @@ export class CombatSystem {
 
   private findTargetForBuilding(building: Building, state: GameState): Unit | null {
     const board     = state.board;
-    const direction = building.side === Side.Bottom ? -1 : 1;
+    // Building attacks toward enemy side — same direction convention.
+    const direction = building.side === Side.Bottom ? 1 : -1;
     const enemySide = building.side === Side.Bottom ? Side.Top : Side.Bottom;
 
     for (let dist = 1; dist <= building.attackRange; dist++) {
@@ -127,6 +135,16 @@ export class CombatSystem {
       damage,
       targetHpRemaining: target.hp,
     });
+
+    // Emit building HP update if target is a building
+    if (target instanceof Building && !target.isDead) {
+      state.pushEvent({
+        type:       'building_hp_changed',
+        buildingId: target.id,
+        hp:         target.hp,
+        maxHp:      target.maxHp,
+      });
+    }
   }
 
   private performBuildingAttack(

@@ -1,7 +1,30 @@
 import { Board } from './Board';
 import { Prng } from './math/prng';
 import { Player } from './Player';
-import { ActiveSpell, GameEvent, GamePhase, OwnerId, Side, sideToOwner } from './types';
+import { ActiveSpell, GameEvent, GamePhase, OwnerId, PlayerStats, Side, sideToOwner } from './types';
+
+/** Mutable version of PlayerStats — accumulated throughout the game. */
+export interface PlayerStatsMutable {
+  damageDealtToBase: number;
+  damageTakenByBase: number;
+  unitsSent: number;
+  unitsKilled: number;
+  spellHits: number;
+  buildingSurvivalTicks: number;
+  goldSpent: number;
+}
+
+function emptyStats(): PlayerStatsMutable {
+  return {
+    damageDealtToBase: 0,
+    damageTakenByBase: 0,
+    unitsSent: 0,
+    unitsKilled: 0,
+    spellHits: 0,
+    buildingSurvivalTicks: 0,
+    goldSpent: 0,
+  };
+}
 
 export class GameState {
   readonly bottomPlayer: Player;
@@ -13,34 +36,31 @@ export class GameState {
   /**
    * Elapsed ticks since game start (integer, incremented each step).
    * Used by ResourceSystem for acceleration thresholds.
-   * Logic layer never stores elapsed time as a float.
    */
   elapsedTicks: number = 0;
 
   winner: Side | null = null;
 
-  /**
-   * Set to true when the 15-min countdown event has been emitted.
-   * Prevents duplicate emission on every subsequent tick.
-   */
+  /** Set to true when the 15-min countdown event has been emitted. */
   countdownStarted: boolean = false;
 
   /** Currently active spell effects. */
   activeSpells: ActiveSpell[] = [];
 
-  /**
-   * Events produced in the current frame.
-   * Cleared at the start of each step() call.
-   * The render layer reads these after step() returns.
-   */
+  /** Per-player accumulated stats. Index matches OwnerId (0 = bottom, 1 = top). */
+  readonly stats: [PlayerStatsMutable, PlayerStatsMutable] = [emptyStats(), emptyStats()];
+
   private _events: GameEvent[] = [];
 
   constructor(seed: number) {
-    // Each player gets a separate PRNG derived from seed to ensure independent deck orders
-    const prng0 = new Prng(seed);
-    const prng1 = new Prng(seed ^ 0xdeadbeef);
-    this.bottomPlayer = new Player(Side.Bottom, prng0);
-    this.topPlayer    = new Player(Side.Top,    prng1);
+    // Each player gets separate PRNGs: one for card draws, one for timer stagger offsets.
+    const cardPrng0  = new Prng(seed);
+    const cardPrng1  = new Prng(seed ^ 0xdeadbeef);
+    const timerPrng0 = new Prng(seed ^ 0x12345678);
+    const timerPrng1 = new Prng(seed ^ 0x87654321);
+
+    this.bottomPlayer = new Player(Side.Bottom, cardPrng0, timerPrng0);
+    this.topPlayer    = new Player(Side.Top,    cardPrng1, timerPrng1);
     this.board        = new Board();
   }
 
@@ -54,6 +74,14 @@ export class GameState {
 
   ownerOf(side: Side): OwnerId {
     return sideToOwner(side);
+  }
+
+  /** Snapshot stats as the immutable PlayerStats type for game_stats event. */
+  snapshotStats(): [PlayerStats, PlayerStats] {
+    return [
+      { owner: 0, ...this.stats[0] },
+      { owner: 1, ...this.stats[1] },
+    ];
   }
 
   // ─── Event queue ──────────────────────────────────────────────────────────

@@ -2,14 +2,17 @@ import {
   ATTACK_LANES,
   BOTTOM_BUILDING_ROW,
   BOTTOM_SPAWN_ROW,
-  BOTTOM_TRANSIT_ROW,
+  CARD_REFRESH_INITIAL_OFFSET_MAX,
+  CARD_REFRESH_TICKS,
   COUNTDOWN_THRESHOLD_TICKS,
   FORCE_DRAW_THRESHOLD_TICKS,
+  HAND_SIZE,
   TOP_BUILDING_ROW,
   TOP_SPAWN_ROW,
   UNIT_BLUEPRINTS,
 } from './config';
-import { fp, toFp, TICK_RATE } from './math/fixed';
+import { toFp, TICK_RATE } from './math/fixed';
+import { cardRefreshDuration } from './Card';
 import { Building } from './Building';
 import { Player } from './Player';
 import { Unit } from './Unit';
@@ -36,12 +39,6 @@ import {
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
-/**
- * Create a game engine. This is the ONLY public constructor.
- * Returns IGameEngine — the render layer never touches the concrete class.
- *
- * @param config  Must include a `seed` for deterministic PRNG. No default.
- */
 export function createGameEngine(config: GameConfig): IGameEngine {
   return new GameEngineImpl(config);
 }
@@ -58,18 +55,12 @@ class GameEngineImpl implements IGameEngine {
   private readonly production: BuildingProductionSystem;
   private readonly ai:         AISystem;
 
-  /** True until the first step() call. */
   private firstStep = true;
-
-  /** Accumulated wall-clock time (seconds) between ticks. */
   private accumulatedTime = 0;
-  /** Monotonically increasing tick counter. */
   private currentTick = 0;
-  /** Commands buffered by playCard()/upgradeBase() for the next tick. */
   private pendingCommands: PlayerCommand[] = [];
 
   constructor(config: GameConfig) {
-    // seed is required — no Date.now() fallback (would break determinism)
     this.state      = new GameState(config.seed);
     this.resource   = new ResourceSystem();
     this.movement   = new MovementSystem();
@@ -103,12 +94,6 @@ class GameEngineImpl implements IGameEngine {
   // ─── IGameEngine ─────────────────────────────────────────────────────────
 
   /**
-   * Advance game state by exactly one logic frame (1/30 s).
-   * Returns all GameEvents produced this frame.
-   *
-   * First call (any tick): also emits initial state events (starting hands, etc.)
-   * so the render layer can build its initial view from events alone.
-   *
    * step() execution order:
    *   1. Emit initial events (first call only)
    *   2. AI commands + filtered external commands
@@ -118,12 +103,13 @@ class GameEngineImpl implements IGameEngine {
    *   6. Combat (attack, damage, deaths)
    *   7. Movement (advance positions)
    *   8. Spells (duration countdown, expiry)
-   *   9. Win condition check
+   *   9. Hand refresh timers
+   *  10. Building survival stats
+   *  11. Win condition check
    */
   step(tick: number, commands: readonly PlayerCommand[]): readonly GameEvent[] {
     if (this.state.phase === GamePhase.GameOver) return [];
 
-    // Transition Idle → Playing on first step
     if (this.state.phase === GamePhase.Idle) {
       this.state.phase = GamePhase.Playing;
     }
@@ -131,7 +117,6 @@ class GameEngineImpl implements IGameEngine {
     this.state.clearEvents();
     this.state.elapsedTicks++;
 
-    // ── Emit initial state events on very first call ───────────────────────
     if (this.firstStep) {
       this.firstStep = false;
       this.emitInitialEvents();
@@ -154,6 +139,13 @@ class GameEngineImpl implements IGameEngine {
     this.movement.tick(this.state);
     this.spell.tick(this.state);
 
+    // ── Hand refresh timers ───────────────────────────────────────────────
+    this.tickHandRefresh(Side.Bottom, 0);
+    this.tickHandRefresh(Side.Top, 1);
+
+    // ── Building survival stats ───────────────────────────────────────────
+    this.accumulateBuildingSurvival();
+
     this.checkWinCondition();
 
     return this.state.events;
@@ -162,22 +154,40 @@ class GameEngineImpl implements IGameEngine {
   // ─── Initial state events ─────────────────────────────────────────────────
 
   /**
-   * Emit card_drawn + resource_changed events for both players' starting state.
-   * Called once, before the first tick's normal logic runs.
-   * The render layer uses these events to set up the initial UI.
+   * Draw 6 cards per player with staggered timers, emit card_drawn + resource_changed.
+   * Called once before the first tick's logic runs.
    */
   private emitInitialEvents(): void {
     for (const side of [Side.Bottom, Side.Top] as const) {
       const player = this.state.getPlayer(side);
       const owner  = sideToOwner(side);
 
-      for (let i = 0; i < player.hand.cards.length; i++) {
-        const card = player.hand.cards[i];
-        if (card) {
-          this.state.pushEvent({ type: 'card_drawn', owner, cardType: card.cardType, handIndex: i });
-        }
+      for (let i = 0; i < HAND_SIZE; i++) {
+        const stagger = player.timerPrng.nextInt(CARD_REFRESH_INITIAL_OFFSET_MAX + 1);
+        const duration = cardRefreshDuration(stagger);
+        const card = player.drawPolicy.draw();
+        player.hand.drawIntoSlot(i, card, duration);
+        this.state.pushEvent({
+          type:                'card_drawn',
+          owner,
+          cardType:            card.cardType,
+          handIndex:           i,
+          refreshDurationTicks: duration,
+        });
       }
       this.state.pushEvent({ type: 'resource_changed', owner, coins: player.coins });
+    }
+  }
+
+  // ─── Hand refresh timer tick ──────────────────────────────────────────────
+
+  private tickHandRefresh(side: Side, owner: OwnerId): void {
+    const player  = this.state.getPlayer(side);
+    const expired = player.hand.tickTimers();
+
+    for (const slotIndex of expired) {
+      this.state.pushEvent({ type: 'card_expired', owner, handIndex: slotIndex });
+      this.drawIntoSlot(player, owner, slotIndex, CARD_REFRESH_TICKS);
     }
   }
 
@@ -188,15 +198,18 @@ class GameEngineImpl implements IGameEngine {
     const player = this.state.getPlayer(side);
 
     if (cmd.type === 'upgrade_base') {
+      const cost = player.nextUpgradeCost;
       if (player.upgradeBase()) {
+        if (cost !== null) this.state.stats[cmd.owner].goldSpent += cost;
         this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, coins: player.coins });
       }
       return;
     }
 
     if (cmd.type === 'play_card') {
-      const card = player.hand.cards[cmd.handIndex];
-      if (!card || player.coins < card.cost) return;
+      const slot = player.hand.slots[cmd.handIndex];
+      if (!slot || player.coins < slot.card.cost) return;
+      const card = slot.card;
 
       // ── Unit card ────────────────────────────────────────────────────────
       if (card.cardType === CardType.Unit && card.unitType) {
@@ -205,6 +218,7 @@ class GameEngineImpl implements IGameEngine {
 
         const bp = UNIT_BLUEPRINTS[card.unitType];
         player.spendCoins(card.cost);
+        this.state.stats[cmd.owner].goldSpent += card.cost;
         player.hand.play(cmd.handIndex);
         this.state.pushEvent({ type: 'card_played', owner: cmd.owner, handIndex: cmd.handIndex });
 
@@ -212,8 +226,9 @@ class GameEngineImpl implements IGameEngine {
         for (let i = 0; i < bp.spawnCount; i++) {
           const unit = new Unit(card.unitType, side, col, spawnRow);
           this.state.board.addUnit(unit);
+          this.state.stats[cmd.owner].unitsSent++;
           this.state.pushEvent({
-            type: 'unit_spawned',
+            type:      'unit_spawned',
             unitId:    unit.id,
             owner:     cmd.owner,
             unitType:  unit.unitType,
@@ -225,12 +240,12 @@ class GameEngineImpl implements IGameEngine {
             type:     'unit_move_start',
             unitId:   unit.id,
             from:     { col: unit.col, y_fp: unit.y_fp },
-            to:       { col: unit.col, y_fp: side === Side.Bottom ? fp(0) : toFp(BOTTOM_TRANSIT_ROW) },
+            to:       { col: unit.col, y_fp: side === Side.Bottom ? toFp(TOP_BUILDING_ROW) : toFp(BOTTOM_BUILDING_ROW) },
             speed_fp: unit.speed_fp,
           });
         }
 
-        this.refillHand(player, cmd.owner);
+        this.drawIntoSlot(player, cmd.owner, cmd.handIndex, CARD_REFRESH_TICKS);
         this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, coins: player.coins });
         return;
       }
@@ -244,6 +259,7 @@ class GameEngineImpl implements IGameEngine {
         if (this.state.board.hasBuildingAt(col, buildingRow)) return;
 
         player.spendCoins(card.cost);
+        this.state.stats[cmd.owner].goldSpent += card.cost;
         player.hand.play(cmd.handIndex);
         this.state.pushEvent({ type: 'card_played', owner: cmd.owner, handIndex: cmd.handIndex });
 
@@ -258,7 +274,7 @@ class GameEngineImpl implements IGameEngine {
           row:          building.row,
         });
 
-        this.refillHand(player, cmd.owner);
+        this.drawIntoSlot(player, cmd.owner, cmd.handIndex, CARD_REFRESH_TICKS);
         this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, coins: player.coins });
         return;
       }
@@ -267,20 +283,22 @@ class GameEngineImpl implements IGameEngine {
       if (card.cardType === CardType.Spell && card.spellType) {
         if (card.spellType === SpellType.Haste) {
           player.spendCoins(card.cost);
+          this.state.stats[cmd.owner].goldSpent += card.cost;
           player.hand.play(cmd.handIndex);
           this.state.pushEvent({ type: 'card_played', owner: cmd.owner, handIndex: cmd.handIndex });
           this.spell.castHaste(side, this.state);
-          this.refillHand(player, cmd.owner);
+          this.drawIntoSlot(player, cmd.owner, cmd.handIndex, CARD_REFRESH_TICKS);
           this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, coins: player.coins });
           return;
         }
 
         if (card.spellType === SpellType.Meteor && cmd.col !== undefined && cmd.row !== undefined) {
           player.spendCoins(card.cost);
+          this.state.stats[cmd.owner].goldSpent += card.cost;
           player.hand.play(cmd.handIndex);
           this.state.pushEvent({ type: 'card_played', owner: cmd.owner, handIndex: cmd.handIndex });
           this.spell.castMeteor(side, cmd.col, cmd.row, this.state);
-          this.refillHand(player, cmd.owner);
+          this.drawIntoSlot(player, cmd.owner, cmd.handIndex, CARD_REFRESH_TICKS);
           this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, coins: player.coins });
           return;
         }
@@ -290,38 +308,53 @@ class GameEngineImpl implements IGameEngine {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  private refillHand(player: Player, owner: OwnerId): void {
-    const drawn = player.hand.fill(player.deck);
-    for (const { index, card } of drawn) {
-      this.state.pushEvent({ type: 'card_drawn', owner, cardType: card.cardType, handIndex: index });
+  /** Draw one card into a hand slot and emit card_drawn. */
+  private drawIntoSlot(player: Player, owner: OwnerId, slotIndex: number, duration: number): void {
+    const card = player.drawPolicy.draw();
+    player.hand.drawIntoSlot(slotIndex, card, duration);
+    this.state.pushEvent({
+      type:                'card_drawn',
+      owner,
+      cardType:            card.cardType,
+      handIndex:           slotIndex,
+      refreshDurationTicks: duration,
+    });
+  }
+
+  private accumulateBuildingSurvival(): void {
+    for (const building of this.state.board.buildings.values()) {
+      if (!building.isDead) {
+        const owner = this.state.ownerOf(building.side);
+        this.state.stats[owner].buildingSurvivalTicks++;
+      }
     }
   }
 
   private checkWinCondition(): void {
     if (this.state.phase === GamePhase.GameOver) return;
 
-    // ── Base destruction ───────────────────────────────────────────────────
     if (this.state.bottomPlayer.isDead) {
       this.state.phase  = GamePhase.GameOver;
       this.state.winner = Side.Top;
+      this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
       this.state.pushEvent({ type: 'game_over', winner: 1 });
       return;
     }
     if (this.state.topPlayer.isDead) {
       this.state.phase  = GamePhase.GameOver;
       this.state.winner = Side.Bottom;
+      this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
       this.state.pushEvent({ type: 'game_over', winner: 0 });
       return;
     }
 
-    // ── 17 min — force draw ────────────────────────────────────────────────
     if (this.state.elapsedTicks >= FORCE_DRAW_THRESHOLD_TICKS) {
       this.state.phase = GamePhase.GameOver;
+      this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
       this.state.pushEvent({ type: 'game_draw' });
       return;
     }
 
-    // ── 15 min — emit countdown start once ────────────────────────────────
     if (
       !this.state.countdownStarted &&
       this.state.elapsedTicks >= COUNTDOWN_THRESHOLD_TICKS
@@ -330,5 +363,4 @@ class GameEngineImpl implements IGameEngine {
       this.state.pushEvent({ type: 'game_countdown_start' });
     }
   }
-
 }

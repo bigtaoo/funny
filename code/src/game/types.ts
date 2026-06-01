@@ -25,8 +25,8 @@ export enum CardType {
 }
 
 export enum Side {
-  Bottom = 'bottom', // local player — units move toward row 0
-  Top = 'top',       // opponent (AI) — units move toward row 18
+  Bottom = 'bottom', // local player  — row 0 is home; units move toward row 17
+  Top = 'top',       // opponent (AI) — row 17 is home; units move toward row 0
 }
 
 export enum GamePhase {
@@ -40,13 +40,13 @@ export enum UnitState {
   Moving    = 'moving',
   Attacking = 'attacking',
   Waiting   = 'waiting',   // blocked by friendly unit in front
-  Crossing  = 'crossing',  // in transit row, moving horizontally toward base
+  Crossing  = 'crossing',  // in building row, moving horizontally toward base cols
   Dead      = 'dead',
 }
 
 // ─── Coordinates ──────────────────────────────────────────────────────────────
 
-/** Integer grid position. col: 0–7, row: 0–18 */
+/** Integer grid position. col: 0–11, row: 0–17 (all 0-indexed) */
 export interface GridPos {
   col: number;
   row: number;
@@ -54,7 +54,7 @@ export interface GridPos {
 
 /**
  * Fixed-point position used in game events.
- * col is a plain integer column index (0–7).
+ * col is a plain integer column index (0–11).
  * y_fp is a Fp (row × 1000); rendering layer uses fromFp(y_fp) to get float row.
  */
 export interface Vec2_fp {
@@ -78,7 +78,7 @@ export function ownerToSide(owner: OwnerId): Side {
 // ─── Game config ──────────────────────────────────────────────────────────────
 
 export interface GameConfig {
-  /** PRNG seed — determines deck shuffle order for both players. Required. */
+  /** PRNG seed — determines card draws for both players. Required. */
   seed: number;
   players: [PlayerConfig, PlayerConfig];
 }
@@ -162,6 +162,26 @@ export interface ActiveSpell {
   targetRow?: number;
 }
 
+// ─── End-of-game stats (per player) ──────────────────────────────────────────
+
+export interface PlayerStats {
+  owner: OwnerId;
+  /** Total damage dealt to the enemy base → 最佳输出 */
+  damageDealtToBase: number;
+  /** Total damage taken by own base → 铁壁防线 */
+  damageTakenByBase: number;
+  /** Total units sent (card plays + barracks spawns) → 兵海战术 */
+  unitsSent: number;
+  /** Enemy units killed → 以少胜多 reference */
+  unitsKilled: number;
+  /** Enemy units hit by spells → 精准打击 */
+  spellHits: number;
+  /** Sum of survival ticks across all own buildings → 建筑大师 */
+  buildingSurvivalTicks: number;
+  /** Total gold spent (cards + upgrades) → 以少胜多 reference */
+  goldSpent: number;
+}
+
 // ─── Public engine interface ──────────────────────────────────────────────────
 
 export interface IGameEngine {
@@ -230,8 +250,11 @@ export type GameEvent =
       buildingId: number; owner: OwnerId;
       buildingType: BuildingType; col: number; row: number }
 
+  | { type: 'building_hp_changed';
+      buildingId: number; hp: number; maxHp: number }
+
   | { type: 'building_destroyed';
-      buildingId: number; pos: Vec2_fp }
+      buildingId: number; col: number; row: number }
 
   | { type: 'building_spawned_unit';
       buildingId: number; unitId: number }
@@ -250,9 +273,15 @@ export type GameEvent =
 
   // ── Cards ──────────────────────────────────────────────────────────────────
   | { type: 'card_drawn';
-      owner: OwnerId; cardType: CardType; handIndex: number }
+      owner: OwnerId; cardType: CardType; handIndex: number;
+      /** Total refresh countdown for this card (ticks). Drives the eraser animation. */
+      refreshDurationTicks: number }
 
   | { type: 'card_played';
+      owner: OwnerId; handIndex: number }
+
+  /** Emitted when a card auto-expires (2 min unused). Always followed by card_drawn. */
+  | { type: 'card_expired';
       owner: OwnerId; handIndex: number }
 
   // ── Phase changes ──────────────────────────────────────────────────────────
@@ -260,6 +289,10 @@ export type GameEvent =
   | { type: 'game_countdown_start' }
 
   // ── Game over ──────────────────────────────────────────────────────────────
+  /** Emitted on the same frame as game_over or game_draw. */
+  | { type: 'game_stats';
+      stats: [PlayerStats, PlayerStats] }
+
   | { type: 'game_over';
       winner: OwnerId }
 

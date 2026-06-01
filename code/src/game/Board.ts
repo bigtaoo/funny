@@ -75,14 +75,21 @@ export class Board {
     return this.unitGrid[row]?.[col] != null;
   }
 
+  /**
+   * Returns the leading unit in the lane for the given side.
+   * Bottom moves toward row 17 — front = highest row.
+   * Top    moves toward row 0  — front = lowest row.
+   */
   getFrontUnitInLane(col: number, side: Side): Unit | null {
     if (side === Side.Bottom) {
-      for (let row = 0; row < BOARD_ROWS; row++) {
+      // Bottom moves toward high y — front = highest row
+      for (let row = BOARD_ROWS - 1; row >= 0; row--) {
         const unit = this.getUnitAt(col, row);
         if (unit && unit.side === Side.Bottom) return unit;
       }
     } else {
-      for (let row = BOARD_ROWS - 1; row >= 0; row--) {
+      // Top moves toward low y — front = lowest row
+      for (let row = 0; row < BOARD_ROWS; row++) {
         const unit = this.getUnitAt(col, row);
         if (unit && unit.side === Side.Top) return unit;
       }
@@ -111,18 +118,18 @@ export class Board {
       if (other.isDead || other.state === UnitState.Dead) continue;
 
       if (isBottom) {
-        // Bottom moves toward lower y — "ahead" = smaller y_fp
-        if (other.y_fp < unit.y_fp) {
-          const dist = unit.y_fp - other.y_fp;
+        // Bottom moves toward higher y — "ahead" = larger y_fp
+        if (other.y_fp > unit.y_fp) {
+          const dist = other.y_fp - unit.y_fp;
           if (dist < bestDist) {
             bestDist = dist;
             bestUnit = other;
           }
         }
       } else {
-        // Top moves toward higher y — "ahead" = larger y_fp
-        if (other.y_fp > unit.y_fp) {
-          const dist = other.y_fp - unit.y_fp;
+        // Top moves toward lower y — "ahead" = smaller y_fp
+        if (other.y_fp < unit.y_fp) {
+          const dist = unit.y_fp - other.y_fp;
           if (dist < bestDist) {
             bestDist = dist;
             bestUnit = other;

@@ -10,30 +10,33 @@ import {
 } from './types';
 
 // ─── Board layout ─────────────────────────────────────────────────────────────
+//
+//  Row 0   : Bottom player building row  (己方建筑行)
+//  Row 1   : Bottom player spawn row     (己方出兵行)
+//  Row 2-15: Combat zone                 (战斗区 14 行)
+//  Row 16  : Top player spawn row        (敌方出兵行)
+//  Row 17  : Top player building row     (敌方建筑行)
+//
+//  All rows/cols are 0-indexed.
 
-export const BOARD_COLS = 8;
-export const BOARD_ROWS = 19; // rows 0–18; rows 0 and 18 are transit rows
+export const BOARD_COLS = 12;
+export const BOARD_ROWS = 18; // rows 0–17
 
-/** Row 0: transit zone — bottom player's units reach here before hitting top base */
-export const TOP_TRANSIT_ROW = 0;
-/** Row 18: transit zone — top player's units reach here before hitting bottom base */
-export const BOTTOM_TRANSIT_ROW = 18;
+/** 0-indexed cols occupied by bases (center 2 columns) */
+export const BASE_COLS = [5, 6] as const;
 
-/** 0-indexed cols occupied by bases */
-export const BASE_COLS = [3, 4] as const;
+/** 0-indexed attack lanes (all cols except base cols 5–6) */
+export const ATTACK_LANES = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11] as const;
 
-/** 0-indexed attack lanes */
-export const ATTACK_LANES = [0, 1, 2, 5, 6, 7] as const;
+/** Building row for bottom player (row 0 = bottom of screen) */
+export const BOTTOM_BUILDING_ROW = 0;
+/** Building row for top player (row 17 = top of screen) */
+export const TOP_BUILDING_ROW = 17;
 
-/** Building row for bottom player (near row 18 = bottom of screen) */
-export const BOTTOM_BUILDING_ROW = 16;
-/** Building row for top player (near row 0 = top of screen) */
-export const TOP_BUILDING_ROW = 2;
-
-/** Unit spawn row for bottom player (just inside building row, toward center) */
-export const BOTTOM_SPAWN_ROW = 15;
-/** Unit spawn row for top player */
-export const TOP_SPAWN_ROW = 3;
+/** Unit spawn row for bottom player (just above building row) */
+export const BOTTOM_SPAWN_ROW = 1;
+/** Unit spawn row for top player (just below building row) */
+export const TOP_SPAWN_ROW = 16;
 
 // ─── Resource ─────────────────────────────────────────────────────────────────
 
@@ -97,9 +100,20 @@ export const FORCE_DRAW_THRESHOLD_TICKS  = FORCE_DRAW_THRESHOLD * TICK_RATE; // 
 export const CROSSING_COLS_PER_S      = 2;
 export const CROSSING_INTERVAL_TICKS  = Math.round(TICK_RATE / CROSSING_COLS_PER_S); // 15
 
-// ─── Hand / deck ──────────────────────────────────────────────────────────────
+// ─── Hand / card refresh ──────────────────────────────────────────────────────
+//
+//  Each hand slot has an independent countdown timer.
+//  When it expires (2 min without playing), the card is auto-refreshed.
+//  Initial timers are staggered by a random offset [0, CARD_REFRESH_INITIAL_OFFSET_MAX]
+//  to prevent all 6 slots from expiring simultaneously.
 
 export const HAND_SIZE = 6;
+
+/** Auto-refresh countdown: 2 min × 30 ticks/s = 3600 ticks */
+export const CARD_REFRESH_TICKS = 2 * 60 * TICK_RATE; // 3600
+
+/** Maximum initial stagger offset: 60 s × 30 ticks/s = 1800 ticks */
+export const CARD_REFRESH_INITIAL_OFFSET_MAX = 60 * TICK_RATE; // 1800
 
 // ─── Base HP ──────────────────────────────────────────────────────────────────
 
@@ -146,7 +160,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     attack: 18,
     attackInterval: 2.0,
     speed: 0.8,
-    range: 3,
+    range: 2,             // 2-grid range (down from 3)
     spawnCount: 1,
     radius_fp: 350,
   },
@@ -166,11 +180,11 @@ export const BUILDING_BLUEPRINTS: Record<BuildingType, BuildingBlueprint> = {
     hp: 120,
     attack: 15,
     attackInterval: 1.5,      // seconds (converted to ticks in Building constructor)
-    attackRange: 3,
+    attackRange: 2,            // 2-grid range (down from 3)
   },
 };
 
-// ─── Card definitions (12-card pool) ─────────────────────────────────────────
+// ─── Card definitions (pool) ──────────────────────────────────────────────────
 
 export const CARD_DEFINITIONS: CardDefinition[] = [
   { id: 'swordsman_1', name: '普通兵',   cardType: CardType.Unit,     cost: 4,  unitType: UnitType.Swordsman       },

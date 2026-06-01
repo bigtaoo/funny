@@ -2,9 +2,7 @@ import {
   BASE_COLS,
   BASE_HP,
   BOTTOM_BUILDING_ROW,
-  BOTTOM_TRANSIT_ROW,
   TOP_BUILDING_ROW,
-  TOP_TRANSIT_ROW,
 } from '../config';
 import { addFp, fromFp, mulFp, scaleFp, subFp, TICK_DT_FP, toFp, type Fp } from '../math/fixed';
 import { GameState } from '../GameState';
@@ -14,8 +12,13 @@ import { Side, UnitState } from '../types';
 /**
  * MovementSystem — advances unit positions by one tick.
  *
- * All position arithmetic uses Fp helpers (addFp/subFp/mulFp/scaleFp).
- * No floating-point operations.
+ * Coordinate convention (0-indexed):
+ *   Row 0  = Bottom building row (home base).
+ *   Row 17 = Top building row (enemy base for Bottom).
+ *   Bottom units spawn at row 1 and move TOWARD row 17 (y_fp increases, direction = +1).
+ *   Top    units spawn at row 16 and move TOWARD row 0  (y_fp decreases, direction = -1).
+ *
+ * All position arithmetic uses Fp helpers. No floating-point operations.
  */
 export class MovementSystem {
   tick(state: GameState): void {
@@ -38,7 +41,7 @@ export class MovementSystem {
       board.updateUnitCell(unit, prevRow);
     }
 
-    // Remove dead units (guard against double-remove for crossing units)
+    // Remove units killed during crossing (guard against double-remove)
     for (const unit of units) {
       if (unit.isDead && board.units.has(unit.id)) {
         board.removeUnit(unit);
@@ -51,18 +54,19 @@ export class MovementSystem {
   private moveForward(unit: Unit, state: GameState): void {
     const board    = state.board;
     const isBottom = unit.side === Side.Bottom;
-    // Bottom moves toward lower y (toward row 0); Top moves toward higher y.
-    const direction = isBottom ? -1 : 1;
-    const transitY_fp: Fp = isBottom ? toFp(TOP_TRANSIT_ROW) : toFp(BOTTOM_TRANSIT_ROW);
+    // Bottom moves toward row 17 (+1); Top moves toward row 0 (-1).
+    const direction = isBottom ? 1 : -1;
+    // The building row of the opponent — reaching it triggers crossing.
+    const crossingY_fp: Fp = isBottom ? toFp(TOP_BUILDING_ROW) : toFp(BOTTOM_BUILDING_ROW);
 
-    // ── Transit threshold check ────────────────────────────────────────────
-    if (isBottom && unit.y_fp <= transitY_fp) {
-      unit.y_fp = transitY_fp;
+    // ── Crossing threshold check ───────────────────────────────────────────
+    if (isBottom && unit.y_fp >= crossingY_fp) {
+      unit.y_fp  = crossingY_fp;
       unit.state = UnitState.Crossing;
       return;
     }
-    if (!isBottom && unit.y_fp >= transitY_fp) {
-      unit.y_fp = transitY_fp;
+    if (!isBottom && unit.y_fp <= crossingY_fp) {
+      unit.y_fp  = crossingY_fp;
       unit.state = UnitState.Crossing;
       return;
     }
@@ -70,66 +74,71 @@ export class MovementSystem {
     // ── Friendly collision (radius-based) ──────────────────────────────────
     const frontUnit = board.getFriendlyUnitAhead(unit);
     if (frontUnit) {
-      // gap = distance between the two radii edges
-      // Bottom: gap = (unit.y_fp - unit.radius_fp) - (front.y_fp + front.radius_fp)
-      // Top:    gap = (front.y_fp - front.radius_fp) - (unit.y_fp  + unit.radius_fp)
+      // gap = space between the two radii edges.
+      // Bottom (+1): front unit has higher y. gap = (front.y - front.r) - (unit.y + unit.r)
+      // Top    (-1): front unit has lower y.  gap = (unit.y - unit.r)   - (front.y + front.r)
       const gapFp = isBottom
-        ? subFp(subFp(unit.y_fp, unit.radius_fp), addFp(frontUnit.y_fp, frontUnit.radius_fp))
-        : subFp(subFp(frontUnit.y_fp, frontUnit.radius_fp), addFp(unit.y_fp, unit.radius_fp));
+        ? subFp(subFp(frontUnit.y_fp, frontUnit.radius_fp), addFp(unit.y_fp, unit.radius_fp))
+        : subFp(subFp(unit.y_fp, unit.radius_fp), addFp(frontUnit.y_fp, frontUnit.radius_fp));
 
       if (gapFp <= 0) {
-        // Clamp to exactly touching — no overlap
         unit.y_fp = isBottom
-          ? addFp(addFp(frontUnit.y_fp, frontUnit.radius_fp), unit.radius_fp)
-          : subFp(subFp(frontUnit.y_fp, frontUnit.radius_fp), unit.radius_fp);
+          ? subFp(subFp(frontUnit.y_fp, frontUnit.radius_fp), unit.radius_fp)
+          : addFp(addFp(frontUnit.y_fp, frontUnit.radius_fp), unit.radius_fp);
         unit.state = UnitState.Waiting;
         return;
       }
     }
 
     // ── Advance ────────────────────────────────────────────────────────────
-    const dy: Fp = mulFp(unit.speed_fp, TICK_DT_FP); // fp displacement this tick
+    const dy: Fp = mulFp(unit.speed_fp, TICK_DT_FP);
     unit.y_fp    = addFp(unit.y_fp, scaleFp(direction, dy));
     unit.state   = UnitState.Moving;
 
-    // Clamp so we don't overshoot the transit row
-    if (isBottom && unit.y_fp < transitY_fp) unit.y_fp = transitY_fp;
-    if (!isBottom && unit.y_fp > transitY_fp) unit.y_fp = transitY_fp;
+    // Clamp so we don't overshoot
+    if (isBottom  && unit.y_fp > crossingY_fp) unit.y_fp = crossingY_fp;
+    if (!isBottom && unit.y_fp < crossingY_fp) unit.y_fp = crossingY_fp;
   }
 
   // ─── Crossing (horizontal transit toward base) ────────────────────────────
 
   private moveCrossing(unit: Unit, state: GameState): void {
-    const [baseMin, baseMax] = BASE_COLS; // cols 3–4
+    const [baseMin, baseMax] = BASE_COLS; // cols 5–6
     const baseMinX_fp: Fp = toFp(baseMin);
     const baseMaxX_fp: Fp = toFp(baseMax);
 
-    // Advance x_fp at unit's own speed (same speed_fp used for vertical movement)
     const dx: Fp = mulFp(unit.speed_fp, TICK_DT_FP);
 
     if (unit.x_fp < baseMinX_fp) {
-      // Moving right toward col 3
       unit.x_fp = addFp(unit.x_fp, dx);
-      if (unit.x_fp > baseMinX_fp) unit.x_fp = baseMinX_fp; // clamp at entry
+      if (unit.x_fp > baseMinX_fp) unit.x_fp = baseMinX_fp;
     } else if (unit.x_fp > baseMaxX_fp) {
-      // Moving left toward col 4
       unit.x_fp = subFp(unit.x_fp, dx);
-      if (unit.x_fp < baseMaxX_fp) unit.x_fp = baseMaxX_fp; // clamp at entry
+      if (unit.x_fp < baseMaxX_fp) unit.x_fp = baseMaxX_fp;
     }
 
-    // Snap integer col from continuous position (used by combat/board lookups)
     unit.col = Math.round(fromFp(unit.x_fp));
 
-    // Reached base — deal damage and despawn
+    // Reached base — deal damage, track stats, despawn
     if (unit.x_fp >= baseMinX_fp && unit.x_fp <= baseMaxX_fp) {
-      const opponent = state.getOpponent(unit.side);
-      opponent.takeDamage(unit.attack);
+      const opponent   = state.getOpponent(unit.side);
+      const attackerOwner = state.ownerOf(unit.side);
+      const defenderOwner = state.ownerOf(opponent.side);
+      const damage     = unit.attack;
+
+      opponent.takeDamage(damage);
+
+      // Track stats for both sides
+      state.stats[attackerOwner].damageDealtToBase += damage;
+      state.stats[defenderOwner].damageTakenByBase += damage;
+
       state.pushEvent({
         type:  'base_hp_changed',
-        owner: state.ownerOf(opponent.side),
+        owner: defenderOwner,
         hp:    opponent.baseHp,
         maxHp: BASE_HP,
       });
+
       unit.hp    = 0;
       unit.state = UnitState.Dead;
       state.board.removeUnit(unit);
@@ -162,26 +171,27 @@ export class MovementSystem {
   /**
    * Best-effort prediction of where a unit will stop.
    * Finds the nearest enemy unit/building ahead in the lane.
-   * Falls back to the transit row if nothing is in the way.
+   * Falls back to the crossing threshold if nothing is in the way.
    */
   private predictStopY(unit: Unit, state: GameState): Fp {
-    const board     = state.board;
-    const isBottom  = unit.side === Side.Bottom;
-    const transitY_fp: Fp = isBottom ? toFp(TOP_TRANSIT_ROW) : toFp(BOTTOM_TRANSIT_ROW);
-    const rangeFp: Fp     = toFp(unit.range);
+    const board      = state.board;
+    const isBottom   = unit.side === Side.Bottom;
+    const crossingY_fp: Fp = isBottom ? toFp(TOP_BUILDING_ROW) : toFp(BOTTOM_BUILDING_ROW);
+    const rangeFp: Fp      = toFp(unit.range);
 
-    let stopY_fp: Fp = transitY_fp;
+    let stopY_fp: Fp = crossingY_fp;
 
     for (const enemy of board.units.values()) {
       if (enemy.side === unit.side || enemy.col !== unit.col || enemy.isDead) continue;
 
-      if (isBottom && enemy.y_fp < unit.y_fp) {
-        // Unit will stop at: enemy.y_fp + enemy.radius + unit.radius + range
-        const candidate = addFp(addFp(addFp(enemy.y_fp, enemy.radius_fp), unit.radius_fp), rangeFp);
-        if (candidate > stopY_fp) stopY_fp = candidate;
-      } else if (!isBottom && enemy.y_fp > unit.y_fp) {
-        const candidate = subFp(subFp(subFp(enemy.y_fp, enemy.radius_fp), unit.radius_fp), rangeFp);
+      if (isBottom && enemy.y_fp > unit.y_fp) {
+        // Bottom moves up: enemy is ahead if higher y
+        const candidate = subFp(subFp(enemy.y_fp, enemy.radius_fp), addFp(unit.radius_fp, rangeFp));
         if (candidate < stopY_fp) stopY_fp = candidate;
+      } else if (!isBottom && enemy.y_fp < unit.y_fp) {
+        // Top moves down: enemy is ahead if lower y
+        const candidate = addFp(addFp(enemy.y_fp, enemy.radius_fp), addFp(unit.radius_fp, rangeFp));
+        if (candidate > stopY_fp) stopY_fp = candidate;
       }
     }
 
@@ -191,11 +201,11 @@ export class MovementSystem {
     if (enemyBuilding && enemyBuilding.side !== unit.side && !enemyBuilding.isDead) {
       const buildingY_fp: Fp = toFp(enemyBuildingRow);
       if (isBottom) {
-        const candidate = addFp(buildingY_fp, rangeFp);
-        if (candidate > stopY_fp) stopY_fp = candidate;
-      } else {
         const candidate = subFp(buildingY_fp, rangeFp);
         if (candidate < stopY_fp) stopY_fp = candidate;
+      } else {
+        const candidate = addFp(buildingY_fp, rangeFp);
+        if (candidate > stopY_fp) stopY_fp = candidate;
       }
     }
 

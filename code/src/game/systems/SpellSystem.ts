@@ -36,7 +36,9 @@ export class SpellSystem {
   }
 
   castMeteor(side: Side, centerCol: number, centerRow: number, state: GameState): void {
-    const board = state.board;
+    const board  = state.board;
+    const owner  = state.ownerOf(side);
+    let hitsCount = 0;
 
     // Damage all units and buildings in 2×2 area
     for (let dc = 0; dc <= 1; dc++) {
@@ -44,17 +46,22 @@ export class SpellSystem {
         const col  = centerCol + dc;
         const row  = centerRow + dr;
         const unit = board.getUnitAt(col, row);
-        if (unit && !unit.isDead) unit.takeDamage(METEOR_DAMAGE);
-
+        if (unit && !unit.isDead) {
+          unit.takeDamage(METEOR_DAMAGE);
+          hitsCount++;
+        }
         const building = board.getBuildingAt(col, row);
         if (building && !building.isDead) building.takeDamage(METEOR_DAMAGE);
       }
     }
 
+    // Track spell hits for badge stats
+    state.stats[owner].spellHits += hitsCount;
+
     state.pushEvent({
       type:      'spell_cast',
       spellType: SpellType.Meteor,
-      owner:     state.ownerOf(side),
+      owner,
       center:    { col: centerCol, y_fp: toFp(centerRow) },
     });
   }

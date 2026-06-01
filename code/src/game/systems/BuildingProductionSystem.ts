@@ -33,6 +33,9 @@ export class BuildingProductionSystem {
     const unit = new Unit(bp.spawnUnit!, building.side, building.col, spawnRow);
     state.board.addUnit(unit);
 
+    // Track barracks-spawned units in stats
+    state.stats[state.ownerOf(building.side)].unitsSent++;
+
     state.pushEvent({ type: 'building_spawned_unit', buildingId: building.id, unitId: unit.id });
     state.pushEvent({
       type:      'unit_spawned',
