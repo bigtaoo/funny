@@ -1,8 +1,8 @@
 import * as PIXI from 'pixi.js-legacy';
 import {
   ATTACK_LANES,
-  BASE_COLS,
   BOARD_COLS,
+  BOARD_ROWS,
   BOTTOM_BUILDING_ROW,
 } from '../game/config';
 import {
@@ -14,13 +14,15 @@ import {
   PlayerStats,
   GameState,
 } from '../game';
+import { ILayout, Rect } from '../layout/ILayout';
+import { InputManager } from '../inputSystem/InputManager';
 import { BoardView } from './BoardView';
 import { BuildingView } from './BuildingView';
 import { HandView } from './HandView';
 import { HUDView } from './HUDView';
 import { UnitView } from './UnitView';
 
-// ─── Drag state ───────────────────────────────────────────────────────────────
+// ── Drag state ─────────────────────────────────────────────────────────────────
 
 interface CardDragState {
   kind: 'card';
@@ -37,26 +39,20 @@ interface UpgradeDragState {
 
 type DragState = CardDragState | UpgradeDragState;
 
-// ─── GameRenderer ─────────────────────────────────────────────────────────────
+// ── GameRenderer ───────────────────────────────────────────────────────────────
 
 /**
- * GameRenderer manages the visual representation of a single game session.
- * It does NOT create a PIXI.Application — the caller provides width, height,
- * and adds `renderer.container` to the stage. Call `update(dt)` each frame.
+ * GameRenderer — purely visual + InputManager-driven input.
+ * No PIXI interactive/hitArea anywhere.  All hit-testing is manual in design space.
  */
 export class GameRenderer {
-  /** Add this to the PIXI stage; remove it to hide the game view. */
   readonly container: PIXI.Container;
 
-  /** Called when game ends. winner=null means draw. */
-  onGameEnd: ((winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) => void) | null = null;
-
-  /** Called when player exits to lobby via settings overlay. */
+  onGameEnd:     ((winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) => void) | null = null;
   onExitToLobby: (() => void) | null = null;
 
   private readonly engine: IGameEngine;
-  private readonly width: number;
-  private readonly height: number;
+  private readonly layout: ILayout;
 
   private boardView!:    BoardView;
   private unitView!:     UnitView;
@@ -64,113 +60,142 @@ export class GameRenderer {
   private handView!:     HandView;
   private hudView!:      HUDView;
 
-  private drag: DragState | null = null;
-  /** Column the card-drag ghost is hovering over (-1 = none). */
-  private dragCol = -1;
-  /** Row the card-drag ghost is hovering over (meteor only). */
-  private dragRow = -1;
-
+  private drag:     DragState | null = null;
+  private dragCol   = -1;
+  private dragRow   = -1;
   private pendingStats: [PlayerStats, PlayerStats] | null = null;
 
-  constructor(engine: IGameEngine, width: number, height: number) {
+  // Unsubscribe functions from InputManager
+  private readonly unsubs: Array<() => void> = [];
+
+  constructor(engine: IGameEngine, layout: ILayout, input: InputManager) {
     this.engine    = engine;
-    this.width     = width;
-    this.height    = height;
+    this.layout    = layout;
     this.container = new PIXI.Container();
+
+    this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
+    this.unsubs.push(input.onUp((x, y)   => this.handleUp(x, y)));
   }
 
-  /** Call once after adding the container to the stage. Synchronous (no assets yet). */
   init(): void {
     this.buildSceneGraph();
   }
 
-  /** Call every render frame with wall-clock dt (seconds). */
   update(dt: number): void {
     this.engine.tick(dt);
     const state = this.engine.state;
-
-    for (const event of state.events) {
-      this.handleEvent(event, state);
-    }
-
+    for (const event of state.events) this.handleEvent(event, state);
     this.unitView.sync(state.board);
     this.buildingView.sync(state.board);
     this.handView.sync(state.bottomPlayer);
     this.hudView.sync(state);
   }
 
-  /** Remove listeners and tear down the scene graph. */
   destroy(): void {
-    this.container.removeAllListeners();
+    this.unsubs.forEach(u => u());
     this.drag?.ghost.destroy();
     this.drag = null;
   }
 
-  // ─── Scene graph ──────────────────────────────────────────────────────────
+  // ── Scene graph ────────────────────────────────────────────────────────────
 
   private buildSceneGraph(): void {
-    const { width, height } = this;
-
-    // Compute base center X for HP bar positioning in HUD
-    const bv = new BoardView(width, height);
-    const [baseMin, baseMax] = BASE_COLS;
-    const baseCenterX = (bv.gridToScreen(baseMin, 0).x + bv.gridToScreen(baseMax, 0).x) / 2
-                      + bv.cellWidth / 2;
-
-    this.boardView    = bv;
+    this.boardView    = new BoardView(this.layout);
     this.unitView     = new UnitView(this.boardView);
     this.buildingView = new BuildingView(this.boardView);
-    this.handView     = new HandView(width, height);
-    this.hudView      = new HUDView(width, height, baseCenterX);
+    this.handView     = new HandView(this.layout);
+    this.hudView      = new HUDView(this.layout);
 
-    // Full-screen transparent hit area so pointer events are captured
-    const hitArea = new PIXI.Graphics();
-    hitArea.beginFill(0xffffff, 0.001);
-    hitArea.drawRect(0, 0, width, height);
-    hitArea.endFill();
-    hitArea.interactive = true;
-
-    // Layer order: hit-area → board → units → buildings → hand → HUD
-    this.container.addChild(hitArea);
     this.container.addChild(this.boardView.container);
     this.container.addChild(this.unitView.container);
     this.container.addChild(this.buildingView.container);
     this.container.addChild(this.handView.container);
     this.container.addChild(this.hudView.container);
-
-    // ── Wire card drag ─────────────────────────────────────────────────────
-    this.handView.onCardDragStart = (handIndex) => {
-      this.startCardDrag(handIndex);
-    };
-
-    // ── Wire upgrade drag ─────────────────────────────────────────────────
-    this.hudView.onUpgradeDragStart = (cx, cy) => {
-      this.startUpgradeDrag(cx, cy);
-    };
-
-    // Global pointer tracking
-    this.container.interactive = true;
-    this.container.on('pointermove',      this.onPointerMove, this);
-    this.container.on('pointerup',        this.onPointerUp,   this);
-    this.container.on('pointerupoutside', this.onPointerUp,   this);
-
-    // Board cell tap (non-drag fallback)
-    this.boardView.onCellTap = (col, row) => {
-      if (this.drag?.kind === 'card') this.commitCardDrag(col, row);
-    };
-
-    // Settings button — toggle pause overlay
-    this.hudView.onSettingsPressed = () => {
-      if (this.hudView.isPaused) {
-        this.hudView.hidePause();
-      } else {
-        this.hudView.onExitToLobby = () => { this.onExitToLobby?.(); };
-        this.hudView.showPause();
-      }
-    };
   }
 
-  // ─── Event handling ───────────────────────────────────────────────────────
+  // ── Input handling (design-space coords) ─────────────────────────────────
+
+  private handleDown(x: number, y: number): void {
+    // Pause overlay intercepts all input
+    if (this.hudView.isPaused) {
+      const resume = this.hudView.getPauseResumeRect();
+      const exit   = this.hudView.getPauseExitRect();
+      if (resume && this.overRect(x, y, resume)) {
+        this.hudView.hidePause();
+      } else if (exit && this.overRect(x, y, exit)) {
+        this.hudView.hidePause();
+        this.onExitToLobby?.();
+      }
+      return;
+    }
+
+    // Settings button
+    if (this.overRect(x, y, this.hudView.getSettingsRect())) {
+      this.hudView.onExitToLobby = () => this.onExitToLobby?.();
+      this.hudView.showPause();
+      return;
+    }
+
+    // Upgrade button
+    if (this.hudView.upgradeEnabled && this.overRect(x, y, this.hudView.getUpgradeRect())) {
+      this.startUpgradeDrag(x, y);
+      return;
+    }
+
+    // Hand cards
+    const cardIdx = this.handView.hitTestCardIndex(x, y);
+    if (cardIdx >= 0) {
+      this.startCardDrag(cardIdx);
+      return;
+    }
+
+    // Board tap (fallback for card placement when drag ends on board)
+    if (this.drag?.kind === 'card' && !this.layout.isOutsideBoard(x, y)) {
+      const col = this.layout.screenToCol(x, y);
+      const row = this.layout.screenToRow(x, y);
+      this.commitCardDrag(col, row);
+    }
+  }
+
+  private handleMove(x: number, y: number): void {
+    if (!this.drag) return;
+
+    this.drag.ghost.x = x;
+    this.drag.ghost.y = y;
+
+    if (this.drag.kind === 'card') {
+      const col = this.layout.screenToCol(x, y);
+      const row = this.layout.screenToRow(x, y);
+      if (col !== this.dragCol || row !== this.dragRow) {
+        this.dragCol = col;
+        this.dragRow = row;
+        this.updateCardDragHighlights(col, row);
+      }
+    } else {
+      const baseRect = this.boardView.getPlayerBaseRect();
+      this.boardView.showBaseUpgradeHighlight(this.overRect(x, y, baseRect));
+    }
+  }
+
+  private handleUp(x: number, y: number): void {
+    if (!this.drag) return;
+
+    if (this.drag.kind === 'upgrade') {
+      const baseRect = this.boardView.getPlayerBaseRect();
+      if (this.overRect(x, y, baseRect)) this.engine.upgradeBase();
+      this.cancelDrag();
+      return;
+    }
+
+    // card drag
+    if (this.layout.isOutsideBoard(x, y)) { this.cancelDrag(); return; }
+    const col = this.layout.screenToCol(x, y);
+    const row = this.layout.screenToRow(x, y);
+    this.commitCardDrag(col, row);
+  }
+
+  // ── Event handling ─────────────────────────────────────────────────────────
 
   private handleEvent(event: GameEvent, _state: GameState): void {
     switch (event.type) {
@@ -178,106 +203,46 @@ export class GameRenderer {
         this.unitView.playHitEffect(event.targetId);
         this.unitView.showHpBar(event.targetId);
         break;
-
       case 'unit_died':
         this.unitView.playDeathEffect(event.unitId);
         break;
-
       case 'building_destroyed':
         this.buildingView.playDestroyEffect(event.buildingId);
         break;
-
       case 'building_hp_changed':
-        break; // BuildingView syncs from state each frame
-
+        break;
       case 'spell_cast':
         if (event.spellType === SpellType.Meteor) {
           const row = Math.round(event.center.y_fp / 1000);
           this.boardView.playMeteorEffect(event.center.col, row);
         }
         break;
-
       case 'card_played':
         if (event.owner === 0) this.cancelDrag();
         break;
-
       case 'card_expired':
-        break; // HandView re-syncs each frame
-
+        break;
       case 'game_stats':
         this.pendingStats = event.stats;
         break;
-
       case 'game_over': {
         this.cancelDrag();
         this.hudView.showGameOver(event.winner);
-        const statsOver = this.pendingStats;
-        if (statsOver) {
-          setTimeout(() => { this.onGameEnd?.(event.winner, statsOver); }, 2000);
-        }
+        const s = this.pendingStats;
+        if (s) setTimeout(() => { this.onGameEnd?.(event.winner, s); }, 2000);
         break;
       }
-
       case 'game_draw': {
         this.cancelDrag();
         this.hudView.showGameOver(null);
-        const statsDraw = this.pendingStats;
-        if (statsDraw) {
-          setTimeout(() => { this.onGameEnd?.(null, statsDraw); }, 2000);
-        }
+        const s = this.pendingStats;
+        if (s) setTimeout(() => { this.onGameEnd?.(null, s); }, 2000);
         break;
       }
     }
   }
 
-  // ─── Pointer handling ─────────────────────────────────────────────────────
-
-  private onPointerMove = (e: PIXI.FederatedPointerEvent): void => {
-    if (!this.drag) return;
-    const pos = e.getLocalPosition(this.container);
-    this.drag.ghost.x = pos.x;
-    this.drag.ghost.y = pos.y;
-
-    if (this.drag.kind === 'card') {
-      const col = this.boardView.screenToCol(pos.x);
-      const row = this.boardView.screenToRow(pos.y);
-      if (col !== this.dragCol || row !== this.dragRow) {
-        this.dragCol = col;
-        this.dragRow = row;
-        this.updateCardDragHighlights(col, row);
-      }
-    } else {
-      // upgrade drag — highlight base when hovering over it
-      const baseRect = this.boardView.getPlayerBaseRect();
-      const overBase = this.isOverRect(pos.x, pos.y, baseRect);
-      this.boardView.showBaseUpgradeHighlight(overBase);
-    }
-  };
-
-  private onPointerUp = (e: PIXI.FederatedPointerEvent): void => {
-    if (!this.drag) return;
-    const pos = e.getLocalPosition(this.container);
-
-    if (this.drag.kind === 'upgrade') {
-      const baseRect = this.boardView.getPlayerBaseRect();
-      if (this.isOverRect(pos.x, pos.y, baseRect)) {
-        this.engine.upgradeBase();
-      }
-      this.cancelDrag();
-      return;
-    }
-
-    // card drag
-    if (this.boardView.isOutsideBoard(pos.x, pos.y)) {
-      this.cancelDrag();
-      return;
-    }
-    const col = this.boardView.screenToCol(pos.x);
-    const row = this.boardView.screenToRow(pos.y);
-    this.commitCardDrag(col, row);
-  };
-
-  // ─── Card drag ────────────────────────────────────────────────────────────
+  // ── Card drag ──────────────────────────────────────────────────────────────
 
   private startCardDrag(handIndex: number): void {
     const player = this.engine.state.bottomPlayer;
@@ -294,7 +259,6 @@ export class GameRenderer {
     this.drag    = { kind: 'card', handIndex, cardType: card.cardType, spellType: card.spellType, ghost };
     this.dragCol = -1;
     this.dragRow = -1;
-
     this.handView.setSelectedCard(handIndex);
     this.updateCardDragHighlights(-1, -1);
   }
@@ -306,8 +270,7 @@ export class GameRenderer {
     switch (cardType) {
       case CardType.Unit: {
         if (!(ATTACK_LANES as readonly number[]).includes(col)) { this.cancelDrag(); return; }
-        const spawnFree = !this.engine.state.board.isCellOccupiedByUnit(col, BOTTOM_BUILDING_ROW + 1);
-        if (!spawnFree) { this.cancelDrag(); return; }
+        if (this.engine.state.board.isCellOccupiedByUnit(col, BOTTOM_BUILDING_ROW + 1)) { this.cancelDrag(); return; }
         this.engine.playCard(handIndex, col);
         break;
       }
@@ -317,15 +280,11 @@ export class GameRenderer {
         break;
       }
       case CardType.Spell: {
-        if (spellType === SpellType.Haste) {
-          this.engine.playCard(handIndex, 0);
-        } else if (spellType === SpellType.Meteor) {
-          this.engine.playCard(handIndex, col, row);
-        }
+        if (spellType === SpellType.Haste)         this.engine.playCard(handIndex, 0);
+        else if (spellType === SpellType.Meteor)   this.engine.playCard(handIndex, col, row);
         break;
       }
     }
-
     this.cancelDrag();
   }
 
@@ -335,64 +294,57 @@ export class GameRenderer {
 
     switch (this.drag.cardType) {
       case CardType.Unit: {
-        const blockedCols = new Set<number>();
+        const blocked = new Set<number>();
         for (const lane of ATTACK_LANES) {
-          if (this.engine.state.board.isCellOccupiedByUnit(lane, BOTTOM_BUILDING_ROW + 1)) {
-            blockedCols.add(lane);
-          }
+          if (this.engine.state.board.isCellOccupiedByUnit(lane, BOTTOM_BUILDING_ROW + 1)) blocked.add(lane);
         }
-        this.boardView.showUnitLaneHighlights(Array.from(ATTACK_LANES), blockedCols, col);
+        this.boardView.showUnitLaneHighlights(Array.from(ATTACK_LANES), blocked, col);
         break;
       }
       case CardType.Building: {
-        const validCols: number[] = [];
+        const valid: number[] = [];
         for (let c = 0; c < BOARD_COLS; c++) {
           if (!(ATTACK_LANES as readonly number[]).includes(c)) continue;
-          if (!this.engine.state.board.hasBuildingAt(c, BOTTOM_BUILDING_ROW)) validCols.push(c);
+          if (!this.engine.state.board.hasBuildingAt(c, BOTTOM_BUILDING_ROW)) valid.push(c);
         }
-        this.boardView.showBuildingHighlights(validCols, BOTTOM_BUILDING_ROW);
+        this.boardView.showBuildingHighlights(valid, BOTTOM_BUILDING_ROW);
         break;
       }
       case CardType.Spell: {
-        if (this.drag.spellType === SpellType.Meteor) {
-          this.boardView.showMeteorHighlights();
-        }
+        if (this.drag.spellType === SpellType.Meteor) this.boardView.showMeteorHighlights();
         break;
       }
     }
   }
 
-  // ─── Upgrade drag ─────────────────────────────────────────────────────────
+  // ── Upgrade drag ───────────────────────────────────────────────────────────
 
-  private startUpgradeDrag(cx: number, cy: number): void {
+  private startUpgradeDrag(x: number, y: number): void {
     const player = this.engine.state.bottomPlayer;
     if (!player.canUpgradeBase()) return;
-
-    const cost  = player.nextUpgradeCost!;
-    const ghost = this.buildDragGhost('↑ 升级', cost, 0xffcc00);
-    ghost.x = cx;
-    ghost.y = cy;
+    const ghost = this.buildDragGhost('↑ 升级', player.nextUpgradeCost!, 0xffcc00);
+    ghost.x = x;
+    ghost.y = y;
     this.container.addChild(ghost);
-
     this.drag = { kind: 'upgrade', ghost };
     this.boardView.showBaseUpgradeHighlight(false);
   }
 
-  // ─── Shared drag helpers ──────────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────────────────
 
   private cancelDrag(): void {
     if (!this.drag) return;
     this.drag.ghost.parent?.removeChild(this.drag.ghost);
     this.drag.ghost.destroy();
-    this.drag = null;
+    this.drag    = null;
     this.dragCol = -1;
     this.dragRow = -1;
     this.handView.clearSelection();
     this.boardView.clearHighlights();
   }
 
-  private isOverRect(x: number, y: number, rect: { x: number; y: number; w: number; h: number }): boolean {
-    return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+  private overRect(x: number, y: number, r: Rect): boolean {
+    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
   }
 
   private buildDragGhost(label: string, cost: number, accentColor = 0x2244aa): PIXI.Container {

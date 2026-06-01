@@ -1,5 +1,7 @@
 import type * as PIXI from 'pixi.js-legacy';
 import { IPlatform, IStorage } from '../IPlatform';
+import { InputManager } from '../../inputSystem/InputManager';
+import { WechatAdapter } from '../../inputSystem/WechatAdapter';
 
 /**
  * WeChat mini-game platform adapter.
@@ -65,64 +67,14 @@ export class WechatPlatform implements IPlatform {
   }
 
   /**
-   * WeChat: bridge wx.onTouch* events into PIXI's EventSystem.
-   *
-   * PIXI's EventSystem attaches PointerEvent listeners to the DOM canvas, but
-   * the wx canvas is NOT a real DOM element and never fires those events.
-   * We synthesise PointerEvent-shaped objects and hand them directly to the
-   * EventSystem's internal handlers so that interactive containers and
-   * `pointertap` callbacks work exactly like on web.
+   * WeChat: wx.onTouch* events → InputManager via WechatAdapter.
    */
-  setupInput(app: PIXI.Application): void {
-    // PIXI v7 exposes the EventSystem at app.renderer.events
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const events = (app.renderer as any).events as {
-      onPointerDown(e: PointerEvent): void;
-      onPointerUp(e: PointerEvent): void;
-      onPointerMove(e: PointerEvent): void;
-      onPointerCancel(e: PointerEvent): void;
-    };
-
-    if (!events) {
-      console.warn('[WechatPlatform] PIXI EventSystem not found — input disabled');
-      return;
-    }
-
-    const makePointerEvent = (type: string, touch: WxTouch): PointerEvent =>
-      // PointerEvent constructor is available in WeChat runtime (Chromium-based)
-      new PointerEvent(type, {
-        pointerId: touch.identifier,
-        clientX: touch.clientX,
-        clientY: touch.clientY,
-        isPrimary: touch.identifier === 0,
-        bubbles: true,
-        cancelable: true,
-        pointerType: 'touch',
-      });
-
-    wx.onTouchStart((res) => {
-      for (const t of res.changedTouches) {
-        events.onPointerDown(makePointerEvent('pointerdown', t));
-      }
-    });
-
-    wx.onTouchEnd((res) => {
-      for (const t of res.changedTouches) {
-        events.onPointerUp(makePointerEvent('pointerup', t));
-      }
-    });
-
-    wx.onTouchMove((res) => {
-      for (const t of res.changedTouches) {
-        events.onPointerMove(makePointerEvent('pointermove', t));
-      }
-    });
-
-    wx.onTouchCancel((res) => {
-      for (const t of res.changedTouches) {
-        events.onPointerCancel(makePointerEvent('pointercancel', t));
-      }
-    });
+  setupInput(
+    _app: PIXI.Application,
+    input: InputManager,
+    toDesign: (sx: number, sy: number) => { x: number; y: number },
+  ): void {
+    new WechatAdapter(input, toDesign);
   }
 
   async onLoadingComplete(): Promise<void> { /* no-op */ }

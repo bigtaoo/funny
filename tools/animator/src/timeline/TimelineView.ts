@@ -154,13 +154,18 @@ export class TimelineView {
       if (!clip) return;
 
       clip.keyframes.forEach(kf => {
-        if (!kf.bones.has(boneId)) return;
+        const bkf = kf.bones.get(boneId);
+        if (!bkf) return;
         const kx = (kf.time / Math.max(dur, 0.001)) * W;
         const ky = y + ROW_H / 2;
         const isSelected = this.state.selectedKfTime != null &&
           Math.abs(kf.time - this.state.selectedKfTime) < 0.001;
 
-        this.ctx.fillStyle   = isSelected ? '#74c7ec' : '#f9e2af';
+        const colors = getKfColors(bkf);
+        const mainColor = isSelected ? '#74c7ec' : colors[0];
+
+        // Diamond
+        this.ctx.fillStyle   = mainColor;
         this.ctx.strokeStyle = '#000';
         this.ctx.lineWidth   = 1;
         this.ctx.beginPath();
@@ -168,6 +173,18 @@ export class TimelineView {
         this.ctx.lineTo(kx, ky + 6); this.ctx.lineTo(kx - 5, ky);
         this.ctx.closePath();
         this.ctx.fill(); this.ctx.stroke();
+
+        // Multi-property indicator: small dots below the diamond when >1 type
+        if (!isSelected && colors.length > 1) {
+          const dotR = 2;
+          const startX = kx - (colors.length - 1) * (dotR * 2 + 1) / 2;
+          colors.slice(1).forEach((col, ci) => {
+            this.ctx.beginPath();
+            this.ctx.fillStyle = col;
+            this.ctx.arc(startX + ci * (dotR * 2 + 1), ky + 8, dotR, 0, Math.PI * 2);
+            this.ctx.fill();
+          });
+        }
       });
     });
   }
@@ -295,4 +312,30 @@ export class TimelineView {
       { label: 'Delete keyframe', action: () => this.cmdManager.execute(new DeleteKeyframeCommand(this.animCtrl, kf.time)) },
     ]);
   }
+}
+
+// ── Keyframe colour helpers ───────────────────────────────────────────────────
+
+/**
+ * Returns an ordered list of hex colours for the property types present in a
+ * BoneKeyframe.  The first element drives the diamond fill; extra elements are
+ * rendered as small indicator dots below the diamond.
+ *
+ * Colour legend (REQUIREMENTS.md §2.6):
+ *   #ffffff (white)  – sprite-frame switch (frameId present)
+ *   #f9e2af (orange) – translate offset
+ *   #89b4fa (blue)   – scale
+ *   #89899a (gray)   – rotation only / default
+ */
+function getKfColors(bkf: BoneKeyframe): string[] {
+  const out: string[] = [];
+
+  if (bkf.frameId !== undefined)                                         out.push('#ffffff');
+  if ((bkf.translateX ?? 0) !== 0 || (bkf.translateY ?? 0) !== 0)       out.push('#f9e2af');
+  if ((bkf.scaleX    ?? 1) !== 1  || (bkf.scaleY    ?? 1) !== 1)        out.push('#89b4fa');
+
+  // Rotation-only (or completely empty) → grey
+  if (out.length === 0) out.push('#89899a');
+
+  return out;
 }

@@ -1,5 +1,7 @@
 import type * as PIXI from 'pixi.js-legacy';
 import { IPlatform, IStorage } from '../IPlatform';
+import { InputManager } from '../../inputSystem/InputManager';
+import { WebAdapter } from '../../inputSystem/WebAdapter';
 
 export class WebPlatform implements IPlatform {
   private canvas: HTMLCanvasElement;
@@ -29,15 +31,12 @@ export class WebPlatform implements IPlatform {
     };
   }
 
-  /**
-   * Web: no-op.
-   * PIXI's EventSystem attaches PointerEvent listeners to the canvas element
-   * automatically during Application construction, so interactive containers
-   * already work out of the box.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  setupInput(_app: PIXI.Application): void {
-    // nothing to do
+  setupInput(
+    _app: PIXI.Application,
+    input: InputManager,
+    toDesign: (sx: number, sy: number) => { x: number; y: number },
+  ): void {
+    new WebAdapter(this.canvas, input, toDesign);
   }
 
   async onLoadingComplete(): Promise<void> { /* no-op */ }

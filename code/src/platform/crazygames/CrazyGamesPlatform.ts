@@ -1,5 +1,7 @@
 import type * as PIXI from 'pixi.js-legacy';
 import { IPlatform, IStorage } from '../IPlatform';
+import { InputManager } from '../../inputSystem/InputManager';
+import { WebAdapter } from '../../inputSystem/WebAdapter';
 
 /**
  * CrazyGames platform adapter.
@@ -59,7 +61,13 @@ export class CrazyGamesPlatform implements IPlatform {
     return { width: window.innerWidth, height: window.innerHeight };
   }
 
-  setupInput(_app: PIXI.Application): void { /* PIXI EventSystem handles this */ }
+  setupInput(
+    _app: PIXI.Application,
+    input: InputManager,
+    toDesign: (sx: number, sy: number) => { x: number; y: number },
+  ): void {
+    new WebAdapter(this.canvas ?? document.querySelector('canvas')!, input, toDesign);
+  }
 
   onAppReady(): void {
     this.canvas.style.display      = 'block';

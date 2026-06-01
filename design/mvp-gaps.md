@@ -1,6 +1,6 @@
 # MVP 缺口清单（CrazyGames 上架版）
 
-版本：v0.1  
+版本：v0.2  
 日期：2026-06-01  
 状态：进行中
 
@@ -10,88 +10,69 @@
 
 目标：发布一个可在 CrazyGames 上架的最小版本，用于小范围真实玩家测试，获取反馈后再推广到其他平台。
 
-当前状态：游戏逻辑层基本完整（引擎、战斗、AI、手牌计时、时间阶段），渲染层有基础战场视图，但缺少上架所需的完整游戏流程。
+---
+
+## ✅ 已完成
+
+### 1. 场景管理器 + 完整游戏流程
+`SceneManager` 已实现，流程：大厅 → 匹配(1.8s) → VS画面(2.5s) → 游戏 → 结算 → 大厅。
+
+### 2. 大厅界面（LobbyScene）
+Logo、匹配按钮动效、VS 覆层、AI 随机名字均已实现。
+
+### 3. 结算界面（ResultScene）
+VICTORY / DEFEAT / DRAW + 最多3枚徽章 + PLAY AGAIN，由 `game_stats` 事件驱动。
+
+### 4. CrazyGames SDK 接入
+`CrazyGamesPlatform` 已集成 SDK v3：`init()`、`gameplayStart/Stop()`、midgame 广告。各平台使用独立 HTML 模板（`public/<platform>/index.html`）。
+
+### 5. 设置按钮（退出到大厅）
+暂停覆层已实现，含 RESUME + EXIT TO LOBBY 两个按钮，EXIT 触发 `onExitToLobby` 回调。
+
+### 6. 升级基地交互（拖拽）
+`HUDView.onUpgradeDragStart` → 拖到基地区域松手触发，与出牌手势一致。
+
+### AI 系统验证
+`Hand.cards` getter 已添加，AI 可正常访问手牌。
 
 ---
 
 ## 🔴 必须做（无此功能无法上架）
 
-### 1. 场景管理器 + 完整游戏流程
+### 7. 布局与缩放系统
 
-当前 `web.ts` 直接启动游戏，没有任何页面切换机制。需要一个 `SceneManager` 串联以下流程：
+当前渲染层硬编码设计尺寸，无缩放支持，在非设计分辨率屏幕上布局错乱。
 
-```
-大厅 → 匹配中 → VS 加载画面 → 游戏 → 结算 → 大厅（循环）
-```
+**目标**：
+- 双设计空间：竖屏 1080×1920，横屏 1920×1080
+- 游戏层 Contain 缩放 + 背景层 Cover 缩放
+- 大厅内实时响应方向变化；游戏中锁定方向
 
-### 2. 大厅界面（LobbyScene）
+**新增文件**：
+- `src/layout/ILayout.ts` — 接口（坐标转换 + 布局矩形）
+- `src/layout/PortraitLayout.ts`
+- `src/layout/LandscapeLayout.ts`
+- `src/layout/ScalingManager.ts` — PIXI 两层容器缩放
 
-- 游戏 Logo
-- "开始匹配"大按钮（居中，视觉重心）
-- 点击后按钮原地变为"匹配中…"动效（无需跳转新页面）
-- 匹配成功 → VS 加载画面（展示双方名字/等级，2-3 秒）
-- 无真实联机时，直接匹配 AI（随机名字、等级）
-
-### 3. 结算界面（ResultScene）
-
-- 胜/负大字
-- 表现徽章（最多 3 枚，文字版先行）：
-  - 最佳输出 / 铁壁防线 / 兵海战术 / 建筑大师 / 精准打击 / 以少胜多
-- "再来一局"按钮 → 返回大厅
-- 接收 `game_stats` 事件数据驱动徽章评定
-
-### 4. CrazyGames SDK 接入
-
-CrazyGames 审核必须接入官方 SDK：
-- HTML 引入 `https://sdk.crazygames.com/crazygames-sdk-v3.js`
-- 游戏开始时调用 `CrazyGames.SDK.game.gameplayStart()`
-- 游戏结束时调用 `CrazyGames.SDK.game.gameplayStop()`
-- 结算时展示 midgame 广告：`CrazyGames.SDK.ad.requestAd('midgame', callbacks)`
-
-### 5. 设置按钮（最低限度：退出到大厅）
-
-当前 `onSettingsPressed` 是空回调。CrazyGames 要求玩家能退出游戏回到主菜单，否则只能关标签页。实现一个简单的暂停覆层，包含"退出到大厅"按钮即可。
+**改动文件**：`BoardView`、`UnitView`、`BuildingView`、`HandView`、`HUDView`、`GameRenderer`、`GameScene`、`LobbyScene`、`app.ts`
 
 ---
 
 ## 🟡 强烈建议（影响审核通过率）
 
-### 6. 升级基地交互改为拖拽
+### 8. 基础音效
 
-**决策（2026-06-01）**：将原"长按升级按钮"方案改为"拖动升级按钮到己方基地区域"触发升级。
+最低需要：出牌、攻击/受击、基地受击、胜/负。可用 freesound.org 免费素材占位。
 
-**理由**：与出牌拖拽手势完全一致，降低学习成本；消除误触风险；长按在 Web 平台（鼠标操作）体验不佳。
+### 9. 美术资源（最低限度）
 
-**实现方案**：
-- HUD 底部保留升级按钮（显示费用/MAX），但改为 `pointerdown` 开始拖拽
-- 拖拽时显示拖拽幽灵（ghost），基地区域高亮
-- 在基地格子范围内松手 → 触发 `engine.upgradeBase()`
-- 拖出基地范围松手 → 取消
-
-### 7. 基础音效
-
-完全无声音是明显扣分项。最低需要：
-- 出牌音效
-- 单位攻击/受击音效
-- 基地受击音效
-- 胜/负音效
-
-可使用免费音效素材（如 freesound.org）临时占位。
-
-### 8. 美术资源（最低限度）
-
-当前单位为纯色圆圈，建筑为矩形，`loadAssets()` 为空方法。需要至少：
-- 单位图形（保持简笔画/涂鸦风格，符合 art-direction.md）
-- 建筑图形
-- 基地图形
-- 地图背景（笔记本纸张感）
+单位/建筑/基地图形（当前为圆圈/矩形占位）+ 地图背景（笔记本纸张纹理）。
 
 ---
 
 ## 🟢 已确认 MVP 外（暂不做）
 
 - 真实联机（帧同步接口已预留）
-- 移动端完整适配（先专注 PC 横屏/竖屏）
 - 背景音乐
 - 粒子特效
 - 徽章图标美术（文字版先行）
@@ -100,17 +81,8 @@ CrazyGames 审核必须接入官方 SDK：
 
 ---
 
-## 实现顺序
+## 实现顺序（剩余）
 
-1. 场景管理器（SceneManager）—— 骨架，其他都依赖它
-2. 大厅界面（LobbyScene）
-3. 结算界面（ResultScene）
-4. 升级基地拖拽交互
-5. CrazyGames SDK 接入
-6. 音效接入（占位素材）
-
----
-
-## AI 系统验证
-
-`AISystem.ts` 中使用 `hand.cards[idx]` 访问手牌，但 `Player.hand` 暴露的是 `slots` 数组，字段名需核对，否则 AI 永远不出牌。
+1. **布局与缩放系统**（当前优先级最高）
+2. 音效接入（占位素材）
+3. 美术资源

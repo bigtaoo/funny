@@ -1,4 +1,5 @@
 import type * as PIXI from 'pixi.js-legacy';
+import type { InputManager } from '../inputSystem/InputManager';
 
 /**
  * IPlatform — abstraction layer for platform-specific capabilities.
@@ -23,10 +24,18 @@ export interface IPlatform {
 
   /**
    * Called once after the PIXI Application is created.
-   * Web: no-op — PIXI EventSystem auto-attaches to DOM canvas events.
-   * WeChat: forwards wx.onTouch* events into PIXI's EventSystem.
+   * Creates the platform-specific input adapter and wires it to the InputManager.
+   *
+   * Web / CrazyGames: creates WebAdapter (canvas pointer events).
+   * WeChat: creates WechatAdapter (wx.onTouch* events).
+   *
+   * The `toDesign` function converts screen CSS-pixel coords to design-space coords.
    */
-  setupInput(app: PIXI.Application): void;
+  setupInput(
+    app: PIXI.Application,
+    input: InputManager,
+    toDesign: (sx: number, sy: number) => { x: number; y: number },
+  ): void;
 
   /** Called after Pixi app is created — platform may set up orientation lock etc. */
   onAppReady(): void;

@@ -69,17 +69,25 @@ export class AISystem {
   // ─── Decision helpers ─────────────────────────────────────────────────────
 
   private chooseLane(state: GameState): number | null {
-    let bestLane: number | null = null;
     let minEnemies = Infinity;
+    const bestLanes: number[] = [];
 
     for (const lane of ATTACK_LANES) {
       let count = 0;
       for (const unit of state.board.units.values()) {
         if (unit.side === Side.Bottom && unit.col === lane) count++;
       }
-      if (count < minEnemies) { minEnemies = count; bestLane = lane; }
+      if (count < minEnemies) {
+        minEnemies = count;
+        bestLanes.length = 0;
+        bestLanes.push(lane);
+      } else if (count === minEnemies) {
+        bestLanes.push(lane);
+      }
     }
-    return bestLane;
+    if (bestLanes.length === 0) return null;
+    // Random tie-breaking so AI spreads across lanes from game start
+    return bestLanes[Math.floor(Math.random() * bestLanes.length)]!;
   }
 
   private chooseBuildingLane(state: GameState): number | null {
