@@ -79,6 +79,24 @@ export interface SpriteBinding {
   flipX:   boolean;
 }
 
+// ── Attachment Points ─────────────────────────────────────────────────────────
+
+/** A non-animated attachment marker that follows a specific bone.
+ *  Position = bone tip (ex, ey) + (offsetX, offsetY) in world space.
+ *  The bone tip is chosen because it's the "output" end of the bone
+ *  (e.g. spine tip = shoulder level, root tip = hip = root itself). */
+export interface AttachmentPoint {
+  id:         string;   // 'shadow' | 'hit'
+  label:      string;
+  parentBone: string;   // which bone to follow (uses bone tip position)
+  offsetX:    number;   // px offset from bone tip, world space
+  offsetY:    number;
+
+  // Shadow-specific display size (only meaningful for id === 'shadow')
+  shadowW?:   number;   // ellipse half-width (px); auto-computed if absent
+  shadowH?:   number;   // ellipse half-height (px); auto-computed if absent
+}
+
 // ── Atlas ─────────────────────────────────────────────────────────────────────
 
 export interface AtlasFrame {

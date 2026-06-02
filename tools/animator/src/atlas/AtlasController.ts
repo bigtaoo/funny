@@ -59,16 +59,22 @@ export class AtlasController {
 
   // ── Import ──────────────────────────────────────────────────────────────────
 
-  async importAtlas(jsonFile: File, imageFile: File): Promise<void> {
+  async importAtlas(jsonFile: File, imageFile?: File | null): Promise<void> {
     const atlasId = jsonFile.name.replace(/\.[^.]+$/, '');
 
-    const [jsonText, imageUrl] = await Promise.all([
-      jsonFile.text(),
-      this.loadImageUrl(imageFile),
-    ]);
-
+    const jsonText = await jsonFile.text();
     const json = JSON.parse(jsonText) as TPJsonHash | TPJsonArray;
     const frames = this.parseFrames(json);
+
+    // Resolve image URL: explicit file > data URL in meta > relative URL in meta
+    let imageUrl: string;
+    if (imageFile) {
+      imageUrl = await this.loadImageUrl(imageFile);
+    } else {
+      const metaImage = (json as TPJsonHash).meta?.image ?? '';
+      if (!metaImage) throw new Error('No image file provided and no meta.image in JSON');
+      imageUrl = metaImage; // works for data: and http: URLs
+    }
 
     const base = PIXI.BaseTexture.from(imageUrl);
     const asset: AtlasAsset = { id: atlasId, frames };

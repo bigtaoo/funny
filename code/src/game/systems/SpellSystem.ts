@@ -40,17 +40,27 @@ export class SpellSystem {
     const owner  = state.ownerOf(side);
     let hitsCount = 0;
 
-    // Damage all units and buildings in 2×2 area
+    const maxCol = centerCol + 1;
+    const maxRow = centerRow + 1;
+
+    // Damage ALL units whose integer position falls in the 2×2 area.
+    // Iterate units directly rather than using getUnitAt(): the unitGrid is updated
+    // in the movement phase, but castMeteor fires in processCommand (before movement).
+    // The grid can lag by 1 tick, causing getUnitAt() to miss units that moved rows
+    // this step but haven't had updateUnitCell() called yet.
+    for (const unit of board.units.values()) {
+      if (unit.isDead) continue;
+      if (unit.col >= centerCol && unit.col <= maxCol &&
+          unit.row >= centerRow && unit.row <= maxRow) {
+        unit.takeDamage(METEOR_DAMAGE);
+        hitsCount++;
+      }
+    }
+
+    // Buildings: grid lookup is safe (at most one building per cell)
     for (let dc = 0; dc <= 1; dc++) {
       for (let dr = 0; dr <= 1; dr++) {
-        const col  = centerCol + dc;
-        const row  = centerRow + dr;
-        const unit = board.getUnitAt(col, row);
-        if (unit && !unit.isDead) {
-          unit.takeDamage(METEOR_DAMAGE);
-          hitsCount++;
-        }
-        const building = board.getBuildingAt(col, row);
+        const building = board.getBuildingAt(centerCol + dc, centerRow + dr);
         if (building && !building.isDead) building.takeDamage(METEOR_DAMAGE);
       }
     }

@@ -21,6 +21,7 @@ export class AtlasPanel {
     const row = document.createElement('div');
     row.style.cssText = 'padding:8px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border)';
 
+    // JSON
     const jsonBtn = document.createElement('button');
     jsonBtn.className = 'sm';
     jsonBtn.textContent = '📄 Select JSON…';
@@ -28,12 +29,13 @@ export class AtlasPanel {
     jsonLabel.style.cssText = 'font-size:10px;color:var(--text-dim);word-break:break-all';
     jsonLabel.textContent = 'No JSON selected';
 
+    // Image (optional)
     const imgBtn = document.createElement('button');
     imgBtn.className = 'sm';
-    imgBtn.textContent = '🖼 Select Image…';
+    imgBtn.textContent = '🖼 Select Image… (optional)';
     const imgLabel = document.createElement('span');
     imgLabel.style.cssText = 'font-size:10px;color:var(--text-dim);word-break:break-all';
-    imgLabel.textContent = 'No image selected';
+    imgLabel.textContent = 'Use meta.image if omitted';
 
     const importBtn = document.createElement('button');
     importBtn.className = 'primary sm';
@@ -58,18 +60,19 @@ export class AtlasPanel {
     });
     imgInput.addEventListener('change', () => {
       this.imageFile = imgInput.files?.[0] ?? null;
-      imgLabel.textContent = this.imageFile?.name ?? 'No image selected';
+      imgLabel.textContent = this.imageFile?.name ?? 'Use meta.image if omitted';
     });
 
     importBtn.addEventListener('click', async () => {
-      if (!this.jsonFile || !this.imageFile) {
-        this.bus.emit('status', 'Select both JSON and image first');
+      if (!this.jsonFile) {
+        this.bus.emit('status', 'Select a JSON file first');
         return;
       }
       try {
         await this.atlasCtrl.importAtlas(this.jsonFile, this.imageFile);
         this.jsonFile = this.imageFile = null;
-        jsonLabel.textContent = imgLabel.textContent = 'Done';
+        jsonLabel.textContent = 'Done';
+        imgLabel.textContent  = 'Use meta.image if omitted';
       } catch (err) {
         this.bus.emit('status', `Atlas import failed: ${(err as Error).message}`);
       }

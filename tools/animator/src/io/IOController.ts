@@ -5,6 +5,7 @@ import type { CommandManager } from '../core/CommandManager';
 import type { EventBus, AppEvents } from '../core/EventBus';
 import type {
   AnimationClip,
+  AttachmentPoint,
   BoneKeyframe,
   Keyframe,
   SpriteBinding,
@@ -35,9 +36,10 @@ interface SerializedClip {
 }
 
 interface SerializedProject {
-  version:    number;
-  bindings:   Record<string, SpriteBinding>;
-  animations: Record<string, SerializedClip>;
+  version:          number;
+  bindings:         Record<string, SpriteBinding>;
+  animations:       Record<string, SerializedClip>;
+  attachmentPoints?: AttachmentPoint[];
 }
 
 // ── IOController ──────────────────────────────────────────────────────────────
@@ -69,7 +71,10 @@ export class IOController {
       animations[name] = this.serializeClip(clip);
     });
 
-    const project: SerializedProject = { version: 1, bindings, animations };
+    const attachmentPoints: AttachmentPoint[] = [];
+    this.state.attachmentPoints.forEach(pt => attachmentPoints.push({ ...pt }));
+
+    const project: SerializedProject = { version: 1, bindings, animations, attachmentPoints };
     const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -99,6 +104,11 @@ export class IOController {
       // Load bindings
       for (const [boneId, binding] of Object.entries(project.bindings)) {
         this.state.setBinding(boneId, binding);
+      }
+
+      // Load attachment points (keep defaults if absent)
+      if (Array.isArray(project.attachmentPoints) && project.attachmentPoints.length > 0) {
+        this.state.setAllAttachmentPoints(project.attachmentPoints);
       }
 
       // Load animations (create clips)

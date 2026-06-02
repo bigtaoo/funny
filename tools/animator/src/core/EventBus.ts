@@ -24,6 +24,9 @@ export interface AppEvents {
   // Undo/Redo
   'history:change': { canUndo: boolean; canRedo: boolean; label: string };
 
+  // Attachment points
+  'attachment:change': void;
+
   // Misc
   'status':         string;
   'pose:reset':     void;

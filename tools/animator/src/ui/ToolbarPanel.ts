@@ -69,6 +69,25 @@ export class ToolbarPanel {
       const el  = document.getElementById('time-display');
       if (el) el.textContent = `${t.toFixed(3)}s / ${dur.toFixed(3)}s`;
     });
+
+    // Sync duration input when a clip is selected
+    bus.on('anim:select', () => {
+      const clip = animCtrl.currentClip;
+      const inpDur = document.getElementById('inp-duration') as HTMLInputElement | null;
+      const chkLoop = document.getElementById('chk-loop') as HTMLInputElement | null;
+      if (inpDur && clip) inpDur.value = clip.duration.toFixed(2);
+      if (chkLoop && clip) chkLoop.checked = clip.loop;
+    });
+
+    // Re-sync duration input when autoFitDuration (or other logic) changes clip.duration.
+    // Also fires on normal kf add/del but is a no-op when duration hasn't changed.
+    bus.on('kf:change', () => {
+      const clip   = animCtrl.currentClip;
+      const inpDur = document.getElementById('inp-duration') as HTMLInputElement | null;
+      if (inpDur && clip && inpDur !== document.activeElement) {
+        inpDur.value = clip.duration.toFixed(2);
+      }
+    });
   }
 
   private buildUndoRedo(): void {
@@ -155,6 +174,16 @@ export class ToolbarPanel {
       if (!isNaN(v)) this.animCtrl.setDuration(v);
     });
 
+    // Inject "Auto" button next to duration input
+    if (inpDur) {
+      const autoBtn = document.createElement('button');
+      autoBtn.className   = 'sm';
+      autoBtn.textContent = 'Auto';
+      autoBtn.title       = 'Set duration to last keyframe time';
+      autoBtn.addEventListener('click', () => this.animCtrl.autoFitDuration());
+      inpDur.insertAdjacentElement('afterend', autoBtn);
+    }
+
     // View checkboxes
     const chkJoints = document.getElementById('chk-joints') as HTMLInputElement | null;
     chkJoints?.addEventListener('change', () => this.state.setShowJoints(chkJoints.checked));
@@ -164,5 +193,29 @@ export class ToolbarPanel {
 
     const chkGuide = document.getElementById('chk-guide') as HTMLInputElement | null;
     chkGuide?.addEventListener('change', () => this.state.setShowGuide(chkGuide.checked));
+
+    const chkOverlay = document.getElementById('chk-overlay') as HTMLInputElement | null;
+    chkOverlay?.addEventListener('change', () => this.state.setShowSkeletonOverlay(chkOverlay.checked));
+
+    const chkPivots = document.getElementById('chk-pivots') as HTMLInputElement | null;
+    chkPivots?.addEventListener('change', () => this.state.setShowPivots(chkPivots.checked));
+
+    const inpBgColor = document.getElementById('inp-bg-color') as HTMLInputElement | null;
+    inpBgColor?.addEventListener('input', () => {
+      const hex = parseInt(inpBgColor.value.replace('#', ''), 16);
+      if (!isNaN(hex)) this.state.setBackgroundColor(hex);
+    });
+
+    // Presets button
+    document.getElementById('btn-presets')?.addEventListener('click', () => {
+      const names = ['idle', 'walk', 'attack', 'hurt', 'death', 'spawn'];
+      const name = prompt(`Load preset (${names.join(', ')}):`);
+      if (!name) return;
+      const trimmed = name.trim();
+      if (!names.includes(trimmed)) { this.bus.emit('status', `Unknown preset: ${trimmed}`); return; }
+      this.animCtrl.loadPreset(trimmed);
+      this.animCtrl.selectClip(trimmed);
+      this.bus.emit('status', `Loaded preset: ${trimmed}`);
+    });
   }
 }

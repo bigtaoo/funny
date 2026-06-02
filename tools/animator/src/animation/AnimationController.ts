@@ -253,6 +253,19 @@ export class AnimationController {
     if (clip) clip.duration = Math.max(0.1, seconds);
   }
 
+  /** Set duration to the time of the last keyframe (min 0.1s). */
+  autoFitDuration(): void {
+    const clip = this.currentClip;
+    if (!clip || clip.keyframes.length === 0) {
+      this.bus.emit('status', 'No keyframes to fit duration to');
+      return;
+    }
+    const maxTime = Math.max(...clip.keyframes.map(k => k.time));
+    clip.duration = Math.max(0.1, maxTime);
+    this.bus.emit('kf:change');
+    this.bus.emit('status', `Duration set to ${clip.duration.toFixed(3)}s`);
+  }
+
   loadPreset(name: string): void {
     const clip = clonePreset(name);
     if (!clip) return;

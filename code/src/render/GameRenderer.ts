@@ -60,9 +60,10 @@ export class GameRenderer {
   private handView!:     HandView;
   private hudView!:      HUDView;
 
-  private drag:     DragState | null = null;
-  private dragCol   = -1;
-  private dragRow   = -1;
+  private drag:      DragState | null = null;
+  private dragCol    = -1;
+  private dragRow    = -1;
+  private dragOnBoard = false;
   private pendingStats: [PlayerStats, PlayerStats] | null = null;
 
   // Unsubscribe functions from InputManager
@@ -165,12 +166,15 @@ export class GameRenderer {
     this.drag.ghost.y = y;
 
     if (this.drag.kind === 'card') {
+      const onBoard = !this.layout.isOutsideBoard(x, y);
       const col = this.layout.screenToCol(x, y);
       const row = this.layout.screenToRow(x, y);
-      if (col !== this.dragCol || row !== this.dragRow) {
-        this.dragCol = col;
-        this.dragRow = row;
-        this.updateCardDragHighlights(col, row);
+      // Always update when onBoard status changes, or when col/row changes
+      if (col !== this.dragCol || row !== this.dragRow || onBoard !== this.dragOnBoard) {
+        this.dragCol    = col;
+        this.dragRow    = row;
+        this.dragOnBoard = onBoard;
+        this.updateCardDragHighlights(col, row, x, y);
       }
     } else {
       const baseRect = this.boardView.getPlayerBaseRect();
@@ -256,11 +260,12 @@ export class GameRenderer {
     ghost.y = center.y;
     this.container.addChild(ghost);
 
-    this.drag    = { kind: 'card', handIndex, cardType: card.cardType, spellType: card.spellType, ghost };
-    this.dragCol = -1;
-    this.dragRow = -1;
+    this.drag      = { kind: 'card', handIndex, cardType: card.cardType, spellType: card.spellType, ghost };
+    this.dragCol    = -1;
+    this.dragRow    = -1;
+    this.dragOnBoard = false;
     this.handView.setSelectedCard(handIndex);
-    this.updateCardDragHighlights(-1, -1);
+    this.updateCardDragHighlights(-1, -1, center.x, center.y);
   }
 
   private commitCardDrag(col: number, row: number): void {
@@ -288,7 +293,7 @@ export class GameRenderer {
     this.cancelDrag();
   }
 
-  private updateCardDragHighlights(col: number, _row: number): void {
+  private updateCardDragHighlights(col: number, row: number, x: number, y: number): void {
     if (!this.drag || this.drag.kind !== 'card') return;
     this.boardView.clearHighlights();
 
@@ -311,7 +316,13 @@ export class GameRenderer {
         break;
       }
       case CardType.Spell: {
-        if (this.drag.spellType === SpellType.Meteor) this.boardView.showMeteorHighlights();
+        if (this.drag.spellType === SpellType.Meteor) {
+          // Show 2×2 target preview only when pointer is on the board
+          if (!this.layout.isOutsideBoard(x, y)) {
+            this.boardView.showMeteorTargetHighlight(col, row);
+          }
+          // When outside board, highlights are already cleared above
+        }
         break;
       }
     }
@@ -336,9 +347,10 @@ export class GameRenderer {
     if (!this.drag) return;
     this.drag.ghost.parent?.removeChild(this.drag.ghost);
     this.drag.ghost.destroy();
-    this.drag    = null;
-    this.dragCol = -1;
-    this.dragRow = -1;
+    this.drag      = null;
+    this.dragCol    = -1;
+    this.dragRow    = -1;
+    this.dragOnBoard = false;
     this.handView.clearSelection();
     this.boardView.clearHighlights();
   }

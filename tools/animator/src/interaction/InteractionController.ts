@@ -10,6 +10,14 @@ import { Skeleton } from '../skeleton/Skeleton';
 
 const HIT_RADIUS = 10;
 
+// Pre-computed reversed draw order for front-first hit testing (computed lazily
+// after Skeleton static init runs).
+let _drawOrderReversed: readonly string[] | null = null;
+function getDrawOrderReversed(): readonly string[] {
+  if (!_drawOrderReversed) _drawOrderReversed = [...Skeleton.DRAW_ORDER].reverse();
+  return _drawOrderReversed;
+}
+
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 class RotateBoneCommand implements Command {
@@ -287,7 +295,7 @@ export class InteractionController {
     let best: string | null = null;
     let bestDist = Infinity;
 
-    for (const boneId of [...Skeleton.DRAW_ORDER].reverse()) {
+    for (const boneId of getDrawOrderReversed()) {
       if (boneId === 'head') continue;
       if (!Skeleton.SELECTABLE_BONES.includes(boneId)) continue;
       const pos = worldPose.get(boneId);

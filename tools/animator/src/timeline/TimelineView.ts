@@ -74,6 +74,11 @@ export class TimelineView {
   private isDraggingKf = false;
   private dragKfTime   = 0;
 
+  /** Set to true by events that require a canvas redraw; cleared after draw. */
+  private dirty = true;
+  /** Set to true by events that require label DOM rebuild. */
+  private labelsDirty = true;
+
   constructor(
     private readonly canvasEl: HTMLCanvasElement,
     private readonly labelContainer: HTMLElement,
@@ -91,13 +96,16 @@ export class TimelineView {
     canvasEl.addEventListener('mouseleave',  () => { this.isScrubbing = false; this.isDraggingKf = false; });
     canvasEl.addEventListener('contextmenu', e => this.onContextMenu(e));
 
-    bus.on('kf:change',   () => this.render());
-    bus.on('time:change', () => this.render());
-    bus.on('anim:select', () => this.render());
-    bus.on('bone:select', () => this.render());
+    bus.on('kf:change',   () => { this.dirty = true; this.labelsDirty = true; });
+    bus.on('time:change', () => { this.dirty = true; });
+    bus.on('anim:select', () => { this.dirty = true; this.labelsDirty = true; });
+    bus.on('bone:select', () => { this.dirty = true; this.labelsDirty = true; });
   }
 
   render(): void {
+    if (!this.dirty) return;
+    this.dirty = false;
+
     const W = this.canvasEl.parentElement!.clientWidth;
     const H = this.canvasEl.parentElement!.clientHeight;
     if (this.canvasEl.width !== W || this.canvasEl.height !== H) {
@@ -115,7 +123,11 @@ export class TimelineView {
     this.drawRuler(W, dur);
     this.drawRows(W, clip, dur);
     this.drawPlayhead(W, dur);
-    this.renderLabels(clip);
+
+    if (this.labelsDirty) {
+      this.labelsDirty = false;
+      this.renderLabels(clip);
+    }
   }
 
   destroy(): void {
@@ -276,6 +288,8 @@ export class TimelineView {
       this.animCtrl.moveKeyframe(this.dragKfTime, newT);
       this.dragKfTime = newT;
       this.state.setCurrentTime(newT);
+      // kf:change sets labelsDirty=true, but during drag labels don't change
+      this.labelsDirty = false;
     } else if (this.isScrubbing && !this.state.isPlaying) {
       const t = this.getTimeFromX(e.clientX);
       this.state.setCurrentTime(t);

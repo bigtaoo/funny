@@ -1,4 +1,4 @@
-import type { SpriteBinding } from './types';
+import type { SpriteBinding, AttachmentPoint } from './types';
 import type { EventBus, AppEvents } from './EventBus';
 
 export class AppState {
@@ -106,5 +106,28 @@ export class AppState {
 
   getBinding(boneId: string): SpriteBinding | undefined {
     return this._bindings.get(boneId);
+  }
+
+  // ── Attachment points ─────────────────────────────────────────────────────
+
+  private _attachments = new Map<string, AttachmentPoint>([
+    // shadow: follows root (hip), offset downward to ground level
+    // shadowW/H left absent → Renderer auto-computes from Skeleton rest pose
+    ['shadow', { id: 'shadow', label: '🔵 Shadow', parentBone: 'root',  offsetX: 0, offsetY: 52 }],
+    // hit: follows spine tip (shoulder/neck area), offset upward to chest
+    ['hit',    { id: 'hit',    label: '✦ Hit',     parentBone: 'spine', offsetX: 0, offsetY: -30 }],
+  ]);
+
+  get attachmentPoints(): ReadonlyMap<string, AttachmentPoint> { return this._attachments; }
+
+  setAttachmentPoint(pt: AttachmentPoint): void {
+    this._attachments.set(pt.id, { ...pt });
+    this.bus.emit('attachment:change');
+  }
+
+  setAllAttachmentPoints(pts: AttachmentPoint[]): void {
+    this._attachments.clear();
+    for (const pt of pts) this._attachments.set(pt.id, { ...pt });
+    this.bus.emit('attachment:change');
   }
 }

@@ -95,12 +95,35 @@ export class BoardView {
     }
   }
 
-  showMeteorHighlights(): void {
+  /**
+   * Show a 2×2 meteor target preview centered at (col, row) in game coords.
+   * Draws a subtle full-board red tint + a bright 2×2 area.
+   * Out-of-bounds cells are silently skipped.
+   */
+  showMeteorTargetHighlight(col: number, row: number): void {
     this.highlightLayer.clear();
+
+    // Subtle full-board tint so the player knows meteor is selected
     const r = this.layout.boardRect;
-    this.highlightLayer.beginFill(HIGHLIGHT_METEOR, 0.08);
+    this.highlightLayer.beginFill(HIGHLIGHT_METEOR, 0.06);
     this.highlightLayer.drawRect(r.x, r.y, r.w, r.h);
     this.highlightLayer.endFill();
+
+    // Bright 2×2 target area
+    const cs = this.layout.cellSize;
+    for (let dc = 0; dc <= 1; dc++) {
+      for (let dr = 0; dr <= 1; dr++) {
+        const tc = col + dc;
+        const tr = row + dr;
+        if (tc < 0 || tc >= BOARD_COLS) continue;
+        if (tr < 0 || tr >= BOARD_ROWS)  continue;
+        const pos = this.layout.gridToScreen(tc, tr);
+        this.highlightLayer.lineStyle(2, HIGHLIGHT_METEOR, 0.9);
+        this.highlightLayer.beginFill(HIGHLIGHT_METEOR, 0.40);
+        this.highlightLayer.drawRect(pos.x - cs / 2, pos.y - cs / 2, cs, cs);
+        this.highlightLayer.endFill();
+      }
+    }
   }
 
   showBaseUpgradeHighlight(active: boolean): void {

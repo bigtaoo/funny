@@ -142,7 +142,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     speed: 1.0,           // grid/s  (converted to fp in Unit constructor)
     range: 1,
     spawnCount: 2,
-    radius_fp: 400,
+    radius_fp: 400,       // diameter 800fp = 0.8 格
   },
   [UnitType.Guardian]: {
     type: UnitType.Guardian,
@@ -152,7 +152,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     speed: 0.6,
     range: 1,
     spawnCount: 1,
-    radius_fp: 450,
+    radius_fp: 500,       // diameter 1000fp = 1.0 格
   },
   [UnitType.Archer]: {
     type: UnitType.Archer,
@@ -162,7 +162,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     speed: 0.8,
     range: 2,             // 2-grid range (down from 3)
     spawnCount: 1,
-    radius_fp: 350,
+    radius_fp: 350,       // diameter 700fp = 0.7 格
   },
 };
 

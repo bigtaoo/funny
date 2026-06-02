@@ -85,7 +85,13 @@ function resolveOne(kf: BoneKeyframe): ResolvedBoneTransform {
 
 // ── Clip sampling ─────────────────────────────────────────────────────────────
 
-/** Sample an AnimationClip at time t, returning every bone's resolved transform. */
+/** Sample an AnimationClip at time t, returning every bone's resolved transform.
+ *
+ *  Single O(n) pass over keyframes: for each keyframe we update the "last seen
+ *  before t" pointer for every bone it contains, then after finding kf1 for all
+ *  bones we do a second O(n) pass to find kf2 (the next keyframe after t).
+ *  Total: O(bones × keyframes) → O(keyframes) amortised per bone.
+ */
 export function sampleClip(
   clip: AnimationClip,
   t: number,
@@ -94,39 +100,47 @@ export function sampleClip(
   const kfs = clip.keyframes;
   if (kfs.length === 0) return result;
 
-  // Collect all bone ids that appear in any keyframe
+  // Pass 1: find kf1 (last keyframe with time <= t) for each bone
+  const kf1Map = new Map<string, { kf: typeof kfs[number]; idx: number }>();
+  for (let i = 0; i < kfs.length; i++) {
+    if (kfs[i].time > t) break;           // keyframes are sorted ascending
+    kfs[i].bones.forEach((_, id) => {
+      kf1Map.set(id, { kf: kfs[i], idx: i });
+    });
+  }
+
+  // Pass 2: find kf2 (first keyframe with time > t) for each bone
+  const kf2Map = new Map<string, typeof kfs[number]>();
+  for (let i = kfs.length - 1; i >= 0; i--) {
+    if (kfs[i].time <= t) break;          // walk backwards from end
+    kfs[i].bones.forEach((_, id) => {
+      kf2Map.set(id, kfs[i]);
+    });
+  }
+
+  // Collect all bone ids
   const boneIds = new Set<string>();
-  for (const kf of kfs) kf.bones.forEach((_, id) => boneIds.add(id));
+  kf1Map.forEach((_, id) => boneIds.add(id));
+  kf2Map.forEach((_, id) => boneIds.add(id));
 
   for (const boneId of boneIds) {
-    // Find surrounding keyframes for this bone
-    let kf1Idx = -1;
-    let kf2Idx = -1;
+    const entry1 = kf1Map.get(boneId);
+    const kf2    = kf2Map.get(boneId);
 
-    for (let i = 0; i < kfs.length; i++) {
-      if (kfs[i].bones.has(boneId) && kfs[i].time <= t) kf1Idx = i;
-    }
-    for (let i = 0; i < kfs.length; i++) {
-      if (kfs[i].bones.has(boneId) && kfs[i].time > t) { kf2Idx = i; break; }
-    }
+    if (!entry1 && !kf2) continue;
 
-    if (kf1Idx < 0 && kf2Idx < 0) continue;
-
-    if (kf1Idx < 0) {
-      // t is before the first keyframe for this bone
-      result.set(boneId, resolveOne(kfs[kf2Idx].bones.get(boneId)!));
+    if (!entry1) {
+      result.set(boneId, resolveOne(kf2!.bones.get(boneId)!));
       continue;
     }
-    if (kf2Idx < 0) {
-      // t is at or past the last keyframe for this bone
-      result.set(boneId, resolveOne(kfs[kf1Idx].bones.get(boneId)!));
+    if (!kf2) {
+      result.set(boneId, resolveOne(entry1.kf.bones.get(boneId)!));
       continue;
     }
 
-    const kf1 = kfs[kf1Idx];
-    const kf2 = kfs[kf2Idx];
+    const kf1  = entry1.kf;
     const span = kf2.time - kf1.time;
-    const f = span > 0 ? (t - kf1.time) / span : 0;
+    const f    = span > 0 ? (t - kf1.time) / span : 0;
     result.set(boneId, interpolateBone(kf1.bones.get(boneId)!, kf2.bones.get(boneId)!, f));
   }
 

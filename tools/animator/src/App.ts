@@ -10,6 +10,7 @@ import { TimelineView }          from './timeline/TimelineView';
 import { AnimListPanel }         from './ui/AnimListPanel';
 import { BoneInspectorPanel }    from './ui/BoneInspectorPanel';
 import { AtlasPanel }            from './ui/AtlasPanel';
+import { AttachmentPanel }       from './ui/AttachmentPanel';
 import { ToolbarPanel }          from './ui/ToolbarPanel';
 import { StatusBar }             from './ui/StatusBar';
 import { IOController }          from './io/IOController';
@@ -61,6 +62,10 @@ export class App {
       rootEl.querySelector<HTMLElement>('#status-text')!,
       bus,
     );
+    new AttachmentPanel(
+      rootEl.querySelector<HTMLElement>('#attachment-panel')!,
+      bus, state,
+    );
     new IOController(state, animCtrl, atlasCtrl, cmdManager, bus);
 
     // ── 6. Resize handling ───────────────────────────────────────────────────
@@ -81,6 +86,7 @@ export class App {
         boneTransforms:      frame,
         bindings:            state.boneBindings,
         getTexture:          id => atlasCtrl.getTexture(id),
+        attachmentPoints:    state.attachmentPoints,
         previewMode:         state.previewMode,
         selectedBone:        state.selectedBone,
         showJoints:          state.showJoints,

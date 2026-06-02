@@ -227,6 +227,9 @@ export class BoneInspectorPanel {
         if (!frameId) return;
         const newBinding: SpriteBinding = { frameId, anchorX: 0.5, anchorY: 0.5, flipX: false };
         this.cmdManager.execute(new SetBindingCommand(this.state, this.animCtrl, boneId, newBinding));
+        // Switch to sprite preview so the binding is immediately visible
+        this.state.setPreviewMode('sprite');
+        this.bus.emit('status', `Bound "${frameId}" → ${boneId}. Switched to Sprite mode.`);
       });
     }
   }

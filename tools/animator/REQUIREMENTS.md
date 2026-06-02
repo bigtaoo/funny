@@ -1,127 +1,255 @@
-# Stickman Animation Editor — Product Requirements
+# Stickman Animation Editor — Requirements
 
-> 版本 v0.1 · 2026-05-26
+> 版本 v0.2 · 2026-06（在 v0.1 基础上更新，对齐当前实现）
 
 ---
 
 ## 1. 产品定位
 
-一个基于浏览器的火柴人骨骼动画编辑工具：
-- 导入 PixiJS 兼容的 sprite atlas（TexturePacker 格式）
-- 将 atlas 帧绑定到骨骼，制作带贴图的骨骼动画
-- 定义关键帧，控制骨骼的旋转、缩放、位移、透明度及精灵切换
-- 实时预览（骨架模式 / 精灵模式）
-- 导出自定义 JSON 格式，附带 PixiJS 播放 runtime
+基于浏览器的火柴人骨骼动画编辑工具：
+- 给 Notebook Wars 游戏角色制作关键帧骨骼动画
+- 导入 sprite atlas，将帧绑定到骨骼，预览实际游戏效果
+- 导出自定义 JSON，游戏引擎运行时直接消费
 
-**设计原则**：编辑器预览逻辑与游戏侧 runtime 共用同一套代码。编辑器里看到的效果，游戏里读同一份 JSON 播放结果完全一致，无需格式转换。
+**核心设计原则**：编辑器与游戏引擎共用同一套插值代码（`interpolate.ts`），编辑器里看到的效果 = 游戏里播放的效果，零格式差异。
 
 ---
 
-## 2. 功能模块
+## 2. 功能规格
 
-### 2.1 Atlas 管理
+### 2.1 骨骼系统
 
-#### 2.1.1 导入
-- 支持导入 PixiJS / TexturePacker JSON hash 格式（`.json` + `.png`）
-- JSON 格式参考：
-  ```json
-  {
-    "frames": {
-      "head.png": { "frame": {"x":0,"y":0,"w":48,"h":48}, "pivot": {"x":0.5,"y":0.5} },
-      "arm_upper.png": { ... }
-    },
-    "meta": { "image": "sheet.png", "size": {"w":512,"h":512} }
-  }
-  ```
-- 同时接受 TexturePacker array 格式（`frames` 为数组）
-- 导入后在 **Atlas 面板** 展示所有帧的缩略图
+- **固定 11 根骨骼**（修改需改代码，无运行时增删）
+  - `root`（髋部，FK 锚点，不可选）
+  - `spine`、`head`
+  - `r/l_upper_arm`、`r/l_lower_arm`（共 4 根）
+  - `r/l_upper_leg`、`r/l_lower_leg`（共 4 根）
+- **选择**：点击高亮，右侧面板显示属性
+- **旋转**：左键拖拽，相对 pivot 点计算 delta
+- **Pan**：右键拖拽画布
 
-#### 2.1.2 多 atlas 支持
-- 支持同时加载多个 atlas 文件（帧 id 全局唯一，以文件名前缀区分冲突）
-- 可删除已导入的 atlas（同时解绑使用该 atlas 帧的骨骼）
+### 2.2 动画片段（Clip）管理
 
----
-
-### 2.2 Sprite 绑定
-
-#### 规则
-- 每块骨骼最多绑定 **一个精灵**（one bone → one sprite slot）
-- 绑定信息是 **全局配置**（不随动画变化），精灵切换通过关键帧属性实现
-
-#### 绑定属性（per bone，结构性配置，不可动画化）
-
-| 属性 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `frameId` | `string \| null` | `null` | atlas 帧 id，null = 不绑定（显示骨架线） |
-| `anchorX` | `number` | `0.5` | 精灵锚点 X（0–1） |
-| `anchorY` | `number` | `0.5` | 精灵锚点 Y（0–1） |
-| `flipX` | `boolean` | `false` | X 轴镜像，对称骨骼复用同一帧 |
-
-> `anchorX/Y` 决定精灵**以哪个点**对齐到骨骼 pivot，属于结构性参数，整个动画不变。
->
-> 精灵的初始旋转校正（`baseRotation`）和位移偏移（`offsetX/Y`）**不在 binding 里**——它们放在 **t=0 关键帧**的 `rotation` 和 `translateX/Y` 字段中。绑定精灵时系统自动在 t=0 创建关键帧（若不存在），用户直接在关键帧里编辑初始姿态。
-
-#### 绑定行为
-- 绑定 `frameId` 后，若当前动画在 t=0 **没有该骨骼的关键帧**，自动插入一条默认关键帧（所有属性为默认值）
-- 用户可立即在 Inspector 编辑该 t=0 关键帧，调整初始旋转、位移、缩放等
-- t=0 关键帧与其他时间点的关键帧完全等价，可正常删除（删除后插值从最近的关键帧推算）
-
-#### 绑定 UI
-- 骨骼属性面板（右侧）新增 "Sprite" 区块
-- 点击帧选择器 → 弹出 atlas 帧浏览器（缩略图网格）
-- 支持锚点可视化调整（精灵上显示十字准星拖拽）
-- 支持 flipX 开关
-- 绑定后 Inspector 自动跳转到 t=0 关键帧，提示用户调整初始姿态
-
----
+| 操作 | 入口 |
+|---|---|
+| 新建 | 左侧 "+ New" |
+| 重命名 | "✎" 按钮 |
+| 删除 | "🗑" 按钮 + 确认 |
+| 切换 | 点击列表项（自动同步 Duration / Loop 输入框） |
+| 加载预设 | 底部 "📋 Preset…"（idle / walk / attack / hurt / death / spawn） |
 
 ### 2.3 关键帧系统
 
-#### 2.3.1 关键帧属性（per bone, per keyframe）
+关键帧是**稀疏的**：只记录有变化的骨骼；其余骨骼从相邻帧插值；不同属性各自独立插值。
 
-| 属性 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `rotation` | `number` | `0` | 相对骨骼 rest pose 的旋转 delta（度）。**t=0 关键帧的 `rotation` 同时承担精灵方向校正（原 baseRotation）的职责** |
-| `scaleX` | `number` | `1` | X 轴缩放 |
-| `scaleY` | `number` | `1` | Y 轴缩放 |
-| `translateX` | `number` | `0` | 精灵相对骨骼 pivot 的 X 位移（像素）。**t=0 关键帧的 translate 同时承担精灵初始位置校正（原 offsetX/Y）的职责** |
-| `translateY` | `number` | `0` | 精灵相对骨骼 pivot 的 Y 位移（像素） |
-| `alpha` | `number` | `1` | 透明度 0–1（0 = 隐藏，1 = 完全显示） |
-| `frameId` | `string \| null` | `undefined` | 覆盖绑定帧（精灵切换），undefined = 沿用 binding.frameId |
-| `easing` | `EasingType` | `'linear'` | 到达**下一关键帧**的插值曲线 |
+#### 关键帧属性（per bone, per keyframe）
 
-> **t=0 关键帧的特殊意义**：它定义了动画的初始姿态，同时承担精灵校正的职责（方向、位置）。绑定精灵后系统自动创建，用户可自由编辑，也可删除（删除后各属性退回默认值）。
+| 属性 | 类型 | 缺省值 | 说明 |
+|---|---|---|---|
+| `rotation` | `number` | `0` | 相对 rest pose 的旋转 delta（度） |
+| `scaleX/Y` | `number` | `1` | 缩放 |
+| `translateX/Y` | `number` | `0` | 相对骨骼 pivot 的位移（px） |
+| `alpha` | `number` | `1` | 透明度 0–1 |
+| `frameId` | `string \| null` | `undefined` | sprite 帧切换；null=隐藏；undefined=沿用 binding |
+| `easing` | `EasingType` | `'linear'` | 出口插值曲线 |
 
-#### 2.3.2 Easing 类型
+**t=0 关键帧特殊意义**：定义初始姿态，同时承担精灵方向/位置校正（相当于其他工具的 baseRotation + offset）。绑定精灵时自动创建。
 
-```ts
-type EasingType =
-  | 'linear'
-  | 'ease-in'       // cubic: t^2
-  | 'ease-out'      // cubic: 1-(1-t)^2
-  | 'ease-in-out'   // cubic: smooth step
-  | 'step'          // 跳变，无插值（用于精灵切换）
-```
+#### Easing 类型
 
-- Easing 配置在**关键帧出点**（即从该帧到下一帧的过渡曲线）
-- 精灵切换（`frameId`）建议使用 `'step'`，其余属性可独立设置
+| 类型 | 描述 |
+|---|---|
+| `linear` | 匀速（默认） |
+| `ease-in` | 慢入快出 |
+| `ease-out` | 快入慢出 |
+| `ease-in-out` | 慢入慢出 |
+| `step` | 瞬间跳变（用于 sprite 帧切换） |
 
-#### 2.3.3 关键帧操作
-- 在任意时间点添加关键帧（K 键 / 工具栏按钮）
-- 删除关键帧（Delete / Backspace）
-- 在时间轴上拖拽移动关键帧位置（横向）
-- 选中关键帧后在 Inspector 编辑所有属性
-- 多选关键帧（Shift 点击）→ 批量删除 / 批量位移
+#### 关键帧操作
+
+| 操作 | 快捷键 / 入口 |
+|---|---|
+| 添加（当前时间+当前姿态） | `K` / 工具栏 "+ Keyframe" |
+| 删除 | `Delete` / `Backspace` |
+| 跳转前/后关键帧 | "⏮" / "⏭" 按钮 |
+| 拖动改时间 | 时间轴菱形左键拖拽 |
+| 设置 easing | 时间轴右键菜单 |
+| 复制 / 粘贴 | 时间轴右键菜单 |
+
+### 2.4 时长管理
+
+- **手动**：工具栏 Duration 数字输入框
+- **自动**：点 "Auto" 按钮，设为最后一个关键帧时间
+- 切换 clip 时 Duration / Loop 自动同步
+
+### 2.5 播放控制
+
+| 控制 | 入口 |
+|---|---|
+| 播放/暂停 | `Space` / "▶ Play" |
+| 停止（回 0） | "⏹ Stop" |
+| 速度 | 0.25× / 0.5× / 1× / 2× |
+| 循环 | Loop 复选框 |
+
+### 2.6 Atlas 管理
+
+#### 导入
+
+- 支持 TexturePacker JSON Hash 格式（`.json` + 图片）
+- 图片可选：若 `meta.image` 为 data URL 或 HTTP URL，自动使用；相对路径需手动选图片文件
+- 同时支持 Array 格式（`frames` 为数组）
+
+#### 多 Atlas
+
+- 可同时加载多个 atlas，帧 ID 全局唯一
+- 可删除 atlas（同时解绑相关 sprite binding）
+
+### 2.7 Sprite 绑定
+
+每根骨骼最多绑定一个精灵（one bone → one sprite slot）。
+
+绑定配置（全局，不随动画变化）：
+
+| 属性 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `frameId` | `string` | — | atlas 帧 ID |
+| `anchorX/Y` | `number` | `0.5` | 锚点 0–1 |
+| `flipX` | `boolean` | `false` | X 轴镜像（对称骨骼复用同一帧） |
+
+绑定后**自动切换到 Sprite 预览模式**，立即可见效果。
+
+精灵的初始旋转校正和位移偏移存在 **t=0 关键帧**的 `rotation` / `translateX/Y` 中，不在 binding 里——绑定时自动创建 t=0 关键帧。
+
+**游戏侧对接**：游戏引擎读取 `bindings` 字段，按相同规则渲染 sprite（anchorX/Y、flipX 均需在游戏侧实现）。
+
+### 2.8 挂点系统（Attachment Points）
+
+挂点是**非动画**的固定标记，跟随指定骨骼移动。世界坐标 = 父骨骼 tip + offset。
+
+#### 内置挂点
+
+| ID | 默认父骨骼 | 默认 offset | 用途 |
+|---|---|---|---|
+| `shadow` | `root` | (0, +52) | 脚下地面阴影的中心位置 |
+| `hit` | `spine` | (0, -30) | 受击特效播放点（胸部附近） |
+
+#### 挂点属性
+
+| 属性 | 类型 | 说明 |
+|---|---|---|
+| `parentBone` | `string` | 跟随的骨骼（使用其 tip 坐标） |
+| `offsetX/Y` | `number` | 相对骨骼 tip 的偏移（px） |
+| `shadowW/H` | `number?` | shadow 专用：椭圆半宽/高；省略则从骨骼 rest pose 自动计算 |
+
+#### Shadow 尺寸默认计算
+
+`Skeleton.computeDefaultShadowSize()` 从 rest pose FK 计算两脚间距 + 骨骼宽度，得出合理椭圆尺寸。用户可在面板中覆盖。
+
+#### 编辑器显示
+
+- shadow → 蓝色半透明椭圆 + 中心点
+- hit → 红色准星
+
+#### 游戏侧对接
+
+- shadow：每帧在挂点世界坐标渲染阴影精灵，尺寸使用 `shadowW/H`
+- hit：受击时在挂点坐标播放特效
+
+### 2.9 预览模式
+
+| 模式 | 说明 |
+|---|---|
+| Skeleton（骨架） | 只显示骨骼线框，无需 atlas |
+| Sprite（精灵） | 骨骼上渲染绑定的 atlas 精灵 |
+
+`Tab` 键切换；绑定 sprite 后自动切换到 Sprite 模式。
+
+辅助选项：
+- Show joints（关节圆圈）
+- Onion skin（相邻帧半透明叠加）
+- Guide lines（中心垂直参考线）
+
+### 2.10 时间轴
+
+- 每根可动骨骼一行（共 10 行：spine / head / 4 臂 / 4 腿）
+- 关键帧菱形，颜色区分属性类型：
+  - 灰色：仅旋转
+  - 白色：sprite 帧切换
+  - 橙色：translateX/Y
+  - 蓝色：scale
+- 选中时高亮青色
+- 左键拖拽菱形改时间
+- 拖拽 ruler 或 scrub
+
+### 2.11 Undo / Redo
+
+`Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y`，上限 100 步。
+
+计入 Undo：骨骼旋转、关键帧增删改、sprite 绑定、挂点编辑。  
+不计入：播放控制、预览模式切换、scrub、视图选项。
+
+### 2.12 导出 / 导入
+
+- 导出：`animation.animator.json`（animations + bindings + attachmentPoints）
+- 导入：同格式 JSON，合并到当前会话
 
 ---
 
-### 2.4 骨骼变换插值
+## 3. 导出格式（animation.animator.json）
 
-骨骼每帧的实际变换由相邻关键帧插值得出：
+```jsonc
+{
+  "version": 1,
+
+  // 全局 sprite 绑定（不随动画变化）
+  "bindings": {
+    "spine":       { "frameId": "body.png",      "anchorX": 0.5, "anchorY": 0,   "flipX": false },
+    "head":        { "frameId": "head.png",       "anchorX": 0.5, "anchorY": 0.5, "flipX": false },
+    "r_upper_arm": { "frameId": "arm_upper.png",  "anchorX": 0.5, "anchorY": 0,   "flipX": false },
+    "l_upper_arm": { "frameId": "arm_upper.png",  "anchorX": 0.5, "anchorY": 0,   "flipX": true  }
+  },
+
+  // 动画片段
+  "animations": {
+    "walk": {
+      "duration": 0.5,
+      "loop": true,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "bones": {
+            "spine":       { "rotation": 5, "translateY": -2 },
+            "r_upper_arm": { "rotation": 22, "easing": "ease-in-out" },
+            "r_upper_leg": { "rotation": -28 }
+          }
+        },
+        {
+          "time": 0.25,
+          "bones": {
+            "spine":       { "rotation": 5 },
+            "r_upper_arm": { "rotation": -18, "easing": "ease-in-out" },
+            "r_upper_leg": { "rotation": 22 }
+          }
+        }
+      ]
+    }
+  },
+
+  // 挂点（跟随骨骼，世界坐标 = parentBone.tip + offset）
+  "attachmentPoints": [
+    { "id": "shadow", "label": "🔵 Shadow", "parentBone": "root",  "offsetX": 0, "offsetY": 52 },
+    { "id": "hit",    "label": "✦ Hit",     "parentBone": "spine", "offsetX": 0, "offsetY": -30 }
+  ]
+}
+```
+
+---
+
+## 4. 插值规则（编辑器与游戏侧共用）
 
 ```
-给定时间 t，找到左侧 kf1 和右侧 kf2：
-  f = ease(kf1.easing, (t - kf1.time) / (kf2.time - kf1.time))
+给定时间 t，找到某骨骼的左侧帧 kf1 和右侧帧 kf2：
+  f = applyEasing((t - kf1.time) / (kf2.time - kf1.time), kf1.easing)
 
   rotation   = lerp(kf1.rotation,   kf2.rotation,   f)
   scaleX     = lerp(kf1.scaleX,     kf2.scaleX,     f)
@@ -129,341 +257,125 @@ type EasingType =
   translateX = lerp(kf1.translateX, kf2.translateX, f)
   translateY = lerp(kf1.translateY, kf2.translateY, f)
   alpha      = lerp(kf1.alpha,      kf2.alpha,      f)
-  frameId    = kf1.frameId  （step：到达 kf2 时间点才切换）
+  frameId    = kf1.frameId   （step 语义：到达 kf2 时间才切换）
 ```
 
-t 在第一个关键帧之前 → 使用第一帧值；在最后一帧之后 → 使用最后一帧值。
+t 在第一帧之前 → 使用第一帧；在最后帧之后 → 使用最后帧。
+
+源文件：`src/animation/interpolate.ts`（无外部依赖，可直接复制到游戏引擎）。
 
 ---
 
-### 2.5 预览
+## 5. 游戏侧对接规格
 
-#### 模式切换
-- **骨架模式**：只显示骨骼线条（当前已实现），无需 atlas
-- **精灵模式**：骨骼上渲染绑定的 atlas 精灵，应用所有变换
-- 快捷键 `Tab` 切换模式；工具栏也有切换按钮
+### 5.1 共享代码策略
 
-#### 实时预览
-- 拖拽骨骼时精灵实时跟随（精灵模式下）
-- 播放动画时精灵随关键帧插值变换
-- Onion skin 在精灵模式下也支持（半透明显示前后帧精灵）
-
-#### 预览设置
-- 显示/隐藏骨架叠加（精灵模式下可叠加骨架线）
-- 显示/隐藏 pivot 点
-- 背景色切换（便于检查透明区域）
-
----
-
-### 2.6 时间轴扩展
-
-现有时间轴只显示 rotation 关键帧，需扩展：
-
-- 时间轴行展示：每个骨骼显示一行，关键帧菱形按时间排列
-- 关键帧颜色区分属性类型：
-  - 灰色 = 仅 rotation
-  - 蓝色 = 含 scale
-  - 橙色 = 含 translate
-  - 白色 = 含 sprite 切换
-  - 混合属性 = 多色小点叠加
-- 时间轴关键帧可左右拖动（改变 time）
-- 右键关键帧 → 上下文菜单：编辑 easing / 复制 / 粘贴 / 删除
-
----
-
-### 2.7 骨骼属性面板（Inspector）扩展
-
-选中骨骼后，右侧 Inspector 展示：
+计划将 `interpolate.ts` 和相关类型移至 monorepo 共享目录，两侧都从同一文件编译：
 
 ```
-┌─ Bone: R. Upper Arm ──────────────┐
-│  Sprite                            │
-│    Frame: [arm_upper.png  ▼] 🖼    │
-│    Anchor: X [0.50] Y [0.50]       │
-│    Offset: X [  0 ] Y [  0 ]       │
-│    Base Rot: [  0 °] [↔ Flip]      │
-├───────────────────────────────────┤
-│  Keyframe @ 0.250s                 │
-│    Rotation  [-12.0°] ←——●——→      │
-│    Scale X   [ 1.00 ] ←——●——→      │
-│    Scale Y   [ 1.00 ] ←——●——→      │
-│    Trans X   [  0.0 ] ←——●——→      │
-│    Trans Y   [  0.0 ] ←——●——→      │
-│    Alpha     [ 1.00 ] ←——●——→      │
-│    Easing    [ease-in-out   ▼]     │
-│  [Reset] [Copy KF] [Set KF]        │
-└───────────────────────────────────┘
+funny/
+├── shared/
+│   ├── animation/interpolate.ts   ← 唯一来源
+│   └── types.ts                   ← 共享类型子集
+├── tools/animator/                tsconfig paths: @shared → ../../shared
+└── code/                          tsconfig paths: @shared → ../shared
 ```
 
-- 滑块与数值输入框双向绑定
-- "Set KF" 将当前面板值写入当前时间点的关键帧
-- "Copy KF" 复制当前关键帧，可粘贴到其他时间点
+> **当前状态**：game 侧尚无动画代码，共享目录结构待实现（见 §8.1）。
 
----
-
-### 2.8 导出格式（自定义 JSON）
-
-编辑器使用**完全自定义的 JSON 格式**，同一份数据同时用于：
-- 编辑器存档（再次导入继续编辑）
-- 游戏/应用侧 runtime 直接消费
-
-> **为什么不用 pixi-spine？**
-> pixi-spine 是播放器，不是编辑器基础设施。Spine JSON 格式复杂、坐标系与 PixiJS 相反（Y 轴方向不同），引入它只会增加格式转换负担，且对编辑器的实现毫无帮助。自定义 runtime 核心约 150–200 行，完全可控。Spine 格式导出可作为后期可选适配器实现。
-
-#### 文件格式 `.animator.json`
-
-```jsonc
-{
-  "version": 1,
-
-  // 骨骼绑定配置（全局，不随动画变化）
-  // 结构性绑定：描述精灵如何挂在骨骼上，不含初始旋转/偏移（那些放在 t=0 KF）
-  "bindings": {
-    "spine":       { "frameId": "body_spine.png", "anchorX": 0.5, "anchorY": 0,   "flipX": false },
-    "head":        { "frameId": "head_normal.png","anchorX": 0.5, "anchorY": 0.5, "flipX": false },
-    "r_upper_arm": { "frameId": "arm_upper.png",  "anchorX": 0.5, "anchorY": 0,   "flipX": false },
-    "l_upper_arm": { "frameId": "arm_upper.png",  "anchorX": 0.5, "anchorY": 0,   "flipX": true  }
-    // ...
-  },
-
-  // 动画片段
-  "animations": {
-    "walk": {
-      "duration": 0.8,
-      "loop": true,
-      "keyframes": [
-        {
-          // t=0 关键帧：初始姿态，同时承担精灵方向/位置校正职责
-          "time": 0.0,
-          "bones": {
-            "spine":       { "rotation": 0,  "translateX": 0, "translateY": -34 },
-            "head":        { "rotation": 90, "scaleX": 1, "scaleY": 1 },
-            "r_upper_arm": { "rotation": -30, "easing": "ease-in-out" },
-            "l_upper_arm": { "rotation": 30 }
-          }
-        },
-        {
-          "time": 0.4,
-          "bones": {
-            "spine":      { "rotation": -5 },
-            "r_upper_arm":{ "rotation": 30, "easing": "ease-in-out" },
-            "l_upper_arm":{ "rotation": -30 },
-            "head":       { "frameId": "head_sweat.png", "easing": "step" }
-          }
-        }
-      ]
-    },
-    "attack": { ... }
-  }
-}
-```
-
-#### 字段说明
-
-**`bindings[boneId]`**（全局骨骼绑定，可选字段有默认值）
-
-| 字段 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `frameId` | `string` | — | atlas 帧 id |
-| `anchorX/Y` | `number` | `0.5` | 精灵锚点（0–1） |
-| `offsetX/Y` | `number` | `0` | 相对骨骼 pivot 的像素偏移 |
-| `baseRotation` | `number` | `0` | 精灵初始旋转校正（度） |
-| `flipX` | `boolean` | `false` | X 轴镜像（对称骨骼复用同一帧） |
-
-**`keyframes[].bones[boneId]`**（关键帧属性，均可选，缺省值见下）
-
-| 字段 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `rotation` | `number` | `0` | 相对 rest pose 的旋转 delta（度） |
-| `scaleX/Y` | `number` | `1` | 缩放 |
-| `translateX/Y` | `number` | `0` | 相对 pivot 的位移（像素） |
-| `alpha` | `number` | `1` | 透明度 0–1 |
-| `frameId` | `string` | `undefined` | 覆盖绑定帧（精灵切换），缺省沿用 binding |
-| `easing` | `string` | `"linear"` | 出点插值曲线，见 §2.3.2 |
-
----
-
-### 2.9 Undo / Redo（必要功能）
-
-编辑器标配，所有破坏性操作必须可撤销。
-
-#### 快捷键
-- `Ctrl+Z`：撤销
-- `Ctrl+Shift+Z` / `Ctrl+Y`：重做
-
-#### 计入 Undo 的操作（需实现 Command）
-
-| 操作 | 说明 |
-|------|------|
-| 添加关键帧 | 包括绑定精灵时自动创建的 t=0 KF |
-| 删除关键帧 | 单条或批量 |
-| 修改关键帧属性 | rotation / scale / translate / alpha / frameId / easing |
-| 移动关键帧时间点 | 时间轴拖拽 |
-| 绑定 / 解绑精灵 | binding.frameId 变更 |
-| 修改 binding 配置 | anchorX/Y、flipX |
-| 骨骼拖拽旋转 | 鼠标拖拽结束时提交一条 Command |
-| 重置姿态 | Reset Pose 按钮 |
-
-#### 不计入 Undo
-- 播放 / 暂停 / 停止
-- 预览模式切换（骨架 ↔ 精灵）
-- 时间轴 scrub（拖动播放头）
-- 面板布局、视图选项（show joints 等）
-
-#### 实现方式
-使用 **Command 模式**：每个操作封装为 `{ execute(), undo() }` 对象，推入 `undoStack`。Redo 从 `redoStack` 取出。
+### 5.2 游戏侧 Runtime 需实现
 
 ```ts
-interface Command {
-  execute(): void;
-  undo(): void;
-  label: string;   // 显示在状态栏："Undo: Add Keyframe @ 0.250s"
+class StickmanRuntime {
+  async load(animDataUrl: string, atlasJsonUrl: string, atlasImageUrl: string): Promise<void>
+
+  play(clipName: string, opts?: { loop?: boolean; onComplete?: () => void }): void
+  pause(): void
+  stop(): void
+  setSpeed(v: number): void
+
+  // 每帧更新（在游戏主循环中调用）
+  update(dt: number): void
+
+  destroy(): void
 }
 ```
 
-- Undo 栈上限：100 条（超出时丢弃最旧的）
-- 任何新 Command 执行时清空 `redoStack`
+内部逻辑：`sampleClip(clip, t)` → 对每根骨骼：
+1. 设置 `PIXI.Container.rotation`（骨骼旋转）
+2. 设置 sprite `scale / position / alpha`
+3. 若 `frameId` 变化，更新 `PIXI.Sprite.texture`
 
----
+### 5.3 挂点游戏侧使用方式
 
-## 3. 数据模型扩展
-
-### 3.1 骨骼绑定配置（新增）
-
-```ts
-// 结构性配置：描述精灵如何挂在骨骼上，整个动画不变，不可关键帧化
-interface SpriteBinding {
-  frameId: string;    // atlas 默认帧 id
-  anchorX: number;    // 0–1，默认 0.5
-  anchorY: number;    // 0–1，默认 0.5
-  flipX:   boolean;   // X 轴镜像
-}
-
-// AppState 中新增
-boneBindings: Map<string, SpriteBinding>;   // boneId → binding
-
-// 注：精灵的初始旋转校正和位移偏移存在 t=0 关键帧的
-//     rotation / translateX/Y 字段中，不在 SpriteBinding 里
-```
-
-### 3.2 关键帧扩展
+每帧从 runtime 获取挂点世界坐标：
 
 ```ts
-// 原来
-interface BoneKeyframe {
-  rotation: number;
-}
+const shadowPos = runtime.getAttachmentPoint('shadow');
+// shadowPos = { x: worldX, y: worldY, w?: halfWidth, h?: halfHeight }
 
-// 扩展后
-interface BoneKeyframe {
-  rotation?:   number;   // delta degrees
-  scaleX?:     number;   // default 1
-  scaleY?:     number;   // default 1
-  translateX?: number;   // px，default 0
-  translateY?: number;   // px，default 0
-  alpha?:      number;   // 0–1，default 1
-  frameId?:    string;   // sprite 切换，undefined = 沿用绑定
-  easing?:     EasingType;  // 出点曲线，default 'linear'
-}
-
-interface Keyframe {
-  time:  number;
-  bones: Map<string, BoneKeyframe>;
-}
-```
-
-### 3.3 Atlas 存储
-
-```ts
-interface AtlasFrame {
-  x: number; y: number;
-  w: number; h: number;
-  pivotX: number; pivotY: number;  // TexturePacker pivot，或默认 0.5
-}
-
-interface AtlasAsset {
-  id:      string;             // 文件名（不含扩展名）
-  image:   HTMLImageElement;   // 已加载的贴图
-  frames:  Map<string, AtlasFrame>;  // frameId → AtlasFrame
-}
+// shadow：在 shadowPos 渲染椭圆阴影精灵
+// hit：受击时在 hitPos 播放特效 particle
 ```
 
 ---
 
-## 4. UI 布局变化
-
-在现有布局基础上新增：
+## 6. 界面布局
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Toolbar: [▶ Play] [⏹] [Speed ▼] [Loop] [+KF] [✕KF] ...   │
-│           [🖼 Skeleton | Sprite] [+ Atlas]  ← 新增          │
-├──────────┬──────────────────────────────────┬───────────────┤
-│ Anim     │                                  │ Bone Inspector│
-│ List     │         Canvas                   │  (扩展后)     │
-│          │    骨架 / 精灵 实时预览           │               │
-│          │                                  │ ─────────────│
-│          │                                  │ Atlas Frames  │
-│          │                                  │  (缩略图网格) │
-│          │                                  │  ← 新增       │
-├──────────┴──────────────────────────────────┴───────────────┤
-│  Timeline（扩展：多属性关键帧颜色区分，可拖拽）              │
-├─────────────────────────────────────────────────────────────┤
-│  Status Bar                                                  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  Toolbar（播放控制 / Duration Auto / Undo / 预览模式）   │
+├──────────┬────────────────────┬────────┬────────────────┤
+│ 动画列表 │     Canvas          │ 骨骼   │  Atlas         │
+│          │                    │ 属性   │  面板          │
+│          │   骨架 / 精灵预览   │ ────── │                │
+│ 播放控制 │   + 挂点标记        │ View   │                │
+│ 时间显示 │                    │ ────── │                │
+│          │                    │ 挂点   │                │
+├──────────┴────────────────────┴────────┴────────────────┤
+│  Timeline（ruler + 骨骼行 + 菱形 + 播放头）              │
+├─────────────────────────────────────────────────────────┤
+│  Bottom Bar（导出 / 导入 / Reset Pose / 状态栏）         │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 5. PixiJS 游戏侧 Runtime
+## 7. 预设动画
 
-编辑器的动画播放核心（`AnimationController` + `Renderer`）直接抽取为独立的 runtime 包，供游戏侧使用。
-
-### 游戏侧使用方式（预期 API）
-
-```ts
-import { StickmanRuntime } from '@your-project/stickman-runtime';
-
-const runtime = new StickmanRuntime({
-  atlasJson: '/assets/sheet.json',
-  atlasImage: '/assets/sheet.png',
-  animData: '/assets/character.animator.json',
-  container: pixiContainer,   // PIXI.Container，由游戏传入
-});
-
-await runtime.load();
-runtime.play('walk');          // 播放动画，自动循环
-runtime.play('attack', { loop: false, onComplete: () => runtime.play('idle') });
-runtime.setSpeed(1.5);
-runtime.destroy();
-```
-
-### Runtime 内部结构（约 200 行）
-
-```
-applyFrame(boneId, t):
-  1. 在 keyframes 中找到左右邻近帧
-  2. 按 easing 函数计算插值因子 f
-  3. lerp 所有属性（rotation / scaleX/Y / translateX/Y / alpha）
-  4. frameId 用 step 切换（到达右帧时间点才切换）
-  5. 对应 PIXI.Container 设置 rotation / scale / position / alpha
-  6. 如有 frameId 变化，更新 PIXI.Sprite.texture
-```
-
-Runtime 与编辑器共享 `types.ts` 和插值逻辑，**零额外维护成本**。
+| 名称 | 时长 | Loop |
+|---|---|---|
+| idle | 1.5s | ✓ |
+| walk | 0.5s | ✓ |
+| attack | 0.6s | ✗ |
+| hurt | 0.4s | ✗ |
+| death | 0.8s | ✗ |
+| spawn | 0.35s | ✗ |
 
 ---
 
-## 6. 超出当前版本的功能（Backlog）
+## 8. 待实现 / 待确认
 
-以下功能暂不实现，记录供后续迭代：
+### 8.1 共享代码策略（已决策：两份独立代码）
+- `interpolate.ts` 逻辑稳定，改动频率极低
+- 编辑器和游戏侧各维护一份，不引入共享目录
+- 若日后出现行为差异，再考虑 path alias 方案
 
-| 功能 | 原因 |
-|------|------|
-| IK（逆向运动学） | 实现复杂，当前 FK 已够用 |
-| 骨骼权重蒙皮 | 超出火柴人场景 |
-| 曲线编辑器（贝塞尔可视化） | 可用 `ease-in-out` 预设覆盖大部分需求 |
-| 多角色同场景 | 超出单角色编辑范围 |
-| 音频轨道 | 需要独立 audio 模块 |
-| 网格变形（mesh deform） | Spine Pro 特性 |
-| Spine JSON 格式导出 | 可作为后期适配器单独实现，不影响核心架构 |
+### 8.2 游戏侧 Runtime（待实现）
+- `StickmanRuntime` 类，实现 `load / play / pause / update`
+- `getAttachmentPoint(id)` 返回当前帧挂点世界坐标
+
+### 8.3 游戏侧 Sprite Binding 渲染（待实现）
+- 读取 `bindings` 字段，按 anchorX/Y、flipX 渲染 sprite
+- 支持关键帧 `frameId` 运行时切换贴图
+
+---
+
+## 9. 不在范围内
+
+- IK / 骨骼权重 / 蒙皮
+- 多角色支持
+- 音效时间轴
+- Spine 格式导出
+- 曲线编辑器（贝塞尔可视化）
+- 网格变形

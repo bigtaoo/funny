@@ -3,8 +3,15 @@ import type {
   WorldPositions,
   ResolvedBoneTransform,
   SpriteBinding,
+  AttachmentPoint,
 } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
+
+// Cache default shadow size (computed once from rest pose)
+let _defaultShadow: { w: number; h: number } | null = null;
+function defaultShadowSize(): { w: number; h: number } {
+  return (_defaultShadow ??= Skeleton.computeDefaultShadowSize());
+}
 
 // ── RenderData ────────────────────────────────────────────────────────────────
 
@@ -15,6 +22,9 @@ export interface RenderData {
   // Sprite resources
   bindings:   ReadonlyMap<string, SpriteBinding>;
   getTexture: (frameId: string) => PIXI.Texture | undefined;
+
+  // Attachment points
+  attachmentPoints: ReadonlyMap<string, AttachmentPoint>;
 
   // Render options
   previewMode:         'skeleton' | 'sprite';
@@ -138,6 +148,7 @@ export class Renderer {
     this.drawSelection(data);
     if (data.showGuide) this.drawGuide(data.rootX, data.rootY);
     if (data.showPivots) this.drawPivots(data.worldPose, data.selectedBone);
+    this.drawAttachmentPoints(data.rootX, data.rootY, data.worldPose, data.attachmentPoints);
   }
 
   // ── Sprite layer ──────────────────────────────────────────────────────────
@@ -302,6 +313,45 @@ export class Renderer {
     g.beginFill(0xFFFFFF);
     g.drawCircle(x, y, r);
     g.endFill();
+  }
+
+  // ── Attachment points ─────────────────────────────────────────────────────
+
+  private drawAttachmentPoints(
+    rootX: number,
+    rootY: number,
+    worldPose: RenderData['worldPose'],
+    pts: ReadonlyMap<string, AttachmentPoint>,
+  ): void {
+    pts.forEach(pt => {
+      // Resolve parent bone tip position (fallback to root if bone not found)
+      const parent = worldPose.get(pt.parentBone) ?? worldPose.get('root');
+      if (!parent) return;
+      const x = parent.ex + pt.offsetX;
+      const y = parent.ey + pt.offsetY;
+
+      if (pt.id === 'shadow') {
+        const def = defaultShadowSize();
+        const sw = pt.shadowW ?? def.w;
+        const sh = pt.shadowH ?? def.h;
+        this.selGfx.lineStyle({ width: 1.5, color: 0x5555aa, alpha: 0.8 });
+        this.selGfx.beginFill(0x3333aa, 0.25);
+        this.selGfx.drawEllipse(x, y, sw, sh);
+        this.selGfx.endFill();
+        this.selGfx.lineStyle(0);
+        this.selGfx.beginFill(0x7777ff, 0.9);
+        this.selGfx.drawCircle(x, y, 2.5);
+        this.selGfx.endFill();
+      } else {
+        // Crosshair for hit / other
+        const S = 7;
+        this.selGfx.lineStyle({ width: 1.5, color: 0xff6666, alpha: 0.9 });
+        this.selGfx.moveTo(x - S, y); this.selGfx.lineTo(x + S, y);
+        this.selGfx.moveTo(x, y - S); this.selGfx.lineTo(x, y + S);
+        this.selGfx.lineStyle({ width: 1.5, color: 0xff6666, alpha: 0.5 });
+        this.selGfx.drawCircle(x, y, 5);
+      }
+    });
   }
 
   // ── Grid ──────────────────────────────────────────────────────────────────

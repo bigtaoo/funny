@@ -27,6 +27,22 @@ export class Skeleton {
   static readonly SELECTABLE_BONES: readonly string[];
   static readonly TIMELINE_BONES: readonly string[];
 
+  /** Compute a sensible default shadow ellipse size based on rest-pose leg span.
+   *  Returns { w: half-width, h: half-height } in logical pixels. */
+  static computeDefaultShadowSize(): { w: number; h: number } {
+    const rest = Skeleton.computeFK(0, 0, new Map());
+    const rFoot = rest.get('r_lower_leg');
+    const lFoot = rest.get('l_lower_leg');
+    if (!rFoot || !lFoot) return { w: 18, h: 5 };
+
+    // Foot span + half the leg bone width on each side
+    const legOuterW = Skeleton.BONE_MAP.get('r_lower_leg')?.outerW ?? 16;
+    const span = Math.abs(rFoot.ex - lFoot.ex);
+    const w = Math.ceil(span / 2 + legOuterW);
+    const h = Math.max(4, Math.ceil(w * 0.3));
+    return { w, h };
+  }
+
   /** Forward kinematics: compute world poses for every bone.
    *  Pure function — no side effects.
    *  @param transforms  Per-bone resolved transforms; rotation field drives FK. */
@@ -76,4 +92,4 @@ S.BONE_MAP        = _boneMap;
 S.BONE_DEFS       = _boneDefs;
 S.DRAW_ORDER      = ['l_upper_leg', 'l_lower_leg', 'l_upper_arm', 'l_lower_arm', 'spine', 'head', 'r_upper_arm', 'r_lower_arm', 'r_upper_leg', 'r_lower_leg'];
 S.SELECTABLE_BONES = _boneDefs.filter(b => b.id !== 'root').map(b => b.id);
-S.TIMELINE_BONES  = ['spine', 'r_upper_arm', 'r_lower_arm', 'l_upper_arm', 'l_lower_arm', 'r_upper_leg', 'r_lower_leg', 'l_upper_leg', 'l_lower_leg'];
+S.TIMELINE_BONES  = ['spine', 'head', 'r_upper_arm', 'r_lower_arm', 'l_upper_arm', 'l_lower_arm', 'r_upper_leg', 'r_lower_leg', 'l_upper_leg', 'l_lower_leg'];
