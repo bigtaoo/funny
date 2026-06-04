@@ -1,47 +1,12 @@
 import type { EventBus, AppEvents } from '../core/EventBus';
 import type { AppState } from '../core/AppState';
 import type { AnimationController } from '../animation/AnimationController';
-import type { AtlasController } from '../atlas/AtlasController';
+import type { ImageController } from '../images/ImageController';
 import type { CommandManager, Command } from '../core/CommandManager';
 import type { SpriteBinding, BoneKeyframe } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
 
 // ── Commands ──────────────────────────────────────────────────────────────────
-
-class SetBindingCommand implements Command {
-  readonly label: string;
-  private prev: SpriteBinding | undefined;
-
-  constructor(
-    private readonly state: AppState,
-    private readonly animCtrl: AnimationController,
-    private readonly boneId: string,
-    private readonly binding: SpriteBinding,
-  ) {
-    this.label = `Bind sprite "${binding.frameId}" → ${boneId}`;
-  }
-
-  execute(): void {
-    this.prev = this.state.getBinding(this.boneId);
-    this.state.setBinding(this.boneId, this.binding);
-    // Auto-create t=0 keyframe for this bone if not present
-    const clip = this.animCtrl.currentClip;
-    if (clip) {
-      const kf0 = clip.keyframes.find(k => Math.abs(k.time) < 0.001);
-      if (!kf0 || !kf0.bones.has(this.boneId)) {
-        this.animCtrl.addKeyframeAt(0, new Map([[this.boneId, { frameId: this.binding.frameId }]]));
-      }
-    }
-  }
-
-  undo(): void {
-    if (this.prev) {
-      this.state.setBinding(this.boneId, this.prev);
-    } else {
-      this.state.removeBinding(this.boneId);
-    }
-  }
-}
 
 class RemoveBindingCommand implements Command {
   readonly label: string;
@@ -103,7 +68,7 @@ export class BoneInspectorPanel {
     private readonly bus: EventBus<AppEvents>,
     private readonly state: AppState,
     private readonly animCtrl: AnimationController,
-    private readonly atlasCtrl: AtlasController,
+    private readonly imageCtrl: ImageController,
     private readonly cmdManager: CommandManager,
   ) {
     this.infoArea = panelEl.querySelector('#bone-info-area') ?? panelEl;
@@ -112,7 +77,7 @@ export class BoneInspectorPanel {
     bus.on('time:change',    () => this.render());
     bus.on('kf:change',      () => this.render());
     bus.on('binding:change', () => this.render());
-    bus.on('atlas:change',   () => this.render());
+    bus.on('images:change',  () => this.render());
 
     this.render();
   }
@@ -124,15 +89,17 @@ export class BoneInspectorPanel {
       return;
     }
 
-    const bone    = Skeleton.BONE_MAP.get(boneId);
-    const frame   = this.animCtrl.getCurrentFrame();
+    const bone      = Skeleton.BONE_MAP.get(boneId);
+    const frame     = this.animCtrl.getCurrentFrame();
     const transform = frame.get(boneId);
     const binding   = this.state.getBinding(boneId);
     const kfTime    = this.state.selectedKfTime ?? this.state.currentTime;
+    const hasImage  = !!this.imageCtrl.getTexture(boneId);
+    const filename  = this.imageCtrl.getFilename(boneId);
 
     let html = `<div class="bone-name">${bone?.label ?? boneId}</div>`;
 
-    // Transform info
+    // Transform
     html += `
       <div class="prop-row"><span class="prop-label">Rotation</span>
         <span class="prop-value">${(transform?.rotation ?? 0).toFixed(1)}°</span></div>
@@ -148,33 +115,29 @@ export class BoneInspectorPanel {
         <input class="prop-input" type="number" id="inp-alpha" value="${(transform?.alpha ?? 1).toFixed(2)}" min="0" max="1" step="0.05" style="width:60px"></div>
     `;
 
-    // Sprite binding
+    // Sprite binding section
     html += `<div style="border-top:1px solid var(--border);margin:6px 0;padding-top:6px">
       <div class="panel-header" style="margin:-6px -8px 6px;padding:4px 8px">Sprite Binding</div>`;
 
     if (binding) {
-      html += `<div class="prop-row"><span class="prop-label">Frame</span>
-        <span class="prop-value">${binding.frameId}</span></div>
+      html += `
+        <div class="prop-row"><span class="prop-label">Image</span>
+          <span class="prop-value" style="font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${filename ?? ''}">${filename ?? '(from import)'}</span></div>
         <div class="prop-row"><span class="prop-label">Anchor X</span>
           <input type="number" id="inp-anchorX" value="${binding.anchorX.toFixed(2)}" min="0" max="1" step="0.05" style="width:55px"></div>
         <div class="prop-row"><span class="prop-label">Anchor Y</span>
           <input type="number" id="inp-anchorY" value="${binding.anchorY.toFixed(2)}" min="0" max="1" step="0.05" style="width:55px"></div>
         <div class="prop-row"><span class="prop-label">Flip X</span>
           <input type="checkbox" id="chk-flipX" ${binding.flipX ? 'checked' : ''}></div>
+        <div class="prop-row"><span class="prop-label">Z-Order</span>
+          <input type="number" id="inp-zorder" value="${binding.zOrder}" step="1" style="width:55px" title="Render layer (higher = in front)"></div>
         <button id="btn-remove-binding" class="danger sm" style="width:100%;margin-top:4px">Remove Binding</button>`;
+    } else if (hasImage) {
+      html += `<div class="hint-text">Image loaded but no binding.<br>Reload the image to restore.</div>`;
     } else {
-      // Frame picker
-      const frameIds = this.atlasCtrl.getAllFrameIds();
-      if (frameIds.length === 0) {
-        html += `<div class="hint-text">Import an atlas<br>to bind sprites</div>`;
-      } else {
-        html += `<div class="prop-row"><span class="prop-label">Frame</span>
-          <select id="sel-frame" style="flex:1;font-size:11px">
-            ${frameIds.map(id => `<option value="${id}">${id}</option>`).join('')}
-          </select></div>
-          <button id="btn-bind" class="primary sm" style="width:100%;margin-top:4px">Bind Sprite</button>`;
-      }
+      html += `<div class="hint-text">Load an image in<br>the Image panel first</div>`;
     }
+
     html += '</div>';
 
     this.infoArea.innerHTML = html;
@@ -205,31 +168,22 @@ export class BoneInspectorPanel {
     if (binding) {
       document.getElementById('inp-anchorX')?.addEventListener('change', e => {
         const v = parseFloat((e.target as HTMLInputElement).value);
-        if (isNaN(v)) return;
-        this.state.setBinding(boneId, { ...binding, anchorX: v });
+        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, anchorX: v });
       });
       document.getElementById('inp-anchorY')?.addEventListener('change', e => {
         const v = parseFloat((e.target as HTMLInputElement).value);
-        if (isNaN(v)) return;
-        this.state.setBinding(boneId, { ...binding, anchorY: v });
+        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, anchorY: v });
       });
       document.getElementById('chk-flipX')?.addEventListener('change', e => {
         const v = (e.target as HTMLInputElement).checked;
         this.state.setBinding(boneId, { ...binding, flipX: v });
       });
+      document.getElementById('inp-zorder')?.addEventListener('change', e => {
+        const v = parseInt((e.target as HTMLInputElement).value, 10);
+        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, zOrder: v });
+      });
       document.getElementById('btn-remove-binding')?.addEventListener('click', () => {
         this.cmdManager.execute(new RemoveBindingCommand(this.state, boneId));
-      });
-    } else {
-      document.getElementById('btn-bind')?.addEventListener('click', () => {
-        const sel = document.getElementById('sel-frame') as HTMLSelectElement | null;
-        const frameId = sel?.value;
-        if (!frameId) return;
-        const newBinding: SpriteBinding = { frameId, anchorX: 0.5, anchorY: 0.5, flipX: false };
-        this.cmdManager.execute(new SetBindingCommand(this.state, this.animCtrl, boneId, newBinding));
-        // Switch to sprite preview so the binding is immediately visible
-        this.state.setPreviewMode('sprite');
-        this.bus.emit('status', `Bound "${frameId}" → ${boneId}. Switched to Sprite mode.`);
       });
     }
   }

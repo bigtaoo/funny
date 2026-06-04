@@ -2,14 +2,15 @@ import { EventBus }              from './core/EventBus';
 import { AppState }              from './core/AppState';
 import { CommandManager }        from './core/CommandManager';
 import { Skeleton }              from './skeleton/Skeleton';
-import { AtlasController }       from './atlas/AtlasController';
+import { ImageController }       from './images/ImageController';
+import { DEFAULT_ZORDER, BONE_SLOTS } from './images/ImageController';
 import { AnimationController }   from './animation/AnimationController';
 import { Renderer }              from './rendering/Renderer';
 import { InteractionController } from './interaction/InteractionController';
 import { TimelineView }          from './timeline/TimelineView';
 import { AnimListPanel }         from './ui/AnimListPanel';
 import { BoneInspectorPanel }    from './ui/BoneInspectorPanel';
-import { AtlasPanel }            from './ui/AtlasPanel';
+import { ImagePanel }            from './ui/ImagePanel';
 import { AttachmentPanel }       from './ui/AttachmentPanel';
 import { ToolbarPanel }          from './ui/ToolbarPanel';
 import { StatusBar }             from './ui/StatusBar';
@@ -28,13 +29,12 @@ export class App {
     const canvasWrap = rootEl.querySelector<HTMLElement>('#canvas-wrap')!;
     const renderer   = new Renderer(canvasWrap);
 
-    // Set initial root position
     const { w, h } = renderer.logicalSize;
     state.setRootPos(w / 2, h / 2 + 30);
 
     // ── 3. Controllers ──────────────────────────────────────────────────────
-    const atlasCtrl   = new AtlasController(bus, cmdManager);
-    const animCtrl    = new AnimationController(bus, state);
+    const imageCtrl  = new ImageController(bus);
+    const animCtrl   = new AnimationController(bus, state);
     new InteractionController(renderer, bus, state, animCtrl, cmdManager);
 
     // ── 4. Timeline ─────────────────────────────────────────────────────────
@@ -49,11 +49,11 @@ export class App {
     );
     new BoneInspectorPanel(
       rootEl.querySelector<HTMLElement>('.right-panel')!,
-      bus, state, animCtrl, atlasCtrl, cmdManager,
+      bus, state, animCtrl, imageCtrl, cmdManager,
     );
-    new AtlasPanel(
-      rootEl.querySelector<HTMLElement>('#atlas-panel')!,
-      bus, atlasCtrl,
+    new ImagePanel(
+      rootEl.querySelector<HTMLElement>('#image-panel')!,
+      bus, imageCtrl, state,
     );
     new ToolbarPanel(
       rootEl.querySelector<HTMLElement>('.toolbar')!,
@@ -67,16 +67,38 @@ export class App {
       rootEl.querySelector<HTMLElement>('#attachment-panel')!,
       bus, state,
     );
-    new IOController(state, animCtrl, atlasCtrl, cmdManager, bus);
+    new IOController(state, animCtrl, imageCtrl, cmdManager, bus);
     new ResizablePanels(rootEl);
 
-    // ── 6. Resize handling ───────────────────────────────────────────────────
+    // ── 6. Auto-binding when images are loaded ───────────────────────────────
+    // When an image is loaded for a bone slot, create a default binding if
+    // none exists; then mark sprite order as dirty for re-sort.
+    bus.on('images:change', (slotId: string) => {
+      if ((BONE_SLOTS as readonly string[]).includes(slotId)) {
+        if (!state.getBinding(slotId) && imageCtrl.getTexture(slotId)) {
+          state.setBinding(slotId, {
+            anchorX: 0.5,
+            anchorY: 0.5,
+            flipX:   false,
+            zOrder:  DEFAULT_ZORDER[slotId] ?? 0,
+          });
+        }
+        renderer.markSpriteOrderDirty();
+
+        if (state.previewMode !== 'sprite' && imageCtrl.hasAllBoneImages()) {
+          state.setPreviewMode('sprite');
+          bus.emit('status', 'All bone images loaded — switched to Sprite mode');
+        }
+      }
+    });
+
+    // Re-sort whenever a binding's zOrder changes
+    bus.on('binding:change', () => renderer.markSpriteOrderDirty());
+
+    // ── 7. Resize handling ───────────────────────────────────────────────────
     const resizeObs = new ResizeObserver(entries => {
-      // Read the container's NEW size from ResizeObserverEntry — NOT from
-      // renderer.logicalSize, which returns the stale pre-resize dimensions.
       const { width: nw, height: nh } = entries[0].contentRect;
       if (nw === 0 || nh === 0) return;
-      // Preserve current pan offset relative to canvas centre.
       const { w: oldW, h: oldH } = renderer.logicalSize;
       const dx = oldW > 0 ? state.rootX - oldW / 2 : 0;
       const dy = oldH > 0 ? state.rootY - (oldH / 2 + 30) : 0;
@@ -85,7 +107,7 @@ export class App {
     });
     resizeObs.observe(canvasWrap);
 
-    // ── 7. Main render loop (PixiJS ticker) ──────────────────────────────────
+    // ── 8. Main render loop ──────────────────────────────────────────────────
     renderer.pixiApp.ticker.add(() => {
       const frame     = animCtrl.getCurrentFrame();
       const worldPose = Skeleton.computeFK(state.rootX, state.rootY, frame);
@@ -94,7 +116,7 @@ export class App {
         worldPose,
         boneTransforms:      frame,
         bindings:            state.boneBindings,
-        getTexture:          id => atlasCtrl.getTexture(id),
+        getTexture:          (boneId: string) => imageCtrl.getTexture(boneId),
         attachmentPoints:    state.attachmentPoints,
         previewMode:         state.previewMode,
         selectedBone:        state.selectedBone,
@@ -114,11 +136,11 @@ export class App {
       });
     });
 
-    // ── 8. Timeline loop ────────────────────────────────────────────────────
+    // ── 9. Timeline loop ────────────────────────────────────────────────────
     const tlLoop = () => { timelineView.render(); requestAnimationFrame(tlLoop); };
     requestAnimationFrame(tlLoop);
 
-    // ── 9. Load presets ──────────────────────────────────────────────────────
+    // ── 10. Load presets ─────────────────────────────────────────────────────
     for (const name of ['idle', 'walk', 'attack', 'hurt', 'death', 'spawn'] as const) {
       animCtrl.loadPreset(name);
     }

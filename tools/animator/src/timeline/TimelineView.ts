@@ -336,7 +336,6 @@ export class TimelineView {
  * rendered as small indicator dots below the diamond.
  *
  * Colour legend (REQUIREMENTS.md §2.6):
- *   #ffffff (white)  – sprite-frame switch (frameId present)
  *   #f9e2af (orange) – translate offset
  *   #89b4fa (blue)   – scale
  *   #89899a (gray)   – rotation only / default
@@ -344,7 +343,6 @@ export class TimelineView {
 function getKfColors(bkf: BoneKeyframe): string[] {
   const out: string[] = [];
 
-  if (bkf.frameId !== undefined)                                         out.push('#ffffff');
   if ((bkf.translateX ?? 0) !== 0 || (bkf.translateY ?? 0) !== 0)       out.push('#f9e2af');
   if ((bkf.scaleX    ?? 1) !== 1  || (bkf.scaleY    ?? 1) !== 1)        out.push('#89b4fa');
 

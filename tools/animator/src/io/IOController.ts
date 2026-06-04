@@ -1,6 +1,9 @@
+import * as PIXI from 'pixi.js';
+import JSZip from 'jszip';
 import type { AppState } from '../core/AppState';
 import type { AnimationController } from '../animation/AnimationController';
-import type { AtlasController } from '../atlas/AtlasController';
+import type { ImageController } from '../images/ImageController';
+import { DEFAULT_ZORDER } from '../images/ImageController';
 import type { CommandManager } from '../core/CommandManager';
 import type { EventBus, AppEvents } from '../core/EventBus';
 import type {
@@ -11,7 +14,7 @@ import type {
   SpriteBinding,
 } from '../core/types';
 
-// ── Serialization format ──────────────────────────────────────────────────────
+// ── Serialization format (version 2) ─────────────────────────────────────────
 
 interface SerializedBoneKeyframe {
   rotation?:   number;
@@ -20,7 +23,6 @@ interface SerializedBoneKeyframe {
   translateX?: number;
   translateY?: number;
   alpha?:      number;
-  frameId?:    string | null;
   easing?:     string;
 }
 
@@ -42,27 +44,117 @@ interface SerializedProject {
   attachmentPoints?: AttachmentPoint[];
 }
 
+// ── Spritesheet types ─────────────────────────────────────────────────────────
+
+interface SpritesheetFrame {
+  frame:      { x: number; y: number; w: number; h: number };
+  sourceSize: { w: number; h: number };
+}
+
+interface SpritesheetJson {
+  frames: Record<string, SpritesheetFrame>;
+  meta:   { size: { w: number; h: number } };
+}
+
 // ── IOController ──────────────────────────────────────────────────────────────
 
 export class IOController {
   constructor(
-    private readonly state: AppState,
-    private readonly animCtrl: AnimationController,
-    private readonly atlasCtrl: AtlasController,
+    private readonly state:     AppState,
+    private readonly animCtrl:  AnimationController,
+    private readonly imageCtrl: ImageController,
     private readonly cmdManager: CommandManager,
-    private readonly bus: EventBus<AppEvents>,
+    private readonly bus:        EventBus<AppEvents>,
   ) {
-    document.getElementById('btn-export')?.addEventListener('click', () => this.exportProject());
+    document.getElementById('btn-export')?.addEventListener('click', () => this.exportTao());
     document.getElementById('btn-import')?.addEventListener('click', () => this.triggerImport());
     document.getElementById('file-input')?.addEventListener('change', e => {
       const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) this.importProject(file);
+      if (file) this.importTao(file);
     });
   }
 
   // ── Export ────────────────────────────────────────────────────────────────
 
-  exportProject(): void {
+  async exportTao(): Promise<void> {
+    this.bus.emit('status', 'Building .tao…');
+
+    try {
+      const animJson = this.buildAnimationJson();
+
+      // Collect image blobs
+      const items: Array<{ id: string; blob: Blob }> = [];
+      for (const slotId of [...this.state.boneBindings.keys(), 'shadow']) {
+        const blob = this.imageCtrl.getBlob(slotId);
+        if (blob) items.push({ id: slotId, blob });
+      }
+
+      const zip = new JSZip();
+      zip.file('animation.json', JSON.stringify(animJson, null, 2));
+
+      if (items.length > 0) {
+        const { canvas, rects } = await this.buildSpritesheet(items);
+        const ssJson = this.buildSpritesheetJson(rects, canvas.width, canvas.height);
+        const pngBlob = await canvasToBlob(canvas);
+
+        zip.file('spritesheet.json', JSON.stringify(ssJson, null, 2));
+        zip.file('spritesheet.png',  pngBlob);
+      }
+
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      triggerDownload(blob, 'animation.tao');
+      this.bus.emit('status', 'Exported animation.tao');
+    } catch (err) {
+      this.bus.emit('status', `Export failed: ${(err as Error).message}`);
+    }
+  }
+
+  // ── Import ────────────────────────────────────────────────────────────────
+
+  private triggerImport(): void {
+    (document.getElementById('file-input') as HTMLInputElement | null)?.click();
+  }
+
+  async importTao(file: File): Promise<void> {
+    try {
+      const zip = await JSZip.loadAsync(file);
+
+      const animFile = zip.file('animation.json');
+      if (!animFile) throw new Error('animation.json missing from archive');
+      const project = JSON.parse(await animFile.async('string')) as SerializedProject;
+
+      if (project.version !== 2) {
+        this.bus.emit('status', `Unsupported version ${project.version} (expected 2)`);
+        return;
+      }
+
+      // Restore animation data
+      this.restoreAnimationData(project);
+
+      // Restore images from spritesheet if present
+      const ssJsonFile = zip.file('spritesheet.json');
+      const ssPngFile  = zip.file('spritesheet.png');
+
+      if (ssJsonFile && ssPngFile) {
+        const ssJson = JSON.parse(await ssJsonFile.async('string')) as SpritesheetJson;
+        const ssBlob = await ssPngFile.async('blob');
+        await this.restoreImagesFromSpritesheet(ssBlob, ssJson);
+      }
+
+      this.cmdManager.clear();
+      this.bus.emit('anim:list');
+      const first = [...this.animCtrl.store.keys()][0];
+      if (first) this.animCtrl.selectClip(first);
+
+      this.bus.emit('status', `Loaded ${file.name}`);
+    } catch (err) {
+      this.bus.emit('status', `Import failed: ${(err as Error).message}`);
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  private buildAnimationJson(): SerializedProject {
     const bindings: Record<string, SpriteBinding> = {};
     this.state.boneBindings.forEach((b, id) => { bindings[id] = { ...b }; });
 
@@ -74,68 +166,101 @@ export class IOController {
     const attachmentPoints: AttachmentPoint[] = [];
     this.state.attachmentPoints.forEach(pt => attachmentPoints.push({ ...pt }));
 
-    const project: SerializedProject = { version: 1, bindings, animations, attachmentPoints };
-    const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = 'animation.animator.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    this.bus.emit('status', 'Exported animation.animator.json');
+    return { version: 2, bindings, animations, attachmentPoints };
   }
 
-  // ── Import ────────────────────────────────────────────────────────────────
-
-  private triggerImport(): void {
-    (document.getElementById('file-input') as HTMLInputElement | null)?.click();
-  }
-
-  async importProject(file: File): Promise<void> {
-    try {
-      const text = await file.text();
-      const project = JSON.parse(text) as SerializedProject;
-
-      if (project.version !== 1) {
-        this.bus.emit('status', `Unknown project version: ${project.version}`);
-        return;
-      }
-
-      // Load bindings
-      for (const [boneId, binding] of Object.entries(project.bindings)) {
-        this.state.setBinding(boneId, binding);
-      }
-
-      // Load attachment points (keep defaults if absent)
-      if (Array.isArray(project.attachmentPoints) && project.attachmentPoints.length > 0) {
-        this.state.setAllAttachmentPoints(project.attachmentPoints);
-      }
-
-      // Load animations (create clips)
-      for (const [name, clip] of Object.entries(project.animations)) {
-        const deserialized = this.deserializeClip(clip);
-        this.animCtrl.loadClip(name, deserialized);
-      }
-
-      this.cmdManager.clear();
-      this.bus.emit('anim:list');
-
-      // Select first clip
-      const first = [...this.animCtrl.store.keys()][0];
-      if (first) this.animCtrl.selectClip(first);
-
-      this.bus.emit('status', `Loaded ${file.name}`);
-    } catch (err) {
-      this.bus.emit('status', `Import failed: ${(err as Error).message}`);
+  private restoreAnimationData(project: SerializedProject): void {
+    for (const [boneId, binding] of Object.entries(project.bindings)) {
+      this.state.setBinding(boneId, binding);
+    }
+    if (Array.isArray(project.attachmentPoints) && project.attachmentPoints.length > 0) {
+      this.state.setAllAttachmentPoints(project.attachmentPoints);
+    }
+    for (const [name, clip] of Object.entries(project.animations)) {
+      this.animCtrl.loadClip(name, this.deserializeClip(clip));
     }
   }
 
-  // ── Serialization helpers ─────────────────────────────────────────────────
+  private async restoreImagesFromSpritesheet(
+    ssBlob: Blob,
+    ssJson: SpritesheetJson,
+  ): Promise<void> {
+    const img = await loadImageFromBlob(ssBlob);
+
+    for (const [slotId, entry] of Object.entries(ssJson.frames)) {
+      const { x, y, w, h } = entry.frame;
+      const canvas = document.createElement('canvas');
+      canvas.width  = w;
+      canvas.height = h;
+      canvas.getContext('2d')!.drawImage(img, x, y, w, h, 0, 0, w, h);
+      const blob = await canvasToBlob(canvas);
+      await this.imageCtrl.setBlob(slotId, blob, slotId);
+    }
+  }
+
+  // ── Spritesheet building ──────────────────────────────────────────────────
+
+  private async buildSpritesheet(
+    items: Array<{ id: string; blob: Blob }>,
+  ): Promise<{ canvas: HTMLCanvasElement; rects: Map<string, { x: number; y: number; w: number; h: number }> }> {
+    // Load all images to get dimensions
+    const loaded = await Promise.all(
+      items.map(async item => {
+        const img = await loadImageFromBlob(item.blob);
+        return { id: item.id, img, w: img.naturalWidth, h: img.naturalHeight };
+      }),
+    );
+
+    // Simple shelf-packing (sort by height descending for better fill)
+    const PADDING  = 2;
+    const MAX_W    = 1024;
+    const sorted   = [...loaded].sort((a, b) => b.h - a.h);
+    const rects    = new Map<string, { x: number; y: number; w: number; h: number }>();
+    let curX = 0, curY = 0, rowH = 0;
+
+    for (const item of sorted) {
+      if (curX + item.w > MAX_W && curX > 0) {
+        curX = 0;
+        curY += rowH + PADDING;
+        rowH  = 0;
+      }
+      rects.set(item.id, { x: curX, y: curY, w: item.w, h: item.h });
+      curX += item.w + PADDING;
+      rowH  = Math.max(rowH, item.h);
+    }
+
+    const totalH = curY + rowH;
+    const canvas = document.createElement('canvas');
+    canvas.width  = MAX_W;
+    canvas.height = totalH;
+    const ctx = canvas.getContext('2d')!;
+
+    for (const item of loaded) {
+      const r = rects.get(item.id)!;
+      ctx.drawImage(item.img, r.x, r.y);
+    }
+
+    return { canvas, rects };
+  }
+
+  private buildSpritesheetJson(
+    rects: Map<string, { x: number; y: number; w: number; h: number }>,
+    totalW: number,
+    totalH: number,
+  ): SpritesheetJson {
+    const frames: Record<string, SpritesheetFrame> = {};
+    rects.forEach((r, id) => {
+      frames[id] = { frame: { ...r }, sourceSize: { w: r.w, h: r.h } };
+    });
+    return { frames, meta: { size: { w: totalW, h: totalH } } };
+  }
+
+  // ── Clip serialization ────────────────────────────────────────────────────
 
   private serializeClip(clip: AnimationClip): SerializedClip {
     return {
-      duration: clip.duration,
-      loop:     clip.loop,
+      duration:  clip.duration,
+      loop:      clip.loop,
       keyframes: clip.keyframes.map(kf => this.serializeKeyframe(kf)),
     };
   }
@@ -148,8 +273,8 @@ export class IOController {
 
   private deserializeClip(s: SerializedClip): AnimationClip {
     return {
-      duration: s.duration,
-      loop:     s.loop,
+      duration:  s.duration,
+      loop:      s.loop,
       keyframes: s.keyframes.map(kf => this.deserializeKeyframe(kf)),
     };
   }
@@ -161,4 +286,34 @@ export class IOController {
     }
     return { time: s.time, bones };
   }
+}
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+
+function loadImageFromBlob(blob: Blob): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload  = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
+    img.src = url;
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(b => {
+      if (b) resolve(b);
+      else   reject(new Error('canvas.toBlob returned null'));
+    }, 'image/png');
+  });
+}
+
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }

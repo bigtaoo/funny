@@ -24,7 +24,7 @@ export function applyEasing(t: number, type: EasingType = 'linear'): number {
 
 // ── Identity defaults ─────────────────────────────────────────────────────────
 
-const DEFAULTS: Required<Omit<BoneKeyframe, 'easing' | 'frameId'>> = {
+const DEFAULTS: Required<Omit<BoneKeyframe, 'easing'>> = {
   rotation:   0,
   scaleX:     1,
   scaleY:     1,
@@ -39,25 +39,12 @@ function lerp(a: number, b: number, t: number): number {
 
 // ── Single-bone interpolation ─────────────────────────────────────────────────
 
-/**
- * Interpolate between two BoneKeyframes.
- * @param kf1   Keyframe at or before current time.
- * @param kf2   Next keyframe.
- * @param f     Raw linear factor between kf1 and kf2 (0–1).
- *              The easing from kf1.easing is applied internally.
- */
 export function interpolateBone(
   kf1: BoneKeyframe,
   kf2: BoneKeyframe,
   f: number,
 ): ResolvedBoneTransform {
   const ef = applyEasing(f, kf1.easing ?? 'linear');
-
-  // frameId: step behaviour — use kf2's frameId only when ef reaches 1
-  const frameId =
-    ef >= 1
-      ? (kf2.frameId !== undefined ? kf2.frameId : (kf1.frameId ?? null))
-      : (kf1.frameId !== undefined ? kf1.frameId : null);
 
   return {
     rotation:   lerp(kf1.rotation   ?? DEFAULTS.rotation,   kf2.rotation   ?? DEFAULTS.rotation,   ef),
@@ -66,7 +53,6 @@ export function interpolateBone(
     translateX: lerp(kf1.translateX ?? DEFAULTS.translateX, kf2.translateX ?? DEFAULTS.translateX, ef),
     translateY: lerp(kf1.translateY ?? DEFAULTS.translateY, kf2.translateY ?? DEFAULTS.translateY, ef),
     alpha:      lerp(kf1.alpha      ?? DEFAULTS.alpha,      kf2.alpha      ?? DEFAULTS.alpha,      ef),
-    frameId,
   };
 }
 
@@ -79,19 +65,12 @@ function resolveOne(kf: BoneKeyframe): ResolvedBoneTransform {
     translateX: kf.translateX ?? DEFAULTS.translateX,
     translateY: kf.translateY ?? DEFAULTS.translateY,
     alpha:      kf.alpha      ?? DEFAULTS.alpha,
-    frameId:    kf.frameId    !== undefined ? kf.frameId : null,
   };
 }
 
 // ── Clip sampling ─────────────────────────────────────────────────────────────
 
-/** Sample an AnimationClip at time t, returning every bone's resolved transform.
- *
- *  Single O(n) pass over keyframes: for each keyframe we update the "last seen
- *  before t" pointer for every bone it contains, then after finding kf1 for all
- *  bones we do a second O(n) pass to find kf2 (the next keyframe after t).
- *  Total: O(bones × keyframes) → O(keyframes) amortised per bone.
- */
+/** Sample an AnimationClip at time t, returning every bone's resolved transform. */
 export function sampleClip(
   clip: AnimationClip,
   t: number,
@@ -103,7 +82,7 @@ export function sampleClip(
   // Pass 1: find kf1 (last keyframe with time <= t) for each bone
   const kf1Map = new Map<string, { kf: typeof kfs[number]; idx: number }>();
   for (let i = 0; i < kfs.length; i++) {
-    if (kfs[i].time > t) break;           // keyframes are sorted ascending
+    if (kfs[i].time > t) break;
     kfs[i].bones.forEach((_, id) => {
       kf1Map.set(id, { kf: kfs[i], idx: i });
     });
@@ -112,13 +91,12 @@ export function sampleClip(
   // Pass 2: find kf2 (first keyframe with time > t) for each bone
   const kf2Map = new Map<string, typeof kfs[number]>();
   for (let i = kfs.length - 1; i >= 0; i--) {
-    if (kfs[i].time <= t) break;          // walk backwards from end
+    if (kfs[i].time <= t) break;
     kfs[i].bones.forEach((_, id) => {
       kf2Map.set(id, kfs[i]);
     });
   }
 
-  // Collect all bone ids
   const boneIds = new Set<string>();
   kf1Map.forEach((_, id) => boneIds.add(id));
   kf2Map.forEach((_, id) => boneIds.add(id));

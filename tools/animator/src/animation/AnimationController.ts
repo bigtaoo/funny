@@ -54,7 +54,7 @@ export class AnimationController {
         } else {
           base.set(boneId, {
             rotation: delta, scaleX: 1, scaleY: 1,
-            translateX: 0, translateY: 0, alpha: 1, frameId: null,
+            translateX: 0, translateY: 0, alpha: 1,
           });
         }
       });
@@ -308,7 +308,6 @@ export class AnimationController {
         translateX: transform.translateX,
         translateY: transform.translateY,
         alpha:      transform.alpha,
-        frameId:    transform.frameId,
       });
     });
     return result;

@@ -27,21 +27,20 @@ export type EasingType =
   | 'ease-in'
   | 'ease-out'
   | 'ease-in-out'
-  | 'step';          // instant jump; useful for sprite-frame switches
+  | 'step';
 
 // ── Keyframes ─────────────────────────────────────────────────────────────────
 
 /** All animatable properties for a single bone at a single keyframe. All optional;
  *  interpolation falls back to identity values when a field is absent. */
 export interface BoneKeyframe {
-  rotation?:   number;        // delta degrees, default 0
-  scaleX?:     number;        // default 1
-  scaleY?:     number;        // default 1
-  translateX?: number;        // px, default 0
-  translateY?: number;        // px, default 0
-  alpha?:      number;        // 0–1, default 1
-  frameId?:    string | null; // sprite switch; null = hide; undefined = use binding default
-  easing?:     EasingType;    // exit curve, default 'linear'
+  rotation?:   number;   // delta degrees, default 0
+  scaleX?:     number;   // default 1
+  scaleY?:     number;   // default 1
+  translateX?: number;   // px, default 0
+  translateY?: number;   // px, default 0
+  alpha?:      number;   // 0–1, default 1; use 0 to hide the bone's sprite
+  easing?:     EasingType;
 }
 
 /** Fully-resolved bone transform after interpolation (no optional fields). */
@@ -52,7 +51,6 @@ export interface ResolvedBoneTransform {
   translateX: number;
   translateY: number;
   alpha:      number;
-  frameId:    string | null;  // null = hide the bone's sprite
 }
 
 export interface Keyframe {
@@ -70,42 +68,28 @@ export type AnimationStore = Map<string, AnimationClip>;
 
 // ── Sprite binding ────────────────────────────────────────────────────────────
 
-/** Structural (non-animatable) config for how a sprite attaches to a bone.
+/** Structural (non-animatable) config for how a bone's image is rendered.
+ *  Each bone has exactly one image (1:1 mapping via ImageController).
  *  Initial orientation corrections go in the t=0 keyframe as rotation/translate. */
 export interface SpriteBinding {
-  frameId: string;    // default atlas frame id
-  anchorX: number;    // 0–1, default 0.5
-  anchorY: number;    // 0–1, default 0.5
+  anchorX: number;   // 0–1, default 0.5
+  anchorY: number;   // 0–1, default 0.5
   flipX:   boolean;
+  zOrder:  number;   // render layer: higher = in front; sort once on binding change
 }
 
 // ── Attachment Points ─────────────────────────────────────────────────────────
 
 /** A non-animated attachment marker that follows a specific bone.
- *  Position = bone tip (ex, ey) + (offsetX, offsetY) in world space.
- *  The bone tip is chosen because it's the "output" end of the bone
- *  (e.g. spine tip = shoulder level, root tip = hip = root itself). */
+ *  Position = bone tip (ex, ey) + (offsetX, offsetY) in world space. */
 export interface AttachmentPoint {
   id:         string;   // 'shadow' | 'hit'
   label:      string;
-  parentBone: string;   // which bone to follow (uses bone tip position)
-  offsetX:    number;   // px offset from bone tip, world space
+  parentBone: string;
+  offsetX:    number;
   offsetY:    number;
 
   // Shadow-specific display size (only meaningful for id === 'shadow')
-  shadowW?:   number;   // ellipse half-width (px); auto-computed if absent
-  shadowH?:   number;   // ellipse half-height (px); auto-computed if absent
-}
-
-// ── Atlas ─────────────────────────────────────────────────────────────────────
-
-export interface AtlasFrame {
-  x: number; y: number;
-  w: number; h: number;
-  pivotX: number; pivotY: number;
-}
-
-export interface AtlasAsset {
-  id:     string;                     // filename without extension
-  frames: Map<string, AtlasFrame>;   // frameId → AtlasFrame
+  shadowW?:   number;
+  shadowH?:   number;
 }

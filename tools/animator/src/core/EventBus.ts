@@ -14,8 +14,8 @@ export interface AppEvents {
   'anim:list':      void;
   'kf:change':      void;
 
-  // Atlas / binding
-  'atlas:change':   void;
+  // Images / binding
+  'images:change':  string;          // slotId that changed
   'binding:change': string;          // boneId
 
   // Preview mode

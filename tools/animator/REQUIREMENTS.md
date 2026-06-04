@@ -91,36 +91,74 @@
 | 速度 | 0.25× / 0.5× / 1× / 2× |
 | 循环 | Loop 复选框 |
 
-### 2.6 Atlas 管理
+### 2.6 图片导入
 
-#### 导入
+每根骨骼一张独立 PNG，另加一张阴影精灵，共 **11 张**。
 
-- 支持 TexturePacker JSON Hash 格式（`.json` + 图片）
-- 图片可选：若 `meta.image` 为 data URL 或 HTTP URL，自动使用；相对路径需手动选图片文件
-- 同时支持 Array 格式（`frames` 为数组）
+#### 导入方式
 
-#### 多 Atlas
+- 拖入或点选多张 PNG 文件
+- **自动映射**：按文件名识别骨骼（`spine.png` → `spine`，`shadow.png` → shadow 挂点图）
+- **手动映射**：在 Image 面板中为每个 bone slot 重新选择文件
 
-- 可同时加载多个 atlas，帧 ID 全局唯一
-- 可删除 atlas（同时解绑相关 sprite binding）
+#### 文件名约定
+
+| 文件名 | 对应骨骼 |
+|---|---|
+| `spine.png` | spine |
+| `head.png` | head |
+| `r_upper_arm.png` / `l_upper_arm.png` | r/l_upper_arm |
+| `r_lower_arm.png` / `l_lower_arm.png` | r/l_lower_arm |
+| `r_upper_leg.png` / `l_upper_leg.png` | r/l_upper_leg |
+| `r_lower_leg.png` / `l_lower_leg.png` | r/l_lower_leg |
+| `shadow.png` | shadow 挂点精灵 |
+
+不符合约定的文件名需在面板中手动指定骨骼。
 
 ### 2.7 Sprite 绑定
 
-每根骨骼最多绑定一个精灵（one bone → one sprite slot）。
+每根骨骼固定绑定一张图片（1 bone : 1 image，无多帧切换）。
 
 绑定配置（全局，不随动画变化）：
 
 | 属性 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `frameId` | `string` | — | atlas 帧 ID |
 | `anchorX/Y` | `number` | `0.5` | 锚点 0–1 |
-| `flipX` | `boolean` | `false` | X 轴镜像（对称骨骼复用同一帧） |
+| `flipX` | `boolean` | `false` | X 轴镜像（对称骨骼复用同一图） |
+| `zOrder` | `number` | — | 渲染层级，值越大越靠前（覆盖低值骨骼） |
 
-绑定后**自动切换到 Sprite 预览模式**，立即可见效果。
+所有骨骼图片加载完成后**自动切换到 Sprite 预览模式**。
+
+#### 层级顺序（zOrder）
+
+关节连接处的遮挡关系由 `zOrder` 控制，数值越大的骨骼精灵渲染在越上层。例如：左臂（前置）的 `zOrder` 高于右臂（后置），两部分上下臂各自也有层级。
+
+推荐默认层级（从后到前，0 最低）：
+
+| 骨骼 | 默认 zOrder | 备注 |
+|---|---|---|
+| `r_lower_leg` | 0 | 最后方 |
+| `r_upper_leg` | 1 | |
+| `l_lower_leg` | 2 | |
+| `l_upper_leg` | 3 | |
+| `r_lower_arm` | 4 | |
+| `r_upper_arm` | 5 | |
+| `spine` | 6 | 躯干居中 |
+| `head` | 7 | |
+| `l_lower_arm` | 8 | |
+| `l_upper_arm` | 9 | 最前方 |
+
+`root` 骨骼无精灵，不参与层级。用户可在 Image 面板拖拽骨骼行或输入数字覆盖默认值。
+
+**渲染实现**：`zOrder` 全局固定。`binding:change` 或图片加载完成时，对 `spriteLayer.children` 按 `zOrder` 排序一次，渲染期间不再重排，无运行时开销。
+
+**shadow.png**：不属于骨骼 `bindings`，不参与 `spriteLayer` 排序。游戏侧在 shadow 挂点世界坐标独立渲染，层级固定在所有骨骼精灵之下（渲染顺序：shadow sprite → spriteLayer 骨骼 sprites）。
 
 精灵的初始旋转校正和位移偏移存在 **t=0 关键帧**的 `rotation` / `translateX/Y` 中，不在 binding 里——绑定时自动创建 t=0 关键帧。
 
-**游戏侧对接**：游戏引擎读取 `bindings` 字段，按相同规则渲染 sprite（anchorX/Y、flipX 均需在游戏侧实现）。
+骨骼可通过关键帧 `alpha: 0` 隐藏，无需 `frameId` 字段。
+
+**游戏侧对接**：读取 `.tao` 内的 `spritesheet.json` 建立 bone → texture rect 映射，按 `anchorX/Y`、`flipX` 渲染。
 
 ### 2.8 挂点系统（Attachment Points）
 
@@ -185,31 +223,38 @@
 
 `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y`，上限 100 步。
 
-计入 Undo：骨骼旋转、关键帧增删改、sprite 绑定、挂点编辑。  
+计入 Undo：骨骼旋转、关键帧增删改、sprite 绑定（含 `zOrder` 修改）、挂点编辑。  
 不计入：播放控制、预览模式切换、scrub、视图选项。
 
 ### 2.12 导出 / 导入
 
-- 导出：`animation.animator.json`（animations + bindings + attachmentPoints）
-- 导入：同格式 JSON，合并到当前会话
+- **导出**：生成 `.tao` 文件（ZIP 压缩包），包含：
+  - `animation.json`：骨骼绑定 + 动画关键帧 + 挂点数据
+  - `spritesheet.png`：11 张图自动 bin-packing 合并，用 upng.js 压缩（可选 TinyPNG API）
+  - `spritesheet.json`：每个 bone slot 在 spritesheet 中的 rect（TexturePacker Hash 兼容格式）
+- **导入**：拖入 `.tao` 文件，解包后恢复完整会话（图片 + 动画数据）
 
 ---
 
-## 3. 导出格式（animation.animator.json）
+## 3. 导出格式（.tao 文件）
+
+`.tao` 是 ZIP 压缩包，内含三个文件：
+
+### 3.1 animation.json
 
 ```jsonc
 {
-  "version": 1,
+  "version": 2,
 
-  // 全局 sprite 绑定（不随动画变化）
+  // 全局 sprite 绑定（不随动画变化；image 由 spritesheet.json 按 boneId 索引）
   "bindings": {
-    "spine":       { "frameId": "body.png",      "anchorX": 0.5, "anchorY": 0,   "flipX": false },
-    "head":        { "frameId": "head.png",       "anchorX": 0.5, "anchorY": 0.5, "flipX": false },
-    "r_upper_arm": { "frameId": "arm_upper.png",  "anchorX": 0.5, "anchorY": 0,   "flipX": false },
-    "l_upper_arm": { "frameId": "arm_upper.png",  "anchorX": 0.5, "anchorY": 0,   "flipX": true  }
+    "spine":       { "anchorX": 0.5, "anchorY": 0,   "flipX": false },
+    "head":        { "anchorX": 0.5, "anchorY": 0.5, "flipX": false },
+    "r_upper_arm": { "anchorX": 0.5, "anchorY": 0,   "flipX": false },
+    "l_upper_arm": { "anchorX": 0.5, "anchorY": 0,   "flipX": true  }
   },
 
-  // 动画片段
+  // 动画片段（关键帧不含 frameId，骨骼隐藏用 alpha:0）
   "animations": {
     "walk": {
       "duration": 0.5,
@@ -222,26 +267,38 @@
             "r_upper_arm": { "rotation": 22, "easing": "ease-in-out" },
             "r_upper_leg": { "rotation": -28 }
           }
-        },
-        {
-          "time": 0.25,
-          "bones": {
-            "spine":       { "rotation": 5 },
-            "r_upper_arm": { "rotation": -18, "easing": "ease-in-out" },
-            "r_upper_leg": { "rotation": 22 }
-          }
         }
       ]
     }
   },
 
-  // 挂点（跟随骨骼，世界坐标 = parentBone.tip + offset）
+  // 挂点（世界坐标 = parentBone.tip + offset）
   "attachmentPoints": [
     { "id": "shadow", "label": "🔵 Shadow", "parentBone": "root",  "offsetX": 0, "offsetY": 52 },
     { "id": "hit",    "label": "✦ Hit",     "parentBone": "spine", "offsetX": 0, "offsetY": -30 }
   ]
 }
 ```
+
+### 3.2 spritesheet.json（TexturePacker Hash 兼容）
+
+```jsonc
+{
+  "frames": {
+    "spine":       { "frame": { "x": 0,   "y": 0,  "w": 20, "h": 60 }, "sourceSize": { "w": 20, "h": 60 } },
+    "head":        { "frame": { "x": 22,  "y": 0,  "w": 32, "h": 32 }, "sourceSize": { "w": 32, "h": 32 } },
+    "r_upper_arm": { "frame": { "x": 56,  "y": 0,  "w": 12, "h": 36 }, "sourceSize": { "w": 12, "h": 36 } },
+    "shadow":      { "frame": { "x": 0,   "y": 62, "w": 64, "h": 20 }, "sourceSize": { "w": 64, "h": 20 } }
+  },
+  "meta": { "size": { "w": 256, "h": 128 } }
+}
+```
+
+`frames` 的 key 即 boneId（或 `"shadow"`），与 `animation.json` 的 `bindings` 键对应。
+
+### 3.3 spritesheet.png
+
+bin-packing 合并的图集，用 upng.js 压缩（可选配置 TinyPNG API Key 进行有损量化压缩）。
 
 ---
 
@@ -257,8 +314,9 @@
   translateX = lerp(kf1.translateX, kf2.translateX, f)
   translateY = lerp(kf1.translateY, kf2.translateY, f)
   alpha      = lerp(kf1.alpha,      kf2.alpha,      f)
-  frameId    = kf1.frameId   （step 语义：到达 kf2 时间才切换）
 ```
+
+每根骨骼固定对应一张图，不再有 `frameId` 帧切换。骨骼隐藏通过 `alpha: 0` 关键帧实现。
 
 t 在第一帧之前 → 使用第一帧；在最后帧之后 → 使用最后帧。
 
@@ -287,7 +345,8 @@ funny/
 
 ```ts
 class StickmanRuntime {
-  async load(animDataUrl: string, atlasJsonUrl: string, atlasImageUrl: string): Promise<void>
+  // 加载 .tao 文件（JSZip 解包，提取 spritesheet + animation.json）
+  async load(taoUrl: string): Promise<void>
 
   play(clipName: string, opts?: { loop?: boolean; onComplete?: () => void }): void
   pause(): void
@@ -303,8 +362,10 @@ class StickmanRuntime {
 
 内部逻辑：`sampleClip(clip, t)` → 对每根骨骼：
 1. 设置 `PIXI.Container.rotation`（骨骼旋转）
-2. 设置 sprite `scale / position / alpha`
-3. 若 `frameId` 变化，更新 `PIXI.Sprite.texture`
+2. 设置 sprite `scale / position / alpha`（每根骨骼固定 1 张纹理，无 frameId 切换）
+3. 加载完成后按 `animation.json` 中各骨骼的 `zOrder` 对 sprites 排序一次，渲染期间不再重排
+
+shadow.png 在 shadow 挂点世界坐标独立渲染，层级固定在所有骨骼精灵之下。
 
 ### 5.3 挂点游戏侧使用方式
 
@@ -366,8 +427,9 @@ const shadowPos = runtime.getAttachmentPoint('shadow');
 - `getAttachmentPoint(id)` 返回当前帧挂点世界坐标
 
 ### 8.3 游戏侧 Sprite Binding 渲染（待实现）
+- 解包 `.tao`，用 `spritesheet.json` 建立 boneId → texture rect 映射
 - 读取 `bindings` 字段，按 anchorX/Y、flipX 渲染 sprite
-- 支持关键帧 `frameId` 运行时切换贴图
+- 每根骨骼固定 1 张纹理，无运行时帧切换
 
 ---
 

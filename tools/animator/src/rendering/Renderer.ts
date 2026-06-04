@@ -19,9 +19,9 @@ export interface RenderData {
   worldPose:    WorldPositions;
   boneTransforms: Map<string, ResolvedBoneTransform>;
 
-  // Sprite resources
+  // Sprite resources — texture looked up by boneId directly (1 image per bone)
   bindings:   ReadonlyMap<string, SpriteBinding>;
-  getTexture: (frameId: string) => PIXI.Texture | undefined;
+  getTexture: (boneId: string) => PIXI.Texture | undefined;
 
   // Attachment points
   attachmentPoints: ReadonlyMap<string, AttachmentPoint>;
@@ -47,14 +47,17 @@ export interface RenderData {
 export class Renderer {
   readonly pixiApp: PIXI.Application;
 
-  private readonly gridGfx:   PIXI.Graphics;
-  private readonly onionGfx:  PIXI.Graphics;
+  private readonly gridGfx:    PIXI.Graphics;
+  private readonly onionGfx:   PIXI.Graphics;
   private readonly spriteLayer: PIXI.Container;
-  private readonly boneGfx:   PIXI.Graphics;
-  private readonly selGfx:    PIXI.Graphics;
+  private readonly boneGfx:    PIXI.Graphics;
+  private readonly selGfx:     PIXI.Graphics;
 
-  /** frameId → Sprite (reused across frames) */
+  /** boneId → Sprite (one per bone, reused across frames) */
   private readonly spriteCache = new Map<string, PIXI.Sprite>();
+
+  /** When true, spriteLayer children are re-sorted by zOrder on the next draw. */
+  private _spriteOrderDirty = false;
 
   constructor(container: HTMLElement) {
     const w = container.clientWidth;
@@ -90,7 +93,6 @@ export class Renderer {
 
   // ── Coordinate conversion ─────────────────────────────────────────────────
 
-  /** Screen coords → stage logical coords (fixes devicePixelRatio mismatch). */
   toStageCoords(clientX: number, clientY: number): { x: number; y: number } {
     const canvas = this.pixiApp.view as HTMLCanvasElement;
     const rect   = canvas.getBoundingClientRect();
@@ -118,15 +120,19 @@ export class Renderer {
     this.pixiApp.destroy(true, { children: true });
   }
 
+  // ── Sprite order ──────────────────────────────────────────────────────────
+
+  /** Call whenever bindings or zOrder values change. Sorting is deferred to
+   *  the next draw call so it happens at most once per binding-change event. */
+  markSpriteOrderDirty(): void {
+    this._spriteOrderDirty = true;
+  }
+
   // ── Main draw ─────────────────────────────────────────────────────────────
 
   draw(data: RenderData): void {
-    const { w, h } = this.logicalSize;
-
-    // Background colour
     (this.pixiApp.renderer as PIXI.Renderer).backgroundColor = data.backgroundColor;
 
-    // Onion skin
     this.onionGfx.clear();
     if (data.onionData.length) {
       for (const od of data.onionData) {
@@ -134,19 +140,16 @@ export class Renderer {
       }
     }
 
-    // Sprites (sprite mode)
     this.updateSprites(data);
 
-    // Skeleton (always visible in skeleton mode; optional overlay in sprite mode)
     this.boneGfx.clear();
     if (data.previewMode === 'skeleton' || data.showSkeletonOverlay) {
       this.drawSkeleton(this.boneGfx, data.worldPose, data.selectedBone, data.showJoints, true);
     }
 
-    // Selection & guides
     this.selGfx.clear();
     this.drawSelection(data);
-    if (data.showGuide) this.drawGuide(data.rootX, data.rootY);
+    if (data.showGuide)  this.drawGuide(data.rootX, data.rootY);
     if (data.showPivots) this.drawPivots(data.worldPose, data.selectedBone);
     this.drawAttachmentPoints(data.rootX, data.rootY, data.worldPose, data.attachmentPoints);
   }
@@ -162,31 +165,27 @@ export class Renderer {
         const transform = data.boneTransforms.get(boneId);
         if (!pose) return;
 
-        // Determine current frame.
-        // transform.frameId is string|null (never undefined), so use != null
-        // to fall back to binding.frameId when no frame was keyframed.
-        const frameId = transform?.frameId != null
-          ? transform.frameId
-          : binding.frameId;
-        if (frameId === null) return;
+        // alpha:0 hides the bone — skip rendering
+        if ((transform?.alpha ?? 1) <= 0) return;
 
-        const texture = data.getTexture(frameId);
+        const texture = data.getTexture(boneId);
         if (!texture) return;
 
-        const key    = `${boneId}:${frameId}`;
-        visible.add(key);
+        visible.add(boneId);
 
-        let sprite = this.spriteCache.get(key);
+        let sprite = this.spriteCache.get(boneId);
         if (!sprite) {
-          sprite = new PIXI.Sprite(texture);
-          this.spriteCache.set(key, sprite);
+          sprite      = new PIXI.Sprite(texture);
+          sprite.name = boneId;  // tag for zOrder sorting
+          this.spriteCache.set(boneId, sprite);
           this.spriteLayer.addChild(sprite);
+          this._spriteOrderDirty = true;  // new sprite added, re-sort
         }
 
-        sprite.texture = texture;
+        sprite.texture  = texture;
         sprite.anchor.set(binding.anchorX, binding.anchorY);
-        sprite.x      = pose.sx + (transform?.translateX ?? 0);
-        sprite.y      = pose.sy + (transform?.translateY ?? 0);
+        sprite.x        = pose.sx + (transform?.translateX ?? 0);
+        sprite.y        = pose.sy + (transform?.translateY ?? 0);
         sprite.rotation = ((pose.wa + (transform?.rotation ?? 0)) * Math.PI) / 180;
         sprite.scale.set(
           (binding.flipX ? -1 : 1) * (transform?.scaleX ?? 1),
@@ -198,9 +197,19 @@ export class Renderer {
     }
 
     // Hide sprites not in visible set
-    this.spriteCache.forEach((sprite, key) => {
-      sprite.visible = visible.has(key);
+    this.spriteCache.forEach((sprite, boneId) => {
+      sprite.visible = visible.has(boneId);
     });
+
+    // Sort spriteLayer children by zOrder (once per binding change, not every frame)
+    if (this._spriteOrderDirty) {
+      this.spriteLayer.children.sort((a, b) => {
+        const za = data.bindings.get(a.name!)?.zOrder ?? 0;
+        const zb = data.bindings.get(b.name!)?.zOrder ?? 0;
+        return za - zb;
+      });
+      this._spriteOrderDirty = false;
+    }
   }
 
   // ── Skeleton drawing ──────────────────────────────────────────────────────
@@ -326,7 +335,6 @@ export class Renderer {
     pts: ReadonlyMap<string, AttachmentPoint>,
   ): void {
     pts.forEach(pt => {
-      // Resolve parent bone tip position (fallback to root if bone not found)
       const parent = worldPose.get(pt.parentBone) ?? worldPose.get('root');
       if (!parent) return;
       const x = parent.ex + pt.offsetX;
@@ -345,7 +353,6 @@ export class Renderer {
         this.selGfx.drawCircle(x, y, 2.5);
         this.selGfx.endFill();
       } else {
-        // Crosshair for hit / other
         const S = 7;
         this.selGfx.lineStyle({ width: 1.5, color: 0xff6666, alpha: 0.9 });
         this.selGfx.moveTo(x - S, y); this.selGfx.lineTo(x + S, y);

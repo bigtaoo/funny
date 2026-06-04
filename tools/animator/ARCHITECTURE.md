@@ -26,8 +26,8 @@ src/
 │   ├── interpolate.ts         sampleClip（纯函数，无外部依赖，可复用到游戏引擎）
 │   └── presets.ts             内置预设动画
 │
-├── atlas/
-│   └── AtlasController.ts     图集加载、TexturePacker JSON 解析、PIXI.Texture 管理
+├── images/
+│   └── ImageController.ts     逐张 PNG 导入、bone slot 映射、PIXI.Texture 管理
 │
 ├── rendering/
 │   └── Renderer.ts            PixiJS 渲染（骨骼线框 + sprite 层 + 挂点标记）
@@ -40,12 +40,12 @@ src/
 │   └── ContextMenu.ts         右键菜单（easing 切换等）
 │
 ├── io/
-│   └── IOController.ts        JSON 导出/导入
+│   └── IOController.ts        .tao 导出（JSZip + shelf bin-packing + canvas PNG）/ 导入
 │
 └── ui/
     ├── AnimListPanel.ts        左侧动画列表
     ├── BoneInspectorPanel.ts   右侧骨骼属性 + sprite 绑定
-    ├── AtlasPanel.ts           图集导入面板
+    ├── ImagePanel.ts           图片导入面板（bone slot 映射）
     ├── AttachmentPanel.ts      挂点编辑面板（parentBone + offset + shadow size）
     ├── ToolbarPanel.ts         顶部工具栏
     └── StatusBar.ts            底部状态栏
@@ -55,9 +55,9 @@ src/
 
 ```
 types ← skeleton ← animation ← rendering
-types ← core ← atlas
+types ← core ← images
 types ← core ← interaction
-ui → (animation, atlas, core, skeleton)
+ui → (animation, images, core, skeleton)
 App → everything
 ```
 
@@ -139,7 +139,7 @@ interface AttachmentPoint {
 | `anim:select` | `string` | 切换当前动画 |
 | `anim:list` | void | 列表增删改 |
 | `kf:change` | void | 关键帧数据变化 |
-| `atlas:change` | void | 图集加载/移除 |
+| `images:change` | void | 骨骼图片加载/移除 |
 | `binding:change` | `string` (boneId) | sprite 绑定变化 |
 | `attachment:change` | void | 挂点数据变化 |
 | `preview:mode` | `'skeleton'\|'sprite'` | 预览模式切换 |
@@ -156,7 +156,7 @@ interface AttachmentPoint {
 **两次线性 pass，O(bones × keyframes)：**
 1. Pass 1 正向扫描：每个 bone 记录最后一个 `time ≤ t` 的帧（kf1）。`time > t` 时提前 break。
 2. Pass 2 逆向扫描：每个 bone 记录第一个 `time > t` 的帧（kf2）。
-3. 用 `kf1.easing` 插值。`frameId` 用 step 语义（ef≥1 才切换到 kf2.frameId）。
+3. 用 `kf1.easing` 插值。
 
 easing：`linear` | `ease-in` | `ease-out` | `ease-in-out` | `step`
 
@@ -183,7 +183,9 @@ boneGfx      — 骨骼线框（skeleton 模式 或 showSkeletonOverlay）
 selGfx       — 选中高亮 + 挂点标记 + Guide
 ```
 
-**Sprite 缓存**：`spriteCache: Map<"{boneId}:{frameId}", PIXI.Sprite>`，通过 `visible` 控制显示，不反复创建。
+**Sprite 缓存**：`spriteCache: Map<boneId, PIXI.Sprite>`，通过 `visible` 控制显示，不反复创建。
+
+**Sprite 层级**：`zOrder` 全局固定，不随动画变化。`binding:change` 或图片加载完成时，按 `zOrder` 对 `spriteLayer` 的 children 重新排序一次（`spriteLayer.children.sort(...)`），此后渲染期间不再排序，无运行时开销。
 
 **挂点渲染**：shadow → 蓝色椭圆（尺寸优先 shadowW/H，否则 `Skeleton.computeDefaultShadowSize()`）；hit → 红色准星。
 
@@ -215,26 +217,23 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 
 ---
 
-## 8. 导出格式（animation.animator.json）
+## 8. 导出格式（.tao）
 
+`.tao` = ZIP 压缩包（JSZip），内含三个文件：
+
+**animation.json**（version 2，bindings 含 zOrder，无 frameId）：
 ```jsonc
 {
-  "version": 1,
+  "version": 2,
   "bindings": {
-    "spine": { "frameId": "body", "anchorX": 0.5, "anchorY": 0.5, "flipX": false }
+    "spine": { "anchorX": 0.5, "anchorY": 0.5, "flipX": false, "zOrder": 6 }
   },
   "animations": {
     "walk": {
       "duration": 0.5,
       "loop": true,
       "keyframes": [
-        {
-          "time": 0,
-          "bones": {
-            "spine":       { "rotation": 5 },
-            "r_upper_leg": { "rotation": -28, "easing": "ease-in-out" }
-          }
-        }
+        { "time": 0, "bones": { "spine": { "rotation": 5 }, "r_upper_leg": { "rotation": -28, "easing": "ease-in-out" } } }
       ]
     }
   },
@@ -244,6 +243,29 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
   ]
 }
 ```
+
+**spritesheet.json**（TexturePacker Hash 兼容，key = boneId）：
+```jsonc
+{
+  "frames": {
+    "spine": { "frame": { "x": 0, "y": 0, "w": 20, "h": 60 }, "sourceSize": { "w": 20, "h": 60 } }
+  },
+  "meta": { "size": { "w": 256, "h": 128 } }
+}
+```
+
+**spritesheet.png**：shelf-packing（按高度降序排列）合并至 1024px 宽 canvas，`canvas.toBlob('image/png')` 导出，JSZip DEFLATE 二次压缩。
+
+**导出流程**（`IOController.exportTao`）：
+1. 从 `ImageController` 取各骨骼 Blob，`loadImageFromBlob` 并行加载为 `HTMLImageElement`
+2. Shelf-packing 算法计算各图 rect，绘制到 canvas
+3. `canvas.toBlob` → PNG Blob；`JSZip` 打包三个文件 → 下载 `.tao`
+
+**导入流程**（`IOController.importTao`）：
+1. `JSZip.loadAsync` 解包 `.tao`
+2. 解析 `spritesheet.json`，从 `spritesheet.png` 按 rect 逐帧 canvas 抠图 → 各骨骼独立 Blob
+3. `ImageController.setBlob` 存储骨骼 Blob + 创建 `PIXI.Texture`
+4. `animation.json` → 恢复 bindings / animations / attachmentPoints
 
 ---
 
@@ -259,7 +281,6 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 ## 10. 已知局限
 
 - `RotateBoneCommand.undo(!hadKeyframe)` 删整个 keyframe，若该帧有多骨骼数据会一并删除
-- 图集 JSON-only 导入仅支持 `meta.image` 为 data URL / HTTP URL；相对路径需同时提供图片文件
 - 暂无 IK / 骨骼权重 / 蒙皮，纯 FK
 - 右键 Pan 的 `window` 事件监听无 destroy 入口
 

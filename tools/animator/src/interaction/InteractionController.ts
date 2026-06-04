@@ -51,7 +51,6 @@ class RotateBoneCommand implements Command {
           translateX: t.translateX,
           translateY: t.translateY,
           alpha:      t.alpha,
-          frameId:    t.frameId,
         });
       });
       if (!bones.has(this.boneId)) bones.set(this.boneId, { rotation: this.newRotation });
@@ -89,7 +88,7 @@ class AddKeyframeCommand implements Command {
       this.snapshot = new Map(Array.from(frame.entries()).map(([id, t]) => [id, {
         rotation: t.rotation, scaleX: t.scaleX, scaleY: t.scaleY,
         translateX: t.translateX, translateY: t.translateY,
-        alpha: t.alpha, frameId: t.frameId,
+        alpha: t.alpha,
       }]));
     }
     this.animCtrl.addKeyframeAt(this.time, this.snapshot);

@@ -140,9 +140,9 @@
       flex-shrink: 0;
     }
 
-    /* ── Atlas Panel ── */
-    #atlas-panel {
-      width: 190px;
+    /* ── Image Panel ── */
+    #image-panel {
+      width: 200px;
       background: var(--surface);
       border-left: 1px solid var(--border);
       display: flex;
@@ -398,8 +398,8 @@
     </div>
   </div>
 
-  <div id="atlas-panel">
-    <div class="panel-header">Atlas</div>
+  <div id="image-panel">
+    <div class="panel-header">Images</div>
   </div>
 </div>
 
@@ -420,14 +420,14 @@
 
 <!-- ═══ BOTTOM BAR ═══ -->
 <div class="bottom-bar">
-  <button id="btn-export">⬇ Export JSON</button>
-  <button id="btn-import">⬆ Import JSON</button>
+  <button id="btn-export">⬇ Export .tao</button>
+  <button id="btn-import">⬆ Import .tao</button>
   <button id="btn-reset-pose">⟳ Reset Pose</button>
   <button id="btn-presets">📋 Preset…</button>
   <span id="status-text">Ready</span>
 </div>
 
-<input type="file" id="file-input" accept=".json" style="display:none">
+<input type="file" id="file-input" accept=".tao" style="display:none">
 
 </body>
 </html>

@@ -16,7 +16,7 @@ class AddKeyframeCommand implements Command {
       this.snapshot = new Map(Array.from(frame.entries()).map(([id, t]) => [id, {
         rotation: t.rotation, scaleX: t.scaleX, scaleY: t.scaleY,
         translateX: t.translateX, translateY: t.translateY,
-        alpha: t.alpha, frameId: t.frameId,
+        alpha: t.alpha,
       }]));
     }
     this.animCtrl.addKeyframeAt(this.time, this.snapshot);

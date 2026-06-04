@@ -25,7 +25,11 @@
       "Bash(findstr /v \"node_modules\")",
       "Bash(wsl -e bash -c \"cd /home/taowang/projects/funny/code && npx tsc --noEmit 2>&1\")",
       "Bash(wsl -e bash -c \"cd /home/taowang/projects/funny/code && npx webpack --mode development --env TARGET=web 2>&1\")",
-      "Bash(Select-String -Pattern \"png|archer|barracks|base\")"
+      "Bash(Select-String -Pattern \"png|archer|barracks|base\")",
+      "Bash(npm install *)",
+      "Bash(cd \"\\\\\\\\wsl.localhost\\\\ubuntu\\\\home\\\\taowang\\\\projects\\\\funny\\\\tools\\\\animator\")",
+      "Bash(ubuntu run *)",
+      "mcp__Claude_Preview__preview_start"
     ]
   }
 }
