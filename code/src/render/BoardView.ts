@@ -185,14 +185,22 @@ export class BoardView {
   private drawBases(layout: ILayout): void {
     const baseTex = PIXI.Texture.from(baseTexUrl as string);
 
-    const addBase = (rect: Rect, flipY: boolean): void => {
+    const addBase = (rect: Rect, mirror: boolean): void => {
       const s = new PIXI.Sprite(baseTex);
       s.anchor.set(0.5);
       s.x = rect.x + rect.w / 2;
       s.y = rect.y + rect.h / 2;
       s.width  = rect.w;
       s.height = rect.h;
-      if (flipY) s.scale.y *= -1;
+      if (mirror) {
+        // Portrait: enemy is above → flip vertically
+        // Landscape: enemy is to the right → flip horizontally
+        if (layout.orientation === 'landscape') {
+          s.scale.x *= -1;
+        } else {
+          s.scale.y *= -1;
+        }
+      }
       this.container.addChild(s);
     };
 

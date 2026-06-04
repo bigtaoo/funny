@@ -127,15 +127,33 @@ hudView.container        ← HUD（最顶层）
 
 ---
 
-## 6. 建筑视觉效果
+## 6. 建筑
+
+### 视觉效果
 
 建筑不使用骨骼动画，只用补间：
 
 | 事件 | 效果 |
 |---|---|
-| 放置 | scale 0→1，duration 0.3s，ease-out（待实现） |
-| 受击 | `BuildingView.playDestroyEffect` 现有旋转+淡出 |
-| 摧毁 | `death_building` VFX（已实现） |
+| 放置 | scale 0→1，duration 0.3s，ease-out cubic（`BuildingView.acquireSprite`） |
+| 受击 | `BuildingView.playDestroyEffect` 旋转+淡出 |
+| 摧毁 | `death_building` VFX |
+
+建筑精灵资源（`src/assets/`）：
+
+| 建筑类型 | 文件 |
+|---|---|
+| `Barracks`（兵营） | `game_infantry_barracks.png` |
+| `ArrowTower`（箭塔） | `game_archer_barracks.png` |
+| 基地（双方） | `game_base.png`，敌方按朝向镜像（横屏左右翻、竖屏上下翻） |
+
+### 箭塔攻击范围
+
+箭塔对 **`attackRange`（当前=2）格 Chebyshev 距离**内的所有敌方单位全向攻击，不区分方向：
+
+- 按距离环由近到远查找目标，优先打最近的敌人
+- 覆盖正面纵向、侧面横向（含 Crossing 状态单位）、斜向，统一处理
+- 实现位置：`CombatSystem.findTargetForBuilding`
 
 ---
 
@@ -143,7 +161,6 @@ hudView.container        ← HUD（最顶层）
 
 | 功能 | 位置 | 说明 |
 |---|---|---|
-| 建筑 spawn 动画 | BuildingView | scale 0→1 弹出 |
 | 骨骼角色动画 | 新建 StickmanRuntime | 读取 animator 导出 JSON |
 | 阴影渲染 | UnitView / StickmanRuntime | 使用挂点 shadow 坐标 |
 | 受击特效位置 | StickmanRuntime | 使用挂点 hit 坐标 |

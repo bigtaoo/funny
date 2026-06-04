@@ -1,4 +1,4 @@
-import { ATTACK_MULT_LATE_GAME, ATTACK_MULT_THRESHOLD_TICKS, BOARD_ROWS } from '../config';
+import { ATTACK_MULT_LATE_GAME, ATTACK_MULT_THRESHOLD_TICKS, BOARD_COLS, BOARD_ROWS } from '../config';
 import { GameState } from '../GameState';
 import { Unit } from '../Unit';
 import { Building } from '../Building';
@@ -106,14 +106,23 @@ export class CombatSystem {
 
   private findTargetForBuilding(building: Building, state: GameState): Unit | null {
     const board     = state.board;
-    // Building attacks toward enemy side — same direction convention.
-    const direction = building.side === Side.Bottom ? 1 : -1;
     const enemySide = building.side === Side.Bottom ? Side.Top : Side.Bottom;
+    const range     = building.attackRange;
 
-    for (let dist = 1; dist <= building.attackRange; dist++) {
-      const checkRow = building.row + direction * dist;
-      const unit     = board.getUnitAt(building.col, checkRow);
-      if (unit && unit.side === enemySide && !unit.isDead) return unit;
+    // Scan all cells within attackRange in every direction (Chebyshev distance),
+    // ring by ring so closer targets are preferred.
+    for (let dist = 1; dist <= range; dist++) {
+      for (let dr = -dist; dr <= dist; dr++) {
+        for (let dc = -dist; dc <= dist; dc++) {
+          if (Math.max(Math.abs(dr), Math.abs(dc)) !== dist) continue; // outer ring only
+          const checkRow = building.row + dr;
+          const checkCol = building.col + dc;
+          if (checkRow < 0 || checkRow >= BOARD_ROWS) continue;
+          if (checkCol < 0 || checkCol >= BOARD_COLS) continue;
+          const unit = board.getUnitAt(checkCol, checkRow);
+          if (unit && unit.side === enemySide && !unit.isDead) return unit;
+        }
+      }
     }
     return null;
   }
