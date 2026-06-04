@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Read(//c/Users/TaoWang/.claude/**)",
+      "Bash(npx webpack *)",
+      "Bash(npm run *)",
+      "Bash(ls //wsl.localhost/ubuntu/home/taowang/projects/funny/tools/animator/)",
+      "Bash(wsl -e bash -c \"cd /home/taowang/projects/funny/tools/animator && npm run build 2>&1 | tail -60\")",
+      "Bash(ls -la /home/taowang/projects/ 2>&1)",
+      "Bash(grep -r \"removeEventListener\" //wsl.localhost/ubuntu/home/taowang/projects/funny/tools/animator/src/ --include=\"*.ts\")",
+      "Bash(grep -rn \"requestAnimationFrame\" //wsl.localhost/ubuntu/home/taowang/projects/funny/tools/animator/src/ --include=\"*.ts\" | grep -v \"cancelAnimationFrame\")",
+      "Bash(grep -n \"Math.abs\" //wsl.localhost/ubuntu/home/taowang/projects/funny/tools/animator/src/ -r --include=\"*.ts\" | head -15)",
+      "Bash(grep -rn \"\\\\.on\\\\\\(\" //wsl.localhost/ubuntu/home/taowang/projects/funny/tools/animator/src/ --include=\"*.ts\" | grep -v \"off\\\\|onNew\\\\|onDelete\\\\|onMouse\\\\|onKey\\\\|onRight\\\\|onContext\")",
+      "Bash(grep -rn \"bus\\\\.on\" //wsl.localhost/ubuntu/home/taowang/projects/funny/tools/animator/src/ --include=\"*.ts\" | head -20)",
+      "Bash(find \"\\\\\\\\\\\\\\\\wsl.localhost\\\\\\\\ubuntu\\\\\\\\home\\\\\\\\taowang\\\\\\\\projects\\\\\\\\funny\" -type f -name \"*.ts\" 2>&1 | head -60)",
+      "Read(///wsl.localhost/ubuntu/home/taowang/projects/funny/tools/animator/**)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:9091)",
+      "Bash(wsl -d ubuntu -- bash -c \"cd ~/projects/funny/tools/animator && npm run start\")",
+      "Bash(wsl -d ubuntu -- bash -c \"cd ~/projects/funny/tools/animator && npx tsc --noEmit 2>&1\")"
+    ]
+  }
+}

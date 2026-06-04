@@ -16,6 +16,7 @@ import { cardRefreshDuration } from './Card';
 import { Building } from './Building';
 import { Player } from './Player';
 import { Unit } from './Unit';
+import { Prng } from './math/prng';
 import { GameState } from './GameState';
 import { AISystem } from './systems/AISystem';
 import { BuildingProductionSystem } from './systems/BuildingProductionSystem';
@@ -67,7 +68,7 @@ class GameEngineImpl implements IGameEngine {
     this.combat     = new CombatSystem();
     this.spell      = new SpellSystem();
     this.production = new BuildingProductionSystem();
-    this.ai         = new AISystem();
+    this.ai         = new AISystem(new Prng(config.seed ^ 0xA1A1A1A1));
   }
 
   // ─── Render-facing API ───────────────────────────────────────────────────

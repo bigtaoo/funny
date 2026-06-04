@@ -1,5 +1,6 @@
 import { ATTACK_LANES, TOP_BUILDING_ROW } from '../config';
 import { TICK_RATE } from '../math/fixed';
+import { Prng } from '../math/prng';
 import { GameState } from '../GameState';
 import { CardType, OwnerId, PlayerCommand, Side, SpellType } from '../types';
 
@@ -22,6 +23,8 @@ export class AISystem {
    * Integer constant — no float stored.
    */
   private readonly thinkIntervalTicks = Math.round(1.5 * TICK_RATE); // 45
+
+  constructor(private readonly rng: Prng) {}
 
   decideTick(tick: number, state: GameState): PlayerCommand[] {
     this.thinkTick++;
@@ -86,8 +89,7 @@ export class AISystem {
       }
     }
     if (bestLanes.length === 0) return null;
-    // Random tie-breaking so AI spreads across lanes from game start
-    return bestLanes[Math.floor(Math.random() * bestLanes.length)]!;
+    return bestLanes[this.rng.nextInt(bestLanes.length)]!;
   }
 
   private chooseBuildingLane(state: GameState): number | null {

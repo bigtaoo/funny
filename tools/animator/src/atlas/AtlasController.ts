@@ -77,6 +77,9 @@ export class AtlasController {
     }
 
     const base = PIXI.BaseTexture.from(imageUrl);
+    base.on('error', () => {
+      this.bus.emit('status', `Image load failed for atlas "${atlasId}"`);
+    });
     const asset: AtlasAsset = { id: atlasId, frames };
 
     // Destroy any previous atlas with same id

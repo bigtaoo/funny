@@ -162,8 +162,10 @@ export class Renderer {
         const transform = data.boneTransforms.get(boneId);
         if (!pose) return;
 
-        // Determine current frame
-        const frameId   = transform?.frameId !== undefined
+        // Determine current frame.
+        // transform.frameId is string|null (never undefined), so use != null
+        // to fall back to binding.frameId when no frame was keyframed.
+        const frameId = transform?.frameId != null
           ? transform.frameId
           : binding.frameId;
         if (frameId === null) return;

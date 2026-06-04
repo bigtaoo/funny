@@ -21,6 +21,8 @@ import { BuildingView } from './BuildingView';
 import { HandView } from './HandView';
 import { HUDView } from './HUDView';
 import { UnitView } from './UnitView';
+import { VFXSystem } from './VFXSystem';
+import { fromFp } from '../game';
 
 // ── Drag state ─────────────────────────────────────────────────────────────────
 
@@ -59,6 +61,7 @@ export class GameRenderer {
   private buildingView!: BuildingView;
   private handView!:     HandView;
   private hudView!:      HUDView;
+  private vfxSystem!:    VFXSystem;
 
   private drag:      DragState | null = null;
   private dragCol    = -1;
@@ -87,6 +90,7 @@ export class GameRenderer {
     this.engine.tick(dt);
     const state = this.engine.state;
     for (const event of state.events) this.handleEvent(event, state);
+    this.vfxSystem.update(dt);
     this.unitView.sync(state.board);
     this.buildingView.sync(state.board);
     this.handView.sync(state.bottomPlayer);
@@ -97,6 +101,7 @@ export class GameRenderer {
     this.unsubs.forEach(u => u());
     this.drag?.ghost.destroy();
     this.drag = null;
+    this.vfxSystem.destroy();
   }
 
   // ── Scene graph ────────────────────────────────────────────────────────────
@@ -107,10 +112,12 @@ export class GameRenderer {
     this.buildingView = new BuildingView(this.boardView);
     this.handView     = new HandView(this.layout);
     this.hudView      = new HUDView(this.layout);
+    this.vfxSystem    = new VFXSystem();
 
     this.container.addChild(this.boardView.container);
     this.container.addChild(this.unitView.container);
     this.container.addChild(this.buildingView.container);
+    this.container.addChild(this.vfxSystem.container);  // above units, below HUD
     this.container.addChild(this.handView.container);
     this.container.addChild(this.hudView.container);
   }
@@ -201,18 +208,32 @@ export class GameRenderer {
 
   // ── Event handling ─────────────────────────────────────────────────────────
 
-  private handleEvent(event: GameEvent, _state: GameState): void {
+  private handleEvent(event: GameEvent, state: GameState): void {
     switch (event.type) {
-      case 'unit_attack_hit':
+      case 'unit_attack_hit': {
         this.unitView.playHitEffect(event.targetId);
         this.unitView.showHpBar(event.targetId);
+        // VFX at the target unit's current position
+        const hitUnit = state.board.units.get(event.targetId);
+        if (hitUnit) {
+          const p = this.boardView.gridToScreen(hitUnit.colExact, hitUnit.rowExact);
+          this.vfxSystem.play('hit', p.x, p.y, 0xffffff);
+        }
         break;
-      case 'unit_died':
+      }
+      case 'unit_died': {
         this.unitView.playDeathEffect(event.unitId);
+        // Vec2_fp carries the authoritative death position
+        const p = this.boardView.gridToScreen(event.pos.col, fromFp(event.pos.y_fp));
+        this.vfxSystem.play('death_unit', p.x, p.y, 0x222222);
         break;
-      case 'building_destroyed':
+      }
+      case 'building_destroyed': {
         this.buildingView.playDestroyEffect(event.buildingId);
+        const p = this.boardView.gridToScreen(event.col, event.row);
+        this.vfxSystem.play('death_building', p.x, p.y, 0x222222);
         break;
+      }
       case 'building_hp_changed':
         break;
       case 'spell_cast':

@@ -11,6 +11,12 @@ export interface MenuItem {
 
 export class ContextMenu {
   private readonly el: HTMLDivElement;
+  private readonly onMouseDown = (e: MouseEvent) => {
+    if (!this.el.contains(e.target as Node)) this.hide();
+  };
+  private readonly onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') this.hide();
+  };
 
   constructor() {
     this.el = document.createElement('div');
@@ -22,12 +28,8 @@ export class ContextMenu {
     ].join(';');
     document.body.appendChild(this.el);
 
-    document.addEventListener('mousedown', e => {
-      if (!this.el.contains(e.target as Node)) this.hide();
-    });
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') this.hide();
-    });
+    document.addEventListener('mousedown', this.onMouseDown);
+    document.addEventListener('keydown', this.onKeyDown);
   }
 
   show(x: number, y: number, items: MenuItem[]): void {
@@ -60,6 +62,8 @@ export class ContextMenu {
   }
 
   destroy(): void {
+    document.removeEventListener('mousedown', this.onMouseDown);
+    document.removeEventListener('keydown', this.onKeyDown);
     this.el.remove();
   }
 }

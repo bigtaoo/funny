@@ -13,6 +13,7 @@ import { AtlasPanel }            from './ui/AtlasPanel';
 import { AttachmentPanel }       from './ui/AttachmentPanel';
 import { ToolbarPanel }          from './ui/ToolbarPanel';
 import { StatusBar }             from './ui/StatusBar';
+import { ResizablePanels }       from './ui/ResizablePanels';
 import { IOController }          from './io/IOController';
 import type { AppEvents }        from './core/EventBus';
 
@@ -67,12 +68,20 @@ export class App {
       bus, state,
     );
     new IOController(state, animCtrl, atlasCtrl, cmdManager, bus);
+    new ResizablePanels(rootEl);
 
     // ── 6. Resize handling ───────────────────────────────────────────────────
-    const resizeObs = new ResizeObserver(() => {
-      const { w: nw, h: nh } = renderer.logicalSize;
+    const resizeObs = new ResizeObserver(entries => {
+      // Read the container's NEW size from ResizeObserverEntry — NOT from
+      // renderer.logicalSize, which returns the stale pre-resize dimensions.
+      const { width: nw, height: nh } = entries[0].contentRect;
+      if (nw === 0 || nh === 0) return;
+      // Preserve current pan offset relative to canvas centre.
+      const { w: oldW, h: oldH } = renderer.logicalSize;
+      const dx = oldW > 0 ? state.rootX - oldW / 2 : 0;
+      const dy = oldH > 0 ? state.rootY - (oldH / 2 + 30) : 0;
       renderer.resize(nw, nh);
-      state.setRootPos(nw / 2 + state.panOffsetX, nh / 2 + 30 + state.panOffsetY);
+      state.setRootPos(nw / 2 + dx, nh / 2 + 30 + dy);
     });
     resizeObs.observe(canvasWrap);
 

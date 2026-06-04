@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "animator",
+      "runtimeExecutable": "wsl",
+      "runtimeArgs": ["-d", "ubuntu", "--", "bash", "-c", "cd ~/projects/funny/tools/animator && npm run start"],
+      "port": 9091
+    }
+  ]
+}
