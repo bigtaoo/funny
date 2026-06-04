@@ -96,4 +96,23 @@ export class PortraitLayout implements ILayout {
       h: 2 * CELL,
     };
   }
+
+  enemyBaseRect(): Rect {
+    if (this.localSide === Side.Bottom) {
+      // Enemy rows 16-17 appear at the top of the board
+      return {
+        x: BOARD_X + BASE_COLS[0] * CELL,
+        y: BOARD_Y,
+        w: 2 * CELL,
+        h: 2 * CELL,
+      };
+    }
+    // Player 1: enemy rows 0-1 appear at the bottom
+    return {
+      x: BOARD_X + (BOARD_COLS - 1 - BASE_COLS[1]) * CELL,
+      y: BOARD_Y + (BOARD_ROWS - 2) * CELL,
+      w: 2 * CELL,
+      h: 2 * CELL,
+    };
+  }
 }

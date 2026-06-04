@@ -4,36 +4,39 @@ import { Building } from '../game/Building';
 import { BuildingType } from '../game/types';
 import { BoardView } from './BoardView';
 import { ObjectPool } from '../cache/ObjectPool';
+import barracksTexUrl from '../assets/game_infantry_barracks.png';
+import archerTexUrl from '../assets/game_archer_barracks.png';
 
-const BUILDING_COLORS: Record<BuildingType, number> = {
-  [BuildingType.Barracks]:   0x2a6a2a, // green marker
-  [BuildingType.ArrowTower]: 0x1a3a8a, // blue marker
-};
+const SPRITE_SIZE = 56;
+const HP_BAR_Y    = 32;
+const HP_BAR_W    = 40;
 
 // ─── Pool factory / resetter ──────────────────────────────────────────────────
 
 function createBuildingContainer(): PIXI.Container {
   const c = new PIXI.Container();
 
-  const gfx    = new PIXI.Graphics(); gfx.name    = 'gfx';
-  const hpBg   = new PIXI.Graphics(); hpBg.name   = 'hpBg';
-  const hpFill = new PIXI.Graphics(); hpFill.name = 'hpFill';
+  const sprite = new PIXI.Sprite();
+  sprite.name = 'sprite';
+  sprite.anchor.set(0.5);
 
+  const hpBg = new PIXI.Graphics(); hpBg.name = 'hpBg';
   hpBg.beginFill(0xcccccc, 0.7);
-  hpBg.drawRect(-16, 20, 32, 4);
+  hpBg.drawRect(-HP_BAR_W / 2, HP_BAR_Y, HP_BAR_W, 4);
   hpBg.endFill();
 
-  c.addChild(gfx, hpBg, hpFill);
+  const hpFill = new PIXI.Graphics(); hpFill.name = 'hpFill';
+
+  c.addChild(sprite, hpBg, hpFill);
   return c;
 }
 
 function resetBuildingContainer(c: PIXI.Container): void {
   c.removeFromParent();
-  c.alpha    = 1;
-  c.angle    = 0;
+  c.alpha   = 1;
+  c.angle   = 0;
   c.scale.set(1);
-  c.visible  = false;
-  (c.getChildByName('gfx')    as PIXI.Graphics).clear();
+  c.visible = false;
   (c.getChildByName('hpFill') as PIXI.Graphics).clear();
 }
 
@@ -47,8 +50,11 @@ export class BuildingView {
   private readonly pool = new ObjectPool<PIXI.Container>(
     createBuildingContainer,
     resetBuildingContainer,
-    12, // prewarm — 6 lanes × 2 players
+    12,
   );
+
+  private texBarracks: PIXI.Texture | null = null;
+  private texArcher:   PIXI.Texture | null = null;
 
   constructor(boardView: BoardView) {
     this.boardView = boardView;
@@ -87,7 +93,6 @@ export class BuildingView {
     const sprite = this.sprites.get(buildingId);
     if (!sprite) return;
 
-    // Remove from map immediately so sync() won't release it while animation runs
     this.sprites.delete(buildingId);
 
     let frames = 20;
@@ -105,24 +110,32 @@ export class BuildingView {
   // ─── Private helpers ──────────────────────────────────────────────────────
 
   private acquireSprite(building: Building): PIXI.Container {
-    const c     = this.pool.acquire();
-    c.visible   = true;
-    const color = BUILDING_COLORS[building.buildingType];
-    const gfx   = c.getChildByName('gfx') as PIXI.Graphics;
+    const c = this.pool.acquire();
+    c.visible = true;
 
-    gfx.clear();
-    gfx.lineStyle(3, color);
-
+    const sp = c.getChildByName('sprite') as PIXI.Sprite;
     if (building.buildingType === BuildingType.Barracks) {
-      gfx.drawRect(-16, -12, 32, 24);
-      gfx.moveTo(16, -12);
-      gfx.lineTo(16, -24);
-      gfx.lineTo(26, -18);
-      gfx.lineTo(16, -12);
+      if (!this.texBarracks) this.texBarracks = PIXI.Texture.from(barracksTexUrl as string);
+      sp.texture = this.texBarracks;
     } else {
-      gfx.drawPolygon([-10, 16, 10, 16, 8, -8, -8, -8]);
-      gfx.drawPolygon([-10, -8, 10, -8, 0, -22]);
+      if (!this.texArcher) this.texArcher = PIXI.Texture.from(archerTexUrl as string);
+      sp.texture = this.texArcher;
     }
+    sp.width  = SPRITE_SIZE;
+    sp.height = SPRITE_SIZE;
+
+    // Spawn animation: scale 0→1, ease-out cubic, ~0.3s at 60fps
+    c.scale.set(0);
+    let elapsed = 0;
+    const DURATION = 18; // frames at 60fps
+    const onTick = (dt: number): void => {
+      elapsed += dt;
+      const t     = Math.min(elapsed / DURATION, 1);
+      const scale = 1 - Math.pow(1 - t, 3);
+      c.scale.set(scale);
+      if (t >= 1) PIXI.Ticker.shared.remove(onTick);
+    };
+    PIXI.Ticker.shared.add(onTick);
 
     return c;
   }
@@ -136,7 +149,7 @@ export class BuildingView {
     hpFill.clear();
     const ratio = Math.max(0, building.hp / building.maxHp);
     hpFill.beginFill(ratio > 0.4 ? 0x44cc44 : 0xcc4444);
-    hpFill.drawRect(-16, 20, 32 * ratio, 4);
+    hpFill.drawRect(-HP_BAR_W / 2, HP_BAR_Y, HP_BAR_W * ratio, 4);
     hpFill.endFill();
   }
 }

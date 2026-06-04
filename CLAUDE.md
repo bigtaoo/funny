@@ -85,6 +85,14 @@ npm run build   # 生产构建
 - **骨骼动画 Runtime**：待实现（`StickmanRuntime`），读取 animator 导出的 JSON
 - **确定性约束**：游戏逻辑（`code/src/game/`）内严禁使用 `Math.random()`，必须使用 `Prng`（`game/math/prng.ts`）。`GameState` 构造函数以 seed 派生各 PRNG；新增需要随机性的系统，在 `GameEngine` 中用 `new Prng(seed ^ 唯一常量)` 注入。
 
+### 已知修复（2026-06）
+
+| 文件 | 问题 | 修复 |
+|---|---|---|
+| `src/layout/ILayout.ts` | 缺少 `enemyBaseRect()` 接口 | 新增该方法，`PortraitLayout` / `LandscapeLayout` 均已实现 |
+| `src/render/BoardView.ts` | 基地无视觉图片，仅靠高亮矩形标识 | 用 `game_base.png` 渲染双方基地精灵；敌方基地垂直翻转以示区分 |
+| `src/render/BuildingView.ts` | 建筑用占位矢量图（矩形/多边形）渲染 | 替换为 PNG 精灵（`game_infantry_barracks.png` / `game_archer_barracks.png`）；`acquireSprite` 添加 scale 0→1 ease-out cubic 弹出动画（约 0.3s）|
+
 ### 游戏核心模块
 
 | 文件 | 职责 |

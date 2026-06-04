@@ -61,4 +61,7 @@ export interface ILayout {
 
   /** Design-space rect occupied by the local player's base (for upgrade drag). */
   playerBaseRect(): Rect;
+
+  /** Design-space rect occupied by the enemy's base. */
+  enemyBaseRect(): Rect;
 }

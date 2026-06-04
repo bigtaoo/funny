@@ -18,7 +18,14 @@
       "Read(///wsl.localhost/ubuntu/home/taowang/projects/funny/tools/animator/**)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:9091)",
       "Bash(wsl -d ubuntu -- bash -c \"cd ~/projects/funny/tools/animator && npm run start\")",
-      "Bash(wsl -d ubuntu -- bash -c \"cd ~/projects/funny/tools/animator && npx tsc --noEmit 2>&1\")"
+      "Bash(wsl -d ubuntu -- bash -c \"cd ~/projects/funny/tools/animator && npx tsc --noEmit 2>&1\")",
+      "Read(///wsl.localhost/ubuntu/home/taowang/projects/**)",
+      "Bash(dir \"\\\\\\\\\\\\\\\\wsl.localhost\\\\\\\\ubuntu\\\\\\\\home\\\\\\\\taowang\\\\\\\\projects\\\\\\\\funny\")",
+      "Bash(dir \"\\\\\\\\\\\\\\\\wsl.localhost\\\\\\\\ubuntu\\\\\\\\home\\\\\\\\taowang\\\\\\\\projects\\\\\\\\funny\\\\\\\\code\" /s /b)",
+      "Bash(findstr /v \"node_modules\")",
+      "Bash(wsl -e bash -c \"cd /home/taowang/projects/funny/code && npx tsc --noEmit 2>&1\")",
+      "Bash(wsl -e bash -c \"cd /home/taowang/projects/funny/code && npx webpack --mode development --env TARGET=web 2>&1\")",
+      "Bash(Select-String -Pattern \"png|archer|barracks|base\")"
     ]
   }
 }

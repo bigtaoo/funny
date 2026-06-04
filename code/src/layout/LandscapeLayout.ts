@@ -118,4 +118,23 @@ export class LandscapeLayout implements ILayout {
       h: 2 * CELL,
     };
   }
+
+  enemyBaseRect(): Rect {
+    if (this.localSide === Side.Bottom) {
+      // Enemy rows 16-17 → rightmost X
+      return {
+        x: BOARD_X + (BOARD_ROWS - 2) * CELL,
+        y: BOARD_Y + BASE_COLS[0] * CELL,
+        w: 2 * CELL,
+        h: 2 * CELL,
+      };
+    }
+    // Player 1: enemy rows 0-1 → leftmost X
+    return {
+      x: BOARD_X,
+      y: BOARD_Y + (BOARD_COLS - 1 - BASE_COLS[1]) * CELL,
+      w: 2 * CELL,
+      h: 2 * CELL,
+    };
+  }
 }

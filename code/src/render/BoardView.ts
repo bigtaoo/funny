@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '../game/config';
 import { ILayout, Rect } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
+import baseTexUrl from '../assets/game_base.png';
 
 /** Colors matching the art direction (notebook paper aesthetic) */
 const GRID_LINE_COLOR    = 0xc8d8e8;
@@ -30,6 +31,7 @@ export class BoardView {
     this.highlightLayer = new PIXI.Graphics();
 
     this.drawGrid();
+    this.drawBases(layout);
     this.container.addChild(this.highlightLayer);
   }
 
@@ -178,6 +180,24 @@ export class BoardView {
     }
     // In landscape, game col → screen Y band
     return { x: r.x, y: r.y + gameCol * cell, w: r.w, h: cell };
+  }
+
+  private drawBases(layout: ILayout): void {
+    const baseTex = PIXI.Texture.from(baseTexUrl as string);
+
+    const addBase = (rect: Rect, flipY: boolean): void => {
+      const s = new PIXI.Sprite(baseTex);
+      s.anchor.set(0.5);
+      s.x = rect.x + rect.w / 2;
+      s.y = rect.y + rect.h / 2;
+      s.width  = rect.w;
+      s.height = rect.h;
+      if (flipY) s.scale.y *= -1;
+      this.container.addChild(s);
+    };
+
+    addBase(layout.playerBaseRect(), false);
+    addBase(layout.enemyBaseRect(),  true);
   }
 
   private drawGrid(): void {
