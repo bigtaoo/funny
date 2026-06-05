@@ -204,16 +204,51 @@ export class Renderer {
       });
     }
 
+    // Render shadow attachment point image (below all bone sprites)
+    if (data.previewMode === 'sprite') {
+      const shadowPt  = data.attachmentPoints.get('shadow');
+      const shadowTex = data.getTexture('shadow');
+      if (shadowPt && shadowTex) {
+        const parent = data.worldPose.get(shadowPt.parentBone) ?? data.worldPose.get('root');
+        if (parent) {
+          visible.add('shadow');
+          let sprite = this.spriteCache.get('shadow');
+          if (!sprite) {
+            sprite      = new PIXI.Sprite(shadowTex);
+            sprite.name = 'shadow';
+            this.spriteCache.set('shadow', sprite);
+            this.spriteLayer.addChild(sprite);
+            this._spriteOrderDirty = true;
+          }
+          const def = defaultShadowSize();
+          const sw  = shadowPt.shadowW ?? def.w;
+          const sh  = shadowPt.shadowH ?? def.h;
+          sprite.texture = shadowTex;
+          sprite.anchor.set(0.5, 0.5);
+          sprite.x       = parent.ex + shadowPt.offsetX;
+          sprite.y       = parent.ey + shadowPt.offsetY;
+          sprite.rotation = 0;
+          sprite.scale.set(
+            (sw * 2) / shadowTex.width,
+            (sh * 2) / shadowTex.height,
+          );
+          sprite.alpha   = 1;
+          sprite.visible = true;
+        }
+      }
+    }
+
     // Hide sprites not in visible set
     this.spriteCache.forEach((sprite, boneId) => {
       sprite.visible = visible.has(boneId);
     });
 
     // Sort spriteLayer children by zOrder (once per binding change, not every frame)
+    // shadow always goes to the bottom (zOrder = -Infinity)
     if (this._spriteOrderDirty) {
       this.spriteLayer.children.sort((a, b) => {
-        const za = data.bindings.get(a.name!)?.zOrder ?? 0;
-        const zb = data.bindings.get(b.name!)?.zOrder ?? 0;
+        const za = a.name === 'shadow' ? -Infinity : (data.bindings.get(a.name!)?.zOrder ?? 0);
+        const zb = b.name === 'shadow' ? -Infinity : (data.bindings.get(b.name!)?.zOrder ?? 0);
         return za - zb;
       });
       this._spriteOrderDirty = false;

@@ -153,7 +153,7 @@ export class InteractionController {
 
     const { x, y } = this.renderer.toStageCoords(e.clientX, e.clientY);
     const wp = this.animCtrl.getCurrentFrame();
-    const worldPose = Skeleton.computeFK(this.state.rootX, this.state.rootY, wp);
+    const worldPose = Skeleton.computeFK(this.state.rootX, this.state.rootY, wp, this.state.boneLengthScales);
 
     const boneId = this.findBoneAt(x, y, worldPose);
 
@@ -177,7 +177,7 @@ export class InteractionController {
 
     const { x, y } = this.renderer.toStageCoords(e.clientX, e.clientY);
     const frame = this.animCtrl.getCurrentFrame();
-    const worldPose = Skeleton.computeFK(this.state.rootX, this.state.rootY, frame);
+    const worldPose = Skeleton.computeFK(this.state.rootX, this.state.rootY, frame, this.state.boneLengthScales);
     const pivot = worldPose.get(this.dragBoneId);
     if (!pivot) return;
 
