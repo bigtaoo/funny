@@ -159,6 +159,7 @@ export class Renderer {
     this.drawSelection(data);
     if (data.showGuide)  this.drawGuide(data.rootX, data.rootY);
     if (data.showPivots) this.drawPivots(data.worldPose, data.selectedBone);
+    if (data.previewMode === 'sprite') this.drawAnchorPoints(data);
     this.drawAttachmentPoints(data.rootX, data.rootY, data.worldPose, data.attachmentPoints);
   }
 
@@ -360,6 +361,41 @@ export class Renderer {
     g.beginFill(0x222222, alpha);
     g.drawCircle(cx + Skeleton.HEAD_R * 0.38, cy - Skeleton.HEAD_R * 0.1, 3);
     g.endFill();
+  }
+
+  private drawAnchorPoints(data: RenderData): void {
+    data.bindings.forEach((binding, boneId) => {
+      if (!data.getTexture(boneId)) return;
+      const pose      = data.worldPose.get(boneId);
+      const transform = data.boneTransforms.get(boneId);
+      if (!pose) return;
+
+      const ax = pose.sx + (transform?.translateX ?? 0) + (binding.offsetX ?? 0);
+      const ay = pose.sy + (transform?.translateY ?? 0) + (binding.offsetY ?? 0);
+      const isSelected = boneId === data.selectedBone;
+
+      // Line from bone pivot to anchor (visible when offset is non-zero)
+      if (Math.hypot(ax - pose.sx, ay - pose.sy) > 1) {
+        this.selGfx.lineStyle({ width: 1, color: 0xff4444, alpha: 0.4 });
+        this.selGfx.moveTo(pose.sx, pose.sy);
+        this.selGfx.lineTo(ax, ay);
+      }
+
+      // Anchor dot
+      const r = isSelected ? 6 : 4;
+      this.selGfx.lineStyle({ width: 1.5, color: 0xffffff, alpha: 0.9 });
+      this.selGfx.beginFill(0xff3333, 0.95);
+      this.selGfx.drawCircle(ax, ay, r);
+      this.selGfx.endFill();
+
+      // Crosshair for selected bone
+      if (isSelected) {
+        const S = 11;
+        this.selGfx.lineStyle({ width: 1.5, color: 0xff3333, alpha: 0.85 });
+        this.selGfx.moveTo(ax - S, ay); this.selGfx.lineTo(ax + S, ay);
+        this.selGfx.moveTo(ax, ay - S); this.selGfx.lineTo(ax, ay + S);
+      }
+    });
   }
 
   private drawJoint(g: PIXI.Graphics, x: number, y: number, r: number): void {

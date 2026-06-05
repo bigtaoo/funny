@@ -80,8 +80,8 @@ export interface SpriteBinding {
   rotation: number;   // degrees, additive to animated rotation; default 0
   scaleX:   number;   // multiplicative with animated scaleX; default 1
   scaleY:   number;   // multiplicative with animated scaleY; default 1
-  offsetX:  number;   // pixel offset from bone pivot in local bone space, X; default 0
-  offsetY:  number;   // pixel offset from bone pivot in local bone space, Y; default 0
+  offsetX:  number;   // pixel offset added in world space (screen X) from bone pivot; default 0
+  offsetY:  number;   // pixel offset added in world space (screen Y) from bone pivot; default 0
 }
 
 // ── Attachment Points ─────────────────────────────────────────────────────────
