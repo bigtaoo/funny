@@ -279,6 +279,13 @@ export class AnimationController {
     this.bus.emit('anim:list');
   }
 
+  /** Remove all clips from the store (used by loadEditorProject). */
+  clearAll(): void {
+    this._store.clear();
+    this._currentName = null;
+    this.bus.emit('anim:list');
+  }
+
   // ── Live drag delta (no Command; InteractionController commits on mouseUp) ──
 
   setBoneDelta(boneId: string, rotationDelta: number): void {

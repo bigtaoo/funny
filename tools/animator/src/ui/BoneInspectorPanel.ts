@@ -78,6 +78,7 @@ export class BoneInspectorPanel {
     bus.on('kf:change',      () => this.render());
     bus.on('binding:change', () => this.render());
     bus.on('images:change',  () => this.render());
+    bus.on('rig:change',     () => this.render());
 
     this.render();
   }
@@ -98,6 +99,18 @@ export class BoneInspectorPanel {
     const filename  = this.imageCtrl.getFilename(boneId);
 
     let html = `<div class="bone-name">${bone?.label ?? boneId}</div>`;
+
+    // Rig: bone length (skip root len=0 and head which uses radius)
+    if (bone && bone.len > 0 && !bone.isHead) {
+      const effectiveLen = Math.round(bone.len * this.state.getLengthScale(boneId));
+      html += `
+      <div style="border-bottom:1px solid var(--border);margin:0 0 6px;padding-bottom:4px">
+        <div class="prop-row">
+          <span class="prop-label" title="Bone length in pixels (rig setup, per character)">Length (px)</span>
+          <input type="number" id="inp-bone-len" value="${effectiveLen}" min="1" step="1" style="width:60px">
+        </div>
+      </div>`;
+    }
 
     // Transform
     html += `
@@ -124,9 +137,19 @@ export class BoneInspectorPanel {
         <div class="prop-row"><span class="prop-label">Image</span>
           <span class="prop-value" style="font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${filename ?? ''}">${filename ?? '(from import)'}</span></div>
         <div class="prop-row"><span class="prop-label">Anchor X</span>
-          <input type="number" id="inp-anchorX" value="${binding.anchorX.toFixed(2)}" min="0" max="1" step="0.05" style="width:55px"></div>
+          <input type="number" id="inp-anchorX" value="${binding.anchorX.toFixed(2)}" min="0" max="1" step="0.05" style="width:55px" title="Pivot X within image (0=left, 1=right)"></div>
         <div class="prop-row"><span class="prop-label">Anchor Y</span>
-          <input type="number" id="inp-anchorY" value="${binding.anchorY.toFixed(2)}" min="0" max="1" step="0.05" style="width:55px"></div>
+          <input type="number" id="inp-anchorY" value="${binding.anchorY.toFixed(2)}" min="0" max="1" step="0.05" style="width:55px" title="Pivot Y within image (0=top, 1=bottom)"></div>
+        <div class="prop-row"><span class="prop-label">Offset X</span>
+          <input type="number" id="inp-bind-ox" value="${(binding.offsetX ?? 0).toFixed(1)}" step="1" style="width:55px" title="Pixel offset X from bone pivot (world space)"></div>
+        <div class="prop-row"><span class="prop-label">Offset Y</span>
+          <input type="number" id="inp-bind-oy" value="${(binding.offsetY ?? 0).toFixed(1)}" step="1" style="width:55px" title="Pixel offset Y from bone pivot (world space)"></div>
+        <div class="prop-row"><span class="prop-label">Rotation</span>
+          <input type="number" id="inp-bind-rot" value="${(binding.rotation ?? 0).toFixed(1)}" step="1" style="width:55px" title="Static rotation offset (degrees)"></div>
+        <div class="prop-row"><span class="prop-label">Scale X</span>
+          <input type="number" id="inp-bind-sx" value="${(binding.scaleX ?? 1).toFixed(2)}" step="0.05" style="width:55px" title="Static scale offset"></div>
+        <div class="prop-row"><span class="prop-label">Scale Y</span>
+          <input type="number" id="inp-bind-sy" value="${(binding.scaleY ?? 1).toFixed(2)}" step="0.05" style="width:55px" title="Static scale offset"></div>
         <div class="prop-row"><span class="prop-label">Flip X</span>
           <input type="checkbox" id="chk-flipX" ${binding.flipX ? 'checked' : ''}></div>
         <div class="prop-row"><span class="prop-label">Z-Order</span>
@@ -149,6 +172,15 @@ export class BoneInspectorPanel {
     binding: SpriteBinding | undefined,
     kfTime: number,
   ): void {
+    // Bone length (rig setup)
+    const bone = Skeleton.BONE_MAP.get(boneId);
+    if (bone && bone.len > 0 && !bone.isHead) {
+      document.getElementById('inp-bone-len')?.addEventListener('change', e => {
+        const px = parseFloat((e.target as HTMLInputElement).value);
+        if (!isNaN(px) && px > 0) this.state.setLengthScale(boneId, px / bone.len);
+      });
+    }
+
     // Numeric transform inputs
     const numericProps: Array<{ id: string; key: keyof BoneKeyframe }> = [
       { id: 'inp-scaleX', key: 'scaleX' },
@@ -173,6 +205,26 @@ export class BoneInspectorPanel {
       document.getElementById('inp-anchorY')?.addEventListener('change', e => {
         const v = parseFloat((e.target as HTMLInputElement).value);
         if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, anchorY: v });
+      });
+      document.getElementById('inp-bind-rot')?.addEventListener('change', e => {
+        const v = parseFloat((e.target as HTMLInputElement).value);
+        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, rotation: v });
+      });
+      document.getElementById('inp-bind-ox')?.addEventListener('change', e => {
+        const v = parseFloat((e.target as HTMLInputElement).value);
+        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, offsetX: v });
+      });
+      document.getElementById('inp-bind-oy')?.addEventListener('change', e => {
+        const v = parseFloat((e.target as HTMLInputElement).value);
+        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, offsetY: v });
+      });
+      document.getElementById('inp-bind-sx')?.addEventListener('change', e => {
+        const v = parseFloat((e.target as HTMLInputElement).value);
+        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, scaleX: v });
+      });
+      document.getElementById('inp-bind-sy')?.addEventListener('change', e => {
+        const v = parseFloat((e.target as HTMLInputElement).value);
+        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, scaleY: v });
       });
       document.getElementById('chk-flipX')?.addEventListener('change', e => {
         const v = (e.target as HTMLInputElement).checked;

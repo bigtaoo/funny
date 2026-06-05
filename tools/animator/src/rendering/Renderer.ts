@@ -47,11 +47,12 @@ export interface RenderData {
 export class Renderer {
   readonly pixiApp: PIXI.Application;
 
-  private readonly gridGfx:    PIXI.Graphics;
-  private readonly onionGfx:   PIXI.Graphics;
+  private readonly gridGfx:     PIXI.Graphics;
+  private readonly onionGfx:    PIXI.Graphics;
+  private readonly boneGfx:     PIXI.Graphics;
   private readonly spriteLayer: PIXI.Container;
-  private readonly boneGfx:    PIXI.Graphics;
-  private readonly selGfx:     PIXI.Graphics;
+  private readonly overlayGfx:  PIXI.Graphics;  // skeleton overlay above sprites
+  private readonly selGfx:      PIXI.Graphics;
 
   /** boneId → Sprite (one per bone, reused across frames) */
   private readonly spriteCache = new Map<string, PIXI.Sprite>();
@@ -79,13 +80,16 @@ export class Renderer {
 
     this.gridGfx     = new PIXI.Graphics();
     this.onionGfx    = new PIXI.Graphics();
-    this.spriteLayer = new PIXI.Container();
     this.boneGfx     = new PIXI.Graphics();
+    this.spriteLayer = new PIXI.Container();
+    this.overlayGfx  = new PIXI.Graphics();
     this.selGfx      = new PIXI.Graphics();
     this.onionGfx.alpha = 0.2;
 
+    // Layer order (bottom → top):
+    // grid → onion → bones → sprites → skeleton overlay → selection/pivots/attachments
     this.pixiApp.stage.addChild(
-      this.gridGfx, this.onionGfx, this.spriteLayer, this.boneGfx, this.selGfx,
+      this.gridGfx, this.onionGfx, this.boneGfx, this.spriteLayer, this.overlayGfx, this.selGfx,
     );
 
     this.drawGrid(w, h);
@@ -143,8 +147,12 @@ export class Renderer {
     this.updateSprites(data);
 
     this.boneGfx.clear();
-    if (data.previewMode === 'skeleton' || data.showSkeletonOverlay) {
+    this.overlayGfx.clear();
+    if (data.previewMode === 'skeleton') {
       this.drawSkeleton(this.boneGfx, data.worldPose, data.selectedBone, data.showJoints, true);
+    } else if (data.showSkeletonOverlay) {
+      // In sprite mode, draw skeleton into overlayGfx so it renders above sprites
+      this.drawSkeleton(this.overlayGfx, data.worldPose, data.selectedBone, data.showJoints, true);
     }
 
     this.selGfx.clear();
@@ -184,12 +192,12 @@ export class Renderer {
 
         sprite.texture  = texture;
         sprite.anchor.set(binding.anchorX, binding.anchorY);
-        sprite.x        = pose.sx + (transform?.translateX ?? 0);
-        sprite.y        = pose.sy + (transform?.translateY ?? 0);
-        sprite.rotation = ((pose.wa + (transform?.rotation ?? 0)) * Math.PI) / 180;
+        sprite.x        = pose.sx + (transform?.translateX ?? 0) + (binding.offsetX ?? 0);
+        sprite.y        = pose.sy + (transform?.translateY ?? 0) + (binding.offsetY ?? 0);
+        sprite.rotation = ((pose.wa + (transform?.rotation ?? 0) + (binding.rotation ?? 0)) * Math.PI) / 180;
         sprite.scale.set(
-          (binding.flipX ? -1 : 1) * (transform?.scaleX ?? 1),
-          transform?.scaleY ?? 1,
+          (binding.flipX ? -1 : 1) * (transform?.scaleX ?? 1) * (binding.scaleX ?? 1),
+          (transform?.scaleY ?? 1) * (binding.scaleY ?? 1),
         );
         sprite.alpha   = transform?.alpha ?? 1;
         sprite.visible = true;

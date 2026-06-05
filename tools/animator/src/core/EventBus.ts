@@ -27,6 +27,9 @@ export interface AppEvents {
   // Attachment points
   'attachment:change': void;
 
+  // Rig setup (bone lengths)
+  'rig:change':     void;
+
   // Misc
   'status':         string;
   'pose:reset':     void;

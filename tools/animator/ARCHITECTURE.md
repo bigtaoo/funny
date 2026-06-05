@@ -110,6 +110,39 @@ interface BoneKeyframe {
 
 关键帧是**稀疏的**：只记录有变化的骨骼，其余从相邻帧插值。
 
+### Sprite 绑定（SpriteBinding）
+
+```ts
+interface SpriteBinding {
+  anchorX:  number;  // 0–1，图片内 pivot X（0=左边，1=右边），默认 0.5
+  anchorY:  number;  // 0–1，图片内 pivot Y（0=上边，1=下边），默认 0.5
+  flipX:    boolean; // 水平翻转
+  zOrder:   number;  // 渲染层次（数值越大越靠前），全局固定，不随动画变化
+  offsetX:  number;  // 像素偏移 X，叠加在骨骼世界坐标上，默认 0
+  offsetY:  number;  // 像素偏移 Y，叠加在骨骼世界坐标上，默认 0
+  rotation: number;  // 静态旋转偏移（度），叠加在动画旋转上，默认 0
+  scaleX:   number;  // 静态缩放，与动画 scaleX 相乘，默认 1
+  scaleY:   number;  // 静态缩放，与动画 scaleY 相乘，默认 1
+}
+```
+
+`offsetX`/`offsetY` 用于处理图片相对骨骼位置的整体平移（如身体很宽时胳膊图片需要向侧面偏移），与关键帧动画中的 `translateX`/`translateY` 互不干扰。旧存档缺少该字段时渲染器以 `?? 0` 安全回退。
+
+### 骨骼长度缩放（BoneLengthScales）
+
+```ts
+// AppState
+boneLengthScales: ReadonlyMap<string, number>  // 稀疏；1.0 不存储
+getLengthScale(boneId: string): number          // 未设置时返回 1.0
+setLengthScale(boneId: string, scale: number): void  // emit 'rig:change'
+setAllLengthScales(scales: Record<string, number>): void
+```
+
+- **用途**：每个角色设置一次，让骨骼可视长度与美术图片比例对齐，方便动画调整。与关键帧动画数据完全独立（旋转关键帧不受骨骼长度影响）。
+- **生效位置**：`Skeleton.computeFK(..., lengthScales?)` — 每根骨骼的 `len` 乘以对应倍率后再计算 tip 坐标；sprite 跟随 FK 位置，因此也随骨骼伸缩。
+- **Inspector UI**：选中骨骼后（root 和 head 除外），顶部显示 **Length (px)** 输入框，输入实际像素值，内部换算为 `px / bone.defaultLen`。
+- **序列化**：`.tao.editor` 和 `.tao` 均含 `boneLengthScales` 字段（稀疏对象，仅含非 1.0 的骨骼）；旧文件缺失时安全回退为全 1.0。
+
 ### 挂点（AttachmentPoint）
 
 ```ts
@@ -142,6 +175,7 @@ interface AttachmentPoint {
 | `images:change` | void | 骨骼图片加载/移除 |
 | `binding:change` | `string` (boneId) | sprite 绑定变化 |
 | `attachment:change` | void | 挂点数据变化 |
+| `rig:change` | void | 骨骼长度倍率变化（触发 Inspector 刷新 + 下一帧 FK 重算） |
 | `preview:mode` | `'skeleton'\|'sprite'` | 预览模式切换 |
 | `history:change` | `{canUndo, canRedo, label}` | Undo/Redo 栈变化 |
 | `status` | `string` | 状态栏消息 |
@@ -178,10 +212,13 @@ renderer.draw({ worldPose, boneTransforms, bindings, attachmentPoints, ... })
 ```
 gridGfx      — 背景网格
 onionGfx     — Onion skin（alpha 0.2）
-spriteLayer  — PIXI.Sprite（只在 sprite 模式）
-boneGfx      — 骨骼线框（skeleton 模式 或 showSkeletonOverlay）
+boneGfx      — 骨骼线框（skeleton 模式专用；sprite 模式下清空）
+spriteLayer  — PIXI.Sprite（只在 sprite 模式可见，盖住骨骼）
+overlayGfx   — 骨骼叠加线框（sprite 模式 + showSkeletonOverlay 时使用，位于 sprite 上方）
 selGfx       — 选中高亮 + 挂点标记 + Guide
 ```
+
+`showSkeletonOverlay` 默认 `false`；skeleton 模式下骨骼绘入 `boneGfx`，sprite 模式下骨骼叠加绘入 `overlayGfx`，两者互斥。
 
 **Sprite 缓存**：`spriteCache: Map<boneId, PIXI.Sprite>`，通过 `visible` 控制显示，不反复创建。
 
@@ -221,13 +258,15 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 
 `.tao` = ZIP 压缩包（JSZip），内含三个文件：
 
-**animation.json**（version 2，bindings 含 zOrder，无 frameId）：
+**animation.json**（version 2，bindings 含 zOrder / offsetX / offsetY，无 frameId）：
 ```jsonc
 {
   "version": 2,
   "bindings": {
-    "spine": { "anchorX": 0.5, "anchorY": 0.5, "flipX": false, "zOrder": 6 }
+    "spine": { "anchorX": 0.5, "anchorY": 0.5, "flipX": false, "zOrder": 6,
+               "offsetX": 0, "offsetY": 0, "rotation": 0, "scaleX": 1, "scaleY": 1 }
   },
+  "boneLengthScales": { "spine": 1.4, "r_upper_arm": 0.9 },
   "animations": {
     "walk": {
       "duration": 0.5,

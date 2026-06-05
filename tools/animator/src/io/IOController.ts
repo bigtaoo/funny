@@ -14,6 +14,18 @@ import type {
   SpriteBinding,
 } from '../core/types';
 
+// ── Editor project format (version 1) ────────────────────────────────────────
+
+interface EditorProject {
+  version:          1;
+  selectedClip:     string | null;
+  previewMode:      'skeleton' | 'sprite';
+  bindings:         Record<string, SpriteBinding>;
+  animations:       Record<string, SerializedClip>;
+  attachmentPoints: AttachmentPoint[];
+  boneLengthScales?: Record<string, number>;   // per-bone length multipliers; absent = all 1.0
+}
+
 // ── Serialization format (version 2) ─────────────────────────────────────────
 
 interface SerializedBoneKeyframe {
@@ -38,10 +50,11 @@ interface SerializedClip {
 }
 
 interface SerializedProject {
-  version:          number;
-  bindings:         Record<string, SpriteBinding>;
-  animations:       Record<string, SerializedClip>;
+  version:           number;
+  bindings:          Record<string, SpriteBinding>;
+  animations:        Record<string, SerializedClip>;
   attachmentPoints?: AttachmentPoint[];
+  boneLengthScales?: Record<string, number>;
 }
 
 // ── Spritesheet types ─────────────────────────────────────────────────────────
@@ -71,7 +84,127 @@ export class IOController {
     document.getElementById('file-input')?.addEventListener('change', e => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) this.importTao(file);
+      (e.target as HTMLInputElement).value = '';
     });
+
+    document.getElementById('btn-save-editor')?.addEventListener('click', () => this.saveEditorProject());
+    document.getElementById('btn-load-editor')?.addEventListener('click', () => {
+      (document.getElementById('editor-file-input') as HTMLInputElement | null)?.click();
+    });
+    document.getElementById('editor-file-input')?.addEventListener('change', e => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) this.loadEditorProject(file);
+      (e.target as HTMLInputElement).value = '';
+    });
+  }
+
+  // ── Editor save / load ────────────────────────────────────────────────────
+
+  async saveEditorProject(): Promise<void> {
+    this.bus.emit('status', 'Saving .tao.editor…');
+    try {
+      const zip = new JSZip();
+
+      // editor.json — all project data + editor state
+      const animations: Record<string, SerializedClip> = {};
+      this.animCtrl.store.forEach((clip, name) => {
+        animations[name] = this.serializeClip(clip);
+      });
+
+      const bindings: Record<string, SpriteBinding> = {};
+      this.state.boneBindings.forEach((b, id) => { bindings[id] = { ...b }; });
+
+      const attachmentPoints: AttachmentPoint[] = [];
+      this.state.attachmentPoints.forEach(pt => attachmentPoints.push({ ...pt }));
+
+      const boneLengthScales: Record<string, number> = {};
+      this.state.boneLengthScales.forEach((v, k) => { boneLengthScales[k] = v; });
+
+      const editorJson: EditorProject = {
+        version:          1,
+        selectedClip:     this.animCtrl.currentName,
+        previewMode:      this.state.previewMode,
+        bindings,
+        animations,
+        attachmentPoints,
+        ...(Object.keys(boneLengthScales).length > 0 && { boneLengthScales }),
+      };
+      zip.file('editor.json', JSON.stringify(editorJson, null, 2));
+
+      // images/ — one PNG per loaded slot (lossless, no spritesheet packing)
+      const imgFolder = zip.folder('images')!;
+      const allSlots = [...this.state.boneBindings.keys(), 'shadow'];
+      for (const slotId of allSlots) {
+        const blob = this.imageCtrl.getBlob(slotId);
+        if (blob) imgFolder.file(`${slotId}.png`, blob);
+      }
+
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      await saveWithPicker(blob, 'project', [
+        { description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.tao.editor'] } },
+      ]);
+      this.bus.emit('status', 'Project saved');
+    } catch (err) {
+      this.bus.emit('status', `Save failed: ${(err as Error).message}`);
+    }
+  }
+
+  async loadEditorProject(file: File): Promise<void> {
+    this.bus.emit('status', `Loading ${file.name}…`);
+    try {
+      const zip = await JSZip.loadAsync(file);
+
+      const jsonFile = zip.file('editor.json');
+      if (!jsonFile) throw new Error('editor.json missing from archive');
+      const project = JSON.parse(await jsonFile.async('string')) as EditorProject;
+
+      if (project.version !== 1) {
+        this.bus.emit('status', `Unsupported editor version ${project.version}`);
+        return;
+      }
+
+      // Clear existing state
+      this.animCtrl.clearAll();
+      [...this.state.boneBindings.keys()].forEach(id => this.state.removeBinding(id));
+
+      // Restore animations + bindings + attachments + rig
+      for (const [boneId, binding] of Object.entries(project.bindings)) {
+        this.state.setBinding(boneId, binding);
+      }
+      if (Array.isArray(project.attachmentPoints) && project.attachmentPoints.length > 0) {
+        this.state.setAllAttachmentPoints(project.attachmentPoints);
+      }
+      this.state.setAllLengthScales(project.boneLengthScales ?? {});
+      for (const [name, clip] of Object.entries(project.animations)) {
+        this.animCtrl.loadClip(name, this.deserializeClip(clip));
+      }
+
+      // Restore individual images
+      const imgFolder = zip.folder('images');
+      if (imgFolder) {
+        const imagePromises: Promise<void>[] = [];
+        imgFolder.forEach((relativePath, zipEntry) => {
+          if (zipEntry.dir) return;
+          const slotId = relativePath.replace(/\.png$/i, '');
+          imagePromises.push(
+            zipEntry.async('blob').then(blob => this.imageCtrl.setBlob(slotId, blob, `${slotId}.png`)),
+          );
+        });
+        await Promise.all(imagePromises);
+      }
+
+      // Restore editor state
+      this.state.setPreviewMode(project.previewMode ?? 'skeleton');
+      this.cmdManager.clear();
+      this.bus.emit('anim:list');
+
+      const clipToSelect = project.selectedClip ?? [...this.animCtrl.store.keys()][0];
+      if (clipToSelect) this.animCtrl.selectClip(clipToSelect);
+
+      this.bus.emit('status', `Loaded ${file.name}`);
+    } catch (err) {
+      this.bus.emit('status', `Load failed: ${(err as Error).message}`);
+    }
   }
 
   // ── Export ────────────────────────────────────────────────────────────────
@@ -102,8 +235,10 @@ export class IOController {
       }
 
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-      triggerDownload(blob, 'animation.tao');
-      this.bus.emit('status', 'Exported animation.tao');
+      await saveWithPicker(blob, 'animation', [
+        { description: 'Tao Animation', accept: { 'application/octet-stream': ['.tao'] } },
+      ]);
+      this.bus.emit('status', 'Exported .tao');
     } catch (err) {
       this.bus.emit('status', `Export failed: ${(err as Error).message}`);
     }
@@ -166,7 +301,13 @@ export class IOController {
     const attachmentPoints: AttachmentPoint[] = [];
     this.state.attachmentPoints.forEach(pt => attachmentPoints.push({ ...pt }));
 
-    return { version: 2, bindings, animations, attachmentPoints };
+    const boneLengthScales: Record<string, number> = {};
+    this.state.boneLengthScales.forEach((v, k) => { boneLengthScales[k] = v; });
+
+    return {
+      version: 2, bindings, animations, attachmentPoints,
+      ...(Object.keys(boneLengthScales).length > 0 && { boneLengthScales }),
+    };
   }
 
   private restoreAnimationData(project: SerializedProject): void {
@@ -316,4 +457,34 @@ function triggerDownload(blob: Blob, filename: string): void {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/** Save blob via the File System Access API (native save dialog with folder + filename).
+ *  Falls back to a filename prompt + triggerDownload for browsers without the API (e.g. Firefox). */
+async function saveWithPicker(
+  blob: Blob,
+  suggestedName: string,
+  types: Array<{ description?: string; accept: Record<string, string[]> }>,
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const picker = (window as any).showSaveFilePicker;
+  if (typeof picker === 'function') {
+    let handle: { createWritable(): Promise<{ write(b: Blob): Promise<void>; close(): Promise<void> }> };
+    try {
+      handle = await picker({ suggestedName, types });
+    } catch (e) {
+      if ((e as DOMException).name === 'AbortError') return;  // user cancelled
+      throw e;
+    }
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+  } else {
+    // Firefox / Safari fallback: prompt for filename, then trigger download.
+    // The save path is controlled by the browser's download settings
+    // (Firefox: Settings → Downloads → "Always ask you where to save files").
+    const name = window.prompt('Save as:', suggestedName);
+    if (name === null) return;  // user cancelled
+    triggerDownload(blob, name.trim() || suggestedName);
+  }
 }

@@ -61,7 +61,7 @@ export class AppState {
   // ── Preview / view options ────────────────────────────────────────────────
 
   private _previewMode:         'skeleton' | 'sprite' = 'skeleton';
-  private _showSkeletonOverlay  = true;
+  private _showSkeletonOverlay  = false;
   private _showJoints           = true;
   private _showOnion            = false;
   private _showGuide            = false;
@@ -87,6 +87,29 @@ export class AppState {
   setShowGuide(v: boolean): void           { this._showGuide = v; }
   setShowPivots(v: boolean): void          { this._showPivots = v; }
   setBackgroundColor(hex: number): void    { this._backgroundColor = hex; }
+
+  // ── Bone length scales (rig setup, per character) ─────────────────────────
+
+  private _boneLengthScales = new Map<string, number>();
+
+  get boneLengthScales(): ReadonlyMap<string, number> { return this._boneLengthScales; }
+
+  getLengthScale(boneId: string): number { return this._boneLengthScales.get(boneId) ?? 1; }
+
+  setLengthScale(boneId: string, scale: number): void {
+    if (scale <= 0) return;
+    if (Math.abs(scale - 1) < 1e-6) {
+      this._boneLengthScales.delete(boneId);   // keep map sparse — 1.0 = no override
+    } else {
+      this._boneLengthScales.set(boneId, scale);
+    }
+    this.bus.emit('rig:change');
+  }
+
+  setAllLengthScales(scales: Record<string, number>): void {
+    this._boneLengthScales = new Map(Object.entries(scales).filter(([, v]) => Math.abs(v - 1) >= 1e-6));
+    this.bus.emit('rig:change');
+  }
 
   // ── Sprite bindings ───────────────────────────────────────────────────────
 

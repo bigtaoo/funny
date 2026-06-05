@@ -50,6 +50,7 @@ export class Skeleton {
     rootX: number,
     rootY: number,
     transforms: Map<string, ResolvedBoneTransform>,
+    lengthScales?: ReadonlyMap<string, number>,
   ): WorldPositions {
     const result = new Map<string, WorldPose>();
     result.set('root', { sx: rootX, sy: rootY, ex: rootX, ey: rootY, wa: 0 });
@@ -61,8 +62,9 @@ export class Skeleton {
       const wa = p.wa + bone.rla + delta;
       const rad = (wa * Math.PI) / 180;
       const sx = p.ex, sy = p.ey;
-      const ex = sx + Math.cos(rad) * bone.len;
-      const ey = sy + Math.sin(rad) * bone.len;
+      const len = bone.len * (lengthScales?.get(bone.id) ?? 1);
+      const ex = sx + Math.cos(rad) * len;
+      const ey = sy + Math.sin(rad) * len;
       result.set(bone.id, { sx, sy, ex, ey, wa });
     }
 

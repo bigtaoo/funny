@@ -70,12 +70,18 @@ export type AnimationStore = Map<string, AnimationClip>;
 
 /** Structural (non-animatable) config for how a bone's image is rendered.
  *  Each bone has exactly one image (1:1 mapping via ImageController).
- *  Initial orientation corrections go in the t=0 keyframe as rotation/translate. */
+ *  rotation / scaleX / scaleY are static offsets applied on top of animated transforms,
+ *  useful for correcting image orientation/size to match the bone. */
 export interface SpriteBinding {
-  anchorX: number;   // 0–1, default 0.5
-  anchorY: number;   // 0–1, default 0.5
-  flipX:   boolean;
-  zOrder:  number;   // render layer: higher = in front; sort once on binding change
+  anchorX:  number;   // 0–1, default 0.5
+  anchorY:  number;   // 0–1, default 0.5
+  flipX:    boolean;
+  zOrder:   number;   // render layer: higher = in front; sort once on binding change
+  rotation: number;   // degrees, additive to animated rotation; default 0
+  scaleX:   number;   // multiplicative with animated scaleX; default 1
+  scaleY:   number;   // multiplicative with animated scaleY; default 1
+  offsetX:  number;   // pixel offset from bone pivot in local bone space, X; default 0
+  offsetY:  number;   // pixel offset from bone pivot in local bone space, Y; default 0
 }
 
 // ── Attachment Points ─────────────────────────────────────────────────────────

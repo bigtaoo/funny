@@ -382,7 +382,7 @@
     <div class="view-options">
       <div class="panel-header">View</div>
       <label class="checkbox-row"><input type="checkbox" id="chk-joints" checked> Show joints</label>
-      <label class="checkbox-row"><input type="checkbox" id="chk-overlay" checked> Skeleton overlay</label>
+      <label class="checkbox-row"><input type="checkbox" id="chk-overlay"> Skeleton overlay</label>
       <label class="checkbox-row"><input type="checkbox" id="chk-pivots"> Show pivots</label>
       <label class="checkbox-row"><input type="checkbox" id="chk-onion"> Onion skin</label>
       <label class="checkbox-row"><input type="checkbox" id="chk-guide"> Guide lines</label>
@@ -420,6 +420,9 @@
 
 <!-- ═══ BOTTOM BAR ═══ -->
 <div class="bottom-bar">
+  <button id="btn-save-editor" class="primary">💾 Save .editor</button>
+  <button id="btn-load-editor">📂 Load .editor</button>
+  <div style="width:1px;height:24px;background:var(--border);margin:0 2px"></div>
   <button id="btn-export">⬇ Export .tao</button>
   <button id="btn-import">⬆ Import .tao</button>
   <button id="btn-reset-pose">⟳ Reset Pose</button>
@@ -428,6 +431,7 @@
 </div>
 
 <input type="file" id="file-input" accept=".tao" style="display:none">
+<input type="file" id="editor-file-input" accept=".tao.editor" style="display:none">
 
 </body>
 </html>

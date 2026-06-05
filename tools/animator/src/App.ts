@@ -77,17 +77,22 @@ export class App {
       if ((BONE_SLOTS as readonly string[]).includes(slotId)) {
         if (!state.getBinding(slotId) && imageCtrl.getTexture(slotId)) {
           state.setBinding(slotId, {
-            anchorX: 0.5,
-            anchorY: 0.5,
-            flipX:   false,
-            zOrder:  DEFAULT_ZORDER[slotId] ?? 0,
+            anchorX:  0.5,
+            anchorY:  0.5,
+            flipX:    false,
+            zOrder:   DEFAULT_ZORDER[slotId] ?? 0,
+            offsetX:  0,
+            offsetY:  0,
+            rotation: 0,
+            scaleX:   1,
+            scaleY:   1,
           });
         }
         renderer.markSpriteOrderDirty();
 
-        if (state.previewMode !== 'sprite' && imageCtrl.hasAllBoneImages()) {
+        if (state.previewMode !== 'sprite') {
           state.setPreviewMode('sprite');
-          bus.emit('status', 'All bone images loaded — switched to Sprite mode');
+          bus.emit('status', 'Image loaded — switched to Sprite mode');
         }
       }
     });
@@ -110,7 +115,7 @@ export class App {
     // ── 8. Main render loop ──────────────────────────────────────────────────
     renderer.pixiApp.ticker.add(() => {
       const frame     = animCtrl.getCurrentFrame();
-      const worldPose = Skeleton.computeFK(state.rootX, state.rootY, frame);
+      const worldPose = Skeleton.computeFK(state.rootX, state.rootY, frame, state.boneLengthScales);
 
       renderer.draw({
         worldPose,
@@ -129,7 +134,7 @@ export class App {
         rootY:               state.rootY,
         onionData:           state.showOnion
           ? animCtrl.getOnionFrames().map(f => ({
-              worldPose:      Skeleton.computeFK(state.rootX, state.rootY, f),
+              worldPose:      Skeleton.computeFK(state.rootX, state.rootY, f, state.boneLengthScales),
               boneTransforms: f,
             }))
           : [],

@@ -51,6 +51,7 @@ export class ToolbarPanel {
   ) {
     this.buildUndoRedo();
     this.buildPreviewMode();
+    this.buildSkeletonToggle();
     this.bindExisting();
 
     bus.on('history:change', ({ canUndo, canRedo, label }) => {
@@ -138,6 +139,40 @@ export class ToolbarPanel {
     }
   }
 
+  private buildSkeletonToggle(): void {
+    const btn = document.createElement('button');
+    btn.id    = 'btn-skeleton-toggle';
+    btn.title = 'Toggle skeleton overlay (visible in Sprite mode)';
+
+    const update = (): void => {
+      const inSprite = this.state.previewMode === 'sprite';
+      const on       = this.state.showSkeletonOverlay;
+      btn.textContent = '🦴 Bones';
+      btn.classList.toggle('active', inSprite && on);
+      btn.disabled = !inSprite;
+    };
+
+    update();
+
+    btn.addEventListener('click', () => {
+      this.state.setShowSkeletonOverlay(!this.state.showSkeletonOverlay);
+      // Keep the sidebar checkbox in sync
+      const chk = document.getElementById('chk-overlay') as HTMLInputElement | null;
+      if (chk) chk.checked = this.state.showSkeletonOverlay;
+      update();
+    });
+
+    // Re-sync when mode changes
+    this.bus.on('preview:mode', () => update());
+
+    const lastSep = [...this.el.querySelectorAll('.sep')].slice(-1)[0];
+    if (lastSep) {
+      this.el.insertBefore(btn, lastSep);
+    } else {
+      this.el.appendChild(btn);
+    }
+  }
+
   private bindExisting(): void {
     document.getElementById('btn-play')?.addEventListener('click',  () => this.animCtrl.toggle());
     document.getElementById('btn-stop')?.addEventListener('click',  () => this.animCtrl.stop());
@@ -195,7 +230,11 @@ export class ToolbarPanel {
     chkGuide?.addEventListener('change', () => this.state.setShowGuide(chkGuide.checked));
 
     const chkOverlay = document.getElementById('chk-overlay') as HTMLInputElement | null;
-    chkOverlay?.addEventListener('change', () => this.state.setShowSkeletonOverlay(chkOverlay.checked));
+    chkOverlay?.addEventListener('change', () => {
+      this.state.setShowSkeletonOverlay(chkOverlay.checked);
+      const btn = document.getElementById('btn-skeleton-toggle') as HTMLButtonElement | null;
+      if (btn) btn.classList.toggle('active', this.state.previewMode === 'sprite' && chkOverlay.checked);
+    });
 
     const chkPivots = document.getElementById('chk-pivots') as HTMLInputElement | null;
     chkPivots?.addEventListener('change', () => this.state.setShowPivots(chkPivots.checked));

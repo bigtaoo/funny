@@ -29,7 +29,9 @@
       "Bash(npm install *)",
       "Bash(cd \"\\\\\\\\wsl.localhost\\\\ubuntu\\\\home\\\\taowang\\\\projects\\\\funny\\\\tools\\\\animator\")",
       "Bash(ubuntu run *)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Read(//mnt/c/Users/TaoWang/Documents/funny/tools/**)",
+      "Bash(npx tsc *)"
     ]
   }
 }
