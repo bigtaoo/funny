@@ -91,7 +91,7 @@ export class GameRenderer {
     const state = this.engine.state;
     for (const event of state.events) this.handleEvent(event, state);
     this.vfxSystem.update(dt);
-    this.unitView.sync(state.board);
+    this.unitView.sync(state.board, dt);
     this.buildingView.sync(state.board);
     this.handView.sync(state.bottomPlayer);
     this.hudView.sync(state);

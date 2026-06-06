@@ -6,6 +6,12 @@
       "runtimeExecutable": "wsl",
       "runtimeArgs": ["-d", "ubuntu", "--", "bash", "-c", "cd ~/projects/funny/tools/animator && npm run start"],
       "port": 9091
+    },
+    {
+      "name": "game",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Users\\TaoWang\\Documents\\funny\\code && npm run start"],
+      "port": 9090
     }
   ]
 }

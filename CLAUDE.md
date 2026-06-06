@@ -230,7 +230,7 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 - **渲染**：`pixi.js-legacy`，兼容微信小游戏 WebGL
 - **游戏逻辑**：纯 TS，固定点数（`game/math/fixed.ts`），与渲染解耦
 - **平台适配**：Web / 微信小游戏 / CrazyGames，多入口 webpack 构建
-- **骨骼动画 Runtime**：待实现（`StickmanRuntime`），读取 animator 导出的 JSON
+- **骨骼动画 Runtime**：`StickmanRuntime`（`src/render/stickman/`），加载 `.tao` ZIP，解析 spritesheet + animation.json，驱动 PIXI Sprite 播放骨骼动画；Swordsman 单位使用 `infantry.tao`
 - **确定性约束**：游戏逻辑（`code/src/game/`）内严禁使用 `Math.random()`，必须使用 `Prng`（`game/math/prng.ts`）。`GameState` 构造函数以 seed 派生各 PRNG；新增需要随机性的系统，在 `GameEngine` 中用 `new Prng(seed ^ 唯一常量)` 注入。
 
 ### 已知修复（2026-06）
@@ -303,6 +303,7 @@ ZIP 压缩包，**保存完整编辑状态**，可随时加载继续编辑：
 ## 会话说明
 
 - **工作目录**：`C:\Users\TaoWang\Documents\funny`（即 `/c/Users/TaoWang/Documents/funny`），Bash 命令直接在此目录下执行，**不要**绕道 `wsl -d ubuntu`。
-- **权限**：Read / Write / Edit / Bash 全部直接执行，无需确认。`rm` / `rmdir` / `git rm` 需确认。
+- **权限**：所有命令（包括 `rm` / `rmdir` / `git rm`）直接执行，**无需向用户确认**。
+- **验证方式**：代码改动后只做 TypeScript 编译检查（`tsc --noEmit`）和 webpack 构建验证，**不要**启动游戏截图验证——用户会自行在浏览器里验证效果。
 - **上下文提醒**：会话接近 200k token 上限时提醒切换新会话。
 - **记录改动**：收到"记录改动/将改动记录进文档"等指令时，需同时更新以下文档——`CLAUDE.md`（已知修复表格）**以及**改动所在子目录的对应文档（animator 相关改 `tools/animator/ARCHITECTURE.md` 和 `REQUIREMENTS.md`；game 相关改 `code/DESIGN.md`；设计相关改 `design/` 下对应文件）。
