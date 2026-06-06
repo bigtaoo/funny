@@ -23,8 +23,6 @@ funny/
 │   │   ├── src/           源码（见下方架构）
 │   │   ├── public/        HTML 模板（webpack-html-plugin 用）
 │   │   └── ARCHITECTURE.md / REQUIREMENTS.md
-│   │
-│   └── animation-editor/  旧版单文件 HTML 编辑器（index.html，参考用）
 │
 ├── art/
 │   ├── maps/              地图资源
@@ -241,6 +239,8 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 | `src/render/BoardView.ts` | 基地无视觉图片，仅靠高亮矩形标识 | 用 `game_base.png` 渲染双方基地精灵；敌方按朝向镜像（横屏左右翻、竖屏上下翻） |
 | `src/render/BuildingView.ts` | 建筑用占位矢量图（矩形/多边形）渲染 | 替换为 PNG 精灵（`game_infantry_barracks.png` / `game_archer_barracks.png`）；`acquireSprite` 添加 scale 0→1 ease-out cubic 弹出动画（约 0.3s） |
 | `src/game/systems/CombatSystem.ts` | 箭塔 `findTargetForBuilding` 仅做前向列扫描，无法命中横穿（Crossing）的敌军 | 改为 Chebyshev 距离全向扫描，按距离环由近到远查找，覆盖纵向/横向/斜向所有敌人 |
+| `src/render/stickman/`（新增） | 骨骼动画 Runtime 缺失，Swordsman 单位用占位圆形 | 新增 `StickmanRuntime`：加载 `.tao` ZIP，解析 `animation.json` + `spritesheet`，按帧驱动 PIXI Sprite；`UnitView` 为 Swordsman 创建 runtime 实例，`sync()` 接收 `dt` 参数推进动画时钟；`GameRenderer` 将 `dt` 透传给 `unitView.sync()` |
+| `src/render/stickman/StickmanRuntime.ts` | shadow 挂点图片位置/尺寸错误：`_applyPose()` 以骨骼逻辑处理 shadow，未读取 `shadowW`/`shadowH` | `TaoAsset` 新增 `attachmentPoints` 字段；shadow sprite zOrder 硬编为 `-Infinity`，anchor `(0.5,0.5)`；`_applyShadowPose()` 专项处理：位置取 `parentBone.tip + offset`，scale 用 `(shadowW*2)/tex.width × (shadowH*2)/tex.height`，与 animator Renderer.ts 一致 |
 
 ### 游戏核心模块
 

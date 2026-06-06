@@ -34,11 +34,16 @@ src/
 ├── render/                渲染层（PIXI.js）
 │   ├── GameRenderer.ts    顶层渲染协调器 + 输入处理
 │   ├── BoardView.ts       棋盘网格 + 高亮层 + 陨石特效
-│   ├── UnitView.ts        单位精灵池 + HP 条
+│   ├── UnitView.ts        单位精灵池 + HP 条（Swordsman 用 StickmanRuntime）
 │   ├── BuildingView.ts    建筑精灵池
 │   ├── HandView.ts        手牌 UI
 │   ├── HUDView.ts         HUD（资源 / 暂停）
-│   └── VFXSystem.ts       程序特效系统（见 §5）
+│   ├── VFXSystem.ts       程序特效系统（见 §5）
+│   └── stickman/          骨骼动画 Runtime（见 §8）
+│       ├── types.ts        共享类型（BoneDef / BoneKeyframe / SpriteBinding 等）
+│       ├── interpolate.ts  sampleClip 插值（与 animator 共享逻辑）
+│       ├── skeleton.ts     Skeleton.computeFK（FK 正向运动学）
+│       └── StickmanRuntime.ts  加载 .tao / 驱动 PIXI Sprite / shadow 处理
 │
 ├── layout/                响应式布局
 │   ├── ILayout.ts         坐标转换接口
@@ -64,7 +69,7 @@ SceneManager.tick(dt)             ← PIXI ticker，dt = ms/1000
       → engine.tick(dt)           ← 游戏逻辑（固定步长内部累积）
       → for event in state.events → handleEvent(event, state)
       → vfxSystem.update(dt)      ← 特效推进
-      → unitView.sync(board)
+      → unitView.sync(board, dt)   ← dt 用于推进骨骼动画时钟
       → buildingView.sync(board)
       → handView.sync(player)
       → hudView.sync(state)
@@ -161,6 +166,63 @@ hudView.container        ← HUD（最顶层）
 
 | 功能 | 位置 | 说明 |
 |---|---|---|
-| 骨骼角色动画 | 新建 StickmanRuntime | 读取 animator 导出 JSON |
-| 阴影渲染 | UnitView / StickmanRuntime | 使用挂点 shadow 坐标 |
+| Guardian / Archer 骨骼动画 | UnitView + 对应 .tao | 目前仍用占位圆形 |
 | 受击特效位置 | StickmanRuntime | 使用挂点 hit 坐标 |
+
+---
+
+## 8. 骨骼动画 Runtime（StickmanRuntime）
+
+### 文件位置
+
+`src/render/stickman/`
+
+### 加载流程
+
+```
+StickmanRuntime.loadAsset(url)       ← 静态方法，结果按 URL 缓存
+  → fetch(url) → ArrayBuffer
+  → JSZip.loadAsync()
+  → 解析 animation.json（clips / bindings / boneLengthScales / attachmentPoints）
+  → 解析 spritesheet.json + spritesheet.png → Map<boneId, PIXI.Texture>
+  → 返回 TaoAsset（共享，所有单位实例共用同一套纹理）
+```
+
+### 每帧渲染流程
+
+```
+runtime.syncState(unit.state)        ← 映射 UnitState → 动画片段名
+runtime.update(dt)
+  → time += dt（looping / clamped）
+  → sampleClip(clip, time) → Map<boneId, ResolvedBoneTransform>
+  → Skeleton.computeFK(0, 0, transforms, boneLengthScales) → WorldPositions
+  → 骨骼 sprite：sprite.x/y/rotation/scale = bone_pivot + kf + binding
+  → shadow sprite：_applyShadowPose()（见下）
+```
+
+### Shadow 渲染（`_applyShadowPose`）
+
+shadow 是 `AttachmentPoint`，不在 `bindings` 中，需专项处理：
+
+```
+position  = parentBone.tip (ex, ey) + (offsetX, offsetY)
+scaleX    = (shadowW * 2) / tex.width
+scaleY    = (shadowH * 2) / tex.height
+rotation  = 0，anchor = (0.5, 0.5)，zOrder = -Infinity（始终最底层）
+```
+
+`shadowW`/`shadowH` 来自 `.tao` 的 `attachmentPoints[shadow]` 字段。
+
+### UnitView 集成
+
+- Swordsman 单位：若 `infantryAsset` 已加载，`acquireSprite` 创建 stickman 容器；否则退回占位圆形
+- 敌方（`Side.Top`）：`mirrorX: true`，`scaleX *= -1`
+- `sync(board, dt)` 中对每个有 runtime 的单位调用 `runtime.syncState` + `runtime.update(dt)`
+- 单位死亡时 `runtime.play('death')` 后在淡出动画结束时 `runtime.destroy()`
+
+### 资源文件
+
+| 文件 | 说明 |
+|---|---|
+| `src/assets/infantry.tao` | Swordsman 骨骼动画包（ZIP）|
+| webpack：`/\.(tao)$/i` → `asset/resource` | .tao 按二进制资源处理，emit 后由 fetch 加载 |
