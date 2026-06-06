@@ -1,4 +1,11 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stickman Animation Editor</title><style>*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stickman Animation Editor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
       --bg: #1a1a2e;
@@ -133,9 +140,9 @@
       flex-shrink: 0;
     }
 
-    /* ── Atlas Panel ── */
-    #atlas-panel {
-      width: 190px;
+    /* ── Image Panel ── */
+    #image-panel {
+      width: 200px;
       background: var(--surface);
       border-left: 1px solid var(--border);
       display: flex;
@@ -164,7 +171,7 @@
 
     /* ── Timeline ── */
     .timeline {
-      height: 285px;  /* RULER_H(20) + TIMELINE_BONES(10) × ROW_H(26) = 280px + 5px breathing room */
+      height: 308px;  /* timeline-header(~23px) + RULER_H(20) + TIMELINE_BONES(10) × ROW_H(26) = 303px + 5px breathing room */
       background: var(--surface);
       border-top: 1px solid var(--border);
       display: flex;
@@ -261,4 +268,170 @@
     }
 
     ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }</style></head><body><div class="toolbar"><span class="logo">✏️ Stickman Anim Editor</span><div class="sep"></div><button class="primary" id="btn-play">▶ Play</button> <button id="btn-stop">⏹ Stop</button><div class="sep"></div><label>Speed</label> <select id="sel-speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected="selected">1×</option><option value="2">2×</option></select><div class="sep"></div><label>Loop</label> <input type="checkbox" id="chk-loop" checked="checked"><div class="sep"></div><button id="btn-add-kf" class="primary sm">＋ Keyframe</button> <button id="btn-del-kf" class="danger sm">✕ Del KF</button><div class="sep"></div><label>Duration</label> <input type="number" id="inp-duration" value="0.5" min="0.1" max="10" step="0.05" style="width:65px"> <span style="color:var(--text-dim)">s</span></div><div class="main"><div class="left-panel"><div class="panel-header">Animations</div><div id="anim-list"></div><div class="left-actions"><button class="sm" id="btn-new-anim" style="flex:1">＋ New</button> <button class="sm danger" id="btn-del-anim">🗑</button> <button class="sm" id="btn-ren-anim">✎</button></div><div class="playback-section"><div class="playback-row"><button class="sm icon" id="btn-prev-kf">⏮</button> <button class="sm icon" id="btn-next-kf">⏭</button> <button class="sm" id="btn-play2" style="flex:1">▶</button></div><div id="time-display">0.000s / 0.500s</div></div></div><div id="canvas-wrap"><span id="canvas-hint">Click bone · Drag to rotate · Right-drag to pan · Tab = toggle mode</span></div><div class="right-panel"><div class="panel-header">Bone Properties</div><div id="bone-info-area"><div class="hint-text">Click a bone<br>on the canvas<br>to select it</div></div><div class="view-options"><div class="panel-header">View</div><label class="checkbox-row"><input type="checkbox" id="chk-joints" checked="checked"> Show joints</label> <label class="checkbox-row"><input type="checkbox" id="chk-overlay" checked="checked"> Skeleton overlay</label> <label class="checkbox-row"><input type="checkbox" id="chk-pivots"> Show pivots</label> <label class="checkbox-row"><input type="checkbox" id="chk-onion"> Onion skin</label> <label class="checkbox-row"><input type="checkbox" id="chk-guide"> Guide lines</label><div class="prop-row" style="padding:4px 8px"><span class="prop-label">Background</span> <input type="color" id="inp-bg-color" value="#F5F0E8" style="width:36px;height:22px;padding:1px;border:1px solid var(--border);border-radius:3px;background:none;cursor:pointer"></div></div><div><div class="panel-header">Attachment Points</div><div id="attachment-panel"></div></div></div><div id="atlas-panel"><div class="panel-header">Atlas</div></div></div><div class="timeline"><div class="timeline-header"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim)">Timeline</span></div><div class="timeline-body"><div id="tl-labels"><div class="tl-label-spacer"></div></div><div id="tl-canvas-wrap"><canvas id="timeline-canvas"></canvas></div></div></div><div class="bottom-bar"><button id="btn-export">⬇ Export JSON</button> <button id="btn-import">⬆ Import JSON</button> <button id="btn-reset-pose">⟳ Reset Pose</button> <button id="btn-presets">📋 Preset…</button> <span id="status-text">Ready</span></div><input type="file" id="file-input" accept=".json" style="display:none"><script defer="defer" src="bundle.cace4ed37cb31325fadd.js"></script></body></html>
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── Resize handles ── */
+    .resize-handle {
+      flex-shrink: 0;
+      position: relative;
+      z-index: 20;
+      background: transparent;
+      transition: background 0.12s;
+    }
+    .resize-handle::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: var(--border);
+      border-radius: 2px;
+      opacity: 0;
+      transition: opacity 0.12s;
+    }
+    .resize-handle:hover,
+    .resize-handle.dragging {
+      background: rgba(137, 180, 250, 0.12);
+    }
+    .resize-handle:hover::after,
+    .resize-handle.dragging::after {
+      opacity: 1;
+    }
+
+    /* vertical (between columns) */
+    .resize-handle-v {
+      width: 5px;
+      cursor: col-resize;
+    }
+    .resize-handle-v::after {
+      width: 1px;
+      height: 32px;
+      background: var(--accent);
+    }
+
+    /* horizontal (above/below timeline) */
+    .resize-handle-h {
+      height: 5px;
+      cursor: row-resize;
+    }
+    .resize-handle-h::after {
+      width: 32px;
+      height: 1px;
+      background: var(--accent);
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ TOOLBAR ═══ -->
+<div class="toolbar">
+  <span class="logo">✏️ Stickman Anim Editor</span>
+  <div class="sep"></div>
+  <button class="primary" id="btn-play">▶ Play</button>
+  <button id="btn-stop">⏹ Stop</button>
+  <div class="sep"></div>
+  <label>Speed</label>
+  <select id="sel-speed">
+    <option value="0.25">0.25×</option>
+    <option value="0.5">0.5×</option>
+    <option value="1" selected>1×</option>
+    <option value="2">2×</option>
+  </select>
+  <div class="sep"></div>
+  <label>Loop</label>
+  <input type="checkbox" id="chk-loop" checked>
+  <div class="sep"></div>
+  <button id="btn-add-kf" class="primary sm">＋ Keyframe</button>
+  <button id="btn-del-kf" class="danger sm">✕ Del KF</button>
+  <div class="sep"></div>
+  <label>Duration</label>
+  <input type="number" id="inp-duration" value="0.5" min="0.1" max="10" step="0.05" style="width:65px">
+  <span style="color:var(--text-dim)">s</span>
+</div>
+
+<!-- ═══ MAIN ═══ -->
+<div class="main">
+
+  <div class="left-panel">
+    <div class="panel-header">Animations</div>
+    <div id="anim-list"></div>
+    <div class="left-actions">
+      <button class="sm" id="btn-new-anim" style="flex:1">＋ New</button>
+      <button class="sm danger" id="btn-del-anim">🗑</button>
+      <button class="sm" id="btn-ren-anim">✎</button>
+    </div>
+    <div class="playback-section">
+      <div class="playback-row">
+        <button class="sm icon" id="btn-prev-kf">⏮</button>
+        <button class="sm icon" id="btn-next-kf">⏭</button>
+        <button class="sm" id="btn-play2" style="flex:1">▶</button>
+      </div>
+      <div id="time-display">0.000s / 0.500s</div>
+    </div>
+  </div>
+
+  <div id="canvas-wrap">
+    <span id="canvas-hint">Click bone · Drag to rotate · Right-drag to pan · Tab = toggle mode</span>
+  </div>
+
+  <div class="right-panel">
+    <div class="panel-header">Bone Properties</div>
+    <div id="bone-info-area">
+      <div class="hint-text">Click a bone<br>on the canvas<br>to select it</div>
+    </div>
+    <div class="view-options">
+      <div class="panel-header">View</div>
+      <label class="checkbox-row"><input type="checkbox" id="chk-joints" checked> Show joints</label>
+      <label class="checkbox-row"><input type="checkbox" id="chk-overlay"> Skeleton overlay</label>
+      <label class="checkbox-row"><input type="checkbox" id="chk-pivots"> Show pivots</label>
+      <label class="checkbox-row"><input type="checkbox" id="chk-onion"> Onion skin</label>
+      <label class="checkbox-row"><input type="checkbox" id="chk-guide"> Guide lines</label>
+      <div class="prop-row" style="padding:4px 8px">
+        <span class="prop-label">Background</span>
+        <input type="color" id="inp-bg-color" value="#F5F0E8"
+          style="width:36px;height:22px;padding:1px;border:1px solid var(--border);border-radius:3px;background:none;cursor:pointer">
+      </div>
+    </div>
+    <div>
+      <div class="panel-header">Attachment Points</div>
+      <div id="attachment-panel"></div>
+    </div>
+  </div>
+
+  <div id="image-panel">
+    <div class="panel-header">Images</div>
+  </div>
+</div>
+
+<!-- ═══ TIMELINE ═══ -->
+<div class="timeline">
+  <div class="timeline-header">
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim)">Timeline</span>
+  </div>
+  <div class="timeline-body">
+    <div id="tl-labels">
+      <div class="tl-label-spacer"></div>
+    </div>
+    <div id="tl-canvas-wrap">
+      <canvas id="timeline-canvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ BOTTOM BAR ═══ -->
+<div class="bottom-bar">
+  <button id="btn-save-editor" class="primary">💾 Save .editor</button>
+  <button id="btn-load-editor">📂 Load .editor</button>
+  <div style="width:1px;height:24px;background:var(--border);margin:0 2px"></div>
+  <button id="btn-export">⬇ Export .tao</button>
+  <button id="btn-import">⬆ Import .tao</button>
+  <button id="btn-reset-pose">⟳ Reset Pose</button>
+  <button id="btn-presets">📋 Preset…</button>
+  <span id="status-text">Ready</span>
+</div>
+
+<input type="file" id="file-input" accept=".tao" style="display:none">
+<input type="file" id="editor-file-input" accept=".tao.editor" style="display:none">
+
+<script defer src="bundle.47faff0b7b95f7a6d12c.js"></script></body>
+</html>

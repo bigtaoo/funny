@@ -82,7 +82,7 @@ root (len=0，hip pivot)
 ```
 
 每根骨骼：
-- `rwa`：rest world angle（degrees，0=右，顺时针为正）
+- `rwa`：rest world angle（degrees，0=右，顺时针/向下为正）；按**角色朝右**约定设定，`r_` 骨骼在屏幕左，`l_` 骨骼在屏幕右（手臂水平 r=180°/l=0°，腿向外下方 r=120°/l=60°）
 - `rla`：rest local angle = rwa − parent.rwa（FK 计算用）
 - `len`：骨骼长度（px）
 
@@ -103,7 +103,6 @@ interface BoneKeyframe {
   translateX?: number;        // px，缺省 0
   translateY?: number;        // px，缺省 0
   alpha?:      number;        // 0-1，缺省 1
-  frameId?:    string | null; // sprite 帧切换；null=隐藏
   easing?:     EasingType;    // 出口曲线，缺省 linear
 }
 ```
@@ -127,6 +126,18 @@ interface SpriteBinding {
 ```
 
 `offsetX`/`offsetY` 用于处理图片相对骨骼位置的整体平移（如身体很宽时胳膊图片需要向侧面偏移），与关键帧动画中的 `translateX`/`translateY` 互不干扰。旧存档缺少该字段时渲染器以 `?? 0` 安全回退。
+
+### 编辑器模式（EditorMode）
+
+```ts
+// AppState
+editorMode: 'skin' | 'animate'   // 默认 'animate'，不序列化到存档
+setEditorMode(mode: 'skin' | 'animate'): void  // emit 'editor:mode'
+```
+
+- **skin**：渲染静息姿（空 transforms → FK 得到纯 rest pose）；Inspector 只显示 SpriteBinding 参数；骨骼拖拽旋转禁用（仍可点击选择骨骼）
+- **animate**：正常动画帧渲染；Inspector 只显示关键帧变换；SpriteBinding 只读摘要
+- 快捷键 `S` / 工具栏 🎨/🎬 按钮切换；切换不计入 Undo
 
 ### 骨骼长度缩放（BoneLengthScales）
 
@@ -177,6 +188,7 @@ interface AttachmentPoint {
 | `attachment:change` | void | 挂点数据变化 |
 | `rig:change` | void | 骨骼长度倍率变化（触发 Inspector 刷新 + 下一帧 FK 重算） |
 | `preview:mode` | `'skeleton'\|'sprite'` | 预览模式切换 |
+| `editor:mode` | `'skin'\|'animate'` | 编辑器模式切换（Inspector + 渲染流程分流） |
 | `history:change` | `{canUndo, canRedo, label}` | Undo/Redo 栈变化 |
 | `status` | `string` | 状态栏消息 |
 | `pose:reset` | void | 重置为 rest pose |
@@ -201,9 +213,10 @@ easing：`linear` | `ease-in` | `ease-out` | `ease-in-out` | `step`
 每帧（PixiJS ticker）：
 
 ```
-animCtrl.getCurrentFrame()              → Map<boneId, ResolvedBoneTransform>
-  ↑ 叠加 liveDelta（drag 中实时预览）
-Skeleton.computeFK(rootX, rootY, frame) → WorldPositions
+// Skin 模式：空 transforms → 静息姿；Animate 模式：animCtrl.getCurrentFrame()
+frame = editorMode === 'skin' ? new Map() : animCtrl.getCurrentFrame()
+  ↑ Animate 模式下叠加 liveDelta（drag 中实时预览）
+Skeleton.computeFK(rootX, rootY, frame, boneLengthScales) → WorldPositions
 renderer.draw({ worldPose, boneTransforms, bindings, attachmentPoints, ... })
 ```
 
@@ -333,6 +346,7 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 | `K` | 当前时间添加关键帧 |
 | `Delete` / `Backspace` | 删除选中关键帧 |
 | `Tab` | 切换 Skeleton / Sprite 预览模式 |
+| `S` | 切换 Skin / Animate 编辑器模式 |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Shift+Z` / `Ctrl+Y` | Redo |
 | 左键拖骨骼 | 旋转（mouseUp 提交 Command） |

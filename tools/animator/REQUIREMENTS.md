@@ -1,34 +1,85 @@
 # Stickman Animation Editor — Requirements
 
-> 版本 v0.2 · 2026-06（在 v0.1 基础上更新，对齐当前实现）
+> 版本 v0.3 · 2026-06
 
 ---
 
-## 1. 产品定位
+## 1. 背景与目标
 
-基于浏览器的火柴人骨骼动画编辑工具：
-- 给 Notebook Wars 游戏角色制作关键帧骨骼动画
-- 导入 sprite atlas，将帧绑定到骨骼，预览实际游戏效果
-- 导出自定义 JSON，游戏引擎运行时直接消费
+### 为什么需要这个工具
 
-**核心设计原则**：编辑器与游戏引擎共用同一套插值代码（`interpolate.ts`），编辑器里看到的效果 = 游戏里播放的效果，零格式差异。
+Notebook Wars 使用程序化骨骼角色（stickman）作为战斗单位，由 11 根骨骼组成，通过关键帧动画驱动。游戏引擎需要在运行时对动画进行插值播放。
+
+- 没有合适的轻量外部工具（Spine 太重，DragonBones 导出格式不可控）
+- 需要完全控制导出格式，游戏引擎直接消费
+- 需要能预览 sprite 绑定效果（骨骼 + 贴图）
+
+### 设计原则
+
+1. **轻量**：浏览器工具，本地 DevServer，无服务端
+2. **格式自主**：导出 `.tao`（ZIP）格式由自己定义，游戏引擎直接读取
+3. **可迭代**：骨骼定义和 UI 在代码里，改起来快
+4. **够用即可**：不追求 Spine 级功能，只做游戏实际需要的
+5. **编辑器 = 游戏**：编辑器与游戏引擎共用同一套插值代码（`interpolate.ts`），预览效果 = 运行效果，零格式差异
 
 ---
 
-## 2. 功能规格
+## 2. 典型工作流
 
-### 2.1 骨骼系统
+```
+1. 打开工具（npm run start，port 9091）
+2. [蒙皮阶段] 导入骨骼图片 → 切换到 Skin 模式
+              → 在静息姿下逐骨骼调整 Binding（anchor / offset / rotation / scale）
+3. [动画阶段] 切换到 Animate 模式 → 选择或新建动画片段（如 "walk"）
+              → 拖动骨骼调整姿态 → K 键打关键帧 → 播放预览 → 反复调整
+4. 保存 .tao.editor（保留图片 + 编辑状态，下次继续编辑）
+5. 导出 .tao（游戏引擎读取）
+```
+
+---
+
+## 3. 功能规格
+
+### 3.1 编辑器模式
+
+编辑器分两个**互斥**模式，工具栏切换或快捷键 `S`：
+
+| 模式 | 按钮 | 说明 |
+|---|---|---|
+| 🎨 **Skin（蒙皮）** | 🎨 Skin | 骨架固定在**静息姿**；只能调整 Sprite Binding 参数；骨骼拖拽禁用 |
+| 🎬 **Animate（动画）** | 🎬 Animate | 正常播放与关键帧编辑；Binding 参数只读显示摘要 |
+
+**设计意图**：Binding 参数（图片 anchor / offset / 旋转修正）应在固定姿态下一次设定，与动画关键帧完全解耦，互不干扰。
+
+### 3.2 骨骼系统
 
 - **固定 11 根骨骼**（修改需改代码，无运行时增删）
   - `root`（髋部，FK 锚点，不可选）
   - `spine`、`head`
   - `r/l_upper_arm`、`r/l_lower_arm`（共 4 根）
   - `r/l_upper_leg`、`r/l_lower_leg`（共 4 根）
-- **选择**：点击高亮，右侧面板显示属性
-- **旋转**：左键拖拽，相对 pivot 点计算 delta
+- **选择**：点击高亮，右侧面板显示属性（两种模式下均可选骨骼）
+- **旋转**：左键拖拽（**仅 Animate 模式**；Skin 模式下骨骼拖拽禁用）
 - **Pan**：右键拖拽画布
 
-### 2.2 动画片段（Clip）管理
+#### 静息姿（Rest Pose）约定
+
+骨骼 `rwa`（rest world angle）按**角色朝右**设定（画布 Y 轴向下，0°=右，90°=下）：
+
+| 骨骼 | rwa | 屏幕方向 | 说明 |
+|---|---|---|---|
+| spine | −90° | 朝上 | |
+| head | −90° | 朝上 | |
+| r_upper_arm | 180° | 朝左 | 角色右臂 = 屏幕左 |
+| r_lower_arm | 195° | 朝左略偏下 | 自然肘弯 |
+| l_upper_arm | 0° | 朝右 | 角色左臂 = 屏幕右 |
+| l_lower_arm | −15° | 朝右略偏上 | 对称肘弯 |
+| r_upper_leg | 120° | 朝左下 30° | 角色右腿 = 屏幕左 |
+| r_lower_leg | 130° | 续左下 | 膝盖微外展 |
+| l_upper_leg | 60° | 朝右下 30° | 角色左腿 = 屏幕右 |
+| l_lower_leg | 50° | 续右下 | 膝盖微外展 |
+
+### 3.3 动画片段（Clip）管理
 
 | 操作 | 入口 |
 |---|---|
@@ -38,7 +89,7 @@
 | 切换 | 点击列表项（自动同步 Duration / Loop 输入框） |
 | 加载预设 | 底部 "📋 Preset…"（idle / walk / attack / hurt / death / spawn） |
 
-### 2.3 关键帧系统
+### 3.4 关键帧系统
 
 关键帧是**稀疏的**：只记录有变化的骨骼；其余骨骼从相邻帧插值；不同属性各自独立插值。
 
@@ -47,13 +98,10 @@
 | 属性 | 类型 | 缺省值 | 说明 |
 |---|---|---|---|
 | `rotation` | `number` | `0` | 相对 rest pose 的旋转 delta（度） |
-| `scaleX/Y` | `number` | `1` | 缩放 |
-| `translateX/Y` | `number` | `0` | 相对骨骼 pivot 的位移（px） |
-| `alpha` | `number` | `1` | 透明度 0–1 |
-| `frameId` | `string \| null` | `undefined` | sprite 帧切换；null=隐藏；undefined=沿用 binding |
+| `scaleX/Y` | `number` | `1` | 骨骼缩放（与 binding.scaleX/Y 相乘） |
+| `translateX/Y` | `number` | `0` | 骨骼 pivot 位移（px），图片跟随 |
+| `alpha` | `number` | `1` | 透明度 0–1（0 = 隐藏骨骼精灵） |
 | `easing` | `EasingType` | `'linear'` | 出口插值曲线 |
-
-**t=0 关键帧特殊意义**：定义初始姿态，同时承担精灵方向/位置校正（相当于其他工具的 baseRotation + offset）。绑定精灵时自动创建。
 
 #### Easing 类型
 
@@ -63,26 +111,26 @@
 | `ease-in` | 慢入快出 |
 | `ease-out` | 快入慢出 |
 | `ease-in-out` | 慢入慢出 |
-| `step` | 瞬间跳变（用于 sprite 帧切换） |
+| `step` | 瞬间跳变 |
 
 #### 关键帧操作
 
 | 操作 | 快捷键 / 入口 |
 |---|---|
-| 添加（当前时间+当前姿态） | `K` / 工具栏 "+ Keyframe" |
+| 添加（当前时间 + 当前姿态） | `K` / 工具栏 "+ Keyframe" |
 | 删除 | `Delete` / `Backspace` |
 | 跳转前/后关键帧 | "⏮" / "⏭" 按钮 |
 | 拖动改时间 | 时间轴菱形左键拖拽 |
 | 设置 easing | 时间轴右键菜单 |
 | 复制 / 粘贴 | 时间轴右键菜单 |
 
-### 2.4 时长管理
+### 3.5 时长管理
 
 - **手动**：工具栏 Duration 数字输入框
 - **自动**：点 "Auto" 按钮，设为最后一个关键帧时间
 - 切换 clip 时 Duration / Loop 自动同步
 
-### 2.5 播放控制
+### 3.6 播放控制
 
 | 控制 | 入口 |
 |---|---|
@@ -91,7 +139,7 @@
 | 速度 | 0.25× / 0.5× / 1× / 2× |
 | 循环 | Loop 复选框 |
 
-### 2.6 图片导入
+### 3.7 图片导入
 
 每根骨骼一张独立 PNG，另加一张阴影精灵，共 **11 张**。
 
@@ -100,6 +148,7 @@
 - 拖入或点选多张 PNG 文件
 - **自动映射**：按文件名识别骨骼（`spine.png` → `spine`，`shadow.png` → shadow 挂点图）
 - **手动映射**：在 Image 面板中为每个 bone slot 重新选择文件
+- **加载任意一张图片即自动切换到 Sprite 预览模式**
 
 #### 文件名约定
 
@@ -115,52 +164,57 @@
 
 不符合约定的文件名需在面板中手动指定骨骼。
 
-### 2.7 Sprite 绑定
+### 3.8 Sprite 绑定（SpriteBinding）
 
-每根骨骼固定绑定一张图片（1 bone : 1 image，无多帧切换）。
+每根骨骼固定绑定一张图片（1 bone : 1 image，无多帧切换）。绑定配置为**静态**，不随动画变化。在 **Skin 模式**下编辑；Animate 模式下只读。
 
-绑定配置（全局，不随动画变化）：
+#### Binding 属性
 
 | 属性 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `anchorX/Y` | `number` | `0.5` | 锚点 0–1 |
+| `anchorX/Y` | `number` | `0.5` | 锚点 0–1（图片内对齐骨骼 pivot 的位置） |
+| `offsetX/Y` | `number` | `0` | 世界空间像素偏移，叠加在骨骼 pivot 上（整体平移图片） |
+| `rotation` | `number` | `0` | 静态旋转修正（度），叠加在动画旋转上（修正图片朝向） |
+| `scaleX/Y` | `number` | `1` | 静态缩放修正，与动画 scaleX/Y 相乘（匹配骨骼长度） |
 | `flipX` | `boolean` | `false` | X 轴镜像（对称骨骼复用同一图） |
-| `zOrder` | `number` | — | 渲染层级，值越大越靠前（覆盖低值骨骼） |
+| `zOrder` | `number` | 见下表 | 渲染层级，值越大越靠前 |
 
-所有骨骼图片加载完成后**自动切换到 Sprite 预览模式**。
+**渲染合成公式：**
+```
+sprite.rotation = bone_FK_angle + keyframe.rotation + binding.rotation
+sprite.x        = bone_pivot.x  + keyframe.translateX + binding.offsetX
+sprite.scale    = keyframe.scaleX × binding.scaleX
+```
 
 #### 层级顺序（zOrder）
 
-关节连接处的遮挡关系由 `zOrder` 控制，数值越大的骨骼精灵渲染在越上层。例如：左臂（前置）的 `zOrder` 高于右臂（后置），两部分上下臂各自也有层级。
+推荐默认层级（从后到前）：
 
-推荐默认层级（从后到前，0 最低）：
+| 骨骼 | 默认 zOrder |
+|---|---|
+| r_lower_leg | 0 |
+| r_upper_leg | 1 |
+| l_lower_leg | 2 |
+| l_upper_leg | 3 |
+| r_lower_arm | 4 |
+| r_upper_arm | 5 |
+| spine | 6 |
+| head | 7 |
+| l_lower_arm | 8 |
+| l_upper_arm | 9 |
 
-| 骨骼 | 默认 zOrder | 备注 |
-|---|---|---|
-| `r_lower_leg` | 0 | 最后方 |
-| `r_upper_leg` | 1 | |
-| `l_lower_leg` | 2 | |
-| `l_upper_leg` | 3 | |
-| `r_lower_arm` | 4 | |
-| `r_upper_arm` | 5 | |
-| `spine` | 6 | 躯干居中 |
-| `head` | 7 | |
-| `l_lower_arm` | 8 | |
-| `l_upper_arm` | 9 | 最前方 |
+`shadow` 不参与 spriteLayer 排序，层级固定在所有骨骼精灵之下。
 
-`root` 骨骼无精灵，不参与层级。用户可在 Image 面板拖拽骨骼行或输入数字覆盖默认值。
+### 3.9 骨骼长度（Rig 设置）
 
-**渲染实现**：`zOrder` 全局固定。`binding:change` 或图片加载完成时，对 `spriteLayer.children` 按 `zOrder` 排序一次，渲染期间不再重排，无运行时开销。
+每个角色可单独设置每根骨骼的视觉长度，让骨骼与美术图片比例对齐，方便动画调整。
 
-**shadow.png**：不属于骨骼 `bindings`，不参与 `spriteLayer` 排序。游戏侧在 shadow 挂点世界坐标独立渲染，层级固定在所有骨骼精灵之下（渲染顺序：shadow sprite → spriteLayer 骨骼 sprites）。
+- **Inspector**：选中骨骼后（root / head 除外）顶部显示 **Length (px)** 输入框，输入实际像素值
+- **内部存储**：`boneLengthScales: Map<boneId, number>`（稀疏，1.0 不存储）
+- **生效范围**：FK 计算、hit-test、渲染；与关键帧动画数据完全独立
+- **序列化**：写入 `.tao.editor` 和 `.tao`；游戏运行时读取 `boneLengthScales` 还原骨骼比例
 
-精灵的初始旋转校正和位移偏移存在 **t=0 关键帧**的 `rotation` / `translateX/Y` 中，不在 binding 里——绑定时自动创建 t=0 关键帧。
-
-骨骼可通过关键帧 `alpha: 0` 隐藏，无需 `frameId` 字段。
-
-**游戏侧对接**：读取 `.tao` 内的 `spritesheet.json` 建立 bone → texture rect 映射，按 `anchorX/Y`、`flipX` 渲染。
-
-### 2.8 挂点系统（Attachment Points）
+### 3.10 挂点系统（Attachment Points）
 
 挂点是**非动画**的固定标记，跟随指定骨骼移动。世界坐标 = 父骨骼 tip + offset。
 
@@ -169,7 +223,7 @@
 | ID | 默认父骨骼 | 默认 offset | 用途 |
 |---|---|---|---|
 | `shadow` | `root` | (0, +52) | 脚下地面阴影的中心位置 |
-| `hit` | `spine` | (0, -30) | 受击特效播放点（胸部附近） |
+| `hit` | `spine` | (0, −30) | 受击特效播放点（胸部附近） |
 
 #### 挂点属性
 
@@ -178,10 +232,6 @@
 | `parentBone` | `string` | 跟随的骨骼（使用其 tip 坐标） |
 | `offsetX/Y` | `number` | 相对骨骼 tip 的偏移（px） |
 | `shadowW/H` | `number?` | shadow 专用：椭圆半宽/高；省略则从骨骼 rest pose 自动计算 |
-
-#### Shadow 尺寸默认计算
-
-`Skeleton.computeDefaultShadowSize()` 从 rest pose FK 计算两脚间距 + 骨骼宽度，得出合理椭圆尺寸。用户可在面板中覆盖。
 
 #### 编辑器显示
 
@@ -193,68 +243,66 @@
 - shadow：每帧在挂点世界坐标渲染阴影精灵，尺寸使用 `shadowW/H`
 - hit：受击时在挂点坐标播放特效
 
-### 2.9 预览模式
+### 3.11 预览模式
 
 | 模式 | 说明 |
 |---|---|
-| Skeleton（骨架） | 只显示骨骼线框，无需 atlas |
-| Sprite（精灵） | 骨骼上渲染绑定的 atlas 精灵 |
+| Skeleton（骨架） | 只显示骨骼线框，无需图片 |
+| Sprite（精灵） | 骨骼上渲染绑定的精灵 |
 
-`Tab` 键切换；绑定 sprite 后自动切换到 Sprite 模式。
+`Tab` 键切换；加载任意一张图片后自动切换到 Sprite 模式。
 
 辅助选项：
 - Show joints（关节圆圈）
 - Onion skin（相邻帧半透明叠加）
 - Guide lines（中心垂直参考线）
+- Bones overlay（Sprite 模式下叠加显示骨骼线框，快捷按钮 🦴 Bones）
 
-### 2.10 时间轴
+### 3.12 时间轴
 
 - 每根可动骨骼一行（共 10 行：spine / head / 4 臂 / 4 腿）
 - 关键帧菱形，颜色区分属性类型：
   - 灰色：仅旋转
-  - 白色：sprite 帧切换
   - 橙色：translateX/Y
   - 蓝色：scale
 - 选中时高亮青色
 - 左键拖拽菱形改时间
 - 拖拽 ruler 或 scrub
 
-### 2.11 Undo / Redo
+### 3.13 Undo / Redo
 
 `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y`，上限 100 步。
 
-计入 Undo：骨骼旋转、关键帧增删改、sprite 绑定（含 `zOrder` 修改）、挂点编辑。  
-不计入：播放控制、预览模式切换、scrub、视图选项。
+计入 Undo：骨骼旋转、关键帧增删改、sprite 绑定修改（含 zOrder）、挂点编辑。  
+不计入：播放控制、预览模式切换、scrub、视图选项、编辑器模式切换。
 
-### 2.12 导出 / 导入
+### 3.14 导出 / 导入
 
-- **导出**：生成 `.tao` 文件（ZIP 压缩包），包含：
-  - `animation.json`：骨骼绑定 + 动画关键帧 + 挂点数据
-  - `spritesheet.png`：11 张图自动 bin-packing 合并，用 upng.js 压缩（可选 TinyPNG API）
-  - `spritesheet.json`：每个 bone slot 在 spritesheet 中的 rect（TexturePacker Hash 兼容格式）
-- **导入**：拖入 `.tao` 文件，解包后恢复完整会话（图片 + 动画数据）
+| 操作 | 文件 | 说明 |
+|---|---|---|
+| Export .tao | `.tao` | 游戏引擎用：动画 JSON + spritesheet；File System Access API 保存 |
+| Save .tao.editor | `.tao.editor` | 编辑器存档：保留原始图片 + 完整编辑状态；随时加载继续编辑 |
+| Import .tao | `.tao` | 恢复游戏导出包（从 spritesheet 抠图还原各骨骼 Blob） |
+| Load .tao.editor | `.tao.editor` | 恢复完整编辑会话（图片 + 动画 + 绑定 + 骨骼长度） |
 
 ---
 
-## 3. 导出格式（.tao 文件）
+## 4. 导出格式（.tao 文件）
 
 `.tao` 是 ZIP 压缩包，内含三个文件：
 
-### 3.1 animation.json
+### 4.1 animation.json（version 2）
 
 ```jsonc
 {
   "version": 2,
-
-  // 全局 sprite 绑定（不随动画变化；image 由 spritesheet.json 按 boneId 索引）
   "bindings": {
-    "spine":       { "anchorX": 0.5, "anchorY": 0,   "flipX": false },
-    "head":        { "anchorX": 0.5, "anchorY": 0.5, "flipX": false },
-    "r_upper_arm": { "anchorX": 0.5, "anchorY": 0,   "flipX": false },
-    "l_upper_arm": { "anchorX": 0.5, "anchorY": 0,   "flipX": true  }
+    "spine": {
+      "anchorX": 0.5, "anchorY": 0.5, "flipX": false, "zOrder": 6,
+      "offsetX": 0, "offsetY": 0, "rotation": 0, "scaleX": 1, "scaleY": 1
+    }
   },
-
-  // 动画片段（关键帧不含 frameId，骨骼隐藏用 alpha:0）
+  "boneLengthScales": { "spine": 1.4, "r_upper_arm": 0.9 },
   "animations": {
     "walk": {
       "duration": 0.5,
@@ -271,24 +319,22 @@
       ]
     }
   },
-
-  // 挂点（世界坐标 = parentBone.tip + offset）
   "attachmentPoints": [
-    { "id": "shadow", "label": "🔵 Shadow", "parentBone": "root",  "offsetX": 0, "offsetY": 52 },
-    { "id": "hit",    "label": "✦ Hit",     "parentBone": "spine", "offsetX": 0, "offsetY": -30 }
+    { "id": "shadow", "parentBone": "root",  "offsetX": 0, "offsetY": 52 },
+    { "id": "hit",    "parentBone": "spine", "offsetX": 0, "offsetY": -30 }
   ]
 }
 ```
 
-### 3.2 spritesheet.json（TexturePacker Hash 兼容）
+`boneLengthScales` 为稀疏对象，只记录非 1.0 的骨骼；缺省或缺键均视为 1.0。
+
+### 4.2 spritesheet.json（TexturePacker Hash 兼容）
 
 ```jsonc
 {
   "frames": {
-    "spine":       { "frame": { "x": 0,   "y": 0,  "w": 20, "h": 60 }, "sourceSize": { "w": 20, "h": 60 } },
-    "head":        { "frame": { "x": 22,  "y": 0,  "w": 32, "h": 32 }, "sourceSize": { "w": 32, "h": 32 } },
-    "r_upper_arm": { "frame": { "x": 56,  "y": 0,  "w": 12, "h": 36 }, "sourceSize": { "w": 12, "h": 36 } },
-    "shadow":      { "frame": { "x": 0,   "y": 62, "w": 64, "h": 20 }, "sourceSize": { "w": 64, "h": 20 } }
+    "spine":  { "frame": { "x": 0,  "y": 0, "w": 20, "h": 60 }, "sourceSize": { "w": 20, "h": 60 } },
+    "shadow": { "frame": { "x": 22, "y": 0, "w": 64, "h": 20 }, "sourceSize": { "w": 64, "h": 20 } }
   },
   "meta": { "size": { "w": 256, "h": 128 } }
 }
@@ -296,113 +342,105 @@
 
 `frames` 的 key 即 boneId（或 `"shadow"`），与 `animation.json` 的 `bindings` 键对应。
 
-### 3.3 spritesheet.png
+### 4.3 spritesheet.png
 
-bin-packing 合并的图集，用 upng.js 压缩（可选配置 TinyPNG API Key 进行有损量化压缩）。
+Shelf bin-packing 合并图集，canvas.toBlob PNG，JSZip DEFLATE 二次压缩。
 
 ---
 
-## 4. 插值规则（编辑器与游戏侧共用）
+## 5. 编辑器存档格式（.tao.editor 文件）
+
+`.tao.editor` 是 ZIP 压缩包，**保存完整编辑状态**，可随时加载继续编辑：
+
+- `editor.json`（version 1）：动画 + 绑定 + 挂点 + boneLengthScales + 编辑器状态（当前 clip、预览模式）
+- `images/spine.png`、`images/head.png` … 各骨骼原始 PNG（无损，不合并 spritesheet）
+
+```jsonc
+// editor.json v1
+{
+  "version": 1,
+  "selectedClip": "walk",
+  "previewMode": "sprite",
+  "bindings": { ... },
+  "animations": { ... },
+  "attachmentPoints": [...],
+  "boneLengthScales": { "spine": 1.4 }
+}
+```
+
+保存通过 File System Access API（`window.showSaveFilePicker`）弹出原生保存对话框；浏览器不支持时退回 `<a download>`。
+
+---
+
+## 6. 插值规则（编辑器与游戏侧共用）
 
 ```
 给定时间 t，找到某骨骼的左侧帧 kf1 和右侧帧 kf2：
   f = applyEasing((t - kf1.time) / (kf2.time - kf1.time), kf1.easing)
-
   rotation   = lerp(kf1.rotation,   kf2.rotation,   f)
   scaleX     = lerp(kf1.scaleX,     kf2.scaleX,     f)
-  scaleY     = lerp(kf1.scaleY,     kf2.scaleY,     f)
   translateX = lerp(kf1.translateX, kf2.translateX, f)
-  translateY = lerp(kf1.translateY, kf2.translateY, f)
   alpha      = lerp(kf1.alpha,      kf2.alpha,      f)
 ```
 
-每根骨骼固定对应一张图，不再有 `frameId` 帧切换。骨骼隐藏通过 `alpha: 0` 关键帧实现。
-
-t 在第一帧之前 → 使用第一帧；在最后帧之后 → 使用最后帧。
-
+骨骼隐藏通过 `alpha: 0` 关键帧实现（无 frameId 帧切换）。  
+t 在第一帧之前 → 使用第一帧；在最后帧之后 → 使用最后帧。  
 源文件：`src/animation/interpolate.ts`（无外部依赖，可直接复制到游戏引擎）。
 
 ---
 
-## 5. 游戏侧对接规格
+## 7. 游戏侧对接规格
 
-### 5.1 共享代码策略
+### 7.1 共享代码策略
 
-计划将 `interpolate.ts` 和相关类型移至 monorepo 共享目录，两侧都从同一文件编译：
+两份独立代码，不引入共享目录（`interpolate.ts` 逻辑稳定，改动频率极低）。游戏侧直接复制该文件和必要 types。
 
-```
-funny/
-├── shared/
-│   ├── animation/interpolate.ts   ← 唯一来源
-│   └── types.ts                   ← 共享类型子集
-├── tools/animator/                tsconfig paths: @shared → ../../shared
-└── code/                          tsconfig paths: @shared → ../shared
-```
-
-> **当前状态**：game 侧尚无动画代码，共享目录结构待实现（见 §8.1）。
-
-### 5.2 游戏侧 Runtime 需实现
+### 7.2 游戏侧 Runtime（待实现）
 
 ```ts
 class StickmanRuntime {
-  // 加载 .tao 文件（JSZip 解包，提取 spritesheet + animation.json）
   async load(taoUrl: string): Promise<void>
-
   play(clipName: string, opts?: { loop?: boolean; onComplete?: () => void }): void
   pause(): void
   stop(): void
   setSpeed(v: number): void
-
-  // 每帧更新（在游戏主循环中调用）
-  update(dt: number): void
-
+  update(dt: number): void  // 每帧在游戏主循环中调用
+  getAttachmentPoint(id: string): { x: number; y: number; w?: number; h?: number }
   destroy(): void
 }
 ```
 
-内部逻辑：`sampleClip(clip, t)` → 对每根骨骼：
-1. 设置 `PIXI.Container.rotation`（骨骼旋转）
-2. 设置 sprite `scale / position / alpha`（每根骨骼固定 1 张纹理，无 frameId 切换）
-3. 加载完成后按 `animation.json` 中各骨骼的 `zOrder` 对 sprites 排序一次，渲染期间不再重排
+### 7.3 渲染注意事项
 
-shadow.png 在 shadow 挂点世界坐标独立渲染，层级固定在所有骨骼精灵之下。
+- 加载完成后按 `boneLengthScales` 还原骨骼比例，传入 FK 计算
+- 按 `animation.json` 的 `zOrder` 对 sprites 排序一次，渲染期间不再重排
+- shadow 在挂点世界坐标独立渲染，层级固定在所有骨骼精灵之下
 
-### 5.3 挂点游戏侧使用方式
+---
 
-每帧从 runtime 获取挂点世界坐标：
+## 8. 界面布局
 
-```ts
-const shadowPos = runtime.getAttachmentPoint('shadow');
-// shadowPos = { x: worldX, y: worldY, w?: halfWidth, h?: halfHeight }
-
-// shadow：在 shadowPos 渲染椭圆阴影精灵
-// hit：受击时在 hitPos 播放特效 particle
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Toolbar（🎨Skin/🎬Animate · 🦴Skeleton/🖼Sprite · 播放控制  │
+│           Duration · Auto · Undo/Redo · 🦴Bones）            │
+├──────────┬─────────────────────┬────────┬────────────────────┤
+│ 动画列表 │      Canvas          │ 骨骼   │  Image             │
+│          │                     │ 属性   │  面板              │
+│          │  骨架 / 精灵预览    │ ────── │                    │
+│ 播放控制 │  + 挂点标记         │ View   │                    │
+│ 时间显示 │                     │ ────── │                    │
+│          │                     │ 挂点   │                    │
+├──────────┴─────────────────────┴────────┴────────────────────┤
+│  Timeline（ruler + 骨骼行 + 菱形关键帧 + 播放头）             │
+├──────────────────────────────────────────────────────────────┤
+│  Bottom Bar（导出 / 导入 / Reset Pose / 状态栏）              │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 6. 界面布局
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  Toolbar（播放控制 / Duration Auto / Undo / 预览模式）   │
-├──────────┬────────────────────┬────────┬────────────────┤
-│ 动画列表 │     Canvas          │ 骨骼   │  Atlas         │
-│          │                    │ 属性   │  面板          │
-│          │   骨架 / 精灵预览   │ ────── │                │
-│ 播放控制 │   + 挂点标记        │ View   │                │
-│ 时间显示 │                    │ ────── │                │
-│          │                    │ 挂点   │                │
-├──────────┴────────────────────┴────────┴────────────────┤
-│  Timeline（ruler + 骨骼行 + 菱形 + 播放头）              │
-├─────────────────────────────────────────────────────────┤
-│  Bottom Bar（导出 / 导入 / Reset Pose / 状态栏）         │
-└─────────────────────────────────────────────────────────┘
-```
-
----
-
-## 7. 预设动画
+## 9. 预设动画
 
 | 名称 | 时长 | Loop |
 |---|---|---|
@@ -415,29 +453,19 @@ const shadowPos = runtime.getAttachmentPoint('shadow');
 
 ---
 
-## 8. 待实现 / 待确认
+## 10. 待实现
 
-### 8.1 共享代码策略（已决策：两份独立代码）
-- `interpolate.ts` 逻辑稳定，改动频率极低
-- 编辑器和游戏侧各维护一份，不引入共享目录
-- 若日后出现行为差异，再考虑 path alias 方案
-
-### 8.2 游戏侧 Runtime（待实现）
-- `StickmanRuntime` 类，实现 `load / play / pause / update`
-- `getAttachmentPoint(id)` 返回当前帧挂点世界坐标
-
-### 8.3 游戏侧 Sprite Binding 渲染（待实现）
-- 解包 `.tao`，用 `spritesheet.json` 建立 boneId → texture rect 映射
-- 读取 `bindings` 字段，按 anchorX/Y、flipX 渲染 sprite
-- 每根骨骼固定 1 张纹理，无运行时帧切换
+- **游戏侧 Runtime**：`StickmanRuntime` 类（load / play / pause / update / getAttachmentPoint）
+- **共享代码**：`interpolate.ts` + 必要 types 复制到游戏侧
 
 ---
 
-## 9. 不在范围内
+## 11. 不在范围内
 
-- IK / 骨骼权重 / 蒙皮
-- 多角色支持
+- IK / 骨骼权重 / 网格蒙皮
+- 多角色骨架支持
 - 音效时间轴
 - Spine 格式导出
 - 曲线编辑器（贝塞尔可视化）
 - 网格变形
+- 在线协作

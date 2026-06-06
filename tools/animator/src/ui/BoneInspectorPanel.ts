@@ -79,6 +79,7 @@ export class BoneInspectorPanel {
     bus.on('binding:change', () => this.render());
     bus.on('images:change',  () => this.render());
     bus.on('rig:change',     () => this.render());
+    bus.on('editor:mode',    () => this.render());
 
     this.render();
   }
@@ -90,17 +91,13 @@ export class BoneInspectorPanel {
       return;
     }
 
-    const bone      = Skeleton.BONE_MAP.get(boneId);
-    const frame     = this.animCtrl.getCurrentFrame();
-    const transform = frame.get(boneId);
-    const binding   = this.state.getBinding(boneId);
-    const kfTime    = this.state.selectedKfTime ?? this.state.currentTime;
-    const hasImage  = !!this.imageCtrl.getTexture(boneId);
-    const filename  = this.imageCtrl.getFilename(boneId);
+    const bone    = Skeleton.BONE_MAP.get(boneId);
+    const binding = this.state.getBinding(boneId);
+    const kfTime  = this.state.selectedKfTime ?? this.state.currentTime;
 
     let html = `<div class="bone-name">${bone?.label ?? boneId}</div>`;
 
-    // Rig: bone length (skip root len=0 and head which uses radius)
+    // Rig: bone length — shown in both modes (it's a rig property, not animation)
     if (bone && bone.len > 0 && !bone.isHead) {
       const effectiveLen = Math.round(bone.len * this.state.getLengthScale(boneId));
       html += `
@@ -112,56 +109,77 @@ export class BoneInspectorPanel {
       </div>`;
     }
 
-    // Transform
-    html += `
-      <div class="prop-row"><span class="prop-label">Rotation</span>
-        <span class="prop-value">${(transform?.rotation ?? 0).toFixed(1)}°</span></div>
-      <div class="prop-row"><span class="prop-label">Scale X</span>
-        <input class="prop-input" type="number" id="inp-scaleX" value="${(transform?.scaleX ?? 1).toFixed(2)}" step="0.05" style="width:60px"></div>
-      <div class="prop-row"><span class="prop-label">Scale Y</span>
-        <input class="prop-input" type="number" id="inp-scaleY" value="${(transform?.scaleY ?? 1).toFixed(2)}" step="0.05" style="width:60px"></div>
-      <div class="prop-row"><span class="prop-label">Translate X</span>
-        <input class="prop-input" type="number" id="inp-tx" value="${(transform?.translateX ?? 0).toFixed(1)}" step="1" style="width:60px"></div>
-      <div class="prop-row"><span class="prop-label">Translate Y</span>
-        <input class="prop-input" type="number" id="inp-ty" value="${(transform?.translateY ?? 0).toFixed(1)}" step="1" style="width:60px"></div>
-      <div class="prop-row"><span class="prop-label">Alpha</span>
-        <input class="prop-input" type="number" id="inp-alpha" value="${(transform?.alpha ?? 1).toFixed(2)}" min="0" max="1" step="0.05" style="width:60px"></div>
-    `;
+    if (this.state.editorMode === 'skin') {
+      // ── Skin mode: only SpriteBinding params ──────────────────────────────
+      const hasImage = !!this.imageCtrl.getTexture(boneId);
+      const filename = this.imageCtrl.getFilename(boneId);
 
-    // Sprite binding section
-    html += `<div style="border-top:1px solid var(--border);margin:6px 0;padding-top:6px">
-      <div class="panel-header" style="margin:-6px -8px 6px;padding:4px 8px">Sprite Binding</div>`;
+      html += `<div>
+        <div class="panel-header" style="margin:-2px -8px 6px;padding:4px 8px">Sprite Binding</div>`;
 
-    if (binding) {
-      html += `
-        <div class="prop-row"><span class="prop-label">Image</span>
-          <span class="prop-value" style="font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${filename ?? ''}">${filename ?? '(from import)'}</span></div>
-        <div class="prop-row"><span class="prop-label">Anchor X</span>
-          <input type="number" id="inp-anchorX" value="${binding.anchorX.toFixed(2)}" min="0" max="1" step="0.05" style="width:55px" title="Pivot X within image (0=left, 1=right)"></div>
-        <div class="prop-row"><span class="prop-label">Anchor Y</span>
-          <input type="number" id="inp-anchorY" value="${binding.anchorY.toFixed(2)}" min="0" max="1" step="0.05" style="width:55px" title="Pivot Y within image (0=top, 1=bottom)"></div>
-        <div class="prop-row"><span class="prop-label">Offset X</span>
-          <input type="number" id="inp-bind-ox" value="${(binding.offsetX ?? 0).toFixed(1)}" step="1" style="width:55px" title="Pixel offset X from bone pivot (world space)"></div>
-        <div class="prop-row"><span class="prop-label">Offset Y</span>
-          <input type="number" id="inp-bind-oy" value="${(binding.offsetY ?? 0).toFixed(1)}" step="1" style="width:55px" title="Pixel offset Y from bone pivot (world space)"></div>
-        <div class="prop-row"><span class="prop-label">Rotation</span>
-          <input type="number" id="inp-bind-rot" value="${(binding.rotation ?? 0).toFixed(1)}" step="1" style="width:55px" title="Static rotation offset (degrees)"></div>
-        <div class="prop-row"><span class="prop-label">Scale X</span>
-          <input type="number" id="inp-bind-sx" value="${(binding.scaleX ?? 1).toFixed(2)}" step="0.05" style="width:55px" title="Static scale offset"></div>
-        <div class="prop-row"><span class="prop-label">Scale Y</span>
-          <input type="number" id="inp-bind-sy" value="${(binding.scaleY ?? 1).toFixed(2)}" step="0.05" style="width:55px" title="Static scale offset"></div>
-        <div class="prop-row"><span class="prop-label">Flip X</span>
-          <input type="checkbox" id="chk-flipX" ${binding.flipX ? 'checked' : ''}></div>
-        <div class="prop-row"><span class="prop-label">Z-Order</span>
-          <input type="number" id="inp-zorder" value="${binding.zOrder}" step="1" style="width:55px" title="Render layer (higher = in front)"></div>
-        <button id="btn-remove-binding" class="danger sm" style="width:100%;margin-top:4px">Remove Binding</button>`;
-    } else if (hasImage) {
-      html += `<div class="hint-text">Image loaded but no binding.<br>Reload the image to restore.</div>`;
+      if (binding) {
+        html += `
+          <div class="prop-row"><span class="prop-label">Image</span>
+            <span class="prop-value" style="font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${filename ?? ''}">${filename ?? '(from import)'}</span></div>
+          <div class="prop-row"><span class="prop-label">Anchor X</span>
+            <input type="number" id="inp-anchorX" value="${binding.anchorX.toFixed(2)}" min="0" max="1" step="0.05" style="width:55px" title="Pivot X within image (0=left, 1=right)"></div>
+          <div class="prop-row"><span class="prop-label">Anchor Y</span>
+            <input type="number" id="inp-anchorY" value="${binding.anchorY.toFixed(2)}" min="0" max="1" step="0.05" style="width:55px" title="Pivot Y within image (0=top, 1=bottom)"></div>
+          <div class="prop-row"><span class="prop-label">Offset X</span>
+            <input type="number" id="inp-bind-ox" value="${(binding.offsetX ?? 0).toFixed(1)}" step="1" style="width:55px" title="Pixel offset X from bone pivot (world space)"></div>
+          <div class="prop-row"><span class="prop-label">Offset Y</span>
+            <input type="number" id="inp-bind-oy" value="${(binding.offsetY ?? 0).toFixed(1)}" step="1" style="width:55px" title="Pixel offset Y from bone pivot (world space)"></div>
+          <div class="prop-row"><span class="prop-label">Rotation</span>
+            <input type="number" id="inp-bind-rot" value="${(binding.rotation ?? 0).toFixed(1)}" step="1" style="width:55px" title="Static rotation offset (degrees)"></div>
+          <div class="prop-row"><span class="prop-label">Scale X</span>
+            <input type="number" id="inp-bind-sx" value="${(binding.scaleX ?? 1).toFixed(2)}" step="0.05" style="width:55px" title="Static scale offset"></div>
+          <div class="prop-row"><span class="prop-label">Scale Y</span>
+            <input type="number" id="inp-bind-sy" value="${(binding.scaleY ?? 1).toFixed(2)}" step="0.05" style="width:55px" title="Static scale offset"></div>
+          <div class="prop-row"><span class="prop-label">Flip X</span>
+            <input type="checkbox" id="chk-flipX" ${binding.flipX ? 'checked' : ''}></div>
+          <div class="prop-row"><span class="prop-label">Z-Order</span>
+            <input type="number" id="inp-zorder" value="${binding.zOrder}" step="1" style="width:55px" title="Render layer (higher = in front)"></div>
+          <button id="btn-remove-binding" class="danger sm" style="width:100%;margin-top:4px">Remove Binding</button>`;
+      } else if (hasImage) {
+        html += `<div class="hint-text">Image loaded but no binding.<br>Reload the image to restore.</div>`;
+      } else {
+        html += `<div class="hint-text">Load an image in<br>the Image panel first</div>`;
+      }
+
+      html += '</div>';
     } else {
-      html += `<div class="hint-text">Load an image in<br>the Image panel first</div>`;
-    }
+      // ── Animate mode: only keyframe transforms ────────────────────────────
+      const frame     = this.animCtrl.getCurrentFrame();
+      const transform = frame.get(boneId);
 
-    html += '</div>';
+      html += `
+        <div class="prop-row"><span class="prop-label">Rotation</span>
+          <span class="prop-value">${(transform?.rotation ?? 0).toFixed(1)}°</span></div>
+        <div class="prop-row"><span class="prop-label">Scale X</span>
+          <input class="prop-input" type="number" id="inp-scaleX" value="${(transform?.scaleX ?? 1).toFixed(2)}" step="0.05" style="width:60px"></div>
+        <div class="prop-row"><span class="prop-label">Scale Y</span>
+          <input class="prop-input" type="number" id="inp-scaleY" value="${(transform?.scaleY ?? 1).toFixed(2)}" step="0.05" style="width:60px"></div>
+        <div class="prop-row"><span class="prop-label">Translate X</span>
+          <input class="prop-input" type="number" id="inp-tx" value="${(transform?.translateX ?? 0).toFixed(1)}" step="1" style="width:60px"></div>
+        <div class="prop-row"><span class="prop-label">Translate Y</span>
+          <input class="prop-input" type="number" id="inp-ty" value="${(transform?.translateY ?? 0).toFixed(1)}" step="1" style="width:60px"></div>
+        <div class="prop-row"><span class="prop-label">Alpha</span>
+          <input class="prop-input" type="number" id="inp-alpha" value="${(transform?.alpha ?? 1).toFixed(2)}" min="0" max="1" step="0.05" style="width:60px"></div>
+      `;
+
+      // SpriteBinding is read-only in Animate mode — show a collapsed summary
+      if (binding) {
+        html += `
+          <div style="border-top:1px solid var(--border);margin:6px 0 0;padding-top:4px">
+            <div class="hint-text" style="text-align:left;color:var(--text-dim)">
+              Binding: anchor(${binding.anchorX.toFixed(2)}, ${binding.anchorY.toFixed(2)})
+              offset(${(binding.offsetX ?? 0).toFixed(0)}, ${(binding.offsetY ?? 0).toFixed(0)})
+              rot ${(binding.rotation ?? 0).toFixed(0)}°
+              — edit in <strong>Skin</strong> mode
+            </div>
+          </div>`;
+      }
+    }
 
     this.infoArea.innerHTML = html;
     this.attachListeners(boneId, binding, kfTime);
@@ -172,7 +190,7 @@ export class BoneInspectorPanel {
     binding: SpriteBinding | undefined,
     kfTime: number,
   ): void {
-    // Bone length (rig setup)
+    // Bone length (rig setup — available in both modes)
     const bone = Skeleton.BONE_MAP.get(boneId);
     if (bone && bone.len > 0 && !bone.isHead) {
       document.getElementById('inp-bone-len')?.addEventListener('change', e => {
@@ -181,62 +199,65 @@ export class BoneInspectorPanel {
       });
     }
 
-    // Numeric transform inputs
-    const numericProps: Array<{ id: string; key: keyof BoneKeyframe }> = [
-      { id: 'inp-scaleX', key: 'scaleX' },
-      { id: 'inp-scaleY', key: 'scaleY' },
-      { id: 'inp-tx',     key: 'translateX' },
-      { id: 'inp-ty',     key: 'translateY' },
-      { id: 'inp-alpha',  key: 'alpha' },
-    ];
-    for (const { id, key } of numericProps) {
-      document.getElementById(id)?.addEventListener('change', e => {
-        const v = parseFloat((e.target as HTMLInputElement).value);
-        if (isNaN(v)) return;
-        this.cmdManager.execute(new UpdateBonePropCommand(this.animCtrl, boneId, kfTime, { [key]: v }));
-      });
-    }
-
-    if (binding) {
-      document.getElementById('inp-anchorX')?.addEventListener('change', e => {
-        const v = parseFloat((e.target as HTMLInputElement).value);
-        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, anchorX: v });
-      });
-      document.getElementById('inp-anchorY')?.addEventListener('change', e => {
-        const v = parseFloat((e.target as HTMLInputElement).value);
-        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, anchorY: v });
-      });
-      document.getElementById('inp-bind-rot')?.addEventListener('change', e => {
-        const v = parseFloat((e.target as HTMLInputElement).value);
-        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, rotation: v });
-      });
-      document.getElementById('inp-bind-ox')?.addEventListener('change', e => {
-        const v = parseFloat((e.target as HTMLInputElement).value);
-        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, offsetX: v });
-      });
-      document.getElementById('inp-bind-oy')?.addEventListener('change', e => {
-        const v = parseFloat((e.target as HTMLInputElement).value);
-        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, offsetY: v });
-      });
-      document.getElementById('inp-bind-sx')?.addEventListener('change', e => {
-        const v = parseFloat((e.target as HTMLInputElement).value);
-        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, scaleX: v });
-      });
-      document.getElementById('inp-bind-sy')?.addEventListener('change', e => {
-        const v = parseFloat((e.target as HTMLInputElement).value);
-        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, scaleY: v });
-      });
-      document.getElementById('chk-flipX')?.addEventListener('change', e => {
-        const v = (e.target as HTMLInputElement).checked;
-        this.state.setBinding(boneId, { ...binding, flipX: v });
-      });
-      document.getElementById('inp-zorder')?.addEventListener('change', e => {
-        const v = parseInt((e.target as HTMLInputElement).value, 10);
-        if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, zOrder: v });
-      });
-      document.getElementById('btn-remove-binding')?.addEventListener('click', () => {
-        this.cmdManager.execute(new RemoveBindingCommand(this.state, boneId));
-      });
+    if (this.state.editorMode === 'skin') {
+      // Skin mode: bind SpriteBinding controls only
+      if (binding) {
+        document.getElementById('inp-anchorX')?.addEventListener('change', e => {
+          const v = parseFloat((e.target as HTMLInputElement).value);
+          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, anchorX: v });
+        });
+        document.getElementById('inp-anchorY')?.addEventListener('change', e => {
+          const v = parseFloat((e.target as HTMLInputElement).value);
+          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, anchorY: v });
+        });
+        document.getElementById('inp-bind-rot')?.addEventListener('change', e => {
+          const v = parseFloat((e.target as HTMLInputElement).value);
+          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, rotation: v });
+        });
+        document.getElementById('inp-bind-ox')?.addEventListener('change', e => {
+          const v = parseFloat((e.target as HTMLInputElement).value);
+          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, offsetX: v });
+        });
+        document.getElementById('inp-bind-oy')?.addEventListener('change', e => {
+          const v = parseFloat((e.target as HTMLInputElement).value);
+          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, offsetY: v });
+        });
+        document.getElementById('inp-bind-sx')?.addEventListener('change', e => {
+          const v = parseFloat((e.target as HTMLInputElement).value);
+          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, scaleX: v });
+        });
+        document.getElementById('inp-bind-sy')?.addEventListener('change', e => {
+          const v = parseFloat((e.target as HTMLInputElement).value);
+          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, scaleY: v });
+        });
+        document.getElementById('chk-flipX')?.addEventListener('change', e => {
+          const v = (e.target as HTMLInputElement).checked;
+          this.state.setBinding(boneId, { ...binding, flipX: v });
+        });
+        document.getElementById('inp-zorder')?.addEventListener('change', e => {
+          const v = parseInt((e.target as HTMLInputElement).value, 10);
+          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, zOrder: v });
+        });
+        document.getElementById('btn-remove-binding')?.addEventListener('click', () => {
+          this.cmdManager.execute(new RemoveBindingCommand(this.state, boneId));
+        });
+      }
+    } else {
+      // Animate mode: bind keyframe transform controls only
+      const numericProps: Array<{ id: string; key: keyof BoneKeyframe }> = [
+        { id: 'inp-scaleX', key: 'scaleX' },
+        { id: 'inp-scaleY', key: 'scaleY' },
+        { id: 'inp-tx',     key: 'translateX' },
+        { id: 'inp-ty',     key: 'translateY' },
+        { id: 'inp-alpha',  key: 'alpha' },
+      ];
+      for (const { id, key } of numericProps) {
+        document.getElementById(id)?.addEventListener('change', e => {
+          const v = parseFloat((e.target as HTMLInputElement).value);
+          if (isNaN(v)) return;
+          this.cmdManager.execute(new UpdateBonePropCommand(this.animCtrl, boneId, kfTime, { [key]: v }));
+        });
+      }
     }
   }
 }

@@ -22,7 +22,7 @@ funny/
 │   ├── animator/          骨骼动画编辑器（TypeScript + PixiJS，主力版本）
 │   │   ├── src/           源码（见下方架构）
 │   │   ├── public/        HTML 模板（webpack-html-plugin 用）
-│   │   └── ARCHITECTURE.md / REQUIREMENTS.md / SPEC.md
+│   │   └── ARCHITECTURE.md / REQUIREMENTS.md
 │   │
 │   └── animation-editor/  旧版单文件 HTML 编辑器（index.html，参考用）
 │
@@ -44,20 +44,58 @@ npm run start   # webpack dev server，端口 9091
 npm run build   # 生产构建
 ```
 
+### 参数两层模型
+
+骨骼动画参数分两层，**不可混淆**：
+
+**第一层：Binding（静态，设定一次，所有帧共用）**
+
+| 字段 | 含义 |
+|---|---|
+| `anchorX/Y` | 图片上的挂点比例（0–1，左上为 0,0，右下为 1,1）；PIXI `sprite.anchor`；sprite.x/y 即该点的世界坐标 |
+| `offsetX/Y` | 在**世界坐标（屏幕空间）**下平移图片，叠加在骨骼 pivot 位置上；用于修正挂点位置 |
+| `rotation` | 图片静态旋转（度），叠加在骨骼 FK 角度 + 动画旋转上；用于修正图片朝向 |
+| `scaleX/Y` | 图片静态缩放，与动画 scaleX/Y 相乘；用于匹配骨骼长度（**不自动绑定，需手动设置**） |
+| `flipX` | 水平镜像 |
+| `zOrder` | 渲染层级，高 = 在前；shadow 固定为 -∞（最底层） |
+
+**第二层：Keyframe（动态，逐帧，可动画化）**
+
+| 字段 | 含义 |
+|---|---|
+| `rotation` | 叠加在骨骼 FK 角度上的旋转 delta（度）；图片跟随骨骼转 |
+| `translateX/Y` | 移动骨骼 pivot（图片跟随），叠加在 FK 计算之上 |
+| `scaleX/Y` | 缩放骨骼（与 binding.scaleX/Y 相乘） |
+| `alpha` | 显隐（0 = 隐藏） |
+
+**渲染合成公式：**
+```
+sprite.rotation = bone_FK_angle + keyframe.rotation + binding.rotation
+sprite.x        = bone_pivot.x  + keyframe.translateX + binding.offsetX
+sprite.scale    = keyframe.scaleX × binding.scaleX
+```
+
+Binding 参数在动画期间不变；动画只控制骨骼，图片跟随骨骼。
+
 ### 架构要点
 
 - **11 根固定骨骼**：root → spine → head / r_upper_arm → r_lower_arm / l_upper_arm → l_lower_arm；root → r_upper_leg → r_lower_leg / l_upper_leg → l_lower_leg
-- **FK 计算**：`Skeleton.computeFK(rootX, rootY, transforms, lengthScales?)` → `WorldPositions`（纯函数）；`lengthScales` 为可选的每骨骼长度倍率 Map，缺省全为 1.0
+- **FK 计算**：`Skeleton.computeFK(rootX, rootY, transforms, lengthScales?)` → `WorldPositions`（纯函数）；`lengthScales` 为可选的每骨骼长度倍率 Map，缺省全为 1.0；**交互控制器的 hit-test 和旋转轴心计算必须传入 `state.boneLengthScales`，否则骨骼拉伸后无法点击**
 - **关键帧插值**：`sampleClip(clip, t)` → `Map<boneId, ResolvedBoneTransform>`（无外部依赖，可复制到游戏引擎）；无 `frameId`，骨骼隐藏用 `alpha:0`
 - **图片导入**：每骨骼一张 PNG（10 骨骼 + 1 阴影 = 11 张），按文件名自动映射；`ImageController` 管理 Blob + PIXI.Texture；**加载任意一张图片即自动切换到 Sprite 预览模式**
-- **Sprite 层级**：`SpriteBinding.zOrder` 控制骨骼精灵遮挡顺序；`binding:change` 或图片加载时对 `spriteLayer.children` 排序一次，渲染期间不重排
-- **Sprite Binding 静态偏移**：`SpriteBinding` 含 `offsetX`/`offsetY`（像素偏移，叠加在骨骼世界坐标上）、`rotation`（度，叠加在动画旋转上）、`scaleX`/`scaleY`（乘以动画缩放），用于修正图片位置/朝向/尺寸，与关键帧动画互不干扰
+- **Sprite 层级**：`SpriteBinding.zOrder` 控制骨骼精灵遮挡顺序；`binding:change` 或图片加载时对 `spriteLayer.children` 排序一次，渲染期间不重排；shadow 图片 zOrder 硬编码为 `-Infinity`（始终最底层）
+- **Shadow 图片渲染**：shadow 是挂点（`AttachmentPoint`），不在 `bindings` Map 里；`Renderer.updateSprites` 单独处理，位置 = `parent.ex + offsetX/Y`，尺寸由 `shadowW/H`（椭圆半轴）换算为 sprite scale：`scaleX = (shadowW*2)/tex.width`
+- **Sprite Binding 静态偏移**：`SpriteBinding` 含 `offsetX`/`offsetY`（世界空间像素偏移，叠加在骨骼 pivot 上）、`rotation`（度，叠加在动画旋转上）、`scaleX`/`scaleY`（乘以动画缩放），用于修正图片位置/朝向/尺寸，与关键帧动画互不干扰
+- **Anchor 可视化**：Sprite 模式下，每个有图片的骨骼在其 anchor 世界坐标处绘制红色实心圆（r=4，选中时 r=6 + 十字线）；若 offsetX/Y 非零则额外画线连接骨骼 pivot 与 anchor，直观显示偏移量
+- **关键帧复制**：右键时间轴关键帧菱形 → Copy keyframe；移动时间指针到目标时刻 → 右键 Paste keyframe
 - **导출格式**：`.tao`（JSZip ZIP）内含 `animation.json`（v2）+ `spritesheet.png`（shelf bin-packing + canvas.toBlob）+ `spritesheet.json`（boneId→rect）
 - **编辑器存档格式**：`.tao.editor`（JSZip ZIP）内含 `editor.json`（v1，动画+绑定+挂点+编辑器状态）+ `images/*.png`（各骨骼原始图，无损，不合并 spritesheet）；Chrome/Edge 通过 File System Access API 弹出原生保存对话框（`suggestedName` 不含扩展名，由 API 自动追加）；Firefox 等不支持的浏览器退回 `window.prompt()` 询问文件名再 `<a download>` 触发下载
 - **骨骼长度（Rig 设置）**：`AppState.boneLengthScales: Map<boneId, number>` 存每根骨骼的长度倍率（稀疏，1.0 不存储）；Inspector 面板「Length (px)」输入框以实际像素显示，内部换算为倍率；序列化进 `.tao.editor` 和 `.tao`；每个角色设置一次，不影响关键帧动画数据
 - **事件总线**：`EventBus<AppEvents>` 强类型，核心事件见 `src/core/EventBus.ts`；`images:change: string` 携带 slotId；`rig:change` 触发骨骼长度变更后的重绘
 - **命令模式**：所有数据变更封装为 `Command`，支持 Undo/Redo（上限 100）
 - **时间轴骨骼行**：`Skeleton.TIMELINE_BONES` = 10 根（spine + head + 4 臂 + 4 腿），每行 26px，标尺 20px，共需 280px
+- **编辑器模式（Skin / Animate）**：`AppState.editorMode: 'skin' | 'animate'`（默认 `'animate'`，不序列化）；工具栏 🎨 Skin / 🎬 Animate 按钮切换，快捷键 `S`；**Skin 模式**：渲染静息姿（empty transforms），Inspector 只显示 SpriteBinding 参数，拖拽旋转骨骼被禁用；**Animate 模式**：正常动画播放 + 关键帧编辑，Inspector 只显示 Keyframe 变换，SpriteBinding 显示只读摘要
+- **静息姿朝向约定**：骨骼 `rwa`（rest world angle）按**角色朝右**设定——`r_`（解剖右）= 屏幕左，`l_`（解剖左）= 屏幕右；手臂水平展开（r_upper_arm 180°，l_upper_arm 0°），腿向外下方 30° 展开（r_upper_leg 120°，l_upper_leg 60°）
 
 ### 已知修复（2026-06）
 
@@ -79,6 +117,13 @@ npm run build   # 生产构建
 | `src/core/types.ts` + `Renderer.ts` + `BoneInspectorPanel.ts` | `SpriteBinding` 缺少像素偏移，厚实的身体图片无法将胳膊图片整体平移到正确位置 | 新增 `offsetX`/`offsetY` 字段；渲染时叠加在骨骼世界坐标上；Inspector 面板加 Offset X/Y 输入框 |
 | `src/ToolbarPanel.ts` | Sprite 模式下无快捷按钮切换骨骼叠加显示，`chk-overlay` 藏在侧边栏 | 工具栏新增 🦴 Bones 切换按钮；Sprite 模式激活，Skeleton 模式禁用；与侧边栏 checkbox 双向同步 |
 | 多文件 | 无法为每个角色单独设置骨骼长度，骨骼和图片比例不一致导致动画调整困难 | 新增 `AppState.boneLengthScales`（稀疏 Map）；`Skeleton.computeFK` 加 `lengthScales?` 参数；Inspector 加 Length (px) 输入框；序列化进 `.tao.editor` 和 `.tao` |
+| `src/interaction/InteractionController.ts` | 骨骼长度改变后无法旋转骨骼：`onMouseDown`/`onMouseMove` 的 `computeFK` 未传 `lengthScales`，hit-test 和旋转轴心与实际渲染位置不一致 | 两处 `computeFK` 均加 `this.state.boneLengthScales` 参数 |
+| `src/rendering/Renderer.ts` | shadow 挂点图片不显示：`updateSprites` 只遍历 `bindings`（骨骼），shadow 作为 `AttachmentPoint` 从未渲染 | 单独处理 shadow slot；位置取 `parent.ex + offsetX/Y`；尺寸由 `shadowW/H` 半轴换算为 sprite scale |
+| `src/rendering/Renderer.ts` | shadow 图片未应用 `shadowW/H` 尺寸 | `scaleX = (shadowW*2)/tex.width`，`scaleY = (shadowH*2)/tex.height` |
+| `src/core/types.ts` | `SpriteBinding.offsetX/Y` 注释误写为 "local bone space"，实为世界坐标直接叠加 | 注释改为 "world space (screen X/Y)" |
+| `src/rendering/Renderer.ts` | Sprite 模式下看不出图片 anchor 与骨骼 pivot 的对应关系 | 新增 `drawAnchorPoints`：每个有图片的骨骼在 anchor 世界坐标处画红点；选中骨骼加十字线；offset 非零时画连线 |
+| 多文件 | 蒙皮参数（SpriteBinding）在动画帧上调整，骨骼已移动，操作混乱 | 新增 `editorMode: 'skin' \| 'animate'`（`AppState` + `EventBus`）；Skin 模式渲染静息姿、Inspector 只显示 Binding 参数、禁止拖拽旋转；工具栏加 🎨/🎬 切换按钮，快捷键 `S` |
+| `src/skeleton/Skeleton.ts` | 静息姿 `rwa` 未按朝右角色约定设定：手臂朝下（82°/98°），左右腿在错误一侧 | 手臂改为水平展开（r 180°/195°，l 0°/−15°）；腿改为向各自外侧下方展开（r 120°/130°，l 60°/50°） |
 
 ### 主要源文件
 

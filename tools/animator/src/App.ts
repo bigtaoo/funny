@@ -114,7 +114,11 @@ export class App {
 
     // ── 8. Main render loop ──────────────────────────────────────────────────
     renderer.pixiApp.ticker.add(() => {
-      const frame     = animCtrl.getCurrentFrame();
+      // In Skin mode render the rest pose (all rotations = 0) so the artist
+      // always adjusts binding parameters against the neutral T-pose.
+      const frame     = state.editorMode === 'skin'
+        ? new Map<string, import('./core/types').ResolvedBoneTransform>()
+        : animCtrl.getCurrentFrame();
       const worldPose = Skeleton.computeFK(state.rootX, state.rootY, frame, state.boneLengthScales);
 
       renderer.draw({

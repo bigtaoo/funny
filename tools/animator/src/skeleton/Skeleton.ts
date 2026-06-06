@@ -2,18 +2,21 @@ import type { BoneDef, WorldPose, WorldPositions, ResolvedBoneTransform } from '
 
 // ── Bone definitions ──────────────────────────────────────────────────────────
 
+// Rest-pose world angles assume the character faces RIGHT.
+// Anatomical right  (r_) = screen LEFT  → arm rwa≈180°, leg rwa≈120°
+// Anatomical left   (l_) = screen RIGHT → arm rwa≈0°,   leg rwa≈60°
 const RAW_DEFS: Omit<BoneDef, 'rla'>[] = [
   { id: 'root',         parent: null,          len: 0,   rwa:   0, label: 'Root'         },
   { id: 'spine',        parent: 'root',        len: 68,  rwa: -90, outerW: 22, innerW: 12, label: 'Spine'        },
   { id: 'head',         parent: 'spine',       len: 24,  rwa: -90, isHead: true,           label: 'Head'         },
-  { id: 'r_upper_arm',  parent: 'spine',       len: 38,  rwa:  82, outerW: 18, innerW: 10, label: 'R. Upper Arm' },
-  { id: 'r_lower_arm',  parent: 'r_upper_arm', len: 30,  rwa:  98, outerW: 14, innerW:  7, label: 'R. Lower Arm' },
-  { id: 'l_upper_arm',  parent: 'spine',       len: 36,  rwa:  98, outerW: 16, innerW:  9, label: 'L. Upper Arm' },
-  { id: 'l_lower_arm',  parent: 'l_upper_arm', len: 28,  rwa: 112, outerW: 12, innerW:  6, label: 'L. Lower Arm' },
-  { id: 'r_upper_leg',  parent: 'root',        len: 50,  rwa:  82, outerW: 20, innerW: 11, label: 'R. Upper Leg' },
-  { id: 'r_lower_leg',  parent: 'r_upper_leg', len: 44,  rwa:  92, outerW: 16, innerW:  8, label: 'R. Lower Leg' },
-  { id: 'l_upper_leg',  parent: 'root',        len: 50,  rwa:  98, outerW: 18, innerW: 10, label: 'L. Upper Leg' },
-  { id: 'l_lower_leg',  parent: 'l_upper_leg', len: 44,  rwa:  88, outerW: 14, innerW:  7, label: 'L. Lower Leg' },
+  { id: 'r_upper_arm',  parent: 'spine',       len: 38,  rwa: 180, outerW: 18, innerW: 10, label: 'R. Upper Arm' },
+  { id: 'r_lower_arm',  parent: 'r_upper_arm', len: 30,  rwa: 195, outerW: 14, innerW:  7, label: 'R. Lower Arm' },
+  { id: 'l_upper_arm',  parent: 'spine',       len: 36,  rwa:   0, outerW: 16, innerW:  9, label: 'L. Upper Arm' },
+  { id: 'l_lower_arm',  parent: 'l_upper_arm', len: 28,  rwa: -15, outerW: 12, innerW:  6, label: 'L. Lower Arm' },
+  { id: 'r_upper_leg',  parent: 'root',        len: 50,  rwa: 120, outerW: 20, innerW: 11, label: 'R. Upper Leg' },
+  { id: 'r_lower_leg',  parent: 'r_upper_leg', len: 44,  rwa: 130, outerW: 16, innerW:  8, label: 'R. Lower Leg' },
+  { id: 'l_upper_leg',  parent: 'root',        len: 50,  rwa:  60, outerW: 18, innerW: 10, label: 'L. Upper Leg' },
+  { id: 'l_lower_leg',  parent: 'l_upper_leg', len: 44,  rwa:  50, outerW: 14, innerW:  7, label: 'L. Lower Leg' },
 ];
 
 // ── Skeleton static class ─────────────────────────────────────────────────────

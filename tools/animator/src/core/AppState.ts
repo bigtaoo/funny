@@ -58,6 +58,17 @@ export class AppState {
 
   setSelectedKfTime(t: number | null): void { this._selectedKfTime = t; }
 
+  // ── Editor mode ───────────────────────────────────────────────────────────
+
+  private _editorMode: 'skin' | 'animate' = 'animate';
+
+  get editorMode(): 'skin' | 'animate' { return this._editorMode; }
+
+  setEditorMode(mode: 'skin' | 'animate'): void {
+    this._editorMode = mode;
+    this.bus.emit('editor:mode', mode);
+  }
+
   // ── Preview / view options ────────────────────────────────────────────────
 
   private _previewMode:         'skeleton' | 'sprite' = 'skeleton';

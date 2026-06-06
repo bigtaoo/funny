@@ -30,6 +30,9 @@ export interface AppEvents {
   // Rig setup (bone lengths)
   'rig:change':     void;
 
+  // Editor mode (skin vs animate)
+  'editor:mode':    'skin' | 'animate';
+
   // Misc
   'status':         string;
   'pose:reset':     void;

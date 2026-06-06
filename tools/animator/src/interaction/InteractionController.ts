@@ -151,22 +151,29 @@ export class InteractionController {
   private onMouseDown(e: MouseEvent): void {
     if (e.button !== 0) return;
 
+    // In Skin mode the pose is fixed at rest; hit-test against the rest pose.
+    const skinMode = this.state.editorMode === 'skin';
+    const wp = skinMode
+      ? new Map<string, import('../core/types').ResolvedBoneTransform>()
+      : this.animCtrl.getCurrentFrame();
     const { x, y } = this.renderer.toStageCoords(e.clientX, e.clientY);
-    const wp = this.animCtrl.getCurrentFrame();
     const worldPose = Skeleton.computeFK(this.state.rootX, this.state.rootY, wp, this.state.boneLengthScales);
 
     const boneId = this.findBoneAt(x, y, worldPose);
 
     if (boneId) {
       this.state.setSelectedBone(boneId);
-      this.isDragging      = true;
-      this.dragBoneId      = boneId;
-      this.dragStartX      = e.clientX;
+      // In Skin mode bone rotation is locked — only selection is allowed.
+      if (!skinMode) {
+        this.isDragging      = true;
+        this.dragBoneId      = boneId;
+        this.dragStartX      = e.clientX;
 
-      // Bone's pivot position for angle calculation
-      const pivot = worldPose.get(boneId)!;
-      this.dragStartAngle  = Math.atan2(y - pivot.sy, x - pivot.sx);
-      this.dragOldRotation = wp.get(boneId)?.rotation ?? 0;
+        // Bone's pivot position for angle calculation
+        const pivot = worldPose.get(boneId)!;
+        this.dragStartAngle  = Math.atan2(y - pivot.sy, x - pivot.sx);
+        this.dragOldRotation = wp.get(boneId)?.rotation ?? 0;
+      }
     } else {
       this.state.setSelectedBone(null);
     }
@@ -174,6 +181,7 @@ export class InteractionController {
 
   private onMouseMove(e: MouseEvent): void {
     if (!this.isDragging || !this.dragBoneId || this.state.isPlaying) return;
+    if (this.state.editorMode === 'skin') return;  // should not happen, but guard
 
     const { x, y } = this.renderer.toStageCoords(e.clientX, e.clientY);
     const frame = this.animCtrl.getCurrentFrame();
@@ -254,6 +262,11 @@ export class InteractionController {
       case 'Tab':
         e.preventDefault();
         this.state.setPreviewMode(this.state.previewMode === 'skeleton' ? 'sprite' : 'skeleton');
+        break;
+      case 's':
+      case 'S':
+        e.preventDefault();
+        this.state.setEditorMode(this.state.editorMode === 'skin' ? 'animate' : 'skin');
         break;
       case 'k':
       case 'K': {

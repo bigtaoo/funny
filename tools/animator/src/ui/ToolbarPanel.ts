@@ -50,6 +50,7 @@ export class ToolbarPanel {
     private readonly cmdManager: CommandManager,
   ) {
     this.buildUndoRedo();
+    this.buildEditorMode();
     this.buildPreviewMode();
     this.buildSkeletonToggle();
     this.bindExisting();
@@ -114,6 +115,33 @@ export class ToolbarPanel {
       this.el.insertBefore(undoSep,      this.btnUndo);
     } else {
       this.el.append(undoSep, this.btnUndo, this.btnRedo);
+    }
+  }
+
+  private buildEditorMode(): void {
+    const btn = document.createElement('button');
+    btn.id    = 'btn-editor-mode';
+    btn.title = 'Switch between Skin setup and Animate modes (S key)';
+
+    const update = (): void => {
+      const isSkin = this.state.editorMode === 'skin';
+      btn.textContent = isSkin ? '🎨 Skin' : '🎬 Animate';
+      btn.classList.toggle('active', isSkin);
+    };
+    update();
+
+    btn.addEventListener('click', () => {
+      this.state.setEditorMode(this.state.editorMode === 'skin' ? 'animate' : 'skin');
+    });
+
+    this.bus.on('editor:mode', () => update());
+
+    // Insert before the first separator
+    const sep = this.el.querySelector('.sep') ?? this.el.firstChild;
+    if (sep) {
+      this.el.insertBefore(btn, sep);
+    } else {
+      this.el.appendChild(btn);
     }
   }
 
