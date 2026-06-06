@@ -191,9 +191,12 @@
       width: 115px;
       flex-shrink: 0;
       border-right: 1px solid var(--border);
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: scroll;
+      scrollbar-width: none; /* Firefox */
     }
-    .tl-label-spacer { height: 20px; border-bottom: 1px solid var(--border); }
+    #tl-labels::-webkit-scrollbar { display: none; }
+    .tl-label-spacer { height: 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
     .tl-label-row {
       height: 26px;
       display: flex;
@@ -204,12 +207,34 @@
       color: var(--text-dim);
       cursor: pointer;
       gap: 5px;
+      flex-shrink: 0;
     }
     .tl-label-row:hover { background: var(--surface2); color: var(--text); }
     .tl-label-row.active { color: var(--selected); }
     .tl-label-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
     #tl-canvas-wrap { flex: 1; position: relative; overflow: hidden; }
     #timeline-canvas { display: block; width: 100%; height: 100%; cursor: pointer; }
+
+    /* ── Timeline scrollbar ── */
+    #tl-vscroll {
+      width: 8px;
+      flex-shrink: 0;
+      background: var(--surface2);
+      border-left: 1px solid var(--border);
+      position: relative;
+      cursor: pointer;
+    }
+    #tl-vscroll-thumb {
+      position: absolute;
+      left: 1px;
+      right: 1px;
+      background: #4a4a6a;
+      border-radius: 4px;
+      min-height: 20px;
+      cursor: grab;
+    }
+    #tl-vscroll-thumb:hover { background: #6a6a8a; }
+    #tl-vscroll-thumb.dragging { background: #8a8aaa; cursor: grabbing; }
 
     /* ── Bottom Bar ── */
     .bottom-bar {
@@ -414,6 +439,9 @@
     </div>
     <div id="tl-canvas-wrap">
       <canvas id="timeline-canvas"></canvas>
+    </div>
+    <div id="tl-vscroll">
+      <div id="tl-vscroll-thumb"></div>
     </div>
   </div>
 </div>

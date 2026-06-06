@@ -76,17 +76,19 @@ export class ResizablePanels {
       if (w >= MIN) rightPanel.style.width = `${w}px`;
     });
 
-    // right | atlas
-    const h3 = this.createHandle('v');
-    mainEl.insertBefore(h3, atlasPanel);
-    this.makeDragger(h3, 'x', delta => {
-      const rw = rightPanel.offsetWidth + delta;
-      const aw = atlasPanel.offsetWidth - delta;
-      if (rw >= MIN && aw >= MIN) {
-        rightPanel.style.width = `${rw}px`;
-        atlasPanel.style.width = `${aw}px`;
-      }
-    });
+    // right | atlas (only if atlas panel exists)
+    if (atlasPanel) {
+      const h3 = this.createHandle('v');
+      mainEl.insertBefore(h3, atlasPanel);
+      this.makeDragger(h3, 'x', delta => {
+        const rw = rightPanel.offsetWidth + delta;
+        const aw = atlasPanel.offsetWidth - delta;
+        if (rw >= MIN && aw >= MIN) {
+          rightPanel.style.width = `${rw}px`;
+          atlasPanel.style.width = `${aw}px`;
+        }
+      });
+    }
   }
 
   // ── horizontal splitter ────────────────────────────────────────────────────

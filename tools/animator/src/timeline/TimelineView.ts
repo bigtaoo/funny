@@ -74,10 +74,18 @@ export class TimelineView {
   private isDraggingKf = false;
   private dragKfTime   = 0;
 
+  private scrollY      = 0;
+  private isDraggingScroll = false;
+  private scrollDragStartY = 0;
+  private scrollDragStartScrollY = 0;
+
   /** Set to true by events that require a canvas redraw; cleared after draw. */
   private dirty = true;
   /** Set to true by events that require label DOM rebuild. */
   private labelsDirty = true;
+
+  private readonly vscrollEl: HTMLElement;
+  private readonly vscrollThumb: HTMLElement;
 
   constructor(
     private readonly canvasEl: HTMLCanvasElement,
@@ -90,16 +98,59 @@ export class TimelineView {
     this.ctx = canvasEl.getContext('2d')!;
     this.contextMenu = new ContextMenu();
 
+    this.vscrollEl    = document.getElementById('tl-vscroll')!;
+    this.vscrollThumb = document.getElementById('tl-vscroll-thumb')!;
+
     canvasEl.addEventListener('mousedown',   e => this.onMouseDown(e));
     canvasEl.addEventListener('mousemove',   e => this.onMouseMove(e));
     canvasEl.addEventListener('mouseup',     e => this.onMouseUp(e));
     canvasEl.addEventListener('mouseleave',  () => { this.isScrubbing = false; this.isDraggingKf = false; });
     canvasEl.addEventListener('contextmenu', e => this.onContextMenu(e));
+    canvasEl.addEventListener('wheel',       e => this.onWheel(e), { passive: false });
+
+    this.vscrollThumb.addEventListener('mousedown', e => this.onScrollThumbDown(e));
+    this.vscrollEl.addEventListener('mousedown',    e => this.onScrollTrackClick(e));
 
     bus.on('kf:change',   () => { this.dirty = true; this.labelsDirty = true; });
     bus.on('time:change', () => { this.dirty = true; });
     bus.on('anim:select', () => { this.dirty = true; this.labelsDirty = true; });
     bus.on('bone:select', () => { this.dirty = true; this.labelsDirty = true; });
+  }
+
+  private get rowsContentH(): number {
+    return Skeleton.TIMELINE_BONES.length * ROW_H;
+  }
+
+  private get maxScrollY(): number {
+    const visibleRowsH = this.canvasEl.height - RULER_H;
+    return Math.max(0, this.rowsContentH - visibleRowsH);
+  }
+
+  private clampScroll(y: number): number {
+    return Math.max(0, Math.min(this.maxScrollY, y));
+  }
+
+  private applyScroll(y: number): void {
+    this.scrollY = this.clampScroll(y);
+    this.labelContainer.scrollTop = this.scrollY;
+    this.dirty = true;
+    this.updateScrollbar();
+  }
+
+  private updateScrollbar(): void {
+    const trackH = this.vscrollEl.clientHeight - RULER_H;
+    const total  = this.rowsContentH;
+    const visible = this.canvasEl.height - RULER_H;
+    if (total <= visible) {
+      this.vscrollThumb.style.display = 'none';
+      return;
+    }
+    this.vscrollThumb.style.display = '';
+    const ratio     = visible / total;
+    const thumbH    = Math.max(20, trackH * ratio);
+    const thumbTop  = RULER_H + (this.scrollY / this.maxScrollY) * (trackH - thumbH);
+    this.vscrollThumb.style.top    = `${thumbTop}px`;
+    this.vscrollThumb.style.height = `${thumbH}px`;
   }
 
   render(): void {
@@ -111,6 +162,8 @@ export class TimelineView {
     if (this.canvasEl.width !== W || this.canvasEl.height !== H) {
       this.canvasEl.width  = W;
       this.canvasEl.height = H;
+      // Re-clamp after resize
+      this.scrollY = this.clampScroll(this.scrollY);
     }
 
     const clip = this.animCtrl.currentClip;
@@ -123,6 +176,7 @@ export class TimelineView {
     this.drawRuler(W, dur);
     this.drawRows(W, clip, dur);
     this.drawPlayhead(W, dur);
+    this.updateScrollbar();
 
     if (this.labelsDirty) {
       this.labelsDirty = false;
@@ -155,8 +209,16 @@ export class TimelineView {
   }
 
   private drawRows(W: number, clip: AnimationClip | null, dur: number): void {
+    const H = this.canvasEl.height;
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(0, RULER_H, W, H - RULER_H);
+    this.ctx.clip();
+
     Skeleton.TIMELINE_BONES.forEach((boneId, ri) => {
-      const y = RULER_H + ri * ROW_H;
+      const y = RULER_H + ri * ROW_H - this.scrollY;
+      if (y + ROW_H < RULER_H || y > H) return;
+
       this.ctx.fillStyle = ri % 2 === 0 ? '#1e1e30' : '#1a1a2e';
       this.ctx.fillRect(0, y, W, ROW_H);
       this.ctx.strokeStyle = '#2a2a40';
@@ -199,16 +261,25 @@ export class TimelineView {
         }
       });
     });
+
+    this.ctx.restore();
   }
 
   private drawPlayhead(W: number, dur: number): void {
     const px = (this.state.currentTime / Math.max(dur, 0.001)) * W;
     const H  = this.canvasEl.height;
-    this.ctx.strokeStyle = '#f38ba8';
-    this.ctx.lineWidth   = 2;
-    this.ctx.beginPath(); this.ctx.moveTo(px, 0); this.ctx.lineTo(px, H); this.ctx.stroke();
+    // Ruler marker (always visible)
     this.ctx.fillStyle = '#f38ba8';
     this.ctx.fillRect(px - 4, 0, 8, RULER_H);
+    // Line through scrollable rows area
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(0, RULER_H, W, H - RULER_H);
+    this.ctx.clip();
+    this.ctx.strokeStyle = '#f38ba8';
+    this.ctx.lineWidth   = 2;
+    this.ctx.beginPath(); this.ctx.moveTo(px, RULER_H); this.ctx.lineTo(px, H); this.ctx.stroke();
+    this.ctx.restore();
   }
 
   private renderLabels(clip: AnimationClip | null): void {
@@ -238,20 +309,66 @@ export class TimelineView {
   private getRowFromY(clientY: number): { ri: number; boneId: string } | null {
     const rect = this.canvasEl.getBoundingClientRect();
     const y    = clientY - rect.top;
-    const ri   = Math.floor((y - RULER_H) / ROW_H);
+    const ri   = Math.floor((y - RULER_H + this.scrollY) / ROW_H);
     if (ri < 0 || ri >= Skeleton.TIMELINE_BONES.length) return null;
     return { ri, boneId: Skeleton.TIMELINE_BONES[ri] };
   }
 
+  private onWheel(e: WheelEvent): void {
+    e.preventDefault();
+    this.applyScroll(this.scrollY + e.deltaY);
+  }
+
+  private onScrollThumbDown(e: MouseEvent): void {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    this.isDraggingScroll    = true;
+    this.scrollDragStartY    = e.clientY;
+    this.scrollDragStartScrollY = this.scrollY;
+    this.vscrollThumb.classList.add('dragging');
+
+    const onMove = (ev: MouseEvent) => {
+      if (!this.isDraggingScroll) return;
+      const trackH  = this.vscrollEl.clientHeight - RULER_H;
+      const visible = this.canvasEl.height - RULER_H;
+      const total   = this.rowsContentH;
+      const thumbH  = Math.max(20, trackH * (visible / total));
+      const dy      = ev.clientY - this.scrollDragStartY;
+      const ratio   = dy / (trackH - thumbH);
+      this.applyScroll(this.scrollDragStartScrollY + ratio * this.maxScrollY);
+    };
+    const onUp = () => {
+      this.isDraggingScroll = false;
+      this.vscrollThumb.classList.remove('dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
+  }
+
+  private onScrollTrackClick(e: MouseEvent): void {
+    if (e.target === this.vscrollThumb) return;
+    const rect    = this.vscrollEl.getBoundingClientRect();
+    const y       = e.clientY - rect.top - RULER_H;
+    const trackH  = this.vscrollEl.clientHeight - RULER_H;
+    const ratio   = Math.max(0, Math.min(1, y / trackH));
+    this.applyScroll(ratio * this.maxScrollY);
+  }
+
   private findKfAt(clientX: number, clientY: number): { kf: Keyframe; boneId: string } | null {
+    const rect = this.canvasEl.getBoundingClientRect();
+    // Ignore clicks in the ruler area
+    if (clientY - rect.top < RULER_H) return null;
+
     const row = this.getRowFromY(clientY);
     if (!row) return null;
     const clip = this.animCtrl.currentClip;
     if (!clip) return null;
 
-    const rect = this.canvasEl.getBoundingClientRect();
-    const x    = clientX - rect.left;
-    const dur  = clip.duration;
+    const x   = clientX - rect.left;
+    const dur = clip.duration;
     const { boneId } = row;
 
     for (const kf of clip.keyframes) {

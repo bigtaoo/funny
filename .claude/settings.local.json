@@ -31,7 +31,8 @@
       "Bash(ubuntu run *)",
       "mcp__Claude_Preview__preview_start",
       "Read(//mnt/c/Users/TaoWang/Documents/funny/tools/**)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\TaoWang\\\\Documents\\\\funny\\\\tools\\\\animator\\\\.claude\" 2>/dev/null; echo done)"
     ]
   }
 }
