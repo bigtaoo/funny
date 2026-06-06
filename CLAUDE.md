@@ -36,6 +36,16 @@ funny/
 
 ## 动画编辑器（tools/animator）
 
+### 外部文档导航
+
+| 想查的内容 | 文件 | 章节 |
+|---|---|---|
+| 典型工作流 / 功能规格 / UI 布局 / 导出格式规范 | `REQUIREMENTS.md` | §2 工作流、§3 功能规格、§8 界面布局 |
+| 目录结构 / 数据模型 / 渲染流程 / 事件总线 / 命令模式 | `ARCHITECTURE.md` | §1 目录、§2 数据模型、§5 渲染、§3 事件总线 |
+| 插值算法细节 | `ARCHITECTURE.md` | §4 插值算法 |
+| 游戏侧对接规格 / StickmanRuntime | `REQUIREMENTS.md` | §7 游戏侧对接 |
+| 性能注意事项 / 已知局限 | `ARCHITECTURE.md` | §9 性能、§10 局限 |
+
 ### 启动
 
 ```bash
@@ -124,6 +134,79 @@ Binding 参数在动画期间不变；动画只控制骨骼，图片跟随骨骼
 | `src/rendering/Renderer.ts` | Sprite 模式下看不出图片 anchor 与骨骼 pivot 的对应关系 | 新增 `drawAnchorPoints`：每个有图片的骨骼在 anchor 世界坐标处画红点；选中骨骼加十字线；offset 非零时画连线 |
 | 多文件 | 蒙皮参数（SpriteBinding）在动画帧上调整，骨骼已移动，操作混乱 | 新增 `editorMode: 'skin' \| 'animate'`（`AppState` + `EventBus`）；Skin 模式渲染静息姿、Inspector 只显示 Binding 参数、禁止拖拽旋转；工具栏加 🎨/🎬 切换按钮，快捷键 `S` |
 | `src/skeleton/Skeleton.ts` | 静息姿 `rwa` 未按朝右角色约定设定：手臂朝下（82°/98°），左右腿在错误一侧 | 手臂改为水平展开（r 180°/195°，l 0°/−15°）；腿改为向各自外侧下方展开（r 120°/130°，l 60°/50°） |
+| `src/ui/ResizablePanels.ts` | `atlasPanel`（`#atlas-panel`）不存在于 DOM，`right | atlas` 分割条初始化时读 `null.offsetWidth` 崩溃 | 加 `if (atlasPanel)` null guard，不存在时跳过该分割条 |
+| `src/timeline/TimelineView.ts` + `public/index.html` | 时间轴面板缩小后骨骼行被截断，无法滚动查看 | 新增垂直滚动：`scrollY` 状态 + `applyScroll()`；canvas `drawRows` 加 `clip()` + scrollY 偏移，跳过不可见行；`getRowFromY`/`findKfAt` 点击坐标加 scrollY 修正；右侧自定义滚动条（`#tl-vscroll` / `#tl-vscroll-thumb`）支持拖拽 thumb、点击轨道跳转；canvas wheel 事件驱动滚动；labels 隐藏原生滚动条，`scrollTop` 由 JS 同步；面板高度足够时 thumb 自动隐藏 |
+
+### 快捷键
+
+| 键 | 动作 |
+|---|---|
+| `Space` | 播放 / 暂停 |
+| `K` | 当前时间打关键帧 |
+| `Delete` / `Backspace` | 删除选中关键帧 |
+| `Tab` | 切换 Skeleton / Sprite 预览模式 |
+| `S` | 切换 Skin / Animate 编辑器模式 |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Shift+Z` / `Ctrl+Y` | Redo |
+| 左键拖骨骼 | 旋转（mouseUp 提交 Command） |
+| 右键拖画布 | Pan |
+| 时间轴右键菱形 | easing 切换 / Copy / Paste / Delete keyframe |
+| 时间轴滚轮 | 垂直滚动骨骼行 |
+
+### 事件总线（核心事件）
+
+| 事件 | payload | 触发时机 |
+|---|---|---|
+| `bone:select` | `string \| null` | 选中 / 取消骨骼 |
+| `bone:rotate` | `{id, delta}` | 拖拽中 live delta |
+| `time:change` | `number` | 播放 / 拖动时间轴 |
+| `play:state` | `boolean` | 播放 / 暂停 |
+| `anim:select` | `string` | 切换当前动画 |
+| `anim:list` | void | 列表增删改 |
+| `kf:change` | void | 关键帧数据变化 |
+| `images:change` | `string`(slotId) | 骨骼图片加载 / 移除 |
+| `binding:change` | `string`(boneId) | sprite 绑定变化 |
+| `attachment:change` | void | 挂点数据变化 |
+| `rig:change` | void | 骨骼长度倍率变化 |
+| `preview:mode` | `'skeleton'\|'sprite'` | 预览模式切换 |
+| `editor:mode` | `'skin'\|'animate'` | 编辑器模式切换 |
+| `history:change` | `{canUndo,canRedo,label}` | Undo/Redo 栈变化 |
+| `status` | `string` | 状态栏消息 |
+| `pose:reset` | void | 重置为 rest pose |
+
+### 渲染层级（PixiJS stage，从下到上）
+
+```
+gridGfx      — 背景网格
+onionGfx     — Onion skin（alpha 0.2）
+boneGfx      — 骨骼线框（Skeleton 模式）
+spriteLayer  — PIXI.Sprite（Sprite 模式，盖住 boneGfx）
+overlayGfx   — 骨骼叠加线框（Sprite 模式 + showSkeletonOverlay=true）
+selGfx       — 选中高亮 + 挂点标记 + Guide
+```
+
+### 典型工作流
+
+```
+1. npm run start → http://localhost:9091
+2. [蒙皮] 导入骨骼图片 → 切换 🎨 Skin 模式
+           → 在静息姿下逐骨骼调 Binding（anchor / offset / rotation / scale）
+3. [动画] 切换 🎬 Animate 模式 → 选 / 新建动画片段
+           → 拖骨骼调姿态 → K 打帧 → Space 预览 → 反复调整
+4. 💾 Save .editor（保留图片 + 编辑状态）
+5. ⬇ Export .tao（游戏引擎读取）
+```
+
+### 预设动画
+
+| 名称 | 时长 | Loop |
+|---|---|---|
+| idle | 1.5s | ✓ |
+| walk | 0.5s | ✓ |
+| attack | 0.6s | ✗ |
+| hurt | 0.4s | ✗ |
+| death | 0.8s | ✗ |
+| spawn | 0.35s | ✗ |
 
 ### 主要源文件
 
@@ -222,3 +305,4 @@ ZIP 压缩包，**保存完整编辑状态**，可随时加载继续编辑：
 - **工作目录**：`C:\Users\TaoWang\Documents\funny`（即 `/c/Users/TaoWang/Documents/funny`），Bash 命令直接在此目录下执行，**不要**绕道 `wsl -d ubuntu`。
 - **权限**：Read / Write / Edit / Bash 全部直接执行，无需确认。`rm` / `rmdir` / `git rm` 需确认。
 - **上下文提醒**：会话接近 200k token 上限时提醒切换新会话。
+- **记录改动**：收到"记录改动/将改动记录进文档"等指令时，需同时更新以下文档——`CLAUDE.md`（已知修复表格）**以及**改动所在子目录的对应文档（animator 相关改 `tools/animator/ARCHITECTURE.md` 和 `REQUIREMENTS.md`；game 相关改 `code/DESIGN.md`；设计相关改 `design/` 下对应文件）。

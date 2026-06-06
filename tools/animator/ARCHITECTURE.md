@@ -323,7 +323,7 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 
 ## 9. 性能注意事项
 
-- **TimelineView**：`dirty`/`labelsDirty` 两个 flag，canvas 重绘和 label DOM 重建各自按需触发
+- **TimelineView**：`dirty`/`labelsDirty` 两个 flag，canvas 重绘和 label DOM 重建各自按需触发；`scrollY` 状态通过 `applyScroll()` 统一更新，同步 `labelContainer.scrollTop`，并触发 `dirty`；`drawRows` 加 `ctx.clip()` 裁切至 ruler 以下区域再施加 scrollY 偏移，跳过不可见行
 - **AttachmentPanel**：DOM 建一次，`attachment:change` 只更新 input value，跳过 focused 元素
 - **sampleClip**：两次线性 pass，keyframes 有序，pass 1 提前 break
 - **hit-test**：`DRAW_ORDER_REVERSED` 懒初始化缓存
@@ -335,6 +335,7 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 - `RotateBoneCommand.undo(!hadKeyframe)` 删整个 keyframe，若该帧有多骨骼数据会一并删除
 - 暂无 IK / 骨骼权重 / 蒙皮，纯 FK
 - 右键 Pan 的 `window` 事件监听无 destroy 入口
+- `ResizablePanels` 的 `right | atlas` 分割条依赖 `#atlas-panel` 存在（当前 HTML 无此元素），已加 null guard 保护
 
 ---
 

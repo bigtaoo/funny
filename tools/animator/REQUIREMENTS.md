@@ -268,6 +268,7 @@ sprite.scale    = keyframe.scaleX × binding.scaleX
 - 选中时高亮青色
 - 左键拖拽菱形改时间
 - 拖拽 ruler 或 scrub
+- **垂直滚动**：面板被纵向拖小后，右侧出现自定义滚动条（thumb 拖拽 / 点击轨道跳转）；canvas 区域也响应鼠标滚轮；ruler 固定在顶部不随行内容滚动；面板高度足以显示全部 10 行时 thumb 自动隐藏
 
 ### 3.13 Undo / Redo
 
