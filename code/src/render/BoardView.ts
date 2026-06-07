@@ -12,11 +12,26 @@ const HIGHLIGHT_BUILDING = 0x44aa44; // green tint — valid building slot
 const HIGHLIGHT_ALPHA    = 0.18;
 const HIGHLIGHT_METEOR   = 0xff4422; // red tint — meteor targeting
 
+// Base idle: alpha pulse only
+const BASE_ALPHA_MIN    = 0.65;
+const BASE_ALPHA_RANGE  = 0.35;    // 0.65 → 1.0
+const BASE_PULSE_SPEED  = Math.PI / 2; // rad/s → period = 4s
+
+interface BaseRef {
+  sprite:   PIXI.Sprite;
+  crackGfx: PIXI.Graphics;
+  rect:     Rect;
+}
+
 export class BoardView {
   readonly container: PIXI.Container;
 
   private readonly layout: ILayout;
   private readonly highlightLayer: PIXI.Graphics;
+
+  private playerBase: BaseRef | null = null;
+  private enemyBase:  BaseRef | null = null;
+  private baseTime = 0;
 
   private readonly meteorPool = new ObjectPool<PIXI.Graphics>(
     () => new PIXI.Graphics(),
@@ -33,6 +48,57 @@ export class BoardView {
     this.drawGrid();
     this.drawBases(layout);
     this.container.addChild(this.highlightLayer);
+  }
+
+  // ── Per-frame update ──────────────────────────────────────────────────────
+
+  update(dt: number): void {
+    this.baseTime += dt;
+    const t = this.baseTime;
+    this.applyBasePulse(this.playerBase, t, 0);
+    // Enemy base slightly out of phase
+    this.applyBasePulse(this.enemyBase,  t, 1.2);
+  }
+
+  private applyBasePulse(base: BaseRef | null, t: number, phaseOffset: number): void {
+    if (!base) return;
+    const v = Math.sin(t * BASE_PULSE_SPEED + phaseOffset);
+    base.sprite.alpha = BASE_ALPHA_MIN + BASE_ALPHA_RANGE * (v * 0.5 + 0.5); // map -1..1 → 0..1
+  }
+
+  // ── Base crack effect ─────────────────────────────────────────────────────
+
+  /**
+   * Accumulate pencil-sketch crack lines on a base when it takes damage.
+   * No cracks above 85% HP; 2 cracks per hit below 40% HP.
+   */
+  playBaseCrackEffect(owner: 0 | 1, hp: number, maxHp: number): void {
+    const base = owner === 0 ? this.playerBase : this.enemyBase;
+    if (!base) return;
+
+    const ratio = hp / maxHp;
+    if (ratio > 0.85) return;
+
+    const gfx = base.crackGfx;
+    const hw = base.rect.w * 0.25;  // ±1/4 宽，即中心到边缘一半
+    const hh = base.rect.h * 0.25;
+    const numCracks = ratio < 0.4 ? 2 : 1;
+
+    gfx.lineStyle(1.2, 0x333333, 0.65);
+    for (let i = 0; i < numCracks; i++) {
+      // Random start near the base center
+      let x = (Math.random() * 2 - 1) * hw;
+      let y = (Math.random() * 2 - 1) * hh;
+      let dir = Math.random() * Math.PI * 2;
+      gfx.moveTo(x, y);
+      // 3-segment jagged line
+      for (let seg = 0; seg < 3; seg++) {
+        dir += (Math.random() - 0.5) * 1.2;
+        x += Math.cos(dir) * (8 + Math.random() * 8);
+        y += Math.sin(dir) * (8 + Math.random() * 8);
+        gfx.lineTo(x, y);
+      }
+    }
   }
 
   // ── Coordinate helpers (delegate to ILayout) ──────────────────────────────
@@ -184,28 +250,28 @@ export class BoardView {
 
   private drawBases(layout: ILayout): void {
     const baseTex = PIXI.Texture.from(baseTexUrl as string);
+    this.playerBase = this.buildBaseRef(layout.playerBaseRect(), false, baseTex, layout);
+    this.enemyBase  = this.buildBaseRef(layout.enemyBaseRect(),  true,  baseTex, layout);
+  }
 
-    const addBase = (rect: Rect, mirror: boolean): void => {
-      const s = new PIXI.Sprite(baseTex);
-      s.anchor.set(0.5);
-      s.x = rect.x + rect.w / 2;
-      s.y = rect.y + rect.h / 2;
-      s.width  = rect.w;
-      s.height = rect.h;
-      if (mirror) {
-        // Portrait: enemy is above → flip vertically
-        // Landscape: enemy is to the right → flip horizontally
-        if (layout.orientation === 'landscape') {
-          s.scale.x *= -1;
-        } else {
-          s.scale.y *= -1;
-        }
-      }
-      this.container.addChild(s);
-    };
+  private buildBaseRef(rect: Rect, mirror: boolean, tex: PIXI.Texture, layout: ILayout): BaseRef {
+    const con = new PIXI.Container();
+    con.x = rect.x + rect.w / 2;
+    con.y = rect.y + rect.h / 2;
 
-    addBase(layout.playerBaseRect(), false);
-    addBase(layout.enemyBaseRect(),  true);
+    const s = new PIXI.Sprite(tex);
+    s.anchor.set(0.5);
+    s.width  = rect.w;
+    s.height = rect.h;
+    if (mirror) {
+      if (layout.orientation === 'landscape') s.scale.x *= -1;
+      else s.scale.y *= -1;
+    }
+
+    const crackGfx = new PIXI.Graphics();
+    con.addChild(s, crackGfx);
+    this.container.addChild(con);
+    return { sprite: s, crackGfx, rect };
   }
 
   private drawGrid(): void {

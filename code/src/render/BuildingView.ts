@@ -11,6 +11,14 @@ const SPRITE_SIZE = 56;
 const HP_BAR_Y    = 32;
 const HP_BAR_W    = 40;
 
+// Idle animation constants
+const BOB_SPEED     = 6.98;  // rad/s → ~0.9s period
+const BOB_AMP       = 1.5;   // px
+const FLAG_SPEED    = 9.0;   // rad/s — flag flutter (faster than body bob)
+const FLAG_AMP      = 3.0;   // px wave amplitude
+const TOWER_SWAY    = 5.0;   // rad/s
+const TOWER_SWAY_DEG = 0.5;  // degrees
+
 // ─── Pool factory / resetter ──────────────────────────────────────────────────
 
 function createBuildingContainer(): PIXI.Container {
@@ -25,9 +33,10 @@ function createBuildingContainer(): PIXI.Container {
   hpBg.drawRect(-HP_BAR_W / 2, HP_BAR_Y, HP_BAR_W, 4);
   hpBg.endFill();
 
-  const hpFill = new PIXI.Graphics(); hpFill.name = 'hpFill';
+  const hpFill  = new PIXI.Graphics(); hpFill.name  = 'hpFill';
+  const flagGfx = new PIXI.Graphics(); flagGfx.name = 'flagGfx';
 
-  c.addChild(sprite, hpBg, hpFill);
+  c.addChild(sprite, hpBg, hpFill, flagGfx);
   return c;
 }
 
@@ -37,7 +46,11 @@ function resetBuildingContainer(c: PIXI.Container): void {
   c.angle   = 0;
   c.scale.set(1);
   c.visible = false;
-  (c.getChildByName('hpFill') as PIXI.Graphics).clear();
+  (c.getChildByName('hpFill')  as PIXI.Graphics).clear();
+  (c.getChildByName('flagGfx') as PIXI.Graphics).clear();
+  const sp = c.getChildByName('sprite') as PIXI.Sprite;
+  sp.y     = 0;
+  sp.angle = 0;
 }
 
 // ─── BuildingView ─────────────────────────────────────────────────────────────
@@ -47,6 +60,7 @@ export class BuildingView {
 
   private readonly boardView: BoardView;
   private sprites: Map<number, PIXI.Container> = new Map();
+  private phases:  Map<number, number>          = new Map();
   private readonly pool = new ObjectPool<PIXI.Container>(
     createBuildingContainer,
     resetBuildingContainer,
@@ -55,10 +69,17 @@ export class BuildingView {
 
   private texBarracks: PIXI.Texture | null = null;
   private texArcher:   PIXI.Texture | null = null;
+  private time = 0;
 
   constructor(boardView: BoardView) {
     this.boardView = boardView;
     this.container = new PIXI.Container();
+  }
+
+  // ─── Per-frame update ─────────────────────────────────────────────────────
+
+  update(dt: number): void {
+    this.time += dt;
   }
 
   // ─── Per-frame sync ───────────────────────────────────────────────────────
@@ -77,11 +98,13 @@ export class BuildingView {
       }
 
       this.updateSprite(sprite, building);
+      this.updateIdleAnim(sprite, building);
     }
 
     for (const [id, sprite] of this.sprites) {
       if (!seen.has(id)) {
         this.sprites.delete(id);
+        this.phases.delete(id);
         this.pool.release(sprite);
       }
     }
@@ -94,6 +117,7 @@ export class BuildingView {
     if (!sprite) return;
 
     this.sprites.delete(buildingId);
+    this.phases.delete(buildingId);
 
     let frames = 20;
     const tick = (): void => {
@@ -113,6 +137,8 @@ export class BuildingView {
     const c = this.pool.acquire();
     c.visible = true;
 
+    this.phases.set(building.id, Math.random() * Math.PI * 2);
+
     const sp = c.getChildByName('sprite') as PIXI.Sprite;
     if (building.buildingType === BuildingType.Barracks) {
       if (!this.texBarracks) this.texBarracks = PIXI.Texture.from(barracksTexUrl as string);
@@ -127,7 +153,7 @@ export class BuildingView {
     // Spawn animation: scale 0→1, ease-out cubic, ~0.3s at 60fps
     c.scale.set(0);
     let elapsed = 0;
-    const DURATION = 18; // frames at 60fps
+    const DURATION = 18;
     const onTick = (dt: number): void => {
       elapsed += dt;
       const t     = Math.min(elapsed / DURATION, 1);
@@ -140,16 +166,55 @@ export class BuildingView {
     return c;
   }
 
-  private updateSprite(sprite: PIXI.Container, building: Building): void {
+  private updateSprite(c: PIXI.Container, building: Building): void {
     const { x, y } = this.boardView.gridToScreen(building.col, building.row);
-    sprite.x = x;
-    sprite.y = y;
+    c.x = x;
+    c.y = y;
 
-    const hpFill = sprite.getChildByName('hpFill') as PIXI.Graphics;
+    const hpFill = c.getChildByName('hpFill') as PIXI.Graphics;
     hpFill.clear();
     const ratio = Math.max(0, building.hp / building.maxHp);
     hpFill.beginFill(ratio > 0.4 ? 0x44cc44 : 0xcc4444);
     hpFill.drawRect(-HP_BAR_W / 2, HP_BAR_Y, HP_BAR_W * ratio, 4);
     hpFill.endFill();
+  }
+
+  private updateIdleAnim(c: PIXI.Container, building: Building): void {
+    const phase = this.phases.get(building.id) ?? 0;
+    const t     = this.time;
+    const sp    = c.getChildByName('sprite') as PIXI.Sprite;
+
+    // All buildings: gentle vertical bob
+    sp.y = Math.sin(t * BOB_SPEED + phase) * BOB_AMP;
+
+    const flagGfx = c.getChildByName('flagGfx') as PIXI.Graphics;
+
+    if (building.buildingType === BuildingType.Barracks) {
+      this.drawFlagWave(flagGfx, t, phase);
+    } else {
+      // Arrow tower: subtle rotational sway, flag gfx unused
+      sp.angle = Math.sin(t * TOWER_SWAY + phase) * TOWER_SWAY_DEG;
+      flagGfx.clear();
+    }
+  }
+
+  /** Draw an animated hand-drawn flag at the top of a barracks. */
+  private drawFlagWave(gfx: PIXI.Graphics, t: number, phase: number): void {
+    gfx.clear();
+    const amp = Math.sin(t * FLAG_SPEED + phase) * FLAG_AMP;
+
+    // Flagpole: short vertical stroke at top-right of sprite
+    const px = 12, poleTop = -30;
+    gfx.lineStyle(1, 0x444444, 0.75);
+    gfx.moveTo(px, poleTop + 10);
+    gfx.lineTo(px, poleTop);
+
+    // Three wavy flag strokes emanating from the pole
+    for (let i = 0; i < 3; i++) {
+      const fy       = poleTop + i * 3;
+      const waveAmp  = amp * (0.6 + i * 0.2);
+      gfx.moveTo(px, fy);
+      gfx.quadraticCurveTo(px + 7, fy + waveAmp, px + 13, fy + waveAmp * 0.3);
+    }
   }
 }

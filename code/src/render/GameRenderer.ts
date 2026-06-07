@@ -41,6 +41,16 @@ interface UpgradeDragState {
 
 type DragState = CardDragState | UpgradeDragState;
 
+// ── Tap-select state ───────────────────────────────────────────────────────────
+
+interface TapSelectState {
+  handIndex: number;
+  cardType: CardType;
+  spellType?: SpellType;
+}
+
+const DRAG_THRESHOLD = 8; // px in design space before a press becomes a drag
+
 // ── GameRenderer ───────────────────────────────────────────────────────────────
 
 /**
@@ -67,6 +77,15 @@ export class GameRenderer {
   private dragCol    = -1;
   private dragRow    = -1;
   private dragOnBoard = false;
+
+  // Tap-select: card selected by tap, placement confirmed by tapping a column
+  private tapSelect: TapSelectState | null = null;
+
+  // Pending card press — deferred until we know if it's a tap or drag
+  private pendingCardDown: { x: number; y: number; handIndex: number } | null = null;
+  private downX = 0;
+  private downY = 0;
+
   private pendingStats: [PlayerStats, PlayerStats] | null = null;
 
   // Unsubscribe functions from InputManager
@@ -90,8 +109,10 @@ export class GameRenderer {
     this.engine.tick(dt);
     const state = this.engine.state;
     for (const event of state.events) this.handleEvent(event, state);
+    this.boardView.update(dt);
     this.vfxSystem.update(dt);
     this.unitView.sync(state.board, dt);
+    this.buildingView.update(dt);
     this.buildingView.sync(state.board);
     this.handView.sync(state.bottomPlayer);
     this.hudView.sync(state);
@@ -100,7 +121,9 @@ export class GameRenderer {
   destroy(): void {
     this.unsubs.forEach(u => u());
     this.drag?.ghost.destroy();
-    this.drag = null;
+    this.drag            = null;
+    this.tapSelect       = null;
+    this.pendingCardDown = null;
     this.vfxSystem.destroy();
   }
 
@@ -125,6 +148,9 @@ export class GameRenderer {
   // ── Input handling (design-space coords) ─────────────────────────────────
 
   private handleDown(x: number, y: number): void {
+    this.downX = x;
+    this.downY = y;
+
     // Pause overlay intercepts all input
     if (this.hudView.isPaused) {
       const resume = this.hudView.getPauseResumeRect();
@@ -140,6 +166,7 @@ export class GameRenderer {
 
     // Settings button
     if (this.overRect(x, y, this.hudView.getSettingsRect())) {
+      this.cancelTapSelect();
       this.hudView.onExitToLobby = () => this.onExitToLobby?.();
       this.hudView.showPause();
       return;
@@ -147,63 +174,116 @@ export class GameRenderer {
 
     // Upgrade button
     if (this.hudView.upgradeEnabled && this.overRect(x, y, this.hudView.getUpgradeRect())) {
+      this.cancelTapSelect();
       this.startUpgradeDrag(x, y);
       return;
     }
 
-    // Hand cards
+    // Hand cards — defer drag start until we see movement (tap vs drag)
     const cardIdx = this.handView.hitTestCardIndex(x, y);
     if (cardIdx >= 0) {
-      this.startCardDrag(cardIdx);
+      this.pendingCardDown = { x, y, handIndex: cardIdx };
       return;
     }
 
-    // Board tap (fallback for card placement when drag ends on board)
-    if (this.drag?.kind === 'card' && !this.layout.isOutsideBoard(x, y)) {
-      const col = this.layout.screenToCol(x, y);
-      const row = this.layout.screenToRow(x, y);
-      this.commitCardDrag(col, row);
-    }
+    // Board area while in tap-select: placement handled on handleUp
   }
 
   private handleMove(x: number, y: number): void {
-    if (!this.drag) return;
-
-    this.drag.ghost.x = x;
-    this.drag.ghost.y = y;
-
-    if (this.drag.kind === 'card') {
-      const onBoard = !this.layout.isOutsideBoard(x, y);
-      const col = this.layout.screenToCol(x, y);
-      const row = this.layout.screenToRow(x, y);
-      // Always update when onBoard status changes, or when col/row changes
-      if (col !== this.dragCol || row !== this.dragRow || onBoard !== this.dragOnBoard) {
-        this.dragCol    = col;
-        this.dragRow    = row;
-        this.dragOnBoard = onBoard;
-        this.updateCardDragHighlights(col, row, x, y);
+    // Pending card down: check if moved far enough to become a drag
+    if (this.pendingCardDown && !this.drag) {
+      const dx = x - this.pendingCardDown.x;
+      const dy = y - this.pendingCardDown.y;
+      if (Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD) {
+        const handIndex = this.pendingCardDown.handIndex;
+        this.pendingCardDown = null;
+        this.cancelTapSelect();
+        this.startCardDrag(handIndex);
       }
-    } else {
-      const baseRect = this.boardView.getPlayerBaseRect();
-      this.boardView.showBaseUpgradeHighlight(this.overRect(x, y, baseRect));
+    }
+
+    if (this.drag) {
+      this.drag.ghost.x = x;
+      this.drag.ghost.y = y;
+
+      if (this.drag.kind === 'card') {
+        const onBoard = !this.layout.isOutsideBoard(x, y);
+        const col = this.layout.screenToCol(x, y);
+        const row = this.layout.screenToRow(x, y);
+        if (col !== this.dragCol || row !== this.dragRow || onBoard !== this.dragOnBoard) {
+          this.dragCol     = col;
+          this.dragRow     = row;
+          this.dragOnBoard = onBoard;
+          this.updatePlacementHighlights(this.drag.cardType, this.drag.spellType, col, row, x, y);
+        }
+      } else {
+        const baseRect = this.boardView.getPlayerBaseRect();
+        this.boardView.showBaseUpgradeHighlight(this.overRect(x, y, baseRect));
+      }
+      return;
+    }
+
+    // Tap-select hover: update Meteor target preview as pointer moves over board
+    if (this.tapSelect?.cardType === CardType.Spell && this.tapSelect.spellType === SpellType.Meteor) {
+      if (!this.layout.isOutsideBoard(x, y)) {
+        const col = this.layout.screenToCol(x, y);
+        const row = this.layout.screenToRow(x, y);
+        this.updatePlacementHighlights(CardType.Spell, SpellType.Meteor, col, row, x, y);
+      }
     }
   }
 
   private handleUp(x: number, y: number): void {
-    if (!this.drag) return;
+    // Resolve pending card press
+    if (this.pendingCardDown) {
+      const pd = this.pendingCardDown;
+      this.pendingCardDown = null;
 
-    if (this.drag.kind === 'upgrade') {
-      const baseRect = this.boardView.getPlayerBaseRect();
-      if (this.overRect(x, y, baseRect)) this.engine.upgradeBase();
+      if (this.tapSelect && this.tapSelect.handIndex === pd.handIndex) {
+        // Tapped the already-selected card → deselect
+        this.cancelTapSelect();
+        return;
+      }
+      // Activate tap-select for this card (cancels any previous selection first)
+      this.cancelTapSelect();
+      this.startTapSelect(pd.handIndex);
+      return;
+    }
+
+    if (this.drag) {
+      if (this.drag.kind === 'upgrade') {
+        const baseRect = this.boardView.getPlayerBaseRect();
+        if (this.overRect(x, y, baseRect)) this.engine.upgradeBase();
+        this.cancelDrag();
+        return;
+      }
+      // card drag
+      if (this.layout.isOutsideBoard(x, y)) { this.cancelDrag(); return; }
+      const col = this.layout.screenToCol(x, y);
+      const row = this.layout.screenToRow(x, y);
+      this.commitCardPlay(
+        this.drag.handIndex, this.drag.cardType, this.drag.spellType, col, row,
+      );
       this.cancelDrag();
       return;
     }
 
-    // card drag
-    if (this.layout.isOutsideBoard(x, y)) { this.cancelDrag(); return; }
-    const col = this.layout.screenToCol(x, y);
-    const row = this.layout.screenToRow(x, y);
-    this.commitCardDrag(col, row);
+    // Tap-select mode: tap the board to place
+    if (this.tapSelect) {
+      // Tapping the selected card itself cancels
+      const cardIdx = this.handView.hitTestCardIndex(x, y);
+      if (cardIdx === this.tapSelect.handIndex) {
+        this.cancelTapSelect();
+        return;
+      }
+      if (!this.layout.isOutsideBoard(x, y)) {
+        const col = this.layout.screenToCol(x, y);
+        const row = this.layout.screenToRow(x, y);
+        const { handIndex, cardType, spellType } = this.tapSelect;
+        this.cancelTapSelect();
+        this.commitCardPlay(handIndex, cardType, spellType, col, row);
+      }
+    }
   }
 
   // ── Event handling ─────────────────────────────────────────────────────────
@@ -236,6 +316,9 @@ export class GameRenderer {
       }
       case 'building_hp_changed':
         break;
+      case 'base_hp_changed':
+        this.boardView.playBaseCrackEffect(event.owner, event.hp, event.maxHp);
+        break;
       case 'spell_cast':
         if (event.spellType === SpellType.Meteor) {
           const row = Math.round(event.center.y_fp / 1000);
@@ -243,7 +326,7 @@ export class GameRenderer {
         }
         break;
       case 'card_played':
-        if (event.owner === 0) this.cancelDrag();
+        if (event.owner === 0) { this.cancelDrag(); this.cancelTapSelect(); }
         break;
       case 'card_expired':
         break;
@@ -251,14 +334,14 @@ export class GameRenderer {
         this.pendingStats = event.stats;
         break;
       case 'game_over': {
-        this.cancelDrag();
+        this.cancelDrag(); this.cancelTapSelect();
         this.hudView.showGameOver(event.winner);
         const s = this.pendingStats;
         if (s) setTimeout(() => { this.onGameEnd?.(event.winner, s); }, 2000);
         break;
       }
       case 'game_draw': {
-        this.cancelDrag();
+        this.cancelDrag(); this.cancelTapSelect();
         this.hudView.showGameOver(null);
         const s = this.pendingStats;
         if (s) setTimeout(() => { this.onGameEnd?.(null, s); }, 2000);
@@ -274,51 +357,75 @@ export class GameRenderer {
     const slot   = player.hand.slots[handIndex];
     if (!slot || player.coins < slot.card.cost) return;
 
-    const card  = slot.card;
-    const ghost = this.buildDragGhost(card.name, card.cost);
+    const card   = slot.card;
+    const ghost  = this.buildDragGhost(card.name, card.cost);
     const center = this.handView.slotCenter(handIndex);
     ghost.x = center.x;
     ghost.y = center.y;
     this.container.addChild(ghost);
 
-    this.drag      = { kind: 'card', handIndex, cardType: card.cardType, spellType: card.spellType, ghost };
-    this.dragCol    = -1;
-    this.dragRow    = -1;
+    this.drag        = { kind: 'card', handIndex, cardType: card.cardType, spellType: card.spellType, ghost };
+    this.dragCol     = -1;
+    this.dragRow     = -1;
     this.dragOnBoard = false;
     this.handView.setSelectedCard(handIndex);
-    this.updateCardDragHighlights(-1, -1, center.x, center.y);
+    this.updatePlacementHighlights(card.cardType, card.spellType, -1, -1, center.x, center.y);
   }
 
-  private commitCardDrag(col: number, row: number): void {
-    if (!this.drag || this.drag.kind !== 'card') return;
-    const { handIndex, cardType, spellType } = this.drag;
+  // ── Tap-select ─────────────────────────────────────────────────────────────
 
+  private startTapSelect(handIndex: number): void {
+    const player = this.engine.state.bottomPlayer;
+    const slot   = player.hand.slots[handIndex];
+    if (!slot || player.coins < slot.card.cost) return;
+
+    const card = slot.card;
+    this.tapSelect = { handIndex, cardType: card.cardType, spellType: card.spellType };
+    this.handView.setSelectedCard(handIndex);
+    // Show placement highlights immediately (static for unit/building, empty for meteor until hover)
+    this.updatePlacementHighlights(card.cardType, card.spellType, -1, -1, 0, 0);
+  }
+
+  private cancelTapSelect(): void {
+    if (!this.tapSelect) return;
+    this.tapSelect = null;
+    this.handView.clearSelection();
+    this.boardView.clearHighlights();
+  }
+
+  // ── Shared placement logic ─────────────────────────────────────────────────
+
+  private commitCardPlay(
+    handIndex: number, cardType: CardType, spellType: SpellType | undefined,
+    col: number, row: number,
+  ): void {
     switch (cardType) {
       case CardType.Unit: {
-        if (!(ATTACK_LANES as readonly number[]).includes(col)) { this.cancelDrag(); return; }
-        if (this.engine.state.board.isCellOccupiedByUnit(col, BOTTOM_BUILDING_ROW + 1)) { this.cancelDrag(); return; }
+        if (!(ATTACK_LANES as readonly number[]).includes(col)) return;
+        if (this.engine.state.board.isCellOccupiedByUnit(col, BOTTOM_BUILDING_ROW + 1)) return;
         this.engine.playCard(handIndex, col);
         break;
       }
       case CardType.Building: {
-        if (this.engine.state.board.hasBuildingAt(col, BOTTOM_BUILDING_ROW)) { this.cancelDrag(); return; }
+        if (this.engine.state.board.hasBuildingAt(col, BOTTOM_BUILDING_ROW)) return;
         this.engine.playCard(handIndex, col);
         break;
       }
       case CardType.Spell: {
-        if (spellType === SpellType.Haste)         this.engine.playCard(handIndex, 0);
-        else if (spellType === SpellType.Meteor)   this.engine.playCard(handIndex, col, row);
+        if (spellType === SpellType.Haste)       this.engine.playCard(handIndex, 0);
+        else if (spellType === SpellType.Meteor)  this.engine.playCard(handIndex, col, row);
         break;
       }
     }
-    this.cancelDrag();
   }
 
-  private updateCardDragHighlights(col: number, row: number, x: number, y: number): void {
-    if (!this.drag || this.drag.kind !== 'card') return;
+  private updatePlacementHighlights(
+    cardType: CardType, spellType: SpellType | undefined,
+    col: number, row: number, x: number, y: number,
+  ): void {
     this.boardView.clearHighlights();
 
-    switch (this.drag.cardType) {
+    switch (cardType) {
       case CardType.Unit: {
         const blocked = new Set<number>();
         for (const lane of ATTACK_LANES) {
@@ -337,12 +444,8 @@ export class GameRenderer {
         break;
       }
       case CardType.Spell: {
-        if (this.drag.spellType === SpellType.Meteor) {
-          // Show 2×2 target preview only when pointer is on the board
-          if (!this.layout.isOutsideBoard(x, y)) {
-            this.boardView.showMeteorTargetHighlight(col, row);
-          }
-          // When outside board, highlights are already cleared above
+        if (spellType === SpellType.Meteor && !this.layout.isOutsideBoard(x, y)) {
+          this.boardView.showMeteorTargetHighlight(col, row);
         }
         break;
       }
@@ -365,12 +468,13 @@ export class GameRenderer {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   private cancelDrag(): void {
+    this.pendingCardDown = null;
     if (!this.drag) return;
     this.drag.ghost.parent?.removeChild(this.drag.ghost);
     this.drag.ghost.destroy();
-    this.drag      = null;
-    this.dragCol    = -1;
-    this.dragRow    = -1;
+    this.drag        = null;
+    this.dragCol     = -1;
+    this.dragRow     = -1;
     this.dragOnBoard = false;
     this.handView.clearSelection();
     this.boardView.clearHighlights();

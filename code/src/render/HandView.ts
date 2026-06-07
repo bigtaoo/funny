@@ -149,7 +149,9 @@ export class HandView {
    */
   hitTestCardIndex(x: number, y: number): number {
     const { cardWidth: cw, cardHeight: ch, cardMargin: cm } = this.layout;
-    if (y < this.baseY || y > this.baseY + ch) return -1;
+    // Extend top boundary to cover selected card's lifted position
+    const topY = this.baseY - CARD_LIFT;
+    if (y < topY || y > this.baseY + ch) return -1;
     for (let i = 0; i < this.slots.length; i++) {
       const slotX = this.startX + i * (cw + cm);
       if (x >= slotX && x <= slotX + cw) return i;

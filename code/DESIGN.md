@@ -10,7 +10,7 @@
 |---|---|
 | 渲染 | `pixi.js-legacy`（兼容微信小游戏 WebGL 环境） |
 | 游戏逻辑 | 纯 TypeScript，固定点数（`math/fixed.ts`），与渲染完全解耦 |
-| 输入 | `InputManager` + 平台适配器（Web / WeChat），手动 hit-test |
+| 输入 | `InputManager` + 平台适配器（Web / WeChat），手动 hit-test；卡牌支持拖拽与 tap-select 双模式 |
 | 平台 | Web（开发）/ 微信小游戏（发布）/ CrazyGames（发布） |
 | 构建 | Webpack，多入口（`web.ts` / `wechat.ts` / `crazygames.ts`） |
 
@@ -144,6 +144,25 @@ hudView.container        ← HUD（最顶层）
 | 受击 | `BuildingView.playDestroyEffect` 旋转+淡出 |
 | 摧毁 | `death_building` VFX |
 
+### Idle 动画
+
+每帧通过 `BuildingView.update(dt)` 累积时间，`sync()` 内 `updateIdleAnim()` 驱动：
+
+| 类型 | 效果 | 参数 |
+|---|---|---|
+| 全部建筑 | 精灵垂直 bob（`sprite.y`） | ±1.5px，周期 0.9s，各建筑随机相位偏移 |
+| 兵营 | 旗帜波动（`flagGfx` Graphics） | 旗杆 + 3 条 quadratic bezier 波浪线，频率 ~1.4Hz |
+| 箭塔 | 精灵微旋转（`sprite.angle`） | ±0.5°，周期 ~1.3s |
+
+### 基地动画
+
+由 `BoardView.update(dt)` 驱动：
+
+| 效果 | 参数 |
+|---|---|
+| Alpha 脉冲（"呼吸"） | 0.65–1.0，周期 4s；双方基地相位差 1.2 rad |
+| 受击裂缝 | `base_hp_changed` 事件触发 `playBaseCrackEffect()`；HP > 85% 不显示；每次受击追加 1–2 条随机折线（3 段，铅笔灰 `#333`，`alpha 0.65`）；HP < 40% 每次追加 2 条 |
+
 建筑精灵资源（`src/assets/`）：
 
 | 建筑类型 | 文件 |
@@ -162,7 +181,38 @@ hudView.container        ← HUD（最顶层）
 
 ---
 
-## 7. 待实现
+## 7. 卡牌放置交互
+
+`GameRenderer` 支持两种互不冲突的放置方式：
+
+### 拖拽模式（原有）
+
+按下卡牌后移动超过 **8px（`DRAG_THRESHOLD`）** → 自动进入拖拽模式，ghost 跟随指针，松手时放置。
+
+### Tap-select 模式（新增）
+
+按下卡牌后原地松手 → 卡牌进入选中态（上移 `CARD_LIFT = 14px`，棋盘列高亮），再点击棋盘列放置。
+
+| 操作 | 效果 |
+|---|---|
+| 点击未选中卡牌 | 卡牌上移，列高亮；若已有其他卡牌选中则切换 |
+| 再次点击同一张卡牌 | 取消选中 |
+| 点击棋盘列 | 放置（与拖拽使用同一 `commitCardPlay` 函数） |
+| Meteor 法术 hover | tap-select 态下悬停棋盘实时更新落点预览 |
+| 点击升级/设置按钮 | 自动取消选中 |
+
+**状态机关键字段：**
+
+```ts
+tapSelect: { handIndex, cardType, spellType? } | null   // tap-select 激活状态
+pendingCardDown: { x, y, handIndex } | null             // 按下卡牌后，判定 tap vs drag 的中间状态
+```
+
+按下卡牌时先记入 `pendingCardDown`；`handleMove` 检测是否超过阈值，超过则升为拖拽并清除 pending；`handleUp` 中 pending 未转化为拖拽则激活 tap-select。
+
+---
+
+## 9. 待实现
 
 | 功能 | 位置 | 说明 |
 |---|---|---|
@@ -171,7 +221,7 @@ hudView.container        ← HUD（最顶层）
 
 ---
 
-## 8. 骨骼动画 Runtime（StickmanRuntime）
+## 10. 骨骼动画 Runtime（StickmanRuntime）
 
 ### 文件位置
 

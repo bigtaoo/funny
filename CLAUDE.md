@@ -241,6 +241,10 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 | `src/game/systems/CombatSystem.ts` | 箭塔 `findTargetForBuilding` 仅做前向列扫描，无法命中横穿（Crossing）的敌军 | 改为 Chebyshev 距离全向扫描，按距离环由近到远查找，覆盖纵向/横向/斜向所有敌人 |
 | `src/render/stickman/`（新增） | 骨骼动画 Runtime 缺失，Swordsman 单位用占位圆形 | 新增 `StickmanRuntime`：加载 `.tao` ZIP，解析 `animation.json` + `spritesheet`，按帧驱动 PIXI Sprite；`UnitView` 为 Swordsman 创建 runtime 实例，`sync()` 接收 `dt` 参数推进动画时钟；`GameRenderer` 将 `dt` 透传给 `unitView.sync()` |
 | `src/render/stickman/StickmanRuntime.ts` | shadow 挂点图片位置/尺寸错误：`_applyPose()` 以骨骼逻辑处理 shadow，未读取 `shadowW`/`shadowH` | `TaoAsset` 新增 `attachmentPoints` 字段；shadow sprite zOrder 硬编为 `-Infinity`，anchor `(0.5,0.5)`；`_applyShadowPose()` 专项处理：位置取 `parentBone.tip + offset`，scale 用 `(shadowW*2)/tex.width × (shadowH*2)/tex.height`，与 animator Renderer.ts 一致 |
+| `src/render/BoardView.ts` | 基地静止无生气，受击无裂缝反馈 | 新增 `update(dt)`：基地 sprite alpha 脉冲（0.65–1.0，周期 4s，双方相位差 1.2 rad）；新增 `playBaseCrackEffect()`：`base_hp_changed` 事件驱动，HP > 85% 不显示裂缝，每次追加 1–2 条随机 3 段折线（铅笔灰），HP < 40% 追加 2 条 |
+| `src/render/BuildingView.ts` | 建筑 idle 完全静止 | 新增 `update(dt)` + `updateIdleAnim()`：全部建筑精灵垂直 bob（±1.5px，0.9s，随机相位）；兵营追加 `flagGfx` 旗帜 quadratic bezier 波动（~1.4Hz）；箭塔精灵微旋转（±0.5°，1.3s） |
+| `src/render/GameRenderer.ts` | `base_hp_changed` 事件无处理；`boardView`/`buildingView` 无 per-frame update | 新增 `base_hp_changed` 分支调用 `playBaseCrackEffect()`；`update()` 中加 `boardView.update(dt)` 和 `buildingView.update(dt)` |
+| `src/render/GameRenderer.ts` + `HandView.ts` | 卡牌只能拖拽放置，触屏/小屏操作不便 | 新增 tap-select 交互模式：点击卡牌进入选中态（卡牌上移 14px，列高亮显示），再点棋盘列放置；再次点击同一张卡牌取消选中；`pendingCardDown` 延迟拖拽判定（移动 > 8px 才升级为拖拽），两种模式共存；`HandView.hitTestCardIndex` 上边界扩展 `CARD_LIFT` 覆盖抬升后的点击区；`commitCardPlay` 提取为公共放置函数供两种模式共用 |
 
 ### 游戏核心模块
 
