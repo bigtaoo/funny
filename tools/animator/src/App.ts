@@ -81,8 +81,6 @@ export class App {
             anchorY:  0.5,
             flipX:    false,
             zOrder:   DEFAULT_ZORDER[slotId] ?? 0,
-            offsetX:  0,
-            offsetY:  0,
             rotation: 0,
             scaleX:   1,
             scaleY:   1,

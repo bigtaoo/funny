@@ -193,9 +193,9 @@ export class Renderer {
 
         sprite.texture  = texture;
         sprite.anchor.set(binding.anchorX, binding.anchorY);
-        sprite.x        = pose.sx + (transform?.translateX ?? 0) + (binding.offsetX ?? 0);
-        sprite.y        = pose.sy + (transform?.translateY ?? 0) + (binding.offsetY ?? 0);
-        sprite.rotation = ((pose.wa + (transform?.rotation ?? 0) + (binding.rotation ?? 0)) * Math.PI) / 180;
+        sprite.x        = pose.sx + (transform?.translateX ?? 0);
+        sprite.y        = pose.sy + (transform?.translateY ?? 0);
+        sprite.rotation = ((pose.wa + (binding.rotation ?? 0)) * Math.PI) / 180;
         sprite.scale.set(
           (binding.flipX ? -1 : 1) * (transform?.scaleX ?? 1) * (binding.scaleX ?? 1),
           (transform?.scaleY ?? 1) * (binding.scaleY ?? 1),
@@ -370,8 +370,8 @@ export class Renderer {
       const transform = data.boneTransforms.get(boneId);
       if (!pose) return;
 
-      const ax = pose.sx + (transform?.translateX ?? 0) + (binding.offsetX ?? 0);
-      const ay = pose.sy + (transform?.translateY ?? 0) + (binding.offsetY ?? 0);
+      const ax = pose.sx + (transform?.translateX ?? 0);
+      const ay = pose.sy + (transform?.translateY ?? 0);
       const isSelected = boneId === data.selectedBone;
 
       // Line from bone pivot to anchor (visible when offset is non-zero)

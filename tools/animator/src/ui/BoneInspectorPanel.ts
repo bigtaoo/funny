@@ -122,13 +122,9 @@ export class BoneInspectorPanel {
           <div class="prop-row"><span class="prop-label">Image</span>
             <span class="prop-value" style="font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${filename ?? ''}">${filename ?? '(from import)'}</span></div>
           <div class="prop-row"><span class="prop-label">Anchor X</span>
-            <input type="number" id="inp-anchorX" value="${binding.anchorX.toFixed(2)}" min="0" max="1" step="0.05" style="width:55px" title="Pivot X within image (0=left, 1=right)"></div>
+            <input type="number" id="inp-anchorX" value="${binding.anchorX.toFixed(2)}" step="0.05" style="width:55px" title="Pivot X within image (0=left, 1=right; values outside 0–1 allowed)"></div>
           <div class="prop-row"><span class="prop-label">Anchor Y</span>
-            <input type="number" id="inp-anchorY" value="${binding.anchorY.toFixed(2)}" min="0" max="1" step="0.05" style="width:55px" title="Pivot Y within image (0=top, 1=bottom)"></div>
-          <div class="prop-row"><span class="prop-label">Offset X</span>
-            <input type="number" id="inp-bind-ox" value="${(binding.offsetX ?? 0).toFixed(1)}" step="1" style="width:55px" title="Pixel offset X from bone pivot (world space)"></div>
-          <div class="prop-row"><span class="prop-label">Offset Y</span>
-            <input type="number" id="inp-bind-oy" value="${(binding.offsetY ?? 0).toFixed(1)}" step="1" style="width:55px" title="Pixel offset Y from bone pivot (world space)"></div>
+            <input type="number" id="inp-anchorY" value="${binding.anchorY.toFixed(2)}" step="0.05" style="width:55px" title="Pivot Y within image (0=top, 1=bottom; values outside 0–1 allowed)"></div>
           <div class="prop-row"><span class="prop-label">Rotation</span>
             <input type="number" id="inp-bind-rot" value="${(binding.rotation ?? 0).toFixed(1)}" step="1" style="width:55px" title="Static rotation offset (degrees)"></div>
           <div class="prop-row"><span class="prop-label">Scale X</span>
@@ -173,7 +169,6 @@ export class BoneInspectorPanel {
           <div style="border-top:1px solid var(--border);margin:6px 0 0;padding-top:4px">
             <div class="hint-text" style="text-align:left;color:var(--text-dim)">
               Binding: anchor(${binding.anchorX.toFixed(2)}, ${binding.anchorY.toFixed(2)})
-              offset(${(binding.offsetX ?? 0).toFixed(0)}, ${(binding.offsetY ?? 0).toFixed(0)})
               rot ${(binding.rotation ?? 0).toFixed(0)}°
               — edit in <strong>Skin</strong> mode
             </div>
@@ -213,14 +208,6 @@ export class BoneInspectorPanel {
         document.getElementById('inp-bind-rot')?.addEventListener('change', e => {
           const v = parseFloat((e.target as HTMLInputElement).value);
           if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, rotation: v });
-        });
-        document.getElementById('inp-bind-ox')?.addEventListener('change', e => {
-          const v = parseFloat((e.target as HTMLInputElement).value);
-          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, offsetX: v });
-        });
-        document.getElementById('inp-bind-oy')?.addEventListener('change', e => {
-          const v = parseFloat((e.target as HTMLInputElement).value);
-          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, offsetY: v });
         });
         document.getElementById('inp-bind-sx')?.addEventListener('change', e => {
           const v = parseFloat((e.target as HTMLInputElement).value);

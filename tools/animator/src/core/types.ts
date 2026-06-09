@@ -73,15 +73,13 @@ export type AnimationStore = Map<string, AnimationClip>;
  *  rotation / scaleX / scaleY are static offsets applied on top of animated transforms,
  *  useful for correcting image orientation/size to match the bone. */
 export interface SpriteBinding {
-  anchorX:  number;   // 0–1, default 0.5
-  anchorY:  number;   // 0–1, default 0.5
+  anchorX:  number;   // image-space pivot X (0=left, 1=right); values outside 0–1 allowed
+  anchorY:  number;   // image-space pivot Y (0=top, 1=bottom); values outside 0–1 allowed
   flipX:    boolean;
   zOrder:   number;   // render layer: higher = in front; sort once on binding change
-  rotation: number;   // degrees, additive to animated rotation; default 0
+  rotation: number;   // degrees, static correction on top of FK angle; default 0
   scaleX:   number;   // multiplicative with animated scaleX; default 1
   scaleY:   number;   // multiplicative with animated scaleY; default 1
-  offsetX:  number;   // pixel offset added in world space (screen X) from bone pivot; default 0
-  offsetY:  number;   // pixel offset added in world space (screen Y) from bone pivot; default 0
 }
 
 // ── Attachment Points ─────────────────────────────────────────────────────────

@@ -60,9 +60,8 @@ npm run build   # 生产构建
 
 | 字段 | 含义 |
 |---|---|
-| `anchorX/Y` | 图片上的挂点比例（0–1，左上为 0,0，右下为 1,1）；PIXI `sprite.anchor`；sprite.x/y 即该点的世界坐标 |
-| `offsetX/Y` | 在**世界坐标（屏幕空间）**下平移图片，叠加在骨骼 pivot 位置上；用于修正挂点位置 |
-| `rotation` | 图片静态旋转（度），叠加在骨骼 FK 角度 + 动画旋转上；用于修正图片朝向 |
+| `anchorX/Y` | 图片上的挂点比例（图片本地坐标，0=左/上，1=右/下，**允许超出 0–1 范围**）；PIXI `sprite.anchor`；随图片旋转，在所有动画帧中保持骨骼与图片的对齐 |
+| `rotation` | 图片静态旋转（度），叠加在骨骼 FK 角度上；用于修正图片朝向 |
 | `scaleX/Y` | 图片静态缩放，与动画 scaleX/Y 相乘；用于匹配骨骼长度（**不自动绑定，需手动设置**） |
 | `flipX` | 水平镜像 |
 | `zOrder` | 渲染层级，高 = 在前；shadow 固定为 -∞（最底层） |
@@ -78,8 +77,8 @@ npm run build   # 生产构建
 
 **渲染合成公式：**
 ```
-sprite.rotation = bone_FK_angle + keyframe.rotation + binding.rotation
-sprite.x        = bone_pivot.x  + keyframe.translateX + binding.offsetX
+sprite.rotation = bone_FK_angle + binding.rotation   （bone_FK_angle 已含 keyframe.rotation，不可重复叠加）
+sprite.x        = bone_pivot.x  + keyframe.translateX
 sprite.scale    = keyframe.scaleX × binding.scaleX
 ```
 
@@ -93,8 +92,8 @@ Binding 参数在动画期间不变；动画只控制骨骼，图片跟随骨骼
 - **图片导入**：每骨骼一张 PNG（10 骨骼 + 1 阴影 = 11 张），按文件名自动映射；`ImageController` 管理 Blob + PIXI.Texture；**加载任意一张图片即自动切换到 Sprite 预览模式**
 - **Sprite 层级**：`SpriteBinding.zOrder` 控制骨骼精灵遮挡顺序；`binding:change` 或图片加载时对 `spriteLayer.children` 排序一次，渲染期间不重排；shadow 图片 zOrder 硬编码为 `-Infinity`（始终最底层）
 - **Shadow 图片渲染**：shadow 是挂点（`AttachmentPoint`），不在 `bindings` Map 里；`Renderer.updateSprites` 单独处理，位置 = `parent.ex + offsetX/Y`，尺寸由 `shadowW/H`（椭圆半轴）换算为 sprite scale：`scaleX = (shadowW*2)/tex.width`
-- **Sprite Binding 静态偏移**：`SpriteBinding` 含 `offsetX`/`offsetY`（世界空间像素偏移，叠加在骨骼 pivot 上）、`rotation`（度，叠加在动画旋转上）、`scaleX`/`scaleY`（乘以动画缩放），用于修正图片位置/朝向/尺寸，与关键帧动画互不干扰
-- **Anchor 可视化**：Sprite 模式下，每个有图片的骨骼在其 anchor 世界坐标处绘制红色实心圆（r=4，选中时 r=6 + 十字线）；若 offsetX/Y 非零则额外画线连接骨骼 pivot 与 anchor，直观显示偏移量
+- **Sprite Binding**：`SpriteBinding` 含 `anchorX/Y`（图片本地挂点，允许超出 0–1，随骨骼旋转保持对齐）、`rotation`（度，静态修正图片朝向）、`scaleX/Y`（乘以动画缩放，匹配骨骼长度）；**无 offsetX/Y**，图片位置完全由 anchor 控制
+- **Anchor 可视化**：Sprite 模式下，每个有图片的骨骼在其 anchor 世界坐标处绘制红色实心圆（r=4，选中时 r=6 + 十字线）
 - **关键帧复制**：右键时间轴关键帧菱形 → Copy keyframe；移动时间指针到目标时刻 → 右键 Paste keyframe
 - **导출格式**：`.tao`（JSZip ZIP）内含 `animation.json`（v2）+ `spritesheet.png`（shelf bin-packing + canvas.toBlob）+ `spritesheet.json`（boneId→rect）
 - **编辑器存档格式**：`.tao.editor`（JSZip ZIP）内含 `editor.json`（v1，动画+绑定+挂点+编辑器状态）+ `images/*.png`（各骨骼原始图，无损，不合并 spritesheet）；Chrome/Edge 通过 File System Access API 弹出原生保存对话框（`suggestedName` 不含扩展名，由 API 自动追加）；Firefox 等不支持的浏览器退回 `window.prompt()` 询问文件名再 `<a download>` 触发下载
@@ -128,8 +127,9 @@ Binding 参数在动画期间不变；动画只控制骨骼，图片跟随骨骼
 | `src/interaction/InteractionController.ts` | 骨骼长度改变后无法旋转骨骼：`onMouseDown`/`onMouseMove` 的 `computeFK` 未传 `lengthScales`，hit-test 和旋转轴心与实际渲染位置不一致 | 两处 `computeFK` 均加 `this.state.boneLengthScales` 参数 |
 | `src/rendering/Renderer.ts` | shadow 挂点图片不显示：`updateSprites` 只遍历 `bindings`（骨骼），shadow 作为 `AttachmentPoint` 从未渲染 | 单独处理 shadow slot；位置取 `parent.ex + offsetX/Y`；尺寸由 `shadowW/H` 半轴换算为 sprite scale |
 | `src/rendering/Renderer.ts` | shadow 图片未应用 `shadowW/H` 尺寸 | `scaleX = (shadowW*2)/tex.width`，`scaleY = (shadowH*2)/tex.height` |
-| `src/core/types.ts` | `SpriteBinding.offsetX/Y` 注释误写为 "local bone space"，实为世界坐标直接叠加 | 注释改为 "world space (screen X/Y)" |
-| `src/rendering/Renderer.ts` | Sprite 模式下看不出图片 anchor 与骨骼 pivot 的对应关系 | 新增 `drawAnchorPoints`：每个有图片的骨骼在 anchor 世界坐标处画红点；选中骨骼加十字线；offset 非零时画连线 |
+| `src/rendering/Renderer.ts` | Sprite 模式下看不出图片 anchor 与骨骼 pivot 的对应关系 | 新增 `drawAnchorPoints`：每个有图片的骨骼在 anchor 世界坐标处画红点；选中骨骼加十字线 |
+| `src/rendering/Renderer.ts` | `sprite.rotation` 重复叠加 keyframe.rotation：`pose.wa` 已含该值，渲染器再加一次导致动画中图片多转一倍关键帧角度，关节断开 | 渲染公式改为 `pose.wa + binding.rotation`，去掉多余的 `transform.rotation` |
+| `src/core/types.ts` + `Renderer.ts` + `BoneInspectorPanel.ts` + `App.ts` | `SpriteBinding.offsetX/Y` 是屏幕空间偏移，不随骨骼旋转，蒙皮时对齐后动画中仍断开；anchor 允许范围 0–1 导致无法将挂点放到图片边界外 | 删除 `SpriteBinding.offsetX/Y`；`anchorX/Y` 输入框去掉 min/max 限制，允许超出 0–1；旧 `.tao.editor` 中的 offsetX/Y 字段加载时自动忽略 |
 | 多文件 | 蒙皮参数（SpriteBinding）在动画帧上调整，骨骼已移动，操作混乱 | 新增 `editorMode: 'skin' \| 'animate'`（`AppState` + `EventBus`）；Skin 模式渲染静息姿、Inspector 只显示 Binding 参数、禁止拖拽旋转；工具栏加 🎨/🎬 切换按钮，快捷键 `S` |
 | `src/skeleton/Skeleton.ts` | 静息姿 `rwa` 未按朝右角色约定设定：手臂朝下（82°/98°），左右腿在错误一侧 | 手臂改为水平展开（r 180°/195°，l 0°/−15°）；腿改为向各自外侧下方展开（r 120°/130°，l 60°/50°） |
 | `src/ui/ResizablePanels.ts` | `atlasPanel`（`#atlas-panel`）不存在于 DOM，`right | atlas` 分割条初始化时读 `null.offsetWidth` 崩溃 | 加 `if (atlasPanel)` null guard，不存在时跳过该分割条 |
