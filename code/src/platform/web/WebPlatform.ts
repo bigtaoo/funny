@@ -2,10 +2,12 @@ import type * as PIXI from 'pixi.js-legacy';
 import { IPlatform, IStorage } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WebAdapter } from '../../inputSystem/WebAdapter';
+import type { Locale } from '../../i18n';
 
 export class WebPlatform implements IPlatform {
   private canvas: HTMLCanvasElement;
   readonly storage: IStorage = localStorage;
+  readonly supportedLocales: readonly Locale[] = ['zh', 'en', 'de'];
 
   /** Use window.devicePixelRatio for crisp rendering on HiDPI screens */
   readonly devicePixelRatio: number = window.devicePixelRatio || 1;
@@ -29,6 +31,10 @@ export class WebPlatform implements IPlatform {
       width: window.innerWidth,
       height: window.innerHeight,
     };
+  }
+
+  getLanguage(): string {
+    return navigator.language || 'en';
   }
 
   setupInput(

@@ -3,6 +3,7 @@ import { BASE_HP, BASE_UPGRADE_COSTS } from '../game/config';
 import { GameState } from '../game/GameState';
 import { OwnerId } from '../game/types';
 import { ILayout, Rect } from '../layout/ILayout';
+import { t } from '../i18n';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,8 @@ const HP_BAR_W    = HP_CELLS * (HP_CELL_W + HP_CELL_GAP) - HP_CELL_GAP;
  */
 export class HUDView {
   readonly container: PIXI.Container;
+  /** Bottom-strip background — must be rendered BEHIND the hand cards. */
+  readonly backgroundContainer: PIXI.Container;
 
   /** Fired by GameRenderer when settings button is tapped. */
   onExitToLobby: (() => void) | null = null;
@@ -55,8 +58,9 @@ export class HUDView {
   upgradeEnabled = false;
 
   constructor(layout: ILayout) {
-    this.container = new PIXI.Container();
-    this.layout    = layout;
+    this.container           = new PIXI.Container();
+    this.backgroundContainer = new PIXI.Container();
+    this.layout              = layout;
     this.build();
   }
 
@@ -80,12 +84,12 @@ export class HUDView {
 
     const cost = p.nextUpgradeCost;
     if (cost === null) {
-      this.upgradeBtnLabel.text = 'MAX';
+      this.upgradeBtnLabel.text = t('hud.upgradeMax');
       this.upgradeEnabled       = false;
       this.setUpgradeBtnStyle(false);
     } else {
       const canAfford = p.coins >= cost;
-      this.upgradeBtnLabel.text = `↑ ${cost}g`;
+      this.upgradeBtnLabel.text = t('hud.upgradeCost', { cost });
       this.upgradeEnabled       = canAfford;
       this.setUpgradeBtnStyle(canAfford);
     }
@@ -117,7 +121,7 @@ export class HUDView {
     panel.endFill();
     overlay.addChild(panel);
 
-    const title = new PIXI.Text('PAUSED', {
+    const title = new PIXI.Text(t('hud.paused'), {
       fontSize: Math.round(pH * 0.18), fill: 0x222222,
       fontWeight: 'bold', fontFamily: 'monospace',
     });
@@ -133,8 +137,8 @@ export class HUDView {
     const y2  = y1 + bH + gap;
     const bX  = (dw - bW) / 2;
 
-    overlay.addChild(this.makeBtn(bX, y1, bW, bH, 0x2c2c2a, 'RESUME',        0xffffff));
-    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 0xf0ece0, 'EXIT TO LOBBY', 0x444444, 0x888888));
+    overlay.addChild(this.makeBtn(bX, y1, bW, bH, 0x2c2c2a, t('hud.resume'),      0xffffff));
+    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 0xf0ece0, t('hud.exitToLobby'), 0x444444, 0x888888));
 
     this._pauseResumeRect = { x: bX, y: y1, w: bW, h: bH };
     this._pauseExitRect   = { x: bX, y: y2, w: bW, h: bH };
@@ -161,7 +165,7 @@ export class HUDView {
     bg.beginFill(0x000000, 0.55);
     bg.drawRoundedRect(-160, -50, 320, 100, 8);
     bg.endFill();
-    const msg  = winner === null ? 'Draw' : (winner === 0 ? 'You Win!' : 'You Lose');
+    const msg  = winner === null ? t('hud.draw') : (winner === 0 ? t('hud.win') : t('hud.lose'));
     const text = new PIXI.Text(msg, { fontSize: 38, fill: 0xffffff, fontWeight: 'bold' });
     text.anchor.set(0.5);
     overlay.addChild(bg, text);
@@ -209,11 +213,13 @@ export class HUDView {
     sLabel.x = sBtnX + BTN_W / 2;
     sLabel.y = sBtnY + BTN_H / 2;
 
-    // Bottom strip (full width)
+    // Bottom strip (full width) — rendered behind the hand cards so it
+    // doesn't paint over them (see backgroundContainer wiring in GameRenderer).
     const botBg = new PIXI.Graphics();
     botBg.beginFill(0xede5d5, 0.92);
     botBg.drawRect(0, bLR.y, this.layout.designWidth, bLR.h);
     botBg.endFill();
+    this.backgroundContainer.addChild(botBg);
 
     // Coins
     this.coinText   = new PIXI.Text('⬤ 0', TEXT_STYLE);
@@ -233,7 +239,7 @@ export class HUDView {
 
     // Upgrade button — visual only, no interactive
     this.upgradeBtnBg    = new PIXI.Graphics();
-    this.upgradeBtnLabel = new PIXI.Text(`↑ ${BASE_UPGRADE_COSTS[0]}g`, SMALL_STYLE);
+    this.upgradeBtnLabel = new PIXI.Text(t('hud.upgradeCost', { cost: BASE_UPGRADE_COSTS[0]! }), SMALL_STYLE);
     const uBtnX = bRR.x + (bRR.w - BTN_W) / 2;
     const uBtnY = bRR.y + (bRR.h - BTN_H) / 2;
     this.upgradeBtnBg.x  = uBtnX;
@@ -246,7 +252,7 @@ export class HUDView {
 
     this.container.addChild(
       topBg, this.timerText, this.enemyHpGfx, this.settingsBtnBg, sLabel,
-      botBg, this.coinText,  this.playerHpGfx,
+      this.coinText,  this.playerHpGfx,
       this.upgradeBtnBg, this.upgradeBtnLabel,
     );
   }

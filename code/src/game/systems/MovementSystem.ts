@@ -39,6 +39,7 @@ export class MovementSystem {
 
       const prevState = unit.state;
       const prevRow   = unit.row;
+      const prevCol   = unit.col;
 
       if (unit.state === UnitState.Crossing) {
         this.moveCrossing(unit, state);
@@ -47,7 +48,7 @@ export class MovementSystem {
       }
 
       this.emitMoveEvents(unit, prevState, state);
-      board.updateUnitCell(unit, prevRow);
+      board.updateUnitCell(unit, prevRow, prevCol);
     }
 
     // Remove units killed during crossing (guard against double-remove)
@@ -87,10 +88,17 @@ export class MovementSystem {
         ? subFp(subFp(frontUnit.y_fp, frontUnit.radius_fp), addFp(unit.y_fp, unit.radius_fp))
         : subFp(subFp(unit.y_fp, unit.radius_fp), addFp(frontUnit.y_fp, frontUnit.radius_fp));
 
-      if (gapFp <= 0) {
-        unit.y_fp = isBottom
-          ? subFp(subFp(frontUnit.y_fp, frontUnit.radius_fp), unit.radius_fp)
-          : addFp(addFp(frontUnit.y_fp, frontUnit.radius_fp), unit.radius_fp);
+      // Once stopped, don't resume until there's room for the unit's own
+      // footprint ahead — avoids rapid Moving/Waiting flapping when the
+      // front unit creeps forward slower than this unit.
+      const minGapFp = unit.state === UnitState.Waiting ? scaleFp(2, unit.radius_fp) : 0;
+
+      if (gapFp <= minGapFp) {
+        if (gapFp <= 0) {
+          unit.y_fp = isBottom
+            ? subFp(subFp(frontUnit.y_fp, frontUnit.radius_fp), unit.radius_fp)
+            : addFp(addFp(frontUnit.y_fp, frontUnit.radius_fp), unit.radius_fp);
+        }
         unit.state = UnitState.Waiting;
         return;
       }
@@ -167,15 +175,24 @@ export class MovementSystem {
         ? subFp(subFp(frontUnit.x_fp, frontUnit.radius_fp), addFp(unit.x_fp, unit.radius_fp))
         : subFp(subFp(unit.x_fp, unit.radius_fp), addFp(frontUnit.x_fp, frontUnit.radius_fp));
 
-      if (gapFp <= 0) {
-        // Blocked by friendly — push self back to just behind the front unit
-        unit.x_fp = direction > 0
-          ? subFp(subFp(frontUnit.x_fp, frontUnit.radius_fp), unit.radius_fp)
-          : addFp(addFp(frontUnit.x_fp, frontUnit.radius_fp), unit.radius_fp);
-        unit.col = Math.round(fromFp(unit.x_fp));
+      // Once stopped, don't resume until there's room for the unit's own
+      // footprint ahead — avoids rapid Moving/Waiting flapping when the
+      // front unit creeps forward slower than this unit.
+      const minGapFp = unit.crossingBlocked ? scaleFp(2, unit.radius_fp) : 0;
+
+      if (gapFp <= minGapFp) {
+        if (gapFp <= 0) {
+          // Blocked by friendly — push self back to just behind the front unit
+          unit.x_fp = direction > 0
+            ? subFp(subFp(frontUnit.x_fp, frontUnit.radius_fp), unit.radius_fp)
+            : addFp(addFp(frontUnit.x_fp, frontUnit.radius_fp), unit.radius_fp);
+          unit.col = Math.round(fromFp(unit.x_fp));
+        }
+        unit.crossingBlocked = true;
         return;
       }
     }
+    unit.crossingBlocked = false;
 
     // ── Advance in crossing direction ──────────────────────────────────────
     const dx: Fp = mulFp(unit.speed_fp, TICK_DT_FP);

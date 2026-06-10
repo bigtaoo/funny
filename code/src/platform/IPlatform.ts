@@ -1,5 +1,6 @@
 import type * as PIXI from 'pixi.js-legacy';
 import type { InputManager } from '../inputSystem/InputManager';
+import type { Locale } from '../i18n';
 
 /**
  * IPlatform — abstraction layer for platform-specific capabilities.
@@ -21,6 +22,22 @@ export interface IPlatform {
 
   /** Persistent key-value storage */
   storage: IStorage;
+
+  /**
+   * Raw system language tag, e.g. "zh-CN" / "en-US".
+   * Web: navigator.language
+   * WeChat: wx.getSystemInfoSync().language
+   * Used by i18n to pick the default locale (player choice overrides it).
+   */
+  getLanguage(): string;
+
+  /**
+   * Locales this platform ships translations for.
+   * Web / CrazyGames: ['zh', 'en', 'de']
+   * WeChat: ['zh'] — the mini-game only needs Chinese.
+   * i18n clamps the active locale to this set.
+   */
+  readonly supportedLocales: readonly Locale[];
 
   /**
    * Called once after the PIXI Application is created.

@@ -187,18 +187,18 @@ export const BUILDING_BLUEPRINTS: Record<BuildingType, BuildingBlueprint> = {
 // ─── Card definitions (pool) ──────────────────────────────────────────────────
 
 export const CARD_DEFINITIONS: CardDefinition[] = [
-  { id: 'swordsman_1', name: '普通兵',   cardType: CardType.Unit,     cost: 4,  unitType: UnitType.Swordsman       },
-  { id: 'swordsman_2', name: '普通兵',   cardType: CardType.Unit,     cost: 4,  unitType: UnitType.Swordsman       },
-  { id: 'guardian_1',  name: '盾兵',     cardType: CardType.Unit,     cost: 6,  unitType: UnitType.Guardian        },
-  { id: 'guardian_2',  name: '盾兵',     cardType: CardType.Unit,     cost: 6,  unitType: UnitType.Guardian        },
-  { id: 'archer_1',    name: '弓箭兵',   cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
-  { id: 'archer_2',    name: '弓箭兵',   cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
-  { id: 'barracks_1',  name: '兵营',     cardType: CardType.Building, cost: 10, buildingType: BuildingType.Barracks   },
-  { id: 'barracks_2',  name: '兵营',     cardType: CardType.Building, cost: 10, buildingType: BuildingType.Barracks   },
-  { id: 'tower_1',     name: '箭塔',     cardType: CardType.Building, cost: 12, buildingType: BuildingType.ArrowTower },
-  { id: 'tower_2',     name: '箭塔',     cardType: CardType.Building, cost: 12, buildingType: BuildingType.ArrowTower },
-  { id: 'haste_1',     name: '急速冲锋', cardType: CardType.Spell,    cost: 8,  spellType: SpellType.Haste         },
-  { id: 'meteor_1',    name: '陨石打击', cardType: CardType.Spell,    cost: 12, spellType: SpellType.Meteor        },
+  { id: 'swordsman_1', nameKey: 'card.swordsman.name', descKey: 'card.swordsman.desc', cardType: CardType.Unit,     cost: 4,  unitType: UnitType.Swordsman       },
+  { id: 'swordsman_2', nameKey: 'card.swordsman.name', descKey: 'card.swordsman.desc', cardType: CardType.Unit,     cost: 4,  unitType: UnitType.Swordsman       },
+  { id: 'guardian_1',  nameKey: 'card.guardian.name',  descKey: 'card.guardian.desc',  cardType: CardType.Unit,     cost: 6,  unitType: UnitType.Guardian        },
+  { id: 'guardian_2',  nameKey: 'card.guardian.name',  descKey: 'card.guardian.desc',  cardType: CardType.Unit,     cost: 6,  unitType: UnitType.Guardian        },
+  { id: 'archer_1',    nameKey: 'card.archer.name',    descKey: 'card.archer.desc',    cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
+  { id: 'archer_2',    nameKey: 'card.archer.name',    descKey: 'card.archer.desc',    cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
+  { id: 'barracks_1',  nameKey: 'card.barracks.name',  descKey: 'card.barracks.desc',  cardType: CardType.Building, cost: 10, buildingType: BuildingType.Barracks   },
+  { id: 'barracks_2',  nameKey: 'card.barracks.name',  descKey: 'card.barracks.desc',  cardType: CardType.Building, cost: 10, buildingType: BuildingType.Barracks   },
+  { id: 'tower_1',     nameKey: 'card.tower.name',     descKey: 'card.tower.desc',     cardType: CardType.Building, cost: 12, buildingType: BuildingType.ArrowTower },
+  { id: 'tower_2',     nameKey: 'card.tower.name',     descKey: 'card.tower.desc',     cardType: CardType.Building, cost: 12, buildingType: BuildingType.ArrowTower },
+  { id: 'haste_1',     nameKey: 'card.haste.name',     descKey: 'card.haste.desc',     cardType: CardType.Spell,    cost: 8,  spellType: SpellType.Haste         },
+  { id: 'meteor_1',    nameKey: 'card.meteor.name',    descKey: 'card.meteor.desc',    cardType: CardType.Spell,    cost: 12, spellType: SpellType.Meteor        },
 ];
 
 // ─── Spell parameters ─────────────────────────────────────────────────────────

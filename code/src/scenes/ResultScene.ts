@@ -1,12 +1,14 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
 import { OwnerId, PlayerStats } from '../game/types';
+import { t } from '../i18n';
 
 // ─── Badge definitions ────────────────────────────────────────────────────────
 
 interface Badge {
   key: string;
-  title: string;
+  /** Resolved lazily via t() so the active locale is applied at build time. */
+  title: () => string;
   detail: (s: PlayerStats) => string;
   score: (s: PlayerStats) => number;
 }
@@ -14,38 +16,38 @@ interface Badge {
 const BADGES: Badge[] = [
   {
     key:    'TOP_DMG',
-    title:  '[Best Damage]',
-    detail: (s) => `Dealt ${s.damageDealtToBase} damage to enemy base`,
+    title:  () => t('badge.topDmg.title'),
+    detail: (s) => t('badge.topDmg.detail', { n: s.damageDealtToBase }),
     score:  (s) => s.damageDealtToBase,
   },
   {
     key:    'IRON_WALL',
-    title:  '[Iron Defense]',
-    detail: (s) => `Base only took ${s.damageTakenByBase} damage`,
+    title:  () => t('badge.ironWall.title'),
+    detail: (s) => t('badge.ironWall.detail', { n: s.damageTakenByBase }),
     score:  (s) => -s.damageTakenByBase,
   },
   {
     key:    'FLOOD',
-    title:  '[Unit Flood]',
-    detail: (s) => `Sent ${s.unitsSent} units total`,
+    title:  () => t('badge.flood.title'),
+    detail: (s) => t('badge.flood.detail', { n: s.unitsSent }),
     score:  (s) => s.unitsSent,
   },
   {
     key:    'BUILDER',
-    title:  '[Master Builder]',
-    detail: (s) => `Buildings survived ${Math.round(s.buildingSurvivalTicks / 30)}s total`,
+    title:  () => t('badge.builder.title'),
+    detail: (s) => t('badge.builder.detail', { n: Math.round(s.buildingSurvivalTicks / 30) }),
     score:  (s) => s.buildingSurvivalTicks,
   },
   {
     key:    'PRECISION',
-    title:  '[Precision Strike]',
-    detail: (s) => `Spells hit ${s.spellHits} units`,
+    title:  () => t('badge.precision.title'),
+    detail: (s) => t('badge.precision.detail', { n: s.spellHits }),
     score:  (s) => s.spellHits,
   },
   {
     key:    'EFFICIENT',
-    title:  '[Efficient]',
-    detail: (s) => `Killed ${s.unitsKilled} enemy units`,
+    title:  () => t('badge.efficient.title'),
+    detail: (s) => t('badge.efficient.detail', { n: s.unitsKilled }),
     score:  (s) => (s.goldSpent > 0 ? s.unitsKilled / s.goldSpent * 100 : 0),
   },
 ];
@@ -110,7 +112,7 @@ export class ResultScene implements Scene {
     // Win / lose / draw headline
     const isDraw  = winner === null;
     const isWin   = winner === 0;
-    const headline = isDraw ? 'DRAW' : (isWin ? 'VICTORY!' : 'DEFEAT');
+    const headline = isDraw ? t('result.draw') : (isWin ? t('result.victory') : t('result.defeat'));
     const headlineColor = isDraw ? 0x888888 : (isWin ? 0x226622 : 0xaa2222);
 
     const title = new PIXI.Text(headline, {
@@ -130,7 +132,7 @@ export class ResultScene implements Scene {
     if (badges.length > 0) {
       // Hero badge — the top one, shown large with detail text
       const hero = badges[0]!;
-      const heroText = new PIXI.Text(hero.title, {
+      const heroText = new PIXI.Text(hero.title(), {
         fontSize: Math.round(h * 0.045),
         fill: 0x222222,
         fontWeight: 'bold',
@@ -162,7 +164,7 @@ export class ResultScene implements Scene {
       }
     } else {
       // No notable stats
-      const no = new PIXI.Text('Keep going!', {
+      const no = new PIXI.Text(t('result.keepGoing'), {
         fontSize: Math.round(h * 0.035),
         fill: 0x888888,
         fontFamily: 'monospace',
@@ -190,7 +192,7 @@ export class ResultScene implements Scene {
     btnBg.cursor = 'pointer';
     btnBg.on('pointertap', () => cb.onPlayAgain());
 
-    const btnLabel = new PIXI.Text('PLAY AGAIN', {
+    const btnLabel = new PIXI.Text(t('result.playAgain'), {
       fontSize: Math.round(btnH * 0.44),
       fill: 0xffffff,
       fontWeight: 'bold',
@@ -212,7 +214,7 @@ export class ResultScene implements Scene {
     gfx.drawRoundedRect(0, 0, width, h, 6);
     gfx.endFill();
 
-    const label = new PIXI.Text(`${badge.title}  ·  ${badge.detail(stats)}`, {
+    const label = new PIXI.Text(`${badge.title()}  ·  ${badge.detail(stats)}`, {
       fontSize: Math.round(h * 0.36),
       fill: 0x333333,
     });

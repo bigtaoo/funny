@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { IPlatform } from './platform/IPlatform';
 import { SceneManager } from './scenes/SceneManager';
+import { IntroScene } from './scenes/IntroScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { GameScene } from './scenes/GameScene';
 import { ResultScene } from './scenes/ResultScene';
@@ -8,8 +9,15 @@ import { OwnerId, PlayerStats } from './game/types';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
+import { initI18n } from './i18n';
+
+/** Storage flag — set after the first-launch intro has been seen. */
+const SEEN_INTRO_KEY = 'nw_seen_intro';
 
 export async function startApp(platform: IPlatform): Promise<void> {
+  // i18n must be ready before any scene builds its texts
+  initI18n(platform.getLanguage(), platform.storage, platform.supportedLocales);
+
   const { width: screenW, height: screenH } = platform.getScreenSize();
 
   const app = new PIXI.Application({
@@ -49,6 +57,16 @@ export async function startApp(platform: IPlatform): Promise<void> {
 
   // ── Navigation ────────────────────────────────────────────────────────────
 
+  function goIntro(): void {
+    inLobby = false;
+    manager.goto(new IntroScene(layout, input, {
+      onFinish() {
+        platform.storage.setItem(SEEN_INTRO_KEY, '1');
+        goLobby();
+      },
+    }));
+  }
+
   function goLobby(): void {
     inLobby = true;
     platform.onGameplayStop();
@@ -79,5 +97,10 @@ export async function startApp(platform: IPlatform): Promise<void> {
     }));
   }
 
-  goLobby();
+  // First launch → background-story intro; afterwards straight to lobby
+  if (platform.storage.getItem(SEEN_INTRO_KEY)) {
+    goLobby();
+  } else {
+    goIntro();
+  }
 }

@@ -1,0 +1,75 @@
+import type { TranslationKey } from './zh';
+
+// Deutsch — must cover every key defined in zh.ts (compile-enforced).
+export const de: Record<TranslationKey, string> = {
+  // ── Karten ────────────────────────────────────────────────────────────────
+  'card.swordsman.name': 'Schwertkämpfer',
+  'card.swordsman.desc': 'Ein Kritzel-Soldat vom Heftrand – billig, robust und immer als Erster in der Schlacht.',
+  'card.guardian.name': 'Schildträger',
+  'card.guardian.desc': 'Trägt einen aus einem Radiergummi geschnitzten Schild. Langsam, blockt aber eine ganze Seite voller Angriffe.',
+  'card.archer.name': 'Bogenschütze',
+  'card.archer.desc': 'Ein aus einer Büroklammer gebogener Bogen – präzise Schüsse hinter den Gitterlinien.',
+  'card.barracks.name': 'Kaserne',
+  'card.barracks.desc': 'Zeichnet ununterbrochen neue Soldaten, bis sie jemand ausradiert.',
+  'card.tower.name': 'Pfeilturm',
+  'card.tower.desc': 'Ein automatischer Geschützturm, auf die Seite gepinnt. Nichts in Reichweite entkommt.',
+  'card.haste.name': 'Sturmangriff',
+  'card.haste.desc': 'Ein Windstoß aus Bleistift – alle verbündeten Einheiten bewegen sich doppelt so schnell.',
+  'card.meteor.name': 'Meteoreinschlag',
+  'card.meteor.desc': 'Ein Tintenmeteor fällt vom Himmel und löscht alles im Zielgebiet aus.',
+
+  // ── Lobby ─────────────────────────────────────────────────────────────────
+  'lobby.title': 'NOTEBOOK WARS',
+  'lobby.subtitle': 'Echtzeit-Tower-Defense',
+  'lobby.feature.1': 'Karten spielen  ->  Einheiten & Gebäude einsetzen',
+  'lobby.feature.2': 'Zerstöre die gegnerische Basis, um zu gewinnen',
+  'lobby.feature.3': 'Spieldauer 5-10 Min.  |  KI-Gegner',
+  'lobby.startMatch': 'MATCH STARTEN',
+  'lobby.matching': 'Suche',
+  'lobby.you': 'DU',
+  'lobby.vs': 'VS',
+  'lobby.loading': 'Schlachtfeld wird geladen...',
+  'lobby.nav.cards': 'Karten',
+  'lobby.nav.stats': 'Statistik',
+  'lobby.nav.home': 'Start',
+  'lobby.nav.shop': 'Shop',
+  'lobby.nav.social': 'Sozial',
+
+  // ── In-Game-HUD ───────────────────────────────────────────────────────────
+  'hud.paused': 'PAUSE',
+  'hud.resume': 'FORTSETZEN',
+  'hud.exitToLobby': 'ZUR LOBBY',
+  'hud.upgradeMax': 'MAX',
+  'hud.upgradeCost': '↑ {cost}g',
+  'hud.upgrade': '↑ Ausbau',
+  'hud.win': 'Gewonnen!',
+  'hud.lose': 'Verloren',
+  'hud.draw': 'Unentschieden',
+
+  // ── Ergebnisbildschirm ────────────────────────────────────────────────────
+  'result.victory': 'SIEG!',
+  'result.defeat': 'NIEDERLAGE',
+  'result.draw': 'UNENTSCHIEDEN',
+  'result.keepGoing': 'Weiter so!',
+  'result.playAgain': 'NOCHMAL SPIELEN',
+  'badge.topDmg.title': '[Bester Schaden]',
+  'badge.topDmg.detail': '{n} Schaden an gegnerischer Basis verursacht',
+  'badge.ironWall.title': '[Eiserne Verteidigung]',
+  'badge.ironWall.detail': 'Basis erlitt nur {n} Schaden',
+  'badge.flood.title': '[Einheitenflut]',
+  'badge.flood.detail': 'Insgesamt {n} Einheiten entsandt',
+  'badge.builder.title': '[Baumeister]',
+  'badge.builder.detail': 'Gebäude überlebten insgesamt {n}s',
+  'badge.precision.title': '[Präzisionsschlag]',
+  'badge.precision.detail': 'Zauber trafen {n} Einheiten',
+  'badge.efficient.title': '[Effizient]',
+  'badge.efficient.detail': '{n} gegnerische Einheiten vernichtet',
+
+  // ── Intro beim ersten Start (Hintergrundgeschichte) ───────────────────────
+  'story.line.1': 'Spät in der Nacht liegt ein aufgeschlagenes Heft auf dem Schulpult.',
+  'story.line.2': 'Zwischen den unberührten Seiten erwachen Kritzel-Soldaten – aufgeteilt in zwei Armeen.',
+  'story.line.3': 'Bleistifte sind Speere, Radiergummis sind Mauern, und die Gitterlinien sind ihr Schlachtfeld.',
+  'story.line.4': 'Befehlige deine Kritzel-Legion und zerstöre die gegnerische Basis vor Tagesanbruch!',
+  'story.tapToContinue': 'Zum Fortfahren tippen',
+  'story.skip': 'Überspringen »',
+};

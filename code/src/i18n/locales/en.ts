@@ -1,0 +1,75 @@
+import type { TranslationKey } from './zh';
+
+// English — must cover every key defined in zh.ts (compile-enforced).
+export const en: Record<TranslationKey, string> = {
+  // ── Cards ─────────────────────────────────────────────────────────────────
+  'card.swordsman.name': 'Swordsman',
+  'card.swordsman.desc': 'A doodle soldier from the notebook margin — cheap, sturdy, always first into battle.',
+  'card.guardian.name': 'Guardian',
+  'card.guardian.desc': 'Carries a shield carved from an eraser. Slow, but blocks a whole page of attacks.',
+  'card.archer.name': 'Archer',
+  'card.archer.desc': 'A bow bent from a paperclip — precise shots from behind the grid lines.',
+  'card.barracks.name': 'Barracks',
+  'card.barracks.desc': 'Keeps drawing new soldiers until someone erases it.',
+  'card.tower.name': 'Arrow Tower',
+  'card.tower.desc': 'An automatic turret pinned to the page. Nothing in range escapes.',
+  'card.haste.name': 'Haste Charge',
+  'card.haste.desc': 'A gust of pencil wind — all friendly units move twice as fast.',
+  'card.meteor.name': 'Meteor Strike',
+  'card.meteor.desc': 'An ink meteor falls from above, erasing everything in the target area.',
+
+  // ── Lobby ─────────────────────────────────────────────────────────────────
+  'lobby.title': 'NOTEBOOK WARS',
+  'lobby.subtitle': 'Real-time Tower Defense',
+  'lobby.feature.1': 'Play cards  ->  deploy units & buildings',
+  'lobby.feature.2': 'Destroy the enemy base to win',
+  'lobby.feature.3': 'Game lasts 5-10 min  |  AI opponent',
+  'lobby.startMatch': 'START MATCH',
+  'lobby.matching': 'Matching',
+  'lobby.you': 'YOU',
+  'lobby.vs': 'VS',
+  'lobby.loading': 'Loading battlefield...',
+  'lobby.nav.cards': 'Cards',
+  'lobby.nav.stats': 'Stats',
+  'lobby.nav.home': 'Home',
+  'lobby.nav.shop': 'Shop',
+  'lobby.nav.social': 'Social',
+
+  // ── In-game HUD ───────────────────────────────────────────────────────────
+  'hud.paused': 'PAUSED',
+  'hud.resume': 'RESUME',
+  'hud.exitToLobby': 'EXIT TO LOBBY',
+  'hud.upgradeMax': 'MAX',
+  'hud.upgradeCost': '↑ {cost}g',
+  'hud.upgrade': '↑ Upgrade',
+  'hud.win': 'You Win!',
+  'hud.lose': 'You Lose',
+  'hud.draw': 'Draw',
+
+  // ── Result screen ─────────────────────────────────────────────────────────
+  'result.victory': 'VICTORY!',
+  'result.defeat': 'DEFEAT',
+  'result.draw': 'DRAW',
+  'result.keepGoing': 'Keep going!',
+  'result.playAgain': 'PLAY AGAIN',
+  'badge.topDmg.title': '[Best Damage]',
+  'badge.topDmg.detail': 'Dealt {n} damage to enemy base',
+  'badge.ironWall.title': '[Iron Defense]',
+  'badge.ironWall.detail': 'Base only took {n} damage',
+  'badge.flood.title': '[Unit Flood]',
+  'badge.flood.detail': 'Sent {n} units total',
+  'badge.builder.title': '[Master Builder]',
+  'badge.builder.detail': 'Buildings survived {n}s total',
+  'badge.precision.title': '[Precision Strike]',
+  'badge.precision.detail': 'Spells hit {n} units',
+  'badge.efficient.title': '[Efficient]',
+  'badge.efficient.detail': 'Killed {n} enemy units',
+
+  // ── First-launch intro (background story) ─────────────────────────────────
+  'story.line.1': 'Late at night, a notebook lies open on a school desk.',
+  'story.line.2': 'Between the untouched pages, doodle soldiers quietly awaken — split into two armies.',
+  'story.line.3': 'Pencils are spears, erasers are walls, and the grid lines are their battlefield.',
+  'story.line.4': 'Command your doodle legion and destroy the enemy base before dawn!',
+  'story.tapToContinue': 'Tap to continue',
+  'story.skip': 'Skip »',
+};

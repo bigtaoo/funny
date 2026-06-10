@@ -23,6 +23,7 @@ import { HUDView } from './HUDView';
 import { UnitView } from './UnitView';
 import { VFXSystem } from './VFXSystem';
 import { fromFp } from '../game';
+import { t } from '../i18n';
 
 // ── Drag state ─────────────────────────────────────────────────────────────────
 
@@ -141,8 +142,9 @@ export class GameRenderer {
     this.container.addChild(this.unitView.container);
     this.container.addChild(this.buildingView.container);
     this.container.addChild(this.vfxSystem.container);  // above units, below HUD
+    this.container.addChild(this.hudView.backgroundContainer);  // bottom strip bg, behind hand
     this.container.addChild(this.handView.container);
-    this.container.addChild(this.hudView.container);
+    this.container.addChild(this.hudView.container);            // HUD foreground + overlays, above hand
   }
 
   // ── Input handling (design-space coords) ─────────────────────────────────
@@ -358,7 +360,7 @@ export class GameRenderer {
     if (!slot || player.coins < slot.card.cost) return;
 
     const card   = slot.card;
-    const ghost  = this.buildDragGhost(card.name, card.cost);
+    const ghost  = this.buildDragGhost(t(card.nameKey), card.cost);
     const center = this.handView.slotCenter(handIndex);
     ghost.x = center.x;
     ghost.y = center.y;
@@ -457,7 +459,7 @@ export class GameRenderer {
   private startUpgradeDrag(x: number, y: number): void {
     const player = this.engine.state.bottomPlayer;
     if (!player.canUpgradeBase()) return;
-    const ghost = this.buildDragGhost('↑ 升级', player.nextUpgradeCost!, 0xffcc00);
+    const ghost = this.buildDragGhost(t('hud.upgrade'), player.nextUpgradeCost!, 0xffcc00);
     ghost.x = x;
     ghost.y = y;
     this.container.addChild(ghost);

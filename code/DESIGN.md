@@ -13,6 +13,7 @@
 | 输入 | `InputManager` + 平台适配器（Web / WeChat），手动 hit-test；卡牌支持拖拽与 tap-select 双模式 |
 | 平台 | Web（开发）/ 微信小游戏（发布）/ CrazyGames（发布） |
 | 构建 | Webpack，多入口（`web.ts` / `wechat.ts` / `crazygames.ts`） |
+| 多语言 | `i18n/`，`zh`/`en`/`de`，键唯一来源 + 编译强制全翻，平台声明支持集合（见 §10） |
 
 ---
 
@@ -39,7 +40,7 @@ src/
 │   ├── HandView.ts        手牌 UI
 │   ├── HUDView.ts         HUD（资源 / 暂停）
 │   ├── VFXSystem.ts       程序特效系统（见 §5）
-│   └── stickman/          骨骼动画 Runtime（见 §8）
+│   └── stickman/          骨骼动画 Runtime（见 §9）
 │       ├── types.ts        共享类型（BoneDef / BoneKeyframe / SpriteBinding 等）
 │       ├── interpolate.ts  sampleClip 插值（与 animator 共享逻辑）
 │       ├── skeleton.ts     Skeleton.computeFK（FK 正向运动学）
@@ -53,8 +54,12 @@ src/
 │
 ├── inputSystem/           输入抽象
 ├── assetsManager/         资源加载（Web / WeChat 适配）
-├── platform/              平台抽象（IPlatform）
-├── scenes/                SceneManager / GameScene / LobbyScene / ResultScene
+├── cache/                 ObjectPool（精灵对象池，BoardView / UnitView / BuildingView / HandView 复用）
+├── platform/              平台抽象（IPlatform，含 getLanguage / supportedLocales）
+├── i18n/                  多语言（见 §10）
+│   ├── index.ts           t() 取词 + 插值 + initI18n/setLocale/...
+│   └── locales/           zh.ts（键唯一来源）/ en.ts / de.ts
+├── scenes/                SceneManager / IntroScene / GameScene / LobbyScene / ResultScene
 └── app.ts                 应用入口
 ```
 
@@ -210,9 +215,28 @@ pendingCardDown: { x, y, handIndex } | null             // 按下卡牌后，判
 
 按下卡牌时先记入 `pendingCardDown`；`handleMove` 检测是否超过阈值，超过则升为拖拽并清除 pending；`handleUp` 中 pending 未转化为拖拽则激活 tap-select。
 
+### 卡面渲染（`HandView`）
+
+每个卡槽自上而下：类型字符（U/B/S，左上）→ 插画（`art` 精灵）→ 名称（底部居中加粗 13px）→ 费用圆（右下）。
+
+| 卡牌 | 插画资源 |
+|---|---|
+| 普通兵（Swordsman） | `infantry.png` |
+| 弓箭兵（Archer） | `archer.png` |
+| 盾兵（Guardian） | `shield_bearer.png` |
+| 兵营（Barracks） | `game_infantry_barracks.png`（与场上建筑同图） |
+| 箭塔（ArrowTower） | `game_archer_barracks.png`（与场上建筑同图） |
+| 法术（Haste / Meteor） | 无图，仅文字 |
+
+- 插画等比缩放居中于类型行与名称行之间，不被费用圆遮挡
+- 纹理按 key 懒加载缓存在 `Map`；异步加载完成时清空 `lastSyncKey` 触发重 sync
+- 对象池回收时重置 `art` 为空纹理并隐藏
+- 卡牌名走 i18n：`CardDefinition.nameKey` → `t(card.nameKey)`（见 §10）
+- **手牌与 HUD 层级**：`HUDView` 的底部条带背景（`botBg`，全宽 alpha 0.92）拆到独立的 `backgroundContainer`，由 `GameRenderer` 挂在 `handView` **之前**渲染；HUD 前景（金币 / HP / 升级按钮 / 暂停 / 结算遮罩）仍在 `handView` **之后**。层级：`vfx → HUD底栏背景 → 手牌 → HUD前景/遮罩`。否则横屏下底栏背景会盖住中段手牌（仅选中卡牌抬升的顶部冒出上沿）
+
 ---
 
-## 9. 待实现
+## 8. 待实现
 
 | 功能 | 位置 | 说明 |
 |---|---|---|
@@ -221,7 +245,7 @@ pendingCardDown: { x, y, handIndex } | null             // 按下卡牌后，判
 
 ---
 
-## 10. 骨骼动画 Runtime（StickmanRuntime）
+## 9. 骨骼动画 Runtime（StickmanRuntime）
 
 ### 文件位置
 
@@ -276,3 +300,89 @@ rotation  = 0，anchor = (0.5, 0.5)，zOrder = -Infinity（始终最底层）
 |---|---|
 | `src/assets/infantry.tao` | Swordsman 骨骼动画包（ZIP）|
 | webpack：`/\.(tao)$/i` → `asset/resource` | .tao 按二进制资源处理，emit 后由 fetch 加载 |
+
+---
+
+## 10. 多语言（i18n）
+
+### 文件位置
+
+`src/i18n/`：`index.ts`（运行时 API）+ `locales/{zh,en,de}.ts`（词条字典）。
+
+### 核心规约
+
+- **所有面向玩家的文案严禁硬编码**，必须先在 `locales/zh.ts` 加键（键的**唯一来源**），再用 `t(key, params?)` 取词。
+- `zh.ts` 导出 `TranslationKey = keyof typeof zh` 联合类型；`en.ts` / `de.ts` 声明为 `Record<TranslationKey, string>`，**漏翻任一语言会编译报错**。
+- 游戏逻辑层只存键不存文案：`CardDefinition` 用 `nameKey` / `descKey`（每卡预留了描述文案，供以后卡牌详情页使用）。
+
+### API
+
+```ts
+t(key, params?)          // 取词 + {param} 插值，如 t('hud.upgradeCost', { cost })
+initI18n(lang, store, supportedLocales)   // 启动时调用，须在任何场景构建前
+setLocale(locale) / getLocale()           // 运行时切换 + 读取当前语言
+getSupportedLocales()                     // 当前平台可选语言集合
+onLocaleChange(fn): () => void            // 订阅切换（场景重绘），返回取消订阅
+detectLocale(rawTag, allowed?)            // 系统语言标签 → Locale
+```
+
+- 取词回退链：当前语言 → `zh` → 键名本身，缺词不会崩溃。
+- 插值用 `{param}` 占位，`t()` 内做字符串替换。
+
+### 语言选择优先级
+
+```
+玩家保存的选择（storage 'nw_locale'，且仍在支持集合内）
+  > 平台系统语言（IPlatform.getLanguage()，经 detectLocale 钳制）
+  > 平台支持集合的第一个
+```
+
+### 平台支持集合
+
+`IPlatform.supportedLocales` 声明各平台 ship 的语言，`initI18n` 把激活语言钳制到该集合：
+
+| 平台 | supportedLocales |
+|---|---|
+| Web / CrazyGames | `['zh', 'en', 'de']` |
+| 微信小游戏 | `['zh']`（小游戏只需中文） |
+
+`IPlatform.getLanguage()`：Web/CrazyGames 读 `navigator.language`，微信读 `wx.getSystemInfoSync().language`。
+
+### 已接入文案的位置
+
+`LobbyScene` / `HUDView`（暂停、升级、胜负）/ `ResultScene`（标题 + 徽章，徽章文案渲染时取词）/ `GameRenderer` 拖拽幻影 / `HandView` 卡牌名 / `IntroScene` 背景故事。
+
+### 新增语言步骤
+
+1. `i18n/index.ts` 的 `Locale` 类型加一项；2. 新建 `locales/<x>.ts`（`Record<TranslationKey,string>`）；3. 注册进 `DICTS` 与 `ALL_LOCALES`；4. 在需要的平台 `supportedLocales` 里加入。
+
+---
+
+## 11. 首次进入引导（IntroScene）
+
+### 职责
+
+首次启动时讲述背景故事，看完后进大厅；之后启动直达大厅。
+
+### 流程
+
+```
+app.ts 启动 → initI18n() → 检查 storage 'nw_seen_intro'
+  ├─ 已看过 → goLobby()
+  └─ 未看过 → goIntro()
+                IntroScene：背景故事逐行淡入 + 点击推进 + 右上角跳过
+                onFinish() → storage.setItem('nw_seen_intro','1') → goLobby()
+```
+
+### 当前实现（骨架）
+
+- 笔记本纸张背景；故事文案逐行淡入（`FADE_DURATION` 0.8s/行）
+- 点击：当前行未淡完则立即完成；已完成则推进下一行；最后一行后任意点击结束
+- 右上角"跳过"按钮（带 padding 的点击热区），底部"点击继续"呼吸提示
+- 文案全部在 i18n `story.*` 命名空间
+
+### 后续扩展
+
+保留"逐段推进 + 跳过"流程，往每段挂 PIXI 容器或 `StickmanRuntime` 动画即可升级为正式引导动画。
+
+> ⚠️ **内容待对齐**：当前 `story.*` 与 `card.*.desc` 的占位文案为"笔记本涂鸦士兵"主题，与 `design/world.md`、`design/characters.md` 的世界观（方家三人试炼：李川/陈守/苏远）不一致，需据设计文档重写。卡牌 `nameKey`（普通兵/盾兵/弓箭兵）已与设定一致。

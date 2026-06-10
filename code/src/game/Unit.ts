@@ -56,6 +56,13 @@ export class Unit {
   /** ID of the current attack target (unit or building), or null. */
   targetId: number | null = null;
 
+  /**
+   * While Crossing, true if blocked by a friendly unit ahead this tick.
+   * Used to require a full-footprint gap before resuming movement,
+   * avoiding rapid Moving/Waiting flapping.
+   */
+  crossingBlocked: boolean = false;
+
 
   constructor(unitType: UnitType, side: Side, col: number, spawnRow: number) {
     this.id        = nextId++;

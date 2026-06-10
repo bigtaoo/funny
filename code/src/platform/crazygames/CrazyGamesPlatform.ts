@@ -2,6 +2,7 @@ import type * as PIXI from 'pixi.js-legacy';
 import { IPlatform, IStorage } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WebAdapter } from '../../inputSystem/WebAdapter';
+import type { Locale } from '../../i18n';
 
 /**
  * CrazyGames platform adapter.
@@ -42,6 +43,7 @@ export class CrazyGamesPlatform implements IPlatform {
   private canvas: HTMLCanvasElement;
   readonly storage: IStorage = localStorage;
   readonly devicePixelRatio: number = window.devicePixelRatio || 1;
+  readonly supportedLocales: readonly Locale[] = ['zh', 'en', 'de'];
 
   private sdk: NonNullable<typeof window.CrazyGames>['SDK'] | null = null;
 
@@ -59,6 +61,10 @@ export class CrazyGamesPlatform implements IPlatform {
 
   getScreenSize(): { width: number; height: number } {
     return { width: window.innerWidth, height: window.innerHeight };
+  }
+
+  getLanguage(): string {
+    return navigator.language || 'en';
   }
 
   setupInput(

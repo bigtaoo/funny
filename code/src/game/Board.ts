@@ -56,14 +56,25 @@ export class Board {
   }
 
   /** Call after a unit moves to keep grid and column list in sync. */
-  updateUnitCell(unit: Unit, oldRow: number): void {
+  updateUnitCell(unit: Unit, oldRow: number, oldCol: number = unit.col): void {
     const newRow = unit.row;
-    if (newRow !== oldRow) {
-      this.clearUnitCell(unit.col, oldRow);
-      this.setUnitCell(unit.col, newRow, unit.id);
+    const newCol = unit.col;
+    if (newRow !== oldRow || newCol !== oldCol) {
+      this.clearUnitCell(oldCol, oldRow);
+      this.setUnitCell(newCol, newRow, unit.id);
     }
-    // Re-sort column list (insertion sort is cheap for small n)
-    this.resortColumn(unit.col);
+    if (newCol !== oldCol) {
+      // Unit crossed into a different column — move it between column lists.
+      const oldList = this.columnUnits.get(oldCol);
+      if (oldList) {
+        const idx = oldList.indexOf(unit);
+        if (idx >= 0) oldList.splice(idx, 1);
+      }
+      this.insertIntoColumn(unit);
+    } else {
+      // Re-sort column list (insertion sort is cheap for small n)
+      this.resortColumn(unit.col);
+    }
   }
 
   getUnitAt(col: number, row: number): Unit | null {

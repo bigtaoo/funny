@@ -34,7 +34,9 @@
       "Bash(npx tsc *)",
       "Bash(mkdir -p \"C:\\\\Users\\\\TaoWang\\\\Documents\\\\funny\\\\tools\\\\animator\\\\.claude\" 2>/dev/null; echo done)",
       "Bash(python3 -c ' *)",
-      "mcp__Claude_in_Chrome__tabs_context_mcp"
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "PowerShell(npx tsc --noEmit)",
+      "Bash(cd /c/Users/TaoWang/Documents/funny/code && echo \"=== assets dir ===\" && ls src/assets/ 2>/dev/null | head -50 && echo \"=== .tao files ===\" && find src -name '*.tao')"
     ]
   }
 }

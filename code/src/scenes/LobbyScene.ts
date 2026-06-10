@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
+import { t } from '../i18n';
 
 // ── AI name pool ───────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ export class LobbyScene implements Scene {
       if (this.dotsTimer >= 0.4) {
         this.dotsTimer = 0;
         this.dotCount  = (this.dotCount + 1) % 4;
-        this.btnLabel.text = 'Matching' + '.'.repeat(this.dotCount);
+        this.btnLabel.text = t('lobby.matching') + '.'.repeat(this.dotCount);
       }
       if (this.matchTimer >= 1.8) this.matchFound();
     } else if (this.state === 'vs') {
@@ -137,11 +138,11 @@ export class LobbyScene implements Scene {
     titleBg.endFill();
     this.container.addChild(titleBg);
 
-    const title = txt('NOTEBOOK WARS', Math.round(h * 0.048), 0xffffff, true);
+    const title = txt(t('lobby.title'), Math.round(h * 0.048), 0xffffff, true);
     title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH * 0.45;
     this.container.addChild(title);
 
-    const subtitle = txt('Real-time Tower Defense', Math.round(h * 0.022), C.light);
+    const subtitle = txt(t('lobby.subtitle'), Math.round(h * 0.022), C.light);
     subtitle.anchor.set(0.5, 0.5); subtitle.x = w / 2; subtitle.y = tbH * 0.78;
     this.container.addChild(subtitle);
 
@@ -153,9 +154,9 @@ export class LobbyScene implements Scene {
     const blockGap = Math.round(h * 0.015);
 
     [
-      'Play cards  ->  deploy units & buildings',
-      'Destroy the enemy base to win',
-      'Game lasts 5-10 min  |  AI opponent',
+      t('lobby.feature.1'),
+      t('lobby.feature.2'),
+      t('lobby.feature.3'),
     ].forEach((label, i) => {
       const box = new PIXI.Graphics();
       box.beginFill(C.paper);
@@ -189,7 +190,7 @@ export class LobbyScene implements Scene {
     this.btnBg.x = btnX; this.btnBg.y = btnY;
     this.container.addChild(this.btnBg);
 
-    this.btnLabel = txt('START MATCH', Math.round(btnH * 0.42), 0xffffff, true);
+    this.btnLabel = txt(t('lobby.startMatch'), Math.round(btnH * 0.42), 0xffffff, true);
     this.btnLabel.anchor.set(0.5, 0.5);
     this.btnLabel.x = btnX + btnW / 2;
     this.btnLabel.y = btnY + btnH / 2;
@@ -203,7 +204,10 @@ export class LobbyScene implements Scene {
     navBg.endFill();
     this.container.addChild(navBg);
 
-    ['Cards', 'Stats', 'Home', 'Shop', 'Social'].forEach((name, i) => {
+    [
+      t('lobby.nav.cards'), t('lobby.nav.stats'), t('lobby.nav.home'),
+      t('lobby.nav.shop'), t('lobby.nav.social'),
+    ].forEach((name, i) => {
       const slotW = w / 5;
       const slotX = i * slotW + slotW / 2;
       const slotY = h - navH / 2;
@@ -248,11 +252,11 @@ export class LobbyScene implements Scene {
     const cardH = Math.round(h * 0.12);
     const cardX = (w - cardW) / 2;
 
-    const youCard = this.buildPlayerCard(cardW, cardH, 'YOU', C.accent);
+    const youCard = this.buildPlayerCard(cardW, cardH, t('lobby.you'), C.accent);
     youCard.x = cardX; youCard.y = Math.round(h * 0.28);
     c.addChild(youCard);
 
-    const vs = txt('VS', Math.round(h * 0.09), C.gold, true);
+    const vs = txt(t('lobby.vs'), Math.round(h * 0.09), C.gold, true);
     vs.anchor.set(0.5, 0.5); vs.x = w / 2; vs.y = h * 0.5;
     c.addChild(vs);
 
@@ -261,7 +265,7 @@ export class LobbyScene implements Scene {
     c.addChild(oppCard);
     this.oppLabel = oppCard.getChildByName('nameLabel') as PIXI.Text;
 
-    const hint = txt('Loading battlefield...', Math.round(h * 0.022), C.mid);
+    const hint = txt(t('lobby.loading'), Math.round(h * 0.022), C.mid);
     hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = h * 0.8;
     c.addChild(hint);
 
@@ -287,7 +291,7 @@ export class LobbyScene implements Scene {
   private onStartPressed(): void {
     this.state = 'matching'; this.matchTimer = 0; this.dotsTimer = 0; this.dotCount = 0;
     this.drawBtn(this.btnBg, this.btnBg.width, this.btnBg.height, false);
-    this.btnLabel.text = 'Matching...';
+    this.btnLabel.text = t('lobby.matching') + '...';
   }
 
   private matchFound(): void {

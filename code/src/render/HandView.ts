@@ -1,8 +1,14 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Player } from '../game/Player';
-import { CardDefinition, CardType } from '../game/types';
+import { CardDefinition, CardType, UnitType, BuildingType } from '../game/types';
 import { ILayout } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
+import { t } from '../i18n';
+import infantryArtUrl from '../assets/infantry.png';
+import archerArtUrl from '../assets/archer.png';
+import shieldBearerArtUrl from '../assets/shield_bearer.png';
+import barracksArtUrl from '../assets/game_infantry_barracks.png';
+import towerArtUrl from '../assets/game_archer_barracks.png';
 
 const CARD_BG              = 0xfaf6ee;
 const CARD_BORDER          = 0x333333;
@@ -11,10 +17,30 @@ const CARD_LIFT            = 14;
 const ERASER_COLOR         = 0xf0ece0;
 const ERASER_ALPHA         = 0.62;
 
+// 卡牌插画：单位/建筑卡显示对应图片，法术卡无图（仅文字）
+const CARD_ART_URLS: Record<string, string> = {
+  [`unit_${UnitType.Swordsman}`]:        infantryArtUrl as string,
+  [`unit_${UnitType.Archer}`]:           archerArtUrl as string,
+  [`unit_${UnitType.Guardian}`]:         shieldBearerArtUrl as string,
+  [`building_${BuildingType.Barracks}`]: barracksArtUrl as string,
+  [`building_${BuildingType.ArrowTower}`]: towerArtUrl as string,
+};
+
+function cardArtKey(card: CardDefinition): string | null {
+  if (card.cardType === CardType.Unit && card.unitType !== undefined) {
+    return `unit_${card.unitType}`;
+  }
+  if (card.cardType === CardType.Building && card.buildingType !== undefined) {
+    return `building_${card.buildingType}`;
+  }
+  return null;
+}
+
 // ── Card slot structure ────────────────────────────────────────────────────────
 //
 // Children by name:
 //   'bg'      Graphics  — border + fill
+//   'art'     Sprite    — card illustration (units / buildings)
 //   'type'    Text
 //   'name'    Text
 //   'costBg'  Graphics
@@ -26,19 +52,21 @@ function createCardSlot(): PIXI.Container {
   const c = new PIXI.Container();
 
   const bg       = new PIXI.Graphics(); bg.name       = 'bg';
+  const art      = new PIXI.Sprite(PIXI.Texture.EMPTY); art.name = 'art';
+  art.anchor.set(0.5);
+  art.visible = false;
   const typeText = new PIXI.Text('', { fontSize: 9,  fill: 0x888888 }); typeText.name = 'type';
   typeText.x = 4; typeText.y = 2;
   const nameText = new PIXI.Text('', {
-    fontSize: 10, fill: 0x222222, wordWrap: true, align: 'center',
+    fontSize: 13, fill: 0x222222, wordWrap: true, align: 'center', fontWeight: 'bold',
   }); nameText.name = 'name';
-  nameText.x = 4; nameText.y = 14;
   const costBg   = new PIXI.Graphics(); costBg.name   = 'costBg';
   const costText = new PIXI.Text('', { fontSize: 14, fill: 0xffffff, fontWeight: 'bold' });
   costText.name  = 'cost';
   const overlay  = new PIXI.Graphics(); overlay.name  = 'overlay';
   const eraser   = new PIXI.Graphics(); eraser.name   = 'eraser';
 
-  c.addChild(bg, typeText, nameText, costBg, costText, overlay, eraser);
+  c.addChild(bg, art, typeText, nameText, costBg, costText, overlay, eraser);
   return c;
 }
 
@@ -53,6 +81,9 @@ function resetCardSlot(c: PIXI.Container): void {
   (c.getChildByName('type')    as PIXI.Text).text = '';
   (c.getChildByName('name')    as PIXI.Text).text = '';
   (c.getChildByName('cost')    as PIXI.Text).text = '';
+  const art = c.getChildByName('art') as PIXI.Sprite;
+  art.texture = PIXI.Texture.EMPTY;
+  art.visible = false;
 }
 
 // ── HandView ───────────────────────────────────────────────────────────────────
@@ -68,6 +99,7 @@ export class HandView {
   private slots:         PIXI.Container[] = [];
   private selectedIndex: number | null    = null;
   private lastSyncKey:   string           = '';
+  private artTextures    = new Map<string, PIXI.Texture>();
 
   private readonly layout: ILayout;
   startX = 0;
@@ -185,7 +217,12 @@ export class HandView {
 
     if (card) {
       (c.getChildByName('type') as PIXI.Text).text = this.cardTypeChar(card);
-      (c.getChildByName('name') as PIXI.Text).text = card.name;
+      const nameText = c.getChildByName('name') as PIXI.Text;
+      nameText.text = t(card.nameKey);
+      nameText.x = (cardW - nameText.width) / 2;
+      nameText.y = cardH - nameText.height - 6;
+
+      this.configureArt(c.getChildByName('art') as PIXI.Sprite, card, cardW, cardH);
 
       const costBg = c.getChildByName('costBg') as PIXI.Graphics;
       costBg.beginFill(canAfford ? 0x2244aa : 0xaa4422);
@@ -204,6 +241,40 @@ export class HandView {
         overlay.endFill();
       }
     }
+  }
+
+  private configureArt(art: PIXI.Sprite, card: CardDefinition, cardW: number, cardH: number): void {
+    const key = cardArtKey(card);
+    if (key === null) {
+      art.visible = false;
+      return;
+    }
+
+    let tex = this.artTextures.get(key);
+    if (!tex) {
+      tex = PIXI.Texture.from(CARD_ART_URLS[key]);
+      if (!tex.baseTexture.valid) {
+        // Texture loads async — force a re-sync once ready so size can be computed
+        tex.baseTexture.once('loaded', () => { this.lastSyncKey = ''; });
+      }
+      this.artTextures.set(key, tex);
+    }
+
+    if (!tex.baseTexture.valid) {
+      art.visible = false;
+      return;
+    }
+
+    // Fit into the area between the type row and the name/cost row, keep aspect
+    const boxW  = cardW - 16;
+    const boxY0 = 16;
+    const boxY1 = cardH - 28;
+    const scale = Math.min(boxW / tex.width, (boxY1 - boxY0) / tex.height);
+
+    art.texture = tex;
+    art.scale.set(scale);
+    art.position.set(cardW / 2, (boxY0 + boxY1) / 2);
+    art.visible = true;
   }
 
   private drawEraser(gfx: PIXI.Graphics, progress: number, cardW: number, cardH: number): void {

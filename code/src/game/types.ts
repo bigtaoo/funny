@@ -1,4 +1,5 @@
 import type { Fp } from './math/fixed';
+import type { TranslationKey } from '../i18n';
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -143,7 +144,10 @@ export interface BuildingBlueprint {
 
 export interface CardDefinition {
   id: string;
-  name: string;
+  /** i18n key for the display name — render layer resolves it via t() */
+  nameKey: TranslationKey;
+  /** i18n key for the card description (reserved for deck screen / detail popup) */
+  descKey: TranslationKey;
   cardType: CardType;
   cost: number;
   unitType?: UnitType;

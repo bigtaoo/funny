@@ -230,6 +230,8 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 - **平台适配**：Web / 微信小游戏 / CrazyGames，多入口 webpack 构建
 - **骨骼动画 Runtime**：`StickmanRuntime`（`src/render/stickman/`），加载 `.tao` ZIP，解析 spritesheet + animation.json，驱动 PIXI Sprite 播放骨骼动画；Swordsman 单位使用 `infantry.tao`
 - **确定性约束**：游戏逻辑（`code/src/game/`）内严禁使用 `Math.random()`，必须使用 `Prng`（`game/math/prng.ts`）。`GameState` 构造函数以 seed 派生各 PRNG；新增需要随机性的系统，在 `GameEngine` 中用 `new Prng(seed ^ 唯一常量)` 注入。
+- **多语言（i18n）**：`src/i18n/`，支持 `zh`/`en`/`de`。**所有面向玩家的文案严禁硬编码**，必须在 `locales/zh.ts` 加键（键的唯一来源），再用 `t(key, params?)` 取词；`zh.ts` 的 `TranslationKey` 联合类型 + `en.ts`/`de.ts` 声明为 `Record<TranslationKey, string>`，漏翻任一语言会编译报错。游戏逻辑层（如 `CardDefinition`）只存 `nameKey`/`descKey` 等键，不存文案。`t()` 支持 `{param}` 插值（如 `t('hud.upgradeCost', { cost })`），缺词回退 zh → 键名，不会崩溃。语言选择优先级：玩家保存的选择（持久化到 `storage` 的 `nw_locale`）> 系统语言 > 平台首个支持语言。**平台声明支持语言**：`IPlatform.supportedLocales`，Web/CrazyGames = `['zh','en','de']`，微信 = `['zh']`（小游戏只需中文）；`initI18n` 把激活语言钳制到该集合。`setLocale`/`onLocaleChange` 支持运行时切换 + 订阅重绘。
+- **首次进入引导**：`IntroScene`（`src/scenes/IntroScene.ts`），讲述背景故事；`app.ts` 启动时检查 `storage` 的 `nw_seen_intro` 标记，首次进入先播引导（逐行淡入 + 点击推进 + 右上角跳过），看完写标记后进大厅，之后启动直达大厅。文案在 i18n `story.*` 命名空间。当前是骨架，后续做正式动画时保留"逐段推进 + 跳过"流程，往每段挂 PIXI 容器或 `StickmanRuntime` 即可。
 
 ### 已知修复（2026-06）
 
@@ -245,6 +247,15 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 | `src/render/BuildingView.ts` | 建筑 idle 完全静止 | 新增 `update(dt)` + `updateIdleAnim()`：全部建筑精灵垂直 bob（±1.5px，0.9s，随机相位）；兵营追加 `flagGfx` 旗帜 quadratic bezier 波动（~1.4Hz）；箭塔精灵微旋转（±0.5°，1.3s） |
 | `src/render/GameRenderer.ts` | `base_hp_changed` 事件无处理；`boardView`/`buildingView` 无 per-frame update | 新增 `base_hp_changed` 分支调用 `playBaseCrackEffect()`；`update()` 中加 `boardView.update(dt)` 和 `buildingView.update(dt)` |
 | `src/render/GameRenderer.ts` + `HandView.ts` | 卡牌只能拖拽放置，触屏/小屏操作不便 | 新增 tap-select 交互模式：点击卡牌进入选中态（卡牌上移 14px，列高亮显示），再点棋盘列放置；再次点击同一张卡牌取消选中；`pendingCardDown` 延迟拖拽判定（移动 > 8px 才升级为拖拽），两种模式共存；`HandView.hitTestCardIndex` 上边界扩展 `CARD_LIFT` 覆盖抬升后的点击区；`commitCardPlay` 提取为公共放置函数供两种模式共用 |
+| `src/render/HandView.ts` | 卡牌仅有文字（U/B/S + 名称），难以辨认 | 每个卡槽新增 `art` 精灵（背景之上、文字之下）：普通兵→`infantry.png`、弓箭兵→`archer.png`、盾兵→`shield_bearer.png`、兵营→`game_infantry_barracks.png`、箭塔→`game_archer_barracks.png`（与场上建筑贴图一致），法术牌无图；插画等比缩放居中于类型行与名称/费用行之间，不被费用圆遮挡；名称改为底部居中加粗 13px；纹理按 key 懒加载缓存在 `Map`，异步加载完成时清空 `lastSyncKey` 触发重 sync；对象池回收时重置 `art` 为空纹理并隐藏 |
+| `src/i18n/`（新增）+ 多文件 | 文案硬编码（中文写死），无多语言支持 | 新增 i18n 模块（`zh`/`en`/`de`，`zh.ts` 为键唯一来源，`en`/`de` 为 `Record<TranslationKey,string>` 编译强制全翻）；`t(key, params?)` 取词 + `{param}` 插值；LobbyScene / HUDView / ResultScene / GameRenderer 拖拽幻影所有硬编码字符串改走 `t()`；`CardDefinition.name` → `nameKey`+`descKey`（每卡预留描述文案）；徽章文案改为渲染时取词 |
+| `src/platform/IPlatform.ts` + 三平台 | 各平台支持语言不同（微信只需中文） | `IPlatform` 新增 `getLanguage()`（系统语言标签）+ `supportedLocales`（Web/CrazyGames=`['zh','en','de']`，微信=`['zh']`）；`initI18n(lang, store, supported)` 把激活语言钳制到平台集合，玩家选择持久化到 `nw_locale` |
+| `src/scenes/IntroScene.ts`（新增）+ `app.ts` | 缺少首次进入的背景故事引导 | 新增 `IntroScene`（背景故事逐行淡入 + 点击推进 + 跳过，文案在 i18n `story.*`）；`app.ts` 按 `storage` 的 `nw_seen_intro` 标记决定首启走引导还是直达大厅（当前为骨架，预留正式动画扩展点） |
+| `src/render/HUDView.ts` + `GameRenderer.ts` | 横屏下底部 HUD 背景（`botBg` 全宽 alpha 0.92）盖住中段手牌，买得起的卡牌发灰，只有选中卡牌抬升的顶部冒出上沿是亮的 | `botBg` 拆到独立 `backgroundContainer`，`GameRenderer` 挂在 `handView` 之前渲染；HUD 前景（金币/HP/升级按钮/暂停/结算遮罩）仍在 `handView` 之后。层级改为 `vfx → HUD底栏背景 → 手牌 → HUD前景/遮罩` |
+| `src/game/Board.ts` + `MovementSystem.ts` | 一列上多个单位排队前进时，最前面的单位进入 Crossing（横向移动）后仍留在原车道的 `columnUnits` 列表中（`y_fp` 冻结），后面的单位永远把它当作"前方单位"判定碰撞，即使前者已经走远也一直 `Waiting` | `Board.updateUnitCell` 新增 `oldCol` 参数，`col` 变化时把单位从旧列的 `columnUnits` 移到新列；`MovementSystem.tick` 记录 `prevCol` 并传入 |
+| `src/game/Unit.ts` + `MovementSystem.ts` | 前方单位移动很慢时，后面单位每帧在"前方空隙刚好为正可以挪一点"和"挪完后又重叠被推回 Waiting"之间反复横跳，动画不停切换 Moving/Waiting | 新增 `Unit.crossingBlocked` 标记；一旦因前方单位停下（lane 内为 `UnitState.Waiting`，Crossing 内为 `crossingBlocked=true`），需等前方空隙 ≥ 自身体积（`2 × radius_fp`）才恢复移动，而不是空隙刚 >0 就动 |
+| `src/`（清理）+ `DESIGN.md` | 旧实现遗留死代码与现 `entries → app.ts → scenes` 构建并存，无人引用却被跟踪，干扰阅读/搜索 | 删除 15 个孤立文件（根 `index.ts`/`wechatIndex.ts`/`GameRunner.ts`、`platform/crazygames.ts`、`game/` 下 `logic`/`gameScene`/`grid`/`effect`/`effectManager`/`consts`/`enums`/`header`/`display`/`numbers`/`helper`）；**保留** `game/index.ts`（公共 API barrel，`from '../game'`）和 `game/Card.ts`（被 `GameEngine`/`Player` 引用）；`DESIGN.md` §2 补 `cache/`、章节编号补连续（原缺 §8）、修正交叉引用 |
+| `code/.gitignore` | 构建产物 `code/dist/` 被 git 跟踪，每次构建污染 diff（单 `index.js` 即数万行） | `.gitignore` 加 `/dist`；`git rm -r --cached dist` 取消跟踪 |
 
 ### 游戏核心模块
 
@@ -255,6 +266,8 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 | `game/systems/AISystem.ts` | AI 决策（注入 `Prng`，每 45 tick 行动一次） |
 | `game/math/prng.ts` | LCG 确定性随机数生成器 |
 | `game/math/fixed.ts` | 定点数运算（`TICK_RATE = 30`） |
+| `i18n/index.ts` | `t()` 取词 + 插值；`initI18n`/`setLocale`/`getLocale`/`getSupportedLocales`/`onLocaleChange`/`detectLocale` |
+| `i18n/locales/{zh,en,de}.ts` | 词条字典；`zh.ts` 为键唯一来源（`TranslationKey`），`en`/`de` 编译强制全翻 |
 
 ## 文件格式
 

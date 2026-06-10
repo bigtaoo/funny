@@ -2,6 +2,7 @@ import type * as PIXI from 'pixi.js-legacy';
 import { IPlatform, IStorage } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WechatAdapter } from '../../inputSystem/WechatAdapter';
+import type { Locale } from '../../i18n';
 
 /**
  * WeChat mini-game platform adapter.
@@ -10,7 +11,7 @@ import { WechatAdapter } from '../../inputSystem/WechatAdapter';
  */
 
 declare const wx: {
-  getSystemInfoSync(): { windowWidth: number; windowHeight: number };
+  getSystemInfoSync(): { windowWidth: number; windowHeight: number; language?: string };
   setPreferredFramesPerSecond(fps: number): void;
   getStorageSync(key: string): string | undefined;
   setStorageSync(key: string, value: string): void;
@@ -52,6 +53,9 @@ class WechatStorage implements IStorage {
 export class WechatPlatform implements IPlatform {
   readonly storage: IStorage = new WechatStorage();
 
+  /** WeChat mini-game only ships Chinese. */
+  readonly supportedLocales: readonly Locale[] = ['zh'];
+
   /**
    * WeChat canvas is already at physical pixel resolution — no scaling needed.
    */
@@ -64,6 +68,14 @@ export class WechatPlatform implements IPlatform {
   getScreenSize(): { width: number; height: number } {
     const info = wx.getSystemInfoSync();
     return { width: info.windowWidth, height: info.windowHeight };
+  }
+
+  getLanguage(): string {
+    try {
+      return wx.getSystemInfoSync().language ?? 'zh-CN';
+    } catch {
+      return 'zh-CN';
+    }
   }
 
   /**
