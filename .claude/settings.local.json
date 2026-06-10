@@ -36,7 +36,11 @@
       "Bash(python3 -c ' *)",
       "mcp__Claude_in_Chrome__tabs_context_mcp",
       "PowerShell(npx tsc --noEmit)",
-      "Bash(cd /c/Users/TaoWang/Documents/funny/code && echo \"=== assets dir ===\" && ls src/assets/ 2>/dev/null | head -50 && echo \"=== .tao files ===\" && find src -name '*.tao')"
+      "Bash(cd /c/Users/TaoWang/Documents/funny/code && echo \"=== assets dir ===\" && ls src/assets/ 2>/dev/null | head -50 && echo \"=== .tao files ===\" && find src -name '*.tao')",
+      "Bash(git commit -m 'i18n + intro scene; remove legacy dead code; untrack dist *)",
+      "Bash(echo \"=== EXIT: $? ===\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
