@@ -4,6 +4,7 @@ import { CardDefinition, CardType, UnitType, BuildingType } from '../game/types'
 import { ILayout } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
 import { t } from '../i18n';
+import { TICK_RATE } from '../game/math/fixed';
 import infantryArtUrl from '../assets/infantry.png';
 import archerArtUrl from '../assets/archer.png';
 import shieldBearerArtUrl from '../assets/shield_bearer.png';
@@ -14,8 +15,16 @@ const CARD_BG              = 0xfaf6ee;
 const CARD_BORDER          = 0x333333;
 const CARD_SELECTED_BORDER = 0xffcc00;
 const CARD_LIFT            = 14;
-const ERASER_COLOR         = 0xf0ece0;
-const ERASER_ALPHA         = 0.62;
+
+const BAR_HEIGHT           = 3;
+const BAR_MARGIN           = 2;
+const BAR_BOTTOM_OFFSET    = 4; // px from card bottom edge
+const BAR_COLOR_GREEN      = 0x44cc55;
+const BAR_COLOR_YELLOW     = 0xddaa00;
+const BAR_COLOR_RED        = 0xdd3322;
+const BAR_TRACK_ALPHA      = 0.15;
+
+const FLASH_DURATION_MS    = 250;
 
 // 卡牌插画：单位/建筑卡显示对应图片，法术卡无图（仅文字）
 const CARD_ART_URLS: Record<string, string> = {
@@ -45,8 +54,9 @@ function cardArtKey(card: CardDefinition): string | null {
 //   'name'    Text
 //   'costBg'  Graphics
 //   'cost'    Text
-//   'overlay' Graphics
-//   'eraser'  Graphics
+//   'overlay' Graphics  — affordability dim overlay
+//   'bar'     Graphics  — refresh countdown progress bar (bottom edge)
+//   'flash'   Graphics  — white flash on card refresh
 
 function createCardSlot(): PIXI.Container {
   const c = new PIXI.Container();
@@ -64,9 +74,10 @@ function createCardSlot(): PIXI.Container {
   const costText = new PIXI.Text('', { fontSize: 14, fill: 0xffffff, fontWeight: 'bold' });
   costText.name  = 'cost';
   const overlay  = new PIXI.Graphics(); overlay.name  = 'overlay';
-  const eraser   = new PIXI.Graphics(); eraser.name   = 'eraser';
+  const bar      = new PIXI.Graphics(); bar.name      = 'bar';
+  const flash    = new PIXI.Graphics(); flash.name    = 'flash';
 
-  c.addChild(bg, art, typeText, nameText, costBg, costText, overlay, eraser);
+  c.addChild(bg, art, typeText, nameText, costBg, costText, overlay, bar, flash);
   return c;
 }
 
@@ -77,7 +88,8 @@ function resetCardSlot(c: PIXI.Container): void {
   (c.getChildByName('bg')      as PIXI.Graphics).clear();
   (c.getChildByName('costBg')  as PIXI.Graphics).clear();
   (c.getChildByName('overlay') as PIXI.Graphics).clear();
-  (c.getChildByName('eraser')  as PIXI.Graphics).clear();
+  (c.getChildByName('bar')     as PIXI.Graphics).clear();
+  (c.getChildByName('flash')   as PIXI.Graphics).clear();
   (c.getChildByName('type')    as PIXI.Text).text = '';
   (c.getChildByName('name')    as PIXI.Text).text = '';
   (c.getChildByName('cost')    as PIXI.Text).text = '';
@@ -101,6 +113,9 @@ export class HandView {
   private lastSyncKey:   string           = '';
   private artTextures    = new Map<string, PIXI.Texture>();
 
+  /** slotIndex → flash start timestamp (ms). Cleared once expired. */
+  private refreshFlashes = new Map<number, number>();
+
   private readonly layout: ILayout;
   startX = 0;
   baseY  = 0;
@@ -116,9 +131,22 @@ export class HandView {
     this.layout    = layout;
   }
 
+  /** Call when a card at slotIndex auto-expires so a white flash is shown. */
+  notifyCardExpired(slotIndex: number): void {
+    this.refreshFlashes.set(slotIndex, performance.now());
+    this.lastSyncKey = ''; // force redraw this frame
+  }
+
   // ── Per-frame sync ─────────────────────────────────────────────────────────
 
   sync(player: Player): void {
+    const now  = performance.now();
+
+    // Force rebuild every frame while any flash is still animating
+    const hasActiveFlash = this.refreshFlashes.size > 0 &&
+      Array.from(this.refreshFlashes.values()).some(t => now - t < FLASH_DURATION_MS);
+    if (hasActiveFlash) this.lastSyncKey = '';
+
     const hand    = player.hand.slots;
     const syncKey = hand.map((s, i) =>
       `${i}:${s?.card.id ?? 'x'}:${s?.refreshRemainingTicks ?? 0}:${this.selectedIndex === i}`
@@ -144,8 +172,23 @@ export class HandView {
       this.configureSlot(slot, handSlot?.card ?? null, i, player.coins, isSelected, cw, ch);
 
       if (handSlot) {
-        const progress = 1 - (handSlot.refreshRemainingTicks / handSlot.refreshDurationTicks);
-        this.drawEraser(slot.getChildByName('eraser') as PIXI.Graphics, progress, cw, ch);
+        this.drawRefreshBar(
+          slot.getChildByName('bar') as PIXI.Graphics,
+          handSlot.refreshRemainingTicks,
+          handSlot.refreshDurationTicks,
+          cw, ch,
+        );
+      }
+
+      const flashStart = this.refreshFlashes.get(i);
+      if (flashStart !== undefined) {
+        const elapsed = now - flashStart;
+        if (elapsed < FLASH_DURATION_MS) {
+          const flashAlpha = (1 - elapsed / FLASH_DURATION_MS) * 0.7;
+          this.drawFlash(slot.getChildByName('flash') as PIXI.Graphics, flashAlpha, cw, ch);
+        } else {
+          this.refreshFlashes.delete(i);
+        }
       }
 
       slot.x = this.startX + i * (cw + cm);
@@ -277,13 +320,47 @@ export class HandView {
     art.visible = true;
   }
 
-  private drawEraser(gfx: PIXI.Graphics, progress: number, cardW: number, cardH: number): void {
+  private drawRefreshBar(
+    gfx: PIXI.Graphics,
+    remainingTicks: number,
+    durationTicks: number,
+    cardW: number,
+    cardH: number,
+  ): void {
     gfx.clear();
-    if (progress <= 0) return;
-    const coverH = Math.round(cardH * progress);
-    const y = cardH - coverH;
-    gfx.beginFill(ERASER_COLOR, ERASER_ALPHA);
-    gfx.drawRoundedRect(1, y, cardW - 2, coverH, progress >= 1 ? 4 : 0);
+    if (remainingTicks <= 0 || durationTicks <= 0) return;
+
+    const fraction     = remainingTicks / durationTicks;
+    const barMaxW      = cardW - BAR_MARGIN * 2;
+    const barW         = Math.round(barMaxW * fraction);
+    const barY         = cardH - BAR_BOTTOM_OFFSET - BAR_HEIGHT;
+
+    const remainingSec = remainingTicks / TICK_RATE;
+    const color = remainingSec > 10 ? BAR_COLOR_GREEN
+                : remainingSec > 5  ? BAR_COLOR_YELLOW
+                :                     BAR_COLOR_RED;
+
+    // Pulse alpha in last 3 seconds
+    const barAlpha = remainingSec <= 3
+      ? 0.6 + 0.4 * Math.abs(Math.sin((remainingTicks / 15) * Math.PI))
+      : 1;
+
+    // Background track
+    gfx.beginFill(0x000000, BAR_TRACK_ALPHA);
+    gfx.drawRect(BAR_MARGIN, barY, barMaxW, BAR_HEIGHT);
+    gfx.endFill();
+
+    // Filled portion
+    gfx.beginFill(color, barAlpha);
+    gfx.drawRect(BAR_MARGIN, barY, barW, BAR_HEIGHT);
+    gfx.endFill();
+  }
+
+  private drawFlash(gfx: PIXI.Graphics, alpha: number, cardW: number, cardH: number): void {
+    gfx.clear();
+    if (alpha <= 0) return;
+    gfx.beginFill(0xffffff, alpha);
+    gfx.drawRoundedRect(1, 1, cardW - 2, cardH - 2, 4);
     gfx.endFill();
   }
 

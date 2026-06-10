@@ -168,6 +168,14 @@ hudView.container        ← HUD（最顶层）
 | Alpha 脉冲（"呼吸"） | 0.65–1.0，周期 4s；双方基地相位差 1.2 rad |
 | 受击裂缝 | `base_hp_changed` 事件触发 `playBaseCrackEffect()`；HP > 85% 不显示；每次受击追加 1–2 条随机折线（3 段，铅笔灰 `#333`，`alpha 0.65`）；HP < 40% 每次追加 2 条 |
 
+### 基地受击全屏晕影
+
+`base_hp_changed`（owner=0，己方基地）触发全屏边缘红色晕影（`GameRenderer.vignetteGfx`）：
+
+- 12 层边框矩形叠加，宽度 42–140px、alpha 0.009–0.063，模拟由边缘向内的径向渐变
+- `vignetteAlpha` 从 1.0 线性衰减，0.55s 内完全淡出
+- `vignetteGfx` 挂在 container 最顶层（HUD 之上），`interactiveChildren = false`，不影响任何点击事件
+
 建筑精灵资源（`src/assets/`）：
 
 | 建筑类型 | 文件 |
@@ -230,8 +238,9 @@ pendingCardDown: { x, y, handIndex } | null             // 按下卡牌后，判
 
 - 插画等比缩放居中于类型行与名称行之间，不被费用圆遮挡
 - 纹理按 key 懒加载缓存在 `Map`；异步加载完成时清空 `lastSyncKey` 触发重 sync
-- 对象池回收时重置 `art` 为空纹理并隐藏
+- 对象池回收时重置 `art`为空纹理并隐藏
 - 卡牌名走 i18n：`CardDefinition.nameKey` → `t(card.nameKey)`（见 §10）
+- **刷新倒计时进度条**：每张牌底部一条 3px 横条（`bar` Graphics），显示距下次自动刷新的剩余比例（`refreshRemainingTicks / refreshDurationTicks`）。颜色随剩余秒数变化：>10s 绿色 → ≤10s 黄色 → ≤5s 红色；最后 3 秒进度条 alpha 做 sin 波脉冲（0.6–1.0）。卡牌被自动刷新时触发 `card_expired` 事件，`GameRenderer` 调用 `handView.notifyCardExpired(slotIndex)`，令该槽渲染 250ms 白色淡出叠加层（`flash` Graphics）作为刷新反馈。倒计时时长由 `config.CARD_REFRESH_TICKS`（900 ticks = 30 s）控制；发牌时随机错峰 [0, 15 s]（`CARD_REFRESH_INITIAL_OFFSET_MAX`）防止所有槽同时刷新。
 - **手牌与 HUD 层级**：`HUDView` 的底部条带背景（`botBg`，全宽 alpha 0.92）拆到独立的 `backgroundContainer`，由 `GameRenderer` 挂在 `handView` **之前**渲染；HUD 前景（金币 / HP / 升级按钮 / 暂停 / 结算遮罩）仍在 `handView` **之后**。层级：`vfx → HUD底栏背景 → 手牌 → HUD前景/遮罩`。否则横屏下底栏背景会盖住中段手牌（仅选中卡牌抬升的顶部冒出上沿）
 
 ---

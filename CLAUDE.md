@@ -256,6 +256,9 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 | `src/game/Unit.ts` + `MovementSystem.ts` | 前方单位移动很慢时，后面单位每帧在"前方空隙刚好为正可以挪一点"和"挪完后又重叠被推回 Waiting"之间反复横跳，动画不停切换 Moving/Waiting | 新增 `Unit.crossingBlocked` 标记；一旦因前方单位停下（lane 内为 `UnitState.Waiting`，Crossing 内为 `crossingBlocked=true`），需等前方空隙 ≥ 自身体积（`2 × radius_fp`）才恢复移动，而不是空隙刚 >0 就动 |
 | `src/`（清理）+ `DESIGN.md` | 旧实现遗留死代码与现 `entries → app.ts → scenes` 构建并存，无人引用却被跟踪，干扰阅读/搜索 | 删除 15 个孤立文件（根 `index.ts`/`wechatIndex.ts`/`GameRunner.ts`、`platform/crazygames.ts`、`game/` 下 `logic`/`gameScene`/`grid`/`effect`/`effectManager`/`consts`/`enums`/`header`/`display`/`numbers`/`helper`）；**保留** `game/index.ts`（公共 API barrel，`from '../game'`）和 `game/Card.ts`（被 `GameEngine`/`Player` 引用）；`DESIGN.md` §2 补 `cache/`、章节编号补连续（原缺 §8）、修正交叉引用 |
 | `code/.gitignore` | 构建产物 `code/dist/` 被 git 跟踪，每次构建污染 diff（单 `index.js` 即数万行） | `.gitignore` 加 `/dist`；`git rm -r --cached dist` 取消跟踪 |
+| `src/game/config.ts` | 卡牌自动刷新间隔 2 分钟，游戏节奏过慢 | `CARD_REFRESH_TICKS` 改为 900（30 s）；`CARD_REFRESH_INITIAL_OFFSET_MAX` 改为 450（15 s 错峰） |
+| `src/render/HandView.ts` + `GameRenderer.ts` | 手牌无视觉提示，玩家不知道卡牌何时自动刷新 | 每张牌底部新增 3px 进度条（`bar` Graphics）：>10s 绿色、≤10s 黄色、≤5s 红色；最后 3 秒 sin 波 alpha 脉冲；`card_expired` 事件触发 `notifyCardExpired()` 渲染 250ms 白色淡出闪白（`flash` Graphics）；移除旧 `eraser` 遮罩 |
+| `src/render/GameRenderer.ts` | 己方基地受击时无全局视觉反馈，容易忽视 | `base_hp_changed`（owner=0）触发全屏边缘红色晕影（`vignetteGfx`，12 层渐变矩形边框，宽 42–140px，alpha 叠加模拟径向渐变），0.55s 线性淡出；挂在 container 最顶层不影响输入 |
 
 ### 游戏核心模块
 

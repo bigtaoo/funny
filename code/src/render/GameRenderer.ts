@@ -74,6 +74,10 @@ export class GameRenderer {
   private hudView!:      HUDView;
   private vfxSystem!:    VFXSystem;
 
+  private vignetteGfx!:   PIXI.Graphics;
+  private vignetteAlpha  = 0;
+  private static readonly VIGNETTE_FADE = 0.55; // seconds to fully fade out
+
   private drag:      DragState | null = null;
   private dragCol    = -1;
   private dragRow    = -1;
@@ -112,6 +116,10 @@ export class GameRenderer {
     for (const event of state.events) this.handleEvent(event, state);
     this.boardView.update(dt);
     this.vfxSystem.update(dt);
+    if (this.vignetteAlpha > 0) {
+      this.vignetteAlpha = Math.max(0, this.vignetteAlpha - dt / GameRenderer.VIGNETTE_FADE);
+      this.drawVignette();
+    }
     this.unitView.sync(state.board, dt);
     this.buildingView.update(dt);
     this.buildingView.sync(state.board);
@@ -145,6 +153,10 @@ export class GameRenderer {
     this.container.addChild(this.hudView.backgroundContainer);  // bottom strip bg, behind hand
     this.container.addChild(this.handView.container);
     this.container.addChild(this.hudView.container);            // HUD foreground + overlays, above hand
+
+    this.vignetteGfx = new PIXI.Graphics();
+    this.vignetteGfx.interactiveChildren = false;
+    this.container.addChild(this.vignetteGfx);                  // topmost — screen-edge flash
   }
 
   // ── Input handling (design-space coords) ─────────────────────────────────
@@ -320,6 +332,10 @@ export class GameRenderer {
         break;
       case 'base_hp_changed':
         this.boardView.playBaseCrackEffect(event.owner, event.hp, event.maxHp);
+        if (event.owner === 0) {
+          this.vignetteAlpha = 1.0;
+          this.drawVignette();
+        }
         break;
       case 'spell_cast':
         if (event.spellType === SpellType.Meteor) {
@@ -331,6 +347,7 @@ export class GameRenderer {
         if (event.owner === 0) { this.cancelDrag(); this.cancelTapSelect(); }
         break;
       case 'card_expired':
+        if (event.owner === 0) this.handView.notifyCardExpired(event.handIndex);
         break;
       case 'game_stats':
         this.pendingStats = event.stats;
@@ -484,6 +501,38 @@ export class GameRenderer {
 
   private overRect(x: number, y: number, r: Rect): boolean {
     return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  }
+
+  // ── Screen-edge vignette flash (base damage feedback) ─────────────────────
+
+  private drawVignette(): void {
+    const g = this.vignetteGfx;
+    g.clear();
+    if (this.vignetteAlpha <= 0) return;
+
+    const W = this.layout.designWidth;
+    const H = this.layout.designHeight;
+    const color = 0xcc0000;
+
+    // Simulate radial vignette with 4 layered border strips.
+    // Each layer is thinner and more opaque, stacking toward the screen edge.
+    const N = 12;
+    const maxW     = 140;
+    const maxAlpha = 0.09;
+
+    g.alpha = this.vignetteAlpha;
+    for (let i = 0; i < N; i++) {
+      // t=0 → innermost (narrow, faint); t=1 → outermost (wide, opaque)
+      const t     = (N - 1 - i) / (N - 1);
+      const w     = Math.round(maxW * (t * 0.7 + 0.3)); // range: 0.3–1.0 × maxW
+      const alpha = maxAlpha * (t * 0.6 + 0.1);         // range: 0.1–0.7 × maxAlpha
+      g.beginFill(color, alpha);
+      g.drawRect(0,     0,     W, w);
+      g.drawRect(0,     H - w, W, w);
+      g.drawRect(0,     0,     w, H);
+      g.drawRect(W - w, 0,     w, H);
+      g.endFill();
+    }
   }
 
   private buildDragGhost(label: string, cost: number, accentColor = 0x2244aa): PIXI.Container {

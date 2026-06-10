@@ -109,11 +109,11 @@ export const CROSSING_INTERVAL_TICKS  = Math.round(TICK_RATE / CROSSING_COLS_PER
 
 export const HAND_SIZE = 6;
 
-/** Auto-refresh countdown: 2 min × 30 ticks/s = 3600 ticks */
-export const CARD_REFRESH_TICKS = 2 * 60 * TICK_RATE; // 3600
+/** Auto-refresh countdown: 30 s × 30 ticks/s = 900 ticks */
+export const CARD_REFRESH_TICKS = 30 * TICK_RATE; // 900
 
-/** Maximum initial stagger offset: 60 s × 30 ticks/s = 1800 ticks */
-export const CARD_REFRESH_INITIAL_OFFSET_MAX = 60 * TICK_RATE; // 1800
+/** Maximum initial stagger offset: 15 s × 30 ticks/s = 450 ticks */
+export const CARD_REFRESH_INITIAL_OFFSET_MAX = 15 * TICK_RATE; // 450
 
 // ─── Base HP ──────────────────────────────────────────────────────────────────
 
