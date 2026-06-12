@@ -395,3 +395,37 @@ app.ts 启动 → initI18n() → 检查 storage 'nw_seen_intro'
 保留"逐段推进 + 跳过"流程，往每段挂 PIXI 容器或 `StickmanRuntime` 动画即可升级为正式引导动画。
 
 > ⚠️ **内容待对齐**：当前 `story.*` 与 `card.*.desc` 的占位文案为"笔记本涂鸦士兵"主题，与 `design/world.md`、`design/characters.md` 的世界观（方家三人试炼：李川/陈守/苏远）不一致，需据设计文档重写。卡牌 `nameKey`（普通兵/盾兵/弓箭兵）已与设定一致。
+
+---
+
+## 12. 测试（Vitest）
+
+### 运行
+
+```bash
+cd code
+npm test          # vitest run，一次性
+npm run test:watch
+```
+
+### 范围与原则
+
+- 只测**纯逻辑内核** `src/game/**`（无 PIXI 依赖）；渲染层不在范围。
+- `vitest.config.ts` 只扫 `test/**/*.test.ts`，与 webpack 构建完全隔离，不进入打包。
+- 测试文件位于 `code/test/`：
+
+| 文件 | 覆盖 |
+|---|---|
+| `math.test.ts` | 定点数截断语义（`toFp`/`mulFp`/`scaleFp` 等）、`Prng` 同 seed 复现 / 跨实例独立 / Fisher-Yates 置换 |
+| `ResourceSystem.test.ts` | 各加速档金币回速、`COIN_CAP` 封顶、基地升级 bonus、`resource_changed` 仅整数变化时发 |
+| `MovementSystem.test.ts` | 纵向推进步长、Crossing 切换、抵达基地造成伤害 + despawn、友军半径碰撞不重叠 + Waiting 滞回 |
+| `CombatSystem.test.ts` | 近战命中、攻击冷却、击杀移除 + 计分、晚期攻击翻倍、箭塔 Chebyshev 横向命中、超射程不打 |
+| `replay-determinism.test.ts` | **黄金回放**：同 seed 两次运行状态指纹结构全等；异 seed 发散；长局活跃度 sanity |
+
+### 确定性 / 回放保障
+
+黄金回放测试是守护"同 seed + 同命令流 ⇒ 逐位一致"这一核心契约的主测试。它用**运行 vs 运行结构比对**而非硬编码数值，因此平衡数值调整不会让它误报。
+
+> **配套修复**：`Unit`/`Building` 原用模块级全局 `nextId`，跨 engine 实例 ID 不复现。新增 `resetUnitIds()`/`resetBuildingIds()`，由 `GameState` 构造函数调用，使每局实体 ID 从固定基址开始 —— replay 可跨进程复现。
+>
+> **ID 命名空间**：**building 从 0 起、unit 从 1000 起**。建筑数量受棋盘格子数（12×18=216）封顶，永远到不了 1000；单位是高频增长方，取上段。两个命名空间无论对局多长都不会冲突。渲染层按事件类型（`unit_spawned` / `building_placed`）分池管理 view，不依赖 ID 区间。

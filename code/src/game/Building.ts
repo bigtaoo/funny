@@ -2,7 +2,19 @@ import { toFp, TICK_RATE } from './math/fixed';
 import { BUILDING_BLUEPRINTS } from './config';
 import { BuildingType, Side, Vec2_fp } from './types';
 
-let nextId = 1000; // start above Unit ID range to avoid accidental collision
+// Buildings are few (capped by board cells, well under 1000) so they take the
+// low id range starting at 0. Units start at 1000, so the namespaces never collide
+// no matter how long the game runs.
+let nextId = 0;
+
+/**
+ * Reset the building id counter. Called once per game (GameState constructor) so that
+ * entity ids are reproducible across engine instances — required for deterministic
+ * replay verification (same seed ⇒ identical id stream).
+ */
+export function resetBuildingIds(): void {
+  nextId = 0;
+}
 
 export class Building {
   readonly id: number;

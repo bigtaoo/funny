@@ -2,7 +2,19 @@ import { fp, FP_SCALE, fromFp, toFp, TICK_RATE, type Fp } from './math/fixed';
 import { UNIT_BLUEPRINTS } from './config';
 import { Side, UnitState, UnitType } from './types';
 
-let nextId = 0;
+// Units are the high-volume entity (continuous spawning), so they take the upper
+// id range starting at 1000. Buildings start at 0 and — capped by board cells —
+// never reach 1000, so the two id namespaces can never collide.
+let nextId = 1000;
+
+/**
+ * Reset the unit id counter. Called once per game (GameState constructor) so that
+ * entity ids are reproducible across engine instances — required for deterministic
+ * replay verification (same seed ⇒ identical id stream).
+ */
+export function resetUnitIds(): void {
+  nextId = 1000;
+}
 
 export class Unit {
   readonly id: number;

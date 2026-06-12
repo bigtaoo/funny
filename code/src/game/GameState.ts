@@ -1,6 +1,8 @@
 import { Board } from './Board';
 import { Prng } from './math/prng';
 import { Player } from './Player';
+import { resetUnitIds } from './Unit';
+import { resetBuildingIds } from './Building';
 import { ActiveSpell, GameEvent, GamePhase, OwnerId, PlayerStats, Side, sideToOwner } from './types';
 
 /** Mutable version of PlayerStats — accumulated throughout the game. */
@@ -53,6 +55,11 @@ export class GameState {
   private _events: GameEvent[] = [];
 
   constructor(seed: number) {
+    // Reset entity id counters so ids are reproducible across engine instances
+    // (deterministic replay). Safe because the client runs one game at a time.
+    resetUnitIds();
+    resetBuildingIds();
+
     // Each player gets separate PRNGs: one for card draws, one for timer stagger offsets.
     const cardPrng0  = new Prng(seed);
     const cardPrng1  = new Prng(seed ^ 0xdeadbeef);

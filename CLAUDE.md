@@ -259,6 +259,7 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 | `src/game/config.ts` | 卡牌自动刷新间隔 2 分钟，游戏节奏过慢 | `CARD_REFRESH_TICKS` 改为 900（30 s）；`CARD_REFRESH_INITIAL_OFFSET_MAX` 改为 450（15 s 错峰） |
 | `src/render/HandView.ts` + `GameRenderer.ts` | 手牌无视觉提示，玩家不知道卡牌何时自动刷新 | 每张牌底部新增 3px 进度条（`bar` Graphics）：>10s 绿色、≤10s 黄色、≤5s 红色；最后 3 秒 sin 波 alpha 脉冲；`card_expired` 事件触发 `notifyCardExpired()` 渲染 250ms 白色淡出闪白（`flash` Graphics）；移除旧 `eraser` 遮罩 |
 | `src/render/GameRenderer.ts` | 己方基地受击时无全局视觉反馈，容易忽视 | `base_hp_changed`（owner=0）触发全屏边缘红色晕影（`vignetteGfx`，12 层渐变矩形边框，宽 42–140px，alpha 叠加模拟径向渐变），0.55s 线性淡出；挂在 container 最顶层不影响输入 |
+| `test/`（新增）+ `Unit.ts`/`Building.ts`/`GameState.ts` | 逻辑内核零自动化测试；且 `Unit`/`Building` 用模块级全局 `nextId`，跨 engine 实例 ID 不可复现，破坏 replay | 引入 **Vitest**（`vitest.config.ts` 仅扫 `test/**`，不进 webpack；`npm test`/`test:watch`），33 用例覆盖 fixed/prng/Resource/Movement/Combat + 同 seed 黄金回放结构全等；新增 `resetUnitIds()`/`resetBuildingIds()`，`GameState` 构造时调用使每局 ID 从固定基址开始；ID 命名空间调整为 **building 从 0、unit 从 1000**（建筑数受棋盘格封顶 <1000，单位高频增长取上段，永不冲突） |
 
 ### 游戏核心模块
 
