@@ -32,108 +32,79 @@
     }
 
     .toolbar {
-      height: 46px;
-      flex: 0 0 auto;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 0 12px;
+      height: 46px; flex: 0 0 auto;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px; padding: 0 12px;
     }
     .toolbar .title { font-weight: 600; color: var(--accent); margin-right: 16px; }
     .toolbar .spacer { flex: 1; }
 
     button {
-      background: var(--surface2);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 6px 12px;
-      font-size: 13px;
-      cursor: pointer;
+      background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 6px 12px; font-size: 13px; cursor: pointer;
     }
     button:hover { border-color: var(--accent); }
     button.primary { background: var(--accent); color: #11111b; border-color: var(--accent); font-weight: 600; }
+    button.danger { background: var(--danger); color: #11111b; border-color: var(--danger); }
     button.tool.active { background: var(--accent); color: #11111b; border-color: var(--accent); font-weight: 600; }
 
     .main { flex: 1 1 auto; display: flex; min-height: 0; }
+
     .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-    .pane.board { flex: 0 0 auto; border-right: 1px solid var(--border); }
-    .pane.json { flex: 1 1 auto; }
     .pane-head {
-      flex: 0 0 auto;
-      padding: 8px 12px;
-      font-size: 12px;
-      color: var(--text-dim);
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
+      flex: 0 0 auto; padding: 8px 12px; font-size: 12px; color: var(--text-dim);
+      background: var(--surface); border-bottom: 1px solid var(--border);
     }
 
+    /* Left column: board */
+    .col-board { flex: 0 0 auto; border-right: 1px solid var(--border); overflow-y: auto; }
     .board-tools {
-      flex: 0 0 auto;
-      display: flex;
-      gap: 6px;
-      padding: 8px 12px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
+      flex: 0 0 auto; display: flex; gap: 6px; padding: 8px 12px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
     }
     .board-tools button.tool { padding: 4px 10px; font-size: 12px; }
-    .board-mount {
-      flex: 1 1 auto;
-      overflow: auto;
-      padding: 12px;
-      display: flex;
-      justify-content: center;
-    }
+    .board-mount { flex: 0 0 auto; padding: 12px; display: flex; justify-content: center; }
     .board-mount canvas { background: #11111b; border-radius: 4px; }
-
     .legend {
-      flex: 0 0 auto;
-      padding: 8px 12px;
-      background: var(--surface);
-      border-top: 1px solid var(--border);
-      font-size: 11px;
-      color: var(--text-dim);
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px 14px;
+      flex: 0 0 auto; padding: 8px 12px; background: var(--surface);
+      border-top: 1px solid var(--border); font-size: 11px; color: var(--text-dim);
+      display: flex; flex-wrap: wrap; gap: 4px 14px;
     }
     .legend i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
 
+    /* Center column: timeline (top) + json (bottom) */
+    .col-center { flex: 1 1 auto; }
+    .timeline-mount { flex: 1 1 auto; overflow: auto; background: #11111b; }
+    .json-wrap { flex: 0 0 auto; height: 180px; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
     textarea {
-      flex: 1 1 auto;
-      background: #11111b;
-      color: var(--text);
-      border: none;
-      padding: 12px;
-      font-family: 'Cascadia Code', 'Consolas', monospace;
-      font-size: 12px;
-      line-height: 1.5;
-      resize: none;
-      outline: none;
-      tab-size: 2;
+      flex: 1 1 auto; background: #11111b; color: var(--text); border: none; padding: 10px;
+      font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 12px; line-height: 1.5;
+      resize: none; outline: none; tab-size: 2;
     }
     .json-bar {
-      flex: 0 0 auto;
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      padding: 8px 12px;
-      background: var(--surface);
-      border-top: 1px solid var(--border);
+      flex: 0 0 auto; display: flex; gap: 8px; align-items: center;
+      padding: 6px 12px; background: var(--surface); border-top: 1px solid var(--border);
     }
     .json-bar .hint { color: var(--text-dim); font-size: 11px; }
 
+    /* Right column: inspector */
+    .col-insp { flex: 0 0 260px; border-left: 1px solid var(--border); overflow-y: auto; }
+    .insp-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .insp-title { font-weight: 600; color: var(--accent); }
+    .insp-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-dim); }
+    .insp-field span { font-size: 11px; }
+    .insp-field input[type=number], .insp-field select {
+      background: #11111b; color: var(--text); border: 1px solid var(--border);
+      border-radius: 5px; padding: 5px 7px; font-size: 13px; width: 100%;
+    }
+    .insp-field input[type=checkbox] { width: 16px; height: 16px; }
+    .hint { color: var(--text-dim); font-size: 11px; line-height: 1.5; }
+
     .status {
-      flex: 0 0 auto;
-      height: 30px;
-      background: var(--surface);
-      border-top: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      padding: 0 12px;
-      font-size: 12px;
+      flex: 0 0 auto; height: 30px; background: var(--surface);
+      border-top: 1px solid var(--border); display: flex; align-items: center;
+      padding: 0 12px; font-size: 12px;
     }
     .status.ok { color: var(--ok); }
     .status.err { color: var(--danger); }
@@ -141,7 +112,7 @@
 </head>
 <body>
   <div class="toolbar">
-    <span class="title">关卡编辑器 <span style="color:var(--text-dim);font-weight:400">P-C 棋盘</span></span>
+    <span class="title">关卡编辑器 <span style="color:var(--text-dim);font-weight:400">P-D 波次时间线</span></span>
     <button id="btn-sample">载入示例 (ch1_lv1)</button>
     <button id="btn-import">导入 .json…</button>
     <span class="spacer"></span>
@@ -149,33 +120,44 @@
   </div>
 
   <div class="main">
-    <div class="pane board">
-      <div class="pane-head">棋盘 — 顶=敌方 (Top) / 底=己方 (Bottom)；点列号开关车道</div>
+    <!-- Left: board -->
+    <div class="pane col-board">
+      <div class="pane-head">棋盘 — 顶=敌方 / 底=己方；点列号开关车道</div>
       <div class="board-tools">
         <span style="color:var(--text-dim);align-self:center">画笔:</span>
         <button class="tool" data-tool="noBuild">不可建造</button>
-        <button class="tool" data-tool="blocked">障碍 (不可通行)</button>
+        <button class="tool" data-tool="blocked">障碍</button>
         <button class="tool" data-tool="erase">擦除</button>
       </div>
       <div class="board-mount" id="board-mount"></div>
       <div class="legend">
         <span><i style="background:#3a3420"></i>基地列</span>
-        <span><i style="background:#1e2c3a"></i>己方建造行</span>
-        <span><i style="background:#243a4e"></i>己方出兵行</span>
-        <span><i style="background:#4e2430"></i>敌方出兵行</span>
-        <span><i style="background:#3a1e26"></i>敌方建造行</span>
+        <span><i style="background:#1e2c3a"></i>己方建造</span>
+        <span><i style="background:#243a4e"></i>己方出兵</span>
+        <span><i style="background:#4e2430"></i>敌方出兵</span>
+        <span><i style="background:#3a1e26"></i>敌方建造</span>
         <span><i style="background:#f9e2af"></i>不可建造</span>
         <span><i style="background:#6c7086"></i>障碍</span>
       </div>
     </div>
 
-    <div class="pane json">
-      <div class="pane-head">关卡 JSON（实时反映编辑；可手改后「应用」）</div>
-      <textarea id="json" spellcheck="false"></textarea>
-      <div class="json-bar">
-        <button id="btn-apply">应用 JSON →</button>
-        <span class="hint">编辑右侧 JSON 后点「应用」回写到棋盘；棋盘操作会刷新此处文本。</span>
+    <!-- Center: timeline + json -->
+    <div class="pane col-center">
+      <div class="pane-head">波次时间线 — 拖动块改时间/车道；右键删除；滚轮平移，Ctrl+滚轮缩放</div>
+      <div class="timeline-mount" id="timeline-mount"></div>
+      <div class="json-wrap">
+        <textarea id="json" spellcheck="false"></textarea>
+        <div class="json-bar">
+          <button id="btn-apply">应用 JSON →</button>
+          <span class="hint">实时反映编辑；手改后「应用」经游戏侧校验回写。</span>
+        </div>
       </div>
+    </div>
+
+    <!-- Right: inspector -->
+    <div class="pane col-insp">
+      <div class="pane-head">波次属性</div>
+      <div class="insp-body" id="inspector"></div>
     </div>
   </div>
 

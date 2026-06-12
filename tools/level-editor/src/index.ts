@@ -3,6 +3,8 @@ import type { LevelDefinition } from '@game/campaign/LevelDefinition';
 import sampleLevel from '@game/campaign/levels/ch1_lv1.json';
 import { EditorState } from './state/EditorState';
 import { BoardPanel } from './board/BoardPanel';
+import { TimelinePanel } from './timeline/TimelinePanel';
+import { InspectorPanel } from './inspector/InspectorPanel';
 
 /**
  * Editor entry / composition root (P-C).
@@ -45,6 +47,8 @@ const initial = parse(sampleLevel)!;
 const state = new EditorState(initial);
 const board = new BoardPanel(state, () => refreshTools());
 $('board-mount').appendChild(board.canvas);
+new TimelinePanel(state, $('timeline-mount'));
+new InspectorPanel(state, $('inspector'));
 
 // ── State → JSON text (re-render on every change) ──
 function refreshJson(): void {

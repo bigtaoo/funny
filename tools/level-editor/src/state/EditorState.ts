@@ -1,4 +1,4 @@
-import type { Cell, LevelDefinition } from '@game/campaign/LevelDefinition';
+import type { Cell, LevelDefinition, WaveEntry } from '@game/campaign/LevelDefinition';
 import { ATTACK_LANES } from '@game/config';
 
 /** Cell-mask paint layers. */
@@ -18,6 +18,9 @@ export type MaskKind = 'blocked' | 'noBuild';
 export class EditorState {
   private listeners = new Set<() => void>();
 
+  /** Index of the selected wave entry (UI state, not serialized). */
+  selectedWave: number | null = null;
+
   constructor(public level: LevelDefinition) {}
 
   /** Subscribe to changes; returns an unsubscribe fn. */
@@ -33,6 +36,47 @@ export class EditorState {
   /** Replace the whole level (e.g. after import) and notify. */
   setLevel(level: LevelDefinition): void {
     this.level = level;
+    this.selectedWave = null;
+    this.emit();
+  }
+
+  // ── Wave entries ─────────────────────────────────────────────────────────────
+
+  get waves(): WaveEntry[] {
+    return this.level.waves.entries;
+  }
+
+  /** Select a wave entry by index (or null to clear), then notify. */
+  selectWave(index: number | null): void {
+    this.selectedWave = index;
+    this.emit();
+  }
+
+  /** Append a new wave entry, select it, and notify. Returns its index. */
+  addWave(entry: WaveEntry): number {
+    this.waves.push(entry);
+    this.selectedWave = this.waves.length - 1;
+    this.emit();
+    return this.selectedWave;
+  }
+
+  /** Patch fields of the wave entry at `index`, normalizing optional fields. */
+  updateWave(index: number, patch: Partial<WaveEntry>): void {
+    const entry = this.waves[index];
+    if (!entry) return;
+    Object.assign(entry, patch);
+    // Normalize: drop default/empty optional fields so JSON stays clean.
+    if (entry.spacingTicks === 0 || entry.spacingTicks === undefined) delete entry.spacingTicks;
+    if (entry.isBoss === false || entry.isBoss === undefined) delete entry.isBoss;
+    this.emit();
+  }
+
+  /** Remove the wave entry at `index`, fixing up the selection, and notify. */
+  removeWave(index: number): void {
+    if (index < 0 || index >= this.waves.length) return;
+    this.waves.splice(index, 1);
+    if (this.selectedWave === index) this.selectedWave = null;
+    else if (this.selectedWave !== null && this.selectedWave > index) this.selectedWave--;
     this.emit();
   }
 
