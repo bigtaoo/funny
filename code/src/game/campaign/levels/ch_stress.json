@@ -1,0 +1,160 @@
+{
+  "id": "ch_stress",
+  "chapter": 0,
+  "seed": 65551,
+  "objective": {
+    "kind": "survive"
+  },
+  "startCoins": 200,
+  "waves": {
+    "entries": [
+      {
+        "atTick": 30,
+        "unitType": "swordsman",
+        "col": 0,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 180,
+        "unitType": "swordsman",
+        "col": 0,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 33,
+        "unitType": "swordsman",
+        "col": 1,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 183,
+        "unitType": "swordsman",
+        "col": 1,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 36,
+        "unitType": "swordsman",
+        "col": 2,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 186,
+        "unitType": "swordsman",
+        "col": 2,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 39,
+        "unitType": "swordsman",
+        "col": 3,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 189,
+        "unitType": "swordsman",
+        "col": 3,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 42,
+        "unitType": "swordsman",
+        "col": 4,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 192,
+        "unitType": "swordsman",
+        "col": 4,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 45,
+        "unitType": "swordsman",
+        "col": 7,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 195,
+        "unitType": "swordsman",
+        "col": 7,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 48,
+        "unitType": "swordsman",
+        "col": 8,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 198,
+        "unitType": "swordsman",
+        "col": 8,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 51,
+        "unitType": "swordsman",
+        "col": 9,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 201,
+        "unitType": "swordsman",
+        "col": 9,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 54,
+        "unitType": "swordsman",
+        "col": 10,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 204,
+        "unitType": "swordsman",
+        "col": 10,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 57,
+        "unitType": "swordsman",
+        "col": 11,
+        "count": 12,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 207,
+        "unitType": "swordsman",
+        "col": 11,
+        "count": 12,
+        "spacingTicks": 8
+      }
+    ]
+  },
+  "rewards": {
+    "starThresholds": [
+      1,
+      1,
+      1
+    ]
+  }
+}

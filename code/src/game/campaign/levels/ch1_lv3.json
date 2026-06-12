@@ -1,0 +1,133 @@
+{
+  "id": "ch1_lv3",
+  "chapter": 1,
+  "seed": 65539,
+  "objective": {
+    "kind": "survive"
+  },
+  "startCoins": 6,
+  "board": {
+    "cellMask": {
+      "noBuild": [
+        {
+          "col": 3,
+          "row": 0
+        },
+        {
+          "col": 4,
+          "row": 0
+        },
+        {
+          "col": 7,
+          "row": 0
+        },
+        {
+          "col": 8,
+          "row": 0
+        }
+      ]
+    }
+  },
+  "waves": {
+    "entries": [
+      {
+        "atTick": 90,
+        "unitType": "swordsman",
+        "col": 4,
+        "count": 4,
+        "spacingTicks": 21
+      },
+      {
+        "atTick": 90,
+        "unitType": "swordsman",
+        "col": 7,
+        "count": 4,
+        "spacingTicks": 21
+      },
+      {
+        "atTick": 360,
+        "unitType": "swordsman",
+        "col": 3,
+        "count": 4,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 360,
+        "unitType": "archer",
+        "col": 8,
+        "count": 3,
+        "spacingTicks": 42
+      },
+      {
+        "atTick": 660,
+        "unitType": "swordsman",
+        "col": 2,
+        "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 660,
+        "unitType": "swordsman",
+        "col": 9,
+        "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 660,
+        "unitType": "guardian",
+        "col": 4,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 1020,
+        "unitType": "swordsman",
+        "col": 7,
+        "count": 5,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1020,
+        "unitType": "archer",
+        "col": 3,
+        "count": 3,
+        "spacingTicks": 36
+      },
+      {
+        "atTick": 1320,
+        "unitType": "guardian",
+        "col": 4,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 1320,
+        "unitType": "guardian",
+        "col": 7,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 1350,
+        "unitType": "swordsman",
+        "col": 3,
+        "count": 4,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1350,
+        "unitType": "swordsman",
+        "col": 8,
+        "count": 4,
+        "spacingTicks": 15
+      }
+    ]
+  },
+  "rewards": {
+    "starThresholds": [
+      50,
+      80,
+      100
+    ]
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "id": "ch1_lv1",
+  "chapter": 1,
+  "seed": 65537,
+  "objective": {
+    "kind": "survive"
+  },
+  "waves": {
+    "entries": [
+      {
+        "atTick": 60,
+        "unitType": "swordsman",
+        "col": 3,
+        "count": 2,
+        "spacingTicks": 24
+      },
+      {
+        "atTick": 60,
+        "unitType": "swordsman",
+        "col": 8,
+        "count": 2,
+        "spacingTicks": 24
+      },
+      {
+        "atTick": 240,
+        "unitType": "swordsman",
+        "col": 2,
+        "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 240,
+        "unitType": "archer",
+        "col": 9,
+        "count": 2,
+        "spacingTicks": 39
+      },
+      {
+        "atTick": 480,
+        "unitType": "swordsman",
+        "col": 1,
+        "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 480,
+        "unitType": "swordsman",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 480,
+        "unitType": "archer",
+        "col": 10,
+        "count": 2,
+        "spacingTicks": 36
+      },
+      {
+        "atTick": 780,
+        "unitType": "guardian",
+        "col": 8,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 810,
+        "unitType": "swordsman",
+        "col": 7,
+        "count": 4,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1080,
+        "unitType": "swordsman",
+        "col": 0,
+        "count": 3,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1080,
+        "unitType": "swordsman",
+        "col": 11,
+        "count": 3,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1080,
+        "unitType": "archer",
+        "col": 3,
+        "count": 2,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 1380,
+        "unitType": "guardian",
+        "col": 3,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 1380,
+        "unitType": "guardian",
+        "col": 8,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 1410,
+        "unitType": "swordsman",
+        "col": 2,
+        "count": 3,
+        "spacingTicks": 12
+      },
+      {
+        "atTick": 1410,
+        "unitType": "swordsman",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 12
+      },
+      {
+        "atTick": 1410,
+        "unitType": "swordsman",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 12
+      },
+      {
+        "atTick": 1410,
+        "unitType": "swordsman",
+        "col": 9,
+        "count": 3,
+        "spacingTicks": 12
+      }
+    ]
+  },
+  "rewards": {
+    "starThresholds": [
+      50,
+      80,
+      100
+    ]
+  }
+}

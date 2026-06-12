@@ -1,0 +1,105 @@
+{
+  "id": "ch1_lv2",
+  "chapter": 1,
+  "seed": 65538,
+  "objective": {
+    "kind": "timed_defense",
+    "durationTicks": 1650
+  },
+  "startCoins": 8,
+  "waves": {
+    "entries": [
+      {
+        "atTick": 30,
+        "unitType": "swordsman",
+        "col": 4,
+        "count": 6,
+        "spacingTicks": 36
+      },
+      {
+        "atTick": 30,
+        "unitType": "swordsman",
+        "col": 7,
+        "count": 6,
+        "spacingTicks": 36
+      },
+      {
+        "atTick": 300,
+        "unitType": "archer",
+        "col": 3,
+        "count": 3,
+        "spacingTicks": 60
+      },
+      {
+        "atTick": 300,
+        "unitType": "archer",
+        "col": 8,
+        "count": 3,
+        "spacingTicks": 60
+      },
+      {
+        "atTick": 600,
+        "unitType": "swordsman",
+        "col": 3,
+        "count": 8,
+        "spacingTicks": 27
+      },
+      {
+        "atTick": 600,
+        "unitType": "swordsman",
+        "col": 8,
+        "count": 8,
+        "spacingTicks": 27
+      },
+      {
+        "atTick": 900,
+        "unitType": "guardian",
+        "col": 4,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 900,
+        "unitType": "guardian",
+        "col": 7,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 1200,
+        "unitType": "swordsman",
+        "col": 4,
+        "count": 10,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 1200,
+        "unitType": "swordsman",
+        "col": 7,
+        "count": 10,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 1320,
+        "unitType": "archer",
+        "col": 3,
+        "count": 4,
+        "spacingTicks": 45
+      },
+      {
+        "atTick": 1320,
+        "unitType": "archer",
+        "col": 8,
+        "count": 4,
+        "spacingTicks": 45
+      }
+    ]
+  },
+  "rewards": {
+    "starThresholds": [
+      40,
+      70,
+      100
+    ]
+  }
+}
