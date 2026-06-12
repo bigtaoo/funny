@@ -11,7 +11,7 @@
 | 2 | 高 | 增强 AI（经济意识 / 防守用陨石 / 威胁评估 / 升级规划） | ✅ 完成（威胁评估 + 三段式决策 + 难度分级 + 5 测试） |
 | 3 | 中 | 同步 README（刷新时间 / 端口 / 兵种译名 / 目录结构） | ✅ 完成 |
 | 4 | 中 | 完成 Guardian / Archer 骨骼动画接入，去掉占位圆 | ☐ 待办 |
-| 5 | 低 | 重构 `GameEngine.processCommand` 重复分支为 helper | ☐ 待办 |
+| 5 | 低 | 重构 `GameEngine.processCommand` 重复分支为 helper | ✅ 完成（抽 `consumeCardSlot` + 闭包 effect，事件顺序不变） |
 | 6 | 低 | 性能：减少 `MovementSystem` 每帧全量拷贝、线性扫描 | ☐ 待办 |
 
 ---
@@ -92,6 +92,13 @@
 
 ## 5. 重构 processCommand
 - 抽 `consumeCardSlot(player, owner, handIndex)` 收敛六连重复（spend/stats/play/event/draw/resource）。
+
+### ✅ 完成记录（2026-06-12）
+
+- 抽 `GameEngine.consumeCardSlot(player, owner, handIndex, card, effect)`：统一做「扣金币 → 记 goldSpent → 清手牌槽 → 发 `card_played` → 跑卡牌专属 `effect()` → 补牌 → 发 `resource_changed`」。
+- Unit / Building / Haste / Meteor 四个分支只保留各自的**校验**（车道 / 建筑占位 / 陨石坐标）和**专属效果闭包**，重复样板消除（约 -50 行）。
+- **事件顺序逐字不变**（spend → card_played → effect 事件 → card_drawn → resource_changed），黄金回放确定性测试通过；闭包内用 `const unitType/buildingType/col/row` 捕获已收窄的值避免 TS 重新放宽类型。
+- 全套 38 测试通过，`tsc --noEmit` 干净。
 
 ## 6. 性能
 - `MovementSystem.tick` 减少 `Array.from` 双重拷贝。

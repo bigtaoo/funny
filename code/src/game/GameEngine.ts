@@ -25,6 +25,7 @@ import { MovementSystem } from './systems/MovementSystem';
 import { ResourceSystem } from './systems/ResourceSystem';
 import { SpellSystem } from './systems/SpellSystem';
 import {
+  CardDefinition,
   CardType,
   GameConfig,
   GameEvent,
@@ -217,37 +218,32 @@ class GameEngineImpl implements IGameEngine {
         const col = cmd.col;
         if (col === undefined || !(ATTACK_LANES as readonly number[]).includes(col)) return;
 
-        const bp = UNIT_BLUEPRINTS[card.unitType];
-        player.spendCoins(card.cost);
-        this.state.stats[cmd.owner].goldSpent += card.cost;
-        player.hand.play(cmd.handIndex);
-        this.state.pushEvent({ type: 'card_played', owner: cmd.owner, handIndex: cmd.handIndex });
-
-        const spawnRow = side === Side.Bottom ? BOTTOM_SPAWN_ROW : TOP_SPAWN_ROW;
-        for (let i = 0; i < bp.spawnCount; i++) {
-          const unit = new Unit(card.unitType, side, col, spawnRow);
-          this.state.board.addUnit(unit);
-          this.state.stats[cmd.owner].unitsSent++;
-          this.state.pushEvent({
-            type:      'unit_spawned',
-            unitId:    unit.id,
-            owner:     cmd.owner,
-            unitType:  unit.unitType,
-            col:       unit.col,
-            y_fp:      unit.y_fp,
-            radius_fp: unit.radius_fp,
-          });
-          this.state.pushEvent({
-            type:     'unit_move_start',
-            unitId:   unit.id,
-            from:     { col: unit.col, y_fp: unit.y_fp },
-            to:       { col: unit.col, y_fp: side === Side.Bottom ? toFp(TOP_BUILDING_ROW) : toFp(BOTTOM_BUILDING_ROW) },
-            speed_fp: unit.speed_fp,
-          });
-        }
-
-        this.drawIntoSlot(player, cmd.owner, cmd.handIndex, CARD_REFRESH_TICKS);
-        this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, coins: player.coins });
+        const unitType = card.unitType;
+        const bp = UNIT_BLUEPRINTS[unitType];
+        this.consumeCardSlot(player, cmd.owner, cmd.handIndex, card, () => {
+          const spawnRow = side === Side.Bottom ? BOTTOM_SPAWN_ROW : TOP_SPAWN_ROW;
+          for (let i = 0; i < bp.spawnCount; i++) {
+            const unit = new Unit(unitType, side, col, spawnRow);
+            this.state.board.addUnit(unit);
+            this.state.stats[cmd.owner].unitsSent++;
+            this.state.pushEvent({
+              type:      'unit_spawned',
+              unitId:    unit.id,
+              owner:     cmd.owner,
+              unitType:  unit.unitType,
+              col:       unit.col,
+              y_fp:      unit.y_fp,
+              radius_fp: unit.radius_fp,
+            });
+            this.state.pushEvent({
+              type:     'unit_move_start',
+              unitId:   unit.id,
+              from:     { col: unit.col, y_fp: unit.y_fp },
+              to:       { col: unit.col, y_fp: side === Side.Bottom ? toFp(TOP_BUILDING_ROW) : toFp(BOTTOM_BUILDING_ROW) },
+              speed_fp: unit.speed_fp,
+            });
+          }
+        });
         return;
       }
 
@@ -259,52 +255,66 @@ class GameEngineImpl implements IGameEngine {
         const buildingRow = side === Side.Bottom ? BOTTOM_BUILDING_ROW : TOP_BUILDING_ROW;
         if (this.state.board.hasBuildingAt(col, buildingRow)) return;
 
-        player.spendCoins(card.cost);
-        this.state.stats[cmd.owner].goldSpent += card.cost;
-        player.hand.play(cmd.handIndex);
-        this.state.pushEvent({ type: 'card_played', owner: cmd.owner, handIndex: cmd.handIndex });
-
-        const building = new Building(card.buildingType, side, col, buildingRow);
-        this.state.board.addBuilding(building);
-        this.state.pushEvent({
-          type:         'building_placed',
-          buildingId:   building.id,
-          owner:        cmd.owner,
-          buildingType: building.buildingType,
-          col:          building.col,
-          row:          building.row,
+        const buildingType = card.buildingType;
+        this.consumeCardSlot(player, cmd.owner, cmd.handIndex, card, () => {
+          const building = new Building(buildingType, side, col, buildingRow);
+          this.state.board.addBuilding(building);
+          this.state.pushEvent({
+            type:         'building_placed',
+            buildingId:   building.id,
+            owner:        cmd.owner,
+            buildingType: building.buildingType,
+            col:          building.col,
+            row:          building.row,
+          });
         });
-
-        this.drawIntoSlot(player, cmd.owner, cmd.handIndex, CARD_REFRESH_TICKS);
-        this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, coins: player.coins });
         return;
       }
 
       // ── Spell card ────────────────────────────────────────────────────────
       if (card.cardType === CardType.Spell && card.spellType) {
         if (card.spellType === SpellType.Haste) {
-          player.spendCoins(card.cost);
-          this.state.stats[cmd.owner].goldSpent += card.cost;
-          player.hand.play(cmd.handIndex);
-          this.state.pushEvent({ type: 'card_played', owner: cmd.owner, handIndex: cmd.handIndex });
-          this.spell.castHaste(side, this.state);
-          this.drawIntoSlot(player, cmd.owner, cmd.handIndex, CARD_REFRESH_TICKS);
-          this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, coins: player.coins });
+          this.consumeCardSlot(player, cmd.owner, cmd.handIndex, card, () => {
+            this.spell.castHaste(side, this.state);
+          });
           return;
         }
 
         if (card.spellType === SpellType.Meteor && cmd.col !== undefined && cmd.row !== undefined) {
-          player.spendCoins(card.cost);
-          this.state.stats[cmd.owner].goldSpent += card.cost;
-          player.hand.play(cmd.handIndex);
-          this.state.pushEvent({ type: 'card_played', owner: cmd.owner, handIndex: cmd.handIndex });
-          this.spell.castMeteor(side, cmd.col, cmd.row, this.state);
-          this.drawIntoSlot(player, cmd.owner, cmd.handIndex, CARD_REFRESH_TICKS);
-          this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, coins: player.coins });
+          const col = cmd.col;
+          const row = cmd.row;
+          this.consumeCardSlot(player, cmd.owner, cmd.handIndex, card, () => {
+            this.spell.castMeteor(side, col, row, this.state);
+          });
           return;
         }
       }
     }
+  }
+
+  /**
+   * Shared bookkeeping for every successful card play: spend the coins, record
+   * gold spent, clear the hand slot, emit `card_played`, run the card-specific
+   * `effect`, then draw a replacement and emit `resource_changed`.
+   *
+   * Event order (spend → card_played → effect events → card_drawn →
+   * resource_changed) is identical to the previous inline branches, so the
+   * golden-replay determinism contract is preserved.
+   */
+  private consumeCardSlot(
+    player: Player,
+    owner: OwnerId,
+    handIndex: number,
+    card: CardDefinition,
+    effect: () => void,
+  ): void {
+    player.spendCoins(card.cost);
+    this.state.stats[owner].goldSpent += card.cost;
+    player.hand.play(handIndex);
+    this.state.pushEvent({ type: 'card_played', owner, handIndex });
+    effect();
+    this.drawIntoSlot(player, owner, handIndex, CARD_REFRESH_TICKS);
+    this.state.pushEvent({ type: 'resource_changed', owner, coins: player.coins });
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

@@ -261,6 +261,7 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 | `src/render/GameRenderer.ts` | 己方基地受击时无全局视觉反馈，容易忽视 | `base_hp_changed`（owner=0）触发全屏边缘红色晕影（`vignetteGfx`，12 层渐变矩形边框，宽 42–140px，alpha 叠加模拟径向渐变），0.55s 线性淡出；挂在 container 最顶层不影响输入 |
 | `test/`（新增）+ `Unit.ts`/`Building.ts`/`GameState.ts` | 逻辑内核零自动化测试；且 `Unit`/`Building` 用模块级全局 `nextId`，跨 engine 实例 ID 不可复现，破坏 replay | 引入 **Vitest**（`vitest.config.ts` 仅扫 `test/**`，不进 webpack；`npm test`/`test:watch`），33 用例覆盖 fixed/prng/Resource/Movement/Combat + 同 seed 黄金回放结构全等；新增 `resetUnitIds()`/`resetBuildingIds()`，`GameState` 构造时调用使每局 ID 从固定基址开始；ID 命名空间调整为 **building 从 0、unit 从 1000**（建筑数受棋盘格封顶 <1000，单位高频增长取上段，永不冲突） |
 | `src/game/systems/AISystem.ts` + `test/AISystem.test.ts`（新增） | AI"无脑出第一张可用牌"，无经济意识 / 防守 / 威胁评估 | 重写为**威胁驱动三段式决策**：①紧急防守（陨石清近基地敌群 → 威胁最高车道放箭塔 → Guardian 肉盾）②升级规划（`upgradeReachable` 守卫，`nextUpgradeCost ≤ COIN_CAP` 才升级/攒钱）③经济进攻（按偏好挑性价比牌推最弱车道、安全车道补兵营、大团进攻陨石）；`computeThreatByCol` 按敌军接近 AI 基地程度加权；新增难度分级 `'easy'\|'medium'\|'hard'`（默认 medium）；仅依赖 state + 注入 Prng，黄金回放确定性不变；+5 测试（共 38 全绿）。配套把 `COIN_CAP` 30→**300**（≥ 首档升级费 50），让基地升级对人机双方均可达（此前 `[50,100,200]` 全 > 30 永远升不了级）；`upgradeReachable` 守卫保留为防御性代码 |
+| `src/game/GameEngine.ts` | `processCommand` 的 Unit/Building/Haste/Meteor 四个分支各自重复「扣币/记账/清槽/发 card_played/补牌/发 resource_changed」样板 | 抽 `consumeCardSlot(player, owner, handIndex, card, effect)` 收敛重复，各分支只留校验 + 专属效果闭包（约 -50 行）；事件顺序逐字不变，黄金回放确定性测试通过 |
 
 ### 游戏核心模块
 
