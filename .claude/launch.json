@@ -12,6 +12,12 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "cd /d C:\\Users\\TaoWang\\Documents\\funny\\code && npm run start"],
       "port": 9090
+    },
+    {
+      "name": "level-editor",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Users\\TaoWang\\Documents\\funny\\tools\\level-editor && npm run start"],
+      "port": 9092
     }
   ]
 }
