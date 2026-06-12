@@ -247,7 +247,16 @@ npm run build   # 生产构建
 - **四区布局**：棋盘格（左，绘 blocked/noBuild + activeLanes）/ 波次时间线（中上，横=秒/纵=10 攻击车道，拖块改 atTick/col、右键删、滚轮平移、Ctrl+滚轮缩放）/ 实时 JSON（中下，双向）/ 右栏「关卡 / 波次」双 Tab Inspector。
 - **中心状态** `EditorState`：持有正在编辑的 `LevelDefinition` + 变更广播；所有 mutator **规范化**（删空数组/对象、留空可选字段从 JSON 删除），保证导出 JSON 与手写关卡逐字等价。
 - **源文件**：`src/state/EditorState.ts`（状态 + 广播）、`src/board/BoardPanel.ts`（棋盘 Canvas）、`src/timeline/TimelinePanel.ts`（时间线 Canvas）、`src/inspector/InspectorPanel.ts`（波次表单）、`src/inspector/LevelFormPanel.ts`（关卡表单）、`src/units.ts`（单位显示元数据）、`src/index.ts`（组合根 + IO）。
+- **可调面板**：三个分隔条（`.vsplit` / `.hsplit`，`index.ts` 的 `dragSplit`）——棋盘列↔中栏（拖宽棋盘，画布按宽度选格子尺寸 16–56px 并放大，clamp 260–820px）、中栏↔Inspector（200–560px）、时间线↔JSON（纵向，调 JSON 高度 90–520px）；棋盘分隔条拖动时直接调 `board.resize()`，另加 `window.resize` 监听（不仅依赖 `ResizeObserver`）。
+- **棋盘画布动态尺寸**：`BoardPanel` 的格子尺寸 `cell`/`header` 是实例状态（非模块常量），按 mount 宽度选取，**backing store 与显示尺寸严格 1:1**，点击坐标始终精确命中格子（与 `TimelinePanel` 同款 `ResizeObserver` 模式）。
 - **已知局限（待修）**：截图工具在预览里抓帧超时（不影响功能）；初始视口极窄时时间线 canvas 退到最小宽度，需 resize 后重载。
+
+### 已知修复（2026-06）
+
+| 文件 | 问题 | 修复 |
+|---|---|---|
+| `src/board/BoardPanel.ts` | 棋盘点击命中的格子与点击位置不符：`CELL`/`HEADER` 是模块级常量、画布固定 312px 渲染，画布显示尺寸一旦与内部分辨率不一致（DPI/缩放/面板可调宽后）`getBoundingClientRect` 映射就偏 | cell/header 改为实例状态，画布按面板宽度动态选格子尺寸（16–56px），backing store 与显示尺寸严格 1:1；`resize()` 改 public 供分隔条同步调用；顺手删 `drawNoBuild` 中一段无 `stroke` 的死代码 hatch 循环 |
+| `public/index.html` + `src/index.ts` | 三列宽度写死、无分隔条，棋盘 / JSON 窗口无法拖动调整大小 | 加 3 个可拖拽分隔条（`dragSplit`）：棋盘列↔中栏 / 中栏↔Inspector / 时间线↔JSON；棋盘分隔条拖动直接调 `board.resize()` + `window.resize` 监听，纯布局改动不触碰 `EditorState` |
 
 ## 游戏主代码（code/）
 

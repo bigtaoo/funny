@@ -51,6 +51,11 @@
 
     .main { flex: 1 1 auto; display: flex; min-height: 0; }
 
+    /* Drag handles between columns / panes */
+    .vsplit { flex: 0 0 6px; cursor: col-resize; background: var(--border); align-self: stretch; }
+    .hsplit { flex: 0 0 6px; cursor: row-resize; background: var(--border); }
+    .vsplit:hover, .hsplit:hover { background: var(--accent); }
+
     .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     .pane-head {
       flex: 0 0 auto; padding: 8px 12px; font-size: 12px; color: var(--text-dim);
@@ -58,7 +63,7 @@
     }
 
     /* Left column: board */
-    .col-board { flex: 0 0 auto; border-right: 1px solid var(--border); overflow-y: auto; }
+    .col-board { flex: 0 0 360px; width: 360px; border-right: 1px solid var(--border); overflow: auto; }
     .board-tools {
       flex: 0 0 auto; display: flex; gap: 6px; padding: 8px 12px;
       background: var(--surface); border-bottom: 1px solid var(--border);
@@ -127,7 +132,7 @@
 
   <div class="main">
     <!-- Left: board -->
-    <div class="pane col-board">
+    <div class="pane col-board" id="col-board">
       <div class="pane-head">棋盘 — 顶=敌方 / 底=己方；点列号开关车道</div>
       <div class="board-tools">
         <span style="color:var(--text-dim);align-self:center">画笔:</span>
@@ -147,11 +152,14 @@
       </div>
     </div>
 
+    <div class="vsplit" id="split-board"></div>
+
     <!-- Center: timeline + json -->
     <div class="pane col-center">
       <div class="pane-head">波次时间线 — 拖动块改时间/车道；右键删除；滚轮平移，Ctrl+滚轮缩放</div>
       <div class="timeline-mount" id="timeline-mount"></div>
-      <div class="json-wrap">
+      <div class="hsplit" id="split-json"></div>
+      <div class="json-wrap" id="json-wrap">
         <textarea id="json" spellcheck="false"></textarea>
         <div class="json-bar">
           <button id="btn-apply">应用 JSON →</button>
@@ -160,8 +168,10 @@
       </div>
     </div>
 
+    <div class="vsplit" id="split-insp"></div>
+
     <!-- Right: tabbed inspector (level form / wave inspector) -->
-    <div class="pane col-insp">
+    <div class="pane col-insp" id="col-insp">
       <div class="insp-tabs">
         <button class="insp-tab active" data-tab="level">关卡</button>
         <button class="insp-tab" data-tab="wave">波次</button>

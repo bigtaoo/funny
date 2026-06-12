@@ -106,6 +106,7 @@
 - 底图分区着色：攻击车道 / 基地列（5,6）/ 双方建造行 / 出生行 用不同底色区分，一眼看清布局语义。
 - 交互：点击/拖拽涂格 → 在 `blocked` / `noBuild` 之间切换（工具按钮选当前画笔）；整列开关 → `activeLanes`。
 - 与时间线联动：选中某车道时高亮，方便对照该列的出兵。
+- **动态尺寸 + 命中精度**：格子尺寸 `cell`/`header` 是 `BoardPanel` 的实例状态（**非模块常量**），按 mount 宽度在 16–56px 间选取；画布 backing store 与显示尺寸严格 **1:1**，所以无论面板拖多宽、DPI/缩放如何，点击坐标都精确命中格子（与 `TimelinePanel` 同款 `ResizeObserver` 模式 + 分隔条同步调 `board.resize()`）。
 
 ### 6.2 波次时间线（核心）
 
@@ -130,6 +131,12 @@
 - 编辑器 webpack `resolve` 加一条指向 `code/src/game/campaign/`（及 `config.ts` 棋盘常量、`types.ts` 的 `UnitType`、卡牌定义）的路径别名。
 - 直接 import：`LevelDefinition` 类型、`parseLevelDefinition`、`UnitType`、棋盘常量、卡牌列表。
 - 这些都是**纯数据 / 纯函数**（无 PIXI、无 DOM 依赖），跨项目 import 安全。若构建出现耦合问题，回退方案：把这批纯数据抽到一个共享子目录两边都 import（不在编辑器里手抄）。
+
+### 6.6 可调面板布局
+
+- 四区之间有 3 个可拖拽分隔条（`index.ts` 的 `dragSplit`，CSS `.vsplit` / `.hsplit`）：**棋盘列↔中栏**（拖宽棋盘，clamp 260–820px）、**中栏↔Inspector**（200–560px）、**时间线↔JSON**（纵向，调 JSON 高度 90–520px）。
+- 棋盘画布随其列宽放大缩小（见 §6.1 动态尺寸）：分隔条拖动时直接调 `board.resize()`，并挂 `window.resize` 监听，不仅依赖 `ResizeObserver`（headless 预览里 rAF/RO 投递会被节流）。
+- 纯布局改动，**不触碰 `EditorState`**，导出 JSON 不受影响。
 
 ---
 

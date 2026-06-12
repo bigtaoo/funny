@@ -46,8 +46,7 @@ function parse(raw: unknown): LevelDefinition | null {
 
 const initial = parse(sampleLevel)!;
 const state = new EditorState(initial);
-const board = new BoardPanel(state, () => refreshTools());
-$('board-mount').appendChild(board.canvas);
+const board = new BoardPanel(state, $('board-mount'), () => refreshTools());
 new TimelinePanel(state, $('timeline-mount'));
 new InspectorPanel(state, $('inspector'));
 new LevelFormPanel(state, $('level-form'));
@@ -188,5 +187,55 @@ async function exportJson(): Promise<void> {
   URL.revokeObjectURL(url);
   setStatus(`✓ 已下载 ${fileName}`, 'ok');
 }
+
+// ── Resizable panels ─────────────────────────────────────────────────────────
+// Drag the vertical bars to widen the board / inspector columns, the horizontal
+// bar to retune the timeline-vs-JSON split. The board canvas auto-refits via its
+// own ResizeObserver; the timeline likewise. Pure layout — no level data changes.
+function dragSplit(
+  splitter: HTMLElement,
+  target: HTMLElement,
+  axis: 'x' | 'y',
+  dir: 1 | -1,
+  min: number,
+  max: number,
+  onResize?: () => void,
+): void {
+  splitter.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const startPos = axis === 'x' ? e.clientX : e.clientY;
+    const startSize = axis === 'x' ? target.offsetWidth : target.offsetHeight;
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = axis === 'x' ? 'col-resize' : 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev: MouseEvent): void => {
+      const pos = axis === 'x' ? ev.clientX : ev.clientY;
+      const next = Math.max(min, Math.min(max, startSize + dir * (pos - startPos)));
+      if (axis === 'x') {
+        target.style.flex = `0 0 ${next}px`;
+        target.style.width = `${next}px`;
+      } else {
+        target.style.flex = `0 0 ${next}px`;
+        target.style.height = `${next}px`;
+      }
+      onResize?.();
+    };
+    const onUp = (): void => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
+}
+
+dragSplit($('split-board'), $<HTMLElement>('col-board'), 'x', 1, 260, 820, () => board.resize());
+dragSplit($('split-insp'), $<HTMLElement>('col-insp'), 'x', -1, 200, 560);
+dragSplit($('split-json'), $<HTMLElement>('json-wrap'), 'y', -1, 90, 520);
+window.addEventListener('resize', () => board.resize());
 
 setStatus('就绪 — 载入示例 ch1_lv1');
