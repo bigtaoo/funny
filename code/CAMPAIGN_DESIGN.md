@@ -92,11 +92,27 @@
 | 特性 | 实现 | 引擎改动 |
 |---|---|---|
 | 重甲（抗箭）/ 快攻 / 高血精英 / 海量小兵 | 新增 `UnitType` + `UNIT_BLUEPRINTS` 条目（仅 PvE 池） | 小：扩 enum + 蓝图 |
+
+> **已实现（2026-06）**：`UnitType.Ironclad`（重甲 hp260/spd0.5/radius520，抗箭逼陨石/近战）、`UnitType.Runner`（疾行 hp26/spd1.9/radius250，小半径真正成团）已落地——纯加 enum + 蓝图 + 渲染色 + 编辑器调色板 META，**无 `CardDefinition` 故永不进 PvP 池**（公平硬墙不破）。前三关已按 §4.4a 原则重写。
 | 飞行（只有某些塔能打） | `UnitBlueprint.flying` + `Building.canTargetFlying` | 中：`CombatSystem` 寻敌过滤 |
 | 死亡分裂 | `UnitBlueprint.onDeathSpawn?: { type, count }` | 中：`CombatSystem` 死亡钩子（用注入 Prng 定坐标） |
 | 带盾 / 治疗 / buff 光环 | 后续扩展，预留 `traits: string[]` | 中–大：按需 |
 
 > 怪种组合 + 克制是每关「不一样」的主力来源，**单这一项就能撑几十关新鲜感**。所有随机必须走注入 `Prng`（确定性约束，见 §9）。
+
+### 4.4a 关卡难度设计原则（2026-06 实战发现，写关卡前必读）
+
+车道引擎有**碰撞排队**：同列单位单行排队，往一列堆 `count` 不增加瞬时压力、只拉长队伍（防守逐个点掉队首）。因此：
+
+> **压力 = 宽度（多列同 tick 齐射）× 混编质量，不是单列纵深。**
+
+三条可立即用、零引擎改动的难度杠杆：
+
+1. **宽度**：同一 `atTick` 跨多列出兵，制造 N 个同时到达的「队首」，超出玩家用有限建筑覆盖的能力（单位只在本列前方寻敌，箭塔才是 Chebyshev 全向，故宽攻迫使分散布防）。
+2. **混编**：`CombatSystem.findTarget` **不受 Moving/Waiting 状态门控**，只按同列前方 `range` 扫描——远程兵排在肉盾（重甲/守卫）身后，只要敌人进它射程就能越过肉盾开火。坦克前 + 弓箭后 = 队伍本身变威胁，而非送菜。
+3. **密度**：小半径单位（疾行 radius 250 = 0.5 格）同列能塞 ~2× 密，把「单行排队」变成真正成团的兵海。
+
+**当前真正接入引擎的关卡旋钮只有 `noBuild` + `startCoins`**（`GameEngine` line ~89）。`board.blocked`（阻挡移动）、`activeLanes`、`hazards`、`crossWaypoints`、`leak_limit` objective **均未实现**，`levelSchema` 只 pass-through 不消费——**勿在关卡里依赖它们**。要做 chokepoint / 变道 / 机关需先补 `Board`（blocked 移动阻挡）、`MovementSystem`（crossWaypoints）、`HazardSystem`（§4.5）、`checkWinCondition`（§4.6）。
 
 ### 4.5 环境机关 / 关卡修饰符（对应保卫萝卜的魔法球 / 天气 / 机关）
 

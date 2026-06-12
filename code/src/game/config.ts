@@ -164,6 +164,33 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     spawnCount: 1,
     radius_fp: 350,       // diameter 700fp = 0.7 格
   },
+  // ── PvE-only enemy types (no card → never enter the PvP pool) ────────────────
+  // Ironclad: anti-arrow damage sponge. Arrow tower (10 dps) needs ~26 s to kill
+  // one, so it monopolizes a defender instead of dying — forces meteor / melee.
+  // Very slow, so it does not outrun your reaction; it just refuses to die cheaply.
+  [UnitType.Ironclad]: {
+    type: UnitType.Ironclad,
+    hp: 260,
+    attack: 10,
+    attackInterval: 1.5,
+    speed: 0.5,
+    range: 1,
+    spawnCount: 1,
+    radius_fp: 520,       // diameter 1040fp ≈ 1.04 格 — fills its lane, leads stacks
+  },
+  // Runner: fast fragile rusher. One arrow-tower hit one-shots it, but it arrives
+  // fast, wide and dense (small radius packs ~2× tighter than a swordsman), so the
+  // threat is the swarm, not the individual — the counter to single-file queueing.
+  [UnitType.Runner]: {
+    type: UnitType.Runner,
+    hp: 26,
+    attack: 9,
+    attackInterval: 0.7,
+    speed: 1.9,
+    range: 1,
+    spawnCount: 1,
+    radius_fp: 250,       // diameter 500fp = 0.5 格 — dense swarm
+  },
 };
 
 // ─── Building blueprints ──────────────────────────────────────────────────────

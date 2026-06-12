@@ -12,6 +12,8 @@ const UNIT_COLORS: Record<UnitType, number> = {
   [UnitType.Swordsman]: 0x222222,
   [UnitType.Guardian]:  0x1a3a8a,
   [UnitType.Archer]:    0xcc2200,
+  [UnitType.Ironclad]:  0x556677,  // steel — heavy armor
+  [UnitType.Runner]:    0xddaa22,  // amber — fast rusher
 };
 
 const SIDE_TINT: Record<Side, number> = {

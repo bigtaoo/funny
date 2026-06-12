@@ -53,7 +53,7 @@
 | `TOP_BUILDING_ROW` | 17 | 敌方建造行 |
 
 > 朝向：敌方从**顶部**（row 16 出生）向**底部**玩家基地推进。编辑器网格按此朝向绘制（顶=敌方，底=玩家）。
-> 单位池：当前 `UnitType` = Swordsman / Archer / Guardian；未来扩 PvE 专属怪种，调色板从游戏侧枚举动态取，不硬编。
+> 单位池：`UnitType` = Swordsman / Archer / Guardian + PvE 专属 **Ironclad（重甲）/ Runner（疾行）**（2026-06 加）。调色板从游戏侧枚举（`Object.values(UnitType)`）动态取，不硬编；`src/units.ts` 的 `META` 仅提供显示标签/颜色，新怪种缺 META 时回退中性色 + 原始值，故扩枚举不需改编辑器即可用。
 
 ---
 

@@ -8,6 +8,10 @@ export enum UnitType {
   Swordsman = 'swordsman',
   Guardian = 'guardian',
   Archer = 'archer',
+  /** PvE-only heavy: very high HP, very slow, soaks arrow-tower fire. No card → never in the PvP pool. */
+  Ironclad = 'ironclad',
+  /** PvE-only rusher: fragile, fast, small radius (packs densely). No card → never in the PvP pool. */
+  Runner = 'runner',
 }
 
 export enum BuildingType {
