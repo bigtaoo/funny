@@ -32,9 +32,13 @@ import { Side, UnitState } from '../types';
 export class MovementSystem {
   tick(state: GameState): void {
     const board = state.board;
-    const units = Array.from(board.units.values());
 
-    for (const unit of units) {
+    // Iterate the live Map directly — no per-tick snapshot allocation.
+    // Safe because the only mutation during this loop is moveCrossing()
+    // removing the *current* unit when it reaches the base; deleting the entry
+    // currently being visited is well-defined for Map iterators (the next
+    // entry is still visited) and MovementSystem never adds units.
+    for (const unit of board.units.values()) {
       if (unit.isDead || unit.state === UnitState.Attacking) continue;
 
       const prevState = unit.state;
@@ -51,11 +55,11 @@ export class MovementSystem {
       board.updateUnitCell(unit, prevRow, prevCol);
     }
 
-    // Remove units killed during crossing (guard against double-remove)
-    for (const unit of units) {
-      if (unit.isDead && board.units.has(unit.id)) {
-        board.removeUnit(unit);
-      }
+    // Sweep units that died this tick (e.g. in an earlier system) but are
+    // still present. Every visited unit is in the Map, so deleting the current
+    // entry mid-iteration is safe and no has()-guard is needed.
+    for (const unit of board.units.values()) {
+      if (unit.isDead) board.removeUnit(unit);
     }
   }
 
@@ -242,9 +246,11 @@ export class MovementSystem {
     let bestDist = Infinity;
 
     for (const other of board.units.values()) {
+      // State check first: most units are in lanes, not Crossing, so this is
+      // the most selective (and cheapest) filter — it skips the common case.
+      if (other.state !== UnitState.Crossing) continue;
       if (other.id === unit.id)              continue;
       if (other.side !== unit.side)          continue;
-      if (other.state !== UnitState.Crossing) continue;
       if (other.isDead)                      continue;
 
       const isAhead = direction > 0 ? other.x_fp > unit.x_fp : other.x_fp < unit.x_fp;

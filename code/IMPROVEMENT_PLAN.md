@@ -12,7 +12,7 @@
 | 3 | 中 | 同步 README（刷新时间 / 端口 / 兵种译名 / 目录结构） | ✅ 完成 |
 | 4 | 中 | 完成 Guardian / Archer 骨骼动画接入，去掉占位圆 | ☐ 待办 |
 | 5 | 低 | 重构 `GameEngine.processCommand` 重复分支为 helper | ✅ 完成（抽 `consumeCardSlot` + 闭包 effect，事件顺序不变） |
-| 6 | 低 | 性能：减少 `MovementSystem` 每帧全量拷贝、线性扫描 | ☐ 待办 |
+| 6 | 低 | 性能：减少 `MovementSystem` 每帧全量拷贝、线性扫描 | ✅ 完成（去掉每帧 Array.from 快照 + 扫描过滤排序） |
 
 ---
 
@@ -103,3 +103,16 @@
 ## 6. 性能
 - `MovementSystem.tick` 减少 `Array.from` 双重拷贝。
 - 评估单位/列扫描的数据结构优化。
+
+### ✅ 完成记录（2026-06-12）
+
+- **去掉每帧快照分配**：`tick()` 原先 `Array.from(board.units.values())` 每帧拷贝整张单位表（仅为在迭代中安全删除）。改为**直接迭代 `board.units` Map**——迭代中唯一的删除是 `moveCrossing` 删**当前**单位（抵达基地），删当前项对 Map 迭代器是良定义的（下一项仍会访问），且本系统从不新增单位。清理 pass 同样直接迭代 Map、删 `isDead`，省掉原来的 `has()` 去重守卫。行为逐字不变（迭代顺序仍是插入序，删除集合一致）。
+- **扫描过滤排序**：`getFriendlyUnitAheadInCrossing` 把最具区分度（最便宜）的 `state !== Crossing` 判断提到最前，绝大多数车道单位一步跳过；纯短路顺序优化，结果不变。
+- **数据结构评估结论**：前向碰撞热路径已走 Board 的每列有序表 `columnUnits`（O(n_col)），无需改。`predictStopY` / 横穿寻敌仍是全量扫描，但只作用于建筑行少量单位、且 `predictStopY` 仅在 Moving 起始帧触发；为它们建专用索引收益小、却要承担确定性维护风险，故**保留全量扫描**，不引入新索引。
+- 全套 38 测试通过（含 `MovementSystem.test.ts` 与黄金回放），`tsc --noEmit` 干净。
+
+---
+
+## 进度小结（2026-06-12）
+
+第 1、2、3、5、6 项已完成。**仅剩第 4 项**（Guardian / Archer 骨骼动画接入）——它依赖美术先用 `tools/animator` 导出对应 `.tao` 资源，代码侧接入点（`UnitView` 去占位圆 + 挂点 `hit` 受击特效）属待办，资源到位后再做。
