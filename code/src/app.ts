@@ -6,6 +6,7 @@ import { LobbyScene } from './scenes/LobbyScene';
 import { GameScene } from './scenes/GameScene';
 import { ResultScene } from './scenes/ResultScene';
 import { OwnerId, PlayerStats } from './game/types';
+import { getLevel } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
@@ -72,6 +73,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
     platform.onGameplayStop();
     manager.goto(new LobbyScene(layout, input, {
       onStartGame(_opponentName: string) { goGame(); },
+      onStartCampaign() { goCampaign(); },
     }));
     window.addEventListener('resize', onResize);
   }
@@ -86,6 +88,20 @@ export async function startApp(platform: IPlatform): Promise<void> {
       },
       onExitToLobby() { goLobby(); },
     }));
+  }
+
+  function goCampaign(): void {
+    const level = getLevel('ch1_lv1');
+    if (!level) { goLobby(); return; }
+    inLobby = false;
+    window.removeEventListener('resize', onResize);
+    platform.onGameplayStart();
+    manager.goto(new GameScene(layout, input, {
+      onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
+        goResult(winner, stats);
+      },
+      onExitToLobby() { goLobby(); },
+    }, { level }));
   }
 
   async function goResult(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]): Promise<void> {

@@ -44,3 +44,7 @@ export type { Fp } from './math/fixed';
 
 // ── GameState — exposed as a type so the render layer can annotate parameters ──
 export type { GameState } from './GameState';
+
+// ── Campaign (PvE) ────────────────────────────────────────────────────────────
+export type { LevelDefinition } from './campaign/LevelDefinition';
+export { CAMPAIGN_LEVELS, getLevel } from './campaign/levels';

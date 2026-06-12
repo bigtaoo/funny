@@ -2,22 +2,34 @@ import { Scene } from './SceneManager';
 import { GameRenderer } from '../render/GameRenderer';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
-import { createGameEngine, OwnerId, PlayerStats } from '../game';
+import { createGameEngine, LevelDefinition, OwnerId, PlayerStats } from '../game';
 
 export interface GameSceneCallbacks {
   onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]): void;
   onExitToLobby(): void;
 }
 
+export interface GameSceneOptions {
+  /** When set, the scene runs the PvE campaign level instead of a PvP match. */
+  level?: LevelDefinition;
+}
+
 export class GameScene implements Scene {
   readonly container;
   private readonly renderer: GameRenderer;
 
-  constructor(layout: ILayout, input: InputManager, cb: GameSceneCallbacks) {
-    const engine = createGameEngine({
-      seed: Date.now() ^ (Math.random() * 0xffffff | 0),
-      players: [{ id: 0 }, { id: 1 }],
-    });
+  constructor(layout: ILayout, input: InputManager, cb: GameSceneCallbacks, opts: GameSceneOptions = {}) {
+    const engine = opts.level
+      ? createGameEngine({
+          seed: opts.level.seed,
+          players: [{ id: 0 }, { id: 1 }],
+          mode: 'campaign',
+          level: opts.level,
+        })
+      : createGameEngine({
+          seed: Date.now() ^ (Math.random() * 0xffffff | 0),
+          players: [{ id: 0 }, { id: 1 }],
+        });
 
     this.renderer = new GameRenderer(engine, layout, input);
     this.renderer.init();

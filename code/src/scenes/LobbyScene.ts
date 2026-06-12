@@ -41,6 +41,7 @@ function txt(label: string, size: number, color: number, bold = false): PIXI.Tex
 
 export interface LobbySceneCallbacks {
   onStartGame(opponentName: string): void;
+  onStartCampaign(): void;
 }
 
 type LobbyState = 'idle' | 'matching' | 'vs';
@@ -66,6 +67,8 @@ export class LobbyScene implements Scene {
 
   /** Hit rect for the start/matching button, in design space. */
   private btnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Hit rect for the campaign (PvE) button, in design space. */
+  private campaignBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
   private readonly unsubs: Array<() => void> = [];
 
@@ -108,6 +111,11 @@ export class LobbyScene implements Scene {
     if (x >= this.btnRect.x && x <= this.btnRect.x + this.btnRect.w &&
         y >= this.btnRect.y && y <= this.btnRect.y + this.btnRect.h) {
       this.onStartPressed();
+      return;
+    }
+    if (x >= this.campaignBtnRect.x && x <= this.campaignBtnRect.x + this.campaignBtnRect.w &&
+        y >= this.campaignBtnRect.y && y <= this.campaignBtnRect.y + this.campaignBtnRect.h) {
+      this.cb.onStartCampaign();
     }
   }
 
@@ -195,6 +203,25 @@ export class LobbyScene implements Scene {
     this.btnLabel.x = btnX + btnW / 2;
     this.btnLabel.y = btnY + btnH / 2;
     this.container.addChild(this.btnLabel);
+
+    // Campaign (PvE) button — sits just below the match button.
+    const campH = Math.round(h * 0.07);
+    const campY = btnY + btnH + Math.round(h * 0.022);
+    this.campaignBtnRect = { x: btnX, y: campY, w: btnW, h: campH };
+
+    const campBg = new PIXI.Graphics();
+    campBg.beginFill(C.paper);
+    campBg.lineStyle(2, C.gold);
+    campBg.drawRoundedRect(0, 0, btnW, campH, 6);
+    campBg.endFill();
+    campBg.x = btnX; campBg.y = campY;
+    this.container.addChild(campBg);
+
+    const campLabel = txt(t('lobby.campaign'), Math.round(campH * 0.42), C.dark, true);
+    campLabel.anchor.set(0.5, 0.5);
+    campLabel.x = btnX + btnW / 2;
+    campLabel.y = campY + campH / 2;
+    this.container.addChild(campLabel);
 
     // Bottom nav bar
     const navH  = Math.round(h * 0.08);

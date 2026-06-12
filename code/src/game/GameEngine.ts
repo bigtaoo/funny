@@ -19,6 +19,8 @@ import { Unit } from './Unit';
 import { Prng } from './math/prng';
 import { GameState } from './GameState';
 import { AISystem } from './systems/AISystem';
+import { WaveDirector } from './campaign/WaveDirector';
+import type { LevelDefinition } from './campaign/LevelDefinition';
 import { BuildingProductionSystem } from './systems/BuildingProductionSystem';
 import { CombatSystem } from './systems/CombatSystem';
 import { MovementSystem } from './systems/MovementSystem';
@@ -29,6 +31,7 @@ import {
   CardType,
   GameConfig,
   GameEvent,
+  GameMode,
   GamePhase,
   IGameEngine,
   OwnerId,
@@ -37,6 +40,7 @@ import {
   Side,
   SpellType,
   sideToOwner,
+  UnitType,
 } from './types';
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
@@ -57,6 +61,10 @@ class GameEngineImpl implements IGameEngine {
   private readonly production: BuildingProductionSystem;
   private readonly ai:         AISystem;
 
+  private readonly mode:          GameMode;
+  private readonly level:         LevelDefinition | null;
+  private readonly waveDirector:  WaveDirector | null;
+
   private firstStep = true;
   private accumulatedTime = 0;
   private currentTick = 0;
@@ -70,6 +78,16 @@ class GameEngineImpl implements IGameEngine {
     this.spell      = new SpellSystem();
     this.production = new BuildingProductionSystem();
     this.ai         = new AISystem(new Prng(config.seed ^ 0xA1A1A1A1));
+
+    this.mode = config.mode ?? 'pvp';
+    if (this.mode === 'campaign') {
+      if (!config.level) throw new Error('campaign mode requires a level definition');
+      this.level        = config.level;
+      this.waveDirector = new WaveDirector(config.level, new Prng(config.seed ^ 0x5A5A5A5A));
+    } else {
+      this.level        = null;
+      this.waveDirector = null;
+    }
   }
 
   // ─── Render-facing API ───────────────────────────────────────────────────
@@ -125,13 +143,24 @@ class GameEngineImpl implements IGameEngine {
     }
 
     // ── Commands ──────────────────────────────────────────────────────────
-    const aiCmds = this.ai.decideTick(tick, this.state);
-    const allCmds = [
-      ...commands.filter((c) => c.tick === tick),
-      ...aiCmds,
-    ];
-    for (const cmd of allCmds) {
-      this.processCommand(cmd);
+    const externalCmds = commands.filter((c) => c.tick === tick);
+    if (this.mode === 'campaign' && this.waveDirector) {
+      // Campaign: process player commands, then spawn scripted enemy waves
+      // directly (bypassing the enemy hand/coin economy).
+      for (const cmd of externalCmds) {
+        this.processCommand(cmd);
+      }
+      for (const spawn of this.waveDirector.tick(tick)) {
+        this.spawnEnemyUnit(spawn.unitType, spawn.col);
+      }
+    } else {
+      // PvP: identical ordering to the original — decideTick is evaluated
+      // before player commands are processed, then both are processed in turn.
+      const aiCmds = this.ai.decideTick(tick, this.state);
+      const allCmds = [...externalCmds, ...aiCmds];
+      for (const cmd of allCmds) {
+        this.processCommand(cmd);
+      }
     }
 
     // ── Systems ───────────────────────────────────────────────────────────
@@ -317,6 +346,45 @@ class GameEngineImpl implements IGameEngine {
     this.state.pushEvent({ type: 'resource_changed', owner, coins: player.coins });
   }
 
+  // ─── Campaign: scripted enemy spawn ────────────────────────────────────────
+
+  /**
+   * Spawn a single enemy (Top side, owner 1) unit on `col`, bypassing the
+   * hand/coin economy. Emits the same unit_spawned / unit_move_start events as
+   * a card play, so the render layer needs no campaign-specific handling.
+   */
+  private spawnEnemyUnit(unitType: UnitType, col: number): void {
+    const side: Side = Side.Top;
+    const owner: OwnerId = 1;
+    const unit = new Unit(unitType, side, col, TOP_SPAWN_ROW);
+    this.state.board.addUnit(unit);
+    this.state.stats[owner].unitsSent++;
+    this.state.pushEvent({
+      type:      'unit_spawned',
+      unitId:    unit.id,
+      owner,
+      unitType:  unit.unitType,
+      col:       unit.col,
+      y_fp:      unit.y_fp,
+      radius_fp: unit.radius_fp,
+    });
+    this.state.pushEvent({
+      type:     'unit_move_start',
+      unitId:   unit.id,
+      from:     { col: unit.col, y_fp: unit.y_fp },
+      to:       { col: unit.col, y_fp: toFp(BOTTOM_BUILDING_ROW) },
+      speed_fp: unit.speed_fp,
+    });
+  }
+
+  /** Whether any living Top-side (enemy) unit is still on the board. */
+  private hasLivingEnemyUnits(): boolean {
+    for (const unit of this.state.board.units.values()) {
+      if (unit.side === Side.Top && !unit.isDead) return true;
+    }
+    return false;
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   /** Draw one card into a hand slot and emit card_drawn. */
@@ -351,6 +419,32 @@ class GameEngineImpl implements IGameEngine {
       this.state.pushEvent({ type: 'game_over', winner: 1 });
       return;
     }
+
+    // ── Campaign objectives ──────────────────────────────────────────────────
+    if (this.mode === 'campaign') {
+      // Wiping the enemy base always wins.
+      if (this.state.topPlayer.isDead) {
+        this.state.phase  = GamePhase.GameOver;
+        this.state.winner = Side.Bottom;
+        this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+        this.state.pushEvent({ type: 'game_over', winner: 0 });
+        return;
+      }
+      const objective = this.level!.objective;
+      const survived =
+        objective.kind === 'timed_defense'
+          ? this.state.elapsedTicks >= objective.durationTicks
+          : this.waveDirector!.exhausted && !this.hasLivingEnemyUnits();
+      if (survived) {
+        this.state.phase  = GamePhase.GameOver;
+        this.state.winner = Side.Bottom;
+        this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+        this.state.pushEvent({ type: 'game_over', winner: 0 });
+      }
+      // Campaign skips the PvP countdown / force-draw timers.
+      return;
+    }
+
     if (this.state.topPlayer.isDead) {
       this.state.phase  = GamePhase.GameOver;
       this.state.winner = Side.Bottom;

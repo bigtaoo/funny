@@ -25,6 +25,7 @@ export const en: Record<TranslationKey, string> = {
   'lobby.feature.2': 'Destroy the enemy base to win',
   'lobby.feature.3': 'Game lasts 5-10 min  |  AI opponent',
   'lobby.startMatch': 'START MATCH',
+  'lobby.campaign': 'CAMPAIGN (Beta)',
   'lobby.matching': 'Matching',
   'lobby.you': 'YOU',
   'lobby.vs': 'VS',

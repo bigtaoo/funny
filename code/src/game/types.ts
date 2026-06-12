@@ -1,5 +1,6 @@
 import type { Fp } from './math/fixed';
 import type { TranslationKey } from '../i18n';
+import type { LevelDefinition } from './campaign/LevelDefinition';
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -78,10 +79,17 @@ export function ownerToSide(owner: OwnerId): Side {
 
 // ─── Game config ──────────────────────────────────────────────────────────────
 
+/** Game mode. `pvp` = duel driven by AISystem; `campaign` = PvE scripted waves. */
+export type GameMode = 'pvp' | 'campaign';
+
 export interface GameConfig {
   /** PRNG seed — determines card draws for both players. Required. */
   seed: number;
   players: [PlayerConfig, PlayerConfig];
+  /** Defaults to 'pvp'. In 'campaign' the enemy is driven by a WaveDirector. */
+  mode?: GameMode;
+  /** Campaign level — required when mode === 'campaign'. */
+  level?: LevelDefinition;
 }
 
 export interface PlayerConfig {
