@@ -420,6 +420,7 @@ npm run test:watch
 | `ResourceSystem.test.ts` | 各加速档金币回速、`COIN_CAP` 封顶、基地升级 bonus、`resource_changed` 仅整数变化时发 |
 | `MovementSystem.test.ts` | 纵向推进步长、Crossing 切换、抵达基地造成伤害 + despawn、友军半径碰撞不重叠 + Waiting 滞回 |
 | `CombatSystem.test.ts` | 近战命中、攻击冷却、击杀移除 + 计分、晚期攻击翻倍、箭塔 Chebyshev 横向命中、超射程不打 |
+| `AISystem.test.ts` | 增强 AI 行为守护：近基地集群放陨石、无陨石退化为放箭塔、无威胁时进攻出兵、coin cap < 升级费时不升级、easy 档不用陨石/箭塔 |
 | `replay-determinism.test.ts` | **黄金回放**：同 seed 两次运行状态指纹结构全等；异 seed 发散；长局活跃度 sanity |
 
 ### 确定性 / 回放保障
@@ -429,3 +430,41 @@ npm run test:watch
 > **配套修复**：`Unit`/`Building` 原用模块级全局 `nextId`，跨 engine 实例 ID 不复现。新增 `resetUnitIds()`/`resetBuildingIds()`，由 `GameState` 构造函数调用，使每局实体 ID 从固定基址开始 —— replay 可跨进程复现。
 >
 > **ID 命名空间**：**building 从 0 起、unit 从 1000 起**。建筑数量受棋盘格子数（12×18=216）封顶，永远到不了 1000；单位是高频增长方，取上段。两个命名空间无论对局多长都不会冲突。渲染层按事件类型（`unit_spawned` / `building_placed`）分池管理 view，不依赖 ID 区间。
+
+---
+
+## 13. AI 系统（AISystem）
+
+### 文件位置
+
+`src/game/systems/AISystem.ts`。AI 操控 **Top 方**（owner 1，基地在 row 17）。敌方单位 = Side.Bottom，朝 row 17 推进——单位 row 越高（越接近 AI 基地）威胁越大。
+
+### 输入 / 输出契约
+
+- `decideTick(tick, state)` 每 tick 调用一次，内部按难度档的 `thinkIntervalTicks` 节流，到点才决策。
+- **只读 state，不改 state**：返回 `PlayerCommand[]`（至多一条），由 `GameEngine.processCommand()` 执行。
+- **确定性**：所有分支只读游戏状态 + 注入的 `Prng`（仅用于并列 lane 的随机 tie-break）。无 `Math.random` / `Date` / 浮点不确定性，满足黄金回放契约。
+
+### 决策流水线（优先级从高到低，命中即返回）
+
+1. **紧急防守**（`underPressure`：有敌军 row ≥ `dangerRow`，或己方基地 HP ≤ `lowBaseHp`）
+   - a) **陨石清团**：扫描 2×2 落点，命中最密的近基地敌群（`preferNearBase` 并列取更高 row）。
+   - b) **箭塔**：在威胁最高且空置的建筑车道放箭塔。
+   - c) **肉盾拦截**：往威胁最高车道出兵，优先 Guardian（最肉）。
+2. **升级规划**（仅当 `upgradeReachable` 且全场无威胁时）
+   - 能升级就升级；接近升级费（≥ 60%）时攒钱、本 tick 不乱花。
+   - **`upgradeReachable` 守卫**：`nextUpgradeCost ≤ COIN_CAP` 才考虑。当前 `COIN_CAP=300` ≥ `BASE_UPGRADE_COSTS=[50,100,200]`，升级**可达**，AI 安全时会攒钱并升级。守卫仍保留为防御性代码：若日后把升级费调到超过金币上限，该分支会自动静默跳过、不会卡死。
+3. **经济 / 进攻**
+   - 早期在**安全车道**（威胁最低）补兵营，维持出兵流（上限 `MAX_BARRACKS=2`）。
+   - 敌群够大（`meteorOffenseCluster`）时进攻性陨石。
+   - 否则按性价比出兵（偏好顺序 Swordsman → Archer → Guardian），推**防守最薄弱**车道（威胁最低）打穿。
+
+### 难度分级
+
+`new AISystem(rng, difficulty)`，`difficulty: 'easy' | 'medium' | 'hard'`，默认 `'medium'`（`GameEngine` 当前用默认值，未接 UI 选择器）。
+
+| 档 | think 间隔 | dangerRow | 低血线 | 陨石 | 箭塔 | 兵营 | 进攻陨石阈值 |
+|---|---|---|---|---|---|---|---|
+| easy | 60t (2s) | 15 | 25% | ✗ | ✗ | ✗ | — |
+| medium | 45t (1.5s) | 13 | 40% | ✓ | ✓ | ✓ | 3 |
+| hard | 30t (1s) | 11 | 50% | ✓ | ✓ | ✓ | 2 |

@@ -41,7 +41,7 @@ export const TOP_SPAWN_ROW = 16;
 // ─── Resource ─────────────────────────────────────────────────────────────────
 
 export const COIN_REGEN_BASE = 2;      // coins / second (reference only)
-export const COIN_CAP = 30;
+export const COIN_CAP = 300;
 export const BASE_UPGRADE_COSTS = [50, 100, 200] as const;
 export const BASE_UPGRADE_REGEN_BONUS = 1; // +1 coin/s per upgrade level
 
