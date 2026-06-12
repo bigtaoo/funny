@@ -140,6 +140,7 @@ export class GameRenderer {
 
   private buildSceneGraph(): void {
     this.boardView    = new BoardView(this.layout);
+    this.boardView.markNoBuildCells(this.engine.state.board.getNoBuildCells());
     this.unitView     = new UnitView(this.boardView);
     this.buildingView = new BuildingView(this.boardView);
     this.handView     = new HandView(this.layout);
@@ -427,6 +428,7 @@ export class GameRenderer {
       }
       case CardType.Building: {
         if (this.engine.state.board.hasBuildingAt(col, BOTTOM_BUILDING_ROW)) return;
+        if (this.engine.state.board.isNoBuild(col, BOTTOM_BUILDING_ROW)) return;
         this.engine.playCard(handIndex, col);
         break;
       }
@@ -457,6 +459,7 @@ export class GameRenderer {
         const valid: number[] = [];
         for (let c = 0; c < BOARD_COLS; c++) {
           if (!(ATTACK_LANES as readonly number[]).includes(c)) continue;
+          if (this.engine.state.board.isNoBuild(c, BOTTOM_BUILDING_ROW)) continue;
           if (!this.engine.state.board.hasBuildingAt(c, BOTTOM_BUILDING_ROW)) valid.push(c);
         }
         this.boardView.showBuildingHighlights(valid, BOTTOM_BUILDING_ROW);

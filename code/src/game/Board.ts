@@ -28,6 +28,11 @@ export class Board {
    */
   private columnUnits: Map<number, Unit[]> = new Map();
 
+  /** Campaign no-build cells (row*COLS+col keys). Empty in PvP. */
+  private noBuildKeys: Set<number> = new Set();
+  /** Original no-build cell list (for the render layer to draw markers). */
+  private noBuildList: { col: number; row: number }[] = [];
+
   constructor() {
     this.clearGrids();
   }
@@ -171,6 +176,23 @@ export class Board {
 
   hasBuildingAt(col: number, row: number): boolean {
     return this.buildingGrid[row]?.[col] != null;
+  }
+
+  // ─── No-build cells (campaign cellMask) ───────────────────────────────────
+
+  /** Mark cells where buildings may not be placed (campaign coverage puzzle). */
+  setNoBuild(cells: { col: number; row: number }[]): void {
+    this.noBuildList = cells.slice();
+    this.noBuildKeys = new Set(cells.map((c) => c.row * BOARD_COLS + c.col));
+  }
+
+  isNoBuild(col: number, row: number): boolean {
+    return this.noBuildKeys.has(row * BOARD_COLS + col);
+  }
+
+  /** No-build cell list for the render layer to draw blocked markers. */
+  getNoBuildCells(): { col: number; row: number }[] {
+    return this.noBuildList;
   }
 
   getUnitsInRange(col: number, row: number, range: number, side: Side): Unit[] {

@@ -41,8 +41,12 @@ function txt(label: string, size: number, color: number, bold = false): PIXI.Tex
 
 export interface LobbySceneCallbacks {
   onStartGame(opponentName: string): void;
-  onStartCampaign(): void;
+  /** Launch a campaign level by its 0-based index in CAMPAIGN_LEVEL_ORDER. */
+  onStartCampaign(levelIndex: number): void;
 }
+
+/** Number of campaign levels exposed in the lobby picker (P0 validation slice). */
+const CAMPAIGN_LEVEL_COUNT = 3;
 
 type LobbyState = 'idle' | 'matching' | 'vs';
 
@@ -67,8 +71,8 @@ export class LobbyScene implements Scene {
 
   /** Hit rect for the start/matching button, in design space. */
   private btnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
-  /** Hit rect for the campaign (PvE) button, in design space. */
-  private campaignBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Hit rects for the campaign (PvE) level-picker buttons, in design space. */
+  private campaignBtnRects: Rect[] = [];
 
   private readonly unsubs: Array<() => void> = [];
 
@@ -113,9 +117,12 @@ export class LobbyScene implements Scene {
       this.onStartPressed();
       return;
     }
-    if (x >= this.campaignBtnRect.x && x <= this.campaignBtnRect.x + this.campaignBtnRect.w &&
-        y >= this.campaignBtnRect.y && y <= this.campaignBtnRect.y + this.campaignBtnRect.h) {
-      this.cb.onStartCampaign();
+    for (let i = 0; i < this.campaignBtnRects.length; i++) {
+      const r = this.campaignBtnRects[i]!;
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+        this.cb.onStartCampaign(i);
+        return;
+      }
     }
   }
 
@@ -204,24 +211,37 @@ export class LobbyScene implements Scene {
     this.btnLabel.y = btnY + btnH / 2;
     this.container.addChild(this.btnLabel);
 
-    // Campaign (PvE) button — sits just below the match button.
-    const campH = Math.round(h * 0.07);
-    const campY = btnY + btnH + Math.round(h * 0.022);
-    this.campaignBtnRect = { x: btnX, y: campY, w: btnW, h: campH };
+    // Campaign (PvE) level picker — a label + numbered buttons below the match button.
+    const campLabelY = btnY + btnH + Math.round(h * 0.022);
+    const campTitle = txt(t('lobby.campaign'), Math.round(h * 0.024), C.dark, true);
+    campTitle.anchor.set(0.5, 0.5);
+    campTitle.x = btnX + btnW / 2;
+    campTitle.y = campLabelY;
+    this.container.addChild(campTitle);
 
-    const campBg = new PIXI.Graphics();
-    campBg.beginFill(C.paper);
-    campBg.lineStyle(2, C.gold);
-    campBg.drawRoundedRect(0, 0, btnW, campH, 6);
-    campBg.endFill();
-    campBg.x = btnX; campBg.y = campY;
-    this.container.addChild(campBg);
+    const campH   = Math.round(h * 0.07);
+    const campY   = campLabelY + Math.round(h * 0.028);
+    const campGap = Math.round(btnW * 0.04);
+    const campW   = Math.round((btnW - campGap * (CAMPAIGN_LEVEL_COUNT - 1)) / CAMPAIGN_LEVEL_COUNT);
+    this.campaignBtnRects = [];
+    for (let i = 0; i < CAMPAIGN_LEVEL_COUNT; i++) {
+      const cx = btnX + i * (campW + campGap);
+      this.campaignBtnRects.push({ x: cx, y: campY, w: campW, h: campH });
 
-    const campLabel = txt(t('lobby.campaign'), Math.round(campH * 0.42), C.dark, true);
-    campLabel.anchor.set(0.5, 0.5);
-    campLabel.x = btnX + btnW / 2;
-    campLabel.y = campY + campH / 2;
-    this.container.addChild(campLabel);
+      const cbg = new PIXI.Graphics();
+      cbg.beginFill(C.paper);
+      cbg.lineStyle(2, C.gold);
+      cbg.drawRoundedRect(0, 0, campW, campH, 6);
+      cbg.endFill();
+      cbg.x = cx; cbg.y = campY;
+      this.container.addChild(cbg);
+
+      const cl = txt(String(i + 1), Math.round(campH * 0.46), C.dark, true);
+      cl.anchor.set(0.5, 0.5);
+      cl.x = cx + campW / 2;
+      cl.y = campY + campH / 2;
+      this.container.addChild(cl);
+    }
 
     // Bottom nav bar
     const navH  = Math.round(h * 0.08);

@@ -84,6 +84,13 @@ class GameEngineImpl implements IGameEngine {
       if (!config.level) throw new Error('campaign mode requires a level definition');
       this.level        = config.level;
       this.waveDirector = new WaveDirector(config.level, new Prng(config.seed ^ 0x5A5A5A5A));
+
+      // Apply level setup: no-build cells (coverage puzzle) + starting coins.
+      const noBuild = config.level.board?.cellMask?.noBuild;
+      if (noBuild && noBuild.length > 0) this.state.board.setNoBuild(noBuild);
+      if (config.level.startCoins) {
+        this.state.bottomPlayer.addCoinsFp(toFp(config.level.startCoins));
+      }
     } else {
       this.level        = null;
       this.waveDirector = null;
@@ -283,6 +290,7 @@ class GameEngineImpl implements IGameEngine {
 
         const buildingRow = side === Side.Bottom ? BOTTOM_BUILDING_ROW : TOP_BUILDING_ROW;
         if (this.state.board.hasBuildingAt(col, buildingRow)) return;
+        if (this.state.board.isNoBuild(col, buildingRow)) return;
 
         const buildingType = card.buildingType;
         this.consumeCardSlot(player, cmd.owner, cmd.handIndex, card, () => {

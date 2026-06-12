@@ -47,4 +47,4 @@ export type { GameState } from './GameState';
 
 // ── Campaign (PvE) ────────────────────────────────────────────────────────────
 export type { LevelDefinition } from './campaign/LevelDefinition';
-export { CAMPAIGN_LEVELS, getLevel } from './campaign/levels';
+export { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER, getLevel } from './campaign/levels';

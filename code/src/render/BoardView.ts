@@ -27,6 +27,7 @@ export class BoardView {
   readonly container: PIXI.Container;
 
   private readonly layout: ILayout;
+  private readonly noBuildLayer: PIXI.Graphics;
   private readonly highlightLayer: PIXI.Graphics;
 
   private playerBase: BaseRef | null = null;
@@ -43,11 +44,34 @@ export class BoardView {
     this.layout    = layout;
     this.container = new PIXI.Container();
 
+    this.noBuildLayer   = new PIXI.Graphics();
     this.highlightLayer = new PIXI.Graphics();
 
     this.drawGrid();
     this.drawBases(layout);
+    this.container.addChild(this.noBuildLayer);    // below highlights
     this.container.addChild(this.highlightLayer);
+  }
+
+  // ── No-build cells (campaign coverage puzzle) ─────────────────────────────
+
+  /** Draw a static blocked marker (gray fill + ✕) on each no-build cell. */
+  markNoBuildCells(cells: { col: number; row: number }[]): void {
+    const g  = this.noBuildLayer;
+    const cs = this.layout.cellSize;
+    g.clear();
+    for (const { col, row } of cells) {
+      const pos = this.layout.gridToScreen(col, row);
+      const x = pos.x - cs / 2;
+      const y = pos.y - cs / 2;
+      g.beginFill(0x888888, 0.30);
+      g.drawRect(x, y, cs, cs);
+      g.endFill();
+      g.lineStyle(2, 0x555555, 0.7);
+      g.moveTo(x + cs * 0.22, y + cs * 0.22); g.lineTo(x + cs * 0.78, y + cs * 0.78);
+      g.moveTo(x + cs * 0.78, y + cs * 0.22); g.lineTo(x + cs * 0.22, y + cs * 0.78);
+      g.lineStyle(0);
+    }
   }
 
   // ── Per-frame update ──────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ import { LobbyScene } from './scenes/LobbyScene';
 import { GameScene } from './scenes/GameScene';
 import { ResultScene } from './scenes/ResultScene';
 import { OwnerId, PlayerStats } from './game/types';
-import { getLevel } from './game';
+import { getLevel, CAMPAIGN_LEVEL_ORDER } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
@@ -73,7 +73,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
     platform.onGameplayStop();
     manager.goto(new LobbyScene(layout, input, {
       onStartGame(_opponentName: string) { goGame(); },
-      onStartCampaign() { goCampaign(); },
+      onStartCampaign(levelIndex: number) { goCampaign(CAMPAIGN_LEVEL_ORDER[levelIndex]); },
     }));
     window.addEventListener('resize', onResize);
   }
@@ -90,8 +90,8 @@ export async function startApp(platform: IPlatform): Promise<void> {
     }));
   }
 
-  function goCampaign(): void {
-    const level = getLevel('ch1_lv1');
+  function goCampaign(levelId: string | undefined): void {
+    const level = levelId ? getLevel(levelId) : null;
     if (!level) { goLobby(); return; }
     inLobby = false;
     window.removeEventListener('resize', onResize);
