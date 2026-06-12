@@ -131,6 +131,8 @@
 ## 5. 数据结构草案
 
 > 与现有类型对齐：`PlayerCommand`、`UnitType`、`col/row`、tick 计时。字段名最终以实现为准。
+>
+> **已实现（2026-06）**：所有关卡已迁为 **JSON 单一来源**（`game/campaign/levels/*.json`），由 `game/campaign/levelSchema.ts` 的 `parseLevelDefinition` 运行时校验后注册；`game/campaign/levels.ts` 改为 import JSON。配套可视化关卡编辑器见 `tools/level-editor/DESIGN.md`。
 
 ```ts
 // game/campaign/LevelDefinition.ts  （纯数据，无 PIXI）

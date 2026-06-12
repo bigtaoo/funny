@@ -23,6 +23,10 @@ funny/
 │   │   ├── src/           源码（见下方架构）
 │   │   ├── public/        HTML 模板（webpack-html-plugin 用）
 │   │   └── ARCHITECTURE.md / REQUIREMENTS.md
+│   ├── level-editor/      战役关卡编辑器（TypeScript + 纯 Canvas，端口 9092）
+│   │   ├── src/           源码（board / timeline / inspector / state）
+│   │   ├── public/        HTML 模板
+│   │   └── DESIGN.md      设计基准（单一文档）
 │
 ├── art/
 │   ├── maps/              地图资源
@@ -223,6 +227,28 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 | `src/core/AppState.ts` | 全局可变状态（写时 emit 事件） |
 | `src/core/CommandManager.ts` | Undo/Redo 命令栈 |
 
+## 关卡编辑器（tools/level-editor）
+
+战役关卡（PvE）可视化编辑器，产出运行时加载的 JSON。设计基准见 `tools/level-editor/DESIGN.md`（单一文档）。
+
+### 启动
+
+```bash
+cd tools/level-editor
+npm run start   # webpack dev server，端口 9092
+npm run build   # 生产构建
+```
+
+### 要点
+
+- **形态**：独立 Web 工具，TypeScript + **纯 Canvas/DOM**（不依赖 PixiJS）。
+- **数据单一来源**：编辑器经 webpack `@game` alias（→ `code/src/game`）直接 import 游戏侧的 `LevelDefinition` / `parseLevelDefinition` / 棋盘常量 / `UnitType` / `CARD_DEFINITIONS`，**绝不在编辑器内维护第二份 schema**；ts-loader `transpileOnly` 避免把 i18n `TranslationKey` 大联合拖进编辑器构建。
+- **关卡为 JSON 单一来源**：所有战役关卡（含内置 CH1_LV1~3 + stress）是 `code/src/game/campaign/levels/*.json`，由 `parseLevelDefinition` 运行时校验加载（见下方游戏侧改动）。编辑器导入/导出走这套 JSON。
+- **四区布局**：棋盘格（左，绘 blocked/noBuild + activeLanes）/ 波次时间线（中上，横=秒/纵=10 攻击车道，拖块改 atTick/col、右键删、滚轮平移、Ctrl+滚轮缩放）/ 实时 JSON（中下，双向）/ 右栏「关卡 / 波次」双 Tab Inspector。
+- **中心状态** `EditorState`：持有正在编辑的 `LevelDefinition` + 变更广播；所有 mutator **规范化**（删空数组/对象、留空可选字段从 JSON 删除），保证导出 JSON 与手写关卡逐字等价。
+- **源文件**：`src/state/EditorState.ts`（状态 + 广播）、`src/board/BoardPanel.ts`（棋盘 Canvas）、`src/timeline/TimelinePanel.ts`（时间线 Canvas）、`src/inspector/InspectorPanel.ts`（波次表单）、`src/inspector/LevelFormPanel.ts`（关卡表单）、`src/units.ts`（单位显示元数据）、`src/index.ts`（组合根 + IO）。
+- **已知局限（待修）**：截图工具在预览里抓帧超时（不影响功能）；初始视口极窄时时间线 canvas 退到最小宽度，需 resize 后重载。
+
 ## 游戏主代码（code/）
 
 - **渲染**：`pixi.js-legacy`，兼容微信小游戏 WebGL
@@ -263,6 +289,7 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 | `src/game/systems/AISystem.ts` + `test/AISystem.test.ts`（新增） | AI"无脑出第一张可用牌"，无经济意识 / 防守 / 威胁评估 | 重写为**威胁驱动三段式决策**：①紧急防守（陨石清近基地敌群 → 威胁最高车道放箭塔 → Guardian 肉盾）②升级规划（`upgradeReachable` 守卫，`nextUpgradeCost ≤ COIN_CAP` 才升级/攒钱）③经济进攻（按偏好挑性价比牌推最弱车道、安全车道补兵营、大团进攻陨石）；`computeThreatByCol` 按敌军接近 AI 基地程度加权；新增难度分级 `'easy'\|'medium'\|'hard'`（默认 medium）；仅依赖 state + 注入 Prng，黄金回放确定性不变；+5 测试（共 38 全绿）。配套把 `COIN_CAP` 30→**300**（≥ 首档升级费 50），让基地升级对人机双方均可达（此前 `[50,100,200]` 全 > 30 永远升不了级）；`upgradeReachable` 守卫保留为防御性代码 |
 | `src/game/GameEngine.ts` | `processCommand` 的 Unit/Building/Haste/Meteor 四个分支各自重复「扣币/记账/清槽/发 card_played/补牌/发 resource_changed」样板 | 抽 `consumeCardSlot(player, owner, handIndex, card, effect)` 收敛重复，各分支只留校验 + 专属效果闭包（约 -50 行）；事件顺序逐字不变，黄金回放确定性测试通过 |
 | `src/game/systems/MovementSystem.ts` | `tick()` 每帧 `Array.from(board.units.values())` 全量快照分配（仅为迭代中安全删除）；横穿寻敌扫描过滤顺序非最优 | 改为**直接迭代 `board.units` Map**（唯一删除是 `moveCrossing` 删当前单位，删当前项对 Map 迭代器良定义；本系统不新增单位）省掉每帧分配；清理 pass 同样直接迭代删 `isDead`、去掉 `has()` 守卫；`getFriendlyUnitAheadInCrossing` 把最具区分度的 `state !== Crossing` 判断提前。行为逐字不变，38 测试 + 黄金回放通过 |
+| `src/game/campaign/levels.ts` + `levels/*.json`（新增）+ `levelSchema.ts`（新增） | 战役关卡是手写 TS 对象，无法被关卡编辑器读写，且无运行时校验 | 关卡迁为 **JSON 单一来源**（`campaign/levels/{ch1_lv1,ch1_lv2,ch1_lv3,ch_stress}.json`，用与原 TS 相同公式生成、逐字等价）；新增 `parseLevelDefinition`（`levelSchema.ts`）运行时校验：objective 类型 / `unitType ∈ UnitType` / `col ∈ ATTACK_LANES` / cellMask 界内 / starThresholds 单调，带字段路径报错，预留字段（hazards/crossWaypoints/story）原样保留；`levels.ts` 改为 import JSON → 过校验 → 建注册表；+14 测试（52 全绿），黄金回放确定性不变。配套关卡编辑器见上方「关卡编辑器」节 |
 
 ### 游戏核心模块
 

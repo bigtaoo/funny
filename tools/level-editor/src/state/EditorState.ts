@@ -33,6 +33,12 @@ export class EditorState {
     for (const fn of this.listeners) fn();
   }
 
+  /** Notify subscribers after a caller mutated `level` directly (used by the
+   *  level form, which edits many top-level fields inline + normalizes itself). */
+  touch(): void {
+    this.emit();
+  }
+
   /** Replace the whole level (e.g. after import) and notify. */
   setLevel(level: LevelDefinition): void {
     this.level = level;

@@ -90,7 +90,13 @@
 
     /* Right column: inspector */
     .col-insp { flex: 0 0 260px; border-left: 1px solid var(--border); overflow-y: auto; }
+    .insp-tabs { display: flex; flex: 0 0 auto; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; }
+    .insp-tab { flex: 1; border: none; border-radius: 0; background: transparent; padding: 9px; color: var(--text-dim); }
+    .insp-tab:hover { color: var(--text); }
+    .insp-tab.active { color: var(--accent); border-bottom: 2px solid var(--accent); font-weight: 600; }
     .insp-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .form-section { font-weight: 600; color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border); }
+    .col-insp select[multiple] { height: auto; font-size: 12px; }
     .insp-title { font-weight: 600; color: var(--accent); }
     .insp-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-dim); }
     .insp-field span { font-size: 11px; }
@@ -154,10 +160,14 @@
       </div>
     </div>
 
-    <!-- Right: inspector -->
+    <!-- Right: tabbed inspector (level form / wave inspector) -->
     <div class="pane col-insp">
-      <div class="pane-head">波次属性</div>
-      <div class="insp-body" id="inspector"></div>
+      <div class="insp-tabs">
+        <button class="insp-tab active" data-tab="level">关卡</button>
+        <button class="insp-tab" data-tab="wave">波次</button>
+      </div>
+      <div class="insp-body" id="level-form"></div>
+      <div class="insp-body" id="inspector" style="display:none"></div>
     </div>
   </div>
 

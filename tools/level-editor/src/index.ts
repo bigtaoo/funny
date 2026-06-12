@@ -5,6 +5,7 @@ import { EditorState } from './state/EditorState';
 import { BoardPanel } from './board/BoardPanel';
 import { TimelinePanel } from './timeline/TimelinePanel';
 import { InspectorPanel } from './inspector/InspectorPanel';
+import { LevelFormPanel } from './inspector/LevelFormPanel';
 
 /**
  * Editor entry / composition root (P-C).
@@ -49,6 +50,22 @@ const board = new BoardPanel(state, () => refreshTools());
 $('board-mount').appendChild(board.canvas);
 new TimelinePanel(state, $('timeline-mount'));
 new InspectorPanel(state, $('inspector'));
+new LevelFormPanel(state, $('level-form'));
+
+// ── Right-column tabs (level form / wave inspector) ──
+const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.insp-tab'));
+function showTab(tab: 'level' | 'wave'): void {
+  for (const b of tabButtons) b.classList.toggle('active', b.dataset.tab === tab);
+  $('level-form').style.display = tab === 'level' ? '' : 'none';
+  $('inspector').style.display = tab === 'wave' ? '' : 'none';
+}
+for (const b of tabButtons) b.addEventListener('click', () => showTab(b.dataset.tab as 'level' | 'wave'));
+// Auto-jump to the wave tab when a block is selected in the timeline.
+let prevSelected = state.selectedWave;
+state.on(() => {
+  if (state.selectedWave !== null && prevSelected === null) showTab('wave');
+  prevSelected = state.selectedWave;
+});
 
 // ── State → JSON text (re-render on every change) ──
 function refreshJson(): void {
