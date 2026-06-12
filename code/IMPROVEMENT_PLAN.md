@@ -9,7 +9,7 @@
 |---|---|---|---|
 | 1 | 高 | 逻辑内核单测 + 确定性黄金回放测试 | ✅ 完成（33 测试，发现并修复跨实例 ID 不可复现） |
 | 2 | 高 | 增强 AI（经济意识 / 防守用陨石 / 威胁评估 / 升级规划） | ✅ 完成（威胁评估 + 三段式决策 + 难度分级 + 5 测试） |
-| 3 | 中 | 同步 README（刷新时间 / 端口 / 兵种译名 / 目录结构） | ☐ 待办 |
+| 3 | 中 | 同步 README（刷新时间 / 端口 / 兵种译名 / 目录结构） | ✅ 完成 |
 | 4 | 中 | 完成 Guardian / Archer 骨骼动画接入，去掉占位圆 | ☐ 待办 |
 | 5 | 低 | 重构 `GameEngine.processCommand` 重复分支为 helper | ☐ 待办 |
 | 6 | 低 | 性能：减少 `MovementSystem` 每帧全量拷贝、线性扫描 | ☐ 待办 |
@@ -75,6 +75,16 @@
 - 端口 8080 → 9090。
 - 兵种译名统一（Swordsman/Guardian/Archer 与中文对应）。
 - 目录结构去掉已删的 `tools/animation-editor`。
+
+### ✅ 完成记录（2026-06-12）
+
+核对真实代码后改 `README.md`（根目录，仓库唯一非 node_modules README）：
+
+- **刷新时间**：2 分钟 → **30 秒**（`config.ts` `CARD_REFRESH_TICKS=900`）。
+- **端口**：8080 → **9090**（`package.json` 的 `start` 脚本用 `--port 9090` 覆盖了 `webpack.config.js` 的 8080；以脚本为准）。
+- **兵种译名**：补英文名映射——普通兵 Swordsman / 盾兵 Guardian / 弓箭兵 Archer（与 `i18n/locales/zh.ts` 的 `card.*` 一致）。
+- **目录结构**：删掉早已不存在的 `tools/animation-editor`（`tools/` 实际只有 `animator`）。
+- **顺手修的过期信息**：导出格式 JSON → `.tao`（ZIP）且 `StickmanRuntime` 普通兵已接入（非"待接入"）；`AISystem` 一行描述更新为威胁驱动决策。
 
 ## 4. Guardian / Archer 动画
 - 制作/接入对应 `.tao`，`UnitView` 去掉占位圆。

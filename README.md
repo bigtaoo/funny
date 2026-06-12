@@ -8,8 +8,8 @@
 
 双方各持一个基地，通过打出手牌派遣士兵、建造建筑，争夺对方基地的血量。
 
-- **手牌系统**：6 张手牌自动轮换（2 分钟未使用自动刷新），消耗金币打出
-- **兵种**：普通兵（群体）、盾兵（高血量）、弓箭兵（远程）
+- **手牌系统**：6 张手牌自动轮换（30 秒未使用自动刷新），消耗金币打出
+- **兵种**：普通兵 Swordsman（群体、廉价）、盾兵 Guardian（高血量、缓慢）、弓箭兵 Archer（远程）
 - **建筑**：兵营（持续生产单位）、箭塔（全向攻击范围内所有敌人）
 - **法术**：急速冲锋（加速己方单位）、陨石打击（2×2 范围秒杀）
 - **基地升级**：消耗金币提升金币回速，最多升级 3 次
@@ -47,7 +47,7 @@ Row  0 ── 己方建筑行（含基地，占中央 2 列）
 - `CombatSystem`：单位 & 箭塔攻击，箭塔全向 Chebyshev 范围寻敌
 - `BuildingProductionSystem`：兵营定时生产
 - `ResourceSystem`：多档加速金币回速
-- `AISystem`：对手 AI，确定性 PRNG 决策
+- `AISystem`：对手 AI，威胁驱动决策（防守 / 经济 / 升级规划，难度分级），确定性 PRNG
 - `SpellSystem`：法术效果处理
 
 ### 动画编辑器（`tools/animator/`）
@@ -57,7 +57,7 @@ Row  0 ── 己方建筑行（含基地，占中央 2 列）
 - **11 根固定骨骼**，FK 正向运动学
 - 关键帧时间轴，支持多 clip 管理
 - Undo/Redo 命令模式（100 步）
-- 导出 JSON 供游戏 Runtime 读取（`StickmanRuntime`，待接入）
+- 导出 `.tao`（ZIP：spritesheet + animation.json）供游戏 Runtime 读取（`StickmanRuntime`，普通兵已接入）
 
 ```bash
 cd tools/animator
@@ -71,7 +71,7 @@ npm run start   # 开发服务器，端口 9091
 ```bash
 cd code
 npm install
-npm run start   # Webpack dev server，端口 8080
+npm run start   # Webpack dev server，端口 9090
 ```
 
 ---
@@ -82,8 +82,7 @@ npm run start   # Webpack dev server，端口 8080
 funny/
 ├── code/          主游戏（TypeScript + PixiJS）
 ├── tools/
-│   ├── animator/  骨骼动画编辑器
-│   └── animation-editor/  旧版单文件编辑器（参考）
+│   └── animator/  骨骼动画编辑器（TypeScript + PixiJS）
 ├── art/           地图 & 角色概念图
 └── design/        产品 & 美术设计文档
 ```
