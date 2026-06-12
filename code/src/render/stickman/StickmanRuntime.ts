@@ -132,6 +132,23 @@ export class StickmanRuntime {
   }
 
   /**
+   * Reset this runtime for reuse from a pool: re-apply mirror, rewind to idle.
+   * Sprites/textures are kept (they all reference the shared asset), so this is
+   * far cheaper than constructing a new runtime per spawn — the key win for
+   * large swarms where Swordsmen spawn and die continuously.
+   */
+  reset(options: StickmanOptions = {}): void {
+    this.container.scale.set(
+      STICKMAN_SCALE * (options.mirrorX ? -1 : 1),
+      STICKMAN_SCALE,
+    );
+    this.currentClip     = null;
+    this.currentClipName = '';
+    this.time            = 0;
+    this.play('idle');
+  }
+
+  /**
    * Advance the animation clock and re-render sprites.
    * Call once per render frame with the elapsed wall-clock delta (seconds).
    */

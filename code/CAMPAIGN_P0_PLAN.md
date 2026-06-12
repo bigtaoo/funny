@@ -18,7 +18,7 @@
 | S3 | 启动接线：`GameScene` 接收 level + `app.ts` `goCampaign` + 大厅「战役」按钮 + i18n 键 | ① | ✅ |
 | S4 | `tsc --noEmit` + webpack 构建验证；**交付玩家体验第一关** | ① | ✅ 验证通过（tsc 干净 / 38 测试全绿 / build:web 成功），⏳ 待用户体验 |
 | S5 | 第 2–3 关：分别用不同旋钮，手感对比 | ② | ✅ |
-| S6 | 性能 pass：对象池审计 + 渲染批处理 + swarm 压力测试（用户要求前期引入，后期只优化） | ③ | ☐ 进行中 |
+| S6 | 性能 pass：对象池审计 + StickmanRuntime 池化 + swarm 压力关 + 标量测试 | ③ | ✅（批处理重构列为后续优化） |
 
 > S1–S4 先把第一关跑通交付，用户玩过确认 ① 之后再做 S5（深度）与 S6（性能）。
 
@@ -63,6 +63,20 @@
 - **待玩家确认的发现**：箭塔射程 2 + 仅 10 车道，两座塔仍能覆盖较多，lv3 更偏「受压下的受限布置」而非紧致几何最优。S5 的意义之一就是让玩家判断这个旋钮深度够不够。
 
 > 三关均可在大厅「战役 (试玩)」下的 1 / 2 / 3 按钮进入。
+
+## S6 性能（已完成；批处理留作后续优化）
+
+**审计结论**：圆形单位（Guardian/Archer）已用 `ObjectPool` 池化；但 **Swordsman 的 `StickmanRuntime` 每次 spawn `new`、death `destroy`** —— 普通兵最高频，每个 runtime 含 ~11 精灵，swarm 下是最大开销点。
+
+**已做**：
+- **StickmanRuntime 池化**：新增 `StickmanRuntime.reset({mirrorX})`（重设镜像 + 回到 idle，复用精灵/纹理，不重建）。`UnitView` 增加 `stickmanPool`，spawn 优先从池取并 `reset`，death/离场时把 (wrapper+runtime) 退回池而非 `destroy`。这是 swarm 性能的关键杠杆。
+- **swarm 压力关 `ch_stress`**（大厅第 4 个按钮）：全 10 车道短时间倾泻 ~240 个普通兵 + 200 启动币，供在目标机型上肉眼看 FPS。
+- **标量/确定性测试**：`test/campaign.test.ts` 新增压力用例——`ch_stress` 同屏并发 > 80 单位、同负载两次跑峰值相同（确定性）。全套 43 测试绿。
+
+**对象池基础设施**：`src/cache/ObjectPool.ts` 已存在并被 meteor / 圆形单位 / 现在的 stickman 复用。
+
+**列为后续优化（不在本步做，原因见下）**：
+- **渲染批处理重构**：当前每个单位 wrapper = [11 张同图集精灵 + HP 条 Graphics]，HP 条 Graphics 夹在单位之间会打断 PIXI 批处理。把 HP 条抽到独立 overlay 层、让单位 body 精灵连续，可显著减少 draw call。但这是触及定位逻辑的重构，且只能肉眼验证，风险较高 —— 符合「前期引入对象池、后期再优化批处理」的取舍，留到压力关实测确认瓶颈后再做。
 
 ## 待用户确认 / 后续
 

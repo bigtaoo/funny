@@ -74,6 +74,13 @@ export class UnitView {
   private readonly stickmanRuntimes: Map<number, StickmanRuntime> = new Map();
 
   /**
+   * Pool of idle stickman (wrapper + runtime) pairs for reuse. Swordsmen are
+   * the high-frequency unit, so reusing their ~11-sprite runtimes instead of
+   * new/destroy per spawn is the main swarm-performance lever.
+   */
+  private readonly stickmanPool: Array<{ wrapper: PIXI.Container; runtime: StickmanRuntime }> = [];
+
+  /**
    * Per-unit HP bar visibility timer (render frames remaining).
    * 0 = hidden. Decremented every render frame in sync().
    */
@@ -212,12 +219,28 @@ export class UnitView {
   // ─── Stickman container (Swordsman with loaded asset) ─────────────────────
 
   private buildStickmanContainer(unit: Unit): PIXI.Container {
+    const mirrorX = unit.side === Side.Top;
+
+    // Reuse a pooled (wrapper + runtime) pair when available.
+    const pooled = this.stickmanPool.pop();
+    if (pooled) {
+      pooled.runtime.reset({ mirrorX });
+      pooled.wrapper.visible = true;
+      pooled.wrapper.alpha   = 1;
+      pooled.wrapper.scale.set(1);
+      const hpBg   = pooled.wrapper.getChildByName('hpBg')   as PIXI.Graphics;
+      const hpFill = pooled.wrapper.getChildByName('hpFill') as PIXI.Graphics;
+      hpBg.visible = false;
+      hpFill.visible = false;
+      hpFill.clear();
+      this.stickmanRuntimes.set(unit.id, pooled.runtime);
+      return pooled.wrapper;
+    }
+
     const wrapper = new PIXI.Container();
     wrapper.visible = true;
 
-    const runtime = new StickmanRuntime(this.infantryAsset!, {
-      mirrorX: unit.side === Side.Top,
-    });
+    const runtime = new StickmanRuntime(this.infantryAsset!, { mirrorX });
     this.stickmanRuntimes.set(unit.id, runtime);
 
     // ── HP bar (positioned above the character's head) ────────────────────
@@ -301,8 +324,10 @@ export class UnitView {
     const runtime = this.stickmanRuntimes.get(unitId);
     if (runtime) {
       this.stickmanRuntimes.delete(unitId);
-      runtime.destroy();
-      sprite.destroy({ children: false }); // runtime.container already destroyed
+      // Return the (wrapper + runtime) pair to the pool instead of destroying.
+      sprite.removeFromParent();
+      sprite.visible = false;
+      this.stickmanPool.push({ wrapper: sprite, runtime });
     } else {
       this.pool.release(sprite);
     }

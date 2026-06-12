@@ -45,8 +45,8 @@ export interface LobbySceneCallbacks {
   onStartCampaign(levelIndex: number): void;
 }
 
-/** Number of campaign levels exposed in the lobby picker (P0 validation slice). */
-const CAMPAIGN_LEVEL_COUNT = 3;
+/** Campaign levels exposed in the lobby picker (1-3 = content, 4 = swarm stress test). */
+const CAMPAIGN_LEVEL_COUNT = 4;
 
 type LobbyState = 'idle' | 'matching' | 'vs';
 

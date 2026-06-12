@@ -68,4 +68,21 @@ describe('campaign mode', () => {
     for (let i = 0; i < 3000; i++) engine.tick(TICK_DT);
     expect(engine.state.bottomPlayer.baseHp).toBeLessThan(100);
   });
+
+  it('the stress level forms a large concurrent swarm and stays deterministic', () => {
+    // Scaling guard for S6: the logic core must handle a big swarm without
+    // error, and the simulation stays reproducible under heavy load.
+    const run = (): number => {
+      const engine = createGameEngine(campaignConfig('ch_stress'));
+      let maxConcurrent = 0;
+      for (let i = 0; i < 300; i++) {
+        engine.tick(TICK_DT);
+        maxConcurrent = Math.max(maxConcurrent, engine.state.board.units.size);
+      }
+      return maxConcurrent;
+    };
+    const peak = run();
+    expect(peak).toBeGreaterThan(80);   // a real swarm formed
+    expect(run()).toBe(peak);           // same load, same peak — deterministic
+  });
 });

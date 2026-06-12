@@ -1,3 +1,4 @@
+import { ATTACK_LANES } from '../config';
 import { UnitType } from '../types';
 import type { LevelDefinition } from './LevelDefinition';
 
@@ -148,15 +149,39 @@ const CH1_LV3: LevelDefinition = {
   rewards: { starThresholds: [50, 80, 100] },
 };
 
+/**
+ * Stress test level — "压力测试" (not real content; S6 perf validation).
+ *
+ * Dumps a very large swarm across all 10 attack lanes in a short window so the
+ * render layer (object pooling, draw batching) can be eyeballed for FPS on the
+ * target device. Plenty of startCoins so the player can also spawn a counter-
+ * swarm and push the concurrent unit count even higher.
+ */
+const CH_STRESS: LevelDefinition = {
+  id: 'ch_stress',
+  chapter: 0,
+  seed: 0x1000f,
+  objective: { kind: 'survive' },
+  startCoins: 200,
+  waves: {
+    entries: ATTACK_LANES.flatMap((col, i) => [
+      { atTick: s(1 + i * 0.1), unitType: UnitType.Swordsman, col, count: 12, spacingTicks: s(0.25) },
+      { atTick: s(6 + i * 0.1), unitType: UnitType.Swordsman, col, count: 12, spacingTicks: s(0.25) },
+    ]),
+  },
+  rewards: { starThresholds: [1, 1, 1] },
+};
+
 /** Registry of all campaign levels, keyed by id. */
 export const CAMPAIGN_LEVELS: Record<string, LevelDefinition> = {
   [CH1_LV1.id]: CH1_LV1,
   [CH1_LV2.id]: CH1_LV2,
   [CH1_LV3.id]: CH1_LV3,
+  [CH_STRESS.id]: CH_STRESS,
 };
 
-/** Ordered level ids — drives the level-select buttons. */
-export const CAMPAIGN_LEVEL_ORDER: string[] = [CH1_LV1.id, CH1_LV2.id, CH1_LV3.id];
+/** Ordered level ids — drives the level-select buttons (4th = swarm stress test). */
+export const CAMPAIGN_LEVEL_ORDER: string[] = [CH1_LV1.id, CH1_LV2.id, CH1_LV3.id, CH_STRESS.id];
 
 /** Look up a level by id, or null if unknown. */
 export function getLevel(id: string): LevelDefinition | null {
