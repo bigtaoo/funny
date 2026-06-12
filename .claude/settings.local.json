@@ -1,6 +1,13 @@
 {
   "permissions": {
     "allow": [
+      "Bash",
+      "PowerShell",
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
       "Skill(update-config)",
       "Skill(update-config:*)",
       "Read(//c/Users/TaoWang/.claude/**)",
@@ -40,7 +47,11 @@
       "Bash(git commit -m 'i18n + intro scene; remove legacy dead code; untrack dist *)",
       "Bash(echo \"=== EXIT: $? ===\")",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
-    ]
+      "Bash(git commit -m ' *)",
+      "Bash(xargs wc -l)",
+      "Bash(git commit *)",
+      "Bash(rm .git/COMMIT_EDITMSG_TMP)"
+    ],
+    "defaultMode": "acceptEdits"
   }
 }
