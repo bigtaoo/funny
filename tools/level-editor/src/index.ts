@@ -1,19 +1,19 @@
 import { parseLevelDefinition, LevelParseError } from '@game/campaign/levelSchema';
 import type { LevelDefinition } from '@game/campaign/LevelDefinition';
 import sampleLevel from '@game/campaign/levels/ch1_lv1.json';
+import { EditorState } from './state/EditorState';
+import { BoardPanel } from './board/BoardPanel';
 
 /**
- * P-B scaffold entry.
+ * Editor entry / composition root (P-C).
  *
- * Proves the two load-bearing claims of the editor architecture before any
- * visual editing is built (see tools/level-editor/DESIGN.md §6.5, phase P-B):
- *   1. the editor can import the game's pure-data level schema directly
- *      (`@game/*` alias → code/src/game), and
- *   2. a level JSON round-trips: import → parseLevelDefinition → export an
- *      equivalent JSON.
+ * Wires the central {@link EditorState} to the board grid panel and a live JSON
+ * pane. Board edits mutate the state, which re-renders both the canvas and the
+ * JSON text; conversely the JSON pane can be hand-edited and applied back
+ * through the shared game-side validator (`parseLevelDefinition`).
  *
- * The UI is a deliberately bare two-pane JSON in/out + validate + import/export.
- * The board grid (P-C), wave timeline (P-D), and form fields (P-E) replace it.
+ * The wave timeline (P-D) and form fields (P-E) become additional panels bound
+ * to the same EditorState.
  */
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -22,53 +22,89 @@ const $ = <T extends HTMLElement>(id: string): T => {
   return el as T;
 };
 
-const inputEl = $<HTMLTextAreaElement>('input');
-const outputEl = $<HTMLTextAreaElement>('output');
+const jsonEl = $<HTMLTextAreaElement>('json');
 const statusEl = $<HTMLDivElement>('status');
-
-/** Last successfully validated level — what "Export" writes. */
-let validated: LevelDefinition | null = null;
 
 function setStatus(message: string, kind: 'ok' | 'err' | '' = ''): void {
   statusEl.className = `status ${kind}`.trim();
   statusEl.textContent = message;
 }
 
-/** Run the shared game-side validator on the input pane's JSON. */
-function validate(): boolean {
-  validated = null;
+/** Validate raw JSON via the shared game-side schema. */
+function parse(raw: unknown): LevelDefinition | null {
+  try {
+    return parseLevelDefinition(raw);
+  } catch (e) {
+    if (e instanceof LevelParseError) setStatus(`✗ ${e.message}`, 'err');
+    else setStatus(`✗ ${(e as Error).message}`, 'err');
+    return null;
+  }
+}
+
+const initial = parse(sampleLevel)!;
+const state = new EditorState(initial);
+const board = new BoardPanel(state, () => refreshTools());
+$('board-mount').appendChild(board.canvas);
+
+// ── State → JSON text (re-render on every change) ──
+function refreshJson(): void {
+  jsonEl.value = JSON.stringify(state.level, null, 2);
+}
+state.on(refreshJson);
+refreshJson();
+
+// ── Paint-tool buttons ──
+const toolButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.board-tools .tool'));
+function refreshTools(): void {
+  for (const b of toolButtons) b.classList.toggle('active', b.dataset.tool === board.getTool());
+}
+for (const b of toolButtons) {
+  b.addEventListener('click', () => board.setTool(b.dataset.tool as 'noBuild' | 'blocked' | 'erase'));
+}
+refreshTools();
+
+// ── Apply hand-edited JSON back into the editor ──
+$('btn-apply').addEventListener('click', () => {
   let raw: unknown;
   try {
-    raw = JSON.parse(inputEl.value);
+    raw = JSON.parse(jsonEl.value);
   } catch (e) {
-    outputEl.value = '';
     setStatus(`JSON 解析失败：${(e as Error).message}`, 'err');
-    return false;
+    return;
   }
-  try {
-    const level = parseLevelDefinition(raw);
-    validated = level;
-    outputEl.value = JSON.stringify(level, null, 2);
-    setStatus(`✓ 校验通过 — 关卡 "${level.id}"，${level.waves.entries.length} 条波次`, 'ok');
-    return true;
-  } catch (e) {
-    outputEl.value = '';
-    if (e instanceof LevelParseError) {
-      setStatus(`✗ 校验失败 @ ${e.path}: ${e.message.slice(e.path.length + 2)}`, 'err');
-    } else {
-      setStatus(`✗ 校验失败：${(e as Error).message}`, 'err');
-    }
-    return false;
+  const level = parse(raw);
+  if (!level) return;
+  state.setLevel(level);
+  setStatus(`✓ 已应用 — 关卡 "${level.id}"`, 'ok');
+});
+
+// ── Load bundled sample ──
+$('btn-sample').addEventListener('click', () => {
+  const level = parse(sampleLevel);
+  if (level) {
+    state.setLevel(level);
+    setStatus('✓ 已载入示例 ch1_lv1', 'ok');
   }
-}
+});
 
-function loadSample(): void {
-  inputEl.value = JSON.stringify(sampleLevel, null, 2);
-  validate();
-}
-
+// ── Import .json ──
+$('btn-import').addEventListener('click', () => void importJson());
 async function importJson(): Promise<void> {
-  // File System Access API where available; fall back to a hidden <input>.
+  const apply = (text: string): void => {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch (e) {
+      setStatus(`JSON 解析失败：${(e as Error).message}`, 'err');
+      return;
+    }
+    const level = parse(raw);
+    if (level) {
+      state.setLevel(level);
+      setStatus(`✓ 已导入 "${level.id}"`, 'ok');
+    }
+  };
+
   if ('showOpenFilePicker' in window) {
     try {
       const [handle] = await (window as unknown as {
@@ -76,11 +112,9 @@ async function importJson(): Promise<void> {
       }).showOpenFilePicker({
         types: [{ description: 'Level JSON', accept: { 'application/json': ['.json'] } }],
       });
-      const file = await handle.getFile();
-      inputEl.value = await file.text();
-      validate();
+      apply(await (await handle.getFile()).text());
     } catch {
-      /* user cancelled */
+      /* cancelled */
     }
     return;
   }
@@ -89,28 +123,28 @@ async function importJson(): Promise<void> {
   picker.accept = '.json,application/json';
   picker.onchange = async () => {
     const file = picker.files?.[0];
-    if (file) {
-      inputEl.value = await file.text();
-      validate();
-    }
+    if (file) apply(await file.text());
   };
   picker.click();
 }
 
+// ── Export .json (re-validates the working state) ──
+$('btn-export').addEventListener('click', () => void exportJson());
 async function exportJson(): Promise<void> {
-  if (!validate() || !validated) {
-    setStatus('导出已阻止 — 先修正校验错误', 'err');
+  const level = parse(state.level);
+  if (!level) {
+    setStatus('导出已阻止 — 当前关卡未通过校验', 'err');
     return;
   }
-  const text = JSON.stringify(validated, null, 2) + '\n';
-  const fileName = `${validated.id}.json`;
+  const text = JSON.stringify(level, null, 2) + '\n';
+  const fileName = `${level.id}.json`;
 
   if ('showSaveFilePicker' in window) {
     try {
       const handle = await (window as unknown as {
         showSaveFilePicker: (o: unknown) => Promise<FileSystemFileHandle>;
       }).showSaveFilePicker({
-        suggestedName: validated.id, // extension added by the accept type
+        suggestedName: level.id,
         types: [{ description: 'Level JSON', accept: { 'application/json': ['.json'] } }],
       });
       const writable = await (handle as unknown as {
@@ -121,11 +155,9 @@ async function exportJson(): Promise<void> {
       setStatus(`✓ 已保存 ${fileName}`, 'ok');
       return;
     } catch {
-      return; // user cancelled
+      return;
     }
   }
-
-  // Fallback: <a download>.
   const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -136,10 +168,4 @@ async function exportJson(): Promise<void> {
   setStatus(`✓ 已下载 ${fileName}`, 'ok');
 }
 
-$('btn-sample').addEventListener('click', loadSample);
-$('btn-import').addEventListener('click', () => void importJson());
-$('btn-validate').addEventListener('click', () => validate());
-$('btn-export').addEventListener('click', () => void exportJson());
-
-// Boot with the sample so the round-trip is visible immediately.
-loadSample();
+setStatus('就绪 — 载入示例 ch1_lv1');

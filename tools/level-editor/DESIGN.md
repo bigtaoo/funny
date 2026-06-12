@@ -149,7 +149,7 @@ npm run build   # 生产构建
 |---|---|---|
 | **P-A** ✅ | 游戏侧 JSON 化：迁移 4 个内置关卡 + `levelSchema.ts` + `levels.ts` 改加载 + Vitest（`resolveJsonModule` 本已开启） | 已完成：`tsc --noEmit` 0 错、`build:web` 通过、52 测试全绿（含校验器 9 例）；黄金回放确定性不变 |
 | **P-B** ✅ | 编辑器骨架：webpack/tsconfig/html/端口 9092 + 共享 import 打通 + JSON 读写往返（裸 textarea 验证 loader） | 已完成：`@game/*` alias 直接 import `parseLevelDefinition`（ts-loader `transpileOnly`，bundle 仅 10.3 KiB 无 PIXI 膨胀）；浏览器内载入 ch1_lv1 → 校验 → 输出与输入深度相等；非法 unitType 触发带字段路径的错误 |
-| **P-C** | 棋盘格面板：12×18 网格 + 分区着色 + 涂 blocked/noBuild + activeLanes | 画的掩码导出 JSON 正确，导入能还原 |
+| **P-C** ✅ | 棋盘格面板：12×18 网格 + 分区着色 + 涂 blocked/noBuild + activeLanes | 已完成：中心化 `EditorState`（变更广播 + 规范化）；Canvas 网格（顶敌底己、分区着色、车道头开关）；noBuild/blocked/erase 画笔（点击 toggle + 拖拽）；实时双向 JSON。浏览器内验证三种画笔 + 车道开关产出排序/规范化 JSON，清空后 `board` 键自动消失 |
 | **P-D** | 波次时间线（主菜）：时间轴 + 车道行 + 出兵块增删改 + 单位调色板 | 能可视化搭出一关完整波次并导出 |
 | **P-E** | 表单字段 + 打磨（objective/经济/rewards/story/loadout/bannedCards） | 完整关卡编辑闭环 |
 
