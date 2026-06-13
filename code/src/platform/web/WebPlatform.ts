@@ -1,8 +1,9 @@
 import type * as PIXI from 'pixi.js-legacy';
-import { IPlatform, IStorage, AuthCredential } from '../IPlatform';
+import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WebAdapter } from '../../inputSystem/WebAdapter';
 import { getOrCreateDeviceId } from '../uuid';
+import { BrowserGameSocket } from '../../net/BrowserGameSocket';
 import type { Locale } from '../../i18n';
 
 export class WebPlatform implements IPlatform {
@@ -53,6 +54,10 @@ export class WebPlatform implements IPlatform {
 
   async getAuthCredential(): Promise<AuthCredential> {
     return { kind: 'device', deviceId: getOrCreateDeviceId(this.storage) };
+  }
+
+  connectSocket(url: string, handlers: SocketHandlers): IGameSocket {
+    return new BrowserGameSocket(url, handlers);
   }
 
   onAppReady(): void {

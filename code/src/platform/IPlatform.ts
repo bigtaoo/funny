@@ -84,6 +84,31 @@ export interface IPlatform {
    * Returns the same kind every call on a given platform.
    */
   getAuthCredential(): Promise<AuthCredential>;
+
+  /**
+   * Open a binary WebSocket to the gameserver (S1-6). Platform abstracts the
+   * underlying transport (browser `WebSocket` vs `wx.connectSocket`); reconnect
+   * and protocol live in `NetClient`. Returns immediately; events arrive via
+   * `handlers`. Binary frames are protobuf `Envelope` (transport.proto).
+   *
+   * Web / CrazyGames: global `WebSocket` (binaryType=arraybuffer).
+   * WeChat: `wx.connectSocket` SocketTask.
+   */
+  connectSocket(url: string, handlers: SocketHandlers): IGameSocket;
+}
+
+/** gameserver WS 事件回调（NetClient 提供，平台 socket 触发）。 */
+export interface SocketHandlers {
+  onOpen(): void;
+  onMessage(data: Uint8Array): void;
+  onClose(code: number, reason: string): void;
+  onError(err: unknown): void;
+}
+
+/** 平台无关的二进制 socket 句柄。 */
+export interface IGameSocket {
+  send(data: Uint8Array): void;
+  close(): void;
 }
 
 /** Anonymous identity proof (S0-4). See IPlatform.getAuthCredential. */

@@ -62,7 +62,7 @@
 - [ ] **S1-RP 录像录制 + 回放**：定义 `replay.proto`（复用 `FrameCmds`）；录制（PvE 客户端记玩家指令 / PvP gameserver 持久化输入日志到 `matches.replayRef`）；实现 `ReplayInputSource` + 回放播放器（同 seed 起新引擎喂输入流），回放前校验 `engineVersion`。**依赖**：C-4、S1-5。**验收**：一局 PvE + 一局 PvP 录像回放与原局逐 tick 一致；改 engineVersion 回放被拒。**注**：PvE 录制可随战役（CAMPAIGN P1）先落地，不必等联机。
 
 ### 客户端
-- [ ] **S1-6 NetClient**：封装 ws 连接、重连、消息编解码（用 C-2 协议）。**依赖**：C-2。**验收**：掉线自动重连。
+- [x] **S1-6 NetClient**：封装 ws 连接、重连、消息编解码（用 C-2 协议）。**依赖**：C-2。**验收**：掉线自动重连。✅ `code/src/net/NetClient.ts`：退避重连 + 代次作废滞后回调 + 首/重连 open 区分（仅重连触发 `onReconnect`，上层据此发 conn_resume）+ 应用层心跳 + 未 open 丢弃发送；平台 socket 抽象 `IPlatform.connectSocket`（Web/CrazyGames=`BrowserGameSocket`，微信=`WechatGameSocket`）；C-2 ts-proto 编解码。6 单测（假 socket）+ 端到端真 NetClient↔真 gameserver 整局 friendly 跑通。**注**：C-2 客户端 proto codegen 同期落地（ts-proto via buf，`code/buf.gen.yaml`+`scripts/gen-proto.mjs`+`npm run proto:gen`，产物 `src/net/proto/`，线兼容回归 `test/proto-wire-compat.test.ts`）。
 - [ ] **S1-7 节拍驱动（NetInputSource）**：实现 `NetInputSource`（C-4 的联机实例）——消费 gameserver 的 `frame_batch`、按 `to_frame` 推进引擎并把 3 帧摊到 100ms 播放，保持 ~1 批次缓冲，缓存空则暂停、超时追帧；出牌即发 `cmd_submit`（不预算帧号）。单机/PvE 走 `LocalInputSource` 不变。**依赖**：S1-6、S1-3、C-4。**验收**：缓冲吸收 <100ms 抖动无感；服务器停发即暂停；无回滚。
 - [ ] **S1-8 RoomScene**：建房/房间码展示/输码加入/ready/倒计时开打（UI 见 `UI_DESIGN.md`）。**依赖**：S1-6、S1-2。**验收**：完整建房→加入→开局流程。
 

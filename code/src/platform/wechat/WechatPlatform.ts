@@ -1,5 +1,5 @@
 import type * as PIXI from 'pixi.js-legacy';
-import { IPlatform, IStorage, AuthCredential } from '../IPlatform';
+import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WechatAdapter } from '../../inputSystem/WechatAdapter';
 import type { Locale } from '../../i18n';
@@ -24,7 +24,18 @@ declare const wx: {
     success(res: { code: string }): void;
     fail(err: unknown): void;
   }): void;
+  connectSocket(opts: { url: string }): WxSocketTask;
 };
+
+/** wx.connectSocket 返回的 SocketTask（仅用到的子集）。 */
+interface WxSocketTask {
+  send(opts: { data: ArrayBuffer }): void;
+  close(opts?: { code?: number; reason?: string }): void;
+  onOpen(cb: () => void): void;
+  onMessage(cb: (res: { data: ArrayBuffer | string }) => void): void;
+  onClose(cb: (res: { code: number; reason: string }) => void): void;
+  onError(cb: (err: unknown) => void): void;
+}
 
 interface WxTouch {
   identifier: number;
@@ -112,7 +123,44 @@ export class WechatPlatform implements IPlatform {
     });
   }
 
+  connectSocket(url: string, handlers: SocketHandlers): IGameSocket {
+    const task = wx.connectSocket({ url });
+    task.onOpen(() => handlers.onOpen());
+    task.onMessage((res) => {
+      if (res.data instanceof ArrayBuffer) handlers.onMessage(new Uint8Array(res.data));
+    });
+    task.onClose((res) => handlers.onClose(res.code, res.reason));
+    task.onError((err) => handlers.onError(err));
+    return new WechatGameSocket(task);
+  }
+
   onAppReady(): void {
     try { wx.setPreferredFramesPerSecond(60); } catch { /* ignore */ }
+  }
+}
+
+/** 微信小游戏二进制 WS 句柄（S1-6）。主动 close 后回调由 NetClient 侧 guard 忽略。 */
+class WechatGameSocket implements IGameSocket {
+  private closed = false;
+  constructor(private readonly task: WxSocketTask) {}
+
+  send(data: Uint8Array): void {
+    if (this.closed) return;
+    // SocketTask.send 要求 ArrayBuffer；切出精确视图避免带上底层多余字节
+    const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+    try {
+      this.task.send({ data: buf });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  close(): void {
+    this.closed = true;
+    try {
+      this.task.close();
+    } catch {
+      /* ignore */
+    }
   }
 }
