@@ -150,7 +150,7 @@ export class HandView {
     const hand    = player.hand.slots;
     const syncKey = hand.map((s, i) =>
       `${i}:${s?.card.id ?? 'x'}:${s?.refreshRemainingTicks ?? 0}:${this.selectedIndex === i}`
-    ).join('|') + `|${player.coins}`;
+    ).join('|') + `|${player.ink}`;
 
     if (syncKey === this.lastSyncKey) return;
     this.lastSyncKey = syncKey;
@@ -169,7 +169,7 @@ export class HandView {
     hand.forEach((handSlot, i) => {
       const isSelected = this.selectedIndex === i;
       const slot = this.pool.acquire();
-      this.configureSlot(slot, handSlot?.card ?? null, i, player.coins, isSelected, cw, ch);
+      this.configureSlot(slot, handSlot?.card ?? null, i, player.ink, isSelected, cw, ch);
 
       if (handSlot) {
         this.drawRefreshBar(
@@ -220,7 +220,7 @@ export class HandView {
 
   /**
    * Returns the card slot index (0-based) at design-space point (x, y), or -1.
-   * Does NOT check affordability — caller should verify player.coins.
+   * Does NOT check affordability — caller should verify player.ink.
    */
   hitTestCardIndex(x: number, y: number): number {
     const { cardWidth: cw, cardHeight: ch, cardMargin: cm } = this.layout;
@@ -240,12 +240,12 @@ export class HandView {
     c: PIXI.Container,
     card: CardDefinition | null,
     _index: number,
-    coins: number,
+    ink: number,
     isSelected: boolean,
     cardW: number,
     cardH: number,
   ): void {
-    const canAfford   = card !== null && coins >= card.cost;
+    const canAfford   = card !== null && ink >= card.cost;
     const borderColor = isSelected ? CARD_SELECTED_BORDER : CARD_BORDER;
     const borderWidth = isSelected ? 3 : 2;
 

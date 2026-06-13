@@ -6,7 +6,7 @@
     "kind": "timed_defense",
     "durationTicks": 1650
   },
-  "startCoins": 8,
+  "startInk": 8,
   "waves": {
     "entries": [
       { "atTick": 30, "unitType": "swordsman", "col": 3, "count": 3, "spacingTicks": 24 },

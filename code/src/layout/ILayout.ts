@@ -30,7 +30,7 @@ export interface ILayout {
   // ── Layout rects (design space) ────────────────────────────────────────────
   readonly boardRect:          Rect;  // The 12×18 (or 18×12) grid area
   readonly hudTopRect:         Rect;  // Top HUD strip (timer / enemy HP / settings)
-  readonly hudBottomLeftRect:  Rect;  // Coins + own HP
+  readonly hudBottomLeftRect:  Rect;  // Ink + own HP
   readonly hudBottomRightRect: Rect;  // Upgrade button
   readonly handRect:           Rect;  // Hand card area (always bottom-center)
 

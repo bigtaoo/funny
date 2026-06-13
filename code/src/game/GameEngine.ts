@@ -95,11 +95,11 @@ class GameEngineImpl implements IGameEngine {
       this.level        = config.level;
       this.waveDirector = new WaveDirector(config.level, new Prng(config.seed ^ 0x5A5A5A5A));
 
-      // Apply level setup: no-build cells (coverage puzzle) + starting coins.
+      // Apply level setup: no-build cells (coverage puzzle) + starting ink.
       const noBuild = config.level.board?.cellMask?.noBuild;
       if (noBuild && noBuild.length > 0) this.state.board.setNoBuild(noBuild);
-      if (config.level.startCoins) {
-        this.state.bottomPlayer.addCoinsFp(toFp(config.level.startCoins));
+      if (config.level.startInk) {
+        this.state.bottomPlayer.addInkFp(toFp(config.level.startInk));
       }
     } else {
       this.level        = null;
@@ -238,7 +238,7 @@ class GameEngineImpl implements IGameEngine {
           refreshDurationTicks: duration,
         });
       }
-      this.state.pushEvent({ type: 'resource_changed', owner, coins: player.coins });
+      this.state.pushEvent({ type: 'resource_changed', owner, ink: player.ink });
     }
   }
 
@@ -264,14 +264,14 @@ class GameEngineImpl implements IGameEngine {
       const cost = player.nextUpgradeCost;
       if (player.upgradeBase()) {
         if (cost !== null) this.state.stats[cmd.owner].goldSpent += cost;
-        this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, coins: player.coins });
+        this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, ink: player.ink });
       }
       return;
     }
 
     if (cmd.type === 'play_card') {
       const slot = player.hand.slots[cmd.handIndex];
-      if (!slot || player.coins < slot.card.cost) return;
+      if (!slot || player.ink < slot.card.cost) return;
       const card = slot.card;
 
       // ── Unit card ────────────────────────────────────────────────────────
@@ -355,7 +355,7 @@ class GameEngineImpl implements IGameEngine {
   }
 
   /**
-   * Shared bookkeeping for every successful card play: spend the coins, record
+   * Shared bookkeeping for every successful card play: spend the ink, record
    * gold spent, clear the hand slot, emit `card_played`, run the card-specific
    * `effect`, then draw a replacement and emit `resource_changed`.
    *
@@ -370,20 +370,20 @@ class GameEngineImpl implements IGameEngine {
     card: CardDefinition,
     effect: () => void,
   ): void {
-    player.spendCoins(card.cost);
+    player.spendInk(card.cost);
     this.state.stats[owner].goldSpent += card.cost;
     player.hand.play(handIndex);
     this.state.pushEvent({ type: 'card_played', owner, handIndex });
     effect();
     this.drawIntoSlot(player, owner, handIndex, CARD_REFRESH_TICKS);
-    this.state.pushEvent({ type: 'resource_changed', owner, coins: player.coins });
+    this.state.pushEvent({ type: 'resource_changed', owner, ink: player.ink });
   }
 
   // ─── Campaign: scripted enemy spawn ────────────────────────────────────────
 
   /**
    * Spawn a single enemy (Top side, owner 1) unit on `col`, bypassing the
-   * hand/coin economy. Emits the same unit_spawned / unit_move_start events as
+   * hand/ink economy. Emits the same unit_spawned / unit_move_start events as
    * a card play, so the render layer needs no campaign-specific handling.
    */
   private spawnEnemyUnit(unitType: UnitType, col: number): void {

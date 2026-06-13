@@ -28,8 +28,8 @@ export class LevelFormPanel {
   /** Strip empty optionals, then broadcast. */
   private commit(): void {
     const lv = this.lv;
-    if (lv.startCoins === undefined || Number.isNaN(lv.startCoins)) delete lv.startCoins;
-    if (lv.coinRegenMult === undefined || Number.isNaN(lv.coinRegenMult)) delete lv.coinRegenMult;
+    if (lv.startInk === undefined || Number.isNaN(lv.startInk)) delete lv.startInk;
+    if (lv.inkRegenMult === undefined || Number.isNaN(lv.inkRegenMult)) delete lv.inkRegenMult;
     if (lv.loadout && lv.loadout.length === 0) delete lv.loadout;
     if (lv.bannedCards && lv.bannedCards.length === 0) delete lv.bannedCards;
     if (lv.rewards && Object.keys(lv.rewards).length === 0) delete lv.rewards;
@@ -80,8 +80,8 @@ export class LevelFormPanel {
 
     // ── Economy ──
     root.appendChild(section('经济'));
-    root.appendChild(optNumField('起始金币 (startCoins)', lv.startCoins, 0, 1, (v) => { if (v === undefined) delete lv.startCoins; else lv.startCoins = Math.max(0, Math.round(v)); this.commit(); }));
-    root.appendChild(optNumField('金币速率倍率 (coinRegenMult)', lv.coinRegenMult, 0, 0.1, (v) => { if (v === undefined) delete lv.coinRegenMult; else lv.coinRegenMult = Math.max(0, v); this.commit(); }));
+    root.appendChild(optNumField('起始墨滴 (startInk)', lv.startInk, 0, 1, (v) => { if (v === undefined) delete lv.startInk; else lv.startInk = Math.max(0, Math.round(v)); this.commit(); }));
+    root.appendChild(optNumField('墨滴速率倍率 (inkRegenMult)', lv.inkRegenMult, 0, 0.1, (v) => { if (v === undefined) delete lv.inkRegenMult; else lv.inkRegenMult = Math.max(0, v); this.commit(); }));
 
     // ── Loadout / banned ──
     root.appendChild(section('编成约束'));

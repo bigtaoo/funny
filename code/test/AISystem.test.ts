@@ -34,8 +34,8 @@ function freshState(): GameState {
   return new GameState(12345);
 }
 
-function giveCoins(state: GameState, coins: number): void {
-  state.topPlayer.addCoinsFp(coins * FP_SCALE);
+function giveInk(state: GameState, ink: number): void {
+  state.topPlayer.addInkFp(ink * FP_SCALE);
 }
 
 /** Place an enemy (Bottom) unit at a grid cell. */
@@ -55,7 +55,7 @@ function firstDecision(ai: AISystem, state: GameState): PlayerCommand[] {
 describe('AISystem — enhanced decisions', () => {
   it('medium AI meteors a cluster pressing its base', () => {
     const state = freshState();
-    giveCoins(state, 30);
+    giveInk(state, 30);
     state.topPlayer.hand.drawIntoSlot(0, METEOR, 900);
     // Two enemies adjacent near the AI base (row 17).
     addEnemy(state, 3, 15);
@@ -77,7 +77,7 @@ describe('AISystem — enhanced decisions', () => {
 
   it('falls back to an arrow tower in the pressured lane when no meteor', () => {
     const state = freshState();
-    giveCoins(state, 30);
+    giveInk(state, 30);
     state.topPlayer.hand.drawIntoSlot(0, TOWER, 900);
     addEnemy(state, 4, 14);
     addEnemy(state, 4, 15);
@@ -95,8 +95,8 @@ describe('AISystem — enhanced decisions', () => {
 
   it('pushes a unit when there is no threat (offense)', () => {
     const state = freshState();
-    // Low on coins (below the upgrade-banking threshold) so the AI spends now.
-    giveCoins(state, 8);
+    // Low on ink (below the upgrade-banking threshold) so the AI spends now.
+    giveInk(state, 8);
     state.topPlayer.hand.drawIntoSlot(0, SWORD, 900);
 
     const ai = new AISystem(new Prng(1), 'medium');
@@ -113,7 +113,7 @@ describe('AISystem — enhanced decisions', () => {
 
   it('upgrades the base when it is safe and affordable', () => {
     const state = freshState();
-    giveCoins(state, 60); // ≥ first upgrade cost (50), now reachable (COIN_CAP 300)
+    giveInk(state, 60); // ≥ first upgrade cost (50), now reachable (INK_CAP 300)
     state.topPlayer.hand.drawIntoSlot(0, SWORD, 900);
     // No enemies on the board → no threat → economy phase prioritises the upgrade.
 
@@ -126,7 +126,7 @@ describe('AISystem — enhanced decisions', () => {
 
   it('easy AI does not use meteor/towers', () => {
     const state = freshState();
-    giveCoins(state, 30);
+    giveInk(state, 30);
     state.topPlayer.hand.drawIntoSlot(0, METEOR, 900);
     addEnemy(state, 3, 15);
     addEnemy(state, 4, 15);

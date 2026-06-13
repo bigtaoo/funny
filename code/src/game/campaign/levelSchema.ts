@@ -243,15 +243,15 @@ export function parseLevelDefinition(raw: unknown, ctx = 'level'): LevelDefiniti
   const hazards = parseHazards(raw.hazards, `${ctx}.hazards`);
   if (hazards) level.hazards = hazards;
 
-  if (raw.startCoins !== undefined) {
-    const startCoins = int(raw.startCoins, `${ctx}.startCoins`);
-    if (startCoins < 0) fail(`${ctx}.startCoins`, `must be >= 0, got ${startCoins}`);
-    level.startCoins = startCoins;
+  if (raw.startInk !== undefined) {
+    const startInk = int(raw.startInk, `${ctx}.startInk`);
+    if (startInk < 0) fail(`${ctx}.startInk`, `must be >= 0, got ${startInk}`);
+    level.startInk = startInk;
   }
-  if (raw.coinRegenMult !== undefined) {
-    const m = num(raw.coinRegenMult, `${ctx}.coinRegenMult`);
-    if (m < 0) fail(`${ctx}.coinRegenMult`, `must be >= 0, got ${m}`);
-    level.coinRegenMult = m;
+  if (raw.inkRegenMult !== undefined) {
+    const m = num(raw.inkRegenMult, `${ctx}.inkRegenMult`);
+    if (m < 0) fail(`${ctx}.inkRegenMult`, `must be >= 0, got ${m}`);
+    level.inkRegenMult = m;
   }
 
   const loadout = optStringArray(raw.loadout, `${ctx}.loadout`);

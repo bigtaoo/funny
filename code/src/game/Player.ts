@@ -1,7 +1,7 @@
 import {
   BASE_HP,
   BASE_UPGRADE_COSTS,
-  COIN_CAP,
+  INK_CAP,
 } from './config';
 import { FP_SCALE } from './math/fixed';
 import { Hand, UniformCardDrawPolicy, type ICardDrawPolicy } from './Card';
@@ -12,10 +12,10 @@ export class Player {
   readonly side: Side;
 
   /**
-   * Internal coin accumulator in fixed-point.
-   * ResourceSystem adds fp/tick; integer view is exposed via `coins` getter.
+   * Internal ink accumulator in fixed-point.
+   * ResourceSystem adds fp/tick; integer view is exposed via `ink` getter.
    */
-  private _coins_fp: number = 0;
+  private _ink_fp: number = 0;
 
   baseHp: number = BASE_HP;
 
@@ -44,8 +44,8 @@ export class Player {
 
   // ── Derived getters ────────────────────────────────────────────────────────
 
-  get coins(): number {
-    return Math.trunc(this._coins_fp / FP_SCALE);
+  get ink(): number {
+    return Math.trunc(this._ink_fp / FP_SCALE);
   }
 
   get isDead(): boolean {
@@ -54,15 +54,15 @@ export class Player {
 
   // ── Mutation helpers ───────────────────────────────────────────────────────
 
-  addCoinsFp(amount_fp: number): number {
-    const before = this.coins;
-    this._coins_fp = Math.min(COIN_CAP * FP_SCALE, this._coins_fp + amount_fp);
-    return this.coins - before;
+  addInkFp(amount_fp: number): number {
+    const before = this.ink;
+    this._ink_fp = Math.min(INK_CAP * FP_SCALE, this._ink_fp + amount_fp);
+    return this.ink - before;
   }
 
-  spendCoins(amount: number): boolean {
-    if (this.coins < amount) return false;
-    this._coins_fp -= amount * FP_SCALE;
+  spendInk(amount: number): boolean {
+    if (this.ink < amount) return false;
+    this._ink_fp -= amount * FP_SCALE;
     return true;
   }
 
@@ -72,7 +72,7 @@ export class Player {
 
   canUpgradeBase(): boolean {
     if (this.upgradeLevel >= BASE_UPGRADE_COSTS.length) return false;
-    return this.coins >= BASE_UPGRADE_COSTS[this.upgradeLevel]!;
+    return this.ink >= BASE_UPGRADE_COSTS[this.upgradeLevel]!;
   }
 
   get nextUpgradeCost(): number | null {
@@ -83,7 +83,7 @@ export class Player {
   upgradeBase(): boolean {
     if (this.upgradeLevel >= BASE_UPGRADE_COSTS.length) return false;
     const cost = BASE_UPGRADE_COSTS[this.upgradeLevel]!;
-    if (!this.spendCoins(cost)) return false;
+    if (!this.spendInk(cost)) return false;
     this.upgradeLevel++;
     return true;
   }

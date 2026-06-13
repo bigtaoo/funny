@@ -5,7 +5,7 @@
   "objective": {
     "kind": "survive"
   },
-  "startCoins": 6,
+  "startInk": 6,
   "board": {
     "cellMask": {
       "noBuild": [

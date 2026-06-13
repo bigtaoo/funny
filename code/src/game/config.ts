@@ -40,26 +40,26 @@ export const TOP_SPAWN_ROW = 16;
 
 // ─── Resource ─────────────────────────────────────────────────────────────────
 
-export const COIN_REGEN_BASE = 2;      // coins / second (reference only)
-export const COIN_CAP = 300;
+export const INK_REGEN_BASE = 2;      // ink / second (reference only)
+export const INK_CAP = 300;
 export const BASE_UPGRADE_COSTS = [50, 100, 200] as const;
-export const BASE_UPGRADE_REGEN_BONUS = 1; // +1 coin/s per upgrade level
+export const BASE_UPGRADE_REGEN_BONUS = 1; // +1 ink/s per upgrade level
 
-// ─── Tick-based coin regen (integer fp per tick, no floats) ──────────────────
+// ─── Tick-based ink regen (integer fp per tick, no floats) ──────────────────
 //
-//  Normal  : COIN_REGEN_BASE coins/s           = trunc(2 * 1000 / 30)     =  66 fp/tick
-//  Accel×1.5: COIN_REGEN_BASE * 1.5 coins/s   = trunc(2 * 1000 * 3 / 60) = 100 fp/tick
-//  Accel×2  : COIN_REGEN_BASE * 2   coins/s   = trunc(2 * 1000 * 2 / 30) = 133 fp/tick
-//  Upgrade bonus: +1 coin/s per level          = trunc(1 * 1000 / 30)     =  33 fp/tick
+//  Normal  : INK_REGEN_BASE ink/s           = trunc(2 * 1000 / 30)     =  66 fp/tick
+//  Accel×1.5: INK_REGEN_BASE * 1.5 ink/s   = trunc(2 * 1000 * 3 / 60) = 100 fp/tick
+//  Accel×2  : INK_REGEN_BASE * 2   ink/s   = trunc(2 * 1000 * 2 / 30) = 133 fp/tick
+//  Upgrade bonus: +1 ink/s per level          = trunc(1 * 1000 / 30)     =  33 fp/tick
 //
-// Regen fp/tick per coin/s of regen rate, at each acceleration phase.
-// Used to compute per-player regen: rate_per_tick * coinRegenRate(coins/s)
-// Normal  (×1  ): trunc(1 * 1000 / 30)         =  33 fp / (coin/s) / tick
-// Accel×1.5     : trunc(1 * 1000 * 3 / 60)     =  50 fp / (coin/s) / tick
-// Accel×2       : trunc(1 * 1000 * 2 / 30)     =  66 fp / (coin/s) / tick
-export const REGEN_FP_PER_COIN_PER_S_NORMAL = Math.trunc(FP_SCALE          / TICK_RATE);           // 33
-export const REGEN_FP_PER_COIN_PER_S_ACCEL1 = Math.trunc(FP_SCALE * 3      / (TICK_RATE * 2));     // 50
-export const REGEN_FP_PER_COIN_PER_S_ACCEL2 = Math.trunc(FP_SCALE * 2      / TICK_RATE);           // 66
+// Regen fp/tick per ink/s of regen rate, at each acceleration phase.
+// Used to compute per-player regen: rate_per_tick * inkRegenRate(ink/s)
+// Normal  (×1  ): trunc(1 * 1000 / 30)         =  33 fp / (ink/s) / tick
+// Accel×1.5     : trunc(1 * 1000 * 3 / 60)     =  50 fp / (ink/s) / tick
+// Accel×2       : trunc(1 * 1000 * 2 / 30)     =  66 fp / (ink/s) / tick
+export const REGEN_FP_PER_INK_PER_S_NORMAL = Math.trunc(FP_SCALE          / TICK_RATE);           // 33
+export const REGEN_FP_PER_INK_PER_S_ACCEL1 = Math.trunc(FP_SCALE * 3      / (TICK_RATE * 2));     // 50
+export const REGEN_FP_PER_INK_PER_S_ACCEL2 = Math.trunc(FP_SCALE * 2      / TICK_RATE);           // 66
 
 // ─── Time acceleration (tick thresholds) ─────────────────────────────────────
 //
@@ -78,8 +78,8 @@ export const ACCEL_THRESHOLD_1_TICKS  = ACCEL_THRESHOLD_1 * TICK_RATE; // 5400
 export const ACCEL_THRESHOLD_2_TICKS  = ACCEL_THRESHOLD_2 * TICK_RATE; // 10800
 export const ACCEL_THRESHOLD_3_TICKS  = ACCEL_THRESHOLD_3 * TICK_RATE; // 18000
 
-// Accel ×4.0: trunc(4 * 1000 / 30) = 133 fp / (coin/s) / tick
-export const REGEN_FP_PER_COIN_PER_S_ACCEL3 = Math.trunc(FP_SCALE * 4 / TICK_RATE); // 133
+// Accel ×4.0: trunc(4 * 1000 / 30) = 133 fp / (ink/s) / tick
+export const REGEN_FP_PER_INK_PER_S_ACCEL3 = Math.trunc(FP_SCALE * 4 / TICK_RATE); // 133
 
 export const ATTACK_MULT_THRESHOLD        = 780; // 13 min (seconds, reference only)
 export const ATTACK_MULT_THRESHOLD_TICKS  = ATTACK_MULT_THRESHOLD * TICK_RATE; // 23400

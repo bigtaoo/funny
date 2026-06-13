@@ -3,7 +3,7 @@ import {
   BASE_HP,
   BOARD_COLS,
   BOARD_ROWS,
-  COIN_CAP,
+  INK_CAP,
   TOP_BUILDING_ROW,
 } from '../config';
 import { TICK_RATE } from '../math/fixed';
@@ -86,7 +86,7 @@ const MAX_BARRACKS = 2;
  *   1. Emergency defense — meteor a cluster near the base, drop an arrow tower
  *      in the most-pressured lane, or block with a Guardian.
  *   2. Upgrade planning — bank toward / buy a base upgrade when it is safe and
- *      actually reachable (guarded by COIN_CAP).
+ *      actually reachable (guarded by INK_CAP).
  *   3. Economy & offense — seed barracks, nuke fat enemy clusters, then push a
  *      cost-effective unit down the least-defended lane.
  *
@@ -133,16 +133,16 @@ export class AISystem {
       if (player.canUpgradeBase()) {
         return [{ type: 'upgrade_base', owner, tick }];
       }
-      // Close to affording the next upgrade — bank coins instead of spending.
+      // Close to affording the next upgrade — bank ink instead of spending.
       const next = player.nextUpgradeCost!;
-      if (player.coins >= Math.floor(next * 0.6)) return [];
+      if (player.ink >= Math.floor(next * 0.6)) return [];
     }
 
     // ── 3. Economy & offense ─────────────────────────────────────────────────
 
     // Seed barracks early for a steady unit stream (placed in a safe lane).
     if (this.params.useBarracks && this.countOwnBarracks(state) < MAX_BARRACKS) {
-      const idx = this.findCardIndex(player.hand.cards, player.coins, (c) =>
+      const idx = this.findCardIndex(player.hand.cards, player.ink, (c) =>
         c.cardType === CardType.Building && c.buildingType === BuildingType.Barracks);
       if (idx !== null) {
         const lane = this.freeBuildingLane(state, threat, /*preferSafe*/ true);
@@ -154,7 +154,7 @@ export class AISystem {
 
     // Offensive meteor on a fat enemy cluster anywhere on the board.
     if (this.params.useMeteor) {
-      const idx = this.findCardIndex(player.hand.cards, player.coins, (c) =>
+      const idx = this.findCardIndex(player.hand.cards, player.ink, (c) =>
         c.cardType === CardType.Spell && c.spellType === SpellType.Meteor);
       if (idx !== null) {
         const target = this.findMeteorTarget(state, this.params.meteorOffenseCluster, false);
@@ -165,7 +165,7 @@ export class AISystem {
     }
 
     // Push a cost-effective unit down the least-defended lane.
-    const unitIdx = this.pickUnitCard(player.hand.cards, player.coins,
+    const unitIdx = this.pickUnitCard(player.hand.cards, player.ink,
       [UnitType.Swordsman, UnitType.Archer, UnitType.Guardian]);
     if (unitIdx !== null) {
       const lane = this.pickLane(threat, /*mostThreatened*/ false);
@@ -189,7 +189,7 @@ export class AISystem {
 
     // a) Meteor the densest cluster pressing the base.
     if (this.params.useMeteor) {
-      const idx = this.findCardIndex(player.hand.cards, player.coins, (c) =>
+      const idx = this.findCardIndex(player.hand.cards, player.ink, (c) =>
         c.cardType === CardType.Spell && c.spellType === SpellType.Meteor);
       if (idx !== null) {
         const target = this.findMeteorTarget(state, 2, /*preferNearBase*/ true);
@@ -201,7 +201,7 @@ export class AISystem {
 
     // b) Arrow tower in the most-pressured open building lane.
     if (this.params.useTowers) {
-      const idx = this.findCardIndex(player.hand.cards, player.coins, (c) =>
+      const idx = this.findCardIndex(player.hand.cards, player.ink, (c) =>
         c.cardType === CardType.Building && c.buildingType === BuildingType.ArrowTower);
       if (idx !== null) {
         const lane = this.freeBuildingLane(state, threat, /*preferSafe*/ false);
@@ -212,7 +212,7 @@ export class AISystem {
     }
 
     // c) Block the most-threatened lane with a body (Guardian tanks best).
-    const unitIdx = this.pickUnitCard(player.hand.cards, player.coins,
+    const unitIdx = this.pickUnitCard(player.hand.cards, player.ink,
       [UnitType.Guardian, UnitType.Swordsman, UnitType.Archer]);
     if (unitIdx !== null) {
       const lane = this.pickLane(threat, /*mostThreatened*/ true);
@@ -309,12 +309,12 @@ export class AISystem {
   /** First affordable hand slot matching `pred`, or null. */
   private findCardIndex(
     cards: (CardDefinition | null)[],
-    coins: number,
+    ink: number,
     pred: (c: CardDefinition) => boolean,
   ): number | null {
     for (let i = 0; i < cards.length; i++) {
       const card = cards[i];
-      if (!card || coins < card.cost) continue;
+      if (!card || ink < card.cost) continue;
       if (pred(card)) return i;
     }
     return null;
@@ -327,11 +327,11 @@ export class AISystem {
    */
   private pickUnitCard(
     cards: (CardDefinition | null)[],
-    coins: number,
+    ink: number,
     preference: UnitType[],
   ): number | null {
     for (const want of preference) {
-      const idx = this.findCardIndex(cards, coins, (c) =>
+      const idx = this.findCardIndex(cards, ink, (c) =>
         c.cardType === CardType.Unit && c.unitType === want);
       if (idx !== null) return idx;
     }
@@ -383,13 +383,13 @@ export class AISystem {
   // ─── Economy ───────────────────────────────────────────────────────────────
 
   /**
-   * Whether a base upgrade is even reachable under the current coin cap.
-   * BASE_UPGRADE_COSTS can exceed COIN_CAP, in which case upgrade planning is
-   * dead weight — this guard keeps the AI from stalling forever to bank coins
+   * Whether a base upgrade is even reachable under the current ink cap.
+   * BASE_UPGRADE_COSTS can exceed INK_CAP, in which case upgrade planning is
+   * dead weight — this guard keeps the AI from stalling forever to bank ink
    * it can never accumulate.
    */
   private upgradeReachable(player: GameState['topPlayer']): boolean {
     const next = player.nextUpgradeCost;
-    return next !== null && next <= COIN_CAP;
+    return next !== null && next <= INK_CAP;
   }
 }

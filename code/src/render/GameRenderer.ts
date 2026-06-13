@@ -468,7 +468,7 @@ export class GameRenderer {
   private startCardDrag(handIndex: number): void {
     const player = this.localPlayer(this.engine.state);
     const slot   = player.hand.slots[handIndex];
-    if (!slot || player.coins < slot.card.cost) return;
+    if (!slot || player.ink < slot.card.cost) return;
 
     const card   = slot.card;
     const ghost  = this.buildDragGhost(t(card.nameKey), card.cost);
@@ -490,7 +490,7 @@ export class GameRenderer {
   private startTapSelect(handIndex: number): void {
     const player = this.localPlayer(this.engine.state);
     const slot   = player.hand.slots[handIndex];
-    if (!slot || player.coins < slot.card.cost) return;
+    if (!slot || player.ink < slot.card.cost) return;
 
     const card = slot.card;
     this.tapSelect = { handIndex, cardType: card.cardType, spellType: card.spellType };

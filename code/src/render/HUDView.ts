@@ -39,7 +39,7 @@ export class HUDView {
   private gameOverOverlay: PIXI.Container | null = null;
 
   private timerText!:       PIXI.Text;
-  private coinText!:        PIXI.Text;
+  private inkText!:         PIXI.Text;
   private playerHpGfx!:     PIXI.Graphics;
   private enemyHpGfx!:      PIXI.Graphics;
   private upgradeBtnBg!:    PIXI.Graphics;
@@ -81,7 +81,7 @@ export class HUDView {
     const e = localOwner === 0 ? state.topPlayer    : state.bottomPlayer;
 
     this.timerText.text = this.formatTime(state.elapsedTicks / 30);
-    this.coinText.text  = `⬤ ${p.coins}`;
+    this.inkText.text   = `⬤ ${p.ink}`;
     this.drawHpBar(this.playerHpGfx, p.baseHp, BASE_HP);
     this.drawHpBar(this.enemyHpGfx,  e.baseHp, BASE_HP);
 
@@ -91,7 +91,7 @@ export class HUDView {
       this.upgradeEnabled       = false;
       this.setUpgradeBtnStyle(false);
     } else {
-      const canAfford = p.coins >= cost;
+      const canAfford = p.ink >= cost;
       this.upgradeBtnLabel.text = t('hud.upgradeCost', { cost });
       this.upgradeEnabled       = canAfford;
       this.setUpgradeBtnStyle(canAfford);
@@ -224,18 +224,18 @@ export class HUDView {
     botBg.endFill();
     this.backgroundContainer.addChild(botBg);
 
-    // Coins
-    this.coinText   = new PIXI.Text('⬤ 0', TEXT_STYLE);
-    this.coinText.x = bLR.x + 14;
+    // Ink
+    this.inkText   = new PIXI.Text('⬤ 0', TEXT_STYLE);
+    this.inkText.x = bLR.x + 14;
 
     // Player HP bar
     this.playerHpGfx = new PIXI.Graphics();
     if (isLandscape) {
-      this.coinText.y      = bLR.y + bLR.h * 0.22;
+      this.inkText.y       = bLR.y + bLR.h * 0.22;
       this.playerHpGfx.x   = bLR.x + 14;
       this.playerHpGfx.y   = bLR.y + bLR.h * 0.58;
     } else {
-      this.coinText.y      = bLR.y + (bLR.h - this.coinText.height) / 2;
+      this.inkText.y       = bLR.y + (bLR.h - this.inkText.height) / 2;
       this.playerHpGfx.x   = this.baseCenterX() - HP_BAR_W / 2;
       this.playerHpGfx.y   = bLR.y + (bLR.h - HP_CELL_H) / 2;
     }
@@ -255,7 +255,7 @@ export class HUDView {
 
     this.container.addChild(
       topBg, this.timerText, this.enemyHpGfx, this.settingsBtnBg, sLabel,
-      this.coinText,  this.playerHpGfx,
+      this.inkText,  this.playerHpGfx,
       this.upgradeBtnBg, this.upgradeBtnLabel,
     );
   }

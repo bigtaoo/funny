@@ -9,7 +9,7 @@ import type { TranslationKey } from '../../i18n';
  * scripted enemy wave timeline. The enemy (owner 1 / Top side) is driven by
  * {@link WaveDirector} from `waves` instead of the threat AI.
  *
- * Forward-compatible fields (board.cellMask / startCoins / hazards / rewards /
+ * Forward-compatible fields (board.cellMask / startInk / hazards / rewards /
  * story) are typed here per CAMPAIGN_DESIGN.md but only `seed` / `objective` /
  * `waves` are consumed in the P0 validation slice; the rest are wired in later
  * steps (depth knobs, economy, meta systems).
@@ -34,9 +34,9 @@ export interface LevelDefinition {
   };
   /** Per-cell hazards: speed bands, fog, lava, etc. (§4.5). */
   hazards?: HazardSpec[];
-  /** Override starting coins / regen for puzzle-style economy constraints (§4.7). */
-  startCoins?: number;
-  coinRegenMult?: number;
+  /** Override starting ink / regen for puzzle-style economy constraints (§4.7). */
+  startInk?: number;
+  inkRegenMult?: number;
   /** Pre-level loadout / banned cards (§4.7). */
   loadout?: string[];
   bannedCards?: string[];

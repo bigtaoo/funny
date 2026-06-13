@@ -258,7 +258,7 @@ export interface IGameEngine {
    * Advance game state by one logic frame (1/30 s).
    *
    * On the very first call (tick 0), also emits initial state events
-   * (card_drawn for both players' starting hands, resource_changed for initial coins).
+   * (card_drawn for both players' starting hands, resource_changed for initial ink).
    *
    * @param tick       Monotonically increasing frame counter (starts at 0).
    * @param commands   All commands bound to this tick (player + any external).
@@ -338,7 +338,7 @@ export type GameEvent =
 
   // ── Resources ──────────────────────────────────────────────────────────────
   | { type: 'resource_changed';
-      owner: OwnerId; coins: number }
+      owner: OwnerId; ink: number }
 
   // ── Cards ──────────────────────────────────────────────────────────────────
   | { type: 'card_drawn';
