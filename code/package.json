@@ -12,6 +12,7 @@
     "build:native": "npm run build:web && npx cap sync",
     "cap:run:android": "npx cap run android",
     "cap:run:ios": "npx cap run ios",
+    "proto:gen": "node scripts/gen-proto.mjs",
     "format": "prettier --write .",
     "lint": "eslint src --ext .ts",
     "test": "vitest run",
@@ -22,6 +23,7 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@bufbuild/buf": "^1.70.0",
     "@capacitor/assets": "^3.0.5",
     "@rollup/plugin-commonjs": "^29.0.2",
     "@rollup/plugin-node-resolve": "^16.0.3",
@@ -44,6 +46,7 @@
     "string-replace-loader": "^3.3.0",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.4",
+    "ts-proto": "^2.11.8",
     "typescript": "^5.9.3",
     "vitest": "^2.1.9",
     "webpack": "^5.105.4",
@@ -51,6 +54,7 @@
     "webpack-dev-server": "^5.2.3"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^2.12.0",
     "@pixi/unsafe-eval": "^7.4.3",
     "@rollup/plugin-json": "^6.1.0",
     "jszip": "^3.10.1",

@@ -1,0 +1,19 @@
+# proto → TypeScript codegen 模板（C-2 客户端侧，ts-proto）。
+# buf 自带跨平台静态编译器（无需系统 protoc，无 DLL 依赖）。
+# 用 argv 数组形式启动 node 版 ts-proto 插件，绕开 Windows .cmd/shebang exec 问题。
+# 跑：npm run proto:gen（见 scripts/gen-proto.mjs）。产物提交进仓库。
+version: v2
+plugins:
+  - local: ["node", "node_modules/ts-proto/protoc-gen-ts_proto"]
+    out: src/net/proto
+    opt:
+      # 纯数据消息：无 gRPC / 服务实现
+      - outputServices=false
+      - outputClientImpl=false
+      # 控包体（小游戏）：去掉 JSON 编解码冗余
+      - outputJsonMethods=false
+      # seed 是 uint64 但钳在 2^48 内，用 number 免引 long
+      - forceLong=number
+      - esModuleInterop=true
+      - useOptionals=messages
+      - snakeToCamel=true
