@@ -54,7 +54,7 @@
 ### 服务器（gateway）
 - [ ] **S1-1 ws-gateway**：WebSocket 接入（`ws`），JWT 鉴权、心跳、断线检测。**依赖**：C-2,3。**验收**：连接/心跳/断开事件正确。
 - [ ] **S1-2 room-service**：建房（短房间码）/ 输码加入 / ready / 满员开局；房间状态走 `RoomRegistry`（内存实现）。开局分配 `seed` + `startTick` + `mode` 下发双方。**依赖**：S1-1。**验收**：两连接进同一房、同时收到一致 seed。
-- [ ] **S1-3 节拍器中继（M14）**：gateway 持房间时钟，每 sim tick（30Hz）递增 frame、广播 `frame_tick{frame, cmds}`；收到 `cmd_submit` 塞进当前帧；空闲发空帧；同帧多指令按 `side` 确定性排序；领先客户端约 3 帧。**依赖**：S1-2、C-2。**验收**：双端收到逐字相同的帧序列；空闲下帧号稳定递增。
+- [ ] **S1-3 节拍器中继（M14）**：gateway 持房间时钟，模拟 30Hz、**每 100ms（10Hz）下发 `frame_batch{to_frame, frames}`（3 帧）**；收到 `cmd_submit` 塞进当前窗口帧；空窗只发 `to_frame` 水位；同帧多指令按 `side` 确定性排序。**依赖**：S1-2、C-2。**验收**：双端收到逐字相同的帧序列；空闲下 `to_frame` 每 100ms 稳定 +3。
 - [ ] **S1-4 非空帧日志 + 重连 + 60s 判负**：每局留非空帧日志；掉线则停发该房间帧 + `peer_dc{grace_ms:60000}` 起 60s，`conn_resume{last_frame}` 下发 `seed + 之后非空帧 + cur_frame` 续打，**超时掉线方判负** `match_over{reason:'disconnect'}`（M10）。**依赖**：S1-3。**验收**：重连续打一致；超时正确判负。
 - [ ] **S1-5 局末结算**：双端 `match.result{hash}` → 比对 desync；写 `matches` 归档（friendly 仅记结果）。**依赖**：S1-3。**验收**：结果落库；hash 不一致标 mismatch。
 - [ ] **S1-R（稍后）ranked 队列 + ELO**：匹配队列按 ELO 配对；ranked 局末算 ELO 写 `saves.pvp`（单文档原子更新，服务器权威）。**依赖**：S1-5、S2-1。**验收**：天梯分服务器权威、刷不动。
@@ -63,7 +63,7 @@
 
 ### 客户端
 - [ ] **S1-6 NetClient**：封装 ws 连接、重连、消息编解码（用 C-2 协议）。**依赖**：C-2。**验收**：掉线自动重连。
-- [ ] **S1-7 节拍驱动（NetInputSource）**：实现 `NetInputSource`（C-4 的联机实例）——消费 gateway 的 `frame_tick` 推进引擎，保持 ~3 帧缓冲，缓存空则暂停、超时追帧；出牌即发 `cmd_submit`（不预算帧号）。单机/PvE 走 `LocalInputSource` 不变。**依赖**：S1-6、S1-3、C-4。**验收**：缓冲吸收 <100ms 抖动无感；服务器停发即暂停；无回滚。
+- [ ] **S1-7 节拍驱动（NetInputSource）**：实现 `NetInputSource`（C-4 的联机实例）——消费 gateway 的 `frame_batch`、按 `to_frame` 推进引擎并把 3 帧摊到 100ms 播放，保持 ~1 批次缓冲，缓存空则暂停、超时追帧；出牌即发 `cmd_submit`（不预算帧号）。单机/PvE 走 `LocalInputSource` 不变。**依赖**：S1-6、S1-3、C-4。**验收**：缓冲吸收 <100ms 抖动无感；服务器停发即暂停；无回滚。
 - [ ] **S1-8 RoomScene**：建房/房间码展示/输码加入/ready/倒计时开打（UI 见 `UI_DESIGN.md`）。**依赖**：S1-6、S1-2。**验收**：完整建房→加入→开局流程。
 
 ### 联调出口

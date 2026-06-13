@@ -26,7 +26,7 @@
 | M2 | 服务器语言 = **Node.js（TS）** | 与客户端同语言、工具链统一；重大比赛要裁判时可直接 import `code/src/game/` 跑同一份确定性引擎，无跨语言发散风险 |
 | M12 | **线协议：WS 热路径用 protobuf，REST 保持 JSON**；`PlayerCommand` 对服务器 **opaque（`bytes` 不解码）** | `.proto` 作唯一契约、双端 codegen，服务器**与游戏逻辑零依赖**（改命令结构服务器不用重编）；REST 低频，JSON 利于浏览器/支付回调/调试 |
 | M13 | **统一输入管线**：引擎按 tick 从抽象 `InputSource` 消费确认指令集；单机=`LocalInputSource`（客户端自转发，DELAY 0）/ 联机=`NetInputSource` / 回放=`ReplayInputSource`。**录像 = seed + 配置 + 输入流**（不存状态） | SP/MP 同一条管线；确定性内核让"录像=重放输入"，**关卡 + 对局都免费支持回放**；命令已是 protobuf bytes，录像直接复用 |
-| M14 | **联机 = 服务器权威节拍器**：gateway 持时钟、每 sim tick（30Hz）发一帧、不等输入；收到指令塞进当前帧广播，无指令发空帧（仅帧号）；客户端落后约 **3 帧（~100ms）缓冲**、缓存有更靠前帧才推进、否则暂停 | 单一时钟零漂移；慢端只拖累自己不拖累对手；服务器是帧序列唯一装配者 → **录像天然落服务端**。延时 = 物理 RTT + ~100ms（非竞技手游可接受） |
+| M14 | **联机 = 服务器权威节拍器**：模拟 30Hz，但 gateway **每 100ms（10Hz）下发一个批次 = 3 帧**（`to_frame` 水位 + 仅非空帧指令，空窗就只有 `to_frame`）；不等输入；客户端缓存 ~1 批次（3 帧/100ms）、`to_frame` 比当前靠前才推进、否则暂停 | 单一时钟零漂移；下行 10 msg/s；慢端只拖累自己；服务器是帧序列唯一装配者 → **录像天然落服务端**。延时 = 物理 RTT + ~100ms（非竞技手游可接受） |
 | M3 | DB = **MongoDB**（存档 + 对局 + 抽卡记录）；Redis 后置 | `SaveData` 是嵌套文档，文档模型天生契合；房间状态初期放内存 |
 | M4 | 联机 = **锁步输入中继**，服务器**纯中继不跑引擎**（1v1 无需服务端验证；重大比赛再开裁判） | 确定性内核（定点数 + 注入 Prng + 黄金回放）已铺好路；服务器只转发输入 + 局末 hash 比对查 desync |
 | M9 | **拓扑：REST(`api`) 与 WS(`gateway`) 为两个可独立部署的服务**，共享 `shared` 包；v1 同机两进程 | 两者扩容画像不同：api 无状态可横扩、gateway 有房间状态需房间亲和（M10） |
@@ -226,22 +226,22 @@ db: MongoDB（saves / accounts / gachaHistory / walletLog / iapReceipts / matche
 
 ### 6.2 联机模型：服务器权威节拍器（gateway，M14）
 
-确定性内核（定点数 `fixed.ts` + 注入 `Prng` + 黄金回放）让两客户端喂相同帧序列 + 同 seed → 逐 tick 完全一致。**gateway 不模拟、只装配命令帧 + 持时钟：**
+确定性内核（定点数 `fixed.ts` + 注入 `Prng` + 黄金回放）让两客户端喂相同帧序列 + 同 seed → 逐 tick 完全一致。**模拟 30Hz；gateway 不模拟、只装配命令 + 持时钟、每 100ms 打包 3 帧下发：**
 
 ```
 建房 → 房间码 → 输码加入 → 双方 ready → match_start{ seed, start_frame }
-  → gateway 每 sim tick（30Hz）递增 frame、广播 frame_tick{ frame, cmds }
-    · 收到 cmd_submit → 塞进「当前正在发的帧」（两端拿到同一帧同一指令）
-    · 无指令 → 空帧（仅 frame 号）
-    · 永远领先客户端约 3 帧（≈100ms 缓冲）
-  → 客户端缓存有更靠前帧才推进，否则暂停（可见）
+  → gateway 每 100ms（10Hz）下发 frame_batch{ to_frame, frames }（覆盖 3 个 sim 帧）
+    · 收到 cmd_submit → 塞进「当前 100ms 窗口对应的帧」（两端拿到同帧同指令）
+    · 无指令 → 批次里只有 to_frame 水位，frames 为空
+    · 客户端缓存 ~1 批次（3 帧 ≈100ms）
+  → 客户端 to_frame 比当前靠前才推进（按 30Hz 播完这 3 帧），否则暂停（可见）
 ```
 
-- 帧号 = sim tick 号；**延时 = 物理 RTT + ~100ms**（3 帧客户端缓冲，可配置）。指令不预盖 LEAD，收到即塞当前帧。
+- 模拟帧 = sim tick（33ms）；网络包 = 10Hz 批次（3 帧）。**延时 = 物理 RTT + ~100ms**（1 批次缓冲，可配置）。指令不预盖 LEAD，收到即塞当前帧。
 - gateway 转发 `commands` **字节流不拆包**（不认识 PlayerCommand，M12）；**同帧多指令需确定性 tiebreak**（按 `side`），否则两端应用顺序分歧。
-- **空闲零上行**：客户端只在出牌时发 `cmd_submit`；`frame_tick` 流是唯一"可前进"信号 → 服务器停发 ⇒ 客户端暂停。
-- **抖动分三档**：<100ms 缓冲透明吸收 / 超出该端短暂卡住再快进追帧（对手不受影响）/ 彻底掉线才暂停。
-- **断线（M10）**：in_match 掉线 → gateway 停发该房间帧 + `peer_dc{grace_ms:60000}` 起 **60s**；`conn_resume` 续发续打；**超时掉线方判负**。
+- **空闲零上行**：客户端只在出牌时发 `cmd_submit`；`frame_batch` 流是唯一"可前进"信号 → 服务器停发 ⇒ 客户端暂停。
+- **抖动分三档**：<100ms（1 批次）缓冲透明吸收 / 超出该端短暂卡住再快进追帧（对手不受影响）/ 彻底掉线才暂停。
+- **断线（M10）**：in_match 掉线 → gateway 停发该房间批次 + `peer_dc{grace_ms:60000}` 起 **60s**；`conn_resume` 续发续打；**超时掉线方判负**。
 - **局末**：双方上报最终状态 hash，gateway 比对查 **desync**（无需引擎，纯字符串比；非反作弊，是确定性回归探针）。
 - **match 类型（M11）**：`friendly`（仅写 `matches` 记结果）/ `ranked`（gateway 结算 ELO 写 `pvp` 段，服务器权威）。
 - **录像**：gateway 是帧序列唯一装配者 → 非空帧日志即录像，天然落服务端（§6.6）。
@@ -284,7 +284,7 @@ db: MongoDB（saves / accounts / gachaHistory / walletLog / iapReceipts / matche
 | 实现 | 用于 | DELAY | 指令来源 |
 |---|---|---|---|
 | `LocalInputSource` | 单机 PvE / 练习 | 0（即时） | 客户端**自转发**：本地出牌即入队当前 tick |
-| `NetInputSource` | 联机对战 | ~3 帧缓冲 | gateway 节拍器广播的 `frame_tick`（M14） |
+| `NetInputSource` | 联机对战 | ~1 批次(3 帧)缓冲 | gateway 节拍器下发的 `frame_batch`（M14） |
 | `ReplayInputSource` | 回放 | — | 录像文件的 `InputFrame[]` |
 
 三者都产出 `InputFrame{tick, commands}`，引擎逻辑逐字相同。**命令入口从「UI 直接 `processCommand`」改为「提交进 `InputSource`、引擎每 tick 消费确认集」**，AI（练习）/ WaveDirector（PvE）作为另一种 tick 内输入源接入。
