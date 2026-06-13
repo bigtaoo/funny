@@ -12,15 +12,15 @@ server/
 │                   game.proto（PlayerCommand，仅客户端↔客户端，服务器 opaque）
 ├── shared/   @nw/shared   类型(SaveData) + JWT + Mongo 工厂 + RoomRegistry + api 包络
 ├── metaserver/  REST（无状态）  fastify + fastify-openapi-glue 按 openapi.yml 装配
-└── gameserver/  WS（有状态，骨架）  ws + JWT 握手；room/节拍器属 S1
+└── gameserver/  WS（有状态）  ws + JWT 握手 + 心跳 + 房间/锁步节拍器中继/重连（S1-1~5）
 ```
 
 ## 实现进度
 
-- **已完成**：C-1 仓库结构、C-2 契约 + shared、**C-3 部署脚手架（Docker + pm2，见下「部署」）**、S0-6 Mongo 接入、S0-7 save-service（`/auth/wx`·`/auth/device`·`GET/PUT /save`，乐观锁单文档原子更新）。客户端 S0-1~5（SaveData/迁移链/SaveStore/匿名账号/云同步）见 `code/src/game/meta/` + `code/src/net/`。
+- **已完成**：C-1 仓库结构、C-2 契约 + shared、**C-3 部署脚手架（Docker + pm2，见下「部署」）**、S0-6 Mongo 接入、S0-7 save-service（`/auth/wx`·`/auth/device`·`GET/PUT /save`，乐观锁单文档原子更新）、**S1-1~5 gameserver 锁步联机（friendly 好友房，见下）**。客户端 S0-1~5（SaveData/迁移链/SaveStore/匿名账号/云同步）见 `code/src/game/meta/` + `code/src/net/`。
 - **占位（契约就绪，handler 返回 501）**：`/shop/*`·`/gacha/*`·`/ads/reward`·`/iap/verify`（S2/S4）。
-- **骨架**：gameserver WS 握手鉴权 + RoomRegistry 口子；room-service / 节拍器中继 / 重连属 S1。
-- **待办**：proto/openapi 客户端 codegen（`ts-proto` / `openapi-typescript`，C-2 客户端侧）。
+- **gameserver S1-1~5（friendly 好友房）已完成**：WS+JWT 握手+心跳；建房（6 位房间码）/ 输码加入 / ready / 房主开局；服务器权威节拍器（模拟 30Hz、网络 10Hz 每 100ms 批次 3 帧，`cmd_submit` 落当前窗口帧、同帧多指令按 `side` 确定性排序）；非空帧日志 + `conn_resume`→`conn_resync` 重连补帧 + 60s 宽限判负；局末 `match_result` hash 比对 + `matches` 归档。`transport.proto` 运行期 protobufjs 编解码（`commands` opaque 透传）。详见 `src/{Connection,Room,RoomManager,proto/transport}.ts`。
+- **待办**：S1-R（ranked 队列 + ELO）、S1-J（服务器裁判复算）、S1-RP（录像）；proto/openapi 客户端 codegen（`ts-proto` / `openapi-typescript`，C-2 客户端侧 + S1-6~9）。
 
 ## 部署（C-3，全栈一条命令）
 

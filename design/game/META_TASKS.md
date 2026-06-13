@@ -52,11 +52,11 @@
 > 本阶段只做 `friendly`（好友码房）。`ranked` 匹配队列 + ELO 结算见 S1-R（稍后）。
 
 ### 服务器（gameserver）
-- [ ] **S1-1 gameserver**：WebSocket 接入（`ws`），JWT 鉴权、心跳、断线检测。**依赖**：C-2,3。**验收**：连接/心跳/断开事件正确。
-- [ ] **S1-2 room-service**：建房（短房间码）/ 输码加入 / ready / 满员开局；房间状态走 `RoomRegistry`（内存实现）。开局分配 `seed` + `startTick` + `mode` 下发双方。**依赖**：S1-1。**验收**：两连接进同一房、同时收到一致 seed。
-- [ ] **S1-3 节拍器中继（M14）**：gameserver 持房间时钟，模拟 30Hz、**每 100ms（10Hz）下发 `frame_batch{to_frame, frames}`（3 帧）**；收到 `cmd_submit` 塞进当前窗口帧；空窗只发 `to_frame` 水位；同帧多指令按 `side` 确定性排序。**依赖**：S1-2、C-2。**验收**：双端收到逐字相同的帧序列；空闲下 `to_frame` 每 100ms 稳定 +3。
-- [ ] **S1-4 非空帧日志 + 重连 + 60s 判负**：每局留非空帧日志；掉线则停发该房间帧 + `peer_dc{grace_ms:60000}` 起 60s，`conn_resume{last_frame}` 下发 `seed + 之后非空帧 + cur_frame` 续打，**超时掉线方判负** `match_over{reason:'disconnect'}`（M10）。**依赖**：S1-3。**验收**：重连续打一致；超时正确判负。
-- [ ] **S1-5 局末结算**：双端 `match.result{hash}` → 比对 desync；写 `matches` 归档（friendly 仅记结果）。**依赖**：S1-3。**验收**：结果落库；hash 不一致标 mismatch。
+- [x] **S1-1 gameserver**：WebSocket 接入（`ws`），JWT 鉴权、心跳、断线检测。**依赖**：C-2,3。**验收**：连接/心跳/断开事件正确。✅ `gameserver/src/index.ts` 握手 `?token=<jwt>`（`verifyToken` 失败 4401）→ `Connection` → `RoomManager`；30s 心跳巡检（两轮无 pong/消息 `terminate`）；`close` 收口路由到房间。
+- [x] **S1-2 room-service**：建房（短房间码）/ 输码加入 / ready / 满员开局；房间状态走 `RoomRegistry`（内存实现）。开局分配 `seed` + `startTick` + `mode` 下发双方。**依赖**：S1-1。**验收**：两连接进同一房、同时收到一致 seed。✅ `RoomManager` 建房生成 6 位无歧义码走 `InMemoryRoomRegistry`、`ROOM_NOT_FOUND`/`ROOM_FULL`/`RANKED_UNAVAILABLE`/`ALREADY_IN_ROOM`、同账号顶替；`room_start` 房主开局下发 `match_start{seed, start_frame, mode, local_side}`。端到端实测双方同 seed + 各自 local_side。
+- [x] **S1-3 节拍器中继（M14）**：gameserver 持房间时钟，模拟 30Hz、**每 100ms（10Hz）下发 `frame_batch{to_frame, frames}`（3 帧）**；收到 `cmd_submit` 塞进当前窗口帧；空窗只发 `to_frame` 水位；同帧多指令按 `side` 确定性排序。**依赖**：S1-2、C-2。**验收**：双端收到逐字相同的帧序列；空闲下 `to_frame` 每 100ms 稳定 +3。✅ `Room` `setInterval(100ms)` 每拍 `curFrame+=3`；`cmd_submit` 落本批次 `to_frame` 帧、`side` 升序稳定排序；空窗 `frames=[]`。实测空闲 `to_frame` 序列 `[3,6,9]` 全空帧、`cmd_submit` 双端同帧同 side。
+- [x] **S1-4 非空帧日志 + 重连 + 60s 判负**：每局留非空帧日志；掉线则停发该房间帧 + `peer_dc{grace_ms:60000}` 起 60s，`conn_resume{last_frame}` 下发 `seed + 之后非空帧 + cur_frame` 续打，**超时掉线方判负** `match_over{reason:'disconnect'}`（M10）。**依赖**：S1-3。**验收**：重连续打一致；超时正确判负。✅ `Room.log` 仅存非空帧；断线停 metronome + `peer_dc{side, grace_ms:60000}` + 60s timer；`resume` 下发 `conn_resync{seed, start_frame, log(>last_frame), cur_frame}`、双方在线清宽限续发；超时/认输 `match_over{reason:'disconnect'}`。实测 peer_dc、停发、resync、续发全过。
+- [x] **S1-5 局末结算**：双端 `match.result{hash}` → 比对 desync；写 `matches` 归档（friendly 仅记结果）。**依赖**：S1-3。**验收**：结果落库；hash 不一致标 mismatch。✅ 双方 `match_result{state_hash}` 齐 → 比对 → `match_over{reason: base|mismatch, mismatch}` + `matches.insertOne`（`seed`/`players`/`hashOk`/`reason`）；Mongo 不可用降级纯中继不归档。friendly 正常结束 `winner_side` 客户端权威（归档 `winner=-1`），disconnect/认输服务器权威。实测一致→base、不一致→mismatch。
 - [ ] **S1-R（稍后）ranked 队列 + ELO**：匹配队列按 ELO 配对；ranked 局末算 ELO 写 `saves.pvp`（单文档原子更新，服务器权威）。**依赖**：S1-5、S2-1。**验收**：天梯分服务器权威、刷不动。
 - [ ] **S1-J（可选）服务器裁判**：仅重大比赛——gameserver headless 跑 `GameEngine` 复算校验。**依赖**：S1-3、C-1。**验收**：篡改输入被检出。
 - [ ] **S1-RP 录像录制 + 回放**：定义 `replay.proto`（复用 `FrameCmds`）；录制（PvE 客户端记玩家指令 / PvP gameserver 持久化输入日志到 `matches.replayRef`）；实现 `ReplayInputSource` + 回放播放器（同 seed 起新引擎喂输入流），回放前校验 `engineVersion`。**依赖**：C-4、S1-5。**验收**：一局 PvE + 一局 PvP 录像回放与原局逐 tick 一致；改 engineVersion 回放被拒。**注**：PvE 录制可随战役（CAMPAIGN P1）先落地，不必等联机。
