@@ -73,7 +73,23 @@ export interface IPlatform {
    * No-op on platforms that don't support ads.
    */
   showMidgameAd(): Promise<void>;
+
+  /**
+   * Anonymous-account credential the client trades to the server for a JWT
+   * + accountId (S0-4). Server-side: /auth/wx (code→openid) or /auth/device.
+   *
+   * Web / CrazyGames: a device UUID persisted in storage (stable per device).
+   * WeChat: a fresh `wx.login` code each call (short-lived, server exchanges it).
+   *
+   * Returns the same kind every call on a given platform.
+   */
+  getAuthCredential(): Promise<AuthCredential>;
 }
+
+/** Anonymous identity proof (S0-4). See IPlatform.getAuthCredential. */
+export type AuthCredential =
+  | { kind: 'device'; deviceId: string }
+  | { kind: 'wx'; code: string };
 
 export interface IStorage {
   getItem(key: string): string | null;

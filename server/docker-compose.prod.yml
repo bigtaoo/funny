@@ -1,0 +1,82 @@
+# 生产/联调全栈（C-3）：mongo(单节点副本集) + metaserver + gameserver + caddy 反代。
+# 一条命令起全栈（见 deploy/up.sh）：
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+#
+# 出口：https://{NW_DOMAIN}/api/...（REST）、wss://{NW_DOMAIN}/ws（锁步）。
+# 缺省 NW_DOMAIN=:80 → 走 HTTP/WS（本机联调）；设真域名则 Caddy 自动 HTTPS/WSS。
+#
+# 与开发版 docker-compose.yml 的差异：本文件起全部进程（不只 mongo）、mongo 挂命名卷持久化、
+# 副本集成员 host 用容器名 mongo（供服务间 DNS 解析），故服务连 mongodb://mongo:27017/?replicaSet=rs0。
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: nw-mongo
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # 首启自动 rs.initiate（成员 host=mongo:27017，容器网络内可解析）；已初始化则跳过，幂等。
+      test: >
+        mongosh --quiet --eval "try { rs.status().ok } catch (e) {
+        rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }"
+      interval: 10s
+      timeout: 10s
+      start_period: 5s
+      retries: 10
+    restart: unless-stopped
+
+  metaserver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "metaserver/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
+      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_MONGO_DB: ${NW_MONGO_DB:-notebook_wars}
+      NW_META_PORT: "8080"
+      NW_META_HOST: 0.0.0.0
+      NW_WX_APPID: ${NW_WX_APPID:-}
+      NW_WX_SECRET: ${NW_WX_SECRET:-}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  gameserver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "gameserver/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
+      NW_GAME_PORT: "8081"
+      NW_GAME_HOST: 0.0.0.0
+    # gameserver 骨架暂不连 Mongo；S1 room/结算落库后再加 depends_on mongo。
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    container_name: nw-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      NW_DOMAIN: ${NW_DOMAIN:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - metaserver
+      - gameserver
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+  caddy-data:
+  caddy-config:

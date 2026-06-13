@@ -1,0 +1,26 @@
+# 反代（C-3）：/api/* → metaserver(JSON)、/ws → gameserver(WebSocket)。
+# 站点地址由 {$NW_DOMAIN} 注入：
+#   · 真域名（如 nw.example.com）→ Caddy 自动签 Let's Encrypt 证书，全程 HTTPS/WSS。
+#   · 缺省 :80 → 仅 HTTP（本机 / 无域名联调用；此时不签证书）。
+#
+# 路由要点：
+#   · metaserver 的 fastify 路由是 /auth/wx、/save … （不含 /api 前缀，openapi servers.url=/api 仅文档前缀），
+#     故用 handle_path 剥掉 /api 再转发。
+#   · gameserver 的 WebSocketServer 绑定 path=/ws，必须保留路径 → 用 handle（不剥前缀）。
+
+{$NW_DOMAIN::80} {
+	# WebSocket 锁步通道（保留 /ws 路径）
+	handle /ws* {
+		reverse_proxy gameserver:8081
+	}
+
+	# REST：剥掉 /api 前缀后转给 metaserver
+	handle_path /api/* {
+		reverse_proxy metaserver:8080
+	}
+
+	# 兜底
+	handle {
+		respond "Notebook Wars server" 200
+	}
+}

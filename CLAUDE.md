@@ -306,6 +306,7 @@ npm run build   # 生产构建
 | `src/game/systems/MovementSystem.ts` | `tick()` 每帧 `Array.from(board.units.values())` 全量快照分配（仅为迭代中安全删除）；横穿寻敌扫描过滤顺序非最优 | 改为**直接迭代 `board.units` Map**（唯一删除是 `moveCrossing` 删当前单位，删当前项对 Map 迭代器良定义；本系统不新增单位）省掉每帧分配；清理 pass 同样直接迭代删 `isDead`、去掉 `has()` 守卫；`getFriendlyUnitAheadInCrossing` 把最具区分度的 `state !== Crossing` 判断提前。行为逐字不变，38 测试 + 黄金回放通过 |
 | `src/game/campaign/levels.ts` + `levels/*.json`（新增）+ `levelSchema.ts`（新增） | 战役关卡是手写 TS 对象，无法被关卡编辑器读写，且无运行时校验 | 关卡迁为 **JSON 单一来源**（`campaign/levels/{ch1_lv1,ch1_lv2,ch1_lv3,ch_stress}.json`，用与原 TS 相同公式生成、逐字等价）；新增 `parseLevelDefinition`（`levelSchema.ts`）运行时校验：objective 类型 / `unitType ∈ UnitType` / `col ∈ ATTACK_LANES` / cellMask 界内 / starThresholds 单调，带字段路径报错，预留字段（hazards/crossWaypoints/story）原样保留；`levels.ts` 改为 import JSON → 过校验 → 建注册表；+14 测试（52 全绿），黄金回放确定性不变。配套关卡编辑器见上方「关卡编辑器」节 |
 | `src/game/types.ts` + `config.ts` + `render/UnitView.ts` + `levels/ch1_lv{1,2,3}.json` + 编辑器 `units.ts` | 前三关与打 AI 体感无差（只用 PvP 的 3 兵种、单调出兵），且往单列堆兵因碰撞排队只拉长队伍不增压力 | 加 **2 个 PvE 专属怪种**（无 `CardDefinition` → 永不进 PvP 池，公平硬墙不破）：`UnitType.Ironclad`（重甲 hp260/spd0.5/radius520，抗箭逼陨石/近战）、`UnitType.Runner`（疾行 hp26/spd1.9/radius250，小半径真正成团）；`UNIT_BLUEPRINTS` / `UNIT_COLORS`（圆形渲染色）/ 编辑器调色板 META 各补 2 项。三关按**「压力 = 宽度（多列同 tick 齐射）× 混编质量，不是单列纵深」**重写：重甲打头吸塔火、弓箭排其后越肉盾射击（`CombatSystem.findTarget` 不受 Moving/Waiting 门控，只按同列前方射程扫描，故成立）、疾行兵海做密集多列冲锋；lv3 终盘近 8 列多兵种齐压。**注意**：关卡旋钮目前仅 `noBuild`+`startCoins` 真接入引擎（`GameEngine` line ~89），`board.blocked`（阻挡移动）/`activeLanes`/`hazards`/`crossWaypoints`/`leak_limit` 均未实现、schema 只 pass-through，勿在关卡里依赖。tsc 干净 + 52 测试全绿（确定性回放/关卡校验不破）+ web 与编辑器构建通过 |
+| `src/game/meta/`（新增）+ `net/`（新增）+ `platform/{IPlatform,uuid,web,wechat,crazygames}` + `app.ts`（S0-1~5）| 客户端无存档底座 / 云同步 / 匿名账号 | 新增元系统存档模块：`meta/SaveData.ts`（镜像服务端 SaveData，纯数据）、`meta/migrate.ts`（迁移链 + 兜底，含单测）、`meta/SaveStore.ts`（`LocalSaveStore`，key `nw_save_v1`，收编旧 `nw_seen_intro`→`flags.seen_intro`）、`meta/SaveManager.ts`（离线优先 + 防抖 2s push + 409 pull-merge reconcile）；`net/ApiClient.ts`（REST，If-Match 乐观锁）+ `net/config.ts`（`getApiBaseUrl`，缺省纯本地）；`IPlatform.getAuthCredential()`（device UUID / wx.login code）三平台实现 + `platform/uuid.ts`；`app.ts` 构建 SaveManager、非阻塞 `bootstrap()`、Intro 门控改读 `flags.seen_intro`。**注**：`nw_locale` 仍由 i18n 自管（字符串，`flags` 仅布尔），未收编。tsc 干净 + 11 新测试（共 63 绿）+ web 构建通过。**微信 rollup 构建预存在 PNG 资源 loader 缺失问题（与本改动无关）** |
 
 ### 游戏核心模块
 
@@ -318,6 +319,13 @@ npm run build   # 生产构建
 | `game/math/fixed.ts` | 定点数运算（`TICK_RATE = 30`） |
 | `i18n/index.ts` | `t()` 取词 + 插值；`initI18n`/`setLocale`/`getLocale`/`getSupportedLocales`/`onLocaleChange`/`detectLocale` |
 | `i18n/locales/{zh,en,de}.ts` | 词条字典；`zh.ts` 为键唯一来源（`TranslationKey`），`en`/`de` 编译强制全翻 |
+| `game/meta/SaveData.ts` | 元系统单一权威根（纯数据，镜像 `server/shared/src/types.ts`）；`makeNewSave`/`SyncPatch`/`extractSyncPatch`/`SAVE_VERSION`/`SAVE_STORAGE_KEY=nw_save_v1` |
+| `game/meta/migrate.ts` | `migrate(raw)→SaveData`：MIGRATIONS 顺序升级 + `fillDefaults` 兜底（保留动态键）+ 钉死 version；改字段必加迁移步骤 |
+| `game/meta/SaveStore.ts` | `LocalSaveStore`：本地存档读写（迁移/损坏退化/`nw_seen_intro`→`flags.seen_intro` 收编），零网络依赖 |
+| `game/meta/SaveManager.ts` | 云同步编排（S0-5）：loadLocal 即玩 → bootstrap auth+pull+reconcile → update() 改同步段立即落本地+防抖 2s push → 409 reconcile 重试；无 api 时退纯本地 |
+| `net/ApiClient.ts` | metaserver REST 客户端（fetch + ApiResp 包络）：auth/device·auth/wx·GET/PUT save（If-Match 乐观锁，409 不抛返回 conflict） |
+| `net/config.ts` | `getApiBaseUrl`：`__NW_API_BASE__` > localStorage `nw_api_base` > null（null=纯本地离线优先） |
+| `platform/uuid.ts` | `getOrCreateDeviceId`：设备 UUID 生成 + 持久化（key `nw_device_id`，crypto→回退） |
 
 ## 服务端（server/）
 
@@ -332,7 +340,9 @@ server/
 │                game.proto（PlayerCommand 真实结构，仅客户端↔客户端）
 ├── shared/   @nw/shared   类型(SaveData/ApiResp/ErrorCode) + JWT + Mongo 工厂 + RoomRegistry + config
 ├── metaserver/  REST（无状态，ESM）  fastify + fastify-openapi-glue 按 openapi.yml 装配 + 校验
-└── gameserver/  WS（有状态，CJS，骨架）  ws + JWT 握手；room/节拍器中继/重连属 S1
+├── gameserver/  WS（有状态，CJS，骨架）  ws + JWT 握手；room/节拍器中继/重连属 S1
+├── Dockerfile + docker-compose.prod.yml + Caddyfile + .env.example + deploy/up.sh   部署脚手架（C-3，Docker 路线）
+└── ecosystem.config.cjs                                                              部署脚手架（C-3，pm2 路线）
 ```
 
 ### 要点
@@ -356,7 +366,22 @@ npm run dev:meta            # metaserver（tsx watch，端口 8080）
 npm run dev:game            # gameserver 骨架（端口 8081）
 ```
 
-> ⚠️ **Docker 须 Linux containers 模式**：mongo:7 是 Linux 镜像，Windows 容器模式会报 `hcs::System::CreateProcess` / 命名卷 `invalid volume specification`。切换：`docker context use desktop-linux`（compose 已去掉命名卷，数据走容器可写层）。
+> ⚠️ **Docker 须 Linux containers 模式**：mongo:7 是 Linux 镜像，Windows 容器模式会报 `hcs::System::CreateProcess` / 命名卷 `invalid volume specification`。切换：`docker context use desktop-linux`（开发 compose 已去掉命名卷，数据走容器可写层；**生产 `docker-compose.prod.yml` 用命名卷持久化**，跑在 Linux VPS）。
+
+### 部署（C-3，全栈一条命令）
+
+```bash
+cd server
+cp .env.example .env        # 填 NW_JWT_SECRET（强随机）/ NW_DOMAIN（真域名→自动 HTTPS，留 :80 走 HTTP）
+./deploy/up.sh              # docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+                            # 起 mongo(副本集) + metaserver + gameserver + caddy
+# 出口：https://host/api/...（REST，Caddy 剥 /api 前缀转 metaserver:8080）
+#       wss://host/ws?token=<jwt>（锁步，转 gameserver:8081）
+#       https://host/api/health（存活探针）
+```
+
+- **单镜像两进程**：`Dockerfile` 多阶段 build 全 workspace，metaserver/gameserver 共用镜像、compose 用 `command` 区分。
+- **pm2 路线（非 Docker）**：`ecosystem.config.cjs`（nw-meta fork 可横扩 / nw-game 单实例房间亲和），密钥从 shell env 继承。
 
 ### 实现进度（2026-06-13）
 
@@ -364,8 +389,10 @@ npm run dev:game            # gameserver 骨架（端口 8081）
 |---|---|---|
 | C-1 仓库结构 | ✅ | workspaces 三包，`tsc -b` 全绿 |
 | C-2 契约 + shared | [~] | openapi/proto/shared 就位；客户端 ts-proto/openapi-typescript codegen 待客户端落地 |
+| C-3 部署脚手架 | ✅ | Docker（`Dockerfile` 单镜像 + `docker-compose.prod.yml` + `Caddyfile` + `.env.example` + `deploy/up.sh` 一条命令起全栈）+ pm2（`ecosystem.config.cjs`）；metaserver 加 `/health` |
 | S0-6 Mongo 接入 | ✅ | `createMongo` 工厂 + 6 集合 + `ensureIndexes` |
 | S0-7 save-service | ✅ | `/auth/wx`·`/auth/device`·`GET/PUT /save`（JWT + 乐观锁原子更新）；端到端 vitest 6 用例全绿（含并发 409、硬墙） |
+| S0-1~5 客户端存档底座 | ✅ | `code/src/game/meta/`（SaveData/migrate/SaveStore/SaveManager）+ `net/`（ApiClient/config）+ `IPlatform.getAuthCredential` 三平台；离线优先 + 防抖 push + 409 pull-merge；11 新测试（共 63 绿） |
 | S2/S4 经济/IAP 端点 | 占位 | 契约就绪，handler 返回 501 |
 | gameserver room/锁步 | 待办 | S1：WS 骨架已立，room-service/节拍器中继/重连未做 |
 

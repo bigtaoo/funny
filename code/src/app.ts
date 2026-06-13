@@ -11,13 +11,27 @@ import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
 import { initI18n } from './i18n';
+import { LocalSaveStore, SaveManager } from './game/meta';
+import { ApiClient } from './net/ApiClient';
+import { getApiBaseUrl } from './net/config';
 
-/** Storage flag — set after the first-launch intro has been seen. */
-const SEEN_INTRO_KEY = 'nw_seen_intro';
+/** flags key — set after the first-launch intro has been seen (was the standalone nw_seen_intro key). */
+const SEEN_INTRO_FLAG = 'seen_intro';
 
 export async function startApp(platform: IPlatform): Promise<void> {
   // i18n must be ready before any scene builds its texts
   initI18n(platform.getLanguage(), platform.storage, platform.supportedLocales);
+
+  // ── SaveManager (S0): local-first save + optional cloud sync ────────────────
+  const baseUrl = getApiBaseUrl(platform.storage);
+  const api = baseUrl ? new ApiClient(baseUrl) : undefined;
+  const saveManager = new SaveManager({
+    store: new LocalSaveStore(platform.storage),
+    api,
+    getCredential: () => platform.getAuthCredential(),
+  });
+  // Cloud sync is offline-first and non-blocking: failures keep the local save.
+  void saveManager.bootstrap();
 
   const { width: screenW, height: screenH } = platform.getScreenSize();
 
@@ -62,7 +76,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
     inLobby = false;
     manager.goto(new IntroScene(layout, input, {
       onFinish() {
-        platform.storage.setItem(SEEN_INTRO_KEY, '1');
+        saveManager.setFlag(SEEN_INTRO_FLAG, true);
         goLobby();
       },
     }));
@@ -113,8 +127,9 @@ export async function startApp(platform: IPlatform): Promise<void> {
     }));
   }
 
-  // First launch → background-story intro; afterwards straight to lobby
-  if (platform.storage.getItem(SEEN_INTRO_KEY)) {
+  // First launch → background-story intro; afterwards straight to lobby.
+  // The flag lives in SaveData.flags now (LocalSaveStore absorbs the legacy nw_seen_intro key).
+  if (saveManager.getFlag(SEEN_INTRO_FLAG)) {
     goLobby();
   } else {
     goIntro();

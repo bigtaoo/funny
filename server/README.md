@@ -17,10 +17,25 @@ server/
 
 ## 实现进度
 
-- **已完成**：C-1 仓库结构、C-2 契约 + shared、S0-6 Mongo 接入、S0-7 save-service（`/auth/wx`·`/auth/device`·`GET/PUT /save`，乐观锁单文档原子更新）。
+- **已完成**：C-1 仓库结构、C-2 契约 + shared、**C-3 部署脚手架（Docker + pm2，见下「部署」）**、S0-6 Mongo 接入、S0-7 save-service（`/auth/wx`·`/auth/device`·`GET/PUT /save`，乐观锁单文档原子更新）。客户端 S0-1~5（SaveData/迁移链/SaveStore/匿名账号/云同步）见 `code/src/game/meta/` + `code/src/net/`。
 - **占位（契约就绪，handler 返回 501）**：`/shop/*`·`/gacha/*`·`/ads/reward`·`/iap/verify`（S2/S4）。
 - **骨架**：gameserver WS 握手鉴权 + RoomRegistry 口子；room-service / 节拍器中继 / 重连属 S1。
-- **待办**：proto/openapi 客户端 codegen（`ts-proto` / `openapi-typescript`，C-2 客户端侧）；C-3 部署脚手架。
+- **待办**：proto/openapi 客户端 codegen（`ts-proto` / `openapi-typescript`，C-2 客户端侧）。
+
+## 部署（C-3，全栈一条命令）
+
+```bash
+cp .env.example .env        # 填 NW_JWT_SECRET（强随机，如 openssl rand -hex 32）/ NW_DOMAIN
+./deploy/up.sh              # docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+```
+
+起 `mongo`（单节点副本集，命名卷持久化，首启自动 `rs.initiate`，成员 host=容器名）+ `metaserver` + `gameserver` + `caddy` 反代。
+
+- **出口**：`https://{NW_DOMAIN}/api/...`（REST）、`wss://{NW_DOMAIN}/ws?token=<jwt>`（锁步）、`/api/health`（存活探针）。
+- **NW_DOMAIN**：填真域名 → Caddy 自动签 Let's Encrypt（HTTPS/WSS）；留 `:80` → HTTP/WS（本机联调）。
+- **路由（Caddyfile）**：`handle_path /api/*` 剥前缀转 metaserver:8080（fastify 路由不含 /api 前缀）；`handle /ws*` 保路径转 gameserver:8081（WS server 绑 path=/ws）。
+- **单镜像两进程**：`Dockerfile` 多阶段 build 全 workspace，两服务共用镜像、compose 用 `command` 区分（`node metaserver/dist/index.js` | `gameserver/dist/index.js`）；运行镜像保留 `contracts/`（metaserver 运行期读 `openapi.yml`）。
+- **非 Docker 路线（pm2）**：`npm ci && npx tsc -b shared metaserver gameserver`，然后 `NW_JWT_SECRET=... pm2 start ecosystem.config.cjs`（nw-meta 可 cluster 横扩 / nw-game 单实例房间亲和）；caddy/mongod 自行装。上游需把 Caddyfile 的 `metaserver:8080`/`gameserver:8081` 改成 `127.0.0.1:8080/8081`。
 
 ## 本地开发
 

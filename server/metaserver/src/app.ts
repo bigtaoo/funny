@@ -33,6 +33,10 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     reply.code(status).send({ ok: false, error: { code, message: error.message } });
   });
 
+  // 存活探针（不在 openapi.yml 内，glue 不接管）：反代 /api/health 剥前缀后命中 /health。
+  // 供 compose / 负载均衡 / C-3 部署冒烟用。
+  app.get('/health', async () => ({ ok: true }));
+
   const service = new MetaService({
     cols: opts.cols,
     jwt: opts.jwt,

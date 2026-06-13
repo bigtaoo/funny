@@ -1,7 +1,8 @@
 import type * as PIXI from 'pixi.js-legacy';
-import { IPlatform, IStorage } from '../IPlatform';
+import { IPlatform, IStorage, AuthCredential } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WebAdapter } from '../../inputSystem/WebAdapter';
+import { getOrCreateDeviceId } from '../uuid';
 import type { Locale } from '../../i18n';
 
 /**
@@ -111,5 +112,9 @@ export class CrazyGamesPlatform implements IPlatform {
         this.sdk.ad.requestAd('midgame', { adFinished: resolve, adError: () => resolve() });
       } catch { resolve(); }
     });
+  }
+
+  async getAuthCredential(): Promise<AuthCredential> {
+    return { kind: 'device', deviceId: getOrCreateDeviceId(this.storage) };
   }
 }

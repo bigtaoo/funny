@@ -1,5 +1,5 @@
 import type * as PIXI from 'pixi.js-legacy';
-import { IPlatform, IStorage } from '../IPlatform';
+import { IPlatform, IStorage, AuthCredential } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WechatAdapter } from '../../inputSystem/WechatAdapter';
 import type { Locale } from '../../i18n';
@@ -20,6 +20,10 @@ declare const wx: {
   onTouchEnd(cb: (res: WxTouchEvent) => void): void;
   onTouchMove(cb: (res: WxTouchEvent) => void): void;
   onTouchCancel(cb: (res: WxTouchEvent) => void): void;
+  login(opts: {
+    success(res: { code: string }): void;
+    fail(err: unknown): void;
+  }): void;
 };
 
 interface WxTouch {
@@ -93,6 +97,20 @@ export class WechatPlatform implements IPlatform {
   onGameplayStart(): void { /* no-op */ }
   onGameplayStop(): void  { /* no-op */ }
   async showMidgameAd(): Promise<void> { /* no-op */ }
+
+  /** wx.login → 临时 code，交服务器 /auth/wx 换 openid → accountId（S0-4）。 */
+  getAuthCredential(): Promise<AuthCredential> {
+    return new Promise((resolve, reject) => {
+      try {
+        wx.login({
+          success: (res) => resolve({ kind: 'wx', code: res.code }),
+          fail: (e) => reject(e),
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
 
   onAppReady(): void {
     try { wx.setPreferredFramesPerSecond(60); } catch { /* ignore */ }
