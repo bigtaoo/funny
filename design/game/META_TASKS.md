@@ -22,8 +22,8 @@
 
 ## 公共底座（贯穿所有阶段）
 
-- [ ] **C-1 仓库结构（三包 workspaces）**：`server/` 下建 **`shared/`（`@nw/shared`）+ `api/`（REST）+ `gateway/`（WS）**三包，可独立部署（`META_DESIGN.md §6.1`）。`shared` 只 import `code/src/game` 的**类型**（`PlayerCommand` 等，编译期擦除，不打进 bundle）。**主要文件**：根/`server` `package.json` workspaces、各包 `tsconfig.json`（paths→`@game`/`@nw/shared`）。**验收**：`api`/`gateway` 各自 `tsc --noEmit` 干净，bundle 内无 PIXI/引擎运行时。
-- [ ] **C-2 协议 + 共享库**：`shared` 内定义 `ClientMsg`/`ServerMsg` 联合、`ApiResp<T>`、`RoomInfo`、`InputFrame`；含 JWT 校验、zod schema、Mongo client 工厂、`RoomRegistry` 接口（内存实现，§6.5 留 Redis 口子）。**依赖**：C-1。**验收**：双端 import 同一份，无重复定义。
+- [ ] **C-1 仓库结构（三包 workspaces + proto）**：`server/` 下建 **`proto/`（`transport.proto`/`game.proto`）+ `shared/`（`@nw/shared`）+ `api/`（REST）+ `gateway/`（WS）**，api/gateway 可独立部署（`META_DESIGN.md §6.1`）。`shared`/`gateway` 只 codegen `transport.proto`，**不依赖 `code/src/game`**（仅可选裁判任务才引）。**主要文件**：根/`server` `package.json` workspaces、各包 `tsconfig.json`。**验收**：`api`/`gateway` 各自 `tsc --noEmit` 干净，bundle 内无 PIXI/引擎运行时/`game.proto`。
+- [ ] **C-2 protobuf 协议 + 共享库**：写 `transport.proto`（房间/锁步控制，`Envelope` oneof；`commands: bytes` 对服务器 opaque）+ `game.proto`（`PlayerCommand`，仅客户端↔客户端）；接 `ts-proto` codegen 进客户端 + 服务器构建。`shared` 另含 JWT 校验、REST 的 zod schema、Mongo client 工厂、`RoomRegistry` 接口（内存实现，§6.5 留 Redis 口子）；dev 模式加二进制帧解码打印。**依赖**：C-1。**验收**：双端从同一 `.proto` codegen；服务器转发 `commands` 字节流不解码。
 - [ ] **C-3 部署脚手架（两进程）**：Linux VPS 上 `mongod`（**单节点副本集** `rs.initiate()`，§6.3）+ `api`/`gateway` 两进程（pm2）+ caddy/nginx 反代（`/api/*`→api、`/ws`→gateway，自动 HTTPS）。**依赖**：C-1。**验收**：一条脚本起全栈，`wss://host/ws` 可连、`https://host/api` 可访。
 
 ---

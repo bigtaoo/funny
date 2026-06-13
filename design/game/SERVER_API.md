@@ -11,8 +11,10 @@
 
 | 通道 | 协议 | 服务 | 承载 |
 |---|---|---|---|
-| 账号 / 存档 / 经济 | **HTTPS REST**（JSON） | `api`（无状态，可横扩） | 一次性请求-响应：登录、存档同步、商店、盲盒、广告、IAP |
-| 房间 / 锁步对战 | **WSS（WebSocket）** | `gateway`（有状态，房间亲和） | 长连接：建房 / 加入 / ready / 逐 tick 输入中继 / 重连 / 天梯结算 |
+| 账号 / 存档 / 经济 | **HTTPS REST（JSON）** | `api`（无状态，可横扩） | 一次性请求-响应：登录、存档同步、商店、盲盒、广告、IAP |
+| 房间 / 锁步对战 | **WSS（protobuf 二进制）** | `gateway`（有状态，房间亲和） | 长连接：建房 / 加入 / ready / 逐 tick 输入中继 / 重连 / 天梯结算 |
+
+> **线协议分层（M12）**：WS 用 protobuf（`transport.proto` = 控制层，服务器认得；`game.proto` = `PlayerCommand` 结构，仅客户端↔客户端）。服务器把 `PlayerCommand` 当 **`bytes` opaque 转发不解码** → 与游戏逻辑零依赖。REST 保持 JSON（低频、利于浏览器/支付回调/调试）。
 
 - 两服务可独立部署（`META_DESIGN.md §6.1`），共享 `@nw/shared`（协议类型 + JWT 校验 + Mongo client）。反代按 `/api/*`、`/ws` 分流。
 - 服务器权威段（钱包 / 库存 / 盲盒 / IAP / **天梯**）只能经服务器改，**客户端永不直接写**（`META_DESIGN.md §2`）。
@@ -23,15 +25,17 @@
 ## 1. 通用约定
 
 ### 1.1 鉴权
-- 登录拿 `token`（JWT 或随机 token，存服务端会话），后续 REST 走 `Authorization: Bearer <token>`，WS 在握手 query 或首帧带 `token`。
+- 登录拿**无状态 JWT**（服务端密钥签），后续 REST 走 `Authorization: Bearer <token>`，WS 在握手 query 或首帧带 `token`。
 - `accountId` 由服务端从 token 解出，**客户端请求体里不带 accountId**（防越权）。
 
-### 1.2 统一响应包络
-```ts
-type ApiResp<T> =
-  | { ok: true;  data: T }
-  | { ok: false; error: { code: string; message: string } };
-```
+### 1.2 编码
+- **REST = JSON**，统一响应包络：
+  ```ts
+  type ApiResp<T> =
+    | { ok: true;  data: T }
+    | { ok: false; error: { code: string; message: string } };
+  ```
+- **WS = protobuf**：每帧一个 `Envelope`（`oneof` 区分消息）。`.proto` 在 `proto/`，双端 codegen（`ts-proto`，无运行时依赖）。dev 模式加二进制帧解码打印便于调试。
 
 ### 1.3 错误码（节选）
 | code | 含义 |
@@ -107,37 +111,41 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 
 ## 3. WebSocket 协议（房间 + 锁步）
 
-握手：`wss://host/ws?token=<token>`。连接后所有消息为 JSON：`{ t: <type>, ...payload }`。
+握手：`wss://host/ws?token=<token>`。连接后每帧一个 protobuf `Envelope`（`transport.proto`，`oneof case` 区分消息）。下表 `case` 列即 oneof 分支名。
 
-### 3.1 客户端 → 服务器（`ClientMsg`）
-| `t` | payload | 说明 |
+> `commands` 字段类型是 **`bytes`**：客户端用 `game.proto` 编码 `PlayerCommand[]`，服务器**透传不解码**（M12）。
+
+### 3.1 客户端 → 服务器（`ClientMsg` oneof）
+| `case` | payload | 说明 |
 |---|---|---|
-| `room.create` | `{ mode: 'friendly'|'ranked' }` | 建房，返回房间码（friendly）；ranked 走匹配队列 |
-| `room.join` | `{ code }` | 输码加入（friendly） |
-| `room.ready` | `{ ready: boolean }` | 切换准备态 |
-| `room.leave` | `{}` | 离开房间 |
-| `room.start` | `{}` | 房主开局（双方 ready 后有效） |
-| `input.submit` | `{ tick, commands: PlayerCommand[] }` | 提交某 tick 的本方指令（含空指令） |
-| `match.result` | `{ stateHash }` | 对局结束上报最终状态 hash |
-| `conn.resume` | `{ roomId }` | 重连，请求输入日志追帧 |
+| `room_create` | `{ mode: friendly|ranked }` | 建房，返回房间码（friendly）；ranked 走匹配队列 |
+| `room_join` | `{ code }` | 输码加入（friendly） |
+| `room_ready` | `{ ready: bool }` | 切换准备态 |
+| `room_leave` | `{}` | 离开房间 |
+| `room_start` | `{}` | 房主开局（双方 ready 后有效） |
+| `input_submit` | `{ tick, commands: bytes }` | 提交某 tick 本方指令（空帧也发，`commands` 可空） |
+| `match_result` | `{ state_hash }` | 对局结束上报最终状态 hash |
+| `conn_resume` | `{ room_id }` | 重连，请求输入日志追帧 |
 | `ping` | `{}` | 心跳 |
 
-### 3.2 服务器 → 客户端（`ServerMsg`）
-| `t` | payload | 说明 |
+### 3.2 服务器 → 客户端（`ServerMsg` oneof）
+| `case` | payload | 说明 |
 |---|---|---|
-| `room.state` | `{ code, players: PlayerSlot[], phase }` | 房间状态变更广播 |
-| `match.start` | `{ roomId, mode, seed, startTick, localSide }` | 开局：模式 + 种子 + 起始 tick + 本方阵营 |
-| `input.frame` | `{ tick, inputs: { side, commands }[] }` | 某 tick 的**确认输入集**（双方齐后广播） |
-| `conn.resync` | `{ seed, startTick, log: InputFrame[], curTick }` | 重连追帧：种子 + 全量输入日志 + 当前 tick |
-| `peer.dc` | `{ side, graceMs: 60000 }` | 对手掉线，进入 60s 等待重连（M10） |
-| `match.over` | `{ winnerSide, reason, mismatch?, elo?: { delta, after, rankAfter } }` | 结束；`reason: 'base'|'disconnect'|'mismatch'`；ranked 带 ELO 变化 |
-| `room.error` | `{ code, message }` | 房间错误（不存在 / 已满） |
+| `room_state` | `{ code, players: PlayerSlot[], phase }` | 房间状态变更广播 |
+| `match_start` | `{ room_id, mode, seed, start_tick, local_side }` | 开局：模式 + 种子 + 起始 tick + 本方阵营 |
+| `input_frame` | `{ tick, inputs: SideInput[] }` | 某 tick 的**确认输入集**（双方齐后广播） |
+| `conn_resync` | `{ seed, start_tick, log: InputFrame[], cur_tick }` | 重连追帧：种子 + 全量输入日志 + 当前 tick |
+| `peer_dc` | `{ side, grace_ms: 60000 }` | 对手掉线，进入 60s 等待重连（M10） |
+| `match_over` | `{ winner_side, reason, mismatch?, elo?: { delta, after, rank_after } }` | 结束；`reason: base|disconnect|mismatch`；ranked 带 ELO 变化 |
+| `room_error` | `{ code, message }` | 房间错误（不存在 / 已满） |
 | `pong` | `{}` | 心跳回应 |
 
-```ts
-interface PlayerSlot { side: Side; name: string; ready: boolean; connected: boolean; }
-type RoomPhase = 'waiting' | 'ready' | 'countdown' | 'in_match' | 'over';
-interface InputFrame { tick: number; inputs: { side: Side; commands: PlayerCommand[] }[]; }
+```proto
+// transport.proto（节选；服务器认得这一层）
+message PlayerSlot  { uint32 side = 1; string name = 2; bool ready = 3; bool connected = 4; }
+message SideInput   { uint32 side = 1; bytes commands = 2; }   // commands 对服务器 opaque
+message InputFrame  { uint32 tick = 1; repeated SideInput inputs = 2; }
+enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; }
 ```
 
 ---
@@ -189,9 +197,9 @@ interface InputFrame { tick: number; inputs: { side: Side; commands: PlayerComma
 - match 类型：`friendly`（仅记结果）/ `ranked`（天梯 ELO，服务器权威）（M11）。
 - token：无状态 **JWT**（服务端密钥签）。
 - 拓扑：`api`/`gateway` 两服务可分（M9）；钱包用单文档原子更新避开多文档事务（`META_DESIGN.md §6.3`）。
+- 线协议：**WS = protobuf**（`transport.proto`/`game.proto` 分层，`PlayerCommand` 对服务器 opaque），**REST = JSON**（M12）。
 
 **开放**：
-- [ ] 锁步 DELAY 取值（2 vs 3 tick）需实测网络往返定。
-- [ ] WS 是否需要二进制编码（初期 JSON 足够）。
+- [ ] 锁步 DELAY 取值（2 vs 3 tick）需实测网络往返定（建议可配置，默认 3）。
 - [ ] ranked 匹配队列算法（按 ELO 配对 + 等待放宽）与段位划分表（v1 先做 friendly，ranked 队列稍后）。
 - [ ] ELO 公式参数（K 因子、初始分、段位阈值）。
