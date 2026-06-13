@@ -13,6 +13,10 @@
 export { createGameEngine } from './GameEngine';
 export type { IGameEngine } from './types';
 
+// ── Unified input pipeline (M13) ──────────────────────────────────────────────
+export { LocalInputSource } from './net/InputSource';
+export type { InputSource } from './net/InputSource';
+
 // ── Public types (needed by the render layer) ─────────────────────────────────
 export type {
   GameConfig,

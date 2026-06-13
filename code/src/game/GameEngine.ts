@@ -20,6 +20,7 @@ import { Prng } from './math/prng';
 import { GameState } from './GameState';
 import { AISystem } from './systems/AISystem';
 import { WaveDirector } from './campaign/WaveDirector';
+import { InputSource, LocalInputSource } from './net/InputSource';
 import type { LevelDefinition } from './campaign/LevelDefinition';
 import { BuildingProductionSystem } from './systems/BuildingProductionSystem';
 import { CombatSystem } from './systems/CombatSystem';
@@ -45,8 +46,16 @@ import {
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
-export function createGameEngine(config: GameConfig): IGameEngine {
-  return new GameEngineImpl(config);
+/**
+ * Build a game engine.
+ *
+ * `input` is the unified input pipeline (M13). Defaults to `LocalInputSource`
+ * (single-player / practice: UI commands self-forward to the current tick with
+ * zero delay). Online play (S1-7) and replay (S1-RP) inject `NetInputSource` /
+ * `ReplayInputSource` here instead — the engine code is unchanged.
+ */
+export function createGameEngine(config: GameConfig, input?: InputSource): IGameEngine {
+  return new GameEngineImpl(config, input ?? new LocalInputSource());
 }
 
 // ─── Implementation (not exported) ───────────────────────────────────────────
@@ -68,9 +77,10 @@ class GameEngineImpl implements IGameEngine {
   private firstStep = true;
   private accumulatedTime = 0;
   private currentTick = 0;
-  private pendingCommands: PlayerCommand[] = [];
+  private readonly input: InputSource;
 
-  constructor(config: GameConfig) {
+  constructor(config: GameConfig, input: InputSource) {
+    this.input      = input;
     this.state      = new GameState(config.seed);
     this.resource   = new ResourceSystem();
     this.movement   = new MovementSystem();
@@ -103,19 +113,22 @@ class GameEngineImpl implements IGameEngine {
     const tickDt = 1 / TICK_RATE;
     this.accumulatedTime += dt;
     while (this.accumulatedTime >= tickDt) {
+      // Pull the confirmed command set for this frame from the input pipeline.
+      // LocalInputSource never stalls; a net source returns null when the frame
+      // is not yet confirmed, in which case we stop advancing (S1-7 buffering).
+      const cmds = this.input.take(this.currentTick);
+      if (cmds === null) break;
       this.accumulatedTime -= tickDt;
-      const cmds = this.pendingCommands;
-      this.pendingCommands = [];
       this.step(this.currentTick++, cmds);
     }
   }
 
   playCard(handIndex: number, col: number, row?: number): void {
-    this.pendingCommands.push({ type: 'play_card', owner: 0, tick: this.currentTick, handIndex, col, row });
+    this.input.submit({ type: 'play_card', owner: 0, tick: this.currentTick, handIndex, col, row });
   }
 
   upgradeBase(): void {
-    this.pendingCommands.push({ type: 'upgrade_base', owner: 0, tick: this.currentTick });
+    this.input.submit({ type: 'upgrade_base', owner: 0, tick: this.currentTick });
   }
 
   // ─── IGameEngine ─────────────────────────────────────────────────────────
@@ -150,6 +163,9 @@ class GameEngineImpl implements IGameEngine {
     }
 
     // ── Commands ──────────────────────────────────────────────────────────
+    // `commands` is the player's confirmed set for this tick, pulled from the
+    // InputSource (M13). AI (practice) and WaveDirector (PvE) are the engine's
+    // *other* in-tick input sources, generated deterministically from state.
     const externalCmds = commands.filter((c) => c.tick === tick);
     if (this.mode === 'campaign' && this.waveDirector) {
       // Campaign: process player commands, then spawn scripted enemy waves
