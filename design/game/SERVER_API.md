@@ -177,7 +177,11 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 - 确定性保证：同 `seed` + 同帧序列 → 双端逐 tick 一致（`META_DESIGN.md §6`）。
 - **重连**：服务器留**非空帧**日志；`conn_resume{ last_frame }` → `conn_resync` 下发种子 + `last_frame` 之后的非空帧 + `cur_frame`，客户端快进追上。
 - **断线规则（M10）**：in_match 一端掉线 → 服务器**停发该房间帧** + 向在线方 `peer_dc{ grace_ms:60000 }` → 起 **60s**；掉线方 `conn_resume` 成功则续发续打；**超时则掉线方判负** `match_over{ reason:'disconnect' }`。
-- **结算**：`friendly` 仅写 `matches` 记结果；`ranked` 由 gameserver 算 ELO、写 `saves.pvp`（服务器权威），随 `match_over.elo` 下发。
+- **结算**：`friendly` 仅写 `matches` 记结果；`ranked` 由 gameserver 算 ELO、写 `saves.pvp`（服务器权威），随 `match_over.elo{delta,after,rank_after}` 按 side 下发。
+- **ranked 匹配 / ELO（S1-R 已落地）**：
+  - 入队：`room_create{mode:ranked}` → 服务器读 `saves.pvp.elo` 入匹配队列（需 Mongo，否则 `RANKED_UNAVAILABLE`）；按 ELO 邻近配对，等待越久可接受分差越宽（初值 `base 100 + 50/s`）；配对即建房直接开局（无 ready/房主环节）。`room_leave`（不在房内）= 取消匹配。
+  - 胜负判定（**无服务器裁判**，S1-J 未做）：`match_result{ state_hash, winner_side }` 双方齐 → **hash 与 winner_side 均一致才认**该胜方、结算 ELO；任一不一致 → 作废（`mismatch`，不动 ELO）。掉线/认输 → 服务器权威判对手胜并结算。防一端谎报刷分。
+  - ELO：K=32 标准公式、零和、分不为负；段位 9 段（`shared/ladder.ts` 与客户端展示同源，阈值见 `ECONOMY_BALANCE.md §2.3`）；`saves.pvp` 经单文档原子更新（rev 守卫 + 重试，整体替换 save，避免与 `PUT /save` 互覆盖）写 `elo/rank/wins/losses/streak`。
 
 ---
 
@@ -233,6 +237,8 @@ message Replay {
 
 **开放**：
 - [ ] 客户端缓冲深度（默认 1 批次 ~100ms）是否做成按 RTT 自适应。
-- [ ] ranked 匹配队列算法（按 ELO 配对 + 等待放宽）与段位划分表（v1 先做 friendly，ranked 队列稍后）。
-- [ ] ELO 公式参数（K 因子、初始分、段位阈值）。
+- [x] ranked 匹配队列算法（按 ELO 配对 + 等待放宽）与段位划分表 → S1-R 已落地（`Matchmaking.ts` + `ladder.ts` 9 段）。
+- [x] ELO 公式参数（K=32 / 初始 1000 / 9 段阈值见 `ladder.ts`）→ DRAFT 初值已定，上线前可热调。
+- [ ] ranked 匹配队列**多实例**共享（当前内存单实例；横扩需 Redis 队列 + 跨实例房间路由）。
+- [ ] ranked 分段差异化胜利金币（`ECONOMY_BALANCE.md §2.3b`）：依赖经济服务 S2，gameserver 局末加 wallet 增量（带每日上限）。
 - [ ] 录像分享/存储：PvE 本地录制先行，云端分享 + PvP 录像对象存储排期（v1 录制即可，分享后置）。

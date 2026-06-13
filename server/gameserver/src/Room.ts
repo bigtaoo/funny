@@ -48,11 +48,26 @@ export interface MatchArchive {
   replay: MatchReplay;
 }
 
+/** 单方 ELO 结算结果（下发 match_over.elo）。 */
+export interface EloResult {
+  delta: number;
+  after: number;
+  rankAfter: string;
+}
+
 export interface RoomDeps {
   /** 房间销毁时回调（清 registry / 连接映射）。 */
   onDestroy: (roomId: string) => void;
   /** 对局归档（无 Mongo 时为 noop）。 */
   archive: (doc: MatchArchive) => void;
+  /**
+   * Ranked 局末 ELO 结算（写 saves.pvp，服务器权威）。仅 ranked 房注入。
+   * 返回 accountId → 该方 ELO 变化；无 Mongo / friendly 不调用。
+   */
+  settleRanked?: (
+    winnerAccountId: string,
+    loserAccountId: string,
+  ) => Promise<Map<string, EloResult>>;
 }
 
 interface Slot {
@@ -78,7 +93,7 @@ export class Room {
   private graceTimer: NodeJS.Timeout | null = null;
 
   // —— 局末结算 ——
-  private results = new Map<number, string>(); // side → stateHash
+  private results = new Map<number, { hash: string; winner: number }>(); // side → {hash, 客户端判定胜方}
   private settled = false;
 
   constructor(
@@ -152,13 +167,24 @@ export class Room {
     this.broadcastRoomState();
   }
 
-  /** 房主（side 0）在双方 ready 后开局。 */
+  /** 房主（side 0）在双方 ready 后开局（friendly）。 */
   start(accountId: string): void {
     if (this.phase >= RoomPhase.IN_MATCH) return;
     const host = this.slots.find((s) => s.side === 0);
     if (!host || host.accountId !== accountId) return;
     if (this.slots.length !== 2 || !this.slots.every((s) => s.ready)) return;
+    this.launch();
+  }
 
+  /** Ranked：匹配成功直接开局，无房主 / ready 环节（队列已配对两人）。 */
+  beginRanked(): void {
+    if (this.phase >= RoomPhase.IN_MATCH || this.slots.length !== 2) return;
+    for (const s of this.slots) s.ready = true;
+    this.launch();
+  }
+
+  /** 派种子 + 下发 match_start + 起节拍器。 */
+  private launch(): void {
     this.seed = randomSeed();
     this.curFrame = START_FRAME;
     this.phase = RoomPhase.IN_MATCH;
@@ -183,18 +209,30 @@ export class Room {
     this.pending.push({ side: slot.side, commands });
   }
 
-  /** 局末上报状态 hash → 双方齐 → 比对 + 结算（S1-5）。 */
-  reportResult(accountId: string, stateHash: string): void {
+  /** 局末上报 hash + 客户端判定胜方 → 双方齐 → 比对 + 结算（S1-5 / S1-R）。 */
+  reportResult(accountId: string, stateHash: string, winnerSide: number): void {
     if (this.phase !== RoomPhase.IN_MATCH || this.settled) return;
     const slot = this.slotOf(accountId);
     if (!slot) return;
-    this.results.set(slot.side, stateHash);
+    this.results.set(slot.side, { hash: stateHash, winner: winnerSide });
     if (this.results.size < this.slots.length) return; // 等另一方
 
-    const hashes = [...this.results.values()];
-    const hashOk = hashes.every((h) => h === hashes[0]);
-    // friendly 正常结束：胜负由客户端模拟权威决定，服务器只审计/归档。
-    this.endMatch({ winnerSide: -1, reason: hashOk ? 'base' : 'mismatch', hashOk });
+    const reports = [...this.results.values()];
+    const hashOk = reports.every((r) => r.hash === reports[0]!.hash);
+
+    if (this.mode === MatchMode.RANKED) {
+      // 无服务器裁判（S1-J 未做）→ 信「双方 hash 一致且胜方判定一致」。
+      // 任一不一致即作废（不动 ELO），标 mismatch；防一端谎报刷分。
+      const winnersAgree = reports.every((r) => r.winner === reports[0]!.winner);
+      if (hashOk && winnersAgree) {
+        void this.endMatch({ winnerSide: reports[0]!.winner, reason: 'base', hashOk: true });
+      } else {
+        void this.endMatch({ winnerSide: -1, reason: 'mismatch', hashOk: false });
+      }
+      return;
+    }
+    // friendly：胜负由客户端模拟权威决定，服务器只审计/归档（不判胜方）。
+    void this.endMatch({ winnerSide: -1, reason: hashOk ? 'base' : 'mismatch', hashOk });
   }
 
   /** 显式离开。对局中视为认输（对手胜）。 */
@@ -203,7 +241,7 @@ export class Room {
     if (!slot) return;
     if (this.phase === RoomPhase.IN_MATCH) {
       const peer = this.slots.find((s) => s.side !== slot.side);
-      this.endMatch({
+      void this.endMatch({
         winnerSide: peer ? peer.side : -1,
         reason: 'disconnect',
         hashOk: true,
@@ -235,7 +273,7 @@ export class Room {
     peer?.conn?.send({ case: 'peer_dc', side: slot.side, graceMs: GRACE_MS });
     this.graceTimer = setTimeout(() => {
       this.graceTimer = null;
-      this.endMatch({
+      void this.endMatch({
         winnerSide: peer ? peer.side : -1,
         reason: 'disconnect',
         hashOk: true,
@@ -316,7 +354,11 @@ export class Room {
 
   // ───────────────────────── 结算 / 销毁 ─────────────────────────
 
-  private endMatch(opts: { winnerSide: number; reason: string; hashOk: boolean }): void {
+  private async endMatch(opts: {
+    winnerSide: number;
+    reason: string;
+    hashOk: boolean;
+  }): Promise<void> {
     if (this.settled) return;
     this.settled = true;
     this.stopMetronome();
@@ -326,14 +368,37 @@ export class Room {
     }
     this.phase = RoomPhase.OVER;
 
-    this.broadcast((c) =>
+    // Ranked + 已知胜方 + 未作废（hashOk）→ 服务器权威结算 ELO，写 saves.pvp。
+    // friendly / 作废(mismatch) / 无胜方 → 不动 ELO。
+    let eloMap: Map<string, EloResult> | null = null;
+    if (
+      this.mode === MatchMode.RANKED &&
+      opts.winnerSide >= 0 &&
+      opts.hashOk &&
+      this.deps.settleRanked
+    ) {
+      const winner = this.slots.find((s) => s.side === opts.winnerSide);
+      const loser = this.slots.find((s) => s.side !== opts.winnerSide);
+      if (winner && loser) {
+        try {
+          eloMap = await this.deps.settleRanked(winner.accountId, loser.accountId);
+        } catch (e) {
+          console.error('[gameserver] ranked ELO settle failed:', e);
+        }
+      }
+    }
+
+    this.broadcast((c) => {
+      const slot = this.slots.find((s) => s.conn === c);
+      const elo = slot ? eloMap?.get(slot.accountId) : undefined;
       c.send({
         case: 'match_over',
         winnerSide: opts.winnerSide < 0 ? 0 : opts.winnerSide,
         reason: opts.reason,
         mismatch: !opts.hashOk,
-      }),
-    );
+        ...(elo ? { elo } : {}),
+      });
+    });
 
     this.deps.archive({
       roomId: this.roomId,

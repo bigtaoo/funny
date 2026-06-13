@@ -4,4 +4,5 @@ export * from './api';
 export * from './jwt';
 export * from './mongo';
 export * from './roomRegistry';
+export * from './ladder';
 export * from './config';

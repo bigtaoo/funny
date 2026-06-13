@@ -1,10 +1,18 @@
 // 房间目录 + 连接路由（S1-2）。建房 / 输码加入 / 重连寻房 / 消息分发。
 // 单实例：本地 rooms Map 持 Room 对象，RoomRegistry 持目录元信息（留多实例口子）。
 import { randomUUID, randomInt } from 'crypto';
-import type { Collections } from '@nw/shared';
-import { type RoomRegistry } from '@nw/shared';
+import type { Collections, SaveDoc, SaveData } from '@nw/shared';
+import {
+  type RoomRegistry,
+  INITIAL_ELO,
+  ELO_FLOOR,
+  computeEloDelta,
+  eloToRank,
+  nextStreak,
+} from '@nw/shared';
 import { Connection } from './Connection';
-import { Room, type MatchArchive } from './Room';
+import { Room, type MatchArchive, type EloResult } from './Room';
+import { Matchmaking, type QueueEntry } from './Matchmaking';
 import { MatchMode, type ClientMsg } from './proto/transport';
 
 // 房间码字母表：去掉易混字符（0/O/1/I/L）。
@@ -15,11 +23,14 @@ export class RoomManager {
   private readonly rooms = new Map<string, Room>();
   private readonly connections = new Map<string, Connection>(); // accountId → 活跃连接
   private readonly instanceId = randomUUID();
+  private readonly matchmaking: Matchmaking;
 
   constructor(
     private readonly registry: RoomRegistry,
     private readonly cols: Collections | null,
-  ) {}
+  ) {
+    this.matchmaking = new Matchmaking((a, b) => void this.createRankedRoom(a, b));
+  }
 
   // ───────────────────────── 连接生命周期 ─────────────────────────
 
@@ -32,6 +43,7 @@ export class RoomManager {
 
   /** 连接关闭：通知所属房间 + 清连接映射（仅当映射仍指向本连接）。 */
   onClose(conn: Connection): void {
+    this.matchmaking.remove(conn.accountId); // 在 ranked 队列里则退队
     if (conn.roomId) {
       const room = this.rooms.get(conn.roomId);
       room?.onDisconnect(conn.accountId, conn);
@@ -67,14 +79,15 @@ export class RoomManager {
         break;
       case 'room_leave': {
         const room = this.roomOf(conn);
-        room?.leave(conn.accountId);
+        if (room) room.leave(conn.accountId);
+        else this.matchmaking.remove(conn.accountId); // 不在房内 → 取消 ranked 匹配
         break;
       }
       case 'cmd_submit':
         this.roomOf(conn)?.submitCmd(conn.accountId, msg.commands);
         break;
       case 'match_result':
-        this.roomOf(conn)?.reportResult(conn.accountId, msg.stateHash);
+        this.roomOf(conn)?.reportResult(conn.accountId, msg.stateHash, msg.winnerSide);
         break;
       case 'unknown':
         break;
@@ -88,16 +101,12 @@ export class RoomManager {
   // ───────────────────────── 建房 / 加入 / 重连 ─────────────────────────
 
   private async create(conn: Connection, mode: number): Promise<void> {
-    if (mode === MatchMode.RANKED) {
-      conn.send({
-        case: 'room_error',
-        code: 'RANKED_UNAVAILABLE',
-        message: 'ranked matchmaking lands in S1-R',
-      });
-      return;
-    }
     if (conn.roomId) {
       conn.send({ case: 'room_error', code: 'ALREADY_IN_ROOM', message: 'leave first' });
+      return;
+    }
+    if (mode === MatchMode.RANKED) {
+      await this.enqueueRanked(conn);
       return;
     }
     const code = await this.uniqueCode();
@@ -142,6 +151,127 @@ export class RoomManager {
       return;
     }
     room.resume(conn, lastFrame);
+  }
+
+  // ───────────────────────── Ranked 匹配 / ELO（S1-R）─────────────────────────
+
+  /** Ranked 入队：需 Mongo（天梯权威）；读当前 ELO 后入匹配队列。 */
+  private async enqueueRanked(conn: Connection): Promise<void> {
+    if (!this.cols) {
+      conn.send({
+        case: 'room_error',
+        code: 'RANKED_UNAVAILABLE',
+        message: 'ranked requires server storage',
+      });
+      return;
+    }
+    if (this.matchmaking.has(conn.accountId)) return; // 已在队列，幂等
+    let elo = INITIAL_ELO;
+    try {
+      const doc = await this.cols.saves.findOne({ _id: conn.accountId });
+      elo = doc?.save.pvp.elo ?? INITIAL_ELO;
+    } catch (e) {
+      console.error('[gameserver] read elo for matchmaking failed:', e);
+    }
+    // await 期间连接可能被顶替 / 进了房 → 不入队
+    if (this.connections.get(conn.accountId) !== conn || conn.roomId) return;
+    this.matchmaking.enqueue(conn, elo);
+  }
+
+  /** 匹配成功建 ranked 房并直接开局（无 ready / 房主环节）。 */
+  private async createRankedRoom(a: QueueEntry, b: QueueEntry): Promise<void> {
+    // 配对回调与连接关闭存在竞态：校验仍是活跃且空闲连接，否则把在线方放回队列。
+    const live = (e: QueueEntry): boolean =>
+      this.connections.get(e.accountId) === e.conn && !e.conn.roomId;
+    if (!live(a) || !live(b)) {
+      if (live(a)) this.matchmaking.enqueue(a.conn, a.elo);
+      if (live(b)) this.matchmaking.enqueue(b.conn, b.elo);
+      return;
+    }
+    const code = await this.uniqueCode();
+    const roomId = randomUUID();
+    await this.registry.create({
+      roomId,
+      code,
+      mode: 'ranked',
+      instanceId: this.instanceId,
+      createdAt: Date.now(),
+    });
+    const room = new Room(roomId, code, MatchMode.RANKED, {
+      onDestroy: (id) => this.destroyRoom(id),
+      archive: (doc) => this.archive(doc),
+      settleRanked: (w, l) => this.settleRanked(w, l),
+    });
+    this.rooms.set(roomId, room);
+    room.addPlayer(a.conn);
+    room.addPlayer(b.conn);
+    room.beginRanked();
+  }
+
+  /** Ranked 局末 ELO 结算：读双方分 → 算分差 → 各自原子写 saves.pvp。 */
+  private async settleRanked(
+    winnerId: string,
+    loserId: string,
+  ): Promise<Map<string, EloResult>> {
+    const out = new Map<string, EloResult>();
+    if (!this.cols) return out;
+    const [wDoc, lDoc] = await Promise.all([
+      this.cols.saves.findOne({ _id: winnerId }),
+      this.cols.saves.findOne({ _id: loserId }),
+    ]);
+    const wElo = wDoc?.save.pvp.elo ?? INITIAL_ELO;
+    const lElo = lDoc?.save.pvp.elo ?? INITIAL_ELO;
+    const { winner, loser } = computeEloDelta(wElo, lElo);
+    const [wRes, lRes] = await Promise.all([
+      this.applyPvp(winnerId, wDoc, winner, true),
+      this.applyPvp(loserId, lDoc, loser, false),
+    ]);
+    if (wRes) out.set(winnerId, wRes);
+    if (lRes) out.set(loserId, lRes);
+    return out;
+  }
+
+  /**
+   * 单方 pvp 原子更新（乐观锁 rev 守卫 + 重试）。整体替换 save（同 putSave 约定），
+   * 避免与客户端 PUT /save 的并发写互相覆盖。
+   */
+  private async applyPvp(
+    accountId: string,
+    doc: SaveDoc | null,
+    delta: number,
+    won: boolean,
+  ): Promise<EloResult | null> {
+    if (!this.cols) return null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const cur = attempt === 0 && doc ? doc : await this.cols.saves.findOne({ _id: accountId });
+      if (!cur) return null; // ranked 玩家应已有存档（已 auth）
+      const pvp = cur.save.pvp;
+      const after = Math.max(ELO_FLOOR, pvp.elo + delta);
+      const appliedDelta = after - pvp.elo; // floor 钳制后的真实变化
+      const rank = eloToRank(after);
+      const next: SaveData = {
+        ...cur.save,
+        rev: cur.save.rev + 1,
+        updatedAt: Date.now(),
+        pvp: {
+          ...pvp,
+          elo: after,
+          rank,
+          streak: nextStreak(pvp.streak, won),
+          wins: pvp.wins + (won ? 1 : 0),
+          losses: pvp.losses + (won ? 0 : 1),
+        },
+      };
+      const res = await this.cols.saves.findOneAndUpdate(
+        { _id: accountId, rev: cur.rev },
+        { $set: { save: next, rev: next.rev } },
+        { returnDocument: 'after' },
+      );
+      if (res) return { delta: appliedDelta, after, rankAfter: rank };
+      // rev 冲突（客户端并发 PUT /save）→ 重读重试
+    }
+    console.warn(`[gameserver] applyPvp rev conflict exhausted for ${accountId}`);
+    return null;
   }
 
   private destroyRoom(roomId: string): void {

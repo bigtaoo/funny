@@ -60,10 +60,13 @@ describe('transport decodeClient（client 线字节 → ClientMsg）', () => {
     expect(Array.from((r as { commands: Uint8Array }).commands)).toEqual([5, 200, 0, 17]);
   });
 
-  it('match_result: snake_case state_hash → stateHash', () => {
-    expect(decodeClient(encodeClient({ match_result: { state_hash: 'deadbeef' } }))).toEqual({
+  it('match_result: snake_case state_hash / winner_side → stateHash / winnerSide', () => {
+    expect(
+      decodeClient(encodeClient({ match_result: { state_hash: 'deadbeef', winner_side: 1 } })),
+    ).toEqual({
       case: 'match_result',
       stateHash: 'deadbeef',
+      winnerSide: 1,
     });
   });
 

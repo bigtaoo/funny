@@ -41,7 +41,7 @@ export type ClientMsg =
   | { case: 'room_leave' }
   | { case: 'room_start' }
   | { case: 'cmd_submit'; commands: Uint8Array }
-  | { case: 'match_result'; stateHash: string }
+  | { case: 'match_result'; stateHash: string; winnerSide: number }
   | { case: 'conn_resume'; roomId: string; lastFrame: number }
   | { case: 'ping' }
   | { case: 'unknown' };
@@ -139,6 +139,7 @@ export function decodeClient(buf: Uint8Array): ClientMsg {
       return {
         case: 'match_result',
         stateHash: String(get('match_result')['state_hash'] ?? ''),
+        winnerSide: Number(get('match_result')['winner_side'] ?? 0),
       };
     case 'conn_resume':
       return {
