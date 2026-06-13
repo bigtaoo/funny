@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+// game.proto —— PlayerCommand 真实结构（M12）。
+// 仅客户端 ↔ 客户端：客户端编码进 transport.proto 的 SideCmd.commands(bytes)，
+// 服务器 opaque 转发不解码、永不依赖本文件。
+// 字段对应 code/src/game 的 PlayerCommand；改命令结构服务器无需重编。
+
+package nw.game;
+
+// 出牌：从手牌槽打一张卡到某攻击列
+message PlayCard {
+  uint32 hand_index = 1;
+  uint32 col        = 2;
+}
+
+// 基地升级
+message UpgradeBase {}
+
+message PlayerCommand {
+  oneof cmd {
+    PlayCard    play_card    = 1;
+    UpgradeBase upgrade_base = 2;
+  }
+}
+
+// 一个 tick 内某一方提交的指令集（编码进 SideCmd.commands）
+message PlayerCommands {
+  repeated PlayerCommand commands = 1;
+}

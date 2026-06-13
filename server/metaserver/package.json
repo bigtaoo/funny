@@ -1,0 +1,28 @@
+{
+  "name": "@nw/metaserver",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "dev": "node --watch --import tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "tsc -b && vitest run"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@nw/shared": "*",
+    "fastify": "^5.1.0",
+    "fastify-openapi-glue": "^4.7.1",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

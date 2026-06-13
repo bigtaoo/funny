@@ -319,6 +319,58 @@ npm run build   # 生产构建
 | `i18n/index.ts` | `t()` 取词 + 插值；`initI18n`/`setLocale`/`getLocale`/`getSupportedLocales`/`onLocaleChange`/`detectLocale` |
 | `i18n/locales/{zh,en,de}.ts` | 词条字典；`zh.ts` 为键唯一来源（`TranslationKey`），`en`/`de` 编译强制全翻 |
 
+## 服务端（server/）
+
+元系统后端：云存档 / 经济 / 好友联机。Node.js(TS) + MongoDB，与客户端同语言、共享契约 codegen。设计基准在 `design/game/`：`META_DESIGN.md`（架构）、`SERVER_API.md`（接口契约）、`META_TASKS.md`（任务进度勾选）、`ECONOMY_BALANCE.md`（数值）。实现进度与续做指引见 `server/README.md`。
+
+### 形态：两进程 + 共享包（npm workspaces）
+
+```
+server/
+├── contracts/   openapi.yml（REST 契约，design-first，M15 单一来源）
+│                transport.proto（WS 房间/锁步控制，服务器认得这一层）
+│                game.proto（PlayerCommand 真实结构，仅客户端↔客户端）
+├── shared/   @nw/shared   类型(SaveData/ApiResp/ErrorCode) + JWT + Mongo 工厂 + RoomRegistry + config
+├── metaserver/  REST（无状态，ESM）  fastify + fastify-openapi-glue 按 openapi.yml 装配 + 校验
+└── gameserver/  WS（有状态，CJS，骨架）  ws + JWT 握手；room/节拍器中继/重连属 S1
+```
+
+### 要点
+
+- **服务端与游戏逻辑零依赖（M12）**：`metaserver`/`gameserver` 严禁 import `code/src/game`；`PlayerCommand` 作 `bytes` opaque 转发不解码。仅"重大比赛裁判"才让 gameserver 额外引确定性引擎复算。
+- **契约单一来源 + 双端 codegen**：REST=`openapi.yml`（M15），WS=`transport.proto`/`game.proto`（M12）。改契约一处，双端同步。
+- **信任边界（M5/§2）**：钱包/库存/盲盒/天梯是服务器权威段，客户端只读。`PUT /save` 只接受同步段（progress/materials/pveUpgrades/equipped/flags），权威段以服务端值为准回推。
+- **乐观锁**：存档/钱包变更用**单文档原子更新**（`findOneAndUpdate({_id, rev})` 守卫，META_DESIGN §6.3，避开多文档事务）；rev 不匹配返回 409 + 当前云端值。
+- **拓扑（M9）**：metaserver 无状态可横扩；gameserver 有房间状态需房间亲和，房间查找走 `RoomRegistry` 接口（内存实现，扩展换 Redis）。
+- **模块系统**：`metaserver` 是 ESM（NodeNext，因 `fastify-openapi-glue` 为 ESM-only）；`shared`/`gameserver` 是 CJS。三包 `npx tsc -b shared metaserver gameserver` 验证。
+
+### 启动（依赖走 Docker，无需本地装 Mongo）
+
+```bash
+cd server
+docker compose up -d        # MongoDB 单节点副本集（首启自动 rs.initiate，解锁事务+change streams）
+npm install
+npx tsc -b shared metaserver gameserver   # 类型检查 + 构建（验证方式）
+npm test --workspace @nw/metaserver        # save-service 端到端（需 mongo 在跑）
+npm run dev:meta            # metaserver（tsx watch，端口 8080）
+npm run dev:game            # gameserver 骨架（端口 8081）
+```
+
+> ⚠️ **Docker 须 Linux containers 模式**：mongo:7 是 Linux 镜像，Windows 容器模式会报 `hcs::System::CreateProcess` / 命名卷 `invalid volume specification`。切换：`docker context use desktop-linux`（compose 已去掉命名卷，数据走容器可写层）。
+
+### 实现进度（2026-06-13）
+
+| 任务 | 状态 | 说明 |
+|---|---|---|
+| C-1 仓库结构 | ✅ | workspaces 三包，`tsc -b` 全绿 |
+| C-2 契约 + shared | [~] | openapi/proto/shared 就位；客户端 ts-proto/openapi-typescript codegen 待客户端落地 |
+| S0-6 Mongo 接入 | ✅ | `createMongo` 工厂 + 6 集合 + `ensureIndexes` |
+| S0-7 save-service | ✅ | `/auth/wx`·`/auth/device`·`GET/PUT /save`（JWT + 乐观锁原子更新）；端到端 vitest 6 用例全绿（含并发 409、硬墙） |
+| S2/S4 经济/IAP 端点 | 占位 | 契约就绪，handler 返回 501 |
+| gameserver room/锁步 | 待办 | S1：WS 骨架已立，room-service/节拍器中继/重连未做 |
+
+> 验证仍按本仓约定：`tsc -b` + 构建，不截图。
+
 ## 文件格式
 
 ### `.tao`（游戏引擎导出）

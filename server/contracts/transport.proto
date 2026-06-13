@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+// transport.proto —— WS 房间 / 锁步控制层（M12）。
+// 服务器认得这一层；PlayerCommand 作 bytes opaque 转发不解码。
+// 双端 codegen（ts-proto），gameserver 仅依赖本文件，不依赖 game.proto。
+// 契约单一来源；改动需同步 SERVER_API.md §3。
+
+package nw.transport;
+
+// ── 房间 ──────────────────────────────────────────────
+enum RoomPhase {
+  WAITING   = 0;
+  READY     = 1;
+  COUNTDOWN = 2;
+  IN_MATCH  = 3;
+  OVER      = 4;
+}
+
+enum MatchMode {
+  FRIENDLY = 0;
+  RANKED   = 1;
+}
+
+message PlayerSlot {
+  uint32 side      = 1;
+  string name      = 2;
+  bool   ready     = 3;
+  bool   connected = 4;
+}
+
+// ── 锁步帧（M14：模拟 30Hz，网络 10Hz 批次 = 3 帧）──────
+message SideCmd {
+  uint32 side     = 1;
+  bytes  commands = 2;   // game.proto PlayerCommand[]，对服务器 opaque
+}
+
+message FrameCmds {
+  uint32             frame = 1;
+  repeated SideCmd   cmds  = 2;   // 单个 sim 帧的指令
+}
+
+message FrameBatch {
+  uint32             to_frame = 1;   // 水位：客户端可推进到的帧
+  repeated FrameCmds frames   = 2;   // 仅列非空帧；空窗只有 to_frame
+}
+
+// ── 客户端 → 服务器 ──────────────────────────────────
+message RoomCreate { MatchMode mode = 1; }
+message RoomJoin   { string code = 1; }
+message RoomReady  { bool ready = 1; }
+message RoomLeave  {}
+message RoomStart  {}
+message CmdSubmit  { bytes commands = 1; }          // 仅出牌时发
+message MatchResult{ string state_hash = 1; }
+message ConnResume { string room_id = 1; uint32 last_frame = 2; }
+message Ping {}
+
+message ClientMsg {
+  oneof body {
+    RoomCreate  room_create  = 1;
+    RoomJoin    room_join    = 2;
+    RoomReady   room_ready   = 3;
+    RoomLeave   room_leave   = 4;
+    RoomStart   room_start   = 5;
+    CmdSubmit   cmd_submit   = 6;
+    MatchResult match_result = 7;
+    ConnResume  conn_resume  = 8;
+    Ping        ping         = 9;
+  }
+}
+
+// ── 服务器 → 客户端 ──────────────────────────────────
+message RoomState {
+  string              code    = 1;
+  repeated PlayerSlot players = 2;
+  RoomPhase           phase   = 3;
+}
+
+message MatchStart {
+  string    room_id     = 1;
+  MatchMode mode        = 2;
+  uint64    seed        = 3;
+  uint32    start_frame = 4;
+  uint32    local_side  = 5;
+}
+
+message ConnResync {
+  uint64             seed        = 1;
+  uint32             start_frame = 2;
+  repeated FrameCmds log         = 3;   // 非空帧日志
+  uint32             cur_frame   = 4;
+}
+
+message PeerDc { uint32 side = 1; uint32 grace_ms = 2; }
+
+message EloDelta { int32 delta = 1; int32 after = 2; string rank_after = 3; }
+
+message MatchOver {
+  uint32   winner_side = 1;
+  string   reason      = 2;   // base | disconnect | mismatch
+  bool     mismatch    = 3;
+  EloDelta elo         = 4;   // 仅 ranked
+}
+
+message RoomError { string code = 1; string message = 2; }
+message Pong {}
+
+message ServerMsg {
+  oneof body {
+    RoomState   room_state  = 1;
+    MatchStart  match_start = 2;
+    FrameBatch  frame_batch = 3;
+    ConnResync  conn_resync = 4;
+    PeerDc      peer_dc     = 5;
+    MatchOver   match_over  = 6;
+    RoomError   room_error  = 7;
+    Pong        pong        = 8;
+  }
+}
+
+// 线上每帧一个 Envelope
+message Envelope {
+  oneof msg {
+    ClientMsg client = 1;
+    ServerMsg server = 2;
+  }
+}

@@ -1,0 +1,507 @@
+openapi: 3.0.3
+info:
+  title: Notebook Wars metaserver REST API
+  version: 0.1.0
+  description: >
+    REST 契约单一来源（design-first，M15）。metaserver 用 fastify-openapi-glue
+    按 operationId 装配路由 + 校验；客户端用 openapi-typescript + openapi-fetch
+    生成 typed fetch。统一响应包络 ApiResp<T>。详见 SERVER_API.md。
+
+servers:
+  - url: /api
+
+tags:
+  - name: auth
+    description: 匿名账号（S0-4 / S0-7）
+  - name: save
+    description: 云存档（save-service，S0-7）
+  - name: shop
+    description: 商店直购（economy-service，S2-2）
+  - name: gacha
+    description: 盲盒（economy-service，S2-3）
+  - name: ads
+    description: 广告奖励（economy-service，S2-4）
+  - name: iap
+    description: 充值验单（iap-service，S4-1）
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+
+    Rarity:
+      type: string
+      enum: [common, rare, epic, legendary]
+
+    LevelRecord:
+      type: object
+      properties:
+        timeMs: { type: integer }
+        leaked: { type: integer }
+      additionalProperties: true
+
+    SaveData:
+      type: object
+      required:
+        - version
+        - accountId
+        - rev
+        - updatedAt
+        - wallet
+        - inventory
+        - gacha
+        - pvp
+        - progress
+        - materials
+        - pveUpgrades
+        - equipped
+        - flags
+      properties:
+        version: { type: integer }
+        accountId: { type: string }
+        rev: { type: integer }
+        updatedAt: { type: integer }
+        wallet:
+          type: object
+          required: [coins]
+          properties:
+            coins: { type: integer, minimum: 0 }
+        inventory:
+          type: object
+          required: [skins, items]
+          properties:
+            skins:
+              type: array
+              items: { type: string }
+            items:
+              type: object
+              additionalProperties: { type: integer }
+        gacha:
+          type: object
+          required: [pity]
+          properties:
+            pity:
+              type: object
+              additionalProperties: { type: integer }
+        pvp:
+          type: object
+          required: [elo, rank, wins, losses, streak]
+          properties:
+            elo: { type: integer }
+            rank: { type: string }
+            wins: { type: integer }
+            losses: { type: integer }
+            streak: { type: integer }
+        progress:
+          type: object
+          required: [cleared, stars, best]
+          properties:
+            cleared:
+              type: array
+              items: { type: string }
+            stars:
+              type: object
+              additionalProperties: { type: integer, minimum: 1, maximum: 3 }
+            best:
+              type: object
+              additionalProperties: { $ref: '#/components/schemas/LevelRecord' }
+        materials:
+          type: object
+          additionalProperties: { type: integer }
+        pveUpgrades:
+          type: object
+          additionalProperties: { type: integer }
+        equipped:
+          type: object
+          additionalProperties: { type: string }
+        flags:
+          type: object
+          additionalProperties: { type: boolean }
+
+    # —— 客户端同步段（PUT /save 仅接受这些字段，§2.2）——
+    SyncPatch:
+      type: object
+      properties:
+        progress: { $ref: '#/components/schemas/SaveData/properties/progress' }
+        materials: { $ref: '#/components/schemas/SaveData/properties/materials' }
+        pveUpgrades: { $ref: '#/components/schemas/SaveData/properties/pveUpgrades' }
+        equipped: { $ref: '#/components/schemas/SaveData/properties/equipped' }
+        flags: { $ref: '#/components/schemas/SaveData/properties/flags' }
+
+    AuthResult:
+      type: object
+      required: [token, accountId, isNew]
+      properties:
+        token: { type: string }
+        accountId: { type: string }
+        isNew: { type: boolean }
+
+    ShopItem:
+      type: object
+      required: [id, cost, kind]
+      properties:
+        id: { type: string }
+        cost: { type: integer }
+        kind: { type: string }
+        grants: { type: string }
+
+    GachaPool:
+      type: object
+      required: [id, costSingle, entries]
+      properties:
+        id: { type: string }
+        costSingle: { type: integer }
+        costTen: { type: integer }
+        pityThreshold: { type: integer }
+        dupePolicy: { type: string, enum: [shards, coins] }
+        entries:
+          type: array
+          items:
+            type: object
+            required: [itemId, weight, rarity]
+            properties:
+              itemId: { type: string }
+              weight: { type: integer }
+              rarity: { $ref: '#/components/schemas/Rarity' }
+
+    GachaResult:
+      type: object
+      required: [itemId, rarity, duplicate]
+      properties:
+        itemId: { type: string }
+        rarity: { $ref: '#/components/schemas/Rarity' }
+        duplicate: { type: boolean }
+        converted:
+          type: object
+          properties:
+            kind: { type: string, enum: [shards, coins] }
+            amount: { type: integer }
+
+  responses:
+    ErrorResp:
+      description: 失败包络
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok, error]
+            properties:
+              ok: { type: boolean, enum: [false] }
+              error: { $ref: '#/components/schemas/Error' }
+
+paths:
+  /auth/wx:
+    post:
+      operationId: authWx
+      tags: [auth]
+      summary: 微信匿名登录（code 换 openid）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/AuthResult' }
+
+  /auth/device:
+    post:
+      operationId: authDevice
+      tags: [auth]
+      summary: 设备 UUID 匿名登录（Web / CrazyGames）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceId]
+              properties:
+                deviceId: { type: string, minLength: 8 }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/AuthResult' }
+
+  /save:
+    get:
+      operationId: getSave
+      tags: [save]
+      summary: 拉取当前账号存档
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+    put:
+      operationId: putSave
+      tags: [save]
+      summary: 推送客户端同步段（乐观锁 If-Match rev）
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string }
+          description: 客户端持有的 rev
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [save]
+              properties:
+                save: { $ref: '#/components/schemas/SyncPatch' }
+      responses:
+        '200':
+          description: 成功，回推规范化存档
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '409':
+          description: REV_CONFLICT，带当前云端值
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, error]
+                properties:
+                  ok: { type: boolean, enum: [false] }
+                  error: { $ref: '#/components/schemas/Error' }
+                  save: { $ref: '#/components/schemas/SaveData' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /shop/items:
+    get:
+      operationId: getShopItems
+      tags: [shop]
+      summary: 商品列表
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/ShopItem' }
+
+  /shop/buy:
+    post:
+      operationId: shopBuy
+      tags: [shop]
+      summary: 直购（扣币→发货→回推）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemId]
+              properties:
+                itemId: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, granted]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      granted: { type: string }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+
+  /gacha/pools:
+    get:
+      operationId: getGachaPools
+      tags: [gacha]
+      summary: 盲盒池列表
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [pools]
+                    properties:
+                      pools:
+                        type: array
+                        items: { $ref: '#/components/schemas/GachaPool' }
+
+  /gacha/draw:
+    post:
+      operationId: gachaDraw
+      tags: [gacha]
+      summary: 抽卡（单抽/十连，原子，逐抽落库）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [poolId, count]
+              properties:
+                poolId: { type: string }
+                count: { type: integer, enum: [1, 10] }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, results]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      results:
+                        type: array
+                        items: { $ref: '#/components/schemas/GachaResult' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+
+  /ads/reward:
+    post:
+      operationId: adsReward
+      tags: [ads]
+      summary: 广告奖励校验（每日 cap）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [adToken]
+              properties:
+                adToken: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, granted]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      granted: { type: integer }
+        '429': { $ref: '#/components/responses/ErrorResp' }
+
+  /iap/verify:
+    post:
+      operationId: iapVerify
+      tags: [iap]
+      summary: 充值验单（票据幂等）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [platform, receipt]
+              properties:
+                platform: { type: string }
+                receipt: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, granted]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      granted: { type: integer }
+        '400': { $ref: '#/components/responses/ErrorResp' }

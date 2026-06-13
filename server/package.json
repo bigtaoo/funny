@@ -1,0 +1,21 @@
+{
+  "name": "@nw/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Notebook Wars 服务端：metaserver(REST) + gameserver(WS) + shared + contracts",
+  "workspaces": [
+    "shared",
+    "metaserver",
+    "gameserver"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev:meta": "npm run dev --workspace @nw/metaserver",
+    "dev:game": "npm run dev --workspace @nw/gameserver",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
