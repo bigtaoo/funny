@@ -13,6 +13,8 @@ export const protobufPackage = "nw.game";
 export interface PlayCard {
   handIndex: number;
   col: number;
+  /** 仅陨石法术用（目标行）；单位/建筑/加速忽略 */
+  row: number;
 }
 
 /** 基地升级 */
@@ -30,7 +32,7 @@ export interface PlayerCommands {
 }
 
 function createBasePlayCard(): PlayCard {
-  return { handIndex: 0, col: 0 };
+  return { handIndex: 0, col: 0, row: 0 };
 }
 
 export const PlayCard: MessageFns<PlayCard> = {
@@ -40,6 +42,9 @@ export const PlayCard: MessageFns<PlayCard> = {
     }
     if (message.col !== 0) {
       writer.uint32(16).uint32(message.col);
+    }
+    if (message.row !== 0) {
+      writer.uint32(24).uint32(message.row);
     }
     return writer;
   },
@@ -67,6 +72,14 @@ export const PlayCard: MessageFns<PlayCard> = {
           message.col = reader.uint32();
           continue;
         }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.row = reader.uint32();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -83,6 +96,7 @@ export const PlayCard: MessageFns<PlayCard> = {
     const message = createBasePlayCard();
     message.handIndex = object.handIndex ?? 0;
     message.col = object.col ?? 0;
+    message.row = object.row ?? 0;
     return message;
   },
 };

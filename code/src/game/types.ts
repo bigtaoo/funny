@@ -83,8 +83,17 @@ export function ownerToSide(owner: OwnerId): Side {
 
 // ─── Game config ──────────────────────────────────────────────────────────────
 
-/** Game mode. `pvp` = duel driven by AISystem; `campaign` = PvE scripted waves. */
-export type GameMode = 'pvp' | 'campaign';
+/**
+ * Game mode.
+ *   `pvp`      — duel driven by AISystem (the Top side is the local bot).
+ *   `campaign` — PvE scripted waves (WaveDirector).
+ *   `netplay`  — online lockstep PvP: BOTH sides are humans, commands for both
+ *                arrive (pre-confirmed, per frame) from the `NetInputSource`.
+ *                No local AI and no WaveDirector run — the engine only processes
+ *                the confirmed command set, so two clients on the same seed +
+ *                same frame stream stay byte-identical (S1-7).
+ */
+export type GameMode = 'pvp' | 'campaign' | 'netplay';
 
 export interface GameConfig {
   /** PRNG seed — determines card draws for both players. Required. */

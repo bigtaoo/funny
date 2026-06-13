@@ -16,6 +16,8 @@ export type { IGameEngine } from './types';
 // ── Unified input pipeline (M13) ──────────────────────────────────────────────
 export { LocalInputSource } from './net/InputSource';
 export type { InputSource } from './net/InputSource';
+export { NetInputSource } from './net/NetInputSource';
+export type { CmdSink, MatchStartInfo, NetInputSourceOptions } from './net/NetInputSource';
 
 // ── Public types (needed by the render layer) ─────────────────────────────────
 export type {

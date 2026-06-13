@@ -176,6 +176,15 @@ class GameEngineImpl implements IGameEngine {
       for (const spawn of this.waveDirector.tick(tick)) {
         this.spawnEnemyUnit(spawn.unitType, spawn.col);
       }
+    } else if (this.mode === 'netplay') {
+      // Online lockstep PvP (S1-7): both sides are humans. `commands` is the
+      // server-confirmed set for this frame (already containing BOTH sides'
+      // commands, decoded from frame_batch). No local AI runs — the confirmed
+      // stream is the *only* input, which is exactly what keeps two clients on
+      // the same seed + same stream byte-identical.
+      for (const cmd of externalCmds) {
+        this.processCommand(cmd);
+      }
     } else {
       // PvP: identical ordering to the original — decideTick is evaluated
       // before player commands are processed, then both are processed in turn.

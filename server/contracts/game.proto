@@ -11,6 +11,7 @@ package nw.game;
 message PlayCard {
   uint32 hand_index = 1;
   uint32 col        = 2;
+  uint32 row        = 3; // 仅陨石法术用（目标行）；单位/建筑/加速忽略
 }
 
 // 基地升级
