@@ -9,14 +9,19 @@
 
 ## 0. 总览
 
-| 通道 | 协议 | 服务 | 承载 |
+> **架构修订（2026-06-13，`META_DESIGN.md §1.1/§6.1`）**：**5 组件 + 三面分离**。玩家只触达 **meta(REST，请求面)** + **gateway(WS，控制面)** + **game(WS，数据面)**；**matchsvc** 是玩家不可达的私有大脑（gateway 当其门面 / game 注册）。**房间/匹配/在线/通知等开局前操作走 gateway WS（双向实时）**，不再走 REST；**开局走 matchsvc 签名 ticket（经 gateway 推）**、**结算 game→meta 上报**（M16–M20）。S1 现实现是 gameserver 中心式（开局操作走 game WS、gameserver 自管匹配/结算），按本修订迁移。内部契约见 §8。
+
+| 通道（面） | 协议 | 服务 | 承载 |
 |---|---|---|---|
-| 账号 / 存档 / 经济 | **HTTPS REST（JSON）** | `metaserver`（无状态，可横扩） | 一次性请求-响应：登录、存档同步、商店、盲盒、广告、IAP |
-| 房间 / 锁步对战 | **WSS（protobuf 二进制）** | `gameserver`（有状态，房间亲和） | 长连接：建房 / 加入 / ready / 逐 tick 输入中继 / 重连 / 天梯结算 |
+| 账号 / 存档 / 经济（请求面） | **HTTPS REST（JSON）** | `metaserver`（无状态，可横扩） | 登录、存档同步、商店、盲盒、广告、IAP（纯请求-响应） |
+| 房间 / 匹配 / 在线 / 通知（控制面） | **WSS（双向实时）** | `gateway`（有状态连接层，M20） | 常驻连接：开始/取消匹配、friendly 建房/加入/ready/start、match-found+ticket 下发、在线状态、（将来）聊天 |
+| 锁步对战（数据面） | **WSS（protobuf 二进制）** | `gameserver`（无状态哑中继，永不连库 M16） | 每局新建：ticket 握手 → 逐 tick 输入中继 / 重连 / 局末上报 meta |
+| **内部：匹配 + 分配** | 内部 RPC（gateway↔matchsvc）+ game 注册 | `matchsvc`（单点，玩家不可达 M17） | 匹配队列、房间状态、game 注册表/分配、签 ticket（§8.1） |
+| **内部：结算上报** | 内部 HTTP（game→meta，幂等） | game→`metaserver` | 局末录像 + hash + winner 上报，meta 判定/写库（§8.3） |
 
 > **线协议分层（M12）**：WS 用 protobuf（`transport.proto` = 控制层，服务器认得；`game.proto` = `PlayerCommand` 结构，仅客户端↔客户端）。服务器把 `PlayerCommand` 当 **`bytes` opaque 转发不解码** → 与游戏逻辑零依赖。REST 保持 JSON（低频、利于浏览器/支付回调/调试）。
 
-- 两服务可独立部署（`META_DESIGN.md §6.1`），共享 `@nw/shared`（协议类型 + JWT 校验 + Mongo client）。反代按 `/api/*`、`/ws` 分流。
+- 各服务可独立部署（`META_DESIGN.md §6.1`），共享 `@nw/shared`（协议类型 + JWT 校验 + Mongo client）。反代按 `/api/*`(meta)、`/gw`(gateway)、`/ws`(game) 分流；matchsvc 不暴露公网。gateway+matchsvc 前期合一进程（M20）。
 - 服务器权威段（钱包 / 库存 / 盲盒 / IAP / **天梯**）只能经服务器改，**客户端永不直接写**（`META_DESIGN.md §2`）。
 - 所有时间戳由服务器盖，客户端不可信。
 
@@ -112,6 +117,8 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 
 ## 3. WebSocket 协议（房间 + 锁步）
 
+> **修订（2026-06-13）**：本节是 **game 数据面 WS**。握手改为 `?ticket=<jwt>`（matchsvc 签，§8.2），game 验签即开局。下表 `room_create/room_join/room_ready/room_leave/room_start` 等**开局前操作迁到 gateway 控制面 WS**（§8.4），game WS 只保留 `cmd_submit`/`frame_batch`/`conn_resume`/`conn_resync`/`peer_dc`/`match_over`/`ping` 这些锁步+重连消息。`match_result` 改为 game→meta 内部上报（§8.3），不再走 WS。以下为 S1 现实现，按修订迁移。
+
 握手：`wss://host/ws?token=<token>`。连接后每帧一个 protobuf `Envelope`（`transport.proto`，`oneof case` 区分消息）。下表 `case` 列即 oneof 分支名。
 
 > `commands` 字段类型是 **`bytes`**：客户端用 `game.proto` 编码 `PlayerCommand[]`，服务器**透传不解码**（M12）。
@@ -177,7 +184,7 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 - 确定性保证：同 `seed` + 同帧序列 → 双端逐 tick 一致（`META_DESIGN.md §6`）。
 - **重连**：服务器留**非空帧**日志；`conn_resume{ last_frame }` → `conn_resync` 下发种子 + `last_frame` 之后的非空帧 + `cur_frame`，客户端快进追上。
 - **断线规则（M10）**：in_match 一端掉线 → 服务器**停发该房间帧** + 向在线方 `peer_dc{ grace_ms:60000 }` → 起 **60s**；掉线方 `conn_resume` 成功则续发续打；**超时则掉线方判负** `match_over{ reason:'disconnect' }`。
-- **结算**：`friendly` 仅写 `matches` 记结果；`ranked` 由 gameserver 算 ELO、写 `saves.pvp`（服务器权威），随 `match_over.elo{delta,after,rank_after}` 按 side 下发。
+- **结算（修订 M19）**：局末 game 把 `{hash×2, winner_side×2, 非空帧录像}` POST 给 **meta**（§8.3）；`friendly` meta 仅写 `matches`；`ranked` **meta** 算 ELO、写 `saves.pvp`（服务器权威）→ 把 `match_over.elo{delta,after,rank_after}` 经 game 转发给客户端。game 不连库、不判定。S1 现实现为 gameserver 直算直写，待迁移。
 - **ranked 匹配 / ELO（S1-R 已落地）**：
   - 入队：`room_create{mode:ranked}` → 服务器读 `saves.pvp.elo` 入匹配队列（需 Mongo，否则 `RANKED_UNAVAILABLE`）；按 ELO 邻近配对，等待越久可接受分差越宽（初值 `base 100 + 50/s`）；配对即建房直接开局（无 ready/房主环节）。`room_leave`（不在房内）= 取消匹配。
   - 胜负判定（**无服务器裁判**，S1-J 未做）：`match_result{ state_hash, winner_side }` 双方齐 → **hash 与 winner_side 均一致才认**该胜方、结算 ELO；任一不一致 → 作废（`mismatch`，不动 ELO）。掉线/认输 → 服务器权威判对手胜并结算。防一端谎报刷分。
@@ -242,3 +249,100 @@ message Replay {
 - [ ] ranked 匹配队列**多实例**共享（当前内存单实例；横扩需 Redis 队列 + 跨实例房间路由）。
 - [ ] ranked 分段差异化胜利金币（`ECONOMY_BALANCE.md §2.3b`）：依赖经济服务 S2，gameserver 局末加 wallet 增量（带每日上限）。
 - [ ] 录像分享/存储：PvE 本地录制先行，云端分享 + PvP 录像对象存储排期（v1 录制即可，分享后置）。
+- [x] **开局前房间事件的推送通道** → 定为**独立 WS 控制面网关 gateway**（M20，§8.4）：房间/匹配/在线/通知走 gateway 双向实时 WS，meta 保持纯 REST 无状态。
+
+---
+
+## 8. 内部服务契约（修订 2026-06-13，玩家不可见；`META_DESIGN.md §1.1/§6.1`）
+
+> 服务间内部边界。全部走**内部密钥**鉴权（gateway/matchsvc/game 共用一把签名密钥；服务间 HTTP 另带内部 bearer）。这些端点**永不暴露公网**。
+
+### 8.1 matchsvc（单点，M17）— 仅 gateway 调它 / game 注册它
+
+**gateway → matchsvc**（玩家操作由 gateway 转发，玩家永不直连 matchsvc）：
+```
+POST /mm/enqueue   { accountId, name, elo }      → { ok }                 // 开始 ranked 匹配（elo 由 gateway 向 meta 取后带入）
+POST /mm/cancel    { accountId }                 → { ok }                 // 取消匹配 / 离队
+POST /mm/room/create { accountId, name }         → { roomCode, state }    // friendly 建房（matchsvc 内存建房）
+POST /mm/room/join   { accountId, name, roomCode }→ { state } | ROOM_NOT_FOUND|ROOM_FULL
+POST /mm/room/ready  { accountId, ready }        → { state }
+POST /mm/room/start  { accountId }               → { tickets: Ticket[] }  // 房主开局：分配 game + 签双方 ticket
+POST /mm/room/leave  { accountId }               → { ok }                 // 离开房间 / 取消匹配
+```
+- **房间分配统一在 matchsvc**：friendly 与 ranked 共用同一套内存房间 + game 分配逻辑（开局前房间「只是一份内存数据」）。
+- **matchsvc 不连 Mongo**：匹配要的 `elo` 由 gateway 在 enqueue 前向 meta 取一次（§8.5）带入；matchsvc 只认这个数。
+- 异步事件（配对成功 / 房间态变更 / 对手 ready / match-found+ticket）由 matchsvc **回调 gateway**（同进程内直接调，拆进程后走内部 RPC/Redis）→ gateway 推给玩家。
+- matchsvc 配对/分配后才接触 game 池；**Redis 仅崩溃副本**（队列 + 房间快照），前期可不接，内存即够。
+
+**game → matchsvc**（启动注册 + 心跳）：
+```
+POST /mm/game/register  { gameId, wsUrl, capacity } → { ok }    // game 启动时注册可达地址
+POST /mm/game/heartbeat { gameId, load, rooms }     → { ok }    // 周期上报负载，matchsvc 据此分配
+```
+> matchsvc 是「谁有空闲 game」唯一知情者；meta/玩家都不需要知道 game 拓扑。
+
+### 8.2 match ticket（M18，matchsvc 签，game 验）
+
+```ts
+interface Ticket {            // matchsvc 用内部密钥签为 JWT；客户端不可篡改，game 只验签
+  room_id: string;
+  seed: number;               // 双方 ticket 同 seed（确定性内核的唯一种子）
+  side: 0 | 1;                // 本方阵营（→ match_start.local_side）
+  opponent: string;           // 对手展示名
+  game_url: string;           // 分配到的 gameserver WS 地址（天然房间亲和，§6.5）
+  mode: 'friendly' | 'ranked';
+  exp: number;                // 过期时间戳
+}
+```
+- 客户端拿 `{ game_url, ticket }` → 连 `wss://<game_url>/ws?ticket=<jwt>`。
+- game **只验签 + 交叉核对两张 ticket 的 `room_id`/`seed` 一致**即开局，不查任何库、不存房间密码表。开局阶段 game 不依赖 meta/matchsvc 在线。
+- `match_start` 的 `seed`/`local_side`/`mode` 直接取自 ticket。
+
+### 8.3 game → meta 局末上报（M19，幂等）
+
+```
+POST /internal/match/report  (内部密钥)
+  {
+    room_id, seed, mode,
+    results: [ { side, state_hash, winner_side }, { side, state_hash, winner_side } ],
+    replay: bytes               // 非空帧日志（replay.proto，opaque；engineVersion=0）
+  }
+  → { ok }                      // 幂等键 = room_id；重发不重复结算
+```
+- meta 收后：**比对 hash + winner_side**（一致才认；不一致 `mismatch` 作废，ranked 不动 ELO）→ `ranked` 算 ELO 写 `saves.pvp`（单文档原子更新）→ 写 `matches`（内嵌 `replay` / 大局转 `replayRef`）。
+- **friendly 正常结束** `winner_side` 由客户端模拟权威决定（meta 不复算，归档 `winner` 可记 -1 或采信一致上报）；**掉线/认输**由 game 直接判对手胜并在上报里标明，meta 据此结算。
+- meta 暂不可用 → game 端**排队重试**（M16 的隔离收益：进行中的对局与结果上报都不依赖 meta 实时在线）。
+
+### 8.4 gateway 控制面 WS（M20，玩家公开门面）
+
+握手：`wss://host/gw?token=<jwt>`（同 REST 的 JWT；gateway 解出 accountId 绑定连接）。常驻整局会话期。JSON 或 protobuf 均可（控制面低频，建议沿用 JSON 便于调试）。
+
+**客户端 → gateway**（gateway 转发 matchsvc，§8.1）：
+| msg | payload | 说明 |
+|---|---|---|
+| `mm_enqueue` | `{}` | 开始 ranked 匹配（gateway 取 elo 后投 matchsvc） |
+| `mm_cancel` | `{}` | 取消匹配 |
+| `room_create` | `{}` | friendly 建房 |
+| `room_join` | `{ code }` | 输码加入 |
+| `room_ready` | `{ ready }` | 切换准备 |
+| `room_start` | `{}` | 房主开局 |
+| `room_leave` | `{}` | 离开房间 / 退队 |
+
+**gateway → 客户端**（matchsvc 事件回推）：
+| msg | payload | 说明 |
+|---|---|---|
+| `room_state` | `{ code, players:[{side,name,ready,connected}], phase }` | 房间态变更广播（好友加入/ready 等都走这条） |
+| `match_found` | `{ game_url, ticket }` | 配对/开局成功，下发连 game 的连接信息（M18）；客户端据此连数据面 WS |
+| `mm_status` | `{ state:'searching'|'idle', waited_ms? }` | 匹配队列状态 |
+| `room_error` | `{ code, message }` | `ROOM_NOT_FOUND`/`ROOM_FULL`/`RANKED_UNAVAILABLE` 等 |
+| `presence` | `{ ... }` | 在线状态/通知（预留，好友系统用） |
+
+> `room_state`/`match_found` 的语义与 S1 现实现里 gameserver WS 的 `room_state`/`match_start` 等价，只是**搬到 gateway 控制面**；game 数据面 WS（§3）不再承载房间阶段消息。
+
+### 8.5 gateway → meta 取 ELO（M17，matchsvc 保持 DB-free）
+
+```
+GET /internal/elo?accountId=<id>  (内部密钥)   → { elo }
+```
+- gateway 在 `mm_enqueue` 时调用，把 `elo` 带进 `/mm/enqueue`；matchsvc 因此无需连 Mongo。
+- 也可在 gateway WS 握手后预取并缓存（elo 变化频率低）；ranked 局末 meta 写新 elo 后可经控制面推 `presence`/刷新。

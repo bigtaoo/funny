@@ -349,6 +349,8 @@ npm run build   # 生产构建
 
 元系统后端：云存档 / 经济 / 好友联机。Node.js(TS) + MongoDB，与客户端同语言、共享契约 codegen。设计基准在 `design/game/`：`META_DESIGN.md`（架构）、`SERVER_API.md`（接口契约）、`META_TASKS.md`（任务进度勾选）、`ECONOMY_BALANCE.md`（数值）。实现进度与续做指引见 `server/README.md`。
 
+> ⚠️ **目标架构修订（2026-06-13，待迁移，见 `META_DESIGN.md §1.1/§6.1`、`SERVER_API.md §8`、`META_TASKS.md` S1-M1~M4）**：现实现是 gameserver 中心式（自管匹配/分配/结算 + 连 Mongo）。已定稿改为「**5 组件 + 控制面/数据面分离**」——玩家只触达 **meta(REST，请求面：auth/save/economy，纯无状态)** + **gateway(WS，控制面：房间/匹配/在线/通知，双向实时)** + **game(WS，数据面：仅锁步，ticket 直连，永不连库)**；**matchsvc** 是玩家不可达的私有大脑（匹配队列+房间分配+签 ticket，gateway 当门面 / game 注册）。gateway+matchsvc 前期合一进程；matchsvc 不连 Mongo（ELO 由 gateway 向 meta 取）；ELO 结算+归档归 meta（game 局末 POST 上报）。下面「已落地」表述是修订前的现状，按 S1-M* 迁移。
+
 ### 形态：两进程 + 共享包（npm workspaces）
 
 ```

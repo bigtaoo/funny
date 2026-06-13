@@ -38,6 +38,20 @@
 | M7 | 盲盒**服务端跑**：`crypto` 真随机 + 逐抽落库 + 保底 | 花币 + 要记录 → 必须服务器扣币、随机、记账 |
 | M8 | gacha 随机**不进确定性回放体系** | 它不是战斗逻辑，无需回放；§8 的 Prng 约束只管 `game/` 战斗内核 |
 
+### 1.1 服务边界修订（2026-06-13，超越 S1 现实现，见 §6.1）
+
+> S1 把匹配/房间分配/天梯结算都放在 gameserver 且让它连 Mongo。修订为 **5 组件 + 控制面/数据面分离**：玩家只触达 **meta(REST，请求面)** + **gateway(WS，控制面)** + **game(WS，数据面)**；**matchsvc** 是玩家不可达的私有大脑。目标：**gameserver 永不连库、meta 保持纯无状态 REST、控制面推送顺畅**。下列决策超越 §1 中 M4/M11 关于 gameserver 结算的描述。
+
+> **三面划分**（理解全局的钥匙）：**数据面**=锁步帧（client↔game 直连，高频低延迟，按 room 分片，绝不经网关中转）；**控制面**=房间/匹配/在线/通知/聊天（client↔gateway，双向实时，按 account 分片，整局会话期常驻）；**请求面**=auth/save/economy/iap（client↔meta REST，纯请求-响应，无状态）。一局里客户端同时持 gateway + game 两条 WS，正常。
+
+| # | 决策 | 理由 |
+|---|---|---|
+| M16 | **gameserver 永不连库**：退化为 WS 接入 + ticket 验签 + 锁步帧节拍器/中继 + 重连帧日志 + 局末打包上报。无 Mongo、无 Redis、无玩家数据 | 安全隔离边界：game 被攻破也读不到/写不了任何持久数据；无状态（仅内存房间帧缓冲）→ 随意横扩；meta 挂了进行中的对局仍能跑完 |
+| M17 | **matchsvc（永远单点，玩家不可达的私有大脑）= 匹配队列 + game 注册表 + 房间分配 + 签 ticket**。Redis 仅作崩溃后数据副本（前期可不加，内存即够）。**不连 Mongo**——匹配要的 ELO 由 gateway 入队时向 meta 取一次带入。所有玩家操作经 **gateway** 转发；game 向 matchsvc 注册上报负载 | 全区单点匹配最简单且无需多实例竞争；game 注册在 matchsvc → 它天然是「谁有空闲 game」唯一知情者，**ranked 与 friendly 共用同一套分配逻辑**（friendly 开局前也只是它内存里的一份房间数据）；签票据信息最全 |
+| M20 | **gateway（WS 控制面网关，玩家公开门面）= 薄连接层**：鉴权 WS（`?token=<jwt>`）+ 维护 `account→socket` 映射 + 把房间/匹配消息转发给 matchsvc + 把 matchsvc/meta 事件推回对的 socket；承载房间/大厅/匹配入队取消/match-found+ticket 下发/在线状态/（将来）通知聊天。**它是 matchsvc 的公开门面**——matchsvc 因此保持玩家不可达。**部署粒度**：前期 gateway+matchsvc 合成**一个进程的两模块**（对外只暴露 gateway 公开 WS，matchsvc 内部 RPC 不绑公网），gateway 连接数撑不住时再拆两进程 + Redis 做 `account→gateway 实例` 路由 | meta 是无状态 REST，推不动 server→client；把长连接放 meta 会破坏其无状态。独立控制面网关让 meta 卸掉转发、回到纯 REST；连接层（按 account）与锁步层（按 room）分片轴不同，必须分开；社交游戏的好友/匹配/聊天迟早要这条常驻连接 |
+| M18 | **开局走 matchsvc 签名 ticket**：matchsvc 配对/分配后给每个玩家签一张 ticket（`{room_id, seed, side, opponent, game_url, mode, exp, sig}`，gateway/matchsvc/game 共用一把内部密钥）→ 经 **gateway 推**给客户端 → 客户端连 game 带 ticket，game **只验签 + 交叉核对两张 ticket 的 room_id/seed 一致**即开局 | 开局阶段 game 无需 meta/matchsvc 在线，也不存房间密码表；gateway 只推不签 |
+| M19 | **结算上报 game→meta**：局末 game 把 `{room_id, seed, 双方 hash, 双方 winner_side, 非空帧录像}` POST 给 meta（内部密钥鉴权、`room_id` 幂等、失败重试/排队）；**meta 判定胜负 + 写 ELO（乐观锁）+ 归档 + 存录像**。matchmaking/ELO/归档逻辑全部从 gameserver 移出 | game 一行 DB 不碰（M16 落地）；meta 暂时 down 不丢结果（game 端排队重试） |
+
 ---
 
 ## 2. 信任边界（M5 的物理落地，写代码前必读）
@@ -46,7 +60,7 @@
 
 | 类别 | 字段 | 谁权威 | 写入方式 |
 |---|---|---|---|
-| **服务器权威**（客户端只读） | `wallet.coins`、`inventory`（皮肤/物品）、`gacha.pity` + 抽卡历史、IAP 票据、`pvp` 天梯（elo/rank/战绩） | 服务器 | 钱包/发货走**单文档原子更新**（见 §6.3）；天梯由 `gameserver` 在 ranked 局结束时结算写入 |
+| **服务器权威**（客户端只读） | `wallet.coins`、`inventory`（皮肤/物品）、`gacha.pity` + 抽卡历史、IAP 票据、`pvp` 天梯（elo/rank/战绩） | 服务器 | 钱包/发货走**单文档原子更新**（见 §6.3）；天梯由 `metaserver` 在收到 game 局末上报后结算写入（M19；S1 现实现是 gameserver 直写，待迁移） |
 | **客户端同步**（轻校验） | `progress`（通关/星级/记录）、PvE 材料 + `pveUpgrades`、设置 `flags`、`equipped`（皮肤选择） | 客户端 | 本地写 + 防抖上行；服务器做 sanity 校验（单调性 / 上界），但不强反作弊 |
 
 > 取舍：PvE 材料/升级被改 → 只是自己 PvE 变简单，**对 PvP 无影响**（硬墙），不值得上重型反作弊。真钱相关零容忍。
@@ -205,26 +219,42 @@ function buildCampaignBlueprints(save: SaveData): UnitBlueprints {
 
 > 接口契约（REST 端点 + WebSocket 消息 + 锁步时序 + DB 集合）的单一来源在 **`SERVER_API.md`**。
 
-### 6.1 拓扑：REST 与 WS 两个可独立部署的服务（M9）
+### 6.1 拓扑：5 组件 + 控制面/数据面分离（M9 / M16–M20）
 
-REST 与 WS 扩容画像不同（metaserver 无状态可横扩、gameserver 有房间状态需房间亲和），故**代码与部署都分两个服务**，共享 `shared` 包。v1 同机两进程，日后各自扩。
+> **架构修订（2026-06-13）**：玩家只触达 **meta(REST)** + **gateway(WS 控制面)** + **game(WS 数据面)**；**matchsvc 对玩家不可见**（gateway 当其公开门面 / game 向它注册）。S1 现实现是 gameserver 中心式（自管匹配/分配/结算且连 Mongo），按此修订迁移。
 
 ```
-server/                      （npm/pnpm workspaces 单仓多包）
-├── contracts/ openapi.yml      REST 契约（design-first，codegen metaserver + 客户端）
-│             transport.proto  WS 房间/锁步控制（服务器认得这一层）
-│             game.proto       PlayerCommand 真实结构（仅客户端↔客户端）
-├── shared/   @nw/shared     openapi + transport.proto codegen + JWT 校验 + zod + Mongo client 工厂
-├── metaserver/ REST 服务（无状态）  auth · save · economy(shop/gacha/ads/wallet) · iap（openapi.yml/JSON）
-│                            → 可横向加副本，LB 轮询；不持有内存会话
-└── gameserver/  WS 服务（有状态）   room · 锁步中继 · 重连 · ranked 局末 ELO 结算（protobuf）
-                             → 持有内存房间状态；扩展需房间亲和（§6.5）
+                  请求面 REST(无状态)
+客户端 ───────────────→ metaserver ──────────────→ MongoDB
+  │  auth/save/economy/iap                        (仅 meta 连)
+  │                                                    ↑ 内部·幂等(room_id)
+  │  控制面 WS(?token)                                  │ 局末录像+结算
+  ├───────────────→ gateway ┐                          │
+  │  房间/匹配/在线/通知/聊天   │ 内部 RPC                 │
+  │  (双向实时)               │  enqueue/cancel·房间分配    │
+  │              ←(game_url,  ↓  ←签好的 ticket           │
+  │                ticket 推)  ┌────────────────────────┐ │
+  │                           │ matchsvc（单点·私有大脑） │ │
+  │                           │ 匹配队列(全区)·房间状态    │ │
+  │  数据面 WS(?ticket 直连)    │ ·game 注册表/分配·签 ticket│ │
+  └───────────────→ gameserver(N 台) ──── register/心跳 ──┘ │
+     锁步中继·ticket 验签·帧日志·重连 ──── 局末 POST 结算 ─────┘
 
-db: MongoDB（saves / accounts / gachaHistory / walletLog / iapReceipts / matches）
-反代 caddy/nginx：/api/* → metaserver 进程（JSON）；/ws → gameserver 进程（protobuf）
+     gateway+matchsvc 前期合一进程（M20）；Redis 仅 matchsvc 崩溃副本(可省)
+反代：/api/*→meta(JSON) · /gw→gateway(WS) · /ws→gameserver(WS protobuf)；matchsvc 不暴露公网
 ```
 
-> **服务器与游戏逻辑零依赖**（M12）：gameserver 只 codegen `transport.proto`，`PlayerCommand` 作 `bytes` **opaque 转发不解码**；`game.proto` 永不进服务器。改命令结构服务器不用重编。仅"重大比赛裁判"才让 gameserver 额外 import 真 `GameEngine` + `game.proto` 跑复算。
+各服务职责与连库边界：
+
+| 服务 | 面 | 职责 | 连库 | 扩容画像 |
+|---|---|---|---|---|
+| **metaserver** | 请求面 | auth · save · economy · iap · 接收 game 局末上报→判定/写 ELO/归档/存录像 · 给 gateway 供 ELO | Mongo | 无状态可横扩（LB 轮询） |
+| **gateway** | 控制面 | 薄连接层：鉴权 WS + `account→socket` 映射 + 房间/匹配消息转发 matchsvc + 推回事件（含 ticket）+ 在线状态 | ❌（前期与 matchsvc 合一进程，连 Redis） | 有状态（连接亲和）；横扩需 `account→实例` 路由（Redis），属后期 |
+| **matchsvc** | 控制面(私有) | 匹配队列（全区）· 房间状态 · game 注册表/负载/分配 · 签 ticket | Redis only（可选） | 永远单点（M17） |
+| **gameserver** | 数据面 | WS 接入 · ticket 验签 · 帧节拍器/中继 · 重连日志 · 局末打包上报 meta | ❌ 永不（M16） | 无状态（仅内存房间帧缓冲）→ 随意横扩；房间亲和靠 ticket 里的 `game_url` 天然绑定 |
+
+> **服务器与游戏逻辑零依赖**（M12）：三服务都只 codegen `transport.proto`/`replay.proto`，`PlayerCommand` 作 `bytes` **opaque 转发/存储不解码**；`game.proto` 永不进服务器。改命令结构服务器不用重编。仅"重大比赛裁判"才让 meta 额外 import 真 `GameEngine` + `game.proto` 跑复算。
+> **「其他先放 meta、以后好拆」**：经济/好友等暂在 meta 内，但 meta↔matchsvc 已是清晰的内部 RPC 边界，将来把任一模块切成独立服务，复用同一套内部密钥 + 服务注册即可。
 
 ### 6.2 联机模型：服务器权威节拍器（gameserver，M14）
 
@@ -244,9 +274,9 @@ db: MongoDB（saves / accounts / gachaHistory / walletLog / iapReceipts / matche
 - **空闲零上行**：客户端只在出牌时发 `cmd_submit`；`frame_batch` 流是唯一"可前进"信号 → 服务器停发 ⇒ 客户端暂停。
 - **抖动分三档**：<100ms（1 批次）缓冲透明吸收 / 超出该端短暂卡住再快进追帧（对手不受影响）/ 彻底掉线才暂停。
 - **断线（M10）**：in_match 掉线 → gameserver 停发该房间批次 + `peer_dc{grace_ms:60000}` 起 **60s**；`conn_resume` 续发续打；**超时掉线方判负**。
-- **局末**：双方上报最终状态 hash，gameserver 比对查 **desync**（无需引擎，纯字符串比；非反作弊，是确定性回归探针）。
-- **match 类型（M11）**：`friendly`（仅写 `matches` 记结果）/ `ranked`（gameserver 结算 ELO 写 `pvp` 段，服务器权威）。
-- **录像**：gameserver 是帧序列唯一装配者 → 非空帧日志即录像，天然落服务端（§6.6）。
+- **局末（修订 M19）**：game 把 `{双方 hash, 双方 winner_side, 非空帧录像}` 打包 POST 给 **meta**；meta 比对查 desync（纯字符串比；非反作弊，是确定性回归探针）、判定胜负、归档、存录像。game 不连库、不判定。
+- **match 类型（M11）**：`friendly`（meta 仅写 `matches` 记结果）/ `ranked`（**meta** 收到 game 上报后结算 ELO 写 `pvp` 段，服务器权威；S1 现实现为 gameserver 直写，待迁移）。
+- **录像**：game 是帧序列唯一装配者 → 非空帧日志即录像，局末随结算上报交给 meta 落库（§6.6）。
 
 ### 6.3 数据库写型（避开多文档事务）
 
@@ -275,9 +305,9 @@ db: MongoDB（saves / accounts / gachaHistory / walletLog / iapReceipts / matche
 | 触发 | metaserver（无状态） | gameserver（有状态） |
 |---|---|---|
 | 日活上千、单机吃紧 | LB 后加副本，DB 拆出独立实例 | 仍单实例够；房间状态内存 |
-| 日活上万 | 多副本横扩（轻量、便宜） | 加实例需**房间亲和**：一个房两条 WS 落同一实例（一致性哈希 by roomId）；跨实例房间目录 / 在线状态用 **Redis** pub-sub |
+| 日活上万 | 多副本横扩（轻量、便宜） | 加实例天然房间亲和：**matchsvc 分配时把目标实例写进 ticket 的 `game_url`**，两条 WS 凭同一 ticket 落同一实例，无需一致性哈希或跨实例目录 |
 
-> v1 不写 Redis，但 gameserver 的房间查找走一层 `RoomRegistry` 接口（内存实现），扩展时换 Redis 实现即可，不动业务。这是现在唯一要留的口子。
+> 修订后 game 实例池由 **matchsvc 注册表**持有（M17）；扩 game 只是多注册几台，matchsvc 按负载分配。Redis 仅 matchsvc 的崩溃副本（M17），非 game 的房间目录——这是新设计相对 S1 的简化。
 
 ### 6.6 统一输入管线 + 录像（M13）
 
