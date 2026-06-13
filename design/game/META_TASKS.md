@@ -22,9 +22,9 @@
 
 ## 公共底座（贯穿所有阶段）
 
-- [ ] **C-1 仓库结构**：新建 `server/`（Node + TS）；配置 workspace / path alias 让 `server` 能 `import` `code/src/game`（确定性引擎）。**依赖**：—。**主要文件**：`server/package.json`、`server/tsconfig.json`（paths→`@game`）、根 `package.json` workspaces。**验收**：`server` 内 import `parseLevelDefinition` / `GameEngine` 类型不报错，`tsc --noEmit` 干净。
-- [ ] **C-2 共享类型契约**：把客户端 ↔ 服务器协议类型抽到 `code/src/net/protocol.ts`（或 `shared/`），双端共用：`ClientMsg` / `ServerMsg` 联合、`RoomInfo`、`SyncEnvelope`。**依赖**：C-1。**验收**：双端 import 同一份，无重复定义。
-- [ ] **C-3 部署脚手架**：Linux VPS 上 `node` + `mongod` + 反向代理（caddy/nginx，自动 HTTPS）+ 进程守护（pm2/systemd）。**依赖**：C-1。**验收**：一条部署脚本把 server 跑起来，`wss://` 可连。
+- [ ] **C-1 仓库结构（三包 workspaces）**：`server/` 下建 **`shared/`（`@nw/shared`）+ `api/`（REST）+ `gateway/`（WS）**三包，可独立部署（`META_DESIGN.md §6.1`）。`shared` 只 import `code/src/game` 的**类型**（`PlayerCommand` 等，编译期擦除，不打进 bundle）。**主要文件**：根/`server` `package.json` workspaces、各包 `tsconfig.json`（paths→`@game`/`@nw/shared`）。**验收**：`api`/`gateway` 各自 `tsc --noEmit` 干净，bundle 内无 PIXI/引擎运行时。
+- [ ] **C-2 协议 + 共享库**：`shared` 内定义 `ClientMsg`/`ServerMsg` 联合、`ApiResp<T>`、`RoomInfo`、`InputFrame`；含 JWT 校验、zod schema、Mongo client 工厂、`RoomRegistry` 接口（内存实现，§6.5 留 Redis 口子）。**依赖**：C-1。**验收**：双端 import 同一份，无重复定义。
+- [ ] **C-3 部署脚手架（两进程）**：Linux VPS 上 `mongod`（**单节点副本集** `rs.initiate()`，§6.3）+ `api`/`gateway` 两进程（pm2）+ caddy/nginx 反代（`/api/*`→api、`/ws`→gateway，自动 HTTPS）。**依赖**：C-1。**验收**：一条脚本起全栈，`wss://host/ws` 可连、`https://host/api` 可访。
 
 ---
 
@@ -46,14 +46,18 @@
 
 ---
 
-## S1 — 好友房 + 锁步联机
+## S1 — 好友房 + 锁步联机（gateway 服务）
 
-### 服务器
-- [ ] **S1-1 ws-gateway**：WebSocket 接入（`ws`），鉴权（accountId）、心跳、断线检测。**依赖**：C-2,3。**验收**：连接/心跳/断开事件正确。
-- [ ] **S1-2 room-service**：建房（生成短房间码）/ 输码加入 / ready / 满员开局；房间状态**内存** Map（Redis 后置）。开局服务端分配 `seed` + `startTick` 下发双方。**依赖**：S1-1。**验收**：两连接进同一房、同时收到一致 seed。
-- [ ] **S1-3 锁步输入中继**：收各端 `{tick, commands[]}` → 按 tick 聚合 → 凑齐双方后广播该 tick 确认输入集；维护输入延迟缓冲（2~3 tick）。**依赖**：S1-2、C-2。**验收**：双端在相同 tick 收到相同输入集。
-- [ ] **S1-4 输入日志 + 重连**：每局留输入日志；重连端下发 `seed + 全量输入日志 + 当前 tick`，客户端重放追上。**依赖**：S1-3。**验收**：中途断开重连后状态与对端一致。
-- [ ] **S1-5（可选）服务器裁判**：服务端 headless 跑 `GameEngine` 复算，校验客户端上报。**依赖**：S1-3、C-1。**验收**：篡改输入被检出。
+> 本阶段只做 `friendly`（好友码房）。`ranked` 匹配队列 + ELO 结算见 S1-R（稍后）。
+
+### 服务器（gateway）
+- [ ] **S1-1 ws-gateway**：WebSocket 接入（`ws`），JWT 鉴权、心跳、断线检测。**依赖**：C-2,3。**验收**：连接/心跳/断开事件正确。
+- [ ] **S1-2 room-service**：建房（短房间码）/ 输码加入 / ready / 满员开局；房间状态走 `RoomRegistry`（内存实现）。开局分配 `seed` + `startTick` + `mode` 下发双方。**依赖**：S1-1。**验收**：两连接进同一房、同时收到一致 seed。
+- [ ] **S1-3 锁步输入中继**：收各端 `{tick, commands[]}` → 按 tick 聚合 → 凑齐双方后广播确认输入集；输入延迟缓冲（2~3 tick）。**依赖**：S1-2、C-2。**验收**：双端在相同 tick 收到相同输入集。
+- [ ] **S1-4 输入日志 + 重连 + 60s 判负**：每局留输入日志；掉线发 `peer.dc{graceMs:60000}` 起 60s 计时，`conn.resume` 下发 `seed+日志+curTick` 续打，**超时掉线方判负** `match.over{reason:'disconnect'}`（M10）。**依赖**：S1-3。**验收**：重连续打一致；超时正确判负。
+- [ ] **S1-5 局末结算**：双端 `match.result{hash}` → 比对 desync；写 `matches` 归档（friendly 仅记结果）。**依赖**：S1-3。**验收**：结果落库；hash 不一致标 mismatch。
+- [ ] **S1-R（稍后）ranked 队列 + ELO**：匹配队列按 ELO 配对；ranked 局末算 ELO 写 `saves.pvp`（单文档原子更新，服务器权威）。**依赖**：S1-5、S2-1。**验收**：天梯分服务器权威、刷不动。
+- [ ] **S1-J（可选）服务器裁判**：仅重大比赛——gateway headless 跑 `GameEngine` 复算校验。**依赖**：S1-3、C-1。**验收**：篡改输入被检出。
 
 ### 客户端
 - [ ] **S1-6 NetClient**：封装 ws 连接、重连、消息编解码（用 C-2 协议）。**依赖**：C-2。**验收**：掉线自动重连。

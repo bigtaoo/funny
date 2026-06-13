@@ -9,12 +9,13 @@
 
 ## 0. 总览
 
-| 通道 | 协议 | 承载 |
-|---|---|---|
-| 账号 / 存档 / 经济 | **HTTPS REST**（JSON） | 一次性请求-响应：登录、存档同步、商店、盲盒、广告、IAP |
-| 房间 / 锁步对战 | **WSS（WebSocket）** | 长连接：建房 / 加入 / ready / 逐 tick 输入中继 / 重连 |
+| 通道 | 协议 | 服务 | 承载 |
+|---|---|---|---|
+| 账号 / 存档 / 经济 | **HTTPS REST**（JSON） | `api`（无状态，可横扩） | 一次性请求-响应：登录、存档同步、商店、盲盒、广告、IAP |
+| 房间 / 锁步对战 | **WSS（WebSocket）** | `gateway`（有状态，房间亲和） | 长连接：建房 / 加入 / ready / 逐 tick 输入中继 / 重连 / 天梯结算 |
 
-- 服务器权威段（钱包 / 库存 / 盲盒 / IAP）只能经 REST 改，**客户端永不直接写**（`META_DESIGN.md §2`）。
+- 两服务可独立部署（`META_DESIGN.md §6.1`），共享 `@nw/shared`（协议类型 + JWT 校验 + Mongo client）。反代按 `/api/*`、`/ws` 分流。
+- 服务器权威段（钱包 / 库存 / 盲盒 / IAP / **天梯**）只能经服务器改，**客户端永不直接写**（`META_DESIGN.md §2`）。
 - 所有时间戳由服务器盖，客户端不可信。
 
 ---
@@ -111,8 +112,8 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 ### 3.1 客户端 → 服务器（`ClientMsg`）
 | `t` | payload | 说明 |
 |---|---|---|
-| `room.create` | `{}` | 建房，返回房间码 |
-| `room.join` | `{ code }` | 输码加入 |
+| `room.create` | `{ mode: 'friendly'|'ranked' }` | 建房，返回房间码（friendly）；ranked 走匹配队列 |
+| `room.join` | `{ code }` | 输码加入（friendly） |
 | `room.ready` | `{ ready: boolean }` | 切换准备态 |
 | `room.leave` | `{}` | 离开房间 |
 | `room.start` | `{}` | 房主开局（双方 ready 后有效） |
@@ -125,11 +126,12 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 | `t` | payload | 说明 |
 |---|---|---|
 | `room.state` | `{ code, players: PlayerSlot[], phase }` | 房间状态变更广播 |
-| `match.start` | `{ roomId, seed, startTick, localSide }` | 开局：下发种子 + 起始 tick + 本方阵营 |
+| `match.start` | `{ roomId, mode, seed, startTick, localSide }` | 开局：模式 + 种子 + 起始 tick + 本方阵营 |
 | `input.frame` | `{ tick, inputs: { side, commands }[] }` | 某 tick 的**确认输入集**（双方齐后广播） |
 | `conn.resync` | `{ seed, startTick, log: InputFrame[], curTick }` | 重连追帧：种子 + 全量输入日志 + 当前 tick |
-| `match.over` | `{ winnerSide, mismatch?: boolean }` | 对局结束（mismatch=hash 不一致） |
-| `room.error` | `{ code, message }` | 房间错误（不存在 / 已满 / 对手掉线） |
+| `peer.dc` | `{ side, graceMs: 60000 }` | 对手掉线，进入 60s 等待重连（M10） |
+| `match.over` | `{ winnerSide, reason, mismatch?, elo?: { delta, after, rankAfter } }` | 结束；`reason: 'base'|'disconnect'|'mismatch'`；ranked 带 ELO 变化 |
+| `room.error` | `{ code, message }` | 房间错误（不存在 / 已满） |
 | `pong` | `{}` | 心跳回应 |
 
 ```ts
@@ -160,7 +162,8 @@ interface InputFrame { tick: number; inputs: { side: Side; commands: PlayerComma
 - 空 tick 也要提交（`commands: []`），否则服务器无法判定"齐了"。
 - 确定性保证：同 `seed` + 同输入序列 → 双端逐 tick 一致（`META_DESIGN.md §6`）。
 - **重连**：服务器留 `InputFrame[]` 日志；`conn.resume` → `conn.resync` 下发种子+日志，客户端从头重放追上 `curTick`。
-- **断线超时**：一端断开超过阈值 → `room.error`/`match.over`（判负或暂停，策略待定，见 §6）。
+- **断线规则（M10）**：in_match 一端掉线 → 向在线方发 `peer.dc{ graceMs:60000 }` → 起 **60s** 计时；期间掉线方 `conn.resume` 成功则续打；**超时则掉线方判负**，`match.over{ reason:'disconnect' }`。
+- **结算**：`friendly` 仅写 `matches` 记结果；`ranked` 由 gateway 算 ELO 变化、写 `saves.pvp`（服务器权威），随 `match.over.elo` 下发。
 
 ---
 
@@ -173,14 +176,22 @@ interface InputFrame { tick: number; inputs: { side: Side; commands: PlayerComma
 | `gachaHistory` | `{ accountId, poolId, itemId, rarity, cost, rev, ts }` | 逐抽记录（M7） |
 | `walletLog` | `{ accountId, delta, reason, balAfter, ts }` | 货币流水（审计 / 防刷） |
 | `iapReceipts` | `{ _id: receiptId, accountId, granted, ts }` | 验单幂等 |
-| `matches`（可选） | `{ roomId, seed, players, winner, hashOk, ts }` | 对局归档 |
+| `matches` | `{ roomId, mode, seed, players, winner, reason, hashOk, ts }` | 对局归档（friendly/ranked 都记） |
+
+> 天梯积分存 `saves.pvp`（elo/rank/wins/losses/streak，服务器权威）；`gateway` 在 ranked 局末用单文档原子更新写入。
 
 ---
 
-## 6. 开放问题
+## 6. 已定 / 开放问题
 
-- [ ] 断线超时阈值与判罚策略（判负 / 暂停等待 / AI 接管）。
+**已定（2026-06-13）**：
+- 断线：60s 等待重连，超时掉线方判负（M10）。
+- match 类型：`friendly`（仅记结果）/ `ranked`（天梯 ELO，服务器权威）（M11）。
+- token：无状态 **JWT**（服务端密钥签）。
+- 拓扑：`api`/`gateway` 两服务可分（M9）；钱包用单文档原子更新避开多文档事务（`META_DESIGN.md §6.3`）。
+
+**开放**：
 - [ ] 锁步 DELAY 取值（2 vs 3 tick）需实测网络往返定。
 - [ ] WS 是否需要二进制编码（初期 JSON 足够）。
-- [ ] token 方案（JWT 自签 vs 服务端会话表）。
-- [ ] 随机匹配 / 段位的协议扩展（v1 只做好友码房）。
+- [ ] ranked 匹配队列算法（按 ELO 配对 + 等待放宽）与段位划分表（v1 先做 friendly，ranked 队列稍后）。
+- [ ] ELO 公式参数（K 因子、初始分、段位阈值）。

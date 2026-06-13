@@ -23,9 +23,12 @@
 | # | 决策 | 理由 |
 |---|---|---|
 | M1 | 一开始就做云存档 + 好友房联机，自购低配 Linux VPS | 朋友一起玩是核心诉求；初期玩家少，单机够用 |
-| M2 | 服务器语言 = **Node.js（TS）** | 直接 import `code/src/game/` 确定性引擎；C# 需重写并保证逐位一致，锁步最怕跨语言发散 |
+| M2 | 服务器语言 = **Node.js（TS）** | 与客户端同语言、共享类型契约（`PlayerCommand`/协议）；重大比赛要裁判时可直接 import `code/src/game/` 跑同一份确定性引擎，无跨语言发散风险 |
 | M3 | DB = **MongoDB**（存档 + 对局 + 抽卡记录）；Redis 后置 | `SaveData` 是嵌套文档，文档模型天生契合；房间状态初期放内存 |
-| M4 | 联机 = **锁步输入中继**，服务器不模拟（可选当裁判） | 确定性内核（定点数 + 注入 Prng + 黄金回放）已铺好路 |
+| M4 | 联机 = **锁步输入中继**，服务器**纯中继不跑引擎**（1v1 无需服务端验证；重大比赛再开裁判） | 确定性内核（定点数 + 注入 Prng + 黄金回放）已铺好路；服务器只转发输入 + 局末 hash 比对查 desync |
+| M9 | **拓扑：REST(`api`) 与 WS(`gateway`) 为两个可独立部署的服务**，共享 `shared` 包；v1 同机两进程 | 两者扩容画像不同：api 无状态可横扩、gateway 有房间状态需房间亲和（M10） |
+| M10 | 断线：in_match 掉线 → 服务器 **60s** 等待 `conn.resume`，超时**掉线方判负** | 好友局只记结果；匹配局结算天梯积分 |
+| M11 | match 分 **`friendly`（好友房，仅记结果）/ `ranked`（匹配局，天梯 ELO）**；天梯积分**服务器权威** | 段位不可由客户端伪造，与钱包同级隔离 |
 | M5 | **单一货币**，只能广告 / 充值获得，**服务器权威绝不可刷** | 涉及真钱；钱包余额只存服务器，花币动作走服务器事务 |
 | M6 | PvE 养成**花关卡掉落材料**，不花货币 | 付费 = 外观 / 盲盒，肝 = 养成，边界最干净 |
 | M7 | 盲盒**服务端跑**：`crypto` 真随机 + 逐抽落库 + 保底 | 花币 + 要记录 → 必须服务器扣币、随机、记账 |
@@ -39,7 +42,7 @@
 
 | 类别 | 字段 | 谁权威 | 写入方式 |
 |---|---|---|---|
-| **服务器权威**（客户端只读） | `wallet.coins`、`inventory`（皮肤/物品）、`gacha.pity` + 抽卡历史、IAP 票据 | 服务器 | 每个花币/发货动作走服务器**事务**：校验余额 → 扣减 → 发货 → 落库，原子完成 |
+| **服务器权威**（客户端只读） | `wallet.coins`、`inventory`（皮肤/物品）、`gacha.pity` + 抽卡历史、IAP 票据、`pvp` 天梯（elo/rank/战绩） | 服务器 | 钱包/发货走**单文档原子更新**（见 §6.3）；天梯由 `gateway` 在 ranked 局结束时结算写入 |
 | **客户端同步**（轻校验） | `progress`（通关/星级/记录）、PvE 材料 + `pveUpgrades`、设置 `flags`、`equipped`（皮肤选择） | 客户端 | 本地写 + 防抖上行；服务器做 sanity 校验（单调性 / 上界），但不强反作弊 |
 
 > 取舍：PvE 材料/升级被改 → 只是自己 PvE 变简单，**对 PvP 无影响**（硬墙），不值得上重型反作弊。真钱相关零容忍。
@@ -65,6 +68,10 @@ interface SaveData {
     items: Record<string, number>;      // 其他可堆叠物品 / 碎片
   };
   gacha: { pity: Record<string, number> }; // 各盲盒保底计数；抽卡历史另存集合
+  pvp: {                                   // 天梯（仅 ranked 局更新，gateway 结算）
+    elo: number; rank: string;
+    wins: number; losses: number; streak: number;
+  };
 
   // —— 客户端同步段（轻校验，§2）——
   progress: {
@@ -194,38 +201,48 @@ function buildCampaignBlueprints(save: SaveData): UnitBlueprints {
 
 > 接口契约（REST 端点 + WebSocket 消息 + 锁步时序 + DB 集合）的单一来源在 **`SERVER_API.md`**。
 
-### 6.1 联机模型：锁步输入中继
+### 6.1 拓扑：REST 与 WS 两个可独立部署的服务（M9）
 
-确定性内核（定点数 `fixed.ts` + 注入 `Prng` + 黄金回放）让两客户端喂相同输入 + 同 seed → 逐 tick 完全一致。**服务器不模拟，只中继：**
-
-```
-房主建房 → 房间码 → 朋友输码加入 → 双方 ready
-        → 服务器分配 seed + 起始 tick
-        → 每 tick 收集各方 PlayerCommand → 广播确认输入集
-        → 客户端凑齐某 tick 全部输入才推进（输入延迟缓冲 2~3 tick）
-```
-
-- 命令稀疏（出牌 / 建塔，非每帧移动）→ 带宽 / 延迟压力极低。
-- **断线重连**：服务器留输入日志，重连客户端从 seed 重放追上当前 tick（确定性白送）。
-- **反作弊**：对局结束双方上报最终状态 hash，服务器比对（或服务器跑同一份引擎当裁判）。
-
-### 6.2 模块划分（单机可全装）
+REST 与 WS 扩容画像不同（api 无状态可横扩、gateway 有房间状态需房间亲和），故**代码与部署都分两个服务**，共享 `shared` 包。v1 同机两进程，日后各自扩。
 
 ```
-server/  (Node + TS)
-├── ws-gateway      WebSocket 接入，锁步输入中继
-├── room-service    建房 / 加入 / 房间码 / ready / 开局分配 seed（状态初期放内存）
-├── matchmaking     好友码 v1；随机匹配后置
-├── save-service    云存档 pull/push（乐观锁 rev，§3）
-├── economy-service 钱包 / 商店 / 盲盒 / 广告校验（服务器权威事务，§4）
-├── iap-service     充值服务端验单 → 写钱包（上线前必做）
-├── shared/         import code/src/game（确定性引擎，裁判 / 重连用）
-└── db: MongoDB（saves / matches / gachaHistory）；Redis 后置（房间 / 在线 pub-sub）
+server/                      （npm/pnpm workspaces 单仓多包）
+├── shared/   @nw/shared     协议类型 + 转发用 game 类型（PlayerCommand，编译期擦除）
+│                            + JWT 校验 + zod schema + Mongo client 工厂
+├── api/      REST 服务（无状态）  auth · save · economy(shop/gacha/ads/wallet) · iap
+│                            → 可横向加副本，LB 轮询；不持有内存会话
+└── gateway/  WS 服务（有状态）   room · 锁步中继 · 重连 · ranked 局末 ELO 结算
+                             → 持有内存房间状态；扩展需房间亲和（§6.5）
+
+db: MongoDB（saves / accounts / gachaHistory / walletLog / iapReceipts / matches）
+反代 caddy/nginx：/api/* → api 进程；/ws → gateway 进程
 ```
 
-> 仓库加 `server/`，通过 path / workspace 共享 `code/src/game`——引擎改一行，客户端与服务器同时拿到。
+> 两服务都只 **import `code/src/game` 的类型**（`PlayerCommand` 等，编译期擦除，bundle 里零引擎运行时）。仅"重大比赛裁判"才让 gateway import 真 `GameEngine` 跑复算。引擎改一行类型，双端 + 客户端同时拿到，不维护多份。
 
-### 6.3 部署与成本（Linux VPS）
+### 6.2 联机模型：锁步输入中继（gateway，纯中继）
+
+确定性内核（定点数 `fixed.ts` + 注入 `Prng` + 黄金回放）让两客户端喂相同输入 + 同 seed → 逐 tick 完全一致。**gateway 不模拟，只中继：**
+
+```
+建房 → 房间码 → 输码加入 → 双方 ready → gateway 分配 seed + startTick
+     → 每 tick 收集各方 PlayerCommand → 凑齐后广播确认输入集
+     → 客户端凑齐某 tick 全部输入才推进（输入延迟缓冲 2~3 tick）
+```
+
+- 命令稀疏（出牌 / 建塔）→ 带宽 / 延迟压力极低。
+- **断线（M10）**：in_match 掉线 → gateway 起 **60s** 计时；期间 `conn.resume` 下发 seed + 输入日志，客户端重放追帧续打；**超时则掉线方判负**。
+- **局末**：双方上报最终状态 hash，gateway 比对查 **desync**（无需引擎，纯字符串比；非反作弊，是确定性回归探针）。
+- **match 类型（M11）**：`friendly`（好友房，仅写 `matches` 记结果）/ `ranked`（匹配局，gateway 结算 ELO 写 `pvp` 段，服务器权威）。
+
+### 6.3 数据库写型（避开多文档事务）
+
+> ⚠️ MongoDB 多文档事务**仅副本集可用**。两条对策：
+
+- **钱包/发货 = 单文档原子更新**：`findOneAndUpdate({_id, "wallet.coins":{$gte:cost}}, {$inc, $push})`——买/抽/广告都是单账号操作，落在一个 `saves` 文档里，**无需事务**，且 `$gte` 守卫防超扣。
+- **部署仍配单节点副本集**：资源占用几乎相同（`rs.initiate()` 一次），解锁跨集合写（如 IAP `iapReceipts`+`wallet`）的事务，顺带可用 change streams。
+
+### 6.4 部署与成本（Linux VPS）
 
 最低配 **2C2G**（MongoDB WiredTiger 缓存让 2GB 成舒适地板；1GB 易 OOM）。Redis 初期不上。
 
@@ -236,7 +253,18 @@ server/  (Node + TS)
 | 海外·Vultr/DO | 2G | $12/月（¥85） | 可选近区节点 |
 | DB 省钱 | MongoDB Atlas **M0 免费层** 512MB | ¥0 | DB 卸到云、VPS 只跑 Node；数据涨了再迁 |
 
-**最省现实组合**：国内轻量首年 ¥99 + 域名 ¥30–60/年 + Let's Encrypt 免费 → **首年 ≈ ¥130–160（¥11–13/月）**；续费 ≈ ¥55–75/月。瓶颈来了先加 Redis 拆房间状态，再升配。
+**最省现实组合**：国内轻量首年 ¥99 + 域名 ¥30–60/年 + Let's Encrypt 免费 → **首年 ≈ ¥130–160（¥11–13/月）**；续费 ≈ ¥55–75/月。
+
+### 6.5 扩展路径（日活上千→上万）
+
+按 M9 的两服务画像分别扩，不一刀切：
+
+| 触发 | api（无状态） | gateway（有状态） |
+|---|---|---|
+| 日活上千、单机吃紧 | LB 后加副本，DB 拆出独立实例 | 仍单实例够；房间状态内存 |
+| 日活上万 | 多副本横扩（轻量、便宜） | 加实例需**房间亲和**：一个房两条 WS 落同一实例（一致性哈希 by roomId）；跨实例房间目录 / 在线状态用 **Redis** pub-sub |
+
+> v1 不写 Redis，但 gateway 的房间查找走一层 `RoomRegistry` 接口（内存实现），扩展时换 Redis 实现即可，不动业务。这是现在唯一要留的口子。
 
 ---
 
