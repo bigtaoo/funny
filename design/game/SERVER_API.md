@@ -3,7 +3,7 @@
 > 创建：2026-06-13。本文件是客户端 ↔ 服务器的**接口契约**：REST 端点 + WebSocket 消息 + 锁步时序。
 > 双端实现以本文件为准（客户端 `NetClient`/`SaveStore`/`EconomyClient` 与 `server/` 各 service）。
 > 配套：`META_DESIGN.md`（系统/架构）、`META_TASKS.md`（任务）、`ECONOMY_BALANCE.md`（数值）。
-> 协议类型建议落在 `code/src/net/protocol.ts`，双端共用（见 `META_TASKS.md` C-2）。
+> 契约单一来源在 `server/contracts/`（`openapi.yml` + `transport.proto`/`game.proto`），双端 codegen（见 `META_TASKS.md` C-2）。
 
 ---
 
@@ -28,14 +28,15 @@
 - 登录拿**无状态 JWT**（服务端密钥签），后续 REST 走 `Authorization: Bearer <token>`，WS 在握手 query 或首帧带 `token`。
 - `accountId` 由服务端从 token 解出，**客户端请求体里不带 accountId**（防越权）。
 
-### 1.2 编码
-- **REST = JSON**，统一响应包络：
+### 1.2 编码（契约单一来源 + 双端 codegen）
+- **REST = JSON / `openapi.yml`（design-first，M15）**：`contracts/openapi.yml` 是机器契约单一来源；codegen metaserver 路由+校验（如 `fastify-openapi-glue`）与客户端 typed fetch（`openapi-typescript` + `openapi-fetch`）。统一响应包络：
   ```ts
   type ApiResp<T> =
     | { ok: true;  data: T }
     | { ok: false; error: { code: string; message: string } };
   ```
-- **WS = protobuf**：每帧一个 `Envelope`（`oneof` 区分消息）。`.proto` 在 `proto/`，双端 codegen（`ts-proto`，无运行时依赖）。dev 模式加二进制帧解码打印便于调试。
+  > 本文 §2 的端点表是 `openapi.yml` 的人类可读摘要；以 `openapi.yml` 为准。
+- **WS = protobuf**：每帧一个 `Envelope`（`oneof` 区分消息）。`.proto` 在 `contracts/`，双端 codegen（`ts-proto`，无运行时依赖）。dev 模式加二进制帧解码打印便于调试。
 
 ### 1.3 错误码（节选）
 | code | 含义 |

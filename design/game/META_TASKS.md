@@ -22,8 +22,8 @@
 
 ## 公共底座（贯穿所有阶段）
 
-- [ ] **C-1 仓库结构（三包 workspaces + proto）**：`server/` 下建 **`proto/`（`transport.proto`/`game.proto`）+ `shared/`（`@nw/shared`）+ `metaserver/`（REST）+ `gameserver/`（WS）**，metaserver/gameserver 可独立部署（`META_DESIGN.md §6.1`）。`shared`/`gameserver` 只 codegen `transport.proto`，**不依赖 `code/src/game`**（仅可选裁判任务才引）。**主要文件**：根/`server` `package.json` workspaces、各包 `tsconfig.json`。**验收**：`metaserver`/`gameserver` 各自 `tsc --noEmit` 干净，bundle 内无 PIXI/引擎运行时/`game.proto`。
-- [ ] **C-2 protobuf 协议 + 共享库**：写 `transport.proto`（房间/锁步控制，`Envelope` oneof；`commands: bytes` 对服务器 opaque）+ `game.proto`（`PlayerCommand`，仅客户端↔客户端）；接 `ts-proto` codegen 进客户端 + 服务器构建。`shared` 另含 JWT 校验、REST 的 zod schema、Mongo client 工厂、`RoomRegistry` 接口（内存实现，§6.5 留 Redis 口子）；dev 模式加二进制帧解码打印。**依赖**：C-1。**验收**：双端从同一 `.proto` codegen；服务器转发 `commands` 字节流不解码。
+- [ ] **C-1 仓库结构（三包 workspaces + contracts）**：`server/` 下建 **`contracts/`（`openapi.yml` + `transport.proto`/`game.proto`）+ `shared/`（`@nw/shared`）+ `metaserver/`（REST）+ `gameserver/`（WS）**，metaserver/gameserver 可独立部署（`META_DESIGN.md §6.1`）。`shared`/`gameserver` 只 codegen `transport.proto`，**不依赖 `code/src/game`**（仅可选裁判任务才引）。**主要文件**：根/`server` `package.json` workspaces、各包 `tsconfig.json`。**验收**：`metaserver`/`gameserver` 各自 `tsc --noEmit` 干净，bundle 内无 PIXI/引擎运行时/`game.proto`。
+- [ ] **C-2 契约（OpenAPI + protobuf）+ 共享库**：写 **`openapi.yml`**（REST 端点 design-first，M15）→ codegen metaserver 路由+校验（`fastify-openapi-glue`）与客户端 typed fetch（`openapi-typescript`+`openapi-fetch`）；写 `transport.proto`（房间/锁步控制，`Envelope` oneof；`commands: bytes` opaque）+ `game.proto`（`PlayerCommand`，仅客户端↔客户端）→ `ts-proto` codegen 双端。`shared` 另含 JWT 校验、Mongo client 工厂、`RoomRegistry` 接口（内存实现，§6.5 留 Redis 口子）；dev 模式加二进制帧解码打印。**依赖**：C-1。**验收**：双端从同一 `openapi.yml`/`.proto` codegen；服务器转发 `commands` 字节流不解码。
 - [ ] **C-3 部署脚手架（两进程）**：Linux VPS 上 `mongod`（**单节点副本集** `rs.initiate()`，§6.3）+ `metaserver`/`gameserver` 两进程（pm2）+ caddy/nginx 反代（`/api/*`→metaserver、`/ws`→gameserver，自动 HTTPS）。**依赖**：C-1。**验收**：一条脚本起全栈，`wss://host/ws` 可连、`https://host/api` 可访。
 - [ ] **C-4 统一输入管线（InputSource）**：引擎命令入口从「UI 直接 `processCommand`」改为「每 tick 从注入的 `InputSource` 消费确认指令集」；实现 `LocalInputSource`（单机自转发，DELAY 0）。AI/WaveDirector 作为 tick 内输入源接入。**依赖**：—（纯客户端引擎重构）。**主要文件**：`code/src/game/GameEngine.ts`、新 `game/net/InputSource.ts`。**验收**：单机 PvE/练习走新管线，38+ 测试 + 黄金回放确定性不破。`NetInputSource`（S1-7）/`ReplayInputSource`（S1-RP）是其另两个实例。
 
@@ -40,7 +40,7 @@
 
 ### 服务器
 - [ ] **S0-6 Mongo 接入**：连接 + `saves` 集合（`{_id: accountId, save, rev}`）+ 索引。**依赖**：C-1,3。**验收**：本地 mongod 读写通。
-- [ ] **S0-7 save-service**：`GET /save/:id`、`PUT /save/:id`（乐观锁：rev 不匹配返回 409 + 当前云端值）；`POST /auth/wx`（code→openid→accountId）。**依赖**：S0-6、C-2。**验收**：并发 PUT 只有一个赢，另一个收 409。
+- [ ] **S0-7 save-service**（metaserver）：`GET /save`、`PUT /save`（accountId 由 JWT 解出；乐观锁：rev 不匹配返回 409 + 当前云端值）；`POST /auth/wx`、`POST /auth/device`。**依赖**：S0-6、C-2。**验收**：并发 PUT 只有一个赢，另一个收 409。
 
 ### 联调出口
 - [ ] **S0-8 多设备同步验收**：A 设备改存档 → B 设备启动拉到最新；离线改 → 上线合并不丢。**依赖**：S0-5,7。
@@ -59,7 +59,7 @@
 - [ ] **S1-5 局末结算**：双端 `match.result{hash}` → 比对 desync；写 `matches` 归档（friendly 仅记结果）。**依赖**：S1-3。**验收**：结果落库；hash 不一致标 mismatch。
 - [ ] **S1-R（稍后）ranked 队列 + ELO**：匹配队列按 ELO 配对；ranked 局末算 ELO 写 `saves.pvp`（单文档原子更新，服务器权威）。**依赖**：S1-5、S2-1。**验收**：天梯分服务器权威、刷不动。
 - [ ] **S1-J（可选）服务器裁判**：仅重大比赛——gameserver headless 跑 `GameEngine` 复算校验。**依赖**：S1-3、C-1。**验收**：篡改输入被检出。
-- [ ] **S1-RP 录像录制 + 回放**：定义 `replay.proto`（复用 `InputFrame`）；录制（PvE 客户端记玩家指令 / PvP gameserver 持久化输入日志到 `matches.replayRef`）；实现 `ReplayInputSource` + 回放播放器（同 seed 起新引擎喂输入流），回放前校验 `engineVersion`。**依赖**：C-4、S1-5。**验收**：一局 PvE + 一局 PvP 录像回放与原局逐 tick 一致；改 engineVersion 回放被拒。**注**：PvE 录制可随战役（CAMPAIGN P1）先落地，不必等联机。
+- [ ] **S1-RP 录像录制 + 回放**：定义 `replay.proto`（复用 `FrameCmds`）；录制（PvE 客户端记玩家指令 / PvP gameserver 持久化输入日志到 `matches.replayRef`）；实现 `ReplayInputSource` + 回放播放器（同 seed 起新引擎喂输入流），回放前校验 `engineVersion`。**依赖**：C-4、S1-5。**验收**：一局 PvE + 一局 PvP 录像回放与原局逐 tick 一致；改 engineVersion 回放被拒。**注**：PvE 录制可随战役（CAMPAIGN P1）先落地，不必等联机。
 
 ### 客户端
 - [ ] **S1-6 NetClient**：封装 ws 连接、重连、消息编解码（用 C-2 协议）。**依赖**：C-2。**验收**：掉线自动重连。
