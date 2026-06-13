@@ -55,6 +55,7 @@ export const en: Record<TranslationKey, string> = {
   'result.playAgain': 'PLAY AGAIN',
   'result.watchReplay': 'WATCH REPLAY',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
+  'rank.unranked': 'Unranked',
   'rank.bronze': 'Bronze',
   'rank.silver': 'Silver',
   'rank.gold': 'Gold',

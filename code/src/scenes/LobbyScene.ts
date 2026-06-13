@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
-import { t } from '../i18n';
+import { t, TranslationKey } from '../i18n';
 
 // ── AI name pool ───────────────────────────────────────────────────────────────
 
@@ -45,6 +45,8 @@ export interface LobbySceneCallbacks {
   onStartCampaign(levelIndex: number): void;
   /** Open the friend room (online play). Wired to the bottom-nav "social" slot. */
   onOpenRoom(): void;
+  /** Server-authoritative ladder standing (SaveData.pvp); shown as a header badge. */
+  pvp?: { rank: string; elo: number };
 }
 
 /** Campaign levels exposed in the lobby picker (1-3 = content, 4 = swarm stress test). */
@@ -169,6 +171,18 @@ export class LobbyScene implements Scene {
     const subtitle = txt(t('lobby.subtitle'), Math.round(h * 0.022), C.light);
     subtitle.anchor.set(0.5, 0.5); subtitle.x = w / 2; subtitle.y = tbH * 0.78;
     this.container.addChild(subtitle);
+
+    // Ranked badge (top-right of header) — server-authoritative pvp from SaveData.
+    if (this.cb.pvp) {
+      const pvp = this.cb.pvp;
+      const rankName = t(('rank.' + pvp.rank) as TranslationKey);
+      const badge = pvp.rank === 'unranked' ? rankName : `${rankName} · ${pvp.elo}`;
+      const badgeLabel = txt(badge, Math.round(h * 0.022), C.gold, true);
+      badgeLabel.anchor.set(1, 0.5);
+      badgeLabel.x = w - Math.round(w * 0.04);
+      badgeLabel.y = tbH * 0.5;
+      this.container.addChild(badgeLabel);
+    }
 
     // Feature blocks
     const blockY   = tbH + Math.round(h * 0.06);

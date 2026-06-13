@@ -54,6 +54,7 @@ export const zh = {
   'result.playAgain': '再来一局',
   'result.watchReplay': '观看回放',
   'result.eloDelta': 'ELO {delta} → {after}　段位 {rank}',
+  'rank.unranked': '未定级',
   'rank.bronze': '青铜',
   'rank.silver': '白银',
   'rank.gold': '黄金',

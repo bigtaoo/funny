@@ -106,10 +106,12 @@ export async function startApp(platform: IPlatform): Promise<void> {
   function goLobby(): void {
     inLobby = true;
     platform.onGameplayStop();
+    const pvp = saveManager.get().pvp;
     manager.goto(new LobbyScene(layout, input, {
       onStartGame(_opponentName: string) { goGame(); },
       onStartCampaign(levelIndex: number) { goCampaign(CAMPAIGN_LEVEL_ORDER[levelIndex]); },
       onOpenRoom() { goRoom(); },
+      pvp: { rank: pvp.rank, elo: pvp.elo },
     }));
     window.addEventListener('resize', onResize);
   }
@@ -229,6 +231,9 @@ export async function startApp(platform: IPlatform): Promise<void> {
       if (netResultShown) return;
       netResultShown = true;
       if (eloWaitTimer) { clearTimeout(eloWaitTimer); eloWaitTimer = null; }
+      // ranked 局末 gameserver 已写 saves.pvp（elo/rank/streak）→ 拉一次刷新本地，
+      // 让大厅段位徽章即时反映新分（reconcile 取云端权威段）。
+      if (isRanked) void saveManager.refresh();
       void goResult(winner, stats, localOwner, undefined, elo);
     };
 

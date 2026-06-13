@@ -99,6 +99,23 @@ export class SaveManager {
     }
   }
 
+  /**
+   * 主动拉取云端存档 + reconcile（不重新 auth，复用现有 token）。
+   * 用于服务器权威段在客户端外被改写后刷新本地——如 ranked 局末 gameserver
+   * 写了 `pvp`（elo/rank/streak），客户端据此即时刷新大厅段位，无需等下次 bootstrap。
+   * 未联通则 no-op，不抛错。
+   */
+  async refresh(): Promise<boolean> {
+    if (!this.api?.hasToken()) return false;
+    try {
+      const cloud = await this.api.getSave();
+      this.reconcile(cloud);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** 立即清空防抖、强制上行（场景切换 / 退出前调用）。 */
   async flush(): Promise<void> {
     if (this.pushTimer != null) {
