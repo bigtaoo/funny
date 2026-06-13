@@ -18,6 +18,12 @@ export { LocalInputSource } from './net/InputSource';
 export type { InputSource } from './net/InputSource';
 export { NetInputSource } from './net/NetInputSource';
 export type { CmdSink, MatchStartInfo, NetInputSourceOptions } from './net/NetInputSource';
+export {
+  ReplayInputSource,
+  RecordingInputSource,
+  ReplayVersionError,
+} from './net/ReplayInputSource';
+export type { ReplaySnapshotOptions } from './net/ReplayInputSource';
 
 // ── Public types (needed by the render layer) ─────────────────────────────────
 export type {
@@ -30,7 +36,11 @@ export type {
   Vec2_fp,
   Replay,
   ReplayFrame,
+  ReplayMeta,
+  GameMode,
 } from './types';
+
+export { ENGINE_VERSION } from './types';
 
 export {
   UnitType,
