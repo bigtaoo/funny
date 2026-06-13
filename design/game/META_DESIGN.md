@@ -25,6 +25,7 @@
 | M1 | 一开始就做云存档 + 好友房联机，自购低配 Linux VPS | 朋友一起玩是核心诉求；初期玩家少，单机够用 |
 | M2 | 服务器语言 = **Node.js（TS）** | 与客户端同语言、工具链统一；重大比赛要裁判时可直接 import `code/src/game/` 跑同一份确定性引擎，无跨语言发散风险 |
 | M12 | **线协议：WS 热路径用 protobuf，REST 保持 JSON**；`PlayerCommand` 对服务器 **opaque（`bytes` 不解码）** | `.proto` 作唯一契约、双端 codegen，服务器**与游戏逻辑零依赖**（改命令结构服务器不用重编）；REST 低频，JSON 利于浏览器/支付回调/调试 |
+| M13 | **统一输入管线**：引擎按 tick 从抽象 `InputSource` 消费确认指令集；单机=`LocalInputSource`（客户端自转发，DELAY 0）/ 联机=`NetInputSource` / 回放=`ReplayInputSource`。**录像 = seed + 配置 + 输入流**（不存状态） | SP/MP 同一条管线；确定性内核让"录像=重放输入"，**关卡 + 对局都免费支持回放**；命令已是 protobuf bytes，录像直接复用 |
 | M3 | DB = **MongoDB**（存档 + 对局 + 抽卡记录）；Redis 后置 | `SaveData` 是嵌套文档，文档模型天生契合；房间状态初期放内存 |
 | M4 | 联机 = **锁步输入中继**，服务器**纯中继不跑引擎**（1v1 无需服务端验证；重大比赛再开裁判） | 确定性内核（定点数 + 注入 Prng + 黄金回放）已铺好路；服务器只转发输入 + 局末 hash 比对查 desync |
 | M9 | **拓扑：REST(`api`) 与 WS(`gateway`) 为两个可独立部署的服务**，共享 `shared` 包；v1 同机两进程 | 两者扩容画像不同：api 无状态可横扩、gateway 有房间状态需房间亲和（M10） |
@@ -268,6 +269,37 @@ db: MongoDB（saves / accounts / gachaHistory / walletLog / iapReceipts / matche
 | 日活上万 | 多副本横扩（轻量、便宜） | 加实例需**房间亲和**：一个房两条 WS 落同一实例（一致性哈希 by roomId）；跨实例房间目录 / 在线状态用 **Redis** pub-sub |
 
 > v1 不写 Redis，但 gateway 的房间查找走一层 `RoomRegistry` 接口（内存实现），扩展时换 Redis 实现即可，不动业务。这是现在唯一要留的口子。
+
+### 6.6 统一输入管线 + 录像（M13）
+
+确定性内核让 SP / MP / 回放可以共用一条输入管线。引擎每 tick 从抽象 `InputSource` **拉取该 tick 确认指令集**，不关心来源：
+
+| 实现 | 用于 | DELAY | 指令来源 |
+|---|---|---|---|
+| `LocalInputSource` | 单机 PvE / 练习 | 0（即时） | 客户端**自转发**：本地出牌即入队当前 tick |
+| `NetInputSource` | 联机对战 | 2~3 tick | gateway 广播的 `InputFrame` |
+| `ReplayInputSource` | 回放 | — | 录像文件的 `InputFrame[]` |
+
+三者都产出 `InputFrame{tick, commands}`，引擎逻辑逐字相同。**命令入口从「UI 直接 `processCommand`」改为「提交进 `InputSource`、引擎每 tick 消费确认集」**，AI（练习）/ WaveDirector（PvE）作为另一种 tick 内输入源接入。
+
+**录像 = `seed` + 配置 + 输入流，从不存状态：**
+
+```proto
+// replay.proto —— 复用 transport.proto 的 InputFrame
+message Replay {
+  uint32 engineVersion = 1;   // 绑引擎版本（回放前校验，见下）
+  string mode = 2;            // campaign | pvp
+  uint64 seed = 3;
+  string configRef = 4;       // PvE=levelId+version；PvP=rosterVer
+  repeated InputFrame frames = 5;  // commands 仍是 protobuf bytes（与线协议复用）
+  ReplayMeta meta = 6;        // 时长 / 结果 / 玩家
+}
+```
+
+- 回放 = 同 `seed` 起新引擎 + 按 tick 喂录像输入流 → 逐 tick 完全还原。
+- **PvE 只记玩家指令**（敌方由 `WaveDirector` 从 seed+level 确定性生成，不记，回放时重算）；**PvP 记双方**——gateway 为重连保留的输入日志**即录像**，服务端录制零额外成本。
+- 落地：PvE 客户端本地存（可选上传分享）；PvP gateway 持久化到 `matches`/对象存储 → 服务端回放 / 分享 / 纠纷复核 / 裁判复算。
+- ⚠️ **脆弱点**：录像绑 `engineVersion`，引擎逻辑改动后老录像可能回放发散，回放前必须校验版本（确定性回放方案的通用代价）。已有的黄金回放确定性测试天然延伸为整局录像的回归守卫。
 
 ---
 

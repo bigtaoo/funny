@@ -184,13 +184,35 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 | `gachaHistory` | `{ accountId, poolId, itemId, rarity, cost, rev, ts }` | 逐抽记录（M7） |
 | `walletLog` | `{ accountId, delta, reason, balAfter, ts }` | 货币流水（审计 / 防刷） |
 | `iapReceipts` | `{ _id: receiptId, accountId, granted, ts }` | 验单幂等 |
-| `matches` | `{ roomId, mode, seed, players, winner, reason, hashOk, ts }` | 对局归档（friendly/ranked 都记） |
+| `matches` | `{ roomId, mode, seed, players, winner, reason, hashOk, replayRef, ts }` | 对局归档（friendly/ranked 都记）；`replayRef` 指向录像 |
 
 > 天梯积分存 `saves.pvp`（elo/rank/wins/losses/streak，服务器权威）；`gateway` 在 ranked 局末用单文档原子更新写入。
 
 ---
 
-## 6. 已定 / 开放问题
+## 6. 录像（replay，M13 / `META_DESIGN.md §6.6`）
+
+统一输入管线让对局/关卡都可回放：**录像 = `seed` + 配置 + 输入流**，从不存状态。
+
+```proto
+// replay.proto —— 复用 transport.proto 的 InputFrame
+message Replay {
+  uint32 engine_version = 1;  // 回放前校验；跨引擎版本可能发散
+  string mode = 2;            // campaign | pvp
+  uint64 seed = 3;
+  string config_ref = 4;      // PvE=levelId+version；PvP=rosterVer
+  repeated InputFrame frames = 5;   // commands 仍是 protobuf bytes
+  ReplayMeta meta = 6;
+}
+```
+
+- **PvP**：`gateway` 为重连保留的输入日志**即录像**，局末持久化到 `matches.replayRef`（小局直接内嵌，大局存对象存储），零额外采集成本。
+- **PvE**：客户端本地录制（只记玩家指令；敌方 `WaveDirector` 回放时由 seed+level 重算），可选上传分享。
+- 回放走 `ReplayInputSource`：同 seed 起新引擎，按 tick 喂 `frames` → 逐 tick 还原。
+
+---
+
+## 7. 已定 / 开放问题
 
 **已定（2026-06-13）**：
 - 断线：60s 等待重连，超时掉线方判负（M10）。
@@ -203,3 +225,4 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 - [ ] 锁步 DELAY 取值（2 vs 3 tick）需实测网络往返定（建议可配置，默认 3）。
 - [ ] ranked 匹配队列算法（按 ELO 配对 + 等待放宽）与段位划分表（v1 先做 friendly，ranked 队列稍后）。
 - [ ] ELO 公式参数（K 因子、初始分、段位阈值）。
+- [ ] 录像分享/存储：PvE 本地录制先行，云端分享 + PvP 录像对象存储排期（v1 录制即可，分享后置）。
