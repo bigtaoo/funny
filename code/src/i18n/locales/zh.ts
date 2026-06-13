@@ -52,6 +52,7 @@ export const zh = {
   'result.draw': '平局',
   'result.keepGoing': '再接再厉！',
   'result.playAgain': '再来一局',
+  'result.watchReplay': '观看回放',
   'badge.topDmg.title': '【最佳输出】',
   'badge.topDmg.detail': '对敌方基地造成 {n} 点伤害',
   'badge.ironWall.title': '【铁壁防线】',
@@ -114,6 +115,15 @@ export const zh = {
   'net.waiting': '等待对手',
   'net.reconnecting': '重新连接中',
   'net.peerDc': '对手掉线，等待重连',
+
+  // ── 回放（S1-RP） ────────────────────────────────────────────────────────────
+  'replay.title': '回放',
+  'replay.play': '播放',
+  'replay.pause': '暂停',
+  'replay.exit': '退出',
+  'replay.speed': '{n}×',
+  'replay.ended': '回放结束',
+  'replay.versionError': '录像版本不兼容，无法回放',
 };
 
 export type TranslationKey = keyof typeof zh;

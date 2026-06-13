@@ -42,6 +42,20 @@ export interface IapReceiptDoc {
   ts: number;
 }
 
+/**
+ * Inline replay (S1-RP): seed + config + non-empty frame log, no state.
+ * Mirrors `contracts/replay.proto`; `frames[].cmds[].commands` are BSON binary
+ * (opaque game.proto bytes — the server never decodes them, M12).
+ */
+export interface MatchReplayDoc {
+  engineVersion: number;
+  mode: string;
+  seed: string;
+  endFrame: number;
+  frames: { frame: number; cmds: { side: number; commands: unknown }[] }[];
+  meta: { recordedAt: number; winner: number };
+}
+
 export interface MatchDoc {
   roomId: string;
   mode: string;
@@ -50,7 +64,10 @@ export interface MatchDoc {
   winner: number;
   reason: string;
   hashOk: boolean;
+  /** Pointer to externally-stored replay (large matches); reserved, not yet used. */
   replayRef?: string;
+  /** Embedded replay (small matches) — the retained frame log, zero extra cost. */
+  replay?: MatchReplayDoc;
   ts: number;
 }
 

@@ -2,12 +2,27 @@ import { Scene } from './SceneManager';
 import { GameRenderer } from '../render/GameRenderer';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
-import { createGameEngine, IGameEngine, LevelDefinition, OwnerId, PlayerStats } from '../game';
+import {
+  createGameEngine,
+  IGameEngine,
+  LevelDefinition,
+  LocalInputSource,
+  OwnerId,
+  PlayerStats,
+  RecordingInputSource,
+  type GameMode,
+  type Replay,
+} from '../game';
 import type { NetState } from '../net/NetClient';
 import type { MatchOver, PeerDc } from '../net/proto/transport';
 
 export interface GameSceneCallbacks {
-  onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]): void;
+  /**
+   * `replay` is present for locally-simulated matches (campaign / PvP-vs-AI):
+   * the confirmed input stream, recorded for playback (S1-RP). Absent for online
+   * netplay (the server owns that recording).
+   */
+  onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats], replay?: Replay): void;
   onExitToLobby(): void;
   /**
    * Online match ended by the *server* (opponent timed out / desync), not by
@@ -37,28 +52,64 @@ export class GameScene implements Scene {
   private readonly renderer: GameRenderer;
   private readonly cb: GameSceneCallbacks;
 
+  /** Recorder wrapping the local input source (null for injected/net engines). */
+  private readonly recorder: RecordingInputSource | null = null;
+  private readonly recordMode: GameMode = 'pvp';
+  private readonly recordSeed: number = 0;
+  private readonly recordLevelId: string | undefined;
+
   constructor(layout: ILayout, input: InputManager, cb: GameSceneCallbacks, opts: GameSceneOptions = {}) {
     this.cb = cb;
-    const engine = opts.engine
-      ? opts.engine
-      : opts.level
-      ? createGameEngine({
-          seed: opts.level.seed,
+
+    let engine: IGameEngine;
+    if (opts.engine) {
+      // Injected engine (online netplay): the server records this match, not us.
+      engine = opts.engine;
+    } else {
+      // Locally-simulated match: wrap the input source in a recorder so the
+      // confirmed command stream can be replayed later (S1-RP). seed + mode +
+      // level are everything needed to reconstruct the run.
+      const seed = opts.level
+        ? opts.level.seed
+        : (Date.now() ^ ((Math.random() * 0xffffff) | 0)) >>> 0;
+      const mode: GameMode = opts.level ? 'campaign' : 'pvp';
+      this.recorder = new RecordingInputSource(new LocalInputSource());
+      this.recordMode = mode;
+      this.recordSeed = seed;
+      this.recordLevelId = opts.level?.id;
+      engine = createGameEngine(
+        {
+          seed,
           players: [{ id: 0 }, { id: 1 }],
-          mode: 'campaign',
-          level: opts.level,
-        })
-      : createGameEngine({
-          seed: Date.now() ^ (Math.random() * 0xffffff | 0),
-          players: [{ id: 0 }, { id: 1 }],
-        });
+          mode,
+          ...(opts.level ? { level: opts.level } : {}),
+        },
+        this.recorder,
+      );
+    }
 
     this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false);
     this.renderer.init();
-    this.renderer.onGameEnd     = cb.onGameEnd;
+    // Attach the recording (if any) to the end-of-game callback.
+    this.renderer.onGameEnd = (winner, stats) => this.cb.onGameEnd(winner, stats, this.buildReplay(winner));
     this.renderer.onExitToLobby = cb.onExitToLobby;
 
     this.container = this.renderer.container;
+  }
+
+  /** Snapshot the recorded input stream into a Replay (null when not recording). */
+  private buildReplay(winner: OwnerId | null): Replay | undefined {
+    if (!this.recorder) return undefined;
+    return this.recorder.snapshot({
+      seed: this.recordSeed,
+      mode: this.recordMode,
+      ...(this.recordLevelId ? { configRef: this.recordLevelId } : {}),
+      meta: {
+        recordedAt: Date.now(),
+        winner: winner ?? -1,
+        ...(this.recordLevelId ? { levelId: this.recordLevelId } : {}),
+      },
+    });
   }
 
   update(dt: number): void { this.renderer.update(dt); }

@@ -19,7 +19,21 @@ const BATCH_MS = 100;
 const GRACE_MS = 60_000; // 掉线宽限（M10）
 const START_FRAME = 0;
 
-/** 归档对局到 matches（friendly 仅记结果）。 */
+/**
+ * 内嵌录像（S1-RP）——重连保留的非空帧日志即录像，局末零成本持久化。
+ * 字段对齐 `contracts/replay.proto`；`commands` 仍是 game.proto opaque bytes。
+ */
+export interface MatchReplay {
+  /** 服务器逻辑无关（M12），无法自证引擎版本 → 0；客户端回放时自校验。 */
+  engineVersion: number;
+  mode: string; // netplay（gameserver 只承载双人真人对局）
+  seed: number;
+  endFrame: number; // 末帧水位（= 最后下发的 to_frame）
+  frames: { frame: number; cmds: { side: number; commands: Uint8Array }[] }[];
+  meta: { recordedAt: number; winner: number };
+}
+
+/** 归档对局到 matches（friendly 仅记结果 + 内嵌录像）。 */
 export interface MatchArchive {
   roomId: string;
   mode: string;
@@ -28,6 +42,8 @@ export interface MatchArchive {
   winner: number; // -1 = 未知（friendly 正常结束，胜负客户端权威）
   reason: string; // base | disconnect | mismatch
   hashOk: boolean;
+  /** 内嵌录像（非空帧日志 + seed + 配置）；空局亦记（frames 为空）。 */
+  replay: MatchReplay;
 }
 
 export interface RoomDeps {
@@ -325,9 +341,29 @@ export class Room {
       winner: opts.winnerSide,
       reason: opts.reason,
       hashOk: opts.hashOk,
+      replay: this.buildReplay(opts.winnerSide),
     });
 
     this.destroy();
+  }
+
+  /**
+   * Assemble the inline replay from the retained non-empty frame log (S1-RP).
+   * Zero extra capture cost — `this.log` is the same buffer kept for reconnect.
+   * `commands` stay opaque (Buffer of game.proto bytes); the server never decodes.
+   */
+  private buildReplay(winnerSide: number): MatchReplay {
+    return {
+      engineVersion: 0, // logic-agnostic server; client self-validates on playback
+      mode: 'netplay',
+      seed: this.seed,
+      endFrame: this.curFrame,
+      frames: this.log.map((fc) => ({
+        frame: fc.frame,
+        cmds: fc.cmds.map((sc) => ({ side: sc.side, commands: Buffer.from(sc.commands) })),
+      })),
+      meta: { recordedAt: Date.now(), winner: winnerSide },
+    };
   }
 
   destroy(): void {

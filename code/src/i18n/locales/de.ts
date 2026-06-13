@@ -53,6 +53,7 @@ export const de: Record<TranslationKey, string> = {
   'result.draw': 'UNENTSCHIEDEN',
   'result.keepGoing': 'Weiter so!',
   'result.playAgain': 'NOCHMAL SPIELEN',
+  'result.watchReplay': 'WIEDERHOLUNG ANSEHEN',
   'badge.topDmg.title': '[Bester Schaden]',
   'badge.topDmg.detail': '{n} Schaden an gegnerischer Basis verursacht',
   'badge.ironWall.title': '[Eiserne Verteidigung]',
@@ -115,4 +116,13 @@ export const de: Record<TranslationKey, string> = {
   'net.waiting': 'Warte auf Gegner',
   'net.reconnecting': 'Verbindung wird wiederhergestellt',
   'net.peerDc': 'Gegner getrennt, warte auf Wiederverbindung',
+
+  // ── Wiederholung (S1-RP) ────────────────────────────────────────────────────
+  'replay.title': 'Wiederholung',
+  'replay.play': 'Abspielen',
+  'replay.pause': 'Pause',
+  'replay.exit': 'Beenden',
+  'replay.speed': '{n}×',
+  'replay.ended': 'Wiederholung beendet',
+  'replay.versionError': 'Wiederholungsversion inkompatibel — Abspielen nicht möglich',
 };

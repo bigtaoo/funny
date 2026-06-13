@@ -119,7 +119,13 @@ export class GameRenderer {
   // Unsubscribe functions from InputManager
   private readonly unsubs: Array<() => void> = [];
 
-  constructor(engine: IGameEngine, layout: ILayout, input: InputManager, netEnabled = false) {
+  constructor(
+    engine: IGameEngine,
+    layout: ILayout,
+    input: InputManager,
+    netEnabled = false,
+    spectator = false,
+  ) {
     this.engine     = engine;
     this.layout     = layout;
     this.netEnabled = netEnabled;
@@ -129,9 +135,14 @@ export class GameRenderer {
     this.localBuildRow = layout.localSide === Side.Bottom ? BOTTOM_BUILDING_ROW : TOP_BUILDING_ROW;
     this.localSpawnRow = layout.localSide === Side.Bottom ? BOTTOM_SPAWN_ROW    : TOP_SPAWN_ROW;
 
-    this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
-    this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
-    this.unsubs.push(input.onUp((x, y)   => this.handleUp(x, y)));
+    // Spectator (replay playback, S1-RP): the game layer is purely visual — skip
+    // all input wiring so taps never select cards, drag, or open the pause menu.
+    // The ReplayScene draws its own transport controls on top.
+    if (!spectator) {
+      this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+      this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
+      this.unsubs.push(input.onUp((x, y)   => this.handleUp(x, y)));
+    }
   }
 
   // ── Local player helper ──────────────────────────────────────────────────────
@@ -149,6 +160,9 @@ export class GameRenderer {
 
   /** True once the local sim has reached a decisive end (base wiped / draw). */
   isGameOver(): boolean { return this.engine.state.phase === GamePhase.GameOver; }
+
+  /** Ticks the sim has advanced — drives the replay progress bar (S1-RP). */
+  get currentTick(): number { return this.engine.state.elapsedTicks; }
 
   /** Authoritative end-state stats snapshot (for a server-driven match_over). */
   snapshotStats(): [PlayerStats, PlayerStats] { return this.engine.state.snapshotStats(); }

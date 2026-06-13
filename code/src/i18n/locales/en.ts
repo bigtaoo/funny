@@ -53,6 +53,7 @@ export const en: Record<TranslationKey, string> = {
   'result.draw': 'DRAW',
   'result.keepGoing': 'Keep going!',
   'result.playAgain': 'PLAY AGAIN',
+  'result.watchReplay': 'WATCH REPLAY',
   'badge.topDmg.title': '[Best Damage]',
   'badge.topDmg.detail': 'Dealt {n} damage to enemy base',
   'badge.ironWall.title': '[Iron Defense]',
@@ -115,4 +116,13 @@ export const en: Record<TranslationKey, string> = {
   'net.waiting': 'Waiting for opponent',
   'net.reconnecting': 'Reconnecting',
   'net.peerDc': 'Opponent dropped, waiting to reconnect',
+
+  // ── Replay (S1-RP) ──────────────────────────────────────────────────────────
+  'replay.title': 'Replay',
+  'replay.play': 'Play',
+  'replay.pause': 'Pause',
+  'replay.exit': 'Exit',
+  'replay.speed': '{n}×',
+  'replay.ended': 'Replay ended',
+  'replay.versionError': 'Replay version incompatible — cannot play back',
 };

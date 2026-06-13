@@ -172,6 +172,16 @@ export class RoomManager {
         winner: doc.winner,
         reason: doc.reason,
         hashOk: doc.hashOk,
+        // Inline replay (S1-RP): seed + config + non-empty frame log. `replayRef`
+        // (object storage for large matches) is a later task; small matches embed.
+        replay: {
+          engineVersion: doc.replay.engineVersion,
+          mode: doc.replay.mode,
+          seed: String(doc.replay.seed),
+          endFrame: doc.replay.endFrame,
+          frames: doc.replay.frames, // cmds[].commands are BSON binary (opaque)
+          meta: doc.replay.meta,
+        },
         ts: Date.now(),
       })
       .catch((e) => console.error('[gameserver] archive match failed:', e));

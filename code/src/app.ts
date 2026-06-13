@@ -6,14 +6,15 @@ import { LobbyScene } from './scenes/LobbyScene';
 import { GameScene } from './scenes/GameScene';
 import { RoomScene } from './scenes/RoomScene';
 import { ResultScene } from './scenes/ResultScene';
+import { ReplayScene } from './scenes/ReplayScene';
 import { OwnerId, PlayerStats } from './game/types';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, ownerToSide } from './game';
-import type { MatchStartInfo } from './game';
+import type { MatchStartInfo, Replay } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
 import { initI18n } from './i18n';
-import { LocalSaveStore, SaveManager } from './game/meta';
+import { LocalSaveStore, SaveManager, ReplayStore } from './game/meta';
 import { ApiClient } from './net/ApiClient';
 import { getApiBaseUrl, getGameWsUrl } from './net/config';
 import { NetSession } from './net/NetSession';
@@ -35,6 +36,9 @@ export async function startApp(platform: IPlatform): Promise<void> {
   });
   // Cloud sync is offline-first and non-blocking: failures keep the local save.
   void saveManager.bootstrap();
+
+  // ── ReplayStore (S1-RP): local ring of recent recorded matches ──────────────
+  const replayStore = new ReplayStore(platform.storage);
 
   // ── NetSession (S1): online friendly room + lockstep transport ──────────────
   // Built only when both a REST base (for JWT auth) and a WS endpoint are
@@ -141,13 +145,22 @@ export async function startApp(platform: IPlatform): Promise<void> {
     manager.goto(scene);
   }
 
+  /** Persist a just-finished local match's recording; returns it for the result screen. */
+  function keepReplay(replay: Replay | undefined): Replay | undefined {
+    if (!replay) return undefined;
+    try {
+      replayStore.save(replay, replay.meta?.recordedAt ?? Date.now());
+    } catch { /* storage full / unavailable — replay still watchable this session */ }
+    return replay;
+  }
+
   function goGame(): void {
     inLobby = false;
     window.removeEventListener('resize', onResize);
     platform.onGameplayStart();
     manager.goto(new GameScene(layout, input, {
-      onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
-        goResult(winner, stats);
+      onGameEnd(winner, stats, replay) {
+        goResult(winner, stats, 0, keepReplay(replay));
       },
       onExitToLobby() { goLobby(); },
     }));
@@ -160,11 +173,21 @@ export async function startApp(platform: IPlatform): Promise<void> {
     window.removeEventListener('resize', onResize);
     platform.onGameplayStart();
     manager.goto(new GameScene(layout, input, {
-      onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
-        goResult(winner, stats);
+      onGameEnd(winner, stats, replay) {
+        goResult(winner, stats, 0, keepReplay(replay));
       },
       onExitToLobby() { goLobby(); },
     }, { level }));
+  }
+
+  // Replay playback (S1-RP): spectator GameRenderer driven by a ReplayInputSource.
+  function goReplay(replay: Replay): void {
+    inLobby = false;
+    window.removeEventListener('resize', onResize);
+    platform.onGameplayStart();
+    manager.goto(new ReplayScene(layout, input, replay, {
+      onExit() { goLobby(); },
+    }));
   }
 
   // Online lockstep match (S1-8 / S1-9): the engine is built from the server's
@@ -217,12 +240,15 @@ export async function startApp(platform: IPlatform): Promise<void> {
     winner: OwnerId | null,
     stats: [PlayerStats, PlayerStats],
     localOwner: OwnerId = 0,
+    replay?: Replay,
   ): Promise<void> {
     inLobby = false;
     platform.onGameplayStop();
     await platform.showMidgameAd();
     manager.goto(new ResultScene(layout.designWidth, layout.designHeight, winner, stats, {
       onPlayAgain() { goLobby(); },
+      // Offer "watch replay" only for locally-recorded matches.
+      ...(replay ? { onWatchReplay: () => goReplay(replay) } : {}),
     }, localOwner));
   }
 

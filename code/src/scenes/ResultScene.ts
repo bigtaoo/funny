@@ -64,6 +64,8 @@ function computeBadges(stats: PlayerStats): Badge[] {
 
 export interface ResultSceneCallbacks {
   onPlayAgain(): void;
+  /** When set, a "watch replay" button is shown (locally-recorded matches, S1-RP). */
+  onWatchReplay?(): void;
 }
 
 export class ResultScene implements Scene {
@@ -179,34 +181,44 @@ export class ResultScene implements Scene {
       this.container.addChild(no);
     }
 
-    // "Play again" button
+    // "Play again" button (and an optional "watch replay" above it, S1-RP).
     const btnW = Math.round(w * 0.65);
     const btnH = Math.round(h * 0.07);
     const btnX = (w - btnW) / 2;
     const btnY = h * 0.82;
 
-    const btnBg = new PIXI.Graphics();
-    btnBg.beginFill(0x2c2c2a);
-    btnBg.lineStyle(2, 0x444444);
-    btnBg.drawRoundedRect(0, 0, btnW, btnH, 8);
-    btnBg.endFill();
-    btnBg.x = btnX;
-    btnBg.y = btnY;
-    btnBg.interactive = true;
-    btnBg.cursor = 'pointer';
-    btnBg.on('pointertap', () => cb.onPlayAgain());
+    if (cb.onWatchReplay) {
+      this.addButton(btnX, btnY - btnH - h * 0.02, btnW, btnH, t('result.watchReplay'),
+        0x33503a, cb.onWatchReplay);
+    }
+    this.addButton(btnX, btnY, btnW, btnH, t('result.playAgain'), 0x2c2c2a, () => cb.onPlayAgain());
+  }
 
-    const btnLabel = new PIXI.Text(t('result.playAgain'), {
-      fontSize: Math.round(btnH * 0.44),
+  private addButton(
+    x: number, y: number, w: number, h: number, text: string, fill: number, onTap: () => void,
+  ): void {
+    const bg = new PIXI.Graphics();
+    bg.beginFill(fill);
+    bg.lineStyle(2, 0x444444);
+    bg.drawRoundedRect(0, 0, w, h, 8);
+    bg.endFill();
+    bg.x = x;
+    bg.y = y;
+    bg.interactive = true;
+    bg.cursor = 'pointer';
+    bg.on('pointertap', onTap);
+
+    const label = new PIXI.Text(text, {
+      fontSize: Math.round(h * 0.44),
       fill: 0xffffff,
       fontWeight: 'bold',
       fontFamily: 'monospace',
     });
-    btnLabel.anchor.set(0.5, 0.5);
-    btnLabel.x = btnX + btnW / 2;
-    btnLabel.y = btnY + btnH / 2;
+    label.anchor.set(0.5, 0.5);
+    label.x = x + w / 2;
+    label.y = y + h / 2;
 
-    this.container.addChild(btnBg, btnLabel);
+    this.container.addChild(bg, label);
   }
 
   private buildBadgeCard(badge: Badge, stats: PlayerStats, width: number): PIXI.Container {
