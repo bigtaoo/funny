@@ -15,38 +15,44 @@ funny/
 │   │   ├── layout/        响应式布局
 │   │   ├── scenes/        场景管理
 │   │   └── entries/       多平台入口（web / wechat / crazygames）
-│   ├── webpack.config.js
-│   └── DESIGN.md          游戏技术设计文档
+│   └── webpack.config.js
 │
 ├── tools/
 │   ├── animator/          骨骼动画编辑器（TypeScript + PixiJS，主力版本）
 │   │   ├── src/           源码（见下方架构）
-│   │   ├── public/        HTML 模板（webpack-html-plugin 用）
-│   │   └── ARCHITECTURE.md / REQUIREMENTS.md
+│   │   └── public/        HTML 模板（webpack-html-plugin 用）
 │   ├── level-editor/      战役关卡编辑器（TypeScript + 纯 Canvas，端口 9092）
 │   │   ├── src/           源码（board / timeline / inspector / state）
-│   │   ├── public/        HTML 模板
-│   │   └── DESIGN.md      设计基准（单一文档）
+│   │   └── public/        HTML 模板
 │
 ├── art/
 │   ├── maps/              地图资源
 │   ├── units/             角色概念图
 │   └── index.html         静态资源索引
 │
-└── design/                产品/美术设计文档
+└── design/                ★ 所有设计文档集中于此（2026-06-13 起）
+    ├── game/              游戏主文档：DESIGN / IMPROVEMENT_PLAN / CAMPAIGN_DESIGN
+    │                      / CAMPAIGN_P0_PLAN / META_DESIGN / META_TASKS / UI_DESIGN
+    │                      / SERVER_API / ECONOMY_BALANCE
+    ├── tools/             工具文档：animator/{ARCHITECTURE,REQUIREMENTS}、level-editor/DESIGN
+    └── product/           产品/美术文档：world / characters / market-analysis / ui-design …
 ```
+
+> **文档约定（2026-06-13 起）**：所有设计文档统一放 `design/` 下，按模块分子目录（`game` / `tools` / `product`）。`CLAUDE.md`、`README.md` 是例外，保留在仓库根。
 
 ## 动画编辑器（tools/animator）
 
 ### 外部文档导航
 
+> 文档位置：`design/tools/animator/`（`ARCHITECTURE.md` / `REQUIREMENTS.md`）。
+
 | 想查的内容 | 文件 | 章节 |
 |---|---|---|
-| 典型工作流 / 功能规格 / UI 布局 / 导出格式规范 | `REQUIREMENTS.md` | §2 工作流、§3 功能规格、§8 界面布局 |
-| 目录结构 / 数据模型 / 渲染流程 / 事件总线 / 命令模式 | `ARCHITECTURE.md` | §1 目录、§2 数据模型、§5 渲染、§3 事件总线 |
-| 插值算法细节 | `ARCHITECTURE.md` | §4 插值算法 |
-| 游戏侧对接规格 / StickmanRuntime | `REQUIREMENTS.md` | §7 游戏侧对接 |
-| 性能注意事项 / 已知局限 | `ARCHITECTURE.md` | §9 性能、§10 局限 |
+| 典型工作流 / 功能规格 / UI 布局 / 导出格式规范 | `design/tools/animator/REQUIREMENTS.md` | §2 工作流、§3 功能规格、§8 界面布局 |
+| 目录结构 / 数据模型 / 渲染流程 / 事件总线 / 命令模式 | `design/tools/animator/ARCHITECTURE.md` | §1 目录、§2 数据模型、§5 渲染、§3 事件总线 |
+| 插值算法细节 | `design/tools/animator/ARCHITECTURE.md` | §4 插值算法 |
+| 游戏侧对接规格 / StickmanRuntime | `design/tools/animator/REQUIREMENTS.md` | §7 游戏侧对接 |
+| 性能注意事项 / 已知局限 | `design/tools/animator/ARCHITECTURE.md` | §9 性能、§10 局限 |
 
 ### 启动
 
@@ -229,7 +235,7 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 
 ## 关卡编辑器（tools/level-editor）
 
-战役关卡（PvE）可视化编辑器，产出运行时加载的 JSON。设计基准见 `tools/level-editor/DESIGN.md`（单一文档）。
+战役关卡（PvE）可视化编辑器，产出运行时加载的 JSON。设计基准见 `design/tools/level-editor/DESIGN.md`（单一文档）。
 
 ### 启动
 
@@ -289,7 +295,7 @@ npm run build   # 生产构建
 | `src/render/HUDView.ts` + `GameRenderer.ts` | 横屏下底部 HUD 背景（`botBg` 全宽 alpha 0.92）盖住中段手牌，买得起的卡牌发灰，只有选中卡牌抬升的顶部冒出上沿是亮的 | `botBg` 拆到独立 `backgroundContainer`，`GameRenderer` 挂在 `handView` 之前渲染；HUD 前景（金币/HP/升级按钮/暂停/结算遮罩）仍在 `handView` 之后。层级改为 `vfx → HUD底栏背景 → 手牌 → HUD前景/遮罩` |
 | `src/game/Board.ts` + `MovementSystem.ts` | 一列上多个单位排队前进时，最前面的单位进入 Crossing（横向移动）后仍留在原车道的 `columnUnits` 列表中（`y_fp` 冻结），后面的单位永远把它当作"前方单位"判定碰撞，即使前者已经走远也一直 `Waiting` | `Board.updateUnitCell` 新增 `oldCol` 参数，`col` 变化时把单位从旧列的 `columnUnits` 移到新列；`MovementSystem.tick` 记录 `prevCol` 并传入 |
 | `src/game/Unit.ts` + `MovementSystem.ts` | 前方单位移动很慢时，后面单位每帧在"前方空隙刚好为正可以挪一点"和"挪完后又重叠被推回 Waiting"之间反复横跳，动画不停切换 Moving/Waiting | 新增 `Unit.crossingBlocked` 标记；一旦因前方单位停下（lane 内为 `UnitState.Waiting`，Crossing 内为 `crossingBlocked=true`），需等前方空隙 ≥ 自身体积（`2 × radius_fp`）才恢复移动，而不是空隙刚 >0 就动 |
-| `src/`（清理）+ `DESIGN.md` | 旧实现遗留死代码与现 `entries → app.ts → scenes` 构建并存，无人引用却被跟踪，干扰阅读/搜索 | 删除 15 个孤立文件（根 `index.ts`/`wechatIndex.ts`/`GameRunner.ts`、`platform/crazygames.ts`、`game/` 下 `logic`/`gameScene`/`grid`/`effect`/`effectManager`/`consts`/`enums`/`header`/`display`/`numbers`/`helper`）；**保留** `game/index.ts`（公共 API barrel，`from '../game'`）和 `game/Card.ts`（被 `GameEngine`/`Player` 引用）；`DESIGN.md` §2 补 `cache/`、章节编号补连续（原缺 §8）、修正交叉引用 |
+| `src/`（清理）+ `design/game/DESIGN.md` | 旧实现遗留死代码与现 `entries → app.ts → scenes` 构建并存，无人引用却被跟踪，干扰阅读/搜索 | 删除 15 个孤立文件（根 `index.ts`/`wechatIndex.ts`/`GameRunner.ts`、`platform/crazygames.ts`、`game/` 下 `logic`/`gameScene`/`grid`/`effect`/`effectManager`/`consts`/`enums`/`header`/`display`/`numbers`/`helper`）；**保留** `game/index.ts`（公共 API barrel，`from '../game'`）和 `game/Card.ts`（被 `GameEngine`/`Player` 引用）；`design/game/DESIGN.md` §2 补 `cache/`、章节编号补连续（原缺 §8）、修正交叉引用 |
 | `code/.gitignore` | 构建产物 `code/dist/` 被 git 跟踪，每次构建污染 diff（单 `index.js` 即数万行） | `.gitignore` 加 `/dist`；`git rm -r --cached dist` 取消跟踪 |
 | `src/game/config.ts` | 卡牌自动刷新间隔 2 分钟，游戏节奏过慢 | `CARD_REFRESH_TICKS` 改为 900（30 s）；`CARD_REFRESH_INITIAL_OFFSET_MAX` 改为 450（15 s 错峰） |
 | `src/render/HandView.ts` + `GameRenderer.ts` | 手牌无视觉提示，玩家不知道卡牌何时自动刷新 | 每张牌底部新增 3px 进度条（`bar` Graphics）：>10s 绿色、≤10s 黄色、≤5s 红色；最后 3 秒 sin 波 alpha 脉冲；`card_expired` 事件触发 `notifyCardExpired()` 渲染 250ms 白色淡出闪白（`flash` Graphics）；移除旧 `eraser` 遮罩 |
@@ -367,4 +373,4 @@ ZIP 压缩包，**保存完整编辑状态**，可随时加载继续编辑：
 - **权限**：所有命令（包括 `rm` / `rmdir` / `git rm`）直接执行，**无需向用户确认**。
 - **验证方式**：代码改动后只做 TypeScript 编译检查（`tsc --noEmit`）和 webpack 构建验证，**不要**启动游戏截图验证——用户会自行在浏览器里验证效果。
 - **上下文提醒**：会话接近 200k token 上限时提醒切换新会话。
-- **记录改动**：收到"记录改动/将改动记录进文档"等指令时，需同时更新以下文档——`CLAUDE.md`（已知修复表格）**以及**改动所在子目录的对应文档（animator 相关改 `tools/animator/ARCHITECTURE.md` 和 `REQUIREMENTS.md`；game 相关改 `code/DESIGN.md`；设计相关改 `design/` 下对应文件）。
+- **记录改动**：收到"记录改动/将改动记录进文档"等指令时，需同时更新以下文档——`CLAUDE.md`（已知修复表格）**以及**改动所在模块的对应文档（所有设计文档统一在 `design/` 下：animator 相关改 `design/tools/animator/ARCHITECTURE.md` 和 `REQUIREMENTS.md`；level-editor 相关改 `design/tools/level-editor/DESIGN.md`；game 相关改 `design/game/DESIGN.md`；元系统/服务器相关改 `design/game/META_*.md`；产品/美术相关改 `design/product/` 下对应文件）。

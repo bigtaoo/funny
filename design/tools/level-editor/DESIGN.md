@@ -1,7 +1,7 @@
 # Notebook Wars — 关卡编辑器设计文档
 
 > 创建：2026-06-12。本文件是关卡编辑器（`tools/level-editor`）的设计基准，随实现推进同步更新。
-> 配套阅读：`code/CAMPAIGN_DESIGN.md`（战役模式 / 数据模型来源）、`code/DESIGN.md`（引擎/系统）、`tools/animator/ARCHITECTURE.md`（工程化参照）、根 `CLAUDE.md`。
+> 配套阅读：`../../game/CAMPAIGN_DESIGN.md`（战役模式 / 数据模型来源）、`../../game/DESIGN.md`（引擎/系统）、`../animator/ARCHITECTURE.md`（工程化参照）、根 `../../../CLAUDE.md`。
 
 ---
 

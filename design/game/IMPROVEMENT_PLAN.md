@@ -1,7 +1,7 @@
 # Notebook Wars — 改进计划
 
 > 来源：2026-06-12 全面分析后制定。按优先级分 6 项，逐项推进。
-> 完成一项后在此勾选，并按 `CLAUDE.md` 约定把改动同步进 `CLAUDE.md` 已知修复表 / `DESIGN.md`。
+> 完成一项后在此勾选，并按 `../../CLAUDE.md` 约定把改动同步进 `../../CLAUDE.md` 已知修复表 / `DESIGN.md`。
 
 ## 进度总览
 
@@ -59,7 +59,7 @@
 
 ### ✅ 完成记录（2026-06-12）
 
-`AISystem` 由"无脑出第一张可用牌"重写为**威胁驱动的三段式决策**（详见 `code/DESIGN.md` §13）：
+`AISystem` 由"无脑出第一张可用牌"重写为**威胁驱动的三段式决策**（详见 `DESIGN.md` §13）：
 
 - **威胁评估**：`computeThreatByCol` 按敌军 row 接近 AI 基地（row 17）的程度加权出每列威胁；`countNearBaseEnemies` 统计进入危险区的敌军。
 - **紧急防守**：基地受压时优先陨石清近基地敌群 → 在威胁最高车道放箭塔 → Guardian 肉盾拦截。
@@ -78,7 +78,7 @@
 
 ### ✅ 完成记录（2026-06-12）
 
-核对真实代码后改 `README.md`（根目录，仓库唯一非 node_modules README）：
+核对真实代码后改 `../../README.md`（根目录，仓库唯一非 node_modules README）：
 
 - **刷新时间**：2 分钟 → **30 秒**（`config.ts` `CARD_REFRESH_TICKS=900`）。
 - **端口**：8080 → **9090**（`package.json` 的 `start` 脚本用 `--port 9090` 覆盖了 `webpack.config.js` 的 8080；以脚本为准）。

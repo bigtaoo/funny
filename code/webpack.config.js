@@ -17,7 +17,7 @@ module.exports = (env, argv) => {
       rules: [
         { test: /\.ts$/, use: 'ts-loader', exclude: /node_modules/ },
         {
-          test: /\.(png|jpg|gif|webp|mp3|wav|ogg|json|tao)$/i,
+          test: /\.(png|jpg|gif|webp|mp3|wav|ogg|tao)$/i,
           type: 'asset/resource',
           // generator: {
           //     'assets/[name].[contenthash][ext]'
