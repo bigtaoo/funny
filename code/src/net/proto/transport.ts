@@ -77,6 +77,7 @@ export interface CmdSubmit {
 
 export interface MatchResult {
   stateHash: string;
+  winnerSide: number;
 }
 
 export interface ConnResume {
@@ -676,13 +677,16 @@ export const CmdSubmit: MessageFns<CmdSubmit> = {
 };
 
 function createBaseMatchResult(): MatchResult {
-  return { stateHash: "" };
+  return { stateHash: "", winnerSide: 0 };
 }
 
 export const MatchResult: MessageFns<MatchResult> = {
   encode(message: MatchResult, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.stateHash !== "") {
       writer.uint32(10).string(message.stateHash);
+    }
+    if (message.winnerSide !== 0) {
+      writer.uint32(16).uint32(message.winnerSide);
     }
     return writer;
   },
@@ -702,6 +706,14 @@ export const MatchResult: MessageFns<MatchResult> = {
           message.stateHash = reader.string();
           continue;
         }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.winnerSide = reader.uint32();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -717,6 +729,7 @@ export const MatchResult: MessageFns<MatchResult> = {
   fromPartial<I extends Exact<DeepPartial<MatchResult>, I>>(object: I): MatchResult {
     const message = createBaseMatchResult();
     message.stateHash = object.stateHash ?? "";
+    message.winnerSide = object.winnerSide ?? 0;
     return message;
   },
 };

@@ -99,8 +99,8 @@ export class NetClient {
   submitCmd(commands: Uint8Array): void {
     this.sendClient({ cmdSubmit: { commands } });
   }
-  reportResult(stateHash: string): void {
-    this.sendClient({ matchResult: { stateHash } });
+  reportResult(stateHash: string, winnerSide: number): void {
+    this.sendClient({ matchResult: { stateHash, winnerSide } });
   }
   /** 重连续局（onReconnect 后调）。 */
   resume(roomId: string, lastFrame: number): void {

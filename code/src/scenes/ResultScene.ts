@@ -1,7 +1,14 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
 import { OwnerId, PlayerStats } from '../game/types';
-import { t } from '../i18n';
+import { t, TranslationKey } from '../i18n';
+
+/** Server-authoritative ELO result (ranked only, from match_over.elo). */
+export interface EloResult {
+  delta: number;
+  after: number;
+  rankAfter: string;
+}
 
 // ─── Badge definitions ────────────────────────────────────────────────────────
 
@@ -75,6 +82,7 @@ export class ResultScene implements Scene {
   private readonly h: number;
 
   private readonly localOwner: OwnerId;
+  private readonly elo?: EloResult;
 
   constructor(
     w: number,
@@ -83,11 +91,13 @@ export class ResultScene implements Scene {
     stats: [PlayerStats, PlayerStats],
     cb: ResultSceneCallbacks,
     localOwner: OwnerId = 0,
+    elo?: EloResult,
   ) {
     this.container = new PIXI.Container();
     this.w  = w;
     this.h  = h;
     this.localOwner = localOwner;
+    this.elo = elo;
     this.build(winner, stats, cb);
   }
 
@@ -132,6 +142,27 @@ export class ResultScene implements Scene {
     title.y = h * 0.07;
     this.container.addChild(title);
 
+    // Ranked ELO result line (server-authoritative, ranked only).
+    let headerBottom = title.y + title.height;
+    if (this.elo) {
+      const sign = this.elo.delta >= 0 ? '+' : '';
+      const rankName = t(('rank.' + this.elo.rankAfter) as TranslationKey);
+      const eloLine = new PIXI.Text(
+        t('result.eloDelta', { delta: `${sign}${this.elo.delta}`, after: this.elo.after, rank: rankName }),
+        {
+          fontSize: Math.round(h * 0.032),
+          fill: this.elo.delta >= 0 ? 0x226622 : 0xaa2222,
+          fontWeight: 'bold',
+          fontFamily: 'monospace',
+        },
+      );
+      eloLine.anchor.set(0.5, 0);
+      eloLine.x = w / 2;
+      eloLine.y = headerBottom + h * 0.02;
+      this.container.addChild(eloLine);
+      headerBottom = eloLine.y + eloLine.height;
+    }
+
     // Badges
     const badges = computeBadges(playerStats);
 
@@ -145,7 +176,7 @@ export class ResultScene implements Scene {
       });
       heroText.anchor.set(0.5, 0);
       heroText.x = w / 2;
-      heroText.y = title.y + title.height + h * 0.04;
+      heroText.y = headerBottom + h * 0.04;
       this.container.addChild(heroText);
 
       const heroDetail = new PIXI.Text(`「${hero.detail(playerStats)}」`, {
@@ -177,7 +208,7 @@ export class ResultScene implements Scene {
       });
       no.anchor.set(0.5, 0);
       no.x = w / 2;
-      no.y = title.y + title.height + h * 0.06;
+      no.y = headerBottom + h * 0.06;
       this.container.addChild(no);
     }
 

@@ -93,7 +93,13 @@ export class NetSession {
   joinRoom(code: string): void { this.client.joinRoom(code); }
   setReady(ready: boolean): void { this.client.setReady(ready); }
   startMatch(): void { this.client.startMatch(); }
-  reportResult(stateHash: string): void { this.client.reportResult(stateHash); }
+  /** Enter the ranked matchmaking queue (S1-R). Server pairs by ELO + auto-starts. */
+  createRanked(): void { this.client.createRoom(MatchMode.RANKED); }
+  /** Cancel ranked search (server treats leave-while-queued as dequeue). */
+  cancelQueue(): void { this.client.leaveRoom(); }
+  reportResult(stateHash: string, winnerSide: number): void {
+    this.client.reportResult(stateHash, winnerSide);
+  }
 
   /** Which side this client controls once the match starts (-1 until then). */
   getLocalSide(): number { return this.localSide; }

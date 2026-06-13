@@ -51,11 +51,15 @@ export interface RoomSceneCallbacks {
   joinRoom(code: string): void;
   setReady(ready: boolean): void;
   startMatch(): void;
+  /** Enter ranked matchmaking queue (S1-R). */
+  createRanked(): void;
+  /** Cancel ranked search. */
+  cancelQueue(): void;
   /** False when no online server is configured → actions surface "unavailable". */
   available: boolean;
 }
 
-type View = 'idle' | 'codeEntry' | 'connecting' | 'inRoom';
+type View = 'idle' | 'codeEntry' | 'connecting' | 'searching' | 'inRoom';
 
 interface Hit { rect: Rect; fn: () => void; }
 
@@ -97,8 +101,8 @@ export class RoomScene implements Scene {
   // ── Scene interface ──────────────────────────────────────────────────────────
 
   update(dt: number): void {
-    // Animate the connecting spinner dots in place (no full re-render).
-    if (this.view === 'connecting' && this.spinnerText) {
+    // Animate the connecting/searching spinner dots in place (no full re-render).
+    if ((this.view === 'connecting' || this.view === 'searching') && this.spinnerText) {
       this.dotsTimer += dt;
       if (this.dotsTimer >= 0.4) {
         this.dotsTimer = 0;
@@ -128,8 +132,8 @@ export class RoomScene implements Scene {
 
   applyRoomError(e: RoomError): void {
     this.toast(roomErrorKey(e.code));
-    // A failed create/join drops us back to the idle picker.
-    if (this.view === 'connecting' || this.view === 'codeEntry') {
+    // A failed create/join/queue drops us back to the idle picker.
+    if (this.view === 'connecting' || this.view === 'codeEntry' || this.view === 'searching') {
       this.view = 'idle';
       this.mySide = -1;
     }
@@ -173,6 +177,21 @@ export class RoomScene implements Scene {
     this.render();
   }
 
+  private onRanked(): void {
+    if (!this.guardAvailable()) return;
+    this.connectingKey = 'room.searching';
+    this.view = 'searching';
+    this.cb.createRanked();
+    this.render();
+  }
+
+  private onCancelSearch(): void {
+    this.cb.cancelQueue();
+    this.view = 'idle';
+    this.mySide = -1;
+    this.render();
+  }
+
   private onJoinPressed(): void {
     if (!this.guardAvailable()) return;
     this.codeChars = [];
@@ -196,6 +215,7 @@ export class RoomScene implements Scene {
 
   private onBack(): void {
     if (this.view === 'codeEntry') { this.view = 'idle'; this.render(); return; }
+    if (this.view === 'searching') { this.onCancelSearch(); return; }
     this.cb.onBack();
   }
 
@@ -237,6 +257,7 @@ export class RoomScene implements Scene {
       case 'idle':       this.drawIdle();       break;
       case 'codeEntry':  this.drawCodeEntry();  break;
       case 'connecting': this.drawConnecting(); break;
+      case 'searching':  this.drawSearching();  break;
       case 'inRoom':     this.drawInRoom();     break;
     }
 
@@ -281,17 +302,41 @@ export class RoomScene implements Scene {
   private drawIdle(): void {
     const { w, h } = this;
     const btnW = Math.round(w * 0.62);
-    const btnH = Math.round(h * 0.11);
+    const btnH = Math.round(h * 0.10);
     const btnX = (w - btnW) / 2;
-    const gap = Math.round(h * 0.05);
-    const y0 = Math.round(h * 0.30);
+    const gap = Math.round(h * 0.035);
+    const y0 = Math.round(h * 0.24);
 
-    this.addButton(t('room.create'), btnX, y0, btnW, btnH, C.dark, C.accent, () => this.onCreate());
-    this.addButton(t('room.join'), btnX, y0 + btnH + gap, btnW, btnH, C.dark, C.gold, () => this.onJoinPressed());
+    // Ranked (primary) → matchmaking queue.
+    this.addButton(t('room.ranked'), btnX, y0, btnW, btnH, C.dark, C.green, () => this.onRanked());
+    const rankedHint = txt(t('room.rankedDesc'), Math.round(h * 0.02), C.mid);
+    rankedHint.anchor.set(0.5, 0); rankedHint.x = w / 2; rankedHint.y = y0 + btnH + Math.round(h * 0.008);
+    this.container.addChild(rankedHint);
+
+    const y1 = y0 + btnH + gap + Math.round(h * 0.03);
+    this.addButton(t('room.create'), btnX, y1, btnW, btnH, C.dark, C.accent, () => this.onCreate());
+    this.addButton(t('room.join'), btnX, y1 + btnH + gap, btnW, btnH, C.dark, C.gold, () => this.onJoinPressed());
 
     const hint = txt(t('room.share'), Math.round(h * 0.022), C.mid);
-    hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = y0 + 2 * btnH + gap + Math.round(h * 0.04);
+    hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = y1 + 2 * btnH + gap + Math.round(h * 0.035);
     this.container.addChild(hint);
+  }
+
+  private drawSearching(): void {
+    const { w, h } = this;
+    const label = txt(t('room.searching'), Math.round(h * 0.034), C.dark, true);
+    label.anchor.set(0.5, 0.5); label.x = w / 2; label.y = h * 0.40;
+    this.container.addChild(label);
+    this.spinnerText = label;
+
+    const sub = txt(t('room.searchingHint'), Math.round(h * 0.022), C.mid);
+    sub.anchor.set(0.5, 0.5); sub.x = w / 2; sub.y = h * 0.40 + Math.round(h * 0.06);
+    this.container.addChild(sub);
+
+    const btnW = Math.round(w * 0.5);
+    const btnH = Math.round(h * 0.09);
+    this.addButton(t('room.cancelSearch'), (w - btnW) / 2, Math.round(h * 0.62), btnW, btnH,
+      C.paper, C.red, () => this.onCancelSearch(), C.red);
   }
 
   private drawConnecting(): void {

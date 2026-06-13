@@ -5,7 +5,7 @@ import { IntroScene } from './scenes/IntroScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { GameScene } from './scenes/GameScene';
 import { RoomScene } from './scenes/RoomScene';
-import { ResultScene } from './scenes/ResultScene';
+import { ResultScene, type EloResult } from './scenes/ResultScene';
 import { ReplayScene } from './scenes/ReplayScene';
 import { OwnerId, PlayerStats } from './game/types';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, ownerToSide } from './game';
@@ -18,6 +18,7 @@ import { LocalSaveStore, SaveManager, ReplayStore } from './game/meta';
 import { ApiClient } from './net/ApiClient';
 import { getApiBaseUrl, getGameWsUrl } from './net/config';
 import { NetSession } from './net/NetSession';
+import { MatchMode } from './net/proto/transport';
 
 /** flags key — set after the first-launch intro has been seen (was the standalone nw_seen_intro key). */
 const SEEN_INTRO_FLAG = 'seen_intro';
@@ -128,6 +129,8 @@ export async function startApp(platform: IPlatform): Promise<void> {
       joinRoom(code: string) { session?.joinRoom(code); },
       setReady(ready: boolean) { session?.setReady(ready); },
       startMatch() { session?.startMatch(); },
+      createRanked() { session?.createRanked(); },
+      cancelQueue() { session?.cancelQueue(); },
     });
 
     if (session) {
@@ -210,15 +213,42 @@ export async function startApp(platform: IPlatform): Promise<void> {
       { seed: info.seed, players: [{ id: 0 }, { id: 1 }], mode: 'netplay' },
       session.input,
     );
+
+    // Ranked needs the server-authoritative ELO (arrives in match_over) before
+    // showing the result. Friendly shows the result immediately on local end.
+    const isRanked = info.mode === MatchMode.RANKED;
+    let netResultShown = false;
+    let lastElo: EloResult | undefined;
+    let pending: { winner: OwnerId | null; stats: [PlayerStats, PlayerStats] } | null = null;
+    let eloWaitTimer: ReturnType<typeof setTimeout> | null = null;
+    const finishNet = (
+      winner: OwnerId | null,
+      stats: [PlayerStats, PlayerStats],
+      elo?: EloResult,
+    ): void => {
+      if (netResultShown) return;
+      netResultShown = true;
+      if (eloWaitTimer) { clearTimeout(eloWaitTimer); eloWaitTimer = null; }
+      void goResult(winner, stats, localOwner, undefined, elo);
+    };
+
     const scene = new GameScene(netLayout, input, {
       onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
-        // S1-5: report a deterministic end-state hash for desync detection.
-        session.reportResult(matchStateHash(winner, stats));
-        goResult(winner, stats, localOwner);
+        // S1-5: report end-state hash + claimed winner (ranked needs the winner;
+        // server settles ELO only when both clients agree on hash + winner).
+        session.reportResult(matchStateHash(winner, stats), winner ?? 0);
+        if (isRanked) {
+          // Hold the result until the server's match_over (ELO) arrives; if the
+          // server is silent, fall back after 6s and show without ELO.
+          pending = { winner, stats };
+          eloWaitTimer = setTimeout(() => finishNet(winner, stats, lastElo), 6000);
+        } else {
+          finishNet(winner, stats);
+        }
       },
       // Server-driven end (opponent timeout / desync) — no hash to report.
       onNetMatchOver(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
-        goResult(winner, stats, localOwner);
+        finishNet(winner, stats, lastElo);
       },
       onExitToLobby() { session.close(); goLobby(); },
     }, { engine, net: true });
@@ -230,7 +260,12 @@ export async function startApp(platform: IPlatform): Promise<void> {
       onMatchStart: (i) => goGameNet(i),
       onNetState:   (s) => scene.applyNetState(s),
       onPeerDc:     (p) => scene.applyPeerDc(p),
-      onMatchOver:  (m) => scene.applyMatchOver(m),
+      onMatchOver:  (m) => {
+        lastElo = m.elo ? { delta: m.elo.delta, after: m.elo.after, rankAfter: m.elo.rankAfter } : undefined;
+        scene.applyMatchOver(m); // may fire onNetMatchOver (server-driven end)
+        // Base-win path: local end already fired onGameEnd and is waiting on ELO.
+        if (pending) finishNet(pending.winner, pending.stats, lastElo);
+      },
     };
 
     manager.goto(scene);
@@ -241,6 +276,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
     stats: [PlayerStats, PlayerStats],
     localOwner: OwnerId = 0,
     replay?: Replay,
+    elo?: EloResult,
   ): Promise<void> {
     inLobby = false;
     platform.onGameplayStop();
@@ -249,7 +285,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
       onPlayAgain() { goLobby(); },
       // Offer "watch replay" only for locally-recorded matches.
       ...(replay ? { onWatchReplay: () => goReplay(replay) } : {}),
-    }, localOwner));
+    }, localOwner, elo));
   }
 
   // First launch → background-story intro; afterwards straight to lobby.
