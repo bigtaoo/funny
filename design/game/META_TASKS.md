@@ -22,9 +22,9 @@
 
 ## 公共底座（贯穿所有阶段）
 
-- [ ] **C-1 仓库结构（三包 workspaces + proto）**：`server/` 下建 **`proto/`（`transport.proto`/`game.proto`）+ `shared/`（`@nw/shared`）+ `api/`（REST）+ `gateway/`（WS）**，api/gateway 可独立部署（`META_DESIGN.md §6.1`）。`shared`/`gateway` 只 codegen `transport.proto`，**不依赖 `code/src/game`**（仅可选裁判任务才引）。**主要文件**：根/`server` `package.json` workspaces、各包 `tsconfig.json`。**验收**：`api`/`gateway` 各自 `tsc --noEmit` 干净，bundle 内无 PIXI/引擎运行时/`game.proto`。
+- [ ] **C-1 仓库结构（三包 workspaces + proto）**：`server/` 下建 **`proto/`（`transport.proto`/`game.proto`）+ `shared/`（`@nw/shared`）+ `metaserver/`（REST）+ `gameserver/`（WS）**，metaserver/gameserver 可独立部署（`META_DESIGN.md §6.1`）。`shared`/`gameserver` 只 codegen `transport.proto`，**不依赖 `code/src/game`**（仅可选裁判任务才引）。**主要文件**：根/`server` `package.json` workspaces、各包 `tsconfig.json`。**验收**：`metaserver`/`gameserver` 各自 `tsc --noEmit` 干净，bundle 内无 PIXI/引擎运行时/`game.proto`。
 - [ ] **C-2 protobuf 协议 + 共享库**：写 `transport.proto`（房间/锁步控制，`Envelope` oneof；`commands: bytes` 对服务器 opaque）+ `game.proto`（`PlayerCommand`，仅客户端↔客户端）；接 `ts-proto` codegen 进客户端 + 服务器构建。`shared` 另含 JWT 校验、REST 的 zod schema、Mongo client 工厂、`RoomRegistry` 接口（内存实现，§6.5 留 Redis 口子）；dev 模式加二进制帧解码打印。**依赖**：C-1。**验收**：双端从同一 `.proto` codegen；服务器转发 `commands` 字节流不解码。
-- [ ] **C-3 部署脚手架（两进程）**：Linux VPS 上 `mongod`（**单节点副本集** `rs.initiate()`，§6.3）+ `api`/`gateway` 两进程（pm2）+ caddy/nginx 反代（`/api/*`→api、`/ws`→gateway，自动 HTTPS）。**依赖**：C-1。**验收**：一条脚本起全栈，`wss://host/ws` 可连、`https://host/api` 可访。
+- [ ] **C-3 部署脚手架（两进程）**：Linux VPS 上 `mongod`（**单节点副本集** `rs.initiate()`，§6.3）+ `metaserver`/`gameserver` 两进程（pm2）+ caddy/nginx 反代（`/api/*`→metaserver、`/ws`→gameserver，自动 HTTPS）。**依赖**：C-1。**验收**：一条脚本起全栈，`wss://host/ws` 可连、`https://host/api` 可访。
 - [ ] **C-4 统一输入管线（InputSource）**：引擎命令入口从「UI 直接 `processCommand`」改为「每 tick 从注入的 `InputSource` 消费确认指令集」；实现 `LocalInputSource`（单机自转发，DELAY 0）。AI/WaveDirector 作为 tick 内输入源接入。**依赖**：—（纯客户端引擎重构）。**主要文件**：`code/src/game/GameEngine.ts`、新 `game/net/InputSource.ts`。**验收**：单机 PvE/练习走新管线，38+ 测试 + 黄金回放确定性不破。`NetInputSource`（S1-7）/`ReplayInputSource`（S1-RP）是其另两个实例。
 
 ---
@@ -47,23 +47,23 @@
 
 ---
 
-## S1 — 好友房 + 锁步联机（gateway 服务）
+## S1 — 好友房 + 锁步联机（gameserver 服务）
 
 > 本阶段只做 `friendly`（好友码房）。`ranked` 匹配队列 + ELO 结算见 S1-R（稍后）。
 
-### 服务器（gateway）
-- [ ] **S1-1 ws-gateway**：WebSocket 接入（`ws`），JWT 鉴权、心跳、断线检测。**依赖**：C-2,3。**验收**：连接/心跳/断开事件正确。
+### 服务器（gameserver）
+- [ ] **S1-1 gameserver**：WebSocket 接入（`ws`），JWT 鉴权、心跳、断线检测。**依赖**：C-2,3。**验收**：连接/心跳/断开事件正确。
 - [ ] **S1-2 room-service**：建房（短房间码）/ 输码加入 / ready / 满员开局；房间状态走 `RoomRegistry`（内存实现）。开局分配 `seed` + `startTick` + `mode` 下发双方。**依赖**：S1-1。**验收**：两连接进同一房、同时收到一致 seed。
-- [ ] **S1-3 节拍器中继（M14）**：gateway 持房间时钟，模拟 30Hz、**每 100ms（10Hz）下发 `frame_batch{to_frame, frames}`（3 帧）**；收到 `cmd_submit` 塞进当前窗口帧；空窗只发 `to_frame` 水位；同帧多指令按 `side` 确定性排序。**依赖**：S1-2、C-2。**验收**：双端收到逐字相同的帧序列；空闲下 `to_frame` 每 100ms 稳定 +3。
+- [ ] **S1-3 节拍器中继（M14）**：gameserver 持房间时钟，模拟 30Hz、**每 100ms（10Hz）下发 `frame_batch{to_frame, frames}`（3 帧）**；收到 `cmd_submit` 塞进当前窗口帧；空窗只发 `to_frame` 水位；同帧多指令按 `side` 确定性排序。**依赖**：S1-2、C-2。**验收**：双端收到逐字相同的帧序列；空闲下 `to_frame` 每 100ms 稳定 +3。
 - [ ] **S1-4 非空帧日志 + 重连 + 60s 判负**：每局留非空帧日志；掉线则停发该房间帧 + `peer_dc{grace_ms:60000}` 起 60s，`conn_resume{last_frame}` 下发 `seed + 之后非空帧 + cur_frame` 续打，**超时掉线方判负** `match_over{reason:'disconnect'}`（M10）。**依赖**：S1-3。**验收**：重连续打一致；超时正确判负。
 - [ ] **S1-5 局末结算**：双端 `match.result{hash}` → 比对 desync；写 `matches` 归档（friendly 仅记结果）。**依赖**：S1-3。**验收**：结果落库；hash 不一致标 mismatch。
 - [ ] **S1-R（稍后）ranked 队列 + ELO**：匹配队列按 ELO 配对；ranked 局末算 ELO 写 `saves.pvp`（单文档原子更新，服务器权威）。**依赖**：S1-5、S2-1。**验收**：天梯分服务器权威、刷不动。
-- [ ] **S1-J（可选）服务器裁判**：仅重大比赛——gateway headless 跑 `GameEngine` 复算校验。**依赖**：S1-3、C-1。**验收**：篡改输入被检出。
-- [ ] **S1-RP 录像录制 + 回放**：定义 `replay.proto`（复用 `InputFrame`）；录制（PvE 客户端记玩家指令 / PvP gateway 持久化输入日志到 `matches.replayRef`）；实现 `ReplayInputSource` + 回放播放器（同 seed 起新引擎喂输入流），回放前校验 `engineVersion`。**依赖**：C-4、S1-5。**验收**：一局 PvE + 一局 PvP 录像回放与原局逐 tick 一致；改 engineVersion 回放被拒。**注**：PvE 录制可随战役（CAMPAIGN P1）先落地，不必等联机。
+- [ ] **S1-J（可选）服务器裁判**：仅重大比赛——gameserver headless 跑 `GameEngine` 复算校验。**依赖**：S1-3、C-1。**验收**：篡改输入被检出。
+- [ ] **S1-RP 录像录制 + 回放**：定义 `replay.proto`（复用 `InputFrame`）；录制（PvE 客户端记玩家指令 / PvP gameserver 持久化输入日志到 `matches.replayRef`）；实现 `ReplayInputSource` + 回放播放器（同 seed 起新引擎喂输入流），回放前校验 `engineVersion`。**依赖**：C-4、S1-5。**验收**：一局 PvE + 一局 PvP 录像回放与原局逐 tick 一致；改 engineVersion 回放被拒。**注**：PvE 录制可随战役（CAMPAIGN P1）先落地，不必等联机。
 
 ### 客户端
 - [ ] **S1-6 NetClient**：封装 ws 连接、重连、消息编解码（用 C-2 协议）。**依赖**：C-2。**验收**：掉线自动重连。
-- [ ] **S1-7 节拍驱动（NetInputSource）**：实现 `NetInputSource`（C-4 的联机实例）——消费 gateway 的 `frame_batch`、按 `to_frame` 推进引擎并把 3 帧摊到 100ms 播放，保持 ~1 批次缓冲，缓存空则暂停、超时追帧；出牌即发 `cmd_submit`（不预算帧号）。单机/PvE 走 `LocalInputSource` 不变。**依赖**：S1-6、S1-3、C-4。**验收**：缓冲吸收 <100ms 抖动无感；服务器停发即暂停；无回滚。
+- [ ] **S1-7 节拍驱动（NetInputSource）**：实现 `NetInputSource`（C-4 的联机实例）——消费 gameserver 的 `frame_batch`、按 `to_frame` 推进引擎并把 3 帧摊到 100ms 播放，保持 ~1 批次缓冲，缓存空则暂停、超时追帧；出牌即发 `cmd_submit`（不预算帧号）。单机/PvE 走 `LocalInputSource` 不变。**依赖**：S1-6、S1-3、C-4。**验收**：缓冲吸收 <100ms 抖动无感；服务器停发即暂停；无回滚。
 - [ ] **S1-8 RoomScene**：建房/房间码展示/输码加入/ready/倒计时开打（UI 见 `UI_DESIGN.md`）。**依赖**：S1-6、S1-2。**验收**：完整建房→加入→开局流程。
 
 ### 联调出口

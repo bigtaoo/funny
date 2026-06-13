@@ -11,8 +11,8 @@
 
 | 通道 | 协议 | 服务 | 承载 |
 |---|---|---|---|
-| 账号 / 存档 / 经济 | **HTTPS REST（JSON）** | `api`（无状态，可横扩） | 一次性请求-响应：登录、存档同步、商店、盲盒、广告、IAP |
-| 房间 / 锁步对战 | **WSS（protobuf 二进制）** | `gateway`（有状态，房间亲和） | 长连接：建房 / 加入 / ready / 逐 tick 输入中继 / 重连 / 天梯结算 |
+| 账号 / 存档 / 经济 | **HTTPS REST（JSON）** | `metaserver`（无状态，可横扩） | 一次性请求-响应：登录、存档同步、商店、盲盒、广告、IAP |
+| 房间 / 锁步对战 | **WSS（protobuf 二进制）** | `gameserver`（有状态，房间亲和） | 长连接：建房 / 加入 / ready / 逐 tick 输入中继 / 重连 / 天梯结算 |
 
 > **线协议分层（M12）**：WS 用 protobuf（`transport.proto` = 控制层，服务器认得；`game.proto` = `PlayerCommand` 结构，仅客户端↔客户端）。服务器把 `PlayerCommand` 当 **`bytes` opaque 转发不解码** → 与游戏逻辑零依赖。REST 保持 JSON（低频、利于浏览器/支付回调/调试）。
 
@@ -176,7 +176,7 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 - 确定性保证：同 `seed` + 同帧序列 → 双端逐 tick 一致（`META_DESIGN.md §6`）。
 - **重连**：服务器留**非空帧**日志；`conn_resume{ last_frame }` → `conn_resync` 下发种子 + `last_frame` 之后的非空帧 + `cur_frame`，客户端快进追上。
 - **断线规则（M10）**：in_match 一端掉线 → 服务器**停发该房间帧** + 向在线方 `peer_dc{ grace_ms:60000 }` → 起 **60s**；掉线方 `conn_resume` 成功则续发续打；**超时则掉线方判负** `match_over{ reason:'disconnect' }`。
-- **结算**：`friendly` 仅写 `matches` 记结果；`ranked` 由 gateway 算 ELO、写 `saves.pvp`（服务器权威），随 `match_over.elo` 下发。
+- **结算**：`friendly` 仅写 `matches` 记结果；`ranked` 由 gameserver 算 ELO、写 `saves.pvp`（服务器权威），随 `match_over.elo` 下发。
 
 ---
 
@@ -191,7 +191,7 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 | `iapReceipts` | `{ _id: receiptId, accountId, granted, ts }` | 验单幂等 |
 | `matches` | `{ roomId, mode, seed, players, winner, reason, hashOk, replayRef, ts }` | 对局归档（friendly/ranked 都记）；`replayRef` 指向录像 |
 
-> 天梯积分存 `saves.pvp`（elo/rank/wins/losses/streak，服务器权威）；`gateway` 在 ranked 局末用单文档原子更新写入。
+> 天梯积分存 `saves.pvp`（elo/rank/wins/losses/streak，服务器权威）；`gameserver` 在 ranked 局末用单文档原子更新写入。
 
 ---
 
@@ -214,7 +214,7 @@ message Replay {
 
 > **稀疏存储**：空帧（仅帧号）不写录像；回放时逐 tick 推进，遇到有对应 `frame` 的内容帧就应用、否则空推进，到 `end_frame` 结束。
 
-- **PvP**：`gateway` 为重连保留的输入日志**即录像**，局末持久化到 `matches.replayRef`（小局直接内嵌，大局存对象存储），零额外采集成本。
+- **PvP**：`gameserver` 为重连保留的输入日志**即录像**，局末持久化到 `matches.replayRef`（小局直接内嵌，大局存对象存储），零额外采集成本。
 - **PvE**：客户端本地录制（只记玩家指令；敌方 `WaveDirector` 回放时由 seed+level 重算），可选上传分享。
 - 回放走 `ReplayInputSource`：同 seed 起新引擎，按 tick 喂 `frames` → 逐 tick 还原。
 
@@ -226,7 +226,7 @@ message Replay {
 - 断线：60s 等待重连，超时掉线方判负（M10）。
 - match 类型：`friendly`（仅记结果）/ `ranked`（天梯 ELO，服务器权威）（M11）。
 - token：无状态 **JWT**（服务端密钥签）。
-- 拓扑：`api`/`gateway` 两服务可分（M9）；钱包用单文档原子更新避开多文档事务（`META_DESIGN.md §6.3`）。
+- 拓扑：`metaserver`/`gameserver` 两服务可分（M9）；钱包用单文档原子更新避开多文档事务（`META_DESIGN.md §6.3`）。
 - 线协议：**WS = protobuf**（`transport.proto`/`game.proto` 分层，`PlayerCommand` 对服务器 opaque），**REST = JSON**（M12）。
 - 联机模型：**服务器权威节拍器**（M14）——模拟 30Hz，**网络 10Hz 批次（每 100ms 打包 3 帧）**、1 批次客户端缓冲（~100ms）、空闲零上行、服务器停发即暂停。
 

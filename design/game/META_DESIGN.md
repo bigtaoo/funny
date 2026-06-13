@@ -26,10 +26,10 @@
 | M2 | 服务器语言 = **Node.js（TS）** | 与客户端同语言、工具链统一；重大比赛要裁判时可直接 import `code/src/game/` 跑同一份确定性引擎，无跨语言发散风险 |
 | M12 | **线协议：WS 热路径用 protobuf，REST 保持 JSON**；`PlayerCommand` 对服务器 **opaque（`bytes` 不解码）** | `.proto` 作唯一契约、双端 codegen，服务器**与游戏逻辑零依赖**（改命令结构服务器不用重编）；REST 低频，JSON 利于浏览器/支付回调/调试 |
 | M13 | **统一输入管线**：引擎按 tick 从抽象 `InputSource` 消费确认指令集；单机=`LocalInputSource`（客户端自转发，DELAY 0）/ 联机=`NetInputSource` / 回放=`ReplayInputSource`。**录像 = seed + 配置 + 输入流**（不存状态） | SP/MP 同一条管线；确定性内核让"录像=重放输入"，**关卡 + 对局都免费支持回放**；命令已是 protobuf bytes，录像直接复用 |
-| M14 | **联机 = 服务器权威节拍器**：模拟 30Hz，但 gateway **每 100ms（10Hz）下发一个批次 = 3 帧**（`to_frame` 水位 + 仅非空帧指令，空窗就只有 `to_frame`）；不等输入；客户端缓存 ~1 批次（3 帧/100ms）、`to_frame` 比当前靠前才推进、否则暂停 | 单一时钟零漂移；下行 10 msg/s；慢端只拖累自己；服务器是帧序列唯一装配者 → **录像天然落服务端**。延时 = 物理 RTT + ~100ms（非竞技手游可接受） |
+| M14 | **联机 = 服务器权威节拍器**：模拟 30Hz，但 gameserver **每 100ms（10Hz）下发一个批次 = 3 帧**（`to_frame` 水位 + 仅非空帧指令，空窗就只有 `to_frame`）；不等输入；客户端缓存 ~1 批次（3 帧/100ms）、`to_frame` 比当前靠前才推进、否则暂停 | 单一时钟零漂移；下行 10 msg/s；慢端只拖累自己；服务器是帧序列唯一装配者 → **录像天然落服务端**。延时 = 物理 RTT + ~100ms（非竞技手游可接受） |
 | M3 | DB = **MongoDB**（存档 + 对局 + 抽卡记录）；Redis 后置 | `SaveData` 是嵌套文档，文档模型天生契合；房间状态初期放内存 |
 | M4 | 联机 = **锁步输入中继**，服务器**纯中继不跑引擎**（1v1 无需服务端验证；重大比赛再开裁判） | 确定性内核（定点数 + 注入 Prng + 黄金回放）已铺好路；服务器只转发输入 + 局末 hash 比对查 desync |
-| M9 | **拓扑：REST(`api`) 与 WS(`gateway`) 为两个可独立部署的服务**，共享 `shared` 包；v1 同机两进程 | 两者扩容画像不同：api 无状态可横扩、gateway 有房间状态需房间亲和（M10） |
+| M9 | **拓扑：REST(`metaserver`) 与 WS(`gameserver`) 为两个可独立部署的服务**，共享 `shared` 包；v1 同机两进程 | 两者扩容画像不同：metaserver 无状态可横扩、gameserver 有房间状态需房间亲和（M10） |
 | M10 | 断线：in_match 掉线 → 服务器 **60s** 等待 `conn.resume`，超时**掉线方判负** | 好友局只记结果；匹配局结算天梯积分 |
 | M11 | match 分 **`friendly`（好友房，仅记结果）/ `ranked`（匹配局，天梯 ELO）**；天梯积分**服务器权威** | 段位不可由客户端伪造，与钱包同级隔离 |
 | M5 | **单一货币**，只能广告 / 充值获得，**服务器权威绝不可刷** | 涉及真钱；钱包余额只存服务器，花币动作走服务器事务 |
@@ -45,7 +45,7 @@
 
 | 类别 | 字段 | 谁权威 | 写入方式 |
 |---|---|---|---|
-| **服务器权威**（客户端只读） | `wallet.coins`、`inventory`（皮肤/物品）、`gacha.pity` + 抽卡历史、IAP 票据、`pvp` 天梯（elo/rank/战绩） | 服务器 | 钱包/发货走**单文档原子更新**（见 §6.3）；天梯由 `gateway` 在 ranked 局结束时结算写入 |
+| **服务器权威**（客户端只读） | `wallet.coins`、`inventory`（皮肤/物品）、`gacha.pity` + 抽卡历史、IAP 票据、`pvp` 天梯（elo/rank/战绩） | 服务器 | 钱包/发货走**单文档原子更新**（见 §6.3）；天梯由 `gameserver` 在 ranked 局结束时结算写入 |
 | **客户端同步**（轻校验） | `progress`（通关/星级/记录）、PvE 材料 + `pveUpgrades`、设置 `flags`、`equipped`（皮肤选择） | 客户端 | 本地写 + 防抖上行；服务器做 sanity 校验（单调性 / 上界），但不强反作弊 |
 
 > 取舍：PvE 材料/升级被改 → 只是自己 PvE 变简单，**对 PvP 无影响**（硬墙），不值得上重型反作弊。真钱相关零容忍。
@@ -71,7 +71,7 @@ interface SaveData {
     items: Record<string, number>;      // 其他可堆叠物品 / 碎片
   };
   gacha: { pity: Record<string, number> }; // 各盲盒保底计数；抽卡历史另存集合
-  pvp: {                                   // 天梯（仅 ranked 局更新，gateway 结算）
+  pvp: {                                   // 天梯（仅 ranked 局更新，gameserver 结算）
     elo: number; rank: string;
     wins: number; losses: number; streak: number;
   };
@@ -206,31 +206,31 @@ function buildCampaignBlueprints(save: SaveData): UnitBlueprints {
 
 ### 6.1 拓扑：REST 与 WS 两个可独立部署的服务（M9）
 
-REST 与 WS 扩容画像不同（api 无状态可横扩、gateway 有房间状态需房间亲和），故**代码与部署都分两个服务**，共享 `shared` 包。v1 同机两进程，日后各自扩。
+REST 与 WS 扩容画像不同（metaserver 无状态可横扩、gameserver 有房间状态需房间亲和），故**代码与部署都分两个服务**，共享 `shared` 包。v1 同机两进程，日后各自扩。
 
 ```
 server/                      （npm/pnpm workspaces 单仓多包）
 ├── proto/    transport.proto  房间/锁步控制（服务器认得这一层）
 │             game.proto       PlayerCommand 真实结构（仅客户端↔客户端）
 ├── shared/   @nw/shared     transport.proto codegen + JWT 校验 + zod + Mongo client 工厂
-├── api/      REST 服务（无状态）  auth · save · economy(shop/gacha/ads/wallet) · iap（JSON）
+├── metaserver/ REST 服务（无状态）  auth · save · economy(shop/gacha/ads/wallet) · iap（JSON）
 │                            → 可横向加副本，LB 轮询；不持有内存会话
-└── gateway/  WS 服务（有状态）   room · 锁步中继 · 重连 · ranked 局末 ELO 结算（protobuf）
+└── gameserver/  WS 服务（有状态）   room · 锁步中继 · 重连 · ranked 局末 ELO 结算（protobuf）
                              → 持有内存房间状态；扩展需房间亲和（§6.5）
 
 db: MongoDB（saves / accounts / gachaHistory / walletLog / iapReceipts / matches）
-反代 caddy/nginx：/api/* → api 进程（JSON）；/ws → gateway 进程（protobuf）
+反代 caddy/nginx：/api/* → metaserver 进程（JSON）；/ws → gameserver 进程（protobuf）
 ```
 
-> **服务器与游戏逻辑零依赖**（M12）：gateway 只 codegen `transport.proto`，`PlayerCommand` 作 `bytes` **opaque 转发不解码**；`game.proto` 永不进服务器。改命令结构服务器不用重编。仅"重大比赛裁判"才让 gateway 额外 import 真 `GameEngine` + `game.proto` 跑复算。
+> **服务器与游戏逻辑零依赖**（M12）：gameserver 只 codegen `transport.proto`，`PlayerCommand` 作 `bytes` **opaque 转发不解码**；`game.proto` 永不进服务器。改命令结构服务器不用重编。仅"重大比赛裁判"才让 gameserver 额外 import 真 `GameEngine` + `game.proto` 跑复算。
 
-### 6.2 联机模型：服务器权威节拍器（gateway，M14）
+### 6.2 联机模型：服务器权威节拍器（gameserver，M14）
 
-确定性内核（定点数 `fixed.ts` + 注入 `Prng` + 黄金回放）让两客户端喂相同帧序列 + 同 seed → 逐 tick 完全一致。**模拟 30Hz；gateway 不模拟、只装配命令 + 持时钟、每 100ms 打包 3 帧下发：**
+确定性内核（定点数 `fixed.ts` + 注入 `Prng` + 黄金回放）让两客户端喂相同帧序列 + 同 seed → 逐 tick 完全一致。**模拟 30Hz；gameserver 不模拟、只装配命令 + 持时钟、每 100ms 打包 3 帧下发：**
 
 ```
 建房 → 房间码 → 输码加入 → 双方 ready → match_start{ seed, start_frame }
-  → gateway 每 100ms（10Hz）下发 frame_batch{ to_frame, frames }（覆盖 3 个 sim 帧）
+  → gameserver 每 100ms（10Hz）下发 frame_batch{ to_frame, frames }（覆盖 3 个 sim 帧）
     · 收到 cmd_submit → 塞进「当前 100ms 窗口对应的帧」（两端拿到同帧同指令）
     · 无指令 → 批次里只有 to_frame 水位，frames 为空
     · 客户端缓存 ~1 批次（3 帧 ≈100ms）
@@ -238,13 +238,13 @@ db: MongoDB（saves / accounts / gachaHistory / walletLog / iapReceipts / matche
 ```
 
 - 模拟帧 = sim tick（33ms）；网络包 = 10Hz 批次（3 帧）。**延时 = 物理 RTT + ~100ms**（1 批次缓冲，可配置）。指令不预盖 LEAD，收到即塞当前帧。
-- gateway 转发 `commands` **字节流不拆包**（不认识 PlayerCommand，M12）；**同帧多指令需确定性 tiebreak**（按 `side`），否则两端应用顺序分歧。
+- gameserver 转发 `commands` **字节流不拆包**（不认识 PlayerCommand，M12）；**同帧多指令需确定性 tiebreak**（按 `side`），否则两端应用顺序分歧。
 - **空闲零上行**：客户端只在出牌时发 `cmd_submit`；`frame_batch` 流是唯一"可前进"信号 → 服务器停发 ⇒ 客户端暂停。
 - **抖动分三档**：<100ms（1 批次）缓冲透明吸收 / 超出该端短暂卡住再快进追帧（对手不受影响）/ 彻底掉线才暂停。
-- **断线（M10）**：in_match 掉线 → gateway 停发该房间批次 + `peer_dc{grace_ms:60000}` 起 **60s**；`conn_resume` 续发续打；**超时掉线方判负**。
-- **局末**：双方上报最终状态 hash，gateway 比对查 **desync**（无需引擎，纯字符串比；非反作弊，是确定性回归探针）。
-- **match 类型（M11）**：`friendly`（仅写 `matches` 记结果）/ `ranked`（gateway 结算 ELO 写 `pvp` 段，服务器权威）。
-- **录像**：gateway 是帧序列唯一装配者 → 非空帧日志即录像，天然落服务端（§6.6）。
+- **断线（M10）**：in_match 掉线 → gameserver 停发该房间批次 + `peer_dc{grace_ms:60000}` 起 **60s**；`conn_resume` 续发续打；**超时掉线方判负**。
+- **局末**：双方上报最终状态 hash，gameserver 比对查 **desync**（无需引擎，纯字符串比；非反作弊，是确定性回归探针）。
+- **match 类型（M11）**：`friendly`（仅写 `matches` 记结果）/ `ranked`（gameserver 结算 ELO 写 `pvp` 段，服务器权威）。
+- **录像**：gameserver 是帧序列唯一装配者 → 非空帧日志即录像，天然落服务端（§6.6）。
 
 ### 6.3 数据库写型（避开多文档事务）
 
@@ -270,12 +270,12 @@ db: MongoDB（saves / accounts / gachaHistory / walletLog / iapReceipts / matche
 
 按 M9 的两服务画像分别扩，不一刀切：
 
-| 触发 | api（无状态） | gateway（有状态） |
+| 触发 | metaserver（无状态） | gameserver（有状态） |
 |---|---|---|
 | 日活上千、单机吃紧 | LB 后加副本，DB 拆出独立实例 | 仍单实例够；房间状态内存 |
 | 日活上万 | 多副本横扩（轻量、便宜） | 加实例需**房间亲和**：一个房两条 WS 落同一实例（一致性哈希 by roomId）；跨实例房间目录 / 在线状态用 **Redis** pub-sub |
 
-> v1 不写 Redis，但 gateway 的房间查找走一层 `RoomRegistry` 接口（内存实现），扩展时换 Redis 实现即可，不动业务。这是现在唯一要留的口子。
+> v1 不写 Redis，但 gameserver 的房间查找走一层 `RoomRegistry` 接口（内存实现），扩展时换 Redis 实现即可，不动业务。这是现在唯一要留的口子。
 
 ### 6.6 统一输入管线 + 录像（M13）
 
@@ -284,7 +284,7 @@ db: MongoDB（saves / accounts / gachaHistory / walletLog / iapReceipts / matche
 | 实现 | 用于 | DELAY | 指令来源 |
 |---|---|---|---|
 | `LocalInputSource` | 单机 PvE / 练习 | 0（即时） | 客户端**自转发**：本地出牌即入队当前 tick |
-| `NetInputSource` | 联机对战 | ~1 批次(3 帧)缓冲 | gateway 节拍器下发的 `frame_batch`（M14） |
+| `NetInputSource` | 联机对战 | ~1 批次(3 帧)缓冲 | gameserver 节拍器下发的 `frame_batch`（M14） |
 | `ReplayInputSource` | 回放 | — | 录像文件的 `InputFrame[]` |
 
 三者都产出 `InputFrame{tick, commands}`，引擎逻辑逐字相同。**命令入口从「UI 直接 `processCommand`」改为「提交进 `InputSource`、引擎每 tick 消费确认集」**，AI（练习）/ WaveDirector（PvE）作为另一种 tick 内输入源接入。
@@ -304,8 +304,8 @@ message Replay {
 ```
 
 - 回放 = 同 `seed` 起新引擎 + 按 tick 喂录像输入流 → 逐 tick 完全还原。
-- **PvE 只记玩家指令**（敌方由 `WaveDirector` 从 seed+level 确定性生成，不记，回放时重算）；**PvP 记双方**——gateway 为重连保留的输入日志**即录像**，服务端录制零额外成本。
-- 落地：PvE 客户端本地存（可选上传分享）；PvP gateway 持久化到 `matches`/对象存储 → 服务端回放 / 分享 / 纠纷复核 / 裁判复算。
+- **PvE 只记玩家指令**（敌方由 `WaveDirector` 从 seed+level 确定性生成，不记，回放时重算）；**PvP 记双方**——gameserver 为重连保留的输入日志**即录像**，服务端录制零额外成本。
+- 落地：PvE 客户端本地存（可选上传分享）；PvP gameserver 持久化到 `matches`/对象存储 → 服务端回放 / 分享 / 纠纷复核 / 裁判复算。
 - ⚠️ **脆弱点**：录像绑 `engineVersion`，引擎逻辑改动后老录像可能回放发散，回放前必须校验版本（确定性回放方案的通用代价）。已有的黄金回放确定性测试天然延伸为整局录像的回归守卫。
 
 ---
@@ -357,7 +357,7 @@ message Replay {
 | 阶段 | 内容 | 验收 |
 |---|---|---|
 | S0 | `server/` 骨架 + Mongo + save-service + 匿名账号 + 客户端 SaveStore + 迁移链 | 多设备云存档同步跑通 |
-| S1 | room-service + ws-gateway 锁步中继 + RoomScene | 两台真机好友房对局一致、可重连 |
+| S1 | room-service + gameserver 锁步中继 + RoomScene | 两台真机好友房对局一致、可重连 |
 | S2 | economy-service：钱包 + 商店 + 盲盒（落库）+ 广告校验 + ShopScene/GachaScene | 服务器权威钱包，刷不动 |
 | S3 | PvE 养成（材料 + 硬墙单测）+ CampaignMapScene + 收集册 | 完整养成 / 收集闭环 |
 | S4 | iap-service 验单 + 礼包（上线前必做）+ 反作弊 hash 比对 | 充值安全 |
