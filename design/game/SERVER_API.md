@@ -123,18 +123,18 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 | `room_ready` | `{ ready: bool }` | 切换准备态 |
 | `room_leave` | `{}` | 离开房间 |
 | `room_start` | `{}` | 房主开局（双方 ready 后有效） |
-| `input_submit` | `{ tick, commands: bytes }` | 提交某 tick 本方指令（空帧也发，`commands` 可空） |
+| `cmd_submit` | `{ commands: bytes }` | **仅在出牌时发**（空闲零上行）；服务器塞进当前帧（M14） |
 | `match_result` | `{ state_hash }` | 对局结束上报最终状态 hash |
-| `conn_resume` | `{ room_id }` | 重连，请求输入日志追帧 |
+| `conn_resume` | `{ room_id, last_frame }` | 重连，从 `last_frame` 之后补帧 |
 | `ping` | `{}` | 心跳 |
 
 ### 3.2 服务器 → 客户端（`ServerMsg` oneof）
 | `case` | payload | 说明 |
 |---|---|---|
 | `room_state` | `{ code, players: PlayerSlot[], phase }` | 房间状态变更广播 |
-| `match_start` | `{ room_id, mode, seed, start_tick, local_side }` | 开局：模式 + 种子 + 起始 tick + 本方阵营 |
-| `input_frame` | `{ tick, inputs: SideInput[] }` | 某 tick 的**确认输入集**（双方齐后广播） |
-| `conn_resync` | `{ seed, start_tick, log: InputFrame[], cur_tick }` | 重连追帧：种子 + 全量输入日志 + 当前 tick |
+| `match_start` | `{ room_id, mode, seed, start_frame, local_side }` | 开局：模式 + 种子 + 起始帧 + 本方阵营 |
+| `frame_tick` | `{ frame, cmds: SideCmd[] }` | **服务器节拍**：每 tick 一帧（M14）；`cmds` 空 ⇒ 帧里只有 `frame` 号 |
+| `conn_resync` | `{ seed, start_frame, log: FrameTick[], cur_frame }` | 重连补帧：种子 + 非空帧日志 + 当前帧 |
 | `peer_dc` | `{ side, grace_ms: 60000 }` | 对手掉线，进入 60s 等待重连（M10） |
 | `match_over` | `{ winner_side, reason, mismatch?, elo?: { delta, after, rank_after } }` | 结束；`reason: base|disconnect|mismatch`；ranked 带 ELO 变化 |
 | `room_error` | `{ code, message }` | 房间错误（不存在 / 已满） |
@@ -142,36 +142,39 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 
 ```proto
 // transport.proto（节选；服务器认得这一层）
-message PlayerSlot  { uint32 side = 1; string name = 2; bool ready = 3; bool connected = 4; }
-message SideInput   { uint32 side = 1; bytes commands = 2; }   // commands 对服务器 opaque
-message InputFrame  { uint32 tick = 1; repeated SideInput inputs = 2; }
+message PlayerSlot { uint32 side = 1; string name = 2; bool ready = 3; bool connected = 4; }
+message SideCmd    { uint32 side = 1; bytes commands = 2; }   // commands 对服务器 opaque
+message FrameTick  { uint32 frame = 1; repeated SideCmd cmds = 2; }  // cmds 空 ⇒ 仅 frame 号
 enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; }
 ```
 
 ---
 
-## 4. 锁步时序（lockstep）
+## 4. 服务器权威节拍器（M14）
+
+**服务器持时钟、不等输入、按 tick 发帧；客户端是纯跟随者。** 帧号 = sim tick 号（30Hz，1 帧 = 33ms）。
 
 ```
-房主 room.create → server room.state(code)
-对手 room.join(code) → server room.state(双方)
-双方 room.ready(true) → phase=ready
-房主 room.start → server match.start{ seed, startTick }（双方一致）
-                ↓
-每个逻辑 tick T（TICK_RATE=30）：
-  各端在 T 提交 input.submit{ tick: T + DELAY, commands }   // DELAY=2~3 tick 输入缓冲
-  服务器收齐双方 tick=K 的 input → 广播 input.frame{ tick:K, inputs }
-  客户端凑齐 tick=K 的全部 inputs 才推进 GameEngine 到 K     // 否则短暂等待（UI 显示"等待对手"）
-对局结束：各端 match.result{ stateHash } → server 比对 → match.over{ winner, mismatch }
+房主 cmd → room_state(code) → 对手 room_join → 双方 room_ready → room_start
+  → match_start{ seed, start_frame }（双方一致）
+  ↓
+服务器每 tick（30Hz）：递增 frame，广播 frame_tick{ frame, cmds }
+  · 期间收到某端 cmd_submit → 塞进「当前正在发的帧」的 cmds（两端拿到同一帧同一指令）
+  · 无指令 → cmds 为空，帧里只有 frame 号
+  · 服务器永远领先客户端约 3 帧（≈100ms 缓冲）
+客户端：缓存里有比当前更靠前的帧 → 推进 GameEngine；没有 → 暂停（可见）
+对局结束：match_result{ stateHash } → 比对 → match_over{ winner, reason, elo? }
 ```
 
 要点：
-- **输入延迟缓冲**（DELAY 2~3 tick）：本地指令延后若干 tick 生效，给网络往返留窗口，避免每 tick 卡顿。
-- 空 tick 也要提交（`commands: []`），否则服务器无法判定"齐了"。
-- 确定性保证：同 `seed` + 同输入序列 → 双端逐 tick 一致（`META_DESIGN.md §6`）。
-- **重连**：服务器留 `InputFrame[]` 日志；`conn.resume` → `conn.resync` 下发种子+日志，客户端从头重放追上 `curTick`。
-- **断线规则（M10）**：in_match 一端掉线 → 向在线方发 `peer.dc{ graceMs:60000 }` → 起 **60s** 计时；期间掉线方 `conn.resume` 成功则续打；**超时则掉线方判负**，`match.over{ reason:'disconnect' }`。
-- **结算**：`friendly` 仅写 `matches` 记结果；`ranked` 由 gateway 算 ELO 变化、写 `saves.pvp`（服务器权威），随 `match.over.elo` 下发。
+- **延时 = 物理 RTT + ~100ms**（3 帧客户端缓冲）。指令不预盖 LEAD，收到即塞当前帧；缓冲在客户端回放侧。
+- **缓冲深度可配置**（默认 3 帧）：容忍 ~100ms 单程下行延迟/抖动。小抖动透明吸收；超出 → 该端短暂卡住再快进追帧（**对手不受影响**）；彻底掉线才触发暂停 + 60s。高 ping 玩家可自适应调大缓冲（延时随之增加）。
+- **同帧多指令**：服务器是唯一排序者，需**确定性 tiebreak**（按 `side` 升序、再按到达序），否则两端应用顺序分歧 → 发散。
+- **空闲零上行**：客户端只在出牌时发 `cmd_submit`；服务器的 `frame_tick` 流是唯一"可前进"信号（服务器停发 ⇒ 客户端暂停）。
+- 确定性保证：同 `seed` + 同帧序列 → 双端逐 tick 一致（`META_DESIGN.md §6`）。
+- **重连**：服务器留**非空帧**日志；`conn_resume{ last_frame }` → `conn_resync` 下发种子 + `last_frame` 之后的非空帧 + `cur_frame`，客户端快进追上。
+- **断线规则（M10）**：in_match 一端掉线 → 服务器**停发该房间帧** + 向在线方 `peer_dc{ grace_ms:60000 }` → 起 **60s**；掉线方 `conn_resume` 成功则续发续打；**超时则掉线方判负** `match_over{ reason:'disconnect' }`。
+- **结算**：`friendly` 仅写 `matches` 记结果；`ranked` 由 gateway 算 ELO、写 `saves.pvp`（服务器权威），随 `match_over.elo` 下发。
 
 ---
 
@@ -195,16 +198,19 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 统一输入管线让对局/关卡都可回放：**录像 = `seed` + 配置 + 输入流**，从不存状态。
 
 ```proto
-// replay.proto —— 复用 transport.proto 的 InputFrame
+// replay.proto —— 复用 transport.proto 的 FrameTick
 message Replay {
   uint32 engine_version = 1;  // 回放前校验；跨引擎版本可能发散
   string mode = 2;            // campaign | pvp
   uint64 seed = 3;
   string config_ref = 4;      // PvE=levelId+version；PvP=rosterVer
-  repeated InputFrame frames = 5;   // commands 仍是 protobuf bytes
-  ReplayMeta meta = 6;
+  repeated FrameTick frames = 5;   // 只存非空帧；commands 仍是 protobuf bytes
+  uint32 end_frame = 6;       // 总帧数（空帧不存，靠它界定终点）
+  ReplayMeta meta = 7;
 }
 ```
+
+> **稀疏存储**：空帧（仅帧号）不写录像；回放时逐 tick 推进，遇到有对应 `frame` 的内容帧就应用、否则空推进，到 `end_frame` 结束。
 
 - **PvP**：`gateway` 为重连保留的输入日志**即录像**，局末持久化到 `matches.replayRef`（小局直接内嵌，大局存对象存储），零额外采集成本。
 - **PvE**：客户端本地录制（只记玩家指令；敌方 `WaveDirector` 回放时由 seed+level 重算），可选上传分享。
@@ -220,9 +226,10 @@ message Replay {
 - token：无状态 **JWT**（服务端密钥签）。
 - 拓扑：`api`/`gateway` 两服务可分（M9）；钱包用单文档原子更新避开多文档事务（`META_DESIGN.md §6.3`）。
 - 线协议：**WS = protobuf**（`transport.proto`/`game.proto` 分层，`PlayerCommand` 对服务器 opaque），**REST = JSON**（M12）。
+- 联机模型：**服务器权威节拍器**（M14）——30Hz 发帧、3 帧客户端缓冲（~100ms）、空闲零上行、服务器停发即暂停。
 
 **开放**：
-- [ ] 锁步 DELAY 取值（2 vs 3 tick）需实测网络往返定（建议可配置，默认 3）。
+- [ ] 客户端缓冲深度（默认 3 帧 ~100ms）是否做成按 RTT 自适应。
 - [ ] ranked 匹配队列算法（按 ELO 配对 + 等待放宽）与段位划分表（v1 先做 friendly，ranked 队列稍后）。
 - [ ] ELO 公式参数（K 因子、初始分、段位阈值）。
 - [ ] 录像分享/存储：PvE 本地录制先行，云端分享 + PvP 录像对象存储排期（v1 录制即可，分享后置）。
