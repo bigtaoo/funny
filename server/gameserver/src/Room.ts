@@ -21,7 +21,9 @@ const START_FRAME = 0;
 
 /**
  * 内嵌录像（S1-RP）——重连保留的非空帧日志即录像，局末零成本持久化。
- * 字段对齐 `contracts/replay.proto`；`commands` 仍是 game.proto opaque bytes。
+ * 这是 `contracts/replay.proto` 的 **netplay 子集**：省略 `config_ref`（PvP=rosterVer，
+ * 暂无 roster 版本概念）与 `meta.level_id`（仅 PvE 有），netplay 下二者恒空。
+ * `commands` 仍是 game.proto opaque bytes（服务器不解码，M12）。
  */
 export interface MatchReplay {
   /** 服务器逻辑无关（M12），无法自证引擎版本 → 0；客户端回放时自校验。 */

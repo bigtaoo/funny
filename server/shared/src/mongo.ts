@@ -60,7 +60,7 @@ export interface MatchDoc {
   roomId: string;
   mode: string;
   seed: string;
-  players: unknown;
+  players: { side: number; accountId: string }[];
   winner: number;
   reason: string;
   hashOk: boolean;
@@ -112,6 +112,8 @@ export async function createMongo(
     await collections.gachaHistory.createIndex({ accountId: 1, ts: -1 });
     await collections.walletLog.createIndex({ accountId: 1, ts: -1 });
     await collections.matches.createIndex({ ts: -1 });
+    // 按玩家查对局/回放历史（S1-RP 分享、ranked 战绩）。
+    await collections.matches.createIndex({ 'players.accountId': 1, ts: -1 });
   }
 
   return {

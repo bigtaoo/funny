@@ -163,6 +163,21 @@ export class RoomManager {
 
   private archive(doc: MatchArchive): void {
     if (!this.cols) return;
+    // BSON 文档硬上限 16MB。内嵌录像随对局长度增长，长局可能撞顶 → insertOne 抛、
+    // 被下方 .catch 静默吞 → 归档丢失却无感。超阈值先告警（「大局转对象存储 replayRef」
+    // 是后续任务，落地前至少留下排查线索，不让人误以为「都归档了」）。
+    const replayBytes = doc.replay.frames.reduce(
+      (n, f) => n + f.cmds.reduce((m, c) => m + c.commands.length + 8, 0),
+      0,
+    );
+    const WARN_BYTES = 12 * 1024 * 1024; // 留足 BSON 其余字段 + 编码膨胀余量
+    if (replayBytes > WARN_BYTES) {
+      console.warn(
+        `[gameserver] inline replay large (~${(replayBytes / 1024 / 1024).toFixed(1)}MB, ` +
+          `${doc.replay.frames.length} frames) for room ${doc.roomId}; ` +
+          `may exceed 16MB BSON limit — replayRef object storage is the fix (S1-RP 待办)`,
+      );
+    }
     void this.cols.matches
       .insertOne({
         roomId: doc.roomId,
