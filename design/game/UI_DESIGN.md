@@ -246,7 +246,7 @@ Collection  Profile    Lobby    Shop/Gacha    Room
 | 场景/组件 | 任务（`META_TASKS.md`） |
 |---|---|
 | 组件套件 + MenuShell | 随 S1-8 起步，逐场景沉淀 |
-| RoomScene | S1-8 |
+| RoomScene | S1-8 ✅（`scenes/RoomScene.ts`，idle/codeEntry/connecting/inRoom；inRoom 全貌 + 换边视角留 S1-9） |
 | ShopScene / GachaScene | S2-6 |
 | CampaignMapScene / LevelPrepScene / CollectionScene | S3-5 |
 | ProfileScene | S0（云同步状态）+ S3 |

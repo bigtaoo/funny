@@ -43,6 +43,8 @@ export interface LobbySceneCallbacks {
   onStartGame(opponentName: string): void;
   /** Launch a campaign level by its 0-based index in CAMPAIGN_LEVEL_ORDER. */
   onStartCampaign(levelIndex: number): void;
+  /** Open the friend room (online play). Wired to the bottom-nav "social" slot. */
+  onOpenRoom(): void;
 }
 
 /** Campaign levels exposed in the lobby picker (1-3 = content, 4 = swarm stress test). */
@@ -73,6 +75,8 @@ export class LobbyScene implements Scene {
   private btnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rects for the campaign (PvE) level-picker buttons, in design space. */
   private campaignBtnRects: Rect[] = [];
+  /** Hit rect for the bottom-nav "social" slot (opens RoomScene). */
+  private socialNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
   private readonly unsubs: Array<() => void> = [];
 
@@ -123,6 +127,11 @@ export class LobbyScene implements Scene {
         this.cb.onStartCampaign(i);
         return;
       }
+    }
+    const s = this.socialNavRect;
+    if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) {
+      this.cb.onOpenRoom();
+      return;
     }
   }
 
@@ -258,18 +267,24 @@ export class LobbyScene implements Scene {
       const slotW = w / 5;
       const slotX = i * slotW + slotW / 2;
       const slotY = h - navH / 2;
+      // "social" (i === 4) is the only wired nav slot besides home → show it active.
+      const active = i === 2 || i === 4;
 
       const dot = new PIXI.Graphics();
-      dot.beginFill(i === 2 ? C.accent : C.mid, i < 3 ? 0.8 : 0.3);
+      dot.beginFill(i === 2 ? C.accent : (i === 4 ? C.gold : C.mid), active ? 0.8 : 0.3);
       dot.drawCircle(0, 0, Math.round(navH * 0.17));
       dot.endFill();
       dot.x = slotX; dot.y = slotY - Math.round(navH * 0.18);
       navBg.addChild(dot);
 
-      const navLabel = txt(name, Math.round(navH * 0.22), i < 3 ? C.light : C.mid);
+      const navLabel = txt(name, Math.round(navH * 0.22), active ? C.light : C.mid);
       navLabel.anchor.set(0.5, 0);
       navLabel.x = slotX; navLabel.y = slotY + Math.round(navH * 0.04);
       navBg.addChild(navLabel);
+
+      if (i === 4) {
+        this.socialNavRect = { x: i * slotW, y: h - navH, w: slotW, h: navH };
+      }
     });
 
     // VS overlay

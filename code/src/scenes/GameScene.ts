@@ -2,7 +2,7 @@ import { Scene } from './SceneManager';
 import { GameRenderer } from '../render/GameRenderer';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
-import { createGameEngine, LevelDefinition, OwnerId, PlayerStats } from '../game';
+import { createGameEngine, IGameEngine, LevelDefinition, OwnerId, PlayerStats } from '../game';
 
 export interface GameSceneCallbacks {
   onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]): void;
@@ -12,6 +12,11 @@ export interface GameSceneCallbacks {
 export interface GameSceneOptions {
   /** When set, the scene runs the PvE campaign level instead of a PvP match. */
   level?: LevelDefinition;
+  /**
+   * A pre-built engine to drive the scene (online netplay, S1-8): app.ts builds
+   * it with mode 'netplay' + a NetInputSource. Takes precedence over `level`.
+   */
+  engine?: IGameEngine;
 }
 
 export class GameScene implements Scene {
@@ -19,7 +24,9 @@ export class GameScene implements Scene {
   private readonly renderer: GameRenderer;
 
   constructor(layout: ILayout, input: InputManager, cb: GameSceneCallbacks, opts: GameSceneOptions = {}) {
-    const engine = opts.level
+    const engine = opts.engine
+      ? opts.engine
+      : opts.level
       ? createGameEngine({
           seed: opts.level.seed,
           players: [{ id: 0 }, { id: 1 }],

@@ -64,7 +64,7 @@
 ### 客户端
 - [x] **S1-6 NetClient**：封装 ws 连接、重连、消息编解码（用 C-2 协议）。**依赖**：C-2。**验收**：掉线自动重连。✅ `code/src/net/NetClient.ts`：退避重连 + 代次作废滞后回调 + 首/重连 open 区分（仅重连触发 `onReconnect`，上层据此发 conn_resume）+ 应用层心跳 + 未 open 丢弃发送；平台 socket 抽象 `IPlatform.connectSocket`（Web/CrazyGames=`BrowserGameSocket`，微信=`WechatGameSocket`）；C-2 ts-proto 编解码。6 单测（假 socket）+ 端到端真 NetClient↔真 gameserver 整局 friendly 跑通。**注**：C-2 客户端 proto codegen 同期落地（ts-proto via buf，`code/buf.gen.yaml`+`scripts/gen-proto.mjs`+`npm run proto:gen`，产物 `src/net/proto/`，线兼容回归 `test/proto-wire-compat.test.ts`）。
 - [x] **S1-7 节拍驱动（NetInputSource）**：实现 `NetInputSource`（C-4 的联机实例）——消费 gameserver 的 `frame_batch`、按 `to_frame` 推进引擎并把 3 帧摊到 100ms 播放，保持 ~1 批次缓冲，缓存空则暂停、超时追帧；出牌即发 `cmd_submit`（不预算帧号）。单机/PvE 走 `LocalInputSource` 不变。**依赖**：S1-6、S1-3、C-4。**验收**：缓冲吸收 <100ms 抖动无感；服务器停发即暂停；无回滚。✅ `code/src/game/net/NetInputSource.ts`：`submit`→`game.proto` `PlayerCommands` opaque bytes `cmd_submit`（不预算帧号，owner/tick 占位由服务器派 side+帧）；`handleServerMsg` 消费 `match_start`/`frame_batch`/`conn_resync`，`FrameCmds` 解码回 `PlayerCommand[]`（owner=`SideCmd.side`、tick=`FrameCmds.frame`，保服务器排序）；`take(frame)` 释放已确认帧、未确认 `null` 停步（锁步、无预测/回滚）；播放头落最新水位后 `bufferFrames`(默认 1 批=3) 吸收 <100ms 抖动；水位单调（陈旧批次不回退）；`conn_resync` 跳水位快进追帧。新增 `GameMode 'netplay'`（双方真人、不跑本地 AI/波次，`step` 只处理确认指令集）；`game.proto` `PlayCard` 加 `row`（陨石目标行）+ `npm run proto:gen`。验证：tsc 干净 + 19 新测试（take/缓冲/水位/解码/no-rollback/resync + 双客户端同 seed 同流逐 horizon fingerprint 全等 + 停发暂停/重连追帧/抖动吸收）+ web 构建通过（共 106 绿）。**注**：双引擎单进程因模块级 id 计数器交错，测试改为录制合流帧流后顺序回放对拍。
-- [ ] **S1-8 RoomScene**：建房/房间码展示/输码加入/ready/倒计时开打（UI 见 `UI_DESIGN.md`）。**依赖**：S1-6、S1-2。**验收**：完整建房→加入→开局流程。
+- [x] **S1-8 RoomScene**：建房/房间码展示/输码加入/ready/倒计时开打（UI 见 `UI_DESIGN.md`）。**依赖**：S1-6、S1-2。**验收**：完整建房→加入→开局流程。✅ `code/src/scenes/RoomScene.ts`（canvas 绘制，视图机 `idle → codeEntry → connecting → inRoom`；i18n `room.*`，zh/en/de 全翻）+ `code/src/net/NetSession.ts`（绑 `NetClient`+`NetInputSource`：路由 ServerMsg → input & UI、重连 `onReconnect`→`conn_resume{roomId, resumeFrame()}`、room 动作转发、`onMatchStart` 建引擎）。`app.ts`：大厅底栏「社交」格 → `goRoom()`；`match_start` → `createGameEngine({seed, mode:'netplay'}, session.input)` → `GameScene`（新增 `engine?` 选项接预建引擎）；局末 `reportResult(FNV-1a(winner+stats))`（S1-5 握手）。无服务端配置时房间 UI 仍可开（`available:false`，create/join 弹「联机服务不可用」）。`LobbyScene` 加 `onOpenRoom`+社交格命中。验证：tsc 干净 + 100 测试全绿 + web 构建通过 + 浏览器实测 idle/codeEntry 两视图（社交入口 → 创建/加入按钮 → 输码键盘逐字填充）。**注**：①`inRoom`（双槽/ready/start/房间码）需活 gameserver 推 `room_state` 才显示，留 S1-9 双机联调验收；②`GameRenderer` 仍以 owner-0（下方）视角渲染，joiner（localSide 1）暂不翻转棋盘，正确换边视角属 S1-9。
 
 ### 联调出口
 - [ ] **S1-9 双真机对局**：两台设备好友房一整局逐 tick 一致；中途断一台能重连续打。**依赖**：S1-3,4,7,8。
@@ -106,7 +106,7 @@
 
 ## i18n（贯穿，随场景落地）
 
-- [ ] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。
+- [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；其余随后续场景。
 
 ---
 
