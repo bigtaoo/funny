@@ -72,16 +72,20 @@ export class ResultScene implements Scene {
   private readonly w: number;
   private readonly h: number;
 
+  private readonly localOwner: OwnerId;
+
   constructor(
     w: number,
     h: number,
     winner: OwnerId | null,
     stats: [PlayerStats, PlayerStats],
     cb: ResultSceneCallbacks,
+    localOwner: OwnerId = 0,
   ) {
     this.container = new PIXI.Container();
     this.w  = w;
     this.h  = h;
+    this.localOwner = localOwner;
     this.build(winner, stats, cb);
   }
 
@@ -99,7 +103,7 @@ export class ResultScene implements Scene {
     cb: ResultSceneCallbacks,
   ): void {
     const { w, h } = this;
-    const playerStats = stats[0]!; // local player is always owner 0
+    const playerStats = stats[this.localOwner]!; // the local player's stats (owner 0 or 1)
 
     // Background
     const bg = new PIXI.Graphics();
@@ -111,7 +115,7 @@ export class ResultScene implements Scene {
 
     // Win / lose / draw headline
     const isDraw  = winner === null;
-    const isWin   = winner === 0;
+    const isWin   = winner === this.localOwner;
     const headline = isDraw ? t('result.draw') : (isWin ? t('result.victory') : t('result.defeat'));
     const headlineColor = isDraw ? 0x888888 : (isWin ? 0x226622 : 0xaa2222);
 

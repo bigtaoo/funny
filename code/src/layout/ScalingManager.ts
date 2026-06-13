@@ -15,13 +15,21 @@ export function detectOrientation(screenW: number, screenH: number): Orientation
 
 /**
  * Creates the appropriate ILayout for the given screen size.
- * MVP: always creates Side.Bottom layout.
+ *
+ * `localSide` decides which side appears at the bottom of the screen:
+ * single-player / campaign / netplay host stay Side.Bottom; the netplay
+ * joiner (localSide 1 = Side.Top) gets a 180°-flipped layout so their own
+ * base, hand and HUD read as "mine" at the bottom (S1-9).
  */
-export function createLayout(screenW: number, screenH: number): ILayout {
+export function createLayout(
+  screenW: number,
+  screenH: number,
+  localSide: Side = Side.Bottom,
+): ILayout {
   const orient = detectOrientation(screenW, screenH);
   return orient === 'landscape'
-    ? new LandscapeLayout(Side.Bottom)
-    : new PortraitLayout(Side.Bottom);
+    ? new LandscapeLayout(localSide)
+    : new PortraitLayout(localSide);
 }
 
 /**

@@ -7,7 +7,7 @@ import { GameScene } from './scenes/GameScene';
 import { RoomScene } from './scenes/RoomScene';
 import { ResultScene } from './scenes/ResultScene';
 import { OwnerId, PlayerStats } from './game/types';
-import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine } from './game';
+import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, ownerToSide } from './game';
 import type { MatchStartInfo } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
@@ -167,42 +167,63 @@ export async function startApp(platform: IPlatform): Promise<void> {
     }, { level }));
   }
 
-  // Online lockstep match (S1-8): the engine is built from the server's
-  // match_start (seed/mode) and driven by NetSession's NetInputSource.
-  // NOTE: GameRenderer renders from the owner-0 (bottom) perspective, so the
-  // joiner (localSide 1) currently sees a non-flipped board — proper per-side
-  // perspective is S1-9 work; same-machine host play verifies end to end.
+  // Online lockstep match (S1-8 / S1-9): the engine is built from the server's
+  // match_start (seed/mode) and driven by NetSession's NetInputSource. The
+  // render layout is built for *this client's* side, so the joiner (localSide 1)
+  // gets a 180°-flipped board with their own base / hand / HUD at the bottom.
   function goGameNet(info: MatchStartInfo): void {
     const session = netSession;
     if (!session) { goLobby(); return; }
     inLobby = false;
     window.removeEventListener('resize', onResize);
     platform.onGameplayStart();
-    // Drop the RoomScene UI handlers (that scene is about to be destroyed); the
-    // session keeps routing frame_batch to its NetInputSource regardless. Keep
-    // onMatchStart so a late re-fire can't strand us.
-    session.handlers = { onMatchStart: (i) => goGameNet(i) };
+
+    const localOwner = info.localSide as OwnerId;
+    const side       = ownerToSide(localOwner);
+    const { width, height } = platform.getScreenSize();
+    const netLayout  = createLayout(width, height, side);
+
     const engine = createGameEngine(
       { seed: info.seed, players: [{ id: 0 }, { id: 1 }], mode: 'netplay' },
       session.input,
     );
-    manager.goto(new GameScene(layout, input, {
+    const scene = new GameScene(netLayout, input, {
       onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
         // S1-5: report a deterministic end-state hash for desync detection.
         session.reportResult(matchStateHash(winner, stats));
-        goResult(winner, stats);
+        goResult(winner, stats, localOwner);
+      },
+      // Server-driven end (opponent timeout / desync) — no hash to report.
+      onNetMatchOver(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
+        goResult(winner, stats, localOwner);
       },
       onExitToLobby() { session.close(); goLobby(); },
-    }, { engine }));
+    }, { engine, net: true });
+
+    // Route server room/net events to the live game scene's status overlay; the
+    // session keeps feeding frame_batch to its NetInputSource regardless. Keep
+    // onMatchStart so a late re-fire can't strand us.
+    session.handlers = {
+      onMatchStart: (i) => goGameNet(i),
+      onNetState:   (s) => scene.applyNetState(s),
+      onPeerDc:     (p) => scene.applyPeerDc(p),
+      onMatchOver:  (m) => scene.applyMatchOver(m),
+    };
+
+    manager.goto(scene);
   }
 
-  async function goResult(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]): Promise<void> {
+  async function goResult(
+    winner: OwnerId | null,
+    stats: [PlayerStats, PlayerStats],
+    localOwner: OwnerId = 0,
+  ): Promise<void> {
     inLobby = false;
     platform.onGameplayStop();
     await platform.showMidgameAd();
     manager.goto(new ResultScene(layout.designWidth, layout.designHeight, winner, stats, {
       onPlayAgain() { goLobby(); },
-    }));
+    }, localOwner));
   }
 
   // First launch → background-story intro; afterwards straight to lobby.

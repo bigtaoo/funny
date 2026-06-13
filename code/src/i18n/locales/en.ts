@@ -110,4 +110,9 @@ export const en: Record<TranslationKey, string> = {
   'room.error.ranked': 'Ranked not available yet',
   'room.error.noServer': 'Online play unavailable',
   'room.error.generic': 'Something went wrong',
+
+  // ── In-battle network status (S1-9) ─────────────────────────────────────────
+  'net.waiting': 'Waiting for opponent',
+  'net.reconnecting': 'Reconnecting',
+  'net.peerDc': 'Opponent dropped, waiting to reconnect',
 };

@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '../game/config';
+import { sideToOwner } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
 import baseTexUrl from '../assets/game_base.png';
@@ -97,7 +98,11 @@ export class BoardView {
    * No cracks above 85% HP; 2 cracks per hit below 40% HP.
    */
   playBaseCrackEffect(owner: 0 | 1, hp: number, maxHp: number): void {
-    const base = owner === 0 ? this.playerBase : this.enemyBase;
+    // `playerBase` is whichever base the local player owns (placed via
+    // layout.playerBaseRect, which is localSide-aware). Map the event's raw
+    // owner to the correct sprite so the joiner's cracks land on the right base.
+    const localOwner = sideToOwner(this.layout.localSide);
+    const base = owner === localOwner ? this.playerBase : this.enemyBase;
     if (!base) return;
 
     const ratio = hp / maxHp;

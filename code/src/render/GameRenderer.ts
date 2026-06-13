@@ -4,6 +4,9 @@ import {
   BOARD_COLS,
   BOARD_ROWS,
   BOTTOM_BUILDING_ROW,
+  BOTTOM_SPAWN_ROW,
+  TOP_BUILDING_ROW,
+  TOP_SPAWN_ROW,
 } from '../game/config';
 import {
   IGameEngine,
@@ -12,7 +15,10 @@ import {
   SpellType,
   OwnerId,
   PlayerStats,
+  GamePhase,
   GameState,
+  Side,
+  sideToOwner,
 } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
@@ -20,6 +26,7 @@ import { BoardView } from './BoardView';
 import { BuildingView } from './BuildingView';
 import { HandView } from './HandView';
 import { HUDView } from './HUDView';
+import { NetStatusView } from './NetStatusView';
 import { UnitView } from './UnitView';
 import { VFXSystem } from './VFXSystem';
 import { fromFp } from '../game';
@@ -67,12 +74,28 @@ export class GameRenderer {
   private readonly engine: IGameEngine;
   private readonly layout: ILayout;
 
+  // Which game owner the *local* player controls (derived from the layout's
+  // localSide). For single-player / campaign / netplay host this is 0 (Bottom);
+  // for the netplay joiner it is 1 (Top). All "is this mine?" decisions — hand,
+  // HUD, upgrade, placement validation rows, base-damage flash — key off this
+  // instead of hardcoding owner 0.
+  private readonly localOwner:    OwnerId;
+  private readonly localBuildRow: number;
+  private readonly localSpawnRow: number;
+
+  /** True for online lockstep matches — enables the waiting-for-opponent overlay. */
+  private readonly netEnabled: boolean;
+
   private boardView!:    BoardView;
   private unitView!:     UnitView;
   private buildingView!: BuildingView;
   private handView!:     HandView;
   private hudView!:      HUDView;
+  private netStatus!:    NetStatusView;
   private vfxSystem!:    VFXSystem;
+
+  // Net stall detection: seconds the engine has failed to advance a tick.
+  private stallTime = 0;
 
   private vignetteGfx!:   PIXI.Graphics;
   private vignetteAlpha  = 0;
@@ -96,21 +119,49 @@ export class GameRenderer {
   // Unsubscribe functions from InputManager
   private readonly unsubs: Array<() => void> = [];
 
-  constructor(engine: IGameEngine, layout: ILayout, input: InputManager) {
-    this.engine    = engine;
-    this.layout    = layout;
-    this.container = new PIXI.Container();
+  constructor(engine: IGameEngine, layout: ILayout, input: InputManager, netEnabled = false) {
+    this.engine     = engine;
+    this.layout     = layout;
+    this.netEnabled = netEnabled;
+    this.container  = new PIXI.Container();
+
+    this.localOwner    = sideToOwner(layout.localSide);
+    this.localBuildRow = layout.localSide === Side.Bottom ? BOTTOM_BUILDING_ROW : TOP_BUILDING_ROW;
+    this.localSpawnRow = layout.localSide === Side.Bottom ? BOTTOM_SPAWN_ROW    : TOP_SPAWN_ROW;
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp((x, y)   => this.handleUp(x, y)));
   }
 
+  // ── Local player helper ──────────────────────────────────────────────────────
+
+  /** The GameState player the local client controls (mirrors `localOwner`). */
+  private localPlayer(state: GameState) {
+    return this.localOwner === 0 ? state.bottomPlayer : state.topPlayer;
+  }
+
+  // ── Network status hooks (driven by app.ts via GameScene, S1-9) ───────────────
+
+  setReconnecting(v: boolean): void { this.netStatus.setReconnecting(v); }
+  setPeerDisconnected(v: boolean): void { this.netStatus.setPeerDc(v); }
+  clearNetStatus(): void { this.netStatus.clear(); }
+
+  /** True once the local sim has reached a decisive end (base wiped / draw). */
+  isGameOver(): boolean { return this.engine.state.phase === GamePhase.GameOver; }
+
+  /** Authoritative end-state stats snapshot (for a server-driven match_over). */
+  snapshotStats(): [PlayerStats, PlayerStats] { return this.engine.state.snapshotStats(); }
+
+  /** The game owner the local player controls (0 = bottom host, 1 = top joiner). */
+  get controlledOwner(): OwnerId { return this.localOwner; }
+
   init(): void {
     this.buildSceneGraph();
   }
 
   update(dt: number): void {
+    const prevTicks = this.engine.state.elapsedTicks;
     this.engine.tick(dt);
     const state = this.engine.state;
     for (const event of state.events) this.handleEvent(event, state);
@@ -123,8 +174,32 @@ export class GameRenderer {
     this.unitView.sync(state.board, dt);
     this.buildingView.update(dt);
     this.buildingView.sync(state.board);
-    this.handView.sync(state.bottomPlayer);
-    this.hudView.sync(state);
+    this.handView.sync(this.localPlayer(state));
+    this.hudView.sync(state, this.localOwner);
+    if (this.netEnabled) this.updateNetWaiting(state, prevTicks, dt);
+    this.netStatus.update(dt);
+  }
+
+  /**
+   * Detect lockstep stalls: in netplay the engine stops advancing ticks while
+   * it waits for the next server-confirmed frame (NetInputSource.take → null).
+   * If no tick lands for a short grace window while the match is live, surface
+   * the waiting-for-opponent spinner so the frozen board doesn't read as a hang.
+   * Skip while paused or after game over — those freezes are intentional.
+   */
+  private updateNetWaiting(state: GameState, prevTicks: number, dt: number): void {
+    const advanced = state.elapsedTicks > prevTicks;
+    const live = state.phase === GamePhase.Playing && !this.hudView.isPaused;
+    if (advanced || !live) {
+      this.stallTime = 0;
+      this.netStatus.setWaiting(false);
+      // Frames flowing again ⇒ the peer is back (server resumed the metronome).
+      // There is no explicit "peer reconnected" message, so clear it here.
+      if (advanced) this.netStatus.setPeerDc(false);
+      return;
+    }
+    this.stallTime += dt;
+    this.netStatus.setWaiting(this.stallTime > 0.3);
   }
 
   destroy(): void {
@@ -145,6 +220,7 @@ export class GameRenderer {
     this.buildingView = new BuildingView(this.boardView);
     this.handView     = new HandView(this.layout);
     this.hudView      = new HUDView(this.layout);
+    this.netStatus    = new NetStatusView(this.layout);
     this.vfxSystem    = new VFXSystem();
 
     this.container.addChild(this.boardView.container);
@@ -157,7 +233,8 @@ export class GameRenderer {
 
     this.vignetteGfx = new PIXI.Graphics();
     this.vignetteGfx.interactiveChildren = false;
-    this.container.addChild(this.vignetteGfx);                  // topmost — screen-edge flash
+    this.container.addChild(this.vignetteGfx);                  // screen-edge flash
+    this.container.addChild(this.netStatus.container);          // topmost — network status pill
   }
 
   // ── Input handling (design-space coords) ─────────────────────────────────
@@ -333,7 +410,7 @@ export class GameRenderer {
         break;
       case 'base_hp_changed':
         this.boardView.playBaseCrackEffect(event.owner, event.hp, event.maxHp);
-        if (event.owner === 0) {
+        if (event.owner === this.localOwner) {
           this.vignetteAlpha = 1.0;
           this.drawVignette();
         }
@@ -345,24 +422,26 @@ export class GameRenderer {
         }
         break;
       case 'card_played':
-        if (event.owner === 0) { this.cancelDrag(); this.cancelTapSelect(); }
+        if (event.owner === this.localOwner) { this.cancelDrag(); this.cancelTapSelect(); }
         break;
       case 'card_expired':
-        if (event.owner === 0) this.handView.notifyCardExpired(event.handIndex);
+        if (event.owner === this.localOwner) this.handView.notifyCardExpired(event.handIndex);
         break;
       case 'game_stats':
         this.pendingStats = event.stats;
         break;
       case 'game_over': {
         this.cancelDrag(); this.cancelTapSelect();
-        this.hudView.showGameOver(event.winner);
+        this.netStatus.clear();
+        this.hudView.showGameOver(event.winner, this.localOwner);
         const s = this.pendingStats;
         if (s) setTimeout(() => { this.onGameEnd?.(event.winner, s); }, 2000);
         break;
       }
       case 'game_draw': {
         this.cancelDrag(); this.cancelTapSelect();
-        this.hudView.showGameOver(null);
+        this.netStatus.clear();
+        this.hudView.showGameOver(null, this.localOwner);
         const s = this.pendingStats;
         if (s) setTimeout(() => { this.onGameEnd?.(null, s); }, 2000);
         break;
@@ -373,7 +452,7 @@ export class GameRenderer {
   // ── Card drag ──────────────────────────────────────────────────────────────
 
   private startCardDrag(handIndex: number): void {
-    const player = this.engine.state.bottomPlayer;
+    const player = this.localPlayer(this.engine.state);
     const slot   = player.hand.slots[handIndex];
     if (!slot || player.coins < slot.card.cost) return;
 
@@ -395,7 +474,7 @@ export class GameRenderer {
   // ── Tap-select ─────────────────────────────────────────────────────────────
 
   private startTapSelect(handIndex: number): void {
-    const player = this.engine.state.bottomPlayer;
+    const player = this.localPlayer(this.engine.state);
     const slot   = player.hand.slots[handIndex];
     if (!slot || player.coins < slot.card.cost) return;
 
@@ -422,13 +501,13 @@ export class GameRenderer {
     switch (cardType) {
       case CardType.Unit: {
         if (!(ATTACK_LANES as readonly number[]).includes(col)) return;
-        if (this.engine.state.board.isCellOccupiedByUnit(col, BOTTOM_BUILDING_ROW + 1)) return;
+        if (this.engine.state.board.isCellOccupiedByUnit(col, this.localSpawnRow)) return;
         this.engine.playCard(handIndex, col);
         break;
       }
       case CardType.Building: {
-        if (this.engine.state.board.hasBuildingAt(col, BOTTOM_BUILDING_ROW)) return;
-        if (this.engine.state.board.isNoBuild(col, BOTTOM_BUILDING_ROW)) return;
+        if (this.engine.state.board.hasBuildingAt(col, this.localBuildRow)) return;
+        if (this.engine.state.board.isNoBuild(col, this.localBuildRow)) return;
         this.engine.playCard(handIndex, col);
         break;
       }
@@ -450,7 +529,7 @@ export class GameRenderer {
       case CardType.Unit: {
         const blocked = new Set<number>();
         for (const lane of ATTACK_LANES) {
-          if (this.engine.state.board.isCellOccupiedByUnit(lane, BOTTOM_BUILDING_ROW + 1)) blocked.add(lane);
+          if (this.engine.state.board.isCellOccupiedByUnit(lane, this.localSpawnRow)) blocked.add(lane);
         }
         this.boardView.showUnitLaneHighlights(Array.from(ATTACK_LANES), blocked, col);
         break;
@@ -459,10 +538,10 @@ export class GameRenderer {
         const valid: number[] = [];
         for (let c = 0; c < BOARD_COLS; c++) {
           if (!(ATTACK_LANES as readonly number[]).includes(c)) continue;
-          if (this.engine.state.board.isNoBuild(c, BOTTOM_BUILDING_ROW)) continue;
-          if (!this.engine.state.board.hasBuildingAt(c, BOTTOM_BUILDING_ROW)) valid.push(c);
+          if (this.engine.state.board.isNoBuild(c, this.localBuildRow)) continue;
+          if (!this.engine.state.board.hasBuildingAt(c, this.localBuildRow)) valid.push(c);
         }
-        this.boardView.showBuildingHighlights(valid, BOTTOM_BUILDING_ROW);
+        this.boardView.showBuildingHighlights(valid, this.localBuildRow);
         break;
       }
       case CardType.Spell: {
@@ -477,7 +556,7 @@ export class GameRenderer {
   // ── Upgrade drag ───────────────────────────────────────────────────────────
 
   private startUpgradeDrag(x: number, y: number): void {
-    const player = this.engine.state.bottomPlayer;
+    const player = this.localPlayer(this.engine.state);
     if (!player.canUpgradeBase()) return;
     const ghost = this.buildDragGhost(t('hud.upgrade'), player.nextUpgradeCost!, 0xffcc00);
     ghost.x = x;

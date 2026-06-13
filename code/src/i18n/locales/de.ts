@@ -110,4 +110,9 @@ export const de: Record<TranslationKey, string> = {
   'room.error.ranked': 'Rangliste noch nicht verfügbar',
   'room.error.noServer': 'Online-Spiel nicht verfügbar',
   'room.error.generic': 'Etwas ist schiefgelaufen',
+
+  // ── In-battle network status (S1-9) ─────────────────────────────────────────
+  'net.waiting': 'Warte auf Gegner',
+  'net.reconnecting': 'Verbindung wird wiederhergestellt',
+  'net.peerDc': 'Gegner getrennt, warte auf Wiederverbindung',
 };

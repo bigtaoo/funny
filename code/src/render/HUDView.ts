@@ -73,9 +73,12 @@ export class HUDView {
 
   // ── Per-frame sync ─────────────────────────────────────────────────────────
 
-  sync(state: GameState): void {
-    const p = state.bottomPlayer;
-    const e = state.topPlayer;
+  sync(state: GameState, localOwner: OwnerId = 0): void {
+    // Bottom strip always shows the *local* player; top strip the opponent.
+    // For the netplay joiner (localOwner 1) that means top↔bottom are swapped
+    // relative to the raw owner indices.
+    const p = localOwner === 0 ? state.bottomPlayer : state.topPlayer;
+    const e = localOwner === 0 ? state.topPlayer    : state.bottomPlayer;
 
     this.timerText.text = this.formatTime(state.elapsedTicks / 30);
     this.coinText.text  = `⬤ ${p.coins}`;
@@ -158,14 +161,14 @@ export class HUDView {
 
   get isPaused(): boolean { return this.pauseOverlay !== null; }
 
-  showGameOver(winner: OwnerId | null): void {
+  showGameOver(winner: OwnerId | null, localOwner: OwnerId = 0): void {
     if (this.gameOverOverlay) return;
     const overlay = new PIXI.Container();
     const bg = new PIXI.Graphics();
     bg.beginFill(0x000000, 0.55);
     bg.drawRoundedRect(-160, -50, 320, 100, 8);
     bg.endFill();
-    const msg  = winner === null ? t('hud.draw') : (winner === 0 ? t('hud.win') : t('hud.lose'));
+    const msg  = winner === null ? t('hud.draw') : (winner === localOwner ? t('hud.win') : t('hud.lose'));
     const text = new PIXI.Text(msg, { fontSize: 38, fill: 0xffffff, fontWeight: 'bold' });
     text.anchor.set(0.5);
     overlay.addChild(bg, text);

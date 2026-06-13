@@ -109,6 +109,11 @@ export const zh = {
   'room.error.ranked': '排位暂未开放',
   'room.error.noServer': '联机服务不可用',
   'room.error.generic': '出错了，请重试',
+
+  // ── In-battle network status (S1-9) ─────────────────────────────────────────
+  'net.waiting': '等待对手',
+  'net.reconnecting': '重新连接中',
+  'net.peerDc': '对手掉线，等待重连',
 };
 
 export type TranslationKey = keyof typeof zh;
