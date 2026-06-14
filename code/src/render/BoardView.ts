@@ -4,15 +4,15 @@ import { sideToOwner } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
 import baseTexUrl from '../assets/game_base.png';
-import mapTexUrl from '../assets/map.png';
+import { SketchPen } from './sketch';
+import { palette, fx } from './theme';
+import { bake } from './bake';
 
-/** Colors matching the art direction (notebook paper aesthetic) */
-const GRID_LINE_COLOR    = 0xc8d8e8;
-const GRID_LINE_ALPHA    = 0.4;
-const HIGHLIGHT_LANE     = 0x4488ff; // blue tint — valid attack lane
-const HIGHLIGHT_BUILDING = 0x44aa44; // green tint — valid building slot
+/** State/highlight colors sourced from theme.fx (art-direction §3.3). */
+const HIGHLIGHT_LANE     = fx.laneValid;     // valid attack lane
+const HIGHLIGHT_BUILDING = fx.buildingValid; // valid building slot
 const HIGHLIGHT_ALPHA    = 0.18;
-const HIGHLIGHT_METEOR   = 0xff4422; // red tint — meteor targeting
+const HIGHLIGHT_METEOR   = fx.meteor;        // meteor targeting
 
 // Base idle: alpha pulse only
 const BASE_ALPHA_MIN    = 0.65;
@@ -35,6 +35,8 @@ export class BoardView {
   private playerBase: BaseRef | null = null;
   private enemyBase:  BaseRef | null = null;
   private baseTime = 0;
+  /** Monotonic seed so each accumulated crack scrawls with a fresh hand. */
+  private crackSeed = 1;
 
   private readonly meteorPool = new ObjectPool<PIXI.Graphics>(
     () => new PIXI.Graphics(),
@@ -49,8 +51,7 @@ export class BoardView {
     this.noBuildLayer   = new PIXI.Graphics();
     this.highlightLayer = new PIXI.Graphics();
 
-    this.drawBackground();
-    this.drawGrid();
+    this.drawBoard();
     this.drawBases(layout);
     this.container.addChild(this.noBuildLayer);    // below highlights
     this.container.addChild(this.highlightLayer);
@@ -67,10 +68,10 @@ export class BoardView {
       const pos = this.layout.gridToScreen(col, row);
       const x = pos.x - cs / 2;
       const y = pos.y - cs / 2;
-      g.beginFill(0x888888, 0.30);
+      g.beginFill(fx.noBuild, 0.30);
       g.drawRect(x, y, cs, cs);
       g.endFill();
-      g.lineStyle(2, 0x555555, 0.7);
+      g.lineStyle(2, palette.pencil, 0.7);
       g.moveTo(x + cs * 0.22, y + cs * 0.22); g.lineTo(x + cs * 0.78, y + cs * 0.78);
       g.moveTo(x + cs * 0.78, y + cs * 0.22); g.lineTo(x + cs * 0.22, y + cs * 0.78);
       g.lineStyle(0);
@@ -115,20 +116,23 @@ export class BoardView {
     const hh = base.rect.h * 0.25;
     const numCracks = ratio < 0.4 ? 2 : 1;
 
-    gfx.lineStyle(1.2, 0x333333, 0.65);
+    // Draw with the shared hand-drawn pencil pen (art-direction §8) instead of a
+    // raw line, so cracks read as scrawled marks. Seed bumps per call so each hit
+    // adds a distinct jagged line on top of the accumulated ones.
+    const pen = new SketchPen(gfx, (this.crackSeed++ * 0x9e3779b1) >>> 0 || 1);
     for (let i = 0; i < numCracks; i++) {
-      // Random start near the base center
+      // Random start near the base center (render-side jitter is fine).
       let x = (Math.random() * 2 - 1) * hw;
       let y = (Math.random() * 2 - 1) * hh;
       let dir = Math.random() * Math.PI * 2;
-      gfx.moveTo(x, y);
-      // 3-segment jagged line
-      for (let seg = 0; seg < 3; seg++) {
+      const pts = [{ x, y }];
+      for (let seg = 0; seg < 3; seg++) {   // 3-segment jagged line
         dir += (Math.random() - 0.5) * 1.2;
         x += Math.cos(dir) * (8 + Math.random() * 8);
         y += Math.sin(dir) * (8 + Math.random() * 8);
-        gfx.lineTo(x, y);
+        pts.push({ x, y });
       }
+      pen.stroke(pts, { color: palette.pencil, width: 1.3, alpha: 0.7, taper: 0.5, double: false });
     }
   }
 
@@ -173,7 +177,7 @@ export class BoardView {
     for (const col of lanes) {
       const isBlocked = blockedCols.has(col);
       const isHovered = col === hoveredCol;
-      const color = isBlocked ? 0xdd3333 : (isHovered ? 0x2266ff : HIGHLIGHT_LANE);
+      const color = isBlocked ? fx.laneBlocked : (isHovered ? fx.laneHover : HIGHLIGHT_LANE);
       const alpha = isBlocked ? 0.28 : (isHovered ? 0.30 : HIGHLIGHT_ALPHA);
 
       this.highlightLayer.beginFill(color, alpha);
@@ -229,8 +233,8 @@ export class BoardView {
     this.highlightLayer.clear();
     if (!active) return;
     const rect = this.layout.playerBaseRect();
-    this.highlightLayer.beginFill(0xffcc00, 0.3);
-    this.highlightLayer.lineStyle(2, 0xffcc00, 0.8);
+    this.highlightLayer.beginFill(fx.upgrade, 0.3);
+    this.highlightLayer.lineStyle(2, fx.upgrade, 0.8);
     this.highlightLayer.drawRect(rect.x, rect.y, rect.w, rect.h);
     this.highlightLayer.endFill();
   }
@@ -245,7 +249,7 @@ export class BoardView {
     const pos = this.layout.gridToScreen(col, row);
     const cs  = this.layout.cellSize;
     const gfx = this.meteorPool.acquire();
-    gfx.lineStyle(4, 0xff0000);
+    gfx.lineStyle(4, fx.meteor);
     gfx.drawRect(pos.x - cs, pos.y - cs, cs * 2, cs * 2);
     this.container.addChild(gfx);
 
@@ -306,26 +310,17 @@ export class BoardView {
   }
 
   /**
-   * Battlefield background image (map.png) covering the board rect.
-   * Rendered as the bottommost layer; drawGrid() lays a translucent paper tone
-   * + grid lines on top so units and cards stay legible.
+   * Procedural notebook board (replaces the old stretched map.png, which never
+   * aligned with the runtime grid). Draws — in local 0,0-origin coords — an aged
+   * paper fill, hand-drawn ruled grid lines, and a scribbled border, then bakes
+   * the whole static layer to a texture (cached per orientation/size/cellSize)
+   * so it costs nothing per frame. Falls back to live Graphics if no renderer
+   * is wired (headless tests).
+   *
+   * The grid is drawn from the same cellSize the live overlays use, so the
+   * baked board and the dynamic highlight/crack layers stay pixel-aligned.
    */
-  private drawBackground(): void {
-    const r   = this.layout.boardRect;
-    const tex = PIXI.Texture.from(mapTexUrl as unknown as string);
-    const s   = new PIXI.Sprite(tex);
-    s.position.set(r.x, r.y);
-
-    // Texture dimensions are unknown until the image loads — fit on load.
-    const fit = (): void => { s.width = r.w; s.height = r.h; };
-    if (tex.baseTexture.valid) fit();
-    else tex.baseTexture.once('loaded', fit);
-
-    this.container.addChild(s);
-  }
-
-  private drawGrid(): void {
-    const gfx  = new PIXI.Graphics();
+  private drawBoard(): void {
     const r    = this.layout.boardRect;
     const cell = this.layout.cellSize;
 
@@ -334,31 +329,50 @@ export class BoardView {
     const numCols = this.layout.orientation === 'portrait' ? BOARD_COLS : BOARD_ROWS;
     const numRows = this.layout.orientation === 'portrait' ? BOARD_ROWS : BOARD_COLS;
 
-    // Translucent paper tone over the map background — keeps the board area
-    // distinct from the margins and keeps units/cards legible against the art.
-    gfx.beginFill(0xE8E4DB, 0.35);
-    gfx.drawRect(r.x, r.y, r.w, r.h);
+    const gfx = new PIXI.Graphics();
+
+    // Aged paper fill for the board area (local coords).
+    gfx.beginFill(palette.paperShade, 1);
+    gfx.drawRect(0, 0, r.w, r.h);
+    gfx.endFill();
+    // Faint warm shadow strip along bottom/right edges — a hint of page curl.
+    gfx.beginFill(palette.paperDeep, 0.35);
+    gfx.drawRect(0, r.h - 6, r.w, 6);
+    gfx.drawRect(r.w - 6, 0, 6, r.h);
     gfx.endFill();
 
-    // Grid lines
-    gfx.lineStyle(1, GRID_LINE_COLOR, GRID_LINE_ALPHA);
-
+    // Hand-drawn ruled grid. A fixed seed keeps the scrawl identical per battle.
+    const pen = new SketchPen(gfx, 0x9e3779b1);
     for (let c = 0; c <= numCols; c++) {
-      const x = r.x + c * cell;
-      gfx.moveTo(x, r.y);
-      gfx.lineTo(x, r.y + numRows * cell);
+      const x = c * cell;
+      pen.line(x, 0, x, numRows * cell, {
+        color: palette.ruleLine, width: 1.1, jitter: 0.6, taper: 0.85, double: false,
+      });
     }
     for (let rr = 0; rr <= numRows; rr++) {
-      const y = r.y + rr * cell;
-      gfx.moveTo(r.x, y);
-      gfx.lineTo(r.x + numCols * cell, y);
+      const y = rr * cell;
+      pen.line(0, y, numCols * cell, y, {
+        color: palette.ruleLine, width: 1.1, jitter: 0.6, taper: 0.85, double: false,
+      });
     }
 
-    // Board border — clear outline to distinguish board from margins
-    gfx.lineStyle(2, 0xaaaaaa, 0.6);
-    gfx.drawRect(r.x, r.y, r.w, r.h);
+    // Scribbled pencil border framing the play area.
+    pen.rect(1, 1, numCols * cell - 2, numRows * cell - 2, {
+      color: palette.pencil, width: 2, jitter: 1.0,
+    });
 
-    this.container.addChild(gfx);
+    const key = `board:${this.layout.orientation}:${Math.round(r.w)}x${Math.round(r.h)}:${cell}`;
+    const tex = bake(key, gfx, r.w, r.h);
+    if (tex) {
+      const sprite = new PIXI.Sprite(tex);
+      sprite.position.set(r.x, r.y);
+      this.container.addChild(sprite);
+      gfx.destroy();
+    } else {
+      // No renderer (tests): draw live at the board offset.
+      gfx.position.set(r.x, r.y);
+      this.container.addChild(gfx);
+    }
   }
 
 }

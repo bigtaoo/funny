@@ -3,6 +3,9 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
+import { SketchPen } from '../render/sketch';
+import { palette } from '../render/theme';
+import { bake } from '../render/bake';
 
 // ── AI name pool ───────────────────────────────────────────────────────────────
 
@@ -19,8 +22,6 @@ function randomAiName(): string {
 const C = {
   bg:     0xf5f0e8,
   paper:  0xfaf6ee,
-  line:   0xc8d8e8,
-  margin: 0xffb3b3,
   dark:   0x2c2c2a,
   mid:    0x888888,
   light:  0xdddddd,
@@ -171,19 +172,8 @@ export class LobbyScene implements Scene {
   private build(): void {
     const { w, h } = this;
 
-    // Background + notebook lines
-    const bg = new PIXI.Graphics();
-    bg.beginFill(C.bg);
-    bg.drawRect(0, 0, w, h);
-    bg.endFill();
-
-    const lineGap = Math.round(h / 28);
-    bg.lineStyle(1, C.line, 0.6);
-    for (let y = lineGap; y < h; y += lineGap) { bg.moveTo(0, y); bg.lineTo(w, y); }
-    bg.lineStyle(1, C.margin, 0.7);
-    const mx = Math.round(w * 0.09);
-    bg.moveTo(mx, 0); bg.lineTo(mx, h);
-    this.container.addChild(bg);
+    // Background — procedural notebook paper (sketch.ts), baked once per size.
+    this.container.addChild(this.buildBackground());
 
     // Header block
     const tbH = Math.round(h * 0.14);
@@ -246,23 +236,16 @@ export class LobbyScene implements Scene {
       t('lobby.feature.2'),
       t('lobby.feature.3'),
     ].forEach((label, i) => {
-      const box = new PIXI.Graphics();
-      box.beginFill(C.paper);
-      box.lineStyle(1, C.line);
-      box.drawRoundedRect(0, 0, blockW, blockH, 4);
-      box.endFill();
+      const box = this.sketchPanel(blockW, blockH, { fill: C.paper, border: C.dark, width: 2, seed: 11 + i });
       box.x = blockX;
       box.y = blockY + i * (blockH + blockGap);
       this.container.addChild(box);
 
-      const accent = new PIXI.Graphics();
-      accent.beginFill(C.accent, 0.7);
-      accent.drawRect(0, 0, 4, blockH);
-      accent.endFill();
-      box.addChild(accent);
+      // Blue ink accent stroke down the left edge (replaces the flat bar).
+      new SketchPen(box, 31 + i).line(4, 5, 4, blockH - 5, { color: C.accent, width: 4, jitter: 0.8, taper: 0.85 });
 
       const lbl = txt(label, Math.round(blockH * 0.28), C.dark);
-      lbl.anchor.set(0, 0.5); lbl.x = 14; lbl.y = blockH / 2;
+      lbl.anchor.set(0, 0.5); lbl.x = 16; lbl.y = blockH / 2;
       box.addChild(lbl);
     });
 
@@ -301,11 +284,7 @@ export class LobbyScene implements Scene {
       const cx = btnX + i * (campW + campGap);
       this.campaignBtnRects.push({ x: cx, y: campY, w: campW, h: campH });
 
-      const cbg = new PIXI.Graphics();
-      cbg.beginFill(C.paper);
-      cbg.lineStyle(2, C.gold);
-      cbg.drawRoundedRect(0, 0, campW, campH, 6);
-      cbg.endFill();
+      const cbg = this.sketchPanel(campW, campH, { fill: C.paper, border: C.gold, width: 2.4, seed: 51 + i });
       cbg.x = cx; cbg.y = campY;
       this.container.addChild(cbg);
 
@@ -360,12 +339,65 @@ export class LobbyScene implements Scene {
     this.container.addChild(this.vsLayer);
   }
 
+  /**
+   * Procedural notebook background drawn with the shared SketchPen: aged paper,
+   * hand-drawn faint-blue ruled lines, and a red "teacher's margin" line down
+   * the left (diegetic correcting pen, double-stroked for emphasis). Baked to a
+   * texture cached per (w,h) so it costs nothing per frame; falls back to live
+   * Graphics if no renderer is wired.
+   */
+  private buildBackground(): PIXI.DisplayObject {
+    const { w, h } = this;
+    const gfx = new PIXI.Graphics();
+    gfx.beginFill(C.bg);
+    gfx.drawRect(0, 0, w, h);
+    gfx.endFill();
+
+    const pen = new SketchPen(gfx, 0x5bd1c7);
+    const lineGap = Math.round(h / 28);
+    for (let y = lineGap; y < h; y += lineGap) {
+      pen.line(0, y, w, y, { color: palette.ruleLine, width: 1.1, jitter: 0.7, taper: 0.9, double: false });
+    }
+    const mx = Math.round(w * 0.09);
+    pen.line(mx, 0, mx, h, { color: palette.inkRed, width: 2.2, jitter: 1.0, taper: 0.95 });
+
+    const tex = bake(`lobbybg:${Math.round(w)}x${Math.round(h)}`, gfx, w, h);
+    if (tex) {
+      const s = new PIXI.Sprite(tex);
+      gfx.destroy();
+      return s;
+    }
+    return gfx;
+  }
+
+  /**
+   * Shared hand-drawn panel: flat fill + a scribbled SketchPen border. A fixed
+   * seed keeps each panel's scrawl stable across redraws. Used for the feature
+   * blocks, campaign buttons, start button, and VS player cards so the whole
+   * lobby reads as one notebook doodle.
+   */
+  private sketchPanel(
+    w: number, h: number,
+    opts: { fill: number; border: number; width?: number; seed?: number },
+  ): PIXI.Graphics {
+    const g = new PIXI.Graphics();
+    g.beginFill(opts.fill);
+    g.drawRect(0, 0, w, h);
+    g.endFill();
+    new SketchPen(g, opts.seed ?? 7).rect(2, 2, w - 4, h - 4, {
+      color: opts.border, width: opts.width ?? 2, jitter: 1.0,
+    });
+    return g;
+  }
+
   private drawBtn(gfx: PIXI.Graphics, w: number, h: number, enabled: boolean): void {
     gfx.clear();
     gfx.beginFill(enabled ? C.dark : C.btnOff);
-    gfx.lineStyle(2, enabled ? C.accent : C.light);
-    gfx.drawRoundedRect(0, 0, w, h, 6);
+    gfx.drawRect(0, 0, w, h);
     gfx.endFill();
+    new SketchPen(gfx, 5).rect(2, 2, w - 4, h - 4, {
+      color: enabled ? C.accent : C.light, width: 2.4, jitter: 1.0,
+    });
   }
 
   private buildVsLayer(w: number, h: number): PIXI.Container {
@@ -402,24 +434,22 @@ export class LobbyScene implements Scene {
   }
 
   private buildPlayerCard(w: number, h: number, name: string, accentColor: number): PIXI.Container {
-    const c = new PIXI.Container();
-    const bg = new PIXI.Graphics();
-    bg.beginFill(C.paper);
-    bg.lineStyle(2, accentColor);
-    bg.drawRoundedRect(0, 0, w, h, 6);
-    bg.endFill();
-    const bar = new PIXI.Graphics();
-    bar.beginFill(accentColor); bar.drawRect(0, 0, 5, h); bar.endFill();
+    // Seed by side colour so the you/opp cards scrawl differently.
+    const bg = this.sketchPanel(w, h, { fill: C.paper, border: accentColor, width: 2.4, seed: accentColor });
+    // Ink accent stroke down the left edge.
+    new SketchPen(bg, accentColor ^ 0x55).line(4, 5, 4, h - 5, { color: accentColor, width: 5, jitter: 0.8, taper: 0.85 });
     const nameLabel = txt(name, Math.round(h * 0.45), C.dark, true);
     nameLabel.name = 'nameLabel'; nameLabel.anchor.set(0, 0.5);
     nameLabel.x = Math.round(w * 0.08); nameLabel.y = h / 2;
-    c.addChild(bg, bar, nameLabel);
-    return c;
+    bg.addChild(nameLabel);
+    return bg;
   }
 
   private onStartPressed(): void {
     this.state = 'matching'; this.matchTimer = 0; this.dotsTimer = 0; this.dotCount = 0;
-    this.drawBtn(this.btnBg, this.btnBg.width, this.btnBg.height, false);
+    // Use the stored rect, not gfx.width — the sketch stroke overshoots the box,
+    // so re-reading bounds would grow the button on every redraw.
+    this.drawBtn(this.btnBg, this.btnRect.w, this.btnRect.h, false);
     this.btnLabel.text = t('lobby.matching') + '...';
   }
 

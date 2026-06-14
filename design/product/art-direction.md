@@ -141,8 +141,8 @@
 
 ### 5.2 公共笔触层
 
-- **`sketch.ts`**：手绘笔触原语（`sketchLine/sketchRect/sketchCircle`…），带**确定性 `Prng` seed 抖动 + 收笔变细 + 双描边**。棋盘和 UI 共用同一支笔，质感才统一。
-- **`theme.ts`**：调色板 / 线宽 / 抖动幅度集中一处，改风格只动这里。
+- **`sketch.ts`**：手绘笔触原语，实现为 `SketchPen` 类（绑定一个 `PIXI.Graphics` + 一个 seeded `Prng`），方法 `stroke / line / rect / circle / hatch`，带**确定性 `Prng` seed 抖动 + 收笔变细（taper）+ 双描边（ghost）**。棋盘和 UI 共用同一支笔，质感才统一。
+- **`theme.ts`**：调色板 / 线宽 / 抖动幅度集中一处，改风格只动这里。**单一来源**还含 `factionInk`（敌我蓝红，战场单位/基地染色取此）+ `fx`（lane/building/meteor/upgrade/hp 等功能状态色，§3.3 不受蓝红约束）；BoardView 高亮、UnitView 阵营色/血条均引用，不再各自硬编码。
 - **纯几何 wobble 不够"铅笔"**：需叠一张可平铺的颗粒（grain）纹理 + 笔触纹理才像石墨/油墨。这是少数"程序画也要资源"的地方，但全场只需一张。
 
 ### 5.3 烘焙缓存

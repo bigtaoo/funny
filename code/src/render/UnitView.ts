@@ -9,6 +9,7 @@ import type { TaoAsset } from './stickman/StickmanRuntime';
 import infantryTaoUrl from '../assets/infantry.tao';
 import archerTaoUrl from '../assets/archer.tao';
 import shieldBearerTaoUrl from '../assets/shieldbearer.tao';
+import { factionInk, fx, palette } from './theme';
 
 /**
  * .tao skeletal-animation bundle URL per unit type. Types listed here render as
@@ -20,17 +21,28 @@ const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
   [UnitType.ShieldBearer]:  shieldBearerTaoUrl as unknown as string, // 盾兵
 };
 
+/**
+ * Faction ink fills the unit body — blue = us, red = enemy (art-direction §3.2,
+ * the primary readability rule). Sourced from theme so a re-skin can't break the
+ * friend/foe split. NOTE: Bottom/Top here are render sides, not owners; the local
+ * player always sits at Bottom after the localSide-aware layout flip.
+ */
+const SIDE_INK: Record<Side, number> = {
+  [Side.Bottom]: factionInk.friend,
+  [Side.Top]:    factionInk.enemy,
+};
+
+/**
+ * Per-type marker color — a small secondary dot so placeholder circles stay
+ * type-distinguishable. Faction (body color) dominates; type is the accent.
+ * Real units render as .tao stickmen and don't use this.
+ */
 const UNIT_COLORS: Record<UnitType, number> = {
   [UnitType.Infantry]: 0x222222,
   [UnitType.ShieldBearer]:  0x1a3a8a,
   [UnitType.Archer]:    0xcc2200,
   [UnitType.Ironclad]:  0x556677,  // steel — heavy armor
   [UnitType.Runner]:    0xddaa22,  // amber — fast rusher
-};
-
-const SIDE_TINT: Record<Side, number> = {
-  [Side.Bottom]: 0x4488ff,
-  [Side.Top]:    0xff6622,
 };
 
 const RADIUS        = 10;
@@ -292,14 +304,20 @@ export class UnitView {
 
     const body = c.getChildByName('body') as PIXI.Graphics;
     body.clear();
-    body.beginFill(UNIT_COLORS[unit.unitType]);
+    // Faction ink dominates (blue = us / red = enemy); a small type marker dot
+    // keeps placeholder circles distinguishable without stealing the faction cue.
+    body.beginFill(SIDE_INK[unit.side]);
     body.drawCircle(0, 0, RADIUS);
+    body.endFill();
+    body.beginFill(UNIT_COLORS[unit.unitType], 0.9);
+    body.drawCircle(0, 0, RADIUS * 0.42);
     body.endFill();
 
     const ring = c.getChildByName('ring') as PIXI.Graphics;
     ring.clear();
-    ring.lineStyle(2, SIDE_TINT[unit.side]);
-    ring.drawCircle(0, 0, RADIUS + 2);
+    // Pencil outline — the notebook line, not the faction cue (that's the fill).
+    ring.lineStyle(1.5, palette.pencil, 0.85);
+    ring.drawCircle(0, 0, RADIUS + 1);
 
     return c;
   }
@@ -316,7 +334,7 @@ export class UnitView {
     if (!hpFill) return;
     hpFill.clear();
     const ratio = Math.max(0, unit.hp / unit.maxHp);
-    hpFill.beginFill(ratio > 0.4 ? 0x44cc44 : 0xcc4444);
+    hpFill.beginFill(ratio > 0.4 ? fx.hpHigh : fx.hpLow);
 
     // Determine HP bar Y offset: stickman containers have their own y offset baked in.
     const isStickman = this.stickmanRuntimes.has(unit.id);
