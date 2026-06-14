@@ -19,6 +19,7 @@
     "dev:gateway": "npm run dev --workspace @nw/gateway",
     "dev:matchsvc": "npm run dev --workspace @nw/matchsvc",
     "dev:commercial": "npm run dev --workspace @nw/commercial",
+    "dev:all": "powershell -NoProfile -ExecutionPolicy Bypass -File dev-up.ps1",
     "test": "npm run test --workspaces --if-present"
   },
   "engines": {

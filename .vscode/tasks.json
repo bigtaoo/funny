@@ -1,0 +1,33 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "server: dev all (skip mongo)",
+      "type": "shell",
+      "command": "npm run dev:all -- -SkipMongo",
+      "options": { "cwd": "${workspaceFolder}/server" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "group": { "kind": "build", "isDefault": true },
+      "detail": "Start gateway/matchsvc/game/meta/commercial + shared watch (Mongo started manually)"
+    },
+    {
+      "label": "server: dev all (with mongo)",
+      "type": "shell",
+      "command": "npm run dev:all",
+      "options": { "cwd": "${workspaceFolder}/server" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "detail": "Same as above but also runs docker compose up -d for Mongo"
+    },
+    {
+      "label": "server: dev meta+commercial (skip mongo)",
+      "type": "shell",
+      "command": "npm run dev:all -- -SkipMongo -Only meta,commercial",
+      "options": { "cwd": "${workspaceFolder}/server" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "detail": "Economy-only debugging: just meta + commercial"
+    }
+  ]
+}
