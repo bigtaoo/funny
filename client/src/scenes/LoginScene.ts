@@ -38,6 +38,7 @@ const C = {
   mid:    0x888888,
   light:  0xdddddd,
   btnOff: 0xbbbbbb,
+  btnDis: 0xddd8ce, // disabled button fill (pale paper-grey)
   accent: 0x4477cc,
   gold:   0xcc9900,
   green:  0x4a9e4a,
@@ -86,6 +87,11 @@ export class LoginScene implements Scene {
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
 
+  /** Active button press: grows the button, then fires its action when the pop ends. */
+  private press: { key: string; t: number; fn: () => void } | null = null;
+  private static readonly PRESS_DUR = 0.12; // seconds — quick tap-grow before the action fires
+  private static readonly PRESS_AMP = 0.12; // peak scale-up (1.0 → 1.12 → 1.0)
+
   /** Hidden DOM input that captures keystrokes (incl. mobile soft keyboard). */
   private hiddenInput: HTMLInputElement | null = null;
 
@@ -102,6 +108,19 @@ export class LoginScene implements Scene {
   // ── Scene interface ──────────────────────────────────────────────────────────
 
   update(dt: number): void {
+    // A button is mid-press: grow it for PRESS_DUR, then fire its action. Deferring
+    // the action until the pop finishes makes the tap visibly register first.
+    if (this.press) {
+      this.press.t += dt;
+      if (this.press.t >= LoginScene.PRESS_DUR) {
+        const fn = this.press.fn;
+        this.press = null;
+        fn();
+      } else {
+        this.render();
+      }
+      return;
+    }
     if (this.view === 'submitting' && this.spinnerText) {
       this.dotsTimer += dt;
       if (this.dotsTimer >= 0.4) {
@@ -147,6 +166,11 @@ export class LoginScene implements Scene {
     el.addEventListener('input', () => {
       if (this.focused) {
         this.fields[this.focused] = el.value;
+        // Editing any field clears a stale validation/auth error so the form stays
+        // live: the red line disappears as the user fixes the input (the green ✓
+        // hints already update per keystroke), and the submit button never looks
+        // "stuck" behind an error that no longer reflects the current values.
+        if (this.errorKey) { this.errorKey = null; this.errorDetail = null; }
         this.render();
       }
     });
@@ -181,6 +205,7 @@ export class LoginScene implements Scene {
   // ── Input ──────────────────────────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
+    if (this.press) return; // swallow taps while a button is mid-press
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
@@ -383,11 +408,13 @@ export class LoginScene implements Scene {
     }
     y += Math.round(h * 0.04);
 
-    // Submit.
+    // Submit — enabled only when the form would actually pass validation, so its
+    // appearance (vivid vs. faded-grey) tells the user at a glance if it's ready.
     this.addButton(
       isRegister ? t('auth.submitRegister') : t('auth.submitLogin'),
       fieldX, y, fieldW, Math.round(h * 0.092),
       C.dark, isRegister ? C.gold : C.accent, () => this.onSubmit(),
+      0xffffff, undefined, this.submitEnabled(isRegister),
     );
     y += Math.round(h * 0.092) + Math.round(h * 0.03);
 
@@ -400,6 +427,23 @@ export class LoginScene implements Scene {
       rect: { x: w / 2 - swap.width / 2 - sp, y: y - swap.height / 2 - sp, w: swap.width + 2 * sp, h: swap.height + 2 * sp },
       fn: () => this.goView(isRegister ? 'password' : 'register'),
     });
+  }
+
+  /**
+   * Whether the submit button should be enabled. Mirrors the validation in
+   * `onSubmit` so the button's enabled look and the actual gate never disagree.
+   * Login only needs both fields non-empty; register enforces the full rules.
+   */
+  private submitEnabled(isRegister: boolean): boolean {
+    const loginId = this.fields.loginId.trim();
+    const pw = this.fields.password;
+    if (!isRegister) return loginId.length > 0 && pw.length > 0;
+    return (
+      loginId.length >= MIN_LOGIN_ID_LEN &&
+      pw.length >= MIN_PASSWORD_LEN &&
+      this.fields.confirmPassword.length > 0 &&
+      pw === this.fields.confirmPassword
+    );
   }
 
   private drawField(
@@ -447,21 +491,49 @@ export class LoginScene implements Scene {
     this.spinnerText = label;
   }
 
-  /** Draw a rounded button and register its hit rect. */
+  /**
+   * Draw a rounded button and register its hit rect.
+   *
+   * `enabled=false` renders a clearly inert button (pale grey fill, muted text,
+   * faded) and ignores taps — so the user can tell at a glance whether it's
+   * actionable instead of guessing. Enabled taps grow the button (press pop) and
+   * defer the action until the pop ends (see `update`).
+   */
   private addButton(
     label: string, x: number, y: number, w: number, h: number,
-    fill: number, stroke: number, fn: () => void, textColor = 0xffffff, fontSize?: number,
+    fill: number, stroke: number, fn: () => void, textColor = 0xffffff,
+    fontSize?: number, enabled = true,
   ): void {
+    const f  = enabled ? fill : C.btnDis;
+    const st = enabled ? stroke : C.btnOff;
+    const tc = enabled ? textColor : C.mid;
+
+    // Build the button centered on its own container so the press pop scales
+    // about the middle (not the top-left corner).
+    const cont = new PIXI.Container();
+    cont.x = x + w / 2; cont.y = y + h / 2;
+
     const g = new PIXI.Graphics();
-    g.beginFill(fill); g.lineStyle(2, stroke);
-    g.drawRoundedRect(0, 0, w, h, 6); g.endFill();
-    g.x = x; g.y = y;
-    this.container.addChild(g);
+    g.beginFill(f); g.lineStyle(enabled ? 2 : 1.5, st);
+    g.drawRoundedRect(-w / 2, -h / 2, w, h, 6); g.endFill();
+    cont.addChild(g);
 
-    const tl = txt(label, fontSize ?? Math.round(h * 0.36), textColor, true);
-    tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
-    this.container.addChild(tl);
+    const tl = txt(label, fontSize ?? Math.round(h * 0.36), tc, true);
+    tl.anchor.set(0.5, 0.5); tl.x = 0; tl.y = 0;
+    cont.addChild(tl);
 
-    this.hits.push({ rect: { x, y, w, h }, fn });
+    if (!enabled) cont.alpha = 0.55;
+
+    const key = `${x},${y},${w},${h}`;
+    if (enabled && this.press && this.press.key === key) {
+      const p = Math.min(1, this.press.t / LoginScene.PRESS_DUR);
+      cont.scale.set(1 + LoginScene.PRESS_AMP * Math.sin(Math.PI * p));
+    }
+    this.container.addChild(cont);
+
+    this.hits.push({
+      rect: { x, y, w, h },
+      fn: enabled ? () => { this.press = { key, t: 0, fn }; } : () => { /* disabled: inert */ },
+    });
   }
 }
