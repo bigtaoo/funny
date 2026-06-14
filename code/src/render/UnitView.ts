@@ -7,10 +7,22 @@ import { ObjectPool } from '../cache/ObjectPool';
 import { StickmanRuntime } from './stickman/StickmanRuntime';
 import type { TaoAsset } from './stickman/StickmanRuntime';
 import infantryTaoUrl from '../assets/infantry.tao';
+import archerTaoUrl from '../assets/archer.tao';
+import shieldBearerTaoUrl from '../assets/shieldbearer.tao';
+
+/**
+ * .tao skeletal-animation bundle URL per unit type. Types listed here render as
+ * animated stickmen; types absent fall back to the colored-circle placeholder.
+ */
+const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
+  [UnitType.Infantry]: infantryTaoUrl     as unknown as string,
+  [UnitType.Archer]:    archerTaoUrl       as unknown as string,
+  [UnitType.ShieldBearer]:  shieldBearerTaoUrl as unknown as string, // 盾兵
+};
 
 const UNIT_COLORS: Record<UnitType, number> = {
-  [UnitType.Swordsman]: 0x222222,
-  [UnitType.Guardian]:  0x1a3a8a,
+  [UnitType.Infantry]: 0x222222,
+  [UnitType.ShieldBearer]:  0x1a3a8a,
   [UnitType.Archer]:    0xcc2200,
   [UnitType.Ironclad]:  0x556677,  // steel — heavy armor
   [UnitType.Runner]:    0xddaa22,  // amber — fast rusher
@@ -32,7 +44,7 @@ const HP_SHOW_FRAMES  = 120;
 const HP_FADE_FRAMES  = 30;
 const HP_TOTAL_FRAMES = HP_SHOW_FRAMES + HP_FADE_FRAMES;
 
-// ── Pool factory / resetter (Guardian & Archer circle placeholder) ─────────────
+// ── Pool factory / resetter (circle placeholder for non-stickman unit types) ───
 
 function createUnitContainer(): PIXI.Container {
   const c = new PIXI.Container();
@@ -72,15 +84,19 @@ export class UnitView {
   /** All active unit display containers (circle or stickman wrapper), keyed by unit id. */
   private sprites: Map<number, PIXI.Container> = new Map();
 
-  /** Active StickmanRuntime instances for Swordsman units. */
+  /** Active StickmanRuntime instances for stickman-animated units, keyed by unit id. */
   private readonly stickmanRuntimes: Map<number, StickmanRuntime> = new Map();
 
+  /** Unit type of each active stickman unit — needed to return its pair to the matching pool. */
+  private readonly stickmanTypes: Map<number, UnitType> = new Map();
+
   /**
-   * Pool of idle stickman (wrapper + runtime) pairs for reuse. Swordsmen are
-   * the high-frequency unit, so reusing their ~11-sprite runtimes instead of
-   * new/destroy per spawn is the main swarm-performance lever.
+   * Pools of idle stickman (wrapper + runtime) pairs for reuse, keyed by unit
+   * type (textures differ per type so pools can't be shared). Reusing the
+   * ~11-sprite runtimes instead of new/destroy per spawn is the main
+   * swarm-performance lever.
    */
-  private readonly stickmanPool: Array<{ wrapper: PIXI.Container; runtime: StickmanRuntime }> = [];
+  private readonly stickmanPools: Map<UnitType, Array<{ wrapper: PIXI.Container; runtime: StickmanRuntime }>> = new Map();
 
   /**
    * Per-unit HP bar visibility timer (render frames remaining).
@@ -88,8 +104,8 @@ export class UnitView {
    */
   private hpTimers: Map<number, number> = new Map();
 
-  /** Loaded once for all Swordsman units; null until the fetch resolves. */
-  private infantryAsset: TaoAsset | null = null;
+  /** Loaded .tao assets keyed by unit type; entries appear as each fetch resolves. */
+  private readonly assets: Map<UnitType, TaoAsset> = new Map();
 
   private readonly pool = new ObjectPool<PIXI.Container>(
     createUnitContainer,
@@ -101,12 +117,15 @@ export class UnitView {
     this.boardView = boardView;
     this.container = new PIXI.Container();
 
-    // Start loading the infantry asset in the background.
-    // The game will be playable before the first unit can spawn, so by the
-    // time acquireSprite() is called for a Swordsman this Promise will be settled.
-    StickmanRuntime.loadAsset(infantryTaoUrl as unknown as string)
-      .then(asset => { this.infantryAsset = asset; })
-      .catch(err  => { console.warn('[UnitView] infantry.tao failed to load:', err); });
+    // Start loading every stickman asset in the background. The game is playable
+    // before the first unit can spawn, so by the time acquireSprite() runs for a
+    // stickman-animated unit these Promises will normally be settled; until then
+    // that unit falls back to the circle placeholder.
+    for (const [type, url] of Object.entries(STICKMAN_ASSETS) as [UnitType, string][]) {
+      StickmanRuntime.loadAsset(url)
+        .then(asset => { this.assets.set(type, asset); })
+        .catch(err  => { console.warn(`[UnitView] ${type} .tao failed to load:`, err); });
+    }
   }
 
   // ── Per-frame sync ────────────────────────────────────────────────────────
@@ -212,19 +231,19 @@ export class UnitView {
   // ── Private helpers ───────────────────────────────────────────────────────
 
   private acquireSprite(unit: Unit): PIXI.Container {
-    if (unit.unitType === UnitType.Swordsman && this.infantryAsset) {
-      return this.buildStickmanContainer(unit);
-    }
+    const asset = this.assets.get(unit.unitType);
+    if (asset) return this.buildStickmanContainer(unit, asset);
     return this.buildCircleContainer(unit);
   }
 
-  // ─── Stickman container (Swordsman with loaded asset) ─────────────────────
+  // ─── Stickman container (unit type with a loaded .tao asset) ───────────────
 
-  private buildStickmanContainer(unit: Unit): PIXI.Container {
+  private buildStickmanContainer(unit: Unit, asset: TaoAsset): PIXI.Container {
     const mirrorX = unit.side === Side.Top;
+    this.stickmanTypes.set(unit.id, unit.unitType);
 
-    // Reuse a pooled (wrapper + runtime) pair when available.
-    const pooled = this.stickmanPool.pop();
+    // Reuse a pooled (wrapper + runtime) pair of the same type when available.
+    const pooled = this.stickmanPools.get(unit.unitType)?.pop();
     if (pooled) {
       pooled.runtime.reset({ mirrorX });
       pooled.wrapper.visible = true;
@@ -242,7 +261,7 @@ export class UnitView {
     const wrapper = new PIXI.Container();
     wrapper.visible = true;
 
-    const runtime = new StickmanRuntime(this.infantryAsset!, { mirrorX });
+    const runtime = new StickmanRuntime(asset, { mirrorX });
     this.stickmanRuntimes.set(unit.id, runtime);
 
     // ── HP bar (positioned above the character's head) ────────────────────
@@ -265,7 +284,7 @@ export class UnitView {
     return wrapper;
   }
 
-  // ─── Circle container (Guardian / Archer, or Swordsman before asset loads) ──
+  // ─── Circle container (PvE-only types, or stickman units before asset loads) ──
 
   private buildCircleContainer(unit: Unit): PIXI.Container {
     const c = this.pool.acquire();
@@ -326,10 +345,14 @@ export class UnitView {
     const runtime = this.stickmanRuntimes.get(unitId);
     if (runtime) {
       this.stickmanRuntimes.delete(unitId);
-      // Return the (wrapper + runtime) pair to the pool instead of destroying.
+      const type = this.stickmanTypes.get(unitId)!;
+      this.stickmanTypes.delete(unitId);
+      // Return the (wrapper + runtime) pair to its type's pool instead of destroying.
       sprite.removeFromParent();
       sprite.visible = false;
-      this.stickmanPool.push({ wrapper: sprite, runtime });
+      let pool = this.stickmanPools.get(type);
+      if (!pool) { pool = []; this.stickmanPools.set(type, pool); }
+      pool.push({ wrapper: sprite, runtime });
     } else {
       this.pool.release(sprite);
     }

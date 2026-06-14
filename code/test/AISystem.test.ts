@@ -28,7 +28,7 @@ const cardOf = (pred: (c: typeof CARD_DEFINITIONS[number]) => boolean) =>
 
 const METEOR = cardOf((c) => c.spellType === SpellType.Meteor);
 const TOWER = cardOf((c) => c.buildingType === BuildingType.ArrowTower);
-const SWORD = cardOf((c) => c.unitType === UnitType.Swordsman);
+const SWORD = cardOf((c) => c.unitType === UnitType.Infantry);
 
 function freshState(): GameState {
   return new GameState(12345);
@@ -40,7 +40,7 @@ function giveInk(state: GameState, ink: number): void {
 
 /** Place an enemy (Bottom) unit at a grid cell. */
 function addEnemy(state: GameState, col: number, row: number): void {
-  state.board.addUnit(new Unit(UnitType.Swordsman, Side.Bottom, col, row));
+  state.board.addUnit(new Unit(UnitType.Infantry, Side.Bottom, col, row));
 }
 
 /** Run the AI until it emits a command (or give up after a few intervals). */

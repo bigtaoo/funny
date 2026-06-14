@@ -10,7 +10,7 @@
 | 1 | 高 | 逻辑内核单测 + 确定性黄金回放测试 | ✅ 完成（33 测试，发现并修复跨实例 ID 不可复现） |
 | 2 | 高 | 增强 AI（经济意识 / 防守用陨石 / 威胁评估 / 升级规划） | ✅ 完成（威胁评估 + 三段式决策 + 难度分级 + 5 测试） |
 | 3 | 中 | 同步 README（刷新时间 / 端口 / 兵种译名 / 目录结构） | ✅ 完成 |
-| 4 | 中 | 完成 Guardian / Archer 骨骼动画接入，去掉占位圆 | ☐ 待办 |
+| 4 | 中 | 完成 ShieldBearer / Archer 骨骼动画接入，去掉占位圆 | ☐ 待办 |
 | 5 | 低 | 重构 `GameEngine.processCommand` 重复分支为 helper | ✅ 完成（抽 `consumeCardSlot` + 闭包 effect，事件顺序不变） |
 | 6 | 低 | 性能：减少 `MovementSystem` 每帧全量拷贝、线性扫描 | ✅ 完成（去掉每帧 Array.from 快照 + 扫描过滤排序） |
 
@@ -62,8 +62,8 @@
 `AISystem` 由"无脑出第一张可用牌"重写为**威胁驱动的三段式决策**（详见 `DESIGN.md` §13）：
 
 - **威胁评估**：`computeThreatByCol` 按敌军 row 接近 AI 基地（row 17）的程度加权出每列威胁；`countNearBaseEnemies` 统计进入危险区的敌军。
-- **紧急防守**：基地受压时优先陨石清近基地敌群 → 在威胁最高车道放箭塔 → Guardian 肉盾拦截。
-- **经济意识**：不再盲出手牌首张，按偏好顺序（Swordsman→Archer→Guardian）挑性价比牌、推防守最弱车道；早期在安全车道补兵营维持出兵流。
+- **紧急防守**：基地受压时优先陨石清近基地敌群 → 在威胁最高车道放箭塔 → ShieldBearer 肉盾拦截。
+- **经济意识**：不再盲出手牌首张，按偏好顺序（Infantry→Archer→ShieldBearer）挑性价比牌、推防守最弱车道；早期在安全车道补兵营维持出兵流。
 - **升级规划**：安全且 `nextUpgradeCost ≤ COIN_CAP` 时升级 / 攒钱。配套把 `COIN_CAP` 从 30 调到 **300**（≥ 首档升级费 50），让升级对人机双方都**可达**；`upgradeReachable` 守卫保留为防御性代码（费用若再超过上限会自动跳过）。
 - **难度分级**：`'easy' | 'medium' | 'hard'`（默认 medium，`GameEngine` 暂用默认值），分别调 think 间隔 / 反应距离 / 是否用陨石箭塔兵营。
 - **测试**：新增 `test/AISystem.test.ts`（5 用例），全套 38 测试通过；黄金回放确定性不变（AI 仅依赖 state + 注入 Prng）。
@@ -73,7 +73,7 @@
 ## 3. 同步 README
 - 刷新时间 2 分钟 → 30s。
 - 端口 8080 → 9090。
-- 兵种译名统一（Swordsman/Guardian/Archer 与中文对应）。
+- 兵种译名统一（Infantry/ShieldBearer/Archer 与中文对应）。
 - 目录结构去掉已删的 `tools/animation-editor`。
 
 ### ✅ 完成记录（2026-06-12）
@@ -82,11 +82,11 @@
 
 - **刷新时间**：2 分钟 → **30 秒**（`config.ts` `CARD_REFRESH_TICKS=900`）。
 - **端口**：8080 → **9090**（`package.json` 的 `start` 脚本用 `--port 9090` 覆盖了 `webpack.config.js` 的 8080；以脚本为准）。
-- **兵种译名**：补英文名映射——普通兵 Swordsman / 盾兵 Guardian / 弓箭兵 Archer（与 `i18n/locales/zh.ts` 的 `card.*` 一致）。
+- **兵种译名**：补英文名映射——普通兵 Infantry / 盾兵 ShieldBearer / 弓箭兵 Archer（与 `i18n/locales/zh.ts` 的 `card.*` 一致）。
 - **目录结构**：删掉早已不存在的 `tools/animation-editor`（`tools/` 实际只有 `animator`）。
 - **顺手修的过期信息**：导出格式 JSON → `.tao`（ZIP）且 `StickmanRuntime` 普通兵已接入（非"待接入"）；`AISystem` 一行描述更新为威胁驱动决策。
 
-## 4. Guardian / Archer 动画
+## 4. ShieldBearer / Archer 动画
 - 制作/接入对应 `.tao`，`UnitView` 去掉占位圆。
 - 受击特效改用挂点 `hit` 坐标。
 
@@ -115,4 +115,4 @@
 
 ## 进度小结（2026-06-12）
 
-第 1、2、3、5、6 项已完成。**仅剩第 4 项**（Guardian / Archer 骨骼动画接入）——它依赖美术先用 `tools/animator` 导出对应 `.tao` 资源，代码侧接入点（`UnitView` 去占位圆 + 挂点 `hit` 受击特效）属待办，资源到位后再做。
+第 1、2、3、5、6 项已完成。**仅剩第 4 项**（ShieldBearer / Archer 骨骼动画接入）——它依赖美术先用 `tools/animator` 导出对应 `.tao` 资源，代码侧接入点（`UnitView` 去占位圆 + 挂点 `hit` 受击特效）属待办，资源到位后再做。

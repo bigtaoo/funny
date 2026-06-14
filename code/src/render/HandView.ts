@@ -7,7 +7,7 @@ import { t } from '../i18n';
 import { TICK_RATE } from '../game/math/fixed';
 import infantryArtUrl from '../assets/infantry.png';
 import archerArtUrl from '../assets/archer.png';
-import shieldBearerArtUrl from '../assets/shield_bearer.png';
+import shieldBearerArtUrl from '../assets/shieldbearer.png';
 import barracksArtUrl from '../assets/game_infantry_barracks.png';
 import towerArtUrl from '../assets/game_archer_barracks.png';
 
@@ -28,9 +28,9 @@ const FLASH_DURATION_MS    = 250;
 
 // 卡牌插画：单位/建筑卡显示对应图片，法术卡无图（仅文字）
 const CARD_ART_URLS: Record<string, string> = {
-  [`unit_${UnitType.Swordsman}`]:        infantryArtUrl as string,
+  [`unit_${UnitType.Infantry}`]:         infantryArtUrl as string,
   [`unit_${UnitType.Archer}`]:           archerArtUrl as string,
-  [`unit_${UnitType.Guardian}`]:         shieldBearerArtUrl as string,
+  [`unit_${UnitType.ShieldBearer}`]:     shieldBearerArtUrl as string,
   [`building_${BuildingType.Barracks}`]: barracksArtUrl as string,
   [`building_${BuildingType.ArrowTower}`]: towerArtUrl as string,
 };

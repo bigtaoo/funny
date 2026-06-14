@@ -53,7 +53,7 @@
 | `TOP_BUILDING_ROW` | 17 | 敌方建造行 |
 
 > 朝向：敌方从**顶部**（row 16 出生）向**底部**玩家基地推进。编辑器网格按此朝向绘制（顶=敌方，底=玩家）。
-> 单位池：`UnitType` = Swordsman / Archer / Guardian + PvE 专属 **Ironclad（重甲）/ Runner（疾行）**（2026-06 加）。调色板从游戏侧枚举（`Object.values(UnitType)`）动态取，不硬编；`src/units.ts` 的 `META` 仅提供显示标签/颜色，新怪种缺 META 时回退中性色 + 原始值，故扩枚举不需改编辑器即可用。
+> 单位池：`UnitType` = Infantry / Archer / ShieldBearer + PvE 专属 **Ironclad（重甲）/ Runner（疾行）**（2026-06 加）。调色板从游戏侧枚举（`Object.values(UnitType)`）动态取，不硬编；`src/units.ts` 的 `META` 仅提供显示标签/颜色，新怪种缺 META 时回退中性色 + 原始值，故扩枚举不需改编辑器即可用。
 
 ---
 
@@ -112,7 +112,7 @@
 
 - 横轴 = 时间（秒，刻度），纵轴 = 攻击车道（10 行）。参照 animator 时间线的渲染/交互模式。
 - 每个 `WaveEntry` 是时间线上一个"出兵块"：起点 = `atTick`，块内 `count` 个单位按 `spacingTicks` 排开（可视化为 count 个小标记）。
-- 单位类型用**带美术缩略图的调色板**（`infantry.png` / `archer.png` / `shield_bearer.png`，未来怪种动态扩）。
+- 单位类型用**带美术缩略图的调色板**（`infantry.png` / `archer.png` / `shieldbearer.png`，未来怪种动态扩）。
 - 交互：拖动改 `atTick`、改车道改 `col`；选中块 → 侧栏编辑 `unitType / count / spacingTicks / isBoss`；右键删除 / 复制。
 - 时间标尺可缩放/滚动（关卡时长可达 ~60s+）。
 

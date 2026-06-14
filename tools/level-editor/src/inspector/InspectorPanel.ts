@@ -31,7 +31,7 @@ export class InspectorPanel {
 
     const addBtn = el('button', { class: 'primary', text: '+ 新增波次' });
     addBtn.addEventListener('click', () => {
-      const entry: WaveEntry = { atTick: 0, unitType: UnitType.Swordsman, col: ATTACK_LANES[0]!, count: 1 };
+      const entry: WaveEntry = { atTick: 0, unitType: UnitType.Infantry, col: ATTACK_LANES[0]!, count: 1 };
       this.state.addWave(entry);
     });
     root.appendChild(addBtn);

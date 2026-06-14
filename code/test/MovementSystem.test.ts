@@ -11,10 +11,10 @@ function tickN(state: GameState, sys: MovementSystem, n: number): void {
 }
 
 describe('MovementSystem — forward movement', () => {
-  it('advances a lone Swordsman toward the enemy at the fixed per-tick step', () => {
+  it('advances a lone Infantry toward the enemy at the fixed per-tick step', () => {
     const state = new GameState(1);
     const sys = new MovementSystem();
-    const u = new Unit(UnitType.Swordsman, Side.Bottom, 0, 1); // spawn row 1
+    const u = new Unit(UnitType.Infantry, Side.Bottom, 0, 1); // spawn row 1
     state.board.addUnit(u);
 
     const startY = u.y_fp;
@@ -31,7 +31,7 @@ describe('MovementSystem — forward movement', () => {
     const state = new GameState(1);
     const sys = new MovementSystem();
     // Place just below the top building row so it crosses quickly.
-    const u = new Unit(UnitType.Swordsman, Side.Bottom, 0, TOP_BUILDING_ROW - 1);
+    const u = new Unit(UnitType.Infantry, Side.Bottom, 0, TOP_BUILDING_ROW - 1);
     state.board.addUnit(u);
 
     // Advance until it snaps to the crossing threshold.
@@ -43,7 +43,7 @@ describe('MovementSystem — forward movement', () => {
   it('a crossing unit reaches the base, damages the opponent, and despawns', () => {
     const state = new GameState(1);
     const sys = new MovementSystem();
-    const u = new Unit(UnitType.Swordsman, Side.Bottom, 0, TOP_BUILDING_ROW); // start at threshold
+    const u = new Unit(UnitType.Infantry, Side.Bottom, 0, TOP_BUILDING_ROW); // start at threshold
     state.board.addUnit(u);
 
     const before = state.topPlayer.baseHp;
@@ -63,8 +63,8 @@ describe('MovementSystem — friendly collision', () => {
     const state = new GameState(1);
     const sys = new MovementSystem();
 
-    const front = new Unit(UnitType.Guardian, Side.Bottom, 3, 3); // slow (speed 0.6)
-    const back = new Unit(UnitType.Swordsman, Side.Bottom, 3, 1); // fast (speed 1.0)
+    const front = new Unit(UnitType.ShieldBearer, Side.Bottom, 3, 3); // slow (speed 0.6)
+    const back = new Unit(UnitType.Infantry, Side.Bottom, 3, 1); // fast (speed 1.0)
     state.board.addUnit(front);
     state.board.addUnit(back);
 

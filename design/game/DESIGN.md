@@ -35,7 +35,7 @@ src/
 ├── render/                渲染层（PIXI.js）
 │   ├── GameRenderer.ts    顶层渲染协调器 + 输入处理
 │   ├── BoardView.ts       棋盘网格 + 高亮层 + 陨石特效
-│   ├── UnitView.ts        单位精灵池 + HP 条（Swordsman 用 StickmanRuntime）
+│   ├── UnitView.ts        单位精灵池 + HP 条（Infantry 用 StickmanRuntime）
 │   ├── BuildingView.ts    建筑精灵池
 │   ├── HandView.ts        手牌 UI
 │   ├── HUDView.ts         HUD（资源 / 暂停）
@@ -229,9 +229,9 @@ pendingCardDown: { x, y, handIndex } | null             // 按下卡牌后，判
 
 | 卡牌 | 插画资源 |
 |---|---|
-| 普通兵（Swordsman） | `infantry.png` |
+| 普通兵（Infantry） | `infantry.png` |
 | 弓箭兵（Archer） | `archer.png` |
-| 盾兵（Guardian） | `shield_bearer.png` |
+| 盾兵（ShieldBearer） | `shieldbearer.png` |
 | 兵营（Barracks） | `game_infantry_barracks.png`（与场上建筑同图） |
 | 箭塔（ArrowTower） | `game_archer_barracks.png`（与场上建筑同图） |
 | 法术（Haste / Meteor） | 无图，仅文字 |
@@ -249,7 +249,6 @@ pendingCardDown: { x, y, handIndex } | null             // 按下卡牌后，判
 
 | 功能 | 位置 | 说明 |
 |---|---|---|
-| Guardian / Archer 骨骼动画 | UnitView + 对应 .tao | 目前仍用占位圆形 |
 | 受击特效位置 | StickmanRuntime | 使用挂点 hit 坐标 |
 
 ---
@@ -298,7 +297,7 @@ rotation  = 0，anchor = (0.5, 0.5)，zOrder = -Infinity（始终最底层）
 
 ### UnitView 集成
 
-- Swordsman 单位：若 `infantryAsset` 已加载，`acquireSprite` 创建 stickman 容器；否则退回占位圆形
+- 凡在 `STICKMAN_ASSETS` 中登记了 `.tao` 的单位类型（Infantry→`infantry.tao`、Archer→`archer.tao`、ShieldBearer→`shieldbearer.tao`），若该类型资源（`assets` Map 内）已加载，`acquireSprite` 创建 stickman 容器；否则退回占位圆形。资源后台加载，按类型各自维护复用池（`stickmanPools`）
 - 敌方（`Side.Top`）：`mirrorX: true`，`scaleX *= -1`
 - `sync(board, dt)` 中对每个有 runtime 的单位调用 `runtime.syncState` + `runtime.update(dt)`
 - 单位死亡时 `runtime.play('death')` 后在淡出动画结束时 `runtime.destroy()`
@@ -307,7 +306,9 @@ rotation  = 0，anchor = (0.5, 0.5)，zOrder = -Infinity（始终最底层）
 
 | 文件 | 说明 |
 |---|---|
-| `src/assets/infantry.tao` | Swordsman 骨骼动画包（ZIP）|
+| `src/assets/infantry.tao` | Infantry 骨骼动画包（ZIP）|
+| `src/assets/archer.tao` | Archer 骨骼动画包（ZIP）|
+| `src/assets/shieldbearer.tao` | ShieldBearer 骨骼动画包（ZIP）|
 | webpack：`/\.(tao)$/i` → `asset/resource` | .tao 按二进制资源处理，emit 后由 fetch 加载 |
 
 ---
@@ -450,14 +451,14 @@ npm run test:watch
 1. **紧急防守**（`underPressure`：有敌军 row ≥ `dangerRow`，或己方基地 HP ≤ `lowBaseHp`）
    - a) **陨石清团**：扫描 2×2 落点，命中最密的近基地敌群（`preferNearBase` 并列取更高 row）。
    - b) **箭塔**：在威胁最高且空置的建筑车道放箭塔。
-   - c) **肉盾拦截**：往威胁最高车道出兵，优先 Guardian（最肉）。
+   - c) **肉盾拦截**：往威胁最高车道出兵，优先 ShieldBearer（最肉）。
 2. **升级规划**（仅当 `upgradeReachable` 且全场无威胁时）
    - 能升级就升级；接近升级费（≥ 60%）时攒钱、本 tick 不乱花。
    - **`upgradeReachable` 守卫**：`nextUpgradeCost ≤ COIN_CAP` 才考虑。当前 `COIN_CAP=300` ≥ `BASE_UPGRADE_COSTS=[50,100,200]`，升级**可达**，AI 安全时会攒钱并升级。守卫仍保留为防御性代码：若日后把升级费调到超过金币上限，该分支会自动静默跳过、不会卡死。
 3. **经济 / 进攻**
    - 早期在**安全车道**（威胁最低）补兵营，维持出兵流（上限 `MAX_BARRACKS=2`）。
    - 敌群够大（`meteorOffenseCluster`）时进攻性陨石。
-   - 否则按性价比出兵（偏好顺序 Swordsman → Archer → Guardian），推**防守最薄弱**车道（威胁最低）打穿。
+   - 否则按性价比出兵（偏好顺序 Infantry → Archer → ShieldBearer），推**防守最薄弱**车道（威胁最低）打穿。
 
 ### 难度分级
 

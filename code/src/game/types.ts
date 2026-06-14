@@ -5,8 +5,8 @@ import type { LevelDefinition } from './campaign/LevelDefinition';
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 export enum UnitType {
-  Swordsman = 'swordsman',
-  Guardian = 'guardian',
+  Infantry = 'infantry',
+  ShieldBearer = 'shieldbearer',
   Archer = 'archer',
   /** PvE-only heavy: very high HP, very slow, soaks arrow-tower fire. No card → never in the PvP pool. */
   Ironclad = 'ironclad',

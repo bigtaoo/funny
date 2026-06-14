@@ -134,8 +134,8 @@ export const HASTE_DURATION_TICKS = 5 * TICK_RATE;  // 150 ticks
 // ─── Unit blueprints ──────────────────────────────────────────────────────────
 
 export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
-  [UnitType.Swordsman]: {
-    type: UnitType.Swordsman,
+  [UnitType.Infantry]: {
+    type: UnitType.Infantry,
     hp: 60,
     attack: 12,
     attackInterval: 1.0,  // seconds (converted to ticks in Unit constructor)
@@ -144,8 +144,8 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     spawnCount: 2,
     radius_fp: 400,       // diameter 800fp = 0.8 格
   },
-  [UnitType.Guardian]: {
-    type: UnitType.Guardian,
+  [UnitType.ShieldBearer]: {
+    type: UnitType.ShieldBearer,
     hp: 150,
     attack: 8,
     attackInterval: 1.5,
@@ -179,7 +179,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     radius_fp: 520,       // diameter 1040fp ≈ 1.04 格 — fills its lane, leads stacks
   },
   // Runner: fast fragile rusher. One arrow-tower hit one-shots it, but it arrives
-  // fast, wide and dense (small radius packs ~2× tighter than a swordsman), so the
+  // fast, wide and dense (small radius packs ~2× tighter than a infantry), so the
   // threat is the swarm, not the individual — the counter to single-file queueing.
   [UnitType.Runner]: {
     type: UnitType.Runner,
@@ -199,7 +199,7 @@ export const BUILDING_BLUEPRINTS: Record<BuildingType, BuildingBlueprint> = {
   [BuildingType.Barracks]: {
     type: BuildingType.Barracks,
     hp: 200,
-    spawnUnit: UnitType.Swordsman,
+    spawnUnit: UnitType.Infantry,
     spawnInterval: 4,         // seconds (converted to ticks in Building constructor)
   },
   [BuildingType.ArrowTower]: {
@@ -214,10 +214,10 @@ export const BUILDING_BLUEPRINTS: Record<BuildingType, BuildingBlueprint> = {
 // ─── Card definitions (pool) ──────────────────────────────────────────────────
 
 export const CARD_DEFINITIONS: CardDefinition[] = [
-  { id: 'swordsman_1', nameKey: 'card.swordsman.name', descKey: 'card.swordsman.desc', cardType: CardType.Unit,     cost: 4,  unitType: UnitType.Swordsman       },
-  { id: 'swordsman_2', nameKey: 'card.swordsman.name', descKey: 'card.swordsman.desc', cardType: CardType.Unit,     cost: 4,  unitType: UnitType.Swordsman       },
-  { id: 'guardian_1',  nameKey: 'card.guardian.name',  descKey: 'card.guardian.desc',  cardType: CardType.Unit,     cost: 6,  unitType: UnitType.Guardian        },
-  { id: 'guardian_2',  nameKey: 'card.guardian.name',  descKey: 'card.guardian.desc',  cardType: CardType.Unit,     cost: 6,  unitType: UnitType.Guardian        },
+  { id: 'infantry_1', nameKey: 'card.infantry.name', descKey: 'card.infantry.desc', cardType: CardType.Unit,     cost: 4,  unitType: UnitType.Infantry       },
+  { id: 'infantry_2', nameKey: 'card.infantry.name', descKey: 'card.infantry.desc', cardType: CardType.Unit,     cost: 4,  unitType: UnitType.Infantry       },
+  { id: 'shieldbearer_1',  nameKey: 'card.shieldbearer.name',  descKey: 'card.shieldbearer.desc',  cardType: CardType.Unit,     cost: 6,  unitType: UnitType.ShieldBearer        },
+  { id: 'shieldbearer_2',  nameKey: 'card.shieldbearer.name',  descKey: 'card.shieldbearer.desc',  cardType: CardType.Unit,     cost: 6,  unitType: UnitType.ShieldBearer        },
   { id: 'archer_1',    nameKey: 'card.archer.name',    descKey: 'card.archer.desc',    cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
   { id: 'archer_2',    nameKey: 'card.archer.name',    descKey: 'card.archer.desc',    cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
   { id: 'barracks_1',  nameKey: 'card.barracks.name',  descKey: 'card.barracks.desc',  cardType: CardType.Building, cost: 10, buildingType: BuildingType.Barracks   },

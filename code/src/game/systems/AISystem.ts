@@ -84,7 +84,7 @@ const MAX_BARRACKS = 2;
  *
  * Decision pipeline (one action per think interval, highest priority wins):
  *   1. Emergency defense — meteor a cluster near the base, drop an arrow tower
- *      in the most-pressured lane, or block with a Guardian.
+ *      in the most-pressured lane, or block with a ShieldBearer.
  *   2. Upgrade planning — bank toward / buy a base upgrade when it is safe and
  *      actually reachable (guarded by INK_CAP).
  *   3. Economy & offense — seed barracks, nuke fat enemy clusters, then push a
@@ -166,7 +166,7 @@ export class AISystem {
 
     // Push a cost-effective unit down the least-defended lane.
     const unitIdx = this.pickUnitCard(player.hand.cards, player.ink,
-      [UnitType.Swordsman, UnitType.Archer, UnitType.Guardian]);
+      [UnitType.Infantry, UnitType.Archer, UnitType.ShieldBearer]);
     if (unitIdx !== null) {
       const lane = this.pickLane(threat, /*mostThreatened*/ false);
       if (lane !== null) {
@@ -211,9 +211,9 @@ export class AISystem {
       }
     }
 
-    // c) Block the most-threatened lane with a body (Guardian tanks best).
+    // c) Block the most-threatened lane with a body (ShieldBearer tanks best).
     const unitIdx = this.pickUnitCard(player.hand.cards, player.ink,
-      [UnitType.Guardian, UnitType.Swordsman, UnitType.Archer]);
+      [UnitType.ShieldBearer, UnitType.Infantry, UnitType.Archer]);
     if (unitIdx !== null) {
       const lane = this.pickLane(threat, /*mostThreatened*/ true);
       if (lane !== null) {

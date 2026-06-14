@@ -4,6 +4,7 @@ import { sideToOwner } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
 import baseTexUrl from '../assets/game_base.png';
+import mapTexUrl from '../assets/map.png';
 
 /** Colors matching the art direction (notebook paper aesthetic) */
 const GRID_LINE_COLOR    = 0xc8d8e8;
@@ -48,6 +49,7 @@ export class BoardView {
     this.noBuildLayer   = new PIXI.Graphics();
     this.highlightLayer = new PIXI.Graphics();
 
+    this.drawBackground();
     this.drawGrid();
     this.drawBases(layout);
     this.container.addChild(this.noBuildLayer);    // below highlights
@@ -303,6 +305,25 @@ export class BoardView {
     return { sprite: s, crackGfx, rect };
   }
 
+  /**
+   * Battlefield background image (map.png) covering the board rect.
+   * Rendered as the bottommost layer; drawGrid() lays a translucent paper tone
+   * + grid lines on top so units and cards stay legible.
+   */
+  private drawBackground(): void {
+    const r   = this.layout.boardRect;
+    const tex = PIXI.Texture.from(mapTexUrl as unknown as string);
+    const s   = new PIXI.Sprite(tex);
+    s.position.set(r.x, r.y);
+
+    // Texture dimensions are unknown until the image loads — fit on load.
+    const fit = (): void => { s.width = r.w; s.height = r.h; };
+    if (tex.baseTexture.valid) fit();
+    else tex.baseTexture.once('loaded', fit);
+
+    this.container.addChild(s);
+  }
+
   private drawGrid(): void {
     const gfx  = new PIXI.Graphics();
     const r    = this.layout.boardRect;
@@ -313,8 +334,9 @@ export class BoardView {
     const numCols = this.layout.orientation === 'portrait' ? BOARD_COLS : BOARD_ROWS;
     const numRows = this.layout.orientation === 'portrait' ? BOARD_ROWS : BOARD_COLS;
 
-    // Board background fill — makes the board area distinct from the surrounding margins
-    gfx.beginFill(0xE8E4DB, 1.0);
+    // Translucent paper tone over the map background — keeps the board area
+    // distinct from the margins and keeps units/cards legible against the art.
+    gfx.beginFill(0xE8E4DB, 0.35);
     gfx.drawRect(r.x, r.y, r.w, r.h);
     gfx.endFill();
 

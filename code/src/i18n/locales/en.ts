@@ -3,10 +3,10 @@ import type { TranslationKey } from './zh';
 // English — must cover every key defined in zh.ts (compile-enforced).
 export const en: Record<TranslationKey, string> = {
   // ── Cards ─────────────────────────────────────────────────────────────────
-  'card.swordsman.name': 'Swordsman',
-  'card.swordsman.desc': 'A doodle soldier from the notebook margin — cheap, sturdy, always first into battle.',
-  'card.guardian.name': 'Guardian',
-  'card.guardian.desc': 'Carries a shield carved from an eraser. Slow, but blocks a whole page of attacks.',
+  'card.infantry.name': 'Infantry',
+  'card.infantry.desc': 'A doodle soldier from the notebook margin — cheap, sturdy, always first into battle.',
+  'card.shieldbearer.name': 'Shield Bearer',
+  'card.shieldbearer.desc': 'Carries a shield carved from an eraser. Slow, but blocks a whole page of attacks.',
   'card.archer.name': 'Archer',
   'card.archer.desc': 'A bow bent from a paperclip — precise shots from behind the grid lines.',
   'card.barracks.name': 'Barracks',

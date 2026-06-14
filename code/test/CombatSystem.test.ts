@@ -10,22 +10,22 @@ describe('CombatSystem — units', () => {
   it('a unit attacks an enemy directly ahead within range', () => {
     const state = new GameState(1);
     const sys = new CombatSystem();
-    const me = new Unit(UnitType.Swordsman, Side.Bottom, 0, 5);
-    const enemy = new Unit(UnitType.Guardian, Side.Top, 0, 6); // one row ahead, in melee range
+    const me = new Unit(UnitType.Infantry, Side.Bottom, 0, 5);
+    const enemy = new Unit(UnitType.ShieldBearer, Side.Top, 0, 6); // one row ahead, in melee range
     state.board.addUnit(me);
     state.board.addUnit(enemy);
 
     const enemyHp0 = enemy.hp;
     sys.tick(state); // cooldown starts at 0 → immediate hit
     expect(me.state).toBe(UnitState.Attacking);
-    expect(enemy.hp).toBe(enemyHp0 - UNIT_BLUEPRINTS[UnitType.Swordsman].attack);
+    expect(enemy.hp).toBe(enemyHp0 - UNIT_BLUEPRINTS[UnitType.Infantry].attack);
   });
 
   it('respects the attack cooldown between hits', () => {
     const state = new GameState(1);
     const sys = new CombatSystem();
-    const me = new Unit(UnitType.Swordsman, Side.Bottom, 0, 5);
-    const enemy = new Unit(UnitType.Guardian, Side.Top, 0, 6);
+    const me = new Unit(UnitType.Infantry, Side.Bottom, 0, 5);
+    const enemy = new Unit(UnitType.ShieldBearer, Side.Top, 0, 6);
     state.board.addUnit(me);
     state.board.addUnit(enemy);
 
@@ -61,8 +61,8 @@ describe('CombatSystem — units', () => {
     const sys = new CombatSystem();
 
     const mk = (s: GameState) => {
-      const me = new Unit(UnitType.Swordsman, Side.Bottom, 0, 5);
-      const enemy = new Unit(UnitType.Guardian, Side.Top, 0, 6);
+      const me = new Unit(UnitType.Infantry, Side.Bottom, 0, 5);
+      const enemy = new Unit(UnitType.ShieldBearer, Side.Top, 0, 6);
       s.board.addUnit(me);
       s.board.addUnit(enemy);
       return enemy;
@@ -86,7 +86,7 @@ describe('CombatSystem — arrow tower (Chebyshev all-direction targeting)', () 
     const sys = new CombatSystem();
     // Tower at (col 5, row 5); enemy 2 cols to the right on the SAME row.
     const tower = new Building(BuildingType.ArrowTower, Side.Bottom, 5, 5);
-    const enemy = new Unit(UnitType.Guardian, Side.Top, 7, 5); // dist = 2 (within attackRange 2), purely horizontal
+    const enemy = new Unit(UnitType.ShieldBearer, Side.Top, 7, 5); // dist = 2 (within attackRange 2), purely horizontal
     state.board.addBuilding(tower);
     state.board.addUnit(enemy);
 
@@ -99,7 +99,7 @@ describe('CombatSystem — arrow tower (Chebyshev all-direction targeting)', () 
     const state = new GameState(1);
     const sys = new CombatSystem();
     const tower = new Building(BuildingType.ArrowTower, Side.Bottom, 5, 5);
-    const enemy = new Unit(UnitType.Guardian, Side.Top, 5, 9); // dist 4 > range 2
+    const enemy = new Unit(UnitType.ShieldBearer, Side.Top, 5, 9); // dist 4 > range 2
     state.board.addBuilding(tower);
     state.board.addUnit(enemy);
 

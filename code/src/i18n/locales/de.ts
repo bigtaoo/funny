@@ -3,10 +3,10 @@ import type { TranslationKey } from './zh';
 // Deutsch — must cover every key defined in zh.ts (compile-enforced).
 export const de: Record<TranslationKey, string> = {
   // ── Karten ────────────────────────────────────────────────────────────────
-  'card.swordsman.name': 'Schwertkämpfer',
-  'card.swordsman.desc': 'Ein Kritzel-Soldat vom Heftrand – billig, robust und immer als Erster in der Schlacht.',
-  'card.guardian.name': 'Schildträger',
-  'card.guardian.desc': 'Trägt einen aus einem Radiergummi geschnitzten Schild. Langsam, blockt aber eine ganze Seite voller Angriffe.',
+  'card.infantry.name': 'Infanterie',
+  'card.infantry.desc': 'Ein Kritzel-Soldat vom Heftrand – billig, robust und immer als Erster in der Schlacht.',
+  'card.shieldbearer.name': 'Schildträger',
+  'card.shieldbearer.desc': 'Trägt einen aus einem Radiergummi geschnitzten Schild. Langsam, blockt aber eine ganze Seite voller Angriffe.',
   'card.archer.name': 'Bogenschütze',
   'card.archer.desc': 'Ein aus einer Büroklammer gebogener Bogen – präzise Schüsse hinter den Gitterlinien.',
   'card.barracks.name': 'Kaserne',

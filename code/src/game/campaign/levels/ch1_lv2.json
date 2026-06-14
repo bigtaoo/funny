@@ -9,8 +9,8 @@
   "startInk": 8,
   "waves": {
     "entries": [
-      { "atTick": 30, "unitType": "swordsman", "col": 3, "count": 3, "spacingTicks": 24 },
-      { "atTick": 30, "unitType": "swordsman", "col": 8, "count": 3, "spacingTicks": 24 },
+      { "atTick": 30, "unitType": "infantry", "col": 3, "count": 3, "spacingTicks": 24 },
+      { "atTick": 30, "unitType": "infantry", "col": 8, "count": 3, "spacingTicks": 24 },
 
       { "atTick": 300, "unitType": "ironclad", "col": 4, "count": 1 },
       { "atTick": 300, "unitType": "ironclad", "col": 7, "count": 1 },
@@ -25,10 +25,10 @@
       { "atTick": 1080, "unitType": "archer", "col": 3, "count": 3, "spacingTicks": 40 },
       { "atTick": 1080, "unitType": "archer", "col": 8, "count": 3, "spacingTicks": 40 },
 
-      { "atTick": 1350, "unitType": "swordsman", "col": 2, "count": 3, "spacingTicks": 15 },
-      { "atTick": 1350, "unitType": "swordsman", "col": 4, "count": 3, "spacingTicks": 15 },
-      { "atTick": 1350, "unitType": "swordsman", "col": 7, "count": 3, "spacingTicks": 15 },
-      { "atTick": 1350, "unitType": "swordsman", "col": 9, "count": 3, "spacingTicks": 15 }
+      { "atTick": 1350, "unitType": "infantry", "col": 2, "count": 3, "spacingTicks": 15 },
+      { "atTick": 1350, "unitType": "infantry", "col": 4, "count": 3, "spacingTicks": 15 },
+      { "atTick": 1350, "unitType": "infantry", "col": 7, "count": 3, "spacingTicks": 15 },
+      { "atTick": 1350, "unitType": "infantry", "col": 9, "count": 3, "spacingTicks": 15 }
     ]
   },
   "rewards": {

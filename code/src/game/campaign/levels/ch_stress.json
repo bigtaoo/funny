@@ -10,140 +10,140 @@
     "entries": [
       {
         "atTick": 30,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 0,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 180,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 0,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 33,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 1,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 183,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 1,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 36,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 2,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 186,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 2,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 39,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 3,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 189,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 3,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 42,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 4,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 192,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 4,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 45,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 7,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 195,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 7,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 48,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 8,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 198,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 8,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 51,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 9,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 201,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 9,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 54,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 10,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 204,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 10,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 57,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 11,
         "count": 12,
         "spacingTicks": 8
       },
       {
         "atTick": 207,
-        "unitType": "swordsman",
+        "unitType": "infantry",
         "col": 11,
         "count": 12,
         "spacingTicks": 8

@@ -15,9 +15,9 @@ export interface UnitMeta {
 }
 
 const META: Partial<Record<UnitType, { label: string; color: string }>> = {
-  [UnitType.Swordsman]: { label: '剑士', color: '#89b4fa' },
-  [UnitType.Archer]: { label: '弓箭', color: '#a6e3a1' },
-  [UnitType.Guardian]: { label: '守卫', color: '#f9e2af' },
+  [UnitType.Infantry]: { label: '普通兵', color: '#89b4fa' },
+  [UnitType.Archer]: { label: '弓箭兵', color: '#a6e3a1' },
+  [UnitType.ShieldBearer]: { label: '盾兵', color: '#f9e2af' },
   [UnitType.Ironclad]: { label: '重甲', color: '#6b7a8f' },
   [UnitType.Runner]: { label: '疾行', color: '#f0b840' },
 };

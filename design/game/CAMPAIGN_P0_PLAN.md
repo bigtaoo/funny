@@ -38,7 +38,7 @@
 
 ## S2 第一关（已完成）
 
-`ch1_lv1`「新兵集结」：纯 survive，固定 seed，~50s 内逐波递增（剑士→弓箭兵→盾兵肉盾→收尾多车道大波），约 44 个单位。验证守护循环手感，不含机关/不可建造格（留给 S5 做深度对比）。
+`ch1_lv1`「新兵集结」：纯 survive，固定 seed，~50s 内逐波递增（普通兵→弓箭兵→盾兵肉盾→收尾多车道大波），约 44 个单位。验证守护循环手感，不含机关/不可建造格（留给 S5 做深度对比）。
 
 ## S3 启动接线（已完成）
 
@@ -66,7 +66,7 @@
 
 ## S6 性能（已完成；批处理留作后续优化）
 
-**审计结论**：圆形单位（Guardian/Archer）已用 `ObjectPool` 池化；但 **Swordsman 的 `StickmanRuntime` 每次 spawn `new`、death `destroy`** —— 普通兵最高频，每个 runtime 含 ~11 精灵，swarm 下是最大开销点。
+**审计结论**：圆形单位（ShieldBearer/Archer）已用 `ObjectPool` 池化；但 **Infantry 的 `StickmanRuntime` 每次 spawn `new`、death `destroy`** —— 普通兵最高频，每个 runtime 含 ~11 精灵，swarm 下是最大开销点。
 
 **已做**：
 - **StickmanRuntime 池化**：新增 `StickmanRuntime.reset({mirrorX})`（重设镜像 + 回到 idle，复用精灵/纹理，不重建）。`UnitView` 增加 `stickmanPool`，spawn 优先从池取并 `reset`，death/离场时把 (wrapper+runtime) 退回池而非 `destroy`。这是 swarm 性能的关键杠杆。

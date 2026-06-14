@@ -2,10 +2,10 @@
 // 新增文案时先在此处加键，en.ts 会因缺键而编译报错。
 export const zh = {
   // ── 卡牌 ──────────────────────────────────────────────────────────────────
-  'card.swordsman.name': '普通兵',
-  'card.swordsman.desc': '从笔记本边角走出的涂鸦士兵，便宜耐用，永远冲在最前面。',
-  'card.guardian.name': '盾兵',
-  'card.guardian.desc': '举着橡皮削成的大盾，行动缓慢，却能挡下整页的攻击。',
+  'card.infantry.name': '普通兵',
+  'card.infantry.desc': '从笔记本边角走出的涂鸦士兵，便宜耐用，永远冲在最前面。',
+  'card.shieldbearer.name': '盾兵',
+  'card.shieldbearer.desc': '举着橡皮削成的大盾，行动缓慢，却能挡下整页的攻击。',
   'card.archer.name': '弓箭兵',
   'card.archer.desc': '用回形针弯成的弓，在格线后方精准点射。',
   'card.barracks.name': '兵营',
