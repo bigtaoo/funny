@@ -71,6 +71,8 @@ npm test --workspace @nw/metaserver
 # 关依赖：docker compose down（保留数据）/ down -v（清空数据）
 ```
 
+> **一键起全套（Windows）**：`npm run dev:all`（`dev-up.ps1`）起 shared watch + meta/gateway/matchsvc/game/commercial 五进程，各自独立窗口 + `node --watch` 热重载，预设内部 URL 与 `NW_INTERNAL_KEY`。`-SkipMongo` 跳过 docker、`-Only meta,commercial` 只起部分。**每个窗口标题为 `nw:<服务名>`**（`nw:meta`/`nw:gateway`/…）：脚本直接 `node --watch …` 启动而非嵌套 `npm run`，避免 npm 在设标题后又把控制台标题改回命令名，故标题稳定可辨。
+
 > **Docker 引擎**：mongo:7 是 Linux 镜像，需 Docker Desktop 处于 **Linux containers** 模式（`docker version` 显示 `Server: linux/amd64`）。Windows 容器模式会报 `hcs::System::CreateProcess` / 命名卷 `invalid volume specification`。切换：`docker context use desktop-linux`，或 Docker Desktop 托盘「Switch to Linux containers」。
 
 环境变量（均有 dev 默认值，生产必须覆盖 `NW_JWT_SECRET`）：

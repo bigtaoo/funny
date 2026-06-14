@@ -25,13 +25,15 @@ $server = $PSScriptRoot
 # Shared secret for all five processes (change in prod; any consistent value in dev)
 $internalKey = 'dev-internal-key'
 
-# name / npm script / per-process env vars
+# name / workspace dir / per-process env vars
+# Run node directly (not via npm) so the PowerShell WindowTitle we set is not
+# clobbered by nested `npm run` — each window stays titled `nw:<name>`.
 $procs = @(
-  @{ name = 'meta';       script = 'dev:meta';       env = @{ NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082' } }
-  @{ name = 'gateway';    script = 'dev:gateway';    env = @{ NW_MATCHSVC_INTERNAL_URL  = 'http://127.0.0.1:8091'; NW_GW_PORT = '8085' } }
-  @{ name = 'matchsvc';   script = 'dev:matchsvc';   env = @{ NW_GATEWAY_INTERNAL_URL   = 'http://127.0.0.1:8090'; NW_GAME_PUBLIC_WS_URL = 'ws://127.0.0.1:8081/ws' } }
-  @{ name = 'game';       script = 'dev:game';       env = @{ NW_MATCHSVC_INTERNAL_URL  = 'http://127.0.0.1:8091' } }
-  @{ name = 'commercial'; script = 'dev:commercial'; env = @{} }
+  @{ name = 'meta';       dir = 'metaserver'; env = @{ NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082' } }
+  @{ name = 'gateway';    dir = 'gateway';    env = @{ NW_MATCHSVC_INTERNAL_URL  = 'http://127.0.0.1:8091'; NW_GW_PORT = '8085' } }
+  @{ name = 'matchsvc';   dir = 'matchsvc';   env = @{ NW_GATEWAY_INTERNAL_URL   = 'http://127.0.0.1:8090'; NW_GAME_PUBLIC_WS_URL = 'ws://127.0.0.1:8081/ws' } }
+  @{ name = 'game';       dir = 'gameserver'; env = @{ NW_MATCHSVC_INTERNAL_URL  = 'http://127.0.0.1:8091' } }
+  @{ name = 'commercial'; dir = 'commercial'; env = @{} }
 )
 
 if ($Only) {
@@ -39,12 +41,14 @@ if ($Only) {
   if (-not $procs) { Write-Error "No matching process in -Only: $($Only -join ',')"; exit 1 }
 }
 
-function Start-DevWindow([string]$title, [hashtable]$env, [string]$cmd) {
-  # Build inner command for the new window: set env -> cd -> run
-  $lines = @("`$host.UI.RawUI.WindowTitle = 'nw:$title'")
-  $lines += "`$env:NW_INTERNAL_KEY = '$internalKey'"
+function Start-DevWindow([string]$title, [hashtable]$env, [string]$cmd, [string]$dir = $server) {
+  # Build inner command for the new window: title -> env -> cd -> run.
+  # Set the title last-thing-before-run and avoid nested npm so it is not
+  # overwritten — the window stays labeled `nw:<title>`.
+  $lines = @("`$env:NW_INTERNAL_KEY = '$internalKey'")
   foreach ($k in $env.Keys) { $lines += "`$env:$k = '$($env[$k])'" }
-  $lines += "Set-Location -LiteralPath '$server'"
+  $lines += "Set-Location -LiteralPath '$dir'"
+  $lines += "`$host.UI.RawUI.WindowTitle = 'nw:$title'"
   $lines += $cmd
   $inner = $lines -join '; '
   Start-Process powershell -ArgumentList '-NoExit', '-NoProfile', '-Command', $inner | Out-Null
@@ -69,7 +73,8 @@ if (-not $SkipShared) {
 
 Write-Host "[3/3] service processes" -ForegroundColor Yellow
 foreach ($p in $procs) {
-  Start-DevWindow $p.name $p.env "npm run $($p.script)"
+  $dir = Join-Path $server $p.dir
+  Start-DevWindow $p.name $p.env 'node --watch --import tsx src/index.ts' $dir
 }
 
 Write-Host ""
