@@ -50,7 +50,7 @@ function txt(label: string, size: number, color: number, bold = false): PIXI.Tex
 }
 
 type View = 'landing' | 'password' | 'register' | 'submitting';
-type Field = 'loginId' | 'password' | 'displayName';
+type Field = 'loginId' | 'password' | 'confirmPassword' | 'displayName';
 
 interface Hit { rect: Rect; fn: () => void; }
 
@@ -62,7 +62,7 @@ export class LoginScene implements Scene {
   private readonly cb: LoginSceneCallbacks;
 
   private view: View = 'landing';
-  private readonly fields: Record<Field, string> = { loginId: '', password: '', displayName: '' };
+  private readonly fields: Record<Field, string> = { loginId: '', password: '', confirmPassword: '', displayName: '' };
   private focused: Field | null = null;
 
   private errorKey: TranslationKey | null = null;
@@ -154,7 +154,7 @@ export class LoginScene implements Scene {
     this.caretTimer = 0;
     const el = this.hiddenInput;
     if (el) {
-      el.type = field === 'password' ? 'password' : 'text';
+      el.type = field === 'password' || field === 'confirmPassword' ? 'password' : 'text';
       el.value = this.fields[field];
       el.focus();
       // Move caret to end.
@@ -190,7 +190,7 @@ export class LoginScene implements Scene {
     this.errorKey = null;
     this.blur();
     if (v === 'landing') {
-      this.fields.loginId = this.fields.password = this.fields.displayName = '';
+      this.fields.loginId = this.fields.password = this.fields.confirmPassword = this.fields.displayName = '';
     }
     this.render();
   }
@@ -199,9 +199,14 @@ export class LoginScene implements Scene {
     if (this.view !== 'password' && this.view !== 'register') return;
     const loginId = this.fields.loginId.trim();
     const password = this.fields.password;
-    if (!loginId || !password) { this.errorKey = 'auth.err.fields'; this.render(); return; }
-
     const isRegister = this.view === 'register';
+    if (!loginId || !password || (isRegister && !this.fields.confirmPassword)) {
+      this.errorKey = 'auth.err.fields'; this.render(); return;
+    }
+    if (isRegister && password !== this.fields.confirmPassword) {
+      this.errorKey = 'auth.err.passwordMismatch'; this.render(); return;
+    }
+
     const displayName = this.fields.displayName.trim() || undefined;
     this.blur();
     this.view = 'submitting';
@@ -310,6 +315,8 @@ export class LoginScene implements Scene {
     this.drawField('password', t('auth.passwordLabel'), fieldX, y, fieldW, fieldH, true);
     y += fieldH + gap;
     if (isRegister) {
+      this.drawField('confirmPassword', t('auth.confirmPasswordLabel'), fieldX, y, fieldW, fieldH, true);
+      y += fieldH + gap;
       this.drawField('displayName', t('auth.displayNameLabel'), fieldX, y, fieldW, fieldH, false);
       y += fieldH + gap;
     }

@@ -147,6 +147,7 @@ export const zh = {
   'auth.register': '注册',
   'auth.loginIdLabel': '邮箱 / 用户名',
   'auth.passwordLabel': '密码',
+  'auth.confirmPasswordLabel': '确认密码',
   'auth.displayNameLabel': '昵称（可选）',
   'auth.submitLogin': '登录',
   'auth.submitRegister': '注册并登录',
@@ -165,6 +166,7 @@ export const zh = {
   'auth.err.weak': '密码至少 6 位',
   'auth.err.loginId': '请输入有效的邮箱 / 用户名（至少 3 位）',
   'auth.err.fields': '请填写完整',
+  'auth.err.passwordMismatch': '两次输入的密码不一致',
   'auth.err.network': '网络错误，请重试',
 
   // ── 商店 / 充值（S2-6） ──────────────────────────────────────────────────────

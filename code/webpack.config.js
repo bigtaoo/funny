@@ -8,6 +8,13 @@ module.exports = (env, argv) => {
   const isProd = argv.mode === 'production';
   const targetPlatform = env.TARGET || 'web';
 
+  // metaserver REST 基址 / gateway 控制面 WS：构建期注入全局，运行时 net/config.ts 读取。
+  // 优先取环境变量（CI/生产用 NW_API_BASE=https://host/api）；dev 缺省指向本地 metaserver
+  // （NW_META_PORT 默认 18080）+ gateway（NW_GW_PORT 默认 8082），开箱即可注册 / 联机。
+  // 生产未配则留空 → net/config 返回 null → 退化为纯本地离线。
+  const apiBase = process.env.NW_API_BASE || (isProd ? '' : 'http://localhost:18080');
+  const gatewayWs = process.env.NW_GATEWAY_WS || (isProd ? '' : 'ws://localhost:8082/gw');
+
   return {
     target: 'web',
     mode: isProd ? 'production' : 'development',
@@ -36,6 +43,8 @@ module.exports = (env, argv) => {
       new HtmlWebpackPlugin({ template: `./public/${targetPlatform}/index.html` }),
       new webpack.DefinePlugin({
         TARGET: JSON.stringify(targetPlatform),
+        'globalThis.__NW_API_BASE__': JSON.stringify(apiBase),
+        'globalThis.__NW_GATEWAY_WS__': JSON.stringify(gatewayWs),
       }),
     ],
     devServer: {

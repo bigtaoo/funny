@@ -148,6 +148,7 @@ export const en: Record<TranslationKey, string> = {
   'auth.register': 'Sign up',
   'auth.loginIdLabel': 'Email / username',
   'auth.passwordLabel': 'Password',
+  'auth.confirmPasswordLabel': 'Confirm password',
   'auth.displayNameLabel': 'Display name (optional)',
   'auth.submitLogin': 'Log in',
   'auth.submitRegister': 'Sign up & log in',
@@ -166,6 +167,7 @@ export const en: Record<TranslationKey, string> = {
   'auth.err.weak': 'Password must be at least 6 characters',
   'auth.err.loginId': 'Enter a valid email / username (3+ characters)',
   'auth.err.fields': 'Please fill in all fields',
+  'auth.err.passwordMismatch': 'Passwords do not match',
   'auth.err.network': 'Network error — please retry',
 
   // ── Shop / top-up (S2-6) ────────────────────────────────────────────────────

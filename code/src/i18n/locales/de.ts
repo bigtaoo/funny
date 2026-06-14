@@ -148,6 +148,7 @@ export const de: Record<TranslationKey, string> = {
   'auth.register': 'Registrieren',
   'auth.loginIdLabel': 'E-Mail / Benutzername',
   'auth.passwordLabel': 'Passwort',
+  'auth.confirmPasswordLabel': 'Passwort bestätigen',
   'auth.displayNameLabel': 'Anzeigename (optional)',
   'auth.submitLogin': 'Anmelden',
   'auth.submitRegister': 'Registrieren & anmelden',
@@ -166,6 +167,7 @@ export const de: Record<TranslationKey, string> = {
   'auth.err.weak': 'Passwort muss mindestens 6 Zeichen haben',
   'auth.err.loginId': 'Gültige E-Mail / Benutzername eingeben (mind. 3 Zeichen)',
   'auth.err.fields': 'Bitte alle Felder ausfüllen',
+  'auth.err.passwordMismatch': 'Passwörter stimmen nicht überein',
   'auth.err.network': 'Netzwerkfehler — bitte erneut versuchen',
 
   // ── Shop / Aufladen (S2-6) ──────────────────────────────────────────────────
