@@ -71,7 +71,7 @@ src/
 SceneManager.tick(dt)             ← PIXI ticker，dt = ms/1000
   → GameScene.update(dt)
     → GameRenderer.update(dt)
-      → engine.tick(dt)           ← 游戏逻辑（固定步长内部累积）
+      → engine.tick(dt)           ← 游戏逻辑（固定步长内部累积；`accumulatedTime` 上限 5 tick，锁步停步时回落到 1 tick，避免帧批集中补跑造成的卡顿）
       → for event in state.events → handleEvent(event, state)
       → vfxSystem.update(dt)      ← 特效推进
       → unitView.sync(board, dt)   ← dt 用于推进骨骼动画时钟
@@ -298,7 +298,7 @@ rotation  = 0，anchor = (0.5, 0.5)，zOrder = -Infinity（始终最底层）
 ### UnitView 集成
 
 - 凡在 `STICKMAN_ASSETS` 中登记了 `.tao` 的单位类型（Infantry→`infantry.tao`、Archer→`archer.tao`、ShieldBearer→`shieldbearer.tao`），若该类型资源（`assets` Map 内）已加载，`acquireSprite` 创建 stickman 容器；否则退回占位圆形。资源后台加载，按类型各自维护复用池（`stickmanPools`）
-- 敌方（`Side.Top`）：`mirrorX: true`，`scaleX *= -1`
+- 敌方（`Side.Top`）：`mirrorX: true`，`scaleX *= -1`（经 `shouldMirror(unit)` 判定）。**例外**：弓箭手豁免水平翻转——弓被非对称烘焙进前臂精灵，翻转会把弓带到身体错误一侧；两个阵营保持作者朝向，敌我靠 faction ink 蓝/红区分
 - `sync(board, dt)` 中对每个有 runtime 的单位调用 `runtime.syncState` + `runtime.update(dt)`
 - 单位死亡时 `runtime.play('death')` 后在淡出动画结束时 `runtime.destroy()`
 

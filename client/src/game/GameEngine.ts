@@ -109,15 +109,36 @@ class GameEngineImpl implements IGameEngine {
 
   // ─── Render-facing API ───────────────────────────────────────────────────
 
+  /**
+   * Max wall-clock the accumulator may bank, in sim ticks. Bounds how many steps
+   * one tick() call can run, so a long pause (backgrounded tab, GC hitch, or a
+   * lockstep stall) can't trigger a giant catch-up burst. ~167 ms of catch-up.
+   */
+  private static readonly MAX_CATCHUP_TICKS = 5;
+
   tick(dt: number): void {
     const tickDt = 1 / TICK_RATE;
     this.accumulatedTime += dt;
+
+    // Cap banked time — prevents post-pause bursts and the spiral-of-death.
+    const maxAccum = tickDt * GameEngineImpl.MAX_CATCHUP_TICKS;
+    if (this.accumulatedTime > maxAccum) this.accumulatedTime = maxAccum;
+
     while (this.accumulatedTime >= tickDt) {
       // Pull the confirmed command set for this frame from the input pipeline.
       // LocalInputSource never stalls; a net source returns null when the frame
       // is not yet confirmed, in which case we stop advancing (S1-7 buffering).
       const cmds = this.input.take(this.currentTick);
-      if (cmds === null) break;
+      if (cmds === null) {
+        // Lockstep stall: the next frame isn't confirmed yet. Drop banked time
+        // back to a single tick so that when the frame lands we resume at the
+        // natural 30 Hz cadence rather than replaying the whole buffered batch
+        // in one render frame — that burst-then-idle is exactly the choppy,
+        // 10 Hz-looking stutter. Re-times step() calls only; never changes which
+        // frames run or their order, so determinism is unaffected.
+        if (this.accumulatedTime > tickDt) this.accumulatedTime = tickDt;
+        break;
+      }
       this.accumulatedTime -= tickDt;
       this.step(this.currentTick++, cmds);
     }
