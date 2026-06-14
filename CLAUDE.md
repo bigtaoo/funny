@@ -144,6 +144,7 @@ Binding 参数在动画期间不变；动画只控制骨骼，图片跟随骨骼
 | `src/skeleton/Skeleton.ts` | 静息姿 `rwa` 未按朝右角色约定设定：手臂朝下（82°/98°），左右腿在错误一侧 | 手臂改为水平展开（r 180°/195°，l 0°/−15°）；腿改为向各自外侧下方展开（r 120°/130°，l 60°/50°） |
 | `src/ui/ResizablePanels.ts` | `atlasPanel`（`#atlas-panel`）不存在于 DOM，`right | atlas` 分割条初始化时读 `null.offsetWidth` 崩溃 | 加 `if (atlasPanel)` null guard，不存在时跳过该分割条 |
 | `src/timeline/TimelineView.ts` + `public/index.html` | 时间轴面板缩小后骨骼行被截断，无法滚动查看 | 新增垂直滚动：`scrollY` 状态 + `applyScroll()`；canvas `drawRows` 加 `clip()` + scrollY 偏移，跳过不可见行；`getRowFromY`/`findKfAt` 点击坐标加 scrollY 修正；右侧自定义滚动条（`#tl-vscroll` / `#tl-vscroll-thumb`）支持拖拽 thumb、点击轨道跳转；canvas wheel 事件驱动滚动；labels 隐藏原生滚动条，`scrollTop` 由 JS 同步；面板高度足够时 thumb 自动隐藏 |
+| `src/io/IOController.ts` | 导出 `.tao` 体积偏大：骨骼图在编辑器里被 `binding.scale` 缩小显示，spritesheet 却存全分辨率原图，浪费像素 | 导出端新增烘焙（约 -1/3 体积）：`buildExportImages` 按每骨骼 `\|binding.scale\| × 最大关键帧 scale × 1.5 余量`（`clamp01` 封顶 ≤1，永不放大源图）canvas 高质量缩小，并把 `animation.json` 的 `binding.scaleX/Y` 除以同比例补偿；shadow 与源分辨率无关，缩到 `shadowW/H 显示尺寸 ×1.5`；`computeMaxKeyframeScale` 取全 clip 最大放大倍数防糊。runtime `sprite.scale=关键帧×binding.scale` 纯乘法 → 像素级一致、零改动；仅作用于 `.tao`，`.tao.editor` 仍存无损原图 |
 
 ### 快捷键
 
