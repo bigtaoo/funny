@@ -287,18 +287,18 @@
 
 ### 必须完成
 
-- [ ] `sketch.ts` 笔触原语 + `theme.ts` + 一张 grain 纹理（程序绘制底座）
-- [ ] 棋盘背景改程序画 + 烘焙缓存（替换拉伸 `map.png`）
-- [ ] 3种单位的可染色造型与动画（行走、攻击、受击、死亡）
-- [ ] 2种建筑造型（兵营、箭塔）
-- [ ] 手牌UI（卡牌外框、费用、选中/禁用，便签纸形态）
-- [ ] 核心特效（攻击命中、死亡、陨石、急速冲锋）
-- [ ] 金币/血条等核心HUD（程序画 + `PIXI.Text`）
+- [x] `sketch.ts` 笔触原语（`SketchPen` 类）+ `theme.ts`（含 `factionInk`/`fx`）+ 程序 grain（`wearOverlay.ts`，§3.1 磨损 overlay：grain/折痕/暗角/透印，bake 缓存）
+- [x] 棋盘背景改程序画 + 烘焙缓存（`BoardView.drawBoard` + `bake.ts`，替换拉伸 `map.png`）
+- [~] 3种单位的可染色造型与动画：PvP 三兵种用 `.tao` 骨骼动画 + faction tint；无 `.tao` 的占位/PvE 怪走 `stickmanDraft.ts` 程序草稿（沿 11 骨骼，faction ink）
+- [x] 2种建筑造型（兵营、箭塔，`BuildingView` 精灵）；基地改程序「2×2 手绘城堡」（`castle.ts`，§6.3）
+- [x] 手牌UI（`HandView`：卡框 + 费用 + 选中/禁用 + 刷新进度条）
+- [~] 核心特效（陨石/裂缝/受击红晕已程序化；攻击命中星形 / 急速速度线待补）
+- [x] 金币/血条等核心HUD（程序画 + `PIXI.Text`，i18n 键化）
 
 ### MVP后扩展
 
-- [ ] UI 全面程序画 + 呼吸线（标题/选中框）
-- [ ] 角色「沿骨骼草稿」生成管线（§5.5）
+- [x] UI 程序画 + 呼吸线（`boil.ts` `BoilingSprite`，大厅标题下划线 ~8fps boiling）
+- [x] 角色「沿骨骼草稿」生成管线（§5.5，`stickmanDraft.ts` 沿 `.tao` 骨骼 FK 静息姿）
 - [ ] 文具皮肤系统（theme 对象 swap）
 - [ ] 文具合成装备的程序绘制叠加
 - [ ] 笔记本封面主菜单 + 手绘翻页过场

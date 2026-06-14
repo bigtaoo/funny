@@ -9,7 +9,8 @@ import type { TaoAsset } from './stickman/StickmanRuntime';
 import infantryTaoUrl from '../assets/infantry.tao';
 import archerTaoUrl from '../assets/archer.tao';
 import shieldBearerTaoUrl from '../assets/shieldbearer.tao';
-import { factionInk, fx, palette } from './theme';
+import { fx, palette } from './theme';
+import { drawStickmanDraft } from './stickmanDraft';
 
 /**
  * .tao skeletal-animation bundle URL per unit type. Types listed here render as
@@ -26,23 +27,27 @@ const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
  * the primary readability rule). Sourced from theme so a re-skin can't break the
  * friend/foe split. NOTE: Bottom/Top here are render sides, not owners; the local
  * player always sits at Bottom after the localSide-aware layout flip.
+ *
+ * Placeholder units (PvE-only Ironclad/Runner, or any stickman type before its
+ * .tao bundle loads) draw the procedural skeleton draft (stickmanDraft.ts) in
+ * faction ink. Per-type figure height gives a silhouette cue (§3.2: types by
+ * silhouette, not color — color is the faction).
  */
-const SIDE_INK: Record<Side, number> = {
-  [Side.Bottom]: factionInk.friend,
-  [Side.Top]:    factionInk.enemy,
+const DRAFT_HEIGHT: Record<UnitType, number> = {
+  [UnitType.Infantry]:     30,
+  [UnitType.ShieldBearer]: 32,
+  [UnitType.Archer]:       29,
+  [UnitType.Ironclad]:     40,  // heavy — bulkier silhouette
+  [UnitType.Runner]:       24,  // small & fast
 };
 
-/**
- * Per-type marker color — a small secondary dot so placeholder circles stay
- * type-distinguishable. Faction (body color) dominates; type is the accent.
- * Real units render as .tao stickmen and don't use this.
- */
-const UNIT_COLORS: Record<UnitType, number> = {
-  [UnitType.Infantry]: 0x222222,
-  [UnitType.ShieldBearer]:  0x1a3a8a,
-  [UnitType.Archer]:    0xcc2200,
-  [UnitType.Ironclad]:  0x556677,  // steel — heavy armor
-  [UnitType.Runner]:    0xddaa22,  // amber — fast rusher
+/** Stable pen seed per type so each draft scrawls consistently. */
+const DRAFT_SEED: Record<UnitType, number> = {
+  [UnitType.Infantry]:     1011,
+  [UnitType.ShieldBearer]: 2027,
+  [UnitType.Archer]:       3041,
+  [UnitType.Ironclad]:     4057,
+  [UnitType.Runner]:       5077,
 };
 
 const RADIUS        = 10;
@@ -304,20 +309,15 @@ export class UnitView {
 
     const body = c.getChildByName('body') as PIXI.Graphics;
     body.clear();
-    // Faction ink dominates (blue = us / red = enemy); a small type marker dot
-    // keeps placeholder circles distinguishable without stealing the faction cue.
-    body.beginFill(SIDE_INK[unit.side]);
-    body.drawCircle(0, 0, RADIUS);
-    body.endFill();
-    body.beginFill(UNIT_COLORS[unit.unitType], 0.9);
-    body.drawCircle(0, 0, RADIUS * 0.42);
-    body.endFill();
+    // Procedural skeleton draft (§5.5) in faction ink — blue = us / red = enemy.
+    drawStickmanDraft(body, unit.side, DRAFT_HEIGHT[unit.unitType], DRAFT_SEED[unit.unitType]);
 
+    // Faint pencil ground shadow so the figure sits on the board.
     const ring = c.getChildByName('ring') as PIXI.Graphics;
     ring.clear();
-    // Pencil outline — the notebook line, not the faction cue (that's the fill).
-    ring.lineStyle(1.5, palette.pencil, 0.85);
-    ring.drawCircle(0, 0, RADIUS + 1);
+    ring.beginFill(palette.pencil, 0.16);
+    ring.drawEllipse(0, RADIUS + 2, RADIUS * 0.9, RADIUS * 0.32);
+    ring.endFill();
 
     return c;
   }

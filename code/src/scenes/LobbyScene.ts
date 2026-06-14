@@ -6,6 +6,8 @@ import { t, TranslationKey } from '../i18n';
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
 import { bake } from '../render/bake';
+import { buildWearOverlay } from '../render/wearOverlay';
+import { BoilingSprite } from '../render/boil';
 
 // ── AI name pool ───────────────────────────────────────────────────────────────
 
@@ -82,6 +84,8 @@ export class LobbyScene implements Scene {
   private btnLabel!: PIXI.Text;
   private vsLayer!:  PIXI.Container;
   private oppLabel!: PIXI.Text;
+  /** Boiling-line title underline (art-direction §5.4); cleaned up in destroy. */
+  private titleBoil: BoilingSprite | null = null;
 
   /** Hit rect for the start/matching button, in design space. */
   private btnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
@@ -127,6 +131,8 @@ export class LobbyScene implements Scene {
 
   destroy(): void {
     this.unsubs.forEach(u => u());
+    this.titleBoil?.destroy();
+    this.titleBoil = null;
   }
 
   // ── Input ──────────────────────────────────────────────────────────────────
@@ -175,6 +181,12 @@ export class LobbyScene implements Scene {
     // Background — procedural notebook paper (sketch.ts), baked once per size.
     this.container.addChild(this.buildBackground());
 
+    // Worn-notebook overlay (art-direction §3.1) — faint grain/creases over the
+    // page, below the header/panels so it never hurts UI readability.
+    const wear = buildWearOverlay(w, h);
+    wear.alpha = 0.55;
+    this.container.addChild(wear);
+
     // Header block
     const tbH = Math.round(h * 0.14);
     const titleBg = new PIXI.Graphics();
@@ -190,6 +202,20 @@ export class LobbyScene implements Scene {
     const subtitle = txt(t('lobby.subtitle'), Math.round(h * 0.022), C.light);
     subtitle.anchor.set(0.5, 0.5); subtitle.x = w / 2; subtitle.y = tbH * 0.78;
     this.container.addChild(subtitle);
+
+    // Boiling-line title underline (art-direction §5.4) — a hand-drawn marker
+    // stroke that subtly wobbles ~8fps. Cycles baked variants; near-zero cost.
+    const ulW = Math.min(w * 0.6, title.width * 1.15);
+    const ulH = Math.round(h * 0.02);
+    this.titleBoil = new BoilingSprite(ulW, ulH, (pen) => {
+      pen.stroke(
+        [{ x: 2, y: ulH * 0.5 }, { x: ulW - 2, y: ulH * 0.5 }],
+        { color: palette.marker, width: Math.max(4, ulH * 0.5), taper: 0.6, double: false },
+      );
+    }, { tag: 'lobby-title', variants: 3, fps: 8 });
+    this.titleBoil.x = w / 2 - ulW / 2;
+    this.titleBoil.y = tbH * 0.45 + title.height / 2;
+    this.container.addChild(this.titleBoil);
 
     // Top-right account chip (SA-4): offline → login/register entry; online →
     // server-authoritative ladder badge with a small logout affordance.

@@ -29,6 +29,7 @@ import { HUDView } from './HUDView';
 import { NetStatusView } from './NetStatusView';
 import { UnitView } from './UnitView';
 import { VFXSystem } from './VFXSystem';
+import { buildWearOverlay } from './wearOverlay';
 import { fromFp } from '../game';
 import { t } from '../i18n';
 
@@ -241,6 +242,13 @@ export class GameRenderer {
     this.container.addChild(this.unitView.container);
     this.container.addChild(this.buildingView.container);
     this.container.addChild(this.vfxSystem.container);  // above units, below HUD
+
+    // Worn-notebook overlay (art-direction §3.1) — faint static grain/creases
+    // over the whole battlefield, below the HUD so it never muddies HUD text.
+    const wear = buildWearOverlay(this.layout.designWidth, this.layout.designHeight);
+    wear.alpha = 0.5;
+    this.container.addChild(wear);
+
     this.container.addChild(this.hudView.backgroundContainer);  // bottom strip bg, behind hand
     this.container.addChild(this.handView.container);
     this.container.addChild(this.hudView.container);            // HUD foreground + overlays, above hand
