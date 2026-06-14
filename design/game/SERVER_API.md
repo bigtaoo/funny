@@ -72,7 +72,7 @@ POST /auth/oauth     { provider, code, redirectUri }      → AuthResult | OAUTH
 POST /auth/bind      (JWT) { method, ...credential }      → { ok, isAnonymous } | ALREADY_BOUND | LOGIN_ID_TAKEN
 POST /auth/password/change (JWT) { oldPassword, newPassword } → { ok }
 POST /profile/rename (JWT) { displayName }  → { save: SaveData, displayName } | INSUFFICIENT_FUNDS | BAD_REQUEST
-# AuthResult = { token, accountId, isNew, isAnonymous, displayName? }
+# AuthResult = { token, accountId, isNew, isAnonymous, displayName?, gatewayUrl? }
 ```
 - 微信：`code` 由 `wx.login` 得，服务端换 openid → 映射 accountId。
 - Web/CrazyGames：`deviceId` 为客户端持久化 UUID（匿名 `isAnonymous=true`）。
@@ -80,10 +80,11 @@ POST /profile/rename (JWT) { displayName }  → { save: SaveData, displayName } 
 - **实现状态（2026-06-14）**：`/auth/register`·`/auth/login`·`/auth/password/change` + `AuthResult.isAnonymous` **已落地**（SA-1，`isAnonymous` 计算得出不落库）；`/auth/oauth`·`/auth/bind` **待做**（SA-2，错误码已预留）。`/auth/password/reset`（找回密码，需邮件服务）后置。
 - **展示名（displayName，2026-06-14）**：注册时填的 `displayName` 存账号文档；`/auth/register`·`/auth/login`·`/auth/device`·`/auth/wx` 的 `AuthResult` 与 `GET /save` 均回带 `displayName`（有才带），客户端持久化用于个人资料显示（token 续登经 `GET /save` 自动恢复）。
 - **改名（`/profile/rename`，2026-06-14）**：消耗 `RENAME_COST=500` 金币改展示名。meta 先经 commercial `/internal/spend` 扣币（余额不足 402 名不变），扣成功后写新名 + 钱包镜像回推权威存档。名字长度 1–24（`validateDisplayName`），空名 400。
+- **gateway 地址下发（`gatewayUrl`，2026-06-14）**：客户端**只硬编码 meta 的 HTTP 地址**——gateway 控制面 WS 地址由 auth/save 回包下发（`AuthResult.gatewayUrl` + `GET /save` 的 `gatewayUrl`），game 数据面地址由 `match_found.game_url` 下发，都实时获取不静态配置。meta 经环境变量 `NW_GATEWAY_PUBLIC_WS_URL`（如 `ws://host:8082/gw` / `wss://host/gw`）得知公开地址；未配置则不下发（客户端退回构建期 fallback `getGatewayWsUrl`：生产同源由 `/api`→`/gw` 推导）。四个 auth 端点 + `GET /save`（token 续登无 auth 回包，故 save 也带）均回带。**注**：openapi 响应 schema 必须声明 `gatewayUrl`，否则 fastify `fast-json-stringify` 静默剥掉 schema 外字段。
 
 ### 2.2 存档（save-service，`META_TASKS.md` S0-7）
 ```
-GET  /save                                     → { save: SaveData, displayName? }  // 当前账号（顺带回带展示名）
+GET  /save                                     → { save: SaveData, displayName?, gatewayUrl? }  // 当前账号（顺带回带展示名 + gateway 地址）
 PUT  /save     (If-Match: <rev>)  { save }     → { save: SaveData }      // 成功回推规范化后的存档
                                                  | 409 REV_CONFLICT { save }  // 当前云端值
 ```

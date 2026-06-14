@@ -44,6 +44,8 @@ export interface ServiceDeps {
   jwt: JwtConfig;
   now: () => number;
   commercial: CommercialClient;
+  /** gateway 公开 WS 地址，随 auth/save 回包下发；null = 不下发（客户端退回自身配置）。 */
+  gatewayPublicUrl: string | null;
 }
 
 /** 取安全处理器写入的 accountId（security handler 保证已鉴权）。 */
@@ -56,6 +58,11 @@ function accountIdOf(req: FastifyRequest): string {
 export class MetaService {
   constructor(private readonly deps: ServiceDeps) {}
 
+  /** gateway 公开 WS 地址（配置了才下发）。客户端据此连控制面，无需自身硬编码 gateway 地址。 */
+  private get gatewayField(): { gatewayUrl?: string } {
+    return this.deps.gatewayPublicUrl ? { gatewayUrl: this.deps.gatewayPublicUrl } : {};
+  }
+
   // ── auth ──────────────────────────────────────────
   async authWx(req: FastifyRequest) {
     const { code } = req.body as { code: string };
@@ -66,7 +73,7 @@ export class MetaService {
       this.deps.now(),
     );
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}) });
+    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
   async authDevice(req: FastifyRequest) {
@@ -77,7 +84,7 @@ export class MetaService {
       this.deps.now(),
     );
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}) });
+    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
   async authRegister(req: FastifyRequest, reply: FastifyReply) {
@@ -103,7 +110,7 @@ export class MetaService {
     }
     const { accountId, isNew, isAnonymous } = result.account;
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}) });
+    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
   async authLogin(req: FastifyRequest, reply: FastifyReply) {
@@ -114,7 +121,7 @@ export class MetaService {
     }
     const { accountId, isNew, isAnonymous, displayName } = account;
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}) });
+    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
   async authPasswordChange(req: FastifyRequest, reply: FastifyReply) {
@@ -179,7 +186,7 @@ export class MetaService {
     }
     const save = await getOrCreateSave(cols, accountId, now());
     const displayName = await getDisplayName(cols, accountId);
-    return ok({ save, ...(displayName ? { displayName } : {}) });
+    return ok({ save, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
   async putSave(req: FastifyRequest, reply: FastifyReply) {

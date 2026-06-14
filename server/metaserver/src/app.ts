@@ -26,6 +26,8 @@ export interface BuildAppOpts {
   /** gateway 内部基址（对等裁判 /gw/judge；null = 裁判不可用）；或直接注入 client（测试用）。 */
   gatewayUrl?: string | null;
   gateway?: GatewayClient;
+  /** gateway 公开 WS 地址，随 auth/save 回包下发给客户端（null = 不下发）。 */
+  gatewayPublicUrl?: string | null;
   now?: () => number;
   logger?: boolean;
 }
@@ -56,6 +58,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     jwt: opts.jwt,
     now,
     commercial,
+    gatewayPublicUrl: opts.gatewayPublicUrl ?? null,
   });
 
   const gateway =

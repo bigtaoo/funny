@@ -24,8 +24,6 @@ funny/
 │   ├── level-editor/      战役关卡编辑器（TypeScript + 纯 Canvas，端口 9092）
 │   │   ├── src/           源码（board / timeline / inspector / state）
 │   │   └── public/        HTML 模板
-│   ├── sketch-gen/        角色生成器（TypeScript + PixiJS，端口 9093）★ 设计中
-│   │   └── src/           复用 @render/sketch 笔触；每角色一套专属绘制代码
 │
 ├── art/
 │   ├── maps/              地图资源
@@ -36,7 +34,7 @@ funny/
     ├── game/              游戏主文档：DESIGN / IMPROVEMENT_PLAN / CAMPAIGN_DESIGN
     │                      / CAMPAIGN_P0_PLAN / META_DESIGN / META_TASKS / UI_DESIGN
     │                      / SERVER_API / ECONOMY_BALANCE
-    ├── tools/             工具文档：animator/{ARCHITECTURE,REQUIREMENTS}、level-editor/DESIGN、sketch-gen/DESIGN
+    ├── tools/             工具文档：animator/{ARCHITECTURE,REQUIREMENTS}、level-editor/DESIGN
     └── product/           产品/美术文档：world / characters / market-analysis / ui-design …
 ```
 
@@ -267,29 +265,15 @@ npm run build   # 生产构建
 | `src/board/BoardPanel.ts` | 棋盘点击命中的格子与点击位置不符：`CELL`/`HEADER` 是模块级常量、画布固定 312px 渲染，画布显示尺寸一旦与内部分辨率不一致（DPI/缩放/面板可调宽后）`getBoundingClientRect` 映射就偏 | cell/header 改为实例状态，画布按面板宽度动态选格子尺寸（16–56px），backing store 与显示尺寸严格 1:1；`resize()` 改 public 供分隔条同步调用；顺手删 `drawNoBuild` 中一段无 `stroke` 的死代码 hatch 循环 |
 | `public/index.html` + `src/index.ts` | 三列宽度写死、无分隔条，棋盘 / JSON 窗口无法拖动调整大小 | 加 3 个可拖拽分隔条（`dragSplit`）：棋盘列↔中栏 / 中栏↔Inspector / 时间线↔JSON；棋盘分隔条拖动直接调 `board.resize()` + `window.resize` 监听，纯布局改动不触碰 `EditorState` |
 
-## 角色生成器（tools/sketch-gen）★ 设计中
+## 美术资产分工（程序绘制 vs AI 图）
 
-用与游戏同源的 SketchPen 笔触**程序化绘制角色**，产出 PNG 资产。设计基准见 `design/tools/sketch-gen/DESIGN.md`。
+> 2026-06-14 拍定。详见 `design/product/art-direction.md`「资产分工」节。
 
-### 定位与工作流
+经实测：**程序笔触能画好抽象 UI，画不好角色**。据此分两条管线（同属手绘笔记本视觉语言，混用不打架）：
 
-不是手绘工具，是**程序生成工具**：代码按"每角色一套专属绘制配方"画出手绘笔记本风的火柴人，导出后进 animator 绑骨骼做动画。
-
-```
-1. [sketch-gen] 选角色 → 程序绘制 → 导出 11 张骨骼分件 PNG（给 animator）+ 1 张整身卡图（给卡牌 UI）
-2. [你] 手动润色 PNG（按需）
-3. [animator] 导入分件 PNG → 绑骨骼 → 做动画 → 导出 .tao
-```
-
-### 要点
-
-- **同源笔触**：webpack alias `@render` → `client/src/render/`，直接 import `SketchPen`（`sketch.ts`）+ `theme.ts`，笔触/配色与游戏运行时完全一致，改一处两边变。
-- **每角色一套专属代码**（不做通用参数器）：`src/characters/<unit>/<unit>.ts` 各自把每根骨骼的笔触写死到极细，互不共享参数 → 表达力拉满（步兵壮实 / 弓箭手箭袋 / 重甲肩甲 / 疾行兵瘦小各自定制）。工具性质，不在乎代码量。
-- **静息姿基准**：`src/restPose.ts` 提供 11 骨骼"朝右约定"世界坐标，所有角色共享坐标基准，保证导出朝向与 animator 自动映射对齐。
-- **两个导出**：①骨骼分件——每骨骼渲到离屏 canvas、裁透明边，按 animator 文件名约定（`spine.png`/`head.png`/`r_upper_arm.png`…10 张 + `shadow.png`）；②整身卡图——组装全部部件成一张 `<unit>_card.png` 给卡牌。**不打 ZIP**：用 File System Access API 弹目录选择器写进指定文件夹（绑骨骼用单图），不支持的浏览器退回逐张下载。
-- **协作环（每角色）**：先出 SVG 视觉草案（标 11 骨骼坐标 + 每部位画法）→ 你在草案上提修正 → 敲定后翻译成 SketchPen stroke 代码 → 工具实时预览 → 微调。设计与编码分离，便宜阶段拍板。
-- **阵营色**：导出 PNG 用中性色，蓝(我)/红(敌)阵营色由游戏运行时染（`factionInk`），不烤死进图。
-- **现状**：设计阶段，工程未立。首版做 infantry（普通兵），跑通"草案→生成→导出→进 animator"全链路再扩其余兵种。
+- **程序绘制（SketchPen，`client/src/render/sketch.ts`）**：棋盘 / 网格 / UI 框 / HUD / 纸纹磨损 / 特效 / 简单装饰——抽象几何元素，程序画出来*就是*设计本身，无"匹配参考图"问题。已落地（见美术第一~三刀）。
+- **AI 图（位图资产，`art/units/*`）**：角色 / 兵种 / 有个性的建筑 / 卡牌图 / 插画式地图元素——人对脸/身材/造型极敏感，程序复刻达不到质感。流程：AI 出图 → 用户在 GIMP 切件/润色 → animator 绑骨做动画（Skin 模式 + anchor 红点已支持）。
+- **不引入中间生成/模板工具**：切件走 GIMP、绑骨走 animator，链路已齐全。（曾试 `tools/sketch-gen` 程序生成角色，质感够不着 AI 图，已废弃删除。）
 
 ## 游戏主代码（client/）
 
@@ -352,6 +336,8 @@ npm run build   # 生产构建
 | `net/ApiClient.ts` + `game/meta/SaveManager.ts` + `app.ts` + 服务端 auth/save | 注册时填的展示名只写进库、auth/save 响应从不返回 → 客户端永远拿不到，显示「访客」；且 token 续登不重新 auth，无从恢复名 | 服务端 `AuthResult`（register/login/device/wx）+ `GET /save` 均回带 `displayName`（有才带）：accounts.ts `resolveByDevice/Openid`/`registerWithPassword`/`loginWithPassword` 带出 + 新增 `getDisplayName`；service.ts 各 auth + `getSave` 附 `displayName`。客户端 `ApiClient.getSave` 返回 `{save,displayName}`；`SaveManager` 加 `onProfile` 回调（bootstrap/refresh 拉到名即回调）；`app.ts` 持久化名 + 名字变化且在大厅时重建大厅 → **token 续登自动恢复展示名，无需重登** |
 | `scenes/SettingsScene.ts` + `net/ApiClient.ts` + `app.ts` + 服务端 commercial/meta + i18n | 无改名功能 | **改名消耗 500 金币**（`RENAME_COST`，`shared/economy.ts`）：commercial 加通用金币 sink `spend()`（原子 `$gte` 扣币 + orderId 幂等 + `OrderDoc.kind:'sink'` 落库即 `delivered`，对账 `undeliveredOrders` 不拾取）+ `/internal/spend`；meta `POST /profile/rename`（先扣币→不足 402 名不变→写新名 `setDisplayName`→钱包镜像回推；名长 1–24 `validateDisplayName`，空名 400）；客户端 SettingsScene 改名按钮（余额不足置灰）+ 模态改名弹层 + `ApiClient.rename`；`app.doRename` 采纳回推存档 + 持久化新名。i18n `settings.rename*` 全翻。验证：server `tsc -b` 六包 + commercial 21（+spend）/ meta 44（+3 rename e2e + 2 auth displayName）/ client 132（+onProfile）测试 + web 构建全绿 |
 | `scenes/LobbyScene.ts` + `app.ts` + `scenes/RoomScene.ts` | 大厅「开始对战」按钮恒打 AI（`matchFound()` 直接 `randomAiName()` 开本地局，从不连服务器），登录与否一样；真人排位埋在底栏「社交」→ RoomScene→「排位赛」里，玩家以为登录后 match 就该匹配真人 | **登录后 match 走真人排位**：`LobbySceneCallbacks` 加 `online`(=登录+`api`+`gatewayUrl`) + `onStartRanked?()`；`onStartPressed()` 在 `online` 时调 `onStartRanked()`（→ `app.goRoom({autoRanked:true})`）否则回退原 AI 快速练习。`goRoom` 接 `autoRanked`：RoomScene 直接落 `searching` 视图，app 在 **gateway WS `open` 后**才发 `createRanked()`（连接握手未完发送会被 NetClient 丢弃；老连接已 open 则立即发），取消搜索重置 `rankedQueued` 守卫。离线/未登录/无 gateway → match 原样 AI 局不变。tsc 干净 + client 132 测试全绿。**注**：真人对战需 gateway+matchsvc+game(+meta) 四进程在跑且有第二玩家排队，否则点 match 卡「搜索中」是预期（无对手），非 bug |
+| `server/dev-up.ps1` | 排位匹配恒卡「搜索中」：dev:all 启动脚本把 gateway 起在 `NW_GW_PORT=8085`，但客户端硬连 `ws://localhost:8082/gw`（webpack 默认 + gateway 自身默认都是 8082）→ 浏览器报「can't establish connection」，`createRanked` 在 WS open 前被 NetClient 丢弃；且 gateway 缺 `NW_META_BASE_URL` → `enqueueRanked` 因 `meta.available=false` 直接 `RANKED_UNAVAILABLE`，取 ELO 失败 | gateway env `NW_GW_PORT` 8085→8082、补 `NW_META_BASE_URL=http://127.0.0.1:18080`；meta env 补 `NW_GATEWAY_PUBLIC_WS_URL`（见下行） |
+| `metaserver/{config,app,index,service}.ts` + `contracts/openapi.yml` + `client/{net/ApiClient,game/meta/SaveManager,app}.ts` + `dev-up.ps1` | 客户端 gateway 地址走 webpack 静态注入 / 由 API 基址推导，与服务端实际端口易不一致（上行 8082/8085 即此类）；架构上客户端应只硬编码 meta 地址，其余实时获取 | **gateway 地址改由服务器下发**：meta 加环境变量 `NW_GATEWAY_PUBLIC_WS_URL`→`config.gatewayPublicUrl`，四个 auth 回包 + `GET /save`（token 续登无 auth 回包）均带 `gatewayUrl`；`openapi.yml` 的 `AuthResult` + save 响应 schema 加 `gatewayUrl`（否则 `fast-json-stringify` 剥字段）。客户端 `ApiClient.AuthResult`/`getSave` + `SaveManager.onProfile` 带出 `gatewayUrl`；`app.ts` 的 `gatewayUrl` 改可变 + `applyGatewayUrl()`（服务器值覆盖构建期 fallback、丢弃旧 NetSession 重建、刷新大厅 `online`），`doAuth`(登录/注册) 与 `onProfile`(续登) 两路径接入。`getGatewayWsUrl` 保留为 fallback（生产同源 `/api`→`/gw` 推导）。game 地址本就由 `match_found` 下发。tsc 六包 + client tsc 干净 |
 
 ### 游戏核心模块
 

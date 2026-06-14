@@ -52,7 +52,8 @@ export async function startApp(platform: IPlatform): Promise<void> {
     // Cloud-authoritative display name (returned by GET /save). On token re-entry the
     // pull happens after the lobby is already shown, so persist the name and, if it
     // actually changed, rebuild the lobby so the profile chip picks it up.
-    onProfile: ({ displayName }) => {
+    onProfile: ({ displayName, gatewayUrl: gw }) => {
+      applyGatewayUrl(gw); // server-provided gateway address (rebuilds lobby if it changed)
       if (!displayName) return;
       if (platform.storage.getItem(PLAYER_NAME_KEY) === displayName) return;
       platform.storage.setItem(PLAYER_NAME_KEY, displayName);
@@ -71,7 +72,11 @@ export async function startApp(platform: IPlatform): Promise<void> {
   // WS; the game data-plane WS address arrives per-match in match_found. Built only
   // when both a REST base (JWT auth) and a gateway endpoint are configured;
   // otherwise the room UI still opens but actions show "unavailable".
-  const gatewayUrl = getGatewayWsUrl(platform.storage);
+  // Client only hardcodes the meta URL. The gateway address is delivered by the server
+  // in auth/save responses (applyGatewayUrl below); the game address arrives per-match
+  // in match_found. getGatewayWsUrl is just a build-time fallback (prod same-origin /
+  // dev inject) used until the server tells us otherwise.
+  let gatewayUrl = getGatewayWsUrl(platform.storage);
   let netSession: NetSession | null = null;
   function getNetSession(): NetSession | null {
     if (netSession) return netSession;
@@ -79,6 +84,18 @@ export async function startApp(platform: IPlatform): Promise<void> {
     netSession = new NetSession(platform, gatewayUrl, api, () => platform.getAuthCredential());
     netSession.handlers.onMatchStart = (info) => goGameNet(info);
     return netSession;
+  }
+
+  /**
+   * Adopt the server-provided gateway WS address (from auth/save). Overrides the
+   * build-time fallback; a session built against the stale address is dropped so the
+   * next getNetSession() rebuilds. Refreshes the lobby so its online state re-evaluates.
+   */
+  function applyGatewayUrl(url?: string): void {
+    if (!url || url === gatewayUrl) return;
+    gatewayUrl = url;
+    if (netSession) { netSession.close(); netSession = null; }
+    if (inLobby) goLobby();
   }
 
   const { width: screenW, height: screenH } = platform.getScreenSize();
@@ -231,6 +248,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
     try {
       const res = await call();
       platform.storage.setItem(TOKEN_KEY, res.token);
+      applyGatewayUrl(res.gatewayUrl); // server-provided gateway address (before goLobby reads `online`)
       // Prefer the server's stored display name (so login restores the name set at
       // registration); fall back to the locally supplied name (loginId / register input).
       const resolvedName = res.displayName || name;

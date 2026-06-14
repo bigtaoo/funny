@@ -7,6 +7,12 @@ export interface MetaEnv extends ServerEnv {
   commercialUrl: string | null;
   /** gateway 内部 HTTP 基址（对等裁判 /gw/judge）。null = 裁判不可用（ranked 不一致直接作废）。 */
   gatewayInternalUrl: string | null;
+  /**
+   * gateway 公开控制面 WS 地址（客户端连这里做房间/匹配），由 auth/save 回包下发给客户端。
+   * 客户端只硬编码 meta 地址，gateway/game 地址都实时获取——gateway 走这里、game 走 match_found。
+   * null = 不下发（客户端退回自身配置/推导）。形如 ws://host:8082/gw 或 wss://host/gw。
+   */
+  gatewayPublicUrl: string | null;
 }
 
 export function loadMetaEnv(): MetaEnv {
@@ -17,5 +23,6 @@ export function loadMetaEnv(): MetaEnv {
     host: process.env.NW_META_HOST ?? '0.0.0.0',
     commercialUrl: process.env.NW_COMMERCIAL_INTERNAL_URL ?? null,
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL ?? null,
+    gatewayPublicUrl: process.env.NW_GATEWAY_PUBLIC_WS_URL ?? null,
   };
 }

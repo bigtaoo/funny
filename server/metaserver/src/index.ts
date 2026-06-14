@@ -17,6 +17,7 @@ async function main() {
     internalKey: env.internalKey,
     commercialUrl: env.commercialUrl,
     gatewayUrl: env.gatewayInternalUrl,
+    gatewayPublicUrl: env.gatewayPublicUrl,
     logger: true,
   });
 
