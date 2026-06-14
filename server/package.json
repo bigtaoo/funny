@@ -2,13 +2,14 @@
   "name": "@nw/server",
   "version": "0.1.0",
   "private": true,
-  "description": "Notebook Wars 服务端：metaserver(REST) + gateway(控制面 WS) + matchsvc(私有匹配大脑) + gameserver(数据面 WS) + shared + contracts",
+  "description": "Notebook Wars 服务端：metaserver(REST) + gateway(控制面 WS) + matchsvc(私有匹配大脑) + gameserver(数据面 WS) + commercial(钱包/交易) + shared + contracts",
   "workspaces": [
     "shared",
     "metaserver",
     "gateway",
     "matchsvc",
-    "gameserver"
+    "gameserver",
+    "commercial"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
@@ -17,6 +18,7 @@
     "dev:game": "npm run dev --workspace @nw/gameserver",
     "dev:gateway": "npm run dev --workspace @nw/gateway",
     "dev:matchsvc": "npm run dev --workspace @nw/matchsvc",
+    "dev:commercial": "npm run dev --workspace @nw/commercial",
     "test": "npm run test --workspaces --if-present"
   },
   "engines": {

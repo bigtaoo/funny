@@ -1,6 +1,6 @@
 // pm2 进程编排（C-3 / S1-M，非 Docker 路线）。
 // 适用于直接在 VPS 上跑 node（mongod 本机装、caddy 系统服务），不想用 Docker 时：
-//   cd server && npm ci && npx tsc -b shared metaserver gateway gameserver
+//   cd server && npm ci && npx tsc -b shared metaserver gateway matchsvc gameserver commercial
 //   NW_JWT_SECRET=... NW_INTERNAL_KEY=... pm2 start ecosystem.config.cjs && pm2 save
 //
 // metaserver 无状态可起多实例（cluster）；gateway / matchsvc / gameserver 各有内存状态必须单实例。
@@ -15,6 +15,8 @@ const META_BASE = process.env.NW_META_BASE_URL || 'http://127.0.0.1:8080';
 const GAME_PUBLIC_WS = process.env.NW_GAME_PUBLIC_WS_URL || 'ws://127.0.0.1:8081/ws';
 const GW_INTERNAL = process.env.NW_GATEWAY_INTERNAL_URL || 'http://127.0.0.1:8090';
 const MM_INTERNAL = process.env.NW_MATCHSVC_INTERNAL_URL || 'http://127.0.0.1:8091';
+// commercial 内部基址（meta → commercial；玩家不可达，不暴露公网，S5）。
+const COMM_INTERNAL = process.env.NW_COMMERCIAL_INTERNAL_URL || 'http://127.0.0.1:8092';
 
 const common = {
   NW_JWT_SECRET: process.env.NW_JWT_SECRET, // 生产必须由环境提供
@@ -40,6 +42,25 @@ module.exports = {
         NW_META_HOST: process.env.NW_META_HOST || '127.0.0.1',
         NW_WX_APPID: process.env.NW_WX_APPID || '',
         NW_WX_SECRET: process.env.NW_WX_SECRET || '',
+        NW_COMMERCIAL_INTERNAL_URL: COMM_INTERNAL, // meta 编排经济调 commercial
+      },
+    },
+    {
+      name: 'nw-commercial',
+      cwd: __dirname,
+      script: 'commercial/dist/index.js',
+      exec_mode: 'fork', // 单实例：钱包权威 + 专属库；横扩走库的乐观锁，但前期单实例
+      instances: 1,
+      env: {
+        ...common,
+        NW_COMM_PORT: process.env.NW_COMM_PORT || '8092',
+        NW_COMM_HOST: process.env.NW_COMM_HOST || '127.0.0.1',
+        // 专属库（默认复用 meta 同 Mongo 实例、不同库名，S5）。
+        NW_COMM_MONGO_URI:
+          process.env.NW_COMM_MONGO_URI ||
+          process.env.NW_MONGO_URI ||
+          'mongodb://127.0.0.1:27017/?replicaSet=rs0',
+        NW_COMM_MONGO_DB: process.env.NW_COMM_MONGO_DB || 'notebook_wars_commercial',
       },
     },
     {

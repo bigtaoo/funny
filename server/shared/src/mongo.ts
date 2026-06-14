@@ -34,30 +34,9 @@ export function isAnonymousAccount(doc: AccountDoc): boolean {
   return !doc.openid && !doc.password && !(doc.oauth && doc.oauth.length > 0);
 }
 
-export interface GachaHistoryDoc {
-  accountId: string;
-  poolId: string;
-  itemId: string;
-  rarity: string;
-  cost: number;
-  rev: number;
-  ts: number;
-}
-
-export interface WalletLogDoc {
-  accountId: string;
-  delta: number;
-  reason: string;
-  balAfter: number;
-  ts: number;
-}
-
-export interface IapReceiptDoc {
-  _id: string; // receiptId
-  accountId: string;
-  granted: number;
-  ts: number;
-}
+// gachaHistory / walletLog / iapReceipts 已迁出 meta 库（S5，COMMERCIAL_DESIGN §8.1）：
+// 钱包/流水/抽卡历史/充值票据现在是 commercial 服务的专属库 `notebook_wars_commercial`
+// 的 wallets/ledger/orders/recharges/gachaHistory。meta 不再持有这几张表。
 
 /**
  * Inline replay (S1-RP): seed + config + non-empty frame log, no state.
@@ -88,13 +67,20 @@ export interface MatchDoc {
   ts: number;
 }
 
+/** 广告每日 cap 计数（S5-5，meta 权威，不放客户端同步段防刷）。_id = `${accountId}:${dayKey}`。 */
+export interface AdsDailyDoc {
+  _id: string;
+  accountId: string;
+  dayKey: string;
+  count: number;
+  ts: number;
+}
+
 export interface Collections {
   saves: Collection<SaveDoc>;
   accounts: Collection<AccountDoc>;
-  gachaHistory: Collection<GachaHistoryDoc>;
-  walletLog: Collection<WalletLogDoc>;
-  iapReceipts: Collection<IapReceiptDoc>;
   matches: Collection<MatchDoc>;
+  adsDaily: Collection<AdsDailyDoc>;
 }
 
 export interface MongoHandle {
@@ -117,10 +103,8 @@ export async function createMongo(
   const collections: Collections = {
     saves: db.collection<SaveDoc>('saves'),
     accounts: db.collection<AccountDoc>('accounts'),
-    gachaHistory: db.collection<GachaHistoryDoc>('gachaHistory'),
-    walletLog: db.collection<WalletLogDoc>('walletLog'),
-    iapReceipts: db.collection<IapReceiptDoc>('iapReceipts'),
     matches: db.collection<MatchDoc>('matches'),
+    adsDaily: db.collection<AdsDailyDoc>('adsDaily'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -135,8 +119,6 @@ export async function createMongo(
       { 'oauth.provider': 1, 'oauth.sub': 1 },
       { sparse: true, unique: true },
     );
-    await collections.gachaHistory.createIndex({ accountId: 1, ts: -1 });
-    await collections.walletLog.createIndex({ accountId: 1, ts: -1 });
     await collections.matches.createIndex({ ts: -1 });
     // room_id 幂等：gameserver 局末上报重试不重复结算/归档（meta /internal/match/report）。
     await collections.matches.createIndex({ roomId: 1 }, { unique: true });

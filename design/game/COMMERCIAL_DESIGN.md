@@ -2,7 +2,15 @@
 
 > 创建：2026-06-14。本文件是**第 6 个服务 `commercial`**（钱包 / 充值 / 消费 / 盲盒 RNG / 流水）的设计基准。
 > 配套：`META_DESIGN.md`（总架构，§1.1/§6.1 拓扑已扩为 6 组件）、`SERVER_API.md`（§9 commercial 内部契约）、`ECONOMY_BALANCE.md`（数值）、`ACCOUNT_DESIGN.md`（账号）。
-> 状态：**设计稿，未实现**。任务编号见 `META_TASKS.md` S5-*。
+> 状态：✅ **已实现（2026-06-14，S5-1~6）**。`server/commercial` 独立进程 + 专属库；meta 编排；钱包权威迁出 meta saves。验证：`tsc -b` 六包 + commercial 20 / meta 37 测试 + client tsc/128 测试 / web 构建全绿。任务编号见 `META_TASKS.md` S5-*。
+>
+> **实现偏离/暂缓（与本设计的差异）**：
+> 1. **内部端点用 node:http**（非 fastify，对齐 matchsvc），业务错误以 HTTP 200 + `{ok:false,error}` 返回供 meta 映射。
+> 2. **重复转化（退币/碎片）S5 暂缓**：§4.3 退币额「待定」+ 碎片落在客户端同步段 `materials`（权威冲突）+ 补发重算 dupe 非幂等。S5 只幂等发新皮肤（`SaveData.deliveredOrders` $addToSet 去重）；退币通道在 commercial `orderDelivered(refundCoins)` 已备，待决策可持久化后接。`DUPE_REFUND_COINS`（shared/economy.ts）已统一退币（common/rare 小额占位）。
+> 3. **充值平台验签 = dev 桩**（`receipt` 形如 `tier:small|mid|large` 按档发币）；真实微信支付/渠道验签留 TODO。
+> 4. **对账**目前仅 `GET /save` 顺带（拉 commercial `orders/undelivered` 补发）；兜底定时扫描待办。
+> 5. **新增 `GET /internal/orders/undelivered`**（对账拉单）+ `order/delivered` 加 `refundCoins`，已登记 `SERVER_API §9`。
+> 6. **catalog 单一来源 `shared/src/economy.ts`**（商品/盲盒池/权重/退币/广告/IAP 档），meta 列表 + commercial RNG 共用，避免漂移。
 
 ---
 
@@ -225,9 +233,9 @@ POST /internal/ads/credit
 
 ---
 
-## 9. 开放问题（实现前需拍板）
+## 9. 开放问题（实现时的拍板）
 
-- [ ] **同实例 vs 同库**：前期 commercial 库与 meta 库同 Mongo 实例（省成本）确认 OK？还是一开始就独立实例？（默认：同实例不同库）
-- [ ] **对账触发**：未发货订单对账放在 `GET /save` 顺带做，还是独立定时扫 `orders(status:'charged', ts<now-30s)`？（默认：GET /save 顺带 + 兜底定时扫）
-- [ ] **充值平台**：首期接哪些渠道（微信虚拟支付 / Web 第三方）？验票据逻辑依赖具体平台。
-- [ ] **余额镜像新鲜度**：客户端长时间不操作时镜像会旧——是否需要在进商店前强制 `GET /save` 刷新？（默认：进 ShopScene 前刷新一次）
+- [x] **同实例 vs 同库**：按默认——同 Mongo 实例不同库（`NW_COMM_MONGO_URI` 缺省复用 `NW_MONGO_URI`，`NW_COMM_MONGO_DB=notebook_wars_commercial`）。涨了改这两个 env 即迁独立实例。
+- [x] **对账触发**：S5 先做 `GET /save` 顺带（拉 `orders/undelivered` 补发）；**兜底定时扫待办**。
+- [x] **充值平台**：首期 **dev 桩**（不接真实渠道）；真实微信支付/Web 第三方验签留 TODO（`CommercialService.verifyReceipt` 可注入）。
+- [ ] **余额镜像新鲜度**：默认「进 ShopScene 前 `GET /save` 刷新」——待 S2 ShopScene 落地时接（场景尚未实现）。

@@ -1,4 +1,4 @@
-# 生产/联调全栈（C-3 / S1-M）：mongo(单节点副本集) + metaserver + gateway + matchsvc + gameserver + caddy 反代。
+# 生产/联调全栈（C-3 / S1-M / S5）：mongo(单节点副本集) + metaserver + gateway + matchsvc + gameserver + commercial + caddy 反代。
 # 一条命令起全栈（见 deploy/up.sh）：
 #   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 #
@@ -47,6 +47,29 @@ services:
       NW_META_HOST: 0.0.0.0
       NW_WX_APPID: ${NW_WX_APPID:-}
       NW_WX_SECRET: ${NW_WX_SECRET:-}
+      # 经济编排调 commercial（内部网络，不暴露公网，S5）。
+      NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
+    depends_on:
+      mongo:
+        condition: service_healthy
+      commercial:
+        condition: service_started
+    restart: unless-stopped
+
+  # 商业服务（钱包/充值/消费/盲盒 RNG/流水，S5）。玩家不可达，仅 meta 经内部网络可达；连专属库。
+  commercial:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "commercial/dist/index.js"]
+    environment:
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
+      NW_COMM_PORT: "8092"
+      NW_COMM_HOST: 0.0.0.0
+      # 专属库（默认复用同 Mongo 实例、不同库名；涨了整库迁独立实例只改这两个）。
+      NW_COMM_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_COMM_MONGO_DB: ${NW_COMM_MONGO_DB:-notebook_wars_commercial}
     depends_on:
       mongo:
         condition: service_healthy

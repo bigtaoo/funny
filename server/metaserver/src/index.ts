@@ -15,6 +15,7 @@ async function main() {
     cols: mongo.collections,
     jwt,
     internalKey: env.internalKey,
+    commercialUrl: env.commercialUrl,
     logger: true,
   });
 

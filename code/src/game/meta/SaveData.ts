@@ -17,12 +17,15 @@ export interface SaveData {
   updatedAt: number; // 服务器时间戳（仅展示，客户端不可信）
 
   // —— 服务器权威段（客户端只读，§2）——
+  // wallet/gacha 自 S5 起为 commercial 服务权威的只读镜像（meta 在经济操作回执后填，客户端不写）。
   wallet: { coins: number };
   inventory: {
     skins: string[];
     items: Record<string, number>;
   };
   gacha: { pity: Record<string, number> };
+  // 已发货消费订单（commercial orderId）；服务器权威，客户端只读（S5-5）。
+  deliveredOrders: string[];
   pvp: {
     elo: number;
     rank: string;
@@ -75,6 +78,7 @@ export function makeNewSave(accountId = '', now = 0): SaveData {
     wallet: { coins: 0 },
     inventory: { skins: [], items: {} },
     gacha: { pity: {} },
+    deliveredOrders: [],
     pvp: { elo: 1000, rank: 'unranked', wins: 0, losses: 0, streak: 0 },
     progress: { cleared: [], stars: {}, best: {} },
     materials: {},

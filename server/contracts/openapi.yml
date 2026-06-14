@@ -93,6 +93,10 @@ components:
             pity:
               type: object
               additionalProperties: { type: integer }
+        # 已发货消费订单（commercial orderId）；发货幂等账本（S5-5）。legacy 档可缺，故非 required。
+        deliveredOrders:
+          type: array
+          items: { type: string }
         pvp:
           type: object
           required: [elo, rank, wins, losses, streak]

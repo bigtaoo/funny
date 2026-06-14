@@ -1,9 +1,9 @@
 # Notebook Wars 服务端镜像（C-3 / S1-M）。
-# 单一镜像同时承载 metaserver / gateway / matchsvc / gameserver——共享 @nw/shared，build 一次即可；
-# compose 用 `command` 选择跑哪个进程（node metaserver|gateway|matchsvc|gameserver /dist/index.js）。
+# 单一镜像同时承载 metaserver / gateway / matchsvc / gameserver / commercial——共享 @nw/shared，build 一次即可；
+# compose 用 `command` 选择跑哪个进程（node metaserver|gateway|matchsvc|gameserver|commercial /dist/index.js）。
 #
 # 多阶段：
-#   build   —— npm ci 整个 workspace + tsc -b 五包
+#   build   —— npm ci 整个 workspace + tsc -b 六包
 #   runtime —— 只保留 node_modules + 各包 dist + contracts（meta 读 openapi.yml；gateway/game 运行期读 transport.proto）
 
 FROM node:20-alpine AS build
@@ -15,9 +15,10 @@ COPY metaserver/package.json ./metaserver/
 COPY gateway/package.json ./gateway/
 COPY matchsvc/package.json ./matchsvc/
 COPY gameserver/package.json ./gameserver/
+COPY commercial/package.json ./commercial/
 RUN npm ci
 COPY . .
-RUN npx tsc -b shared metaserver gateway matchsvc gameserver
+RUN npx tsc -b shared metaserver gateway matchsvc gameserver commercial
 
 FROM node:20-alpine AS runtime
 WORKDIR /app
@@ -35,6 +36,8 @@ COPY --from=build /app/matchsvc/package.json ./matchsvc/package.json
 COPY --from=build /app/matchsvc/dist ./matchsvc/dist
 COPY --from=build /app/gameserver/package.json ./gameserver/package.json
 COPY --from=build /app/gameserver/dist ./gameserver/dist
+COPY --from=build /app/commercial/package.json ./commercial/package.json
+COPY --from=build /app/commercial/dist ./commercial/dist
 # meta 读 contracts/openapi.yml；gateway/gameserver 运行期读 contracts/transport.proto（dist/*.js → /app/contracts）。
 COPY --from=build /app/contracts ./contracts
 # 默认 metaserver；gameserver 服务在 compose 里覆盖 command。

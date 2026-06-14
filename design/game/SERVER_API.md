@@ -362,22 +362,24 @@ GET /internal/elo?accountId=<id>  (内部密钥)   → { elo }
 
 ---
 
-## 9. commercial 内部契约（M21，meta → commercial）
+## 9. commercial 内部契约（M21 / S5，meta → commercial）
 
-> 修订（2026-06-14）：钱包/充值/消费/盲盒迁到独立 **commercial 服务**（连专属库 `notebook_wars_commercial`，玩家不可达）。**meta 是唯一调用方**——§2.3~2.6 的公开端点收到请求后，经下列内部 RPC（JSON + `X-Internal-Key: <NW_INTERNAL_KEY>`）调 commercial 完成扣币/随机/记账，再据结果写 inventory（meta 库）+ 钱包镜像回推。设计与流程见 `COMMERCIAL_DESIGN.md`。
+> ✅ **已实现（2026-06-14，S5-1~6）**。钱包/充值/消费/盲盒迁到独立 **commercial 服务**（连专属库 `notebook_wars_commercial`，玩家不可达）。**meta 是唯一调用方**——§2.3~2.6 的公开端点收到请求后，经下列内部 RPC（JSON + `X-Internal-Key: <NW_INTERNAL_KEY>`）调 commercial 完成扣币/随机/记账，再据结果写 inventory（meta 库）+ 钱包镜像回推。设计与流程见 `COMMERCIAL_DESIGN.md`。业务结果（含 INSUFFICIENT_FUNDS 等）以 HTTP 200 + `{ok:false,error}` 返回，meta 映射成公开错误码；协议错误（鉴权/解析）才 4xx。
 
 ```
-GET  /internal/wallet?accountId=<id>           → { coins, pity:{poolId:count} }
+GET  /internal/wallet?accountId=<id>             → { ok, coins, pity:{poolId:count} }
+GET  /internal/orders/undelivered?accountId=<id> → { ok, orders:[{_id,accountId,kind,result}] }   # 对账：未发货订单
 POST /internal/shop/charge
-     { accountId, itemId, cost, orderId }       → { ok, orderId, coinsAfter, status } | INSUFFICIENT_FUNDS | ALREADY_PROCESSED
+     { accountId, itemId, cost, orderId }       → { ok, orderId, coinsAfter, status } | {ok:false,error:INSUFFICIENT_FUNDS|BAD_REQUEST}
 POST /internal/gacha/draw
-     { accountId, poolId, count:1|10, orderId } → { ok, orderId, coinsAfter, pityAfter, results:[{itemId,rarity,dupeConverted?}] } | INSUFFICIENT_FUNDS | ALREADY_PROCESSED
-POST /internal/order/delivered  { orderId }     → { ok }
+     { accountId, poolId, count:1|10, orderId } → { ok, orderId, coinsAfter, pityAfter, results:[{itemId,rarity}] } | {ok:false,error:INSUFFICIENT_FUNDS|BAD_REQUEST}
+POST /internal/order/delivered  { orderId, refundCoins? } → { ok }   # refundCoins>0：dupe 退币随发货闭环入账（幂等）
 POST /internal/recharge/verify
-     { accountId, platform, receipt, receiptId }→ { ok, coinsAfter, coinsGranted } | INVALID_RECEIPT | ALREADY_PROCESSED
+     { accountId, platform, receipt, receiptId }→ { ok, coinsAfter, coinsGranted } | {ok:false,error:INVALID_RECEIPT}
 POST /internal/ads/credit  { accountId, amount, dayKey } → { ok, coinsAfter }
 ```
 
-- **幂等**：消费用 meta 生成的 `orderId`，充值用平台 `receiptId`；重放返回原结果不重扣/不重发。
-- **一致性**：扣币（commercial）+ 发货（meta）是 saga——meta 据回执发货后调 `/internal/order/delivered` 闭环；崩溃则下次 `GET /save` 拉未发货订单补发（幂等）。详见 `COMMERCIAL_DESIGN.md §6`。
-- **库迁移**：`gachaHistory`/`walletLog`/`iapReceipts` 从 meta 库（`shared/src/mongo.ts`）移除，在 commercial 库重建为 `gachaHistory`/`ledger`/`recharges`（+ `wallets`/`orders`）。
+- **幂等**：消费用 meta 生成的 `orderId`，充值用平台 `receiptId`；重放返回原结果不重扣/不重发（commercial 端 orders/recharges 唯一 `_id` 守卫）。
+- **一致性**：扣币（commercial）+ 发货（meta）是 saga——meta 据回执发货后调 `/internal/order/delivered` 闭环；崩溃则下次 `GET /save` 拉 `orders/undelivered` 补发（皮肤 `SaveData.deliveredOrders` $addToSet 幂等）。详见 `COMMERCIAL_DESIGN.md §6`。
+- **库迁移**：`gachaHistory`/`walletLog`/`iapReceipts` 已从 meta 库（`shared/src/mongo.ts`）移除，在 commercial 库重建为 `gachaHistory`/`ledger`/`recharges`（+ `wallets`/`orders`）。meta 库新增 `adsDaily`（广告 cap 计数）。
+- **未实现**：`results[].dupeConverted` 改由 meta 据库存判重复（commercial 不持有 inventory）；重复退币 S5 暂缓（见 `COMMERCIAL_DESIGN §6`）；`recharge` 平台验签为 dev 桩。

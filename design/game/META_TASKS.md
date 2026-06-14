@@ -14,7 +14,7 @@
 | **SA** | 账号系统（登录 + 单机门槛） | 默认登录可进、单机试玩可玩、匿名可转正 |
 | **S1** | 好友房 + 锁步联机 + 重连 | 两台真机好友房对局逐 tick 一致，可重连 |
 | **S2** | 经济：服务端钱包 / 商店 / 盲盒 / 广告校验 | 钱包服务器权威，刷不动；盲盒逐抽落库 |
-| **S5** | commercial 商业服务（钱包/充值/消费/盲盒，独立库） | 钱包权威迁 commercial，扣币+发货 saga 收敛 |
+| **S5** ✅ | commercial 商业服务（钱包/充值/消费/盲盒，独立库） | 钱包权威迁 commercial，扣币+发货 saga 收敛（已实现） |
 | **S3** | PvE 养成（材料 + 硬墙）+ 收集 + 选关 | 养成 / 收集 / 选关闭环；硬墙单测绿 |
 | **S4** | IAP 验单 + 反作弊 hash + 上线加固 | 充值安全，对局 hash 比对 |
 
@@ -118,15 +118,17 @@
 
 > 细分设计见 `COMMERCIAL_DESIGN.md`。决策（M21）：钱包权威从 meta `saves.wallet` 迁到 **commercial 独立库** `notebook_wars_commercial`；commercial 玩家不可达，**meta 唯一调用方**（编排者）；抽卡「扣币+随机+记账」同库原子，物品由 meta 据结果发货；跨服务用 orderId 幂等 + 待发货对账（saga）。
 
+> ✅ **S5-1~6 已实现并测试通过（2026-06-14）**。`server/commercial` 独立进程 + 专属库；meta 编排经济端点；钱包权威迁出 meta saves（降级只读镜像）。验证：`tsc -b` 六包全绿 + commercial 20 测试（gacha RNG 纯函数 5 + service e2e 9：默认钱包/加扣币守卫/orderId·receiptId 幂等/**并发不超支**/发货退币闭环 + internalHttp e2e 6：**无内部密钥被拒 401**/路由/404）+ meta 37 测试（+7 economy e2e：扣币→发物品→镜像/广告 cap 429/**对账补发不丢不重**/commercial 未配 503 +5 HttpCommercialClient fetch 解析 +catalog 端点）+ client tsc + 128 测试 + web 构建。实现细节见 `COMMERCIAL_DESIGN.md` 与 `CLAUDE.md` 服务端节。**注**：重复转化（退币/碎片）S5 暂缓（§4.3 退币额待定 + materials 客户端同步段权威冲突 + 补发重算非幂等），先只幂等发新皮肤，退币通道在 commercial `orderDelivered(refundCoins)` 已备。
+
 ### 服务器
-- [ ] **S5-1 commercial 包 + 独立库**：`server/` 新增 workspace `commercial`（CJS，对齐 gameserver 结构）；`createCommercialMongo`（库名 `notebook_wars_commercial`，集合 `wallets`/`ledger`/`orders`/`recharges`/`gachaHistory` + 索引）；`NW_COMM_PORT`(默认 18082)/`NW_COMM_MONGO_*`/`NW_INTERNAL_KEY`（内部密钥鉴权 `/internal/*`，不暴露公网）。**依赖**：S0-6。**验收**：`tsc -b` 全绿；commercial 起得来、连独立库；无内部密钥的请求被拒。
-- [ ] **S5-2 钱包 + 流水**：`GET /internal/wallet`（余额+pity）；`wallets` 单文档原子扣/加币（`coins>=cost` 守卫）+ 每笔写 `ledger`。**依赖**：S5-1。**验收**：并发扣币不超支；每次余额变更有流水。
-- [ ] **S5-3 盲盒 RNG + 商店扣币**：`POST /internal/gacha/draw`（crypto 真随机按 weight + 保底，扣币+RNG+写 gachaHistory/orders 同操作，`orderId` 幂等）；`POST /internal/shop/charge`（扣币+orders）；`POST /internal/order/delivered`（闭环）。**依赖**：S5-2。**验收**：单抽/十连原子；保底命中可复现；orderId 重放返回原结果不重扣。
-- [ ] **S5-4 充值 + 广告加币**：`POST /internal/recharge/verify`（验平台票据→加币→recharges 幂等）；`POST /internal/ads/credit`（meta 已校验后加币记账）。**依赖**：S5-2。**验收**：未验单不发币；重复票据/重复 receiptId 幂等。
-- [ ] **S5-5 meta 编排 + 钱包镜像 + 对账**：meta 的 `/shop/buy`/`/gacha/draw`/`/ads/reward`/`/iap/verify` 从 501 改为「校验 JWT → 调 commercial → 据结果写 inventory（meta 库，orderId 幂等）→ 标 delivered → 写 `SaveData.wallet/gacha` 镜像 → 回推」；`GET /save` 顺带拉 commercial 余额填镜像；未发货订单对账（GET /save 顺带 + 兜底定时扫 `orders status:charged`）。`shared/mongo.ts` 从 meta 库移除 gachaHistory/walletLog/iapReceipts。**依赖**：S5-3,4。**验收**：抽卡端到端（扣币→发物品→镜像刷新）；meta 在发货前崩 → 下次 GET /save 补发不丢不重。
+- [x] **S5-1 commercial 包 + 独立库** ✅：`server/commercial`（CJS，node:http 内部端点）；`createCommercialMongo`（库 `notebook_wars_commercial`，集合 `wallets`/`ledger`/`orders`/`recharges`/`gachaHistory` + 索引）；`NW_COMM_PORT`(默认 18082)/`NW_COMM_MONGO_*`/`NW_INTERNAL_KEY`（`/internal/*` 鉴权，不暴露公网）。
+- [x] **S5-2 钱包 + 流水** ✅：`GET /internal/wallet`（余额+pity）；`wallets` 单文档原子扣/加币（`coins>=cost` 守卫）+ 每笔写 `ledger`。并发 10 单抽余额仅够 4 抽 → 恰 4 成功（e2e 验）。
+- [x] **S5-3 盲盒 RNG + 商店扣币** ✅：`POST /internal/gacha/draw`（crypto 真随机按 weight + 大保底 90/十连 epic 保底，扣币+RNG+pity+gachaHistory/orders 同操作，`orderId` 幂等）；`POST /internal/shop/charge`（扣币+orders+目录价交叉核对）；`POST /internal/order/delivered`（闭环 + 可选 refundCoins）。保底命中注入随机源可复现。
+- [x] **S5-4 充值 + 广告加币** ✅：`POST /internal/recharge/verify`（dev 桩验票据→加币→recharges receiptId 幂等；真实渠道验签留 TODO）；`POST /internal/ads/credit`（加币记账）。空 receipt → INVALID_RECEIPT。
+- [x] **S5-5 meta 编排 + 钱包镜像 + 对账** ✅：`/shop/buy`/`/gacha/draw`/`/ads/reward`/`/iap/verify` 改为「校验 JWT → 调 commercial → 发 inventory（`deliveredOrders` $addToSet 幂等）→ 标 delivered → 写 `SaveData.wallet/gacha` 镜像 → 回推」；`GET /save` 顺带对账（拉 commercial 未发货订单补发）+ 拉余额/pity 填镜像；广告 cap 用 meta `adsDaily` 集合按 `dayKey` 原子计数。`shared/mongo.ts` 从 meta 库移除 gachaHistory/walletLog/iapReceipts。**兜底定时扫待办**（当前仅 GET /save 顺带对账）。
 
 ### 客户端
-- [ ] **S5-6 客户端零感知验收**：客户端继续只读 `save.wallet.coins`、只调 meta economy 端点（不感知 commercial）；进 ShopScene 前 `GET /save` 刷新余额镜像。**依赖**：S5-5、S2-5。**验收**：客户端无需改动钱包读取逻辑；余额展示与 commercial 权威一致。
+- [x] **S5-6 客户端零感知验收** ✅：客户端 `SaveData` 加只读 `deliveredOrders`，`wallet.coins`/`gacha.pity` 注释改为「commercial 权威只读镜像」；继续只读 `save.wallet.coins`、只调 meta 端点，钱包读取逻辑零改动。**进 ShopScene 前 `GET /save` 刷新待 S2 ShopScene 落地时接**（场景尚未实现）。
 
 ---
 

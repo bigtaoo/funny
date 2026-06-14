@@ -7,4 +7,5 @@ export * from './password';
 export * from './mongo';
 export * from './roomRegistry';
 export * from './ladder';
+export * from './economy';
 export * from './config';

@@ -1,6 +1,6 @@
 # Notebook Wars — 服务端
 
-控制面/数据面分离（S1-M，2026-06-14）：`metaserver`(REST 云存档/经济/内部结算) + `gateway`(控制面 WS：房间/匹配门面) + `matchsvc`(私有匹配大脑，独立进程 S1-M5) + `gameserver`(数据面 WS：瘦锁步中继)，共享 `@nw/shared`。服务间通信走内部 HTTP（`META_DESIGN §6.7` ADR）。
+控制面/数据面分离（S1-M，2026-06-14）：`metaserver`(REST 云存档/经济编排/内部结算) + `gateway`(控制面 WS：房间/匹配门面) + `matchsvc`(私有匹配大脑，独立进程 S1-M5) + `gameserver`(数据面 WS：瘦锁步中继) + `commercial`(钱包/交易，独立进程 S5，玩家不可达)，共享 `@nw/shared`。服务间通信走内部 HTTP（`META_DESIGN §6.7` ADR）。
 契约单一来源在 `contracts/`。设计基准：`../design/game/META_DESIGN.md`、`SERVER_API.md`、`META_TASKS.md`、`GATEWAY_DESIGN.md`、`MATCHSVC_DESIGN.md`。
 
 ## 结构（npm workspaces）
@@ -14,16 +14,18 @@ server/
 ├── metaserver/  REST（无状态，ESM）  fastify + openapi-glue + internal.ts（/internal/elo·/match/report，M19）
 ├── gateway/     控制面 WS（CJS）  /gw?token= 门面 + MatchsvcClient(转命令) + 内部 HTTP(/gw/push 收 matchsvc 事件)
 ├── matchsvc/    私有匹配大脑（CJS，独立进程 S1-M5）  内部 HTTP(gateway 命令 + game 注册/心跳) + 房间/ELO 配对/签 ticket + GatewayClient(/gw/push)
-└── gameserver/  数据面 WS（CJS）  /ws?ticket= 验签 + 节拍器中继/帧日志/重连 + 局末上报 meta（永不连库 M16）
+├── gameserver/  数据面 WS（CJS）  /ws?ticket= 验签 + 节拍器中继/帧日志/重连 + 局末上报 meta（永不连库 M16）
+└── commercial/  钱包/交易（CJS，独立进程 S5，玩家不可达）  node:http /internal/*（钱包/扣币/盲盒/充值/广告）+ 专属库 notebook_wars_commercial（wallets/ledger/orders/recharges/gachaHistory）
 ```
 
-> **本地四进程**：`docker compose up -d`（Mongo）→ `npm run dev:meta` + `npm run dev:gateway` + `npm run dev:matchsvc` + `npm run dev:game`。
-> dev 默认端口：meta 18080、gateway 8082（内部 HTTP 8090，收 matchsvc 推送）、matchsvc 内部 HTTP 8091、game 8081。内部链路：gateway `NW_MATCHSVC_INTERNAL_URL=http://127.0.0.1:8091`、matchsvc `NW_GATEWAY_INTERNAL_URL=http://127.0.0.1:8090`、game `NW_MATCHSVC_INTERNAL_URL=http://127.0.0.1:8091`；matchsvc/game 配 `NW_GAME_PUBLIC_WS_URL` 兜底分配；`NW_INTERNAL_KEY` 四进程一致。
+> **本地五进程**：`docker compose up -d`（Mongo）→ `npm run dev:meta` + `npm run dev:gateway` + `npm run dev:matchsvc` + `npm run dev:game` + `npm run dev:commercial`。
+> dev 默认端口：meta 18080、gateway 8082（内部 HTTP 8090，收 matchsvc 推送）、matchsvc 内部 HTTP 8091、game 8081、commercial 内部 18082。内部链路：gateway `NW_MATCHSVC_INTERNAL_URL=http://127.0.0.1:8091`、matchsvc `NW_GATEWAY_INTERNAL_URL=http://127.0.0.1:8090`、game `NW_MATCHSVC_INTERNAL_URL=http://127.0.0.1:8091`；meta `NW_COMMERCIAL_INTERNAL_URL=http://127.0.0.1:18082`（缺省 null → 经济端点 503）；matchsvc/game 配 `NW_GAME_PUBLIC_WS_URL` 兜底分配；`NW_INTERNAL_KEY` 五进程一致。commercial 连专属库（`NW_COMM_MONGO_DB=notebook_wars_commercial`，URI 默认复用 `NW_MONGO_URI`）。
 
 ## 实现进度
 
 - **已完成**：C-1 仓库结构、C-2 契约 + shared、**C-3 部署脚手架（Docker + pm2，见下「部署」）**、S0-6 Mongo 接入、S0-7 save-service（`/auth/wx`·`/auth/device`·`GET/PUT /save`，乐观锁单文档原子更新）、**S1-1~5 gameserver 锁步联机（friendly 好友房，见下）**。客户端 S0-1~5（SaveData/迁移链/SaveStore/匿名账号/云同步）见 `code/src/game/meta/` + `code/src/net/`。
-- **占位（契约就绪，handler 返回 501）**：`/shop/*`·`/gacha/*`·`/ads/reward`·`/iap/verify`（S2/S4）。
+- **S5 commercial 商业服务（2026-06-14 已落地）**：钱包/充值/消费/盲盒迁独立进程 `commercial` + 专属库；meta 编排 `/shop/buy`·`/gacha/draw`·`/ads/reward`·`/iap/verify`（调 commercial 扣币/随机 → 发 inventory → 钱包镜像回推 → `GET /save` 对账补发）；钱包权威迁出 meta saves（`SaveData.wallet/gacha` 降只读镜像，加 `deliveredOrders`）。dev 充值桩；重复退币暂缓。commercial 20 + meta 37 测试绿（含 internalHttp 鉴权/路由 + HttpCommercialClient fetch 解析）。详见 `../CLAUDE.md`「commercial 商业服务」节。
+- **占位（契约就绪，handler 返回 501）**：无（economy 端点已由 S5 实现；commercial 未配 `NW_COMMERCIAL_INTERNAL_URL` 时返回 503）。
 - **gameserver S1-1~5（friendly 好友房）已完成**：WS+JWT 握手+心跳；建房（6 位房间码）/ 输码加入 / ready / 房主开局；服务器权威节拍器（模拟 30Hz、网络 10Hz 每 100ms 批次 3 帧，`cmd_submit` 落当前窗口帧、同帧多指令按 `side` 确定性排序）；非空帧日志 + `conn_resume`→`conn_resync` 重连补帧 + 60s 宽限判负；局末 `match_result` hash 比对 + `matches` 归档。`transport.proto` 运行期 protobufjs 编解码（`commands` opaque 透传）。详见 `src/{Connection,Room,RoomManager,proto/transport}.ts`。
 - **待办**：S1-R（ranked 队列 + ELO）、S1-J（服务器裁判复算）、S1-RP（录像）；proto/openapi 客户端 codegen（`ts-proto` / `openapi-typescript`，C-2 客户端侧 + S1-6~9）。
 - **S1-M1~M4（控制面/数据面拆分，2026-06-14 已落地）**：新增 `gateway` 包（控制面 WS + matchsvc，签 ticket + 取 ELO + game 注册）；gameserver 瘦成 `?ticket=` 验签的纯帧中继（删匹配/ELO/Mongo，局末 `POST meta /internal/match/report`）；meta 加内部路由 `internal.ts`（ELO 结算 + 归档，自 gameserver 迁来）；客户端 `NetSession` 拆 gateway/game 双连接、`transport.proto` 加 `match_found`。

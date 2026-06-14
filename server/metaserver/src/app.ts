@@ -8,6 +8,7 @@ import type { Collections, JwtConfig } from '@nw/shared';
 import { MetaService } from './service.js';
 import { makeSecurityHandlers } from './auth.js';
 import { registerInternalRoutes } from './internal.js';
+import { HttpCommercialClient, type CommercialClient } from './commercialClient.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // dist/app.js 与 src/app.ts 都在 metaserver 下两级 → contracts。
@@ -16,8 +17,11 @@ export const SPEC_PATH = resolve(here, '../../contracts/openapi.yml');
 export interface BuildAppOpts {
   cols: Collections;
   jwt: JwtConfig;
-  /** 内部服务鉴权密钥（gateway 取 ELO / gameserver 上报对局）。 */
+  /** 内部服务鉴权密钥（gateway 取 ELO / gameserver 上报对局 / commercial 调用）。 */
   internalKey: string;
+  /** commercial 内部基址（null = 经济端点 503）；或直接注入 client（测试用）。 */
+  commercialUrl?: string | null;
+  commercial?: CommercialClient;
   now?: () => number;
   logger?: boolean;
 }
@@ -41,10 +45,13 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   app.get('/health', async () => ({ ok: true }));
 
   const now = opts.now ?? (() => Date.now());
+  const commercial =
+    opts.commercial ?? new HttpCommercialClient(opts.commercialUrl ?? null, opts.internalKey);
   const service = new MetaService({
     cols: opts.cols,
     jwt: opts.jwt,
     now,
+    commercial,
   });
 
   // 内部路由（玩家不可见，X-Internal-Key 鉴权，不经 openapi glue）：取 ELO + 局末上报。
