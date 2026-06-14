@@ -1,7 +1,7 @@
 // Ranked 匹配队列单测（S1-R，搬到 gateway/matchsvc 后）：窗口内立即配、超窗口等待加宽、
 // 出队、重复入队覆盖。注入 now() + autoTick:false 手动 tick，不依赖真实定时器。
 import { describe, it, expect } from 'vitest';
-import { Matchmaking } from '../src/matchsvc/Matchmaking';
+import { Matchmaking } from '../src/Matchmaking';
 
 describe('Matchmaking', () => {
   it('分差在窗口内立即配对', () => {

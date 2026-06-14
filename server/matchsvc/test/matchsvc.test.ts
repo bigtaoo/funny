@@ -2,8 +2,8 @@
 // match ticket（双方同 roomId/seed、各自 side）。push 回调录制；GameRegistry 用静态兜底地址。
 import { describe, it, expect } from 'vitest';
 import { verifyTicket } from '@nw/shared';
-import { Matchsvc, type PushMsg } from '../src/matchsvc/Matchsvc';
-import { GameRegistry } from '../src/matchsvc/GameRegistry';
+import { Matchsvc, type PushMsg } from '../src/Matchsvc';
+import { GameRegistry } from '../src/GameRegistry';
 
 const KEY = 'test-internal-key';
 const GAME_URL = 'ws://game:8081/ws';

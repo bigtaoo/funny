@@ -1,10 +1,13 @@
-# 生产/联调全栈（C-3 / S1-M）：mongo(单节点副本集) + metaserver + gateway + gameserver + caddy 反代。
+# 生产/联调全栈（C-3 / S1-M）：mongo(单节点副本集) + metaserver + gateway + matchsvc + gameserver + caddy 反代。
 # 一条命令起全栈（见 deploy/up.sh）：
 #   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 #
 # 出口：https://{NW_DOMAIN}/api/...（REST）、wss://{NW_DOMAIN}/gw（控制面：房间/匹配）、wss://{NW_DOMAIN}/ws（数据面：锁步）。
-# 内部链路：gameserver/gateway 经 NW_META_BASE_URL=http://metaserver:8080 调 meta 内部路由；
-#           gameserver 经 NW_GATEWAY_INTERNAL_URL=http://gateway:8090 向 matchsvc 注册；三者共用 NW_INTERNAL_KEY。
+# 内部链路（S1-M5，matchsvc 独立进程；matchsvc 不暴露公网）：
+#           gateway 经 NW_META_BASE_URL=http://metaserver:8080 取 ELO；
+#           gateway → matchsvc 命令：NW_MATCHSVC_INTERNAL_URL=http://matchsvc:8091；
+#           matchsvc → gateway 推送：NW_GATEWAY_INTERNAL_URL=http://gateway:8090；
+#           gameserver 经 NW_MATCHSVC_INTERNAL_URL=http://matchsvc:8091 注册/心跳，局末经 meta 上报；共用 NW_INTERNAL_KEY。
 #           NW_GAME_PUBLIC_WS_URL = 客户端可达的数据面地址（如 wss://域名/ws），写进 ticket + 分配兜底。
 # 缺省 NW_DOMAIN=:80 → 走 HTTP/WS（本机联调）；设真域名则 Caddy 自动 HTTPS/WSS。
 #
@@ -49,7 +52,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # 控制面 WS（房间/匹配）+ matchsvc（合一进程，S1-M1）。不连 Mongo，向 meta 取 ELO。
+  # 控制面 WS（房间/匹配，S1-M1）。薄连接层，不连 Mongo；向 meta 取 ELO，命令转发 matchsvc。
   gateway:
     build:
       context: .
@@ -63,10 +66,27 @@ services:
       NW_GW_HOST: 0.0.0.0
       NW_GW_INTERNAL_PORT: "8090"
       NW_META_BASE_URL: http://metaserver:8080
-      # 数据面兜底地址（gameserver 注册前用）：客户端可达的 game WS。设真域名时改 wss://域名/ws。
-      NW_GAME_PUBLIC_WS_URL: ${NW_GAME_PUBLIC_WS_URL:-ws://localhost/ws}
+      NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
     depends_on:
       - metaserver
+      - matchsvc
+    restart: unless-stopped
+
+  # 私有匹配大脑（S1-M5，独立进程，不暴露公网）。匹配/房间/game 注册表/签 ticket；不连库。
+  matchsvc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "matchsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
+      NW_MM_INTERNAL_PORT: "8091"
+      NW_MM_HOST: 0.0.0.0
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      # 数据面兜底地址（gameserver 注册前用）：客户端可达的 game WS。设真域名时改 wss://域名/ws。
+      NW_GAME_PUBLIC_WS_URL: ${NW_GAME_PUBLIC_WS_URL:-ws://localhost/ws}
     restart: unless-stopped
 
   # 数据面 WS（瘦锁步中继，S1-M2）。?ticket= 验签，永不连库；局末上报 meta。
@@ -81,11 +101,11 @@ services:
       NW_GAME_PORT: "8081"
       NW_GAME_HOST: 0.0.0.0
       NW_META_BASE_URL: http://metaserver:8080
-      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
       NW_GAME_PUBLIC_WS_URL: ${NW_GAME_PUBLIC_WS_URL:-ws://localhost/ws}
     depends_on:
       - metaserver
-      - gateway
+      - matchsvc
     restart: unless-stopped
 
   caddy:

@@ -9,23 +9,23 @@ import { MetaReporter } from './metaReport';
 import { decodeClient, MatchMode } from './proto/transport';
 
 const HEARTBEAT_MS = 30_000; // 心跳巡检：两轮无响应判死
-const REGISTER_HEARTBEAT_MS = 10_000; // 向 gateway 上报负载
+const REGISTER_HEARTBEAT_MS = 10_000; // 向 matchsvc 上报负载
 
 const CONN = Symbol('nwConn');
 type WsWithConn = WebSocket & { [CONN]?: Connection };
 
-async function registerWithGateway(env: ReturnType<typeof loadGameEnv>): Promise<void> {
-  if (!env.gatewayInternalUrl || !env.publicWsUrl) return;
+async function registerWithMatchsvc(env: ReturnType<typeof loadGameEnv>): Promise<void> {
+  if (!env.matchsvcInternalUrl || !env.publicWsUrl) return;
   const headers = { 'content-type': 'application/json', 'X-Internal-Key': env.internalKey };
   try {
-    await fetch(`${env.gatewayInternalUrl}/mm/game/register`, {
+    await fetch(`${env.matchsvcInternalUrl}/mm/game/register`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ gameId: env.gameId, wsUrl: env.publicWsUrl, capacity: env.capacity }),
     });
-    console.log(`[gameserver] registered with gateway as ${env.gameId} (${env.publicWsUrl})`);
+    console.log(`[gameserver] registered with matchsvc as ${env.gameId} (${env.publicWsUrl})`);
   } catch (e) {
-    console.warn('[gameserver] gateway register failed (will retry via heartbeat):', (e as Error).message);
+    console.warn('[gameserver] matchsvc register failed (will retry via heartbeat):', (e as Error).message);
   }
 }
 
@@ -98,11 +98,11 @@ function main(): void {
     }
   }, HEARTBEAT_MS);
 
-  // 向 gateway 注册 + 周期心跳上报负载（单实例可不配，gateway 用静态兜底地址）。
-  void registerWithGateway(env);
+  // 向 matchsvc 注册 + 周期心跳上报负载（单实例可不配，matchsvc 用静态兜底地址）。
+  void registerWithMatchsvc(env);
   const registerTimer = setInterval(() => {
-    if (!env.gatewayInternalUrl) return;
-    void fetch(`${env.gatewayInternalUrl}/mm/game/heartbeat`, {
+    if (!env.matchsvcInternalUrl) return;
+    void fetch(`${env.matchsvcInternalUrl}/mm/game/heartbeat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'X-Internal-Key': env.internalKey },
       body: JSON.stringify({ gameId: env.gameId, load: wss.clients.size, rooms: 0 }),
@@ -128,7 +128,7 @@ function main(): void {
   process.on('SIGTERM', shutdown);
 
   console.log(`gameserver (data-plane relay) listening on ws://${env.host}:${env.port}/ws`);
-  console.log(`meta report: ${env.metaBaseUrl ?? 'disabled'}; gateway: ${env.gatewayInternalUrl ?? 'static-fallback'}`);
+  console.log(`meta report: ${env.metaBaseUrl ?? 'disabled'}; matchsvc: ${env.matchsvcInternalUrl ?? 'static-fallback'}`);
 }
 
 main();

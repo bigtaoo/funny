@@ -1,11 +1,13 @@
-// 内部 HTTP（M17，不暴露公网）：gameserver 启动注册 + 周期心跳，让 matchsvc 知道
-// 哪台 game 空闲可分配（SERVER_API.md §8.1 game → matchsvc）。鉴权：X-Internal-Key。
+// gateway 内部 HTTP（S1-M5，不暴露公网）：matchsvc 把异步事件经 /gw/push 推回 gateway，
+// gateway 据 accountId 找到玩家 socket 下发。鉴权：X-Internal-Key。
 //
-// 用 node:http（避免给 gateway 引 fastify）。端点极少，手写路由足够。
+// （拆 matchsvc 为独立进程前，这里曾接 gameserver 的 game 注册/心跳——那两个端点已随
+//  GameRegistry 迁到 matchsvc 自己的内部 HTTP，gameserver 现直接注册到 matchsvc。）
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
-import type { Matchsvc } from './matchsvc/Matchsvc';
+import type { Gateway } from './Gateway';
+import type { PushMsg } from './matchsvcClient';
 
-function readJson(req: IncomingMessage): Promise<unknown> {
+function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (c) => {
@@ -14,7 +16,7 @@ function readJson(req: IncomingMessage): Promise<unknown> {
     });
     req.on('end', () => {
       try {
-        resolve(body ? JSON.parse(body) : {});
+        resolve(body ? (JSON.parse(body) as Record<string, unknown>) : {});
       } catch (e) {
         reject(e as Error);
       }
@@ -24,40 +26,28 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
-  const data = JSON.stringify(body);
   res.writeHead(status, { 'content-type': 'application/json' });
-  res.end(data);
+  res.end(JSON.stringify(body));
 }
 
 export function startInternalHttp(
   opts: { host: string; port: number; internalKey: string },
-  matchsvc: Matchsvc,
+  gateway: Gateway,
 ): Server {
   const server = createServer((req, res) => {
     void (async () => {
-      // 内部密钥鉴权
       if (req.headers['x-internal-key'] !== opts.internalKey) {
         send(res, 401, { ok: false, error: 'unauthorized' });
         return;
       }
       try {
-        if (req.method === 'POST' && req.url === '/mm/game/register') {
-          const b = (await readJson(req)) as { gameId: string; wsUrl: string; capacity?: number };
-          if (!b.gameId || !b.wsUrl) {
-            send(res, 400, { ok: false, error: 'gameId and wsUrl required' });
+        if (req.method === 'POST' && req.url === '/gw/push') {
+          const b = (await readJson(req)) as { accountId?: string; msg?: PushMsg };
+          if (!b.accountId || !b.msg) {
+            send(res, 400, { ok: false, error: 'accountId and msg required' });
             return;
           }
-          matchsvc.registerGame(b.gameId, b.wsUrl, b.capacity ?? 100);
-          send(res, 200, { ok: true });
-          return;
-        }
-        if (req.method === 'POST' && req.url === '/mm/game/heartbeat') {
-          const b = (await readJson(req)) as { gameId: string; load?: number; rooms?: number };
-          if (!b.gameId) {
-            send(res, 400, { ok: false, error: 'gameId required' });
-            return;
-          }
-          matchsvc.gameHeartbeat(b.gameId, b.load ?? 0, b.rooms ?? 0);
+          gateway.push(b.accountId, b.msg);
           send(res, 200, { ok: true });
           return;
         }

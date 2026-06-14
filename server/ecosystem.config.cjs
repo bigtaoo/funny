@@ -3,11 +3,18 @@
 //   cd server && npm ci && npx tsc -b shared metaserver gateway gameserver
 //   NW_JWT_SECRET=... NW_INTERNAL_KEY=... pm2 start ecosystem.config.cjs && pm2 save
 //
-// metaserver 无状态可起多实例（cluster）；gateway+matchsvc 与 gameserver 各有内存状态必须单实例。
+// metaserver 无状态可起多实例（cluster）；gateway / matchsvc / gameserver 各有内存状态必须单实例。
 // 密钥从启动 pm2 时的 shell 环境继承（勿把生产密钥写进本文件）。
+//
+// 内部链路（S1-M5，matchsvc 独立进程）：
+//   gateway → matchsvc 命令：NW_MATCHSVC_INTERNAL_URL=http://127.0.0.1:8091
+//   matchsvc → gateway 推送：NW_GATEWAY_INTERNAL_URL=http://127.0.0.1:8090
+//   gameserver → matchsvc 注册/心跳：NW_MATCHSVC_INTERNAL_URL=http://127.0.0.1:8091
 
 const META_BASE = process.env.NW_META_BASE_URL || 'http://127.0.0.1:8080';
 const GAME_PUBLIC_WS = process.env.NW_GAME_PUBLIC_WS_URL || 'ws://127.0.0.1:8081/ws';
+const GW_INTERNAL = process.env.NW_GATEWAY_INTERNAL_URL || 'http://127.0.0.1:8090';
+const MM_INTERNAL = process.env.NW_MATCHSVC_INTERNAL_URL || 'http://127.0.0.1:8091';
 
 const common = {
   NW_JWT_SECRET: process.env.NW_JWT_SECRET, // 生产必须由环境提供
@@ -39,7 +46,7 @@ module.exports = {
       name: 'nw-gateway',
       cwd: __dirname,
       script: 'gateway/dist/index.js',
-      exec_mode: 'fork', // 单实例：房间/匹配内存态（多实例需 Redis）
+      exec_mode: 'fork', // 单实例：account→socket 连接亲和（多实例需 Redis 路由）
       instances: 1,
       env: {
         ...common,
@@ -47,6 +54,20 @@ module.exports = {
         NW_GW_HOST: process.env.NW_GW_HOST || '127.0.0.1',
         NW_GW_INTERNAL_PORT: process.env.NW_GW_INTERNAL_PORT || '8090',
         NW_META_BASE_URL: META_BASE,
+        NW_MATCHSVC_INTERNAL_URL: MM_INTERNAL,
+      },
+    },
+    {
+      name: 'nw-matchsvc',
+      cwd: __dirname,
+      script: 'matchsvc/dist/index.js',
+      exec_mode: 'fork', // 永远单实例：房间/匹配队列内存态（M17）
+      instances: 1,
+      env: {
+        ...common,
+        NW_MM_INTERNAL_PORT: process.env.NW_MM_INTERNAL_PORT || '8091',
+        NW_MM_HOST: process.env.NW_MM_HOST || '127.0.0.1',
+        NW_GATEWAY_INTERNAL_URL: GW_INTERNAL,
         NW_GAME_PUBLIC_WS_URL: GAME_PUBLIC_WS,
       },
     },
@@ -61,7 +82,7 @@ module.exports = {
         NW_GAME_PORT: process.env.NW_GAME_PORT || '8081',
         NW_GAME_HOST: process.env.NW_GAME_HOST || '127.0.0.1',
         NW_META_BASE_URL: META_BASE,
-        NW_GATEWAY_INTERNAL_URL: process.env.NW_GATEWAY_INTERNAL_URL || 'http://127.0.0.1:8090',
+        NW_MATCHSVC_INTERNAL_URL: MM_INTERNAL,
         NW_GAME_PUBLIC_WS_URL: GAME_PUBLIC_WS,
       },
     },

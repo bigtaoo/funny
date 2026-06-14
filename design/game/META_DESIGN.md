@@ -49,10 +49,12 @@
 |---|---|---|
 | M16 | **gameserver 永不连库**：退化为 WS 接入 + ticket 验签 + 锁步帧节拍器/中继 + 重连帧日志 + 局末打包上报。无 Mongo、无 Redis、无玩家数据 | 安全隔离边界：game 被攻破也读不到/写不了任何持久数据；无状态（仅内存房间帧缓冲）→ 随意横扩；meta 挂了进行中的对局仍能跑完 |
 | M17 | **matchsvc（永远单点，玩家不可达的私有大脑）= 匹配队列 + game 注册表 + 房间分配 + 签 ticket**。Redis 仅作崩溃后数据副本（前期可不加，内存即够）。**不连 Mongo**——匹配要的 ELO 由 gateway 入队时向 meta 取一次带入。所有玩家操作经 **gateway** 转发；game 向 matchsvc 注册上报负载 | 全区单点匹配最简单且无需多实例竞争；game 注册在 matchsvc → 它天然是「谁有空闲 game」唯一知情者，**ranked 与 friendly 共用同一套分配逻辑**（friendly 开局前也只是它内存里的一份房间数据）；签票据信息最全 |
-| M20 | **gateway（WS 控制面网关，玩家公开门面）= 薄连接层**：鉴权 WS（`?token=<jwt>`）+ 维护 `account→socket` 映射 + 把房间/匹配消息转发给 matchsvc + 把 matchsvc/meta 事件推回对的 socket；承载房间/大厅/匹配入队取消/match-found+ticket 下发/在线状态/（将来）通知聊天。**它是 matchsvc 的公开门面**——matchsvc 因此保持玩家不可达。**部署粒度**：前期 gateway+matchsvc 合成**一个进程的两模块**（对外只暴露 gateway 公开 WS，matchsvc 内部 RPC 不绑公网），gateway 连接数撑不住时再拆两进程 + Redis 做 `account→gateway 实例` 路由 | meta 是无状态 REST，推不动 server→client；把长连接放 meta 会破坏其无状态。独立控制面网关让 meta 卸掉转发、回到纯 REST；连接层（按 account）与锁步层（按 room）分片轴不同，必须分开；社交游戏的好友/匹配/聊天迟早要这条常驻连接 |
+| M20 | **gateway（WS 控制面网关，玩家公开门面）= 薄连接层**：鉴权 WS（`?token=<jwt>`）+ 维护 `account→socket` 映射 + 把房间/匹配消息转发给 matchsvc + 把 matchsvc/meta 事件推回对的 socket；承载房间/大厅/匹配入队取消/match-found+ticket 下发/在线状态/（将来）通知聊天。**它是 matchsvc 的公开门面**——matchsvc 因此保持玩家不可达。**部署粒度**：gateway 与 matchsvc 已拆为**两个独立进程**（M23，S1-M5），经内部 HTTP 互通（gateway→matchsvc 转命令、matchsvc→gateway `/gw/push` 回事件、game→matchsvc 注册心跳）；对外只暴露 gateway 公开 WS，matchsvc 不绑公网。gateway 横扩时再加 Redis 做 `account→gateway 实例` 路由（届时 `/gw/push` 改走 pub/sub，§6.7） | meta 是无状态 REST，推不动 server→client；把长连接放 meta 会破坏其无状态。独立控制面网关让 meta 卸掉转发、回到纯 REST；连接层（按 account）与锁步层（按 room）分片轴不同，必须分开；社交游戏的好友/匹配/聊天迟早要这条常驻连接 |
 | M18 | **开局走 matchsvc 签名 ticket**：matchsvc 配对/分配后给每个玩家签一张 ticket（`{room_id, seed, side, opponent, game_url, mode, exp, sig}`，gateway/matchsvc/game 共用一把内部密钥）→ 经 **gateway 推**给客户端 → 客户端连 game 带 ticket，game **只验签 + 交叉核对两张 ticket 的 room_id/seed 一致**即开局 | 开局阶段 game 无需 meta/matchsvc 在线，也不存房间密码表；gateway 只推不签 |
 | M19 | **结算上报 game→meta**：局末 game 把 `{room_id, seed, 双方 hash, 双方 winner_side, 非空帧录像}` POST 给 meta（内部密钥鉴权、`room_id` 幂等、失败重试/排队）；**meta 判定胜负 + 写 ELO（乐观锁）+ 归档 + 存录像**。matchmaking/ELO/归档逻辑全部从 gameserver 移出 | game 一行 DB 不碰（M16 落地）；meta 暂时 down 不丢结果（game 端排队重试） |
 | M21 | **commercial（钱包/商业服务，玩家不可达，连自己专属库）= coins 余额 + 流水 + 订单 + 充值票据 + 盲盒 RNG + 保底**。独立 Mongo 数据库 `notebook_wars_commercial`（与 meta 库物理隔离）。**meta 是其唯一调用方**（编排者）：客户端经济请求仍只发 meta，meta 经内部 RPC 调 commercial 扣币/随机/记账，据结果写 inventory（meta 库）并回推。钱包权威从 `saves.wallet` 迁出，`SaveData.wallet/gacha` 降级为只读镜像 | 真钱数据物理隔离（meta 出 bug 也碰不到余额/充值流水），审计/对账/合规边界清晰；抽卡「扣币+随机+记账」同库原子（M7）；客户端只认 meta，零改动。详见 `COMMERCIAL_DESIGN.md` |
+| M22 | **服务间通信 = 内部 HTTP/REST（`X-Internal-Key`，JSON）；不引 gRPC；MQ 暂缓、将来用 Redis 兼做** | 详见 §6.7 ADR。本项目内部调用极低频且多为同步请求-响应，HTTP 零新基建、与外部 API 同栈；gRPC 的 polyglot/高频流式优势本项目不占且有 Node-on-Windows 原生依赖坑；MQ 待「异步+持久化」场景出现再用 Redis（gateway 横扩本就需要它），不背独立 MQ |
+| M23 | **gateway 与 matchsvc 拆为独立进程**（S1-M5，2026-06-14）；不再「前期合一进程」 | 连接层（按 account 分片，gateway）与匹配大脑（全区单点内存态，matchsvc）扩容轴不同，提前拆清边界；两者经内部 HTTP 互通（M22）。matchsvc 仍玩家不可达，gateway 是其唯一公开门面 |
 
 ---
 
@@ -242,7 +244,7 @@ function buildCampaignBlueprints(save: SaveData): UnitBlueprints {
   │  数据面 WS(?ticket 直连)    │ ·game 注册表/分配·签 ticket│
   └───────────────→ gameserver(N 台) ──── register/心跳 ──┘
 
-  gateway+matchsvc 前期合一进程（M20）；commercial 独立进程+独立库（M21）；Redis 仅 matchsvc 崩溃副本(可省)
+  gateway 与 matchsvc 各为独立进程（M23，经内部 HTTP 互通 M22）；commercial 独立进程+独立库（M21）；Redis 仅 matchsvc 崩溃副本(可省)
 反代：/api/*→meta(JSON) · /gw→gateway(WS) · /ws→gameserver(WS protobuf)；matchsvc/commercial 不暴露公网
 ```
 
@@ -252,8 +254,8 @@ function buildCampaignBlueprints(save: SaveData): UnitBlueprints {
 |---|---|---|---|---|
 | **metaserver** | 请求面 | auth · save · 经济编排（调 commercial）· 接收 game 局末上报→判定/写 ELO/归档/存录像 · 给 gateway 供 ELO | Mongo `notebook_wars` | 无状态可横扩（LB 轮询） |
 | **commercial** | 私有(商业) | 钱包余额 + 流水 + 订单 + 充值票据 + 盲盒 RNG/保底；meta 唯一调用方（M21） | Mongo `notebook_wars_commercial`（独立库） | 与钱强相关，谨慎扩；前期单实例 |
-| **gateway** | 控制面 | 薄连接层：鉴权 WS + `account→socket` 映射 + 房间/匹配消息转发 matchsvc + 推回事件（含 ticket）+ 在线状态 | ❌（前期与 matchsvc 合一进程，连 Redis） | 有状态（连接亲和）；横扩需 `account→实例` 路由（Redis），属后期 |
-| **matchsvc** | 控制面(私有) | 匹配队列（全区）· 房间状态 · game 注册表/负载/分配 · 签 ticket | Redis only（可选） | 永远单点（M17） |
+| **gateway** | 控制面 | 薄连接层：鉴权 WS + `account→socket` 映射 + 房间/匹配命令经内部 HTTP 转发 matchsvc + 推回事件（含 ticket）+ 在线状态 | ❌（独立进程，M23；横扩后连 Redis） | 有状态（连接亲和）；横扩需 `account→实例` 路由（Redis），属后期 |
+| **matchsvc** | 控制面(私有) | 匹配队列（全区）· 房间状态 · game 注册表/负载/分配 · 签 ticket；独立进程（M23），经内部 HTTP 接 gateway 命令 + game 注册 | Redis only（可选） | 永远单点（M17） |
 | **gameserver** | 数据面 | WS 接入 · ticket 验签 · 帧节拍器/中继 · 重连日志 · 局末打包上报 meta | ❌ 永不（M16） | 无状态（仅内存房间帧缓冲）→ 随意横扩；房间亲和靠 ticket 里的 `game_url` 天然绑定 |
 
 > **服务器与游戏逻辑零依赖**（M12）：三服务都只 codegen `transport.proto`/`replay.proto`，`PlayerCommand` 作 `bytes` **opaque 转发/存储不解码**；`game.proto` 永不进服务器。改命令结构服务器不用重编。仅"重大比赛裁判"才让 meta 额外 import 真 `GameEngine` + `game.proto` 跑复算。
@@ -343,6 +345,22 @@ message Replay {
 - **PvE 只记玩家指令**（敌方由 `WaveDirector` 从 seed+level 确定性生成，不记，回放时重算）；**PvP 记双方**——gameserver 为重连保留的输入日志**即录像**，服务端录制零额外成本。
 - 落地：PvE 客户端本地存（可选上传分享）；PvP gameserver 持久化到 `matches`/对象存储 → 服务端回放 / 分享 / 纠纷复核 / 裁判复算。
 - ⚠️ **脆弱点**：录像绑 `engineVersion`，引擎逻辑改动后老录像可能回放发散，回放前必须校验版本（确定性回放方案的通用代价）。已有的黄金回放确定性测试天然延伸为整局录像的回归守卫。
+
+### 6.7 服务间通信选型（ADR，2026-06-14 定）
+
+> 背景：服务端是单 VPS 上的 4 个 Node(TS) 进程（meta / gateway / matchsvc / game），服务间调用量极小且多为同步请求-响应（gateway→meta 取 ELO、game→meta 局末上报、gateway↔matchsvc 房间命令/事件、game→matchsvc 注册心跳）。在 gRPC / HTTP(REST) / 消息队列(MQ) 三者间定调。
+
+**决策（M22）：内部调用一律走内部 HTTP/REST（`X-Internal-Key` 鉴权，JSON body）；不引 gRPC；MQ 等到出现「必须异步 + 必须持久化」的场景再上，且优先用迟早要装的 Redis 兼做 pub/sub + 轻量队列，而非单独部署 Kafka/RabbitMQ。**
+
+| 方案 | 结论 | 理由 |
+|---|---|---|
+| **HTTP/REST**（采用） | 内部同步调用的主干 | 已在用（meta 内部路由 + gateway↔matchsvc 命令/推送）；零新基建、与对外 API 同栈、curl 可调；契约漂移由 openapi/proto 单一来源 + JSON 镜像类型压住；本项目一局才一次 ELO/上报的量级，文本开销无感 |
+| **gRPC**（不采用） | 解决的是本项目还没有的问题 | 赢在 polyglot / 高频内部 RPC / 双向流——三者本项目都不占（全 TS、流式已被数据面 WS 吃掉、内部 RPC 极低频）；且 Node gRPC 在 Windows 有原生依赖坑（本仓已记 grpc-tools `protoc.exe` 0xC0000135，故弃 grpc-tools 改 buf），再引 HTTP/2 反代复杂度不偿失 |
+| **消息队列**（暂缓，方向已定） | 有真实价值但现在错时机 | 将来撞上：①局末结算可靠投递（现 game→meta 是内存重试队列，进程挂则丢）②经济/盲盒/IAP webhook 事件驱动记账 ③天梯/成就异步 fan-out。届时引 **Redis**（gateway 多实例化的 `account→实例` 路由本就需要它，是刚需）兼 pub/sub + Stream 轻量队列，一个组件解决路由 + 异步两件事，不背独立 MQ 运维 |
+
+**升级触发条件**（满足任一再重新评估）：①局末结算/经济写账需要跨进程崩溃不丢 → 引 Redis Stream；②gateway 单实例连接数撑不住要横扩 → 引 Redis 做 `account→gateway` 路由 + pub/sub 跨实例推送（matchsvc→gateway 的 `/gw/push` 届时改走 pub/sub）；③出现 Kafka 级吞吐（本品类大概率到不了）→ 再议专用 MQ。在此之前，新服务间调用一律复用内部 HTTP + `NW_INTERNAL_KEY`。
+
+> matchsvc↔gateway 拆进程后即按此落地：gateway→matchsvc 命令、matchsvc→gateway 事件推送（`/gw/push`）、game→matchsvc 注册心跳全是内部 HTTP（§8 / `MATCHSVC_DESIGN.md`）。单 matchsvc 实例下 push 用固定 gateway 地址；多 gateway 时该处换 Redis 路由（见上「升级触发」②）。
 
 ---
 

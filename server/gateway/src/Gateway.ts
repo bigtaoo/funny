@@ -1,14 +1,14 @@
 // gateway 控制面 WS 服务（M20，玩家公开门面）。薄连接层：
 //   • 握手 ?token=<jwt>（复用 meta 的 JWT，解出 accountId 绑定连接）；
 //   • 维护 account → socket 映射（同账号新连顶替旧连）；
-//   • 把客户端控制面消息（room_create/join/ready/start/leave）转发进程内 matchsvc；
-//   • 把 matchsvc 回调事件（room_state / match_found / room_error）推回对应 socket。
+//   • 把客户端控制面消息（room_create/join/ready/start/leave）转发给 matchsvc（独立进程，内部 HTTP）；
+//   • 把 matchsvc 经 /gw/push 回推的事件（room_state / match_found / room_error）推回对应 socket。
 //
 // 它不做匹配、不存房间、不签 ticket——全在 matchsvc（§8.1）。ranked 入队前向 meta 取 ELO。
 import { WebSocketServer, type WebSocket } from 'ws';
 import { verifyToken, type JwtConfig } from '@nw/shared';
 import { decodeClient, encodeServer, MatchMode, type PlayerSlotOut, type ServerMsg } from './proto';
-import type { Matchsvc, PushMsg } from './matchsvc/Matchsvc';
+import type { MatchsvcClient, PushMsg } from './matchsvcClient';
 import type { MetaClient } from './metaClient';
 
 const HEARTBEAT_MS = 30_000;
@@ -32,7 +32,7 @@ export class Gateway {
   constructor(
     opts: { host: string; port: number },
     private readonly jwt: JwtConfig,
-    private readonly matchsvc: Matchsvc,
+    private readonly matchsvc: MatchsvcClient,
     private readonly meta: MetaClient,
   ) {
     this.wss = new WebSocketServer({ host: opts.host, port: opts.port, path: '/gw' });
@@ -81,7 +81,7 @@ export class Gateway {
     }
     const conn: GwConn = { accountId, ws, alive: true };
     this.conns.set(accountId, conn);
-    this.matchsvc.onConnected(accountId);
+    this.matchsvc.connected(accountId);
 
     ws.on('message', (data: Buffer, isBinary: boolean) => {
       conn.alive = true;
@@ -100,7 +100,7 @@ export class Gateway {
     ws.on('close', () => {
       if (this.conns.get(accountId) === conn) {
         this.conns.delete(accountId);
-        this.matchsvc.onDisconnected(accountId);
+        this.matchsvc.disconnected(accountId);
       }
     });
     ws.on('error', () => {

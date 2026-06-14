@@ -8,10 +8,10 @@ export interface GameEnv extends ServerEnv {
   host: string;
   /** meta REST 内部基址（局末上报 POST {metaBaseUrl}/internal/match/report）。null = 不上报。 */
   metaBaseUrl: string | null;
-  /** 本实例对客户端公开的 WS 地址（写进 ticket.game_url；向 gateway 注册用）。 */
+  /** 本实例对客户端公开的 WS 地址（写进 ticket.game_url；向 matchsvc 注册用）。 */
   publicWsUrl: string | null;
-  /** gateway 内部 HTTP 基址（启动注册 + 心跳）。null = 不注册（gateway 用静态兜底地址）。 */
-  gatewayInternalUrl: string | null;
+  /** matchsvc 内部 HTTP 基址（启动注册 + 心跳）。null = 不注册（matchsvc 用静态兜底地址）。 */
+  matchsvcInternalUrl: string | null;
   /** 本实例 id（注册标识）。 */
   gameId: string;
   /** 并发对局容量（分配权重）。 */
@@ -25,7 +25,7 @@ export function loadGameEnv(): GameEnv {
     host: process.env.NW_GAME_HOST ?? '0.0.0.0',
     metaBaseUrl: process.env.NW_META_BASE_URL ?? null,
     publicWsUrl: process.env.NW_GAME_PUBLIC_WS_URL ?? null,
-    gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL ?? null,
+    matchsvcInternalUrl: process.env.NW_MATCHSVC_INTERNAL_URL ?? null,
     gameId: process.env.NW_GAME_ID ?? randomUUID(),
     capacity: Number(process.env.NW_GAME_CAPACITY ?? 100),
   };

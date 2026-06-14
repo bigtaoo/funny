@@ -1,5 +1,6 @@
-// matchsvc —— 玩家不可达的私有匹配大脑（M17）。gateway+matchsvc 前期合一进程，
-// 故所有「玩家操作」由 gateway 解码后**进程内直接调用**本类（拆进程后换内部 RPC，接口不变）。
+// matchsvc —— 玩家不可达的私有匹配大脑（M17），自 2026-06-14 起为**独立进程**（S1-M5）。
+// 玩家操作由 gateway 解码后经内部 HTTP 调用本进程（internalHttp.ts → 本类方法）；
+// 异步事件经注入的 push 回调推回 gateway（GatewayClient HTTP），gateway 再推给玩家 socket。
 //
 // 职责（SERVER_API.md §8.1 / MATCHSVC_DESIGN.md §2）：
 //   • friendly 内存房间（建房 / 输码加入 / ready / 房主开局）；
@@ -10,9 +11,17 @@
 // **不连任何库**：匹配要的 elo 由 gateway 入队前向 meta 取后带入（enqueue 的 elo 参数）。
 import { randomUUID, randomInt } from 'crypto';
 import { signTicket, type TicketClaims } from '@nw/shared';
-import { RoomPhase } from '../proto';
 import { Matchmaking, type QueueEntry } from './Matchmaking';
 import { GameRegistry } from './GameRegistry';
+
+// RoomPhase 枚举值镜像 contracts/transport.proto（编码归 gateway，matchsvc 只透传整数 phase）。
+const RoomPhase = {
+  WAITING: 0,
+  READY: 1,
+  COUNTDOWN: 2,
+  IN_MATCH: 3,
+  OVER: 4,
+} as const;
 
 // ── gateway 推送接口（matchsvc 不直接持连接，proto 无关）────────────────
 export interface PlayerView {
