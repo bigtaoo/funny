@@ -10,7 +10,7 @@ syntax = "proto3";
 //  • PvP — gameserver 为重连保留的非空帧日志即录像，局末持久化进 matches.replay
 //    （小局直接内嵌；当前 gameserver 以等价 BSON 子文档内嵌——见 Room.ts/RoomManager.ts）。
 //  • PvE — 客户端本地录制（只记玩家指令，敌方 WaveDirector 回放时由 seed+level 重算），
-//    客户端 Replay TS 类型（code/src/game/types.ts）字段与本 proto 对齐。
+//    客户端 Replay TS 类型（client/src/game/types.ts）字段与本 proto 对齐。
 //
 // 契约单一来源；改动需同步 SERVER_API.md §6 + 客户端 Replay 类型。
 

@@ -16,7 +16,7 @@ module.exports = (env, argv) => {
       alias: {
         // Single source of truth: the editor imports the game's pure-data level
         // schema / constants directly (see tools/level-editor/DESIGN.md §6.5).
-        '@game': path.resolve(__dirname, '../../code/src/game'),
+        '@game': path.resolve(__dirname, '../../client/src/game'),
       },
     },
     module: {

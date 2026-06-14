@@ -31,7 +31,7 @@ Row  0 ── 己方建筑行（含基地，占中央 2 列）
 
 ## 技术范围
 
-### 主游戏（`code/`）
+### 主游戏（`client/`）
 
 | 层 | 技术 |
 |---|---|
@@ -69,7 +69,7 @@ npm run start   # 开发服务器，端口 9091
 ## 快速启动
 
 ```bash
-cd code
+cd client
 npm install
 npm run start   # Webpack dev server，端口 9090
 ```
@@ -80,7 +80,7 @@ npm run start   # Webpack dev server，端口 9090
 
 ```
 funny/
-├── code/          主游戏（TypeScript + PixiJS）
+├── client/        主游戏（TypeScript + PixiJS）
 ├── tools/
 │   └── animator/  骨骼动画编辑器（TypeScript + PixiJS）
 ├── art/           地图 & 角色概念图

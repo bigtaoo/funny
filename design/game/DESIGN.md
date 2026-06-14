@@ -404,7 +404,7 @@ app.ts 启动 → initI18n() → 检查 storage 'nw_seen_intro'
 ### 运行
 
 ```bash
-cd code
+cd client
 npm test          # vitest run，一次性
 npm run test:watch
 ```
@@ -413,7 +413,7 @@ npm run test:watch
 
 - 只测**纯逻辑内核** `src/game/**`（无 PIXI 依赖）；渲染层不在范围。
 - `vitest.config.ts` 只扫 `test/**/*.test.ts`，与 webpack 构建完全隔离，不进入打包。
-- 测试文件位于 `code/test/`：
+- 测试文件位于 `client/test/`：
 
 | 文件 | 覆盖 |
 |---|---|

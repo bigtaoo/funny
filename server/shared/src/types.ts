@@ -1,6 +1,6 @@
 // 存档与契约类型。SaveData 是元系统单一权威根（META_DESIGN.md §3.1）。
-// 与客户端 code/src/game/meta/SaveData.ts 镜像（S0-1）；本文件是服务端权威拷贝，
-// 不依赖 code/src/game。openapi.yml 的 SaveData schema 与此同源。
+// 与客户端 client/src/game/meta/SaveData.ts 镜像（S0-1）；本文件是服务端权威拷贝，
+// 不依赖 client/src/game。openapi.yml 的 SaveData schema 与此同源。
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
 

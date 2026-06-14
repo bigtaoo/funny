@@ -220,7 +220,7 @@ POST /internal/ads/credit
 - **鉴权**：`NW_INTERNAL_KEY`（meta 与 commercial 共享；缺失则拒绝所有 `/internal/*`）。
 - **契约**：内部 RPC 走 JSON（低频、便于调试），契约登记在 `SERVER_API.md §9`；**不进 protobuf**（protobuf 只管 WS 热路径，`M12`）。
 - **索引**：`ledger(accountId,ts↓)`、`orders(accountId,status)`、`orders(status,ts)`（对账扫描未发货）、`recharges` `_id` 天然唯一。
-- **零依赖游戏逻辑**（`M12`）：commercial 不 import `code/src/game`。
+- **零依赖游戏逻辑**（`M12`）：commercial 不 import `client/src/game`。
 
 ---
 

@@ -3,7 +3,7 @@ syntax = "proto3";
 // game.proto —— PlayerCommand 真实结构（M12）。
 // 仅客户端 ↔ 客户端：客户端编码进 transport.proto 的 SideCmd.commands(bytes)，
 // 服务器 opaque 转发不解码、永不依赖本文件。
-// 字段对应 code/src/game 的 PlayerCommand；改命令结构服务器无需重编。
+// 字段对应 client/src/game 的 PlayerCommand；改命令结构服务器无需重编。
 
 package nw.game;
 

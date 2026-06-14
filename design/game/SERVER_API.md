@@ -308,7 +308,7 @@ client → gateway: ClientMsg.client_caps { can_judge }                         
 
 - gateway 挑非参赛、`can_judge` 的在线 socket，push `judge_request`、挂 pending 等 `judge_verdict`（20s 超时 / 候选掉线即作废）；阻塞返回 `/gw/judge`。
 - meta `judgeMismatch()`：裁判 `state_hash` 命中哪方上报哪方诚实、另一方判负 + `settleElo` + 写 `matches.cheat{side,accountId,judgeAccountId}`；裁判不可用/超时/对不上任一方 → 退回作废（不结算、不标记）。
-- 客户端 `runJudge`（`code/src/net/judgeRunner.ts`）：proto 帧 → `Replay` → netplay 引擎跑到 GameOver → 同 `matchStateHash`（FNV-1a）算终局 hash，与对局上报逐字同源。
+- 客户端 `runJudge`（`client/src/net/judgeRunner.ts`）：proto 帧 → `Replay` → netplay 引擎跑到 GameOver → 同 `matchStateHash`（FNV-1a）算终局 hash，与对局上报逐字同源。
 - meta 加 `NW_GATEWAY_INTERNAL_URL`（→ gateway 内部 HTTP `:8090`，无 depends_on 避环）。**简化**：gameserver 未改，mismatch 的 `match_over` 文案仍标 mismatch，但 ELO 已按裁决下发。
 
 ### 8.2 match ticket（M18，matchsvc 签，game 验）

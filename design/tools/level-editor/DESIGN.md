@@ -22,7 +22,7 @@
 | 解决什么 | `LevelDefinition` 里真正"难手写"的两块——① **波次时间线**（多车道 × 多批次 × 时序）② **棋盘格掩码**（blocked/noBuild 坐标数组，脑内映射 12×18 易错）——给可视化编辑；其余是简单表单。 |
 | 工具形态 | 独立 Web 工具，`tools/level-editor`，端口 **9092**（animator 占 9091）。 |
 | 不做什么（MVP） | 不内嵌引擎试玩；不做运行时玩家导入（关卡走"提交进仓库、构建打包"流程）。 |
-| 数据来源真值 | 数据模型与校验在**游戏侧**（`code/src/game/campaign/`），编辑器复用，绝不在编辑器内维护第二份易漂移的 schema。 |
+| 数据来源真值 | 数据模型与校验在**游戏侧**（`client/src/game/campaign/`），编辑器复用，绝不在编辑器内维护第二份易漂移的 schema。 |
 
 ---
 
@@ -39,7 +39,7 @@
 
 ---
 
-## 3. 棋盘几何（编辑器网格必须镜像，来源 `code/src/game/config.ts`）
+## 3. 棋盘几何（编辑器网格必须镜像，来源 `client/src/game/config.ts`）
 
 | 常量 | 值 | 含义 |
 |---|---|---|
@@ -57,7 +57,7 @@
 
 ---
 
-## 4. 数据模型（来源 `code/src/game/campaign/LevelDefinition.ts`）
+## 4. 数据模型（来源 `client/src/game/campaign/LevelDefinition.ts`）
 
 编辑器编辑的就是 `LevelDefinition`，不复述完整字段（以游戏侧类型为准），编辑器对各字段的处理：
 
@@ -81,10 +81,10 @@
 
 ## 5. 游戏侧改造（编辑器前置依赖，先于编辑器实现）
 
-> 这部分在 `code/` 里做，是 L2/L3/L5 的落地，也是编辑器复用 schema 的基础。
+> 这部分在 `client/` 里做，是 L2/L3/L5 的落地，也是编辑器复用 schema 的基础。
 
-1. **关卡迁为 JSON**：新建 `code/src/game/campaign/levels/`，把 `levels.ts` 里的 `CH1_LV1~3` + `CH_STRESS` 转成 `ch1_lv1.json` 等；`CAMPAIGN_LEVEL_ORDER` 保留（可用 `index.json` 列顺序，或 TS 常量数组）。
-2. **运行时校验加载器** `code/src/game/campaign/levelSchema.ts`：
+1. **关卡迁为 JSON**：新建 `client/src/game/campaign/levels/`，把 `levels.ts` 里的 `CH1_LV1~3` + `CH_STRESS` 转成 `ch1_lv1.json` 等；`CAMPAIGN_LEVEL_ORDER` 保留（可用 `index.json` 列顺序，或 TS 常量数组）。
+2. **运行时校验加载器** `client/src/game/campaign/levelSchema.ts`：
    - `parseLevelDefinition(raw: unknown): LevelDefinition`，逐字段校验：
      - `objective.kind ∈ {survive, timed_defense}`；`timed_defense` 需正 `durationTicks`。
      - `waves.entries[].unitType ∈ UnitType` 值集；`col ∈ ATTACK_LANES`；`count > 0`；`atTick / spacingTicks ≥ 0`。
@@ -128,7 +128,7 @@
 
 ### 6.5 与游戏侧共享（L5 落地）
 
-- 编辑器 webpack `resolve` 加一条指向 `code/src/game/campaign/`（及 `config.ts` 棋盘常量、`types.ts` 的 `UnitType`、卡牌定义）的路径别名。
+- 编辑器 webpack `resolve` 加一条指向 `client/src/game/campaign/`（及 `config.ts` 棋盘常量、`types.ts` 的 `UnitType`、卡牌定义）的路径别名。
 - 直接 import：`LevelDefinition` 类型、`parseLevelDefinition`、`UnitType`、棋盘常量、卡牌列表。
 - 这些都是**纯数据 / 纯函数**（无 PIXI、无 DOM 依赖），跨项目 import 安全。若构建出现耦合问题，回退方案：把这批纯数据抽到一个共享子目录两边都 import（不在编辑器里手抄）。
 

@@ -23,7 +23,7 @@ server/
 
 ## 实现进度
 
-- **已完成**：C-1 仓库结构、C-2 契约 + shared、**C-3 部署脚手架（Docker + pm2，见下「部署」）**、S0-6 Mongo 接入、S0-7 save-service（`/auth/wx`·`/auth/device`·`GET/PUT /save`，乐观锁单文档原子更新）、**S1-1~5 gameserver 锁步联机（friendly 好友房，见下）**。客户端 S0-1~5（SaveData/迁移链/SaveStore/匿名账号/云同步）见 `code/src/game/meta/` + `code/src/net/`。
+- **已完成**：C-1 仓库结构、C-2 契约 + shared、**C-3 部署脚手架（Docker + pm2，见下「部署」）**、S0-6 Mongo 接入、S0-7 save-service（`/auth/wx`·`/auth/device`·`GET/PUT /save`，乐观锁单文档原子更新）、**S1-1~5 gameserver 锁步联机（friendly 好友房，见下）**。客户端 S0-1~5（SaveData/迁移链/SaveStore/匿名账号/云同步）见 `client/src/game/meta/` + `client/src/net/`。
 - **S5 commercial 商业服务（2026-06-14 已落地）**：钱包/充值/消费/盲盒迁独立进程 `commercial` + 专属库；meta 编排 `/shop/buy`·`/gacha/draw`·`/ads/reward`·`/iap/verify`（调 commercial 扣币/随机 → 发 inventory → 钱包镜像回推 → `GET /save` 对账补发）；钱包权威迁出 meta saves（`SaveData.wallet/gacha` 降只读镜像，加 `deliveredOrders`）。dev 充值桩；重复退币暂缓。commercial 20 + meta 37 测试绿（含 internalHttp 鉴权/路由 + HttpCommercialClient fetch 解析）。详见 `../CLAUDE.md`「commercial 商业服务」节。
 - **占位（契约就绪，handler 返回 501）**：无（economy 端点已由 S5 实现；commercial 未配 `NW_COMMERCIAL_INTERNAL_URL` 时返回 503）。
 - **gameserver S1-1~5（friendly 好友房）已完成**：WS+JWT 握手+心跳；建房（6 位房间码）/ 输码加入 / ready / 房主开局；服务器权威节拍器（模拟 30Hz、网络 10Hz 每 100ms 批次 3 帧，`cmd_submit` 落当前窗口帧、同帧多指令按 `side` 确定性排序）；非空帧日志 + `conn_resume`→`conn_resync` 重连补帧 + 60s 宽限判负；局末 `match_result` hash 比对 + `matches` 归档。`transport.proto` 运行期 protobufjs 编解码（`commands` opaque 透传）。详见 `src/{Connection,Room,RoomManager,proto/transport}.ts`。
@@ -91,4 +91,4 @@ npm test --workspace @nw/metaserver
 
 - **信任边界**：钱包/库存/盲盒/天梯服务器权威；客户端永不直接写。`PUT /save` 只接受同步段（progress/materials/pveUpgrades/equipped/flags），权威段以服务端为准回推。
 - **乐观锁**：`PUT /save` 带 `If-Match: <rev>`，`findOneAndUpdate({_id, rev})` 守卫，并发只有一个赢，另一个 409 + 当前云端值。
-- **服务器与游戏逻辑零依赖**：服务端不 import `code/src/game`；`PlayerCommand` 作 `bytes` opaque 转发。
+- **服务器与游戏逻辑零依赖**：服务端不 import `client/src/game`；`PlayerCommand` 作 `bytes` opaque 转发。
