@@ -7,16 +7,50 @@
 // 它不做匹配、不存房间、不签 ticket——全在 matchsvc（§8.1）。ranked 入队前向 meta 取 ELO。
 import { WebSocketServer, type WebSocket } from 'ws';
 import { verifyToken, type JwtConfig } from '@nw/shared';
-import { decodeClient, encodeServer, MatchMode, type PlayerSlotOut, type ServerMsg } from './proto';
+import {
+  decodeClient,
+  encodeServer,
+  MatchMode,
+  type FrameCmdsOut,
+  type PlayerSlotOut,
+  type ServerMsg,
+} from './proto';
 import type { MatchsvcClient, PushMsg } from './matchsvcClient';
 import type { MetaClient } from './metaClient';
 
 const HEARTBEAT_MS = 30_000;
+/** 裁判复算 + 回报的等待上限（含网络往返 + 客户端跑完整局）。 */
+const JUDGE_TIMEOUT_MS = 20_000;
 
 interface GwConn {
   accountId: string;
   ws: WebSocket;
   alive: boolean;
+  /** 本机能否承担无头复算裁决（client_caps 上报）。 */
+  canJudge: boolean;
+}
+
+/** meta → gateway 裁判请求（内部 HTTP /gw/judge）。 */
+export interface JudgeArgs {
+  seed: number;
+  mode: number;
+  endFrame: number;
+  frames: FrameCmdsOut[];
+  /** 参赛双方 accountId——不可自己裁自己。 */
+  exclude: string[];
+}
+/** 裁判结果（回给 meta）。ok=false：无候选 / 超时 / 复算失败。 */
+export interface JudgeResult {
+  ok: boolean;
+  stateHash?: string;
+  winnerSide?: number;
+  judgeAccountId?: string;
+}
+
+interface PendingJudge {
+  resolve: (r: JudgeResult) => void;
+  accountId: string;
+  timer: NodeJS.Timeout;
 }
 
 /** 玩家展示名（gateway 只有 accountId，沿用 gameserver 旧约定取前 12 位）。 */
@@ -28,6 +62,9 @@ export class Gateway {
   private readonly wss: WebSocketServer;
   private readonly conns = new Map<string, GwConn>(); // accountId → 活跃连接
   private readonly heartbeat: NodeJS.Timeout;
+  /** 在途裁判请求（requestId → pending）。verdict 到达或超时即清。 */
+  private readonly pendingJudges = new Map<string, PendingJudge>();
+  private judgeSeq = 0;
 
   constructor(
     opts: { host: string; port: number },
@@ -79,7 +116,7 @@ export class Gateway {
         /* ignore */
       }
     }
-    const conn: GwConn = { accountId, ws, alive: true };
+    const conn: GwConn = { accountId, ws, alive: true, canJudge: false };
     this.conns.set(accountId, conn);
     this.matchsvc.connected(accountId);
 
@@ -101,6 +138,13 @@ export class Gateway {
       if (this.conns.get(accountId) === conn) {
         this.conns.delete(accountId);
         this.matchsvc.disconnected(accountId);
+      }
+      // 该账号若正担任裁判 → 立即作废其在途请求（不必等超时）。
+      for (const [id, p] of this.pendingJudges) {
+        if (p.accountId !== accountId) continue;
+        clearTimeout(p.timer);
+        this.pendingJudges.delete(id);
+        p.resolve({ ok: false });
       }
     });
     ws.on('error', () => {
@@ -129,12 +173,84 @@ export class Gateway {
       case 'room_leave':
         this.matchsvc.roomLeave(accountId);
         break;
+      case 'client_caps': {
+        const conn = this.conns.get(accountId);
+        if (conn) conn.canJudge = msg.canJudge;
+        break;
+      }
+      case 'judge_verdict': {
+        const pending = this.pendingJudges.get(msg.requestId);
+        // 只接受被指派的裁判回报（防别的玩家伪造 verdict 抢答）。
+        if (pending && pending.accountId === accountId) {
+          clearTimeout(pending.timer);
+          this.pendingJudges.delete(msg.requestId);
+          pending.resolve(
+            msg.ok
+              ? {
+                  ok: true,
+                  stateHash: msg.stateHash,
+                  winnerSide: msg.winnerSide,
+                  judgeAccountId: accountId,
+                }
+              : { ok: false },
+          );
+        }
+        break;
+      }
       case 'ping':
         this.sendPong(accountId);
         break;
       case 'unknown':
         break;
     }
+  }
+
+  // ───────────────────────── 对等裁判（Phase C）─────────────────────────
+
+  /**
+   * meta 调用（经 /gw/judge）：挑一名高配空闲在线玩家无头复算该局，回报终局 hash。
+   * 无合格候选 / 超时 / 复算失败 → {ok:false}，meta 退回作废（不定罪）。
+   */
+  judge(args: JudgeArgs): Promise<JudgeResult> {
+    const candidate = this.pickJudge(args.exclude);
+    if (!candidate) return Promise.resolve({ ok: false });
+
+    const requestId = `j${++this.judgeSeq}:${Date.now()}`;
+    return new Promise<JudgeResult>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingJudges.delete(requestId);
+        resolve({ ok: false });
+      }, JUDGE_TIMEOUT_MS);
+      timer.unref?.();
+      this.pendingJudges.set(requestId, { resolve, accountId: candidate.accountId, timer });
+      try {
+        candidate.ws.send(
+          encodeServer({
+            case: 'judge_request',
+            requestId,
+            seed: args.seed,
+            mode: args.mode,
+            endFrame: args.endFrame,
+            frames: args.frames,
+          }),
+        );
+      } catch {
+        clearTimeout(timer);
+        this.pendingJudges.delete(requestId);
+        resolve({ ok: false });
+      }
+    });
+  }
+
+  /** 挑一名 canJudge 且不在 exclude 中的在线玩家（任一即可，单裁判）。 */
+  private pickJudge(exclude: string[]): GwConn | null {
+    for (const conn of this.conns.values()) {
+      if (!conn.canJudge) continue;
+      if (conn.ws.readyState !== conn.ws.OPEN) continue;
+      if (exclude.includes(conn.accountId)) continue;
+      return conn;
+    }
+    return null;
   }
 
   /** ranked 入队：先向 meta 取 ELO（matchsvc 保持 DB-free），再入队。 */

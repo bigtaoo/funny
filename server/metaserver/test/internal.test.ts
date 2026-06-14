@@ -4,8 +4,17 @@ import { describe, it, expect } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { makeNewSave, type Collections, type SaveData, type SaveDoc } from '@nw/shared';
 import { registerInternalRoutes } from '../src/internal.js';
+import type { GatewayClient, JudgeRes } from '../src/gatewayClient.js';
 
 const KEY = 'test-internal-key';
+
+/** 假裁判：可配 available + 固定裁决结果（不发真 HTTP）。 */
+function fakeGateway(opts: { available?: boolean; res?: JudgeRes } = {}): GatewayClient {
+  return {
+    available: opts.available ?? false,
+    judge: async () => opts.res ?? { ok: false },
+  };
+}
 
 /** 内存 saves + matches：findOne / 乐观锁 findOneAndUpdate / 唯一 roomId insertOne。 */
 function fakeCols(seed: Record<string, SaveData>): { cols: Collections; matches: unknown[] } {
@@ -38,9 +47,9 @@ function fakeCols(seed: Record<string, SaveData>): { cols: Collections; matches:
   return { cols, matches };
 }
 
-function build(cols: Collections): FastifyInstance {
+function build(cols: Collections, gateway: GatewayClient = fakeGateway()): FastifyInstance {
   const app = Fastify();
-  registerInternalRoutes(app, { cols, internalKey: KEY, now: () => 1000 });
+  registerInternalRoutes(app, { cols, internalKey: KEY, now: () => 1000, gateway });
   return app;
 }
 
@@ -139,6 +148,71 @@ describe('internal routes', () => {
     const sa = await cols.saves.findOne({ _id: 'a' });
     expect(sa!.save.pvp.elo).toBe(1000); // 未变
     expect((matches[0] as { winner: number }).winner).toBe(-1);
+    await app.close();
+  });
+
+  // ── Phase C 对等裁判 ─────────────────────────────────────────────────────
+  const mismatchPayload = {
+    room_id: 'M1', seed: '1', mode: 'ranked', reason: 'mismatch', winner_side: 0, hash_ok: false,
+    players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
+    // 两端 hash 不一致：a 报 HONEST，b 报 FAKE。
+    results: [{ side: 0, state_hash: 'HONEST', winner_side: 0 }, { side: 1, state_hash: 'FAKE', winner_side: 1 }],
+    replay: emptyReplay(),
+  };
+
+  it('ranked 不一致 + 裁判命中 a 的 hash → b 判负 + 归档 cheat + 结算 ELO', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols, matches } = fakeCols({ a, b });
+    const gateway = fakeGateway({
+      available: true,
+      res: { ok: true, stateHash: 'HONEST', winnerSide: 0, judgeAccountId: 'c' },
+    });
+    const app = build(cols, gateway);
+    const res = await app.inject({
+      method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: mismatchPayload,
+    });
+    const body = res.json() as { ok: boolean; elo?: Record<number, { delta: number }> };
+    expect(body.ok).toBe(true);
+    // 诚实方 a（side 0）赢 +16，作弊方 b（side 1）输 -16。
+    expect(body.elo![0]!.delta).toBe(16);
+    expect(body.elo![1]!.delta).toBe(-16);
+    const sa = await cols.saves.findOne({ _id: 'a' });
+    const sb = await cols.saves.findOne({ _id: 'b' });
+    expect(sa!.save.pvp.elo).toBe(1016);
+    expect(sb!.save.pvp.elo).toBe(984);
+    const m = matches[0] as { winner: number; cheat?: { side: number; accountId: string; judgeAccountId?: string } };
+    expect(m.cheat).toEqual({ side: 1, accountId: 'b', judgeAccountId: 'c' });
+    expect(m.winner).toBe(0); // 诚实方
+    await app.close();
+  });
+
+  it('ranked 不一致 + 裁判不可用 → 作废（不结算、不标记）', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols, matches } = fakeCols({ a, b });
+    const app = build(cols, fakeGateway({ available: false }));
+    const res = await app.inject({
+      method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: mismatchPayload,
+    });
+    expect(res.json()).toEqual({ ok: true }); // 无 elo
+    expect((await cols.saves.findOne({ _id: 'a' }))!.save.pvp.elo).toBe(1000);
+    expect((matches[0] as { cheat?: unknown }).cheat).toBeUndefined();
+    await app.close();
+  });
+
+  it('ranked 不一致 + 裁判结果对不上任何一方 → 作废', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols, matches } = fakeCols({ a, b });
+    const gateway = fakeGateway({ available: true, res: { ok: true, stateHash: 'OTHER', winnerSide: 0 } });
+    const app = build(cols, gateway);
+    const res = await app.inject({
+      method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: mismatchPayload,
+    });
+    expect(res.json()).toEqual({ ok: true });
+    expect((await cols.saves.findOne({ _id: 'a' }))!.save.pvp.elo).toBe(1000);
+    expect((matches[0] as { cheat?: unknown }).cheat).toBeUndefined();
     await app.close();
   });
 });

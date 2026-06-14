@@ -16,6 +16,7 @@ async function main() {
     jwt,
     internalKey: env.internalKey,
     commercialUrl: env.commercialUrl,
+    gatewayUrl: env.gatewayInternalUrl,
     logger: true,
   });
 

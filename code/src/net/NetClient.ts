@@ -111,6 +111,14 @@ export class NetClient {
   resume(roomId: string, lastFrame: number): void {
     this.sendClient({ connResume: { roomId, lastFrame } });
   }
+  /** 上报本机能否承担无头复算裁决（连上 gateway 后发，Phase C）。 */
+  sendClientCaps(canJudge: boolean): void {
+    this.sendClient({ clientCaps: { canJudge } });
+  }
+  /** 回报裁判复算结果（收 judge_request 复算后发，Phase C）。 */
+  sendJudgeVerdict(requestId: string, stateHash: string, winnerSide: number, ok: boolean): void {
+    this.sendClient({ judgeVerdict: { requestId, stateHash, winnerSide, ok } });
+  }
   ping(): void {
     this.sendClient({ ping: {} });
   }

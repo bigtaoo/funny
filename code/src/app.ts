@@ -21,7 +21,9 @@ import { LocalSaveStore, SaveManager, ReplayStore } from './game/meta';
 import { ApiClient, ApiError, type AuthResult } from './net/ApiClient';
 import { getApiBaseUrl, getGatewayWsUrl } from './net/config';
 import { NetSession } from './net/NetSession';
+import { matchStateHash } from './net/judgeRunner';
 import { MatchMode } from './net/proto/transport';
+import { setBakeRenderer } from './render/bake';
 
 /** flags key — set after the first-launch intro has been seen (was the standalone nw_seen_intro key). */
 const SEEN_INTRO_FLAG = 'seen_intro';
@@ -74,6 +76,9 @@ export async function startApp(platform: IPlatform): Promise<void> {
     resolution:      platform.devicePixelRatio,
     autoDensity:     true,
   });
+
+  // Procedural art (sketch.ts) bakes static board layers to textures via this renderer.
+  setBakeRenderer(app.renderer);
 
   // ── ScalingManager ────────────────────────────────────────────────────────
   let layout: ILayout = createLayout(screenW, screenH);
@@ -477,19 +482,4 @@ function mapAuthError(e: unknown): TranslationKey {
     case 'BAD_REQUEST':         return 'auth.err.loginId';
     default:                    return 'auth.err.network';
   }
-}
-
-/**
- * Deterministic end-state hash for the S1-5 result handshake. Both clients run
- * the same engine on the same frame stream, so the final winner + per-player
- * stats are byte-identical; the server only checks the two strings match.
- */
-function matchStateHash(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]): string {
-  const payload = JSON.stringify({ winner, stats });
-  let h = 0x811c9dc5; // FNV-1a 32-bit
-  for (let i = 0; i < payload.length; i++) {
-    h ^= payload.charCodeAt(i);
-    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
-  }
-  return h.toString(16).padStart(8, '0');
 }

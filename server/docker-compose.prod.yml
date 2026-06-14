@@ -49,6 +49,9 @@ services:
       NW_WX_SECRET: ${NW_WX_SECRET:-}
       # 经济编排调 commercial（内部网络，不暴露公网，S5）。
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
+      # 对等裁判（Phase C）：ranked hash 不一致时经 gateway 挑第三方复算。不加 depends_on
+      # 避免与 gateway→metaserver 成环；裁判仅在局末调用、gateway 不可达时优雅作废。
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
     depends_on:
       mongo:
         condition: service_healthy

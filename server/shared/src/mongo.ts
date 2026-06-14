@@ -64,6 +64,11 @@ export interface MatchDoc {
   replayRef?: string;
   /** Embedded replay (small matches) — the retained frame log, zero extra cost. */
   replay?: MatchReplayDoc;
+  /**
+   * 对等裁判定罪标记（Phase C）：ranked hash 不一致经第三方无头复算后，与裁判结果
+   * 不符的一方判负 + 记此标记。`judgeAccountId` 为复算裁判（审计用）。
+   */
+  cheat?: { side: number; accountId: string; judgeAccountId?: string };
   ts: number;
 }
 

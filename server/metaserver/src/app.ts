@@ -9,6 +9,7 @@ import { MetaService } from './service.js';
 import { makeSecurityHandlers } from './auth.js';
 import { registerInternalRoutes } from './internal.js';
 import { HttpCommercialClient, type CommercialClient } from './commercialClient.js';
+import { HttpGatewayClient, type GatewayClient } from './gatewayClient.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // dist/app.js 与 src/app.ts 都在 metaserver 下两级 → contracts。
@@ -22,6 +23,9 @@ export interface BuildAppOpts {
   /** commercial 内部基址（null = 经济端点 503）；或直接注入 client（测试用）。 */
   commercialUrl?: string | null;
   commercial?: CommercialClient;
+  /** gateway 内部基址（对等裁判 /gw/judge；null = 裁判不可用）；或直接注入 client（测试用）。 */
+  gatewayUrl?: string | null;
+  gateway?: GatewayClient;
   now?: () => number;
   logger?: boolean;
 }
@@ -54,8 +58,11 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     commercial,
   });
 
-  // 内部路由（玩家不可见，X-Internal-Key 鉴权，不经 openapi glue）：取 ELO + 局末上报。
-  registerInternalRoutes(app, { cols: opts.cols, internalKey: opts.internalKey, now });
+  const gateway =
+    opts.gateway ?? new HttpGatewayClient(opts.gatewayUrl ?? null, opts.internalKey);
+
+  // 内部路由（玩家不可见，X-Internal-Key 鉴权，不经 openapi glue）：取 ELO + 局末上报 + 对等裁判。
+  registerInternalRoutes(app, { cols: opts.cols, internalKey: opts.internalKey, now, gateway });
 
   await app.register(openapiGlue, {
     specification: SPEC_PATH,

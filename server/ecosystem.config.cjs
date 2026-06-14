@@ -43,6 +43,7 @@ module.exports = {
         NW_WX_APPID: process.env.NW_WX_APPID || '',
         NW_WX_SECRET: process.env.NW_WX_SECRET || '',
         NW_COMMERCIAL_INTERNAL_URL: COMM_INTERNAL, // meta 编排经济调 commercial
+        NW_GATEWAY_INTERNAL_URL: GW_INTERNAL, // 对等裁判（Phase C）：meta → gateway /gw/judge
       },
     },
     {

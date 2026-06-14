@@ -22,6 +22,7 @@ import {
   type ServerMsg,
 } from './proto/transport';
 import { NetInputSource, type MatchStartInfo } from '../game';
+import { runJudge } from './judgeRunner';
 import type { ApiClient } from './ApiClient';
 
 export interface NetSessionHandlers {
@@ -74,12 +75,26 @@ export class NetSession {
         // Pre-match the room overlay tracks the control plane; in-match the game
         // plane takes over (its onStateChange overrides).
         onStateChange: (s) => {
+          // Advertise judge capability whenever the control plane (re)opens so the
+          // server can pick us as a peer judge for desynced ranked matches (Phase C).
+          if (s === 'open') this.gateway.sendClientCaps(this.canJudge);
           if (!this.game) this.handlers.onNetState?.(s);
         },
         // gateway reconnect: server re-sends room_state for our accountId (no
         // client action needed — GATEWAY_DESIGN §7 default).
       },
     });
+  }
+
+  /**
+   * Whether this device should volunteer as a peer judge. The recompute runs a
+   * full headless match, so gate it on a reasonably capable host; unknown → yes
+   * (the run is bounded and only requested on rare desyncs).
+   */
+  private get canJudge(): boolean {
+    const cores = (globalThis.navigator as { hardwareConcurrency?: number } | undefined)
+      ?.hardwareConcurrency;
+    return typeof cores === 'number' ? cores >= 4 : true;
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -139,11 +154,19 @@ export class NetSession {
     return res.token;
   }
 
-  /** Control-plane messages (gateway): rooms + match_found. */
+  /** Control-plane messages (gateway): rooms + match_found + peer-judge requests. */
   private routeControl(msg: ServerMsg): void {
     if (msg.roomState) this.handlers.onRoomState?.(msg.roomState);
     else if (msg.roomError) this.handlers.onRoomError?.(msg.roomError);
     else if (msg.matchFound) this.connectGame(msg.matchFound.gameUrl, msg.matchFound.ticket);
+    else if (msg.judgeRequest) {
+      // Phase C: the server asked us to recompute a desynced ranked match. Replay
+      // it headlessly and report the verdict hash; this client is a neutral third
+      // party (never one of the two players in that match).
+      const r = msg.judgeRequest;
+      const out = runJudge(r);
+      this.gateway.sendJudgeVerdict(r.requestId, out.stateHash, out.winnerSide, out.ok);
+    }
   }
 
   /** Data-plane messages (game): lockstep + match_start/peer_dc/match_over. */

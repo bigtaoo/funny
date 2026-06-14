@@ -30,6 +30,8 @@ export type ClientMsg =
   | { case: 'room_leave' }
   | { case: 'room_start' }
   | { case: 'ping' }
+  | { case: 'client_caps'; canJudge: boolean }
+  | { case: 'judge_verdict'; requestId: string; stateHash: string; winnerSide: number; ok: boolean }
   | { case: 'unknown' };
 
 export interface PlayerSlotOut {
@@ -38,10 +40,23 @@ export interface PlayerSlotOut {
   ready: boolean;
   connected: boolean;
 }
+/** 单 sim 帧的非空指令（裁判录像帧；与 conn_resync.log 同构）。 */
+export interface FrameCmdsOut {
+  frame: number;
+  cmds: { side: number; commands: Uint8Array }[];
+}
 export type ServerMsg =
   | { case: 'room_state'; code: string; players: PlayerSlotOut[]; phase: number }
   | { case: 'match_found'; gameUrl: string; ticket: string }
   | { case: 'room_error'; code: string; message: string }
+  | {
+      case: 'judge_request';
+      requestId: string;
+      seed: number;
+      mode: number;
+      endFrame: number;
+      frames: FrameCmdsOut[];
+    }
   | { case: 'pong' };
 
 function resolveProtoPath(): string {
@@ -89,6 +104,18 @@ export function decodeClient(buf: Uint8Array): ClientMsg {
       return { case: 'room_start' };
     case 'ping':
       return { case: 'ping' };
+    case 'client_caps':
+      return { case: 'client_caps', canJudge: Boolean(get('client_caps')['can_judge']) };
+    case 'judge_verdict': {
+      const v = get('judge_verdict');
+      return {
+        case: 'judge_verdict',
+        requestId: String(v['request_id'] ?? ''),
+        stateHash: String(v['state_hash'] ?? ''),
+        winnerSide: Number(v['winner_side'] ?? 0),
+        ok: Boolean(v['ok']),
+      };
+    }
     default:
       return { case: 'unknown' };
   }
@@ -116,6 +143,20 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
       break;
     case 'room_error':
       server = { room_error: { code: msg.code, message: msg.message } };
+      break;
+    case 'judge_request':
+      server = {
+        judge_request: {
+          request_id: msg.requestId,
+          seed: msg.seed,
+          mode: msg.mode,
+          end_frame: msg.endFrame,
+          frames: msg.frames.map((f) => ({
+            frame: f.frame,
+            cmds: f.cmds.map((c) => ({ side: c.side, commands: c.commands })),
+          })),
+        },
+      };
       break;
     case 'pong':
       server = { pong: {} };

@@ -88,6 +88,25 @@ export interface ConnResume {
 export interface Ping {
 }
 
+/**
+ * ── 对等裁判反作弊（Phase C，单裁判）─────────────────────
+ * hash 不一致的 ranked 局，meta 挑一名高配空闲在线玩家做无头复算裁决。
+ * client_caps：玩家连上 gateway 后上报本机能否承担复算（控制面）。
+ */
+export interface ClientCaps {
+  canJudge: boolean;
+}
+
+/** judge_verdict：裁判客户端复算完终局后回报（控制面）。 */
+export interface JudgeVerdict {
+  requestId: string;
+  /** 复算得到的终局 hash（与 match_result.state_hash 同构） */
+  stateHash: string;
+  winnerSide: number;
+  /** 复算成功（版本匹配 + 跑到终局） */
+  ok: boolean;
+}
+
 export interface ClientMsg {
   roomCreate?: RoomCreate | undefined;
   roomJoin?: RoomJoin | undefined;
@@ -98,6 +117,8 @@ export interface ClientMsg {
   matchResult?: MatchResult | undefined;
   connResume?: ConnResume | undefined;
   ping?: Ping | undefined;
+  clientCaps?: ClientCaps | undefined;
+  judgeVerdict?: JudgeVerdict | undefined;
 }
 
 /** ── 服务器 → 客户端 ────────────────────────────────── */
@@ -162,6 +183,19 @@ export interface RoomError {
 export interface Pong {
 }
 
+/**
+ * 裁判请求（gateway 控制面推给被选中的裁判客户端，Phase C）。客户端用 frames + seed
+ * 无头复算整局，得到终局 hash + winner_side，经 judge_verdict 回报。frames 与
+ * conn_resync.log 同构（仅非空帧；command bytes 仍 game.proto opaque）。
+ */
+export interface JudgeRequest {
+  requestId: string;
+  seed: number;
+  mode: MatchMode;
+  endFrame: number;
+  frames: FrameCmds[];
+}
+
 export interface ServerMsg {
   roomState?: RoomState | undefined;
   matchStart?: MatchStart | undefined;
@@ -172,6 +206,7 @@ export interface ServerMsg {
   roomError?: RoomError | undefined;
   pong?: Pong | undefined;
   matchFound?: MatchFound | undefined;
+  judgeRequest?: JudgeRequest | undefined;
 }
 
 /** 线上每帧一个 Envelope */
@@ -838,6 +873,134 @@ export const Ping: MessageFns<Ping> = {
   },
 };
 
+function createBaseClientCaps(): ClientCaps {
+  return { canJudge: false };
+}
+
+export const ClientCaps: MessageFns<ClientCaps> = {
+  encode(message: ClientCaps, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.canJudge !== false) {
+      writer.uint32(8).bool(message.canJudge);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ClientCaps {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseClientCaps();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.canJudge = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<ClientCaps>, I>>(base?: I): ClientCaps {
+    return ClientCaps.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ClientCaps>, I>>(object: I): ClientCaps {
+    const message = createBaseClientCaps();
+    message.canJudge = object.canJudge ?? false;
+    return message;
+  },
+};
+
+function createBaseJudgeVerdict(): JudgeVerdict {
+  return { requestId: "", stateHash: "", winnerSide: 0, ok: false };
+}
+
+export const JudgeVerdict: MessageFns<JudgeVerdict> = {
+  encode(message: JudgeVerdict, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.requestId !== "") {
+      writer.uint32(10).string(message.requestId);
+    }
+    if (message.stateHash !== "") {
+      writer.uint32(18).string(message.stateHash);
+    }
+    if (message.winnerSide !== 0) {
+      writer.uint32(24).uint32(message.winnerSide);
+    }
+    if (message.ok !== false) {
+      writer.uint32(32).bool(message.ok);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): JudgeVerdict {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseJudgeVerdict();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.requestId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.stateHash = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.winnerSide = reader.uint32();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.ok = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<JudgeVerdict>, I>>(base?: I): JudgeVerdict {
+    return JudgeVerdict.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<JudgeVerdict>, I>>(object: I): JudgeVerdict {
+    const message = createBaseJudgeVerdict();
+    message.requestId = object.requestId ?? "";
+    message.stateHash = object.stateHash ?? "";
+    message.winnerSide = object.winnerSide ?? 0;
+    message.ok = object.ok ?? false;
+    return message;
+  },
+};
+
 function createBaseClientMsg(): ClientMsg {
   return {
     roomCreate: undefined,
@@ -849,6 +1012,8 @@ function createBaseClientMsg(): ClientMsg {
     matchResult: undefined,
     connResume: undefined,
     ping: undefined,
+    clientCaps: undefined,
+    judgeVerdict: undefined,
   };
 }
 
@@ -880,6 +1045,12 @@ export const ClientMsg: MessageFns<ClientMsg> = {
     }
     if (message.ping !== undefined) {
       Ping.encode(message.ping, writer.uint32(74).fork()).join();
+    }
+    if (message.clientCaps !== undefined) {
+      ClientCaps.encode(message.clientCaps, writer.uint32(82).fork()).join();
+    }
+    if (message.judgeVerdict !== undefined) {
+      JudgeVerdict.encode(message.judgeVerdict, writer.uint32(90).fork()).join();
     }
     return writer;
   },
@@ -963,6 +1134,22 @@ export const ClientMsg: MessageFns<ClientMsg> = {
           message.ping = Ping.decode(reader, reader.uint32());
           continue;
         }
+        case 10: {
+          if (tag !== 82) {
+            break;
+          }
+
+          message.clientCaps = ClientCaps.decode(reader, reader.uint32());
+          continue;
+        }
+        case 11: {
+          if (tag !== 90) {
+            break;
+          }
+
+          message.judgeVerdict = JudgeVerdict.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1002,6 +1189,12 @@ export const ClientMsg: MessageFns<ClientMsg> = {
       ? ConnResume.fromPartial(object.connResume)
       : undefined;
     message.ping = (object.ping !== undefined && object.ping !== null) ? Ping.fromPartial(object.ping) : undefined;
+    message.clientCaps = (object.clientCaps !== undefined && object.clientCaps !== null)
+      ? ClientCaps.fromPartial(object.clientCaps)
+      : undefined;
+    message.judgeVerdict = (object.judgeVerdict !== undefined && object.judgeVerdict !== null)
+      ? JudgeVerdict.fromPartial(object.judgeVerdict)
+      : undefined;
     return message;
   },
 };
@@ -1612,6 +1805,100 @@ export const Pong: MessageFns<Pong> = {
   },
 };
 
+function createBaseJudgeRequest(): JudgeRequest {
+  return { requestId: "", seed: 0, mode: 0, endFrame: 0, frames: [] };
+}
+
+export const JudgeRequest: MessageFns<JudgeRequest> = {
+  encode(message: JudgeRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.requestId !== "") {
+      writer.uint32(10).string(message.requestId);
+    }
+    if (message.seed !== 0) {
+      writer.uint32(16).uint64(message.seed);
+    }
+    if (message.mode !== 0) {
+      writer.uint32(24).int32(message.mode);
+    }
+    if (message.endFrame !== 0) {
+      writer.uint32(32).uint32(message.endFrame);
+    }
+    for (const v of message.frames) {
+      FrameCmds.encode(v!, writer.uint32(42).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): JudgeRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseJudgeRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.requestId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.seed = longToNumber(reader.uint64());
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.mode = reader.int32() as any;
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.endFrame = reader.uint32();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.frames.push(FrameCmds.decode(reader, reader.uint32()));
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<JudgeRequest>, I>>(base?: I): JudgeRequest {
+    return JudgeRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<JudgeRequest>, I>>(object: I): JudgeRequest {
+    const message = createBaseJudgeRequest();
+    message.requestId = object.requestId ?? "";
+    message.seed = object.seed ?? 0;
+    message.mode = object.mode ?? 0;
+    message.endFrame = object.endFrame ?? 0;
+    message.frames = object.frames?.map((e) => FrameCmds.fromPartial(e)) || [];
+    return message;
+  },
+};
+
 function createBaseServerMsg(): ServerMsg {
   return {
     roomState: undefined,
@@ -1623,6 +1910,7 @@ function createBaseServerMsg(): ServerMsg {
     roomError: undefined,
     pong: undefined,
     matchFound: undefined,
+    judgeRequest: undefined,
   };
 }
 
@@ -1654,6 +1942,9 @@ export const ServerMsg: MessageFns<ServerMsg> = {
     }
     if (message.matchFound !== undefined) {
       MatchFound.encode(message.matchFound, writer.uint32(74).fork()).join();
+    }
+    if (message.judgeRequest !== undefined) {
+      JudgeRequest.encode(message.judgeRequest, writer.uint32(82).fork()).join();
     }
     return writer;
   },
@@ -1737,6 +2028,14 @@ export const ServerMsg: MessageFns<ServerMsg> = {
           message.matchFound = MatchFound.decode(reader, reader.uint32());
           continue;
         }
+        case 10: {
+          if (tag !== 82) {
+            break;
+          }
+
+          message.judgeRequest = JudgeRequest.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1775,6 +2074,9 @@ export const ServerMsg: MessageFns<ServerMsg> = {
     message.pong = (object.pong !== undefined && object.pong !== null) ? Pong.fromPartial(object.pong) : undefined;
     message.matchFound = (object.matchFound !== undefined && object.matchFound !== null)
       ? MatchFound.fromPartial(object.matchFound)
+      : undefined;
+    message.judgeRequest = (object.judgeRequest !== undefined && object.judgeRequest !== null)
+      ? JudgeRequest.fromPartial(object.judgeRequest)
       : undefined;
     return message;
   },

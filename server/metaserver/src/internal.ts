@@ -12,6 +12,7 @@ import {
   eloToRank,
   nextStreak,
 } from '@nw/shared';
+import type { GatewayClient } from './gatewayClient.js';
 
 interface EloResult {
   delta: number;
@@ -42,10 +43,12 @@ export interface InternalDeps {
   cols: Collections;
   internalKey: string;
   now: () => number;
+  /** 对等裁判客户端（Phase C）。未配置则 available=false，ranked 不一致直接作废。 */
+  gateway: GatewayClient;
 }
 
 export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps): void {
-  const { cols, internalKey, now } = deps;
+  const { cols, internalKey, now, gateway } = deps;
 
   const authed = (key: unknown): boolean => key === internalKey;
 
@@ -76,6 +79,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     const settleRanked =
       body.mode === 'ranked' && body.winner_side >= 0 && body.reason !== 'mismatch';
     let eloBySide: Record<number, EloResult> | null = null;
+    let cheat: { side: number; accountId: string; judgeAccountId?: string } | undefined;
     if (settleRanked) {
       const winner = body.players.find((p) => p.side === body.winner_side);
       const loser = body.players.find((p) => p.side !== body.winner_side);
@@ -86,6 +90,21 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
           app.log.error({ err: e }, 'ranked ELO settle failed');
         }
       }
+    } else if (body.mode === 'ranked' && body.reason === 'mismatch' && gateway.available) {
+      // Phase C 对等裁判：两端 hash 不一致 → 挑第三方无头复算定罪（而非直接作废）。
+      try {
+        const verdict = await judgeMismatch(gateway, body);
+        if (verdict) {
+          eloBySide = await settleElo(cols, now, verdict.honest, verdict.cheater);
+          cheat = {
+            side: verdict.cheater.side,
+            accountId: verdict.cheater.accountId,
+            ...(verdict.judgeAccountId ? { judgeAccountId: verdict.judgeAccountId } : {}),
+          };
+        }
+      } catch (e) {
+        app.log.error({ err: e }, 'peer judge failed');
+      }
     }
 
     // 归档 matches（内嵌录像 / 大局 replayRef 待办）。winner -1 = 未知（friendly 正常结束）。
@@ -95,7 +114,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         mode: body.mode,
         seed: body.seed,
         players: body.players,
-        winner: body.winner_side,
+        winner: cheat ? body.players.find((p) => p.side !== cheat!.side)!.side : body.winner_side,
         reason: body.reason,
         hashOk: body.hash_ok,
         replay: {
@@ -106,6 +125,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
           frames: body.replay.frames, // cmds[].commands 为 base64 opaque（不解码 M12）
           meta: body.replay.meta,
         },
+        ...(cheat ? { cheat } : {}),
         ts: now(),
       })
       .catch((e) => {
@@ -115,6 +135,43 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
 
     return reply.send({ ok: true, ...(eloBySide ? { elo: eloBySide } : {}) });
   });
+}
+
+/**
+ * 对等裁判（Phase C）：把整局录像发给 gateway 挑第三方无头复算，按裁判 hash 判定哪方诚实。
+ * 返回 {诚实方, 作弊方, 裁判 accountId}；裁判不可裁（无候选/超时/复算失败/结果对不上任一方）→ null。
+ */
+async function judgeMismatch(
+  gateway: GatewayClient,
+  body: ReportBody,
+): Promise<{
+  honest: { side: number; accountId: string };
+  cheater: { side: number; accountId: string };
+  judgeAccountId?: string;
+} | null> {
+  if (body.results.length !== 2) return null;
+  const verdict = await gateway.judge({
+    seed: Number(body.seed),
+    mode: 1, // RANKED（裁判客户端按 netplay 复算，mode 仅审计语义）
+    endFrame: body.replay.endFrame,
+    frames: body.replay.frames, // command bytes 已是 base64，原样转交
+    exclude: body.players.map((p) => p.accountId),
+  });
+  if (!verdict.ok || !verdict.stateHash) return null;
+
+  // 裁判 hash 命中哪方 → 那方诚实；另一方（hash 不符）作弊。两端 hash 互不相同，
+  // 故至多一方命中；若都不命中（裁判结果对不上任何一方）则无法定罪 → 作废。
+  const honestRes = body.results.find((r) => r.state_hash === verdict.stateHash);
+  const cheaterRes = body.results.find((r) => r.state_hash !== verdict.stateHash);
+  if (!honestRes || !cheaterRes) return null;
+  const honest = body.players.find((p) => p.side === honestRes.side);
+  const cheater = body.players.find((p) => p.side === cheaterRes.side);
+  if (!honest || !cheater) return null;
+  return {
+    honest,
+    cheater,
+    ...(verdict.judgeAccountId ? { judgeAccountId: verdict.judgeAccountId } : {}),
+  };
 }
 
 /** 双方 ELO 结算：读分 → 算分差 → 各自原子写 saves.pvp（乐观锁 rev 守卫 + 重试）。 */

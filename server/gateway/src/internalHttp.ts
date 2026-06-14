@@ -4,8 +4,26 @@
 // （拆 matchsvc 为独立进程前，这里曾接 gameserver 的 game 注册/心跳——那两个端点已随
 //  GameRegistry 迁到 matchsvc 自己的内部 HTTP，gameserver 现直接注册到 matchsvc。）
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
-import type { Gateway } from './Gateway';
+import type { Gateway, JudgeArgs } from './Gateway';
+import type { FrameCmdsOut } from './proto';
 import type { PushMsg } from './matchsvcClient';
+
+/** /gw/judge 请求体（meta 发来）。frames 的 command bytes 用 base64 传输（JSON 安全）。 */
+interface JudgeReqBody {
+  seed?: number;
+  mode?: number;
+  endFrame?: number;
+  frames?: { frame: number; cmds: { side: number; commands: string }[] }[];
+  exclude?: string[];
+}
+
+/** base64 帧 → gateway 内部 FrameCmdsOut（commands 解回 Uint8Array）。 */
+function decodeFrames(frames: JudgeReqBody['frames']): FrameCmdsOut[] {
+  return (frames ?? []).map((f) => ({
+    frame: f.frame,
+    cmds: f.cmds.map((c) => ({ side: c.side, commands: new Uint8Array(Buffer.from(c.commands, 'base64')) })),
+  }));
+}
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -49,6 +67,21 @@ export function startInternalHttp(
           }
           gateway.push(b.accountId, b.msg);
           send(res, 200, { ok: true });
+          return;
+        }
+        // 对等裁判（Phase C）：meta 发来一局录像，gateway 挑裁判复算并阻塞返回裁决。
+        if (req.method === 'POST' && req.url === '/gw/judge') {
+          const b = (await readJson(req)) as JudgeReqBody;
+          const args: JudgeArgs = {
+            seed: Number(b.seed ?? 0),
+            mode: Number(b.mode ?? 0),
+            endFrame: Number(b.endFrame ?? 0),
+            frames: decodeFrames(b.frames),
+            exclude: b.exclude ?? [],
+          };
+          // 直接回 JudgeResult（ok = 裁决是否成功；meta 据此定罪或作废）。
+          const result = await gateway.judge(args);
+          send(res, 200, result);
           return;
         }
         send(res, 404, { ok: false, error: 'not found' });
