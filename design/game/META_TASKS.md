@@ -55,12 +55,12 @@
 > 细分设计见 `ACCOUNT_DESIGN.md`。决策：默认要求登录 + 登录界面带「单机试玩」入口；四种登录并存（邮箱密码 / OAuth / 微信 / 匿名升级）；一账号多凭证，匿名可转正不丢档。
 
 ### 服务器（meta）
-- [ ] **SA-1 accounts 模型扩展 + 密码登录**：`accounts` 加 `password{loginId,hash}`/`oauth[]`/`displayName`/`isAnonymous` + 索引（`password.loginId` 稀疏唯一、`oauth.provider+sub` 唯一）；`POST /auth/register`（argon2/bcrypt 哈希）+ `POST /auth/login`（比对哈希）+ `POST /auth/password/change`；AuthResult 加 `isAnonymous`。**依赖**：S0-6,7。**验收**：注册→登录→改密闭环；重复 loginId 拒；密码哈希存储。
+- [x] **SA-1 accounts 模型扩展 + 密码登录**：`accounts` 加 `password{loginId,hash}`/`oauth[]`/`displayName` + 索引（`password.loginId` 稀疏唯一、`oauth.provider+sub` 唯一，预建）；`POST /auth/register` + `POST /auth/login` + `POST /auth/password/change`；AuthResult 加 `isAnonymous`。**依赖**：S0-6,7。**已落地**：密码哈希用 Node 内置 `crypto.scrypt`（`shared/password.ts`，零依赖、跨平台，**非 argon2/bcrypt** 以免 Windows 原生编译）；`isAnonymous` **计算得出不落库**（`isAnonymousAccount(doc)`：仅 device 无 password/oauth/wx → true），避免漂移；loginId 大小写/空格不敏感（`normalizeLoginId`），邮箱与用户名都允许；`WEAK_PASSWORD` 由 handler 校验（openapi 不设 password minLength 以免被通用校验抢先 BAD_REQUEST）；新错误码 `LOGIN_ID_TAKEN/INVALID_CREDENTIALS/WEAK_PASSWORD/ALREADY_BOUND/OAUTH_FAILED`。`tsc -b` + 7 新 e2e（共 19 绿）。
 - [ ] **SA-2 OAuth + 绑定/升级**：`POST /auth/oauth`（授权码流，先接 Google，`state` 防 CSRF，服务端换 token 取 sub）；`POST /auth/bind`（持现有 JWT 把新凭证挂当前 accountId，未占用则升级 `isAnonymous=false`、存档/钱包保留；已占用返 `ALREADY_BOUND`）。**依赖**：SA-1。**验收**：OAuth 登录通；匿名 device 账号 bind 邮箱后同 accountId、PvE 进度不丢。
 
 ### 客户端
-- [ ] **SA-3 LoginScene + 登录门控**：新增 `LoginScene`（canvas，视图机 `landing/password/register/oauthWait`，复用 RoomScene 输入键盘模式，i18n `auth.*` zh/en/de 全翻）；`app.ts` 启动门控改为「非微信 + 无有效会话 → goLogin」（微信静默 wx.login 跳过，A6）；正式登录后持久化 token（`nw_token` + 过期）免重输。**依赖**：SA-1、S0-5。**验收**：默认进登录界面；登录后直达大厅；重启免重输密码。
-- [ ] **SA-4 单机门槛 + 转正**：登录界面「单机试玩」→ `goLobby({offline:true})`；大厅屏蔽联机/排位/商店/充值入口并引导登录，PvE/PvP-vs-AI/本地录像可玩；登录/注册成功走 `SaveManager.reconcile` 合并本地匿名存档（PvE 进度不丢）；新增登出（清 token 回登录，本地存档保留）。**依赖**：SA-3。**验收**：单机可玩且联机/付费被拦；试玩转正后进度合并不丢。
+- [x] **SA-3 LoginScene + 登录门控**：新增 `LoginScene`（canvas，视图机 `landing/password/register/submitting`，i18n `auth.*` zh/en/de 全翻）；`app.ts` 启动门控 `resolveEntry`（intro 后）：微信静默 wx.login（A6）/ 无 API 配置纯本地 / 有持久 token 复用会话（pull+reconcile）/ 否则 goLogin；正式登录后持久化 token（`nw_token`）免重输。**已落地**：文本输入用**隐藏 `<input>` 捕获键击**（桌面键盘 + 移动软键盘），canvas 渲染字段框、密码掩码为圆点、聚焦字段闪烁光标（**未用 RoomScene 的字符键盘**——邮箱/密码自由文本不适合定制键盘）；`ApiClient.register/login/changePassword`/`getToken`；`SaveManager.adoptSession(accountId)`（token 已持有，跳过 auth，pull+reconcile）。**注**：OAuth(`oauthWait`)首期不做（SA-2，仅留接口）；token 过期检测从简（乐观进大厅，pull 失败静默退化只读本地）。client tsc + 120 测试 + web 构建绿。
+- [x] **SA-4 单机门槛 + 转正**：登录界面「单机试玩」→ `goLobby({offline:true})`；大厅 offline 模式社交/联机入口改路由到登录、顶部右上「登录/注册」chip（登录态显段位徽章 + 登出 chip）；PvE/PvP-vs-AI/本地录像可玩；登录/注册成功经 `SaveManager.adoptSession`→`reconcile` 合并本地匿名存档（PvE 进度不丢，权威段以云端为准）；`doLogout` 清 token 回登录、本地存档保留。**依赖**：SA-3。**注**：商店/充值入口尚未实现（占位），当前只拦联机/排位（社交格）。
 
 ---
 
@@ -150,7 +150,7 @@
 
 ## i18n（贯穿，随场景落地）
 
-- [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`auth.*`（登录界面，SA）/ `meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；`auth.*` 随 SA-3；其余随后续场景。
+- [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`auth.*`（登录界面，SA）/ `meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；`auth.*` **已随 SA-3 落地**（zh/en/de 全翻）；其余随后续场景。
 
 ---
 

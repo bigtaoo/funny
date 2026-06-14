@@ -16,6 +16,12 @@ export const ErrorCode = {
   NOT_IMPLEMENTED: 'NOT_IMPLEMENTED',
   BAD_REQUEST: 'BAD_REQUEST',
   INTERNAL: 'INTERNAL',
+  // —— 账号系统（SA-1/SA-2）——
+  LOGIN_ID_TAKEN: 'LOGIN_ID_TAKEN',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  WEAK_PASSWORD: 'WEAK_PASSWORD',
+  ALREADY_BOUND: 'ALREADY_BOUND',
+  OAUTH_FAILED: 'OAUTH_FAILED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -44,4 +50,9 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.NOT_IMPLEMENTED]: 501,
   [ErrorCode.BAD_REQUEST]: 400,
   [ErrorCode.INTERNAL]: 500,
+  [ErrorCode.LOGIN_ID_TAKEN]: 409,
+  [ErrorCode.INVALID_CREDENTIALS]: 401,
+  [ErrorCode.WEAK_PASSWORD]: 400,
+  [ErrorCode.ALREADY_BOUND]: 409,
+  [ErrorCode.OAUTH_FAILED]: 400,
 };

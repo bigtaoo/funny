@@ -16,6 +16,8 @@ export interface AuthResult {
   token: string;
   accountId: string;
   isNew: boolean;
+  /** 仅 device、无可恢复凭证 → true。联机/商店/充值要求 false（SA-1）。 */
+  isAnonymous: boolean;
 }
 
 /** PUT /save 结果：成功回推规范化存档，或 409 冲突带当前云端值。 */
@@ -40,6 +42,10 @@ export class ApiClient {
     this.token = token;
   }
 
+  getToken(): string | null {
+    return this.token;
+  }
+
   hasToken(): boolean {
     return this.token !== null;
   }
@@ -52,6 +58,30 @@ export class ApiClient {
     const data = await this.post<AuthResult>(path, body);
     this.token = data.token;
     return data;
+  }
+
+  // ── 密码账号（SA-1）─────────────────────────────────────
+  /** 密码注册（新账号）；成功后自动持有 token。 */
+  async register(loginId: string, password: string, displayName?: string): Promise<AuthResult> {
+    const data = await this.post<AuthResult>('/auth/register', {
+      loginId,
+      password,
+      ...(displayName ? { displayName } : {}),
+    });
+    this.token = data.token;
+    return data;
+  }
+
+  /** 密码登录；成功后自动持有 token。 */
+  async login(loginId: string, password: string): Promise<AuthResult> {
+    const data = await this.post<AuthResult>('/auth/login', { loginId, password });
+    this.token = data.token;
+    return data;
+  }
+
+  /** 改密（需已登录，token 已持有）。 */
+  async changePassword(oldPassword: string, newPassword: string): Promise<void> {
+    await this.post<{ ok: true }>('/auth/password/change', { oldPassword, newPassword });
   }
 
   // ── save（S0-7）─────────────────────────────────────────

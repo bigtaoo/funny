@@ -116,6 +116,17 @@ export class SaveManager {
     }
   }
 
+  /**
+   * 正式登录/注册后采纳会话（SA-3/SA-4）：token 已由 ApiClient 持有，此处把 accountId
+   * 落本地并 pull + reconcile（单机攒的 PvE 进度并入云端，权威段以云端为准，§4.4）。
+   * 与 bootstrap 的区别是不重新 auth（不用匿名 device 凭据换号）。未联通则 no-op。
+   */
+  async adoptSession(accountId: string): Promise<boolean> {
+    this.save.accountId = accountId;
+    this.store.saveLocal(this.save);
+    return this.refresh();
+  }
+
   /** 立即清空防抖、强制上行（场景切换 / 退出前调用）。 */
   async flush(): Promise<void> {
     if (this.pushTimer != null) {

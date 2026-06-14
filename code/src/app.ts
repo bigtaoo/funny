@@ -5,6 +5,7 @@ import { IntroScene } from './scenes/IntroScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { GameScene } from './scenes/GameScene';
 import { RoomScene } from './scenes/RoomScene';
+import { LoginScene, type AuthOutcome } from './scenes/LoginScene';
 import { ResultScene, type EloResult } from './scenes/ResultScene';
 import { ReplayScene } from './scenes/ReplayScene';
 import { OwnerId, PlayerStats } from './game/types';
@@ -13,15 +14,18 @@ import type { MatchStartInfo, Replay } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
-import { initI18n } from './i18n';
+import { initI18n, type TranslationKey } from './i18n';
 import { LocalSaveStore, SaveManager, ReplayStore } from './game/meta';
-import { ApiClient } from './net/ApiClient';
+import { ApiClient, ApiError, type AuthResult } from './net/ApiClient';
 import { getApiBaseUrl, getGameWsUrl } from './net/config';
 import { NetSession } from './net/NetSession';
 import { MatchMode } from './net/proto/transport';
 
 /** flags key — set after the first-launch intro has been seen (was the standalone nw_seen_intro key). */
 const SEEN_INTRO_FLAG = 'seen_intro';
+
+/** Persisted JWT for a real (non-anonymous) account, so logins survive restarts (SA-3 §5). */
+const TOKEN_KEY = 'nw_token';
 
 export async function startApp(platform: IPlatform): Promise<void> {
   // i18n must be ready before any scene builds its texts
@@ -35,8 +39,9 @@ export async function startApp(platform: IPlatform): Promise<void> {
     api,
     getCredential: () => platform.getAuthCredential(),
   });
-  // Cloud sync is offline-first and non-blocking: failures keep the local save.
-  void saveManager.bootstrap();
+  // Cloud sync is offline-first and non-blocking; the entry gating (resolveEntry,
+  // after intro) decides whether to bootstrap silently (wx / persisted token) or
+  // show the login screen (SA-3).
 
   // ── ReplayStore (S1-RP): local ring of recent recorded matches ──────────────
   const replayStore = new ReplayStore(platform.storage);
@@ -93,27 +98,97 @@ export async function startApp(platform: IPlatform): Promise<void> {
 
   // ── Navigation ────────────────────────────────────────────────────────────
 
+  // SA-4: offline single-player — online entries (room / shop) route to login.
+  let offlineMode = false;
+
   function goIntro(): void {
     inLobby = false;
     manager.goto(new IntroScene(layout, input, {
       onFinish() {
         saveManager.setFlag(SEEN_INTRO_FLAG, true);
-        goLobby();
+        void resolveEntry();
       },
     }));
   }
 
-  function goLobby(): void {
+  function goLobby(opts?: { offline?: boolean }): void {
+    if (opts?.offline !== undefined) offlineMode = opts.offline;
     inLobby = true;
     platform.onGameplayStop();
     const pvp = saveManager.get().pvp;
+    const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     manager.goto(new LobbyScene(layout, input, {
       onStartGame(_opponentName: string) { goGame(); },
       onStartCampaign(levelIndex: number) { goCampaign(CAMPAIGN_LEVEL_ORDER[levelIndex]); },
       onOpenRoom() { goRoom(); },
       pvp: { rank: pvp.rank, elo: pvp.elo },
+      offline: offlineMode,
+      onLogin: () => goLogin(),
+      onLogout: loggedIn ? () => doLogout() : undefined,
     }));
     window.addEventListener('resize', onResize);
+  }
+
+  // SA-3: login screen + entry gating + persistent token.
+  function goLogin(): void {
+    inLobby = false;
+    window.removeEventListener('resize', onResize);
+    manager.goto(new LoginScene(layout, input, {
+      onPlayOffline() { goLobby({ offline: true }); },
+      onLogin: (loginId, password) => doAuth(() => api!.login(loginId, password)),
+      onRegister: (loginId, password, displayName) =>
+        doAuth(() => api!.register(loginId, password, displayName)),
+    }));
+  }
+
+  /** Run a login/register call; on success persist token, reconcile, enter lobby. */
+  async function doAuth(call: () => Promise<AuthResult>): Promise<AuthOutcome> {
+    if (!api) return { ok: false, errorKey: 'auth.err.network' };
+    try {
+      const res = await call();
+      platform.storage.setItem(TOKEN_KEY, res.token);
+      // Merge single-player progress into the cloud account (§4.4): pull + reconcile.
+      await saveManager.adoptSession(res.accountId);
+      goLobby({ offline: false });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, errorKey: mapAuthError(e) };
+    }
+  }
+
+  function doLogout(): void {
+    platform.storage.removeItem(TOKEN_KEY);
+    api?.setToken(null);
+    goLogin();
+  }
+
+  /**
+   * Entry gating after intro (SA-3 §4.1):
+   *   wx platform        → silent wx.login (A6), straight to lobby.
+   *   no server / API    → offline single-player lobby.
+   *   persisted token    → reuse the session (pull + reconcile), straight to lobby.
+   *   otherwise          → login screen.
+   */
+  async function resolveEntry(): Promise<void> {
+    let cred: { kind: string } | null = null;
+    try { cred = await platform.getAuthCredential(); } catch { cred = null; }
+    if (cred?.kind === 'wx') {
+      void saveManager.bootstrap();
+      goLobby({ offline: false });
+      return;
+    }
+    if (!api) { goLobby({ offline: true }); return; }
+    const token = platform.storage.getItem(TOKEN_KEY);
+    if (token) {
+      api.setToken(token);
+      // Optimistic: enter lobby online; pull/reconcile runs in the background and
+      // swallows failures (offline-first). An invalid token degrades to read-only
+      // local until the next explicit login.
+      void saveManager.adoptSession(saveManager.get().accountId);
+      goLobby({ offline: false });
+      return;
+    }
+    goLogin();
   }
 
   function goRoom(): void {
@@ -293,12 +368,24 @@ export async function startApp(platform: IPlatform): Promise<void> {
     }, localOwner, elo));
   }
 
-  // First launch → background-story intro; afterwards straight to lobby.
-  // The flag lives in SaveData.flags now (LocalSaveStore absorbs the legacy nw_seen_intro key).
+  // First launch → background-story intro; afterwards the entry gating decides
+  // login vs lobby (SA-3). The seen-intro flag lives in SaveData.flags now.
   if (saveManager.getFlag(SEEN_INTRO_FLAG)) {
-    goLobby();
+    void resolveEntry();
   } else {
     goIntro();
+  }
+}
+
+/** Map a server auth error code to a LoginScene message key (SA-3). */
+function mapAuthError(e: unknown): TranslationKey {
+  const code = e instanceof ApiError ? e.code : '';
+  switch (code) {
+    case 'LOGIN_ID_TAKEN':      return 'auth.err.taken';
+    case 'INVALID_CREDENTIALS': return 'auth.err.invalid';
+    case 'WEAK_PASSWORD':       return 'auth.err.weak';
+    case 'BAD_REQUEST':         return 'auth.err.loginId';
+    default:                    return 'auth.err.network';
   }
 }
 

@@ -66,3 +66,37 @@ describe('SaveManager.refresh (S1-R)', () => {
     expect(await mgr.refresh()).toBe(false);
   });
 });
+
+describe('SaveManager.adoptSession (SA-3/SA-4 转正)', () => {
+  it('登录后采纳 accountId + pull/reconcile：本地 PvE 进度并入，权威段取云端', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const local = makeNewSave('local-anon', 1); // 单机匿名档
+    local.progress.cleared.push('ch1_lv1');
+    local.progress.stars['ch1_lv1'] = 2;
+    store.saveLocal(local);
+
+    const cloud = makeNewSave('real-123', 5); // 云端正式账号，已有权威段
+    cloud.pvp = { elo: 1300, rank: 'gold', wins: 9, losses: 2, streak: 2 };
+    cloud.wallet.coins = 500;
+
+    const mgr = new SaveManager({ store, api: fakeApi(cloud) });
+    const ok = await mgr.adoptSession('real-123');
+
+    expect(ok).toBe(true);
+    // 权威段 + accountId/rev 取云端
+    expect(mgr.get().accountId).toBe('real-123');
+    expect(mgr.get().wallet.coins).toBe(500);
+    expect(mgr.get().pvp.rank).toBe('gold');
+    // 单机攒的 PvE 进度不丢（reconcile 并集）
+    expect(mgr.get().progress.cleared).toContain('ch1_lv1');
+    expect(mgr.get().progress.stars['ch1_lv1']).toBe(2);
+  });
+
+  it('无 token（pull 失败）→ 仍写下 accountId 但返回 false', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('local-anon', 1));
+    const mgr = new SaveManager({ store, api: fakeApi(makeNewSave('x', 1), false) });
+    expect(await mgr.adoptSession('real-123')).toBe(false);
+    expect(mgr.get().accountId).toBe('real-123');
+  });
+});

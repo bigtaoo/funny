@@ -75,7 +75,8 @@ POST /auth/password/change (JWT) { oldPassword, newPassword } → { ok }
 ```
 - 微信：`code` 由 `wx.login` 得，服务端换 openid → 映射 accountId。
 - Web/CrazyGames：`deviceId` 为客户端持久化 UUID（匿名 `isAnonymous=true`）。
-- 密码哈希存储（argon2/bcrypt）；OAuth 走授权码流（`state` 防 CSRF）；`bind` 把新凭证挂当前 accountId（升级转正，不丢档/钱包）。详见 `ACCOUNT_DESIGN.md`。
+- 密码哈希存储（**实现用 Node 内置 `crypto.scrypt`**，零依赖跨平台，串 `scrypt$N$r$p$salt$hash`）；OAuth 走授权码流（`state` 防 CSRF）；`bind` 把新凭证挂当前 accountId（升级转正，不丢档/钱包）。详见 `ACCOUNT_DESIGN.md`。
+- **实现状态（2026-06-14）**：`/auth/register`·`/auth/login`·`/auth/password/change` + `AuthResult.isAnonymous` **已落地**（SA-1，`isAnonymous` 计算得出不落库）；`/auth/oauth`·`/auth/bind` **待做**（SA-2，错误码已预留）。`/auth/password/reset`（找回密码，需邮件服务）后置。
 
 ### 2.2 存档（save-service，`META_TASKS.md` S0-7）
 ```

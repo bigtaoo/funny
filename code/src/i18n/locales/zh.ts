@@ -140,6 +140,32 @@ export const zh = {
   'replay.speed': '{n}×',
   'replay.ended': '回放结束',
   'replay.versionError': '录像版本不兼容，无法回放',
+
+  // ── 账号 / 登录（SA-3） ──────────────────────────────────────────────────────
+  'auth.title': '登录 Notebook Wars',
+  'auth.login': '登录',
+  'auth.register': '注册',
+  'auth.loginIdLabel': '邮箱 / 用户名',
+  'auth.passwordLabel': '密码',
+  'auth.displayNameLabel': '昵称（可选）',
+  'auth.submitLogin': '登录',
+  'auth.submitRegister': '注册并登录',
+  'auth.toRegister': '没有账号？去注册',
+  'auth.toLogin': '已有账号？去登录',
+  'auth.playOffline': '单机试玩',
+  'auth.offlineHint': '单机模式：可玩战役与人机，登录后才能联机 / 商店',
+  'auth.loginEntry': '登录 / 注册',
+  'auth.goLogin': '去登录',
+  'auth.logout': '退出登录',
+  'auth.loggingIn': '登录中',
+  'auth.tapToType': '点此输入',
+  'auth.back': '← 返回',
+  'auth.err.invalid': '邮箱 / 用户名或密码错误',
+  'auth.err.taken': '该邮箱 / 用户名已被注册',
+  'auth.err.weak': '密码至少 6 位',
+  'auth.err.loginId': '请输入有效的邮箱 / 用户名（至少 3 位）',
+  'auth.err.fields': '请填写完整',
+  'auth.err.network': '网络错误，请重试',
 };
 
 export type TranslationKey = keyof typeof zh;

@@ -12,9 +12,26 @@ export interface SaveDoc {
 
 export interface AccountDoc {
   _id: string; // accountId
-  openid?: string;
-  deviceId?: string;
   createdAt: number;
+  // —— 凭证（每种可选，至少一条）——
+  deviceId?: string; // 匿名设备（稀疏唯一）
+  openid?: string; // 微信（稀疏唯一）
+  password?: {
+    // 邮箱/用户名密码（ACCOUNT_DESIGN §2.2）
+    loginId: string; // 规范化的 email/username（稀疏唯一）
+    hash: string; // scrypt（shared/password.ts）
+  };
+  oauth?: { provider: string; sub: string }[]; // 第三方（provider+sub 唯一，SA-2）
+  // —— 资料 ——
+  displayName?: string;
+}
+
+/**
+ * 是否匿名：仅挂 device、无任何可恢复凭证（password/oauth/wx）。
+ * 联机/商店/充值要求 isAnonymous=false（ACCOUNT_DESIGN §2.2）。计算得出不落库，避免漂移。
+ */
+export function isAnonymousAccount(doc: AccountDoc): boolean {
+  return !doc.openid && !doc.password && !(doc.oauth && doc.oauth.length > 0);
 }
 
 export interface GachaHistoryDoc {
@@ -109,6 +126,15 @@ export async function createMongo(
   async function ensureIndexes(): Promise<void> {
     await collections.accounts.createIndex({ openid: 1 }, { sparse: true, unique: true });
     await collections.accounts.createIndex({ deviceId: 1 }, { sparse: true, unique: true });
+    // 密码登录 loginId 唯一（SA-1）；oauth provider+sub 唯一（SA-2，预建）。
+    await collections.accounts.createIndex(
+      { 'password.loginId': 1 },
+      { sparse: true, unique: true },
+    );
+    await collections.accounts.createIndex(
+      { 'oauth.provider': 1, 'oauth.sub': 1 },
+      { sparse: true, unique: true },
+    );
     await collections.gachaHistory.createIndex({ accountId: 1, ts: -1 });
     await collections.walletLog.createIndex({ accountId: 1, ts: -1 });
     await collections.matches.createIndex({ ts: -1 });

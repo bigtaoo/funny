@@ -187,10 +187,17 @@ initI18n
 
 ---
 
-## 8. 开放问题（实现前需拍板）
+## 8. 开放问题（已于 2026-06-14 拍板）
 
-- [ ] **loginId 用邮箱还是用户名还是都行**？（默认：都允许，邮箱可走找回密码，用户名不可）
-- [ ] **OAuth 首期接哪个 provider**？（默认：Google；GitHub 次之）
-- [ ] **找回密码**需要邮件服务（SMTP/第三方）——首期是否上，还是先只做改密？（默认：首期只做需登录的改密，找回密码后置）
-- [ ] **单机试玩攒的钱包/抽卡**：单机本无钱包（commercial 不参与），转正后从零开始——确认 OK？（默认：OK，单机无付费段）
-- [ ] **微信是否也允许绑定邮箱**（跨端继续玩）？（默认：允许，wx 账号 isAnonymous=false，可再 bind password）
+- [x] **loginId 用邮箱还是用户名还是都行** → **都允许**（`normalizeLoginId` 大小写/空格不敏感；邮箱可走后置找回密码，用户名不可）。
+- [x] **OAuth 首期接哪个 provider** → **首期不接 OAuth**（SA-2 留接口/错误码 `OAUTH_FAILED`，待有 provider 凭证 + 可联调回调域名再接 Google）。
+- [x] **找回密码** → **首期只做需登录的改密**（`/auth/password/change`）；找回密码（邮件服务）后置。
+- [x] **单机试玩攒的钱包/抽卡** → **OK，从零开始**（单机无 commercial 参与；转正后权威段以云端为准，仅 PvE 进度并入）。
+- [x] **微信是否也允许绑定邮箱** → **允许**（属 SA-2 bind，本期未实现）。
+
+> 实现备注（SA-1/SA-3/SA-4，2026-06-14 落地）：
+> - 密码哈希用 **Node 内置 `crypto.scrypt`**（`shared/password.ts`，零依赖、跨平台），**非 argon2/bcrypt**（避免 Windows 原生编译）。串格式 `scrypt$N$r$p$saltB64$hashB64`。
+> - `isAnonymous` **计算得出不落库**（`isAnonymousAccount(doc)`），device-only=true，绑 password/oauth/wx=false。
+> - `WEAK_PASSWORD` 由 handler 校验（openapi 的 password 不设 minLength，否则被 glue 通用校验抢先成 BAD_REQUEST）。
+> - 客户端文本输入用**隐藏 `<input>`**（桌面 + 移动软键盘）+ canvas 渲染（密码掩码），**未用** RoomScene 的定制字符键盘。
+> - 持久 token 存 `nw_token`；启动门控 `resolveEntry`（wx 静默 / 无 API 纯本地 / 有 token 复用 / 否则登录）。token 过期检测从简（乐观进大厅，pull 失败静默退化只读本地）。

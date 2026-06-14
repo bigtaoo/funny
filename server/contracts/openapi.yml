@@ -140,11 +140,13 @@ components:
 
     AuthResult:
       type: object
-      required: [token, accountId, isNew]
+      required: [token, accountId, isNew, isAnonymous]
       properties:
         token: { type: string }
         accountId: { type: string }
         isNew: { type: boolean }
+        # 仅挂 device、无可恢复凭证（password/oauth/wx）→ true。联机/商店/充值要求 false（SA-1）。
+        isAnonymous: { type: boolean }
 
     ShopItem:
       type: object
@@ -251,6 +253,100 @@ paths:
                 properties:
                   ok: { type: boolean, enum: [true] }
                   data: { $ref: '#/components/schemas/AuthResult' }
+
+  /auth/register:
+    post:
+      operationId: authRegister
+      tags: [auth]
+      summary: 密码注册（邮箱/用户名 + 密码，新建账号）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [loginId, password]
+              properties:
+                loginId: { type: string, minLength: 3, maxLength: 64 }
+                # 密码强度由 handler 校验，返回专属 WEAK_PASSWORD（schema 不设 minLength 以免被通用校验抢先）。
+                password: { type: string }
+                displayName: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/AuthResult' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+
+  /auth/login:
+    post:
+      operationId: authLogin
+      tags: [auth]
+      summary: 密码登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [loginId, password]
+              properties:
+                loginId: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/AuthResult' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /auth/password/change:
+    post:
+      operationId: authPasswordChange
+      tags: [auth]
+      summary: 改密（需登录；校验旧密码）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [oldPassword, newPassword]
+              properties:
+                oldPassword: { type: string }
+                # 强度由 handler 校验（WEAK_PASSWORD）。
+                newPassword: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [ok]
+                    properties:
+                      ok: { type: boolean, enum: [true] }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
 
   /save:
     get:

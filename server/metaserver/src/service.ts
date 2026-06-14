@@ -4,8 +4,16 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Collections, JwtConfig, SyncPatch } from '@nw/shared';
 import { ErrorCode, err, ok, signToken } from '@nw/shared';
+import { validateLoginId, validatePassword } from '@nw/shared';
 import { getOrCreateSave, putSave } from './save.js';
-import { exchangeWxCode, resolveByDevice, resolveByOpenid } from './accounts.js';
+import {
+  changePassword,
+  exchangeWxCode,
+  loginWithPassword,
+  registerWithPassword,
+  resolveByDevice,
+  resolveByOpenid,
+} from './accounts.js';
 
 export interface ServiceDeps {
   cols: Collections;
@@ -31,24 +39,79 @@ export class MetaService {
   async authWx(req: FastifyRequest) {
     const { code } = req.body as { code: string };
     const openid = await exchangeWxCode(code);
-    const { accountId, isNew } = await resolveByOpenid(
+    const { accountId, isNew, isAnonymous } = await resolveByOpenid(
       this.deps.cols,
       openid,
       this.deps.now(),
     );
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew });
+    return ok({ token, accountId, isNew, isAnonymous });
   }
 
   async authDevice(req: FastifyRequest) {
     const { deviceId } = req.body as { deviceId: string };
-    const { accountId, isNew } = await resolveByDevice(
+    const { accountId, isNew, isAnonymous } = await resolveByDevice(
       this.deps.cols,
       deviceId,
       this.deps.now(),
     );
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew });
+    return ok({ token, accountId, isNew, isAnonymous });
+  }
+
+  async authRegister(req: FastifyRequest, reply: FastifyReply) {
+    const { loginId, password, displayName } = req.body as {
+      loginId: string;
+      password: string;
+      displayName?: string;
+    };
+    const idErr = validateLoginId(loginId);
+    if (idErr) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, idErr));
+    const pwErr = validatePassword(password);
+    if (pwErr) return reply.code(400).send(err(ErrorCode.WEAK_PASSWORD, pwErr));
+
+    const result = await registerWithPassword(
+      this.deps.cols,
+      loginId,
+      password,
+      displayName,
+      this.deps.now(),
+    );
+    if (result.kind === 'taken') {
+      return reply.code(409).send(err(ErrorCode.LOGIN_ID_TAKEN, 'loginId already registered'));
+    }
+    const { accountId, isNew, isAnonymous } = result.account;
+    const token = signToken(accountId, this.deps.jwt);
+    return ok({ token, accountId, isNew, isAnonymous });
+  }
+
+  async authLogin(req: FastifyRequest, reply: FastifyReply) {
+    const { loginId, password } = req.body as { loginId: string; password: string };
+    const account = await loginWithPassword(this.deps.cols, loginId, password);
+    if (!account) {
+      return reply.code(401).send(err(ErrorCode.INVALID_CREDENTIALS, 'invalid loginId or password'));
+    }
+    const { accountId, isNew, isAnonymous } = account;
+    const token = signToken(accountId, this.deps.jwt);
+    return ok({ token, accountId, isNew, isAnonymous });
+  }
+
+  async authPasswordChange(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { oldPassword, newPassword } = req.body as {
+      oldPassword: string;
+      newPassword: string;
+    };
+    const pwErr = validatePassword(newPassword);
+    if (pwErr) return reply.code(400).send(err(ErrorCode.WEAK_PASSWORD, pwErr));
+    const result = await changePassword(this.deps.cols, accountId, oldPassword, newPassword);
+    if (result === 'no-password') {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'account has no password credential'));
+    }
+    if (result === 'invalid') {
+      return reply.code(401).send(err(ErrorCode.INVALID_CREDENTIALS, 'old password mismatch'));
+    }
+    return ok({ ok: true });
   }
 
   // ── save ──────────────────────────────────────────

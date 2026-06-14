@@ -47,6 +47,12 @@ export interface LobbySceneCallbacks {
   onOpenRoom(): void;
   /** Server-authoritative ladder standing (SaveData.pvp); shown as a header badge. */
   pvp?: { rank: string; elo: number };
+  /** SA-4: offline single-player mode — online entries route to login instead. */
+  offline?: boolean;
+  /** Open the login screen (offline mode header chip + gated online entries). */
+  onLogin?(): void;
+  /** Log out (clear persisted session) — shown when logged in. */
+  onLogout?(): void;
 }
 
 /** Campaign levels exposed in the lobby picker (1-3 = content, 4 = swarm stress test). */
@@ -79,6 +85,9 @@ export class LobbyScene implements Scene {
   private campaignBtnRects: Rect[] = [];
   /** Hit rect for the bottom-nav "social" slot (opens RoomScene). */
   private socialNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Hit rect for the top-right account chip (login when offline / logout when on). */
+  private accountChipRect: Rect | null = null;
+  private accountChipFn: (() => void) | null = null;
 
   private readonly unsubs: Array<() => void> = [];
 
@@ -130,9 +139,17 @@ export class LobbyScene implements Scene {
         return;
       }
     }
+    const ac = this.accountChipRect;
+    if (ac && this.accountChipFn &&
+        x >= ac.x && x <= ac.x + ac.w && y >= ac.y && y <= ac.y + ac.h) {
+      this.accountChipFn();
+      return;
+    }
     const s = this.socialNavRect;
     if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) {
-      this.cb.onOpenRoom();
+      // Online play requires an account; in offline mode route to login.
+      if (this.cb.offline && this.cb.onLogin) this.cb.onLogin();
+      else this.cb.onOpenRoom();
       return;
     }
   }
@@ -172,16 +189,37 @@ export class LobbyScene implements Scene {
     subtitle.anchor.set(0.5, 0.5); subtitle.x = w / 2; subtitle.y = tbH * 0.78;
     this.container.addChild(subtitle);
 
-    // Ranked badge (top-right of header) — server-authoritative pvp from SaveData.
-    if (this.cb.pvp) {
+    // Top-right account chip (SA-4): offline → login/register entry; online →
+    // server-authoritative ladder badge with a small logout affordance.
+    const chipX = w - Math.round(w * 0.04);
+    if (this.cb.offline) {
+      const login = txt(t('auth.loginEntry'), Math.round(h * 0.024), C.gold, true);
+      login.anchor.set(1, 0.5); login.x = chipX; login.y = tbH * 0.5;
+      this.container.addChild(login);
+      const pad = Math.round(h * 0.02);
+      this.accountChipRect = {
+        x: login.x - login.width - pad, y: tbH * 0.5 - login.height / 2 - pad,
+        w: login.width + 2 * pad, h: login.height + 2 * pad,
+      };
+      this.accountChipFn = this.cb.onLogin ?? null;
+    } else if (this.cb.pvp) {
       const pvp = this.cb.pvp;
       const rankName = t(('rank.' + pvp.rank) as TranslationKey);
       const badge = pvp.rank === 'unranked' ? rankName : `${rankName} · ${pvp.elo}`;
       const badgeLabel = txt(badge, Math.round(h * 0.022), C.gold, true);
-      badgeLabel.anchor.set(1, 0.5);
-      badgeLabel.x = w - Math.round(w * 0.04);
-      badgeLabel.y = tbH * 0.5;
+      badgeLabel.anchor.set(1, 0.5); badgeLabel.x = chipX; badgeLabel.y = tbH * 0.40;
       this.container.addChild(badgeLabel);
+      if (this.cb.onLogout) {
+        const out = txt(t('auth.logout'), Math.round(h * 0.018), C.light);
+        out.anchor.set(1, 0.5); out.x = chipX; out.y = tbH * 0.68;
+        this.container.addChild(out);
+        const pad = Math.round(h * 0.012);
+        this.accountChipRect = {
+          x: out.x - out.width - pad, y: out.y - out.height / 2 - pad,
+          w: out.width + 2 * pad, h: out.height + 2 * pad,
+        };
+        this.accountChipFn = this.cb.onLogout;
+      }
     }
 
     // Feature blocks
