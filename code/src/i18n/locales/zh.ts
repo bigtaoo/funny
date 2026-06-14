@@ -166,6 +166,50 @@ export const zh = {
   'auth.err.loginId': '请输入有效的邮箱 / 用户名（至少 3 位）',
   'auth.err.fields': '请填写完整',
   'auth.err.network': '网络错误，请重试',
+
+  // ── 商店 / 充值（S2-6） ──────────────────────────────────────────────────────
+  'shop.title': '商店',
+  'shop.coins': '金币：{coins}',
+  'shop.buy': '购买',
+  'shop.owned': '已拥有',
+  'shop.bought': '购买成功',
+  'shop.insufficient': '金币不足',
+  'shop.error': '购买失败，请重试',
+  'shop.back': '← 返回',
+  'shop.openGacha': '🎁 盲盒',
+  'shop.recharge': '💎 充值',
+  'shop.rechargeTitle': '输入充值码',
+  'shop.rechargeHint': '测试入口：输入充值码即刻到账',
+  'shop.rechargeConfirm': '确认',
+  'shop.rechargeCancel': '取消',
+  'shop.rechargeOk': '充值成功 +{coins}',
+  'shop.rechargeFail': '充值码无效',
+  'shop.tapToType': '点此输入',
+  'shop.skinLabel': '皮肤',
+  'shop.loading': '加载中…',
+  'shop.empty': '暂无商品',
+
+  // ── 盲盒（S2-6） ──────────────────────────────────────────────────────────────
+  'gacha.title': '盲盒',
+  'gacha.coins': '金币：{coins}',
+  'gacha.drawOne': '单抽 {cost}',
+  'gacha.drawTen': '十连 {cost}',
+  'gacha.pity': '保底 {cur}/{max}',
+  'gacha.insufficient': '金币不足',
+  'gacha.error': '抽取失败，请重试',
+  'gacha.back': '← 返回',
+  'gacha.results': '本次获得',
+  'gacha.new': 'NEW',
+  'gacha.duplicate': '重复',
+  'gacha.tapContinue': '点击任意处继续',
+  'gacha.drawing': '抽取中',
+  'gacha.loading': '加载中…',
+
+  // ── 稀有度 ────────────────────────────────────────────────────────────────────
+  'rarity.common': '普通',
+  'rarity.rare': '稀有',
+  'rarity.epic': '史诗',
+  'rarity.legendary': '传说',
 };
 
 export type TranslationKey = keyof typeof zh;

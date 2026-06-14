@@ -27,6 +27,7 @@ const C = {
   btnOff: 0xbbbbbb,
   accent: 0x4477cc,
   gold:   0xcc9900,
+  green:  0x4a9e4a,
   red:    0xcc3333,
 };
 
@@ -45,6 +46,8 @@ export interface LobbySceneCallbacks {
   onStartCampaign(levelIndex: number): void;
   /** Open the friend room (online play). Wired to the bottom-nav "social" slot. */
   onOpenRoom(): void;
+  /** Open the shop (economy). Wired to the bottom-nav "shop" slot (S2-6). */
+  onOpenShop(): void;
   /** Server-authoritative ladder standing (SaveData.pvp); shown as a header badge. */
   pvp?: { rank: string; elo: number };
   /** SA-4: offline single-player mode — online entries route to login instead. */
@@ -85,6 +88,8 @@ export class LobbyScene implements Scene {
   private campaignBtnRects: Rect[] = [];
   /** Hit rect for the bottom-nav "social" slot (opens RoomScene). */
   private socialNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Hit rect for the bottom-nav "shop" slot (opens ShopScene). */
+  private shopNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the top-right account chip (login when offline / logout when on). */
   private accountChipRect: Rect | null = null;
   private accountChipFn: (() => void) | null = null;
@@ -150,6 +155,13 @@ export class LobbyScene implements Scene {
       // Online play requires an account; in offline mode route to login.
       if (this.cb.offline && this.cb.onLogin) this.cb.onLogin();
       else this.cb.onOpenRoom();
+      return;
+    }
+    const sh = this.shopNavRect;
+    if (x >= sh.x && x <= sh.x + sh.w && y >= sh.y && y <= sh.y + sh.h) {
+      // The shop spends server-authoritative coins → requires an account too.
+      if (this.cb.offline && this.cb.onLogin) this.cb.onLogin();
+      else this.cb.onOpenShop();
       return;
     }
   }
@@ -319,11 +331,12 @@ export class LobbyScene implements Scene {
       const slotW = w / 5;
       const slotX = i * slotW + slotW / 2;
       const slotY = h - navH / 2;
-      // "social" (i === 4) is the only wired nav slot besides home → show it active.
-      const active = i === 2 || i === 4;
+      // Wired slots: home (2), shop (3), social (4) → shown active.
+      const active = i === 2 || i === 3 || i === 4;
+      const dotColor = i === 2 ? C.accent : (i === 3 ? C.green : (i === 4 ? C.gold : C.mid));
 
       const dot = new PIXI.Graphics();
-      dot.beginFill(i === 2 ? C.accent : (i === 4 ? C.gold : C.mid), active ? 0.8 : 0.3);
+      dot.beginFill(dotColor, active ? 0.8 : 0.3);
       dot.drawCircle(0, 0, Math.round(navH * 0.17));
       dot.endFill();
       dot.x = slotX; dot.y = slotY - Math.round(navH * 0.18);
@@ -334,7 +347,9 @@ export class LobbyScene implements Scene {
       navLabel.x = slotX; navLabel.y = slotY + Math.round(navH * 0.04);
       navBg.addChild(navLabel);
 
-      if (i === 4) {
+      if (i === 3) {
+        this.shopNavRect = { x: i * slotW, y: h - navH, w: slotW, h: navH };
+      } else if (i === 4) {
         this.socialNavRect = { x: i * slotW, y: h - navH, w: slotW, h: navH };
       }
     });

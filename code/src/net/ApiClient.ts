@@ -6,7 +6,38 @@
 // 其云同步随微信联机合规一并排期；当前 SaveManager 在无 baseUrl / fetch 时退化为纯本地（离线优先）。
 
 import type { AuthCredential } from '../platform/IPlatform';
-import type { SaveData, SyncPatch } from '../game/meta/SaveData';
+import type { SaveData, SyncPatch, Rarity } from '../game/meta/SaveData';
+
+// ── Economy DTOs (S2; mirror contracts/openapi.yml shop/gacha schemas) ──────────
+
+export interface ShopItem {
+  id: string;
+  cost: number;
+  kind: string;
+  grants?: string;
+}
+
+export interface GachaEntry {
+  itemId: string;
+  weight: number;
+  rarity: Rarity;
+}
+
+export interface GachaPool {
+  id: string;
+  costSingle: number;
+  costTen?: number;
+  pityThreshold?: number;
+  dupePolicy?: string;
+  entries: GachaEntry[];
+}
+
+export interface GachaResultEntry {
+  itemId: string;
+  rarity: Rarity;
+  duplicate: boolean;
+  converted?: { kind: string; amount: number };
+}
 
 type ApiResp<T> =
   | { ok: true; data: T }
@@ -107,6 +138,51 @@ export class ApiClient {
       throw new ApiError(json.error.code, json.error.message);
     }
     return { kind: 'ok', save: json.data.save };
+  }
+
+  // ── 经济：商店 / 盲盒 / 广告 / 充值（S2，需登录 token）────────────
+  // 所有花币动作返回服务器回推的权威 SaveData（钱包/库存以服务器为准）。
+  // 余额不足 → ApiError('INSUFFICIENT_FUNDS')（402）；票据无效 → ApiError('INVALID_RECEIPT')（400）。
+
+  /** 商品列表（catalog 单一来源在服务端 @nw/shared）。 */
+  async getShopItems(): Promise<ShopItem[]> {
+    const data = await this.request<{ items: ShopItem[] }>('GET', '/shop/items');
+    return data.items;
+  }
+
+  /** 直购：扣币 → 发货 → 回推权威存档。 */
+  async shopBuy(itemId: string): Promise<{ save: SaveData; granted: string }> {
+    return this.post<{ save: SaveData; granted: string }>('/shop/buy', { itemId });
+  }
+
+  /** 盲盒池列表（含展开 entries 供展示）。 */
+  async getGachaPools(): Promise<GachaPool[]> {
+    const data = await this.request<{ pools: GachaPool[] }>('GET', '/gacha/pools');
+    return data.pools;
+  }
+
+  /** 抽卡（单抽 / 十连，原子，逐抽落库）。 */
+  async gachaDraw(
+    poolId: string,
+    count: 1 | 10,
+  ): Promise<{ save: SaveData; results: GachaResultEntry[] }> {
+    return this.post<{ save: SaveData; results: GachaResultEntry[] }>('/gacha/draw', {
+      poolId,
+      count,
+    });
+  }
+
+  /** 广告奖励（每日 cap；超限 → ApiError('DAILY_CAP_REACHED')，429）。 */
+  async adsReward(adToken: string): Promise<{ save: SaveData; granted: number }> {
+    return this.post<{ save: SaveData; granted: number }>('/ads/reward', { adToken });
+  }
+
+  /** 充值验单（票据幂等）。当前服务端 dev 桩：platform/receipt 任意非空即按档发币。 */
+  async iapVerify(
+    platform: string,
+    receipt: string,
+  ): Promise<{ save: SaveData; granted: number }> {
+    return this.post<{ save: SaveData; granted: number }>('/iap/verify', { platform, receipt });
   }
 
   // ── 内部 ────────────────────────────────────────────────

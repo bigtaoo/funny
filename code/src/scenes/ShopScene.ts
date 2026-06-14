@@ -1,0 +1,447 @@
+import * as PIXI from 'pixi.js-legacy';
+import { Scene } from './SceneManager';
+import { ILayout, Rect } from '../layout/ILayout';
+import { InputManager } from '../inputSystem/InputManager';
+import { t, TranslationKey } from '../i18n';
+import type { ShopItem } from '../net/ApiClient';
+
+// ── ShopScene (S2-6) — direct-purchase shop + virtual top-up entry ─────────────
+//
+// Canvas-drawn (mirrors LoginScene/RoomScene): a render()-on-change tree with a
+// flat hit-list, plus a hidden <input> for the top-up code overlay. The economy
+// itself is server-authoritative — every buy/top-up returns a fresh SaveData that
+// the app adopts; this scene only reads the current wallet via getCoins() and
+// re-renders. Gacha lives in its own scene, reached via the 🎁 button.
+
+const C = {
+  bg:     0xf5f0e8,
+  paper:  0xfaf6ee,
+  line:   0xc8d8e8,
+  margin: 0xffb3b3,
+  dark:   0x2c2c2a,
+  mid:    0x888888,
+  light:  0xdddddd,
+  btnOff: 0xbbbbbb,
+  accent: 0x4477cc,
+  gold:   0xcc9900,
+  green:  0x4a9e4a,
+  red:    0xcc3333,
+};
+
+function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
+  return new PIXI.Text(label, {
+    fontSize: size, fill: color, fontFamily: 'monospace',
+    fontWeight: bold ? 'bold' : 'normal',
+  });
+}
+
+/** Outcome of a buy/top-up — ok, or a message key to surface as a toast. */
+export type ShopActionResult =
+  | { ok: true; coins?: number }
+  | { ok: false; key: TranslationKey };
+
+export interface ShopSceneCallbacks {
+  onBack(): void;
+  /** Current server-authoritative coin balance (read from SaveData). */
+  getCoins(): number;
+  /** Owned skin ids (to mark already-purchased items). */
+  getOwnedSkins(): string[];
+  loadItems(): Promise<ShopItem[]>;
+  buy(itemId: string): Promise<ShopActionResult>;
+  /** Virtual top-up: a magic code credits coins (dev stub; real IAP SDK later). */
+  recharge(code: string): Promise<ShopActionResult>;
+  openGacha(): void;
+}
+
+interface Hit { rect: Rect; fn: () => void; }
+
+export class ShopScene implements Scene {
+  readonly container: PIXI.Container;
+
+  private readonly w: number;
+  private readonly h: number;
+  private readonly cb: ShopSceneCallbacks;
+
+  private items: ShopItem[] | null = null;
+  private loading = true;
+  private busy = false; // a buy/top-up is in flight — block further taps
+
+  /** Transient toast message (success / error), cleared on next action. */
+  private toast: { text: string; color: number } | null = null;
+
+  /** Top-up code overlay state. */
+  private rechargeOpen = false;
+  private rechargeCode = '';
+  private caretOn = true;
+  private caretTimer = 0;
+
+  private hits: Hit[] = [];
+  private readonly unsubs: Array<() => void> = [];
+  private hiddenInput: HTMLInputElement | null = null;
+
+  constructor(layout: ILayout, input: InputManager, cb: ShopSceneCallbacks) {
+    this.container = new PIXI.Container();
+    this.w = layout.designWidth;
+    this.h = layout.designHeight;
+    this.cb = cb;
+    this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.setupHiddenInput();
+    this.render();
+    void this.loadItems();
+  }
+
+  // ── Scene interface ──────────────────────────────────────────────────────────
+
+  update(dt: number): void {
+    if (this.rechargeOpen) {
+      this.caretTimer += dt;
+      if (this.caretTimer >= 0.5) {
+        this.caretTimer = 0;
+        this.caretOn = !this.caretOn;
+        this.render();
+      }
+    }
+  }
+
+  destroy(): void {
+    this.unsubs.forEach((u) => u());
+    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+  }
+
+  // ── Loading ──────────────────────────────────────────────────────────────────
+
+  private async loadItems(): Promise<void> {
+    try {
+      this.items = await this.cb.loadItems();
+    } catch {
+      this.items = [];
+    }
+    this.loading = false;
+    this.render();
+  }
+
+  // ── Hidden input (top-up code capture) ─────────────────────────────────────────
+
+  private setupHiddenInput(): void {
+    if (typeof document === 'undefined') return; // non-DOM platform
+    const el = document.createElement('input');
+    el.type = 'text';
+    el.autocomplete = 'off';
+    el.setAttribute('autocapitalize', 'off');
+    el.setAttribute('autocorrect', 'off');
+    el.style.cssText =
+      'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;' +
+      'border:0;padding:0;margin:0;font-size:16px;z-index:-1;';
+    el.addEventListener('input', () => {
+      if (this.rechargeOpen) { this.rechargeCode = el.value; this.render(); }
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); void this.submitRecharge(); }
+    });
+    document.body.appendChild(el);
+    this.hiddenInput = el;
+  }
+
+  private openRecharge(): void {
+    this.rechargeOpen = true;
+    this.rechargeCode = '';
+    this.toast = null;
+    this.caretOn = true; this.caretTimer = 0;
+    const el = this.hiddenInput;
+    if (el) { el.value = ''; el.focus(); }
+    this.render();
+  }
+
+  private closeRecharge(): void {
+    this.rechargeOpen = false;
+    this.hiddenInput?.blur();
+    this.render();
+  }
+
+  private async submitRecharge(): Promise<void> {
+    if (this.busy) return;
+    const code = this.rechargeCode.trim();
+    if (!code) { this.closeRecharge(); return; }
+    this.busy = true;
+    this.rechargeOpen = false;
+    this.hiddenInput?.blur();
+    this.render();
+    const res = await this.cb.recharge(code);
+    this.busy = false;
+    this.toast = res.ok
+      ? { text: t('shop.rechargeOk', { coins: res.coins ?? 0 }), color: C.green }
+      : { text: t('shop.rechargeFail'), color: C.red };
+    this.render();
+  }
+
+  // ── Buy ──────────────────────────────────────────────────────────────────────
+
+  private async onBuy(itemId: string): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    this.toast = null;
+    this.render();
+    const res = await this.cb.buy(itemId);
+    this.busy = false;
+    this.toast = res.ok
+      ? { text: t('shop.bought'), color: C.green }
+      : { text: t(res.key), color: C.red };
+    this.render();
+  }
+
+  // ── Input ──────────────────────────────────────────────────────────────────────
+
+  private handleDown(x: number, y: number): void {
+    for (const hit of this.hits) {
+      const r = hit.rect;
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
+    }
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+
+  private render(): void {
+    this.container.removeChildren();
+    this.hits = [];
+
+    this.drawBackground();
+    const tbH = this.drawHeader();
+    this.drawList(tbH);
+    this.drawFooter();
+    if (this.toast) this.drawToast();
+    if (this.rechargeOpen) this.drawRechargeOverlay();
+  }
+
+  private drawBackground(): void {
+    const { w, h } = this;
+    const bg = new PIXI.Graphics();
+    bg.beginFill(C.bg); bg.drawRect(0, 0, w, h); bg.endFill();
+    const lineGap = Math.round(h / 28);
+    bg.lineStyle(1, C.line, 0.6);
+    for (let y = lineGap; y < h; y += lineGap) { bg.moveTo(0, y); bg.lineTo(w, y); }
+    bg.lineStyle(1, C.margin, 0.7);
+    const mx = Math.round(w * 0.09);
+    bg.moveTo(mx, 0); bg.lineTo(mx, h);
+    this.container.addChild(bg);
+  }
+
+  /** Header bar with title, back, and coin balance. Returns its height. */
+  private drawHeader(): number {
+    const { w, h } = this;
+    const tbH = Math.round(h * 0.12);
+    const titleBg = new PIXI.Graphics();
+    titleBg.beginFill(C.dark); titleBg.drawRect(0, 0, w, tbH); titleBg.endFill();
+    this.container.addChild(titleBg);
+
+    const title = txt(t('shop.title'), Math.round(h * 0.034), 0xffffff, true);
+    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
+    this.container.addChild(title);
+
+    const back = txt(t('shop.back'), Math.round(h * 0.026), C.light);
+    back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
+    this.container.addChild(back);
+    const pad = Math.round(h * 0.02);
+    this.hits.push({ rect: { x: 0, y: 0, w: back.x + back.width + pad, h: tbH }, fn: () => this.cb.onBack() });
+
+    // Coin balance (top-right).
+    const coins = txt(t('shop.coins', { coins: this.cb.getCoins() }), Math.round(h * 0.026), C.gold, true);
+    coins.anchor.set(1, 0.5); coins.x = w - Math.round(w * 0.04); coins.y = tbH / 2;
+    this.container.addChild(coins);
+
+    return tbH;
+  }
+
+  private drawList(tbH: number): void {
+    const { w, h } = this;
+    const listX = Math.round(w * 0.06);
+    const listW = w - listX * 2;
+    let y = tbH + Math.round(h * 0.04);
+
+    if (this.loading) {
+      const lbl = txt(t('shop.loading'), Math.round(h * 0.028), C.mid);
+      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = tbH + Math.round(h * 0.18);
+      this.container.addChild(lbl);
+      return;
+    }
+    if (!this.items || this.items.length === 0) {
+      const lbl = txt(t('shop.empty'), Math.round(h * 0.028), C.mid);
+      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = tbH + Math.round(h * 0.18);
+      this.container.addChild(lbl);
+      return;
+    }
+
+    const rowH = Math.round(h * 0.10);
+    const gap = Math.round(h * 0.018);
+    const owned = new Set(this.cb.getOwnedSkins());
+    for (const item of this.items) {
+      this.drawItemRow(item, owned.has(item.grants ?? item.id), listX, y, listW, rowH);
+      y += rowH + gap;
+    }
+  }
+
+  private drawItemRow(
+    item: ShopItem, isOwned: boolean, x: number, y: number, w: number, h: number,
+  ): void {
+    const box = new PIXI.Graphics();
+    box.beginFill(C.paper); box.lineStyle(1, C.line);
+    box.drawRoundedRect(0, 0, w, h, 6); box.endFill();
+    box.x = x; box.y = y;
+    this.container.addChild(box);
+
+    const accent = new PIXI.Graphics();
+    accent.beginFill(C.accent, 0.7); accent.drawRect(0, 0, 4, h); accent.endFill();
+    box.addChild(accent);
+
+    // Name (placeholder: kind label + id, real skin art/names pending).
+    const name = txt(`${t('shop.skinLabel')} · ${item.id}`, Math.round(h * 0.22), C.dark, true);
+    name.anchor.set(0, 0.5); name.x = x + Math.round(w * 0.04); name.y = y + h * 0.36;
+    this.container.addChild(name);
+
+    const cost = txt(`◎ ${item.cost}`, Math.round(h * 0.22), C.gold, true);
+    cost.anchor.set(0, 0.5); cost.x = x + Math.round(w * 0.04); cost.y = y + h * 0.70;
+    this.container.addChild(cost);
+
+    // Buy / owned button (right).
+    const bw = Math.round(w * 0.26);
+    const bh = Math.round(h * 0.56);
+    const bx = x + w - bw - Math.round(w * 0.03);
+    const by = y + (h - bh) / 2;
+    const canBuy = !isOwned && !this.busy && this.cb.getCoins() >= item.cost;
+
+    const btn = new PIXI.Graphics();
+    btn.beginFill(isOwned ? C.btnOff : (canBuy ? C.dark : C.btnOff));
+    btn.lineStyle(2, isOwned ? C.light : (canBuy ? C.green : C.light));
+    btn.drawRoundedRect(0, 0, bw, bh, 6); btn.endFill();
+    btn.x = bx; btn.y = by;
+    this.container.addChild(btn);
+
+    const blabel = txt(isOwned ? t('shop.owned') : t('shop.buy'),
+      Math.round(bh * 0.40), isOwned ? C.mid : 0xffffff, true);
+    blabel.anchor.set(0.5, 0.5); blabel.x = bx + bw / 2; blabel.y = by + bh / 2;
+    this.container.addChild(blabel);
+
+    if (!isOwned && !this.busy) {
+      this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: () => void this.onBuy(item.id) });
+    }
+  }
+
+  /** Bottom row: gacha + top-up entries. */
+  private drawFooter(): void {
+    const { w, h } = this;
+    const navH = Math.round(h * 0.10);
+    const y = h - navH;
+    const navBg = new PIXI.Graphics();
+    navBg.beginFill(C.dark, 0.92); navBg.drawRect(0, y, w, navH); navBg.endFill();
+    this.container.addChild(navBg);
+
+    const bw = Math.round(w * 0.40);
+    const bh = Math.round(navH * 0.62);
+    const by = y + (navH - bh) / 2;
+    const gap = Math.round(w * 0.04);
+    const totalW = bw * 2 + gap;
+    const startX = (w - totalW) / 2;
+
+    this.addButton(t('shop.openGacha'), startX, by, bw, bh, C.dark, C.gold, () => this.cb.openGacha());
+    this.addButton(t('shop.recharge'), startX + bw + gap, by, bw, bh, C.dark, C.green,
+      () => this.openRecharge());
+  }
+
+  private drawToast(): void {
+    const { w, h } = this;
+    const toast = this.toast!;
+    const lbl = txt(toast.text, Math.round(h * 0.026), 0xffffff, true);
+    const padX = Math.round(w * 0.04);
+    const padY = Math.round(h * 0.012);
+    const bw = lbl.width + padX * 2;
+    const bh = lbl.height + padY * 2;
+    const bx = (w - bw) / 2;
+    const by = Math.round(h * 0.80);
+    const bg = new PIXI.Graphics();
+    bg.beginFill(toast.color, 0.95); bg.drawRoundedRect(0, 0, bw, bh, 8); bg.endFill();
+    bg.x = bx; bg.y = by;
+    this.container.addChild(bg);
+    lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
+    this.container.addChild(lbl);
+  }
+
+  private drawRechargeOverlay(): void {
+    const { w, h } = this;
+    // Overlay is modal: discard the base-scene hits drawn underneath so only the
+    // overlay's controls are tappable (handleDown matches the first hit in order).
+    this.hits = [];
+
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.7); dim.drawRect(0, 0, w, h); dim.endFill();
+    this.container.addChild(dim);
+
+    const panelW = Math.round(w * 0.84);
+    const panelH = Math.round(h * 0.40);
+    const px = (w - panelW) / 2;
+    const py = (h - panelH) / 2;
+    const panel = new PIXI.Graphics();
+    panel.beginFill(C.bg); panel.lineStyle(2, C.gold);
+    panel.drawRoundedRect(0, 0, panelW, panelH, 10); panel.endFill();
+    panel.x = px; panel.y = py;
+    this.container.addChild(panel);
+
+    const title = txt(t('shop.rechargeTitle'), Math.round(h * 0.030), C.dark, true);
+    title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.03);
+    this.container.addChild(title);
+
+    const hint = txt(t('shop.rechargeHint'), Math.round(h * 0.020), C.mid);
+    hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = py + Math.round(h * 0.075);
+    this.container.addChild(hint);
+
+    // Code field.
+    const fieldW = Math.round(panelW * 0.84);
+    const fieldH = Math.round(h * 0.072);
+    const fieldX = (w - fieldW) / 2;
+    const fieldY = py + Math.round(h * 0.13);
+    const box = new PIXI.Graphics();
+    box.beginFill(C.paper); box.lineStyle(2, C.accent);
+    box.drawRoundedRect(0, 0, fieldW, fieldH, 6); box.endFill();
+    box.x = fieldX; box.y = fieldY;
+    this.container.addChild(box);
+
+    const hasText = this.rechargeCode.length > 0;
+    const display = (hasText ? this.rechargeCode : t('shop.tapToType')) + (hasText && this.caretOn ? '|' : '');
+    const valTxt = txt(display, Math.round(fieldH * 0.40), hasText ? C.dark : C.light);
+    valTxt.anchor.set(0, 0.5); valTxt.x = fieldX + Math.round(fieldW * 0.04); valTxt.y = fieldY + fieldH / 2;
+    this.container.addChild(valTxt);
+    this.hits.push({ rect: { x: fieldX, y: fieldY, w: fieldW, h: fieldH }, fn: () => this.hiddenInput?.focus() });
+
+    // Confirm / cancel.
+    const btnW = Math.round(panelW * 0.40);
+    const btnH = Math.round(h * 0.072);
+    const btnY = py + panelH - btnH - Math.round(h * 0.03);
+    const btnGap = Math.round(panelW * 0.04);
+    const btnStartX = px + (panelW - btnW * 2 - btnGap) / 2;
+    this.addButton(t('shop.rechargeCancel'), btnStartX, btnY, btnW, btnH, C.paper, C.mid,
+      () => this.closeRecharge(), C.dark);
+    this.addButton(t('shop.rechargeConfirm'), btnStartX + btnW + btnGap, btnY, btnW, btnH, C.dark, C.green,
+      () => void this.submitRecharge());
+
+    // Hit priority (handleDown returns on first match): field + buttons above were
+    // pushed first; a panel-area no-op next; the full-screen cancel goes LAST so a
+    // tap anywhere outside the panel dismisses it, but taps inside don't.
+    this.hits.push({ rect: { x: px, y: py, w: panelW, h: panelH }, fn: () => { /* keep open */ } });
+    this.hits.push({ rect: { x: 0, y: 0, w, h }, fn: () => this.closeRecharge() });
+  }
+
+  private addButton(
+    label: string, x: number, y: number, w: number, h: number,
+    fill: number, stroke: number, fn: () => void, textColor = 0xffffff,
+  ): void {
+    const g = new PIXI.Graphics();
+    g.beginFill(fill); g.lineStyle(2, stroke);
+    g.drawRoundedRect(0, 0, w, h, 6); g.endFill();
+    g.x = x; g.y = y;
+    this.container.addChild(g);
+
+    const tl = txt(label, Math.round(h * 0.38), textColor, true);
+    tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
+    this.container.addChild(tl);
+
+    this.hits.push({ rect: { x, y, w, h }, fn });
+  }
+}

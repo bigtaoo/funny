@@ -5,6 +5,8 @@ import { IntroScene } from './scenes/IntroScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { GameScene } from './scenes/GameScene';
 import { RoomScene } from './scenes/RoomScene';
+import { ShopScene } from './scenes/ShopScene';
+import { GachaScene } from './scenes/GachaScene';
 import { LoginScene, type AuthOutcome } from './scenes/LoginScene';
 import { ResultScene, type EloResult } from './scenes/ResultScene';
 import { ReplayScene } from './scenes/ReplayScene';
@@ -123,6 +125,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
       onStartGame(_opponentName: string) { goGame(); },
       onStartCampaign(levelIndex: number) { goCampaign(CAMPAIGN_LEVEL_ORDER[levelIndex]); },
       onOpenRoom() { goRoom(); },
+      onOpenShop() { goShop(); },
       pvp: { rank: pvp.rank, elo: pvp.elo },
       offline: offlineMode,
       onLogin: () => goLogin(),
@@ -225,6 +228,77 @@ export async function startApp(platform: IPlatform): Promise<void> {
     }
 
     manager.goto(scene);
+  }
+
+  // Shop (S2-6): server-authoritative economy. Every buy/top-up returns a fresh
+  // SaveData that we adopt; the scene reads wallet/inventory from SaveManager.
+  // Reached only when online (api + token); the lobby routes the shop nav slot to
+  // login while offline.
+  function goShop(): void {
+    if (!api) { goLobby(); return; }
+    const client = api; // narrowed; closures below capture it as ApiClient
+    inLobby = false;
+    window.removeEventListener('resize', onResize);
+    manager.goto(new ShopScene(layout, input, {
+      onBack() { goLobby(); },
+      getCoins: () => saveManager.get().wallet.coins,
+      getOwnedSkins: () => saveManager.get().inventory.skins,
+      loadItems: () => client.getShopItems(),
+      async buy(itemId) {
+        try {
+          const { save } = await client.shopBuy(itemId);
+          saveManager.adoptServer(save);
+          return { ok: true };
+        } catch (e) {
+          return {
+            ok: false,
+            key: e instanceof ApiError && e.code === 'INSUFFICIENT_FUNDS'
+              ? 'shop.insufficient' : 'shop.error',
+          };
+        }
+      },
+      async recharge(code) {
+        // Virtual top-up entry (dev): a magic code maps to an IAP tier and credits
+        // coins via the server's dev stub. A fresh platform tag per call keeps the
+        // receiptId unique so repeated top-ups each grant. Real platform SDK on launch.
+        const tier = rechargeTier(code);
+        if (!tier) return { ok: false, key: 'shop.rechargeFail' };
+        try {
+          const { save, granted } = await client.iapVerify(`dev-${Date.now()}`, `tier:${tier}`);
+          saveManager.adoptServer(save);
+          return { ok: true, coins: granted };
+        } catch {
+          return { ok: false, key: 'shop.rechargeFail' };
+        }
+      },
+      openGacha() { goGacha(); },
+    }));
+  }
+
+  function goGacha(): void {
+    if (!api) { goLobby(); return; }
+    const client = api; // narrowed; closures below capture it as ApiClient
+    inLobby = false;
+    window.removeEventListener('resize', onResize);
+    manager.goto(new GachaScene(layout, input, {
+      onBack() { goShop(); },
+      getCoins: () => saveManager.get().wallet.coins,
+      getPity: (poolId) => saveManager.get().gacha.pity[poolId] ?? 0,
+      loadPools: () => client.getGachaPools(),
+      async draw(poolId, count) {
+        try {
+          const { save, results } = await client.gachaDraw(poolId, count);
+          saveManager.adoptServer(save);
+          return { ok: true, results };
+        } catch (e) {
+          return {
+            ok: false,
+            key: e instanceof ApiError && e.code === 'INSUFFICIENT_FUNDS'
+              ? 'gacha.insufficient' : 'gacha.error',
+          };
+        }
+      },
+    }));
   }
 
   /** Persist a just-finished local match's recording; returns it for the result screen. */
@@ -376,6 +450,20 @@ export async function startApp(platform: IPlatform): Promise<void> {
     void resolveEntry();
   } else {
     goIntro();
+  }
+}
+
+/**
+ * Map a virtual top-up code to an IAP tier (S2-6 dev entry). Replaces the real
+ * platform purchase SDK until launch; the magic word "taowang" tops up the mid
+ * tier, with -s / -l suffixes for the small / large tiers.
+ */
+function rechargeTier(code: string): 'small' | 'mid' | 'large' | null {
+  switch (code.trim().toLowerCase()) {
+    case 'taowang':   return 'mid';
+    case 'taowang-s': return 'small';
+    case 'taowang-l': return 'large';
+    default:          return null;
   }
 }
 

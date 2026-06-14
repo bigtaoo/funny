@@ -127,6 +127,14 @@ export class SaveManager {
     return this.refresh();
   }
 
+  /**
+   * 采纳服务器经济操作（商店/盲盒/充值/广告）回推的权威存档（S2）。钱包/库存/盲盒/pvp
+   * 等权威段以服务器为准，客户端同步段合并本地。与 refresh 不同的是直接吃回执，不再发请求。
+   */
+  adoptServer(save: SaveData): void {
+    this.reconcile(save);
+  }
+
   /** 立即清空防抖、强制上行（场景切换 / 退出前调用）。 */
   async flush(): Promise<void> {
     if (this.pushTimer != null) {
