@@ -8,7 +8,8 @@ export interface MetaEnv extends ServerEnv {
 export function loadMetaEnv(): MetaEnv {
   return {
     ...loadServerEnv(),
-    port: Number(process.env.NW_META_PORT ?? 8080),
+    // 默认 18080：Windows(Hyper-V/WSL)常把 8080 纳入 netsh 保留端口段，listen 报 EACCES。
+    port: Number(process.env.NW_META_PORT ?? 18080),
     host: process.env.NW_META_HOST ?? '0.0.0.0',
   };
 }

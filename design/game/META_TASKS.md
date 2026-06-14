@@ -11,12 +11,15 @@
 | 阶段 | 主题 | 出口标准 |
 |---|---|---|
 | **S0** | 存档底座 + 云存档 + 匿名账号 | 多设备云存档同步跑通，迁移链就位 |
+| **SA** | 账号系统（登录 + 单机门槛） | 默认登录可进、单机试玩可玩、匿名可转正 |
 | **S1** | 好友房 + 锁步联机 + 重连 | 两台真机好友房对局逐 tick 一致，可重连 |
 | **S2** | 经济：服务端钱包 / 商店 / 盲盒 / 广告校验 | 钱包服务器权威，刷不动；盲盒逐抽落库 |
+| **S5** | commercial 商业服务（钱包/充值/消费/盲盒，独立库） | 钱包权威迁 commercial，扣币+发货 saga 收敛 |
 | **S3** | PvE 养成（材料 + 硬墙）+ 收集 + 选关 | 养成 / 收集 / 选关闭环；硬墙单测绿 |
 | **S4** | IAP 验单 + 反作弊 hash + 上线加固 | 充值安全，对局 hash 比对 |
 
-> 先打通 S0/S1（云存档 + 好友联机，核心诉求），再铺 S2/S3。
+> 先打通 S0/S1（云存档 + 好友联机，核心诉求），再铺 SA/S5/S2/S3。
+> **2026-06-14 新增三块**（细分设计见各专文）：**SA 账号系统**（`ACCOUNT_DESIGN.md`）、**S5 commercial 商业服务**（`COMMERCIAL_DESIGN.md`，钱包权威迁出 meta saves）、**S1-M1~M4 gateway/matchsvc 拆分**（`MATCHSVC_DESIGN.md` + `GATEWAY_DESIGN.md`，已在 §S1 架构修订迁移登记）。建议顺序：SA（登录门槛，门面）→ S5（经济权威底座）→ S1-M（联机拓扑拆分，动链路最大放最后）。
 
 ---
 
@@ -44,6 +47,20 @@
 
 ### 联调出口
 - [ ] **S0-8 多设备同步验收**：A 设备改存档 → B 设备启动拉到最新；离线改 → 上线合并不丢。**依赖**：S0-5,7。
+
+---
+
+## SA — 账号系统（登录 + 单机门槛）
+
+> 细分设计见 `ACCOUNT_DESIGN.md`。决策：默认要求登录 + 登录界面带「单机试玩」入口；四种登录并存（邮箱密码 / OAuth / 微信 / 匿名升级）；一账号多凭证，匿名可转正不丢档。
+
+### 服务器（meta）
+- [ ] **SA-1 accounts 模型扩展 + 密码登录**：`accounts` 加 `password{loginId,hash}`/`oauth[]`/`displayName`/`isAnonymous` + 索引（`password.loginId` 稀疏唯一、`oauth.provider+sub` 唯一）；`POST /auth/register`（argon2/bcrypt 哈希）+ `POST /auth/login`（比对哈希）+ `POST /auth/password/change`；AuthResult 加 `isAnonymous`。**依赖**：S0-6,7。**验收**：注册→登录→改密闭环；重复 loginId 拒；密码哈希存储。
+- [ ] **SA-2 OAuth + 绑定/升级**：`POST /auth/oauth`（授权码流，先接 Google，`state` 防 CSRF，服务端换 token 取 sub）；`POST /auth/bind`（持现有 JWT 把新凭证挂当前 accountId，未占用则升级 `isAnonymous=false`、存档/钱包保留；已占用返 `ALREADY_BOUND`）。**依赖**：SA-1。**验收**：OAuth 登录通；匿名 device 账号 bind 邮箱后同 accountId、PvE 进度不丢。
+
+### 客户端
+- [ ] **SA-3 LoginScene + 登录门控**：新增 `LoginScene`（canvas，视图机 `landing/password/register/oauthWait`，复用 RoomScene 输入键盘模式，i18n `auth.*` zh/en/de 全翻）；`app.ts` 启动门控改为「非微信 + 无有效会话 → goLogin」（微信静默 wx.login 跳过，A6）；正式登录后持久化 token（`nw_token` + 过期）免重输。**依赖**：SA-1、S0-5。**验收**：默认进登录界面；登录后直达大厅；重启免重输密码。
+- [ ] **SA-4 单机门槛 + 转正**：登录界面「单机试玩」→ `goLobby({offline:true})`；大厅屏蔽联机/排位/商店/充值入口并引导登录，PvE/PvP-vs-AI/本地录像可玩；登录/注册成功走 `SaveManager.reconcile` 合并本地匿名存档（PvE 进度不丢）；新增登出（清 token 回登录，本地存档保留）。**依赖**：SA-3。**验收**：单机可玩且联机/付费被拦；试玩转正后进度合并不丢。
 
 ---
 
@@ -93,6 +110,24 @@
 - [ ] **S2-6 ShopScene + GachaScene**：商品格/购买确认/盲盒开箱动画/保底进度（见 `UI_DESIGN.md`）。**依赖**：S2-5。**验收**：购买与开箱闭环。
 - [ ] **S2-7 防刷验收**：本地改 `wallet.coins` 后任何花币动作被服务器拒（以服务器值为准）。**依赖**：S2-1~5。
 
+> ⚠️ **S2 与 S5 的关系**：原 S2 把钱包/商店/盲盒放在 meta 内。2026-06-14 决策把这些迁到独立 **commercial 服务**（见 S5 + `COMMERCIAL_DESIGN.md`）。落地顺序上 **S5 取代 S2-1~4 的服务端钱包实现**（meta 改为编排者调 commercial），S2-5~7 客户端/防刷验收仍有效（客户端只认 meta，不感知 commercial）。若先做 S5 则 S2 服务端任务并入 S5。
+
+---
+
+## S5 — commercial 商业服务（钱包 / 充值 / 消费 / 盲盒，独立库）
+
+> 细分设计见 `COMMERCIAL_DESIGN.md`。决策（M21）：钱包权威从 meta `saves.wallet` 迁到 **commercial 独立库** `notebook_wars_commercial`；commercial 玩家不可达，**meta 唯一调用方**（编排者）；抽卡「扣币+随机+记账」同库原子，物品由 meta 据结果发货；跨服务用 orderId 幂等 + 待发货对账（saga）。
+
+### 服务器
+- [ ] **S5-1 commercial 包 + 独立库**：`server/` 新增 workspace `commercial`（CJS，对齐 gameserver 结构）；`createCommercialMongo`（库名 `notebook_wars_commercial`，集合 `wallets`/`ledger`/`orders`/`recharges`/`gachaHistory` + 索引）；`NW_COMM_PORT`(默认 18082)/`NW_COMM_MONGO_*`/`NW_INTERNAL_KEY`（内部密钥鉴权 `/internal/*`，不暴露公网）。**依赖**：S0-6。**验收**：`tsc -b` 全绿；commercial 起得来、连独立库；无内部密钥的请求被拒。
+- [ ] **S5-2 钱包 + 流水**：`GET /internal/wallet`（余额+pity）；`wallets` 单文档原子扣/加币（`coins>=cost` 守卫）+ 每笔写 `ledger`。**依赖**：S5-1。**验收**：并发扣币不超支；每次余额变更有流水。
+- [ ] **S5-3 盲盒 RNG + 商店扣币**：`POST /internal/gacha/draw`（crypto 真随机按 weight + 保底，扣币+RNG+写 gachaHistory/orders 同操作，`orderId` 幂等）；`POST /internal/shop/charge`（扣币+orders）；`POST /internal/order/delivered`（闭环）。**依赖**：S5-2。**验收**：单抽/十连原子；保底命中可复现；orderId 重放返回原结果不重扣。
+- [ ] **S5-4 充值 + 广告加币**：`POST /internal/recharge/verify`（验平台票据→加币→recharges 幂等）；`POST /internal/ads/credit`（meta 已校验后加币记账）。**依赖**：S5-2。**验收**：未验单不发币；重复票据/重复 receiptId 幂等。
+- [ ] **S5-5 meta 编排 + 钱包镜像 + 对账**：meta 的 `/shop/buy`/`/gacha/draw`/`/ads/reward`/`/iap/verify` 从 501 改为「校验 JWT → 调 commercial → 据结果写 inventory（meta 库，orderId 幂等）→ 标 delivered → 写 `SaveData.wallet/gacha` 镜像 → 回推」；`GET /save` 顺带拉 commercial 余额填镜像；未发货订单对账（GET /save 顺带 + 兜底定时扫 `orders status:charged`）。`shared/mongo.ts` 从 meta 库移除 gachaHistory/walletLog/iapReceipts。**依赖**：S5-3,4。**验收**：抽卡端到端（扣币→发物品→镜像刷新）；meta 在发货前崩 → 下次 GET /save 补发不丢不重。
+
+### 客户端
+- [ ] **S5-6 客户端零感知验收**：客户端继续只读 `save.wallet.coins`、只调 meta economy 端点（不感知 commercial）；进 ShopScene 前 `GET /save` 刷新余额镜像。**依赖**：S5-5、S2-5。**验收**：客户端无需改动钱包读取逻辑；余额展示与 commercial 权威一致。
+
 ---
 
 ## S3 — PvE 养成 + 收集 + 选关
@@ -115,7 +150,7 @@
 
 ## i18n（贯穿，随场景落地）
 
-- [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；其余随后续场景。
+- [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`auth.*`（登录界面，SA）/ `meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；`auth.*` 随 SA-3；其余随后续场景。
 
 ---
 

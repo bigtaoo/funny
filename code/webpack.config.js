@@ -45,7 +45,7 @@ module.exports = (env, argv) => {
       ],
       hot: true,
       open: true,
-      port: 8080,
+      port: 19090,
     },
     optimization: {
       minimize: isProd,

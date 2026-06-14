@@ -3,6 +3,7 @@
 > 创建：2026-06-13。本文件是元系统（存档 / 经济 / 养成 / 收集 / 商业化）+ 服务器（云存档 / 好友房联机）的设计基准，随实现推进同步更新。
 > 配套阅读：`CAMPAIGN_DESIGN.md`（PvE 战役）、`DESIGN.md`（引擎/系统）、`IMPROVEMENT_PLAN.md`（迭代进度）、根 `../../CLAUDE.md`。
 > 子文档：`META_TASKS.md`（任务拆分）、`UI_DESIGN.md`（客户端 UI）、`SERVER_API.md`（接口契约）、`ECONOMY_BALANCE.md`（经济数值）。
+> 细分设计（2026-06-14）：`ACCOUNT_DESIGN.md`（账号/登录/单机门槛）、`COMMERCIAL_DESIGN.md`（commercial 商业服务：钱包/充值/消费/盲盒）、`MATCHSVC_DESIGN.md`（matchsvc 匹配大脑 + gameserver 瘦身 + 局末结算）、`GATEWAY_DESIGN.md`（gateway 控制面网关 + 客户端三通道）。
 
 ---
 
@@ -38,9 +39,9 @@
 | M7 | 盲盒**服务端跑**：`crypto` 真随机 + 逐抽落库 + 保底 | 花币 + 要记录 → 必须服务器扣币、随机、记账 |
 | M8 | gacha 随机**不进确定性回放体系** | 它不是战斗逻辑，无需回放；§8 的 Prng 约束只管 `game/` 战斗内核 |
 
-### 1.1 服务边界修订（2026-06-13，超越 S1 现实现，见 §6.1）
+### 1.1 服务边界修订（2026-06-13；2026-06-14 扩为 6 组件，见 §6.1）
 
-> S1 把匹配/房间分配/天梯结算都放在 gameserver 且让它连 Mongo。修订为 **5 组件 + 控制面/数据面分离**：玩家只触达 **meta(REST，请求面)** + **gateway(WS，控制面)** + **game(WS，数据面)**；**matchsvc** 是玩家不可达的私有大脑。目标：**gameserver 永不连库、meta 保持纯无状态 REST、控制面推送顺畅**。下列决策超越 §1 中 M4/M11 关于 gameserver 结算的描述。
+> S1 把匹配/房间分配/天梯结算都放在 gameserver 且让它连 Mongo。修订为 **6 组件 + 控制面/数据面分离**：玩家只触达 **meta(REST，请求面)** + **gateway(WS，控制面)** + **game(WS，数据面)**；**matchsvc**（匹配大脑）与 **commercial**（钱包/商业）是玩家不可达的私有服务。目标：**gameserver 永不连库、meta 保持纯编排 REST、钱与交易物理隔离、控制面推送顺畅**。下列决策超越 §1 中 M4/M11 关于 gameserver 结算的描述。
 
 > **三面划分**（理解全局的钥匙）：**数据面**=锁步帧（client↔game 直连，高频低延迟，按 room 分片，绝不经网关中转）；**控制面**=房间/匹配/在线/通知/聊天（client↔gateway，双向实时，按 account 分片，整局会话期常驻）；**请求面**=auth/save/economy/iap（client↔meta REST，纯请求-响应，无状态）。一局里客户端同时持 gateway + game 两条 WS，正常。
 
@@ -51,6 +52,7 @@
 | M20 | **gateway（WS 控制面网关，玩家公开门面）= 薄连接层**：鉴权 WS（`?token=<jwt>`）+ 维护 `account→socket` 映射 + 把房间/匹配消息转发给 matchsvc + 把 matchsvc/meta 事件推回对的 socket；承载房间/大厅/匹配入队取消/match-found+ticket 下发/在线状态/（将来）通知聊天。**它是 matchsvc 的公开门面**——matchsvc 因此保持玩家不可达。**部署粒度**：前期 gateway+matchsvc 合成**一个进程的两模块**（对外只暴露 gateway 公开 WS，matchsvc 内部 RPC 不绑公网），gateway 连接数撑不住时再拆两进程 + Redis 做 `account→gateway 实例` 路由 | meta 是无状态 REST，推不动 server→client；把长连接放 meta 会破坏其无状态。独立控制面网关让 meta 卸掉转发、回到纯 REST；连接层（按 account）与锁步层（按 room）分片轴不同，必须分开；社交游戏的好友/匹配/聊天迟早要这条常驻连接 |
 | M18 | **开局走 matchsvc 签名 ticket**：matchsvc 配对/分配后给每个玩家签一张 ticket（`{room_id, seed, side, opponent, game_url, mode, exp, sig}`，gateway/matchsvc/game 共用一把内部密钥）→ 经 **gateway 推**给客户端 → 客户端连 game 带 ticket，game **只验签 + 交叉核对两张 ticket 的 room_id/seed 一致**即开局 | 开局阶段 game 无需 meta/matchsvc 在线，也不存房间密码表；gateway 只推不签 |
 | M19 | **结算上报 game→meta**：局末 game 把 `{room_id, seed, 双方 hash, 双方 winner_side, 非空帧录像}` POST 给 meta（内部密钥鉴权、`room_id` 幂等、失败重试/排队）；**meta 判定胜负 + 写 ELO（乐观锁）+ 归档 + 存录像**。matchmaking/ELO/归档逻辑全部从 gameserver 移出 | game 一行 DB 不碰（M16 落地）；meta 暂时 down 不丢结果（game 端排队重试） |
+| M21 | **commercial（钱包/商业服务，玩家不可达，连自己专属库）= coins 余额 + 流水 + 订单 + 充值票据 + 盲盒 RNG + 保底**。独立 Mongo 数据库 `notebook_wars_commercial`（与 meta 库物理隔离）。**meta 是其唯一调用方**（编排者）：客户端经济请求仍只发 meta，meta 经内部 RPC 调 commercial 扣币/随机/记账，据结果写 inventory（meta 库）并回推。钱包权威从 `saves.wallet` 迁出，`SaveData.wallet/gacha` 降级为只读镜像 | 真钱数据物理隔离（meta 出 bug 也碰不到余额/充值流水），审计/对账/合规边界清晰；抽卡「扣币+随机+记账」同库原子（M7）；客户端只认 meta，零改动。详见 `COMMERCIAL_DESIGN.md` |
 
 ---
 
@@ -60,7 +62,8 @@
 
 | 类别 | 字段 | 谁权威 | 写入方式 |
 |---|---|---|---|
-| **服务器权威**（客户端只读） | `wallet.coins`、`inventory`（皮肤/物品）、`gacha.pity` + 抽卡历史、IAP 票据、`pvp` 天梯（elo/rank/战绩） | 服务器 | 钱包/发货走**单文档原子更新**（见 §6.3）；天梯由 `metaserver` 在收到 game 局末上报后结算写入（M19；S1 现实现是 gameserver 直写，待迁移） |
+| **commercial 权威**（客户端只读，`saves` 里仅镜像） | `wallet.coins`、`gacha.pity` + 抽卡历史、充值票据、消费订单/流水 | **commercial**（独立库，M21） | 钱包**单文档原子更新**（`wallets`，§6.3）；meta 经内部 RPC 调用、据回执写 inventory + 镜像。详见 `COMMERCIAL_DESIGN.md` |
+| **meta 权威**（客户端只读） | `inventory`（皮肤/物品）、`pvp` 天梯（elo/rank/战绩） | metaserver | inventory 由 meta 收 commercial 发货回执后写；天梯由 meta 在收到 game 局末上报后结算写入（M19；S1 现实现是 gameserver 直写，待迁移） |
 | **客户端同步**（轻校验） | `progress`（通关/星级/记录）、PvE 材料 + `pveUpgrades`、设置 `flags`、`equipped`（皮肤选择） | 客户端 | 本地写 + 防抖上行；服务器做 sanity 校验（单调性 / 上界），但不强反作弊 |
 
 > 取舍：PvE 材料/升级被改 → 只是自己 PvE 变简单，**对 PvP 无影响**（硬墙），不值得上重型反作弊。真钱相关零容忍。
@@ -219,36 +222,36 @@ function buildCampaignBlueprints(save: SaveData): UnitBlueprints {
 
 > 接口契约（REST 端点 + WebSocket 消息 + 锁步时序 + DB 集合）的单一来源在 **`SERVER_API.md`**。
 
-### 6.1 拓扑：5 组件 + 控制面/数据面分离（M9 / M16–M20）
+### 6.1 拓扑：6 组件 + 控制面/数据面分离（M9 / M16–M21）
 
-> **架构修订（2026-06-13）**：玩家只触达 **meta(REST)** + **gateway(WS 控制面)** + **game(WS 数据面)**；**matchsvc 对玩家不可见**（gateway 当其公开门面 / game 向它注册）。S1 现实现是 gameserver 中心式（自管匹配/分配/结算且连 Mongo），按此修订迁移。
+> **架构修订（2026-06-13；2026-06-14 加 commercial）**：玩家只触达 **meta(REST)** + **gateway(WS 控制面)** + **game(WS 数据面)**；**matchsvc**（匹配大脑）+ **commercial**（钱包/商业，连自己专属库）对玩家不可见。S1 现实现是 gameserver 中心式（自管匹配/分配/结算且连 Mongo），按此修订迁移。
 
 ```
-                  请求面 REST(无状态)
-客户端 ───────────────→ metaserver ──────────────→ MongoDB
-  │  auth/save/economy/iap                        (仅 meta 连)
-  │                                                    ↑ 内部·幂等(room_id)
-  │  控制面 WS(?token)                                  │ 局末录像+结算
-  ├───────────────→ gateway ┐                          │
-  │  房间/匹配/在线/通知/聊天   │ 内部 RPC                 │
-  │  (双向实时)               │  enqueue/cancel·房间分配    │
-  │              ←(game_url,  ↓  ←签好的 ticket           │
-  │                ticket 推)  ┌────────────────────────┐ │
-  │                           │ matchsvc（单点·私有大脑） │ │
-  │                           │ 匹配队列(全区)·房间状态    │ │
-  │  数据面 WS(?ticket 直连)    │ ·game 注册表/分配·签 ticket│ │
-  └───────────────→ gameserver(N 台) ──── register/心跳 ──┘ │
-     锁步中继·ticket 验签·帧日志·重连 ──── 局末 POST 结算 ─────┘
+                  请求面 REST(无状态)              内部 RPC(内部密钥)
+客户端 ───────────────→ metaserver ──────────────→ MongoDB(notebook_wars)
+  │  auth/save/economy/iap   │  ↑ game 局末上报(幂等 room_id)  (仅 meta 连)
+  │                          │  charge/draw/recharge/balance
+  │  控制面 WS(?token)        └────────────→ commercial ──→ MongoDB(notebook_wars_commercial)
+  ├───────────────→ gateway ┐                (钱包/流水/订单/充值/盲盒，玩家不可达)
+  │  房间/匹配/在线/通知/聊天   │ 内部 RPC
+  │  (双向实时)               │  enqueue/cancel·房间分配
+  │              ←(game_url,  ↓  ←签好的 ticket
+  │                ticket 推)  ┌────────────────────────┐
+  │                           │ matchsvc（单点·私有大脑） │
+  │                           │ 匹配队列(全区)·房间状态    │
+  │  数据面 WS(?ticket 直连)    │ ·game 注册表/分配·签 ticket│
+  └───────────────→ gameserver(N 台) ──── register/心跳 ──┘
 
-     gateway+matchsvc 前期合一进程（M20）；Redis 仅 matchsvc 崩溃副本(可省)
-反代：/api/*→meta(JSON) · /gw→gateway(WS) · /ws→gameserver(WS protobuf)；matchsvc 不暴露公网
+  gateway+matchsvc 前期合一进程（M20）；commercial 独立进程+独立库（M21）；Redis 仅 matchsvc 崩溃副本(可省)
+反代：/api/*→meta(JSON) · /gw→gateway(WS) · /ws→gameserver(WS protobuf)；matchsvc/commercial 不暴露公网
 ```
 
 各服务职责与连库边界：
 
 | 服务 | 面 | 职责 | 连库 | 扩容画像 |
 |---|---|---|---|---|
-| **metaserver** | 请求面 | auth · save · economy · iap · 接收 game 局末上报→判定/写 ELO/归档/存录像 · 给 gateway 供 ELO | Mongo | 无状态可横扩（LB 轮询） |
+| **metaserver** | 请求面 | auth · save · 经济编排（调 commercial）· 接收 game 局末上报→判定/写 ELO/归档/存录像 · 给 gateway 供 ELO | Mongo `notebook_wars` | 无状态可横扩（LB 轮询） |
+| **commercial** | 私有(商业) | 钱包余额 + 流水 + 订单 + 充值票据 + 盲盒 RNG/保底；meta 唯一调用方（M21） | Mongo `notebook_wars_commercial`（独立库） | 与钱强相关，谨慎扩；前期单实例 |
 | **gateway** | 控制面 | 薄连接层：鉴权 WS + `account→socket` 映射 + 房间/匹配消息转发 matchsvc + 推回事件（含 ticket）+ 在线状态 | ❌（前期与 matchsvc 合一进程，连 Redis） | 有状态（连接亲和）；横扩需 `account→实例` 路由（Redis），属后期 |
 | **matchsvc** | 控制面(私有) | 匹配队列（全区）· 房间状态 · game 注册表/负载/分配 · 签 ticket | Redis only（可选） | 永远单点（M17） |
 | **gameserver** | 数据面 | WS 接入 · ticket 验签 · 帧节拍器/中继 · 重连日志 · 局末打包上报 meta | ❌ 永不（M16） | 无状态（仅内存房间帧缓冲）→ 随意横扩；房间亲和靠 ticket 里的 `game_url` 天然绑定 |
