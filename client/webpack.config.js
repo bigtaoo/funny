@@ -10,10 +10,12 @@ module.exports = (env, argv) => {
 
   // metaserver REST 基址 / gateway 控制面 WS：构建期注入全局，运行时 net/config.ts 读取。
   // 优先取环境变量（CI/生产用 NW_API_BASE=https://host/api）；dev 缺省指向本地 metaserver
-  // （NW_META_PORT 默认 18080）+ gateway（NW_GW_PORT 默认 8082），开箱即可注册 / 联机。
+  // （NW_META_PORT 默认 18080）+ gateway（NW_GW_PORT 默认 8086），开箱即可注册 / 联机。
+  // 注意：8082/8083 在本机 Windows TCP excludedportrange 内（WinNAT/Hyper-V 动态保留），
+  // 绑定会 EACCES，故 gateway 改用 8086（须与 dev-up.ps1 的 NW_GW_PORT / NW_GATEWAY_PUBLIC_WS_URL 一致）。
   // 生产未配则留空 → net/config 返回 null → 退化为纯本地离线。
   const apiBase = process.env.NW_API_BASE || (isProd ? '' : 'http://localhost:18080');
-  const gatewayWs = process.env.NW_GATEWAY_WS || (isProd ? '' : 'ws://localhost:8082/gw');
+  const gatewayWs = process.env.NW_GATEWAY_WS || (isProd ? '' : 'ws://localhost:8086/gw');
 
   return {
     target: 'web',
