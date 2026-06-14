@@ -2,6 +2,7 @@
 export * from './types';
 export * from './api';
 export * from './jwt';
+export * from './ticket';
 export * from './password';
 export * from './mongo';
 export * from './roomRegistry';

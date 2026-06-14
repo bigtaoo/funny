@@ -11,7 +11,12 @@ async function main() {
   const mongo = await createMongo(env.mongoUri, env.mongoDb);
   await mongo.ensureIndexes();
 
-  const app = await buildApp({ cols: mongo.collections, jwt, logger: true });
+  const app = await buildApp({
+    cols: mongo.collections,
+    jwt,
+    internalKey: env.internalKey,
+    logger: true,
+  });
 
   const shutdown = async () => {
     await app.close();

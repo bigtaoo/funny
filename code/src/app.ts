@@ -17,7 +17,7 @@ import type { ILayout } from './layout/ILayout';
 import { initI18n, type TranslationKey } from './i18n';
 import { LocalSaveStore, SaveManager, ReplayStore } from './game/meta';
 import { ApiClient, ApiError, type AuthResult } from './net/ApiClient';
-import { getApiBaseUrl, getGameWsUrl } from './net/config';
+import { getApiBaseUrl, getGatewayWsUrl } from './net/config';
 import { NetSession } from './net/NetSession';
 import { MatchMode } from './net/proto/transport';
 
@@ -46,15 +46,17 @@ export async function startApp(platform: IPlatform): Promise<void> {
   // ── ReplayStore (S1-RP): local ring of recent recorded matches ──────────────
   const replayStore = new ReplayStore(platform.storage);
 
-  // ── NetSession (S1): online friendly room + lockstep transport ──────────────
-  // Built only when both a REST base (for JWT auth) and a WS endpoint are
-  // configured; otherwise the room UI still opens but actions show "unavailable".
-  const wsUrl = getGameWsUrl(platform.storage);
+  // ── NetSession (S1 / S1-M): online room + lockstep transport ────────────────
+  // Three-channel topology (M20): rooms/matchmaking over the gateway control-plane
+  // WS; the game data-plane WS address arrives per-match in match_found. Built only
+  // when both a REST base (JWT auth) and a gateway endpoint are configured;
+  // otherwise the room UI still opens but actions show "unavailable".
+  const gatewayUrl = getGatewayWsUrl(platform.storage);
   let netSession: NetSession | null = null;
   function getNetSession(): NetSession | null {
     if (netSession) return netSession;
-    if (!api || !wsUrl) return null;
-    netSession = new NetSession(platform, wsUrl, api, () => platform.getAuthCredential());
+    if (!api || !gatewayUrl) return null;
+    netSession = new NetSession(platform, gatewayUrl, api, () => platform.getAuthCredential());
     netSession.handlers.onMatchStart = (info) => goGameNet(info);
     return netSession;
   }

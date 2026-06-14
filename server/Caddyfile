@@ -1,15 +1,20 @@
-# 反代（C-3）：/api/* → metaserver(JSON)、/ws → gameserver(WebSocket)。
+# 反代（C-3 / S1-M）：/api/* → metaserver、/gw → gateway(控制面 WS)、/ws → gameserver(数据面 WS)。
 # 站点地址由 {$NW_DOMAIN} 注入：
 #   · 真域名（如 nw.example.com）→ Caddy 自动签 Let's Encrypt 证书，全程 HTTPS/WSS。
 #   · 缺省 :80 → 仅 HTTP（本机 / 无域名联调用；此时不签证书）。
 #
 # 路由要点：
-#   · metaserver 的 fastify 路由是 /auth/wx、/save … （不含 /api 前缀，openapi servers.url=/api 仅文档前缀），
-#     故用 handle_path 剥掉 /api 再转发。
-#   · gameserver 的 WebSocketServer 绑定 path=/ws，必须保留路径 → 用 handle（不剥前缀）。
+#   · metaserver 的 fastify 路由是 /auth/wx、/save …（不含 /api 前缀），故用 handle_path 剥掉 /api 再转发。
+#   · gateway 控制面 WS 绑 path=/gw、gameserver 数据面 WS 绑 path=/ws，必须保留路径 → 用 handle（不剥前缀）。
+#   · matchsvc / gateway 内部 HTTP / meta 内部路由（/internal/*）不暴露公网（无路由，仅集群内调用）。
 
 {$NW_DOMAIN::80} {
-	# WebSocket 锁步通道（保留 /ws 路径）
+	# 控制面 WS：房间 / 匹配（保留 /gw 路径）
+	handle /gw* {
+		reverse_proxy gateway:8082
+	}
+
+	# 数据面 WS：锁步对战（保留 /ws 路径）
 	handle /ws* {
 		reverse_proxy gameserver:8081
 	}

@@ -2,7 +2,7 @@
 
 > 创建：2026-06-14。本文件设计 **matchsvc（私有匹配大脑）** + 配套的 **gameserver 瘦身** 与 **game→meta 局末结算**，并锚定整个 S1-M 拆分的迁移顺序。
 > 配套：`META_DESIGN.md`（§1.1/§6.1 决策 M16–M21 拓扑）、`GATEWAY_DESIGN.md`（控制面网关，matchsvc 的公开门面）、`SERVER_API.md`（§8 内部契约 / §3 数据面 WS）、`META_TASKS.md`（S1-M1~M4）。
-> 状态：**设计稿，未实现**。现状是 gameserver 中心式（自管匹配/房间/ELO/归档且连 Mongo），本文是迁移目标。
+> 状态：**已实现（2026-06-14，S1-M1~M4）**。matchsvc 落地于 `server/gateway/src/matchsvc`，gameserver 瘦身于 `server/gameserver`，game→meta 结算于 `server/metaserver/src/internal.ts`。下文为设计依据，实现细节见 `CLAUDE.md`「gateway 控制面 + matchsvc」节。
 
 ---
 
@@ -150,9 +150,9 @@ POST /internal/match/report
 
 ---
 
-## 7. 开放问题（matchsvc 侧）
+## 7. 开放问题（matchsvc 侧）— 已拍板落地（2026-06-14）
 
-- [ ] **内部密钥体系**：gateway↔matchsvc↔game↔meta↔commercial 共用一把 `NW_INTERNAL_KEY`，还是按服务对分别签？（默认：前期共用一把）
-- [ ] **gateway+matchsvc 合一**时内部 RPC 走进程内调用还是 localhost HTTP（便于将来拆）？（默认：进程内函数调用 + 接口抽象，拆时换实现）
-- [ ] **ticket 过期**窗口多长（match_found 到连 game 的容忍时间）？（默认：30s）
-- [ ] 这部分要不要等 commercial/account 完成后再做？（建议最后做，动联机链路最大）
+- [x] **内部密钥体系**：共用一把 `NW_INTERNAL_KEY`（`shared/config.ts`），用于签 ticket（HMAC）+ 服务间内部 HTTP 的 `X-Internal-Key`。
+- [x] **gateway+matchsvc 合一**：进程内函数调用（`Matchsvc` + `push` 回调），接口抽象，拆进程换实现。
+- [x] **ticket 过期**：默认 30s（`NW_TICKET_TTL_SEC`），仅约束 match_found→首次连 game；重连复用同票据，game `verifyTicket(ignoreExpiration:true)` 放过已活房间的过期票据。
+- [x] 实现顺序：本次直接做了 S1-M（用户拍板「Full S1-M1~M4」）。

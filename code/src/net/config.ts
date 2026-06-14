@@ -34,3 +34,20 @@ export function getGameWsUrl(storage?: IStorage): string | null {
     .replace(/^http/, 'ws') // http→ws, https→wss
     .replace(/\/api$/, '/ws');
 }
+
+// gateway 控制面 WS 端点解析（S1-M4）。房间/匹配走这条；锁步数据面 game WS 的地址
+// 由开局时的 match_found.game_url 下发（不再静态配置）。
+// 优先级与 game 同：__NW_GATEWAY_WS__ > localStorage(nw_gateway_ws) > 由 API 基址推导 /gw。
+// 返回 null → 无联机（房间 UI 仍可开，create/join 显示「不可用」）。
+const GATEWAY_WS_OVERRIDE_KEY = 'nw_gateway_ws';
+
+export function getGatewayWsUrl(storage?: IStorage): string | null {
+  const injected = (globalThis as { __NW_GATEWAY_WS__?: string }).__NW_GATEWAY_WS__;
+  const override = storage?.getItem(GATEWAY_WS_OVERRIDE_KEY) ?? null;
+  const explicit = (override || injected || '').replace(/\/+$/, '');
+  if (explicit) return explicit;
+
+  const api = getApiBaseUrl(storage);
+  if (!api) return null;
+  return api.replace(/^http/, 'ws').replace(/\/api$/, '/gw');
+}

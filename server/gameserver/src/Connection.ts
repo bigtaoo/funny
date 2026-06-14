@@ -1,15 +1,19 @@
-// 单条 WS 连接封装：绑 accountId、编码发送、心跳存活检测。
-// 一个 account 同一时刻只允许一条活跃连接（重连时旧连接被顶替）。
+// 单条数据面 WS 连接封装（S1-M2）：绑 ticket 身份（roomId / side / accountId）、
+// 编码发送、心跳存活检测。gameserver 瘦成纯帧中继——身份完全来自 matchsvc 签的
+// ticket，gameserver 不查任何库（M16）。
 import type { WebSocket } from 'ws';
 import { encodeServer, type ServerMsg } from './proto/transport';
 
 export class Connection {
-  /** 当前所属房间 id（null = 在大厅）。 */
-  roomId: string | null = null;
   /** 心跳：上一次 pong/ping 后置 true，巡检置 false，再次巡检仍 false 则判死。 */
   alive = true;
 
   constructor(
+    /** ticket.roomId —— 本连接所属对局。 */
+    readonly roomId: string,
+    /** ticket.side —— 本方阵营（0/1）。 */
+    readonly side: 0 | 1,
+    /** ticket.accountId —— 仅作局末上报 meta 的标识透传，gameserver 不读库。 */
     readonly accountId: string,
     readonly ws: WebSocket,
   ) {}

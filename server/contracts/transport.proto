@@ -91,6 +91,13 @@ message ConnResync {
   uint32             cur_frame   = 4;
 }
 
+// 配对 / 房主开局成功（gateway 控制面推，M18/M20）。客户端据此连 game 数据面 WS：
+// wss://<game_url>?ticket=<ticket>。ticket 对客户端 opaque（HMAC-JWT，仅 game 验签）。
+message MatchFound {
+  string game_url = 1;   // 分配到的 gameserver 公开 WS 地址
+  string ticket   = 2;   // matchsvc 签名票据（含 room_id/seed/side/mode/opponent）
+}
+
 message PeerDc { uint32 side = 1; uint32 grace_ms = 2; }
 
 message EloDelta { int32 delta = 1; int32 after = 2; string rank_after = 3; }
@@ -115,6 +122,7 @@ message ServerMsg {
     MatchOver   match_over  = 6;
     RoomError   room_error  = 7;
     Pong        pong        = 8;
+    MatchFound  match_found = 9;
   }
 }
 

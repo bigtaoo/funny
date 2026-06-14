@@ -20,10 +20,15 @@ export interface NetClientHandlers {
 }
 
 export interface NetClientOptions {
-  /** WS 端点（含 /ws，不含 query），见 getGameWsUrl。 */
+  /** WS 端点（不含 query）。gateway 控制面 = /gw；game 数据面 = match_found.game_url。 */
   url: string;
-  /** 取新鲜 token（每次连接/重连都调，支持过期刷新）。 */
+  /**
+   * 取新鲜凭证（每次连接/重连都调）。gateway 用 JWT（?token=），game 用 ticket（?ticket=）。
+   * 重连复用同一票据（ticket exp 仅约束首连，game 验签放过已活房间的过期票据）。
+   */
   tokenProvider: () => Promise<string>;
+  /** 握手 query 参数名：gateway = 'token'（默认），game 数据面 = 'ticket'。 */
+  queryParam?: string;
   handlers: NetClientHandlers;
   /** 重连退避（ms），用尽后保持末值。默认 [500,1000,2000,4000,8000]。 */
   backoffMs?: number[];
@@ -125,7 +130,7 @@ export class NetClient {
     }
     if (gen !== this.gen) return;
 
-    const url = `${this.opt.url}?token=${encodeURIComponent(token)}`;
+    const url = `${this.opt.url}?${this.opt.queryParam ?? 'token'}=${encodeURIComponent(token)}`;
     const handlers: SocketHandlers = {
       onOpen: () => {
         if (gen !== this.gen) return;

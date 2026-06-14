@@ -1,10 +1,11 @@
-// Ranked 匹配队列（S1-R）。按 ELO 邻近配对；等待越久，可接受的分差窗口越宽，
-// 保证冷门时段也能在有限等待内成局。单实例内存队列（多实例横扩需共享队列，留后续）。
-import type { Connection } from './Connection';
+// Ranked 匹配队列（S1-R，搬自 gameserver 并解耦连接依赖）。按 ELO 邻近配对；等待越久，
+// 可接受的分差窗口越宽，保证冷门时段也能在有限等待内成局。单实例内存队列
+// （多实例横扩需共享队列 / Redis，留后续）。条目只持 accountId + name + elo，
+// 不再持网络连接——matchsvc 是玩家不可达的私有大脑，玩家通过 gateway 间接操作。
 
 export interface QueueEntry {
   accountId: string;
-  conn: Connection;
+  name: string;
   elo: number;
   enqueuedAt: number;
 }
@@ -53,9 +54,9 @@ export class Matchmaking {
   }
 
   /** 入队（同账号再次入队覆盖旧条目，重置等待）。入队后尝试一次配对。 */
-  enqueue(conn: Connection, elo: number): void {
-    this.remove(conn.accountId);
-    this.queue.push({ accountId: conn.accountId, conn, elo, enqueuedAt: this.now() });
+  enqueue(accountId: string, name: string, elo: number): void {
+    this.remove(accountId);
+    this.queue.push({ accountId, name, elo, enqueuedAt: this.now() });
     this.ensureTimer();
     this.tick();
   }
@@ -88,7 +89,6 @@ export class Matchmaking {
     }
     if (paired.size === 0) return;
 
-    // 先从队列移除已配对者，再回调建房（回调里可能再入队，不能被本轮误删）。
     const pairs: [QueueEntry, QueueEntry][] = [];
     const sortedPaired = sorted.filter((e) => paired.has(e.accountId));
     for (let i = 0; i + 1 < sortedPaired.length; i += 2) {
@@ -99,7 +99,6 @@ export class Matchmaking {
     for (const [a, b] of pairs) this.onPair(a, b);
   }
 
-  /** 清空（关服）。 */
   clear(): void {
     this.queue = [];
     this.stopTimer();
@@ -113,7 +112,6 @@ export class Matchmaking {
   private ensureTimer(): void {
     if (!this.autoTick || this.timer) return;
     this.timer = setInterval(() => this.tick(), this.tickMs);
-    // 不阻止进程退出。
     this.timer.unref?.();
   }
 

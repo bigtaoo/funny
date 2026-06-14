@@ -1,19 +1,23 @@
 # Notebook Wars — 服务端
 
-`metaserver`（REST 云存档/经济）+ `gameserver`（WS 锁步联机）两进程，共享 `@nw/shared`。
-契约单一来源在 `contracts/`。设计基准：`../design/game/META_DESIGN.md`、`SERVER_API.md`、`META_TASKS.md`。
+控制面/数据面分离（S1-M，2026-06-14）：`metaserver`(REST 云存档/经济/内部结算) + `gateway`(控制面 WS：房间/匹配，含 matchsvc) + `gameserver`(数据面 WS：瘦锁步中继)，共享 `@nw/shared`。
+契约单一来源在 `contracts/`。设计基准：`../design/game/META_DESIGN.md`、`SERVER_API.md`、`META_TASKS.md`、`GATEWAY_DESIGN.md`、`MATCHSVC_DESIGN.md`。
 
 ## 结构（npm workspaces）
 
 ```
 server/
 ├── contracts/      openapi.yml（REST 契约，design-first M15）
-│                   transport.proto（WS 房间/锁步，服务器认得）
+│                   transport.proto（WS 控制面+数据面，含 match_found；服务器认得）
 │                   game.proto（PlayerCommand，仅客户端↔客户端，服务器 opaque）
-├── shared/   @nw/shared   类型(SaveData) + JWT + Mongo 工厂 + RoomRegistry + api 包络
-├── metaserver/  REST（无状态）  fastify + fastify-openapi-glue 按 openapi.yml 装配
-└── gameserver/  WS（有状态）  ws + JWT 握手 + 心跳 + 房间/锁步节拍器中继/重连（S1-1~5）
+├── shared/   @nw/shared   类型(SaveData) + JWT + ticket(HMAC) + Mongo 工厂 + RoomRegistry + ladder + api + config
+├── metaserver/  REST（无状态，ESM）  fastify + openapi-glue + internal.ts（/internal/elo·/match/report，M19）
+├── gateway/     控制面 WS（CJS）  /gw?token= + matchsvc(房间/ELO 配对/game 注册/签 ticket，进程内) + 内部 HTTP(game 注册/心跳)
+└── gameserver/  数据面 WS（CJS）  /ws?ticket= 验签 + 节拍器中继/帧日志/重连 + 局末上报 meta（永不连库 M16）
 ```
+
+> **本地三进程**：`docker compose up -d`（Mongo）→ `npm run dev:meta` + `npm run dev:gateway` + `npm run dev:game`。
+> dev 默认端口：meta 18080、gateway 8082（内部 HTTP 8090）、game 8081。单实例可给 gateway/game 配 `NW_GAME_PUBLIC_WS_URL` 兜底分配，`NW_META_BASE_URL`/`NW_GATEWAY_INTERNAL_URL` 串起内部链路，`NW_INTERNAL_KEY` 三者一致。
 
 ## 实现进度
 
@@ -21,6 +25,7 @@ server/
 - **占位（契约就绪，handler 返回 501）**：`/shop/*`·`/gacha/*`·`/ads/reward`·`/iap/verify`（S2/S4）。
 - **gameserver S1-1~5（friendly 好友房）已完成**：WS+JWT 握手+心跳；建房（6 位房间码）/ 输码加入 / ready / 房主开局；服务器权威节拍器（模拟 30Hz、网络 10Hz 每 100ms 批次 3 帧，`cmd_submit` 落当前窗口帧、同帧多指令按 `side` 确定性排序）；非空帧日志 + `conn_resume`→`conn_resync` 重连补帧 + 60s 宽限判负；局末 `match_result` hash 比对 + `matches` 归档。`transport.proto` 运行期 protobufjs 编解码（`commands` opaque 透传）。详见 `src/{Connection,Room,RoomManager,proto/transport}.ts`。
 - **待办**：S1-R（ranked 队列 + ELO）、S1-J（服务器裁判复算）、S1-RP（录像）；proto/openapi 客户端 codegen（`ts-proto` / `openapi-typescript`，C-2 客户端侧 + S1-6~9）。
+- **S1-M1~M4（控制面/数据面拆分，2026-06-14 已落地）**：新增 `gateway` 包（控制面 WS + matchsvc 合一进程，签 ticket + 取 ELO + game 注册）；gameserver 瘦成 `?ticket=` 验签的纯帧中继（删匹配/ELO/Mongo，局末 `POST meta /internal/match/report`）；meta 加内部路由 `internal.ts`（ELO 结算 + 归档，自 gameserver 迁来）；客户端 `NetSession` 拆 gateway/game 双连接、`transport.proto` 加 `match_found`。验证：`tsc -b shared metaserver gateway gameserver` 全绿 + gateway 17/gameserver 42/meta internal 5 测试 + client 128 + web 构建。详见 `../CLAUDE.md`「gateway 控制面 + matchsvc」节。**双真机联调待办**。
 
 ## 部署（C-3，全栈一条命令）
 

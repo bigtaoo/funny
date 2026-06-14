@@ -123,6 +123,17 @@ export interface ConnResync {
   curFrame: number;
 }
 
+/**
+ * 配对 / 房主开局成功（gateway 控制面推，M18/M20）。客户端据此连 game 数据面 WS：
+ * wss://<game_url>?ticket=<ticket>。ticket 对客户端 opaque（HMAC-JWT，仅 game 验签）。
+ */
+export interface MatchFound {
+  /** 分配到的 gameserver 公开 WS 地址 */
+  gameUrl: string;
+  /** matchsvc 签名票据（含 room_id/seed/side/mode/opponent） */
+  ticket: string;
+}
+
 export interface PeerDc {
   side: number;
   graceMs: number;
@@ -160,6 +171,7 @@ export interface ServerMsg {
   matchOver?: MatchOver | undefined;
   roomError?: RoomError | undefined;
   pong?: Pong | undefined;
+  matchFound?: MatchFound | undefined;
 }
 
 /** 线上每帧一个 Envelope */
@@ -1240,6 +1252,64 @@ export const ConnResync: MessageFns<ConnResync> = {
   },
 };
 
+function createBaseMatchFound(): MatchFound {
+  return { gameUrl: "", ticket: "" };
+}
+
+export const MatchFound: MessageFns<MatchFound> = {
+  encode(message: MatchFound, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.gameUrl !== "") {
+      writer.uint32(10).string(message.gameUrl);
+    }
+    if (message.ticket !== "") {
+      writer.uint32(18).string(message.ticket);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): MatchFound {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMatchFound();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.gameUrl = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.ticket = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<MatchFound>, I>>(base?: I): MatchFound {
+    return MatchFound.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<MatchFound>, I>>(object: I): MatchFound {
+    const message = createBaseMatchFound();
+    message.gameUrl = object.gameUrl ?? "";
+    message.ticket = object.ticket ?? "";
+    return message;
+  },
+};
+
 function createBasePeerDc(): PeerDc {
   return { side: 0, graceMs: 0 };
 }
@@ -1552,6 +1622,7 @@ function createBaseServerMsg(): ServerMsg {
     matchOver: undefined,
     roomError: undefined,
     pong: undefined,
+    matchFound: undefined,
   };
 }
 
@@ -1580,6 +1651,9 @@ export const ServerMsg: MessageFns<ServerMsg> = {
     }
     if (message.pong !== undefined) {
       Pong.encode(message.pong, writer.uint32(66).fork()).join();
+    }
+    if (message.matchFound !== undefined) {
+      MatchFound.encode(message.matchFound, writer.uint32(74).fork()).join();
     }
     return writer;
   },
@@ -1655,6 +1729,14 @@ export const ServerMsg: MessageFns<ServerMsg> = {
           message.pong = Pong.decode(reader, reader.uint32());
           continue;
         }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.matchFound = MatchFound.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1691,6 +1773,9 @@ export const ServerMsg: MessageFns<ServerMsg> = {
       ? RoomError.fromPartial(object.roomError)
       : undefined;
     message.pong = (object.pong !== undefined && object.pong !== null) ? Pong.fromPartial(object.pong) : undefined;
+    message.matchFound = (object.matchFound !== undefined && object.matchFound !== null)
+      ? MatchFound.fromPartial(object.matchFound)
+      : undefined;
     return message;
   },
 };

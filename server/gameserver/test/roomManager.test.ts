@@ -1,136 +1,99 @@
-// RoomManager 单测（S1-2）：建房生成无歧义房间码、输码加入（大小写无关）、
-// 满员 / 不存在 / 重复入房 / ranked 拒绝、连接顶替。无 Mongo（cols=null）。
-//
-// 注：handle() 对 create/join 是 `void this.create()` 即发即忘（纯微任务链），
-// 故每次发消息后 await flush() 排空微任务再断言。
-import { describe, expect, it } from 'vitest';
-import { InMemoryRoomRegistry } from '@nw/shared';
+// RoomManager 单测（S1-M2，瘦身后）：ticket 握手驱动——按 roomId 找/建房、按 side 入座、
+// 第二张 ticket 的 seed/mode 交叉核对一致才接纳、数据面消息路由、重连不重复入座。
+import { describe, expect, it, vi } from 'vitest';
 import type { Connection } from '../src/Connection';
 import { RoomManager } from '../src/RoomManager';
+import type { MatchReport } from '../src/Room';
 import { MatchMode, type ServerMsg } from '../src/proto/transport';
 
-const flush = (): Promise<void> => new Promise((res) => setTimeout(res, 0));
-
 interface FakeConn {
+  roomId: string;
+  side: 0 | 1;
   accountId: string;
-  roomId: string | null;
   alive: boolean;
   outbox: ServerMsg[];
-  closed: { code: number; reason: string } | null;
   send(msg: ServerMsg): void;
-  close(code: number, reason: string): void;
+  close(): void;
 }
-function makeConn(accountId: string): FakeConn {
+function makeConn(roomId: string, side: 0 | 1, accountId: string): FakeConn {
   return {
+    roomId,
+    side,
     accountId,
-    roomId: null,
     alive: true,
     outbox: [],
-    closed: null,
     send(msg) {
       this.outbox.push(msg);
     },
-    close(code, reason) {
-      this.closed = { code, reason };
-    },
+    close() {},
   };
 }
 const asConn = (c: FakeConn): Connection => c as unknown as Connection;
-const errOf = (c: FakeConn): string | undefined => {
-  const m = c.outbox.find((x) => x.case === 'room_error');
-  return m && m.case === 'room_error' ? m.code : undefined;
-};
-const roomStateOf = (c: FakeConn): Extract<ServerMsg, { case: 'room_state' }> | undefined =>
-  c.outbox.find((m) => m.case === 'room_state') as
-    | Extract<ServerMsg, { case: 'room_state' }>
-    | undefined;
+const has = (c: FakeConn, kase: ServerMsg['case']): boolean => c.outbox.some((m) => m.case === kase);
 
 function newManager(): RoomManager {
-  return new RoomManager(new InMemoryRoomRegistry(), null);
+  const reports: MatchReport[] = [];
+  const mgr = new RoomManager({
+    report: async (r) => {
+      reports.push(r);
+      return null;
+    },
+  });
+  return mgr;
 }
 
-describe('RoomManager', () => {
-  it('建房生成 6 位无歧义房间码（去 0/O/1/I/L）', async () => {
-    const mgr = newManager();
-    const c0 = makeConn('a');
-    mgr.register(asConn(c0));
-    mgr.handle(asConn(c0), { case: 'room_create', mode: MatchMode.FRIENDLY });
-    await flush();
+const SEED = 999;
 
-    const rs = roomStateOf(c0)!;
-    expect(rs.code).toHaveLength(6);
-    expect(rs.code).toMatch(/^[A-HJ-NP-Z2-9]+$/); // 无 0O1IL
-    expect(c0.roomId).not.toBeNull();
+describe('RoomManager (ticket relay)', () => {
+  it('两张同 roomId/seed ticket（side 0/1）凑齐 → 自动开局', () => {
+    const mgr = newManager();
+    const c0 = makeConn('R', 0, 'a');
+    const c1 = makeConn('R', 1, 'b');
+    expect(mgr.join(asConn(c0), 'a', SEED, MatchMode.FRIENDLY)).toBe(true);
+    expect(has(c0, 'match_start')).toBe(false); // 等第二人
+    expect(mgr.join(asConn(c1), 'b', SEED, MatchMode.FRIENDLY)).toBe(true);
+    expect(has(c0, 'match_start')).toBe(true);
+    expect(has(c1, 'match_start')).toBe(true);
   });
 
-  it('输码加入大小写无关，双方进同一房间', async () => {
+  it('第二张 ticket seed 不一致 → 拒绝', () => {
     const mgr = newManager();
-    const c0 = makeConn('a');
-    const c1 = makeConn('b');
-    mgr.register(asConn(c0));
-    mgr.register(asConn(c1));
-    mgr.handle(asConn(c0), { case: 'room_create', mode: MatchMode.FRIENDLY });
-    await flush();
-    const code = roomStateOf(c0)!.code;
-
-    mgr.handle(asConn(c1), { case: 'room_join', code: code.toLowerCase() });
-    await flush();
-    expect(c1.roomId).toBe(c0.roomId);
-    expect(roomStateOf(c1)!.players).toHaveLength(2);
+    const c0 = makeConn('R', 0, 'a');
+    const c1 = makeConn('R', 1, 'b');
+    mgr.join(asConn(c0), 'a', SEED, MatchMode.FRIENDLY);
+    expect(mgr.join(asConn(c1), 'b', SEED + 1, MatchMode.FRIENDLY)).toBe(false);
   });
 
-  it('满员 → ROOM_FULL', async () => {
+  it('mode 不一致 → 拒绝', () => {
     const mgr = newManager();
-    const c0 = makeConn('a');
-    const c1 = makeConn('b');
-    const c2 = makeConn('c');
-    [c0, c1, c2].forEach((c) => mgr.register(asConn(c)));
-    mgr.handle(asConn(c0), { case: 'room_create', mode: MatchMode.FRIENDLY });
-    await flush();
-    const code = roomStateOf(c0)!.code;
-    mgr.handle(asConn(c1), { case: 'room_join', code });
-    await flush();
-    mgr.handle(asConn(c2), { case: 'room_join', code });
-    await flush();
-    expect(errOf(c2)).toBe('ROOM_FULL');
+    const c0 = makeConn('R', 0, 'a');
+    const c1 = makeConn('R', 1, 'b');
+    mgr.join(asConn(c0), 'a', SEED, MatchMode.FRIENDLY);
+    expect(mgr.join(asConn(c1), 'b', SEED, MatchMode.RANKED)).toBe(false);
   });
 
-  it('不存在的房间码 → ROOM_NOT_FOUND', async () => {
+  it('cmd_submit 路由进房间 → 出现在 frame_batch', () => {
+    vi.useFakeTimers();
     const mgr = newManager();
-    const c0 = makeConn('a');
-    mgr.register(asConn(c0));
-    mgr.handle(asConn(c0), { case: 'room_join', code: 'ZZZZZZ' });
-    await flush();
-    expect(errOf(c0)).toBe('ROOM_NOT_FOUND');
+    const c0 = makeConn('R', 0, 'a');
+    const c1 = makeConn('R', 1, 'b');
+    mgr.join(asConn(c0), 'a', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(c1), 'b', SEED, MatchMode.FRIENDLY);
+    mgr.handle(asConn(c0), { case: 'cmd_submit', commands: new Uint8Array([42]) });
+    vi.advanceTimersByTime(100);
+    const fb = c0.outbox.filter((m) => m.case === 'frame_batch').at(-1);
+    expect(fb && fb.case === 'frame_batch' && fb.frames[0]?.cmds[0]?.commands[0]).toBe(42);
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
-  it('ranked 建房 → RANKED_UNAVAILABLE（S1-R 前拒）', async () => {
+  it('重连：同 roomId/side 再 join 不重复入座（返回 true）', () => {
     const mgr = newManager();
-    const c0 = makeConn('a');
-    mgr.register(asConn(c0));
-    mgr.handle(asConn(c0), { case: 'room_create', mode: MatchMode.RANKED });
-    await flush();
-    expect(errOf(c0)).toBe('RANKED_UNAVAILABLE');
-    expect(c0.roomId).toBeNull();
-  });
-
-  it('已在房内再建房 → ALREADY_IN_ROOM', async () => {
-    const mgr = newManager();
-    const c0 = makeConn('a');
-    mgr.register(asConn(c0));
-    mgr.handle(asConn(c0), { case: 'room_create', mode: MatchMode.FRIENDLY });
-    await flush();
-    mgr.handle(asConn(c0), { case: 'room_create', mode: MatchMode.FRIENDLY });
-    await flush();
-    expect(errOf(c0)).toBe('ALREADY_IN_ROOM');
-  });
-
-  it('同账号新连接顶替旧连接（双开 / 残连）', () => {
-    const mgr = newManager();
-    const c0 = makeConn('a');
-    const c0b = makeConn('a'); // 同账号新连接
-    mgr.register(asConn(c0));
-    mgr.register(asConn(c0b));
-    expect(c0.closed).toEqual({ code: 4409, reason: 'replaced' });
+    const c0 = makeConn('R', 0, 'a');
+    const c1 = makeConn('R', 1, 'b');
+    mgr.join(asConn(c0), 'a', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(c1), 'b', SEED, MatchMode.FRIENDLY);
+    const c0b = makeConn('R', 0, 'a'); // 重连
+    expect(mgr.join(asConn(c0b), 'a', SEED, MatchMode.FRIENDLY)).toBe(true);
   });
 });

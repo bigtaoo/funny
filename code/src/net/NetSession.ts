@@ -1,24 +1,26 @@
-// NetSession (S1-8) — ties the gameserver transport (NetClient) to the lockstep
-// input pipeline (NetInputSource) and exposes a small surface for RoomScene /
-// app.ts to drive a friendly online match end to end.
+// NetSession (S1-8, S1-M4) — 联机会话编排。三通道架构（M20）下，房间/匹配走 **gateway
+// 控制面 WS**，锁步对战走 **game 数据面 WS**，二者是两条独立连接：
 //
-// Lifetime: created once when the player first opens the friend room, and kept
-// alive across the RoomScene → GameScene transition (the NetInputSource must
-// keep ingesting frame_batch while the engine plays). One match at a time, so a
-// single subscriber per event is enough.
+//   NetSession
+//     ├── gatewayConn (控制面 /gw?token=)  ── 房间/匹配 room_*/createRanked，收 match_found
+//     └── gameConn    (数据面 ?ticket=)     ── 锁步 cmd_submit/frame_batch（收 match_found 后才连）
 //
-// Responsibilities:
-//   • build NetClient (transport) + NetInputSource (sink = client.submitCmd);
-//   • route every ServerMsg to the input source AND surface the room-level ones
-//     (room_state / room_error / peer_dc / match_over / match_start) to the UI;
-//   • on reconnect, resume the match (conn_resume{roomId, resumeFrame}) — S1-4.
+// Lifetime: 玩家首次开好友房时建一次，跨 RoomScene → GameScene 存活（gameConn 的
+// NetInputSource 须在引擎播放期间持续吃 frame_batch）。一次一局，每事件单订阅足够。
 //
-// It does NOT build the engine or own scenes; app.ts does that on match_start
-// using `session.input` as the engine's InputSource.
+// 收 match_found{game_url, ticket} → 用 ticket 连 gameConn → 收 match_start（来自 game，
+// 取自 ticket）→ NetInputSource.onMatchStart → app 建引擎。auth/save 仍走 meta REST，不变。
 
 import type { AuthCredential, IPlatform } from '../platform/IPlatform';
 import { NetClient, type NetState } from './NetClient';
-import { MatchMode, type MatchOver, type PeerDc, type RoomError, type RoomState, type ServerMsg } from './proto/transport';
+import {
+  MatchMode,
+  type MatchOver,
+  type PeerDc,
+  type RoomError,
+  type RoomState,
+  type ServerMsg,
+} from './proto/transport';
 import { NetInputSource, type MatchStartInfo } from '../game';
 import type { ApiClient } from './ApiClient';
 
@@ -27,25 +29,34 @@ export interface NetSessionHandlers {
   onRoomError?(e: RoomError): void;
   onPeerDc?(p: PeerDc): void;
   onMatchOver?(m: MatchOver): void;
-  /** Fired once the server confirms the match — app builds the engine here. */
+  /** Fired once the data-plane confirms match_start — app builds the engine here. */
   onMatchStart?(info: MatchStartInfo): void;
   onNetState?(s: NetState): void;
 }
 
 export class NetSession {
-  readonly client: NetClient;
+  /** Control plane: rooms / matchmaking. Always-on while the player is in the room flow. */
+  readonly gateway: NetClient;
+  /** Data plane: lockstep. Built lazily once match_found arrives. */
+  private game: NetClient | null = null;
   readonly input: NetInputSource;
 
-  /** Swapped by whoever is currently driving the session (RoomScene, then app). */
   handlers: NetSessionHandlers = {};
 
-  /** Set when this client created the room (side 0 = host) vs joined (side 1). */
   private roomId = '';
   private localSide = -1;
+  /** Stored match ticket — reused verbatim on game-plane reconnect. */
+  private ticket = '';
 
-  constructor(platform: IPlatform, url: string, api: ApiClient, getCredential: () => Promise<AuthCredential>) {
+  constructor(
+    private readonly platform: IPlatform,
+    /** gateway control-plane WS endpoint (/gw). */
+    private readonly gatewayUrl: string,
+    private readonly api: ApiClient,
+    private readonly getCredential: () => Promise<AuthCredential>,
+  ) {
     this.input = new NetInputSource(
-      { submitCmd: (bytes) => this.client.submitCmd(bytes) },
+      { submitCmd: (bytes) => this.game?.submitCmd(bytes) },
       {
         onMatchStart: (info) => {
           this.roomId = info.roomId;
@@ -55,67 +66,113 @@ export class NetSession {
       },
     );
 
-    this.client = new NetClient(platform, {
-      url,
-      tokenProvider: async () => {
-        // Re-auth on every (re)connect: device/wx auth is idempotent (upsert →
-        // stable accountId) and hands back a fresh JWT, so token expiry is moot.
-        const res = await api.auth(await getCredential());
-        return res.token;
-      },
+    this.gateway = new NetClient(platform, {
+      url: gatewayUrl,
+      tokenProvider: () => this.freshToken(),
       handlers: {
-        onServerMsg: (msg) => this.route(msg),
-        onStateChange: (s) => this.handlers.onNetState?.(s),
-        // Reconnected mid-match → ask the server to replay frames past our
-        // watermark and resume the metronome (S1-4).
-        onReconnect: () => {
-          if (this.roomId) this.client.resume(this.roomId, this.input.resumeFrame());
+        onServerMsg: (msg) => this.routeControl(msg),
+        // Pre-match the room overlay tracks the control plane; in-match the game
+        // plane takes over (its onStateChange overrides).
+        onStateChange: (s) => {
+          if (!this.game) this.handlers.onNetState?.(s);
         },
+        // gateway reconnect: server re-sends room_state for our accountId (no
+        // client action needed — GATEWAY_DESIGN §7 default).
       },
     });
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
 
-  connect(): void { this.client.connect(); }
+  connect(): void {
+    this.gateway.connect();
+  }
 
-  /** Leave the room (if any) and tear down the socket. */
+  /** Leave the room/queue and tear down both sockets. */
   close(): void {
-    this.client.leaveRoom();
-    this.client.disconnect();
+    this.gateway.leaveRoom();
+    this.gateway.disconnect();
+    this.game?.disconnect();
+    this.game = null;
     this.roomId = '';
     this.localSide = -1;
+    this.ticket = '';
   }
 
-  // ── Room actions ───────────────────────────────────────────────────────────────
+  // ── Room actions (control plane) ──────────────────────────────────────────────
 
-  createRoom(): void { this.client.createRoom(MatchMode.FRIENDLY); }
-  joinRoom(code: string): void { this.client.joinRoom(code); }
-  setReady(ready: boolean): void { this.client.setReady(ready); }
-  startMatch(): void { this.client.startMatch(); }
-  /** Enter the ranked matchmaking queue (S1-R). Server pairs by ELO + auto-starts. */
-  createRanked(): void { this.client.createRoom(MatchMode.RANKED); }
-  /** Cancel ranked search (server treats leave-while-queued as dequeue). */
-  cancelQueue(): void { this.client.leaveRoom(); }
+  createRoom(): void {
+    this.gateway.createRoom(MatchMode.FRIENDLY);
+  }
+  joinRoom(code: string): void {
+    this.gateway.joinRoom(code);
+  }
+  setReady(ready: boolean): void {
+    this.gateway.setReady(ready);
+  }
+  startMatch(): void {
+    this.gateway.startMatch();
+  }
+  /** Enter the ranked queue (server pairs by ELO + auto-starts → match_found). */
+  createRanked(): void {
+    this.gateway.createRoom(MatchMode.RANKED);
+  }
+  cancelQueue(): void {
+    this.gateway.leaveRoom();
+  }
+
+  // ── Match actions (data plane) ────────────────────────────────────────────────
+
   reportResult(stateHash: string, winnerSide: number): void {
-    this.client.reportResult(stateHash, winnerSide);
+    this.game?.reportResult(stateHash, winnerSide);
   }
 
-  /** Which side this client controls once the match starts (-1 until then). */
-  getLocalSide(): number { return this.localSide; }
+  getLocalSide(): number {
+    return this.localSide;
+  }
 
   // ── Routing ──────────────────────────────────────────────────────────────────
 
-  private route(msg: ServerMsg): void {
-    // The input source consumes match_start / frame_batch / conn_resync and
-    // ignores the rest — feed it everything.
-    this.input.handleServerMsg(msg);
+  /** Re-auth on every (re)connect: device/wx auth is idempotent → stable accountId + fresh JWT. */
+  private async freshToken(): Promise<string> {
+    const res = await this.api.auth(await this.getCredential());
+    return res.token;
+  }
 
+  /** Control-plane messages (gateway): rooms + match_found. */
+  private routeControl(msg: ServerMsg): void {
     if (msg.roomState) this.handlers.onRoomState?.(msg.roomState);
     else if (msg.roomError) this.handlers.onRoomError?.(msg.roomError);
-    else if (msg.peerDc) this.handlers.onPeerDc?.(msg.peerDc);
+    else if (msg.matchFound) this.connectGame(msg.matchFound.gameUrl, msg.matchFound.ticket);
+  }
+
+  /** Data-plane messages (game): lockstep + match_start/peer_dc/match_over. */
+  private routeData(msg: ServerMsg): void {
+    // The input source consumes match_start / frame_batch / conn_resync; feed it all.
+    this.input.handleServerMsg(msg);
+    if (msg.peerDc) this.handlers.onPeerDc?.(msg.peerDc);
     else if (msg.matchOver) this.handlers.onMatchOver?.(msg.matchOver);
-    // match_start is surfaced via NetInputSource.onMatchStart (above) so the
-    // app sees it only after the input source has captured seed/startFrame.
+    // match_start is surfaced via NetInputSource.onMatchStart (above).
+  }
+
+  /** Got match_found → connect the data-plane WS with the signed ticket. */
+  private connectGame(gameUrl: string, ticket: string): void {
+    if (this.game) return; // already connected for this match
+    this.ticket = ticket;
+    this.game = new NetClient(this.platform, {
+      url: gameUrl,
+      queryParam: 'ticket',
+      tokenProvider: () => Promise.resolve(this.ticket),
+      handlers: {
+        onServerMsg: (m) => this.routeData(m),
+        onStateChange: (s) => this.handlers.onNetState?.(s),
+        // Mid-match game-plane reconnect → ask the server to replay frames past
+        // our watermark and resume the metronome (S1-4).
+        onReconnect: () => {
+          if (this.roomId) this.game?.resume(this.roomId, this.input.resumeFrame());
+        },
+      },
+    });
+    this.game.connect();
   }
 }

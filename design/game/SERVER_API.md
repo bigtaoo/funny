@@ -266,7 +266,9 @@ message Replay {
 
 ## 8. 内部服务契约（修订 2026-06-13，玩家不可见；`META_DESIGN.md §1.1/§6.1`）
 
-> 服务间内部边界。全部走**内部密钥**鉴权（gateway/matchsvc/game 共用一把签名密钥；服务间 HTTP 另带内部 bearer）。这些端点**永不暴露公网**。
+> 服务间内部边界。全部走**内部密钥**鉴权（gateway/matchsvc/game/meta 共用一把 `NW_INTERNAL_KEY`，签 ticket + 服务间 HTTP `X-Internal-Key`）。这些端点**永不暴露公网**。
+>
+> **实现状态（2026-06-14，S1-M1~M4 已落地）**：matchsvc(§8.1/8.2) 在 `server/gateway/src/matchsvc`（gateway 合一进程，内部调用 = 进程内函数，game 注册走 `server/gateway/src/internalHttp.ts`）；game→meta 上报(§8.3) = `server/gameserver/src/metaReport.ts` → `server/metaserver/src/internal.ts`；gateway 控制面 WS(§8.4) = `server/gateway/src/Gateway.ts`（复用 `transport.proto` 子集，`match_found` 新增）；取 ELO(§8.5) = `MetaClient`。**差异**：§8.3 `match/report` 响应在 ranked 下额外回 `{ elo: {side:{delta,after,rankAfter}} }`，game 转进 `match_over.elo`；ranked 入队复用 `room_create{mode:RANKED}`（未单设 `mm_enqueue` 线消息），取消用 `room_leave`。
 
 ### 8.1 matchsvc（单点，M17）— 仅 gateway 调它 / game 注册它
 

@@ -1,15 +1,22 @@
-// pm2 进程编排（C-3，非 Docker 路线）。
+// pm2 进程编排（C-3 / S1-M，非 Docker 路线）。
 // 适用于直接在 VPS 上跑 node（mongod 本机装、caddy 系统服务），不想用 Docker 时：
-//   cd server && npm ci && npx tsc -b shared metaserver gameserver
-//   NW_JWT_SECRET=... pm2 start ecosystem.config.cjs && pm2 save
+//   cd server && npm ci && npx tsc -b shared metaserver gateway gameserver
+//   NW_JWT_SECRET=... NW_INTERNAL_KEY=... pm2 start ecosystem.config.cjs && pm2 save
 //
-// metaserver 无状态可起多实例（cluster）；gameserver 有房间状态必须单实例（房间亲和，§6.5）。
+// metaserver 无状态可起多实例（cluster）；gateway+matchsvc 与 gameserver 各有内存状态必须单实例。
 // 密钥从启动 pm2 时的 shell 环境继承（勿把生产密钥写进本文件）。
 
-const shared = {
+const META_BASE = process.env.NW_META_BASE_URL || 'http://127.0.0.1:8080';
+const GAME_PUBLIC_WS = process.env.NW_GAME_PUBLIC_WS_URL || 'ws://127.0.0.1:8081/ws';
+
+const common = {
+  NW_JWT_SECRET: process.env.NW_JWT_SECRET, // 生产必须由环境提供
+  NW_INTERNAL_KEY: process.env.NW_INTERNAL_KEY, // 服务间共用，生产必须由环境提供
+};
+const metaShared = {
+  ...common,
   NW_MONGO_URI: process.env.NW_MONGO_URI || 'mongodb://127.0.0.1:27017/?replicaSet=rs0',
   NW_MONGO_DB: process.env.NW_MONGO_DB || 'notebook_wars',
-  NW_JWT_SECRET: process.env.NW_JWT_SECRET, // 生产必须由环境提供
 };
 
 module.exports = {
@@ -21,11 +28,26 @@ module.exports = {
       exec_mode: 'fork', // 横扩改 'cluster' + instances:N（无状态）
       instances: 1,
       env: {
-        ...shared,
+        ...metaShared,
         NW_META_PORT: process.env.NW_META_PORT || '8080',
         NW_META_HOST: process.env.NW_META_HOST || '127.0.0.1',
         NW_WX_APPID: process.env.NW_WX_APPID || '',
         NW_WX_SECRET: process.env.NW_WX_SECRET || '',
+      },
+    },
+    {
+      name: 'nw-gateway',
+      cwd: __dirname,
+      script: 'gateway/dist/index.js',
+      exec_mode: 'fork', // 单实例：房间/匹配内存态（多实例需 Redis）
+      instances: 1,
+      env: {
+        ...common,
+        NW_GW_PORT: process.env.NW_GW_PORT || '8082',
+        NW_GW_HOST: process.env.NW_GW_HOST || '127.0.0.1',
+        NW_GW_INTERNAL_PORT: process.env.NW_GW_INTERNAL_PORT || '8090',
+        NW_META_BASE_URL: META_BASE,
+        NW_GAME_PUBLIC_WS_URL: GAME_PUBLIC_WS,
       },
     },
     {
@@ -35,9 +57,12 @@ module.exports = {
       exec_mode: 'fork', // 必须单实例：房间状态在内存
       instances: 1,
       env: {
-        ...shared,
+        ...common,
         NW_GAME_PORT: process.env.NW_GAME_PORT || '8081',
         NW_GAME_HOST: process.env.NW_GAME_HOST || '127.0.0.1',
+        NW_META_BASE_URL: META_BASE,
+        NW_GATEWAY_INTERNAL_URL: process.env.NW_GATEWAY_INTERNAL_URL || 'http://127.0.0.1:8090',
+        NW_GAME_PUBLIC_WS_URL: GAME_PUBLIC_WS,
       },
     },
   ],

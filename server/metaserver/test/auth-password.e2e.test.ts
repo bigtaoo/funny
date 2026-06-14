@@ -31,7 +31,7 @@ describe.skipIf(!mongo)('metaserver auth password e2e', () => {
     await m.db.dropDatabase();
     await m.ensureIndexes();
     if (app) await app.close();
-    app = await buildApp({ cols: m.collections, jwt });
+    app = await buildApp({ cols: m.collections, jwt, internalKey: 'test-internal-key' });
   });
 
   afterAll(async () => {

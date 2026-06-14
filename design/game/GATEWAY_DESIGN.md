@@ -2,7 +2,7 @@
 
 > 创建：2026-06-14。本文件设计 **gateway（WS 控制面网关，玩家公开门面）** + 配套的 **客户端三通道适配**。
 > 配套：`META_DESIGN.md`（§1.1/§6.1 决策 M16–M21 拓扑）、`MATCHSVC_DESIGN.md`（私有匹配大脑，gateway 是其门面）、`SERVER_API.md`（§8.4 控制面 WS / §8.5 取 ELO）、`META_TASKS.md`（S1-M1、S1-M4）。
-> 状态：**设计稿，未实现**。现状是 gameserver 中心式（房间/匹配消息走 game WS），本文是迁移目标。
+> 状态：**已实现（2026-06-14，S1-M1+S1-M4）**。gateway+matchsvc 合一进程落地于 `server/gateway`，客户端三通道落地于 `code/src/net/NetSession.ts`。下文为设计依据，实现细节见 `CLAUDE.md`「gateway 控制面 + matchsvc」节。
 
 ---
 
@@ -97,8 +97,8 @@ NetSession
 
 ---
 
-## 7. 开放问题（gateway 侧）
+## 7. 开放问题（gateway 侧）— 已拍板落地（2026-06-14）
 
-- [ ] gateway 重连续房间会话的协议（控制面是否需要类似 game 的 `conn_resume`，把玩家拉回原房间态）？（默认：重连后 gateway 据 accountId 重发当前 `room_state`）
-- [ ] `presence`/好友/聊天首期是否上，还是只留协议位？（默认：只留位，先做房间/匹配）
-- [ ] 内部 RPC（gateway↔matchsvc）合一进程时进程内调用 vs localhost HTTP？（与 matchsvc 开放问题同条，默认进程内）
+- [x] gateway 重连续房间会话：重连后 gateway（`Matchsvc.onConnected`）据 accountId 重发当前 `room_state`；掉线在大厅房标记 `connected:false` 保留 60s 宽限，全员掉线才回收。
+- [x] `presence`/好友/聊天：首期不上，控制面只做房间/匹配（协议未占位，后续加 `presence` ServerMsg）。
+- [x] 内部 RPC（gateway↔matchsvc）：合一进程走**进程内函数调用**（`Matchsvc` 实例 + `push` 回调），拆进程时换内部 RPC，接口不变。

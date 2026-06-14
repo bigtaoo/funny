@@ -138,6 +138,8 @@ export async function createMongo(
     await collections.gachaHistory.createIndex({ accountId: 1, ts: -1 });
     await collections.walletLog.createIndex({ accountId: 1, ts: -1 });
     await collections.matches.createIndex({ ts: -1 });
+    // room_id 幂等：gameserver 局末上报重试不重复结算/归档（meta /internal/match/report）。
+    await collections.matches.createIndex({ roomId: 1 }, { unique: true });
     // 按玩家查对局/回放历史（S1-RP 分享、ranked 战绩）。
     await collections.matches.createIndex({ 'players.accountId': 1, ts: -1 });
   }

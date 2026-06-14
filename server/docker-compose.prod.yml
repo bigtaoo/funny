@@ -1,8 +1,11 @@
-# 生产/联调全栈（C-3）：mongo(单节点副本集) + metaserver + gameserver + caddy 反代。
+# 生产/联调全栈（C-3 / S1-M）：mongo(单节点副本集) + metaserver + gateway + gameserver + caddy 反代。
 # 一条命令起全栈（见 deploy/up.sh）：
 #   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 #
-# 出口：https://{NW_DOMAIN}/api/...（REST）、wss://{NW_DOMAIN}/ws（锁步）。
+# 出口：https://{NW_DOMAIN}/api/...（REST）、wss://{NW_DOMAIN}/gw（控制面：房间/匹配）、wss://{NW_DOMAIN}/ws（数据面：锁步）。
+# 内部链路：gameserver/gateway 经 NW_META_BASE_URL=http://metaserver:8080 调 meta 内部路由；
+#           gameserver 经 NW_GATEWAY_INTERNAL_URL=http://gateway:8090 向 matchsvc 注册；三者共用 NW_INTERNAL_KEY。
+#           NW_GAME_PUBLIC_WS_URL = 客户端可达的数据面地址（如 wss://域名/ws），写进 ticket + 分配兜底。
 # 缺省 NW_DOMAIN=:80 → 走 HTTP/WS（本机联调）；设真域名则 Caddy 自动 HTTPS/WSS。
 #
 # 与开发版 docker-compose.yml 的差异：本文件起全部进程（不只 mongo）、mongo 挂命名卷持久化、
@@ -34,6 +37,7 @@ services:
     command: ["node", "metaserver/dist/index.js"]
     environment:
       NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
       NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       NW_MONGO_DB: ${NW_MONGO_DB:-notebook_wars}
       NW_META_PORT: "8080"
@@ -45,6 +49,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # 控制面 WS（房间/匹配）+ matchsvc（合一进程，S1-M1）。不连 Mongo，向 meta 取 ELO。
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "gateway/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
+      NW_GW_PORT: "8082"
+      NW_GW_HOST: 0.0.0.0
+      NW_GW_INTERNAL_PORT: "8090"
+      NW_META_BASE_URL: http://metaserver:8080
+      # 数据面兜底地址（gameserver 注册前用）：客户端可达的 game WS。设真域名时改 wss://域名/ws。
+      NW_GAME_PUBLIC_WS_URL: ${NW_GAME_PUBLIC_WS_URL:-ws://localhost/ws}
+    depends_on:
+      - metaserver
+    restart: unless-stopped
+
+  # 数据面 WS（瘦锁步中继，S1-M2）。?ticket= 验签，永不连库；局末上报 meta。
   gameserver:
     build:
       context: .
@@ -52,10 +77,15 @@ services:
     image: nw-server:latest
     command: ["node", "gameserver/dist/index.js"]
     environment:
-      NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
       NW_GAME_PORT: "8081"
       NW_GAME_HOST: 0.0.0.0
-    # gameserver 骨架暂不连 Mongo；S1 room/结算落库后再加 depends_on mongo。
+      NW_META_BASE_URL: http://metaserver:8080
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_GAME_PUBLIC_WS_URL: ${NW_GAME_PUBLIC_WS_URL:-ws://localhost/ws}
+    depends_on:
+      - metaserver
+      - gateway
     restart: unless-stopped
 
   caddy:
@@ -73,6 +103,7 @@ services:
       - caddy-config:/config
     depends_on:
       - metaserver
+      - gateway
       - gameserver
     restart: unless-stopped
 
