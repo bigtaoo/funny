@@ -3,8 +3,7 @@ import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '../game/config';
 import { sideToOwner } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
-import { Side } from '../game/types';
-import { buildCastle } from './castle';
+import baseTexUrl from '../assets/game_base.png';
 import { SketchPen } from './sketch';
 import { palette, fx } from './theme';
 import { bake } from './bake';
@@ -285,26 +284,31 @@ export class BoardView {
   }
 
   private drawBases(layout: ILayout): void {
-    // Procedural hand-drawn castles (art-direction §6.3) — the faction ink (blue
-    // = us / red = enemy) carries the side, so no mirroring is needed. Always
-    // draw "us" blue regardless of which screen side the local player sits on.
-    this.playerBase = this.buildBaseRef(layout.playerBaseRect(), false);
-    this.enemyBase  = this.buildBaseRef(layout.enemyBaseRect(),  true);
+    // Base art is a bitmap asset (art belongs to AI-drawn assets, not procedural
+    // — see art-direction.md「〇、资产分工」). Enemy base mirrors by orientation.
+    const baseTex = PIXI.Texture.from(baseTexUrl as string);
+    this.playerBase = this.buildBaseRef(layout.playerBaseRect(), false, baseTex, layout);
+    this.enemyBase  = this.buildBaseRef(layout.enemyBaseRect(),  true,  baseTex, layout);
   }
 
-  private buildBaseRef(rect: Rect, isEnemy: boolean): BaseRef {
+  private buildBaseRef(rect: Rect, mirror: boolean, tex: PIXI.Texture, layout: ILayout): BaseRef {
     const con = new PIXI.Container();
     con.x = rect.x + rect.w / 2;
     con.y = rect.y + rect.h / 2;
 
-    const castle = buildCastle(rect.w, rect.h, isEnemy ? Side.Top : Side.Bottom);
-    castle.width  = rect.w;
-    castle.height = rect.h;
+    const s = new PIXI.Sprite(tex);
+    s.anchor.set(0.5);
+    s.width  = rect.w;
+    s.height = rect.h;
+    if (mirror) {
+      if (layout.orientation === 'landscape') s.scale.x *= -1;
+      else s.scale.y *= -1;
+    }
 
     const crackGfx = new PIXI.Graphics();
-    con.addChild(castle, crackGfx);
+    con.addChild(s, crackGfx);
     this.container.addChild(con);
-    return { sprite: castle as PIXI.Sprite, crackGfx, rect };
+    return { sprite: s, crackGfx, rect };
   }
 
   /**
