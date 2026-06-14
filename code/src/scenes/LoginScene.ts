@@ -18,7 +18,9 @@ import { t, TranslationKey } from '../i18n';
 // scene only collects input and reports the outcome (to clear "submitting" and
 // show an error key on failure). On success app navigates away (scene destroyed).
 
-export type AuthOutcome = { ok: true } | { ok: false; errorKey: TranslationKey };
+export type AuthOutcome =
+  | { ok: true }
+  | { ok: false; errorKey: TranslationKey; detail?: string };
 
 export interface LoginSceneCallbacks {
   onLogin(loginId: string, password: string): Promise<AuthOutcome>;
@@ -66,6 +68,8 @@ export class LoginScene implements Scene {
   private focused: Field | null = null;
 
   private errorKey: TranslationKey | null = null;
+  /** Raw error detail (code / message) surfaced under the translated error line for diagnosis. */
+  private errorDetail: string | null = null;
 
   private caretOn = true;
   private caretTimer = 0;
@@ -188,6 +192,7 @@ export class LoginScene implements Scene {
   private goView(v: View): void {
     this.view = v;
     this.errorKey = null;
+    this.errorDetail = null;
     this.blur();
     if (v === 'landing') {
       this.fields.loginId = this.fields.password = this.fields.confirmPassword = this.fields.displayName = '';
@@ -200,30 +205,42 @@ export class LoginScene implements Scene {
     const loginId = this.fields.loginId.trim();
     const password = this.fields.password;
     const isRegister = this.view === 'register';
+    const formView: View = isRegister ? 'register' : 'password';
     if (!loginId || !password || (isRegister && !this.fields.confirmPassword)) {
-      this.errorKey = 'auth.err.fields'; this.render(); return;
+      this.errorKey = 'auth.err.fields'; this.errorDetail = null; this.render(); return;
     }
     if (isRegister && password !== this.fields.confirmPassword) {
-      this.errorKey = 'auth.err.passwordMismatch'; this.render(); return;
+      this.errorKey = 'auth.err.passwordMismatch'; this.errorDetail = null; this.render(); return;
     }
 
     const displayName = this.fields.displayName.trim() || undefined;
     this.blur();
     this.view = 'submitting';
     this.errorKey = null;
+    this.errorDetail = null;
     this.render();
+
+    // Always return to the form on any failure — including an unexpected rejection
+    // — so the submit button is never stranded behind the (button-less) spinner.
+    const fail = (errorKey: TranslationKey, detail?: string): void => {
+      this.view = formView;
+      this.errorKey = errorKey;
+      this.errorDetail = detail ?? null;
+      this.render();
+    };
 
     const call = isRegister
       ? this.cb.onRegister(loginId, password, displayName)
       : this.cb.onLogin(loginId, password);
-    void call.then((outcome) => {
-      // On success app navigates away; only handle failure (scene still alive).
-      if (!outcome.ok) {
-        this.view = isRegister ? 'register' : 'password';
-        this.errorKey = outcome.errorKey;
-        this.render();
-      }
-    });
+    void call
+      .then((outcome) => {
+        // On success app navigates away; only handle failure (scene still alive).
+        if (!outcome.ok) fail(outcome.errorKey, outcome.detail);
+      })
+      .catch((e: unknown) => {
+        console.error('[LoginScene] auth call rejected', e);
+        fail('auth.err.network', e instanceof Error ? e.message : String(e));
+      });
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -321,11 +338,18 @@ export class LoginScene implements Scene {
       y += fieldH + gap;
     }
 
-    // Error line.
+    // Error line (+ raw detail beneath, for diagnosis).
     if (this.errorKey) {
       const errLbl = txt(t(this.errorKey), Math.round(h * 0.022), C.red, true);
       errLbl.anchor.set(0.5, 0.5); errLbl.x = w / 2; errLbl.y = y + Math.round(h * 0.005);
       this.container.addChild(errLbl);
+      if (this.errorDetail) {
+        const det = txt(this.errorDetail, Math.round(h * 0.016), C.mid);
+        det.anchor.set(0.5, 0); det.x = w / 2; det.y = y + Math.round(h * 0.02);
+        det.style.wordWrap = true; det.style.wordWrapWidth = fieldW; det.style.align = 'center';
+        this.container.addChild(det);
+        y += Math.round(h * 0.03);
+      }
     }
     y += Math.round(h * 0.04);
 

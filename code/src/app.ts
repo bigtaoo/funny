@@ -153,7 +153,10 @@ export async function startApp(platform: IPlatform): Promise<void> {
 
   /** Run a login/register call; on success persist token, reconcile, enter lobby. */
   async function doAuth(call: () => Promise<AuthResult>): Promise<AuthOutcome> {
-    if (!api) return { ok: false, errorKey: 'auth.err.network' };
+    if (!api) {
+      console.error('[auth] no API base configured (__NW_API_BASE__ empty) — request not sent');
+      return { ok: false, errorKey: 'auth.err.network', detail: 'API base not configured' };
+    }
     try {
       const res = await call();
       platform.storage.setItem(TOKEN_KEY, res.token);
@@ -162,7 +165,10 @@ export async function startApp(platform: IPlatform): Promise<void> {
       goLobby({ offline: false });
       return { ok: true };
     } catch (e) {
-      return { ok: false, errorKey: mapAuthError(e) };
+      console.error('[auth] request failed', e);
+      const detail =
+        e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e);
+      return { ok: false, errorKey: mapAuthError(e), detail };
     }
   }
 

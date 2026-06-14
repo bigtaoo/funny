@@ -50,7 +50,8 @@
       "Bash(git commit -m ' *)",
       "Bash(xargs wc -l)",
       "Bash(git commit *)",
-      "Bash(rm .git/COMMIT_EDITMSG_TMP)"
+      "Bash(rm .git/COMMIT_EDITMSG_TMP)",
+      "WebSearch"
     ],
     "defaultMode": "acceptEdits"
   }
