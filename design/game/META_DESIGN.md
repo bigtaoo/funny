@@ -362,6 +362,12 @@ message Replay {
 
 > matchsvc↔gateway 拆进程后即按此落地：gateway→matchsvc 命令、matchsvc→gateway 事件推送（`/gw/push`）、game→matchsvc 注册心跳全是内部 HTTP（§8 / `MATCHSVC_DESIGN.md`）。单 matchsvc 实例下 push 用固定 gateway 地址；多 gateway 时该处换 Redis 路由（见上「升级触发」②）。
 
+### 6.8 日志与可观测性（S1 联调起，详见 `server/observability/README.md`）
+
+**Phase 1（已落地）**：五进程共用 `@nw/shared` 的 `createLogger(service)`，双 sink——控制台可读单行 +（`NW_LOG_DIR` 设置时）`<service>.log` 每条一行 JSON（`{t,level,svc,msg,...data}`，append、按根服务名分文件、Loki-ready）。级别 `NW_LOG_LEVEL`。`dev-up.ps1` 自动注入 `NW_LOG_DIR=server/logs`。埋点覆盖匹配全链路（WS 连/断、控制命令收发、ranked 入队/配对/开局、`GAME_UNAVAILABLE`、push 下发/丢弃、跨服务 HTTP 失败）。**correlation id = `roomId`** 贯穿 matchsvc→gateway push（`/gw/push` 体携带，仅日志）+ game/meta，可按整局聚合。客户端 `net/log.ts` 同期落地（控制台 + 全局异常钩子，不上送服务端）。
+
+**Phase 2（后期做）**：Loki（存储）+ Grafana Alloy（tail `server/logs/*.log` 或 Docker stdout）+ Grafana（查询 `{svc=…} | json | roomId=…`）。docker-compose 观测栈 + Alloy 配置待建，方案与示意配置已记入 `server/observability/README.md`。
+
 ---
 
 ## 7. G — 元系统 UI / 场景

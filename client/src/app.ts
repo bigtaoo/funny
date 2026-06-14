@@ -22,7 +22,10 @@ import { LocalSaveStore, SaveManager, ReplayStore } from './game/meta';
 import { ApiClient, ApiError, type AuthResult } from './net/ApiClient';
 import { getApiBaseUrl, getGatewayWsUrl } from './net/config';
 import { NetSession } from './net/NetSession';
+import { netLog, installGlobalErrorHandlers } from './net/log';
 import { matchStateHash } from './net/judgeRunner';
+
+const log = netLog('app');
 import { MatchMode } from './net/proto/transport';
 import { setBakeRenderer } from './render/bake';
 
@@ -39,6 +42,9 @@ const PLAYER_NAME_KEY = 'nw_player_name';
 const RENAME_COST = 500;
 
 export async function startApp(platform: IPlatform): Promise<void> {
+  // Surface every uncaught error / rejection to the console (was silent before).
+  installGlobalErrorHandlers();
+
   // i18n must be ready before any scene builds its texts
   initI18n(platform.getLanguage(), platform.storage, platform.supportedLocales);
 
@@ -309,10 +315,17 @@ export async function startApp(platform: IPlatform): Promise<void> {
     // the scene in its searching view and fire the ranked queue once the gateway
     // is open (the createRanked send is dropped while the socket is still opening).
     const autoRanked = !!opts?.autoRanked && session !== null;
+    if (opts?.autoRanked && session === null) {
+      log.warn('autoRanked requested but no NetSession (offline / no gateway url)', {
+        hasApi: !!api,
+        gatewayUrl,
+      });
+    }
     let rankedQueued = false;
     const queueRanked = (): void => {
       if (rankedQueued) return;
       rankedQueued = true;
+      log.info('entering ranked queue (createRanked)');
       session?.createRanked();
     };
     const scene = new RoomScene(layout, input, {

@@ -11,8 +11,11 @@ import {
   computeEloDelta,
   eloToRank,
   nextStreak,
+  createLogger,
 } from '@nw/shared';
 import type { GatewayClient } from './gatewayClient.js';
+
+const log = createLogger('meta:internal');
 
 interface EloResult {
   delta: number;
@@ -60,7 +63,9 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     const accountId = (req.query as { accountId?: string }).accountId;
     if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
     const doc = await cols.saves.findOne({ _id: accountId });
-    return reply.send({ elo: doc?.save.pvp.elo ?? INITIAL_ELO });
+    const elo = doc?.save.pvp.elo ?? INITIAL_ELO;
+    log.info('GET /internal/elo', { accountId, elo, hasSave: !!doc });
+    return reply.send({ elo });
   });
 
   // ── POST /internal/match/report ───────────────────────────────────────
@@ -70,6 +75,13 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     }
     const body = req.body as ReportBody;
     if (!body?.room_id) return reply.code(400).send({ ok: false, error: 'room_id required' });
+    log.info('POST /internal/match/report', {
+      roomId: body.room_id,
+      mode: body.mode,
+      reason: body.reason,
+      winner: body.winner_side,
+      hashOk: body.hash_ok,
+    });
 
     // 幂等：同 room_id 已归档则直接 ok（重发不重复结算）。
     const existing = await cols.matches.findOne({ roomId: body.room_id });
@@ -87,7 +99,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         try {
           eloBySide = await settleElo(cols, now, winner, loser);
         } catch (e) {
-          app.log.error({ err: e }, 'ranked ELO settle failed');
+          log.error('ranked ELO settle failed', { err: (e as Error).message });
         }
       }
     } else if (body.mode === 'ranked' && body.reason === 'mismatch' && gateway.available) {
@@ -103,7 +115,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
           };
         }
       } catch (e) {
-        app.log.error({ err: e }, 'peer judge failed');
+        log.error('peer judge failed', { err: (e as Error).message });
       }
     }
 
@@ -130,7 +142,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       })
       .catch((e) => {
         // 幂等竞态：唯一索引冲突说明并发已归档，忽略。
-        if ((e as { code?: number }).code !== 11000) app.log.error({ err: e }, 'archive match failed');
+        if ((e as { code?: number }).code !== 11000) log.error('archive match failed', { err: (e as Error).message });
       });
 
     return reply.send({ ok: true, ...(eloBySide ? { elo: eloBySide } : {}) });

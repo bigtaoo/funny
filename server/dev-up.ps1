@@ -25,6 +25,10 @@ $server = $PSScriptRoot
 # Shared secret for all five processes (change in prod; any consistent value in dev)
 $internalKey = 'dev-internal-key'
 
+# Per-service log files (JSON lines) live here; the shared logger appends when NW_LOG_DIR is set.
+# Each process writes server/logs/<service>.log; readable console output is unaffected.
+$logDir = Join-Path $server 'logs'
+
 # name / workspace dir / per-process env vars
 # Run node directly (not via npm) so the PowerShell WindowTitle we set is not
 # clobbered by nested `npm run` — each window stays titled `nw:<name>`.
@@ -45,7 +49,7 @@ function Start-DevWindow([string]$title, [hashtable]$env, [string]$cmd, [string]
   # Build inner command for the new window: title -> env -> cd -> run.
   # Set the title last-thing-before-run and avoid nested npm so it is not
   # overwritten — the window stays labeled `nw:<title>`.
-  $lines = @("`$env:NW_INTERNAL_KEY = '$internalKey'")
+  $lines = @("`$env:NW_INTERNAL_KEY = '$internalKey'", "`$env:NW_LOG_DIR = '$logDir'")
   foreach ($k in $env.Keys) { $lines += "`$env:$k = '$($env[$k])'" }
   $lines += "Set-Location -LiteralPath '$dir'"
   $lines += "`$host.UI.RawUI.WindowTitle = 'nw:$title'"

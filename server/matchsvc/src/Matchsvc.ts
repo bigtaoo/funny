@@ -10,9 +10,11 @@
 //
 // **不连任何库**：匹配要的 elo 由 gateway 入队前向 meta 取后带入（enqueue 的 elo 参数）。
 import { randomUUID, randomInt } from 'crypto';
-import { signTicket, type TicketClaims } from '@nw/shared';
+import { signTicket, createLogger, type TicketClaims } from '@nw/shared';
 import { Matchmaking, type QueueEntry } from './Matchmaking';
 import { GameRegistry } from './GameRegistry';
+
+const log = createLogger('matchsvc');
 
 // RoomPhase 枚举值镜像 contracts/transport.proto（编码归 gateway，matchsvc 只透传整数 phase）。
 const RoomPhase = {
@@ -34,7 +36,12 @@ export type PushMsg =
   | { kind: 'room_state'; code: string; players: PlayerView[]; phase: number }
   | { kind: 'match_found'; gameUrl: string; ticket: string }
   | { kind: 'room_error'; code: string; message: string };
-export type Push = (accountId: string, msg: PushMsg) => void;
+/**
+ * 推送回调。`roomId` 是跨进程关联 id（correlation id）——同一局在 matchsvc / gateway / game /
+ * meta 的日志里都带它，Grafana 用 `| json | roomId="X"` 可把整局拉成一条时间线。仅用于日志，
+ * 不进客户端可见的 PushMsg。无房上下文（如 ALREADY_IN_ROOM 错误）时省略。
+ */
+export type Push = (accountId: string, msg: PushMsg, roomId?: string) => void;
 
 interface Slot {
   accountId: string;
@@ -92,8 +99,12 @@ export class Matchsvc {
 
   /** 开始 ranked 匹配（elo 由 gateway 向 meta 取后带入）。已在房 / 已在队则忽略。 */
   enqueue(accountId: string, name: string, elo: number): void {
-    if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) return;
+    if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
+      log.warn('enqueue ignored: already in room/queue', { accountId });
+      return;
+    }
     this.matchmaking.enqueue(accountId, name, elo);
+    log.info('enqueued for ranked', { accountId, elo, queueSize: this.matchmaking.size });
   }
 
   cancel(accountId: string): void {
@@ -102,6 +113,7 @@ export class Matchsvc {
 
   /** Matchmaking 配对成功 → 直接开局（无 ready / 房主环节）。 */
   private onPair(a: QueueEntry, b: QueueEntry): void {
+    log.info('ranked pair matched', { a: a.accountId, b: b.accountId, eloA: a.elo, eloB: b.elo });
     this.startMatch('ranked', { accountId: a.accountId, name: a.name }, { accountId: b.accountId, name: b.name });
   }
 
@@ -124,6 +136,7 @@ export class Matchsvc {
     this.rooms.set(roomId, room);
     this.byCode.set(code, roomId);
     this.accountRoom.set(accountId, roomId);
+    log.info('room created', { accountId, code, roomId });
     this.broadcast(room);
   }
 
@@ -135,15 +148,18 @@ export class Matchsvc {
     const roomId = this.byCode.get(code.toUpperCase());
     const room = roomId ? this.rooms.get(roomId) : undefined;
     if (!room) {
+      log.warn('join failed: room not found', { accountId, code });
       this.push(accountId, { kind: 'room_error', code: 'ROOM_NOT_FOUND', message: 'no such room' });
       return;
     }
     if (room.slots.length >= 2) {
+      log.warn('join failed: room full', { accountId, code });
       this.push(accountId, { kind: 'room_error', code: 'ROOM_FULL', message: 'room is full' });
       return;
     }
     room.slots.push({ accountId, name, side: 1, ready: false, connected: true });
     this.accountRoom.set(accountId, room.roomId);
+    log.info('room joined', { accountId, code, roomId: room.roomId });
     this.broadcast(room);
   }
 
@@ -222,6 +238,7 @@ export class Matchsvc {
   // ───────────────────────── game 注册表 ─────────────────────────
 
   registerGame(gameId: string, wsUrl: string, capacity: number): void {
+    log.info('game server registered', { gameId, wsUrl, capacity });
     this.games.register(gameId, wsUrl, capacity);
   }
   gameHeartbeat(gameId: string, load: number, rooms: number): void {
@@ -237,6 +254,11 @@ export class Matchsvc {
   ): void {
     const gameUrl = this.games.pick();
     if (!gameUrl) {
+      log.error('startMatch aborted: no game server available (none registered + no fallback)', {
+        a: a.accountId,
+        b: b.accountId,
+        mode,
+      });
       const msg: PushMsg = { kind: 'room_error', code: 'GAME_UNAVAILABLE', message: 'no game server available' };
       this.push(a.accountId, msg);
       this.push(b.accountId, msg);
@@ -244,6 +266,7 @@ export class Matchsvc {
     }
     const roomId = randomUUID();
     const seed = randomInt(1, 2 ** 48); // < 2^48，落在安全整数内
+    log.info('match starting', { mode, roomId, gameUrl, a: a.accountId, b: b.accountId, seed });
 
     const sign = (self: { accountId: string; name: string }, opp: { accountId: string; name: string }, side: 0 | 1): string => {
       const claims: TicketClaims = {
@@ -258,8 +281,8 @@ export class Matchsvc {
       return signTicket(claims, { key: this.internalKey, ttlSec: this.ticketTtlSec });
     };
 
-    this.push(a.accountId, { kind: 'match_found', gameUrl, ticket: sign(a, b, 0) });
-    this.push(b.accountId, { kind: 'match_found', gameUrl, ticket: sign(b, a, 1) });
+    this.push(a.accountId, { kind: 'match_found', gameUrl, ticket: sign(a, b, 0) }, roomId);
+    this.push(b.accountId, { kind: 'match_found', gameUrl, ticket: sign(b, a, 1) }, roomId);
   }
 
   // ───────────────────────── 内部 ─────────────────────────
@@ -303,18 +326,17 @@ export class Matchsvc {
   }
 
   private pushRoomState(accountId: string, room: Room): void {
-    this.push(accountId, {
-      kind: 'room_state',
-      code: room.code,
-      players: this.playersView(room),
-      phase: room.phase,
-    });
+    this.push(
+      accountId,
+      { kind: 'room_state', code: room.code, players: this.playersView(room), phase: room.phase },
+      room.roomId,
+    );
   }
 
   private broadcast(room: Room): void {
     const players = this.playersView(room);
     for (const s of room.slots) {
-      this.push(s.accountId, { kind: 'room_state', code: room.code, players, phase: room.phase });
+      this.push(s.accountId, { kind: 'room_state', code: room.code, players, phase: room.phase }, room.roomId);
     }
   }
 

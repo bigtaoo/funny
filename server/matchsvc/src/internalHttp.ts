@@ -5,7 +5,10 @@
 // 用 node:http（matchsvc 不引 fastify）。命令均为「收到即处理、异步事件经 GatewayClient 回推」，
 // 故响应只回 {ok:true}（不在 HTTP 响应里带房间态）。
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
+import { createLogger } from '@nw/shared';
 import type { Matchsvc } from './Matchsvc';
+
+const log = createLogger('matchsvc:internal');
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -40,6 +43,7 @@ export function startInternalHttp(
   const server = createServer((req, res) => {
     void (async () => {
       if (req.headers['x-internal-key'] !== opts.internalKey) {
+        log.warn('internal request rejected: bad X-Internal-Key', { url: req.url });
         send(res, 401, { ok: false, error: 'unauthorized' });
         return;
       }
@@ -49,6 +53,9 @@ export function startInternalHttp(
       }
       try {
         const b = await readJson(req);
+        // game 心跳每 10s 一次，噪声大 → debug；其余命令 info。
+        if (req.url === '/mm/game/heartbeat') log.debug(`recv ${req.url}`, { gameId: b.gameId });
+        else log.info(`recv ${req.url}`, { accountId: b.accountId, code: b.code, gameId: b.gameId });
         switch (req.url) {
           // —— gateway 控制命令 ——
           case '/mm/room/create':

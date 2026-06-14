@@ -5,7 +5,10 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import openapiGlue from 'fastify-openapi-glue';
 import type { Collections, JwtConfig } from '@nw/shared';
+import { createLogger } from '@nw/shared';
 import { MetaService } from './service.js';
+
+const log = createLogger('meta');
 import { makeSecurityHandlers } from './auth.js';
 import { registerInternalRoutes } from './internal.js';
 import { HttpCommercialClient, type CommercialClient } from './commercialClient.js';
@@ -36,13 +39,24 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   const app = Fastify({ logger: opts.logger ?? false });
   await app.register(cors, { origin: true });
 
+  // 可读的请求/响应日志（联调用，替代 pino JSON）。每条请求一行收尾：方法 路径 状态 耗时。
+  // 健康探针不打日志（巡检噪声）。
+  app.addHook('onResponse', async (req, reply) => {
+    if (req.url === '/health') return;
+    const ms = Math.round(reply.elapsedTime ?? 0);
+    log.info(`${req.method} ${req.url} -> ${reply.statusCode}`, { ms });
+  });
+
   // 统一错误包络：校验失败 / 安全处理器抛错都转成 ApiResp。
   // 必须在注册 glue 路由之前设置——fastify 在路由注册时即把 error handler
   // 绑进路由上下文，之后再 setErrorHandler 对已注册路由不生效。
-  app.setErrorHandler((error: Error & { statusCode?: number }, _req, reply) => {
+  app.setErrorHandler((error: Error & { statusCode?: number }, req, reply) => {
     const status = error.statusCode ?? 500;
     const code =
       status === 401 ? 'UNAUTHENTICATED' : status === 400 ? 'BAD_REQUEST' : 'INTERNAL';
+    // 5xx 是真问题（带栈），4xx 是预期校验失败（仅一行）。
+    if (status >= 500) log.error(`${req.method} ${req.url} ${status} ${code}`, { err: error.stack ?? error.message });
+    else log.warn(`${req.method} ${req.url} ${status} ${code}`, { message: error.message });
     reply.code(status).send({ ok: false, error: { code, message: error.message } });
   });
 

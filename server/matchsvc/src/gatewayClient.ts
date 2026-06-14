@@ -5,7 +5,10 @@
 //
 // 内部鉴权：X-Internal-Key（共用 NW_INTERNAL_KEY）。fire-and-forget——玩家离线 / gateway 抖动
 // 时丢弃即可（房间态是最新快照，下次变更会重发；match_found 丢失则玩家停在房间，可重试开局）。
+import { createLogger } from '@nw/shared';
 import type { PushMsg } from './Matchsvc';
+
+const log = createLogger('matchsvc:gw');
 
 export class GatewayClient {
   constructor(
@@ -17,14 +20,28 @@ export class GatewayClient {
     return this.baseUrl !== null;
   }
 
-  readonly push = (accountId: string, msg: PushMsg): void => {
-    if (!this.baseUrl) return;
+  readonly push = (accountId: string, msg: PushMsg, roomId?: string): void => {
+    if (!this.baseUrl) {
+      log.warn('gateway push not configured: event dropped', { accountId, kind: msg.kind, roomId });
+      return;
+    }
     void fetch(`${this.baseUrl}/gw/push`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
-      body: JSON.stringify({ accountId, msg }),
-    }).catch(() => {
-      /* 下次状态变更会重发；离线玩家本就该丢弃 */
-    });
+      body: JSON.stringify({ accountId, msg, roomId }),
+    })
+      .then((res) => {
+        if (!res.ok) log.warn('gateway push non-OK', { accountId, kind: msg.kind, roomId, status: res.status });
+      })
+      .catch((e) => {
+        // 下次状态变更会重发；离线玩家本就该丢弃。联调期 match_found 丢失会卡「搜索中」，必须看见。
+        log.error('gateway push failed', {
+          accountId,
+          kind: msg.kind,
+          roomId,
+          url: this.baseUrl,
+          err: (e as Error).message,
+        });
+      });
   };
 }

@@ -23,7 +23,10 @@ import {
 } from './proto/transport';
 import { NetInputSource, type MatchStartInfo } from '../game';
 import { runJudge } from './judgeRunner';
+import { netLog } from './log';
 import type { ApiClient } from './ApiClient';
+
+const log = netLog('session');
 
 export interface NetSessionHandlers {
   onRoomState?(s: RoomState): void;
@@ -69,6 +72,7 @@ export class NetSession {
 
     this.gateway = new NetClient(platform, {
       url: gatewayUrl,
+      tag: 'gateway',
       tokenProvider: () => this.freshToken(),
       handlers: {
         onServerMsg: (msg) => this.routeControl(msg),
@@ -156,10 +160,20 @@ export class NetSession {
 
   /** Control-plane messages (gateway): rooms + match_found + peer-judge requests. */
   private routeControl(msg: ServerMsg): void {
-    if (msg.roomState) this.handlers.onRoomState?.(msg.roomState);
-    else if (msg.roomError) this.handlers.onRoomError?.(msg.roomError);
-    else if (msg.matchFound) this.connectGame(msg.matchFound.gameUrl, msg.matchFound.ticket);
-    else if (msg.judgeRequest) {
+    if (msg.roomState) {
+      log.info('room_state', {
+        code: msg.roomState.code,
+        phase: msg.roomState.phase,
+        players: msg.roomState.players.length,
+      });
+      this.handlers.onRoomState?.(msg.roomState);
+    } else if (msg.roomError) {
+      log.error('room_error', { code: msg.roomError.code, message: msg.roomError.message });
+      this.handlers.onRoomError?.(msg.roomError);
+    } else if (msg.matchFound) {
+      log.info('match_found', { gameUrl: msg.matchFound.gameUrl });
+      this.connectGame(msg.matchFound.gameUrl, msg.matchFound.ticket);
+    } else if (msg.judgeRequest) {
       // Phase C: the server asked us to recompute a desynced ranked match. Replay
       // it headlessly and report the verdict hash; this client is a neutral third
       // party (never one of the two players in that match).
@@ -181,9 +195,11 @@ export class NetSession {
   /** Got match_found → connect the data-plane WS with the signed ticket. */
   private connectGame(gameUrl: string, ticket: string): void {
     if (this.game) return; // already connected for this match
+    log.info('connecting data plane (game)', { gameUrl });
     this.ticket = ticket;
     this.game = new NetClient(this.platform, {
       url: gameUrl,
+      tag: 'game',
       queryParam: 'ticket',
       tokenProvider: () => Promise.resolve(this.ticket),
       handlers: {

@@ -1,7 +1,9 @@
 // gameserver 进程引导（S1-M2/M3）：数据面纯帧中继 + ticket 握手 + 心跳。瘦身后永不连库（M16）。
 // 反代将 /ws 转到本进程（SERVER_API.md §0）。
 import { WebSocketServer, type WebSocket } from 'ws';
-import { verifyTicket } from '@nw/shared';
+import { verifyTicket, createLogger } from '@nw/shared';
+
+const log = createLogger('game');
 import { loadGameEnv } from './config';
 import { Connection } from './Connection';
 import { RoomManager } from './RoomManager';
@@ -45,7 +47,11 @@ function main(): void {
     try {
       // 验签即可；exp 仅约束首连，重连复用同票据放过过期（已活房间不再查 exp）。
       claims = verifyTicket(ticketStr ?? '', { key: env.internalKey }, { ignoreExpiration: true });
-    } catch {
+    } catch (e) {
+      log.warn('WS handshake rejected: invalid ticket', {
+        hasTicket: !!ticketStr,
+        err: (e as Error).message,
+      });
       ws.close(4401, 'invalid ticket');
       return;
     }
@@ -55,11 +61,19 @@ function main(): void {
     (ws as WsWithConn)[CONN] = conn;
 
     const mode = claims.mode === 'ranked' ? MatchMode.RANKED : MatchMode.FRIENDLY;
+    log.info('WS connected (ticket ok)', {
+      accountId: claims.accountId,
+      roomId: claims.roomId,
+      side: claims.side,
+      mode: claims.mode,
+    });
     const ok = manager.join(conn, claims.opponent, claims.seed, mode);
     if (!ok) {
+      log.warn('join rejected: ticket room mismatch', { accountId: claims.accountId, roomId: claims.roomId });
       ws.close(4403, 'ticket room mismatch');
       return;
     }
+    log.info('joined room', { accountId: claims.accountId, roomId: claims.roomId, side: claims.side });
 
     ws.on('message', (data: Buffer, isBinary: boolean) => {
       conn.alive = true;

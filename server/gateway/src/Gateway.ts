@@ -6,7 +6,9 @@
 //
 // 它不做匹配、不存房间、不签 ticket——全在 matchsvc（§8.1）。ranked 入队前向 meta 取 ELO。
 import { WebSocketServer, type WebSocket } from 'ws';
-import { verifyToken, type JwtConfig } from '@nw/shared';
+import { verifyToken, createLogger, type JwtConfig } from '@nw/shared';
+
+const log = createLogger('gateway');
 import {
   decodeClient,
   encodeServer,
@@ -79,13 +81,23 @@ export class Gateway {
   }
 
   /** matchsvc → 玩家：据 accountId 找 socket 推消息。离线则丢弃。 */
-  readonly push = (accountId: string, msg: PushMsg): void => {
+  readonly push = (accountId: string, msg: PushMsg, roomId?: string): void => {
     const conn = this.conns.get(accountId);
-    if (!conn || conn.ws.readyState !== conn.ws.OPEN) return;
+    if (!conn || conn.ws.readyState !== conn.ws.OPEN) {
+      log.warn('push dropped: recipient offline', { accountId, kind: msg.kind, roomId });
+      return;
+    }
+    log.info(`push -> ${msg.kind}`, {
+      accountId,
+      roomId,
+      ...(msg.kind === 'room_state' ? { code: msg.code, phase: msg.phase, players: msg.players.length } : {}),
+      ...(msg.kind === 'match_found' ? { gameUrl: msg.gameUrl } : {}),
+      ...(msg.kind === 'room_error' ? { code: msg.code, message: msg.message } : {}),
+    });
     try {
       conn.ws.send(encodeServer(toServerMsg(msg)));
-    } catch {
-      /* close 收口 */
+    } catch (e) {
+      log.warn('push send failed', { accountId, err: (e as Error).message });
     }
   };
 
@@ -102,7 +114,11 @@ export class Gateway {
     let accountId: string;
     try {
       accountId = verifyToken(token ?? '', this.jwt);
-    } catch {
+    } catch (e) {
+      log.warn('WS handshake rejected: invalid token', {
+        hasToken: !!token,
+        err: (e as Error).message,
+      });
       ws.close(4401, 'unauthenticated');
       return;
     }
@@ -110,6 +126,7 @@ export class Gateway {
     // 同账号顶替旧连（双开 / 残连）。
     const prev = this.conns.get(accountId);
     if (prev && prev.ws !== ws) {
+      log.info('replacing existing connection (same account)', { accountId });
       try {
         prev.ws.close(4409, 'replaced');
       } catch {
@@ -118,6 +135,7 @@ export class Gateway {
     }
     const conn: GwConn = { accountId, ws, alive: true, canJudge: false };
     this.conns.set(accountId, conn);
+    log.info('WS connected', { accountId, online: this.conns.size });
     this.matchsvc.connected(accountId);
 
     ws.on('message', (data: Buffer, isBinary: boolean) => {
@@ -134,9 +152,10 @@ export class Gateway {
     ws.on('pong', () => {
       conn.alive = true;
     });
-    ws.on('close', () => {
+    ws.on('close', (code: number) => {
       if (this.conns.get(accountId) === conn) {
         this.conns.delete(accountId);
+        log.info('WS closed', { accountId, code, online: this.conns.size });
         this.matchsvc.disconnected(accountId);
       }
       // 该账号若正担任裁判 → 立即作废其在途请求（不必等超时）。
@@ -153,15 +172,20 @@ export class Gateway {
   }
 
   private handle(accountId: string, msg: ReturnType<typeof decodeClient>): void {
+    // ping 太频繁，单独 debug；其余控制命令 info 级（联调主线）。
+    if (msg.case !== 'ping') log.info(`recv ${msg.case}`, { accountId });
     switch (msg.case) {
       case 'room_create':
         if (msg.mode === MatchMode.RANKED) {
+          log.info('-> ranked enqueue', { accountId });
           void this.enqueueRanked(accountId);
         } else {
+          log.info('-> matchsvc roomCreate', { accountId });
           this.matchsvc.roomCreate(accountId, displayName(accountId));
         }
         break;
       case 'room_join':
+        log.info('-> matchsvc roomJoin', { accountId, code: msg.code });
         this.matchsvc.roomJoin(accountId, displayName(accountId), msg.code);
         break;
       case 'room_ready':
@@ -256,6 +280,7 @@ export class Gateway {
   /** ranked 入队：先向 meta 取 ELO（matchsvc 保持 DB-free），再入队。 */
   private async enqueueRanked(accountId: string): Promise<void> {
     if (!this.meta.available) {
+      log.warn('ranked rejected: meta unavailable (no ELO source)', { accountId });
       this.push(accountId, {
         kind: 'room_error',
         code: 'RANKED_UNAVAILABLE',
@@ -265,7 +290,11 @@ export class Gateway {
     }
     const elo = await this.meta.getElo(accountId);
     // await 期间可能掉线 → 仅在仍在线时入队。
-    if (!this.conns.has(accountId)) return;
+    if (!this.conns.has(accountId)) {
+      log.warn('ranked enqueue aborted: account dropped during ELO fetch', { accountId });
+      return;
+    }
+    log.info('-> matchsvc enqueue', { accountId, elo });
     this.matchsvc.enqueue(accountId, displayName(accountId), elo);
   }
 

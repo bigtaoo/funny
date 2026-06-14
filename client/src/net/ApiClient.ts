@@ -7,6 +7,9 @@
 
 import type { AuthCredential } from '../platform/IPlatform';
 import type { SaveData, SyncPatch, Rarity } from '../game/meta/SaveData';
+import { netLog } from './log';
+
+const log = netLog('api');
 
 // ── Economy DTOs (S2; mirror contracts/openapi.yml shop/gacha schemas) ──────────
 
@@ -209,12 +212,14 @@ export class ApiClient {
     const res = await this.fetchRaw(method, path, body);
     const json = (await res.json()) as ApiResp<T>;
     if (!json.ok) {
+      log.error(`${method} ${path} -> ${res.status} ${json.error.code}`, json.error.message);
       throw new ApiError(json.error.code, json.error.message);
     }
+    log.info(`${method} ${path} -> ${res.status} ok`);
     return json.data;
   }
 
-  private fetchRaw(
+  private async fetchRaw(
     method: string,
     path: string,
     body?: unknown,
@@ -223,10 +228,17 @@ export class ApiClient {
     const headers: Record<string, string> = { ...extraHeaders };
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (this.token) headers['authorization'] = `Bearer ${this.token}`;
-    return fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    log.debug(`${method} ${path}`);
+    try {
+      return await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (e) {
+      // 网络层失败（服务器没起 / CORS / DNS）：fetch reject 在 console 里很笼统，这里点名 URL。
+      log.error(`${method} ${path} network failure`, { url: `${this.baseUrl}${path}`, err: String(e) });
+      throw e;
+    }
   }
 }

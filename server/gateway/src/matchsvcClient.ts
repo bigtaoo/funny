@@ -6,6 +6,10 @@
 // 这里的 PushMsg / PlayerView 是 matchsvc 同名类型的 JSON 镜像（跨进程的线契约是 JSON，
 // 两侧各持结构相同的本地类型，与 REST/JSON 内部通信约定一致，见 META_DESIGN §6.7）。
 
+import { createLogger } from '@nw/shared';
+
+const log = createLogger('gateway:matchsvc');
+
 export interface PlayerView {
   side: number;
   name: string;
@@ -28,14 +32,22 @@ export class MatchsvcClient {
   }
 
   private post(path: string, body: Record<string, unknown>): void {
-    if (!this.baseUrl) return;
+    if (!this.baseUrl) {
+      log.warn('matchsvc not configured: command dropped', { path });
+      return;
+    }
     void fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
       body: JSON.stringify(body),
-    }).catch(() => {
-      /* 命令丢失：玩家可重试（建房/加入/开局均幂等于「再点一次」） */
-    });
+    })
+      .then((res) => {
+        if (!res.ok) log.warn('matchsvc returned non-OK', { path, status: res.status });
+      })
+      .catch((e) => {
+        // 命令丢失：玩家可重试（建房/加入/开局均幂等于「再点一次」），但联调期必须看见。
+        log.error('matchsvc POST failed', { path, url: this.baseUrl, err: (e as Error).message });
+      });
   }
 
   roomCreate(accountId: string, name: string): void {

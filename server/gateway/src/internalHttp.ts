@@ -4,7 +4,10 @@
 // （拆 matchsvc 为独立进程前，这里曾接 gameserver 的 game 注册/心跳——那两个端点已随
 //  GameRegistry 迁到 matchsvc 自己的内部 HTTP，gameserver 现直接注册到 matchsvc。）
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
+import { createLogger } from '@nw/shared';
 import type { Gateway, JudgeArgs } from './Gateway';
+
+const log = createLogger('gateway:internal');
 import type { FrameCmdsOut } from './proto';
 import type { PushMsg } from './matchsvcClient';
 
@@ -55,17 +58,19 @@ export function startInternalHttp(
   const server = createServer((req, res) => {
     void (async () => {
       if (req.headers['x-internal-key'] !== opts.internalKey) {
+        log.warn('internal request rejected: bad X-Internal-Key', { url: req.url });
         send(res, 401, { ok: false, error: 'unauthorized' });
         return;
       }
       try {
         if (req.method === 'POST' && req.url === '/gw/push') {
-          const b = (await readJson(req)) as { accountId?: string; msg?: PushMsg };
+          const b = (await readJson(req)) as { accountId?: string; msg?: PushMsg; roomId?: string };
           if (!b.accountId || !b.msg) {
             send(res, 400, { ok: false, error: 'accountId and msg required' });
             return;
           }
-          gateway.push(b.accountId, b.msg);
+          log.debug('recv /gw/push', { accountId: b.accountId, kind: b.msg.kind, roomId: b.roomId });
+          gateway.push(b.accountId, b.msg, b.roomId);
           send(res, 200, { ok: true });
           return;
         }

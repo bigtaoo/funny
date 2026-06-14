@@ -7,6 +7,7 @@
 // 重连后只通知上层（onReconnect），由上层决定发 conn_resume 续局（S1-4）。
 import type { IGameSocket, IPlatform, SocketHandlers } from '../platform/IPlatform';
 import { Envelope, type ClientMsg, type MatchMode, type ServerMsg } from './proto/transport';
+import { netLog, type NetLogger } from './log';
 
 export type NetState = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
 
@@ -34,6 +35,8 @@ export interface NetClientOptions {
   backoffMs?: number[];
   /** 应用层心跳间隔（ms），保活 + 让服务端看到流量。默认 25000；0 = 关。 */
   pingIntervalMs?: number;
+  /** 日志标签（区分 gateway / game 两条连接）。默认 'ws'。 */
+  tag?: string;
 }
 
 const DEFAULT_BACKOFF = [500, 1000, 2000, 4000, 8000];
@@ -50,6 +53,7 @@ export class NetClient {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private readonly backoff: number[];
   private readonly pingIntervalMs: number;
+  private readonly log: NetLogger;
 
   constructor(
     private readonly platform: IPlatform,
@@ -57,6 +61,7 @@ export class NetClient {
   ) {
     this.backoff = opt.backoffMs ?? DEFAULT_BACKOFF;
     this.pingIntervalMs = opt.pingIntervalMs ?? 25_000;
+    this.log = netLog(opt.tag ?? 'ws');
   }
 
   getState(): NetState {
@@ -133,19 +138,24 @@ export class NetClient {
       token = await this.opt.tokenProvider();
     } catch (e) {
       if (gen !== this.gen) return; // 期间被 disconnect/重置
+      this.log.error('token fetch failed; will retry', e);
       this.scheduleReconnect();
       return;
     }
     if (gen !== this.gen) return;
 
     const url = `${this.opt.url}?${this.opt.queryParam ?? 'token'}=${encodeURIComponent(token)}`;
+    this.log.info('opening socket', { url: this.opt.url });
     const handlers: SocketHandlers = {
       onOpen: () => {
         if (gen !== this.gen) return;
         this.attempt = 0;
         this.setState('open');
         this.startPing();
-        if (this.everOpened) this.opt.handlers.onReconnect?.();
+        if (this.everOpened) {
+          this.log.info('reconnected');
+          this.opt.handlers.onReconnect?.();
+        }
         this.everOpened = true;
       },
       onMessage: (data) => {
@@ -153,13 +163,15 @@ export class NetClient {
         let env: Envelope;
         try {
           env = Envelope.decode(data);
-        } catch {
+        } catch (e) {
+          this.log.warn('dropped undecodable frame', e);
           return; // 坏帧丢弃
         }
         if (env.server) this.opt.handlers.onServerMsg(env.server);
       },
       onClose: () => {
         if (gen !== this.gen || this.intentional) return;
+        this.log.warn('socket closed');
         this.stopPing();
         this.socket = null;
         this.scheduleReconnect();
@@ -167,6 +179,7 @@ export class NetClient {
       onError: () => {
         // 浏览器 error 后会跟 close；微信可能只有 error。统一交给 close 驱动重连；
         // 若长时间无 close（极少），心跳缺失也不致命（上层 grace 内会暂停）。
+        this.log.error('socket error', { url: this.opt.url });
       },
     };
     this.socket = this.platform.connectSocket(url, handlers);
@@ -182,7 +195,13 @@ export class NetClient {
   }
 
   private sendClient(client: ClientMsg): void {
-    if (!this.socket || this.state !== 'open') return;
+    const kind = Object.keys(client)[0] ?? 'unknown';
+    if (!this.socket || this.state !== 'open') {
+      // ping 在未连时丢弃属正常；其余命令丢弃要警示（如 createRanked 在 socket open 前发出会被吞）。
+      if (kind !== 'ping') this.log.warn(`send dropped (not open): ${kind}`, { state: this.state });
+      return;
+    }
+    if (kind !== 'ping') this.log.info(`send ${kind}`);
     const bytes = Envelope.encode(Envelope.fromPartial({ client })).finish();
     this.socket.send(bytes);
   }
@@ -190,6 +209,7 @@ export class NetClient {
   private setState(s: NetState): void {
     if (this.state === s) return;
     this.state = s;
+    this.log.info(`state ${s}`);
     this.opt.handlers.onStateChange?.(s);
   }
 
