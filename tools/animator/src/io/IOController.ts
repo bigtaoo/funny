@@ -215,12 +215,12 @@ export class IOController {
     try {
       const animJson = this.buildAnimationJson();
 
-      // Collect image blobs
-      const items: Array<{ id: string; blob: Blob }> = [];
-      for (const slotId of [...this.state.boneBindings.keys(), 'shadow']) {
-        const blob = this.imageCtrl.getBlob(slotId);
-        if (blob) items.push({ id: slotId, blob });
-      }
+      // Bake each image down to the largest size it is ever displayed at (×headroom),
+      // capped at the source resolution, then rewrite binding.scaleX/Y to compensate.
+      // The game renders sprite.scale = keyframe.scale × binding.scale, so pre-scaling
+      // the pixels and dividing binding.scale by the same factor is visually identical
+      // while shrinking the spritesheet — no runtime change needed.
+      const items = await this.buildExportImages(animJson);
 
       const zip = new JSZip();
       zip.file('animation.json', JSON.stringify(animJson, null, 2));
@@ -341,17 +341,88 @@ export class IOController {
 
   // ── Spritesheet building ──────────────────────────────────────────────────
 
-  private async buildSpritesheet(
-    items: Array<{ id: string; blob: Blob }>,
-  ): Promise<{ canvas: HTMLCanvasElement; rects: Map<string, { x: number; y: number; w: number; h: number }> }> {
-    // Load all images to get dimensions
-    const loaded = await Promise.all(
-      items.map(async item => {
-        const img = await loadImageFromBlob(item.blob);
-        return { id: item.id, img, w: img.naturalWidth, h: img.naturalHeight };
-      }),
-    );
+  /** Headroom factor: bake images at 1.5× their largest displayed size so they stay
+   *  crisp on high-DPI screens and when an animation scales the bone up past 1.0. */
+  private static readonly EXPORT_HEADROOM = 1.5;
 
+  /** Bake each loaded image down to the resolution it actually needs, and rewrite the
+   *  corresponding binding.scaleX/Y in `animJson` so the on-screen result is unchanged.
+   *  Shadow has no binding (its size is driven by shadowW/H) but is resolution-independent,
+   *  so it is shrunk to its display size × headroom too. */
+  private async buildExportImages(
+    animJson: SerializedProject,
+  ): Promise<Array<{ id: string; src: CanvasImageSource; w: number; h: number }>> {
+    const headroom = IOController.EXPORT_HEADROOM;
+    const maxKf    = this.computeMaxKeyframeScale();
+    const out: Array<{ id: string; src: CanvasImageSource; w: number; h: number }> = [];
+
+    for (const slotId of [...this.state.boneBindings.keys(), 'shadow']) {
+      const blob = this.imageCtrl.getBlob(slotId);
+      if (!blob) continue;
+
+      const img = await loadImageFromBlob(blob);
+      const sw  = img.naturalWidth;
+      const sh  = img.naturalHeight;
+
+      let bakeX = 1, bakeY = 1;
+
+      if (slotId === 'shadow') {
+        // Shadow display size = shadowW*2 × shadowH*2 (animator px), independent of source.
+        const shadow = this.state.attachmentPoints.get('shadow');
+        const dispW  = (shadow?.shadowW ?? 20) * 2;
+        const dispH  = (shadow?.shadowH ?? 6)  * 2;
+        bakeX = clamp01((dispW * headroom) / sw);
+        bakeY = clamp01((dispH * headroom) / sh);
+      } else {
+        const binding = animJson.bindings[slotId];
+        if (binding) {
+          const kf = maxKf.get(slotId) ?? { x: 1, y: 1 };
+          bakeX = clamp01(Math.abs(binding.scaleX) * kf.x * headroom);
+          bakeY = clamp01(Math.abs(binding.scaleY) * kf.y * headroom);
+          // Compensate so keyframe.scale × binding.scale renders identical pixels.
+          binding.scaleX /= bakeX;
+          binding.scaleY /= bakeY;
+        }
+      }
+
+      if (bakeX > 0.999 && bakeY > 0.999) {
+        out.push({ id: slotId, src: img, w: sw, h: sh });
+      } else {
+        const dw     = Math.max(1, Math.round(sw * bakeX));
+        const dh     = Math.max(1, Math.round(sh * bakeY));
+        const canvas = document.createElement('canvas');
+        canvas.width  = dw;
+        canvas.height = dh;
+        const ctx = canvas.getContext('2d')!;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, dw, dh);
+        out.push({ id: slotId, src: canvas, w: dw, h: dh });
+      }
+    }
+
+    return out;
+  }
+
+  /** Largest per-axis keyframe scale each bone reaches across all clips (default 1). */
+  private computeMaxKeyframeScale(): Map<string, { x: number; y: number }> {
+    const max = new Map<string, { x: number; y: number }>();
+    this.animCtrl.store.forEach(clip => {
+      for (const kf of clip.keyframes) {
+        kf.bones.forEach((bkf, boneId) => {
+          const cur = max.get(boneId) ?? { x: 1, y: 1 };
+          cur.x = Math.max(cur.x, Math.abs(bkf.scaleX ?? 1));
+          cur.y = Math.max(cur.y, Math.abs(bkf.scaleY ?? 1));
+          max.set(boneId, cur);
+        });
+      }
+    });
+    return max;
+  }
+
+  private async buildSpritesheet(
+    loaded: Array<{ id: string; src: CanvasImageSource; w: number; h: number }>,
+  ): Promise<{ canvas: HTMLCanvasElement; rects: Map<string, { x: number; y: number; w: number; h: number }> }> {
     // Simple shelf-packing (sort by height descending for better fill)
     const PADDING  = 2;
     const MAX_W    = 1024;
@@ -378,7 +449,7 @@ export class IOController {
 
     for (const item of loaded) {
       const r = rects.get(item.id)!;
-      ctx.drawImage(item.img, r.x, r.y);
+      ctx.drawImage(item.src, r.x, r.y);
     }
 
     return { canvas, rects };
@@ -430,6 +501,12 @@ export class IOController {
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
+
+/** Clamp a bake factor to (0, 1]: never upscale the source, never produce a zero-size image. */
+function clamp01(v: number): number {
+  if (!Number.isFinite(v) || v <= 0) return 1;
+  return Math.min(1, v);
+}
 
 function loadImageFromBlob(blob: Blob): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
