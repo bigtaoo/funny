@@ -253,24 +253,10 @@ export class UnitView {
     return this.buildCircleContainer(unit);
   }
 
-  /**
-   * Whether a unit's stickman should be horizontally flipped for the Top side.
-   *
-   * Most types are authored facing right and read fine as a clean mirror. The
-   * Archer is the exception: its bow is baked asymmetrically into the front
-   * (left) arm sprite, so a horizontal flip carries the bow to the wrong side of
-   * the body. We keep the archer on its authored orientation for both factions
-   * (friend/foe is already read from faction ink colour, not facing).
-   */
-  private shouldMirror(unit: Unit): boolean {
-    if (unit.unitType === UnitType.Archer) return false;
-    return unit.side === Side.Top;
-  }
-
   // ─── Stickman container (unit type with a loaded .tao asset) ───────────────
 
   private buildStickmanContainer(unit: Unit, asset: TaoAsset): PIXI.Container {
-    const mirrorX = this.shouldMirror(unit);
+    const mirrorX = unit.side === Side.Top;
     this.stickmanTypes.set(unit.id, unit.unitType);
 
     // Reuse a pooled (wrapper + runtime) pair of the same type when available.
