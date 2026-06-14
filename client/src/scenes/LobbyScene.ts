@@ -46,6 +46,13 @@ function txt(label: string, size: number, color: number, bold = false): PIXI.Tex
 
 export interface LobbySceneCallbacks {
   onStartGame(opponentName: string): void;
+  /**
+   * Enter real PvP ranked matchmaking (online). Only invoked when `online` is
+   * true; otherwise the start button falls back to the local AI match.
+   */
+  onStartRanked?(): void;
+  /** True when logged in + an online server is configured → match = real PvP. */
+  online?: boolean;
   /** Launch a campaign level by its 0-based index in CAMPAIGN_LEVEL_ORDER. */
   onStartCampaign(levelIndex: number): void;
   /** Open the friend room (online play). Wired to the bottom-nav "social" slot. */
@@ -508,6 +515,12 @@ export class LobbyScene implements Scene {
   }
 
   private onStartPressed(): void {
+    // Online + logged in → real PvP ranked matchmaking (RoomScene searching flow).
+    // Offline / no server → the local AI quick-match below.
+    if (this.cb.online && this.cb.onStartRanked) {
+      this.cb.onStartRanked();
+      return;
+    }
     this.state = 'matching'; this.matchTimer = 0; this.dotsTimer = 0; this.dotCount = 0;
     // Use the stored rect, not gfx.width — the sketch stroke overshoots the box,
     // so re-reading bounds would grow the button on every redraw.

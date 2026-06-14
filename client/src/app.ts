@@ -147,8 +147,13 @@ export async function startApp(platform: IPlatform): Promise<void> {
     platform.onGameplayStop();
     const pvp = saveManager.get().pvp;
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
+    // Online = logged in + a server is reachable → the match button does real PvP
+    // ranked matchmaking; otherwise it falls back to the local AI quick-match.
+    const online = loggedIn && !!api && !!gatewayUrl;
     manager.goto(new LobbyScene(layout, input, {
       onStartGame(_opponentName: string) { goGame(); },
+      onStartRanked() { goRoom({ autoRanked: true }); },
+      online,
       onStartCampaign(levelIndex: number) { goCampaign(CAMPAIGN_LEVEL_ORDER[levelIndex]); },
       onOpenRoom() { goRoom(); },
       onOpenShop() { goShop(); },
@@ -278,12 +283,23 @@ export async function startApp(platform: IPlatform): Promise<void> {
     goLogin();
   }
 
-  function goRoom(): void {
+  function goRoom(opts?: { autoRanked?: boolean }): void {
     inLobby = false;
     window.removeEventListener('resize', onResize);
     const session = getNetSession();
+    // autoRanked: the lobby match button jumped straight here for real PvP — start
+    // the scene in its searching view and fire the ranked queue once the gateway
+    // is open (the createRanked send is dropped while the socket is still opening).
+    const autoRanked = !!opts?.autoRanked && session !== null;
+    let rankedQueued = false;
+    const queueRanked = (): void => {
+      if (rankedQueued) return;
+      rankedQueued = true;
+      session?.createRanked();
+    };
     const scene = new RoomScene(layout, input, {
       available: session !== null,
+      autoRanked,
       onBack() {
         session?.close();
         if (session) session.handlers = { onMatchStart: (info) => goGameNet(info) };
@@ -294,7 +310,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
       setReady(ready: boolean) { session?.setReady(ready); },
       startMatch() { session?.startMatch(); },
       createRanked() { session?.createRanked(); },
-      cancelQueue() { session?.cancelQueue(); },
+      cancelQueue() { rankedQueued = false; session?.cancelQueue(); },
     });
 
     if (session) {
@@ -304,9 +320,15 @@ export async function startApp(platform: IPlatform): Promise<void> {
         onRoomState: (s) => scene.applyRoomState(s),
         onRoomError: (e) => scene.applyRoomError(e),
         onPeerDc:    (p) => scene.applyPeerDc(p),
-        onNetState:  (s) => scene.applyNetState(s),
+        onNetState:  (s) => {
+          scene.applyNetState(s);
+          if (autoRanked && s === 'open') queueRanked();
+        },
       };
       session.connect();
+      // Returning visitor: the gateway may already be open (no fresh 'open' event),
+      // so kick the queue immediately in that case.
+      if (autoRanked && session.gateway.getState() === 'open') queueRanked();
     }
 
     manager.goto(scene);

@@ -57,6 +57,12 @@ export interface RoomSceneCallbacks {
   cancelQueue(): void;
   /** False when no online server is configured → actions surface "unavailable". */
   available: boolean;
+  /**
+   * Open directly in the ranked searching view (the lobby match button jumped
+   * here for real PvP). The actual queue join is driven by app once the gateway
+   * connects; this only sets the initial view.
+   */
+  autoRanked?: boolean;
 }
 
 type View = 'idle' | 'codeEntry' | 'connecting' | 'searching' | 'inRoom';
@@ -94,6 +100,13 @@ export class RoomScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
+    // Lobby match button → land straight in the ranked searching view (app fires
+    // the queue join once the gateway opens). Unavailable → fall through to idle
+    // so guardAvailable can surface the "no server" toast on user action.
+    if (cb.autoRanked && cb.available) {
+      this.view = 'searching';
+      this.connectingKey = 'room.searching';
+    }
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
   }
