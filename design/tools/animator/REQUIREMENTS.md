@@ -347,6 +347,8 @@ sprite.scale    = keyframe.scaleX × binding.scaleX
 
 Shelf bin-packing 合并图集，canvas.toBlob PNG，JSZip DEFLATE 二次压缩。
 
+**导出烘焙（缩小体积，约 -1/3）**：导出前每张骨骼图按「实际显示分辨率 × 1.5 余量」缩小，并改写 `animation.json` 的 `binding.scaleX/Y` 补偿，渲染结果像素级一致、runtime 零改动。详见 `ARCHITECTURE.md §8`。`.tao.editor` 存档不烘焙，继续保存无损原图。
+
 ---
 
 ## 5. 编辑器存档格式（.tao.editor 文件）

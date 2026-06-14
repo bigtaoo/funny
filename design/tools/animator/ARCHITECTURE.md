@@ -308,10 +308,18 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 
 **spritesheet.png**：shelf-packing（按高度降序排列）合并至 1024px 宽 canvas，`canvas.toBlob('image/png')` 导出，JSZip DEFLATE 二次压缩。
 
+**导出烘焙（bake-down，缩小体积）**：编辑器里骨骼图通常被 `binding.scaleX/Y` 缩小显示，存原图浪费像素。导出时 `buildExportImages` 把每张图缩到「实际会用到的分辨率」：
+- 普通骨骼烘焙比例 = `|binding.scaleX| × 该骨骼跨所有 clip 的最大关键帧 scale × EXPORT_HEADROOM(1.5)`，`clamp01` 封顶 ≤1（永不放大源图）；canvas 高质量缩小后，把 `animation.json` 里该骨骼的 `binding.scaleX/Y` 除以同一比例补偿。
+- shadow 无 binding，但显示尺寸由 `shadowW/H` 决定、与源分辨率无关，缩到 `shadowW*2 × shadowH*2 × 1.5`。
+- 比例 ≈1 的图直接透传，不重编码。
+
+**无损保证**：游戏 runtime `sprite.scale = 关键帧 × binding.scale` 为纯乘法，小图 × 放大后 binding 与原图 × 原 binding 像素级一致，**runtime 零改动**；1.5 余量覆盖高 DPI 与放大动画帧。烘焙仅作用于 `.tao` 导出路径，`.tao.editor` 存档继续保存无损原图。
+
 **导出流程**（`IOController.exportTao`）：
-1. 从 `ImageController` 取各骨骼 Blob，`loadImageFromBlob` 并行加载为 `HTMLImageElement`
-2. Shelf-packing 算法计算各图 rect，绘制到 canvas
-3. `canvas.toBlob` → PNG Blob；`JSZip` 打包三个文件 → 下载 `.tao`
+1. 从 `ImageController` 取各骨骼 Blob，`loadImageFromBlob` 加载为 `HTMLImageElement`
+2. `buildExportImages` 逐图按烘焙比例缩小（canvas）并改写 `animation.json` 的 binding 补偿
+3. Shelf-packing 算法计算各图 rect，绘制到 canvas
+4. `canvas.toBlob` → PNG Blob；`JSZip` 打包三个文件 → 下载 `.tao`
 
 **导入流程**（`IOController.importTao`）：
 1. `JSZip.loadAsync` 解包 `.tao`
