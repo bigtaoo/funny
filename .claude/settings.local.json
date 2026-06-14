@@ -51,7 +51,10 @@
       "Bash(xargs wc -l)",
       "Bash(git commit *)",
       "Bash(rm .git/COMMIT_EDITMSG_TMP)",
-      "WebSearch"
+      "WebSearch",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget",
+      "Bash(rm -f \"/c/Users/TaoWang/.claude/projects/C--Users-TaoWang-Documents-funny/memory/project_sketch_gen_tool.md\" && echo \"removed memory file\")"
     ],
     "defaultMode": "acceptEdits"
   }
