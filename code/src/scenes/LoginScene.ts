@@ -51,6 +51,11 @@ function txt(label: string, size: number, color: number, bold = false): PIXI.Tex
   });
 }
 
+// Mirror the server's account rules (server/shared/src/password.ts) so the client
+// validates live before submitting. Keep in sync if the server limits change.
+const MIN_PASSWORD_LEN = 6;
+const MIN_LOGIN_ID_LEN = 3;
+
 type View = 'landing' | 'password' | 'register' | 'submitting';
 type Field = 'loginId' | 'password' | 'confirmPassword' | 'displayName';
 
@@ -209,6 +214,12 @@ export class LoginScene implements Scene {
     if (!loginId || !password || (isRegister && !this.fields.confirmPassword)) {
       this.errorKey = 'auth.err.fields'; this.errorDetail = null; this.render(); return;
     }
+    if (isRegister && loginId.length < MIN_LOGIN_ID_LEN) {
+      this.errorKey = 'auth.err.loginId'; this.errorDetail = null; this.render(); return;
+    }
+    if (isRegister && password.length < MIN_PASSWORD_LEN) {
+      this.errorKey = 'auth.err.weak'; this.errorDetail = null; this.render(); return;
+    }
     if (isRegister && password !== this.fields.confirmPassword) {
       this.errorKey = 'auth.err.passwordMismatch'; this.errorDetail = null; this.render(); return;
     }
@@ -325,15 +336,34 @@ export class LoginScene implements Scene {
     const fieldH = Math.round(h * 0.072);
     const fieldX = (w - fieldW) / 2;
     const gap = Math.round(h * 0.028);
-    let y = Math.round(h * 0.22);
+    const hintH = Math.round(h * 0.026);
+    // Register stacks more fields + live hints → start higher to keep it on-screen.
+    let y = Math.round(h * (isRegister ? 0.16 : 0.22));
+
+    const pw = this.fields.password;
+    const cpw = this.fields.confirmPassword;
 
     this.drawField('loginId', t('auth.loginIdLabel'), fieldX, y, fieldW, fieldH, false);
-    y += fieldH + gap;
+    y += fieldH;
+    if (isRegister) {
+      this.drawHint(t('auth.hint.loginId'), this.fields.loginId.trim().length >= MIN_LOGIN_ID_LEN, fieldX, y, fieldW);
+      y += hintH;
+    }
+    y += gap;
+
     this.drawField('password', t('auth.passwordLabel'), fieldX, y, fieldW, fieldH, true);
-    y += fieldH + gap;
+    y += fieldH;
+    if (isRegister) {
+      this.drawHint(t('auth.hint.password'), pw.length >= MIN_PASSWORD_LEN, fieldX, y, fieldW);
+      y += hintH;
+    }
+    y += gap;
+
     if (isRegister) {
       this.drawField('confirmPassword', t('auth.confirmPasswordLabel'), fieldX, y, fieldW, fieldH, true);
-      y += fieldH + gap;
+      y += fieldH;
+      this.drawHint(t('auth.hint.match'), cpw.length > 0 && pw === cpw, fieldX, y, fieldW);
+      y += hintH + gap;
       this.drawField('displayName', t('auth.displayNameLabel'), fieldX, y, fieldW, fieldH, false);
       y += fieldH + gap;
     }
@@ -399,6 +429,14 @@ export class LoginScene implements Scene {
     this.container.addChild(valTxt);
 
     this.hits.push({ rect: { x, y, w, h }, fn: () => this.focus(field) });
+  }
+
+  /** Live requirement line under a field: ✓ green when satisfied, • grey otherwise. */
+  private drawHint(text: string, ok: boolean, x: number, y: number, w: number): void {
+    const { h } = this;
+    const hint = txt((ok ? '✓ ' : '• ') + text, Math.round(h * 0.019), ok ? C.green : C.mid);
+    hint.anchor.set(0, 0); hint.x = x + Math.round(w * 0.02); hint.y = y + Math.round(h * 0.004);
+    this.container.addChild(hint);
   }
 
   private drawSubmitting(): void {
