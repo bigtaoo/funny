@@ -24,6 +24,8 @@ funny/
 │   ├── level-editor/      战役关卡编辑器（TypeScript + 纯 Canvas，端口 9092）
 │   │   ├── src/           源码（board / timeline / inspector / state）
 │   │   └── public/        HTML 模板
+│   ├── sketch-gen/        角色生成器（TypeScript + PixiJS，端口 9093）★ 设计中
+│   │   └── src/           复用 @render/sketch 笔触；每角色一套专属绘制代码
 │
 ├── art/
 │   ├── maps/              地图资源
@@ -34,7 +36,7 @@ funny/
     ├── game/              游戏主文档：DESIGN / IMPROVEMENT_PLAN / CAMPAIGN_DESIGN
     │                      / CAMPAIGN_P0_PLAN / META_DESIGN / META_TASKS / UI_DESIGN
     │                      / SERVER_API / ECONOMY_BALANCE
-    ├── tools/             工具文档：animator/{ARCHITECTURE,REQUIREMENTS}、level-editor/DESIGN
+    ├── tools/             工具文档：animator/{ARCHITECTURE,REQUIREMENTS}、level-editor/DESIGN、sketch-gen/DESIGN
     └── product/           产品/美术文档：world / characters / market-analysis / ui-design …
 ```
 
@@ -265,6 +267,30 @@ npm run build   # 生产构建
 | `src/board/BoardPanel.ts` | 棋盘点击命中的格子与点击位置不符：`CELL`/`HEADER` 是模块级常量、画布固定 312px 渲染，画布显示尺寸一旦与内部分辨率不一致（DPI/缩放/面板可调宽后）`getBoundingClientRect` 映射就偏 | cell/header 改为实例状态，画布按面板宽度动态选格子尺寸（16–56px），backing store 与显示尺寸严格 1:1；`resize()` 改 public 供分隔条同步调用；顺手删 `drawNoBuild` 中一段无 `stroke` 的死代码 hatch 循环 |
 | `public/index.html` + `src/index.ts` | 三列宽度写死、无分隔条，棋盘 / JSON 窗口无法拖动调整大小 | 加 3 个可拖拽分隔条（`dragSplit`）：棋盘列↔中栏 / 中栏↔Inspector / 时间线↔JSON；棋盘分隔条拖动直接调 `board.resize()` + `window.resize` 监听，纯布局改动不触碰 `EditorState` |
 
+## 角色生成器（tools/sketch-gen）★ 设计中
+
+用与游戏同源的 SketchPen 笔触**程序化绘制角色**，产出 PNG 资产。设计基准见 `design/tools/sketch-gen/DESIGN.md`。
+
+### 定位与工作流
+
+不是手绘工具，是**程序生成工具**：代码按"每角色一套专属绘制配方"画出手绘笔记本风的火柴人，导出后进 animator 绑骨骼做动画。
+
+```
+1. [sketch-gen] 选角色 → 程序绘制 → 导出 11 张骨骼分件 PNG（给 animator）+ 1 张整身卡图（给卡牌 UI）
+2. [你] 手动润色 PNG（按需）
+3. [animator] 导入分件 PNG → 绑骨骼 → 做动画 → 导出 .tao
+```
+
+### 要点
+
+- **同源笔触**：webpack alias `@render` → `client/src/render/`，直接 import `SketchPen`（`sketch.ts`）+ `theme.ts`，笔触/配色与游戏运行时完全一致，改一处两边变。
+- **每角色一套专属代码**（不做通用参数器）：`src/characters/<unit>/<unit>.ts` 各自把每根骨骼的笔触写死到极细，互不共享参数 → 表达力拉满（步兵壮实 / 弓箭手箭袋 / 重甲肩甲 / 疾行兵瘦小各自定制）。工具性质，不在乎代码量。
+- **静息姿基准**：`src/restPose.ts` 提供 11 骨骼"朝右约定"世界坐标，所有角色共享坐标基准，保证导出朝向与 animator 自动映射对齐。
+- **两个导出**：①骨骼分件——每骨骼渲到离屏 canvas、裁透明边，按 animator 文件名约定（`spine.png`/`head.png`/`r_upper_arm.png`…10 张 + `shadow.png`）；②整身卡图——组装全部部件成一张 `<unit>_card.png` 给卡牌。**不打 ZIP**：用 File System Access API 弹目录选择器写进指定文件夹（绑骨骼用单图），不支持的浏览器退回逐张下载。
+- **协作环（每角色）**：先出 SVG 视觉草案（标 11 骨骼坐标 + 每部位画法）→ 你在草案上提修正 → 敲定后翻译成 SketchPen stroke 代码 → 工具实时预览 → 微调。设计与编码分离，便宜阶段拍板。
+- **阵营色**：导出 PNG 用中性色，蓝(我)/红(敌)阵营色由游戏运行时染（`factionInk`），不烤死进图。
+- **现状**：设计阶段，工程未立。首版做 infantry（普通兵），跑通"草案→生成→导出→进 animator"全链路再扩其余兵种。
+
 ## 游戏主代码（client/）
 
 - **渲染**：`pixi.js-legacy`，兼容微信小游戏 WebGL
@@ -322,6 +348,9 @@ npm run build   # 生产构建
 | `render/{wearOverlay,boil,stickmanDraft,castle}.ts`（新增）+ `UnitView.ts` + `BoardView.ts` + `GameRenderer.ts` + `scenes/LobbyScene.ts`（美术第三刀：future work 全落地）| 纲领四项 future 未实现：grain/磨损 overlay、呼吸线、角色沿骨骼草稿、基地 2×2 手绘城堡 | ①`wearOverlay.ts`「翻了一年的笔记本」静态 overlay（§3.1）：确定性 Prng grain 颗粒 + 折痕 + 暗角（嵌套低 alpha 角三角，非渐变）+ 马克笔透印，bake 缓存 per (w,h)，大厅 + 战场各铺一层（alpha~0.5，非交互，在 HUD 之下）。②`boil.ts` 呼吸线（§5.4）：`BoilingSprite` bake N 个不同 seed 变体、~8fps 循环切 visible（只翻可见性零重画）；大厅标题下马克笔下划线用之。③`stickmanDraft.ts` 角色沿骨骼草稿（§5.5 北极星）：沿真实 `.tao` 11 骨骼（复用 `render/stickman/skeleton.ts` 的 `computeFK` 静息姿）用 SketchPen 画收笔变细管状肢 + 关节圆 + 潦草头 + 铅笔眼点，faction ink 染色；`UnitView` 占位圆（Ironclad/Runner + .tao 加载前回退）改画此草稿，按兵种 `DRAFT_HEIGHT` 高度差给剪影区分（§3.2 类型靠剪影），ring 改铅笔地面投影。④`castle.ts` 基地 2×2 手绘城堡（§6.3）：垛口墙 + 拱门 + 三角旗，faction ink + 铅笔结构线，bake per (size,side)；`BoardView.buildBaseRef` 删 `game_base.png` 改 `buildCastle`（色彩载阵营，无需镜像）。删无引用 `src/assets/game_base.png`。tsc 干净 + 131 测试 + web 构建绿 |
 | `webpack.config.js` + `scenes/LoginScene.ts` + `i18n/locales/{zh,en,de}.ts` | ①注册「没有网络请求」：`net/config.getApiBaseUrl` 读 `globalThis.__NW_API_BASE__`，但 webpack `DefinePlugin` 只定义了 `TARGET`，从未注入该全局 → `getApiBaseUrl` 恒返 null → `app.ts` 不建 `ApiClient`（`api=undefined`）→ `doAuth` 直接返回 `auth.err.network`，`fetch` 从未发出（服务端 `/auth/register`、CORS 均已就绪）；②注册页缺确认密码 | ①`DefinePlugin` 注入 `globalThis.__NW_API_BASE__` / `__NW_GATEWAY_WS__`：取 env `NW_API_BASE`/`NW_GATEWAY_WS`（CI/生产，如 `https://host/api`），dev 缺省 `http://localhost:18080`（metaserver `NW_META_PORT`）+ `ws://localhost:8082/gw`（gateway `NW_GW_PORT`），开箱即可注册/联机；生产未配留空 → null → 纯本地离线（行为不变）。②`LoginScene` 加 `confirmPassword` 字段（masked，仅 register 视图，password 与 displayName 之间）；`onSubmit` 校验非空 + 与 password 一致，否则 `auth.err.passwordMismatch`；hidden input 对 confirmPassword 同样走 `type=password`。i18n 加 `auth.confirmPasswordLabel`/`auth.err.passwordMismatch` zh/en/de 全翻。tsc 干净 + dev 构建注入 URL 已验证（dist 含 `localhost:18080`/`8082/gw`）。③注册页加实时合规提示（`drawHint`：✓ 绿/• 灰，随输入每帧重绘，镜像服务端 `MIN_PASSWORD_LEN=6`/`MIN_LOGIN_ID_LEN=3`）+ 提交前客户端预校验（loginId 至少 3 位 / 密码至少 6 位 / 两次一致），不合规不发请求；i18n 加 `auth.hint.{loginId,password,match}`。④`doAuth`/`LoginScene` 把真实错误打到 console + 错误行下方显示 `code: message`（之前只映射成笼统 `auth.err.network`）；submit Promise 加 `.catch`，任何 outcome/rejection 都还原回表单，避免异常令 render 半途清空 hits 停在无按钮的 submitting 态。**注**：webpack `DefinePlugin` 改动需重启 `npm run start`（dev server 不热读配置）；临时绕过可 `localStorage.setItem('nw_api_base','http://localhost:18080')` |
 | `scenes/LoginScene.ts` + `design/product/art-direction.md §7.5.1` | 注册/登录按钮无状态表现：可用/不可用/按下长得一样，密码不一致时点提交「看着像卡死」——其实按钮命中矩形固定、点击确实调到 `onSubmit`，只是重新校验后又显示同一条 mismatch 错误（实时提示那行灰色 `• Passwords match` 已说明 `pw!==cpw`），屏幕无变化故像点不动；且错误「黏性」，改输入也不清除 | ①编辑任一字段即清除残留 `errorKey`/`errorDetail`（绿色 ✓ 提示本就每帧刷新，红字现在同步消失），表单保持「活」的；②新增 `submitEnabled(isRegister)`（登录=两框非空；注册=账号≥3+密码≥6+确认非空且一致，**与 `onSubmit` 校验逐字一致**）驱动提交按钮可用/不可用；③`addButton` 加 `enabled` 参：不可用=淡灰底 `C.btnDis`+灰字+细边+alpha 0.55+点击 inert，可用=原深底/金蓝边/白粗字；每次输入重绘，密码补齐瞬间按钮即由灰变亮；④`press` 状态：点可用按钮以中心快速放大回弹（1.0→1.12→1.0，0.12s，正弦），动画结束才触发动作，放大期间 `handleDown` 吞掉其它点击防误触/重复提交（按钮在自有居中 `PIXI.Container` 内绘制以正确缩放）。按钮三态规范沉淀进 `art-direction.md §7.5.1`（修订旧「按下=下压」口径为「中心放大+延迟触发」）。tsc 干净 |
+| `scenes/SettingsScene.ts`（新增）+ `render/avatar.ts`（新增）+ `LobbyScene.ts` + `app.ts` + i18n | 大厅无个人资料入口；展示名注册后显示为「访客」 | ①大厅左上角加个人资料 chip（头像 + 名字，盖在深色 header 上），点击进 **SettingsScene**（个人设置：头像/名字/段位 + 语言切换 zh/en/de + 账号登录/登出 + 改名）。`render/avatar.ts` 程序绘制头像（手绘墨水圆圈 + 名字首字母，faction 蓝，确定性 per name+seed）。②展示名持久化到 `nw_player_name`（注册存 displayName / 登录存 loginId）。③`LobbySceneCallbacks` 加 `playerName`/`onOpenProfile`。i18n `settings.*` zh/en/de 全翻 |
+| `net/ApiClient.ts` + `game/meta/SaveManager.ts` + `app.ts` + 服务端 auth/save | 注册时填的展示名只写进库、auth/save 响应从不返回 → 客户端永远拿不到，显示「访客」；且 token 续登不重新 auth，无从恢复名 | 服务端 `AuthResult`（register/login/device/wx）+ `GET /save` 均回带 `displayName`（有才带）：accounts.ts `resolveByDevice/Openid`/`registerWithPassword`/`loginWithPassword` 带出 + 新增 `getDisplayName`；service.ts 各 auth + `getSave` 附 `displayName`。客户端 `ApiClient.getSave` 返回 `{save,displayName}`；`SaveManager` 加 `onProfile` 回调（bootstrap/refresh 拉到名即回调）；`app.ts` 持久化名 + 名字变化且在大厅时重建大厅 → **token 续登自动恢复展示名，无需重登** |
+| `scenes/SettingsScene.ts` + `net/ApiClient.ts` + `app.ts` + 服务端 commercial/meta + i18n | 无改名功能 | **改名消耗 500 金币**（`RENAME_COST`，`shared/economy.ts`）：commercial 加通用金币 sink `spend()`（原子 `$gte` 扣币 + orderId 幂等 + `OrderDoc.kind:'sink'` 落库即 `delivered`，对账 `undeliveredOrders` 不拾取）+ `/internal/spend`；meta `POST /profile/rename`（先扣币→不足 402 名不变→写新名 `setDisplayName`→钱包镜像回推；名长 1–24 `validateDisplayName`，空名 400）；客户端 SettingsScene 改名按钮（余额不足置灰）+ 模态改名弹层 + `ApiClient.rename`；`app.doRename` 采纳回推存档 + 持久化新名。i18n `settings.rename*` 全翻。验证：server `tsc -b` 六包 + commercial 21（+spend）/ meta 44（+3 rename e2e + 2 auth displayName）/ client 132（+onProfile）测试 + web 构建全绿 |
 
 ### 游戏核心模块
 

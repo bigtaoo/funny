@@ -49,6 +49,8 @@ export interface AuthResult {
   isNew: boolean;
   /** 仅 device、无可恢复凭证 → true。联机/商店/充值要求 false（SA-1）。 */
   isAnonymous: boolean;
+  /** 注册时填的展示名（可选）；客户端用于个人资料显示。 */
+  displayName?: string;
 }
 
 /** PUT /save 结果：成功回推规范化存档，或 409 冲突带当前云端值。 */
@@ -116,10 +118,15 @@ export class ApiClient {
   }
 
   // ── save（S0-7）─────────────────────────────────────────
-  /** 拉取当前账号云端存档。 */
-  async getSave(): Promise<SaveData> {
-    const data = await this.request<{ save: SaveData }>('GET', '/save');
-    return data.save;
+  /** 拉取当前账号云端存档（顺带回带账号展示名，供个人资料显示）。 */
+  async getSave(): Promise<{ save: SaveData; displayName?: string }> {
+    const data = await this.request<{ save: SaveData; displayName?: string }>('GET', '/save');
+    return { save: data.save, displayName: data.displayName };
+  }
+
+  /** 改展示名（消耗金币）。回推权威存档 + 新展示名；余额不足 → ApiError('INSUFFICIENT_FUNDS')。 */
+  async rename(displayName: string): Promise<{ save: SaveData; displayName: string }> {
+    return this.post<{ save: SaveData; displayName: string }>('/profile/rename', { displayName });
   }
 
   /**

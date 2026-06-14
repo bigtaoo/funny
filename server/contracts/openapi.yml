@@ -151,6 +151,8 @@ components:
         isNew: { type: boolean }
         # 仅挂 device、无可恢复凭证（password/oauth/wx）→ true。联机/商店/充值要求 false（SA-1）。
         isAnonymous: { type: boolean }
+        # 注册时填的展示名（可选）；客户端用于个人资料显示。未设置则缺省。
+        displayName: { type: string }
 
     ShopItem:
       type: object
@@ -352,6 +354,42 @@ paths:
         '400': { $ref: '#/components/responses/ErrorResp' }
         '401': { $ref: '#/components/responses/ErrorResp' }
 
+  /profile/rename:
+    post:
+      operationId: profileRename
+      tags: [profile]
+      summary: 改展示名（消耗金币；扣币成功后写名并回推存档）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName]
+              properties:
+                displayName: { type: string, minLength: 1, maxLength: 24 }
+      responses:
+        '200':
+          description: 成功，回推权威存档 + 新展示名
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, displayName]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      displayName: { type: string }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+        '503': { $ref: '#/components/responses/ErrorResp' }
+
   /save:
     get:
       operationId: getSave
@@ -373,6 +411,8 @@ paths:
                     required: [save]
                     properties:
                       save: { $ref: '#/components/schemas/SaveData' }
+                      # 账号展示名（可选）；token 续登时客户端据此恢复个人资料。
+                      displayName: { type: string }
         '401': { $ref: '#/components/responses/ErrorResp' }
     put:
       operationId: putSave

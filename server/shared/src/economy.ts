@@ -69,6 +69,9 @@ export const DUPE_REFUND_COINS: Record<Rarity, number> = {
 export const ADS_REWARD_COINS = 50;
 export const ADS_DAILY_CAP = 5;
 
+/** 改名消耗（金币）。改一次展示名扣此数（commercial 钱包扣币 → meta 改名）。 */
+export const RENAME_COST = 500;
+
 /** IAP 档位 → 到账金币（§2.2，首充双倍等钩子后期再叠）。 */
 export const IAP_TIERS: Record<string, number> = {
   small: 600,

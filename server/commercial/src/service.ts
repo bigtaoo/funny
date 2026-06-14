@@ -150,6 +150,53 @@ export class CommercialService {
     return { ok: true, orderId: args.orderId, coinsAfter, status: 'charged' };
   }
 
+  /**
+   * 纯金币消耗（改名等无发货物品的 sink）：原子扣币 + 记 order(kind:'sink', 落库即 delivered)
+   * + 流水。orderId 幂等（重放回原余额）。对账只扫 status:'charged'，故 sink 不会被补发。
+   */
+  async spend(args: {
+    accountId: string;
+    amount: number;
+    reason: string;
+    orderId: string;
+  }): Promise<Result<{ coinsAfter: number }>> {
+    const existing = await this.cols.orders.findOne({ _id: args.orderId });
+    if (existing) return { ok: true, coinsAfter: existing.coinsAfter };
+
+    const amount = Math.max(0, Math.floor(args.amount));
+    if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
+
+    await this.ensureWallet(args.accountId);
+    const charged = await this.cols.wallets.findOneAndUpdate(
+      { _id: args.accountId, coins: { $gte: amount } },
+      { $inc: { coins: -amount, rev: 1 }, $set: { updatedAt: this.now() } },
+      { returnDocument: 'after' },
+    );
+    if (!charged) return { ok: false, error: 'INSUFFICIENT_FUNDS' };
+    const coinsAfter = charged.coins;
+
+    await this.cols.orders.insertOne({
+      _id: args.orderId,
+      accountId: args.accountId,
+      kind: 'sink',
+      cost: amount,
+      status: 'delivered',
+      coinsAfter,
+      result: {},
+      deliveredAt: this.now(),
+      ts: this.now(),
+    });
+    await this.cols.ledger.insertOne({
+      accountId: args.accountId,
+      delta: -amount,
+      balanceAfter: coinsAfter,
+      reason: args.reason,
+      orderId: args.orderId,
+      ts: this.now(),
+    });
+    return { ok: true, coinsAfter };
+  }
+
   /** 盲盒：扣币 + RNG + 更新保底 + 记 order/gachaHistory。物品由 meta 发。 */
   async gachaDraw(args: {
     accountId: string;

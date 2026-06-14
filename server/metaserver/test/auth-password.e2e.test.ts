@@ -53,13 +53,21 @@ describe.skipIf(!mongo)('metaserver auth password e2e', () => {
     return app.inject({ method: 'POST', url: '/auth/login', payload: { loginId, password } });
   }
 
-  it('注册成功：返回 token + isNew + isAnonymous=false', async () => {
+  it('注册成功：返回 token + isNew + isAnonymous=false + displayName', async () => {
     const r = await register('Alice@Example.com', 'secret123', 'Alice');
     expect(r.statusCode).toBe(200);
     const d = body(r).data;
     expect(d.token).toBeTruthy();
     expect(d.isNew).toBe(true);
     expect(d.isAnonymous).toBe(false);
+    expect(d.displayName).toBe('Alice');
+  });
+
+  it('登录恢复注册时填的 displayName', async () => {
+    await register('frank@example.com', 'secret123', 'Frank');
+    const r = await login('FRANK@EXAMPLE.COM', 'secret123');
+    expect(r.statusCode).toBe(200);
+    expect(body(r).data.displayName).toBe('Frank');
   });
 
   it('loginId 大小写/空格不敏感，重复注册 → 409 LOGIN_ID_TAKEN', async () => {

@@ -13,6 +13,8 @@ export interface ResolvedAccount {
   accountId: string;
   isNew: boolean;
   isAnonymous: boolean;
+  /** 展示名（注册时填）；用于客户端个人资料显示，缺省 undefined。 */
+  displayName?: string;
 }
 
 /** 按 deviceId 取/建账号（Web / CrazyGames）。同设备稳定返回同 id。 */
@@ -22,7 +24,7 @@ export async function resolveByDevice(
   now: number,
 ): Promise<ResolvedAccount> {
   const existing = await cols.accounts.findOne({ deviceId });
-  if (existing) return { accountId: existing._id, isNew: false, isAnonymous: isAnonymousAccount(existing) };
+  if (existing) return { accountId: existing._id, isNew: false, isAnonymous: isAnonymousAccount(existing), displayName: existing.displayName };
 
   const accountId = randomUUID();
   // deviceId 唯一索引：并发首建只有一个插入成功，另一个回读。
@@ -48,7 +50,7 @@ export async function resolveByOpenid(
   now: number,
 ): Promise<ResolvedAccount> {
   const existing = await cols.accounts.findOne({ openid });
-  if (existing) return { accountId: existing._id, isNew: false, isAnonymous: isAnonymousAccount(existing) };
+  if (existing) return { accountId: existing._id, isNew: false, isAnonymous: isAnonymousAccount(existing), displayName: existing.displayName };
 
   const accountId = randomUUID();
   await cols.accounts.updateOne(
@@ -96,7 +98,7 @@ export async function registerWithPassword(
     { upsert: true },
   );
   if (!res.upsertedId) return { kind: 'taken' };
-  return { kind: 'ok', account: { accountId, isNew: true, isAnonymous: false } };
+  return { kind: 'ok', account: { accountId, isNew: true, isAnonymous: false, displayName } };
 }
 
 /** 密码登录（SA-1）。loginId 规范化匹配 + 哈希比对。 */
@@ -110,7 +112,25 @@ export async function loginWithPassword(
   if (!doc?.password) return null;
   const ok = await verifyPassword(password, doc.password.hash);
   if (!ok) return null;
-  return { accountId: doc._id, isNew: false, isAnonymous: isAnonymousAccount(doc) };
+  return { accountId: doc._id, isNew: false, isAnonymous: isAnonymousAccount(doc), displayName: doc.displayName };
+}
+
+/** 读账号展示名（GET /save 顺带回带，token 续登恢复个人资料）。 */
+export async function getDisplayName(
+  cols: Collections,
+  accountId: string,
+): Promise<string | undefined> {
+  const doc = await cols.accounts.findOne({ _id: accountId });
+  return doc?.displayName;
+}
+
+/** 改展示名（改名功能，已扣币后写入）。 */
+export async function setDisplayName(
+  cols: Collections,
+  accountId: string,
+  displayName: string,
+): Promise<void> {
+  await cols.accounts.updateOne({ _id: accountId }, { $set: { displayName } });
 }
 
 export type ChangePasswordResult = 'ok' | 'no-password' | 'invalid';

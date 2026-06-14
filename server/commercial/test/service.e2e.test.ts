@@ -123,4 +123,19 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     const r = await svc.adsCredit({ accountId: 'i', amount: 50, dayKey: '2026-06-14' });
     expect(r).toMatchObject({ ok: true, coinsAfter: 50 });
   });
+
+  it('spend（改名 sink）：扣币 + orderId 幂等 + 余额不足拒绝 + 对账不拾取', async () => {
+    await svc.rechargeVerify({ accountId: 'j', platform: 'web', receipt: 'tier:small', receiptId: 'rcj' }); // 600
+    const r1 = await svc.spend({ accountId: 'j', amount: 500, reason: 'rename', orderId: 'sp1' });
+    expect(r1).toMatchObject({ ok: true, coinsAfter: 100 });
+    // orderId 幂等：重放不再扣。
+    const r2 = await svc.spend({ accountId: 'j', amount: 500, reason: 'rename', orderId: 'sp1' });
+    expect(r2).toMatchObject({ ok: true, coinsAfter: 100 });
+    expect((await svc.getWallet('j')).coins).toBe(100);
+    // 余额不足拒绝。
+    const r3 = await svc.spend({ accountId: 'j', amount: 500, reason: 'rename', orderId: 'sp2' });
+    expect(r3).toEqual({ ok: false, error: 'INSUFFICIENT_FUNDS' });
+    // sink 落库即 delivered → 对账不拾取。
+    expect(await svc.undeliveredOrders('j')).toHaveLength(0);
+  });
 });

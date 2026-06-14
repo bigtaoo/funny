@@ -35,6 +35,23 @@ export const zh = {
   'lobby.nav.shop': '商店',
   'lobby.nav.social': '社交',
 
+  // ── 个人设置 ──────────────────────────────────────────────────────────────
+  'settings.title': '个人设置',
+  'settings.guest': '访客',
+  'settings.language': '语言',
+  'settings.account': '账号',
+  'settings.offlineHint': '当前为单机模式，登录后可云存档 / 联机 / 商店。',
+  'settings.back': '← 返回',
+  'settings.coins': '金币：{coins}',
+  'settings.rename': '✎ 改名（{cost} 金币）',
+  'settings.renameTitle': '输入新名字',
+  'settings.renamePlaceholder': '点此输入新名字',
+  'settings.renameConfirm': '确认',
+  'settings.renameCancel': '取消',
+  'settings.renameOk': '改名成功',
+  'settings.renameFail': '改名失败，请重试',
+  'settings.renameInsufficient': '金币不足',
+
   // ── 对局 HUD ──────────────────────────────────────────────────────────────
   'hud.paused': '已暂停',
   'hud.resume': '继续游戏',

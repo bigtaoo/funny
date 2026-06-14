@@ -8,6 +8,7 @@ import { palette } from '../render/theme';
 import { bake } from '../render/bake';
 import { buildWearOverlay } from '../render/wearOverlay';
 import { BoilingSprite } from '../render/boil';
+import { buildAvatar } from '../render/avatar';
 
 // ── AI name pool ───────────────────────────────────────────────────────────────
 
@@ -51,6 +52,10 @@ export interface LobbySceneCallbacks {
   onOpenRoom(): void;
   /** Open the shop (economy). Wired to the bottom-nav "shop" slot (S2-6). */
   onOpenShop(): void;
+  /** Open the personal profile / settings screen (top-left profile chip). */
+  onOpenProfile(): void;
+  /** Player display name shown in the top-left profile chip. */
+  playerName: string;
   /** Server-authoritative ladder standing (SaveData.pvp); shown as a header badge. */
   pvp?: { rank: string; elo: number };
   /** SA-4: offline single-player mode — online entries route to login instead. */
@@ -98,6 +103,8 @@ export class LobbyScene implements Scene {
   /** Hit rect for the top-right account chip (login when offline / logout when on). */
   private accountChipRect: Rect | null = null;
   private accountChipFn: (() => void) | null = null;
+  /** Hit rect for the top-left profile chip (opens SettingsScene). */
+  private profileChipRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
   private readonly unsubs: Array<() => void> = [];
 
@@ -139,6 +146,11 @@ export class LobbyScene implements Scene {
 
   private handleDown(x: number, y: number): void {
     if (this.state !== 'idle') return;
+    const p = this.profileChipRect;
+    if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) {
+      this.cb.onOpenProfile();
+      return;
+    }
     if (x >= this.btnRect.x && x <= this.btnRect.x + this.btnRect.w &&
         y >= this.btnRect.y && y <= this.btnRect.y + this.btnRect.h) {
       this.onStartPressed();
@@ -202,6 +214,30 @@ export class LobbyScene implements Scene {
     const subtitle = txt(t('lobby.subtitle'), Math.round(h * 0.022), C.light);
     subtitle.anchor.set(0.5, 0.5); subtitle.x = w / 2; subtitle.y = tbH * 0.78;
     this.container.addChild(subtitle);
+
+    // Top-left profile chip (avatar + name) — opens the personal settings screen.
+    const av = Math.round(tbH * 0.46);
+    const avX = Math.round(w * 0.03);
+    const avY = Math.round(tbH * 0.5 - av / 2);
+    const avatar = buildAvatar(av, this.cb.playerName, 21);
+    avatar.x = avX; avatar.y = avY;
+    this.container.addChild(avatar);
+
+    const nameGap = Math.round(w * 0.02);
+    const nameLabel = txt(this.cb.playerName, Math.round(tbH * 0.24), 0xffffff, true);
+    nameLabel.anchor.set(0, 0.5);
+    nameLabel.x = avX + av + nameGap;
+    nameLabel.y = tbH * 0.5;
+    // Keep the chip clear of the centred title.
+    const nameMax = w * 0.36 - (av + nameGap);
+    if (nameLabel.width > nameMax) nameLabel.scale.set(nameMax / nameLabel.width);
+    this.container.addChild(nameLabel);
+
+    const pad = Math.round(tbH * 0.12);
+    this.profileChipRect = {
+      x: avX - pad, y: avY - pad,
+      w: av + nameGap + nameLabel.width + 2 * pad, h: av + 2 * pad,
+    };
 
     // Boiling-line title underline (art-direction §5.4) — a hand-drawn marker
     // stroke that subtly wobbles ~8fps. Cycles baked variants; near-zero cost.

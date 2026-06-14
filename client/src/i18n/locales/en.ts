@@ -36,6 +36,23 @@ export const en: Record<TranslationKey, string> = {
   'lobby.nav.shop': 'Shop',
   'lobby.nav.social': 'Social',
 
+  // ── Personal settings ───────────────────────────────────────────────────────
+  'settings.title': 'Profile',
+  'settings.guest': 'Guest',
+  'settings.language': 'Language',
+  'settings.account': 'Account',
+  'settings.offlineHint': 'Offline mode. Log in for cloud save / online play / shop.',
+  'settings.back': '← Back',
+  'settings.coins': 'Coins: {coins}',
+  'settings.rename': '✎ Rename ({cost} coins)',
+  'settings.renameTitle': 'Enter a new name',
+  'settings.renamePlaceholder': 'Tap to type a new name',
+  'settings.renameConfirm': 'Confirm',
+  'settings.renameCancel': 'Cancel',
+  'settings.renameOk': 'Name changed',
+  'settings.renameFail': 'Rename failed, please retry',
+  'settings.renameInsufficient': 'Not enough coins',
+
   // ── In-game HUD ───────────────────────────────────────────────────────────
   'hud.paused': 'PAUSED',
   'hud.resume': 'RESUME',

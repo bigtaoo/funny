@@ -71,16 +71,19 @@ POST /auth/login     { loginId, password }                → AuthResult | INVAL
 POST /auth/oauth     { provider, code, redirectUri }      → AuthResult | OAUTH_FAILED
 POST /auth/bind      (JWT) { method, ...credential }      → { ok, isAnonymous } | ALREADY_BOUND | LOGIN_ID_TAKEN
 POST /auth/password/change (JWT) { oldPassword, newPassword } → { ok }
-# AuthResult = { token, accountId, isNew, isAnonymous }
+POST /profile/rename (JWT) { displayName }  → { save: SaveData, displayName } | INSUFFICIENT_FUNDS | BAD_REQUEST
+# AuthResult = { token, accountId, isNew, isAnonymous, displayName? }
 ```
 - 微信：`code` 由 `wx.login` 得，服务端换 openid → 映射 accountId。
 - Web/CrazyGames：`deviceId` 为客户端持久化 UUID（匿名 `isAnonymous=true`）。
 - 密码哈希存储（**实现用 Node 内置 `crypto.scrypt`**，零依赖跨平台，串 `scrypt$N$r$p$salt$hash`）；OAuth 走授权码流（`state` 防 CSRF）；`bind` 把新凭证挂当前 accountId（升级转正，不丢档/钱包）。详见 `ACCOUNT_DESIGN.md`。
 - **实现状态（2026-06-14）**：`/auth/register`·`/auth/login`·`/auth/password/change` + `AuthResult.isAnonymous` **已落地**（SA-1，`isAnonymous` 计算得出不落库）；`/auth/oauth`·`/auth/bind` **待做**（SA-2，错误码已预留）。`/auth/password/reset`（找回密码，需邮件服务）后置。
+- **展示名（displayName，2026-06-14）**：注册时填的 `displayName` 存账号文档；`/auth/register`·`/auth/login`·`/auth/device`·`/auth/wx` 的 `AuthResult` 与 `GET /save` 均回带 `displayName`（有才带），客户端持久化用于个人资料显示（token 续登经 `GET /save` 自动恢复）。
+- **改名（`/profile/rename`，2026-06-14）**：消耗 `RENAME_COST=500` 金币改展示名。meta 先经 commercial `/internal/spend` 扣币（余额不足 402 名不变），扣成功后写新名 + 钱包镜像回推权威存档。名字长度 1–24（`validateDisplayName`），空名 400。
 
 ### 2.2 存档（save-service，`META_TASKS.md` S0-7）
 ```
-GET  /save                                     → { save: SaveData }      // 当前账号
+GET  /save                                     → { save: SaveData, displayName? }  // 当前账号（顺带回带展示名）
 PUT  /save     (If-Match: <rev>)  { save }     → { save: SaveData }      // 成功回推规范化后的存档
                                                  | 409 REV_CONFLICT { save }  // 当前云端值
 ```
@@ -390,6 +393,7 @@ POST /internal/shop/charge
      { accountId, itemId, cost, orderId }       → { ok, orderId, coinsAfter, status } | {ok:false,error:INSUFFICIENT_FUNDS|BAD_REQUEST}
 POST /internal/gacha/draw
      { accountId, poolId, count:1|10, orderId } → { ok, orderId, coinsAfter, pityAfter, results:[{itemId,rarity}] } | {ok:false,error:INSUFFICIENT_FUNDS|BAD_REQUEST}
+POST /internal/spend  { accountId, amount, reason, orderId } → { ok, coinsAfter } | INSUFFICIENT_FUNDS   # 纯金币 sink（改名等），无发货物品，落库即 delivered（对账不拾取），orderId 幂等
 POST /internal/order/delivered  { orderId, refundCoins? } → { ok }   # refundCoins>0：dupe 退币随发货闭环入账（幂等）
 POST /internal/recharge/verify
      { accountId, platform, receipt, receiptId }→ { ok, coinsAfter, coinsGranted } | {ok:false,error:INVALID_RECEIPT}

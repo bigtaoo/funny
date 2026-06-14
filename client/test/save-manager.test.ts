@@ -14,10 +14,10 @@ class MemStorage implements IStorage {
   removeItem(k: string): void { this.map.delete(k); }
 }
 
-function fakeApi(cloud: SaveData, hasToken = true): ApiClient {
+function fakeApi(cloud: SaveData, hasToken = true, displayName?: string): ApiClient {
   return {
     hasToken: () => hasToken,
-    getSave: async () => cloud,
+    getSave: async () => ({ save: cloud, displayName }),
   } as unknown as ApiClient;
 }
 
@@ -64,6 +64,19 @@ describe('SaveManager.refresh (S1-R)', () => {
     const store = new LocalSaveStore(new MemStorage());
     const mgr = new SaveManager({ store });
     expect(await mgr.refresh()).toBe(false);
+  });
+
+  it('refresh 回带 displayName → onProfile 回调（token 续登恢复展示名）', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    let seen: string | undefined = 'unset';
+    const mgr = new SaveManager({
+      store,
+      api: fakeApi(makeNewSave('a', 1), true, 'Frank'),
+      onProfile: (p) => { seen = p.displayName; },
+    });
+    await mgr.refresh();
+    expect(seen).toBe('Frank');
   });
 });
 

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Collections, JwtConfig, SyncPatch } from '@nw/shared';
 import { ErrorCode, err, ok, signToken } from '@nw/shared';
-import { validateLoginId, validatePassword } from '@nw/shared';
+import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import {
   SHOP_ITEMS,
   GACHA_POOLS,
@@ -15,15 +15,18 @@ import {
   gachaCost,
   ADS_REWARD_COINS,
   ADS_DAILY_CAP,
+  RENAME_COST,
 } from '@nw/shared';
 import { getOrCreateSave, putSave } from './save.js';
 import {
   changePassword,
   exchangeWxCode,
+  getDisplayName,
   loginWithPassword,
   registerWithPassword,
   resolveByDevice,
   resolveByOpenid,
+  setDisplayName,
 } from './accounts.js';
 import type { CommercialClient } from './commercialClient.js';
 import {
@@ -57,24 +60,24 @@ export class MetaService {
   async authWx(req: FastifyRequest) {
     const { code } = req.body as { code: string };
     const openid = await exchangeWxCode(code);
-    const { accountId, isNew, isAnonymous } = await resolveByOpenid(
+    const { accountId, isNew, isAnonymous, displayName } = await resolveByOpenid(
       this.deps.cols,
       openid,
       this.deps.now(),
     );
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew, isAnonymous });
+    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}) });
   }
 
   async authDevice(req: FastifyRequest) {
     const { deviceId } = req.body as { deviceId: string };
-    const { accountId, isNew, isAnonymous } = await resolveByDevice(
+    const { accountId, isNew, isAnonymous, displayName } = await resolveByDevice(
       this.deps.cols,
       deviceId,
       this.deps.now(),
     );
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew, isAnonymous });
+    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}) });
   }
 
   async authRegister(req: FastifyRequest, reply: FastifyReply) {
@@ -100,7 +103,7 @@ export class MetaService {
     }
     const { accountId, isNew, isAnonymous } = result.account;
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew, isAnonymous });
+    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}) });
   }
 
   async authLogin(req: FastifyRequest, reply: FastifyReply) {
@@ -109,9 +112,9 @@ export class MetaService {
     if (!account) {
       return reply.code(401).send(err(ErrorCode.INVALID_CREDENTIALS, 'invalid loginId or password'));
     }
-    const { accountId, isNew, isAnonymous } = account;
+    const { accountId, isNew, isAnonymous, displayName } = account;
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew, isAnonymous });
+    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}) });
   }
 
   async authPasswordChange(req: FastifyRequest, reply: FastifyReply) {
@@ -132,6 +135,33 @@ export class MetaService {
     return ok({ ok: true });
   }
 
+  // ── profile ───────────────────────────────────────
+  /**
+   * 改展示名（消耗 RENAME_COST 金币）。先 commercial 扣币（余额不足则名不变），
+   * 扣成功后写新名 + 钱包镜像回推权威存档 + 返回新 displayName。需登录 + commercial 可用。
+   */
+  async profileRename(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.ensureCommercial(reply)) return;
+    const accountId = accountIdOf(req);
+    const { displayName } = req.body as { displayName: string };
+    const nameErr = validateDisplayName(displayName);
+    if (nameErr) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, nameErr));
+    const name = displayName.trim();
+
+    const { cols, commercial, now } = this.deps;
+    const orderId = randomUUID();
+    const charge = await commercial.spend({ accountId, amount: RENAME_COST, reason: 'rename', orderId });
+    if (!charge.ok) {
+      if (charge.error === 'INSUFFICIENT_FUNDS') {
+        return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough coins'));
+      }
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, charge.error));
+    }
+    await setDisplayName(cols, accountId, name);
+    const save = await mirrorCoins(cols, accountId, charge.coinsAfter, now());
+    return ok({ save, displayName: name });
+  }
+
   // ── save ──────────────────────────────────────────
   async getSave(req: FastifyRequest) {
     const accountId = accountIdOf(req);
@@ -148,7 +178,8 @@ export class MetaService {
       }
     }
     const save = await getOrCreateSave(cols, accountId, now());
-    return ok({ save });
+    const displayName = await getDisplayName(cols, accountId);
+    return ok({ save, ...(displayName ? { displayName } : {}) });
   }
 
   async putSave(req: FastifyRequest, reply: FastifyReply) {

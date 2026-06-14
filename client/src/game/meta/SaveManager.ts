@@ -22,6 +22,8 @@ export interface SaveManagerOpts {
   getCredential?: () => Promise<AuthCredential>;
   /** 上行防抖窗口（ms），默认 2000（§3.3）。 */
   debounceMs?: number;
+  /** 云端回带的账号资料（展示名等）；bootstrap/refresh 拉到后回调。用于客户端持久化 / 刷新 UI。 */
+  onProfile?: (profile: { displayName?: string }) => void;
   /** 注入定时器（测试用）；默认走 globalThis。 */
   setTimer?: (cb: () => void, ms: number) => unknown;
   clearTimer?: (h: unknown) => void;
@@ -32,6 +34,7 @@ export class SaveManager {
   private readonly store: SaveStore;
   private readonly api?: ApiClient;
   private readonly getCredential?: () => Promise<AuthCredential>;
+  private readonly onProfile?: (profile: { displayName?: string }) => void;
   private readonly debounceMs: number;
   private readonly setTimer: (cb: () => void, ms: number) => unknown;
   private readonly clearTimer: (h: unknown) => void;
@@ -44,6 +47,7 @@ export class SaveManager {
     this.store = opts.store;
     this.api = opts.api;
     this.getCredential = opts.getCredential;
+    this.onProfile = opts.onProfile;
     this.debounceMs = opts.debounceMs ?? 2000;
     this.setTimer =
       opts.setTimer ?? ((cb, ms) => (globalThis as typeof globalThis).setTimeout(cb, ms));
@@ -91,7 +95,8 @@ export class SaveManager {
       this.store.saveLocal(this.save);
 
       const cloud = await this.api.getSave();
-      this.reconcile(cloud);
+      this.reconcile(cloud.save);
+      this.onProfile?.({ displayName: cloud.displayName });
       return true;
     } catch {
       // 离线 / 服务器不可达：留在本地，不报错。
@@ -109,7 +114,8 @@ export class SaveManager {
     if (!this.api?.hasToken()) return false;
     try {
       const cloud = await this.api.getSave();
-      this.reconcile(cloud);
+      this.reconcile(cloud.save);
+      this.onProfile?.({ displayName: cloud.displayName });
       return true;
     } catch {
       return false;

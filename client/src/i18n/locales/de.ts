@@ -36,6 +36,23 @@ export const de: Record<TranslationKey, string> = {
   'lobby.nav.shop': 'Shop',
   'lobby.nav.social': 'Sozial',
 
+  // ── Persönliche Einstellungen ───────────────────────────────────────────────
+  'settings.title': 'Profil',
+  'settings.guest': 'Gast',
+  'settings.language': 'Sprache',
+  'settings.account': 'Konto',
+  'settings.offlineHint': 'Offline-Modus. Melde dich an für Cloud-Speicher / Online / Shop.',
+  'settings.back': '← Zurück',
+  'settings.coins': 'Münzen: {coins}',
+  'settings.rename': '✎ Umbenennen ({cost} Münzen)',
+  'settings.renameTitle': 'Neuen Namen eingeben',
+  'settings.renamePlaceholder': 'Tippen zum Eingeben',
+  'settings.renameConfirm': 'Bestätigen',
+  'settings.renameCancel': 'Abbrechen',
+  'settings.renameOk': 'Name geändert',
+  'settings.renameFail': 'Umbenennen fehlgeschlagen',
+  'settings.renameInsufficient': 'Nicht genug Münzen',
+
   // ── In-Game-HUD ───────────────────────────────────────────────────────────
   'hud.paused': 'PAUSE',
   'hud.resume': 'FORTSETZEN',

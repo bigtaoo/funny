@@ -88,6 +88,14 @@ class FakeCommercial implements CommercialClient {
     this.coins.set(a.accountId, this.bal(a.accountId) + a.amount);
     return { ok: true as const, coinsAfter: this.bal(a.accountId) };
   }
+  spent = new Set<string>();
+  async spend(a: { accountId: string; amount: number; reason: string; orderId: string }) {
+    if (this.spent.has(a.orderId)) return { ok: true as const, coinsAfter: this.bal(a.accountId) };
+    if (this.bal(a.accountId) < a.amount) return { ok: false as const, error: 'INSUFFICIENT_FUNDS' };
+    this.coins.set(a.accountId, this.bal(a.accountId) - a.amount);
+    this.spent.add(a.orderId);
+    return { ok: true as const, coinsAfter: this.bal(a.accountId) };
+  }
 }
 
 describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
@@ -131,6 +139,30 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     const r = body(await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:small' } }));
     expect(r.data.granted).toBe(600);
     expect(r.data.save.wallet.coins).toBe(600);
+  });
+
+  it('改名：扣 500 金币 → 写展示名 → 镜像余额；GET /save 回带新名', async () => {
+    comm.coins.set(accountId, 700);
+    const r = body(await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: '  新名字  ' } }));
+    expect(r.ok).toBe(true);
+    expect(r.data.displayName).toBe('新名字'); // trim
+    expect(r.data.save.wallet.coins).toBe(200); // 700 - 500
+    const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(save.data.displayName).toBe('新名字');
+  });
+
+  it('改名：余额不足 → 402，名字不变', async () => {
+    comm.coins.set(accountId, 100);
+    const r = await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: 'Broke' } });
+    expect(r.statusCode).toBe(402);
+    const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(save.data.displayName).toBeUndefined();
+  });
+
+  it('改名：空名 → 400', async () => {
+    comm.coins.set(accountId, 700);
+    const r = await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: '   ' } });
+    expect(r.statusCode).toBe(400);
   });
 
   it('商店直购：扣币 → 发皮肤 → 镜像', async () => {

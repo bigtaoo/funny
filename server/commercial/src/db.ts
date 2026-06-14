@@ -32,7 +32,8 @@ export interface GachaResultEntry {
 export interface OrderDoc {
   _id: string; // orderId（meta 生成 UUID）
   accountId: string;
-  kind: 'shop' | 'gacha';
+  // 'sink' = 纯金币消耗（改名等），无物品发货，落库即 status:'delivered'，对账不拾取。
+  kind: 'shop' | 'gacha' | 'sink';
   cost: number;
   status: 'charged' | 'delivered';
   coinsAfter: number; // 扣币后余额（幂等重放回放）

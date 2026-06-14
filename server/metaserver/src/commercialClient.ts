@@ -34,6 +34,12 @@ export interface CommercialClient {
   }): Promise<
     Body<{ orderId: string; coinsAfter: number; pityAfter: number; results: GachaResultEntry[] }>
   >;
+  spend(args: {
+    accountId: string;
+    amount: number;
+    reason: string;
+    orderId: string;
+  }): Promise<Body<{ coinsAfter: number }>>;
   orderDelivered(args: { orderId: string; refundCoins?: number }): Promise<Body<{}>>;
   undeliveredOrders(accountId: string): Promise<UndeliveredOrder[]>;
   rechargeVerify(args: {
@@ -98,6 +104,10 @@ export class HttpCommercialClient implements CommercialClient {
       pityAfter: number;
       results: GachaResultEntry[];
     }>('/internal/gacha/draw', args);
+  }
+
+  spend(args: { accountId: string; amount: number; reason: string; orderId: string }) {
+    return this.post<{ coinsAfter: number }>('/internal/spend', args);
   }
 
   orderDelivered(args: { orderId: string; refundCoins?: number }) {

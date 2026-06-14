@@ -43,6 +43,17 @@ export function validateLoginId(loginId: string): string | null {
   return null;
 }
 
+export const MIN_DISPLAY_NAME_LEN = 1;
+export const MAX_DISPLAY_NAME_LEN = 24;
+
+/** 展示名是否合法（长度，trim 后非空）。返回 null 表示合法，否则返回原因。 */
+export function validateDisplayName(name: string): string | null {
+  const t = (typeof name === 'string' ? name : '').trim();
+  if (t.length < MIN_DISPLAY_NAME_LEN) return 'display name is empty';
+  if (t.length > MAX_DISPLAY_NAME_LEN) return `display name too long (max ${MAX_DISPLAY_NAME_LEN})`;
+  return null;
+}
+
 /** 密码是否合法。返回 null 表示合法，否则返回原因。 */
 export function validatePassword(password: string): string | null {
   if (typeof password !== 'string' || password.length < MIN_PASSWORD_LEN) {

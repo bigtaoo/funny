@@ -10,13 +10,14 @@ import { GachaScene } from './scenes/GachaScene';
 import { LoginScene, type AuthOutcome } from './scenes/LoginScene';
 import { ResultScene, type EloResult } from './scenes/ResultScene';
 import { ReplayScene } from './scenes/ReplayScene';
+import { SettingsScene, type RenameOutcome } from './scenes/SettingsScene';
 import { OwnerId, PlayerStats } from './game/types';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, ownerToSide } from './game';
 import type { MatchStartInfo, Replay } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
-import { initI18n, type TranslationKey } from './i18n';
+import { initI18n, t, type TranslationKey } from './i18n';
 import { LocalSaveStore, SaveManager, ReplayStore } from './game/meta';
 import { ApiClient, ApiError, type AuthResult } from './net/ApiClient';
 import { getApiBaseUrl, getGatewayWsUrl } from './net/config';
@@ -31,6 +32,12 @@ const SEEN_INTRO_FLAG = 'seen_intro';
 /** Persisted JWT for a real (non-anonymous) account, so logins survive restarts (SA-3 §5). */
 const TOKEN_KEY = 'nw_token';
 
+/** Persisted display name shown in the lobby profile chip / settings screen. */
+const PLAYER_NAME_KEY = 'nw_player_name';
+
+/** Coin cost to change the display name. Mirrors server RENAME_COST (@nw/shared); server is authoritative. */
+const RENAME_COST = 500;
+
 export async function startApp(platform: IPlatform): Promise<void> {
   // i18n must be ready before any scene builds its texts
   initI18n(platform.getLanguage(), platform.storage, platform.supportedLocales);
@@ -42,6 +49,15 @@ export async function startApp(platform: IPlatform): Promise<void> {
     store: new LocalSaveStore(platform.storage),
     api,
     getCredential: () => platform.getAuthCredential(),
+    // Cloud-authoritative display name (returned by GET /save). On token re-entry the
+    // pull happens after the lobby is already shown, so persist the name and, if it
+    // actually changed, rebuild the lobby so the profile chip picks it up.
+    onProfile: ({ displayName }) => {
+      if (!displayName) return;
+      if (platform.storage.getItem(PLAYER_NAME_KEY) === displayName) return;
+      platform.storage.setItem(PLAYER_NAME_KEY, displayName);
+      if (inLobby) goLobby();
+    },
   });
   // Cloud sync is offline-first and non-blocking; the entry gating (resolveEntry,
   // after intro) decides whether to bootstrap silently (wx / persisted token) or
@@ -120,6 +136,11 @@ export async function startApp(platform: IPlatform): Promise<void> {
     }));
   }
 
+  /** Display name for the profile chip: persisted name, else a generic guest label. */
+  function playerName(): string {
+    return platform.storage.getItem(PLAYER_NAME_KEY) || t('settings.guest');
+  }
+
   function goLobby(opts?: { offline?: boolean }): void {
     if (opts?.offline !== undefined) offlineMode = opts.offline;
     inLobby = true;
@@ -131,6 +152,8 @@ export async function startApp(platform: IPlatform): Promise<void> {
       onStartCampaign(levelIndex: number) { goCampaign(CAMPAIGN_LEVEL_ORDER[levelIndex]); },
       onOpenRoom() { goRoom(); },
       onOpenShop() { goShop(); },
+      onOpenProfile() { goSettings(); },
+      playerName: playerName(),
       pvp: { rank: pvp.rank, elo: pvp.elo },
       offline: offlineMode,
       onLogin: () => goLogin(),
@@ -139,20 +162,63 @@ export async function startApp(platform: IPlatform): Promise<void> {
     window.addEventListener('resize', onResize);
   }
 
+  // Personal profile / settings — language switch + account (login/logout) + rename.
+  function goSettings(): void {
+    inLobby = false;
+    window.removeEventListener('resize', onResize);
+    const pvp = saveManager.get().pvp;
+    const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
+    // Rename spends server-authoritative coins → only when online (api + token).
+    const canRename = !offlineMode && !!api && loggedIn;
+    manager.goto(new SettingsScene(layout, input, {
+      onBack() { goLobby(); },
+      playerName: playerName(),
+      pvp: { rank: pvp.rank, elo: pvp.elo },
+      offline: offlineMode,
+      onLogin: () => goLogin(),
+      onLogout: loggedIn ? () => doLogout() : undefined,
+      ...(canRename
+        ? {
+            renameCost: RENAME_COST,
+            getCoins: () => saveManager.get().wallet.coins,
+            onRename: doRename,
+          }
+        : {}),
+    }));
+  }
+
+  /** Spend coins to change the display name; persists locally + adopts the pushed save. */
+  async function doRename(name: string): Promise<RenameOutcome> {
+    if (!api) return { ok: false, key: 'settings.renameFail' };
+    try {
+      const { save, displayName } = await api.rename(name);
+      saveManager.adoptServer(save);
+      platform.storage.setItem(PLAYER_NAME_KEY, displayName);
+      return { ok: true, name: displayName };
+    } catch (e) {
+      console.error('[rename] failed', e);
+      return {
+        ok: false,
+        key: e instanceof ApiError && e.code === 'INSUFFICIENT_FUNDS'
+          ? 'settings.renameInsufficient' : 'settings.renameFail',
+      };
+    }
+  }
+
   // SA-3: login screen + entry gating + persistent token.
   function goLogin(): void {
     inLobby = false;
     window.removeEventListener('resize', onResize);
     manager.goto(new LoginScene(layout, input, {
       onPlayOffline() { goLobby({ offline: true }); },
-      onLogin: (loginId, password) => doAuth(() => api!.login(loginId, password)),
+      onLogin: (loginId, password) => doAuth(() => api!.login(loginId, password), loginId),
       onRegister: (loginId, password, displayName) =>
-        doAuth(() => api!.register(loginId, password, displayName)),
+        doAuth(() => api!.register(loginId, password, displayName), displayName || loginId),
     }));
   }
 
   /** Run a login/register call; on success persist token, reconcile, enter lobby. */
-  async function doAuth(call: () => Promise<AuthResult>): Promise<AuthOutcome> {
+  async function doAuth(call: () => Promise<AuthResult>, name?: string): Promise<AuthOutcome> {
     if (!api) {
       console.error('[auth] no API base configured (__NW_API_BASE__ empty) — request not sent');
       return { ok: false, errorKey: 'auth.err.network', detail: 'API base not configured' };
@@ -160,6 +226,10 @@ export async function startApp(platform: IPlatform): Promise<void> {
     try {
       const res = await call();
       platform.storage.setItem(TOKEN_KEY, res.token);
+      // Prefer the server's stored display name (so login restores the name set at
+      // registration); fall back to the locally supplied name (loginId / register input).
+      const resolvedName = res.displayName || name;
+      if (resolvedName) platform.storage.setItem(PLAYER_NAME_KEY, resolvedName);
       // Merge single-player progress into the cloud account (§4.4): pull + reconcile.
       await saveManager.adoptSession(res.accountId);
       goLobby({ offline: false });
@@ -174,6 +244,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
 
   function doLogout(): void {
     platform.storage.removeItem(TOKEN_KEY);
+    platform.storage.removeItem(PLAYER_NAME_KEY);
     api?.setToken(null);
     goLogin();
   }
