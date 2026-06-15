@@ -1,0 +1,66 @@
+# CI 叠加层（与 docker-compose.prod.yml 合并使用）。专供 GitHub Actions 跑全链路 E2E：
+#   docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml up -d --wait \
+#       mongo metaserver commercial gateway matchsvc gameserver
+#
+# 与 prod 的差异（仅为「E2E 在 runner 宿主机上以 Node 进程直连」服务）：
+#   • 不起 caddy（up 命令显式列服务，省去反代；E2E 直连各服务的宿主映射端口）。
+#   • 把 meta REST / gateway 公开 WS / game 数据面 WS 映射到宿主端口，且端口号与
+#     client/test/e2e/full-link.e2e.ts 的默认期望一致（meta 18080 / gateway 8086 / game 8081）。
+#   • meta 下发的 gateway 地址 + ticket 里的 game 地址都用 localhost:<宿主端口>，
+#     这样 runner 上的 E2E 进程能照服务器下发的地址连上（验证「客户端连对端口」的核心断言）。
+#   • 给五个服务加 node 版 healthcheck（镜像内有 node、无 curl），配合 `--wait` 确定性等待就绪。
+services:
+  metaserver:
+    environment:
+      # 客户端连这个地址做房间/匹配；E2E 断言 gateway socket 用的是这个、不是 meta base。
+      NW_GATEWAY_PUBLIC_WS_URL: ws://localhost:8086/gw
+    ports:
+      - "18080:8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8080/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 20
+
+  commercial:
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8092/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 20
+
+  gateway:
+    ports:
+      - "8086:8082"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8090/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 20
+
+  matchsvc:
+    environment:
+      # 数据面兜底地址改为 runner 宿主机可达（gameserver 注册前用 + 写进 ticket 兜底）。
+      NW_GAME_PUBLIC_WS_URL: ws://localhost:8081/ws
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8091/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 20
+
+  gameserver:
+    environment:
+      # ticket 里写给客户端的数据面地址 → runner 宿主机可达。
+      NW_GAME_PUBLIC_WS_URL: ws://localhost:8081/ws
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8081/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 20

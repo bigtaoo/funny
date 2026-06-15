@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支/PR 的旧跑批自动取消，省 runner。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 快路：类型检查 + 单测 + 构建，无需 Docker，几分钟内出结果。
+  build-test:
+    name: build + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
+
+      # —— 服务端：六包 tsc -b ——
+      - name: server install
+        working-directory: server
+        run: npm ci
+      - name: server typecheck (tsc -b)
+        working-directory: server
+        run: npx tsc -b shared metaserver gateway matchsvc gameserver commercial
+
+      # —— 客户端：单测 + web 构建 ——
+      - name: client install
+        working-directory: client
+        run: npm ci
+      - name: client unit tests
+        working-directory: client
+        run: npm test
+      - name: client web build
+        working-directory: client
+        run: npm run build:web
+
+  # 慢路：docker compose 起全栈（mongo + meta + commercial + gateway + matchsvc + game），
+  # 在 runner 宿主机上以 Node 进程跑真实客户端编排核心（createAppCore）做全链路 E2E。
+  e2e:
+    name: full-link E2E (live stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # CI 用固定弱密钥（栈是 PR 级临时的、不暴露公网）。生产由 .env 注入强随机串。
+      NW_JWT_SECRET: ci-jwt-secret
+      NW_INTERNAL_KEY: ci-internal-key
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: client install
+        working-directory: client
+        run: npm ci
+
+      # 起全栈并等所有服务 healthy（--wait 配合 compose 里的 healthcheck）。不起 caddy。
+      - name: bring up server stack
+        working-directory: server
+        run: |
+          docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml \
+            up -d --build --wait \
+            mongo metaserver commercial gateway matchsvc gameserver
+
+      - name: run full-link E2E
+        working-directory: client
+        env:
+          NW_API_BASE: http://localhost:18080
+          NW_EXPECT_GATEWAY: ws://localhost:8086/gw
+        run: npm run test:e2e
+
+      # 失败时倒出全栈日志便于排查（端口/握手/匹配队列）。
+      - name: dump server logs on failure
+        if: failure()
+        working-directory: server
+        run: docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml logs --no-color --tail=400
+
+      - name: tear down server stack
+        if: always()
+        working-directory: server
+        run: docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml down -v

@@ -42,6 +42,11 @@ export function startInternalHttp(
 ): Server {
   const server = createServer((req, res) => {
     void (async () => {
+      // 存活探针（无需 X-Internal-Key）：docker healthcheck / CI 等待用。
+      if (req.method === 'GET' && req.url === '/health') {
+        send(res, 200, { ok: true, service: 'matchsvc' });
+        return;
+      }
       if (req.headers['x-internal-key'] !== opts.internalKey) {
         log.warn('internal request rejected: bad X-Internal-Key', { url: req.url });
         send(res, 401, { ok: false, error: 'unauthorized' });

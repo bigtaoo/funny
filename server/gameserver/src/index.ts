@@ -1,5 +1,6 @@
 // gameserver 进程引导（S1-M2/M3）：数据面纯帧中继 + ticket 握手 + 心跳。瘦身后永不连库（M16）。
 // 反代将 /ws 转到本进程（SERVER_API.md §0）。
+import { createServer } from 'http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { verifyTicket, createLogger } from '@nw/shared';
 
@@ -37,7 +38,18 @@ function main(): void {
   const reporter = new MetaReporter(env.metaBaseUrl, env.internalKey);
   const manager = new RoomManager({ report: (r) => reporter.report(r) });
 
-  const wss = new WebSocketServer({ host: env.host, port: env.port, path: '/ws' });
+  // 显式 HTTP server 承载 WS 升级 + 存活探针：GET /health（无鉴权，docker healthcheck / CI 等待用），
+  // 其余非升级请求一律 426。WS 升级仍只在 /ws 路径（path 选项交给 ws 处理）。
+  const http = createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/health') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, service: 'gameserver' }));
+      return;
+    }
+    res.writeHead(426, { 'content-type': 'text/plain' });
+    res.end('Upgrade Required');
+  });
+  const wss = new WebSocketServer({ server: http, path: '/ws' });
 
   wss.on('connection', (ws: WebSocket, req) => {
     // 握手鉴权：?ticket=<matchsvc 签名票据>（M18）。
@@ -136,11 +148,13 @@ function main(): void {
     clearInterval(registerTimer);
     manager.destroyAll();
     wss.close();
+    http.close();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
+  http.listen(env.port, env.host);
   console.log(`gameserver (data-plane relay) listening on ws://${env.host}:${env.port}/ws`);
   console.log(`meta report: ${env.metaBaseUrl ?? 'disabled'}; matchsvc: ${env.matchsvcInternalUrl ?? 'static-fallback'}`);
 }
