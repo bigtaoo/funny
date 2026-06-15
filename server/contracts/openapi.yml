@@ -573,6 +573,80 @@ paths:
         '401': { $ref: '#/components/responses/ErrorResp' }
         '404': { $ref: '#/components/responses/ErrorResp' }
 
+  /pve/clear:
+    post:
+      operationId: pveClear
+      tags: [save]
+      summary: PvE 通关结算（服务器权威：校验解锁→发材料[每日上限]→写 progress/stars→回推）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [levelId, stars]
+              properties:
+                levelId: { type: string }
+                stars: { type: integer, minimum: 0, maximum: 3 }
+                replayRef: { type: string, description: 可选录像引用（L1 抽检复算用） }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, granted, capped]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      granted:
+                        type: object
+                        additionalProperties: { type: integer }
+                        description: 本次实发材料（capped 时为空）
+                      capped: { type: boolean, description: 当日发材料通关已达上限 }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /pve/upgrade:
+    post:
+      operationId: pveUpgrade
+      tags: [save]
+      summary: PvE 升级（服务器权威：校验材料→扣材料→pveUpgrades+1→回推）；仅在线
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [upgradeId]
+              properties:
+                upgradeId: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+
   /shop/items:
     get:
       operationId: getShopItems

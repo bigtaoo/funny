@@ -158,6 +158,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pve/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PvE 通关结算（服务器权威：校验解锁→发材料[每日上限]→写 progress/stars→回推） */
+        post: operations["pveClear"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pve/upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PvE 升级（服务器权威：校验材料→扣材料→pveUpgrades+1→回推）；仅在线 */
+        post: operations["pveUpgrade"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shop/items": {
         parameters: {
             query?: never;
@@ -766,6 +800,84 @@ export interface operations {
             };
             401: components["responses"]["ErrorResp"];
             404: components["responses"]["ErrorResp"];
+        };
+    };
+    pveClear: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    levelId: string;
+                    stars: number;
+                    /** @description 可选录像引用（L1 抽检复算用） */
+                    replayRef?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            /** @description 本次实发材料（capped 时为空） */
+                            granted: {
+                                [key: string]: number;
+                            };
+                            /** @description 当日发材料通关已达上限 */
+                            capped: boolean;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    pveUpgrade: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    upgradeId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
         };
     };
     getShopItems: {

@@ -107,12 +107,22 @@ export interface ReplayBlobDoc {
   ts: number;
 }
 
+/** PvE 每日发材料通关次数计数（服务器权威，防刷）。_id = `${accountId}:${dayKey}`。 */
+export interface PveDailyDoc {
+  _id: string;
+  accountId: string;
+  dayKey: string;
+  rewardedClears: number;
+  ts: number;
+}
+
 export interface Collections {
   saves: Collection<SaveDoc>;
   accounts: Collection<AccountDoc>;
   matches: Collection<MatchDoc>;
   adsDaily: Collection<AdsDailyDoc>;
   replayBlobs: Collection<ReplayBlobDoc>;
+  pveDaily: Collection<PveDailyDoc>;
 }
 
 export interface MongoHandle {
@@ -153,6 +163,7 @@ export async function createMongo(
     matches: db.collection<MatchDoc>('matches'),
     adsDaily: db.collection<AdsDailyDoc>('adsDaily'),
     replayBlobs: db.collection<ReplayBlobDoc>('replayBlobs'),
+    pveDaily: db.collection<PveDailyDoc>('pveDaily'),
   };
 
   async function ensureIndexes(): Promise<void> {

@@ -84,6 +84,68 @@
 4. 离线合并：C1（上线补校验）确认？离线材料是否要「待确认」中间态？
 5. 优先级：这层在「上线加固（S4-3）」之前还是之后做？
 
+## 8. 已拍板（2026-06-15）+ 实现规格
+
+四项决策（覆盖 §4/§5/§6）：
+
+1. **范围**：选 §4 **方案 B**——`progress.cleared` / `progress.stars` / `materials` / `pveUpgrades`
+   全部 **服务器权威**。`PUT /save` 同步段收窄为仅 `equipped` / `flags`。
+2. **通关 = 一次服务器事务**：客户端报「打完关卡 X 得 Y 星 (+ 录像)」，服务器校验后原子写 progress/stars
+   + 发材料。`equipped`/`flags` 仍客户端同步。
+3. **可重复刷**：每次通关都发材料（不止首通），受**每日上限**约束（类比 `VICTORY_DAILY_WIN_CAP`）。
+   首通额外发首通奖励 + 解锁下一关 + 记星（取 max）。
+4. **离线**：只能重刷**已解锁**关卡攒材料；**新解锁须联网**。离线通关记录排队本地（不本地发材料），
+   上线 flush → 服务器对账发材料（受当日上限）。离线不能升级/锻造。
+
+### 8.1 M12 约束下的数据落位（关键）
+
+metaserver 严禁 import `client/src/game`（M12）。故 PvE **经济数据**（不是 game logic）上提到
+`@nw/shared` 作权威单一来源，客户端保留**展示镜像**（同 wallet.coins 模式）：
+
+- `shared/pveRewards.ts`（新）：`PVE_LEVELS`（有序 id + 每关 `firstClear`/`repeat` 材料表 + 解锁前置）
+  + `PVE_DAILY_CLEAR_REWARD_CAP`（每日发材料的通关次数上限）+ 纯函数 `grantForClear(levelId, isFirst)`。
+- `shared/pveRewards.ts` 同含 `PVE_UPGRADE_COSTS`（每个 upgradeId 的材料花费表 + maxLevel）。
+- 客户端 `game/balance/pveUpgrades.ts` 保留**升级效果**（HP/伤害乘子，game logic，跑蓝图用）；
+  **花费**改由服务器权威（客户端镜像仅供 LevelPrep 显示，服务器 `/pve/upgrade` 重算扣费）。
+- 客户端 `campaign/levels/*.json` 的 `rewards.materials` 降级为**参考/编辑器用**，不再是发放权威
+  （发放走 `shared/pveRewards.ts`）；`starThresholds` 仍客户端用于本地算星（报给服务器校验）。
+
+### 8.2 API（openapi.yml）
+
+- `POST /pve/clear` `{ levelId, stars, replayRef? }` → 校验（level 存在 + **已解锁**：前置关在
+  `progress.cleared` 内 + stars≤3）→ 当日上限内发材料（首通额外发首通奖励 + 解锁记录）→ 原子写
+  save（progress/stars/materials）→ 回推权威 `{ save }`。超限：仍写 progress/stars，材料不发（`capped`）。
+- `POST /pve/upgrade` `{ upgradeId }` → 校验材料足够（服务器）→ 扣材料 + `pveUpgrades[id]+1` → 回推 `{ save }`。
+  仅在线；离线客户端禁用入口。
+- 两端点都返回完整权威 SaveData（客户端 adopt 镜像，同经济回执）。
+
+### 8.3 权威落位 + 并发
+
+`materials`/`progress`/`pveUpgrades` 仍存 meta `saves` 文档（不像钱包迁 commercial），但**只有
+`/pve/*` + ranked 结算路径**能写，`putSave` 不接受。写用乐观锁 rev 守卫（同 `applyPvp`/`putSave`），
+与客户端 `PUT /save`（只改 equipped/flags）并发安全。每日上限用 `pveDaily` 计数集合（同 `adsDaily`）。
+
+### 8.4 离线队列
+
+- 客户端 `SaveManager`：新增 `pendingClears: {levelId, stars, ts}[]`（持久化本地，非同步段）。
+- 离线通关已解锁关：入队 + 本地乐观显示「待结算」，**不**改本地 materials/progress 权威值。
+- 上线 bootstrap/reconnect：按序 flush `POST /pve/clear`，每条成功后采纳回推 save；全部 flush 后清队列。
+- 新解锁：离线不可（CampaignMap 锁住未解锁关，提示「联网解锁」）。
+
+### 8.5 迁移
+
+`materials`/`progress`/`pveUpgrades` 字段位置不变（仍在 SaveData），只是**写权限**变。无需 `SAVE_VERSION`
+bump（字段不变）。客户端 `extractSyncPatch` 去掉这三段；服务端 `putSave` 忽略这三段（防旧客户端覆盖）。
+
+### 8.6 实现顺序（每步可验证、非破坏式切换）
+
+1. **服务器基础（附加，不破坏现状）**：`shared/pveRewards.ts` + meta `/pve/clear`·`/pve/upgrade` +
+   `pveDaily` cap + 测试。客户端暂不用 → 现状不变。
+2. **客户端切换（破坏式但同提交内自洽）**：`extractSyncPatch` 去三段 + `putSave` 忽略三段；
+   `createAppCore` 通关/升级改走 API（在线）/ 离线队列；`SaveManager` pendingClears flush；
+   CampaignMap/LevelPrep 在线门控 + 待结算显示。
+3. L1 录像抽检复算（可疑触发）= 后续（依赖本步落地的 replayRef 通道）。
+
 ## 7. 不做 / 暂缓
 
 - 不为录像引入外部对象存储（S3）；沿用 Mongo `replay`/`replayBlobs`（够用，见 S1-RP）。

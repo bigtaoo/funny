@@ -3,8 +3,14 @@
 // 经济/盲盒/IAP（S2/S4）先返回 NOT_IMPLEMENTED 占位，契约已就绪。
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Collections, JwtConfig, SyncPatch } from '@nw/shared';
+import type { Collections, JwtConfig, SyncPatch, SaveData } from '@nw/shared';
 import { ErrorCode, err, ok, signToken } from '@nw/shared';
+import {
+  findPveLevel,
+  findPveUpgrade,
+  pveUpgradeCost,
+  PVE_DAILY_CLEAR_REWARD_CAP,
+} from '@nw/shared';
 import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import {
   SHOP_ITEMS,
@@ -220,6 +226,120 @@ export class MetaService {
       });
     }
     return ok({ save: result.save });
+  }
+
+  // ── PvE 服务器权威（PVE_INTEGRITY_PLAN §8）：通关结算 + 升级。progress/stars/materials/
+  //    pveUpgrades 只由此处 + ranked 结算写，putSave 不接受（信任边界，§8.3）。──────────
+
+  /** 乐观锁读-改-写存档（rev 守卫 + 重试，同 applyPvp）。transform 返回新 save 或业务错误码字符串。 */
+  private async mutateSave(
+    accountId: string,
+    transform: (s: SaveData) => SaveData | string,
+  ): Promise<{ save: SaveData } | { error: string }> {
+    const { cols, now } = this.deps;
+    await getOrCreateSave(cols, accountId, now());
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const doc = await cols.saves.findOne({ _id: accountId });
+      if (!doc) return { error: 'NOT_FOUND' };
+      const out = transform(doc.save);
+      if (typeof out === 'string') return { error: out };
+      const next: SaveData = { ...out, rev: doc.save.rev + 1, updatedAt: now() };
+      const res = await cols.saves.findOneAndUpdate(
+        { _id: accountId, rev: doc.rev },
+        { $set: { save: next, rev: next.rev } },
+        { returnDocument: 'after' },
+      );
+      if (res) return { save: res.save };
+      // rev 冲突（客户端并发 PUT equipped/flags 或并发 pve 写）→ 重读重试
+    }
+    return { error: 'REV_CONFLICT' };
+  }
+
+  /** 当日「发材料的通关」次数 +1（< cap 才占格并返 true），同 bumpAdsCap 两步法。 */
+  private async bumpPveRewardCap(accountId: string, now: number): Promise<boolean> {
+    const dayKey = new Date(now).toISOString().slice(0, 10);
+    const id = `${accountId}:${dayKey}`;
+    await this.deps.cols.pveDaily.updateOne(
+      { _id: id },
+      { $setOnInsert: { _id: id, accountId, dayKey, rewardedClears: 0, ts: now } },
+      { upsert: true },
+    );
+    const res = await this.deps.cols.pveDaily.findOneAndUpdate(
+      { _id: id, rewardedClears: { $lt: PVE_DAILY_CLEAR_REWARD_CAP } },
+      { $inc: { rewardedClears: 1 }, $set: { ts: now } },
+      { returnDocument: 'after' },
+    );
+    return !!res;
+  }
+
+  /** PvE 通关结算：校验解锁 → 每日上限内发材料 → 原子写 progress/stars/materials → 回推。 */
+  async pveClear(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { cols, now } = this.deps;
+    const { levelId, stars: starsRaw } = req.body as { levelId: string; stars: number };
+    const level = findPveLevel(levelId);
+    if (!level) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown level'));
+    const stars = Math.floor(starsRaw);
+    if (stars < 1 || stars > 3) {
+      // 通关至少 1 星；0 星不算通关（与客户端 applyCampaignClear 的 stars>0 门一致）。
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'stars must be 1..3'));
+    }
+
+    const cur = await getOrCreateSave(cols, accountId, now());
+    // 解锁前置：前置关须已通关（离线新解锁被拒，§8 决策 4）。
+    if (level.requires && !cur.progress.cleared.includes(level.requires)) {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level locked'));
+    }
+    // 每日发材料通关上限：超限仍记 progress/stars，材料不发（§8 决策 3）。
+    const hasReward = Object.keys(level.reward).length > 0;
+    const capped = hasReward ? !(await this.bumpPveRewardCap(accountId, now())) : false;
+    const reward: Record<string, number> = capped ? {} : { ...level.reward };
+
+    const out = await this.mutateSave(accountId, (s) => {
+      const cleared = s.progress.cleared.includes(levelId)
+        ? s.progress.cleared
+        : [...s.progress.cleared, levelId];
+      const stars2 = Math.max(s.progress.stars[levelId] ?? 0, stars) as 1 | 2 | 3;
+      const materials = { ...s.materials };
+      for (const [m, n] of Object.entries(reward)) materials[m] = (materials[m] ?? 0) + n;
+      return {
+        ...s,
+        progress: { ...s.progress, cleared, stars: { ...s.progress.stars, [levelId]: stars2 } },
+        materials,
+      };
+    });
+    if ('error' in out) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
+    return ok({ save: out.save, granted: reward, capped });
+  }
+
+  /** PvE 升级：服务器校验材料足够 → 扣材料 + pveUpgrades+1 → 回推（仅在线）。 */
+  async pveUpgrade(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { upgradeId } = req.body as { upgradeId: string };
+    const def = findPveUpgrade(upgradeId);
+    if (!def) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown upgrade'));
+
+    const out = await this.mutateSave(accountId, (s) => {
+      const lvl = s.pveUpgrades[upgradeId] ?? 0;
+      const cost = pveUpgradeCost(def, lvl);
+      if (!cost) return 'MAXED';
+      if ((s.materials[cost.material] ?? 0) < cost.amount) return 'INSUFFICIENT';
+      return {
+        ...s,
+        materials: { ...s.materials, [cost.material]: (s.materials[cost.material] ?? 0) - cost.amount },
+        pveUpgrades: { ...s.pveUpgrades, [upgradeId]: lvl + 1 },
+      };
+    });
+    if ('error' in out) {
+      if (out.error === 'INSUFFICIENT') {
+        return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough materials'));
+      }
+      if (out.error === 'MAXED') {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'upgrade maxed'));
+      }
+      return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
+    }
+    return ok({ save: out.save });
   }
 
   /** 最近对战历史（ranked / friendly），从归档 matches 取当前账号视角的精简摘要。 */
