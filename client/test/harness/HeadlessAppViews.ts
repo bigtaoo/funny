@@ -25,13 +25,14 @@ import type { GachaSceneCallbacks } from '../../src/scenes/GachaScene';
 import type { CampaignMapCallbacks } from '../../src/scenes/CampaignMapScene';
 import type { LevelPrepCallbacks } from '../../src/scenes/LevelPrepScene';
 import type { CollectionCallbacks } from '../../src/scenes/CollectionScene';
+import type { StatsCallbacks } from '../../src/scenes/StatsScene';
 import type { ReplaySceneCallbacks } from '../../src/scenes/ReplayScene';
 import type { RoomSceneCallbacks } from '../../src/scenes/RoomScene';
 import type { GameSceneCallbacks, GameSceneOptions } from '../../src/scenes/GameScene';
 
 export type ScreenName =
   | 'none' | 'intro' | 'lobby' | 'settings' | 'login' | 'shop' | 'gacha'
-  | 'campaignMap' | 'levelPrep' | 'collection' | 'replay' | 'result' | 'room' | 'gameNet' | 'game';
+  | 'campaignMap' | 'levelPrep' | 'collection' | 'stats' | 'replay' | 'result' | 'room' | 'gameNet' | 'game';
 
 interface ActiveMatch {
   engine: IGameEngine;
@@ -59,6 +60,7 @@ export class HeadlessAppViews implements AppViews {
   campaignMap?: CampaignMapCallbacks;
   levelPrep?: LevelPrepCallbacks;
   collection?: CollectionCallbacks;
+  stats?: StatsCallbacks;
   replay?: ReplaySceneCallbacks;
   result?: ResultViewProps;
   room?: RoomSceneCallbacks;
@@ -80,6 +82,7 @@ export class HeadlessAppViews implements AppViews {
   showCampaignMap(cb: CampaignMapCallbacks): void { this.screen = 'campaignMap'; this.campaignMap = cb; }
   showLevelPrep(cb: LevelPrepCallbacks): void { this.screen = 'levelPrep'; this.levelPrep = cb; }
   showCollection(cb: CollectionCallbacks): void { this.screen = 'collection'; this.collection = cb; }
+  showStats(cb: StatsCallbacks): void { this.screen = 'stats'; this.stats = cb; }
   showReplay(replay: Replay, cb: ReplaySceneCallbacks): void {
     this.screen = 'replay';
     this.replay = cb;

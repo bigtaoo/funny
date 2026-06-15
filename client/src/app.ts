@@ -20,6 +20,7 @@ import { SettingsScene, type SettingsSceneCallbacks } from './scenes/SettingsSce
 import { CampaignMapScene, type CampaignMapCallbacks } from './scenes/CampaignMapScene';
 import { LevelPrepScene, type LevelPrepCallbacks } from './scenes/LevelPrepScene';
 import { CollectionScene, type CollectionCallbacks } from './scenes/CollectionScene';
+import { StatsScene, type StatsCallbacks } from './scenes/StatsScene';
 import { OwnerId, ownerToSide } from './game';
 import type { Replay } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
@@ -107,6 +108,11 @@ class PixiAppViews implements AppViews {
   showCollection(cb: CollectionCallbacks): void {
     this.leaveLobby();
     this.manager.goto(new CollectionScene(this.layout, this.input, cb));
+  }
+
+  showStats(cb: StatsCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new StatsScene(this.layout, this.input, cb));
   }
 
   showReplay(replay: Replay, cb: ReplaySceneCallbacks): void {

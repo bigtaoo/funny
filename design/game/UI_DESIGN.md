@@ -47,16 +47,18 @@
 
 ```
 [ Cards ]   [ Stats ]   [ Home ]   [ Shop ]   [ Social ]
-   收集册      档案       大厅      商店/盲盒    好友房
-Collection  Profile    Lobby    Shop/Gacha    Room
+  收藏中心     战绩       大厅      商店/盲盒    好友房
+Collection  Stats     Lobby    Shop/Gacha    Room
 ```
+
+> **已落地（2026-06-15）**：五格全部接好。Cards → **收藏中心**（CollectionScene 双 Tab：卡牌图鉴只读 + 皮肤衣柜）；Stats → **StatsScene**（本地存档：排位/战役/收集+材料 + 对战历史占位）。Cards/Stats 读本地存档、离线可用不门控；Shop/Social 花服务器权威币/联机，离线路由登录。对战历史段待第二步服务端 `GET /match/history`。
 
 完整场景流（扩展 `META_DESIGN.md §7.1`）：
 
 ```
 启动 →(首次)Intro→ LobbyScene ┬─ Home   = 大厅（PvP匹配 + 战役入口 + 每日）
-                              ├─ Cards  → CollectionScene  收集册/衣柜
-                              ├─ Stats  → ProfileScene      档案/账号/云同步
+                              ├─ Cards  → CollectionScene  收藏中心（卡牌图鉴 + 皮肤衣柜）
+                              ├─ Stats  → StatsScene        战绩（排位/战役/收集 + 对战历史）
                               ├─ Shop   → ShopScene ⇄ GachaScene
                               └─ Social → RoomScene         好友房
 

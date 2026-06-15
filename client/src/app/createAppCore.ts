@@ -125,6 +125,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onStartCampaign(_levelIndex: number) { goCampaignMap(); },
       onOpenRoom() { goRoom(); },
       onOpenShop() { goShop(); },
+      onOpenCards() { goCollection(goLobby, 'cards'); },
+      onOpenStats() { goStats(); },
       onOpenProfile() { goSettings(); },
       playerName: playerName(),
       pvp: { rank: pvp.rank, elo: pvp.elo },
@@ -372,7 +374,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     views.showCampaignMap({
       onBack() { goLobby(); },
       onSelectLevel(levelId) { goLevelPrep(levelId); },
-      onOpenCollection() { goCollection(goCampaignMap); },
+      onOpenCollection() { goCollection(goCampaignMap, 'skins'); },
       getStars: () => saveManager.get().progress.stars,
       getCleared: () => saveManager.get().progress.cleared,
     });
@@ -393,10 +395,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  function goCollection(back: () => void): void {
+  function goCollection(back: () => void, initialTab: 'cards' | 'skins' = 'cards'): void {
     inLobby = false;
     views.showCollection({
       onBack: back,
+      initialTab,
       getSkins: () => saveManager.get().inventory.skins,
       getEquipped: () => saveManager.get().equipped[EQUIP_SLOT] ?? null,
       equip: (skinId) => {
@@ -404,6 +407,31 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           if (skinId === null) delete d.equipped[EQUIP_SLOT];
           else d.equipped[EQUIP_SLOT] = skinId;
         });
+      },
+    });
+  }
+
+  function goStats(): void {
+    inLobby = false;
+    views.showStats({
+      onBack: () => goLobby(),
+      getStats: () => {
+        const save = saveManager.get();
+        const stars = Object.values(save.progress.stars).reduce((a, b) => a + b, 0);
+        return {
+          pvp: {
+            rank: save.pvp.rank,
+            elo: save.pvp.elo,
+            wins: save.pvp.wins,
+            losses: save.pvp.losses,
+            streak: save.pvp.streak,
+          },
+          cleared: save.progress.cleared.length,
+          totalLevels: CAMPAIGN_LEVEL_ORDER.length,
+          stars,
+          skinsOwned: save.inventory.skins.length,
+          materials: save.materials,
+        };
       },
     });
   }

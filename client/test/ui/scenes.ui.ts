@@ -24,6 +24,7 @@ import { GachaScene } from '../../src/scenes/GachaScene';
 import { CampaignMapScene } from '../../src/scenes/CampaignMapScene';
 import { LevelPrepScene } from '../../src/scenes/LevelPrepScene';
 import { CollectionScene } from '../../src/scenes/CollectionScene';
+import { StatsScene } from '../../src/scenes/StatsScene';
 import { RoomScene } from '../../src/scenes/RoomScene';
 import { ResultScene } from '../../src/scenes/ResultScene';
 import type { PlayerStats } from '../../src/game/types';
@@ -87,6 +88,8 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         onStartCampaign() {},
         onOpenRoom() {},
         onOpenShop() {},
+        onOpenCards() {},
+        onOpenStats() {},
         onOpenProfile() {},
         playerName: 'Tester',
         pvp: { rank: 'bronze', elo: 1000 },
@@ -100,6 +103,8 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         onStartCampaign() {},
         onOpenRoom() {},
         onOpenShop() {},
+        onOpenCards() {},
+        onOpenStats() {},
         onOpenProfile() {},
         playerName: 'Guest',
       }),
@@ -174,6 +179,21 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         getSkins: () => [],
         getEquipped: () => null,
         equip() {},
+      }),
+  },
+  {
+    name: 'StatsScene',
+    build: (w, h) =>
+      new StatsScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        getStats: () => ({
+          pvp: { rank: 'bronze', elo: 1000, wins: 12, losses: 5, streak: 3 },
+          cleared: 2,
+          totalLevels: 4,
+          stars: 5,
+          skinsOwned: 1,
+          materials: { scrap: 30, lead: 10, binding: 4 },
+        }),
       }),
   },
   {

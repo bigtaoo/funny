@@ -26,6 +26,7 @@ import type { GachaSceneCallbacks } from '../scenes/GachaScene';
 import type { CampaignMapCallbacks } from '../scenes/CampaignMapScene';
 import type { LevelPrepCallbacks } from '../scenes/LevelPrepScene';
 import type { CollectionCallbacks } from '../scenes/CollectionScene';
+import type { StatsCallbacks } from '../scenes/StatsScene';
 import type { ReplaySceneCallbacks } from '../scenes/ReplayScene';
 import type { ResultSceneCallbacks, EloResult } from '../scenes/ResultScene';
 import type { GameSceneCallbacks, GameSceneOptions } from '../scenes/GameScene';
@@ -72,6 +73,7 @@ export interface AppViews {
   showCampaignMap(cb: CampaignMapCallbacks): void;
   showLevelPrep(cb: LevelPrepCallbacks): void;
   showCollection(cb: CollectionCallbacks): void;
+  showStats(cb: StatsCallbacks): void;
   showReplay(replay: Replay, cb: ReplaySceneCallbacks): void;
   showResult(props: ResultViewProps): void;
 

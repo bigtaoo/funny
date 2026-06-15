@@ -59,6 +59,10 @@ export interface LobbySceneCallbacks {
   onOpenRoom(): void;
   /** Open the shop (economy). Wired to the bottom-nav "shop" slot (S2-6). */
   onOpenShop(): void;
+  /** Open the collection center (cards codex + skins). Bottom-nav "cards" slot. */
+  onOpenCards(): void;
+  /** Open the stats / match-record screen. Bottom-nav "stats" slot. */
+  onOpenStats(): void;
   /** Open the personal profile / settings screen (top-left profile chip). */
   onOpenProfile(): void;
   /** Player display name shown in the top-left profile chip. */
@@ -107,6 +111,10 @@ export class LobbyScene implements Scene {
   private socialNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the bottom-nav "shop" slot (opens ShopScene). */
   private shopNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Hit rect for the bottom-nav "cards" slot (opens CollectionScene). */
+  private cardsNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Hit rect for the bottom-nav "stats" slot (opens StatsScene). */
+  private statsNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the top-right account chip (login when offline / logout when on). */
   private accountChipRect: Rect | null = null;
   private accountChipFn: (() => void) | null = null;
@@ -188,6 +196,17 @@ export class LobbyScene implements Scene {
       // The shop spends server-authoritative coins → requires an account too.
       if (this.cb.offline && this.cb.onLogin) this.cb.onLogin();
       else this.cb.onOpenShop();
+      return;
+    }
+    // Cards (collection) and stats read local save data → work offline, no gate.
+    const cd = this.cardsNavRect;
+    if (x >= cd.x && x <= cd.x + cd.w && y >= cd.y && y <= cd.y + cd.h) {
+      this.cb.onOpenCards();
+      return;
+    }
+    const st = this.statsNavRect;
+    if (x >= st.x && x <= st.x + st.w && y >= st.y && y <= st.y + st.h) {
+      this.cb.onOpenStats();
       return;
     }
   }
@@ -379,9 +398,10 @@ export class LobbyScene implements Scene {
       const slotW = w / 5;
       const slotX = i * slotW + slotW / 2;
       const slotY = h - navH / 2;
-      // Wired slots: home (2), shop (3), social (4) → shown active.
-      const active = i === 2 || i === 3 || i === 4;
-      const dotColor = i === 2 ? C.accent : (i === 3 ? C.green : (i === 4 ? C.gold : C.mid));
+      // All five slots are wired now: cards (0), stats (1), home (2), shop (3),
+      // social (4). Home is the current page (no-op).
+      const active = true;
+      const dotColor = [C.red, C.accent, C.accent, C.green, C.gold][i] ?? C.mid;
 
       const dot = new PIXI.Graphics();
       dot.beginFill(dotColor, active ? 0.8 : 0.3);
@@ -395,11 +415,11 @@ export class LobbyScene implements Scene {
       navLabel.x = slotX; navLabel.y = slotY + Math.round(navH * 0.04);
       navBg.addChild(navLabel);
 
-      if (i === 3) {
-        this.shopNavRect = { x: i * slotW, y: h - navH, w: slotW, h: navH };
-      } else if (i === 4) {
-        this.socialNavRect = { x: i * slotW, y: h - navH, w: slotW, h: navH };
-      }
+      const navRect = { x: i * slotW, y: h - navH, w: slotW, h: navH };
+      if (i === 0)      this.cardsNavRect  = navRect;
+      else if (i === 1) this.statsNavRect  = navRect;
+      else if (i === 3) this.shopNavRect   = navRect;
+      else if (i === 4) this.socialNavRect = navRect;
     });
 
     // VS overlay
