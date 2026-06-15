@@ -11,9 +11,12 @@ import {
   computeEloDelta,
   eloToRank,
   nextStreak,
+  victoryCoinsForRank,
   createLogger,
 } from '@nw/shared';
 import type { GatewayClient } from './gatewayClient.js';
+import type { CommercialClient } from './commercialClient.js';
+import { adsDayKey } from './economy.js';
 import { getProfile } from './accounts.js';
 
 const log = createLogger('meta:internal');
@@ -49,10 +52,12 @@ export interface InternalDeps {
   now: () => number;
   /** 对等裁判客户端（Phase C）。未配置则 available=false，ranked 不一致直接作废。 */
   gateway: GatewayClient;
+  /** commercial 客户端：ranked 胜者发分段胜利金币（§2.3b）。未配置则不发。 */
+  commercial: CommercialClient;
 }
 
 export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps): void {
-  const { cols, internalKey, now, gateway } = deps;
+  const { cols, internalKey, now, gateway, commercial } = deps;
 
   const authed = (key: unknown): boolean => key === internalKey;
 
@@ -110,7 +115,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       const loser = body.players.find((p) => p.side !== body.winner_side);
       if (winner && loser) {
         try {
-          eloBySide = await settleElo(cols, now, winner, loser);
+          eloBySide = await settleElo(cols, now, commercial, winner, loser);
         } catch (e) {
           log.error('ranked ELO settle failed', { err: (e as Error).message });
         }
@@ -120,7 +125,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       try {
         const verdict = await judgeMismatch(gateway, body);
         if (verdict) {
-          eloBySide = await settleElo(cols, now, verdict.honest, verdict.cheater);
+          eloBySide = await settleElo(cols, now, commercial, verdict.honest, verdict.cheater);
           cheat = {
             side: verdict.cheater.side,
             accountId: verdict.cheater.accountId,
@@ -221,6 +226,7 @@ async function judgeMismatch(
 async function settleElo(
   cols: Collections,
   now: () => number,
+  commercial: CommercialClient,
   winner: { side: number; accountId: string },
   loser: { side: number; accountId: string },
 ): Promise<Record<number, EloResult>> {
@@ -238,6 +244,24 @@ async function settleElo(
   ]);
   if (wRes) out[winner.side] = wRes;
   if (lRes) out[loser.side] = lRes;
+
+  // 分段胜利金币（§2.3b）：仅胜者，按结算后段位发，commercial 权威 enforce 每日上限。
+  // best-effort——发币失败不影响 ELO 结算（钱包是 commercial 权威，下次 GET /save 对账）。
+  if (wRes && commercial.available) {
+    const amount = victoryCoinsForRank(wRes.rankAfter);
+    try {
+      await commercial.victoryCredit({
+        accountId: winner.accountId,
+        amount,
+        dayKey: adsDayKey(now()),
+      });
+    } catch (e) {
+      log.error('victory coin credit failed', {
+        accountId: winner.accountId,
+        err: (e as Error).message,
+      });
+    }
+  }
   return out;
 }
 

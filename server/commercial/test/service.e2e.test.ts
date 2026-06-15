@@ -124,6 +124,25 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     expect(r).toMatchObject({ ok: true, coinsAfter: 50 });
   });
 
+  it('胜利金币：每日上限内发币、超限 capped 不发、跨日重置', async () => {
+    // 当日 10 局封顶（VICTORY_DAILY_WIN_CAP），每局 5 币 → 共 50。
+    let last = 0;
+    for (let i = 0; i < 10; i++) {
+      const r = await svc.victoryCredit({ accountId: 'v', amount: 5, dayKey: '2026-06-14' });
+      expect(r).toMatchObject({ ok: true, credited: 5, capped: false });
+      if (r.ok) last = r.coinsAfter;
+    }
+    expect(last).toBe(50);
+    // 第 11 局：超限不发币。
+    const over = await svc.victoryCredit({ accountId: 'v', amount: 5, dayKey: '2026-06-14' });
+    expect(over).toMatchObject({ ok: true, credited: 0, capped: true });
+    expect((await svc.getWallet('v')).coins).toBe(50);
+    // 跨日重置：新 dayKey 又可领。
+    const nextDay = await svc.victoryCredit({ accountId: 'v', amount: 5, dayKey: '2026-06-15' });
+    expect(nextDay).toMatchObject({ ok: true, credited: 5, capped: false });
+    expect((await svc.getWallet('v')).coins).toBe(55);
+  });
+
   it('spend（改名 sink）：扣币 + orderId 幂等 + 余额不足拒绝 + 对账不拾取', async () => {
     await svc.rechargeVerify({ accountId: 'j', platform: 'web', receipt: 'tier:small', receiptId: 'rcj' }); // 600
     const r1 = await svc.spend({ accountId: 'j', amount: 500, reason: 'rename', orderId: 'sp1' });

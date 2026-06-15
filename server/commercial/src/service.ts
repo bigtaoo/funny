@@ -6,6 +6,7 @@ import {
   findShopItem,
   gachaCost,
   IAP_TIERS,
+  VICTORY_DAILY_WIN_CAP,
   type Rarity,
 } from '@nw/shared';
 import type {
@@ -352,6 +353,40 @@ export class CommercialService {
     if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
     const coinsAfter = await this.credit(args.accountId, amount, 'ads', {});
     return { ok: true, coinsAfter };
+  }
+
+  /**
+   * 分段胜利金币加币（§2.3b）。meta 算好 amount（按段位）+ dayKey；commercial 在此**权威 enforce
+   * 每日胜局上限**：原子守卫当日计数 < VICTORY_DAILY_WIN_CAP 才占一格并发币，超限 capped=true 不发
+   * （胜场已计在 saves.pvp，金币不发）。计数文档 _id=`accountId:dayKey`，与广告 cap 同款两步法。
+   */
+  async victoryCredit(args: {
+    accountId: string;
+    amount: number;
+    dayKey: string;
+  }): Promise<Result<{ coinsAfter: number; credited: number; capped: boolean }>> {
+    const amount = Math.max(0, Math.floor(args.amount));
+    if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
+
+    const id = `${args.accountId}:${args.dayKey}`;
+    // 先 upsert 保证文档存在，再带守卫 $inc（同 bumpAdsCap）。
+    await this.cols.victoryDaily.updateOne(
+      { _id: id },
+      { $setOnInsert: { _id: id, accountId: args.accountId, dayKey: args.dayKey, wins: 0, ts: this.now() } },
+      { upsert: true },
+    );
+    const slot = await this.cols.victoryDaily.findOneAndUpdate(
+      { _id: id, wins: { $lt: VICTORY_DAILY_WIN_CAP } },
+      { $inc: { wins: 1 }, $set: { ts: this.now() } },
+      { returnDocument: 'after' },
+    );
+    if (!slot) {
+      // 当日已达上限：不发币。
+      const w = await this.cols.wallets.findOne({ _id: args.accountId });
+      return { ok: true, coinsAfter: w?.coins ?? 0, credited: 0, capped: true };
+    }
+    const coinsAfter = await this.credit(args.accountId, amount, 'victory', {});
+    return { ok: true, coinsAfter, credited: amount, capped: false };
   }
 }
 

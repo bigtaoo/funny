@@ -127,6 +127,16 @@ export function startInternalHttp(
                 dayKey: str(b.dayKey),
               }),
             );
+          case '/internal/victory/credit':
+            return send(
+              res,
+              200,
+              await svc.victoryCredit({
+                accountId: str(b.accountId),
+                amount: num(b.amount, 0),
+                dayKey: str(b.dayKey),
+              }),
+            );
           default:
             return send(res, 404, { ok: false, error: 'not found' });
         }

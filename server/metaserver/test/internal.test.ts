@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { makeNewSave, type Collections, type SaveData, type SaveDoc } from '@nw/shared';
 import { registerInternalRoutes } from '../src/internal.js';
 import type { GatewayClient, JudgeRes } from '../src/gatewayClient.js';
+import type { CommercialClient } from '../src/commercialClient.js';
 
 const KEY = 'test-internal-key';
 
@@ -14,6 +15,25 @@ function fakeGateway(opts: { available?: boolean; res?: JudgeRes } = {}): Gatewa
     available: opts.available ?? false,
     judge: async () => opts.res ?? { ok: false },
   };
+}
+
+interface VictoryCall {
+  accountId: string;
+  amount: number;
+  dayKey: string;
+}
+
+/** 假 commercial：仅 internal.ts 用到的 available + victoryCredit，记录胜利金币调用供断言。 */
+function fakeCommercial(available = true): CommercialClient & { victoryCalls: VictoryCall[] } {
+  const victoryCalls: VictoryCall[] = [];
+  return {
+    available,
+    victoryCalls,
+    victoryCredit: async (a: VictoryCall) => {
+      victoryCalls.push(a);
+      return { ok: true as const, coinsAfter: 0, credited: a.amount, capped: false };
+    },
+  } as unknown as CommercialClient & { victoryCalls: VictoryCall[] };
 }
 
 /** 内存 saves + matches：findOne / 乐观锁 findOneAndUpdate / 唯一 roomId insertOne。 */
@@ -47,9 +67,13 @@ function fakeCols(seed: Record<string, SaveData>): { cols: Collections; matches:
   return { cols, matches };
 }
 
-function build(cols: Collections, gateway: GatewayClient = fakeGateway()): FastifyInstance {
+function build(
+  cols: Collections,
+  gateway: GatewayClient = fakeGateway(),
+  commercial: CommercialClient = fakeCommercial(false),
+): FastifyInstance {
   const app = Fastify();
-  registerInternalRoutes(app, { cols, internalKey: KEY, now: () => 1000, gateway });
+  registerInternalRoutes(app, { cols, internalKey: KEY, now: () => 1000, gateway, commercial });
   return app;
 }
 
@@ -106,6 +130,35 @@ describe('internal routes', () => {
     const sa = await cols.saves.findOne({ _id: 'a' });
     expect(sa!.save.pvp.elo).toBe(1016);
     expect(sa!.save.pvp.wins).toBe(1);
+    await app.close();
+  });
+
+  it('ranked 胜者发分段胜利金币（按结算后段位，仅胜方）', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols } = fakeCols({ a, b });
+    const comm = fakeCommercial(true);
+    const app = build(cols, fakeGateway(), comm);
+    await app.inject({
+      method: 'POST',
+      url: '/internal/match/report',
+      headers: { 'x-internal-key': KEY },
+      payload: {
+        room_id: 'RV',
+        seed: '1',
+        mode: 'ranked',
+        reason: 'base',
+        winner_side: 0,
+        hash_ok: true,
+        players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
+        results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
+        replay: emptyReplay(),
+      },
+    });
+    // 仅胜者 a 发币；结算后 ELO 1016 → bronze → 5 金币。
+    expect(comm.victoryCalls).toHaveLength(1);
+    expect(comm.victoryCalls[0]!.accountId).toBe('a');
+    expect(comm.victoryCalls[0]!.amount).toBe(5);
     await app.close();
   });
 

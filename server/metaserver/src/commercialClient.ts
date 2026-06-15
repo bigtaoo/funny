@@ -53,6 +53,11 @@ export interface CommercialClient {
     amount: number;
     dayKey: string;
   }): Promise<Body<{ coinsAfter: number }>>;
+  victoryCredit(args: {
+    accountId: string;
+    amount: number;
+    dayKey: string;
+  }): Promise<Body<{ coinsAfter: number; credited: number; capped: boolean }>>;
 }
 
 /** 真实 HTTP 实现。baseUrl 为 null（未配 commercial）→ available=false，经济端点回 503。 */
@@ -133,5 +138,12 @@ export class HttpCommercialClient implements CommercialClient {
 
   adsCredit(args: { accountId: string; amount: number; dayKey: string }) {
     return this.post<{ coinsAfter: number }>('/internal/ads/credit', args);
+  }
+
+  victoryCredit(args: { accountId: string; amount: number; dayKey: string }) {
+    return this.post<{ coinsAfter: number; credited: number; capped: boolean }>(
+      '/internal/victory/credit',
+      args,
+    );
   }
 }

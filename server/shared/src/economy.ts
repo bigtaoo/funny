@@ -1,6 +1,7 @@
 // 经济数值单一来源（ECONOMY_BALANCE.md §2~4）。纯数据，无 DB / 无 PIXI。
 // meta 用它列商品/盲盒池 + 算 dupe 退币；commercial 用它跑盲盒 RNG。两端同源避免漂移。
 import type { Rarity } from './types';
+import type { RankId } from './ladder';
 
 export const RARITY_ORDER: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
 
@@ -78,6 +79,30 @@ export const IAP_TIERS: Record<string, number> = {
   mid: 3300,
   large: 11800,
 };
+
+/**
+ * 分段单局胜利金币（§2.3b，持续 faucet）。高段更高，配合每日上限防通胀。
+ * 仅 ranked 胜局发放（含掉线/认输判胜、对等裁判判定的诚实胜方）。
+ */
+export const VICTORY_COINS_BY_RANK: Record<RankId, number> = {
+  bronze: 5,
+  silver: 5,
+  gold: 5,
+  platinum: 8,
+  diamond: 8,
+  star: 12,
+  master: 12,
+  grandmaster: 18,
+  king: 18,
+};
+
+/** 每日可领胜利金币的对局上限（超出仍计积分/战绩，不发币，§2.3b）。 */
+export const VICTORY_DAILY_WIN_CAP = 10;
+
+/** 段位 → 单局胜利金币（未知段位回退最低档）。 */
+export function victoryCoinsForRank(rank: string): number {
+  return VICTORY_COINS_BY_RANK[rank as RankId] ?? VICTORY_COINS_BY_RANK.bronze;
+}
 
 export function findGachaPool(id: string): GachaPoolDef | undefined {
   return GACHA_POOLS.find((p) => p.id === id);

@@ -79,7 +79,13 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     opts.gateway ?? new HttpGatewayClient(opts.gatewayUrl ?? null, opts.internalKey);
 
   // 内部路由（玩家不可见，X-Internal-Key 鉴权，不经 openapi glue）：取 ELO + 局末上报 + 对等裁判。
-  registerInternalRoutes(app, { cols: opts.cols, internalKey: opts.internalKey, now, gateway });
+  registerInternalRoutes(app, {
+    cols: opts.cols,
+    internalKey: opts.internalKey,
+    now,
+    gateway,
+    commercial,
+  });
 
   await app.register(openapiGlue, {
     specification: SPEC_PATH,

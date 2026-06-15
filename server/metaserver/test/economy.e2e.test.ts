@@ -88,6 +88,10 @@ class FakeCommercial implements CommercialClient {
     this.coins.set(a.accountId, this.bal(a.accountId) + a.amount);
     return { ok: true as const, coinsAfter: this.bal(a.accountId) };
   }
+  async victoryCredit(a: { accountId: string; amount: number; dayKey: string }) {
+    this.coins.set(a.accountId, this.bal(a.accountId) + a.amount);
+    return { ok: true as const, coinsAfter: this.bal(a.accountId), credited: a.amount, capped: false };
+  }
   spent = new Set<string>();
   async spend(a: { accountId: string; amount: number; reason: string; orderId: string }) {
     if (this.spent.has(a.orderId)) return { ok: true as const, coinsAfter: this.bal(a.accountId) };

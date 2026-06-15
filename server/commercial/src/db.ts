@@ -66,12 +66,22 @@ export interface GachaHistoryDoc {
   ts: number;
 }
 
+/** 每日胜利金币领取计数（_id=`accountId:dayKey` → 已领局数），enforce 每日上限。 */
+export interface VictoryDailyDoc {
+  _id: string; // `${accountId}:${dayKey}`
+  accountId: string;
+  dayKey: string;
+  wins: number; // 当日已发金币的胜局数（封顶 VICTORY_DAILY_WIN_CAP）
+  ts: number;
+}
+
 export interface CommercialCollections {
   wallets: Collection<WalletDoc>;
   ledger: Collection<LedgerDoc>;
   orders: Collection<OrderDoc>;
   recharges: Collection<RechargeDoc>;
   gachaHistory: Collection<GachaHistoryDoc>;
+  victoryDaily: Collection<VictoryDailyDoc>;
 }
 
 export interface CommercialMongo {
@@ -106,6 +116,7 @@ export async function createCommercialMongo(
     orders: db.collection<OrderDoc>('orders'),
     recharges: db.collection<RechargeDoc>('recharges'),
     gachaHistory: db.collection<GachaHistoryDoc>('gachaHistory'),
+    victoryDaily: db.collection<VictoryDailyDoc>('victoryDaily'),
   };
 
   async function ensureIndexes(): Promise<void> {
