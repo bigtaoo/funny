@@ -12,10 +12,9 @@
 
 import type { IPlatform } from '../platform/IPlatform';
 import type { AppViews, RoomView, NetGameView } from './AppViews';
-import { getUpgradeDef, upgradeCost } from '../game/balance/pveUpgrades';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, RecordingInputSource } from '../game';
 import type { OwnerId, PlayerStats, MatchStartInfo, Replay } from '../game';
-import { computeStars, remainingHpPct, applyCampaignClear } from '../game/meta/campaignRewards';
+import { computeStars, remainingHpPct } from '../game/meta/campaignRewards';
 import { initI18n, t, type TranslationKey } from '../i18n';
 import { LocalSaveStore, SaveManager, ReplayStore } from '../game/meta';
 import { ApiClient, ApiError, type AuthResult } from '../net/ApiClient';
@@ -378,6 +377,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onOpenCollection() { goCollection(goCampaignMap, 'skins'); },
       getStars: () => saveManager.get().progress.stars,
       getCleared: () => saveManager.get().progress.cleared,
+      // PvE 服务器权威：通关/解锁须联网（§8 决策 4）。离线只能重刷已解锁关，新解锁锁住。
+      isOnline: () => saveManager.online(),
+      getPendingLevels: () => saveManager.getPendingClears().map((p) => p.levelId),
     });
   }
 
@@ -392,7 +394,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       levelNumber,
       getMaterials: () => saveManager.get().materials,
       getUpgradeLevel: (id) => saveManager.get().pveUpgrades[id] ?? 0,
-      tryUpgrade: (id) => tryUpgrade(id),
+      // 升级是服务器权威扣费，仅在线可用（§8 决策 4）。
+      isOnline: () => saveManager.online(),
+      tryUpgrade: (id) => saveManager.upgrade(id),
     });
   }
 
@@ -453,21 +457,6 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  function tryUpgrade(id: string): boolean {
-    const def = getUpgradeDef(id);
-    if (!def) return false;
-    const save = saveManager.get();
-    const lvl = save.pveUpgrades[id] ?? 0;
-    const cost = upgradeCost(def, lvl);
-    if (!cost) return false; // already maxed
-    if ((save.materials[cost.material] ?? 0) < cost.amount) return false;
-    saveManager.update((d) => {
-      d.materials[cost.material] = (d.materials[cost.material] ?? 0) - cost.amount;
-      d.pveUpgrades[id] = (d.pveUpgrades[id] ?? 0) + 1;
-    });
-    return true;
-  }
-
   function goCampaign(levelId: string | undefined): void {
     const level = levelId ? getLevel(levelId) : null;
     if (!level || !levelId) { goLobby(); return; }
@@ -478,11 +467,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         if (winner === 0) {
           const pct = remainingHpPct(stats[0].damageTakenByBase);
           const stars = computeStars(level.rewards?.starThresholds, pct);
-          if (stars > 0) {
-            saveManager.update((draft) => {
-              applyCampaignClear(draft, levelId, level, stars);
-            });
-          }
+          // 服务器权威结算（§8）：在线 → POST /pve/clear；离线 → 入队待结算（fire-and-forget，
+          // 回到 CampaignMap 时重读 save / pending 反映状态）。
+          if (stars > 0) void saveManager.recordClear(levelId, stars);
         }
         goResult(winner, stats, 0, keepReplay(replay));
       },

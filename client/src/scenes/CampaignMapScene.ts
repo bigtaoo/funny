@@ -23,6 +23,10 @@ export interface CampaignMapCallbacks {
   getStars(): Record<string, 1 | 2 | 3>;
   /** Cleared level ids — drives the sequential unlock gate. */
   getCleared(): string[];
+  /** Online = can reach /pve/* (clear/unlock are server-authoritative, §8). Offline gates new unlocks. */
+  isOnline(): boolean;
+  /** Level ids with an offline clear queued for settlement (shown as「待结算」). */
+  getPendingLevels(): string[];
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -95,6 +99,8 @@ export class CampaignMapScene implements Scene {
     // Level list.
     const stars = this.cb.getStars();
     const cleared = new Set(this.cb.getCleared());
+    const online = this.cb.isOnline();
+    const pending = new Set(this.cb.getPendingLevels());
     const listX = Math.round(w * 0.08);
     const listW = w - listX * 2;
     const rowH = Math.round(h * 0.11);
@@ -102,13 +108,17 @@ export class CampaignMapScene implements Scene {
     let y = tbH + Math.round(h * 0.05);
 
     CAMPAIGN_LEVEL_ORDER.forEach((levelId, i) => {
-      this.drawLevelRow(levelId, i, this.isUnlocked(i, cleared), stars[levelId] ?? 0, listX, y, listW, rowH);
+      this.drawLevelRow(
+        levelId, i, this.isUnlocked(i, cleared), stars[levelId] ?? 0,
+        online, pending.has(levelId), listX, y, listW, rowH,
+      );
       y += rowH + gap;
     });
   }
 
   private drawLevelRow(
     levelId: string, index: number, unlocked: boolean, starCount: number,
+    online: boolean, pending: boolean,
     x: number, y: number, w: number, h: number,
   ): void {
     const box = sketchPanel(w, h, {
@@ -125,14 +135,22 @@ export class CampaignMapScene implements Scene {
     name.anchor.set(0, 0.5); name.x = x + Math.round(w * 0.05); name.y = y + h * 0.38;
     this.container.addChild(name);
 
-    // Stars row (★ filled / ☆ empty) or lock label.
+    // Stars row (★ filled / ☆ empty), pending badge, or lock label.
     if (unlocked) {
       const starStr = '★'.repeat(starCount) + '☆'.repeat(3 - starCount);
       const st = txt(starStr, Math.round(h * 0.24), C.gold);
       st.anchor.set(0, 0.5); st.x = x + Math.round(w * 0.05); st.y = y + h * 0.72;
       this.container.addChild(st);
+      if (pending) {
+        // 离线攒的通关待上线结算（材料/记星未生效）。
+        const pd = txt(t('campaign.pending'), Math.round(h * 0.18), C.mid);
+        pd.anchor.set(1, 0.5); pd.x = x + w - Math.round(w * 0.05); pd.y = y + h * 0.72;
+        this.container.addChild(pd);
+      }
     } else {
-      const lock = txt(t('campaign.locked'), Math.round(h * 0.20), C.mid);
+      // 离线时新解锁不可用（解锁是服务器权威，§8 决策 4）→ 提示联网。
+      const lockKey = online ? 'campaign.locked' : 'campaign.lockedOffline';
+      const lock = txt(t(lockKey), Math.round(h * 0.20), C.mid);
       lock.anchor.set(0, 0.5); lock.x = x + Math.round(w * 0.05); lock.y = y + h * 0.72;
       this.container.addChild(lock);
     }

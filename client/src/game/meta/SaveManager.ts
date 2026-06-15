@@ -6,13 +6,13 @@
 // 网络不可用 / 未配 ApiClient → 静默退化为纯本地（不抛错给调用方）。
 
 import type { AuthCredential } from '../../platform/IPlatform';
-import type { ApiClient } from '../../net/ApiClient';
+import { ApiError, type ApiClient } from '../../net/ApiClient';
 import {
   extractSyncPatch,
   type LevelRecord,
   type SaveData,
 } from './SaveData';
-import type { SaveStore } from './SaveStore';
+import type { PendingClear, SaveStore } from './SaveStore';
 
 export interface SaveManagerOpts {
   store: SaveStore;
@@ -45,6 +45,7 @@ export class SaveManager {
   private pushTimer: unknown = null;
   private pushing = false;
   private dirty = false; // 防抖窗口内有未上行的本地改动
+  private pending: PendingClear[]; // 离线待结算通关队列（PVE_INTEGRITY_PLAN §8.4）
 
   constructor(opts: SaveManagerOpts) {
     this.store = opts.store;
@@ -56,6 +57,7 @@ export class SaveManager {
       opts.setTimer ?? ((cb, ms) => (globalThis as typeof globalThis).setTimeout(cb, ms));
     this.clearTimer = opts.clearTimer ?? ((h) => (globalThis as typeof globalThis).clearTimeout(h as never));
     this.save = this.store.loadLocal();
+    this.pending = this.store.loadPending();
   }
 
   /** 当前内存存档（同步可读，UI 余额等只读自此，由服务器回推刷新）。 */
@@ -104,6 +106,7 @@ export class SaveManager {
         publicId: auth.publicId ?? cloud.publicId,
         gatewayUrl: auth.gatewayUrl ?? cloud.gatewayUrl,
       });
+      await this.flushPending(); // 离线攒的通关上线结算
       return true;
     } catch {
       // 离线 / 服务器不可达：留在本地，不报错。
@@ -127,6 +130,7 @@ export class SaveManager {
         publicId: cloud.publicId,
         gatewayUrl: cloud.gatewayUrl,
       });
+      await this.flushPending(); // 重连后结算离线攒的通关
       return true;
     } catch {
       return false;
@@ -150,6 +154,80 @@ export class SaveManager {
    */
   adoptServer(save: SaveData): void {
     this.reconcile(save);
+  }
+
+  // ── PvE 服务器权威（PVE_INTEGRITY_PLAN §8）────────────────────────────
+  // progress/materials/pveUpgrades 是服务器权威；通关/升级走 /pve/* 端点，回推后 adopt。
+  // 离线（无 token）：通关入队待结算（不改本地权威值）；升级禁用。
+
+  /** 是否联通可写服务器权威段（有 api + token）。场景据此做在线门控。 */
+  online(): boolean {
+    return !!this.api?.hasToken();
+  }
+
+  /** 离线待结算通关队列（只读副本，供 UI 显示「待结算」）。 */
+  getPendingClears(): PendingClear[] {
+    return this.pending.slice();
+  }
+
+  /**
+   * 记录一次通关（stars≥1）。在线 → POST /pve/clear 立即结算并 adopt 回推；
+   * 离线 / 请求失败 → 入队（不改本地权威值），上线后 flush。
+   */
+  async recordClear(levelId: string, stars: number, replayRef?: string): Promise<void> {
+    if (stars <= 0) return;
+    if (this.online()) {
+      try {
+        const res = await this.api!.pveClear(levelId, stars, replayRef);
+        this.adoptServer(res.save);
+        return;
+      } catch {
+        // 在线但请求失败（网络抖动）→ 入队兜底，下次 flush
+      }
+    }
+    this.enqueueClear({ levelId, stars, ts: Date.now() });
+  }
+
+  /**
+   * PvE 升级（仅在线，服务器权威扣费）。POST /pve/upgrade → adopt 回推。
+   * 离线 / 失败（材料不足等）→ 返回 false，不改本地。
+   */
+  async upgrade(upgradeId: string): Promise<boolean> {
+    if (!this.online()) return false;
+    try {
+      const res = await this.api!.pveUpgrade(upgradeId);
+      this.adoptServer(res.save);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private enqueueClear(entry: PendingClear): void {
+    this.pending.push(entry);
+    this.store.savePending(this.pending);
+  }
+
+  /** 上线后按序 flush 待结算队列：每条成功后 adopt；网络失败保留待下次，业务错误丢弃。 */
+  private async flushPending(): Promise<void> {
+    if (!this.online()) return;
+    while (this.pending.length > 0) {
+      const head = this.pending[0];
+      try {
+        const res = await this.api!.pveClear(head.levelId, head.stars);
+        this.adoptServer(res.save);
+        this.pending.shift();
+        this.store.savePending(this.pending);
+      } catch (e) {
+        if (e instanceof ApiError) {
+          // 业务错误（关卡未解锁 / 参数非法）：该条无法结算，丢弃避免永久卡队列。
+          this.pending.shift();
+          this.store.savePending(this.pending);
+          continue;
+        }
+        break; // 网络错误：保留队列，下次再试
+      }
+    }
   }
 
   /** 立即清空防抖、强制上行（场景切换 / 退出前调用）。 */
@@ -201,42 +279,27 @@ export class SaveManager {
   }
 
   /**
-   * reconcile：服务器权威段一律以云端为准；客户端同步段做合并（progress 并集、
-   * materials/pveUpgrades 取较大、equipped/flags 本地覆盖），rev/accountId 取云端。
+   * reconcile：服务器权威段一律以云端为准。PVE_INTEGRITY_PLAN §8 起 progress（cleared/stars）/
+   * materials / pveUpgrades 也是服务器权威 → 取云端（不再并集/取较大）；仅 equipped/flags 是客户端
+   * 同步段做本地覆盖。progress.best 是本地展示统计（永不上云、无奖励含义）→ 并集取优保留本地。
+   * rev/accountId 取云端。
    */
   private reconcile(cloud: SaveData): void {
     const local = this.save;
     this.save = {
-      ...cloud, // 权威段 + rev/accountId/updatedAt/version 取云端
+      ...cloud, // 权威段（含 progress.cleared/stars / materials / pveUpgrades）+ rev/accountId 取云端
       progress: {
-        cleared: unionStr(local.progress.cleared, cloud.progress.cleared),
-        stars: mergeMax(local.progress.stars, cloud.progress.stars) as Record<string, 1 | 2 | 3>,
+        cleared: cloud.progress.cleared,
+        stars: cloud.progress.stars,
         best: mergeBest(local.progress.best, cloud.progress.best),
       },
-      materials: mergeMax(local.materials, cloud.materials),
-      pveUpgrades: mergeMax(local.pveUpgrades, cloud.pveUpgrades),
       equipped: { ...cloud.equipped, ...local.equipped },
       flags: { ...cloud.flags, ...local.flags },
     };
     this.store.saveLocal(this.save);
-    // 合并后本地若与云端有别（并集/较大造成），标脏待下次上行。
+    // equipped/flags 本地可能与云端有别（本地覆盖），标脏待下次上行。
     this.dirty = true;
   }
-}
-
-function unionStr(a: string[], b: string[]): string[] {
-  return Array.from(new Set([...a, ...b]));
-}
-
-function mergeMax(
-  a: Record<string, number>,
-  b: Record<string, number>,
-): Record<string, number> {
-  const out: Record<string, number> = { ...b };
-  for (const k of Object.keys(a)) {
-    out[k] = Math.max(a[k], b[k] ?? -Infinity);
-  }
-  return out;
 }
 
 /** best：并集键，时间更短 / 漏怪更少者胜（缺则取存在的一方）。 */

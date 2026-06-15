@@ -31,12 +31,16 @@ describe('applySyncPatch 信任边界', () => {
   it('硬墙：patch 塞入权威段被结构性丢弃（HTTP body 无类型，客户端篡改无效）', () => {
     const prev = makeNewSave('acc', 0);
     // 模拟恶意/越界 body：SyncPatch 类型不含这些字段，运行期也必须丢弃。
+    // PVE_INTEGRITY_PLAN §8 起 progress/materials/pveUpgrades 也是服务器权威 → 同样丢弃。
     const malicious = {
       flags: { x: true },
       wallet: { coins: 999_999 },
       inventory: { skins: ['hacked'], items: { gold: 999 } },
       pvp: { elo: 9999, rank: 'legend', wins: 999, losses: 0, streak: 99 },
       gacha: { pity: { p: 999 } },
+      progress: { cleared: ['ch_stress'], stars: { ch_stress: 3 }, best: {} },
+      materials: { scrap: 999 },
+      pveUpgrades: { inf_hp: 5 },
     } as Parameters<typeof applySyncPatch>[1];
 
     const next = applySyncPatch(prev, malicious, NOW, 1);
@@ -45,6 +49,9 @@ describe('applySyncPatch 信任边界', () => {
     expect(next.inventory.skins).toEqual([]); // 未被 'hacked' 覆盖
     expect(next.pvp.elo).toBe(1000); // 默认值，未被 9999 覆盖
     expect(next.gacha.pity).toEqual({}); // 未被覆盖
+    expect(next.progress.cleared).toEqual([]); // §8 服务器权威，未被覆盖
+    expect(next.materials).toEqual({}); // §8 服务器权威，未被覆盖
+    expect(next.pveUpgrades).toEqual({}); // §8 服务器权威，未被覆盖
     expect(next.flags).toEqual({ x: true }); // 合法同步段照常写入
   });
 
@@ -57,24 +64,26 @@ describe('applySyncPatch 信任边界', () => {
     expect(next.version).toBe(prev.version);
   });
 
-  it('空 patch：同步段保持 prev（仅 rev/updatedAt 推进）', () => {
+  it('空 patch：所有段保持 prev（仅 rev/updatedAt 推进）', () => {
     const prev = makeNewSave('acc', 0);
     prev.progress.cleared = ['ch1_lv1'];
     prev.materials = { wood: 3 };
+    prev.equipped = { skin: 's1' };
     const next = applySyncPatch(prev, {}, NOW, 1);
     expect(next.progress.cleared).toEqual(['ch1_lv1']);
     expect(next.materials).toEqual({ wood: 3 });
+    expect(next.equipped).toEqual({ skin: 's1' });
   });
 
-  it('部分 patch：未提供的同步段保留 prev，提供的被覆盖', () => {
+  it('部分 patch：提供的同步段（equipped/flags）覆盖，未提供的保留 prev', () => {
     const prev = makeNewSave('acc', 0);
-    prev.progress.cleared = ['ch1_lv1'];
-    prev.materials = { wood: 3 };
+    prev.equipped = { skin: 's1' };
+    prev.flags = { seen_intro: true };
 
-    const next = applySyncPatch(prev, { materials: { iron: 9 } }, NOW, 1);
+    const next = applySyncPatch(prev, { equipped: { skin: 's2' } }, NOW, 1);
 
-    expect(next.materials).toEqual({ iron: 9 }); // 覆盖
-    expect(next.progress.cleared).toEqual(['ch1_lv1']); // 未提供 → 保留
+    expect(next.equipped).toEqual({ skin: 's2' }); // 覆盖
+    expect(next.flags).toEqual({ seen_intro: true }); // 未提供 → 保留
   });
 
   it('不改动入参 prev（无副作用）', () => {

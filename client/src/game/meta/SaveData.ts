@@ -49,19 +49,13 @@ export interface SaveData {
 /**
  * PUT /save 仅接受的客户端同步段（SERVER_API.md §2.2）。服务器权威段永不上行。
  * 与 server/shared/src/types.ts 的 SyncPatch 同构。
+ * PVE_INTEGRITY_PLAN §8 起，progress/materials/pveUpgrades 升级为服务器权威
+ * （只由 /pve/* + ranked 结算写），同步段收窄为仅 equipped/flags。
  */
-export type SyncPatch = Partial<
-  Pick<SaveData, 'progress' | 'materials' | 'pveUpgrades' | 'equipped' | 'flags'>
->;
+export type SyncPatch = Partial<Pick<SaveData, 'equipped' | 'flags'>>;
 
 /** 客户端同步段的字段名（push 抽取 / merge 用单一来源）。 */
-export const SYNC_KEYS = [
-  'progress',
-  'materials',
-  'pveUpgrades',
-  'equipped',
-  'flags',
-] as const;
+export const SYNC_KEYS = ['equipped', 'flags'] as const;
 
 export const SAVE_VERSION = 1;
 
@@ -88,12 +82,9 @@ export function makeNewSave(accountId = '', now = 0): SaveData {
   };
 }
 
-/** 抽出仅客户端同步段，供 push 上行。 */
+/** 抽出仅客户端同步段（equipped/flags），供 push 上行。 */
 export function extractSyncPatch(save: SaveData): Required<SyncPatch> {
   return {
-    progress: save.progress,
-    materials: save.materials,
-    pveUpgrades: save.pveUpgrades,
     equipped: save.equipped,
     flags: save.flags,
   };

@@ -157,6 +157,8 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         onOpenCollection() {},
         getStars: () => ({}),
         getCleared: () => [],
+        isOnline: () => true,
+        getPendingLevels: () => [],
       }),
   },
   {
@@ -167,7 +169,8 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         onStart() {},
         getMaterials: () => ({}),
         getUpgradeLevel: () => 0,
-        tryUpgrade: () => false,
+        isOnline: () => true,
+        tryUpgrade: async () => false,
         levelNumber: 1,
       }),
   },

@@ -29,8 +29,10 @@ export async function getOrCreateSave(
 
 /**
  * 仅把客户端同步段覆盖进存档；服务器权威段保持不变（SERVER_API.md §2.2）。
- * 信任边界硬墙：只读 patch 的 5 个白名单字段，任何额外字段（wallet/inventory/
- * gacha/pvp 等权威段）结构性丢弃——HTTP body 是无类型 JSON，客户端塞了也不落库。
+ * 信任边界硬墙：只读 patch 的 2 个白名单字段（equipped/flags），任何额外字段
+ * （wallet/inventory/gacha/pvp 权威段，以及 PVE_INTEGRITY_PLAN §8 起转为服务器权威的
+ * progress/materials/pveUpgrades）结构性丢弃——HTTP body 无类型，客户端塞了也不落库。
+ * 后三段只由 /pve/* + ranked 结算写。
  * 导出供 always-run 单测（e2e 仅 Mongo 在跑时验，本函数纯逻辑应无条件覆盖）。
  */
 export function applySyncPatch(
@@ -43,9 +45,6 @@ export function applySyncPatch(
     ...prev,
     rev: nextRev,
     updatedAt: now,
-    ...(patch.progress ? { progress: patch.progress } : {}),
-    ...(patch.materials ? { materials: patch.materials } : {}),
-    ...(patch.pveUpgrades ? { pveUpgrades: patch.pveUpgrades } : {}),
     ...(patch.equipped ? { equipped: patch.equipped } : {}),
     ...(patch.flags ? { flags: patch.flags } : {}),
   };

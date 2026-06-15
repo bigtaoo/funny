@@ -14,6 +14,16 @@ import { SAVE_STORAGE_KEY, type SaveData } from './SaveData';
 /** 历史遗留 key —— 首次加载时收编进 SaveData.flags。 */
 const LEGACY_SEEN_INTRO_KEY = 'nw_seen_intro';
 
+/** 离线通关待结算队列的本地 key（PVE_INTEGRITY_PLAN §8.4，非同步段、不上云）。 */
+const PENDING_CLEARS_KEY = 'nw_pending_clears_v1';
+
+/** 离线通关待结算记录（上线 flush → POST /pve/clear）。 */
+export interface PendingClear {
+  levelId: string;
+  stars: number;
+  ts: number;
+}
+
 export interface SaveStore {
   /** 读本地存档（含迁移 + 兜底 + 旧 key 收编）；从无则返回全新存档。 */
   loadLocal(): SaveData;
@@ -21,6 +31,10 @@ export interface SaveStore {
   saveLocal(save: SaveData): void;
   /** 清空本地存档（调试 / 登出用）。 */
   clearLocal(): void;
+  /** 读离线待结算通关队列（损坏退化为空）。 */
+  loadPending(): PendingClear[];
+  /** 写离线待结算通关队列。 */
+  savePending(list: PendingClear[]): void;
 }
 
 export class LocalSaveStore implements SaveStore {
@@ -47,6 +61,26 @@ export class LocalSaveStore implements SaveStore {
 
   clearLocal(): void {
     this.storage.removeItem(SAVE_STORAGE_KEY);
+  }
+
+  loadPending(): PendingClear[] {
+    const text = this.storage.getItem(PENDING_CLEARS_KEY);
+    if (!text) return [];
+    try {
+      const arr = JSON.parse(text);
+      if (!Array.isArray(arr)) return [];
+      return arr.filter(
+        (e): e is PendingClear =>
+          !!e && typeof e.levelId === 'string' && typeof e.stars === 'number',
+      );
+    } catch {
+      return []; // 损坏 → 当作空队列
+    }
+  }
+
+  savePending(list: PendingClear[]): void {
+    if (list.length === 0) this.storage.removeItem(PENDING_CLEARS_KEY);
+    else this.storage.setItem(PENDING_CLEARS_KEY, JSON.stringify(list));
   }
 
   /** 把历史散 key 收编进 flags（仅当 flags 尚无该项时）。 */

@@ -360,9 +360,6 @@ export interface components {
             };
         };
         SyncPatch: {
-            progress?: components["schemas"]["SaveData"]["progress"];
-            materials?: components["schemas"]["SaveData"]["materials"];
-            pveUpgrades?: components["schemas"]["SaveData"]["pveUpgrades"];
             equipped?: components["schemas"]["SaveData"]["equipped"];
             flags?: components["schemas"]["SaveData"]["flags"];
         };

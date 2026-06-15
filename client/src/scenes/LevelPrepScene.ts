@@ -33,8 +33,10 @@ export interface LevelPrepCallbacks {
   getMaterials(): Record<string, number>;
   /** Upgrade id → current level. */
   getUpgradeLevel(id: string): number;
-  /** Attempt to buy one level of `id`; returns true if it succeeded (materials spent). */
-  tryUpgrade(id: string): boolean;
+  /** Online = can reach /pve/upgrade (upgrades are server-authoritative, §8). Offline disables upgrading. */
+  isOnline(): boolean;
+  /** Buy one level of `id` (server-authoritative spend); resolves true on success. */
+  tryUpgrade(id: string): Promise<boolean>;
   /** 1-based level number for the header label. */
   levelNumber: number;
 }
@@ -70,12 +72,23 @@ export class LevelPrepScene implements Scene {
     }
   }
 
+  private upgrading = false;
+
   private onUpgrade(def: PveUpgradeDef): void {
-    const ok = this.cb.tryUpgrade(def.id);
-    this.toast = ok
-      ? { text: t('prep.upgraded'), color: C.green }
-      : { text: t('prep.insufficient'), color: C.red };
-    this.render();
+    if (this.upgrading) return; // 防连点重复扣费（服务器端点在途）
+    if (!this.cb.isOnline()) {
+      this.toast = { text: t('prep.offlineUpgrade'), color: C.red };
+      this.render();
+      return;
+    }
+    this.upgrading = true;
+    void this.cb.tryUpgrade(def.id).then((ok) => {
+      this.upgrading = false;
+      this.toast = ok
+        ? { text: t('prep.upgraded'), color: C.green }
+        : { text: t('prep.insufficient'), color: C.red };
+      this.render(); // 重读 save 镜像（已被回推刷新）
+    });
   }
 
   private render(): void {
@@ -181,25 +194,28 @@ export class LevelPrepScene implements Scene {
     sub.anchor.set(0, 0.5); sub.x = x + Math.round(w * 0.04); sub.y = y + h * 0.72;
     this.container.addChild(sub);
 
-    // Upgrade button (right).
+    // Upgrade button (right). Server-authoritative spend → disabled offline (§8).
+    const online = this.cb.isOnline();
+    const canAfford = !maxed && affordable;
+    const enabled = canAfford && online; // 视觉可用：能买得起且在线
     const bw = Math.round(w * 0.22);
     const bh = Math.round(h * 0.6);
     const bx = x + w - bw - Math.round(w * 0.03);
     const by = y + (h - bh) / 2;
-    const canBuy = !maxed && affordable;
     const btn = sketchPanel(bw, bh, {
-      fill: canBuy ? C.dark : C.btnDis,
-      border: canBuy ? C.green : C.btnOff,
+      fill: enabled ? C.dark : C.btnDis,
+      border: enabled ? C.green : C.btnOff,
       width: 2, seed: seedFor(bx, by, bw),
     });
     btn.x = bx; btn.y = by;
     this.container.addChild(btn);
     const blabel = txt(maxed ? t('prep.maxed') : t('prep.upgrade'),
-      Math.round(bh * 0.34), canBuy ? 0xffffff : C.mid, true);
+      Math.round(bh * 0.34), enabled ? 0xffffff : C.mid, true);
     blabel.anchor.set(0.5, 0.5); blabel.x = bx + bw / 2; blabel.y = by + bh / 2;
     this.container.addChild(blabel);
 
-    if (canBuy) {
+    // 仍买得起就接受点击：在线 → 升级；离线 → onUpgrade 弹「联网升级」提示。
+    if (canAfford) {
       this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: () => this.onUpgrade(def) });
     }
   }

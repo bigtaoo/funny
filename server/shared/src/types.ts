@@ -46,10 +46,12 @@ export interface SaveData {
   flags: Record<string, boolean>;
 }
 
-/** PUT /save 仅接受的客户端同步段（SERVER_API.md §2.2）。 */
-export type SyncPatch = Partial<
-  Pick<SaveData, 'progress' | 'materials' | 'pveUpgrades' | 'equipped' | 'flags'>
->;
+/**
+ * PUT /save 仅接受的客户端同步段（SERVER_API.md §2.2）。
+ * PVE_INTEGRITY_PLAN §8 起，progress/materials/pveUpgrades 升级为服务器权威
+ * （只由 /pve/* + ranked 结算写），PUT /save 收窄为仅 equipped/flags。
+ */
+export type SyncPatch = Partial<Pick<SaveData, 'equipped' | 'flags'>>;
 
 export const SAVE_VERSION = 1;
 

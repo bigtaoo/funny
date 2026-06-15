@@ -107,13 +107,16 @@ describe('LocalSaveStore round-trip (S0-3)', () => {
   });
 });
 
-describe('extractSyncPatch (S0-1)', () => {
-  it('只含客户端同步段，不含权威段', () => {
+describe('extractSyncPatch (S0-1 / PvE 服务器权威 §8)', () => {
+  it('收窄为仅 equipped/flags（progress/materials/pveUpgrades 升级为服务器权威，不再上行）', () => {
     const patch = extractSyncPatch(makeNewSave());
-    expect(Object.keys(patch).sort()).toEqual(
-      ['equipped', 'flags', 'materials', 'progress', 'pveUpgrades'].sort(),
-    );
+    expect(Object.keys(patch).sort()).toEqual(['equipped', 'flags'].sort());
+    // 权威段永不上行
     expect('wallet' in patch).toBe(false);
     expect('pvp' in patch).toBe(false);
+    // §8 起这三段也是服务器权威（只由 /pve/* 写），PUT /save 不接受
+    expect('progress' in patch).toBe(false);
+    expect('materials' in patch).toBe(false);
+    expect('pveUpgrades' in patch).toBe(false);
   });
 });

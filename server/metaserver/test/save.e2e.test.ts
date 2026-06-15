@@ -86,13 +86,14 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
       method: 'PUT',
       url: '/save',
       headers: { ...auth, 'if-match': '0' },
+      // materials 是服务器权威段（§8），PUT 不接受 → 仅 flags 落库。
       payload: { save: { flags: { seenIntro: true }, materials: { wood: 5 } } },
     });
     expect(ok.statusCode).toBe(200);
     const saved = body(ok).data.save;
     expect(saved.rev).toBe(1);
     expect(saved.flags.seenIntro).toBe(true);
-    expect(saved.materials.wood).toBe(5);
+    expect(saved.materials.wood).toBeUndefined(); // 服务器权威，未被 PUT 覆盖
 
     const stale = await app.inject({
       method: 'PUT',
@@ -133,22 +134,33 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(codes).toEqual([200, 409]);
   });
 
-  it('硬墙：PUT 携带权威段（wallet）被忽略，coins 仍 0', async () => {
+  it('硬墙：PUT 携带权威段（wallet/materials/progress）被忽略', async () => {
     const { token } = await authDevice('device-5');
     const auth = { authorization: `Bearer ${token}` };
     await app.inject({
       method: 'PUT',
       url: '/save',
       headers: { ...auth, 'if-match': '0' },
-      // SyncPatch 不含 wallet 字段 → 即便客户端塞入也不落库
-      payload: { save: { flags: { c: true }, wallet: { coins: 999999 } } },
+      // SyncPatch 仅含 equipped/flags → 其余字段即便客户端塞入也不落库（§8）
+      payload: {
+        save: {
+          flags: { c: true },
+          wallet: { coins: 999999 },
+          materials: { scrap: 999 },
+          progress: { cleared: ['ch_stress'], stars: {}, best: {} },
+        },
+      },
     });
     const r = await app.inject({
       method: 'GET',
       url: '/save',
       headers: auth,
     });
-    expect(body(r).data.save.wallet.coins).toBe(0);
+    const save = body(r).data.save;
+    expect(save.wallet.coins).toBe(0);
+    expect(save.materials).toEqual({});
+    expect(save.progress.cleared).toEqual([]);
+    expect(save.flags.c).toBe(true); // 合法同步段写入
   });
 
   // ── 对战历史（归档 enrich + GET /match/history）─────────────────────────────

@@ -135,6 +135,27 @@ export class ApiClient {
     return { kind: 'ok', save: json.data.save };
   }
 
+  // ── PvE 服务器权威（PVE_INTEGRITY_PLAN §8，需登录 token）─────────────
+  // progress/stars/materials/pveUpgrades 是服务器权威段；通关/升级走这两个端点，
+  // 回推完整权威 SaveData（客户端 adopt 镜像）。仅在线可调。
+
+  /** PvE 通关结算：服务器校验解锁 → 每日上限内发材料 → 写 progress/stars → 回推。 */
+  async pveClear(
+    levelId: string,
+    stars: number,
+    replayRef?: string,
+  ): Promise<{ save: SaveData; granted: Record<string, number>; capped: boolean }> {
+    return this.post<{ save: SaveData; granted: Record<string, number>; capped: boolean }>(
+      '/pve/clear',
+      { levelId, stars, ...(replayRef ? { replayRef } : {}) },
+    );
+  }
+
+  /** PvE 升级：服务器校验材料 → 扣材料 + pveUpgrades+1 → 回推。材料不足 → ApiError('INSUFFICIENT_FUNDS')（402）。 */
+  async pveUpgrade(upgradeId: string): Promise<{ save: SaveData }> {
+    return this.post<{ save: SaveData }>('/pve/upgrade', { upgradeId });
+  }
+
   /** 最近对战历史（ranked / friendly，按时间倒序；需登录 token）。 */
   async getMatchHistory(limit = 20): Promise<MatchHistoryEntry[]> {
     const data = await this.request<{ matches: MatchHistoryEntry[] }>(

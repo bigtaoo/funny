@@ -133,12 +133,11 @@ components:
           additionalProperties: { type: boolean }
 
     # —— 客户端同步段（PUT /save 仅接受这些字段，§2.2）——
+    # PVE_INTEGRITY_PLAN §8 起 progress/materials/pveUpgrades 转服务器权威
+    # （只由 /pve/* + ranked 结算写），PUT /save 收窄为仅 equipped/flags。
     SyncPatch:
       type: object
       properties:
-        progress: { $ref: '#/components/schemas/SaveData/properties/progress' }
-        materials: { $ref: '#/components/schemas/SaveData/properties/materials' }
-        pveUpgrades: { $ref: '#/components/schemas/SaveData/properties/pveUpgrades' }
         equipped: { $ref: '#/components/schemas/SaveData/properties/equipped' }
         flags: { $ref: '#/components/schemas/SaveData/properties/flags' }
 
