@@ -1,0 +1,141 @@
+# 本地「真实发布」模拟全栈：客户端 + 服务端 6 进程 + mongo，全部 Docker，所有请求经 nginx。
+#
+#   一键起（重建最新代码）：  docker compose -f docker-compose.local.yml up -d --build
+#   停（保留数据）：          docker compose -f docker-compose.local.yml down
+#   停并清空 DB：             docker compose -f docker-compose.local.yml down -v
+#   看日志：                  docker compose -f docker-compose.local.yml logs -f nginx metaserver gateway
+#
+# 入口：http://localhost:8088  （nginx 同源托管 SPA + /api REST + /gw 控制面 WS + /ws 数据面 WS）
+#
+# 端口为何不是 80：本机 Windows 把 80（及 8080/8082/8083）划进 TCP excludedportrange（http.sys/WinNAT
+# 保留），绑定报 EACCES，故默认用排除段外的 8088。换端口须同时改 NW_HTTP_PORT 与三个 NW_PUBLIC_*
+# （客户端地址在构建期烘焙，改后须 `up --build` 重建 nginx 镜像）；建议直接用 ./local-up.ps1 -Port <n>。
+#
+# 与代码改动隔离：所有进程都从镜像跑（构建期快照源码），编辑本地代码不影响运行中的容器；
+# `down` 后再 `up --build` 才会基于最新代码重建镜像。
+
+services:
+  # MongoDB 单节点副本集（事务 + change streams）。仅集群内可达，不暴露宿主。
+  mongo:
+    image: mongo:7
+    container_name: nw-local-mongo
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: >
+        mongosh --quiet --eval "try { rs.status().ok } catch (e) {
+        rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }"
+      interval: 10s
+      timeout: 10s
+      start_period: 5s
+      retries: 10
+    restart: unless-stopped
+
+  metaserver:
+    build: { context: ./server, dockerfile: Dockerfile }
+    image: nw-server:local
+    command: ["node", "metaserver/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:-dev-jwt-secret-change-me}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
+      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_MONGO_DB: ${NW_MONGO_DB:-notebook_wars}
+      NW_META_PORT: "8080"
+      NW_META_HOST: 0.0.0.0
+      NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      # meta 鉴权回包下发给客户端的 gateway 地址（经 nginx 同源）。
+      NW_GATEWAY_PUBLIC_WS_URL: ${NW_PUBLIC_GW:-ws://localhost:8088/gw}
+    depends_on:
+      mongo: { condition: service_healthy }
+      commercial: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8080/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 20
+    restart: unless-stopped
+
+  commercial:
+    build: { context: ./server, dockerfile: Dockerfile }
+    image: nw-server:local
+    command: ["node", "commercial/dist/index.js"]
+    environment:
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
+      NW_COMM_PORT: "8092"
+      NW_COMM_HOST: 0.0.0.0
+      NW_COMM_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_COMM_MONGO_DB: ${NW_COMM_MONGO_DB:-notebook_wars_commercial}
+    depends_on:
+      mongo: { condition: service_healthy }
+    restart: unless-stopped
+
+  gateway:
+    build: { context: ./server, dockerfile: Dockerfile }
+    image: nw-server:local
+    command: ["node", "gateway/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:-dev-jwt-secret-change-me}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
+      NW_GW_PORT: "8082"
+      NW_GW_HOST: 0.0.0.0
+      NW_GW_INTERNAL_PORT: "8090"
+      NW_META_BASE_URL: http://metaserver:8080
+      NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+    depends_on:
+      - metaserver
+      - matchsvc
+    restart: unless-stopped
+
+  matchsvc:
+    build: { context: ./server, dockerfile: Dockerfile }
+    image: nw-server:local
+    command: ["node", "matchsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:-dev-jwt-secret-change-me}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
+      NW_MM_INTERNAL_PORT: "8091"
+      NW_MM_HOST: 0.0.0.0
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      # 写进 ticket 的数据面地址（gameserver 注册前兜底；经 nginx 同源）。
+      NW_GAME_PUBLIC_WS_URL: ${NW_PUBLIC_GAME:-ws://localhost:8088/ws}
+    restart: unless-stopped
+
+  gameserver:
+    build: { context: ./server, dockerfile: Dockerfile }
+    image: nw-server:local
+    command: ["node", "gameserver/dist/index.js"]
+    environment:
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
+      NW_GAME_PORT: "8081"
+      NW_GAME_HOST: 0.0.0.0
+      NW_META_BASE_URL: http://metaserver:8080
+      NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+      NW_GAME_PUBLIC_WS_URL: ${NW_PUBLIC_GAME:-ws://localhost:8088/ws}
+    depends_on:
+      - metaserver
+      - matchsvc
+    restart: unless-stopped
+
+  # nginx = 客户端镜像（静态 SPA + 反向代理）。唯一暴露到宿主的服务。
+  nginx:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        NW_API_BASE: ${NW_PUBLIC_API:-http://localhost:8088/api}
+        NW_GATEWAY_WS: ${NW_PUBLIC_GW:-ws://localhost:8088/gw}
+    image: nw-client:local
+    container_name: nw-local-nginx
+    ports:
+      - "${NW_HTTP_PORT:-8088}:80"
+    depends_on:
+      - metaserver
+      - gateway
+      - gameserver
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
