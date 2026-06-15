@@ -181,13 +181,19 @@ export class Gateway {
           void this.enqueueRanked(accountId);
         } else {
           log.info('-> matchsvc roomCreate', { accountId });
-          this.matchsvc.roomCreate(accountId, displayName(accountId));
+          void this.resolveProfile(accountId).then(({ name, publicId }) =>
+            this.matchsvc.roomCreate(accountId, name, publicId),
+          );
         }
         break;
-      case 'room_join':
-        log.info('-> matchsvc roomJoin', { accountId, code: msg.code });
-        this.matchsvc.roomJoin(accountId, displayName(accountId), msg.code);
+      case 'room_join': {
+        const code = msg.code;
+        log.info('-> matchsvc roomJoin', { accountId, code });
+        void this.resolveProfile(accountId).then(({ name, publicId }) =>
+          this.matchsvc.roomJoin(accountId, name, publicId, code),
+        );
         break;
+      }
       case 'room_ready':
         this.matchsvc.roomReady(accountId, msg.ready);
         break;
@@ -294,8 +300,19 @@ export class Gateway {
       log.warn('ranked enqueue aborted: account dropped during ELO fetch', { accountId });
       return;
     }
+    const { name, publicId } = await this.resolveProfile(accountId);
+    if (!this.conns.has(accountId)) return;
     log.info('-> matchsvc enqueue', { accountId, elo });
-    this.matchsvc.enqueue(accountId, displayName(accountId), elo);
+    this.matchsvc.enqueue(accountId, name, publicId, elo);
+  }
+
+  /**
+   * 玩家展示资料：向 meta 取真实昵称 + 9 位数字公开 id。meta 不可用 / 无资料 →
+   * 名字退回 accountId 前 12 位、publicId 空串（房间仍可建，只是名字不友好）。
+   */
+  private async resolveProfile(accountId: string): Promise<{ name: string; publicId: string }> {
+    const p = await this.meta.getProfile(accountId);
+    return { name: p.displayName || displayName(accountId), publicId: p.publicId ?? '' };
   }
 
   private sendPong(accountId: string): void {

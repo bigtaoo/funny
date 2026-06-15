@@ -502,11 +502,27 @@ export class RoomScene implements Scene {
     bar.x = x; bar.y = y;
     this.container.addChild(bar);
 
-    const roleKey: TranslationKey = isMe ? 'room.you' : (side === 0 ? 'room.host' : 'room.guest');
-    const name = slot ? (isMe ? t('room.you') : (slot.name || t(roleKey))) : t('room.empty');
-    const nameTxt = txt(name, Math.round(h * 0.34), slot ? C.dark : C.mid, true);
-    nameTxt.anchor.set(0, 0.5); nameTxt.x = x + Math.round(w * 0.06); nameTxt.y = y + h / 2;
+    // Always show the nickname (displayName); accountId is never player-facing.
+    // The 9-digit public id sits beneath it for player-to-player reference / 投诉.
+    const roleKey: TranslationKey = side === 0 ? 'room.host' : 'room.guest';
+    const name = slot ? (slot.name || t(roleKey)) : t('room.empty');
+    const hasId = !!slot?.publicId;
+    const nameY = hasId ? y + h * 0.38 : y + h / 2;
+    const nameTxt = txt(name, Math.round(h * 0.32), slot ? C.dark : C.mid, true);
+    nameTxt.anchor.set(0, 0.5); nameTxt.x = x + Math.round(w * 0.06); nameTxt.y = nameY;
     this.container.addChild(nameTxt);
+
+    if (slot && hasId) {
+      const idLabel = `#${slot.publicId}${isMe ? ' · ' + t('room.you') : ''}`;
+      const idTxt = txt(idLabel, Math.round(h * 0.2), C.mid, false);
+      idTxt.anchor.set(0, 0.5); idTxt.x = x + Math.round(w * 0.06); idTxt.y = y + h * 0.68;
+      this.container.addChild(idTxt);
+    } else if (slot && isMe) {
+      // No id yet (server didn't supply one) — still mark which slot is me.
+      const meTxt = txt(t('room.you'), Math.round(h * 0.2), C.mid, false);
+      meTxt.anchor.set(0, 0.5); meTxt.x = x + Math.round(w * 0.06); meTxt.y = y + h * 0.68;
+      this.container.addChild(meTxt);
+    }
 
     if (slot) {
       const statusKey: TranslationKey = slot.ready ? 'room.statusReady' : 'room.statusNotReady';

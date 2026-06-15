@@ -39,6 +39,7 @@ export interface PlayerSlotOut {
   name: string;
   ready: boolean;
   connected: boolean;
+  publicId: string;
 }
 /** 单 sim 帧的非空指令（裁判录像帧；与 conn_resync.log 同构）。 */
 export interface FrameCmdsOut {
@@ -133,6 +134,7 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
             name: p.name,
             ready: p.ready,
             connected: p.connected,
+            public_id: p.publicId,
           })),
           phase: msg.phase,
         },

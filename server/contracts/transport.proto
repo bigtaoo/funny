@@ -23,9 +23,10 @@ enum MatchMode {
 
 message PlayerSlot {
   uint32 side      = 1;
-  string name      = 2;
+  string name      = 2;   // 展示昵称（displayName），非 accountId
   bool   ready     = 3;
   bool   connected = 4;
+  string public_id = 5;   // 9 位数字公开 id（玩家交流 / 投诉用；accountId 仅服务器内部）
 }
 
 // ── 锁步帧（M14：模拟 30Hz，网络 10Hz 批次 = 3 帧）──────

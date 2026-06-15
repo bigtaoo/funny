@@ -153,6 +153,8 @@ components:
         isAnonymous: { type: boolean }
         # 注册时填的展示名（可选）；客户端用于个人资料显示。未设置则缺省。
         displayName: { type: string }
+        # 9 位数字公开 id（玩家交流/投诉用；accountId 仅服务器内部）。
+        publicId: { type: string }
         # gateway 公开控制面 WS 地址（房间/匹配）。客户端只硬编码 meta 地址，
         # gateway 地址由本回包下发、game 地址由 match_found 下发。未配置则缺省。
         gatewayUrl: { type: string }
@@ -416,6 +418,8 @@ paths:
                       save: { $ref: '#/components/schemas/SaveData' }
                       # 账号展示名（可选）；token 续登时客户端据此恢复个人资料。
                       displayName: { type: string }
+                      # 9 位数字公开 id；token 续登时客户端据此恢复个人资料。
+                      publicId: { type: string }
                       # gateway 公开 WS 地址（可选）；token 续登无 auth 回包，从这里取。
                       gatewayUrl: { type: string }
         '401': { $ref: '#/components/responses/ErrorResp' }

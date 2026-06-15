@@ -98,6 +98,16 @@ export class UnitView {
 
   private readonly boardView: BoardView;
 
+  /**
+   * The game side the local player controls. The layout already flips unit
+   * *positions* 180° for the joiner (localSide=Top) so their own units sit at
+   * the screen bottom. Facing/animation must NOT also key off the raw game side
+   * or the joiner's units get mirrored twice (wrong way round). Instead every
+   * unit renders relative to the screen: own side = bottom (un-mirrored, like
+   * owner 0 vs AI), enemy = top (mirrored). See {@link renderSide}.
+   */
+  private readonly localSide: Side;
+
   /** All active unit display containers (circle or stickman wrapper), keyed by unit id. */
   private sprites: Map<number, PIXI.Container> = new Map();
 
@@ -130,8 +140,9 @@ export class UnitView {
     20,
   );
 
-  constructor(boardView: BoardView) {
+  constructor(boardView: BoardView, localSide: Side = Side.Bottom) {
     this.boardView = boardView;
+    this.localSide = localSide;
     this.container = new PIXI.Container();
 
     // Start loading every stickman asset in the background. The game is playable
@@ -247,6 +258,16 @@ export class UnitView {
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
+  /**
+   * Screen-relative side: the local player always renders at the bottom, the
+   * opponent at the top — regardless of which game side (owner) they are. Drives
+   * both sprite mirroring and faction tint so the joiner's view matches a vs-AI
+   * view (own units face up un-mirrored, enemy units mirrored), never flipped twice.
+   */
+  private renderSide(unit: Unit): Side {
+    return unit.side === this.localSide ? Side.Bottom : Side.Top;
+  }
+
   private acquireSprite(unit: Unit): PIXI.Container {
     const asset = this.assets.get(unit.unitType);
     if (asset) return this.buildStickmanContainer(unit, asset);
@@ -256,7 +277,7 @@ export class UnitView {
   // ─── Stickman container (unit type with a loaded .tao asset) ───────────────
 
   private buildStickmanContainer(unit: Unit, asset: TaoAsset): PIXI.Container {
-    const mirrorX = unit.side === Side.Top;
+    const mirrorX = this.renderSide(unit) === Side.Top;
     this.stickmanTypes.set(unit.id, unit.unitType);
 
     // Reuse a pooled (wrapper + runtime) pair of the same type when available.
@@ -310,7 +331,8 @@ export class UnitView {
     const body = c.getChildByName('body') as PIXI.Graphics;
     body.clear();
     // Procedural skeleton draft (§5.5) in faction ink — blue = us / red = enemy.
-    drawStickmanDraft(body, unit.side, DRAFT_HEIGHT[unit.unitType], DRAFT_SEED[unit.unitType]);
+    // Keyed off render side so the joiner's own units stay "us"-colored.
+    drawStickmanDraft(body, this.renderSide(unit), DRAFT_HEIGHT[unit.unitType], DRAFT_SEED[unit.unitType]);
 
     // Faint pencil ground shadow so the figure sits on the board.
     const ring = c.getChildByName('ring') as PIXI.Graphics;

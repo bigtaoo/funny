@@ -24,6 +24,8 @@ export interface AccountDoc {
   oauth?: { provider: string; sub: string }[]; // 第三方（provider+sub 唯一，SA-2）
   // —— 资料 ——
   displayName?: string;
+  /** 9 位数字公开 id（全局唯一，玩家交流/投诉用）。首次鉴权时惰性生成。 */
+  publicId?: string;
 }
 
 /**
@@ -124,6 +126,8 @@ export async function createMongo(
       { 'oauth.provider': 1, 'oauth.sub': 1 },
       { sparse: true, unique: true },
     );
+    // 9 位数字公开 id 全局唯一（稀疏，旧账号惰性补）。
+    await collections.accounts.createIndex({ publicId: 1 }, { sparse: true, unique: true });
     await collections.matches.createIndex({ ts: -1 });
     // room_id 幂等：gameserver 局末上报重试不重复结算/归档（meta /internal/match/report）。
     await collections.matches.createIndex({ roomId: 1 }, { unique: true });

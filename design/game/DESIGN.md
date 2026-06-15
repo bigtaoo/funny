@@ -460,6 +460,10 @@ npm run test:watch
    - 敌群够大（`meteorOffenseCluster`）时进攻性陨石。
    - 否则按性价比出兵（偏好顺序 Infantry → Archer → ShieldBearer），推**防守最薄弱**车道（威胁最低）打穿。
 
+> **规则统一（2026-06-15）**：放置/金币校验是**引擎单一权威**，AI 与人类同规则。`GameEngine.processCommand` 对出兵格 `isCellOccupiedByUnit(col, spawnRow)` 守卫（行满则该指令被丢弃，AI 也不能越格堆兵）；金币不足（`player.ink < card.cost`）本就在 `processCommand` + `AISystem.findCardIndex` 双重拦。**netplay 不跑任何 AI / 波次**（`decideTick` 仅 pvp 分支、只产 owner 1 指令），引擎从不替人类自动出牌。
+>
+> **平衡（2026-06-15）**：兵营出兵间隔 4s→6s（`BARRACKS_SPAWN_INTERVAL_TICKS`，−33% 产出）+ 卡费 10→14，收敛「约 20s 回本后无限产出」的过强问题。
+
 ### 难度分级
 
 `new AISystem(rng, difficulty)`，`difficulty: 'easy' | 'medium' | 'hard'`，默认 `'medium'`（`GameEngine` 当前用默认值，未接 UI 选择器）。

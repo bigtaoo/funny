@@ -144,6 +144,11 @@ export class NetInputSource implements InputSource {
   // ─── Internals ──────────────────────────────────────────────────────────────
 
   private onMatchStart(m: MatchStart): void {
+    // Fresh match (incl. a rematch on a reused session): clear any frame state
+    // left over from a previous match so stale commands can't bleed into the
+    // new engine and break determinism. (Reconnect uses conn_resync, not this.)
+    this.cmdsByFrame.clear();
+    this.lastTaken = -1;
     this.matchInfo = {
       roomId: m.roomId,
       mode: m.mode,

@@ -54,6 +54,8 @@ export interface AuthResult {
   isAnonymous: boolean;
   /** 注册时填的展示名（可选）；客户端用于个人资料显示。 */
   displayName?: string;
+  /** 9 位数字公开 id（玩家交流/投诉用；accountId 仅服务器内部标识）。 */
+  publicId?: string;
   /**
    * gateway 公开控制面 WS 地址（房间/匹配），由服务器下发。客户端只硬编码 meta 地址，
    * gateway 地址走这里、game 地址走 match_found——都实时获取，不静态配置。未配置则缺省。
@@ -126,13 +128,20 @@ export class ApiClient {
   }
 
   // ── save（S0-7）─────────────────────────────────────────
-  /** 拉取当前账号云端存档（顺带回带账号展示名 + gateway 地址，供个人资料 / 联机）。 */
-  async getSave(): Promise<{ save: SaveData; displayName?: string; gatewayUrl?: string }> {
-    const data = await this.request<{ save: SaveData; displayName?: string; gatewayUrl?: string }>(
-      'GET',
-      '/save',
-    );
-    return { save: data.save, displayName: data.displayName, gatewayUrl: data.gatewayUrl };
+  /** 拉取当前账号云端存档（顺带回带账号展示名 + 公开 id + gateway 地址，供个人资料 / 联机）。 */
+  async getSave(): Promise<{ save: SaveData; displayName?: string; publicId?: string; gatewayUrl?: string }> {
+    const data = await this.request<{
+      save: SaveData;
+      displayName?: string;
+      publicId?: string;
+      gatewayUrl?: string;
+    }>('GET', '/save');
+    return {
+      save: data.save,
+      displayName: data.displayName,
+      publicId: data.publicId,
+      gatewayUrl: data.gatewayUrl,
+    };
   }
 
   /** 改展示名（消耗金币）。回推权威存档 + 新展示名；余额不足 → ApiError('INSUFFICIENT_FUNDS')。 */

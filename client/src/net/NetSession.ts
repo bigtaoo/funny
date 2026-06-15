@@ -152,8 +152,17 @@ export class NetSession {
 
   // ── Routing ──────────────────────────────────────────────────────────────────
 
-  /** Re-auth on every (re)connect: device/wx auth is idempotent → stable accountId + fresh JWT. */
+  /**
+   * Token for the gateway handshake. Prefer the token the REST client already
+   * holds (the *logged-in* account, from password login / persisted token) so
+   * the room identity matches the player's real account — otherwise the gateway
+   * would re-auth via the device credential and the player would show up as an
+   * anonymous device account (wrong nickname / id). Only when there's no token
+   * (truly anonymous) do we mint one from the device/wx credential.
+   */
   private async freshToken(): Promise<string> {
+    const existing = this.api.getToken();
+    if (existing) return existing;
     const res = await this.api.auth(await this.getCredential());
     return res.token;
   }
@@ -194,7 +203,17 @@ export class NetSession {
 
   /** Got match_found → connect the data-plane WS with the signed ticket. */
   private connectGame(gameUrl: string, ticket: string): void {
-    if (this.game) return; // already connected for this match
+    // Same ticket = a re-sent match_found for the *current* match → ignore.
+    if (this.game && this.ticket === ticket) return;
+    // A different ticket means a NEW match (e.g. queueing again after the last
+    // one ended). The previous data-plane socket was never torn down — drop it
+    // first, otherwise the stale conn blocks this match from ever connecting
+    // (the rematch-can't-connect bug).
+    if (this.game) {
+      log.info('tearing down stale game conn before new match');
+      this.game.disconnect();
+      this.game = null;
+    }
     log.info('connecting data plane (game)', { gameUrl });
     this.ticket = ticket;
     this.game = new NetClient(this.platform, {

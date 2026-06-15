@@ -301,8 +301,10 @@ export class BoardView {
     s.width  = rect.w;
     s.height = rect.h;
     if (mirror) {
-      if (layout.orientation === 'landscape') s.scale.x *= -1;
-      else s.scale.y *= -1;
+      // Distinguish the enemy base with a horizontal flip in BOTH orientations.
+      // (Portrait used to flip vertically, but an upside-down castle reads as a
+      // rendering bug — a left/right mirror is the cleaner distinction.)
+      s.scale.x *= -1;
     }
 
     const crackGfx = new PIXI.Graphics();

@@ -12,7 +12,7 @@ import { ResultScene, type EloResult } from './scenes/ResultScene';
 import { ReplayScene } from './scenes/ReplayScene';
 import { SettingsScene, type RenameOutcome } from './scenes/SettingsScene';
 import { OwnerId, PlayerStats } from './game/types';
-import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, ownerToSide } from './game';
+import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, ownerToSide, RecordingInputSource } from './game';
 import type { MatchStartInfo, Replay } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
@@ -38,6 +38,9 @@ const TOKEN_KEY = 'nw_token';
 /** Persisted display name shown in the lobby profile chip / settings screen. */
 const PLAYER_NAME_KEY = 'nw_player_name';
 
+/** Persisted 9-digit public id (player-facing identifier; accountId stays server-internal). */
+const PLAYER_PUBLIC_ID_KEY = 'nw_player_public_id';
+
 /** Coin cost to change the display name. Mirrors server RENAME_COST (@nw/shared); server is authoritative. */
 const RENAME_COST = 500;
 
@@ -58,8 +61,9 @@ export async function startApp(platform: IPlatform): Promise<void> {
     // Cloud-authoritative display name (returned by GET /save). On token re-entry the
     // pull happens after the lobby is already shown, so persist the name and, if it
     // actually changed, rebuild the lobby so the profile chip picks it up.
-    onProfile: ({ displayName, gatewayUrl: gw }) => {
+    onProfile: ({ displayName, publicId, gatewayUrl: gw }) => {
       applyGatewayUrl(gw); // server-provided gateway address (rebuilds lobby if it changed)
+      if (publicId) platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, publicId);
       if (!displayName) return;
       if (platform.storage.getItem(PLAYER_NAME_KEY) === displayName) return;
       platform.storage.setItem(PLAYER_NAME_KEY, displayName);
@@ -259,6 +263,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
       // registration); fall back to the locally supplied name (loginId / register input).
       const resolvedName = res.displayName || name;
       if (resolvedName) platform.storage.setItem(PLAYER_NAME_KEY, resolvedName);
+      if (res.publicId) platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, res.publicId);
       // Merge single-player progress into the cloud account (§4.4): pull + reconcile.
       await saveManager.adoptSession(res.accountId);
       goLobby({ offline: false });
@@ -274,6 +279,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
   function doLogout(): void {
     platform.storage.removeItem(TOKEN_KEY);
     platform.storage.removeItem(PLAYER_NAME_KEY);
+    platform.storage.removeItem(PLAYER_PUBLIC_ID_KEY);
     api?.setToken(null);
     goLogin();
   }
@@ -497,22 +503,33 @@ export async function startApp(platform: IPlatform): Promise<void> {
     const { width, height } = platform.getScreenSize();
     const netLayout  = createLayout(width, height, side);
 
+    // Record the confirmed lockstep stream locally so net matches also offer
+    // "watch replay" (S1-RP). The server-confirmed stream already carries BOTH
+    // sides' commands, so the recording reconstructs the full match.
+    const recorder = new RecordingInputSource(session.input);
     const engine = createGameEngine(
       { seed: info.seed, players: [{ id: 0 }, { id: 1 }], mode: 'netplay' },
-      session.input,
+      recorder,
     );
+    const buildNetReplay = (winner: OwnerId | null): Replay =>
+      recorder.snapshot({
+        seed: info.seed,
+        mode: 'netplay',
+        meta: { recordedAt: Date.now(), winner: winner ?? -1 },
+      });
 
     // Ranked needs the server-authoritative ELO (arrives in match_over) before
     // showing the result. Friendly shows the result immediately on local end.
     const isRanked = info.mode === MatchMode.RANKED;
     let netResultShown = false;
     let lastElo: EloResult | undefined;
-    let pending: { winner: OwnerId | null; stats: [PlayerStats, PlayerStats] } | null = null;
+    let pending: { winner: OwnerId | null; stats: [PlayerStats, PlayerStats]; replay?: Replay } | null = null;
     let eloWaitTimer: ReturnType<typeof setTimeout> | null = null;
     const finishNet = (
       winner: OwnerId | null,
       stats: [PlayerStats, PlayerStats],
       elo?: EloResult,
+      replay?: Replay,
     ): void => {
       if (netResultShown) return;
       netResultShown = true;
@@ -520,7 +537,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
       // ranked 局末 gameserver 已写 saves.pvp（elo/rank/streak）→ 拉一次刷新本地，
       // 让大厅段位徽章即时反映新分（reconcile 取云端权威段）。
       if (isRanked) void saveManager.refresh();
-      void goResult(winner, stats, localOwner, undefined, elo);
+      void goResult(winner, stats, localOwner, keepReplay(replay), elo);
     };
 
     const scene = new GameScene(netLayout, input, {
@@ -528,18 +545,19 @@ export async function startApp(platform: IPlatform): Promise<void> {
         // S1-5: report end-state hash + claimed winner (ranked needs the winner;
         // server settles ELO only when both clients agree on hash + winner).
         session.reportResult(matchStateHash(winner, stats), winner ?? 0);
+        const replay = buildNetReplay(winner);
         if (isRanked) {
           // Hold the result until the server's match_over (ELO) arrives; if the
           // server is silent, fall back after 6s and show without ELO.
-          pending = { winner, stats };
-          eloWaitTimer = setTimeout(() => finishNet(winner, stats, lastElo), 6000);
+          pending = { winner, stats, replay };
+          eloWaitTimer = setTimeout(() => finishNet(winner, stats, lastElo, replay), 6000);
         } else {
-          finishNet(winner, stats);
+          finishNet(winner, stats, undefined, replay);
         }
       },
       // Server-driven end (opponent timeout / desync) — no hash to report.
       onNetMatchOver(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
-        finishNet(winner, stats, lastElo);
+        finishNet(winner, stats, lastElo, buildNetReplay(winner));
       },
       onExitToLobby() { session.close(); goLobby(); },
     }, { engine, net: true });
@@ -555,7 +573,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
         lastElo = m.elo ? { delta: m.elo.delta, after: m.elo.after, rankAfter: m.elo.rankAfter } : undefined;
         scene.applyMatchOver(m); // may fire onNetMatchOver (server-driven end)
         // Base-win path: local end already fired onGameEnd and is waiting on ELO.
-        if (pending) finishNet(pending.winner, pending.stats, lastElo);
+        if (pending) finishNet(pending.winner, pending.stats, lastElo, pending.replay);
       },
     };
 

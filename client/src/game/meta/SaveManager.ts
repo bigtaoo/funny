@@ -26,7 +26,7 @@ export interface SaveManagerOpts {
    * 云端回带的账号资料；bootstrap/refresh 拉到后回调。用于客户端持久化 / 刷新 UI / 联网。
    * `gatewayUrl`：服务器下发的控制面 WS 地址（客户端不硬编码，见 ApiClient.AuthResult）。
    */
-  onProfile?: (profile: { displayName?: string; gatewayUrl?: string }) => void;
+  onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string }) => void;
   /** 注入定时器（测试用）；默认走 globalThis。 */
   setTimer?: (cb: () => void, ms: number) => unknown;
   clearTimer?: (h: unknown) => void;
@@ -37,7 +37,7 @@ export class SaveManager {
   private readonly store: SaveStore;
   private readonly api?: ApiClient;
   private readonly getCredential?: () => Promise<AuthCredential>;
-  private readonly onProfile?: (profile: { displayName?: string; gatewayUrl?: string }) => void;
+  private readonly onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string }) => void;
   private readonly debounceMs: number;
   private readonly setTimer: (cb: () => void, ms: number) => unknown;
   private readonly clearTimer: (h: unknown) => void;
@@ -101,6 +101,7 @@ export class SaveManager {
       this.reconcile(cloud.save);
       this.onProfile?.({
         displayName: cloud.displayName,
+        publicId: auth.publicId ?? cloud.publicId,
         gatewayUrl: auth.gatewayUrl ?? cloud.gatewayUrl,
       });
       return true;
@@ -121,7 +122,11 @@ export class SaveManager {
     try {
       const cloud = await this.api.getSave();
       this.reconcile(cloud.save);
-      this.onProfile?.({ displayName: cloud.displayName, gatewayUrl: cloud.gatewayUrl });
+      this.onProfile?.({
+        displayName: cloud.displayName,
+        publicId: cloud.publicId,
+        gatewayUrl: cloud.gatewayUrl,
+      });
       return true;
     } catch {
       return false;

@@ -121,10 +121,13 @@ export const BASE_HP = 100;
 
 // ─── Building tick intervals ──────────────────────────────────────────────────
 //
-//  Barracks spawn interval : 4 s   → 4 * 30 = 120 ticks
+//  Barracks spawn interval : 6 s   → 6 * 30 = 180 ticks
 //  Arrow tower attack      : 1.5 s → round(1.5 * 30) = 45 ticks
 //
-export const BARRACKS_SPAWN_INTERVAL_TICKS     = 4 * TICK_RATE;                   // 120
+// Barracks were overpowered: a 10-ink building paid for itself in ~20 s then
+// produced infinite value. Slowed the stream (4 s → 6 s, −33% output) and the
+// card cost was raised (see CARD_DEFINITIONS) to bring it in line with towers.
+export const BARRACKS_SPAWN_INTERVAL_TICKS     = 6 * TICK_RATE;                   // 180
 export const ARROW_TOWER_ATTACK_INTERVAL_TICKS = Math.round(1.5 * TICK_RATE);     // 45
 
 // ─── Spell tick durations ─────────────────────────────────────────────────────
@@ -200,7 +203,7 @@ export const BUILDING_BLUEPRINTS: Record<BuildingType, BuildingBlueprint> = {
     type: BuildingType.Barracks,
     hp: 200,
     spawnUnit: UnitType.Infantry,
-    spawnInterval: 4,         // seconds (converted to ticks in Building constructor)
+    spawnInterval: 6,         // seconds — actual cadence lives in BARRACKS_SPAWN_INTERVAL_TICKS
   },
   [BuildingType.ArrowTower]: {
     type: BuildingType.ArrowTower,
@@ -220,8 +223,8 @@ export const CARD_DEFINITIONS: CardDefinition[] = [
   { id: 'shieldbearer_2',  nameKey: 'card.shieldbearer.name',  descKey: 'card.shieldbearer.desc',  cardType: CardType.Unit,     cost: 6,  unitType: UnitType.ShieldBearer        },
   { id: 'archer_1',    nameKey: 'card.archer.name',    descKey: 'card.archer.desc',    cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
   { id: 'archer_2',    nameKey: 'card.archer.name',    descKey: 'card.archer.desc',    cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
-  { id: 'barracks_1',  nameKey: 'card.barracks.name',  descKey: 'card.barracks.desc',  cardType: CardType.Building, cost: 10, buildingType: BuildingType.Barracks   },
-  { id: 'barracks_2',  nameKey: 'card.barracks.name',  descKey: 'card.barracks.desc',  cardType: CardType.Building, cost: 10, buildingType: BuildingType.Barracks   },
+  { id: 'barracks_1',  nameKey: 'card.barracks.name',  descKey: 'card.barracks.desc',  cardType: CardType.Building, cost: 14, buildingType: BuildingType.Barracks   },
+  { id: 'barracks_2',  nameKey: 'card.barracks.name',  descKey: 'card.barracks.desc',  cardType: CardType.Building, cost: 14, buildingType: BuildingType.Barracks   },
   { id: 'tower_1',     nameKey: 'card.tower.name',     descKey: 'card.tower.desc',     cardType: CardType.Building, cost: 12, buildingType: BuildingType.ArrowTower },
   { id: 'tower_2',     nameKey: 'card.tower.name',     descKey: 'card.tower.desc',     cardType: CardType.Building, cost: 12, buildingType: BuildingType.ArrowTower },
   { id: 'haste_1',     nameKey: 'card.haste.name',     descKey: 'card.haste.desc',     cardType: CardType.Spell,    cost: 8,  spellType: SpellType.Haste         },

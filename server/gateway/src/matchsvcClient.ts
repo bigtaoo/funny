@@ -15,6 +15,8 @@ export interface PlayerView {
   name: string;
   ready: boolean;
   connected: boolean;
+  /** 9 位数字公开 id（玩家交流/投诉用；缺省空串）。 */
+  publicId: string;
 }
 export type PushMsg =
   | { kind: 'room_state'; code: string; players: PlayerView[]; phase: number }
@@ -50,11 +52,11 @@ export class MatchsvcClient {
       });
   }
 
-  roomCreate(accountId: string, name: string): void {
-    this.post('/mm/room/create', { accountId, name });
+  roomCreate(accountId: string, name: string, publicId: string): void {
+    this.post('/mm/room/create', { accountId, name, publicId });
   }
-  roomJoin(accountId: string, name: string, code: string): void {
-    this.post('/mm/room/join', { accountId, name, code });
+  roomJoin(accountId: string, name: string, publicId: string, code: string): void {
+    this.post('/mm/room/join', { accountId, name, publicId, code });
   }
   roomReady(accountId: string, ready: boolean): void {
     this.post('/mm/room/ready', { accountId, ready });
@@ -65,8 +67,8 @@ export class MatchsvcClient {
   roomLeave(accountId: string): void {
     this.post('/mm/room/leave', { accountId });
   }
-  enqueue(accountId: string, name: string, elo: number): void {
-    this.post('/mm/queue/enqueue', { accountId, name, elo });
+  enqueue(accountId: string, name: string, publicId: string, elo: number): void {
+    this.post('/mm/queue/enqueue', { accountId, name, publicId, elo });
   }
   connected(accountId: string): void {
     this.post('/mm/conn/connected', { accountId });

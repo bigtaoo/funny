@@ -20,6 +20,7 @@ import {
 import { getOrCreateSave, putSave } from './save.js';
 import {
   changePassword,
+  ensurePublicId,
   exchangeWxCode,
   getDisplayName,
   loginWithPassword,
@@ -73,7 +74,8 @@ export class MetaService {
       this.deps.now(),
     );
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}), ...this.gatewayField });
+    const publicId = await ensurePublicId(this.deps.cols, accountId);
+    return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
   async authDevice(req: FastifyRequest) {
@@ -84,7 +86,8 @@ export class MetaService {
       this.deps.now(),
     );
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}), ...this.gatewayField });
+    const publicId = await ensurePublicId(this.deps.cols, accountId);
+    return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
   async authRegister(req: FastifyRequest, reply: FastifyReply) {
@@ -110,7 +113,8 @@ export class MetaService {
     }
     const { accountId, isNew, isAnonymous } = result.account;
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}), ...this.gatewayField });
+    const publicId = await ensurePublicId(this.deps.cols, accountId);
+    return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
   async authLogin(req: FastifyRequest, reply: FastifyReply) {
@@ -121,7 +125,8 @@ export class MetaService {
     }
     const { accountId, isNew, isAnonymous, displayName } = account;
     const token = signToken(accountId, this.deps.jwt);
-    return ok({ token, accountId, isNew, isAnonymous, ...(displayName ? { displayName } : {}), ...this.gatewayField });
+    const publicId = await ensurePublicId(this.deps.cols, accountId);
+    return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
   async authPasswordChange(req: FastifyRequest, reply: FastifyReply) {
@@ -186,7 +191,8 @@ export class MetaService {
     }
     const save = await getOrCreateSave(cols, accountId, now());
     const displayName = await getDisplayName(cols, accountId);
-    return ok({ save, ...(displayName ? { displayName } : {}), ...this.gatewayField });
+    const publicId = await ensurePublicId(cols, accountId);
+    return ok({ save, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
   async putSave(req: FastifyRequest, reply: FastifyReply) {

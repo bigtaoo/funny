@@ -24,7 +24,7 @@ function setup() {
 describe('Matchsvc friendly', () => {
   it('建房 → room_state（6 位无歧义码，建房者 side 0）', () => {
     const { svc, last } = setup();
-    svc.roomCreate('a', 'Alice');
+    svc.roomCreate('a', 'Alice', '100000001');
     const rs = last('a', 'room_state');
     expect(rs?.kind).toBe('room_state');
     if (rs?.kind !== 'room_state') throw new Error();
@@ -35,35 +35,38 @@ describe('Matchsvc friendly', () => {
 
   it('输码加入（大小写无关）→ 双方进同一房，各 side', () => {
     const { svc, last } = setup();
-    svc.roomCreate('a', 'Alice');
+    svc.roomCreate('a', 'Alice', '100000001');
     const rs = last('a', 'room_state');
     if (rs?.kind !== 'room_state') throw new Error();
-    svc.roomJoin('b', 'Bob', rs.code.toLowerCase());
+    svc.roomJoin('b', 'Bob', '100000002', rs.code.toLowerCase());
     const rsB = last('b', 'room_state');
     if (rsB?.kind !== 'room_state') throw new Error();
     expect(rsB.players).toHaveLength(2);
     expect(rsB.players.map((p) => p.side).sort()).toEqual([0, 1]);
+    // 昵称 + 9 位公开 id 随 room_state 下发（房间显示昵称而非 accountId）。
+    expect(rsB.players.find((p) => p.side === 0)).toMatchObject({ name: 'Alice', publicId: '100000001' });
+    expect(rsB.players.find((p) => p.side === 1)).toMatchObject({ name: 'Bob', publicId: '100000002' });
   });
 
   it('不存在的码 → ROOM_NOT_FOUND；满员 → ROOM_FULL', () => {
     const { svc, last } = setup();
-    svc.roomJoin('z', 'Z', 'ZZZZZZ');
+    svc.roomJoin('z', 'Z', '100000099', 'ZZZZZZ');
     expect(last('z', 'room_error')).toMatchObject({ code: 'ROOM_NOT_FOUND' });
 
-    svc.roomCreate('a', 'A');
+    svc.roomCreate('a', 'A', '100000001');
     const rs = last('a', 'room_state');
     if (rs?.kind !== 'room_state') throw new Error();
-    svc.roomJoin('b', 'B', rs.code);
-    svc.roomJoin('c', 'C', rs.code);
+    svc.roomJoin('b', 'B', '100000002', rs.code);
+    svc.roomJoin('c', 'C', '100000003', rs.code);
     expect(last('c', 'room_error')).toMatchObject({ code: 'ROOM_FULL' });
   });
 
   it('双方 ready → 房主开局 → 双方收 match_found（同 roomId/seed、各 side、签名可验）', () => {
     const { svc, last } = setup();
-    svc.roomCreate('a', 'Alice');
+    svc.roomCreate('a', 'Alice', '100000001');
     const rs = last('a', 'room_state');
     if (rs?.kind !== 'room_state') throw new Error();
-    svc.roomJoin('b', 'Bob', rs.code);
+    svc.roomJoin('b', 'Bob', '100000002', rs.code);
     svc.roomReady('a', true);
     svc.roomReady('b', true);
     svc.roomStart('a'); // host = side 0
@@ -84,10 +87,10 @@ describe('Matchsvc friendly', () => {
 
   it('非房主开局无效；未全 ready 不开局', () => {
     const { svc, last } = setup();
-    svc.roomCreate('a', 'A');
+    svc.roomCreate('a', 'A', '100000001');
     const rs = last('a', 'room_state');
     if (rs?.kind !== 'room_state') throw new Error();
-    svc.roomJoin('b', 'B', rs.code);
+    svc.roomJoin('b', 'B', '100000002', rs.code);
     svc.roomReady('a', true); // 仅一方 ready
     svc.roomStart('a');
     expect(last('a', 'match_found')).toBeUndefined();
@@ -97,7 +100,7 @@ describe('Matchsvc friendly', () => {
 
   it('控制面重连：onConnected 重发当前 room_state', () => {
     const { svc, pushed, last } = setup();
-    svc.roomCreate('a', 'A');
+    svc.roomCreate('a', 'A', '100000001');
     const before = pushed.length;
     svc.onConnected('a');
     expect(pushed.length).toBeGreaterThan(before);
@@ -108,8 +111,8 @@ describe('Matchsvc friendly', () => {
 describe('Matchsvc ranked', () => {
   it('两人入队 → 配对 → 双方收 match_found（mode ranked）', () => {
     const { svc, last } = setup();
-    svc.enqueue('a', 'Alice', 1000);
-    svc.enqueue('b', 'Bob', 1020); // 窗口内立即配
+    svc.enqueue('a', 'Alice', '100000001', 1000);
+    svc.enqueue('b', 'Bob', '100000002', 1020); // 窗口内立即配
     const fa = last('a', 'match_found');
     const fb = last('b', 'match_found');
     if (fa?.kind !== 'match_found' || fb?.kind !== 'match_found') throw new Error('no match_found');
@@ -124,8 +127,8 @@ describe('Matchsvc ranked', () => {
     const pushed: { acc: string; msg: PushMsg }[] = [];
     const games = new GameRegistry(() => 0, null); // 无兜底、无注册
     const svc = new Matchsvc((acc, msg) => pushed.push({ acc, msg }), games, KEY, { autoTick: false });
-    svc.enqueue('a', 'A', 1000);
-    svc.enqueue('b', 'B', 1000);
+    svc.enqueue('a', 'A', '100000001', 1000);
+    svc.enqueue('b', 'B', '100000002', 1000);
     expect(pushed.some((p) => p.msg.kind === 'room_error' && p.msg.code === 'GAME_UNAVAILABLE')).toBe(true);
   });
 });

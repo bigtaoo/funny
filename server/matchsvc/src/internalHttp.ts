@@ -59,10 +59,10 @@ export function startInternalHttp(
         switch (req.url) {
           // —— gateway 控制命令 ——
           case '/mm/room/create':
-            svc.roomCreate(str(b.accountId), str(b.name));
+            svc.roomCreate(str(b.accountId), str(b.name), str(b.publicId));
             break;
           case '/mm/room/join':
-            svc.roomJoin(str(b.accountId), str(b.name), str(b.code));
+            svc.roomJoin(str(b.accountId), str(b.name), str(b.publicId), str(b.code));
             break;
           case '/mm/room/ready':
             svc.roomReady(str(b.accountId), Boolean(b.ready));
@@ -74,7 +74,7 @@ export function startInternalHttp(
             svc.roomLeave(str(b.accountId));
             break;
           case '/mm/queue/enqueue':
-            svc.enqueue(str(b.accountId), str(b.name), num(b.elo, 1000));
+            svc.enqueue(str(b.accountId), str(b.name), str(b.publicId), num(b.elo, 1000));
             break;
           case '/mm/conn/connected':
             svc.onConnected(str(b.accountId));

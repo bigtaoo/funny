@@ -27,9 +27,12 @@ export enum MatchMode {
 
 export interface PlayerSlot {
   side: number;
+  /** 展示昵称（displayName），非 accountId */
   name: string;
   ready: boolean;
   connected: boolean;
+  /** 9 位数字公开 id（玩家交流 / 投诉用；accountId 仅服务器内部） */
+  publicId: string;
 }
 
 /** ── 锁步帧（M14：模拟 30Hz，网络 10Hz 批次 = 3 帧）────── */
@@ -216,7 +219,7 @@ export interface Envelope {
 }
 
 function createBasePlayerSlot(): PlayerSlot {
-  return { side: 0, name: "", ready: false, connected: false };
+  return { side: 0, name: "", ready: false, connected: false, publicId: "" };
 }
 
 export const PlayerSlot: MessageFns<PlayerSlot> = {
@@ -232,6 +235,9 @@ export const PlayerSlot: MessageFns<PlayerSlot> = {
     }
     if (message.connected !== false) {
       writer.uint32(32).bool(message.connected);
+    }
+    if (message.publicId !== "") {
+      writer.uint32(42).string(message.publicId);
     }
     return writer;
   },
@@ -275,6 +281,14 @@ export const PlayerSlot: MessageFns<PlayerSlot> = {
           message.connected = reader.bool();
           continue;
         }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.publicId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -293,6 +307,7 @@ export const PlayerSlot: MessageFns<PlayerSlot> = {
     message.name = object.name ?? "";
     message.ready = object.ready ?? false;
     message.connected = object.connected ?? false;
+    message.publicId = object.publicId ?? "";
     return message;
   },
 };

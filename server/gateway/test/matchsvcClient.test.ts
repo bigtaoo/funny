@@ -37,12 +37,12 @@ describe('MatchsvcClient', () => {
 
   it('各命令打到对应端点，带 body 与内部密钥', () => {
     const c = new MatchsvcClient(BASE, KEY);
-    c.roomCreate('a', 'Alice');
-    c.roomJoin('b', 'Bob', 'ABC123');
+    c.roomCreate('a', 'Alice', '100000001');
+    c.roomJoin('b', 'Bob', '100000002', 'ABC123');
     c.roomReady('a', true);
     c.roomStart('a');
     c.roomLeave('b');
-    c.enqueue('a', 'Alice', 1234);
+    c.enqueue('a', 'Alice', '100000001', 1234);
     c.connected('a');
     c.disconnected('b');
 
@@ -57,14 +57,14 @@ describe('MatchsvcClient', () => {
       `${BASE}/mm/conn/disconnected`,
     ]);
     expect(calls.every((x) => x.key === KEY)).toBe(true);
-    expect(calls[1]!.body).toEqual({ accountId: 'b', name: 'Bob', code: 'ABC123' });
-    expect(calls[5]!.body).toEqual({ accountId: 'a', name: 'Alice', elo: 1234 });
+    expect(calls[1]!.body).toEqual({ accountId: 'b', name: 'Bob', publicId: '100000002', code: 'ABC123' });
+    expect(calls[5]!.body).toEqual({ accountId: 'a', name: 'Alice', publicId: '100000001', elo: 1234 });
   });
 
   it('无 baseUrl → available=false 且不发请求', () => {
     const c = new MatchsvcClient(null, KEY);
     expect(c.available).toBe(false);
-    c.roomCreate('a', 'A');
+    c.roomCreate('a', 'A', '100000001');
     expect(calls).toHaveLength(0);
   });
 });

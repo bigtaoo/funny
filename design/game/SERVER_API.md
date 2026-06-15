@@ -72,7 +72,7 @@ POST /auth/oauth     { provider, code, redirectUri }      → AuthResult | OAUTH
 POST /auth/bind      (JWT) { method, ...credential }      → { ok, isAnonymous } | ALREADY_BOUND | LOGIN_ID_TAKEN
 POST /auth/password/change (JWT) { oldPassword, newPassword } → { ok }
 POST /profile/rename (JWT) { displayName }  → { save: SaveData, displayName } | INSUFFICIENT_FUNDS | BAD_REQUEST
-# AuthResult = { token, accountId, isNew, isAnonymous, displayName?, gatewayUrl? }
+# AuthResult = { token, accountId, isNew, isAnonymous, displayName?, publicId?, gatewayUrl? }
 ```
 - 微信：`code` 由 `wx.login` 得，服务端换 openid → 映射 accountId。
 - Web/CrazyGames：`deviceId` 为客户端持久化 UUID（匿名 `isAnonymous=true`）。
@@ -80,11 +80,12 @@ POST /profile/rename (JWT) { displayName }  → { save: SaveData, displayName } 
 - **实现状态（2026-06-14）**：`/auth/register`·`/auth/login`·`/auth/password/change` + `AuthResult.isAnonymous` **已落地**（SA-1，`isAnonymous` 计算得出不落库）；`/auth/oauth`·`/auth/bind` **待做**（SA-2，错误码已预留）。`/auth/password/reset`（找回密码，需邮件服务）后置。
 - **展示名（displayName，2026-06-14）**：注册时填的 `displayName` 存账号文档；`/auth/register`·`/auth/login`·`/auth/device`·`/auth/wx` 的 `AuthResult` 与 `GET /save` 均回带 `displayName`（有才带），客户端持久化用于个人资料显示（token 续登经 `GET /save` 自动恢复）。
 - **改名（`/profile/rename`，2026-06-14）**：消耗 `RENAME_COST=500` 金币改展示名。meta 先经 commercial `/internal/spend` 扣币（余额不足 402 名不变），扣成功后写新名 + 钱包镜像回推权威存档。名字长度 1–24（`validateDisplayName`），空名 400。
+- **公开数字 id + 房间昵称（publicId，2026-06-15）**：账号文档加 `publicId`（9 位数字、稀疏唯一索引），首次鉴权 `ensurePublicId` 惰性生成（碰撞换号重试，旧账号下次 auth 补）。`AuthResult` + `GET /save` 回带 `publicId`（accountId 仅服务器内部标识，绝不面向玩家）。新增内部端口 `GET /internal/profile?accountId=`（X-Internal-Key）→ `{ displayName?, publicId }`，gateway 据此把 `room_state` 里的玩家显示为**昵称（#publicId）**而非 accountId 前缀（meta 不可用则回退 id 前缀）。`PlayerSlot` 加 `public_id`（field 5，proto 双端重生）。**身份修正**：客户端 `NetSession` 连 gateway 时优先用 REST 已登录 token，不再用设备凭证重鉴权——否则登录用户在房间里会是设备匿名账号。openapi 的 `AuthResult` / save 响应 schema 须声明 `publicId`（同 `gatewayUrl`，防 `fast-json-stringify` 剥字段）。
 - **gateway 地址下发（`gatewayUrl`，2026-06-14）**：客户端**只硬编码 meta 的 HTTP 地址**——gateway 控制面 WS 地址由 auth/save 回包下发（`AuthResult.gatewayUrl` + `GET /save` 的 `gatewayUrl`），game 数据面地址由 `match_found.game_url` 下发，都实时获取不静态配置。meta 经环境变量 `NW_GATEWAY_PUBLIC_WS_URL`（如 `ws://host:8082/gw` / `wss://host/gw`）得知公开地址；未配置则不下发（客户端退回构建期 fallback `getGatewayWsUrl`：生产同源由 `/api`→`/gw` 推导）。四个 auth 端点 + `GET /save`（token 续登无 auth 回包，故 save 也带）均回带。**注**：openapi 响应 schema 必须声明 `gatewayUrl`，否则 fastify `fast-json-stringify` 静默剥掉 schema 外字段。
 
 ### 2.2 存档（save-service，`META_TASKS.md` S0-7）
 ```
-GET  /save                                     → { save: SaveData, displayName?, gatewayUrl? }  // 当前账号（顺带回带展示名 + gateway 地址）
+GET  /save                                     → { save: SaveData, displayName?, publicId?, gatewayUrl? }  // 当前账号（顺带回带展示名 + 公开 id + gateway 地址）
 PUT  /save     (If-Match: <rev>)  { save }     → { save: SaveData }      // 成功回推规范化后的存档
                                                  | 409 REV_CONFLICT { save }  // 当前云端值
 ```
@@ -165,7 +166,7 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 
 ```proto
 // transport.proto（节选；服务器认得这一层）
-message PlayerSlot { uint32 side = 1; string name = 2; bool ready = 3; bool connected = 4; }
+message PlayerSlot { uint32 side = 1; string name = 2; bool ready = 3; bool connected = 4; string public_id = 5; }  // name=昵称, public_id=9 位数字公开 id
 message SideCmd    { uint32 side = 1; bytes commands = 2; }   // commands 对服务器 opaque
 message FrameCmds  { uint32 frame = 1; repeated SideCmd cmds = 2; }   // 单个 sim 帧的指令
 message FrameBatch { uint32 to_frame = 1; repeated FrameCmds frames = 2; } // 10Hz；frames 仅非空帧
@@ -376,7 +377,8 @@ POST /internal/match/report  (内部密钥)
 ### 8.5 gateway → meta 取 ELO（M17，matchsvc 保持 DB-free）
 
 ```
-GET /internal/elo?accountId=<id>  (内部密钥)   → { elo }
+GET /internal/elo?accountId=<id>      (内部密钥)   → { elo }
+GET /internal/profile?accountId=<id>  (内部密钥)   → { displayName?, publicId }   // gateway 取昵称 + 9 位公开 id 显示房间
 ```
 - gateway 在 `mm_enqueue` 时调用，把 `elo` 带进 `/mm/enqueue`；matchsvc 因此无需连 Mongo。
 - 也可在 gateway WS 握手后预取并缓存（elo 变化频率低）；ranked 局末 meta 写新 elo 后可经控制面推 `presence`/刷新。

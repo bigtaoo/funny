@@ -14,6 +14,7 @@ import {
   createLogger,
 } from '@nw/shared';
 import type { GatewayClient } from './gatewayClient.js';
+import { getProfile } from './accounts.js';
 
 const log = createLogger('meta:internal');
 
@@ -66,6 +67,18 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     const elo = doc?.save.pvp.elo ?? INITIAL_ELO;
     log.info('GET /internal/elo', { accountId, elo, hasSave: !!doc });
     return reply.send({ elo });
+  });
+
+  // ── GET /internal/profile?accountId= ──────────────────────────────────
+  // gateway 据此把房间玩家显示为昵称（#publicId），而非 accountId。publicId 惰性生成。
+  app.get('/internal/profile', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const accountId = (req.query as { accountId?: string }).accountId;
+    if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
+    const profile = await getProfile(cols, accountId);
+    return reply.send(profile); // { displayName?, publicId }
   });
 
   // ── POST /internal/match/report ───────────────────────────────────────

@@ -300,10 +300,17 @@ class GameEngineImpl implements IGameEngine {
         const col = cmd.col;
         if (col === undefined || !(ATTACK_LANES as readonly number[]).includes(col)) return;
 
+        // Placement rule: can't spawn into a lane whose spawn cell is already
+        // occupied (its troops are "full"). The human UI enforces this in
+        // GameRenderer.commitCardPlay; enforcing it here makes the engine the
+        // single authority so the AI (and any net-confirmed command) obeys the
+        // same rule — no auto-stacking past a packed lane.
+        const spawnRow = side === Side.Bottom ? BOTTOM_SPAWN_ROW : TOP_SPAWN_ROW;
+        if (this.state.board.isCellOccupiedByUnit(col, spawnRow)) return;
+
         const unitType = card.unitType;
         const bp = UNIT_BLUEPRINTS[unitType];
         this.consumeCardSlot(player, cmd.owner, cmd.handIndex, card, () => {
-          const spawnRow = side === Side.Bottom ? BOTTOM_SPAWN_ROW : TOP_SPAWN_ROW;
           for (let i = 0; i < bp.spawnCount; i++) {
             const unit = new Unit(unitType, side, col, spawnRow);
             this.state.board.addUnit(unit);

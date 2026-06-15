@@ -31,6 +31,8 @@ export interface PlayerView {
   name: string;
   ready: boolean;
   connected: boolean;
+  /** 9 位数字公开 id（玩家交流/投诉用；缺省空串）。 */
+  publicId: string;
 }
 export type PushMsg =
   | { kind: 'room_state'; code: string; players: PlayerView[]; phase: number }
@@ -46,6 +48,7 @@ export type Push = (accountId: string, msg: PushMsg, roomId?: string) => void;
 interface Slot {
   accountId: string;
   name: string;
+  publicId: string;
   side: 0 | 1;
   ready: boolean;
   connected: boolean;
@@ -97,8 +100,12 @@ export class Matchsvc {
 
   // ───────────────────────── ranked 匹配 ─────────────────────────
 
-  /** 开始 ranked 匹配（elo 由 gateway 向 meta 取后带入）。已在房 / 已在队则忽略。 */
-  enqueue(accountId: string, name: string, elo: number): void {
+  /**
+   * 开始 ranked 匹配（elo 由 gateway 向 meta 取后带入）。已在房 / 已在队则忽略。
+   * publicId 接收但不入队列：ranked 配对后立即开局，不展示房间 slot（无 room_state），
+   * 故公开 id 仅 friendly 房需要。
+   */
+  enqueue(accountId: string, name: string, _publicId: string, elo: number): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       log.warn('enqueue ignored: already in room/queue', { accountId });
       return;
@@ -119,7 +126,7 @@ export class Matchsvc {
 
   // ───────────────────────── friendly 房间 ─────────────────────────
 
-  roomCreate(accountId: string, name: string): void {
+  roomCreate(accountId: string, name: string, publicId: string): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       this.push(accountId, { kind: 'room_error', code: 'ALREADY_IN_ROOM', message: 'leave first' });
       return;
@@ -129,7 +136,7 @@ export class Matchsvc {
     const room: Room = {
       roomId,
       code,
-      slots: [{ accountId, name, side: 0, ready: false, connected: true }],
+      slots: [{ accountId, name, publicId, side: 0, ready: false, connected: true }],
       phase: RoomPhase.WAITING,
       reapTimer: null,
     };
@@ -140,7 +147,7 @@ export class Matchsvc {
     this.broadcast(room);
   }
 
-  roomJoin(accountId: string, name: string, code: string): void {
+  roomJoin(accountId: string, name: string, publicId: string, code: string): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       this.push(accountId, { kind: 'room_error', code: 'ALREADY_IN_ROOM', message: 'leave first' });
       return;
@@ -157,7 +164,7 @@ export class Matchsvc {
       this.push(accountId, { kind: 'room_error', code: 'ROOM_FULL', message: 'room is full' });
       return;
     }
-    room.slots.push({ accountId, name, side: 1, ready: false, connected: true });
+    room.slots.push({ accountId, name, publicId, side: 1, ready: false, connected: true });
     this.accountRoom.set(accountId, room.roomId);
     log.info('room joined', { accountId, code, roomId: room.roomId });
     this.broadcast(room);
@@ -169,14 +176,28 @@ export class Matchsvc {
     const slot = room.slots.find((s) => s.accountId === accountId);
     if (!slot) return;
     slot.ready = ready;
-    room.phase =
-      room.slots.length === 2 && room.slots.every((s) => s.ready)
-        ? RoomPhase.READY
-        : RoomPhase.WAITING;
+    const allReady = room.slots.length === 2 && room.slots.every((s) => s.ready);
+    room.phase = allReady ? RoomPhase.READY : RoomPhase.WAITING;
     this.broadcast(room);
+
+    // Both players ready → start automatically. Previously this only flipped the
+    // phase to READY and waited for the host to press "start", which players read
+    // as the game failing to start. Auto-start (like ranked) removes that gap.
+    if (allReady) {
+      const [s0, s1] = room.slots;
+      this.destroyRoom(room); // 大厅房使命完成；对局态归 gameserver
+      this.startMatch(
+        'friendly',
+        { accountId: s0!.accountId, name: s0!.name },
+        { accountId: s1!.accountId, name: s1!.name },
+      );
+    }
   }
 
-  /** 房主（side 0）在双方 ready 后开局。 */
+  /**
+   * 房主（side 0）在双方 ready 后开局。双方 ready 现在已由 {@link roomReady} 自动开局，
+   * 此入口保留以兼容旧客户端的显式 start 按钮（房间届时已销毁 → roomOf 返回 undefined → no-op）。
+   */
   roomStart(accountId: string): void {
     const room = this.roomOf(accountId);
     if (!room || room.phase >= RoomPhase.IN_MATCH) return;
@@ -322,6 +343,7 @@ export class Matchsvc {
       name: s.name,
       ready: s.ready,
       connected: s.connected,
+      publicId: s.publicId,
     }));
   }
 

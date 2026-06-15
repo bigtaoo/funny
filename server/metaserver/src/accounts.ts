@@ -1,6 +1,6 @@
 // 账号解析（S0-4 / S0-7）+ 密码账号（SA-1）。
 // 匿名 device/wx → 稳定 accountId；密码注册/登录/改密。
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomInt } from 'node:crypto';
 import type { Collections } from '@nw/shared';
 import {
   hashPassword,
@@ -15,6 +15,8 @@ export interface ResolvedAccount {
   isAnonymous: boolean;
   /** 展示名（注册时填）；用于客户端个人资料显示，缺省 undefined。 */
   displayName?: string;
+  /** 9 位数字公开 id（由 {@link ensurePublicId} 惰性生成后回填）。 */
+  publicId?: string;
 }
 
 /** 按 deviceId 取/建账号（Web / CrazyGames）。同设备稳定返回同 id。 */
@@ -122,6 +124,46 @@ export async function getDisplayName(
 ): Promise<string | undefined> {
   const doc = await cols.accounts.findOne({ _id: accountId });
   return doc?.displayName;
+}
+
+/**
+ * 公开资料（展示名 + 9 位数字公开 id）。gateway 据此把房间里的玩家显示为昵称（#id），
+ * 而非 accountId。publicId 缺失时惰性生成。
+ */
+export async function getProfile(
+  cols: Collections,
+  accountId: string,
+): Promise<{ displayName?: string; publicId: string }> {
+  const doc = await cols.accounts.findOne({ _id: accountId });
+  const publicId = await ensurePublicId(cols, accountId);
+  return { ...(doc?.displayName ? { displayName: doc.displayName } : {}), publicId };
+}
+
+/**
+ * 确保账号有 9 位数字公开 id：已有直接返回，否则生成一个全局唯一的并写入。
+ * publicId 唯一索引在并发/碰撞时会让 updateOne 抛错 → 重试换号；900M 空间下碰撞极罕见。
+ */
+export async function ensurePublicId(cols: Collections, accountId: string): Promise<string> {
+  const existing = await cols.accounts.findOne({ _id: accountId }, { projection: { publicId: 1 } });
+  if (existing?.publicId) return existing.publicId;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    // 100000000–999999999：定长 9 位，首位非 0。
+    const candidate = String(randomInt(100_000_000, 1_000_000_000));
+    try {
+      // 仅当本账号尚无 publicId 时写入；唯一索引守卫跨账号不撞号。
+      const res = await cols.accounts.updateOne(
+        { _id: accountId, publicId: { $exists: false } },
+        { $set: { publicId: candidate } },
+      );
+      if (res.modifiedCount === 1) return candidate;
+      // 没改到：可能并发已写入 → 回读取真实值。
+      const now = await cols.accounts.findOne({ _id: accountId }, { projection: { publicId: 1 } });
+      if (now?.publicId) return now.publicId;
+    } catch {
+      // 唯一索引碰撞（candidate 已被别的账号占用）→ 换号重试。
+    }
+  }
+  throw new Error('failed to allocate publicId after retries');
 }
 
 /** 改展示名（改名功能，已扣币后写入）。 */
