@@ -3,7 +3,7 @@ import { GameState } from '../src/game/GameState';
 import { Unit } from '../src/game/Unit';
 import { Building } from '../src/game/Building';
 import { MovementSystem } from '../src/game/systems/MovementSystem';
-import { toFp } from '../src/game/math/fixed';
+import { toFp, mulFp, TICK_DT_FP } from '../src/game/math/fixed';
 import { BASE_HP, BASE_COLS, TOP_BUILDING_ROW } from '../src/game/config';
 import { Side, UnitType, UnitState, BuildingType } from '../src/game/types';
 
@@ -19,13 +19,14 @@ describe('MovementSystem — forward movement', () => {
     state.board.addUnit(u);
 
     const startY = u.y_fp;
+    // Per-tick step is derived from the unit's speed so this tracks blueprint tuning.
+    const stepFp = mulFp(u.speed_fp, TICK_DT_FP) as number;
     sys.tick(state);
-    // speed 1.0 grid/s → 1000 fp/s → per tick mulFp(1000,33) = 33 fp
-    expect((u.y_fp as number) - (startY as number)).toBe(33);
+    expect((u.y_fp as number) - (startY as number)).toBe(stepFp);
     expect(u.state).toBe(UnitState.Moving);
 
     tickN(state, sys, 9);
-    expect((u.y_fp as number) - (startY as number)).toBe(330); // 10 ticks total
+    expect((u.y_fp as number) - (startY as number)).toBe(stepFp * 10); // 10 ticks total
   });
 
   it('enters Crossing state upon reaching the enemy building row', () => {

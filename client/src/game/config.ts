@@ -92,14 +92,6 @@ export const COUNTDOWN_THRESHOLD_TICKS  = COUNTDOWN_THRESHOLD * TICK_RATE; // 27
 export const FORCE_DRAW_THRESHOLD        = 1020; // 17 min (seconds, reference only)
 export const FORCE_DRAW_THRESHOLD_TICKS  = FORCE_DRAW_THRESHOLD * TICK_RATE; // 30600
 
-// ─── Crossing (horizontal transit) ───────────────────────────────────────────
-//
-//  Units move 1 column every CROSSING_INTERVAL_TICKS ticks.
-//  CROSSING_COLS_PER_S = 2  →  interval = round(30 / 2) = 15 ticks/col
-
-export const CROSSING_COLS_PER_S      = 2;
-export const CROSSING_INTERVAL_TICKS  = Math.round(TICK_RATE / CROSSING_COLS_PER_S); // 15
-
 // ─── Hand / card refresh ──────────────────────────────────────────────────────
 //
 //  Each hand slot has an independent countdown timer.
@@ -141,28 +133,36 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     type: UnitType.Infantry,
     hp: 60,
     attack: 12,
-    attackInterval: 1.0,  // seconds (converted to ticks in Unit constructor)
-    speed: 1.0,           // grid/s  (converted to fp in Unit constructor)
+    attackInterval: 0.8,  // seconds (converted to ticks in Unit constructor)
+    speed: 1.4,           // grid/s  (converted to fp in Unit constructor)
     range: 1,
     spawnCount: 2,
     radius_fp: 400,       // diameter 800fp = 0.8 格
   },
+  // Tank: leads the line and soaks fire so squishier units survive behind it.
+  // HP/ink (40) is clearly above Infantry (30) — that's its whole identity — at
+  // the cost of low DPS and the slowest speed. Walls infantry, breaks towers,
+  // but threatens little alone (ignore-and-flank it, or AoE the clump it forms).
   [UnitType.ShieldBearer]: {
     type: UnitType.ShieldBearer,
-    hp: 150,
+    hp: 240,
     attack: 8,
-    attackInterval: 1.5,
-    speed: 0.6,
+    attackInterval: 1.2,
+    speed: 0.85,
     range: 1,
     spawnCount: 1,
     radius_fp: 500,       // diameter 1000fp = 1.0 格
   },
+  // Glass cannon: range 2 lets it hit before melee reaches and shoot over/around
+  // a shield ahead (surrounding-cell targeting). Highest per-hit damage of the
+  // three, but 35 HP folds to one arrow tower / any melee that closes in — it
+  // wants a tank in front, never the front line itself.
   [UnitType.Archer]: {
     type: UnitType.Archer,
     hp: 35,
-    attack: 18,
-    attackInterval: 2.0,
-    speed: 0.8,
+    attack: 22,
+    attackInterval: 1.4,
+    speed: 1.1,
     range: 2,             // 2-grid range (down from 3)
     spawnCount: 1,
     radius_fp: 350,       // diameter 700fp = 0.7 格

@@ -87,19 +87,33 @@ export class CombatSystem {
   // ─── Target finding ───────────────────────────────────────────────────────
 
   private findTarget(unit: Unit, state: GameState): Unit | Building | null {
-    const board     = state.board;
-    // Bottom attacks toward higher row; Top attacks toward lower row.
-    const direction = unit.side === Side.Bottom ? 1 : -1;
+    const board = state.board;
 
+    // Units advance single-file along their lane, but engage ANY enemy within
+    // attack range around them (Chebyshev distance), not just the cell straight
+    // ahead. Scan ring by ring so the closest target is preferred; within a ring,
+    // an enemy unit takes priority over a building in the same cell.
     for (let dist = 1; dist <= unit.range; dist++) {
-      const checkRow = unit.row + direction * dist;
-      if (checkRow < 0 || checkRow >= BOARD_ROWS) break;
+      let buildingHit: Building | null = null;
+      for (let dr = -dist; dr <= dist; dr++) {
+        for (let dc = -dist; dc <= dist; dc++) {
+          if (Math.max(Math.abs(dr), Math.abs(dc)) !== dist) continue; // outer ring only
+          const checkRow = unit.row + dr;
+          const checkCol = unit.col + dc;
+          if (checkRow < 0 || checkRow >= BOARD_ROWS) continue;
+          if (checkCol < 0 || checkCol >= BOARD_COLS) continue;
 
-      const enemy = board.getUnitAt(unit.col, checkRow);
-      if (enemy && enemy.side !== unit.side && !enemy.isDead) return enemy;
+          const enemy = board.getUnitAt(checkCol, checkRow);
+          if (enemy && enemy.side !== unit.side && !enemy.isDead) return enemy;
 
-      const building = board.getBuildingAt(unit.col, checkRow);
-      if (building && building.side !== unit.side && !building.isDead) return building;
+          if (!buildingHit) {
+            const building = board.getBuildingAt(checkCol, checkRow);
+            if (building && building.side !== unit.side && !building.isDead) buildingHit = building;
+          }
+        }
+      }
+      // No enemy unit in this ring — fall back to a building found in the same ring.
+      if (buildingHit) return buildingHit;
     }
     return null;
   }
