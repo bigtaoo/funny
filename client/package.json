@@ -17,7 +17,9 @@
     "lint": "eslint src --ext .ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+    "test:ui": "vitest run --config vitest.ui.config.ts",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:load": "vitest run --config vitest.load.config.ts"
   },
   "keywords": [],
   "author": "",

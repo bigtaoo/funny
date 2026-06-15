@@ -42,6 +42,11 @@ jobs:
       - name: client unit tests
         working-directory: client
         run: npm test
+      # UI 冒烟：headless PIXI adapter 在纯 Node 里构造真实场景，证明各场景能正常启动。
+      # 无需 Docker / 浏览器 / 活栈，故放在快路。
+      - name: client UI smoke tests
+        working-directory: client
+        run: npm run test:ui
       - name: client web build
         working-directory: client
         run: npm run build:web
@@ -83,6 +88,15 @@ jobs:
           NW_API_BASE: http://localhost:18080
           NW_EXPECT_GATEWAY: ws://localhost:8086/gw
         run: npm run test:e2e
+
+      # 容量冒烟：小规模舰队（20 客户端）跑真实栈，验证匹配在并发下成立。
+      # 真正的容量探测在本地/专用环境调大 NW_LOAD_CLIENTS 进行。
+      - name: run ranked load smoke (small fleet)
+        working-directory: client
+        env:
+          NW_API_BASE: http://localhost:18080
+          NW_LOAD_CLIENTS: '20'
+        run: npm run test:load
 
       # 失败时倒出全栈日志便于排查（端口/握手/匹配队列）。
       - name: dump server logs on failure
