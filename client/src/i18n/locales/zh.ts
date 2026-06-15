@@ -43,6 +43,7 @@ export const zh = {
   'settings.offlineHint': '当前为单机模式，登录后可云存档 / 联机 / 商店。',
   'settings.back': '← 返回',
   'settings.coins': '金币：{coins}',
+  'settings.playerId': 'ID #{id}',
   'settings.rename': '✎ 改名（{cost} 金币）',
   'settings.renameTitle': '输入新名字',
   'settings.renamePlaceholder': '点此输入新名字',

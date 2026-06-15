@@ -205,6 +205,9 @@ export async function startApp(platform: IPlatform): Promise<void> {
     manager.goto(new SettingsScene(layout, input, {
       onBack() { goLobby(); },
       playerName: playerName(),
+      ...(platform.storage.getItem(PLAYER_PUBLIC_ID_KEY)
+        ? { publicId: platform.storage.getItem(PLAYER_PUBLIC_ID_KEY)! }
+        : {}),
       pvp: { rank: pvp.rank, elo: pvp.elo },
       offline: offlineMode,
       onLogin: () => goLogin(),

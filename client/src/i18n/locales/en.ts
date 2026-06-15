@@ -44,6 +44,7 @@ export const en: Record<TranslationKey, string> = {
   'settings.offlineHint': 'Offline mode. Log in for cloud save / online play / shop.',
   'settings.back': '← Back',
   'settings.coins': 'Coins: {coins}',
+  'settings.playerId': 'ID #{id}',
   'settings.rename': '✎ Rename ({cost} coins)',
   'settings.renameTitle': 'Enter a new name',
   'settings.renamePlaceholder': 'Tap to type a new name',

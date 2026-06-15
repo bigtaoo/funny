@@ -44,6 +44,12 @@ export interface SettingsSceneCallbacks {
   onBack(): void;
   /** Display name shown next to the avatar. */
   playerName: string;
+  /**
+   * 9-digit public id — DISPLAY ONLY (player-facing identifier for chat / 投诉).
+   * Never used as an identifier anywhere else; all interactions key off the uuid
+   * (accountId). Absent → no id line. Shown here, on the profile screen, only.
+   */
+  publicId?: string;
   /** Ladder standing (logged-in only) for a small rank line under the name. */
   pvp?: { rank: string; elo: number };
   /** SA-4 offline mode — show a login entry instead of logout. */
@@ -234,16 +240,28 @@ export class SettingsScene implements Scene {
     this.container.addChild(avatar);
 
     const nameX = cardX + av + Math.round(w * 0.04);
+    const hasId = !!this.cb.publicId;
+    const hasRank = !this.cb.offline && !!this.cb.pvp;
+    // Stack name / #id / rank vertically next to the avatar; top line rises when
+    // there are more lines so the block stays vertically centred on the avatar.
+    const nameY = cardY + av * (hasId || hasRank ? 0.28 : 0.34);
     const name = txt(this.playerName, Math.round(h * 0.04), C.dark, true);
-    name.anchor.set(0, 0.5); name.x = nameX; name.y = cardY + av * 0.34;
+    name.anchor.set(0, 0.5); name.x = nameX; name.y = nameY;
     this.container.addChild(name);
 
-    if (!this.cb.offline && this.cb.pvp) {
-      const pvp = this.cb.pvp;
+    if (hasId) {
+      // Display-only public id (#123456789); the uuid stays server-internal.
+      const idLine = txt(t('settings.playerId', { id: this.cb.publicId! }), Math.round(h * 0.026), C.mid);
+      idLine.anchor.set(0, 0.5); idLine.x = nameX; idLine.y = cardY + av * 0.56;
+      this.container.addChild(idLine);
+    }
+
+    if (hasRank) {
+      const pvp = this.cb.pvp!;
       const rankName = t(('rank.' + pvp.rank) as TranslationKey);
       const sub = pvp.rank === 'unranked' ? rankName : `${rankName} · ${pvp.elo}`;
       const rank = txt(sub, Math.round(h * 0.026), C.gold, true);
-      rank.anchor.set(0, 0.5); rank.x = nameX; rank.y = cardY + av * 0.68;
+      rank.anchor.set(0, 0.5); rank.x = nameX; rank.y = cardY + av * (hasId ? 0.82 : 0.68);
       this.container.addChild(rank);
     }
 

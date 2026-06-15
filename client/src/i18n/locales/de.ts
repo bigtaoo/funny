@@ -44,6 +44,7 @@ export const de: Record<TranslationKey, string> = {
   'settings.offlineHint': 'Offline-Modus. Melde dich an für Cloud-Speicher / Online / Shop.',
   'settings.back': '← Zurück',
   'settings.coins': 'Münzen: {coins}',
+  'settings.playerId': 'ID #{id}',
   'settings.rename': '✎ Umbenennen ({cost} Münzen)',
   'settings.renameTitle': 'Neuen Namen eingeben',
   'settings.renamePlaceholder': 'Tippen zum Eingeben',
