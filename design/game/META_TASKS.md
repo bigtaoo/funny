@@ -104,6 +104,8 @@
 
   **✅ S1-E2E-CI GitHub Actions（2026-06-15）**：`.github/workflows/ci.yml` 两 job——**build-test**（无 Docker，快路：server 六包 `tsc -b` + client 单测 + web 构建）+ **e2e**（慢路：`docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml up -d --build --wait` 起 mongo+meta+commercial+gateway+matchsvc+game 全栈，runner 宿主机以 Node 跑 `npm run test:e2e`，失败倒 compose 日志，`always` `down -v`）。①**轻量 `/health` 探针**：gateway/matchsvc/commercial 在各自 `internalHttp` 的 X-Internal-Key 鉴权门**之前**加 `GET /health`（无需密钥，docker healthcheck/CI 等待用）；gameserver 原是纯 WS server，重构为显式 `http.createServer`（serve `/health` + 承载 `/ws` 升级、非升级 426），`http.listen(port)` 取代 `wss` 直接 listen。②**`docker-compose.ci.yml` 叠加层**：不起 caddy；把 meta/gateway 公开 WS/game 数据面映射到宿主端口且端口号与 e2e 默认期望一致（meta 18080 / gateway 8086 / game 8081）；meta `NW_GATEWAY_PUBLIC_WS_URL=ws://localhost:8086/gw` + matchsvc/game `NW_GAME_PUBLIC_WS_URL=ws://localhost:8081/ws`（服务器下发地址 runner 可达）；五服务加 node 版 healthcheck（镜像内有 node 无 curl）配合 `--wait`。**本机实跑验证通过**：`up --wait` 六服务全 healthy + `test:e2e` 2 用例全绿（连真 prod 镜像）。**Phase 4 完成**。
 
+  **✅ S1-E2E-RP 录像全链路（2026-06-15）**：matchmaking 用例延伸覆盖「真实对战 → 录像 → 回放」。两 headless 客户端排位匹配后 `driveFor` 跑真实锁步帧（经 live WS），随后双方各调 GameScene 的 `onGameEnd`（=引擎到达 game-over 的真实回调）上报结果 → 服务器（ranked）双方齐报即结算并下发 `match_over` → app 把包裹 live 确认帧流的 `RecordingInputSource` 快照成 `Replay`、`keepReplay` 落 `ReplayStore` → 结算页。**断言**：结算页 `onWatchReplay` 存在（录像产出）+ `nw_replays_v1` 已落盘（持久化）+ 点「观看回放」进 replay 屏 → `HeadlessAppViews.showReplay` 镜像真 ReplayScene 用 `ReplayInputSource`+`createGameEngine` 重建引擎（无 PIXI）→ 新增 `driveReplayToEnd()` 把录制的 netplay 帧回放到 `endFrame`（record→snapshot→store→playback 闭环 round-trip）。harness 加 `replayEndFrame`/`driveReplayToEnd`。实跑 2 用例全绿 + 159 单测不破。
+
 ---
 
 ## S2 — 经济：钱包 / 商店 / 盲盒 / 广告

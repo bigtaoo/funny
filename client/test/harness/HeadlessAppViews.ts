@@ -11,6 +11,7 @@ import type {
   ResultViewProps,
 } from '../../src/app/AppViews';
 import { createLocalMatch } from '../../src/app/matchEngine';
+import { createGameEngine, getLevel, ReplayInputSource } from '../../src/game';
 import type { IGameEngine, OwnerId, PlayerStats, Replay } from '../../src/game';
 
 import type { IntroSceneCallbacks } from '../../src/scenes/IntroScene';
@@ -62,6 +63,7 @@ export class HeadlessAppViews implements AppViews {
   gameNet?: { localSide: OwnerId; cb: GameSceneCallbacks; opts: GameSceneOptions };
 
   private match: ActiveMatch | null = null;
+  private replayMatch: { engine: IGameEngine; endFrame: number } | null = null;
 
   showIntro(cb: IntroSceneCallbacks): void { this.screen = 'intro'; this.intro = cb; }
   showLobby(cb: LobbySceneCallbacks): void { this.screen = 'lobby'; this.lobby = cb; }
@@ -72,7 +74,20 @@ export class HeadlessAppViews implements AppViews {
   showCampaignMap(cb: CampaignMapCallbacks): void { this.screen = 'campaignMap'; this.campaignMap = cb; }
   showLevelPrep(cb: LevelPrepCallbacks): void { this.screen = 'levelPrep'; this.levelPrep = cb; }
   showCollection(cb: CollectionCallbacks): void { this.screen = 'collection'; this.collection = cb; }
-  showReplay(_replay: Replay, cb: ReplaySceneCallbacks): void { this.screen = 'replay'; this.replay = cb; }
+  showReplay(replay: Replay, cb: ReplaySceneCallbacks): void {
+    this.screen = 'replay';
+    this.replay = cb;
+    // Mirror ReplayScene: rebuild a fresh engine on the replay's seed+mode and
+    // drive it with a ReplayInputSource — minus the GameRenderer (headless). Lets
+    // the test drive the recorded match back and assert it advances to endFrame.
+    const src = new ReplayInputSource(replay);
+    const level = replay.mode === 'campaign' && replay.meta?.levelId ? getLevel(replay.meta.levelId) : null;
+    const engine = createGameEngine(
+      { seed: replay.seed, players: [{ id: 0 }, { id: 1 }], mode: replay.mode, ...(level ? { level } : {}) },
+      src,
+    );
+    this.replayMatch = { engine, endFrame: Math.max(1, src.endFrame) };
+  }
   showResult(props: ResultViewProps): void { this.screen = 'result'; this.result = props; }
 
   showGame(cb: GameSceneCallbacks, opts: GameSceneOptions): void {
@@ -109,6 +124,26 @@ export class HeadlessAppViews implements AppViews {
 
   /** Active match engine (for assertions like lockstep tick advancement). */
   get matchEngine(): IGameEngine | null { return this.match?.engine ?? null; }
+
+  /** Recorded length (frames) of the replay being played back, if any. */
+  get replayEndFrame(): number | null { return this.replayMatch?.endFrame ?? null; }
+
+  /**
+   * Drive the playback engine built in showReplay (ReplayInputSource-fed) until it
+   * reaches the recorded endFrame or game over. Replay never stalls (take always
+   * answers), so this terminates without WS I/O. Returns the final tick count.
+   */
+  driveReplayToEnd(opts?: { maxSeconds?: number }): number {
+    const r = this.replayMatch;
+    if (!r) throw new Error('no replay to drive — showReplay was not called');
+    const maxTicks = Math.ceil((opts?.maxSeconds ?? 600) / DT);
+    let guard = 0;
+    while (r.engine.state.elapsedTicks < r.endFrame) {
+      r.engine.tick(DT);
+      if (++guard > maxTicks) throw new Error('replay playback did not reach endFrame within budget');
+    }
+    return r.engine.state.elapsedTicks;
+  }
 
   /**
    * Tick the active match engine for a wall-clock duration, yielding to the event

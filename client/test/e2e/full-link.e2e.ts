@@ -90,7 +90,7 @@ describe('full-link E2E (live stack)', () => {
     expect(draw.ok && draw.results.length).toBe(1);
   });
 
-  it('ranked matchmaking wires the correct ports: server gateway + ticketed game plane', async () => {
+  it('ranked matchmaking wires correct ports + the match produces a watchable replay', async () => {
     const a = createClient();
     const b = createClient();
 
@@ -128,6 +128,31 @@ describe('full-link E2E (live stack)', () => {
     const [ticksA, ticksB] = await Promise.all([a.views.driveFor(2500), b.views.driveFor(2500)]);
     expect(ticksA, 'client A lockstep did not advance').toBeGreaterThan(0);
     expect(ticksB, 'client B lockstep did not advance').toBeGreaterThan(0);
+
+    // —— Replay: a real netplay match must produce a watchable, replayable recording ——
+    // End the match the way the GameScene does when its engine reaches game over:
+    // both clients report a result. The server (ranked) ends the match and pushes
+    // match_over to both → the app snapshots the RecordingInputSource that wrapped the
+    // LIVE confirmed-frame stream into a Replay, persists it, and shows the result.
+    a.views.gameNet!.cb.onGameEnd(0, a.views.matchEngine!.state.snapshotStats());
+    b.views.gameNet!.cb.onGameEnd(0, b.views.matchEngine!.state.snapshotStats());
+
+    await waitFor(() => a.views.screen === 'result', 'client A result screen', 15_000);
+
+    // The result must offer a replay (built end-to-end from the recorded frames)…
+    expect(a.views.result!.cb.onWatchReplay, 'no replay offered on result').toBeTruthy();
+    // …and it must have landed in the local ReplayStore (key nw_replays_v1).
+    expect(a.platform.storage.getItem('nw_replays_v1'), 'replay not persisted').toBeTruthy();
+
+    // Watch it: enter the replay scene and drive the ReplayInputSource-fed engine.
+    // It re-runs the recorded netplay frames and advances to the recorded end —
+    // proving the record → snapshot → store → playback loop round-trips.
+    a.views.result!.cb.onWatchReplay!();
+    expect(a.views.screen).toBe('replay');
+    const endFrame = a.views.replayEndFrame!;
+    expect(endFrame, 'replay has no recorded frames').toBeGreaterThan(0);
+    const replayedTicks = a.views.driveReplayToEnd();
+    expect(replayedTicks, 'replay did not advance to endFrame').toBeGreaterThanOrEqual(endFrame);
 
     // Clean up: leave the match (closes both NetSessions / sockets).
     a.views.gameNet!.cb.onExitToLobby();
