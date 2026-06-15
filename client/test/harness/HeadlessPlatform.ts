@@ -24,6 +24,7 @@ class MemoryStorage implements IStorage {
   getItem(key: string): string | null { return this.map.has(key) ? this.map.get(key)! : null; }
   setItem(key: string, value: string): void { this.map.set(key, value); }
   removeItem(key: string): void { this.map.delete(key); }
+  snapshot(): Record<string, string> { return Object.fromEntries(this.map); }
 }
 
 /** Wraps Node's global WebSocket; mirrors BrowserGameSocket (binary, arraybuffer). */
@@ -65,14 +66,20 @@ export class HeadlessPlatform implements IPlatform {
   /** Every WS url the client asked to open, in order — the port-assertion seam. */
   readonly openedSockets: string[] = [];
 
+  private readonly mem: MemoryStorage;
   private readonly deviceId: string;
   private readonly language: string;
 
   constructor(opts: HeadlessPlatformOpts = {}) {
-    this.storage = new MemoryStorage(opts.storage);
+    this.mem = new MemoryStorage(opts.storage);
+    this.storage = this.mem;
     this.deviceId = opts.deviceId ?? `dev-${Math.random().toString(36).slice(2)}`;
     this.language = opts.language ?? 'en';
   }
+
+  /** Dump all persisted keys — seed another HeadlessPlatform with this to simulate
+   * an app restart on the same device (token re-login keeps the persisted JWT). */
+  snapshotStorage(): Record<string, string> { return this.mem.snapshot(); }
 
   getLanguage(): string { return this.language; }
   getScreenSize(): { width: number; height: number } { return { width: 800, height: 1280 }; }

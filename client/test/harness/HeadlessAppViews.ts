@@ -10,6 +10,8 @@ import type {
   NetGameView,
   ResultViewProps,
 } from '../../src/app/AppViews';
+import type { RoomState } from '../../src/net/proto/transport';
+import type { NetState } from '../../src/net/NetClient';
 import { createLocalMatch } from '../../src/app/matchEngine';
 import { createGameEngine, getLevel, ReplayInputSource } from '../../src/game';
 import type { IGameEngine, OwnerId, PlayerStats, Replay } from '../../src/game';
@@ -60,6 +62,10 @@ export class HeadlessAppViews implements AppViews {
   replay?: ReplaySceneCallbacks;
   result?: ResultViewProps;
   room?: RoomSceneCallbacks;
+  /** Last room_state the core forwarded to the room view (carries the room code). */
+  lastRoomState?: RoomState;
+  /** Last gateway net-state forwarded to the room view (wait for 'open' before acting). */
+  lastRoomNetState?: NetState;
   gameNet?: { localSide: OwnerId; cb: GameSceneCallbacks; opts: GameSceneOptions };
 
   private match: ActiveMatch | null = null;
@@ -102,11 +108,13 @@ export class HeadlessAppViews implements AppViews {
   showRoom(cb: RoomSceneCallbacks): RoomView {
     this.screen = 'room';
     this.room = cb;
+    this.lastRoomState = undefined;
+    this.lastRoomNetState = undefined;
     return {
-      applyRoomState: () => {},
+      applyRoomState: (s) => { this.lastRoomState = s; },
       applyRoomError: () => {},
       applyPeerDc: () => {},
-      applyNetState: () => {},
+      applyNetState: (s) => { this.lastRoomNetState = s; },
     };
   }
 

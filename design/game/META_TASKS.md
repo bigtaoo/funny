@@ -106,6 +106,8 @@
 
   **✅ S1-E2E-RP 录像全链路（2026-06-15）**：matchmaking 用例延伸覆盖「真实对战 → 录像 → 回放」。两 headless 客户端排位匹配后 `driveFor` 跑真实锁步帧（经 live WS），随后双方各调 GameScene 的 `onGameEnd`（=引擎到达 game-over 的真实回调）上报结果 → 服务器（ranked）双方齐报即结算并下发 `match_over` → app 把包裹 live 确认帧流的 `RecordingInputSource` 快照成 `Replay`、`keepReplay` 落 `ReplayStore` → 结算页。**断言**：结算页 `onWatchReplay` 存在（录像产出）+ `nw_replays_v1` 已落盘（持久化）+ 点「观看回放」进 replay 屏 → `HeadlessAppViews.showReplay` 镜像真 ReplayScene 用 `ReplayInputSource`+`createGameEngine` 重建引擎（无 PIXI）→ 新增 `driveReplayToEnd()` 把录制的 netplay 帧回放到 `endFrame`（record→snapshot→store→playback 闭环 round-trip）。harness 加 `replayEndFrame`/`driveReplayToEnd`。实跑 2 用例全绿 + 159 单测不破。
 
+  **✅ S1-E2E-补全 登录/好友房/存档/改名/负向（2026-06-15）**：从 2 用例扩到 **5 用例**，补齐 headless 能驱动真实服务栈的主路径。①**账号生命周期**（登录 + 续登 + 云存档 round-trip + 改名）：注册 A → 充值 → 改名（扣 500）→ 新客户端 `onLogin` 同账号 → **displayName + 金币从云端恢复**（证 login + push→cloud→pull + rename 持久化）→ 同设备「重启」（新 core 喂 A 的 storage 快照）经持久化 token `bootstrap` 自动续登进在线大厅、名字恢复。②**好友房**（房间码）：A `createRoom`→拿 `room_state.code`→B `joinRoom(code)`→双方 `setReady(true)`→matchsvc 双就绪自动开局→双 gameNet（数据面带 `?ticket=`、锁步帧推进）。③**负向**：重复 loginId 注册被拒（停在 login）、0 金币账号买不起最便宜商品（INSUFFICIENT_FUNDS）。harness 加 `HeadlessPlatform.snapshotStorage()`（模拟同设备重启）+ `HeadlessAppViews` 捕获 `lastRoomState`（房间码）/`lastRoomNetState`（等 gateway open 再发命令）。实跑 5 用例全绿 + 159 单测不破。**仍不放 headless 的**：重连/`conn_resync`、`peer_dc` 宽限、中途掉线判负（需 socket 级时序操控，留服务端单测）；确定性 winner（单进程双引擎既有限制）。
+
 ---
 
 ## S2 — 经济：钱包 / 商店 / 盲盒 / 广告
