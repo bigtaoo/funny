@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { ShopItem } from '../net/ApiClient';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
 
 // ── ShopScene (S2-6) — direct-purchase shop + virtual top-up entry ─────────────
 //
@@ -12,28 +13,6 @@ import type { ShopItem } from '../net/ApiClient';
 // itself is server-authoritative — every buy/top-up returns a fresh SaveData that
 // the app adopts; this scene only reads the current wallet via getCoins() and
 // re-renders. Gacha lives in its own scene, reached via the 🎁 button.
-
-const C = {
-  bg:     0xf5f0e8,
-  paper:  0xfaf6ee,
-  line:   0xc8d8e8,
-  margin: 0xffb3b3,
-  dark:   0x2c2c2a,
-  mid:    0x888888,
-  light:  0xdddddd,
-  btnOff: 0xbbbbbb,
-  accent: 0x4477cc,
-  gold:   0xcc9900,
-  green:  0x4a9e4a,
-  red:    0xcc3333,
-};
-
-function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
-  return new PIXI.Text(label, {
-    fontSize: size, fill: color, fontFamily: 'monospace',
-    fontWeight: bold ? 'bold' : 'normal',
-  });
-}
 
 /** Outcome of a buy/top-up — ok, or a message key to surface as a toast. */
 export type ShopActionResult =
@@ -213,16 +192,7 @@ export class ShopScene implements Scene {
   }
 
   private drawBackground(): void {
-    const { w, h } = this;
-    const bg = new PIXI.Graphics();
-    bg.beginFill(C.bg); bg.drawRect(0, 0, w, h); bg.endFill();
-    const lineGap = Math.round(h / 28);
-    bg.lineStyle(1, C.line, 0.6);
-    for (let y = lineGap; y < h; y += lineGap) { bg.moveTo(0, y); bg.lineTo(w, y); }
-    bg.lineStyle(1, C.margin, 0.7);
-    const mx = Math.round(w * 0.09);
-    bg.moveTo(mx, 0); bg.lineTo(mx, h);
-    this.container.addChild(bg);
+    this.container.addChild(buildPaperBackground('shopbg', this.w, this.h));
   }
 
   /** Header bar with title, back, and coin balance. Returns its height. */
@@ -282,15 +252,10 @@ export class ShopScene implements Scene {
   private drawItemRow(
     item: ShopItem, isOwned: boolean, x: number, y: number, w: number, h: number,
   ): void {
-    const box = new PIXI.Graphics();
-    box.beginFill(C.paper); box.lineStyle(1, C.line);
-    box.drawRoundedRect(0, 0, w, h, 6); box.endFill();
+    const box = sketchPanel(w, h, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
     box.x = x; box.y = y;
+    sketchAccentBar(box, h, C.accent, seedFor(x, h, 3));
     this.container.addChild(box);
-
-    const accent = new PIXI.Graphics();
-    accent.beginFill(C.accent, 0.7); accent.drawRect(0, 0, 4, h); accent.endFill();
-    box.addChild(accent);
 
     // Name (placeholder: kind label + id, real skin art/names pending).
     const name = txt(`${t('shop.skinLabel')} · ${item.id}`, Math.round(h * 0.22), C.dark, true);
@@ -308,10 +273,11 @@ export class ShopScene implements Scene {
     const by = y + (h - bh) / 2;
     const canBuy = !isOwned && !this.busy && this.cb.getCoins() >= item.cost;
 
-    const btn = new PIXI.Graphics();
-    btn.beginFill(isOwned ? C.btnOff : (canBuy ? C.dark : C.btnOff));
-    btn.lineStyle(2, isOwned ? C.light : (canBuy ? C.green : C.light));
-    btn.drawRoundedRect(0, 0, bw, bh, 6); btn.endFill();
+    const btn = sketchPanel(bw, bh, {
+      fill: isOwned ? C.btnOff : (canBuy ? C.dark : C.btnOff),
+      border: isOwned ? C.light : (canBuy ? C.green : C.light),
+      width: 2, seed: seedFor(bx, by, bw),
+    });
     btn.x = bx; btn.y = by;
     this.container.addChild(btn);
 
@@ -356,8 +322,7 @@ export class ShopScene implements Scene {
     const bh = lbl.height + padY * 2;
     const bx = (w - bw) / 2;
     const by = Math.round(h * 0.80);
-    const bg = new PIXI.Graphics();
-    bg.beginFill(toast.color, 0.95); bg.drawRoundedRect(0, 0, bw, bh, 8); bg.endFill();
+    const bg = sketchPanel(bw, bh, { fill: toast.color, fillAlpha: 0.95, border: toast.color, width: 2, seed: seedFor(bw, bh, 2) });
     bg.x = bx; bg.y = by;
     this.container.addChild(bg);
     lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
@@ -378,9 +343,7 @@ export class ShopScene implements Scene {
     const panelH = Math.round(h * 0.40);
     const px = (w - panelW) / 2;
     const py = (h - panelH) / 2;
-    const panel = new PIXI.Graphics();
-    panel.beginFill(C.bg); panel.lineStyle(2, C.gold);
-    panel.drawRoundedRect(0, 0, panelW, panelH, 10); panel.endFill();
+    const panel = sketchPanel(panelW, panelH, { fill: C.bg, border: C.gold, width: 2.4, seed: seedFor(panelW, panelH, 7) });
     panel.x = px; panel.y = py;
     this.container.addChild(panel);
 
@@ -397,9 +360,7 @@ export class ShopScene implements Scene {
     const fieldH = Math.round(h * 0.072);
     const fieldX = (w - fieldW) / 2;
     const fieldY = py + Math.round(h * 0.13);
-    const box = new PIXI.Graphics();
-    box.beginFill(C.paper); box.lineStyle(2, C.accent);
-    box.drawRoundedRect(0, 0, fieldW, fieldH, 6); box.endFill();
+    const box = sketchPanel(fieldW, fieldH, { fill: C.paper, border: C.accent, width: 2, seed: seedFor(fieldX, fieldY, fieldW) });
     box.x = fieldX; box.y = fieldY;
     this.container.addChild(box);
 
@@ -432,9 +393,7 @@ export class ShopScene implements Scene {
     label: string, x: number, y: number, w: number, h: number,
     fill: number, stroke: number, fn: () => void, textColor = 0xffffff,
   ): void {
-    const g = new PIXI.Graphics();
-    g.beginFill(fill); g.lineStyle(2, stroke);
-    g.drawRoundedRect(0, 0, w, h, 6); g.endFill();
+    const g = sketchPanel(w, h, { fill, border: stroke, width: 2, seed: seedFor(x, y, w) });
     g.x = x; g.y = y;
     this.container.addChild(g);
 

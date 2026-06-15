@@ -3,6 +3,7 @@ import { Scene } from './SceneManager';
 import { OwnerId, PlayerStats } from '../game/types';
 import { t, TranslationKey } from '../i18n';
 import { ProfilePopup, type ProfileData } from '../render/ProfilePopup';
+import { ui, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
 
 /** Optional player identities for the result screen's tap-to-view profile popup. */
 export interface ResultProfiles {
@@ -131,13 +132,8 @@ export class ResultScene implements Scene {
     const { w, h } = this;
     const playerStats = stats[this.localOwner]!; // the local player's stats (owner 0 or 1)
 
-    // Background
-    const bg = new PIXI.Graphics();
-    bg.beginFill(0xf5f0e8);
-    bg.drawRect(0, 0, w, h);
-    bg.endFill();
-    this.drawNotebookLines(bg);
-    this.container.addChild(bg);
+    // Background — shared hand-drawn notebook page (baked per size).
+    this.container.addChild(buildPaperBackground('resultbg', w, h));
 
     // Win / lose / draw headline
     const isDraw  = winner === null;
@@ -273,11 +269,7 @@ export class ResultScene implements Scene {
   private addButton(
     x: number, y: number, w: number, h: number, text: string, fill: number, onTap: () => void,
   ): void {
-    const bg = new PIXI.Graphics();
-    bg.beginFill(fill);
-    bg.lineStyle(2, 0x444444);
-    bg.drawRoundedRect(0, 0, w, h, 8);
-    bg.endFill();
+    const bg = sketchPanel(w, h, { fill, border: ui.btnOff, width: 2.2, seed: seedFor(x, y, w) });
     bg.x = x;
     bg.y = y;
     bg.interactive = true;
@@ -300,11 +292,7 @@ export class ResultScene implements Scene {
   private buildBadgeCard(badge: Badge, stats: PlayerStats, width: number): PIXI.Container {
     const h   = Math.round(this.h * 0.07);
     const c   = new PIXI.Container();
-    const gfx = new PIXI.Graphics();
-    gfx.beginFill(0xfaf6ee);
-    gfx.lineStyle(1, 0xcccccc);
-    gfx.drawRoundedRect(0, 0, width, h, 6);
-    gfx.endFill();
+    const gfx = sketchPanel(width, h, { fill: ui.paper, border: ui.line, width: 1.6, seed: seedFor(width, h, badge.score(stats)) });
 
     const label = new PIXI.Text(`${badge.title()}  ·  ${badge.detail(stats)}`, {
       fontSize: Math.round(h * 0.36),
@@ -316,17 +304,5 @@ export class ResultScene implements Scene {
 
     c.addChild(gfx, label);
     return c;
-  }
-
-  private drawNotebookLines(into: PIXI.Graphics): void {
-    const spacing = Math.round(this.h / 30);
-    into.lineStyle(1, 0xc8d8e8, 0.5);
-    for (let y = spacing; y < this.h; y += spacing) {
-      into.moveTo(0, y);
-      into.lineTo(this.w, y);
-    }
-    into.lineStyle(1, 0xff9999, 0.4);
-    into.moveTo(this.w * 0.08, 0);
-    into.lineTo(this.w * 0.08, this.h);
   }
 }

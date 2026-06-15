@@ -3,6 +3,7 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
+import { buildPaperBackground } from '../render/sketchUi';
 
 // ── First-launch intro (background story) ─────────────────────────────────────
 //
@@ -27,9 +28,6 @@ const STORY_LINE_KEYS: TranslationKey[] = [
 const FADE_DURATION = 0.8; // seconds per line fade-in
 
 const C = {
-  bg:     0xf5f0e8,
-  line:   0xc8d8e8,
-  margin: 0xffb3b3,
   ink:    0x2c2c2a,
   mid:    0x888888,
 };
@@ -123,18 +121,8 @@ export class IntroScene implements Scene {
   private build(): void {
     const { w, h } = this;
 
-    // Notebook-paper background
-    const bg = new PIXI.Graphics();
-    bg.beginFill(C.bg);
-    bg.drawRect(0, 0, w, h);
-    bg.endFill();
-    const lineGap = Math.round(h / 28);
-    bg.lineStyle(1, C.line, 0.6);
-    for (let y = lineGap; y < h; y += lineGap) { bg.moveTo(0, y); bg.lineTo(w, y); }
-    bg.lineStyle(1, C.margin, 0.7);
-    const mx = Math.round(w * 0.09);
-    bg.moveTo(mx, 0); bg.lineTo(mx, h);
-    this.container.addChild(bg);
+    // Notebook-paper background (shared hand-drawn page, baked per size).
+    this.container.addChild(buildPaperBackground('introbg', w, h));
 
     // Story lines, vertically centered as a block
     const fontSize  = Math.round(h * 0.026);

@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, getLocale, setLocale, getSupportedLocales, Locale, TranslationKey } from '../i18n';
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
+import { sketchPanel, seedFor } from '../render/sketchUi';
 import { buildAvatar } from '../render/avatar';
 
 // ── SettingsScene — personal profile + settings ────────────────────────────────
@@ -372,8 +373,8 @@ export class SettingsScene implements Scene {
     const padX = Math.round(w * 0.04), padY = Math.round(h * 0.014);
     const boxW = label.width + 2 * padX, boxH = label.height + 2 * padY;
     const bx = (w - boxW) / 2, by = Math.round(h * 0.9);
-    const box = new PIXI.Graphics();
-    box.beginFill(to.color, 0.95); box.drawRoundedRect(bx, by, boxW, boxH, 8); box.endFill();
+    const box = sketchPanel(boxW, boxH, { fill: to.color, fillAlpha: 0.95, border: to.color, width: 2, seed: seedFor(boxW, boxH, 4) });
+    box.x = bx; box.y = by;
     this.container.addChild(box);
     label.x = w / 2; label.y = by + boxH / 2;
     this.container.addChild(label);
@@ -390,9 +391,8 @@ export class SettingsScene implements Scene {
 
     const pw = Math.round(w * 0.72), ph = Math.round(h * 0.34);
     const px = (w - pw) / 2, py = (h - ph) / 2;
-    const panel = new PIXI.Graphics();
-    panel.beginFill(C.paper); panel.drawRoundedRect(px, py, pw, ph, 10); panel.endFill();
-    new SketchPen(panel, 33).rect(px + 3, py + 3, pw - 6, ph - 6, { color: C.dark, width: 2.4, jitter: 1.0 });
+    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, width: 2.4, seed: 33 });
+    panel.x = px; panel.y = py;
     this.container.addChild(panel);
 
     const title = txt(t('settings.renameTitle'), Math.round(h * 0.03), C.dark, true);

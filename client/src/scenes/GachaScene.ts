@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { Rarity } from '../game/meta/SaveData';
 import type { GachaPool, GachaResultEntry } from '../net/ApiClient';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
 
 // ── GachaScene (S2-6) — single / ten-pull lootbox with pity + reveal ───────────
 //
@@ -13,21 +14,6 @@ import type { GachaPool, GachaResultEntry } from '../net/ApiClient';
 // shows the pool's cost/pity, fires single/ten draws, and reveals the returned
 // results (rarity-coloured cards, NEW / duplicate badges) over a dim overlay.
 
-const C = {
-  bg:     0xf5f0e8,
-  paper:  0xfaf6ee,
-  line:   0xc8d8e8,
-  margin: 0xffb3b3,
-  dark:   0x2c2c2a,
-  mid:    0x888888,
-  light:  0xdddddd,
-  btnOff: 0xbbbbbb,
-  accent: 0x4477cc,
-  gold:   0xcc9900,
-  green:  0x4a9e4a,
-  red:    0xcc3333,
-};
-
 /** Rarity → card accent colour (shared visual language with shop/collection later). */
 const RARITY_COLOR: Record<Rarity, number> = {
   common:    0x9aa0a6,
@@ -35,13 +21,6 @@ const RARITY_COLOR: Record<Rarity, number> = {
   epic:      0xaa55cc,
   legendary: 0xddaa33,
 };
-
-function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
-  return new PIXI.Text(label, {
-    fontSize: size, fill: color, fontFamily: 'monospace',
-    fontWeight: bold ? 'bold' : 'normal',
-  });
-}
 
 export type GachaDrawResult =
   | { ok: true; results: GachaResultEntry[] }
@@ -150,16 +129,7 @@ export class GachaScene implements Scene {
   }
 
   private drawBackground(): void {
-    const { w, h } = this;
-    const bg = new PIXI.Graphics();
-    bg.beginFill(C.bg); bg.drawRect(0, 0, w, h); bg.endFill();
-    const lineGap = Math.round(h / 28);
-    bg.lineStyle(1, C.line, 0.6);
-    for (let y = lineGap; y < h; y += lineGap) { bg.moveTo(0, y); bg.lineTo(w, y); }
-    bg.lineStyle(1, C.margin, 0.7);
-    const mx = Math.round(w * 0.09);
-    bg.moveTo(mx, 0); bg.lineTo(mx, h);
-    this.container.addChild(bg);
+    this.container.addChild(buildPaperBackground('gachabg', this.w, this.h));
   }
 
   private drawHeader(): number {
@@ -208,9 +178,7 @@ export class GachaScene implements Scene {
     const bannerH = Math.round(h * 0.26);
     const bx = (w - bannerW) / 2;
     const by = tbH + Math.round(h * 0.05);
-    const banner = new PIXI.Graphics();
-    banner.beginFill(C.paper); banner.lineStyle(3, C.gold);
-    banner.drawRoundedRect(0, 0, bannerW, bannerH, 12); banner.endFill();
+    const banner = sketchPanel(bannerW, bannerH, { fill: C.paper, border: C.gold, width: 2.8, seed: seedFor(bannerW, bannerH, 5) });
     banner.x = bx; banner.y = by;
     this.container.addChild(banner);
 
@@ -288,8 +256,7 @@ export class GachaScene implements Scene {
     const bh = lbl.height + padY * 2;
     const bx = (w - bw) / 2;
     const by = Math.round(h * 0.88);
-    const bg = new PIXI.Graphics();
-    bg.beginFill(toast.color, 0.95); bg.drawRoundedRect(0, 0, bw, bh, 8); bg.endFill();
+    const bg = sketchPanel(bw, bh, { fill: toast.color, fillAlpha: 0.95, border: toast.color, width: 2, seed: seedFor(bw, bh, 2) });
     bg.x = bx; bg.y = by;
     this.container.addChild(bg);
     lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
@@ -334,9 +301,7 @@ export class GachaScene implements Scene {
 
   private drawResultCard(r: GachaResultEntry, x: number, y: number, w: number, h: number): void {
     const color = RARITY_COLOR[r.rarity];
-    const card = new PIXI.Graphics();
-    card.beginFill(C.paper); card.lineStyle(3, color);
-    card.drawRoundedRect(0, 0, w, h, 8); card.endFill();
+    const card = sketchPanel(w, h, { fill: C.paper, border: color, width: 2.6, seed: seedFor(x, y, w) });
     card.x = x; card.y = y;
     this.container.addChild(card);
 
@@ -366,9 +331,7 @@ export class GachaScene implements Scene {
     label: string, x: number, y: number, w: number, h: number,
     fill: number, stroke: number, fn: () => void, enabled = true,
   ): void {
-    const g = new PIXI.Graphics();
-    g.beginFill(fill); g.lineStyle(2, stroke);
-    g.drawRoundedRect(0, 0, w, h, 6); g.endFill();
+    const g = sketchPanel(w, h, { fill, border: stroke, width: 2, seed: seedFor(x, y, w) });
     g.x = x; g.y = y;
     this.container.addChild(g);
 

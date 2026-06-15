@@ -3,6 +3,7 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
 
 // ── LoginScene (SA-3) — account login / register + single-player entry ─────────
 //
@@ -27,29 +28,6 @@ export interface LoginSceneCallbacks {
   onRegister(loginId: string, password: string, displayName?: string): Promise<AuthOutcome>;
   /** Continue without an account (offline single-player). */
   onPlayOffline(): void;
-}
-
-const C = {
-  bg:     0xf5f0e8,
-  paper:  0xfaf6ee,
-  line:   0xc8d8e8,
-  margin: 0xffb3b3,
-  dark:   0x2c2c2a,
-  mid:    0x888888,
-  light:  0xdddddd,
-  btnOff: 0xbbbbbb,
-  btnDis: 0xddd8ce, // disabled button fill (pale paper-grey)
-  accent: 0x4477cc,
-  gold:   0xcc9900,
-  green:  0x4a9e4a,
-  red:    0xcc3333,
-};
-
-function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
-  return new PIXI.Text(label, {
-    fontSize: size, fill: color, fontFamily: 'monospace',
-    fontWeight: bold ? 'bold' : 'normal',
-  });
 }
 
 // Mirror the server's account rules (server/shared/src/password.ts) so the client
@@ -298,16 +276,7 @@ export class LoginScene implements Scene {
   }
 
   private drawBackground(): void {
-    const { w, h } = this;
-    const bg = new PIXI.Graphics();
-    bg.beginFill(C.bg); bg.drawRect(0, 0, w, h); bg.endFill();
-    const lineGap = Math.round(h / 28);
-    bg.lineStyle(1, C.line, 0.6);
-    for (let y = lineGap; y < h; y += lineGap) { bg.moveTo(0, y); bg.lineTo(w, y); }
-    bg.lineStyle(1, C.margin, 0.7);
-    const mx = Math.round(w * 0.09);
-    bg.moveTo(mx, 0); bg.lineTo(mx, h);
-    this.container.addChild(bg);
+    this.container.addChild(buildPaperBackground('loginbg', this.w, this.h));
   }
 
   private drawHeader(): void {
@@ -457,10 +426,7 @@ export class LoginScene implements Scene {
     lbl.anchor.set(0, 1); lbl.x = x; lbl.y = y - Math.round(h * 0.08);
     this.container.addChild(lbl);
 
-    const box = new PIXI.Graphics();
-    box.beginFill(C.paper);
-    box.lineStyle(2, isFocused ? C.accent : C.line);
-    box.drawRoundedRect(0, 0, w, h, 6); box.endFill();
+    const box = sketchPanel(w, h, { fill: C.paper, border: isFocused ? C.accent : C.line, width: 2, seed: seedFor(x, y, w) });
     box.x = x; box.y = y;
     this.container.addChild(box);
 
@@ -513,9 +479,8 @@ export class LoginScene implements Scene {
     const cont = new PIXI.Container();
     cont.x = x + w / 2; cont.y = y + h / 2;
 
-    const g = new PIXI.Graphics();
-    g.beginFill(f); g.lineStyle(enabled ? 2 : 1.5, st);
-    g.drawRoundedRect(-w / 2, -h / 2, w, h, 6); g.endFill();
+    const g = sketchPanel(w, h, { fill: f, border: st, width: enabled ? 2 : 1.5, seed: seedFor(x, y, w) });
+    g.x = -w / 2; g.y = -h / 2;
     cont.addChild(g);
 
     const tl = txt(label, fontSize ?? Math.round(h * 0.36), tc, true);

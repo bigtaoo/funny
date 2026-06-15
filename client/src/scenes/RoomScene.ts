@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import type { NetState } from '../net/NetClient';
 import type { PeerDc, RoomError, RoomState, PlayerSlot } from '../net/proto/transport';
 import { ProfilePopup } from '../render/ProfilePopup';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
 
 // ── RoomScene (S1-8) — friendly online room ──────────────────────────────────
 //
@@ -23,28 +24,6 @@ import { ProfilePopup } from '../render/ProfilePopup';
 /** Server room-code charset — mirrors gameserver RoomManager (no 0/O/1/I/L). */
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const CODE_LEN = 6;
-
-const C = {
-  bg:     0xf5f0e8,
-  paper:  0xfaf6ee,
-  line:   0xc8d8e8,
-  margin: 0xffb3b3,
-  dark:   0x2c2c2a,
-  mid:    0x888888,
-  light:  0xdddddd,
-  btnOff: 0xbbbbbb,
-  accent: 0x4477cc,
-  gold:   0xcc9900,
-  green:  0x4a9e4a,
-  red:    0xcc3333,
-};
-
-function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
-  return new PIXI.Text(label, {
-    fontSize: size, fill: color, fontFamily: 'monospace',
-    fontWeight: bold ? 'bold' : 'normal',
-  });
-}
 
 export interface RoomSceneCallbacks {
   onBack(): void;
@@ -300,16 +279,7 @@ export class RoomScene implements Scene {
   }
 
   private drawBackground(): void {
-    const { w, h } = this;
-    const bg = new PIXI.Graphics();
-    bg.beginFill(C.bg); bg.drawRect(0, 0, w, h); bg.endFill();
-    const lineGap = Math.round(h / 28);
-    bg.lineStyle(1, C.line, 0.6);
-    for (let y = lineGap; y < h; y += lineGap) { bg.moveTo(0, y); bg.lineTo(w, y); }
-    bg.lineStyle(1, C.margin, 0.7);
-    const mx = Math.round(w * 0.09);
-    bg.moveTo(mx, 0); bg.lineTo(mx, h);
-    this.container.addChild(bg);
+    this.container.addChild(buildPaperBackground('roombg', this.w, this.h));
   }
 
   private drawHeader(): void {
@@ -398,9 +368,9 @@ export class RoomScene implements Scene {
     const rowY = Math.round(h * 0.23);
     for (let i = 0; i < CODE_LEN; i++) {
       const bx = rowX + i * (boxW + boxGap);
-      const g = new PIXI.Graphics();
-      g.beginFill(C.paper); g.lineStyle(2, this.codeChars[i] ? C.accent : C.line);
-      g.drawRoundedRect(0, 0, boxW, boxH, 5); g.endFill();
+      const g = sketchPanel(boxW, boxH, {
+        fill: C.paper, border: this.codeChars[i] ? C.accent : C.line, width: 2, seed: seedFor(i, boxW, boxH),
+      });
       g.x = bx; g.y = rowY;
       this.container.addChild(g);
       const ch = this.codeChars[i] ?? '';
@@ -512,22 +482,17 @@ export class RoomScene implements Scene {
     const isMe = side === this.mySide;
     const accent = side === 0 ? C.accent : C.red;
 
-    const bg = new PIXI.Graphics();
-    bg.beginFill(C.paper, slot ? 1 : 0.6);
-    bg.lineStyle(2, slot ? accent : C.light);
-    bg.drawRoundedRect(0, 0, w, h, 6); bg.endFill();
+    const bg = sketchPanel(w, h, {
+      fill: C.paper, fillAlpha: slot ? 1 : 0.6, border: slot ? accent : C.light, width: 2, seed: seedFor(side, w, h),
+    });
     bg.x = x; bg.y = y;
+    sketchAccentBar(bg, h, accent, seedFor(side, h, accent));
     this.container.addChild(bg);
 
     // Occupied slot → tappable to open its profile card.
     if (slot) {
       this.hits.push({ rect: { x, y, w, h }, fn: () => this.openProfile(slot) });
     }
-
-    const bar = new PIXI.Graphics();
-    bar.beginFill(accent); bar.drawRect(0, 0, 5, h); bar.endFill();
-    bar.x = x; bar.y = y;
-    this.container.addChild(bar);
 
     // Always show the nickname (displayName); accountId is never player-facing.
     // The 9-digit public id sits beneath it for player-to-player reference / 投诉.
@@ -570,8 +535,7 @@ export class RoomScene implements Scene {
     const bh = label.height + padY * 2;
     const bx = (w - bw) / 2;
     const by = Math.round(h * 0.135);
-    const bg = new PIXI.Graphics();
-    bg.beginFill(C.red, 0.92); bg.drawRoundedRect(0, 0, bw, bh, 6); bg.endFill();
+    const bg = sketchPanel(bw, bh, { fill: C.red, fillAlpha: 0.92, border: C.red, width: 2, seed: seedFor(bw, bh, 1) });
     bg.x = bx; bg.y = by;
     this.container.addChild(bg);
     label.anchor.set(0.5, 0.5); label.x = w / 2; label.y = by + bh / 2;
@@ -584,9 +548,7 @@ export class RoomScene implements Scene {
     fill: number, stroke: number, fn: () => void,
     textColor = 0xffffff, fontSize?: number,
   ): void {
-    const g = new PIXI.Graphics();
-    g.beginFill(fill); g.lineStyle(2, stroke);
-    g.drawRoundedRect(0, 0, w, h, 6); g.endFill();
+    const g = sketchPanel(w, h, { fill, border: stroke, width: 2, seed: seedFor(x, y, w) });
     g.x = x; g.y = y;
     this.container.addChild(g);
 

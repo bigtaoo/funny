@@ -11,6 +11,7 @@ import {
   type Replay,
 } from '../game';
 import { t } from '../i18n';
+import { ui, sketchPanel, seedFor } from '../render/sketchUi';
 
 /**
  * Replay player (S1-RP).
@@ -189,11 +190,9 @@ export class ReplayScene implements Scene {
     text: string,
     onTap: () => void,
   ): PIXI.Text {
-    const bg = new PIXI.Graphics();
-    bg.beginFill(0x2c2c2a, 0.9);
-    bg.lineStyle(2, 0x555555);
-    bg.drawRoundedRect(x, y, w, h, 6);
-    bg.endFill();
+    const bg = sketchPanel(w, h, { fill: ui.dark, border: ui.btnOff, width: 2, fillAlpha: 0.9, seed: seedFor(x, y, w) });
+    bg.x = x;
+    bg.y = y;
     bg.interactive = true;
     bg.cursor = 'pointer';
     bg.on('pointertap', onTap);
