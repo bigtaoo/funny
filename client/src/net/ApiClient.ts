@@ -6,76 +6,28 @@
 // 其云同步随微信联机合规一并排期；当前 SaveManager 在无 baseUrl / fetch 时退化为纯本地（离线优先）。
 
 import type { AuthCredential } from '../platform/IPlatform';
-import type { SaveData, SyncPatch, Rarity } from '../game/meta/SaveData';
+import type { SaveData, SyncPatch } from '../game/meta/SaveData';
+import type { components } from './openapi';
 import { netLog } from './log';
 
 const log = netLog('api');
 
-// ── Economy DTOs (S2; mirror contracts/openapi.yml shop/gacha schemas) ──────────
+// ── Wire DTOs：从 openapi.yml codegen（contracts 单一来源，`npm run rest:gen`）取，
+//    契约漂移在 tsc 时暴露。SaveData/SyncPatch/Rarity 仍用客户端自有 meta 镜像（域类型，
+//    刻意手维护）；纯线协议 DTO（shop/gacha/auth/history）这里 alias 生成 schema。
+type Schemas = components['schemas'];
 
-export interface ShopItem {
-  id: string;
-  cost: number;
-  kind: string;
-  grants?: string;
-}
-
-export interface GachaEntry {
-  itemId: string;
-  weight: number;
-  rarity: Rarity;
-}
-
-export interface GachaPool {
-  id: string;
-  costSingle: number;
-  costTen?: number;
-  pityThreshold?: number;
-  dupePolicy?: string;
-  entries: GachaEntry[];
-}
-
-export interface GachaResultEntry {
-  itemId: string;
-  rarity: Rarity;
-  duplicate: boolean;
-  converted?: { kind: string; amount: number };
-}
-
-/** 对战历史一条（mirror contracts/openapi.yml MatchHistoryEntry；从当前账号视角）。 */
-export interface MatchHistoryEntry {
-  roomId: string;
-  mode: string; // friendly | ranked
-  result: 'win' | 'loss' | 'unknown';
-  /** 归档当刻对手展示名快照（可能缺省）。 */
-  opponentName?: string;
-  opponentPublicId?: string;
-  /** ranked 本局 ELO 变化（带符号）；friendly 缺省。 */
-  eloDelta?: number;
-  /** 归档时间（epoch ms）。 */
-  ts: number;
-}
+export type ShopItem = Schemas['ShopItem'];
+export type GachaPool = Schemas['GachaPool'];
+export type GachaEntry = GachaPool['entries'][number];
+export type GachaResultEntry = Schemas['GachaResult'];
+/** 对战历史一条（从当前账号视角）。 */
+export type MatchHistoryEntry = Schemas['MatchHistoryEntry'];
+export type AuthResult = Schemas['AuthResult'];
 
 type ApiResp<T> =
   | { ok: true; data: T }
   | { ok: false; error: { code: string; message: string } };
-
-export interface AuthResult {
-  token: string;
-  accountId: string;
-  isNew: boolean;
-  /** 仅 device、无可恢复凭证 → true。联机/商店/充值要求 false（SA-1）。 */
-  isAnonymous: boolean;
-  /** 注册时填的展示名（可选）；客户端用于个人资料显示。 */
-  displayName?: string;
-  /** 9 位数字公开 id（玩家交流/投诉用；accountId 仅服务器内部标识）。 */
-  publicId?: string;
-  /**
-   * gateway 公开控制面 WS 地址（房间/匹配），由服务器下发。客户端只硬编码 meta 地址，
-   * gateway 地址走这里、game 地址走 match_found——都实时获取，不静态配置。未配置则缺省。
-   */
-  gatewayUrl?: string;
-}
 
 /** PUT /save 结果：成功回推规范化存档，或 409 冲突带当前云端值。 */
 export type PushResult =
