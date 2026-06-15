@@ -24,6 +24,8 @@ export type GachaResultEntry = Schemas['GachaResult'];
 /** 对战历史一条（从当前账号视角）。 */
 export type MatchHistoryEntry = Schemas['MatchHistoryEntry'];
 export type AuthResult = Schemas['AuthResult'];
+/** 服务端持久化录像（opaque 帧，base64）；客户端用 net/serverReplay 解码回放。 */
+export type ServerReplay = Schemas['MatchReplay'];
 
 type ApiResp<T> =
   | { ok: true; data: T }
@@ -140,6 +142,15 @@ export class ApiClient {
       `/match/history?limit=${limit}`,
     );
     return data.matches;
+  }
+
+  /** 取某局服务端录像（仅本人参与；opaque 帧，交 net/serverReplay 解码回放）。404 → ApiError。 */
+  async getMatchReplay(roomId: string): Promise<ServerReplay> {
+    const data = await this.request<{ replay: ServerReplay }>(
+      'GET',
+      `/match/${encodeURIComponent(roomId)}/replay`,
+    );
+    return data.replay;
   }
 
   // ── 经济：商店 / 盲盒 / 广告 / 充值（S2，需登录 token）────────────

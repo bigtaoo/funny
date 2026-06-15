@@ -141,6 +141,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/match/{roomId}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 取某局录像（仅本人参与的对局）；服务端 opaque 帧，客户端解码回放 */
+        get: operations["getMatchReplay"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shop/items": {
         parameters: {
             query?: never;
@@ -338,6 +355,27 @@ export interface components {
             eloDelta?: number;
             /** @description 归档时间（epoch ms） */
             ts: number;
+        };
+        /** @description 服务端持久化的对局录像（非空帧日志）。命令为 game.proto opaque bytes（base64），客户端解码回放。 */
+        MatchReplay: {
+            /** @description 服务端逻辑无关恒 0；客户端按自身 ENGINE_VERSION 回放校验 */
+            engineVersion: number;
+            mode: string;
+            /** @description uint64 十进制字符串 */
+            seed: string;
+            endFrame: number;
+            frames: {
+                frame: number;
+                cmds: {
+                    side: number;
+                    /** @description PlayerCommands opaque bytes（base64） */
+                    commands: string;
+                }[];
+            }[];
+            meta?: {
+                recordedAt?: number;
+                winner?: number;
+            };
         };
         ShopItem: {
             id: string;
@@ -698,6 +736,36 @@ export interface operations {
                 };
             };
             401: components["responses"]["ErrorResp"];
+        };
+    };
+    getMatchReplay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roomId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            replay: components["schemas"]["MatchReplay"];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
         };
     };
     getShopItems: {

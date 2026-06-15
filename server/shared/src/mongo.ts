@@ -95,11 +95,24 @@ export interface AdsDailyDoc {
   ts: number;
 }
 
+/**
+ * 大局录像外置存储（S1-RP）：当内嵌帧日志过大（超阈值）时，replay 落此独立集合、
+ * `MatchDoc.replayRef = roomId` 指向这里，使 `matches` 文档保持精简、列表/战绩查询快。
+ * `GET /match/{roomId}/replay` 取录像时先看 `MatchDoc.replay`（内嵌），缺则回退此集合。
+ * （仍是 Mongo BSON binary，非外部对象存储 / S3——那是后续 infra 决策，见 META_TASKS S1-RP。）
+ */
+export interface ReplayBlobDoc {
+  _id: string; // roomId
+  replay: MatchReplayDoc;
+  ts: number;
+}
+
 export interface Collections {
   saves: Collection<SaveDoc>;
   accounts: Collection<AccountDoc>;
   matches: Collection<MatchDoc>;
   adsDaily: Collection<AdsDailyDoc>;
+  replayBlobs: Collection<ReplayBlobDoc>;
 }
 
 export interface MongoHandle {
@@ -139,6 +152,7 @@ export async function createMongo(
     accounts: db.collection<AccountDoc>('accounts'),
     matches: db.collection<MatchDoc>('matches'),
     adsDaily: db.collection<AdsDailyDoc>('adsDaily'),
+    replayBlobs: db.collection<ReplayBlobDoc>('replayBlobs'),
   };
 
   async function ensureIndexes(): Promise<void> {

@@ -253,6 +253,30 @@ export class MetaService {
     return ok({ matches });
   }
 
+  /** 取某局录像（仅本人参与的对局）；内嵌 replay 优先，大局回退 replayBlobs（S1-RP）。 */
+  async getMatchReplay(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { cols } = this.deps;
+    const roomId = (req.params as { roomId?: string }).roomId;
+    if (!roomId) {
+      return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'match not found'));
+    }
+    const doc = await cols.matches.findOne({ roomId });
+    // 仅本人参与的对局可取（防越权拉别人录像）。
+    if (!doc || !doc.players.some((p) => p.accountId === accountId)) {
+      return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'match not found'));
+    }
+    let replay = doc.replay;
+    if (!replay && doc.replayRef) {
+      const blob = await cols.replayBlobs.findOne({ _id: doc.replayRef });
+      replay = blob?.replay;
+    }
+    if (!replay) {
+      return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'replay unavailable'));
+    }
+    return ok({ replay });
+  }
+
   // ── economy（S5：meta 编排 → commercial 扣币/随机 → 发货 → 镜像回推）──────
   /** commercial 未配置时经济端点不可用（503）。 */
   private ensureCommercial(reply: FastifyReply): boolean {

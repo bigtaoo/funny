@@ -21,6 +21,9 @@ import { getProfile } from './accounts.js';
 
 const log = createLogger('meta:internal');
 
+/** 内嵌录像帧字节上限；超过则外置 replayBlobs + replayRef（保持 matches 文档精简）。 */
+const REPLAY_INLINE_MAX_BYTES = 256 * 1024;
+
 interface EloResult {
   delta: number;
   after: number;
@@ -155,7 +158,28 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       }),
     );
 
-    // 归档 matches（内嵌录像 / 大局 replayRef 待办）。winner -1 = 未知（friendly 正常结束）。
+    // 归档 matches。winner -1 = 未知（friendly 正常结束）。
+    // 录像：小局内嵌 `replay`；超阈值的大局外置 `replayBlobs` + `replayRef`（matches 文档保持精简）。
+    const replayDoc = {
+      engineVersion: body.replay.engineVersion,
+      mode: body.replay.mode,
+      seed: body.replay.seed,
+      endFrame: body.replay.endFrame,
+      frames: body.replay.frames, // cmds[].commands 为 base64 opaque（不解码 M12）
+      meta: body.replay.meta,
+    };
+    const replayBytes = JSON.stringify(replayDoc.frames).length;
+    const inline = replayBytes <= REPLAY_INLINE_MAX_BYTES;
+    if (!inline) {
+      // 先写 blob（roomId 幂等覆盖），matches 仅留 replayRef 指针。
+      await cols.replayBlobs
+        .updateOne(
+          { _id: body.room_id },
+          { $set: { _id: body.room_id, replay: replayDoc, ts: now() } },
+          { upsert: true },
+        )
+        .catch((e) => log.error('archive replay blob failed', { err: (e as Error).message }));
+    }
     await cols.matches
       .insertOne({
         roomId: body.room_id,
@@ -165,14 +189,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         winner: cheat ? body.players.find((p) => p.side !== cheat!.side)!.side : body.winner_side,
         reason: body.reason,
         hashOk: body.hash_ok,
-        replay: {
-          engineVersion: body.replay.engineVersion,
-          mode: body.replay.mode,
-          seed: body.replay.seed,
-          endFrame: body.replay.endFrame,
-          frames: body.replay.frames, // cmds[].commands 为 base64 opaque（不解码 M12）
-          meta: body.replay.meta,
-        },
+        ...(inline ? { replay: replayDoc } : { replayRef: body.room_id }),
         ...(cheat ? { cheat } : {}),
         ts: now(),
       })

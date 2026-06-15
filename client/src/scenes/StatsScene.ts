@@ -36,10 +36,12 @@ export interface StatsCallbacks {
    * in (the history section then shows an "offline" hint instead of records).
    */
   loadHistory?(): Promise<MatchHistoryEntry[]>;
+  /** Watch a recorded match by roomId (fetch + decode server replay). Omitted when offline. */
+  onWatchReplay?(roomId: string): void;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
-interface Row { label: string; value: string; valueColor?: number; }
+interface Row { label: string; value: string; valueColor?: number; rowHit?: () => void; }
 
 export class StatsScene implements Scene {
   readonly container: PIXI.Container;
@@ -169,6 +171,7 @@ export class StatsScene implements Scene {
         label: opp,
         value: res + elo,
         valueColor: m.result === 'win' ? C.green : m.result === 'loss' ? C.red : C.mid,
+        ...(this.cb.onWatchReplay ? { rowHit: () => this.cb.onWatchReplay!(m.roomId) } : {}),
       };
     });
   }
@@ -203,6 +206,13 @@ export class StatsScene implements Scene {
       const val = txt(row.value, Math.round(rowH * 0.66), row.valueColor ?? C.dark, true);
       val.anchor.set(1, 0.5); val.x = x + w - Math.round(w * 0.05); val.y = ry + rowH / 2;
       this.container.addChild(val);
+      // 可看回放的行：左侧画 ▶ 提示 + 整行命中区。
+      if (row.rowHit) {
+        const play = txt('▶', Math.round(rowH * 0.6), accent, true);
+        play.anchor.set(0, 0.5); play.x = x + Math.round(w * 0.035); play.y = ry + rowH / 2;
+        this.container.addChild(play);
+        this.hits.push({ rect: { x, y: ry, w, h: rowH }, fn: row.rowHit });
+      }
       ry += rowH;
     }
 

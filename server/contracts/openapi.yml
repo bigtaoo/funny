@@ -171,6 +171,36 @@ components:
         eloDelta: { type: integer, description: 'ranked 本局 ELO 变化（带符号）；friendly 缺省' }
         ts: { type: integer, description: 归档时间（epoch ms） }
 
+    MatchReplay:
+      type: object
+      required: [engineVersion, mode, seed, endFrame, frames]
+      description: 服务端持久化的对局录像（非空帧日志）。命令为 game.proto opaque bytes（base64），客户端解码回放。
+      properties:
+        engineVersion: { type: integer, description: 服务端逻辑无关恒 0；客户端按自身 ENGINE_VERSION 回放校验 }
+        mode: { type: string }
+        seed: { type: string, description: uint64 十进制字符串 }
+        endFrame: { type: integer }
+        frames:
+          type: array
+          items:
+            type: object
+            required: [frame, cmds]
+            properties:
+              frame: { type: integer }
+              cmds:
+                type: array
+                items:
+                  type: object
+                  required: [side, commands]
+                  properties:
+                    side: { type: integer }
+                    commands: { type: string, description: 'PlayerCommands opaque bytes（base64）' }
+        meta:
+          type: object
+          properties:
+            recordedAt: { type: integer }
+            winner: { type: integer }
+
     ShopItem:
       type: object
       required: [id, cost, kind]
@@ -513,6 +543,35 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/MatchHistoryEntry' }
         '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /match/{roomId}/replay:
+    get:
+      operationId: getMatchReplay
+      tags: [save]
+      summary: 取某局录像（仅本人参与的对局）；服务端 opaque 帧，客户端解码回放
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [replay]
+                    properties:
+                      replay: { $ref: '#/components/schemas/MatchReplay' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
 
   /shop/items:
     get:

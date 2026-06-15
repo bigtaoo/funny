@@ -19,6 +19,7 @@ import { computeStars, remainingHpPct, applyCampaignClear } from '../game/meta/c
 import { initI18n, t, type TranslationKey } from '../i18n';
 import { LocalSaveStore, SaveManager, ReplayStore } from '../game/meta';
 import { ApiClient, ApiError, type AuthResult } from '../net/ApiClient';
+import { serverReplayToReplay } from '../net/serverReplay';
 import { getApiBaseUrl, getGatewayWsUrl } from '../net/config';
 import { NetSession } from '../net/NetSession';
 import { netLog } from '../net/log';
@@ -417,8 +418,20 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const client = api;
     views.showStats({
       onBack: () => goLobby(),
-      // 仅登录在线时拉服务端对战历史；离线 / 未登录则不提供（页面显示离线提示）。
-      ...(client && loggedIn ? { loadHistory: () => client.getMatchHistory() } : {}),
+      // 仅登录在线时拉服务端对战历史 + 看回放；离线 / 未登录则不提供（页面显示离线提示）。
+      ...(client && loggedIn
+        ? {
+            loadHistory: () => client.getMatchHistory(),
+            onWatchReplay: (roomId: string) => {
+              void client
+                .getMatchReplay(roomId)
+                .then((sr) => goReplay(serverReplayToReplay(sr), goStats))
+                .catch(() => {
+                  /* 录像缺失/解码失败：best-effort，留在 stats */
+                });
+            },
+          }
+        : {}),
       getStats: () => {
         const save = saveManager.get();
         const stars = Object.values(save.progress.stars).reduce((a, b) => a + b, 0);
@@ -481,11 +494,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  function goReplay(replay: Replay): void {
+  function goReplay(replay: Replay, onExit: () => void = goLobby): void {
     inLobby = false;
     platform.onGameplayStart();
     views.showReplay(replay, {
-      onExit() { goLobby(); },
+      onExit() { onExit(); },
     });
   }
 
