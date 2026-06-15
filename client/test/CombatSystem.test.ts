@@ -95,6 +95,23 @@ describe('CombatSystem — arrow tower (Chebyshev all-direction targeting)', () 
     expect(enemy.hp).toBe(hp0 - BUILDING_BLUEPRINTS[BuildingType.ArrowTower].attack!);
   });
 
+  it('hits an enemy in Crossing state moving horizontally past the tower', () => {
+    const state = new GameState(1);
+    const sys = new CombatSystem();
+    // A Bottom tower on the home building row; a Top unit crosses sideways along it.
+    const tower = new Building(BuildingType.ArrowTower, Side.Bottom, 5, 0);
+    const crosser = new Unit(UnitType.Runner, Side.Top, 6, 0); // adjacent, mid-crossing
+    crosser.state = UnitState.Crossing;
+    state.board.addBuilding(tower);
+    state.board.addUnit(crosser);
+
+    const hp0 = crosser.hp;
+    sys.tick(state);
+    // Targeting is grid/Chebyshev-based and state-agnostic — the crossing enemy
+    // is hit (the original forward-only scan would have missed it entirely).
+    expect(crosser.hp).toBeLessThan(hp0);
+  });
+
   it('does not target out-of-range enemies', () => {
     const state = new GameState(1);
     const sys = new CombatSystem();

@@ -88,7 +88,17 @@ export async function createCommercialMongo(
   options?: MongoClientOptions,
 ): Promise<CommercialMongo> {
   const client = new MongoClient(uri, options);
-  await client.connect();
+  try {
+    await client.connect();
+  } catch (err) {
+    // 连接失败时输出清晰、脱敏的错误信息再抛出，避免启动期 DB 连不上变成沉默崩溃。
+    const safeUri = uri.replace(/\/\/[^@/]*@/, '//<redacted>@');
+    console.error(
+      `[commercial-mongo] 连接 MongoDB 失败 (uri=${safeUri}, db=${dbName}): ` +
+        `${(err as Error).message}. 请确认数据库已启动且连接配置 (NW_COMM_MONGO_URI/NW_MONGO_URI) 正确。`,
+    );
+    throw err;
+  }
   const db = client.db(dbName);
   const collections: CommercialCollections = {
     wallets: db.collection<WalletDoc>('wallets'),

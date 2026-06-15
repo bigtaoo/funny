@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { GameState } from '../src/game/GameState';
 import { Unit } from '../src/game/Unit';
+import { Building } from '../src/game/Building';
 import { MovementSystem } from '../src/game/systems/MovementSystem';
 import { toFp } from '../src/game/math/fixed';
 import { BASE_HP, BASE_COLS, TOP_BUILDING_ROW } from '../src/game/config';
-import { Side, UnitType, UnitState } from '../src/game/types';
+import { Side, UnitType, UnitState, BuildingType } from '../src/game/types';
 
 function tickN(state: GameState, sys: MovementSystem, n: number): void {
   for (let i = 0; i < n; i++) sys.tick(state);
@@ -81,5 +82,59 @@ describe('MovementSystem — friendly collision', () => {
 
     // Having caught up, the trailing unit is blocked (Waiting), not Moving.
     expect(back.state).toBe(UnitState.Waiting);
+  });
+});
+
+describe('MovementSystem — a crossing leader frees the lane behind it', () => {
+  it('a trailing lane unit is not blocked once the leader crosses into another column', () => {
+    const state = new GameState(1);
+    const sys = new MovementSystem();
+
+    // Same column, leader near the crossing row, follower a few cells behind.
+    const leader = new Unit(UnitType.Infantry, Side.Bottom, 0, TOP_BUILDING_ROW - 2);
+    const follower = new Unit(UnitType.Infantry, Side.Bottom, 0, TOP_BUILDING_ROW - 5);
+    state.board.addUnit(leader);
+    state.board.addUnit(follower);
+
+    // The leader reaches row 17, enters Crossing, and moves sideways out of col 0.
+    // Before the columnUnits fix, the follower would wait forever behind a phantom
+    // leader still listed in col 0. Now it advances all the way to the crossing row.
+    tickN(state, sys, 400);
+
+    expect(follower.row).toBe(TOP_BUILDING_ROW);
+    expect([UnitState.Crossing, UnitState.Dead]).toContain(follower.state);
+  });
+});
+
+describe('MovementSystem — crossing collision does not flap', () => {
+  it('a unit jammed behind a frozen friendly crosser stays blocked (no Moving/Waiting flap)', () => {
+    const state = new GameState(1);
+    const sys = new MovementSystem();
+
+    // Freeze the leader: an enemy building one cell ahead in the crossing path
+    // means the leader can never advance, so the follower behind it must stay put.
+    const wall = new Building(BuildingType.Barracks, Side.Top, 3, TOP_BUILDING_ROW);
+    state.board.addBuilding(wall);
+
+    const leader = new Unit(UnitType.Infantry, Side.Bottom, 2, TOP_BUILDING_ROW);
+    const follower = new Unit(UnitType.Infantry, Side.Bottom, 1, TOP_BUILDING_ROW);
+    leader.state = UnitState.Crossing;
+    follower.state = UnitState.Crossing;
+    state.board.addUnit(leader);
+    state.board.addUnit(follower);
+
+    // Let the follower close the gap and jam up against the frozen leader.
+    tickN(state, sys, 30);
+    expect(follower.crossingBlocked).toBe(true);
+
+    // Over a long window it must remain blocked (the leader is frozen): it never
+    // flaps back to advancing on a sub-footprint gap, and never overruns the leader.
+    let unblockedTicks = 0;
+    for (let i = 0; i < 60; i++) {
+      sys.tick(state);
+      if (!follower.crossingBlocked) unblockedTicks++;
+    }
+    expect(unblockedTicks).toBe(0);
+    expect(follower.x_fp).toBeLessThan(leader.x_fp);
   });
 });

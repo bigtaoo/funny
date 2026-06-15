@@ -99,13 +99,28 @@ export interface MongoHandle {
   close(): Promise<void>;
 }
 
+/** Strip userinfo (user:pass@) from a Mongo URI so it's safe to log. */
+function sanitizeMongoUri(uri: string): string {
+  return uri.replace(/\/\/[^@/]*@/, '//<redacted>@');
+}
+
 export async function createMongo(
   uri: string,
   dbName: string,
   options?: MongoClientOptions,
 ): Promise<MongoHandle> {
   const client = new MongoClient(uri, options);
-  await client.connect();
+  try {
+    await client.connect();
+  } catch (err) {
+    // Surface a clear, credential-free message before rethrowing, so a failed
+    // DB connection at startup is never a silent/opaque crash regardless of caller.
+    console.error(
+      `[mongo] 连接 MongoDB 失败 (uri=${sanitizeMongoUri(uri)}, db=${dbName}): ` +
+        `${(err as Error).message}. 请确认数据库已启动且连接配置 (NW_MONGO_URI) 正确。`,
+    );
+    throw err;
+  }
   const db = client.db(dbName);
   const collections: Collections = {
     saves: db.collection<SaveDoc>('saves'),
