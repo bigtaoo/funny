@@ -109,7 +109,7 @@ describe('full-link E2E (live stack)', () => {
     expect(draw.ok && draw.results.length).toBe(1);
   });
 
-  it('ranked matchmaking wires correct ports + the match produces a watchable replay', async () => {
+  it('ranked matchmaking wires correct ports + produces a watchable replay (local + server)', async () => {
     const a = createClient();
     const b = createClient();
 
@@ -177,6 +177,35 @@ describe('full-link E2E (live stack)', () => {
     a.views.gameNet!.cb.onExitToLobby();
     b.views.gameNet!.cb.onExitToLobby();
     await waitFor(() => a.views.screen === 'lobby' && b.views.screen === 'lobby', 'back to lobby');
+
+    // —— Server-side replay (S1-RP): the archived match is fetchable over REST,
+    // its opaque base64 frames decode to a client Replay, and it plays back. This is
+    // the StatsScene "watch from history" path: getMatchHistory → getMatchReplay →
+    // serverReplayToReplay → ReplayInputSource. (Distinct from the local ReplayStore
+    // path asserted above — here the frames came from the SERVER, not local recording.)
+    a.views.lobby!.onOpenStats();
+    expect(a.views.screen).toBe('stats');
+    expect(a.views.stats!.loadHistory, 'logged-in stats must offer history').toBeTruthy();
+    expect(a.views.stats!.onWatchReplay, 'logged-in stats must offer watch-replay').toBeTruthy();
+
+    // The just-played ranked match is archived async on the server; poll history for it.
+    let roomId = '';
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const hist = await a.views.stats!.loadHistory!();
+      const entry = hist.find((h) => h.mode === 'ranked');
+      if (entry) { roomId = entry.roomId; break; }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    expect(roomId, 'archived ranked match not found in history').toBeTruthy();
+
+    // Fetch + decode + play the SERVER replay (fire-and-forget → navigates to replay).
+    a.views.stats!.onWatchReplay!(roomId);
+    await waitFor(() => a.views.screen === 'replay', 'server replay scene', 15_000);
+    const srvEnd = a.views.replayEndFrame!;
+    expect(srvEnd, 'server replay has no frame horizon').toBeGreaterThan(0);
+    const srvTicks = a.views.driveReplayToEnd();
+    expect(srvTicks, 'server replay did not advance to endFrame').toBeGreaterThanOrEqual(srvEnd);
   });
 
   it('account lifecycle: register → recharge → rename, then login on a fresh client restores name + coins (cloud round-trip); same-device restart re-logs in via persisted token', async () => {
