@@ -132,13 +132,31 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       }
     }
 
+    // 归档前 enrich 每方身份快照（昵称 / publicId）+ ELO 结算结果（仅 ranked）。
+    // 快照在归档当刻定格，事后改名不回填——战绩历史按当时显示。
+    const enrichedPlayers = await Promise.all(
+      body.players.map(async (p) => {
+        const profile = await getProfile(cols, p.accountId).catch(() => ({ publicId: undefined as string | undefined }));
+        const elo = eloBySide?.[p.side];
+        return {
+          side: p.side,
+          accountId: p.accountId,
+          ...((profile as { displayName?: string }).displayName
+            ? { displayName: (profile as { displayName?: string }).displayName }
+            : {}),
+          ...(profile.publicId ? { publicId: profile.publicId } : {}),
+          ...(elo ? { eloDelta: elo.delta, eloAfter: elo.after } : {}),
+        };
+      }),
+    );
+
     // 归档 matches（内嵌录像 / 大局 replayRef 待办）。winner -1 = 未知（friendly 正常结束）。
     await cols.matches
       .insertOne({
         roomId: body.room_id,
         mode: body.mode,
         seed: body.seed,
-        players: body.players,
+        players: enrichedPlayers,
         winner: cheat ? body.players.find((p) => p.side !== cheat!.side)!.side : body.winner_side,
         reason: body.reason,
         hashOk: body.hash_ok,

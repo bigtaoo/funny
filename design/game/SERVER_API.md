@@ -88,8 +88,10 @@ POST /profile/rename (JWT) { displayName }  → { save: SaveData, displayName } 
 GET  /save                                     → { save: SaveData, displayName?, publicId?, gatewayUrl? }  // 当前账号（顺带回带展示名 + 公开 id + gateway 地址）
 PUT  /save     (If-Match: <rev>)  { save }     → { save: SaveData }      // 成功回推规范化后的存档
                                                  | 409 REV_CONFLICT { save }  // 当前云端值
+GET  /match/history?limit=<1..50>              → { matches: MatchHistoryEntry[] }  // 最近对战（默认 20），按 ts 倒序
 ```
 - PUT 只接受**客户端同步段**字段（progress / materials / pveUpgrades / equipped / flags）；服务器权威段被忽略（以服务端值为准回推）。
+- **对战历史（`GET /match/history`，2026-06-15）**：从归档 `matches` 取当前账号视角的精简摘要（无录像/帧日志）。`MatchHistoryEntry = { roomId, mode(friendly|ranked), result(win|loss|unknown), opponentName?, opponentPublicId?, eloDelta?, ts }`——`result` 由 `matches.winner` 对比我方 side 推导（winner<0 / 未知 → unknown）；`opponentName`/`opponentPublicId` 与 `eloDelta` 取自归档时 enrich 进 `matches.players` 的快照（昵称在归档当刻定格，事后改名不回填；`eloDelta` 仅 ranked 成功结算时有）。查询走索引 `{ 'players.accountId': 1, ts: -1 }`。客户端 `StatsScene` 仅登录在线时拉取（离线显「登录后查看」）。
 
 > **修订（2026-06-14，M21）**：§2.3~2.6 的经济端点**对客户端不变**（仍是 meta 的公开 REST），但服务端实现改为 **meta 编排 → 内部调 commercial 服务**（钱包/扣币/RNG/充值在 commercial 独立库，物品由 meta 发货）。`save.wallet/gacha` 降级为只读镜像。内部契约见 **§9**；流程见 `COMMERCIAL_DESIGN.md §6`。
 
@@ -217,7 +219,7 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 | `gachaHistory` | `{ accountId, poolId, itemId, rarity, cost, rev, ts }` | 逐抽记录（M7） |
 | `walletLog` | `{ accountId, delta, reason, balAfter, ts }` | 货币流水（审计 / 防刷） |
 | `iapReceipts` | `{ _id: receiptId, accountId, granted, ts }` | 验单幂等 |
-| `matches` | `{ roomId, mode, seed, players, winner, reason, hashOk, replay?, replayRef?, ts }` | 对局归档（friendly/ranked 都记）；`replay` 内嵌录像（小局，非空帧日志零成本内嵌，`cmds[].commands` 为 BSON binary opaque）；`replayRef` 指向外部存储（大局，待办） |
+| `matches` | `{ roomId, mode, seed, players, winner, reason, hashOk, replay?, replayRef?, ts }` | 对局归档（friendly/ranked 都记）；`players[]` 归档时 enrich 每方 `{ side, accountId, displayName?, publicId?, eloDelta?, eloAfter? }`（昵称/publicId 快照定格、`eloDelta` 仅 ranked，供 `GET /match/history`）；`replay` 内嵌录像（小局，非空帧日志零成本内嵌，`cmds[].commands` 为 BSON binary opaque）；`replayRef` 指向外部存储（大局，待办）。索引 `{ 'players.accountId': 1, ts: -1 }` 支撑战绩查询 |
 
 > 天梯积分存 `saves.pvp`（elo/rank/wins/losses/streak，服务器权威）；`gameserver` 在 ranked 局末用单文档原子更新写入。
 

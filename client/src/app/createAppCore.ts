@@ -413,8 +413,12 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
   function goStats(): void {
     inLobby = false;
+    const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
+    const client = api;
     views.showStats({
       onBack: () => goLobby(),
+      // 仅登录在线时拉服务端对战历史；离线 / 未登录则不提供（页面显示离线提示）。
+      ...(client && loggedIn ? { loadHistory: () => client.getMatchHistory() } : {}),
       getStats: () => {
         const save = saveManager.get();
         const stars = Object.values(save.progress.stars).reduce((a, b) => a + b, 0);

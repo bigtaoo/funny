@@ -58,7 +58,19 @@ export interface MatchDoc {
   roomId: string;
   mode: string;
   seed: string;
-  players: { side: number; accountId: string }[];
+  /**
+   * 归档时快照每方身份 + ELO 结算结果（战绩历史 `GET /match/history` 用）。
+   * `displayName`/`publicId` 是归档当刻的快照（事后改名不回填）；`eloDelta`/`eloAfter`
+   * 仅 ranked 且成功结算时存在（friendly / 作废局缺省）。
+   */
+  players: {
+    side: number;
+    accountId: string;
+    displayName?: string;
+    publicId?: string;
+    eloDelta?: number;
+    eloAfter?: number;
+  }[];
   winner: number;
   reason: string;
   hashOk: boolean;

@@ -150,4 +150,69 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     });
     expect(body(r).data.save.wallet.coins).toBe(0);
   });
+
+  // ── 对战历史（归档 enrich + GET /match/history）─────────────────────────────
+  it('GET /match/history 无 token → 401', async () => {
+    const r = await app.inject({ method: 'GET', url: '/match/history' });
+    expect(r.statusCode).toBe(401);
+  });
+
+  it('GET /match/history 无对局 → 空数组', async () => {
+    const { token } = await authDevice('hist-empty');
+    const r = await app.inject({
+      method: 'GET',
+      url: '/match/history',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(body(r).data.matches).toEqual([]);
+  });
+
+  it('ranked 上报后双方各取战绩：result + 对手 publicId 快照 + eloDelta', async () => {
+    const a = await authDevice('hist-aaaa');
+    const b = await authDevice('hist-bbbb');
+    // ranked 结算需双方已有存档（getOrCreateSave）；先各拉一次建档。
+    await app.inject({ method: 'GET', url: '/save', headers: { authorization: `Bearer ${a.token}` } });
+    await app.inject({ method: 'GET', url: '/save', headers: { authorization: `Bearer ${b.token}` } });
+    // 内部上报：结算 ELO + enrich players（昵称/publicId 快照 + eloDelta）+ 归档。
+    const report = await app.inject({
+      method: 'POST',
+      url: '/internal/match/report',
+      headers: { 'x-internal-key': 'test-internal-key' },
+      payload: {
+        room_id: 'HIST1', seed: '7', mode: 'ranked', reason: 'base', winner_side: 0, hash_ok: true,
+        players: [
+          { side: 0, accountId: a.accountId },
+          { side: 1, accountId: b.accountId },
+        ],
+        results: [
+          { side: 0, state_hash: 'H', winner_side: 0 },
+          { side: 1, state_hash: 'H', winner_side: 0 },
+        ],
+        replay: { engineVersion: 0, mode: 'netplay', seed: '7', endFrame: 0, frames: [], meta: { recordedAt: 0, winner: 0 } },
+      },
+    });
+    expect(report.statusCode).toBe(200);
+
+    // 胜方 a 视角：win + eloDelta +16 + 对手 publicId 快照。
+    const ra = await app.inject({
+      method: 'GET', url: '/match/history', headers: { authorization: `Bearer ${a.token}` },
+    });
+    expect(ra.statusCode).toBe(200);
+    const aList = body(ra).data.matches as Array<Record<string, unknown>>;
+    expect(aList).toHaveLength(1);
+    expect(aList[0].roomId).toBe('HIST1');
+    expect(aList[0].mode).toBe('ranked');
+    expect(aList[0].result).toBe('win');
+    expect(aList[0].eloDelta).toBe(16);
+    expect(typeof aList[0].opponentPublicId).toBe('string');
+
+    // 败方 b 视角：loss + eloDelta -16。
+    const rb = await app.inject({
+      method: 'GET', url: '/match/history', headers: { authorization: `Bearer ${b.token}` },
+    });
+    const bList = body(rb).data.matches as Array<Record<string, unknown>>;
+    expect(bList[0].result).toBe('loss');
+    expect(bList[0].eloDelta).toBe(-16);
+  });
 });

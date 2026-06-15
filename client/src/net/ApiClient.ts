@@ -42,6 +42,20 @@ export interface GachaResultEntry {
   converted?: { kind: string; amount: number };
 }
 
+/** 对战历史一条（mirror contracts/openapi.yml MatchHistoryEntry；从当前账号视角）。 */
+export interface MatchHistoryEntry {
+  roomId: string;
+  mode: string; // friendly | ranked
+  result: 'win' | 'loss' | 'unknown';
+  /** 归档当刻对手展示名快照（可能缺省）。 */
+  opponentName?: string;
+  opponentPublicId?: string;
+  /** ranked 本局 ELO 变化（带符号）；friendly 缺省。 */
+  eloDelta?: number;
+  /** 归档时间（epoch ms）。 */
+  ts: number;
+}
+
 type ApiResp<T> =
   | { ok: true; data: T }
   | { ok: false; error: { code: string; message: string } };
@@ -165,6 +179,15 @@ export class ApiClient {
       throw new ApiError(json.error.code, json.error.message);
     }
     return { kind: 'ok', save: json.data.save };
+  }
+
+  /** 最近对战历史（ranked / friendly，按时间倒序；需登录 token）。 */
+  async getMatchHistory(limit = 20): Promise<MatchHistoryEntry[]> {
+    const data = await this.request<{ matches: MatchHistoryEntry[] }>(
+      'GET',
+      `/match/history?limit=${limit}`,
+    );
+    return data.matches;
   }
 
   // ── 经济：商店 / 盲盒 / 广告 / 充值（S2，需登录 token）────────────

@@ -303,5 +303,10 @@ export const en: Record<TranslationKey, string> = {
   'stats.skins': 'Skins',
   'stats.materials': 'Materials',
   'stats.history': 'Match history',
-  'stats.historyEmpty': 'Coming soon',
+  'stats.historyEmpty': 'No matches yet',
+  'stats.historyLoading': 'Loading…',
+  'stats.historyOffline': 'Log in to view',
+  'stats.historyUnknownOpp': 'Opponent',
+  'stats.win': 'Win',
+  'stats.loss': 'Loss',
 };

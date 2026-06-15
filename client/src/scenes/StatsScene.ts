@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
 import { MATERIAL_ORDER } from '../game/balance/pveUpgrades';
+import type { MatchHistoryEntry } from '../net/ApiClient';
 
 // ── StatsScene — 战绩 / 统计页 (lobby "stats" nav) ──────────────────────────────
 //
@@ -30,6 +31,11 @@ export interface StatsView {
 export interface StatsCallbacks {
   onBack(): void;
   getStats(): StatsView;
+  /**
+   * Fetch recent match history from the server. Omitted when offline / not logged
+   * in (the history section then shows an "offline" hint instead of records).
+   */
+  loadHistory?(): Promise<MatchHistoryEntry[]>;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -43,6 +49,8 @@ export class StatsScene implements Scene {
   private readonly cb: StatsCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** null = not fetched yet (loading); [] = fetched, empty. Only meaningful when loadHistory is provided. */
+  private history: MatchHistoryEntry[] | null = null;
 
   constructor(layout: ILayout, input: InputManager, cb: StatsCallbacks) {
     this.container = new PIXI.Container();
@@ -50,6 +58,16 @@ export class StatsScene implements Scene {
     this.h = layout.designHeight;
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.render();
+    if (this.cb.loadHistory) void this.fetchHistory();
+  }
+
+  private async fetchHistory(): Promise<void> {
+    try {
+      this.history = (await this.cb.loadHistory!()).slice(0, 10);
+    } catch {
+      this.history = [];
+    }
     this.render();
   }
 
@@ -125,10 +143,34 @@ export class StatsScene implements Scene {
     ]);
     y += gap;
 
-    // 4. Match history — placeholder until the server endpoint lands (step 2).
-    this.drawSection(pad, y, secW, t('stats.history'), C.mid, [
-      { label: '', value: t('stats.historyEmpty'), valueColor: C.mid },
-    ]);
+    // 4. Match history — fetched from the server (GET /match/history).
+    this.drawSection(pad, y, secW, t('stats.history'), C.mid, this.historyRows());
+  }
+
+  /** Rows for the match-history section, reflecting fetch state. */
+  private historyRows(): Row[] {
+    if (!this.cb.loadHistory) {
+      return [{ label: '', value: t('stats.historyOffline'), valueColor: C.mid }];
+    }
+    if (this.history === null) {
+      return [{ label: '', value: t('stats.historyLoading'), valueColor: C.mid }];
+    }
+    if (this.history.length === 0) {
+      return [{ label: '', value: t('stats.historyEmpty'), valueColor: C.mid }];
+    }
+    return this.history.map((m) => {
+      const opp =
+        m.opponentName || (m.opponentPublicId ? `#${m.opponentPublicId}` : t('stats.historyUnknownOpp'));
+      const res =
+        m.result === 'win' ? t('stats.win') : m.result === 'loss' ? t('stats.loss') : '—';
+      const elo =
+        m.eloDelta !== undefined ? ` (${m.eloDelta >= 0 ? '+' : ''}${m.eloDelta})` : '';
+      return {
+        label: opp,
+        value: res + elo,
+        valueColor: m.result === 'win' ? C.green : m.result === 'loss' ? C.red : C.mid,
+      };
+    });
   }
 
   /**

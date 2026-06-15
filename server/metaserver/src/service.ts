@@ -222,6 +222,37 @@ export class MetaService {
     return ok({ save: result.save });
   }
 
+  /** 最近对战历史（ranked / friendly），从归档 matches 取当前账号视角的精简摘要。 */
+  async getMatchHistory(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { cols } = this.deps;
+    const limitRaw = Number((req.query as { limit?: string | number }).limit);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(50, Math.max(1, Math.floor(limitRaw)))
+      : 20;
+    const docs = await cols.matches
+      .find({ 'players.accountId': accountId })
+      .sort({ ts: -1 })
+      .limit(limit)
+      .toArray();
+    const matches = docs.map((d) => {
+      const me = d.players.find((p) => p.accountId === accountId);
+      const opp = d.players.find((p) => p.accountId !== accountId);
+      const result: 'win' | 'loss' | 'unknown' =
+        !me || d.winner < 0 ? 'unknown' : d.winner === me.side ? 'win' : 'loss';
+      return {
+        roomId: d.roomId,
+        mode: d.mode,
+        result,
+        ...(opp?.displayName ? { opponentName: opp.displayName } : {}),
+        ...(opp?.publicId ? { opponentPublicId: opp.publicId } : {}),
+        ...(me?.eloDelta !== undefined ? { eloDelta: me.eloDelta } : {}),
+        ts: d.ts,
+      };
+    });
+    return ok({ matches });
+  }
+
   // ── economy（S5：meta 编排 → commercial 扣币/随机 → 发货 → 镜像回推）──────
   /** commercial 未配置时经济端点不可用（503）。 */
   private ensureCommercial(reply: FastifyReply): boolean {

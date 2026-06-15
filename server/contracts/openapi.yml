@@ -159,6 +159,18 @@ components:
         # gateway 地址由本回包下发、game 地址由 match_found 下发。未配置则缺省。
         gatewayUrl: { type: string }
 
+    MatchHistoryEntry:
+      type: object
+      required: [roomId, mode, result, ts]
+      properties:
+        roomId: { type: string }
+        mode: { type: string, description: 'friendly | ranked' }
+        result: { type: string, enum: [win, loss, unknown] }
+        opponentName: { type: string, description: 归档当刻对手展示名快照 }
+        opponentPublicId: { type: string, description: 对手 9 位公开 id }
+        eloDelta: { type: integer, description: 'ranked 本局 ELO 变化（带符号）；friendly 缺省' }
+        ts: { type: integer, description: 归档时间（epoch ms） }
+
     ShopItem:
       type: object
       required: [id, cost, kind]
@@ -469,6 +481,37 @@ paths:
                   ok: { type: boolean, enum: [false] }
                   error: { $ref: '#/components/schemas/Error' }
                   save: { $ref: '#/components/schemas/SaveData' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /match/history:
+    get:
+      operationId: getMatchHistory
+      tags: [save]
+      summary: 当前账号最近对战历史（ranked / friendly，按时间倒序）
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+          description: 返回条数上限（默认 20，最多 50）
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [matches]
+                    properties:
+                      matches:
+                        type: array
+                        items: { $ref: '#/components/schemas/MatchHistoryEntry' }
         '401': { $ref: '#/components/responses/ErrorResp' }
 
   /shop/items:

@@ -302,7 +302,12 @@ export const zh = {
   'stats.skins': '皮肤',
   'stats.materials': '材料',
   'stats.history': '对战历史',
-  'stats.historyEmpty': '即将推出',
+  'stats.historyEmpty': '暂无对战记录',
+  'stats.historyLoading': '加载中…',
+  'stats.historyOffline': '登录后查看',
+  'stats.historyUnknownOpp': '对手',
+  'stats.win': '胜',
+  'stats.loss': '负',
 };
 
 export type TranslationKey = keyof typeof zh;
