@@ -160,7 +160,7 @@
 - [ ] **S4-1 iap-service**：各平台充值服务端验单（微信虚拟支付 / Web 渠道）→ 加币。**依赖**：S2-1。**验收**：未验单不发币；重复票据幂等。
 - [ ] **S4-2 对局 hash 比对**：对局结束双端上报最终状态 hash，服务器比对，分歧标记。**依赖**：S1-3。**验收**：人为分歧被检出。
 - [ ] **S4-3 上线加固**：限流、输入校验、日志/告警、Mongo 备份脚本。**依赖**：全部。
-- [ ] **S4-4 PvE 数据完整性 + 离线合并**（设计稿待拍板）：PvE 通关/材料/养成全是客户端同步段，无服务器校验。提议 L0 廉价不变量（服务器重算奖励/前置/限速 + 开局战力一致性 + 材料守恒账本）+ L1 录像抽检复算（复用 S1-RP 录像 + S1-J 无头复算）。**根问题待拍板**：`pveUpgrades`/`materials` 保留客户端应用 + 守恒校验（方案 A）还是升级权威迁服务器（方案 B）。离线合并校验窗口同议。详见 **`PVE_INTEGRITY_PLAN.md`**。**依赖**：S1-RP、S1-J。
+- [~] **S4-4 PvE 数据完整性（升级权威迁服务器，方案 B）**：拍板（2026-06-15）——`progress`/`stars`/`materials`/`pveUpgrades` 全服务器权威；通关=一次服务器事务；可重复刷（每日上限）；离线只重刷已解锁关攒材料、新解锁/升级须联网。详见 **`PVE_INTEGRITY_PLAN.md` §8**。✅ **Step 1 服务器基础已落地**：`shared/pveRewards`（发放/花费权威，M12 安全）+ `pveDaily` cap 集合 + meta `POST /pve/clear`（校验解锁→每日上限内发材料→写 progress/stars/materials→回推）+ `POST /pve/upgrade`（校验材料→扣费→pveUpgrades+1→回推）+ `mutateSave` 乐观锁；附加非破坏（客户端暂不调用）。meta pve.e2e 5 例 + 57 测试绿。**Step 2 客户端切换（未做，核心 sync 模型变更，需迁移 ~5 测试文件）**：`SyncPatch` 收窄为 equipped/flags（client `extractSyncPatch` + server `applySyncPatch`）；`createAppCore` 通关/升级改走 API（在线）/ 离线 `pendingClears` 队列；`SaveManager` flush + reconcile 改 progress/materials/pveUpgrades 服务器为准；CampaignMap/LevelPrep 在线门控。**Step 3 L1 录像抽检复算**：依赖 Step 2 + S1-J。**依赖**：S1-RP、S1-J。
 
 ---
 
