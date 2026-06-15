@@ -1,5 +1,5 @@
 import { Scene } from './SceneManager';
-import { GameRenderer } from '../render/GameRenderer';
+import { GameRenderer, type GameProfiles } from '../render/GameRenderer';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import {
@@ -45,6 +45,8 @@ export interface GameSceneOptions {
    * opponent / reconnecting / peer dropped) and server-driven match_over (S1-9).
    */
   net?: boolean;
+  /** Player identities for the in-battle profile popup (netplay only). */
+  profiles?: GameProfiles;
 }
 
 export class GameScene implements Scene {
@@ -88,7 +90,7 @@ export class GameScene implements Scene {
       );
     }
 
-    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false);
+    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {});
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats) => this.cb.onGameEnd(winner, stats, this.buildReplay(winner));

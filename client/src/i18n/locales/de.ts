@@ -146,6 +146,14 @@ export const de: Record<TranslationKey, string> = {
   'room.error.noServer': 'Online-Spiel nicht verfügbar',
   'room.error.generic': 'Etwas ist schiefgelaufen',
 
+  // ── Spielerprofil-Popup (Avatar antippen zum Ansehen) ────────────────────────
+  'profile.title': 'Spielerprofil',
+  'profile.close': 'Schließen',
+  'profile.id': 'Öffentliche ID',
+  'profile.rank': 'Rang',
+  'profile.you': '(du)',
+  'result.vs': 'vs {name}',
+
   // ── In-battle network status (S1-9) ─────────────────────────────────────────
   'net.waiting': 'Warte auf Gegner',
   'net.reconnecting': 'Verbindung wird wiederhergestellt',

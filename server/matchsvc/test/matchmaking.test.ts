@@ -10,8 +10,8 @@ describe('Matchmaking', () => {
       autoTick: false,
       now: () => 0,
     });
-    mm.enqueue('a', 'a', 1000);
-    mm.enqueue('b', 'b', 1050); // diff 50 ≤ baseWindow 100
+    mm.enqueue('a', 'a', '', 1000);
+    mm.enqueue('b', 'b', '', 1050); // diff 50 ≤ baseWindow 100
     expect(pairs).toEqual([['a', 'b']]);
     expect(mm.size).toBe(0);
   });
@@ -25,8 +25,8 @@ describe('Matchmaking', () => {
       baseWindow: 100,
       widenPerSec: 50,
     });
-    mm.enqueue('a', 'a', 1000);
-    mm.enqueue('b', 'b', 1300); // diff 300 > 100
+    mm.enqueue('a', 'a', '', 1000);
+    mm.enqueue('b', 'b', '', 1300); // diff 300 > 100
     expect(pairs).toHaveLength(0);
     t = 5000; // 窗口 100 + 5×50 = 350 ≥ 300
     mm.tick();
@@ -35,7 +35,7 @@ describe('Matchmaking', () => {
 
   it('remove 出队', () => {
     const mm = new Matchmaking(() => {}, { autoTick: false, now: () => 0 });
-    mm.enqueue('a', 'a', 1000);
+    mm.enqueue('a', 'a', '', 1000);
     expect(mm.has('a')).toBe(true);
     mm.remove('a');
     expect(mm.has('a')).toBe(false);
@@ -44,8 +44,8 @@ describe('Matchmaking', () => {
   it('同账号重复入队覆盖，不和自己配对', () => {
     const pairs: unknown[] = [];
     const mm = new Matchmaking((a, b) => pairs.push([a, b]), { autoTick: false, now: () => 0 });
-    mm.enqueue('a', 'a', 1000);
-    mm.enqueue('a', 'a', 1200);
+    mm.enqueue('a', 'a', '', 1000);
+    mm.enqueue('a', 'a', '', 1200);
     expect(mm.size).toBe(1);
     expect(pairs).toHaveLength(0);
   });
@@ -56,9 +56,9 @@ describe('Matchmaking', () => {
       autoTick: false,
       now: () => 0,
     });
-    mm.enqueue('a', 'a', 1000);
-    mm.enqueue('b', 'b', 1500);
-    mm.enqueue('c', 'c', 1050);
+    mm.enqueue('a', 'a', '', 1000);
+    mm.enqueue('b', 'b', '', 1500);
+    mm.enqueue('c', 'c', '', 1050);
     expect(pairs).toEqual([['a', 'c']]);
     expect(mm.has('b')).toBe(true);
   });

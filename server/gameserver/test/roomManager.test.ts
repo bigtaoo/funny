@@ -49,9 +49,9 @@ describe('RoomManager (ticket relay)', () => {
     const mgr = newManager();
     const c0 = makeConn('R', 0, 'a');
     const c1 = makeConn('R', 1, 'b');
-    expect(mgr.join(asConn(c0), 'a', SEED, MatchMode.FRIENDLY)).toBe(true);
+    expect(mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY)).toBe(true);
     expect(has(c0, 'match_start')).toBe(false); // 等第二人
-    expect(mgr.join(asConn(c1), 'b', SEED, MatchMode.FRIENDLY)).toBe(true);
+    expect(mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY)).toBe(true);
     expect(has(c0, 'match_start')).toBe(true);
     expect(has(c1, 'match_start')).toBe(true);
   });
@@ -60,16 +60,16 @@ describe('RoomManager (ticket relay)', () => {
     const mgr = newManager();
     const c0 = makeConn('R', 0, 'a');
     const c1 = makeConn('R', 1, 'b');
-    mgr.join(asConn(c0), 'a', SEED, MatchMode.FRIENDLY);
-    expect(mgr.join(asConn(c1), 'b', SEED + 1, MatchMode.FRIENDLY)).toBe(false);
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY);
+    expect(mgr.join(asConn(c1), 'b', '', SEED + 1, MatchMode.FRIENDLY)).toBe(false);
   });
 
   it('mode 不一致 → 拒绝', () => {
     const mgr = newManager();
     const c0 = makeConn('R', 0, 'a');
     const c1 = makeConn('R', 1, 'b');
-    mgr.join(asConn(c0), 'a', SEED, MatchMode.FRIENDLY);
-    expect(mgr.join(asConn(c1), 'b', SEED, MatchMode.RANKED)).toBe(false);
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY);
+    expect(mgr.join(asConn(c1), 'b', '', SEED, MatchMode.RANKED)).toBe(false);
   });
 
   it('cmd_submit 路由进房间 → 出现在 frame_batch', () => {
@@ -77,8 +77,8 @@ describe('RoomManager (ticket relay)', () => {
     const mgr = newManager();
     const c0 = makeConn('R', 0, 'a');
     const c1 = makeConn('R', 1, 'b');
-    mgr.join(asConn(c0), 'a', SEED, MatchMode.FRIENDLY);
-    mgr.join(asConn(c1), 'b', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY);
     mgr.handle(asConn(c0), { case: 'cmd_submit', commands: new Uint8Array([42]) });
     vi.advanceTimersByTime(100);
     const fb = c0.outbox.filter((m) => m.case === 'frame_batch').at(-1);
@@ -91,9 +91,9 @@ describe('RoomManager (ticket relay)', () => {
     const mgr = newManager();
     const c0 = makeConn('R', 0, 'a');
     const c1 = makeConn('R', 1, 'b');
-    mgr.join(asConn(c0), 'a', SEED, MatchMode.FRIENDLY);
-    mgr.join(asConn(c1), 'b', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY);
     const c0b = makeConn('R', 0, 'a'); // 重连
-    expect(mgr.join(asConn(c0b), 'a', SEED, MatchMode.FRIENDLY)).toBe(true);
+    expect(mgr.join(asConn(c0b), 'a', '', SEED, MatchMode.FRIENDLY)).toBe(true);
   });
 });

@@ -4,7 +4,8 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { NetState } from '../net/NetClient';
-import type { PeerDc, RoomError, RoomState } from '../net/proto/transport';
+import type { PeerDc, RoomError, RoomState, PlayerSlot } from '../net/proto/transport';
+import { ProfilePopup } from '../render/ProfilePopup';
 
 // ── RoomScene (S1-8) — friendly online room ──────────────────────────────────
 //
@@ -95,11 +96,15 @@ export class RoomScene implements Scene {
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
 
+  /** Tap-a-slot → view-profile overlay (persists across re-renders, drawn on top). */
+  private readonly popup: ProfilePopup;
+
   constructor(layout: ILayout, input: InputManager, cb: RoomSceneCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
+    this.popup = new ProfilePopup(this.w, this.h);
     // Lobby match button → land straight in the ranked searching view (app fires
     // the queue join once the gateway opens). Unavailable → fall through to idle
     // so guardAvailable can surface the "no server" toast on user action.
@@ -132,6 +137,7 @@ export class RoomScene implements Scene {
 
   destroy(): void {
     this.unsubs.forEach((u) => u());
+    this.popup.destroy();
   }
 
   // ── Inbound (app forwards NetSession events here) ─────────────────────────────
@@ -170,6 +176,9 @@ export class RoomScene implements Scene {
   // ── Input ──────────────────────────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
+    // Profile overlay open → its own dim backdrop (PIXI interactive) handles the
+    // close tap; ignore the scene hit-list so nothing behind it fires.
+    if (this.popup.isOpen) return;
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
@@ -275,6 +284,19 @@ export class RoomScene implements Scene {
     }
 
     this.drawToast();
+
+    // Profile overlay stays on top of every re-render (server room_state pushes
+    // re-run render()); the popup keeps its own visibility state.
+    this.container.addChild(this.popup.container);
+  }
+
+  /** Open the view-profile card for a room slot (nickname + public id). */
+  private openProfile(slot: PlayerSlot): void {
+    this.popup.show({
+      name: slot.name || t(slot.side === 0 ? 'room.host' : 'room.guest'),
+      publicId: slot.publicId,
+      isSelf: slot.side === this.mySide,
+    });
   }
 
   private drawBackground(): void {
@@ -496,6 +518,11 @@ export class RoomScene implements Scene {
     bg.drawRoundedRect(0, 0, w, h, 6); bg.endFill();
     bg.x = x; bg.y = y;
     this.container.addChild(bg);
+
+    // Occupied slot → tappable to open its profile card.
+    if (slot) {
+      this.hits.push({ rect: { x, y, w, h }, fn: () => this.openProfile(slot) });
+    }
 
     const bar = new PIXI.Graphics();
     bar.beginFill(accent); bar.drawRect(0, 0, 5, h); bar.endFill();

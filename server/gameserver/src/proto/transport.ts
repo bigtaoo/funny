@@ -62,6 +62,8 @@ export type ServerMsg =
       seed: number;
       startFrame: number;
       localSide: number;
+      opponentName: string;
+      opponentPublicId: string;
     }
   | { case: 'frame_batch'; toFrame: number; frames: FrameCmds[] }
   | {
@@ -187,6 +189,8 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
           seed: msg.seed,
           start_frame: msg.startFrame,
           local_side: msg.localSide,
+          opponent_name: msg.opponentName,
+          opponent_public_id: msg.opponentPublicId,
         },
       };
       break;

@@ -53,6 +53,10 @@ export class HUDView {
   private _upgradeRect:     Rect = { x: 0, y: 0, w: 0, h: 0 };
   private _pauseResumeRect: Rect | null = null;
   private _pauseExitRect:   Rect | null = null;
+  /** Opponent info area (top strip, left of the settings button) — profile tap (S1 net). */
+  private _enemyInfoRect:   Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Local player info area (bottom strip, left) — profile tap (S1 net). */
+  private _playerInfoRect:  Rect = { x: 0, y: 0, w: 0, h: 0 };
 
   /** True when upgrade is currently affordable (set each frame by sync). */
   upgradeEnabled = false;
@@ -70,6 +74,8 @@ export class HUDView {
   getUpgradeRect():     Rect        { return this._upgradeRect; }
   getPauseResumeRect(): Rect | null { return this._pauseResumeRect; }
   getPauseExitRect():   Rect | null { return this._pauseExitRect; }
+  getEnemyInfoRect():   Rect        { return this._enemyInfoRect; }
+  getPlayerInfoRect():  Rect        { return this._playerInfoRect; }
 
   // ── Per-frame sync ─────────────────────────────────────────────────────────
 
@@ -252,6 +258,11 @@ export class HUDView {
     this.upgradeBtnLabel.y = uBtnY + BTN_H / 2;
     this._upgradeRect      = { x: uBtnX, y: uBtnY, w: BTN_W, h: BTN_H };
     this.setUpgradeBtnStyle(false);
+
+    // Profile-tap regions (used only in netplay, GameRenderer gates on netEnabled):
+    // opponent = top strip up to the settings button; local = bottom-left info column.
+    this._enemyInfoRect  = { x: topR.x, y: topR.y, w: Math.max(0, sBtnX - topR.x), h: topR.h };
+    this._playerInfoRect = { x: bLR.x, y: bLR.y, w: Math.round(this.layout.designWidth * 0.34), h: bLR.h };
 
     this.container.addChild(
       topBg, this.timerText, this.enemyHpGfx, this.settingsBtnBg, sLabel,

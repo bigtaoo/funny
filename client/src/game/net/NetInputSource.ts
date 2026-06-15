@@ -57,6 +57,10 @@ export interface MatchStartInfo {
   startFrame: number;
   /** Which side this client controls (0 = bottom, 1 = top). */
   localSide: number;
+  /** Opponent display name (UI only; empty if unknown). */
+  opponentName: string;
+  /** Opponent 9-digit public id (UI only; empty if unknown). */
+  opponentPublicId: string;
 }
 
 export interface NetInputSourceOptions {
@@ -155,6 +159,8 @@ export class NetInputSource implements InputSource {
       seed: m.seed,
       startFrame: m.startFrame,
       localSide: m.localSide,
+      opponentName: m.opponentName,
+      opponentPublicId: m.opponentPublicId,
     };
     this.startFrame = m.startFrame;
     // The start frame is playable immediately (its command set is empty — the

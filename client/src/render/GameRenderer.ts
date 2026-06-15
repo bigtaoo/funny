@@ -30,8 +30,15 @@ import { NetStatusView } from './NetStatusView';
 import { UnitView } from './UnitView';
 import { VFXSystem } from './VFXSystem';
 import { buildWearOverlay } from './wearOverlay';
+import { ProfilePopup, type ProfileData } from './ProfilePopup';
 import { fromFp } from '../game';
 import { t } from '../i18n';
+
+/** Optional player identities for the in-battle profile popup (netplay, S1). */
+export interface GameProfiles {
+  opponent?: ProfileData;
+  local?: ProfileData;
+}
 
 // ── Drag state ─────────────────────────────────────────────────────────────────
 
@@ -87,6 +94,11 @@ export class GameRenderer {
   /** True for online lockstep matches — enables the waiting-for-opponent overlay. */
   private readonly netEnabled: boolean;
 
+  /** Opponent / local identities for the tap-to-view profile popup (netplay only). */
+  private readonly oppProfile:  ProfileData | null;
+  private readonly selfProfile: ProfileData | null;
+  private profilePopup: ProfilePopup | null = null;
+
   private boardView!:    BoardView;
   private unitView!:     UnitView;
   private buildingView!: BuildingView;
@@ -126,11 +138,14 @@ export class GameRenderer {
     input: InputManager,
     netEnabled = false,
     spectator = false,
+    profiles: GameProfiles = {},
   ) {
     this.engine     = engine;
     this.layout     = layout;
     this.netEnabled = netEnabled;
     this.container  = new PIXI.Container();
+    this.oppProfile  = profiles.opponent ?? null;
+    this.selfProfile = profiles.local ?? null;
 
     this.localOwner    = sideToOwner(layout.localSide);
     this.localBuildRow = layout.localSide === Side.Bottom ? BOTTOM_BUILDING_ROW : TOP_BUILDING_ROW;
@@ -223,6 +238,7 @@ export class GameRenderer {
     this.drag            = null;
     this.tapSelect       = null;
     this.pendingCardDown = null;
+    this.profilePopup?.destroy();
     this.vfxSystem.destroy();
   }
 
@@ -256,7 +272,29 @@ export class GameRenderer {
     this.vignetteGfx = new PIXI.Graphics();
     this.vignetteGfx.interactiveChildren = false;
     this.container.addChild(this.vignetteGfx);                  // screen-edge flash
-    this.container.addChild(this.netStatus.container);          // topmost — network status pill
+    this.container.addChild(this.netStatus.container);          // network status pill
+
+    // Netplay only: show the opponent's name on the top strip and enable the
+    // tap-to-view-profile popup (opponent + self). Single-player / campaign keep
+    // the AI/anonymous opponent non-clickable.
+    if (this.netEnabled && this.oppProfile) {
+      this.drawOpponentLabel();
+      this.profilePopup = new ProfilePopup(this.layout.designWidth, this.layout.designHeight);
+      this.container.addChild(this.profilePopup.container); // topmost — above status pill
+    }
+  }
+
+  /** Opponent nickname on the top HUD strip, right-aligned before the settings button. */
+  private drawOpponentLabel(): void {
+    const r = this.hudView.getEnemyInfoRect();
+    const label = new PIXI.Text(this.oppProfile!.name || '?', {
+      fontSize: Math.max(11, Math.round(r.h * 0.34)),
+      fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace',
+    });
+    label.anchor.set(1, 0.5);
+    label.x = r.x + r.w - 8;
+    label.y = r.y + r.h / 2;
+    this.container.addChild(label);
   }
 
   // ── Input handling (design-space coords) ─────────────────────────────────
@@ -264,6 +302,10 @@ export class GameRenderer {
   private handleDown(x: number, y: number): void {
     this.downX = x;
     this.downY = y;
+
+    // Profile popup open → its own dim backdrop (PIXI interactive) handles the
+    // close tap; swallow the manual hit-test so nothing behind it fires.
+    if (this.profilePopup?.isOpen) return;
 
     // Pause overlay intercepts all input
     if (this.hudView.isPaused) {
@@ -293,10 +335,23 @@ export class GameRenderer {
       return;
     }
 
+    // Opponent profile (top strip, netplay only — no cards live up there).
+    if (this.profilePopup && this.oppProfile && this.overRect(x, y, this.hudView.getEnemyInfoRect())) {
+      this.profilePopup.show(this.oppProfile);
+      return;
+    }
+
     // Hand cards — defer drag start until we see movement (tap vs drag)
     const cardIdx = this.handView.hitTestCardIndex(x, y);
     if (cardIdx >= 0) {
       this.pendingCardDown = { x, y, handIndex: cardIdx };
+      return;
+    }
+
+    // Local profile (bottom-strip info column) — checked AFTER cards so a card
+    // in the same area always wins; only empty HUD space opens the popup.
+    if (this.profilePopup && this.selfProfile && this.overRect(x, y, this.hudView.getPlayerInfoRect())) {
+      this.profilePopup.show(this.selfProfile);
       return;
     }
 

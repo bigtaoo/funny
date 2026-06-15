@@ -92,11 +92,13 @@ message RoomState {
 }
 
 message MatchStart {
-  string    room_id     = 1;
-  MatchMode mode        = 2;
-  uint64    seed        = 3;
-  uint32    start_frame = 4;
-  uint32    local_side  = 5;
+  string    room_id            = 1;
+  MatchMode mode               = 2;
+  uint64    seed               = 3;
+  uint32    start_frame        = 4;
+  uint32    local_side         = 5;
+  string    opponent_name      = 6;   // 对手展示名（UI 用，纯展示）
+  string    opponent_public_id = 7;   // 对手 9 位数字公开 id（UI 用，纯展示）
 }
 
 message ConnResync {

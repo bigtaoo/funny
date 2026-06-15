@@ -145,6 +145,14 @@ export const zh = {
   'room.error.noServer': '联机服务不可用',
   'room.error.generic': '出错了，请重试',
 
+  // ── 玩家资料弹层（点头像查看，Profile Popup）─────────────────────────────────
+  'profile.title': '玩家资料',
+  'profile.close': '关闭',
+  'profile.id': '公开 ID',
+  'profile.rank': '段位',
+  'profile.you': '（你）',
+  'result.vs': 'vs {name}',
+
   // ── In-battle network status (S1-9) ─────────────────────────────────────────
   'net.waiting': '等待对手',
   'net.reconnecting': '重新连接中',

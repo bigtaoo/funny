@@ -2,6 +2,13 @@ import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
 import { OwnerId, PlayerStats } from '../game/types';
 import { t, TranslationKey } from '../i18n';
+import { ProfilePopup, type ProfileData } from '../render/ProfilePopup';
+
+/** Optional player identities for the result screen's tap-to-view profile popup. */
+export interface ResultProfiles {
+  opponent?: ProfileData;
+  local?: ProfileData;
+}
 
 /** Server-authoritative ELO result (ranked only, from match_over.elo). */
 export interface EloResult {
@@ -83,6 +90,8 @@ export class ResultScene implements Scene {
 
   private readonly localOwner: OwnerId;
   private readonly elo?: EloResult;
+  private readonly profiles?: ResultProfiles;
+  private readonly popup: ProfilePopup;
 
   constructor(
     w: number,
@@ -92,19 +101,24 @@ export class ResultScene implements Scene {
     cb: ResultSceneCallbacks,
     localOwner: OwnerId = 0,
     elo?: EloResult,
+    profiles?: ResultProfiles,
   ) {
     this.container = new PIXI.Container();
     this.w  = w;
     this.h  = h;
     this.localOwner = localOwner;
     this.elo = elo;
+    this.profiles = profiles;
+    this.popup = new ProfilePopup(w, h);
     this.build(winner, stats, cb);
+    this.container.addChild(this.popup.container); // topmost overlay
   }
 
   update(_dt: number): void { /* static scene */ }
 
   destroy(): void {
     this.container.removeAllListeners();
+    this.popup.destroy();
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────
@@ -161,6 +175,18 @@ export class ResultScene implements Scene {
       eloLine.y = headerBottom + h * 0.02;
       this.container.addChild(eloLine);
       headerBottom = eloLine.y + eloLine.height;
+    }
+
+    // Tap-to-view profile lines (netplay only — local then "vs opponent").
+    const local = this.profiles?.local;
+    if (local) {
+      headerBottom = this.addProfileLine(
+        local.name + ' ' + t('profile.you'), headerBottom, local, 0x2c2c2a);
+    }
+    const opp = this.profiles?.opponent;
+    if (opp && opp.name) {
+      headerBottom = this.addProfileLine(
+        t('result.vs', { name: opp.name }), headerBottom, opp, 0xaa2222);
     }
 
     // Badges
@@ -223,6 +249,25 @@ export class ResultScene implements Scene {
         0x33503a, cb.onWatchReplay);
     }
     this.addButton(btnX, btnY, btnW, btnH, t('result.playAgain'), 0x2c2c2a, () => cb.onPlayAgain());
+  }
+
+  /** A centred, tappable "name #id" line that opens its profile card. Returns new bottom y. */
+  private addProfileLine(label: string, top: number, data: ProfileData, color: number): number {
+    const { w, h } = this;
+    const line = new PIXI.Text(label, {
+      fontSize: Math.round(h * 0.03),
+      fill: color,
+      fontFamily: 'monospace',
+      fontWeight: 'bold',
+    });
+    line.anchor.set(0.5, 0);
+    line.x = w / 2;
+    line.y = top + h * 0.018;
+    line.interactive = true;
+    line.cursor = 'pointer';
+    line.on('pointertap', () => this.popup.show(data));
+    this.container.addChild(line);
+    return line.y + line.height;
   }
 
   private addButton(

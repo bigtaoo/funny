@@ -1,6 +1,9 @@
 # 查看玩家资料弹层（Profile Popup）实现计划
 
-> 状态：**待实现**（2026-06-15 拍板，留新会话做）。形态已定：**点击头像 → 弹出资料卡**。
+> 状态：**已实现**（2026-06-15）。形态：**点击头像/槽位/对手名 → 弹出资料卡**。
+> 落地摘要见文末「实现记录」。
+>
+> 形态已定：**点击头像 → 弹出资料卡**。
 > 背景：9 位数字公开 id 是**纯展示**字段，所有交互（REST/auth/路由/结算/匹配）一律用 uuid(accountId)，
 > publicId 从不做标识符。已落地的展示点见下「现状」。本计划补「查看**其他**玩家资料」的入口。
 
@@ -85,3 +88,34 @@ ticket 有 `opponent`(名字) 但客户端看不到 ticket 内部，publicId 也
 - 改 `transport.proto` 必 `npm run proto:gen`；改 `webpack.config.js`/`DefinePlugin` 才需重启 dev server（本任务不涉及）。
 - 已确认的关键事实：`gameserver` 的 `Slot.name` = **对手**名字（来自对方视角的 `ticket.opponent`），
   所以 `match_start` 里「对手名」直接取 `s.name`，不要再去找另一个 slot。
+
+## 实现记录（2026-06-15）
+
+**A 对手身份下发（服务端）**：`TicketClaims.opponentPublicId`；`transport.proto MatchStart` 加
+`opponent_name=6 / opponent_public_id=7`（`npm run proto:gen` 重生 client proto + gameserver 手写
+`proto/transport.ts` 的 `match_start` encode 补两字段）；`Matchmaking.QueueEntry.publicId` +
+`enqueue(accountId,name,publicId,elo)`；`Matchsvc` onPair/startMatch/sign 全程透传 publicId（gateway 早已
+经 `/mm/queue/enqueue` 带 publicId 入参，无需改 gateway）；`gameserver` `RoomManager.join` /
+`Room.addPlayer` / `Slot.publicId` 透传，`Room.launch` 的 `match_start` 取 `s.name`/`s.publicId`。
+
+**B 客户端接收**：`NetInputSource.MatchStartInfo` 加 `opponentName/opponentPublicId`，`onMatchStart` 填入。
+
+**C 组件**：新建 `client/src/render/ProfilePopup.ts`——PIXI interactive 覆盖层（暗底点击关闭 + 资料卡
+`buildAvatar` 头像 + 昵称 + `#publicId` + 可选 rank/ELO + 关闭按钮）。跨场景统一：宿主只需把
+`popup.container` 加到最顶层，并在自己的 down-handler 里 `if (popup.isOpen) return`（弹层自带 PIXI 关闭）。
+
+**D 三入口**：① `RoomScene` 每个占用槽位注册 hit → `openProfile(slot)`；render() 末尾恒重加 popup 容器。
+② `GameRenderer`（仅 netplay）：top строй右侧绘对手昵称 + `HUDView.getEnemyInfoRect()`/`getPlayerInfoRect()`
+两个命中区——对手区在卡牌检测前、自己区在卡牌检测后（卡牌优先）；`GameScene.options.profiles` 透传，
+`app.goGameNet` 用 `info.opponentName/publicId` + 本地 `playerName()`/`nw_player_public_id`/`saveManager.pvp`
+组 profiles。③ `ResultScene` 加可选 `ResultProfiles{opponent,local}`，标题下渲染「{本地名}（你）」+
+「vs {对手名}」两行可点（PIXI interactive）→ 弹层；`app.goResult` 第 6 参透传。
+
+**E i18n**：`profile.{title,close,id,rank,you}` + `result.vs` zh/en/de 全翻。
+
+**验证**：server `tsc -b` 六包 + matchsvc 17/gameserver 42/gateway 5 测试绿（`matchmaking.test`/`room.test`/
+`roomManager.test` 同步加 publicId 参数）；client `tsc` + 132 测试 + web 构建绿。
+
+**未做**：对手 rank/ELO 未下发（`match_start` 只带 name+publicId），故对手卡不显示段位；本地卡显示段位。
+要显示对手段位需再扩 `match_start`（带 opponent elo/rank）或 meta 查询，本期不做。vs-AI/campaign 无真人
+对手，不接线。

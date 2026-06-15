@@ -102,15 +102,15 @@ export class Matchsvc {
 
   /**
    * 开始 ranked 匹配（elo 由 gateway 向 meta 取后带入）。已在房 / 已在队则忽略。
-   * publicId 接收但不入队列：ranked 配对后立即开局，不展示房间 slot（无 room_state），
-   * 故公开 id 仅 friendly 房需要。
+   * publicId 随队列条目带入：ranked 不展示房间 slot，但开局后要把对手 publicId 写进
+   * ticket → match_start，供对局内资料弹层展示。
    */
-  enqueue(accountId: string, name: string, _publicId: string, elo: number): void {
+  enqueue(accountId: string, name: string, publicId: string, elo: number): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       log.warn('enqueue ignored: already in room/queue', { accountId });
       return;
     }
-    this.matchmaking.enqueue(accountId, name, elo);
+    this.matchmaking.enqueue(accountId, name, publicId, elo);
     log.info('enqueued for ranked', { accountId, elo, queueSize: this.matchmaking.size });
   }
 
@@ -121,7 +121,11 @@ export class Matchsvc {
   /** Matchmaking 配对成功 → 直接开局（无 ready / 房主环节）。 */
   private onPair(a: QueueEntry, b: QueueEntry): void {
     log.info('ranked pair matched', { a: a.accountId, b: b.accountId, eloA: a.elo, eloB: b.elo });
-    this.startMatch('ranked', { accountId: a.accountId, name: a.name }, { accountId: b.accountId, name: b.name });
+    this.startMatch(
+      'ranked',
+      { accountId: a.accountId, name: a.name, publicId: a.publicId },
+      { accountId: b.accountId, name: b.name, publicId: b.publicId },
+    );
   }
 
   // ───────────────────────── friendly 房间 ─────────────────────────
@@ -188,8 +192,8 @@ export class Matchsvc {
       this.destroyRoom(room); // 大厅房使命完成；对局态归 gameserver
       this.startMatch(
         'friendly',
-        { accountId: s0!.accountId, name: s0!.name },
-        { accountId: s1!.accountId, name: s1!.name },
+        { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId },
+        { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId },
       );
     }
   }
@@ -209,8 +213,8 @@ export class Matchsvc {
     this.destroyRoom(room); // 大厅房使命完成；对局态归 gameserver
     this.startMatch(
       'friendly',
-      { accountId: s0!.accountId, name: s0!.name },
-      { accountId: s1!.accountId, name: s1!.name },
+      { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId },
+      { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId },
     );
   }
 
@@ -270,8 +274,8 @@ export class Matchsvc {
 
   private startMatch(
     mode: 'friendly' | 'ranked',
-    a: { accountId: string; name: string },
-    b: { accountId: string; name: string },
+    a: { accountId: string; name: string; publicId: string },
+    b: { accountId: string; name: string; publicId: string },
   ): void {
     const gameUrl = this.games.pick();
     if (!gameUrl) {
@@ -289,13 +293,18 @@ export class Matchsvc {
     const seed = randomInt(1, 2 ** 48); // < 2^48，落在安全整数内
     log.info('match starting', { mode, roomId, gameUrl, a: a.accountId, b: b.accountId, seed });
 
-    const sign = (self: { accountId: string; name: string }, opp: { accountId: string; name: string }, side: 0 | 1): string => {
+    const sign = (
+      self: { accountId: string; name: string; publicId: string },
+      opp: { accountId: string; name: string; publicId: string },
+      side: 0 | 1,
+    ): string => {
       const claims: TicketClaims = {
         roomId,
         seed,
         side,
         mode,
         opponent: opp.name,
+        opponentPublicId: opp.publicId,
         gameUrl,
         accountId: self.accountId,
       };

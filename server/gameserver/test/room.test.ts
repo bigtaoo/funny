@@ -75,8 +75,8 @@ describe('Room', () => {
 
   /** 两张 ticket 凑齐即开局（无 ready / 房主）。 */
   function startMatch(): void {
-    room.addPlayer(asConn(c0), 'n0');
-    room.addPlayer(asConn(c1), 'n1');
+    room.addPlayer(asConn(c0), 'n0', '');
+    room.addPlayer(asConn(c1), 'n1', '');
   }
 
   it('双方凑齐自动开局：同 seed（来自 ticket）+ 各自 local_side', () => {
@@ -90,9 +90,9 @@ describe('Room', () => {
   });
 
   it('第一名就位不开局，第二名到位才 launch', () => {
-    room.addPlayer(asConn(c0), 'n0');
+    room.addPlayer(asConn(c0), 'n0', '');
     expect(lastOf(c0, 'match_start')).toBeUndefined();
-    room.addPlayer(asConn(c1), 'n1');
+    room.addPlayer(asConn(c1), 'n1', '');
     expect(lastOf(c0, 'match_start')).toBeDefined();
   });
 
@@ -222,8 +222,8 @@ describe('Room', () => {
     });
     const r0 = makeConn(0, 'acc-0');
     const r1 = makeConn(1, 'acc-1');
-    ranked.addPlayer(asConn(r0), 'n0');
-    ranked.addPlayer(asConn(r1), 'n1');
+    ranked.addPlayer(asConn(r0), 'n0', '');
+    ranked.addPlayer(asConn(r1), 'n1', '');
     ranked.reportResult(0, 'H', 0);
     ranked.reportResult(1, 'H', 0);
     await vi.runAllTimersAsync(); // ranked 等 report 回 ELO 再下发 match_over

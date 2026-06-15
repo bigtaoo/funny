@@ -28,6 +28,7 @@ import { matchStateHash } from './net/judgeRunner';
 const log = netLog('app');
 import { MatchMode } from './net/proto/transport';
 import { setBakeRenderer } from './render/bake';
+import type { ProfileData } from './render/ProfilePopup';
 
 /** flags key — set after the first-launch intro has been seen (was the standalone nw_seen_intro key). */
 const SEEN_INTRO_FLAG = 'seen_intro';
@@ -506,6 +507,20 @@ export async function startApp(platform: IPlatform): Promise<void> {
     const { width, height } = platform.getScreenSize();
     const netLayout  = createLayout(width, height, side);
 
+    // Player identities for the tap-to-view profile popup (in-battle + result).
+    // Opponent name/id arrive in match_start (server-supplied); the local card
+    // also carries our rank/ELO from the synced save.
+    const localPvp = saveManager.get().pvp;
+    const oppProfile: ProfileData = { name: info.opponentName, publicId: info.opponentPublicId };
+    const localProfile: ProfileData = {
+      name: playerName(),
+      publicId: platform.storage.getItem(PLAYER_PUBLIC_ID_KEY) ?? '',
+      rankKey: localPvp.rank,
+      elo: localPvp.elo,
+      isSelf: true,
+    };
+    const profiles = { opponent: oppProfile, local: localProfile };
+
     // Record the confirmed lockstep stream locally so net matches also offer
     // "watch replay" (S1-RP). The server-confirmed stream already carries BOTH
     // sides' commands, so the recording reconstructs the full match.
@@ -540,7 +555,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
       // ranked 局末 gameserver 已写 saves.pvp（elo/rank/streak）→ 拉一次刷新本地，
       // 让大厅段位徽章即时反映新分（reconcile 取云端权威段）。
       if (isRanked) void saveManager.refresh();
-      void goResult(winner, stats, localOwner, keepReplay(replay), elo);
+      void goResult(winner, stats, localOwner, keepReplay(replay), elo, profiles);
     };
 
     const scene = new GameScene(netLayout, input, {
@@ -563,7 +578,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
         finishNet(winner, stats, lastElo, buildNetReplay(winner));
       },
       onExitToLobby() { session.close(); goLobby(); },
-    }, { engine, net: true });
+    }, { engine, net: true, profiles });
 
     // Route server room/net events to the live game scene's status overlay; the
     // session keeps feeding frame_batch to its NetInputSource regardless. Keep
@@ -589,6 +604,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
     localOwner: OwnerId = 0,
     replay?: Replay,
     elo?: EloResult,
+    profiles?: { opponent?: ProfileData; local?: ProfileData },
   ): Promise<void> {
     inLobby = false;
     platform.onGameplayStop();
@@ -597,7 +613,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
       onPlayAgain() { goLobby(); },
       // Offer "watch replay" only for locally-recorded matches.
       ...(replay ? { onWatchReplay: () => goReplay(replay) } : {}),
-    }, localOwner, elo));
+    }, localOwner, elo, profiles));
   }
 
   // First launch → background-story intro; afterwards the entry gating decides

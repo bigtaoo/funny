@@ -146,6 +146,14 @@ export const en: Record<TranslationKey, string> = {
   'room.error.noServer': 'Online play unavailable',
   'room.error.generic': 'Something went wrong',
 
+  // ── Profile popup (tap an avatar to view) ────────────────────────────────────
+  'profile.title': 'Player profile',
+  'profile.close': 'Close',
+  'profile.id': 'Public ID',
+  'profile.rank': 'Rank',
+  'profile.you': '(you)',
+  'result.vs': 'vs {name}',
+
   // ── In-battle network status (S1-9) ─────────────────────────────────────────
   'net.waiting': 'Waiting for opponent',
   'net.reconnecting': 'Reconnecting',
