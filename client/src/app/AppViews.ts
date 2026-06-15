@@ -1,0 +1,88 @@
+// AppViews — the render-free seam between the app orchestration core
+// (createAppCore) and the view layer. The core decides *what* screen to show and
+// *what* callbacks/business-logic each screen runs; an AppViews implementation
+// decides *how* to present it.
+//
+//   PixiAppViews (app.ts)        — real game: manager.goto(new XxxScene(...))
+//   HeadlessAppViews (test)      — full-link E2E: records the current screen +
+//                                  exposes the callbacks so a test can drive it
+//                                  without PixiJS / rendering.
+//
+// IMPORTANT: every import here is `import type` (erased at runtime) so this module
+// — and createAppCore which imports it — never pulls pixi.js-legacy into the test
+// runtime. Do NOT add a value import of any scene class.
+
+import type { OwnerId, PlayerStats, Replay } from '../game';
+import type { NetState } from '../net/NetClient';
+import type { RoomState, RoomError, PeerDc, MatchOver } from '../net/proto/transport';
+import type { ProfileData } from '../render/ProfilePopup';
+
+import type { IntroSceneCallbacks } from '../scenes/IntroScene';
+import type { LobbySceneCallbacks } from '../scenes/LobbyScene';
+import type { SettingsSceneCallbacks } from '../scenes/SettingsScene';
+import type { LoginSceneCallbacks } from '../scenes/LoginScene';
+import type { ShopSceneCallbacks } from '../scenes/ShopScene';
+import type { GachaSceneCallbacks } from '../scenes/GachaScene';
+import type { CampaignMapCallbacks } from '../scenes/CampaignMapScene';
+import type { LevelPrepCallbacks } from '../scenes/LevelPrepScene';
+import type { CollectionCallbacks } from '../scenes/CollectionScene';
+import type { ReplaySceneCallbacks } from '../scenes/ReplayScene';
+import type { ResultSceneCallbacks, EloResult } from '../scenes/ResultScene';
+import type { GameSceneCallbacks, GameSceneOptions } from '../scenes/GameScene';
+import type { RoomSceneCallbacks } from '../scenes/RoomScene';
+
+/** Live handle for the room scene — the core forwards NetSession control events to it. */
+export interface RoomView {
+  applyRoomState(s: RoomState): void;
+  applyRoomError(e: RoomError): void;
+  applyPeerDc(p: PeerDc): void;
+  applyNetState(s: NetState): void;
+}
+
+/** Live handle for a netplay game scene — the core forwards data-plane events to it. */
+export interface NetGameView {
+  applyNetState(s: NetState): void;
+  applyPeerDc(p: PeerDc): void;
+  /** May fire the scene's onNetMatchOver callback (server-driven end). */
+  applyMatchOver(m: MatchOver): void;
+}
+
+/** ResultScene takes positional args, so the core hands the view a props bag. */
+export interface ResultViewProps {
+  winner: OwnerId | null;
+  stats: [PlayerStats, PlayerStats];
+  localOwner: OwnerId;
+  elo?: EloResult;
+  profiles?: { opponent?: ProfileData; local?: ProfileData };
+  cb: ResultSceneCallbacks;
+}
+
+/**
+ * One method per screen the core navigates to. Props == the existing scene
+ * callback objects. Only the two scenes the core holds a reference to (room,
+ * netplay game) return a handle.
+ */
+export interface AppViews {
+  showIntro(cb: IntroSceneCallbacks): void;
+  showLobby(cb: LobbySceneCallbacks): void;
+  showSettings(cb: SettingsSceneCallbacks): void;
+  showLogin(cb: LoginSceneCallbacks): void;
+  showShop(cb: ShopSceneCallbacks): void;
+  showGacha(cb: GachaSceneCallbacks): void;
+  showCampaignMap(cb: CampaignMapCallbacks): void;
+  showLevelPrep(cb: LevelPrepCallbacks): void;
+  showCollection(cb: CollectionCallbacks): void;
+  showReplay(replay: Replay, cb: ReplaySceneCallbacks): void;
+  showResult(props: ResultViewProps): void;
+
+  /** Local / campaign match (scene builds its own engine via createLocalMatch). */
+  showGame(cb: GameSceneCallbacks, opts: GameSceneOptions): void;
+
+  // Held-by-reference scenes return a handle the core pushes server events into.
+  showRoom(cb: RoomSceneCallbacks): RoomView;
+  /**
+   * Netplay match. The core passes the pre-built engine in `opts.engine` plus the
+   * local side; the view turns `localSide` into the side-flipped layout.
+   */
+  showGameNet(localSide: OwnerId, cb: GameSceneCallbacks, opts: GameSceneOptions): NetGameView;
+}

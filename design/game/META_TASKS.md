@@ -100,6 +100,7 @@
 
 ### 联调出口
 - [ ] **S1-9 双真机对局**：两台设备好友房一整局逐 tick 一致；中途断一台能重连续打。**依赖**：S1-3,4,7,8。
+- [~] **S1-E2E 全链路 headless 客户端测试**（2026-06-15）：把散落各处的「双真机手动验收」自动化掉一大半。用**真实客户端编排核心**（`client/src/app/createAppCore.ts`，从 `startApp` 抽出的 PIXI-free 层，经 `AppViews` 依赖倒置接缝；`PixiAppViews`=真游戏、`HeadlessAppViews`=测试）在 Node 里 headless 跑全链路，无渲染。`test/harness/HeadlessPlatform` 的 `connectSocket` 记录每个打开的 WS URL 作断言接缝。`client/test/e2e/full-link.e2e.ts`（`npm run test:e2e`，连真栈 meta+gateway+matchsvc+game+commercial+mongo）覆盖：注册→充值/商店购买/盲盒抽卡（服务器权威回推）→双客户端排位匹配。**断言**：gateway 用服务器下发的 `:8086/gw`（非 meta `:18080` / 非错误 fallback）、`match_found` 下发 game_url、数据面带 `?ticket=`、锁步帧推进。**实跑验证通过**（2 用例全绿）。**单进程跑两 netplay 引擎因模块级 unit/building id 计数器交错无法对拍确定性胜负**，故 e2e 只断言端口/握手/帧推进、不断言一致 winner；**完整对局到结算 + 逐 tick 一致 + conn_resync 续打仍需各自进程**（留 S1-9 / CI）。**待办**：GitHub Actions CI（docker compose prod 起全栈 + 给 gateway/matchsvc/game/commercial 补轻量 `/health` 探针）。
 
 ---
 

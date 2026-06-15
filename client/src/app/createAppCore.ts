@@ -1,0 +1,597 @@
+// createAppCore — the render-free orchestration core of the client. Owns i18n
+// init, SaveManager / ApiClient / ReplayStore, the NetSession wiring, and every
+// navigation + business-logic decision (which port to call, in what order). It
+// talks to the screen layer only through the `AppViews` interface, so the exact
+// same code runs under PixiAppViews (real game) and HeadlessAppViews (full-link
+// E2E). It uses only the render-free methods of IPlatform — never getCanvas /
+// setupInput — and imports scene types with `import type` so PixiJS never leaks
+// into this module's runtime graph.
+//
+// This is a behaviour-preserving extraction of the old startApp() closure; see
+// app.ts for the thin PIXI shell that constructs PixiAppViews and calls start().
+
+import type { IPlatform } from '../platform/IPlatform';
+import type { AppViews, RoomView, NetGameView } from './AppViews';
+import { getUpgradeDef, upgradeCost } from '../game/balance/pveUpgrades';
+import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, RecordingInputSource } from '../game';
+import type { OwnerId, PlayerStats, MatchStartInfo, Replay } from '../game';
+import { computeStars, remainingHpPct, applyCampaignClear } from '../game/meta/campaignRewards';
+import { initI18n, t, type TranslationKey } from '../i18n';
+import { LocalSaveStore, SaveManager, ReplayStore } from '../game/meta';
+import { ApiClient, ApiError, type AuthResult } from '../net/ApiClient';
+import { getApiBaseUrl, getGatewayWsUrl } from '../net/config';
+import { NetSession } from '../net/NetSession';
+import { netLog } from '../net/log';
+import { matchStateHash } from '../net/judgeRunner';
+import { MatchMode } from '../net/proto/transport';
+import { EQUIP_SLOT } from './equipSlot';
+import type { ProfileData } from '../render/ProfilePopup';
+import type { AuthOutcome } from '../scenes/LoginScene';
+import type { RenameOutcome } from '../scenes/SettingsScene';
+import type { EloResult } from '../scenes/ResultScene';
+
+const log = netLog('app');
+
+/** flags key — set after the first-launch intro has been seen. */
+const SEEN_INTRO_FLAG = 'seen_intro';
+/** Persisted JWT for a real (non-anonymous) account, so logins survive restarts. */
+const TOKEN_KEY = 'nw_token';
+/** Persisted display name shown in the lobby profile chip / settings screen. */
+const PLAYER_NAME_KEY = 'nw_player_name';
+/** Persisted 9-digit public id (player-facing identifier; accountId stays internal). */
+const PLAYER_PUBLIC_ID_KEY = 'nw_player_public_id';
+/** Coin cost to change the display name. Mirrors server RENAME_COST; server authoritative. */
+const RENAME_COST = 500;
+
+export interface AppCore {
+  /** First launch → intro; otherwise entry gating (login vs lobby). Call once. */
+  start(): void;
+  /** Called by the shell after a window resize (shell already re-rendered). */
+  onResized(): void;
+}
+
+export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
+  // i18n must be ready before any scene builds its texts / playerName() runs.
+  initI18n(platform.getLanguage(), platform.storage, platform.supportedLocales);
+
+  // ── SaveManager: local-first save + optional cloud sync ─────────────────────
+  const baseUrl = getApiBaseUrl(platform.storage);
+  const api = baseUrl ? new ApiClient(baseUrl) : undefined;
+  const saveManager = new SaveManager({
+    store: new LocalSaveStore(platform.storage),
+    api,
+    getCredential: () => platform.getAuthCredential(),
+    onProfile: ({ displayName, publicId, gatewayUrl: gw }) => {
+      applyGatewayUrl(gw);
+      if (publicId) platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, publicId);
+      if (!displayName) return;
+      if (platform.storage.getItem(PLAYER_NAME_KEY) === displayName) return;
+      platform.storage.setItem(PLAYER_NAME_KEY, displayName);
+      if (inLobby) goLobby();
+    },
+  });
+
+  const replayStore = new ReplayStore(platform.storage);
+
+  // ── NetSession: online room + lockstep transport (three-channel, M20) ───────
+  let gatewayUrl = getGatewayWsUrl(platform.storage);
+  let netSession: NetSession | null = null;
+  function getNetSession(): NetSession | null {
+    if (netSession) return netSession;
+    if (!api || !gatewayUrl) return null;
+    netSession = new NetSession(platform, gatewayUrl, api, () => platform.getAuthCredential());
+    netSession.handlers.onMatchStart = (info) => goGameNet(info);
+    return netSession;
+  }
+
+  /** Adopt the server-provided gateway WS address (from auth/save). */
+  function applyGatewayUrl(url?: string): void {
+    if (!url || url === gatewayUrl) return;
+    gatewayUrl = url;
+    if (netSession) { netSession.close(); netSession = null; }
+    if (inLobby) goLobby();
+  }
+
+  // ── Navigation state ────────────────────────────────────────────────────────
+  let inLobby = false;
+  let offlineMode = false;
+
+  function goIntro(): void {
+    inLobby = false;
+    views.showIntro({
+      onFinish() {
+        saveManager.setFlag(SEEN_INTRO_FLAG, true);
+        void resolveEntry();
+      },
+    });
+  }
+
+  /** Display name for the profile chip: persisted name, else a generic guest label. */
+  function playerName(): string {
+    return platform.storage.getItem(PLAYER_NAME_KEY) || t('settings.guest');
+  }
+
+  function goLobby(opts?: { offline?: boolean }): void {
+    if (opts?.offline !== undefined) offlineMode = opts.offline;
+    inLobby = true;
+    platform.onGameplayStop();
+    const pvp = saveManager.get().pvp;
+    const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
+    const online = loggedIn && !!api && !!gatewayUrl;
+    views.showLobby({
+      onStartGame(_opponentName: string) { goGame(); },
+      onStartRanked() { goRoom({ autoRanked: true }); },
+      online,
+      onStartCampaign(_levelIndex: number) { goCampaignMap(); },
+      onOpenRoom() { goRoom(); },
+      onOpenShop() { goShop(); },
+      onOpenProfile() { goSettings(); },
+      playerName: playerName(),
+      pvp: { rank: pvp.rank, elo: pvp.elo },
+      offline: offlineMode,
+      onLogin: () => goLogin(),
+      onLogout: loggedIn ? () => doLogout() : undefined,
+    });
+  }
+
+  function goSettings(): void {
+    inLobby = false;
+    const pvp = saveManager.get().pvp;
+    const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
+    const canRename = !offlineMode && !!api && loggedIn;
+    views.showSettings({
+      onBack() { goLobby(); },
+      playerName: playerName(),
+      ...(platform.storage.getItem(PLAYER_PUBLIC_ID_KEY)
+        ? { publicId: platform.storage.getItem(PLAYER_PUBLIC_ID_KEY)! }
+        : {}),
+      pvp: { rank: pvp.rank, elo: pvp.elo },
+      offline: offlineMode,
+      onLogin: () => goLogin(),
+      onLogout: loggedIn ? () => doLogout() : undefined,
+      ...(canRename
+        ? {
+            renameCost: RENAME_COST,
+            getCoins: () => saveManager.get().wallet.coins,
+            onRename: doRename,
+          }
+        : {}),
+    });
+  }
+
+  async function doRename(name: string): Promise<RenameOutcome> {
+    if (!api) return { ok: false, key: 'settings.renameFail' };
+    try {
+      const { save, displayName } = await api.rename(name);
+      saveManager.adoptServer(save);
+      platform.storage.setItem(PLAYER_NAME_KEY, displayName);
+      return { ok: true, name: displayName };
+    } catch (e) {
+      console.error('[rename] failed', e);
+      return {
+        ok: false,
+        key: e instanceof ApiError && e.code === 'INSUFFICIENT_FUNDS'
+          ? 'settings.renameInsufficient' : 'settings.renameFail',
+      };
+    }
+  }
+
+  function goLogin(): void {
+    inLobby = false;
+    views.showLogin({
+      onPlayOffline() { goLobby({ offline: true }); },
+      onLogin: (loginId, password) => doAuth(() => api!.login(loginId, password), loginId),
+      onRegister: (loginId, password, displayName) =>
+        doAuth(() => api!.register(loginId, password, displayName), displayName || loginId),
+    });
+  }
+
+  async function doAuth(call: () => Promise<AuthResult>, name?: string): Promise<AuthOutcome> {
+    if (!api) {
+      console.error('[auth] no API base configured (__NW_API_BASE__ empty) — request not sent');
+      return { ok: false, errorKey: 'auth.err.network', detail: 'API base not configured' };
+    }
+    try {
+      const res = await call();
+      platform.storage.setItem(TOKEN_KEY, res.token);
+      applyGatewayUrl(res.gatewayUrl);
+      const resolvedName = res.displayName || name;
+      if (resolvedName) platform.storage.setItem(PLAYER_NAME_KEY, resolvedName);
+      if (res.publicId) platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, res.publicId);
+      await saveManager.adoptSession(res.accountId);
+      goLobby({ offline: false });
+      return { ok: true };
+    } catch (e) {
+      console.error('[auth] request failed', e);
+      const detail =
+        e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e);
+      return { ok: false, errorKey: mapAuthError(e), detail };
+    }
+  }
+
+  function doLogout(): void {
+    platform.storage.removeItem(TOKEN_KEY);
+    platform.storage.removeItem(PLAYER_NAME_KEY);
+    platform.storage.removeItem(PLAYER_PUBLIC_ID_KEY);
+    api?.setToken(null);
+    goLogin();
+  }
+
+  async function resolveEntry(): Promise<void> {
+    let cred: { kind: string } | null = null;
+    try { cred = await platform.getAuthCredential(); } catch { cred = null; }
+    if (cred?.kind === 'wx') {
+      void saveManager.bootstrap();
+      goLobby({ offline: false });
+      return;
+    }
+    if (!api) { goLobby({ offline: true }); return; }
+    const token = platform.storage.getItem(TOKEN_KEY);
+    if (token) {
+      api.setToken(token);
+      void saveManager.adoptSession(saveManager.get().accountId);
+      goLobby({ offline: false });
+      return;
+    }
+    goLogin();
+  }
+
+  function goRoom(opts?: { autoRanked?: boolean }): void {
+    inLobby = false;
+    const session = getNetSession();
+    const autoRanked = !!opts?.autoRanked && session !== null;
+    if (opts?.autoRanked && session === null) {
+      log.warn('autoRanked requested but no NetSession (offline / no gateway url)', {
+        hasApi: !!api,
+        gatewayUrl,
+      });
+    }
+    let rankedQueued = false;
+    const queueRanked = (): void => {
+      if (rankedQueued) return;
+      rankedQueued = true;
+      log.info('entering ranked queue (createRanked)');
+      session?.createRanked();
+    };
+    const view: RoomView = views.showRoom({
+      available: session !== null,
+      autoRanked,
+      onBack() {
+        session?.close();
+        if (session) session.handlers = { onMatchStart: (info) => goGameNet(info) };
+        goLobby();
+      },
+      createRoom() { session?.createRoom(); },
+      joinRoom(code: string) { session?.joinRoom(code); },
+      setReady(ready: boolean) { session?.setReady(ready); },
+      startMatch() { session?.startMatch(); },
+      createRanked() { session?.createRanked(); },
+      cancelQueue() { rankedQueued = false; session?.cancelQueue(); },
+    });
+
+    if (session) {
+      session.handlers = {
+        onMatchStart: (info) => goGameNet(info),
+        onRoomState: (s) => view.applyRoomState(s),
+        onRoomError: (e) => view.applyRoomError(e),
+        onPeerDc:    (p) => view.applyPeerDc(p),
+        onNetState:  (s) => {
+          view.applyNetState(s);
+          if (autoRanked && s === 'open') queueRanked();
+        },
+      };
+      session.connect();
+      if (autoRanked && session.gateway.getState() === 'open') queueRanked();
+    }
+  }
+
+  function goShop(): void {
+    if (!api) { goLobby(); return; }
+    const client = api;
+    inLobby = false;
+    views.showShop({
+      onBack() { goLobby(); },
+      getCoins: () => saveManager.get().wallet.coins,
+      getOwnedSkins: () => saveManager.get().inventory.skins,
+      loadItems: () => client.getShopItems(),
+      async buy(itemId) {
+        try {
+          const { save } = await client.shopBuy(itemId);
+          saveManager.adoptServer(save);
+          return { ok: true };
+        } catch (e) {
+          return {
+            ok: false,
+            key: e instanceof ApiError && e.code === 'INSUFFICIENT_FUNDS'
+              ? 'shop.insufficient' : 'shop.error',
+          };
+        }
+      },
+      async recharge(code) {
+        const tier = rechargeTier(code);
+        if (!tier) return { ok: false, key: 'shop.rechargeFail' };
+        try {
+          const { save, granted } = await client.iapVerify(`dev-${Date.now()}`, `tier:${tier}`);
+          saveManager.adoptServer(save);
+          return { ok: true, coins: granted };
+        } catch {
+          return { ok: false, key: 'shop.rechargeFail' };
+        }
+      },
+      openGacha() { goGacha(); },
+    });
+  }
+
+  function goGacha(): void {
+    if (!api) { goLobby(); return; }
+    const client = api;
+    inLobby = false;
+    views.showGacha({
+      onBack() { goShop(); },
+      getCoins: () => saveManager.get().wallet.coins,
+      getPity: (poolId) => saveManager.get().gacha.pity[poolId] ?? 0,
+      loadPools: () => client.getGachaPools(),
+      async draw(poolId, count) {
+        try {
+          const { save, results } = await client.gachaDraw(poolId, count);
+          saveManager.adoptServer(save);
+          return { ok: true, results };
+        } catch (e) {
+          return {
+            ok: false,
+            key: e instanceof ApiError && e.code === 'INSUFFICIENT_FUNDS'
+              ? 'gacha.insufficient' : 'gacha.error',
+          };
+        }
+      },
+    });
+  }
+
+  /** Persist a just-finished local match's recording; returns it for the result screen. */
+  function keepReplay(replay: Replay | undefined): Replay | undefined {
+    if (!replay) return undefined;
+    try {
+      replayStore.save(replay, replay.meta?.recordedAt ?? Date.now());
+    } catch { /* storage full / unavailable — replay still watchable this session */ }
+    return replay;
+  }
+
+  function goGame(): void {
+    inLobby = false;
+    platform.onGameplayStart();
+    views.showGame({
+      onGameEnd(winner, stats, replay) {
+        goResult(winner, stats, 0, keepReplay(replay));
+      },
+      onExitToLobby() { goLobby(); },
+    }, { equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null });
+  }
+
+  function goCampaignMap(): void {
+    inLobby = false;
+    views.showCampaignMap({
+      onBack() { goLobby(); },
+      onSelectLevel(levelId) { goLevelPrep(levelId); },
+      onOpenCollection() { goCollection(goCampaignMap); },
+      getStars: () => saveManager.get().progress.stars,
+      getCleared: () => saveManager.get().progress.cleared,
+    });
+  }
+
+  function goLevelPrep(levelId: string): void {
+    const level = getLevel(levelId);
+    if (!level) { goCampaignMap(); return; }
+    const levelNumber = CAMPAIGN_LEVEL_ORDER.indexOf(levelId) + 1 || 1;
+    inLobby = false;
+    views.showLevelPrep({
+      onBack() { goCampaignMap(); },
+      onStart() { goCampaign(levelId); },
+      levelNumber,
+      getMaterials: () => saveManager.get().materials,
+      getUpgradeLevel: (id) => saveManager.get().pveUpgrades[id] ?? 0,
+      tryUpgrade: (id) => tryUpgrade(id),
+    });
+  }
+
+  function goCollection(back: () => void): void {
+    inLobby = false;
+    views.showCollection({
+      onBack: back,
+      getSkins: () => saveManager.get().inventory.skins,
+      getEquipped: () => saveManager.get().equipped[EQUIP_SLOT] ?? null,
+      equip: (skinId) => {
+        saveManager.update((d) => {
+          if (skinId === null) delete d.equipped[EQUIP_SLOT];
+          else d.equipped[EQUIP_SLOT] = skinId;
+        });
+      },
+    });
+  }
+
+  function tryUpgrade(id: string): boolean {
+    const def = getUpgradeDef(id);
+    if (!def) return false;
+    const save = saveManager.get();
+    const lvl = save.pveUpgrades[id] ?? 0;
+    const cost = upgradeCost(def, lvl);
+    if (!cost) return false; // already maxed
+    if ((save.materials[cost.material] ?? 0) < cost.amount) return false;
+    saveManager.update((d) => {
+      d.materials[cost.material] = (d.materials[cost.material] ?? 0) - cost.amount;
+      d.pveUpgrades[id] = (d.pveUpgrades[id] ?? 0) + 1;
+    });
+    return true;
+  }
+
+  function goCampaign(levelId: string | undefined): void {
+    const level = levelId ? getLevel(levelId) : null;
+    if (!level || !levelId) { goLobby(); return; }
+    inLobby = false;
+    platform.onGameplayStart();
+    views.showGame({
+      onGameEnd(winner, stats, replay) {
+        if (winner === 0) {
+          const pct = remainingHpPct(stats[0].damageTakenByBase);
+          const stars = computeStars(level.rewards?.starThresholds, pct);
+          if (stars > 0) {
+            saveManager.update((draft) => {
+              applyCampaignClear(draft, levelId, level, stars);
+            });
+          }
+        }
+        goResult(winner, stats, 0, keepReplay(replay));
+      },
+      onExitToLobby() { goLobby(); },
+    }, {
+      level,
+      pveUpgrades: saveManager.get().pveUpgrades,
+      equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
+    });
+  }
+
+  function goReplay(replay: Replay): void {
+    inLobby = false;
+    platform.onGameplayStart();
+    views.showReplay(replay, {
+      onExit() { goLobby(); },
+    });
+  }
+
+  function goGameNet(info: MatchStartInfo): void {
+    const session = netSession;
+    if (!session) { goLobby(); return; }
+    inLobby = false;
+    platform.onGameplayStart();
+
+    const localOwner = info.localSide as OwnerId;
+
+    const localPvp = saveManager.get().pvp;
+    const oppProfile: ProfileData = { name: info.opponentName, publicId: info.opponentPublicId };
+    const localProfile: ProfileData = {
+      name: playerName(),
+      publicId: platform.storage.getItem(PLAYER_PUBLIC_ID_KEY) ?? '',
+      rankKey: localPvp.rank,
+      elo: localPvp.elo,
+      isSelf: true,
+    };
+    const profiles = { opponent: oppProfile, local: localProfile };
+
+    const recorder = new RecordingInputSource(session.input);
+    const engine = createGameEngine(
+      { seed: info.seed, players: [{ id: 0 }, { id: 1 }], mode: 'netplay' },
+      recorder,
+    );
+    const buildNetReplay = (winner: OwnerId | null): Replay =>
+      recorder.snapshot({
+        seed: info.seed,
+        mode: 'netplay',
+        meta: { recordedAt: Date.now(), winner: winner ?? -1 },
+      });
+
+    const isRanked = info.mode === MatchMode.RANKED;
+    let netResultShown = false;
+    let lastElo: EloResult | undefined;
+    let pending: { winner: OwnerId | null; stats: [PlayerStats, PlayerStats]; replay?: Replay } | null = null;
+    let eloWaitTimer: ReturnType<typeof setTimeout> | null = null;
+    const finishNet = (
+      winner: OwnerId | null,
+      stats: [PlayerStats, PlayerStats],
+      elo?: EloResult,
+      replay?: Replay,
+    ): void => {
+      if (netResultShown) return;
+      netResultShown = true;
+      if (eloWaitTimer) { clearTimeout(eloWaitTimer); eloWaitTimer = null; }
+      if (isRanked) void saveManager.refresh();
+      void goResult(winner, stats, localOwner, keepReplay(replay), elo, profiles);
+    };
+
+    const view: NetGameView = views.showGameNet(localOwner, {
+      onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
+        session.reportResult(matchStateHash(winner, stats), winner ?? 0);
+        const replay = buildNetReplay(winner);
+        if (isRanked) {
+          pending = { winner, stats, replay };
+          eloWaitTimer = setTimeout(() => finishNet(winner, stats, lastElo, replay), 6000);
+        } else {
+          finishNet(winner, stats, undefined, replay);
+        }
+      },
+      onNetMatchOver(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
+        finishNet(winner, stats, lastElo, buildNetReplay(winner));
+      },
+      onExitToLobby() { session.close(); goLobby(); },
+    }, { engine, net: true, profiles });
+
+    session.handlers = {
+      onMatchStart: (i) => goGameNet(i),
+      onNetState:   (s) => view.applyNetState(s),
+      onPeerDc:     (p) => view.applyPeerDc(p),
+      onMatchOver:  (m) => {
+        lastElo = m.elo ? { delta: m.elo.delta, after: m.elo.after, rankAfter: m.elo.rankAfter } : undefined;
+        view.applyMatchOver(m);
+        if (pending) finishNet(pending.winner, pending.stats, lastElo, pending.replay);
+      },
+    };
+  }
+
+  async function goResult(
+    winner: OwnerId | null,
+    stats: [PlayerStats, PlayerStats],
+    localOwner: OwnerId = 0,
+    replay?: Replay,
+    elo?: EloResult,
+    profiles?: { opponent?: ProfileData; local?: ProfileData },
+  ): Promise<void> {
+    inLobby = false;
+    platform.onGameplayStop();
+    await platform.showMidgameAd();
+    views.showResult({
+      winner,
+      stats,
+      localOwner,
+      ...(elo ? { elo } : {}),
+      ...(profiles ? { profiles } : {}),
+      cb: {
+        onPlayAgain() { goLobby(); },
+        ...(replay ? { onWatchReplay: () => goReplay(replay) } : {}),
+      },
+    });
+  }
+
+  function start(): void {
+    if (saveManager.getFlag(SEEN_INTRO_FLAG)) {
+      void resolveEntry();
+    } else {
+      goIntro();
+    }
+  }
+
+  function onResized(): void {
+    if (inLobby) goLobby();
+  }
+
+  return { start, onResized };
+}
+
+/** Map a virtual top-up code to an IAP tier (S2-6 dev entry). */
+function rechargeTier(code: string): 'small' | 'mid' | 'large' | null {
+  switch (code.trim().toLowerCase()) {
+    case 'taowang':   return 'mid';
+    case 'taowang-s': return 'small';
+    case 'taowang-l': return 'large';
+    default:          return null;
+  }
+}
+
+/** Map a server auth error code to a LoginScene message key (SA-3). */
+function mapAuthError(e: unknown): TranslationKey {
+  const code = e instanceof ApiError ? e.code : '';
+  switch (code) {
+    case 'LOGIN_ID_TAKEN':      return 'auth.err.taken';
+    case 'INVALID_CREDENTIALS': return 'auth.err.invalid';
+    case 'WEAK_PASSWORD':       return 'auth.err.weak';
+    case 'BAD_REQUEST':         return 'auth.err.loginId';
+    default:                    return 'auth.err.network';
+  }
+}

@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { EQUIP_SLOT } from '../app/equipSlot';
 
 // ── CollectionScene (S3-5) — skin wardrobe (收集) ──────────────────────────────
 //
@@ -12,7 +13,6 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 // client-sync `equipped` segment. Rendering swaps texture only (S3-4) — never
 // stats — so a skin carried into PvP changes nothing but the picture (§5.2).
 
-const EQUIP_SLOT = 'unit'; // single cosmetic slot for now (per-unit slots later)
 
 export interface CollectionCallbacks {
   onBack(): void;

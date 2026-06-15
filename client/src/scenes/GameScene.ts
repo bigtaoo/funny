@@ -3,16 +3,13 @@ import { GameRenderer, type GameProfiles } from '../render/GameRenderer';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import {
-  createGameEngine,
   IGameEngine,
   LevelDefinition,
-  LocalInputSource,
   OwnerId,
   PlayerStats,
-  RecordingInputSource,
-  type GameMode,
   type Replay,
 } from '../game';
+import { createLocalMatch } from '../app/matchEngine';
 import type { NetState } from '../net/NetClient';
 import type { MatchOver, PeerDc } from '../net/proto/transport';
 
@@ -62,64 +59,33 @@ export class GameScene implements Scene {
   private readonly renderer: GameRenderer;
   private readonly cb: GameSceneCallbacks;
 
-  /** Recorder wrapping the local input source (null for injected/net engines). */
-  private readonly recorder: RecordingInputSource | null = null;
-  private readonly recordMode: GameMode = 'pvp';
-  private readonly recordSeed: number = 0;
-  private readonly recordLevelId: string | undefined;
-
   constructor(layout: ILayout, input: InputManager, cb: GameSceneCallbacks, opts: GameSceneOptions = {}) {
     this.cb = cb;
 
     let engine: IGameEngine;
+    // Replay snapshot: locally-simulated matches record their confirmed stream;
+    // an injected (netplay) engine is recorded by the server, so returns undefined.
+    let buildReplay: (winner: OwnerId | null) => Replay | undefined;
     if (opts.engine) {
       // Injected engine (online netplay): the server records this match, not us.
       engine = opts.engine;
+      buildReplay = () => undefined;
     } else {
-      // Locally-simulated match: wrap the input source in a recorder so the
-      // confirmed command stream can be replayed later (S1-RP). seed + mode +
-      // level are everything needed to reconstruct the run.
-      const seed = opts.level
-        ? opts.level.seed
-        : (Date.now() ^ ((Math.random() * 0xffffff) | 0)) >>> 0;
-      const mode: GameMode = opts.level ? 'campaign' : 'pvp';
-      this.recorder = new RecordingInputSource(new LocalInputSource());
-      this.recordMode = mode;
-      this.recordSeed = seed;
-      this.recordLevelId = opts.level?.id;
-      engine = createGameEngine(
-        {
-          seed,
-          players: [{ id: 0 }, { id: 1 }],
-          mode,
-          ...(opts.level ? { level: opts.level, pveUpgrades: opts.pveUpgrades ?? {} } : {}),
-        },
-        this.recorder,
-      );
+      const match = createLocalMatch({
+        ...(opts.level ? { level: opts.level } : {}),
+        ...(opts.pveUpgrades ? { pveUpgrades: opts.pveUpgrades } : {}),
+      });
+      engine = match.engine;
+      buildReplay = match.buildReplay;
     }
 
     this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkin ?? null);
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
-    this.renderer.onGameEnd = (winner, stats) => this.cb.onGameEnd(winner, stats, this.buildReplay(winner));
+    this.renderer.onGameEnd = (winner, stats) => this.cb.onGameEnd(winner, stats, buildReplay(winner));
     this.renderer.onExitToLobby = cb.onExitToLobby;
 
     this.container = this.renderer.container;
-  }
-
-  /** Snapshot the recorded input stream into a Replay (null when not recording). */
-  private buildReplay(winner: OwnerId | null): Replay | undefined {
-    if (!this.recorder) return undefined;
-    return this.recorder.snapshot({
-      seed: this.recordSeed,
-      mode: this.recordMode,
-      ...(this.recordLevelId ? { configRef: this.recordLevelId } : {}),
-      meta: {
-        recordedAt: Date.now(),
-        winner: winner ?? -1,
-        ...(this.recordLevelId ? { levelId: this.recordLevelId } : {}),
-      },
-    });
   }
 
   update(dt: number): void { this.renderer.update(dt); }
