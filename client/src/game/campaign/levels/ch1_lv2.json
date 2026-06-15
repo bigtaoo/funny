@@ -32,6 +32,7 @@
     ]
   },
   "rewards": {
-    "starThresholds": [40, 70, 100]
+    "starThresholds": [40, 70, 100],
+    "materials": { "scrap": 8, "lead": 3, "binding": 1 }
   }
 }

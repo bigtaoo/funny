@@ -10,7 +10,7 @@
 | 1 | 高 | 逻辑内核单测 + 确定性黄金回放测试 | ✅ 完成（33 测试，发现并修复跨实例 ID 不可复现） |
 | 2 | 高 | 增强 AI（经济意识 / 防守用陨石 / 威胁评估 / 升级规划） | ✅ 完成（威胁评估 + 三段式决策 + 难度分级 + 5 测试） |
 | 3 | 中 | 同步 README（刷新时间 / 端口 / 兵种译名 / 目录结构） | ✅ 完成 |
-| 4 | 中 | 完成 ShieldBearer / Archer 骨骼动画接入，去掉占位圆 | ☐ 待办 |
+| 4 | 中 | 完成 ShieldBearer / Archer 骨骼动画接入，去掉占位圆 | ✅ 完成（三兵种早已接入 .tao；受击特效改用 `hit` 挂点，2026-06-15） |
 | 5 | 低 | 重构 `GameEngine.processCommand` 重复分支为 helper | ✅ 完成（抽 `consumeCardSlot` + 闭包 effect，事件顺序不变） |
 | 6 | 低 | 性能：减少 `MovementSystem` 每帧全量拷贝、线性扫描 | ✅ 完成（去掉每帧 Array.from 快照 + 扫描过滤排序） |
 
@@ -90,6 +90,12 @@
 - 制作/接入对应 `.tao`，`UnitView` 去掉占位圆。
 - 受击特效改用挂点 `hit` 坐标。
 
+### ✅ 完成记录（2026-06-15）
+
+- **三兵种均已接入真实 `.tao`**：`UnitView.STICKMAN_ASSETS` 含 infantry/archer/shieldbearer，占位圆只用于 PvE 专属怪种（Ironclad/Runner）和 `.tao` 加载前回退（已是 `stickmanDraft` 草稿）。本项第一条早已落地。
+- **受击特效改用 `hit` 挂点**：`hit` 挂点此前被 `StickmanRuntime` 解析进 `attachmentPoints` 却从未使用（只有 shadow 用到），受击 VFX 播在单位格子中心。新增 `StickmanRuntime.getAttachmentOffset(id)`（返回挂点相对 container 的屏幕偏移，已乘缩放 + 镜像）+ `UnitView.getHitPoint(unitId)`（挂点世界坐标，无 runtime/无挂点回退单位原点）；`GameRenderer` 的 `unit_attack_hit` 改用它播 hit VFX → 命中躯干而非格心。`playHitEffect` 的整体 alpha 闪烁保留（受击反馈）。
+- **第 4 项完成**，6 项改进计划全部完成。
+
 ## 5. 重构 processCommand
 - 抽 `consumeCardSlot(player, owner, handIndex)` 收敛六连重复（spend/stats/play/event/draw/resource）。
 
@@ -115,4 +121,4 @@
 
 ## 进度小结（2026-06-12）
 
-第 1、2、3、5、6 项已完成。**仅剩第 4 项**（ShieldBearer / Archer 骨骼动画接入）——它依赖美术先用 `tools/animator` 导出对应 `.tao` 资源，代码侧接入点（`UnitView` 去占位圆 + 挂点 `hit` 受击特效）属待办，资源到位后再做。
+**6 项全部完成**（2026-06-15 收尾第 4 项：三兵种早已接入 `.tao`，受击特效改走 `hit` 挂点）。

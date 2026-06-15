@@ -218,6 +218,16 @@ function parseRewards(v: unknown, path: string): LevelRewards | undefined {
     }
     rewards.starThresholds = t;
   }
+  if (v.materials !== undefined) {
+    if (!isObject(v.materials)) fail(`${path}.materials`, 'expected a material→amount object');
+    const mats: Record<string, number> = {};
+    for (const [k, amt] of Object.entries(v.materials)) {
+      const n = int(amt, `${path}.materials.${k}`);
+      if (n < 0) fail(`${path}.materials.${k}`, `must be >= 0, got ${n}`);
+      mats[k] = n;
+    }
+    rewards.materials = mats;
+  }
   return rewards;
 }
 

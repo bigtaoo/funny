@@ -101,6 +101,8 @@ export class GameRenderer {
 
   private boardView!:    BoardView;
   private unitView!:     UnitView;
+  /** Equipped skin id (S3-4), passed to UnitView for the texture swap; null = default. */
+  private readonly equippedSkin: string | null = null;
   private buildingView!: BuildingView;
   private handView!:     HandView;
   private hudView!:      HUDView;
@@ -139,10 +141,12 @@ export class GameRenderer {
     netEnabled = false,
     spectator = false,
     profiles: GameProfiles = {},
+    equippedSkin: string | null = null,
   ) {
     this.engine     = engine;
     this.layout     = layout;
     this.netEnabled = netEnabled;
+    this.equippedSkin = equippedSkin;
     this.container  = new PIXI.Container();
     this.oppProfile  = profiles.opponent ?? null;
     this.selfProfile = profiles.local ?? null;
@@ -247,7 +251,7 @@ export class GameRenderer {
   private buildSceneGraph(): void {
     this.boardView    = new BoardView(this.layout);
     this.boardView.markNoBuildCells(this.engine.state.board.getNoBuildCells());
-    this.unitView     = new UnitView(this.boardView, this.layout.localSide);
+    this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkin);
     this.buildingView = new BuildingView(this.boardView);
     this.handView     = new HandView(this.layout);
     this.hudView      = new HUDView(this.layout);
@@ -462,11 +466,11 @@ export class GameRenderer {
       case 'unit_attack_hit': {
         this.unitView.playHitEffect(event.targetId);
         this.unitView.showHpBar(event.targetId);
-        // VFX at the target unit's current position
-        const hitUnit = state.board.units.get(event.targetId);
-        if (hitUnit) {
-          const p = this.boardView.gridToScreen(hitUnit.colExact, hitUnit.rowExact);
-          this.vfxSystem.play('hit', p.x, p.y, 0xffffff);
+        // VFX at the target unit's `hit` attachment point (torso) — falls back
+        // to the grid-cell centre for circle-placeholder / no-attachment units.
+        const hitPos = this.unitView.getHitPoint(event.targetId);
+        if (hitPos) {
+          this.vfxSystem.play('hit', hitPos.x, hitPos.y, 0xffffff);
         }
         break;
       }

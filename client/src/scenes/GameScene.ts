@@ -36,6 +36,12 @@ export interface GameSceneOptions {
   /** When set, the scene runs the PvE campaign level instead of a PvP match. */
   level?: LevelDefinition;
   /**
+   * PvE upgrade levels (SaveData.pveUpgrades) for the campaign path. Threaded
+   * into the engine to build buffed blueprints (hard wall, §5.2); ignored unless
+   * `level` is set. Omit for vanilla/no-upgrade runs.
+   */
+  pveUpgrades?: Record<string, number>;
+  /**
    * A pre-built engine to drive the scene (online netplay, S1-8): app.ts builds
    * it with mode 'netplay' + a NetInputSource. Takes precedence over `level`.
    */
@@ -47,6 +53,8 @@ export interface GameSceneOptions {
   net?: boolean;
   /** Player identities for the in-battle profile popup (netplay only). */
   profiles?: GameProfiles;
+  /** Equipped skin id (S3-4) — swaps unit textures only; null/absent = default look. */
+  equippedSkin?: string | null;
 }
 
 export class GameScene implements Scene {
@@ -84,13 +92,13 @@ export class GameScene implements Scene {
           seed,
           players: [{ id: 0 }, { id: 1 }],
           mode,
-          ...(opts.level ? { level: opts.level } : {}),
+          ...(opts.level ? { level: opts.level, pveUpgrades: opts.pveUpgrades ?? {} } : {}),
         },
         this.recorder,
       );
     }
 
-    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {});
+    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkin ?? null);
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats) => this.cb.onGameEnd(winner, stats, this.buildReplay(winner));

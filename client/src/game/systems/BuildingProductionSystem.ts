@@ -30,7 +30,13 @@ export class BuildingProductionSystem {
     const bp       = BUILDING_BLUEPRINTS[BuildingType.Barracks];
     const spawnRow = building.side === Side.Bottom ? BOTTOM_SPAWN_ROW : TOP_SPAWN_ROW;
 
-    const unit = new Unit(bp.spawnUnit!, building.side, building.col, spawnRow);
+    const unit = new Unit(
+      bp.spawnUnit!,
+      building.side,
+      building.col,
+      spawnRow,
+      state.unitBlueprints[bp.spawnUnit!],
+    );
     state.board.addUnit(unit);
 
     // Track barracks-spawned units in stats

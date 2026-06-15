@@ -170,6 +170,28 @@ export class StickmanRuntime {
     this.container.destroy({ children: true });
   }
 
+  /**
+   * Screen-space offset of an attachment point (e.g. 'hit') relative to this
+   * runtime's container origin — i.e. already scaled by STICKMAN_SCALE and
+   * mirrored to match the rendered sprites. Add it to the unit's screen position
+   * to place a hit spark on the torso instead of the grid-cell centre.
+   * Returns null if the attachment point or current pose is unavailable.
+   */
+  getAttachmentOffset(id: string): { x: number; y: number } | null {
+    const pt = this.asset.attachmentPoints.get(id);
+    if (!pt || !this.currentClip) return null;
+
+    const transforms = sampleClip(this.currentClip, this.time);
+    const worldPos   = Skeleton.computeFK(0, 0, transforms, this.asset.boneLengthScales);
+    const parent     = worldPos.get(pt.parentBone) ?? worldPos.get('root');
+    if (!parent) return null;
+
+    return {
+      x: (parent.ex + pt.offsetX) * this.container.scale.x,
+      y: (parent.ey + pt.offsetY) * this.container.scale.y,
+    };
+  }
+
   // ── Pose evaluation ───────────────────────────────────────────────────────
 
   private _applyPose(): void {

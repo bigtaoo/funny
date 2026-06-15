@@ -9,9 +9,9 @@ import {
   HAND_SIZE,
   TOP_BUILDING_ROW,
   TOP_SPAWN_ROW,
-  UNIT_BLUEPRINTS,
 } from './config';
 import { toFp, TICK_RATE } from './math/fixed';
+import { buildPvpBlueprints, buildCampaignBlueprints } from './balance/pveUpgrades';
 import { cardRefreshDuration } from './Card';
 import { Building } from './Building';
 import { Player } from './Player';
@@ -90,6 +90,15 @@ class GameEngineImpl implements IGameEngine {
     this.ai         = new AISystem(new Prng(config.seed ^ 0xA1A1A1A1));
 
     this.mode = config.mode ?? 'pvp';
+
+    // Hard wall (§5.2): the campaign path is the ONLY place PvE upgrades enter the
+    // engine. PvP / netplay always get the read-only constants. buildPvpBlueprints'
+    // signature has no SaveData/upgrade param, so power can't leak into PvP.
+    this.state.unitBlueprints =
+      this.mode === 'campaign'
+        ? buildCampaignBlueprints(config.pveUpgrades ?? {})
+        : buildPvpBlueprints();
+
     if (this.mode === 'campaign') {
       if (!config.level) throw new Error('campaign mode requires a level definition');
       this.level        = config.level;
@@ -309,10 +318,10 @@ class GameEngineImpl implements IGameEngine {
         if (this.state.board.isCellOccupiedByUnit(col, spawnRow)) return;
 
         const unitType = card.unitType;
-        const bp = UNIT_BLUEPRINTS[unitType];
+        const bp = this.state.unitBlueprints[unitType];
         this.consumeCardSlot(player, cmd.owner, cmd.handIndex, card, () => {
           for (let i = 0; i < bp.spawnCount; i++) {
-            const unit = new Unit(unitType, side, col, spawnRow);
+            const unit = new Unit(unitType, side, col, spawnRow, bp);
             this.state.board.addUnit(unit);
             this.state.stats[cmd.owner].unitsSent++;
             this.state.pushEvent({
@@ -417,7 +426,7 @@ class GameEngineImpl implements IGameEngine {
   private spawnEnemyUnit(unitType: UnitType, col: number): void {
     const side: Side = Side.Top;
     const owner: OwnerId = 1;
-    const unit = new Unit(unitType, side, col, TOP_SPAWN_ROW);
+    const unit = new Unit(unitType, side, col, TOP_SPAWN_ROW, this.state.unitBlueprints[unitType]);
     this.state.board.addUnit(unit);
     this.state.stats[owner].unitsSent++;
     this.state.pushEvent({

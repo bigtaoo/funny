@@ -11,8 +11,13 @@ import { LoginScene, type AuthOutcome } from './scenes/LoginScene';
 import { ResultScene, type EloResult } from './scenes/ResultScene';
 import { ReplayScene } from './scenes/ReplayScene';
 import { SettingsScene, type RenameOutcome } from './scenes/SettingsScene';
+import { CampaignMapScene } from './scenes/CampaignMapScene';
+import { LevelPrepScene } from './scenes/LevelPrepScene';
+import { CollectionScene, COLLECTION_EQUIP_SLOT } from './scenes/CollectionScene';
+import { getUpgradeDef, upgradeCost } from './game/balance/pveUpgrades';
 import { OwnerId, PlayerStats } from './game/types';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, ownerToSide, RecordingInputSource } from './game';
+import { computeStars, remainingHpPct, applyCampaignClear } from './game/meta/campaignRewards';
 import type { MatchStartInfo, Replay } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
@@ -182,7 +187,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
       onStartGame(_opponentName: string) { goGame(); },
       onStartRanked() { goRoom({ autoRanked: true }); },
       online,
-      onStartCampaign(levelIndex: number) { goCampaign(CAMPAIGN_LEVEL_ORDER[levelIndex]); },
+      onStartCampaign(_levelIndex: number) { goCampaignMap(); },
       onOpenRoom() { goRoom(); },
       onOpenShop() { goShop(); },
       onOpenProfile() { goSettings(); },
@@ -464,21 +469,105 @@ export async function startApp(platform: IPlatform): Promise<void> {
         goResult(winner, stats, 0, keepReplay(replay));
       },
       onExitToLobby() { goLobby(); },
+    }, { equippedSkin: saveManager.get().equipped[COLLECTION_EQUIP_SLOT] ?? null }));
+  }
+
+  // ── Campaign hub: map (select) → prep (upgrades) → battle, + collection ──────
+
+  /** Level-select hub: stars + sequential unlock; routes to prep / collection. */
+  function goCampaignMap(): void {
+    inLobby = false;
+    window.removeEventListener('resize', onResize);
+    manager.goto(new CampaignMapScene(layout, input, {
+      onBack() { goLobby(); },
+      onSelectLevel(levelId) { goLevelPrep(levelId); },
+      onOpenCollection() { goCollection(goCampaignMap); },
+      getStars: () => saveManager.get().progress.stars,
+      getCleared: () => saveManager.get().progress.cleared,
     }));
+  }
+
+  /** Pre-battle: spend materials on the upgrade tree, then launch the level. */
+  function goLevelPrep(levelId: string): void {
+    const level = getLevel(levelId);
+    if (!level) { goCampaignMap(); return; }
+    const levelNumber = CAMPAIGN_LEVEL_ORDER.indexOf(levelId) + 1 || 1;
+    inLobby = false;
+    window.removeEventListener('resize', onResize);
+    manager.goto(new LevelPrepScene(layout, input, {
+      onBack() { goCampaignMap(); },
+      onStart() { goCampaign(levelId); },
+      levelNumber,
+      getMaterials: () => saveManager.get().materials,
+      getUpgradeLevel: (id) => saveManager.get().pveUpgrades[id] ?? 0,
+      tryUpgrade: (id) => tryUpgrade(id),
+    }));
+  }
+
+  /** Wardrobe: equip an owned skin (writes the client-sync equipped segment). */
+  function goCollection(back: () => void): void {
+    inLobby = false;
+    window.removeEventListener('resize', onResize);
+    manager.goto(new CollectionScene(layout, input, {
+      onBack: back,
+      getSkins: () => saveManager.get().inventory.skins,
+      getEquipped: () => saveManager.get().equipped[COLLECTION_EQUIP_SLOT] ?? null,
+      equip: (skinId) => {
+        saveManager.update((d) => {
+          if (skinId === null) delete d.equipped[COLLECTION_EQUIP_SLOT];
+          else d.equipped[COLLECTION_EQUIP_SLOT] = skinId;
+        });
+      },
+    }));
+  }
+
+  /**
+   * Spend materials to buy one level of a PvE upgrade. Returns true on success.
+   * Materials + pveUpgrades are the client-sync segment (SaveManager.update →
+   * local + debounced push). The hard wall keeps these off the PvP path (§5.2).
+   */
+  function tryUpgrade(id: string): boolean {
+    const def = getUpgradeDef(id);
+    if (!def) return false;
+    const save = saveManager.get();
+    const lvl = save.pveUpgrades[id] ?? 0;
+    const cost = upgradeCost(def, lvl);
+    if (!cost) return false; // already maxed
+    if ((save.materials[cost.material] ?? 0) < cost.amount) return false;
+    saveManager.update((d) => {
+      d.materials[cost.material] = (d.materials[cost.material] ?? 0) - cost.amount;
+      d.pveUpgrades[id] = (d.pveUpgrades[id] ?? 0) + 1;
+    });
+    return true;
   }
 
   function goCampaign(levelId: string | undefined): void {
     const level = levelId ? getLevel(levelId) : null;
-    if (!level) { goLobby(); return; }
+    if (!level || !levelId) { goLobby(); return; }
     inLobby = false;
     window.removeEventListener('resize', onResize);
     platform.onGameplayStart();
     manager.goto(new GameScene(layout, input, {
       onGameEnd(winner, stats, replay) {
+        // S3-1: grant clear rewards (stars + materials) on a player win before
+        // showing the result. localOwner is 0 for campaign; win = winner === 0.
+        if (winner === 0) {
+          const pct = remainingHpPct(stats[0].damageTakenByBase);
+          const stars = computeStars(level.rewards?.starThresholds, pct);
+          if (stars > 0) {
+            saveManager.update((draft) => {
+              applyCampaignClear(draft, levelId, level, stars);
+            });
+          }
+        }
         goResult(winner, stats, 0, keepReplay(replay));
       },
       onExitToLobby() { goLobby(); },
-    }, { level }));
+    }, {
+      level,
+      pveUpgrades: saveManager.get().pveUpgrades,
+      equippedSkin: saveManager.get().equipped[COLLECTION_EQUIP_SLOT] ?? null,
+    }));
   }
 
   // Replay playback (S1-RP): spectator GameRenderer driven by a ReplayInputSource.

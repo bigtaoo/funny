@@ -3,7 +3,8 @@ import { Prng } from './math/prng';
 import { Player } from './Player';
 import { resetUnitIds } from './Unit';
 import { resetBuildingIds } from './Building';
-import { ActiveSpell, GameEvent, GamePhase, OwnerId, PlayerStats, Side, sideToOwner } from './types';
+import { UNIT_BLUEPRINTS } from './config';
+import { ActiveSpell, GameEvent, GamePhase, OwnerId, PlayerStats, Side, UnitType, UnitBlueprint, sideToOwner } from './types';
 
 /** Mutable version of PlayerStats — accumulated throughout the game. */
 export interface PlayerStatsMutable {
@@ -51,6 +52,15 @@ export class GameState {
 
   /** Per-player accumulated stats. Index matches OwnerId (0 = bottom, 1 = top). */
   readonly stats: [PlayerStatsMutable, PlayerStatsMutable] = [emptyStats(), emptyStats()];
+
+  /**
+   * Resolved unit blueprints for this match. Defaults to the read-only PvP
+   * constants; the engine overwrites it at construction with either
+   * buildPvpBlueprints() or buildCampaignBlueprints(save.pveUpgrades) (the hard
+   * wall — §5.2). Every unit spawn reads stats from here, NOT the global
+   * UNIT_BLUEPRINTS, so PvE upgrades only ever touch the campaign path.
+   */
+  unitBlueprints: Record<UnitType, UnitBlueprint> = UNIT_BLUEPRINTS;
 
   private _events: GameEvent[] = [];
 

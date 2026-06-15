@@ -1,6 +1,6 @@
 import { fp, FP_SCALE, fromFp, toFp, TICK_RATE, type Fp } from './math/fixed';
 import { UNIT_BLUEPRINTS } from './config';
-import { Side, UnitState, UnitType } from './types';
+import { Side, UnitState, UnitType, type UnitBlueprint } from './types';
 
 // Units are the high-volume entity (continuous spawning), so they take the upper
 // id range starting at 1000. Buildings start at 0 and — capped by board cells —
@@ -76,7 +76,19 @@ export class Unit {
   crossingBlocked: boolean = false;
 
 
-  constructor(unitType: UnitType, side: Side, col: number, spawnRow: number) {
+  /**
+   * @param blueprint Resolved stats for this unit. Defaults to the read-only PvP
+   *   constant; the engine injects state.unitBlueprints[unitType] so PvE upgrades
+   *   apply only on the campaign path (hard wall, §5.2). Tests that construct a
+   *   Unit directly get the default PvP stats.
+   */
+  constructor(
+    unitType: UnitType,
+    side: Side,
+    col: number,
+    spawnRow: number,
+    blueprint: UnitBlueprint = UNIT_BLUEPRINTS[unitType],
+  ) {
     this.id        = nextId++;
     this.unitType  = unitType;
     this.side      = side;
@@ -84,7 +96,7 @@ export class Unit {
     this.x_fp      = toFp(col);
     this.y_fp      = toFp(spawnRow);
 
-    const bp = UNIT_BLUEPRINTS[unitType];
+    const bp = blueprint;
     this.hp       = bp.hp;
     this.maxHp    = bp.hp;
     this.attack   = bp.attack;

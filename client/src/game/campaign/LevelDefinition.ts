@@ -100,4 +100,10 @@ export interface LevelRewards {
   unlockStoryKey?: TranslationKey;
   /** Base-HP% thresholds for 1 / 2 / 3 stars. */
   starThresholds?: [number, number, number];
+  /**
+   * PvE materials granted on first clear (S3-1, M6) — material id → amount.
+   * Materials feed the upgrade tree (game/balance/pveUpgrades.ts); they are a
+   * client-sync segment (SaveData.materials), not server-authoritative currency.
+   */
+  materials?: Record<string, number>;
 }

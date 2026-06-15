@@ -103,6 +103,12 @@ export interface GameConfig {
   mode?: GameMode;
   /** Campaign level — required when mode === 'campaign'. */
   level?: LevelDefinition;
+  /**
+   * PvE upgrade levels (SaveData.pveUpgrades), read ONLY on the campaign path to
+   * build buffed blueprints. The hard wall (§5.2) keeps this off the PvP path:
+   * pvp/netplay ignore it entirely. Pass save.pveUpgrades when launching campaign.
+   */
+  pveUpgrades?: Record<string, number>;
 }
 
 export interface PlayerConfig {

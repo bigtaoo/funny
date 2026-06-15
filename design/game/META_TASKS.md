@@ -140,11 +140,11 @@
 
 ## S3 — PvE 养成 + 收集 + 选关
 
-- [ ] **S3-1 材料 + 关卡掉落**：`LevelRewards` 增材料产出；ResultScene 发放写 `SaveData.materials`。**依赖**：S0-1。**验收**：通关按 reward 发材料。
-- [ ] **S3-2 PveUpgradeDef 表 + applyPveUpgrades**：升级树定义（花材料，`META_DESIGN.md §5.1`）+ 修饰层函数。**依赖**：S0-1。**验收**：升级改 `pveUpgrades`，材料原子扣。
-- [ ] **S3-3 引擎双路 + 硬墙单测**：`buildPvpBlueprints()`（不收 SaveData）/ `buildCampaignBlueprints(save)`；`GameEngine` 按 mode 选。**单测**：满级 SaveData 构造 PvP 引擎，断言 blueprints 与常量逐字相等。**依赖**：S3-2。**验收**：单测绿；黄金回放不破。
-- [ ] **S3-4 皮肤渲染**：`UnitView`/`StickmanRuntime` 按 `equipped` 选贴图；`game/` 不 import 皮肤。**依赖**：S0-1。**验收**：换肤只改贴图，数值不变。
-- [ ] **S3-5 CampaignMapScene + LevelPrepScene + CollectionScene**：选关地图/星级/解锁、关前编成、收集衣柜（见 `UI_DESIGN.md`）。**依赖**：S3-1~4。**验收**：选关→编成→打→评星→解锁→收集闭环。
+- [x] **S3-1 材料 + 关卡掉落** ✅（2026-06-15）：`LevelRewards.materials`（material→amount，客户端同步段）+ `levelSchema.parseRewards` 校验 + ch1_lv1~3 JSON 加材料；`game/meta/campaignRewards.ts`（`computeStars`/`remainingHpPct`/`applyCampaignClear` 纯函数）；`app.goCampaign` onGameEnd 胜利时算星（基地剩余 HP% 对 `starThresholds`）→ `saveManager.update` 写 `progress.cleared/stars` + 首次通关发材料（避免刷）。+7 测试（`test/campaign-rewards.test.ts`）。**注**：coins/皮肤解锁属服务器权威段，需端点，未在此发（留 S2）。
+- [x] **S3-2 PveUpgradeDef 表 + applyPveUpgrades** ✅（2026-06-15）：`game/balance/pveUpgrades.ts`——`PVE_UPGRADE_DEFS`（3 玩家单位 × HP/Damage 各一条，maxLevel 5，乘算 `1+effectPerLevel×lvl`，DRAFT 数值）+ `MATERIALS`(scrap/lead/binding) + `upgradeCost(def,lvl)`（线性 `baseCost×(lvl+1)`，满级 null）+ `applyPveUpgrades`（钳制未知 id/0 级/超 max）。`app.tryUpgrade` 扣材料 + 升级，走 `SaveManager.update`（客户端同步段，防抖上行）。
+- [x] **S3-3 引擎双路 + 硬墙单测** ✅（2026-06-15）：`buildPvpBlueprints()`（无 SaveData 参数）/ `buildCampaignBlueprints(pveUpgrades)`；蓝图从全局常量改为 `GameState.unitBlueprints`（引擎构造按 mode 选），`Unit` 构造加可选 `blueprint` 参（默认常量，旧测试不动）、3 处出兵点 + `BuildingProductionSystem` 传 `state.unitBlueprints[type]`；`GameConfig.pveUpgrades` 仅 campaign 路径读。**硬墙单测** `test/hardwall.test.ts`（9 例）：满级升级下 `buildPvpBlueprints()` 与 `UNIT_BLUEPRINTS` 逐字相等、campaign 引擎建后 PvP 引擎仍纯、克隆不污染常量、钳制/费用。157 测试全绿，黄金回放不破。
+- [x] **S3-4 皮肤渲染（机制就位）** ✅（2026-06-15）：`UnitView` 加 `equippedSkin` 参 + `SKIN_ASSETS` 注册表 + `resolveAssets`（皮肤覆盖 ∪ 默认，未映射回退默认）；`GameRenderer`/`GameScene.options.equippedSkin` 透传，`app` 在 campaign / PvP-vs-AI 传 `equipped[COLLECTION_EQUIP_SLOT]`。只换贴图、不碰数值（§5.2）。**注**：`SKIN_ASSETS` 暂空（无皮肤 .tao 资源），当前视觉为 no-op，资源到位后填表即生效。
+- [x] **S3-5 CampaignMapScene + LevelPrepScene + CollectionScene** ✅（2026-06-15）：三个 canvas 场景（ShopScene 同款 render+hit-list + sketchUi 手绘）。**CampaignMapScene**：关卡列表 + 星级（★/☆）+ 顺序解锁（前一关通关才解锁）+ 收集入口。**LevelPrepScene**：材料条 + 升级树（每条显示 Lv/费用，点击花材料强化，toast）+ 开打。**CollectionScene**：皮肤衣柜（默认 + 已拥有，点击装备写 `equipped`）。`app` 加 `goCampaignMap`/`goLevelPrep`/`goCollection`/`tryUpgrade`，大厅「战役」入口改路由到 map（`onStartCampaign`→`goCampaignMap`，零 LobbyScene 渲染改动）。i18n `campaign.*`/`prep.*`/`material.*`/`collection.*` zh/en/de 全翻。tsc + 157 测试 + web 构建绿。
 
 ---
 
