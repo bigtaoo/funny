@@ -139,6 +139,40 @@ export async function sendPlayerMail(
   return { kind: 'ok', mailId, to };
 }
 
+export interface SystemMailContent {
+  subject: string;
+  body: string;
+  attachments?: MailAttachmentDoc[];
+  expireDays: number;
+}
+
+/** 构建系统邮件的 _id / hasAttachment / $setOnInsert 文档（单发与批量 fan-out 共用，避免漂移）。 */
+function buildSystemMail(
+  dispatchKey: string,
+  to: string,
+  content: SystemMailContent,
+  now: number,
+): { mailId: string; hasAttachment: boolean; setOnInsert: MailDoc } {
+  const mailId = `${dispatchKey}:${to}`;
+  const expireSec = content.expireDays > 0 ? content.expireDays * 86400 : MAIL_DEFAULT_TTL_SEC;
+  const hasAttachment = !!content.attachments && content.attachments.length > 0;
+  return {
+    mailId,
+    hasAttachment,
+    setOnInsert: {
+      _id: mailId,
+      to,
+      from: 'system',
+      fromName: 'System',
+      subject: content.subject,
+      body: content.body,
+      ...(hasAttachment ? { attachments: content.attachments } : {}),
+      createdAt: now,
+      expireAt: new Date(now + expireSec * 1000),
+    },
+  };
+}
+
 /**
  * 系统邮件写入（运营补偿 / 活动奖励，OPS_DESIGN §3.3）。dispatchKey 幂等：_id = `${dispatchKey}:${to}`，
  * upsert $setOnInsert 防重复执行（admin 工单重试同 dispatchKey 不重复发）。返回是否新插入（供 push 判定）。
@@ -147,28 +181,39 @@ export async function insertSystemMail(
   cols: Collections,
   dispatchKey: string,
   to: string,
-  content: { subject: string; body: string; attachments?: MailAttachmentDoc[]; expireDays: number },
+  content: SystemMailContent,
   now: number,
 ): Promise<{ mailId: string; inserted: boolean; hasAttachment: boolean }> {
-  const mailId = `${dispatchKey}:${to}`;
-  const expireSec = content.expireDays > 0 ? content.expireDays * 86400 : MAIL_DEFAULT_TTL_SEC;
-  const hasAttachment = !!content.attachments && content.attachments.length > 0;
-  const res = await cols.mail.updateOne(
-    { _id: mailId },
-    {
-      $setOnInsert: {
-        _id: mailId,
-        to,
-        from: 'system',
-        fromName: 'System',
-        subject: content.subject,
-        body: content.body,
-        ...(hasAttachment ? { attachments: content.attachments } : {}),
-        createdAt: now,
-        expireAt: new Date(now + expireSec * 1000),
-      },
-    },
-    { upsert: true },
-  );
+  const { mailId, hasAttachment, setOnInsert } = buildSystemMail(dispatchKey, to, content, now);
+  const res = await cols.mail.updateOne({ _id: mailId }, { $setOnInsert: setOnInsert }, { upsert: true });
   return { mailId, inserted: res.upsertedCount > 0, hasAttachment };
+}
+
+/**
+ * 批量系统邮件写入（全服 fan-out 分批，§3.3 / SOC5）。对一批 accountId 走单次 `bulkWrite`（unordered
+ * upsert），把 O(N) 次往返压成 O(N/批) 次。同 `insertSystemMail` 的 dispatchKey 幂等（重试不重复发）。
+ * 返回**本次新插入**的 accountId 列表（据 `upsertedIds` 的 op 下标映射），供调用方只对新收件人推红点。
+ */
+export async function bulkInsertSystemMail(
+  cols: Collections,
+  dispatchKey: string,
+  accountIds: string[],
+  content: SystemMailContent,
+  now: number,
+): Promise<{ insertedAccountIds: string[]; hasAttachment: boolean }> {
+  const hasAttachment = !!content.attachments && content.attachments.length > 0;
+  if (accountIds.length === 0) return { insertedAccountIds: [], hasAttachment };
+  const ops = accountIds.map((to) => ({
+    updateOne: {
+      filter: { _id: `${dispatchKey}:${to}` },
+      update: { $setOnInsert: buildSystemMail(dispatchKey, to, content, now).setOnInsert },
+      upsert: true,
+    },
+  }));
+  const res = await cols.mail.bulkWrite(ops, { ordered: false });
+  // upsertedIds: { [op 下标]: 新插入文档 _id }。下标即 ops/accountIds 的位置 → 映射回 accountId。
+  const insertedAccountIds = Object.keys(res.upsertedIds ?? {})
+    .map((idx) => accountIds[Number(idx)])
+    .filter((id): id is string => id !== undefined);
+  return { insertedAccountIds, hasAttachment };
 }

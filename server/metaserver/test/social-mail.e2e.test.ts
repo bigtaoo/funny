@@ -215,4 +215,40 @@ describe.skipIf(!mongo)('social mail e2e', () => {
     expect(b(await get(a.token, '/mail')).data.mail).toHaveLength(1);
     expect(b(await get(c.token, '/mail')).data.mail).toHaveLength(1);
   });
+
+  it('global fan-out is batched: idempotent resend pushes only newly-added accounts', async () => {
+    const accts = [];
+    for (let i = 0; i < 5; i++) accts.push(await newAccount(`fan-acct-${i}`));
+
+    const sendReq = {
+      dispatchKey: 'fan-001',
+      scope: 'global',
+      target: { filter: { kind: 'all' } },
+      subject: '全服公告',
+      body: '维护补偿',
+      attachments: [{ kind: 'coins', count: 50 }],
+      expireDays: 5,
+    };
+
+    // 首发：5 人全收到 + 各推一条 mail_new。
+    const first = b(await internal('/internal/mail/system/send', sendReq));
+    expect(first.recipientCount).toBe(5);
+    expect(gateway.pushes.filter((p) => p.msg.kind === 'mail_new')).toHaveLength(5);
+    for (const ac of accts) {
+      expect(b(await get(ac.token, '/mail')).data.mail).toHaveLength(1);
+    }
+
+    // 同 dispatchKey 重发 + 新增 1 个账号：bulkWrite upsert 幂等，仅新账号被插入 → 仅它收到推送。
+    gateway.pushes = [];
+    const late = await newAccount('fan-late-acct');
+    const second = b(await internal('/internal/mail/system/send', sendReq));
+    expect(second.recipientCount).toBe(6); // 全员仍计入收件人数
+    const newPushes = gateway.pushes.filter((p) => p.msg.kind === 'mail_new');
+    expect(newPushes).toHaveLength(1);
+    expect(newPushes[0].accountId).toBe(late.accountId);
+
+    // 原 5 人仍只有 1 封（无重复），新账号也收到 1 封。
+    expect(b(await get(accts[0].token, '/mail')).data.mail).toHaveLength(1);
+    expect(b(await get(late.token, '/mail')).data.mail).toHaveLength(1);
+  });
 });

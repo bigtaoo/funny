@@ -19,13 +19,16 @@ import type { CommercialClient } from './commercialClient.js';
 import { adsDayKey } from './economy.js';
 import { getProfile, resolveByPublicId } from './accounts.js';
 import { friendAccountIds } from './social.js';
-import { insertSystemMail } from './mail.js';
+import { insertSystemMail, bulkInsertSystemMail } from './mail.js';
 import type { CompAttachment, CompTarget } from '@nw/shared';
 
 const log = createLogger('meta:internal');
 
 /** 内嵌录像帧字节上限；超过则外置 replayBlobs + replayRef（保持 matches 文档精简）。 */
 const REPLAY_INLINE_MAX_BYTES = 256 * 1024;
+
+/** 全服系统邮件 fan-out 每批账号数（一次 bulkWrite 的 op 数）。MongoDB 单批上限 1000，留余量。 */
+const MAIL_FANOUT_BATCH = 500;
 
 interface EloResult {
   delta: number;
@@ -171,29 +174,50 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       attachments: b.attachments ?? [],
       expireDays: b.expireDays ?? 0,
     };
-    const deliverOne = async (accountId: string): Promise<void> => {
-      const r = await insertSystemMail(cols, b.dispatchKey, accountId, content, now());
-      // 仅新插入时推送红点（重试同 dispatchKey 幂等不重复推）；离线 gateway 自行丢弃。
-      if (r.inserted) {
-        void gateway.push(accountId, { kind: 'mail_new', mailId: r.mailId, hasAttachment: r.hasAttachment });
-      }
-    };
 
     if (b.scope === 'global') {
+      // 全服 fan-out 分批：每批 MAIL_FANOUT_BATCH 个账号走一次 bulkWrite（unordered upsert），
+      // O(N) 次往返压成 O(N/批)。仅本批新插入的收件人推红点（dispatchKey 幂等，重试不重复推）。
       let recipientCount = 0;
+      let insertedCount = 0;
+      let batch: string[] = [];
+      const flush = async (): Promise<void> => {
+        if (batch.length === 0) return;
+        const ids = batch;
+        batch = [];
+        const r = await bulkInsertSystemMail(cols, b.dispatchKey, ids, content, now());
+        recipientCount += ids.length;
+        insertedCount += r.insertedAccountIds.length;
+        for (const accountId of r.insertedAccountIds) {
+          // 离线 gateway 自行丢弃；push fire-and-forget 不阻塞批次。
+          void gateway.push(accountId, {
+            kind: 'mail_new',
+            mailId: `${b.dispatchKey}:${accountId}`,
+            hasAttachment: r.hasAttachment,
+          });
+        }
+      };
       const cursor = cols.accounts.find({}, { projection: { _id: 1 } });
       for await (const doc of cursor) {
-        await deliverOne(doc._id);
-        recipientCount++;
+        batch.push(doc._id);
+        if (batch.length >= MAIL_FANOUT_BATCH) await flush();
       }
-      log.info('POST /internal/mail/system/send (global)', { dispatchKey: b.dispatchKey, recipientCount });
+      await flush();
+      log.info('POST /internal/mail/system/send (global)', {
+        dispatchKey: b.dispatchKey,
+        recipientCount,
+        insertedCount,
+      });
       return reply.send({ ok: true, recipientCount });
     }
 
     const publicId = 'publicId' in b.target ? b.target.publicId : '';
     const accountId = await resolveByPublicId(cols, publicId);
     if (!accountId) return reply.send({ ok: false, recipientCount: 0, error: 'recipient not found' });
-    await deliverOne(accountId);
+    const r = await insertSystemMail(cols, b.dispatchKey, accountId, content, now());
+    if (r.inserted) {
+      void gateway.push(accountId, { kind: 'mail_new', mailId: r.mailId, hasAttachment: r.hasAttachment });
+    }
     log.info('POST /internal/mail/system/send (single)', { dispatchKey: b.dispatchKey, publicId });
     return reply.send({ ok: true, recipientCount: 1 });
   });
