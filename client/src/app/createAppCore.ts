@@ -11,7 +11,7 @@
 // app.ts for the thin PIXI shell that constructs PixiAppViews and calls start().
 
 import type { IPlatform } from '../platform/IPlatform';
-import type { AppViews, RoomView, NetGameView } from './AppViews';
+import type { AppViews, RoomView, FriendsView, NetGameView } from './AppViews';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, RecordingInputSource } from '../game';
 import type { OwnerId, PlayerStats, MatchStartInfo, Replay } from '../game';
 import { computeStars, remainingHpPct } from '../game/meta/campaignRewards';
@@ -125,6 +125,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       online,
       onStartCampaign(_levelIndex: number) { goCampaignMap(); },
       onOpenRoom() { goRoom(); },
+      onOpenSocial() { goFriends(); },
       onOpenShop() { goShop(); },
       onOpenCards() { goCollection(goLobby, 'cards'); },
       onOpenStats() { goStats(); },
@@ -285,6 +286,39 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       };
       session.connect();
       if (autoRanked && session.gateway.getState() === 'open') queueRanked();
+    }
+  }
+
+  function goFriends(): void {
+    // Social needs a server account; offline / no API → bounce to login.
+    if (!api) { goLogin(); return; }
+    const client = api;
+    inLobby = false;
+    const session = getNetSession();
+    // Restore the default match-start handler when leaving (mirrors goRoom).
+    const restore = (): void => {
+      if (session) session.handlers = { onMatchStart: (info) => goGameNet(info) };
+    };
+    const view: FriendsView = views.showFriends({
+      onBack() { restore(); goLobby(); },
+      onOpenRoom() { goRoom(); },
+      loadFriends: () => client.getFriends(),
+      loadRequests: () => client.getFriendRequests(),
+      search: (publicId) => client.searchFriend(publicId),
+      addFriend: async (publicId) => { await client.requestFriend(publicId); },
+      respond: (requestId, accept) => client.respondFriend(requestId, accept),
+      removeFriend: (publicId) => client.removeFriend(publicId),
+    });
+    // Live social pushes (presence / request / friend add-remove) arrive over the
+    // gateway control plane; forward them to the scene so the list stays fresh.
+    if (session) {
+      session.handlers = {
+        onMatchStart: (info) => goGameNet(info),
+        onFriendPresence: (p) => view.applyFriendPresence(p),
+        onFriendRequest:  (r) => view.applyFriendRequest(r),
+        onFriendUpdate:   (u) => view.applyFriendUpdate(u),
+      };
+      session.connect();
     }
   }
 

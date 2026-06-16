@@ -11,6 +11,7 @@ import { IntroScene } from './scenes/IntroScene';
 import { LobbyScene, type LobbySceneCallbacks } from './scenes/LobbyScene';
 import { GameScene, type GameSceneCallbacks, type GameSceneOptions } from './scenes/GameScene';
 import { RoomScene, type RoomSceneCallbacks } from './scenes/RoomScene';
+import { FriendsScene, type FriendsSceneCallbacks } from './scenes/FriendsScene';
 import { ShopScene, type ShopSceneCallbacks } from './scenes/ShopScene';
 import { GachaScene, type GachaSceneCallbacks } from './scenes/GachaScene';
 import { LoginScene, type LoginSceneCallbacks } from './scenes/LoginScene';
@@ -29,7 +30,7 @@ import type { ILayout } from './layout/ILayout';
 import { installGlobalErrorHandlers } from './net/log';
 import { setBakeRenderer } from './render/bake';
 import { createAppCore } from './app/createAppCore';
-import type { AppViews, RoomView, NetGameView, ResultViewProps } from './app/AppViews';
+import type { AppViews, RoomView, FriendsView, NetGameView, ResultViewProps } from './app/AppViews';
 
 /**
  * The PIXI implementation of AppViews: each show*() runs the same
@@ -148,6 +149,17 @@ class PixiAppViews implements AppViews {
       applyRoomError: (e) => scene.applyRoomError(e),
       applyPeerDc:    (p) => scene.applyPeerDc(p),
       applyNetState:  (s) => scene.applyNetState(s),
+    };
+  }
+
+  showFriends(cb: FriendsSceneCallbacks): FriendsView {
+    this.leaveLobby();
+    const scene = new FriendsScene(this.layout, this.input, cb);
+    this.manager.goto(scene);
+    return {
+      applyFriendPresence: (p) => scene.applyFriendPresence(p),
+      applyFriendRequest:  (r) => scene.applyFriendRequest(r),
+      applyFriendUpdate:   (u) => scene.applyFriendUpdate(u),
     };
   }
 

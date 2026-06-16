@@ -55,8 +55,13 @@ export interface LobbySceneCallbacks {
   online?: boolean;
   /** Launch a campaign level by its 0-based index in CAMPAIGN_LEVEL_ORDER. */
   onStartCampaign(levelIndex: number): void;
-  /** Open the friend room (online play). Wired to the bottom-nav "social" slot. */
+  /** Open the friend room (online play). Used by the social hub's "play online" button. */
   onOpenRoom(): void;
+  /**
+   * Open the social hub (friends / requests). Wired to the bottom-nav "social"
+   * slot (S6-1). Falls back to onOpenRoom when not provided (older callers).
+   */
+  onOpenSocial?(): void;
   /** Open the shop (economy). Wired to the bottom-nav "shop" slot (S2-6). */
   onOpenShop(): void;
   /** Open the collection center (cards codex + skins). Bottom-nav "cards" slot. */
@@ -186,8 +191,9 @@ export class LobbyScene implements Scene {
     }
     const s = this.socialNavRect;
     if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) {
-      // Online play requires an account; in offline mode route to login.
+      // Social (friends/chat/mail) requires an account; in offline mode route to login.
       if (this.cb.offline && this.cb.onLogin) this.cb.onLogin();
+      else if (this.cb.onOpenSocial) this.cb.onOpenSocial();
       else this.cb.onOpenRoom();
       return;
     }

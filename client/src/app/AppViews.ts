@@ -14,7 +14,10 @@
 
 import type { OwnerId, PlayerStats, Replay } from '../game';
 import type { NetState } from '../net/NetClient';
-import type { RoomState, RoomError, PeerDc, MatchOver } from '../net/proto/transport';
+import type {
+  RoomState, RoomError, PeerDc, MatchOver,
+  FriendPresence, FriendRequestPush, FriendUpdate,
+} from '../net/proto/transport';
 import type { ProfileData } from '../render/ProfilePopup';
 
 import type { IntroSceneCallbacks } from '../scenes/IntroScene';
@@ -31,6 +34,7 @@ import type { ReplaySceneCallbacks } from '../scenes/ReplayScene';
 import type { ResultSceneCallbacks, EloResult } from '../scenes/ResultScene';
 import type { GameSceneCallbacks, GameSceneOptions } from '../scenes/GameScene';
 import type { RoomSceneCallbacks } from '../scenes/RoomScene';
+import type { FriendsSceneCallbacks } from '../scenes/FriendsScene';
 
 /** Live handle for the room scene — the core forwards NetSession control events to it. */
 export interface RoomView {
@@ -38,6 +42,13 @@ export interface RoomView {
   applyRoomError(e: RoomError): void;
   applyPeerDc(p: PeerDc): void;
   applyNetState(s: NetState): void;
+}
+
+/** Live handle for the friends scene — the core forwards social push events to it. */
+export interface FriendsView {
+  applyFriendPresence(p: FriendPresence): void;
+  applyFriendRequest(r: FriendRequestPush): void;
+  applyFriendUpdate(u: FriendUpdate): void;
 }
 
 /** Live handle for a netplay game scene — the core forwards data-plane events to it. */
@@ -82,6 +93,8 @@ export interface AppViews {
 
   // Held-by-reference scenes return a handle the core pushes server events into.
   showRoom(cb: RoomSceneCallbacks): RoomView;
+  /** Social hub (friends list + requests). The core pushes social events to the handle. */
+  showFriends(cb: FriendsSceneCallbacks): FriendsView;
   /**
    * Netplay match. The core passes the pre-built engine in `opts.engine` plus the
    * local side; the view turns `localSide` into the side-flipped layout.

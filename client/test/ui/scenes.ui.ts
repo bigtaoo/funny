@@ -26,6 +26,7 @@ import { LevelPrepScene } from '../../src/scenes/LevelPrepScene';
 import { CollectionScene } from '../../src/scenes/CollectionScene';
 import { StatsScene } from '../../src/scenes/StatsScene';
 import { RoomScene } from '../../src/scenes/RoomScene';
+import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { ResultScene } from '../../src/scenes/ResultScene';
 import type { PlayerStats } from '../../src/game/types';
 
@@ -87,6 +88,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         online: true,
         onStartCampaign() {},
         onOpenRoom() {},
+        onOpenSocial() {},
         onOpenShop() {},
         onOpenCards() {},
         onOpenStats() {},
@@ -211,6 +213,20 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         createRanked() {},
         cancelQueue() {},
         available: true,
+      }),
+  },
+  {
+    name: 'FriendsScene',
+    build: (w, h) =>
+      new FriendsScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        onOpenRoom() {},
+        loadFriends: async () => [],
+        loadRequests: async () => ({ incoming: [], outgoing: [] }),
+        search: async () => ({ publicId: '123456789', displayName: 'Bob' }),
+        addFriend: async () => {},
+        respond: async () => {},
+        removeFriend: async () => {},
       }),
   },
   {

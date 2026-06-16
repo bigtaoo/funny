@@ -7,6 +7,7 @@
 import type {
   AppViews,
   RoomView,
+  FriendsView,
   NetGameView,
   ResultViewProps,
 } from '../../src/app/AppViews';
@@ -28,11 +29,13 @@ import type { CollectionCallbacks } from '../../src/scenes/CollectionScene';
 import type { StatsCallbacks } from '../../src/scenes/StatsScene';
 import type { ReplaySceneCallbacks } from '../../src/scenes/ReplayScene';
 import type { RoomSceneCallbacks } from '../../src/scenes/RoomScene';
+import type { FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
 import type { GameSceneCallbacks, GameSceneOptions } from '../../src/scenes/GameScene';
 
 export type ScreenName =
   | 'none' | 'intro' | 'lobby' | 'settings' | 'login' | 'shop' | 'gacha'
-  | 'campaignMap' | 'levelPrep' | 'collection' | 'stats' | 'replay' | 'result' | 'room' | 'gameNet' | 'game';
+  | 'campaignMap' | 'levelPrep' | 'collection' | 'stats' | 'replay' | 'result' | 'room' | 'friends'
+  | 'gameNet' | 'game';
 
 interface ActiveMatch {
   engine: IGameEngine;
@@ -64,6 +67,7 @@ export class HeadlessAppViews implements AppViews {
   replay?: ReplaySceneCallbacks;
   result?: ResultViewProps;
   room?: RoomSceneCallbacks;
+  friends?: FriendsSceneCallbacks;
   /** Last room_state the core forwarded to the room view (carries the room code). */
   lastRoomState?: RoomState;
   /** Last gateway net-state forwarded to the room view (wait for 'open' before acting). */
@@ -118,6 +122,16 @@ export class HeadlessAppViews implements AppViews {
       applyRoomError: () => {},
       applyPeerDc: () => {},
       applyNetState: (s) => { this.lastRoomNetState = s; },
+    };
+  }
+
+  showFriends(cb: FriendsSceneCallbacks): FriendsView {
+    this.screen = 'friends';
+    this.friends = cb;
+    return {
+      applyFriendPresence: () => {},
+      applyFriendRequest: () => {},
+      applyFriendUpdate: () => {},
     };
   }
 
