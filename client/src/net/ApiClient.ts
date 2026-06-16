@@ -32,6 +32,8 @@ export type ConversationView = Schemas['ConversationView'];
 export type ChatMessageView = Schemas['ChatMessageView'];
 export type MailView = Schemas['MailView'];
 export type MailAttachmentView = Schemas['MailAttachmentView'];
+/** 离线红点聚合（申请 / 未读会话 / 未读邮件 + total），登录后拉一次。 */
+export type SocialBadges = Schemas['SocialBadges'];
 /** 服务端持久化录像（opaque 帧，base64）；客户端用 net/serverReplay 解码回放。 */
 export type ServerReplay = Schemas['MatchReplay'];
 
@@ -267,6 +269,11 @@ export class ApiClient {
       'GET',
       '/friends/requests',
     );
+  }
+
+  /** 离线红点聚合（SOC8）：登录后一次性拉总未读红点，之后凭 social push 增量更新。 */
+  async getSocialBadges(): Promise<SocialBadges> {
+    return this.request<SocialBadges>('GET', '/social/badges');
   }
 
   /** 按 9 位公开 id 搜索玩家。未找到 → ApiError('NOT_FOUND')（404）。 */

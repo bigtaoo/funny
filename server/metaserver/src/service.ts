@@ -53,6 +53,7 @@ import {
   getConversations,
   getMessages,
   markConversationRead,
+  socialBadges,
   profileOf,
   type SocialError,
 } from './social.js';
@@ -627,6 +628,13 @@ export class MetaService {
     const accountId = accountIdOf(req);
     const { incoming, outgoing } = await listRequests(this.deps.cols, accountId);
     return ok({ incoming, outgoing });
+  }
+
+  /** 离线红点聚合（SOC8）：登录后一次性拉总未读红点（申请 / 会话 / 邮件）。 */
+  async getSocialBadges(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const badges = await socialBadges(this.deps.cols, accountId, this.deps.now());
+    return ok(badges);
   }
 
   async searchFriend(req: FastifyRequest, reply: FastifyReply) {

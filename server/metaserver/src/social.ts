@@ -10,6 +10,7 @@ import type {
   ProfileView,
   ConversationView,
   ChatMessageView,
+  SocialBadges,
 } from '@nw/shared';
 import {
   FRIEND_CAP,
@@ -416,4 +417,22 @@ export async function markConversationRead(cols: Collections, me: string, convId
     { _id: convId, members: me },
     { $set: { [`unread.${me}`]: 0 } },
   );
+}
+
+// ── 离线红点聚合（SOC8）。登录后一次性拉总红点，之后客户端凭 social push 增量更新。──
+
+/**
+ * 聚合未读红点：待处理收到的好友申请数 / 有未读的会话数 / 未读且未过期的邮件数。
+ * 三项均走轻量 `countDocuments`（不拉全量列表）：
+ *  - 申请：`friendRequests` 上有 `{ to, status }` 索引；
+ *  - 会话：按 `{ members, unread.<me> > 0 }` 计数（动态键，会话数级别小）；
+ *  - 邮件：按 `{ to, readAt 不存在, expireAt > now }`（TTL 可能未即时清理故再过滤 expireAt）。
+ */
+export async function socialBadges(cols: Collections, me: string, now: number): Promise<SocialBadges> {
+  const [friendRequests, chat, mail] = await Promise.all([
+    cols.friendRequests.countDocuments({ to: me, status: 'pending' }),
+    cols.conversations.countDocuments({ members: me, [`unread.${me}`]: { $gt: 0 } }),
+    cols.mail.countDocuments({ to: me, readAt: { $exists: false }, expireAt: { $gt: new Date(now) } }),
+  ]);
+  return { friendRequests, chat, mail, total: friendRequests + chat + mail };
 }

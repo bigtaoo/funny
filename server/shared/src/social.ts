@@ -106,3 +106,17 @@ export interface MailView {
   read: boolean;
   claimed: boolean;
 }
+
+/**
+ * 离线红点聚合（SOCIAL_DESIGN §6 UI「顶部/底栏未读总红点」，SOC8）。登录后拉一次，
+ * 之后由 social push（friend_request / chat_message / mail_new）在客户端做增量更新。
+ * 各项为「点数」语义而非消息总数：`friendRequests`=待处理收到的申请数、`chat`=有未读的会话数、
+ * `mail`=未读且未过期的邮件数；`total` 为三者之和，供单一总红点显示。
+ * 走轻量聚合查询（countDocuments），不拉好友/会话/邮件全量列表。
+ */
+export interface SocialBadges {
+  friendRequests: number;
+  chat: number;
+  mail: number;
+  total: number;
+}

@@ -277,6 +277,15 @@ components:
         message: { type: string }
         createdAt: { type: integer }
 
+    SocialBadges:
+      type: object
+      required: [friendRequests, chat, mail, total]
+      properties:
+        friendRequests: { type: integer }
+        chat: { type: integer }
+        mail: { type: integer }
+        total: { type: integer }
+
     ConversationView:
       type: object
       required: [convId, peer, lastTs, unread]
@@ -1034,6 +1043,25 @@ paths:
                       outgoing:
                         type: array
                         items: { $ref: '#/components/schemas/FriendRequestView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /social/badges:
+    get:
+      operationId: getSocialBadges
+      tags: [friends]
+      summary: 离线红点聚合（待处理申请 / 未读会话 / 未读邮件 + 总数）
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/SocialBadges' }
         '401': { $ref: '#/components/responses/ErrorResp' }
 
   /friends/search:

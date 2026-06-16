@@ -345,6 +345,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/social/badges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 离线红点聚合（待处理申请 / 未读会话 / 未读邮件 + 总数） */
+        get: operations["getSocialBadges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/friends/search": {
         parameters: {
             query?: never;
@@ -763,6 +780,12 @@ export interface components {
             toPublicId: string;
             message?: string;
             createdAt: number;
+        };
+        SocialBadges: {
+            friendRequests: number;
+            chat: number;
+            mail: number;
+            total: number;
         };
         ConversationView: {
             convId: string;
@@ -1542,6 +1565,31 @@ export interface operations {
                             incoming: components["schemas"]["FriendRequestView"][];
                             outgoing: components["schemas"]["FriendRequestView"][];
                         };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    getSocialBadges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: components["schemas"]["SocialBadges"];
                     };
                 };
             };
