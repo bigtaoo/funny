@@ -339,6 +339,38 @@ export const zh = {
   'friends.alreadyFriend': '你们已是好友',
   'friends.capReached': '好友数量已达上限',
   'friends.blocked': '无法添加（已被屏蔽）',
+  // 多 Tab（好友 / 聊天 / 邮件，S6-2/S6-3）
+  'friends.tab.friends': '好友',
+  'friends.tab.chat': '聊天',
+  'friends.tab.mail': '邮件',
+  'friends.message': '发消息',
+  'friends.block': '拉黑',
+  'friends.blockedDone': '已拉黑',
+  // 私聊（S6-2）
+  'chat.back': '← 返回',
+  'chat.loading': '加载中…',
+  'chat.empty': '还没有消息，打个招呼吧',
+  'chat.noConversations': '还没有会话',
+  'chat.loadEarlier': '加载更早的消息',
+  'chat.placeholder': '输入消息…',
+  'chat.send': '发送',
+  'chat.error': '发送失败，请重试',
+  'chat.notFriend': '仅好友之间可私聊',
+  'chat.blocked': '对方已被屏蔽',
+  'chat.rateLimited': '发送太频繁，请稍后',
+  // 邮件（S6-3）
+  'mail.empty': '没有邮件',
+  'mail.system': '系统',
+  'mail.attachments': '附件',
+  'mail.attCoins': '金币 ×{n}',
+  'mail.attSkin': '皮肤 {id}',
+  'mail.attItem': '物品 {id} ×{n}',
+  'mail.claim': '领取附件',
+  'mail.claimed': '已领取',
+  'mail.claimDone': '领取成功',
+  'mail.claimFail': '领取失败',
+  'mail.alreadyClaimed': '已经领取过了',
+  'mail.delete': '删除邮件',
 };
 
 export type TranslationKey = keyof typeof zh;

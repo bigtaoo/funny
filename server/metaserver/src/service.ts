@@ -24,6 +24,7 @@ import {
   ADS_DAILY_CAP,
   RENAME_COST,
 } from '@nw/shared';
+import { CHAT_SEND_RATE_PER_MIN } from '@nw/shared';
 import { getOrCreateSave, putSave } from './save.js';
 import {
   changePassword,
@@ -47,13 +48,27 @@ import {
   blockUser,
   unblockUser,
   friendAccountIds,
+  sendMessage,
+  getConversations,
+  getMessages,
+  markConversationRead,
+  profileOf,
   type SocialError,
 } from './social.js';
+import {
+  getMail,
+  readMail,
+  deleteMail,
+  claimMailAtomic,
+  splitAttachments,
+  sendPlayerMail,
+} from './mail.js';
 import type { CommercialClient } from './commercialClient.js';
 import type { GatewayClient } from './gatewayClient.js';
 import {
   markDuplicates,
   deliverGrant,
+  deliverMailGrant,
   mirrorCoins,
   mirrorWalletFrom,
   reconcileUndelivered,
@@ -91,6 +106,22 @@ function normUpgrades(u: Record<string, number>): Record<string, number> {
 
 export class MetaService {
   constructor(private readonly deps: ServiceDeps) {}
+
+  /**
+   * 私聊发送限流（SOC2）：每账号近 60s 的发送时间戳滑窗。进程内（meta 无状态横扩时是 per-instance
+   * 近似限流，足以挡刷屏；精确全局限流待 Redis）。返回 true=允许并记一次，false=超限。
+   */
+  private readonly chatRate = new Map<string, number[]>();
+  private allowChat(accountId: string, now: number): boolean {
+    const win = this.chatRate.get(accountId)?.filter((t) => now - t < 60_000) ?? [];
+    if (win.length >= CHAT_SEND_RATE_PER_MIN) {
+      this.chatRate.set(accountId, win);
+      return false;
+    }
+    win.push(now);
+    this.chatRate.set(accountId, win);
+    return true;
+  }
 
   /** gateway 公开 WS 地址（配置了才下发）。客户端据此连控制面，无需自身硬编码 gateway 地址。 */
   private get gatewayField(): { gatewayUrl?: string } {
@@ -553,6 +584,8 @@ export class MetaService {
         return reply.code(409).send(err(ErrorCode.ALREADY_FRIEND, 'already friends'));
       case 'FRIEND_CAP_REACHED':
         return reply.code(409).send(err(ErrorCode.FRIEND_CAP_REACHED, 'friend cap reached'));
+      case 'NOT_FRIEND':
+        return reply.code(403).send(err(ErrorCode.NOT_FRIEND, 'not friends'));
       case 'BLOCKED':
         return reply.code(403).send(err(ErrorCode.BLOCKED, 'blocked'));
       case 'BAD_REQUEST':
@@ -674,6 +707,151 @@ export class MetaService {
     const { publicId } = req.params as { publicId: string };
     await unblockUser(this.deps.cols, accountId, publicId);
     return ok({ ok: true });
+  }
+
+  // ── 社交：私聊（S6-2）。发送走 REST（单一写者）；收消息经 gateway chat_message push。──
+  async getConversations(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const conversations = await getConversations(this.deps.cols, accountId);
+    return ok({ conversations });
+  }
+
+  async getMessages(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { convId } = req.params as { convId: string };
+    const q = req.query as { before?: string | number; limit?: string | number };
+    const before = q.before !== undefined ? Number(q.before) : undefined;
+    const limit = q.limit !== undefined ? Number(q.limit) : 30;
+    const messages = await getMessages(this.deps.cols, accountId, convId, before, limit);
+    if (messages === null) {
+      return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'conversation not found'));
+    }
+    return ok({ messages });
+  }
+
+  async sendChat(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { toPublicId, body } = req.body as { toPublicId: string; body: string };
+    if (!this.allowChat(accountId, this.deps.now())) {
+      return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many messages'));
+    }
+    // 敏感词地区：账号暂无 region 字段 → 用全局词表（SOC10 分地区词表已就位，按账号选取待补）。
+    const res = await sendMessage(this.deps.cols, accountId, toPublicId, body, 'global', this.deps.now());
+    if (res.kind === 'error') return this.sendSocialError(reply, res.error);
+    // 推送给收件方（在线则弹消息 / 红点）。
+    void this.deps.gateway.push(res.to, {
+      kind: 'chat_message',
+      convId: res.convId,
+      fromPublicId: res.fromProfile.publicId,
+      fromName: res.fromProfile.displayName,
+      body: res.body,
+      ts: res.ts,
+    });
+    return ok({ messageId: res.messageId, ts: res.ts });
+  }
+
+  async readChat(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { convId } = req.body as { convId: string };
+    await markConversationRead(this.deps.cols, accountId, convId);
+    return ok({ ok: true });
+  }
+
+  // ── 社交：邮件（S6-3）。附件领取经 commercial 发金币 + meta 发 inventory，claimOrderId 幂等。──
+  async getMail(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { mail, unread } = await getMail(this.deps.cols, accountId, this.deps.now());
+    return ok({ mail, unread });
+  }
+
+  async readMail(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { id } = req.params as { id: string };
+    const okRead = await readMail(this.deps.cols, accountId, id, this.deps.now());
+    if (!okRead) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));
+    return ok({ ok: true });
+  }
+
+  async deleteMail(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { id } = req.params as { id: string };
+    await deleteMail(this.deps.cols, accountId, id);
+    return ok({ ok: true });
+  }
+
+  async claimMail(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { id } = req.params as { id: string };
+    const { cols, commercial, now } = this.deps;
+
+    // 先看附件构成：含金币时需 commercial 可用（否则无法发币）→ 在领取前判，避免标记后无法发放。
+    const peek = await cols.mail.findOne({ _id: id, to: accountId });
+    if (!peek) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));
+    if (!peek.attachments || peek.attachments.length === 0) {
+      return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
+    }
+    if (peek.claimedAt !== undefined) {
+      return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
+    }
+    const split = splitAttachments(peek.attachments);
+    if (split.coins > 0 && !commercial.available) {
+      return reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'commercial service unavailable'));
+    }
+
+    const orderId = randomUUID();
+    const claimed = await claimMailAtomic(cols, accountId, id, orderId, now());
+    if ('error' in claimed) {
+      if (claimed.error === 'ALREADY_CLAIMED') {
+        return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
+      }
+      if (claimed.error === 'NO_ATTACHMENT') {
+        return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
+      }
+      return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));
+    }
+
+    // 发金币（commercial 权威，orderId 幂等）→ 取回权威余额做镜像；无金币则镜像不动。
+    let coinsAfter: number | null = null;
+    if (split.coins > 0) {
+      const g = await commercial.grant({ accountId, amount: split.coins, reason: 'mail', orderId });
+      if (g.ok) coinsAfter = g.coinsAfter;
+    }
+    // 发 inventory（皮肤幂等 set / 物品 $inc）+ 钱包镜像 + deliveredOrders 幂等账本。
+    const cur = await getOrCreateSave(cols, accountId, now());
+    const newSkins = split.skins.filter((s) => !cur.inventory.skins.includes(s));
+    const save = await deliverMailGrant(cols, accountId, orderId, newSkins, split.items, coinsAfter, now());
+    return ok({ save });
+  }
+
+  async sendMail(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { toPublicId, subject, body } = req.body as {
+      toPublicId: string;
+      subject: string;
+      body: string;
+    };
+    const fromProfile = await profileOf(this.deps.cols, accountId);
+    if (!fromProfile) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'sender profile missing'));
+    const res = await sendPlayerMail(
+      this.deps.cols,
+      accountId,
+      fromProfile,
+      toPublicId,
+      subject,
+      body,
+      this.deps.now(),
+    );
+    if (res.kind === 'error') {
+      if (res.error === 'NOT_FRIEND') {
+        return reply.code(403).send(err(ErrorCode.NOT_FRIEND, 'not friends'));
+      }
+      if (res.error === 'NOT_FOUND') {
+        return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'player not found'));
+      }
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'bad request'));
+    }
+    void this.deps.gateway.push(res.to, { kind: 'mail_new', mailId: res.mailId, hasAttachment: false });
+    return ok({ mailId: res.mailId });
   }
 
   // ── economy（S5：meta 编排 → commercial 扣币/随机 → 发货 → 镜像回推）──────

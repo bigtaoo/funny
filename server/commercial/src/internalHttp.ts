@@ -86,6 +86,17 @@ export function startInternalHttp(
                 orderId: str(b.orderId),
               }),
             );
+          case '/internal/grant':
+            return send(
+              res,
+              200,
+              await svc.grant({
+                accountId: str(b.accountId),
+                amount: num(b.amount, 0),
+                reason: str(b.reason),
+                orderId: str(b.orderId),
+              }),
+            );
           case '/internal/gacha/draw':
             return send(
               res,

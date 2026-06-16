@@ -157,4 +157,18 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     // sink 落库即 delivered → 对账不拾取。
     expect(await svc.undeliveredOrders('j')).toHaveLength(0);
   });
+
+  it('grant（邮件附件发币）：加币 + orderId 幂等 + amount=0 仅占订单 + 对账不拾取', async () => {
+    const r1 = await svc.grant({ accountId: 'g', amount: 500, reason: 'mail', orderId: 'gr1' });
+    expect(r1).toMatchObject({ ok: true, coinsAfter: 500 });
+    // orderId 幂等：重放不再加。
+    const r2 = await svc.grant({ accountId: 'g', amount: 500, reason: 'mail', orderId: 'gr1' });
+    expect(r2).toMatchObject({ ok: true, coinsAfter: 500 });
+    expect((await svc.getWallet('g')).coins).toBe(500);
+    // amount=0（纯物品/皮肤附件）仅占幂等订单，不加币。
+    const r3 = await svc.grant({ accountId: 'g', amount: 0, reason: 'mail', orderId: 'gr2' });
+    expect(r3).toMatchObject({ ok: true, coinsAfter: 500 });
+    // grant 落库即 delivered → 对账不拾取。
+    expect(await svc.undeliveredOrders('g')).toHaveLength(0);
+  });
 });

@@ -33,7 +33,8 @@ export interface OrderDoc {
   _id: string; // orderId（meta 生成 UUID）
   accountId: string;
   // 'sink' = 纯金币消耗（改名等），无物品发货，落库即 status:'delivered'，对账不拾取。
-  kind: 'shop' | 'gacha' | 'sink';
+  // 'grant' = 纯金币发放（邮件附件领取 S6-3），同 sink 落库即 delivered，对账不拾取。
+  kind: 'shop' | 'gacha' | 'sink' | 'grant';
   cost: number;
   status: 'charged' | 'delivered';
   coinsAfter: number; // 扣币后余额（幂等重放回放）

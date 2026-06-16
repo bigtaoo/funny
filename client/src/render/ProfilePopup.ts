@@ -32,6 +32,18 @@ export interface ProfileData {
   elo?: number;
   /** Marks this card as the local player (adds a "you" tag to the name). */
   isSelf?: boolean;
+  /**
+   * Optional action buttons rendered above Close (e.g. 发消息 / 拉黑 from the friends
+   * list). Each runs its `fn` then auto-closes the popup. Omit for display-only cards.
+   */
+  actions?: ProfileAction[];
+}
+
+export interface ProfileAction {
+  labelKey: TranslationKey;
+  fn: () => void;
+  /** Render in a warning style (e.g. block / remove). */
+  danger?: boolean;
 }
 
 export class ProfilePopup {
@@ -146,6 +158,36 @@ export class ProfilePopup {
     const bH = Math.round(cardH * 0.16);
     const bX = (cardW - bW) / 2;
     const bY = cardH - bH - cardH * 0.07;
+
+    // Optional action row (发消息 / 拉黑), laid out above Close.
+    const actions = data.actions ?? [];
+    if (actions.length > 0) {
+      const gap = Math.round(cardW * 0.04);
+      const aW = Math.round((cardW * 0.84 - gap * (actions.length - 1)) / actions.length);
+      const aH = bH;
+      const aY = bY - aH - Math.round(cardH * 0.04);
+      const aX0 = (cardW - (aW * actions.length + gap * (actions.length - 1))) / 2;
+      actions.forEach((act, i) => {
+        const ax = aX0 + i * (aW + gap);
+        const ab = new PIXI.Graphics();
+        ab.beginFill(act.danger ? 0xf6eceb : palette.paper);
+        ab.lineStyle(2, act.danger ? palette.inkRed : palette.inkBlue);
+        ab.drawRoundedRect(0, 0, aW, aH, 8);
+        ab.endFill();
+        ab.x = ax; ab.y = aY;
+        ab.interactive = true;
+        ab.cursor = 'pointer';
+        ab.on('pointertap', () => { this.hide(); act.fn(); });
+        this.card.addChild(ab);
+        const al = new PIXI.Text(t(act.labelKey), {
+          fontSize: Math.round(aH * 0.4), fill: act.danger ? palette.inkRed : palette.inkBlue,
+          fontWeight: 'bold', fontFamily: 'monospace',
+        });
+        al.anchor.set(0.5, 0.5);
+        al.x = ax + aW / 2; al.y = aY + aH / 2;
+        this.card.addChild(al);
+      });
+    }
     const btn = new PIXI.Graphics();
     btn.beginFill(0x2c2c2a);
     btn.lineStyle(2, palette.pencil);

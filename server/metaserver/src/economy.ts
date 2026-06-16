@@ -62,6 +62,42 @@ export async function deliverGrant(
   return cur.save;
 }
 
+/**
+ * 邮件附件发货（S6-3）：单文档原子 + 幂等（deliveredOrders $addToSet 去重）。
+ * 皮肤进 inventory.skins（set 去重）、物品 $inc inventory.items.{id}、金币写镜像（coinsAfter 非 null 时）。
+ * `orderId` = mail.claimOrderId；重发同 orderId 不重复加物品（$addToSet 去重 + 金币以 commercial 权威镜像）。
+ */
+export async function deliverMailGrant(
+  cols: Collections,
+  accountId: string,
+  orderId: string,
+  newSkins: string[],
+  itemInc: Record<string, number>,
+  coinsAfter: number | null,
+  now: number,
+): Promise<SaveData> {
+  const set: Record<string, unknown> = { 'save.updatedAt': now };
+  if (coinsAfter !== null) set['save.wallet.coins'] = coinsAfter;
+  const inc: Record<string, number> = { 'save.rev': 1, rev: 1 };
+  for (const [id, n] of Object.entries(itemInc)) if (n > 0) inc[`save.inventory.items.${id}`] = n;
+  const res = await cols.saves.findOneAndUpdate(
+    { _id: accountId },
+    {
+      $addToSet: {
+        'save.inventory.skins': { $each: newSkins },
+        'save.deliveredOrders': orderId,
+      },
+      $inc: inc,
+      $set: set,
+    },
+    { returnDocument: 'after' },
+  );
+  if (res) return res.save;
+  const cur = await cols.saves.findOne({ _id: accountId });
+  if (!cur) throw new Error('save missing after mail grant');
+  return cur.save;
+}
+
 /** 仅刷新钱包镜像（充值/广告：无物品发货，只回写余额）。 */
 export async function mirrorCoins(
   cols: Collections,

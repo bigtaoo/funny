@@ -198,6 +198,49 @@ export class CommercialService {
     return { ok: true, coinsAfter };
   }
 
+  /**
+   * 纯金币发放（邮件附件领取 S6-3 等无扣费的入账）：原子加币 + 记 order(kind:'grant'，落库即
+   * delivered) + 流水。orderId 幂等（重放回原余额，对账不拾取）。amount 可为 0（纯物品/皮肤附件
+   * 也走此处占一个幂等订单，金额 0 不加币）。
+   */
+  async grant(args: {
+    accountId: string;
+    amount: number;
+    reason: string;
+    orderId: string;
+  }): Promise<Result<{ coinsAfter: number }>> {
+    const existing = await this.cols.orders.findOne({ _id: args.orderId });
+    if (existing) return { ok: true, coinsAfter: existing.coinsAfter };
+
+    const amount = Math.max(0, Math.floor(args.amount));
+    // 先占幂等订单（unique _id 防并发重复发币），再加币 + 回填 coinsAfter。
+    try {
+      await this.cols.orders.insertOne({
+        _id: args.orderId,
+        accountId: args.accountId,
+        kind: 'grant',
+        cost: 0,
+        status: 'delivered',
+        coinsAfter: 0,
+        result: {},
+        deliveredAt: this.now(),
+        ts: this.now(),
+      });
+    } catch (e) {
+      if ((e as { code?: number }).code === 11000) {
+        const o = await this.cols.orders.findOne({ _id: args.orderId });
+        return { ok: true, coinsAfter: o?.coinsAfter ?? 0 };
+      }
+      throw e;
+    }
+    const coinsAfter =
+      amount > 0
+        ? await this.credit(args.accountId, amount, args.reason, { orderId: args.orderId })
+        : (await this.ensureWallet(args.accountId)).coins;
+    await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
+    return { ok: true, coinsAfter };
+  }
+
   /** 盲盒：扣币 + RNG + 更新保底 + 记 order/gachaHistory。物品由 meta 发。 */
   async gachaDraw(args: {
     accountId: string;

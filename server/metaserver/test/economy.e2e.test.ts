@@ -100,6 +100,13 @@ class FakeCommercial implements CommercialClient {
     this.spent.add(a.orderId);
     return { ok: true as const, coinsAfter: this.bal(a.accountId) };
   }
+  granted = new Set<string>();
+  async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
+    if (this.granted.has(a.orderId)) return { ok: true as const, coinsAfter: this.bal(a.accountId) };
+    this.coins.set(a.accountId, this.bal(a.accountId) + a.amount);
+    this.granted.add(a.orderId);
+    return { ok: true as const, coinsAfter: this.bal(a.accountId) };
+  }
 }
 
 describe.skipIf(!mongo)('meta economy orchestration e2e', () => {

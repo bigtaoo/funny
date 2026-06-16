@@ -11,7 +11,7 @@
 // app.ts for the thin PIXI shell that constructs PixiAppViews and calls start().
 
 import type { IPlatform } from '../platform/IPlatform';
-import type { AppViews, RoomView, FriendsView, NetGameView } from './AppViews';
+import type { AppViews, RoomView, FriendsView, ChatView, NetGameView } from './AppViews';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, RecordingInputSource } from '../game';
 import type { OwnerId, PlayerStats, MatchStartInfo, Replay } from '../game';
 import { computeStars, remainingHpPct } from '../game/meta/campaignRewards';
@@ -308,15 +308,62 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       addFriend: async (publicId) => { await client.requestFriend(publicId); },
       respond: (requestId, accept) => client.respondFriend(requestId, accept),
       removeFriend: (publicId) => client.removeFriend(publicId),
+      blockUser: (publicId) => client.blockUser(publicId),
+      // chat (S6-2)
+      loadConversations: () => client.getConversations(),
+      openChat: (peerPublicId, peerName) => goChat(peerPublicId, peerName),
+      // mail (S6-3)
+      loadMail: () => client.getMail(),
+      markMailRead: (mailId) => client.readMail(mailId),
+      async claimMail(mailId) {
+        const { save } = await client.claimMail(mailId);
+        saveManager.adoptServer(save);
+        return true;
+      },
+      deleteMail: (mailId) => client.deleteMail(mailId),
     });
-    // Live social pushes (presence / request / friend add-remove) arrive over the
-    // gateway control plane; forward them to the scene so the list stays fresh.
+    // Live social pushes (presence / request / friend add-remove / chat / mail)
+    // arrive over the gateway control plane; forward them so the tabs stay fresh.
     if (session) {
       session.handlers = {
         onMatchStart: (info) => goGameNet(info),
         onFriendPresence: (p) => view.applyFriendPresence(p),
         onFriendRequest:  (r) => view.applyFriendRequest(r),
         onFriendUpdate:   (u) => view.applyFriendUpdate(u),
+        onChatMessage:    (m) => view.applyChatMessage(m),
+        onMailNew:        (m) => view.applyMailNew(m),
+      };
+      session.connect();
+    }
+  }
+
+  function goChat(peerPublicId: string, peerName: string): void {
+    if (!api) { goLogin(); return; }
+    const client = api;
+    inLobby = false;
+    const session = getNetSession();
+    const myPublicId = platform.storage.getItem(PLAYER_PUBLIC_ID_KEY) ?? '';
+    const restore = (): void => {
+      if (session) session.handlers = { onMatchStart: (info) => goGameNet(info) };
+    };
+    const view: ChatView = views.showChat({
+      peerName,
+      peerPublicId,
+      myPublicId,
+      onBack() { restore(); goFriends(); },
+      async resolveConvId(pid) {
+        const convs = await client.getConversations();
+        return convs.find((c) => c.peer.publicId === pid)?.convId ?? null;
+      },
+      loadMessages: (convId, before) => client.getMessages(convId, before),
+      send: (body) => client.sendChat(peerPublicId, body),
+      markRead: (convId) => client.readChat(convId),
+    });
+    // Forward inbound chat pushes to the open window (others ignored here).
+    if (session) {
+      session.handlers = {
+        onMatchStart: (info) => goGameNet(info),
+        onChatMessage: (m) => view.applyIncoming(m),
       };
       session.connect();
     }

@@ -27,6 +27,7 @@ import { CollectionScene } from '../../src/scenes/CollectionScene';
 import { StatsScene } from '../../src/scenes/StatsScene';
 import { RoomScene } from '../../src/scenes/RoomScene';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
+import { ChatScene } from '../../src/scenes/ChatScene';
 import { ResultScene } from '../../src/scenes/ResultScene';
 import type { PlayerStats } from '../../src/game/types';
 
@@ -227,6 +228,27 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         addFriend: async () => {},
         respond: async () => {},
         removeFriend: async () => {},
+        blockUser: async () => {},
+        loadConversations: async () => [],
+        openChat() {},
+        loadMail: async () => ({ mail: [], unread: 0 }),
+        markMailRead: async () => {},
+        claimMail: async () => true,
+        deleteMail: async () => {},
+      }),
+  },
+  {
+    name: 'ChatScene',
+    build: (w, h) =>
+      new ChatScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        peerName: 'Bob',
+        peerPublicId: '123456789',
+        myPublicId: '987654321',
+        resolveConvId: async () => null,
+        loadMessages: async () => [],
+        send: async () => ({ messageId: 'm1', ts: 0 }),
+        markRead: async () => {},
       }),
   },
   {

@@ -40,6 +40,13 @@ export interface CommercialClient {
     reason: string;
     orderId: string;
   }): Promise<Body<{ coinsAfter: number }>>;
+  /** 纯金币发放（邮件附件领取 S6-3），orderId 幂等。amount=0 仅占幂等订单不加币。 */
+  grant(args: {
+    accountId: string;
+    amount: number;
+    reason: string;
+    orderId: string;
+  }): Promise<Body<{ coinsAfter: number }>>;
   orderDelivered(args: { orderId: string; refundCoins?: number }): Promise<Body<{}>>;
   undeliveredOrders(accountId: string): Promise<UndeliveredOrder[]>;
   rechargeVerify(args: {
@@ -113,6 +120,10 @@ export class HttpCommercialClient implements CommercialClient {
 
   spend(args: { accountId: string; amount: number; reason: string; orderId: string }) {
     return this.post<{ coinsAfter: number }>('/internal/spend', args);
+  }
+
+  grant(args: { accountId: string; amount: number; reason: string; orderId: string }) {
+    return this.post<{ coinsAfter: number }>('/internal/grant', args);
   }
 
   orderDelivered(args: { orderId: string; refundCoins?: number }) {

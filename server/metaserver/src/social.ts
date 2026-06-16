@@ -3,8 +3,26 @@
 // 实时投递（friend_request / friend_update / friend_presence）由 MetaService 调 GatewayClient.push
 // 走 gateway /gw/push 定向下发，离线丢弃（数据已落库，下次登录拉）。
 import { randomUUID } from 'node:crypto';
-import type { Collections, FriendView, FriendRequestView, ProfileView } from '@nw/shared';
-import { FRIEND_CAP, friendEdgeId, blockId, eloToRank, INITIAL_ELO } from '@nw/shared';
+import type {
+  Collections,
+  FriendView,
+  FriendRequestView,
+  ProfileView,
+  ConversationView,
+  ChatMessageView,
+} from '@nw/shared';
+import {
+  FRIEND_CAP,
+  friendEdgeId,
+  blockId,
+  eloToRank,
+  INITIAL_ELO,
+  conversationId,
+  CHAT_BODY_MAX,
+  CHAT_HISTORY_PAGE_MAX,
+  censorChat,
+  type ChatRegion,
+} from '@nw/shared';
 
 /** 业务错误码（与 ErrorCode 子集对齐，service 层据此映射 HTTP 状态）。 */
 export type SocialError =
@@ -12,10 +30,11 @@ export type SocialError =
   | 'BAD_REQUEST'
   | 'ALREADY_FRIEND'
   | 'FRIEND_CAP_REACHED'
+  | 'NOT_FRIEND'
   | 'BLOCKED';
 
 /** accountId → 公开资料（publicId / displayName）。无 publicId（未生成）视为不可见。 */
-async function profileOf(cols: Collections, accountId: string): Promise<ProfileView | null> {
+export async function profileOf(cols: Collections, accountId: string): Promise<ProfileView | null> {
   const doc = await cols.accounts.findOne({ _id: accountId });
   if (!doc?.publicId) return null;
   const save = await cols.saves.findOne({ _id: accountId }, { projection: { 'save.pvp.elo': 1 } });
@@ -268,4 +287,133 @@ export async function unblockUser(cols: Collections, me: string, publicId: strin
   if (!target) return false;
   await cols.blocks.deleteOne({ _id: blockId(me, target.accountId) });
   return true;
+}
+
+// ── 私聊（S6-2，SOC4）。会话 id 确定性派生；发送须互为好友且未互相拉黑；敏感词打码。──
+
+export type SendChatResult =
+  | {
+      kind: 'ok';
+      messageId: string;
+      ts: number;
+      convId: string;
+      to: string;
+      fromProfile: ProfileView;
+      /** 已过敏感词打码的正文（push 用，与落库一致）。 */
+      body: string;
+    }
+  | { kind: 'error'; error: SocialError };
+
+/**
+ * 发私聊：校验目标存在 / 非自己 / 互为好友 / 未互相拉黑 / 正文非空且不超长 → 敏感词打码 →
+ * 插消息（ts 存 BSON Date 供 TTL）+ bump 会话末条摘要 + 收件方 unread+1（单文档原子）。
+ * 限流（每分钟条数）由 service 层维护（meta 进程内滑窗），此处只做内容/关系校验。
+ */
+export async function sendMessage(
+  cols: Collections,
+  me: string,
+  toPublicId: string,
+  bodyRaw: string,
+  region: ChatRegion,
+  now: number,
+): Promise<SendChatResult> {
+  const target = await resolveByPublicId(cols, toPublicId);
+  if (!target) return { kind: 'error', error: 'NOT_FOUND' };
+  const to = target.accountId;
+  if (to === me) return { kind: 'error', error: 'BAD_REQUEST' };
+  const trimmed = (bodyRaw ?? '').trim();
+  if (!trimmed || trimmed.length > CHAT_BODY_MAX) return { kind: 'error', error: 'BAD_REQUEST' };
+  // 拉黑优先（拉黑会删好友边，故 BLOCKED 比 NOT_FRIEND 更准确地说明原因）。
+  if ((await hasBlock(cols, to, me)) || (await hasBlock(cols, me, to))) {
+    return { kind: 'error', error: 'BLOCKED' };
+  }
+  if (!(await isFriend(cols, me, to))) return { kind: 'error', error: 'NOT_FRIEND' };
+  const fromProfile = await profileOf(cols, me);
+  if (!fromProfile) return { kind: 'error', error: 'BAD_REQUEST' };
+
+  const body = censorChat(trimmed, region).text;
+  const convId = conversationId(me, to);
+  const messageId = randomUUID();
+  await cols.chatMessages.insertOne({
+    _id: messageId,
+    convId,
+    from: me,
+    body,
+    kind: 'text',
+    ts: new Date(now),
+  });
+  // 会话 upsert：写末条摘要 + 收件方未读 +1（自己未读保持/归零由 read 端点管）。
+  await cols.conversations.updateOne(
+    { _id: convId },
+    {
+      $setOnInsert: { _id: convId, members: [me < to ? me : to, me < to ? to : me] as [string, string] },
+      $set: { lastBody: body, lastFrom: me, lastTs: now },
+      $inc: { [`unread.${to}`]: 1 },
+    },
+    { upsert: true },
+  );
+  return { kind: 'ok', messageId, ts: now, convId, to, fromProfile, body };
+}
+
+/** 会话列表（含对端资料 + 自己未读数）。按末条时间倒序。`lastFrom`=末条发送者 publicId（UI 判向）。 */
+export async function getConversations(cols: Collections, me: string): Promise<ConversationView[]> {
+  const docs = await cols.conversations.find({ members: me }).sort({ lastTs: -1 }).toArray();
+  const myProfile = await profileOf(cols, me);
+  const myPid = myProfile?.publicId ?? '';
+  const out: ConversationView[] = [];
+  for (const d of docs) {
+    const peerId = d.members[0] === me ? d.members[1] : d.members[0];
+    const peer = await profileOf(cols, peerId);
+    if (!peer) continue; // 对端账号异常跳过
+    out.push({
+      convId: d._id,
+      peer,
+      ...(d.lastBody ? { lastBody: d.lastBody } : {}),
+      ...(d.lastFrom ? { lastFrom: d.lastFrom === me ? myPid : peer.publicId } : {}),
+      lastTs: d.lastTs,
+      unread: d.unread?.[me] ?? 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * 拉会话历史（按时间倒序分页）。仅会话成员可拉（防越权）。`before`=epoch ms 游标（取更早的）。
+ * 返回的 `fromPublicId` 由两成员资料映射；非成员 / 会话不存在 → null。
+ */
+export async function getMessages(
+  cols: Collections,
+  me: string,
+  convId: string,
+  before: number | undefined,
+  limit: number,
+): Promise<ChatMessageView[] | null> {
+  const conv = await cols.conversations.findOne({ _id: convId });
+  if (!conv || !conv.members.includes(me)) return null;
+  const lim = Math.min(CHAT_HISTORY_PAGE_MAX, Math.max(1, Math.floor(limit) || 30));
+  const q: Record<string, unknown> = { convId };
+  if (before !== undefined && Number.isFinite(before)) q.ts = { $lt: new Date(before) };
+  const docs = await cols.chatMessages.find(q).sort({ ts: -1 }).limit(lim).toArray();
+  // accountId → publicId（仅两成员）。
+  const pid = new Map<string, string>();
+  for (const mId of conv.members) {
+    const p = await profileOf(cols, mId);
+    if (p) pid.set(mId, p.publicId);
+  }
+  return docs.map((d) => ({
+    messageId: d._id,
+    convId: d.convId,
+    fromPublicId: pid.get(d.from) ?? '',
+    body: d.body,
+    kind: d.kind,
+    ts: d.ts instanceof Date ? d.ts.getTime() : Number(d.ts),
+  }));
+}
+
+/** 标记会话已读（清自己的未读计数）。非成员 no-op。 */
+export async function markConversationRead(cols: Collections, me: string, convId: string): Promise<void> {
+  await cols.conversations.updateOne(
+    { _id: convId, members: me },
+    { $set: { [`unread.${me}`]: 0 } },
+  );
 }

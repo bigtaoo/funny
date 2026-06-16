@@ -5,8 +5,21 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ProfilePopup } from '../render/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
-import type { FriendView, FriendRequestView, ProfileView } from '../net/ApiClient';
-import type { FriendPresence, FriendRequestPush, FriendUpdate } from '../net/proto/transport';
+import type {
+  FriendView,
+  FriendRequestView,
+  ProfileView,
+  ConversationView,
+  MailView,
+  MailAttachmentView,
+} from '../net/ApiClient';
+import type {
+  FriendPresence,
+  FriendRequestPush,
+  FriendUpdate,
+  ChatMessagePush,
+  MailNew,
+} from '../net/proto/transport';
 
 // ── FriendsScene (S6-1) — the lobby "social" hub: friends list + requests ─────
 //
@@ -36,8 +49,21 @@ export interface FriendsSceneCallbacks {
   addFriend(publicId: string): Promise<void>;
   respond(requestId: string, accept: boolean): Promise<void>;
   removeFriend(publicId: string): Promise<void>;
+  /** Block a player (removes friendship + blocks requests/chat). */
+  blockUser(publicId: string): Promise<void>;
+  // —— chat (S6-2) ——
+  loadConversations(): Promise<ConversationView[]>;
+  /** Open the 1:1 conversation window with this peer. */
+  openChat(peerPublicId: string, peerName: string): void;
+  // —— mail (S6-3) ——
+  loadMail(): Promise<{ mail: MailView[]; unread: number }>;
+  markMailRead(mailId: string): Promise<void>;
+  /** Claim a mail's attachments; resolves true on success. */
+  claimMail(mailId: string): Promise<boolean>;
+  deleteMail(mailId: string): Promise<void>;
 }
 
+type Tab = 'friends' | 'chat' | 'mail';
 type View = 'list' | 'search';
 
 interface Hit { rect: Rect; fn: () => void; scroll?: boolean; }
@@ -51,10 +77,19 @@ export class FriendsScene implements Scene {
   private readonly h: number;
   private readonly cb: FriendsSceneCallbacks;
 
+  private tab: Tab = 'friends';
   private view: View = 'list';
   private loading = true;
   private friends: FriendView[] = [];
   private incoming: FriendRequestView[] = [];
+
+  // Chat tab.
+  private conversations: ConversationView[] = [];
+  // Mail tab.
+  private mail: MailView[] = [];
+  private mailUnread = 0;
+  /** Mail detail overlay (null = list). */
+  private openMailItem: MailView | null = null;
 
   // Search sub-view state.
   private searchDigits: string[] = [];
@@ -126,23 +161,42 @@ export class FriendsScene implements Scene {
     void this.refresh();
   }
 
+  applyChatMessage(_m: ChatMessagePush): void {
+    // Bump conversation list + unread badge (ChatScene handles the open window).
+    void this.refresh();
+  }
+
+  applyMailNew(_m: MailNew): void {
+    void this.refresh();
+  }
+
   // ── Data ───────────────────────────────────────────────────────────────────
 
+  /** Load everything (friends/requests/conversations/mail) so tab badges stay accurate. */
   private async refresh(): Promise<void> {
     try {
-      const [friends, requests] = await Promise.all([
+      const [friends, requests, conversations, mail] = await Promise.all([
         this.cb.loadFriends(),
         this.cb.loadRequests(),
+        this.cb.loadConversations(),
+        this.cb.loadMail(),
       ]);
       this.friends = friends;
       this.incoming = requests.incoming;
+      this.conversations = conversations;
+      this.mail = mail.mail;
+      this.mailUnread = mail.unread;
     } catch {
       // Leave whatever we have; surface a soft toast on first failure.
       if (this.loading) this.toast('friends.error');
     } finally {
       this.loading = false;
-      this.render();
+      if (!this.dead) this.render();
     }
+  }
+
+  private get chatUnread(): number {
+    return this.conversations.reduce((s, c) => s + (c.unread > 0 ? 1 : 0), 0);
   }
 
   // ── Input ──────────────────────────────────────────────────────────────────
@@ -243,8 +297,24 @@ export class FriendsScene implements Scene {
   }
 
   private onBack(): void {
+    if (this.openMailItem) { this.openMailItem = null; this.render(); return; }
     if (this.view === 'search') { this.view = 'list'; this.render(); return; }
     this.cb.onBack();
+  }
+
+  private switchTab(tab: Tab): void {
+    if (this.tab === tab) return;
+    this.tab = tab;
+    this.view = 'list';
+    this.openMailItem = null;
+    this.scrollY = 0;
+    this.render();
+    void this.refresh();
+  }
+
+  /** Content region starts below header + tab bar. */
+  private get bodyTop(): number {
+    return Math.round(this.h * 0.12) + Math.round(this.h * 0.07);
   }
 
   private toast(key: TranslationKey): void {
@@ -262,11 +332,59 @@ export class FriendsScene implements Scene {
     this.container.addChild(buildPaperBackground('friendsbg', this.w, this.h));
     this.drawHeader();
 
-    if (this.view === 'search') this.drawSearch();
-    else this.drawList();
+    if (this.tab === 'friends' && this.view === 'search') {
+      this.drawSearch();
+    } else if (this.openMailItem) {
+      this.drawTabBar();
+      this.drawMailDetail(this.openMailItem);
+    } else {
+      this.drawTabBar();
+      if (this.tab === 'friends') this.drawList();
+      else if (this.tab === 'chat') this.drawChatList();
+      else this.drawMailList();
+    }
 
     this.drawToast();
     this.container.addChild(this.popup.container);
+  }
+
+  private drawTabBar(): void {
+    const { w, h } = this;
+    const tbH = Math.round(h * 0.12);
+    const barH = Math.round(h * 0.07);
+    const tabs: { id: Tab; key: TranslationKey; badge: number }[] = [
+      { id: 'friends', key: 'friends.tab.friends', badge: this.incoming.length },
+      { id: 'chat', key: 'friends.tab.chat', badge: this.chatUnread },
+      { id: 'mail', key: 'friends.tab.mail', badge: this.mailUnread },
+    ];
+    const tw = Math.round(w / tabs.length);
+    tabs.forEach((tabDef, i) => {
+      const tx = i * tw;
+      const active = this.tab === tabDef.id;
+      const bg = new PIXI.Graphics();
+      bg.beginFill(active ? C.paper : C.dark, active ? 1 : 0.12);
+      bg.drawRect(tx, tbH, tw, barH);
+      bg.endFill();
+      this.container.addChild(bg);
+      if (active) {
+        const underline = new PIXI.Graphics();
+        underline.beginFill(C.accent);
+        underline.drawRect(tx + tw * 0.18, tbH + barH - 3, tw * 0.64, 3);
+        underline.endFill();
+        this.container.addChild(underline);
+      }
+      const label = txt(t(tabDef.key), Math.round(barH * 0.4), active ? C.dark : C.mid, active);
+      label.anchor.set(0.5, 0.5); label.x = tx + tw / 2; label.y = tbH + barH / 2;
+      this.container.addChild(label);
+      if (tabDef.badge > 0) {
+        const dot = new PIXI.Graphics();
+        dot.beginFill(C.red);
+        dot.drawCircle(tx + tw / 2 + label.width / 2 + Math.round(barH * 0.18), tbH + barH / 2 - Math.round(barH * 0.18), Math.round(barH * 0.14));
+        dot.endFill();
+        this.container.addChild(dot);
+      }
+      this.hits.push({ rect: { x: tx, y: tbH, w: tw, h: barH }, fn: () => this.switchTab(tabDef.id) });
+    });
   }
 
   private drawHeader(): void {
@@ -289,10 +407,9 @@ export class FriendsScene implements Scene {
 
   private drawList(): void {
     const { w, h } = this;
-    const tbH = Math.round(h * 0.12);
 
     // Action row: search (add) + online play (room).
-    const aY = tbH + Math.round(h * 0.025);
+    const aY = this.bodyTop + Math.round(h * 0.01);
     const aH = Math.round(h * 0.075);
     const aGap = Math.round(w * 0.04);
     const aW = Math.round((w * 0.92 - aGap) / 2);
@@ -443,7 +560,223 @@ export class FriendsScene implements Scene {
       name: f.alias || f.displayName,
       publicId: f.publicId,
       ...(f.rank ? { rankKey: 'rank.' + f.rank } : {}),
+      actions: [
+        { labelKey: 'friends.message', fn: () => this.cb.openChat(f.publicId, f.alias || f.displayName) },
+        { labelKey: 'friends.block', fn: () => void this.doBlock(f.publicId), danger: true },
+      ],
     });
+  }
+
+  private async doBlock(publicId: string): Promise<void> {
+    try {
+      await this.cb.blockUser(publicId);
+      this.toast('friends.blockedDone');
+    } catch {
+      this.toast('friends.error');
+    }
+    void this.refresh();
+  }
+
+  // ── Chat tab ──────────────────────────────────────────────────────────────
+  private drawChatList(): void {
+    const { w, h } = this;
+    this.regionTop = this.bodyTop + Math.round(h * 0.01);
+    this.regionBottom = h - Math.round(h * 0.02);
+    const regionH = this.regionBottom - this.regionTop;
+    const { layer } = this.scrollRegion(regionH);
+
+    if (this.loading) { this.centerLabel(layer, 'friends.loading', regionH); this.maxScroll = 0; return; }
+    if (this.conversations.length === 0) { this.centerLabel(layer, 'chat.noConversations', regionH); this.maxScroll = 0; return; }
+
+    let cy = Math.round(h * 0.01);
+    const screenY = (c: number) => this.regionTop + c - this.scrollY;
+    const rowGap = Math.round(h * 0.014);
+    for (const c of this.conversations) {
+      this.drawConvRow(layer, c, screenY(cy));
+      cy += Math.round(h * 0.10) + rowGap;
+    }
+    this.maxScroll = Math.max(0, cy - regionH);
+    if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;
+  }
+
+  private drawConvRow(layer: PIXI.Container, c: ConversationView, y: number): void {
+    const { w, h } = this;
+    const rh = Math.round(h * 0.10);
+    const rx = Math.round(w * 0.04);
+    const rw = Math.round(w * 0.92);
+    const bg = sketchPanel(rw, rh, { fill: C.paper, border: c.unread > 0 ? C.accent : C.line, width: 2, seed: seedFor(rx, 2, rw) });
+    bg.x = rx; bg.y = y;
+    sketchAccentBar(bg, rh, c.unread > 0 ? C.accent : C.mid, seedFor(rx, rh, 9));
+    layer.addChild(bg);
+
+    const name = txt(c.peer.displayName, Math.round(rh * 0.3), C.dark, true);
+    name.anchor.set(0, 0.5); name.x = rx + Math.round(rw * 0.06); name.y = y + rh * 0.34;
+    layer.addChild(name);
+
+    const preview = (c.lastBody ?? '').slice(0, 28) || t('chat.empty');
+    const sub = txt(preview, Math.round(rh * 0.22), C.mid);
+    sub.anchor.set(0, 0.5); sub.x = rx + Math.round(rw * 0.06); sub.y = y + rh * 0.70;
+    layer.addChild(sub);
+
+    if (c.unread > 0) {
+      const badge = txt(String(c.unread), Math.round(rh * 0.26), 0xffffff, true);
+      const bw = Math.max(Math.round(rh * 0.4), badge.width + Math.round(rh * 0.2));
+      const dot = new PIXI.Graphics();
+      dot.beginFill(C.red);
+      dot.drawCircle(rx + rw - Math.round(rw * 0.06), y + rh / 2, bw / 2);
+      dot.endFill();
+      layer.addChild(dot);
+      badge.anchor.set(0.5, 0.5); badge.x = rx + rw - Math.round(rw * 0.06); badge.y = y + rh / 2;
+      layer.addChild(badge);
+    }
+
+    this.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.cb.openChat(c.peer.publicId, c.peer.displayName) });
+  }
+
+  // ── Mail tab ────────────────────────────────────────────────────────────────
+  private drawMailList(): void {
+    const { w, h } = this;
+    this.regionTop = this.bodyTop + Math.round(h * 0.01);
+    this.regionBottom = h - Math.round(h * 0.02);
+    const regionH = this.regionBottom - this.regionTop;
+    const { layer } = this.scrollRegion(regionH);
+
+    if (this.loading) { this.centerLabel(layer, 'friends.loading', regionH); this.maxScroll = 0; return; }
+    if (this.mail.length === 0) { this.centerLabel(layer, 'mail.empty', regionH); this.maxScroll = 0; return; }
+
+    let cy = Math.round(h * 0.01);
+    const screenY = (c: number) => this.regionTop + c - this.scrollY;
+    const rowGap = Math.round(h * 0.014);
+    for (const m of this.mail) {
+      this.drawMailRow(layer, m, screenY(cy));
+      cy += Math.round(h * 0.10) + rowGap;
+    }
+    this.maxScroll = Math.max(0, cy - regionH);
+    if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;
+  }
+
+  private drawMailRow(layer: PIXI.Container, m: MailView, y: number): void {
+    const { w, h } = this;
+    const rh = Math.round(h * 0.10);
+    const rx = Math.round(w * 0.04);
+    const rw = Math.round(w * 0.92);
+    const hasAtt = !!m.attachments && m.attachments.length > 0;
+    const unclaimed = hasAtt && !m.claimed;
+    const accent = !m.read ? C.gold : unclaimed ? C.green : C.mid;
+    const bg = sketchPanel(rw, rh, { fill: C.paper, border: accent, width: 2, seed: seedFor(rx, 3, rw) });
+    bg.x = rx; bg.y = y;
+    sketchAccentBar(bg, rh, accent, seedFor(rx, rh, 11));
+    layer.addChild(bg);
+
+    if (!m.read) {
+      const dot = new PIXI.Graphics();
+      dot.beginFill(C.gold); dot.drawCircle(rx + Math.round(rw * 0.05), y + rh / 2, Math.round(rh * 0.08)); dot.endFill();
+      layer.addChild(dot);
+    }
+    const tx = rx + Math.round(rw * 0.1);
+    const subj = txt((hasAtt ? '🎁 ' : '') + m.subject, Math.round(rh * 0.3), C.dark, true);
+    subj.anchor.set(0, 0.5); subj.x = tx; subj.y = y + rh * 0.34;
+    layer.addChild(subj);
+    const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), Math.round(rh * 0.22), C.mid);
+    from.anchor.set(0, 0.5); from.x = tx; from.y = y + rh * 0.70;
+    layer.addChild(from);
+
+    this.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.openMail(m) });
+  }
+
+  private openMail(m: MailView): void {
+    this.openMailItem = m;
+    this.scrollY = 0;
+    if (!m.read) void this.cb.markMailRead(m.mailId).then(() => { m.read = true; });
+    this.render();
+  }
+
+  private drawMailDetail(m: MailView): void {
+    const { w, h } = this;
+    const top = this.bodyTop + Math.round(h * 0.02);
+    const px = Math.round(w * 0.06);
+    const panelW = w - px * 2;
+
+    const subj = txt(m.subject, Math.round(h * 0.034), C.dark, true);
+    subj.anchor.set(0, 0); subj.x = px; subj.y = top;
+    this.container.addChild(subj);
+    const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), Math.round(h * 0.024), C.mid);
+    from.anchor.set(0, 0); from.x = px; from.y = top + Math.round(h * 0.05);
+    this.container.addChild(from);
+
+    const bodyTxt = new PIXI.Text(m.body, {
+      fontSize: Math.round(h * 0.026), fill: C.dark, fontFamily: 'monospace',
+      wordWrap: true, wordWrapWidth: panelW, breakWords: true,
+    });
+    bodyTxt.x = px; bodyTxt.y = top + Math.round(h * 0.10);
+    this.container.addChild(bodyTxt);
+
+    let cy = bodyTxt.y + bodyTxt.height + Math.round(h * 0.03);
+    const hasAtt = !!m.attachments && m.attachments.length > 0;
+    if (hasAtt) {
+      const label = txt(t('mail.attachments'), Math.round(h * 0.024), C.mid, true);
+      label.anchor.set(0, 0); label.x = px; label.y = cy;
+      this.container.addChild(label);
+      cy += Math.round(h * 0.04);
+      for (const a of m.attachments!) {
+        const desc = attachmentLabel(a);
+        const row = txt('· ' + desc, Math.round(h * 0.026), C.dark);
+        row.anchor.set(0, 0); row.x = px + Math.round(w * 0.02); row.y = cy;
+        this.container.addChild(row);
+        cy += Math.round(h * 0.04);
+      }
+      cy += Math.round(h * 0.02);
+      const bH = Math.round(h * 0.08);
+      if (m.claimed) {
+        const done = txt(t('mail.claimed'), Math.round(h * 0.028), C.green, true);
+        done.anchor.set(0.5, 0.5); done.x = w / 2; done.y = cy + bH / 2;
+        this.container.addChild(done);
+      } else {
+        this.addButton(t('mail.claim'), px, cy, panelW, bH, C.green, C.green, () => void this.doClaim(m), 0xffffff);
+      }
+      cy += bH + Math.round(h * 0.02);
+    }
+
+    // Delete (always) at the bottom.
+    const dH = Math.round(h * 0.07);
+    this.addButton(t('mail.delete'), px, h - dH - Math.round(h * 0.03), panelW, dH, C.paper, C.red, () => void this.doMailDelete(m), C.red);
+  }
+
+  private async doClaim(m: MailView): Promise<void> {
+    try {
+      const ok = await this.cb.claimMail(m.mailId);
+      if (ok) { m.claimed = true; this.toast('mail.claimDone'); }
+      else this.toast('mail.claimFail');
+    } catch (e) {
+      this.toast(((e as { code?: string } | null)?.code) === 'ALREADY_CLAIMED' ? 'mail.alreadyClaimed' : 'mail.claimFail');
+    }
+    this.render();
+    void this.refresh();
+  }
+
+  private async doMailDelete(m: MailView): Promise<void> {
+    this.openMailItem = null;
+    try { await this.cb.deleteMail(m.mailId); } catch { this.toast('friends.error'); }
+    this.render();
+    void this.refresh();
+  }
+
+  // ── Shared scroll-region + helpers ──────────────────────────────────────────
+  private scrollRegion(regionH: number): { layer: PIXI.Container } {
+    const { w } = this;
+    const clip = new PIXI.Graphics();
+    clip.beginFill(0xffffff); clip.drawRect(0, this.regionTop, w, regionH); clip.endFill();
+    this.container.addChild(clip);
+    const layer = new PIXI.Container();
+    layer.mask = clip;
+    this.container.addChild(layer);
+    return { layer };
+  }
+
+  private centerLabel(layer: PIXI.Container, key: TranslationKey, regionH: number): void {
+    const l = txt(t(key), Math.round(this.h * 0.026), C.mid);
+    l.anchor.set(0.5, 0.5); l.x = this.w / 2; l.y = this.regionTop + regionH / 2;
+    layer.addChild(l);
   }
 
   private drawSearch(): void {
@@ -575,6 +908,13 @@ function clamp(v: number, lo: number, hi: number): number {
 
 function rankLabel(rank: string): string {
   return t(('rank.' + rank.replace(/^rank\./, '')) as TranslationKey);
+}
+
+function attachmentLabel(a: MailAttachmentView): string {
+  const n = a.count ?? 1;
+  if (a.kind === 'coins') return t('mail.attCoins', { n });
+  if (a.kind === 'skin') return t('mail.attSkin', { id: a.id ?? '' });
+  return t('mail.attItem', { id: a.id ?? '', n });
 }
 
 function addErrorKey(e: unknown): TranslationKey {

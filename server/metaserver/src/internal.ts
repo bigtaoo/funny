@@ -19,6 +19,8 @@ import type { CommercialClient } from './commercialClient.js';
 import { adsDayKey } from './economy.js';
 import { getProfile, resolveByPublicId } from './accounts.js';
 import { friendAccountIds } from './social.js';
+import { insertSystemMail } from './mail.js';
+import type { CompAttachment, CompTarget } from '@nw/shared';
 
 const log = createLogger('meta:internal');
 
@@ -125,6 +127,75 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
     const friends = await friendAccountIds(cols, accountId);
     return reply.send({ friends });
+  });
+
+  // ── 系统邮件（S6-3，OPS_DESIGN §3.3）：admin 补偿工单经 HttpMailDispatcher 调用。──
+  // 钱在玩家领邮件时才经 commercial/inventory 入账（admin 从不直接写钱包）。dispatchKey 幂等。
+  interface SystemMailBody {
+    dispatchKey: string;
+    scope: 'single' | 'global';
+    target: CompTarget;
+    subject: string;
+    body: string;
+    attachments: CompAttachment[];
+    expireDays: number;
+  }
+
+  // POST /internal/mail/system/preview → { ok, recipientCount }
+  app.post('/internal/mail/system/preview', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const b = req.body as Pick<SystemMailBody, 'scope' | 'target'>;
+    if (b.scope === 'global') {
+      const recipientCount = await cols.accounts.countDocuments({});
+      return reply.send({ ok: true, recipientCount });
+    }
+    const publicId = 'publicId' in b.target ? b.target.publicId : '';
+    const accountId = await resolveByPublicId(cols, publicId);
+    return reply.send({ ok: true, recipientCount: accountId ? 1 : 0 });
+  });
+
+  // POST /internal/mail/system/send → { ok, recipientCount }
+  app.post('/internal/mail/system/send', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const b = req.body as SystemMailBody;
+    if (!b?.dispatchKey || !b.subject) {
+      return reply.code(400).send({ ok: false, error: 'dispatchKey + subject required' });
+    }
+    const content = {
+      subject: b.subject,
+      body: b.body ?? '',
+      attachments: b.attachments ?? [],
+      expireDays: b.expireDays ?? 0,
+    };
+    const deliverOne = async (accountId: string): Promise<void> => {
+      const r = await insertSystemMail(cols, b.dispatchKey, accountId, content, now());
+      // 仅新插入时推送红点（重试同 dispatchKey 幂等不重复推）；离线 gateway 自行丢弃。
+      if (r.inserted) {
+        void gateway.push(accountId, { kind: 'mail_new', mailId: r.mailId, hasAttachment: r.hasAttachment });
+      }
+    };
+
+    if (b.scope === 'global') {
+      let recipientCount = 0;
+      const cursor = cols.accounts.find({}, { projection: { _id: 1 } });
+      for await (const doc of cursor) {
+        await deliverOne(doc._id);
+        recipientCount++;
+      }
+      log.info('POST /internal/mail/system/send (global)', { dispatchKey: b.dispatchKey, recipientCount });
+      return reply.send({ ok: true, recipientCount });
+    }
+
+    const publicId = 'publicId' in b.target ? b.target.publicId : '';
+    const accountId = await resolveByPublicId(cols, publicId);
+    if (!accountId) return reply.send({ ok: false, recipientCount: 0, error: 'recipient not found' });
+    await deliverOne(accountId);
+    log.info('POST /internal/mail/system/send (single)', { dispatchKey: b.dispatchKey, publicId });
+    return reply.send({ ok: true, recipientCount: 1 });
   });
 
   // ── POST /internal/match/report ───────────────────────────────────────

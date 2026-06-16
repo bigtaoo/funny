@@ -24,10 +24,14 @@ export type GachaResultEntry = Schemas['GachaResult'];
 /** 对战历史一条（从当前账号视角）。 */
 export type MatchHistoryEntry = Schemas['MatchHistoryEntry'];
 export type AuthResult = Schemas['AuthResult'];
-// —— 社交（S6-1 好友）——
+// —— 社交（S6-1 好友 / S6-2 私聊 / S6-3 邮件）——
 export type ProfileView = Schemas['ProfileView'];
 export type FriendView = Schemas['FriendView'];
 export type FriendRequestView = Schemas['FriendRequestView'];
+export type ConversationView = Schemas['ConversationView'];
+export type ChatMessageView = Schemas['ChatMessageView'];
+export type MailView = Schemas['MailView'];
+export type MailAttachmentView = Schemas['MailAttachmentView'];
 /** 服务端持久化录像（opaque 帧，base64）；客户端用 net/serverReplay 解码回放。 */
 export type ServerReplay = Schemas['MatchReplay'];
 
@@ -301,6 +305,60 @@ export class ApiClient {
   /** 取消拉黑。 */
   async unblockUser(publicId: string): Promise<void> {
     await this.request<{ ok: boolean }>('DELETE', `/friends/block/${encodeURIComponent(publicId)}`);
+  }
+
+  // ── 社交：私聊（S6-2，需登录 token）。发送走 REST，收消息经 gateway push（NetSession）。──
+  /** 会话列表（含各自未读数 + 末条摘要）。 */
+  async getConversations(): Promise<ConversationView[]> {
+    const data = await this.request<{ conversations: ConversationView[] }>('GET', '/chat/conversations');
+    return data.conversations;
+  }
+
+  /** 拉会话历史（按时间倒序分页）。`before`=游标（epoch ms，取更早的）。 */
+  async getMessages(convId: string, before?: number, limit = 30): Promise<ChatMessageView[]> {
+    const qs = `?limit=${limit}${before !== undefined ? `&before=${before}` : ''}`;
+    const data = await this.request<{ messages: ChatMessageView[] }>(
+      'GET',
+      `/chat/${encodeURIComponent(convId)}/messages${qs}`,
+    );
+    return data.messages;
+  }
+
+  /** 发私聊。非好友 → ApiError('NOT_FRIEND')；被拉黑 → 'BLOCKED'；限流 → 'RATE_LIMITED'（429）。 */
+  async sendChat(toPublicId: string, body: string): Promise<{ messageId: string; ts: number }> {
+    return this.post<{ messageId: string; ts: number }>('/chat/send', { toPublicId, body });
+  }
+
+  /** 标记会话已读（清未读计数）。 */
+  async readChat(convId: string): Promise<void> {
+    await this.post<{ ok: boolean }>('/chat/read', { convId });
+  }
+
+  // ── 社交：邮件（S6-3，需登录 token）。领取经 commercial + inventory，回推权威存档。──
+  /** 收件箱（邮件列表 + 未读数）。 */
+  async getMail(): Promise<{ mail: MailView[]; unread: number }> {
+    return this.request<{ mail: MailView[]; unread: number }>('GET', '/mail');
+  }
+
+  /** 标记邮件已读。 */
+  async readMail(mailId: string): Promise<void> {
+    await this.post<{ ok: boolean }>(`/mail/${encodeURIComponent(mailId)}/read`, {});
+  }
+
+  /** 领取附件（发金币/物品，幂等）→ 回推权威存档。已领 → ApiError('ALREADY_CLAIMED')；无附件 → 'NO_ATTACHMENT'。 */
+  async claimMail(mailId: string): Promise<{ save: SaveData }> {
+    return this.post<{ save: SaveData }>(`/mail/${encodeURIComponent(mailId)}/claim`, {});
+  }
+
+  /** 删除邮件。 */
+  async deleteMail(mailId: string): Promise<void> {
+    await this.request<{ ok: boolean }>('DELETE', `/mail/${encodeURIComponent(mailId)}`);
+  }
+
+  /** 玩家间发邮件（门控为好友，无附件）。非好友 → ApiError('NOT_FRIEND')。 */
+  async sendMail(toPublicId: string, subject: string, body: string): Promise<string> {
+    const data = await this.post<{ mailId: string }>('/mail/send', { toPublicId, subject, body });
+    return data.mailId;
   }
 
   // ── 内部 ────────────────────────────────────────────────
