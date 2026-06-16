@@ -71,6 +71,12 @@ const STICKMAN_SCALE = 0.27;
  */
 const OUTLINE_GAP_PX   = 1.6;   // transparent gap between body edge and the line
 const OUTLINE_WIDTH_PX = 1.2;   // thickness of the contour line itself
+/**
+ * Outline opacity — the faction inks are saturated, so a fully opaque line reads
+ * too harsh. ~0.38 softens it to a light pencil/marker trace (it sits mostly over
+ * the paper gap, so the slight background-dependence of alpha is imperceptible).
+ */
+const OUTLINE_ALPHA    = 0.38;
 
 /** Map logical UnitState values → animation clip names. */
 const STATE_ANIM: Record<string, string> = {
@@ -309,7 +315,7 @@ export class StickmanRuntime {
         outline.y        = sprite.y;
         outline.rotation = sprite.rotation;
         outline.scale.set(sprite.scale.x, sprite.scale.y);
-        outline.alpha    = alpha;
+        outline.alpha    = alpha * OUTLINE_ALPHA;
         outline.visible  = this.outlineColor != null && alpha > 0;
       }
     }
