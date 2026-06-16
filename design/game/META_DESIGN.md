@@ -5,6 +5,7 @@
 > 子文档：`META_TASKS.md`（任务拆分）、`UI_DESIGN.md`（客户端 UI）、`SERVER_API.md`（接口契约）、`ECONOMY_BALANCE.md`（经济数值）。
 > 细分设计（2026-06-14）：`ACCOUNT_DESIGN.md`（账号/登录/单机门槛）、`COMMERCIAL_DESIGN.md`（commercial 商业服务：钱包/充值/消费/盲盒）、`MATCHSVC_DESIGN.md`（matchsvc 匹配大脑 + gameserver 瘦身 + 局末结算）、`GATEWAY_DESIGN.md`（gateway 控制面网关 + 客户端三通道）。
 > 社交（2026-06-16）：`SOCIAL_DESIGN.md`（好友 / 私聊 / 邮件，扩展 meta + 复用 gateway `/gw/push`；帮会/国家频道留 SLG 后 + Redis）。
+> SLG（2026-06-16）：`SLG_DESIGN.md`（共享大地图领土争霸 = 赚钱区；宗门=赛季服 / 家族=联盟；围攻战复用确定性引擎 + 录像；养成 PvE+SLG 统一、天梯隔离；拍卖行；第七进程 `worldsvc` + Redis 入场）。
 
 ---
 

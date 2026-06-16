@@ -192,6 +192,25 @@
 
 ---
 
+## S8 — SLG 大世界（共享大地图领土争霸 = 赚钱区）
+
+> 拍板 2026-06-16，详见 **`SLG_DESIGN.md`**。率土之滨级共享大地图；宗门=赛季服 / 家族=联盟；围攻战 = 确定性引擎打防守 config + 录像（复用全部战斗基建）；养成 PvE+SLG 统一、**天梯绝对隔离**（红线，硬墙单测守住）；交易全走拍卖行（指定受拍人）；第七进程 `worldsvc` + **Redis 入场**（兑现 M22 / SOC6-4）。**month 级大工程，按可独立验收切片推进。**
+
+- [ ] **S8-0 契约 + shared + worldsvc 骨架 + Redis**：地图/格子/行军/家族 schema；`worldsvc` 第七 workspace（有状态）；Redis 接入（gateway 横扩 account→实例路由 + 行军调度 + 频道 pub/sub）。
+- [ ] **S8-1 地图与领地**：格子状态机（归属/等级/防守 config/资源/驻军）、占领、资源**读时惰性产出** + 仓储上限、保护罩。
+- [ ] **S8-2 兵力与行军**：兵力上限 / 训练队列（sink + 加速变现）、行军 Redis 调度、增援 / 协防。
+- [ ] **S8-3 围攻战**：新增 `'siege'` `GameMode` + 防守 config（玩家自定义关卡形态，复用 `levelSchema`）+ 真人手操 / 自动扫荡 + 关键战斗 `judgeRunner` 复算 + 录像。**承重墙，MVP 先验证此条**。
+- [ ] **S8-4 家族（兑现 SOC6-4）**：家族 CRUD + 家族频道（**Redis pub/sub** 群扇出）+ 互助 / 增援 + 家族战；复用 social 持久层 + mail fan-out。
+- [ ] **S8-5 拍卖行**：挂单 / 竞拍 / 一口价 / **指定受拍人** / 高税 + 限额 + 禁挂 反 RMT + 异常审计（OPS 复用）。
+- [ ] **S8-6 养成统一**：`buildSiegeBlueprints(养成)`（与天梯 `buildPvpBlueprints` 隔离）+ PvE/SLG 材料统一（复用 scrap/lead/binding）+ 服务器权威扩展（PVE_INTEGRITY 方案 B）+ SLG 战力单调性单测。
+- [ ] **S8-7 赛季**：分服 / 按规则选人 / 赛季重置（清领地+兵力+赛季资源，保养成+外观+段位）/ 宗门间大比。
+- [ ] **S8-8 变现 + 运营**：加速 / 资源包 / 科技直购 / 战令（走 `commercial`）+ admin 赛季运维（异常交易审计 / 补偿 / 监控）。
+
+> **MVP 切片**：S8-0~3（单服、无家族、无拍卖、无赛季重置）先跑通「战斗接大地图」承重墙，再叠加家族/拍卖/赛季。
+> **依赖**：Redis（首次引入）；`PVE_INTEGRITY_PLAN` 方案 B（养成服务器权威）；social S6（家族升级其基建）；commercial S5（变现）；admin S7（运维）。
+
+---
+
 ## i18n（贯穿，随场景落地）
 
 - [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`auth.*`（登录界面，SA）/ `meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；`auth.*` **已随 SA-3 落地**（zh/en/de 全翻）；其余随后续场景。
