@@ -9,5 +9,6 @@ export * from './roomRegistry';
 export * from './ladder';
 export * from './economy';
 export * from './pveRewards';
+export * from './social';
 export * from './config';
 export * from './logger';

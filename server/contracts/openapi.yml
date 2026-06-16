@@ -23,6 +23,12 @@ tags:
     description: 广告奖励（economy-service，S2-4）
   - name: iap
     description: 充值验单（iap-service，S4-1）
+  - name: friends
+    description: 好友（S6-1，SOCIAL_DESIGN §5.1）
+  - name: chat
+    description: 私聊（S6-2，SOCIAL_DESIGN §5.2）
+  - name: mail
+    description: 邮件（S6-3，SOCIAL_DESIGN §5.3）
 
 components:
   securitySchemes:
@@ -240,6 +246,83 @@ components:
           properties:
             kind: { type: string, enum: [shards, coins] }
             amount: { type: integer }
+
+    # —— 社交（S6，SOCIAL_DESIGN §5）——
+    ProfileView:
+      type: object
+      required: [publicId, displayName]
+      properties:
+        publicId: { type: string }
+        displayName: { type: string }
+        rank: { type: string }
+
+    FriendView:
+      type: object
+      required: [publicId, displayName, online]
+      properties:
+        publicId: { type: string }
+        displayName: { type: string }
+        online: { type: boolean }
+        rank: { type: string }
+        alias: { type: string, description: owner 私有备注名 }
+
+    FriendRequestView:
+      type: object
+      required: [requestId, fromPublicId, fromName, toPublicId, createdAt]
+      properties:
+        requestId: { type: string }
+        fromPublicId: { type: string }
+        fromName: { type: string }
+        toPublicId: { type: string }
+        message: { type: string }
+        createdAt: { type: integer }
+
+    ConversationView:
+      type: object
+      required: [convId, peer, lastTs, unread]
+      properties:
+        convId: { type: string }
+        peer: { $ref: '#/components/schemas/ProfileView' }
+        lastBody: { type: string }
+        lastFrom: { type: string }
+        lastTs: { type: integer }
+        unread: { type: integer }
+
+    ChatMessageView:
+      type: object
+      required: [messageId, convId, fromPublicId, body, kind, ts]
+      properties:
+        messageId: { type: string }
+        convId: { type: string }
+        fromPublicId: { type: string }
+        body: { type: string }
+        kind: { type: string, enum: [text, system] }
+        ts: { type: integer }
+
+    MailAttachmentView:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [coins, item, skin] }
+        id: { type: string }
+        count: { type: integer }
+
+    MailView:
+      type: object
+      required: [mailId, from, subject, body, createdAt, expireAt, read, claimed]
+      properties:
+        mailId: { type: string }
+        from: { type: string, description: "'system' 或发件人 publicId" }
+        fromName: { type: string }
+        subject: { type: string }
+        body: { type: string }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/MailAttachmentView' }
+        createdAt: { type: integer }
+        expireAt: { type: integer }
+        read: { type: boolean }
+        claimed: { type: boolean }
 
   responses:
     ErrorResp:
@@ -898,3 +981,531 @@ paths:
                       save: { $ref: '#/components/schemas/SaveData' }
                       granted: { type: integer }
         '400': { $ref: '#/components/responses/ErrorResp' }
+
+  # ════════════ 社交（S6，SOCIAL_DESIGN §5）════════════
+  /friends:
+    get:
+      operationId: getFriends
+      tags: [friends]
+      summary: 好友列表（含在线态，meta 向 gateway 查 presence）
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [friends]
+                    properties:
+                      friends:
+                        type: array
+                        items: { $ref: '#/components/schemas/FriendView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /friends/requests:
+    get:
+      operationId: getFriendRequests
+      tags: [friends]
+      summary: 待处理好友申请（收到的 + 发出的）
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [incoming, outgoing]
+                    properties:
+                      incoming:
+                        type: array
+                        items: { $ref: '#/components/schemas/FriendRequestView' }
+                      outgoing:
+                        type: array
+                        items: { $ref: '#/components/schemas/FriendRequestView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /friends/search:
+    post:
+      operationId: searchFriend
+      tags: [friends]
+      summary: 按 9 位公开 id 搜索玩家
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicId]
+              properties:
+                publicId: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [profile]
+                    properties:
+                      profile: { $ref: '#/components/schemas/ProfileView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+
+  /friends/request:
+    post:
+      operationId: requestFriend
+      tags: [friends]
+      summary: 发好友申请（凭 publicId）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicId]
+              properties:
+                publicId: { type: string }
+                message: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [requestId]
+                    properties:
+                      requestId: { type: string }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+
+  /friends/respond:
+    post:
+      operationId: respondFriend
+      tags: [friends]
+      summary: 同意 / 拒绝好友申请（accept → 建双向边 + 推双方）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestId, accept]
+              properties:
+                requestId: { type: string }
+                accept: { type: boolean }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [ok]
+                    properties:
+                      ok: { type: boolean }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+
+  /friends/{publicId}:
+    delete:
+      operationId: removeFriend
+      tags: [friends]
+      summary: 删好友（双向）
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: publicId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [ok]
+                    properties:
+                      ok: { type: boolean }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /friends/block:
+    post:
+      operationId: blockUser
+      tags: [friends]
+      summary: 拉黑（删好友 + 屏蔽申请/私聊）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicId]
+              properties:
+                publicId: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [ok]
+                    properties:
+                      ok: { type: boolean }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+
+  /friends/block/{publicId}:
+    delete:
+      operationId: unblockUser
+      tags: [friends]
+      summary: 取消拉黑
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: publicId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [ok]
+                    properties:
+                      ok: { type: boolean }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /chat/conversations:
+    get:
+      operationId: getConversations
+      tags: [chat]
+      summary: 会话列表（各自未读数 + 末条摘要）
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [conversations]
+                    properties:
+                      conversations:
+                        type: array
+                        items: { $ref: '#/components/schemas/ConversationView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /chat/{convId}/messages:
+    get:
+      operationId: getMessages
+      tags: [chat]
+      summary: 拉会话历史（按时间倒序分页）
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: convId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: before
+          in: query
+          required: false
+          schema: { type: integer }
+          description: 取此时间戳（epoch ms）之前的消息（分页游标）
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 30 }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [messages]
+                    properties:
+                      messages:
+                        type: array
+                        items: { $ref: '#/components/schemas/ChatMessageView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /chat/send:
+    post:
+      operationId: sendChat
+      tags: [chat]
+      summary: 发私聊（须互为好友且未拉黑；限流 + 敏感词过滤）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [toPublicId, body]
+              properties:
+                toPublicId: { type: string }
+                body: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [messageId, ts]
+                    properties:
+                      messageId: { type: string }
+                      ts: { type: integer }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '429': { $ref: '#/components/responses/ErrorResp' }
+
+  /chat/read:
+    post:
+      operationId: readChat
+      tags: [chat]
+      summary: 标记会话已读（清未读计数）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [convId]
+              properties:
+                convId: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [ok]
+                    properties:
+                      ok: { type: boolean }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /mail:
+    get:
+      operationId: getMail
+      tags: [mail]
+      summary: 收件箱（未读数 + 邮件列表）
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [mail, unread]
+                    properties:
+                      mail:
+                        type: array
+                        items: { $ref: '#/components/schemas/MailView' }
+                      unread: { type: integer }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /mail/{id}/read:
+    post:
+      operationId: readMail
+      tags: [mail]
+      summary: 标记邮件已读
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [ok]
+                    properties:
+                      ok: { type: boolean }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+
+  /mail/{id}/claim:
+    post:
+      operationId: claimMail
+      tags: [mail]
+      summary: 领取邮件附件（经 commercial 发金币/物品，幂等）→ 回推权威存档
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+
+  /mail/{id}:
+    delete:
+      operationId: deleteMail
+      tags: [mail]
+      summary: 删除邮件
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [ok]
+                    properties:
+                      ok: { type: boolean }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /mail/send:
+    post:
+      operationId: sendMail
+      tags: [mail]
+      summary: 玩家间发邮件（门控为好友）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [toPublicId, subject, body]
+              properties:
+                toPublicId: { type: string }
+                subject: { type: string }
+                body: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [mailId]
+                    properties:
+                      mailId: { type: string }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }

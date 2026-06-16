@@ -146,6 +146,28 @@ message JudgeRequest {
   map<string, uint32>    pve_upgrades = 7;
 }
 
+// ── 社交实时推送（S6，SOCIAL_DESIGN §4.2）─────────────────
+// 发送动作走 REST 到 meta（单一写者，SOC3）；这些仅 server→client 推送（来消息 / 好友
+// 上下线 / 申请 / 新邮件红点）。meta 经 gateway /gw/push 据 account→socket 定向下发，
+// 离线则丢弃（数据已落库，下次登录拉取）。多 gateway 实例时 push 经 Redis 路由（SOC9）。
+message FriendPresence { string public_id = 1; bool online = 2; }
+message FriendRequestPush {
+  string request_id = 1;
+  string from_public_id = 2;
+  string from_name = 3;
+  string message = 4;
+}
+enum FriendUpdateKind { ADDED = 0; REMOVED = 1; }
+message FriendUpdate { string public_id = 1; FriendUpdateKind kind = 2; }
+message ChatMessagePush {
+  string conv_id = 1;
+  string from_public_id = 2;
+  string from_name = 3;
+  string body = 4;
+  uint64 ts = 5;
+}
+message MailNew { string mail_id = 1; bool has_attachment = 2; }
+
 message ServerMsg {
   oneof body {
     RoomState    room_state    = 1;
@@ -158,6 +180,11 @@ message ServerMsg {
     Pong         pong          = 8;
     MatchFound   match_found   = 9;
     JudgeRequest judge_request = 10;
+    FriendPresence    friend_presence = 11;
+    FriendRequestPush friend_request  = 12;
+    FriendUpdate      friend_update   = 13;
+    ChatMessagePush   chat_message    = 14;
+    MailNew           mail_new        = 15;
   }
 }
 

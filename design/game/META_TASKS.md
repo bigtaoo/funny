@@ -164,6 +164,19 @@
 
 ---
 
+## S6 — 社交系统（好友 / 私聊 / 邮件；帮会/国家频道留 SLG 后）
+
+> 拍板 2026-06-16：持久数据扩展 meta（不新建进程）；一期做好友+私聊+邮件全套。详见 **`SOCIAL_DESIGN.md`**。
+> 架构复用：meta=数据权威，gateway=在线态+实时投递（复用 `account→socket` + `/gw/push`，meta 成第二个 push 调用方）；发送走 REST、接收走 push；邮件附件领奖复用 commercial 发货幂等。gateway 横扩（单实例 ~3000）+ Redis 路由是近期里程碑（SOC9）。
+
+- [x] **S6-0 契约 + shared** ✅（2026-06-16）：`shared/social.ts`（`FRIEND_CAP=100`/`CHAT_RETENTION_SEC`/`MAIL_DEFAULT_TTL_SEC` 等常量 + `conversationId`/`friendEdgeId`/`blockId` 确定性 id + 视图类型 `FriendView`/`ConversationView`/`MailView`…）；`mongo.ts` 加 6 集合（friendEdges/friendRequests/blocks/conversations/chatMessages/mail）+ 索引 + 两条 **TTL**（chatMessages.ts / mail.expireAt，**字段须 BSON Date** Mongo 才过期，已在 Doc 类型标注）；`api.ts` 加 6 错误码（FRIEND_CAP_REACHED/ALREADY_FRIEND/NOT_FRIEND/BLOCKED/ALREADY_CLAIMED/NO_ATTACHMENT + HTTP 映射）；`transport.proto` 加 5 个 social ServerMsg（friend_presence/friend_request/friend_update/chat_message/mail_new，仅 server→client 推送，发送走 REST）；`openapi.yml` 加 17 端点（friends 8 / chat 4 / mail 5）+ 7 schema。客户端 `npm run proto:gen` + `rest:gen` 重生。验证：shared `tsc -b` + 六包 `tsc -b` + client tsc 全绿，生成 proto 含 social 消息。
+- [ ] **S6-1 好友**：meta 好友/申请/拉黑 service + REST（getFriends/requestFriend/respondFriend/removeFriend/blockUser… 校验 FRIEND_CAP + 双向边 + 拉黑）+ 内部端点 `GET /internal/social/friends`；gateway presence 广播（连/断时拉好友列表 + push `friend_presence`）+ `/gw/presence` + 缓存失效；客户端 `ApiClient` + `NetSession` 路由 + 好友 UI。**依赖**：S6-0。
+- [ ] **S6-2 私聊**：meta 会话/消息 service（好友校验 + 拉黑 + **敏感词分地区配置 SOC10** + 限流 `CHAT_SEND_RATE_PER_MIN`）+ REST + push；客户端聊天 UI（会话列表 + 窗口 + 历史分页 + 未读红点）。**依赖**：S6-1。
+- [ ] **S6-3 邮件**：meta 邮件 service + 附件领奖（编排 commercial + inventory + `claimOrderId` 幂等）+ REST + `mail_new` push；系统邮件内部写入端点；客户端邮件箱 UI + 领取。**依赖**：S6-0（领奖依赖 commercial ✅）。
+- [ ] **S6-4（SLG 后）频道**：独立 `social` 服务 + **Redis pub/sub** + gateway 订阅投递 + 帮会/家族/国家频道。**依赖**：SLG 模式 + Redis（兑现 M22）。
+
+---
+
 ## i18n（贯穿，随场景落地）
 
 - [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`auth.*`（登录界面，SA）/ `meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；`auth.*` **已随 SA-3 落地**（zh/en/de 全翻）；其余随后续场景。

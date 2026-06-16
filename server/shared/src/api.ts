@@ -23,6 +23,13 @@ export const ErrorCode = {
   WEAK_PASSWORD: 'WEAK_PASSWORD',
   ALREADY_BOUND: 'ALREADY_BOUND',
   OAUTH_FAILED: 'OAUTH_FAILED',
+  // —— 社交系统（S6，SOCIAL_DESIGN §5）——
+  FRIEND_CAP_REACHED: 'FRIEND_CAP_REACHED',
+  ALREADY_FRIEND: 'ALREADY_FRIEND',
+  NOT_FRIEND: 'NOT_FRIEND',
+  BLOCKED: 'BLOCKED',
+  ALREADY_CLAIMED: 'ALREADY_CLAIMED',
+  NO_ATTACHMENT: 'NO_ATTACHMENT',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -57,4 +64,10 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.WEAK_PASSWORD]: 400,
   [ErrorCode.ALREADY_BOUND]: 409,
   [ErrorCode.OAUTH_FAILED]: 400,
+  [ErrorCode.FRIEND_CAP_REACHED]: 409,
+  [ErrorCode.ALREADY_FRIEND]: 409,
+  [ErrorCode.NOT_FRIEND]: 403,
+  [ErrorCode.BLOCKED]: 403,
+  [ErrorCode.ALREADY_CLAIMED]: 409,
+  [ErrorCode.NO_ATTACHMENT]: 400,
 };

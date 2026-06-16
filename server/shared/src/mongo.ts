@@ -2,6 +2,7 @@
 // 部署配单节点副本集解锁跨集合事务；钱包/发货走单文档原子更新。
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
 import type { SaveData } from './types';
+import { CHAT_RETENTION_SEC } from './social';
 
 // —— 集合文档形状 ——
 export interface SaveDoc {
@@ -139,6 +140,80 @@ export interface PveVerificationDoc {
   ts: number;
 }
 
+// —— 社交系统集合（S6，SOCIAL_DESIGN §3）——
+
+/** 有向好友边：双向好友 = 两条边。查「我的好友」按 owner 点查（SOC6）。 */
+export interface FriendEdgeDoc {
+  _id: string; // `${owner}:${friend}`（friendEdgeId）
+  owner: string;
+  friend: string;
+  since: number;
+  alias?: string; // owner 私有备注名
+}
+
+export interface FriendRequestDoc {
+  _id: string; // uuid
+  from: string; // accountId
+  to: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  message?: string;
+  createdAt: number;
+  resolvedAt?: number;
+}
+
+/** 有向拉黑边（屏蔽对方的好友申请 + 私聊）。 */
+export interface BlockDoc {
+  _id: string; // `${owner}:${target}`（blockId）
+  owner: string;
+  target: string;
+  ts: number;
+}
+
+/** 私聊会话（SOC4）。convId = conversationId(a,b)。 */
+export interface ConversationDoc {
+  _id: string; // convId
+  members: [string, string]; // accountId 对
+  lastBody?: string;
+  lastFrom?: string;
+  lastTs: number;
+  unread: Record<string, number>; // accountId → 未读数
+}
+
+export interface ChatMessageDoc {
+  _id: string; // uuid
+  convId: string;
+  from: string; // accountId
+  body: string;
+  kind: 'text' | 'system';
+  // BSON Date（非 epoch number）：Mongo TTL 只过期 Date 字段。写入端存 new Date(ts)，
+  // 读出时转回 number 建 ChatMessageView。排序/分页（before=<epoch>）按 Date 比较亦正确。
+  ts: Date;
+}
+
+export interface MailAttachmentDoc {
+  kind: 'coins' | 'item' | 'skin';
+  id?: string;
+  count?: number;
+}
+
+/** 邮件（SOC5）：每收件人一份；附件领取经 commercial 幂等（claimOrderId）。 */
+export interface MailDoc {
+  _id: string; // uuid
+  to: string; // accountId（收件人）
+  from: 'system' | string; // 'system' 或发件人 accountId
+  fromName?: string;
+  subject: string;
+  body: string;
+  attachments?: MailAttachmentDoc[];
+  createdAt: number;
+  // BSON Date（非 epoch number）：Mongo TTL 只过期 Date 字段，到期绝对时间（expireAfterSeconds:0）。
+  // 写入端存 new Date(createdAt + MAIL_DEFAULT_TTL_SEC*1000)，读出转 number 建 MailView。
+  expireAt: Date;
+  readAt?: number;
+  claimedAt?: number;
+  claimOrderId?: string; // 领取幂等（commercial orderId）
+}
+
 export interface Collections {
   saves: Collection<SaveDoc>;
   accounts: Collection<AccountDoc>;
@@ -147,6 +222,13 @@ export interface Collections {
   replayBlobs: Collection<ReplayBlobDoc>;
   pveDaily: Collection<PveDailyDoc>;
   pveVerifications: Collection<PveVerificationDoc>;
+  // 社交（S6）
+  friendEdges: Collection<FriendEdgeDoc>;
+  friendRequests: Collection<FriendRequestDoc>;
+  blocks: Collection<BlockDoc>;
+  conversations: Collection<ConversationDoc>;
+  chatMessages: Collection<ChatMessageDoc>;
+  mail: Collection<MailDoc>;
 }
 
 export interface MongoHandle {
@@ -189,6 +271,12 @@ export async function createMongo(
     replayBlobs: db.collection<ReplayBlobDoc>('replayBlobs'),
     pveDaily: db.collection<PveDailyDoc>('pveDaily'),
     pveVerifications: db.collection<PveVerificationDoc>('pveVerifications'),
+    friendEdges: db.collection<FriendEdgeDoc>('friendEdges'),
+    friendRequests: db.collection<FriendRequestDoc>('friendRequests'),
+    blocks: db.collection<BlockDoc>('blocks'),
+    conversations: db.collection<ConversationDoc>('conversations'),
+    chatMessages: db.collection<ChatMessageDoc>('chatMessages'),
+    mail: db.collection<MailDoc>('mail'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -212,6 +300,25 @@ export async function createMongo(
     await collections.matches.createIndex({ 'players.accountId': 1, ts: -1 });
     // PvE 抽检记录：按账号 + 时间查（审计 / 清理待结算）。
     await collections.pveVerifications.createIndex({ accountId: 1, ts: -1 });
+    // —— 社交（S6，SOCIAL_DESIGN §3）——
+    await collections.friendEdges.createIndex({ owner: 1 });
+    // 收件箱（待处理申请）+ 防重复申请（同方向去重）。
+    await collections.friendRequests.createIndex({ to: 1, status: 1 });
+    await collections.friendRequests.createIndex({ from: 1, to: 1 });
+    await collections.blocks.createIndex({ owner: 1 });
+    // 按参与者拉会话列表（任一成员 + 末条时间倒序）。
+    await collections.conversations.createIndex({ members: 1, lastTs: -1 });
+    // 按会话分页拉历史。
+    await collections.chatMessages.createIndex({ convId: 1, ts: -1 });
+    // 私聊消息保留期满自动回收（TTL，SOC4）。
+    await collections.chatMessages.createIndex(
+      { ts: 1 },
+      { expireAfterSeconds: CHAT_RETENTION_SEC },
+    );
+    // 收件箱（按时间倒序）。
+    await collections.mail.createIndex({ to: 1, createdAt: -1 });
+    // 邮件到期自动回收（expireAt 是到期绝对时间戳 → expireAfterSeconds:0，SOC5）。
+    await collections.mail.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
   }
 
   return {

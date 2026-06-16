@@ -25,6 +25,12 @@ export enum MatchMode {
   UNRECOGNIZED = -1,
 }
 
+export enum FriendUpdateKind {
+  ADDED = 0,
+  REMOVED = 1,
+  UNRECOGNIZED = -1,
+}
+
 export interface PlayerSlot {
   side: number;
   /** 展示昵称（displayName），非 accountId */
@@ -217,6 +223,42 @@ export interface JudgeRequest_PveUpgradesEntry {
   value: number;
 }
 
+/**
+ * ── 社交实时推送（S6，SOCIAL_DESIGN §4.2）─────────────────
+ * 发送动作走 REST 到 meta（单一写者，SOC3）；这些仅 server→client 推送（来消息 / 好友
+ * 上下线 / 申请 / 新邮件红点）。meta 经 gateway /gw/push 据 account→socket 定向下发，
+ * 离线则丢弃（数据已落库，下次登录拉取）。多 gateway 实例时 push 经 Redis 路由（SOC9）。
+ */
+export interface FriendPresence {
+  publicId: string;
+  online: boolean;
+}
+
+export interface FriendRequestPush {
+  requestId: string;
+  fromPublicId: string;
+  fromName: string;
+  message: string;
+}
+
+export interface FriendUpdate {
+  publicId: string;
+  kind: FriendUpdateKind;
+}
+
+export interface ChatMessagePush {
+  convId: string;
+  fromPublicId: string;
+  fromName: string;
+  body: string;
+  ts: number;
+}
+
+export interface MailNew {
+  mailId: string;
+  hasAttachment: boolean;
+}
+
 export interface ServerMsg {
   roomState?: RoomState | undefined;
   matchStart?: MatchStart | undefined;
@@ -228,6 +270,11 @@ export interface ServerMsg {
   pong?: Pong | undefined;
   matchFound?: MatchFound | undefined;
   judgeRequest?: JudgeRequest | undefined;
+  friendPresence?: FriendPresence | undefined;
+  friendRequest?: FriendRequestPush | undefined;
+  friendUpdate?: FriendUpdate | undefined;
+  chatMessage?: ChatMessagePush | undefined;
+  mailNew?: MailNew | undefined;
 }
 
 /** 线上每帧一个 Envelope */
@@ -2063,6 +2110,356 @@ export const JudgeRequest_PveUpgradesEntry: MessageFns<JudgeRequest_PveUpgradesE
   },
 };
 
+function createBaseFriendPresence(): FriendPresence {
+  return { publicId: "", online: false };
+}
+
+export const FriendPresence: MessageFns<FriendPresence> = {
+  encode(message: FriendPresence, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.publicId !== "") {
+      writer.uint32(10).string(message.publicId);
+    }
+    if (message.online !== false) {
+      writer.uint32(16).bool(message.online);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): FriendPresence {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseFriendPresence();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.publicId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.online = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<FriendPresence>, I>>(base?: I): FriendPresence {
+    return FriendPresence.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<FriendPresence>, I>>(object: I): FriendPresence {
+    const message = createBaseFriendPresence();
+    message.publicId = object.publicId ?? "";
+    message.online = object.online ?? false;
+    return message;
+  },
+};
+
+function createBaseFriendRequestPush(): FriendRequestPush {
+  return { requestId: "", fromPublicId: "", fromName: "", message: "" };
+}
+
+export const FriendRequestPush: MessageFns<FriendRequestPush> = {
+  encode(message: FriendRequestPush, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.requestId !== "") {
+      writer.uint32(10).string(message.requestId);
+    }
+    if (message.fromPublicId !== "") {
+      writer.uint32(18).string(message.fromPublicId);
+    }
+    if (message.fromName !== "") {
+      writer.uint32(26).string(message.fromName);
+    }
+    if (message.message !== "") {
+      writer.uint32(34).string(message.message);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): FriendRequestPush {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseFriendRequestPush();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.requestId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.fromPublicId = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.fromName = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.message = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<FriendRequestPush>, I>>(base?: I): FriendRequestPush {
+    return FriendRequestPush.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<FriendRequestPush>, I>>(object: I): FriendRequestPush {
+    const message = createBaseFriendRequestPush();
+    message.requestId = object.requestId ?? "";
+    message.fromPublicId = object.fromPublicId ?? "";
+    message.fromName = object.fromName ?? "";
+    message.message = object.message ?? "";
+    return message;
+  },
+};
+
+function createBaseFriendUpdate(): FriendUpdate {
+  return { publicId: "", kind: 0 };
+}
+
+export const FriendUpdate: MessageFns<FriendUpdate> = {
+  encode(message: FriendUpdate, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.publicId !== "") {
+      writer.uint32(10).string(message.publicId);
+    }
+    if (message.kind !== 0) {
+      writer.uint32(16).int32(message.kind);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): FriendUpdate {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseFriendUpdate();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.publicId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.kind = reader.int32() as any;
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<FriendUpdate>, I>>(base?: I): FriendUpdate {
+    return FriendUpdate.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<FriendUpdate>, I>>(object: I): FriendUpdate {
+    const message = createBaseFriendUpdate();
+    message.publicId = object.publicId ?? "";
+    message.kind = object.kind ?? 0;
+    return message;
+  },
+};
+
+function createBaseChatMessagePush(): ChatMessagePush {
+  return { convId: "", fromPublicId: "", fromName: "", body: "", ts: 0 };
+}
+
+export const ChatMessagePush: MessageFns<ChatMessagePush> = {
+  encode(message: ChatMessagePush, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.convId !== "") {
+      writer.uint32(10).string(message.convId);
+    }
+    if (message.fromPublicId !== "") {
+      writer.uint32(18).string(message.fromPublicId);
+    }
+    if (message.fromName !== "") {
+      writer.uint32(26).string(message.fromName);
+    }
+    if (message.body !== "") {
+      writer.uint32(34).string(message.body);
+    }
+    if (message.ts !== 0) {
+      writer.uint32(40).uint64(message.ts);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ChatMessagePush {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseChatMessagePush();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.convId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.fromPublicId = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.fromName = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.body = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.ts = longToNumber(reader.uint64());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<ChatMessagePush>, I>>(base?: I): ChatMessagePush {
+    return ChatMessagePush.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ChatMessagePush>, I>>(object: I): ChatMessagePush {
+    const message = createBaseChatMessagePush();
+    message.convId = object.convId ?? "";
+    message.fromPublicId = object.fromPublicId ?? "";
+    message.fromName = object.fromName ?? "";
+    message.body = object.body ?? "";
+    message.ts = object.ts ?? 0;
+    return message;
+  },
+};
+
+function createBaseMailNew(): MailNew {
+  return { mailId: "", hasAttachment: false };
+}
+
+export const MailNew: MessageFns<MailNew> = {
+  encode(message: MailNew, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.mailId !== "") {
+      writer.uint32(10).string(message.mailId);
+    }
+    if (message.hasAttachment !== false) {
+      writer.uint32(16).bool(message.hasAttachment);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): MailNew {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMailNew();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.mailId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.hasAttachment = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<MailNew>, I>>(base?: I): MailNew {
+    return MailNew.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<MailNew>, I>>(object: I): MailNew {
+    const message = createBaseMailNew();
+    message.mailId = object.mailId ?? "";
+    message.hasAttachment = object.hasAttachment ?? false;
+    return message;
+  },
+};
+
 function createBaseServerMsg(): ServerMsg {
   return {
     roomState: undefined,
@@ -2075,6 +2472,11 @@ function createBaseServerMsg(): ServerMsg {
     pong: undefined,
     matchFound: undefined,
     judgeRequest: undefined,
+    friendPresence: undefined,
+    friendRequest: undefined,
+    friendUpdate: undefined,
+    chatMessage: undefined,
+    mailNew: undefined,
   };
 }
 
@@ -2109,6 +2511,21 @@ export const ServerMsg: MessageFns<ServerMsg> = {
     }
     if (message.judgeRequest !== undefined) {
       JudgeRequest.encode(message.judgeRequest, writer.uint32(82).fork()).join();
+    }
+    if (message.friendPresence !== undefined) {
+      FriendPresence.encode(message.friendPresence, writer.uint32(90).fork()).join();
+    }
+    if (message.friendRequest !== undefined) {
+      FriendRequestPush.encode(message.friendRequest, writer.uint32(98).fork()).join();
+    }
+    if (message.friendUpdate !== undefined) {
+      FriendUpdate.encode(message.friendUpdate, writer.uint32(106).fork()).join();
+    }
+    if (message.chatMessage !== undefined) {
+      ChatMessagePush.encode(message.chatMessage, writer.uint32(114).fork()).join();
+    }
+    if (message.mailNew !== undefined) {
+      MailNew.encode(message.mailNew, writer.uint32(122).fork()).join();
     }
     return writer;
   },
@@ -2200,6 +2617,46 @@ export const ServerMsg: MessageFns<ServerMsg> = {
           message.judgeRequest = JudgeRequest.decode(reader, reader.uint32());
           continue;
         }
+        case 11: {
+          if (tag !== 90) {
+            break;
+          }
+
+          message.friendPresence = FriendPresence.decode(reader, reader.uint32());
+          continue;
+        }
+        case 12: {
+          if (tag !== 98) {
+            break;
+          }
+
+          message.friendRequest = FriendRequestPush.decode(reader, reader.uint32());
+          continue;
+        }
+        case 13: {
+          if (tag !== 106) {
+            break;
+          }
+
+          message.friendUpdate = FriendUpdate.decode(reader, reader.uint32());
+          continue;
+        }
+        case 14: {
+          if (tag !== 114) {
+            break;
+          }
+
+          message.chatMessage = ChatMessagePush.decode(reader, reader.uint32());
+          continue;
+        }
+        case 15: {
+          if (tag !== 122) {
+            break;
+          }
+
+          message.mailNew = MailNew.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2241,6 +2698,21 @@ export const ServerMsg: MessageFns<ServerMsg> = {
       : undefined;
     message.judgeRequest = (object.judgeRequest !== undefined && object.judgeRequest !== null)
       ? JudgeRequest.fromPartial(object.judgeRequest)
+      : undefined;
+    message.friendPresence = (object.friendPresence !== undefined && object.friendPresence !== null)
+      ? FriendPresence.fromPartial(object.friendPresence)
+      : undefined;
+    message.friendRequest = (object.friendRequest !== undefined && object.friendRequest !== null)
+      ? FriendRequestPush.fromPartial(object.friendRequest)
+      : undefined;
+    message.friendUpdate = (object.friendUpdate !== undefined && object.friendUpdate !== null)
+      ? FriendUpdate.fromPartial(object.friendUpdate)
+      : undefined;
+    message.chatMessage = (object.chatMessage !== undefined && object.chatMessage !== null)
+      ? ChatMessagePush.fromPartial(object.chatMessage)
+      : undefined;
+    message.mailNew = (object.mailNew !== undefined && object.mailNew !== null)
+      ? MailNew.fromPartial(object.mailNew)
       : undefined;
     return message;
   },
