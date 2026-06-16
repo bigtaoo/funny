@@ -10,6 +10,7 @@ export * from './ladder';
 export * from './economy';
 export * from './pveRewards';
 export * from './social';
+export * from './slg';
 export * from './chatFilter';
 export * from './admin';
 export * from './config';

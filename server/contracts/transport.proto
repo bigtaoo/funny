@@ -168,6 +168,58 @@ message ChatMessagePush {
 }
 message MailNew { string mail_id = 1; bool has_attachment = 2; }
 
+// ── SLG 大世界（S8）：仅 server→client 推送 ──────────────────
+// 与 social 同原则（SOC3 / §14.5）：SLG 玩家动作走 REST 到 worldsvc（单一写者），
+// 实时事件走 WS push（worldsvc → gateway /gw/push → 据 account→socket 定向下发）。
+// tile 字段一律用 tileId 字符串（`{worldId}:{x}:{y}`），客户端自解析坐标。
+message MarchUpdate {
+  string march_id = 1;
+  string kind      = 2;   // attack | reinforce | occupy | sweep | return
+  string from_tile = 3;
+  string to_tile   = 4;
+  uint64 arrive_at = 5;   // ms
+  string status    = 6;
+}
+message TileUpdate {
+  string tile_id         = 1;
+  string type            = 2;   // TileType
+  uint32 level           = 3;
+  string owner_id        = 4;   // 占领者 publicId（空=中立）
+  string family_id       = 5;
+  uint64 protected_until = 6;   // ms（0=无保护）
+}
+message UnderAttack {
+  string tile               = 1;
+  string attacker_name      = 2;
+  string attacker_public_id = 3;
+  uint64 arrive_at          = 4;   // ms
+  uint32 troops_hint        = 5;
+}
+message SiegeResult {
+  string siege_id     = 1;
+  string tile         = 2;
+  string outcome      = 3;   // attacker_win | defender_win | draw
+  string loot_summary = 4;
+  string replay_ref   = 5;
+}
+message FamilyMsg {
+  string family_id      = 1;
+  string from_public_id = 2;
+  string from_name      = 3;
+  string text           = 4;
+  uint64 ts             = 5;
+}
+message SectBroadcast {
+  string world_id = 1;
+  string kind     = 2;
+  string text     = 3;
+  uint64 ts       = 4;
+}
+message WorldEvent {
+  string kind    = 1;   // season_open | season_settle | grand_tourney | …
+  string payload = 2;   // JSON（DRAFT，结构随事件类型）
+}
+
 message ServerMsg {
   oneof body {
     RoomState    room_state    = 1;
@@ -185,6 +237,13 @@ message ServerMsg {
     FriendUpdate      friend_update   = 13;
     ChatMessagePush   chat_message    = 14;
     MailNew           mail_new        = 15;
+    MarchUpdate       march_update    = 16;
+    TileUpdate        tile_update     = 17;
+    UnderAttack       under_attack    = 18;
+    SiegeResult       siege_result    = 19;
+    FamilyMsg         family_msg      = 20;
+    SectBroadcast     sect_broadcast  = 21;
+    WorldEvent        world_event     = 22;
   }
 }
 

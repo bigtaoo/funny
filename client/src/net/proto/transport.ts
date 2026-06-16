@@ -259,6 +259,75 @@ export interface MailNew {
   hasAttachment: boolean;
 }
 
+/**
+ * ── SLG 大世界（S8）：仅 server→client 推送 ──────────────────
+ * 与 social 同原则（SOC3 / §14.5）：SLG 玩家动作走 REST 到 worldsvc（单一写者），
+ * 实时事件走 WS push（worldsvc → gateway /gw/push → 据 account→socket 定向下发）。
+ * tile 字段一律用 tileId 字符串（`{worldId}:{x}:{y}`），客户端自解析坐标。
+ */
+export interface MarchUpdate {
+  marchId: string;
+  /** attack | reinforce | occupy | sweep | return */
+  kind: string;
+  fromTile: string;
+  toTile: string;
+  /** ms */
+  arriveAt: number;
+  status: string;
+}
+
+export interface TileUpdate {
+  tileId: string;
+  /** TileType */
+  type: string;
+  level: number;
+  /** 占领者 publicId（空=中立） */
+  ownerId: string;
+  familyId: string;
+  /** ms（0=无保护） */
+  protectedUntil: number;
+}
+
+export interface UnderAttack {
+  tile: string;
+  attackerName: string;
+  attackerPublicId: string;
+  /** ms */
+  arriveAt: number;
+  troopsHint: number;
+}
+
+export interface SiegeResult {
+  siegeId: string;
+  tile: string;
+  /** attacker_win | defender_win | draw */
+  outcome: string;
+  lootSummary: string;
+  replayRef: string;
+}
+
+export interface FamilyMsg {
+  familyId: string;
+  fromPublicId: string;
+  fromName: string;
+  text: string;
+  ts: number;
+}
+
+export interface SectBroadcast {
+  worldId: string;
+  kind: string;
+  text: string;
+  ts: number;
+}
+
+export interface WorldEvent {
+  /** season_open | season_settle | grand_tourney | … */
+  kind: string;
+  /** JSON（DRAFT，结构随事件类型） */
+  payload: string;
+}
+
 export interface ServerMsg {
   roomState?: RoomState | undefined;
   matchStart?: MatchStart | undefined;
@@ -275,6 +344,13 @@ export interface ServerMsg {
   friendUpdate?: FriendUpdate | undefined;
   chatMessage?: ChatMessagePush | undefined;
   mailNew?: MailNew | undefined;
+  marchUpdate?: MarchUpdate | undefined;
+  tileUpdate?: TileUpdate | undefined;
+  underAttack?: UnderAttack | undefined;
+  siegeResult?: SiegeResult | undefined;
+  familyMsg?: FamilyMsg | undefined;
+  sectBroadcast?: SectBroadcast | undefined;
+  worldEvent?: WorldEvent | undefined;
 }
 
 /** 线上每帧一个 Envelope */
@@ -2460,6 +2536,640 @@ export const MailNew: MessageFns<MailNew> = {
   },
 };
 
+function createBaseMarchUpdate(): MarchUpdate {
+  return { marchId: "", kind: "", fromTile: "", toTile: "", arriveAt: 0, status: "" };
+}
+
+export const MarchUpdate: MessageFns<MarchUpdate> = {
+  encode(message: MarchUpdate, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.marchId !== "") {
+      writer.uint32(10).string(message.marchId);
+    }
+    if (message.kind !== "") {
+      writer.uint32(18).string(message.kind);
+    }
+    if (message.fromTile !== "") {
+      writer.uint32(26).string(message.fromTile);
+    }
+    if (message.toTile !== "") {
+      writer.uint32(34).string(message.toTile);
+    }
+    if (message.arriveAt !== 0) {
+      writer.uint32(40).uint64(message.arriveAt);
+    }
+    if (message.status !== "") {
+      writer.uint32(50).string(message.status);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): MarchUpdate {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMarchUpdate();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.marchId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.kind = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.fromTile = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.toTile = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.arriveAt = longToNumber(reader.uint64());
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.status = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<MarchUpdate>, I>>(base?: I): MarchUpdate {
+    return MarchUpdate.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<MarchUpdate>, I>>(object: I): MarchUpdate {
+    const message = createBaseMarchUpdate();
+    message.marchId = object.marchId ?? "";
+    message.kind = object.kind ?? "";
+    message.fromTile = object.fromTile ?? "";
+    message.toTile = object.toTile ?? "";
+    message.arriveAt = object.arriveAt ?? 0;
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
+function createBaseTileUpdate(): TileUpdate {
+  return { tileId: "", type: "", level: 0, ownerId: "", familyId: "", protectedUntil: 0 };
+}
+
+export const TileUpdate: MessageFns<TileUpdate> = {
+  encode(message: TileUpdate, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.tileId !== "") {
+      writer.uint32(10).string(message.tileId);
+    }
+    if (message.type !== "") {
+      writer.uint32(18).string(message.type);
+    }
+    if (message.level !== 0) {
+      writer.uint32(24).uint32(message.level);
+    }
+    if (message.ownerId !== "") {
+      writer.uint32(34).string(message.ownerId);
+    }
+    if (message.familyId !== "") {
+      writer.uint32(42).string(message.familyId);
+    }
+    if (message.protectedUntil !== 0) {
+      writer.uint32(48).uint64(message.protectedUntil);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): TileUpdate {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseTileUpdate();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.tileId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.type = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.level = reader.uint32();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.ownerId = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.familyId = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.protectedUntil = longToNumber(reader.uint64());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<TileUpdate>, I>>(base?: I): TileUpdate {
+    return TileUpdate.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<TileUpdate>, I>>(object: I): TileUpdate {
+    const message = createBaseTileUpdate();
+    message.tileId = object.tileId ?? "";
+    message.type = object.type ?? "";
+    message.level = object.level ?? 0;
+    message.ownerId = object.ownerId ?? "";
+    message.familyId = object.familyId ?? "";
+    message.protectedUntil = object.protectedUntil ?? 0;
+    return message;
+  },
+};
+
+function createBaseUnderAttack(): UnderAttack {
+  return { tile: "", attackerName: "", attackerPublicId: "", arriveAt: 0, troopsHint: 0 };
+}
+
+export const UnderAttack: MessageFns<UnderAttack> = {
+  encode(message: UnderAttack, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.tile !== "") {
+      writer.uint32(10).string(message.tile);
+    }
+    if (message.attackerName !== "") {
+      writer.uint32(18).string(message.attackerName);
+    }
+    if (message.attackerPublicId !== "") {
+      writer.uint32(26).string(message.attackerPublicId);
+    }
+    if (message.arriveAt !== 0) {
+      writer.uint32(32).uint64(message.arriveAt);
+    }
+    if (message.troopsHint !== 0) {
+      writer.uint32(40).uint32(message.troopsHint);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): UnderAttack {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseUnderAttack();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.tile = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.attackerName = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.attackerPublicId = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.arriveAt = longToNumber(reader.uint64());
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.troopsHint = reader.uint32();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<UnderAttack>, I>>(base?: I): UnderAttack {
+    return UnderAttack.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UnderAttack>, I>>(object: I): UnderAttack {
+    const message = createBaseUnderAttack();
+    message.tile = object.tile ?? "";
+    message.attackerName = object.attackerName ?? "";
+    message.attackerPublicId = object.attackerPublicId ?? "";
+    message.arriveAt = object.arriveAt ?? 0;
+    message.troopsHint = object.troopsHint ?? 0;
+    return message;
+  },
+};
+
+function createBaseSiegeResult(): SiegeResult {
+  return { siegeId: "", tile: "", outcome: "", lootSummary: "", replayRef: "" };
+}
+
+export const SiegeResult: MessageFns<SiegeResult> = {
+  encode(message: SiegeResult, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.siegeId !== "") {
+      writer.uint32(10).string(message.siegeId);
+    }
+    if (message.tile !== "") {
+      writer.uint32(18).string(message.tile);
+    }
+    if (message.outcome !== "") {
+      writer.uint32(26).string(message.outcome);
+    }
+    if (message.lootSummary !== "") {
+      writer.uint32(34).string(message.lootSummary);
+    }
+    if (message.replayRef !== "") {
+      writer.uint32(42).string(message.replayRef);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SiegeResult {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSiegeResult();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.siegeId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.tile = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.outcome = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.lootSummary = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.replayRef = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<SiegeResult>, I>>(base?: I): SiegeResult {
+    return SiegeResult.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SiegeResult>, I>>(object: I): SiegeResult {
+    const message = createBaseSiegeResult();
+    message.siegeId = object.siegeId ?? "";
+    message.tile = object.tile ?? "";
+    message.outcome = object.outcome ?? "";
+    message.lootSummary = object.lootSummary ?? "";
+    message.replayRef = object.replayRef ?? "";
+    return message;
+  },
+};
+
+function createBaseFamilyMsg(): FamilyMsg {
+  return { familyId: "", fromPublicId: "", fromName: "", text: "", ts: 0 };
+}
+
+export const FamilyMsg: MessageFns<FamilyMsg> = {
+  encode(message: FamilyMsg, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.familyId !== "") {
+      writer.uint32(10).string(message.familyId);
+    }
+    if (message.fromPublicId !== "") {
+      writer.uint32(18).string(message.fromPublicId);
+    }
+    if (message.fromName !== "") {
+      writer.uint32(26).string(message.fromName);
+    }
+    if (message.text !== "") {
+      writer.uint32(34).string(message.text);
+    }
+    if (message.ts !== 0) {
+      writer.uint32(40).uint64(message.ts);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): FamilyMsg {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseFamilyMsg();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.familyId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.fromPublicId = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.fromName = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.text = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.ts = longToNumber(reader.uint64());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<FamilyMsg>, I>>(base?: I): FamilyMsg {
+    return FamilyMsg.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<FamilyMsg>, I>>(object: I): FamilyMsg {
+    const message = createBaseFamilyMsg();
+    message.familyId = object.familyId ?? "";
+    message.fromPublicId = object.fromPublicId ?? "";
+    message.fromName = object.fromName ?? "";
+    message.text = object.text ?? "";
+    message.ts = object.ts ?? 0;
+    return message;
+  },
+};
+
+function createBaseSectBroadcast(): SectBroadcast {
+  return { worldId: "", kind: "", text: "", ts: 0 };
+}
+
+export const SectBroadcast: MessageFns<SectBroadcast> = {
+  encode(message: SectBroadcast, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.worldId !== "") {
+      writer.uint32(10).string(message.worldId);
+    }
+    if (message.kind !== "") {
+      writer.uint32(18).string(message.kind);
+    }
+    if (message.text !== "") {
+      writer.uint32(26).string(message.text);
+    }
+    if (message.ts !== 0) {
+      writer.uint32(32).uint64(message.ts);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SectBroadcast {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSectBroadcast();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.worldId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.kind = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.text = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.ts = longToNumber(reader.uint64());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<SectBroadcast>, I>>(base?: I): SectBroadcast {
+    return SectBroadcast.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SectBroadcast>, I>>(object: I): SectBroadcast {
+    const message = createBaseSectBroadcast();
+    message.worldId = object.worldId ?? "";
+    message.kind = object.kind ?? "";
+    message.text = object.text ?? "";
+    message.ts = object.ts ?? 0;
+    return message;
+  },
+};
+
+function createBaseWorldEvent(): WorldEvent {
+  return { kind: "", payload: "" };
+}
+
+export const WorldEvent: MessageFns<WorldEvent> = {
+  encode(message: WorldEvent, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.kind !== "") {
+      writer.uint32(10).string(message.kind);
+    }
+    if (message.payload !== "") {
+      writer.uint32(18).string(message.payload);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): WorldEvent {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseWorldEvent();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.kind = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.payload = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<WorldEvent>, I>>(base?: I): WorldEvent {
+    return WorldEvent.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<WorldEvent>, I>>(object: I): WorldEvent {
+    const message = createBaseWorldEvent();
+    message.kind = object.kind ?? "";
+    message.payload = object.payload ?? "";
+    return message;
+  },
+};
+
 function createBaseServerMsg(): ServerMsg {
   return {
     roomState: undefined,
@@ -2477,6 +3187,13 @@ function createBaseServerMsg(): ServerMsg {
     friendUpdate: undefined,
     chatMessage: undefined,
     mailNew: undefined,
+    marchUpdate: undefined,
+    tileUpdate: undefined,
+    underAttack: undefined,
+    siegeResult: undefined,
+    familyMsg: undefined,
+    sectBroadcast: undefined,
+    worldEvent: undefined,
   };
 }
 
@@ -2526,6 +3243,27 @@ export const ServerMsg: MessageFns<ServerMsg> = {
     }
     if (message.mailNew !== undefined) {
       MailNew.encode(message.mailNew, writer.uint32(122).fork()).join();
+    }
+    if (message.marchUpdate !== undefined) {
+      MarchUpdate.encode(message.marchUpdate, writer.uint32(130).fork()).join();
+    }
+    if (message.tileUpdate !== undefined) {
+      TileUpdate.encode(message.tileUpdate, writer.uint32(138).fork()).join();
+    }
+    if (message.underAttack !== undefined) {
+      UnderAttack.encode(message.underAttack, writer.uint32(146).fork()).join();
+    }
+    if (message.siegeResult !== undefined) {
+      SiegeResult.encode(message.siegeResult, writer.uint32(154).fork()).join();
+    }
+    if (message.familyMsg !== undefined) {
+      FamilyMsg.encode(message.familyMsg, writer.uint32(162).fork()).join();
+    }
+    if (message.sectBroadcast !== undefined) {
+      SectBroadcast.encode(message.sectBroadcast, writer.uint32(170).fork()).join();
+    }
+    if (message.worldEvent !== undefined) {
+      WorldEvent.encode(message.worldEvent, writer.uint32(178).fork()).join();
     }
     return writer;
   },
@@ -2657,6 +3395,62 @@ export const ServerMsg: MessageFns<ServerMsg> = {
           message.mailNew = MailNew.decode(reader, reader.uint32());
           continue;
         }
+        case 16: {
+          if (tag !== 130) {
+            break;
+          }
+
+          message.marchUpdate = MarchUpdate.decode(reader, reader.uint32());
+          continue;
+        }
+        case 17: {
+          if (tag !== 138) {
+            break;
+          }
+
+          message.tileUpdate = TileUpdate.decode(reader, reader.uint32());
+          continue;
+        }
+        case 18: {
+          if (tag !== 146) {
+            break;
+          }
+
+          message.underAttack = UnderAttack.decode(reader, reader.uint32());
+          continue;
+        }
+        case 19: {
+          if (tag !== 154) {
+            break;
+          }
+
+          message.siegeResult = SiegeResult.decode(reader, reader.uint32());
+          continue;
+        }
+        case 20: {
+          if (tag !== 162) {
+            break;
+          }
+
+          message.familyMsg = FamilyMsg.decode(reader, reader.uint32());
+          continue;
+        }
+        case 21: {
+          if (tag !== 170) {
+            break;
+          }
+
+          message.sectBroadcast = SectBroadcast.decode(reader, reader.uint32());
+          continue;
+        }
+        case 22: {
+          if (tag !== 178) {
+            break;
+          }
+
+          message.worldEvent = WorldEvent.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2713,6 +3507,27 @@ export const ServerMsg: MessageFns<ServerMsg> = {
       : undefined;
     message.mailNew = (object.mailNew !== undefined && object.mailNew !== null)
       ? MailNew.fromPartial(object.mailNew)
+      : undefined;
+    message.marchUpdate = (object.marchUpdate !== undefined && object.marchUpdate !== null)
+      ? MarchUpdate.fromPartial(object.marchUpdate)
+      : undefined;
+    message.tileUpdate = (object.tileUpdate !== undefined && object.tileUpdate !== null)
+      ? TileUpdate.fromPartial(object.tileUpdate)
+      : undefined;
+    message.underAttack = (object.underAttack !== undefined && object.underAttack !== null)
+      ? UnderAttack.fromPartial(object.underAttack)
+      : undefined;
+    message.siegeResult = (object.siegeResult !== undefined && object.siegeResult !== null)
+      ? SiegeResult.fromPartial(object.siegeResult)
+      : undefined;
+    message.familyMsg = (object.familyMsg !== undefined && object.familyMsg !== null)
+      ? FamilyMsg.fromPartial(object.familyMsg)
+      : undefined;
+    message.sectBroadcast = (object.sectBroadcast !== undefined && object.sectBroadcast !== null)
+      ? SectBroadcast.fromPartial(object.sectBroadcast)
+      : undefined;
+    message.worldEvent = (object.worldEvent !== undefined && object.worldEvent !== null)
+      ? WorldEvent.fromPartial(object.worldEvent)
       : undefined;
     return message;
   },
