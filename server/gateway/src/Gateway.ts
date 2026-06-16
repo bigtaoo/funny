@@ -40,12 +40,18 @@ export interface JudgeArgs {
   frames: FrameCmdsOut[];
   /** 参赛双方 accountId——不可自己裁自己。 */
   exclude: string[];
+  /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：非空 → 裁判按战役模式复算该关。 */
+  levelId?: string;
+  /** 服务器权威蓝图快照（升级等级），保证 PvE 复算确定性。 */
+  pveUpgrades?: Record<string, number>;
 }
 /** 裁判结果（回给 meta）。ok=false：无候选 / 超时 / 复算失败。 */
 export interface JudgeResult {
   ok: boolean;
   stateHash?: string;
   winnerSide?: number;
+  /** PvE 复算得到的星数（PVE_INTEGRITY §8.6 L1）。 */
+  stars?: number;
   judgeAccountId?: string;
 }
 
@@ -220,6 +226,7 @@ export class Gateway {
                   ok: true,
                   stateHash: msg.stateHash,
                   winnerSide: msg.winnerSide,
+                  stars: msg.stars,
                   judgeAccountId: accountId,
                 }
               : { ok: false },
@@ -262,6 +269,8 @@ export class Gateway {
             mode: args.mode,
             endFrame: args.endFrame,
             frames: args.frames,
+            levelId: args.levelId ?? '',
+            pveUpgrades: args.pveUpgrades ?? {},
           }),
         );
       } catch {

@@ -22,6 +22,8 @@ export interface PendingClear {
   levelId: string;
   stars: number;
   ts: number;
+  /** 本地录像 id（ReplayStore），上线 flush 被 L1 抽中时据此取回上传复算（§8.6）。 */
+  replayId?: string;
 }
 
 export interface SaveStore {
@@ -69,10 +71,17 @@ export class LocalSaveStore implements SaveStore {
     try {
       const arr = JSON.parse(text);
       if (!Array.isArray(arr)) return [];
-      return arr.filter(
-        (e): e is PendingClear =>
-          !!e && typeof e.levelId === 'string' && typeof e.stars === 'number',
-      );
+      return arr
+        .filter(
+          (e): e is PendingClear =>
+            !!e && typeof e.levelId === 'string' && typeof e.stars === 'number',
+        )
+        .map((e) => ({
+          levelId: e.levelId,
+          stars: e.stars,
+          ts: typeof e.ts === 'number' ? e.ts : 0,
+          ...(typeof e.replayId === 'string' ? { replayId: e.replayId } : {}),
+        }));
     } catch {
       return []; // 损坏 → 当作空队列
     }

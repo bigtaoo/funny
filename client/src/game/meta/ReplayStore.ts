@@ -20,6 +20,11 @@ export const REPLAY_STORAGE_KEY = 'nw_replays_v1';
 /** How many recent replays to retain locally (ring buffer). */
 export const MAX_REPLAYS = 12;
 
+/** The id a replay is stored under (single source of the scheme; `recordedAt` doubles as id). */
+export function replayIdFor(recordedAt: number): string {
+  return `r${recordedAt}`;
+}
+
 /** A lightweight index row — enough to list replays without loading every stream. */
 export interface ReplayEntry {
   id: string;
@@ -69,7 +74,7 @@ export class ReplayStore {
    */
   save(replay: Replay, recordedAt: number): string {
     const file = this.read();
-    const id = `r${recordedAt}`;
+    const id = replayIdFor(recordedAt);
     const entry: StoredEntry = {
       id,
       recordedAt,

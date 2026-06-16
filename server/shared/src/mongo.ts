@@ -116,6 +116,29 @@ export interface PveDailyDoc {
   ts: number;
 }
 
+/**
+ * PvE 通关录像抽检复算记录（PVE_INTEGRITY §8.6 L1）。被抽中的通关先记此（材料未发、progress/stars
+ * 已写），客户端补传录像 → 经 gateway 第三方无头复算 → 复算星数 ≥ 声称才发材料。status：
+ * `pending`=等录像、`verified`=复算通过已发、`unverified`=无裁判可裁(benefit-of-doubt 已发)、
+ * `rejected`=复算不符未发(可疑)。`pveUpgrades` 是结算当刻服务器权威蓝图快照（复算用，防漂移）。
+ */
+export interface PveVerificationDoc {
+  _id: string; // verifyId（uuid）
+  accountId: string;
+  levelId: string;
+  /** 客户端声称的星数（待复算校验）。 */
+  claimedStars: number;
+  /** 结算当刻服务器权威 pveUpgrades 快照（复算蓝图）。 */
+  pveUpgrades: Record<string, number>;
+  /** 触发原因（审计）：first | anomaly | sample。 */
+  reason: string;
+  status: 'pending' | 'verified' | 'unverified' | 'rejected';
+  /** 复算得到的星数（verified/rejected 时存）。 */
+  judgedStars?: number;
+  judgeAccountId?: string;
+  ts: number;
+}
+
 export interface Collections {
   saves: Collection<SaveDoc>;
   accounts: Collection<AccountDoc>;
@@ -123,6 +146,7 @@ export interface Collections {
   adsDaily: Collection<AdsDailyDoc>;
   replayBlobs: Collection<ReplayBlobDoc>;
   pveDaily: Collection<PveDailyDoc>;
+  pveVerifications: Collection<PveVerificationDoc>;
 }
 
 export interface MongoHandle {
@@ -164,6 +188,7 @@ export async function createMongo(
     adsDaily: db.collection<AdsDailyDoc>('adsDaily'),
     replayBlobs: db.collection<ReplayBlobDoc>('replayBlobs'),
     pveDaily: db.collection<PveDailyDoc>('pveDaily'),
+    pveVerifications: db.collection<PveVerificationDoc>('pveVerifications'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -185,6 +210,8 @@ export async function createMongo(
     await collections.matches.createIndex({ roomId: 1 }, { unique: true });
     // 按玩家查对局/回放历史（S1-RP 分享、ranked 战绩）。
     await collections.matches.createIndex({ 'players.accountId': 1, ts: -1 });
+    // PvE 抽检记录：按账号 + 时间查（审计 / 清理待结算）。
+    await collections.pveVerifications.createIndex({ accountId: 1, ts: -1 });
   }
 
   return {

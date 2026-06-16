@@ -16,14 +16,20 @@ export interface JudgeReq {
   mode: number;
   endFrame: number;
   frames: JudgeFrame[];
-  /** 参赛双方 accountId——不可自己裁自己。 */
+  /** 参赛双方 accountId——不可自己裁自己（PvE 仅排除本人）。 */
   exclude: string[];
+  /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：非空 → 裁判按战役模式复算该关。 */
+  levelId?: string;
+  /** 服务器权威蓝图快照（升级等级），保证 PvE 复算确定性。 */
+  pveUpgrades?: Record<string, number>;
 }
 
 export interface JudgeRes {
   ok: boolean;
   stateHash?: string;
   winnerSide?: number;
+  /** PvE 复算得到的星数（PVE_INTEGRITY §8.6 L1）。 */
+  stars?: number;
   judgeAccountId?: string;
 }
 

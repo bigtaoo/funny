@@ -139,16 +139,43 @@ export class ApiClient {
   // progress/stars/materials/pveUpgrades 是服务器权威段；通关/升级走这两个端点，
   // 回推完整权威 SaveData（客户端 adopt 镜像）。仅在线可调。
 
-  /** PvE 通关结算：服务器校验解锁 → 每日上限内发材料 → 写 progress/stars → 回推。 */
+  /**
+   * PvE 通关结算：服务器校验解锁 → 每日上限内发材料 → 写 progress/stars → 回推。
+   * L1 抽检（§8.6 第 3 步）：被抽中时回 `needsReplay + verifyId`（材料暂扣），调用方补传录像走
+   * {@link pveVerify} 复算入账。`pveUpgrades` 是客户端开局蓝图快照（L0 异常判定，与服务器权威对比）。
+   */
   async pveClear(
     levelId: string,
     stars: number,
-    replayRef?: string,
-  ): Promise<{ save: SaveData; granted: Record<string, number>; capped: boolean }> {
-    return this.post<{ save: SaveData; granted: Record<string, number>; capped: boolean }>(
-      '/pve/clear',
-      { levelId, stars, ...(replayRef ? { replayRef } : {}) },
-    );
+    pveUpgrades?: Record<string, number>,
+  ): Promise<{
+    save: SaveData;
+    granted: Record<string, number>;
+    capped: boolean;
+    needsReplay?: boolean;
+    verifyId?: string;
+  }> {
+    return this.post<{
+      save: SaveData;
+      granted: Record<string, number>;
+      capped: boolean;
+      needsReplay?: boolean;
+      verifyId?: string;
+    }>('/pve/clear', { levelId, stars, ...(pveUpgrades ? { pveUpgrades } : {}) });
+  }
+
+  /** L1 录像抽检复算：补传被抽中通关的录像帧 → 第三方无头复算 → 复算星数 ≥ 声称才发材料。 */
+  async pveVerify(
+    verifyId: string,
+    endFrame: number,
+    frames: { frame: number; cmds: { side: number; commands: string }[] }[],
+  ): Promise<{ save: SaveData; granted: Record<string, number>; capped: boolean; verified: boolean }> {
+    return this.post<{
+      save: SaveData;
+      granted: Record<string, number>;
+      capped: boolean;
+      verified: boolean;
+    }>('/pve/verify', { verifyId, endFrame, frames });
   }
 
   /** PvE 升级：服务器校验材料 → 扣材料 + pveUpgrades+1 → 回推。材料不足 → ApiError('INSUFFICIENT_FUNDS')（402）。 */

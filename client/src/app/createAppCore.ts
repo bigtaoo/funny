@@ -57,10 +57,13 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   // ── SaveManager: local-first save + optional cloud sync ─────────────────────
   const baseUrl = getApiBaseUrl(platform.storage);
   const api = baseUrl ? new ApiClient(baseUrl) : undefined;
+  const replayStore = new ReplayStore(platform.storage);
   const saveManager = new SaveManager({
     store: new LocalSaveStore(platform.storage),
     api,
     getCredential: () => platform.getAuthCredential(),
+    // L1 抽检（§8.6）：离线 flush 被抽中时据 replayId 取回本地录像补传复算。
+    loadReplay: (id) => replayStore.load(id),
     onProfile: ({ displayName, publicId, gatewayUrl: gw }) => {
       applyGatewayUrl(gw);
       if (publicId) platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, publicId);
@@ -70,8 +73,6 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       if (inLobby) goLobby();
     },
   });
-
-  const replayStore = new ReplayStore(platform.storage);
 
   // ── NetSession: online room + lockstep transport (three-channel, M20) ───────
   let gatewayUrl = getGatewayWsUrl(platform.storage);
@@ -464,14 +465,16 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     platform.onGameplayStart();
     views.showGame({
       onGameEnd(winner, stats, replay) {
+        // 先落盘录像（一次），既供结算页回放、也供 L1 抽检（§8.6）补传复算。
+        const kept = keepReplay(replay);
         if (winner === 0) {
           const pct = remainingHpPct(stats[0].damageTakenByBase);
           const stars = computeStars(level.rewards?.starThresholds, pct);
-          // 服务器权威结算（§8）：在线 → POST /pve/clear；离线 → 入队待结算（fire-and-forget，
-          // 回到 CampaignMap 时重读 save / pending 反映状态）。
-          if (stars > 0) void saveManager.recordClear(levelId, stars);
+          // 服务器权威结算（§8）：在线 → POST /pve/clear（被抽中则用 kept 录像走 /pve/verify 复算）；
+          // 离线 → 入队待结算（fire-and-forget，回到 CampaignMap 时重读 save / pending 反映状态）。
+          if (stars > 0) void saveManager.recordClear(levelId, stars, kept);
         }
-        goResult(winner, stats, 0, keepReplay(replay));
+        goResult(winner, stats, 0, kept);
       },
       onExitToLobby() { goLobby(); },
     }, {

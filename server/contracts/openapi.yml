@@ -588,7 +588,11 @@ paths:
               properties:
                 levelId: { type: string }
                 stars: { type: integer, minimum: 0, maximum: 3 }
-                replayRef: { type: string, description: 可选录像引用（L1 抽检复算用） }
+                replayRef: { type: string, description: 可选录像引用（L1 抽检复算用，已弃用） }
+                pveUpgrades:
+                  type: object
+                  additionalProperties: { type: integer }
+                  description: 客户端开局蓝图快照（L0 异常判定；与服务器权威不符触发抽检）
       responses:
         '200':
           description: 成功
@@ -607,10 +611,75 @@ paths:
                       granted:
                         type: object
                         additionalProperties: { type: integer }
-                        description: 本次实发材料（capped 时为空）
+                        description: 本次实发材料（capped / 抽检暂扣时为空）
                       capped: { type: boolean, description: 当日发材料通关已达上限 }
+                      needsReplay:
+                        type: boolean
+                        description: 被 L1 抽中——材料暂扣，客户端须补传录像走 /pve/verify 复算入账
+                      verifyId:
+                        type: string
+                        description: 抽检记录 id（needsReplay 时），补传录像时回带
         '400': { $ref: '#/components/responses/ErrorResp' }
         '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /pve/verify:
+    post:
+      operationId: pveVerify
+      tags: [save]
+      summary: PvE L1 录像抽检复算（补传被抽中通关的录像→第三方无头复算→复算星数≥声称才发材料）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verifyId, frames, endFrame]
+              properties:
+                verifyId: { type: string, description: /pve/clear 回执的抽检记录 id }
+                endFrame: { type: integer, description: 录像总帧数（复算步数上限） }
+                frames:
+                  type: array
+                  description: 非空帧（command bytes base64，与裁判管线同构）
+                  items:
+                    type: object
+                    required: [frame, cmds]
+                    properties:
+                      frame: { type: integer }
+                      cmds:
+                        type: array
+                        items:
+                          type: object
+                          required: [side, commands]
+                          properties:
+                            side: { type: integer }
+                            commands: { type: string, description: base64 PlayerCommands }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, granted, capped, verified]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      granted:
+                        type: object
+                        additionalProperties: { type: integer }
+                        description: 复算通过后实发材料（rejected / capped 时为空）
+                      capped: { type: boolean }
+                      verified:
+                        type: boolean
+                        description: 复算是否通过（false=星数不符判可疑，未发材料）
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
 
   /pve/upgrade:
     post:

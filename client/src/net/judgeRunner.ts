@@ -8,17 +8,20 @@
 
 import {
   createGameEngine,
+  getLevel,
   ReplayInputSource,
   ENGINE_VERSION,
   Side,
   GamePhase,
   TICK_RATE,
+  type GameMode,
   type OwnerId,
   type PlayerCommand,
   type PlayerStats,
   type Replay,
   type ReplayFrame,
 } from '../game';
+import { computeStars, remainingHpPct } from '../game/meta/campaignRewards';
 import { PlayerCommands, type PlayerCommand as ProtoPlayerCommand } from './proto/game';
 import type { JudgeRequest } from './proto/transport';
 
@@ -26,17 +29,21 @@ export interface JudgeOutcome {
   ok: boolean;
   stateHash: string;
   winnerSide: number;
+  /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：复算得到的星数（0 = 未通关）。PvP 恒 0。 */
+  stars: number;
 }
 
-const FAIL: JudgeOutcome = { ok: false, stateHash: '', winnerSide: 0 };
+const FAIL: JudgeOutcome = { ok: false, stateHash: '', winnerSide: 0, stars: 0 };
 
 /**
- * 复算一局并返回终局 hash。无法跑到终局（帧流不完整 / 异常）→ {ok:false}。
+ * 复算一局并返回终局结果。无法跑到终局（帧流不完整 / 异常）→ {ok:false}。
+ * `level_id` 非空 → PvE 抽检复算（战役模式，回报星数）；否则 PvP（回报终局 hash + winner）。
  * 上限步数 = endFrame + 余量，防坏录像导致死循环。
  */
 export function runJudge(req: JudgeRequest): JudgeOutcome {
+  if (req.levelId) return runPveJudge(req);
   try {
-    const replay = buildReplay(req);
+    const replay = buildReplay(req, 'netplay', req.seed);
     const engine = createGameEngine(
       { seed: req.seed, players: [{ id: 0 }, { id: 1 }], mode: 'netplay' },
       new ReplayInputSource(replay),
@@ -53,7 +60,48 @@ export function runJudge(req: JudgeRequest): JudgeOutcome {
 
     const winner = stateWinner(engine.state.winner);
     const stats = engine.state.snapshotStats();
-    return { ok: true, stateHash: matchStateHash(winner, stats), winnerSide: winner ?? 0 };
+    return { ok: true, stateHash: matchStateHash(winner, stats), winnerSide: winner ?? 0, stars: 0 };
+  } catch {
+    return FAIL;
+  }
+}
+
+/**
+ * PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：用 seed（由 level 派生，本地查 levels JSON 取权威值）
+ * + 服务器权威 pve_upgrades 蓝图快照 + 玩家指令帧，按战役模式跑到终局算星数。复算的星数交
+ * meta 与客户端声称的对比——作弊者篡改的是本地状态，改不了「这套指令是否真能在这套蓝图下通关」，
+ * 故复算结果与诚实通关一致。通关 = 玩家(owner 0)胜；非玩家胜 → 0 星。
+ */
+function runPveJudge(req: JudgeRequest): JudgeOutcome {
+  try {
+    const level = getLevel(req.levelId);
+    if (!level) return FAIL; // 裁判本地无此关定义 → 无法复算（版本不符）
+    const replay = buildReplay(req, 'campaign', level.seed, req.levelId);
+    const engine = createGameEngine(
+      {
+        seed: level.seed,
+        players: [{ id: 0 }, { id: 1 }],
+        mode: 'campaign',
+        level,
+        pveUpgrades: req.pveUpgrades,
+      },
+      new ReplayInputSource(replay),
+    );
+
+    const tickDt = 1 / TICK_RATE;
+    const maxTicks = req.endFrame + 600;
+    let guard = 0;
+    while (engine.state.phase !== GamePhase.GameOver && guard < maxTicks) {
+      engine.tick(tickDt);
+      guard++;
+    }
+    if (engine.state.phase !== GamePhase.GameOver) return FAIL;
+
+    const winner = stateWinner(engine.state.winner);
+    if (winner !== 0) return { ok: true, stateHash: '', winnerSide: winner ?? 0, stars: 0 };
+    const stats = engine.state.snapshotStats();
+    const stars = computeStars(level.rewards?.starThresholds, remainingHpPct(stats[0].damageTakenByBase));
+    return { ok: true, stateHash: '', winnerSide: 0, stars };
   } catch {
     return FAIL;
   }
@@ -62,7 +110,7 @@ export function runJudge(req: JudgeRequest): JudgeOutcome {
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 /** judge_request 的非空帧（game.proto opaque bytes）→ 可回放的 Replay。 */
-function buildReplay(req: JudgeRequest): Replay {
+function buildReplay(req: JudgeRequest, mode: GameMode, seed: number, levelId?: string): Replay {
   const frames: ReplayFrame[] = req.frames.map((fc) => {
     const commands: PlayerCommand[] = [];
     for (const sc of fc.cmds) {
@@ -73,10 +121,11 @@ function buildReplay(req: JudgeRequest): Replay {
   });
   return {
     engineVersion: ENGINE_VERSION,
-    mode: 'netplay',
-    seed: req.seed,
+    mode,
+    seed,
     frames,
     endFrame: req.endFrame,
+    ...(levelId ? { configRef: levelId, meta: { levelId } } : {}),
   };
 }
 

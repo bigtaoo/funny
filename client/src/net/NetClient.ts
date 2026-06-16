@@ -120,9 +120,15 @@ export class NetClient {
   sendClientCaps(canJudge: boolean): void {
     this.sendClient({ clientCaps: { canJudge } });
   }
-  /** 回报裁判复算结果（收 judge_request 复算后发，Phase C）。 */
-  sendJudgeVerdict(requestId: string, stateHash: string, winnerSide: number, ok: boolean): void {
-    this.sendClient({ judgeVerdict: { requestId, stateHash, winnerSide, ok } });
+  /** 回报裁判复算结果（收 judge_request 复算后发，Phase C；PvE 抽检带 stars）。 */
+  sendJudgeVerdict(
+    requestId: string,
+    stateHash: string,
+    winnerSide: number,
+    ok: boolean,
+    stars = 0,
+  ): void {
+    this.sendClient({ judgeVerdict: { requestId, stateHash, winnerSide, ok, stars } });
   }
   ping(): void {
     this.sendClient({ ping: {} });

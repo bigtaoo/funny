@@ -175,6 +175,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pve/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PvE L1 录像抽检复算（补传被抽中通关的录像→第三方无头复算→复算星数≥声称才发材料） */
+        post: operations["pveVerify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pve/upgrade": {
         parameters: {
             query?: never;
@@ -811,8 +828,12 @@ export interface operations {
                 "application/json": {
                     levelId: string;
                     stars: number;
-                    /** @description 可选录像引用（L1 抽检复算用） */
+                    /** @description 可选录像引用（L1 抽检复算用，已弃用） */
                     replayRef?: string;
+                    /** @description 客户端开局蓝图快照（L0 异常判定；与服务器权威不符触发抽检） */
+                    pveUpgrades?: {
+                        [key: string]: number;
+                    };
                 };
             };
         };
@@ -828,18 +849,76 @@ export interface operations {
                         ok: true;
                         data: {
                             save: components["schemas"]["SaveData"];
-                            /** @description 本次实发材料（capped 时为空） */
+                            /** @description 本次实发材料（capped / 抽检暂扣时为空） */
                             granted: {
                                 [key: string]: number;
                             };
                             /** @description 当日发材料通关已达上限 */
                             capped: boolean;
+                            /** @description 被 L1 抽中——材料暂扣，客户端须补传录像走 /pve/verify 复算入账 */
+                            needsReplay?: boolean;
+                            /** @description 抽检记录 id（needsReplay 时），补传录像时回带 */
+                            verifyId?: string;
                         };
                     };
                 };
             };
             400: components["responses"]["ErrorResp"];
             401: components["responses"]["ErrorResp"];
+        };
+    };
+    pveVerify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description /pve/clear 回执的抽检记录 id */
+                    verifyId: string;
+                    /** @description 录像总帧数（复算步数上限） */
+                    endFrame: number;
+                    /** @description 非空帧（command bytes base64，与裁判管线同构） */
+                    frames: {
+                        frame: number;
+                        cmds: {
+                            side: number;
+                            /** @description base64 PlayerCommands */
+                            commands: string;
+                        }[];
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            /** @description 复算通过后实发材料（rejected / capped 时为空） */
+                            granted: {
+                                [key: string]: number;
+                            };
+                            capped: boolean;
+                            /** @description 复算是否通过（false=星数不符判可疑，未发材料） */
+                            verified: boolean;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
         };
     };
     pveUpgrade: {

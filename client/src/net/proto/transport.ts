@@ -103,11 +103,13 @@ export interface ClientCaps {
 /** judge_verdict：裁判客户端复算完终局后回报（控制面）。 */
 export interface JudgeVerdict {
   requestId: string;
-  /** 复算得到的终局 hash（与 match_result.state_hash 同构） */
+  /** 复算得到的终局 hash（PvP：与 match_result.state_hash 同构） */
   stateHash: string;
   winnerSide: number;
   /** 复算成功（版本匹配 + 跑到终局） */
   ok: boolean;
+  /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：复算得到的星数（0=未通关） */
+  stars: number;
 }
 
 export interface ClientMsg {
@@ -201,6 +203,18 @@ export interface JudgeRequest {
   mode: MatchMode;
   endFrame: number;
   frames: FrameCmds[];
+  /**
+   * PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：level_id 非空 → 裁判按战役模式无头复算该关，
+   * 用 seed（由 level 派生，裁判本地查 levels JSON）+ pve_upgrades（服务器权威蓝图快照，
+   * 保证复算确定性）+ frames（玩家指令）跑到终局算星数，经 judge_verdict.stars 回报。
+   */
+  levelId: string;
+  pveUpgrades: { [key: string]: number };
+}
+
+export interface JudgeRequest_PveUpgradesEntry {
+  key: string;
+  value: number;
 }
 
 export interface ServerMsg {
@@ -939,7 +953,7 @@ export const ClientCaps: MessageFns<ClientCaps> = {
 };
 
 function createBaseJudgeVerdict(): JudgeVerdict {
-  return { requestId: "", stateHash: "", winnerSide: 0, ok: false };
+  return { requestId: "", stateHash: "", winnerSide: 0, ok: false, stars: 0 };
 }
 
 export const JudgeVerdict: MessageFns<JudgeVerdict> = {
@@ -955,6 +969,9 @@ export const JudgeVerdict: MessageFns<JudgeVerdict> = {
     }
     if (message.ok !== false) {
       writer.uint32(32).bool(message.ok);
+    }
+    if (message.stars !== 0) {
+      writer.uint32(40).uint32(message.stars);
     }
     return writer;
   },
@@ -998,6 +1015,14 @@ export const JudgeVerdict: MessageFns<JudgeVerdict> = {
           message.ok = reader.bool();
           continue;
         }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.stars = reader.uint32();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1016,6 +1041,7 @@ export const JudgeVerdict: MessageFns<JudgeVerdict> = {
     message.stateHash = object.stateHash ?? "";
     message.winnerSide = object.winnerSide ?? 0;
     message.ok = object.ok ?? false;
+    message.stars = object.stars ?? 0;
     return message;
   },
 };
@@ -1849,7 +1875,7 @@ export const Pong: MessageFns<Pong> = {
 };
 
 function createBaseJudgeRequest(): JudgeRequest {
-  return { requestId: "", seed: 0, mode: 0, endFrame: 0, frames: [] };
+  return { requestId: "", seed: 0, mode: 0, endFrame: 0, frames: [], levelId: "", pveUpgrades: {} };
 }
 
 export const JudgeRequest: MessageFns<JudgeRequest> = {
@@ -1869,6 +1895,12 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
     for (const v of message.frames) {
       FrameCmds.encode(v!, writer.uint32(42).fork()).join();
     }
+    if (message.levelId !== "") {
+      writer.uint32(50).string(message.levelId);
+    }
+    globalThis.Object.entries(message.pveUpgrades).forEach(([key, value]: [string, number]) => {
+      JudgeRequest_PveUpgradesEntry.encode({ key: key as any, value }, writer.uint32(58).fork()).join();
+    });
     return writer;
   },
 
@@ -1919,6 +1951,25 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
           message.frames.push(FrameCmds.decode(reader, reader.uint32()));
           continue;
         }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.levelId = reader.string();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          const entry7 = JudgeRequest_PveUpgradesEntry.decode(reader, reader.uint32());
+          if (entry7.value !== undefined) {
+            message.pveUpgrades[entry7.key] = entry7.value;
+          }
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1938,6 +1989,76 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
     message.mode = object.mode ?? 0;
     message.endFrame = object.endFrame ?? 0;
     message.frames = object.frames?.map((e) => FrameCmds.fromPartial(e)) || [];
+    message.levelId = object.levelId ?? "";
+    message.pveUpgrades = (globalThis.Object.entries(object.pveUpgrades ?? {}) as [string, number][]).reduce(
+      (acc: { [key: string]: number }, [key, value]: [string, number]) => {
+        if (value !== undefined) {
+          acc[key] = globalThis.Number(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    return message;
+  },
+};
+
+function createBaseJudgeRequest_PveUpgradesEntry(): JudgeRequest_PveUpgradesEntry {
+  return { key: "", value: 0 };
+}
+
+export const JudgeRequest_PveUpgradesEntry: MessageFns<JudgeRequest_PveUpgradesEntry> = {
+  encode(message: JudgeRequest_PveUpgradesEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== 0) {
+      writer.uint32(16).uint32(message.value);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): JudgeRequest_PveUpgradesEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseJudgeRequest_PveUpgradesEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.key = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.value = reader.uint32();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<JudgeRequest_PveUpgradesEntry>, I>>(base?: I): JudgeRequest_PveUpgradesEntry {
+    return JudgeRequest_PveUpgradesEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<JudgeRequest_PveUpgradesEntry>, I>>(
+    object: I,
+  ): JudgeRequest_PveUpgradesEntry {
+    const message = createBaseJudgeRequest_PveUpgradesEntry();
+    message.key = object.key ?? "";
+    message.value = object.value ?? 0;
     return message;
   },
 };

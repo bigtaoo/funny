@@ -7,11 +7,14 @@
 
 import type { AuthCredential } from '../../platform/IPlatform';
 import { ApiError, type ApiClient } from '../../net/ApiClient';
+import { replayToUploadFrames } from '../../net/replayUpload';
+import type { Replay } from '../types';
 import {
   extractSyncPatch,
   type LevelRecord,
   type SaveData,
 } from './SaveData';
+import { replayIdFor } from './ReplayStore';
 import type { PendingClear, SaveStore } from './SaveStore';
 
 export interface SaveManagerOpts {
@@ -27,6 +30,8 @@ export interface SaveManagerOpts {
    * `gatewayUrl`：服务器下发的控制面 WS 地址（客户端不硬编码，见 ApiClient.AuthResult）。
    */
   onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string }) => void;
+  /** 取回本地录像（ReplayStore）；L1 抽检时离线 flush 据 replayId 取回上传复算（§8.6）。 */
+  loadReplay?: (id: string) => Replay | null;
   /** 注入定时器（测试用）；默认走 globalThis。 */
   setTimer?: (cb: () => void, ms: number) => unknown;
   clearTimer?: (h: unknown) => void;
@@ -38,6 +43,7 @@ export class SaveManager {
   private readonly api?: ApiClient;
   private readonly getCredential?: () => Promise<AuthCredential>;
   private readonly onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string }) => void;
+  private readonly loadReplay?: (id: string) => Replay | null;
   private readonly debounceMs: number;
   private readonly setTimer: (cb: () => void, ms: number) => unknown;
   private readonly clearTimer: (h: unknown) => void;
@@ -52,6 +58,7 @@ export class SaveManager {
     this.api = opts.api;
     this.getCredential = opts.getCredential;
     this.onProfile = opts.onProfile;
+    this.loadReplay = opts.loadReplay;
     this.debounceMs = opts.debounceMs ?? 2000;
     this.setTimer =
       opts.setTimer ?? ((cb, ms) => (globalThis as typeof globalThis).setTimeout(cb, ms));
@@ -173,19 +180,40 @@ export class SaveManager {
   /**
    * 记录一次通关（stars≥1）。在线 → POST /pve/clear 立即结算并 adopt 回推；
    * 离线 / 请求失败 → 入队（不改本地权威值），上线后 flush。
+   * L1 抽检（§8.6 第 3 步）：服务器回 `needsReplay` 时材料暂扣，用本局录像补传 /pve/verify 复算入账。
    */
-  async recordClear(levelId: string, stars: number, replayRef?: string): Promise<void> {
+  async recordClear(levelId: string, stars: number, replay?: Replay): Promise<void> {
     if (stars <= 0) return;
     if (this.online()) {
       try {
-        const res = await this.api!.pveClear(levelId, stars, replayRef);
+        const res = await this.api!.pveClear(levelId, stars, this.save.pveUpgrades);
         this.adoptServer(res.save);
+        if (res.needsReplay && res.verifyId && replay) {
+          await this.verifyReplay(res.verifyId, replay);
+        }
         return;
       } catch {
         // 在线但请求失败（网络抖动）→ 入队兜底，下次 flush
       }
     }
-    this.enqueueClear({ levelId, stars, ts: Date.now() });
+    this.enqueueClear({
+      levelId,
+      stars,
+      ts: Date.now(),
+      ...(replay?.meta?.recordedAt !== undefined
+        ? { replayId: replayIdFor(replay.meta.recordedAt) }
+        : {}),
+    });
+  }
+
+  /** 上传录像走 /pve/verify 复算 → adopt 回推（含发材料）。失败静默（服务器侧记录仍 pending）。 */
+  private async verifyReplay(verifyId: string, replay: Replay): Promise<void> {
+    try {
+      const res = await this.api!.pveVerify(verifyId, replay.endFrame, replayToUploadFrames(replay));
+      this.adoptServer(res.save);
+    } catch {
+      /* 网络/复算异常 → 本轮不入账，服务器侧记录留 pending（不卡本地流程） */
+    }
   }
 
   /**
@@ -214,8 +242,13 @@ export class SaveManager {
     while (this.pending.length > 0) {
       const head = this.pending[0];
       try {
-        const res = await this.api!.pveClear(head.levelId, head.stars);
+        const res = await this.api!.pveClear(head.levelId, head.stars, this.save.pveUpgrades);
         this.adoptServer(res.save);
+        // L1 抽中：取回本地录像补传复算（已被 ReplayStore 淘汰则跳过，材料本轮不入账）。
+        if (res.needsReplay && res.verifyId && head.replayId && this.loadReplay) {
+          const replay = this.loadReplay(head.replayId);
+          if (replay) await this.verifyReplay(res.verifyId, replay);
+        }
         this.pending.shift();
         this.store.savePending(this.pending);
       } catch (e) {

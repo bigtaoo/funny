@@ -31,7 +31,14 @@ export type ClientMsg =
   | { case: 'room_start' }
   | { case: 'ping' }
   | { case: 'client_caps'; canJudge: boolean }
-  | { case: 'judge_verdict'; requestId: string; stateHash: string; winnerSide: number; ok: boolean }
+  | {
+      case: 'judge_verdict';
+      requestId: string;
+      stateHash: string;
+      winnerSide: number;
+      ok: boolean;
+      stars: number;
+    }
   | { case: 'unknown' };
 
 export interface PlayerSlotOut {
@@ -57,6 +64,10 @@ export type ServerMsg =
       mode: number;
       endFrame: number;
       frames: FrameCmdsOut[];
+      /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：非空 → 裁判按战役模式复算该关。 */
+      levelId: string;
+      /** 服务器权威蓝图快照（升级等级），保证 PvE 复算确定性。 */
+      pveUpgrades: Record<string, number>;
     }
   | { case: 'pong' };
 
@@ -115,6 +126,7 @@ export function decodeClient(buf: Uint8Array): ClientMsg {
         stateHash: String(v['state_hash'] ?? ''),
         winnerSide: Number(v['winner_side'] ?? 0),
         ok: Boolean(v['ok']),
+        stars: Number(v['stars'] ?? 0),
       };
     }
     default:
@@ -157,6 +169,8 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
             frame: f.frame,
             cmds: f.cmds.map((c) => ({ side: c.side, commands: c.commands })),
           })),
+          level_id: msg.levelId,
+          pve_upgrades: msg.pveUpgrades,
         },
       };
       break;

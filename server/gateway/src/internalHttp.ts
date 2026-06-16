@@ -18,6 +18,9 @@ interface JudgeReqBody {
   endFrame?: number;
   frames?: { frame: number; cmds: { side: number; commands: string }[] }[];
   exclude?: string[];
+  /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）。 */
+  levelId?: string;
+  pveUpgrades?: Record<string, number>;
 }
 
 /** base64 帧 → gateway 内部 FrameCmdsOut（commands 解回 Uint8Array）。 */
@@ -88,6 +91,8 @@ export function startInternalHttp(
             endFrame: Number(b.endFrame ?? 0),
             frames: decodeFrames(b.frames),
             exclude: b.exclude ?? [],
+            ...(b.levelId ? { levelId: b.levelId } : {}),
+            ...(b.pveUpgrades ? { pveUpgrades: b.pveUpgrades } : {}),
           };
           // 直接回 JudgeResult（ok = 裁决是否成功；meta 据此定罪或作废）。
           const result = await gateway.judge(args);

@@ -10,6 +10,7 @@ import {
   findPveUpgrade,
   pveUpgradeCost,
   PVE_DAILY_CLEAR_REWARD_CAP,
+  shouldSpotCheck,
 } from '@nw/shared';
 import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import {
@@ -36,6 +37,7 @@ import {
   setDisplayName,
 } from './accounts.js';
 import type { CommercialClient } from './commercialClient.js';
+import type { GatewayClient } from './gatewayClient.js';
 import {
   markDuplicates,
   deliverGrant,
@@ -53,6 +55,8 @@ export interface ServiceDeps {
   commercial: CommercialClient;
   /** gateway 公开 WS 地址，随 auth/save 回包下发；null = 不下发（客户端退回自身配置）。 */
   gatewayPublicUrl: string | null;
+  /** gateway 内部客户端：PvE L1 录像抽检经 /gw/judge 派第三方无头复算。未配置则不抽检（直接发材料）。 */
+  gateway: GatewayClient;
 }
 
 /** 取安全处理器写入的 accountId（security handler 保证已鉴权）。 */
@@ -60,6 +64,16 @@ function accountIdOf(req: FastifyRequest): string {
   const id = req.accountId;
   if (!id) throw new Error('accountId missing after auth');
   return id;
+}
+
+/** 规范化升级表（去 0 值 + 排序键）便于跨来源稳定比较（L0 蓝图异常判定）。 */
+function normUpgrades(u: Record<string, number>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const k of Object.keys(u).sort()) {
+    const v = u[k] ?? 0;
+    if (v > 0) out[k] = v;
+  }
+  return out;
 }
 
 export class MetaService {
@@ -272,11 +286,50 @@ export class MetaService {
     return !!res;
   }
 
-  /** PvE 通关结算：校验解锁 → 每日上限内发材料 → 原子写 progress/stars/materials → 回推。 */
+  /** 写 progress/stars（解锁 + 记星，取 max），不动 materials。 */
+  private async writeClearProgress(accountId: string, levelId: string, stars: number) {
+    return this.mutateSave(accountId, (s) => {
+      const cleared = s.progress.cleared.includes(levelId)
+        ? s.progress.cleared
+        : [...s.progress.cleared, levelId];
+      const stars2 = Math.max(s.progress.stars[levelId] ?? 0, stars) as 1 | 2 | 3;
+      return {
+        ...s,
+        progress: { ...s.progress, cleared, stars: { ...s.progress.stars, [levelId]: stars2 } },
+      };
+    });
+  }
+
+  /** 当日上限内发材料（reward 已是权威表）。返回实发 reward（capped → {}）+ 是否 capped + 回推 save。 */
+  private async grantClearReward(
+    accountId: string,
+    reward: Record<string, number>,
+  ): Promise<{ save: SaveData; granted: Record<string, number>; capped: boolean } | { error: string }> {
+    const hasReward = Object.keys(reward).length > 0;
+    const capped = hasReward ? !(await this.bumpPveRewardCap(accountId, this.deps.now())) : false;
+    const grant: Record<string, number> = capped ? {} : { ...reward };
+    const out = await this.mutateSave(accountId, (s) => {
+      const materials = { ...s.materials };
+      for (const [m, n] of Object.entries(grant)) materials[m] = (materials[m] ?? 0) + n;
+      return { ...s, materials };
+    });
+    if ('error' in out) return out;
+    return { save: out.save, granted: grant, capped };
+  }
+
+  /**
+   * PvE 通关结算：校验解锁 → 写 progress/stars → 发材料（当日上限内）→ 回推。
+   * L1 抽检（§8.6 第 3 步）：被抽中（首通 / 蓝图异常 / 随机）且裁判可用时 **暂不发材料**，
+   * 记 pveVerifications 并回执 `needsReplay + verifyId`，由客户端补传录像走 /pve/verify 复算入账。
+   */
   async pveClear(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
-    const { cols, now } = this.deps;
-    const { levelId, stars: starsRaw } = req.body as { levelId: string; stars: number };
+    const { cols, now, gateway } = this.deps;
+    const { levelId, stars: starsRaw, pveUpgrades: clientUpgrades } = req.body as {
+      levelId: string;
+      stars: number;
+      pveUpgrades?: Record<string, number>;
+    };
     const level = findPveLevel(levelId);
     if (!level) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown level'));
     const stars = Math.floor(starsRaw);
@@ -290,26 +343,106 @@ export class MetaService {
     if (level.requires && !cur.progress.cleared.includes(level.requires)) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level locked'));
     }
-    // 每日发材料通关上限：超限仍记 progress/stars，材料不发（§8 决策 3）。
     const hasReward = Object.keys(level.reward).length > 0;
-    const capped = hasReward ? !(await this.bumpPveRewardCap(accountId, now())) : false;
-    const reward: Record<string, number> = capped ? {} : { ...level.reward };
 
-    const out = await this.mutateSave(accountId, (s) => {
-      const cleared = s.progress.cleared.includes(levelId)
-        ? s.progress.cleared
-        : [...s.progress.cleared, levelId];
-      const stars2 = Math.max(s.progress.stars[levelId] ?? 0, stars) as 1 | 2 | 3;
-      const materials = { ...s.materials };
-      for (const [m, n] of Object.entries(reward)) materials[m] = (materials[m] ?? 0) + n;
-      return {
-        ...s,
-        progress: { ...s.progress, cleared, stars: { ...s.progress.stars, [levelId]: stars2 } },
-        materials,
-      };
+    // L1 抽检决策：仅在「有材料可发 + 裁判可用」时考虑（否则没有可被作弊套利的产出）。
+    if (hasReward && gateway.available) {
+      const isFirstClear = !cur.progress.cleared.includes(levelId);
+      // L0 异常（§0「开局战力不符 → 必作弊」）：客户端上报蓝图快照与服务器权威 pveUpgrades 不符。
+      const blueprintMismatch =
+        clientUpgrades !== undefined &&
+        JSON.stringify(normUpgrades(clientUpgrades)) !== JSON.stringify(normUpgrades(cur.pveUpgrades));
+      if (shouldSpotCheck({ isFirstClear, blueprintMismatch, rand: Math.random() })) {
+        const reason = blueprintMismatch ? 'anomaly' : isFirstClear ? 'first' : 'sample';
+        // 写 progress/stars（解锁照常）但不发材料；记抽检，等客户端补传录像复算。
+        const prog = await this.writeClearProgress(accountId, levelId, stars);
+        if ('error' in prog) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, prog.error));
+        const verifyId = randomUUID();
+        await cols.pveVerifications.insertOne({
+          _id: verifyId,
+          accountId,
+          levelId,
+          claimedStars: stars,
+          pveUpgrades: { ...cur.pveUpgrades }, // 服务器权威蓝图快照（复算用，防漂移）
+          reason,
+          status: 'pending',
+          ts: now(),
+        });
+        return ok({ save: prog.save, granted: {}, capped: false, needsReplay: true, verifyId });
+      }
+    }
+
+    // 普通通关：写 progress/stars 后发材料（当日上限内）。
+    const prog = await this.writeClearProgress(accountId, levelId, stars);
+    if ('error' in prog) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, prog.error));
+    const granted = await this.grantClearReward(accountId, level.reward);
+    if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
+    return ok({ save: granted.save, granted: granted.granted, capped: granted.capped });
+  }
+
+  /**
+   * PvE L1 录像抽检复算（§8.6 第 3 步）：客户端补传被抽中通关的录像帧 → 经 gateway 派第三方
+   * 在线客户端无头复算（复用 S1-J，战役模式 + 服务器权威蓝图快照）→ 复算星数 ≥ 声称才发材料。
+   * 无裁判可裁（无候选 / 超时 / 复算失败）→ benefit-of-doubt 照发（不因缺裁判惩罚诚实玩家）；
+   * 复算星数 < 声称 → 判为可疑，不发材料 + 记 rejected。
+   */
+  async pveVerify(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { cols, gateway, now } = this.deps;
+    const { verifyId, frames, endFrame } = req.body as {
+      verifyId: string;
+      frames: { frame: number; cmds: { side: number; commands: string }[] }[];
+      endFrame: number;
+    };
+    const doc = await cols.pveVerifications.findOne({ _id: verifyId });
+    if (!doc || doc.accountId !== accountId) {
+      return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'verification not found'));
+    }
+    if (doc.status !== 'pending') {
+      // 已结算（重复上传）→ 幂等：回当前 save，不再发。
+      const s = await getOrCreateSave(cols, accountId, now());
+      return ok({ save: s, granted: {}, capped: false, verified: doc.status !== 'rejected' });
+    }
+    const level = findPveLevel(doc.levelId);
+    if (!level) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown level'));
+
+    // 派第三方无头复算（seed 由裁判本地查关卡 JSON 派生；mode 仅审计，PvE 看 levelId）。
+    const verdict = await gateway.judge({
+      seed: 0,
+      mode: 0,
+      endFrame: Math.floor(endFrame) || 0,
+      frames: frames ?? [],
+      exclude: [accountId],
+      levelId: doc.levelId,
+      pveUpgrades: doc.pveUpgrades,
     });
-    if ('error' in out) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
-    return ok({ save: out.save, granted: reward, capped });
+
+    const judgedStars = verdict.stars ?? 0;
+    // 复算成功且星数 < 声称 → 可疑，不发材料。其余（通过 / 无裁判可裁）发材料。
+    const rejected = verdict.ok && judgedStars < doc.claimedStars;
+    const status: 'verified' | 'unverified' | 'rejected' = rejected
+      ? 'rejected'
+      : verdict.ok
+        ? 'verified'
+        : 'unverified';
+    await cols.pveVerifications.updateOne(
+      { _id: verifyId, status: 'pending' },
+      {
+        $set: {
+          status,
+          judgedStars,
+          ...(verdict.judgeAccountId ? { judgeAccountId: verdict.judgeAccountId } : {}),
+        },
+      },
+    );
+
+    if (rejected) {
+      const s = await getOrCreateSave(cols, accountId, now());
+      return ok({ save: s, granted: {}, capped: false, verified: false });
+    }
+    const granted = await this.grantClearReward(accountId, level.reward);
+    if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
+    return ok({ save: granted.save, granted: granted.granted, capped: granted.capped, verified: true });
   }
 
   /** PvE 升级：服务器校验材料足够 → 扣材料 + pveUpgrades+1 → 回推（仅在线）。 */

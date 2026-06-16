@@ -67,16 +67,16 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   const now = opts.now ?? (() => Date.now());
   const commercial =
     opts.commercial ?? new HttpCommercialClient(opts.commercialUrl ?? null, opts.internalKey);
+  const gateway =
+    opts.gateway ?? new HttpGatewayClient(opts.gatewayUrl ?? null, opts.internalKey);
   const service = new MetaService({
     cols: opts.cols,
     jwt: opts.jwt,
     now,
     commercial,
     gatewayPublicUrl: opts.gatewayPublicUrl ?? null,
+    gateway,
   });
-
-  const gateway =
-    opts.gateway ?? new HttpGatewayClient(opts.gatewayUrl ?? null, opts.internalKey);
 
   // 内部路由（玩家不可见，X-Internal-Key 鉴权，不经 openapi glue）：取 ELO + 局末上报 + 对等裁判。
   registerInternalRoutes(app, {

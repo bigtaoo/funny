@@ -86,8 +86,39 @@ describe('Gateway peer judge', () => {
 
     await sleep(50); // 让 client_caps 先到达 gateway
     const verdict = await gw.judge({ seed: 7, mode: 1, endFrame: 0, frames: [], exclude: ['a', 'b'] });
-    expect(verdict).toEqual({ ok: true, stateHash: 'HONEST', winnerSide: 0, judgeAccountId: 'c' });
+    expect(verdict).toEqual({ ok: true, stateHash: 'HONEST', winnerSide: 0, stars: 0, judgeAccountId: 'c' });
     void a; void b;
+  });
+
+  it('PvE 抽检：transport level_id/pve_upgrades 透传给裁判，verdict.stars 解出', async () => {
+    const port = 19513;
+    const gw = startGateway(port);
+    const [p, j] = await Promise.all([connect(port, 'p'), connect(port, 'j')]);
+    j.send(encodeClient({ client_caps: { can_judge: true } }));
+
+    let seenReq: Record<string, unknown> | undefined;
+    j.on('message', (data: ArrayBuffer) => {
+      const srv = decodeServer(new Uint8Array(data));
+      const req = srv['judge_request'] as Record<string, unknown> | undefined;
+      if (!req) return;
+      seenReq = req;
+      j.send(
+        encodeClient({
+          judge_verdict: { request_id: req['request_id'], state_hash: '', winner_side: 0, ok: true, stars: 2 },
+        }),
+      );
+    });
+
+    await sleep(50);
+    const verdict = await gw.judge({
+      seed: 0, mode: 0, endFrame: 99, frames: [], exclude: ['p'],
+      levelId: 'ch1_lv2', pveUpgrades: { inf_hp: 3 },
+    });
+    expect(verdict).toEqual({ ok: true, stateHash: '', winnerSide: 0, stars: 2, judgeAccountId: 'j' });
+    // 裁判收到 PvE 复算参数（level_id + 权威蓝图快照）。
+    expect(seenReq?.['level_id']).toBe('ch1_lv2');
+    expect(seenReq?.['pve_upgrades']).toEqual({ inf_hp: 3 });
+    void p;
   });
 
   it('无合格候选（无人上报 canJudge）→ {ok:false}', async () => {

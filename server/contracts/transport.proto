@@ -63,9 +63,10 @@ message ClientCaps  { bool can_judge = 1; }
 // judge_verdict：裁判客户端复算完终局后回报（控制面）。
 message JudgeVerdict {
   string request_id  = 1;
-  string state_hash  = 2;   // 复算得到的终局 hash（与 match_result.state_hash 同构）
+  string state_hash  = 2;   // 复算得到的终局 hash（PvP：与 match_result.state_hash 同构）
   uint32 winner_side = 3;
   bool   ok          = 4;   // 复算成功（版本匹配 + 跑到终局）
+  uint32 stars       = 5;   // PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：复算得到的星数（0=未通关）
 }
 
 message ClientMsg {
@@ -138,6 +139,11 @@ message JudgeRequest {
   MatchMode          mode       = 3;
   uint32             end_frame  = 4;
   repeated FrameCmds frames     = 5;
+  // PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：level_id 非空 → 裁判按战役模式无头复算该关，
+  // 用 seed（由 level 派生，裁判本地查 levels JSON）+ pve_upgrades（服务器权威蓝图快照，
+  // 保证复算确定性）+ frames（玩家指令）跑到终局算星数，经 judge_verdict.stars 回报。
+  string                 level_id     = 6;
+  map<string, uint32>    pve_upgrades = 7;
 }
 
 message ServerMsg {

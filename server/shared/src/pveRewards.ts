@@ -56,6 +56,35 @@ export function findPveUpgrade(id: string): PveUpgradeCost | undefined {
   return PVE_UPGRADE_COSTS.find((u) => u.id === id);
 }
 
+// ── L1 录像抽检复算触发（PVE_INTEGRITY_PLAN §8.6 第 3 步）────────────────────
+// 把通关结果发给第三方在线客户端无头复算（复用 S1-J），复算星数 ≥ 声称才发材料。默认不传录像，
+// 仅被抽中时回执 needsReplay 让客户端补传。触发：①按比例随机抽检 ②首通高价值关 ③L0 异常（开局
+// 蓝图战力与服务器权威 pveUpgrades 不符——「开局战力不符 → 必作弊」，§0）。
+
+/** 重复刷已通关关的随机抽检比例（首通/异常恒触发，不走此率）。DRAFT 待实测调。 */
+export const PVE_VERIFY_SAMPLE_RATE = 0.1;
+
+export interface SpotCheckInput {
+  /** 是否首次通关该关（含解锁，高价值）。 */
+  isFirstClear: boolean;
+  /** L0 异常：客户端上报的开局蓝图快照与服务器权威 pveUpgrades 不符。 */
+  blueprintMismatch: boolean;
+  /** 0..1 随机数（调用方注入，便于测试确定性）。 */
+  rand: number;
+  /** 抽检比例（缺省 {@link PVE_VERIFY_SAMPLE_RATE}）。 */
+  sampleRate?: number;
+}
+
+/**
+ * 是否对该次通关做 L1 录像抽检复算。首通 / 异常恒触发；其余按比例随机抽检。
+ * 纯函数（随机数外部注入），不读时钟 / 不连库。
+ */
+export function shouldSpotCheck(input: SpotCheckInput): boolean {
+  if (input.blueprintMismatch || input.isFirstClear) return true;
+  const rate = input.sampleRate ?? PVE_VERIFY_SAMPLE_RATE;
+  return input.rand < rate;
+}
+
 /** currentLevel → currentLevel+1 的花费；已满级返回 null。 */
 export function pveUpgradeCost(
   cost: PveUpgradeCost,
