@@ -2,6 +2,7 @@
 // 部署配单节点副本集解锁跨集合事务；钱包/发货走单文档原子更新。
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
 import type { SaveData } from './types';
+import type { ChatRegion } from './chatFilter';
 import { CHAT_RETENTION_SEC } from './social';
 
 // —— 集合文档形状 ——
@@ -27,6 +28,11 @@ export interface AccountDoc {
   displayName?: string;
   /** 9 位数字公开 id（全局唯一，玩家交流/投诉用）。首次鉴权时惰性生成。 */
   publicId?: string;
+  /**
+   * 合规地区码（SOC10）。auth 时由 `Accept-Language` 头惰性推断并刷新（best-effort）。
+   * 私聊敏感词按发送方此字段选词表；缺省 / 旧账号无此字段 → `'global'`（仅基础词表）。
+   */
+  region?: ChatRegion;
 }
 
 /**

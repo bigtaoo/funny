@@ -42,8 +42,16 @@ describe.skipIf(!mongo)('social chat e2e', () => {
   let gateway: FakeGateway;
   const b = (r: { payload: string }) => JSON.parse(r.payload);
 
-  async function newAccount(deviceId: string): Promise<{ token: string; accountId: string; publicId: string }> {
-    const r = b(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId } }));
+  async function newAccount(
+    deviceId: string,
+    acceptLanguage?: string,
+  ): Promise<{ token: string; accountId: string; publicId: string }> {
+    const r = b(await app.inject({
+      method: 'POST',
+      url: '/auth/device',
+      payload: { deviceId },
+      ...(acceptLanguage ? { headers: { 'accept-language': acceptLanguage } } : {}),
+    }));
     return { token: r.data.token, accountId: r.data.accountId, publicId: r.data.publicId };
   }
   const auth = (token: string) => ({ authorization: `Bearer ${token}` });
@@ -108,6 +116,36 @@ describe.skipIf(!mongo)('social chat e2e', () => {
     expect(hist.data.messages).toHaveLength(1);
     expect(hist.data.messages[0].fromPublicId).toBe(a.publicId);
     expect(hist.data.messages[0].body).toBe('hello **** you');
+  });
+
+  it('censors per sender region: de account masks a German-only word', async () => {
+    // sender authed with Accept-Language: de → account.region='de' → de wordlist active.
+    const a = await newAccount('chat-aaaa', 'de-DE,de;q=0.9,en;q=0.8');
+    const c = await newAccount('chat-bbbb');
+    await befriend(a, c);
+    const send = b(await post(a.token, '/chat/send', { toPublicId: c.publicId, body: 'du bist scheisse' }));
+    expect(send.ok).toBe(true);
+    const conv = b(await get(c.token, '/chat/conversations')).data.conversations[0];
+    expect(conv.lastBody).toBe('du bist ********'); // "scheisse" (8) → 8 stars
+  });
+
+  it('censors per sender region: cn account masks a Chinese word', async () => {
+    const a = await newAccount('chat-aaaa', 'zh-CN');
+    const c = await newAccount('chat-bbbb');
+    await befriend(a, c);
+    await post(a.token, '/chat/send', { toPublicId: c.publicId, body: '卖外挂吗' });
+    const conv = b(await get(c.token, '/chat/conversations')).data.conversations[0];
+    expect(conv.lastBody).toBe('卖**吗'); // "外挂" (2) → 2 stars
+  });
+
+  it('region-scopes wordlists: an en-region account does not mask a de-only word', async () => {
+    const a = await newAccount('chat-aaaa', 'en-US');
+    const c = await newAccount('chat-bbbb');
+    await befriend(a, c);
+    // "scheisse" is in the de list only — en account sees global+en, so it stays unmasked.
+    await post(a.token, '/chat/send', { toPublicId: c.publicId, body: 'das ist scheisse' });
+    const conv = b(await get(c.token, '/chat/conversations')).data.conversations[0];
+    expect(conv.lastBody).toBe('das ist scheisse');
   });
 
   it('read clears the unread counter', async () => {

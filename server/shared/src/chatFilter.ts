@@ -23,6 +23,52 @@ export const REGION_WORDLISTS: Record<ChatRegion, string[]> = {
   en: ['asshole', 'scam'],
 };
 
+/**
+ * 语言标签 → 合规地区码（best-effort）。取主子标签（`de-DE`→`de`），大小写不敏感。
+ * 不识别的语言落 `global`（仅基础词表）。映射刻意保守——合规地区 ≠ 语言，
+ * 但在没有更强信号（IP 地理 / 账号实名地区）前，客户端语言是最现实的代理。
+ */
+export function regionFromLocale(locale: string | undefined | null): ChatRegion {
+  if (!locale) return 'global';
+  const primary = locale.trim().toLowerCase().split(/[-_]/)[0] ?? '';
+  switch (primary) {
+    case 'zh':
+      return 'cn';
+    case 'de':
+      return 'de';
+    case 'en':
+      return 'en';
+    default:
+      return 'global';
+  }
+}
+
+/**
+ * 解析 HTTP `Accept-Language` 头，取 q 值最高的语言 → 地区码。
+ * 例：`de-DE,de;q=0.9,en;q=0.8` → `de`。空 / 无法解析落 `global`。
+ * 服务端在 auth 时据此惰性给账号打 region 标（无需客户端/契约改动）。
+ */
+export function regionFromAcceptLanguage(header: string | undefined | null): ChatRegion {
+  if (!header) return 'global';
+  let bestTag = '';
+  let bestQ = -1;
+  for (const part of header.split(',')) {
+    const [tagRaw, ...params] = part.trim().split(';');
+    const tag = (tagRaw ?? '').trim();
+    if (!tag || tag === '*') continue;
+    let q = 1;
+    for (const p of params) {
+      const m = /^\s*q\s*=\s*([0-9.]+)\s*$/.exec(p);
+      if (m) q = parseFloat(m[1] ?? '1');
+    }
+    if (q > bestQ) {
+      bestQ = q;
+      bestTag = tag;
+    }
+  }
+  return regionFromLocale(bestTag);
+}
+
 /** 把命中词的可显字符替换为同长度的 `*`（保留 URL 协议串这类含符号词的非字母原样打码亦可）。 */
 function maskWord(word: string): string {
   return '*'.repeat([...word].length);

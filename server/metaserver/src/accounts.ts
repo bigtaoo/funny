@@ -1,13 +1,22 @@
 // 账号解析（S0-4 / S0-7）+ 密码账号（SA-1）。
 // 匿名 device/wx → 稳定 accountId；密码注册/登录/改密。
 import { randomUUID, randomInt } from 'node:crypto';
-import type { Collections } from '@nw/shared';
+import type { Collections, ChatRegion } from '@nw/shared';
 import {
   hashPassword,
   isAnonymousAccount,
   normalizeLoginId,
   verifyPassword,
 } from '@nw/shared';
+
+/**
+ * auth 时把惰性推断出的合规地区写回账号（best-effort，私聊敏感词分地区选词表用）。
+ * 仅当 region 非 `global` 时写入——无 Accept-Language 信号的请求不把已探明的真实地区降级。
+ */
+async function touchRegion(cols: Collections, accountId: string, region: ChatRegion): Promise<void> {
+  if (region === 'global') return;
+  await cols.accounts.updateOne({ _id: accountId }, { $set: { region } });
+}
 
 export interface ResolvedAccount {
   accountId: string;
@@ -24,15 +33,22 @@ export async function resolveByDevice(
   cols: Collections,
   deviceId: string,
   now: number,
+  region: ChatRegion = 'global',
 ): Promise<ResolvedAccount> {
   const existing = await cols.accounts.findOne({ deviceId });
-  if (existing) return { accountId: existing._id, isNew: false, isAnonymous: isAnonymousAccount(existing), displayName: existing.displayName };
+  if (existing) {
+    await touchRegion(cols, existing._id, region);
+    return { accountId: existing._id, isNew: false, isAnonymous: isAnonymousAccount(existing), displayName: existing.displayName };
+  }
 
   const accountId = randomUUID();
   // deviceId 唯一索引：并发首建只有一个插入成功，另一个回读。
   await cols.accounts.updateOne(
     { deviceId },
-    { $setOnInsert: { _id: accountId, deviceId, createdAt: now } },
+    {
+      $setOnInsert: { _id: accountId, deviceId, createdAt: now },
+      ...(region !== 'global' ? { $set: { region } } : {}),
+    },
     { upsert: true },
   );
   const doc = await cols.accounts.findOne({ deviceId });
@@ -50,14 +66,21 @@ export async function resolveByOpenid(
   cols: Collections,
   openid: string,
   now: number,
+  region: ChatRegion = 'global',
 ): Promise<ResolvedAccount> {
   const existing = await cols.accounts.findOne({ openid });
-  if (existing) return { accountId: existing._id, isNew: false, isAnonymous: isAnonymousAccount(existing), displayName: existing.displayName };
+  if (existing) {
+    await touchRegion(cols, existing._id, region);
+    return { accountId: existing._id, isNew: false, isAnonymous: isAnonymousAccount(existing), displayName: existing.displayName };
+  }
 
   const accountId = randomUUID();
   await cols.accounts.updateOne(
     { openid },
-    { $setOnInsert: { _id: accountId, openid, createdAt: now } },
+    {
+      $setOnInsert: { _id: accountId, openid, createdAt: now },
+      ...(region !== 'global' ? { $set: { region } } : {}),
+    },
     { upsert: true },
   );
   const doc = await cols.accounts.findOne({ openid });
@@ -82,6 +105,7 @@ export async function registerWithPassword(
   password: string,
   displayName: string | undefined,
   now: number,
+  region: ChatRegion = 'global',
 ): Promise<RegisterResult> {
   const norm = normalizeLoginId(loginId);
   const hash = await hashPassword(password);
@@ -95,6 +119,7 @@ export async function registerWithPassword(
         createdAt: now,
         password: { loginId: norm, hash },
         ...(displayName ? { displayName } : {}),
+        ...(region !== 'global' ? { region } : {}),
       },
     },
     { upsert: true },
@@ -108,13 +133,21 @@ export async function loginWithPassword(
   cols: Collections,
   loginId: string,
   password: string,
+  region: ChatRegion = 'global',
 ): Promise<ResolvedAccount | null> {
   const norm = normalizeLoginId(loginId);
   const doc = await cols.accounts.findOne({ 'password.loginId': norm });
   if (!doc?.password) return null;
   const ok = await verifyPassword(password, doc.password.hash);
   if (!ok) return null;
+  await touchRegion(cols, doc._id, region);
   return { accountId: doc._id, isNew: false, isAnonymous: isAnonymousAccount(doc), displayName: doc.displayName };
+}
+
+/** 读账号合规地区（私聊敏感词选词表用）。缺省 / 旧账号无字段 → `'global'`。 */
+export async function getRegion(cols: Collections, accountId: string): Promise<ChatRegion> {
+  const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { region: 1 } });
+  return doc?.region ?? 'global';
 }
 
 /** 读账号展示名（GET /save 顺带回带，token 续登恢复个人资料）。 */

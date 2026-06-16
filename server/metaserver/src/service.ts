@@ -24,7 +24,7 @@ import {
   ADS_DAILY_CAP,
   RENAME_COST,
 } from '@nw/shared';
-import { CHAT_SEND_RATE_PER_MIN } from '@nw/shared';
+import { CHAT_SEND_RATE_PER_MIN, regionFromAcceptLanguage } from '@nw/shared';
 import { getOrCreateSave, putSave } from './save.js';
 import {
   changePassword,
@@ -32,6 +32,7 @@ import {
   exchangeWxCode,
   getDisplayName,
   getProfile,
+  getRegion,
   loginWithPassword,
   registerWithPassword,
   resolveByDevice,
@@ -132,10 +133,12 @@ export class MetaService {
   async authWx(req: FastifyRequest) {
     const { code } = req.body as { code: string };
     const openid = await exchangeWxCode(code);
+    const region = regionFromAcceptLanguage(req.headers['accept-language']);
     const { accountId, isNew, isAnonymous, displayName } = await resolveByOpenid(
       this.deps.cols,
       openid,
       this.deps.now(),
+      region,
     );
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
@@ -144,10 +147,12 @@ export class MetaService {
 
   async authDevice(req: FastifyRequest) {
     const { deviceId } = req.body as { deviceId: string };
+    const region = regionFromAcceptLanguage(req.headers['accept-language']);
     const { accountId, isNew, isAnonymous, displayName } = await resolveByDevice(
       this.deps.cols,
       deviceId,
       this.deps.now(),
+      region,
     );
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
@@ -165,12 +170,14 @@ export class MetaService {
     const pwErr = validatePassword(password);
     if (pwErr) return reply.code(400).send(err(ErrorCode.WEAK_PASSWORD, pwErr));
 
+    const region = regionFromAcceptLanguage(req.headers['accept-language']);
     const result = await registerWithPassword(
       this.deps.cols,
       loginId,
       password,
       displayName,
       this.deps.now(),
+      region,
     );
     if (result.kind === 'taken') {
       return reply.code(409).send(err(ErrorCode.LOGIN_ID_TAKEN, 'loginId already registered'));
@@ -183,7 +190,8 @@ export class MetaService {
 
   async authLogin(req: FastifyRequest, reply: FastifyReply) {
     const { loginId, password } = req.body as { loginId: string; password: string };
-    const account = await loginWithPassword(this.deps.cols, loginId, password);
+    const region = regionFromAcceptLanguage(req.headers['accept-language']);
+    const account = await loginWithPassword(this.deps.cols, loginId, password, region);
     if (!account) {
       return reply.code(401).send(err(ErrorCode.INVALID_CREDENTIALS, 'invalid loginId or password'));
     }
@@ -735,8 +743,10 @@ export class MetaService {
     if (!this.allowChat(accountId, this.deps.now())) {
       return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many messages'));
     }
-    // 敏感词地区：账号暂无 region 字段 → 用全局词表（SOC10 分地区词表已就位，按账号选取待补）。
-    const res = await sendMessage(this.deps.cols, accountId, toPublicId, body, 'global', this.deps.now());
+    // 敏感词地区：按发送方账号 region 选词表（SOC10）。auth 时由 Accept-Language 惰性打标，
+    // 缺省 / 旧账号 → 'global'（仅基础词表）。单条 body 只存一份，发送端过滤最自然。
+    const region = await getRegion(this.deps.cols, accountId);
+    const res = await sendMessage(this.deps.cols, accountId, toPublicId, body, region, this.deps.now());
     if (res.kind === 'error') return this.sendSocialError(reply, res.error);
     // 推送给收件方（在线则弹消息 / 红点）。
     void this.deps.gateway.push(res.to, {
