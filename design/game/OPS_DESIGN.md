@@ -161,10 +161,10 @@ admin 执行器（approved 后，可自动或手动触发）
 | `GET /internal/stats` | **matchsvc**（新增） | 匹配队列长度/等待分布、房间数按 phase、game 实例负载 | 待加 |
 | `GET /internal/profile` | meta（已存在） | 查玩家昵称/publicId（player.lookup） | ✅ |
 | `GET /save`（内部查档变体，按需） | meta | 玩家档案/进度/钱包镜像（只读，player.lookup） | 待定（可加 `GET /internal/player/{publicId}`） |
-| `POST /internal/mail/system/send` | **meta**（SOCIAL_DESIGN S6-3 留口） | 执行补偿 = 创建系统邮件（单人/批量，幂等键） | **邮件后端并行做，先留口子** |
-| `POST /internal/mail/system/preview` | meta | 全服补偿 dry-run 估算命中人数 | 同上 |
+| `POST /internal/mail/system/send` | **meta**（SOCIAL_DESIGN S6-3） | 执行补偿 = 创建系统邮件（单人/批量，幂等键） | ✅ 已联调 |
+| `POST /internal/mail/system/preview` | meta | 全服补偿 dry-run 估算命中人数 | ✅ 已联调 |
 
-> 邮件相关端点由 `SOCIAL_DESIGN` 的 S6-3 落地；admin 侧先按上述契约形状对接，邮件后端完成后联调（用户：「邮件系统已经在做，做完告诉你」）。
+> 邮件相关端点由 `SOCIAL_DESIGN` 的 S6-3 落地；admin 侧先按契约形状对接，**2026-06-16 跨进程实跑联调通过**（`server/admin/test/comp-mail.e2e.test.ts`：真实 `HttpMailDispatcher`/`HttpPlayerClient` 经 `fetch` 打真实 `app.listen` 的 meta 进程，跑通 单人补偿全链/`dispatchKey` 幂等/全服 fan-out+preview/player.lookup/错 key→401→工单 failed/收件人不存在→failed）。
 
 ### 4.2 admin 自有端点（给运维前端，admin 会话鉴权）
 
@@ -251,7 +251,7 @@ POST   /admin/accounts/{id}/reset-password { password }
 | **S7-0 shared + 契约** | `shared/admin.ts`（`AdminRole`/能力枚举/角色→能力矩阵/`SINGLE_COMP_QUOTA`/工单与审计类型）；admin 库集合形状 | — | ✅ |
 | **S7-1 admin 后端骨架** | `server/admin` workspace：登录/JWT/RBAC 中间件 + 账号管理 + 审计写入 + 种子超管；`/health` | S7-0 | ✅ |
 | **S7-2 监控 + stats 端点** | gateway/matchsvc 加 `GET /internal/stats`；admin 采样定时器 + `metricSnapshots` + monitor/trend 端点 | S7-1 | ✅ |
-| **S7-3 补偿工单流** | 工单 CRUD + 审批路由（发起≠审批、额度分级）+ dry-run；执行器**先对接 meta 系统邮件端点的契约形状**（邮件后端就绪后联调） | S7-1、S6-3 | ✅（执行器留口子，待 S6-3 联调） |
+| **S7-3 补偿工单流** | 工单 CRUD + 审批路由（发起≠审批、额度分级）+ dry-run；执行器对接 meta 系统邮件端点，**2026-06-16 跨进程联调通过** | S7-1、S6-3 | ✅ |
 | **S7-4 前端页面** | `tools/ops` 全部页面（登录/监控/分析/查询/工单/审计/账号） | S7-1~3 | ✅ |
 | **S7-5 数据分析** | 自采指标扩充 + 看板聚合（注册/补偿量/经济概览，按需经只读 API） | S7-2 | ✅（核心；扩充按需） |
 
@@ -262,7 +262,8 @@ POST   /admin/accounts/{id}/reset-password { password }
 - **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：`api.ts`（Bearer + localStorage 续登）/ `app.ts`（登录 + 按 capabilities 渲染导航）/ `pages.ts`（监控 sparkline / 分析 / 玩家 / 工单发起+审批 / 审计 / 账号）。不持密钥、不连库、不直连业务服务。
 - **部署接线**：`server/package.json` workspaces + `dev:admin`；`Dockerfile` 七包；`docker-compose.prod.yml` admin 服务（caddy 不路由）；`ecosystem.config.cjs` `nw-admin`；`.env.example` + `dev-up.ps1`（dev 种子 root/rootpass）。
 - **验证**：七包 `tsc -b` 全绿 + admin 11 e2e（登录/RBAC/发起≠审批/超额+全服走超管/dry-run/幂等执行+重试/审计可见性/player.lookup/采样 trend/账号管理）+ gateway 10 / matchsvc 17 / meta 74 不破 + `tools/ops` tsc + webpack 构建。
-- **待办**：S6-3 邮件后端就绪后联调执行器（现 `HttpMailDispatcher` 命中 404/501 → 工单 failed 可重试）；§9 开放问题（金币当量换算表、GlobalFilter 维度、TOTP 二次审批）。
+- **补偿 ↔ 邮件跨进程联调（2026-06-16）**：S6-3 邮件后端就绪，补全 `server/admin/test/comp-mail.e2e.test.ts`——admin 真实 `HttpMailDispatcher`/`HttpPlayerClient` 经 `fetch` 打真实 `app.listen({port:0})` 的 meta 进程（非 fastify inject），6 用例跑通：①单人补偿全链（发起→审批→真 HTTP 投递→玩家收件箱→领取附件→commercial 入账+钱包镜像）②`dispatchKey` 幂等（同 key 重发仅一封，meta `$setOnInsert`）③全服 fan-out + `preview` 命中人数 ④`player.lookup` 经真 `/internal/player` ⑤鉴权边界（错 `X-Internal-Key`→401→工单 failed、玩家无信）⑥收件人不存在→工单 failed。admin e2e 12→18，七包 `tsc -b` 全绿（meta dist 须先 `tsc -b`）。
+- **待办**：§9 开放问题（金币当量换算表、GlobalFilter 维度、TOTP 二次审批）。
 
 ### 加固 / 优化（2026-06-16，第二轮）
 
