@@ -9,7 +9,8 @@
     "gateway",
     "matchsvc",
     "gameserver",
-    "commercial"
+    "commercial",
+    "admin"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
@@ -19,6 +20,7 @@
     "dev:gateway": "npm run dev --workspace @nw/gateway",
     "dev:matchsvc": "npm run dev --workspace @nw/matchsvc",
     "dev:commercial": "npm run dev --workspace @nw/commercial",
+    "dev:admin": "npm run dev --workspace @nw/admin",
     "dev:all": "powershell -NoProfile -ExecutionPolicy Bypass -File dev-up.ps1",
     "test": "npm run test --workspaces --if-present"
   },

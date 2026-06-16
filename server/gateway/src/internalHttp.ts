@@ -82,6 +82,11 @@ export function startInternalHttp(
           send(res, 200, { ok: true });
           return;
         }
+        // 实时态聚合（admin 监控/采样，OPS_DESIGN §4.1）：当前在线连接数。
+        if (req.method === 'GET' && req.url === '/internal/stats') {
+          send(res, 200, gateway.stats());
+          return;
+        }
         // 在线态查询（meta 标好友列表 online flag，SOC9）：?accounts=a,b,c → {[id]: bool}。
         if (req.method === 'GET' && req.url?.startsWith('/gw/presence')) {
           const u = new URL(req.url, 'http://localhost');

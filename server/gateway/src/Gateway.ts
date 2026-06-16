@@ -111,6 +111,9 @@ export class Gateway {
     }
   };
 
+  /** 实时态聚合（admin GET /internal/stats，OPS_DESIGN §4.1/§8）：当前在线连接数。 */
+  readonly stats = (): { online: number } => ({ online: this.conns.size });
+
   /** 批量在线态查询（meta 标好友列表 online flag）。accountId → 是否有活跃连接。 */
   readonly presenceOf = (accountIds: string[]): Record<string, boolean> => {
     const out: Record<string, boolean> = {};

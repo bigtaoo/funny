@@ -98,6 +98,20 @@ export class Matchsvc {
     });
   }
 
+  /**
+   * 实时态聚合（admin GET /internal/stats，OPS_DESIGN §4.1）：ranked 队列长度 / 活跃 friendly
+   * 房间数 / 健康 game 实例数 / game 负载合计。
+   */
+  stats(): { queue: number; rooms: number; gameInstances: number; gameLoad: number } {
+    const g = this.games.stats();
+    return {
+      queue: this.matchmaking.size,
+      rooms: this.rooms.size,
+      gameInstances: g.instances,
+      gameLoad: g.load,
+    };
+  }
+
   // ───────────────────────── ranked 匹配 ─────────────────────────
 
   /**

@@ -52,6 +52,11 @@ export function startInternalHttp(
         send(res, 401, { ok: false, error: 'unauthorized' });
         return;
       }
+      // 实时态聚合（admin 监控/采样，OPS_DESIGN §4.1）：队列/房间/game 实例。
+      if (req.method === 'GET' && req.url === '/internal/stats') {
+        send(res, 200, svc.stats());
+        return;
+      }
       if (req.method !== 'POST') {
         send(res, 404, { ok: false, error: 'not found' });
         return;

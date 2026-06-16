@@ -42,6 +42,21 @@ export class GameRegistry {
     inst.lastSeen = this.now();
   }
 
+  /** 实时态聚合（admin 监控，OPS_DESIGN §4.1）：健康实例数 + 负载/容量合计。 */
+  stats(): { instances: number; load: number; capacity: number } {
+    const t = this.now();
+    let instances = 0;
+    let load = 0;
+    let capacity = 0;
+    for (const inst of this.instances.values()) {
+      if (t - inst.lastSeen > STALE_MS) continue; // 不健康，不计入
+      instances++;
+      load += inst.load;
+      capacity += inst.capacity;
+    }
+    return { instances, load, capacity };
+  }
+
   /** 挑负载最低且健康的实例 wsUrl；无注册实例时退回兜底地址（null = 无 game 可用）。 */
   pick(): string | null {
     const t = this.now();

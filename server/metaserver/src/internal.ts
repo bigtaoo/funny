@@ -17,7 +17,7 @@ import {
 import type { GatewayClient } from './gatewayClient.js';
 import type { CommercialClient } from './commercialClient.js';
 import { adsDayKey } from './economy.js';
-import { getProfile } from './accounts.js';
+import { getProfile, resolveByPublicId } from './accounts.js';
 import { friendAccountIds } from './social.js';
 
 const log = createLogger('meta:internal');
@@ -88,6 +88,31 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
     const profile = await getProfile(cols, accountId);
     return reply.send(profile); // { displayName?, publicId }
+  });
+
+  // ── GET /internal/player?publicId= ───────────────────────────────────
+  // admin 后台玩家查询（OPS_DESIGN §4.1 player.lookup）：按 9 位公开 id 反查档案摘要。
+  app.get('/internal/player', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const publicId = (req.query as { publicId?: string }).publicId;
+    if (!publicId) return reply.code(400).send({ ok: false, error: 'publicId required' });
+    const accountId = await resolveByPublicId(cols, publicId);
+    if (!accountId) return reply.code(404).send({ ok: false, error: 'not found' });
+    const [profile, saveDoc] = await Promise.all([
+      getProfile(cols, accountId),
+      cols.saves.findOne({ _id: accountId }),
+    ]);
+    const pvp = saveDoc?.save.pvp;
+    return reply.send({
+      publicId,
+      accountId,
+      ...(profile.displayName ? { displayName: profile.displayName } : {}),
+      ...(pvp
+        ? { rank: pvp.rank, elo: pvp.elo, wins: pvp.wins, losses: pvp.losses }
+        : {}),
+    });
   });
 
   // ── GET /internal/social/friends?accountId= ──────────────────────────

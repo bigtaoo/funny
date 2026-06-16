@@ -134,6 +134,32 @@ services:
       - matchsvc
     restart: unless-stopped
 
+  # 运维后台后端（S7，OPS_DESIGN）。玩家不可达，caddy 不路由到它（仅内网/VPN/IP allowlist）；
+  # 连独立库 notebook_wars_admin；调 meta(player/mail) + gateway/matchsvc(/internal/stats)。
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "admin/dist/index.js"]
+    environment:
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
+      NW_ADMIN_JWT_SECRET: ${NW_ADMIN_JWT_SECRET:?set NW_ADMIN_JWT_SECRET in .env}
+      NW_ADMIN_PORT: "8083"
+      NW_ADMIN_HOST: 0.0.0.0
+      NW_ADMIN_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_ADMIN_MONGO_DB: ${NW_ADMIN_MONGO_DB:-notebook_wars_admin}
+      # 首启种子超管（首次部署后建议清空 env，由后台管理增删账号）。
+      NW_ADMIN_SEED_USER: ${NW_ADMIN_SEED_USER:-}
+      NW_ADMIN_SEED_PASS: ${NW_ADMIN_SEED_PASS:-}
+      NW_META_BASE_URL: http://metaserver:8080
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
   caddy:
     image: caddy:2
     container_name: nw-caddy

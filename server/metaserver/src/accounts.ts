@@ -166,6 +166,15 @@ export async function ensurePublicId(cols: Collections, accountId: string): Prom
   throw new Error('failed to allocate publicId after retries');
 }
 
+/** 按 9 位公开 id 反查 accountId（admin player.lookup，OPS_DESIGN §4.1）。未找到 null。 */
+export async function resolveByPublicId(
+  cols: Collections,
+  publicId: string,
+): Promise<string | null> {
+  const doc = await cols.accounts.findOne({ publicId }, { projection: { _id: 1 } });
+  return doc?._id ?? null;
+}
+
 /** 改展示名（改名功能，已扣币后写入）。 */
 export async function setDisplayName(
   cols: Collections,

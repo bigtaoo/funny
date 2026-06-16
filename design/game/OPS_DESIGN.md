@@ -246,14 +246,23 @@ POST   /admin/accounts/{id}/reset-password { password }
 
 > 进度勾选随实现进 `META_TASKS.md`。补偿执行依赖 meta 系统邮件端点（S6-3，并行）。
 
-| 任务 | 内容 | 依赖 |
-|---|---|---|
-| **S7-0 shared + 契约** | `shared/admin.ts`（`AdminRole`/能力枚举/角色→能力矩阵/`SINGLE_COMP_QUOTA`/工单与审计类型）；admin 库集合形状 | — |
-| **S7-1 admin 后端骨架** | `server/admin` workspace：登录/JWT/RBAC 中间件 + 账号管理 + 审计写入 + 种子超管；`/health` | S7-0 |
-| **S7-2 监控 + stats 端点** | gateway/matchsvc 加 `GET /internal/stats`；admin 采样定时器 + `metricSnapshots` + monitor/trend 端点 | S7-1 |
-| **S7-3 补偿工单流** | 工单 CRUD + 审批路由（发起≠审批、额度分级）+ dry-run；执行器**先对接 meta 系统邮件端点的契约形状**（邮件后端就绪后联调） | S7-1、S6-3 |
-| **S7-4 前端页面** | `tools/ops` 全部页面（登录/监控/分析/查询/工单/审计/账号） | S7-1~3 |
-| **S7-5 数据分析** | 自采指标扩充 + 看板聚合（注册/补偿量/经济概览，按需经只读 API） | S7-2 |
+| 任务 | 内容 | 依赖 | 状态 |
+|---|---|---|---|
+| **S7-0 shared + 契约** | `shared/admin.ts`（`AdminRole`/能力枚举/角色→能力矩阵/`SINGLE_COMP_QUOTA`/工单与审计类型）；admin 库集合形状 | — | ✅ |
+| **S7-1 admin 后端骨架** | `server/admin` workspace：登录/JWT/RBAC 中间件 + 账号管理 + 审计写入 + 种子超管；`/health` | S7-0 | ✅ |
+| **S7-2 监控 + stats 端点** | gateway/matchsvc 加 `GET /internal/stats`；admin 采样定时器 + `metricSnapshots` + monitor/trend 端点 | S7-1 | ✅ |
+| **S7-3 补偿工单流** | 工单 CRUD + 审批路由（发起≠审批、额度分级）+ dry-run；执行器**先对接 meta 系统邮件端点的契约形状**（邮件后端就绪后联调） | S7-1、S6-3 | ✅（执行器留口子，待 S6-3 联调） |
+| **S7-4 前端页面** | `tools/ops` 全部页面（登录/监控/分析/查询/工单/审计/账号） | S7-1~3 | ✅ |
+| **S7-5 数据分析** | 自采指标扩充 + 看板聚合（注册/补偿量/经济概览，按需经只读 API） | S7-2 | ✅（核心；扩充按需） |
+
+### 实现记录（2026-06-16）
+
+- **后端 `server/admin`（第七 workspace，CJS）**：`config.ts`（env）/ `db.ts`（独立库 `notebook_wars_admin`：adminAccounts/compTickets/auditLog/metricSnapshots，snapshot TTL 锚 BSON `at:Date`）/ `service.ts`（`AdminService` + `AdminError`，业务不变量：发起≠审批、`requiredApproveCapability(scope,tier)`、工单状态机、审计落库）/ `httpApi.ts`（node:http + admin JWT 鉴权 + 每端点 RBAC 静态能力门 + CORS）/ `clients.ts`（`HttpStatsClient` 合并 gateway+matchsvc、`HttpPlayerClient` 调 meta `/internal/player`、`HttpMailDispatcher` 按系统邮件端点契约形状对接）/ `seed.ts`（种子超管幂等）/ `index.ts`（引导 + 采样定时器）。
+- **业务侧新增端点**：gateway `GET /internal/stats`（`Gateway.stats()` 在线数）；matchsvc `GET /internal/stats`（`Matchsvc.stats()` + `GameRegistry.stats()` 队列/房间/game）；meta `GET /internal/player?publicId=`（`resolveByPublicId` 反查档案摘要，player.lookup）。
+- **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：`api.ts`（Bearer + localStorage 续登）/ `app.ts`（登录 + 按 capabilities 渲染导航）/ `pages.ts`（监控 sparkline / 分析 / 玩家 / 工单发起+审批 / 审计 / 账号）。不持密钥、不连库、不直连业务服务。
+- **部署接线**：`server/package.json` workspaces + `dev:admin`；`Dockerfile` 七包；`docker-compose.prod.yml` admin 服务（caddy 不路由）；`ecosystem.config.cjs` `nw-admin`；`.env.example` + `dev-up.ps1`（dev 种子 root/rootpass）。
+- **验证**：七包 `tsc -b` 全绿 + admin 11 e2e（登录/RBAC/发起≠审批/超额+全服走超管/dry-run/幂等执行+重试/审计可见性/player.lookup/采样 trend/账号管理）+ gateway 10 / matchsvc 17 / meta 74 不破 + `tools/ops` tsc + webpack 构建。
+- **待办**：S6-3 邮件后端就绪后联调执行器（现 `HttpMailDispatcher` 命中 404/501 → 工单 failed 可重试）；§9 开放问题（金币当量换算表、GlobalFilter 维度、TOTP 二次审批）。
 
 ### 新增环境变量（基线）
 

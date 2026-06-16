@@ -177,6 +177,21 @@
 
 ---
 
+## S7 — 运维后台（Ops / Admin）
+
+> 拍板 2026-06-16，详见 **`OPS_DESIGN.md`**。后端独立进程 `server/admin` + 独立库 `notebook_wars_admin`；前端纯前端 `tools/ops`（端口 9093）。两层鉴权（admin JWT 用户层 + `X-Internal-Key` 服务层，secret 隔离）；补偿一律走邮件 + 审批工单流（发起≠审批）；数据 = 自采快照 + 只读 API（不直连业务库）。
+
+- [x] **S7-0 shared + 契约** ✅（2026-06-16）：`shared/admin.ts`（`AdminRole`/`AdminCapability` 枚举 + `ROLE_CAPABILITIES` 角色→能力矩阵单一真相 + `roleHasCapability` + `SINGLE_COMP_QUOTA`/附件金币当量换算 + `tierForAttachments`/`requiredApproveCapability`/`requiredInitiateCapability` + 工单/审计/账号/监控视图类型）；export 进 `shared/index.ts`。
+- [x] **S7-1 admin 后端骨架** ✅（2026-06-16）：`server/admin` workspace（第七包，CJS，`@nw/shared`，独立库）。`config.ts`（env：`NW_ADMIN_PORT`/`NW_ADMIN_JWT_SECRET`/`NW_ADMIN_MONGO_*`/`NW_ADMIN_SEED_*`/业务内部基址）+ `db.ts`（adminAccounts/compTickets/auditLog/metricSnapshots + 索引 + snapshot TTL 用 BSON `at:Date`）+ `service.ts`（`AdminService`：登录鉴权/账号 CRUD/审计写入，`AdminError` 状态码）+ `httpApi.ts`（node:http + admin JWT 鉴权 + 每端点 RBAC 静态能力门 + CORS）+ `seed.ts`（种子超管幂等）+ `/health`。
+- [x] **S7-2 监控 + stats 端点** ✅（2026-06-16）：gateway `Gateway.stats()`→`GET /internal/stats`（在线连接数）；matchsvc `Matchsvc.stats()`+`GameRegistry.stats()`→`GET /internal/stats`（队列/房间/game 实例/负载）；admin `HttpStatsClient` 合并两源 + 采样定时器 `sampleOnce` 写 `metricSnapshots` + `GET /admin/monitor/{live,trend}`。
+- [x] **S7-3 补偿工单流** ✅（2026-06-16）：工单 CRUD（initiate/list/approve/reject/cancel/retry）+ 审批路由（**发起≠审批** + 据 scope/tier 选 `comp.approve.*` 能力，global/超额恒超管）+ dry-run preview + 审批即自动执行。执行器 `HttpMailDispatcher` 按 meta 系统邮件端点（`POST /internal/mail/system/{send,preview}`）**契约形状**对接，带 `dispatchKey` 幂等；**邮件后端 S6-3 并行做，未就绪时执行 failed 可重试**（先留口子）。
+- [x] **S7-4 前端页面** ✅（2026-06-16）：`tools/ops`（纯前端 TS + DOM，无框架，手绘 monospace 风，webpack 9093）。登录页 → 按 `capabilities` 渲染导航：监控（实时卡片 + 趋势 sparkline）/ 数据分析（24h 聚合 + 工单统计）/ 玩家查询 / 补偿工单（发起表单 + 列表 + 审批/拒绝/撤销/重试 + dry-run）/ 审计（按可见性）/ 账号管理（建/改角色/禁用/重置密码）。`Api`（Bearer token + localStorage 续登）；不持密钥/不连库/不直连业务服务。
+- [x] **S7-5 数据分析** ✅（2026-06-16，并入 S7-2/4）：`analyticsSummary`（自采指标 24h 均值/峰值/采样数 + 工单态统计）；meta `GET /internal/player?publicId=`（player.lookup 按 9 位公开 id 反查档案摘要）。**待办**：注册/补偿量等经只读 API 扩充按需做；与 SOC S6-3 邮件后端联调。
+
+> 验证（2026-06-16）：七包 `tsc -b shared metaserver gateway matchsvc gameserver commercial admin` 全绿 + admin 11 e2e（登录/RBAC/发起≠审批/超额走超管/全服走超管/dry-run/幂等执行重试/审计可见性/player.lookup/采样 trend/账号管理）+ gateway 10 / matchsvc 17 / meta 74 测试不破 + `tools/ops` tsc + webpack 构建全绿。部署脚手架（Dockerfile 七包 / docker-compose.prod admin 服务 / ecosystem nw-admin / .env.example / dev-up.ps1）同步。**待办**：S6-3 邮件后端就绪后联调执行器；二次审批 TOTP 后置（§9）。
+
+---
+
 ## i18n（贯穿，随场景落地）
 
 - [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`auth.*`（登录界面，SA）/ `meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；`auth.*` **已随 SA-3 落地**（zh/en/de 全翻）；其余随后续场景。

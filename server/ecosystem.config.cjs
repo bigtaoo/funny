@@ -108,5 +108,29 @@ module.exports = {
         NW_GAME_PUBLIC_WS_URL: GAME_PUBLIC_WS,
       },
     },
+    {
+      // 运维后台后端（S7，玩家不可达，反代不路由；仅内网/VPN 可达）。
+      name: 'nw-admin',
+      cwd: __dirname,
+      script: 'admin/dist/index.js',
+      exec_mode: 'fork', // 单实例：自采采样定时器 + 独立库
+      instances: 1,
+      env: {
+        ...common,
+        NW_ADMIN_PORT: process.env.NW_ADMIN_PORT || '8083',
+        NW_ADMIN_HOST: process.env.NW_ADMIN_HOST || '127.0.0.1',
+        NW_ADMIN_JWT_SECRET: process.env.NW_ADMIN_JWT_SECRET, // 生产必须提供（与玩家 JWT 隔离）
+        NW_ADMIN_MONGO_URI:
+          process.env.NW_ADMIN_MONGO_URI ||
+          process.env.NW_MONGO_URI ||
+          'mongodb://127.0.0.1:27017/?replicaSet=rs0',
+        NW_ADMIN_MONGO_DB: process.env.NW_ADMIN_MONGO_DB || 'notebook_wars_admin',
+        NW_ADMIN_SEED_USER: process.env.NW_ADMIN_SEED_USER || '',
+        NW_ADMIN_SEED_PASS: process.env.NW_ADMIN_SEED_PASS || '',
+        NW_META_BASE_URL: META_BASE, // player.lookup / 系统邮件端点
+        NW_GATEWAY_INTERNAL_URL: GW_INTERNAL, // GET /internal/stats 在线数
+        NW_MATCHSVC_INTERNAL_URL: MM_INTERNAL, // GET /internal/stats 匹配池
+      },
+    },
   ],
 };
