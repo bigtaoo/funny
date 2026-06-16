@@ -11,7 +11,16 @@ import type {
   Session,
 } from './types';
 
-type Ctx = { api: Api; session: Session; root: HTMLElement };
+type Ctx = { api: Api; session: Session; root: HTMLElement; onTeardown: (fn: () => void) => void };
+
+// 自采指标 → 中文标签（与后端 METRIC_KEYS 同序）。
+const METRICS: [string, string][] = [
+  ['online', '在线连接'],
+  ['queue', '匹配队列'],
+  ['rooms', '活跃房间'],
+  ['gameInstances', 'game 实例'],
+  ['gameLoad', 'game 负载'],
+];
 
 function showErr(el: HTMLElement, e: unknown): void {
   const msg = e instanceof ApiError ? `${e.code}: ${e.message}` : (e as Error).message;
@@ -25,15 +34,17 @@ function showOk(el: HTMLElement, msg: string): void {
 
 // ───────────────────────── 监控 ─────────────────────────
 export async function pageMonitor(ctx: Ctx): Promise<void> {
-  const { api, root } = ctx;
+  const { api, root, onTeardown } = ctx;
   clear(root);
   root.append(h('h2', {}, '在线监控'));
+
+  const metricSel = h('select', {}, ...METRICS.map(([v, label]) => h('option', { value: v }, label)));
+  const autoChk = h('input', { type: 'checkbox' }) as HTMLInputElement;
   const grid = h('div', { class: 'grid' });
   const err = h('div', { class: 'err' });
   const trendBox = h('div', { class: 'card' });
-  root.append(grid, err, trendBox);
 
-  const refresh = async (): Promise<void> => {
+  const refreshLive = async (): Promise<void> => {
     try {
       const live = await api.monitorLive();
       clear(grid);
@@ -47,21 +58,56 @@ export async function pageMonitor(ctx: Ctx): Promise<void> {
       for (const [k, v] of cells) {
         grid.append(h('div', { class: 'stat' }, h('div', { class: 'v' }, String(v)), h('div', { class: 'k' }, k)));
       }
-      if (!live.available) err.textContent = '提示：stats 后端未配置，显示 0。';
-      else err.textContent = '';
+      err.textContent = live.available ? '' : '提示：stats 后端未配置，显示 0。';
     } catch (e) {
       showErr(err, e);
     }
+  };
+  const refreshTrend = async (): Promise<void> => {
+    const metric = metricSel.value;
+    const label = METRICS.find(([v]) => v === metric)?.[1] ?? metric;
     try {
-      const pts = await api.trend('online', Date.now() - 6 * 3600 * 1000);
+      const pts = await api.trend(metric, Date.now() - 6 * 3600 * 1000);
       clear(trendBox);
-      trendBox.append(h('div', { class: 'muted' }, `在线趋势（近 6h，${pts.length} 采样点）`));
+      trendBox.append(h('div', { class: 'muted' }, `${label}趋势（近 6h，${pts.length} 采样点）`));
       trendBox.append(sparkline(pts.map((p) => p.value)));
-    } catch (e) {
+    } catch {
       /* 趋势可空 */
     }
   };
-  root.prepend(h('div', { class: 'row' }, h('button', { class: 'ghost', onclick: refresh }, '刷新'), h('span', { class: 'right muted' }, '每次手动刷新')));
+  const refresh = async (): Promise<void> => {
+    await Promise.all([refreshLive(), refreshTrend()]);
+  };
+
+  metricSel.addEventListener('change', () => void refreshTrend());
+
+  // 自动刷新（10s 轮询，开关控制）；离开页面/会话失效时 onTeardown 停掉。
+  let timer: ReturnType<typeof setInterval> | null = null;
+  const stop = (): void => {
+    if (timer !== null) {
+      clearInterval(timer);
+      timer = null;
+    }
+  };
+  autoChk.addEventListener('change', () => {
+    stop();
+    if (autoChk.checked) timer = setInterval(() => void refresh(), 10_000);
+  });
+  onTeardown(stop);
+
+  root.append(
+    h(
+      'div',
+      { class: 'row' },
+      h('button', { class: 'ghost', onclick: refresh }, '刷新'),
+      h('span', { class: 'muted' }, '趋势指标'),
+      metricSel,
+      h('label', { style: 'display:inline-flex;align-items:center;gap:4px;margin:0' }, autoChk, '自动刷新 10s'),
+    ),
+    grid,
+    err,
+    trendBox,
+  );
   await refresh();
 }
 
@@ -313,17 +359,34 @@ export async function pageAudit(ctx: Ctx): Promise<void> {
   root.append(h('h2', {}, '操作审计'));
   const canAll = session.capabilities.includes('audit.view.all');
   const actorInput = h('input', { placeholder: 'actor adminId（仅超管可跨人查）' });
+  const fromInput = h('input', { type: 'date' }) as HTMLInputElement;
+  const toInput = h('input', { type: 'date' }) as HTMLInputElement;
   const err = h('div', { class: 'err' });
   const box = h('div', { class: 'card' });
   root.append(
-    h('div', { class: 'row' }, canAll ? actorInput : h('span', { class: 'muted' }, '仅可查看自己的操作'), h('button', { class: 'ghost', onclick: () => void reload() }, '刷新')),
+    h(
+      'div',
+      { class: 'row' },
+      canAll ? actorInput : h('span', { class: 'muted' }, '仅可查看自己的操作'),
+      h('span', { class: 'muted' }, '从'),
+      fromInput,
+      h('span', { class: 'muted' }, '至'),
+      toInput,
+      h('button', { class: 'ghost', onclick: () => void reload() }, '刷新'),
+    ),
     err,
     box,
   );
   const reload = async (): Promise<void> => {
     err.textContent = '';
     try {
-      const entries = await api.audit(canAll && actorInput.value.trim() ? { actor: actorInput.value.trim() } : {});
+      const fromMs = fromInput.value ? Date.parse(fromInput.value) : NaN;
+      const toMs = toInput.value ? Date.parse(toInput.value) + 24 * 3600 * 1000 : NaN; // 含当日全天
+      const entries = await api.audit({
+        ...(canAll && actorInput.value.trim() ? { actor: actorInput.value.trim() } : {}),
+        ...(Number.isFinite(fromMs) ? { from: fromMs } : {}),
+        ...(Number.isFinite(toMs) ? { to: toMs } : {}),
+      });
       clear(box);
       const t = h('table', {}, h('tr', {}, h('th', {}, '时间'), h('th', {}, '操作人'), h('th', {}, '动作'), h('th', {}, '目标'), h('th', {}, '摘要'), h('th', {}, 'IP')));
       for (const e of entries) {

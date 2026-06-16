@@ -28,6 +28,8 @@ export class ApiError extends Error {
 
 export class Api {
   private token: string | null = localStorage.getItem(TOKEN_KEY);
+  /** 会话中途收到 401（token 过期/被禁用）时回调——上层据此弹回登录页。 */
+  onUnauthorized: (() => void) | null = null;
 
   get baseUrl(): string {
     return localStorage.getItem(API_KEY) ?? 'http://localhost:18083';
@@ -62,6 +64,11 @@ export class Api {
     if (!res.ok || data.ok === false) {
       const code = typeof data.code === 'string' ? data.code : String(res.status);
       const msg = typeof data.error === 'string' ? data.error : `HTTP ${res.status}`;
+      // 会话中途失效：清 token 并通知上层弹回登录页（登录请求本身的 401 = 凭证错，不弹）。
+      if (res.status === 401 && path !== '/admin/login') {
+        this.setToken(null);
+        this.onUnauthorized?.();
+      }
       throw new ApiError(res.status, code, msg);
     }
     return data as T;
@@ -137,10 +144,11 @@ export class Api {
   }
 
   // —— 审计 ——
-  async audit(filter: { actor?: string; from?: number }): Promise<AuditEntryView[]> {
+  async audit(filter: { actor?: string; from?: number; to?: number }): Promise<AuditEntryView[]> {
     const qs = new URLSearchParams();
     if (filter.actor) qs.set('actor', filter.actor);
     if (filter.from !== undefined) qs.set('from', String(filter.from));
+    if (filter.to !== undefined) qs.set('to', String(filter.to));
     const r = await this.req<{ entries: AuditEntryView[] }>('GET', `/admin/audit?${qs}`);
     return r.entries;
   }

@@ -264,6 +264,17 @@ POST   /admin/accounts/{id}/reset-password { password }
 - **验证**：七包 `tsc -b` 全绿 + admin 11 e2e（登录/RBAC/发起≠审批/超额+全服走超管/dry-run/幂等执行+重试/审计可见性/player.lookup/采样 trend/账号管理）+ gateway 10 / matchsvc 17 / meta 74 不破 + `tools/ops` tsc + webpack 构建。
 - **待办**：S6-3 邮件后端就绪后联调执行器（现 `HttpMailDispatcher` 命中 404/501 → 工单 failed 可重试）；§9 开放问题（金币当量换算表、GlobalFilter 维度、TOTP 二次审批）。
 
+### 加固 / 优化（2026-06-16，第二轮）
+
+落实 §6 安全要求 + 前端体验补完，四项：
+
+- **登录失败限流（§6）**：`AdminService.authenticate` 按登录名（归一化大小写/空白）滑动窗口计数——`LOGIN_WINDOW_MS=15min` 内连错 `LOGIN_MAX_FAILURES=5` 次 → 锁定 `LOGIN_LOCKOUT_MS=15min`；锁定期间**连口令都不校验**直接返回 **429**（防爆破 + 防计时旁路），成功登录即 `loginAttempts.delete` 清零。内存态（admin 单实例够用，多实例横扩迁 Redis）。审计 `login.failed` 记 `rate limited (Ns left)`。
+- **会话中途 401 回登录页（前端）**：`Api.req` 遇**非登录端点**的 401 → `setToken(null)` + 触发 `Api.onUnauthorized` 回调；`App` 构造时挂该回调 → 清理当前页 teardown + `renderLogin('会话已过期')`。修掉 token 过期（8h TTL）后全页面渲染 `unauthorized` 红字的 UX（看似"全后台坏了"）。
+- **页面 teardown 钩子（前端框架）**：`App` 维护 `teardowns[]`，导航 `select()` / 登出 / 会话失效前统一执行并清空；render ctx 注入 `onTeardown(fn)`。供监控页自动刷新的定时器在离开页面时 `clearInterval`，杜绝向已离开页面追加渲染的泄漏。
+- **监控指标下拉 + 自动刷新（前端）**：趋势图加 5 指标下拉（online/queue/rooms/gameInstances/gameLoad，之前硬编码只看 online）+ 可开关的 10s 轮询（经 `onTeardown` 停表）。
+- **审计时间范围过滤（前端）**：审计页加 从/至 `type=date` 输入，接后端已支持的 `from/to`（至 = 含当日全天 +24h）；`ApiClient.audit` 补 `to` 参数。
+- **验证**：七包 `tsc -b` + `tools/ops` tsc/webpack 构建 + admin **12 e2e**（+1 限流用例：连错 5 次锁定 429、成功登录清零、大小写归一化同键）全绿。
+
 ### 新增环境变量（基线）
 
 `NW_ADMIN_PORT`（前端 API 端口）/ `NW_ADMIN_JWT_SECRET` / `NW_ADMIN_MONGO_URI`（缺省复用 `NW_MONGO_URI`）/ `NW_ADMIN_MONGO_DB`（默认 `notebook_wars_admin`）/ `NW_ADMIN_SEED_USER` / `NW_ADMIN_SEED_PASS` / `NW_INTERNAL_KEY`（调业务内部端点）/ 各业务内部基址（`NW_META_BASE_URL` / `NW_GATEWAY_INTERNAL_URL` / `NW_MATCHSVC_INTERNAL_URL`）。

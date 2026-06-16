@@ -97,6 +97,22 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     await expect(svc.authenticate('root', 'wrong')).rejects.toBeInstanceOf(AdminError);
   });
 
+  it('登录失败限流：连错 5 次后锁定（429），即便口令正确也拒；成功登录清零', async () => {
+    // 先确保未达阈值时正确口令仍可登录（计数到 4 不锁）。
+    for (let i = 0; i < 4; i++) {
+      await expect(svc.authenticate('root', 'wrong')).rejects.toMatchObject({ status: 401 });
+    }
+    await svc.authenticate('root', 'rootpass'); // 成功 → 计数清零
+    // 再连错 5 次触发锁定。
+    for (let i = 0; i < 5; i++) {
+      await expect(svc.authenticate('root', 'wrong')).rejects.toMatchObject({ status: 401 });
+    }
+    // 锁定后即使口令正确也被 429 挡下。
+    await expect(svc.authenticate('root', 'rootpass')).rejects.toMatchObject({ status: 429 });
+    // 大小写/空白归一化为同一限流键。
+    await expect(svc.authenticate(' ROOT ', 'rootpass')).rejects.toMatchObject({ status: 429 });
+  });
+
   it('客服发起 + 运营审批个人补偿（normal）→ 自动执行投递邮件', async () => {
     const cs = await actorOf(svc, 'csr');
     const ops = await actorOf(svc, 'opsy');

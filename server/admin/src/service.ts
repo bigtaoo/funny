@@ -73,12 +73,27 @@ const ALL_TICKET_STATUS: readonly CompTicketStatus[] = [
   'failed',
 ];
 
+// 登录失败限流（OPS_DESIGN §6「登录失败限流」）。admin 同时持内部密钥 + 对运维开端口，
+// 是攻击高地；按登录名滑动窗口计数，达阈值即锁定一段时间。内存态（admin 单实例够用，
+// 多实例横扩时迁 Redis）。
+const LOGIN_MAX_FAILURES = 5; // 窗口内最大失败次数
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 失败计数滑动窗口
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // 触发后锁定时长
+
+interface LoginAttempt {
+  fails: number;
+  windowStart: number;
+  lockedUntil: number;
+}
+
 export class AdminService {
   private readonly cols: AdminCollections;
   private readonly stats: StatsClient;
   private readonly players: PlayerClient;
   private readonly mail: MailDispatcher;
   private readonly now: () => number;
+  /** 登录失败限流表（按登录名，内存态）。 */
+  private readonly loginAttempts = new Map<string, LoginAttempt>();
 
   constructor(deps: AdminServiceDeps) {
     this.cols = deps.cols;
@@ -92,8 +107,21 @@ export class AdminService {
 
   /** 校验账号口令。成功返回账号（供 httpApi 签 token）；失败抛 AdminError。审计登录成败。 */
   async authenticate(username: string, password: string, ip?: string): Promise<AdminAccountDoc> {
+    const key = (username ?? '').trim().toLowerCase();
+    // 限流闸门：达阈值即拒，连口令对错都不校验（防爆破 + 防计时旁路）。
+    const lockedFor = this.loginLockedMs(key);
+    if (lockedFor > 0) {
+      await this.audit(`unknown:${username}`, 'login.failed', {
+        target: username,
+        ...(ip ? { ip } : {}),
+        summary: `rate limited (${Math.ceil(lockedFor / 1000)}s left)`,
+      });
+      throw new AdminError(429, 'too_many_attempts', 'too many failed attempts, try again later');
+    }
+
     const doc = await this.cols.adminAccounts.findOne({ username });
     if (!doc || doc.disabled || !(await verifyPassword(password, doc.passwordHash))) {
+      this.recordLoginFailure(key);
       // 不区分「无此人/密码错/已禁用」对外，避免账号枚举；审计记原因。
       await this.audit(doc?._id ?? `unknown:${username}`, 'login.failed', {
         target: username,
@@ -102,9 +130,34 @@ export class AdminService {
       });
       throw new AdminError(401, 'invalid_credentials', 'invalid username or password');
     }
+    this.loginAttempts.delete(key); // 成功即清零
     await this.cols.adminAccounts.updateOne({ _id: doc._id }, { $set: { lastLoginAt: this.now() } });
     await this.audit(doc._id, 'login', { ...(ip ? { ip } : {}) });
     return doc;
+  }
+
+  /** 当前是否处于锁定中；返回剩余锁定毫秒（0 = 未锁）。 */
+  private loginLockedMs(key: string): number {
+    const a = this.loginAttempts.get(key);
+    if (!a) return 0;
+    const now = this.now();
+    return a.lockedUntil > now ? a.lockedUntil - now : 0;
+  }
+
+  /** 记一次登录失败；窗口外重置计数，达阈值则锁定。 */
+  private recordLoginFailure(key: string): void {
+    const now = this.now();
+    const a = this.loginAttempts.get(key);
+    if (!a || now - a.windowStart > LOGIN_WINDOW_MS) {
+      this.loginAttempts.set(key, { fails: 1, windowStart: now, lockedUntil: 0 });
+      return;
+    }
+    a.fails += 1;
+    if (a.fails >= LOGIN_MAX_FAILURES) {
+      a.lockedUntil = now + LOGIN_LOCKOUT_MS;
+      a.fails = 0; // 锁定后计数清零，解锁后重新计
+      a.windowStart = now;
+    }
   }
 
   async getAccount(adminId: string): Promise<AdminAccountDoc | null> {

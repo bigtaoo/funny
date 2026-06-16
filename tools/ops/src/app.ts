@@ -8,7 +8,12 @@ interface NavItem {
   id: string;
   label: string;
   cap: AdminCapability;
-  render: (ctx: { api: Api; session: Session; root: HTMLElement }) => void | Promise<void>;
+  render: (ctx: {
+    api: Api;
+    session: Session;
+    root: HTMLElement;
+    onTeardown: (fn: () => void) => void;
+  }) => void | Promise<void>;
 }
 
 const NAV: NavItem[] = [
@@ -21,10 +26,29 @@ const NAV: NavItem[] = [
 ];
 
 export class App {
+  /** 当前页面注册的清理回调（导航/登出/会话失效时执行，停掉定时器等）。 */
+  private teardowns: (() => void)[] = [];
+
   constructor(
     private readonly api: Api,
     private readonly mount: HTMLElement,
-  ) {}
+  ) {
+    // 会话中途 401 → 清理当前页 + 弹回登录页。
+    this.api.onUnauthorized = () => {
+      this.runTeardowns();
+      this.renderLogin('会话已过期，请重新登录。');
+    };
+  }
+
+  private runTeardowns(): void {
+    for (const fn of this.teardowns.splice(0)) {
+      try {
+        fn();
+      } catch {
+        /* 清理失败不应阻断导航 */
+      }
+    }
+  }
 
   renderLogin(message?: string): void {
     clear(this.mount);
@@ -72,9 +96,13 @@ export class App {
     const navEl = h('nav', {});
 
     const select = (item: NavItem): void => {
+      this.runTeardowns(); // 停掉上一页的定时器等
       for (const a of Array.from(navEl.children)) a.classList.toggle('active', a.getAttribute('data-id') === item.id);
       clear(main);
-      void Promise.resolve(item.render({ api: this.api, session, root: main })).catch((e) => {
+      const onTeardown = (fn: () => void): void => {
+        this.teardowns.push(fn);
+      };
+      void Promise.resolve(item.render({ api: this.api, session, root: main, onTeardown })).catch((e) => {
         main.append(h('div', { class: 'err' }, (e as Error).message));
       });
     };
@@ -97,6 +125,7 @@ export class App {
   }
 
   private async doLogout(): Promise<void> {
+    this.runTeardowns();
     await this.api.logout();
     this.renderLogin('已退出。');
   }
