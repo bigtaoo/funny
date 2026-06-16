@@ -272,18 +272,35 @@ export class UnitView {
     const sprite = this.sprites.get(unitId);
     if (!sprite) return;
 
+    // Take ownership: drop from the live maps so sync() (the unit is already gone
+    // from board.units) doesn't release the sprite out from under this animation.
     this.sprites.delete(unitId);
     this.hpTimers.delete(unitId);
+    const hpBg   = sprite.getChildByName('hpBg')   as PIXI.Graphics | null;
+    const hpFill = sprite.getChildByName('hpFill') as PIXI.Graphics | null;
+    if (hpBg)   hpBg.visible   = false;
+    if (hpFill) hpFill.visible = false;
 
-    // Switch to death animation while fading out
+    // Switch to the death clip. The runtime is no longer ticked by sync() (the unit
+    // left board.units), so we must advance its clock here for the clip to play.
     const runtime = this.stickmanRuntimes.get(unitId);
     if (runtime) runtime.play('death');
 
-    let frames = 20;
+    const deathDur = runtime ? runtime.currentDuration : 0; // seconds
+    const HOLD_SEC = 1.0;   // linger after the death clip finishes (requested)
+    const FADE_SEC = 0.4;   // fade out over the tail of the hold
+    const total    = deathDur + HOLD_SEC;
+
+    let elapsed = 0;
     const tick = (): void => {
-      sprite.alpha = frames / 20;
-      sprite.scale.set(1 + (1 - frames / 20) * 0.5);
-      if (--frames <= 0) {
+      const dt = PIXI.Ticker.shared.deltaMS / 1000;
+      elapsed += dt;
+      if (runtime) runtime.update(dt); // advance the (non-loop) death clip; clamps at its end
+
+      const remaining = total - elapsed;
+      sprite.alpha = remaining < FADE_SEC ? Math.max(0, remaining / FADE_SEC) : 1;
+
+      if (elapsed >= total) {
         PIXI.Ticker.shared.remove(tick);
         this.releaseUnit(unitId, sprite);
       }

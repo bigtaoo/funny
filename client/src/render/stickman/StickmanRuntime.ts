@@ -194,7 +194,20 @@ export class StickmanRuntime {
 
   /** Convenience: map a UnitState string to the appropriate clip and play it. */
   syncState(unitState: string): void {
-    this.play(STATE_ANIM[unitState] ?? 'idle');
+    const name = STATE_ANIM[unitState] ?? 'idle';
+    if (name !== this.currentClipName) {
+      this.play(name);
+    } else if (this.currentClip && !this.currentClip.loop && this.time >= this.currentClip.duration) {
+      // A non-loop clip (e.g. 'attack') has finished but the state still holds —
+      // replay it so a unit attacking continuously keeps swinging instead of
+      // freezing on the final attack pose.
+      this.time = 0;
+    }
+  }
+
+  /** Duration (seconds) of the currently-playing clip, or 0 when none is set. */
+  get currentDuration(): number {
+    return this.currentClip?.duration ?? 0;
   }
 
   /**
