@@ -27,7 +27,26 @@ export type PushMsg =
   | { kind: 'friend_request'; requestId: string; fromPublicId: string; fromName: string; message: string }
   | { kind: 'friend_update'; publicId: string; added: boolean }
   | { kind: 'chat_message'; convId: string; fromPublicId: string; fromName: string; body: string; ts: number }
-  | { kind: 'mail_new'; mailId: string; hasAttachment: boolean };
+  | { kind: 'mail_new'; mailId: string; hasAttachment: boolean }
+  // —— SLG 大世界实时推送（S8-2，worldsvc 经 /gw/push 调用，与 matchsvc/meta 共用此通道）——
+  | {
+      kind: 'march_update';
+      marchId: string;
+      marchKind: string;
+      fromTile: string;
+      toTile: string;
+      arriveAt: number;
+      status: string;
+    }
+  | {
+      kind: 'tile_update';
+      tileId: string;
+      type: string;
+      level: number;
+      ownerId: string;
+      familyId: string;
+      protectedUntil: number;
+    };
 
 export class MatchsvcClient {
   constructor(

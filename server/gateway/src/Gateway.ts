@@ -459,5 +459,25 @@ function toServerMsg(msg: PushMsg): ServerMsg {
       };
     case 'mail_new':
       return { case: 'mail_new', mailId: msg.mailId, hasAttachment: msg.hasAttachment };
+    case 'march_update':
+      return {
+        case: 'march_update',
+        marchId: msg.marchId,
+        marchKind: msg.marchKind,
+        fromTile: msg.fromTile,
+        toTile: msg.toTile,
+        arriveAt: msg.arriveAt,
+        status: msg.status,
+      };
+    case 'tile_update':
+      return {
+        case: 'tile_update',
+        tileId: msg.tileId,
+        type: msg.type,
+        level: msg.level,
+        ownerId: msg.ownerId,
+        familyId: msg.familyId,
+        protectedUntil: msg.protectedUntil,
+      };
   }
 }

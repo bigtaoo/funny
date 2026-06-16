@@ -56,6 +56,14 @@ export function playerWorldId(world: string, accountId: string): string {
 export function familyMemberId(world: string, accountId: string): string {
   return `${world}:${accountId}`;
 }
+/**
+ * 行军 ID（S8-2）：`m:{worldId}:{ownerId}:{departAt}:{seq}`。
+ * 行军是临时文档（不像 tile/playerWorld 全局确定性），用 departAt(ms) + 进程内单调 seq
+ * 保证同毫秒多次出征不撞键。worldsvc 非确定性引擎，可安全用真实时间戳。
+ */
+export function marchId(world: string, ownerId: string, departAt: number, seq: number): string {
+  return `m:${world}:${ownerId}:${departAt}:${seq}`;
+}
 
 // ── 容量 / 地图尺寸（U4/U2 已拍，2026-06-16；SLG_DESIGN §14.10）──
 /** 单服（一个赛季宗门世界）目标容量：中型 300–500 人。 */
@@ -95,6 +103,7 @@ export const SLG_GEN = {
 // ── 数值常量（U6 DRAFT，上线后调参）────────────────────
 export const TROOP_CAP_BASE = 2000;
 export const MARCH_SPEED_SEC_PER_TILE = 6; // 行军每格耗时（秒）
+export const MARCH_MIN_TROOPS = 1; // 出征最少带兵
 export const RESOURCE_CAP = 200_000;
 export const RESOURCE_YIELD_BASE = 100; // 每格每小时基础产出（× level 倍率）
 export const PROTECTION_SEC = 8 * 3600; // 新手/被破城保护时长
@@ -103,6 +112,8 @@ export const AUCTION_TAX_RATE = 0.1; // U1 推迟到 S8-5，先占位
 export const AUCTION_MAX_LISTINGS = 20;
 export const AUCTION_DURATIONS_SEC: readonly number[] = [6 * 3600, 12 * 3600, 24 * 3600];
 export const GARRISON_PER_TILE = 500;
+/** 占领格至少需带的驻军（到点占领后即成该格 garrison；不足拒绝出征）。 */
+export const OCCUPY_MIN_TROOPS = GARRISON_PER_TILE;
 export const SEASON_LENGTH_DAYS = 30; // U3 推迟到 S8-7，先占位
 
 // ── 确定性噪声（纯函数，无随机源；同输入同输出）─────────────
@@ -226,6 +237,18 @@ export function tileYield(
   if (type === 'base') return { food: RESOURCE_YIELD_BASE };
   if (resType) return { [resType]: RESOURCE_YIELD_BASE * Math.max(1, level) };
   return {};
+}
+
+// ── 行军（S8-2，§14.4/§4）────────────────────────────────
+/**
+ * 行军耗时（秒）：欧氏距离（向上取整）× MARCH_SPEED_SEC_PER_TILE，最少 1 格。
+ * 纯函数、双端可算（客户端预估 ETA / 服务端权威定 arriveAt）。同格（距离 0）= 1 格成本。
+ */
+export function marchDurationSec(fx: number, fy: number, tx: number, ty: number): number {
+  const dx = tx - fx;
+  const dy = ty - fy;
+  const tiles = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dy * dy)));
+  return tiles * MARCH_SPEED_SEC_PER_TILE;
 }
 
 // ── 错误码：见 api.ts ErrorCode 的 SLG 段（WORLD_FULL/TILE_OCCUPIED/…）──

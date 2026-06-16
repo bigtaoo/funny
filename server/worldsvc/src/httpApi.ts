@@ -11,6 +11,7 @@ import {
   extractBearer,
   verifyToken,
   SlgError,
+  type MarchKind,
 } from '@nw/shared';
 import type { WorldService } from './service';
 
@@ -135,11 +136,38 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.abandonTile(worldId, accountId, x, y)));
         }
 
-        // ── 行军 / 防守 / 兵力（写，S8-2/S8-3 stub）──
+        // ── 行军（S8-2，做实）──
+        if (method === 'POST' && path === '/world/march') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const fromX = Number(body.fromX);
+          const fromY = Number(body.fromY);
+          const toX = Number(body.toX);
+          const toY = Number(body.toY);
+          const kind = typeof body.kind === 'string' ? body.kind : '';
+          const troops = Number(body.troops);
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (![fromX, fromY, toX, toY].every(Number.isFinite)) {
+            return sendErr(res, ErrorCode.BAD_REQUEST, 'fromX/fromY/toX/toY required');
+          }
+          return send(
+            res,
+            200,
+            ok(await svc.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind as MarchKind, troops)),
+          );
+        }
+        {
+          const m = /^\/world\/march\/([^/]+)\/recall$/.exec(path);
+          if (method === 'POST' && m) {
+            const body = await readJson(req);
+            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+            return send(res, 200, ok(await svc.recallMarch(worldId, accountId, decodeURIComponent(m[1]!))));
+          }
+        }
+
+        // ── 防守 / 兵力（写，S8-3 stub）──
         if (method === 'PUT' && path === '/world/defense') return NOT_IMPL(res, 'defense');
-        if (method === 'POST' && path === '/world/march') return NOT_IMPL(res, 'march');
-        if (method === 'POST' && /^\/world\/march\/[^/]+\/recall$/.test(path))
-          return NOT_IMPL(res, 'march recall');
         if (method === 'POST' && path === '/world/sweep') return NOT_IMPL(res, 'sweep');
         if (method === 'POST' && path === '/world/troops/train') return NOT_IMPL(res, 'train');
         if (method === 'POST' && path === '/world/troops/speedup') return NOT_IMPL(res, 'speedup');

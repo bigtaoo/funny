@@ -5,6 +5,8 @@ import { createWorldMongo } from './db';
 import { connectRedis } from './redis';
 import { WorldService } from './service';
 import { startHttpApi } from './httpApi';
+import { startScheduler } from './scheduler';
+import { HttpWorldGatewayClient } from './gatewayClient';
 import { loadWorldsvcEnv } from './config';
 
 async function main(): Promise<void> {
@@ -15,13 +17,18 @@ async function main(): Promise<void> {
 
   const redis = await connectRedis(env.redisUrl);
 
+  const gateway = new HttpWorldGatewayClient(env.gatewayInternalUrl ?? null, env.internalKey);
+
   const svc = new WorldService({
     cols: mongo.collections,
     redis,
+    gateway,
     mapW: SLG_MAP_W,
     mapH: SLG_MAP_H,
     now: () => Date.now(),
   });
+
+  const scheduler = startScheduler(svc);
 
   const server = startHttpApi(
     { host: env.host, port: env.port, jwtSecret: env.jwtSecret },
@@ -29,6 +36,7 @@ async function main(): Promise<void> {
   );
 
   const shutdown = async (): Promise<void> => {
+    scheduler.stop();
     server.close();
     if (redis) await redis.quit().catch(() => {});
     await mongo.close();
@@ -39,7 +47,8 @@ async function main(): Promise<void> {
 
   console.log(
     `worldsvc public REST on :${env.port}; db=${env.worldMongoDb}; ` +
-      `map=${SLG_MAP_W}x${SLG_MAP_H}; redis=${redis ? 'on' : 'off'}`,
+      `map=${SLG_MAP_W}x${SLG_MAP_H}; redis=${redis ? 'on' : 'off'}; ` +
+      `gateway=${gateway.available ? 'on' : 'off'}`,
   );
 }
 

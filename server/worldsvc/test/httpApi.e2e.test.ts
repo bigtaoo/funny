@@ -45,6 +45,24 @@ function findResource(): { x: number; y: number } {
   throw new Error('no resource tile');
 }
 
+/** 找一个可占领空闲格（非中心、非主城(5,5)）。 */
+function findFreeNear(sx: number, sy: number): { x: number; y: number } {
+  for (let r = 0; r < 60; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dy = -r; dy <= r; dy++) {
+        const x = sx + dx;
+        const y = sy + dy;
+        if (x < 0 || y < 0 || x >= SLG_MAP_W || y >= SLG_MAP_H) continue;
+        if (x === CENTER_X && y === CENTER_Y) continue;
+        if (x === 5 && y === 5) continue;
+        const t = proceduralTile(W, x, y).type;
+        if (t === 'neutral' || t === 'resource') return { x, y };
+      }
+    }
+  }
+  throw new Error('no free tile');
+}
+
 describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
   const m = mongo!;
   let server: Server;
@@ -138,13 +156,45 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(r.status).toBe(400);
   });
 
+  it('POST /world/march → occupy 行军（marching）', async () => {
+    // acct-1 已在 (5,5) 落城；向相邻空闲格发占领行军。
+    const free = findFreeNear(6, 6);
+    const r = await fetch(`${base}/world/march`, {
+      method: 'POST',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        worldId: W,
+        fromX: 5,
+        fromY: 5,
+        toX: free.x,
+        toY: free.y,
+        kind: 'occupy',
+        troops: 500,
+      }),
+    });
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body.ok).toBe(true);
+    expect(body.data).toMatchObject({ kind: 'occupy', status: 'marching' });
+    expect(typeof body.data.marchId).toBe('string');
+  });
+
+  it('POST /world/march 缺坐标 → 400', async () => {
+    const r = await fetch(`${base}/world/march`, {
+      method: 'POST',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ worldId: W, kind: 'occupy', troops: 500 }),
+    });
+    expect(r.status).toBe(400);
+  });
+
   it('未实现写端点 → 501；未知路由 → 404', async () => {
-    const march = await fetch(`${base}/world/march`, {
+    const sweep = await fetch(`${base}/world/sweep`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },
       body: '{}',
     });
-    expect(march.status).toBe(501);
+    expect(sweep.status).toBe(501);
     const nf = await fetch(`${base}/world/nope`, { headers: auth });
     expect(nf.status).toBe(404);
   });

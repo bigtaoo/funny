@@ -75,6 +75,25 @@ export type ServerMsg =
   | { case: 'friend_update'; publicId: string; added: boolean }
   | { case: 'chat_message'; convId: string; fromPublicId: string; fromName: string; body: string; ts: number }
   | { case: 'mail_new'; mailId: string; hasAttachment: boolean }
+  // —— SLG 大世界推送（S8-2）——
+  | {
+      case: 'march_update';
+      marchId: string;
+      marchKind: string;
+      fromTile: string;
+      toTile: string;
+      arriveAt: number;
+      status: string;
+    }
+  | {
+      case: 'tile_update';
+      tileId: string;
+      type: string;
+      level: number;
+      ownerId: string;
+      familyId: string;
+      protectedUntil: number;
+    }
   | { case: 'pong' };
 
 function resolveProtoPath(): string {
@@ -210,6 +229,30 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
       break;
     case 'mail_new':
       server = { mail_new: { mail_id: msg.mailId, has_attachment: msg.hasAttachment } };
+      break;
+    case 'march_update':
+      server = {
+        march_update: {
+          march_id: msg.marchId,
+          kind: msg.marchKind,
+          from_tile: msg.fromTile,
+          to_tile: msg.toTile,
+          arrive_at: msg.arriveAt,
+          status: msg.status,
+        },
+      };
+      break;
+    case 'tile_update':
+      server = {
+        tile_update: {
+          tile_id: msg.tileId,
+          type: msg.type,
+          level: msg.level,
+          owner_id: msg.ownerId,
+          family_id: msg.familyId,
+          protected_until: msg.protectedUntil,
+        },
+      };
       break;
     case 'pong':
       server = { pong: {} };
