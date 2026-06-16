@@ -166,9 +166,24 @@ export function startHttpApi(
           }
         }
 
-        // ── 防守 / 兵力（写，S8-3 stub）──
+        // ── 扫荡（S8-3，§14.6 便捷别名 = march kind:'sweep'）──
+        if (method === 'POST' && path === '/world/sweep') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const fromX = Number(body.fromX);
+          const fromY = Number(body.fromY);
+          const toX = Number(body.toX);
+          const toY = Number(body.toY);
+          const troops = Number(body.troops);
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (![fromX, fromY, toX, toY].every(Number.isFinite)) {
+            return sendErr(res, ErrorCode.BAD_REQUEST, 'fromX/fromY/toX/toY required');
+          }
+          return send(res, 200, ok(await svc.startMarch(worldId, accountId, fromX, fromY, toX, toY, 'sweep', troops)));
+        }
+
+        // ── 防守 / 兵力（写，S8-3+ stub）──
         if (method === 'PUT' && path === '/world/defense') return NOT_IMPL(res, 'defense');
-        if (method === 'POST' && path === '/world/sweep') return NOT_IMPL(res, 'sweep');
         if (method === 'POST' && path === '/world/troops/train') return NOT_IMPL(res, 'train');
         if (method === 'POST' && path === '/world/troops/speedup') return NOT_IMPL(res, 'speedup');
 

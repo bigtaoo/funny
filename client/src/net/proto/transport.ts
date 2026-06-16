@@ -216,6 +216,13 @@ export interface JudgeRequest {
    */
   levelId: string;
   pveUpgrades: { [key: string]: number };
+  /**
+   * SLG 围攻复算（S8-3，SLG_DESIGN §5.3）：defense_json 非空 → 裁判按 siege 模式无头复算。
+   * 防守 config 是一份 LevelDefinition 的 JSON（worldsvc 为被攻击格即时构造，对 worldsvc opaque，
+   * 仅客户端引擎解释）；裁判用 seed + 该 config + pve_upgrades（攻方服务器权威养成快照）+ frames
+   * （攻方指令）跑到终局，winner_side=0 → 攻方破城（attacker_win），经 judge_verdict 回报。
+   */
+  defenseJson: string;
 }
 
 export interface JudgeRequest_PveUpgradesEntry {
@@ -1998,7 +2005,7 @@ export const Pong: MessageFns<Pong> = {
 };
 
 function createBaseJudgeRequest(): JudgeRequest {
-  return { requestId: "", seed: 0, mode: 0, endFrame: 0, frames: [], levelId: "", pveUpgrades: {} };
+  return { requestId: "", seed: 0, mode: 0, endFrame: 0, frames: [], levelId: "", pveUpgrades: {}, defenseJson: "" };
 }
 
 export const JudgeRequest: MessageFns<JudgeRequest> = {
@@ -2024,6 +2031,9 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
     globalThis.Object.entries(message.pveUpgrades).forEach(([key, value]: [string, number]) => {
       JudgeRequest_PveUpgradesEntry.encode({ key: key as any, value }, writer.uint32(58).fork()).join();
     });
+    if (message.defenseJson !== "") {
+      writer.uint32(66).string(message.defenseJson);
+    }
     return writer;
   },
 
@@ -2093,6 +2103,14 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
           }
           continue;
         }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.defenseJson = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2122,6 +2140,7 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
       },
       {},
     );
+    message.defenseJson = object.defenseJson ?? "";
     return message;
   },
 };

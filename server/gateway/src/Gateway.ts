@@ -479,5 +479,23 @@ function toServerMsg(msg: PushMsg): ServerMsg {
         familyId: msg.familyId,
         protectedUntil: msg.protectedUntil,
       };
+    case 'under_attack':
+      return {
+        case: 'under_attack',
+        tile: msg.tile,
+        attackerName: msg.attackerName,
+        attackerPublicId: msg.attackerPublicId,
+        arriveAt: msg.arriveAt,
+        troopsHint: msg.troopsHint,
+      };
+    case 'siege_result':
+      return {
+        case: 'siege_result',
+        siegeId: msg.siegeId,
+        tile: msg.tile,
+        outcome: msg.outcome,
+        lootSummary: msg.lootSummary,
+        replayRef: msg.replayRef,
+      };
   }
 }

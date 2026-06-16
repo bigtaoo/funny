@@ -87,13 +87,20 @@ export function ownerToSide(owner: OwnerId): Side {
  * Game mode.
  *   `pvp`      — duel driven by AISystem (the Top side is the local bot).
  *   `campaign` — PvE scripted waves (WaveDirector).
+ *   `siege`    — SLG 围攻 (S8-3): mechanically identical to `campaign` (the
+ *                defender is a scripted `WaveDirector` from a defense-config
+ *                `LevelDefinition`, the local player is the attacker), differing
+ *                ONLY in the blueprint source — `buildSiegeBlueprints(pveUpgrades)`
+ *                instead of `buildCampaignBlueprints`. Same upgrade tree feeds
+ *                both PvE and SLG (SLG_DESIGN §6.2); the PvP hard wall is untouched
+ *                because `buildPvpBlueprints()` has no upgrade param (§6.1).
  *   `netplay`  — online lockstep PvP: BOTH sides are humans, commands for both
  *                arrive (pre-confirmed, per frame) from the `NetInputSource`.
  *                No local AI and no WaveDirector run — the engine only processes
  *                the confirmed command set, so two clients on the same seed +
  *                same frame stream stay byte-identical (S1-7).
  */
-export type GameMode = 'pvp' | 'campaign' | 'netplay';
+export type GameMode = 'pvp' | 'campaign' | 'netplay' | 'siege';
 
 export interface GameConfig {
   /** PRNG seed — determines card draws for both players. Required. */

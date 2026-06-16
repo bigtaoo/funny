@@ -185,9 +185,9 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     await expect(svc.startMarch(W, 'a', 5, 5, free.x, free.y, 'occupy', 10)).rejects.toMatchObject({
       code: 'NO_TROOPS',
     });
-    // 围攻/扫荡未实现。
-    await expect(svc.startMarch(W, 'a', 5, 5, free.x, free.y, 'attack', 100)).rejects.toMatchObject({
-      code: 'NOT_IMPLEMENTED',
+    // 围攻无主格 → TILE_NOT_OWNED（围攻 S8-3 已实现，目标须是他人领地；无主用占领/扫荡）。
+    await expect(svc.startMarch(W, 'a', 5, 5, free.x, free.y, 'attack', OCCUPY_MIN_TROOPS)).rejects.toMatchObject({
+      code: 'TILE_NOT_OWNED',
     });
     // 增援非己方格。
     await expect(svc.startMarch(W, 'a', 5, 5, free.x, free.y, 'reinforce', 100)).rejects.toMatchObject({

@@ -24,6 +24,22 @@ export type SlgPushMsg =
       ownerId: string; // 占领者标识（空=中立）；S8-2 暂用 accountId，publicId 解析待后补
       familyId: string;
       protectedUntil: number; // ms（0=无保护）
+    }
+  | {
+      kind: 'under_attack'; // S8-3：出征发起即推给防守方（预警，到达时刻 + 兵力估计）
+      tile: string;
+      attackerName: string; // 攻方标识；S8-3 暂用 accountId，publicId 解析待后补
+      attackerPublicId: string;
+      arriveAt: number; // ms
+      troopsHint: number;
+    }
+  | {
+      kind: 'siege_result'; // S8-3：围攻结算后推给攻守双方
+      siegeId: string;
+      tile: string;
+      outcome: string; // attacker_win | defender_win | draw
+      lootSummary: string; // 人读摘要（如 "food+250"），UI 直接展示
+      replayRef: string; // 录像引用（S8-3b 接 judge 复算后填，当前空）
     };
 
 export interface WorldGatewayClient {

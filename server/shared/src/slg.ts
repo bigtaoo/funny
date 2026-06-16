@@ -64,6 +64,10 @@ export function familyMemberId(world: string, accountId: string): string {
 export function marchId(world: string, ownerId: string, departAt: number, seq: number): string {
   return `m:${world}:${ownerId}:${departAt}:${seq}`;
 }
+/** 围攻 ID（S8-3）：`g:{worldId}:{attackerId}:{ts}:{seq}`，瞬态战报记录，同 marchId 防撞键。 */
+export function siegeId(world: string, attackerId: string, ts: number, seq: number): string {
+  return `g:${world}:${attackerId}:${ts}:${seq}`;
+}
 
 // ── 容量 / 地图尺寸（U4/U2 已拍，2026-06-16；SLG_DESIGN §14.10）──
 /** 单服（一个赛季宗门世界）目标容量：中型 300–500 人。 */
@@ -249,6 +253,45 @@ export function marchDurationSec(fx: number, fy: number, tx: number, ty: number)
   const dy = ty - fy;
   const tiles = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dy * dy)));
   return tiles * MARCH_SPEED_SEC_PER_TILE;
+}
+
+// ── 围攻结算（S8-3，§5.3）────────────────────────────────
+// worldsvc 不引确定性引擎（M12），到点用此**廉价线性数值结算**即时落地围攻 outcome
+// （territory 易主 / 主城掠夺 / NPC 扫荡）；这是设计许可的「非关键 / 廉价数值结算」路径（§5.3）。
+// 「关键战斗」（真人手操破城）的引擎复算（buildSiegeBlueprints + judgeRunner siege 分支）已在
+// 客户端落地并单测，S8-3b 经 worldsvc→gateway /gw/judge 接入此处替代廉价结算。
+
+/** 中立 / 资源格的 NPC 守军强度（扫荡 sweep 的防守，按格等级线性）。 */
+export const NPC_GARRISON_PER_LEVEL = 120;
+/** 围攻得手后掠夺目标资源的比例（territory 易主 / 主城掠夺时从败方资源抽走给攻方）。 */
+export const SIEGE_LOOT_RATE = 0.25;
+/** 扫荡 NPC 得手的一次性资源缴获（按格等级，单资源）。 */
+export const SWEEP_LOOT_PER_LEVEL = 200;
+
+/** 单格 NPC 守军（扫荡防守强度）。 */
+export function npcGarrison(level: number): number {
+  return NPC_GARRISON_PER_LEVEL * Math.max(1, level);
+}
+
+export interface SiegeResolution {
+  outcome: SiegeOutcome;
+  /** 攻方生还兵力（attacker_win 时可成新驻军 / 回师；defender_win = 0 全灭）。 */
+  attackerSurvivors: number;
+  /** 守方生还兵力（defender_win 时为残余守军；attacker_win = 0）。 */
+  defenderSurvivors: number;
+}
+
+/**
+ * 线性（Lanchester-lite）围攻结算：攻方兵力 > 守方防守强度 → 攻方胜，生还 = 兵力差；
+ * 否则守方胜（平局并入守方，符合「防守占优」）。纯函数、确定性、双端可算。
+ */
+export function resolveSiege(attackerTroops: number, defenseStrength: number): SiegeResolution {
+  const atk = Math.max(0, Math.floor(attackerTroops));
+  const def = Math.max(0, Math.floor(defenseStrength));
+  if (atk > def) {
+    return { outcome: 'attacker_win', attackerSurvivors: atk - def, defenderSurvivors: 0 };
+  }
+  return { outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: def - atk };
 }
 
 // ── 错误码：见 api.ts ErrorCode 的 SLG 段（WORLD_FULL/TILE_OCCUPIED/…）──

@@ -94,6 +94,22 @@ export type ServerMsg =
       familyId: string;
       protectedUntil: number;
     }
+  | {
+      case: 'under_attack';
+      tile: string;
+      attackerName: string;
+      attackerPublicId: string;
+      arriveAt: number;
+      troopsHint: number;
+    }
+  | {
+      case: 'siege_result';
+      siegeId: string;
+      tile: string;
+      outcome: string;
+      lootSummary: string;
+      replayRef: string;
+    }
   | { case: 'pong' };
 
 function resolveProtoPath(): string {
@@ -251,6 +267,28 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
           owner_id: msg.ownerId,
           family_id: msg.familyId,
           protected_until: msg.protectedUntil,
+        },
+      };
+      break;
+    case 'under_attack':
+      server = {
+        under_attack: {
+          tile: msg.tile,
+          attacker_name: msg.attackerName,
+          attacker_public_id: msg.attackerPublicId,
+          arrive_at: msg.arriveAt,
+          troops_hint: msg.troopsHint,
+        },
+      };
+      break;
+    case 'siege_result':
+      server = {
+        siege_result: {
+          siege_id: msg.siegeId,
+          tile: msg.tile,
+          outcome: msg.outcome,
+          loot_summary: msg.lootSummary,
+          replay_ref: msg.replayRef,
         },
       };
       break;

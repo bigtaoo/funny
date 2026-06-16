@@ -11,7 +11,7 @@ import {
   TOP_SPAWN_ROW,
 } from './config';
 import { toFp, TICK_RATE } from './math/fixed';
-import { buildPvpBlueprints, buildCampaignBlueprints } from './balance/pveUpgrades';
+import { buildPvpBlueprints, buildCampaignBlueprints, buildSiegeBlueprints } from './balance/pveUpgrades';
 import { cardRefreshDuration } from './Card';
 import { Building } from './Building';
 import { Player } from './Player';
@@ -91,16 +91,25 @@ class GameEngineImpl implements IGameEngine {
 
     this.mode = config.mode ?? 'pvp';
 
-    // Hard wall (§5.2): the campaign path is the ONLY place PvE upgrades enter the
-    // engine. PvP / netplay always get the read-only constants. buildPvpBlueprints'
-    // signature has no SaveData/upgrade param, so power can't leak into PvP.
+    // PvE-shaped modes: scripted enemy (WaveDirector) + upgrade-buffed blueprints.
+    // `campaign` (single-player PvE) and `siege` (SLG 围攻, S8-3) share the same
+    // mechanics; they differ only in which builder injects the upgrade levels.
+    const pve = this.mode === 'campaign' || this.mode === 'siege';
+
+    // Hard wall (§5.2 / §6.1): the PvE-shaped paths are the ONLY place upgrades
+    // enter the engine. PvP / netplay always get the read-only constants.
+    // buildPvpBlueprints' signature has no SaveData/upgrade param, so power can't
+    // leak into PvP. `siege` reuses the upgrade tree (SLG_DESIGN §6.2) via a
+    // distinctly-named builder, keeping the red line explicit.
     this.state.unitBlueprints =
       this.mode === 'campaign'
         ? buildCampaignBlueprints(config.pveUpgrades ?? {})
+        : this.mode === 'siege'
+        ? buildSiegeBlueprints(config.pveUpgrades ?? {})
         : buildPvpBlueprints();
 
-    if (this.mode === 'campaign') {
-      if (!config.level) throw new Error('campaign mode requires a level definition');
+    if (pve) {
+      if (!config.level) throw new Error(`${this.mode} mode requires a level definition`);
       this.level        = config.level;
       this.waveDirector = new WaveDirector(config.level, new Prng(config.seed ^ 0x5A5A5A5A));
 
@@ -197,9 +206,9 @@ class GameEngineImpl implements IGameEngine {
     // InputSource (M13). AI (practice) and WaveDirector (PvE) are the engine's
     // *other* in-tick input sources, generated deterministically from state.
     const externalCmds = commands.filter((c) => c.tick === tick);
-    if (this.mode === 'campaign' && this.waveDirector) {
-      // Campaign: process player commands, then spawn scripted enemy waves
-      // directly (bypassing the enemy hand/coin economy).
+    if (this.waveDirector) {
+      // PvE-shaped (campaign / siege): process player commands, then spawn the
+      // scripted enemy waves directly (bypassing the enemy hand/coin economy).
       for (const cmd of externalCmds) {
         this.processCommand(cmd);
       }
@@ -490,9 +499,9 @@ class GameEngineImpl implements IGameEngine {
       return;
     }
 
-    // ── Campaign objectives ──────────────────────────────────────────────────
-    if (this.mode === 'campaign') {
-      // Wiping the enemy base always wins.
+    // ── Campaign / siege objectives ──────────────────────────────────────────
+    if (this.waveDirector) {
+      // Wiping the enemy base always wins (siege: attacker captures the tile).
       if (this.state.topPlayer.isDead) {
         this.state.phase  = GamePhase.GameOver;
         this.state.winner = Side.Bottom;

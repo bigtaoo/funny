@@ -109,6 +109,22 @@ export function buildCampaignBlueprints(
 }
 
 /**
+ * SLG 围攻路径（S8-3，SLG_DESIGN §5.2 / §6.2）：与 campaign 共用同一棵养成树和注入点
+ * （PvE 攒的装备直接是 SLG 战力）。当前与 buildCampaignBlueprints 逐字等价，独立命名是为了
+ *   ①把「天梯红线」表达在类型层面（siege 走这个、netplay/pvp 永远走 buildPvpBlueprints，
+ *     后者签名无升级参 → 编译期不可能串味，§6.1 硬墙单测原样守护）；
+ *   ②给未来 SLG 专属 buff（科技/家族增益，不影响 PvE）留唯一落点。
+ * @param levels 服务器权威 pveUpgrades（升级 id → 等级）。
+ */
+export function buildSiegeBlueprints(
+  levels: Record<string, number>,
+): Record<UnitType, UnitBlueprint> {
+  const bp = cloneBlueprints();
+  applyPveUpgrades(bp, levels);
+  return bp;
+}
+
+/**
  * 把升级等级以乘算修饰叠加到蓝图（原地改）。未知 id / 0 级 / 超 maxLevel 都安全钳制。
  * 唯一的 SaveData→blueprint 注入点（§5.2）。
  */

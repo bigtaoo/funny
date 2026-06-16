@@ -189,13 +189,23 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
   });
 
   it('未实现写端点 → 501；未知路由 → 404', async () => {
-    const sweep = await fetch(`${base}/world/sweep`, {
-      method: 'POST',
+    // 防守设置仍 stub（S8-3+）。
+    const defense = await fetch(`${base}/world/defense`, {
+      method: 'PUT',
       headers: { ...auth, 'content-type': 'application/json' },
       body: '{}',
     });
-    expect(sweep.status).toBe(501);
+    expect(defense.status).toBe(501);
     const nf = await fetch(`${base}/world/nope`, { headers: auth });
     expect(nf.status).toBe(404);
+  });
+
+  it('扫荡端点（S8-3）：缺坐标 → 400', async () => {
+    const sweep = await fetch(`${base}/world/sweep`, {
+      method: 'POST',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ worldId: W, troops: 500 }),
+    });
+    expect(sweep.status).toBe(400);
   });
 });

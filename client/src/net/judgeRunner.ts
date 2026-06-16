@@ -15,6 +15,7 @@ import {
   GamePhase,
   TICK_RATE,
   type GameMode,
+  type LevelDefinition,
   type OwnerId,
   type PlayerCommand,
   type PlayerStats,
@@ -41,6 +42,7 @@ const FAIL: JudgeOutcome = { ok: false, stateHash: '', winnerSide: 0, stars: 0 }
  * 上限步数 = endFrame + 余量，防坏录像导致死循环。
  */
 export function runJudge(req: JudgeRequest): JudgeOutcome {
+  if (req.defenseJson) return runSiegeJudge(req);
   if (req.levelId) return runPveJudge(req);
   try {
     const replay = buildReplay(req, 'netplay', req.seed);
@@ -102,6 +104,49 @@ function runPveJudge(req: JudgeRequest): JudgeOutcome {
     const stats = engine.state.snapshotStats();
     const stars = computeStars(level.rewards?.starThresholds, remainingHpPct(stats[0].damageTakenByBase));
     return { ok: true, stateHash: '', winnerSide: 0, stars };
+  } catch {
+    return FAIL;
+  }
+}
+
+/**
+ * SLG 围攻复算（S8-3，SLG_DESIGN §5.3）：worldsvc 为被攻击格构造一份防守 config（LevelDefinition
+ * 的 JSON），裁判用 seed + 该 config + 攻方服务器权威养成快照（pve_upgrades）+ 攻方指令帧按 siege
+ * 模式跑到终局。siege 引擎机制同 campaign（防守方=WaveDirector 脚本），故 winner_side=0(Bottom)
+ * = 攻方破城（attacker_win 夺地），否则防守成功（defender_win）。攻方篡改本地状态改不了「这套兵能否
+ * 在这套防守 config 下破城」，复算结果即权威 outcome。stateHash/stars 对 siege 无意义恒空/0。
+ */
+function runSiegeJudge(req: JudgeRequest): JudgeOutcome {
+  try {
+    let level: LevelDefinition;
+    try {
+      level = JSON.parse(req.defenseJson) as LevelDefinition;
+    } catch {
+      return FAIL; // 防守 config 不是合法 JSON → 无法复算
+    }
+    const replay = buildReplay(req, 'siege', req.seed);
+    const engine = createGameEngine(
+      {
+        seed: req.seed,
+        players: [{ id: 0 }, { id: 1 }],
+        mode: 'siege',
+        level,
+        pveUpgrades: req.pveUpgrades,
+      },
+      new ReplayInputSource(replay),
+    );
+
+    const tickDt = 1 / TICK_RATE;
+    const maxTicks = req.endFrame + 600;
+    let guard = 0;
+    while (engine.state.phase !== GamePhase.GameOver && guard < maxTicks) {
+      engine.tick(tickDt);
+      guard++;
+    }
+    if (engine.state.phase !== GamePhase.GameOver) return FAIL;
+
+    const winner = stateWinner(engine.state.winner);
+    return { ok: true, stateHash: '', winnerSide: winner ?? 1, stars: 0 };
   } catch {
     return FAIL;
   }

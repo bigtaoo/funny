@@ -46,6 +46,22 @@ export type PushMsg =
       ownerId: string;
       familyId: string;
       protectedUntil: number;
+    }
+  | {
+      kind: 'under_attack';
+      tile: string;
+      attackerName: string;
+      attackerPublicId: string;
+      arriveAt: number;
+      troopsHint: number;
+    }
+  | {
+      kind: 'siege_result';
+      siegeId: string;
+      tile: string;
+      outcome: string;
+      lootSummary: string;
+      replayRef: string;
     };
 
 export class MatchsvcClient {

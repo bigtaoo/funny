@@ -6,9 +6,14 @@ import {
   proceduralTile,
   tileId,
   marchId,
+  siegeId,
   marchDurationSec,
   playerWorldId,
   tileYield,
+  resolveSiege,
+  npcGarrison,
+  SIEGE_LOOT_RATE,
+  SWEEP_LOOT_PER_LEVEL,
   RESOURCE_CAP,
   RESOURCE_TYPES,
   TROOP_CAP_BASE,
@@ -20,8 +25,9 @@ import {
   type TileType,
   type ResourceType,
   type MarchKind,
+  type SiegeOutcome,
 } from '@nw/shared';
-import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc } from './db';
+import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc } from './db';
 import type { WorldRedis } from './redis';
 import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient';
 
@@ -87,13 +93,15 @@ export interface WorldServiceDeps {
 
 const emptyResources = (): Record<ResourceType, number> => ({ food: 0, iron: 0, wood: 0 });
 
-/** 出征许可的玩家面 kind（attack/sweep 走围攻=S8-3；return 仅内部撤军腿，禁止外部直接发起）。 */
-const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce']);
+/** 出征许可的玩家面 kind（return 仅内部撤军腿，禁止外部直接发起）。 */
+const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'attack', 'sweep']);
 
 export class WorldService {
   private readonly gateway: WorldGatewayClient;
   /** 进程内单调序号，保证同毫秒多次出征 marchId 不撞键。 */
   private marchSeq = 0;
+  /** 进程内单调序号，保证同毫秒多次围攻 siegeId 不撞键。 */
+  private siegeSeq = 0;
 
   constructor(private readonly deps: WorldServiceDeps) {
     this.gateway = deps.gateway ?? nullWorldGatewayClient;
@@ -354,6 +362,7 @@ export class WorldService {
     const toTid = tileId(worldId, toX, toY);
     const proc = proceduralTile(worldId, toX, toY);
     const toTile = await cols.tiles.findOne({ _id: toTid });
+    let defenderId: string | undefined; // attack：被攻击方 accountId（出征即推 under_attack 预警）
     if (kind === 'occupy') {
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可直占');
       if (toTile?.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', '该格已是己方领地（用增援）');
@@ -361,11 +370,24 @@ export class WorldService {
         if (toTile.protectedUntil && toTile.protectedUntil > now()) {
           throw new SlgError('PROTECTED', '目标处于保护期');
         }
-        throw new SlgError('TILE_OCCUPIED', '该格已被占领（夺地需围攻，S8-3）');
+        throw new SlgError('TILE_OCCUPIED', '该格已被占领（夺地需围攻 attack）');
       }
-    } else {
-      // reinforce
+    } else if (kind === 'reinforce') {
       if (!toTile || toTile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', '只能增援己方格');
+    } else if (kind === 'attack') {
+      // 围攻：目标必须是他人领地/主城（中立无主格请用占领/扫荡）。
+      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心由宗门争夺，不可围攻');
+      if (!toTile?.ownerId) throw new SlgError('TILE_NOT_OWNED', '围攻目标无主（用占领/扫荡）');
+      if (toTile.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', '不能围攻己方领地');
+      if (toTile.protectedUntil && toTile.protectedUntil > now()) {
+        throw new SlgError('PROTECTED', '目标处于保护期');
+      }
+      if (troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `围攻至少需带 ${OCCUPY_MIN_TROOPS} 兵`);
+      defenderId = toTile.ownerId;
+    } else {
+      // sweep：清中立 / 资源格的 NPC 守军（不占地，回师带回缴获）。
+      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可扫荡');
+      if (toTile?.ownerId) throw new SlgError('TILE_OCCUPIED', '目标已被占领（夺地用围攻 attack）');
     }
 
     const t = now();
@@ -397,6 +419,18 @@ export class WorldService {
     await this.scheduleMarch(worldId, mid, arriveAt);
     const view = this.marchView(doc);
     void this.pushMarch(accountId, view);
+    // 围攻：出征即向防守方推预警（§5 / §14.5）。attackerName/publicId 暂用 accountId，
+    // publicId 解析（meta /internal/profile）待后补——与 S8-1/2 owner 标识 todo 一致。
+    if (kind === 'attack' && defenderId) {
+      void this.gateway.push(defenderId, {
+        kind: 'under_attack',
+        tile: toTid,
+        attackerName: accountId,
+        attackerPublicId: '',
+        arriveAt,
+        troopsHint: troops,
+      });
+    }
     return view;
   }
 
@@ -472,6 +506,16 @@ export class WorldService {
       return;
     }
 
+    if (m.kind === 'attack') {
+      await this.applySiege(m, pw, t);
+      return;
+    }
+
+    if (m.kind === 'sweep') {
+      await this.applySweep(m, pw, t);
+      return;
+    }
+
     if (m.kind === 'occupy') {
       const proc = proceduralTile(m.worldId, this.coordX(m.toTile), this.coordY(m.toTile));
       const occ = await cols.tiles.findOne({ _id: m.toTile });
@@ -526,9 +570,176 @@ export class WorldService {
     if (after) void this.pushTile(m.ownerId, after);
   }
 
-  /** 退兵回池（封顶 troopCap）+ 结算资源。 */
-  private async refundTroops(pw: PlayerWorldDoc, troops: number, t: number): Promise<void> {
+  // ── S8-3：围攻 / 扫荡到点结算（廉价数值，§5.3；关键战斗的引擎复算 S8-3b 接 judge）──
+
+  /**
+   * 围攻他人领地/主城（attack 到点）。到达时重校验目标仍为敌方且未受保护，否则退兵。
+   * 廉价线性结算 resolveSiege(攻方兵, 守军)：
+   *   - attacker_win + territory → 领地易主（survivors 成新驻军）+ 掠夺败方资源 + 双方产率重算；
+   *   - attacker_win + base      → 主城不可夺：守军清零 + 给败方上保护罩 + 掠夺 + 攻方生还回师退兵池；
+   *   - defender_win             → 攻方committed 兵全灭（出征已扣，不回池）+ 守军减员。
+   */
+  private async applySiege(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
+    const { cols } = this.deps;
+    const target = await cols.tiles.findOne({ _id: m.toTile });
+    // 到达时目标已非敌方（被弃/已转己方/无主）或进入保护期 → 视作扑空，退兵回师。
+    if (
+      !target?.ownerId ||
+      target.ownerId === m.ownerId ||
+      (target.protectedUntil && target.protectedUntil > t)
+    ) {
+      await this.refundTroops(pw, m.troops, t);
+      void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'recalled' }));
+      return;
+    }
+
+    const defenderId = target.ownerId;
+    const res = resolveSiege(m.troops, target.garrison ?? 0);
+    const defender = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defenderId) });
+    let loot = emptyResources();
+
+    if (res.outcome === 'attacker_win') {
+      // 掠夺败方资源（按比例从守方搬到攻方）。
+      if (defender) loot = await this.transferLoot(defender, pw, t);
+
+      if (target.type === 'base') {
+        // 主城不可永久夺取：守军清零 + 上保护罩；攻方生还回师退兵池。
+        await cols.tiles.updateOne(
+          { _id: m.toTile },
+          { $set: { garrison: 0, protectedUntil: t + PROTECTION_SEC * 1000 }, $inc: { rev: 1 } },
+        );
+        await this.refundTroops(pw, res.attackerSurvivors, t);
+      } else {
+        // 领地易主：survivors 成新驻军（出征已扣兵，不再动攻方池），双方产率重算。
+        await cols.tiles.updateOne(
+          { _id: m.toTile },
+          {
+            $set: { type: 'territory', ownerId: m.ownerId, garrison: res.attackerSurvivors },
+            $unset: { protectedUntil: '' },
+            $inc: { rev: 1 },
+          },
+        );
+        const atkYield = await this.recomputeYield(m.worldId, m.ownerId);
+        await cols.playerWorld.updateOne(
+          { _id: pw._id },
+          { $set: { yieldRate: atkYield, lastTickAt: t }, $inc: { rev: 1 } },
+        );
+        const defYield = await this.recomputeYield(m.worldId, defenderId);
+        await cols.playerWorld.updateOne(
+          { _id: playerWorldId(m.worldId, defenderId) },
+          { $set: { yieldRate: defYield }, $inc: { rev: 1 } },
+        );
+      }
+    } else {
+      // 守方胜：守军减员到 survivors；攻方 committed 兵全灭（出征已扣，无回师）。
+      await cols.tiles.updateOne(
+        { _id: m.toTile },
+        { $set: { garrison: res.defenderSurvivors }, $inc: { rev: 1 } },
+      );
+    }
+
+    const siege = await this.recordSiege(m, defenderId, res.outcome, t);
+    const lootStr = lootSummary(loot);
+    void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
+    void this.pushSiege(m.ownerId, siege, lootStr);
+    void this.pushSiege(defenderId, siege, lootStr);
+    const after = await cols.tiles.findOne({ _id: m.toTile });
+    if (after) {
+      void this.pushTile(m.ownerId, after);
+      void this.pushTile(defenderId, after);
+    }
+  }
+
+  /**
+   * 扫荡中立 / 资源格的 NPC 守军（sweep 到点）。不占地：得手缴获资源 + 生还回师退兵池，
+   * 失手则攻方兵力损耗（生还回池，可能为 0）。到达时若该格已被某玩家占领 → 退兵（扑空）。
+   */
+  private async applySweep(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
+    const { cols } = this.deps;
+    const occ = await cols.tiles.findOne({ _id: m.toTile });
+    if (occ?.ownerId) {
+      // 已被占领（应走 attack）→ 扑空退兵。
+      await this.refundTroops(pw, m.troops, t);
+      void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'recalled' }));
+      return;
+    }
+    const proc = proceduralTile(m.worldId, this.coordX(m.toTile), this.coordY(m.toTile));
+    const res = resolveSiege(m.troops, npcGarrison(proc.level));
+    let loot = emptyResources();
+    if (res.outcome === 'attacker_win') {
+      const rt: ResourceType = proc.resType ?? 'food';
+      loot = emptyResources();
+      loot[rt] = SWEEP_LOOT_PER_LEVEL * Math.max(1, proc.level);
+    }
+    // 生还回师（缴获并入攻方资源，封顶）。
+    await this.refundTroops(pw, res.attackerSurvivors, t, loot);
+    const siege = await this.recordSiege(m, undefined, res.outcome, t);
+    void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
+    void this.pushSiege(m.ownerId, siege, lootSummary(loot));
+  }
+
+  /** 写一条围攻战报（瞬态记录，§14.3 sieges）。replayRef 留空（S8-3b judge 复算后填）。 */
+  private async recordSiege(
+    m: MarchDoc,
+    defenderId: string | undefined,
+    outcome: SiegeOutcome,
+    t: number,
+  ): Promise<SiegeDoc> {
+    const doc: SiegeDoc = {
+      _id: siegeId(m.worldId, m.ownerId, t, ++this.siegeSeq),
+      worldId: m.worldId,
+      attackerId: m.ownerId,
+      ...(defenderId ? { defenderId } : {}),
+      tile: m.toTile,
+      outcome,
+      recomputed: false,
+      ts: t,
+    };
+    await this.deps.cols.sieges.insertOne(doc);
+    return doc;
+  }
+
+  /** 从败方搬走 SIEGE_LOOT_RATE 比例的资源到攻方（双方均结算 + 封顶）。返回实际掠得量。 */
+  private async transferLoot(
+    defender: PlayerWorldDoc,
+    attacker: PlayerWorldDoc,
+    t: number,
+  ): Promise<Record<ResourceType, number>> {
+    const defRes = this.settle(defender, t);
+    const loot = emptyResources();
+    for (const rt of RESOURCE_TYPES) loot[rt] = Math.floor((defRes[rt] ?? 0) * SIEGE_LOOT_RATE);
+    const defAfter = emptyResources();
+    for (const rt of RESOURCE_TYPES) defAfter[rt] = Math.max(0, (defRes[rt] ?? 0) - loot[rt]);
+    await this.deps.cols.playerWorld.updateOne(
+      { _id: defender._id },
+      { $set: { resources: defAfter, lastTickAt: t }, $inc: { rev: 1 } },
+    );
+    // 攻方收入掠夺（结算自身产出后并入，封顶）。
+    const atkRes = this.settle(attacker, t);
+    for (const rt of RESOURCE_TYPES) atkRes[rt] = Math.min(RESOURCE_CAP, (atkRes[rt] ?? 0) + loot[rt]);
+    await this.deps.cols.playerWorld.updateOne(
+      { _id: attacker._id },
+      { $set: { resources: atkRes, lastTickAt: t }, $inc: { rev: 1 } },
+    );
+    // attacker 内存副本同步，供同一次结算后续不重复 settle 时一致（此处之后不再读 attacker）。
+    attacker.resources = atkRes;
+    attacker.lastTickAt = t;
+    return loot;
+  }
+
+  /** 退兵回池（封顶 troopCap）+ 结算资源；可选并入缴获 loot（封顶 RESOURCE_CAP）。 */
+  private async refundTroops(
+    pw: PlayerWorldDoc,
+    troops: number,
+    t: number,
+    loot?: Record<ResourceType, number>,
+  ): Promise<void> {
     const resources = this.settle(pw, t);
+    if (loot) {
+      for (const rt of RESOURCE_TYPES) {
+        resources[rt] = Math.min(RESOURCE_CAP, (resources[rt] ?? 0) + (loot[rt] ?? 0));
+      }
+    }
     const next = Math.min(pw.troopCap, pw.troops + troops);
     await this.deps.cols.playerWorld.updateOne(
       { _id: pw._id },
@@ -658,4 +869,21 @@ export class WorldService {
       protectedUntil: t.protectedUntil ?? 0,
     });
   }
+  private async pushSiege(accountId: string, s: SiegeDoc, lootSummaryStr: string): Promise<void> {
+    await this.gateway.push(accountId, {
+      kind: 'siege_result',
+      siegeId: s._id,
+      tile: s.tile,
+      outcome: s.outcome,
+      lootSummary: lootSummaryStr,
+      replayRef: s.replayRef ?? '',
+    });
+  }
+}
+
+/** 掠夺资源人读摘要（仅非零项，如 "food+250,iron+40"；空 = ""）。供 siege_result push 直接展示。 */
+function lootSummary(loot: Record<ResourceType, number>): string {
+  return RESOURCE_TYPES.filter((rt) => (loot[rt] ?? 0) > 0)
+    .map((rt) => `${rt}+${loot[rt]}`)
+    .join(',');
 }
