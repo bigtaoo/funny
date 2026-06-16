@@ -169,5 +169,5 @@ npm run build   # 生产构建
 - [ ] `CAMPAIGN_LEVEL_ORDER` 用 `index.json` 还是 TS 常量数组维护？（影响新增关卡是否要改 TS）
 - [ ] story 键能否在编辑器侧做存在性校验（import zh.ts 的 `TranslationKey`）？还是保持自由文本。
 - [ ] 时间线纵轴用"攻击车道"还是"波次组"分行——多车道同批次的可读性权衡。
-- [ ] `hazards` / `crossWaypoints` 何时上可视化（当前原样透传保留）。
+- [~] `hazards` / `crossWaypoints` 何时上可视化：**`crossWaypoints` 已排期**——随 `CAMPAIGN_DESIGN.md §4.8`（旋钮落地批次）一起做：棋盘加 blocked 画笔 + 时间线出兵块 Inspector 加 waypoint 编辑（§4.8.5）。`hazards` 仍原样透传保留（HazardSystem 未排期）。
 - [ ] 将来若要内嵌真实棋盘预览 / 试玩，是否引 PixiJS + 复用 `GameRenderer`。
