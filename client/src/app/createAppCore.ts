@@ -11,7 +11,7 @@
 // app.ts for the thin PIXI shell that constructs PixiAppViews and calls start().
 
 import type { IPlatform } from '../platform/IPlatform';
-import type { AppViews, RoomView, FriendsView, ChatView, NetGameView } from './AppViews';
+import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView } from './AppViews';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, RecordingInputSource } from '../game';
 import type { OwnerId, PlayerStats, MatchStartInfo, Replay } from '../game';
 import { computeStars, remainingHpPct } from '../game/meta/campaignRewards';
@@ -96,6 +96,22 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   // ── Navigation state ────────────────────────────────────────────────────────
   let inLobby = false;
   let offlineMode = false;
+  /**
+   * Cached aggregate social unread (GET /social/badges). Kept across lobby
+   * re-shows (e.g. window resize) so the red dot survives a rebuild without a
+   * refetch; refreshed on lobby entry + nudged by live social pushes.
+   */
+  let socialBadgeTotal = 0;
+
+  /** Re-fetch the authoritative social badge total and push it into the lobby. */
+  async function refreshSocialBadge(view: LobbyView): Promise<void> {
+    if (!api || offlineMode || !platform.storage.getItem(TOKEN_KEY)) return;
+    try {
+      const b = await api.getSocialBadges();
+      socialBadgeTotal = b.total;
+      view.applySocialBadge(b.total);
+    } catch { /* best-effort red dot — leave the cached value in place */ }
+  }
 
   function goIntro(): void {
     inLobby = false;
@@ -112,14 +128,14 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     return platform.storage.getItem(PLAYER_NAME_KEY) || t('settings.guest');
   }
 
-  function goLobby(opts?: { offline?: boolean }): void {
+  function goLobby(opts?: { offline?: boolean; fromResize?: boolean }): void {
     if (opts?.offline !== undefined) offlineMode = opts.offline;
     inLobby = true;
     platform.onGameplayStop();
     const pvp = saveManager.get().pvp;
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const online = loggedIn && !!api && !!gatewayUrl;
-    views.showLobby({
+    const lobby = views.showLobby({
       onStartGame(_opponentName: string) { goGame(); },
       onStartRanked() { goRoom({ autoRanked: true }); },
       online,
@@ -136,6 +152,29 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onLogin: () => goLogin(),
       onLogout: loggedIn ? () => doLogout() : undefined,
     });
+
+    // Paint the cached social total immediately so the dot survives a resize
+    // rebuild without flicker; then refresh from the server (skip on resize).
+    lobby.applySocialBadge(socialBadgeTotal);
+    if (online) {
+      // Keep the gateway connected while idling in the lobby so presence + live
+      // social pushes (request / chat / mail) update the red dot in real time.
+      const onSocialPush = (): void => { void refreshSocialBadge(lobby); };
+      const session = getNetSession();
+      if (session) {
+        session.handlers = {
+          onMatchStart: (info) => goGameNet(info),
+          onFriendRequest: onSocialPush,
+          onFriendUpdate:  onSocialPush,
+          onChatMessage:   onSocialPush,
+          onMailNew:       onSocialPush,
+        };
+        session.connect();
+      }
+      if (!opts?.fromResize) void refreshSocialBadge(lobby);
+    } else {
+      socialBadgeTotal = 0;
+    }
   }
 
   function goSettings(): void {
@@ -684,7 +723,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   function onResized(): void {
-    if (inLobby) goLobby();
+    if (inLobby) goLobby({ fromResize: true });
   }
 
   return { start, onResized };

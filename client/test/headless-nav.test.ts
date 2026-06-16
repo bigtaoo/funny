@@ -49,4 +49,18 @@ describe('headless app core — offline navigation', () => {
     views.lobby!.onStartCampaign(0);
     expect(views.screen).toBe('campaignMap');
   });
+
+  it('lobby pushes a social badge through the returned view handle', async () => {
+    const platform = new HeadlessPlatform(); // offline → online features gated off
+    const views = new HeadlessAppViews();
+    const core = createAppCore(platform, views);
+
+    core.start();
+    views.intro!.onFinish();
+    await settle();
+    expect(views.screen).toBe('lobby');
+    // Offline: no /social/badges fetch, but the handle is still wired and the
+    // cached total (0) is applied — proving showLobby → LobbyView seam works.
+    expect(views.lastSocialBadge).toBe(0);
+  });
 });

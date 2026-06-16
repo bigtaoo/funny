@@ -199,6 +199,18 @@ export class FriendsScene implements Scene {
     return this.conversations.reduce((s, c) => s + (c.unread > 0 ? 1 : 0), 0);
   }
 
+  /**
+   * Viewport cull for scrolled lists: skip building rows whose on-screen span
+   * falls entirely outside the visible region. With the 100-friend cap a full
+   * rebuild is ~600-800 PIXI objects; since render() runs on every drag-move
+   * (~60 Hz), culling to the handful of visible rows keeps drag-scroll smooth on
+   * low-end / WeChat devices. Layout (cy) still advances for every row so the
+   * scroll height stays correct.
+   */
+  private rowVisible(yTop: number, rowH: number): boolean {
+    return yTop + rowH >= this.regionTop && yTop <= this.regionBottom;
+  }
+
   // ── Input ──────────────────────────────────────────────────────────────────
 
   private onPointerDown(x: number, y: number): void {
@@ -455,9 +467,11 @@ export class FriendsScene implements Scene {
     // Incoming requests first (red-dot priority).
     if (this.incoming.length > 0) {
       sectionLabel('friends.requests', this.incoming.length);
+      const reqH = Math.round(h * 0.09);
       for (const r of this.incoming) {
-        this.drawRequestRow(layer, r, cy, screenY(cy));
-        cy += Math.round(h * 0.09) + rowGap;
+        const sy = screenY(cy);
+        if (this.rowVisible(sy, reqH)) this.drawRequestRow(layer, r, cy, sy);
+        cy += reqH + rowGap;
       }
       cy += Math.round(h * 0.01);
     }
@@ -473,9 +487,11 @@ export class FriendsScene implements Scene {
       const sorted = [...this.friends].sort(
         (a, b) => (a.online === b.online ? a.displayName.localeCompare(b.displayName) : a.online ? -1 : 1),
       );
+      const fH = Math.round(h * 0.10);
       for (const f of sorted) {
-        this.drawFriendRow(layer, f, cy, screenY(cy));
-        cy += Math.round(h * 0.10) + rowGap;
+        const sy = screenY(cy);
+        if (this.rowVisible(sy, fH)) this.drawFriendRow(layer, f, cy, sy);
+        cy += fH + rowGap;
       }
     }
 
@@ -591,9 +607,11 @@ export class FriendsScene implements Scene {
     let cy = Math.round(h * 0.01);
     const screenY = (c: number) => this.regionTop + c - this.scrollY;
     const rowGap = Math.round(h * 0.014);
+    const rh = Math.round(h * 0.10);
     for (const c of this.conversations) {
-      this.drawConvRow(layer, c, screenY(cy));
-      cy += Math.round(h * 0.10) + rowGap;
+      const sy = screenY(cy);
+      if (this.rowVisible(sy, rh)) this.drawConvRow(layer, c, sy);
+      cy += rh + rowGap;
     }
     this.maxScroll = Math.max(0, cy - regionH);
     if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;
@@ -647,9 +665,11 @@ export class FriendsScene implements Scene {
     let cy = Math.round(h * 0.01);
     const screenY = (c: number) => this.regionTop + c - this.scrollY;
     const rowGap = Math.round(h * 0.014);
+    const rh = Math.round(h * 0.10);
     for (const m of this.mail) {
-      this.drawMailRow(layer, m, screenY(cy));
-      cy += Math.round(h * 0.10) + rowGap;
+      const sy = screenY(cy);
+      if (this.rowVisible(sy, rh)) this.drawMailRow(layer, m, sy);
+      cy += rh + rowGap;
     }
     this.maxScroll = Math.max(0, cy - regionH);
     if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;

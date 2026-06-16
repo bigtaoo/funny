@@ -31,7 +31,7 @@ import type { ILayout } from './layout/ILayout';
 import { installGlobalErrorHandlers } from './net/log';
 import { setBakeRenderer } from './render/bake';
 import { createAppCore } from './app/createAppCore';
-import type { AppViews, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps } from './app/AppViews';
+import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps } from './app/AppViews';
 
 /**
  * The PIXI implementation of AppViews: each show*() runs the same
@@ -72,9 +72,11 @@ class PixiAppViews implements AppViews {
     this.manager.goto(new IntroScene(this.layout, this.input, cb));
   }
 
-  showLobby(cb: LobbySceneCallbacks): void {
-    this.manager.goto(new LobbyScene(this.layout, this.input, cb));
+  showLobby(cb: LobbySceneCallbacks): LobbyView {
+    const scene = new LobbyScene(this.layout, this.input, cb);
+    this.manager.goto(scene);
     window.addEventListener('resize', this.onResize);
+    return { applySocialBadge: (n) => scene.applySocialBadge(n) };
   }
 
   showSettings(cb: SettingsSceneCallbacks): void {

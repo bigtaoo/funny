@@ -6,6 +6,7 @@
 
 import type {
   AppViews,
+  LobbyView,
   RoomView,
   FriendsView,
   ChatView,
@@ -72,6 +73,8 @@ export class HeadlessAppViews implements AppViews {
   friends?: FriendsSceneCallbacks;
   chat?: ChatSceneCallbacks;
   /** Last room_state the core forwarded to the room view (carries the room code). */
+  /** Last aggregate social badge total the core pushed into the lobby handle. */
+  lastSocialBadge?: number;
   lastRoomState?: RoomState;
   /** Last gateway net-state forwarded to the room view (wait for 'open' before acting). */
   lastRoomNetState?: NetState;
@@ -81,7 +84,12 @@ export class HeadlessAppViews implements AppViews {
   private replayMatch: { engine: IGameEngine; endFrame: number } | null = null;
 
   showIntro(cb: IntroSceneCallbacks): void { this.screen = 'intro'; this.intro = cb; }
-  showLobby(cb: LobbySceneCallbacks): void { this.screen = 'lobby'; this.lobby = cb; }
+  showLobby(cb: LobbySceneCallbacks): LobbyView {
+    this.screen = 'lobby';
+    this.lobby = cb;
+    this.lastSocialBadge = undefined;
+    return { applySocialBadge: (n) => { this.lastSocialBadge = n; } };
+  }
   showSettings(cb: SettingsSceneCallbacks): void { this.screen = 'settings'; this.settings = cb; }
   showLogin(cb: LoginSceneCallbacks): void { this.screen = 'login'; this.login = cb; }
   showShop(cb: ShopSceneCallbacks): void { this.screen = 'shop'; this.shop = cb; }

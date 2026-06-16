@@ -37,6 +37,12 @@ import type { RoomSceneCallbacks } from '../scenes/RoomScene';
 import type { FriendsSceneCallbacks } from '../scenes/FriendsScene';
 import type { ChatSceneCallbacks } from '../scenes/ChatScene';
 
+/** Live handle for the lobby scene — the core pushes the aggregate social badge into it. */
+export interface LobbyView {
+  /** Update the social (friends/chat/mail) unread total shown on the bottom-nav dot. */
+  applySocialBadge(total: number): void;
+}
+
 /** Live handle for the room scene — the core forwards NetSession control events to it. */
 export interface RoomView {
   applyRoomState(s: RoomState): void;
@@ -84,7 +90,8 @@ export interface ResultViewProps {
  */
 export interface AppViews {
   showIntro(cb: IntroSceneCallbacks): void;
-  showLobby(cb: LobbySceneCallbacks): void;
+  /** Lobby (home). Returns a handle so the core can push live social-badge updates. */
+  showLobby(cb: LobbySceneCallbacks): LobbyView;
   showSettings(cb: SettingsSceneCallbacks): void;
   showLogin(cb: LoginSceneCallbacks): void;
   showShop(cb: ShopSceneCallbacks): void;

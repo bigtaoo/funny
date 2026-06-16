@@ -126,6 +126,13 @@ export class LobbyScene implements Scene {
   /** Hit rect for the top-left profile chip (opens SettingsScene). */
   private profileChipRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
+  /** Aggregate social unread (friends + chat + mail) → red dot on the social nav slot. */
+  private socialBadge = 0;
+  /** Re-drawn layer for the social badge so updates don't rebuild the whole nav bar. */
+  private socialBadgeLayer: PIXI.Container | null = null;
+  /** Set on destroy so a late-resolving badge fetch skips touching a dead container. */
+  private destroyed = false;
+
   private readonly unsubs: Array<() => void> = [];
 
   constructor(layout: ILayout, input: InputManager, cb: LobbySceneCallbacks) {
@@ -157,9 +164,22 @@ export class LobbyScene implements Scene {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.unsubs.forEach(u => u());
     this.titleBoil?.destroy();
     this.titleBoil = null;
+    this.socialBadgeLayer = null;
+  }
+
+  /**
+   * Update the aggregate social unread count (friends requests + unread chats +
+   * unread mail). The core fetches GET /social/badges on lobby entry and forwards
+   * push-driven increments here; we redraw just the badge dot, not the nav bar.
+   */
+  applySocialBadge(total: number): void {
+    if (this.destroyed) return;
+    this.socialBadge = Math.max(0, total | 0);
+    this.drawSocialBadge();
   }
 
   // ── Input ──────────────────────────────────────────────────────────────────
@@ -428,10 +448,44 @@ export class LobbyScene implements Scene {
       else if (i === 4) this.socialNavRect = navRect;
     });
 
+    // Aggregate social unread badge (count bubble) drawn over the social slot.
+    // Lives in its own layer so applySocialBadge() can refresh it cheaply.
+    this.socialBadgeLayer = new PIXI.Container();
+    navBg.addChild(this.socialBadgeLayer);
+    this.drawSocialBadge();
+
     // VS overlay
     this.vsLayer = this.buildVsLayer(w, h);
     this.vsLayer.visible = false;
     this.container.addChild(this.vsLayer);
+  }
+
+  /** Draw (or clear) the social unread bubble at the top-right of the social nav dot. */
+  private drawSocialBadge(): void {
+    const layer = this.socialBadgeLayer;
+    if (!layer) return;
+    layer.removeChildren();
+    if (this.socialBadge <= 0) return;
+
+    const s = this.socialNavRect;
+    const navH = s.h;
+    const dotR  = Math.round(navH * 0.17);
+    const cx = s.x + s.w / 2 + dotR;
+    const cy = s.y + navH / 2 - Math.round(navH * 0.18) - dotR;
+
+    const label = this.socialBadge > 99 ? '99+' : String(this.socialBadge);
+    const txtNode = txt(label, Math.round(navH * 0.24), 0xffffff, true);
+    txtNode.anchor.set(0.5, 0.5);
+    const r = Math.max(Math.round(navH * 0.16), txtNode.width / 2 + Math.round(navH * 0.08));
+
+    const g = new PIXI.Graphics();
+    g.beginFill(C.red);
+    g.lineStyle(2, C.light, 0.9);
+    g.drawCircle(cx, cy, r);
+    g.endFill();
+    layer.addChild(g);
+    txtNode.x = cx; txtNode.y = cy;
+    layer.addChild(txtNode);
   }
 
   /**
