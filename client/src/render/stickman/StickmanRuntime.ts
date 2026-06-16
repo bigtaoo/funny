@@ -43,11 +43,12 @@ export interface TaoAsset {
   boneLengthScales:  Map<string, number>;
   attachmentPoints:  Map<string, TaoAttachmentPoint>;   // id → attachment
   /**
-   * Per-bone white outline texture (silhouette dilated outward by a few px, RGB
-   * forced white so a per-unit `tint` recolors it to the faction ink). Generated
-   * once at load (cached on the shared asset), driven at runtime by a 1-sprite-
-   * per-bone back layer — the cheap, device-friendly alternative to a per-unit
-   * outline filter. Shadow has no outline. Empty if generation was skipped.
+   * Per-bone white outline texture (a detached contour line: the band of pixels
+   * just outside the silhouette, RGB forced white so a `tint` recolors it).
+   * Generated once at load (cached on the shared asset). Used ONLY for the
+   * momentary hit-flash — a brief contour pop on impact — never a constant
+   * overlay (a static traced line competes with the hand-drawn ink linework and
+   * reads as eye-straining moiré). Empty if generation was skipped (headless).
    */
   outlineTextures:   Map<string, PIXI.Texture>;          // boneId → outline texture
   /** Outline texture anchor (the bordered texture shifts the bone pivot). */
@@ -63,20 +64,14 @@ export interface TaoAsset {
 const STICKMAN_SCALE = 0.27;
 
 /**
- * Faction outline geometry, in *screen* pixels (per-bone radii are derived from
- * these so the line reads the same regardless of each bone's baked texture scale).
- * The outline is a thin *detached* contour line, not a solid silhouette: a paper-
- * colored GAP separates the body from the LINE, so it reads as a drawn outline
- * around the character rather than a hugging colored garment.
+ * Hit-flash outline geometry, in *screen* pixels (per-bone radii derive from
+ * these so the line reads the same regardless of each bone's baked scale). The
+ * outline is a thin *detached* contour: a paper gap separates the body from the
+ * line. Slightly bolder than a hairline since it only ever shows for a brief
+ * impact flash, where a punchy ring reads best.
  */
-const OUTLINE_GAP_PX   = 1.6;   // transparent gap between body edge and the line
-const OUTLINE_WIDTH_PX = 1.2;   // thickness of the contour line itself
-/**
- * Outline opacity — the faction inks are saturated, so a fully opaque line reads
- * too harsh. ~0.38 softens it to a light pencil/marker trace (it sits mostly over
- * the paper gap, so the slight background-dependence of alpha is imperceptible).
- */
-const OUTLINE_ALPHA    = 0.38;
+const OUTLINE_GAP_PX   = 1.0;   // transparent gap between body edge and the line
+const OUTLINE_WIDTH_PX = 2.4;   // thickness of the contour line itself
 
 /** Map logical UnitState values → animation clip names. */
 const STATE_ANIM: Record<string, string> = {
@@ -92,12 +87,6 @@ const STATE_ANIM: Record<string, string> = {
 export interface StickmanOptions {
   /** Mirror the character horizontally (for Top-side / enemy units). */
   mirrorX?: boolean;
-  /**
-   * Faction outline tint (e.g. theme.factionInk.friend / .enemy). When set, a
-   * white outline layer renders behind the bones tinted to this color — the
-   * friend/foe signal for full-color art sprites. `null` / omitted = no outline.
-   */
-  outlineColor?: number | null;
 }
 
 export class StickmanRuntime {
@@ -105,12 +94,12 @@ export class StickmanRuntime {
   readonly container: PIXI.Container;
 
   private readonly sprites: Map<string, PIXI.Sprite> = new Map();
-  /** Outline back-layer sprites, keyed by boneId (parallel to {@link sprites}). */
+  /** Hit-flash outline sprites, keyed by boneId (parallel to {@link sprites}). */
   private readonly outlineSprites: Map<string, PIXI.Sprite> = new Map();
-  /** Container holding all outline sprites, below the real bones, above the shadow. */
+  /** Container holding all outline sprites, in front of the bones (the flash pops over the body). */
   private readonly outlineLayer: PIXI.Container;
-  /** Current faction outline tint, or null when no outline is shown. */
-  private outlineColor: number | null;
+  /** When false, outline sprites are hidden and not synced (the common case). */
+  private outlineFlashing = false;
   private readonly asset:   TaoAsset;
 
   private currentClip:     AnimationClip | null = null;
@@ -119,9 +108,9 @@ export class StickmanRuntime {
 
   constructor(asset: TaoAsset, options: StickmanOptions = {}) {
     this.asset        = asset;
-    this.outlineColor = options.outlineColor ?? null;
     this.container    = new PIXI.Container();
     this.outlineLayer = new PIXI.Container();
+    this.outlineLayer.visible = false;   // shown only during a hit flash
     this.container.scale.set(
       STICKMAN_SCALE * (options.mirrorX ? -1 : 1),
       STICKMAN_SCALE,
@@ -135,49 +124,52 @@ export class StickmanRuntime {
       return za - zb;
     });
 
-    // Layering: [shadow] → [outline layer] → [bone sprites]. A single back layer
-    // for all outlines (rather than one behind each bone) makes overlapping limbs
-    // read as one "paper cut-out" silhouette — inner seams hide behind front parts.
-    let outlineLayerAdded = false;
     for (const boneId of boneIds) {
       const tex     = asset.textures.get(boneId)!;
       const binding = asset.bindings.get(boneId);
       const sprite  = new PIXI.Sprite(tex);
       sprite.name   = boneId;
       if (boneId === 'shadow') {
-        // Shadow is centred over its attachment position, stays below the outline.
+        // Shadow is centred over its attachment position, stays below the bones.
         sprite.anchor.set(0.5, 0.5);
-        this.sprites.set(boneId, sprite);
-        this.container.addChild(sprite);
-        continue;
+      } else if (binding) {
+        sprite.anchor.set(binding.anchorX, binding.anchorY);
       }
-
-      if (!outlineLayerAdded) {
-        this.container.addChild(this.outlineLayer);
-        outlineLayerAdded = true;
-      }
-
-      if (binding) sprite.anchor.set(binding.anchorX, binding.anchorY);
       this.sprites.set(boneId, sprite);
       this.container.addChild(sprite);
 
-      // Matching outline sprite (white texture, tinted to faction ink).
+      // Matching outline sprite (white, tintable) — hidden until a hit flash.
       const outTex    = asset.outlineTextures.get(boneId);
       const outAnchor = asset.outlineAnchors.get(boneId);
       if (outTex && outAnchor) {
-        const outline = new PIXI.Sprite(outTex);
-        outline.name = boneId;
+        const outline   = new PIXI.Sprite(outTex);
+        outline.name    = boneId;
         outline.anchor.set(outAnchor.ax, outAnchor.ay);
-        outline.tint    = this.outlineColor ?? 0xffffff;
-        outline.visible = this.outlineColor != null;
+        outline.visible = false;
         this.outlineSprites.set(boneId, outline);
         this.outlineLayer.addChild(outline);
       }
     }
-    if (!outlineLayerAdded) this.container.addChild(this.outlineLayer);
+    // Outline layer on top so the flash pops over the body silhouette.
+    this.container.addChild(this.outlineLayer);
 
     // Start with idle (falls back gracefully if the clip doesn't exist).
     this.play('idle');
+  }
+
+  /**
+   * Toggle the momentary hit-flash outline. `color` tints the contour (a hot
+   * impact color reads better than white, which is near-invisible over the paper
+   * gap); `alpha` fades it out across the flash. `null` clears the flash.
+   * Outline transforms are synced in {@link _applyPose} only while flashing, so
+   * an idle unit pays nothing for this.
+   */
+  setOutlineFlash(color: number | null, alpha = 1): void {
+    this.outlineFlashing      = color != null;
+    this.outlineLayer.visible = this.outlineFlashing;
+    if (color != null) {
+      for (const o of this.outlineSprites.values()) { o.tint = color; o.alpha = alpha; }
+    }
   }
 
   // ── Animation control ─────────────────────────────────────────────────────
@@ -221,14 +213,7 @@ export class StickmanRuntime {
       STICKMAN_SCALE * (options.mirrorX ? -1 : 1),
       STICKMAN_SCALE,
     );
-    // Re-apply faction tint: a pooled runtime may be reused for the opposite side.
-    if (options.outlineColor !== undefined) {
-      this.outlineColor = options.outlineColor;
-      for (const outline of this.outlineSprites.values()) {
-        outline.tint    = this.outlineColor ?? 0xffffff;
-        outline.visible = this.outlineColor != null;
-      }
-    }
+    this.setOutlineFlash(null);   // a reused runtime must not carry a stale flash
     this.currentClip     = null;
     this.currentClipName = '';
     this.time            = 0;
@@ -264,6 +249,29 @@ export class StickmanRuntime {
    * to place a hit spark on the torso instead of the grid-cell centre.
    * Returns null if the attachment point or current pose is unavailable.
    */
+  /**
+   * Ground anchor of the shadow: screen-space offset from the container origin
+   * (already scaled + mirrored) plus the shadow ellipse half-extents in screen
+   * px. Used to place the faction ground marker exactly over the shadow rather
+   * than at a guessed Y. Null if the .tao has no shadow or no current clip.
+   */
+  getShadowGround(): { x: number; y: number; rx: number; ry: number } | null {
+    const pt = this.asset.attachmentPoints.get('shadow');
+    if (!pt || !this.currentClip) return null;
+    const transforms = sampleClip(this.currentClip, this.time);
+    const worldPos   = Skeleton.computeFK(0, 0, transforms, this.asset.boneLengthScales);
+    const parent     = worldPos.get(pt.parentBone) ?? worldPos.get('root');
+    if (!parent) return null;
+    const sx = this.container.scale.x;   // signed (negative when mirrored)
+    const sy = this.container.scale.y;
+    return {
+      x:  (parent.ex + pt.offsetX) * sx,
+      y:  (parent.ey + pt.offsetY) * sy,
+      rx: (pt.shadowW ?? 20) * Math.abs(sx),
+      ry: (pt.shadowH ?? 6)  * sy,
+    };
+  }
+
   getAttachmentOffset(id: string): { x: number; y: number } | null {
     const pt = this.asset.attachmentPoints.get(id);
     if (!pt || !this.currentClip) return null;
@@ -320,16 +328,18 @@ export class StickmanRuntime {
       sprite.alpha   = alpha;
       sprite.visible = alpha > 0;
 
-      // Outline sprite shares the bone's pivot/transform; its own (bordered)
-      // anchor was pre-computed so identical x/y/rotation/scale align them.
-      const outline = this.outlineSprites.get(boneId);
-      if (outline) {
-        outline.x        = sprite.x;
-        outline.y        = sprite.y;
-        outline.rotation = sprite.rotation;
-        outline.scale.set(sprite.scale.x, sprite.scale.y);
-        outline.alpha    = alpha * OUTLINE_ALPHA;
-        outline.visible  = this.outlineColor != null && alpha > 0;
+      // While a hit flash is active, the outline sprite shares the bone's
+      // pivot/transform; its own (bordered) anchor was pre-computed so identical
+      // x/y/rotation/scale align them. Skipped entirely when not flashing.
+      if (this.outlineFlashing) {
+        const outline = this.outlineSprites.get(boneId);
+        if (outline) {
+          outline.x        = sprite.x;
+          outline.y        = sprite.y;
+          outline.rotation = sprite.rotation;
+          outline.scale.set(sprite.scale.x, sprite.scale.y);
+          outline.visible  = alpha > 0;
+        }
       }
     }
   }
@@ -449,10 +459,10 @@ export class StickmanRuntime {
       textures.set(boneId, new PIXI.Texture(baseTex, new PIXI.Rectangle(x, y, w, h)));
     }
 
-    // ── Faction outline textures (white silhouette, dilated; cached once) ──────
-    // Generated from the spritesheet bitmap at load — one extra static sprite per
-    // bone at runtime, no per-unit filter. Falls back to no outline if the canvas
-    // bitmap can't be read (headless / tainted) — the game still renders fine.
+    // ── Hit-flash outline textures (white contour, dilated; cached once) ───────
+    // Generated from the spritesheet bitmap at load — reused, hidden, shown only
+    // during a hit flash. Falls back to no outline if the canvas bitmap can't be
+    // read (headless / tainted) — the game still renders fine.
     const outlineTextures = new Map<string, PIXI.Texture>();
     const outlineAnchors  = new Map<string, { ax: number; ay: number }>();
     try {
@@ -513,10 +523,9 @@ function clampInt(v: number, lo: number, hi: number): number {
 /**
  * Build a white *detached contour line* texture for one bone. The line occupies
  * the band of distance ∈ (gap, gap+width] outside the bone's silhouette — i.e. a
- * `gap`-px transparent margin separates the body from a `width`-px line, so it
- * reads as a drawn outline around the character, not a hugging colored garment.
- * Computed as (dilate by gap+width) AND NOT (dilate by gap), each a separable
- * binary box-dilation. RGB is forced white so a per-unit `tint` recolors it.
+ * `gap`-px transparent margin separates the body from a `width`-px line. Computed
+ * as (dilate by gap+width) AND NOT (dilate by gap), each a separable binary
+ * box-dilation. RGB is forced white so a per-flash `tint` recolors it.
  *
  * Returns null if the canvas bitmap can't be read (e.g. tainted / headless).
  */

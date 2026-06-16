@@ -5,6 +5,8 @@ import { ILayout } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
 import { t } from '../i18n';
 import { TICK_RATE } from '../game/math/fixed';
+import { SketchPen } from './sketch';
+import { palette } from './theme';
 import infantryArtUrl from '../assets/infantry.png';
 import archerArtUrl from '../assets/archer.png';
 import shieldBearerArtUrl from '../assets/shieldbearer.png';
@@ -13,7 +15,6 @@ import towerArtUrl from '../assets/game_archer_barracks.png';
 
 const CARD_BG              = 0xfaf6ee;
 const CARD_BORDER          = 0x333333;
-const CARD_SELECTED_BORDER = 0xffcc00;
 const CARD_LIFT            = 14;
 
 const BAR_HEIGHT           = 3;
@@ -239,24 +240,35 @@ export class HandView {
   private configureSlot(
     c: PIXI.Container,
     card: CardDefinition | null,
-    _index: number,
+    index: number,
     ink: number,
     isSelected: boolean,
     cardW: number,
     cardH: number,
   ): void {
     const canAfford   = card !== null && ink >= card.cost;
-    const borderColor = isSelected ? CARD_SELECTED_BORDER : CARD_BORDER;
-    const borderWidth = isSelected ? 3 : 2;
 
     const nameStyle = (c.getChildByName('name') as PIXI.Text).style;
     nameStyle.wordWrapWidth = cardW - 8;
 
     const bg = c.getChildByName('bg') as PIXI.Graphics;
-    bg.lineStyle(borderWidth, borderColor);
-    bg.beginFill(CARD_BG);
-    bg.drawRoundedRect(0, 0, cardW, cardH, 4);
-    bg.endFill();
+    if (isSelected) {
+      // Selected: faint border + a hand-drawn faction-blue scribble frame (the
+      // outline look, used where it fits — a discrete selection affordance, not
+      // a constant overlay). Seeded by slot index so the scrawl is stable across
+      // redraws while selected (sync only rebuilds on state change).
+      bg.lineStyle(1, CARD_BORDER, 0.5);
+      bg.beginFill(CARD_BG);
+      bg.drawRoundedRect(0, 0, cardW, cardH, 4);
+      bg.endFill();
+      const pen = new SketchPen(bg, (index + 1) * 0x9e3779b1 >>> 0 || 1);
+      pen.rect(-2, -2, cardW + 4, cardH + 4, { color: palette.inkBlue, width: 2.6, jitter: 1.2 });
+    } else {
+      bg.lineStyle(2, CARD_BORDER);
+      bg.beginFill(CARD_BG);
+      bg.drawRoundedRect(0, 0, cardW, cardH, 4);
+      bg.endFill();
+    }
 
     if (card) {
       (c.getChildByName('type') as PIXI.Text).text = this.cardTypeChar(card);

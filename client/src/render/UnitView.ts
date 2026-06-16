@@ -9,7 +9,7 @@ import type { TaoAsset } from './stickman/StickmanRuntime';
 import infantryTaoUrl from '../assets/infantry.tao';
 import archerTaoUrl from '../assets/archer.tao';
 import shieldBearerTaoUrl from '../assets/shieldbearer.tao';
-import { fx, palette, factionInk } from './theme';
+import { fx, factionInk } from './theme';
 import { drawStickmanDraft } from './stickmanDraft';
 
 /**
@@ -67,6 +67,40 @@ const DRAFT_SEED: Record<UnitType, number> = {
 };
 
 const RADIUS        = 10;
+
+/**
+ * Faction ground marker — a soft highlighter-style color wash under the unit's
+ * feet (blue = us / red = enemy). This is the friend/foe signal for full-color
+ * art sprites that can't be body-tinted (art-direction §3.2). A low-frequency
+ * ground blob deliberately replaces the old per-bone contour outline: a thin
+ * traced line competed with the hand-drawn ink linework (high-frequency "moiré"
+ * vibration → eye strain); a marker patch at the feet reads instantly without
+ * touching the character art, and matches the stationery look.
+ */
+const MARKER_Y = 12;   // fallback feet ground Y (circle units / no shadow)
+
+/**
+ * Hit-flash outline color — a hot orange impact spark. NOT white: the detached
+ * contour sits over the paper-colored gap, where white is near-invisible against
+ * the aged-paper background; a saturated warm tone reads instantly as a hit.
+ */
+const HIT_FLASH_COLOR = 0xff5a2b;
+
+/**
+ * Faction ground marker — a soft highlighter wash overlaid on the unit's shadow
+ * (cx, cy = shadow center; rx, ry = wash half-extents). Two overlapping ellipses
+ * give an uneven marker feel rather than a flat disc.
+ */
+function drawFactionMarker(
+  g: PIXI.Graphics, side: Side,
+  cx: number, cy: number, rx: number, ry: number,
+): void {
+  const color = side === Side.Bottom ? factionInk.friend : factionInk.enemy;
+  g.clear();
+  g.beginFill(color, 0.16); g.drawEllipse(cx,       cy,       rx,        ry);        g.endFill();
+  g.beginFill(color, 0.22); g.drawEllipse(cx + 1.5, cy + 0.5, rx * 0.74, ry * 0.74); g.endFill();
+}
+
 const HP_BAR_WIDTH  = 20;
 const HP_BAR_HEIGHT = 3;
 /** HP bar Y offset above the unit centre (works for both circle and stickman). */
@@ -256,6 +290,28 @@ export class UnitView {
     const sprite = this.sprites.get(unitId);
     if (!sprite) return;
 
+    const runtime = this.stickmanRuntimes.get(unitId);
+    if (runtime) {
+      // Hit-impact contour flash: a hot outline pops around the figure for a few
+      // frames, fading out. Reuses the (otherwise idle) outline textures — the
+      // right home for the outline look. Kept short + soft (peak alpha < 1) so
+      // dense melee, where both fighters take damage every exchange, isn't noisy.
+      const TOTAL = 4;
+      const PEAK  = 0.7;
+      let frames  = TOTAL;
+      const tick = (): void => {
+        if (!this.sprites.has(unitId)) { PIXI.Ticker.shared.remove(tick); runtime.setOutlineFlash(null); return; }
+        runtime.setOutlineFlash(HIT_FLASH_COLOR, (frames / TOTAL) * PEAK);
+        if (--frames <= 0) {
+          PIXI.Ticker.shared.remove(tick);
+          runtime.setOutlineFlash(null);
+        }
+      };
+      PIXI.Ticker.shared.add(tick);
+      return;
+    }
+
+    // Circle / draft placeholder units (no outline textures): alpha blink fallback.
     let frames = 6;
     const tick = (): void => {
       if (!this.sprites.has(unitId)) { PIXI.Ticker.shared.remove(tick); return; }
@@ -320,6 +376,17 @@ export class UnitView {
     return unit.side === this.localSide ? Side.Bottom : Side.Top;
   }
 
+  /**
+   * Draw the faction ground marker for a stickman unit, aligned to its shadow
+   * (slightly larger than the shadow so it reads as a colored patch under it).
+   * Falls back to a default ground ellipse when the shadow ground is unavailable.
+   */
+  private drawUnitMarker(marker: PIXI.Graphics, runtime: StickmanRuntime, side: Side): void {
+    const g = runtime.getShadowGround();
+    if (g) drawFactionMarker(marker, side, g.x, g.y, g.rx * 1.3, g.ry * 1.3);
+    else   drawFactionMarker(marker, side, 0, MARKER_Y, 12, 4.4);
+  }
+
   private acquireSprite(unit: Unit): PIXI.Container {
     const asset = this.assets.get(unit.unitType);
     if (asset) return this.buildStickmanContainer(unit, asset);
@@ -331,19 +398,18 @@ export class UnitView {
   private buildStickmanContainer(unit: Unit, asset: TaoAsset): PIXI.Container {
     const side    = this.renderSide(unit);
     const mirrorX = side === Side.Top;
-    // Faction outline — blue = us / red = enemy (the friend/foe signal for the
-    // full-color art sprites, which can't be body-tinted). Keyed off render side
-    // so the joiner's own units stay "us"-colored. See StickmanRuntime outline layer.
-    const outlineColor = side === Side.Bottom ? factionInk.friend : factionInk.enemy;
     this.stickmanTypes.set(unit.id, unit.unitType);
 
     // Reuse a pooled (wrapper + runtime) pair of the same type when available.
     const pooled = this.stickmanPools.get(unit.unitType)?.pop();
     if (pooled) {
-      pooled.runtime.reset({ mirrorX, outlineColor });
+      pooled.runtime.reset({ mirrorX });
       pooled.wrapper.visible = true;
       pooled.wrapper.alpha   = 1;
       pooled.wrapper.scale.set(1);
+      // A pooled wrapper may be reused for the opposite side — recolor + reposition.
+      const marker = pooled.wrapper.getChildByName('factionMarker') as PIXI.Graphics | null;
+      if (marker) this.drawUnitMarker(marker, pooled.runtime, side);
       const hpBg   = pooled.wrapper.getChildByName('hpBg')   as PIXI.Graphics;
       const hpFill = pooled.wrapper.getChildByName('hpFill') as PIXI.Graphics;
       hpBg.visible = false;
@@ -356,8 +422,13 @@ export class UnitView {
     const wrapper = new PIXI.Container();
     wrapper.visible = true;
 
-    const runtime = new StickmanRuntime(asset, { mirrorX, outlineColor });
+    // Faction ground marker — drawn first so it sits behind the figure (under the shadow).
+    const marker = new PIXI.Graphics();
+    marker.name = 'factionMarker';
+
+    const runtime = new StickmanRuntime(asset, { mirrorX });
     this.stickmanRuntimes.set(unit.id, runtime);
+    this.drawUnitMarker(marker, runtime, side);
 
     // ── HP bar (positioned above the character's head) ────────────────────
     // At STICKMAN_SCALE=0.27, spine (68px) + head (24px) ≈ 25px above root.
@@ -375,7 +446,7 @@ export class UnitView {
     hpFill.name    = 'hpFill';
     hpFill.visible = false;
 
-    wrapper.addChild(runtime.container, hpBg, hpFill);
+    wrapper.addChild(marker, runtime.container, hpBg, hpFill);
     return wrapper;
   }
 
@@ -391,12 +462,9 @@ export class UnitView {
     // Keyed off render side so the joiner's own units stay "us"-colored.
     drawStickmanDraft(body, this.renderSide(unit), DRAFT_HEIGHT[unit.unitType], DRAFT_SEED[unit.unitType]);
 
-    // Faint pencil ground shadow so the figure sits on the board.
+    // Faction ground marker (also grounds the figure on the board).
     const ring = c.getChildByName('ring') as PIXI.Graphics;
-    ring.clear();
-    ring.beginFill(palette.pencil, 0.16);
-    ring.drawEllipse(0, RADIUS + 2, RADIUS * 0.9, RADIUS * 0.32);
-    ring.endFill();
+    drawFactionMarker(ring, this.renderSide(unit), 0, MARKER_Y, RADIUS * 1.1, RADIUS * 0.42);
 
     return c;
   }

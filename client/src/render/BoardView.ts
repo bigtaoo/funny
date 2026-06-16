@@ -19,9 +19,19 @@ const BASE_ALPHA_MIN    = 0.65;
 const BASE_ALPHA_RANGE  = 0.35;    // 0.65 → 1.0
 const BASE_PULSE_SPEED  = Math.PI / 2; // rad/s → period = 4s
 
+// Base under-attack: a hand-drawn outline pops around the base and fades out.
+const BASE_HIT_PULSE_SEC   = 0.5;   // duration of one pulse
+const BASE_HIT_PULSE_GROW  = 0.18;  // outline expands by this fraction as it fades
+
 interface BaseRef {
   sprite:   PIXI.Sprite;
   crackGfx: PIXI.Graphics;
+  /** Hand-drawn outline shown briefly when the base takes damage. */
+  pulseGfx: PIXI.Graphics;
+  /** Remaining seconds of the current hit pulse (0 = idle). */
+  pulseT:   number;
+  /** Monotonic seed so each pulse scrawls with a fresh hand. */
+  pulseSeed: number;
   rect:     Rect;
 }
 
@@ -86,12 +96,28 @@ export class BoardView {
     this.applyBasePulse(this.playerBase, t, 0);
     // Enemy base slightly out of phase
     this.applyBasePulse(this.enemyBase,  t, 1.2);
+    this.applyHitPulse(this.playerBase, dt);
+    this.applyHitPulse(this.enemyBase,  dt);
   }
 
   private applyBasePulse(base: BaseRef | null, t: number, phaseOffset: number): void {
     if (!base) return;
     const v = Math.sin(t * BASE_PULSE_SPEED + phaseOffset);
     base.sprite.alpha = BASE_ALPHA_MIN + BASE_ALPHA_RANGE * (v * 0.5 + 0.5); // map -1..1 → 0..1
+  }
+
+  /** Animate the under-attack outline: fade out + slight expand, then clear. */
+  private applyHitPulse(base: BaseRef | null, dt: number): void {
+    if (!base || base.pulseT <= 0) return;
+    base.pulseT -= dt;
+    if (base.pulseT <= 0) {
+      base.pulseT = 0;
+      base.pulseGfx.clear();
+      return;
+    }
+    const frac = base.pulseT / BASE_HIT_PULSE_SEC;   // 1 → 0
+    base.pulseGfx.alpha = frac;
+    base.pulseGfx.scale.set(1 + (1 - frac) * BASE_HIT_PULSE_GROW);
   }
 
   // ── Base crack effect ─────────────────────────────────────────────────────
@@ -107,6 +133,10 @@ export class BoardView {
     const localOwner = sideToOwner(this.layout.localSide);
     const base = owner === localOwner ? this.playerBase : this.enemyBase;
     if (!base) return;
+
+    // Outline pulse on EVERY hit (immediate "this base got hit" feedback),
+    // independent of the accumulated cracks below.
+    this.triggerBaseHitPulse(base);
 
     const ratio = hp / maxHp;
     if (ratio > 0.85) return;
@@ -134,6 +164,31 @@ export class BoardView {
       }
       pen.stroke(pts, { color: palette.pencil, width: 1.3, alpha: 0.7, taper: 0.5, double: false });
     }
+  }
+
+  /**
+   * Draw a hand-drawn red outline around the base footprint (centered on the
+   * base container) and start its fade-out pulse. Red = the correcting pen /
+   * damage; reads instantly as "under attack" on the clear-edged base bitmap.
+   */
+  private triggerBaseHitPulse(base: BaseRef): void {
+    // Under sustained fire base_hp_changed fires almost every frame; don't restart
+    // a pulse that's still animating, or it freezes at full alpha/scale (looks
+    // like a static frame). Let the current pulse finish, then the next hit starts
+    // a fresh one — a steady rhythm of expand-and-fade pulses.
+    if (base.pulseT > 0) return;
+
+    const g = base.pulseGfx;
+    g.clear();
+    g.alpha = 1;
+    g.scale.set(1);
+    const hw = base.rect.w / 2;
+    const hh = base.rect.h / 2;
+    const pen = new SketchPen(g, (base.pulseSeed++ * 0x9e3779b1) >>> 0 || 1);
+    pen.rect(-hw - 3, -hh - 3, base.rect.w + 6, base.rect.h + 6, {
+      color: palette.inkRed, width: 3, jitter: 1.4,
+    });
+    base.pulseT = BASE_HIT_PULSE_SEC;
   }
 
   // ── Coordinate helpers (delegate to ILayout) ──────────────────────────────
@@ -308,9 +363,10 @@ export class BoardView {
     }
 
     const crackGfx = new PIXI.Graphics();
-    con.addChild(s, crackGfx);
+    const pulseGfx = new PIXI.Graphics();   // under-attack outline, drawn on top
+    con.addChild(s, crackGfx, pulseGfx);
     this.container.addChild(con);
-    return { sprite: s, crackGfx, rect };
+    return { sprite: s, crackGfx, pulseGfx, pulseT: 0, pulseSeed: 1, rect };
   }
 
   /**
