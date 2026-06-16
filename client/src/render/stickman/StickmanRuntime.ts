@@ -42,6 +42,16 @@ export interface TaoAsset {
   bindings:          Map<string, SpriteBinding>;         // boneId → binding
   boneLengthScales:  Map<string, number>;
   attachmentPoints:  Map<string, TaoAttachmentPoint>;   // id → attachment
+  /**
+   * Per-bone white outline texture (silhouette dilated outward by a few px, RGB
+   * forced white so a per-unit `tint` recolors it to the faction ink). Generated
+   * once at load (cached on the shared asset), driven at runtime by a 1-sprite-
+   * per-bone back layer — the cheap, device-friendly alternative to a per-unit
+   * outline filter. Shadow has no outline. Empty if generation was skipped.
+   */
+  outlineTextures:   Map<string, PIXI.Texture>;          // boneId → outline texture
+  /** Outline texture anchor (the bordered texture shifts the bone pivot). */
+  outlineAnchors:    Map<string, { ax: number; ay: number }>;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -51,6 +61,16 @@ export interface TaoAsset {
  * The animator works in ~200 px natural height; at 0.27 the character is ~50 px tall.
  */
 const STICKMAN_SCALE = 0.27;
+
+/**
+ * Faction outline geometry, in *screen* pixels (per-bone radii are derived from
+ * these so the line reads the same regardless of each bone's baked texture scale).
+ * The outline is a thin *detached* contour line, not a solid silhouette: a paper-
+ * colored GAP separates the body from the LINE, so it reads as a drawn outline
+ * around the character rather than a hugging colored garment.
+ */
+const OUTLINE_GAP_PX   = 1.6;   // transparent gap between body edge and the line
+const OUTLINE_WIDTH_PX = 1.2;   // thickness of the contour line itself
 
 /** Map logical UnitState values → animation clip names. */
 const STATE_ANIM: Record<string, string> = {
@@ -66,6 +86,12 @@ const STATE_ANIM: Record<string, string> = {
 export interface StickmanOptions {
   /** Mirror the character horizontally (for Top-side / enemy units). */
   mirrorX?: boolean;
+  /**
+   * Faction outline tint (e.g. theme.factionInk.friend / .enemy). When set, a
+   * white outline layer renders behind the bones tinted to this color — the
+   * friend/foe signal for full-color art sprites. `null` / omitted = no outline.
+   */
+  outlineColor?: number | null;
 }
 
 export class StickmanRuntime {
@@ -73,6 +99,12 @@ export class StickmanRuntime {
   readonly container: PIXI.Container;
 
   private readonly sprites: Map<string, PIXI.Sprite> = new Map();
+  /** Outline back-layer sprites, keyed by boneId (parallel to {@link sprites}). */
+  private readonly outlineSprites: Map<string, PIXI.Sprite> = new Map();
+  /** Container holding all outline sprites, below the real bones, above the shadow. */
+  private readonly outlineLayer: PIXI.Container;
+  /** Current faction outline tint, or null when no outline is shown. */
+  private outlineColor: number | null;
   private readonly asset:   TaoAsset;
 
   private currentClip:     AnimationClip | null = null;
@@ -80,8 +112,10 @@ export class StickmanRuntime {
   private time             = 0;
 
   constructor(asset: TaoAsset, options: StickmanOptions = {}) {
-    this.asset     = asset;
-    this.container = new PIXI.Container();
+    this.asset        = asset;
+    this.outlineColor = options.outlineColor ?? null;
+    this.container    = new PIXI.Container();
+    this.outlineLayer = new PIXI.Container();
     this.container.scale.set(
       STICKMAN_SCALE * (options.mirrorX ? -1 : 1),
       STICKMAN_SCALE,
@@ -95,20 +129,46 @@ export class StickmanRuntime {
       return za - zb;
     });
 
+    // Layering: [shadow] → [outline layer] → [bone sprites]. A single back layer
+    // for all outlines (rather than one behind each bone) makes overlapping limbs
+    // read as one "paper cut-out" silhouette — inner seams hide behind front parts.
+    let outlineLayerAdded = false;
     for (const boneId of boneIds) {
       const tex     = asset.textures.get(boneId)!;
       const binding = asset.bindings.get(boneId);
       const sprite  = new PIXI.Sprite(tex);
       sprite.name   = boneId;
       if (boneId === 'shadow') {
-        // Shadow is centred over its attachment position
+        // Shadow is centred over its attachment position, stays below the outline.
         sprite.anchor.set(0.5, 0.5);
-      } else if (binding) {
-        sprite.anchor.set(binding.anchorX, binding.anchorY);
+        this.sprites.set(boneId, sprite);
+        this.container.addChild(sprite);
+        continue;
       }
+
+      if (!outlineLayerAdded) {
+        this.container.addChild(this.outlineLayer);
+        outlineLayerAdded = true;
+      }
+
+      if (binding) sprite.anchor.set(binding.anchorX, binding.anchorY);
       this.sprites.set(boneId, sprite);
       this.container.addChild(sprite);
+
+      // Matching outline sprite (white texture, tinted to faction ink).
+      const outTex    = asset.outlineTextures.get(boneId);
+      const outAnchor = asset.outlineAnchors.get(boneId);
+      if (outTex && outAnchor) {
+        const outline = new PIXI.Sprite(outTex);
+        outline.name = boneId;
+        outline.anchor.set(outAnchor.ax, outAnchor.ay);
+        outline.tint    = this.outlineColor ?? 0xffffff;
+        outline.visible = this.outlineColor != null;
+        this.outlineSprites.set(boneId, outline);
+        this.outlineLayer.addChild(outline);
+      }
     }
+    if (!outlineLayerAdded) this.container.addChild(this.outlineLayer);
 
     // Start with idle (falls back gracefully if the clip doesn't exist).
     this.play('idle');
@@ -142,6 +202,14 @@ export class StickmanRuntime {
       STICKMAN_SCALE * (options.mirrorX ? -1 : 1),
       STICKMAN_SCALE,
     );
+    // Re-apply faction tint: a pooled runtime may be reused for the opposite side.
+    if (options.outlineColor !== undefined) {
+      this.outlineColor = options.outlineColor;
+      for (const outline of this.outlineSprites.values()) {
+        outline.tint    = this.outlineColor ?? 0xffffff;
+        outline.visible = this.outlineColor != null;
+      }
+    }
     this.currentClip     = null;
     this.currentClipName = '';
     this.time            = 0;
@@ -232,6 +300,18 @@ export class StickmanRuntime {
       const alpha   = xform?.alpha ?? 1;
       sprite.alpha   = alpha;
       sprite.visible = alpha > 0;
+
+      // Outline sprite shares the bone's pivot/transform; its own (bordered)
+      // anchor was pre-computed so identical x/y/rotation/scale align them.
+      const outline = this.outlineSprites.get(boneId);
+      if (outline) {
+        outline.x        = sprite.x;
+        outline.y        = sprite.y;
+        outline.rotation = sprite.rotation;
+        outline.scale.set(sprite.scale.x, sprite.scale.y);
+        outline.alpha    = alpha;
+        outline.visible  = this.outlineColor != null && alpha > 0;
+      }
     }
   }
 
@@ -350,6 +430,33 @@ export class StickmanRuntime {
       textures.set(boneId, new PIXI.Texture(baseTex, new PIXI.Rectangle(x, y, w, h)));
     }
 
+    // ── Faction outline textures (white silhouette, dilated; cached once) ──────
+    // Generated from the spritesheet bitmap at load — one extra static sprite per
+    // bone at runtime, no per-unit filter. Falls back to no outline if the canvas
+    // bitmap can't be read (headless / tainted) — the game still renders fine.
+    const outlineTextures = new Map<string, PIXI.Texture>();
+    const outlineAnchors  = new Map<string, { ax: number; ay: number }>();
+    try {
+      const ssImg = await loadImageEl(pngUrl);
+      for (const [boneId, fd] of Object.entries(spRaw.frames as Record<string, any>)) {
+        if (boneId === 'shadow') continue;
+        const { x, y, w, h } = fd.frame;
+        const binding = bindings.get(boneId);
+        const sScale  = Math.abs(binding?.scaleX ?? 1) || 1;
+        // Convert screen-px geometry → this bone's texture px (undo bake + render scale).
+        const texPerScreen = 1 / (STICKMAN_SCALE * sScale);
+        const gapTex   = clampInt(OUTLINE_GAP_PX   * texPerScreen, 1, 14);
+        const widthTex = clampInt(OUTLINE_WIDTH_PX * texPerScreen, 1, 10);
+        const built    = buildBoneOutline(ssImg, x, y, w, h, gapTex, widthTex, binding);
+        if (built) {
+          outlineTextures.set(boneId, PIXI.Texture.from(built.canvas));
+          outlineAnchors.set(boneId, { ax: built.ax, ay: built.ay });
+        }
+      }
+    } catch (err) {
+      console.warn('[StickmanRuntime] outline generation skipped:', err);
+    }
+
     // ── attachment points ────────────────────────────────────────────────────
     const attachmentPoints = new Map<string, TaoAttachmentPoint>();
     for (const ap of (animRaw.attachmentPoints ?? []) as any[]) {
@@ -363,6 +470,113 @@ export class StickmanRuntime {
       });
     }
 
-    return { clips, textures, bindings, boneLengthScales, attachmentPoints };
+    return { clips, textures, bindings, boneLengthScales, attachmentPoints, outlineTextures, outlineAnchors };
   }
+}
+
+// ── Outline generation helpers ─────────────────────────────────────────────────
+
+/** Load an HTMLImageElement from a (same-origin / object) URL. */
+function loadImageEl(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload  = () => resolve(img);
+    img.onerror = () => reject(new Error('outline: spritesheet image load failed'));
+    img.src = url;
+  });
+}
+
+function clampInt(v: number, lo: number, hi: number): number {
+  if (!Number.isFinite(v)) return lo;
+  return Math.max(lo, Math.min(hi, Math.round(v)));
+}
+
+/**
+ * Build a white *detached contour line* texture for one bone. The line occupies
+ * the band of distance ∈ (gap, gap+width] outside the bone's silhouette — i.e. a
+ * `gap`-px transparent margin separates the body from a `width`-px line, so it
+ * reads as a drawn outline around the character, not a hugging colored garment.
+ * Computed as (dilate by gap+width) AND NOT (dilate by gap), each a separable
+ * binary box-dilation. RGB is forced white so a per-unit `tint` recolors it.
+ *
+ * Returns null if the canvas bitmap can't be read (e.g. tainted / headless).
+ */
+function buildBoneOutline(
+  img: HTMLImageElement,
+  sx: number, sy: number, w: number, h: number,
+  gap: number, width: number,
+  binding: SpriteBinding | undefined,
+): { canvas: HTMLCanvasElement; ax: number; ay: number } | null {
+  const inner = gap;            // dilation radius to the line's inner edge
+  const outer = gap + width;    // dilation radius to the line's outer edge
+  const B  = outer + 1;         // canvas margin must hold the full outer ring
+  const OW = w + 2 * B;
+  const OH = h + 2 * B;
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = OW;
+  canvas.height = OH;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.drawImage(img, sx, sy, w, h, B, B, w, h);
+
+  let srcData: ImageData;
+  try {
+    srcData = ctx.getImageData(0, 0, OW, OH);
+  } catch {
+    return null;  // tainted canvas — skip outline, game still renders
+  }
+
+  // Binary coverage mask (alpha ≥ 128) of the bordered source.
+  const cov = new Uint8Array(OW * OH);
+  for (let i = 0; i < OW * OH; i++) cov[i] = srcData.data[i * 4 + 3] >= 128 ? 1 : 0;
+
+  const innerCov = dilateMask(cov, OW, OH, inner);
+  const outerCov = dilateMask(cov, OW, OH, outer);
+
+  const out = ctx.createImageData(OW, OH);
+  for (let i = 0; i < OW * OH; i++) {
+    // The line = covered by the outer dilation but NOT the inner one.
+    if (outerCov[i] && !innerCov[i]) {
+      const o = i * 4;
+      out.data[o] = 255; out.data[o + 1] = 255; out.data[o + 2] = 255; out.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+
+  // The bordered texture moves the bone pivot by B px on each axis; re-normalize
+  // the binding anchor to the new (OW × OH) texture so the outline aligns exactly.
+  const baseAx = binding?.anchorX ?? 0.5;
+  const baseAy = binding?.anchorY ?? 0.5;
+  return {
+    canvas,
+    ax: (baseAx * w + B) / OW,
+    ay: (baseAy * h + B) / OH,
+  };
+}
+
+/** Separable binary dilation (box, radius r) of a 0/1 mask. */
+function dilateMask(src: Uint8Array, w: number, h: number, r: number): Uint8Array {
+  if (r <= 0) return src.slice();
+  const horiz = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x - r), x1 = Math.min(w - 1, x + r);
+      let hit = 0;
+      for (let xx = x0; xx <= x1; xx++) { if (src[row + xx]) { hit = 1; break; } }
+      horiz[row + x] = hit;
+    }
+  }
+  const out = new Uint8Array(w * h);
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
+      let hit = 0;
+      for (let yy = y0; yy <= y1; yy++) { if (horiz[yy * w + x]) { hit = 1; break; } }
+      out[y * w + x] = hit;
+    }
+  }
+  return out;
 }

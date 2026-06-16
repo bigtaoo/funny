@@ -9,7 +9,7 @@ import type { TaoAsset } from './stickman/StickmanRuntime';
 import infantryTaoUrl from '../assets/infantry.tao';
 import archerTaoUrl from '../assets/archer.tao';
 import shieldBearerTaoUrl from '../assets/shieldbearer.tao';
-import { fx, palette } from './theme';
+import { fx, palette, factionInk } from './theme';
 import { drawStickmanDraft } from './stickmanDraft';
 
 /**
@@ -312,13 +312,18 @@ export class UnitView {
   // ─── Stickman container (unit type with a loaded .tao asset) ───────────────
 
   private buildStickmanContainer(unit: Unit, asset: TaoAsset): PIXI.Container {
-    const mirrorX = this.renderSide(unit) === Side.Top;
+    const side    = this.renderSide(unit);
+    const mirrorX = side === Side.Top;
+    // Faction outline — blue = us / red = enemy (the friend/foe signal for the
+    // full-color art sprites, which can't be body-tinted). Keyed off render side
+    // so the joiner's own units stay "us"-colored. See StickmanRuntime outline layer.
+    const outlineColor = side === Side.Bottom ? factionInk.friend : factionInk.enemy;
     this.stickmanTypes.set(unit.id, unit.unitType);
 
     // Reuse a pooled (wrapper + runtime) pair of the same type when available.
     const pooled = this.stickmanPools.get(unit.unitType)?.pop();
     if (pooled) {
-      pooled.runtime.reset({ mirrorX });
+      pooled.runtime.reset({ mirrorX, outlineColor });
       pooled.wrapper.visible = true;
       pooled.wrapper.alpha   = 1;
       pooled.wrapper.scale.set(1);
@@ -334,7 +339,7 @@ export class UnitView {
     const wrapper = new PIXI.Container();
     wrapper.visible = true;
 
-    const runtime = new StickmanRuntime(asset, { mirrorX });
+    const runtime = new StickmanRuntime(asset, { mirrorX, outlineColor });
     this.stickmanRuntimes.set(unit.id, runtime);
 
     // ── HP bar (positioned above the character's head) ────────────────────
