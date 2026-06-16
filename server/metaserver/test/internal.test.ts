@@ -14,6 +14,9 @@ function fakeGateway(opts: { available?: boolean; res?: JudgeRes } = {}): Gatewa
   return {
     available: opts.available ?? false,
     judge: async () => opts.res ?? { ok: false },
+    push: async () => {},
+    presence: async () => ({}),
+    invalidateFriends: async () => {},
   };
 }
 

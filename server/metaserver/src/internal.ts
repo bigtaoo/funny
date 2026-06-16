@@ -18,6 +18,7 @@ import type { GatewayClient } from './gatewayClient.js';
 import type { CommercialClient } from './commercialClient.js';
 import { adsDayKey } from './economy.js';
 import { getProfile } from './accounts.js';
+import { friendAccountIds } from './social.js';
 
 const log = createLogger('meta:internal');
 
@@ -87,6 +88,18 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
     const profile = await getProfile(cols, accountId);
     return reply.send(profile); // { displayName?, publicId }
+  });
+
+  // ── GET /internal/social/friends?accountId= ──────────────────────────
+  // gateway 据此算 presence 广播范围（连/断时向该用户的在线好友 push friend_presence）。
+  app.get('/internal/social/friends', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const accountId = (req.query as { accountId?: string }).accountId;
+    if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
+    const friends = await friendAccountIds(cols, accountId);
+    return reply.send({ friends });
   });
 
   // ── POST /internal/match/report ───────────────────────────────────────

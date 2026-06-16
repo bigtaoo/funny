@@ -15,6 +15,11 @@ import type { AuthCredential, IPlatform } from '../platform/IPlatform';
 import { NetClient, type NetState } from './NetClient';
 import {
   MatchMode,
+  type ChatMessagePush,
+  type FriendPresence,
+  type FriendRequestPush,
+  type FriendUpdate,
+  type MailNew,
   type MatchOver,
   type PeerDc,
   type RoomError,
@@ -36,6 +41,12 @@ export interface NetSessionHandlers {
   /** Fired once the data-plane confirms match_start — app builds the engine here. */
   onMatchStart?(info: MatchStartInfo): void;
   onNetState?(s: NetState): void;
+  // —— 社交实时推送（S6，gateway 控制面 push）。UI 据此刷红点 / 在线态 / 收消息。——
+  onFriendPresence?(p: FriendPresence): void;
+  onFriendRequest?(r: FriendRequestPush): void;
+  onFriendUpdate?(u: FriendUpdate): void;
+  onChatMessage?(m: ChatMessagePush): void;
+  onMailNew?(m: MailNew): void;
 }
 
 export class NetSession {
@@ -189,6 +200,17 @@ export class NetSession {
       const r = msg.judgeRequest;
       const out = runJudge(r);
       this.gateway.sendJudgeVerdict(r.requestId, out.stateHash, out.winnerSide, out.ok, out.stars);
+    } else if (msg.friendPresence) {
+      this.handlers.onFriendPresence?.(msg.friendPresence);
+    } else if (msg.friendRequest) {
+      log.info('friend_request', { from: msg.friendRequest.fromPublicId });
+      this.handlers.onFriendRequest?.(msg.friendRequest);
+    } else if (msg.friendUpdate) {
+      this.handlers.onFriendUpdate?.(msg.friendUpdate);
+    } else if (msg.chatMessage) {
+      this.handlers.onChatMessage?.(msg.chatMessage);
+    } else if (msg.mailNew) {
+      this.handlers.onMailNew?.(msg.mailNew);
     }
   }
 

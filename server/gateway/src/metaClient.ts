@@ -42,4 +42,20 @@ export class MetaClient {
       return {};
     }
   }
+
+  /**
+   * 取某账号的好友 accountId 列表（presence 广播范围，SOC9）。meta 未配置 / 出错 → 空。
+   */
+  async getFriends(accountId: string): Promise<string[]> {
+    if (!this.baseUrl) return [];
+    try {
+      const url = `${this.baseUrl}/internal/social/friends?accountId=${encodeURIComponent(accountId)}`;
+      const res = await fetch(url, { headers: { 'X-Internal-Key': this.internalKey } });
+      if (!res.ok) return [];
+      const body = (await res.json()) as { friends?: string[] };
+      return Array.isArray(body.friends) ? body.friends : [];
+    } catch {
+      return [];
+    }
+  }
 }

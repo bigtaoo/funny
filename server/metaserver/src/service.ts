@@ -30,12 +30,25 @@ import {
   ensurePublicId,
   exchangeWxCode,
   getDisplayName,
+  getProfile,
   loginWithPassword,
   registerWithPassword,
   resolveByDevice,
   resolveByOpenid,
   setDisplayName,
 } from './accounts.js';
+import {
+  getFriends,
+  listRequests,
+  resolveByPublicId,
+  requestFriend,
+  respondFriend,
+  removeFriend,
+  blockUser,
+  unblockUser,
+  friendAccountIds,
+  type SocialError,
+} from './social.js';
 import type { CommercialClient } from './commercialClient.js';
 import type { GatewayClient } from './gatewayClient.js';
 import {
@@ -528,6 +541,139 @@ export class MetaService {
       return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'replay unavailable'));
     }
     return ok({ replay });
+  }
+
+  // ── 社交：好友（S6-1）。meta = 数据权威，写一处；实时投递经 gateway push（离线丢弃）。──
+  /** SocialError → HTTP 状态 + ErrorCode。 */
+  private sendSocialError(reply: FastifyReply, e: SocialError) {
+    switch (e) {
+      case 'NOT_FOUND':
+        return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'not found'));
+      case 'ALREADY_FRIEND':
+        return reply.code(409).send(err(ErrorCode.ALREADY_FRIEND, 'already friends'));
+      case 'FRIEND_CAP_REACHED':
+        return reply.code(409).send(err(ErrorCode.FRIEND_CAP_REACHED, 'friend cap reached'));
+      case 'BLOCKED':
+        return reply.code(403).send(err(ErrorCode.BLOCKED, 'blocked'));
+      case 'BAD_REQUEST':
+      default:
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'bad request'));
+    }
+  }
+
+  async getFriends(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { cols, gateway } = this.deps;
+    const friends = await getFriends(cols, accountId);
+    // 标在线态：拉好友 accountId → 向 gateway 批量查 presence。需 publicId→accountId 映射回填。
+    if (gateway.available && friends.length > 0) {
+      const ids = await friendAccountIds(cols, accountId);
+      const presence = await gateway.presence(ids);
+      // accountId → publicId 映射（仅这批好友）。
+      const docs = await cols.accounts
+        .find({ _id: { $in: ids } }, { projection: { publicId: 1 } })
+        .toArray();
+      const byPublic = new Map<string, boolean>();
+      for (const d of docs) {
+        if (d.publicId) byPublic.set(d.publicId, presence[d._id] ?? false);
+      }
+      for (const f of friends) f.online = byPublic.get(f.publicId) ?? false;
+    }
+    return ok({ friends });
+  }
+
+  async getFriendRequests(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { incoming, outgoing } = await listRequests(this.deps.cols, accountId);
+    return ok({ incoming, outgoing });
+  }
+
+  async searchFriend(req: FastifyRequest, reply: FastifyReply) {
+    accountIdOf(req); // 须登录
+    const { publicId } = req.body as { publicId: string };
+    const found = await resolveByPublicId(this.deps.cols, publicId);
+    if (!found) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'player not found'));
+    return ok({ profile: found.profile });
+  }
+
+  async requestFriend(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { publicId, message } = req.body as { publicId: string; message?: string };
+    const res = await requestFriend(this.deps.cols, accountId, publicId, message, this.deps.now());
+    if (res.kind === 'error') return this.sendSocialError(reply, res.error);
+    // 推送给目标（在线则弹申请红点）。
+    void this.deps.gateway.push(res.to, {
+      kind: 'friend_request',
+      requestId: res.requestId,
+      fromPublicId: res.fromProfile.publicId,
+      fromName: res.fromProfile.displayName,
+      message: res.message ?? '',
+    });
+    return ok({ requestId: res.requestId });
+  }
+
+  async respondFriend(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { requestId, accept } = req.body as { requestId: string; accept: boolean };
+    const res = await respondFriend(this.deps.cols, accountId, requestId, accept, this.deps.now());
+    if (res.kind === 'error') return this.sendSocialError(reply, res.error);
+    if (res.accepted) {
+      // 好友边变更 → 让 gateway presence 缓存失效（双方）。
+      void this.deps.gateway.invalidateFriends(accountId);
+      void this.deps.gateway.invalidateFriends(res.otherAccountId);
+      // 通知双方好友已建立（各自 push 对方的 publicId）。
+      void this.deps.gateway.push(res.otherAccountId, {
+        kind: 'friend_update',
+        publicId: res.meProfile.publicId,
+        added: true,
+      });
+      void this.deps.gateway.push(accountId, {
+        kind: 'friend_update',
+        publicId: res.otherProfile.publicId,
+        added: true,
+      });
+    }
+    return ok({ ok: true });
+  }
+
+  async removeFriend(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { publicId } = req.params as { publicId: string };
+    const res = await removeFriend(this.deps.cols, accountId, publicId);
+    if (res) {
+      void this.deps.gateway.invalidateFriends(accountId);
+      void this.deps.gateway.invalidateFriends(res.otherAccountId);
+      const me = await getProfile(this.deps.cols, accountId);
+      void this.deps.gateway.push(res.otherAccountId, {
+        kind: 'friend_update',
+        publicId: me.publicId,
+        added: false,
+      });
+    }
+    return ok({ ok: true });
+  }
+
+  async blockUser(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { publicId } = req.body as { publicId: string };
+    const res = await blockUser(this.deps.cols, accountId, publicId, this.deps.now());
+    if (!res) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'player not found'));
+    void this.deps.gateway.invalidateFriends(accountId);
+    void this.deps.gateway.invalidateFriends(res.otherAccountId);
+    const me = await getProfile(this.deps.cols, accountId);
+    void this.deps.gateway.push(res.otherAccountId, {
+      kind: 'friend_update',
+      publicId: me.publicId,
+      added: false,
+    });
+    return ok({ ok: true });
+  }
+
+  async unblockUser(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { publicId } = req.params as { publicId: string };
+    await unblockUser(this.deps.cols, accountId, publicId);
+    return ok({ ok: true });
   }
 
   // ── economy（S5：meta 编排 → commercial 扣币/随机 → 发货 → 镜像回推）──────

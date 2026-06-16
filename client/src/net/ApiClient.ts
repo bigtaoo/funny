@@ -24,6 +24,10 @@ export type GachaResultEntry = Schemas['GachaResult'];
 /** 对战历史一条（从当前账号视角）。 */
 export type MatchHistoryEntry = Schemas['MatchHistoryEntry'];
 export type AuthResult = Schemas['AuthResult'];
+// —— 社交（S6-1 好友）——
+export type ProfileView = Schemas['ProfileView'];
+export type FriendView = Schemas['FriendView'];
+export type FriendRequestView = Schemas['FriendRequestView'];
 /** 服务端持久化录像（opaque 帧，base64）；客户端用 net/serverReplay 解码回放。 */
 export type ServerReplay = Schemas['MatchReplay'];
 
@@ -244,6 +248,59 @@ export class ApiClient {
     receipt: string,
   ): Promise<{ save: SaveData; granted: number }> {
     return this.post<{ save: SaveData; granted: number }>('/iap/verify', { platform, receipt });
+  }
+
+  // ── 社交：好友（S6-1，需登录 token）。发送/拉取走 REST，实时事件经 gateway push（NetSession）。──
+  /** 好友列表（含在线态）。 */
+  async getFriends(): Promise<FriendView[]> {
+    const data = await this.request<{ friends: FriendView[] }>('GET', '/friends');
+    return data.friends;
+  }
+
+  /** 待处理好友申请（收到 + 发出）。 */
+  async getFriendRequests(): Promise<{ incoming: FriendRequestView[]; outgoing: FriendRequestView[] }> {
+    return this.request<{ incoming: FriendRequestView[]; outgoing: FriendRequestView[] }>(
+      'GET',
+      '/friends/requests',
+    );
+  }
+
+  /** 按 9 位公开 id 搜索玩家。未找到 → ApiError('NOT_FOUND')（404）。 */
+  async searchFriend(publicId: string): Promise<ProfileView> {
+    const data = await this.post<{ profile: ProfileView }>('/friends/search', { publicId });
+    return data.profile;
+  }
+
+  /**
+   * 发好友申请。已是好友 → ApiError('ALREADY_FRIEND')；超上限 → 'FRIEND_CAP_REACHED'；
+   * 被拉黑 → 'BLOCKED'；目标不存在 → 'NOT_FOUND'。
+   */
+  async requestFriend(publicId: string, message?: string): Promise<string> {
+    const data = await this.post<{ requestId: string }>('/friends/request', {
+      publicId,
+      ...(message ? { message } : {}),
+    });
+    return data.requestId;
+  }
+
+  /** 同意 / 拒绝好友申请（accept=true → 建双向边）。 */
+  async respondFriend(requestId: string, accept: boolean): Promise<void> {
+    await this.post<{ ok: boolean }>('/friends/respond', { requestId, accept });
+  }
+
+  /** 删好友（双向）。 */
+  async removeFriend(publicId: string): Promise<void> {
+    await this.request<{ ok: boolean }>('DELETE', `/friends/${encodeURIComponent(publicId)}`);
+  }
+
+  /** 拉黑（删好友 + 屏蔽申请/私聊）。 */
+  async blockUser(publicId: string): Promise<void> {
+    await this.post<{ ok: boolean }>('/friends/block', { publicId });
+  }
+
+  /** 取消拉黑。 */
+  async unblockUser(publicId: string): Promise<void> {
+    await this.request<{ ok: boolean }>('DELETE', `/friends/block/${encodeURIComponent(publicId)}`);
   }
 
   // ── 内部 ────────────────────────────────────────────────

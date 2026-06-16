@@ -260,7 +260,7 @@ POST /gw/social/invalidate { accountId }   → { ok }                  // 好友
 | 任务 | 内容 | 依赖 |
 |---|---|---|
 | **S6-0 契约 + shared** | `shared/social.ts`（`FRIEND_CAP`/`CHAT_RETENTION_SEC` 等常量 + 视图类型）；`mongo.ts` 加 4 集合 + 索引 + TTL；`transport.proto` 加 5 个 social ServerMsg（双端重生）；`openapi.yml` 加好友/聊天/邮件端点 + 错误码 | — |
-| **S6-1 好友** | meta：好友/申请/拉黑 service + REST + 内部端点；gateway：presence 广播（连/断时拉好友列表 + push `friend_presence`）+ `/gw/presence` + 缓存失效；客户端 `ApiClient` + `NetSession` 路由 + 好友 UI | S6-0 |
+| **S6-1 好友** | 服务端 + 客户端 net 层 ✅（2026-06-16）：meta `social.ts` service + 8 REST handler + `GET /internal/social/friends` + `GatewayClient.push/presence/invalidateFriends`；gateway presence 广播（连/断 `broadcastPresence` + 好友/publicId 缓存）+ `/gw/presence`·`/gw/social/invalidate` + 5 social ServerMsg 编码；客户端 `ApiClient` 8 方法 + `NetSession` 路由 5 push。meta 74 测试（+6 social-friends.e2e）。**好友 UI 待做**（大厅社交 Tab，复用 ProfilePopup + sketchUi） | S6-0 |
 | **S6-2 私聊** | meta：会话/消息 service（好友校验 + 拉黑 + 敏感词 + 限流）+ REST + push；客户端聊天 UI（会话列表 + 窗口 + 历史分页 + 未读红点） | S6-1 |
 | **S6-3 邮件** | meta：邮件 service + 附件领奖（编排 commercial + inventory + 幂等）+ REST + `mail_new` push；系统邮件内部写入端点；客户端邮件箱 UI + 领取 | S6-0（领奖依赖 commercial 已就绪 ✅） |
 | **S6-4（SLG 后）频道** | `social` 服务 + Redis pub/sub + gateway 订阅投递 + 帮会/家族/国家频道数据模型与 UI | SLG 模式 + Redis |

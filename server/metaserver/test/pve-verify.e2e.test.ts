@@ -31,6 +31,11 @@ class FakeGateway implements GatewayClient {
     this.last = req;
     return this.next;
   }
+  async push(): Promise<void> {}
+  async presence(): Promise<Record<string, boolean>> {
+    return {};
+  }
+  async invalidateFriends(): Promise<void> {}
 }
 
 describe.skipIf(!mongo)('pve L1 verify e2e', () => {

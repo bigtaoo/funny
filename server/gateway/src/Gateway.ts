@@ -73,6 +73,10 @@ export class Gateway {
   /** 在途裁判请求（requestId → pending）。verdict 到达或超时即清。 */
   private readonly pendingJudges = new Map<string, PendingJudge>();
   private judgeSeq = 0;
+  /** 好友列表缓存（accountId → 好友 accountId[]）；好友变更经 /gw/social/invalidate 清。 */
+  private readonly friendsCache = new Map<string, string[]>();
+  /** publicId 缓存（accountId → publicId）；presence 广播复用，避免每次问 meta。 */
+  private readonly publicIdCache = new Map<string, string>();
 
   constructor(
     opts: { host: string; port: number },
@@ -107,9 +111,66 @@ export class Gateway {
     }
   };
 
+  /** 批量在线态查询（meta 标好友列表 online flag）。accountId → 是否有活跃连接。 */
+  readonly presenceOf = (accountIds: string[]): Record<string, boolean> => {
+    const out: Record<string, boolean> = {};
+    for (const id of accountIds) {
+      const conn = this.conns.get(id);
+      out[id] = !!conn && conn.ws.readyState === conn.ws.OPEN;
+    }
+    return out;
+  };
+
+  /** 好友关系变更（meta 通知）→ 清缓存，下次广播/查询重拉。 */
+  readonly invalidateFriends = (accountId: string): void => {
+    this.friendsCache.delete(accountId);
+  };
+
   close(): void {
     clearInterval(this.heartbeat);
     this.wss.close();
+  }
+
+  // ───────────────────────── 好友在线态广播（SOC9）─────────────────────────
+
+  private async friendsOf(accountId: string): Promise<string[]> {
+    const cached = this.friendsCache.get(accountId);
+    if (cached) return cached;
+    const friends = await this.meta.getFriends(accountId);
+    this.friendsCache.set(accountId, friends);
+    return friends;
+  }
+
+  private async publicIdOf(accountId: string): Promise<string> {
+    const cached = this.publicIdCache.get(accountId);
+    if (cached !== undefined) return cached;
+    const p = await this.meta.getProfile(accountId);
+    const pid = p.publicId ?? '';
+    this.publicIdCache.set(accountId, pid);
+    return pid;
+  }
+
+  /**
+   * 上/下线广播：向当前在线的好友 push 我的 friend_presence；上线时另给我推一份在线好友快照。
+   * meta 不可用（无好友来源）则跳过——presence 是好友功能，不影响联机主线。
+   */
+  private async broadcastPresence(accountId: string, online: boolean): Promise<void> {
+    if (!this.meta.available) return;
+    const [friends, myPid] = await Promise.all([
+      this.friendsOf(accountId),
+      this.publicIdOf(accountId),
+    ]);
+    if (!myPid) return;
+    for (const fid of friends) {
+      const fConn = this.conns.get(fid);
+      if (!fConn || fConn.ws.readyState !== fConn.ws.OPEN) continue;
+      this.push(fid, { kind: 'friend_presence', publicId: myPid, online });
+      // 上线时回送：该在线好友的在线态给刚上线的我（下线时我已断开，无需回送）。
+      if (online) {
+        const fPid = await this.publicIdOf(fid);
+        if (fPid) this.push(accountId, { kind: 'friend_presence', publicId: fPid, online: true });
+      }
+    }
   }
 
   // ───────────────────────── 连接 ─────────────────────────
@@ -143,6 +204,8 @@ export class Gateway {
     this.conns.set(accountId, conn);
     log.info('WS connected', { accountId, online: this.conns.size });
     this.matchsvc.connected(accountId);
+    // 好友在线态广播（SOC9）：通知在线好友我上线 + 给我推一份在线好友快照。
+    void this.broadcastPresence(accountId, true);
 
     ws.on('message', (data: Buffer, isBinary: boolean) => {
       conn.alive = true;
@@ -163,6 +226,8 @@ export class Gateway {
         this.conns.delete(accountId);
         log.info('WS closed', { accountId, code, online: this.conns.size });
         this.matchsvc.disconnected(accountId);
+        // 通知在线好友我下线（不给自己推，conn 已删）。
+        void this.broadcastPresence(accountId, false);
       }
       // 该账号若正担任裁判 → 立即作废其在途请求（不必等超时）。
       for (const [id, p] of this.pendingJudges) {
@@ -368,5 +433,28 @@ function toServerMsg(msg: PushMsg): ServerMsg {
       return { case: 'match_found', gameUrl: msg.gameUrl, ticket: msg.ticket };
     case 'room_error':
       return { case: 'room_error', code: msg.code, message: msg.message };
+    case 'friend_presence':
+      return { case: 'friend_presence', publicId: msg.publicId, online: msg.online };
+    case 'friend_request':
+      return {
+        case: 'friend_request',
+        requestId: msg.requestId,
+        fromPublicId: msg.fromPublicId,
+        fromName: msg.fromName,
+        message: msg.message,
+      };
+    case 'friend_update':
+      return { case: 'friend_update', publicId: msg.publicId, added: msg.added };
+    case 'chat_message':
+      return {
+        case: 'chat_message',
+        convId: msg.convId,
+        fromPublicId: msg.fromPublicId,
+        fromName: msg.fromName,
+        body: msg.body,
+        ts: msg.ts,
+      };
+    case 'mail_new':
+      return { case: 'mail_new', mailId: msg.mailId, hasAttachment: msg.hasAttachment };
   }
 }

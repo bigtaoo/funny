@@ -21,7 +21,13 @@ export interface PlayerView {
 export type PushMsg =
   | { kind: 'room_state'; code: string; players: PlayerView[]; phase: number }
   | { kind: 'match_found'; gameUrl: string; ticket: string }
-  | { kind: 'room_error'; code: string; message: string };
+  | { kind: 'room_error'; code: string; message: string }
+  // —— 社交实时推送（S6，meta 经 /gw/push 调用，与 matchsvc 共用此通道）——
+  | { kind: 'friend_presence'; publicId: string; online: boolean }
+  | { kind: 'friend_request'; requestId: string; fromPublicId: string; fromName: string; message: string }
+  | { kind: 'friend_update'; publicId: string; added: boolean }
+  | { kind: 'chat_message'; convId: string; fromPublicId: string; fromName: string; body: string; ts: number }
+  | { kind: 'mail_new'; mailId: string; hasAttachment: boolean };
 
 export class MatchsvcClient {
   constructor(

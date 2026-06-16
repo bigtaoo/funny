@@ -69,6 +69,12 @@ export type ServerMsg =
       /** 服务器权威蓝图快照（升级等级），保证 PvE 复算确定性。 */
       pveUpgrades: Record<string, number>;
     }
+  // —— 社交推送（S6，SOCIAL_DESIGN §4.2）——
+  | { case: 'friend_presence'; publicId: string; online: boolean }
+  | { case: 'friend_request'; requestId: string; fromPublicId: string; fromName: string; message: string }
+  | { case: 'friend_update'; publicId: string; added: boolean }
+  | { case: 'chat_message'; convId: string; fromPublicId: string; fromName: string; body: string; ts: number }
+  | { case: 'mail_new'; mailId: string; hasAttachment: boolean }
   | { case: 'pong' };
 
 function resolveProtoPath(): string {
@@ -173,6 +179,37 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
           pve_upgrades: msg.pveUpgrades,
         },
       };
+      break;
+    case 'friend_presence':
+      server = { friend_presence: { public_id: msg.publicId, online: msg.online } };
+      break;
+    case 'friend_request':
+      server = {
+        friend_request: {
+          request_id: msg.requestId,
+          from_public_id: msg.fromPublicId,
+          from_name: msg.fromName,
+          message: msg.message,
+        },
+      };
+      break;
+    case 'friend_update':
+      // FriendUpdateKind: ADDED=0, REMOVED=1。
+      server = { friend_update: { public_id: msg.publicId, kind: msg.added ? 0 : 1 } };
+      break;
+    case 'chat_message':
+      server = {
+        chat_message: {
+          conv_id: msg.convId,
+          from_public_id: msg.fromPublicId,
+          from_name: msg.fromName,
+          body: msg.body,
+          ts: msg.ts,
+        },
+      };
+      break;
+    case 'mail_new':
+      server = { mail_new: { mail_id: msg.mailId, has_attachment: msg.hasAttachment } };
       break;
     case 'pong':
       server = { pong: {} };

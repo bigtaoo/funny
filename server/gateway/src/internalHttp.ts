@@ -82,6 +82,20 @@ export function startInternalHttp(
           send(res, 200, { ok: true });
           return;
         }
+        // 在线态查询（meta 标好友列表 online flag，SOC9）：?accounts=a,b,c → {[id]: bool}。
+        if (req.method === 'GET' && req.url?.startsWith('/gw/presence')) {
+          const u = new URL(req.url, 'http://localhost');
+          const accounts = (u.searchParams.get('accounts') ?? '').split(',').filter(Boolean);
+          send(res, 200, gateway.presenceOf(accounts));
+          return;
+        }
+        // 好友关系变更（meta 通知）→ 清 gateway 好友缓存，下次广播/查询重拉。
+        if (req.method === 'POST' && req.url === '/gw/social/invalidate') {
+          const b = (await readJson(req)) as { accountId?: string };
+          if (b.accountId) gateway.invalidateFriends(b.accountId);
+          send(res, 200, { ok: true });
+          return;
+        }
         // 对等裁判（Phase C）：meta 发来一局录像，gateway 挑裁判复算并阻塞返回裁决。
         if (req.method === 'POST' && req.url === '/gw/judge') {
           const b = (await readJson(req)) as JudgeReqBody;
