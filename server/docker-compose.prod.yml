@@ -2,7 +2,8 @@
 # 一条命令起全栈（见 deploy/up.sh）：
 #   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 #
-# 出口：https://{NW_DOMAIN}/api/...（REST）、wss://{NW_DOMAIN}/gw（控制面：房间/匹配）、wss://{NW_DOMAIN}/ws（数据面：锁步）。
+# 出口：https://{NW_DOMAIN}/api/...（REST）、wss://{NW_DOMAIN}/gw（控制面：房间/匹配）、wss://{NW_DOMAIN}/ws（数据面：锁步）、
+#       https://{NW_DOMAIN}/world|/family|/auction（SLG 大世界 REST，S8）。
 # 内部链路（S1-M5，matchsvc 独立进程；matchsvc 不暴露公网）：
 #           gateway 经 NW_META_BASE_URL=http://metaserver:8080 取 ELO；
 #           gateway → matchsvc 命令：NW_MATCHSVC_INTERNAL_URL=http://matchsvc:8091；
@@ -134,6 +135,30 @@ services:
       - matchsvc
     restart: unless-stopped
 
+  # SLG 大世界（S8，第七进程，公网 REST 第四面）。反代 /world,/family,/auction → 此进程；
+  # 复用 meta JWT 仅验签（不连 accounts 库）；连专属库 notebook_wars_world。Redis 可选（S8-2/S8-4 才需）。
+  worldsvc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "worldsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
+      NW_WORLD_PORT: "18084"
+      NW_WORLD_HOST: 0.0.0.0
+      NW_WORLD_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_WORLD_MONGO_DB: ${NW_WORLD_MONGO_DB:-notebook_wars_world}
+      # Redis 可选：留空降级（行军调度走 Mongo 兜底，频道关闭）。S8-2/S8-4 接入时填 redis://redis:6379。
+      NW_WORLD_REDIS_URL: ${NW_WORLD_REDIS_URL:-}
+      # 实时事件回推客户端（S8-1+ 经 gateway /gw/push）。
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
   # 运维后台后端（S7，OPS_DESIGN）。玩家不可达，caddy 不路由到它（仅内网/VPN/IP allowlist）；
   # 连独立库 notebook_wars_admin；调 meta(player/mail) + gateway/matchsvc(/internal/stats)。
   admin:
@@ -177,6 +202,7 @@ services:
       - metaserver
       - gateway
       - gameserver
+      - worldsvc
     restart: unless-stopped
 
 volumes:

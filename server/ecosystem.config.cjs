@@ -1,6 +1,6 @@
 // pm2 进程编排（C-3 / S1-M，非 Docker 路线）。
 // 适用于直接在 VPS 上跑 node（mongod 本机装、caddy 系统服务），不想用 Docker 时：
-//   cd server && npm ci && npx tsc -b shared metaserver gateway matchsvc gameserver commercial
+//   cd server && npm ci && npx tsc -b shared metaserver gateway matchsvc gameserver commercial worldsvc admin
 //   NW_JWT_SECRET=... NW_INTERNAL_KEY=... pm2 start ecosystem.config.cjs && pm2 save
 //
 // metaserver 无状态可起多实例（cluster）；gateway / matchsvc / gameserver 各有内存状态必须单实例。
@@ -106,6 +106,26 @@ module.exports = {
         NW_META_BASE_URL: META_BASE,
         NW_MATCHSVC_INTERNAL_URL: MM_INTERNAL,
         NW_GAME_PUBLIC_WS_URL: GAME_PUBLIC_WS,
+      },
+    },
+    {
+      // SLG 大世界（S8，第七进程，公网 REST 第四面 /world,/family,/auction）。
+      name: 'nw-world',
+      cwd: __dirname,
+      script: 'worldsvc/dist/index.js',
+      exec_mode: 'fork', // 单实例：行军单点调度 + 视区推送内存态（横扩需 Redis 分片，留后）
+      instances: 1,
+      env: {
+        ...common,
+        NW_WORLD_PORT: process.env.NW_WORLD_PORT || '18084',
+        NW_WORLD_HOST: process.env.NW_WORLD_HOST || '127.0.0.1',
+        NW_WORLD_MONGO_URI:
+          process.env.NW_WORLD_MONGO_URI ||
+          process.env.NW_MONGO_URI ||
+          'mongodb://127.0.0.1:27017/?replicaSet=rs0',
+        NW_WORLD_MONGO_DB: process.env.NW_WORLD_MONGO_DB || 'notebook_wars_world',
+        NW_WORLD_REDIS_URL: process.env.NW_WORLD_REDIS_URL || '', // 可选；空=降级
+        NW_GATEWAY_INTERNAL_URL: GW_INTERNAL, // 实时事件回推 /gw/push
       },
     },
     {

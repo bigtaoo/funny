@@ -10,6 +10,7 @@ import {
   err,
   extractBearer,
   verifyToken,
+  SlgError,
 } from '@nw/shared';
 import type { WorldService } from './service';
 
@@ -95,6 +96,7 @@ export function startHttpApi(
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           const view = await svc.getMap(
             worldId,
+            accountId,
             numQ(q.get('cx'), 0),
             numQ(q.get('cy'), 0),
             numQ(q.get('r'), 10),
@@ -111,10 +113,29 @@ export function startHttpApi(
           if (!Number.isFinite(x) || !Number.isFinite(y)) {
             return sendErr(res, ErrorCode.BAD_REQUEST, 'bad tileId coords');
           }
-          return send(res, 200, ok(await svc.getTile(worldId, x, y)));
+          return send(res, 200, ok(await svc.getTile(worldId, accountId, x, y)));
         }
 
-        // ── 行军 / 防守 / 兵力（写，S8-1/S8-2 stub）──
+        // ── 进入世界 / 占领 / 放弃（S8-1，做实）──
+        if (method === 'POST' && (path === '/world/join' || path === '/world/occupy' || path === '/world/abandon')) {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const x = Number(body.x);
+          const y = Number(body.y);
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            return sendErr(res, ErrorCode.BAD_REQUEST, 'x/y required');
+          }
+          if (path === '/world/join') {
+            return send(res, 200, ok(await svc.joinWorld(worldId, accountId, x, y)));
+          }
+          if (path === '/world/occupy') {
+            return send(res, 200, ok(await svc.occupyTile(worldId, accountId, x, y)));
+          }
+          return send(res, 200, ok(await svc.abandonTile(worldId, accountId, x, y)));
+        }
+
+        // ── 行军 / 防守 / 兵力（写，S8-2/S8-3 stub）──
         if (method === 'PUT' && path === '/world/defense') return NOT_IMPL(res, 'defense');
         if (method === 'POST' && path === '/world/march') return NOT_IMPL(res, 'march');
         if (method === 'POST' && /^\/world\/march\/[^/]+\/recall$/.test(path))
@@ -130,6 +151,7 @@ export function startHttpApi(
 
         return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
       } catch (e) {
+        if (e instanceof SlgError) return sendErr(res, e.code, e.message);
         send(res, 500, err(ErrorCode.INTERNAL, (e as Error).message));
       }
     })();

@@ -64,3 +64,14 @@ services:
       timeout: 5s
       start_period: 5s
       retries: 20
+
+  worldsvc:
+    # SLG 公网 REST 第四面：映射到宿主，E2E/curl 直连（meta/gateway 不代理 world）。
+    ports:
+      - "18084:18084"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:18084/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 20

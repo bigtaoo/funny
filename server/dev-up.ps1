@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   - shared: tsc -b --watch (rebuild on shared/src change so dependents restart)
-  - meta / gateway / matchsvc / game / commercial (each uses node --watch)
+  - meta / gateway / matchsvc / game / commercial / world / admin (each uses node --watch)
   - presets internal URLs + shared NW_INTERNAL_KEY
   Runs docker compose up -d for Mongo by default.
 
@@ -38,6 +38,7 @@ $procs = @(
   @{ name = 'matchsvc';   dir = 'matchsvc';   env = @{ NW_GATEWAY_INTERNAL_URL   = 'http://127.0.0.1:8090'; NW_GAME_PUBLIC_WS_URL = 'ws://127.0.0.1:8081/ws' } }
   @{ name = 'game';       dir = 'gameserver'; env = @{ NW_MATCHSVC_INTERNAL_URL  = 'http://127.0.0.1:8091' } }
   @{ name = 'commercial'; dir = 'commercial'; env = @{} }
+  @{ name = 'world';      dir = 'worldsvc';   env = @{ NW_WORLD_PORT = '18084'; NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090' } }
   @{ name = 'admin';      dir = 'admin';      env = @{ NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_MATCHSVC_INTERNAL_URL = 'http://127.0.0.1:8091'; NW_META_BASE_URL = 'http://127.0.0.1:18080'; NW_ADMIN_SEED_USER = 'root'; NW_ADMIN_SEED_PASS = 'rootpass' } }
 )
 

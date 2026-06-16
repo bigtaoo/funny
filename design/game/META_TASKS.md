@@ -196,8 +196,8 @@
 
 > 拍板 2026-06-16，详见 **`SLG_DESIGN.md`**。率土之滨级共享大地图；宗门=赛季服 / 家族=联盟；围攻战 = 确定性引擎打防守 config + 录像（复用全部战斗基建）；养成 PvE+SLG 统一、**天梯绝对隔离**（红线，硬墙单测守住）；交易全走拍卖行（指定受拍人）；第七进程 `worldsvc` + **Redis 入场**（兑现 M22 / SOC6-4）。**month 级大工程，按可独立验收切片推进。**
 
-- [ ] **S8-0 契约 + shared + worldsvc 骨架 + Redis**：地图/格子/行军/家族 schema；`worldsvc` 第七 workspace（有状态）；Redis 接入（gateway 横扩 account→实例路由 + 行军调度 + 频道 pub/sub）。
-- [ ] **S8-1 地图与领地**：格子状态机（归属/等级/防守 config/资源/驻军）、占领、资源**读时惰性产出** + 仓储上限、保护罩。
+- [x] **S8-0 契约 + shared + worldsvc 骨架 + 部署接线**（✅ 2026-06-16）：地图/格子/行军/家族 schema；`worldsvc` 第七 workspace（有状态）；Redis 可选接入骨架（缺省降级）。**部署接线收尾**：`dev-up.ps1`(八进程)/`Dockerfile`(八包)/`docker-compose.{prod,ci}.yml`/`Caddyfile`(`/world,/family,/auction`)/`.env.example`/`ecosystem.config.cjs`/CI；`npm run dev:all` 起八进程 + 实跑 curl 验证。Redis 横扩路由/调度本体留 S8-2/S8-4。
+- [x] **S8-1 地图与领地**（✅ 2026-06-16）：进入世界（落主城 + 保护罩 + 满兵 + 起步产率，幂等 + 容量守卫）、占领（直占 territory：扣驻军 + 写 TileDoc + 重算 yieldRate + 校验中心/界外/兵力/他人 PROTECTED·TILE_OCCUPIED）、放弃（退兵 + 回归程序化）、资源**读时惰性产出** + `RESOURCE_CAP` 封顶；`shared/slg.ts` 加 `tileYield()`+`SlgError`。`POST /world/{join,occupy,abandon}`。worldsvc 15 e2e（service 8 + httpApi 7）。**直占即生效**（行军旅行/围攻夺地走 S8-2/S8-3）。
 - [ ] **S8-2 兵力与行军**：兵力上限 / 训练队列（sink + 加速变现）、行军 Redis 调度、增援 / 协防。
 - [ ] **S8-3 围攻战**：新增 `'siege'` `GameMode` + 防守 config（玩家自定义关卡形态，复用 `levelSchema`）+ 真人手操 / 自动扫荡 + 关键战斗 `judgeRunner` 复算 + 录像。**承重墙，MVP 先验证此条**。
 - [ ] **S8-4 家族（兑现 SOC6-4）**：家族 CRUD + 家族频道（**Redis pub/sub** 群扇出）+ 互助 / 增援 + 家族战；复用 social 持久层 + mail fan-out。

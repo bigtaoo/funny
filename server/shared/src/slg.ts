@@ -6,6 +6,21 @@
 //   未触碰的中立格由 worldId 派生的纯函数 proceduralTile() 即时算出，不落库——scale 的关键。
 //   同一 worldId + 同一 (x,y) 永远算出同一格（双端任一可算）。
 
+import { ErrorCode, type ErrorCode as ErrorCodeT } from './api';
+
+/**
+ * worldsvc 端点错误：携带 SLG ErrorCode（httpApi 据 ERROR_HTTP_STATUS 映射 HTTP）。
+ * code 限定为 api.ts ErrorCode 的合法值（含 SLG 段 + 通用 BAD_REQUEST/NOT_FOUND/…）。
+ */
+export class SlgError extends Error {
+  readonly code: ErrorCodeT;
+  constructor(code: keyof typeof ErrorCode, message?: string) {
+    super(message ?? code);
+    this.name = 'SlgError';
+    this.code = ErrorCode[code];
+  }
+}
+
 // ── 枚举（§14.7）─────────────────────────────────────
 export type TileType =
   | 'neutral' // 中立空地（低级、可占领、产出微薄）
@@ -194,6 +209,23 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
     return { type: 'resource', level, resType: biomeAt(x, y, seed) };
   }
   return { type: 'neutral', level: Math.min(level, SLG_GEN.neutralLevelCap) };
+}
+
+// ── 领地产出（S8-1，资源惰性结算的单格贡献，§14.3）────────────
+/**
+ * 单格每小时产出（占领后计入 `playerWorld.yieldRate`）。纯函数。
+ * - `base`（主城）：给起步粮食 trickle（`RESOURCE_YIELD_BASE`），保证新玩家有产出可结算。
+ * - 有 `resType` 的格（resource / familyKeep / 占领后的 territory）：产对应资源 `RESOURCE_YIELD_BASE × level`。
+ * - 其余（无 resType 的 neutral/territory）：不产出。
+ */
+export function tileYield(
+  type: TileType,
+  level: number,
+  resType?: ResourceType,
+): Partial<Record<ResourceType, number>> {
+  if (type === 'base') return { food: RESOURCE_YIELD_BASE };
+  if (resType) return { [resType]: RESOURCE_YIELD_BASE * Math.max(1, level) };
+  return {};
 }
 
 // ── 错误码：见 api.ts ErrorCode 的 SLG 段（WORLD_FULL/TILE_OCCUPIED/…）──
