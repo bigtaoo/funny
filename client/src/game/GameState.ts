@@ -5,6 +5,7 @@ import { resetUnitIds } from './Unit';
 import { resetBuildingIds } from './Building';
 import { UNIT_BLUEPRINTS } from './config';
 import { ActiveSpell, GameEvent, GamePhase, OwnerId, PlayerStats, Side, UnitType, UnitBlueprint, sideToOwner } from './types';
+import type { HazardSpec } from './campaign/LevelDefinition';
 
 /** Mutable version of PlayerStats — accumulated throughout the game. */
 export interface PlayerStatsMutable {
@@ -61,6 +62,9 @@ export class GameState {
 
   /** Multiplier applied to the bottom player's ink regen rate (campaign `inkRegenMult`). */
   bottomInkRegenMult: number = 1;
+
+  /** Active hazard zones for this level. Empty in PvP/netplay. */
+  hazards: HazardSpec[] = [];
 
   /** Currently active spell effects. */
   activeSpells: ActiveSpell[] = [];

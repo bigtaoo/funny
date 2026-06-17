@@ -1,0 +1,36 @@
+{
+  "id": "ch1_lv10",
+  "chapter": 1,
+  "seed": 10010,
+  "objective": { "kind": "boss" },
+  "waves": {
+    "entries": [
+      { "atTick": 60,  "unitType": "infantry",    "col": 1,  "count": 3, "spacingTicks": 15 },
+      { "atTick": 60,  "unitType": "infantry",    "col": 10, "count": 3, "spacingTicks": 15 },
+      { "atTick": 240, "unitType": "runner",      "col": 4,  "count": 4, "spacingTicks": 8 },
+      { "atTick": 240, "unitType": "runner",      "col": 7,  "count": 4, "spacingTicks": 8 },
+      { "atTick": 480, "unitType": "shieldbearer","col": 3,  "count": 3, "spacingTicks": 20 },
+      { "atTick": 480, "unitType": "shieldbearer","col": 8,  "count": 3, "spacingTicks": 20 },
+      { "atTick": 480, "unitType": "ironclad",    "col": 0,  "count": 2, "spacingTicks": 40 },
+      { "atTick": 480, "unitType": "ironclad",    "col": 11, "count": 2, "spacingTicks": 40 },
+      { "atTick": 720, "unitType": "runner",      "col": 1,  "count": 5, "spacingTicks": 6 },
+      { "atTick": 720, "unitType": "runner",      "col": 10, "count": 5, "spacingTicks": 6 },
+      { "atTick": 720, "unitType": "ironclad",    "col": 4,  "count": 2, "spacingTicks": 35 },
+      { "atTick": 720, "unitType": "ironclad",    "col": 7,  "count": 2, "spacingTicks": 35 },
+      { "atTick": 960, "unitType": "ironclad",    "col": 2,  "count": 3, "spacingTicks": 30 },
+      { "atTick": 960, "unitType": "ironclad",    "col": 9,  "count": 3, "spacingTicks": 30 },
+      { "atTick": 960, "unitType": "shieldbearer","col": 4,  "count": 3, "spacingTicks": 18 },
+      { "atTick": 960, "unitType": "shieldbearer","col": 7,  "count": 3, "spacingTicks": 18 },
+      { "atTick": 1200,"unitType": "ironclad",    "col": 4,  "count": 1, "isBoss": true },
+      { "atTick": 1200,"unitType": "ironclad",    "col": 7,  "count": 1, "isBoss": true },
+      { "atTick": 1200,"unitType": "runner",      "col": 0,  "count": 5, "spacingTicks": 6 },
+      { "atTick": 1200,"unitType": "runner",      "col": 11, "count": 5, "spacingTicks": 6 },
+      { "atTick": 1200,"unitType": "shieldbearer","col": 3,  "count": 3, "spacingTicks": 18 },
+      { "atTick": 1200,"unitType": "shieldbearer","col": 8,  "count": 3, "spacingTicks": 18 }
+    ]
+  },
+  "rewards": {
+    "starThresholds": [40, 70, 100],
+    "materials": { "scrap": 18, "lead": 8, "binding": 3 }
+  }
+}

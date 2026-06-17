@@ -470,6 +470,24 @@ export class WorldService {
     return view;
   }
 
+  /** 玩家当前世界所有在途行军列表（scheduler 到点删档，查到的均为未到达行军）。 */
+  async getMarches(worldId: string, accountId: string): Promise<MarchView[]> {
+    const docs = await this.deps.cols.marches
+      .find({ worldId, ownerId: accountId })
+      .sort({ arriveAt: 1 })
+      .toArray();
+    return docs.map((d) => ({
+      marchId: d._id,
+      kind: d.kind,
+      fromTile: d.fromTile,
+      toTile: d.toTile,
+      troops: d.troops,
+      departAt: d.departAt,
+      arriveAt: d.arriveAt,
+      status: d.status as 'marching' | 'returning',
+    }));
+  }
+
   /**
    * 到点处理：扫描所有 arriveAt ≤ now 的在途行军，原子认领（findOneAndDelete）后按 kind 落地。
    * 以 Mongo `arriveAt` 索引扫描为权威（跨世界、无 Redis 也正确）；Redis ZSET 仅作精确唤醒提示

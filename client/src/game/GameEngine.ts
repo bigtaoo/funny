@@ -28,6 +28,7 @@ import { CombatSystem } from './systems/CombatSystem';
 import { MovementSystem } from './systems/MovementSystem';
 import { ResourceSystem } from './systems/ResourceSystem';
 import { SpellSystem } from './systems/SpellSystem';
+import { HazardSystem } from './systems/HazardSystem';
 import {
   CardDefinition,
   CardType,
@@ -67,6 +68,7 @@ class GameEngineImpl implements IGameEngine {
   private readonly resource:   ResourceSystem;
   private readonly movement:   MovementSystem;
   private readonly combat:     CombatSystem;
+  private readonly hazard:     HazardSystem;
   private readonly spell:      SpellSystem;
   private readonly production: BuildingProductionSystem;
   private readonly ai:         AISystem;
@@ -86,6 +88,7 @@ class GameEngineImpl implements IGameEngine {
     this.resource   = new ResourceSystem();
     this.movement   = new MovementSystem();
     this.combat     = new CombatSystem();
+    this.hazard     = new HazardSystem();
     this.spell      = new SpellSystem();
     this.production = new BuildingProductionSystem();
     this.ai         = new AISystem(new Prng(config.seed ^ 0xA1A1A1A1));
@@ -114,9 +117,14 @@ class GameEngineImpl implements IGameEngine {
       this.level        = config.level;
       this.waveDirector = new WaveDirector(config.level, new Prng(config.seed ^ 0x5A5A5A5A));
 
-      // Apply level setup: no-build cells (coverage puzzle) + starting ink.
+      // Apply level setup: blocked cells, no-build cells, hazards, starting ink.
+      const blocked = config.level.board?.cellMask?.blocked;
+      if (blocked && blocked.length > 0) this.state.board.setBlocked(blocked);
       const noBuild = config.level.board?.cellMask?.noBuild;
       if (noBuild && noBuild.length > 0) this.state.board.setNoBuild(noBuild);
+      if (config.level.hazards && config.level.hazards.length > 0) {
+        this.state.hazards = config.level.hazards;
+      }
       if (config.level.startInk) {
         this.state.bottomPlayer.addInkFp(toFp(config.level.startInk));
       }
@@ -237,7 +245,7 @@ class GameEngineImpl implements IGameEngine {
         this.processCommand(cmd);
       }
       for (const spawn of this.waveDirector.tick(tick)) {
-        this.spawnEnemyUnit(spawn.unitType, spawn.col, spawn.isBoss);
+        this.spawnEnemyUnit(spawn.unitType, spawn.col, spawn.isBoss, spawn.crossWaypoints);
       }
     } else if (this.mode === 'netplay') {
       // Online lockstep PvP (S1-7): both sides are humans. `commands` is the
@@ -262,6 +270,7 @@ class GameEngineImpl implements IGameEngine {
     this.resource.tick(this.state);
     this.production.tick(this.state);
     this.combat.tick(this.state);
+    this.hazard.tick(this.state);
     this.movement.tick(this.state);
     this.spell.tick(this.state);
 
@@ -459,13 +468,16 @@ class GameEngineImpl implements IGameEngine {
    * hand/ink economy. Emits the same unit_spawned / unit_move_start events as
    * a card play, so the render layer needs no campaign-specific handling.
    */
-  private spawnEnemyUnit(unitType: UnitType, col: number, isBoss?: boolean): void {
+  private spawnEnemyUnit(unitType: UnitType, col: number, isBoss?: boolean, crossWaypoints?: { atRow: number; toCol: number }[]): void {
     const side: Side = Side.Top;
     const owner: OwnerId = 1;
     const unit = new Unit(unitType, side, col, TOP_SPAWN_ROW, this.state.unitBlueprints[unitType]);
     if (isBoss) {
       unit.isBoss = true;
       this.state.bossUnitIds.add(unit.id);
+    }
+    if (crossWaypoints && crossWaypoints.length > 0) {
+      unit.pendingWaypoints = crossWaypoints.slice();
     }
     this.state.board.addUnit(unit);
     this.state.stats[owner].unitsSent++;

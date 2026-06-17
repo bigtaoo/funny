@@ -94,6 +94,12 @@ export interface HazardSpec {
   col: number;
   rowRange: [number, number];
   effect: 'speed' | 'fog' | 'lava';
+  /** For 'speed': multiplier applied to unit base speed (default 0.5 = half speed). */
+  speedMult?: number;
+  /** For 'fog': additive range delta, typically negative (default -1). */
+  rangeMod?: number;
+  /** For 'lava': damage per second dealt to units inside the zone (default 5). */
+  dps?: number;
 }
 
 export interface LevelRewards {

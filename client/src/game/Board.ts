@@ -33,6 +33,10 @@ export class Board {
   /** Original no-build cell list (for the render layer to draw markers). */
   private noBuildList: { col: number; row: number }[] = [];
 
+  /** Campaign impassable (blocked) cells — units must detour around them. Empty in PvP. */
+  private blockedKeys: Set<number> = new Set();
+  private blockedList: { col: number; row: number }[] = [];
+
   constructor() {
     this.clearGrids();
   }
@@ -193,6 +197,19 @@ export class Board {
   /** No-build cell list for the render layer to draw blocked markers. */
   getNoBuildCells(): { col: number; row: number }[] {
     return this.noBuildList;
+  }
+
+  setBlocked(cells: { col: number; row: number }[]): void {
+    this.blockedList = cells.slice();
+    this.blockedKeys = new Set(cells.map((c) => c.row * BOARD_COLS + c.col));
+  }
+
+  isBlocked(col: number, row: number): boolean {
+    return this.blockedKeys.has(row * BOARD_COLS + col);
+  }
+
+  getBlockedCells(): { col: number; row: number }[] {
+    return this.blockedList;
   }
 
   getUnitsInRange(col: number, row: number, range: number, side: Side): Unit[] {

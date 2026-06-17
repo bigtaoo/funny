@@ -1,0 +1,35 @@
+{
+  "id": "ch2_lv8",
+  "chapter": 2,
+  "seed": 20008,
+  "objective": { "kind": "survive" },
+  "loadout": ["infantry_1", "infantry_2", "meteor_1", "haste_1"],
+  "waves": {
+    "entries": [
+      { "atTick": 60,  "unitType": "infantry",    "col": 4,  "count": 3, "spacingTicks": 15 },
+      { "atTick": 60,  "unitType": "infantry",    "col": 7,  "count": 3, "spacingTicks": 15 },
+      { "atTick": 300, "unitType": "ironclad",    "col": 3,  "count": 1 },
+      { "atTick": 300, "unitType": "runner",      "col": 1,  "count": 4, "spacingTicks": 9 },
+      { "atTick": 300, "unitType": "runner",      "col": 10, "count": 4, "spacingTicks": 9 },
+      { "atTick": 540, "unitType": "shieldbearer","col": 4,  "count": 3, "spacingTicks": 22 },
+      { "atTick": 540, "unitType": "shieldbearer","col": 7,  "count": 3, "spacingTicks": 22 },
+      { "atTick": 540, "unitType": "runner",      "col": 0,  "count": 4, "spacingTicks": 8 },
+      { "atTick": 780, "unitType": "ironclad",    "col": 4,  "count": 2, "spacingTicks": 38 },
+      { "atTick": 780, "unitType": "ironclad",    "col": 7,  "count": 2, "spacingTicks": 38 },
+      { "atTick": 780, "unitType": "infantry",    "col": 2,  "count": 4, "spacingTicks": 13 },
+      { "atTick": 780, "unitType": "infantry",    "col": 9,  "count": 4, "spacingTicks": 13 },
+      { "atTick": 1020,"unitType": "ironclad",    "col": 0,  "count": 2, "spacingTicks": 35 },
+      { "atTick": 1020,"unitType": "ironclad",    "col": 11, "count": 2, "spacingTicks": 35 },
+      { "atTick": 1020,"unitType": "runner",      "col": 3,  "count": 5, "spacingTicks": 7 },
+      { "atTick": 1020,"unitType": "runner",      "col": 8,  "count": 5, "spacingTicks": 7 },
+      { "atTick": 1260,"unitType": "ironclad",    "col": 3,  "count": 3, "spacingTicks": 32 },
+      { "atTick": 1260,"unitType": "ironclad",    "col": 8,  "count": 3, "spacingTicks": 32 },
+      { "atTick": 1260,"unitType": "shieldbearer","col": 4,  "count": 3, "spacingTicks": 20 },
+      { "atTick": 1260,"unitType": "shieldbearer","col": 7,  "count": 3, "spacingTicks": 20 }
+    ]
+  },
+  "rewards": {
+    "starThresholds": [35, 65, 100],
+    "materials": { "scrap": 10, "lead": 8, "binding": 1 }
+  }
+}

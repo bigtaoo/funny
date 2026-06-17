@@ -78,6 +78,20 @@ export class Unit {
    */
   crossingBlocked: boolean = false;
 
+  // ── Detour (MidCross) ─────────────────────────────────────────────────────
+
+  /** Target column for the current Detour (crossWaypoint or blocked auto-detour). Null when not detouring. */
+  detourTargetCol: number | null = null;
+  /** Lateral direction of travel during Detour: +1 right, -1 left, 0 not yet assigned. */
+  detourDir: 1 | -1 | 0 = 0;
+  /** Pending crossWaypoint triggers for this unit, sorted by atRow (ascending for Bottom, descending for Top). */
+  pendingWaypoints: { atRow: number; toCol: number }[] = [];
+
+  // ── Hazard modifiers (reset each tick by HazardSystem) ───────────────────
+
+  /** Additive range modifier applied by fog hazards. Negative = reduced range. Reset to 0 each tick. */
+  rangeMod: number = 0;
+
 
   /**
    * @param blueprint Resolved stats for this unit. Defaults to the read-only PvP
@@ -145,6 +159,11 @@ export class Unit {
 
   get isDead(): boolean {
     return this.hp <= 0;
+  }
+
+  /** Attack range taking fog-hazard reduction into account. Always >= 1. */
+  get effectiveRange(): number {
+    return Math.max(1, this.range + this.rangeMod);
   }
 
   // ── Mutation helpers ───────────────────────────────────────────────────────

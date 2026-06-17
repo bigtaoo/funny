@@ -195,11 +195,15 @@ function parseHazards(v: unknown, path: string): HazardSpec[] | undefined {
     }
     const effect = str(h.effect, `${hp}.effect`);
     if (!effects.has(effect)) fail(`${hp}.effect`, `unknown hazard effect '${effect}'`);
-    return {
+    const spec: HazardSpec = {
       col,
       rowRange: [int(h.rowRange[0], `${hp}.rowRange[0]`), int(h.rowRange[1], `${hp}.rowRange[1]`)],
       effect: effect as HazardSpec['effect'],
     };
+    if (h.speedMult !== undefined) spec.speedMult = num(h.speedMult, `${hp}.speedMult`);
+    if (h.rangeMod  !== undefined) spec.rangeMod  = num(h.rangeMod,  `${hp}.rangeMod`);
+    if (h.dps       !== undefined) spec.dps       = num(h.dps,       `${hp}.dps`);
+    return spec;
   });
 }
 

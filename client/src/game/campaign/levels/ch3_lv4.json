@@ -1,0 +1,34 @@
+{
+  "id": "ch3_lv4",
+  "chapter": 3,
+  "seed": 30004,
+  "objective": { "kind": "survive" },
+  "board": {
+    "activeLanes": [0, 1, 9, 10, 11]
+  },
+  "waves": {
+    "entries": [
+      { "atTick": 60,  "unitType": "runner",      "col": 0,  "count": 3, "spacingTicks": 9 },
+      { "atTick": 60,  "unitType": "runner",      "col": 11, "count": 3, "spacingTicks": 9 },
+      { "atTick": 300, "unitType": "infantry",    "col": 1,  "count": 3, "spacingTicks": 15 },
+      { "atTick": 300, "unitType": "infantry",    "col": 10, "count": 3, "spacingTicks": 15 },
+      { "atTick": 300, "unitType": "runner",      "col": 9,  "count": 3, "spacingTicks": 8 },
+      { "atTick": 540, "unitType": "shieldbearer","col": 0,  "count": 2, "spacingTicks": 26 },
+      { "atTick": 540, "unitType": "shieldbearer","col": 11, "count": 2, "spacingTicks": 26 },
+      { "atTick": 540, "unitType": "runner",      "col": 1,  "count": 4, "spacingTicks": 8 },
+      { "atTick": 540, "unitType": "runner",      "col": 10, "count": 4, "spacingTicks": 8 },
+      { "atTick": 780, "unitType": "ironclad",    "col": 9,  "count": 2, "spacingTicks": 38 },
+      { "atTick": 780, "unitType": "infantry",    "col": 0,  "count": 4, "spacingTicks": 13 },
+      { "atTick": 780, "unitType": "infantry",    "col": 11, "count": 4, "spacingTicks": 13 },
+      { "atTick": 1020,"unitType": "ironclad",    "col": 0,  "count": 2, "spacingTicks": 36 },
+      { "atTick": 1020,"unitType": "ironclad",    "col": 11, "count": 2, "spacingTicks": 36 },
+      { "atTick": 1020,"unitType": "shieldbearer","col": 1,  "count": 3, "spacingTicks": 20 },
+      { "atTick": 1020,"unitType": "shieldbearer","col": 10, "count": 3, "spacingTicks": 20 },
+      { "atTick": 1020,"unitType": "runner",      "col": 9,  "count": 5, "spacingTicks": 7 }
+    ]
+  },
+  "rewards": {
+    "starThresholds": [35, 65, 100],
+    "materials": { "scrap": 9, "lead": 5 }
+  }
+}

@@ -16,6 +16,7 @@ module.exports = (env, argv) => {
   // 生产未配则留空 → net/config 返回 null → 退化为纯本地离线。
   const apiBase = process.env.NW_API_BASE || (isProd ? '' : 'http://localhost:18080');
   const gatewayWs = process.env.NW_GATEWAY_WS || (isProd ? '' : 'ws://localhost:8086/gw');
+  const worldBase = process.env.NW_WORLD_BASE || (isProd ? '' : 'http://localhost:18084');
 
   return {
     target: 'web',
@@ -48,6 +49,7 @@ module.exports = (env, argv) => {
         'globalThis.__NW_API_BASE__': JSON.stringify(apiBase),
         'globalThis.__NW_GATEWAY_WS__': JSON.stringify(gatewayWs),
         'globalThis.__NW_BUILD_VERSION__': JSON.stringify(process.env.NW_BUILD_VERSION || '0.0.0'),
+        'globalThis.__NW_WORLD_BASE__': JSON.stringify(worldBase),
       }),
     ],
     devServer: {

@@ -23,7 +23,14 @@ const minimal = () => ({
 describe('parseLevelDefinition', () => {
   it('accepts every bundled campaign level', () => {
     // Loading levels.ts already ran the parser; assert the registry is intact.
-    expect(CAMPAIGN_LEVEL_ORDER).toEqual(['ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch_stress']);
+    expect(CAMPAIGN_LEVEL_ORDER).toEqual([
+      'ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch1_lv4', 'ch1_lv5',
+      'ch1_lv6', 'ch1_lv7', 'ch1_lv8', 'ch1_lv9', 'ch1_lv10',
+      'ch2_lv1', 'ch2_lv2', 'ch2_lv3', 'ch2_lv4', 'ch2_lv5',
+      'ch2_lv6', 'ch2_lv7', 'ch2_lv8', 'ch2_lv9', 'ch2_lv10',
+      'ch3_lv1', 'ch3_lv2', 'ch3_lv3', 'ch3_lv4',
+      'ch_stress',
+    ]);
     for (const id of CAMPAIGN_LEVEL_ORDER) {
       expect(CAMPAIGN_LEVELS[id]!.id).toBe(id);
     }

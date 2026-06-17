@@ -93,7 +93,7 @@ export class CombatSystem {
     // attack range around them (Chebyshev distance), not just the cell straight
     // ahead. Scan ring by ring so the closest target is preferred; within a ring,
     // an enemy unit takes priority over a building in the same cell.
-    for (let dist = 1; dist <= unit.range; dist++) {
+    for (let dist = 1; dist <= unit.effectiveRange; dist++) {
       let buildingHit: Building | null = null;
       for (let dr = -dist; dr <= dist; dr++) {
         for (let dc = -dist; dc <= dist; dc++) {

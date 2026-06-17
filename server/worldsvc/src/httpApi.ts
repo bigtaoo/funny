@@ -117,6 +117,13 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.getTile(worldId, accountId, x, y)));
         }
 
+        // ── 行军列表（S8-2，做实）──
+        if (method === 'GET' && path === '/world/march') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await svc.getMarches(worldId, accountId)));
+        }
+
         // ── 进入世界 / 占领 / 放弃（S8-1，做实）──
         if (method === 'POST' && (path === '/world/join' || path === '/world/occupy' || path === '/world/abandon')) {
           const body = await readJson(req);

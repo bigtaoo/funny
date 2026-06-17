@@ -7,6 +7,7 @@ export interface WaveSpawn {
   unitType: UnitType;
   col: number;
   isBoss?: boolean;
+  crossWaypoints?: { atRow: number; toCol: number }[];
 }
 
 interface ExpandedSpawn {
@@ -14,6 +15,7 @@ interface ExpandedSpawn {
   unitType: UnitType;
   col: number;
   isBoss?: boolean;
+  crossWaypoints?: { atRow: number; toCol: number }[];
 }
 
 /**
@@ -47,6 +49,7 @@ export class WaveDirector {
           unitType: entry.unitType,
           col: entry.col,
           isBoss: entry.isBoss,
+          crossWaypoints: entry.crossWaypoints,
         });
       }
     }
@@ -60,7 +63,7 @@ export class WaveDirector {
     const out: WaveSpawn[] = [];
     while (this.cursor < this.spawns.length && this.spawns[this.cursor]!.tick <= tick) {
       const s = this.spawns[this.cursor++]!;
-      out.push({ unitType: s.unitType, col: s.col, isBoss: s.isBoss });
+      out.push({ unitType: s.unitType, col: s.col, isBoss: s.isBoss, crossWaypoints: s.crossWaypoints });
     }
     return out;
   }

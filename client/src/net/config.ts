@@ -51,3 +51,11 @@ export function getGatewayWsUrl(storage?: IStorage): string | null {
   if (!api) return null;
   return api.replace(/^http/, 'ws').replace(/\/api$/, '/gw');
 }
+
+// worldsvc REST 基址解析（S8）。
+// 优先级：构建期注入 __NW_WORLD_BASE__ > '' (同源，Caddy /world/* 转 worldsvc)。
+// 生产未配则空字符串（同源路径），dev 缺省 http://localhost:18084。
+export function getWorldBaseUrl(): string {
+  const injected = (globalThis as { __NW_WORLD_BASE__?: string }).__NW_WORLD_BASE__ ?? '';
+  return injected.replace(/\/+$/, '');
+}

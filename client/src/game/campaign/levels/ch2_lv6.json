@@ -1,0 +1,35 @@
+{
+  "id": "ch2_lv6",
+  "chapter": 2,
+  "seed": 20006,
+  "objective": { "kind": "survive" },
+  "bannedCards": ["tower_1", "tower_2"],
+  "waves": {
+    "entries": [
+      { "atTick": 60,  "unitType": "archer",      "col": 4,  "count": 2, "spacingTicks": 18 },
+      { "atTick": 60,  "unitType": "archer",      "col": 7,  "count": 2, "spacingTicks": 18 },
+      { "atTick": 300, "unitType": "infantry",    "col": 1,  "count": 3, "spacingTicks": 15 },
+      { "atTick": 300, "unitType": "infantry",    "col": 10, "count": 3, "spacingTicks": 15 },
+      { "atTick": 300, "unitType": "runner",      "col": 4,  "count": 3, "spacingTicks": 9 },
+      { "atTick": 540, "unitType": "archer",      "col": 3,  "count": 3, "spacingTicks": 16 },
+      { "atTick": 540, "unitType": "archer",      "col": 8,  "count": 3, "spacingTicks": 16 },
+      { "atTick": 540, "unitType": "shieldbearer","col": 0,  "count": 2, "spacingTicks": 24 },
+      { "atTick": 780, "unitType": "runner",      "col": 1,  "count": 5, "spacingTicks": 7 },
+      { "atTick": 780, "unitType": "runner",      "col": 10, "count": 5, "spacingTicks": 7 },
+      { "atTick": 780, "unitType": "archer",      "col": 4,  "count": 3, "spacingTicks": 14 },
+      { "atTick": 780, "unitType": "archer",      "col": 7,  "count": 3, "spacingTicks": 14 },
+      { "atTick": 1020,"unitType": "ironclad",    "col": 4,  "count": 2, "spacingTicks": 40 },
+      { "atTick": 1020,"unitType": "ironclad",    "col": 7,  "count": 2, "spacingTicks": 40 },
+      { "atTick": 1020,"unitType": "archer",      "col": 2,  "count": 3, "spacingTicks": 15 },
+      { "atTick": 1020,"unitType": "archer",      "col": 9,  "count": 3, "spacingTicks": 15 },
+      { "atTick": 1260,"unitType": "ironclad",    "col": 0,  "count": 2, "spacingTicks": 35 },
+      { "atTick": 1260,"unitType": "ironclad",    "col": 11, "count": 2, "spacingTicks": 35 },
+      { "atTick": 1260,"unitType": "runner",      "col": 3,  "count": 5, "spacingTicks": 7 },
+      { "atTick": 1260,"unitType": "runner",      "col": 8,  "count": 5, "spacingTicks": 7 }
+    ]
+  },
+  "rewards": {
+    "starThresholds": [35, 65, 100],
+    "materials": { "scrap": 9, "lead": 7, "binding": 1 }
+  }
+}

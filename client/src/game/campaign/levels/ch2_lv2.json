@@ -1,0 +1,29 @@
+{
+  "id": "ch2_lv2",
+  "chapter": 2,
+  "seed": 20002,
+  "objective": { "kind": "survive" },
+  "startInk": 10,
+  "waves": {
+    "entries": [
+      { "atTick": 180, "unitType": "infantry",    "col": 4,  "count": 2, "spacingTicks": 22 },
+      { "atTick": 180, "unitType": "infantry",    "col": 7,  "count": 2, "spacingTicks": 22 },
+      { "atTick": 420, "unitType": "runner",      "col": 3,  "count": 3, "spacingTicks": 12 },
+      { "atTick": 420, "unitType": "runner",      "col": 8,  "count": 3, "spacingTicks": 12 },
+      { "atTick": 660, "unitType": "shieldbearer","col": 1,  "count": 2, "spacingTicks": 28 },
+      { "atTick": 660, "unitType": "infantry",    "col": 4,  "count": 3, "spacingTicks": 15 },
+      { "atTick": 660, "unitType": "infantry",    "col": 7,  "count": 3, "spacingTicks": 15 },
+      { "atTick": 900, "unitType": "runner",      "col": 0,  "count": 4, "spacingTicks": 9 },
+      { "atTick": 900, "unitType": "runner",      "col": 11, "count": 4, "spacingTicks": 9 },
+      { "atTick": 900, "unitType": "shieldbearer","col": 4,  "count": 2, "spacingTicks": 22 },
+      { "atTick": 1140,"unitType": "infantry",    "col": 2,  "count": 4, "spacingTicks": 14 },
+      { "atTick": 1140,"unitType": "infantry",    "col": 9,  "count": 4, "spacingTicks": 14 },
+      { "atTick": 1140,"unitType": "runner",      "col": 4,  "count": 4, "spacingTicks": 8 },
+      { "atTick": 1140,"unitType": "runner",      "col": 7,  "count": 4, "spacingTicks": 8 }
+    ]
+  },
+  "rewards": {
+    "starThresholds": [40, 70, 100],
+    "materials": { "scrap": 7, "lead": 5 }
+  }
+}

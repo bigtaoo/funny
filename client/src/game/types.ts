@@ -47,6 +47,7 @@ export enum UnitState {
   Attacking = 'attacking',
   Waiting   = 'waiting',   // blocked by friendly unit in front
   Crossing  = 'crossing',  // in building row, moving horizontally toward base cols
+  Detour    = 'detour',   // mid-lane horizontal redirect (crossWaypoints / blocked auto-detour)
   Dead      = 'dead',
 }
 

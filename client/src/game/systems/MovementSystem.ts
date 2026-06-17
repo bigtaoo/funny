@@ -47,6 +47,8 @@ export class MovementSystem {
 
       if (unit.state === UnitState.Crossing) {
         this.moveCrossing(unit, state);
+      } else if (unit.state === UnitState.Detour) {
+        this.moveDetour(unit, state);
       } else {
         this.moveForward(unit, state);
       }
@@ -85,6 +87,33 @@ export class MovementSystem {
       return;
     }
 
+    // ── Cross-waypoint trigger (scripted lane switch) ──────────────────────
+    if (unit.pendingWaypoints.length > 0) {
+      const wp = unit.pendingWaypoints[0]!;
+      const triggerMet = isBottom ? unit.row >= wp.atRow : unit.row <= wp.atRow;
+      if (triggerMet) {
+        unit.pendingWaypoints.shift();
+        if (unit.col !== wp.toCol) {
+          unit.detourTargetCol = wp.toCol;
+          unit.detourDir = (wp.toCol > unit.col ? 1 : -1) as 1 | -1;
+          unit.state = UnitState.Detour;
+          return;
+        }
+      }
+    }
+
+    // ── Blocked cell ahead — auto-detour ──────────────────────────────────
+    const nextRow = unit.row + direction;
+    if (nextRow >= 0 && nextRow < 18 && state.board.isBlocked(unit.col, nextRow)) {
+      // Pick detour direction: prefer existing dir, else toward board center
+      if (unit.detourDir === 0) {
+        unit.detourDir = (unit.col < 5.5 ? 1 : -1) as 1 | -1;
+      }
+      unit.detourTargetCol = unit.col + unit.detourDir;
+      unit.state = UnitState.Detour;
+      return;
+    }
+
     // ── Friendly collision (radius-based) ──────────────────────────────────
     const frontUnit = board.getFriendlyUnitAhead(unit);
     if (frontUnit) {
@@ -116,6 +145,54 @@ export class MovementSystem {
     // Clamp so we don't overshoot
     if (isBottom  && unit.y_fp > crossingY_fp) unit.y_fp = crossingY_fp;
     if (!isBottom && unit.y_fp < crossingY_fp) unit.y_fp = crossingY_fp;
+  }
+
+  // ─── Detour (lateral redirect around blocked cell or crossWaypoint) ─────────
+
+  private moveDetour(unit: Unit, state: GameState): void {
+    const board = state.board;
+    const targetCol = unit.detourTargetCol;
+    if (targetCol === null) {
+      unit.state = UnitState.Moving;
+      return;
+    }
+
+    const dir = unit.detourDir as 1 | -1;
+
+    // Advance one step laterally this tick
+    const dx: Fp = mulFp(unit.speed_fp, TICK_DT_FP);
+    if (dir > 0) {
+      unit.x_fp = addFp(unit.x_fp, dx);
+      if (unit.x_fp > toFp(targetCol)) unit.x_fp = toFp(targetCol);
+    } else {
+      unit.x_fp = subFp(unit.x_fp, dx);
+      if (unit.x_fp < toFp(targetCol)) unit.x_fp = toFp(targetCol);
+    }
+    unit.col = Math.round(fromFp(unit.x_fp));
+
+    // Check if we've arrived at the target col
+    if (unit.col === targetCol) {
+      const isBottom = unit.side === Side.Bottom;
+      const direction = isBottom ? 1 : -1;
+      const nextRow = unit.row + direction;
+
+      if (nextRow >= 0 && nextRow < 18 && board.isBlocked(unit.col, nextRow)) {
+        // Forward is still blocked — extend detour by one more col in same dir
+        let newTarget = targetCol + dir;
+        if (newTarget < 0 || newTarget >= BOARD_COLS) {
+          // Reverse direction at board edge
+          unit.detourDir = (dir > 0 ? -1 : 1) as 1 | -1;
+          newTarget = targetCol + unit.detourDir;
+        }
+        unit.detourTargetCol = newTarget;
+      } else {
+        // Path is clear ahead — resume forward movement
+        unit.detourTargetCol = null;
+        unit.detourDir = dir; // keep dir so we don't immediately re-detour in same direction
+        unit.state = UnitState.Moving;
+      }
+    }
+    (void board);
   }
 
   // ─── Crossing (horizontal transit toward base, same rules as forward) ─────
@@ -301,7 +378,7 @@ export class MovementSystem {
     const board      = state.board;
     const isBottom   = unit.side === Side.Bottom;
     const crossingY_fp: Fp = isBottom ? toFp(TOP_BUILDING_ROW) : toFp(BOTTOM_BUILDING_ROW);
-    const rangeFp: Fp      = toFp(unit.range);
+    const rangeFp: Fp      = toFp(unit.effectiveRange);
 
     let stopY_fp: Fp = crossingY_fp;
 

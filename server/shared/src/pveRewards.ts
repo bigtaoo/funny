@@ -18,9 +18,34 @@ export interface PveLevelConfig {
  * 但**这里是发放权威**（客户端 JSON 降级为参考）。首通额外解锁下一关 + 记星，材料同表（每次发）。
  */
 export const PVE_LEVELS: PveLevelConfig[] = [
-  { id: 'ch1_lv1', requires: null, reward: { scrap: 6, lead: 2 } },
-  { id: 'ch1_lv2', requires: 'ch1_lv1', reward: { scrap: 8, lead: 3, binding: 1 } },
-  { id: 'ch1_lv3', requires: 'ch1_lv2', reward: { scrap: 10, lead: 4, binding: 2 } },
+  // ── Chapter 1 ────────────────────────────────────────────────────────────
+  { id: 'ch1_lv1',  requires: null,       reward: { scrap: 6,  lead: 2 } },
+  { id: 'ch1_lv2',  requires: 'ch1_lv1',  reward: { scrap: 8,  lead: 3,  binding: 1 } },
+  { id: 'ch1_lv3',  requires: 'ch1_lv2',  reward: { scrap: 10, lead: 4,  binding: 2 } },
+  { id: 'ch1_lv4',  requires: 'ch1_lv3',  reward: { scrap: 8,  lead: 3 } },
+  { id: 'ch1_lv5',  requires: 'ch1_lv4',  reward: { scrap: 10, lead: 4 } },
+  { id: 'ch1_lv6',  requires: 'ch1_lv5',  reward: { scrap: 10, lead: 4,  binding: 1 } },
+  { id: 'ch1_lv7',  requires: 'ch1_lv6',  reward: { scrap: 12, lead: 5 } },
+  { id: 'ch1_lv8',  requires: 'ch1_lv7',  reward: { scrap: 14, lead: 6,  binding: 1 } },
+  { id: 'ch1_lv9',  requires: 'ch1_lv8',  reward: { scrap: 16, lead: 7,  binding: 2 } },
+  { id: 'ch1_lv10', requires: 'ch1_lv9',  reward: { scrap: 18, lead: 8,  binding: 3 } },
+  // ── Chapter 2 ────────────────────────────────────────────────────────────
+  { id: 'ch2_lv1',  requires: 'ch1_lv10', reward: { scrap: 6,  lead: 5 } },
+  { id: 'ch2_lv2',  requires: 'ch2_lv1',  reward: { scrap: 7,  lead: 5 } },
+  { id: 'ch2_lv3',  requires: 'ch2_lv2',  reward: { scrap: 8,  lead: 6 } },
+  { id: 'ch2_lv4',  requires: 'ch2_lv3',  reward: { scrap: 9,  lead: 6,  binding: 1 } },
+  { id: 'ch2_lv5',  requires: 'ch2_lv4',  reward: { scrap: 8,  lead: 7 } },
+  { id: 'ch2_lv6',  requires: 'ch2_lv5',  reward: { scrap: 9,  lead: 7,  binding: 1 } },
+  { id: 'ch2_lv7',  requires: 'ch2_lv6',  reward: { scrap: 10, lead: 8,  binding: 1 } },
+  { id: 'ch2_lv8',  requires: 'ch2_lv7',  reward: { scrap: 10, lead: 8,  binding: 1 } },
+  { id: 'ch2_lv9',  requires: 'ch2_lv8',  reward: { scrap: 9,  lead: 8,  binding: 2 } },
+  { id: 'ch2_lv10', requires: 'ch2_lv9',  reward: { scrap: 12, lead: 10, binding: 2 } },
+  // ── Chapter 3 ────────────────────────────────────────────────────────────
+  { id: 'ch3_lv1',  requires: 'ch2_lv10', reward: { scrap: 8,  lead: 4 } },
+  { id: 'ch3_lv2',  requires: 'ch3_lv1',  reward: { scrap: 8,  lead: 4 } },
+  { id: 'ch3_lv3',  requires: 'ch3_lv2',  reward: { scrap: 9,  lead: 5 } },
+  { id: 'ch3_lv4',  requires: 'ch3_lv3',  reward: { scrap: 9,  lead: 5 } },
+  // ── Extras ───────────────────────────────────────────────────────────────
   { id: 'ch_stress', requires: 'ch1_lv3', reward: {} },
 ];
 
