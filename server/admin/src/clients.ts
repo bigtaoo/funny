@@ -115,6 +115,57 @@ export class HttpPlayerClient implements PlayerClient {
   }
 }
 
+// ── analyticsvc 查询（/internal/query，A9-6）──────────────────
+export interface AnalyticsEventCountRow { date: string; event: string; count: number }
+export interface AnalyticsDauRow { date: string; dau: number }
+export interface AnalyticsFunnelRow { date: string; platform: string; funnel_step: string; count: number; conversion_rate?: number }
+
+export interface AnalyticsQueryResult {
+  event_counts?: AnalyticsEventCountRow[];
+  dau?: AnalyticsDauRow[];
+  funnel?: AnalyticsFunnelRow[];
+}
+
+export interface AnalyticsClient {
+  readonly available: boolean;
+  query(type: string, days: number, platform?: string): Promise<AnalyticsQueryResult>;
+}
+
+export class HttpAnalyticsClient implements AnalyticsClient {
+  constructor(
+    private readonly analyticsUrl: string | null,
+    private readonly internalKey: string,
+  ) {}
+
+  get available(): boolean { return this.analyticsUrl !== null; }
+
+  async query(type: string, days: number, platform?: string): Promise<AnalyticsQueryResult> {
+    if (!this.analyticsUrl) return {};
+    try {
+      const qs = new URLSearchParams({ type, days: String(days) });
+      if (platform) qs.set('platform', platform);
+      const res = await fetch(`${this.analyticsUrl}/internal/query?${qs}`, {
+        headers: { 'X-Internal-Key': this.internalKey },
+      });
+      if (!res.ok) {
+        log.warn('analytics query non-2xx', { type, status: res.status });
+        return {};
+      }
+      type Payload = { type: string; counts?: AnalyticsEventCountRow[]; dau?: AnalyticsDauRow[]; funnel?: AnalyticsFunnelRow[] };
+      const body = (await res.json()) as { data: Payload };
+      const p = body.data;
+      if (!p) return {};
+      if (p.type === 'event_counts') return { event_counts: p.counts ?? [] };
+      if (p.type === 'dau') return { dau: p.dau ?? [] };
+      if (p.type === 'funnel') return { funnel: p.funnel ?? [] };
+      return {};
+    } catch (e) {
+      log.warn('analytics query failed', { type, err: (e as Error).message });
+      return {};
+    }
+  }
+}
+
 // ── 邮件投递（meta 系统邮件端点，OPS_DESIGN §4.1 / §3.3）─────
 // 补偿执行 = 创建系统邮件（不碰钱包）。端点由 SOCIAL_DESIGN S6-3 落地，邮件后端并行做，
 // admin 先按契约形状对接。available=false（未配置）或端点不存在（404/501）时执行失败 → 工单

@@ -93,14 +93,30 @@ export function startHttpApi(
         return send(res, 200, ok(null));
       }
 
-      // ─── GET /internal/query（X-Internal-Key，ops 后台用）────────────────
+      // ─── GET /internal/query（X-Internal-Key，ops 后台用，A9-6）─────────
       if (method === 'GET' && url.startsWith('/internal/query')) {
         const key = req.headers['x-internal-key'];
         if (key !== opts.internalKey) {
           return sendErr(res, ErrorCode.UNAUTHENTICATED, 'invalid internal key');
         }
-        // A9-6：具体聚合查询留 ops 后台任务实现，当前返回 NOT_IMPLEMENTED
-        return sendErr(res, ErrorCode.NOT_IMPLEMENTED, '/internal/query 未实现（A9-6）');
+        const qs = new URL(req.url ?? '/', 'http://x').searchParams;
+        const type = qs.get('type') ?? 'event_counts';
+        const days = Math.min(90, Math.max(1, Number(qs.get('days') ?? '7')));
+        const platform = qs.get('platform') ?? undefined;
+
+        if (type === 'event_counts') {
+          const counts = await svc.queryEventCounts(days);
+          return send(res, 200, ok({ type, counts }));
+        }
+        if (type === 'dau') {
+          const dau = await svc.queryDau(days);
+          return send(res, 200, ok({ type, dau }));
+        }
+        if (type === 'funnel') {
+          const funnel = await svc.queryFunnel(days, platform);
+          return send(res, 200, ok({ type, funnel }));
+        }
+        return sendErr(res, ErrorCode.BAD_REQUEST, `unknown query type: ${type}`);
       }
 
       return sendErr(res, ErrorCode.NOT_FOUND, 'not found');

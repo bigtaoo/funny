@@ -109,6 +109,16 @@ export class Api {
   }> {
     return this.req('GET', '/admin/analytics/summary');
   }
+  analyticsEvents(type: string, days: number, platform?: string): Promise<{
+    available: boolean;
+    event_counts?: { date: string; event: string; count: number }[];
+    dau?: { date: string; dau: number }[];
+    funnel?: { date: string; platform: string; funnel_step: string; count: number; conversion_rate?: number }[];
+  }> {
+    const qs = new URLSearchParams({ type, days: String(days) });
+    if (platform) qs.set('platform', platform);
+    return this.req('GET', `/admin/analytics/events?${qs}`);
+  }
 
   // —— 玩家 ——
   async player(publicId: string): Promise<PlayerProfile> {

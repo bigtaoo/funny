@@ -32,7 +32,7 @@ import {
 } from '@nw/shared';
 import { METRIC_KEYS } from '@nw/shared';
 import type { AdminAccountDoc, AdminCollections, AuditDoc, CompTicketDoc } from './db';
-import type { MailDispatcher, PlayerClient, PlayerProfile, StatsClient } from './clients';
+import type { AnalyticsClient, AnalyticsQueryResult, MailDispatcher, PlayerClient, PlayerProfile, StatsClient } from './clients';
 
 const log = createLogger('admin:service');
 
@@ -61,6 +61,7 @@ export interface AdminServiceDeps {
   stats: StatsClient;
   players: PlayerClient;
   mail: MailDispatcher;
+  analytics: AnalyticsClient;
   now: () => number;
 }
 
@@ -91,6 +92,7 @@ export class AdminService {
   private readonly stats: StatsClient;
   private readonly players: PlayerClient;
   private readonly mail: MailDispatcher;
+  private readonly analytics: AnalyticsClient;
   private readonly now: () => number;
   /** 登录失败限流表（按登录名，内存态）。 */
   private readonly loginAttempts = new Map<string, LoginAttempt>();
@@ -100,6 +102,7 @@ export class AdminService {
     this.stats = deps.stats;
     this.players = deps.players;
     this.mail = deps.mail;
+    this.analytics = deps.analytics;
     this.now = deps.now;
   }
 
@@ -521,6 +524,13 @@ export class AdminService {
       tickets[st] = await this.cols.compTickets.countDocuments({ status: st });
     }
     return { live, last24h, tickets };
+  }
+
+  /** 埋点聚合查询（代理到 analyticsvc /internal/query，A9-6）。 */
+  async analyticsQuery(type: string, days: number, platform?: string): Promise<AnalyticsQueryResult & { available: boolean }> {
+    if (!this.analytics.available) return { available: false };
+    const result = await this.analytics.query(type, days, platform);
+    return { ...result, available: true };
   }
 
   /** 玩家查询（player.lookup）。 */

@@ -146,6 +146,13 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           requireCap(actor, 'analytics.view');
           return send(res, 200, { ok: true, ...(await svc.analyticsSummary()) });
         }
+        if (method === 'GET' && path === '/admin/analytics/events') {
+          requireCap(actor, 'analytics.view');
+          const type = url.searchParams.get('type') ?? 'event_counts';
+          const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days') ?? '7')));
+          const platform = url.searchParams.get('platform') ?? undefined;
+          return send(res, 200, { ok: true, ...(await svc.analyticsQuery(type, days, platform)) });
+        }
 
         // ── 玩家查询 ──
         if (method === 'GET' && path.startsWith('/admin/player/')) {

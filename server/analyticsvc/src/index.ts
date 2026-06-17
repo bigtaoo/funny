@@ -3,6 +3,7 @@ import { loadAnalyticssvcEnv } from './config';
 import { createAnalyticsMongo } from './db';
 import { AnalyticsService } from './service';
 import { startHttpApi } from './httpApi';
+import { startEtlScheduler } from './scheduler';
 
 async function main(): Promise<void> {
   const env = loadAnalyticssvcEnv();
@@ -10,12 +11,14 @@ async function main(): Promise<void> {
   await mongo.ensureIndexes();
 
   const svc = new AnalyticsService(mongo.collections);
+  const stopEtl = startEtlScheduler(svc);
   const server = startHttpApi(
     { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },
     svc,
   );
 
   const shutdown = async (): Promise<void> => {
+    stopEtl();
     server.close();
     await mongo.close();
     process.exit(0);

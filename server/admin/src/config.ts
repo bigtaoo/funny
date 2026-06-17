@@ -25,6 +25,8 @@ export interface AdminEnv extends ServerEnv {
   gatewayInternalUrl: string | null;
   /** matchsvc 内部 HTTP 基址（GET /internal/stats 匹配池）。 */
   matchsvcInternalUrl: string | null;
+  /** analyticsvc 内部 HTTP 基址（GET /internal/query 埋点查询）。 */
+  analyticsBaseUrl: string | null;
   /** 自采采样间隔 ms（写 metricSnapshots）。默认 30000；<=0 关闭采样。 */
   sampleIntervalMs: number;
   /** metricSnapshots TTL（秒，保留窗口）。默认 14 天。 */
@@ -46,6 +48,7 @@ export function loadAdminEnv(): AdminEnv {
     metaBaseUrl: process.env.NW_META_BASE_URL ?? null,
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL ?? null,
     matchsvcInternalUrl: process.env.NW_MATCHSVC_INTERNAL_URL ?? null,
+    analyticsBaseUrl: process.env.NW_ANALYTICS_BASE_URL ?? null,
     sampleIntervalMs: Number(process.env.NW_ADMIN_SAMPLE_MS ?? 30000),
     snapshotTtlSec: Number(process.env.NW_ADMIN_SNAPSHOT_TTL_SEC ?? 14 * 24 * 3600),
   };

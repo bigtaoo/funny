@@ -138,23 +138,106 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
   root.append(h('h2', {}, '数据分析'));
   const err = h('div', { class: 'err' });
   const body = h('div', {});
-  root.append(body, err);
-  try {
-    const s = await api.analyticsSummary();
-    const t = h('table', {}, h('tr', {}, h('th', {}, '指标'), h('th', {}, '24h 均值'), h('th', {}, '24h 峰值'), h('th', {}, '采样数')));
-    for (const [k, v] of Object.entries(s.last24h)) {
-      t.append(h('tr', {}, h('td', {}, k), h('td', {}, v.avg.toFixed(1)), h('td', {}, String(v.peak)), h('td', {}, String(v.samples))));
-    }
-    body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, '近 24 小时自采趋势'), t));
+  const daysSel = h('select', { style: 'margin-left:8px' },
+    h('option', { value: '1' }, '今天'),
+    h('option', { value: '7', selected: 'selected' }, '近 7 天'),
+    h('option', { value: '30' }, '近 30 天'),
+  ) as HTMLSelectElement;
+  const refreshBtn = h('button', { class: 'ghost' }, '刷新');
 
-    const tk = h('table', {}, h('tr', {}, h('th', {}, '工单状态'), h('th', {}, '数量')));
-    for (const [k, v] of Object.entries(s.tickets)) {
-      tk.append(h('tr', {}, h('td', {}, pill(k, k)), h('td', {}, String(v))));
+  root.append(
+    h('div', { class: 'row' }, h('span', { class: 'muted' }, '时间范围'), daysSel, refreshBtn),
+    body,
+    err,
+  );
+
+  const reload = async (): Promise<void> => {
+    err.textContent = '';
+    clear(body);
+    const days = Number(daysSel.value);
+
+    // ── 并行拉三种数据 + 监控概览 ──
+    const [summary, evCounts, dau, funnel] = await Promise.allSettled([
+      api.analyticsSummary(),
+      api.analyticsEvents('event_counts', days),
+      api.analyticsEvents('dau', days),
+      api.analyticsEvents('funnel', days),
+    ]);
+
+    // 监控概览（自采指标 + 工单）
+    if (summary.status === 'fulfilled') {
+      const s = summary.value;
+      const t = h('table', {}, h('tr', {}, h('th', {}, '指标'), h('th', {}, '24h 均值'), h('th', {}, '24h 峰值'), h('th', {}, '采样数')));
+      for (const [k, v] of Object.entries(s.last24h)) {
+        t.append(h('tr', {}, h('td', {}, k), h('td', {}, v.avg.toFixed(1)), h('td', {}, String(v.peak)), h('td', {}, String(v.samples))));
+      }
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, '近 24 小时自采监控'), t));
+
+      const tk = h('table', {}, h('tr', {}, h('th', {}, '工单状态'), h('th', {}, '数量')));
+      for (const [k, v] of Object.entries(s.tickets)) {
+        tk.append(h('tr', {}, h('td', {}, pill(k, k)), h('td', {}, String(v))));
+      }
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, '补偿工单概览'), tk));
     }
-    body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, '补偿工单概览'), tk));
-  } catch (e) {
-    showErr(err, e);
-  }
+
+    // 事件计数
+    if (evCounts.status === 'fulfilled' && evCounts.value.available && evCounts.value.event_counts?.length) {
+      const rows = evCounts.value.event_counts;
+      // 收集所有事件类型（列）和日期（行）。
+      const events = [...new Set(rows.map((r) => r.event))].sort();
+      const dates = [...new Set(rows.map((r) => r.date))].sort();
+      const lookup = new Map(rows.map((r) => [`${r.date}:${r.event}`, r.count]));
+
+      const header = h('tr', {}, h('th', {}, '日期'), ...events.map((e) => h('th', {}, e)));
+      const t = h('table', {}, header);
+      for (const date of dates) {
+        t.append(h('tr', {}, h('td', {}, date), ...events.map((e) => h('td', { style: 'text-align:right' }, String(lookup.get(`${date}:${e}`) ?? 0)))));
+      }
+      body.append(h('div', { class: 'card', style: 'overflow-x:auto' }, h('div', { class: 'muted' }, `事件计数（近 ${days} 天）`), t));
+    } else if (evCounts.status === 'fulfilled' && !evCounts.value.available) {
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, '埋点服务未配置（NW_ANALYTICS_BASE_URL）')));
+    }
+
+    // DAU 趋势
+    if (dau.status === 'fulfilled' && dau.value.available && dau.value.dau?.length) {
+      const pts = dau.value.dau;
+      const t = h('table', {}, h('tr', {}, h('th', {}, '日期'), h('th', {}, 'DAU（日活设备）')));
+      for (const p of pts) t.append(h('tr', {}, h('td', {}, p.date), h('td', { style: 'text-align:right' }, String(p.dau))));
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `DAU 趋势（近 ${days} 天）`), sparkline(pts.map((p) => p.dau)), t));
+    }
+
+    // 漏斗转化
+    if (funnel.status === 'fulfilled' && funnel.value.available && funnel.value.funnel?.length) {
+      const rows = funnel.value.funnel;
+      const platforms = [...new Set(rows.map((r) => r.platform))].sort();
+      const steps = ['session_start', 'game_start', 'level_attempt', 'level_complete'];
+
+      for (const plat of platforms) {
+        const platRows = rows.filter((r) => r.platform === plat);
+        // 最新一天的漏斗（取最大 date）。
+        const latestDate = platRows.reduce((m, r) => (r.date > m ? r.date : m), '');
+        const latest = platRows.filter((r) => r.date === latestDate);
+        const byStep = new Map(latest.map((r) => [r.funnel_step, r]));
+
+        const t = h('table', {}, h('tr', {}, h('th', {}, '步骤'), h('th', {}, '人次'), h('th', {}, '转化率')));
+        for (const step of steps) {
+          const row = byStep.get(step);
+          t.append(h('tr', {},
+            h('td', {}, step),
+            h('td', { style: 'text-align:right' }, row ? String(row.count) : '—'),
+            h('td', { style: 'text-align:right' }, row?.conversion_rate !== undefined ? (row.conversion_rate * 100).toFixed(1) + '%' : '—'),
+          ));
+        }
+        body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `漏斗转化（${plat}，${latestDate}）`), t));
+      }
+    }
+
+    if (evCounts.status === 'rejected') showErr(err, evCounts.reason);
+  };
+
+  refreshBtn.addEventListener('click', () => void reload());
+  daysSel.addEventListener('change', () => void reload());
+  await reload();
 }
 
 // ───────────────────────── 玩家查询 ─────────────────────────
