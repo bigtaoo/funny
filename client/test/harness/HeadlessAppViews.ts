@@ -34,11 +34,14 @@ import type { RoomSceneCallbacks } from '../../src/scenes/RoomScene';
 import type { FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
 import type { ChatSceneCallbacks } from '../../src/scenes/ChatScene';
 import type { GameSceneCallbacks, GameSceneOptions } from '../../src/scenes/GameScene';
+import type { WorldMapCallbacks } from '../../src/scenes/WorldMapScene';
+import type { FamilySceneCallbacks } from '../../src/scenes/FamilyScene';
+import type { AuctionSceneCallbacks } from '../../src/scenes/AuctionScene';
 
 export type ScreenName =
   | 'none' | 'intro' | 'lobby' | 'settings' | 'login' | 'shop' | 'gacha'
   | 'campaignMap' | 'levelPrep' | 'collection' | 'stats' | 'replay' | 'result' | 'room' | 'friends'
-  | 'chat' | 'gameNet' | 'game';
+  | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'auction';
 
 interface ActiveMatch {
   engine: IGameEngine;
@@ -153,6 +156,10 @@ export class HeadlessAppViews implements AppViews {
     this.chat = cb;
     return { applyIncoming: () => {} };
   }
+
+  showWorldMap(_cb: WorldMapCallbacks): void { this.screen = 'worldMap'; }
+  showFamily(_cb: FamilySceneCallbacks): void { this.screen = 'family'; }
+  showAuction(_cb: AuctionSceneCallbacks): void { this.screen = 'auction'; }
 
   showGameNet(localSide: OwnerId, cb: GameSceneCallbacks, opts: GameSceneOptions): NetGameView {
     this.screen = 'gameNet';

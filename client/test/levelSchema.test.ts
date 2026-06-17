@@ -28,7 +28,14 @@ describe('parseLevelDefinition', () => {
       'ch1_lv6', 'ch1_lv7', 'ch1_lv8', 'ch1_lv9', 'ch1_lv10',
       'ch2_lv1', 'ch2_lv2', 'ch2_lv3', 'ch2_lv4', 'ch2_lv5',
       'ch2_lv6', 'ch2_lv7', 'ch2_lv8', 'ch2_lv9', 'ch2_lv10',
-      'ch3_lv1', 'ch3_lv2', 'ch3_lv3', 'ch3_lv4',
+      'ch3_lv1', 'ch3_lv2', 'ch3_lv3', 'ch3_lv4', 'ch3_lv5',
+      'ch3_lv6', 'ch3_lv7', 'ch3_lv8', 'ch3_lv9', 'ch3_lv10',
+      'ch4_lv1', 'ch4_lv2', 'ch4_lv3', 'ch4_lv4', 'ch4_lv5',
+      'ch4_lv6', 'ch4_lv7', 'ch4_lv8', 'ch4_lv9', 'ch4_lv10',
+      'ch5_lv1', 'ch5_lv2', 'ch5_lv3', 'ch5_lv4', 'ch5_lv5',
+      'ch5_lv6', 'ch5_lv7', 'ch5_lv8', 'ch5_lv9', 'ch5_lv10',
+      'ch6_lv1', 'ch6_lv2', 'ch6_lv3', 'ch6_lv4', 'ch6_lv5',
+      'ch6_lv6', 'ch6_lv7', 'ch6_lv8', 'ch6_lv9', 'ch6_lv10',
       'ch_stress',
     ]);
     for (const id of CAMPAIGN_LEVEL_ORDER) {

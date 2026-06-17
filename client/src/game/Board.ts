@@ -37,6 +37,9 @@ export class Board {
   private blockedKeys: Set<number> = new Set();
   private blockedList: { col: number; row: number }[] = [];
 
+  /** Campaign active attack lanes — only these lanes accept new units / are highlighted. */
+  private activeLanesList: number[] | undefined;
+
   constructor() {
     this.clearGrids();
   }
@@ -210,6 +213,16 @@ export class Board {
 
   getBlockedCells(): { col: number; row: number }[] {
     return this.blockedList;
+  }
+
+  // ─── Active attack lanes (campaign lane restriction) ──────────────────────
+
+  setActiveLanes(lanes: number[]): void {
+    this.activeLanesList = lanes.slice();
+  }
+
+  getActiveLanes(): number[] | undefined {
+    return this.activeLanesList;
   }
 
   getUnitsInRange(col: number, row: number, range: number, side: Side): Unit[] {

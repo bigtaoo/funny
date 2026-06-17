@@ -44,6 +44,8 @@ export interface LevelDefinition {
   rewards?: LevelRewards;
   /** i18n story keys for intro / outro narration (§8). */
   story?: { introKey?: TranslationKey; outroKey?: TranslationKey };
+  /** Optional display-name key for this level, shown in CampaignMapScene. Falls back to chapter/position label. */
+  nameKey?: TranslationKey;
 }
 
 /** Integer grid cell. */

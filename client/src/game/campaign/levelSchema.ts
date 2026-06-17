@@ -283,6 +283,10 @@ export function parseLevelDefinition(raw: unknown, ctx = 'level'): LevelDefiniti
   const rewards = parseRewards(raw.rewards, `${ctx}.rewards`);
   if (rewards) level.rewards = rewards;
 
+  if (raw.nameKey !== undefined) {
+    level.nameKey = str(raw.nameKey, `${ctx}.nameKey`) as LevelDefinition['nameKey'];
+  }
+
   if (raw.story !== undefined) {
     if (!isObject(raw.story)) fail(`${ctx}.story`, 'expected a story object');
     const story: NonNullable<LevelDefinition['story']> = {};

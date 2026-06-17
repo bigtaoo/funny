@@ -251,6 +251,7 @@ export class GameRenderer {
   private buildSceneGraph(): void {
     this.boardView    = new BoardView(this.layout);
     this.boardView.markNoBuildCells(this.engine.state.board.getNoBuildCells());
+    this.boardView.markInactiveLanes(this.engine.state.board.getActiveLanes());
     this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkin);
     this.buildingView = new BuildingView(this.boardView);
     this.handView     = new HandView(this.layout);

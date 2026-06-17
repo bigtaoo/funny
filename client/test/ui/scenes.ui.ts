@@ -29,7 +29,11 @@ import { RoomScene } from '../../src/scenes/RoomScene';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { ChatScene } from '../../src/scenes/ChatScene';
 import { ResultScene } from '../../src/scenes/ResultScene';
+import { WorldMapScene } from '../../src/scenes/WorldMapScene';
+import { FamilyScene } from '../../src/scenes/FamilyScene';
+import { AuctionScene } from '../../src/scenes/AuctionScene';
 import type { PlayerStats } from '../../src/game/types';
+import type { WorldApiClient } from '../../src/net/WorldApiClient';
 
 // In-memory storage so initI18n (which persists the locale) has somewhere to write.
 const memStore = (() => {
@@ -55,6 +59,23 @@ const zeroStats = (owner: 0 | 1): PlayerStats => ({
   buildingSurvivalTicks: 0,
   goldSpent: 0,
 });
+
+/** Minimal WorldApiClient stub — all methods return never-resolving promises so the
+ *  scene's async loadData() just hangs silently (all API calls are try/caught). */
+function stubWorldApi(): WorldApiClient {
+  const never = () => new Promise<never>(() => {});
+  return {
+    getMe: never, getMap: never, getTile: never, getMarches: never,
+    joinWorld: never, occupyTile: never, abandonTile: never,
+    startMarch: never, recallMarch: never,
+    listFamilies: never, getFamily: never, createFamily: never,
+    joinFamily: never, leaveFamily: never, kickMember: never,
+    setRole: never, dissolveFamily: never,
+    sendFamilyMessage: never, getFamilyChannel: never,
+    listAuctions: never, getMyListings: never,
+    createAuction: never, buyAuction: never, cancelAuction: never,
+  } as unknown as WorldApiClient;
+}
 
 /** Build → update twice → destroy. Asserts the container is real and nothing throws. */
 function exercise(scene: Scene): void {
@@ -263,6 +284,37 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         0,
         { delta: 16, after: 1016, rankAfter: 'bronze' },
       ),
+  },
+  {
+    name: 'WorldMapScene',
+    build: (w, h) =>
+      new WorldMapScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        onOpenFamily() {},
+        onOpenAuction() {},
+        worldApi: stubWorldApi(),
+        worldId: 'world:1:0',
+        playerName: 'Tester',
+      }),
+  },
+  {
+    name: 'FamilyScene',
+    build: (w, h) =>
+      new FamilyScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        worldApi: stubWorldApi(),
+        worldId: 'world:1:0',
+        myAccountId: 'acc_test',
+      }),
+  },
+  {
+    name: 'AuctionScene',
+    build: (w, h) =>
+      new AuctionScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        worldApi: stubWorldApi(),
+        worldId: 'world:1:0',
+      }),
   },
 ];
 

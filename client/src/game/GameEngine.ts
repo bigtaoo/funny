@@ -122,6 +122,8 @@ class GameEngineImpl implements IGameEngine {
       if (blocked && blocked.length > 0) this.state.board.setBlocked(blocked);
       const noBuild = config.level.board?.cellMask?.noBuild;
       if (noBuild && noBuild.length > 0) this.state.board.setNoBuild(noBuild);
+      const activeLanes = config.level.board?.activeLanes;
+      if (activeLanes && activeLanes.length > 0) this.state.board.setActiveLanes(activeLanes);
       if (config.level.hazards && config.level.hazards.length > 0) {
         this.state.hazards = config.level.hazards;
       }
