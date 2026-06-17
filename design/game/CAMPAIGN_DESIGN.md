@@ -191,7 +191,7 @@
 | **`boss`** | — | `WaveEntry.isBoss` 单位出生时把 id 记入 `GameState.bossUnitIds`；已出生 boss 全部 `isDead` 且非空集 → 胜；基地死 / 漏过仍判负 | 小 |
 
 > `boss` 的 `isBoss` 已在 `WaveEntry` 预留，`WaveDirector` 出兵时把标记透到 `Unit.isBoss` 并登记 id。
-> **`multi_objective` 不做**：需要"被保护子实体"（额外基地 / 建筑）这一全新概念，比上述重一档，推迟到该实体系统存在时。
+> **`escort`（原 `multi_objective`）**：重新定义为「护送单位到达终点」，已完整设计，见 §4.9。
 
 ### 4.8.3 activeLanes（禁用车道）
 
@@ -221,6 +221,122 @@
 
 ---
 
+## 4.9 新旋钮设计（2026-06-17 拍板）
+
+### 4.9.1 laneLength（非对称车道长度）
+
+| 字段 | `LevelDef.board.laneLength?: Record<number, number>` |
+|---|---|
+| 含义 | 每列的有效行数（从玩家侧算起）；未指定的列默认全长 `ROWS` |
+| 出生行 | `spawnRow = ROWS - laneLength[col]`（出生点上移，敌军更快逼近） |
+| 引擎 | `GameEngine` 初始化时把 `row < spawnRow` 的格子全部 `board.setBlocked()`；`WaveDirector` 出兵时读 `laneLength` 决定出生行 |
+| 渲染 | `BoardView` 把被截断的顶部格子渲染为不可通行地形（灰色/岩石，复用 inactive lane 逻辑） |
+| 量 | 小 |
+
+### 4.9.2 levelSpells（关卡专属玩家主动技 → 加进卡牌）
+
+**设计约束：**
+- 关卡开局**固定给若干张**在手牌；用完后进入随机刷新池（可再抽到）
+- 只存在于关卡指定的牌池中，**永不进全局 `CARD_DEFINITIONS` / PvP 池**（公平硬墙）
+- 新增 `SPELL_CARD_DEFS`（独立 Map），关卡通过 `levelSpells` 字段引用
+
+**配置字段：**
+```ts
+LevelDef.levelSpells?: { cardId: string; initialCount: number }[]
+```
+
+**本期两种法术（2026-06-17 拍板）：**
+
+| 法术 | cardId | 效果 | 费用 | 量 |
+|---|---|---|---|---|
+| 滚石 | `rockslide` | 对目标**列**所有敌方单位造成固定伤害（Meteor 的列版） | 3 | 小 |
+| 炸桥 | `bridge_collapse` | 使目标**列**变为临时 `blocked` N 秒，单位被迫绕路 | 4 | 小 |
+
+**引擎接入点：**
+- `GameEngine.init`：强制把 `initialCount` 张发入玩家手牌，同时把该 cardId 加入刷新池
+- `processCommand`：新增 `Rockslide`（遍历目标列所有 owner=1 单位扣血）和 `BridgeCollapse`（写 `GameState.tempBlockedCols: Map<col, expiresAtTick>`）分支
+- `GameEngine.step`：每 tick 清理过期 `tempBlockedCols`
+- `MovementSystem`：前进检查时把 `tempBlockedCols` 里的列视同 `isBlocked`（触发 MidCross 绕路）
+
+**卡牌 UI：**
+- 滚石 / 炸桥打出后选列（同单位/建筑出牌选列，复用现有拖拽逻辑）
+
+### 4.9.3 escort 护送目标（原 `multi_objective`，2026-06-17 拍板）
+
+**核心玩法：** 玩家侧有一个（或多个）友方护送单位，沿设定路径从玩家端向敌方端移动；到达终点 = 胜利条件之一。玩家用手牌和建筑为护送单位清路/护卫。
+
+**设计决策（全部拍板）：**
+
+| 问题 | 决策 |
+|---|---|
+| 移动方向 | 从 `startRow`（玩家侧）向上走到 `row 0`（敌方侧）；有显式 `path` 则按 path |
+| 有无显式路径 | 关卡可选 `path: Waypoint[]`；缺省 = 沿 `startCol` 直线到 `row 0` |
+| 护送单位能否攻击 | 否，纯被动目标 |
+| 被攻击时行为 | **继续前进**（只扣血不停步），玩家需预清路上的敌军 |
+| 敌军行为 | 进入射程即停下攻击，护送单位走出射程后敌军恢复前进 |
+| 多目标胜负 | `required: 'all' \| 'any' \| number`（全部/任一/至少 N 个到达） |
+
+**配置字段：**
+```ts
+// LevelDef 新增
+escorts?: EscortSpec[]
+
+interface EscortSpec {
+  id: string
+  hp: number
+  speed: number          // 格/秒
+  startCol: number
+  startRow: number
+  path?: { col: number; row: number }[]   // 显式路径；缺省走 startCol 直到 row 0
+}
+
+// ObjectiveSpec 新 variant
+{ kind: 'escort'; required: 'all' | 'any' | number }
+```
+
+**运行时实体（GameState.escorts）：**
+```ts
+interface EscortUnit {
+  id: string
+  hp: number; maxHp: number
+  col_fp: number; row_fp: number    // 定点数，平滑移动
+  remainingPath: { col: number; row: number }[]
+  speed_fp: number
+  status: 'moving' | 'arrived' | 'dead'
+}
+```
+
+**新增系统 `EscortSystem`：**
+- 每 tick 推进 `col_fp`/`row_fp` 朝下一 waypoint 移动
+- 到达 waypoint → 弹出，继续下一段
+- 全路点走完 → `status = 'arrived'`
+
+**CombatSystem 改动：**
+- `findTarget` 把射程内的 `EscortUnit`（`status === 'moving'`）也列为候选目标
+- 按 Chebyshev 距离与普通单位/建筑混排，取最近目标
+- 敌军不会为追护送单位后退（天然满足：`MovementSystem` 前进逻辑不变，`EscortUnit` 不作为「前方障碍」阻塞移动）
+
+**checkWinCondition 新分支：**
+```ts
+// 'escort' objective
+const arrived = escorts 中 status==='arrived' 的数量
+const dead    = escorts 中 status==='dead'    的数量
+const needed  = required==='all' ? total : required==='any' ? 1 : required
+
+if (arrived >= needed) → 玩家胜
+if (total - dead < needed - arrived) → 无法完成，玩家败
+基地死亡仍判负（现有逻辑不变）
+```
+
+**关卡编辑器：** 护送路径可视化编辑（点击棋盘格生成 waypoints）作为**独立 UI 任务**，三核心功能代码完成后补做。
+
+**实现顺序（2026-06-17 拍板）：**
+1. `laneLength`（最小，复用 blocked 逻辑）
+2. `levelSpells`（Rockslide + BridgeCollapse，复用 processCommand 框架）
+3. Escort 护送系统（新实体 + EscortSystem + CombatSystem 改动 + 渲染）
+
+---
+
 ## 5. 数据结构草案
 
 > 与现有类型对齐：`PlayerCommand`、`UnitType`、`col/row`、tick 计时。字段名最终以实现为准。
@@ -233,12 +349,15 @@ interface LevelDefinition {
   id: string;                 // 'ch1_lv3'
   chapter: number;            // 章节（= 故事线 / 主角）
   seed: number;               // 关卡固定随机种子（确定性 + 可做同种子挑战）
-  objective: ObjectiveSpec;   // §4.6
+  objective: ObjectiveSpec;   // §4.6 / §4.9.3
   board: {
-    activeLanes: number[];                  // §4.1
+    activeLanes: number[];                          // §4.1
+    laneLength?: Record<number, number>;            // §4.9.1 col→有效行数
     cellMask?: { blocked?: Cell[]; noBuild?: Cell[] };
   };
   hazards?: HazardSpec[];      // §4.5
+  levelSpells?: { cardId: string; initialCount: number }[];  // §4.9.2
+  escorts?: EscortSpec[];      // §4.9.3 护送目标
   startCoins?: number;
   coinRegenMult?: number;      // §4.7
   loadout?: string[];          // 关前编成（覆盖默认卡池）
@@ -246,6 +365,25 @@ interface LevelDefinition {
   waves: WaveScript;           // §6
   rewards: LevelRewards;       // §7
   story?: { introKey?: string; outroKey?: string }; // i18n story.* 键
+}
+
+// ObjectiveSpec 完整联合（§4.6 + §4.9.3）
+type ObjectiveSpec =
+  | { kind: 'survive' }
+  | { kind: 'timed_defense'; durationTicks: number }
+  | { kind: 'leak_limit'; maxLeaks: number }
+  | { kind: 'destroy_base'; durationTicks: number }
+  | { kind: 'boss' }
+  | { kind: 'escort'; required: 'all' | 'any' | number }
+
+// EscortSpec（§4.9.3）
+interface EscortSpec {
+  id: string
+  hp: number
+  speed: number          // 格/秒
+  startCol: number
+  startRow: number
+  path?: { col: number; row: number }[]  // 显式路径；缺省沿 startCol 到 row 0
 }
 
 interface WaveScript {
