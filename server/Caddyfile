@@ -31,6 +31,11 @@
 		reverse_proxy worldsvc:18084
 	}
 
+	# Analytics 事件采集（A9，公开端点 /analytics/config + /analytics/events；保留路径）
+	handle /analytics* {
+		reverse_proxy analyticsvc:18085
+	}
+
 	# REST：剥掉 /api 前缀后转给 metaserver
 	handle_path /api/* {
 		reverse_proxy metaserver:8080

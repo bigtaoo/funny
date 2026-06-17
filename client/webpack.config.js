@@ -47,6 +47,7 @@ module.exports = (env, argv) => {
         TARGET: JSON.stringify(targetPlatform),
         'globalThis.__NW_API_BASE__': JSON.stringify(apiBase),
         'globalThis.__NW_GATEWAY_WS__': JSON.stringify(gatewayWs),
+        'globalThis.__NW_BUILD_VERSION__': JSON.stringify(process.env.NW_BUILD_VERSION || '0.0.0'),
       }),
     ],
     devServer: {

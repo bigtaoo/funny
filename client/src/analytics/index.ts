@@ -1,0 +1,127 @@
+// Analytics SDK public API (A9-4).
+// Usage:
+//   await analytics.init(platform, saveManager, apiBaseUrl);
+//   analytics.track('screen_view', { scene: 'LobbyScene' });
+//   analytics.track('game_end', { mode: 'campaign', result: 'win', ... });
+
+import type { IPlatform } from '../platform/IPlatform';
+import type { ApiClient } from '../net/ApiClient';
+import { getOrCreateDeviceId } from '../platform/uuid';
+import { getLocale } from '../i18n';
+import { fetchAnalyticsConfig, shouldTrack } from './config';
+import { EventQueue, type BatchMeta } from './queue';
+
+// Derive analytics base URL from API base. If API is https://host/api,
+// analytics is at https://host/analytics (Caddy routes /analytics* to analyticsvc).
+// Returns null when no API base is configured (offline).
+function analyticsBaseUrl(apiBase: string): string {
+  return apiBase.replace(/\/api$/, '');
+}
+
+let queue: EventQueue | null = null;
+let sessionId: string | null = null;
+let getToken: () => string | undefined = () => undefined;
+let sessionStartTs = 0;
+let scenesVisited: string[] = [];
+
+function genSessionId(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Call once at app startup.  Fetches the server-side sampling config and
+ * starts the 30-second flush timer + lifecycle hooks (beforeunload / wx.onHide).
+ *
+ * @param platform   IPlatform (for deviceId, storage, platform name, OS, language)
+ * @param api        ApiClient (for JWT token when user is logged in) — undefined for anonymous
+ * @param apiBase    REST API base URL (e.g. https://host/api) — null → analytics disabled
+ */
+export async function init(
+  platform: IPlatform,
+  api: ApiClient | undefined,
+  apiBase: string | null,
+): Promise<void> {
+  if (!apiBase) return; // no server → analytics disabled silently
+
+  const base = analyticsBaseUrl(apiBase);
+  sessionId = genSessionId();
+  sessionStartTs = Date.now();
+  scenesVisited = [];
+
+  const deviceId = getOrCreateDeviceId(platform.storage);
+  const os = getPlatformOs(platform);
+  const platformName = getPlatformName();
+  const gameVersion = getGameVersion();
+
+  getToken = () => api?.getToken() ?? undefined;
+
+  const getBatchMeta = (): BatchMeta => ({
+    session_id: sessionId!,
+    device_id: deviceId,
+    platform: platformName,
+    os,
+    game_version: gameVersion,
+    locale: getLocale(),
+  });
+
+  queue = new EventQueue({ analyticsBaseUrl: base, getToken, getBatchMeta });
+
+  // Fetch sampling config; on failure the disabled fallback is already in place.
+  await fetchAnalyticsConfig(base);
+
+  queue.start();
+
+  // Emit session_start immediately (sample=1.0 by default).
+  track('session_start', { platform: platformName, os, locale: getLocale() });
+}
+
+/** Track a named event with arbitrary props (synchronous, non-blocking). */
+export function track(event: string, props: Record<string, unknown> = {}): void {
+  if (!queue || !sessionId) return;
+  if (!shouldTrack(event)) return;
+
+  if (event === 'screen_view') {
+    const scene = props['scene'] as string | undefined;
+    if (scene) scenesVisited.push(scene);
+    queue.checkpoint(); // flush before adding new screen event
+  }
+
+  queue.push({ event, ts: Date.now(), props });
+}
+
+/** Emit session_end and flush. Call on app hide / explicit exit. */
+export function endSession(): void {
+  if (!queue || !sessionId) return;
+  const durationSec = Math.round((Date.now() - sessionStartTs) / 1000);
+  track('session_end', { duration_sec: durationSec, scenes_visited: scenesVisited });
+  queue.flushSync();
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function getPlatformName(): 'web' | 'wechat' | 'crazygames' {
+  const t = (globalThis as { TARGET?: string }).TARGET ?? '';
+  if (t === 'wechat') return 'wechat';
+  if (t === 'crazygames') return 'crazygames';
+  return 'web';
+}
+
+function getPlatformOs(platform: IPlatform): string {
+  // WeChat: wx.getSystemInfoSync().system; Web: navigator.platform (deprecated but still widespread).
+  const wx = (globalThis as unknown as { wx?: { getSystemInfoSync?: () => { system: string } } }).wx;
+  if (wx?.getSystemInfoSync) {
+    try { return wx.getSystemInfoSync().system; } catch { /* */ }
+  }
+  if (typeof navigator !== 'undefined') {
+    return (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform
+      ?? navigator.platform
+      ?? 'unknown';
+  }
+  return 'unknown';
+}
+
+function getGameVersion(): string {
+  return (globalThis as { __NW_BUILD_VERSION__?: string }).__NW_BUILD_VERSION__ ?? '0.0.0';
+}

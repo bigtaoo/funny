@@ -18,9 +18,10 @@ COPY gameserver/package.json ./gameserver/
 COPY commercial/package.json ./commercial/
 COPY worldsvc/package.json ./worldsvc/
 COPY admin/package.json ./admin/
+COPY analyticsvc/package.json ./analyticsvc/
 RUN npm ci
 COPY . .
-RUN npx tsc -b shared metaserver gateway matchsvc gameserver commercial worldsvc admin
+RUN npx tsc -b shared metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc
 
 FROM node:20-alpine AS runtime
 WORKDIR /app
@@ -44,6 +45,8 @@ COPY --from=build /app/worldsvc/package.json ./worldsvc/package.json
 COPY --from=build /app/worldsvc/dist ./worldsvc/dist
 COPY --from=build /app/admin/package.json ./admin/package.json
 COPY --from=build /app/admin/dist ./admin/dist
+COPY --from=build /app/analyticsvc/package.json ./analyticsvc/package.json
+COPY --from=build /app/analyticsvc/dist ./analyticsvc/dist
 # meta 读 contracts/openapi.yml；gateway/gameserver 运行期读 contracts/transport.proto（dist/*.js → /app/contracts）。
 COPY --from=build /app/contracts ./contracts
 # 默认 metaserver；gameserver 服务在 compose 里覆盖 command。

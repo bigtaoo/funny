@@ -11,7 +11,8 @@
     "gameserver",
     "commercial",
     "worldsvc",
-    "admin"
+    "admin",
+    "analyticsvc"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
@@ -23,6 +24,7 @@
     "dev:commercial": "npm run dev --workspace @nw/commercial",
     "dev:world": "npm run dev --workspace @nw/worldsvc",
     "dev:admin": "npm run dev --workspace @nw/admin",
+    "dev:analytics": "npm run dev --workspace @nw/analyticsvc",
     "dev:all": "powershell -NoProfile -ExecutionPolicy Bypass -File dev-up.ps1",
     "test": "npm run test --workspaces --if-present"
   },

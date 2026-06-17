@@ -27,13 +27,13 @@ jobs:
             client/package-lock.json
             server/package-lock.json
 
-      # —— 服务端：八包 tsc -b ——
+      # —— 服务端：九包 tsc -b ——
       - name: server install
         working-directory: server
         run: npm ci
       - name: server typecheck (tsc -b)
         working-directory: server
-        run: npx tsc -b shared metaserver gateway matchsvc gameserver commercial worldsvc admin
+        run: npx tsc -b shared metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc
 
       # —— 客户端：单测 + web 构建 ——
       - name: client install
@@ -80,12 +80,15 @@ jobs:
         run: |
           docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml \
             up -d --build --wait \
-            mongo metaserver commercial gateway matchsvc gameserver worldsvc
+            mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc
 
       # SLG worldsvc 部署冒烟（S8-0）：证明第七进程在 prod 镜像里起得来、公网 REST 第四面可达。
-      # （worldsvc 的 Mongo 端到端用例在本地跑——同 commercial/meta，replica-set 容器不便从 runner 宿主直连。）
       - name: worldsvc health smoke
         run: curl -fsS http://localhost:18084/health
+
+      # analyticsvc 部署冒烟（A9-1）：证明第九进程在 prod 镜像里起得来。
+      - name: analyticsvc health smoke
+        run: curl -fsS http://localhost:18085/health
 
       - name: run full-link E2E
         working-directory: client

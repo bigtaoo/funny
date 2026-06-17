@@ -1,6 +1,6 @@
-// pm2 进程编排（C-3 / S1-M，非 Docker 路线）。
+// pm2 进程编排（C-3 / S1-M / A9，非 Docker 路线）。
 // 适用于直接在 VPS 上跑 node（mongod 本机装、caddy 系统服务），不想用 Docker 时：
-//   cd server && npm ci && npx tsc -b shared metaserver gateway matchsvc gameserver commercial worldsvc admin
+//   cd server && npm ci && npx tsc -b shared metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc
 //   NW_JWT_SECRET=... NW_INTERNAL_KEY=... pm2 start ecosystem.config.cjs && pm2 save
 //
 // metaserver 无状态可起多实例（cluster）；gateway / matchsvc / gameserver 各有内存状态必须单实例。
@@ -150,6 +150,24 @@ module.exports = {
         NW_META_BASE_URL: META_BASE, // player.lookup / 系统邮件端点
         NW_GATEWAY_INTERNAL_URL: GW_INTERNAL, // GET /internal/stats 在线数
         NW_MATCHSVC_INTERNAL_URL: MM_INTERNAL, // GET /internal/stats 匹配池
+      },
+    },
+    {
+      // Analytics 事件采集服务（A9，第九进程，玩家不可达，反代不路由）。
+      name: 'nw-analytics',
+      cwd: __dirname,
+      script: 'analyticsvc/dist/index.js',
+      exec_mode: 'fork', // 无状态，可横扩（insertMany 幂等）
+      instances: 1,
+      env: {
+        ...common,
+        NW_ANALYTICS_PORT: process.env.NW_ANALYTICS_PORT || '18085',
+        NW_ANALYTICS_HOST: process.env.NW_ANALYTICS_HOST || '127.0.0.1',
+        NW_ANALYTICS_MONGO_URI:
+          process.env.NW_ANALYTICS_MONGO_URI ||
+          process.env.NW_MONGO_URI ||
+          'mongodb://127.0.0.1:27017/?replicaSet=rs0',
+        NW_ANALYTICS_MONGO_DB: process.env.NW_ANALYTICS_MONGO_DB || 'notebook_wars_analytics',
       },
     },
   ],

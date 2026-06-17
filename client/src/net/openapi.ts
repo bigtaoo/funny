@@ -617,6 +617,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/analytics/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 下发采集配置（无需鉴权，匿名 session 启动时拉一次） */
+        get: operations["getAnalyticsConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analytics/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 批量上报事件（JWT 可选；有 token 附 user_id，否则匿名） */
+        post: operations["postAnalyticsEvents"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -822,6 +856,35 @@ export interface components {
             expireAt: number;
             read: boolean;
             claimed: boolean;
+        };
+        AnalyticsEventConfig: {
+            enabled?: boolean;
+            sample?: number;
+        };
+        AnalyticsConfig: {
+            enabled?: boolean;
+            defaultSample?: number;
+            events?: {
+                [key: string]: components["schemas"]["AnalyticsEventConfig"];
+            };
+        };
+        AnalyticsEvent: {
+            event: string;
+            /** @description 客户端 unix ms */
+            ts: number;
+            props?: {
+                [key: string]: unknown;
+            };
+        };
+        AnalyticsEventBatch: {
+            session_id?: string;
+            device_id?: string;
+            /** @enum {string} */
+            platform?: "web" | "wechat" | "crazygames";
+            os?: string;
+            game_version?: string;
+            locale?: string;
+            events: components["schemas"]["AnalyticsEvent"][];
         };
     };
     responses: {
@@ -2078,6 +2141,59 @@ export interface operations {
             };
             401: components["responses"]["ErrorResp"];
             403: components["responses"]["ErrorResp"];
+        };
+    };
+    getAnalyticsConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 采集配置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: components["schemas"]["AnalyticsConfig"];
+                    };
+                };
+            };
+        };
+    };
+    postAnalyticsEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalyticsEventBatch"];
+            };
+        };
+        responses: {
+            /** @description 接收成功（fire-and-forget，不代表落盘） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok?: true;
+                        data?: unknown;
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
         };
     };
 }

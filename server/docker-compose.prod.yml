@@ -185,6 +185,25 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # 事件采集服务（A9，第九进程，玩家不可达，反代不路由）。连专属库 notebook_wars_analytics。
+  analyticsvc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "analyticsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
+      NW_ANALYTICS_PORT: "18085"
+      NW_ANALYTICS_HOST: 0.0.0.0
+      NW_ANALYTICS_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_ANALYTICS_MONGO_DB: ${NW_ANALYTICS_MONGO_DB:-notebook_wars_analytics}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
   caddy:
     image: caddy:2
     container_name: nw-caddy

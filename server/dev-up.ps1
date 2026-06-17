@@ -40,6 +40,7 @@ $procs = @(
   @{ name = 'commercial'; dir = 'commercial'; env = @{} }
   @{ name = 'world';      dir = 'worldsvc';   env = @{ NW_WORLD_PORT = '18084'; NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090' } }
   @{ name = 'admin';      dir = 'admin';      env = @{ NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_MATCHSVC_INTERNAL_URL = 'http://127.0.0.1:8091'; NW_META_BASE_URL = 'http://127.0.0.1:18080'; NW_ADMIN_SEED_USER = 'root'; NW_ADMIN_SEED_PASS = 'rootpass' } }
+  @{ name = 'analytics';  dir = 'analyticsvc'; env = @{ NW_ANALYTICS_PORT = '18085' } }
 )
 
 if ($Only) {

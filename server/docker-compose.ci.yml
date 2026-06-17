@@ -75,3 +75,13 @@ services:
       timeout: 5s
       start_period: 5s
       retries: 20
+
+  analyticsvc:
+    ports:
+      - "18085:18085"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:18085/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 20

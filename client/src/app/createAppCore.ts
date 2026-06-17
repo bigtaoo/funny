@@ -29,6 +29,7 @@ import type { ProfileData } from '../render/ProfilePopup';
 import type { AuthOutcome } from '../scenes/LoginScene';
 import type { RenameOutcome } from '../scenes/SettingsScene';
 import type { EloResult } from '../scenes/ResultScene';
+import * as analytics from '../analytics';
 
 const log = netLog('app');
 
@@ -74,6 +75,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     },
   });
 
+  // Analytics SDK — fire and forget; config fetch failure degrades to disabled.
+  void analytics.init(platform, api, baseUrl);
+
   // ── NetSession: online room + lockstep transport (three-channel, M20) ───────
   let gatewayUrl = getGatewayWsUrl(platform.storage);
   let netSession: NetSession | null = null;
@@ -115,6 +119,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
   function goIntro(): void {
     inLobby = false;
+    analytics.track('screen_view', { scene: 'IntroScene' });
     views.showIntro({
       onFinish() {
         saveManager.setFlag(SEEN_INTRO_FLAG, true);
@@ -132,6 +137,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (opts?.offline !== undefined) offlineMode = opts.offline;
     inLobby = true;
     platform.onGameplayStop();
+    if (!opts?.fromResize) analytics.track('screen_view', { scene: 'LobbyScene' });
     const pvp = saveManager.get().pvp;
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const online = loggedIn && !!api && !!gatewayUrl;
@@ -221,6 +227,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
   function goLogin(): void {
     inLobby = false;
+    analytics.track('screen_view', { scene: 'LoginScene' });
     views.showLogin({
       onPlayOffline() { goLobby({ offline: true }); },
       onLogin: (loginId, password) => doAuth(() => api!.login(loginId, password), loginId),
@@ -281,6 +288,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
   function goRoom(opts?: { autoRanked?: boolean }): void {
     inLobby = false;
+    analytics.track('screen_view', { scene: 'RoomScene', ranked: !!opts?.autoRanked });
     const session = getNetSession();
     const autoRanked = !!opts?.autoRanked && session !== null;
     if (opts?.autoRanked && session === null) {
@@ -331,6 +339,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   function goFriends(): void {
     // Social needs a server account; offline / no API → bounce to login.
     if (!api) { goLogin(); return; }
+    analytics.track('screen_view', { scene: 'FriendsScene' });
     const client = api;
     inLobby = false;
     const session = getNetSession();
@@ -412,6 +421,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (!api) { goLobby(); return; }
     const client = api;
     inLobby = false;
+    analytics.track('shop_open', {});
     views.showShop({
       onBack() { goLobby(); },
       getCoins: () => saveManager.get().wallet.coins,
@@ -482,16 +492,27 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   function goGame(): void {
     inLobby = false;
     platform.onGameplayStart();
+    analytics.track('game_start', { mode: 'pvp_ai' });
+    const gameStartTs = Date.now();
     views.showGame({
       onGameEnd(winner, stats, replay) {
+        analytics.track('game_end', {
+          mode: 'pvp_ai',
+          result: winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw',
+          duration_sec: Math.round((Date.now() - gameStartTs) / 1000),
+        });
         goResult(winner, stats, 0, keepReplay(replay));
       },
-      onExitToLobby() { goLobby(); },
+      onExitToLobby() {
+        analytics.track('game_end', { mode: 'pvp_ai', result: 'abandon', duration_ticks: 0 });
+        goLobby();
+      },
     }, { equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null });
   }
 
   function goCampaignMap(): void {
     inLobby = false;
+    analytics.track('screen_view', { scene: 'CampaignMapScene' });
     views.showCampaignMap({
       onBack() { goLobby(); },
       onSelectLevel(levelId) { goLevelPrep(levelId); },
@@ -509,9 +530,13 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (!level) { goCampaignMap(); return; }
     const levelNumber = CAMPAIGN_LEVEL_ORDER.indexOf(levelId) + 1 || 1;
     inLobby = false;
+    analytics.track('level_attempt', {
+      level_id: levelId,
+      stars_before: saveManager.get().progress.stars[levelId] ?? 0,
+    });
     views.showLevelPrep({
       onBack() { goCampaignMap(); },
-      onStart() { goCampaign(levelId); },
+      onStart() { analytics.track('screen_view', { scene: 'GameScene' }); goCampaign(levelId); },
       levelNumber,
       getMaterials: () => saveManager.get().materials,
       getUpgradeLevel: (id) => saveManager.get().pveUpgrades[id] ?? 0,
@@ -583,20 +608,38 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (!level || !levelId) { goLobby(); return; }
     inLobby = false;
     platform.onGameplayStart();
+    analytics.track('game_start', { mode: 'campaign', level_id: levelId });
+    const campaignStartTs = Date.now();
     views.showGame({
       onGameEnd(winner, stats, replay) {
         // 先落盘录像（一次），既供结算页回放、也供 L1 抽检（§8.6）补传复算。
         const kept = keepReplay(replay);
+        const durationSec = Math.round((Date.now() - campaignStartTs) / 1000);
         if (winner === 0) {
           const pct = remainingHpPct(stats[0].damageTakenByBase);
           const stars = computeStars(level.rewards?.starThresholds, pct);
+          analytics.track('level_complete', {
+            level_id: levelId,
+            stars,
+            duration_sec: durationSec,
+          });
           // 服务器权威结算（§8）：在线 → POST /pve/clear（被抽中则用 kept 录像走 /pve/verify 复算）；
           // 离线 → 入队待结算（fire-and-forget，回到 CampaignMap 时重读 save / pending 反映状态）。
           if (stars > 0) void saveManager.recordClear(levelId, stars, kept);
+        } else {
+          analytics.track('game_end', {
+            mode: 'campaign',
+            result: 'loss',
+            level_id: levelId,
+            duration_sec: durationSec,
+          });
         }
         goResult(winner, stats, 0, kept);
       },
-      onExitToLobby() { goLobby(); },
+      onExitToLobby() {
+        analytics.track('level_abandon', { level_id: levelId, phase: 'in_game' });
+        goLobby();
+      },
     }, {
       level,
       pveUpgrades: saveManager.get().pveUpgrades,
@@ -617,6 +660,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (!session) { goLobby(); return; }
     inLobby = false;
     platform.onGameplayStart();
+    const isRankedMode = info.mode === MatchMode.RANKED;
+    analytics.track('game_start', { mode: isRankedMode ? 'pvp_ranked' : 'pvp_friendly' });
+    const netGameStartTs = Date.now();
 
     const localOwner = info.localSide as OwnerId;
 
@@ -643,7 +689,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         meta: { recordedAt: Date.now(), winner: winner ?? -1 },
       });
 
-    const isRanked = info.mode === MatchMode.RANKED;
+    const isRanked = isRankedMode;
     let netResultShown = false;
     let lastElo: EloResult | undefined;
     let pending: { winner: OwnerId | null; stats: [PlayerStats, PlayerStats]; replay?: Replay } | null = null;
@@ -665,6 +711,12 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
         session.reportResult(matchStateHash(winner, stats), winner ?? 0);
         const replay = buildNetReplay(winner);
+        const result = winner === null ? 'draw' : winner === localOwner ? 'win' : 'loss';
+        analytics.track('game_end', {
+          mode: isRanked ? 'pvp_ranked' : 'pvp_friendly',
+          result,
+          duration_sec: Math.round((Date.now() - netGameStartTs) / 1000),
+        });
         if (isRanked) {
           pending = { winner, stats, replay };
           eloWaitTimer = setTimeout(() => finishNet(winner, stats, lastElo, replay), 6000);
@@ -675,7 +727,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onNetMatchOver(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
         finishNet(winner, stats, lastElo, buildNetReplay(winner));
       },
-      onExitToLobby() { session.close(); goLobby(); },
+      onExitToLobby() {
+        analytics.track('game_end', { mode: isRanked ? 'pvp_ranked' : 'pvp_friendly', result: 'abandon', duration_sec: Math.round((Date.now() - netGameStartTs) / 1000) });
+        session.close(); goLobby();
+      },
     }, { engine, net: true, profiles });
 
     session.handlers = {

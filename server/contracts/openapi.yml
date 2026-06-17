@@ -333,6 +333,49 @@ components:
         read: { type: boolean }
         claimed: { type: boolean }
 
+    # —— Analytics（A9-0）——
+    AnalyticsEventConfig:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        sample:  { type: number }
+
+    AnalyticsConfig:
+      type: object
+      properties:
+        enabled:       { type: boolean }
+        defaultSample: { type: number }
+        events:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/AnalyticsEventConfig'
+
+    AnalyticsEvent:
+      type: object
+      required: [event, ts]
+      properties:
+        event: { type: string }
+        ts:    { type: number, description: "客户端 unix ms" }
+        props:
+          type: object
+          additionalProperties: true
+
+    AnalyticsEventBatch:
+      type: object
+      required: [events]
+      properties:
+        session_id:   { type: string }
+        device_id:    { type: string }
+        platform:     { type: string, enum: [web, wechat, crazygames] }
+        os:           { type: string }
+        game_version: { type: string }
+        locale:       { type: string }
+        events:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/AnalyticsEvent'
+
   responses:
     ErrorResp:
       description: 失败包络
@@ -1537,3 +1580,46 @@ paths:
                       mailId: { type: string }
         '401': { $ref: '#/components/responses/ErrorResp' }
         '403': { $ref: '#/components/responses/ErrorResp' }
+
+  # —— Analytics（A9-0）——
+  /analytics/config:
+    get:
+      tags: [analytics]
+      operationId: getAnalyticsConfig
+      summary: 下发采集配置（无需鉴权，匿名 session 启动时拉一次）
+      security: []
+      responses:
+        '200':
+          description: 采集配置
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/AnalyticsConfig' }
+
+  /analytics/events:
+    post:
+      tags: [analytics]
+      operationId: postAnalyticsEvents
+      summary: 批量上报事件（JWT 可选；有 token 附 user_id，否则匿名）
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyticsEventBatch'
+      responses:
+        '200':
+          description: 接收成功（fire-and-forget，不代表落盘）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data: { nullable: true }
+        '400': { $ref: '#/components/responses/ErrorResp' }
