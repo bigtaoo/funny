@@ -1,6 +1,6 @@
-import { CARD_DEFINITIONS } from '@game/config';
+import { ATTACK_LANES, BOARD_ROWS, CARD_DEFINITIONS } from '@game/config';
 import { TICK_RATE } from '@game/math/fixed';
-import type { LevelDefinition, LevelRewards } from '@game/campaign/LevelDefinition';
+import type { HazardSpec, LevelDefinition, LevelRewards } from '@game/campaign/LevelDefinition';
 import type { EditorState } from '../state/EditorState';
 
 /**
@@ -59,21 +59,38 @@ export class LevelFormPanel {
     // ── Objective ──
     root.appendChild(section('目标'));
     const objSel = document.createElement('select');
-    for (const [val, label] of [['survive', '撑过全部波次 (survive)'], ['timed_defense', '限时防守 (timed_defense)']] as const) {
+    for (const [val, label] of [
+      ['survive',      '撑过全部波次 (survive)'],
+      ['timed_defense','限时防守 (timed_defense)'],
+      ['destroy_base', '摧毁敌方基地 (destroy_base)'],
+      ['leak_limit',   '漏怪上限 (leak_limit)'],
+      ['boss',         '击杀 Boss (boss)'],
+    ] as [string, string][]) {
       const o = document.createElement('option');
       o.value = val; o.textContent = label;
       if (lv.objective.kind === val) o.selected = true;
       objSel.appendChild(o);
     }
     objSel.addEventListener('change', () => {
-      if (objSel.value === 'timed_defense') lv.objective = { kind: 'timed_defense', durationTicks: this.toTicks(30) };
-      else lv.objective = { kind: 'survive' };
+      switch (objSel.value) {
+        case 'timed_defense': lv.objective = { kind: 'timed_defense', durationTicks: this.toTicks(30) }; break;
+        case 'destroy_base':  lv.objective = { kind: 'destroy_base' }; break;
+        case 'leak_limit':    lv.objective = { kind: 'leak_limit', maxLeaks: 3 }; break;
+        case 'boss':          lv.objective = { kind: 'boss' }; break;
+        default:              lv.objective = { kind: 'survive' };
+      }
       this.commit();
     });
     root.appendChild(field('类型', objSel));
     if (lv.objective.kind === 'timed_defense') {
       root.appendChild(numField('防守时长 (秒)', this.toSec(lv.objective.durationTicks), 1, 1, (v) => {
         if (lv.objective.kind === 'timed_defense') lv.objective.durationTicks = Math.max(1, this.toTicks(v));
+        this.commit();
+      }));
+    }
+    if (lv.objective.kind === 'leak_limit') {
+      root.appendChild(numField('最大漏过数量 (maxLeaks)', String(lv.objective.maxLeaks), 0, 1, (v) => {
+        if (lv.objective.kind === 'leak_limit') lv.objective.maxLeaks = Math.max(0, Math.round(v));
         this.commit();
       }));
     }
@@ -97,6 +114,81 @@ export class LevelFormPanel {
     }));
     root.appendChild(optTextField('解锁皮肤 (unlockSkinId)', lv.rewards?.unlockSkinId, (v) => { if (v === undefined) delete this.rewards().unlockSkinId; else this.rewards().unlockSkinId = v; this.commit(); }));
     root.appendChild(optTextField('解锁故事键 (unlockStoryKey)', lv.rewards?.unlockStoryKey, (v) => { if (v === undefined) delete this.rewards().unlockStoryKey; else (this.rewards() as { unlockStoryKey?: string }).unlockStoryKey = v; this.commit(); }));
+
+    // ── Hazards ──
+    root.appendChild(section('危险区 (hazards)'));
+    for (let hi = 0; hi < (lv.hazards ?? []).length; hi++) {
+      const h = lv.hazards![hi]!;
+      const hRow = document.createElement('div');
+      hRow.className = 'hazard-row';
+      // col
+      const hCol = document.createElement('select');
+      for (const c of ATTACK_LANES) {
+        const o = document.createElement('option'); o.value = String(c); o.textContent = `列 ${c}`;
+        if (c === h.col) o.selected = true; hCol.appendChild(o);
+      }
+      hCol.addEventListener('change', () => this.state.updateHazard(hi, { col: Number(hCol.value) }));
+      hRow.appendChild(hCol);
+      // rowRange[0]
+      const hR0 = document.createElement('input');
+      hR0.type = 'number'; hR0.min = '0'; hR0.max = String(BOARD_ROWS - 1); hR0.step = '1';
+      hR0.value = String(h.rowRange[0]); hR0.title = '起始行'; hR0.style.width = '44px';
+      hR0.addEventListener('change', () => {
+        const v = parseInt(hR0.value);
+        if (!isNaN(v)) this.state.updateHazard(hi, { rowRange: [Math.max(0, v), h.rowRange[1]] });
+      });
+      hRow.appendChild(hR0);
+      const sep = document.createElement('span'); sep.textContent = '–'; sep.style.margin = '0 2px';
+      hRow.appendChild(sep);
+      // rowRange[1]
+      const hR1 = document.createElement('input');
+      hR1.type = 'number'; hR1.min = '0'; hR1.max = String(BOARD_ROWS - 1); hR1.step = '1';
+      hR1.value = String(h.rowRange[1]); hR1.title = '结束行'; hR1.style.width = '44px';
+      hR1.addEventListener('change', () => {
+        const v = parseInt(hR1.value);
+        if (!isNaN(v)) this.state.updateHazard(hi, { rowRange: [h.rowRange[0], Math.max(0, v)] });
+      });
+      hRow.appendChild(hR1);
+      // effect
+      const hEff = document.createElement('select');
+      for (const [ev, elabel] of [['speed', '减速'], ['fog', '迷雾'], ['lava', '岩浆']] as [string, string][]) {
+        const o = document.createElement('option'); o.value = ev; o.textContent = elabel;
+        if (ev === h.effect) o.selected = true; hEff.appendChild(o);
+      }
+      hEff.addEventListener('change', () => this.state.updateHazard(hi, { effect: hEff.value as HazardSpec['effect'] }));
+      hRow.appendChild(hEff);
+      // effect-specific param
+      if (h.effect === 'speed') {
+        const p = document.createElement('input');
+        p.type = 'number'; p.min = '0'; p.max = '2'; p.step = '0.1';
+        p.value = String(h.speedMult ?? 0.5); p.title = 'speedMult'; p.style.width = '50px';
+        p.addEventListener('change', () => { const v = parseFloat(p.value); if (!isNaN(v)) this.state.updateHazard(hi, { speedMult: v }); });
+        hRow.appendChild(p);
+      } else if (h.effect === 'fog') {
+        const p = document.createElement('input');
+        p.type = 'number'; p.step = '1';
+        p.value = String(h.rangeMod ?? -1); p.title = 'rangeMod'; p.style.width = '50px';
+        p.addEventListener('change', () => { const v = parseInt(p.value); if (!isNaN(v)) this.state.updateHazard(hi, { rangeMod: v }); });
+        hRow.appendChild(p);
+      } else if (h.effect === 'lava') {
+        const p = document.createElement('input');
+        p.type = 'number'; p.min = '0'; p.step = '1';
+        p.value = String(h.dps ?? 5); p.title = 'dps'; p.style.width = '50px';
+        p.addEventListener('change', () => { const v = parseFloat(p.value); if (!isNaN(v)) this.state.updateHazard(hi, { dps: v }); });
+        hRow.appendChild(p);
+      }
+      // delete
+      const hDel = document.createElement('button'); hDel.className = 'danger'; hDel.textContent = '×';
+      hDel.addEventListener('click', () => this.state.removeHazard(hi));
+      hRow.appendChild(hDel);
+      root.appendChild(hRow);
+    }
+    const addHazardBtn = document.createElement('button');
+    addHazardBtn.textContent = '+ 添加危险区';
+    addHazardBtn.addEventListener('click', () => {
+      this.state.addHazard({ col: ATTACK_LANES[0]!, rowRange: [0, BOARD_ROWS - 1], effect: 'speed', speedMult: 0.5 });
+    });
+    root.appendChild(addHazardBtn);
 
     // ── Story ──
     root.appendChild(section('故事 (i18n 键，不校验存在性)'));

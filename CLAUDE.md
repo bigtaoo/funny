@@ -264,6 +264,8 @@ npm run build   # 生产构建
 |---|---|---|
 | `src/board/BoardPanel.ts` | 棋盘点击命中的格子与点击位置不符：`CELL`/`HEADER` 是模块级常量、画布固定 312px 渲染，画布显示尺寸一旦与内部分辨率不一致（DPI/缩放/面板可调宽后）`getBoundingClientRect` 映射就偏 | cell/header 改为实例状态，画布按面板宽度动态选格子尺寸（16–56px），backing store 与显示尺寸严格 1:1；`resize()` 改 public 供分隔条同步调用；顺手删 `drawNoBuild` 中一段无 `stroke` 的死代码 hatch 循环 |
 | `public/index.html` + `src/index.ts` | 三列宽度写死、无分隔条，棋盘 / JSON 窗口无法拖动调整大小 | 加 3 个可拖拽分隔条（`dragSplit`）：棋盘列↔中栏 / 中栏↔Inspector / 时间线↔JSON；棋盘分隔条拖动直接调 `board.resize()` + `window.resize` 监听，纯布局改动不触碰 `EditorState` |
+| `src/inspector/LevelFormPanel.ts` + `src/state/EditorState.ts` | 目标类型只有 2 种（`survive`/`timed_defense`），`destroy_base`/`leak_limit`/`boss` 缺失；无危险区（hazards）编辑入口 | 目标下拉扩为全部 5 种，新增 `leak_limit` 的 `maxLeaks` 输入框；新增「危险区」列表区（列选/行范围/效果/参数/删除），`EditorState` 加 `addHazard`/`updateHazard`（切换 effect 自动清无关参数）/`removeHazard` |
+| `src/inspector/InspectorPanel.ts` + `src/state/EditorState.ts` | 波次 Inspector 无 `crossWaypoints` 编辑入口；`updateWave` 不清空空的 `crossWaypoints` 数组 | 波次 Inspector 新增「变道点」子列表（atRow 数字输入 → toCol 车道选择，+ 添加/× 删除）；`updateWave` 规范化：空数组删 `crossWaypoints` 字段 |
 
 ## 美术资产分工（程序绘制 vs AI 图）
 

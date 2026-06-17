@@ -97,6 +97,60 @@ export class InspectorPanel {
     boss.addEventListener('change', () => this.state.updateWave(index, { isBoss: boss.checked }));
     root.appendChild(field('Boss', boss));
 
+    // crossWaypoints
+    const wpHeader = el('div', { class: 'insp-title', text: '变道点 (crossWaypoints)' });
+    wpHeader.style.fontSize = '11px';
+    root.appendChild(wpHeader);
+    const wps = entry.crossWaypoints ?? [];
+    for (let wi = 0; wi < wps.length; wi++) {
+      const wp = wps[wi]!;
+      const wpRow = document.createElement('div');
+      wpRow.style.cssText = 'display:flex;gap:4px;align-items:center;margin:2px 0';
+      // atRow
+      const rowInp = el('input') as HTMLInputElement;
+      rowInp.type = 'number'; rowInp.min = '0'; rowInp.max = '17'; rowInp.step = '1';
+      rowInp.value = String(wp.atRow); rowInp.title = '触发行'; rowInp.style.width = '46px';
+      rowInp.addEventListener('change', () => {
+        const v = parseInt(rowInp.value);
+        if (!isNaN(v)) {
+          const updated = [...(entry.crossWaypoints ?? [])];
+          updated[wi] = { ...updated[wi]!, atRow: Math.max(0, Math.min(17, v)) };
+          this.state.updateWave(index, { crossWaypoints: updated });
+        }
+      });
+      wpRow.appendChild(rowInp);
+      const arrow = document.createElement('span'); arrow.textContent = '→';
+      wpRow.appendChild(arrow);
+      // toCol
+      const toColSel = el('select') as HTMLSelectElement;
+      for (const c of ATTACK_LANES) {
+        const o = el('option', { text: `列 ${c}` }) as HTMLOptionElement;
+        o.value = String(c);
+        if (c === wp.toCol) o.selected = true;
+        toColSel.appendChild(o);
+      }
+      toColSel.addEventListener('change', () => {
+        const updated = [...(entry.crossWaypoints ?? [])];
+        updated[wi] = { ...updated[wi]!, toCol: Number(toColSel.value) };
+        this.state.updateWave(index, { crossWaypoints: updated });
+      });
+      wpRow.appendChild(toColSel);
+      // delete
+      const wpDel = el('button', { class: 'danger', text: '×' });
+      wpDel.addEventListener('click', () => {
+        const updated = (entry.crossWaypoints ?? []).filter((_, i) => i !== wi);
+        this.state.updateWave(index, { crossWaypoints: updated });
+      });
+      wpRow.appendChild(wpDel);
+      root.appendChild(wpRow);
+    }
+    const addWpBtn = el('button', { text: '+ 变道点' });
+    addWpBtn.addEventListener('click', () => {
+      const updated = [...(entry.crossWaypoints ?? []), { atRow: 9, toCol: ATTACK_LANES[0]! }];
+      this.state.updateWave(index, { crossWaypoints: updated });
+    });
+    root.appendChild(addWpBtn);
+
     // duration readout
     const endSec = this.toSec(entry.atTick + Math.max(0, entry.count - 1) * (entry.spacingTicks ?? 0));
     root.appendChild(el('p', { class: 'hint', text: `本组结束于 ${endSec}s` }));

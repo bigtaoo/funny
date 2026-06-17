@@ -1,4 +1,4 @@
-import type { Cell, LevelDefinition, WaveEntry } from '@game/campaign/LevelDefinition';
+import type { Cell, HazardSpec, LevelDefinition, WaveEntry } from '@game/campaign/LevelDefinition';
 import { ATTACK_LANES } from '@game/config';
 
 /** Cell-mask paint layers. */
@@ -74,6 +74,7 @@ export class EditorState {
     // Normalize: drop default/empty optional fields so JSON stays clean.
     if (entry.spacingTicks === 0 || entry.spacingTicks === undefined) delete entry.spacingTicks;
     if (entry.isBoss === false || entry.isBoss === undefined) delete entry.isBoss;
+    if (!entry.crossWaypoints || entry.crossWaypoints.length === 0) delete entry.crossWaypoints;
     this.emit();
   }
 
@@ -83,6 +84,36 @@ export class EditorState {
     this.waves.splice(index, 1);
     if (this.selectedWave === index) this.selectedWave = null;
     else if (this.selectedWave !== null && this.selectedWave > index) this.selectedWave--;
+    this.emit();
+  }
+
+  // ── Hazards ───────────────────────────────────────────────────────────────────
+
+  get hazards(): HazardSpec[] {
+    return this.level.hazards ?? [];
+  }
+
+  addHazard(spec: HazardSpec): void {
+    if (!this.level.hazards) this.level.hazards = [];
+    this.level.hazards.push(spec);
+    this.emit();
+  }
+
+  updateHazard(index: number, patch: Partial<HazardSpec>): void {
+    if (!this.level.hazards?.[index]) return;
+    Object.assign(this.level.hazards[index], patch);
+    const h = this.level.hazards[index]!;
+    // Drop effect-specific params that no longer apply.
+    if (h.effect !== 'speed') delete h.speedMult;
+    if (h.effect !== 'fog') delete h.rangeMod;
+    if (h.effect !== 'lava') delete h.dps;
+    this.emit();
+  }
+
+  removeHazard(index: number): void {
+    if (!this.level.hazards || index < 0 || index >= this.level.hazards.length) return;
+    this.level.hazards.splice(index, 1);
+    if (this.level.hazards.length === 0) delete this.level.hazards;
     this.emit();
   }
 
