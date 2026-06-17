@@ -103,6 +103,7 @@ export class ResultScene implements Scene {
     localOwner: OwnerId = 0,
     elo?: EloResult,
     profiles?: ResultProfiles,
+    outroText?: string,
   ) {
     this.container = new PIXI.Container();
     this.w  = w;
@@ -111,8 +112,16 @@ export class ResultScene implements Scene {
     this.elo = elo;
     this.profiles = profiles;
     this.popup = new ProfilePopup(w, h);
-    this.build(winner, stats, cb);
-    this.container.addChild(this.popup.container); // topmost overlay
+
+    if (outroText) {
+      this.buildOutroOverlay(outroText, () => {
+        this.build(winner, stats, cb);
+        this.container.addChild(this.popup.container);
+      });
+    } else {
+      this.build(winner, stats, cb);
+      this.container.addChild(this.popup.container); // topmost overlay
+    }
   }
 
   update(_dt: number): void { /* static scene */ }
@@ -120,6 +129,48 @@ export class ResultScene implements Scene {
   destroy(): void {
     this.container.removeAllListeners();
     this.popup.destroy();
+  }
+
+  /** Full-screen tap-through outro overlay; calls onDone to reveal the result. */
+  private buildOutroOverlay(text: string, onDone: () => void): void {
+    const { w, h } = this;
+
+    const bg = new PIXI.Graphics();
+    bg.beginFill(0x1a1408, 0.97); bg.drawRect(0, 0, w, h); bg.endFill();
+    this.container.addChild(bg);
+
+    const margin = Math.round(w * 0.08);
+    const fontSize = Math.round(h * 0.026);
+    const body = new PIXI.Text(text, {
+      fontSize,
+      fill: 0xe8dfc0,
+      wordWrap: true,
+      wordWrapWidth: w - margin * 2,
+      lineHeight: Math.round(fontSize * 1.65),
+      align: 'center',
+      fontFamily: 'monospace',
+    });
+    body.anchor.set(0.5, 0.5);
+    body.x = w / 2;
+    body.y = h / 2;
+    this.container.addChild(body);
+
+    const hint = new PIXI.Text(t('story.tapToContinue'), {
+      fontSize: Math.round(h * 0.022),
+      fill: 0x8a7a60,
+      fontFamily: 'monospace',
+    });
+    hint.anchor.set(0.5, 1);
+    hint.x = w / 2;
+    hint.y = h - Math.round(h * 0.06);
+    this.container.addChild(hint);
+
+    this.container.interactive = true;
+    this.container.once('pointerdown', () => {
+      this.container.interactive = false;
+      this.container.removeChildren();
+      onDone();
+    });
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────

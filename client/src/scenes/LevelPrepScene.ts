@@ -39,6 +39,10 @@ export interface LevelPrepCallbacks {
   tryUpgrade(id: string): Promise<boolean>;
   /** 1-based level number for the header label. */
   levelNumber: number;
+  /** Pre-translated story brief shown in a panel above the upgrade list. */
+  brief?: string;
+  /** Pre-translated story intro shown as a tap-through overlay when the player hits Start. */
+  intro?: string;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -66,6 +70,12 @@ export class LevelPrepScene implements Scene {
   destroy(): void { this.unsubs.forEach((u) => u()); }
 
   private handleDown(x: number, y: number): void {
+    if (this.showingIntro) {
+      this.showingIntro = false;
+      this.render();
+      this.cb.onStart();
+      return;
+    }
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
@@ -73,6 +83,7 @@ export class LevelPrepScene implements Scene {
   }
 
   private upgrading = false;
+  private showingIntro = false;
 
   private onUpgrade(def: PveUpgradeDef): void {
     if (this.upgrading) return; // 防连点重复扣费（服务器端点在途）
@@ -96,6 +107,12 @@ export class LevelPrepScene implements Scene {
     this.hits = [];
     const { w, h } = this;
 
+    // ── Intro story overlay (shown when player taps Start and introKey is set) ──
+    if (this.showingIntro) {
+      this.drawStoryOverlay(this.cb.intro!);
+      return;
+    }
+
     this.container.addChild(buildPaperBackground('prepbg', w, h));
 
     // Header: back + level label + start.
@@ -113,8 +130,14 @@ export class LevelPrepScene implements Scene {
     this.container.addChild(back);
     this.hits.push({ rect: { x: 0, y: 0, w: back.x + back.width + Math.round(h * 0.02), h: tbH }, fn: () => this.cb.onBack() });
 
+    // ── Story brief panel (briefKey) ─────────────────────────────────────────
+    let y = tbH + Math.round(h * 0.02);
+    if (this.cb.brief) {
+      y = this.drawBrief(y);
+    }
+
     // Materials strip.
-    let y = tbH + Math.round(h * 0.03);
+    y += Math.round(h * 0.01);
     y = this.drawMaterials(y);
 
     // Upgrade list.
@@ -143,7 +166,14 @@ export class LevelPrepScene implements Scene {
     const sl = txt(t('prep.start'), Math.round(sbH * 0.42), 0xffffff, true);
     sl.anchor.set(0.5, 0.5); sl.x = sbX + sbW / 2; sl.y = sbY + sbH / 2;
     this.container.addChild(sl);
-    this.hits.push({ rect: { x: sbX, y: sbY, w: sbW, h: sbH }, fn: () => this.cb.onStart() });
+    this.hits.push({ rect: { x: sbX, y: sbY, w: sbW, h: sbH }, fn: () => {
+      if (this.cb.intro) {
+        this.showingIntro = true;
+        this.render();
+      } else {
+        this.cb.onStart();
+      }
+    } });
 
     if (this.toast) this.drawToast();
   }
@@ -218,6 +248,65 @@ export class LevelPrepScene implements Scene {
     if (canAfford) {
       this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: () => this.onUpgrade(def) });
     }
+  }
+
+  /** Compact story-brief panel, returns the y just below it. */
+  private drawBrief(y: number): number {
+    const { w, h } = this;
+    const padX = Math.round(w * 0.06);
+    const panW = w - padX * 2;
+    const fontSize = Math.round(h * 0.022);
+    const lineH = Math.round(fontSize * 1.5);
+    const maxLines = 3;
+    const panH = Math.round(h * 0.005) * 2 + lineH * maxLines;
+
+    const bg = sketchPanel(panW, panH, {
+      fill: C.paper, border: C.line, width: 1.2, seed: seedFor(padX, y, panW),
+    });
+    bg.x = padX; bg.y = y;
+    sketchAccentBar(bg, panH, C.accent, seedFor(padX, panH, 7));
+    this.container.addChild(bg);
+
+    // Word-wrap to maxLines using a scratch Text for measurement.
+    const scratch = txt(this.cb.brief!, fontSize, C.mid);
+    scratch.style.wordWrap = true;
+    scratch.style.wordWrapWidth = panW - Math.round(panW * 0.12);
+    scratch.anchor.set(0, 0);
+    scratch.x = padX + Math.round(panW * 0.06);
+    scratch.y = y + Math.round(panH * 0.1);
+    this.container.addChild(scratch);
+
+    return y + panH + Math.round(h * 0.015);
+  }
+
+  /** Full-screen tap-through story overlay (intro / outro). */
+  private drawStoryOverlay(text: string): void {
+    const { w, h } = this;
+
+    // Dark paper background.
+    const bg = new PIXI.Graphics();
+    bg.beginFill(0x1a1408, 0.97); bg.drawRect(0, 0, w, h); bg.endFill();
+    this.container.addChild(bg);
+
+    const margin = Math.round(w * 0.08);
+    const textW = w - margin * 2;
+    const fontSize = Math.round(h * 0.026);
+
+    const body = txt(text, fontSize, 0xe8dfc0);
+    body.style.wordWrap = true;
+    body.style.wordWrapWidth = textW;
+    body.style.lineHeight = Math.round(fontSize * 1.65);
+    body.anchor.set(0.5, 0.5);
+    body.x = w / 2;
+    body.y = h / 2;
+    this.container.addChild(body);
+
+    // "tap to continue" hint at bottom.
+    const hint = txt(t('story.tapToContinue'), Math.round(h * 0.022), 0x8a7a60);
+    hint.anchor.set(0.5, 1);
+    hint.x = w / 2;
+    hint.y = h - Math.round(h * 0.06);
+    this.container.addChild(hint);
   }
 
   private drawToast(): void {

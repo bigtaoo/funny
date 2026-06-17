@@ -587,6 +587,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       // 升级是服务器权威扣费，仅在线可用（§8 决策 4）。
       isOnline: () => saveManager.online(),
       tryUpgrade: (id) => saveManager.upgrade(id),
+      ...(level.briefKey ? { brief: t(level.briefKey) } : {}),
+      ...(level.story?.introKey ? { intro: t(level.story.introKey) } : {}),
     });
   }
 
@@ -678,7 +680,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             duration_sec: durationSec,
           });
         }
-        goResult(winner, stats, 0, kept);
+        const outroText = (winner === 0 && level.story?.outroKey) ? t(level.story.outroKey) : undefined;
+        goResult(winner, stats, 0, kept, undefined, undefined, outroText);
       },
       onExitToLobby() {
         analytics.track('level_abandon', { level_id: levelId, phase: 'in_game' });
@@ -796,6 +799,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     replay?: Replay,
     elo?: EloResult,
     profiles?: { opponent?: ProfileData; local?: ProfileData },
+    outroText?: string,
   ): Promise<void> {
     inLobby = false;
     platform.onGameplayStop();
@@ -806,6 +810,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       localOwner,
       ...(elo ? { elo } : {}),
       ...(profiles ? { profiles } : {}),
+      ...(outroText ? { outroText } : {}),
       cb: {
         onPlayAgain() { goLobby(); },
         ...(replay ? { onWatchReplay: () => goReplay(replay) } : {}),

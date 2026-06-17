@@ -138,6 +138,7 @@ class PixiAppViews implements AppViews {
       props.localOwner,
       props.elo,
       props.profiles,
+      props.outroText,
     ));
   }
 
