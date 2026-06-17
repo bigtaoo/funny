@@ -30,8 +30,9 @@ import {
 import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc } from './db';
 import type { WorldRedis } from './redis';
 import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient';
+import { nullWorldMetaClient, type WorldMetaClient, type PlayerProfile } from './metaClient';
 
-/** 视区单格视图（REST 响应；不泄露 accountId——`mine` 标识是否归请求者，他人身份[publicId]待 S8-1 后补）。 */
+/** 视区单格视图（REST 响应）。`mine` 标识是否归请求者；`ownerPublicId`/`ownerName` 为他人领地昵称（需 meta 可用）。 */
 export interface WorldTileView {
   x: number;
   y: number;
@@ -42,6 +43,10 @@ export interface WorldTileView {
   occupied?: boolean;
   /** 是否归请求者所有。 */
   mine?: boolean;
+  /** 他人领地：占领者 9 位公开 id（meta 可用时填充）。 */
+  ownerPublicId?: string;
+  /** 他人领地：占领者昵称（meta 可用时填充）。 */
+  ownerName?: string;
   familyId?: string;
   garrison?: number;
   protectedUntil?: number;
@@ -89,6 +94,8 @@ export interface WorldServiceDeps {
   now: () => number;
   /** 实时事件推送（march_update/tile_update）；缺省 = 无 gateway，push no-op（REST 轮询）。 */
   gateway?: WorldGatewayClient;
+  /** 解析玩家档案（publicId/displayName）；缺省 = 不填充昵称。 */
+  meta?: WorldMetaClient;
 }
 
 const emptyResources = (): Record<ResourceType, number> => ({ food: 0, iron: 0, wood: 0 });
@@ -98,6 +105,7 @@ const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'at
 
 export class WorldService {
   private readonly gateway: WorldGatewayClient;
+  private readonly meta: WorldMetaClient;
   /** 进程内单调序号，保证同毫秒多次出征 marchId 不撞键。 */
   private marchSeq = 0;
   /** 进程内单调序号，保证同毫秒多次围攻 siegeId 不撞键。 */
@@ -105,6 +113,7 @@ export class WorldService {
 
   constructor(private readonly deps: WorldServiceDeps) {
     this.gateway = deps.gateway ?? nullWorldGatewayClient;
+    this.meta = deps.meta ?? nullWorldMetaClient;
   }
 
   private inBounds(x: number, y: number): boolean {
@@ -131,11 +140,27 @@ export class WorldService {
       .toArray();
     const byKey = new Map(overrides.map((t) => [`${t.x}:${t.y}`, t]));
 
+    // 批量解析他人领地昵称（去重 + Promise.allSettled，meta 不可用时降级为空 Map）
+    const otherOwnerIds = [...new Set(
+      overrides.filter((o) => o.ownerId && o.ownerId !== accountId).map((o) => o.ownerId!),
+    )];
+    const profileMap = new Map<string, PlayerProfile>();
+    if (otherOwnerIds.length > 0 && this.meta.available) {
+      const results = await Promise.allSettled(
+        otherOwnerIds.map((id) => this.meta.getProfile(id).then((p) => ({ id, p }))),
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value.p) profileMap.set(r.value.id, r.value.p);
+      }
+    }
+
     const tiles: WorldTileView[] = [];
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const o = byKey.get(`${x}:${y}`);
-        tiles.push(o ? this.tileDocView(o, accountId) : this.proceduralView(worldId, x, y));
+        const ownerProfile = (o?.ownerId && o.ownerId !== accountId)
+          ? profileMap.get(o.ownerId) : undefined;
+        tiles.push(o ? this.tileDocView(o, accountId, ownerProfile) : this.proceduralView(worldId, x, y));
       }
     }
     return { worldId, cx: Math.floor(cx), cy: Math.floor(cy), r: rad, tiles };
@@ -144,7 +169,10 @@ export class WorldService {
   /** 单格详情。DB 覆盖优先，否则程序化默认。 */
   async getTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     const o = await this.deps.cols.tiles.findOne({ _id: tileId(worldId, x, y) });
-    return o ? this.tileDocView(o, accountId) : this.proceduralView(worldId, x, y);
+    if (!o) return this.proceduralView(worldId, x, y);
+    const ownerProfile = (o.ownerId && o.ownerId !== accountId && this.meta.available)
+      ? await this.meta.getProfile(o.ownerId).catch(() => null) : undefined;
+    return this.tileDocView(o, accountId, ownerProfile ?? undefined);
   }
 
   /** 玩家在世界的状态：资源惰性结算（读时按 yieldRate × dt 补算并封顶）。§14.3。 */
@@ -799,7 +827,7 @@ export class WorldService {
     return this.yieldRecord(owned);
   }
 
-  private tileDocView(o: TileDoc, accountId: string): WorldTileView {
+  private tileDocView(o: TileDoc, accountId: string, ownerProfile?: PlayerProfile): WorldTileView {
     return {
       x: o.x,
       y: o.y,
@@ -808,6 +836,8 @@ export class WorldService {
       ...(o.resType ? { resType: o.resType } : {}),
       ...(o.ownerId ? { occupied: true } : {}),
       ...(o.ownerId === accountId ? { mine: true } : {}),
+      ...(ownerProfile?.publicId ? { ownerPublicId: ownerProfile.publicId } : {}),
+      ...(ownerProfile?.displayName ? { ownerName: ownerProfile.displayName } : {}),
       ...(o.familyId ? { familyId: o.familyId } : {}),
       ...(o.garrison ? { garrison: o.garrison } : {}),
       ...(o.protectedUntil ? { protectedUntil: o.protectedUntil } : {}),

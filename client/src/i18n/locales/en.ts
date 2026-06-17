@@ -405,6 +405,8 @@ export const en: Record<TranslationKey, string> = {
   'world.marchTo': '→ ({x},{y})',
   'world.marchArr': 'Arriving',
   'world.recall': 'Recall',
+  'world.enemyTile': 'Enemy Territory',
+  'world.unknownOwner': 'Unknown Player',
   'world.family': 'Family',
   'world.auction': 'Auction',
   'world.noBase': 'No base yet',

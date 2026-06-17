@@ -1,0 +1,779 @@
+openapi: 3.1.0
+info:
+  title: Notebook Wars — worldsvc REST API
+  version: "1.0"
+  description: >
+    SLG 大世界（worldsvc）REST 契约。与 metaserver openapi.yml 分离，因 worldsvc 跑在不同 base URL。
+    客户端经 gen-openapi.mjs 生成 src/net/openapi-world.ts。
+
+servers:
+  - url: '{worldBase}'
+    variables:
+      worldBase:
+        default: 'http://localhost:18084'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    # ── World ──────────────────────────────────────────────────────────────────
+
+    WorldTileView:
+      type: object
+      required: [x, y, type, level]
+      properties:
+        x:
+          type: integer
+        y:
+          type: integer
+        type:
+          type: string
+          enum: [neutral, resource, mountain, forest, water, center, familyKeep, base]
+        level:
+          type: integer
+        resType:
+          type: string
+          enum: [food, iron, wood]
+        occupied:
+          type: boolean
+        mine:
+          type: boolean
+        ownerPublicId:
+          type: string
+          description: 占领者 9 位公开 id（meta 服务可用时填充）
+        ownerName:
+          type: string
+          description: 占领者昵称（meta 服务可用时填充）
+        familyId:
+          type: string
+        garrison:
+          type: integer
+        protectedUntil:
+          type: number
+
+    WorldMapView:
+      type: object
+      required: [worldId, cx, cy, r, tiles]
+      properties:
+        worldId:
+          type: string
+        cx:
+          type: integer
+        cy:
+          type: integer
+        r:
+          type: integer
+        tiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorldTileView'
+
+    PlayerWorldView:
+      type: object
+      required: [joined]
+      properties:
+        joined:
+          type: boolean
+        troops:
+          type: integer
+        troopCap:
+          type: integer
+        resources:
+          type: object
+          additionalProperties:
+            type: number
+        yieldRate:
+          type: object
+          additionalProperties:
+            type: number
+        mainBaseTile:
+          type: string
+        familyId:
+          type: string
+        territoryCount:
+          type: integer
+
+    MarchView:
+      type: object
+      required: [marchId, kind, fromTile, toTile, troops, departAt, arriveAt, status]
+      properties:
+        marchId:
+          type: string
+        kind:
+          type: string
+          enum: [attack, reinforce, occupy, sweep, return]
+        fromTile:
+          type: string
+        toTile:
+          type: string
+        troops:
+          type: integer
+        departAt:
+          type: number
+        arriveAt:
+          type: number
+        status:
+          type: string
+          enum: [marching, returning, arrived]
+
+    # ── Family ─────────────────────────────────────────────────────────────────
+
+    FamilyMemberView:
+      type: object
+      required: [accountId, role, joinedAt]
+      properties:
+        accountId:
+          type: string
+        publicId:
+          type: string
+        displayName:
+          type: string
+        role:
+          type: string
+          enum: [leader, elder, member]
+        joinedAt:
+          type: number
+
+    FamilyView:
+      type: object
+      required: [familyId, name, tag, worldId, memberCount, leaderId, createdAt]
+      properties:
+        familyId:
+          type: string
+        name:
+          type: string
+        tag:
+          type: string
+        worldId:
+          type: string
+        memberCount:
+          type: integer
+        leaderId:
+          type: string
+        createdAt:
+          type: number
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/FamilyMemberView'
+
+    FamilyMessageView:
+      type: object
+      required: [id, from, body, ts]
+      properties:
+        id:
+          type: string
+        from:
+          type: string
+        fromName:
+          type: string
+        body:
+          type: string
+        ts:
+          type: number
+
+    # ── Auction ────────────────────────────────────────────────────────────────
+
+    AuctionView:
+      type: object
+      required: [auctionId, worldId, sellerId, itemType, item, qty, price, status, expireAt]
+      properties:
+        auctionId:
+          type: string
+        worldId:
+          type: string
+        sellerId:
+          type: string
+        sellerName:
+          type: string
+        itemType:
+          type: string
+        item:
+          type: object
+          additionalProperties: true
+        qty:
+          type: integer
+        price:
+          type: number
+        status:
+          type: string
+          enum: [open, sold, cancelled, expired]
+        expireAt:
+          type: number
+        designatedBuyerId:
+          type: string
+        taxPaid:
+          type: number
+        buyerId:
+          type: string
+
+    # ── Shared response wrappers ───────────────────────────────────────────────
+
+    OkResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+
+    MarchIdResponse:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+
+paths:
+
+  # ── World ──────────────────────────────────────────────────────────────────
+
+  /world/map:
+    get:
+      operationId: getWorldMap
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+        - { name: cx,      in: query, required: true, schema: { type: integer } }
+        - { name: cy,      in: query, required: true, schema: { type: integer } }
+        - { name: r,       in: query, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Map viewport
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/WorldMapView' }
+
+  /world/tile/{tileId}:
+    get:
+      operationId: getWorldTile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: tileId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Single tile
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/WorldTileView' }
+
+  /world/me:
+    get:
+      operationId: getWorldMe
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Player world state
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
+
+  /world/join:
+    post:
+      operationId: joinWorld
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, x, y]
+              properties:
+                worldId: { type: string }
+                x: { type: integer }
+                y: { type: integer }
+      responses:
+        '200':
+          description: Joined
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
+
+  /world/occupy:
+    post:
+      operationId: occupyTile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, x, y]
+              properties:
+                worldId: { type: string }
+                x: { type: integer }
+                y: { type: integer }
+      responses:
+        '200':
+          description: Occupied
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /world/abandon:
+    post:
+      operationId: abandonTile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, x, y]
+              properties:
+                worldId: { type: string }
+                x: { type: integer }
+                y: { type: integer }
+      responses:
+        '200':
+          description: Abandoned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /world/march:
+    get:
+      operationId: getMarches
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Active marches
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/MarchView' }
+    post:
+      operationId: startMarch
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, fromX, fromY, toX, toY, kind, troops]
+              properties:
+                worldId: { type: string }
+                fromX: { type: integer }
+                fromY: { type: integer }
+                toX: { type: integer }
+                toY: { type: integer }
+                kind: { type: string, enum: [occupy, reinforce, attack, sweep] }
+                troops: { type: integer }
+      responses:
+        '200':
+          description: March started
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/MarchView' }
+
+  /world/march/{marchId}/recall:
+    post:
+      operationId: recallMarch
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: marchId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId]
+              properties:
+                worldId: { type: string }
+      responses:
+        '200':
+          description: Recalled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  # ── Family ─────────────────────────────────────────────────────────────────
+
+  /family/list:
+    get:
+      operationId: listFamilies
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Family list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/FamilyView' }
+
+  /family/{familyId}:
+    get:
+      operationId: getFamily
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Family detail
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/FamilyView' }
+
+  /family/create:
+    post:
+      operationId: createFamily
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, name, tag]
+              properties:
+                worldId: { type: string }
+                name: { type: string }
+                tag: { type: string }
+      responses:
+        '200':
+          description: Family created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/FamilyView' }
+
+  /family/join:
+    post:
+      operationId: joinFamily
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, familyId]
+              properties:
+                worldId: { type: string }
+                familyId: { type: string }
+      responses:
+        '200':
+          description: Joined
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /family/leave:
+    post:
+      operationId: leaveFamily
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId]
+              properties:
+                worldId: { type: string }
+      responses:
+        '200':
+          description: Left
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /family/kick:
+    post:
+      operationId: kickFamilyMember
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, targetId]
+              properties:
+                worldId: { type: string }
+                targetId: { type: string }
+      responses:
+        '200':
+          description: Kicked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /family/role:
+    post:
+      operationId: setFamilyRole
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, targetId, role]
+              properties:
+                worldId: { type: string }
+                targetId: { type: string }
+                role: { type: string, enum: [leader, elder, member] }
+      responses:
+        '200':
+          description: Role set
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /family/dissolve:
+    post:
+      operationId: dissolveFamily
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId]
+              properties:
+                worldId: { type: string }
+      responses:
+        '200':
+          description: Dissolved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /family/message:
+    post:
+      operationId: sendFamilyMessage
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, body]
+              properties:
+                worldId: { type: string }
+                body: { type: string }
+                senderName: { type: string }
+      responses:
+        '200':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [id]
+                        properties:
+                          id: { type: string }
+
+  /family/channel:
+    get:
+      operationId: getFamilyChannel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId,  in: query, required: true,  schema: { type: string } }
+        - { name: familyId, in: query, required: true,  schema: { type: string } }
+        - { name: before,   in: query, required: false, schema: { type: number } }
+        - { name: limit,    in: query, required: false, schema: { type: integer } }
+      responses:
+        '200':
+          description: Channel messages
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/FamilyMessageView' }
+
+  # ── Auction ────────────────────────────────────────────────────────────────
+
+  /auction/list:
+    get:
+      operationId: listAuctions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId,  in: query, required: true,  schema: { type: string } }
+        - { name: itemType, in: query, required: false, schema: { type: string } }
+        - { name: limit,    in: query, required: false, schema: { type: integer } }
+      responses:
+        '200':
+          description: Auction list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuctionView' }
+
+  /auction/mine:
+    get:
+      operationId: getMyAuctions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: My listings
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuctionView' }
+
+  /auction/create:
+    post:
+      operationId: createAuction
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, itemType, item, qty, price, durationSec]
+              properties:
+                worldId: { type: string }
+                itemType: { type: string }
+                item:
+                  type: object
+                  additionalProperties: true
+                qty: { type: integer }
+                price: { type: number }
+                durationSec: { type: integer }
+                designatedBuyerId: { type: string }
+      responses:
+        '200':
+          description: Auction created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AuctionView' }
+
+  /auction/{auctionId}/buy:
+    post:
+      operationId: buyAuction
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: auctionId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId]
+              properties:
+                worldId: { type: string }
+      responses:
+        '200':
+          description: Bought
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /auction/{auctionId}/cancel:
+    post:
+      operationId: cancelAuction
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: auctionId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId]
+              properties:
+                worldId: { type: string }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }

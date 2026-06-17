@@ -307,17 +307,49 @@ export class WorldMapScene implements Scene {
       }
     }
 
-    // Active marches row
+    // Active marches list (one row per march, recall button)
+    this.marchRowRects = [];
     if (this.marches.length > 0) {
       const now = Date.now();
-      const marchTxt = this.marches.map(m => {
+      const MARCH_ROW_H = 22;
+      const ROW_Y0 = h - HUD_H + 40;
+      const RECALL_W = 46;
+      for (let i = 0; i < this.marches.length; i++) {
+        const m = this.marches[i];
         const [tx, ty] = this.parseTileId(m.toTile);
         const remaining = Math.max(0, Math.ceil((m.arriveAt - now) / 1000));
-        return `→(${tx},${ty}) ${remaining}s`;
-      }).join('  ');
-      const lbl = txt(marchTxt, 10, C.red);
-      lbl.x = 10; lbl.y = h - HUD_H + 40;
-      hud.addChild(lbl);
+        const kindIcon = m.kind === 'attack' ? '⚔' : m.kind === 'reinforce' ? '🛡' : m.kind === 'return' ? '↩' : '→';
+        const rowY = ROW_Y0 + i * MARCH_ROW_H;
+        const rowLbl = txt(`${kindIcon}(${tx},${ty}) ${remaining}s`, 10, C.dark);
+        rowLbl.x = 10; rowLbl.y = rowY + 3;
+        hud.addChild(rowLbl);
+
+        // Recall button (only for non-return marches)
+        if (m.kind !== 'return') {
+          const recallBtn = sketchPanel(RECALL_W, 18, { fill: C.accent, border: C.red, seed: seedFor(i, 99, RECALL_W) });
+          recallBtn.x = 10 + 120; recallBtn.y = rowY + 1;
+          hud.addChild(recallBtn);
+          const recallLbl = txt(t('world.recall'), 9, C.light);
+          recallLbl.anchor.set(0.5, 0.5);
+          recallLbl.x = recallBtn.x + RECALL_W / 2; recallLbl.y = recallBtn.y + 9;
+          hud.addChild(recallLbl);
+          this.marchRowRects.push({
+            marchId: m.marchId,
+            worldId: m.toTile.split(':')[2] ?? '',
+            destX: tx, destY: ty,
+            rowRect: { x: 10, y: rowY, w: 120, h: MARCH_ROW_H },
+            recallRect: { x: recallBtn.x, y: recallBtn.y, w: RECALL_W, h: 18 },
+          });
+        } else {
+          this.marchRowRects.push({
+            marchId: m.marchId,
+            worldId: m.toTile.split(':')[2] ?? '',
+            destX: tx, destY: ty,
+            rowRect: { x: 10, y: rowY, w: 120, h: MARCH_ROW_H },
+            recallRect: null,
+          });
+        }
+      }
     }
 
     // Family / Auction buttons
@@ -346,6 +378,11 @@ export class WorldMapScene implements Scene {
   private backRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   private famBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   private aucBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  private marchRowRects: {
+    marchId: string; worldId: string; destX: number; destY: number;
+    rowRect: { x: number; y: number; w: number; h: number };
+    recallRect: { x: number; y: number; w: number; h: number } | null;
+  }[] = [];
 
   // ── Modal ──────────────────────────────────────────────────────────────────
 
@@ -462,9 +499,14 @@ export class WorldMapScene implements Scene {
     }
 
     if (tile?.occupied) {
-      // Enemy tile — march (attack) — not yet implemented for client
-      this.showToast(t('world.err.notImpl'), C.red);
-      this.closeModal();
+      // Enemy tile — show owner info if available
+      const ownerLine = tile.ownerName
+        ? `${tile.ownerName}${tile.ownerPublicId ? ' #' + tile.ownerPublicId : ''}`
+        : (tile.ownerPublicId ? '#' + tile.ownerPublicId : t('world.unknownOwner'));
+      this.showModal(
+        [t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`],
+        [{ label: '✕', action: () => this.closeModal() }],
+      );
       return;
     }
 
@@ -509,6 +551,16 @@ export class WorldMapScene implements Scene {
       await this.loadMapViewport();
       this.showToast(t('world.occupied'));
       this.renderMap(); this.renderHud();
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  private async doRecall(marchId: string, worldId: string): Promise<void> {
+    try {
+      await this.cb.worldApi.recallMarch(marchId, worldId);
+      this.marches = await this.cb.worldApi.getMarches(this.cb.worldId);
+      this.renderHud();
     } catch (e) {
       this.showToast(this.errorMsg(e), C.red);
     }
@@ -600,6 +652,23 @@ export class WorldMapScene implements Scene {
     if (x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h) {
       this.cb.onOpenAuction();
       return;
+    }
+
+    // March row hit detection (recall button or click-to-center)
+    for (const entry of this.marchRowRects) {
+      if (entry.recallRect) {
+        const r = entry.recallRect;
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+          void this.doRecall(entry.marchId, entry.worldId);
+          return;
+        }
+      }
+      const row = entry.rowRect;
+      if (x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h) {
+        this.centerAt(entry.destX, entry.destY);
+        this.renderMap();
+        return;
+      }
     }
 
     // Begin drag

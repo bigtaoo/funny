@@ -407,6 +407,8 @@ export const zh = {
   'world.marchTo': '→ ({x},{y})',
   'world.marchArr': '到达',
   'world.recall': '撤军',
+  'world.enemyTile': '他人领地',
+  'world.unknownOwner': '未知玩家',
   'world.family': '家族',
   'world.auction': '拍卖',
   'world.noBase': '未建立主城',

@@ -4,105 +4,30 @@
 //
 // Auth: reads the JWT stored by SaveManager under key nw_token.
 // All responses are wrapped in { ok: true, data: T } | { ok: false, code, message }.
+//
+// DTO types are generated from server/contracts/openapi-world.yml via npm run rest:gen
+// → src/net/openapi-world.ts. Do NOT hand-edit these type aliases.
 
 import { getWorldBaseUrl } from './config';
 import type { IStorage } from '../platform/IPlatform';
+import type { components } from './openapi-world';
 
-// Inline type aliases matching @nw/shared (worldsvc S8)
-type TileType = 'neutral' | 'resource' | 'mountain' | 'forest' | 'water' | 'center' | 'familyKeep' | 'base';
-type ResourceType = 'food' | 'iron' | 'wood';
-type MarchKind = 'attack' | 'reinforce' | 'occupy' | 'sweep' | 'return';
-type FamilyRole = 'leader' | 'elder' | 'member';
+// ── Generated DTO type aliases (single source of truth = openapi-world.yml) ──
+
+export type WorldTileView = components['schemas']['WorldTileView'];
+export type WorldMapView = components['schemas']['WorldMapView'];
+export type PlayerWorldView = components['schemas']['PlayerWorldView'];
+export type MarchView = components['schemas']['MarchView'];
+export type FamilyMemberView = components['schemas']['FamilyMemberView'];
+export type FamilyView = components['schemas']['FamilyView'];
+export type FamilyMessageView = components['schemas']['FamilyMessageView'];
+export type AuctionView = components['schemas']['AuctionView'];
+
+// Derived enum types for method parameters
+type MarchKind = Exclude<MarchView['kind'], 'return'>;
+type FamilyRole = FamilyMemberView['role'];
 
 const TOKEN_KEY = 'nw_token';
-
-// ── Response shapes (mirrors worldsvc httpApi) ──────────────────────────────
-
-export interface WorldTileView {
-  x: number;
-  y: number;
-  type: TileType;
-  level: number;
-  resType?: ResourceType;
-  occupied?: boolean;
-  mine?: boolean;
-  familyId?: string;
-  garrison?: number;
-  protectedUntil?: number;
-}
-
-export interface WorldMapView {
-  worldId: string;
-  cx: number;
-  cy: number;
-  r: number;
-  tiles: WorldTileView[];
-}
-
-export interface PlayerWorldView {
-  joined: boolean;
-  troops?: number;
-  troopCap?: number;
-  resources?: Partial<Record<ResourceType, number>>;
-  yieldRate?: Partial<Record<ResourceType, number>>;
-  mainBaseTile?: string; // "x:y:worldId"
-  familyId?: string;
-  territoryCount?: number;
-}
-
-export interface MarchView {
-  marchId: string;
-  kind: string;
-  fromTile: string; // "x:y:worldId"
-  toTile: string;
-  troops: number;
-  departAt: number;
-  arriveAt: number;
-  status: string;
-}
-
-export interface FamilyMemberView {
-  accountId: string;
-  publicId?: string;
-  displayName?: string;
-  role: FamilyRole;
-  joinedAt: number;
-}
-
-export interface FamilyView {
-  familyId: string;
-  name: string;
-  tag: string;
-  worldId: string;
-  memberCount: number;
-  leaderId: string;
-  createdAt: number;
-  members?: FamilyMemberView[];
-}
-
-export interface FamilyMessageView {
-  id: string;
-  from: string;
-  fromName?: string;
-  body: string;
-  ts: number;
-}
-
-export interface AuctionView {
-  auctionId: string;
-  worldId: string;
-  sellerId: string;
-  sellerName?: string;
-  itemType: string;
-  item: Record<string, unknown>;
-  qty: number;
-  price: number;
-  status: 'open' | 'sold' | 'cancelled' | 'expired';
-  expireAt: number;
-  designatedBuyerId?: string;
-  taxPaid?: number;
-  buyerId?: string;
-}
 
 // ── Error ────────────────────────────────────────────────────────────────────
 
