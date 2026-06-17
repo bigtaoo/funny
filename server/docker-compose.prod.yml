@@ -16,6 +16,19 @@
 # 副本集成员 host 用容器名 mongo（供服务间 DNS 解析），故服务连 mongodb://mongo:27017/?replicaSet=rs0。
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: nw-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   mongo:
     image: mongo:7
     container_name: nw-mongo
@@ -150,12 +163,14 @@ services:
       NW_WORLD_HOST: 0.0.0.0
       NW_WORLD_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       NW_WORLD_MONGO_DB: ${NW_WORLD_MONGO_DB:-notebook_wars_world}
-      # Redis 可选：留空降级（行军调度走 Mongo 兜底，频道关闭）。S8-2/S8-4 接入时填 redis://redis:6379。
-      NW_WORLD_REDIS_URL: ${NW_WORLD_REDIS_URL:-}
+      # Redis：默认指向同栈 redis 服务；覆盖 NW_WORLD_REDIS_URL='' 可降级（行军走 Mongo 兜底）。
+      NW_WORLD_REDIS_URL: ${NW_WORLD_REDIS_URL:-redis://redis:6379}
       # 实时事件回推客户端（S8-1+ 经 gateway /gw/push）。
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
     depends_on:
       mongo:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
 
@@ -226,5 +241,6 @@ services:
 
 volumes:
   mongo-data:
+  redis-data:
   caddy-data:
   caddy-config:

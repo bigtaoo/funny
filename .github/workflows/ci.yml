@@ -80,7 +80,7 @@ jobs:
         run: |
           docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml \
             up -d --build --wait \
-            mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc
+            redis mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc
 
       # SLG worldsvc 部署冒烟（S8-0）：证明第七进程在 prod 镜像里起得来、公网 REST 第四面可达。
       - name: worldsvc health smoke

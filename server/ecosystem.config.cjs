@@ -124,7 +124,7 @@ module.exports = {
           process.env.NW_MONGO_URI ||
           'mongodb://127.0.0.1:27017/?replicaSet=rs0',
         NW_WORLD_MONGO_DB: process.env.NW_WORLD_MONGO_DB || 'notebook_wars_world',
-        NW_WORLD_REDIS_URL: process.env.NW_WORLD_REDIS_URL || '', // 可选；空=降级
+        NW_WORLD_REDIS_URL: process.env.NW_WORLD_REDIS_URL || 'redis://127.0.0.1:6379',
         NW_GATEWAY_INTERNAL_URL: GW_INTERNAL, // 实时事件回推 /gw/push
       },
     },

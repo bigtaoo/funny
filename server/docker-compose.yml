@@ -10,6 +10,15 @@
 # 连接串（与 NW_MONGO_URI 默认值一致）：mongodb://127.0.0.1:27017/?replicaSet=rs0
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: nw-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    # 本地开发数据放容器可写层，down 时清除（同 mongo dev 策略）。
+    # 需跨 down 持久化时，自行加 volumes: [redis-data:/data] + 顶层 volumes。
+
   mongo:
     image: mongo:7
     container_name: nw-mongo

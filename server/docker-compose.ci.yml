@@ -10,6 +10,14 @@
 #     这样 runner 上的 E2E 进程能照服务器下发的地址连上（验证「客户端连对端口」的核心断言）。
 #   • 给五个服务加 node 版 healthcheck（镜像内有 node、无 curl），配合 `--wait` 确定性等待就绪。
 services:
+  redis:
+    # CI 用内存态，不挂卷；healthcheck 让 --wait 确定性等待就绪。
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   metaserver:
     environment:
       # 客户端连这个地址做房间/匹配；E2E 断言 gateway socket 用的是这个、不是 meta base。
