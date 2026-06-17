@@ -14,6 +14,8 @@ import {
   type MarchKind,
 } from '@nw/shared';
 import type { WorldService } from './service';
+import type { FamilyService } from './familyService';
+import type { AuctionService } from './auctionService';
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -59,6 +61,8 @@ const numQ = (v: string | null, d: number): number => {
 export function startHttpApi(
   opts: { host: string; port: number; jwtSecret: string },
   svc: WorldService,
+  familySvc: FamilyService,
+  auctionSvc: AuctionService,
 ): Server {
   const server = createServer((req, res) => {
     void (async () => {
@@ -194,9 +198,131 @@ export function startHttpApi(
         if (method === 'POST' && path === '/world/troops/train') return NOT_IMPL(res, 'train');
         if (method === 'POST' && path === '/world/troops/speedup') return NOT_IMPL(res, 'speedup');
 
-        // ── 家族 / 拍卖 / 赛季（S8-4/S8-5/S8-7 stub）──
-        if (path.startsWith('/family')) return NOT_IMPL(res, 'family');
-        if (path.startsWith('/auction')) return NOT_IMPL(res, 'auction');
+        // ── 家族（S8-4，做实）──────────────────────────────────────────
+        if (method === 'GET' && path === '/family/list') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await familySvc.listFamilies(worldId)));
+        }
+        {
+          const m = /^\/family\/([^/]+)$/.exec(path);
+          if (method === 'GET' && m) {
+            return send(res, 200, ok(await familySvc.getFamily(decodeURIComponent(m[1]!))));
+          }
+        }
+        if (method === 'POST' && path === '/family/create') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const name = typeof body.name === 'string' ? body.name : null;
+          const tag = typeof body.tag === 'string' ? body.tag : null;
+          if (!worldId || !name || !tag) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + name + tag required');
+          return send(res, 200, ok(await familySvc.createFamily(worldId, accountId, name, tag)));
+        }
+        if (method === 'POST' && path === '/family/join') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const familyId = typeof body.familyId === 'string' ? body.familyId : null;
+          if (!worldId || !familyId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + familyId required');
+          await familySvc.joinFamily(worldId, accountId, familyId);
+          return send(res, 200, ok({}));
+        }
+        if (method === 'POST' && path === '/family/leave') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          await familySvc.leaveFamily(worldId, accountId);
+          return send(res, 200, ok({}));
+        }
+        if (method === 'POST' && path === '/family/kick') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const targetId = typeof body.targetId === 'string' ? body.targetId : null;
+          if (!worldId || !targetId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + targetId required');
+          await familySvc.kickMember(worldId, accountId, targetId);
+          return send(res, 200, ok({}));
+        }
+        if (method === 'POST' && path === '/family/role') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const targetId = typeof body.targetId === 'string' ? body.targetId : null;
+          const role = typeof body.role === 'string' ? body.role : null;
+          if (!worldId || !targetId || !role) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + targetId + role required');
+          await familySvc.setRole(worldId, accountId, targetId, role as import('@nw/shared').FamilyRole);
+          return send(res, 200, ok({}));
+        }
+        if (method === 'POST' && path === '/family/dissolve') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          await familySvc.dissolveFamily(worldId, accountId);
+          return send(res, 200, ok({}));
+        }
+        if (method === 'POST' && path === '/family/message') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const msgBody = typeof body.body === 'string' ? body.body : null;
+          const senderName = typeof body.senderName === 'string' ? body.senderName : accountId;
+          if (!worldId || !msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + body required');
+          return send(res, 200, ok(await familySvc.sendMessage(worldId, accountId, senderName, msgBody)));
+        }
+        if (method === 'GET' && path === '/family/channel') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          const before = q.get('before') ? Number(q.get('before')) : undefined;
+          const limit = numQ(q.get('limit'), 30);
+          return send(res, 200, ok(await familySvc.getChannel(worldId, accountId, before, limit)));
+        }
+
+        // ── 拍卖（S8-5，做实）──────────────────────────────────────────
+        if (method === 'GET' && path === '/auction/list') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          const itemType = q.get('itemType') ?? undefined;
+          const limit = numQ(q.get('limit'), 20);
+          return send(res, 200, ok(await auctionSvc.listAuctions(worldId, itemType, limit)));
+        }
+        if (method === 'GET' && path === '/auction/mine') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await auctionSvc.getMyListings(worldId, accountId)));
+        }
+        if (method === 'POST' && path === '/auction/create') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const itemType = typeof body.itemType === 'string' ? body.itemType : null;
+          const item = typeof body.item === 'object' && body.item && !Array.isArray(body.item) ? body.item as Record<string, unknown> : null;
+          const qty = Number(body.qty);
+          const price = Number(body.price);
+          const durationSec = Number(body.durationSec);
+          const designatedBuyerId = typeof body.designatedBuyerId === 'string' ? body.designatedBuyerId : undefined;
+          if (!worldId || !itemType || !item || !Number.isFinite(qty) || !Number.isFinite(price) || !Number.isFinite(durationSec)) {
+            return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + itemType + item + qty + price + durationSec required');
+          }
+          return send(res, 200, ok(await auctionSvc.createAuction({
+            worldId, sellerId: accountId, itemType: itemType as 'material' | 'equipment',
+            item, qty, price, durationSec, designatedBuyerId,
+          })));
+        }
+        {
+          const m = /^\/auction\/([^/]+)\/buy$/.exec(path);
+          if (method === 'POST' && m) {
+            const body = await readJson(req);
+            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+            return send(res, 200, ok(await auctionSvc.buyAuction(worldId, accountId, decodeURIComponent(m[1]!))));
+          }
+        }
+        {
+          const m = /^\/auction\/([^/]+)\/cancel$/.exec(path);
+          if (method === 'POST' && m) {
+            const body = await readJson(req);
+            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+            return send(res, 200, ok(await auctionSvc.cancelAuction(worldId, accountId, decodeURIComponent(m[1]!))));
+          }
+        }
+
+        // ── 赛季（S8-7 stub）──
         if (method === 'GET' && path === '/world/season') return NOT_IMPL(res, 'season');
 
         return sendErr(res, ErrorCode.NOT_FOUND, 'not found');

@@ -12,6 +12,7 @@ import type {
   AuctionStatus,
   SiegeOutcome,
 } from '@nw/shared';
+import { FAMILY_MSG_RETENTION_SEC } from '@nw/shared';
 
 /** 防守配置：引擎 LevelDefinition 的受限子集（P2/P5，内嵌不建独立集合）。S8-3 接引擎前为 opaque 占位。 */
 export type DefenseConfig = Record<string, unknown>;
@@ -113,6 +114,23 @@ export interface AuctionDoc {
   rev: number;
 }
 
+/**
+ * 家族频道消息（S8-4）。
+ * ★ ts 须存 BSON Date（非 epoch number）——MongoDB TTL 只对 Date 字段生效。
+ * 读出时转 epoch number 给客户端。
+ */
+export interface FamilyMessageDoc {
+  _id: string; // `fm:{familyId}:{ts_epoch}:{seq}`
+  worldId: string;
+  familyId: string;
+  senderId: string;
+  /** 发送时快照昵称（防改名后历史失真）。 */
+  senderName: string;
+  body: string;
+  /** BSON Date，TTL 锚字段（须 Date 非 epoch，见 CLAUDE.md 注）。 */
+  ts: Date;
+}
+
 export interface SiegeDoc {
   _id: string; // siegeId
   worldId: string;
@@ -132,6 +150,7 @@ export interface WorldCollections {
   marches: Collection<MarchDoc>;
   families: Collection<FamilyDoc>;
   familyMembers: Collection<FamilyMemberDoc>;
+  familyMessages: Collection<FamilyMessageDoc>;
   auctions: Collection<AuctionDoc>;
   sieges: Collection<SiegeDoc>;
 }
@@ -168,6 +187,7 @@ export async function createWorldMongo(
     marches: db.collection<MarchDoc>('marches'),
     families: db.collection<FamilyDoc>('families'),
     familyMembers: db.collection<FamilyMemberDoc>('familyMembers'),
+    familyMessages: db.collection<FamilyMessageDoc>('familyMessages'),
     auctions: db.collection<AuctionDoc>('auctions'),
     sieges: db.collection<SiegeDoc>('sieges'),
   };
@@ -186,6 +206,9 @@ export async function createWorldMongo(
     await collections.families.createIndex({ worldId: 1, tag: 1 }, { unique: true });
     await collections.families.createIndex({ worldId: 1 });
     await collections.familyMembers.createIndex({ familyId: 1 });
+    await collections.familyMessages.createIndex({ familyId: 1, ts: -1 });
+    // TTL：7 天后自动删除（ts 为 BSON Date 字段，Mongo TTL 只对 Date 生效）。
+    await collections.familyMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
     await collections.auctions.createIndex({ worldId: 1, itemType: 1, status: 1 });
     await collections.auctions.createIndex({ sellerId: 1 });
     await collections.auctions.createIndex({ designatedBuyerId: 1 });

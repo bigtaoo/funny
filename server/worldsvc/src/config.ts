@@ -15,6 +15,10 @@ export interface WorldsvcEnv extends ServerEnv {
   redisUrl: string | undefined;
   /** gateway 内部 HTTP 基址（worldsvc → /gw/push 推送实时事件）；缺省 = 不推送（仅 REST 轮询）。 */
   gatewayInternalUrl: string | undefined;
+  /** commercial 内部 HTTP 基址（拍卖场 S8-5：买方扣币 / 卖方付款）；缺省 = 不支持金币交易。 */
+  commercialInternalUrl: string | undefined;
+  /** meta 内部 HTTP 基址（拍卖场 S8-5：材料扣除 / 发放）；缺省 = 不支持材料交易。 */
+  metaInternalUrl: string | undefined;
 }
 
 export function loadWorldsvcEnv(): WorldsvcEnv {
@@ -27,5 +31,7 @@ export function loadWorldsvcEnv(): WorldsvcEnv {
     worldMongoDb: process.env.NW_WORLD_MONGO_DB ?? 'notebook_wars_world',
     redisUrl: process.env.NW_WORLD_REDIS_URL || undefined,
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL || undefined,
+    commercialInternalUrl: process.env.NW_COMMERCIAL_INTERNAL_URL || undefined,
+    metaInternalUrl: process.env.NW_META_INTERNAL_URL || undefined,
   };
 }

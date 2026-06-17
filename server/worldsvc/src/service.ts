@@ -484,7 +484,7 @@ export class WorldService {
       troops: d.troops,
       departAt: d.departAt,
       arriveAt: d.arriveAt,
-      status: d.status as 'marching' | 'returning',
+      status: d.status,
     }));
   }
 

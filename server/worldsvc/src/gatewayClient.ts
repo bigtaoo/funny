@@ -40,6 +40,14 @@ export type SlgPushMsg =
       outcome: string; // attacker_win | defender_win | draw
       lootSummary: string; // 人读摘要（如 "food+250"），UI 直接展示
       replayRef: string; // 录像引用（S8-3b 接 judge 复算后填，当前空）
+    }
+  | {
+      kind: 'family_msg'; // S8-4：家族频道新消息（仅推给在线成员）
+      familyId: string;
+      fromPublicId: string; // S8-4 暂用 accountId，publicId 解析待后补
+      fromName: string;
+      body: string;
+      ts: number; // ms（epoch，非 Date）
     };
 
 export interface WorldGatewayClient {

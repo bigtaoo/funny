@@ -56,6 +56,14 @@ export function playerWorldId(world: string, accountId: string): string {
 export function familyMemberId(world: string, accountId: string): string {
   return `${world}:${accountId}`;
 }
+/** 家族 ID（S8-4）：`f:{worldId}:{TAG}`；TAG 大写唯一缩写（3–4 字符）。 */
+export function familyId(worldId: string, tag: string): string {
+  return `f:${worldId}:${tag.toUpperCase()}`;
+}
+/** 拍卖 ID（S8-5）：`a:{worldId}:{sellerId}:{ts}:{seq}`，防同毫秒多挂撞键。 */
+export function auctionId(worldId: string, sellerId: string, ts: number, seq: number): string {
+  return `a:${worldId}:${sellerId}:${ts}:${seq}`;
+}
 /**
  * 行军 ID（S8-2）：`m:{worldId}:{ownerId}:{departAt}:{seq}`。
  * 行军是临时文档（不像 tile/playerWorld 全局确定性），用 departAt(ms) + 进程内单调 seq
@@ -111,7 +119,11 @@ export const MARCH_MIN_TROOPS = 1; // 出征最少带兵
 export const RESOURCE_CAP = 200_000;
 export const RESOURCE_YIELD_BASE = 100; // 每格每小时基础产出（× level 倍率）
 export const PROTECTION_SEC = 8 * 3600; // 新手/被破城保护时长
-export const FAMILY_CAP = 50; // U5 推迟到 S8-4，先占位
+export const FAMILY_CAP = 30; // S8-4 拍板：中小家族上限 30 人
+/** 家族频道消息保留时长（秒），TTL 锚字段须 BSON Date（见 db.ts FamilyMessageDoc.ts 注）。 */
+export const FAMILY_MSG_RETENTION_SEC = 7 * 24 * 3600; // 7 天
+/** 家族频道单条消息正文最大长度。 */
+export const FAMILY_MSG_BODY_MAX = 500;
 export const AUCTION_TAX_RATE = 0.1; // U1 推迟到 S8-5，先占位
 export const AUCTION_MAX_LISTINGS = 20;
 export const AUCTION_DURATIONS_SEC: readonly number[] = [6 * 3600, 12 * 3600, 24 * 3600];

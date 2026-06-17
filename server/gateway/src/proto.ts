@@ -110,6 +110,7 @@ export type ServerMsg =
       lootSummary: string;
       replayRef: string;
     }
+  | { case: 'family_msg'; familyId: string; fromPublicId: string; fromName: string; body: string; ts: number }
   | { case: 'pong' };
 
 function resolveProtoPath(): string {
@@ -289,6 +290,17 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
           outcome: msg.outcome,
           loot_summary: msg.lootSummary,
           replay_ref: msg.replayRef,
+        },
+      };
+      break;
+    case 'family_msg':
+      server = {
+        family_msg: {
+          family_id: msg.familyId,
+          from_public_id: msg.fromPublicId,
+          from_name: msg.fromName,
+          text: msg.body,
+          ts: msg.ts,
         },
       };
       break;

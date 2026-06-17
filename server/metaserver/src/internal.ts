@@ -333,6 +333,75 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
 
     return reply.send({ ok: true, ...(eloBySide ? { elo: eloBySide } : {}) });
   });
+
+  // ── 材料扣除 / 发放（S8-5，worldsvc 拍卖场调用）─────────────────────────────────
+  // 不经 openapi glue，X-Internal-Key 鉴权。
+  // POST /internal/materials/deduct  { accountId, material, qty, orderId }
+  //   → 扣除指定材料；不足 → 402；乐观锁冲突重试 3 次后 409。
+  app.post('/internal/materials/deduct', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const { accountId, material, qty } = req.body as {
+      accountId?: string;
+      material?: string;
+      qty?: number;
+    };
+    if (!accountId || !material || typeof qty !== 'number' || qty <= 0) {
+      return reply.code(400).send({ ok: false, error: 'accountId + material + qty (>0) required' });
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const doc = await cols.saves.findOne({ _id: accountId });
+      if (!doc) return reply.code(404).send({ ok: false, error: 'save not found' });
+      const cur = doc.save.materials?.[material] ?? 0;
+      if (cur < qty) return reply.code(402).send({ ok: false, error: 'insufficient materials' });
+      const next: SaveData = {
+        ...doc.save,
+        rev: doc.save.rev + 1,
+        updatedAt: now(),
+        materials: { ...doc.save.materials, [material]: cur - qty },
+      };
+      const res = await cols.saves.findOneAndUpdate(
+        { _id: accountId, rev: doc.rev },
+        { $set: { save: next, rev: next.rev } },
+      );
+      if (res) return reply.send({ ok: true, remaining: cur - qty });
+    }
+    return reply.code(409).send({ ok: false, error: 'rev conflict, retry' });
+  });
+
+  // POST /internal/materials/grant  { accountId, material, qty, orderId }
+  //   → 发放指定材料；幂等（orderId 目前仅日志，无 dedup 集合，best-effort）。
+  app.post('/internal/materials/grant', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const { accountId, material, qty, orderId } = req.body as {
+      accountId?: string;
+      material?: string;
+      qty?: number;
+      orderId?: string;
+    };
+    if (!accountId || !material || typeof qty !== 'number' || qty <= 0) {
+      return reply.code(400).send({ ok: false, error: 'accountId + material + qty (>0) required' });
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const doc = await cols.saves.findOne({ _id: accountId });
+      if (!doc) return reply.code(404).send({ ok: false, error: 'save not found' });
+      const cur = doc.save.materials?.[material] ?? 0;
+      const next: SaveData = {
+        ...doc.save,
+        rev: doc.save.rev + 1,
+        updatedAt: now(),
+        materials: { ...doc.save.materials, [material]: cur + qty },
+      };
+      const res = await cols.saves.findOneAndUpdate(
+        { _id: accountId, rev: doc.rev },
+        { $set: { save: next, rev: next.rev } },
+      );
+      if (res) {
+        log.info('materials granted', { accountId, material, qty, orderId, after: cur + qty });
+        return reply.send({ ok: true, after: cur + qty });
+      }
+    }
+    return reply.code(409).send({ ok: false, error: 'rev conflict, retry' });
+  });
 }
 
 /**
