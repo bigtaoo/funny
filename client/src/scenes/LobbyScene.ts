@@ -62,6 +62,8 @@ export interface LobbySceneCallbacks {
    * slot (S6-1). Falls back to onOpenRoom when not provided (older callers).
    */
   onOpenSocial?(): void;
+  /** Open the SLG world map. Wired to the bottom-nav "home/world" slot (S8). */
+  onOpenWorld?(): void;
   /** Open the shop (economy). Wired to the bottom-nav "shop" slot (S2-6). */
   onOpenShop(): void;
   /** Open the collection center (cards codex + skins). Bottom-nav "cards" slot. */
@@ -112,6 +114,8 @@ export class LobbyScene implements Scene {
   private btnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rects for the campaign (PvE) level-picker buttons, in design space. */
   private campaignBtnRects: Rect[] = [];
+  /** Hit rect for the bottom-nav "world" slot (opens WorldMapScene). */
+  private worldNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the bottom-nav "social" slot (opens RoomScene). */
   private socialNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the bottom-nav "shop" slot (opens ShopScene). */
@@ -207,6 +211,11 @@ export class LobbyScene implements Scene {
     if (ac && this.accountChipFn &&
         x >= ac.x && x <= ac.x + ac.w && y >= ac.y && y <= ac.y + ac.h) {
       this.accountChipFn();
+      return;
+    }
+    const wld = this.worldNavRect;
+    if (x >= wld.x && x <= wld.x + wld.w && y >= wld.y && y <= wld.y + wld.h) {
+      if (this.cb.onOpenWorld) this.cb.onOpenWorld();
       return;
     }
     const s = this.socialNavRect;
@@ -444,6 +453,7 @@ export class LobbyScene implements Scene {
       const navRect = { x: i * slotW, y: h - navH, w: slotW, h: navH };
       if (i === 0)      this.cardsNavRect  = navRect;
       else if (i === 1) this.statsNavRect  = navRect;
+      else if (i === 2) this.worldNavRect  = navRect;
       else if (i === 3) this.shopNavRect   = navRect;
       else if (i === 4) this.socialNavRect = navRect;
     });

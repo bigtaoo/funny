@@ -23,6 +23,9 @@ import { CampaignMapScene, type CampaignMapCallbacks } from './scenes/CampaignMa
 import { LevelPrepScene, type LevelPrepCallbacks } from './scenes/LevelPrepScene';
 import { CollectionScene, type CollectionCallbacks } from './scenes/CollectionScene';
 import { StatsScene, type StatsCallbacks } from './scenes/StatsScene';
+import { WorldMapScene, type WorldMapCallbacks } from './scenes/WorldMapScene';
+import { FamilyScene, type FamilySceneCallbacks } from './scenes/FamilyScene';
+import { AuctionScene, type AuctionSceneCallbacks } from './scenes/AuctionScene';
 import { OwnerId, ownerToSide } from './game';
 import type { Replay } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
@@ -173,6 +176,21 @@ class PixiAppViews implements AppViews {
     const scene = new ChatScene(this.layout, this.input, cb);
     this.manager.goto(scene);
     return { applyIncoming: (m) => scene.applyIncoming(m) };
+  }
+
+  showWorldMap(cb: WorldMapCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new WorldMapScene(this.layout, this.input, cb));
+  }
+
+  showFamily(cb: FamilySceneCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new FamilyScene(this.layout, this.input, cb));
+  }
+
+  showAuction(cb: AuctionSceneCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new AuctionScene(this.layout, this.input, cb));
   }
 
   showGameNet(localSide: OwnerId, cb: GameSceneCallbacks, opts: GameSceneOptions): NetGameView {

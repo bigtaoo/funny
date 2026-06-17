@@ -36,6 +36,9 @@ import type { GameSceneCallbacks, GameSceneOptions } from '../scenes/GameScene';
 import type { RoomSceneCallbacks } from '../scenes/RoomScene';
 import type { FriendsSceneCallbacks } from '../scenes/FriendsScene';
 import type { ChatSceneCallbacks } from '../scenes/ChatScene';
+import type { WorldMapCallbacks } from '../scenes/WorldMapScene';
+import type { FamilySceneCallbacks } from '../scenes/FamilyScene';
+import type { AuctionSceneCallbacks } from '../scenes/AuctionScene';
 
 /** Live handle for the lobby scene — the core pushes the aggregate social badge into it. */
 export interface LobbyView {
@@ -112,6 +115,12 @@ export interface AppViews {
   showFriends(cb: FriendsSceneCallbacks): FriendsView;
   /** 1:1 chat window. The core pushes chat_message to the handle. */
   showChat(cb: ChatSceneCallbacks): ChatView;
+  /** SLG world map (S8). */
+  showWorldMap(cb: WorldMapCallbacks): void;
+  /** SLG family hub (S8-4). */
+  showFamily(cb: FamilySceneCallbacks): void;
+  /** SLG auction house (S8-5). */
+  showAuction(cb: AuctionSceneCallbacks): void;
   /**
    * Netplay match. The core passes the pre-built engine in `opts.engine` plus the
    * local side; the view turns `localSide` into the side-flipped layout.

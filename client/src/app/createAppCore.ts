@@ -30,6 +30,8 @@ import type { AuthOutcome } from '../scenes/LoginScene';
 import type { RenameOutcome } from '../scenes/SettingsScene';
 import type { EloResult } from '../scenes/ResultScene';
 import * as analytics from '../analytics';
+import { WorldApiClient } from '../net/WorldApiClient';
+import { getWorldBaseUrl } from '../net/config';
 
 const log = netLog('app');
 
@@ -151,6 +153,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onOpenShop() { goShop(); },
       onOpenCards() { goCollection(goLobby, 'cards'); },
       onOpenStats() { goStats(); },
+      onOpenWorld() { goWorldEntry(); },
       onOpenProfile() { goSettings(); },
       playerName: playerName(),
       pvp: { rank: pvp.rank, elo: pvp.elo },
@@ -415,6 +418,47 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       };
       session.connect();
     }
+  }
+
+  function goWorldEntry(): void {
+    const worldBase = getWorldBaseUrl();
+    if (!worldBase) { goLobby(); return; }
+    const token = platform.storage.getItem(TOKEN_KEY);
+    if (!token) { goLogin(); return; }
+    const worldApi = new WorldApiClient(platform.storage);
+    // Use a fixed world ID for now; in future this would come from the server
+    const worldId = 'world:1:0';
+    inLobby = false;
+    goWorldMap(worldApi, worldId);
+  }
+
+  function goWorldMap(worldApi: WorldApiClient, worldId: string): void {
+    views.showWorldMap({
+      onBack() { goLobby(); },
+      onOpenFamily() { goFamilyHub(worldApi, worldId); },
+      onOpenAuction() { goAuctionHouse(worldApi, worldId); },
+      worldApi,
+      worldId,
+      playerName: playerName(),
+    });
+  }
+
+  function goFamilyHub(worldApi: WorldApiClient, worldId: string): void {
+    const myAccountId = platform.storage.getItem('nw_account_id') ?? '';
+    views.showFamily({
+      onBack() { goWorldMap(worldApi, worldId); },
+      worldApi,
+      worldId,
+      myAccountId,
+    });
+  }
+
+  function goAuctionHouse(worldApi: WorldApiClient, worldId: string): void {
+    views.showAuction({
+      onBack() { goWorldMap(worldApi, worldId); },
+      worldApi,
+      worldId,
+    });
   }
 
   function goShop(): void {

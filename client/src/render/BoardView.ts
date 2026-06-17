@@ -39,6 +39,7 @@ export class BoardView {
   readonly container: PIXI.Container;
 
   private readonly layout: ILayout;
+  private readonly inactiveLaneLayer!: PIXI.Graphics;
   private readonly noBuildLayer: PIXI.Graphics;
   private readonly highlightLayer: PIXI.Graphics;
 
@@ -58,12 +59,14 @@ export class BoardView {
     this.layout    = layout;
     this.container = new PIXI.Container();
 
+    this.inactiveLaneLayer = new PIXI.Graphics();
     this.noBuildLayer   = new PIXI.Graphics();
     this.highlightLayer = new PIXI.Graphics();
 
     this.drawBoard();
     this.drawBases(layout);
-    this.container.addChild(this.noBuildLayer);    // below highlights
+    this.container.addChild(this.inactiveLaneLayer); // below no-build + highlights
+    this.container.addChild(this.noBuildLayer);
     this.container.addChild(this.highlightLayer);
   }
 
@@ -85,6 +88,28 @@ export class BoardView {
       g.moveTo(x + cs * 0.22, y + cs * 0.22); g.lineTo(x + cs * 0.78, y + cs * 0.78);
       g.moveTo(x + cs * 0.78, y + cs * 0.22); g.lineTo(x + cs * 0.22, y + cs * 0.78);
       g.lineStyle(0);
+    }
+  }
+
+  // ── Active-lane gray-out (campaign lane restriction) ─────────────────────
+
+  /**
+   * Draw a semi-transparent pencil overlay on every attack lane that is NOT in
+   * `activeLanes`. If `activeLanes` is undefined/empty (no restriction), clears any
+   * prior overlay. Called once from GameRenderer.buildSceneGraph().
+   */
+  markInactiveLanes(activeLanes: number[] | undefined): void {
+    const g = this.inactiveLaneLayer;
+    g.clear();
+    if (!activeLanes || activeLanes.length === 0) return;
+
+    const activeSet = new Set(activeLanes);
+    for (const col of ATTACK_LANES) {
+      if (activeSet.has(col)) continue;
+      const r = this.laneRect(col);
+      g.beginFill(palette.pencil, 0.13);
+      g.drawRect(r.x, r.y, r.w, r.h);
+      g.endFill();
     }
   }
 
