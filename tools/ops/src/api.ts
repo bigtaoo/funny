@@ -114,6 +114,10 @@ export class Api {
     event_counts?: { date: string; event: string; count: number }[];
     dau?: { date: string; dau: number }[];
     funnel?: { date: string; platform: string; funnel_step: string; count: number; conversion_rate?: number }[];
+    region_dist?: { locale: string; devices: number }[];
+    os_dist?: { os: string; devices: number }[];
+    login_hour?: { hour: number; count: number }[];
+    retention?: { date: string; cohort_size: number; d1?: number; d7?: number; d1_rate?: number; d7_rate?: number }[];
   }> {
     const qs = new URLSearchParams({ type, days: String(days) });
     if (platform) qs.set('platform', platform);

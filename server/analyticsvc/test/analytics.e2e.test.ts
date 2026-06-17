@@ -236,4 +236,80 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     // 重跑后计数不变
     expect(ssRow?.count).toBe(2);
   });
+
+  // ─── region_dist ─────────────────────────────────────────────────────────
+
+  it('GET /internal/query?type=region_dist 返回地区分布', async () => {
+    const res = await fetch(`${base}/internal/query?type=region_dist&days=7`, {
+      headers: { 'x-internal-key': INTERNAL_KEY },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string; regions: { locale: string; devices: number }[] } };
+    expect(body.ok).toBe(true);
+    expect(body.data.type).toBe('region_dist');
+    // dev-001=zh, dev-002=en → 两个地区
+    const locales = body.data.regions.map((r) => r.locale).sort();
+    expect(locales).toContain('zh');
+    expect(locales).toContain('en');
+    // 按设备数降序
+    expect(body.data.regions[0].devices).toBeGreaterThanOrEqual(body.data.regions[body.data.regions.length - 1].devices);
+  });
+
+  // ─── os_dist ─────────────────────────────────────────────────────────────
+
+  it('GET /internal/query?type=os_dist 返回 OS 分布', async () => {
+    const res = await fetch(`${base}/internal/query?type=os_dist&days=7`, {
+      headers: { 'x-internal-key': INTERNAL_KEY },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string; os_dist: { os: string; devices: number }[] } };
+    expect(body.ok).toBe(true);
+    expect(body.data.type).toBe('os_dist');
+    // dev-001=Windows, dev-002=macOS
+    const oses = body.data.os_dist.map((r) => r.os).sort();
+    expect(oses).toContain('Windows');
+    expect(oses).toContain('macOS');
+  });
+
+  // ─── login_hour ──────────────────────────────────────────────────────────
+
+  it('GET /internal/query?type=login_hour 返回 24 个小时槽', async () => {
+    const res = await fetch(`${base}/internal/query?type=login_hour&days=7`, {
+      headers: { 'x-internal-key': INTERNAL_KEY },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string; login_hour: { hour: number; count: number }[] } };
+    expect(body.ok).toBe(true);
+    expect(body.data.type).toBe('login_hour');
+    // 始终返回 24 个小时槽（0-23），有数据的小时 count > 0
+    expect(body.data.login_hour).toHaveLength(24);
+    const total = body.data.login_hour.reduce((s, r) => s + r.count, 0);
+    expect(total).toBe(2); // 两次 session_start
+    // 小时槽按升序
+    for (let i = 1; i < 24; i++) {
+      expect(body.data.login_hour[i].hour).toBe(i);
+    }
+  });
+
+  // ─── retention ───────────────────────────────────────────────────────────
+
+  it('GET /internal/query?type=retention 返回留存数组', async () => {
+    const res = await fetch(`${base}/internal/query?type=retention&days=7`, {
+      headers: { 'x-internal-key': INTERNAL_KEY },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      data: { type: string; retention: { date: string; cohort_size: number; d1?: number; d7?: number }[] };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.data.type).toBe('retention');
+    // 返回 7 行（每天一行）
+    expect(body.data.retention).toHaveLength(7);
+    // 今天队列有 2 个设备
+    const todayRow = body.data.retention.find((r) => r.date === TODAY);
+    expect(todayRow?.cohort_size).toBe(2);
+    // 当天 D7 = undefined（未来数据不存在）
+    expect(todayRow?.d7).toBeUndefined();
+  });
 });

@@ -116,6 +116,22 @@ export function startHttpApi(
           const funnel = await svc.queryFunnel(days, platform);
           return send(res, 200, ok({ type, funnel }));
         }
+        if (type === 'region_dist') {
+          const regions = await svc.queryRegionDist(days);
+          return send(res, 200, ok({ type, regions }));
+        }
+        if (type === 'os_dist') {
+          const os_dist = await svc.queryOsDist(days);
+          return send(res, 200, ok({ type, os_dist }));
+        }
+        if (type === 'login_hour') {
+          const login_hour = await svc.queryLoginHour(days);
+          return send(res, 200, ok({ type, login_hour }));
+        }
+        if (type === 'retention') {
+          const retention = await svc.queryRetention(days);
+          return send(res, 200, ok({ type, retention }));
+        }
         return sendErr(res, ErrorCode.BAD_REQUEST, `unknown query type: ${type}`);
       }
 

@@ -69,10 +69,26 @@ export interface DauRow {
   dau: number;
 }
 
+export interface RegionRow { locale: string; devices: number }
+export interface OsRow { os: string; devices: number }
+export interface LoginHourRow { hour: number; count: number }
+export interface RetentionRow {
+  date: string;
+  cohort_size: number;
+  d1?: number;
+  d7?: number;
+  d1_rate?: number;
+  d7_rate?: number;
+}
+
 export interface QueryResult {
   event_counts?: EventCountRow[];
   dau?: DauRow[];
   funnel?: FunnelDailyDoc[];
+  region_dist?: RegionRow[];
+  os_dist?: OsRow[];
+  login_hour?: LoginHourRow[];
+  retention?: RetentionRow[];
 }
 
 // 漏斗步骤定义（顺序即转化链，ETL 写入 funnels_daily 用同一列表）。
@@ -208,6 +224,97 @@ export class AnalyticsService {
         this.cols.funnels_daily.updateOne(filter, { $set: doc }, { upsert: true }),
       ),
     );
+  }
+
+  /** 地区分布：按 locale 统计独立设备数（最近 N 天所有事件）。 */
+  async queryRegionDist(days: number): Promise<RegionRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const pipeline = [
+      { $match: { ts: { $gte: since } } },
+      { $group: { _id: { locale: '$locale', device: '$device_id' } } },
+      { $group: { _id: '$_id.locale', devices: { $sum: 1 } } },
+      { $sort: { devices: -1 as const } },
+    ];
+    const rows = await this.cols.events
+      .aggregate<{ _id: string; devices: number }>(pipeline)
+      .toArray();
+    return rows.map((r) => ({ locale: r._id || 'unknown', devices: r.devices }));
+  }
+
+  /** 设备/OS 分布：按 os 统计独立设备数（最近 N 天 session_start）。 */
+  async queryOsDist(days: number): Promise<OsRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const pipeline = [
+      { $match: { ts: { $gte: since }, event: 'session_start' } },
+      { $group: { _id: { os: '$os', device: '$device_id' } } },
+      { $group: { _id: '$_id.os', devices: { $sum: 1 } } },
+      { $sort: { devices: -1 as const } },
+    ];
+    const rows = await this.cols.events
+      .aggregate<{ _id: string; devices: number }>(pipeline)
+      .toArray();
+    return rows.map((r) => ({ os: r._id || 'unknown', devices: r.devices }));
+  }
+
+  /** 登录时段：按 UTC 小时统计 session_start 次数（最近 N 天，填满 0-23）。 */
+  async queryLoginHour(days: number): Promise<LoginHourRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const pipeline = [
+      { $match: { ts: { $gte: since }, event: 'session_start' } },
+      { $group: { _id: { $hour: '$ts' }, count: { $sum: 1 } } },
+      { $sort: { _id: 1 as const } },
+    ];
+    const rows = await this.cols.events
+      .aggregate<{ _id: number; count: number }>(pipeline)
+      .toArray();
+    const byHour = new Map(rows.map((r) => [r._id, r.count]));
+    return Array.from({ length: 24 }, (_, h) => ({ hour: h, count: byHour.get(h) ?? 0 }));
+  }
+
+  /**
+   * D1/D7 滚动留存：最近 N 天每日活跃设备中次日/第7日仍活跃的比例。
+   * 多取 7 天数据窗口以便计算早期队列的 D7。
+   */
+  async queryRetention(days: number): Promise<RetentionRow[]> {
+    const extraDays = 7;
+    const since = new Date(dayStart(this.now()) - (days - 1 + extraDays) * 86400_000);
+
+    // 去重 (date, device) → 每日独立活跃设备列表
+    const pipeline = [
+      { $match: { ts: { $gte: since }, event: 'session_start' } },
+      { $group: { _id: { date: { $dateToString: { format: '%Y-%m-%d', date: '$ts' } }, device: '$device_id' } } },
+      { $group: { _id: '$_id.date', devices: { $push: '$_id.device' } } },
+    ];
+    const rows = await this.cols.events
+      .aggregate<{ _id: string; devices: string[] }>(pipeline)
+      .toArray();
+
+    const byDate = new Map<string, Set<string>>();
+    for (const r of rows) byDate.set(r._id, new Set(r.devices));
+
+    const result: RetentionRow[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const dateMs = dayStart(this.now()) - i * 86400_000;
+      const date = toDateStr(dateMs);
+      const cohort = byDate.get(date);
+      if (!cohort || cohort.size === 0) {
+        result.push({ date, cohort_size: 0 });
+        continue;
+      }
+      const d1Set = byDate.get(toDateStr(dateMs + 86400_000));
+      const d7Set = byDate.get(toDateStr(dateMs + 7 * 86400_000));
+      const d1 = d1Set !== undefined ? [...cohort].filter((d) => d1Set.has(d)).length : undefined;
+      const d7 = d7Set !== undefined ? [...cohort].filter((d) => d7Set.has(d)).length : undefined;
+      result.push({
+        date,
+        cohort_size: cohort.size,
+        d1,
+        d7,
+        d1_rate: d1 !== undefined ? d1 / cohort.size : undefined,
+        d7_rate: d7 !== undefined ? d7 / cohort.size : undefined,
+      });
+    }
+    return result;
   }
 
   async ingestEvents(batch: EventBatch, userId: string | undefined): Promise<void> {

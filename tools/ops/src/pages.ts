@@ -156,12 +156,15 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
     clear(body);
     const days = Number(daysSel.value);
 
-    // ── 并行拉三种数据 + 监控概览 ──
-    const [summary, evCounts, dau, funnel] = await Promise.allSettled([
+    const [summary, evCounts, dau, funnel, regions, osDist, loginHour, retention] = await Promise.allSettled([
       api.analyticsSummary(),
       api.analyticsEvents('event_counts', days),
       api.analyticsEvents('dau', days),
       api.analyticsEvents('funnel', days),
+      api.analyticsEvents('region_dist', days),
+      api.analyticsEvents('os_dist', days),
+      api.analyticsEvents('login_hour', days),
+      api.analyticsEvents('retention', days),
     ]);
 
     // 监控概览（自采指标 + 工单）
@@ -180,22 +183,12 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, '补偿工单概览'), tk));
     }
 
-    // 事件计数
-    if (evCounts.status === 'fulfilled' && evCounts.value.available && evCounts.value.event_counts?.length) {
-      const rows = evCounts.value.event_counts;
-      // 收集所有事件类型（列）和日期（行）。
-      const events = [...new Set(rows.map((r) => r.event))].sort();
-      const dates = [...new Set(rows.map((r) => r.date))].sort();
-      const lookup = new Map(rows.map((r) => [`${r.date}:${r.event}`, r.count]));
-
-      const header = h('tr', {}, h('th', {}, '日期'), ...events.map((e) => h('th', {}, e)));
-      const t = h('table', {}, header);
-      for (const date of dates) {
-        t.append(h('tr', {}, h('td', {}, date), ...events.map((e) => h('td', { style: 'text-align:right' }, String(lookup.get(`${date}:${e}`) ?? 0)))));
-      }
-      body.append(h('div', { class: 'card', style: 'overflow-x:auto' }, h('div', { class: 'muted' }, `事件计数（近 ${days} 天）`), t));
-    } else if (evCounts.status === 'fulfilled' && !evCounts.value.available) {
+    // 埋点服务不可用提示（仅显示一次）
+    const analyticsUnavailable =
+      evCounts.status === 'fulfilled' && !evCounts.value.available;
+    if (analyticsUnavailable) {
       body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, '埋点服务未配置（NW_ANALYTICS_BASE_URL）')));
+      return;
     }
 
     // DAU 趋势
@@ -206,6 +199,86 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `DAU 趋势（近 ${days} 天）`), sparkline(pts.map((p) => p.dau)), t));
     }
 
+    // D1/D7 留存
+    if (retention.status === 'fulfilled' && retention.value.available && retention.value.retention?.length) {
+      const rows = retention.value.retention.filter((r) => r.cohort_size > 0);
+      if (rows.length > 0) {
+        const t = h('table', {},
+          h('tr', {},
+            h('th', {}, '日期'),
+            h('th', { style: 'text-align:right' }, '队列'),
+            h('th', { style: 'text-align:right' }, 'D1 留存'),
+            h('th', { style: 'text-align:right' }, 'D1%'),
+            h('th', { style: 'text-align:right' }, 'D7 留存'),
+            h('th', { style: 'text-align:right' }, 'D7%'),
+          ),
+        );
+        for (const r of rows) {
+          t.append(h('tr', {},
+            h('td', {}, r.date),
+            h('td', { style: 'text-align:right' }, String(r.cohort_size)),
+            h('td', { style: 'text-align:right' }, r.d1 !== undefined ? String(r.d1) : '—'),
+            h('td', { style: 'text-align:right' }, r.d1_rate !== undefined ? pct(r.d1_rate) : '—'),
+            h('td', { style: 'text-align:right' }, r.d7 !== undefined ? String(r.d7) : '—'),
+            h('td', { style: 'text-align:right' }, r.d7_rate !== undefined ? pct(r.d7_rate) : '—'),
+          ));
+        }
+        body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `D1/D7 滚动留存（近 ${days} 天，—=数据不足）`), t));
+      }
+    }
+
+    // 地区分布
+    if (regions.status === 'fulfilled' && regions.value.available && regions.value.region_dist?.length) {
+      const rows = regions.value.region_dist;
+      const total = rows.reduce((s, r) => s + r.devices, 0);
+      const t = h('table', {},
+        h('tr', {}, h('th', {}, '语言/地区'), h('th', { style: 'text-align:right' }, '设备数'), h('th', {}, '占比')),
+      );
+      for (const r of rows) {
+        t.append(h('tr', {},
+          h('td', {}, r.locale),
+          h('td', { style: 'text-align:right' }, String(r.devices)),
+          h('td', {}, barCell(r.devices, total)),
+        ));
+      }
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `地区分布（近 ${days} 天）`), t));
+    }
+
+    // 设备/OS 分布
+    if (osDist.status === 'fulfilled' && osDist.value.available && osDist.value.os_dist?.length) {
+      const rows = osDist.value.os_dist;
+      const total = rows.reduce((s, r) => s + r.devices, 0);
+      const t = h('table', {},
+        h('tr', {}, h('th', {}, '操作系统'), h('th', { style: 'text-align:right' }, '设备数'), h('th', {}, '占比')),
+      );
+      for (const r of rows) {
+        t.append(h('tr', {},
+          h('td', {}, r.os),
+          h('td', { style: 'text-align:right' }, String(r.devices)),
+          h('td', {}, barCell(r.devices, total)),
+        ));
+      }
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `设备分布（近 ${days} 天，session_start）`), t));
+    }
+
+    // 登录时段（UTC）
+    if (loginHour.status === 'fulfilled' && loginHour.value.available && loginHour.value.login_hour?.length) {
+      const rows = loginHour.value.login_hour;
+      const maxCount = Math.max(1, ...rows.map((r) => r.count));
+      const t = h('table', {},
+        h('tr', {}, h('th', {}, 'UTC 时'), h('th', { style: 'text-align:right' }, 'session 数'), h('th', {}, '分布')),
+      );
+      for (const r of rows) {
+        const label = `${String(r.hour).padStart(2, '0')}:00`;
+        t.append(h('tr', {},
+          h('td', { style: 'font-variant-numeric:tabular-nums' }, label),
+          h('td', { style: 'text-align:right' }, String(r.count)),
+          h('td', {}, barCell(r.count, maxCount)),
+        ));
+      }
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `登录时段（UTC，近 ${days} 天，session_start）`), t));
+    }
+
     // 漏斗转化
     if (funnel.status === 'fulfilled' && funnel.value.available && funnel.value.funnel?.length) {
       const rows = funnel.value.funnel;
@@ -214,7 +287,6 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
 
       for (const plat of platforms) {
         const platRows = rows.filter((r) => r.platform === plat);
-        // 最新一天的漏斗（取最大 date）。
         const latestDate = platRows.reduce((m, r) => (r.date > m ? r.date : m), '');
         const latest = platRows.filter((r) => r.date === latestDate);
         const byStep = new Map(latest.map((r) => [r.funnel_step, r]));
@@ -225,11 +297,26 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
           t.append(h('tr', {},
             h('td', {}, step),
             h('td', { style: 'text-align:right' }, row ? String(row.count) : '—'),
-            h('td', { style: 'text-align:right' }, row?.conversion_rate !== undefined ? (row.conversion_rate * 100).toFixed(1) + '%' : '—'),
+            h('td', { style: 'text-align:right' }, row?.conversion_rate !== undefined ? pct(row.conversion_rate) : '—'),
           ));
         }
         body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `漏斗转化（${plat}，${latestDate}）`), t));
       }
+    }
+
+    // 事件计数明细
+    if (evCounts.status === 'fulfilled' && evCounts.value.available && evCounts.value.event_counts?.length) {
+      const rows = evCounts.value.event_counts;
+      const events = [...new Set(rows.map((r) => r.event))].sort();
+      const dates = [...new Set(rows.map((r) => r.date))].sort();
+      const lookup = new Map(rows.map((r) => [`${r.date}:${r.event}`, r.count]));
+
+      const header = h('tr', {}, h('th', {}, '日期'), ...events.map((e) => h('th', {}, e)));
+      const t = h('table', {}, header);
+      for (const date of dates) {
+        t.append(h('tr', {}, h('td', {}, date), ...events.map((e) => h('td', { style: 'text-align:right' }, String(lookup.get(`${date}:${e}`) ?? 0)))));
+      }
+      body.append(h('div', { class: 'card', style: 'overflow-x:auto' }, h('div', { class: 'muted' }, `事件计数明细（近 ${days} 天）`), t));
     }
 
     if (evCounts.status === 'rejected') showErr(err, evCounts.reason);
@@ -238,6 +325,18 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
   refreshBtn.addEventListener('click', () => void reload());
   daysSel.addEventListener('change', () => void reload());
   await reload();
+}
+
+function pct(rate: number): string {
+  return (rate * 100).toFixed(1) + '%';
+}
+
+function barCell(value: number, max: number): HTMLElement {
+  const ratio = max > 0 ? value / max : 0;
+  const bar = h('div', {
+    style: `display:inline-block;width:${(ratio * 120).toFixed(0)}px;height:8px;background:#2f5fcf;vertical-align:middle;border-radius:2px`,
+  });
+  return h('span', {}, bar, ` ${pct(ratio)}`);
 }
 
 // ───────────────────────── 玩家查询 ─────────────────────────
