@@ -1,0 +1,42 @@
+{
+  "id": "ch4_lv8",
+  "chapter": 4,
+  "seed": 40008,
+  "objective": { "kind": "leak_limit", "maxLeaks": 2 },
+  "hazards": [
+    { "col": 3, "rowRange": [3, 13], "effect": "lava", "dps": 8 },
+    { "col": 8, "rowRange": [3, 13], "effect": "lava", "dps": 8 }
+  ],
+  "waves": {
+    "entries": [
+      { "atTick": 60,  "unitType": "runner",      "col": 3,  "count": 4, "spacingTicks": 8,
+        "crossWaypoints": [{ "atRow": 14, "toCol": 4 }] },
+      { "atTick": 60,  "unitType": "runner",      "col": 8,  "count": 4, "spacingTicks": 8,
+        "crossWaypoints": [{ "atRow": 14, "toCol": 7 }] },
+      { "atTick": 240, "unitType": "ironclad",    "col": 3,  "count": 2, "spacingTicks": 38,
+        "crossWaypoints": [{ "atRow": 14, "toCol": 4 }] },
+      { "atTick": 240, "unitType": "ironclad",    "col": 8,  "count": 2, "spacingTicks": 38,
+        "crossWaypoints": [{ "atRow": 14, "toCol": 7 }] },
+      { "atTick": 240, "unitType": "infantry",    "col": 1,  "count": 3, "spacingTicks": 15 },
+      { "atTick": 240, "unitType": "infantry",    "col": 10, "count": 3, "spacingTicks": 15 },
+      { "atTick": 480, "unitType": "shieldbearer","col": 4,  "count": 3, "spacingTicks": 22 },
+      { "atTick": 480, "unitType": "shieldbearer","col": 7,  "count": 3, "spacingTicks": 22 },
+      { "atTick": 480, "unitType": "runner",      "col": 3,  "count": 5, "spacingTicks": 7,
+        "crossWaypoints": [{ "atRow": 14, "toCol": 4 }] },
+      { "atTick": 720, "unitType": "ironclad",    "col": 4,  "count": 3, "spacingTicks": 34 },
+      { "atTick": 720, "unitType": "ironclad",    "col": 7,  "count": 3, "spacingTicks": 34 },
+      { "atTick": 720, "unitType": "runner",      "col": 8,  "count": 5, "spacingTicks": 7,
+        "crossWaypoints": [{ "atRow": 14, "toCol": 7 }] },
+      { "atTick": 960, "unitType": "runner",      "col": 3,  "count": 5, "spacingTicks": 7,
+        "crossWaypoints": [{ "atRow": 14, "toCol": 4 }] },
+      { "atTick": 960, "unitType": "runner",      "col": 8,  "count": 5, "spacingTicks": 7,
+        "crossWaypoints": [{ "atRow": 14, "toCol": 7 }] },
+      { "atTick": 960, "unitType": "ironclad",    "col": 1,  "count": 3, "spacingTicks": 32 },
+      { "atTick": 960, "unitType": "ironclad",    "col": 10, "count": 3, "spacingTicks": 32 }
+    ]
+  },
+  "rewards": {
+    "starThresholds": [30, 65, 100],
+    "materials": { "scrap": 14, "lead": 10, "binding": 3 }
+  }
+}
