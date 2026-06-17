@@ -2,39 +2,199 @@
   "id": "ch5_lv10",
   "chapter": 5,
   "seed": 50010,
-  "objective": { "kind": "boss" },
+  "objective": {
+    "kind": "boss"
+  },
   "inkRegenMult": 0.7,
   "hazards": [
-    { "col": 2,  "rowRange": [3, 13], "effect": "speed", "speedMult": 1.8 },
-    { "col": 9,  "rowRange": [3, 13], "effect": "speed", "speedMult": 1.8 },
-    { "col": 4,  "rowRange": [3, 13], "effect": "fog",   "rangeMod": -1 },
-    { "col": 7,  "rowRange": [3, 13], "effect": "fog",   "rangeMod": -1 },
-    { "col": 1,  "rowRange": [5, 11], "effect": "lava",  "dps": 8 }
+    {
+      "col": 2,
+      "rowRange": [
+        3,
+        13
+      ],
+      "effect": "speed",
+      "speedMult": 1.8
+    },
+    {
+      "col": 9,
+      "rowRange": [
+        3,
+        13
+      ],
+      "effect": "speed",
+      "speedMult": 1.8
+    },
+    {
+      "col": 4,
+      "rowRange": [
+        3,
+        13
+      ],
+      "effect": "fog",
+      "rangeMod": -1
+    },
+    {
+      "col": 7,
+      "rowRange": [
+        3,
+        13
+      ],
+      "effect": "fog",
+      "rangeMod": -1
+    },
+    {
+      "col": 1,
+      "rowRange": [
+        5,
+        11
+      ],
+      "effect": "lava",
+      "dps": 8
+    }
   ],
   "waves": {
     "entries": [
-      { "atTick": 60,  "unitType": "runner",      "col": 2,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 60,  "unitType": "runner",      "col": 9,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 300, "unitType": "ironclad",    "col": 3,  "count": 2, "spacingTicks": 38 },
-      { "atTick": 300, "unitType": "ironclad",    "col": 8,  "count": 2, "spacingTicks": 38 },
-      { "atTick": 300, "unitType": "runner",      "col": 2,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 600, "unitType": "shieldbearer","col": 4,  "count": 3, "spacingTicks": 22 },
-      { "atTick": 600, "unitType": "shieldbearer","col": 7,  "count": 3, "spacingTicks": 22 },
-      { "atTick": 600, "unitType": "runner",      "col": 9,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 900, "unitType": "ironclad",    "col": 0,  "count": 3, "spacingTicks": 30 },
-      { "atTick": 900, "unitType": "ironclad",    "col": 11, "count": 3, "spacingTicks": 30 },
-      { "atTick": 900, "unitType": "runner",      "col": 2,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 900, "unitType": "runner",      "col": 9,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 1200,"unitType": "ironclad",    "col": 1,  "count": 1, "isBoss": true },
-      { "atTick": 1200,"unitType": "ironclad",    "col": 10, "count": 1, "isBoss": true },
-      { "atTick": 1200,"unitType": "runner",      "col": 2,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 1200,"unitType": "runner",      "col": 9,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 1200,"unitType": "ironclad",    "col": 4,  "count": 3, "spacingTicks": 28 },
-      { "atTick": 1200,"unitType": "ironclad",    "col": 7,  "count": 3, "spacingTicks": 28 }
+      {
+        "atTick": 60,
+        "unitType": "runner",
+        "col": 2,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 60,
+        "unitType": "runner",
+        "col": 9,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 300,
+        "unitType": "ironclad",
+        "col": 3,
+        "count": 2,
+        "spacingTicks": 38
+      },
+      {
+        "atTick": 300,
+        "unitType": "ironclad",
+        "col": 8,
+        "count": 2,
+        "spacingTicks": 38
+      },
+      {
+        "atTick": 300,
+        "unitType": "runner",
+        "col": 2,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 600,
+        "unitType": "shieldbearer",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 22
+      },
+      {
+        "atTick": 600,
+        "unitType": "shieldbearer",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 22
+      },
+      {
+        "atTick": 600,
+        "unitType": "runner",
+        "col": 9,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 900,
+        "unitType": "ironclad",
+        "col": 0,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 900,
+        "unitType": "ironclad",
+        "col": 11,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 900,
+        "unitType": "runner",
+        "col": 2,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 900,
+        "unitType": "runner",
+        "col": 9,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 1200,
+        "unitType": "ironclad",
+        "col": 1,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 1200,
+        "unitType": "ironclad",
+        "col": 10,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 1200,
+        "unitType": "runner",
+        "col": 2,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 1200,
+        "unitType": "runner",
+        "col": 9,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 1200,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 28
+      },
+      {
+        "atTick": 1200,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 28
+      }
     ]
   },
   "rewards": {
-    "starThresholds": [40, 70, 100],
-    "materials": { "scrap": 20, "lead": 15, "binding": 6 }
-  }
+    "starThresholds": [
+      40,
+      70,
+      100
+    ],
+    "materials": {
+      "scrap": 20,
+      "lead": 15,
+      "binding": 6
+    }
+  },
+  "nameKey": "campaign.ch5.lv10.name",
+  "briefKey": "campaign.ch5.lv10.brief"
 }

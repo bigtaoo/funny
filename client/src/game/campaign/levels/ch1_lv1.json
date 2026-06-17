@@ -7,28 +7,117 @@
   },
   "waves": {
     "entries": [
-      { "atTick": 60, "unitType": "infantry", "col": 4, "count": 2, "spacingTicks": 24 },
-      { "atTick": 60, "unitType": "infantry", "col": 7, "count": 2, "spacingTicks": 24 },
-
-      { "atTick": 300, "unitType": "infantry", "col": 2, "count": 3, "spacingTicks": 18 },
-      { "atTick": 300, "unitType": "infantry", "col": 9, "count": 3, "spacingTicks": 18 },
-
-      { "atTick": 600, "unitType": "runner", "col": 3, "count": 3, "spacingTicks": 12 },
-      { "atTick": 600, "unitType": "runner", "col": 8, "count": 3, "spacingTicks": 12 },
-
-      { "atTick": 900, "unitType": "infantry", "col": 1, "count": 3, "spacingTicks": 18 },
-      { "atTick": 900, "unitType": "infantry", "col": 4, "count": 3, "spacingTicks": 18 },
-      { "atTick": 900, "unitType": "infantry", "col": 7, "count": 3, "spacingTicks": 18 },
-      { "atTick": 900, "unitType": "infantry", "col": 10, "count": 3, "spacingTicks": 18 },
-
-      { "atTick": 1260, "unitType": "shieldbearer", "col": 4, "count": 1, "isBoss": true },
-      { "atTick": 1260, "unitType": "shieldbearer", "col": 7, "count": 1, "isBoss": true },
-      { "atTick": 1290, "unitType": "infantry", "col": 2, "count": 2, "spacingTicks": 15 },
-      { "atTick": 1290, "unitType": "infantry", "col": 9, "count": 2, "spacingTicks": 15 }
+      {
+        "atTick": 60,
+        "unitType": "infantry",
+        "col": 4,
+        "count": 2,
+        "spacingTicks": 24
+      },
+      {
+        "atTick": 60,
+        "unitType": "infantry",
+        "col": 7,
+        "count": 2,
+        "spacingTicks": 24
+      },
+      {
+        "atTick": 300,
+        "unitType": "infantry",
+        "col": 2,
+        "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 300,
+        "unitType": "infantry",
+        "col": 9,
+        "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 600,
+        "unitType": "runner",
+        "col": 3,
+        "count": 3,
+        "spacingTicks": 12
+      },
+      {
+        "atTick": 600,
+        "unitType": "runner",
+        "col": 8,
+        "count": 3,
+        "spacingTicks": 12
+      },
+      {
+        "atTick": 900,
+        "unitType": "infantry",
+        "col": 1,
+        "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 900,
+        "unitType": "infantry",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 900,
+        "unitType": "infantry",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 900,
+        "unitType": "infantry",
+        "col": 10,
+        "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 1260,
+        "unitType": "shieldbearer",
+        "col": 4,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 1260,
+        "unitType": "shieldbearer",
+        "col": 7,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 1290,
+        "unitType": "infantry",
+        "col": 2,
+        "count": 2,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1290,
+        "unitType": "infantry",
+        "col": 9,
+        "count": 2,
+        "spacingTicks": 15
+      }
     ]
   },
   "rewards": {
-    "starThresholds": [50, 80, 100],
-    "materials": { "scrap": 6, "lead": 2 }
-  }
+    "starThresholds": [
+      50,
+      80,
+      100
+    ],
+    "materials": {
+      "scrap": 6,
+      "lead": 2
+    }
+  },
+  "nameKey": "campaign.ch1.lv1.name",
+  "briefKey": "campaign.ch1.lv1.brief"
 }

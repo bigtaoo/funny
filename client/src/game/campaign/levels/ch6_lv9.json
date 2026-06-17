@@ -2,50 +2,273 @@
   "id": "ch6_lv9",
   "chapter": 6,
   "seed": 60009,
-  "objective": { "kind": "leak_limit", "maxLeaks": 1 },
+  "objective": {
+    "kind": "leak_limit",
+    "maxLeaks": 1
+  },
   "inkRegenMult": 0.5,
   "hazards": [
-    { "col": 2,  "rowRange": [2, 14], "effect": "speed", "speedMult": 1.9 },
-    { "col": 9,  "rowRange": [2, 14], "effect": "speed", "speedMult": 1.9 },
-    { "col": 4,  "rowRange": [3, 13], "effect": "fog",   "rangeMod": -1 },
-    { "col": 7,  "rowRange": [3, 13], "effect": "fog",   "rangeMod": -1 },
-    { "col": 1,  "rowRange": [5, 12], "effect": "lava",  "dps": 10 }
+    {
+      "col": 2,
+      "rowRange": [
+        2,
+        14
+      ],
+      "effect": "speed",
+      "speedMult": 1.9
+    },
+    {
+      "col": 9,
+      "rowRange": [
+        2,
+        14
+      ],
+      "effect": "speed",
+      "speedMult": 1.9
+    },
+    {
+      "col": 4,
+      "rowRange": [
+        3,
+        13
+      ],
+      "effect": "fog",
+      "rangeMod": -1
+    },
+    {
+      "col": 7,
+      "rowRange": [
+        3,
+        13
+      ],
+      "effect": "fog",
+      "rangeMod": -1
+    },
+    {
+      "col": 1,
+      "rowRange": [
+        5,
+        12
+      ],
+      "effect": "lava",
+      "dps": 10
+    }
   ],
   "waves": {
     "entries": [
-      { "atTick": 60,  "unitType": "runner",      "col": 2,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 60,  "unitType": "runner",      "col": 9,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 60,  "unitType": "ironclad",    "col": 1,  "count": 2, "spacingTicks": 36,
-        "crossWaypoints": [{ "atRow": 13, "toCol": 0 }] },
-      { "atTick": 240, "unitType": "ironclad",    "col": 3,  "count": 3, "spacingTicks": 30 },
-      { "atTick": 240, "unitType": "ironclad",    "col": 8,  "count": 3, "spacingTicks": 30 },
-      { "atTick": 240, "unitType": "runner",      "col": 2,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 240, "unitType": "runner",      "col": 9,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 420, "unitType": "ironclad",    "col": 4,  "count": 3, "spacingTicks": 28 },
-      { "atTick": 420, "unitType": "ironclad",    "col": 7,  "count": 3, "spacingTicks": 28 },
-      { "atTick": 420, "unitType": "runner",      "col": 0,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 420, "unitType": "runner",      "col": 11, "count": 5, "spacingTicks": 6 },
-      { "atTick": 420, "unitType": "ironclad",    "col": 1,  "count": 2, "spacingTicks": 34,
-        "crossWaypoints": [{ "atRow": 13, "toCol": 0 }] },
-      { "atTick": 600, "unitType": "ironclad",    "col": 2,  "count": 4, "spacingTicks": 24 },
-      { "atTick": 600, "unitType": "ironclad",    "col": 9,  "count": 4, "spacingTicks": 24 },
-      { "atTick": 600, "unitType": "runner",      "col": 3,  "count": 6, "spacingTicks": 5 },
-      { "atTick": 600, "unitType": "runner",      "col": 8,  "count": 6, "spacingTicks": 5 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 0,  "count": 4, "spacingTicks": 22 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 11, "count": 4, "spacingTicks": 22 },
-      { "atTick": 840, "unitType": "runner",      "col": 2,  "count": 6, "spacingTicks": 5 },
-      { "atTick": 840, "unitType": "runner",      "col": 9,  "count": 6, "spacingTicks": 5 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 1,  "count": 3, "spacingTicks": 30,
-        "crossWaypoints": [{ "atRow": 13, "toCol": 0 }] },
-      { "atTick": 1080,"unitType": "ironclad",    "col": 4,  "count": 5, "spacingTicks": 18 },
-      { "atTick": 1080,"unitType": "ironclad",    "col": 7,  "count": 5, "spacingTicks": 18 },
-      { "atTick": 1080,"unitType": "runner",      "col": 1,  "count": 7, "spacingTicks": 5,
-        "crossWaypoints": [{ "atRow": 13, "toCol": 0 }] },
-      { "atTick": 1080,"unitType": "runner",      "col": 10, "count": 7, "spacingTicks": 5 }
+      {
+        "atTick": 60,
+        "unitType": "runner",
+        "col": 2,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 60,
+        "unitType": "runner",
+        "col": 9,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 60,
+        "unitType": "ironclad",
+        "col": 1,
+        "count": 2,
+        "spacingTicks": 36,
+        "crossWaypoints": [
+          {
+            "atRow": 13,
+            "toCol": 0
+          }
+        ]
+      },
+      {
+        "atTick": 240,
+        "unitType": "ironclad",
+        "col": 3,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 240,
+        "unitType": "ironclad",
+        "col": 8,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 240,
+        "unitType": "runner",
+        "col": 2,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 240,
+        "unitType": "runner",
+        "col": 9,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 420,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 28
+      },
+      {
+        "atTick": 420,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 28
+      },
+      {
+        "atTick": 420,
+        "unitType": "runner",
+        "col": 0,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 420,
+        "unitType": "runner",
+        "col": 11,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 420,
+        "unitType": "ironclad",
+        "col": 1,
+        "count": 2,
+        "spacingTicks": 34,
+        "crossWaypoints": [
+          {
+            "atRow": 13,
+            "toCol": 0
+          }
+        ]
+      },
+      {
+        "atTick": 600,
+        "unitType": "ironclad",
+        "col": 2,
+        "count": 4,
+        "spacingTicks": 24
+      },
+      {
+        "atTick": 600,
+        "unitType": "ironclad",
+        "col": 9,
+        "count": 4,
+        "spacingTicks": 24
+      },
+      {
+        "atTick": 600,
+        "unitType": "runner",
+        "col": 3,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 600,
+        "unitType": "runner",
+        "col": 8,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 0,
+        "count": 4,
+        "spacingTicks": 22
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 11,
+        "count": 4,
+        "spacingTicks": 22
+      },
+      {
+        "atTick": 840,
+        "unitType": "runner",
+        "col": 2,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 840,
+        "unitType": "runner",
+        "col": 9,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 1,
+        "count": 3,
+        "spacingTicks": 30,
+        "crossWaypoints": [
+          {
+            "atRow": 13,
+            "toCol": 0
+          }
+        ]
+      },
+      {
+        "atTick": 1080,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 5,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 1080,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 5,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 1080,
+        "unitType": "runner",
+        "col": 1,
+        "count": 7,
+        "spacingTicks": 5,
+        "crossWaypoints": [
+          {
+            "atRow": 13,
+            "toCol": 0
+          }
+        ]
+      },
+      {
+        "atTick": 1080,
+        "unitType": "runner",
+        "col": 10,
+        "count": 7,
+        "spacingTicks": 5
+      }
     ]
   },
   "rewards": {
-    "starThresholds": [45, 75, 100],
-    "materials": { "scrap": 25, "lead": 19, "binding": 9 }
-  }
+    "starThresholds": [
+      45,
+      75,
+      100
+    ],
+    "materials": {
+      "scrap": 25,
+      "lead": 19,
+      "binding": 9
+    }
+  },
+  "nameKey": "campaign.ch6.lv9.name",
+  "briefKey": "campaign.ch6.lv9.brief"
 }

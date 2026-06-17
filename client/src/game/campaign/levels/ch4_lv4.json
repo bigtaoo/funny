@@ -2,38 +2,183 @@
   "id": "ch4_lv4",
   "chapter": 4,
   "seed": 40004,
-  "objective": { "kind": "survive" },
+  "objective": {
+    "kind": "survive"
+  },
   "hazards": [
-    { "col": 4, "rowRange": [4, 12], "effect": "lava", "dps": 4 }
+    {
+      "col": 4,
+      "rowRange": [
+        4,
+        12
+      ],
+      "effect": "lava",
+      "dps": 4
+    }
   ],
   "waves": {
     "entries": [
-      { "atTick": 60,  "unitType": "runner",      "col": 4,  "count": 3, "spacingTicks": 9,
-        "crossWaypoints": [{ "atRow": 12, "toCol": 3 }] },
-      { "atTick": 60,  "unitType": "infantry",    "col": 3,  "count": 3, "spacingTicks": 15 },
-      { "atTick": 240, "unitType": "infantry",    "col": 8,  "count": 3, "spacingTicks": 15 },
-      { "atTick": 240, "unitType": "shieldbearer","col": 4,  "count": 2, "spacingTicks": 26,
-        "crossWaypoints": [{ "atRow": 10, "toCol": 3 }] },
-      { "atTick": 420, "unitType": "ironclad",    "col": 4,  "count": 2, "spacingTicks": 38,
-        "crossWaypoints": [{ "atRow": 10, "toCol": 3 }] },
-      { "atTick": 420, "unitType": "runner",      "col": 1,  "count": 4, "spacingTicks": 8 },
-      { "atTick": 420, "unitType": "infantry",    "col": 7,  "count": 4, "spacingTicks": 13 },
-      { "atTick": 600, "unitType": "runner",      "col": 4,  "count": 5, "spacingTicks": 7,
-        "crossWaypoints": [{ "atRow": 12, "toCol": 3 }] },
-      { "atTick": 600, "unitType": "ironclad",    "col": 3,  "count": 2, "spacingTicks": 36 },
-      { "atTick": 600, "unitType": "shieldbearer","col": 8,  "count": 3, "spacingTicks": 20 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 4,  "count": 3, "spacingTicks": 34,
-        "crossWaypoints": [{ "atRow": 10, "toCol": 3 }] },
-      { "atTick": 840, "unitType": "infantry",    "col": 0,  "count": 4, "spacingTicks": 13 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 7,  "count": 2, "spacingTicks": 36 },
-      { "atTick": 1020,"unitType": "runner",      "col": 4,  "count": 5, "spacingTicks": 7,
-        "crossWaypoints": [{ "atRow": 12, "toCol": 3 }] },
-      { "atTick": 1020,"unitType": "runner",      "col": 10, "count": 5, "spacingTicks": 7 },
-      { "atTick": 1020,"unitType": "ironclad",    "col": 3,  "count": 3, "spacingTicks": 32 }
+      {
+        "atTick": 60,
+        "unitType": "runner",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 9,
+        "crossWaypoints": [
+          {
+            "atRow": 12,
+            "toCol": 3
+          }
+        ]
+      },
+      {
+        "atTick": 60,
+        "unitType": "infantry",
+        "col": 3,
+        "count": 3,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 240,
+        "unitType": "infantry",
+        "col": 8,
+        "count": 3,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 240,
+        "unitType": "shieldbearer",
+        "col": 4,
+        "count": 2,
+        "spacingTicks": 26,
+        "crossWaypoints": [
+          {
+            "atRow": 10,
+            "toCol": 3
+          }
+        ]
+      },
+      {
+        "atTick": 420,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 2,
+        "spacingTicks": 38,
+        "crossWaypoints": [
+          {
+            "atRow": 10,
+            "toCol": 3
+          }
+        ]
+      },
+      {
+        "atTick": 420,
+        "unitType": "runner",
+        "col": 1,
+        "count": 4,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 420,
+        "unitType": "infantry",
+        "col": 7,
+        "count": 4,
+        "spacingTicks": 13
+      },
+      {
+        "atTick": 600,
+        "unitType": "runner",
+        "col": 4,
+        "count": 5,
+        "spacingTicks": 7,
+        "crossWaypoints": [
+          {
+            "atRow": 12,
+            "toCol": 3
+          }
+        ]
+      },
+      {
+        "atTick": 600,
+        "unitType": "ironclad",
+        "col": 3,
+        "count": 2,
+        "spacingTicks": 36
+      },
+      {
+        "atTick": 600,
+        "unitType": "shieldbearer",
+        "col": 8,
+        "count": 3,
+        "spacingTicks": 20
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 34,
+        "crossWaypoints": [
+          {
+            "atRow": 10,
+            "toCol": 3
+          }
+        ]
+      },
+      {
+        "atTick": 840,
+        "unitType": "infantry",
+        "col": 0,
+        "count": 4,
+        "spacingTicks": 13
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 2,
+        "spacingTicks": 36
+      },
+      {
+        "atTick": 1020,
+        "unitType": "runner",
+        "col": 4,
+        "count": 5,
+        "spacingTicks": 7,
+        "crossWaypoints": [
+          {
+            "atRow": 12,
+            "toCol": 3
+          }
+        ]
+      },
+      {
+        "atTick": 1020,
+        "unitType": "runner",
+        "col": 10,
+        "count": 5,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 1020,
+        "unitType": "ironclad",
+        "col": 3,
+        "count": 3,
+        "spacingTicks": 32
+      }
     ]
   },
   "rewards": {
-    "starThresholds": [35, 65, 100],
-    "materials": { "scrap": 12, "lead": 8, "binding": 2 }
-  }
+    "starThresholds": [
+      35,
+      65,
+      100
+    ],
+    "materials": {
+      "scrap": 12,
+      "lead": 8,
+      "binding": 2
+    }
+  },
+  "nameKey": "campaign.ch4.lv4.name"
 }

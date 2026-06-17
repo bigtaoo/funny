@@ -2,41 +2,221 @@
   "id": "ch6_lv1",
   "chapter": 6,
   "seed": 60001,
-  "objective": { "kind": "survive" },
+  "objective": {
+    "kind": "survive"
+  },
   "waves": {
     "entries": [
-      { "atTick": 60,  "unitType": "ironclad",    "col": 1,  "count": 2, "spacingTicks": 38 },
-      { "atTick": 60,  "unitType": "ironclad",    "col": 10, "count": 2, "spacingTicks": 38 },
-      { "atTick": 60,  "unitType": "runner",      "col": 2,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 60,  "unitType": "runner",      "col": 9,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 240, "unitType": "ironclad",    "col": 3,  "count": 2, "spacingTicks": 36 },
-      { "atTick": 240, "unitType": "ironclad",    "col": 8,  "count": 2, "spacingTicks": 36 },
-      { "atTick": 240, "unitType": "runner",      "col": 0,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 240, "unitType": "runner",      "col": 11, "count": 4, "spacingTicks": 7 },
-      { "atTick": 420, "unitType": "ironclad",    "col": 0,  "count": 3, "spacingTicks": 32 },
-      { "atTick": 420, "unitType": "ironclad",    "col": 11, "count": 3, "spacingTicks": 32 },
-      { "atTick": 420, "unitType": "runner",      "col": 1,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 420, "unitType": "runner",      "col": 10, "count": 5, "spacingTicks": 6 },
-      { "atTick": 420, "unitType": "ironclad",    "col": 4,  "count": 2, "spacingTicks": 34 },
-      { "atTick": 420, "unitType": "ironclad",    "col": 7,  "count": 2, "spacingTicks": 34 },
-      { "atTick": 600, "unitType": "ironclad",    "col": 2,  "count": 4, "spacingTicks": 28 },
-      { "atTick": 600, "unitType": "ironclad",    "col": 9,  "count": 4, "spacingTicks": 28 },
-      { "atTick": 600, "unitType": "runner",      "col": 3,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 600, "unitType": "runner",      "col": 8,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 1,  "count": 4, "spacingTicks": 26 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 10, "count": 4, "spacingTicks": 26 },
-      { "atTick": 840, "unitType": "runner",      "col": 0,  "count": 6, "spacingTicks": 5 },
-      { "atTick": 840, "unitType": "runner",      "col": 11, "count": 6, "spacingTicks": 5 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 4,  "count": 3, "spacingTicks": 30 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 7,  "count": 3, "spacingTicks": 30 },
-      { "atTick": 1080,"unitType": "ironclad",    "col": 3,  "count": 5, "spacingTicks": 22 },
-      { "atTick": 1080,"unitType": "ironclad",    "col": 8,  "count": 5, "spacingTicks": 22 },
-      { "atTick": 1080,"unitType": "runner",      "col": 2,  "count": 7, "spacingTicks": 5 },
-      { "atTick": 1080,"unitType": "runner",      "col": 9,  "count": 7, "spacingTicks": 5 }
+      {
+        "atTick": 60,
+        "unitType": "ironclad",
+        "col": 1,
+        "count": 2,
+        "spacingTicks": 38
+      },
+      {
+        "atTick": 60,
+        "unitType": "ironclad",
+        "col": 10,
+        "count": 2,
+        "spacingTicks": 38
+      },
+      {
+        "atTick": 60,
+        "unitType": "runner",
+        "col": 2,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 60,
+        "unitType": "runner",
+        "col": 9,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 240,
+        "unitType": "ironclad",
+        "col": 3,
+        "count": 2,
+        "spacingTicks": 36
+      },
+      {
+        "atTick": 240,
+        "unitType": "ironclad",
+        "col": 8,
+        "count": 2,
+        "spacingTicks": 36
+      },
+      {
+        "atTick": 240,
+        "unitType": "runner",
+        "col": 0,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 240,
+        "unitType": "runner",
+        "col": 11,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 420,
+        "unitType": "ironclad",
+        "col": 0,
+        "count": 3,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 420,
+        "unitType": "ironclad",
+        "col": 11,
+        "count": 3,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 420,
+        "unitType": "runner",
+        "col": 1,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 420,
+        "unitType": "runner",
+        "col": 10,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 420,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 2,
+        "spacingTicks": 34
+      },
+      {
+        "atTick": 420,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 2,
+        "spacingTicks": 34
+      },
+      {
+        "atTick": 600,
+        "unitType": "ironclad",
+        "col": 2,
+        "count": 4,
+        "spacingTicks": 28
+      },
+      {
+        "atTick": 600,
+        "unitType": "ironclad",
+        "col": 9,
+        "count": 4,
+        "spacingTicks": 28
+      },
+      {
+        "atTick": 600,
+        "unitType": "runner",
+        "col": 3,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 600,
+        "unitType": "runner",
+        "col": 8,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 1,
+        "count": 4,
+        "spacingTicks": 26
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 10,
+        "count": 4,
+        "spacingTicks": 26
+      },
+      {
+        "atTick": 840,
+        "unitType": "runner",
+        "col": 0,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 840,
+        "unitType": "runner",
+        "col": 11,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 1080,
+        "unitType": "ironclad",
+        "col": 3,
+        "count": 5,
+        "spacingTicks": 22
+      },
+      {
+        "atTick": 1080,
+        "unitType": "ironclad",
+        "col": 8,
+        "count": 5,
+        "spacingTicks": 22
+      },
+      {
+        "atTick": 1080,
+        "unitType": "runner",
+        "col": 2,
+        "count": 7,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 1080,
+        "unitType": "runner",
+        "col": 9,
+        "count": 7,
+        "spacingTicks": 5
+      }
     ]
   },
   "rewards": {
-    "starThresholds": [40, 70, 100],
-    "materials": { "scrap": 18, "lead": 14, "binding": 6 }
-  }
+    "starThresholds": [
+      40,
+      70,
+      100
+    ],
+    "materials": {
+      "scrap": 18,
+      "lead": 14,
+      "binding": 6
+    }
+  },
+  "nameKey": "campaign.ch6.lv1.name",
+  "briefKey": "campaign.ch6.lv1.brief"
 }

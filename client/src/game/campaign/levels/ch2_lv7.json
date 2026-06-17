@@ -2,43 +2,224 @@
   "id": "ch2_lv7",
   "chapter": 2,
   "seed": 20007,
-  "objective": { "kind": "timed_defense", "durationTicks": 2100 },
+  "objective": {
+    "kind": "timed_defense",
+    "durationTicks": 2100
+  },
   "startInk": 50,
   "inkRegenMult": 1.5,
   "waves": {
     "entries": [
-      { "atTick": 30,  "unitType": "runner",      "col": 0,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 30,  "unitType": "runner",      "col": 11, "count": 4, "spacingTicks": 7 },
-      { "atTick": 30,  "unitType": "runner",      "col": 4,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 30,  "unitType": "runner",      "col": 7,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 210, "unitType": "ironclad",    "col": 3,  "count": 2, "spacingTicks": 35 },
-      { "atTick": 210, "unitType": "ironclad",    "col": 8,  "count": 2, "spacingTicks": 35 },
-      { "atTick": 210, "unitType": "runner",      "col": 1,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 210, "unitType": "runner",      "col": 10, "count": 5, "spacingTicks": 6 },
-      { "atTick": 450, "unitType": "shieldbearer","col": 4,  "count": 4, "spacingTicks": 18 },
-      { "atTick": 450, "unitType": "shieldbearer","col": 7,  "count": 4, "spacingTicks": 18 },
-      { "atTick": 450, "unitType": "ironclad",    "col": 0,  "count": 2, "spacingTicks": 35 },
-      { "atTick": 450, "unitType": "ironclad",    "col": 11, "count": 2, "spacingTicks": 35 },
-      { "atTick": 720, "unitType": "ironclad",    "col": 4,  "count": 3, "spacingTicks": 30 },
-      { "atTick": 720, "unitType": "ironclad",    "col": 7,  "count": 3, "spacingTicks": 30 },
-      { "atTick": 720, "unitType": "runner",      "col": 2,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 720, "unitType": "runner",      "col": 9,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 1020,"unitType": "ironclad",    "col": 1,  "count": 3, "spacingTicks": 30 },
-      { "atTick": 1020,"unitType": "ironclad",    "col": 10, "count": 3, "spacingTicks": 30 },
-      { "atTick": 1020,"unitType": "shieldbearer","col": 3,  "count": 4, "spacingTicks": 17 },
-      { "atTick": 1020,"unitType": "shieldbearer","col": 8,  "count": 4, "spacingTicks": 17 },
-      { "atTick": 1380,"unitType": "ironclad",    "col": 3,  "count": 3, "spacingTicks": 28 },
-      { "atTick": 1380,"unitType": "ironclad",    "col": 8,  "count": 3, "spacingTicks": 28 },
-      { "atTick": 1380,"unitType": "runner",      "col": 4,  "count": 6, "spacingTicks": 5 },
-      { "atTick": 1380,"unitType": "runner",      "col": 7,  "count": 6, "spacingTicks": 5 },
-      { "atTick": 1740,"unitType": "ironclad",    "col": 4,  "count": 4, "spacingTicks": 28 },
-      { "atTick": 1740,"unitType": "ironclad",    "col": 7,  "count": 4, "spacingTicks": 28 },
-      { "atTick": 1740,"unitType": "runner",      "col": 0,  "count": 6, "spacingTicks": 5 },
-      { "atTick": 1740,"unitType": "runner",      "col": 11, "count": 6, "spacingTicks": 5 }
+      {
+        "atTick": 30,
+        "unitType": "runner",
+        "col": 0,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 30,
+        "unitType": "runner",
+        "col": 11,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 30,
+        "unitType": "runner",
+        "col": 4,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 30,
+        "unitType": "runner",
+        "col": 7,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 210,
+        "unitType": "ironclad",
+        "col": 3,
+        "count": 2,
+        "spacingTicks": 35
+      },
+      {
+        "atTick": 210,
+        "unitType": "ironclad",
+        "col": 8,
+        "count": 2,
+        "spacingTicks": 35
+      },
+      {
+        "atTick": 210,
+        "unitType": "runner",
+        "col": 1,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 210,
+        "unitType": "runner",
+        "col": 10,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 450,
+        "unitType": "shieldbearer",
+        "col": 4,
+        "count": 4,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 450,
+        "unitType": "shieldbearer",
+        "col": 7,
+        "count": 4,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 450,
+        "unitType": "ironclad",
+        "col": 0,
+        "count": 2,
+        "spacingTicks": 35
+      },
+      {
+        "atTick": 450,
+        "unitType": "ironclad",
+        "col": 11,
+        "count": 2,
+        "spacingTicks": 35
+      },
+      {
+        "atTick": 720,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 720,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 720,
+        "unitType": "runner",
+        "col": 2,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 720,
+        "unitType": "runner",
+        "col": 9,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 1020,
+        "unitType": "ironclad",
+        "col": 1,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 1020,
+        "unitType": "ironclad",
+        "col": 10,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 1020,
+        "unitType": "shieldbearer",
+        "col": 3,
+        "count": 4,
+        "spacingTicks": 17
+      },
+      {
+        "atTick": 1020,
+        "unitType": "shieldbearer",
+        "col": 8,
+        "count": 4,
+        "spacingTicks": 17
+      },
+      {
+        "atTick": 1380,
+        "unitType": "ironclad",
+        "col": 3,
+        "count": 3,
+        "spacingTicks": 28
+      },
+      {
+        "atTick": 1380,
+        "unitType": "ironclad",
+        "col": 8,
+        "count": 3,
+        "spacingTicks": 28
+      },
+      {
+        "atTick": 1380,
+        "unitType": "runner",
+        "col": 4,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 1380,
+        "unitType": "runner",
+        "col": 7,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 1740,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 4,
+        "spacingTicks": 28
+      },
+      {
+        "atTick": 1740,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 4,
+        "spacingTicks": 28
+      },
+      {
+        "atTick": 1740,
+        "unitType": "runner",
+        "col": 0,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 1740,
+        "unitType": "runner",
+        "col": 11,
+        "count": 6,
+        "spacingTicks": 5
+      }
     ]
   },
   "rewards": {
-    "starThresholds": [50, 75, 100],
-    "materials": { "scrap": 10, "lead": 8, "binding": 1 }
-  }
+    "starThresholds": [
+      50,
+      75,
+      100
+    ],
+    "materials": {
+      "scrap": 10,
+      "lead": 8,
+      "binding": 1
+    }
+  },
+  "nameKey": "campaign.ch2.lv7.name",
+  "briefKey": "campaign.ch2.lv7.brief"
 }

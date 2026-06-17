@@ -2,40 +2,202 @@
   "id": "ch4_lv9",
   "chapter": 4,
   "seed": 40009,
-  "objective": { "kind": "survive" },
-  "bannedCards": ["meteor_1"],
+  "objective": {
+    "kind": "survive"
+  },
+  "bannedCards": [
+    "meteor_1"
+  ],
   "hazards": [
-    { "col": 4, "rowRange": [2, 14], "effect": "fog", "rangeMod": -1 },
-    { "col": 7, "rowRange": [2, 14], "effect": "fog", "rangeMod": -1 }
+    {
+      "col": 4,
+      "rowRange": [
+        2,
+        14
+      ],
+      "effect": "fog",
+      "rangeMod": -1
+    },
+    {
+      "col": 7,
+      "rowRange": [
+        2,
+        14
+      ],
+      "effect": "fog",
+      "rangeMod": -1
+    }
   ],
   "waves": {
     "entries": [
-      { "atTick": 60,  "unitType": "archer",      "col": 4,  "count": 3, "spacingTicks": 14 },
-      { "atTick": 60,  "unitType": "archer",      "col": 7,  "count": 3, "spacingTicks": 14 },
-      { "atTick": 240, "unitType": "infantry",    "col": 3,  "count": 4, "spacingTicks": 13 },
-      { "atTick": 240, "unitType": "infantry",    "col": 8,  "count": 4, "spacingTicks": 13 },
-      { "atTick": 240, "unitType": "runner",      "col": 1,  "count": 4, "spacingTicks": 8 },
-      { "atTick": 420, "unitType": "shieldbearer","col": 4,  "count": 3, "spacingTicks": 22 },
-      { "atTick": 420, "unitType": "shieldbearer","col": 7,  "count": 3, "spacingTicks": 22 },
-      { "atTick": 420, "unitType": "runner",      "col": 10, "count": 4, "spacingTicks": 8 },
-      { "atTick": 600, "unitType": "ironclad",    "col": 4,  "count": 3, "spacingTicks": 34 },
-      { "atTick": 600, "unitType": "ironclad",    "col": 7,  "count": 3, "spacingTicks": 34 },
-      { "atTick": 600, "unitType": "infantry",    "col": 1,  "count": 4, "spacingTicks": 13 },
-      { "atTick": 600, "unitType": "infantry",    "col": 10, "count": 4, "spacingTicks": 13 },
-      { "atTick": 840, "unitType": "archer",      "col": 4,  "count": 4, "spacingTicks": 12 },
-      { "atTick": 840, "unitType": "archer",      "col": 7,  "count": 4, "spacingTicks": 12 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 3,  "count": 3, "spacingTicks": 32 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 8,  "count": 3, "spacingTicks": 32 },
-      { "atTick": 1080,"unitType": "runner",      "col": 0,  "count": 5, "spacingTicks": 7 },
-      { "atTick": 1080,"unitType": "runner",      "col": 11, "count": 5, "spacingTicks": 7 },
-      { "atTick": 1080,"unitType": "ironclad",    "col": 4,  "count": 3, "spacingTicks": 32 },
-      { "atTick": 1080,"unitType": "ironclad",    "col": 7,  "count": 3, "spacingTicks": 32 },
-      { "atTick": 1320,"unitType": "ironclad",    "col": 1,  "count": 4, "spacingTicks": 30 },
-      { "atTick": 1320,"unitType": "ironclad",    "col": 10, "count": 4, "spacingTicks": 30 }
+      {
+        "atTick": 60,
+        "unitType": "archer",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 14
+      },
+      {
+        "atTick": 60,
+        "unitType": "archer",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 14
+      },
+      {
+        "atTick": 240,
+        "unitType": "infantry",
+        "col": 3,
+        "count": 4,
+        "spacingTicks": 13
+      },
+      {
+        "atTick": 240,
+        "unitType": "infantry",
+        "col": 8,
+        "count": 4,
+        "spacingTicks": 13
+      },
+      {
+        "atTick": 240,
+        "unitType": "runner",
+        "col": 1,
+        "count": 4,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 420,
+        "unitType": "shieldbearer",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 22
+      },
+      {
+        "atTick": 420,
+        "unitType": "shieldbearer",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 22
+      },
+      {
+        "atTick": 420,
+        "unitType": "runner",
+        "col": 10,
+        "count": 4,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 600,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 34
+      },
+      {
+        "atTick": 600,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 34
+      },
+      {
+        "atTick": 600,
+        "unitType": "infantry",
+        "col": 1,
+        "count": 4,
+        "spacingTicks": 13
+      },
+      {
+        "atTick": 600,
+        "unitType": "infantry",
+        "col": 10,
+        "count": 4,
+        "spacingTicks": 13
+      },
+      {
+        "atTick": 840,
+        "unitType": "archer",
+        "col": 4,
+        "count": 4,
+        "spacingTicks": 12
+      },
+      {
+        "atTick": 840,
+        "unitType": "archer",
+        "col": 7,
+        "count": 4,
+        "spacingTicks": 12
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 3,
+        "count": 3,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 8,
+        "count": 3,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 1080,
+        "unitType": "runner",
+        "col": 0,
+        "count": 5,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 1080,
+        "unitType": "runner",
+        "col": 11,
+        "count": 5,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 1080,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 1080,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 1320,
+        "unitType": "ironclad",
+        "col": 1,
+        "count": 4,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 1320,
+        "unitType": "ironclad",
+        "col": 10,
+        "count": 4,
+        "spacingTicks": 30
+      }
     ]
   },
   "rewards": {
-    "starThresholds": [35, 65, 100],
-    "materials": { "scrap": 15, "lead": 11, "binding": 3 }
-  }
+    "starThresholds": [
+      35,
+      65,
+      100
+    ],
+    "materials": {
+      "scrap": 15,
+      "lead": 11,
+      "binding": 3
+    }
+  },
+  "nameKey": "campaign.ch4.lv9.name",
+  "briefKey": "campaign.ch4.lv9.brief"
 }

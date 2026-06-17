@@ -46,6 +46,8 @@ export interface LevelDefinition {
   story?: { introKey?: TranslationKey; outroKey?: TranslationKey };
   /** Optional display-name key for this level, shown in CampaignMapScene. Falls back to chapter/position label. */
   nameKey?: TranslationKey;
+  /** Optional pre-battle briefing text key, shown in LevelPrepScene. Omitted for pure-combat levels. */
+  briefKey?: TranslationKey;
 }
 
 /** Integer grid cell. */

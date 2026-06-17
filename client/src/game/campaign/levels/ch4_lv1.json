@@ -2,33 +2,155 @@
   "id": "ch4_lv1",
   "chapter": 4,
   "seed": 40001,
-  "objective": { "kind": "survive" },
+  "objective": {
+    "kind": "survive"
+  },
   "hazards": [
-    { "col": 1, "rowRange": [2, 14], "effect": "speed", "speedMult": 1.8 }
+    {
+      "col": 1,
+      "rowRange": [
+        2,
+        14
+      ],
+      "effect": "speed",
+      "speedMult": 1.8
+    }
   ],
   "waves": {
     "entries": [
-      { "atTick": 60,  "unitType": "runner",      "col": 1,  "count": 4, "spacingTicks": 8 },
-      { "atTick": 60,  "unitType": "infantry",    "col": 3,  "count": 3, "spacingTicks": 15 },
-      { "atTick": 240, "unitType": "infantry",    "col": 8,  "count": 3, "spacingTicks": 15 },
-      { "atTick": 240, "unitType": "runner",      "col": 1,  "count": 4, "spacingTicks": 8 },
-      { "atTick": 420, "unitType": "shieldbearer","col": 3,  "count": 2, "spacingTicks": 26 },
-      { "atTick": 420, "unitType": "runner",      "col": 1,  "count": 5, "spacingTicks": 7 },
-      { "atTick": 420, "unitType": "infantry",    "col": 10, "count": 3, "spacingTicks": 14 },
-      { "atTick": 600, "unitType": "ironclad",    "col": 4,  "count": 2, "spacingTicks": 38 },
-      { "atTick": 600, "unitType": "runner",      "col": 1,  "count": 5, "spacingTicks": 7 },
-      { "atTick": 600, "unitType": "infantry",    "col": 8,  "count": 4, "spacingTicks": 13 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 1,  "count": 2, "spacingTicks": 36 },
-      { "atTick": 840, "unitType": "shieldbearer","col": 7,  "count": 3, "spacingTicks": 20 },
-      { "atTick": 840, "unitType": "runner",      "col": 3,  "count": 5, "spacingTicks": 7 },
-      { "atTick": 1020,"unitType": "ironclad",    "col": 4,  "count": 3, "spacingTicks": 32 },
-      { "atTick": 1020,"unitType": "runner",      "col": 1,  "count": 6, "spacingTicks": 6 },
-      { "atTick": 1020,"unitType": "infantry",    "col": 10, "count": 4, "spacingTicks": 12 },
-      { "atTick": 1020,"unitType": "ironclad",    "col": 8,  "count": 2, "spacingTicks": 36 }
+      {
+        "atTick": 60,
+        "unitType": "runner",
+        "col": 1,
+        "count": 4,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 60,
+        "unitType": "infantry",
+        "col": 3,
+        "count": 3,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 240,
+        "unitType": "infantry",
+        "col": 8,
+        "count": 3,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 240,
+        "unitType": "runner",
+        "col": 1,
+        "count": 4,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 420,
+        "unitType": "shieldbearer",
+        "col": 3,
+        "count": 2,
+        "spacingTicks": 26
+      },
+      {
+        "atTick": 420,
+        "unitType": "runner",
+        "col": 1,
+        "count": 5,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 420,
+        "unitType": "infantry",
+        "col": 10,
+        "count": 3,
+        "spacingTicks": 14
+      },
+      {
+        "atTick": 600,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 2,
+        "spacingTicks": 38
+      },
+      {
+        "atTick": 600,
+        "unitType": "runner",
+        "col": 1,
+        "count": 5,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 600,
+        "unitType": "infantry",
+        "col": 8,
+        "count": 4,
+        "spacingTicks": 13
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 1,
+        "count": 2,
+        "spacingTicks": 36
+      },
+      {
+        "atTick": 840,
+        "unitType": "shieldbearer",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 20
+      },
+      {
+        "atTick": 840,
+        "unitType": "runner",
+        "col": 3,
+        "count": 5,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 1020,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 1020,
+        "unitType": "runner",
+        "col": 1,
+        "count": 6,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 1020,
+        "unitType": "infantry",
+        "col": 10,
+        "count": 4,
+        "spacingTicks": 12
+      },
+      {
+        "atTick": 1020,
+        "unitType": "ironclad",
+        "col": 8,
+        "count": 2,
+        "spacingTicks": 36
+      }
     ]
   },
   "rewards": {
-    "starThresholds": [35, 65, 100],
-    "materials": { "scrap": 10, "lead": 6, "binding": 2 }
-  }
+    "starThresholds": [
+      35,
+      65,
+      100
+    ],
+    "materials": {
+      "scrap": 10,
+      "lead": 6,
+      "binding": 2
+    }
+  },
+  "nameKey": "campaign.ch4.lv1.name",
+  "briefKey": "campaign.ch4.lv1.brief"
 }

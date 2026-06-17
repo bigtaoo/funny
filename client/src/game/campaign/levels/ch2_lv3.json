@@ -2,29 +2,132 @@
   "id": "ch2_lv3",
   "chapter": 2,
   "seed": 20003,
-  "objective": { "kind": "survive" },
-  "bannedCards": ["barracks_1", "barracks_2"],
+  "objective": {
+    "kind": "survive"
+  },
+  "bannedCards": [
+    "barracks_1",
+    "barracks_2"
+  ],
   "waves": {
     "entries": [
-      { "atTick": 60,  "unitType": "infantry",    "col": 3,  "count": 3, "spacingTicks": 16 },
-      { "atTick": 60,  "unitType": "infantry",    "col": 8,  "count": 3, "spacingTicks": 16 },
-      { "atTick": 300, "unitType": "shieldbearer","col": 4,  "count": 2, "spacingTicks": 25 },
-      { "atTick": 300, "unitType": "runner",      "col": 1,  "count": 4, "spacingTicks": 9 },
-      { "atTick": 300, "unitType": "runner",      "col": 10, "count": 4, "spacingTicks": 9 },
-      { "atTick": 540, "unitType": "ironclad",    "col": 7,  "count": 1 },
-      { "atTick": 540, "unitType": "infantry",    "col": 4,  "count": 4, "spacingTicks": 14 },
-      { "atTick": 540, "unitType": "infantry",    "col": 7,  "count": 4, "spacingTicks": 14 },
-      { "atTick": 780, "unitType": "runner",      "col": 0,  "count": 5, "spacingTicks": 8 },
-      { "atTick": 780, "unitType": "runner",      "col": 11, "count": 5, "spacingTicks": 8 },
-      { "atTick": 780, "unitType": "shieldbearer","col": 3,  "count": 3, "spacingTicks": 20 },
-      { "atTick": 1020,"unitType": "ironclad",    "col": 4,  "count": 2, "spacingTicks": 40 },
-      { "atTick": 1020,"unitType": "ironclad",    "col": 7,  "count": 2, "spacingTicks": 40 },
-      { "atTick": 1020,"unitType": "runner",      "col": 2,  "count": 5, "spacingTicks": 7 },
-      { "atTick": 1020,"unitType": "runner",      "col": 9,  "count": 5, "spacingTicks": 7 }
+      {
+        "atTick": 60,
+        "unitType": "infantry",
+        "col": 3,
+        "count": 3,
+        "spacingTicks": 16
+      },
+      {
+        "atTick": 60,
+        "unitType": "infantry",
+        "col": 8,
+        "count": 3,
+        "spacingTicks": 16
+      },
+      {
+        "atTick": 300,
+        "unitType": "shieldbearer",
+        "col": 4,
+        "count": 2,
+        "spacingTicks": 25
+      },
+      {
+        "atTick": 300,
+        "unitType": "runner",
+        "col": 1,
+        "count": 4,
+        "spacingTicks": 9
+      },
+      {
+        "atTick": 300,
+        "unitType": "runner",
+        "col": 10,
+        "count": 4,
+        "spacingTicks": 9
+      },
+      {
+        "atTick": 540,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 1
+      },
+      {
+        "atTick": 540,
+        "unitType": "infantry",
+        "col": 4,
+        "count": 4,
+        "spacingTicks": 14
+      },
+      {
+        "atTick": 540,
+        "unitType": "infantry",
+        "col": 7,
+        "count": 4,
+        "spacingTicks": 14
+      },
+      {
+        "atTick": 780,
+        "unitType": "runner",
+        "col": 0,
+        "count": 5,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 780,
+        "unitType": "runner",
+        "col": 11,
+        "count": 5,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 780,
+        "unitType": "shieldbearer",
+        "col": 3,
+        "count": 3,
+        "spacingTicks": 20
+      },
+      {
+        "atTick": 1020,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 2,
+        "spacingTicks": 40
+      },
+      {
+        "atTick": 1020,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 2,
+        "spacingTicks": 40
+      },
+      {
+        "atTick": 1020,
+        "unitType": "runner",
+        "col": 2,
+        "count": 5,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 1020,
+        "unitType": "runner",
+        "col": 9,
+        "count": 5,
+        "spacingTicks": 7
+      }
     ]
   },
   "rewards": {
-    "starThresholds": [35, 65, 100],
-    "materials": { "scrap": 8, "lead": 6 }
-  }
+    "starThresholds": [
+      35,
+      65,
+      100
+    ],
+    "materials": {
+      "scrap": 8,
+      "lead": 6
+    }
+  },
+  "nameKey": "campaign.ch2.lv3.name",
+  "briefKey": "campaign.ch2.lv3.brief"
 }

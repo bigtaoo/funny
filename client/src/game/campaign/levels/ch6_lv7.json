@@ -2,41 +2,213 @@
   "id": "ch6_lv7",
   "chapter": 6,
   "seed": 60007,
-  "objective": { "kind": "survive" },
+  "objective": {
+    "kind": "survive"
+  },
   "inkRegenMult": 0.3,
-  "bannedCards": ["meteor_1", "haste_1", "tower_1"],
+  "bannedCards": [
+    "meteor_1",
+    "haste_1",
+    "tower_1"
+  ],
   "waves": {
     "entries": [
-      { "atTick": 60,  "unitType": "ironclad",    "col": 1,  "count": 2, "spacingTicks": 38 },
-      { "atTick": 60,  "unitType": "ironclad",    "col": 10, "count": 2, "spacingTicks": 38 },
-      { "atTick": 60,  "unitType": "runner",      "col": 2,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 60,  "unitType": "runner",      "col": 9,  "count": 4, "spacingTicks": 7 },
-      { "atTick": 240, "unitType": "ironclad",    "col": 0,  "count": 3, "spacingTicks": 32 },
-      { "atTick": 240, "unitType": "ironclad",    "col": 11, "count": 3, "spacingTicks": 32 },
-      { "atTick": 240, "unitType": "runner",      "col": 3,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 240, "unitType": "runner",      "col": 8,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 420, "unitType": "ironclad",    "col": 4,  "count": 3, "spacingTicks": 30 },
-      { "atTick": 420, "unitType": "ironclad",    "col": 7,  "count": 3, "spacingTicks": 30 },
-      { "atTick": 420, "unitType": "runner",      "col": 1,  "count": 5, "spacingTicks": 6 },
-      { "atTick": 420, "unitType": "runner",      "col": 10, "count": 5, "spacingTicks": 6 },
-      { "atTick": 600, "unitType": "ironclad",    "col": 2,  "count": 4, "spacingTicks": 26 },
-      { "atTick": 600, "unitType": "ironclad",    "col": 9,  "count": 4, "spacingTicks": 26 },
-      { "atTick": 600, "unitType": "runner",      "col": 0,  "count": 6, "spacingTicks": 5 },
-      { "atTick": 600, "unitType": "runner",      "col": 11, "count": 6, "spacingTicks": 5 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 3,  "count": 4, "spacingTicks": 24 },
-      { "atTick": 840, "unitType": "ironclad",    "col": 8,  "count": 4, "spacingTicks": 24 },
-      { "atTick": 840, "unitType": "runner",      "col": 4,  "count": 6, "spacingTicks": 5 },
-      { "atTick": 840, "unitType": "runner",      "col": 7,  "count": 6, "spacingTicks": 5 },
-      { "atTick": 1080,"unitType": "ironclad",    "col": 1,  "count": 5, "spacingTicks": 20 },
-      { "atTick": 1080,"unitType": "ironclad",    "col": 10, "count": 5, "spacingTicks": 20 },
-      { "atTick": 1080,"unitType": "runner",      "col": 2,  "count": 7, "spacingTicks": 5 },
-      { "atTick": 1080,"unitType": "runner",      "col": 9,  "count": 7, "spacingTicks": 5 },
-      { "atTick": 1080,"unitType": "ironclad",    "col": 4,  "count": 4, "spacingTicks": 22 },
-      { "atTick": 1080,"unitType": "ironclad",    "col": 7,  "count": 4, "spacingTicks": 22 }
+      {
+        "atTick": 60,
+        "unitType": "ironclad",
+        "col": 1,
+        "count": 2,
+        "spacingTicks": 38
+      },
+      {
+        "atTick": 60,
+        "unitType": "ironclad",
+        "col": 10,
+        "count": 2,
+        "spacingTicks": 38
+      },
+      {
+        "atTick": 60,
+        "unitType": "runner",
+        "col": 2,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 60,
+        "unitType": "runner",
+        "col": 9,
+        "count": 4,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 240,
+        "unitType": "ironclad",
+        "col": 0,
+        "count": 3,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 240,
+        "unitType": "ironclad",
+        "col": 11,
+        "count": 3,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 240,
+        "unitType": "runner",
+        "col": 3,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 240,
+        "unitType": "runner",
+        "col": 8,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 420,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 420,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 420,
+        "unitType": "runner",
+        "col": 1,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 420,
+        "unitType": "runner",
+        "col": 10,
+        "count": 5,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 600,
+        "unitType": "ironclad",
+        "col": 2,
+        "count": 4,
+        "spacingTicks": 26
+      },
+      {
+        "atTick": 600,
+        "unitType": "ironclad",
+        "col": 9,
+        "count": 4,
+        "spacingTicks": 26
+      },
+      {
+        "atTick": 600,
+        "unitType": "runner",
+        "col": 0,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 600,
+        "unitType": "runner",
+        "col": 11,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 3,
+        "count": 4,
+        "spacingTicks": 24
+      },
+      {
+        "atTick": 840,
+        "unitType": "ironclad",
+        "col": 8,
+        "count": 4,
+        "spacingTicks": 24
+      },
+      {
+        "atTick": 840,
+        "unitType": "runner",
+        "col": 4,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 840,
+        "unitType": "runner",
+        "col": 7,
+        "count": 6,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 1080,
+        "unitType": "ironclad",
+        "col": 1,
+        "count": 5,
+        "spacingTicks": 20
+      },
+      {
+        "atTick": 1080,
+        "unitType": "ironclad",
+        "col": 10,
+        "count": 5,
+        "spacingTicks": 20
+      },
+      {
+        "atTick": 1080,
+        "unitType": "runner",
+        "col": 2,
+        "count": 7,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 1080,
+        "unitType": "runner",
+        "col": 9,
+        "count": 7,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 1080,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 4,
+        "spacingTicks": 22
+      },
+      {
+        "atTick": 1080,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 4,
+        "spacingTicks": 22
+      }
     ]
   },
   "rewards": {
-    "starThresholds": [40, 70, 100],
-    "materials": { "scrap": 22, "lead": 17, "binding": 8 }
-  }
+    "starThresholds": [
+      40,
+      70,
+      100
+    ],
+    "materials": {
+      "scrap": 22,
+      "lead": 17,
+      "binding": 8
+    }
+  },
+  "nameKey": "campaign.ch6.lv7.name",
+  "briefKey": "campaign.ch6.lv7.brief"
 }
