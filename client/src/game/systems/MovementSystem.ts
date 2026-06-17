@@ -216,6 +216,9 @@ export class MovementSystem {
       const defenderOwner = state.ownerOf(opponent.side);
       const damage        = unit.attack;
 
+      // Track enemy leaks for the campaign `leak_limit` objective.
+      if (unit.side === Side.Top) state.enemyLeaks++;
+
       opponent.takeDamage(damage);
       state.stats[attackerOwner].damageDealtToBase += damage;
       state.stats[defenderOwner].damageTakenByBase += damage;

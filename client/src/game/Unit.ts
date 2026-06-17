@@ -68,6 +68,9 @@ export class Unit {
   /** ID of the current attack target (unit or building), or null. */
   targetId: number | null = null;
 
+  /** Whether this unit is a scripted boss (campaign `boss` objective). */
+  isBoss: boolean = false;
+
   /**
    * While Crossing, true if blocked by a friendly unit ahead this tick.
    * Used to require a full-footprint gap before resuming movement,

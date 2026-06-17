@@ -2,6 +2,7 @@ import {
   ATTACK_LANES,
   BOTTOM_BUILDING_ROW,
   BOTTOM_SPAWN_ROW,
+  CARD_DEFINITIONS,
   CARD_REFRESH_INITIAL_OFFSET_MAX,
   CARD_REFRESH_TICKS,
   COUNTDOWN_THRESHOLD_TICKS,
@@ -12,7 +13,7 @@ import {
 } from './config';
 import { toFp, TICK_RATE } from './math/fixed';
 import { buildPvpBlueprints, buildCampaignBlueprints, buildSiegeBlueprints } from './balance/pveUpgrades';
-import { cardRefreshDuration } from './Card';
+import { cardRefreshDuration, UniformCardDrawPolicy } from './Card';
 import { Building } from './Building';
 import { Player } from './Player';
 import { Unit } from './Unit';
@@ -119,6 +120,29 @@ class GameEngineImpl implements IGameEngine {
       if (config.level.startInk) {
         this.state.bottomPlayer.addInkFp(toFp(config.level.startInk));
       }
+
+      // Ink regen multiplier for the bottom (human) player.
+      if (config.level.inkRegenMult !== undefined) {
+        this.state.bottomInkRegenMult = config.level.inkRegenMult;
+      }
+
+      // Loadout / banned cards — replace bottom player draw policy with a filtered pool.
+      const { loadout, bannedCards } = config.level;
+      if (loadout || bannedCards) {
+        const loadoutSet  = loadout     ? new Set(loadout)      : null;
+        const bannedSet   = bannedCards ? new Set(bannedCards)  : null;
+        const pool = (CARD_DEFINITIONS as readonly CardDefinition[]).filter((c) => {
+          if (loadoutSet  && !loadoutSet.has(c.id))  return false;
+          if (bannedSet   && bannedSet.has(c.id))    return false;
+          return true;
+        });
+        // Use a separate PRNG so loadout levels are deterministic and don't
+        // disturb levels that draw from the full CARD_DEFINITIONS pool.
+        this.state.bottomPlayer.drawPolicy = new UniformCardDrawPolicy(
+          new Prng(config.seed ^ 0xC0FFEE00),
+          pool.length > 0 ? pool : undefined,
+        );
+      }
     } else {
       this.level        = null;
       this.waveDirector = null;
@@ -213,7 +237,7 @@ class GameEngineImpl implements IGameEngine {
         this.processCommand(cmd);
       }
       for (const spawn of this.waveDirector.tick(tick)) {
-        this.spawnEnemyUnit(spawn.unitType, spawn.col);
+        this.spawnEnemyUnit(spawn.unitType, spawn.col, spawn.isBoss);
       }
     } else if (this.mode === 'netplay') {
       // Online lockstep PvP (S1-7): both sides are humans. `commands` is the
@@ -317,6 +341,9 @@ class GameEngineImpl implements IGameEngine {
       if (card.cardType === CardType.Unit && card.unitType) {
         const col = cmd.col;
         if (col === undefined || !(ATTACK_LANES as readonly number[]).includes(col)) return;
+        // In campaign, restrict placement to the active lanes defined by the level.
+        const activeLanes = this.level?.board?.activeLanes;
+        if (activeLanes && !activeLanes.includes(col)) return;
 
         // Placement rule: can't spawn into a lane whose spawn cell is already
         // occupied (its troops are "full"). The human UI enforces this in
@@ -432,10 +459,14 @@ class GameEngineImpl implements IGameEngine {
    * hand/ink economy. Emits the same unit_spawned / unit_move_start events as
    * a card play, so the render layer needs no campaign-specific handling.
    */
-  private spawnEnemyUnit(unitType: UnitType, col: number): void {
+  private spawnEnemyUnit(unitType: UnitType, col: number, isBoss?: boolean): void {
     const side: Side = Side.Top;
     const owner: OwnerId = 1;
     const unit = new Unit(unitType, side, col, TOP_SPAWN_ROW, this.state.unitBlueprints[unitType]);
+    if (isBoss) {
+      unit.isBoss = true;
+      this.state.bossUnitIds.add(unit.id);
+    }
     this.state.board.addUnit(unit);
     this.state.stats[owner].unitsSent++;
     this.state.pushEvent({
@@ -501,6 +532,17 @@ class GameEngineImpl implements IGameEngine {
 
     // ── Campaign / siege objectives ──────────────────────────────────────────
     if (this.waveDirector) {
+      const objective = this.level!.objective;
+
+      // `leak_limit`: lose if too many enemies have reached the player's base.
+      if (objective.kind === 'leak_limit' && this.state.enemyLeaks > objective.maxLeaks) {
+        this.state.phase  = GamePhase.GameOver;
+        this.state.winner = Side.Top;
+        this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+        this.state.pushEvent({ type: 'game_over', winner: 1 });
+        return;
+      }
+
       // Wiping the enemy base always wins (siege: attacker captures the tile).
       if (this.state.topPlayer.isDead) {
         this.state.phase  = GamePhase.GameOver;
@@ -509,11 +551,26 @@ class GameEngineImpl implements IGameEngine {
         this.state.pushEvent({ type: 'game_over', winner: 0 });
         return;
       }
-      const objective = this.level!.objective;
-      const survived =
-        objective.kind === 'timed_defense'
-          ? this.state.elapsedTicks >= objective.durationTicks
-          : this.waveDirector!.exhausted && !this.hasLivingEnemyUnits();
+
+      // Evaluate the win condition.
+      let survived = false;
+      if (objective.kind === 'timed_defense') {
+        survived = this.state.elapsedTicks >= objective.durationTicks;
+      } else if (objective.kind === 'survive') {
+        survived = this.waveDirector.exhausted && !this.hasLivingEnemyUnits();
+      } else if (objective.kind === 'boss') {
+        // Win when all spawned boss units are dead (at least one must exist).
+        if (this.state.bossUnitIds.size > 0) {
+          const anyAlive = Array.from(this.state.bossUnitIds).some((id) => {
+            const u = this.state.board.units.get(id);
+            return u !== undefined && !u.isDead;
+          });
+          survived = !anyAlive;
+        }
+      }
+      // `destroy_base`: only the topPlayer.isDead check above triggers a win.
+      // `leak_limit`:   only the leak check above triggers a loss.
+
       if (survived) {
         this.state.phase  = GamePhase.GameOver;
         this.state.winner = Side.Bottom;

@@ -76,12 +76,19 @@ function parseObjective(v: unknown, path: string): ObjectiveSpec {
   if (!isObject(v)) fail(path, 'expected an objective object');
   const kind = str(v.kind, `${path}.kind`);
   if (kind === 'survive') return { kind: 'survive' };
+  if (kind === 'destroy_base') return { kind: 'destroy_base' };
+  if (kind === 'boss') return { kind: 'boss' };
   if (kind === 'timed_defense') {
     const durationTicks = int(v.durationTicks, `${path}.durationTicks`);
     if (durationTicks <= 0) fail(`${path}.durationTicks`, `must be > 0, got ${durationTicks}`);
     return { kind: 'timed_defense', durationTicks };
   }
-  return fail(`${path}.kind`, `unknown objective kind '${kind}' (expected 'survive' | 'timed_defense')`);
+  if (kind === 'leak_limit') {
+    const maxLeaks = int(v.maxLeaks, `${path}.maxLeaks`);
+    if (maxLeaks < 0) fail(`${path}.maxLeaks`, `must be >= 0, got ${maxLeaks}`);
+    return { kind: 'leak_limit', maxLeaks };
+  }
+  return fail(`${path}.kind`, `unknown objective kind '${kind}' (expected 'survive' | 'timed_defense' | 'destroy_base' | 'leak_limit' | 'boss')`);
 }
 
 function parseCell(v: unknown, path: string): Cell {

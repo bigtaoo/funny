@@ -31,7 +31,10 @@ export class ResourceSystem {
 
     for (const player of [state.bottomPlayer, state.topPlayer]) {
       const inkRegenRate = INK_REGEN_BASE + player.upgradeLevel * BASE_UPGRADE_REGEN_BONUS;
-      const regenFp = inkRegenRate * fpPerInkPerS; // integer × integer = integer
+      const baseFp = inkRegenRate * fpPerInkPerS; // integer × integer = integer
+      // Apply per-level regen multiplier only to the bottom (human) player.
+      const mult = player === state.bottomPlayer ? state.bottomInkRegenMult : 1;
+      const regenFp = mult === 1 ? baseFp : Math.round(baseFp * mult);
 
       const delta = player.addInkFp(regenFp);
       if (delta !== 0) {

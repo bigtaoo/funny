@@ -54,15 +54,18 @@ export interface Cell {
 
 /**
  * Win condition kind.
- * - `survive`        : clear all waves with the base alive.
+ * - `survive`        : clear all waves (no living enemies remain) with the base alive.
  * - `timed_defense`  : keep the base alive until the timer runs out.
- *
- * (`destroy_base` is implicitly always a valid win — wiping the enemy base ends
- * the level — so it is not listed as a separate objective here.)
+ * - `destroy_base`   : win only by destroying the enemy base; wave exhaustion alone is not enough.
+ * - `leak_limit`     : lose if more than `maxLeaks` enemy units reach the player's base.
+ * - `boss`           : win by killing the boss unit(s) (WaveEntry.isBoss === true).
  */
 export type ObjectiveSpec =
   | { kind: 'survive' }
-  | { kind: 'timed_defense'; durationTicks: number };
+  | { kind: 'timed_defense'; durationTicks: number }
+  | { kind: 'destroy_base' }
+  | { kind: 'leak_limit'; maxLeaks: number }
+  | { kind: 'boss' };
 
 export interface WaveScript {
   entries: WaveEntry[];

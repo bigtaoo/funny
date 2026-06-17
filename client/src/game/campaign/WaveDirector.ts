@@ -6,12 +6,14 @@ import type { LevelDefinition } from './LevelDefinition';
 export interface WaveSpawn {
   unitType: UnitType;
   col: number;
+  isBoss?: boolean;
 }
 
 interface ExpandedSpawn {
   tick: number;
   unitType: UnitType;
   col: number;
+  isBoss?: boolean;
 }
 
 /**
@@ -33,14 +35,18 @@ export class WaveDirector {
   private cursor = 0;
 
   constructor(level: LevelDefinition, private readonly rng: Prng) {
+    const activeLanes = level.board?.activeLanes;
     const expanded: ExpandedSpawn[] = [];
     for (const entry of level.waves.entries) {
+      // Skip lanes not in activeLanes (if the level restricts lanes).
+      if (activeLanes && !activeLanes.includes(entry.col)) continue;
       const spacing = entry.spacingTicks ?? 0;
       for (let i = 0; i < entry.count; i++) {
         expanded.push({
           tick: entry.atTick + i * spacing,
           unitType: entry.unitType,
           col: entry.col,
+          isBoss: entry.isBoss,
         });
       }
     }
@@ -54,7 +60,7 @@ export class WaveDirector {
     const out: WaveSpawn[] = [];
     while (this.cursor < this.spawns.length && this.spawns[this.cursor]!.tick <= tick) {
       const s = this.spawns[this.cursor++]!;
-      out.push({ unitType: s.unitType, col: s.col });
+      out.push({ unitType: s.unitType, col: s.col, isBoss: s.isBoss });
     }
     return out;
   }

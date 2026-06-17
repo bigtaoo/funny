@@ -24,8 +24,8 @@ export class Player {
 
   readonly hand: Hand;
 
-  /** Card draw policy — MVP: uniform random. Replace for weighted draws. */
-  readonly drawPolicy: ICardDrawPolicy;
+  /** Card draw policy — MVP: uniform random. Replace for weighted draws (e.g. campaign loadout). */
+  drawPolicy: ICardDrawPolicy;
 
   /**
    * Separate PRNG used only for generating initial hand timer stagger offsets.

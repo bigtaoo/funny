@@ -14,11 +14,15 @@ export interface ICardDrawPolicy {
 }
 
 export class UniformCardDrawPolicy implements ICardDrawPolicy {
-  constructor(private readonly prng: Prng) {}
+  private readonly pool: readonly CardDefinition[];
+
+  constructor(private readonly prng: Prng, pool?: readonly CardDefinition[]) {
+    this.pool = pool && pool.length > 0 ? pool : CARD_DEFINITIONS;
+  }
 
   draw(): CardDefinition {
-    const idx = this.prng.nextInt(CARD_DEFINITIONS.length);
-    return CARD_DEFINITIONS[idx]!;
+    const idx = this.prng.nextInt(this.pool.length);
+    return this.pool[idx]!;
   }
 }
 

@@ -47,6 +47,21 @@ export class GameState {
   /** Set to true when the 15-min countdown event has been emitted. */
   countdownStarted: boolean = false;
 
+  /**
+   * Number of Top-side (enemy) units that have reached the Bottom player's base
+   * during this match. Used by the `leak_limit` campaign objective.
+   */
+  enemyLeaks: number = 0;
+
+  /**
+   * Ids of units spawned with `isBoss === true` (campaign `boss` objective).
+   * Registered at spawn time; queried in checkWinCondition.
+   */
+  bossUnitIds: Set<number> = new Set();
+
+  /** Multiplier applied to the bottom player's ink regen rate (campaign `inkRegenMult`). */
+  bottomInkRegenMult: number = 1;
+
   /** Currently active spell effects. */
   activeSpells: ActiveSpell[] = [];
 
