@@ -94,11 +94,84 @@
 | 重甲（抗箭）/ 快攻 / 高血精英 / 海量小兵 | 新增 `UnitType` + `UNIT_BLUEPRINTS` 条目（仅 PvE 池） | 小：扩 enum + 蓝图 |
 
 > **已实现（2026-06）**：`UnitType.Ironclad`（重甲 hp260/spd0.5/radius520，抗箭逼陨石/近战）、`UnitType.Runner`（疾行 hp26/spd1.9/radius250，小半径真正成团）已落地——纯加 enum + 蓝图 + 渲染色 + 编辑器调色板 META，**无 `CardDefinition` 故永不进 PvP 池**（公平硬墙不破）。前三关已按 §4.4a 原则重写。
-| 飞行（只有某些塔能打） | `UnitBlueprint.flying` + `Building.canTargetFlying` | 中：`CombatSystem` 寻敌过滤 |
-| 死亡分裂 | `UnitBlueprint.onDeathSpawn?: { type, count }` | 中：`CombatSystem` 死亡钩子（用注入 Prng 定坐标） |
-| 带盾 / 治疗 / buff 光环 | 后续扩展，预留 `traits: string[]` | 中–大：按需 |
+**已实装 trait（见上方 Ironclad / Runner）**
 
-> 怪种组合 + 克制是每关「不一样」的主力来源，**单这一项就能撑几十关新鲜感**。所有随机必须走注入 `Prng`（确定性约束，见 §9）。
+**计划 trait 全表（2026-06-17 拍板）：**
+
+#### 4.4b 飞行系统（PvP + PvE，优先级高）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `UnitBlueprint.flying` | `boolean` | 单位是飞行单位，地面单位寻敌时跳过飞行目标 |
+| `UnitBlueprint.canTargetFlying` | `boolean` | 单位可以打飞行目标（弓箭手 = true，步兵 / 盾兵 = false） |
+| `Building.canTargetFlying` | `boolean` | 建筑可打飞行目标（箭塔 = true，兵营 = false） |
+
+**飞行机制规则（已拍板）：**
+- 飞行单位穿越 `blocked` 格（飞越障碍）
+- 飞行单位有独立碰撞层（飞行间互相碰撞，不与地面单位碰撞排队）
+- 飞行单位正常横穿（crossing 机制不变）
+- 飞行单位可以攻击地面单位；地面单位**无法**攻击飞行单位
+- 飞行单位也可打飞行单位（`canTargetFlying` 双方通用）
+- **PvP 收录**：朱雀（东）/ 哈耳庇厄（西）作为飞行牌，详见 `MYTHOLOGY_DESIGN.md §4`
+- 引擎改动：`CombatSystem.findTarget` + `findTargetForBuilding` 加 `flying` 过滤；`MovementSystem.moveForward` 跳过 blocked 格检测；飞行碰撞层独立处理
+
+**数值草案（朱雀 / Harpy，PvP 卡）：**  
+HP 45 / 速度 1.4 / 攻击 12 / 攻击间隔 1.0s / 射程 1 / 费用 11 墨
+
+#### 4.4c Trait 系统全表
+
+> 所有随机效果必须走注入 `Prng`（确定性约束，见 §9）。
+> 「PvP」= 可进 PvP 牌池；「PvE 专属」= 只在 PvE 关卡敌方 / 关卡限定 loadout 出现。
+
+**进攻修饰**
+
+| Trait | 字段 | PvP / PvE | 效果 | 引擎改动量 |
+|---|---|---|---|---|
+| 死亡分裂 | `onDeathSpawn?: {type: UnitType, count: number}` | PvE 专属 | 死亡时在周边生成 N 个弱小单位（BOSS 死裂首选） | 中：`CombatSystem` 死亡钩子，注入 Prng 定坐标 |
+| 溅射 | `splashRadius?: number`（Chebyshev 圈数） | PvE 专属 | 攻击命中周边额外目标，克制 Runner 鱼群 | 中：`CombatSystem` 命中后二次伤害循环 |
+| 穿透 | `piercing?: boolean` | PvE 专属 | 攻击穿过同列前方所有单位（弓箭兵进阶形态） | 小：`findTarget` 改返回列表而非单一目标 |
+| 减速 | `slowOnHit?: {mult: number, durationSec: number}` | PvE 专属 | 命中后目标速度 × mult 持续 N 秒 | 中：`Unit` 加临时速度修正 + tick 倒计时 |
+
+**防御修饰**
+
+| Trait | 字段 | PvP / PvE | 效果 | 引擎改动量 |
+|---|---|---|---|---|
+| 护甲 | `armor?: number` | PvP + PvE | 每次受击减少固定伤害，克制低伤多次攻击（弓箭） | 小：`CombatSystem` 伤害计算加减法 |
+| 嘲讽 | `taunt?: boolean` | PvP + PvE | 敌方 `findTarget` 优先以此单位为目标 | 小：寻敌排序权重 |
+| 不死一次 | `undying?: boolean` | PvE 专属 | 首次致死时以 1 HP 存活，清除标记 | 小：死亡判定加特判 |
+| 狂热 | `berserkerThreshold?: number` | PvP + PvE | HP < threshold% 时攻速 × 1.5 | 小：攻击间隔公式加 HP 判断 |
+
+**持续效果（PvE 专属，关卡 / 波次限定）**
+
+| Trait | 字段 | 效果 | 备注 |
+|---|---|---|---|
+| 再生 | `regenPerSec?: number` | 每 tick 回 HP，拖延战斗节奏 | 精英怪 / Boss 常用 |
+| 吸血 | `lifestealPct?: number` | 造成伤害的 % 回 HP | 不进 PvP（无限续航破局） |
+| 治疗光环 | `traits: [{type:'aura_heal', radius, hps}]` | 每秒治疗周边友军 | 不进 PvP（同上） |
+
+**隐匿 / 召唤（PvE 专属）**
+
+| Trait | 字段 | 效果 | 引擎改动量 |
+|---|---|---|---|
+| 隐身 | `stealth?: boolean` | 距离 > 2 格时 `findTarget` 不选中；进入攻击范围显身 | 中：寻敌加距离门控 |
+| 召唤 | `summonOnTimer?: {type: UnitType, intervalSec: number}` | 每 N 秒在周边刷出弱小单位（Summoner BOSS） | 中：`tick` 计时钩子 + 注入 Prng |
+
+#### 4.4d 新计划单位类型（PvP 候选）
+
+| 单位 | 定位 | 关键机制 | 状态 |
+|---|---|---|---|
+| 朱雀 / 哈耳庇厄 | 飞行脆皮 | `flying=true`，只有弓箭 / 箭塔能打 | 设计完成，待实现 |
+| 枪骑兵 Lancer | 一次性冲锋 | 到达敌方基地前方时触发 `onArrival` 高额伤害后立即死亡 | 草案 |
+| 蜂群 Swarm | 数量压制 | 一张牌放出 3 个 hp=15 radius=150fp 的极小单位，1 费 / 个 | 草案 |
+
+**PvE 专属单位（不进 PvP 池）：**
+
+| 单位 | 定位 | 关键 Trait |
+|---|---|---|
+| 医疗兵 Medic | 无攻击支援 | `traits: aura_heal`，单独放必死 |
+| 巨灵 Golem | 2 列宽 BOSS 形态 | 占双列 `blocked`，需特殊寻敌逻辑 |
+
+> 怪种组合 + 克制是每关「不一样」的主力来源，**单这一项就能撑几十关新鲜感**。详见神话世界观框架：`MYTHOLOGY_DESIGN.md`。
 
 ### 4.4a 关卡难度设计原则（2026-06 实战发现，写关卡前必读）
 
