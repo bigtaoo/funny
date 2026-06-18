@@ -104,6 +104,9 @@ export class GameRenderer {
   /** Equipped skin id (S3-4), passed to UnitView for the texture swap; null = default. */
   private readonly equippedSkin: string | null = null;
   private buildingView!: BuildingView;
+  private escortLayer!:  PIXI.Container;
+  /** Escort sprite containers keyed by escortId (campaign escort levels only). */
+  private readonly escortSprites: Map<string, PIXI.Container> = new Map();
   private handView!:     HandView;
   private hudView!:      HUDView;
   private netStatus!:    NetStatusView;
@@ -244,6 +247,8 @@ export class GameRenderer {
     this.pendingCardDown = null;
     this.profilePopup?.destroy();
     this.vfxSystem.destroy();
+    for (const sprite of this.escortSprites.values()) sprite.destroy();
+    this.escortSprites.clear();
   }
 
   // ── Scene graph ────────────────────────────────────────────────────────────
@@ -260,9 +265,12 @@ export class GameRenderer {
     this.netStatus    = new NetStatusView(this.layout);
     this.vfxSystem    = new VFXSystem();
 
+    this.escortLayer = new PIXI.Container();
+
     this.container.addChild(this.boardView.container);
     this.container.addChild(this.unitView.container);
     this.container.addChild(this.buildingView.container);
+    this.container.addChild(this.escortLayer);           // escort units above buildings
     this.container.addChild(this.vfxSystem.container);  // above units, below HUD
 
     // Worn-notebook overlay (art-direction §3.1) — faint static grain/creases
@@ -529,7 +537,96 @@ export class GameRenderer {
         if (s) setTimeout(() => { this.onGameEnd?.(null, s); }, 2000);
         break;
       }
+      case 'escort_spawned': {
+        const pos = this.boardView.gridToScreen(fromFp(event.col_fp), fromFp(event.row_fp));
+        const sprite = this.buildEscortSprite(pos.x, pos.y, event.hp, event.maxHp);
+        this.escortSprites.set(event.escortId, sprite);
+        this.escortLayer.addChild(sprite);
+        break;
+      }
+      case 'escort_moved': {
+        const sprite = this.escortSprites.get(event.escortId);
+        if (!sprite) break;
+        const pos = this.boardView.gridToScreen(fromFp(event.col_fp), fromFp(event.row_fp));
+        sprite.x = pos.x;
+        sprite.y = pos.y;
+        break;
+      }
+      case 'escort_hp_changed': {
+        const sprite = this.escortSprites.get(event.escortId);
+        if (sprite) this.setEscortHpBar(sprite, event.hp, event.maxHp);
+        break;
+      }
+      case 'escort_died': {
+        const sprite = this.escortSprites.get(event.escortId);
+        if (!sprite) break;
+        this.escortSprites.delete(event.escortId);
+        let elapsed = 0;
+        const tick = (): void => {
+          elapsed += PIXI.Ticker.shared.deltaMS / 1000;
+          sprite.alpha = Math.max(0, 1 - elapsed / 0.5);
+          if (elapsed >= 0.5) {
+            PIXI.Ticker.shared.remove(tick);
+            sprite.parent?.removeChild(sprite);
+            sprite.destroy();
+          }
+        };
+        PIXI.Ticker.shared.add(tick);
+        break;
+      }
+      case 'escort_arrived': {
+        const sprite = this.escortSprites.get(event.escortId);
+        if (!sprite) break;
+        this.escortSprites.delete(event.escortId);
+        let frames = 12;
+        const tick = (): void => {
+          sprite.alpha = frames % 3 === 0 ? 0.2 : 1;
+          if (--frames <= 0) {
+            PIXI.Ticker.shared.remove(tick);
+            sprite.parent?.removeChild(sprite);
+            sprite.destroy();
+          }
+        };
+        PIXI.Ticker.shared.add(tick);
+        break;
+      }
     }
+  }
+
+  private buildEscortSprite(x: number, y: number, hp: number, maxHp: number): PIXI.Container {
+    const c = new PIXI.Container();
+
+    const gfx = new PIXI.Graphics();
+    gfx.lineStyle(1.5, 0x226622);
+    gfx.beginFill(0x44bb66, 0.85);
+    gfx.drawPolygon([-9, 0, 0, -11, 9, 0, 0, 11]);
+    gfx.endFill();
+    gfx.name = 'body';
+
+    const hpBg = new PIXI.Graphics();
+    hpBg.beginFill(0x888888, 0.6);
+    hpBg.drawRect(-10, -22, 20, 3);
+    hpBg.endFill();
+    hpBg.name = 'hpBg';
+
+    const hpFill = new PIXI.Graphics();
+    hpFill.name = 'hpFill';
+
+    c.addChild(gfx, hpBg, hpFill);
+    c.x = x;
+    c.y = y;
+    this.setEscortHpBar(c, hp, maxHp);
+    return c;
+  }
+
+  private setEscortHpBar(sprite: PIXI.Container, hp: number, maxHp: number): void {
+    const hpFill = sprite.getChildByName('hpFill') as PIXI.Graphics | null;
+    if (!hpFill) return;
+    hpFill.clear();
+    const ratio = maxHp > 0 ? Math.max(0, hp / maxHp) : 0;
+    hpFill.beginFill(ratio > 0.4 ? 0x44cc66 : 0xff8833);
+    hpFill.drawRect(-10, -22, 20 * ratio, 3);
+    hpFill.endFill();
   }
 
   // ── Card drag ──────────────────────────────────────────────────────────────

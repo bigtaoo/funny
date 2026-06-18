@@ -365,3 +365,75 @@ describe('loadout / bannedCards', () => {
     expect(hasCards).toBe(true);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// escort objective
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('objective: escort', () => {
+  it('escort_spawned events are emitted on the first tick for each escort', () => {
+    const level = baseLevel({
+      objective: { kind: 'escort', required: 'any' },
+      escorts: [
+        { id: 'e1', hp: 100, speed: 1, startCol: 0, startRow: 1 },
+        { id: 'e2', hp: 100, speed: 1, startCol: 2, startRow: 1 },
+      ],
+      waves: { entries: [] },
+    });
+    const engine = createGameEngine(makeCampaignConfig(level));
+    engine.tick(TICK_DT);
+    const spawned = engine.state.events.filter((e) => e.type === 'escort_spawned');
+    expect(spawned).toHaveLength(2);
+  });
+
+  it('game ends (Bottom wins) when a required escort reaches the enemy base', () => {
+    // Escort placed 1 row from TOP_BUILDING_ROW (row 17), speed=5 → arrives in ~7 ticks.
+    const level = baseLevel({
+      objective: { kind: 'escort', required: 'any' },
+      escorts: [{ id: 'e1', hp: 100, speed: 5, startCol: 0, startRow: 16 }],
+      waves: { entries: [] },
+    });
+    const engine = runTicks(makeCampaignConfig(level), 30);
+    expect(engine.state.phase).toBe(GamePhase.GameOver);
+    expect(engine.state.winner).toBe(Side.Bottom);
+  });
+
+  it('game is still Playing while the escort has not yet arrived', () => {
+    // Very slow escort starting far from the enemy base.
+    const level = baseLevel({
+      objective: { kind: 'escort', required: 'any' },
+      escorts: [{ id: 'e1', hp: 100, speed: 0.05, startCol: 0, startRow: 0 }],
+      waves: { entries: [] },
+    });
+    const engine = runTicks(makeCampaignConfig(level), 10);
+    expect(engine.state.phase).toBe(GamePhase.Playing);
+  });
+
+  it('game ends (Top wins) when all escorts die before arriving (required=all)', () => {
+    // Infantry spawns at TOP_SPAWN_ROW (row 16), escort at row 15 (1 row below) →
+    // Infantry range=1 can target the escort. Escort hp=1 dies in one hit.
+    const level = baseLevel({
+      objective: { kind: 'escort', required: 'all' },
+      escorts: [{ id: 'e1', hp: 1, speed: 0.01, startCol: 0, startRow: 15 }],
+      waves: {
+        entries: [
+          { atTick: 5, unitType: UnitType.Infantry, col: 0, count: 1 },
+        ],
+      },
+    });
+    const engine = runTicks(makeCampaignConfig(level), 120);
+    expect(engine.state.phase).toBe(GamePhase.GameOver);
+    expect(engine.state.winner).toBe(Side.Top);
+  });
+
+  it('escort status transitions: moving → arrived', () => {
+    const level = baseLevel({
+      objective: { kind: 'escort', required: 'all' },
+      escorts: [{ id: 'e1', hp: 100, speed: 5, startCol: 0, startRow: 16 }],
+      waves: { entries: [] },
+    });
+    const engine = runTicks(makeCampaignConfig(level), 30);
+    const escort = engine.state.escorts[0]!;
+    expect(escort.status).toBe('arrived');
+  });
+});

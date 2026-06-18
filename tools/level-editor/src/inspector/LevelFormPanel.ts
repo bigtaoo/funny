@@ -1,6 +1,6 @@
-import { ATTACK_LANES, BOARD_ROWS, CARD_DEFINITIONS } from '@game/config';
+import { ATTACK_LANES, BOARD_ROWS, CARD_DEFINITIONS, SPELL_CARD_DEFS } from '@game/config';
 import { TICK_RATE } from '@game/math/fixed';
-import type { HazardSpec, LevelDefinition, LevelRewards } from '@game/campaign/LevelDefinition';
+import type { EscortSpec, HazardSpec, LevelDefinition, LevelRewards } from '@game/campaign/LevelDefinition';
 import type { EditorState } from '../state/EditorState';
 
 /**
@@ -32,6 +32,8 @@ export class LevelFormPanel {
     if (lv.inkRegenMult === undefined || Number.isNaN(lv.inkRegenMult)) delete lv.inkRegenMult;
     if (lv.loadout && lv.loadout.length === 0) delete lv.loadout;
     if (lv.bannedCards && lv.bannedCards.length === 0) delete lv.bannedCards;
+    if (lv.levelSpells && lv.levelSpells.length === 0) delete lv.levelSpells;
+    if (lv.escorts && lv.escorts.length === 0) delete lv.escorts;
     if (lv.rewards && Object.keys(lv.rewards).length === 0) delete lv.rewards;
     if (lv.story && Object.keys(lv.story).length === 0) delete lv.story;
     this.state.touch();
@@ -65,6 +67,7 @@ export class LevelFormPanel {
       ['destroy_base', '摧毁敌方基地 (destroy_base)'],
       ['leak_limit',   '漏怪上限 (leak_limit)'],
       ['boss',         '击杀 Boss (boss)'],
+      ['escort',       '护送到达 (escort)'],
     ] as [string, string][]) {
       const o = document.createElement('option');
       o.value = val; o.textContent = label;
@@ -77,6 +80,7 @@ export class LevelFormPanel {
         case 'destroy_base':  lv.objective = { kind: 'destroy_base' }; break;
         case 'leak_limit':    lv.objective = { kind: 'leak_limit', maxLeaks: 3 }; break;
         case 'boss':          lv.objective = { kind: 'boss' }; break;
+        case 'escort':        lv.objective = { kind: 'escort', required: 'all' }; break;
         default:              lv.objective = { kind: 'survive' };
       }
       this.commit();
@@ -94,6 +98,30 @@ export class LevelFormPanel {
         this.commit();
       }));
     }
+    if (lv.objective.kind === 'escort') {
+      const obj = lv.objective;
+      // required: 'all' | 'any' | number — show as select + optional count
+      const reqSel = document.createElement('select');
+      for (const [v, l] of [['all', '全部到达 (all)'], ['any', '任一到达 (any)'], ['count', '至少 N 个']] as [string, string][]) {
+        const o = document.createElement('option'); o.value = v; o.textContent = l;
+        if ((typeof obj.required === 'number' && v === 'count') || obj.required === v) o.selected = true;
+        reqSel.appendChild(o);
+      }
+      reqSel.addEventListener('change', () => {
+        if (lv.objective.kind !== 'escort') return;
+        if (reqSel.value === 'all') lv.objective.required = 'all';
+        else if (reqSel.value === 'any') lv.objective.required = 'any';
+        else lv.objective.required = 1;
+        this.commit();
+      });
+      root.appendChild(field('到达要求 (required)', reqSel));
+      if (typeof obj.required === 'number') {
+        root.appendChild(numField('最少到达数 (N)', String(obj.required), 1, 1, (v) => {
+          if (lv.objective.kind === 'escort') lv.objective.required = Math.max(1, Math.round(v));
+          this.commit();
+        }));
+      }
+    }
 
     // ── Economy ──
     root.appendChild(section('经济'));
@@ -104,6 +132,133 @@ export class LevelFormPanel {
     root.appendChild(section('编成约束'));
     root.appendChild(cardMultiSelect('限定卡池 (loadout)', lv.loadout, (sel) => { if (sel.length === 0) delete lv.loadout; else lv.loadout = sel; this.commit(); }));
     root.appendChild(cardMultiSelect('禁用卡牌 (bannedCards)', lv.bannedCards, (sel) => { if (sel.length === 0) delete lv.bannedCards; else lv.bannedCards = sel; this.commit(); }));
+
+    // ── Level spells ──
+    root.appendChild(section('关卡法术 (levelSpells)'));
+    for (let si = 0; si < (lv.levelSpells ?? []).length; si++) {
+      const sp = lv.levelSpells![si]!;
+      const spRow = document.createElement('div');
+      spRow.style.cssText = 'display:flex;gap:4px;align-items:center;margin:2px 0';
+      const cardSel = document.createElement('select');
+      for (const id of SPELL_CARD_DEFS.keys()) {
+        const o = document.createElement('option'); o.value = id; o.textContent = id;
+        if (id === sp.cardId) o.selected = true;
+        cardSel.appendChild(o);
+      }
+      cardSel.addEventListener('change', () => {
+        if (lv.levelSpells?.[si]) { lv.levelSpells[si]!.cardId = cardSel.value; this.commit(); }
+      });
+      spRow.appendChild(cardSel);
+      const countInp = document.createElement('input');
+      countInp.type = 'number'; countInp.min = '1'; countInp.step = '1';
+      countInp.value = String(sp.initialCount); countInp.style.width = '50px'; countInp.title = '初始手牌数';
+      countInp.addEventListener('change', () => {
+        const v = parseInt(countInp.value);
+        if (!isNaN(v) && lv.levelSpells?.[si]) { lv.levelSpells[si]!.initialCount = Math.max(1, v); this.commit(); }
+      });
+      spRow.appendChild(countInp);
+      const spDel = document.createElement('button'); spDel.className = 'danger'; spDel.textContent = '×';
+      spDel.addEventListener('click', () => {
+        lv.levelSpells!.splice(si, 1);
+        if (lv.levelSpells!.length === 0) delete lv.levelSpells;
+        this.commit();
+      });
+      spRow.appendChild(spDel);
+      root.appendChild(spRow);
+    }
+    const addSpellBtn = document.createElement('button');
+    addSpellBtn.textContent = '+ 添加法术';
+    addSpellBtn.addEventListener('click', () => {
+      if (!lv.levelSpells) lv.levelSpells = [];
+      lv.levelSpells.push({ cardId: [...SPELL_CARD_DEFS.keys()][0]!, initialCount: 1 });
+      this.commit();
+    });
+    root.appendChild(addSpellBtn);
+
+    // ── Escorts ──
+    root.appendChild(section('护送单位 (escorts)'));
+    for (let ei = 0; ei < (lv.escorts ?? []).length; ei++) {
+      const esc = lv.escorts![ei]!;
+      const escBlock = document.createElement('div');
+      escBlock.style.cssText = 'border:1px solid #ccc;border-radius:4px;padding:4px;margin:4px 0';
+      const update = (patch: Partial<EscortSpec>): void => {
+        if (lv.escorts?.[ei]) { Object.assign(lv.escorts[ei]!, patch); this.commit(); }
+      };
+      escBlock.appendChild(textField('id', esc.id, (v) => update({ id: v })));
+      escBlock.appendChild(numField('HP', String(esc.hp), 1, 1, (v) => update({ hp: Math.max(1, Math.round(v)) })));
+      escBlock.appendChild(numField('速度 (格/秒)', String(esc.speed), 0.01, 0.1, (v) => update({ speed: Math.max(0.01, v) })));
+      // startCol select
+      const colSel = document.createElement('select');
+      for (const c of ATTACK_LANES) {
+        const o = document.createElement('option'); o.value = String(c); o.textContent = `列 ${c}`;
+        if (c === esc.startCol) o.selected = true;
+        colSel.appendChild(o);
+      }
+      colSel.addEventListener('change', () => update({ startCol: Number(colSel.value) }));
+      escBlock.appendChild(field('起始列', colSel));
+      escBlock.appendChild(numField('起始行', String(esc.startRow), 0, 1, (v) => update({ startRow: Math.max(0, Math.round(v)) })));
+      // Path waypoints
+      const pathHeader = document.createElement('div');
+      pathHeader.style.cssText = 'font-size:11px;color:#666;margin:4px 0 2px';
+      pathHeader.textContent = '路径点 (path)';
+      escBlock.appendChild(pathHeader);
+      for (let wi = 0; wi < (esc.path ?? []).length; wi++) {
+        const wp = esc.path![wi]!;
+        const wpRow = document.createElement('div');
+        wpRow.style.cssText = 'display:flex;gap:4px;align-items:center;margin:2px 0';
+        const wColSel = document.createElement('select');
+        for (const c of ATTACK_LANES) {
+          const o = document.createElement('option'); o.value = String(c); o.textContent = `列 ${c}`;
+          if (c === wp.col) o.selected = true;
+          wColSel.appendChild(o);
+        }
+        wColSel.addEventListener('change', () => {
+          const p = (lv.escorts?.[ei]?.path ?? []); if (p[wi]) { p[wi]!.col = Number(wColSel.value); this.commit(); }
+        });
+        wpRow.appendChild(wColSel);
+        const wRowInp = document.createElement('input');
+        wRowInp.type = 'number'; wRowInp.min = '0'; wRowInp.max = String(BOARD_ROWS - 1); wRowInp.step = '1';
+        wRowInp.value = String(wp.row); wRowInp.style.width = '50px'; wRowInp.title = '行';
+        wRowInp.addEventListener('change', () => {
+          const v = parseInt(wRowInp.value);
+          const p = (lv.escorts?.[ei]?.path ?? []); if (!isNaN(v) && p[wi]) { p[wi]!.row = Math.max(0, Math.min(BOARD_ROWS - 1, v)); this.commit(); }
+        });
+        wpRow.appendChild(wRowInp);
+        const wpDel = document.createElement('button'); wpDel.className = 'danger'; wpDel.textContent = '×';
+        wpDel.addEventListener('click', () => {
+          const p = lv.escorts?.[ei]?.path; if (p) { p.splice(wi, 1); if (p.length === 0) delete lv.escorts![ei]!.path; this.commit(); }
+        });
+        wpRow.appendChild(wpDel);
+        escBlock.appendChild(wpRow);
+      }
+      const addWpBtn = document.createElement('button'); addWpBtn.textContent = '+ 路径点'; addWpBtn.style.fontSize = '11px';
+      addWpBtn.addEventListener('click', () => {
+        if (!lv.escorts?.[ei]) return;
+        if (!lv.escorts[ei]!.path) lv.escorts[ei]!.path = [];
+        const path = lv.escorts[ei]!.path!;
+        const lastRow = path.length > 0 ? path[path.length - 1]!.row : esc.startRow;
+        lv.escorts[ei]!.path!.push({ col: esc.startCol, row: Math.min(BOARD_ROWS - 1, lastRow + 2) });
+        this.commit();
+      });
+      escBlock.appendChild(addWpBtn);
+      const escDel = document.createElement('button'); escDel.className = 'danger'; escDel.textContent = '删除护送';
+      escDel.style.marginTop = '4px';
+      escDel.addEventListener('click', () => {
+        lv.escorts!.splice(ei, 1);
+        if (lv.escorts!.length === 0) delete lv.escorts;
+        this.commit();
+      });
+      escBlock.appendChild(escDel);
+      root.appendChild(escBlock);
+    }
+    const addEscortBtn = document.createElement('button');
+    addEscortBtn.textContent = '+ 添加护送';
+    addEscortBtn.addEventListener('click', () => {
+      if (!lv.escorts) lv.escorts = [];
+      lv.escorts.push({ id: `escort_${lv.escorts.length + 1}`, hp: 100, speed: 1, startCol: ATTACK_LANES[0]!, startRow: 1 });
+      this.commit();
+    });
+    root.appendChild(addEscortBtn);
 
     // ── Rewards ──
     root.appendChild(section('奖励'));
