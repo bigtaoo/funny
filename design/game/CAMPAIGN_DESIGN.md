@@ -404,9 +404,20 @@ if (total - dead < needed - arrived) → 无法完成，玩家败
 **关卡编辑器：** 护送路径可视化编辑（点击棋盘格生成 waypoints）作为**独立 UI 任务**，三核心功能代码完成后补做。
 
 **实现顺序（2026-06-17 拍板）：**
-1. `laneLength`（最小，复用 blocked 逻辑）
-2. `levelSpells`（Rockslide + BridgeCollapse，复用 processCommand 框架）
-3. Escort 护送系统（新实体 + EscortSystem + CombatSystem 改动 + 渲染）
+1. ✅ `laneLength`（已实现 2026-06）
+2. ✅ `levelSpells`（已实现 2026-06）
+3. ✅ Escort 护送系统（已实现 2026-06-18，见下方实现记录）
+
+**实现记录（2026-06-18 落地）：**
+- `EscortUnit.ts`：类实体（hp/col_fp/row_fp/speed_fp/status/remainingPath），numericId 5000+ 避免与 Unit/Building ID 冲突
+- `EscortSystem.ts`：每 tick 前进 speed_fp × TICK_DT_FP；到路点行时 snap col；到 TOP_BUILDING_ROW → `arrived`；hp=0 → `dead`
+- `CombatSystem`：`findTarget` 对 Top-side 单位扫 `state.escorts`（Chebyshev 混排，unit > escort > building），`performUnitAttack` 分发 `escort_hp_changed`
+- `LevelDefinition`：`EscortSpec` 接口 + `escorts?` 字段 + `ObjectiveSpec` escort variant
+- `levelSchema`：`parseEscorts` 严格校验（path 行号严格升序）+ escort objective 解析
+- `GameState`：`escorts: EscortUnit[]` + `resetEscortIds()`
+- `types.ts`：`escort_spawned/moved/hp_changed/died/arrived` 五个事件
+- `GameEngine`：构造器创建实例，`emitInitialEvents` 发 `escort_spawned`，step 插 EscortSystem，`checkWinCondition` 处理 arrived≥needed → 胜 / total-dead < needed-arrived → 败
+- **待做**：渲染层（EscortUnit 精灵 + HP 条）；关卡编辑器路径可视化 UI
 
 ---
 
