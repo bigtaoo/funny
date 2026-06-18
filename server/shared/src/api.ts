@@ -49,6 +49,8 @@ export const ErrorCode = {
   INSUFFICIENT_RESOURCES: 'INSUFFICIENT_RESOURCES',
   AUCTION_LIMIT_REACHED: 'AUCTION_LIMIT_REACHED',
   NO_PERMISSION: 'NO_PERMISSION',
+  // —— S8-6.6 A* 寻路 ——
+  PATH_BLOCKED: 'PATH_BLOCKED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -107,4 +109,5 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.INSUFFICIENT_RESOURCES]: 402,
   [ErrorCode.AUCTION_LIMIT_REACHED]: 409,
   [ErrorCode.NO_PERMISSION]: 403,
+  [ErrorCode.PATH_BLOCKED]: 400,
 };

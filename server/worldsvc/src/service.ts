@@ -7,11 +7,12 @@ import {
   tileId,
   marchId,
   siegeId,
-  marchDurationSec,
   playerWorldId,
   tileYield,
   resolveSiege,
   npcGarrison,
+  findMarchPath,
+  marchDurationFromPath,
   SIEGE_LOOT_RATE,
   SWEEP_LOOT_PER_LEVEL,
   RESOURCE_CAP,
@@ -22,6 +23,7 @@ import {
   MARCH_MIN_TROOPS,
   PROTECTION_SEC,
   SlgError,
+  type PathCell,
   type TileType,
   type ResourceType,
   type MarchKind,
@@ -120,6 +122,45 @@ export class WorldService {
     return x >= 0 && y >= 0 && x < this.deps.mapW && y < this.deps.mapH;
   }
 
+  /**
+   * A* 行军寻路：预取所有已占领关隘格，组装 passableGateKeys，再调 findMarchPath。
+   * 关隘：自己占领的视为可通行（盟友通行 S8-4 pending，当前仅己方）。
+   * 无路 → throw PATH_BLOCKED (HTTP 400)。
+   */
+  private async computeMarchPath(
+    worldId: string,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    requesterId: string,
+  ): Promise<PathCell[]> {
+    // 关隘稀疏（全图 ~20-40 个）；一次性取出再过滤，避免 A* 内异步。
+    const gateTiles = await this.deps.cols.tiles
+      .find({ worldId, type: 'gate' })
+      .project<{ _id: string; x: number; y: number; ownerId: string | undefined }>({
+        _id: 1, x: 1, y: 1, ownerId: 1,
+      })
+      .toArray();
+    const passableGateKeys = new Set<string>(
+      gateTiles
+        .filter((g) => g.ownerId === requesterId)
+        .map((g) => `${g.x}:${g.y}`),
+    );
+    const path = findMarchPath(
+      worldId,
+      this.deps.mapW,
+      this.deps.mapH,
+      fromX,
+      fromY,
+      toX,
+      toY,
+      passableGateKeys,
+    );
+    if (!path) throw new SlgError('PATH_BLOCKED', '找不到可行路径');
+    return path;
+  }
+
   /** 视区格子：合并程序化默认（中立世界）与稀疏 DB 覆盖（被占领/改动的格）。§14.2。 */
   async getMap(
     worldId: string,
@@ -209,6 +250,7 @@ export class WorldService {
     if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', '主城坐标越界');
     const proc = proceduralTile(worldId, x, y);
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可落城');
+    if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', '障碍/关隘不可落城');
 
     const tid = tileId(worldId, x, y);
     const occ = await cols.tiles.findOne({ _id: tid });
@@ -273,6 +315,7 @@ export class WorldService {
 
     const proc = proceduralTile(worldId, x, y);
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心由宗门争夺，不可直占');
+    if (proc.type === 'obstacle') throw new SlgError('BAD_REQUEST', '阻挡地形不可占领');
 
     const tid = tileId(worldId, x, y);
     const occ = await cols.tiles.findOne({ _id: tid });
@@ -389,6 +432,7 @@ export class WorldService {
     // 目标格出征时校验（到达时会再校验一次，状态可能已变）。
     const toTid = tileId(worldId, toX, toY);
     const proc = proceduralTile(worldId, toX, toY);
+    if (proc.type === 'obstacle') throw new SlgError('BAD_REQUEST', '阻挡地形不可进军');
     const toTile = await cols.tiles.findOne({ _id: toTid });
     let defenderId: string | undefined; // attack：被攻击方 accountId（出征即推 under_attack 预警）
     if (kind === 'occupy') {
@@ -422,8 +466,9 @@ export class WorldService {
     const resources = this.settle(pw, t);
     if (pw.troops < troops) throw new SlgError('NO_TROOPS', '兵力不足');
 
+    const path = await this.computeMarchPath(worldId, fromX, fromY, toX, toY, accountId);
     const departAt = t;
-    const arriveAt = departAt + marchDurationSec(fromX, fromY, toX, toY) * 1000;
+    const arriveAt = departAt + marchDurationFromPath(path) * 1000;
     const mid = marchId(worldId, accountId, departAt, ++this.marchSeq);
     const doc: MarchDoc = {
       _id: mid,

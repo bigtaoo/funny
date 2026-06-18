@@ -28,7 +28,9 @@ export type TileType =
   | 'territory' // 已被玩家占领的领地（运行时写库后才有，生成不产出此类型）
   | 'familyKeep' // 战略要点 / 家族关隘（稀疏、高级、高价值）
   | 'center' // 世界中心（宗门归属争夺点，唯一）
-  | 'base'; // 玩家主城落点（运行时写库）
+  | 'base' // 玩家主城落点（运行时写库）
+  | 'obstacle' // 阻挡地形（山脉/河流，完全不可通行，S8-6.6）
+  | 'gate'; // 关隘/桥（嵌于阻挡带；占领方及盟友可通行；未占领视为阻挡，S8-6.6）
 
 export type ResourceType = 'food' | 'iron' | 'wood';
 export type MarchKind = 'attack' | 'reinforce' | 'occupy' | 'sweep' | 'return';
@@ -110,6 +112,20 @@ export const SLG_GEN = {
   biomeWoodMax: 0.68,
   /** 中立空地的等级封顶（保持空地低价值）。 */
   neutralLevelCap: 2,
+  // ── S8-6.6 阻挡地形 + 关隘 ──────────────────────────
+  /** 阻挡地形噪声频率（中尺度连续山脉/河流地带）。 */
+  obstacleFreq: 1 / 40,
+  /** 阻挡地形噪声阈值（超过此值 → 障碍，~12% 格子）。 */
+  obstacleThreshold: 0.88,
+  /**
+   * 障碍地形仅生成于 dr ≤ 此比例的区域（外围平原不生成障碍，保证玩家起始角落区可通行）。
+   * 角落附近（dr > obstacleMaxDr）为无障碍安全区域。
+   */
+  obstacleMaxDr: 0.87,
+  /** 关隘噪声频率（大尺度，稀疏战略通道）。 */
+  gateFreq: 1 / 60,
+  /** 关隘噪声阈值：障碍带内此值以上生成关隘（战略通道），极稀疏。 */
+  gateThreshold: 0.99,
 } as const;
 
 // ── 数值常量（U6 DRAFT，上线后调参）────────────────────
@@ -196,8 +212,8 @@ function biomeAt(x: number, y: number, seed: number): ResourceType {
 
 /**
  * 算出 (worldId, x, y) 的程序化默认格子。纯函数、确定性、不落库。
- * 分布规则（U6 首版）：中心唯一 center 格；等级中心高→边缘低 + 中频噪声扰动；
- * 稀疏 familyKeep 战略要点；其余按密度判 resource（带 biome 资源种类）/ neutral 空地。
+ * 分布规则（U6 + S8-6.6）：中心唯一 center 格；阻挡地形（山脉/河流）+ 关隘嵌于阻挡带；
+ * 等级中心高→边缘低；稀疏 familyKeep 战略要点；其余按密度判 resource / neutral。
  */
 export function proceduralTile(world: string, x: number, y: number): ProceduralTile {
   const seed = worldSeed(world);
@@ -214,6 +230,20 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
   const dist = Math.sqrt(dx * dx + dy * dy);
   const maxDist = Math.sqrt(cx * cx + cy * cy);
   const dr = dist / maxDist; // 0 中心 .. 1 角落
+
+  // ── 阻挡地形 + 关隘（S8-6.6）────────────────────────────────
+  // 仅在 dr ≤ obstacleMaxDr 的中部区域生成；外围平原（角落）保持无障碍，保证玩家起始区通行。
+  if (dr <= SLG_GEN.obstacleMaxDr) {
+    const obstNoise = valueNoise(x, y, SLG_GEN.obstacleFreq, seed ^ 0x0888);
+    if (obstNoise > SLG_GEN.obstacleThreshold) {
+      // 关隘：阻挡带内高峰位置（战略通道）——比阻挡更稀疏。
+      const gateNoise = valueNoise(x, y, SLG_GEN.gateFreq, seed ^ 0x0999);
+      if (gateNoise > SLG_GEN.gateThreshold) {
+        return { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) };
+      }
+      return { type: 'obstacle', level: 1 };
+    }
+  }
 
   // 等级：中心高→边缘低（(1-dr) 主导）+ 中频噪声扰动
   const lvlNoise = valueNoise(x, y, SLG_GEN.levelFreq, seed ^ 0x0111);
@@ -265,6 +295,144 @@ export function marchDurationSec(fx: number, fy: number, tx: number, ty: number)
   const dy = ty - fy;
   const tiles = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dy * dy)));
   return tiles * MARCH_SPEED_SEC_PER_TILE;
+}
+
+// ── A* 行军寻路（S8-6.6，§4「行军寻路」）──────────────────────────
+// 4方向 A*（上/下/左/右，无斜向），曼哈顿距离启发。
+// 阻挡格不可通行；未占领关隘视为阻挡（"未占领视为阻挡"）；
+// 已占领关隘仅占领方 / 盟友可途经（passableGateKeys 由调用方预取 DB 组装）。
+
+/** 行军路径节点。 */
+export interface PathCell {
+  x: number;
+  y: number;
+}
+
+/**
+ * A* 寻路：从 (fx,fy) 到 (tx,ty)。
+ * - 返回完整路径（含起点和终点）；同格返回单节点 [{fx,fy}]。
+ * - 目标不可达（障碍 / 无路 / 越界）返回 null。
+ * - passableGateKeys：可途经的关隘格 key 集合（格式 "x:y"）；目标关隘本身始终可达（不论有无通行权）。
+ * - MAX_NODES 安全上限（防超大地图极端情况）。
+ */
+export function findMarchPath(
+  world: string,
+  mapW: number,
+  mapH: number,
+  fx: number,
+  fy: number,
+  tx: number,
+  ty: number,
+  passableGateKeys: ReadonlySet<string>,
+): PathCell[] | null {
+  if (fx === tx && fy === ty) return [{ x: fx, y: fy }];
+  if (!_slgInBounds(fx, fy, mapW, mapH) || !_slgInBounds(tx, ty, mapW, mapH)) return null;
+
+  const walkable = (x: number, y: number, isDest: boolean): boolean => {
+    if (!_slgInBounds(x, y, mapW, mapH)) return false;
+    const p = proceduralTile(world, x, y);
+    if (p.type === 'obstacle') return false; // 障碍永远阻挡，含目标格
+    if (p.type === 'gate') return isDest || passableGateKeys.has(`${x}:${y}`);
+    return true;
+  };
+
+  if (!walkable(tx, ty, true)) return null; // 目标格是障碍
+
+  const MAX_NODES = 500_000;
+  // g: 从起点到该节点的最短步数；par: 父节点 flat index（重建路径）
+  const g = new Map<number, number>();
+  const par = new Map<number, number>();
+  // open set：最小堆，元素 = [f, flatIdx]
+  const heap: [number, number][] = [];
+
+  const h = (x: number, y: number) => Math.abs(x - tx) + Math.abs(y - ty);
+  const si = fy * mapW + fx;
+  g.set(si, 0);
+  _slgHeapPush(heap, [h(fx, fy), si]);
+
+  const DIRS: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  const closed = new Set<number>();
+  let explored = 0;
+
+  while (heap.length > 0) {
+    const [, cur] = _slgHeapPop(heap)!;
+    if (closed.has(cur)) continue;
+    closed.add(cur);
+
+    const cx = cur % mapW;
+    const cy = (cur / mapW) | 0;
+    if (cx === tx && cy === ty) return _slgReconstructPath(par, mapW, si, cur);
+    if (++explored > MAX_NODES) break;
+
+    const cg = g.get(cur)!;
+    for (const [ddx, ddy] of DIRS) {
+      const nx = cx + ddx;
+      const ny = cy + ddy;
+      const isDest = nx === tx && ny === ty;
+      if (!walkable(nx, ny, isDest)) continue;
+      const ni = ny * mapW + nx;
+      const ng = cg + 1;
+      if (ng < (g.get(ni) ?? Infinity)) {
+        g.set(ni, ng);
+        par.set(ni, cur);
+        _slgHeapPush(heap, [ng + h(nx, ny), ni]);
+      }
+    }
+  }
+  return null;
+}
+
+/** 行军路径 → 耗时（秒）：path.length-1 步 × MARCH_SPEED_SEC_PER_TILE。 */
+export function marchDurationFromPath(path: PathCell[]): number {
+  return Math.max(0, path.length - 1) * MARCH_SPEED_SEC_PER_TILE;
+}
+
+function _slgInBounds(x: number, y: number, mapW: number, mapH: number): boolean {
+  return x >= 0 && y >= 0 && x < mapW && y < mapH;
+}
+
+function _slgReconstructPath(par: Map<number, number>, mapW: number, start: number, end: number): PathCell[] {
+  const path: PathCell[] = [];
+  let cur = end;
+  while (cur !== start) {
+    path.push({ x: cur % mapW, y: (cur / mapW) | 0 });
+    cur = par.get(cur)!;
+  }
+  path.push({ x: start % mapW, y: (start / mapW) | 0 });
+  return path.reverse();
+}
+
+function _slgHeapPush(heap: [number, number][], item: [number, number]): void {
+  heap.push(item);
+  let i = heap.length - 1;
+  while (i > 0) {
+    const p = (i - 1) >> 1;
+    const pi = heap[p]!; const ii = heap[i]!;
+    if (pi[0] <= ii[0]) break;
+    heap[p] = ii; heap[i] = pi;
+    i = p;
+  }
+}
+
+function _slgHeapPop(heap: [number, number][]): [number, number] | undefined {
+  if (heap.length === 0) return undefined;
+  const top = heap[0]!;
+  const last = heap.pop()!;
+  if (heap.length > 0) {
+    heap[0] = last;
+    let i = 0;
+    for (;;) {
+      const l = 2 * i + 1;
+      const r = 2 * i + 2;
+      let m = i;
+      if (l < heap.length && heap[l]![0] < heap[m]![0]) m = l;
+      if (r < heap.length && heap[r]![0] < heap[m]![0]) m = r;
+      if (m === i) break;
+      const tmp = heap[i]!; heap[i] = heap[m]!; heap[m] = tmp;
+      i = m;
+    }
+  }
+  return top;
 }
 
 // ── 围攻结算（S8-3，§5.3）────────────────────────────────

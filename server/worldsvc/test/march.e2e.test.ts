@@ -6,7 +6,8 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   proceduralTile,
   tileId,
-  marchDurationSec,
+  findMarchPath,
+  MARCH_SPEED_SEC_PER_TILE,
   SLG_MAP_W,
   SLG_MAP_H,
   GARRISON_PER_TILE,
@@ -93,11 +94,11 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const target = findCoord((t) => t.type === 'resource', 30, 30);
     const procT = proceduralTile(W, target.x, target.y);
-    const dur = marchDurationSec(5, 5, target.x, target.y);
+    const expectedPath = findMarchPath(W, SLG_MAP_W, SLG_MAP_H, 5, 5, target.x, target.y, new Set());
 
     const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS);
     expect(mv).toMatchObject({ kind: 'occupy', status: 'marching', troops: OCCUPY_MIN_TROOPS });
-    expect(mv.arriveAt).toBe(nowMs + dur * 1000);
+    expect(mv.arriveAt).toBe(nowMs + (expectedPath!.length - 1) * MARCH_SPEED_SEC_PER_TILE * 1000);
     expect(mv.fromTile).toBe(tileId(W, 5, 5));
     expect(mv.toTile).toBe(tileId(W, target.x, target.y));
 
@@ -107,12 +108,12 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     expect(pushes.some((p) => p.msg.kind === 'march_update' && p.msg.status === 'marching')).toBe(true);
 
     // 未到点：处理无果，目标仍中立。
-    nowMs += (dur - 1) * 1000;
+    nowMs = mv.arriveAt - 1000;
     expect(await svc.processDueArrivals()).toBe(0);
     expect((await svc.getTile(W, 'a', target.x, target.y)).mine).toBeUndefined();
 
     // 到点：占领落地。
-    nowMs += 1000;
+    nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
     const tile = await svc.getTile(W, 'a', target.x, target.y);
     expect(tile).toMatchObject({ type: 'territory', mine: true, occupied: true, garrison: OCCUPY_MIN_TROOPS });
@@ -140,7 +141,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     const mv = await svc.startMarch(W, 'a', 5, 5, terr.x, terr.y, 'reinforce', 300);
     expect((await svc.getMe(W, 'a')).troops).toBe(before - 300); // 出征扣兵
 
-    nowMs += marchDurationSec(5, 5, terr.x, terr.y) * 1000;
+    nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
     const tile = await svc.getTile(W, 'a', terr.x, terr.y);
@@ -152,10 +153,9 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
   it('撤军：返程腿 + 到点退兵回池', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const target = findCoord((t) => t.type === 'neutral', 40, 40);
-    const dur = marchDurationSec(5, 5, target.x, target.y);
     const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS);
 
-    nowMs += Math.floor((dur * 1000) / 2); // 走到一半撤军
+    nowMs += Math.floor((mv.arriveAt - nowMs) / 2); // 走到一半撤军
     const back = await svc.recallMarch(W, 'a', mv.marchId);
     expect(back.kind).toBe('return');
     expect(back.fromTile).toBe(mv.toTile);
@@ -198,7 +198,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
   it('到达时目标已被他人占领 → 退兵回池（不夺地，S8-3）', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const target = findCoord((t) => t.type === 'neutral', 40, 40);
-    await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS);
+    const mv2 = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS);
 
     // 行军在途时，b 直占了该格（保护期已过的模拟：直接写他人 territory）。
     await m.collections.tiles.insertOne({
@@ -213,7 +213,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
       rev: 0,
     });
 
-    nowMs += marchDurationSec(5, 5, target.x, target.y) * 1000;
+    nowMs = mv2.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
     // a 没夺到，兵退回池；该格仍归 b。
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE);
