@@ -335,7 +335,12 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         },
       };
       session.connect();
-      if (autoRanked && session.gateway.getState() === 'open') queueRanked();
+      // If the gateway was already open from the lobby phase, connect() is a no-op
+      // and onNetState('open') will never fire — deliver it synchronously now.
+      if (session.gateway.getState() === 'open') {
+        view.applyNetState('open');
+        if (autoRanked) queueRanked();
+      }
     }
   }
 
