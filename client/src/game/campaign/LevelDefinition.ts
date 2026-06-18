@@ -1,4 +1,4 @@
-import type { UnitType } from '../types';
+import type { BuildingType, UnitType } from '../types';
 import type { TranslationKey } from '../../i18n';
 
 /**
@@ -46,6 +46,24 @@ export interface LevelDefinition {
   levelSpells?: { cardId: string; initialCount: number }[];
   /** Friendly escort units the player must protect to the enemy base (§4.9.3). */
   escorts?: EscortSpec[];
+  /**
+   * SLG defense config (U10): pre-placed units on the defender (Top) side at game start.
+   * Units are positioned mid-field in their lanes — not spawned at the top spawn row.
+   * Valid for 'siege' mode; ignored in 'campaign'.
+   */
+  garrison?: GarrisonEntry[];
+  /**
+   * SLG defense config (U10): pre-placed buildings on the defender's (Top) building row.
+   * Lets the defender start with turrets / barracks without needing to spend ink.
+   * Valid for 'siege' mode; ignored in 'campaign'.
+   */
+  defenderBuildings?: DefenderBuildingEntry[];
+  /**
+   * SLG defense config (U10): defender's (Top side) base upgrade level pre-applied at
+   * game start. Range 0–3 matching BASE_UPGRADE_COSTS length. Affects ink regen and
+   * signals investment level. Valid for 'siege' mode; silently clamped in 'campaign'.
+   */
+  defenderBaseLevel?: number;
   /** Clear rewards: coins, exclusive skin, story unlock, star thresholds (§7). */
   rewards?: LevelRewards;
   /** i18n story keys for intro / outro narration (§8). */
@@ -136,6 +154,22 @@ export interface EscortSpec {
    * Omit for a straight-line advance along startCol.
    */
   path?: { col: number; row: number }[];
+}
+
+/** SLG defense config: one pre-deployed unit on the defender (Top) side. */
+export interface GarrisonEntry {
+  unitType: UnitType;
+  /** Attack lane column (must be in ATTACK_LANES). */
+  col: number;
+  /** Row 1–16 inclusive — anywhere in the combat zone or top spawn row. */
+  row: number;
+}
+
+/** SLG defense config: one pre-placed building on the defender's building row. */
+export interface DefenderBuildingEntry {
+  buildingType: BuildingType;
+  /** Attack lane column (must be in ATTACK_LANES, not a base column). */
+  col: number;
 }
 
 export interface LevelRewards {

@@ -1,8 +1,10 @@
-import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '../config';
-import { UnitType } from '../types';
+import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS, TOP_BUILDING_ROW, BOTTOM_BUILDING_ROW, BASE_UPGRADE_COSTS } from '../config';
+import { BuildingType, UnitType } from '../types';
 import type {
   Cell,
+  DefenderBuildingEntry,
   EscortSpec,
+  GarrisonEntry,
   HazardSpec,
   LevelDefinition,
   LevelRewards,
@@ -36,6 +38,8 @@ export class LevelParseError extends Error {
 
 const ATTACK_LANE_SET: ReadonlySet<number> = new Set<number>(ATTACK_LANES as readonly number[]);
 const UNIT_TYPE_SET: ReadonlySet<string> = new Set<string>(Object.values(UnitType));
+const BUILDING_TYPE_SET: ReadonlySet<string> = new Set<string>(Object.values(BuildingType));
+const MAX_BASE_LEVEL = BASE_UPGRADE_COSTS.length;
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -277,6 +281,44 @@ function parseEscorts(v: unknown, path: string): EscortSpec[] | undefined {
   });
 }
 
+function parseGarrison(v: unknown, path: string): GarrisonEntry[] | undefined {
+  if (v === undefined) return undefined;
+  if (!Array.isArray(v)) fail(path, 'expected an array of garrison entries');
+  if (v.length === 0) return [];
+  return v.map((e, i) => {
+    const ep = `${path}[${i}]`;
+    if (!isObject(e)) fail(ep, 'expected a garrison entry object');
+    const unitType = str(e.unitType, `${ep}.unitType`);
+    if (!UNIT_TYPE_SET.has(unitType)) {
+      fail(`${ep}.unitType`, `unknown unit type '${unitType}' (expected one of ${[...UNIT_TYPE_SET].join(', ')})`);
+    }
+    const col = int(e.col, `${ep}.col`);
+    if (!ATTACK_LANE_SET.has(col)) fail(`${ep}.col`, `lane ${col} is not an attack lane`);
+    const row = int(e.row, `${ep}.row`);
+    if (row < 1 || row > TOP_BUILDING_ROW - 1) {
+      fail(`${ep}.row`, `garrison row must be 1..${TOP_BUILDING_ROW - 1} (combat zone + top spawn row), got ${row}`);
+    }
+    return { unitType: unitType as UnitType, col, row };
+  });
+}
+
+function parseDefenderBuildings(v: unknown, path: string): DefenderBuildingEntry[] | undefined {
+  if (v === undefined) return undefined;
+  if (!Array.isArray(v)) fail(path, 'expected an array of defender building entries');
+  if (v.length === 0) return [];
+  return v.map((e, i) => {
+    const ep = `${path}[${i}]`;
+    if (!isObject(e)) fail(ep, 'expected a defender building entry object');
+    const buildingType = str(e.buildingType, `${ep}.buildingType`);
+    if (!BUILDING_TYPE_SET.has(buildingType)) {
+      fail(`${ep}.buildingType`, `unknown building type '${buildingType}' (expected one of ${[...BUILDING_TYPE_SET].join(', ')})`);
+    }
+    const col = int(e.col, `${ep}.col`);
+    if (!ATTACK_LANE_SET.has(col)) fail(`${ep}.col`, `lane ${col} is not an attack lane (base cols 5–6 are not valid)`);
+    return { buildingType: buildingType as BuildingType, col };
+  });
+}
+
 function parseRewards(v: unknown, path: string): LevelRewards | undefined {
   if (v === undefined) return undefined;
   if (!isObject(v)) fail(path, 'expected a rewards object');
@@ -364,6 +406,20 @@ export function parseLevelDefinition(raw: unknown, ctx = 'level'): LevelDefiniti
 
   const escorts = parseEscorts(raw.escorts, `${ctx}.escorts`);
   if (escorts && escorts.length > 0) level.escorts = escorts;
+
+  const garrison = parseGarrison(raw.garrison, `${ctx}.garrison`);
+  if (garrison && garrison.length > 0) level.garrison = garrison;
+
+  const defenderBuildings = parseDefenderBuildings(raw.defenderBuildings, `${ctx}.defenderBuildings`);
+  if (defenderBuildings && defenderBuildings.length > 0) level.defenderBuildings = defenderBuildings;
+
+  if (raw.defenderBaseLevel !== undefined) {
+    const lvl = int(raw.defenderBaseLevel, `${ctx}.defenderBaseLevel`);
+    if (lvl < 0 || lvl > MAX_BASE_LEVEL) {
+      fail(`${ctx}.defenderBaseLevel`, `must be 0..${MAX_BASE_LEVEL}, got ${lvl}`);
+    }
+    level.defenderBaseLevel = lvl;
+  }
 
   const rewards = parseRewards(raw.rewards, `${ctx}.rewards`);
   if (rewards) level.rewards = rewards;

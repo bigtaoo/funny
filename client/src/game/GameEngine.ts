@@ -92,6 +92,10 @@ class GameEngineImpl implements IGameEngine {
   private readonly input: InputSource;
   /** Spell cards to force-inject into the player's opening hand (levelSpells). */
   private initialSpellCards: CardDefinition[] = [];
+  /** Garrison units (U10): pre-placed defender units awaiting their spawn events. */
+  private readonly garrisonUnits: Unit[] = [];
+  /** Defender buildings (U10): pre-placed buildings awaiting their placed events. */
+  private readonly defenderBuildingList: Building[] = [];
 
   constructor(config: GameConfig, input: InputSource) {
     this.input      = input;
@@ -173,6 +177,38 @@ class GameEngineImpl implements IGameEngine {
         for (const spec of config.level.escorts) {
           this.state.escorts.push(new EscortUnit(spec));
         }
+      }
+
+      // SLG defense config (U10) — garrison, defender buildings, base level.
+      // These three knobs let a player-authored defense config pre-shape the
+      // battle exactly like a hand-crafted campaign level would.
+
+      // Garrison: pre-placed Top-side units at their specified mid-field positions.
+      // Tracked in garrisonUnits[] so emitInitialEvents() can emit spawn events.
+      if (config.level.garrison) {
+        for (const entry of config.level.garrison) {
+          const bp = this.state.unitBlueprints[entry.unitType];
+          const unit = new Unit(entry.unitType, Side.Top, entry.col, entry.row, bp);
+          this.state.board.addUnit(unit);
+          this.garrisonUnits.push(unit);
+        }
+      }
+
+      // Defender buildings: pre-placed buildings on the Top player's building row.
+      // Tracked in defenderBuildingList[] for emitInitialEvents() event emission.
+      if (config.level.defenderBuildings) {
+        for (const entry of config.level.defenderBuildings) {
+          const building = new Building(entry.buildingType, Side.Top, entry.col, TOP_BUILDING_ROW);
+          this.state.board.addBuilding(building);
+          this.defenderBuildingList.push(building);
+        }
+      }
+
+      // Defender base level: pre-apply upgrade levels for the Top player.
+      // Sets upgradeLevel directly (skips ink cost) — this represents the defender's
+      // investment in their base before the attacker arrives.
+      if (config.level.defenderBaseLevel && config.level.defenderBaseLevel > 0) {
+        this.state.topPlayer.upgradeLevel = config.level.defenderBaseLevel;
       }
 
       // Loadout / banned cards + level spells (§4.7, §4.9.2).
@@ -409,6 +445,38 @@ class GameEngineImpl implements IGameEngine {
         row_fp:   escort.row_fp,
         hp:       escort.hp,
         maxHp:    escort.maxHp,
+      });
+    }
+
+    // SLG defense config (U10): emit spawn events for pre-placed garrison units.
+    for (const unit of this.garrisonUnits) {
+      this.state.pushEvent({
+        type:      'unit_spawned',
+        unitId:    unit.id,
+        owner:     1,
+        unitType:  unit.unitType,
+        col:       unit.col,
+        y_fp:      unit.y_fp,
+        radius_fp: unit.radius_fp,
+      });
+      this.state.pushEvent({
+        type:     'unit_move_start',
+        unitId:   unit.id,
+        from:     { col: unit.col, y_fp: unit.y_fp },
+        to:       { col: unit.col, y_fp: toFp(BOTTOM_BUILDING_ROW) },
+        speed_fp: unit.speed_fp,
+      });
+    }
+
+    // SLG defense config (U10): emit placed events for pre-placed defender buildings.
+    for (const building of this.defenderBuildingList) {
+      this.state.pushEvent({
+        type:         'building_placed',
+        buildingId:   building.id,
+        owner:        1,
+        buildingType: building.buildingType,
+        col:          building.col,
+        row:          building.row,
       });
     }
   }
