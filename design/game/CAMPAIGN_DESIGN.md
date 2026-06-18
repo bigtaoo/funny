@@ -94,6 +94,12 @@
 | 重甲（抗箭）/ 快攻 / 高血精英 / 海量小兵 | 新增 `UnitType` + `UNIT_BLUEPRINTS` 条目（仅 PvE 池） | 小：扩 enum + 蓝图 |
 
 > **已实现（2026-06）**：`UnitType.Ironclad`（重甲 hp260/spd0.5/radius520，抗箭逼陨石/近战）、`UnitType.Runner`（疾行 hp26/spd1.9/radius250，小半径真正成团）已落地——纯加 enum + 蓝图 + 渲染色 + 编辑器调色板 META，**无 `CardDefinition` 故永不进 PvP 池**（公平硬墙不破）。前三关已按 §4.4a 原则重写。
+>
+> **已实现（2026-06-18，新 4 种 PvE 专属单位）**：
+> - `UnitType.Harpy`（flying hp22/spd2.2/radius210，只有箭塔+弓手能打，绕过 blocked 格）→ 引入 ch3_lv3 末段
+> - `UnitType.Berserker`（hp95/spd1.1/radius420，berserkerThreshold:0.4 — HP<40% 攻速×1.5）→ 引入 ch3_lv7
+> - `UnitType.Splitter`（hp55/spd0.8/radius470，onDeathSpawn:Runner×2）→ 引入 ch4_lv5
+> - `UnitType.Medic`（hp90/spd0.55/radius440，aura_heal radius:2 hps:8，无攻击）→ 引入 ch4_lv9
 
 #### 4.4b 飞行系统（PvP + PvE）
 
@@ -398,10 +404,26 @@ if (total - dead < needed - arrived) → 无法完成，玩家败
 
 **关卡编辑器：** 护送路径可视化编辑（点击棋盘格生成 waypoints）作为**独立 UI 任务**，三核心功能代码完成后补做。
 
+**关卡接入一览（2026-06-18 落地）：**
+
+| 旋钮 | 关卡 | 说明 |
+|---|---|---|
+| `levelSpells` rockslide×2 | ch1_lv5 | 引导教学：survive 关，法术帮助清 ironclad |
+| `levelSpells` rockslide×1+bridge_collapse×1 | ch2_lv5 | inkRegenMult:0.5 经济紧张，法术替代费用 |
+| `levelSpells` bridge_collapse×2 | ch4_lv4 | 岩浆+crossWaypoints，桥断强迫更绕路 |
+| `escort` required:'all' (1 护送) | ch2_lv3 | bannedCards 禁兵营，需主动清路护送 |
+| `escort` required:'any' (2 护送) | ch3_lv4 | activeLanes 5 路，任一到达即胜 |
+| `escort` required:'all' (2 护送) | ch5_lv5 | loadout 受限，双护送全部到达才胜 |
+| `harpy` 末段波次 | ch3_lv3 | 末段引入飞行单位，逼玩家前期有箭塔 |
+| `berserker` 穿插波次 | ch3_lv7 | timed_defense 中盘开始出现，越打越猛 |
+| `splitter` 穿插波次 | ch4_lv5 | speed 加速道上分裂，死了更多 runner |
+| `medic` 穿插波次 | ch4_lv9 | 迷雾关里的隐藏治疗者，必须优先击杀 |
+
 **实现顺序（2026-06-17 拍板）：**
 1. ✅ `laneLength`（已实现 2026-06）
 2. ✅ `levelSpells`（已实现 2026-06）
 3. ✅ Escort 护送系统（已实现 2026-06-18，见下方实现记录）
+4. ✅ **关卡内容接入（2026-06-18）**：escort、levelSpells、新单位类型全部首次在关卡中使用——见 §4.4 新单位说明及下表。
 
 **实现记录（2026-06-18 落地）：**
 - `EscortUnit.ts`：类实体（hp/col_fp/row_fp/speed_fp/status/remainingPath），numericId 5000+ 避免与 Unit/Building ID 冲突
