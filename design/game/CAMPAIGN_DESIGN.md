@@ -275,9 +275,9 @@
 
 ### 4.8.5 schema + 编辑器 + 测试同步
 
-- `levelSchema.ts`：扩 `ObjectiveSpec` 3 个新 kind 校验；`activeLanes ⊆ ATTACK_LANES` 且 `wave.col ⊆ activeLanes`；`crossWaypoints[].atRow ∈ 0..ROWS`、`toCol ∈ ATTACK_LANES`；`blocked` cell 界内 + 死墙警告；`loadout`/`bannedCards` id 合法。
-- 关卡编辑器（`tools/level-editor`）：objective 下拉加 3 项（leak_limit 附 maxLeaks、destroy_base 附秒数）；棋盘面板加 **blocked 画笔**（已有 noBuild/erase，加第三种）；时间线出兵块 Inspector 加 **crossWaypoints 编辑**（解掉 §9 开放问题「hazards/crossWaypoints 何时上可视化」中的 crossWaypoints 一半）。
-- Vitest：每个新 objective 一个终局用例；MidCross 绕行 + 变道各一个确定性回放用例；「满级 pveUpgrades 下 PvP 蓝图逐字等于常量」硬墙用例已存在，不受影响。
+- ✅ `levelSchema.ts`：扩 `ObjectiveSpec` 3 个新 kind 校验；`activeLanes ⊆ ATTACK_LANES` 且 `wave.col ⊆ activeLanes`；`crossWaypoints[].atRow ∈ 0..ROWS`、`toCol ∈ ATTACK_LANES`；`blocked` cell 界内 + 死墙警告；`loadout`/`bannedCards` id 合法。
+- ✅ 关卡编辑器（`tools/level-editor`）：objective 下拉已含 6 种（含 escort）；棋盘面板有 **blocked 画笔**；Inspector 有 **crossWaypoints 编辑**；**levelSpells 编辑**；**escorts 编辑**（id/hp/speed/startCol/startRow + 路径点列表）。BoardPanel 可视化路径拖拽仍为待做。
+- ✅ Vitest：objective×3（destroy_base/leak_limit/boss）+ escort×5 终局用例；MidCross 绕行 + 变道确定性回放用例；硬墙用例。
 
 ### 4.8.6 实现顺序（低风险优先）
 
@@ -412,7 +412,9 @@ if (total - dead < needed - arrived) → 无法完成，玩家败
 - `GameState`：`escorts: EscortUnit[]` + `resetEscortIds()`
 - `types.ts`：`escort_spawned/moved/hp_changed/died/arrived` 五个事件
 - `GameEngine`：构造器创建实例，`emitInitialEvents` 发 `escort_spawned`，step 插 EscortSystem，`checkWinCondition` 处理 arrived≥needed → 胜 / total-dead < needed-arrived → 败
-- **待做**：渲染层（EscortUnit 精灵 + HP 条）；关卡编辑器路径可视化 UI
+- ✅ **渲染层（2026-06-18 落地）**：`GameRenderer` 新增 `escortLayer`（Buildings 之上）；消费 `escort_spawned/moved/hp_changed/died/arrived` 五个事件；绿色菱形精灵 + HP 条，death 淡出 0.5s，arrived 闪烁消失。
+- ✅ **关卡编辑器（2026-06-18 落地）**：`LevelFormPanel` 新增「护送到达 (escort)」objective 选项（required: all/any/N 子表单）；levelSpells 编辑区（card 选择 + initialCount）；escorts 编辑区（id/hp/speed/startCol/startRow + 路径点列表增删）。BoardPanel 可视化路径拖拽仍为待做（独立 UI 任务）。
+- ✅ **Vitest（2026-06-18 落地）**：`campaign-knobs.test.ts` 新增 5 个 escort 用例（spawn 事件、到达胜利、行进中未结束、全员阵亡判负、status 状态转换）。
 
 ---
 
