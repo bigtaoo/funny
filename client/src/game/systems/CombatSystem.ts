@@ -2,6 +2,8 @@ import { ATTACK_MULT_LATE_GAME, ATTACK_MULT_THRESHOLD_TICKS, BOARD_COLS, BOARD_R
 import { GameState } from '../GameState';
 import { Unit } from '../Unit';
 import { Building } from '../Building';
+import { EscortUnit } from '../EscortUnit';
+import { fromFp } from '../math/fixed';
 import { Side, UnitState } from '../types';
 
 /**
@@ -27,9 +29,10 @@ export class CombatSystem {
 
       const target = this.findTarget(unit, state);
       if (target) {
+        const targetId = target instanceof EscortUnit ? target.numericId : target.id;
         if (unit.state !== UnitState.Attacking) {
-          state.pushEvent({ type: 'unit_attack_start', unitId: unit.id, targetId: target.id });
-          unit.targetId = target.id;
+          state.pushEvent({ type: 'unit_attack_start', unitId: unit.id, targetId });
+          unit.targetId = targetId;
           unit.state    = UnitState.Attacking;
         }
         if (unit.attackCooldownTicks === 0) {
@@ -86,15 +89,35 @@ export class CombatSystem {
 
   // ─── Target finding ───────────────────────────────────────────────────────
 
-  private findTarget(unit: Unit, state: GameState): Unit | Building | null {
+  private findTarget(unit: Unit, state: GameState): Unit | Building | EscortUnit | null {
     const board = state.board;
+
+    // Top-side (enemy) units can also target moving escort units (§4.9.3).
+    // Collect active escorts once; empty for Bottom-side units and non-escort levels.
+    const movingEscorts = unit.side === Side.Top
+      ? state.escorts.filter(e => e.status === 'moving')
+      : [];
 
     // Units advance single-file along their lane, but engage ANY enemy within
     // attack range around them (Chebyshev distance), not just the cell straight
-    // ahead. Scan ring by ring so the closest target is preferred; within a ring,
-    // an enemy unit takes priority over a building in the same cell.
+    // ahead. Scan ring by ring so the closest target is preferred; within a ring:
+    //   enemy unit > escort unit > enemy building.
     for (let dist = 1; dist <= unit.effectiveRange; dist++) {
       let buildingHit: Building | null = null;
+      let escortHit: EscortUnit | null = null;
+
+      // Check escort units at this Chebyshev distance.
+      if (movingEscorts.length > 0) {
+        for (const escort of movingEscorts) {
+          const eRow = Math.round(fromFp(escort.row_fp));
+          const eCol = Math.round(fromFp(escort.col_fp));
+          const d    = Math.max(Math.abs(unit.row - eRow), Math.abs(unit.col - eCol));
+          if (d === dist && !escortHit) {
+            escortHit = escort;
+          }
+        }
+      }
+
       for (let dr = -dist; dr <= dist; dr++) {
         for (let dc = -dist; dc <= dist; dc++) {
           if (Math.max(Math.abs(dr), Math.abs(dc)) !== dist) continue; // outer ring only
@@ -112,7 +135,9 @@ export class CombatSystem {
           }
         }
       }
-      // No enemy unit in this ring — fall back to a building found in the same ring.
+
+      // No enemy unit in this ring — prefer escort over building.
+      if (escortHit) return escortHit;
       if (buildingHit) return buildingHit;
     }
     return null;
@@ -145,12 +170,30 @@ export class CombatSystem {
 
   private performUnitAttack(
     attacker: Unit,
-    target: Unit | Building,
+    target: Unit | Building | EscortUnit,
     state: GameState,
     attackMult: number,
   ): void {
-    const damage = attacker.attack * attackMult;
+    const damage   = attacker.attack * attackMult;
     target.takeDamage(damage);
+
+    if (target instanceof EscortUnit) {
+      state.pushEvent({
+        type:              'unit_attack_hit',
+        unitId:            attacker.id,
+        targetId:          target.numericId,
+        damage,
+        targetHpRemaining: target.hp,
+      });
+      state.pushEvent({
+        type:     'escort_hp_changed',
+        escortId: target.id,
+        hp:       target.hp,
+        maxHp:    target.maxHp,
+      });
+      return;
+    }
+
     state.pushEvent({
       type:              'unit_attack_hit',
       unitId:            attacker.id,

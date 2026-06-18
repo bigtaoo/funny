@@ -25,6 +25,8 @@ import { Prng } from './math/prng';
 import { GameState } from './GameState';
 import { AISystem } from './systems/AISystem';
 import { WaveDirector } from './campaign/WaveDirector';
+import { EscortUnit } from './EscortUnit';
+import { EscortSystem } from './systems/EscortSystem';
 import { InputSource, LocalInputSource } from './net/InputSource';
 import type { LevelDefinition } from './campaign/LevelDefinition';
 import { BuildingProductionSystem } from './systems/BuildingProductionSystem';
@@ -72,6 +74,7 @@ class GameEngineImpl implements IGameEngine {
   private readonly resource:   ResourceSystem;
   private readonly movement:   MovementSystem;
   private readonly combat:     CombatSystem;
+  private readonly escort:     EscortSystem;
   private readonly hazard:     HazardSystem;
   private readonly spell:      SpellSystem;
   private readonly production: BuildingProductionSystem;
@@ -94,6 +97,7 @@ class GameEngineImpl implements IGameEngine {
     this.resource   = new ResourceSystem();
     this.movement   = new MovementSystem();
     this.combat     = new CombatSystem();
+    this.escort     = new EscortSystem();
     this.hazard     = new HazardSystem();
     this.spell      = new SpellSystem();
     this.production = new BuildingProductionSystem();
@@ -158,6 +162,13 @@ class GameEngineImpl implements IGameEngine {
         if (laneLengthBlocked.length > 0) {
           const existing = this.state.board.getBlockedCells();
           this.state.board.setBlocked([...existing, ...laneLengthBlocked]);
+        }
+      }
+
+      // Escort units (§4.9.3): created here so they're ready for emitInitialEvents.
+      if (config.level.escorts) {
+        for (const spec of config.level.escorts) {
+          this.state.escorts.push(new EscortUnit(spec));
         }
       }
 
@@ -313,6 +324,7 @@ class GameEngineImpl implements IGameEngine {
     this.resource.tick(this.state);
     this.production.tick(this.state);
     this.combat.tick(this.state);
+    this.escort.tick(this.state);
     this.hazard.tick(this.state);
     this.movement.tick(this.state);
     this.spell.tick(this.state);
@@ -382,6 +394,18 @@ class GameEngineImpl implements IGameEngine {
         });
       }
       this.state.pushEvent({ type: 'resource_changed', owner, ink: player.ink });
+    }
+
+    // Emit spawn events for all escort units placed at level start.
+    for (const escort of this.state.escorts) {
+      this.state.pushEvent({
+        type:    'escort_spawned',
+        escortId: escort.id,
+        col_fp:   escort.col_fp,
+        row_fp:   escort.row_fp,
+        hp:       escort.hp,
+        maxHp:    escort.maxHp,
+      });
     }
   }
 
@@ -636,6 +660,30 @@ class GameEngineImpl implements IGameEngine {
     // ── Campaign / siege objectives ──────────────────────────────────────────
     if (this.waveDirector) {
       const objective = this.level!.objective;
+
+      // `escort` impossible-to-complete loss: not enough living escorts remain.
+      if (objective.kind === 'escort') {
+        const total   = this.state.escorts.length;
+        const arrived = this.state.escorts.filter(e => e.status === 'arrived').length;
+        const dead    = this.state.escorts.filter(e => e.status === 'dead').length;
+        const needed  = objective.required === 'all' ? total
+                      : objective.required === 'any' ? 1
+                      : objective.required as number;
+        if (arrived >= needed) {
+          this.state.phase  = GamePhase.GameOver;
+          this.state.winner = Side.Bottom;
+          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+          this.state.pushEvent({ type: 'game_over', winner: 0 });
+          return;
+        }
+        if (total - dead < needed - arrived) {
+          this.state.phase  = GamePhase.GameOver;
+          this.state.winner = Side.Top;
+          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+          this.state.pushEvent({ type: 'game_over', winner: 1 });
+          return;
+        }
+      }
 
       // `leak_limit`: lose if too many enemies have reached the player's base.
       if (objective.kind === 'leak_limit' && this.state.enemyLeaks > objective.maxLeaks) {

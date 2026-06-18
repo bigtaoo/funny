@@ -382,4 +382,25 @@ export type GameEvent =
       winner: OwnerId }
 
   /** Emitted at 17 min when the game ends in a draw (both players survive). */
-  | { type: 'game_draw' };
+  | { type: 'game_draw' }
+
+  // ── Escort units (§4.9.3) ──────────────────────────────────────────────────
+  /** Emitted once at game start for each escort defined in the level. */
+  | { type: 'escort_spawned';
+      escortId: string; col_fp: Fp; row_fp: Fp; hp: number; maxHp: number }
+
+  /** Emitted every tick while the escort is moving (renderer tracks smooth position). */
+  | { type: 'escort_moved';
+      escortId: string; col_fp: Fp; row_fp: Fp }
+
+  /** Emitted when an escort takes damage. */
+  | { type: 'escort_hp_changed';
+      escortId: string; hp: number; maxHp: number }
+
+  /** Emitted when an escort's HP reaches 0 — it is gone and cannot arrive. */
+  | { type: 'escort_died';
+      escortId: string }
+
+  /** Emitted when an escort reaches TOP_BUILDING_ROW (or the last waypoint). */
+  | { type: 'escort_arrived';
+      escortId: string };

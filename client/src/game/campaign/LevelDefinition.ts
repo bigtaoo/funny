@@ -44,6 +44,8 @@ export interface LevelDefinition {
   bannedCards?: string[];
   /** PvE-only level spells force-injected into the player's opening hand (§4.9.2). */
   levelSpells?: { cardId: string; initialCount: number }[];
+  /** Friendly escort units the player must protect to the enemy base (§4.9.3). */
+  escorts?: EscortSpec[];
   /** Clear rewards: coins, exclusive skin, story unlock, star thresholds (§7). */
   rewards?: LevelRewards;
   /** i18n story keys for intro / outro narration (§8). */
@@ -67,13 +69,16 @@ export interface Cell {
  * - `destroy_base`   : win only by destroying the enemy base; wave exhaustion alone is not enough.
  * - `leak_limit`     : lose if more than `maxLeaks` enemy units reach the player's base.
  * - `boss`           : win by killing the boss unit(s) (WaveEntry.isBoss === true).
+ * - `escort`         : win when enough escort units reach the enemy base (§4.9.3).
+ *                      `required` controls how many must arrive: 'all', 'any', or an integer count.
  */
 export type ObjectiveSpec =
   | { kind: 'survive' }
   | { kind: 'timed_defense'; durationTicks: number }
   | { kind: 'destroy_base' }
   | { kind: 'leak_limit'; maxLeaks: number }
-  | { kind: 'boss' };
+  | { kind: 'boss' }
+  | { kind: 'escort'; required: 'all' | 'any' | number };
 
 export interface WaveScript {
   entries: WaveEntry[];
@@ -108,6 +113,29 @@ export interface HazardSpec {
   rangeMod?: number;
   /** For 'lava': damage per second dealt to units inside the zone (default 5). */
   dps?: number;
+}
+
+/**
+ * Specification for one friendly escort unit placed in a campaign level (§4.9.3).
+ * The escort starts at (startCol, startRow) and walks toward the enemy base row
+ * (row 17 = TOP_BUILDING_ROW), optionally following explicit waypoints.
+ */
+export interface EscortSpec {
+  /** Stable string id — matches EscortUnit.id and used in events. */
+  id: string;
+  /** Starting HP (and max HP). */
+  hp: number;
+  /** Movement speed in cells / second. */
+  speed: number;
+  startCol: number;
+  startRow: number;
+  /**
+   * Explicit waypoint list. The escort passes through each in order; at each
+   * waypoint's row the escort snaps to the waypoint's col, then continues.
+   * Waypoints must have strictly increasing row values (ascending toward enemy).
+   * Omit for a straight-line advance along startCol.
+   */
+  path?: { col: number; row: number }[];
 }
 
 export interface LevelRewards {

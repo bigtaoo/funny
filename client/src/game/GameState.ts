@@ -3,6 +3,7 @@ import { Prng } from './math/prng';
 import { Player } from './Player';
 import { resetUnitIds } from './Unit';
 import { resetBuildingIds } from './Building';
+import { EscortUnit, resetEscortIds } from './EscortUnit';
 import { UNIT_BLUEPRINTS } from './config';
 import { ActiveSpell, GameEvent, GamePhase, OwnerId, PlayerStats, Side, UnitType, UnitBlueprint, sideToOwner } from './types';
 import type { HazardSpec } from './campaign/LevelDefinition';
@@ -75,6 +76,12 @@ export class GameState {
    */
   tempBlockedCols: Map<number, number> = new Map();
 
+  /**
+   * Escort units active in this level (§4.9.3). Populated at construction time
+   * by GameEngine for campaign/escort levels; empty in PvP and non-escort PvE.
+   */
+  escorts: EscortUnit[] = [];
+
   /** Per-player accumulated stats. Index matches OwnerId (0 = bottom, 1 = top). */
   readonly stats: [PlayerStatsMutable, PlayerStatsMutable] = [emptyStats(), emptyStats()];
 
@@ -94,6 +101,7 @@ export class GameState {
     // (deterministic replay). Safe because the client runs one game at a time.
     resetUnitIds();
     resetBuildingIds();
+    resetEscortIds();
 
     // Each player gets separate PRNGs: one for card draws, one for timer stagger offsets.
     const cardPrng0  = new Prng(seed);
