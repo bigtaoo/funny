@@ -15,13 +15,14 @@
 
 | 文件 | 职责 |
 |---|---|
-| `game/GameEngine.ts` | 主循环、系统编排、命令处理；每 tick 从 `InputSource` 消费指令 |
+| `game/GameEngine.ts` | 主循环、系统编排、命令处理；每 tick 从 `InputSource` 消费指令；tick 顺序：resource→production→**trait**→combat→escort→hazard→movement→spell |
 | `game/net/InputSource.ts` | 统一输入管线接口 + `LocalInputSource` |
 | `game/net/ReplayInputSource.ts` | `RecordingInputSource`（捕获确认帧，`snapshot()→Replay`）+ `ReplayInputSource`（喂 Replay，永不停步） |
 | `game/net/NetInputSource.ts` | 联机锁步：`submit`→opaque `cmd_submit`；`frame_batch`→解码→`take(frame)`；未确认返 `null` 停步 |
 | `game/meta/ReplayStore.ts` | 本地录像：key `nw_replays_v1`，最近 12 局 ring |
 | `game/GameState.ts` | 纯数据状态，持有 Board / Player / PRNG |
 | `game/systems/AISystem.ts` | AI 决策（威胁驱动三段式；注入 Prng + 难度档） |
+| `game/systems/TraitSystem.ts` | 被动 trait tick：regen / aura_heal（fp 累加→整数 HP）；slow 倒计时到期 resetSpeed；summonOnTimer 倒计时到期出兵；在 combat 前执行 |
 | `game/math/prng.ts` | LCG 确定性随机数生成器 |
 | `game/math/fixed.ts` | 定点数运算（`TICK_RATE = 30`） |
 | `i18n/index.ts` | `t()` 取词 + 插值；`initI18n`/`setLocale`/`onLocaleChange` |
