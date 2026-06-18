@@ -198,5 +198,6 @@
     }
   },
   "nameKey": "campaign.ch5.lv1.name",
-  "briefKey": "campaign.ch5.lv1.brief"
+  "briefKey": "campaign.ch5.lv1.brief",
+  "story": { "introKey": "campaign.ch5.intro" }
 }

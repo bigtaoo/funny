@@ -66,14 +66,36 @@ export class LevelPrepScene implements Scene {
     this.render();
   }
 
-  update(): void { /* static */ }
+  update(dt: number): void {
+    if (!this.showingIntro || this.introLineTexts.length === 0) return;
+    if (this.introShownCount > 0 && this.introShownCount <= this.introLineTexts.length) {
+      const line = this.introLineTexts[this.introShownCount - 1]!;
+      if (line.alpha < 1) {
+        this.introFadeT += dt;
+        line.alpha = Math.min(1, this.introFadeT / 0.8);
+      }
+    }
+  }
   destroy(): void { this.unsubs.forEach((u) => u()); }
 
   private handleDown(x: number, y: number): void {
     if (this.showingIntro) {
-      this.showingIntro = false;
-      this.render();
-      this.cb.onStart();
+      // Skip button
+      const sr = this.introSkipRect;
+      if (x >= sr.x && x <= sr.x + sr.w && y >= sr.y && y <= sr.y + sr.h) {
+        this.finishIntro();
+        return;
+      }
+      // Tap: complete in-progress fade → advance → finish
+      const current = this.introLineTexts[this.introShownCount - 1];
+      if (current && current.alpha < 1) {
+        current.alpha = 1;
+      } else if (this.introShownCount < this.introLineTexts.length) {
+        this.introShownCount++;
+        this.introFadeT = 0;
+      } else {
+        this.finishIntro();
+      }
       return;
     }
     for (const hit of this.hits) {
@@ -82,8 +104,22 @@ export class LevelPrepScene implements Scene {
     }
   }
 
+  private finishIntro(): void {
+    this.showingIntro = false;
+    this.introLines = [];
+    this.introLineTexts = [];
+    this.cb.onStart();
+  }
+
   private upgrading = false;
+
+  // ── Intro story animation state (IntroScene-style line-by-line fade-in) ──
   private showingIntro = false;
+  private introLines: string[] = [];
+  private introShownCount = 0;  // lines requested so far
+  private introFadeT = 0;       // current line fade progress (seconds)
+  private introLineTexts: PIXI.Text[] = [];
+  private introSkipRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
   private onUpgrade(def: PveUpgradeDef): void {
     if (this.upgrading) return; // 防连点重复扣费（服务器端点在途）
@@ -109,7 +145,7 @@ export class LevelPrepScene implements Scene {
 
     // ── Intro story overlay (shown when player taps Start and introKey is set) ──
     if (this.showingIntro) {
-      this.drawStoryOverlay(this.cb.intro!);
+      this.buildIntroLines();
       return;
     }
 
@@ -168,6 +204,10 @@ export class LevelPrepScene implements Scene {
     this.container.addChild(sl);
     this.hits.push({ rect: { x: sbX, y: sbY, w: sbW, h: sbH }, fn: () => {
       if (this.cb.intro) {
+        this.introLines = this.cb.intro.split('\n').filter((l) => l.trim().length > 0);
+        this.introShownCount = 0;
+        this.introFadeT = 0;
+        this.introLineTexts = [];
         this.showingIntro = true;
         this.render();
       } else {
@@ -279,34 +319,70 @@ export class LevelPrepScene implements Scene {
     return y + panH + Math.round(h * 0.015);
   }
 
-  /** Full-screen tap-through story overlay (intro / outro). */
-  private drawStoryOverlay(text: string): void {
+  /** Builds the IntroScene-style line-by-line intro overlay. Called from render() when showingIntro. */
+  private buildIntroLines(): void {
+    this.container.removeChildren();
     const { w, h } = this;
 
-    // Dark paper background.
     const bg = new PIXI.Graphics();
     bg.beginFill(0x1a1408, 0.97); bg.drawRect(0, 0, w, h); bg.endFill();
     this.container.addChild(bg);
 
-    const margin = Math.round(w * 0.08);
-    const textW = w - margin * 2;
     const fontSize = Math.round(h * 0.026);
+    const lineGapY = Math.round(h * 0.085);
+    const blockH = (this.introLines.length - 1) * lineGapY;
+    const startY = (h - blockH) / 2 - Math.round(h * 0.05);
 
-    const body = txt(text, fontSize, 0xe8dfc0);
-    body.style.wordWrap = true;
-    body.style.wordWrapWidth = textW;
-    body.style.lineHeight = Math.round(fontSize * 1.65);
-    body.anchor.set(0.5, 0.5);
-    body.x = w / 2;
-    body.y = h / 2;
-    this.container.addChild(body);
+    this.introLineTexts = [];
+    this.introLines.forEach((line, i) => {
+      const text = new PIXI.Text(line, {
+        fontSize,
+        fill: 0xe8dfc0,
+        fontFamily: 'serif',
+        wordWrap: true,
+        wordWrapWidth: w * 0.78,
+        align: 'center',
+        lineHeight: Math.round(fontSize * 1.5),
+      });
+      text.anchor.set(0.5, 0.5);
+      text.x = w / 2;
+      text.y = startY + i * lineGapY;
+      text.alpha = 0;
+      this.container.addChild(text);
+      this.introLineTexts.push(text);
+    });
 
-    // "tap to continue" hint at bottom.
-    const hint = txt(t('story.tapToContinue'), Math.round(h * 0.022), 0x8a7a60);
+    const hint = new PIXI.Text(t('story.tapToContinue'), {
+      fontSize: Math.round(h * 0.02),
+      fill: 0x8a7a60,
+      fontFamily: 'monospace',
+    });
     hint.anchor.set(0.5, 1);
     hint.x = w / 2;
-    hint.y = h - Math.round(h * 0.06);
+    hint.y = h * 0.92;
     this.container.addChild(hint);
+
+    const skipText = new PIXI.Text(t('story.skip'), {
+      fontSize: Math.round(h * 0.022),
+      fill: 0x8a7a60,
+      fontFamily: 'monospace',
+    });
+    skipText.anchor.set(1, 0);
+    skipText.x = w - Math.round(w * 0.04);
+    skipText.y = Math.round(h * 0.03);
+    this.container.addChild(skipText);
+
+    const pad = Math.round(h * 0.015);
+    this.introSkipRect = {
+      x: skipText.x - skipText.width - pad,
+      y: skipText.y - pad,
+      w: skipText.width + pad * 2,
+      h: skipText.height + pad * 2,
+    };
+
+    // Start fading in the first line.
+    this.introShownCount = 1;
+    this.introFadeT = 0;
   }
 
   private drawToast(): void {

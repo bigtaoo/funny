@@ -75,6 +75,7 @@ export const en: Record<TranslationKey, string> = {
   'result.draw': 'DRAW',
   'result.keepGoing': 'Keep going!',
   'result.playAgain': 'PLAY AGAIN',
+  'result.backToMap': 'BACK TO MAP',
   'result.watchReplay': 'WATCH REPLAY',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
   'rank.unranked': 'Unranked',
@@ -616,4 +617,18 @@ export const en: Record<TranslationKey, string> = {
   'campaign.ch6.lv9.brief': 'The bracket is posted. Mara sees Fang\'s name. No surprise. Max says: "Ready." Lena says: "Have been." Mara says: "I know what they\'re called now." Neither of them asks.',
   'campaign.ch6.lv10.name': 'Trust',
   'campaign.ch6.lv10.brief': 'It is the second time Fang and Hartmann meet — and the best match either squad has ever played. Neither side holds back. Every step is answered; every gap is seen. Hartmann loses, and loses with full respect for it. Afterward, Mara walks to Su Yuan. They stand without speaking for a moment. Finally Mara says: "I know what that thing is called." Su Yuan looks at her, waiting. Mara says: "Trust. You don\'t speak because you believe the other will be there." Su Yuan thinks, then nods. Mara says: "We have it too. Just a different way." Su Yuan says: "I know." Both squads will go on to represent their sects on a larger stage. Where that stage is, Tao hasn\'t drawn that page yet. Neither has Anna.',
+
+  // Chapter story intros & outros
+  'campaign.ch1.intro': 'A winter training ground — three strangers standing together.\nNo one said we would become a squad.\nBut on the instructor\'s roster, three names share one line.\nThe only way forward is together.',
+  'campaign.ch1.outro': 'The instructor circled the names without a word.\nThe three walked out into the cold. The bun shop\'s stove was just starting to warm up.\nSu Yuan quickened her pace and stood beside them.\nShe knew now — they were a squad.',
+  'campaign.ch2.intro': 'The Hartmann training ground — everything perfectly kept.\nThree of the strongest stand together, but not yet as a squad.\nMara wonders: what is being strong for?\nThey don\'t have an answer yet.',
+  'campaign.ch2.outro': 'The instructor wrote a line in the record book and didn\'t read it aloud.\nMara saw it: "They found it."\nShe didn\'t ask what they had found.\nBecause she already knew.',
+  'campaign.ch3.intro': 'It is the first time the Fang squad enters the inter-clan tournament grounds.\nBigger than the training yard, louder, banners in every color.\nSu Yuan notices a squad entering from the far side.\nShe recognizes the Hartmann colors — and says nothing.',
+  'campaign.ch3.outro': 'It is the first time Fang has faced a squad that could match them step for step.\nBoth squads file out through their own tunnels.\nSu Yuan looks back. Mara is also looking back.\nThey hold each other\'s gaze for one second, then both walk on.',
+  'campaign.ch4.intro': 'The Hartmann squad enters the inter-clan grounds.\nMax says there are no real rivals here.\nMara says nothing — she is already looking for that squad.\nShe spots the Fang colors and files them away.',
+  'campaign.ch4.outro': 'Hartmann lost — at the very last moment.\nMara turns the same question over and over on the walk home.\nNo words, no signals — yet every one of them knew the next step.\nWhat is that thing called?',
+  'campaign.ch5.intro': 'The sect tournament grounds are the largest place the Fang trio has ever seen.\nLi Chuan goes quiet for a long time.\nThen he says: "We\'re still us."\nChen Shou takes one step closer to him.',
+  'campaign.ch5.outro': 'Across the finals bracket: Hartmann.\nMara sees Su Yuan. Both pause for a half-second.\nSu Yuan knows today will be the best match they have ever played.\nNot because of winning — because the squad across the line will force them to use everything they know.',
+  'campaign.ch6.intro': 'Since losing to Fang, Mara has carried one question.\nNo words, no signals — yet each of them knew the other\'s next step.\nWhat is that thing called?\nThe sect tournament has begun, and Mara still has no answer.',
+  'campaign.ch6.outro': 'After that match, Mara finally found her answer.\nNot because she won — she found it while playing.\nThree people, each clear in themselves, stronger together.\nThat thing is called: knowing who the other person is.',
 };

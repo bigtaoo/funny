@@ -119,5 +119,6 @@
     }
   },
   "nameKey": "campaign.ch1.lv1.name",
-  "briefKey": "campaign.ch1.lv1.brief"
+  "briefKey": "campaign.ch1.lv1.brief",
+  "story": { "introKey": "campaign.ch1.intro" }
 }

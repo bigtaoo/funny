@@ -81,6 +81,8 @@ export interface ResultSceneCallbacks {
   onPlayAgain(): void;
   /** When set, a "watch replay" button is shown (locally-recorded matches, S1-RP). */
   onWatchReplay?(): void;
+  /** Override the "play again" button label (e.g. campaign uses 'Back to Map'). */
+  playAgainLabel?: string;
 }
 
 export class ResultScene implements Scene {
@@ -295,7 +297,7 @@ export class ResultScene implements Scene {
       this.addButton(btnX, btnY - btnH - h * 0.02, btnW, btnH, t('result.watchReplay'),
         0x33503a, cb.onWatchReplay);
     }
-    this.addButton(btnX, btnY, btnW, btnH, t('result.playAgain'), 0x2c2c2a, () => cb.onPlayAgain());
+    this.addButton(btnX, btnY, btnW, btnH, cb.playAgainLabel ?? t('result.playAgain'), 0x2c2c2a, () => cb.onPlayAgain());
   }
 
   /** A centred, tappable "name #id" line that opens its profile card. Returns new bottom y. */

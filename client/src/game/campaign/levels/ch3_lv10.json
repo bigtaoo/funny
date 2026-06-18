@@ -185,5 +185,6 @@
     }
   },
   "nameKey": "campaign.ch3.lv10.name",
-  "briefKey": "campaign.ch3.lv10.brief"
+  "briefKey": "campaign.ch3.lv10.brief",
+  "story": { "outroKey": "campaign.ch3.outro" }
 }

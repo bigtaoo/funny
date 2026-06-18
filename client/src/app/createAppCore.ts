@@ -686,7 +686,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           });
         }
         const outroText = (winner === 0 && level.story?.outroKey) ? t(level.story.outroKey) : undefined;
-        goResult(winner, stats, 0, kept, undefined, undefined, outroText);
+        void goResult(winner, stats, 0, kept, undefined, undefined, outroText, goCampaignMap, t('result.backToMap'));
       },
       onExitToLobby() {
         analytics.track('level_abandon', { level_id: levelId, phase: 'in_game' });
@@ -805,6 +805,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     elo?: EloResult,
     profiles?: { opponent?: ProfileData; local?: ProfileData },
     outroText?: string,
+    onPlayAgain?: () => void,
+    playAgainLabel?: string,
   ): Promise<void> {
     inLobby = false;
     platform.onGameplayStop();
@@ -817,8 +819,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       ...(profiles ? { profiles } : {}),
       ...(outroText ? { outroText } : {}),
       cb: {
-        onPlayAgain() { goLobby(); },
+        onPlayAgain() { (onPlayAgain ?? goLobby)(); },
         ...(replay ? { onWatchReplay: () => goReplay(replay) } : {}),
+        ...(playAgainLabel ? { playAgainLabel } : {}),
       },
     });
   }

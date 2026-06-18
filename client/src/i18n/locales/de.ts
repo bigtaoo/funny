@@ -75,6 +75,7 @@ export const de: Record<TranslationKey, string> = {
   'result.draw': 'UNENTSCHIEDEN',
   'result.keepGoing': 'Weiter so!',
   'result.playAgain': 'NOCHMAL SPIELEN',
+  'result.backToMap': 'ZURÜCK ZUR KARTE',
   'result.watchReplay': 'WIEDERHOLUNG ANSEHEN',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
   'rank.unranked': 'Unplatziert',
@@ -616,4 +617,18 @@ export const de: Record<TranslationKey, string> = {
   'campaign.ch6.lv9.brief': 'Die Tabelle wird veröffentlicht. Mara sieht Fangs Namen. Keine Überraschung. Max sagt: „Bereit." Lena sagt: „War ich." Mara sagt: „Ich weiß jetzt, wie sie heißen." Keiner fragt.',
   'campaign.ch6.lv10.name': 'Vertrauen',
   'campaign.ch6.lv10.brief': 'Es ist das zweite Treffen von Fang und Hartmann – und der beste Kampf, den eine der beiden Gruppen je gespielt hat. Keine Seite hält zurück. Jeder Schritt wird beantwortet; jede Lücke wird gesehen. Hartmann verliert und verliert mit vollem Respekt dafür. Danach geht Mara zu Su Yuan. Sie stehen einen Moment schweigend. Schließlich sagt Mara: „Ich weiß, wie dieses Ding heißt." Su Yuan schaut sie an, wartet. Mara sagt: „Vertrauen. Ihr sprecht nicht, weil ihr glaubt, dass der andere da sein wird." Su Yuan denkt, nickt dann. Mara sagt: „Wir haben es auch. Nur auf eine andere Weise." Su Yuan sagt: „Ich weiß." Beide Gruppen werden ihre Sekten auf einer größeren Bühne vertreten. Wo diese Bühne ist, hat Tao diese Seite noch nicht gezeichnet. Anna auch nicht.',
+
+  // Kapitel-Geschichte Intro / Outro
+  'campaign.ch1.intro': 'Ein Winterübungsplatz – drei Fremde stehen beieinander.\nNiemand sagte, dass wir eine Gruppe werden.\nDoch auf der Liste des Lehrers stehen drei Namen in einer Zeile.\nDen nächsten Weg können sie nur gemeinsam gehen.',
+  'campaign.ch1.outro': 'Der Lehrer umkreiste die Namen, ohne ein Wort.\nDie drei traten hinaus in die Kälte. Der Ofen des Brötchenladens fing gerade an zu glühen.\nSu Yuan beschleunigte ihren Schritt und stellte sich neben sie.\nSie wusste es jetzt – sie waren eine Gruppe.',
+  'campaign.ch2.intro': 'Der Hartmann-Übungsplatz – alles tadellos gepflegt.\nDrei der Stärksten stehen zusammen, aber noch keine Gruppe.\nMara fragt sich: Wofür ist man stark?\nSie haben noch keine Antwort.',
+  'campaign.ch2.outro': 'Der Lehrer schrieb eine Zeile ins Protokoll und las sie nicht vor.\nMara sah sie: „Sie haben es gefunden."\nSie fragte nicht, was sie gefunden hatten.\nWeil sie es bereits wusste.',
+  'campaign.ch3.intro': 'Die Fang-Gruppe betritt zum ersten Mal das Turnier der Klans.\nGrößer als der Übungsplatz, lauter, Bannern in allen Farben.\nSu Yuan bemerkt eine Gruppe von der anderen Seite.\nSie erkennt die Hartmann-Farben – und sagt nichts.',
+  'campaign.ch3.outro': 'Es ist das erste Mal, dass Fang eine Gruppe trifft, die mit ihnen Schritt halten kann.\nBeide Gruppen verlassen das Feld durch ihre eigenen Tunnels.\nSu Yuan blickt zurück. Mara blickt ebenfalls zurück.\nSie halten einen Augenblick Blickkontakt, dann gehen beide weiter.',
+  'campaign.ch4.intro': 'Die Hartmann-Gruppe betritt das Turnier der Klans.\nMax sagt, es gebe keine echten Rivalen hier.\nMara sagt nichts – sie sucht bereits nach jener Gruppe.\nSie entdeckt die Fang-Farben und prägt sie sich ein.',
+  'campaign.ch4.outro': 'Hartmann verlor – im allerletzten Moment.\nMara dreht auf dem Heimweg dieselbe Frage immer wieder um.\nKeine Worte, keine Signale – und doch kannte jeder den nächsten Schritt des anderen.\nWie heißt dieses Ding?',
+  'campaign.ch5.intro': 'Das Sekten-Turnier ist der größte Ort, den das Fang-Trio je gesehen hat.\nLi Chuan schweigt ungewöhnlich lange.\nDann sagt er: „Wir sind immer noch wir."\nChen Shou tritt einen Schritt näher an ihn heran.',
+  'campaign.ch5.outro': 'Im Finale warten: Hartmann.\nMara sieht Su Yuan. Beide halten kurz inne.\nSu Yuan weiß, dass dies ihr bisher bestes Spiel sein wird.\nNicht wegen des Sieges – weil die Gruppe gegenüber sie zwingt, alles einzusetzen, was sie können.',
+  'campaign.ch6.intro': 'Seit der Niederlage gegen Fang trägt Mara eine Frage mit sich.\nKeine Worte, keine Signale – und doch kannte jeder den nächsten Schritt.\nWie heißt dieses Ding?\nDas Sekten-Turnier hat begonnen, und Mara hat noch immer keine Antwort.',
+  'campaign.ch6.outro': 'Nach diesem Kampf fand Mara endlich ihre Antwort.\nNicht weil sie gewann – sie fand sie beim Spielen.\nDrei Menschen, jeder klar in sich selbst, zusammen stärker.\nDieses Ding heißt: voneinander wissen, wer man ist.',
 };

@@ -244,5 +244,6 @@
     }
   },
   "nameKey": "campaign.ch4.lv10.name",
-  "briefKey": "campaign.ch4.lv10.brief"
+  "briefKey": "campaign.ch4.lv10.brief",
+  "story": { "outroKey": "campaign.ch4.outro" }
 }
