@@ -183,6 +183,30 @@
         "col": 10,
         "count": 4,
         "spacingTicks": 30
+      },
+      {
+        "atTick": 420,
+        "unitType": "medic",
+        "col": 4,
+        "count": 1
+      },
+      {
+        "atTick": 660,
+        "unitType": "medic",
+        "col": 7,
+        "count": 1
+      },
+      {
+        "atTick": 900,
+        "unitType": "medic",
+        "col": 4,
+        "count": 1
+      },
+      {
+        "atTick": 1140,
+        "unitType": "medic",
+        "col": 7,
+        "count": 1
       }
     ]
   },

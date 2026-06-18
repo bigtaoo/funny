@@ -194,6 +194,66 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     spawnCount: 1,
     radius_fp: 250,       // diameter 500fp = 0.5 格 — dense swarm
   },
+  // Harpy: PvE-only flying unit. flying=true means ground melee can't target it
+  // (only archers + arrow towers). Bypasses blocked cells. Fragile — one arrow-
+  // tower volley kills it — but demands the player has placed towers, punishing
+  // pure barracks builds. Small radius keeps it visually distinct from runners.
+  [UnitType.Harpy]: {
+    type: UnitType.Harpy,
+    hp: 22,
+    attack: 8,
+    attackInterval: 0.9,
+    speed: 2.2,
+    range: 1,
+    spawnCount: 1,
+    radius_fp: 210,
+    flying: true,
+    canTargetFlying: false,
+  },
+  // Medic: PvE-only support. No attack (range 0, attack 0, extreme interval so the
+  // engine never fires). Emits an aura_heal that heals nearby allies for 8 HP/s.
+  // Slow and soft, but a cluster escorted by a Medic becomes self-sustaining — must
+  // be prioritised or the whole wave stops dying.
+  [UnitType.Medic]: {
+    type: UnitType.Medic,
+    hp: 90,
+    attack: 0,
+    attackInterval: 999,
+    speed: 0.55,
+    range: 0,
+    spawnCount: 1,
+    radius_fp: 440,
+    traits: [{ type: 'aura_heal', radius: 2, hps: 8 }],
+  },
+  // Berserker: PvE-only rage brawler. Below 40% HP its attack interval halves
+  // (×1.5 attack speed), making it increasingly dangerous the longer it survives.
+  // Burst it down before the threshold or it shreds buildings faster than expected.
+  [UnitType.Berserker]: {
+    type: UnitType.Berserker,
+    hp: 95,
+    attack: 18,
+    attackInterval: 1.1,
+    speed: 1.1,
+    range: 1,
+    spawnCount: 1,
+    radius_fp: 420,
+    berserkerThreshold: 0.4,
+  },
+  // Splitter: PvE-only bomb unit. Dies and immediately spawns 2 Runners at its
+  // position. Ignoring it is worse than fighting it — killing it with area damage
+  // (Meteor, Rockslide) clears all three units; single-target fire turns one slow
+  // threat into two fast ones.
+  [UnitType.Splitter]: {
+    type: UnitType.Splitter,
+    hp: 55,
+    attack: 7,
+    attackInterval: 1.0,
+    speed: 0.8,
+    range: 1,
+    spawnCount: 1,
+    radius_fp: 470,
+    onDeathSpawn: { type: UnitType.Runner, count: 2 },
+  },
 };
 
 // ─── Building blueprints ──────────────────────────────────────────────────────

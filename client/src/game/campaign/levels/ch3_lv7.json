@@ -184,6 +184,32 @@
         "col": 0,
         "count": 4,
         "spacingTicks": 18
+      },
+      {
+        "atTick": 660,
+        "unitType": "berserker",
+        "col": 9,
+        "count": 1
+      },
+      {
+        "atTick": 900,
+        "unitType": "berserker",
+        "col": 0,
+        "count": 1
+      },
+      {
+        "atTick": 1080,
+        "unitType": "berserker",
+        "col": 11,
+        "count": 2,
+        "spacingTicks": 40
+      },
+      {
+        "atTick": 1260,
+        "unitType": "berserker",
+        "col": 1,
+        "count": 2,
+        "spacingTicks": 36
       }
     ]
   },

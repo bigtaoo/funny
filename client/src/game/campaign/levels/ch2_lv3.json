@@ -3,8 +3,18 @@
   "chapter": 2,
   "seed": 20003,
   "objective": {
-    "kind": "survive"
+    "kind": "escort",
+    "required": "all"
   },
+  "escorts": [
+    {
+      "id": "escort_1",
+      "hp": 180,
+      "speed": 0.38,
+      "startCol": 3,
+      "startRow": 2
+    }
+  ],
   "bannedCards": [
     "barracks_1",
     "barracks_2"

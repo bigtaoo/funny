@@ -55,6 +55,10 @@ const DRAFT_HEIGHT: Record<UnitType, number> = {
   [UnitType.Archer]:       29,
   [UnitType.Ironclad]:     40,  // heavy — bulkier silhouette
   [UnitType.Runner]:       24,  // small & fast
+  [UnitType.Harpy]:        22,  // flying — tiny, drawn slightly higher
+  [UnitType.Medic]:        28,  // civilian healer, unarmed pose
+  [UnitType.Berserker]:    35,  // bulkier than infantry — rage fighter
+  [UnitType.Splitter]:     26,  // stocky bomb shape
 };
 
 /** Stable pen seed per type so each draft scrawls consistently. */
@@ -64,6 +68,10 @@ const DRAFT_SEED: Record<UnitType, number> = {
   [UnitType.Archer]:       3041,
   [UnitType.Ironclad]:     4057,
   [UnitType.Runner]:       5077,
+  [UnitType.Harpy]:        6089,
+  [UnitType.Medic]:        7103,
+  [UnitType.Berserker]:    8117,
+  [UnitType.Splitter]:     9131,
 };
 
 const RADIUS        = 10;

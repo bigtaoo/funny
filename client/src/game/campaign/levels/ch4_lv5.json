@@ -173,6 +173,32 @@
         "col": 4,
         "count": 3,
         "spacingTicks": 20
+      },
+      {
+        "atTick": 420,
+        "unitType": "splitter",
+        "col": 2,
+        "count": 1
+      },
+      {
+        "atTick": 600,
+        "unitType": "splitter",
+        "col": 9,
+        "count": 1
+      },
+      {
+        "atTick": 840,
+        "unitType": "splitter",
+        "col": 2,
+        "count": 2,
+        "spacingTicks": 45
+      },
+      {
+        "atTick": 1080,
+        "unitType": "splitter",
+        "col": 9,
+        "count": 2,
+        "spacingTicks": 40
       }
     ]
   },

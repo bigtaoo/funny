@@ -5,6 +5,9 @@
   "objective": {
     "kind": "survive"
   },
+  "levelSpells": [
+    { "cardId": "bridge_collapse", "initialCount": 2 }
+  ],
   "hazards": [
     {
       "col": 4,

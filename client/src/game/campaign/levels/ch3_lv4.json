@@ -3,8 +3,25 @@
   "chapter": 3,
   "seed": 30004,
   "objective": {
-    "kind": "survive"
+    "kind": "escort",
+    "required": "any"
   },
+  "escorts": [
+    {
+      "id": "escort_1",
+      "hp": 150,
+      "speed": 0.42,
+      "startCol": 1,
+      "startRow": 2
+    },
+    {
+      "id": "escort_2",
+      "hp": 150,
+      "speed": 0.42,
+      "startCol": 10,
+      "startRow": 2
+    }
+  ],
   "board": {
     "activeLanes": [
       0,

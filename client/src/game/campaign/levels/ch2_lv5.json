@@ -6,6 +6,10 @@
     "kind": "survive"
   },
   "inkRegenMult": 0.5,
+  "levelSpells": [
+    { "cardId": "rockslide", "initialCount": 1 },
+    { "cardId": "bridge_collapse", "initialCount": 1 }
+  ],
   "waves": {
     "entries": [
       {

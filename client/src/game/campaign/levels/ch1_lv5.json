@@ -5,6 +5,9 @@
   "objective": {
     "kind": "survive"
   },
+  "levelSpells": [
+    { "cardId": "rockslide", "initialCount": 2 }
+  ],
   "waves": {
     "entries": [
       {

@@ -3,8 +3,25 @@
   "chapter": 5,
   "seed": 50005,
   "objective": {
-    "kind": "survive"
+    "kind": "escort",
+    "required": "all"
   },
+  "escorts": [
+    {
+      "id": "escort_1",
+      "hp": 260,
+      "speed": 0.5,
+      "startCol": 3,
+      "startRow": 2
+    },
+    {
+      "id": "escort_2",
+      "hp": 260,
+      "speed": 0.5,
+      "startCol": 8,
+      "startRow": 2
+    }
+  ],
   "loadout": [
     "infantry_1",
     "shieldbearer_1",

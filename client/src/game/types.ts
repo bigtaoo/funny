@@ -12,6 +12,18 @@ export enum UnitType {
   Ironclad = 'ironclad',
   /** PvE-only rusher: fragile, fast, small radius (packs densely). No card → never in the PvP pool. */
   Runner = 'runner',
+  /** PvE-only flying unit: fast, fragile, bypasses ground collision and blocked cells.
+   *  Only arrow towers and archer units (canTargetFlying) can hit it. No card → never in PvP. */
+  Harpy = 'harpy',
+  /** PvE-only support: no attack, emits an aura_heal aura that regenerates nearby ally HP.
+   *  Must be prioritised or killed before engaging the main force. No card → never in PvP. */
+  Medic = 'medic',
+  /** PvE-only rage brawler: normal stats, but attack speed ×1.5 when HP falls below 40%.
+   *  Killing it quickly is better than letting it rage. No card → never in PvP. */
+  Berserker = 'berserker',
+  /** PvE-only bomb unit: dies and spawns 2 Runners, making it worse to ignore.
+   *  Kill it with area damage or it becomes a swarm on death. No card → never in PvP. */
+  Splitter = 'splitter',
 }
 
 export enum BuildingType {
