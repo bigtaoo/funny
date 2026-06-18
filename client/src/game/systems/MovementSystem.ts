@@ -112,9 +112,9 @@ export class MovementSystem {
       return;
     }
 
-    // ── Blocked cell ahead — auto-detour ──────────────────────────────────
+    // ── Blocked cell ahead — auto-detour (flying units bypass) ──────────────
     const nextRow = unit.row + direction;
-    if (nextRow >= 0 && nextRow < 18 && state.board.isBlocked(unit.col, nextRow)) {
+    if (!unit.flying && nextRow >= 0 && nextRow < 18 && state.board.isBlocked(unit.col, nextRow)) {
       // Pick detour direction: prefer existing dir, else toward board center
       if (unit.detourDir === 0) {
         unit.detourDir = (unit.col < 5.5 ? 1 : -1) as 1 | -1;

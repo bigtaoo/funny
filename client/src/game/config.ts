@@ -211,6 +211,7 @@ export const BUILDING_BLUEPRINTS: Record<BuildingType, BuildingBlueprint> = {
     attack: 15,
     attackInterval: 1.5,      // seconds (converted to ticks in Building constructor)
     attackRange: 2,            // 2-grid range (down from 3)
+    canTargetFlying: true,
   },
 };
 

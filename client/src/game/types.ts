@@ -199,6 +199,12 @@ export interface ReplayMeta {
   [key: string]: unknown;
 }
 
+// ─── Trait system (§4.4b–c) ──────────────────────────────────────────────────
+
+/** Extensible slot-based trait descriptors (aura effects, etc.). */
+export type TraitSpec =
+  | { type: 'aura_heal'; radius: number; hps: number };
+
 // ─── Data blueprints (immutable, not runtime state) ───────────────────────────
 
 export interface UnitBlueprint {
@@ -211,6 +217,31 @@ export interface UnitBlueprint {
   spawnCount: number;     // units spawned per card play
   /** Collision radius in pre-scaled fixed-point (e.g. 400 = 0.4 grid). */
   radius_fp: number;
+
+  // ── Flying system (§4.4b) ──────────────────────────────────────────────────
+  flying?: boolean;
+  canTargetFlying?: boolean;   // archers = true; melee = false
+
+  // ── Defensive traits ───────────────────────────────────────────────────────
+  armor?: number;               // flat damage reduction per hit (min 1 damage)
+  taunt?: boolean;              // enemy findTarget prefers this unit
+  undying?: boolean;            // survive first lethal hit at 1 HP (PvE)
+  berserkerThreshold?: number;  // HP fraction 0–1; attack speed ×1.5 when HP < threshold
+
+  // ── Offensive traits (PvE) ────────────────────────────────────────────────
+  onDeathSpawn?: { type: UnitType; count: number };
+  splashRadius?: number;        // Chebyshev radius of splash damage (0 = no splash)
+  piercing?: boolean;           // hit all enemies in same column
+  slowOnHit?: { mult: number; durationSec: number };
+
+  // ── Sustain traits (PvE) ──────────────────────────────────────────────────
+  regenPerSec?: number;
+  lifestealPct?: number;        // 0–100; heal self by % of damage dealt
+  traits?: TraitSpec[];
+
+  // ── Special traits (PvE) ──────────────────────────────────────────────────
+  stealth?: boolean;            // invisible to findTarget at Chebyshev dist > 2
+  summonOnTimer?: { type: UnitType; intervalSec: number };
 }
 
 export interface BuildingBlueprint {
@@ -221,6 +252,7 @@ export interface BuildingBlueprint {
   attackRange?: number;     // grid cells forward
   spawnUnit?: UnitType;     // barracks only
   spawnInterval?: number;   // seconds — converted to ticks in Building constructor
+  canTargetFlying?: boolean;
 }
 
 export interface CardDefinition {

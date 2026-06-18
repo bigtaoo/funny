@@ -27,6 +27,7 @@ export class Building {
   readonly maxHp: number;
   readonly attack: number;
   readonly attackRange: number;
+  readonly canTargetFlying: boolean;
 
   /**
    * Attack interval in integer ticks.
@@ -54,10 +55,11 @@ export class Building {
     this.row          = row;
 
     const bp = BUILDING_BLUEPRINTS[buildingType];
-    this.hp          = bp.hp;
-    this.maxHp       = bp.hp;
-    this.attack      = bp.attack ?? 0;
-    this.attackRange = bp.attackRange ?? 0;
+    this.hp               = bp.hp;
+    this.maxHp            = bp.hp;
+    this.attack           = bp.attack ?? 0;
+    this.attackRange      = bp.attackRange ?? 0;
+    this.canTargetFlying  = bp.canTargetFlying ?? false;
 
     // Convert seconds → ticks (integer, no float retained after construction)
     this.attackIntervalTicks = bp.attackInterval !== undefined

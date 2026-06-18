@@ -1,9 +1,9 @@
-import { ATTACK_MULT_LATE_GAME, ATTACK_MULT_THRESHOLD_TICKS, BOARD_COLS, BOARD_ROWS } from '../config';
+import { ATTACK_MULT_LATE_GAME, ATTACK_MULT_THRESHOLD_TICKS, BOARD_COLS, BOARD_ROWS, BOTTOM_BUILDING_ROW, TOP_BUILDING_ROW } from '../config';
 import { GameState } from '../GameState';
 import { Unit } from '../Unit';
 import { Building } from '../Building';
 import { EscortUnit } from '../EscortUnit';
-import { fromFp } from '../math/fixed';
+import { fp, fromFp, toFp } from '../math/fixed';
 import { Side, UnitState } from '../types';
 
 /**
@@ -37,7 +37,7 @@ export class CombatSystem {
         }
         if (unit.attackCooldownTicks === 0) {
           this.performUnitAttack(unit, target, state, attackMult);
-          unit.attackCooldownTicks = unit.attackIntervalTicks;
+          unit.attackCooldownTicks = unit.effectiveAttackIntervalTicks;
         }
       } else {
         if (unit.state === UnitState.Attacking) {
@@ -69,6 +69,34 @@ export class CombatSystem {
         state.stats[killerOwner].unitsKilled++;
 
         state.pushEvent({ type: 'unit_died', unitId: unit.id, pos: { col: unit.col, y_fp: unit.y_fp } });
+
+        // onDeathSpawn: spawn minions at the dead unit's position (PvE).
+        if (unit.onDeathSpawn) {
+          const spawnBp = state.unitBlueprints[unit.onDeathSpawn.type];
+          for (let i = 0; i < unit.onDeathSpawn.count; i++) {
+            const spawned = new Unit(unit.onDeathSpawn.type, unit.side, unit.col, unit.row, spawnBp);
+            board.addUnit(spawned);
+            state.stats[state.ownerOf(unit.side)].unitsSent++;
+            const destRow = unit.side === Side.Bottom ? TOP_BUILDING_ROW : BOTTOM_BUILDING_ROW;
+            state.pushEvent({
+              type:      'unit_spawned',
+              unitId:    spawned.id,
+              owner:     state.ownerOf(unit.side),
+              unitType:  spawned.unitType,
+              col:       spawned.col,
+              y_fp:      spawned.y_fp,
+              radius_fp: spawned.radius_fp,
+            });
+            state.pushEvent({
+              type:     'unit_move_start',
+              unitId:   spawned.id,
+              from:     { col: spawned.col, y_fp: spawned.y_fp },
+              to:       { col: spawned.col, y_fp: toFp(destRow) },
+              speed_fp: spawned.speed_fp,
+            });
+          }
+        }
+
         board.removeUnit(unit);
       }
     }
@@ -101,7 +129,13 @@ export class CombatSystem {
     // Units advance single-file along their lane, but engage ANY enemy within
     // attack range around them (Chebyshev distance), not just the cell straight
     // ahead. Scan ring by ring so the closest target is preferred; within a ring:
-    //   enemy unit > escort unit > enemy building.
+    //   taunt unit > enemy unit > escort unit > enemy building.
+    // Stealth: enemies with stealth are invisible at Chebyshev dist > 2.
+    // Flying: units without canTargetFlying cannot target flying enemies.
+    let bestTarget: Unit | Building | EscortUnit | null = null;
+    let bestTaunt  = false;  // whether bestTarget has taunt
+    let bestDist   = Infinity;
+
     for (let dist = 1; dist <= unit.effectiveRange; dist++) {
       let buildingHit: Building | null = null;
       let escortHit: EscortUnit | null = null;
@@ -127,7 +161,24 @@ export class CombatSystem {
           if (checkCol < 0 || checkCol >= BOARD_COLS) continue;
 
           const enemy = board.getUnitAt(checkCol, checkRow);
-          if (enemy && enemy.side !== unit.side && !enemy.isDead) return enemy;
+          if (enemy && enemy.side !== unit.side && !enemy.isDead) {
+            // Flying filter: skip flying targets if attacker can't target them.
+            if (enemy.flying && !unit.canTargetFlying) continue;
+            // Stealth: invisible beyond dist 2.
+            if (enemy.stealth && dist > 2) continue;
+
+            // Taunt preference: keep best candidate, prefer taunt.
+            const hasTaunt = enemy.taunt;
+            if (
+              bestTarget === null ||
+              (!bestTaunt && hasTaunt) ||
+              (bestTaunt === hasTaunt && dist < bestDist)
+            ) {
+              bestTarget = enemy;
+              bestTaunt  = hasTaunt;
+              bestDist   = dist;
+            }
+          }
 
           if (!buildingHit) {
             const building = board.getBuildingAt(checkCol, checkRow);
@@ -136,11 +187,19 @@ export class CombatSystem {
         }
       }
 
-      // No enemy unit in this ring — prefer escort over building.
-      if (escortHit) return escortHit;
-      if (buildingHit) return buildingHit;
+      // Accumulate escort candidate (lower priority than taunt unit).
+      if (escortHit && bestTarget === null) {
+        bestTarget = escortHit;
+        bestDist   = dist;
+      }
+      // Accumulate building candidate (lowest priority).
+      if (buildingHit && bestTarget === null) {
+        bestTarget = buildingHit;
+        bestDist   = dist;
+      }
     }
-    return null;
+
+    return bestTarget;
   }
 
   private findTargetForBuilding(building: Building, state: GameState): Unit | null {
@@ -159,7 +218,11 @@ export class CombatSystem {
           if (checkRow < 0 || checkRow >= BOARD_ROWS) continue;
           if (checkCol < 0 || checkCol >= BOARD_COLS) continue;
           const unit = board.getUnitAt(checkCol, checkRow);
-          if (unit && unit.side === enemySide && !unit.isDead) return unit;
+          if (unit && unit.side === enemySide && !unit.isDead) {
+            // Flying filter: buildings without canTargetFlying skip flying targets.
+            if (unit.flying && !building.canTargetFlying) continue;
+            return unit;
+          }
         }
       }
     }
@@ -174,15 +237,23 @@ export class CombatSystem {
     state: GameState,
     attackMult: number,
   ): void {
-    const damage   = attacker.attack * attackMult;
-    target.takeDamage(damage);
+    const rawDamage = attacker.attack * attackMult;
+
+    // Apply damage to primary target; capture actual HP lost for lifesteal.
+    let actualDamage: number;
+    if (target instanceof Unit) {
+      actualDamage = target.takeDamage(rawDamage);
+    } else {
+      target.takeDamage(rawDamage);
+      actualDamage = rawDamage;
+    }
 
     if (target instanceof EscortUnit) {
       state.pushEvent({
         type:              'unit_attack_hit',
         unitId:            attacker.id,
         targetId:          target.numericId,
-        damage,
+        damage:            actualDamage,
         targetHpRemaining: target.hp,
       });
       state.pushEvent({
@@ -191,25 +262,72 @@ export class CombatSystem {
         hp:       target.hp,
         maxHp:    target.maxHp,
       });
-      return;
+    } else {
+      state.pushEvent({
+        type:              'unit_attack_hit',
+        unitId:            attacker.id,
+        targetId:          target.id,
+        damage:            actualDamage,
+        targetHpRemaining: target.hp,
+      });
+
+      if (target instanceof Building && !target.isDead) {
+        state.pushEvent({
+          type:       'building_hp_changed',
+          buildingId: target.id,
+          hp:         target.hp,
+          maxHp:      target.maxHp,
+        });
+      }
     }
 
-    state.pushEvent({
-      type:              'unit_attack_hit',
-      unitId:            attacker.id,
-      targetId:          target.id,
-      damage,
-      targetHpRemaining: target.hp,
-    });
+    // ── Offensive trait effects (applied after primary hit) ───────────────
 
-    // Emit building HP update if target is a building
-    if (target instanceof Building && !target.isDead) {
-      state.pushEvent({
-        type:       'building_hp_changed',
-        buildingId: target.id,
-        hp:         target.hp,
-        maxHp:      target.maxHp,
-      });
+    // Lifesteal: heal attacker by % of actual damage dealt (Units only).
+    if (attacker.lifestealPct > 0 && actualDamage > 0) {
+      const heal = Math.floor(actualDamage * attacker.lifestealPct / 100);
+      if (heal > 0) attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
+    }
+
+    // Slow on hit: reduce target speed for N ticks (Units only).
+    if (attacker.slowOnHit && target instanceof Unit) {
+      target.slowRemainingTicks = attacker.slowOnHit.durationTicks;
+      target.speed_fp = fp(Math.max(1, Math.round(target.baseSpeed_fp * attacker.slowOnHit.mult)));
+    }
+
+    // Splash: deal rawDamage to enemies within splashRadius Chebyshev of the primary target.
+    if (attacker.splashRadius > 0 && target instanceof Unit) {
+      const tRow = target.row;
+      const tCol = target.col;
+      for (const u of state.board.units.values()) {
+        if (u === target || u.isDead || u.side === attacker.side) continue;
+        if (attacker.splashRadius < Math.max(Math.abs(u.row - tRow), Math.abs(u.col - tCol))) continue;
+        const splashActual = u.takeDamage(rawDamage);
+        state.pushEvent({
+          type:              'unit_attack_hit',
+          unitId:            attacker.id,
+          targetId:          u.id,
+          damage:            splashActual,
+          targetHpRemaining: u.hp,
+        });
+      }
+    }
+
+    // Piercing: hit all other enemies in the same column as the primary target.
+    if (attacker.piercing && target instanceof Unit) {
+      const tCol = target.col;
+      for (const u of state.board.units.values()) {
+        if (u === target || u.isDead || u.side === attacker.side) continue;
+        if (u.col !== tCol) continue;
+        const pierceActual = u.takeDamage(rawDamage);
+        state.pushEvent({
+          type:              'unit_attack_hit',
+          unitId:            attacker.id,
+          targetId:          u.id,
+          damage:            pierceActual,
+          targetHpRemaining: u.hp,
+        });
+      }
     }
   }
 
@@ -220,12 +338,12 @@ export class CombatSystem {
     attackMult: number,
   ): void {
     const damage = building.attack * attackMult;
-    target.takeDamage(damage);
+    const actual = target.takeDamage(damage);
     state.pushEvent({
       type:              'unit_attack_hit',
       unitId:            building.id,
       targetId:          target.id,
-      damage,
+      damage:            actual,
       targetHpRemaining: target.hp,
     });
   }

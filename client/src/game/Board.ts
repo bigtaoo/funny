@@ -139,6 +139,8 @@ export class Board {
       if (other.id === unit.id) continue;
       if (other.side !== unit.side) continue;
       if (other.isDead || other.state === UnitState.Dead) continue;
+      // Flying units collide only with other flying units; ground units only with ground.
+      if (other.flying !== unit.flying) continue;
 
       if (isBottom) {
         // Bottom moves toward higher y — "ahead" = larger y_fp

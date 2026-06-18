@@ -1,6 +1,6 @@
 import { fp, FP_SCALE, fromFp, toFp, TICK_RATE, type Fp } from './math/fixed';
 import { UNIT_BLUEPRINTS } from './config';
-import { Side, UnitState, UnitType, type UnitBlueprint } from './types';
+import { Side, UnitState, UnitType, type TraitSpec, type UnitBlueprint } from './types';
 
 // Units are the high-volume entity (continuous spawning), so they take the upper
 // id range starting at 1000. Buildings start at 0 and — capped by board cells —
@@ -50,7 +50,7 @@ export class Unit {
   /** Attack range in integer grid cells (1 = melee). */
   readonly range: number;
 
-  /** Current speed in fp/tick (may be modified by Haste spell). */
+  /** Current speed in fp/tick (may be modified by Haste spell or slow). */
   speed_fp: Fp;
   /** Base speed before modifiers, in fp/tick. */
   readonly baseSpeed_fp: Fp;
@@ -92,6 +92,49 @@ export class Unit {
   /** Additive range modifier applied by fog hazards. Negative = reduced range. Reset to 0 each tick. */
   rangeMod: number = 0;
 
+  // ── Blueprint-derived trait data (§4.4b–c) ────────────────────────────────
+
+  /** Flying units bypass blocked cells and don't collide with ground units. */
+  readonly flying: boolean;
+  /** Unit can target flying enemies (archers = true, melee = false). */
+  readonly canTargetFlying: boolean;
+  /** Flat damage reduction per hit; absorbed damage minimum 1. */
+  readonly armor: number;
+  /** Enemy findTarget prefers this unit as the attack target. */
+  readonly taunt: boolean;
+  /** Survive first lethal hit with 1 HP; flag cleared after use (PvE). */
+  readonly undying: boolean;
+  /** HP fraction 0–1; attack speed ×1.5 when HP < threshold. 0 = disabled. */
+  readonly berserkerThreshold: number;
+  /** Spawn N units of given type on death (PvE). */
+  readonly onDeathSpawn: { type: UnitType; count: number } | null;
+  /** Chebyshev radius of bonus splash damage applied around the primary target. 0 = no splash. */
+  readonly splashRadius: number;
+  /** Hit all enemies in the same column on each attack (PvE). */
+  readonly piercing: boolean;
+  /** Slow attacker-target speed on hit: mult × baseSpeed for durationTicks (PvE). */
+  readonly slowOnHit: { mult: number; durationTicks: number } | null;
+  /** HP regen in fp/tick (accumulated into healAccFp). 0 = no regen. */
+  readonly regenFpPerTick: number;
+  /** Heal self by this % of damage dealt to Units. 0 = no lifesteal. */
+  readonly lifestealPct: number;
+  /** Extensible trait descriptors (e.g. aura_heal). */
+  readonly traits: readonly TraitSpec[];
+  /** Invisible to findTarget at Chebyshev dist > 2 (PvE). */
+  readonly stealth: boolean;
+  /** Periodically summon units of given type; intervalTicks between spawns. */
+  readonly summonOnTimer: { type: UnitType; intervalTicks: number } | null;
+
+  // ── Runtime trait state ────────────────────────────────────────────────────
+
+  /** Set to true after undying triggers; prevents repeat activation. */
+  undyingTriggered: boolean = false;
+  /** Ticks remaining for current slow effect. 0 = not slowed. */
+  slowRemainingTicks: number = 0;
+  /** Countdown until next summonOnTimer spawn. Set to intervalTicks on construction. */
+  summonCooldownTicks: number = 0;
+  /** Fractional HP accumulator for regen and aura_heal (fp units = 1/1000 HP). */
+  healAccFp: number = 0;
 
   /**
    * @param blueprint Resolved stats for this unit. Defaults to the read-only PvP
@@ -131,6 +174,30 @@ export class Unit {
     // Actually speed_fp here should be fp/s, and movement uses TICK_DT_FP to get fp/tick.
     // toFp(bp.speed) = bp.speed * 1000, which is fp/s — correct, MovementSystem uses mulFp(speed_fp, TICK_DT_FP).
     this.baseSpeed_fp = this.speed_fp;
+
+    // ── Trait fields from blueprint ──────────────────────────────────────────
+    this.flying          = bp.flying          ?? false;
+    this.canTargetFlying = bp.canTargetFlying ?? false;
+    this.armor           = bp.armor           ?? 0;
+    this.taunt           = bp.taunt           ?? false;
+    this.undying         = bp.undying         ?? false;
+    this.berserkerThreshold = bp.berserkerThreshold ?? 0;
+    this.onDeathSpawn    = bp.onDeathSpawn    ?? null;
+    this.splashRadius    = bp.splashRadius    ?? 0;
+    this.piercing        = bp.piercing        ?? false;
+    this.slowOnHit       = bp.slowOnHit
+      ? { mult: bp.slowOnHit.mult, durationTicks: Math.round(bp.slowOnHit.durationSec * TICK_RATE) }
+      : null;
+    this.regenFpPerTick  = bp.regenPerSec
+      ? Math.round(bp.regenPerSec * FP_SCALE / TICK_RATE)
+      : 0;
+    this.lifestealPct    = bp.lifestealPct    ?? 0;
+    this.traits          = bp.traits          ?? [];
+    this.stealth         = bp.stealth         ?? false;
+    this.summonOnTimer   = bp.summonOnTimer
+      ? { type: bp.summonOnTimer.type, intervalTicks: Math.round(bp.summonOnTimer.intervalSec * TICK_RATE) }
+      : null;
+    this.summonCooldownTicks = this.summonOnTimer?.intervalTicks ?? 0;
   }
 
   // ── Derived / compatibility getters ───────────────────────────────────────
@@ -166,11 +233,38 @@ export class Unit {
     return Math.max(1, this.range + this.rangeMod);
   }
 
+  /**
+   * Attack interval after berserker modifier.
+   * ×1.5 speed = ÷1.5 interval when HP < berserkerThreshold fraction.
+   */
+  get effectiveAttackIntervalTicks(): number {
+    if (this.berserkerThreshold > 0 && this.hp < this.maxHp * this.berserkerThreshold) {
+      return Math.max(1, Math.round(this.attackIntervalTicks * 2 / 3));
+    }
+    return this.attackIntervalTicks;
+  }
+
   // ── Mutation helpers ───────────────────────────────────────────────────────
 
-  takeDamage(amount: number): void {
-    this.hp = Math.max(0, this.hp - amount);
+  /**
+   * Apply damage to this unit, accounting for armor and undying.
+   * Returns the actual HP lost (after armor reduction, capped to current HP).
+   */
+  takeDamage(rawAmount: number): number {
+    const effective = this.armor > 0 ? Math.max(1, rawAmount - this.armor) : rawAmount;
+
+    // Undying: survive first lethal hit at 1 HP.
+    if (this.undying && !this.undyingTriggered && this.hp - effective <= 0) {
+      const lost = this.hp - 1;
+      this.hp = 1;
+      this.undyingTriggered = true;
+      return Math.max(0, lost);
+    }
+
+    const actual = Math.min(this.hp, effective);
+    this.hp = Math.max(0, this.hp - effective);
     if (this.hp === 0) this.state = UnitState.Dead;
+    return actual;
   }
 
   resetSpeed(): void {

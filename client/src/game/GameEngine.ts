@@ -35,6 +35,7 @@ import { MovementSystem } from './systems/MovementSystem';
 import { ResourceSystem } from './systems/ResourceSystem';
 import { SpellSystem } from './systems/SpellSystem';
 import { HazardSystem } from './systems/HazardSystem';
+import { TraitSystem } from './systems/TraitSystem';
 import {
   CardDefinition,
   CardType,
@@ -78,6 +79,7 @@ class GameEngineImpl implements IGameEngine {
   private readonly hazard:     HazardSystem;
   private readonly spell:      SpellSystem;
   private readonly production: BuildingProductionSystem;
+  private readonly trait:      TraitSystem;
   private readonly ai:         AISystem;
 
   private readonly mode:          GameMode;
@@ -101,6 +103,7 @@ class GameEngineImpl implements IGameEngine {
     this.hazard     = new HazardSystem();
     this.spell      = new SpellSystem();
     this.production = new BuildingProductionSystem();
+    this.trait      = new TraitSystem();
     this.ai         = new AISystem(new Prng(config.seed ^ 0xA1A1A1A1));
 
     this.mode = config.mode ?? 'pvp';
@@ -323,6 +326,7 @@ class GameEngineImpl implements IGameEngine {
     // ── Systems ───────────────────────────────────────────────────────────
     this.resource.tick(this.state);
     this.production.tick(this.state);
+    this.trait.tick(this.state);
     this.combat.tick(this.state);
     this.escort.tick(this.state);
     this.hazard.tick(this.state);
