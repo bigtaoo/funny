@@ -61,6 +61,7 @@ jobs:
       # CI 用固定弱密钥（栈是 PR 级临时的、不暴露公网）。生产由 .env 注入强随机串。
       NW_JWT_SECRET: ci-jwt-secret
       NW_INTERNAL_KEY: ci-internal-key
+      NW_ADMIN_JWT_SECRET: ci-admin-jwt-secret
     steps:
       - uses: actions/checkout@v4
 
