@@ -1,0 +1,56 @@
+# 动画编辑器（tools/animator）
+
+设计文档：`design/tools/animator/REQUIREMENTS.md`（§2 §3 §8）、`ARCHITECTURE.md`（§1 §2 §5 §3）
+
+```bash
+cd tools/animator && npm run start   # 端口 9091
+```
+
+## 参数两层模型
+
+**Binding（静态，所有帧共用）**：`anchorX/Y`（挂点比例，允许超出 0–1）、`rotation`（静态偏移）、`scaleX/Y`、`flipX`、`zOrder`
+
+**Keyframe（动态，逐帧）**：`rotation`（delta）、`translateX/Y`、`scaleX/Y`、`alpha`
+
+渲染公式：`sprite.rotation = bone_FK_angle + binding.rotation`（bone_FK_angle 已含 keyframe.rotation，不可重复叠加）
+
+## 架构要点
+
+- **11 根固定骨骼**：root → spine → head / 4 臂 / 4 腿
+- **FK**：`Skeleton.computeFK(rootX, rootY, transforms, lengthScales?)` 纯函数；hit-test 须传 `state.boneLengthScales`
+- **关键帧插值**：`sampleClip(clip, t)` 无外部依赖，可复制到游戏引擎
+- **导出格式**：`.tao`（JSZip + spritesheet.png + animation.json v2）；`.tao.editor`（保留原始图 + 编辑状态）
+- **骨骼长度**：`AppState.boneLengthScales`（稀疏 Map）序列化进两种格式
+- **编辑器模式**：`'skin'`（静息姿调 Binding）/ `'animate'`（关键帧编辑）；快捷键 `S`
+- **静息姿约定**：角色朝右，`r_`（解剖右）= 屏幕左，`l_`（解剖左）= 屏幕右
+
+## 快捷键
+
+| 键 | 动作 |
+|---|---|
+| `Space` | 播放 / 暂停 |
+| `K` | 打关键帧 |
+| `Delete`/`Backspace` | 删选中关键帧 |
+| `Tab` | 切换 Skeleton / Sprite 预览 |
+| `S` | 切换 Skin / Animate 模式 |
+| `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / Redo |
+
+## 事件总线（核心事件）
+
+`bone:select`、`bone:rotate`、`time:change`、`play:state`、`anim:select`、`anim:list`、`kf:change`、`images:change`、`binding:change`、`attachment:change`、`rig:change`、`preview:mode`、`editor:mode`、`history:change`、`status`、`pose:reset`
+
+渲染层级（从下到上）：`gridGfx → onionGfx → boneGfx → spriteLayer → overlayGfx → selGfx`
+
+## 主要源文件
+
+| 文件 | 职责 |
+|---|---|
+| `src/App.ts` | 组合根，连接所有模块，主循环 |
+| `src/rendering/Renderer.ts` | PixiJS 渲染（骨骼 + sprite + 挂点） |
+| `src/skeleton/Skeleton.ts` | 骨骼定义 + FK 计算 |
+| `src/animation/AnimationController.ts` | clip CRUD + 播放 + 关键帧操作 |
+| `src/animation/interpolate.ts` | `sampleClip` 插值（无依赖，游戏侧共享） |
+| `src/images/ImageController.ts` | 逐张 PNG 导入、Blob + PIXI.Texture 管理 |
+| `src/io/IOController.ts` | `.tao` 导出 / 导入；`.tao.editor` 存档 |
+| `src/timeline/TimelineView.ts` | Canvas 时间轴渲染 + 交互 |
+| `src/interaction/InteractionController.ts` | 鼠标拖拽 + 键盘快捷键 |
