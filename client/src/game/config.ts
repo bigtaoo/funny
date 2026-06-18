@@ -235,3 +235,31 @@ export const CARD_DEFINITIONS: CardDefinition[] = [
 
 export const HASTE_SPEED_MULT = 2;    // integer multiplier — used with scaleFp()
 export const METEOR_DAMAGE    = 9999; // one-shots anything in 2×2 area
+
+// PvE-only level spell parameters
+export const ROCKSLIDE_DAMAGE              = 80;
+export const BRIDGE_COLLAPSE_DURATION_TICKS = 8 * TICK_RATE; // 240 ticks = 8s
+
+/**
+ * PvE-only level-specific spell card definitions.
+ * These MUST NOT appear in CARD_DEFINITIONS (the PvP pool) — hard wall.
+ * Injected into the bottom player's draw pool via levelSpells level config.
+ */
+export const SPELL_CARD_DEFS: ReadonlyMap<string, CardDefinition> = new Map<string, CardDefinition>([
+  ['rockslide', {
+    id:        'rockslide',
+    nameKey:   'card.rockslide.name' as CardDefinition['nameKey'],
+    descKey:   'card.rockslide.desc' as CardDefinition['descKey'],
+    cardType:  CardType.Spell,
+    cost:      3,
+    spellType: SpellType.Rockslide,
+  }],
+  ['bridge_collapse', {
+    id:        'bridge_collapse',
+    nameKey:   'card.bridge_collapse.name' as CardDefinition['nameKey'],
+    descKey:   'card.bridge_collapse.desc' as CardDefinition['descKey'],
+    cardType:  CardType.Spell,
+    cost:      4,
+    spellType: SpellType.BridgeCollapse,
+  }],
+]);

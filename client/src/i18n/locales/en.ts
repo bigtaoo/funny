@@ -17,6 +17,10 @@ export const en: Record<TranslationKey, string> = {
   'card.haste.desc': 'A gust of pencil wind — all friendly units move twice as fast.',
   'card.meteor.name': 'Meteor Strike',
   'card.meteor.desc': 'An ink meteor falls from above, erasing everything in the target area.',
+  'card.rockslide.name': 'Rockslide',
+  'card.rockslide.desc': 'Choose a column — falling debris damages all enemies in that lane.',
+  'card.bridge_collapse.name': 'Bridge Collapse',
+  'card.bridge_collapse.desc': 'Choose a column — the path crumbles, forcing units to detour for 8 seconds.',
 
   // ── Lobby ─────────────────────────────────────────────────────────────────
   'lobby.title': 'NOTEBOOK WARS',

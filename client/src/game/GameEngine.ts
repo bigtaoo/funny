@@ -1,13 +1,17 @@
 import {
   ATTACK_LANES,
+  BOARD_ROWS,
   BOTTOM_BUILDING_ROW,
   BOTTOM_SPAWN_ROW,
+  BRIDGE_COLLAPSE_DURATION_TICKS,
   CARD_DEFINITIONS,
   CARD_REFRESH_INITIAL_OFFSET_MAX,
   CARD_REFRESH_TICKS,
   COUNTDOWN_THRESHOLD_TICKS,
   FORCE_DRAW_THRESHOLD_TICKS,
   HAND_SIZE,
+  ROCKSLIDE_DAMAGE,
+  SPELL_CARD_DEFS,
   TOP_BUILDING_ROW,
   TOP_SPAWN_ROW,
 } from './config';
@@ -81,6 +85,8 @@ class GameEngineImpl implements IGameEngine {
   private accumulatedTime = 0;
   private currentTick = 0;
   private readonly input: InputSource;
+  /** Spell cards to force-inject into the player's opening hand (levelSpells). */
+  private initialSpellCards: CardDefinition[] = [];
 
   constructor(config: GameConfig, input: InputSource) {
     this.input      = input;
@@ -136,21 +142,56 @@ class GameEngineImpl implements IGameEngine {
         this.state.bottomInkRegenMult = config.level.inkRegenMult;
       }
 
-      // Loadout / banned cards — replace bottom player draw policy with a filtered pool.
-      const { loadout, bannedCards } = config.level;
-      if (loadout || bannedCards) {
-        const loadoutSet  = loadout     ? new Set(loadout)      : null;
-        const bannedSet   = bannedCards ? new Set(bannedCards)  : null;
+      // laneLength (§4.9.1): truncate the top of each specified lane so enemies
+      // spawn closer to the player's base. Rows above the new spawn row are added
+      // to the blocked set (merged with any cellMask.blocked from the level JSON).
+      const laneLength = config.level.board?.laneLength;
+      if (laneLength) {
+        const laneLengthBlocked: { col: number; row: number }[] = [];
+        for (const [colStr, len] of Object.entries(laneLength)) {
+          const col = Number(colStr);
+          const spawnRow = BOARD_ROWS - len;
+          for (let row = spawnRow + 1; row <= TOP_SPAWN_ROW; row++) {
+            laneLengthBlocked.push({ col, row });
+          }
+        }
+        if (laneLengthBlocked.length > 0) {
+          const existing = this.state.board.getBlockedCells();
+          this.state.board.setBlocked([...existing, ...laneLengthBlocked]);
+        }
+      }
+
+      // Loadout / banned cards + level spells (§4.7, §4.9.2).
+      // Build a unified card pool for the bottom player's draw policy that
+      // respects loadout/ban filters and includes any PvE-only spell cards.
+      const { loadout, bannedCards, levelSpells } = config.level;
+      const loadoutSet = loadout     ? new Set(loadout)     : null;
+      const bannedSet  = bannedCards ? new Set(bannedCards) : null;
+      const needsCustomPolicy = loadoutSet || bannedSet || (levelSpells && levelSpells.length > 0);
+      if (needsCustomPolicy) {
         const pool = (CARD_DEFINITIONS as readonly CardDefinition[]).filter((c) => {
-          if (loadoutSet  && !loadoutSet.has(c.id))  return false;
-          if (bannedSet   && bannedSet.has(c.id))    return false;
+          if (loadoutSet && !loadoutSet.has(c.id)) return false;
+          if (bannedSet  && bannedSet.has(c.id))   return false;
           return true;
         });
+        // Append spell card defs to the draw pool so they appear in refreshes too.
+        const spellDefs: CardDefinition[] = [];
+        if (levelSpells) {
+          for (const { cardId, initialCount } of levelSpells) {
+            const def = SPELL_CARD_DEFS.get(cardId);
+            if (!def) throw new Error(`levelSpells: unknown spell card '${cardId}'`);
+            spellDefs.push(def);
+            for (let i = 0; i < initialCount; i++) this.initialSpellCards.push(def);
+          }
+        }
+        const finalPool = pool.length > 0 || spellDefs.length > 0
+          ? [...pool, ...spellDefs]
+          : undefined;
         // Use a separate PRNG so loadout levels are deterministic and don't
         // disturb levels that draw from the full CARD_DEFINITIONS pool.
         this.state.bottomPlayer.drawPolicy = new UniformCardDrawPolicy(
           new Prng(config.seed ^ 0xC0FFEE00),
-          pool.length > 0 ? pool : undefined,
+          finalPool,
         );
       }
     } else {
@@ -276,6 +317,13 @@ class GameEngineImpl implements IGameEngine {
     this.movement.tick(this.state);
     this.spell.tick(this.state);
 
+    // Expire BridgeCollapse column blocks.
+    for (const [col, expiresAt] of this.state.tempBlockedCols) {
+      if (this.state.elapsedTicks >= expiresAt) {
+        this.state.tempBlockedCols.delete(col);
+      }
+    }
+
     // ── Hand refresh timers ───────────────────────────────────────────────
     this.tickHandRefresh(Side.Bottom, 0);
     this.tickHandRefresh(Side.Top, 1);
@@ -299,10 +347,31 @@ class GameEngineImpl implements IGameEngine {
       const player = this.state.getPlayer(side);
       const owner  = sideToOwner(side);
 
-      for (let i = 0; i < HAND_SIZE; i++) {
-        const stagger = player.timerPrng.nextInt(CARD_REFRESH_INITIAL_OFFSET_MAX + 1);
+      let slotIdx = 0;
+
+      // Force-inject level-specific spell cards into the first hand slots.
+      if (side === Side.Bottom && this.initialSpellCards.length > 0) {
+        for (const card of this.initialSpellCards) {
+          if (slotIdx >= HAND_SIZE) break;
+          const stagger  = player.timerPrng.nextInt(CARD_REFRESH_INITIAL_OFFSET_MAX + 1);
+          const duration = cardRefreshDuration(stagger);
+          player.hand.drawIntoSlot(slotIdx, card, duration);
+          this.state.pushEvent({
+            type:                'card_drawn',
+            owner,
+            cardType:            card.cardType,
+            handIndex:           slotIdx,
+            refreshDurationTicks: duration,
+          });
+          slotIdx++;
+        }
+      }
+
+      // Fill remaining slots from the normal draw policy.
+      for (let i = slotIdx; i < HAND_SIZE; i++) {
+        const stagger  = player.timerPrng.nextInt(CARD_REFRESH_INITIAL_OFFSET_MAX + 1);
         const duration = cardRefreshDuration(stagger);
-        const card = player.drawPolicy.draw();
+        const card     = player.drawPolicy.draw();
         player.hand.drawIntoSlot(i, card, duration);
         this.state.pushEvent({
           type:                'card_drawn',
@@ -434,6 +503,22 @@ class GameEngineImpl implements IGameEngine {
           });
           return;
         }
+
+        if (card.spellType === SpellType.Rockslide && cmd.col !== undefined) {
+          const col = cmd.col;
+          this.consumeCardSlot(player, cmd.owner, cmd.handIndex, card, () => {
+            this.spell.castRockslide(side, col, this.state);
+          });
+          return;
+        }
+
+        if (card.spellType === SpellType.BridgeCollapse && cmd.col !== undefined) {
+          const col = cmd.col;
+          this.consumeCardSlot(player, cmd.owner, cmd.handIndex, card, () => {
+            this.spell.castBridgeCollapse(side, col, this.state, this.state.elapsedTicks);
+          });
+          return;
+        }
       }
     }
   }
@@ -473,7 +558,11 @@ class GameEngineImpl implements IGameEngine {
   private spawnEnemyUnit(unitType: UnitType, col: number, isBoss?: boolean, crossWaypoints?: { atRow: number; toCol: number }[]): void {
     const side: Side = Side.Top;
     const owner: OwnerId = 1;
-    const unit = new Unit(unitType, side, col, TOP_SPAWN_ROW, this.state.unitBlueprints[unitType]);
+    const laneLen  = this.level?.board?.laneLength;
+    const spawnRow = (laneLen && laneLen[String(col)] !== undefined)
+      ? BOARD_ROWS - laneLen[String(col)]
+      : TOP_SPAWN_ROW;
+    const unit = new Unit(unitType, side, col, spawnRow, this.state.unitBlueprints[unitType]);
     if (isBoss) {
       unit.isBoss = true;
       this.state.bossUnitIds.add(unit.id);

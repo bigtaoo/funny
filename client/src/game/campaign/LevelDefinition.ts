@@ -31,6 +31,8 @@ export interface LevelDefinition {
   board?: {
     activeLanes?: number[];
     cellMask?: { blocked?: Cell[]; noBuild?: Cell[] };
+    /** Per-column lane shortening (§4.9.1). spawnRow = BOARD_ROWS − laneLength[col]. */
+    laneLength?: Record<string, number>;
   };
   /** Per-cell hazards: speed bands, fog, lava, etc. (§4.5). */
   hazards?: HazardSpec[];
@@ -40,6 +42,8 @@ export interface LevelDefinition {
   /** Pre-level loadout / banned cards (§4.7). */
   loadout?: string[];
   bannedCards?: string[];
+  /** PvE-only level spells force-injected into the player's opening hand (§4.9.2). */
+  levelSpells?: { cardId: string; initialCount: number }[];
   /** Clear rewards: coins, exclusive skin, story unlock, star thresholds (§7). */
   rewards?: LevelRewards;
   /** i18n story keys for intro / outro narration (§8). */

@@ -22,6 +22,8 @@ export enum BuildingType {
 export enum SpellType {
   Haste = 'haste',
   Meteor = 'meteor',
+  Rockslide = 'rockslide',
+  BridgeCollapse = 'bridge_collapse',
 }
 
 export enum CardType {

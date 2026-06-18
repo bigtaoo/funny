@@ -252,6 +252,7 @@ export class GameRenderer {
     this.boardView    = new BoardView(this.layout);
     this.boardView.markNoBuildCells(this.engine.state.board.getNoBuildCells());
     this.boardView.markInactiveLanes(this.engine.state.board.getActiveLanes());
+    this.boardView.markBlockedCells(this.engine.state.board.getBlockedCells());
     this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkin);
     this.buildingView = new BuildingView(this.boardView);
     this.handView     = new HandView(this.layout);

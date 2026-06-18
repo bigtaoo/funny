@@ -113,6 +113,22 @@ export class BoardView {
     }
   }
 
+  /**
+   * Overlay individual blocked cells (e.g. from laneLength) on the inactive-lane
+   * layer. Must be called AFTER markInactiveLanes() — does NOT call g.clear().
+   */
+  markBlockedCells(cells: { col: number; row: number }[]): void {
+    if (cells.length === 0) return;
+    const g  = this.inactiveLaneLayer;
+    const cs = this.layout.cellSize;
+    for (const { col, row } of cells) {
+      const pos = this.layout.gridToScreen(col, row);
+      g.beginFill(palette.pencil, 0.13);
+      g.drawRect(pos.x - cs / 2, pos.y - cs / 2, cs, cs);
+      g.endFill();
+    }
+  }
+
   // ── Per-frame update ──────────────────────────────────────────────────────
 
   update(dt: number): void {

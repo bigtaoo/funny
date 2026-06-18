@@ -165,6 +165,24 @@ function parseBoard(v: unknown, path: string): LevelDefinition['board'] {
     });
   }
 
+  if (v.laneLength !== undefined) {
+    if (!isObject(v.laneLength)) fail(`${path}.laneLength`, 'expected a col→length object');
+    const ll: Record<string, number> = {};
+    for (const [colStr, lenVal] of Object.entries(v.laneLength as Record<string, unknown>)) {
+      const col = parseInt(colStr, 10);
+      if (isNaN(col) || !ATTACK_LANE_SET.has(col)) {
+        fail(`${path}.laneLength`, `key '${colStr}' is not a valid attack lane column`);
+      }
+      const len = int(lenVal, `${path}.laneLength.${colStr}`);
+      const spawnRow = BOARD_ROWS - len;
+      if (spawnRow < 2 || spawnRow > 16) {
+        fail(`${path}.laneLength.${colStr}`, `laneLength ${len} puts spawnRow at ${spawnRow}, must give spawnRow 2..16`);
+      }
+      ll[colStr] = len;
+    }
+    board.laneLength = ll;
+  }
+
   if (v.cellMask !== undefined) {
     if (!isObject(v.cellMask)) fail(`${path}.cellMask`, 'expected a cellMask object');
     const mask: NonNullable<NonNullable<LevelDefinition['board']>['cellMask']> = {};
@@ -279,6 +297,18 @@ export function parseLevelDefinition(raw: unknown, ctx = 'level'): LevelDefiniti
   if (loadout) level.loadout = loadout;
   const bannedCards = optStringArray(raw.bannedCards, `${ctx}.bannedCards`);
   if (bannedCards) level.bannedCards = bannedCards;
+
+  if (raw.levelSpells !== undefined) {
+    if (!Array.isArray(raw.levelSpells)) fail(`${ctx}.levelSpells`, 'expected an array');
+    level.levelSpells = (raw.levelSpells as unknown[]).map((s, i) => {
+      const sp = `${ctx}.levelSpells[${i}]`;
+      if (!isObject(s)) fail(sp, 'expected a {cardId, initialCount} object');
+      const cardId      = str(s.cardId,      `${sp}.cardId`);
+      const initialCount = int(s.initialCount, `${sp}.initialCount`);
+      if (initialCount < 0) fail(`${sp}.initialCount`, 'must be >= 0');
+      return { cardId, initialCount };
+    });
+  }
 
   const rewards = parseRewards(raw.rewards, `${ctx}.rewards`);
   if (rewards) level.rewards = rewards;

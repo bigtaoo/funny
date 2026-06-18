@@ -16,6 +16,10 @@ export const zh = {
   'card.haste.desc': '一阵铅笔疾风，让所有友军移动速度翻倍。',
   'card.meteor.name': '陨石打击',
   'card.meteor.desc': '从天而降的墨水陨石，抹除目标区域内的一切。',
+  'card.rockslide.name': '石壁崩塌',
+  'card.rockslide.desc': '选定一列，碎石倾落，对该列所有敌军造成伤害。',
+  'card.bridge_collapse.name': '桥梁坍塌',
+  'card.bridge_collapse.desc': '选定一列，桥面断裂，该列单位被迫绕道8秒。',
 
   // ── 大厅 ──────────────────────────────────────────────────────────────────
   'lobby.title': 'NOTEBOOK WARS',

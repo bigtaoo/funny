@@ -69,6 +69,12 @@ export class GameState {
   /** Currently active spell effects. */
   activeSpells: ActiveSpell[] = [];
 
+  /**
+   * Columns temporarily blocked by BridgeCollapse. Maps col → tick at which the
+   * block expires. Checked by MovementSystem; cleaned up each step().
+   */
+  tempBlockedCols: Map<number, number> = new Map();
+
   /** Per-player accumulated stats. Index matches OwnerId (0 = bottom, 1 = top). */
   readonly stats: [PlayerStatsMutable, PlayerStatsMutable] = [emptyStats(), emptyStats()];
 

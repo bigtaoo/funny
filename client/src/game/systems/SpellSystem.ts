@@ -1,4 +1,4 @@
-import { HASTE_DURATION_TICKS, HASTE_SPEED_MULT, METEOR_DAMAGE } from '../config';
+import { BRIDGE_COLLAPSE_DURATION_TICKS, HASTE_DURATION_TICKS, HASTE_SPEED_MULT, METEOR_DAMAGE, ROCKSLIDE_DAMAGE } from '../config';
 import { fp, scaleFp, toFp } from '../math/fixed';
 import { GameState } from '../GameState';
 import { ActiveSpell, Side, SpellType } from '../types';
@@ -74,6 +74,24 @@ export class SpellSystem {
       owner,
       center:    { col: centerCol, y_fp: toFp(centerRow) },
     });
+  }
+
+  /** Damages all units in `col` (PvE-only Rockslide spell, §4.9.2). */
+  castRockslide(side: Side, col: number, state: GameState): void {
+    const owner = state.ownerOf(side);
+    let hits = 0;
+    for (const unit of state.board.units.values()) {
+      if (unit.isDead) continue;
+      if (unit.col === col) { unit.takeDamage(ROCKSLIDE_DAMAGE); hits++; }
+    }
+    state.stats[owner].spellHits += hits;
+    state.pushEvent({ type: 'spell_cast', spellType: SpellType.Rockslide, owner, center: { col, y_fp: fp(0) } });
+  }
+
+  /** Blocks an entire column for `BRIDGE_COLLAPSE_DURATION_TICKS` (PvE-only, §4.9.2). */
+  castBridgeCollapse(side: Side, col: number, state: GameState, currentTick: number): void {
+    state.tempBlockedCols.set(col, currentTick + BRIDGE_COLLAPSE_DURATION_TICKS);
+    state.pushEvent({ type: 'spell_cast', spellType: SpellType.BridgeCollapse, owner: state.ownerOf(side), center: { col, y_fp: fp(0) } });
   }
 
   /** Decrement spell timers; expire finished spells. */

@@ -17,6 +17,10 @@ export const de: Record<TranslationKey, string> = {
   'card.haste.desc': 'Ein Windstoß aus Bleistift – alle verbündeten Einheiten bewegen sich doppelt so schnell.',
   'card.meteor.name': 'Meteoreinschlag',
   'card.meteor.desc': 'Ein Tintenmeteor fällt vom Himmel und löscht alles im Zielgebiet aus.',
+  'card.rockslide.name': 'Felssturz',
+  'card.rockslide.desc': 'Wähle eine Spalte – herabstürzende Trümmer schaden allen Feinden in dieser Gasse.',
+  'card.bridge_collapse.name': 'Brückeneinsturz',
+  'card.bridge_collapse.desc': 'Wähle eine Spalte – der Weg bricht ein und zwingt Einheiten für 8 Sekunden zum Umweg.',
 
   // ── Lobby ─────────────────────────────────────────────────────────────────
   'lobby.title': 'NOTEBOOK WARS',

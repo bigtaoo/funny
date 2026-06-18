@@ -102,6 +102,16 @@ export class MovementSystem {
       }
     }
 
+    // ── Entire column blocked by BridgeCollapse — force detour ───────────
+    if (state.tempBlockedCols.has(unit.col)) {
+      if (unit.detourDir === 0) {
+        unit.detourDir = (unit.col < 5.5 ? 1 : -1) as 1 | -1;
+      }
+      unit.detourTargetCol = unit.col + unit.detourDir;
+      unit.state = UnitState.Detour;
+      return;
+    }
+
     // ── Blocked cell ahead — auto-detour ──────────────────────────────────
     const nextRow = unit.row + direction;
     if (nextRow >= 0 && nextRow < 18 && state.board.isBlocked(unit.col, nextRow)) {
