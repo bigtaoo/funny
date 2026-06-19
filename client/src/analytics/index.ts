@@ -72,9 +72,39 @@ export async function init(
   await fetchAnalyticsConfig(base);
 
   queue.start();
+  bindSessionLifecycle();
 
   // Emit session_start immediately (sample=1.0 by default).
   track('session_start', { platform: platformName, os, locale: getLocale() });
+}
+
+// ── Session lifecycle → churn_signal + session_end ───────────────────────────
+// The queue owns flushSync on hide/unload; here we emit the *semantic* end
+// markers (churn_signal + session_end) so the funnel can see where players drop.
+// Re-armed on return to foreground so a tab-switch round-trip only logs once.
+let lifecycleBound = false;
+let hiddenFired = false;
+
+function onAppHidden(reason: string): void {
+  if (hiddenFired) return;
+  hiddenFired = true;
+  track('churn_signal', { reason, scene: scenesVisited[scenesVisited.length - 1] ?? 'unknown' });
+  endSession();
+}
+
+function bindSessionLifecycle(): void {
+  if (lifecycleBound) return;
+  lifecycleBound = true;
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') onAppHidden('background');
+      else hiddenFired = false; // back to foreground → re-arm
+    });
+    window.addEventListener('beforeunload', () => onAppHidden('explicit_exit'));
+  }
+  const wx = (globalThis as { wx?: { onHide?: (cb: () => void) => void; onShow?: (cb: () => void) => void } }).wx;
+  if (wx?.onHide) wx.onHide(() => onAppHidden('background'));
+  if (wx?.onShow) wx.onShow(() => { hiddenFired = false; });
 }
 
 /** Track a named event with arbitrary props (synchronous, non-blocking). */

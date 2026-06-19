@@ -33,7 +33,8 @@ const C = {
 };
 
 export interface IntroSceneCallbacks {
-  onFinish(): void;
+  /** @param skipped true when the player tapped the skip button instead of reading through. */
+  onFinish(skipped?: boolean): void;
 }
 
 export class IntroScene implements Scene {
@@ -93,7 +94,7 @@ export class IntroScene implements Scene {
     // Skip button
     if (x >= this.skipRect.x && x <= this.skipRect.x + this.skipRect.w &&
         y >= this.skipRect.y && y <= this.skipRect.y + this.skipRect.h) {
-      this.finish();
+      this.finish(true);
       return;
     }
 
@@ -110,10 +111,10 @@ export class IntroScene implements Scene {
     }
   }
 
-  private finish(): void {
+  private finish(skipped = false): void {
     if (this.finished) return;
     this.finished = true;
-    this.cb.onFinish();
+    this.cb.onFinish(skipped);
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────

@@ -22,7 +22,13 @@ export async function fetchAnalyticsConfig(analyticsBaseUrl: string): Promise<vo
       headers: { Accept: 'application/json' },
     });
     if (res.ok) {
-      cached = (await res.json()) as AnalyticsConfig;
+      // analyticsvc wraps responses in the shared { ok, data } envelope; unwrap
+      // it here (tolerant of a raw body too, per the OpenAPI contract §8).
+      const json = (await res.json()) as unknown;
+      cached =
+        json && typeof json === 'object' && 'data' in json
+          ? ((json as { data: AnalyticsConfig }).data)
+          : (json as AnalyticsConfig);
     }
   } catch {
     // network failure → keep disabled fallback

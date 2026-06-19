@@ -123,7 +123,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     inLobby = false;
     analytics.track('screen_view', { scene: 'IntroScene' });
     views.showIntro({
-      onFinish() {
+      onFinish(skipped) {
+        if (skipped) analytics.track('tutorial_skip', { step: 'intro' });
         saveManager.setFlag(SEEN_INTRO_FLAG, true);
         void resolveEntry();
       },
@@ -188,6 +189,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
   function goSettings(): void {
     inLobby = false;
+    analytics.track('screen_view', { scene: 'SettingsScene' });
     const pvp = saveManager.get().pvp;
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const canRename = !offlineMode && !!api && loggedIn;
@@ -305,6 +307,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       if (rankedQueued) return;
       rankedQueued = true;
       log.info('entering ranked queue (createRanked)');
+      analytics.track('pvp_room_create', { mode: 'ranked' });
       session?.createRanked();
     };
     const view: RoomView = views.showRoom({
@@ -315,11 +318,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         if (session) session.handlers = { onMatchStart: (info) => goGameNet(info) };
         goLobby();
       },
-      createRoom() { session?.createRoom(); },
+      createRoom() { analytics.track('pvp_room_create', { mode: 'friendly' }); session?.createRoom(); },
       joinRoom(code: string) { session?.joinRoom(code); },
       setReady(ready: boolean) { session?.setReady(ready); },
       startMatch() { session?.startMatch(); },
-      createRanked() { session?.createRanked(); },
+      createRanked() { analytics.track('pvp_room_create', { mode: 'ranked' }); session?.createRanked(); },
       cancelQueue() { rankedQueued = false; session?.cancelQueue(); },
     });
 
@@ -346,7 +349,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
   function goFriends(): void {
     // Social needs a server account; offline / no API → bounce to login.
-    if (!api) { goLogin(); return; }
+    if (!api) { analytics.track('login_gate_hit', { scene: 'FriendsScene' }); goLogin(); return; }
     analytics.track('screen_view', { scene: 'FriendsScene' });
     const client = api;
     inLobby = false;
@@ -362,7 +365,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       loadRequests: () => client.getFriendRequests(),
       search: (publicId) => client.searchFriend(publicId),
       addFriend: async (publicId) => { await client.requestFriend(publicId); },
-      respond: (requestId, accept) => client.respondFriend(requestId, accept),
+      respond: async (requestId, accept) => {
+        const r = await client.respondFriend(requestId, accept);
+        if (accept) analytics.track('friend_add', {});
+        return r;
+      },
       removeFriend: (publicId) => client.removeFriend(publicId),
       blockUser: (publicId) => client.blockUser(publicId),
       // chat (S6-2)
@@ -429,7 +436,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const worldBase = getWorldBaseUrl();
     if (!worldBase) { goLobby(); return; }
     const token = platform.storage.getItem(TOKEN_KEY);
-    if (!token) { goLogin(); return; }
+    if (!token) { analytics.track('login_gate_hit', { scene: 'WorldMapScene' }); goLogin(); return; }
     const worldApi = new WorldApiClient(platform.storage);
     // Use a fixed world ID for now; in future this would come from the server
     const worldId = 'world:1:0';
@@ -471,8 +478,15 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const client = api;
     inLobby = false;
     analytics.track('shop_open', {});
+    analytics.track('screen_view', { scene: 'ShopScene' });
+    // 转化标记：本次进店是否产生过购买，离店时随 shop_close 上报（漏斗末端，§9.3）。
+    let converted = false;
+    const shopOpenTs = Date.now();
     views.showShop({
-      onBack() { goLobby(); },
+      onBack() {
+        analytics.track('shop_close', { converted, time_sec: Math.round((Date.now() - shopOpenTs) / 1000) });
+        goLobby();
+      },
       getCoins: () => saveManager.get().wallet.coins,
       getOwnedSkins: () => saveManager.get().inventory.skins,
       loadItems: () => client.getShopItems(),
@@ -480,6 +494,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         try {
           const { save } = await client.shopBuy(itemId);
           saveManager.adoptServer(save);
+          converted = true;
+          analytics.track('shop_buy', { item_id: itemId, currency: 'coins' });
           return { ok: true };
         } catch (e) {
           return {
@@ -495,6 +511,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         try {
           const { save, granted } = await client.iapVerify(`dev-${Date.now()}`, `tier:${tier}`);
           saveManager.adoptServer(save);
+          converted = true;
+          analytics.track('recharge', { tier });
           return { ok: true, coins: granted };
         } catch {
           return { ok: false, key: 'shop.rechargeFail' };
@@ -508,6 +526,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (!api) { goLobby(); return; }
     const client = api;
     inLobby = false;
+    analytics.track('screen_view', { scene: 'GachaScene' });
     views.showGacha({
       onBack() { goShop(); },
       getCoins: () => saveManager.get().wallet.coins,
@@ -517,6 +536,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         try {
           const { save, results } = await client.gachaDraw(poolId, count);
           saveManager.adoptServer(save);
+          analytics.track('gacha_draw', { pool_id: poolId, count });
           return { ok: true, results };
         } catch (e) {
           return {
@@ -583,15 +603,20 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       level_id: levelId,
       stars_before: saveManager.get().progress.stars[levelId] ?? 0,
     });
+    analytics.track('screen_view', { scene: 'LevelPrepScene' });
     views.showLevelPrep({
-      onBack() { goCampaignMap(); },
+      onBack() { analytics.track('level_abandon', { level_id: levelId, phase: 'prep' }); goCampaignMap(); },
       onStart() { analytics.track('screen_view', { scene: 'GameScene' }); goCampaign(levelId); },
       levelNumber,
       getMaterials: () => saveManager.get().materials,
       getUpgradeLevel: (id) => saveManager.get().pveUpgrades[id] ?? 0,
       // 升级是服务器权威扣费，仅在线可用（§8 决策 4）。
       isOnline: () => saveManager.online(),
-      tryUpgrade: (id) => saveManager.upgrade(id),
+      tryUpgrade: async (id) => {
+        const ok = await saveManager.upgrade(id);
+        if (ok) analytics.track('upgrade', { upgrade_id: id, level_after: saveManager.get().pveUpgrades[id] ?? 0 });
+        return ok;
+      },
       ...(level.briefKey ? { brief: t(level.briefKey) } : {}),
       ...(level.story?.introKey ? { intro: t(level.story.introKey) } : {}),
     });
@@ -599,6 +624,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
   function goCollection(back: () => void, initialTab: 'cards' | 'skins' = 'cards'): void {
     inLobby = false;
+    analytics.track('screen_view', { scene: 'CollectionScene' });
     views.showCollection({
       onBack: back,
       initialTab,
@@ -615,6 +641,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
   function goStats(): void {
     inLobby = false;
+    analytics.track('screen_view', { scene: 'StatsScene' });
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const client = api;
     views.showStats({
@@ -713,6 +740,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     inLobby = false;
     platform.onGameplayStart();
     const isRankedMode = info.mode === MatchMode.RANKED;
+    analytics.track('pvp_match_start', { mode: isRankedMode ? 'ranked' : 'friendly' });
     analytics.track('game_start', { mode: isRankedMode ? 'pvp_ranked' : 'pvp_friendly' });
     const netGameStartTs = Date.now();
 
@@ -810,6 +838,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   ): Promise<void> {
     inLobby = false;
     platform.onGameplayStop();
+    analytics.track('screen_view', { scene: 'ResultScene' });
     await platform.showMidgameAd();
     views.showResult({
       winner,

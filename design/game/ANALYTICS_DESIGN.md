@@ -523,3 +523,37 @@ db.events.aggregate([
 | A9-5 埋点接入 | 各场景/系统加 `analytics.track()` 调用（优先级：session/game_end/level/churn） |
 | A9-6 ops 查询端点 | `GET /internal/query?funnel=...`；tools/ops 加 Analytics 页（DAU / 漏斗 / 关卡通过率） |
 | A9-7 funnels_daily ETL | `setInterval` 每小时跑聚合写 `funnels_daily`（ops 快速查询用） |
+
+---
+
+## §12 实现记录（2026-06-19）
+
+### 12.1 A9-5 埋点接入补全
+
+此前仅有 `session_start/end`、部分 `screen_view`、`game_start/end`、`level_attempt/complete/abandon(in_game)`、`shop_open` 落地。本次在 `client/src/app/createAppCore.ts` 补齐设计 §5 的剩余事件：
+
+| 层 | 补入事件 | 落点 |
+|---|---|---|
+| 经济 | `shop_buy` / `shop_close{converted,time_sec}` / `recharge{tier}` | `goShop()` buy/onBack/recharge 回调 |
+| 经济 | `gacha_draw{pool_id,count}` | `goGacha()` draw 成功 |
+| 经济 | `upgrade{upgrade_id,level_after}` | `goLevelPrep()` tryUpgrade 成功 |
+| 社交 | `friend_add` | `goFriends()` respond(accept) 成功 |
+| 社交 | `pvp_room_create{mode}` | `goRoom()` createRoom/createRanked/queueRanked |
+| 社交 | `pvp_match_start{mode}` | `goGameNet()` |
+| 流失 | `tutorial_skip{step}` | `IntroScene` 跳过按钮（`onFinish(skipped)` 回传） |
+| 流失 | `login_gate_hit{scene}` | `goFriends`/`goWorldEntry` 离线门控 |
+| 导航 | `screen_view` 补 7 场景 | Settings/Shop/Gacha/LevelPrep/Collection/Stats/Result |
+| 关卡 | `level_abandon{phase:'prep'}` | `goLevelPrep()` onBack |
+
+### 12.2 churn_signal + session_end 生命周期接线
+
+`endSession()` 此前**从未被调用**——`session_end` 一直没产出。本次在 `analytics/index.ts` 的 `bindSessionLifecycle()` 接 `visibilitychange(hidden)` / `beforeunload` / `wx.onHide`，在隐藏时发 `churn_signal{reason}`（background / explicit_exit）后调 `endSession()`；回前台 re-arm，避免切 Tab 往返重复上报。
+> **idle_10min 暂缓**：需真实输入活跃度探针（本层拿不到），后续接 InputManager 再补，不做易误触发的近似实现。
+
+### 12.3 修复：config 信封未解包导致采集全程失效
+
+`/analytics/config` 走共享 `ok()` 信封返回 `{ok,data}`，但 `analytics/config.ts` 旧代码把整个 body 当 `AnalyticsConfig` 用，`cached.enabled` 恒为 `undefined` → `shouldTrack()` 恒 false。**即所有埋点此前一条都没真正上报。** 已改为解包 `.data`（兼容裸 body，对齐契约 §8）。
+
+### 12.4 采样配置补全
+
+`service.ts` `DEFAULT_CONFIG` 补入新事件采样率（`shop_close/gacha_draw/recharge/friend_add/pvp_room_create/pvp_match_start/tutorial_skip/login_gate_hit` 均 `1.0`），避免落入 `defaultSample:0.1` 漏采转化/流失事件。
