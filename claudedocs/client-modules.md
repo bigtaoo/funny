@@ -41,3 +41,4 @@
 | `render/sketchUi.ts` | 共享手绘 UI 原语（纸底/手绘按钮/面板/色板单一来源） |
 | `game/campaign/levels.ts` + `levelSchema.ts` | 关卡注册（`CAMPAIGN_LEVELS`/`CAMPAIGN_LEVEL_ORDER`，61 关 JSON 单一来源）+ `parseLevelDefinition` 运行时校验，加载即 fail-fast。⚠️ 出兵/`activeLanes` 的 col 必为 `ATTACK_LANES=[0,1,2,3,4,7,8,9,10,11]`（5/6 是中央基地列，非攻击道——棋盘 6→12 列迁移后的历史坑） |
 | `game/campaign/maps/` | 章节地图（CAMPAIGN_DESIGN §12）：`ChapterMap` 类型 + `parseChapterMap` 校验（节点 `levelId` 必在 `CAMPAIGN_LEVELS`，坐标 0..1 越界软告警）+ `CHAPTER_MAPS`/`getChapterMap` 注册；`chN.json` 存节点归一化坐标/`path`/`decor`，**只引 levelId**，与关卡数值分离 |
+| `scenes/CampaignMapScene.ts` | **战役笔记本**（PvE 正门，CAMPAIGN_DESIGN §12）：两类页——目录页（6 章卡片 + 进度/星数 + 锁章胶带遮罩）/ 章节页（节点按 `maps/chN.json` 归一化坐标摆放，`SketchPen` 铅笔虚线路径串联，已通关金圈星章 / 当前关蓝圈脉冲 / 未解锁淡铅笔轮廓 / decor 涂鸦）。进场落目录页→自动翻到「当前可打关」那章；翻页 = 横向 slide+fade（`update(dt)` 驱动，0.42s），左右箭头切章（下一章须通关方亮）；整章通关盖「第 N 章 · 通关」红章。全程序绘制，零美术资产；回调 `CampaignMapCallbacks` 与旧扁平列表版同构 |

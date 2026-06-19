@@ -3,14 +3,27 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { CAMPAIGN_LEVEL_ORDER, CAMPAIGN_LEVELS } from '../game';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { CAMPAIGN_LEVEL_ORDER, CHAPTER_ORDER, getChapterMap } from '../game';
+import type { ChapterMap, ChapterNode } from '../game';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { SketchPen } from '../render/sketch';
+import { palette } from '../render/theme';
 
-// ── CampaignMapScene (S3-5) — PvE level select hub ─────────────────────────────
+// ── CampaignMapScene (S3-5 → CAMPAIGN_DESIGN §12) — the「战役笔记本」─────────────
 //
-// Canvas-drawn, render()-on-change. Levels grouped by chapter with a scrollable list.
-// Drag-scroll (≥8 px threshold distinguishes tap from drag). nameKey from level JSON
-// shown as subtitle when supplied by story author. Mirrors FriendsScene drag pattern.
+// The PvE entry is a diegetic open notebook, not a flat list. Two page kinds:
+//   • TOC (landing): one card per chapter with venue name + star progress + lock
+//     state; tapping an unlocked chapter flips to its page.
+//   • Chapter page: that chapter's 10 levels drawn as hand-placed nodes threaded
+//     by a pencil trail (positions from `maps/chN.json`, normalized 0..1). Cleared
+//     nodes get a star stamp, the current playable node pulses, locked nodes are a
+//     faint pencil outline. Procedural doodle decor (start/boss/rack…) sets venue.
+//
+// On entry the book "opens" — it starts on the TOC then auto-flips to the chapter
+// holding the current playable level (progress landing, §12.2). Page changes are a
+// horizontal slide+fade ("page turn") driven from update(); the current node's
+// pulse is animated there too. All art is procedural (SketchPen + sketchUi), no
+// assets. Callbacks/interface are unchanged so app wiring + ui tests keep working.
 
 export interface CampaignMapCallbacks {
   onBack(): void;
@@ -28,9 +41,25 @@ export interface CampaignMapCallbacks {
   getPendingLevels(): string[];
 }
 
-interface Hit { rect: Rect; fn: () => void; scroll?: boolean; }
+interface Hit { rect: Rect; fn: () => void; }
 
-interface ChapterGroup { chapter: number; levelIds: string[]; }
+/** A built page: its display root, tap targets, and (optionally) the node to pulse. */
+interface Page {
+  root: PIXI.Container;
+  hits: Hit[];
+  pulse: PIXI.Graphics | null;
+}
+
+/** Flip transition between two pages. */
+interface Flip {
+  out: PIXI.Container;
+  in: PIXI.Container;
+  t: number;
+  dir: 1 | -1; // +1 forward (new slides in from right), -1 backward
+}
+
+const FLIP_DUR = 0.42; // seconds
+const TAP_SLOP = 8;    // px movement above which a touch is a drag, not a tap
 
 /** Parse chapter number and within-chapter index from a level id like 'ch3_lv7'. */
 function parseLevelId(id: string): { chapter: number; lvIndex: number } | null {
@@ -39,17 +68,23 @@ function parseLevelId(id: string): { chapter: number; lvIndex: number } | null {
   return { chapter: parseInt(m[1], 10), lvIndex: parseInt(m[2], 10) };
 }
 
-function groupByChapter(levelIds: readonly string[]): ChapterGroup[] {
-  const map = new Map<number, string[]>();
-  for (const id of levelIds) {
-    const p = parseLevelId(id);
-    const ch = p?.chapter ?? 0;
-    if (!map.has(ch)) map.set(ch, []);
-    map.get(ch)!.push(id);
+/** A level unlocks once the previous one in the global order is cleared (level 0 free). */
+function isLevelUnlocked(levelId: string, cleared: Set<string>): boolean {
+  const i = CAMPAIGN_LEVEL_ORDER.indexOf(levelId);
+  if (i <= 0) return true;
+  return cleared.has(CAMPAIGN_LEVEL_ORDER[i - 1]);
+}
+
+/** Chapter holding the first uncleared level — where the book opens to (§12.2). */
+function currentChapter(cleared: Set<string>): number {
+  for (const lid of CAMPAIGN_LEVEL_ORDER) {
+    if (!cleared.has(lid)) return parseLevelId(lid)?.chapter ?? CHAPTER_ORDER[0]!;
   }
-  return [...map.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([chapter, ids]) => ({ chapter, levelIds: ids }));
+  return CHAPTER_ORDER[CHAPTER_ORDER.length - 1]!;
+}
+
+function easeInOut(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
 
 export class CampaignMapScene implements Scene {
@@ -58,234 +93,452 @@ export class CampaignMapScene implements Scene {
   private readonly w: number;
   private readonly h: number;
   private readonly cb: CampaignMapCallbacks;
-  private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
 
-  // Scroll state
-  private scrollY = 0;
-  private maxScroll = 0;
-  private dragStart: { x: number; y: number; scroll: number } | null = null;
-  private hasDragged = false;
+  /** Currently shown page kind + chapter. */
+  private mode: 'toc' | 'chapter' = 'toc';
+  private chapter = CHAPTER_ORDER[0]!;
 
-  // List geometry — set during render, used for hit-testing
-  private listY = 0;
-  private listH = 0;
-  private readonly listContainer: PIXI.Container;
+  private page: Page | null = null;
+  private flip: Flip | null = null;
+
+  private hits: Hit[] = [];
+  private pulseT = 0;
+
+  // Tap detection (no scroll: every page fits one screen by construction).
+  private down: { x: number; y: number } | null = null;
+  private moved = false;
 
   constructor(layout: ILayout, input: InputManager, cb: CampaignMapCallbacks) {
     this.container = new PIXI.Container();
-    this.listContainer = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
 
-    this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
-    this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
+    this.container.addChild(buildPaperBackground('campbg', this.w, this.h));
+
+    this.unsubs.push(input.onDown((x, y) => { this.down = { x, y }; this.moved = false; }));
+    this.unsubs.push(input.onMove((x, y) => {
+      if (this.down && (Math.abs(x - this.down.x) > TAP_SLOP || Math.abs(y - this.down.y) > TAP_SLOP)) this.moved = true;
+    }));
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
 
-    this.render();
+    // Open on the TOC, then flip to the current chapter — the book opening itself.
+    this.chapter = currentChapter(new Set(this.cb.getCleared()));
+    this.showPage(this.buildToc());
+    this.flipTo(() => this.buildChapter(this.chapter), 1, () => { this.mode = 'chapter'; });
   }
 
-  update(): void { /* static */ }
+  update(dt: number): void {
+    this.pulseT += dt;
+    const ring = this.page?.pulse;
+    if (ring) {
+      const k = 0.5 + 0.5 * Math.sin(this.pulseT * 4.2);
+      ring.scale.set(1 + 0.22 * k);
+      ring.alpha = 0.3 + 0.45 * k;
+    }
+    if (this.flip) this.advanceFlip(dt);
+  }
 
   destroy(): void { this.unsubs.forEach((u) => u()); }
 
-  private handleDown(x: number, y: number): void {
-    this.dragStart = { x, y, scroll: this.scrollY };
-    this.hasDragged = false;
+  // ── Page lifecycle ────────────────────────────────────────────────────────────
+
+  private showPage(p: Page): void {
+    if (this.page) { this.container.removeChild(this.page.root); this.page.root.destroy({ children: true }); }
+    this.page = p;
+    this.hits = p.hits;
+    this.container.addChild(p.root);
   }
 
-  private handleMove(_x: number, y: number): void {
-    if (!this.dragStart) return;
-    const dy = y - this.dragStart.y;
-    if (!this.hasDragged && Math.abs(dy) < 8) return;
-    this.hasDragged = true;
-    this.scrollY = Math.max(0, Math.min(this.maxScroll, this.dragStart.scroll - dy));
-    this.listContainer.y = this.listY - this.scrollY;
+  /** Start a slide+fade flip to a freshly built page. `dir` +1 = forward. */
+  private flipTo(build: () => Page, dir: 1 | -1, onArrive?: () => void): void {
+    if (this.flip || !this.page) return;
+    const neu = build();
+    const out = this.page.root;
+    // The incoming page becomes the live one immediately (its pulse/hits take over);
+    // hits stay disabled until the flip settles.
+    this.page = neu;
+    this.hits = [];
+    this.container.addChild(neu.root);
+    neu.root.x = dir * this.w;
+    neu.root.alpha = 0;
+    this.flip = { out, in: neu.root, t: 0, dir };
+    this.arrive = onArrive ?? null;
+  }
+
+  private arrive: (() => void) | null = null;
+
+  private advanceFlip(dt: number): void {
+    const f = this.flip!;
+    f.t = Math.min(1, f.t + dt / FLIP_DUR);
+    const e = easeInOut(f.t);
+    f.out.x = -f.dir * this.w * e;
+    f.out.alpha = 1 - e;
+    f.in.x = f.dir * this.w * (1 - e);
+    f.in.alpha = e;
+    if (f.t >= 1) {
+      this.container.removeChild(f.out);
+      f.out.destroy({ children: true });
+      f.in.x = 0; f.in.alpha = 1;
+      this.flip = null;
+      this.hits = this.page!.hits;
+      const cb = this.arrive; this.arrive = null;
+      if (cb) cb();
+    }
   }
 
   private handleUp(x: number, y: number): void {
-    if (!this.dragStart) return;
-    if (!this.hasDragged) {
-      // Treat as tap — test fixed hits first, then scrollable list hits.
-      for (const hit of this.hits) {
-        const r = hit.rect;
-        if (hit.scroll) {
-          // Translate tap into content space; only fire if within list viewport.
-          if (x < r.x || x > r.x + r.w) continue;
-          const contentY = y - this.listY + this.scrollY;
-          if (contentY >= r.y && contentY <= r.y + r.h) { hit.fn(); break; }
-        } else {
-          if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); break; }
-        }
-      }
+    const wasTap = this.down && !this.moved;
+    this.down = null;
+    if (!wasTap || this.flip) return;
+    for (const hit of this.hits) {
+      const r = hit.rect;
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); break; }
     }
-    this.dragStart = null;
   }
 
-  /** A level unlocks once the previous one in the order is cleared (level 0 free). */
-  private isUnlocked(index: number, cleared: Set<string>): boolean {
-    if (index === 0) return true;
-    return cleared.has(CAMPAIGN_LEVEL_ORDER[index - 1]);
-  }
+  // ── Shared header ───────────────────────────────────────────────────────────
 
-  private render(): void {
-    this.container.removeChildren();
-    this.hits = [];
+  /** Draws the fixed top band into `root`; returns its height. Pushes its hits. */
+  private buildHeader(root: PIXI.Container, hits: Hit[], titleStr: string, onBack: () => void): number {
     const { w, h } = this;
-
-    this.container.addChild(buildPaperBackground('campbg', w, h));
-
-    // ── Header (fixed) ──────────────────────────────────────────────────────
     const tbH = Math.round(h * 0.12);
-    const titleBg = new PIXI.Graphics();
-    titleBg.beginFill(C.dark); titleBg.drawRect(0, 0, w, tbH); titleBg.endFill();
-    this.container.addChild(titleBg);
 
-    const title = txt(t('campaign.title'), Math.round(h * 0.034), 0xffffff, true);
+    const bar = new PIXI.Graphics();
+    bar.beginFill(C.dark); bar.drawRect(0, 0, w, tbH); bar.endFill();
+    root.addChild(bar);
+
+    const title = txt(titleStr, Math.round(h * 0.032), 0xffffff, true);
     title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
-    this.container.addChild(title);
+    root.addChild(title);
 
     const back = txt(t('campaign.back'), Math.round(h * 0.026), C.light);
     back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
-    this.container.addChild(back);
-    this.hits.push({ rect: { x: 0, y: 0, w: back.x + back.width + Math.round(h * 0.02), h: tbH }, fn: () => this.cb.onBack() });
+    root.addChild(back);
+    hits.push({ rect: { x: 0, y: 0, w: back.x + back.width + Math.round(h * 0.02), h: tbH }, fn: onBack });
 
     const coll = txt(t('campaign.collection'), Math.round(h * 0.024), C.gold, true);
     coll.anchor.set(1, 0.5); coll.x = w - Math.round(w * 0.04); coll.y = tbH / 2;
-    this.container.addChild(coll);
-    this.hits.push({
+    root.addChild(coll);
+    hits.push({
       rect: { x: coll.x - coll.width - Math.round(w * 0.03), y: 0, w: coll.width + Math.round(w * 0.06), h: tbH },
       fn: () => this.cb.onOpenCollection(),
     });
 
-    // ── Scrollable list ─────────────────────────────────────────────────────
-    this.listY = tbH + Math.round(h * 0.02);
-    this.listH = h - this.listY - Math.round(h * 0.02);
+    return tbH;
+  }
 
-    // Mask clips the list to its viewport.
-    const mask = new PIXI.Graphics();
-    mask.beginFill(0xffffff); mask.drawRect(0, this.listY, w, this.listH); mask.endFill();
-    this.container.addChild(mask);
+  // ── Table of contents page ────────────────────────────────────────────────────
 
-    this.listContainer.removeChildren();
-    this.listContainer.y = this.listY;
-    this.listContainer.mask = mask;
-    this.container.addChild(this.listContainer);
+  private buildToc(): Page {
+    const { w, h } = this;
+    const root = new PIXI.Container();
+    const hits: Hit[] = [];
+
+    const tbH = this.buildHeader(root, hits, t('campaign.notebookTitle'), () => this.cb.onBack());
+
+    const stars = this.cb.getStars();
+    const cleared = new Set(this.cb.getCleared());
+    const online = this.cb.isOnline();
+
+    const listX = Math.round(w * 0.12);
+    const listW = w - listX - Math.round(w * 0.06);
+    const top = tbH + Math.round(h * 0.03);
+    const avail = h - top - Math.round(h * 0.03);
+    const n = CHAPTER_ORDER.length;
+    const gap = Math.round(h * 0.018);
+    const cardH = Math.round((avail - gap * (n - 1)) / n);
+
+    CHAPTER_ORDER.forEach((ch, i) => {
+      const map = getChapterMap(ch);
+      if (!map) return;
+      const y = top + i * (cardH + gap);
+      const unlocked = isLevelUnlocked(map.nodes[0]!.levelId, cleared);
+
+      const card = sketchPanel(listW, cardH, {
+        fill: unlocked ? C.paper : C.btnDis,
+        border: unlocked ? C.gold : C.btnOff,
+        width: 2, seed: seedFor(listX, y, listW), fillAlpha: unlocked ? 1 : 0.9,
+      });
+      card.x = listX; card.y = y;
+      root.addChild(card);
+
+      const titleStr = `${t('campaign.chapterLabel', { n: ch })} · ${t(map.venueKey)}`;
+      const name = txt(titleStr, Math.round(cardH * 0.30), unlocked ? C.dark : C.mid, true);
+      name.anchor.set(0, 0.5); name.x = listX + Math.round(w * 0.04); name.y = y + cardH * 0.36;
+      root.addChild(name);
+
+      // Progress: cleared count + earned stars.
+      const clearedCount = map.nodes.filter((node) => cleared.has(node.levelId)).length;
+      const earned = map.nodes.reduce((s, node) => s + (stars[node.levelId] ?? 0), 0);
+      const progStr = t('campaign.chapterProgress', { c: clearedCount, n: map.nodes.length });
+      const prog = txt(progStr, Math.round(cardH * 0.22), unlocked ? C.mid : C.btnOff);
+      prog.anchor.set(0, 0.5); prog.x = listX + Math.round(w * 0.04); prog.y = y + cardH * 0.70;
+      root.addChild(prog);
+
+      if (unlocked) {
+        const starStr = `★ ${earned}/${map.nodes.length * 3}`;
+        const st = txt(starStr, Math.round(cardH * 0.26), C.gold, true);
+        st.anchor.set(1, 0.5); st.x = listX + listW - Math.round(w * 0.04); st.y = y + cardH / 2;
+        root.addChild(st);
+        hits.push({ rect: { x: listX, y, w: listW, h: cardH }, fn: () => this.openChapter(ch) });
+      } else {
+        // Locked chapter — taped shut.
+        this.drawTape(card, listW, cardH, seedFor(listX, cardH, ch));
+        const lock = txt(t(online ? 'campaign.locked' : 'campaign.lockedOffline'), Math.round(cardH * 0.22), C.mid);
+        lock.anchor.set(1, 0.5); lock.x = listX + listW - Math.round(w * 0.04); lock.y = y + cardH / 2;
+        root.addChild(lock);
+      }
+    });
+
+    return { root, hits, pulse: null };
+  }
+
+  private openChapter(ch: number): void {
+    if (this.flip) return;
+    const dir = ch >= this.chapter ? 1 : -1;
+    this.chapter = ch;
+    this.flipTo(() => this.buildChapter(ch), dir, () => { this.mode = 'chapter'; });
+  }
+
+  // ── Chapter page ────────────────────────────────────────────────────────────
+
+  private buildChapter(ch: number): Page {
+    const { w, h } = this;
+    const root = new PIXI.Container();
+    const hits: Hit[] = [];
+    let pulse: PIXI.Graphics | null = null;
+
+    const map = getChapterMap(ch);
+    if (!map) return { root, hits, pulse };
+
+    const titleStr = `${t('campaign.chapterLabel', { n: ch })} · ${t(map.venueKey)}`;
+    const tbH = this.buildHeader(root, hits, titleStr, () => this.backToToc());
 
     const stars = this.cb.getStars();
     const cleared = new Set(this.cb.getCleared());
     const online = this.cb.isOnline();
     const pending = new Set(this.cb.getPendingLevels());
-    const globalOrder = CAMPAIGN_LEVEL_ORDER;
 
-    const listX    = Math.round(w * 0.05);
-    const listW    = w - listX * 2;
-    const rowH     = Math.round(h * 0.095);
-    const rowGap   = Math.round(h * 0.016);
-    const chHdrH   = Math.round(h * 0.065);
-    const chHdrGap = Math.round(h * 0.01);
+    // Content rect (kept right of the red margin at 0.09w, padded all round).
+    const cx0 = Math.round(w * 0.14);
+    const cy0 = tbH + Math.round(h * 0.05);
+    const cw = w - cx0 - Math.round(w * 0.06);
+    const cph = h - cy0 - Math.round(h * 0.05);
+    const px = (nx: number) => cx0 + Math.max(0, Math.min(1, nx)) * cw;
+    const py = (ny: number) => cy0 + Math.max(0, Math.min(1, ny)) * cph;
 
-    const chapters = groupByChapter(CAMPAIGN_LEVEL_ORDER);
-    let cy = 0; // y offset within listContainer content
-
-    for (const { chapter, levelIds } of chapters) {
-      // Chapter header row
-      const chLabel = txt(t('campaign.chapterLabel', { n: chapter }), Math.round(chHdrH * 0.52), C.accent, true);
-      chLabel.anchor.set(0, 0.5);
-      chLabel.x = listX;
-      chLabel.y = cy + chHdrH / 2;
-      this.listContainer.addChild(chLabel);
-
-      // Decorative line after chapter label
-      const chLine = new PIXI.Graphics();
-      const lx = listX + chLabel.width + Math.round(w * 0.025);
-      const ly = Math.round(cy + chHdrH / 2);
-      chLine.lineStyle(1, C.accent, 0.35);
-      chLine.moveTo(lx, ly); chLine.lineTo(w - listX, ly);
-      chLine.lineStyle(0);
-      this.listContainer.addChild(chLine);
-
-      cy += chHdrH + chHdrGap;
-
-      for (const levelId of levelIds) {
-        const globalIndex = globalOrder.indexOf(levelId);
-        const parsed = parseLevelId(levelId);
-        const lvIndex = parsed?.lvIndex ?? (globalIndex + 1);
-        const unlocked = this.isUnlocked(globalIndex, cleared);
-        const starCount = stars[levelId] ?? 0;
-        const isPending = pending.has(levelId);
-
-        this.drawLevelRow(
-          levelId, lvIndex, chapter, unlocked, starCount, online, isPending,
-          listX, cy, listW, rowH,
-        );
-        cy += rowH + rowGap;
-      }
-
-      cy += Math.round(h * 0.015); // extra gap between chapters
+    // Decor doodles first (behind nodes/path).
+    if (map.decor) {
+      for (const d of map.decor) this.drawDecor(root, d.kind, px(d.x), py(d.y), Math.round(h * 0.03));
     }
 
-    this.maxScroll = Math.max(0, cy - this.listH);
-    // Clamp existing scrollY after a re-render (e.g. resize).
-    this.scrollY = Math.min(this.scrollY, this.maxScroll);
-    this.listContainer.y = this.listY - this.scrollY;
+    // Pencil trail threading the nodes in order.
+    this.drawTrail(root, map, px, py);
+
+    // The current playable node = first unlocked & uncleared node this chapter.
+    const currentLevelId = map.nodes.find((nd) => isLevelUnlocked(nd.levelId, cleared) && !cleared.has(nd.levelId))?.levelId;
+
+    map.nodes.forEach((node, i) => {
+      const cx = px(node.x), cy = py(node.y);
+      const unlocked = isLevelUnlocked(node.levelId, cleared);
+      const isCleared = cleared.has(node.levelId);
+      const isCurrent = node.levelId === currentLevelId;
+      const ring = this.drawNode(
+        root, cx, cy, node, i, unlocked, isCleared, isCurrent,
+        stars[node.levelId] ?? 0, pending.has(node.levelId),
+      );
+      if (isCurrent && ring) pulse = ring;
+      if (unlocked) {
+        const r = Math.round(h * 0.04);
+        hits.push({ rect: { x: cx - r, y: cy - r, w: r * 2, h: r * 2 }, fn: () => this.cb.onSelectLevel(node.levelId) });
+      }
+    });
+
+    // Chapter-cleared stamp by the title once every node is cleared (§12.2 ceremony).
+    if (map.nodes.every((nd) => cleared.has(nd.levelId))) {
+      this.drawClearStamp(root, ch, w - Math.round(w * 0.30), tbH + Math.round(h * 0.06));
+    }
+
+    // Prev / next chapter arrows (next only once this chapter is fully cleared).
+    const idx = CHAPTER_ORDER.indexOf(ch);
+    if (idx > 0) {
+      const prevCh = CHAPTER_ORDER[idx - 1]!;
+      const a = txt('‹', Math.round(h * 0.06), C.mid, true);
+      a.anchor.set(0.5); a.x = Math.round(w * 0.05); a.y = (tbH + h) / 2;
+      root.addChild(a);
+      hits.push({ rect: { x: 0, y: tbH, w: Math.round(w * 0.12), h: h - tbH }, fn: () => this.openChapter(prevCh) });
+    }
+    if (idx < CHAPTER_ORDER.length - 1) {
+      const nextCh = CHAPTER_ORDER[idx + 1]!;
+      const nextMap = getChapterMap(nextCh);
+      const nextUnlocked = nextMap ? isLevelUnlocked(nextMap.nodes[0]!.levelId, cleared) : false;
+      const a = txt('›', Math.round(h * 0.06), nextUnlocked ? C.accent : C.btnOff, true);
+      a.anchor.set(0.5); a.x = w - Math.round(w * 0.05); a.y = (tbH + h) / 2;
+      root.addChild(a);
+      if (nextUnlocked) {
+        hits.push({ rect: { x: w - Math.round(w * 0.12), y: tbH, w: Math.round(w * 0.12), h: h - tbH }, fn: () => this.openChapter(nextCh) });
+      }
+    }
+
+    return { root, hits, pulse };
   }
 
-  private drawLevelRow(
-    levelId: string, lvIndex: number, _chapter: number,
-    unlocked: boolean, starCount: number,
-    online: boolean, pending: boolean,
-    x: number, y: number, w: number, h: number,
-  ): void {
-    const box = sketchPanel(w, h, {
-      fill: unlocked ? C.paper : C.btnDis,
-      border: unlocked ? C.gold : C.btnOff,
-      width: 2, seed: seedFor(x, y, w), fillAlpha: unlocked ? 1 : 0.85,
-    });
-    box.x = x; box.y = y;
-    sketchAccentBar(box, h, unlocked ? C.accent : C.btnOff, seedFor(x, h, 4));
-    this.listContainer.addChild(box);
+  private backToToc(): void {
+    if (this.flip) return;
+    this.flipTo(() => this.buildToc(), -1, () => { this.mode = 'toc'; });
+  }
 
-    // Level label (within-chapter index)
-    const nameStr = t('campaign.levelLabel', { n: lvIndex });
-    const hasNameKey = !!(CAMPAIGN_LEVELS[levelId]?.nameKey);
-    const labelFontSz = hasNameKey ? Math.round(h * 0.25) : Math.round(h * 0.30);
-    const labelY = hasNameKey ? h * 0.32 : h * 0.50;
+  /** Draw one level node; returns the pulse ring Graphics if `isCurrent`. */
+  private drawNode(
+    root: PIXI.Container, cx: number, cy: number, node: ChapterNode, i: number,
+    unlocked: boolean, isCleared: boolean, isCurrent: boolean,
+    starCount: number, pending: boolean,
+  ): PIXI.Graphics | null {
+    const { h } = this;
+    const r = Math.round(h * 0.032);
+    const parsed = parseLevelId(node.levelId);
+    const lvIndex = parsed?.lvIndex ?? (i + 1);
 
-    const name = txt(nameStr, labelFontSz, unlocked ? C.dark : C.mid, true);
-    name.anchor.set(0, 0.5); name.x = x + Math.round(w * 0.05); name.y = y + labelY;
-    this.listContainer.addChild(name);
-
-    // Optional story name (nameKey)
-    if (hasNameKey) {
-      const story = txt(t(CAMPAIGN_LEVELS[levelId]!.nameKey!), Math.round(h * 0.21), unlocked ? C.dark : C.mid);
-      story.anchor.set(0, 0.5); story.x = x + Math.round(w * 0.05); story.y = y + h * 0.70;
-      this.listContainer.addChild(story);
-    }
-
-    // Stars / pending / lock on the right
+    const g = new PIXI.Graphics();
+    const pen = new SketchPen(g, seedFor(cx, cy, r));
     if (unlocked) {
-      const starStr = '★'.repeat(starCount) + '☆'.repeat(3 - starCount);
-      const st = txt(starStr, Math.round(h * 0.26), C.gold);
-      st.anchor.set(1, 0.5); st.x = x + w - Math.round(w * 0.05); st.y = y + h * 0.50;
-      this.listContainer.addChild(st);
-      if (pending) {
-        const pd = txt(t('campaign.pending'), Math.round(h * 0.18), C.mid);
-        pd.anchor.set(1, 0.5); pd.x = x + w - Math.round(w * 0.05); pd.y = y + h * 0.78;
-        this.listContainer.addChild(pd);
-      }
+      g.beginFill(isCleared ? C.gold : C.paper, isCleared ? 0.22 : 1);
+      g.drawCircle(cx, cy, r); g.endFill();
+      pen.circle(cx, cy, r, { color: isCleared ? C.gold : C.accent, width: 2.4, jitter: 1.0 });
     } else {
-      const lockKey = online ? 'campaign.locked' : 'campaign.lockedOffline';
-      const lock = txt(t(lockKey), Math.round(h * 0.20), C.mid);
-      lock.anchor.set(1, 0.5); lock.x = x + w - Math.round(w * 0.05); lock.y = y + h * 0.50;
-      this.listContainer.addChild(lock);
+      // Locked — faint pencil outline only.
+      pen.circle(cx, cy, r, { color: palette.pencilLight, width: 1.6, jitter: 1.2, double: false });
+    }
+    root.addChild(g);
+
+    const num = txt(String(lvIndex), Math.round(r * 1.0), unlocked ? (isCleared ? C.gold : C.dark) : C.btnOff, true);
+    num.anchor.set(0.5); num.x = cx; num.y = cy;
+    root.addChild(num);
+
+    if (unlocked && isCleared) {
+      const starStr = '★'.repeat(starCount) + '☆'.repeat(3 - starCount);
+      const st = txt(starStr, Math.round(r * 0.62), C.gold);
+      st.anchor.set(0.5, 0); st.x = cx; st.y = cy + r + Math.round(h * 0.004);
+      root.addChild(st);
+    } else if (unlocked && pending) {
+      const pd = txt(t('campaign.pending'), Math.round(r * 0.55), C.mid);
+      pd.anchor.set(0.5, 0); pd.x = cx; pd.y = cy + r + Math.round(h * 0.004);
+      root.addChild(pd);
     }
 
-    if (unlocked) {
-      // Hit rect is in content space (relative to listContainer origin = listY).
-      // handleUp will offset by scrollY before comparing.
-      this.hits.push({ rect: { x, y, w, h }, scroll: true, fn: () => this.cb.onSelectLevel(levelId) });
+    if (isCurrent) {
+      const ring = new PIXI.Graphics();
+      new SketchPen(ring, seedFor(cx, cy, r + 5)).circle(0, 0, r + Math.round(h * 0.012), {
+        color: C.accent, width: 2.6, jitter: 0.9, double: false,
+      });
+      ring.x = cx; ring.y = cy;
+      root.addChild(ring);
+      return ring;
     }
+    return null;
+  }
+
+  /** Pencil dashed trail through the nodes (or an explicit point list). */
+  private drawTrail(root: PIXI.Container, map: ChapterMap, px: (n: number) => number, py: (n: number) => number): void {
+    const pts = (map.path && map.path !== 'auto' ? map.path : map.nodes).map((p) => ({ x: px(p.x), y: py(p.y) }));
+    if (pts.length < 2) return;
+    const g = new PIXI.Graphics();
+    const pen = new SketchPen(g, seedFor(pts[0]!.x, pts[0]!.y, pts.length));
+    const dash = Math.round(this.h * 0.018), gapLen = Math.round(this.h * 0.012);
+    for (let s = 0; s < pts.length - 1; s++) {
+      const a = pts[s]!, b = pts[s + 1]!;
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+      for (let d = 0; d < len; d += dash + gapLen) {
+        const d2 = Math.min(len, d + dash);
+        pen.line(a.x + ux * d, a.y + uy * d, a.x + ux * d2, a.y + uy * d2, {
+          color: palette.pencilLight, width: 1.8, jitter: 0.7, taper: 0.8, double: false,
+        });
+      }
+    }
+    root.addChildAt(g, 0); // behind nodes, but the bg paper is on the container, not the page root
+  }
+
+  // ── Procedural doodle decor ───────────────────────────────────────────────────
+
+  private drawDecor(root: PIXI.Container, kind: string, x: number, y: number, s: number): void {
+    const g = new PIXI.Graphics();
+    const pen = new SketchPen(g, seedFor(x, y, s));
+    switch (kind) {
+      case 'start': {
+        pen.line(x, y - s, x, y + s, { color: palette.pencil, width: 2.2 });
+        const fl = new PIXI.Graphics();
+        fl.beginFill(C.green, 0.85); fl.drawPolygon([x, y - s, x + s * 1.3, y - s * 0.6, x, y - s * 0.2]); fl.endFill();
+        root.addChild(fl);
+        const lbl = txt(t('campaign.markerStart'), Math.round(s * 0.62), C.green, true);
+        lbl.anchor.set(0.5, 0); lbl.x = x; lbl.y = y + s * 0.2; root.addChild(lbl);
+        break;
+      }
+      case 'boss': {
+        pen.line(x, y - s, x, y + s, { color: palette.pencil, width: 2.2 });
+        const fl = new PIXI.Graphics();
+        fl.beginFill(C.red, 0.85); fl.drawPolygon([x, y - s, x + s * 1.4, y - s * 0.55, x, y - s * 0.1]); fl.endFill();
+        root.addChild(fl);
+        const lbl = txt(t('campaign.markerBoss'), Math.round(s * 0.62), C.red, true);
+        lbl.anchor.set(0.5, 0); lbl.x = x; lbl.y = y + s * 0.2; root.addChild(lbl);
+        break;
+      }
+      case 'rack': // spear rack — an X of two strokes on a baseline
+        pen.line(x - s, y + s, x + s, y - s, { color: palette.pencilLight, width: 2.0, double: false });
+        pen.line(x - s, y - s, x + s, y + s, { color: palette.pencilLight, width: 2.0, double: false });
+        pen.line(x - s * 1.2, y + s, x + s * 1.2, y + s, { color: palette.pencilLight, width: 1.6, double: false });
+        break;
+      case 'flag':
+      case 'banner': {
+        pen.line(x, y - s, x, y + s, { color: palette.pencilLight, width: 2.0 });
+        const fl = new PIXI.Graphics();
+        fl.beginFill(C.accent, 0.55); fl.drawPolygon([x, y - s, x + s, y - s * 0.6, x, y - s * 0.2]); fl.endFill();
+        root.addChild(fl);
+        break;
+      }
+      case 'tent':
+        pen.line(x - s, y + s, x, y - s, { color: palette.pencilLight, width: 2.0, double: false });
+        pen.line(x + s, y + s, x, y - s, { color: palette.pencilLight, width: 2.0, double: false });
+        pen.line(x - s, y + s, x + s, y + s, { color: palette.pencilLight, width: 1.6, double: false });
+        break;
+      case 'tree':
+        pen.line(x, y + s, x, y - s * 0.2, { color: palette.pencil, width: 2.0, double: false });
+        pen.circle(x, y - s * 0.5, s * 0.7, { color: palette.pencilLight, width: 1.6, double: false });
+        break;
+      case 'rock':
+        pen.circle(x, y, s * 0.7, { color: palette.pencilLight, width: 1.8, double: false });
+        break;
+      default:
+        return; // unknown kind — forward-compatible skip
+    }
+    root.addChild(g);
+  }
+
+  /** A taped-shut overlay on a locked TOC card. */
+  private drawTape(card: PIXI.Graphics, w: number, h: number, seed: number): void {
+    const tw = Math.round(w * 0.18), th = Math.round(h * 0.5);
+    const tape = new PIXI.Graphics();
+    tape.beginFill(C.gold, 0.28); tape.drawRect(-tw / 2, -th / 2, tw, th); tape.endFill();
+    new SketchPen(tape, seed).rect(-tw / 2, -th / 2, tw, th, { color: C.gold, width: 1.4, alpha: 0.5, double: false });
+    tape.x = w * 0.5; tape.y = h * 0.5; tape.rotation = -0.35;
+    card.addChild(tape);
+  }
+
+  /** Rotated「第 N 章 · 通关」stamp near the chapter title. */
+  private drawClearStamp(root: PIXI.Container, ch: number, x: number, y: number): void {
+    const wrap = new PIXI.Container();
+    const label = `${t('campaign.chapterLabel', { n: ch })} · ${t('campaign.chapterStamp')}`;
+    const tx = txt(label, Math.round(this.h * 0.024), C.red, true);
+    tx.anchor.set(0.5);
+    const pad = Math.round(this.h * 0.012);
+    const box = new PIXI.Graphics();
+    new SketchPen(box, seedFor(x, y, ch)).rect(
+      -tx.width / 2 - pad, -tx.height / 2 - pad / 2, tx.width + pad * 2, tx.height + pad, { color: C.red, width: 2.2 },
+    );
+    wrap.addChild(box); wrap.addChild(tx);
+    wrap.x = x; wrap.y = y; wrap.rotation = -0.18; wrap.alpha = 0.85;
+    root.addChild(wrap);
   }
 }
