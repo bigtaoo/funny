@@ -16,6 +16,7 @@ import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
 import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
+import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/proto/transport';
 
 // ── Public callbacks ────────────────────────────────────────────────────────
 
@@ -23,9 +24,32 @@ export interface WorldMapCallbacks {
   onBack(): void;
   onOpenFamily(): void;
   onOpenAuction(): void;
+  /**
+   * Replay a finished siege the local player attacked: app fetches the defender
+   * config, runs GameScene in 'siege' mode, then uploads the recording to
+   * resolveSiege (anti-cheat reconciliation, C2 / S8-3b). Scene-side this is just
+   * a hand-off — the app owns the GameScene transition + replay upload.
+   */
+  onReplaySiege(siegeId: string): void;
+  /**
+   * Open the simplified defense editor (C3) for a tile. `tileKey` is 'base' for the
+   * main city or the full tileId `{worldId}:{x}:{y}` for an owned territory.
+   */
+  onOpenDefense(tileKey: string): void;
   worldApi: WorldApiClient;
   worldId: string;
   playerName: string;
+}
+
+/** March kinds the deploy dialog can dispatch (occupy/reinforce/attack/sweep). */
+type DeployKind = 'occupy' | 'reinforce' | 'attack' | 'sweep';
+
+/** Live-push handle returned by showWorldMap — app forwards NetSession pushes here. */
+export interface WorldMapView {
+  applyMarchUpdate(m: MarchUpdate): void;
+  applyTileUpdate(t: TileUpdate): void;
+  applyUnderAttack(u: UnderAttack): void;
+  applySiegeResult(s: SiegeResult): void;
 }
 
 // ── Tile styling ─────────────────────────────────────────────────────────────
@@ -111,20 +135,30 @@ export class WorldMapScene implements Scene {
   // Selected tile
   private selectedTile: { x: number; y: number } | null = null;
 
+  // Tiles this player launched an attack against this session — used to tell
+  // whether an incoming siege_result is ours (attacker → offer replay) or the
+  // defender's (just a toast). Keyed by full tileId "x:y:world".
+  private myAttackTiles: Set<string> = new Set();
+
   // Toast
   private toastTimer = 0;
   private destroyed = false;
 
   // March poll interval
   private marchPoll: ReturnType<typeof setInterval> | null = null;
+  private readonly unsubs: (() => void)[] = [];
 
-  constructor(layout: ILayout, _input: InputManager, cb: WorldMapCallbacks) {
+  constructor(layout: ILayout, input: InputManager, cb: WorldMapCallbacks) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
     this.container = new PIXI.Container();
     this.build();
     this.loadData();
+
+    this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
+    this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
 
     // Center map on join initially; will be overridden once we know base location
     this.centerAt(Math.floor(this.mapW / 2), Math.floor(this.mapH / 2));
@@ -214,6 +248,14 @@ export class WorldMapScene implements Scene {
     if (this.destroyed) return;
     try {
       this.marches = await this.cb.worldApi.getMarches(this.cb.worldId);
+      if (!this.destroyed) { this.renderHud(); this.renderMap(); }
+    } catch { /* offline */ }
+  }
+
+  private async refreshMe(): Promise<void> {
+    if (this.destroyed) return;
+    try {
+      this.me = await this.cb.worldApi.getMe(this.cb.worldId);
       if (!this.destroyed) this.renderHud();
     } catch { /* offline */ }
   }
@@ -533,17 +575,27 @@ export class WorldMapScene implements Scene {
     }
 
     if (tile?.mine) {
-      // My tile — abandon option
+      // My tile — reinforce (march from base) + abandon. Base itself: no actions.
       const [bx, by] = me.mainBaseTile ? this.parseTileId(me.mainBaseTile) : [-1, -1];
       const isBase = bx === tx && by === ty;
       if (isBase) {
-        this.showToast(t('world.myBase'));
+        // Main city — edit base defense config (C3).
+        this.showModal(
+          [t('world.myBase'), `(${tx}, ${ty})`],
+          [
+            { label: t('world.actDefense'), action: () => { this.closeModal(); this.cb.onOpenDefense('base'); } },
+            { label: '✕', action: () => this.closeModal() },
+          ],
+        );
         return;
       }
+      const tileKey = `${this.cb.worldId}:${tx}:${ty}`;
       this.showModal(
         [t('world.mine'), `(${tx}, ${ty})`],
         [
-          { label: t('world.confirmAbandonBtn'), action: () => this.doAbandon(tx, ty) },
+          { label: t('world.actReinforce'), action: () => this.showDeployDialog(tx, ty, 'reinforce') },
+          { label: t('world.actDefense'), action: () => { this.closeModal(); this.cb.onOpenDefense(tileKey); } },
+          { label: t('world.actAbandon'), action: () => this.doAbandon(tx, ty) },
           { label: '✕', action: () => this.closeModal() },
         ],
       );
@@ -551,14 +603,17 @@ export class WorldMapScene implements Scene {
     }
 
     if (tile?.occupied) {
-      // Enemy tile — show owner info if available
+      // Enemy tile — siege (attack march from base). Protected tiles can't be hit.
       const ownerLine = tile.ownerName
         ? `${tile.ownerName}${tile.ownerPublicId ? ' #' + tile.ownerPublicId : ''}`
         : (tile.ownerPublicId ? '#' + tile.ownerPublicId : t('world.unknownOwner'));
-      this.showModal(
-        [t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`],
-        [{ label: '✕', action: () => this.closeModal() }],
-      );
+      const buttons: { label: string; action: () => void }[] = [];
+      const protectedNow = (tile.protectedUntil ?? 0) > Date.now();
+      if (!protectedNow) {
+        buttons.push({ label: t('world.actAttack'), action: () => this.showDeployDialog(tx, ty, 'attack') });
+      }
+      buttons.push({ label: '✕', action: () => this.closeModal() });
+      this.showModal([t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`], buttons);
       return;
     }
 
@@ -567,20 +622,61 @@ export class WorldMapScene implements Scene {
       return;
     }
 
-    // Empty tile — occupy
-    const garrison = tile?.garrison;
-    const troops = me.troops ?? 0;
-    const msg = garrison
-      ? `${t('world.confirmOccupy').replace('{troops}', String(garrison))}`
-      : t('world.confirmOccupy').replace('{troops}', '1');
+    // Neutral tile. NPC garrison present → offer sweep (march). Always offer
+    // direct occupy (S8-1, in-range; server rejects out-of-range).
+    const garrison = tile?.garrison ?? 0;
+    const buttons: { label: string; action: () => void }[] = [
+      { label: t('world.actOccupy'), action: () => this.doOccupy(tx, ty) },
+    ];
+    if (garrison > 0) {
+      buttons.push({ label: t('world.actSweep'), action: () => this.showDeployDialog(tx, ty, 'sweep') });
+    }
+    buttons.push({ label: '✕', action: () => this.closeModal() });
+    const head = garrison > 0 ? t('world.garrison').replace('{n}', String(garrison)) : t('world.actOccupy');
+    this.showModal([head, `(${tx}, ${ty})`], buttons);
+  }
+
+  // ── Deploy (派兵数对话框) ──────────────────────────────────────────────────
+  // Pick how many troops to send for a march action. Presets ¼ / ½ / all of the
+  // available pool. March source is the player's main base. Server enforces the
+  // per-kind minimums (occupy/attack need OCCUPY_MIN_TROOPS) → toast on reject.
+
+  private showDeployDialog(tx: number, ty: number, kind: DeployKind): void {
+    const me = this.me;
+    if (!me?.joined || !me.mainBaseTile) { this.showToast(t('world.needBase'), C.red); return; }
+    const avail = Math.max(0, Math.floor(me.troops ?? 0));
+    const kindLabel = kind === 'attack' ? t('world.actAttack')
+      : kind === 'reinforce' ? t('world.actReinforce')
+      : kind === 'sweep' ? t('world.actSweep')
+      : t('world.actOccupy');
+    const send = (qty: number): void => { void this.doMarch(tx, ty, kind, qty); };
     this.showModal(
-      [msg, `(${tx}, ${ty})`],
+      [t('world.deployTitle').replace('{avail}', String(avail)), `${kindLabel} → (${tx}, ${ty})`],
       [
-        { label: t('world.confirmOccupyBtn'), action: () => this.doOccupy(tx, ty) },
+        { label: t('world.deployQuarter'), action: () => send(Math.floor(avail / 4)) },
+        { label: t('world.deployHalf'), action: () => send(Math.floor(avail / 2)) },
+        { label: t('world.deployAll'), action: () => send(avail) },
         { label: '✕', action: () => this.closeModal() },
       ],
     );
-    void troops; // checked server-side
+  }
+
+  private async doMarch(tx: number, ty: number, kind: DeployKind, troops: number): Promise<void> {
+    this.closeModal();
+    const me = this.me;
+    if (!me?.mainBaseTile) { this.showToast(t('world.needBase'), C.red); return; }
+    if (troops < 1) { this.showToast(t('world.err.noTroops'), C.red); return; }
+    const [fx, fy] = this.parseTileId(me.mainBaseTile);
+    try {
+      const march = await this.cb.worldApi.startMarch(this.cb.worldId, fx, fy, tx, ty, kind, troops);
+      if (kind === 'attack') this.myAttackTiles.add(march.toTile);
+      this.marches = await this.cb.worldApi.getMarches(this.cb.worldId);
+      this.me = await this.cb.worldApi.getMe(this.cb.worldId);
+      this.showToast(t('world.dispatched'));
+      this.renderMap(); this.renderHud();
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
   }
 
   private async doJoin(tx: number, ty: number): Promise<void> {
@@ -629,6 +725,62 @@ export class WorldMapScene implements Scene {
       this.renderMap(); this.renderHud();
     } catch (e) {
       this.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  // ── Live push (worldsvc → gateway → NetSession → here, §14.5) ────────────────
+  // Wired by createAppCore: it points session.handlers at these while the world
+  // map is on-screen. Each one does a targeted authoritative refetch then redraws
+  // — cheaper than hand-merging the push payload into the cached views.
+
+  applyMarchUpdate(_m: MarchUpdate): void {
+    if (this.destroyed) return;
+    void this.refreshMarches();
+  }
+
+  applyTileUpdate(_tu: TileUpdate): void {
+    if (this.destroyed) return;
+    void this.loadMapViewport().then(() => { if (!this.destroyed) this.renderMap(); });
+  }
+
+  applyUnderAttack(u: UnderAttack): void {
+    if (this.destroyed) return;
+    const [tx, ty] = this.parseTileId(u.tile);
+    const sec = Math.max(0, Math.ceil((u.arriveAt - Date.now()) / 1000));
+    const name = u.attackerName || ('#' + (u.attackerPublicId || '?'));
+    this.showToast(
+      `${t('world.underAttack')} ${t('world.underAttackMsg')
+        .replace('{name}', name)
+        .replace('{tile}', `(${tx},${ty})`)
+        .replace('{sec}', String(sec))}`,
+      C.red,
+    );
+  }
+
+  applySiegeResult(s: SiegeResult): void {
+    if (this.destroyed) return;
+    // Ownership / resources / troops may all have shifted — refetch the lot.
+    void this.loadMapViewport().then(() => { if (!this.destroyed) this.renderMap(); });
+    void this.refreshMe();
+    void this.refreshMarches();
+
+    if (this.myAttackTiles.has(s.tile)) {
+      // We attacked — show the outcome + offer replay & verify (anti-cheat, C2).
+      const loot = s.lootSummary ?? '';
+      const line = s.outcome === 'attacker_win' ? t('world.siegeWin').replace('{loot}', loot)
+        : s.outcome === 'defender_win' ? t('world.siegeLoss')
+        : t('world.siegeDraw');
+      this.showModal(
+        [line],
+        [
+          { label: t('world.replaySiege'), action: () => { this.closeModal(); this.cb.onReplaySiege(s.siegeId); } },
+          { label: '✕', action: () => this.closeModal() },
+        ],
+      );
+    } else {
+      // We were the defender (or a bystander) — toast only.
+      const line = s.outcome === 'attacker_win' ? t('world.defendLost') : t('world.defendHeld');
+      this.showToast(line, s.outcome === 'attacker_win' ? C.red : C.dark);
     }
   }
 
@@ -771,6 +923,8 @@ export class WorldMapScene implements Scene {
   destroy(): void {
     this.destroyed = true;
     if (this.marchPoll) { clearInterval(this.marchPoll); this.marchPoll = null; }
+    for (const u of this.unsubs) u();
+    this.unsubs.length = 0;
     this.container.destroy({ children: true });
   }
 }

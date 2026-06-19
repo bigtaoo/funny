@@ -187,8 +187,24 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["getDefense"];
         put: operations["setDefense"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/siege/{siegeId}/defense": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSiegeDefense"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -664,6 +680,12 @@ export interface components {
             };
             description: string;
         };
+        SiegeDefenseView: {
+            siegeId: string;
+            level: {
+                [key: string]: unknown;
+            };
+        };
         SiegeResolveResult: {
             recomputed: boolean;
             judgeOutcome?: string;
@@ -1026,6 +1048,32 @@ export interface operations {
             };
         };
     };
+    getDefense: {
+        parameters: {
+            query: {
+                worldId: string;
+                /** @description 'base' 主城（缺省），或 '{x}:{y}' 领地键 */
+                tileKey?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current defense config (data null when unset) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["DefenseConfig"];
+                    };
+                };
+            };
+        };
+    };
     setDefense: {
         parameters: {
             query?: never;
@@ -1051,6 +1099,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    getSiegeDefense: {
+        parameters: {
+            query: {
+                worldId: string;
+            };
+            header?: never;
+            path: {
+                siegeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Playable siege defense level (attacker-only) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["SiegeDefenseView"];
+                    };
                 };
             };
         };

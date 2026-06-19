@@ -13,7 +13,8 @@
 import type { IPlatform } from '../platform/IPlatform';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView } from './AppViews';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, RecordingInputSource } from '../game';
-import type { OwnerId, PlayerStats, MatchStartInfo, Replay } from '../game';
+import type { OwnerId, PlayerStats, MatchStartInfo, Replay, LevelDefinition } from '../game';
+import { replayToUploadFrames } from '../net/replayUpload';
 import { computeStars, remainingHpPct } from '../game/meta/campaignRewards';
 import { initI18n, t, type TranslationKey } from '../i18n';
 import { LocalSaveStore, SaveManager, ReplayStore } from '../game/meta';
@@ -445,13 +446,85 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   function goWorldMap(worldApi: WorldApiClient, worldId: string): void {
-    views.showWorldMap({
+    inLobby = false;
+    const view = views.showWorldMap({
       onBack() { goLobby(); },
       onOpenFamily() { goFamilyHub(worldApi, worldId); },
       onOpenAuction() { goAuctionHouse(worldApi, worldId); },
+      onReplaySiege(siegeId) { void goSiegeReplay(worldApi, worldId, siegeId); },
+      onOpenDefense(tileKey) { goDefenseEditor(worldApi, worldId, tileKey); },
       worldApi,
       worldId,
       playerName: playerName(),
+    });
+    // Keep the gateway connected + forward SLG pushes into the live map handle
+    // (march/tile/under-attack/siege incremental refresh, §14.5).
+    const session = getNetSession();
+    if (session) {
+      session.handlers = {
+        onMatchStart: (info) => goGameNet(info),
+        onMarchUpdate: (m) => view.applyMarchUpdate(m),
+        onTileUpdate:  (tu) => view.applyTileUpdate(tu),
+        onUnderAttack: (u) => view.applyUnderAttack(u),
+        onSiegeResult: (s) => view.applySiegeResult(s),
+      };
+      session.connect();
+    }
+  }
+
+  /**
+   * Replay a finished siege the player attacked (C2 / S8-3b): fetch the defender
+   * config from worldsvc, run GameScene in 'siege' mode against it, then upload
+   * the recording to resolveSiege for anti-cheat reconciliation (best-effort).
+   * The cheap-settled outcome stays authoritative (option B) — this is a
+   * play-back + verification pass, not a re-decision.
+   */
+  async function goSiegeReplay(worldApi: WorldApiClient, worldId: string, siegeId: string): Promise<void> {
+    let level: LevelDefinition;
+    try {
+      const defense = await worldApi.getSiegeDefense(worldId, siegeId);
+      level = defense.level as unknown as LevelDefinition;
+    } catch {
+      goWorldMap(worldApi, worldId);
+      return;
+    }
+    inLobby = false;
+    platform.onGameplayStart();
+    analytics.track('game_start', { mode: 'siege', level_id: siegeId });
+    views.showGame({
+      onGameEnd(winner, stats, replay) {
+        if (replay) {
+          // Upload for server recompute (judge). Fire-and-forget — failure only
+          // means no anti-cheat reconciliation, the cheap outcome already stuck.
+          void worldApi.resolveSiege(worldId, siegeId, {
+            seed: replay.seed,
+            mode: 0,
+            endFrame: replay.endFrame,
+            frames: replayToUploadFrames(replay),
+            pveUpgrades: saveManager.get().pveUpgrades,
+          }).catch(() => { /* best-effort */ });
+        }
+        analytics.track('game_end', { mode: 'siege', result: winner === 0 ? 'win' : 'loss', level_id: siegeId });
+        void goResult(winner, stats, 0, replay, undefined, undefined, undefined,
+          () => goWorldMap(worldApi, worldId), t('world.back'));
+      },
+      onExitToLobby() { goWorldMap(worldApi, worldId); },
+    }, {
+      level,
+      mode: 'siege',
+      pveUpgrades: saveManager.get().pveUpgrades,
+      equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
+    });
+  }
+
+  /** Open the simplified defense editor (C3) for a tile; returns to the map on back. */
+  function goDefenseEditor(worldApi: WorldApiClient, worldId: string, tileKey: string): void {
+    inLobby = false;
+    views.showDefenseEditor({
+      onBack() { goWorldMap(worldApi, worldId); },
+      worldApi,
+      worldId,
+      tileKey,
     });
   }
 

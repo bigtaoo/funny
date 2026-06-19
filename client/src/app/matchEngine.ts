@@ -19,8 +19,15 @@ import {
 export interface LocalMatchOpts {
   /** When set, runs the PvE campaign level instead of a PvP-vs-AI match. */
   level?: LevelDefinition;
-  /** PvE upgrade levels threaded into the engine (hard wall, §5.2); campaign only. */
+  /** PvE upgrade levels threaded into the engine (hard wall, §5.2); campaign + siege. */
   pveUpgrades?: Record<string, number>;
+  /**
+   * Engine mode override. Defaults to 'campaign' when a level is given, else 'pvp'.
+   * Pass 'siege' (SLG 围攻, S8-3) to drive the same PvE-shaped engine with the
+   * siege blueprint source — the `level` then carries the defender's config
+   * (garrison / defenderBuildings / defenderBaseLevel).
+   */
+  mode?: GameMode;
 }
 
 export interface LocalMatch {
@@ -38,7 +45,7 @@ export function createLocalMatch(opts: LocalMatchOpts = {}): LocalMatch {
   const seed = opts.level
     ? opts.level.seed
     : (Date.now() ^ ((Math.random() * 0xffffff) | 0)) >>> 0;
-  const mode: GameMode = opts.level ? 'campaign' : 'pvp';
+  const mode: GameMode = opts.mode ?? (opts.level ? 'campaign' : 'pvp');
   const recorder = new RecordingInputSource(new LocalInputSource());
   const recordLevelId = opts.level?.id;
   const engine = createGameEngine(

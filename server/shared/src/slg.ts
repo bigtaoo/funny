@@ -575,4 +575,56 @@ export function resolveSiege(attackerTroops: number, defenseStrength: number): S
   return { outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: def - atk };
 }
 
+// ── 围攻可玩防守关卡（S8-3b / C2）─────────────────────────────────────────────
+// 把存储的防守 config（DefenseConfig 子集：garrison/defenderBuildings/defenderBaseLevel）规整成一份
+// 「攻方可打」的完整 LevelDefinition 形态对象（objective=destroy_base，无脚本波次）。客户端用它在
+// GameScene siege 模式实打 / 复盘；worldsvc 复算（resolveSiegeWithJudge）用同一份作为 judge 的
+// defenseJson —— 两端必须逐字一致才能确定性复算，故集中于此单一来源。
+
+/** 由 siegeId 派生确定性 seed（FNV-1a 32-bit），供围攻关卡 + 复算同 seed。 */
+export function siegeSeedFromId(sid: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < sid.length; i++) {
+    h ^= sid.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+function clampBaseLevel(n: number): number {
+  return Math.max(0, Math.min(3, Math.floor(n) || 0));
+}
+
+/**
+ * 规整防守 config → 完整围攻关卡对象。`config` 为防守方自定义（可空）；`tileLevel` 用于无自定义时
+ * 派生一个象征性的基地等级防守。返回形态对齐客户端 LevelDefinition（loose object，避免在 shared
+ * 复制引擎 schema）。纯函数、确定性、双端可算。
+ */
+export function buildSiegeLevel(
+  config: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null | undefined,
+  tileLevel: number,
+  seed: number,
+): Record<string, unknown> {
+  const level: Record<string, unknown> = {
+    id: `siege:${seed}`,
+    chapter: 0,
+    seed,
+    objective: { kind: 'destroy_base' },
+    waves: { entries: [] },
+  };
+  if (config) {
+    if (Array.isArray(config.garrison) && config.garrison.length > 0) level.garrison = config.garrison;
+    if (Array.isArray(config.defenderBuildings) && config.defenderBuildings.length > 0) {
+      level.defenderBuildings = config.defenderBuildings;
+    }
+    if (typeof config.defenderBaseLevel === 'number') {
+      level.defenderBaseLevel = clampBaseLevel(config.defenderBaseLevel);
+    }
+  } else {
+    // 无自定义防守 → 用格等级派生一个象征性基地防守（确定性，攻方破基即胜）。
+    level.defenderBaseLevel = clampBaseLevel(Math.floor(tileLevel) - 1);
+  }
+  return level;
+}
+
 // ── 错误码：见 api.ts ErrorCode 的 SLG 段（WORLD_FULL/TILE_OCCUPIED/…）──

@@ -10,6 +10,8 @@ import {
   playerWorldId,
   tileYield,
   resolveSiege,
+  siegeSeedFromId,
+  buildSiegeLevel,
   npcGarrison,
   findMarchPath,
   marchDurationFromPath,
@@ -1187,6 +1189,68 @@ export class WorldService {
     }
   }
 
+  /**
+   * 读取领地或主城当前防守 config（C3 编辑器预填）。
+   * tileKey='base' → 主城 playerWorld.defense；否则该 tileId 的 tile.defense。
+   * 未设置返回 null；非己方领地抛 TILE_NOT_OWNED。
+   */
+  async getDefense(
+    worldId: string,
+    accountId: string,
+    tileKey: string,
+  ): Promise<Record<string, unknown> | null> {
+    const { cols } = this.deps;
+    if (tileKey === 'base') {
+      const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+      if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+      return (pw.defense as Record<string, unknown> | undefined) ?? null;
+    }
+    const tile = await cols.tiles.findOne({ _id: tileKey });
+    if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', '非己方领地');
+    return (tile.defense as Record<string, unknown> | undefined) ?? null;
+  }
+
+  // ── S8-3b / C2：围攻防守 config 读取 + 复盘关卡 ────────────
+
+  /** 取一条围攻战报关联的防守 config（领地 tile 优先，否则主城 playerWorld）+ 目标格等级。 */
+  private async siegeDefenseConfig(
+    worldId: string,
+    siege: SiegeDoc,
+  ): Promise<{ config: Record<string, unknown> | null; tileLevel: number }> {
+    const { cols } = this.deps;
+    let config: Record<string, unknown> | null = null;
+    let tileLevel = 1;
+    const targetTile = await cols.tiles.findOne({ _id: siege.tile });
+    if (targetTile) {
+      tileLevel = targetTile.level ?? 1;
+      if (targetTile.defense) config = targetTile.defense as Record<string, unknown>;
+    }
+    if (!config && siege.defenderId) {
+      const defPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, siege.defenderId) });
+      if (defPw?.defense) config = defPw.defense as Record<string, unknown>;
+    }
+    return { config, tileLevel };
+  }
+
+  /**
+   * 取一份「攻方可打」的围攻防守关卡（C2 客户端复盘 + 录像复算同源）。仅进攻方可读。
+   * 返回的 level 形态对齐客户端 LevelDefinition；其 seed = siegeSeedFromId(sid)，客户端必须用此
+   * seed 在 siege 模式实打，复算（resolveSiegeWithJudge）方能逐字复现。
+   */
+  async getSiegeDefense(
+    worldId: string,
+    accountId: string,
+    sid: string,
+  ): Promise<{ siegeId: string; level: Record<string, unknown> }> {
+    const { cols } = this.deps;
+    const siege = await cols.sieges.findOne({ _id: sid, worldId });
+    if (!siege) throw new SlgError('NOT_FOUND', '战报不存在');
+    if (siege.attackerId !== accountId) throw new SlgError('NO_PERMISSION', '只有进攻方可复盘');
+    const { config, tileLevel } = await this.siegeDefenseConfig(worldId, siege);
+    const seed = siegeSeedFromId(sid);
+    return { siegeId: sid, level: buildSiegeLevel(config, tileLevel, seed) };
+  }
+
   // ── S8-3b：judgeRunner 接入（关键围攻录像复算）────────────
 
   /**
@@ -1210,22 +1274,17 @@ export class WorldService {
     if (siege.attackerId !== accountId) throw new SlgError('NO_PERMISSION', '只有进攻方可提交录像');
     if (siege.recomputed) return { recomputed: true }; // 已复算过，幂等返回
 
-    // 取防守方的防守 config（领地 tile 或主城 playerWorld）
-    let defenseConfig: Record<string, unknown> | undefined;
-    const targetTile = await cols.tiles.findOne({ _id: siege.tile });
-    if (targetTile?.defense) {
-      defenseConfig = targetTile.defense as Record<string, unknown>;
-    } else if (siege.defenderId) {
-      const defPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, siege.defenderId) });
-      if (defPw?.defense) defenseConfig = defPw.defense as Record<string, unknown>;
-    }
-
-    const defenseJson = defenseConfig ? JSON.stringify(defenseConfig) : undefined;
+    // 取防守 config（领地 tile 或主城 playerWorld）→ 规整成可玩围攻关卡（与 getSiegeDefense 同源），
+    // 作为 judge 的 defenseJson。seed 用 siegeId 派生的 canonical 值（客户端必须用同 seed 实打）。
+    const { config, tileLevel } = await this.siegeDefenseConfig(worldId, siege);
+    const seed = siegeSeedFromId(sid);
+    const defenseJson = JSON.stringify(buildSiegeLevel(config, tileLevel, seed));
 
     const result = await this.gateway.judge({
       ...judgeArgs,
+      seed,
       exclude: [accountId],
-      ...(defenseJson ? { defenseJson } : {}),
+      defenseJson,
     });
 
     const replayRef = result.judgeAccountId

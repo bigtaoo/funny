@@ -7,6 +7,7 @@ import {
   LevelDefinition,
   OwnerId,
   PlayerStats,
+  type GameMode,
   type Replay,
 } from '../game';
 import { createLocalMatch } from '../app/matchEngine';
@@ -32,6 +33,12 @@ export interface GameSceneCallbacks {
 export interface GameSceneOptions {
   /** When set, the scene runs the PvE campaign level instead of a PvP match. */
   level?: LevelDefinition;
+  /**
+   * Engine mode override for locally-simulated matches. Defaults to 'campaign'
+   * when `level` is set. Pass 'siege' to replay an SLG 围攻 against a defender's
+   * config (S8-3 / C2). Ignored when an `engine` is injected (netplay).
+   */
+  mode?: GameMode;
   /**
    * PvE upgrade levels (SaveData.pveUpgrades) for the campaign path. Threaded
    * into the engine to build buffed blueprints (hard wall, §5.2); ignored unless
@@ -74,6 +81,7 @@ export class GameScene implements Scene {
       const match = createLocalMatch({
         ...(opts.level ? { level: opts.level } : {}),
         ...(opts.pveUpgrades ? { pveUpgrades: opts.pveUpgrades } : {}),
+        ...(opts.mode ? { mode: opts.mode } : {}),
       });
       engine = match.engine;
       buildReplay = match.buildReplay;

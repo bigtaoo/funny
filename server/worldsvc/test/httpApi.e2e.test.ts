@@ -188,14 +188,32 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(r.status).toBe(400);
   });
 
-  it('未实现写端点 → 501；未知路由 → 404', async () => {
-    // 防守设置仍 stub（S8-3+）。
-    const defense = await fetch(`${base}/world/defense`, {
+  it('防守 config（C3）：PUT 主城防守 → GET 取回；缺 worldId → 400；未知路由 → 404', async () => {
+    const config = {
+      garrison: [{ unitType: 'infantry', col: 3, row: 16 }],
+      defenderBuildings: [{ buildingType: 'arrow_tower', col: 7 }],
+      defenderBaseLevel: 2,
+    };
+    const put = await fetch(`${base}/world/defense`, {
+      method: 'PUT',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ worldId: W, tileKey: 'base', defenseConfig: config }),
+    });
+    expect(put.status).toBe(200);
+
+    const get = await fetch(`${base}/world/defense?worldId=${W}&tileKey=base`, { headers: auth });
+    expect(get.status).toBe(200);
+    const body = await get.json() as { ok: boolean; data: typeof config };
+    expect(body.ok).toBe(true);
+    expect(body.data).toEqual(config);
+
+    const bad = await fetch(`${base}/world/defense`, {
       method: 'PUT',
       headers: { ...auth, 'content-type': 'application/json' },
       body: '{}',
     });
-    expect(defense.status).toBe(501);
+    expect(bad.status).toBe(400);
+
     const nf = await fetch(`${base}/world/nope`, { headers: auth });
     expect(nf.status).toBe(404);
   });

@@ -55,7 +55,8 @@
       "mcp__visualize__read_me",
       "mcp__visualize__show_widget",
       "Bash(rm -f \"/c/Users/TaoWang/.claude/projects/C--Users-TaoWang-Documents-funny/memory/project_sketch_gen_tool.md\" && echo \"removed memory file\")",
-      "Bash(npm test *)"
+      "Bash(npm test *)",
+      "Bash(rm -f .git/COMMIT_MSG_TMP.txt && echo \"=== HEAD commit files: ===\" && git show --stat --oneline HEAD && echo \"\" && echo \"=== still-uncommitted \\(other work, untouched\\): ===\" && git status --short | head -30)"
     ],
     "defaultMode": "acceptEdits"
   }

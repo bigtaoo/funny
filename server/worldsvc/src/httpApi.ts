@@ -194,6 +194,12 @@ export function startHttpApi(
         }
 
         // ── 防守 config（S8-4 残留，做实）──
+        if (method === 'GET' && path === '/world/defense') {
+          const worldId = q.get('worldId');
+          const tileKey = q.get('tileKey') ?? 'base';
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await svc.getDefense(worldId, accountId, tileKey)));
+        }
         if (method === 'PUT' && path === '/world/defense') {
           const body = await readJson(req);
           const worldId = typeof body.worldId === 'string' ? body.worldId : null;
@@ -223,6 +229,16 @@ export function startHttpApi(
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           if (!Number.isFinite(coins) || coins < 1) return sendErr(res, ErrorCode.BAD_REQUEST, 'coins required');
           return send(res, 200, ok(await svc.speedupTraining(worldId, accountId, coins)));
+        }
+
+        // ── 围攻防守关卡读取（C2 复盘 / 录像复算同源）──
+        {
+          const m = /^\/world\/siege\/([^/]+)\/defense$/.exec(path);
+          if (method === 'GET' && m) {
+            const worldId = q.get('worldId');
+            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+            return send(res, 200, ok(await svc.getSiegeDefense(worldId, accountId, decodeURIComponent(m[1]!))));
+          }
         }
 
         // ── 围攻录像复算（S8-3b，做实）──

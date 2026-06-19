@@ -23,9 +23,10 @@ import { CampaignMapScene, type CampaignMapCallbacks } from './scenes/CampaignMa
 import { LevelPrepScene, type LevelPrepCallbacks } from './scenes/LevelPrepScene';
 import { CollectionScene, type CollectionCallbacks } from './scenes/CollectionScene';
 import { StatsScene, type StatsCallbacks } from './scenes/StatsScene';
-import { WorldMapScene, type WorldMapCallbacks } from './scenes/WorldMapScene';
+import { WorldMapScene, type WorldMapCallbacks, type WorldMapView } from './scenes/WorldMapScene';
 import { FamilyScene, type FamilySceneCallbacks } from './scenes/FamilyScene';
 import { AuctionScene, type AuctionSceneCallbacks } from './scenes/AuctionScene';
+import { DefenseEditorScene, type DefenseEditorCallbacks } from './scenes/DefenseEditorScene';
 import { OwnerId, ownerToSide } from './game';
 import type { Replay } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
@@ -179,9 +180,16 @@ class PixiAppViews implements AppViews {
     return { applyIncoming: (m) => scene.applyIncoming(m) };
   }
 
-  showWorldMap(cb: WorldMapCallbacks): void {
+  showWorldMap(cb: WorldMapCallbacks): WorldMapView {
     this.leaveLobby();
-    this.manager.goto(new WorldMapScene(this.layout, this.input, cb));
+    const scene = new WorldMapScene(this.layout, this.input, cb);
+    this.manager.goto(scene);
+    return {
+      applyMarchUpdate: (m) => scene.applyMarchUpdate(m),
+      applyTileUpdate:  (tu) => scene.applyTileUpdate(tu),
+      applyUnderAttack: (u) => scene.applyUnderAttack(u),
+      applySiegeResult: (s) => scene.applySiegeResult(s),
+    };
   }
 
   showFamily(cb: FamilySceneCallbacks): void {
@@ -192,6 +200,11 @@ class PixiAppViews implements AppViews {
   showAuction(cb: AuctionSceneCallbacks): void {
     this.leaveLobby();
     this.manager.goto(new AuctionScene(this.layout, this.input, cb));
+  }
+
+  showDefenseEditor(cb: DefenseEditorCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new DefenseEditorScene(this.layout, this.input, cb));
   }
 
   showGameNet(localSide: OwnerId, cb: GameSceneCallbacks, opts: GameSceneOptions): NetGameView {

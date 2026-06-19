@@ -26,6 +26,7 @@ export type NationView = components['schemas']['NationView'];
 export type SeasonView = components['schemas']['SeasonView'];
 export type SlgShopItemView = components['schemas']['SlgShopItemView'];
 export type SiegeResolveResult = components['schemas']['SiegeResolveResult'];
+export type SiegeDefenseView = components['schemas']['SiegeDefenseView'];
 export type DefenseConfig = components['schemas']['DefenseConfig'];
 
 // Derived enum types for method parameters
@@ -147,12 +148,25 @@ export class WorldApiClient {
 
   // ── Defense（防守 config 内嵌，S8-4）────────────────────────────────────────
 
+  /** 读当前防守 config（C3 编辑器预填）。tileKey='base' 主城 或 '{x}:{y}' 领地；未设置返回 null。 */
+  async getDefense(worldId: string, tileKey: string): Promise<DefenseConfig | null> {
+    return this.req('GET', `/world/defense?worldId=${encodeURIComponent(worldId)}&tileKey=${encodeURIComponent(tileKey)}`);
+  }
+
   /** 设/改防守 config。tileKey='base' 主城 或 '{x}:{y}' 领地。 */
   async setDefense(worldId: string, tileKey: string, defenseConfig: DefenseConfig): Promise<{ ok: true }> {
     return this.req('PUT', '/world/defense', { worldId, tileKey, defenseConfig });
   }
 
   // ── Siege（围攻录像复算，S8-3b）─────────────────────────────────────────────
+
+  /**
+   * 取一份「攻方可打」的围攻防守关卡（C2 复盘）。返回 level 形态对齐引擎 LevelDefinition，
+   * 其 seed 须原样用于 GameScene siege 实打 + 后续 resolveSiege 上传，方能确定性复算。
+   */
+  async getSiegeDefense(worldId: string, siegeId: string): Promise<SiegeDefenseView> {
+    return this.req('GET', `/world/siege/${encodeURIComponent(siegeId)}/defense?worldId=${encodeURIComponent(worldId)}`);
+  }
 
   /** 上传围攻录像帧，服务端 judgeRunner 复算落地。 */
   async resolveSiege(worldId: string, siegeId: string, payload: SiegeResolvePayload): Promise<SiegeResolveResult> {

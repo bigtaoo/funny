@@ -278,6 +278,17 @@ components:
         description:
           type: string
 
+    # 攻方可打的围攻防守关卡（C2 复盘）。level 形态对齐客户端 LevelDefinition（loose object），
+    # 其 seed 由 siegeId 派生，客户端须以此 seed 在 siege 模式实打后再上传录像复算。
+    SiegeDefenseView:
+      type: object
+      required: [siegeId, level]
+      properties:
+        siegeId: { type: string }
+        level:
+          type: object
+          additionalProperties: true
+
     SiegeResolveResult:
       type: object
       required: [recomputed]
@@ -596,6 +607,27 @@ paths:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
 
   /world/defense:
+    get:
+      operationId: getDefense
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+        - name: tileKey
+          in: query
+          required: false
+          schema: { type: string }
+          description: "'base' 主城（缺省），或 '{x}:{y}' 领地键"
+      responses:
+        '200':
+          description: Current defense config (data null when unset)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/DefenseConfig' }
     put:
       operationId: setDefense
       security: [{ bearerAuth: [] }]
@@ -618,6 +650,25 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /world/siege/{siegeId}/defense:
+    get:
+      operationId: getSiegeDefense
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: siegeId, in: path, required: true, schema: { type: string } }
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Playable siege defense level (attacker-only)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SiegeDefenseView' }
 
   /world/siege/{siegeId}/resolve:
     post:

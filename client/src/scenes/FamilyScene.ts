@@ -61,14 +61,19 @@ export class FamilyScene implements Scene {
   // Toast
   private toastTimer = 0;
   private destroyed = false;
+  private readonly unsubs: (() => void)[] = [];
 
-  constructor(layout: ILayout, _input: InputManager, cb: FamilySceneCallbacks) {
+  constructor(layout: ILayout, input: InputManager, cb: FamilySceneCallbacks) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
     this.container = new PIXI.Container();
     this.build();
     void this.loadData();
+
+    this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
+    this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
   }
 
   private build(): void {
@@ -659,6 +664,8 @@ export class FamilyScene implements Scene {
 
   destroy(): void {
     this.destroyed = true;
+    for (const u of this.unsubs) u();
+    this.unsubs.length = 0;
     if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
     this.container.destroy({ children: true });
   }
