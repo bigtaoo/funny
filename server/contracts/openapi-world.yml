@@ -33,7 +33,7 @@ components:
           type: integer
         type:
           type: string
-          enum: [neutral, resource, mountain, forest, water, center, familyKeep, base]
+          enum: [neutral, resource, territory, familyKeep, center, base, obstacle, gate]
         level:
           type: integer
         resType:
@@ -211,6 +211,87 @@ components:
           type: number
         buyerId:
           type: string
+
+    # ── Nation / Season / Shop / Siege (S8-6.5 ~ S8-8) ──────────────────────────
+
+    NationView:
+      type: object
+      required: [capitalIdx, x, y]
+      properties:
+        capitalIdx:
+          type: integer
+          description: 0~9，对应 CAPITAL_FRACTIONS 索引
+        x:
+          type: integer
+        y:
+          type: integer
+        ownerId:
+          type: string
+        familyId:
+          type: string
+        nationName:
+          type: string
+        foundedAt:
+          type: number
+
+    SeasonView:
+      type: object
+      required: [worldId, season, shard, status, openAt, capacity, population, mapW, mapH]
+      properties:
+        worldId:
+          type: string
+        season:
+          type: integer
+        shard:
+          type: integer
+        status:
+          type: string
+          enum: [open, active, settling, closed]
+        openAt:
+          type: number
+        resetAt:
+          type: number
+        capacity:
+          type: integer
+        population:
+          type: integer
+        mapW:
+          type: integer
+        mapH:
+          type: integer
+
+    SlgShopItemView:
+      type: object
+      required: [id, cost, kind, effect, description]
+      properties:
+        id:
+          type: string
+        cost:
+          type: integer
+          description: 金币价格
+        kind:
+          type: string
+          enum: [troop_speedup, resource_pack, protection, battle_pass]
+        effect:
+          type: object
+          additionalProperties: true
+        description:
+          type: string
+
+    SiegeResolveResult:
+      type: object
+      required: [recomputed]
+      properties:
+        recomputed:
+          type: boolean
+        judgeOutcome:
+          type: string
+
+    # 防守 config = 引擎 LevelDefinition 的受限子集（garrison/defenderBuildings/defenderBaseLevel）。
+    # 形态由客户端自有 meta 镜像约束，契约层用 loose object（避免重复引擎 schema）。
+    DefenseConfig:
+      type: object
+      additionalProperties: true
 
     # ── Shared response wrappers ───────────────────────────────────────────────
 
@@ -428,6 +509,258 @@ paths:
       responses:
         '200':
           description: Recalled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /world/sweep:
+    post:
+      operationId: sweepTile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, fromX, fromY, toX, toY, troops]
+              properties:
+                worldId: { type: string }
+                fromX: { type: integer }
+                fromY: { type: integer }
+                toX: { type: integer }
+                toY: { type: integer }
+                troops: { type: integer }
+      responses:
+        '200':
+          description: Sweep march started
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/MarchView' }
+
+  /world/troops/train:
+    post:
+      operationId: trainTroops
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, qty]
+              properties:
+                worldId: { type: string }
+                qty: { type: integer }
+      responses:
+        '200':
+          description: Training queued
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
+
+  /world/troops/speedup:
+    post:
+      operationId: speedupTraining
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, coins]
+              properties:
+                worldId: { type: string }
+                coins: { type: integer }
+      responses:
+        '200':
+          description: Training sped up
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
+
+  /world/defense:
+    put:
+      operationId: setDefense
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, defenseConfig]
+              properties:
+                worldId: { type: string }
+                tileKey:
+                  type: string
+                  description: "'base' 主城，或 '{x}:{y}' 领地键；缺省 'base'"
+                defenseConfig: { $ref: '#/components/schemas/DefenseConfig' }
+      responses:
+        '200':
+          description: Defense set
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /world/siege/{siegeId}/resolve:
+    post:
+      operationId: resolveSiege
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: siegeId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, seed, mode, endFrame, frames]
+              properties:
+                worldId: { type: string }
+                seed: { type: integer }
+                mode: { type: integer }
+                endFrame: { type: integer }
+                frames:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      frame: { type: integer }
+                      cmds:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            side: { type: integer }
+                            commands: { type: string }
+                pveUpgrades:
+                  type: object
+                  additionalProperties: { type: number }
+      responses:
+        '200':
+          description: Siege recomputed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SiegeResolveResult' }
+
+  /world/nations:
+    get:
+      operationId: getNations
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Nation list (10 capitals)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/NationView' }
+
+  /world/nations/{capitalIdx}/name:
+    post:
+      operationId: setNationName
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: capitalIdx, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, name]
+              properties:
+                worldId: { type: string }
+                name: { type: string }
+      responses:
+        '200':
+          description: Nation named
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /world/season:
+    get:
+      operationId: getSeason
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Season info
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SeasonView' }
+
+  /world/shop/items:
+    get:
+      operationId: getSlgShopItems
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: SLG shop items
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/SlgShopItemView' }
+
+  /world/shop/buy:
+    post:
+      operationId: buySlgShopItem
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, itemId]
+              properties:
+                worldId: { type: string }
+                itemId: { type: string }
+      responses:
+        '200':
+          description: Item bought
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }

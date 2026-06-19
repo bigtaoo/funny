@@ -132,6 +132,166 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["sweepTile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/troops/train": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["trainTroops"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/troops/speedup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["speedupTraining"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/defense": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["setDefense"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/siege/{siegeId}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resolveSiege"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/nations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/nations/{capitalIdx}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["setNationName"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/season": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSeason"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/shop/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSlgShopItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/shop/buy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["buySlgShopItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/family/list": {
         parameters: {
             query?: never;
@@ -380,7 +540,7 @@ export interface components {
             x: number;
             y: number;
             /** @enum {string} */
-            type: "neutral" | "resource" | "mountain" | "forest" | "water" | "center" | "familyKeep" | "base";
+            type: "neutral" | "resource" | "territory" | "familyKeep" | "center" | "base" | "obstacle" | "gate";
             level: number;
             /** @enum {string} */
             resType?: "food" | "iron" | "wood";
@@ -469,6 +629,47 @@ export interface components {
             designatedBuyerId?: string;
             taxPaid?: number;
             buyerId?: string;
+        };
+        NationView: {
+            /** @description 0~9，对应 CAPITAL_FRACTIONS 索引 */
+            capitalIdx: number;
+            x: number;
+            y: number;
+            ownerId?: string;
+            familyId?: string;
+            nationName?: string;
+            foundedAt?: number;
+        };
+        SeasonView: {
+            worldId: string;
+            season: number;
+            shard: number;
+            /** @enum {string} */
+            status: "open" | "active" | "settling" | "closed";
+            openAt: number;
+            resetAt?: number;
+            capacity: number;
+            population: number;
+            mapW: number;
+            mapH: number;
+        };
+        SlgShopItemView: {
+            id: string;
+            /** @description 金币价格 */
+            cost: number;
+            /** @enum {string} */
+            kind: "troop_speedup" | "resource_pack" | "protection" | "battle_pass";
+            effect: {
+                [key: string]: unknown;
+            };
+            description: string;
+        };
+        SiegeResolveResult: {
+            recomputed: boolean;
+            judgeOutcome?: string;
+        };
+        DefenseConfig: {
+            [key: string]: unknown;
         };
         OkResponse: {
             /** @enum {boolean} */
@@ -724,6 +925,295 @@ export interface operations {
         };
         responses: {
             /** @description Recalled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    sweepTile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    fromX: number;
+                    fromY: number;
+                    toX: number;
+                    toY: number;
+                    troops: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Sweep march started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["MarchView"];
+                    };
+                };
+            };
+        };
+    };
+    trainTroops: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    qty: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Training queued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["PlayerWorldView"];
+                    };
+                };
+            };
+        };
+    };
+    speedupTraining: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    coins: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Training sped up */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["PlayerWorldView"];
+                    };
+                };
+            };
+        };
+    };
+    setDefense: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    /** @description 'base' 主城，或 '{x}:{y}' 领地键；缺省 'base' */
+                    tileKey?: string;
+                    defenseConfig: components["schemas"]["DefenseConfig"];
+                };
+            };
+        };
+        responses: {
+            /** @description Defense set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    resolveSiege: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                siegeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    seed: number;
+                    mode: number;
+                    endFrame: number;
+                    frames: {
+                        frame?: number;
+                        cmds?: {
+                            side?: number;
+                            commands?: string;
+                        }[];
+                    }[];
+                    pveUpgrades?: {
+                        [key: string]: number;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Siege recomputed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["SiegeResolveResult"];
+                    };
+                };
+            };
+        };
+    };
+    getNations: {
+        parameters: {
+            query: {
+                worldId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Nation list (10 capitals) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["NationView"][];
+                    };
+                };
+            };
+        };
+    };
+    setNationName: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                capitalIdx: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Nation named */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    getSeason: {
+        parameters: {
+            query: {
+                worldId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Season info */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["SeasonView"];
+                    };
+                };
+            };
+        };
+    };
+    getSlgShopItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SLG shop items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["SlgShopItemView"][];
+                    };
+                };
+            };
+        };
+    };
+    buySlgShopItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    itemId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Item bought */
             200: {
                 headers: {
                     [name: string]: unknown;

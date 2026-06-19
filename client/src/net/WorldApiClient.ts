@@ -22,10 +22,24 @@ export type FamilyMemberView = components['schemas']['FamilyMemberView'];
 export type FamilyView = components['schemas']['FamilyView'];
 export type FamilyMessageView = components['schemas']['FamilyMessageView'];
 export type AuctionView = components['schemas']['AuctionView'];
+export type NationView = components['schemas']['NationView'];
+export type SeasonView = components['schemas']['SeasonView'];
+export type SlgShopItemView = components['schemas']['SlgShopItemView'];
+export type SiegeResolveResult = components['schemas']['SiegeResolveResult'];
+export type DefenseConfig = components['schemas']['DefenseConfig'];
 
 // Derived enum types for method parameters
 type MarchKind = Exclude<MarchView['kind'], 'return'>;
 type FamilyRole = FamilyMemberView['role'];
+
+/** 围攻录像复算载荷（来自 RecordingInputSource snapshot → Replay 的精简映射）。 */
+export interface SiegeResolvePayload {
+  seed: number;
+  mode: number;
+  endFrame: number;
+  frames: { frame: number; cmds: { side: number; commands: string }[] }[];
+  pveUpgrades?: Record<string, number>;
+}
 
 const TOKEN_KEY = 'nw_token';
 
@@ -119,6 +133,58 @@ export class WorldApiClient {
     return this.req('POST', `/world/march/${encodeURIComponent(marchId)}/recall`, { worldId });
   }
 
+  // ── Troops（训练队列 S8-2）──────────────────────────────────────────────────
+
+  /** 入队训练（消耗粮食 + 时间）。返回更新后的玩家状态。 */
+  async trainTroops(worldId: string, qty: number): Promise<PlayerWorldView> {
+    return this.req('POST', '/world/troops/train', { worldId, qty });
+  }
+
+  /** 金币加速训练（走 commercial 扣币）。 */
+  async speedupTraining(worldId: string, coins: number): Promise<PlayerWorldView> {
+    return this.req('POST', '/world/troops/speedup', { worldId, coins });
+  }
+
+  // ── Defense（防守 config 内嵌，S8-4）────────────────────────────────────────
+
+  /** 设/改防守 config。tileKey='base' 主城 或 '{x}:{y}' 领地。 */
+  async setDefense(worldId: string, tileKey: string, defenseConfig: DefenseConfig): Promise<{ ok: true }> {
+    return this.req('PUT', '/world/defense', { worldId, tileKey, defenseConfig });
+  }
+
+  // ── Siege（围攻录像复算，S8-3b）─────────────────────────────────────────────
+
+  /** 上传围攻录像帧，服务端 judgeRunner 复算落地。 */
+  async resolveSiege(worldId: string, siegeId: string, payload: SiegeResolvePayload): Promise<SiegeResolveResult> {
+    return this.req('POST', `/world/siege/${encodeURIComponent(siegeId)}/resolve`, { worldId, ...payload });
+  }
+
+  // ── Nations（国家系统 S8-6.5）───────────────────────────────────────────────
+
+  async getNations(worldId: string): Promise<NationView[]> {
+    return this.req('GET', `/world/nations?worldId=${encodeURIComponent(worldId)}`);
+  }
+
+  async setNationName(worldId: string, capitalIdx: number, name: string): Promise<{ ok: true }> {
+    return this.req('POST', `/world/nations/${capitalIdx}/name`, { worldId, name });
+  }
+
+  // ── Season（赛季 S8-7）──────────────────────────────────────────────────────
+
+  async getSeason(worldId: string): Promise<SeasonView> {
+    return this.req('GET', `/world/season?worldId=${encodeURIComponent(worldId)}`);
+  }
+
+  // ── SLG Shop（变现 S8-8）────────────────────────────────────────────────────
+
+  async getShopItems(): Promise<SlgShopItemView[]> {
+    return this.req('GET', '/world/shop/items');
+  }
+
+  async buyShopItem(worldId: string, itemId: string): Promise<{ ok: true }> {
+    return this.req('POST', '/world/shop/buy', { worldId, itemId });
+  }
+
   // ── Family ─────────────────────────────────────────────────────────────────
 
   async listFamilies(worldId: string): Promise<FamilyView[]> {
@@ -186,7 +252,7 @@ export class WorldApiClient {
 
   async createAuction(
     worldId: string,
-    itemType: 'material',
+    itemType: 'material' | 'equipment',
     item: Record<string, unknown>,
     qty: number,
     price: number,

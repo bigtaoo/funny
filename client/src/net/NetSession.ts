@@ -25,6 +25,11 @@ import {
   type RoomError,
   type RoomState,
   type ServerMsg,
+  type MarchUpdate,
+  type TileUpdate,
+  type UnderAttack,
+  type SiegeResult,
+  type FamilyMsg,
 } from './proto/transport';
 import { NetInputSource, type MatchStartInfo } from '../game';
 import { runJudge } from './judgeRunner';
@@ -47,6 +52,12 @@ export interface NetSessionHandlers {
   onFriendUpdate?(u: FriendUpdate): void;
   onChatMessage?(m: ChatMessagePush): void;
   onMailNew?(m: MailNew): void;
+  // —— SLG 大世界实时推送（S8，worldsvc → gateway 控制面 push）。WorldMapScene 据此增量刷新。——
+  onMarchUpdate?(m: MarchUpdate): void;
+  onTileUpdate?(t: TileUpdate): void;
+  onUnderAttack?(u: UnderAttack): void;
+  onSiegeResult?(s: SiegeResult): void;
+  onFamilyMsg?(f: FamilyMsg): void;
 }
 
 export class NetSession {
@@ -211,6 +222,16 @@ export class NetSession {
       this.handlers.onChatMessage?.(msg.chatMessage);
     } else if (msg.mailNew) {
       this.handlers.onMailNew?.(msg.mailNew);
+    } else if (msg.marchUpdate) {
+      this.handlers.onMarchUpdate?.(msg.marchUpdate);
+    } else if (msg.tileUpdate) {
+      this.handlers.onTileUpdate?.(msg.tileUpdate);
+    } else if (msg.underAttack) {
+      this.handlers.onUnderAttack?.(msg.underAttack);
+    } else if (msg.siegeResult) {
+      this.handlers.onSiegeResult?.(msg.siegeResult);
+    } else if (msg.familyMsg) {
+      this.handlers.onFamilyMsg?.(msg.familyMsg);
     }
   }
 

@@ -14,7 +14,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
-import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView } from '../net/WorldApiClient';
+import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 
 // ── Public callbacks ────────────────────────────────────────────────────────
@@ -29,15 +29,20 @@ export interface WorldMapCallbacks {
 }
 
 // ── Tile styling ─────────────────────────────────────────────────────────────
+// 配色对齐服务端 TileType（neutral/resource/territory/familyKeep/center/base/
+// obstacle/gate）。敌我色遵循「敌蓝我红」（project_art_direction）：
+// 我方领地/主城 = 红墨，敌方 = 蓝墨。首府由 getNations() 叠加星标渲染（非瓦片类型）。
 
-const TILE_COLORS: Record<string, number> = {
-  plains:      0xf5f0e8,
-  mountain:    0xc8c0b0,
-  forest:      0xb8d4a0,
-  water:       0xa8cce0,
-  resource:    0xd4e8a0,
-  center:      0xffe88a,
-  familyKeep:  0xffd060,
+// 地形底色（未被占领时）。
+const TERRAIN_COLORS: Record<string, number> = {
+  neutral:    0xf5f0e8, // 纸底空地
+  resource:   0xd4e8a0, // 资源格（resType 进一步细分）
+  familyKeep: 0xffd060, // 战略要点 / 险地
+  center:     0xffe88a, // 世界中心
+  obstacle:   0x9a9488, // 阻挡地形（山脉/河流，不可通行）
+  gate:       0xc8a878, // 关隘/桥（通道）
+  territory:  0xf5f0e8, // 兜底（territory 一定被 own/enemy 覆盖）
+  base:       0xf5f0e8,
 };
 
 const RES_COLORS: Record<string, number> = {
@@ -46,21 +51,23 @@ const RES_COLORS: Record<string, number> = {
   iron:  0xa0b8c8,
 };
 
-function tileColor(tile: WorldTileView, isMine: boolean): number {
-  if (isMine) return 0x8ab4e8;        // ink blue tint
-  if (tile.occupied) return 0xf0a0a0; // ink red tint (enemy)
-  if (tile.type === 'center') return TILE_COLORS.center!;
-  if (tile.type === 'familyKeep') return TILE_COLORS.familyKeep!;
-  if (tile.resType) return RES_COLORS[tile.resType] ?? TILE_COLORS.resource!;
-  if (tile.type === 'mountain') return TILE_COLORS.mountain!;
-  if (tile.type === 'forest') return TILE_COLORS.forest!;
-  if (tile.type === 'water') return TILE_COLORS.water!;
-  return TILE_COLORS.plains!;
+const MINE_TINT      = 0xe69090; // 我方领地（红墨淡）
+const MINE_BASE_TINT = 0xcc3333; // 我方主城（红墨浓）
+const ENEMY_TINT     = 0x90a8e6; // 敌方领地（蓝墨淡）
+const ENEMY_BASE_TINT= 0x4477cc; // 敌方主城（蓝墨浓）
+
+function tileColor(tile: WorldTileView): number {
+  if (tile.mine)     return tile.type === 'base' ? MINE_BASE_TINT : MINE_TINT;
+  if (tile.occupied) return tile.type === 'base' ? ENEMY_BASE_TINT : ENEMY_TINT;
+  if (tile.type === 'resource' && tile.resType) {
+    return RES_COLORS[tile.resType] ?? TERRAIN_COLORS.resource!;
+  }
+  return TERRAIN_COLORS[tile.type] ?? TERRAIN_COLORS.neutral!;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MAP_SIZE = 300;
+const DEFAULT_MAP_SIZE = 1500; // 服务端默认 1500×1500；实际从 getSeason 取
 const TILE_PX  = 20;   // logical pixels per tile when fully zoomed out
 const HUD_H    = 80;   // bottom HUD bar height
 const MARGIN   = 4;    // margin inside modal
@@ -83,10 +90,16 @@ export class WorldMapScene implements Scene {
   private dragging = false;
   private dragMoved = false;
 
+  // Map bounds (from getSeason; default to server's 1500×1500)
+  private mapW = DEFAULT_MAP_SIZE;
+  private mapH = DEFAULT_MAP_SIZE;
+
   // Tile data cache
   private tileCache: Map<string, WorldTileView> = new Map();
   private me: PlayerWorldView | null = null;
   private marches: MarchView[] = [];
+  // Nations (10 capitals) — overlaid as star markers + Voronoi-nearest tint hint.
+  private nations: NationView[] = [];
 
   // Graphics layers
   private mapGfx!: PIXI.Graphics;
@@ -114,7 +127,7 @@ export class WorldMapScene implements Scene {
     this.loadData();
 
     // Center map on join initially; will be overridden once we know base location
-    this.centerAt(Math.floor(MAP_SIZE / 2), Math.floor(MAP_SIZE / 2));
+    this.centerAt(Math.floor(this.mapW / 2), Math.floor(this.mapH / 2));
 
     this.marchPoll = setInterval(() => { if (!this.destroyed) this.refreshMarches(); }, 5000);
   }
@@ -160,6 +173,15 @@ export class WorldMapScene implements Scene {
 
   private async loadData(): Promise<void> {
     if (this.destroyed) return;
+    // Map bounds + nations are world-static; fetch once up front (best-effort).
+    try {
+      const season = await this.cb.worldApi.getSeason(this.cb.worldId);
+      if (season.mapW > 0) this.mapW = season.mapW;
+      if (season.mapH > 0) this.mapH = season.mapH;
+    } catch { /* offline — keep defaults */ }
+    try {
+      this.nations = await this.cb.worldApi.getNations(this.cb.worldId);
+    } catch { /* offline — no nation overlay */ }
     try {
       this.me = await this.cb.worldApi.getMe(this.cb.worldId);
       if (this.me.mainBaseTile) {
@@ -201,7 +223,7 @@ export class WorldMapScene implements Scene {
     const cx = Math.floor(-this.panX / TILE_PX + this.w / 2 / TILE_PX);
     const cy = Math.floor(-this.panY / TILE_PX + (this.h - HUD_H) / 2 / TILE_PX);
     const r  = Math.ceil(Math.max(this.w, this.h - HUD_H) / TILE_PX / 2) + 4;
-    return { cx: Math.max(0, Math.min(MAP_SIZE - 1, cx)), cy: Math.max(0, Math.min(MAP_SIZE - 1, cy)), r };
+    return { cx: Math.max(0, Math.min(this.mapW - 1, cx)), cy: Math.max(0, Math.min(this.mapH - 1, cy)), r };
   }
 
   // ── Rendering ──────────────────────────────────────────────────────────────
@@ -219,14 +241,13 @@ export class WorldMapScene implements Scene {
     const x1 = Math.ceil((-this.panX + w) / TILE_PX);
     const y1 = Math.ceil((-this.panY + mapH) / TILE_PX);
 
-    for (let ty = Math.max(0, y0); ty <= Math.min(MAP_SIZE - 1, y1); ty++) {
-      for (let tx = Math.max(0, x0); tx <= Math.min(MAP_SIZE - 1, x1); tx++) {
+    for (let ty = Math.max(0, y0); ty <= Math.min(this.mapH - 1, y1); ty++) {
+      for (let tx = Math.max(0, x0); tx <= Math.min(this.mapW - 1, x1); tx++) {
         const tile = this.tileCache.get(`${tx}:${ty}`);
         const px = this.panX + tx * TILE_PX;
         const py = this.panY + ty * TILE_PX;
 
-        const isMine = tile?.mine === true;
-        const color = tile ? tileColor(tile, isMine) : TILE_COLORS.plains!;
+        const color = tile ? tileColor(tile) : TERRAIN_COLORS.neutral!;
 
         g.beginFill(color, 0.85);
         g.lineStyle(0.5, 0xccbbaa, 0.5);
@@ -236,7 +257,7 @@ export class WorldMapScene implements Scene {
         // Level label for resource tiles
         if (tile && tile.level > 1) {
           // Draw a small level indicator using a dot
-          const dotColor = tile.mine ? 0x2266cc : (tile.occupied ? 0xcc2222 : 0x888888);
+          const dotColor = tile.mine ? 0xcc2222 : (tile.occupied ? 0x2266cc : 0x888888);
           g.beginFill(dotColor, 0.9);
           g.drawCircle(px + TILE_PX - 4, py + 4, 2);
           g.endFill();
@@ -255,17 +276,48 @@ export class WorldMapScene implements Scene {
       g.endFill();
     }
 
-    // March arrows (simplified: dot at destination)
+    // Capital star markers (10 nations) — drawn above tiles so they stay visible.
+    for (const n of this.nations) {
+      const cx = this.panX + n.x * TILE_PX + TILE_PX / 2;
+      const cy = this.panY + n.y * TILE_PX + TILE_PX / 2;
+      if (cx < -TILE_PX || cy < -TILE_PX || cx > this.w + TILE_PX || cy > this.h - HUD_H + TILE_PX) continue;
+      this.drawStar(g, cx, cy, TILE_PX * 0.7, n.ownerId ? 0xffcc00 : 0xccb890, !!n.ownerId);
+    }
+
+    // March arrows (line from→to + dot at destination)
     for (const march of this.marches) {
+      const [fx, fy] = this.parseTileId(march.fromTile);
       const [tx2, ty2] = this.parseTileId(march.toTile);
+      const fpx = this.panX + fx * TILE_PX + TILE_PX / 2;
+      const fpy = this.panY + fy * TILE_PX + TILE_PX / 2;
       const px = this.panX + tx2 * TILE_PX + TILE_PX / 2;
       const py = this.panY + ty2 * TILE_PX + TILE_PX / 2;
-      const col = march.kind === 'return' ? 0x44cc88 : 0xcc8844;
+      const col = march.kind === 'return' ? 0x44cc88
+        : march.kind === 'attack' ? 0xcc3333
+        : march.kind === 'reinforce' ? 0x44aacc
+        : 0xcc8844;
+      g.lineStyle(1.5, col, 0.55);
+      g.moveTo(fpx, fpy);
+      g.lineTo(px, py);
       g.lineStyle(0);
       g.beginFill(col, 0.9);
       g.drawCircle(px, py, 4);
       g.endFill();
     }
+  }
+
+  /** Draw a 5-point star (capital marker). Filled when the nation is owned. */
+  private drawStar(g: PIXI.Graphics, cx: number, cy: number, r: number, color: number, filled: boolean): void {
+    const pts: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      const rad = i % 2 === 0 ? r : r * 0.45;
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      pts.push(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad);
+    }
+    g.lineStyle(1.5, 0x6a5a20, 0.9);
+    if (filled) g.beginFill(color, 0.95);
+    g.drawPolygon(pts);
+    if (filled) g.endFill();
   }
 
   private renderHud(): void {
@@ -461,7 +513,7 @@ export class WorldMapScene implements Scene {
   // ── Tile actions ───────────────────────────────────────────────────────────
 
   private onTileClick(tx: number, ty: number): void {
-    if (tx < 0 || ty < 0 || tx >= MAP_SIZE || ty >= MAP_SIZE) return;
+    if (tx < 0 || ty < 0 || tx >= this.mapW || ty >= this.mapH) return;
     this.selectedTile = { x: tx, y: ty };
     this.renderMap();
 
@@ -607,8 +659,8 @@ export class WorldMapScene implements Scene {
   private clampPan(): void {
     const maxX = TILE_PX * 2;
     const maxY = TILE_PX * 2;
-    const minX = this.w - MAP_SIZE * TILE_PX - TILE_PX * 2;
-    const minY = (this.h - HUD_H) - MAP_SIZE * TILE_PX - TILE_PX * 2;
+    const minX = this.w - this.mapW * TILE_PX - TILE_PX * 2;
+    const minY = (this.h - HUD_H) - this.mapH * TILE_PX - TILE_PX * 2;
     this.panX = Math.min(maxX, Math.max(minX, this.panX));
     this.panY = Math.min(maxY, Math.max(minY, this.panY));
   }

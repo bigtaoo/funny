@@ -1342,6 +1342,8 @@ export class WorldService {
     resetAt?: number;
     capacity: number;
     population: number;
+    mapW: number;
+    mapH: number;
   } | null> {
     const w = await this.deps.cols.worlds.findOne({ _id: worldId });
     if (!w) return null;
@@ -1354,6 +1356,8 @@ export class WorldService {
       ...(w.resetAt ? { resetAt: w.resetAt } : {}),
       capacity: w.capacity,
       population: w.population,
+      mapW: w.mapW,
+      mapH: w.mapH,
     };
   }
 
