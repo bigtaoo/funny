@@ -39,3 +39,5 @@
 | `scenes/RoomScene.ts` | 好友房 UI：idle→codeEntry→connecting→inRoom |
 | `render/sketch.ts` | `SketchPen`：确定性 Prng 抖动的手绘笔触 |
 | `render/sketchUi.ts` | 共享手绘 UI 原语（纸底/手绘按钮/面板/色板单一来源） |
+| `game/campaign/levels.ts` + `levelSchema.ts` | 关卡注册（`CAMPAIGN_LEVELS`/`CAMPAIGN_LEVEL_ORDER`，61 关 JSON 单一来源）+ `parseLevelDefinition` 运行时校验，加载即 fail-fast。⚠️ 出兵/`activeLanes` 的 col 必为 `ATTACK_LANES=[0,1,2,3,4,7,8,9,10,11]`（5/6 是中央基地列，非攻击道——棋盘 6→12 列迁移后的历史坑） |
+| `game/campaign/maps/` | 章节地图（CAMPAIGN_DESIGN §12）：`ChapterMap` 类型 + `parseChapterMap` 校验（节点 `levelId` 必在 `CAMPAIGN_LEVELS`，坐标 0..1 越界软告警）+ `CHAPTER_MAPS`/`getChapterMap` 注册；`chN.json` 存节点归一化坐标/`path`/`decor`，**只引 levelId**，与关卡数值分离 |
