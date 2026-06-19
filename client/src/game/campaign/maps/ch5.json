@@ -1,0 +1,23 @@
+{
+  "chapter": 5,
+  "venueKey": "campaign.ch5.venue",
+  "path": "auto",
+  "nodes": [
+    { "levelId": "ch5_lv1",  "x": 0.18, "y": 0.16 },
+    { "levelId": "ch5_lv2",  "x": 0.42, "y": 0.12 },
+    { "levelId": "ch5_lv3",  "x": 0.66, "y": 0.18 },
+    { "levelId": "ch5_lv4",  "x": 0.80, "y": 0.34 },
+    { "levelId": "ch5_lv5",  "x": 0.64, "y": 0.46 },
+    { "levelId": "ch5_lv6",  "x": 0.40, "y": 0.50 },
+    { "levelId": "ch5_lv7",  "x": 0.20, "y": 0.58 },
+    { "levelId": "ch5_lv8",  "x": 0.36, "y": 0.70 },
+    { "levelId": "ch5_lv9",  "x": 0.62, "y": 0.74 },
+    { "levelId": "ch5_lv10", "x": 0.82, "y": 0.86 }
+  ],
+  "decor": [
+    { "kind": "start", "x": 0.10, "y": 0.12 },
+    { "kind": "tent",  "x": 0.54, "y": 0.08 },
+    { "kind": "tent",  "x": 0.30, "y": 0.62 },
+    { "kind": "boss",  "x": 0.90, "y": 0.93 }
+  ]
+}

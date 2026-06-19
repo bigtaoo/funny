@@ -666,7 +666,8 @@ interface ChapterMap {
 
 1. ✅ **本节落文档**（2026-06-19）。
 2. ✅ **大厅收口**（2026-06-19）：删 `LobbyScene` 4 个编号快捷按钮 + `CAMPAIGN_LEVEL_COUNT`，回调 `onStartCampaign(levelIndex)` → `onOpenCampaign()`，单一金边「战役」正门（左缘金墨竖描，呼应特性块）；`lobby.campaign` 文案去「试玩 / Beta」改正式「战役 / CAMPAIGN / KAMPAGNE」（zh/en/de）。`createAppCore` / headless-nav / scenes.ui 同步改名。
-3. **地图数据 + schema**：`maps/chN.json` 格式 + `mapSchema` 校验 + 6 章节点坐标手摄。
+3. ✅ **地图数据 + schema**（2026-06-19）：新增 `maps/ChapterMap.ts`（类型）+ `maps/mapSchema.ts`（`parseChapterMap` 运行时校验：节点 `levelId` 必须在 `CAMPAIGN_LEVELS`，坐标越界 `console.warn` 软告警）+ `maps/index.ts`（注册 `CHAPTER_MAPS` / `CHAPTER_ORDER` / `getChapterMap`，模块加载即解析全部 6 章，fail-fast）+ `maps/ch{1-6}.json`（每章 10 节点手摄归一化坐标，`path:'auto'`，decor 含 start/boss/场景物）。i18n 补 `campaign.ch{1-6}.venue`（zh/en/de）。game barrel 导出。新增 `test/mapSchema.test.ts`（6 用例）。
+   - **顺带修复**：发现 campaign 关卡数据在棋盘从 6 路（`ATTACK_LANES=[0,1,2,5,6,7]`）迁到 12 列（`[0,1,2,3,4,7,8,9,10,11]`，5/6 变中央基地列）后留下的数据腐烂——`ch2_lv4`/`ch5_lv3` 的 `activeLanes` 含基地列 5/6，`ch6_lv1`/`ch6_lv8`/`ch6_lv10` 的 wave 在 5/6 列出兵。`parseLevelDefinition` 因此**在模块加载即抛错，整章战役崩溃**；因团队验证只跑 tsc+webpack（不跑运行时）一直未暴露。已将 activeLanes 收敛为合法攻击道集，wave 出兵 col 5→4 / 6→7（保留「中央钳形」意图）。全量 267 单测通过（含「每关确定性加载」）。
 4. **章节页渲染**：替换 `CampaignMapScene` 扁平列表为节点 / 铅笔虚线路径 / 星章 / 当前脉冲；复用 `sketchUi` 原语。
 5. **目录页 + 进度落点 + 翻页过场 + 章节小结仪式**：目录页 landing、自动定位当前章/关、翻页转场、章末「第 N 章 通关」印章 + outro。
 

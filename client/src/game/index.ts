@@ -64,3 +64,5 @@ export type { GameState } from './GameState';
 // ── Campaign (PvE) ────────────────────────────────────────────────────────────
 export type { LevelDefinition } from './campaign/LevelDefinition';
 export { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER, getLevel } from './campaign/levels';
+export type { ChapterMap, ChapterNode, ChapterDecor, NormPoint } from './campaign/maps';
+export { CHAPTER_MAPS, CHAPTER_ORDER, getChapterMap, parseChapterMap, ChapterMapParseError } from './campaign/maps';

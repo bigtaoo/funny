@@ -1,0 +1,23 @@
+{
+  "chapter": 1,
+  "venueKey": "campaign.ch1.venue",
+  "path": "auto",
+  "nodes": [
+    { "levelId": "ch1_lv1",  "x": 0.16, "y": 0.14 },
+    { "levelId": "ch1_lv2",  "x": 0.40, "y": 0.20 },
+    { "levelId": "ch1_lv3",  "x": 0.64, "y": 0.15 },
+    { "levelId": "ch1_lv4",  "x": 0.83, "y": 0.28 },
+    { "levelId": "ch1_lv5",  "x": 0.62, "y": 0.38 },
+    { "levelId": "ch1_lv6",  "x": 0.38, "y": 0.44 },
+    { "levelId": "ch1_lv7",  "x": 0.17, "y": 0.52 },
+    { "levelId": "ch1_lv8",  "x": 0.34, "y": 0.64 },
+    { "levelId": "ch1_lv9",  "x": 0.60, "y": 0.70 },
+    { "levelId": "ch1_lv10", "x": 0.82, "y": 0.82 }
+  ],
+  "decor": [
+    { "kind": "start", "x": 0.08, "y": 0.10 },
+    { "kind": "rack",  "x": 0.30, "y": 0.08 },
+    { "kind": "rack",  "x": 0.50, "y": 0.56 },
+    { "kind": "boss",  "x": 0.90, "y": 0.90 }
+  ]
+}

@@ -150,14 +150,14 @@
       {
         "atTick": 600,
         "unitType": "shieldbearer",
-        "col": 5,
+        "col": 4,
         "count": 2,
         "spacingTicks": 24
       },
       {
         "atTick": 600,
         "unitType": "shieldbearer",
-        "col": 6,
+        "col": 7,
         "count": 2,
         "spacingTicks": 24
       },
