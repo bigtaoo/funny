@@ -791,8 +791,17 @@ class GameEngineImpl implements IGameEngine {
           survived = !anyAlive;
         }
       }
-      // `destroy_base`: only the topPlayer.isDead check above triggers a win.
-      // `leak_limit`:   only the leak check above triggers a loss.
+      // `destroy_base` with durationTicks: lose if time expired before base is destroyed.
+      if (objective.kind === 'destroy_base' && objective.durationTicks !== undefined &&
+          this.state.elapsedTicks >= objective.durationTicks) {
+        this.state.phase  = GamePhase.GameOver;
+        this.state.winner = Side.Top;
+        this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+        this.state.pushEvent({ type: 'game_over', winner: 1 });
+        return;
+      }
+
+      // `leak_limit`: only the leak check above triggers a loss.
 
       if (survived) {
         this.state.phase  = GamePhase.GameOver;

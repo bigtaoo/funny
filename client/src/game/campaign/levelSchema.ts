@@ -81,7 +81,15 @@ function parseObjective(v: unknown, path: string): ObjectiveSpec {
   if (!isObject(v)) fail(path, 'expected an objective object');
   const kind = str(v.kind, `${path}.kind`);
   if (kind === 'survive') return { kind: 'survive' };
-  if (kind === 'destroy_base') return { kind: 'destroy_base' };
+  if (kind === 'destroy_base') {
+    const spec: Extract<ObjectiveSpec, { kind: 'destroy_base' }> = { kind: 'destroy_base' };
+    if (v.durationTicks !== undefined) {
+      const durationTicks = int(v.durationTicks, `${path}.durationTicks`);
+      if (durationTicks <= 0) fail(`${path}.durationTicks`, `must be > 0, got ${durationTicks}`);
+      spec.durationTicks = durationTicks;
+    }
+    return spec;
+  }
   if (kind === 'boss') return { kind: 'boss' };
   if (kind === 'timed_defense') {
     const durationTicks = int(v.durationTicks, `${path}.durationTicks`);

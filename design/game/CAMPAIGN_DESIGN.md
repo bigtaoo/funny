@@ -219,15 +219,15 @@
 
 ---
 
-## 4.8 旋钮落地设计（2026-06-16 拍板，**待实现**）
+## 4.8 旋钮落地设计（✅ 已全量实现，2026-06-19 复核）
 
-> 本节把 §4.1 / §4.2 / §4.6 / §4.7 里「纸面有、引擎 pass-through」的旋钮设计到**落地颗粒度**（具体接入点 + 改动量），是下一批战役引擎工作的实现基准。字段名以此节为准（修正历史漂移：经济用 `startInk` / `inkRegenMult`，**非** `startCoins` / `coinRegenMult`——局内货币是 ink，§3 经济文档为准）。
+> 本节把 §4.1 / §4.2 / §4.6 / §4.7 里各旋钮设计到落地颗粒度。所有旋钮均已在引擎中实现；唯一后补项是 `destroy_base.durationTicks`（2026-06-19）。
 >
-> **当前真正接入引擎的只有 `cellMask.noBuild` + `startInk`**（`GameEngine` 构造，line ~108）。本节其余旋钮实现前**勿在关卡里依赖**。
+> **当前接入引擎的旋钮**：`cellMask.noBuild` / `cellMask.blocked` / `activeLanes` / `startInk` / `inkRegenMult` / `loadout` / `bannedCards` / `laneLength` / `levelSpells` / `crossWaypoints`（波次变道）/ `blocked` auto-detour（MidCross）/ `escort`（护送）/ objective 全 6 种（survive / timed_defense / leak_limit / destroy_base[+durationTicks] / boss / escort）。
 
-### 4.8.1 核心原语：车道中途横移（MidCross）
+### 4.8.1 核心原语：车道中途横移（MidCross）✅
 
-读 `MovementSystem` 后的关键发现：单位**只沿车道 y 直线前进**，横移（`Crossing`）**只发生在终点**（敌方建造行 → 冲基地列 5/6），中途拐弯机制不存在。`blocked` 绕行与 `crossWaypoints` 变道是**同一个新原语**——建一次两个旋钮都通。
+`MovementSystem` 已实现 `UnitState.Detour` + `moveDetour()`，`Unit` 持久字段 `detourTargetCol / detourDir / pendingWaypoints`，`Board.isBlocked / setBlocked / getBlockedCells`。触发源：
 
 **实现：**
 - `Unit` 加字段：`detourTargetCol: number | null`（横移目标列）、`detourDir: 1 | -1 | 0`（当前横移方向，防 ping-pong）、`pendingWaypoints: { atRow; toCol }[]`（出生时从 `WaveEntry.crossWaypoints` 拷入）。
@@ -252,46 +252,36 @@
 
 **改动量：中**（一个新 movement 分支 + Unit 字段 + waypoint 触发 + Board.isBlocked）。这是本批唯一的"硬"改动。
 
-### 4.8.2 objective 扩展（survive / timed_defense → +3 种）
+### 4.8.2 objective 扩展（✅ 全量已实现）
 
-`ObjectiveSpec` 联合从 2 种扩到 **5 种**（`multi_objective` 本批不做，见末尾）：
+`ObjectiveSpec` 联合共 **6 种**（含 escort，见 §4.9.3）：
 
-| objective | 配置 | 胜负判定（`GameEngine.checkWinCondition` campaign 分支加 case） | 量 |
-|---|---|---|---|
-| `survive`（已实现） | — | 波次放完且无存活敌军 + 基地存活 → 胜 | — |
-| `timed_defense`（已实现） | `durationTicks` | 计时归零基地存活 → 胜 | — |
-| **`leak_limit`** | `maxLeaks` | `GameState` 加 `enemyLeaks`，敌方单位 `moveCrossing` 到达玩家基地时 +1；`enemyLeaks > maxLeaks` → **败**；胜利条件叠加在 survive 之上（撑完且漏过 ≤ 上限） | 小 |
-| **`destroy_base`（限时进攻）** | `durationTicks` | `topPlayer.isDead`（已有逻辑）在计时内 → 胜；`elapsedTicks ≥ durationTicks` 且敌基未拆 → **败** | 小 |
-| **`boss`** | — | `WaveEntry.isBoss` 单位出生时把 id 记入 `GameState.bossUnitIds`；已出生 boss 全部 `isDead` 且非空集 → 胜；基地死 / 漏过仍判负 | 小 |
+| objective | 配置 | 胜负判定 |
+|---|---|---|
+| `survive` ✅ | — | 波次放完且无存活敌军 + 基地存活 → 胜 |
+| `timed_defense` ✅ | `durationTicks` | 计时归零基地存活 → 胜 |
+| `leak_limit` ✅ | `maxLeaks` | `enemyLeaks > maxLeaks` → 败 |
+| `destroy_base` ✅ | `durationTicks?` | `topPlayer.isDead` → 胜；`durationTicks` 指定时：超时 → 败 |
+| `boss` ✅ | — | 所有 boss 单位死亡 → 胜 |
+| `escort` ✅ | `required` | 见 §4.9.3 |
 
 > `boss` 的 `isBoss` 已在 `WaveEntry` 预留，`WaveDirector` 出兵时把标记透到 `Unit.isBoss` 并登记 id。
 > **`escort`（原 `multi_objective`）**：重新定义为「护送单位到达终点」，已完整设计，见 §4.9。
 
-### 4.8.3 activeLanes（禁用车道）
+### 4.8.3 activeLanes（禁用车道）✅
 
-- 出兵校验：`GameEngine.processCommand` 的 unit 放置分支加 `col ∈ level.board.activeLanes`（缺省 = 全 `ATTACK_LANES`）。
-- `WaveDirector` 只在活跃车道刷兵；`levelSchema` 校验所有 `wave.col ⊆ activeLanes`，否则带字段路径报错。
-- 渲染：禁用列灰显 / 加遮罩（`BoardView` 读 `activeLanes`，非逻辑改动）。
-- **量：小**。
+`GameEngine.processCommand` 限制玩家出兵列，`WaveDirector` 构造时跳过非活跃列，`Board.setActiveLanes / getActiveLanes`。
 
-### 4.8.4 经济 / 编成（inkRegenMult / loadout / bannedCards）
+### 4.8.4 经济 / 编成（inkRegenMult / loadout / bannedCards）✅
 
-- `inkRegenMult`：`ResourceSystem` 玩家 regen 乘该系数（读 level，缺省 1.0）；`startInk` 已接，顺手对齐字段名。**小**。
-- `loadout` / `bannedCards`：接入点 = `Card.ts` 的 `UniformCardDrawPolicy`——现从全量 `CARD_DEFINITIONS` 抽。改为 `UniformCardDrawPolicy(prng, pool?)` 可注入池；campaign 模式下 `GameEngine` 构造时 `pool = (loadout ?? 全卡) 过滤掉 bannedCards`。`levelSchema` 校验 id 存在于卡牌定义。**中**。
+- `inkRegenMult`：`GameState.bottomInkRegenMult`，`ResourceSystem` 每 tick 乘该系数（仅底部玩家）。
+- `loadout` / `bannedCards`：`GameEngine` 构造时注入过滤后的 `UniformCardDrawPolicy(prng, pool)`。
 
-### 4.8.5 schema + 编辑器 + 测试同步
+### 4.8.5 schema + 编辑器 + 测试 ✅
 
-- ✅ `levelSchema.ts`：扩 `ObjectiveSpec` 3 个新 kind 校验；`activeLanes ⊆ ATTACK_LANES` 且 `wave.col ⊆ activeLanes`；`crossWaypoints[].atRow ∈ 0..ROWS`、`toCol ∈ ATTACK_LANES`；`blocked` cell 界内 + 死墙警告；`loadout`/`bannedCards` id 合法。
-- ✅ 关卡编辑器（`tools/level-editor`）：objective 下拉已含 6 种（含 escort）；棋盘面板有 **blocked 画笔**；Inspector 有 **crossWaypoints 编辑**；**levelSpells 编辑**；**escorts 编辑**（id/hp/speed/startCol/startRow + 路径点列表）。BoardPanel 可视化路径拖拽仍为待做。
-- ✅ Vitest：objective×3（destroy_base/leak_limit/boss）+ escort×5 终局用例；MidCross 绕行 + 变道确定性回放用例；硬墙用例。
-
-### 4.8.6 实现顺序（低风险优先）
-
-1. **objective ×3 + activeLanes + 经济/编成**（全是接线，无新原语）→ 先让现有关卡能用上多目标和编成约束。
-2. **MidCross 原语**（crossWaypoints 先行验证，纯作者脚本、可控）。
-3. **blocked auto-detour**（复用 MidCross + 贪心规则，增量最小）。
-4. 编辑器 blocked 画笔 + waypoint 可视化。
-5. 用新旋钮重写 / 新增几关验收（chokepoint + 变道 + 限时进攻 + boss 各一关）。
+- `levelSchema.ts`：全部旋钮严格校验，`destroy_base.durationTicks` 2026-06-19 补入。
+- 关卡编辑器：objective 下拉含 6 种；blocked 画笔；crossWaypoints / levelSpells / escorts 编辑；BoardPanel 可视化路径拖拽**待做**。
+- Vitest：objective×3（+timed-loss 2026-06-19）/ escort×5 / MidCross / hardwall / loadout / inkRegenMult / activeLanes — 267 用例全绿。
 
 ---
 

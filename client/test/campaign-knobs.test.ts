@@ -114,6 +114,25 @@ describe('objective: destroy_base', () => {
     expect(engine.state.phase).toBe(GamePhase.Playing);
   });
 
+  it('timed loss: Top wins when durationTicks expires and the enemy base is still standing', () => {
+    const level = baseLevel({
+      objective: { kind: 'destroy_base', durationTicks: 30 },
+      waves: { entries: [] },
+    });
+    const engine = runTicks(makeCampaignConfig(level), 31);
+    expect(engine.state.phase).toBe(GamePhase.GameOver);
+    expect(engine.state.winner).toBe(Side.Top);
+  });
+
+  it('no timed loss when durationTicks is absent — game stays playing', () => {
+    const level = baseLevel({
+      objective: { kind: 'destroy_base' },
+      waves: { entries: [] },
+    });
+    const engine = runTicks(makeCampaignConfig(level), 300);
+    expect(engine.state.phase).toBe(GamePhase.Playing);
+  });
+
   it('a single enemy that leaks does NOT trigger a Bottom win with destroy_base', () => {
     // After the single enemy walks off the board the wave director is exhausted,
     // but since the objective is destroy_base the engine should still be Playing.

@@ -93,7 +93,7 @@ export interface Cell {
 export type ObjectiveSpec =
   | { kind: 'survive' }
   | { kind: 'timed_defense'; durationTicks: number }
-  | { kind: 'destroy_base' }
+  | { kind: 'destroy_base'; durationTicks?: number }
   | { kind: 'leak_limit'; maxLeaks: number }
   | { kind: 'boss' }
   | { kind: 'escort'; required: 'all' | 'any' | number };
