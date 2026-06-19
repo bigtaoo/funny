@@ -6,6 +6,8 @@ import {
   marchDurationFromPath,
   proceduralTile,
   MARCH_SPEED_SEC_PER_TILE,
+  SLG_MAP_W,
+  SLG_MAP_H,
 } from '@nw/shared';
 
 // 构造一个小地图包装器（内联障碍），用自定义 world seed 测试纯逻辑。
@@ -69,10 +71,12 @@ describe('marchDurationFromPath', () => {
 });
 
 describe('proceduralTile 障碍生成', () => {
+  // proceduralTile 内部用真实 SLG_MAP_W/H（300×300）算 dr，与 findMarchPath 的
+  // mapW/mapH 参数无关——所以这里必须用真实地图维度，不能用上面 50×50 的逻辑窗口。
   it('地图中心附近可以有障碍（dr ≤ 0.87 区域）', () => {
-    // 扫描中心周围 30×30，统计障碍格数量；种子不同结果不同，只断言总数 ≥ 0。
-    const cx = Math.floor(MAP_W / 2);
-    const cy = Math.floor(MAP_H / 2);
+    // 扫描真实中心周围 30×30，统计障碍格数量；种子不同结果不同，只断言总数 ≥ 0。
+    const cx = Math.floor(SLG_MAP_W / 2);
+    const cy = Math.floor(SLG_MAP_H / 2);
     let obstacleCnt = 0;
     for (let x = cx - 15; x <= cx + 15; x++) {
       for (let y = cy - 15; y <= cy + 15; y++) {
@@ -85,12 +89,13 @@ describe('proceduralTile 障碍生成', () => {
   });
 
   it('角落区域（dr > 0.87）不生成障碍', () => {
-    // (0,0)、(0,MAP_H-1)、(MAP_W-1,0)、(MAP_W-1,MAP_H-1) 均是角落格，dr = √2 ≈ 1.41 > 0.87。
+    // 真实地图四角（dr = √2/√2 = 1.0 > 0.87）。注意必须用 SLG_MAP_W/H：
+    // 用 50×50 的伪角（如 (0,49)）相对真实中心 (150,150) 的 dr≈0.85 仍在障碍带内。
     const corners = [
       [0, 0],
-      [0, MAP_H - 1],
-      [MAP_W - 1, 0],
-      [MAP_W - 1, MAP_H - 1],
+      [0, SLG_MAP_H - 1],
+      [SLG_MAP_W - 1, 0],
+      [SLG_MAP_W - 1, SLG_MAP_H - 1],
     ] as const;
     for (const [x, y] of corners) {
       const t = proceduralTile(W_OPEN, x, y);
