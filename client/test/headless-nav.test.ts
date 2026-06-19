@@ -46,7 +46,7 @@ describe('headless app core — offline navigation', () => {
     views.settings!.onBack();
     expect(views.screen).toBe('lobby');
 
-    views.lobby!.onStartCampaign(0);
+    views.lobby!.onOpenCampaign();
     expect(views.screen).toBe('campaignMap');
   });
 

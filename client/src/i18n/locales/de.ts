@@ -29,7 +29,7 @@ export const de: Record<TranslationKey, string> = {
   'lobby.feature.2': 'Zerstöre die gegnerische Basis, um zu gewinnen',
   'lobby.feature.3': 'Spieldauer 5-10 Min.  |  KI-Gegner',
   'lobby.startMatch': 'MATCH STARTEN',
-  'lobby.campaign': 'KAMPAGNE (Beta)',
+  'lobby.campaign': 'KAMPAGNE',
   'lobby.matching': 'Suche',
   'lobby.you': 'DU',
   'lobby.vs': 'VS',

@@ -147,7 +147,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onStartGame(_opponentName: string) { goGame(); },
       onStartRanked() { goRoom({ autoRanked: true }); },
       online,
-      onStartCampaign(_levelIndex: number) { goCampaignMap(); },
+      onOpenCampaign() { goCampaignMap(); },
       onOpenRoom() { goRoom(); },
       onOpenSocial() { goFriends(); },
       onOpenShop() { goShop(); },

@@ -665,7 +665,7 @@ interface ChapterMap {
 ### 12.4 实现切片（顺序）
 
 1. ✅ **本节落文档**（2026-06-19）。
-2. **大厅收口**：删 `LobbyScene` 4 个快捷按钮 + `CAMPAIGN_LEVEL_COUNT`，单一「战役」入口；`lobby.campaign` 文案去「试玩」（zh/en/de）。最小独立可验证。
+2. ✅ **大厅收口**（2026-06-19）：删 `LobbyScene` 4 个编号快捷按钮 + `CAMPAIGN_LEVEL_COUNT`，回调 `onStartCampaign(levelIndex)` → `onOpenCampaign()`，单一金边「战役」正门（左缘金墨竖描，呼应特性块）；`lobby.campaign` 文案去「试玩 / Beta」改正式「战役 / CAMPAIGN / KAMPAGNE」（zh/en/de）。`createAppCore` / headless-nav / scenes.ui 同步改名。
 3. **地图数据 + schema**：`maps/chN.json` 格式 + `mapSchema` 校验 + 6 章节点坐标手摄。
 4. **章节页渲染**：替换 `CampaignMapScene` 扁平列表为节点 / 铅笔虚线路径 / 星章 / 当前脉冲；复用 `sketchUi` 原语。
 5. **目录页 + 进度落点 + 翻页过场 + 章节小结仪式**：目录页 landing、自动定位当前章/关、翻页转场、章末「第 N 章 通关」印章 + outro。

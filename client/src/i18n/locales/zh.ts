@@ -28,7 +28,7 @@ export const zh = {
   'lobby.feature.2': '摧毁敌方基地即获胜',
   'lobby.feature.3': '单局 5-10 分钟 | AI 对手',
   'lobby.startMatch': '开始匹配',
-  'lobby.campaign': '战役 (试玩)',
+  'lobby.campaign': '战役',
   'lobby.matching': '匹配中',
   'lobby.you': '你',
   'lobby.vs': 'VS',

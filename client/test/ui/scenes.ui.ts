@@ -108,7 +108,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         onStartGame() {},
         onStartRanked() {},
         online: true,
-        onStartCampaign() {},
+        onOpenCampaign() {},
         onOpenRoom() {},
         onOpenSocial() {},
         onOpenShop() {},
@@ -124,7 +124,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
     build: (w, h) =>
       new LobbyScene(createLayout(w, h), new InputManager(), {
         onStartGame() {},
-        onStartCampaign() {},
+        onOpenCampaign() {},
         onOpenRoom() {},
         onOpenShop() {},
         onOpenCards() {},

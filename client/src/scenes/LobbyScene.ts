@@ -53,8 +53,8 @@ export interface LobbySceneCallbacks {
   onStartRanked?(): void;
   /** True when logged in + an online server is configured → match = real PvP. */
   online?: boolean;
-  /** Launch a campaign level by its 0-based index in CAMPAIGN_LEVEL_ORDER. */
-  onStartCampaign(levelIndex: number): void;
+  /** Enter the campaign notebook (CampaignMapScene) — the single PvE front door. */
+  onOpenCampaign(): void;
   /** Open the friend room (online play). Used by the social hub's "play online" button. */
   onOpenRoom(): void;
   /**
@@ -84,9 +84,6 @@ export interface LobbySceneCallbacks {
   onLogout?(): void;
 }
 
-/** Campaign levels exposed in the lobby picker (1-3 = content, 4 = swarm stress test). */
-const CAMPAIGN_LEVEL_COUNT = 4;
-
 type LobbyState = 'idle' | 'matching' | 'vs';
 
 export class LobbyScene implements Scene {
@@ -112,8 +109,8 @@ export class LobbyScene implements Scene {
 
   /** Hit rect for the start/matching button, in design space. */
   private btnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
-  /** Hit rects for the campaign (PvE) level-picker buttons, in design space. */
-  private campaignBtnRects: Rect[] = [];
+  /** Hit rect for the single campaign (PvE) entry button, in design space. */
+  private campaignBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the bottom-nav "world" slot (opens WorldMapScene). */
   private worldNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the bottom-nav "social" slot (opens RoomScene). */
@@ -200,12 +197,10 @@ export class LobbyScene implements Scene {
       this.onStartPressed();
       return;
     }
-    for (let i = 0; i < this.campaignBtnRects.length; i++) {
-      const r = this.campaignBtnRects[i]!;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-        this.cb.onStartCampaign(i);
-        return;
-      }
+    const camp = this.campaignBtnRect;
+    if (x >= camp.x && x <= camp.x + camp.w && y >= camp.y && y <= camp.y + camp.h) {
+      this.cb.onOpenCampaign();
+      return;
     }
     const ac = this.accountChipRect;
     if (ac && this.accountChipFn &&
@@ -390,33 +385,24 @@ export class LobbyScene implements Scene {
     this.btnLabel.y = btnY + btnH / 2;
     this.container.addChild(this.btnLabel);
 
-    // Campaign (PvE) level picker — a label + numbered buttons below the match button.
-    const campLabelY = btnY + btnH + Math.round(h * 0.022);
-    const campTitle = txt(t('lobby.campaign'), Math.round(h * 0.024), C.dark, true);
-    campTitle.anchor.set(0.5, 0.5);
-    campTitle.x = btnX + btnW / 2;
-    campTitle.y = campLabelY;
-    this.container.addChild(campTitle);
+    // Campaign (PvE) — a single notebook front door below the match button.
+    // (Replaced the demo-era 1-4 numbered picker; unlock chain / stars / chapter
+    // narrative all live behind this one entry now — CAMPAIGN_DESIGN §12.)
+    const campH = Math.round(h * 0.07);
+    const campY = btnY + btnH + Math.round(h * 0.026);
+    this.campaignBtnRect = { x: btnX, y: campY, w: btnW, h: campH };
 
-    const campH   = Math.round(h * 0.07);
-    const campY   = campLabelY + Math.round(h * 0.028);
-    const campGap = Math.round(btnW * 0.04);
-    const campW   = Math.round((btnW - campGap * (CAMPAIGN_LEVEL_COUNT - 1)) / CAMPAIGN_LEVEL_COUNT);
-    this.campaignBtnRects = [];
-    for (let i = 0; i < CAMPAIGN_LEVEL_COUNT; i++) {
-      const cx = btnX + i * (campW + campGap);
-      this.campaignBtnRects.push({ x: cx, y: campY, w: campW, h: campH });
+    const cbg = this.sketchPanel(btnW, campH, { fill: C.paper, border: C.gold, width: 2.6, seed: 51 });
+    cbg.x = btnX; cbg.y = campY;
+    this.container.addChild(cbg);
+    // Gold ink accent stroke down the left edge — echoes the feature blocks.
+    new SketchPen(cbg, 0x55).line(4, 5, 4, campH - 5, { color: C.gold, width: 5, jitter: 0.8, taper: 0.85 });
 
-      const cbg = this.sketchPanel(campW, campH, { fill: C.paper, border: C.gold, width: 2.4, seed: 51 + i });
-      cbg.x = cx; cbg.y = campY;
-      this.container.addChild(cbg);
-
-      const cl = txt(String(i + 1), Math.round(campH * 0.46), C.dark, true);
-      cl.anchor.set(0.5, 0.5);
-      cl.x = cx + campW / 2;
-      cl.y = campY + campH / 2;
-      this.container.addChild(cl);
-    }
+    const campLabel = txt(t('lobby.campaign'), Math.round(campH * 0.4), C.dark, true);
+    campLabel.anchor.set(0.5, 0.5);
+    campLabel.x = btnX + btnW / 2;
+    campLabel.y = campY + campH / 2;
+    this.container.addChild(campLabel);
 
     // Bottom nav bar
     const navH  = Math.round(h * 0.08);
