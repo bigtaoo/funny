@@ -79,7 +79,7 @@ function refreshTools(): void {
   for (const b of toolButtons) b.classList.toggle('active', b.dataset.tool === board.getTool());
 }
 for (const b of toolButtons) {
-  b.addEventListener('click', () => board.setTool(b.dataset.tool as 'noBuild' | 'blocked' | 'erase'));
+  b.addEventListener('click', () => board.setTool(b.dataset.tool as 'noBuild' | 'blocked' | 'erase' | 'wp' | 'escort'));
 }
 refreshTools();
 

@@ -179,11 +179,19 @@ export class LevelFormPanel {
     root.appendChild(section('护送单位 (escorts)'));
     for (let ei = 0; ei < (lv.escorts ?? []).length; ei++) {
       const esc = lv.escorts![ei]!;
+      const onBoard = this.state.selectedEscort === ei;
       const escBlock = document.createElement('div');
-      escBlock.style.cssText = 'border:1px solid #ccc;border-radius:4px;padding:4px;margin:4px 0';
+      escBlock.style.cssText = `border:1px solid ${onBoard ? 'var(--accent)' : '#ccc'};border-radius:4px;padding:4px;margin:4px 0`;
       const update = (patch: Partial<EscortSpec>): void => {
         if (lv.escorts?.[ei]) { Object.assign(lv.escorts[ei]!, patch); this.commit(); }
       };
+      // Latch this escort for board path editing (the「护送」board tool edits it).
+      const pickBtn = document.createElement('button');
+      pickBtn.textContent = onBoard ? '◉ 棋盘编辑中' : '◯ 在棋盘编辑路径';
+      pickBtn.style.cssText = 'font-size:11px;width:100%;margin-bottom:4px';
+      if (onBoard) pickBtn.className = 'primary';
+      pickBtn.addEventListener('click', () => this.state.selectEscort(onBoard ? null : ei));
+      escBlock.appendChild(pickBtn);
       escBlock.appendChild(textField('id', esc.id, (v) => update({ id: v })));
       escBlock.appendChild(numField('HP', String(esc.hp), 1, 1, (v) => update({ hp: Math.max(1, Math.round(v)) })));
       escBlock.appendChild(numField('速度 (格/秒)', String(esc.speed), 0.01, 0.1, (v) => update({ speed: Math.max(0.01, v) })));
@@ -246,6 +254,10 @@ export class LevelFormPanel {
       escDel.addEventListener('click', () => {
         lv.escorts!.splice(ei, 1);
         if (lv.escorts!.length === 0) delete lv.escorts;
+        // Keep the board's escort selection valid after the splice.
+        const sel = this.state.selectedEscort;
+        if (sel === ei) this.state.selectedEscort = null;
+        else if (sel !== null && sel > ei) this.state.selectedEscort = sel - 1;
         this.commit();
       });
       escBlock.appendChild(escDel);

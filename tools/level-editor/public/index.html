@@ -133,12 +133,14 @@
   <div class="main">
     <!-- Left: board -->
     <div class="pane col-board" id="col-board">
-      <div class="pane-head">棋盘 — 顶=敌方 / 底=己方；点列号开关车道</div>
+      <div class="pane-head">棋盘 — 顶=敌方 / 底=己方；点列号开关车道；变道/护送工具下点空格加点·拖节点·右键删</div>
       <div class="board-tools">
         <span style="color:var(--text-dim);align-self:center">画笔:</span>
         <button class="tool" data-tool="noBuild">不可建造</button>
         <button class="tool" data-tool="blocked">障碍</button>
         <button class="tool" data-tool="erase">擦除</button>
+        <button class="tool" data-tool="wp" title="选中波次后：点空格加变道点，拖动节点改位置，右键删除">变道</button>
+        <button class="tool" data-tool="escort" title="点护送起点选中后：点空格加路径点（须向敌方推进），拖动改位置，右键删除">护送</button>
       </div>
       <div class="board-mount" id="board-mount"></div>
       <div class="legend">
@@ -149,6 +151,8 @@
         <span><i style="background:#3a1e26"></i>敌方建造</span>
         <span><i style="background:#f9e2af"></i>不可建造</span>
         <span><i style="background:#6c7086"></i>障碍</span>
+        <span><i style="background:#f38ba8"></i>变道路径</span>
+        <span><i style="background:#a6e3a1"></i>护送路径</span>
       </div>
     </div>
 

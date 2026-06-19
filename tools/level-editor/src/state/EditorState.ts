@@ -1,5 +1,5 @@
-import type { Cell, HazardSpec, LevelDefinition, WaveEntry } from '@game/campaign/LevelDefinition';
-import { ATTACK_LANES } from '@game/config';
+import type { Cell, EscortSpec, HazardSpec, LevelDefinition, WaveEntry } from '@game/campaign/LevelDefinition';
+import { ATTACK_LANES, BOARD_ROWS } from '@game/config';
 
 /** Cell-mask paint layers. */
 export type MaskKind = 'blocked' | 'noBuild';
@@ -21,7 +21,33 @@ export class EditorState {
   /** Index of the selected wave entry (UI state, not serialized). */
   selectedWave: number | null = null;
 
+  /** Index of the escort being edited on the board (UI state, not serialized). */
+  selectedEscort: number | null = null;
+
   constructor(public level: LevelDefinition) {}
+
+  // ── Coordinate clamps (shared by board-path editing) ───────────────────────
+
+  /** Snap a column to the nearest attack lane (escorts / detours are authored on
+   *  attack lanes, matching the form selects). */
+  private clampLane(col: number): number {
+    const lanes = ATTACK_LANES as readonly number[];
+    let best = lanes[0]!;
+    let bestDist = Infinity;
+    for (const c of lanes) {
+      const d = Math.abs(c - col);
+      if (d < bestDist) {
+        bestDist = d;
+        best = c;
+      }
+    }
+    return best;
+  }
+
+  /** Clamp a row to the board (0..ROWS-1), rounded to an integer. */
+  private clampRow(row: number): number {
+    return Math.max(0, Math.min(BOARD_ROWS - 1, Math.round(row)));
+  }
 
   /** Subscribe to changes; returns an unsubscribe fn. */
   on(fn: () => void): () => void {
@@ -43,6 +69,95 @@ export class EditorState {
   setLevel(level: LevelDefinition): void {
     this.level = level;
     this.selectedWave = null;
+    this.selectedEscort = null;
+    this.emit();
+  }
+
+  // ── crossWaypoints of the selected wave (board-path editing) ───────────────
+
+  /** Append a detour waypoint to the selected wave (toCol snapped to an attack
+   *  lane). No-op if no wave is selected. */
+  addCrossWaypoint(col: number, row: number): void {
+    const idx = this.selectedWave;
+    if (idx === null || !this.waves[idx]) return;
+    const wps = [...(this.waves[idx]!.crossWaypoints ?? []), { atRow: this.clampRow(row), toCol: this.clampLane(col) }];
+    this.updateWave(idx, { crossWaypoints: wps });
+  }
+
+  /** Move the k-th detour waypoint of the selected wave. */
+  updateCrossWaypoint(k: number, col: number, row: number): void {
+    const idx = this.selectedWave;
+    const entry = idx !== null ? this.waves[idx] : null;
+    if (!entry?.crossWaypoints?.[k]) return;
+    const wps = entry.crossWaypoints.map((wp, i) => (i === k ? { atRow: this.clampRow(row), toCol: this.clampLane(col) } : wp));
+    this.updateWave(idx!, { crossWaypoints: wps });
+  }
+
+  /** Delete the k-th detour waypoint of the selected wave. */
+  removeCrossWaypoint(k: number): void {
+    const idx = this.selectedWave;
+    const entry = idx !== null ? this.waves[idx] : null;
+    if (!entry?.crossWaypoints?.[k]) return;
+    this.updateWave(idx!, { crossWaypoints: entry.crossWaypoints.filter((_, i) => i !== k) });
+  }
+
+  // ── Escort start + path (board-path editing) ───────────────────────────────
+
+  get escorts(): EscortSpec[] {
+    return this.level.escorts ?? [];
+  }
+
+  /** Select an escort for board editing (or null to clear), then notify. */
+  selectEscort(index: number | null): void {
+    this.selectedEscort = index !== null && this.level.escorts?.[index] ? index : null;
+    this.emit();
+  }
+
+  /** Move an escort's spawn point (col snapped to an attack lane). */
+  setEscortStart(i: number, col: number, row: number): void {
+    const esc = this.level.escorts?.[i];
+    if (!esc) return;
+    esc.startCol = this.clampLane(col);
+    esc.startRow = this.clampRow(row);
+    this.emit();
+  }
+
+  /** Append a path waypoint to escort `i`. Rows must stay strictly ascending
+   *  (escort moves toward the enemy side) — returns false if the click row does
+   *  not advance past the last point / spawn. */
+  addEscortWaypoint(i: number, col: number, row: number): boolean {
+    const esc = this.level.escorts?.[i];
+    if (!esc) return false;
+    const path = esc.path ?? [];
+    const lastRow = path.length > 0 ? path[path.length - 1]!.row : esc.startRow;
+    const r = this.clampRow(row);
+    if (r <= lastRow) return false; // must advance toward the enemy side, keep strictly ascending
+    path.push({ col: this.clampLane(col), row: r });
+    esc.path = path;
+    this.emit();
+    return true;
+  }
+
+  /** Move the j-th path waypoint of escort `i`, clamping its row to the open
+   *  interval between its neighbours so the strictly-ascending invariant holds. */
+  updateEscortWaypoint(i: number, j: number, col: number, row: number): void {
+    const esc = this.level.escorts?.[i];
+    const path = esc?.path;
+    if (!esc || !path?.[j]) return;
+    const lo = (j > 0 ? path[j - 1]!.row : esc.startRow) + 1;
+    const hi = (j < path.length - 1 ? path[j + 1]!.row : BOARD_ROWS) - 1;
+    path[j]!.col = this.clampLane(col);
+    if (lo <= hi) path[j]!.row = Math.max(lo, Math.min(hi, Math.round(row)));
+    this.emit();
+  }
+
+  /** Delete the j-th path waypoint of escort `i`; drops an emptied path array. */
+  removeEscortWaypoint(i: number, j: number): void {
+    const esc = this.level.escorts?.[i];
+    const path = esc?.path;
+    if (!esc || !path || j < 0 || j >= path.length) return;
+    path.splice(j, 1);
+    if (path.length === 0) delete esc.path;
     this.emit();
   }
 

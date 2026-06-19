@@ -72,8 +72,9 @@
 | `loadout` / `bannedCards` | 卡牌多选（从游戏侧卡牌定义取列表） | ✓ |
 | `rewards`（coins / starThresholds / unlockSkinId / unlockStoryKey） | 表单；`starThresholds` 三档 HP% | ✓ |
 | `story.introKey` / `outroKey` | 文本框输入 i18n 键（**不校验是否存在于 zh.ts**，MVP 自由文本，留警示） | ✓ |
-| `hazards[]` | 预留，MVP 不做可视化（可原样 JSON 透传保留） | ✗ |
-| `crossWaypoints`（WaveEntry 内脚本化变道） | 预留，MVP 不做可视化 | ✗ |
+| `hazards[]` | 关卡表单编辑（col/行段/effect/参数） | ✓ |
+| `crossWaypoints`（WaveEntry 内脚本化变道） | 波次 Inspector 表单 + **棋盘可视化点拖**（「变道」工具，见 CAMPAIGN_DESIGN §4.9.4） | ✓ |
+| `escorts[]` 起点 / 路径 | 关卡表单 + **棋盘可视化点拖**（「护送」工具，行号严格升序约束，见 CAMPAIGN_DESIGN §4.9.4） | ✓ |
 
 > 原则：**MVP 不编辑的字段也不能丢**——读取时原样保留，导出时回写，避免编辑一次就抹掉预留数据。
 
@@ -169,5 +170,5 @@ npm run build   # 生产构建
 - [ ] `CAMPAIGN_LEVEL_ORDER` 用 `index.json` 还是 TS 常量数组维护？（影响新增关卡是否要改 TS）
 - [ ] story 键能否在编辑器侧做存在性校验（import zh.ts 的 `TranslationKey`）？还是保持自由文本。
 - [ ] 时间线纵轴用"攻击车道"还是"波次组"分行——多车道同批次的可读性权衡。
-- [~] `hazards` / `crossWaypoints` 何时上可视化：**`crossWaypoints` 已排期**——随 `CAMPAIGN_DESIGN.md §4.8`（旋钮落地批次）一起做：棋盘加 blocked 画笔 + 时间线出兵块 Inspector 加 waypoint 编辑（§4.8.5）。`hazards` 仍原样透传保留（HazardSystem 未排期）。
+- [x] `hazards` / `crossWaypoints` / `escorts` 可视化：均已落地。`crossWaypoints` 与 escort 路径上**棋盘可视化点拖编辑**（「变道」/「护送」工具，2026-06-19，见 `CAMPAIGN_DESIGN.md §4.9.4`）；`hazards` 走关卡表单编辑。
 - [ ] 将来若要内嵌真实棋盘预览 / 试玩，是否引 PixiJS + 复用 `GameRenderer`。

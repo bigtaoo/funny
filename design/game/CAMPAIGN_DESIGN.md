@@ -280,7 +280,7 @@
 ### 4.8.5 schema + 编辑器 + 测试 ✅
 
 - `levelSchema.ts`：全部旋钮严格校验，`destroy_base.durationTicks` 2026-06-19 补入。
-- 关卡编辑器：objective 下拉含 6 种；blocked 画笔；crossWaypoints / levelSpells / escorts 编辑；BoardPanel 可视化路径拖拽**待做**。
+- 关卡编辑器：objective 下拉含 6 种；blocked 画笔；crossWaypoints / levelSpells / escorts 编辑；BoardPanel 可视化路径拖拽 ✅（2026-06-19，见 §4.9.4）。
 - Vitest：objective×3（+timed-loss 2026-06-19）/ escort×5 / MidCross / hardwall / loadout / inkRegenMult / activeLanes — 267 用例全绿。
 
 ---
@@ -394,7 +394,7 @@ if (total - dead < needed - arrived) → 无法完成，玩家败
 基地死亡仍判负（现有逻辑不变）
 ```
 
-**关卡编辑器：** 护送路径可视化编辑（点击棋盘格生成 waypoints）作为**独立 UI 任务**，三核心功能代码完成后补做。
+**关卡编辑器：** 护送路径可视化编辑（点击棋盘格生成 waypoints）作为**独立 UI 任务**，三核心功能代码完成后补做。✅ **已落地（2026-06-19，见 §4.9.4）**。
 
 **关卡接入一览（2026-06-18 落地）：**
 
@@ -438,8 +438,33 @@ if (total - dead < needed - arrived) → 无法完成，玩家败
 - `types.ts`：`escort_spawned/moved/hp_changed/died/arrived` 五个事件
 - `GameEngine`：构造器创建实例，`emitInitialEvents` 发 `escort_spawned`，step 插 EscortSystem，`checkWinCondition` 处理 arrived≥needed → 胜 / total-dead < needed-arrived → 败
 - ✅ **渲染层（2026-06-18 落地）**：`GameRenderer` 新增 `escortLayer`（Buildings 之上）；消费 `escort_spawned/moved/hp_changed/died/arrived` 五个事件；绿色菱形精灵 + HP 条，death 淡出 0.5s，arrived 闪烁消失。
-- ✅ **关卡编辑器（2026-06-18 落地）**：`LevelFormPanel` 新增「护送到达 (escort)」objective 选项（required: all/any/N 子表单）；levelSpells 编辑区（card 选择 + initialCount）；escorts 编辑区（id/hp/speed/startCol/startRow + 路径点列表增删）。BoardPanel 可视化路径拖拽仍为待做（独立 UI 任务）。
+- ✅ **关卡编辑器（2026-06-18 落地）**：`LevelFormPanel` 新增「护送到达 (escort)」objective 选项（required: all/any/N 子表单）；levelSpells 编辑区（card 选择 + initialCount）；escorts 编辑区（id/hp/speed/startCol/startRow + 路径点列表增删）。✅ **BoardPanel 可视化路径拖拽已落地（2026-06-19，见 §4.9.4）**。
 - ✅ **Vitest（2026-06-18 落地）**：`campaign-knobs.test.ts` 新增 5 个 escort 用例（spawn 事件、到达胜利、行进中未结束、全员阵亡判负、status 状态转换）。
+
+### 4.9.4 BoardPanel 可视化路径编辑（✅ 2026-06-19 落地）
+
+`crossWaypoints`（波次变道）与 escort `path`（护送路径）此前只能在右侧表单填数字。本批让两者在棋盘上**所见即所得**地点/拖编辑——关卡编辑器最后一块 UI 待办收口。
+
+**交互（沿用画笔工具范式，新增两个工具）：**
+
+| 工具 | 编辑对象 | 操作 |
+|---|---|---|
+| **变道** (`wp`) | 当前选中波次的 `crossWaypoints` | 点空格 = 追加变道点 `{atRow, toCol}`；拖节点 = 改位置；右键节点 = 删除。须先在时间线选中一条波次。 |
+| **护送** (`escort`) | 选中 escort 的 `startCol/startRow` + `path` | 点护送起点/路径节点 = 选中该 escort；选中后点空格 = 追加路径点（须向敌方推进，保持行号严格升序，否则 no-op）；拖节点/起点 = 改位置；右键路径点 = 删除（起点删除走表单）。 |
+
+**渲染（始终叠加，工具激活时高亮）：**
+- 变道折线：从 `TOP_SPAWN_ROW` 出生点起 elbow 折线（当前列下行到 `atRow` → 横移到 `toCol`），延伸到基地行；敌方主题粉色，未激活时虚线点缀。
+- 护送折线：起点 → 各 waypoint（垂直上行到 row → snap 到 col，与 `EscortSystem` 行为同构）→ 到达 `TOP_BUILDING_ROW`；绿色系，多 escort 用色板区分；选中 escort 加粗。
+- 节点 = 圆形手柄（带序号），未激活工具时降为小圆点上下文提示。出生点画三角标travel 方向（敌人向下 / 护送向上）。
+
+**数据约束（落在 `EditorState`，与 schema 对齐）：**
+- 列吸附最近**攻击道**、行 clamp 到 `0..ROWS-1`（沿用表单 select 的约束）。
+- escort `path` 行号**严格升序**硬约束：拖动时把行 clamp 进相邻节点的开区间，追加时拒绝不推进的点——保证导出永远过 `parseEscorts` 的「strictly ascending」校验。
+- 变道折线按**数组顺序**画（与 `MovementSystem` 顺序消费 `pendingWaypoints` 一致），WYSIWYG 对应 JSON。
+
+**接线：** `index.html` 加两个工具按钮 + 图例；`LevelFormPanel` 高亮 `selectedEscort` 并给「◉/◯ 在棋盘编辑路径」按钮做表单↔棋盘双向选中（escort 删除时同步修正 `selectedEscort` 索引）。
+
+**公平墙不破**：纯 campaign 关卡编辑器表现层，不触碰运行时引擎 / PvP。验证：`tsc --noEmit` + webpack 生产构建通过（编辑器无 Vitest 套件，数据层约束在 `EditorState` 方法内保证）。
 
 ---
 
