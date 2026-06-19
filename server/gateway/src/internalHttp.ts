@@ -11,7 +11,7 @@ const log = createLogger('gateway:internal');
 import type { FrameCmdsOut } from './proto';
 import type { PushMsg } from './matchsvcClient';
 
-/** /gw/judge 请求体（meta 发来）。frames 的 command bytes 用 base64 传输（JSON 安全）。 */
+/** /gw/judge 请求体（meta 或 worldsvc 发来）。frames 的 command bytes 用 base64 传输（JSON 安全）。 */
 interface JudgeReqBody {
   seed?: number;
   mode?: number;
@@ -21,6 +21,8 @@ interface JudgeReqBody {
   /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）。 */
   levelId?: string;
   pveUpgrades?: Record<string, number>;
+  /** SLG 围攻防守 config JSON 字符串（S8-3b，worldsvc 发来）。 */
+  defenseJson?: string;
 }
 
 /** base64 帧 → gateway 内部 FrameCmdsOut（commands 解回 Uint8Array）。 */
@@ -112,6 +114,7 @@ export function startInternalHttp(
             exclude: b.exclude ?? [],
             ...(b.levelId ? { levelId: b.levelId } : {}),
             ...(b.pveUpgrades ? { pveUpgrades: b.pveUpgrades } : {}),
+            ...(b.defenseJson ? { defenseJson: b.defenseJson } : {}),
           };
           // 直接回 JudgeResult（ok = 裁决是否成功；meta 据此定罪或作废）。
           const result = await gateway.judge(args);

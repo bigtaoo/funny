@@ -13,6 +13,9 @@ import {
   npcGarrison,
   findMarchPath,
   marchDurationFromPath,
+  capitalPositions,
+  capitalIdxAt,
+  nearestCapitalIdx,
   SIEGE_LOOT_RATE,
   SWEEP_LOOT_PER_LEVEL,
   RESOURCE_CAP,
@@ -22,6 +25,15 @@ import {
   OCCUPY_MIN_TROOPS,
   MARCH_MIN_TROOPS,
   PROTECTION_SEC,
+  TROOP_TRAIN_FOOD_COST,
+  TROOP_TRAIN_TIME_SEC,
+  TROOP_TRAIN_BATCH_MAX,
+  TROOP_TRAIN_QUEUE_MAX,
+  TROOP_SPEEDUP_SECS_PER_COIN,
+  NATION_BONUS_PRODUCTION,
+  NATION_BONUS_DEFENSE,
+  SLG_SHOP_ITEMS,
+  CAPITAL_FRACTIONS,
   SlgError,
   type PathCell,
   type TileType,
@@ -29,10 +41,11 @@ import {
   type MarchKind,
   type SiegeOutcome,
 } from '@nw/shared';
-import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc } from './db';
+import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry } from './db';
 import type { WorldRedis } from './redis';
-import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient';
+import { nullWorldGatewayClient, type WorldGatewayClient, type WorldJudgeArgs } from './gatewayClient';
 import { nullWorldMetaClient, type WorldMetaClient, type PlayerProfile } from './metaClient';
+import { nullWorldCommercialClient, type WorldCommercialClient } from './commercialClient';
 
 /** 视区单格视图（REST 响应）。`mine` 标识是否归请求者；`ownerPublicId`/`ownerName` 为他人领地昵称（需 meta 可用）。 */
 export interface WorldTileView {
@@ -98,6 +111,8 @@ export interface WorldServiceDeps {
   gateway?: WorldGatewayClient;
   /** 解析玩家档案（publicId/displayName）；缺省 = 不填充昵称。 */
   meta?: WorldMetaClient;
+  /** 金币扣费（训练加速/SLG 商店）；缺省 = 金币操作不可用。 */
+  commercial?: WorldCommercialClient;
 }
 
 const emptyResources = (): Record<ResourceType, number> => ({ food: 0, iron: 0, wood: 0 });
@@ -108,14 +123,25 @@ const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'at
 export class WorldService {
   private readonly gateway: WorldGatewayClient;
   private readonly meta: WorldMetaClient;
+  private readonly commercial: WorldCommercialClient;
   /** 进程内单调序号，保证同毫秒多次出征 marchId 不撞键。 */
   private marchSeq = 0;
   /** 进程内单调序号，保证同毫秒多次围攻 siegeId 不撞键。 */
   private siegeSeq = 0;
+  /** 缓存当前 mapW/mapH 派生的首府坐标列表（懒初始化）。 */
+  private _capitals: [number, number][] | null = null;
 
   constructor(private readonly deps: WorldServiceDeps) {
     this.gateway = deps.gateway ?? nullWorldGatewayClient;
     this.meta = deps.meta ?? nullWorldMetaClient;
+    this.commercial = deps.commercial ?? nullWorldCommercialClient;
+  }
+
+  private get capitals(): [number, number][] {
+    if (!this._capitals) {
+      this._capitals = capitalPositions(this.deps.mapW, this.deps.mapH);
+    }
+    return this._capitals;
   }
 
   private inBounds(x: number, y: number): boolean {
@@ -124,7 +150,8 @@ export class WorldService {
 
   /**
    * A* 行军寻路：预取所有已占领关隘格，组装 passableGateKeys，再调 findMarchPath。
-   * 关隘：自己占领的视为可通行（盟友通行 S8-4 pending，当前仅己方）。
+   * 关隘通行规则（S8-4）：己方占领的关隘 + 同一家族成员占领的关隘均可通行
+   * （盟友宗门通行 S8-4+ 联盟系统 pending，当前仅己方家族内互通）。
    * 无路 → throw PATH_BLOCKED (HTTP 400)。
    */
   private async computeMarchPath(
@@ -135,16 +162,25 @@ export class WorldService {
     toY: number,
     requesterId: string,
   ): Promise<PathCell[]> {
+    // 取请求者当前家族（如果有），同族成员占领的关隘也视为可通行。
+    const memDoc = await this.deps.cols.familyMembers.findOne({
+      _id: `${worldId}:${requesterId}`,
+    });
+    const allyFamilyId = memDoc?.familyId;
+
     // 关隘稀疏（全图 ~20-40 个）；一次性取出再过滤，避免 A* 内异步。
     const gateTiles = await this.deps.cols.tiles
       .find({ worldId, type: 'gate' })
-      .project<{ _id: string; x: number; y: number; ownerId: string | undefined }>({
-        _id: 1, x: 1, y: 1, ownerId: 1,
+      .project<{ _id: string; x: number; y: number; ownerId: string | undefined; familyId: string | undefined }>({
+        _id: 1, x: 1, y: 1, ownerId: 1, familyId: 1,
       })
       .toArray();
     const passableGateKeys = new Set<string>(
       gateTiles
-        .filter((g) => g.ownerId === requesterId)
+        .filter((g) =>
+          g.ownerId === requesterId ||
+          (allyFamilyId && g.familyId === allyFamilyId),
+        )
         .map((g) => `${g.x}:${g.y}`),
     );
     const path = findMarchPath(
@@ -644,6 +680,9 @@ export class WorldService {
       );
       void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
       void this.pushTile(m.ownerId, tileDoc);
+      // 首府格占领 → 触发立国（S8-6.5）
+      const pwMem = await this.deps.cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
+      void this.applyNationChange(m.worldId, x, y, m.ownerId, pwMem?.familyId);
       return;
     }
 
@@ -720,6 +759,9 @@ export class WorldService {
           { _id: playerWorldId(m.worldId, defenderId) },
           { $set: { yieldRate: defYield }, $inc: { rev: 1 } },
         );
+        // 首府格被夺 → 立国易主（S8-6.5）
+        const atkMem = await cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
+        void this.applyNationChange(m.worldId, target.x, target.y, m.ownerId, atkMem?.familyId);
       }
     } else {
       // 守方胜：守军减员到 survivors；攻方 committed 兵全灭（出征已扣，无回师）。
@@ -971,6 +1013,553 @@ export class WorldService {
       lootSummary: lootSummaryStr,
       replayRef: s.replayRef ?? '',
     });
+  }
+
+  // ── S8-2：训练队列 ────────────────────────────────────────
+
+  /**
+   * 排入训练队列。消耗粮食，按 TROOP_TRAIN_TIME_SEC × qty 排期。
+   * 校验：已进入世界 + qty 合法 + 队列槽位未满 + 训练后兵力不超 troopCap + 粮食够。
+   */
+  async trainTroops(worldId: string, accountId: string, qty: number): Promise<PlayerWorldView> {
+    const { cols, now } = this.deps;
+    qty = Math.max(1, Math.min(TROOP_TRAIN_BATCH_MAX, Math.floor(qty)));
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+
+    const queue = pw.trainingQueue ?? [];
+    if (queue.length >= TROOP_TRAIN_QUEUE_MAX) throw new SlgError('BAD_REQUEST', '训练队列已满');
+
+    const inTraining = queue.reduce((s, e) => s + e.qty, 0);
+    if (pw.troops + inTraining + qty > pw.troopCap) throw new SlgError('TROOP_CAP_REACHED', '训练后兵力超上限');
+
+    const t = now();
+    const resources = this.settle(pw, t);
+    const foodCost = qty * TROOP_TRAIN_FOOD_COST;
+    if ((resources.food ?? 0) < foodCost) throw new SlgError('INSUFFICIENT_RESOURCES', '粮食不足');
+    resources.food = (resources.food ?? 0) - foodCost;
+
+    // 训练开始时间紧接上一批结束（队列串联），没有在训批次则立即开始。
+    const lastComplete = queue.length > 0 ? queue[queue.length - 1]!.completeAt : t;
+    const duration = qty * TROOP_TRAIN_TIME_SEC * 1000;
+    const entry: TrainingEntry = {
+      qty,
+      foodCost,
+      startAt: lastComplete,
+      completeAt: lastComplete + duration,
+    };
+    await cols.playerWorld.updateOne(
+      { _id: pw._id },
+      {
+        $set: { resources, lastTickAt: t },
+        $push: { trainingQueue: entry } as never,
+        $inc: { rev: 1 },
+      },
+    );
+    return this.getMe(worldId, accountId);
+  }
+
+  /**
+   * 金币加速训练。coins 换成缩短时长（TROOP_SPEEDUP_SECS_PER_COIN 秒/币），
+   * 从队首批次开始缩短，溢出部分移到下一批。到期的批次立即出队加兵。
+   * 调 commercial.spend() 扣金币（失败则不加速）。
+   */
+  async speedupTraining(worldId: string, accountId: string, coins: number): Promise<PlayerWorldView> {
+    const { cols, now } = this.deps;
+    coins = Math.max(1, Math.floor(coins));
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+    const queue = pw.trainingQueue ?? [];
+    if (queue.length === 0) throw new SlgError('BAD_REQUEST', '当前没有训练中的队列');
+
+    const speedSec = coins * TROOP_SPEEDUP_SECS_PER_COIN;
+    const orderId = `slg_speedup:${worldId}:${accountId}:${now()}`;
+    await this.commercial.spend(accountId, coins, orderId);
+
+    // 从 Mongo 取最新 doc（spend 调用后可能延迟，保证幂等）
+    const fresh = await cols.playerWorld.findOne({ _id: pw._id });
+    if (!fresh) return this.getMe(worldId, accountId);
+
+    const t = now();
+    const resources = this.settle(fresh, t);
+    const newQueue = (fresh.trainingQueue ?? []).slice();
+    let remaining = speedSec * 1000;
+    let troopsReady = 0;
+
+    for (let i = 0; i < newQueue.length && remaining > 0; ) {
+      const e = newQueue[i]!;
+      const left = e.completeAt - t;
+      if (remaining >= left) {
+        remaining -= left;
+        troopsReady += e.qty;
+        newQueue.splice(i, 1);
+      } else {
+        newQueue[i] = { ...e, completeAt: e.completeAt - remaining };
+        remaining = 0;
+        i++;
+      }
+    }
+
+    // 同步后续批次的 startAt（completeAt 压缩后级联）
+    for (let i = 1; i < newQueue.length; i++) {
+      const prev = newQueue[i - 1]!;
+      const cur = newQueue[i]!;
+      const dur = cur.completeAt - cur.startAt;
+      newQueue[i] = { ...cur, startAt: prev.completeAt, completeAt: prev.completeAt + dur };
+    }
+
+    const newTroops = Math.min(fresh.troopCap, fresh.troops + troopsReady);
+    await cols.playerWorld.updateOne(
+      { _id: fresh._id },
+      { $set: { resources, troops: newTroops, trainingQueue: newQueue, lastTickAt: t }, $inc: { rev: 1 } },
+    );
+    return this.getMe(worldId, accountId);
+  }
+
+  /**
+   * 处理到期训练批次（由 scheduler 每 2s 调用）。
+   * 遍历所有有 trainingQueue 的 playerWorld，取出 completeAt ≤ now 的批次，
+   * 原子 $inc troops + $pull 已完成条目。返回处理条数。
+   */
+  async processCompletedTraining(nowMs?: number): Promise<number> {
+    const { cols } = this.deps;
+    const t = nowMs ?? this.deps.now();
+    // 找所有队列非空且队首已到期的玩家（队首最早完成）
+    const docs = await cols.playerWorld
+      .find({ 'trainingQueue.0.completeAt': { $lte: t } })
+      .project<{ _id: string; troops: number; troopCap: number; trainingQueue: TrainingEntry[] }>({
+        _id: 1, troops: 1, troopCap: 1, trainingQueue: 1,
+      })
+      .toArray();
+
+    let n = 0;
+    for (const doc of docs) {
+      const queue = doc.trainingQueue ?? [];
+      const done = queue.filter((e) => e.completeAt <= t);
+      if (done.length === 0) continue;
+      const troopsReady = done.reduce((s, e) => s + e.qty, 0);
+      const newTroops = Math.min(doc.troopCap, doc.troops + troopsReady);
+      // 原子：$inc troops + 移除已完成批次（按 completeAt 精确匹配）
+      for (const e of done) {
+        await cols.playerWorld.updateOne(
+          { _id: doc._id },
+          { $pull: { trainingQueue: { completeAt: e.completeAt } } as never },
+        );
+      }
+      await cols.playerWorld.updateOne(
+        { _id: doc._id },
+        { $set: { troops: newTroops }, $inc: { rev: 1 } },
+      );
+      n += done.length;
+    }
+    return n;
+  }
+
+  // ── S8-4 残留：防守 config ────────────────────────────────
+
+  /**
+   * 设置领地或主城防守 config（玩家编辑防守关）。
+   * tileKey='base' → 写主城 playerWorld.defense；否则写该 tileId 的 tile.defense。
+   * 防守 config 内容在此层不校验（P2 延迟校验，§14.9），levelSchema 校验在引擎侧 S8-3b 后补。
+   */
+  async setDefense(
+    worldId: string,
+    accountId: string,
+    tileKey: string,
+    defenseConfig: Record<string, unknown>,
+  ): Promise<void> {
+    const { cols } = this.deps;
+    if (tileKey === 'base') {
+      const pwId = playerWorldId(worldId, accountId);
+      const pw = await cols.playerWorld.findOne({ _id: pwId });
+      if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+      await cols.playerWorld.updateOne(
+        { _id: pwId },
+        { $set: { defense: defenseConfig }, $inc: { rev: 1 } },
+      );
+    } else {
+      const tile = await cols.tiles.findOne({ _id: tileKey });
+      if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', '非己方领地');
+      await cols.tiles.updateOne(
+        { _id: tileKey },
+        { $set: { defense: defenseConfig }, $inc: { rev: 1 } },
+      );
+    }
+  }
+
+  // ── S8-3b：judgeRunner 接入（关键围攻录像复算）────────────
+
+  /**
+   * 接收客户端提交的围攻录像，调 gateway /gw/judge 复算，更新 SiegeDoc。
+   * 流程：
+   *   1. 验证 siegeId 属于 accountId + 对应 tile 有防守 config；
+   *   2. 调 gateway.judge(replay + defenseJson + pveUpgrades)；
+   *   3. 更新 siege.recomputed=true, siege.replayRef；
+   *   4. 若复算结果与廉价结算不同 → log（反作弊标记），暂不自动翻转
+   *      （S8-3b server-only：翻转逻辑等 client UI 完整后再启用）。
+   */
+  async resolveSiegeWithJudge(
+    worldId: string,
+    accountId: string,
+    sid: string,
+    judgeArgs: Pick<WorldJudgeArgs, 'seed' | 'mode' | 'endFrame' | 'frames' | 'pveUpgrades'>,
+  ): Promise<{ recomputed: boolean; judgeOutcome?: string }> {
+    const { cols } = this.deps;
+    const siege = await cols.sieges.findOne({ _id: sid, worldId });
+    if (!siege) throw new SlgError('NOT_FOUND', '战报不存在');
+    if (siege.attackerId !== accountId) throw new SlgError('NO_PERMISSION', '只有进攻方可提交录像');
+    if (siege.recomputed) return { recomputed: true }; // 已复算过，幂等返回
+
+    // 取防守方的防守 config（领地 tile 或主城 playerWorld）
+    let defenseConfig: Record<string, unknown> | undefined;
+    const targetTile = await cols.tiles.findOne({ _id: siege.tile });
+    if (targetTile?.defense) {
+      defenseConfig = targetTile.defense as Record<string, unknown>;
+    } else if (siege.defenderId) {
+      const defPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, siege.defenderId) });
+      if (defPw?.defense) defenseConfig = defPw.defense as Record<string, unknown>;
+    }
+
+    const defenseJson = defenseConfig ? JSON.stringify(defenseConfig) : undefined;
+
+    const result = await this.gateway.judge({
+      ...judgeArgs,
+      exclude: [accountId],
+      ...(defenseJson ? { defenseJson } : {}),
+    });
+
+    const replayRef = result.judgeAccountId
+      ? `judge:${result.judgeAccountId}:${sid}`
+      : undefined;
+
+    await cols.sieges.updateOne(
+      { _id: sid },
+      {
+        $set: {
+          recomputed: result.ok,
+          ...(replayRef ? { replayRef } : {}),
+        },
+      },
+    );
+
+    if (result.ok && result.winnerSide !== undefined) {
+      // winnerSide: 0=attacker win, 1=defender win
+      const judgeOutcome: SiegeOutcome = result.winnerSide === 0 ? 'attacker_win' : 'defender_win';
+      if (judgeOutcome !== siege.outcome) {
+        // 廉价结算与引擎复算不一致 → 记录（反作弊，后续决策）
+        console.warn('[worldsvc] siege outcome mismatch', {
+          sid,
+          cheap: siege.outcome,
+          judge: judgeOutcome,
+          attackerId: accountId,
+        });
+      }
+      return { recomputed: true, judgeOutcome };
+    }
+    return { recomputed: result.ok };
+  }
+
+  // ── S8-6.5：国家系统 ──────────────────────────────────────
+
+  /**
+   * 初始化世界的 10 个首府文档（赛季开服时调用，幂等）。
+   * 若已存在则跳过（$setOnInsert + _id 唯一防重复）。
+   */
+  async initNations(worldId: string): Promise<void> {
+    const caps = this.capitals;
+    for (let i = 0; i < caps.length; i++) {
+      const [x, y] = caps[i]!;
+      const id = `nation:${worldId}:${i}`;
+      const doc: NationDoc = { _id: id, worldId, capitalIdx: i, x, y, rev: 0 };
+      await this.deps.cols.nations.updateOne({ _id: id }, { $setOnInsert: doc }, { upsert: true });
+    }
+  }
+
+  /** 获取世界所有国家状态。 */
+  async getNations(worldId: string): Promise<NationDoc[]> {
+    return this.deps.cols.nations.find({ worldId }).toArray();
+  }
+
+  /**
+   * 当围攻/占领到达目标格时检查是否是首府格，触发立国或灭国。
+   * winnerAccountId = 占领者；若此格原先属于另一国则灭其国。
+   * 返回是否触发了国家状态变更。
+   */
+  private async applyNationChange(
+    worldId: string,
+    x: number,
+    y: number,
+    winnerAccountId: string,
+    winnerFamilyId?: string,
+  ): Promise<boolean> {
+    const idx = capitalIdxAt(x, y, this.capitals);
+    if (idx < 0) return false; // 不是首府格
+    const nationId = `nation:${worldId}:${idx}`;
+    await this.deps.cols.nations.updateOne(
+      { _id: nationId },
+      {
+        $set: {
+          ownerId: winnerAccountId,
+          ...(winnerFamilyId ? { familyId: winnerFamilyId } : {}),
+          foundedAt: this.deps.now(),
+          rev: 1, // 覆盖，不自增（简化，后续可改 $inc）
+        },
+        $unset: { nationName: '' }, // 新占领重命名前清空旧国名
+      },
+    );
+    return true;
+  }
+
+  /** 设置国家名称（仅首府占领者可命名）。 */
+  async setNationName(worldId: string, accountId: string, capitalIdx: number, name: string): Promise<void> {
+    if (!name || name.length < 1 || name.length > 10) throw new SlgError('BAD_REQUEST', '国名 1~10 字');
+    const nationId = `nation:${worldId}:${capitalIdx}`;
+    const nation = await this.deps.cols.nations.findOne({ _id: nationId });
+    if (!nation?.ownerId) throw new SlgError('TILE_NOT_OWNED', '该首府尚无国家');
+    if (nation.ownerId !== accountId) throw new SlgError('NO_PERMISSION', '只有占领者可命名');
+    await this.deps.cols.nations.updateOne({ _id: nationId }, { $set: { nationName: name } });
+  }
+
+  /**
+   * 查询 (x,y) 对应的国家（Voronoi 分区最近首府）。
+   * 若最近首府当前无国家（无主），返回 null。
+   */
+  async getNationAt(worldId: string, x: number, y: number): Promise<NationDoc | null> {
+    const idx = nearestCapitalIdx(x, y, this.capitals);
+    const nationId = `nation:${worldId}:${idx}`;
+    return this.deps.cols.nations.findOne({ _id: nationId });
+  }
+
+  // ── S8-7：赛季管理 ────────────────────────────────────────
+
+  /** 获取世界/赛季信息（GET /world/season）。 */
+  async getSeason(worldId: string): Promise<{
+    worldId: string;
+    season: number;
+    shard: number;
+    status: string;
+    openAt: number;
+    resetAt?: number;
+    capacity: number;
+    population: number;
+  } | null> {
+    const w = await this.deps.cols.worlds.findOne({ _id: worldId });
+    if (!w) return null;
+    return {
+      worldId: w._id,
+      season: w.season,
+      shard: w.shard,
+      status: w.status,
+      openAt: w.openAt,
+      ...(w.resetAt ? { resetAt: w.resetAt } : {}),
+      capacity: w.capacity,
+      population: w.population,
+    };
+  }
+
+  /**
+   * 开服：创建世界文档（幂等，已存在则更新 status → open）。
+   * worldId 必须形如 `s{season}-{shard}`。
+   */
+  async openSeason(
+    worldId: string,
+    season: number,
+    shard: number,
+    capacity: number,
+  ): Promise<void> {
+    const { cols, now } = this.deps;
+    await cols.worlds.updateOne(
+      { _id: worldId },
+      {
+        $setOnInsert: {
+          _id: worldId,
+          season,
+          shard,
+          status: 'open' as const,
+          mapW: this.deps.mapW,
+          mapH: this.deps.mapH,
+          openAt: now(),
+          capacity,
+          population: 0,
+          rev: 0,
+        },
+        $set: { status: 'open' as const },
+      },
+      { upsert: true },
+    );
+    // 初始化 10 个首府文档
+    await this.initNations(worldId);
+  }
+
+  /**
+   * 赛季结算（settling）：计算宗门/家族占领首府数量，产出排名数据。
+   * 结算只计算，不清档（清档走 resetSeason）。
+   * 返回排名列表（按占国数降序）。
+   */
+  async settleSeason(worldId: string): Promise<Array<{
+    rank: number;
+    familyId: string;
+    nationCount: number;
+    capitalIdxs: number[];
+  }>> {
+    const { cols } = this.deps;
+
+    // 标记赛季进入结算状态
+    await cols.worlds.updateOne(
+      { _id: worldId },
+      { $set: { status: 'settling' as const } },
+    );
+
+    const nations = await cols.nations.find({ worldId, ownerId: { $exists: true } }).toArray();
+
+    // 按 familyId 聚合占国数（无 familyId 的用 ownerId 兜底）
+    const familyNations = new Map<string, { capitalIdxs: number[] }>();
+    for (const n of nations) {
+      const key = n.familyId ?? n.ownerId ?? 'solo';
+      const cur = familyNations.get(key) ?? { capitalIdxs: [] };
+      cur.capitalIdxs.push(n.capitalIdx);
+      familyNations.set(key, cur);
+    }
+
+    const ranking = [...familyNations.entries()]
+      .sort((a, b) => b[1].capitalIdxs.length - a[1].capitalIdxs.length)
+      .map(([fid, v], i) => ({
+        rank: i + 1,
+        familyId: fid,
+        nationCount: v.capitalIdxs.length,
+        capitalIdxs: v.capitalIdxs,
+      }));
+
+    return ranking;
+  }
+
+  /**
+   * 赛季重置（清地图态、保养成 + 外观 + 段位，§2.3 SLG4）。
+   * 清除：tiles / marches / playerWorld / nations（对应 worldId）。
+   * 重置后 world.status → 'open'，population → 0，resetAt 更新。
+   * ⚠ 大批量删除，生产环境建议分批执行。
+   */
+  async resetSeason(worldId: string): Promise<{ deleted: Record<string, number> }> {
+    const { cols, now } = this.deps;
+    const [r1, r2, r3, r4, r5] = await Promise.all([
+      cols.tiles.deleteMany({ worldId }),
+      cols.marches.deleteMany({ worldId }),
+      cols.playerWorld.deleteMany({ worldId }),
+      cols.nations.deleteMany({ worldId }),
+      cols.sieges.deleteMany({ worldId }),
+    ]);
+    // 重置家族繁荣度（赛季归零，但不删除家族成员关系——S8-4 待细化）
+    await cols.families.updateMany({ worldId }, { $set: { territoryCount: 0 } });
+    await cols.worlds.updateOne(
+      { _id: worldId },
+      {
+        $set: { status: 'open' as const, population: 0, resetAt: now() },
+        $inc: { rev: 1 },
+      },
+    );
+    // 重新初始化首府文档
+    await this.initNations(worldId);
+    return {
+      deleted: {
+        tiles: r1.deletedCount,
+        marches: r2.deletedCount,
+        playerWorld: r3.deletedCount,
+        nations: r4.deletedCount,
+        sieges: r5.deletedCount,
+      },
+    };
+  }
+
+  /** 关闭世界（赛季结束归档）。 */
+  async closeSeason(worldId: string): Promise<void> {
+    await this.deps.cols.worlds.updateOne(
+      { _id: worldId },
+      { $set: { status: 'closed' as const }, $inc: { rev: 1 } },
+    );
+  }
+
+  // ── S8-8：SLG 商店 ────────────────────────────────────────
+
+  /**
+   * SLG 商店购买（商品定义见 SLG_SHOP_ITEMS）。
+   * 扣金币 → 立即生效（加速/资源包/保护罩/战令写 playerWorld）。
+   */
+  async buySlgShopItem(worldId: string, accountId: string, itemId: string): Promise<PlayerWorldView> {
+    const item = SLG_SHOP_ITEMS.find((i) => i.id === itemId);
+    if (!item) throw new SlgError('NOT_FOUND', '商品不存在');
+
+    const { cols, now } = this.deps;
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+
+    const orderId = `slg_shop:${worldId}:${accountId}:${itemId}:${now()}`;
+    await this.commercial.spend(accountId, item.cost, orderId);
+
+    const t = now();
+    const resources = this.settle(pw, t);
+
+    if (item.kind === 'troop_speedup') {
+      const secToSpeed = Number(item.effect['duration_sec'] ?? 0);
+      // 重用 speedupTraining 逻辑的简化版（已扣款，直接操作 queue）
+      const queue = (pw.trainingQueue ?? []).slice();
+      let remaining = secToSpeed * 1000;
+      let troopsReady = 0;
+      for (let i = 0; i < queue.length && remaining > 0; ) {
+        const e = queue[i]!;
+        const left = e.completeAt - t;
+        if (remaining >= left) {
+          remaining -= left;
+          troopsReady += e.qty;
+          queue.splice(i, 1);
+        } else {
+          queue[i] = { ...e, completeAt: e.completeAt - remaining };
+          remaining = 0;
+          i++;
+        }
+      }
+      const newTroops = Math.min(pw.troopCap, pw.troops + troopsReady);
+      await cols.playerWorld.updateOne(
+        { _id: pw._id },
+        { $set: { resources, troops: newTroops, trainingQueue: queue, lastTickAt: t }, $inc: { rev: 1 } },
+      );
+    } else if (item.kind === 'resource_pack') {
+      const each = Number(item.effect['each'] ?? 0);
+      for (const rt of RESOURCE_TYPES) {
+        resources[rt] = Math.min(RESOURCE_CAP, (resources[rt] ?? 0) + each);
+      }
+      await cols.playerWorld.updateOne(
+        { _id: pw._id },
+        { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
+      );
+    } else if (item.kind === 'protection') {
+      const durSec = Number(item.effect['duration_sec'] ?? 0);
+      const baseId = pw.mainBaseTile;
+      if (baseId) {
+        const existingProtection = await cols.tiles.findOne({ _id: baseId });
+        const currentProtectUntil = existingProtection?.protectedUntil ?? t;
+        const newProtectUntil = Math.max(currentProtectUntil, t) + durSec * 1000;
+        await cols.tiles.updateOne(
+          { _id: baseId },
+          { $set: { protectedUntil: newProtectUntil }, $inc: { rev: 1 } },
+        );
+      }
+      await cols.playerWorld.updateOne(
+        { _id: pw._id },
+        { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
+      );
+    } else if (item.kind === 'battle_pass') {
+      await cols.playerWorld.updateOne(
+        { _id: pw._id },
+        { $set: { resources, hasBattlePass: true, lastTickAt: t }, $inc: { rev: 1 } },
+      );
+    }
+
+    return this.getMe(worldId, accountId);
+  }
+
+  /** SLG 商店商品列表（客户端展示用）。 */
+  getSlgShopItems(): typeof SLG_SHOP_ITEMS {
+    return SLG_SHOP_ITEMS;
   }
 }
 

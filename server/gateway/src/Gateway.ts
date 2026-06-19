@@ -44,6 +44,8 @@ export interface JudgeArgs {
   levelId?: string;
   /** 服务器权威蓝图快照（升级等级），保证 PvE 复算确定性。 */
   pveUpgrades?: Record<string, number>;
+  /** SLG 围攻防守 config JSON 字符串（S8-3b）：非空 → 裁判按 siege 模式复算。 */
+  defenseJson?: string;
 }
 /** 裁判结果（回给 meta）。ok=false：无候选 / 超时 / 复算失败。 */
 export interface JudgeResult {

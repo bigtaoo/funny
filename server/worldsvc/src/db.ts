@@ -48,6 +48,14 @@ export interface TileDoc {
   rev: number;
 }
 
+/** 训练队列条目（S8-2）。每批独立排队，completeAt 到期由 scheduler 转化为兵力。 */
+export interface TrainingEntry {
+  qty: number;       // 本批训练数量
+  foodCost: number;  // 已扣粮食（出队时无需退还）
+  startAt: number;   // ms epoch
+  completeAt: number; // ms epoch（到点 scheduler 加兵到 troops 并移出队列）
+}
+
 /** 玩家在某世界的状态（资源惰性结算：存聚合 yieldRate + lastTickAt，读时补算，不逐格 tick）。 */
 export interface PlayerWorldDoc {
   _id: string; // `{worldId}:{accountId}`
@@ -61,6 +69,8 @@ export interface PlayerWorldDoc {
   mainBaseTile?: string;
   defense?: DefenseConfig; // 主城防守（P5 内嵌）
   familyId?: string;
+  trainingQueue?: TrainingEntry[]; // 训练队列（S8-2，≤ TROOP_TRAIN_QUEUE_MAX 条）
+  hasBattlePass?: boolean;         // 当赛季战令（S8-8，赛季重置时清除）
   rev: number;
 }
 
@@ -143,6 +153,20 @@ export interface SiegeDoc {
   ts: number;
 }
 
+/** 国家文档（S8-6.5）。每个首府对应一条记录，无主时无 ownerId/nationName。 */
+export interface NationDoc {
+  _id: string;            // `nation:{worldId}:{capitalIdx}`
+  worldId: string;
+  capitalIdx: number;     // 0~9，对应 CAPITAL_FRACTIONS 索引
+  x: number;              // 首府格子 x（由 capitalPositions 计算，赛季开服时写入）
+  y: number;
+  ownerId?: string;       // 占领者 accountId
+  familyId?: string;      // 占领者家族
+  nationName?: string;    // 立国时玩家命名
+  foundedAt?: number;     // ms
+  rev: number;
+}
+
 export interface WorldCollections {
   worlds: Collection<WorldDoc>;
   tiles: Collection<TileDoc>;
@@ -153,6 +177,7 @@ export interface WorldCollections {
   familyMessages: Collection<FamilyMessageDoc>;
   auctions: Collection<AuctionDoc>;
   sieges: Collection<SiegeDoc>;
+  nations: Collection<NationDoc>;
 }
 
 export interface WorldMongo {
@@ -190,6 +215,7 @@ export async function createWorldMongo(
     familyMessages: db.collection<FamilyMessageDoc>('familyMessages'),
     auctions: db.collection<AuctionDoc>('auctions'),
     sieges: db.collection<SiegeDoc>('sieges'),
+    nations: db.collection<NationDoc>('nations'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -217,6 +243,9 @@ export async function createWorldMongo(
     await collections.auctions.createIndex({ expireAt: 1 });
     await collections.sieges.createIndex({ worldId: 1, ts: -1 });
     await collections.sieges.createIndex({ attackerId: 1 });
+    // 国家：worldId 内按首府索引唯一
+    await collections.nations.createIndex({ worldId: 1, capitalIdx: 1 }, { unique: true });
+    await collections.nations.createIndex({ ownerId: 1 });
   }
 
   return {

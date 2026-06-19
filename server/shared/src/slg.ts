@@ -146,7 +146,108 @@ export const AUCTION_DURATIONS_SEC: readonly number[] = [6 * 3600, 12 * 3600, 24
 export const GARRISON_PER_TILE = 500;
 /** 占领格至少需带的驻军（到点占领后即成该格 garrison；不足拒绝出征）。 */
 export const OCCUPY_MIN_TROOPS = GARRISON_PER_TILE;
-export const SEASON_LENGTH_DAYS = 30; // U3 推迟到 S8-7，先占位
+export const SEASON_LENGTH_DAYS = 60; // U3：2 个月
+
+// ── 训练队列（S8-2，§4 兵力循环）──────────────────────────────
+/** 每兵训练消耗粮食（DRAFT，上线后调参）。 */
+export const TROOP_TRAIN_FOOD_COST = 10;
+/** 每兵训练耗时（秒，DRAFT）。*/
+export const TROOP_TRAIN_TIME_SEC = 5;
+/** 单批最大训练量（上限单批队列大小）。 */
+export const TROOP_TRAIN_BATCH_MAX = 500;
+/** 同时可排的训练批次上限（训练队列槽位）。 */
+export const TROOP_TRAIN_QUEUE_MAX = 2;
+/** 加速：1 金币 = 多少秒训练时间（DRAFT，60 秒/币）。 */
+export const TROOP_SPEEDUP_SECS_PER_COIN = 60;
+
+// ── 国家系统（S8-6.5，§2.4）──────────────────────────────────
+/** 国家数量（10 首府 = 10 国）。*/
+export const NATION_COUNT = 10;
+/** 国民加成：本国 Voronoi 区内资源产出加成（分数，0.10 = +10%，DRAFT）。 */
+export const NATION_BONUS_PRODUCTION = 0.10;
+/** 国民加成：本国 Voronoi 区内防御战斗加成（分数，0.15 = +15%，DRAFT）。 */
+export const NATION_BONUS_DEFENSE = 0.15;
+/**
+ * 10 首府相对坐标（分数 0~1，乘以 mapW-1/mapH-1 得实际格子）。
+ * 布局：8 外围（四角 + 四边中点）+ 1 中部偏内 + 1 中原（地图中心）。
+ * 设计文档 §2.4：固定坐标，hardcoded in shared/slg.ts，Voronoi 分区由此派生。
+ */
+export const CAPITAL_FRACTIONS: readonly [number, number][] = [
+  [0.14, 0.14], // 0: 西北角
+  [0.50, 0.10], // 1: 正北
+  [0.86, 0.14], // 2: 东北角
+  [0.10, 0.50], // 3: 正西
+  [0.90, 0.50], // 4: 正东
+  [0.14, 0.86], // 5: 西南角
+  [0.50, 0.90], // 6: 正南
+  [0.86, 0.86], // 7: 东南角
+  [0.32, 0.32], // 8: 内圈西北（普通首府）
+  [0.50, 0.50], // 9: 中原首府（地图中心，赛季额外奖励目标）
+] as const;
+
+/** 把相对坐标转换为地图实际整数坐标。 */
+export function capitalPositions(mapW: number, mapH: number): [number, number][] {
+  return CAPITAL_FRACTIONS.map(([fx, fy]) => [
+    Math.round(fx * (mapW - 1)),
+    Math.round(fy * (mapH - 1)),
+  ]);
+}
+
+/** 返回 (x,y) 所属的最近首府索引（Voronoi 分区，欧氏距离）。 */
+export function nearestCapitalIdx(
+  x: number,
+  y: number,
+  capitals: readonly [number, number][],
+): number {
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < capitals.length; i++) {
+    const [cx, cy] = capitals[i]!;
+    const d = (x - cx) ** 2 + (y - cy) ** 2;
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+/** 判断 (x,y) 是否是某个首府位置，返回首府索引（-1 = 不是首府）。 */
+export function capitalIdxAt(
+  x: number,
+  y: number,
+  capitals: readonly [number, number][],
+): number {
+  for (let i = 0; i < capitals.length; i++) {
+    const [cx, cy] = capitals[i]!;
+    if (cx === x && cy === y) return i;
+  }
+  return -1;
+}
+
+// ── SLG 商店商品（S8-8，§8）──────────────────────────────────
+export interface SlgShopItem {
+  id: string;
+  /** 金币价格。 */
+  cost: number;
+  kind: 'troop_speedup' | 'resource_pack' | 'protection' | 'battle_pass';
+  /** 具体效果参数（duration_sec / resource_each / pass_season）。 */
+  effect: Record<string, number | string>;
+  description: string;
+}
+
+export const SLG_SHOP_ITEMS: readonly SlgShopItem[] = [
+  // 训练加速
+  { id: 'slg_speedup_1h',    cost: 200,   kind: 'troop_speedup', effect: { duration_sec: 3600 },  description: '加速训练 1 小时' },
+  { id: 'slg_speedup_8h',    cost: 1400,  kind: 'troop_speedup', effect: { duration_sec: 28800 }, description: '加速训练 8 小时' },
+  { id: 'slg_speedup_24h',   cost: 3600,  kind: 'troop_speedup', effect: { duration_sec: 86400 }, description: '加速训练 24 小时' },
+  // 资源包（food/iron/wood 各加等量）
+  { id: 'slg_res_s',  cost: 300,   kind: 'resource_pack', effect: { each: 20000 },  description: '小资源包（各 2 万）' },
+  { id: 'slg_res_m',  cost: 1000,  kind: 'resource_pack', effect: { each: 80000 },  description: '中资源包（各 8 万）' },
+  { id: 'slg_res_l',  cost: 3000,  kind: 'resource_pack', effect: { each: 200000 }, description: '大资源包（各 20 万）' },
+  // 保护罩
+  { id: 'slg_shield_8h',  cost: 500,  kind: 'protection', effect: { duration_sec: 28800 }, description: '主城保护罩 8 小时' },
+  { id: 'slg_shield_24h', cost: 1200, kind: 'protection', effect: { duration_sec: 86400 }, description: '主城保护罩 24 小时' },
+  // 赛季战令
+  { id: 'slg_battle_pass', cost: 9800, kind: 'battle_pass', effect: { pass_season: 1 }, description: '赛季战令（当季有效）' },
+] as const;
 
 // ── 确定性噪声（纯函数，无随机源；同输入同输出）─────────────
 /** 32-bit 整数哈希（两坐标 + seed → uint32）。 */

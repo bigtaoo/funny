@@ -35,6 +35,7 @@ async function main(): Promise<void> {
     cols: mongo.collections,
     redis,
     gateway,
+    commercial,
     meta,
     mapW: SLG_MAP_W,
     mapH: SLG_MAP_H,

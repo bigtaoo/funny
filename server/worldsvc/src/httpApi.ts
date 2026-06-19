@@ -193,10 +193,55 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.startMarch(worldId, accountId, fromX, fromY, toX, toY, 'sweep', troops)));
         }
 
-        // ── 防守 / 兵力（写，S8-3+ stub）──
-        if (method === 'PUT' && path === '/world/defense') return NOT_IMPL(res, 'defense');
-        if (method === 'POST' && path === '/world/troops/train') return NOT_IMPL(res, 'train');
-        if (method === 'POST' && path === '/world/troops/speedup') return NOT_IMPL(res, 'speedup');
+        // ── 防守 config（S8-4 残留，做实）──
+        if (method === 'PUT' && path === '/world/defense') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const tileKey = typeof body.tileKey === 'string' ? body.tileKey : 'base';
+          const defenseConfig = typeof body.defenseConfig === 'object' && body.defenseConfig && !Array.isArray(body.defenseConfig)
+            ? body.defenseConfig as Record<string, unknown>
+            : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (!defenseConfig) return sendErr(res, ErrorCode.BAD_REQUEST, 'defenseConfig required');
+          await svc.setDefense(worldId, accountId, tileKey, defenseConfig);
+          return send(res, 200, ok({}));
+        }
+
+        // ── 训练队列（S8-2，做实）──
+        if (method === 'POST' && path === '/world/troops/train') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const qty = Number(body.qty);
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (!Number.isFinite(qty) || qty < 1) return sendErr(res, ErrorCode.BAD_REQUEST, 'qty required');
+          return send(res, 200, ok(await svc.trainTroops(worldId, accountId, qty)));
+        }
+        if (method === 'POST' && path === '/world/troops/speedup') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const coins = Number(body.coins);
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (!Number.isFinite(coins) || coins < 1) return sendErr(res, ErrorCode.BAD_REQUEST, 'coins required');
+          return send(res, 200, ok(await svc.speedupTraining(worldId, accountId, coins)));
+        }
+
+        // ── 围攻录像复算（S8-3b，做实）──
+        {
+          const m = /^\/world\/siege\/([^/]+)\/resolve$/.exec(path);
+          if (method === 'POST' && m) {
+            const body = await readJson(req);
+            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+            const judgeArgs = {
+              seed: Number(body.seed ?? 0),
+              mode: Number(body.mode ?? 0),
+              endFrame: Number(body.endFrame ?? 0),
+              frames: Array.isArray(body.frames) ? body.frames as { frame: number; cmds: { side: number; commands: string }[] }[] : [],
+              pveUpgrades: typeof body.pveUpgrades === 'object' && body.pveUpgrades ? body.pveUpgrades as Record<string, number> : undefined,
+            };
+            return send(res, 200, ok(await svc.resolveSiegeWithJudge(worldId, accountId, decodeURIComponent(m[1]!), judgeArgs)));
+          }
+        }
 
         // ── 家族（S8-4，做实）──────────────────────────────────────────
         if (method === 'GET' && path === '/family/list') {
@@ -322,8 +367,72 @@ export function startHttpApi(
           }
         }
 
-        // ── 赛季（S8-7 stub）──
-        if (method === 'GET' && path === '/world/season') return NOT_IMPL(res, 'season');
+        // ── 国家（S8-6.5，做实）──
+        if (method === 'GET' && path === '/world/nations') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await svc.getNations(worldId)));
+        }
+        {
+          const m = /^\/world\/nations\/(\d+)\/name$/.exec(path);
+          if (method === 'POST' && m) {
+            const body = await readJson(req);
+            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+            const name = typeof body.name === 'string' ? body.name : null;
+            if (!worldId || !name) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + name required');
+            await svc.setNationName(worldId, accountId, Number(m[1]), name);
+            return send(res, 200, ok({}));
+          }
+        }
+
+        // ── 赛季（S8-7，做实）──
+        if (method === 'GET' && path === '/world/season') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          const season = await svc.getSeason(worldId);
+          if (!season) return sendErr(res, ErrorCode.NOT_FOUND, '世界不存在');
+          return send(res, 200, ok(season));
+        }
+
+        // ── SLG 商店（S8-8，做实）──
+        if (method === 'GET' && path === '/world/shop/items') {
+          return send(res, 200, ok(svc.getSlgShopItems()));
+        }
+        if (method === 'POST' && path === '/world/shop/buy') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const itemId = typeof body.itemId === 'string' ? body.itemId : null;
+          if (!worldId || !itemId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + itemId required');
+          return send(res, 200, ok(await svc.buySlgShopItem(worldId, accountId, itemId)));
+        }
+
+        // ── 赛季管理（运营操作，内部用；生产应加 X-Internal-Key，P2 补）──
+        if (method === 'POST' && path === '/admin/world/open') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          await svc.openSeason(worldId, Number(body.season ?? 1), Number(body.shard ?? 1), Number(body.capacity ?? 10000));
+          return send(res, 200, ok({}));
+        }
+        if (method === 'POST' && path === '/admin/world/settle') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await svc.settleSeason(worldId)));
+        }
+        if (method === 'POST' && path === '/admin/world/reset') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await svc.resetSeason(worldId)));
+        }
+        if (method === 'POST' && path === '/admin/world/close') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          await svc.closeSeason(worldId);
+          return send(res, 200, ok({}));
+        }
 
         return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
       } catch (e) {

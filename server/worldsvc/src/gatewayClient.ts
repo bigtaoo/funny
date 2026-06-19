@@ -50,15 +50,36 @@ export type SlgPushMsg =
       ts: number; // ms（epoch，非 Date）
     };
 
+/** S8-3b：worldsvc → gateway judge 请求（关键围攻录像复算）。 */
+export interface WorldJudgeArgs {
+  seed: number;
+  mode: number;
+  endFrame: number;
+  frames: { frame: number; cmds: { side: number; commands: string }[] }[];
+  exclude: string[];
+  /** 防守 config JSON 字符串（siege 模式，gateway judge 用来重建防守关）。 */
+  defenseJson?: string;
+  pveUpgrades?: Record<string, number>;
+}
+
+export interface WorldJudgeResult {
+  ok: boolean;
+  winnerSide?: number;
+  stateHash?: string;
+  judgeAccountId?: string;
+}
+
 export interface WorldGatewayClient {
   readonly available: boolean;
   /** 据 accountId 定向推一条 SLG 事件（离线 / 未配置 gateway → 丢弃）。best-effort，不抛。 */
   push(accountId: string, msg: SlgPushMsg): Promise<void>;
+  /** S8-3b：关键围攻录像送 gateway 裁判复算。gateway 未配置 → 返回 { ok: false }。 */
+  judge(args: WorldJudgeArgs): Promise<WorldJudgeResult>;
 }
 
 export class HttpWorldGatewayClient implements WorldGatewayClient {
   constructor(
-    private readonly baseUrl: string | null, // 形如 http://gateway:8090（内部 HTTP 端口）
+    private readonly baseUrl: string | null,
     private readonly internalKey: string,
   ) {}
 
@@ -78,12 +99,26 @@ export class HttpWorldGatewayClient implements WorldGatewayClient {
       // best-effort：推送失败不影响已落库的权威状态；客户端下次 REST 轮询拉到。
     }
   }
+
+  async judge(args: WorldJudgeArgs): Promise<WorldJudgeResult> {
+    if (!this.baseUrl) return { ok: false };
+    try {
+      const res = await fetch(`${this.baseUrl}/gw/judge`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+        body: JSON.stringify(args),
+      });
+      if (!res.ok) return { ok: false };
+      return (await res.json()) as WorldJudgeResult;
+    } catch {
+      return { ok: false };
+    }
+  }
 }
 
 /** 测试/无 gateway 时的空实现。 */
 export const nullWorldGatewayClient: WorldGatewayClient = {
   available: false,
-  async push() {
-    /* no-op */
-  },
+  async push() { /* no-op */ },
+  async judge() { return { ok: false }; },
 };
