@@ -264,6 +264,8 @@ export const zh = {
   'campaign.collection': '收集册',
   'campaign.cleared': '已通关',
   'campaign.notebookTitle': '战役笔记本',
+  'campaign.notebookOwner.tao': '陶的笔记本',
+  'campaign.notebookOwner.anna': 'Anna 的笔记本',
   'campaign.chapterStamp': '通关',
   'campaign.chapterProgress': '{c}/{n} 关',
   'campaign.markerStart': '起点',

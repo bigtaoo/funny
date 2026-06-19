@@ -201,7 +201,7 @@ export class CampaignMapScene implements Scene {
   // ── Shared header ───────────────────────────────────────────────────────────
 
   /** Draws the fixed top band into `root`; returns its height. Pushes its hits. */
-  private buildHeader(root: PIXI.Container, hits: Hit[], titleStr: string, onBack: () => void): number {
+  private buildHeader(root: PIXI.Container, hits: Hit[], titleStr: string, onBack: () => void, subtitleStr?: string): number {
     const { w, h } = this;
     const tbH = Math.round(h * 0.12);
 
@@ -209,9 +209,19 @@ export class CampaignMapScene implements Scene {
     bar.beginFill(C.dark); bar.drawRect(0, 0, w, tbH); bar.endFill();
     root.addChild(bar);
 
+    // With a subtitle (chapter pages: notebook owner), the title rides slightly
+    // above center so the dim owner line tucks beneath it; without one it centers.
     const title = txt(titleStr, Math.round(h * 0.032), 0xffffff, true);
-    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
+    title.anchor.set(0.5, 0.5); title.x = w / 2;
+    title.y = subtitleStr ? Math.round(tbH * 0.40) : tbH / 2;
     root.addChild(title);
+
+    if (subtitleStr) {
+      const sub = txt(subtitleStr, Math.round(h * 0.020), C.light);
+      sub.anchor.set(0.5, 0.5); sub.x = w / 2; sub.y = Math.round(tbH * 0.72);
+      sub.alpha = 0.75;
+      root.addChild(sub);
+    }
 
     const back = txt(t('campaign.back'), Math.round(h * 0.026), C.light);
     back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
@@ -314,7 +324,10 @@ export class CampaignMapScene implements Scene {
     if (!map) return { root, hits, pulse };
 
     const titleStr = `${t('campaign.chapterLabel', { n: ch })} · ${t(map.venueKey)}`;
-    const tbH = this.buildHeader(root, hits, titleStr, () => this.backToToc());
+    // Narrator attribution: odd chapters are Tao's notebook, even are Anna's
+    // (CAMPAIGN_STORY.md framework table — Ch1/3/5 陶, Ch2/4/6 Anna).
+    const ownerStr = t(ch % 2 === 1 ? 'campaign.notebookOwner.tao' : 'campaign.notebookOwner.anna');
+    const tbH = this.buildHeader(root, hits, titleStr, () => this.backToToc(), ownerStr);
 
     const stars = this.cb.getStars();
     const cleared = new Set(this.cb.getCleared());

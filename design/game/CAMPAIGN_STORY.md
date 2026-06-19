@@ -333,10 +333,14 @@ campaign.ch2.lv1.name   = "三强"
 
 `briefKey` 为可选字段，纯战斗关（Lv4 / Lv8）不设此键。LevelPrepScene 在开战前展示 `briefKey` 内容，CampaignMapScene 在关卡节点 hover/选中时展示 `nameKey`。
 
-### 尚未落地的事项
+### 落地状态（2026-06-19 核对）
 
-- [ ] `LevelDefinition` 加 `briefKey?: TranslationKey`
-- [ ] 所有关卡 JSON 补 `nameKey` + `briefKey`
-- [ ] `zh.ts` / `en.ts` / `de.ts` 填入全部文案（英/德译稿待做）
-- [ ] LevelPrepScene 实现简报展示区
-- [ ] CampaignMapScene 章节头标题（`campaign.chapterLabel` 已有）展示 Anna / 陶的笔记本切换提示
+简报系统已端到端完成：
+
+- [x] `LevelDefinition` 加 `nameKey?` + `briefKey?: TranslationKey`（`LevelDefinition.ts:72-74`）
+- [x] `levelSchema` 解析两字段（`levelSchema.ts:435-440`）
+- [x] 所有关卡 JSON 补 `nameKey`（60 关全有）+ `briefKey`（48 关；纯战斗关 Lv4/Lv8 共 12 关无简报）
+- [x] `zh.ts` / `en.ts` / `de.ts` 各 108 条文案全部填入，英/德为正式译稿（非占位）
+- [x] LevelPrepScene 简报展示面板（`LevelPrepScene.ts:293-311`），`createAppCore.ts:620` 翻译 `briefKey`→`brief` 传入
+
+- [x] CampaignMapScene 章节头展示叙事者归属：标题下方加一行「陶的笔记本 / Anna 的笔记本」（odd 章=陶，even 章=Anna，对应框架表），i18n key `campaign.notebookOwner.tao` / `.anna`（zh/en/de）；`buildHeader` 加可选 `subtitleStr` 参数，章节页传入、TOC 不传

@@ -265,6 +265,8 @@ export const en: Record<TranslationKey, string> = {
   'campaign.collection': 'Collection',
   'campaign.cleared': 'Cleared',
   'campaign.notebookTitle': 'Campaign Notebook',
+  'campaign.notebookOwner.tao': "Tao's notebook",
+  'campaign.notebookOwner.anna': "Anna's notebook",
   'campaign.chapterStamp': 'CLEARED',
   'campaign.chapterProgress': '{c}/{n} levels',
   'campaign.markerStart': 'START',
