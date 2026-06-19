@@ -85,6 +85,20 @@
         "spacingTicks": 6
       },
       {
+        "atTick": 240,
+        "unitType": "infantry",
+        "col": 3,
+        "count": 2,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 240,
+        "unitType": "infantry",
+        "col": 8,
+        "count": 2,
+        "spacingTicks": 18
+      },
+      {
         "atTick": 420,
         "unitType": "ironclad",
         "col": 3,
@@ -111,6 +125,20 @@
         "col": 9,
         "count": 5,
         "spacingTicks": 6
+      },
+      {
+        "atTick": 420,
+        "unitType": "infantry",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 420,
+        "unitType": "infantry",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 15
       },
       {
         "atTick": 600,
@@ -223,6 +251,20 @@
         "col": 11,
         "count": 7,
         "spacingTicks": 5
+      },
+      {
+        "atTick": 1380,
+        "unitType": "berserker",
+        "col": 2,
+        "count": 1,
+        "spacingTicks": 44
+      },
+      {
+        "atTick": 1380,
+        "unitType": "berserker",
+        "col": 9,
+        "count": 1,
+        "spacingTicks": 44
       }
     ]
   },

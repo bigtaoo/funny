@@ -201,6 +201,18 @@
         "spacingTicks": 5
       },
       {
+        "atTick": 1320,
+        "unitType": "medic",
+        "col": 3,
+        "count": 1
+      },
+      {
+        "atTick": 1320,
+        "unitType": "medic",
+        "col": 8,
+        "count": 1
+      },
+      {
         "atTick": 1680,
         "unitType": "ironclad",
         "col": 1,

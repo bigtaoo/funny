@@ -15,6 +15,18 @@
       11
     ]
   },
+  "hazards": [
+    {
+      "col": 1,
+      "rowRange": [3, 14],
+      "effect": "fog"
+    },
+    {
+      "col": 10,
+      "rowRange": [3, 14],
+      "effect": "fog"
+    }
+  ],
   "waves": {
     "entries": [
       {

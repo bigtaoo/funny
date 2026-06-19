@@ -218,6 +218,60 @@
         "spacingTicks": 5
       },
       {
+        "atTick": 900,
+        "unitType": "harpy",
+        "col": 4,
+        "count": 2,
+        "spacingTicks": 14
+      },
+      {
+        "atTick": 900,
+        "unitType": "harpy",
+        "col": 7,
+        "count": 2,
+        "spacingTicks": 14
+      },
+      {
+        "atTick": 900,
+        "unitType": "berserker",
+        "col": 3,
+        "count": 1,
+        "spacingTicks": 40
+      },
+      {
+        "atTick": 900,
+        "unitType": "berserker",
+        "col": 8,
+        "count": 1,
+        "spacingTicks": 40
+      },
+      {
+        "atTick": 900,
+        "unitType": "splitter",
+        "col": 2,
+        "count": 1,
+        "spacingTicks": 38
+      },
+      {
+        "atTick": 900,
+        "unitType": "splitter",
+        "col": 9,
+        "count": 1,
+        "spacingTicks": 38
+      },
+      {
+        "atTick": 960,
+        "unitType": "medic",
+        "col": 5,
+        "count": 1
+      },
+      {
+        "atTick": 960,
+        "unitType": "medic",
+        "col": 6,
+        "count": 1
+      },
+      {
         "atTick": 1200,
         "unitType": "ironclad",
         "col": 3,

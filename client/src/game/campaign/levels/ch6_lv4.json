@@ -150,6 +150,20 @@
         ]
       },
       {
+        "atTick": 600,
+        "unitType": "berserker",
+        "col": 3,
+        "count": 1,
+        "spacingTicks": 44
+      },
+      {
+        "atTick": 600,
+        "unitType": "berserker",
+        "col": 8,
+        "count": 1,
+        "spacingTicks": 44
+      },
+      {
         "atTick": 840,
         "unitType": "ironclad",
         "col": 3,
@@ -204,6 +218,20 @@
         "col": 9,
         "count": 7,
         "spacingTicks": 5
+      },
+      {
+        "atTick": 1080,
+        "unitType": "harpy",
+        "col": 4,
+        "count": 2,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1080,
+        "unitType": "harpy",
+        "col": 7,
+        "count": 2,
+        "spacingTicks": 15
       }
     ]
   },

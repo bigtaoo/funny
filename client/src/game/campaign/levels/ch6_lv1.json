@@ -64,6 +64,20 @@
         "spacingTicks": 7
       },
       {
+        "atTick": 240,
+        "unitType": "infantry",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 14
+      },
+      {
+        "atTick": 240,
+        "unitType": "infantry",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 14
+      },
+      {
         "atTick": 420,
         "unitType": "ironclad",
         "col": 0,
@@ -132,6 +146,20 @@
         "col": 8,
         "count": 5,
         "spacingTicks": 6
+      },
+      {
+        "atTick": 600,
+        "unitType": "shieldbearer",
+        "col": 5,
+        "count": 2,
+        "spacingTicks": 24
+      },
+      {
+        "atTick": 600,
+        "unitType": "shieldbearer",
+        "col": 6,
+        "count": 2,
+        "spacingTicks": 24
       },
       {
         "atTick": 840,

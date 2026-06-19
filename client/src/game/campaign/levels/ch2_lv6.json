@@ -9,6 +9,13 @@
     "tower_1",
     "tower_2"
   ],
+  "hazards": [
+    {
+      "col": 5,
+      "rowRange": [3, 14],
+      "effect": "fog"
+    }
+  ],
   "waves": {
     "entries": [
       {

@@ -151,6 +151,32 @@
         "spacingTicks": 5
       },
       {
+        "atTick": 720,
+        "unitType": "berserker",
+        "col": 3,
+        "count": 2,
+        "spacingTicks": 36
+      },
+      {
+        "atTick": 720,
+        "unitType": "berserker",
+        "col": 8,
+        "count": 2,
+        "spacingTicks": 36
+      },
+      {
+        "atTick": 720,
+        "unitType": "medic",
+        "col": 5,
+        "count": 1
+      },
+      {
+        "atTick": 720,
+        "unitType": "medic",
+        "col": 6,
+        "count": 1
+      },
+      {
         "atTick": 960,
         "unitType": "ironclad",
         "col": 3,

@@ -160,6 +160,20 @@
         "spacingTicks": 6
       },
       {
+        "atTick": 960,
+        "unitType": "berserker",
+        "col": 4,
+        "count": 1,
+        "spacingTicks": 45
+      },
+      {
+        "atTick": 960,
+        "unitType": "berserker",
+        "col": 7,
+        "count": 1,
+        "spacingTicks": 45
+      },
+      {
         "atTick": 1200,
         "unitType": "ironclad",
         "col": 2,

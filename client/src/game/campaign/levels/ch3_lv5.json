@@ -15,6 +15,20 @@
       11
     ]
   },
+  "hazards": [
+    {
+      "col": 2,
+      "rowRange": [3, 14],
+      "effect": "speed",
+      "speedMult": 1.7
+    },
+    {
+      "col": 10,
+      "rowRange": [3, 14],
+      "effect": "speed",
+      "speedMult": 1.7
+    }
+  ],
   "waves": {
     "entries": [
       {

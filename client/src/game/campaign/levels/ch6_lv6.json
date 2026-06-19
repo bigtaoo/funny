@@ -11,7 +11,11 @@
       1,
       9,
       10
-    ]
+    ],
+    "laneLength": {
+      "1": 11,
+      "9": 11
+    }
   },
   "hazards": [
     {
@@ -233,6 +237,18 @@
             "toCol": 9
           }
         ]
+      },
+      {
+        "atTick": 1080,
+        "unitType": "medic",
+        "col": 0,
+        "count": 1
+      },
+      {
+        "atTick": 1080,
+        "unitType": "medic",
+        "col": 10,
+        "count": 1
       }
     ]
   },

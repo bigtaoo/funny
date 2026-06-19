@@ -217,6 +217,34 @@
             "toCol": 2
           }
         ]
+      },
+      {
+        "atTick": 1260,
+        "unitType": "splitter",
+        "col": 4,
+        "count": 2,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 1260,
+        "unitType": "splitter",
+        "col": 7,
+        "count": 2,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 1440,
+        "unitType": "harpy",
+        "col": 2,
+        "count": 2,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 1440,
+        "unitType": "harpy",
+        "col": 9,
+        "count": 2,
+        "spacingTicks": 18
       }
     ]
   },

@@ -92,6 +92,32 @@
         "spacingTicks": 5
       },
       {
+        "atTick": 600,
+        "unitType": "harpy",
+        "col": 2,
+        "count": 3,
+        "spacingTicks": 14
+      },
+      {
+        "atTick": 600,
+        "unitType": "harpy",
+        "col": 9,
+        "count": 3,
+        "spacingTicks": 14
+      },
+      {
+        "atTick": 660,
+        "unitType": "medic",
+        "col": 4,
+        "count": 1
+      },
+      {
+        "atTick": 660,
+        "unitType": "medic",
+        "col": 7,
+        "count": 1
+      },
+      {
         "atTick": 900,
         "unitType": "ironclad",
         "col": 2,

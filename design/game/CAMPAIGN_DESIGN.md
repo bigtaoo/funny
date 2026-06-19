@@ -96,10 +96,10 @@
 > **已实现（2026-06）**：`UnitType.Ironclad`（重甲 hp260/spd0.5/radius520，抗箭逼陨石/近战）、`UnitType.Runner`（疾行 hp26/spd1.9/radius250，小半径真正成团）已落地——纯加 enum + 蓝图 + 渲染色 + 编辑器调色板 META，**无 `CardDefinition` 故永不进 PvP 池**（公平硬墙不破）。前三关已按 §4.4a 原则重写。
 >
 > **已实现（2026-06-18，新 4 种 PvE 专属单位）**：
-> - `UnitType.Harpy`（flying hp22/spd2.2/radius210，只有箭塔+弓手能打，绕过 blocked 格）→ 引入 ch3_lv3 末段
-> - `UnitType.Berserker`（hp95/spd1.1/radius420，berserkerThreshold:0.4 — HP<40% 攻速×1.5）→ 引入 ch3_lv7
-> - `UnitType.Splitter`（hp55/spd0.8/radius470，onDeathSpawn:Runner×2）→ 引入 ch4_lv5
-> - `UnitType.Medic`（hp90/spd0.55/radius440，aura_heal radius:2 hps:8，无攻击）→ 引入 ch4_lv9
+> - `UnitType.Harpy`（flying hp22/spd2.2/radius210，只有箭塔+弓手能打，绕过 blocked 格）→ 首入 ch3_lv3；后续复用：ch6_lv4/ch6_lv5/ch6_lv7/ch6_lv9/ch6_lv10（+ch5_lv8 末段）
+> - `UnitType.Berserker`（hp95/spd1.1/radius420，berserkerThreshold:0.4 — HP<40% 攻速×1.5）→ 首入 ch3_lv7；后续复用：ch5_lv6/ch6_lv2/ch6_lv4/ch6_lv8/ch6_lv9/ch6_lv10
+> - `UnitType.Splitter`（hp55/spd0.8/radius470，onDeathSpawn:Runner×2）→ 首入 ch4_lv5；后续复用：ch5_lv8/ch6_lv7/ch6_lv10
+> - `UnitType.Medic`（hp90/spd0.55/radius440，aura_heal radius:2 hps:8，无攻击）→ 首入 ch4_lv9；后续复用：ch5_lv9/ch6_lv5/ch6_lv6/ch6_lv8/ch6_lv10
 
 #### 4.4b 飞行系统（PvP + PvE）
 
@@ -297,6 +297,8 @@
 | 渲染 | `BoardView` 把被截断的顶部格子渲染为不可通行地形（灰色/岩石，复用 inactive lane 逻辑） |
 | 量 | 小 |
 
+> **已部署（2026-06-19）**：ch2_lv4（cols 2/9 缩短为 10 行）、ch5_lv3（cols 4/7 缩短为 11 行）、ch6_lv6（cols 1/9 缩短为 11 行，配合 4-activeLanes 布局）。
+
 ### 4.9.2 levelSpells（关卡专属玩家主动技 → 加进卡牌）
 
 **设计约束：**
@@ -408,6 +410,17 @@ if (total - dead < needed - arrived) → 无法完成，玩家败
 | `berserker` 穿插波次 | ch3_lv7 | timed_defense 中盘开始出现，越打越猛 |
 | `splitter` 穿插波次 | ch4_lv5 | speed 加速道上分裂，死了更多 runner |
 | `medic` 穿插波次 | ch4_lv9 | 迷雾关里的隐藏治疗者，必须优先击杀 |
+| `berserker` 中段波次 | ch5_lv6 | destroy_base + 速度道，狂热兵越打越猛逼快攻 |
+| `splitter`+`harpy` 末段 | ch5_lv8 | 分裂兵加剧岩浆道压力，飞行单位作末段考验 |
+| `medic` 末段波次 | ch5_lv9 | timed_defense 中藏治疗者，先杀医再守时 |
+| `laneLength` cols 2/9 = 10 | ch2_lv4 | 编成受限关（仅步兵/盾兵），短道让敌军更快逼近 |
+| `laneLength` cols 4/7 = 11 | ch5_lv3 | lava+crossWaypoints 关，短道强化岩浆列压力 |
+| `laneLength` cols 1/9 = 11 | ch6_lv6 | 4-activeLanes 关，短道使 4 路宽度各异 |
+| hazard speed ch3 | ch3_lv5 | activeLanes 6 路+速度道，窄道变快道 |
+| hazard fog ch3 | ch3_lv9 | activeLanes 6 路+迷雾，视野缩减加窄道难度 |
+| hazard speed ch2 | ch2_lv4 | loadout 受限关 + 速度道，首次引入环境机关 |
+| hazard fog ch2 | ch2_lv6 | 禁箭塔关加迷雾，射程缩减倒逼近战 |
+| ch6 全章 PvE 单位补全 | ch6_lv1–lv10 | infantry/shieldbearer 加入早期关；harpy/berserker/splitter/medic 分散覆盖 ch6_lv2–lv10，最终关集齐四种 |
 
 **实现顺序（2026-06-17 拍板）：**
 1. ✅ `laneLength`（已实现 2026-06）
