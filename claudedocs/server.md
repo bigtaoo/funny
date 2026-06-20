@@ -5,6 +5,7 @@
 ## 架构关键约束
 
 - **M12**：metaserver/gateway/gameserver 严禁 import `client/src/game`；`PlayerCommand` 作 `bytes` opaque 转发不解码
+  - **`@nw/engine`（G3-2b-0，2026-06-21）**：确定性模拟内核已抽成独立 library workspace `server/engine/`（不是进程；与 `@nw/shared` 同范式）。worldsvc/gateway `import '@nw/engine'` headless 跑权威围攻 / 自复算是 **M12 的设计许可例外**（SLG_DESIGN §16.3「裁判」），且引擎已是单一来源包、非 `client/src/game`——M12「严禁 import client 引擎」约束不破。client 反过来经 webpack/tsconfig/vitest alias 引 `../server/engine/src`（旧 `client/src/game/*` 留再导出 shim）。详见 SLG_DESIGN §16.7。
 - **M16**：gameserver 永不连库，身份来自 ticket
 - **乐观锁**：存档/钱包 `findOneAndUpdate({_id, rev})` 守卫；rev 不匹配返回 409
 - **三通道**：玩家只触达 `meta`(REST) + `gateway`(WS `/gw?token=`) + `game`(WS `?ticket=`)

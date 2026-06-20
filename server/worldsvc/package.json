@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@nw/shared": "*",
+    "@nw/engine": "*",
     "mongodb": "^6.10.0",
     "ioredis": "^5.4.1"
   },

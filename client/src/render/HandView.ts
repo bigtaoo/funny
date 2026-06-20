@@ -3,7 +3,7 @@ import { Player } from '../game/Player';
 import { CardDefinition, CardType, UnitType, BuildingType } from '../game/types';
 import { ILayout } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
-import { t } from '../i18n';
+import { t, type TranslationKey } from '../i18n';
 import { TICK_RATE } from '../game/math/fixed';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
@@ -273,7 +273,7 @@ export class HandView {
     if (card) {
       (c.getChildByName('type') as PIXI.Text).text = this.cardTypeChar(card);
       const nameText = c.getChildByName('name') as PIXI.Text;
-      nameText.text = t(card.nameKey);
+      nameText.text = t(card.nameKey as TranslationKey);
       nameText.x = (cardW - nameText.width) / 2;
       nameText.y = cardH - nameText.height - 6;
 

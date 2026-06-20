@@ -1,3 +1,4 @@
+import path from 'path';
 import { defineConfig } from 'vitest/config';
 
 // Load / capacity test — spins up N concurrent headless clients (real createAppCore)
@@ -11,6 +12,7 @@ import { defineConfig } from 'vitest/config';
 //
 // Named *.load.ts so neither `npm test` nor `npm run test:e2e` picks it up.
 export default defineConfig({
+  resolve: { alias: { '@nw/engine': path.resolve(__dirname, '../server/engine/src') } },
   test: {
     include: ['test/load/**/*.load.ts'],
     environment: 'node',

@@ -1,3 +1,4 @@
+import path from 'path';
 import { defineConfig } from 'vitest/config';
 
 // UI smoke tests — construct real PIXI scenes headlessly and assert they build,
@@ -12,6 +13,7 @@ import { defineConfig } from 'vitest/config';
 // Named *.ui.ts (not *.test.ts) so the default `npm test` never picks it up; runs
 // via `npm run test:ui`.
 export default defineConfig({
+  resolve: { alias: { '@nw/engine': path.resolve(__dirname, '../server/engine/src') } },
   test: {
     include: ['test/ui/**/*.ui.ts'],
     environment: 'node',

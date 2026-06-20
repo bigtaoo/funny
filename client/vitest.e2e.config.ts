@@ -1,3 +1,4 @@
+import path from 'path';
 import { defineConfig } from 'vitest/config';
 
 // Full-link E2E: drives the REAL client orchestration (createAppCore) headlessly
@@ -6,6 +7,7 @@ import { defineConfig } from 'vitest/config';
 // running (see server/dev-up.ps1 / docker compose). Named *.e2e.ts so the default
 // `npm test` (test/**/*.test.ts) never picks it up.
 export default defineConfig({
+  resolve: { alias: { '@nw/engine': path.resolve(__dirname, '../server/engine/src') } },
   test: {
     include: ['test/e2e/**/*.e2e.ts'],
     environment: 'node',

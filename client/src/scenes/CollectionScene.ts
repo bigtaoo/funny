@@ -151,7 +151,7 @@ export class CollectionScene implements Scene {
     const { w, h } = this;
 
     // Collapse pool duplicates (infantry_1/_2) to one entry per display name.
-    const seen = new Set<TranslationKey>();
+    const seen = new Set<string>();
     const entries: CodexEntry[] = [];
     for (const card of CARD_DEFINITIONS) {
       if (seen.has(card.nameKey)) continue;
@@ -184,7 +184,7 @@ export class CollectionScene implements Scene {
     sketchAccentBar(box, h, accent, seedFor(x, h, 6));
     this.container.addChild(box);
 
-    const name = txt(t(card.nameKey), Math.round(h * 0.15), C.dark, true);
+    const name = txt(t(card.nameKey as TranslationKey), Math.round(h * 0.15), C.dark, true);
     name.anchor.set(0, 0); name.x = x + Math.round(w * 0.07); name.y = y + Math.round(h * 0.10);
     this.container.addChild(name);
 
@@ -205,7 +205,7 @@ export class CollectionScene implements Scene {
       this.container.addChild(st);
     }
 
-    const desc = txt(t(card.descKey), Math.round(h * 0.10), C.mid);
+    const desc = txt(t(card.descKey as TranslationKey), Math.round(h * 0.10), C.mid);
     desc.anchor.set(0, 0); desc.x = x + Math.round(w * 0.07); desc.y = y + Math.round(h * 0.75);
     const maxDescW = w * 0.86;
     if (desc.width > maxDescW) desc.scale.set(maxDescW / desc.width);

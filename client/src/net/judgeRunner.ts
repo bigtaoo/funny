@@ -7,13 +7,11 @@
 // 改不了服务器排序后的指令流，复算结果必与诚实方一致。无渲染、无交互，纯逻辑。
 
 import {
-  createGameEngine,
   getLevel,
+  runHeadless,
   ReplayInputSource,
   ENGINE_VERSION,
   Side,
-  GamePhase,
-  TICK_RATE,
   type GameMode,
   type LevelDefinition,
   type OwnerId,
@@ -46,19 +44,13 @@ export function runJudge(req: JudgeRequest): JudgeOutcome {
   if (req.levelId) return runPveJudge(req);
   try {
     const replay = buildReplay(req, 'netplay', req.seed);
-    const engine = createGameEngine(
+    // endFrame + 余量：终局后留缓冲，防坏录像死循环；正常会更早 GameOver。
+    const { ok, engine } = runHeadless(
       { seed: req.seed, players: [{ id: 0 }, { id: 1 }], mode: 'netplay' },
       new ReplayInputSource(replay),
+      req.endFrame + 600,
     );
-
-    const tickDt = 1 / TICK_RATE;
-    const maxTicks = req.endFrame + 600; // 终局后留余量；正常会更早 GameOver
-    let guard = 0;
-    while (engine.state.phase !== GamePhase.GameOver && guard < maxTicks) {
-      engine.tick(tickDt);
-      guard++;
-    }
-    if (engine.state.phase !== GamePhase.GameOver) return FAIL;
+    if (!ok) return FAIL;
 
     const winner = stateWinner(engine.state.winner);
     const stats = engine.state.snapshotStats();
@@ -79,7 +71,7 @@ function runPveJudge(req: JudgeRequest): JudgeOutcome {
     const level = getLevel(req.levelId);
     if (!level) return FAIL; // 裁判本地无此关定义 → 无法复算（版本不符）
     const replay = buildReplay(req, 'campaign', level.seed, req.levelId);
-    const engine = createGameEngine(
+    const { ok, engine } = runHeadless(
       {
         seed: level.seed,
         players: [{ id: 0 }, { id: 1 }],
@@ -88,16 +80,9 @@ function runPveJudge(req: JudgeRequest): JudgeOutcome {
         pveUpgrades: req.pveUpgrades,
       },
       new ReplayInputSource(replay),
+      req.endFrame + 600,
     );
-
-    const tickDt = 1 / TICK_RATE;
-    const maxTicks = req.endFrame + 600;
-    let guard = 0;
-    while (engine.state.phase !== GamePhase.GameOver && guard < maxTicks) {
-      engine.tick(tickDt);
-      guard++;
-    }
-    if (engine.state.phase !== GamePhase.GameOver) return FAIL;
+    if (!ok) return FAIL;
 
     const winner = stateWinner(engine.state.winner);
     if (winner !== 0) return { ok: true, stateHash: '', winnerSide: winner ?? 0, stars: 0 };
@@ -125,7 +110,7 @@ function runSiegeJudge(req: JudgeRequest): JudgeOutcome {
       return FAIL; // 防守 config 不是合法 JSON → 无法复算
     }
     const replay = buildReplay(req, 'siege', req.seed);
-    const engine = createGameEngine(
+    const { ok, engine } = runHeadless(
       {
         seed: req.seed,
         players: [{ id: 0 }, { id: 1 }],
@@ -134,16 +119,9 @@ function runSiegeJudge(req: JudgeRequest): JudgeOutcome {
         pveUpgrades: req.pveUpgrades,
       },
       new ReplayInputSource(replay),
+      req.endFrame + 600,
     );
-
-    const tickDt = 1 / TICK_RATE;
-    const maxTicks = req.endFrame + 600;
-    let guard = 0;
-    while (engine.state.phase !== GamePhase.GameOver && guard < maxTicks) {
-      engine.tick(tickDt);
-      guard++;
-    }
-    if (engine.state.phase !== GamePhase.GameOver) return FAIL;
+    if (!ok) return FAIL;
 
     const winner = stateWinner(engine.state.winner);
     return { ok: true, stateHash: '', winnerSide: winner ?? 1, stars: 0 };

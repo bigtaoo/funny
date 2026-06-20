@@ -720,8 +720,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         if (ok) analytics.track('upgrade', { upgrade_id: id, level_after: saveManager.get().pveUpgrades[id] ?? 0 });
         return ok;
       },
-      ...(level.briefKey ? { brief: t(level.briefKey) } : {}),
-      ...(level.story?.introKey ? { intro: t(level.story.introKey) } : {}),
+      ...(level.briefKey ? { brief: t(level.briefKey as TranslationKey) } : {}),
+      ...(level.story?.introKey ? { intro: t(level.story.introKey as TranslationKey) } : {}),
     });
   }
 
@@ -815,7 +815,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             duration_sec: durationSec,
           });
         }
-        const outroText = (winner === 0 && level.story?.outroKey) ? t(level.story.outroKey) : undefined;
+        const outroText = (winner === 0 && level.story?.outroKey) ? t(level.story.outroKey as TranslationKey) : undefined;
         void goResult(winner, stats, 0, kept, undefined, undefined, outroText, goCampaignMap, t('result.backToMap'));
       },
       onExitToLobby() {

@@ -36,7 +36,15 @@ module.exports = (env, argv) => {
         { test: /\.css$/i, use: ['style-loader', 'css-loader'] },
       ],
     },
-    resolve: { extensions: ['.ts', '.js'] },
+    resolve: {
+      extensions: ['.ts', '.js'],
+      alias: {
+        // @nw/engine = the deterministic core (server/engine/src), consumed as
+        // TS source via ts-loader. client's first cross-boundary bridge (§16.7).
+        '@nw/engine$': path.resolve(__dirname, '../server/engine/src/index.ts'),
+        '@nw/engine': path.resolve(__dirname, '../server/engine/src'),
+      },
+    },
     output: {
       filename: 'index.js',
       path: path.resolve(__dirname, 'dist'),

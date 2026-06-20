@@ -5,6 +5,7 @@
   "description": "Notebook Wars 服务端：metaserver(REST) + gateway(控制面 WS) + matchsvc(私有匹配大脑) + gameserver(数据面 WS) + commercial(钱包/交易) + worldsvc(SLG 大世界) + admin(运维后台) + shared + contracts",
   "workspaces": [
     "shared",
+    "engine",
     "metaserver",
     "gateway",
     "matchsvc",

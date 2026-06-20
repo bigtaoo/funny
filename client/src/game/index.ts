@@ -13,6 +13,10 @@
 export { createGameEngine } from './GameEngine';
 export type { IGameEngine } from './types';
 
+// ── Headless driver (shared with server: worldsvc siege / gateway self-judge) ─
+export { runHeadless } from './runHeadless';
+export type { HeadlessOutcome } from './runHeadless';
+
 // ── Unified input pipeline (M13) ──────────────────────────────────────────────
 export { LocalInputSource } from './net/InputSource';
 export type { InputSource } from './net/InputSource';

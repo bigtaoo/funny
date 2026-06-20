@@ -32,7 +32,7 @@ import { VFXSystem } from './VFXSystem';
 import { buildWearOverlay } from './wearOverlay';
 import { ProfilePopup, type ProfileData } from './ProfilePopup';
 import { fromFp } from '../game';
-import { t } from '../i18n';
+import { t, type TranslationKey } from '../i18n';
 
 /** Optional player identities for the in-battle profile popup (netplay, S1). */
 export interface GameProfiles {
@@ -646,7 +646,7 @@ export class GameRenderer {
     if (!slot || player.ink < slot.card.cost) return;
 
     const card   = slot.card;
-    const ghost  = this.buildDragGhost(t(card.nameKey), card.cost);
+    const ghost  = this.buildDragGhost(t(card.nameKey as TranslationKey), card.cost);
     const center = this.handView.slotCenter(handIndex);
     ghost.x = center.x;
     ghost.y = center.y;

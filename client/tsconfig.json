@@ -9,9 +9,13 @@
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "outDir": "./dist",
-    "rootDir": "./src"
+    "baseUrl": ".",
+    "paths": {
+      "@nw/engine": ["../server/engine/src/index.ts"],
+      "@nw/engine/*": ["../server/engine/src/*"]
+    }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "../server/engine/src/**/*"],
   "exclude": [
     "node_modules",
     "dist",

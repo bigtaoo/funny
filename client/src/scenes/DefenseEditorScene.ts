@@ -52,8 +52,8 @@ const COLLECTED_BUILDINGS = distinctCollected((c) =>
 /** First card display-name key for a given unit/building type (label reuse, no new keys). */
 function nameKeyFor(kind: 'unit' | 'building', type: string): TranslationKey {
   for (const card of CARD_DEFINITIONS) {
-    if (kind === 'unit' && card.unitType === type) return card.nameKey;
-    if (kind === 'building' && card.buildingType === type) return card.nameKey;
+    if (kind === 'unit' && card.unitType === type) return card.nameKey as TranslationKey;
+    if (kind === 'building' && card.buildingType === type) return card.nameKey as TranslationKey;
   }
   return 'world.defense.title';
 }
