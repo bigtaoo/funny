@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Start the local "production-like" full stack (client + 6 server processes + mongo,
   all in Docker, every request routed through nginx).

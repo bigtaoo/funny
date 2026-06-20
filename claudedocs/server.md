@@ -47,6 +47,8 @@ npm run dev:all             # 起全部进程（dev-up.ps1）
 ./local-down.ps1            # 停（保留 DB）；-Fresh 连数据清
 ```
 
+> **脚本编码**：`local-up.ps1`/`local-down.ps1` 含中文，**必须存为 UTF-8 with BOM**——否则 Windows PowerShell 5.1 按系统 ANSI 码页解析多字节字符，会把含中文的字符串引号读错而整脚本解析失败（`Missing closing ')'`）。改这两个脚本后务必保留 BOM。
+
 **前端地址**（宿主机端口）：
 
 | 地址 | 说明 |

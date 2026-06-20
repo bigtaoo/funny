@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Stop the local simulated full stack. Keeps the mongo data volume by default; -Fresh wipes it.
 .EXAMPLE
