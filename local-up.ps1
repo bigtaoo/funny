@@ -37,8 +37,21 @@ if ($Fresh) {
   docker compose -f $compose down -v
 }
 
-Write-Host ">> Building and starting full stack (latest code) ..." -ForegroundColor Cyan
-docker compose -f $compose up -d --build --wait
+# 串行构建各镜像（不并行）：并行 build 会让 5 个 npm ci 同时抢慢速 npm registry，
+# 触发 ECONNRESET / EIDLETIMEOUT。逐个构建即可稳定。镜像：
+#   nw-server:local（7 个服务端进程共用，构建一次）/ nw-client:local（nginx）/ animator / level-editor / ops。
+$buildTargets = @('metaserver', 'nginx', 'animator', 'level-editor', 'ops')
+foreach ($svc in $buildTargets) {
+  Write-Host ">> Building image for '$svc' ..." -ForegroundColor Cyan
+  docker compose -f $compose build $svc
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "!! Build failed for '$svc' (exit $LASTEXITCODE)." -ForegroundColor Red
+    exit $LASTEXITCODE
+  }
+}
+
+Write-Host ">> Starting full stack ..." -ForegroundColor Cyan
+docker compose -f $compose up -d --wait
 if ($LASTEXITCODE -ne 0) {
   Write-Host "!! Stack failed to come up (exit $LASTEXITCODE). Recent logs:" -ForegroundColor Red
   docker compose -f $compose ps
@@ -48,6 +61,14 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 docker compose -f $compose ps
 Write-Host ""
-Write-Host "OK. Open in browser: http://localhost:$Port" -ForegroundColor Green
-Write-Host "  logs : docker compose -f docker-compose.local.yml logs -f nginx metaserver gateway" -ForegroundColor DarkGray
+Write-Host "OK. Full stack is up (9 server processes + 4 frontends)." -ForegroundColor Green
+Write-Host ""
+Write-Host "  Frontends:" -ForegroundColor Green
+Write-Host "    http://localhost:$Port`t主游戏 (SPA + REST + 对战 WS + SLG + 埋点，全部同源)" -ForegroundColor White
+Write-Host "    http://localhost:9091`t动画编辑器 (animator)" -ForegroundColor White
+Write-Host "    http://localhost:9092`t关卡编辑器 (level-editor)" -ForegroundColor White
+Write-Host "    http://localhost:9093`t运维后台 (ops；默认连 admin http://localhost:18083)" -ForegroundColor White
+Write-Host ""
+Write-Host "  admin 种子账号: admin / admin123  (改 NW_ADMIN_SEED_USER / NW_ADMIN_SEED_PASS)" -ForegroundColor DarkGray
+Write-Host "  logs : docker compose -f docker-compose.local.yml logs -f nginx metaserver worldsvc" -ForegroundColor DarkGray
 Write-Host "  stop : ./local-down.ps1   (add -Fresh to wipe data)" -ForegroundColor DarkGray

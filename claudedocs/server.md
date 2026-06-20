@@ -36,15 +36,34 @@ npm install
 npm run dev:all             # 起全部进程（dev-up.ps1）
 ```
 
-### 本地全栈模拟（含客户端）
+### 本地全栈模拟（完整：9 进程 + 主客户端 + 3 工具 + mongo + redis）
+
+`docker-compose.local.yml` 拉起**全部 9 个服务端进程 + redis + 主客户端(nginx) + animator/level-editor/ops 三个工具前端**，每次 up 都 `--build`（从当前代码重建镜像）。
 
 ```powershell
 ./local-up.ps1              # 构建最新代码 + docker compose，浏览器开 http://localhost:8088
 ./local-up.ps1 -Fresh       # 先清空 mongo 数据卷
-./local-down.ps1            # 停（保留 DB）
+./local-up.ps1 -Port 9000   # 换主游戏入口端口（客户端地址构建期烘焙，须重建 nginx 镜像）
+./local-down.ps1            # 停（保留 DB）；-Fresh 连数据清
 ```
 
-nginx 反代：`/` SPA，`/api/` → metaserver:8080，`/gw` → gateway WS，`/ws` → gameserver WS。
+**前端地址**（宿主机端口）：
+
+| 地址 | 说明 |
+|---|---|
+| http://localhost:8088 | 主游戏（nginx 同源 SPA + 反代） |
+| http://localhost:9091 | animator 动画编辑器 |
+| http://localhost:9092 | level-editor 关卡编辑器 |
+| http://localhost:9093 | ops 运维后台（跨源调 admin :18083；种子账号 `admin`/`admin123`） |
+| http://localhost:18083 | admin 运维后端（仅 ops 前端访问） |
+
+nginx 同源反代（`client/nginx.conf`）：`/` SPA · `/api/`→metaserver:8080 · `/gw`→gateway WS · `/ws`→gameserver WS · `/world`,`/family`,`/auction`→worldsvc:18084（不剥前缀）· `/analytics`→analyticsvc:18085。worldsvc 内部需 redis + gateway/commercial/meta 内网基址；analyticsvc/worldsvc 不暴露宿主，仅经 nginx。
+
+**容器内端口与 dev 不同**：镜像里各进程固定监听 metaserver:8080 / gateway:8082(内部 8090) / gameserver:8081 / commercial:8092 / matchsvc:8091 / worldsvc:18084 / admin:18083 / analyticsvc:18085（dev 裸跑的 18080/8086 等仅 webpack 注入默认值用）。
+
+**工具镜像**：animator/ops 自带上下文构建；level-editor 的 Dockerfile 用**仓库根**作上下文（webpack `@game` alias 引用 `client/src/game`，需把 client/src 拷进镜像）。
+
+**构建期网络坑**：并行构建 5 个镜像会让多个 `npm ci`/sharp 下载同时抢慢速外网，触发 EIDLETIMEOUT/ECONNRESET/aborted。`local-up.ps1` 已改为**逐镜像串行构建**（`metaserver→nginx→animator→level-editor→ops`，server 镜像 7 进程共用只构建一次）后再 `up --wait`；工具镜像另加了 npm fetch 超时/重试。某镜像若仍因网络中断，直接重跑——已构建层有缓存只补失败项。
 
 ## 部署（production）
 

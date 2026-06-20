@@ -1,11 +1,21 @@
-# 本地「真实发布」模拟全栈：客户端 + 服务端 6 进程 + mongo，全部 Docker，所有请求经 nginx。
+# 本地「真实发布」模拟全栈：服务端 9 进程 + 主客户端 + 3 个工具 + mongo + redis，全部 Docker。
 #
 #   一键起（重建最新代码）：  docker compose -f docker-compose.local.yml up -d --build
 #   停（保留数据）：          docker compose -f docker-compose.local.yml down
 #   停并清空 DB：             docker compose -f docker-compose.local.yml down -v
-#   看日志：                  docker compose -f docker-compose.local.yml logs -f nginx metaserver gateway
+#   看日志：                  docker compose -f docker-compose.local.yml logs -f nginx metaserver worldsvc
 #
-# 入口：http://localhost:8088  （nginx 同源托管 SPA + /api REST + /gw 控制面 WS + /ws 数据面 WS）
+# 前端地址（宿主机端口）：
+#   http://localhost:8088   主游戏（nginx 同源托管 SPA + /api REST + /gw 控制面 WS + /ws 数据面 WS
+#                                    + /world,/family,/auction SLG REST + /analytics 埋点）
+#   http://localhost:9091   动画编辑器（animator，纯前端工具）
+#   http://localhost:9092   关卡编辑器（level-editor，纯前端工具）
+#   http://localhost:9093   运维后台（ops，跨源调 admin 后端 http://localhost:18083）
+#   http://localhost:18083  admin 运维后端（ops 前端访问；玩家侧不经此）
+#
+# 服务端九进程：metaserver / commercial / gateway / matchsvc / gameserver / worldsvc / admin / analyticsvc
+#   （第九进程 analyticsvc 玩家不可达，仅经 nginx /analytics 收埋点 + admin 内网查询）。
+# worldsvc 需要 redis（行军调度 / 频道）；mongo 为单节点副本集（事务 + change streams）。
 #
 # 端口为何不是 80：本机 Windows 把 80（及 8080/8082/8083）划进 TCP excludedportrange（http.sys/WinNAT
 # 保留），绑定报 EACCES，故默认用排除段外的 8088。换端口须同时改 NW_HTTP_PORT 与三个 NW_PUBLIC_*
@@ -30,6 +40,13 @@ services:
       timeout: 10s
       start_period: 5s
       retries: 10
+    restart: unless-stopped
+
+  # Redis：worldsvc 行军调度 / 频道（SLG_DESIGN）。仅集群内可达，不暴露宿主。
+  redis:
+    image: redis:7-alpine
+    container_name: nw-local-redis
+    command: ["redis-server", "--appendonly", "yes"]
     restart: unless-stopped
 
   metaserver:
@@ -119,7 +136,76 @@ services:
       - matchsvc
     restart: unless-stopped
 
-  # nginx = 客户端镜像（静态 SPA + 反向代理）。唯一暴露到宿主的服务。
+  # worldsvc：SLG 大世界第四公网面（/world /family /auction）。需 redis；经 nginx 同源反代。
+  worldsvc:
+    build: { context: ./server, dockerfile: Dockerfile }
+    image: nw-server:local
+    command: ["node", "worldsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:-dev-jwt-secret-change-me}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
+      NW_WORLD_PORT: "18084"
+      NW_WORLD_HOST: 0.0.0.0
+      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_WORLD_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_WORLD_MONGO_DB: ${NW_WORLD_MONGO_DB:-notebook_wars_world}
+      NW_WORLD_REDIS_URL: redis://redis:6379
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
+      NW_META_INTERNAL_URL: http://metaserver:8080
+    depends_on:
+      mongo: { condition: service_healthy }
+      redis: { condition: service_started }
+      gateway: { condition: service_started }
+      commercial: { condition: service_started }
+    restart: unless-stopped
+
+  # analyticsvc：第九进程，埋点采集 + 内网查询。玩家侧仅经 nginx /analytics 投递事件。
+  analyticsvc:
+    build: { context: ./server, dockerfile: Dockerfile }
+    image: nw-server:local
+    command: ["node", "analyticsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:-dev-jwt-secret-change-me}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
+      NW_ANALYTICS_PORT: "18085"
+      NW_ANALYTICS_HOST: 0.0.0.0
+      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_ANALYTICS_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_ANALYTICS_MONGO_DB: ${NW_ANALYTICS_MONGO_DB:-notebook_wars_analytics}
+    depends_on:
+      mongo: { condition: service_healthy }
+    restart: unless-stopped
+
+  # admin：运维后端。唯一暴露宿主的「后端」（ops 前端跨源访问 :18083）。
+  admin:
+    build: { context: ./server, dockerfile: Dockerfile }
+    image: nw-server:local
+    command: ["node", "admin/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:-dev-jwt-secret-change-me}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
+      NW_ADMIN_PORT: "18083"
+      NW_ADMIN_HOST: 0.0.0.0
+      NW_ADMIN_JWT_SECRET: ${NW_ADMIN_JWT_SECRET:-dev-insecure-admin-secret-change-me}
+      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_ADMIN_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_ADMIN_MONGO_DB: ${NW_ADMIN_MONGO_DB:-notebook_wars_admin}
+      # 首启种子超管账号（仅本地联调用；生产改强密码或走别的注入）。
+      NW_ADMIN_SEED_USER: ${NW_ADMIN_SEED_USER:-admin}
+      NW_ADMIN_SEED_PASS: ${NW_ADMIN_SEED_PASS:-admin123}
+      NW_META_BASE_URL: http://metaserver:8080
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+      NW_ANALYTICS_BASE_URL: http://analyticsvc:18085
+    ports:
+      - "${NW_ADMIN_PORT:-18083}:18083"
+    depends_on:
+      mongo: { condition: service_healthy }
+      analyticsvc: { condition: service_started }
+    restart: unless-stopped
+
+  # nginx = 客户端镜像（静态 SPA + 反向代理）。主游戏唯一暴露到宿主的服务。
   nginx:
     build:
       context: ./client
@@ -135,6 +221,37 @@ services:
       - metaserver
       - gateway
       - gameserver
+      - worldsvc
+      - analyticsvc
+    restart: unless-stopped
+
+  # ── 工具前端（纯静态，各自 nginx 容器；端口沿用 dev 约定 9091/9092/9093）──
+  animator:
+    build: { context: ./tools/animator, dockerfile: Dockerfile }
+    image: nw-animator:local
+    container_name: nw-local-animator
+    ports:
+      - "${NW_ANIMATOR_PORT:-9091}:80"
+    restart: unless-stopped
+
+  # level-editor：构建上下文是「仓库根」（webpack @game alias 引用 client/src/game）。
+  level-editor:
+    build: { context: ., dockerfile: tools/level-editor/Dockerfile }
+    image: nw-level-editor:local
+    container_name: nw-local-level-editor
+    ports:
+      - "${NW_LEVEL_EDITOR_PORT:-9092}:80"
+    restart: unless-stopped
+
+  # ops：运维后台前端；浏览器跨源调 admin（默认 http://localhost:18083）。
+  ops:
+    build: { context: ./tools/ops, dockerfile: Dockerfile }
+    image: nw-ops:local
+    container_name: nw-local-ops
+    ports:
+      - "${NW_OPS_PORT:-9093}:80"
+    depends_on:
+      - admin
     restart: unless-stopped
 
 volumes:

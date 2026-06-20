@@ -68,11 +68,45 @@ npm run start   # 开发服务器，端口 9091
 
 ## 快速启动
 
-```bash
-cd client
-npm install
-npm run start   # Webpack dev server，端口 9090
+### 方式一：Docker 一键全栈（推荐，模拟真实发布）
+
+需要 Docker Desktop。一条命令重建最新代码并拉起**全部 9 个服务端进程 + 主客户端 + 3 个工具 + MongoDB + Redis**：
+
+```powershell
+./local-up.ps1            # 重建并启动；浏览器打开 http://localhost:8088
+./local-up.ps1 -Fresh     # 顺带清空数据库后再起
+./local-up.ps1 -Port 9000 # 换主游戏入口端口（客户端地址构建期烘焙，须 --build 重建）
+./local-down.ps1          # 停止（保留数据）；-Fresh 连数据一起清
 ```
+
+> 每次 `up` 都会 `--build`，即从当前代码重新构建镜像——改完代码重跑即可生效。
+> 容器从镜像快照跑，编辑本地代码不影响运行中的容器，直到下次重跑（重建）。
+
+**前端地址**（启动后浏览器直接打开）：
+
+| 地址 | 说明 |
+|---|---|
+| http://localhost:8088 | **主游戏**——nginx 同源托管 SPA，并反代 `/api`(REST) `/gw`(控制面 WS) `/ws`(对战数据面 WS) `/world` `/family` `/auction`(SLG 大世界) `/analytics`(埋点) |
+| http://localhost:9091 | **动画编辑器** animator |
+| http://localhost:9092 | **关卡编辑器** level-editor |
+| http://localhost:9093 | **运维后台** ops（跨源调 admin 后端 http://localhost:18083，种子账号 `admin` / `admin123`） |
+
+**服务端九进程**（均跑同一镜像 `nw-server:local`，由 `command` 选进程）：
+`metaserver`(REST) · `commercial`(钱包) · `gateway`(控制面 WS) · `matchsvc`(匹配) · `gameserver`(对战数据面 WS) · `worldsvc`(SLG 第四公网面) · `admin`(运维) · `analyticsvc`(埋点)。
+对玩家暴露的入口只有主游戏 `:8088`（同源），其余服务经 nginx 反代或仅内网可达。
+
+编排见 [`docker-compose.local.yml`](docker-compose.local.yml)。
+
+### 方式二：单模块 dev server（改前端时热更最快）
+
+```bash
+cd client && npm install && npm run start          # 主游戏，端口 19090
+cd tools/animator && npm install && npm run start  # 动画编辑器，端口 9091
+cd tools/level-editor && npm install && npm run start  # 关卡编辑器，端口 9092
+cd tools/ops && npm install && npm run start        # 运维后台，端口 9093
+```
+
+dev server 默认连本地裸跑的后端（见 `client/webpack.config.js` 注入的默认地址）；要联调完整后端，仍推荐方式一。
 
 ---
 
@@ -82,7 +116,10 @@ npm run start   # Webpack dev server，端口 9090
 funny/
 ├── client/        主游戏（TypeScript + PixiJS）
 ├── tools/
-│   └── animator/  骨骼动画编辑器（TypeScript + PixiJS）
+│   ├── animator/      骨骼动画编辑器（TypeScript + PixiJS）
+│   ├── level-editor/  战役关卡编辑器（TypeScript + 纯 Canvas）
+│   └── ops/           运维后台前端（TypeScript）
+├── server/        Node.js 后端（npm workspaces，九进程）
 ├── art/           地图 & 角色概念图
 └── design/        产品 & 美术设计文档
 ```

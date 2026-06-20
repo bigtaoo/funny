@@ -1,0 +1,7 @@
+# 仅在「仓库根」作为构建上下文时生效（目前只有 tools/level-editor 的镜像用根上下文）。
+# 把各处 node_modules / 构建产物 / git 排除掉，避免把上百 MB 发给 Docker daemon。
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.git
+*.log
