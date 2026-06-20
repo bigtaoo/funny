@@ -112,8 +112,8 @@ describe.skipIf(!mongo)('FamilyService e2e', () => {
   });
 
   it('踢 leader → NO_PERMISSION', async () => {
-    const d1 = await svc.createFamily(W, 'alice', 'A', 'AA');
-    const d2 = await svc.createFamily(W, 'eve', 'E', 'EE');
+    const d1 = await svc.createFamily(W, 'alice', 'Aa', 'AA');
+    const d2 = await svc.createFamily(W, 'eve', 'Ee', 'EE');
     await svc.joinFamily(W, 'bob', d1.familyId);
     // alice 是 leader 不能被 bob（member）踢
     await expect(svc.kickMember(W, 'bob', 'alice')).rejects.toMatchObject({ code: 'NO_PERMISSION' });

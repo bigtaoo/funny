@@ -51,6 +51,11 @@ export const ErrorCode = {
   NO_PERMISSION: 'NO_PERMISSION',
   // —— S8-6.6 A* 寻路 ——
   PATH_BLOCKED: 'PATH_BLOCKED',
+  // —— S8-4b 宗门（Sect）——
+  SECT_FULL: 'SECT_FULL',
+  NOT_IN_SECT: 'NOT_IN_SECT',
+  ALREADY_IN_SECT: 'ALREADY_IN_SECT',
+  ALLY_CAP_REACHED: 'ALLY_CAP_REACHED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -110,4 +115,8 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.AUCTION_LIMIT_REACHED]: 409,
   [ErrorCode.NO_PERMISSION]: 403,
   [ErrorCode.PATH_BLOCKED]: 400,
+  [ErrorCode.SECT_FULL]: 409,
+  [ErrorCode.NOT_IN_SECT]: 403,
+  [ErrorCode.ALREADY_IN_SECT]: 409,
+  [ErrorCode.ALLY_CAP_REACHED]: 409,
 };

@@ -96,6 +96,23 @@ export interface FamilyDoc {
   leaderId: string;
   memberCount: number;
   territoryCount: number;
+  sectId?: string; // 所属宗门（S8-4b，无 = 散家族）
+  rev: number;
+}
+
+/** 宗门（S8-4b，§2.1/§8.2）：大区内由家族组成的势力组织。成员 = sectId 指向本门的家族。 */
+export interface SectDoc {
+  _id: string; // sectId = `s:{worldId}:{TAG}`
+  worldId: string;
+  name: string;
+  tag: string;
+  leaderFamilyId: string; // 门主家族
+  leaderId: string;       // 门主账号（= 门主家族的 leader），用于权限校验
+  memberFamilyCount: number;
+  allySectIds: string[];  // 联盟宗门（≤ SECT_ALLY_CAP）
+  prosperity: number;     // 繁荣度（DRAFT，赛季内有效）
+  /** 罢免门主投票（§8.2，超 2/3 族长同意 + 提名）。换届/解决后清空。 */
+  removalVote?: { nomineeFamilyId: string; voterFamilyIds: string[] };
   rev: number;
 }
 
@@ -141,6 +158,17 @@ export interface FamilyMessageDoc {
   ts: Date;
 }
 
+/** 宗门频道消息（S8-4b）。同 FamilyMessageDoc：ts 须 BSON Date（TTL 锚字段）。 */
+export interface SectMessageDoc {
+  _id: string; // `sm:{sectId}:{ts_epoch}:{seq}`
+  worldId: string;
+  sectId: string;
+  senderId: string;
+  senderName: string;
+  body: string;
+  ts: Date;
+}
+
 export interface SiegeDoc {
   _id: string; // siegeId
   worldId: string;
@@ -175,6 +203,8 @@ export interface WorldCollections {
   families: Collection<FamilyDoc>;
   familyMembers: Collection<FamilyMemberDoc>;
   familyMessages: Collection<FamilyMessageDoc>;
+  sects: Collection<SectDoc>;
+  sectMessages: Collection<SectMessageDoc>;
   auctions: Collection<AuctionDoc>;
   sieges: Collection<SiegeDoc>;
   nations: Collection<NationDoc>;
@@ -213,6 +243,8 @@ export async function createWorldMongo(
     families: db.collection<FamilyDoc>('families'),
     familyMembers: db.collection<FamilyMemberDoc>('familyMembers'),
     familyMessages: db.collection<FamilyMessageDoc>('familyMessages'),
+    sects: db.collection<SectDoc>('sects'),
+    sectMessages: db.collection<SectMessageDoc>('sectMessages'),
     auctions: db.collection<AuctionDoc>('auctions'),
     sieges: db.collection<SiegeDoc>('sieges'),
     nations: db.collection<NationDoc>('nations'),
@@ -235,6 +267,12 @@ export async function createWorldMongo(
     await collections.familyMessages.createIndex({ familyId: 1, ts: -1 });
     // TTL：7 天后自动删除（ts 为 BSON Date 字段，Mongo TTL 只对 Date 生效）。
     await collections.familyMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
+    // 宗门（S8-4b）：TAG worldId 内唯一；按 worldId 列；成员家族经 families.sectId 查。
+    await collections.sects.createIndex({ worldId: 1, tag: 1 }, { unique: true });
+    await collections.sects.createIndex({ worldId: 1 });
+    await collections.families.createIndex({ sectId: 1 });
+    await collections.sectMessages.createIndex({ sectId: 1, ts: -1 });
+    await collections.sectMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
     await collections.auctions.createIndex({ worldId: 1, itemType: 1, status: 1 });
     await collections.auctions.createIndex({ sellerId: 1 });
     await collections.auctions.createIndex({ designatedBuyerId: 1 });

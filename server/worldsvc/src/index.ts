@@ -5,6 +5,7 @@ import { createWorldMongo } from './db';
 import { connectRedis } from './redis';
 import { WorldService } from './service';
 import { FamilyService } from './familyService';
+import { SectService } from './sectService';
 import { AuctionService } from './auctionService';
 import { startHttpApi } from './httpApi';
 import { startScheduler } from './scheduler';
@@ -48,6 +49,12 @@ async function main(): Promise<void> {
     now: () => Date.now(),
   });
 
+  const sectSvc = new SectService({
+    cols: mongo.collections,
+    commercial,
+    now: () => Date.now(),
+  });
+
   const auctionSvc = new AuctionService({
     cols: mongo.collections,
     commercial,
@@ -61,6 +68,7 @@ async function main(): Promise<void> {
     { host: env.host, port: env.port, jwtSecret: env.jwtSecret },
     svc,
     familySvc,
+    sectSvc,
     auctionSvc,
   );
 

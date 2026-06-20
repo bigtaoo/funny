@@ -15,6 +15,7 @@ import {
 } from '@nw/shared';
 import type { WorldService } from './service';
 import type { FamilyService } from './familyService';
+import type { SectService } from './sectService';
 import type { AuctionService } from './auctionService';
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -62,6 +63,7 @@ export function startHttpApi(
   opts: { host: string; port: number; jwtSecret: string },
   svc: WorldService,
   familySvc: FamilyService,
+  sectSvc: SectService,
   auctionSvc: AuctionService,
 ): Server {
   const server = createServer((req, res) => {
@@ -332,6 +334,87 @@ export function startHttpApi(
           const before = q.get('before') ? Number(q.get('before')) : undefined;
           const limit = numQ(q.get('limit'), 30);
           return send(res, 200, ok(await familySvc.getChannel(worldId, accountId, before, limit)));
+        }
+
+        // ── 宗门（S8-4b，做实）────────────────────────────────────────
+        if (method === 'GET' && path === '/sect/list') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await sectSvc.listSects(worldId)));
+        }
+        {
+          const m = /^\/sect\/([^/]+)$/.exec(path);
+          if (method === 'GET' && m && path !== '/sect/list' && path !== '/sect/channel') {
+            return send(res, 200, ok(await sectSvc.getSect(decodeURIComponent(m[1]!))));
+          }
+        }
+        if (method === 'POST' && path === '/sect/create') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const name = typeof body.name === 'string' ? body.name : null;
+          const tag = typeof body.tag === 'string' ? body.tag : null;
+          if (!worldId || !name || !tag) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + name + tag required');
+          return send(res, 200, ok(await sectSvc.createSect(worldId, accountId, name, tag)));
+        }
+        if (method === 'POST' && path === '/sect/join') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const sectId = typeof body.sectId === 'string' ? body.sectId : null;
+          if (!worldId || !sectId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + sectId required');
+          await sectSvc.joinSect(worldId, accountId, sectId);
+          return send(res, 200, ok({}));
+        }
+        if (method === 'POST' && path === '/sect/leave') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          await sectSvc.leaveSect(worldId, accountId);
+          return send(res, 200, ok({}));
+        }
+        if (method === 'POST' && path === '/sect/dissolve') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          await sectSvc.dissolveSect(worldId, accountId);
+          return send(res, 200, ok({}));
+        }
+        if (method === 'POST' && path === '/sect/ally') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const targetSectId = typeof body.targetSectId === 'string' ? body.targetSectId : null;
+          if (!worldId || !targetSectId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + targetSectId required');
+          await sectSvc.allySect(worldId, accountId, targetSectId);
+          return send(res, 200, ok({}));
+        }
+        if (method === 'POST' && path === '/sect/unally') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const targetSectId = typeof body.targetSectId === 'string' ? body.targetSectId : null;
+          if (!worldId || !targetSectId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + targetSectId required');
+          await sectSvc.unallySect(worldId, accountId, targetSectId);
+          return send(res, 200, ok({}));
+        }
+        if (method === 'POST' && path === '/sect/vote-remove-leader') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const nomineeFamilyId = typeof body.nomineeFamilyId === 'string' ? body.nomineeFamilyId : null;
+          if (!worldId || !nomineeFamilyId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + nomineeFamilyId required');
+          return send(res, 200, ok(await sectSvc.voteRemoveLeader(worldId, accountId, nomineeFamilyId)));
+        }
+        if (method === 'POST' && path === '/sect/message') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const msgBody = typeof body.body === 'string' ? body.body : null;
+          const senderName = typeof body.senderName === 'string' ? body.senderName : accountId;
+          if (!worldId || !msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + body required');
+          return send(res, 200, ok(await sectSvc.sendMessage(worldId, accountId, senderName, msgBody)));
+        }
+        if (method === 'GET' && path === '/sect/channel') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          const before = q.get('before') ? Number(q.get('before')) : undefined;
+          const limit = numQ(q.get('limit'), 30);
+          return send(res, 200, ok(await sectSvc.getChannel(worldId, accountId, before, limit)));
         }
 
         // ── 拍卖（S8-5，做实）──────────────────────────────────────────

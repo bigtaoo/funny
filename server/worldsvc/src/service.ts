@@ -34,6 +34,7 @@ import {
   TROOP_SPEEDUP_SECS_PER_COIN,
   NATION_BONUS_PRODUCTION,
   NATION_BONUS_DEFENSE,
+  SECT_LEADER_PENALTY_RATE,
   SLG_SHOP_ITEMS,
   CAPITAL_FRACTIONS,
   SlgError,
@@ -741,6 +742,10 @@ export class WorldService {
           { $set: { garrison: 0, protectedUntil: t + PROTECTION_SEC * 1000 }, $inc: { rev: 1 } },
         );
         await this.refundTroops(pw, res.attackerSurvivors, t);
+        // 门主主城被攻破 → 全宗门成员资源 -50%（§8.2 重大惩罚）。
+        // 注：设计中的「主城自动迁移」暂缓（迁城需选空格 + 改 base tile，留后续）；
+        // 现以保护罩替代「迁往安全」的节奏作用，资源惩罚先落地。
+        await this.applySectLeaderPenalty(m.worldId, defenderId, t);
       } else {
         // 领地易主：survivors 成新驻军（出征已扣兵，不再动攻方池），双方产率重算。
         await cols.tiles.updateOne(
@@ -880,6 +885,37 @@ export class WorldService {
       { _id: pw._id },
       { $set: { resources, troops: next, lastTickAt: t }, $inc: { rev: 1 } },
     );
+  }
+
+  /**
+   * 门主主城被攻破惩罚（§8.2）：若 defenderId 是某宗门门主，全宗门成员当前资源 × (1-RATE)。
+   * 逐成员结算后扣减（大规模写，U13 标注的原子性风险——前期单进程可接受，规模化再分批/事务）。
+   * 非门主 / 无宗门 → no-op。
+   */
+  private async applySectLeaderPenalty(worldId: string, defenderId: string, t: number): Promise<void> {
+    const { cols } = this.deps;
+    const mem = await cols.familyMembers.findOne({ _id: playerWorldId(worldId, defenderId) });
+    if (!mem) return;
+    const fam = await cols.families.findOne({ _id: mem.familyId });
+    if (!fam?.sectId) return;
+    const sect = await cols.sects.findOne({ _id: fam.sectId });
+    if (!sect || sect.leaderId !== defenderId) return; // 仅门主被破触发
+
+    const memberFamilies = await cols.families.find({ sectId: sect._id }).project<{ _id: string }>({ _id: 1 }).toArray();
+    const famIds = memberFamilies.map((f) => f._id);
+    if (famIds.length === 0) return;
+    const members = await cols.familyMembers.find({ familyId: { $in: famIds } }).toArray();
+    const keep = 1 - SECT_LEADER_PENALTY_RATE;
+    for (const mm of members) {
+      const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, mm.accountId) });
+      if (!pw) continue;
+      const resources = this.settle(pw, t);
+      for (const rt of RESOURCE_TYPES) resources[rt] = Math.floor((resources[rt] ?? 0) * keep);
+      await cols.playerWorld.updateOne(
+        { _id: pw._id },
+        { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
+      );
+    }
   }
 
   // ── 内部辅助 ─────────────────────────────────────────────
@@ -1455,13 +1491,17 @@ export class WorldService {
   }
 
   /**
-   * 赛季结算（settling）：计算宗门/家族占领首府数量，产出排名数据。
-   * 结算只计算，不清档（清档走 resetSeason）。
-   * 返回排名列表（按占国数降序）。
+   * 赛季结算（settling）：按宗门占领首府数量排名（§2.1 大比 = 大区内宗门占国数排名）。
+   * 聚合优先级：宗门(sect) → 散家族(family) → 个人(owner)，逐级兜底无宗门/无族的占领者。
+   * 结算只计算，不清档（清档走 resetSeason）。返回排名列表（按占国数降序）。
+   * `scope` 标识聚合维度：'sect' | 'family' | 'solo'。
    */
   async settleSeason(worldId: string): Promise<Array<{
     rank: number;
+    scope: 'sect' | 'family' | 'solo';
+    /** 聚合主体 ID（sectId / familyId / ownerId）。字段名沿用 familyId 兼容既有调用方。 */
     familyId: string;
+    name?: string;
     nationCount: number;
     capitalIdxs: number[];
   }>> {
@@ -1475,25 +1515,46 @@ export class WorldService {
 
     const nations = await cols.nations.find({ worldId, ownerId: { $exists: true } }).toArray();
 
-    // 按 familyId 聚合占国数（无 familyId 的用 ownerId 兜底）
-    const familyNations = new Map<string, { capitalIdxs: number[] }>();
+    // family → sectId 映射（占国者的家族归属哪个宗门）。
+    const fams = await cols.families.find({ worldId }).toArray();
+    const familySect = new Map<string, string | undefined>();
+    const familyName = new Map<string, string>();
+    for (const f of fams) {
+      familySect.set(f._id, f.sectId);
+      familyName.set(f._id, f.name);
+    }
+    const sectName = new Map<string, string>();
+    for (const s of await cols.sects.find({ worldId }).toArray()) sectName.set(s._id, s.name);
+
+    // 按「宗门 → 家族 → 个人」逐级聚合占国数。
+    const agg = new Map<string, { scope: 'sect' | 'family' | 'solo'; name?: string; capitalIdxs: number[] }>();
     for (const n of nations) {
-      const key = n.familyId ?? n.ownerId ?? 'solo';
-      const cur = familyNations.get(key) ?? { capitalIdxs: [] };
+      let scope: 'sect' | 'family' | 'solo';
+      let key: string;
+      let name: string | undefined;
+      const sid = n.familyId ? familySect.get(n.familyId) : undefined;
+      if (sid) {
+        scope = 'sect'; key = sid; name = sectName.get(sid);
+      } else if (n.familyId) {
+        scope = 'family'; key = n.familyId; name = familyName.get(n.familyId);
+      } else {
+        scope = 'solo'; key = n.ownerId ?? 'solo';
+      }
+      const cur = agg.get(key) ?? { scope, name, capitalIdxs: [] };
       cur.capitalIdxs.push(n.capitalIdx);
-      familyNations.set(key, cur);
+      agg.set(key, cur);
     }
 
-    const ranking = [...familyNations.entries()]
+    return [...agg.entries()]
       .sort((a, b) => b[1].capitalIdxs.length - a[1].capitalIdxs.length)
-      .map(([fid, v], i) => ({
+      .map(([id, v], i) => ({
         rank: i + 1,
-        familyId: fid,
+        scope: v.scope,
+        familyId: id,
+        ...(v.name ? { name: v.name } : {}),
         nationCount: v.capitalIdxs.length,
         capitalIdxs: v.capitalIdxs,
       }));
-
-    return ranking;
   }
 
   /**
@@ -1504,15 +1565,18 @@ export class WorldService {
    */
   async resetSeason(worldId: string): Promise<{ deleted: Record<string, number> }> {
     const { cols, now } = this.deps;
-    const [r1, r2, r3, r4, r5] = await Promise.all([
+    const [r1, r2, r3, r4, r5, r6, r7] = await Promise.all([
       cols.tiles.deleteMany({ worldId }),
       cols.marches.deleteMany({ worldId }),
       cols.playerWorld.deleteMany({ worldId }),
       cols.nations.deleteMany({ worldId }),
       cols.sieges.deleteMany({ worldId }),
+      // 宗门编制每季重组（§2.3）：删宗门 + 频道。
+      cols.sects.deleteMany({ worldId }),
+      cols.sectMessages.deleteMany({ worldId }),
     ]);
-    // 重置家族繁荣度（赛季归零，但不删除家族成员关系——S8-4 待细化）
-    await cols.families.updateMany({ worldId }, { $set: { territoryCount: 0 } });
+    // 重置家族繁荣度（赛季归零，但不删除家族成员关系——S8-4 待细化）；清宗门归属。
+    await cols.families.updateMany({ worldId }, { $set: { territoryCount: 0 }, $unset: { sectId: '' } });
     await cols.worlds.updateOne(
       { _id: worldId },
       {
@@ -1529,6 +1593,8 @@ export class WorldService {
         playerWorld: r3.deletedCount,
         nations: r4.deletedCount,
         sieges: r5.deletedCount,
+        sects: r6.deletedCount,
+        sectMessages: r7.deletedCount,
       },
     };
   }

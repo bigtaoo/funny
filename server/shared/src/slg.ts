@@ -62,6 +62,10 @@ export function familyMemberId(world: string, accountId: string): string {
 export function familyId(worldId: string, tag: string): string {
   return `f:${worldId}:${tag.toUpperCase()}`;
 }
+/** 宗门 ID（S8-4b）：`s:{worldId}:{TAG}`；TAG 大写唯一缩写（2–5 字符），worldId 内唯一。 */
+export function sectId(worldId: string, tag: string): string {
+  return `s:${worldId}:${tag.toUpperCase()}`;
+}
 /** 拍卖 ID（S8-5）：`a:{worldId}:{sellerId}:{ts}:{seq}`，防同毫秒多挂撞键。 */
 export function auctionId(worldId: string, sellerId: string, ts: number, seq: number): string {
   return `a:${worldId}:${sellerId}:${ts}:${seq}`;
@@ -140,6 +144,17 @@ export const FAMILY_CAP = 30; // S8-4 拍板：中小家族上限 30 人
 export const FAMILY_MSG_RETENTION_SEC = 7 * 24 * 3600; // 7 天
 /** 家族频道单条消息正文最大长度。 */
 export const FAMILY_MSG_BODY_MAX = 500;
+// ── 宗门（S8-4b，§2.1 / §8.2）──────────────────────────────
+/** 宗门内家族数量上限（≤30 家族 → ≤900 人）。 */
+export const SECT_FAMILY_CAP = 30;
+/** 建立宗门花费金币（U5：5000 coin + 繁荣度门槛）。 */
+export const SECT_CREATE_COST = 5000;
+/** 宗门可结盟的其他宗门数量上限（合纵连横 ≤3 宗门联盟 = 自身 + 2 盟友）。 */
+export const SECT_ALLY_CAP = 2;
+/** 门主主城被攻破时，全宗门成员当前资源损失比例（§8.2 重大惩罚）。 */
+export const SECT_LEADER_PENALTY_RATE = 0.5;
+/** 换届罢免投票通过门槛（族长票数 / 家族数 ≥ 此比例，§8.2 超 2/3）。 */
+export const SECT_REMOVAL_VOTE_RATIO = 2 / 3;
 export const AUCTION_TAX_RATE = 0.1; // U1 推迟到 S8-5，先占位
 export const AUCTION_MAX_LISTINGS = 20;
 export const AUCTION_DURATIONS_SEC: readonly number[] = [6 * 3600, 12 * 3600, 24 * 3600];
