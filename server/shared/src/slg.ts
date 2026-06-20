@@ -599,6 +599,15 @@ export function resolveSiege(attackerTroops: number, defenseStrength: number): S
   return { outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: def - atk };
 }
 
+/**
+ * 国民防御加成（S8-6.5 / §2.4）：守军处于「己方占领首府的 Voronoi 区」内时，有效防守强度
+ * ×(1+NATION_BONUS_DEFENSE)，否则取原值。纯函数、确定性、整数化、双端可算。
+ */
+export function nationDefenseStrength(garrison: number, inOwnNation: boolean): number {
+  const g = Math.max(0, Math.floor(garrison));
+  return inOwnNation ? Math.floor(g * (1 + NATION_BONUS_DEFENSE)) : g;
+}
+
 // ── 围攻可玩防守关卡（S8-3b / C2）─────────────────────────────────────────────
 // 把存储的防守 config（DefenseConfig 子集：garrison/defenderBuildings/defenderBaseLevel）规整成一份
 // 「攻方可打」的完整 LevelDefinition 形态对象（objective=destroy_base，无脚本波次）。客户端用它在

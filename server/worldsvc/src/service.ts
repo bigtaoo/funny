@@ -33,7 +33,7 @@ import {
   TROOP_TRAIN_QUEUE_MAX,
   TROOP_SPEEDUP_SECS_PER_COIN,
   NATION_BONUS_PRODUCTION,
-  NATION_BONUS_DEFENSE,
+  nationDefenseStrength,
   SECT_LEADER_PENALTY_RATE,
   RELOCATE_COST,
   SLG_SHOP_ITEMS,
@@ -791,7 +791,11 @@ export class WorldService {
     }
 
     const defenderId = target.ownerId;
-    const res = resolveSiege(m.troops, target.garrison ?? 0);
+    // 国民防御加成（§2.4 / G1）：守军处于「自己占领首府的 Voronoi 区」内 → 有效守军强度抬高。
+    const capIdx = nearestCapitalIdx(target.x, target.y, this.capitals);
+    const nation = await cols.nations.findOne({ _id: `nation:${m.worldId}:${capIdx}` });
+    const inOwnNation = !!nation?.ownerId && nation.ownerId === defenderId;
+    const res = resolveSiege(m.troops, nationDefenseStrength(target.garrison ?? 0, inOwnNation));
     const defender = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defenderId) });
     let loot = emptyResources();
 
@@ -1078,7 +1082,19 @@ export class WorldService {
     accountId: string,
   ): Promise<Record<ResourceType, number>> {
     const owned = await this.deps.cols.tiles.find({ worldId, ownerId: accountId }).toArray();
-    return this.yieldRecord(owned);
+    // 国民产出加成（§2.4 / G1）：该玩家占领的首府 → 这些首府 Voronoi 区内的己方格享 +NATION_BONUS_PRODUCTION。
+    const ownedNations = await this.deps.cols.nations.find({ worldId, ownerId: accountId }).toArray();
+    const ownedCapIdx = new Set(ownedNations.map((n) => n.capitalIdx));
+    if (ownedCapIdx.size === 0) return this.yieldRecord(owned);
+    const acc = emptyResources();
+    for (const tl of owned) {
+      const inOwnNation = ownedCapIdx.has(nearestCapitalIdx(tl.x, tl.y, this.capitals));
+      const mult = inOwnNation ? 1 + NATION_BONUS_PRODUCTION : 1;
+      const y = tileYield(tl.type, tl.level, tl.resType);
+      for (const rt of RESOURCE_TYPES) acc[rt] += (y[rt] ?? 0) * mult;
+    }
+    for (const rt of RESOURCE_TYPES) acc[rt] = Math.floor(acc[rt]);
+    return acc;
   }
 
   private tileDocView(o: TileDoc, accountId: string, ownerProfile?: PlayerProfile): WorldTileView {

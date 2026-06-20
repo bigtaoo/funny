@@ -518,4 +518,49 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 
 ---
 
+## 15. 已知缺口 / 收尾清单（2026-06-20 盘点）
+
+> S8-0~S8-9 主干切片全部 ✅（地图/领地/行军/围攻/家族/宗门/拍卖/赛季/变现框架/客户端全量 UI）。本节盘点「设计已承诺、任务已标 ✅，但代码里仍空转或暂缓」的缺口，按"该不该补"分三档。盘点依据：逐函数核对 `worldsvc`/`shared` 实现与本文档 §2~§9 承诺。
+
+### 15.1 第一档——已定义但没接通（最该补，目前是死代码/空转）
+
+| # | 缺口 | 现状 | 影响 |
+|---|---|---|---|
+| **G1** | **国民加成未生效** | `NATION_BONUS_PRODUCTION=0.10`/`NATION_BONUS_DEFENSE=0.15`（`shared/slg.ts`）仅 import、worldsvc 全程未使用；`resolveSiege` 与 `recomputeYield` 都不读 | 国家系统沦为「占国数计分牌」，对产出/战斗零影响，违背 SLG2 / §2.4「国民加成」 |
+| **G2** | **繁荣度系统是死字段** | `FamilyDoc.prosperity` 仅在 `db.ts` 定义，service 零读写（无评分/衰减/赛季档位奖励）；连带「建宗门需繁荣度中等门槛」未做（仅扣 coin） | §8.1 繁荣度循环、SLG3「按宗门综合实力分配大区」缺基础数据 |
+| **G3** | **围攻反作弊判负翻转未启用** | judge 复算（S8-3b）只 `log mismatch`，不翻转结果 | 承重墙 SLG11「关键战斗复算后才落地」只对账不执行，伪造战报仍生效 |
+| **G4** | **养成统一的「材料流转」半截** | `buildSiegeBlueprints(养成)` 注入装备/科技战力已通；但 SLG8 承诺的 PvE↔SLG 材料（scrap/lead/binding）统一流转 + 上拍卖行未接；战令 `hasBattlePass` 写了但增益效果为空 | SLG7/SLG8「养成统一」「赚钱区=卖战力」闭环未合 |
+
+### 15.2 第二档——系统级整块缺失
+
+| # | 缺口 | 现状 | 影响 |
+|---|---|---|---|
+| **G5** | **地图迷雾 / 侦察视野 / 宗门视野共享 / 盟友土地标记** | 服务端 grep `fog/vision/scout/迷雾` 零命中，整图可见 | §8.2 宗门视野共享、§2.1「视野订阅」核心战略玩法缺失 |
+| **G6** | **多大区 + 赛季分配规则** | 单世界；`settleSeason`/`resetSeason` 有，但 SLG3「按宗门强弱平衡分配大区 / 超 ~1 万人开新大区」未做 | 规模化与生态平衡（SLG3）未兑现 |
+| **G7** | **admin 运营后台 SLG 接入** | 异常交易审计工单 / 赛季运维 UI / 商品价格可调基本未接 admin | S8-8 运营侧、SLG9 反 RMT 审计闭环缺口 |
+| **G8** | **险地（Stronghold）格子类型** | 设计 §3.1 列出，服务端 grep `stronghold/险地` 零命中 | 高战略价值 PvE 格缺失 |
+
+### 15.3 第三档——DRAFT 数值 / 打磨
+
+- 拍卖行季末冻结/结算策略（DRAFT）；国民加成/繁荣度/碾压级廉价结算具体数值待调参（§14.10 U6）。
+- 首府改名服务端已校验 ownerId；商城金币余额展示已接 SaveData 镜像。
+
+### 15.4 收尾优先级建议
+
+1. **G1（国民加成）+ G3（判负翻转）**：「承诺了但空转」，工作量小、对玩法完整性影响最大，先收口。
+2. **G5（视野系统）**：「加家族才守得住」留存逻辑的关键拼图，工作量大可单列切片。
+3. **G2/G4/G6/G7/G8**：随对应经济/运营/规模化专项推进。
+
+> **进度**：**G1 国民加成已落地（2026-06-20）**——见 §15.5。
+
+### 15.5 G1 国民加成实现记录（2026-06-20）
+
+- **shared**：新增纯函数 `nationDefenseStrength(garrison, inOwnNation)`（己方 Voronoi 区守军强度 ×(1+`NATION_BONUS_DEFENSE`)，否则原值；`Math.floor` 整数化、双端可算）。
+- **归属判定**（无逐玩家国籍字段，v1 取「首府占领者即国民代表」）：瓦片落在「由瓦片主人自己占领的首府」的 Voronoi 区内 → 享加成。
+- **生产加成**：`recomputeYield` 先取该玩家占领的首府集合（`nations.find({worldId, ownerId})` → `capitalIdx` Set），逐格 `nearestCapitalIdx` 命中集合则该格 `tileYield` ×(1+`NATION_BONUS_PRODUCTION`)；聚合后 `Math.floor` 保持整数产率。占领/放弃/围攻易主等所有改产率路径均经 `recomputeYield`，天然覆盖。
+- **防御加成**：`applySiege` 围攻到点结算前，查目标格 Voronoi 首府，若 `nation.ownerId === defenderId` → 守军经 `nationDefenseStrength` 放大后再喂 `resolveSiege`。NPC 扫荡（`applySweep`）不享（无国籍）。
+- **测试**：`worldsvc/test/nation-bonus.e2e.test.ts`（生产加成产率提升、防御加成抬高破城门槛、非己方区无加成）。
+
+---
+
 *本文档为 SLG 设计基准，DRAFT 标注处随实现/调参细化；锁定决策（SLG1~13）非经重新拍板不改。*
