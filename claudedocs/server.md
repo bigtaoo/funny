@@ -11,7 +11,7 @@
 - **钱包权威**：`SaveData.wallet.coins` 是只读镜像；商业操作经 commercial → meta 编排 → 回推
 - **PvE 服务器权威**：通关/升级走 `/pve/clear`、`/pve/upgrade` API；`SyncPatch` 只同步 `equipped`/`flags`
 
-## 九进程 + 端口
+## 8 个应用进程（+ mongo/redis 基础设施）+ 端口
 
 | 进程 | 端口 | 说明 |
 |---|---|---|

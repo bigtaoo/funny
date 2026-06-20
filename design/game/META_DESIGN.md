@@ -228,6 +228,9 @@ function buildCampaignBlueprints(save: SaveData): UnitBlueprints {
 
 ### 6.1 拓扑：6 组件 + 控制面/数据面分离（M9 / M16–M21）
 
+> **范畴说明**：本节「6 组件」是 **meta 范畴**（S0–S5）。全系统后来加了 admin / worldsvc / analyticsvc，
+> 共 **8 个应用进程**——全量清单见 `design/README.md` §4 与 `claudedocs/server.md`。
+
 > **架构修订（2026-06-13；2026-06-14 加 commercial）**：玩家只触达 **meta(REST)** + **gateway(WS 控制面)** + **game(WS 数据面)**；**matchsvc**（匹配大脑）+ **commercial**（钱包/商业，连自己专属库）对玩家不可见。S1 现实现是 gameserver 中心式（自管匹配/分配/结算且连 Mongo），按此修订迁移。
 
 ```

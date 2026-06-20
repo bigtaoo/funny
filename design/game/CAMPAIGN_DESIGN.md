@@ -42,6 +42,11 @@
 
 ## 3. 商业化与公平性架构硬墙（最重要，须在写代码前埋好）
 
+> **数据权威更新（ADR-006）**：本节下方把 `campaignProgress`（PvE 升级/解锁/货币）画成"玩家存档"段，
+> 当时假设是客户端权威。**现已改为服务器权威**——`pveUpgrades`/`progress`/`materials` 客户端只读镜像，
+> 变更走 `POST /pve/upgrade`、`POST /pve/clear`，奖励服务器按 `shared/pveRewards.ts` 重算。
+> PvE 数据权威与反作弊的真源是 [`PVE_INTEGRITY_PLAN.md`](PVE_INTEGRITY_PLAN.md)。本节的 PvP 硬墙原则不变。
+
 竞技公平不能靠「记得别串味」，要靠**数据来源隔离**强约束：
 
 ```

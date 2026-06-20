@@ -1,8 +1,11 @@
 # 数值模拟与节奏分析 v1
 
 版本：v1.0  
+状态：**已归档**（基于未落地的 `v1-balance.md`，数值与现行 `config.ts` 不符）  
 基于：`v1-balance.md`  
 方法：解析计算 + 场景推演（bash 环境异常，待后续自动化验证）
+
+> ⛔ 现行数值见 [`design/game/BALANCE.md`](../game/BALANCE.md)。见 ADR-001。
 
 ---
 

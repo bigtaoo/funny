@@ -22,7 +22,7 @@ funny/
 │   ├── level-editor/      战役关卡编辑器（TypeScript + 纯 Canvas，端口 9092）
 │   └── ops/               运维后台前端（TypeScript，端口 9093）
 │
-├── server/                Node.js 后端（npm workspaces，九进程）
+├── server/                Node.js 后端（npm workspaces，8 个应用进程 + contracts/shared 包）
 │   ├── contracts/         openapi.yml + transport.proto + game.proto
 │   ├── shared/            @nw/shared（类型/JWT/ticket/Mongo/ladder/economy）
 │   ├── metaserver/        REST，无状态（auth/save/economy/social/pve/match-report）
@@ -39,7 +39,7 @@ funny/
 └── claudedocs/            模块级快查文档（按需加载）
 ```
 
-> **文档约定**：设计文档放 `design/`，实现进度见 `design/game/META_TASKS.md`，模块细节见 `claudedocs/`。
+> **文档约定**：**设计文档统一入口 = [`design/README.md`](design/README.md)**（索引 / 权威来源登记 / 文档规约）；关键拍板见 [`design/DECISIONS.md`](design/DECISIONS.md)；战斗数值以 `client/src/game/config.ts` 为准、快照见 `design/game/BALANCE.md`；实现进度见 `design/game/META_TASKS.md`；模块细节见 `claudedocs/`。
 
 ## 各模块入口
 
@@ -48,7 +48,7 @@ funny/
 | 动画编辑器（animator） | [`claudedocs/animator.md`](claudedocs/animator.md) | `design/tools/animator/` |
 | 关卡编辑器（level-editor） | — | `design/tools/level-editor/DESIGN.md` |
 | 游戏主代码（client） | [`claudedocs/client-modules.md`](claudedocs/client-modules.md) | `design/game/` |
-| 服务端（server，九进程） | [`claudedocs/server.md`](claudedocs/server.md) | `design/game/META_DESIGN.md` |
+| 服务端（server，8 个应用进程） | [`claudedocs/server.md`](claudedocs/server.md) | `design/game/META_DESIGN.md` |
 | 文件格式（.tao / .tao.editor） | [`claudedocs/file-formats.md`](claudedocs/file-formats.md) | — |
 
 ### 关卡编辑器补充

@@ -142,6 +142,9 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 > `commands` 字段类型是 **`bytes`**：客户端用 `game.proto` 编码 `PlayerCommand[]`，服务器**透传不解码**（M12）。
 
 ### 3.1 客户端 → 服务器（`ClientMsg` oneof）
+
+> ⚠️ 下表 `room_*` 房间消息**已迁 gateway 控制面 WS（§8.4）**，game 数据面仅保留 `cmd_submit`/`conn_resume`/`ping`。房间行保留作历史/实现参考。
+
 | `case` | payload | 说明 |
 |---|---|---|
 | `room_create` | `{ mode: friendly|ranked }` | 建房，返回房间码（friendly）；ranked 走匹配队列 |
