@@ -589,7 +589,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 ### 16.4 分片（可独立验收）
 
 - **G3-1 落地逻辑抽取（纯重构）✅（2026-06-20）**：`applySiege` 的写库块抽成 `landSiege(m, pw, target, defenderId, defender, res, t)`，行为零变化、e2e 全绿。judge/兜底/引擎三路共用此唯一落地点。
-- **G3-2a shared + 引擎**：army layout schema（unit/cell/分配兵力）；troops=HP（布兵单位初始 HP = 分配兵力，≤ 满血）；`buildSiegeBattle`（双军 + 双基地 + timeout 关卡）；引擎支持攻方预布兵 + 超时判防守方胜；headless 跑通；**确定性 battle 单测**（同布阵 + seed → 逐 tick 同终局；破基地 / 超时两路胜负）。
+- **G3-2a shared + 引擎 ✅（2026-06-21）**：army layout schema（`GarrisonEntry.initialHp` 复用于攻守两军 + `LevelDefinition.attackerArmy`/`battleTimeoutTicks`，`levelSchema` 校验）；troops=HP（`Unit` 构造 `this.hp = min(initialHp ?? 满血, 满血)`，maxHp 恒为蓝图满血）；`buildSiegeBattle`（shared/slg.ts，**复用 `buildSiegeLevel` 守方规整 + 叠攻方军 + `battleTimeoutTicks`**；`buildSiegeLevel` 暂留供 worldsvc，G3-2b 再切换以守「不碰 worldsvc」）；引擎镜像 garrison 初始化到 `attackerArmy`（owner0/Bottom，首 tick spawn+move 向 `TOP_BUILDING_ROW`）+ 超时双基皆存判 owner1（防守方）胜；headless 跑通；**确定性 battle 单测**（`client/test/siege-battle.test.ts`：同布阵 + seed → 逐 tick 双基 HP 序列逐字一致；破基地 / 超时两路胜负；红线不破）。client tsc + 293 测试全绿、server tsc -b shared worldsvc 绿。
 - **G3-2b worldsvc**：import 引擎 headless 跑围攻；`applySiege` 关键战斗改为「跑引擎 → 真实残存折兵力 → `landSiege`」即时落地（非关键 sweep/NPC 维持廉价）；队伍/布阵持久化（`playerWorld.teams[]` + 领地 `tile.defense` 已有）；e2e。
 - **G3-2c 客户端**：5 队伍布阵编辑器（攻）+ 领地布阵（守，盟军可布）+ 出征挂队 + `seed` 重播观战；i18n。
 - **删除**：S8-3b 的 pending/录像上传/judge/peer 复算路径（手操不再存在）；`siegeLandingFromVerdict` 不再需要（引擎给真实残存）。

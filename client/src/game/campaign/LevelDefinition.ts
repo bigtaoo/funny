@@ -53,6 +53,20 @@ export interface LevelDefinition {
    */
   garrison?: GarrisonEntry[];
   /**
+   * SLG siege battle (G3, §16): the attacker's pre-deployed army on the attacker
+   * (Bottom / owner 0) half. Mirror of {@link garrison} for the lower side — units
+   * are placed at their (col,row) and auto-advance toward the enemy base on the
+   * first tick (no live card play). Valid for 'siege' mode; ignored in 'campaign'.
+   */
+  attackerArmy?: GarrisonEntry[];
+  /**
+   * SLG siege battle (G3, §16): hard time limit in ticks. When the battle reaches
+   * this many elapsed ticks with both bases still standing, the defender (Top /
+   * owner 1) wins — "防守占优". Safety net against zero-damage stalemates and a
+   * compute cap for headless authoritative runs. Valid for 'siege' mode.
+   */
+  battleTimeoutTicks?: number;
+  /**
    * SLG defense config (U10): pre-placed buildings on the defender's (Top) building row.
    * Lets the defender start with turrets / barracks without needing to spend ink.
    * Valid for 'siege' mode; ignored in 'campaign'.
@@ -156,13 +170,23 @@ export interface EscortSpec {
   path?: { col: number; row: number }[];
 }
 
-/** SLG defense config: one pre-deployed unit on the defender (Top) side. */
+/**
+ * SLG defense config: one pre-deployed unit on the defender (Top) side, or — when
+ * used in {@link LevelDefinition.attackerArmy} — one pre-deployed attacker unit on
+ * the Bottom side.
+ */
 export interface GarrisonEntry {
   unitType: UnitType;
   /** Attack lane column (must be in ATTACK_LANES). */
   col: number;
-  /** Row 1–16 inclusive — anywhere in the combat zone or top spawn row. */
+  /** Row 1–16 inclusive — anywhere in the combat zone or a spawn row. */
   row: number;
+  /**
+   * SLG siege battle (G3, §16.1): "兵力 = 血量". The troops allotted to this unit
+   * become its starting HP (≤ the blueprint's full capacity). Omitted → the unit
+   * spawns at full blueprint HP. Deterministic; consumed by the Unit constructor.
+   */
+  initialHp?: number;
 }
 
 /** SLG defense config: one pre-placed building on the defender's building row. */

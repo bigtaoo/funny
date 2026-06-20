@@ -94,6 +94,8 @@ class GameEngineImpl implements IGameEngine {
   private initialSpellCards: CardDefinition[] = [];
   /** Garrison units (U10): pre-placed defender units awaiting their spawn events. */
   private readonly garrisonUnits: Unit[] = [];
+  /** Attacker army (G3, §16): pre-placed Bottom-side units awaiting their spawn events. */
+  private readonly attackerArmyUnits: Unit[] = [];
   /** Defender buildings (U10): pre-placed buildings awaiting their placed events. */
   private readonly defenderBuildingList: Building[] = [];
 
@@ -188,9 +190,23 @@ class GameEngineImpl implements IGameEngine {
       if (config.level.garrison) {
         for (const entry of config.level.garrison) {
           const bp = this.state.unitBlueprints[entry.unitType];
-          const unit = new Unit(entry.unitType, Side.Top, entry.col, entry.row, bp);
+          const unit = new Unit(entry.unitType, Side.Top, entry.col, entry.row, bp, entry.initialHp);
           this.state.board.addUnit(unit);
           this.garrisonUnits.push(unit);
+        }
+      }
+
+      // Attacker army (G3, §16): the attacker's pre-deployed units on the Bottom
+      // (owner 0) half. Mirror of the garrison block above — same construction,
+      // opposite side. Tracked in attackerArmyUnits[] so emitInitialEvents() can
+      // emit owner-0 spawn + move-toward-enemy-base events. troops = HP via
+      // entry.initialHp (§16.1). No live card play needed: these advance on tick 1.
+      if (config.level.attackerArmy) {
+        for (const entry of config.level.attackerArmy) {
+          const bp = this.state.unitBlueprints[entry.unitType];
+          const unit = new Unit(entry.unitType, Side.Bottom, entry.col, entry.row, bp, entry.initialHp);
+          this.state.board.addUnit(unit);
+          this.attackerArmyUnits.push(unit);
         }
       }
 
@@ -500,6 +516,28 @@ class GameEngineImpl implements IGameEngine {
       });
     }
 
+    // SLG siege battle (G3, §16): emit spawn + move events for the attacker's
+    // pre-deployed army (owner 0 / Bottom). Mirror of the garrison block — these
+    // advance toward the defender base (TOP_BUILDING_ROW) on the first tick.
+    for (const unit of this.attackerArmyUnits) {
+      this.state.pushEvent({
+        type:      'unit_spawned',
+        unitId:    unit.id,
+        owner:     0,
+        unitType:  unit.unitType,
+        col:       unit.col,
+        y_fp:      unit.y_fp,
+        radius_fp: unit.radius_fp,
+      });
+      this.state.pushEvent({
+        type:     'unit_move_start',
+        unitId:   unit.id,
+        from:     { col: unit.col, y_fp: unit.y_fp },
+        to:       { col: unit.col, y_fp: toFp(TOP_BUILDING_ROW) },
+        speed_fp: unit.speed_fp,
+      });
+    }
+
     // SLG defense config (U10): emit placed events for pre-placed defender buildings.
     for (const building of this.defenderBuildingList) {
       this.state.pushEvent({
@@ -804,6 +842,19 @@ class GameEngineImpl implements IGameEngine {
         this.state.winner = Side.Bottom;
         this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
         this.state.pushEvent({ type: 'game_over', winner: 0 });
+        return;
+      }
+
+      // SLG siege battle (G3, §16.1): hard time limit. Reaching battleTimeoutTicks
+      // with both bases still standing → the defender (Top / owner 1) wins —
+      // "超时 / 同归于尽 → 进攻方负 (防守占优)". Both base-down cases are handled
+      // above, so on arrival here both bases are alive by construction.
+      if (this.level!.battleTimeoutTicks !== undefined &&
+          this.state.elapsedTicks >= this.level!.battleTimeoutTicks) {
+        this.state.phase  = GamePhase.GameOver;
+        this.state.winner = Side.Top;
+        this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+        this.state.pushEvent({ type: 'game_over', winner: 1 });
         return;
       }
 

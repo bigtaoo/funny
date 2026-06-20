@@ -629,6 +629,12 @@ function clampBaseLevel(n: number): number {
 }
 
 /**
+ * 围攻战斗硬时限（ticks，§16.1 DRAFT）：~10 分钟游戏时间 × 60 × 30 Hz = 18000 ticks。
+ * 超时双基地皆存 → 防守方胜（防守占优）+ headless 复算算力封顶。调参细化见 §16.5。
+ */
+export const SIEGE_BATTLE_TIMEOUT_TICKS = 10 * 60 * 30;
+
+/**
  * 规整防守 config → 完整围攻关卡对象。`config` 为防守方自定义（可空）；`tileLevel` 用于无自定义时
  * 派生一个象征性的基地等级防守。返回形态对齐客户端 LevelDefinition（loose object，避免在 shared
  * 复制引擎 schema）。纯函数、确定性、双端可算。
@@ -656,6 +662,37 @@ export function buildSiegeLevel(
   } else {
     // 无自定义防守 → 用格等级派生一个象征性基地防守（确定性，攻方破基即胜）。
     level.defenderBaseLevel = clampBaseLevel(Math.floor(tileLevel) - 1);
+  }
+  return level;
+}
+
+/**
+ * 围攻自动战斗关卡（G3-2a，§16.3）：在 {@link buildSiegeLevel}（守方布阵 + 双基地 +
+ * objective:destroy_base）基础上扩出**攻方预布军**（`attackerArmy`，下半场 owner0）+
+ * **战斗硬时限**（`battleTimeoutTicks`，超时判防守方胜）。无 live 指令 → 战斗由
+ * `seed + 双方布阵` 唯一确定（worldsvc headless 跑权威；客户端 seed 重播观战）。
+ *
+ * 纯函数、确定性、双端可算。返回 loose object，形态对齐客户端 LevelDefinition
+ * （含 attackerArmy / battleTimeoutTicks，由 levelSchema 校验）。
+ *
+ * @param attacker 攻方布阵（`army` = GarrisonEntry[]，含每单位 initialHp = 分配兵力）。
+ * @param defender 守方 config（garrison / defenderBuildings / defenderBaseLevel），同 buildSiegeLevel。
+ * @param tileLevel 无守方自定义时派生象征性基地等级。
+ * @param seed 关卡 seed（围攻同 seed，复算/重播一致）。
+ * @param battleTimeoutTicks 战斗硬时限，默认 {@link SIEGE_BATTLE_TIMEOUT_TICKS}。
+ */
+export function buildSiegeBattle(
+  attacker: { army?: unknown } | null | undefined,
+  defender: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null | undefined,
+  tileLevel: number,
+  seed: number,
+  battleTimeoutTicks: number = SIEGE_BATTLE_TIMEOUT_TICKS,
+): Record<string, unknown> {
+  // 复用守方规整（双基地 + destroy_base 已含）；再叠加攻方军 + 时限。
+  const level = buildSiegeLevel(defender, tileLevel, seed);
+  level.battleTimeoutTicks = Math.max(1, Math.floor(battleTimeoutTicks));
+  if (attacker && Array.isArray(attacker.army) && attacker.army.length > 0) {
+    level.attackerArmy = attacker.army;
   }
   return level;
 }

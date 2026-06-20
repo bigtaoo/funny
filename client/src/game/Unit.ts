@@ -141,6 +141,9 @@ export class Unit {
    *   constant; the engine injects state.unitBlueprints[unitType] so PvE upgrades
    *   apply only on the campaign path (hard wall, §5.2). Tests that construct a
    *   Unit directly get the default PvP stats.
+   * @param initialHp SLG siege battle (G3, §16.1, "兵力 = 血量"): override the unit's
+   *   starting HP with the allotted troops. Clamped to the blueprint's full HP
+   *   capacity. Omitted → full blueprint HP. maxHp always stays the blueprint cap.
    */
   constructor(
     unitType: UnitType,
@@ -148,6 +151,7 @@ export class Unit {
     col: number,
     spawnRow: number,
     blueprint: UnitBlueprint = UNIT_BLUEPRINTS[unitType],
+    initialHp?: number,
   ) {
     this.id        = nextId++;
     this.unitType  = unitType;
@@ -157,7 +161,9 @@ export class Unit {
     this.y_fp      = toFp(spawnRow);
 
     const bp = blueprint;
-    this.hp       = bp.hp;
+    // 兵力 = 血量 (§16.1): allotted troops set starting HP, capped at the blueprint
+    // full capacity. maxHp stays the cap so combat / regen / UI bars are unchanged.
+    this.hp       = initialHp !== undefined ? Math.min(initialHp, bp.hp) : bp.hp;
     this.maxHp    = bp.hp;
     this.attack   = bp.attack;
     this.range    = bp.range;
