@@ -184,6 +184,11 @@ export class SaveManager {
    */
   async recordClear(levelId: string, stars: number, replay?: Replay): Promise<void> {
     if (stars <= 0) return;
+    // 乐观本地解锁（离线优先）：立刻把通关写进本地 progress，回到 CampaignMap 时下一关即解锁，
+    // 不必干等服务器回执（在线时 recordClear 是 fire-and-forget，回执前场景已重建会读到旧值）。
+    // 服务器仍权威结算：在线 adoptServer / 离线 flush 后 reconcile 用云端 cleared/stars 整体覆盖回填，
+    // 即便服务器判负也会被纠正（自愈），故乐观值不会造成漂移。
+    this.applyLocalClear(levelId, stars);
     if (this.online()) {
       try {
         const res = await this.api!.pveClear(levelId, stars, this.save.pveUpgrades);
@@ -229,6 +234,15 @@ export class SaveManager {
     } catch {
       return false;
     }
+  }
+
+  /** 乐观写本地通关：cleared 去重追加 + stars 取较大（夹到 1|2|3）。仅落本地（progress 不上行）。 */
+  private applyLocalClear(levelId: string, stars: number): void {
+    const p = this.save.progress;
+    if (!p.cleared.includes(levelId)) p.cleared.push(levelId);
+    const s = Math.max(1, Math.min(3, Math.round(stars))) as 1 | 2 | 3;
+    if ((p.stars[levelId] ?? 0) < s) p.stars[levelId] = s;
+    this.store.saveLocal(this.save);
   }
 
   private enqueueClear(entry: PendingClear): void {
