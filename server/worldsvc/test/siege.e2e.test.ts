@@ -11,7 +11,6 @@ import {
   proceduralTile,
   tileId,
   playerWorldId,
-  marchDurationSec,
   npcGarrison,
   SIEGE_LOOT_RATE,
   SWEEP_LOOT_PER_LEVEL,
@@ -63,6 +62,11 @@ function findCoord(
   }
   throw new Error('no matching tile found');
 }
+
+/** 程序化地形上「可被行军到达」的格：排除障碍/关隘/中心（findMarchPath 把这些当永久阻挡，
+ *  且 startMarch 对 obstacle 目标直接拒绝）。setupDefender 会在 DB 覆盖类型，但寻路只看程序化层。 */
+const NON_BLOCKING = (t: ReturnType<typeof proceduralTile>): boolean =>
+  t.type !== 'obstacle' && t.type !== 'gate' && t.type !== 'center';
 
 describe.skipIf(!mongo)('worldsvc siege e2e', () => {
   const m = mongo!;
@@ -137,21 +141,22 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
 
   it('攻领地胜：易主 + 掠夺 + 双方产率重算 + under_attack/siege_result 推送', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    await setupDefender('b', 10, 5, { type: 'territory', garrison: 500, food: 1000 });
-    const dur = marchDurationSec(5, 5, 10, 5);
+    const tgt = findCoord(NON_BLOCKING, 10, 5);
+    await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 500, food: 1000 });
 
-    const mv = await svc.startMarch(W, 'a', 5, 5, 10, 5, 'attack', 800);
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 800);
     expect(mv).toMatchObject({ kind: 'attack', status: 'marching', troops: 800 });
     // 出征即向防守方 b 推 under_attack。
     const ua = pushes.find((p) => p.msg.kind === 'under_attack');
     expect(ua?.accountId).toBe('b');
-    expect(ua?.msg).toMatchObject({ tile: tileId(W, 10, 5), troopsHint: 800 });
+    expect(ua?.msg).toMatchObject({ tile: tileId(W, tgt.x, tgt.y), troopsHint: 800 });
 
-    nowMs += dur * 1000;
+    // 推进至 A* 行军到点（用 service 算出的 arriveAt，避免欧氏距离低估路径长度）。
+    nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
     // 领地易主：现归 a，garrison = 生还 300。
-    const tile = await svc.getTile(W, 'a', 10, 5);
+    const tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
     expect(tile).toMatchObject({ type: 'territory', mine: true, garrison: 300 });
     const me = await svc.getMe(W, 'a');
     expect(me.territoryCount).toBe(2);
@@ -162,7 +167,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
 
     // sieges 记录 + siege_result 推双方。
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
-    expect(siege).toMatchObject({ outcome: 'attacker_win', defenderId: 'b', tile: tileId(W, 10, 5) });
+    expect(siege).toMatchObject({ outcome: 'attacker_win', defenderId: 'b', tile: tileId(W, tgt.x, tgt.y) });
     const sr = pushes.filter((p) => p.msg.kind === 'siege_result');
     expect(sr.map((p) => p.accountId).sort()).toEqual(['a', 'b']);
     expect((sr[0]!.msg as { outcome: string }).outcome).toBe('attacker_win');
@@ -171,16 +176,17 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
 
   it('攻领地败：攻方committed 全灭 + 守军减员（不易主）', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    await setupDefender('b', 10, 5, { type: 'territory', garrison: 800 });
+    const tgt = findCoord(NON_BLOCKING, 10, 5);
+    await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 800 });
 
-    await svc.startMarch(W, 'a', 5, 5, 10, 5, 'attack', 600);
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 600);
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - 600); // 出征扣兵
-    nowMs += marchDurationSec(5, 5, 10, 5) * 1000;
+    nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
     // 守方胜：攻方 600 committed 全灭（不回池），守军 800-600=200，格仍归 b。
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - 600);
-    const tile = await svc.getTile(W, 'b', 10, 5);
+    const tile = await svc.getTile(W, 'b', tgt.x, tgt.y);
     expect(tile.mine).toBe(true);
     expect(tile.garrison).toBe(200);
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
@@ -189,14 +195,15 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
 
   it('攻主城胜：不可夺 + 守军清零 + 保护罩 + 掠夺 + 攻方生还回师退兵', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    await setupDefender('b', 10, 5, { type: 'base', garrison: 500, food: 1000 });
+    const tgt = findCoord(NON_BLOCKING, 10, 5);
+    await setupDefender('b', tgt.x, tgt.y, { type: 'base', garrison: 500, food: 1000 });
 
-    await svc.startMarch(W, 'a', 5, 5, 10, 5, 'attack', 800);
-    nowMs += marchDurationSec(5, 5, 10, 5) * 1000;
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 800);
+    nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
     // 主城仍归 b，但守军清零 + 上保护罩。
-    const tile = await m.collections.tiles.findOne({ _id: tileId(W, 10, 5) });
+    const tile = await m.collections.tiles.findOne({ _id: tileId(W, tgt.x, tgt.y) });
     expect(tile?.ownerId).toBe('b');
     expect(tile?.type).toBe('base');
     expect(tile?.garrison).toBe(0);
@@ -217,9 +224,9 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     const npc = npcGarrison(proc.level);
     const troops = npc + 600;
 
-    await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'sweep', troops);
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'sweep', troops);
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - troops);
-    nowMs += marchDurationSec(5, 5, tgt.x, tgt.y) * 1000;
+    nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
     const me = await svc.getMe(W, 'a');
@@ -241,8 +248,8 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     const proc = proceduralTile(W, tgt.x, tgt.y);
     const troops = 10; // < npcGarrison
 
-    await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'sweep', troops);
-    nowMs += marchDurationSec(5, 5, tgt.x, tgt.y) * 1000;
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'sweep', troops);
+    nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
     // committed 全灭：2000 - 10。
@@ -267,13 +274,15 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
       code: 'TILE_OCCUPIED',
     });
     // 扫已占（他人领地）→ TILE_OCCUPIED。
-    await setupDefender('b', 10, 5, { type: 'territory', garrison: 500 });
-    await expect(svc.startMarch(W, 'a', 5, 5, 10, 5, 'sweep', 100)).rejects.toMatchObject({
+    const occ = findCoord(NON_BLOCKING, 10, 5);
+    await setupDefender('b', occ.x, occ.y, { type: 'territory', garrison: 500 });
+    await expect(svc.startMarch(W, 'a', 5, 5, occ.x, occ.y, 'sweep', 100)).rejects.toMatchObject({
       code: 'TILE_OCCUPIED',
     });
     // 攻保护期目标 → PROTECTED。
-    await setupDefender('c', 12, 5, { type: 'territory', garrison: 500, protectedUntil: nowMs + 100000 });
-    await expect(svc.startMarch(W, 'a', 5, 5, 12, 5, 'attack', OCCUPY_MIN_TROOPS)).rejects.toMatchObject({
+    const prot = findCoord(NON_BLOCKING, occ.x + 2, occ.y);
+    await setupDefender('c', prot.x, prot.y, { type: 'territory', garrison: 500, protectedUntil: nowMs + 100000 });
+    await expect(svc.startMarch(W, 'a', 5, 5, prot.x, prot.y, 'attack', OCCUPY_MIN_TROOPS)).rejects.toMatchObject({
       code: 'PROTECTED',
     });
   });
