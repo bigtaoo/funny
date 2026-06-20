@@ -39,7 +39,7 @@ funny/
 └── claudedocs/            模块级快查文档（按需加载）
 ```
 
-> **文档约定**：**设计文档统一入口 = [`design/README.md`](design/README.md)**（索引 / 权威来源登记 / 文档规约）；关键拍板见 [`design/DECISIONS.md`](design/DECISIONS.md)；战斗数值以 `client/src/game/config.ts` 为准、快照见 `design/game/BALANCE.md`；实现进度见 `design/game/META_TASKS.md`；模块细节见 `claudedocs/`。
+> **文档约定**：**设计文档统一入口 = [`design/README.md`](design/README.md)**（索引 / 权威来源登记 / 文档规约）；关键拍板见 [`design/DECISIONS.md`](design/DECISIONS.md)；战斗数值以 `server/engine/src/config.ts`（`@nw/engine`）为准、快照见 `design/game/BALANCE.md`；实现进度见 `design/game/META_TASKS.md`；模块细节见 `claudedocs/`。
 
 ## 各模块入口
 

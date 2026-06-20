@@ -9,7 +9,7 @@
 
 ## 0. 三条铁律
 
-1. **数值活在代码，文档引用代码。** 战斗运行数值的唯一可信源是 `client/src/game/config.ts`；文档只做带日期的快照（见 [`game/BALANCE.md`](game/BALANCE.md)），不得各自重述一套数值。文档与代码冲突时，**以代码为准**，并修文档。
+1. **数值活在代码，文档引用代码。** 战斗运行数值的唯一可信源是 `server/engine/src/config.ts`（`@nw/engine`，G3-2b-0 后引擎已抽成独立库；client 经 alias 引用、旧 `client/src/game/*` 留 re-export shim）；文档只做带日期的快照（见 [`game/BALANCE.md`](game/BALANCE.md)），不得各自重述一套数值。文档与代码冲突时，**以代码为准**，并修文档。
 2. **每个域只有一个权威文档。** 见 §2 权威来源登记表。其他文档引用它，不复制它的结论。
 3. **决策进 ADR。** 任何会造成"文档间漂移"的拍板（改数值口径、改命名、改架构、废弃旧方案），在 [`DECISIONS.md`](DECISIONS.md) 记一条，并在受影响文档加指针。
 
@@ -31,7 +31,8 @@
 |---|---|---|
 | [DESIGN.md](game/DESIGN.md) | 引擎 / 系统设计基准（机制，非数值权威） | 实现中 |
 | [BALANCE.md](game/BALANCE.md) | **战斗数值快照（镜像 config.ts）— 文档侧唯一数值参考** | 实现中 |
-| [ECONOMY_BALANCE.md](game/ECONOMY_BALANCE.md) | 经济 / 货币（局内 `ink` + 持久 `coins`）/ 盲盒数值 | 实现中 |
+| [ECONOMY_BALANCE.md](game/ECONOMY_BALANCE.md) | 经济**哲学/政策**（faucet/sink、鲸鱼天花板、反通胀） | 实现中 |
+| [ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | **经济/养成数值演算表（数字权威：体力/合成/护甲/金币/皮肤）** | 设计中 |
 | [CAMPAIGN_DESIGN.md](game/CAMPAIGN_DESIGN.md) | 战役 PvE 设计基准（数据权威见 PVE_INTEGRITY_PLAN） | 实现中 |
 | [CAMPAIGN_P0_PLAN.md](game/CAMPAIGN_P0_PLAN.md) | 战役 P0 试玩切片计划 | 实现中 |
 | [CAMPAIGN_STORY.md](game/CAMPAIGN_STORY.md) | 战役剧情文案（叙事铁律见 world.md / ADR） | 设计中 |
@@ -82,8 +83,9 @@
 
 | 域 | 权威来源 | 文档侧镜像/说明 |
 |---|---|---|
-| 战斗运行数值（HP/攻/速/费/上限/计时/卡池） | `client/src/game/config.ts` | [game/BALANCE.md](game/BALANCE.md) 快照 |
-| 经济 / 货币命名 / 盲盒 | [game/ECONOMY_BALANCE.md](game/ECONOMY_BALANCE.md) + 代码常量 | 货币：局内 `ink`（墨滴，清零）、持久 `coins`（金币，服务器权威） |
+| 战斗运行数值（HP/攻/速/费/上限/计时/卡池） | `server/engine/src/config.ts`（`@nw/engine`；client 经 alias） | [game/BALANCE.md](game/BALANCE.md) 快照 |
+| 经济/养成**数值**（体力/合成/护甲/金币/皮肤价） | [game/ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | 演算沙盘，可调参数集中 §10 |
+| 经济**政策**/货币命名/盲盒哲学 | [game/ECONOMY_BALANCE.md](game/ECONOMY_BALANCE.md) | 货币：局内 `ink`（墨滴，清零）、持久 `coins`（金币，服务器权威） |
 | PvE 关卡定义 | `client/src/game/campaign/levels/*.json`（+ level-editor 编辑、`parseLevelDefinition` 校验） | — |
 | PvE 奖励 / 养成数据权威 | 服务器 `server/shared/pveRewards.ts` + [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md)（方案 B：服务器权威） | 客户端 JSON 仅参考/编辑器用 |
 | 接口契约（REST/WS/proto/DB 集合） | [game/SERVER_API.md](game/SERVER_API.md) + `server/contracts/` | — |

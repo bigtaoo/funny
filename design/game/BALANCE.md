@@ -1,11 +1,12 @@
 # 战斗数值快照（BALANCE）
 
-> 状态：实现中 · **权威：`client/src/game/config.ts`（本文是它的快照，非权威）** · 更新：2026-06-21
+> 状态：实现中 · **权威：`server/engine/src/config.ts`（`@nw/engine`；本文是它的快照，非权威）** · 更新：2026-06-21
 >
 > ⚠️ 改数值改 `config.ts`，然后同步本文 + 注明日期。**不要**只改本文。
 > 本文取代 `product/v1-balance.md`（未落地）与 `core-gameplay-loop.md` 内联数值（设计意图）作为文档侧数值参考。
+> 引擎已抽成 `@nw/engine`（G3-2b-0，2026-06-21）：config.ts 真身在 `server/engine/src/`，client 经 alias 引用、旧 `client/src/game/config.ts` 留 re-export shim。
 
-来源：[`client/src/game/config.ts`](../../client/src/game/config.ts)（截至 2026-06-21）。
+来源：[`server/engine/src/config.ts`](../../server/engine/src/config.ts)（截至 2026-06-21）。
 
 ---
 
