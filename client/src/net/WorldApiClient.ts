@@ -28,6 +28,11 @@ export type SlgShopItemView = components['schemas']['SlgShopItemView'];
 export type SiegeResolveResult = components['schemas']['SiegeResolveResult'];
 export type SiegeDefenseView = components['schemas']['SiegeDefenseView'];
 export type DefenseConfig = components['schemas']['DefenseConfig'];
+export type SectView = components['schemas']['SectView'];
+export type SectDetailView = components['schemas']['SectDetailView'];
+export type SectMemberFamilyView = components['schemas']['SectMemberFamilyView'];
+export type SectMessageView = components['schemas']['SectMessageView'];
+export type SectVoteResult = components['schemas']['SectVoteResult'];
 
 // Derived enum types for method parameters
 type MarchKind = Exclude<MarchView['kind'], 'return'>;
@@ -285,5 +290,57 @@ export class WorldApiClient {
 
   async cancelAuction(auctionId: string, worldId: string): Promise<{ ok: true }> {
     return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/cancel`, { worldId });
+  }
+
+  // ── Sect（宗门 S8-4b）────────────────────────────────────────────────────────
+
+  async listSects(worldId: string): Promise<SectView[]> {
+    return this.req('GET', `/sect/list?worldId=${encodeURIComponent(worldId)}`);
+  }
+
+  async getSect(sectId: string): Promise<SectDetailView> {
+    return this.req('GET', `/sect/${encodeURIComponent(sectId)}`);
+  }
+
+  async createSect(worldId: string, name: string, tag: string): Promise<SectDetailView> {
+    return this.req('POST', '/sect/create', { worldId, name, tag });
+  }
+
+  async joinSect(worldId: string, sectId: string): Promise<{ ok: true }> {
+    return this.req('POST', '/sect/join', { worldId, sectId });
+  }
+
+  async leaveSect(worldId: string): Promise<{ ok: true }> {
+    return this.req('POST', '/sect/leave', { worldId });
+  }
+
+  async dissolveSect(worldId: string): Promise<{ ok: true }> {
+    return this.req('POST', '/sect/dissolve', { worldId });
+  }
+
+  async allySect(worldId: string, targetSectId: string): Promise<{ ok: true }> {
+    return this.req('POST', '/sect/ally', { worldId, targetSectId });
+  }
+
+  async unallySect(worldId: string, targetSectId: string): Promise<{ ok: true }> {
+    return this.req('POST', '/sect/unally', { worldId, targetSectId });
+  }
+
+  async voteRemoveSectLeader(worldId: string, nomineeFamilyId: string): Promise<SectVoteResult> {
+    return this.req('POST', '/sect/vote-remove-leader', { worldId, nomineeFamilyId });
+  }
+
+  async sendSectMessage(worldId: string, body: string, senderName?: string): Promise<SectMessageView> {
+    return this.req('POST', '/sect/message', { worldId, body, ...(senderName ? { senderName } : {}) });
+  }
+
+  async getSectChannel(
+    worldId: string,
+    opts?: { before?: number; limit?: number },
+  ): Promise<SectMessageView[]> {
+    const params = new URLSearchParams({ worldId });
+    if (opts?.before) params.set('before', String(opts.before));
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    return this.req('GET', `/sect/channel?${params}`);
   }
 }

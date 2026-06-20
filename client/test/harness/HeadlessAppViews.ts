@@ -36,13 +36,14 @@ import type { ChatSceneCallbacks } from '../../src/scenes/ChatScene';
 import type { GameSceneCallbacks, GameSceneOptions } from '../../src/scenes/GameScene';
 import type { WorldMapCallbacks } from '../../src/scenes/WorldMapScene';
 import type { FamilySceneCallbacks } from '../../src/scenes/FamilyScene';
+import type { SectSceneCallbacks } from '../../src/scenes/SectScene';
 import type { AuctionSceneCallbacks } from '../../src/scenes/AuctionScene';
 import type { DefenseEditorCallbacks } from '../../src/scenes/DefenseEditorScene';
 
 export type ScreenName =
   | 'none' | 'intro' | 'lobby' | 'settings' | 'login' | 'shop' | 'gacha'
   | 'campaignMap' | 'levelPrep' | 'collection' | 'stats' | 'replay' | 'result' | 'room' | 'friends'
-  | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'auction' | 'defenseEditor';
+  | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor';
 
 interface ActiveMatch {
   engine: IGameEngine;
@@ -160,6 +161,7 @@ export class HeadlessAppViews implements AppViews {
 
   showWorldMap(_cb: WorldMapCallbacks): void { this.screen = 'worldMap'; }
   showFamily(_cb: FamilySceneCallbacks): void { this.screen = 'family'; }
+  showSect(_cb: SectSceneCallbacks): void { this.screen = 'sect'; }
   showAuction(_cb: AuctionSceneCallbacks): void { this.screen = 'auction'; }
   showDefenseEditor(_cb: DefenseEditorCallbacks): void { this.screen = 'defenseEditor'; }
 

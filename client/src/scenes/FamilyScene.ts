@@ -12,6 +12,8 @@ import { WorldApiError } from '../net/WorldApiClient';
 
 export interface FamilySceneCallbacks {
   onBack(): void;
+  /** Open the sect hub (S8-4b) — sect = a family-of-families, rooted in the family UI. */
+  onOpenSect(): void;
   worldApi: WorldApiClient;
   worldId: string;
   /** current player's accountId */
@@ -292,33 +294,57 @@ export class FamilyScene implements Scene {
       nameLbl.x = 16; nameLbl.y = cy + 18;
       this.bodyLayer.addChild(nameLbl);
 
-      // Action buttons for leader
+      // Action buttons for leader (promote/demote elders + kick).
       if (isLeader && mem.accountId !== me) {
+        const accId = mem.accountId;
+
+        // Role toggle: members → elder, elders → member. (Leader role only changes via transfer/dissolve.)
+        if (mem.role !== 'leader') {
+          const toElder = mem.role === 'member';
+          const roleBtn = sketchPanel(50, 22, { fill: 0xeef0e0, border: 0xd4a030, seed: seedFor(cy, 2, 50) });
+          roleBtn.x = w - 116; roleBtn.y = cy + 10;
+          this.bodyLayer.addChild(roleBtn);
+          const rl = txt(t(toElder ? 'family.setElder' : 'family.setMember'), 10, 0xb8881a);
+          rl.anchor.set(0.5, 0.5); rl.x = w - 91; rl.y = cy + 21;
+          this.bodyLayer.addChild(rl);
+          const nextRole: 'elder' | 'member' = toElder ? 'elder' : 'member';
+          this.hitRects.push({ rect: { x: w - 116, y: cy + 10, w: 50, h: 22 }, action: () => void this.doSetRole(accId, nextRole) });
+        }
+
         const kickBtn = sketchPanel(50, 22, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 0, 50) });
         kickBtn.x = w - 60; kickBtn.y = cy + 10;
         this.bodyLayer.addChild(kickBtn);
         const kl = txt(t('family.kick'), 11, C.red);
         kl.anchor.set(0.5, 0.5); kl.x = w - 35; kl.y = cy + 21;
         this.bodyLayer.addChild(kl);
-        const accId = mem.accountId;
         this.hitRects.push({ rect: { x: w - 60, y: cy + 10, w: 50, h: 22 }, action: () => this.confirmKick(accId, mem.displayName ?? mem.publicId ?? '') });
       }
 
       cy += ROW_H;
     }
 
-    // Leave / Dissolve button at bottom
+    // Bottom bar: Sect hub entry (left) + Leave / Dissolve (right).
     const isLdr = myRole === 'leader';
+    const barY = y0 + maxH - 36;
+
+    const sectBtn = sketchPanel(110, 32, { fill: C.dark, border: C.accent, seed: seedFor(2, 0, 110) });
+    sectBtn.x = w / 2 - 120; sectBtn.y = barY;
+    this.bodyLayer.addChild(sectBtn);
+    const sbl = txt(t('family.sect'), 13, C.light);
+    sbl.anchor.set(0.5, 0.5); sbl.x = w / 2 - 65; sbl.y = barY + 16;
+    this.bodyLayer.addChild(sbl);
+    this.hitRects.push({ rect: { x: w / 2 - 120, y: barY, w: 110, h: 32 }, action: () => this.cb.onOpenSect() });
+
     const btnLabel = isLdr ? t('family.dissolve') : t('family.leave');
     const btnColor = isLdr ? C.red : C.accent;
-    const btn = sketchPanel(120, 32, { fill: 0xf8f8f0, border: btnColor, seed: seedFor(0, 0, 120) });
-    btn.x = this.w / 2 - 60; btn.y = y0 + maxH - 36;
+    const btn = sketchPanel(110, 32, { fill: 0xf8f8f0, border: btnColor, seed: seedFor(0, 0, 110) });
+    btn.x = w / 2 + 10; btn.y = barY;
     this.bodyLayer.addChild(btn);
     const bl = txt(btnLabel, 13, btnColor);
-    bl.anchor.set(0.5, 0.5); bl.x = this.w / 2; bl.y = y0 + maxH - 20;
+    bl.anchor.set(0.5, 0.5); bl.x = w / 2 + 65; bl.y = barY + 16;
     this.bodyLayer.addChild(bl);
     this.hitRects.push({
-      rect: { x: this.w / 2 - 60, y: y0 + maxH - 36, w: 120, h: 32 },
+      rect: { x: w / 2 + 10, y: barY, w: 110, h: 32 },
       action: () => isLdr ? this.confirmDissolve() : this.confirmLeave(),
     });
   }
@@ -535,6 +561,18 @@ export class FamilyScene implements Scene {
     try {
       await this.cb.worldApi.kickMember(this.cb.worldId, targetId);
       this.members = this.members.filter(m => m.accountId !== targetId);
+      this.render();
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  private async doSetRole(targetId: string, role: 'elder' | 'member'): Promise<void> {
+    if (!this.family) return;
+    try {
+      await this.cb.worldApi.setRole(this.cb.worldId, targetId, role);
+      const m = this.members.find(mem => mem.accountId === targetId);
+      if (m) m.role = role;
       this.render();
     } catch (e) {
       this.showToast(this.errorMsg(e), C.red);

@@ -21,11 +21,15 @@ type AucTab = 'all' | 'mine';
 const ROW_H = 56;
 const HUD_H = 50;
 const TAB_H = 36;
-const CREATE_H = 200;
+const FILTER_H = 34;
+const CREATE_H = 250;
 
 // Material types available for auction
 const MATERIALS = ['scrap', 'lead', 'binding'] as const;
 const DURATIONS = [3600, 14400, 86400] as const; // 1h, 4h, 24h
+// Category filter for the market tab — matches AuctionView.itemType ('' = no filter).
+const FILTERS = ['', 'material', 'equipment'] as const;
+type AucFilter = typeof FILTERS[number];
 
 export class AuctionScene implements Scene {
   readonly container: PIXI.Container;
@@ -35,9 +39,11 @@ export class AuctionScene implements Scene {
   private readonly cb: AuctionSceneCallbacks;
 
   private activeTab: AucTab = 'all';
+  private allFilter: AucFilter = '';
   private allAuctions: AuctionView[] = [];
   private myListings: AuctionView[] = [];
   private loading = true;
+  private hiddenInput: HTMLInputElement | null = null;
 
   private bodyLayer!: PIXI.Container;
   private modalLayer!: PIXI.Container;
@@ -48,6 +54,7 @@ export class AuctionScene implements Scene {
   private createQty = 1;
   private createPrice = 10;
   private createDuration: typeof DURATIONS[number] = 3600;
+  private createBuyer = '';
   private createOpen = false;
 
   // Scroll
@@ -114,7 +121,7 @@ export class AuctionScene implements Scene {
     this.render();
     try {
       const [all, mine] = await Promise.all([
-        this.cb.worldApi.listAuctions(this.cb.worldId),
+        this.cb.worldApi.listAuctions(this.cb.worldId, this.allFilter ? { itemType: this.allFilter } : undefined),
         this.cb.worldApi.getMyListings(this.cb.worldId),
       ]);
       this.allAuctions = all;
@@ -134,9 +141,34 @@ export class AuctionScene implements Scene {
     this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: HUD_H }, action: () => this.cb.onBack() });
 
     this.renderTabs();
+    const filterH = this.activeTab === 'all' ? this.renderFilterBar() : 0;
     const list = this.activeTab === 'all' ? this.allAuctions : this.myListings;
-    this.renderList(list);
+    this.renderList(list, filterH);
     this.renderCreateButton();
+  }
+
+  private renderFilterBar(): number {
+    const { w } = this;
+    const y = HUD_H + TAB_H;
+    const chipW = w / FILTERS.length;
+    const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterMaterial' | 'auction.filterEquipment'> = {
+      '': 'auction.filterAll', material: 'auction.filterMaterial', equipment: 'auction.filterEquipment',
+    };
+    for (let i = 0; i < FILTERS.length; i++) {
+      const f = FILTERS[i]!;
+      const active = f === this.allFilter;
+      const chip = sketchPanel(chipW - 6, FILTER_H - 8, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(i, 3, chipW) });
+      chip.x = i * chipW + 3; chip.y = y + 2;
+      this.bodyLayer.addChild(chip);
+      const lbl = txt(t(keys[f]), 11, active ? C.light : C.dark);
+      lbl.anchor.set(0.5, 0.5); lbl.x = i * chipW + chipW / 2; lbl.y = y + 2 + (FILTER_H - 8) / 2;
+      this.bodyLayer.addChild(lbl);
+      this.hitRects.push({
+        rect: { x: i * chipW + 3, y: y + 2, w: chipW - 6, h: FILTER_H - 8 },
+        action: () => { if (this.allFilter !== f) { this.allFilter = f; this.scrollY = 0; void this.loadData(); } },
+      });
+    }
+    return FILTER_H;
   }
 
   private renderTabs(): void {
@@ -156,9 +188,9 @@ export class AuctionScene implements Scene {
     }
   }
 
-  private renderList(auctions: AuctionView[]): void {
+  private renderList(auctions: AuctionView[], filterH = 0): void {
     const { w, h } = this;
-    const listY = HUD_H + TAB_H;
+    const listY = HUD_H + TAB_H + filterH;
     const createBtnH = 44;
     const listH = h - listY - createBtnH - 10;
 
@@ -307,6 +339,19 @@ export class AuctionScene implements Scene {
       dx += 56;
     }
 
+    // Designated buyer (optional) — private sale to a specific account.
+    const buyerY = my + 174;
+    const bl0 = txt(t('auction.buyer') + ':', 11, C.dark);
+    bl0.x = mx + 10; bl0.y = buyerY;
+    ml.addChild(bl0);
+    const buyerField = sketchPanel(mw - 20, 26, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(buyerY, 0, mw - 20) });
+    buyerField.x = mx + 10; buyerField.y = buyerY + 16;
+    ml.addChild(buyerField);
+    const bfl = txt(this.createBuyer || t('auction.buyerPlaceholder'), 11, this.createBuyer ? C.dark : C.mid);
+    bfl.x = mx + 16; bfl.y = buyerY + 23;
+    ml.addChild(bfl);
+    this.modalHits.push({ rect: { x: mx + 10, y: buyerY + 16, w: mw - 20, h: 26 }, action: () => this.openBuyerInput() });
+
     // Tax info
     const tax = Math.floor(this.createPrice * 0.1);
     const youGet = this.createPrice - tax;
@@ -367,10 +412,33 @@ export class AuctionScene implements Scene {
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
+  private openBuyerInput(): void {
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = this.createBuyer;
+    inp.maxLength = 64;
+    inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+    document.body.appendChild(inp);
+    inp.focus();
+    inp.addEventListener('input', () => { this.createBuyer = inp.value.trim(); });
+    inp.addEventListener('blur', () => {
+      document.body.removeChild(inp);
+      if (this.hiddenInput === inp) this.hiddenInput = null;
+      if (!this.destroyed && this.modalOpen) this.openCreateForm();
+    });
+    this.hiddenInput = inp;
+  }
+
   private async doCreate(): Promise<void> {
+    const buyer = this.createBuyer.trim();
     this.closeModal();
     try {
-      await this.cb.worldApi.createAuction(this.cb.worldId, 'material', { mat: this.createMaterial }, this.createQty, this.createPrice, this.createDuration);
+      await this.cb.worldApi.createAuction(
+        this.cb.worldId, 'material', { mat: this.createMaterial },
+        this.createQty, this.createPrice, this.createDuration,
+        buyer || undefined,
+      );
+      this.createBuyer = '';
       this.showToast(t('auction.created'));
       await this.loadData();
     } catch (e) {
@@ -527,6 +595,7 @@ export class AuctionScene implements Scene {
     this.destroyed = true;
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
+    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
     this.container.destroy({ children: true });
   }
 }

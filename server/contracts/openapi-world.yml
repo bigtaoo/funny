@@ -172,6 +172,8 @@ components:
           type: string
         createdAt:
           type: number
+        sectId:
+          type: string
         members:
           type: array
           items:
@@ -226,6 +228,97 @@ components:
           type: number
         buyerId:
           type: string
+
+    # ── Sect（宗门，S8-4b）───────────────────────────────────────────────────────
+
+    SectView:
+      type: object
+      required: [sectId, worldId, name, tag, leaderFamilyId, leaderId, memberFamilyCount, allySectIds, prosperity]
+      properties:
+        sectId:
+          type: string
+        worldId:
+          type: string
+        name:
+          type: string
+        tag:
+          type: string
+        leaderFamilyId:
+          type: string
+        leaderId:
+          type: string
+        memberFamilyCount:
+          type: integer
+        allySectIds:
+          type: array
+          items:
+            type: string
+        prosperity:
+          type: number
+
+    SectMemberFamilyView:
+      type: object
+      required: [familyId, name, tag, leaderId, memberCount, territoryCount]
+      properties:
+        familyId:
+          type: string
+        name:
+          type: string
+        tag:
+          type: string
+        leaderId:
+          type: string
+        memberCount:
+          type: integer
+        territoryCount:
+          type: integer
+
+    SectDetailView:
+      allOf:
+        - $ref: '#/components/schemas/SectView'
+        - type: object
+          required: [memberFamilies]
+          properties:
+            memberFamilies:
+              type: array
+              items:
+                $ref: '#/components/schemas/SectMemberFamilyView'
+            removalVote:
+              type: object
+              required: [nomineeFamilyId, voteCount, needed]
+              properties:
+                nomineeFamilyId:
+                  type: string
+                voteCount:
+                  type: integer
+                needed:
+                  type: integer
+
+    SectMessageView:
+      type: object
+      required: [id, senderId, senderName, body, ts]
+      properties:
+        id:
+          type: string
+        senderId:
+          type: string
+        senderName:
+          type: string
+        body:
+          type: string
+        ts:
+          type: number
+
+    SectVoteResult:
+      type: object
+      required: [passed, voteCount, needed]
+      properties:
+        passed:
+          type: boolean
+        voteCount:
+          type: integer
+        needed:
+          type: integer
 
     # ── Nation / Season / Shop / Siege (S8-6.5 ~ S8-8) ──────────────────────────
 
@@ -1176,3 +1269,248 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+
+  # ── Sect（宗门，S8-4b）─────────────────────────────────────────────────────────
+
+  /sect/list:
+    get:
+      operationId: listSects
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Sect list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/SectView' }
+
+  /sect/{sectId}:
+    get:
+      operationId: getSect
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: sectId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Sect detail
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SectDetailView' }
+
+  /sect/create:
+    post:
+      operationId: createSect
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, name, tag]
+              properties:
+                worldId: { type: string }
+                name: { type: string }
+                tag: { type: string }
+      responses:
+        '200':
+          description: Sect created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SectDetailView' }
+
+  /sect/join:
+    post:
+      operationId: joinSect
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, sectId]
+              properties:
+                worldId: { type: string }
+                sectId: { type: string }
+      responses:
+        '200':
+          description: Joined
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /sect/leave:
+    post:
+      operationId: leaveSect
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId]
+              properties:
+                worldId: { type: string }
+      responses:
+        '200':
+          description: Left
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /sect/dissolve:
+    post:
+      operationId: dissolveSect
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId]
+              properties:
+                worldId: { type: string }
+      responses:
+        '200':
+          description: Dissolved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /sect/ally:
+    post:
+      operationId: allySect
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, targetSectId]
+              properties:
+                worldId: { type: string }
+                targetSectId: { type: string }
+      responses:
+        '200':
+          description: Allied
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /sect/unally:
+    post:
+      operationId: unallySect
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, targetSectId]
+              properties:
+                worldId: { type: string }
+                targetSectId: { type: string }
+      responses:
+        '200':
+          description: Unallied
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /sect/vote-remove-leader:
+    post:
+      operationId: voteRemoveSectLeader
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, nomineeFamilyId]
+              properties:
+                worldId: { type: string }
+                nomineeFamilyId: { type: string }
+      responses:
+        '200':
+          description: Vote tallied
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SectVoteResult' }
+
+  /sect/message:
+    post:
+      operationId: sendSectMessage
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, body]
+              properties:
+                worldId: { type: string }
+                body: { type: string }
+                senderName: { type: string }
+      responses:
+        '200':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SectMessageView' }
+
+  /sect/channel:
+    get:
+      operationId: getSectChannel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true,  schema: { type: string } }
+        - { name: before,  in: query, required: false, schema: { type: number } }
+        - { name: limit,   in: query, required: false, schema: { type: integer } }
+      responses:
+        '200':
+          description: Channel messages
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/SectMessageView' }

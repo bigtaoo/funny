@@ -31,6 +31,7 @@ import { ChatScene } from '../../src/scenes/ChatScene';
 import { ResultScene } from '../../src/scenes/ResultScene';
 import { WorldMapScene } from '../../src/scenes/WorldMapScene';
 import { FamilyScene } from '../../src/scenes/FamilyScene';
+import { SectScene } from '../../src/scenes/SectScene';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
 import type { PlayerStats } from '../../src/game/types';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
@@ -74,6 +75,10 @@ function stubWorldApi(): WorldApiClient {
     sendFamilyMessage: never, getFamilyChannel: never,
     listAuctions: never, getMyListings: never,
     createAuction: never, buyAuction: never, cancelAuction: never,
+    listSects: never, getSect: never, createSect: never,
+    joinSect: never, leaveSect: never, dissolveSect: never,
+    allySect: never, unallySect: never, voteRemoveSectLeader: never,
+    sendSectMessage: never, getSectChannel: never,
   } as unknown as WorldApiClient;
 }
 
@@ -295,6 +300,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         worldApi: stubWorldApi(),
         worldId: 'world:1:0',
         playerName: 'Tester',
+        accountId: 'acc_test',
       }),
   },
   {
@@ -302,9 +308,21 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
     build: (w, h) =>
       new FamilyScene(createLayout(w, h), new InputManager(), {
         onBack() {},
+        onOpenSect() {},
         worldApi: stubWorldApi(),
         worldId: 'world:1:0',
         myAccountId: 'acc_test',
+      }),
+  },
+  {
+    name: 'SectScene',
+    build: (w, h) =>
+      new SectScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        worldApi: stubWorldApi(),
+        worldId: 'world:1:0',
+        myAccountId: 'acc_test',
+        playerName: 'Tester',
       }),
   },
   {

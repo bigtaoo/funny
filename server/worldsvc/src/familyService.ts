@@ -22,6 +22,8 @@ export interface FamilyView {
   leaderId: string;
   memberCount: number;
   territoryCount: number;
+  /** 所属宗门 id（未入门则缺省）。S8-4b 客户端据此进宗门界面。 */
+  sectId?: string;
 }
 
 export interface FamilyDetailView extends FamilyView {
@@ -60,6 +62,7 @@ function docToView(doc: FamilyDoc): FamilyView {
     leaderId: doc.leaderId,
     memberCount: doc.memberCount,
     territoryCount: doc.territoryCount,
+    ...(doc.sectId ? { sectId: doc.sectId } : {}),
   };
 }
 

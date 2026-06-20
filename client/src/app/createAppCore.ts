@@ -456,6 +456,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       worldApi,
       worldId,
       playerName: playerName(),
+      accountId: platform.storage.getItem('nw_account_id') ?? '',
+      getCoins: () => saveManager.get().wallet.coins,
     });
     // Keep the gateway connected + forward SLG pushes into the live map handle
     // (march/tile/under-attack/siege incremental refresh, §14.5).
@@ -532,9 +534,21 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const myAccountId = platform.storage.getItem('nw_account_id') ?? '';
     views.showFamily({
       onBack() { goWorldMap(worldApi, worldId); },
+      onOpenSect() { goSectHub(worldApi, worldId); },
       worldApi,
       worldId,
       myAccountId,
+    });
+  }
+
+  function goSectHub(worldApi: WorldApiClient, worldId: string): void {
+    const myAccountId = platform.storage.getItem('nw_account_id') ?? '';
+    views.showSect({
+      onBack() { goFamilyHub(worldApi, worldId); },
+      worldApi,
+      worldId,
+      myAccountId,
+      playerName: playerName(),
     });
   }
 

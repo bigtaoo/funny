@@ -39,6 +39,10 @@ export interface WorldMapCallbacks {
   worldApi: WorldApiClient;
   worldId: string;
   playerName: string;
+  /** current player's accountId — gates capital rename (must own the capital). */
+  accountId: string;
+  /** live coin balance getter (SaveData.wallet mirror) — shown in the SLG shop. */
+  getCoins?: () => number;
 }
 
 /** March kinds the deploy dialog can dispatch (occupy/reinforce/attack/sweep). */
@@ -136,6 +140,7 @@ export class WorldMapScene implements Scene {
   private season: SeasonView | null = null;
   private shopItems: SlgShopItemView[] = [];
   private infoTab: 'nations' | 'season' | 'shop' = 'nations';
+  private hiddenInput: HTMLInputElement | null = null;
 
   // Graphics layers
   private mapGfx!: PIXI.Graphics;
@@ -944,10 +949,10 @@ export class WorldMapScene implements Scene {
   }
 
   // ── World info panel (C5): nations / season / SLG shop ───────────────────────
-  // Tabbed modal rendered into modalLayer. Nations + season are read-only; the
-  // shop buys via worldApi.buyShopItem → commercial.spend (server-authoritative,
-  // toast on INSUFFICIENT_FUNDS). Coin balance lives in SaveData (not held here),
-  // so the shop relies on server rejection rather than a pre-check.
+  // Tabbed modal rendered into modalLayer. Season is read-only; nations lets the
+  // capital owner rename theirs (setNationName, server re-checks ownerId). The shop
+  // buys via worldApi.buyShopItem → commercial.spend (server-authoritative, toast on
+  // INSUFFICIENT_FUNDS) and shows the SaveData coin balance via the getCoins callback.
 
   private openInfoPanel(): void {
     this.trainPanelOpen = false;
@@ -1034,10 +1039,17 @@ export class WorldMapScene implements Scene {
         for (const n of this.nations) {
           if (ly > bodyBottom) break;
           const name = n.nationName || t('world.nationCol').replace('{idx}', String(n.capitalIdx));
-          const status = n.ownerId ? t('world.nationOwned') : t('world.nationFree');
+          const mine = !!n.ownerId && n.ownerId === this.cb.accountId;
           addText(`★ ${name}  (${n.x},${n.y})`, px + 14, ly, 11);
-          addText(status, px + pw - 14, ly, 11, n.ownerId ? C.red : C.mid, 1);
-          ly += 18;
+          if (mine) {
+            // Owner may rename their capital (server re-checks ownerId).
+            const bw = 54;
+            this.panelButton(t('world.nationRename'), px + pw - bw - 14, ly - 4, bw, 22, C.accent, () => this.openRenameInput(n.capitalIdx, name));
+          } else {
+            const status = n.ownerId ? t('world.nationOwned') : t('world.nationFree');
+            addText(status, px + pw - 14, ly, 11, n.ownerId ? C.red : C.mid, 1);
+          }
+          ly += 24;
         }
       }
     } else if (this.infoTab === 'season') {
@@ -1055,7 +1067,11 @@ export class WorldMapScene implements Scene {
         }
       }
     } else {
-      // Shop
+      // Shop — show current coin balance (SaveData mirror) above the catalog.
+      if (this.cb.getCoins) {
+        addText(t('world.shopBalance').replace('{coins}', String(this.cb.getCoins())), px + 14, ly, 11, C.accent);
+        ly += 22;
+      }
       const rowH = 30;
       for (const it of this.shopItems) {
         if (ly + rowH > bodyBottom) break;
@@ -1069,6 +1085,42 @@ export class WorldMapScene implements Scene {
 
     // Close
     this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
+  }
+
+  /** Open a hidden text input to rename an owned capital, then PATCH via worldsvc. */
+  private openRenameInput(capitalIdx: number, current: string): void {
+    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = current;
+    inp.maxLength = 24;
+    inp.placeholder = t('world.nationNamePrompt');
+    inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+    document.body.appendChild(inp);
+    inp.focus();
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const name = inp.value.trim();
+        inp.remove();
+        if (name && name !== current) void this.doRename(capitalIdx, name);
+      }
+    });
+    inp.addEventListener('blur', () => {
+      inp.remove();
+      if (this.hiddenInput === inp) this.hiddenInput = null;
+    });
+    this.hiddenInput = inp;
+  }
+
+  private async doRename(capitalIdx: number, name: string): Promise<void> {
+    try {
+      await this.cb.worldApi.setNationName(this.cb.worldId, capitalIdx, name);
+      const n = this.nations.find(x => x.capitalIdx === capitalIdx);
+      if (n) n.nationName = name;
+      if (this.modalDimRect && !this.trainPanelOpen) this.renderInfoPanel();
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
   }
 
   private async doBuyShopItem(itemId: string): Promise<void> {
@@ -1300,6 +1352,7 @@ export class WorldMapScene implements Scene {
   destroy(): void {
     this.destroyed = true;
     if (this.marchPoll) { clearInterval(this.marchPoll); this.marchPoll = null; }
+    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
     this.container.destroy({ children: true });
