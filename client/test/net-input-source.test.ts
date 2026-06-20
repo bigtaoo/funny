@@ -335,6 +335,62 @@ describe('NetInputSource — two-client lockstep determinism', () => {
     expect(eng.state.elapsedTicks).toBeGreaterThan(stalledAt);
   });
 
+  // The lockstep buffer can pile up when a tab is backgrounded/minimised (rAF
+  // halts so the engine stops draining) or after a long stall resolves. Catch-up
+  // speeds the sim up proportionally to that backlog so it re-syncs, then settles.
+  it('scales catch-up speed with the confirmed backlog (1×/2×/3×/5×)', () => {
+    const SEED = 99;
+    // Drive F render-frames while continuously topping the watermark so the
+    // backlog stays pinned at ~targetLead (and thus one speed tier the whole
+    // run), then return total sim ticks advanced. Measuring the rate over many
+    // frames lets the per-frame FP remainder (stepDt rarely divides TICK_DT
+    // evenly) carry forward and average out, so total ≈ F × speed.
+    const F = 60;
+    const ticksAtLead = (targetLead: number): number => {
+      const ni = new NetInputSource(noopSink);
+      ni.handleServerMsg(matchStartMsg(SEED, 0));
+      const eng = createGameEngine(netConfig(SEED), ni);
+      let total = 0;
+      for (let i = 0; i < F; i++) {
+        // playTo = toFrame − bufferFrames; hold lead ≈ targetLead at the head.
+        ni.handleServerMsg(frameBatchMsg(eng.state.elapsedTicks + targetLead + FRAMES_PER_BATCH));
+        const before = eng.state.elapsedTicks;
+        eng.tick(TICK_DT);
+        total += eng.state.elapsedTicks - before;
+      }
+      return total;
+    };
+
+    expect(ticksAtLead(15)).toBe(F); //                      lead 15   (≤1 s)        → 1× (exact)
+    expect(Math.abs(ticksAtLead(100) - 2 * F)).toBeLessThanOrEqual(2); // (>1 s, ≤10 s) → 2×
+    expect(Math.abs(ticksAtLead(500) - 3 * F)).toBeLessThanOrEqual(2); // (>10 s, ≤30 s)→ 3×
+    expect(Math.abs(ticksAtLead(1200) - 5 * F)).toBeLessThanOrEqual(2); // (>30 s)      → 5×
+  });
+
+  it('catches up a 30 s+ backlog and settles back to 1× once synced', () => {
+    const SEED = 123;
+    const ni = new NetInputSource(noopSink);
+    ni.handleServerMsg(matchStartMsg(SEED, 0));
+    const eng = createGameEngine(netConfig(SEED), ni);
+    ni.handleServerMsg(frameBatchMsg(1200)); // playTo = 1197 (~40 s backlog)
+
+    // elapsedTicks == the engine's internal currentTick (both ++ per step).
+    let renderFrames = 0;
+    while (ni.confirmedLead(eng.state.elapsedTicks) > 1 * 30 && renderFrames < 2000) {
+      eng.tick(TICK_DT);
+      renderFrames++;
+    }
+    // Converged well under the wall (at 1× it would take ~1200 frames; the 5×/3×/2×
+    // tiers cut that to a few hundred), and the head is now within the 1 s cushion.
+    expect(renderFrames).toBeLessThan(2000);
+    expect(ni.confirmedLead(eng.state.elapsedTicks)).toBeLessThanOrEqual(30);
+
+    // Back inside 1 s ⇒ 1× again: a single render frame advances at most one tick.
+    const before = eng.state.elapsedTicks;
+    eng.tick(TICK_DT);
+    expect(eng.state.elapsedTicks - before).toBeLessThanOrEqual(1);
+  });
+
   it('absorbs <100ms jitter without stalling (one-batch cushion)', () => {
     const SEED = 7;
     const server = new FakeServer();
