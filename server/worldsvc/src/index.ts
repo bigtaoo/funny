@@ -22,7 +22,8 @@ async function main(): Promise<void> {
 
   const redis = await connectRedis(env.redisUrl);
 
-  const gateway = new HttpWorldGatewayClient(env.gatewayInternalUrl ?? null, env.internalKey);
+  // redis 传入 gateway client：宗门频道扇出走 Redis pub/sub（缺省降级为 O(n) HTTP push）。
+  const gateway = new HttpWorldGatewayClient(env.gatewayInternalUrl ?? null, env.internalKey, redis);
 
   const commercial = env.commercialInternalUrl
     ? new HttpWorldCommercialClient(env.commercialInternalUrl, env.internalKey)
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
   const sectSvc = new SectService({
     cols: mongo.collections,
     commercial,
+    gateway,
     now: () => Date.now(),
   });
 

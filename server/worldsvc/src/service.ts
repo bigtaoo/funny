@@ -35,6 +35,7 @@ import {
   NATION_BONUS_PRODUCTION,
   NATION_BONUS_DEFENSE,
   SECT_LEADER_PENALTY_RATE,
+  RELOCATE_COST,
   SLG_SHOP_ITEMS,
   CAPITAL_FRACTIONS,
   SlgError,
@@ -432,6 +433,64 @@ export class WorldService {
     return this.getMe(worldId, accountId);
   }
 
+  /**
+   * 主动迁城（§3.4 / §8.2，所有玩家通用）：花 RELOCATE_COST 金币把主城迁到自选的合法空格。
+   * 校验：已进入 + 目标界内 + 非中心/障碍/关隘 + 未被任何人占领。保留全部领地（仅被动迁城失地）。
+   * 落地：扣币 → 删旧 base 格 → 在新址写 base 格（沿用旧城驻军与剩余保护罩）→ 改 mainBaseTile + 重算产率。
+   */
+  async relocateBase(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
+    const { cols, now } = this.deps;
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!pw || !pw.mainBaseTile) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+    if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', '迁城坐标越界');
+
+    const newTid = tileId(worldId, x, y);
+    if (newTid === pw.mainBaseTile) return this.getMe(worldId, accountId); // 原地迁城 = no-op，不扣费
+
+    const proc = proceduralTile(worldId, x, y);
+    if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可落城');
+    if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', '障碍/关隘不可落城');
+    const occ = await cols.tiles.findOne({ _id: newTid });
+    if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', '该格已被占领');
+
+    // 先扣金币（失败抛 INSUFFICIENT_FUNDS，不动地图）。
+    const orderId = `slg_relocate:${worldId}:${accountId}:${now()}`;
+    await this.commercial.spend(accountId, RELOCATE_COST, orderId);
+
+    const t = now();
+    const oldBase = await cols.tiles.findOne({ _id: pw.mainBaseTile });
+    const carryGarrison = oldBase?.garrison ?? GARRISON_PER_TILE;
+    const carryProtect = oldBase?.protectedUntil; // 沿用旧城剩余保护罩（自愿迁城不额外续）
+    await cols.tiles.deleteOne({ _id: pw.mainBaseTile });
+
+    const tileDoc: TileDoc = {
+      _id: newTid,
+      worldId,
+      x,
+      y,
+      type: 'base',
+      level: proc.level,
+      ...(proc.resType ? { resType: proc.resType } : {}),
+      ownerId: accountId,
+      garrison: carryGarrison,
+      ...(carryProtect ? { protectedUntil: carryProtect } : {}),
+      rev: 0,
+    };
+    await cols.tiles.updateOne({ _id: newTid }, { $set: tileDoc }, { upsert: true });
+
+    const resources = this.settle(pw, t);
+    const yieldRate = await this.recomputeYield(worldId, accountId);
+    await cols.playerWorld.updateOne(
+      { _id: pw._id },
+      { $set: { resources, yieldRate, mainBaseTile: newTid, lastTickAt: t }, $inc: { rev: 1 } },
+    );
+
+    // 推新旧两格变更（旧址回归中立、新址主城）。
+    const after = await cols.tiles.findOne({ _id: newTid });
+    if (after) void this.pushTile(accountId, after);
+    return this.getMe(worldId, accountId);
+  }
+
   // ── S8-2：行军 / 撤军 / 到点处理 ──────────────────────────
 
   /**
@@ -741,16 +800,12 @@ export class WorldService {
       if (defender) loot = await this.transferLoot(defender, pw, t);
 
       if (target.type === 'base') {
-        // 主城不可永久夺取：守军清零 + 上保护罩；攻方生还回师退兵池。
-        await cols.tiles.updateOne(
-          { _id: m.toTile },
-          { $set: { garrison: 0, protectedUntil: t + PROTECTION_SEC * 1000 }, $inc: { rev: 1 } },
-        );
+        // 主城不可永久夺取，但被攻破 → 被动迁城（§3.4/§8.2，所有玩家通用）：
+        //   1) 攻方生还回师退兵池；2) 若守方是门主，全宗门成员资源 -50%（§8.2 重大惩罚）；
+        //   3) 守方主城随机迁到新空格 + 失去当前占领的所有领地（passiveRelocate）。
         await this.refundTroops(pw, res.attackerSurvivors, t);
-        // 门主主城被攻破 → 全宗门成员资源 -50%（§8.2 重大惩罚）。
-        // 注：设计中的「主城自动迁移」暂缓（迁城需选空格 + 改 base tile，留后续）；
-        // 现以保护罩替代「迁往安全」的节奏作用，资源惩罚先落地。
         await this.applySectLeaderPenalty(m.worldId, defenderId, t);
+        await this.passiveRelocate(m.worldId, defenderId, t);
       } else {
         // 领地易主：survivors 成新驻军（出征已扣兵，不再动攻方池），双方产率重算。
         await cols.tiles.updateOne(
@@ -921,6 +976,75 @@ export class WorldService {
         { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
       );
     }
+  }
+
+  /**
+   * 被动迁城（§3.4/§8.2）：主城被攻破后，守方主城随机迁到新空格，且**失去当前占领的所有领地**。
+   * 删掉该玩家全部己方格（旧主城 + 领地）→ 随机选合法空格写新主城（上保护罩）→ 改 mainBaseTile +
+   * 重算产率（此时仅剩新主城）。不退还领地驻军（失地即损耗，强惩罚）。
+   */
+  private async passiveRelocate(worldId: string, defenderId: string, t: number): Promise<void> {
+    const { cols } = this.deps;
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, defenderId) });
+    if (!pw) return;
+
+    // 失地：删除该玩家全部己方格（旧主城 + 全部领地），回归程序化中立。
+    await cols.tiles.deleteMany({ worldId, ownerId: defenderId });
+
+    // 随机落新主城（找一个合法空格）。极端找不到 → 放弃迁城（仅失地，下次仍可主动迁）。
+    const spot = await this.pickRandomEmptyTile(worldId);
+    if (!spot) {
+      const yieldRate = await this.recomputeYield(worldId, defenderId);
+      await cols.playerWorld.updateOne(
+        { _id: pw._id },
+        { $set: { yieldRate, lastTickAt: t }, $unset: { mainBaseTile: '' }, $inc: { rev: 1 } },
+      );
+      return;
+    }
+
+    const newTid = tileId(worldId, spot.x, spot.y);
+    const tileDoc: TileDoc = {
+      _id: newTid,
+      worldId,
+      x: spot.x,
+      y: spot.y,
+      type: 'base',
+      level: spot.level,
+      ...(spot.resType ? { resType: spot.resType } : {}),
+      ownerId: defenderId,
+      garrison: 0,
+      protectedUntil: t + PROTECTION_SEC * 1000, // 迁往安全：上保护罩
+      rev: 0,
+    };
+    await cols.tiles.updateOne({ _id: newTid }, { $set: tileDoc }, { upsert: true });
+
+    const yieldRate = await this.recomputeYield(worldId, defenderId);
+    await cols.playerWorld.updateOne(
+      { _id: pw._id },
+      { $set: { yieldRate, mainBaseTile: newTid, lastTickAt: t }, $inc: { rev: 1 } },
+    );
+    const after = await cols.tiles.findOne({ _id: newTid });
+    if (after) void this.pushTile(defenderId, after);
+  }
+
+  /**
+   * 随机挑一个合法空格（界内、非中心/障碍/关隘、无人占领）。被动迁城落点用。
+   * 服务端权威随机（非回放路径，Math.random 安全），最多试若干次，找不到返回 null。
+   */
+  private async pickRandomEmptyTile(
+    worldId: string,
+  ): Promise<{ x: number; y: number; level: number; resType?: ResourceType } | null> {
+    const { cols, mapW, mapH } = this.deps;
+    for (let i = 0; i < 200; i++) {
+      const x = Math.floor(Math.random() * mapW);
+      const y = Math.floor(Math.random() * mapH);
+      const proc = proceduralTile(worldId, x, y);
+      if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'gate') continue;
+      const occ = await cols.tiles.findOne({ _id: tileId(worldId, x, y) });
+      if (occ?.ownerId) continue;
+      return { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
+    }
+    return null;
   }
 
   // ── 内部辅助 ─────────────────────────────────────────────

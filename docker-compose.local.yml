@@ -101,9 +101,12 @@ services:
       NW_GW_INTERNAL_PORT: "8090"
       NW_META_BASE_URL: http://metaserver:8080
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+      # S8-4c：订阅宗门频道扇出通道（与 worldsvc 共用同一 Redis）。
+      NW_GW_REDIS_URL: redis://redis:6379
     depends_on:
       - metaserver
       - matchsvc
+      - redis
     restart: unless-stopped
 
   matchsvc:

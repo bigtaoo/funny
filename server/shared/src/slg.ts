@@ -162,6 +162,15 @@ export const GARRISON_PER_TILE = 500;
 /** 占领格至少需带的驻军（到点占领后即成该格 garrison；不足拒绝出征）。 */
 export const OCCUPY_MIN_TROOPS = GARRISON_PER_TILE;
 export const SEASON_LENGTH_DAYS = 60; // U3：2 个月
+/** 主动迁城花费金币（§3.4 / §8.2 主城迁移：选好新址 + 付费迁移，所有玩家通用，非门主特有）。 */
+export const RELOCATE_COST = 500;
+
+/**
+ * gateway 横扩推送通道（SOC9 / §8.4）：worldsvc 把「一条消息 + 收件人列表」发到此 Redis
+ * pub/sub channel，每个 gateway 实例订阅后向本机在线的收件人 socket 扇出。避免 worldsvc 对
+ * ≤900 人宗门做 O(n) HTTP 直推（信息量过大），亦天然支持多 gateway 实例路由。
+ */
+export const GW_PUSH_REDIS_CHANNEL = 'nw:gw:push';
 
 // ── 训练队列（S8-2，§4 兵力循环）──────────────────────────────
 /** 每兵训练消耗粮食（DRAFT，上线后调参）。 */

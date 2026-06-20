@@ -11,6 +11,8 @@ export interface GatewayEnv extends ServerEnv {
   metaBaseUrl: string | null;
   /** matchsvc 内部 HTTP 基址（转发玩家控制命令）。null = 联机不可用。 */
   matchsvcInternalUrl: string | null;
+  /** Redis 连接串（S8-4b，订阅 GW_PUSH_REDIS_CHANNEL 做宗门频道扇出）；缺省 = 实时推送降级。 */
+  redisUrl: string | undefined;
 }
 
 export function loadGatewayEnv(): GatewayEnv {
@@ -21,5 +23,6 @@ export function loadGatewayEnv(): GatewayEnv {
     internalPort: Number(process.env.NW_GW_INTERNAL_PORT ?? 8090),
     metaBaseUrl: process.env.NW_META_BASE_URL ?? null,
     matchsvcInternalUrl: process.env.NW_MATCHSVC_INTERNAL_URL ?? null,
+    redisUrl: process.env.NW_GW_REDIS_URL || undefined,
   };
 }

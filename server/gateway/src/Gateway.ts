@@ -113,6 +113,18 @@ export class Gateway {
     }
   };
 
+  /**
+   * Redis pub/sub 扇出（SOC9 / §8.4）：worldsvc 把「一条消息 + 收件人列表」发到 Redis，
+   * 每个 gateway 实例收到后只向本机在线的收件人推送（离线/不在本机 → 跳过）。
+   * 这样 worldsvc 对 ≤900 人宗门只发一条，扇出成本落在各 gateway 的本地 socket 写。
+   */
+  readonly routeBroadcast = (recipients: string[], msg: PushMsg): void => {
+    for (const accountId of recipients) {
+      const conn = this.conns.get(accountId);
+      if (conn && conn.ws.readyState === conn.ws.OPEN) this.push(accountId, msg);
+    }
+  };
+
   /** 实时态聚合（admin GET /internal/stats，OPS_DESIGN §4.1/§8）：当前在线连接数。 */
   readonly stats = (): { online: number } => ({ online: this.conns.size });
 
@@ -498,6 +510,24 @@ function toServerMsg(msg: PushMsg): ServerMsg {
         outcome: msg.outcome,
         lootSummary: msg.lootSummary,
         replayRef: msg.replayRef,
+      };
+    case 'family_msg':
+      return {
+        case: 'family_msg',
+        familyId: msg.familyId,
+        fromPublicId: msg.fromPublicId,
+        fromName: msg.fromName,
+        body: msg.body,
+        ts: msg.ts,
+      };
+    case 'sect_msg':
+      return {
+        case: 'sect_msg',
+        sectId: msg.sectId,
+        fromPublicId: msg.fromPublicId,
+        fromName: msg.fromName,
+        body: msg.body,
+        ts: msg.ts,
       };
   }
 }

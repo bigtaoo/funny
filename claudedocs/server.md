@@ -78,6 +78,8 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 - `shared/slg.ts`：`proceduralTile(world,x,y)` 确定性程序化地图（单一来源，client/server 共用）
 - `auctions.expireAt` **故意非 TTL**——过期需结算退还托管物，用普通索引+扫描器
 - Redis（`NW_WORLD_REDIS_URL`）：行军 ZSET 仅精确唤醒提示，处理不依赖；缺 Redis 静默降级
+- **宗门频道横扩推送（S8-4c）**：worldsvc `gatewayClient.broadcast` publish `{recipients,msg}` 到 Redis channel `nw:gw:push`（`GW_PUSH_REDIS_CHANNEL`），各 gateway 实例订阅后 `routeBroadcast` 只推本机在线收件人；无 Redis 降级逐个 HTTP push。gateway 须配 `NW_GW_REDIS_URL`（与 worldsvc 同一 Redis）。push 分支新增 `sect_msg`/`family_msg`（proto `SectBroadcast`→`SectMsg`）
+- **主城迁城（S8-4c）**：`service.relocateBase` 花 `RELOCATE_COST` coin 迁主城到合法空格，保留领地；区别于门主被破的被动迁城
 - **S8-3b（待办）**：围攻经 `/gw/judge` 引擎复算替代廉价线性结算
 
 ## social/admin/analytics 要点

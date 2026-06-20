@@ -561,6 +561,34 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
 
+  /world/relocate:
+    post:
+      operationId: relocateBase
+      summary: 主动迁城（花 RELOCATE_COST 金币把主城迁到 (x,y)，保留全部领地）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, x, y]
+              properties:
+                worldId: { type: string }
+                x: { type: integer }
+                y: { type: integer }
+      responses:
+        '200':
+          description: Relocated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
+
   /world/march:
     get:
       operationId: getMarches

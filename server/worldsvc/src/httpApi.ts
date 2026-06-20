@@ -131,7 +131,10 @@ export function startHttpApi(
         }
 
         // ── 进入世界 / 占领 / 放弃（S8-1，做实）──
-        if (method === 'POST' && (path === '/world/join' || path === '/world/occupy' || path === '/world/abandon')) {
+        if (
+          method === 'POST' &&
+          (path === '/world/join' || path === '/world/occupy' || path === '/world/abandon' || path === '/world/relocate')
+        ) {
           const body = await readJson(req);
           const worldId = typeof body.worldId === 'string' ? body.worldId : null;
           const x = Number(body.x);
@@ -145,6 +148,9 @@ export function startHttpApi(
           }
           if (path === '/world/occupy') {
             return send(res, 200, ok(await svc.occupyTile(worldId, accountId, x, y)));
+          }
+          if (path === '/world/relocate') {
+            return send(res, 200, ok(await svc.relocateBase(worldId, accountId, x, y)));
           }
           return send(res, 200, ok(await svc.abandonTile(worldId, accountId, x, y)));
         }

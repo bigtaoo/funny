@@ -62,7 +62,11 @@ export type PushMsg =
       outcome: string;
       lootSummary: string;
       replayRef: string;
-    };
+    }
+  // 家族频道消息（S8-4，worldsvc 经 /gw/push 定向直推；≤30 人 O(n) 可接受）。
+  | { kind: 'family_msg'; familyId: string; fromPublicId: string; fromName: string; body: string; ts: number }
+  // 宗门频道消息（S8-4b，worldsvc 经 Redis pub/sub 扇出 → gateway 据在线成员下发；≤900 人）。
+  | { kind: 'sect_msg'; sectId: string; fromPublicId: string; fromName: string; body: string; ts: number };
 
 export class MatchsvcClient {
   constructor(

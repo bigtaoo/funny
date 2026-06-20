@@ -21,6 +21,8 @@ import {
 import type { WorldCollections, SectDoc, FamilyDoc, SectMessageDoc } from './db';
 import type { WorldCommercialClient } from './commercialClient';
 import { nullWorldCommercialClient } from './commercialClient';
+import type { WorldGatewayClient } from './gatewayClient';
+import { nullWorldGatewayClient } from './gatewayClient';
 
 export interface SectView {
   sectId: string;
@@ -60,6 +62,8 @@ export interface SectServiceDeps {
   cols: WorldCollections;
   now: () => number;
   commercial?: WorldCommercialClient;
+  /** 实时频道扇出（S8-4b）；缺省 = 无 gateway，仅 REST 轮询。 */
+  gateway?: WorldGatewayClient;
 }
 
 /** 进程内单调序号，防同毫秒多条消息 id 撞键。 */
@@ -81,9 +85,11 @@ function docToView(doc: SectDoc): SectView {
 
 export class SectService {
   private readonly commercial: WorldCommercialClient;
+  private readonly gateway: WorldGatewayClient;
 
   constructor(private readonly deps: SectServiceDeps) {
     this.commercial = deps.commercial ?? nullWorldCommercialClient;
+    this.gateway = deps.gateway ?? nullWorldGatewayClient;
   }
 
   /** 取请求者所在家族（要求其为该家族族长），否则抛权限/未入族错误。 */
@@ -310,7 +316,11 @@ export class SectService {
     return { passed: false, voteCount: voters.length, needed };
   }
 
-  /** 发宗门频道消息（成员可发，持久化；实时推送规模化走 Redis，本切片 REST 轮询）。 */
+  /**
+   * 发宗门频道消息（成员可发，持久化 + 实时推送）。落库后把消息经 Redis pub/sub 扇出给宗门内
+   * 其他在线成员（≤900 人，worldsvc 只发一条到 GW_PUSH_REDIS_CHANNEL，由各 gateway 据在线成员
+   * 扇出；无 Redis → gateway client 降级为 O(n) HTTP push）。离线成员靠 REST 拉历史（TTL 7 天）。
+   */
   async sendMessage(
     worldId: string,
     accountId: string,
@@ -324,20 +334,50 @@ export class SectService {
     if (!fam?.sectId) throw new SlgError('NOT_IN_SECT');
     if (!body || body.length > FAMILY_MSG_BODY_MAX) throw new SlgError('BAD_REQUEST');
 
+    const sectId = fam.sectId;
     const ts = this.deps.now();
     const seq = ++msgSeq;
-    const msgId = `sm:${fam.sectId}:${ts}:${seq}`;
+    const msgId = `sm:${sectId}:${ts}:${seq}`;
     const msgDoc: SectMessageDoc = {
       _id: msgId,
       worldId,
-      sectId: fam.sectId,
+      sectId,
       senderId: accountId,
       senderName,
       body,
       ts: new Date(ts),
     };
     await cols.sectMessages.insertOne(msgDoc);
+
+    // 实时扇出给宗门内其他在线成员（发送者自己不推——REST 回包即是其本地回显）。
+    const recipients = await this.sectMemberAccountIds(sectId, accountId);
+    void this.gateway.broadcast(recipients, {
+      kind: 'sect_msg',
+      sectId,
+      fromPublicId: accountId, // 暂用 accountId，publicId 解析待后补
+      fromName: senderName,
+      body,
+      ts,
+    });
+
     return { id: msgId, senderId: accountId, senderName, body, ts };
+  }
+
+  /** 取宗门内全部成员 accountId（散在各成员家族里），可选排除某人（如发送者）。 */
+  private async sectMemberAccountIds(sectId: string, exclude?: string): Promise<string[]> {
+    const fams = await this.deps.cols.families
+      .find({ sectId })
+      .project<{ _id: string }>({ _id: 1 })
+      .toArray();
+    const famIds = fams.map((f) => f._id);
+    if (famIds.length === 0) return [];
+    const members = await this.deps.cols.familyMembers
+      .find({ familyId: { $in: famIds } })
+      .project<{ accountId: string }>({ accountId: 1 })
+      .toArray();
+    const ids = members.map((m) => m.accountId).filter((id) => id !== exclude);
+    // 去重（同一 accountId 理论上只在一个家族，稳妥起见）。
+    return [...new Set(ids)];
   }
 
   /** 取宗门频道历史（成员可读，按时间倒序分页）。 */

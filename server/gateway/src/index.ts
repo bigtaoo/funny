@@ -11,8 +11,9 @@ import { Gateway } from './Gateway';
 import { MatchsvcClient } from './matchsvcClient';
 import { MetaClient } from './metaClient';
 import { startInternalHttp } from './internalHttp';
+import { connectGatewaySubscriber, type GatewaySubscriber } from './redis';
 
-function main(): void {
+async function main(): Promise<void> {
   const env = loadGatewayEnv();
   const jwt: JwtConfig = { secret: env.jwtSecret };
 
@@ -25,9 +26,16 @@ function main(): void {
     gateway,
   );
 
+  // 宗门频道实时推送（S8-4b）：订阅 Redis，把 worldsvc 扇出的 push 投给本机在线收件人。
+  const subscriber: GatewaySubscriber | null = await connectGatewaySubscriber(
+    env.redisUrl,
+    gateway.routeBroadcast,
+  );
+
   const shutdown = (): void => {
     gateway.close();
     internal.close();
+    if (subscriber) void subscriber.quit();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
@@ -37,8 +45,12 @@ function main(): void {
   console.log(`gateway internal HTTP on :${env.internalPort} (matchsvc /gw/push)`);
   console.log(
     `matchsvc: ${matchsvc.available ? env.matchsvcInternalUrl : 'unavailable (rooms/match disabled)'}; ` +
-      `meta ELO: ${meta.available ? env.metaBaseUrl : 'unavailable (ranked disabled)'}`,
+      `meta ELO: ${meta.available ? env.metaBaseUrl : 'unavailable (ranked disabled)'}; ` +
+      `redis push fan-out: ${subscriber ? 'on' : 'off'}`,
   );
 }
 
-main();
+main().catch((e) => {
+  console.error('gateway failed to start:', e);
+  process.exit(1);
+});

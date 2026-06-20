@@ -214,11 +214,14 @@ message FamilyMsg {
   string text           = 4;
   uint64 ts             = 5;
 }
-message SectBroadcast {
-  string world_id = 1;
-  string kind     = 2;
-  string text     = 3;
-  uint64 ts       = 4;
+// 宗门频道消息（S8-4b，§8.2 宗门频道）。worldsvc 经 Redis pub/sub（GW_PUSH_REDIS_CHANNEL）
+// 把消息扇给各 gateway，gateway 据宗门在线成员定向下发。结构对齐 FamilyMsg。
+message SectMsg {
+  string sect_id        = 1;
+  string from_public_id = 2;
+  string from_name      = 3;
+  string text           = 4;
+  uint64 ts             = 5;
 }
 message WorldEvent {
   string kind    = 1;   // season_open | season_settle | grand_tourney | …
@@ -247,7 +250,7 @@ message ServerMsg {
     UnderAttack       under_attack    = 18;
     SiegeResult       siege_result    = 19;
     FamilyMsg         family_msg      = 20;
-    SectBroadcast     sect_broadcast  = 21;
+    SectMsg           sect_msg        = 21;
     WorldEvent        world_event     = 22;
   }
 }
