@@ -44,6 +44,7 @@ import {
   type ResourceType,
   type MarchKind,
   type SiegeOutcome,
+  type SiegeResolution,
 } from '@nw/shared';
 import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry } from './db';
 import type { WorldRedis } from './redis';
@@ -797,6 +798,25 @@ export class WorldService {
     const inOwnNation = !!nation?.ownerId && nation.ownerId === defenderId;
     const res = resolveSiege(m.troops, nationDefenseStrength(target.garrison ?? 0, inOwnNation));
     const defender = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defenderId) });
+    await this.landSiege(m, pw, target, defenderId, defender, res, t);
+  }
+
+  /**
+   * 落地一次围攻结算（G3-1 抽取，§16.4）：按 res 写易主/掠夺/驻军/立国/被动迁城（attacker_win）
+   * 或守军减员（defender_win）+ 记 SiegeDoc + 推送 march/siege/tile。
+   * 当前 `applySiege` 即时调用（廉价结算路径不变）；G3-2 延迟落地后，judge 复算确认 / 超时兜底
+   * 两路将共用此唯一落地点。
+   */
+  private async landSiege(
+    m: MarchDoc,
+    pw: PlayerWorldDoc,
+    target: TileDoc,
+    defenderId: string,
+    defender: PlayerWorldDoc | null,
+    res: SiegeResolution,
+    t: number,
+  ): Promise<void> {
+    const { cols } = this.deps;
     let loot = emptyResources();
 
     if (res.outcome === 'attacker_win') {
