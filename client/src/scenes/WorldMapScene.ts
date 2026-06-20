@@ -14,7 +14,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
-import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView } from '../net/WorldApiClient';
+import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView, SeasonView, SlgShopItemView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/proto/transport';
 
@@ -97,6 +97,14 @@ const HUD_H    = 80;   // bottom HUD bar height
 const MARGIN   = 4;    // margin inside modal
 const CONFIRM_H = 140;
 
+// Train economy mirrors (DRAFT; server @nw/shared is authoritative — these only
+// size the client's preview/cost estimates for the C4 panel). Keep in sync with
+// shared/slg.ts TROOP_TRAIN_FOOD_COST / TROOP_SPEEDUP_SECS_PER_COIN / *_BATCH_MAX.
+const TRAIN_FOOD_PER        = 10;
+const TRAIN_SPEEDUP_PER_COIN = 60; // seconds shortened per coin
+const TRAIN_BATCH_MAX       = 500;
+const TRAIN_PRESETS         = [10, 50];
+
 // ── Scene ─────────────────────────────────────────────────────────────────────
 
 export class WorldMapScene implements Scene {
@@ -124,6 +132,10 @@ export class WorldMapScene implements Scene {
   private marches: MarchView[] = [];
   // Nations (10 capitals) — overlaid as star markers + Voronoi-nearest tint hint.
   private nations: NationView[] = [];
+  // Season + SLG shop catalog (C5; season also gives map bounds, shop fetched lazily).
+  private season: SeasonView | null = null;
+  private shopItems: SlgShopItemView[] = [];
+  private infoTab: 'nations' | 'season' | 'shop' = 'nations';
 
   // Graphics layers
   private mapGfx!: PIXI.Graphics;
@@ -143,6 +155,10 @@ export class WorldMapScene implements Scene {
   // Toast
   private toastTimer = 0;
   private destroyed = false;
+
+  // Train/resource panel (C4): when open, re-rendered ~1s for live countdowns.
+  private trainPanelOpen = false;
+  private panelRepaint = 0;
 
   // March poll interval
   private marchPoll: ReturnType<typeof setInterval> | null = null;
@@ -210,6 +226,7 @@ export class WorldMapScene implements Scene {
     // Map bounds + nations are world-static; fetch once up front (best-effort).
     try {
       const season = await this.cb.worldApi.getSeason(this.cb.worldId);
+      this.season = season;
       if (season.mapW > 0) this.mapW = season.mapW;
       if (season.mapH > 0) this.mapH = season.mapH;
     } catch { /* offline — keep defaults */ }
@@ -446,8 +463,24 @@ export class WorldMapScene implements Scene {
       }
     }
 
-    // Family / Auction buttons
+    // Train / Family / Auction buttons (right side)
     const btnW = 70;
+
+    // Train button — only meaningful once the player has a base.
+    if (this.me?.joined) {
+      const trainBtn = sketchPanel(btnW, 28, { fill: C.red, border: C.accent, seed: seedFor(2, 0, btnW) });
+      trainBtn.x = w - btnW * 3 - 22; trainBtn.y = h - HUD_H + 26;
+      hud.addChild(trainBtn);
+      const inQ = (this.me.trainingQueue ?? []).reduce((s, e) => s + e.qty, 0);
+      const trainLbl = txt(inQ > 0 ? `${t('world.train')} (${inQ})` : t('world.train'), 12, C.light);
+      trainLbl.anchor.set(0.5, 0.5);
+      trainLbl.x = trainBtn.x + btnW / 2; trainLbl.y = trainBtn.y + 14;
+      hud.addChild(trainLbl);
+      this.trainBtnRect = { x: trainBtn.x, y: trainBtn.y, w: btnW, h: 28 };
+    } else {
+      this.trainBtnRect = { x: 0, y: 0, w: 0, h: 0 };
+    }
+
     const famBtn = sketchPanel(btnW, 28, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, btnW) });
     famBtn.x = w - btnW * 2 - 14; famBtn.y = h - HUD_H + 26;
     hud.addChild(famBtn);
@@ -465,13 +498,26 @@ export class WorldMapScene implements Scene {
     aucLbl.x = aucBtn.x + btnW / 2; aucLbl.y = aucBtn.y + 14;
     hud.addChild(aucLbl);
     this.aucBtnRect = { x: aucBtn.x, y: aucBtn.y, w: btnW, h: 28 };
+
+    // World info button — floats top-right over the map (nations / season / shop).
+    const infoW = 56, infoH = 26;
+    const infoBtn = sketchPanel(infoW, infoH, { fill: C.dark, border: C.accent, seed: seedFor(3, 1, infoW) });
+    infoBtn.x = w - infoW - 8; infoBtn.y = 8;
+    hud.addChild(infoBtn);
+    const infoLbl = txt(t('world.info'), 12, C.light);
+    infoLbl.anchor.set(0.5, 0.5);
+    infoLbl.x = infoBtn.x + infoW / 2; infoLbl.y = infoBtn.y + infoH / 2;
+    hud.addChild(infoLbl);
+    this.infoBtnRect = { x: infoBtn.x, y: infoBtn.y, w: infoW, h: infoH };
   }
 
   // ── Hit rects ──────────────────────────────────────────────────────────────
 
   private backRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  private trainBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   private famBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   private aucBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  private infoBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   private marchRowRects: {
     marchId: string; worldId: string; destX: number; destY: number;
     rowRect: { x: number; y: number; w: number; h: number };
@@ -533,6 +579,7 @@ export class WorldMapScene implements Scene {
     this.modalBtnRects = [];
     this.modalDimRect = null;
     this.selectedTile = null;
+    this.trainPanelOpen = false;
     this.renderMap();
   }
 
@@ -728,6 +775,313 @@ export class WorldMapScene implements Scene {
     }
   }
 
+  // ── Train / resource panel (C4) ─────────────────────────────────────────────
+  // A richer modal than showModal: full resources + yield, recruit presets, the
+  // live training queue (countdown), and a one-tap coin speedup. Rendered into
+  // modalLayer (reusing modalBtnRects for hit detection + dim-to-close), and
+  // re-painted ~1s by update() so the queue countdowns tick.
+
+  private openTrainPanel(): void {
+    if (!this.me?.joined) { this.showToast(t('world.needBase'), C.red); return; }
+    this.trainPanelOpen = true;
+    this.panelRepaint = 0;
+    void this.refreshMe().then(() => { if (this.trainPanelOpen) this.renderTrainPanel(); });
+    this.renderTrainPanel();
+  }
+
+  /** A small filled button registered in modalBtnRects. */
+  private panelButton(
+    label: string, x: number, y: number, bw: number, bh: number,
+    fill: number, action: () => void,
+  ): void {
+    const ml = this.modalLayer;
+    const bp = sketchPanel(bw, bh, { fill, border: C.accent, seed: seedFor(x, y, bw) });
+    bp.x = x; bp.y = y;
+    ml.addChild(bp);
+    const bl = txt(label, 11, C.light);
+    bl.anchor.set(0.5, 0.5);
+    bl.x = x + bw / 2; bl.y = y + bh / 2;
+    ml.addChild(bl);
+    this.modalBtnRects.push({ rect: { x, y, w: bw, h: bh }, action });
+  }
+
+  private renderTrainPanel(): void {
+    const me = this.me;
+    if (!me?.joined) { this.closeModal(); return; }
+    const ml = this.modalLayer;
+    ml.removeChildren();
+    this.modalBtnRects = [];
+
+    const { w, h } = this;
+    const pw = Math.min(340, w - 24);
+    const ph = 300;
+    const px = (w - pw) / 2;
+    const py = (h - HUD_H - ph) / 2;
+
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.35).drawRect(0, 0, w, h).endFill();
+    ml.addChild(dim);
+    this.modalDimRect = { x: 0, y: 0, w, h };
+
+    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, seed: seedFor(7, 7, pw) });
+    panel.x = px; panel.y = py;
+    ml.addChild(panel);
+
+    const addText = (s: string, ty: number, size = 12, color: number = C.dark, cx = px + 14, anchorX = 0): PIXI.Text => {
+      const lbl = txt(s, size, color);
+      lbl.anchor.set(anchorX, 0);
+      lbl.x = cx; lbl.y = ty;
+      ml.addChild(lbl);
+      return lbl;
+    };
+
+    let ly = py + 12;
+    // Title
+    const title = txt(t('world.trainTitle'), 14, C.accent);
+    title.anchor.set(0.5, 0); title.x = px + pw / 2; title.y = ly;
+    ml.addChild(title);
+    ly += 26;
+
+    // Resources + yield
+    const res = me.resources ?? {};
+    const yield_ = me.yieldRate ?? {};
+    const fmt = (icon: string, key: string): string => {
+      const amt = Math.floor(res[key] ?? 0);
+      const yr = yield_[key];
+      return yr ? `${icon}${amt} (+${Math.round(yr)}/${t('world.resYield')})` : `${icon}${amt}`;
+    };
+    addText(`${fmt('🌾', 'food')}   ${fmt('🪵', 'wood')}   ${fmt('⛏️', 'iron')}`, ly, 11);
+    ly += 20;
+
+    // Troops
+    const inQ = (me.trainingQueue ?? []).reduce((s, e) => s + e.qty, 0);
+    const troops = Math.floor(me.troops ?? 0);
+    const cap = Math.floor(me.troopCap ?? 0);
+    let troopLine = `${t('world.troops')} ${troops}/${cap}`;
+    if (inQ > 0) troopLine += `  ·  ${t('world.trainInQueue').replace('{n}', String(inQ))}`;
+    addText(troopLine, ly, 12, C.red);
+    ly += 24;
+
+    // Recruit row
+    addText(t('world.trainNew'), ly, 12);
+    ly += 20;
+    const food = Math.floor(res['food'] ?? 0);
+    const capLeft = Math.max(0, cap - troops - inQ);
+    const queueFull = (me.trainingQueue ?? []).length >= 2;
+    const bw = (pw - 28 - MARGIN * 2) / 3;
+    let bx = px + 14;
+    for (const n of TRAIN_PRESETS) {
+      const cost = n * TRAIN_FOOD_PER;
+      const ok = !queueFull && capLeft >= n && food >= cost;
+      this.panelButton(
+        `+${n}`, bx, ly, bw, 30,
+        ok ? C.dark : C.mid,
+        () => { if (ok) void this.doTrain(n); else this.showToast(queueFull ? t('world.err.queueFull') : (capLeft < n ? t('world.err.troopCap') : t('world.err.noFood')), C.red); },
+      );
+      bx += bw + MARGIN;
+    }
+    // Max preset = min(batch cap, capacity left, food-affordable)
+    const maxQty = Math.min(TRAIN_BATCH_MAX, capLeft, Math.floor(food / TRAIN_FOOD_PER));
+    const maxOk = !queueFull && maxQty >= 1;
+    this.panelButton(
+      maxOk ? `${t('world.trainMax')} +${maxQty}` : t('world.trainMax'), bx, ly, bw, 30,
+      maxOk ? C.red : C.mid,
+      () => { if (maxOk) void this.doTrain(maxQty); else this.showToast(queueFull ? t('world.err.queueFull') : (capLeft < 1 ? t('world.err.troopCap') : t('world.err.noFood')), C.red); },
+    );
+    ly += 38;
+
+    // Queue
+    addText(t('world.trainQueue'), ly, 12);
+    ly += 18;
+    const queue = me.trainingQueue ?? [];
+    if (queue.length === 0) {
+      addText(t('world.trainQueueEmpty'), ly, 11, C.mid);
+      ly += 18;
+    } else {
+      const now = Date.now();
+      for (const e of queue) {
+        const sec = Math.max(0, Math.ceil((e.completeAt - now) / 1000));
+        addText(`• ${t('world.trainEntry').replace('{n}', String(e.qty)).replace('{sec}', String(sec))}`, ly, 11, C.dark);
+        ly += 18;
+      }
+      // One-tap coin speedup: enough coins to clear the whole queue.
+      const lastDone = queue[queue.length - 1]!.completeAt;
+      const remainSec = Math.max(0, Math.ceil((lastDone - now) / 1000));
+      const coins = Math.max(1, Math.ceil(remainSec / TRAIN_SPEEDUP_PER_COIN));
+      ly += 4;
+      this.panelButton(
+        t('world.speedup').replace('{coins}', String(coins)),
+        px + 14, ly, pw - 28, 28, C.accent,
+        () => void this.doSpeedup(coins),
+      );
+      ly += 34;
+    }
+
+    // Close
+    this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
+  }
+
+  private async doTrain(qty: number): Promise<void> {
+    try {
+      this.me = await this.cb.worldApi.trainTroops(this.cb.worldId, qty);
+      this.showToast(t('world.trained'));
+      if (this.trainPanelOpen) this.renderTrainPanel();
+      this.renderHud();
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  private async doSpeedup(coins: number): Promise<void> {
+    try {
+      this.me = await this.cb.worldApi.speedupTraining(this.cb.worldId, coins);
+      this.showToast(t('world.spedup'));
+      if (this.trainPanelOpen) this.renderTrainPanel();
+      this.renderHud();
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  // ── World info panel (C5): nations / season / SLG shop ───────────────────────
+  // Tabbed modal rendered into modalLayer. Nations + season are read-only; the
+  // shop buys via worldApi.buyShopItem → commercial.spend (server-authoritative,
+  // toast on INSUFFICIENT_FUNDS). Coin balance lives in SaveData (not held here),
+  // so the shop relies on server rejection rather than a pre-check.
+
+  private openInfoPanel(): void {
+    this.trainPanelOpen = false;
+    this.renderInfoPanel();
+    // Lazy-load shop catalog + fresh nations/season the first time.
+    if (this.shopItems.length === 0) {
+      void this.cb.worldApi.getShopItems()
+        .then((items) => { this.shopItems = items; if (this.modalDimRect && !this.trainPanelOpen) this.renderInfoPanel(); })
+        .catch(() => { /* offline */ });
+    }
+    void this.cb.worldApi.getNations(this.cb.worldId)
+      .then((n) => { this.nations = n; })
+      .catch(() => {});
+  }
+
+  /** Localize an SLG shop item by kind + effect (server description is zh-only). */
+  private shopLabel(it: SlgShopItemView): string {
+    const eff = it.effect as Record<string, number>;
+    switch (it.kind) {
+      case 'troop_speedup': return t('world.shop.speedup').replace('{h}', String(Math.round((eff.duration_sec ?? 0) / 3600)));
+      case 'resource_pack': return t('world.shop.resPack').replace('{n}', String(eff.each ?? 0));
+      case 'protection':    return t('world.shop.shield').replace('{h}', String(Math.round((eff.duration_sec ?? 0) / 3600)));
+      case 'battle_pass':   return t('world.shop.battlePass');
+      default:              return it.id;
+    }
+  }
+
+  private renderInfoPanel(): void {
+    const ml = this.modalLayer;
+    ml.removeChildren();
+    this.modalBtnRects = [];
+
+    const { w, h } = this;
+    const pw = Math.min(360, w - 20);
+    const ph = Math.min(380, h - HUD_H - 16);
+    const px = (w - pw) / 2;
+    const py = (h - HUD_H - ph) / 2;
+
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.35).drawRect(0, 0, w, h).endFill();
+    ml.addChild(dim);
+    this.modalDimRect = { x: 0, y: 0, w, h };
+
+    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, seed: seedFor(9, 9, pw) });
+    panel.x = px; panel.y = py;
+    ml.addChild(panel);
+
+    const addText = (s: string, tx2: number, ty: number, size = 12, color: number = C.dark, anchorX = 0): void => {
+      const lbl = txt(s, size, color);
+      lbl.anchor.set(anchorX, 0);
+      lbl.x = tx2; lbl.y = ty;
+      ml.addChild(lbl);
+    };
+
+    // Title
+    const title = txt(t('world.infoTitle'), 14, C.accent);
+    title.anchor.set(0.5, 0); title.x = px + pw / 2; title.y = py + 10;
+    ml.addChild(title);
+
+    // Tabs
+    const tabs: { id: 'nations' | 'season' | 'shop'; label: string }[] = [
+      { id: 'nations', label: t('world.tabNations') },
+      { id: 'season',  label: t('world.tabSeason') },
+      { id: 'shop',    label: t('world.tabShop') },
+    ];
+    const tabW = (pw - 28 - MARGIN * 2) / 3;
+    let tx = px + 14;
+    const tabY = py + 34;
+    for (const tab of tabs) {
+      const active = this.infoTab === tab.id;
+      this.panelButton(tab.label, tx, tabY, tabW, 26, active ? C.red : C.dark, () => {
+        this.infoTab = tab.id; this.renderInfoPanel();
+      });
+      tx += tabW + MARGIN;
+    }
+
+    let ly = tabY + 38;
+    const bodyBottom = py + ph - 42;
+
+    if (this.infoTab === 'nations') {
+      if (this.nations.length === 0) {
+        addText(t('world.nationsEmpty'), px + 14, ly, 11, C.mid);
+      } else {
+        for (const n of this.nations) {
+          if (ly > bodyBottom) break;
+          const name = n.nationName || t('world.nationCol').replace('{idx}', String(n.capitalIdx));
+          const status = n.ownerId ? t('world.nationOwned') : t('world.nationFree');
+          addText(`★ ${name}  (${n.x},${n.y})`, px + 14, ly, 11);
+          addText(status, px + pw - 14, ly, 11, n.ownerId ? C.red : C.mid, 1);
+          ly += 18;
+        }
+      }
+    } else if (this.infoTab === 'season') {
+      const s = this.season;
+      if (!s) {
+        addText('—', px + 14, ly, 11, C.mid);
+      } else {
+        addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, ly, 13, C.red); ly += 22;
+        const statusKey = `world.season.${s.status}`;
+        addText(t(statusKey as Parameters<typeof t>[0]), px + 14, ly, 11); ly += 18;
+        addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, ly, 11); ly += 18;
+        if (s.resetAt) {
+          const days = Math.max(0, Math.ceil((s.resetAt - Date.now()) / 86400000));
+          addText(t('world.seasonReset').replace('{d}', String(days)), px + 14, ly, 11); ly += 18;
+        }
+      }
+    } else {
+      // Shop
+      const rowH = 30;
+      for (const it of this.shopItems) {
+        if (ly + rowH > bodyBottom) break;
+        addText(this.shopLabel(it), px + 14, ly + 4, 11);
+        addText(t('world.shopCost').replace('{coins}', String(it.cost)), px + 14, ly + 18, 10, C.mid);
+        const bw = 56;
+        this.panelButton(t('world.shopBuy'), px + pw - bw - 14, ly + 2, bw, 24, C.accent, () => void this.doBuyShopItem(it.id));
+        ly += rowH + 2;
+      }
+    }
+
+    // Close
+    this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
+  }
+
+  private async doBuyShopItem(itemId: string): Promise<void> {
+    try {
+      await this.cb.worldApi.buyShopItem(this.cb.worldId, itemId);
+      this.showToast(t('world.shopBought'));
+      await this.refreshMe();
+      if (this.modalDimRect && !this.trainPanelOpen) this.renderInfoPanel();
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
   // ── Live push (worldsvc → gateway → NetSession → here, §14.5) ────────────────
   // Wired by createAppCore: it points session.handlers at these while the world
   // map is on-screen. Each one does a targeted authoritative refetch then redraws
@@ -794,6 +1148,9 @@ export class WorldMapScene implements Scene {
         OUT_OF_RANGE:  t('world.err.outOfRange'),
         NOT_OWNER:     t('world.err.notOwner'),
         NOT_IMPLEMENTED: t('world.err.notImpl'),
+        TROOP_CAP_REACHED:      t('world.err.troopCap'),
+        INSUFFICIENT_RESOURCES: t('world.err.noFood'),
+        PATH_BLOCKED:  t('world.err.pathBlocked'),
       };
       return map[e.code] ?? e.message;
     }
@@ -839,6 +1196,13 @@ export class WorldMapScene implements Scene {
       return;
     }
 
+    // World info button (floats top-right over the map)
+    const ib = this.infoBtnRect;
+    if (ib.w > 0 && x >= ib.x && x <= ib.x + ib.w && y >= ib.y && y <= ib.y + ib.h) {
+      this.openInfoPanel();
+      return;
+    }
+
     // Back button
     const b = this.backRect;
     if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
@@ -846,7 +1210,12 @@ export class WorldMapScene implements Scene {
       return;
     }
 
-    // Family / Auction buttons
+    // Train / Family / Auction buttons
+    const tr = this.trainBtnRect;
+    if (tr.w > 0 && x >= tr.x && x <= tr.x + tr.w && y >= tr.y && y <= tr.y + tr.h) {
+      this.openTrainPanel();
+      return;
+    }
     const f = this.famBtnRect;
     if (x >= f.x && x <= f.x + f.w && y >= f.y && y <= f.y + f.h) {
       this.cb.onOpenFamily();
@@ -917,6 +1286,14 @@ export class WorldMapScene implements Scene {
     if (this.toastTimer > 0) {
       this.toastTimer -= dt * 1000;
       if (this.toastTimer <= 0) this.toastLayer.removeChildren();
+    }
+    // Tick the train panel's queue countdowns once per second while open.
+    if (this.trainPanelOpen) {
+      this.panelRepaint += dt;
+      if (this.panelRepaint >= 1) {
+        this.panelRepaint = 0;
+        this.renderTrainPanel();
+      }
     }
   }
 

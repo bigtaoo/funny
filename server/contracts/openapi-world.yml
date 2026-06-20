@@ -97,6 +97,21 @@ components:
           type: string
         territoryCount:
           type: integer
+        trainingQueue:
+          type: array
+          description: 训练队列（S8-2，按 completeAt 升序）。客户端据此渲染队列倒计时（C4）。
+          items:
+            type: object
+            required: [qty, startAt, completeAt]
+            properties:
+              qty:
+                type: integer
+              startAt:
+                type: integer
+                format: int64
+              completeAt:
+                type: integer
+                format: int64
 
     MarchView:
       type: object

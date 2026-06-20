@@ -87,6 +87,8 @@ export interface PlayerWorldView {
   mainBaseTile?: string;
   territoryCount?: number;
   familyId?: string;
+  /** 训练队列（S8-2，按 completeAt 升序）；客户端 C4 据此渲染倒计时。 */
+  trainingQueue?: { qty: number; startAt: number; completeAt: number }[];
 }
 
 /** 行军视图（REST 响应 / push 载荷源）。 */
@@ -271,6 +273,9 @@ export class WorldService {
       territoryCount: await this.deps.cols.tiles.countDocuments({ worldId, ownerId: accountId }),
       ...(doc.mainBaseTile ? { mainBaseTile: doc.mainBaseTile } : {}),
       ...(doc.familyId ? { familyId: doc.familyId } : {}),
+      ...(doc.trainingQueue && doc.trainingQueue.length > 0
+        ? { trainingQueue: doc.trainingQueue.map((e) => ({ qty: e.qty, startAt: e.startAt, completeAt: e.completeAt })) }
+        : {}),
     };
   }
 

@@ -590,6 +590,14 @@ export interface components {
             mainBaseTile?: string;
             familyId?: string;
             territoryCount?: number;
+            /** @description 训练队列（S8-2，按 completeAt 升序）。客户端据此渲染队列倒计时（C4）。 */
+            trainingQueue?: {
+                qty: number;
+                /** Format: int64 */
+                startAt: number;
+                /** Format: int64 */
+                completeAt: number;
+            }[];
         };
         MarchView: {
             marchId: string;
