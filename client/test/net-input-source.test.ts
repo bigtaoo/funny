@@ -70,6 +70,16 @@ describe('NetInputSource — take() / buffer / watermark', () => {
     expect(ni.take(7)).toBeNull();
   });
 
+  it('confirmedLead reports the releasable backlog ahead of a frame', () => {
+    const ni = new NetInputSource(noopSink, { bufferFrames: FRAMES_PER_BATCH });
+    expect(ni.confirmedLead(0)).toBe(0); // before match_start
+    ni.handleServerMsg(matchStartMsg(1, 0));
+    ni.handleServerMsg(frameBatchMsg(903)); // playTo = 903 - 3 = 900
+    expect(ni.confirmedLead(0)).toBe(900); // 30 s of backlog at 30 Hz
+    expect(ni.confirmedLead(900)).toBe(0); // caught up to the head
+    expect(ni.confirmedLead(950)).toBe(0); // never negative past the head
+  });
+
   it('decodes non-empty frames back into PlayerCommand[] (owner=side, tick=frame)', () => {
     const ni = new NetInputSource(noopSink, { bufferFrames: 0 });
     ni.handleServerMsg(matchStartMsg(1, 0));

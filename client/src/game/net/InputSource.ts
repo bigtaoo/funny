@@ -36,6 +36,18 @@ export interface InputSource {
    * always returns an array (possibly empty).
    */
   take(frame: number): readonly PlayerCommand[] | null;
+
+  /**
+   * How many confirmed-but-unplayed frames sit ahead of `frame` — the playback
+   * backlog. The engine reads this to pick a catch-up speed when a paused /
+   * backgrounded tab (or a resolved stall) has fallen behind the server, so the
+   * sim can run faster than real time until it's synced again.
+   *
+   * Optional: sources that never fall behind the player's own clock
+   * (`LocalInputSource`, `ReplayInputSource`) may omit it — absent ⇒ 0 backlog ⇒
+   * always play at 1×.
+   */
+  confirmedLead?(frame: number): number;
 }
 
 const NO_COMMANDS: readonly PlayerCommand[] = [];

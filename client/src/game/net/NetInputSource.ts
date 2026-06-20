@@ -123,6 +123,19 @@ export class NetInputSource implements InputSource {
     return this.cmdsByFrame.get(frame) ?? EMPTY;
   }
 
+  /**
+   * Confirmed playback backlog ahead of `frame` (see
+   * {@link InputSource.confirmedLead}). Mirrors `take()`'s playback head exactly
+   * so the two never disagree about what's releasable: the count is how many
+   * frames `take()` would return non-null for, starting at `frame`. A large lead
+   * means the watermark raced ahead while this client was paused / backgrounded.
+   */
+  confirmedLead(frame: number): number {
+    if (this.confirmedTo < 0) return 0;
+    const playTo = Math.max(this.startFrame, this.confirmedTo - this.bufferFrames);
+    return Math.max(0, playTo - frame);
+  }
+
   // ─── Server message intake (wire NetClient.onServerMsg here) ────────────────
 
   /** Route a decoded server message; ignores everything but the lockstep ones. */

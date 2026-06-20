@@ -15,10 +15,10 @@
 
 | 文件 | 职责 |
 |---|---|
-| `game/GameEngine.ts` | 主循环、系统编排、命令处理；每 tick 从 `InputSource` 消费指令；tick 顺序：resource→production→**trait**→combat→escort→hazard→movement→spell |
+| `game/GameEngine.ts` | 主循环、系统编排、命令处理；每 tick 从 `InputSource` 消费指令；tick 顺序：resource→production→**trait**→combat→escort→hazard→movement→spell。**联机追帧**：`tick()` 按 `confirmedLead` 积压选倍速（>30s→5×/>10s→3×/>1s→2×/否则1×）缩短 `stepDt`，让暂停/最小化（rAF 停摆）落后的客户端加速排帧追上水位线；只重定时 step 不改帧序，确定性不变 |
 | `game/net/InputSource.ts` | 统一输入管线接口 + `LocalInputSource` |
 | `game/net/ReplayInputSource.ts` | `RecordingInputSource`（捕获确认帧，`snapshot()→Replay`）+ `ReplayInputSource`（喂 Replay，永不停步） |
-| `game/net/NetInputSource.ts` | 联机锁步：`submit`→opaque `cmd_submit`；`frame_batch`→解码→`take(frame)`；未确认返 `null` 停步 |
+| `game/net/NetInputSource.ts` | 联机锁步：`submit`→opaque `cmd_submit`；`frame_batch`→解码→`take(frame)`；未确认返 `null` 停步；`confirmedLead(frame)` 报告播放头之后的已确认积压帧数（供引擎追帧倍速） |
 | `game/meta/ReplayStore.ts` | 本地录像：key `nw_replays_v1`，最近 12 局 ring |
 | `game/GameState.ts` | 纯数据状态，持有 Board / Player / PRNG |
 | `game/systems/AISystem.ts` | AI 决策（威胁驱动三段式；注入 Prng + 难度档） |

@@ -253,36 +253,65 @@ class GameEngineImpl implements IGameEngine {
   // ─── Render-facing API ───────────────────────────────────────────────────
 
   /**
-   * Max wall-clock the accumulator may bank, in sim ticks. Bounds how many steps
-   * one tick() call can run, so a long pause (backgrounded tab, GC hitch, or a
-   * lockstep stall) can't trigger a giant catch-up burst. ~167 ms of catch-up.
+   * Max wall-clock the accumulator may bank, in *catch-up* ticks. Bounds how
+   * much real time one tick() call may convert to sim steps, so a long pause
+   * (backgrounded tab, GC hitch, or a resolved lockstep stall) can't bank an
+   * unbounded burst. At catch-up speed N this still permits N× this many sim
+   * steps in a single tick() — that is the intended fast-forward.
    */
   private static readonly MAX_CATCHUP_TICKS = 5;
+
+  /**
+   * Catch-up speed multiplier (sim ticks per wall-clock tick) based on how far
+   * the confirmed watermark has outrun our playback head. A client that paused
+   * (minimized tab → rAF halts) or stalled keeps receiving frame_batches, so on
+   * resume the backlog can be huge; draining it at 1× would never sync. Speed up
+   * proportionally to the backlog so we converge, then settle back to 1×.
+   *
+   *   backlog > 30 s → 5×   |   > 10 s → 3×   |   > 1 s → 2×   |   else 1×
+   *
+   * Only re-times step() calls — never changes which frames run or their order,
+   * so lockstep determinism is unaffected.
+   */
+  private catchUpSpeed(): number {
+    const lead = this.input.confirmedLead?.(this.currentTick) ?? 0;
+    if (lead > 30 * TICK_RATE) return 5;
+    if (lead > 10 * TICK_RATE) return 3;
+    if (lead > 1 * TICK_RATE) return 2;
+    return 1;
+  }
 
   tick(dt: number): void {
     const tickDt = 1 / TICK_RATE;
     this.accumulatedTime += dt;
 
-    // Cap banked time — prevents post-pause bursts and the spiral-of-death.
+    // When playback has fallen behind the confirmed watermark, spend each banked
+    // millisecond on more than one sim step so we catch up to the server.
+    const speed = this.catchUpSpeed();
+    const stepDt = tickDt / speed;
+
+    // Cap banked time — prevents post-pause bursts and the spiral-of-death. The
+    // bound is on real time (MAX_CATCHUP_TICKS at 1×); at speed N this still
+    // allows N× as many sim steps to drain, which is the catch-up we want.
     const maxAccum = tickDt * GameEngineImpl.MAX_CATCHUP_TICKS;
     if (this.accumulatedTime > maxAccum) this.accumulatedTime = maxAccum;
 
-    while (this.accumulatedTime >= tickDt) {
+    while (this.accumulatedTime >= stepDt) {
       // Pull the confirmed command set for this frame from the input pipeline.
       // LocalInputSource never stalls; a net source returns null when the frame
       // is not yet confirmed, in which case we stop advancing (S1-7 buffering).
       const cmds = this.input.take(this.currentTick);
       if (cmds === null) {
         // Lockstep stall: the next frame isn't confirmed yet. Drop banked time
-        // back to a single tick so that when the frame lands we resume at the
-        // natural 30 Hz cadence rather than replaying the whole buffered batch
-        // in one render frame — that burst-then-idle is exactly the choppy,
+        // back to a single step so that when the frame lands we resume at the
+        // natural cadence rather than replaying the whole buffered batch in one
+        // render frame — that burst-then-idle is exactly the choppy,
         // 10 Hz-looking stutter. Re-times step() calls only; never changes which
         // frames run or their order, so determinism is unaffected.
-        if (this.accumulatedTime > tickDt) this.accumulatedTime = tickDt;
+        if (this.accumulatedTime > stepDt) this.accumulatedTime = stepDt;
         break;
       }
-      this.accumulatedTime -= tickDt;
+      this.accumulatedTime -= stepDt;
       this.step(this.currentTick++, cmds);
     }
   }
