@@ -3,8 +3,9 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { CAMPAIGN_LEVEL_ORDER, CHAPTER_ORDER, getChapterMap } from '../game';
+import { CHAPTER_ORDER, getChapterMap } from '../game';
 import type { ChapterMap, ChapterNode } from '../game';
+import { parseLevelId, isLevelUnlocked, currentChapter, currentLevelIdInChapter } from '../game/campaign/progress';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
@@ -60,28 +61,6 @@ interface Flip {
 
 const FLIP_DUR = 0.42; // seconds
 const TAP_SLOP = 8;    // px movement above which a touch is a drag, not a tap
-
-/** Parse chapter number and within-chapter index from a level id like 'ch3_lv7'. */
-function parseLevelId(id: string): { chapter: number; lvIndex: number } | null {
-  const m = id.match(/^ch(\d+)_lv(\d+)$/);
-  if (!m) return null;
-  return { chapter: parseInt(m[1], 10), lvIndex: parseInt(m[2], 10) };
-}
-
-/** A level unlocks once the previous one in the global order is cleared (level 0 free). */
-function isLevelUnlocked(levelId: string, cleared: Set<string>): boolean {
-  const i = CAMPAIGN_LEVEL_ORDER.indexOf(levelId);
-  if (i <= 0) return true;
-  return cleared.has(CAMPAIGN_LEVEL_ORDER[i - 1]);
-}
-
-/** Chapter holding the first uncleared level — where the book opens to (§12.2). */
-function currentChapter(cleared: Set<string>): number {
-  for (const lid of CAMPAIGN_LEVEL_ORDER) {
-    if (!cleared.has(lid)) return parseLevelId(lid)?.chapter ?? CHAPTER_ORDER[0]!;
-  }
-  return CHAPTER_ORDER[CHAPTER_ORDER.length - 1]!;
-}
 
 function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -351,7 +330,7 @@ export class CampaignMapScene implements Scene {
     this.drawTrail(root, map, px, py);
 
     // The current playable node = first unlocked & uncleared node this chapter.
-    const currentLevelId = map.nodes.find((nd) => isLevelUnlocked(nd.levelId, cleared) && !cleared.has(nd.levelId))?.levelId;
+    const currentLevelId = currentLevelIdInChapter(ch, cleared);
 
     map.nodes.forEach((node, i) => {
       const cx = px(node.x), cy = py(node.y);

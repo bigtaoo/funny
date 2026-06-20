@@ -79,6 +79,11 @@ export class GameRenderer {
   onGameEnd:     ((winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) => void) | null = null;
   onExitToLobby: (() => void) | null = null;
 
+  // 一次性闸门：GameOver 后引擎 step() 提前返回不清事件队列（GameEngine §step），
+  // 故 game_over/game_draw 事件每帧被 update() 重复消费 → 不加锁会重复调 onGameEnd
+  // （→ 重复 recordClear / 重复 level_complete 埋点，见双发 bug）。结算只触发一次。
+  private gameEnded = false;
+
   private readonly engine: IGameEngine;
   private readonly layout: ILayout;
 
@@ -522,6 +527,8 @@ export class GameRenderer {
         this.pendingStats = event.stats;
         break;
       case 'game_over': {
+        if (this.gameEnded) break;
+        this.gameEnded = true;
         this.cancelDrag(); this.cancelTapSelect();
         this.netStatus.clear();
         this.hudView.showGameOver(event.winner, this.localOwner);
@@ -530,6 +537,8 @@ export class GameRenderer {
         break;
       }
       case 'game_draw': {
+        if (this.gameEnded) break;
+        this.gameEnded = true;
         this.cancelDrag(); this.cancelTapSelect();
         this.netStatus.clear();
         this.hudView.showGameOver(null, this.localOwner);

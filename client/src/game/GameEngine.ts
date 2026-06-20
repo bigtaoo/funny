@@ -341,6 +341,9 @@ class GameEngineImpl implements IGameEngine {
    *  11. Win condition check
    */
   step(tick: number, commands: readonly PlayerCommand[]): readonly GameEvent[] {
+    // 结束后 step 提前返回、不清事件队列：game_over 会滞留在 state.events 被渲染层每帧
+    // 重复消费（重复结算/埋点双发 bug 的根因）。此处不清队列——多 step/帧的 catch-up 下
+    // 同一 tick 内清掉会让渲染层错过 game_over；改由 GameRenderer 的 gameEnded 一次性闸门兜住。
     if (this.state.phase === GamePhase.GameOver) return [];
 
     if (this.state.phase === GamePhase.Idle) {

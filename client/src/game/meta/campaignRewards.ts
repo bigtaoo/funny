@@ -9,17 +9,23 @@
 
 import { BASE_HP } from '../config';
 
-/** 基地剩余 HP% → 星数（0..3），按非递减门槛。无门槛时通关即 1★。 */
+/**
+ * 基地剩余 HP% → 星数（0..3），按非递减门槛。
+ * 通关保底 1★：只要基地没被打爆（HP>0）即视为通关 → 至少 1★（解锁下一关）；
+ * starThresholds 只用来把评价**升级**到 2★/3★，不该把一次胜利压到 0★。
+ * （此前门槛 [50,80,100] 会让「血量<50% 的胜利」算 0★，导致通关不入账、下一关不解锁——见 §通关0星 bug。）
+ */
 export function computeStars(
   thresholds: [number, number, number] | undefined,
   remainingHpPct: number,
 ): 0 | 1 | 2 | 3 {
-  if (!thresholds) return remainingHpPct > 0 ? 1 : 0;
+  if (remainingHpPct <= 0) return 0; // 基地被打爆 = 没通关
+  if (!thresholds) return 1;
   let stars = 0;
   for (const t of thresholds) {
     if (remainingHpPct >= t) stars++;
   }
-  return stars as 0 | 1 | 2 | 3;
+  return Math.max(1, stars) as 0 | 1 | 2 | 3; // 胜利保底 1★
 }
 
 /** 由本局玩家基地承伤算剩余 HP%（满血 100，clamp 到 0..100）。 */

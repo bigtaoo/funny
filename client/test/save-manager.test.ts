@@ -187,7 +187,7 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     expect(calls.clears).toEqual([]);
   });
 
-  it('离线通关 → 入队待结算（不调端点、不改本地权威值），持久化本地', async () => {
+  it('离线通关 → 入队待结算 + 乐观本地解锁（不调端点），持久化本地', async () => {
     const mem = new MemStorage();
     const store = new LocalSaveStore(mem);
     store.saveLocal(makeNewSave('a', 1));
@@ -197,10 +197,14 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     await mgr.recordClear('ch1_lv1', 3);
     expect(calls.clears).toEqual([]); // 离线不发请求
     expect(mgr.getPendingClears().map((p) => p.levelId)).toEqual(['ch1_lv1']);
-    expect(mgr.get().progress.cleared).toEqual([]); // 本地权威值未改
-    // 持久化：新实例从存储恢复队列
+    // 乐观本地解锁（§8.4）：通关立刻写进本地 progress，回到 CampaignMap 下一关即解锁；
+    // materials 仍待服务器结算。reconcile/flush 后用云端 cleared 整体覆盖回填。
+    expect(mgr.get().progress.cleared).toEqual(['ch1_lv1']);
+    expect(mgr.get().progress.stars).toEqual({ ch1_lv1: 3 });
+    // 持久化：新实例从存储恢复队列 + 乐观进度
     const mgr2 = new SaveManager({ store, api });
     expect(mgr2.getPendingClears().map((p) => p.levelId)).toEqual(['ch1_lv1']);
+    expect(mgr2.get().progress.cleared).toEqual(['ch1_lv1']);
   });
 
   it('在线请求失败（网络）→ 入队兜底', async () => {

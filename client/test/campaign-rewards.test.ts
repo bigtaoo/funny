@@ -6,15 +6,22 @@ import { computeStars, remainingHpPct } from '../src/game/meta/campaignRewards';
 // 本文件只保留客户端评星纯函数（结果报给服务器校验）。
 
 describe('computeStars', () => {
-  it('counts non-decreasing thresholds met', () => {
+  it('counts non-decreasing thresholds met, upgrading to 2★/3★', () => {
     expect(computeStars([50, 80, 100], 100)).toBe(3);
     expect(computeStars([50, 80, 100], 85)).toBe(2);
     expect(computeStars([50, 80, 100], 50)).toBe(1);
-    expect(computeStars([50, 80, 100], 49)).toBe(0);
+  });
+  it('floors any clear (base alive) to 1★ even below the first threshold', () => {
+    // 胜利保底 1★：基地没被打爆就算通关、解锁下一关；门槛只升级到 2★/3★。
+    expect(computeStars([50, 80, 100], 49)).toBe(1);
+    expect(computeStars([50, 80, 100], 1)).toBe(1);
+  });
+  it('returns 0★ only when the base was destroyed (HP ≤ 0)', () => {
+    expect(computeStars([50, 80, 100], 0)).toBe(0);
+    expect(computeStars(undefined, 0)).toBe(0);
   });
   it('falls back to 1★ on clear when no thresholds given', () => {
     expect(computeStars(undefined, 1)).toBe(1);
-    expect(computeStars(undefined, 0)).toBe(0);
   });
 });
 
