@@ -125,6 +125,11 @@ export class WorldApiClient {
     return this.req('POST', '/world/abandon', { worldId, x, y });
   }
 
+  /** 主动迁城（花 RELOCATE_COST 金币迁主城到 (x,y)）。返回迁城后的玩家世界态。 */
+  async relocateBase(worldId: string, x: number, y: number): Promise<PlayerWorldView> {
+    return this.req('POST', '/world/relocate', { worldId, x, y });
+  }
+
   async startMarch(
     worldId: string,
     fromX: number, fromY: number,

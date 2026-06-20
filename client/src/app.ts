@@ -25,7 +25,7 @@ import { CollectionScene, type CollectionCallbacks } from './scenes/CollectionSc
 import { StatsScene, type StatsCallbacks } from './scenes/StatsScene';
 import { WorldMapScene, type WorldMapCallbacks, type WorldMapView } from './scenes/WorldMapScene';
 import { FamilyScene, type FamilySceneCallbacks } from './scenes/FamilyScene';
-import { SectScene, type SectSceneCallbacks } from './scenes/SectScene';
+import { SectScene, type SectSceneCallbacks, type SectSceneView } from './scenes/SectScene';
 import { AuctionScene, type AuctionSceneCallbacks } from './scenes/AuctionScene';
 import { DefenseEditorScene, type DefenseEditorCallbacks } from './scenes/DefenseEditorScene';
 import { OwnerId, ownerToSide } from './game';
@@ -198,9 +198,11 @@ class PixiAppViews implements AppViews {
     this.manager.goto(new FamilyScene(this.layout, this.input, cb));
   }
 
-  showSect(cb: SectSceneCallbacks): void {
+  showSect(cb: SectSceneCallbacks): SectSceneView {
     this.leaveLobby();
-    this.manager.goto(new SectScene(this.layout, this.input, cb));
+    const scene = new SectScene(this.layout, this.input, cb);
+    this.manager.goto(scene);
+    return scene;
   }
 
   showAuction(cb: AuctionSceneCallbacks): void {

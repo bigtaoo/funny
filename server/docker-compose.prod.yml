@@ -107,9 +107,12 @@ services:
       NW_GW_INTERNAL_PORT: "8090"
       NW_META_BASE_URL: http://metaserver:8080
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+      # 宗门频道实时扇出（S8-4b）：订阅与 worldsvc 同一 Redis；覆盖 NW_GW_REDIS_URL='' 可降级。
+      NW_GW_REDIS_URL: ${NW_GW_REDIS_URL:-redis://redis:6379}
     depends_on:
       - metaserver
       - matchsvc
+      - redis
     restart: unless-stopped
 
   # 私有匹配大脑（S1-M5，独立进程，不暴露公网）。匹配/房间/game 注册表/签 ticket；不连库。

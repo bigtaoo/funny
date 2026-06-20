@@ -12,6 +12,7 @@ import {
   RESOURCE_YIELD_BASE,
   GARRISON_PER_TILE,
   TROOP_CAP_BASE,
+  RELOCATE_COST,
   type ResourceType,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -138,6 +139,55 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     expect(after.troops).toBe(TROOP_CAP_BASE);
     expect(after.territoryCount).toBe(1);
     expect(await m.collections.tiles.findOne({ _id: tileId(W, res.x, res.y) })).toBeNull();
+  });
+
+  it('主动迁城：扣 RELOCATE_COST 金币 + 旧址回归中立 + 新址成主城 + 保留领地', async () => {
+    const spends: Array<{ accountId: string; amount: number }> = [];
+    const commercial = {
+      available: true,
+      async spend(accountId: string, amount: number) { spends.push({ accountId, amount }); },
+      async grant() { /* unused */ },
+    };
+    const svc2 = new WorldService({
+      cols: m.collections, redis: null, commercial,
+      mapW: SLG_MAP_W, mapH: SLG_MAP_H, now,
+    });
+
+    await svc2.joinWorld(W, 'a', 5, 5);
+    const res = findCoord((t) => t.type === 'resource', 50, 50);
+    await svc2.occupyTile(W, 'a', res.x, res.y); // 一块领地，迁城后应保留
+
+    const dst = findCoord((t) => t.type === 'neutral', 80, 80);
+    const me = await svc2.relocateBase(W, 'a', dst.x, dst.y);
+
+    expect(spends).toEqual([{ accountId: 'a', amount: RELOCATE_COST }]);
+    expect(me.mainBaseTile).toBe(tileId(W, dst.x, dst.y));
+    expect(me.territoryCount).toBe(2); // 新主城 + 保留的领地
+    // 旧主城格回归中立（删除）。
+    expect(await m.collections.tiles.findOne({ _id: tileId(W, 5, 5) })).toBeNull();
+    // 新址成主城。
+    const newBase = await m.collections.tiles.findOne({ _id: tileId(W, dst.x, dst.y) });
+    expect(newBase).toMatchObject({ type: 'base', ownerId: 'a' });
+    // 领地仍在。
+    expect(await m.collections.tiles.findOne({ _id: tileId(W, res.x, res.y), ownerId: 'a' })).not.toBeNull();
+
+    // 原地迁城 = no-op（不重复扣费）。
+    await svc2.relocateBase(W, 'a', dst.x, dst.y);
+    expect(spends).toHaveLength(1);
+  });
+
+  it('迁城校验：未进入 / 越界 / 目标被占', async () => {
+    const commercial = { available: true, async spend() {}, async grant() {} };
+    const svc2 = new WorldService({
+      cols: m.collections, redis: null, commercial,
+      mapW: SLG_MAP_W, mapH: SLG_MAP_H, now,
+    });
+    await expect(svc2.relocateBase(W, 'ghost', 5, 5)).rejects.toMatchObject({ code: 'TILE_NOT_OWNED' });
+    await svc2.joinWorld(W, 'a', 5, 5);
+    await expect(svc2.relocateBase(W, 'a', -1, 0)).rejects.toMatchObject({ code: 'OUT_OF_RANGE' });
+    // 目标被他人占（b 的主城）→ TILE_OCCUPIED。
+    await svc2.joinWorld(W, 'b', 200, 200);
+    await expect(svc2.relocateBase(W, 'a', 200, 200)).rejects.toMatchObject({ code: 'TILE_OCCUPIED' });
   });
 
   it('资源惰性结算：按 yieldRate × dt 补算', async () => {

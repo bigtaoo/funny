@@ -38,7 +38,7 @@ import type { FriendsSceneCallbacks } from '../scenes/FriendsScene';
 import type { ChatSceneCallbacks } from '../scenes/ChatScene';
 import type { WorldMapCallbacks, WorldMapView } from '../scenes/WorldMapScene';
 import type { FamilySceneCallbacks } from '../scenes/FamilyScene';
-import type { SectSceneCallbacks } from '../scenes/SectScene';
+import type { SectSceneCallbacks, SectSceneView } from '../scenes/SectScene';
 import type { AuctionSceneCallbacks } from '../scenes/AuctionScene';
 import type { DefenseEditorCallbacks } from '../scenes/DefenseEditorScene';
 
@@ -123,8 +123,8 @@ export interface AppViews {
   showWorldMap(cb: WorldMapCallbacks): WorldMapView;
   /** SLG family hub (S8-4). */
   showFamily(cb: FamilySceneCallbacks): void;
-  /** SLG sect hub (S8-4b). */
-  showSect(cb: SectSceneCallbacks): void;
+  /** SLG sect hub (S8-4b). Returns a handle the core forwards live sect-channel pushes to. */
+  showSect(cb: SectSceneCallbacks): SectSceneView;
   /** SLG auction house (S8-5). */
   showAuction(cb: AuctionSceneCallbacks): void;
   /** SLG simplified defense placement editor (S8-9 C3). */

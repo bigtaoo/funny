@@ -108,6 +108,8 @@ const TRAIN_FOOD_PER        = 10;
 const TRAIN_SPEEDUP_PER_COIN = 60; // seconds shortened per coin
 const TRAIN_BATCH_MAX       = 500;
 const TRAIN_PRESETS         = [10, 50];
+/** 主动迁城金币花费（display only；server @nw/shared RELOCATE_COST 权威）。 */
+const RELOCATE_COST = 500;
 
 // ── Scene ─────────────────────────────────────────────────────────────────────
 
@@ -683,6 +685,11 @@ export class WorldMapScene implements Scene {
     if (garrison > 0) {
       buttons.push({ label: t('world.actSweep'), action: () => this.showDeployDialog(tx, ty, 'sweep') });
     }
+    // 主动迁城（§3.4）：已有主城且目标可落城（非障碍/关隘）→ 花 500 金币把主城迁到此格。
+    const relocatable = this.me?.mainBaseTile && tile?.type !== 'obstacle' && tile?.type !== 'gate';
+    if (relocatable) {
+      buttons.push({ label: t('world.actRelocate'), action: () => this.confirmRelocate(tx, ty) });
+    }
     buttons.push({ label: '✕', action: () => this.closeModal() });
     const head = garrison > 0 ? t('world.garrison').replace('{n}', String(garrison)) : t('world.actOccupy');
     this.showModal([head, `(${tx}, ${ty})`], buttons);
@@ -761,6 +768,34 @@ export class WorldMapScene implements Scene {
       await this.cb.worldApi.recallMarch(marchId, worldId);
       this.marches = await this.cb.worldApi.getMarches(this.cb.worldId);
       this.renderHud();
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  /** 迁城前的二次确认（展示花费）；确认 → doRelocate。 */
+  private confirmRelocate(tx: number, ty: number): void {
+    this.showModal(
+      [t('world.relocateTitle'), t('world.relocateConfirm').replace('{n}', String(RELOCATE_COST))],
+      [
+        { label: t('world.relocateBtn'), action: () => this.doRelocate(tx, ty) },
+        { label: '✕', action: () => this.closeModal() },
+      ],
+    );
+  }
+
+  private async doRelocate(tx: number, ty: number): Promise<void> {
+    this.closeModal();
+    try {
+      this.me = await this.cb.worldApi.relocateBase(this.cb.worldId, tx, ty);
+      this.tileCache.clear(); // 主城位置变了 + 旧址回归中立，整块视区重拉
+      if (this.me.mainBaseTile) {
+        const [bx, by] = this.parseTileId(this.me.mainBaseTile);
+        this.centerAt(bx, by);
+      }
+      await this.loadMapViewport();
+      this.showToast(t('world.relocated'));
+      this.renderMap(); this.renderHud();
     } catch (e) {
       this.showToast(this.errorMsg(e), C.red);
     }

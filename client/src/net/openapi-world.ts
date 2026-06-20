@@ -100,6 +100,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/relocate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 主动迁城（花 RELOCATE_COST 金币把主城迁到 (x,y)，保留全部领地） */
+        post: operations["relocateBase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/march": {
         parameters: {
             query?: never;
@@ -1090,6 +1107,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    relocateBase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    x: number;
+                    y: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Relocated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["PlayerWorldView"];
+                    };
                 };
             };
         };

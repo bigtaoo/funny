@@ -77,6 +77,8 @@ module.exports = {
         NW_GW_INTERNAL_PORT: process.env.NW_GW_INTERNAL_PORT || '8090',
         NW_META_BASE_URL: META_BASE,
         NW_MATCHSVC_INTERNAL_URL: MM_INTERNAL,
+        // 宗门频道实时扇出（S8-4b）：订阅与 worldsvc 同一 Redis。
+        NW_GW_REDIS_URL: process.env.NW_GW_REDIS_URL || 'redis://127.0.0.1:6379',
       },
     },
     {

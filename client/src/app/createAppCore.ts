@@ -543,13 +543,29 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
   function goSectHub(worldApi: WorldApiClient, worldId: string): void {
     const myAccountId = platform.storage.getItem('nw_account_id') ?? '';
-    views.showSect({
+    const view = views.showSect({
       onBack() { goFamilyHub(worldApi, worldId); },
       worldApi,
       worldId,
       myAccountId,
       playerName: playerName(),
     });
+    // Keep the gateway connected + forward live sect-channel messages into the scene
+    // (S8-4b: worldsvc → Redis pub/sub → gateway → here). Offline → REST history poll.
+    const session = getNetSession();
+    if (session) {
+      session.handlers = {
+        onMatchStart: (info) => goGameNet(info),
+        onSectMsg: (s) => view.applySectMsg({
+          id: `push:${s.ts}:${s.fromPublicId}`,
+          senderId: s.fromPublicId,
+          senderName: s.fromName,
+          body: s.text,
+          ts: s.ts,
+        }),
+      };
+      session.connect();
+    }
   }
 
   function goAuctionHouse(worldApi: WorldApiClient, worldId: string): void {

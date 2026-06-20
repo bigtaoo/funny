@@ -80,6 +80,12 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     async push(accountId, msg) {
       pushes.push({ accountId, msg });
     },
+    async broadcast(recipients, msg) {
+      for (const accountId of recipients) pushes.push({ accountId, msg });
+    },
+    async judge() {
+      return { ok: false };
+    },
   };
 
   /** 直接落一个防守方（playerWorld + 一块防守格），绕过保护期/直占约束，全控 garrison/资源。 */
@@ -193,21 +199,38 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(siege?.outcome).toBe('defender_win');
   });
 
-  it('攻主城胜：不可夺 + 守军清零 + 保护罩 + 掠夺 + 攻方生还回师退兵', async () => {
+  it('攻主城胜：被动迁城（旧址回归中立 + 随机新址上保护罩 + 失地）+ 掠夺 + 攻方生还回师退兵', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(NON_BLOCKING, 10, 5);
+    // b 主城 + 一块领地：被动迁城应让 b 失去这块领地。
     await setupDefender('b', tgt.x, tgt.y, { type: 'base', garrison: 500, food: 1000 });
+    const terr = findCoord(NON_BLOCKING, 12, 5);
+    await m.collections.tiles.updateOne(
+      { _id: tileId(W, terr.x, terr.y) },
+      { $set: { _id: tileId(W, terr.x, terr.y), worldId: W, x: terr.x, y: terr.y, type: 'territory', level: 1, ownerId: 'b', garrison: 300, rev: 0 } },
+      { upsert: true },
+    );
 
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 800);
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    // 主城仍归 b，但守军清零 + 上保护罩。
-    const tile = await m.collections.tiles.findOne({ _id: tileId(W, tgt.x, tgt.y) });
-    expect(tile?.ownerId).toBe('b');
-    expect(tile?.type).toBe('base');
-    expect(tile?.garrison).toBe(0);
-    expect(tile?.protectedUntil).toBeGreaterThan(nowMs);
+    // 旧主城格回归中立（被删，无 ownerId）。
+    const oldTile = await m.collections.tiles.findOne({ _id: tileId(W, tgt.x, tgt.y) });
+    expect(oldTile?.ownerId).toBeUndefined();
+    // 旧领地格也被清（失地）。
+    const oldTerr = await m.collections.tiles.findOne({ _id: tileId(W, terr.x, terr.y) });
+    expect(oldTerr?.ownerId).toBeUndefined();
+    // b 主城迁到随机新址（≠ 旧址），新址 type=base + 上保护罩 + 守军 0。
+    const meB = await svc.getMe(W, 'b');
+    expect(meB.mainBaseTile).toBeDefined();
+    expect(meB.mainBaseTile).not.toBe(tileId(W, tgt.x, tgt.y));
+    expect(meB.territoryCount).toBe(1); // 仅剩新主城
+    const newBase = await m.collections.tiles.findOne({ _id: meB.mainBaseTile! });
+    expect(newBase?.ownerId).toBe('b');
+    expect(newBase?.type).toBe('base');
+    expect(newBase?.garrison).toBe(0);
+    expect(newBase?.protectedUntil).toBeGreaterThan(nowMs);
     // 攻方生还 300 回师退兵池：2000 - 800(出征) + 300(回师) = 1500。
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - 800 + 300);
     // 掠夺 250。

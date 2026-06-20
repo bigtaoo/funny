@@ -36,7 +36,7 @@ import type { ChatSceneCallbacks } from '../../src/scenes/ChatScene';
 import type { GameSceneCallbacks, GameSceneOptions } from '../../src/scenes/GameScene';
 import type { WorldMapCallbacks } from '../../src/scenes/WorldMapScene';
 import type { FamilySceneCallbacks } from '../../src/scenes/FamilyScene';
-import type { SectSceneCallbacks } from '../../src/scenes/SectScene';
+import type { SectSceneCallbacks, SectSceneView } from '../../src/scenes/SectScene';
 import type { AuctionSceneCallbacks } from '../../src/scenes/AuctionScene';
 import type { DefenseEditorCallbacks } from '../../src/scenes/DefenseEditorScene';
 
@@ -161,7 +161,7 @@ export class HeadlessAppViews implements AppViews {
 
   showWorldMap(_cb: WorldMapCallbacks): void { this.screen = 'worldMap'; }
   showFamily(_cb: FamilySceneCallbacks): void { this.screen = 'family'; }
-  showSect(_cb: SectSceneCallbacks): void { this.screen = 'sect'; }
+  showSect(_cb: SectSceneCallbacks): SectSceneView { this.screen = 'sect'; return { applySectMsg() {} }; }
   showAuction(_cb: AuctionSceneCallbacks): void { this.screen = 'auction'; }
   showDefenseEditor(_cb: DefenseEditorCallbacks): void { this.screen = 'defenseEditor'; }
 

@@ -321,9 +321,14 @@ export interface FamilyMsg {
   ts: number;
 }
 
-export interface SectBroadcast {
-  worldId: string;
-  kind: string;
+/**
+ * 宗门频道消息（S8-4b，§8.2 宗门频道）。worldsvc 经 Redis pub/sub（GW_PUSH_REDIS_CHANNEL）
+ * 把消息扇给各 gateway，gateway 据宗门在线成员定向下发。结构对齐 FamilyMsg。
+ */
+export interface SectMsg {
+  sectId: string;
+  fromPublicId: string;
+  fromName: string;
   text: string;
   ts: number;
 }
@@ -356,7 +361,7 @@ export interface ServerMsg {
   underAttack?: UnderAttack | undefined;
   siegeResult?: SiegeResult | undefined;
   familyMsg?: FamilyMsg | undefined;
-  sectBroadcast?: SectBroadcast | undefined;
+  sectMsg?: SectMsg | undefined;
   worldEvent?: WorldEvent | undefined;
 }
 
@@ -3049,31 +3054,34 @@ export const FamilyMsg: MessageFns<FamilyMsg> = {
   },
 };
 
-function createBaseSectBroadcast(): SectBroadcast {
-  return { worldId: "", kind: "", text: "", ts: 0 };
+function createBaseSectMsg(): SectMsg {
+  return { sectId: "", fromPublicId: "", fromName: "", text: "", ts: 0 };
 }
 
-export const SectBroadcast: MessageFns<SectBroadcast> = {
-  encode(message: SectBroadcast, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.worldId !== "") {
-      writer.uint32(10).string(message.worldId);
+export const SectMsg: MessageFns<SectMsg> = {
+  encode(message: SectMsg, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.sectId !== "") {
+      writer.uint32(10).string(message.sectId);
     }
-    if (message.kind !== "") {
-      writer.uint32(18).string(message.kind);
+    if (message.fromPublicId !== "") {
+      writer.uint32(18).string(message.fromPublicId);
+    }
+    if (message.fromName !== "") {
+      writer.uint32(26).string(message.fromName);
     }
     if (message.text !== "") {
-      writer.uint32(26).string(message.text);
+      writer.uint32(34).string(message.text);
     }
     if (message.ts !== 0) {
-      writer.uint32(32).uint64(message.ts);
+      writer.uint32(40).uint64(message.ts);
     }
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): SectBroadcast {
+  decode(input: BinaryReader | Uint8Array, length?: number): SectMsg {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseSectBroadcast();
+    const message = createBaseSectMsg();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -3082,7 +3090,7 @@ export const SectBroadcast: MessageFns<SectBroadcast> = {
             break;
           }
 
-          message.worldId = reader.string();
+          message.sectId = reader.string();
           continue;
         }
         case 2: {
@@ -3090,7 +3098,7 @@ export const SectBroadcast: MessageFns<SectBroadcast> = {
             break;
           }
 
-          message.kind = reader.string();
+          message.fromPublicId = reader.string();
           continue;
         }
         case 3: {
@@ -3098,11 +3106,19 @@ export const SectBroadcast: MessageFns<SectBroadcast> = {
             break;
           }
 
-          message.text = reader.string();
+          message.fromName = reader.string();
           continue;
         }
         case 4: {
-          if (tag !== 32) {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.text = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
             break;
           }
 
@@ -3118,13 +3134,14 @@ export const SectBroadcast: MessageFns<SectBroadcast> = {
     return message;
   },
 
-  create<I extends Exact<DeepPartial<SectBroadcast>, I>>(base?: I): SectBroadcast {
-    return SectBroadcast.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<SectMsg>, I>>(base?: I): SectMsg {
+    return SectMsg.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<SectBroadcast>, I>>(object: I): SectBroadcast {
-    const message = createBaseSectBroadcast();
-    message.worldId = object.worldId ?? "";
-    message.kind = object.kind ?? "";
+  fromPartial<I extends Exact<DeepPartial<SectMsg>, I>>(object: I): SectMsg {
+    const message = createBaseSectMsg();
+    message.sectId = object.sectId ?? "";
+    message.fromPublicId = object.fromPublicId ?? "";
+    message.fromName = object.fromName ?? "";
     message.text = object.text ?? "";
     message.ts = object.ts ?? 0;
     return message;
@@ -3211,7 +3228,7 @@ function createBaseServerMsg(): ServerMsg {
     underAttack: undefined,
     siegeResult: undefined,
     familyMsg: undefined,
-    sectBroadcast: undefined,
+    sectMsg: undefined,
     worldEvent: undefined,
   };
 }
@@ -3278,8 +3295,8 @@ export const ServerMsg: MessageFns<ServerMsg> = {
     if (message.familyMsg !== undefined) {
       FamilyMsg.encode(message.familyMsg, writer.uint32(162).fork()).join();
     }
-    if (message.sectBroadcast !== undefined) {
-      SectBroadcast.encode(message.sectBroadcast, writer.uint32(170).fork()).join();
+    if (message.sectMsg !== undefined) {
+      SectMsg.encode(message.sectMsg, writer.uint32(170).fork()).join();
     }
     if (message.worldEvent !== undefined) {
       WorldEvent.encode(message.worldEvent, writer.uint32(178).fork()).join();
@@ -3459,7 +3476,7 @@ export const ServerMsg: MessageFns<ServerMsg> = {
             break;
           }
 
-          message.sectBroadcast = SectBroadcast.decode(reader, reader.uint32());
+          message.sectMsg = SectMsg.decode(reader, reader.uint32());
           continue;
         }
         case 22: {
@@ -3542,8 +3559,8 @@ export const ServerMsg: MessageFns<ServerMsg> = {
     message.familyMsg = (object.familyMsg !== undefined && object.familyMsg !== null)
       ? FamilyMsg.fromPartial(object.familyMsg)
       : undefined;
-    message.sectBroadcast = (object.sectBroadcast !== undefined && object.sectBroadcast !== null)
-      ? SectBroadcast.fromPartial(object.sectBroadcast)
+    message.sectMsg = (object.sectMsg !== undefined && object.sectMsg !== null)
+      ? SectMsg.fromPartial(object.sectMsg)
       : undefined;
     message.worldEvent = (object.worldEvent !== undefined && object.worldEvent !== null)
       ? WorldEvent.fromPartial(object.worldEvent)

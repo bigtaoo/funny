@@ -16,6 +16,7 @@ import { FamilyService } from '../src/familyService';
 import { SectService } from '../src/sectService';
 import { WorldService } from '../src/service';
 import type { WorldCommercialClient } from '../src/commercialClient';
+import type { WorldGatewayClient } from '../src/gatewayClient';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_sect_test';
@@ -46,6 +47,17 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     async grant(accountId, amount) { grants.push({ accountId, amount }); },
   };
 
+  // 捕获宗门频道扇出（broadcast 的收件人 + 消息），断言实时推送目标正确。
+  const broadcasts: Array<{ recipients: string[]; kind: string; body?: string }> = [];
+  const fakeGateway: WorldGatewayClient = {
+    available: true,
+    async push() { /* sect 不走定向 push */ },
+    async broadcast(recipients, msg) {
+      broadcasts.push({ recipients, kind: msg.kind, body: (msg as { body?: string }).body });
+    },
+    async judge() { return { ok: false }; },
+  };
+
   beforeEach(async () => {
     const cols = mongo!.collections;
     await Promise.all([
@@ -58,8 +70,9 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     ]);
     spends.length = 0;
     grants.length = 0;
+    broadcasts.length = 0;
     fam = new FamilyService({ cols, now: () => Date.now() });
-    sect = new SectService({ cols, commercial, now: () => Date.now() });
+    sect = new SectService({ cols, commercial, gateway: fakeGateway, now: () => Date.now() });
   });
 
   afterAll(async () => {
@@ -175,6 +188,25 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(msgs[0].body).toBe('hello sect');
     await expect(sect.getChannel(W, 'bob')).rejects.toMatchObject({ code: 'NOT_IN_SECT' });
     void s;
+  });
+
+  it('频道实时扇出：broadcast 推给宗门内其他成员，发送者自己不在收件人列表', async () => {
+    // alice（门主家族）+ bob + carol 三家族同宗；bob、carol 各带一名 member。
+    await makeFamily('alice', 'A', 'AA');
+    await makeFamily('bob', 'B', 'BB');
+    await makeFamily('carol', 'C', 'CC');
+    await fam.joinFamily(W, 'bob2', familyId(W, 'BB'));
+    const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    await sect.joinSect(W, 'bob', s.sectId);
+    await sect.joinSect(W, 'carol', s.sectId);
+
+    await sect.sendMessage(W, 'alice', 'Alice', 'hello everyone');
+    expect(broadcasts).toHaveLength(1);
+    expect(broadcasts[0].kind).toBe('sect_msg');
+    expect(broadcasts[0].body).toBe('hello everyone');
+    // 收件人 = 宗门内全部成员去掉发送者 alice：bob、bob2、carol（无序）。
+    expect([...broadcasts[0].recipients].sort()).toEqual(['bob', 'bob2', 'carol']);
+    expect(broadcasts[0].recipients).not.toContain('alice');
   });
 
   it('解散：清成员 sectId + 删频道 + 双向解盟', async () => {

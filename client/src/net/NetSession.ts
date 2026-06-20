@@ -30,6 +30,7 @@ import {
   type UnderAttack,
   type SiegeResult,
   type FamilyMsg,
+  type SectMsg,
 } from './proto/transport';
 import { NetInputSource, type MatchStartInfo } from '../game';
 import { runJudge } from './judgeRunner';
@@ -58,6 +59,7 @@ export interface NetSessionHandlers {
   onUnderAttack?(u: UnderAttack): void;
   onSiegeResult?(s: SiegeResult): void;
   onFamilyMsg?(f: FamilyMsg): void;
+  onSectMsg?(s: SectMsg): void;
 }
 
 export class NetSession {
@@ -232,6 +234,8 @@ export class NetSession {
       this.handlers.onSiegeResult?.(msg.siegeResult);
     } else if (msg.familyMsg) {
       this.handlers.onFamilyMsg?.(msg.familyMsg);
+    } else if (msg.sectMsg) {
+      this.handlers.onSectMsg?.(msg.sectMsg);
     }
   }
 

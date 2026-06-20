@@ -232,8 +232,8 @@
 - **组成**：最多 **30 个家族**（≤900 人）。
 - **宗门内视野共享**：宗门成员共享侦察视野（地图迷雾对盟友透明）。
 - **合纵连横（联盟）**：宗门可与至多 **2 个**其他宗门结盟（3 宗门联盟上限）；盟友间禁止进攻/夺地；**盟友不共享视野**；地图上对盟友土地颜色标记区分。
-- **门主继承**：门主主城被攻破 → 主城自动迁移到新位置（宗门继续存在）；**所有宗门成员损失 50% 当前资源**（重大惩罚，城主周围宗门成员有强烈互保动机）。门主职位通过**罢免投票**更换：各家族族长发起，超过 **2/3 族长同意 + 同时提名新门主**方可执行。
-- **宗门频道**（Redis pub/sub）：宗门内全员广播频道。
+- **门主继承**：门主主城被攻破 → 主城被动迁移到新位置（见 §3.4，所有玩家通用规则）；**额外**令所有宗门成员损失 50% 当前资源（重大惩罚，城主周围宗门成员有强烈互保动机）。门主职位通过**罢免投票**更换：各家族族长发起，超过 **2/3 族长同意 + 同时提名新门主**方可执行。
+- **宗门频道**（Redis pub/sub，✅ 已实现）：宗门内全员广播频道。worldsvc 落库后把消息发到 `GW_PUSH_REDIS_CHANNEL`（`nw:gw:push`，一条带收件人列表），各 gateway 实例订阅后只向本机在线成员扇出（≤900 人不做 worldsvc 端 O(n) HTTP 直推；天然支持多 gateway 横扩，SOC9）。无 Redis → 降级为 gateway client 逐个 HTTP push 兜底；离线成员靠 REST 拉历史（TTL 7 天）。
 
 ### 8.3 国家
 
@@ -324,11 +324,14 @@
   - 验证：client tsc + **176 测试**（+7 `test/siege.test.ts`：养成单调性/红线/引擎确定性/judge 复算闭环）+ web 构建；八包 `tsc -b` + **worldsvc 29 e2e**（+6 siege +1 sweep httpApi）+ gateway 10 全绿。
 - **S8-4 家族 ✅（2026-06-19）**：家族 CRUD（创建/加入/退出/踢出/角色/解散）、家族频道（落库 + gateway 定向推 `family_msg`）、互助/盟友关隘通行、防守 config。拍板不做家族战（围攻复用 attack/siege）。
 - **S8-4b 宗门 ✅（2026-06-20）**：补齐「大区→宗门→家族」三级里此前缺失的宗门层。宗门以**家族**为成员单位，操作须族长代表；`sects`/`sectMessages` 集合 + `families.sectId`。功能：建宗门（5000 coin via commercial，TAG worldId 内唯一）/家族加入退出（≤30 家族）/解散/联盟（双向，各 ≤2 = 3 宗门联盟）/罢免换届（族长投票 ≥⌈家族数×2/3⌉ → 门主转移）/宗门频道（落库，TTL 7 天）。**门主被打惩罚**：门主主城被破 → 全宗门成员资源 -50%（§8.2；主城迁移暂缓）。**大比按宗门**：`settleSeason` 按「宗门→散家族→个人」聚合占国数排名（兑现 §2.1）。`/sect/*` REST + worldsvc 12 e2e。**待办**：繁荣度建宗门门槛数值；盟友视野标记 + 客户端 UI（S8-9 C6）。
-- **S8-4c 宗门频道实时推送横扩 + 主城迁城 ✅（2026-06-20，服务端）**：
+- **S8-4c 宗门频道实时推送横扩 + 主城迁城 ✅（2026-06-20，服务端 + 客户端）**：
   - **宗门频道实时推送（横扩，SOC9 / §8.2 / §8.4）**：worldsvc `gatewayClient.broadcast(recipients, msg)`——Redis 可用 → publish 一条 `{recipients, msg}` 到 `GW_PUSH_REDIS_CHANNEL='nw:gw:push'`（`shared/slg.ts`），各 gateway 实例订阅（`gateway/redis.ts` `connectGatewaySubscriber`）后经 `Gateway.routeBroadcast` **只推本机在线收件人**；无 Redis → 降级逐个 HTTP push 兜底（≤900 人，避免 worldsvc O(n) 直推）。`sectService.sendMessage` 落库后扇出 `sect_msg`（排除发送者，本地回显靠 REST 回包），`sectMemberAccountIds` 跨成员家族汇总收件人去重。proto `SectBroadcast`→`SectMsg`（对齐 FamilyMsg：`sectId/fromPublicId/fromName/text/ts`）；新增 `family_msg`/`sect_msg` 两个 push 分支（gateway `proto.ts`/`matchsvcClient.PushMsg`/`toServerMsg` + worldsvc `SlgPushMsg`）。gateway 读 `NW_GW_REDIS_URL` 订阅（缺省降级，与 worldsvc 共用同一 Redis）。
-  - **主城迁城（§3.4 / §8.2，所有玩家通用）**：`service.relocateBase(worldId, accountId, x, y)`——花 `RELOCATE_COST=500` coin via commercial，把主城迁到自选合法空格（界内/非中心/非障碍/非关隘/未被占领），**保留全部领地**，沿用旧城剩余保护罩（自愿迁城不续）；原地迁城 = no-op 不扣费。区别于门主主城被破的**被动**迁城。
-  - **契约/客户端**：`openapi-world.yml` + `transport.proto` 已改；client codegen（`openapi-world.ts`/`proto/transport.ts`）+ `WorldApiClient`/`NetSession` 客户端接线随客户端切片单独提交（本次仅服务端）。
-  - 验证：服务端 9 包 `tsc -b` 全绿。
+  - **主城迁城（§3.4 / §8.2，所有玩家通用）**：
+    - **主动迁城**：`service.relocateBase(worldId, accountId, x, y)`——花 `RELOCATE_COST=500` coin via commercial，把主城迁到自选合法空格（界内/非中心/非障碍/非关隘/未被占领），**保留全部领地**，沿用旧城剩余保护罩（自愿迁城不续）；原地迁城 = no-op 不扣费。`POST /world/relocate`。
+    - **被动迁城**：`applySiege` 主城被破分支改为 `passiveRelocate(worldId, defenderId, t)`——`deleteMany({ownerId})` 删玩家全部己方格（旧主城 + **所有领地**，失地强惩罚，不退驻军）→ `pickRandomEmptyTile` 随机选合法空格写新主城（守军 0 + 上保护罩）→ 改 `mainBaseTile` + 重算产率。门主额外仍触发全宗门 -50%（`applySectLeaderPenalty`，叠加）。极端找不到空格 → 仅失地 + 清 `mainBaseTile`。
+  - **契约/客户端 ✅**：`openapi-world.yml`（`/world/relocate`）+ `transport.proto`（`SectBroadcast`→`SectMsg`）已改并 codegen（`openapi-world.ts`/`proto/transport.ts`）；`WorldApiClient.relocateBase`；`NetSession.onSectMsg` 路由 `msg.sectMsg`；`WorldMapScene` 中立格菜单加「迁城到此」（确认弹层显花费）+ `doRelocate`；`SectScene.applySectMsg` 实时插入频道（去重）+ `createAppCore.goSectHub` 转发 `onSectMsg`；i18n `world.actRelocate/relocateTitle/relocateConfirm/relocateBtn/relocated` zh/en/de。
+  - **部署接线**：gateway 加 `NW_GW_REDIS_URL`（与 worldsvc 同 Redis）+ `ioredis` 依赖；写入 `.env.example`/`dev-up.ps1`/`ecosystem.config.cjs`/`docker-compose.{prod,local}.yml`。
+  - 验证：服务端 `tsc -b shared worldsvc gateway` 全绿 + worldsvc **81 e2e**（+主动迁城/迁城校验/宗门频道扇出 3 例，含被动迁城断言改写）；client `tsc --noEmit` 0 错 + **273 测试** + `build:web` 通过。
 - **S8-5 拍卖行**：材料/装备挂单（赛季资源禁挂）/竞拍/指定受拍人/10% 手续费（coin）/每日限额/反 RMT 审计。
 - **S8-6 养成统一**：`buildSiegeBlueprints` + PvE/SLG 材料统一 + 服务器权威扩展 + 战力单调性单测。
 - **S8-6.5 国家系统**：10 首府固定坐标写入 `shared/slg.ts`、Voronoi 分区计算、立国/灭国状态机、国民加成注入围攻蓝图。

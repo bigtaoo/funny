@@ -28,6 +28,11 @@ export interface SectSceneCallbacks {
   playerName: string;
 }
 
+/** Handle returned by showSect so the core can push live sect-channel messages in. */
+export interface SectSceneView {
+  applySectMsg(msg: SectMessageView): void;
+}
+
 type SectTab = 'families' | 'channel';
 type ViewMode = 'loading' | 'noSect' | 'create' | 'mySect';
 
@@ -165,6 +170,19 @@ export class SectScene implements Scene {
   private async loadChannel(): Promise<void> {
     if (!this.sect) return;
     this.messages = await this.cb.worldApi.getSectChannel(this.cb.worldId);
+  }
+
+  /**
+   * 实时收到一条本宗门频道消息（gateway push，S8-4b）→ 去重后插入并按需重绘。
+   * messages 为 newest-first（与 getSectChannel 一致），故新消息 unshift 到队首。
+   */
+  applySectMsg(msg: SectMessageView): void {
+    if (this.destroyed) return;
+    if (this.messages.some((m) => m.ts === msg.ts && m.senderId === msg.senderId && m.body === msg.body)) {
+      return; // 与轮询/重发去重
+    }
+    this.messages.unshift(msg);
+    if (this.mode === 'mySect' && this.activeTab === 'channel') this.render();
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
