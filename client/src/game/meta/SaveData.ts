@@ -44,6 +44,11 @@ export interface SaveData {
   pveUpgrades: Record<string, number>;
   equipped: Record<string, string>;
   flags: Record<string, boolean>;
+
+  // —— 成就系统（服务器权威，ACHIEVEMENT_DESIGN §3）。懒创建：缺省视为全 0 / 空，
+  //    legacy 档不迁移；客户端只读（PUT /save 不上行，A2）。antiCheat 不下发，故镜像不含。——
+  stats?: Record<string, number>; // 终身累计统计（StatKey→值），单调递增
+  achievements?: Record<string, { claimedTiers: number[] }>; // achId→已领阶号子集
 }
 
 /**

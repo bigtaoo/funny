@@ -209,6 +209,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/achievements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 成就定义表 + 我的 stats + 已领进度（客户端本地算阶，ACHIEVEMENT_DESIGN §6） */
+        get: operations["getAchievements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/achievements/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 领取某成就某阶金币（服务器二次校验 stat≥阈值 + $addToSet 幂等发币，§4.3） */
+        post: operations["claimAchievement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shop/items": {
         parameters: {
             query?: never;
@@ -715,6 +749,28 @@ export interface components {
             flags: {
                 [key: string]: boolean;
             };
+            /** @description 终身累计统计（StatKey→值），单调递增，服务器权威 */
+            stats?: {
+                [key: string]: number;
+            };
+            /** @description achId→已领阶号子集，幂等防重领 */
+            achievements?: {
+                [key: string]: {
+                    claimedTiers: number[];
+                };
+            };
+        };
+        Achievement: {
+            id: string;
+            statKey: string;
+            /** @enum {string} */
+            category: "pve" | "pvp" | "collection" | "progression";
+            titleId?: string;
+            hidden?: boolean;
+            tiers: {
+                threshold: number;
+                coins: number;
+            }[];
         };
         SyncPatch: {
             equipped?: components["schemas"]["SaveData"]["equipped"];
@@ -1386,6 +1442,76 @@ export interface operations {
             400: components["responses"]["ErrorResp"];
             401: components["responses"]["ErrorResp"];
             402: components["responses"]["ErrorResp"];
+        };
+    };
+    getAchievements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            defs: components["schemas"]["Achievement"][];
+                            stats: {
+                                [key: string]: number;
+                            };
+                            achievements: components["schemas"]["SaveData"]["achievements"];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    claimAchievement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    achId: string;
+                    tier: number;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            /** @description 本次发放金币 */
+                            granted: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
         };
     };
     getShopItems: {

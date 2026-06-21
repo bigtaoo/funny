@@ -30,6 +30,7 @@ import type { CampaignMapCallbacks } from '../scenes/CampaignMapScene';
 import type { LevelPrepCallbacks } from '../scenes/LevelPrepScene';
 import type { CollectionCallbacks } from '../scenes/CollectionScene';
 import type { StatsCallbacks } from '../scenes/StatsScene';
+import type { AchievementCallbacks } from '../scenes/AchievementScene';
 import type { ReplaySceneCallbacks } from '../scenes/ReplayScene';
 import type { ResultSceneCallbacks, EloResult } from '../scenes/ResultScene';
 import type { GameSceneCallbacks, GameSceneOptions } from '../scenes/GameScene';
@@ -47,6 +48,8 @@ import type { TeamsCallbacks } from '../scenes/TeamsScene';
 export interface LobbyView {
   /** Update the social (friends/chat/mail) unread total shown on the bottom-nav dot. */
   applySocialBadge(total: number): void;
+  /** Toggle the achievement-claimable red dot on the stats nav slot (ACHIEVEMENT_DESIGN §4.1). */
+  applyAchievementBadge(claimable: boolean): void;
 }
 
 /** Live handle for the room scene — the core forwards NetSession control events to it. */
@@ -108,6 +111,7 @@ export interface AppViews {
   showLevelPrep(cb: LevelPrepCallbacks): void;
   showCollection(cb: CollectionCallbacks): void;
   showStats(cb: StatsCallbacks): void;
+  showAchievements(cb: AchievementCallbacks): void;
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void;
   showResult(props: ResultViewProps): void;
 

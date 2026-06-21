@@ -131,6 +131,10 @@ export class LobbyScene implements Scene {
   private socialBadge = 0;
   /** Re-drawn layer for the social badge so updates don't rebuild the whole nav bar. */
   private socialBadgeLayer: PIXI.Container | null = null;
+  /** Any achievement tier is claimable (ACHIEVEMENT_DESIGN §4.1) → red dot on the stats nav slot. */
+  private achievementBadge = false;
+  /** Re-drawn layer for the achievement dot (cheap refresh, no nav rebuild). */
+  private achievementBadgeLayer: PIXI.Container | null = null;
   /** Set on destroy so a late-resolving badge fetch skips touching a dead container. */
   private destroyed = false;
 
@@ -170,6 +174,7 @@ export class LobbyScene implements Scene {
     this.titleBoil?.destroy();
     this.titleBoil = null;
     this.socialBadgeLayer = null;
+    this.achievementBadgeLayer = null;
   }
 
   /**
@@ -181,6 +186,17 @@ export class LobbyScene implements Scene {
     if (this.destroyed) return;
     this.socialBadge = Math.max(0, total | 0);
     this.drawSocialBadge();
+  }
+
+  /**
+   * Mark whether any achievement tier is claimable. The core fetches
+   * GET /achievements on lobby entry and computes hasClaimable; we redraw just
+   * the dot on the stats nav slot, not the nav bar.
+   */
+  applyAchievementBadge(claimable: boolean): void {
+    if (this.destroyed) return;
+    this.achievementBadge = claimable;
+    this.drawAchievementBadge();
   }
 
   // ── Input ──────────────────────────────────────────────────────────────────
@@ -450,6 +466,11 @@ export class LobbyScene implements Scene {
     navBg.addChild(this.socialBadgeLayer);
     this.drawSocialBadge();
 
+    // Achievement claimable dot over the stats slot (its own layer for cheap refresh).
+    this.achievementBadgeLayer = new PIXI.Container();
+    navBg.addChild(this.achievementBadgeLayer);
+    this.drawAchievementBadge();
+
     // VS overlay
     this.vsLayer = this.buildVsLayer(w, h);
     this.vsLayer.visible = false;
@@ -482,6 +503,28 @@ export class LobbyScene implements Scene {
     layer.addChild(g);
     txtNode.x = cx; txtNode.y = cy;
     layer.addChild(txtNode);
+  }
+
+  /** Draw (or clear) a small red dot at the top-right of the stats nav dot when a reward is claimable. */
+  private drawAchievementBadge(): void {
+    const layer = this.achievementBadgeLayer;
+    if (!layer) return;
+    layer.removeChildren();
+    if (!this.achievementBadge) return;
+
+    const s = this.statsNavRect;
+    const navH = s.h;
+    const dotR = Math.round(navH * 0.17);
+    const cx = s.x + s.w / 2 + dotR;
+    const cy = s.y + navH / 2 - Math.round(navH * 0.18) - dotR;
+    const r = Math.round(navH * 0.12);
+
+    const g = new PIXI.Graphics();
+    g.beginFill(C.red);
+    g.lineStyle(2, C.light, 0.9);
+    g.drawCircle(cx, cy, r);
+    g.endFill();
+    layer.addChild(g);
   }
 
   /**

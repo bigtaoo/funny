@@ -38,6 +38,8 @@ export interface StatsCallbacks {
   loadHistory?(): Promise<MatchHistoryEntry[]>;
   /** Watch a recorded match by roomId (fetch + decode server replay). Omitted when offline. */
   onWatchReplay?(roomId: string): void;
+  /** Open the achievement wall (S9-5). Shown as a top-right entry in the title bar. */
+  onOpenAchievements?(): void;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -104,6 +106,17 @@ export class StatsScene implements Scene {
     back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
     this.container.addChild(back);
     this.hits.push({ rect: { x: 0, y: 0, w: back.x + back.width + Math.round(h * 0.02), h: tbH }, fn: () => this.cb.onBack() });
+
+    // 成就墙入口（顶栏右上，ACHIEVEMENT_DESIGN §7：成就只在自己档案出现）。
+    if (this.cb.onOpenAchievements) {
+      const ach = txt(t('stats.achievements'), Math.round(h * 0.026), C.gold, true);
+      ach.anchor.set(1, 0.5); ach.x = w - Math.round(w * 0.04); ach.y = tbH / 2;
+      this.container.addChild(ach);
+      this.hits.push({
+        rect: { x: ach.x - ach.width - Math.round(w * 0.03), y: 0, w: ach.width + Math.round(w * 0.06), h: tbH },
+        fn: () => this.cb.onOpenAchievements!(),
+      });
+    }
 
     // Sections, stacked.
     const pad = Math.round(w * 0.06);

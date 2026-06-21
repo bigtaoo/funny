@@ -23,6 +23,7 @@ import { CampaignMapScene, type CampaignMapCallbacks } from './scenes/CampaignMa
 import { LevelPrepScene, type LevelPrepCallbacks } from './scenes/LevelPrepScene';
 import { CollectionScene, type CollectionCallbacks } from './scenes/CollectionScene';
 import { StatsScene, type StatsCallbacks } from './scenes/StatsScene';
+import { AchievementScene, type AchievementCallbacks } from './scenes/AchievementScene';
 import { WorldMapScene, type WorldMapCallbacks, type WorldMapView } from './scenes/WorldMapScene';
 import { FamilyScene, type FamilySceneCallbacks } from './scenes/FamilyScene';
 import { SectScene, type SectSceneCallbacks, type SectSceneView } from './scenes/SectScene';
@@ -82,7 +83,10 @@ class PixiAppViews implements AppViews {
     const scene = new LobbyScene(this.layout, this.input, cb);
     this.manager.goto(scene);
     window.addEventListener('resize', this.onResize);
-    return { applySocialBadge: (n) => scene.applySocialBadge(n) };
+    return {
+      applySocialBadge: (n) => scene.applySocialBadge(n),
+      applyAchievementBadge: (c) => scene.applyAchievementBadge(c),
+    };
   }
 
   showSettings(cb: SettingsSceneCallbacks): void {
@@ -123,6 +127,11 @@ class PixiAppViews implements AppViews {
   showStats(cb: StatsCallbacks): void {
     this.leaveLobby();
     this.manager.goto(new StatsScene(this.layout, this.input, cb));
+  }
+
+  showAchievements(cb: AchievementCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new AchievementScene(this.layout, this.input, cb));
   }
 
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void {

@@ -7,7 +7,7 @@
 
 import type { AuthCredential } from '../platform/IPlatform';
 import type { SaveData, SyncPatch } from '../game/meta/SaveData';
-import type { components } from './openapi';
+import type { components, operations } from './openapi';
 import { netLog } from './log';
 
 const log = netLog('api');
@@ -36,6 +36,12 @@ export type MailAttachmentView = Schemas['MailAttachmentView'];
 export type SocialBadges = Schemas['SocialBadges'];
 /** 服务端持久化录像（opaque 帧，base64）；客户端用 net/serverReplay 解码回放。 */
 export type ServerReplay = Schemas['MatchReplay'];
+// —— 成就系统（S9-5）——
+/** 成就定义（硬编码 @nw/shared，服务端下发；客户端据此 + stats 本地算阶）。 */
+export type Achievement = Schemas['Achievement'];
+/** GET /achievements 回包：定义表 + 我的 stats + 已领进度。 */
+export type AchievementsView =
+  operations['getAchievements']['responses']['200']['content']['application/json']['data'];
 
 type ApiResp<T> =
   | { ok: true; data: T }
@@ -254,6 +260,17 @@ export class ApiClient {
     receipt: string,
   ): Promise<{ save: SaveData; granted: number }> {
     return this.post<{ save: SaveData; granted: number }>('/iap/verify', { platform, receipt });
+  }
+
+  // ── 成就（S9-5，需登录 token）────────────────────────────
+  /** 成就定义表 + 我的 stats + 已领进度；客户端本地算阶（ACHIEVEMENT_DESIGN §6）。 */
+  async getAchievements(): Promise<AchievementsView> {
+    return this.request<AchievementsView>('GET', '/achievements');
+  }
+
+  /** 领取某成就某阶金币：服务器二次校验 stat≥阈值 + 幂等发币 → 回推权威存档 + 本次发放数。 */
+  async claimAchievement(achId: string, tier: number): Promise<{ save: SaveData; granted: number }> {
+    return this.post<{ save: SaveData; granted: number }>('/achievements/claim', { achId, tier });
   }
 
   // ── 社交：好友（S6-1，需登录 token）。发送/拉取走 REST，实时事件经 gateway push（NetSession）。──
