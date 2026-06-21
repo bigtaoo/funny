@@ -1,2 +1,5 @@
 node_modules/
 dist/
+
+# git worktree 工作目录（并行开发，见 claudedocs/worktrees.md）
+.claude/worktrees/
