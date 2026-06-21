@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "death_building",
+  "duration": 0.55,
+  "loop": false,
+  "defaultColor": "0x222222",
+  "layers": [
+    {
+      "type": "ring",
+      "params": {
+        "radius": { "from": 0, "to": 42 },
+        "alpha": { "from": 0.75, "to": 0 },
+        "lineWidth": 2.5
+      }
+    },
+    {
+      "type": "spokes",
+      "count": 12,
+      "params": {
+        "innerR": { "from": 0, "to": 11.76 },
+        "outerR": { "from": 0, "to": 38.64 },
+        "alpha": { "from": 1, "to": 0 },
+        "lineWidth": 1.5,
+        "emphasisEvery": 3,
+        "emphasisLineWidth": 2.5
+      }
+    },
+    {
+      "type": "dots",
+      "count": 4,
+      "params": {
+        "angleOffset": 0.63,
+        "spreadR": { "from": 0, "to": 38 },
+        "dotSize": { "from": 4, "to": 0 },
+        "alpha": { "from": 0.9, "to": 0 }
+      }
+    }
+  ]
+}

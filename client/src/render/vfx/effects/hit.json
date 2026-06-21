@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "hit",
+  "duration": 0.25,
+  "loop": false,
+  "defaultColor": "0x222222",
+  "layers": [
+    {
+      "type": "ring",
+      "params": {
+        "radius": { "from": 0, "to": 26 },
+        "alpha": { "from": 1, "to": 0 },
+        "lineWidth": 2
+      }
+    },
+    {
+      "type": "spokes",
+      "count": 6,
+      "params": {
+        "innerR": { "from": 0, "to": 11.7 },
+        "outerR": { "from": 0, "to": 23.92 },
+        "alpha": { "from": 1, "to": 0 },
+        "lineWidth": 2
+      }
+    }
+  ]
+}
