@@ -766,6 +766,8 @@ export interface components {
             visible?: boolean;
             /** @description G5：该格归同家族盟友所有（视野内、非己方）。客户端用友方色渲染。 */
             ally?: boolean;
+            /** @description G5：该格归本宗门「联盟宗门」成员所有（视野内、非己方、非家族）。联盟不共享视野， 仅在地图上用黄描边标记区分（§8.2，盟友间禁止进攻/夺地）。 */
+            allySect?: boolean;
         };
         WorldMapView: {
             worldId: string;

@@ -94,6 +94,11 @@ export interface WorldTileView {
    */
   ally?: boolean;
   /**
+   * G5：该格归本宗门「联盟宗门」成员所有（视野内、非己方、非家族）。联盟不共享视野，
+   * 仅地图黄描边标记区分（§8.2）。家族盟友走 `ally`；本字段专指跨宗门联盟。
+   */
+  allySect?: boolean;
+  /**
    * G5 视野：该格是否在请求者当前视野内。
    * - true：动态层（归属/驻军/防守/保护罩）如实返回；
    * - false：视野外，仅返回程序化底层地形（type/level/resType），动态层全部隐去
@@ -262,6 +267,8 @@ export class WorldService {
     const vis = (x: number, y: number): boolean => isInVision(sources, x, y);
     // 家族成员集（含自己）：可见的家族盟友领地标 ally（客户端用友方色，不显敌色）。
     const family = await this.familyMemberIds(worldId, accountId);
+    // 联盟宗门成员集（≤2 联盟宗门）：可见的联盟领地标 allySect（客户端黄描边，§8.2）。
+    const allySect = await this.allySectMemberIds(worldId, accountId);
 
     // 批量解析他人领地昵称：只对「可见的他人领地」拉档（视野外不显归属，无需 profile）。
     const otherOwnerIds = [...new Set(
@@ -292,7 +299,14 @@ export class WorldService {
           ? profileMap.get(o.ownerId) : undefined;
         const view = o ? this.tileDocView(o, accountId, ownerProfile) : this.proceduralView(worldId, x, y);
         const ally = !!o?.ownerId && o.ownerId !== accountId && family.has(o.ownerId);
-        tiles.push({ ...view, visible: true, ...(ally ? { ally: true } : {}) });
+        // 联盟标记：可见、非己方、非家族、属联盟宗门成员（家族盟友优先，二者互斥）。
+        const allied = !ally && !!o?.ownerId && o.ownerId !== accountId && allySect.has(o.ownerId);
+        tiles.push({
+          ...view,
+          visible: true,
+          ...(ally ? { ally: true } : {}),
+          ...(allied ? { allySect: true } : {}),
+        });
       }
     }
     return { worldId, cx: Math.floor(cx), cy: Math.floor(cy), r: rad, tiles };
@@ -307,6 +321,33 @@ export class WorldService {
       for (const m of mates) ids.add(m.accountId);
     }
     return ids;
+  }
+
+  /**
+   * G5：本宗门「联盟宗门」（`sect.allySectIds`，≤2）全体成员的 accountId 集。
+   * 链路：accountId → familyMembers → family.sectId → sect.allySectIds → 各联盟宗门成员家族 → 成员。
+   * 联盟**不共享视野**（§8.2），仅供 getMap 标记联盟领地（黄描边）。无宗门/无联盟 → 空集。
+   * 不含自己/同家族（那些走 `familyMemberIds`）。
+   */
+  private async allySectMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
+    const { cols } = this.deps;
+    const result = new Set<string>();
+    const myMember = await cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
+    if (!myMember?.familyId) return result;
+    const myFam = await cols.families.findOne({ _id: myMember.familyId });
+    if (!myFam?.sectId) return result;
+    const mySect = await cols.sects.findOne({ _id: myFam.sectId });
+    const allyIds = mySect?.allySectIds ?? [];
+    if (allyIds.length === 0) return result;
+    const allyFamilies = await cols.families
+      .find({ worldId, sectId: { $in: allyIds } })
+      .project<{ _id: string }>({ _id: 1 })
+      .toArray();
+    const famIds = allyFamilies.map((f) => f._id);
+    if (famIds.length === 0) return result;
+    const members = await cols.familyMembers.find({ familyId: { $in: famIds } }).toArray();
+    for (const m of members) result.add(m.accountId);
+    return result;
   }
 
   /**

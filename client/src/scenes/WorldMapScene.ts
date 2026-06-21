@@ -87,6 +87,7 @@ const ENEMY_BASE_TINT= 0x4477cc; // 敌方主城（蓝墨浓）
 const ALLY_TINT      = 0x9cd6a4; // 家族盟友领地（绿墨淡，G5 友方第三色）
 const ALLY_BASE_TINT = 0x46a85a; // 家族盟友主城（绿墨浓）
 const FOG_COLOR      = 0x6b6458; // 视野外灰雾（铅笔灰，覆盖在地形上）
+const ALLY_SECT_BORDER = 0xe6a817; // 联盟宗门领地黄描边（金琥珀，G5；不共享视野仅标记，§8.2）
 
 function tileColor(tile: WorldTileView): number {
   if (tile.mine)     return tile.type === 'base' ? MINE_BASE_TINT : MINE_TINT;
@@ -337,6 +338,14 @@ export class WorldMapScene implements Scene {
           const dotColor = tile.mine ? 0xcc2222 : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0x2266cc : 0x888888));
           g.beginFill(dotColor, 0.9);
           g.drawCircle(px + TILE_PX - 4, py + 4, 2);
+          g.endFill();
+        }
+
+        // G5：联盟宗门领地——金琥珀内描边标记（区别于首府星标/选区的亮黄 0xffcc00；不共享视野仅标记）。
+        if (tile?.allySect && !fogged) {
+          g.lineStyle(1.5, ALLY_SECT_BORDER, 0.95);
+          g.beginFill(0, 0);
+          g.drawRect(px + 1.5, py + 1.5, TILE_PX - 4, TILE_PX - 4);
           g.endFill();
         }
       }
