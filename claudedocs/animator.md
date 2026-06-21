@@ -20,6 +20,7 @@ cd tools/animator && npm run start   # 端口 9091
 - **FK**：`Skeleton.computeFK(rootX, rootY, transforms, lengthScales?)` 纯函数；hit-test 须传 `state.boneLengthScales`
 - **关键帧插值**：`sampleClip(clip, t)` 无外部依赖，可复制到游戏引擎
 - **导出格式**：`.tao`（JSZip + spritesheet.png + animation.json v2）；`.tao.editor`（保留原始图 + 编辑状态）
+- **多工程自动保存**：IndexedDB 库 `nw-animator`（`meta`+`blobs` 两 store），脏事件停手 1.5s debounce 静默存当前工程，启动恢复上次工程；底部栏工程下拉 + 增删改复制 + 状态点。编排见 `AutoSaveController`，存储见 `ProjectStore`，UI 见 `ProjectPanel`（设计 §11）。**注意**：浏览器本地存储，换浏览器/清缓存即失；重要成果仍需 `Save .editor` 导磁盘。`Load .editor` 会覆盖当前选中工程
 - **骨骼长度**：`AppState.boneLengthScales`（稀疏 Map）序列化进两种格式
 - **编辑器模式**：`'skin'`（静息姿调 Binding）/ `'animate'`（关键帧编辑）；快捷键 `S`
 - **静息姿约定**：角色朝右，`r_`（解剖右）= 屏幕左，`l_`（解剖左）= 屏幕右
@@ -51,6 +52,9 @@ cd tools/animator && npm run start   # 端口 9091
 | `src/animation/AnimationController.ts` | clip CRUD + 播放 + 关键帧操作 |
 | `src/animation/interpolate.ts` | `sampleClip` 插值（无依赖，游戏侧共享） |
 | `src/images/ImageController.ts` | 逐张 PNG 导入、Blob + PIXI.Texture 管理 |
-| `src/io/IOController.ts` | `.tao` 导出 / 导入；`.tao.editor` 存档 |
+| `src/io/IOController.ts` | `.tao` 导出 / 导入；`.tao.editor` 存档（`buildEditorBlob`/`loadEditorBlob` 复用） |
+| `src/io/ProjectStore.ts` | IndexedDB 工程库（`meta`+`blobs` 两 store） |
+| `src/io/AutoSaveController.ts` | 多工程自动保存 + 切换 + 启动恢复 |
+| `src/ui/ProjectPanel.ts` | 底部栏工程下拉 + 增删改复制 + 自动保存状态点 |
 | `src/timeline/TimelineView.ts` | Canvas 时间轴渲染 + 交互 |
 | `src/interaction/InteractionController.ts` | 鼠标拖拽 + 键盘快捷键 |

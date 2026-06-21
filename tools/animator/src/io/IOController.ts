@@ -100,46 +100,52 @@ export class IOController {
 
   // ── Editor save / load ────────────────────────────────────────────────────
 
+  /** Build the `.tao.editor` archive (editor.json + per-slot PNGs) as a Blob.
+   *  Shared by the manual "Save .editor" button and the IndexedDB auto-save. */
+  async buildEditorBlob(): Promise<Blob> {
+    const zip = new JSZip();
+
+    // editor.json — all project data + editor state
+    const animations: Record<string, SerializedClip> = {};
+    this.animCtrl.store.forEach((clip, name) => {
+      animations[name] = this.serializeClip(clip);
+    });
+
+    const bindings: Record<string, SpriteBinding> = {};
+    this.state.boneBindings.forEach((b, id) => { bindings[id] = { ...b }; });
+
+    const attachmentPoints: AttachmentPoint[] = [];
+    this.state.attachmentPoints.forEach(pt => attachmentPoints.push({ ...pt }));
+
+    const boneLengthScales: Record<string, number> = {};
+    this.state.boneLengthScales.forEach((v, k) => { boneLengthScales[k] = v; });
+
+    const editorJson: EditorProject = {
+      version:          1,
+      selectedClip:     this.animCtrl.currentName,
+      previewMode:      this.state.previewMode,
+      bindings,
+      animations,
+      attachmentPoints,
+      ...(Object.keys(boneLengthScales).length > 0 && { boneLengthScales }),
+    };
+    zip.file('editor.json', JSON.stringify(editorJson, null, 2));
+
+    // images/ — one PNG per loaded slot (lossless, no spritesheet packing)
+    const imgFolder = zip.folder('images')!;
+    const allSlots = [...this.state.boneBindings.keys(), 'shadow'];
+    for (const slotId of allSlots) {
+      const blob = this.imageCtrl.getBlob(slotId);
+      if (blob) imgFolder.file(`${slotId}.png`, blob);
+    }
+
+    return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  }
+
   async saveEditorProject(): Promise<void> {
     this.bus.emit('status', 'Saving .tao.editor…');
     try {
-      const zip = new JSZip();
-
-      // editor.json — all project data + editor state
-      const animations: Record<string, SerializedClip> = {};
-      this.animCtrl.store.forEach((clip, name) => {
-        animations[name] = this.serializeClip(clip);
-      });
-
-      const bindings: Record<string, SpriteBinding> = {};
-      this.state.boneBindings.forEach((b, id) => { bindings[id] = { ...b }; });
-
-      const attachmentPoints: AttachmentPoint[] = [];
-      this.state.attachmentPoints.forEach(pt => attachmentPoints.push({ ...pt }));
-
-      const boneLengthScales: Record<string, number> = {};
-      this.state.boneLengthScales.forEach((v, k) => { boneLengthScales[k] = v; });
-
-      const editorJson: EditorProject = {
-        version:          1,
-        selectedClip:     this.animCtrl.currentName,
-        previewMode:      this.state.previewMode,
-        bindings,
-        animations,
-        attachmentPoints,
-        ...(Object.keys(boneLengthScales).length > 0 && { boneLengthScales }),
-      };
-      zip.file('editor.json', JSON.stringify(editorJson, null, 2));
-
-      // images/ — one PNG per loaded slot (lossless, no spritesheet packing)
-      const imgFolder = zip.folder('images')!;
-      const allSlots = [...this.state.boneBindings.keys(), 'shadow'];
-      for (const slotId of allSlots) {
-        const blob = this.imageCtrl.getBlob(slotId);
-        if (blob) imgFolder.file(`${slotId}.png`, blob);
-      }
-
-      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const blob = await this.buildEditorBlob();
       await saveWithPicker(blob, 'project', [
         { description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.tao.editor'] } },
       ]);
@@ -149,10 +155,16 @@ export class IOController {
     }
   }
 
-  async loadEditorProject(file: File): Promise<void> {
-    this.bus.emit('status', `Loading ${file.name}…`);
+  loadEditorProject(file: File): Promise<void> {
+    return this.loadEditorBlob(file, file.name);
+  }
+
+  /** Restore editor state from a `.tao.editor` archive (File or Blob).
+   *  Used by both the manual "Load .editor" button and project switching. */
+  async loadEditorBlob(data: Blob, label: string): Promise<void> {
+    this.bus.emit('status', `Loading ${label}…`);
     try {
-      const zip = await JSZip.loadAsync(file);
+      const zip = await JSZip.loadAsync(data);
 
       const jsonFile = zip.file('editor.json');
       if (!jsonFile) throw new Error('editor.json missing from archive');
@@ -201,7 +213,7 @@ export class IOController {
       const clipToSelect = project.selectedClip ?? [...this.animCtrl.store.keys()][0];
       if (clipToSelect) this.animCtrl.selectClip(clipToSelect);
 
-      this.bus.emit('status', `Loaded ${file.name}`);
+      this.bus.emit('status', `Loaded ${label}`);
     } catch (err) {
       this.bus.emit('status', `Load failed: ${(err as Error).message}`);
     }

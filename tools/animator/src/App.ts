@@ -16,6 +16,10 @@ import { ToolbarPanel }          from './ui/ToolbarPanel';
 import { StatusBar }             from './ui/StatusBar';
 import { ResizablePanels }       from './ui/ResizablePanels';
 import { IOController }          from './io/IOController';
+import { ProjectStore }          from './io/ProjectStore';
+import { AutoSaveController }     from './io/AutoSaveController';
+import { ProjectPanel }          from './ui/ProjectPanel';
+import type { AttachmentPoint }  from './core/types';
 import type { AppEvents }        from './core/EventBus';
 
 export class App {
@@ -67,7 +71,7 @@ export class App {
       rootEl.querySelector<HTMLElement>('#attachment-panel')!,
       bus, state,
     );
-    new IOController(state, animCtrl, imageCtrl, cmdManager, bus);
+    const ioCtrl = new IOController(state, animCtrl, imageCtrl, cmdManager, bus);
     new ResizablePanels(rootEl);
 
     // ── 6. Auto-binding when images are loaded ───────────────────────────────
@@ -147,11 +151,36 @@ export class App {
     const tlLoop = () => { timelineView.render(); requestAnimationFrame(tlLoop); };
     requestAnimationFrame(tlLoop);
 
-    // ── 10. Load presets ─────────────────────────────────────────────────────
-    for (const name of ['idle', 'walk', 'attack', 'hurt', 'death', 'spawn'] as const) {
-      animCtrl.loadPreset(name);
-    }
-    animCtrl.selectClip('walk');
+    // ── 10. Default-project factory ───────────────────────────────────────────
+    // Resets all state to a blank character: default attachments, no images,
+    // the six preset clips, "walk" selected. Used for "New" / "Delete last".
+    const DEFAULT_ATTACHMENTS: AttachmentPoint[] = [
+      { id: 'shadow', label: '🔵 Shadow', parentBone: 'root',  offsetX: 0, offsetY: 52 },
+      { id: 'hit',    label: '✦ Hit',     parentBone: 'spine', offsetX: 0, offsetY: -30 },
+    ];
+    const resetToDefaults = () => {
+      animCtrl.clearAll();
+      [...state.boneBindings.keys()].forEach(id => state.removeBinding(id));
+      imageCtrl.clearAll();
+      state.setAllLengthScales({});
+      state.setAllAttachmentPoints(DEFAULT_ATTACHMENTS.map(pt => ({ ...pt })));
+      state.setPreviewMode('skeleton');
+      for (const name of ['idle', 'walk', 'attack', 'hurt', 'death', 'spawn'] as const) {
+        animCtrl.loadPreset(name);
+      }
+      animCtrl.selectClip('walk');
+      cmdManager.clear();
+    };
+    resetToDefaults();
+
+    // ── 11. Project library + auto-save ───────────────────────────────────────
+    const projectStore = new ProjectStore();
+    const autoSave = new AutoSaveController(projectStore, ioCtrl, bus, resetToDefaults);
+    new ProjectPanel(
+      rootEl.querySelector<HTMLElement>('.bottom-bar')!,
+      bus, autoSave, projectStore,
+    );
+    void autoSave.bootstrap();
 
     bus.emit('status', 'Ready');
   }
