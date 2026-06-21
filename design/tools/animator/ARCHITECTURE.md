@@ -40,7 +40,9 @@ src/
 │   └── ContextMenu.ts         右键菜单（easing 切换等）
 │
 ├── io/
-│   └── IOController.ts        .tao 导出（JSZip + shelf bin-packing + canvas PNG）/ 导入
+│   ├── IOController.ts        .tao 导出（JSZip + shelf bin-packing + canvas PNG）/ 导入；.tao.editor 存档（buildEditorBlob / loadEditorBlob 复用）
+│   ├── ProjectStore.ts        IndexedDB 工程库（meta + blobs 两 store）
+│   └── AutoSaveController.ts  多工程自动保存 + 切换 + 启动恢复（见 §11）
 │
 └── ui/
     ├── AnimListPanel.ts        左侧动画列表
@@ -48,6 +50,7 @@ src/
     ├── ImagePanel.ts           图片导入面板（bone slot 映射）
     ├── AttachmentPanel.ts      挂点编辑面板（parentBone + offset + shadow size）
     ├── ToolbarPanel.ts         顶部工具栏
+    ├── ProjectPanel.ts         底部栏工程下拉 + 增删改/复制 + 自动保存状态点
     └── StatusBar.ts            底部状态栏
 ```
 
@@ -347,7 +350,30 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 
 ---
 
-## 11. 快捷键
+## 11. 多工程自动保存（IndexedDB）
+
+浏览器内的"安全网"持久化，与磁盘文件存档（`Save .editor` / `Load .editor`）并存、互不替代。
+
+**存储**：IndexedDB 库 `nw-animator`，两个 object store（`ProjectStore.ts`）：
+- `meta`：`{ id, name, updatedAt }`——列表渲染只读这个，不拉 blob。
+- `blobs`：`{ id, blob }`——blob 即 `IOController.buildEditorBlob()` 产出的 `.tao.editor` zip；仅在打开工程时读取。
+
+> localStorage 装不下 PNG，故用 IndexedDB；`updatedAt` 用于下拉按最近编辑排序。
+
+**编排**（`AutoSaveController.ts`）：
+- **脏事件**：订阅 `kf:change` / `binding:change` / `attachment:change` / `rig:change` / `anim:list` / `images:change`，停手 **1.5s** debounce 写一次当前工程。
+- **切换/新建/复制/删除**：切换前先 `flushNow()` 落盘当前工程再加载目标，避免丢改动；新建/删到空时调用 `App.resetToDefaults()`（清空 + 6 预设 + 选 walk）建空白角色。
+- **加载抑制**：程序化加载（`loadEditorBlob` / `resetToDefaults`）期间置 `loading` 标志，吞掉它们触发的脏事件，避免自存自。
+- **启动恢复**：`bootstrap()` 读 `localStorage['nw-animator:activeProject']`，恢复上次工程；库为空则把启动态存为 "Untitled"。
+- **关页兜底**：`visibilitychange`(hidden) 与 `beforeunload` 尽力 `flushNow()`。
+
+**UI**（`ProjectPanel.ts`，底部栏）：工程下拉 + `＋`/`✎`/`⎘`/`🗑` + 状态点（灰 idle / 黄 dirty / 蓝 saving / 绿 saved），事件 `project:list` / `project:active` / `autosave:state` 驱动。
+
+**注意**：`Load .editor` 导入文件会覆盖**当前选中工程**（下次自存写入）；想作为新角色须先 `＋` 新建再导入。
+
+---
+
+## 12. 快捷键
 
 | 键 | 动作 |
 |---|---|
