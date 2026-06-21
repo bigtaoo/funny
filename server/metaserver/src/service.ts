@@ -12,6 +12,8 @@ import {
   PVE_DAILY_CLEAR_REWARD_CAP,
   shouldSpotCheck,
   chaptersClearedCount,
+  sanitizePvpReportedStats,
+  accrueStats,
 } from '@nw/shared';
 import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import {
@@ -365,6 +367,30 @@ export class MetaService {
     });
   }
 
+  /**
+   * PvE 喂入（S9-3b）：把裁判复算回传的本局成就计数（`kill.*`/`cast.*`）累加进玩家终身 stats。
+   * statsJson 解析失败 / 非对象 → 跳过；过 {@link sanitizePvpReportedStats}（L1 caps 兜底「串通裁判
+   * 刷量」，越界整份丢弃，不阻塞发材料）；空增量懒创建不实例化 stats。失败不抛（喂入是 best-effort
+   * 附加，绝不因此卡死发材料主路径——金币池小且一次性，§4.4）。
+   */
+  private async accrueJudgedPveStats(accountId: string, statsJson: string | undefined): Promise<void> {
+    if (!statsJson) return;
+    let reported: Record<string, number>;
+    try {
+      const parsed = JSON.parse(statsJson) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+      reported = parsed as Record<string, number>;
+    } catch {
+      return;
+    }
+    const clean = sanitizePvpReportedStats(reported);
+    if (!clean || Object.keys(clean).length === 0) return; // L1 越界拒收 / 无可累加
+    await this.mutateSave(accountId, (s) => {
+      const stats = accrueStats(s.stats, clean);
+      return stats === s.stats ? s : { ...s, stats };
+    });
+  }
+
   /** 当日上限内发材料（reward 已是权威表）。返回实发 reward（capped → {}）+ 是否 capped + 回推 save。 */
   private async grantClearReward(
     accountId: string,
@@ -505,6 +531,11 @@ export class MetaService {
       const s = await getOrCreateSave(cols, accountId, now());
       return ok({ save: s, granted: {}, capped: false, verified: false });
     }
+    // PvE 喂入（S9-3b，ACHIEVEMENT_DESIGN §6.2）：仅**裁判成功复算**（status==='verified'，非
+    // benefit-of-doubt 的 'unverified'）时，把裁判权威产出的本局 kill/cast 累加进终身 stats。
+    // 裁判是随机第三方无头复算 → 玩家无法伪造；仍过 L1 caps 作为「玩家串通裁判刷量」的廉价兜底
+    // （越界整份丢弃，不阻塞发材料）。A2：计数只在此服务器权威结算点写。
+    if (status === 'verified') await this.accrueJudgedPveStats(accountId, verdict.statsJson);
     const granted = await this.grantClearReward(accountId, level.reward);
     if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
     return ok({ save: granted.save, granted: granted.granted, capped: granted.capped, verified: true });

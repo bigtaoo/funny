@@ -118,6 +118,8 @@ export interface JudgeVerdict {
   ok: boolean;
   /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：复算得到的星数（0=未通关） */
   stars: number;
+  /** PvE 喂入（S9-3b）：复算出的玩家本局成就计数 JSON；PvP/siege 恒空 */
+  statsJson: string;
 }
 
 export interface ClientMsg {
@@ -1102,7 +1104,7 @@ export const ClientCaps: MessageFns<ClientCaps> = {
 };
 
 function createBaseJudgeVerdict(): JudgeVerdict {
-  return { requestId: "", stateHash: "", winnerSide: 0, ok: false, stars: 0 };
+  return { requestId: "", stateHash: "", winnerSide: 0, ok: false, stars: 0, statsJson: "" };
 }
 
 export const JudgeVerdict: MessageFns<JudgeVerdict> = {
@@ -1121,6 +1123,9 @@ export const JudgeVerdict: MessageFns<JudgeVerdict> = {
     }
     if (message.stars !== 0) {
       writer.uint32(40).uint32(message.stars);
+    }
+    if (message.statsJson !== "") {
+      writer.uint32(50).string(message.statsJson);
     }
     return writer;
   },
@@ -1172,6 +1177,14 @@ export const JudgeVerdict: MessageFns<JudgeVerdict> = {
           message.stars = reader.uint32();
           continue;
         }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.statsJson = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1191,6 +1204,7 @@ export const JudgeVerdict: MessageFns<JudgeVerdict> = {
     message.winnerSide = object.winnerSide ?? 0;
     message.ok = object.ok ?? false;
     message.stars = object.stars ?? 0;
+    message.statsJson = object.statsJson ?? "";
     return message;
   },
 };

@@ -32,6 +32,8 @@ export interface JudgeRes {
   winnerSide?: number;
   /** PvE 复算得到的星数（PVE_INTEGRITY §8.6 L1）。 */
   stars?: number;
+  /** PvE 喂入（S9-3b，ACHIEVEMENT_DESIGN §6.2）：复算出的玩家本局成就计数 JSON；PvP/siege 恒空。 */
+  statsJson?: string;
   judgeAccountId?: string;
 }
 

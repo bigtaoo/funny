@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle, PVE_DAILY_CLEAR_REWARD_CAP } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
+import type { GatewayClient, JudgeRes } from '../dist/gatewayClient.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_pve_test';
@@ -118,5 +119,83 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(u2.statusCode).toBe(402);
     // 未知升级 → 400。
     expect((await upgrade('nope')).statusCode).toBe(400);
+  });
+});
+
+// S9-3b PvE 喂入：裁判复算回传 kill/cast（verdict.statsJson）→ /pve/verify verified 时累加进 stats。
+// 需注入「可用 + 可配裁决」的假裁判触发抽检 + 复算（首通恒触发抽检 → needsReplay → verify）。
+describe.skipIf(!mongo)('pve achievement feed (S9-3b) e2e', () => {
+  const m = mongo!;
+  let app: FastifyInstance;
+  let token: string;
+  const body = (r: { payload: string }) => JSON.parse(r.payload);
+  const auth = () => ({ authorization: `Bearer ${token}` });
+  /** 可变裁决：每个用例改 `verdict` 配置假裁判回传值（含 statsJson）。 */
+  let verdict: JudgeRes = { ok: true, stars: 3, statsJson: '{}' };
+  const fakeGateway: GatewayClient = {
+    available: true,
+    judge: async () => verdict,
+    push: async () => {},
+    presence: async () => ({}),
+    invalidateFriends: async () => {},
+  };
+  const clear = (levelId: string, stars = 3) =>
+    app.inject({ method: 'POST', url: '/pve/clear', headers: auth(), payload: { levelId, stars } });
+  const verify = (verifyId: string) =>
+    app.inject({ method: 'POST', url: '/pve/verify', headers: auth(), payload: { verifyId, frames: [], endFrame: 0 } });
+
+  beforeEach(async () => {
+    await m.db.dropDatabase();
+    await m.ensureIndexes();
+    if (app) await app.close();
+    app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', gateway: fakeGateway });
+    const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'pve-feed-1' } }));
+    token = r.data.token;
+    await app.inject({ method: 'GET', url: '/save', headers: auth() });
+  });
+  afterAll(async () => { if (app) await app.close(); });
+
+  it('裁判 verified：kill/cast 累加进终身 stats + 材料照发', async () => {
+    verdict = { ok: true, stars: 3, statsJson: '{"kill.archer":4,"cast.meteor":2}' };
+    // 首通 → 恒抽检 → 暂不发材料，回 needsReplay + verifyId。
+    const c = body(await clear('ch1_lv1', 3));
+    expect(c.data.needsReplay).toBe(true);
+    expect(c.data.granted).toEqual({});
+    expect(c.data.save.stats?.['kill.archer'] ?? 0).toBe(0); // 复算前不入账
+
+    const v = body(await verify(c.data.verifyId));
+    expect(v.data.verified).toBe(true);
+    expect(v.data.granted).toEqual({ scrap: 6, lead: 2 }); // 复算通过 → 发材料
+    expect(v.data.save.stats['kill.archer']).toBe(4);
+    expect(v.data.save.stats['cast.meteor']).toBe(2);
+    expect(v.data.save.stats['kill.guard'] ?? 0).toBe(0); // 缺省项不写
+  });
+
+  it('L1 越界（串通裁判刷量）：整份拒收不入账，但材料仍发 + verified', async () => {
+    verdict = { ok: true, stars: 3, statsJson: '{"kill.archer":9999,"cast.meteor":1}' }; // 9999 > cap 200
+    const c = body(await clear('ch1_lv1', 3));
+    const v = body(await verify(c.data.verifyId));
+    expect(v.data.verified).toBe(true);
+    expect(v.data.granted).toEqual({ scrap: 6, lead: 2 }); // 喂入失败不阻塞发材料
+    expect(v.data.save.stats?.['kill.archer'] ?? 0).toBe(0); // 越界 → 整份丢弃
+    expect(v.data.save.stats?.['cast.meteor'] ?? 0).toBe(0);
+  });
+
+  it('benefit-of-doubt（裁判不可裁 ok:false）：发材料但不喂 stats（非权威复算）', async () => {
+    verdict = { ok: false }; // 无候选 / 复算失败 → unverified，照发材料（不罚诚实玩家）但不喂入
+    const c = body(await clear('ch1_lv1', 3));
+    const v = body(await verify(c.data.verifyId));
+    expect(v.data.verified).toBe(true); // 既有契约：verified=未被判可疑（含 benefit-of-doubt），仍发材料
+    expect(v.data.granted).toEqual({ scrap: 6, lead: 2 });
+    expect(v.data.save.stats?.['kill.archer'] ?? 0).toBe(0); // 关键：非权威复算 → 绝不入账（status!=='verified'）
+  });
+
+  it('rejected（复算星 < 声称）：判可疑，不发材料也不喂 stats', async () => {
+    verdict = { ok: true, stars: 1, statsJson: '{"kill.archer":4}' }; // 复算 1 星 < 声称 3 星
+    const c = body(await clear('ch1_lv1', 3));
+    const v = body(await verify(c.data.verifyId));
+    expect(v.data.verified).toBe(false);
+    expect(v.data.granted).toEqual({});
+    expect(v.data.save.stats?.['kill.archer'] ?? 0).toBe(0);
   });
 });
