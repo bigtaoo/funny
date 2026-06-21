@@ -65,6 +65,7 @@ cd tools/level-editor && npm run start   # 端口 9092
 
 ## 会话说明
 
+- **⚠️ 必须在自己的 worktree 下开展任务，不要直接在 main 分支操作**：开始任务前先用 `git worktree` 建立独立工作目录 + 独立分支，所有改动在 worktree 内完成；约定与实时索引见 `claudedocs/worktrees.md`，多会话续做先读它对号入座。任务结束再合并回 main 并清理 worktree。仅有微小的文档/索引订正可在主目录直接提交。
 - **工作目录**：`C:\Users\TaoWang\Documents\funny`，Bash 命令直接执行，**不要**绕道 `wsl -d ubuntu`。
 - **权限**：所有命令（包括 `rm` / `rmdir` / `git rm`）直接执行，**无需向用户确认**。
 - **验证方式**：代码改动后只做 TypeScript 编译检查（`tsc --noEmit`）和 webpack 构建验证，**不要**启动游戏截图验证。
