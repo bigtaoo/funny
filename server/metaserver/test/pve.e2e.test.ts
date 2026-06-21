@@ -24,12 +24,16 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
   const m = mongo!;
   let app: FastifyInstance;
   let token: string;
+  let accountId: string;
   const body = (r: { payload: string }) => JSON.parse(r.payload);
   const auth = () => ({ authorization: `Bearer ${token}` });
   const clear = (levelId: string, stars = 3) =>
     app.inject({ method: 'POST', url: '/pve/clear', headers: auth(), payload: { levelId, stars } });
   const upgrade = (upgradeId: string) =>
     app.inject({ method: 'POST', url: '/pve/upgrade', headers: auth(), payload: { upgradeId } });
+  /** 直接种入已通关关卡（绕过逐关解锁前置），用于测终关章节计数。 */
+  const seedCleared = (cleared: string[]) =>
+    m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.progress.cleared': cleared } });
 
   beforeEach(async () => {
     await m.db.dropDatabase();
@@ -38,6 +42,8 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     app = await buildApp({ cols: m.collections, jwt, internalKey: 'k' });
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'pve-dev-1' } }));
     token = r.data.token;
+    accountId = r.data.accountId;
+    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // 建档
   });
   afterAll(async () => { if (app) await app.close(); });
 
@@ -72,6 +78,33 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(over.data.capped).toBe(true);
     expect(over.data.granted).toEqual({});
     expect(over.data.save.materials.scrap).toBe(6 * PVE_DAILY_CLEAR_REWARD_CAP); // 未再加
+  });
+
+  it('成就 stat（S9-3）：通关章节终关累加 campaign.chaptersCleared（首通才涨、重打不涨）', async () => {
+    // 非终关通关：不涨章节 stat（缺省懒创建，stats 不实例化）。
+    const r1 = body(await clear('ch1_lv1', 3));
+    expect(r1.data.save.stats?.['campaign.chaptersCleared'] ?? 0).toBe(0);
+
+    // 种入 ch1 前 9 关解锁终关 → 通关 ch1_lv10 → 章节 +1。
+    await seedCleared([
+      'ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch1_lv4', 'ch1_lv5',
+      'ch1_lv6', 'ch1_lv7', 'ch1_lv8', 'ch1_lv9',
+    ]);
+    const r2 = body(await clear('ch1_lv10', 3));
+    expect(r2.data.save.stats['campaign.chaptersCleared']).toBe(1);
+
+    // 重打已通关终关：stat 不回退也不重复涨（$max + 首通语义）。
+    const r3 = body(await clear('ch1_lv10', 1));
+    expect(r3.data.save.stats['campaign.chaptersCleared']).toBe(1);
+
+    // 通关第二章终关 → +1 = 2。
+    await seedCleared([
+      ...r3.data.save.progress.cleared,
+      'ch2_lv1', 'ch2_lv2', 'ch2_lv3', 'ch2_lv4', 'ch2_lv5',
+      'ch2_lv6', 'ch2_lv7', 'ch2_lv8', 'ch2_lv9',
+    ]);
+    const r4 = body(await clear('ch2_lv10', 2));
+    expect(r4.data.save.stats['campaign.chaptersCleared']).toBe(2);
   });
 
   it('升级：材料足够扣费 + pveUpgrades+1；不足 → 402；满级 → 400', async () => {

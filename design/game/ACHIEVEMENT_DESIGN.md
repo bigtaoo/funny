@@ -1,6 +1,6 @@
 # 成就系统设计 — Achievements
 
-> 状态：实现中（服务端基座 S9-1/2/4 已落地，见 §11）· 权威：**本文（成就系统机制单一来源）**；数值（阈值/金币）镜像并最终落 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)（DRAFT 初值）· 更新：2026-06-21
+> 状态：实现中（服务端基座 S9-1/2/4 + PvE 章节计数 S9-3 已落地，见 §11）· 权威：**本文（成就系统机制单一来源）**；数值（阈值/金币）镜像并最终落 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)（DRAFT 初值）· 更新：2026-06-21
 
 本文是成就子系统的**机制设计基准**：定位、数据模型、统计来源、解锁/领取流程、服务器权威与防刷、接口契约、UI、经济联动、实现拆解。
 **具体阈值/金币不在本文拍死**——初值见 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)；本文只镜像示例并标注权威指针，条目/阈值后期慢慢扩。
@@ -191,7 +191,7 @@ POST /achievements/claim        (JWT) { achId, tier:1|2|3 }
 
 ### 6.2 实现前仍需对齐
 
-- [ ] **PvE 计数粒度**：哪些 statKey 由 `pveRewards.ts` 结算产出，需与关卡结算数据结构对齐（击杀是否已分兵种计数；`cast.meteor` 等法术计数是否在结算可得）。
+- [x] **PvE 计数粒度（S9-3 已对齐，2026-06-21）**：PvE **唯一能服务器权威产出**的成就 stat 是 `campaign.chaptersCleared`（由 `levelId` 派生，首通 `$max`，不依赖客户端上报）。`kill.archer`/`kill.guard`/`cast.meteor` 设计上（§3.1）也想由 PvE 喂，但**当前不可权威产出**：① `@nw/engine` 只在 `PlayerStats` 累计聚合 `unitsKilled`/`spellHits`，**无分兵种击杀、无分法术 cast**；② 普通通关服务器**不跑引擎**（只信客户端 stars + 抽样录像复算），裁判 verdict 也只回 `stars`，故无法当场拿到分项计数；③ A2 铁律禁止客户端直写「无法复算的计数」。→ 故 S9-3 只落 `campaign.chaptersCleared`；PvE 的 kill/cast 喂入拆为后续 **S9-3b**：需「引擎分类型埋点（per-victimType kill / per-spellType cast）进 deterministic snapshot → 裁判 verdict 扩展回这些计数 → `/pve/verify` 比对后入账」。在此之前 `kill.*`/`cast.*` 仅由 PvP 上报（S9-6）喂。
 - [ ] **L1 硬边界来源**：单局各 statKey 的理论上限怎么从 `@nw/engine` 约束推出（费用/帧数/单位数），需与引擎侧确认可取。
 
 ---
@@ -287,4 +287,11 @@ POST /achievements/claim        (JWT) { achId, tier:1|2|3 }
   - **崩溃窗口**：已记阶但发币失败 → 回 `granted:0`，确定性 orderId 可后续补发（金额小、一次性，可接受，同 PvE 发奖风险等级）。
 - **测试**：`metaserver/test/achievements.test.ts`（12 纯函数单测，无 Mongo 总跑）+ `achievements.e2e.test.ts`（7 e2e：GET 回定义+进度 / 未达拒发不发币 / 达阈发该阶币+记阶 / 重复 409 只发一次 / **并发恰一发** / 越界 400 / 逐阶累加）。**meta 全套 132 测试绿**（+19），`tsc -b shared metaserver gameserver commercial gateway` 干净。
 
-> **下一会话接续点**：S9-3（PvE 结算累加 stats，需先与 `pveRewards.ts`/引擎结算对齐分兵种 kill / `cast.meteor` 计数粒度，§6.2）→ S9-5（客户端成就墙 + i18n，并 `npm run rest:gen` 重生 openapi 客户端类型）→ S9-6（PvP 上报 + L1）→ S9-7/8。任务跟踪见 `META_TASKS.md` S9。
+### S9-3 PvE 章节通关计数（2026-06-21）
+
+- **范围**：PvE 结算累加 `campaign.chaptersCleared`（§6.2 对齐结论：这是 PvE 唯一可服务器权威产出的 stat；kill/cast 拆 S9-3b）。
+- **共享纯函数** `shared/src/pveRewards.ts` `chaptersClearedCount(cleared)`：章节 = 终关 `ch{N}_lv{max}`，终关 id 由 `PVE_LEVELS` 派生（单一来源，不硬编码 lv10）；返回 cleared 中含的终关个数。特殊关 `ch_stress`（无 `_lvN`）不计。cleared 单调增 → 结果单调增。barrel 导出。
+- **挂载点** `metaserver/service.ts` `writeClearProgress`：折进既有 `mutateSave` 事务（与 progress/stars 同一 rev 守卫的原子写，**天然权威、与 S9-4 claim 解耦**）。`$max` 语义：`chapters > prev` 才写，且无章节通关+无既有 stats 时不实例化 `stats`（懒创建，省存储）。普通通关 / 抽检通关（`writeClearProgress` 在抽检分支也照写 progress）两路都覆盖。
+- **测试**：`chapters-cleared.test.ts`（7 纯函数单测：空/章内非终关不计/终关计 1/多章去重/重复去重/`ch_stress` 不计/单调）+ `pve.e2e.test.ts` 新增 1 e2e（非终关不涨 / 种 9 关后通终关 +1 / 重打不涨 / 二章 +1）。**meta 全套 140 测试绿**（+8），`tsc -b shared metaserver gameserver commercial gateway` 干净。
+
+> **下一会话接续点**：S9-5（客户端成就墙 UI + i18n `achievement.*`，并 `npm run rest:gen` 重生 openapi 客户端类型）→ S9-6（PvP `match/report` 上报 `kill.*`/`cast.*` + meta 累加 + L1 异常复查）→ **S9-3b**（引擎分类型埋点，让 PvE 也能喂 kill/cast，§6.2）→ S9-7/8。任务跟踪见 `META_TASKS.md` S9。

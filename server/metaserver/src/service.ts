@@ -11,6 +11,7 @@ import {
   pveUpgradeCost,
   PVE_DAILY_CLEAR_REWARD_CAP,
   shouldSpotCheck,
+  chaptersClearedCount,
 } from '@nw/shared';
 import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import {
@@ -347,9 +348,19 @@ export class MetaService {
         ? s.progress.cleared
         : [...s.progress.cleared, levelId];
       const stars2 = Math.max(s.progress.stars[levelId] ?? 0, stars) as 1 | 2 | 3;
+      // 成就 stat（S9-3，ACHIEVEMENT_DESIGN §4.2.2）：章节首通累加 campaign.chaptersCleared，
+      // 与 progress 同一 mutateSave 事务（rev 守卫），天然权威防伪。$max 语义 → 首通才涨、重打不涨。
+      // 缺省懒创建：无章节通关（count=0）且无既有 stats 时不实例化 stats（省存储）。
+      const chapters = chaptersClearedCount(cleared);
+      const prevChapters = s.stats?.['campaign.chaptersCleared'] ?? 0;
+      const stats =
+        chapters > prevChapters
+          ? { ...(s.stats ?? {}), 'campaign.chaptersCleared': chapters }
+          : s.stats;
       return {
         ...s,
         progress: { ...s.progress, cleared, stars: { ...s.progress.stars, [levelId]: stars2 } },
+        ...(stats !== s.stats ? { stats } : {}),
       };
     });
   }

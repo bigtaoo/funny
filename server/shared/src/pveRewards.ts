@@ -92,6 +92,43 @@ export function findPveLevel(id: string): PveLevelConfig | undefined {
   return PVE_LEVELS.find((l) => l.id === id);
 }
 
+// ── 成就：章节通关计数（ACHIEVEMENT_DESIGN §3.1 `campaign.chaptersCleared`）──────────
+// PvE 唯一能服务器权威产出的成就 stat（其余 kill.*/cast.* 待引擎分类型埋点，§6.2）。
+
+/**
+ * 各章节的「终关」levelId（该章 lv 序号最大者），由 {@link PVE_LEVELS} 派生（单一来源）。
+ * 无 `_lvN` 后缀的特殊关（如 `ch_stress`）不属任何章节，被忽略。
+ */
+function chapterFinales(): Map<string, string> {
+  const maxLv = new Map<string, number>();
+  const finale = new Map<string, string>();
+  for (const l of PVE_LEVELS) {
+    const m = /^(.+)_lv(\d+)$/.exec(l.id);
+    if (!m || m[1] === undefined || m[2] === undefined) continue;
+    const ch = m[1];
+    const n = Number(m[2]);
+    if (n > (maxLv.get(ch) ?? -1)) {
+      maxLv.set(ch, n);
+      finale.set(ch, l.id);
+    }
+  }
+  return finale;
+}
+
+/**
+ * 已通关章节数 = 终关已通关的章节个数（章节 = 终关 `ch{N}_lv{max}` 在 cleared 中）。
+ * 纯函数，由 {@link PVE_LEVELS} 派生，不读时钟/不连库。cleared 单调增 → 结果单调增（首通才涨、
+ * 重打不涨），故服务器侧 `$max` 写入。特殊关（`ch_stress`，无终关编号）不计章节。
+ */
+export function chaptersClearedCount(cleared: readonly string[]): number {
+  const clearedSet = new Set(cleared);
+  let count = 0;
+  for (const finaleId of chapterFinales().values()) {
+    if (clearedSet.has(finaleId)) count++;
+  }
+  return count;
+}
+
 /** 每日「发材料的通关」次数上限（超出仍记 progress/stars，材料不发，§8 决策 3）。DRAFT 待实测。 */
 export const PVE_DAILY_CLEAR_REWARD_CAP = 20;
 
