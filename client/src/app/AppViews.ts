@@ -12,7 +12,7 @@
 // — and createAppCore which imports it — never pulls pixi.js-legacy into the test
 // runtime. Do NOT add a value import of any scene class.
 
-import type { OwnerId, PlayerStats, Replay } from '../game';
+import type { OwnerId, PlayerStats, Replay, LevelDefinition } from '../game';
 import type { NetState } from '../net/NetClient';
 import type {
   RoomState, RoomError, PeerDc, MatchOver,
@@ -108,7 +108,7 @@ export interface AppViews {
   showLevelPrep(cb: LevelPrepCallbacks): void;
   showCollection(cb: CollectionCallbacks): void;
   showStats(cb: StatsCallbacks): void;
-  showReplay(replay: Replay, cb: ReplaySceneCallbacks): void;
+  showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void;
   showResult(props: ResultViewProps): void;
 
   /** Local / campaign match (scene builds its own engine via createLocalMatch). */

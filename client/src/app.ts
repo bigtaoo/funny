@@ -30,7 +30,7 @@ import { AuctionScene, type AuctionSceneCallbacks } from './scenes/AuctionScene'
 import { DefenseEditorScene, type DefenseEditorCallbacks } from './scenes/DefenseEditorScene';
 import { TeamsScene, type TeamsCallbacks } from './scenes/TeamsScene';
 import { OwnerId, ownerToSide } from './game';
-import type { Replay } from './game';
+import type { Replay, LevelDefinition } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
@@ -125,9 +125,9 @@ class PixiAppViews implements AppViews {
     this.manager.goto(new StatsScene(this.layout, this.input, cb));
   }
 
-  showReplay(replay: Replay, cb: ReplaySceneCallbacks): void {
+  showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void {
     this.leaveLobby();
-    this.manager.goto(new ReplayScene(this.layout, this.input, replay, cb));
+    this.manager.goto(new ReplayScene(this.layout, this.input, replay, cb, level));
   }
 
   showResult(props: ResultViewProps): void {

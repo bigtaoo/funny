@@ -695,7 +695,16 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 - **接线**：`WorldApiClient` 加 `getTeams`/`setTeams`/`getSiegeReplay` + `startMarch` `teamId`；`AppViews`/`app.ts` 加 `showTeams`；`createAppCore` 加 `goTeams`/`goTeamEditor`，`goDefenseEditor` 改传 `target`；i18n `world.team.*` + `world.teams` zh/en/de。
 - **验收**：client `tsc --noEmit` + 293 测试 + `build:web` 全绿；server 不动。
 
-**Phase 3/4**：重播观战改造（`goSiegeReplay` 拉 `/replay` → 空帧 spectator 重跑，去 live 局/录像上传）、删 judge/peer 死路径。进行中。
+**Phase 3 — seed 重播观战改造 ✅（2026-06-21）**
+
+兑现 §16.8 未尽③（客户端凭 seed + 双方布阵重播观战）：
+
+- **`goSiegeReplay` 改纯演出**：从「跑 live 局 + 上传录像 judge 复算」（旧 S8-3b 模型）改为——拉 `getSiegeReplay`（seed + 双方布阵重建的 LevelDefinition）→ 构造 siege 模式空帧 `Replay`（无 live 指令）→ `views.showReplay` spectator 重跑，逐字复现 worldsvc 跑过的权威战斗。**无录像上传、无 judge**（引擎权威已在 worldsvc 落地）。攻守双方均可观战。
+- **`ReplayScene` 推广**：构造加可选 `providedLevel` 参数——siege 重播的 level 含双方军（攻方 `attackerArmy` + 守方 garrison），不能由 campaign id 派生，直接传入；campaign 重播仍走 `getLevel(meta.levelId)`。endFrame = 战斗时限 + 余量（实际由 game-over 先停）。
+- **接线**：`AppViews`/`app.ts` `showReplay` 加可选 `level`；createAppCore 去 `replayToUploadFrames` 死 import；`analytics.track('siege_replay')`。
+- **验收**：client `tsc --noEmit` + 293 测试 + `build:web` 全绿。
+
+**Phase 4 — 删 S8-3b judge/peer 死路径**：`goSiegeReplay` 改后 `getSiegeDefense`/`resolveSiegeWithJudge` 无调用方。进行中。
 
 ---
 

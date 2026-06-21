@@ -9,6 +9,7 @@ import {
   ReplayInputSource,
   ReplayVersionError,
   type Replay,
+  type LevelDefinition,
 } from '../game';
 import { t } from '../i18n';
 import { ui, sketchPanel, seedFor } from '../render/sketchUi';
@@ -57,6 +58,13 @@ export class ReplayScene implements Scene {
     input: InputManager,
     replay: Replay,
     private readonly cb: ReplaySceneCallbacks,
+    /**
+     * Explicit level to rebuild the sim against. Required for siege replays (G3-2c):
+     * the battle is pure pre-placement (both armies live in this level, empty frames),
+     * so the level can't be derived from a campaign id. When omitted, campaign replays
+     * fall back to `getLevel(meta.levelId)`.
+     */
+    providedLevel?: LevelDefinition,
   ) {
     this.container = new PIXI.Container();
 
@@ -65,9 +73,10 @@ export class ReplayScene implements Scene {
       const src = new ReplayInputSource(replay);
       endFrame = src.endFrame;
       const level =
-        replay.mode === 'campaign' && replay.meta?.levelId
+        providedLevel
+        ?? (replay.mode === 'campaign' && replay.meta?.levelId
           ? getLevel(replay.meta.levelId)
-          : null;
+          : null);
       const engine = createGameEngine(
         {
           seed: replay.seed,

@@ -12,9 +12,8 @@
 
 import type { IPlatform } from '../platform/IPlatform';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView } from './AppViews';
-import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, RecordingInputSource } from '../game';
+import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, RecordingInputSource, ENGINE_VERSION } from '../game';
 import type { OwnerId, PlayerStats, MatchStartInfo, Replay, LevelDefinition } from '../game';
-import { replayToUploadFrames } from '../net/replayUpload';
 import { computeStars, remainingHpPct } from '../game/meta/campaignRewards';
 import { initI18n, t, type TranslationKey } from '../i18n';
 import { LocalSaveStore, SaveManager, ReplayStore } from '../game/meta';
@@ -476,48 +475,29 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   /**
-   * Replay a finished siege the player attacked (C2 / S8-3b): fetch the defender
-   * config from worldsvc, run GameScene in 'siege' mode against it, then upload
-   * the recording to resolveSiege for anti-cheat reconciliation (best-effort).
-   * The cheap-settled outcome stays authoritative (option B) — this is a
-   * play-back + verification pass, not a re-decision.
+   * 观战一场已结算的关键围攻（G3-2c §16.3）。worldsvc 已 headless 跑过权威战斗并落地——这里
+   * **纯演出重播**（非权威，无录像上传、无 judge）：拉 `/replay`（seed + 双方布阵重建的
+   * LevelDefinition）→ 以同 seed + 空 ReplayInputSource 在 siege 模式 spectator 重跑，逐字复现
+   * worldsvc 跑过的那一场。攻守双方均可观战。
    */
   async function goSiegeReplay(worldApi: WorldApiClient, worldId: string, siegeId: string): Promise<void> {
     let level: LevelDefinition;
+    let seed = 0;
     try {
-      const defense = await worldApi.getSiegeDefense(worldId, siegeId);
-      level = defense.level as unknown as LevelDefinition;
+      const data = await worldApi.getSiegeReplay(worldId, siegeId);
+      level = data.level as unknown as LevelDefinition;
+      seed = data.seed;
     } catch {
       goWorldMap(worldApi, worldId);
       return;
     }
     inLobby = false;
-    platform.onGameplayStart();
-    analytics.track('game_start', { mode: 'siege', level_id: siegeId });
-    views.showGame({
-      onGameEnd(winner, stats, replay) {
-        if (replay) {
-          // Upload for server recompute (judge). Fire-and-forget — failure only
-          // means no anti-cheat reconciliation, the cheap outcome already stuck.
-          void worldApi.resolveSiege(worldId, siegeId, {
-            seed: replay.seed,
-            mode: 0,
-            endFrame: replay.endFrame,
-            frames: replayToUploadFrames(replay),
-            pveUpgrades: saveManager.get().pveUpgrades,
-          }).catch(() => { /* best-effort */ });
-        }
-        analytics.track('game_end', { mode: 'siege', result: winner === 0 ? 'win' : 'loss', level_id: siegeId });
-        void goResult(winner, stats, 0, replay, undefined, undefined, undefined,
-          () => goWorldMap(worldApi, worldId), t('world.back'));
-      },
-      onExitToLobby() { goWorldMap(worldApi, worldId); },
-    }, {
-      level,
-      mode: 'siege',
-      pveUpgrades: saveManager.get().pveUpgrades,
-      equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
-    });
+    analytics.track('siege_replay', { siege_id: siegeId });
+    // 纯预布无 live 指令 → 空帧；endFrame 取战斗时限 + 余量作播放上界（实际由 game-over 先停）。
+    const SIEGE_TIMEOUT_FALLBACK = 10 * 60 * 30; // §16.1 DRAFT，与 server 默认一致
+    const endFrame = (level.battleTimeoutTicks ?? SIEGE_TIMEOUT_FALLBACK) + 600;
+    const replay: Replay = { engineVersion: ENGINE_VERSION, mode: 'siege', seed, frames: [], endFrame };
+    views.showReplay(replay, { onExit() { goWorldMap(worldApi, worldId); } }, level);
   }
 
   /** Open the simplified defense editor (C3) for a tile; returns to the map on back. */
