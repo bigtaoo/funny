@@ -91,6 +91,7 @@
 ## 5. 与其他文档的关系
 
 - **机制细节**：天梯 → [`SEASON_DESIGN.md`](SEASON_DESIGN.md)；SLG → [`SLG_DESIGN.md`](SLG_DESIGN.md)。本文不复制它们的结论。
+- **可编码实现规格**：天梯 → `SEASON_DESIGN §13A/§13B`；SLG 大区 → `SLG_DESIGN §17`（§17.10 给出「SLG worldsvc 进程从不连 meta saves 库 → 写入域隔离是架构级保证」的代码层自检，兑现本文 §3.1 红线）。
 - **数值**：`ECONOMY_NUMBERS`（§13 天梯 / SLG 常量）、`ECONOMY_BALANCE`（政策与预算）。
 - **称号下游**：[`TITLE_DESIGN.md`](TITLE_DESIGN.md)（两套赛季结算都向它 `grantTitle`）。
 - **接口契约**：[`SERVER_API.md`](SERVER_API.md)（`/admin/ladder/season/roll`、`/leaderboard`、`/world/season` 等）。
