@@ -131,6 +131,82 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 ```
 - 服务端向平台验单；票据幂等（重复提交不重复发币）。
 
+### 2.7 PvE 养成（服务器权威，ADR-006 / `PVE_INTEGRITY_PLAN.md §8`）
+
+> `progress.cleared` / `progress.stars` / `materials` / `pveUpgrades` 自 ADR-006 起**服务器权威**——`PUT /save` 同步段收窄为仅 `equipped`/`flags`，这四段只能经下列端点写。奖励按 `@nw/shared/pveRewards.ts` 服务器重算，不信客户端自报数额。
+
+```
+POST /pve/clear    { levelId, stars, pveSnapshot?, replayRef? }
+   → { save: SaveData, capped?: boolean, needsReplay?: boolean, verifyId?: string }
+POST /pve/verify   { verifyId, frames }        → { save: SaveData, status: 'verified'|'rejected'|'unverified' }
+POST /pve/upgrade  { upgradeId }               → { save: SaveData } | INSUFFICIENT_MATERIALS
+```
+
+- **`/pve/clear`**：校验 level 存在 + **已解锁**（前置关在 `progress.cleared` 内）+ `stars≤3` → 按 `grantForClear(levelId,isFirst)` 在**每日上限**（`PVE_DAILY_CLEAR_REWARD_CAP`，按 `dayKey` 原子计数，类比 `victoryDaily`）内发材料；首通额外发首通奖励 + 解锁下一关 + 记星（取 max）→ 原子写 `progress/stars/materials`（rev 守卫）→ 回推权威 save。超上限：仍写 progress/stars，材料不发（`capped:true`）。
+- **抽检复算（L1，复用 S1-J 对等裁判）**：`shouldSpotCheck` 命中（首通恒查 / 开局 `pveSnapshot` 与服务器权威 `pveUpgrades` 不符「开局战力不符→必作弊」/ 按 `PVE_VERIFY_SAMPLE_RATE` 随机）→ 暂扣材料、记 `pveVerifications{status:pending}`、回 `{needsReplay:true, verifyId}`；客户端补传录像帧调 `/pve/verify` → meta 经 `gateway.judge` 派第三方无头复算 → 复算星数 ≥ 声称则发材料(`verified`)，< 声称则不发(`rejected`)，无裁判可裁则 benefit-of-doubt 照发(`unverified`)。
+- **`/pve/upgrade`**：服务器按 `PVE_UPGRADE_COSTS` 校验材料足够 → 扣材料 + `pveUpgrades[id]+1` → 回推 save。**仅在线**（离线客户端禁用入口，离线通关入本地 `pendingClears` 队列、上线 flush）。
+- 两端点均返回完整权威 SaveData（客户端 adopt 镜像，同经济回执）。
+
+### 2.8 装备养成（服务器权威，ADR-010 / ADR-012 / `EQUIPMENT_DESIGN.md §18`）
+
+> 装备实例段（`equipmentInv`）移出 `PUT /save` 可写范围，全部由 `/equipment/*` 服务器权威端点写（同 §2.7）。穿戴影响 SLG 战力，亦走专用端点不并进 `PUT /save`。所有变更类端点带客户端生成的 `idempotencyKey`，服务器记 (key→结果) 账本重放首次结果（不二次扣料/二次掷骰），范式借 commercial `deliveredOrders`。
+
+```
+POST /equipment/craft    { defId, idempotencyKey }                          → { save, instance|stackDelta }
+POST /equipment/enhance  { instanceId, idempotencyKey }                     → { save, success, instance, consumed }
+POST /equipment/salvage  { instanceIds[], idempotencyKey }                  → { save, refunded } | NOT_SALVAGEABLE
+POST /equipment/reforge  { instanceId, fuelInstanceId, lockedIndex?, idempotencyKey } → { save, instance, consumed }
+POST /equipment/equip    { slot, instanceId|null, unitType? }              → { save, equipped }
+```
+
+- **`/equipment/craft`**：扣材料产 0 级基础装备（堆叠或新实例）；撞 **300 库存硬上限**（堆叠件不计）则拒/转等值材料补偿（§3.3）。
+- **`/equipment/enhance`**：**服务器掷骰**（成功率表 80%…+8→9 仅 10%，绑定 `idempotencyKey` 首次结果防「重试改命」）、扣材料/金币、成功则 level+1；**失败只损耗、不掉级、不碎**（ADR-009/010）。
+- **`/equipment/salvage`（ADR-012，分解回收）**：扣实例、返还 **70% 打造基础成本材料**（**强化投入不返还**）；**+5 及以上不可分解** → 返 `NOT_SALVAGEABLE`（可分解范围 +0~+4，含堆叠 0 级冗余件，可批量）。30% 损耗本身是温和 sink，主职清库存。
+- **`/equipment/reforge`**：吞低一级同类装备作燃料、扣金币、重 roll 副词条（可锁一条）。
+- **`/equipment/equip`**：纯穿戴状态变更（无随机）；穿戴数结构性自限 = 3 槽 × loadout 套数，不占 300 库存。
+- 扣料 + 改实例 + 写账本**单事务**（Mongo 事务或乐观锁 rev 守卫），失败整体回滚。数字权威 → `ECONOMY_NUMBERS §5`。
+
+### 2.9 活动 / Live-ops（ADR-014 / `EVENTS_DESIGN.md`）
+
+> 活动是叠在既有系统上的**受控时效容器**，不造第二条发奖路径：发奖走系统邮件（OPS）、任务计数复用 statKey 累加链、限定直购复用 commercial 商店、时钟服务器权威。**绝不信客户端自报进度**，加成乘子由服务器在产出结算时套用（受 `ECONOMY_NUMBERS §14` 封顶）。
+
+```
+GET  /events                                   → { events: ActiveEvent[] }   // 当前 active 活动 + 配置 + 我的进度
+POST /events/claim   { eventId, milestoneId }  → { save, granted } | NOT_REACHED | ALREADY_CLAIMED | EVENT_ENDED
+POST /events/redeem  { eventId, shopItemId }   → { save, granted } | INSUFFICIENT_POINTS | EVENT_ENDED
+```
+
+- **`GET /events`**：返回 active 活动的 `EventDef`（窗口/i18n key/任务/里程碑/乘子/限定 SKU，文案走 i18n 不内嵌明文）+ 该玩家服务器权威进度（任务计数/已领里程碑/活动积分 `eventPoints`）。
+- **`/events/claim`**：服务器按 `window + 幂等键(eventId+milestoneId+accountId)` 二次校验，达成则发系统邮件（领取时经 commercial/inventory 入账，幂等）；过窗 `EVENT_ENDED`（已获奖励进领取宽限，如结束后 7 天可领）。
+- **`/events/redeem`**：活动积分兑限定物（积分活动期清零、不入持久经济、不兑金币、不破皮肤稀有度铁律）。
+- **限定直购**走 commercial 正常购买流（§2.3/§9），活动只控上下架窗口（带同一 `window`）；活动加成**只注入 PvE/SLG**，PvP 硬墙恒不读（ADR-009/014）。
+
+### 2.10 账号删除与合规（ADR-013 / `COMPLIANCE_GLOBAL.md §3.5`）
+
+> Apple 5.1.1(v)：凡支持账号注册的 App **必须提供应用内删除账号入口**（不能只让发邮件）。
+
+```
+POST /account/delete   (JWT) { confirm: true }   → { ok, scheduledPurgeAt? }
+```
+
+- meta 编排：删/匿名化 `saves` + `accounts`（移除 `openid`/`deviceId`/`loginId`/`displayName` 等 PII）+ 通知 commercial 处理钱包/交易留存（交易记录依税务/审计义务可保留必要最小集，但与身份解绑）+ analyticsvc 按 `user_id` 批删事件 + social 解好友关系/清私聊。
+- **二次确认**在客户端（`SettingsScene`），服务端要求 `confirm:true`；删除不可逆（或给短宽限 `scheduledPurgeAt` 后清除，按法务定）。
+- GDPR 数据导出（DSAR）测试期走人工，正式期再做自助导出端点（占位，未建）。
+
+### 2.11 天梯赛季 / 排行榜 / 战令（`SEASON_DESIGN.md §10`）
+
+> 赛季状态服务器权威（赛季号/ELO/峰值/战令经验全在服务端）；客户端只读、领取走 API、二次校验。**无 increment 端点**——经验/峰值/首达只在服务器结算链累加。详细可编码规格见 SEASON §13A/§13B。
+
+```
+GET  /leaderboard                          (JWT) → { season:{seasonNo,endAt}, top:[≤100], me|null }
+POST /battlepass/claim   { track, level }  (JWT) → { save, granted } | NOT_REACHED|ALREADY_CLAIMED|PASS_REQUIRED|BAD_REQUEST
+POST /battlepass/buy                       (JWT) → 下单（commercial 发货置 hasPass）
+POST /internal/ladder/season/roll          (X-Internal-Key) → { season }   # admin 手动开新季，CAS 幂等
+```
+
+- **赛季时钟**随 `GET /save` / `GET /leaderboard` 带回 `{seasonNo,endAt}`；推进 = 运维在 ops 后台手动触发 `season/roll`（meta 不自带定时器），逐玩家结算走**惰性迁移**（下次访问按 `pvp.seasonNo` 落后即软重置 + 发上季峰值金币邮件）。
+- `pvp` 扩字段（`seasonNo/seasonPeakElo/seasonPeakRank/reachedRanks`）+ `battlePass` 块随 save 下发（客户端只读）。段位首达金币 / 赛季峰值金币 / 战令经验数值 → `ECONOMY_NUMBERS §13`。
+
 ---
 
 ## 3. WebSocket 协议（房间 + 锁步）
@@ -223,7 +299,12 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 | `walletLog` | `{ accountId, delta, reason, balAfter, ts }` | 货币流水（审计 / 防刷） |
 | `iapReceipts` | `{ _id: receiptId, accountId, granted, ts }` | 验单幂等 |
 | `matches` | `{ roomId, mode, seed, players, winner, reason, hashOk, replay?, replayRef?, ts }` | 对局归档（friendly/ranked 都记）；`players[]` 归档时 enrich 每方 `{ side, accountId, displayName?, publicId?, eloDelta?, eloAfter? }`（昵称/publicId 快照定格、`eloDelta` 仅 ranked，供 `GET /match/history`）；`replay` 内嵌录像（小局，非空帧日志零成本内嵌，`cmds[].commands` 为 BSON binary opaque）；`replayRef` 指向外部存储（大局，待办）。索引 `{ 'players.accountId': 1, ts: -1 }` 支撑战绩查询 |
+| `pveDaily` | `{ _id: accountId+dayKey, clears, ts }` | PvE 每日发材料的通关次数计数（`PVE_DAILY_CLEAR_REWARD_CAP`，按 dayKey 原子计数，同 `adsDaily`，§2.7） |
+| `pveVerifications` | `{ _id: verifyId, accountId, levelId, stars, pveUpgrades, status, ts }` | PvE 抽检复算账本（`status: pending|verified|rejected|unverified`，存服务器权威 `pveUpgrades` 快照防漂移，§2.7） |
+| `ladderSeasons` | `{ _id:'current', seasonNo, startAt, endAt, state }` | 天梯赛季时钟（**单文档**，admin roll 推进；§2.11 / SEASON §3） |
 
+> 装备实例 v1 内嵌 `saves.equipmentInv`（小体量），膨胀后迁独立集合 `equipment`（索引 `accountId`、`accountId+instanceId`，§2.8 / EQUIPMENT §18.3）；活动 `EventDef` 配置由 admin 下发存运营库，玩家进度内嵌 save（§2.9）；`saves.pvp` 扩赛季字段 + `battlePass` 块无独立集合，加复合索引 `{ 'save.pvp.seasonNo':1, 'save.pvp.elo':-1 }`（§2.11）。
+>
 > 天梯积分存 `saves.pvp`（elo/rank/wins/losses/streak，服务器权威）；`gameserver` 在 ranked 局末用单文档原子更新写入。
 
 ---

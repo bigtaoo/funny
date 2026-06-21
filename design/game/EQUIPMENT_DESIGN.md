@@ -492,6 +492,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 |---|---|---|---|
 | `POST /equipment/craft` | `{ defId, idempotencyKey }` | `{ instance \| stackDelta }` | 校验+扣材料，产 0 级基础装备（堆叠或新实例，§3.3） |
 | `POST /equipment/enhance` | `{ instanceId, idempotencyKey }` | `{ success, instance, consumed }` | **服务器掷骰**（成功率表）、扣材料/金币、成功则 level+1、回执 |
+| `POST /equipment/salvage` | `{ instanceIds[], idempotencyKey }` | `{ refunded }` \| `NOT_SALVAGEABLE` | 分解回收：返 70% 打造材料，+5↑ 拒（§6.3，ADR-012）；可批量含堆叠 0 级件 |
 | `POST /equipment/reforge` | `{ instanceId, fuelInstanceId, lockedIndex?, idempotencyKey }` | `{ instance, consumed }` | 校验燃料（低一级同类）、扣金币、重 roll 副词条/特技 |
 | `POST /equipment/equip` | `{ slot, instanceId\|null, unitType? }` | `{ equipped }` | 改穿戴状态（纯状态，无随机） |
 

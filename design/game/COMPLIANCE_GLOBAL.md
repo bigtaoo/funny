@@ -9,7 +9,7 @@
 ## 1. 范围与定位
 
 - **覆盖渠道（本次海外测试 + 首发）**：①网页（自有域名 / CrazyGames 等聚合平台）；②iOS App Store；③Google Play。
-- **不覆盖**：中国大陆上架（版号 / 实名 / 防沉迷 / PIPL / 分龄充值限额）——那是**另一套、跟着版号流程走**，见占位 [`COMPLIANCE_CN.md`](COMPLIANCE_CN.md)（尚未建，版号启动时再写）。两份解耦：海外测试**不**需要中国那套。
+- **不覆盖**：中国大陆上架（版号 / 实名 / 防沉迷 / PIPL / 分龄充值限额）——那是**另一套、跟着版号流程走**，见 [`COMPLIANCE_CN.md`](COMPLIANCE_CN.md)（已建，跟版号流程走）。两份解耦：海外测试**不**需要中国那套。
 - **决策依据**：见 [`../DECISIONS.md`](../DECISIONS.md) ADR-013（合规拆分为 Global / CN 两份）。
 
 > 一句话原则：**海外没有"防沉迷"，但有隐私、年龄分级、抽卡概率公示、平台支付/数据表四道硬门**——其中**抽卡概率公示**和**平台内购强制**最容易在审核时卡你。
@@ -61,7 +61,7 @@
 
 ### 3.5 数据权利与删除账号
 - **Apple 5.1.1(v) 强制**：凡支持账号注册的 App，**必须提供应用内删除账号入口**（不能只让发邮件）。
-- 落地：`SettingsScene` 加「删除账号」→ 二次确认 → 调新端点 `POST /account/delete`（meta 编排：删/匿名化 saves + 通知 commercial 处理钱包/交易留存 + analyticsvc 按 user_id 删事件 + social 解好友关系）。**契约待补进 [`SERVER_API.md`](SERVER_API.md)**。
+- 落地：`SettingsScene` 加「删除账号」→ 二次确认 → 调端点 `POST /account/delete`（meta 编排：删/匿名化 saves + 通知 commercial 处理钱包/交易留存 + analyticsvc 按 user_id 删事件 + social 解好友关系）。**契约见 [`SERVER_API.md §2.10`](SERVER_API.md)**。
 - GDPR 数据导出（DSAR）：测试期可走人工，正式期再做自助导出。
 
 ---
@@ -145,7 +145,7 @@
 | 埋点同意/删除 | analyticsvc `enabled` 开关 + 按 user_id 删（ANALYTICS §10） | 首次同意弹窗（按地区） |
 | 抽卡掉率数据 | commercial `GachaPool.weight` + pity | 公示页 + `displayRates` 回执字段 + i18n |
 | 内购 | `iapVerify` dev 桩 | 平台 IAP/Billing SDK + 真票据校验 |
-| 账号删除 | account 模型 | `POST /account/delete` 编排（SERVER_API 待补） |
+| 账号删除 | account 模型 + `POST /account/delete` 契约（SERVER_API §2.10） | meta 编排实现（删/匿名化 + 跨服务联动） |
 | UGC | social 敏感词 + 拉黑 | 举报入口 + displayName 过滤接管 |
 | 隐私政策入口 | — | LoginScene / SettingsScene 链接 |
 

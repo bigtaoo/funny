@@ -56,6 +56,7 @@
 | [OPS_DESIGN.md](game/OPS_DESIGN.md) | 运维后台（监控/匹配池/补偿工单） | 已实现 |
 | [ANALYTICS_DESIGN.md](game/ANALYTICS_DESIGN.md) | 埋点分析（analyticsvc:18085） | 已实现 |
 | [COMPLIANCE_GLOBAL.md](game/COMPLIANCE_GLOBAL.md) | **海外合规（Web/iOS/Android：隐私/分级/抽卡概率公示/平台支付/删账号/UGC）** | 设计中 |
+| [COMPLIANCE_CN.md](game/COMPLIANCE_CN.md) | **中国大陆合规（版号/实名/未成年人防沉迷限时/分龄充值限额/PIPL；跟版号走，海外测试不阻断）** | 设计中 |
 | [AUDIO_DESIGN.md](game/AUDIO_DESIGN.md) | **音频系统（资产/触发表/播放层/混音/设置/平台约束；美学仍归 art-direction）** | 设计中 |
 | [ONBOARDING_DESIGN.md](game/ONBOARDING_DESIGN.md) | **新手引导/FTUE 编排（首会话动线/战斗教学覆盖层/功能渐进解锁/合规门；不重述故事/关卡）** | 设计中 |
 | [SLG_DESIGN.md](game/SLG_DESIGN.md) | SLG 大世界（worldsvc:18084） | 实现中 |
@@ -113,7 +114,8 @@
 | 客户端 UI | 菜单/元系统 → [game/UI_DESIGN.md](game/UI_DESIGN.md)；战斗内 → [product/ui-design.md](product/ui-design.md) | 互补分工，见 §3 |
 | 实现状态 / 任务进度 | [game/META_TASKS.md](game/META_TASKS.md) + 各文档「实现记录」节 | — |
 | 叙事铁律 | [product/world.md](product/world.md) + ADR-008 | 陶(东方)/Anna(西方)/两本笔记本 |
-| 海外合规（隐私/分级/抽卡公示/平台支付/删账号/UGC） | [game/COMPLIANCE_GLOBAL.md](game/COMPLIANCE_GLOBAL.md) | 中国版（版号/实名/防沉迷/PIPL）另见 COMPLIANCE_CN（待建，ADR-013） |
+| 海外合规（隐私/分级/抽卡公示/平台支付/删账号/UGC） | [game/COMPLIANCE_GLOBAL.md](game/COMPLIANCE_GLOBAL.md) | 与中国版 [COMPLIANCE_CN](game/COMPLIANCE_CN.md) 解耦（ADR-013，海外先行） |
+| 中国大陆合规（版号/实名/防沉迷/分龄充值限额/PIPL） | [game/COMPLIANCE_CN.md](game/COMPLIANCE_CN.md) | 跟版号流程走、海外测试不触发；抽卡概率公示与海外共用一套数据源（COMPLIANCE_GLOBAL §4） |
 | 音频系统（资产/触发/播放层/混音/设置/平台约束） | [game/AUDIO_DESIGN.md](game/AUDIO_DESIGN.md) | **美学方向**（音色/禁用清单）仍归 [product/art-direction.md](product/art-direction.md) §声音 |
 | 新手引导/FTUE 编排（动线/教学覆盖层/渐进解锁/合规门） | [game/ONBOARDING_DESIGN.md](game/ONBOARDING_DESIGN.md) | 故事归 CAMPAIGN_STORY/world；教学关定义归 CAMPAIGN_DESIGN；埋点字段归 ANALYTICS |
 

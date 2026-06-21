@@ -3,7 +3,7 @@
 > 状态：设计中 · 权威：**本文（天梯赛季 / 战令 / 排行榜机制单一来源）** · 更新：2026-06-21
 >
 > 本文是天梯运营层的**机制设计基准**：赛季时钟、软重置、段位首达金币补齐、赛季峰值追踪与结算奖励、排行榜、战令（Battle Pass）、惰性迁移、接口契约、UI、经济联动、实现拆解。
-> **数值不在本文拍死**：ELO/段位/首达金币 → [`ECONOMY_BALANCE.md §2.3`](ECONOMY_BALANCE.md)；赛季重置基准/赛季奖励/战令奖励曲线 → [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)（待铺 §13）。
+> **数值不在本文拍死**：ELO/段位/首达金币 → [`ECONOMY_BALANCE.md §2.3`](ECONOMY_BALANCE.md)；赛季重置基准/赛季奖励/战令奖励曲线 → [`ECONOMY_NUMBERS.md §13`](ECONOMY_NUMBERS.md)。
 > **与 SLG 大区赛季的边界/对照** → [`SEASON_OVERVIEW.md`](SEASON_OVERVIEW.md)（两套赛季独立性契约的单一来源；本文是其中「天梯」一侧的机制权威）。
 > 设计同构参照：[`RETENTION_DESIGN.md`](RETENTION_DESIGN.md)（服务器权威 + 边界惰性重置 + 领取流程几乎照搬）、[`TITLE_DESIGN.md`](TITLE_DESIGN.md)（段位称号授予 = 本文赛季结算的下游）、worldsvc `S8-7 赛季`（`open/settle/reset/close` 四段式 admin 编排，本文照此模式但作用于天梯而非大地图）。
 
@@ -275,7 +275,7 @@ POST /battlepass/buy                      (JWT) → 下单（commercial）
 
 ## 12. 经济联动（与 ECONOMY 对齐）
 
-- **数字权威**：软重置基准/赛季峰值金币/战令奖励曲线 → `ECONOMY_NUMBERS`（待铺 §13）；段位首达/分段胜利金币 → `ECONOMY_BALANCE §2.3`（已有）。
+- **数字权威**：软重置基准/赛季峰值金币/战令奖励曲线 → `ECONOMY_NUMBERS §13`（已铺）；段位首达/分段胜利金币 → `ECONOMY_BALANCE §2.3`（已有）。
 - **新增金币 faucet 需入预算跑模拟**（`ECONOMY_BALANCE §9` 遗留）：本文引入两条新金币产出——①**赛季峰值金币**（每季可重复，高段持续 faucet，是最需控量的一条，初定首达的 ~30–40%）；②**战令免费轨金币**（整季总额须 < 一次十连，`ECONOMY_BALANCE §2.6`）。二者与首达/胜利/成就/留存一起跑总产出验证，**不冲垮金币经济**。
 - **变现脊梁**：付费 Pass（¥6 区间）是早期主力变现 + sink（`ECONOMY_BALANCE §2.6`「让买空 90% 物品的鲸鱼金币有去处」）。
 - **红线**：所有奖励绝不进 PvP 蓝图、不卖战力（S5）。

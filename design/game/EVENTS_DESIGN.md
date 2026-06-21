@@ -50,7 +50,7 @@ interface EventDef {
 }
 ```
 
-- **单一来源**:可调数字(乘子上限、积分产出、里程碑阈值)集中 [`ECONOMY_NUMBERS.md §14`](ECONOMY_NUMBERS.md)(待建节),配置只引用不另定。
+- **单一来源**:可调数字(乘子上限、积分产出、里程碑阈值)集中 [`ECONOMY_NUMBERS.md §14`](ECONOMY_NUMBERS.md)(已铺),配置只引用不另定。
 - **校验**:服务器加载配置时校验 window 合法、乘子不超封顶、rewards 在白名单内——非法配置拒绝上线(防运营误操作放出超量奖励)。
 
 ---
@@ -124,9 +124,9 @@ draft(admin编辑) → scheduled(已排期未到点) → active(窗口内) → e
 | 发奖 | OPS 邮件 + commercial 发货幂等 | 活动结算 → 系统邮件 |
 | 任务计数 | RETENTION/ACHIEVEMENT statKey 累加链 | 活动任务挂既有结算点 |
 | 限定直购 | commercial 商店 | 商品带 window + 上下架 |
-| 数字 | — | ECONOMY_NUMBERS §14(活动参数节,待建) |
+| 数字 | ECONOMY_NUMBERS §14(乘子封顶/积分/月度归口已铺) | 每次活动具体配置(里程碑阈值/积分产出)随 admin 配置 |
 | 客户端 | ShopScene / 大厅 / 渐进解锁 | 活动面板 + banner + `event.*` i18n |
-| 契约 | SERVER_API | `/events`(列表/进度/领取/兑换)端点待补 |
+| 契约 | SERVER_API §2.9 `/events|claim|redeem`(列表/进度/领取/兑换)已补 | admin 配置下发端点（运营侧）待补 |
 
 ---
 
