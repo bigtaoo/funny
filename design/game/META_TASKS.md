@@ -18,6 +18,7 @@
 | **S3** | PvE 养成（材料 + 硬墙）+ 收集 + 选关 | 养成 / 收集 / 选关闭环；硬墙单测绿 |
 | **S4** | IAP 验单 + 反作弊 hash + 上线加固 | 充值安全，对局 hash 比对 |
 | **S9** | 成就系统（统计里程碑 → 一次性金币） | 计数服务器权威、领取幂等、成就墙；红线单测绿 |
+| **S10** | 称号系统（公开身份名片 / 统一 titleId 容器） | 多来源授予、赛季快照、四处展示；依赖天梯+赛季，**先文档占位** |
 
 > 先打通 S0/S1（云存档 + 好友联机，核心诉求），再铺 SA/S5/S2/S3。
 > **2026-06-14 新增三块**（细分设计见各专文）：**SA 账号系统**（`ACCOUNT_DESIGN.md`）、**S5 commercial 商业服务**（`COMMERCIAL_DESIGN.md`，钱包权威迁出 meta saves）、**S1-M1~M4 gateway/matchsvc 拆分**（`MATCHSVC_DESIGN.md` + `GATEWAY_DESIGN.md`，已在 §S1 架构修订迁移登记）。建议顺序：SA（登录门槛，门面）→ S5（经济权威底座）→ S1-M（联机拓扑拆分，动链路最大放最后）。
@@ -251,6 +252,23 @@
 - [ ] **S9-8** 埋点上报 analyticsvc（解锁/领取漏斗）（A-8）+ 红线/幂等单测（A-9）+ 金币池模拟校准（A-10）
 
 > **依赖**：S3（PvE 结算 + 方案 B，PvE 半的前提）；S1-R 天梯（PvP 半计 ranked 的前提）；S7 admin（L2/L3 审查队列）；S2/S5（金币发放路径）。
+
+---
+
+## S10 — 称号系统（公开身份名片 / 统一 titleId 容器）
+
+> 机制权威 = [`TITLE_DESIGN.md`](TITLE_DESIGN.md)；段位金币数值 = `ECONOMY_BALANCE.md §2.3`。
+>
+> **关键拍板（2026-06-21）**：统一身份容器（多来源 titleId 聚合，拥有多枚佩戴其一）；段位称号**按赛季快照**（每季峰值一枚、掉段不丢）；成就**部分顶阶发永久称号**；获得**自动佩戴最高/最新**（仍可手动改）；**四处展示**（资料弹层/对战名牌/聊天前缀/排行榜）；与经济解耦（首达金币仅首次、称号每季快照）；**先写设计文档占位**，待天梯+赛季落地再实现。
+
+- [ ] **S10-1** `@nw/shared`：`TitleId` 命名约定 + `titles: string[]` 入 SaveData 服务器权威段；`pvp.seasonPeakRank` 字段；`PUT /save` 校验 `equipped.title ∈ titles`
+- [ ] **S10-2** meta `grantTitle(accountId, titleId)`（`$addToSet` 幂等 + 自动佩戴最高 + 回推 SaveData）
+- [ ] **S10-3** 授予接入：ranked 赛季结算（读 seasonPeakRank 授段位称号清零）/ worldsvc SLG 赛季 / 成就顶阶（`Achievement.titleId?`）/ admin 活动授予
+- [ ] **S10-4** 下发：`GET /internal/profile` 加 `equippedTitle`；ticket→`match_start` 加 `opponentTitle`；social 消息附 sender 称号；天梯/SLG 榜 join
+- [ ] **S10-5** 客户端：资料弹层佩戴位 + 称号墙（全部 titles，可切换佩戴）；对战名牌/聊天前缀/榜短标签渲染 + i18n `title.*`（full/short）
+- [ ] **S10-6** 跨来源等级序表（自动佩戴用）+ 短标签限长/截断规则 + 新号默认佩戴策略
+
+> **依赖**：S1-R 天梯（段位称号源）；赛季系统（`ECONOMY_BALANCE §2.6`，赛季快照/结算时机）；S9 成就（顶阶→称号）；S6 social（聊天前缀）；S8 SLG（赛季称号源）。
 
 ---
 

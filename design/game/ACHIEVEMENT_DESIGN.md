@@ -12,7 +12,8 @@
 成就是**与天梯无关的「统计里程碑」**：累计某类行为到阈值 → 分阶解锁 → **每阶一次性发金币**。
 它是金币的 **one-shot faucet**（与广告/IAP/称号/日常并列），**全部一次性、绝不构成持续金币泵**。
 
-与称号系统（[`ECONOMY_BALANCE.md §2.3`](ECONOMY_BALANCE.md)）正交：
+与称号系统（机制权威 [`TITLE_DESIGN.md`](TITLE_DESIGN.md)；段位金币数字 [`ECONOMY_BALANCE.md §2.3`](ECONOMY_BALANCE.md)）正交。
+> **2026-06-21 补**：成就**部分顶阶/标志性条目**额外授予一枚**永久称号**（`ach.*`），让成就也能变对外名片——定义模型加可选字段 `Achievement.titleId?: string`，达成顶阶时调 meta `grantTitle`（见 `TITLE_DESIGN §7`）。红线不变：成就仍**只发金币 + 称号，绝不发战力**；普通成就仍纯自看。
 
 | | 称号系统（§2.3） | 成就系统（本文 / §2.4） |
 |---|---|---|
