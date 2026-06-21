@@ -18,6 +18,12 @@ const MIGRATIONS: Array<(d: AnyObj) => AnyObj> = [
     d.version = 1;
     return d;
   },
+  // v1 → v2：装备系统 E0。equipmentInv / gear 为纯增字段，由 fillDefaults 从
+  // makeNewSave 默认值补齐（{}），无需在此显式写——只钉版本号。
+  (d) => {
+    d.version = 2;
+    return d;
+  },
 ];
 
 /** 深合并默认值：obj 缺的键用 def 补；已有键保留（对象递归，数组/标量直接保留）。 */

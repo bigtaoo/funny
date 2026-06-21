@@ -10,6 +10,34 @@ export interface LevelRecord {
   [k: string]: unknown;
 }
 
+// ── 装备实例（EQUIPMENT_DESIGN §3.1）。客户端镜像，与 server/shared/src/types.ts 同源 ──
+export type EquipSlot = 'weapon' | 'armor' | 'trinket';
+export type EquipRarity = 'common' | 'fine' | 'rare' | 'epic';
+
+/** 词条（主/副/特技统一形态）。 */
+export interface Affix {
+  id: string;
+  value: number;
+}
+
+/** 装备实例（服务器权威，客户端只读）。 */
+export interface EquipmentInstance {
+  id: string;
+  defId: string;
+  rarity: EquipRarity;
+  level: number; // 0..9
+  affixes: Affix[];
+  locked?: boolean;
+}
+
+export type GearSlotMap = Partial<Record<EquipSlot, string /* instanceId */>>;
+
+/** 穿戴 loadout（global 全军 / byUnit 按兵种预留）。 */
+export interface GearLoadout {
+  global?: GearSlotMap;
+  byUnit?: Record<string, GearSlotMap>;
+}
+
 export interface SaveData {
   version: number; // schema 版本，迁移用
   accountId: string; // 云存档身份（空串 = 尚未取得 / 纯本地）
@@ -42,8 +70,14 @@ export interface SaveData {
   };
   materials: Record<string, number>;
   pveUpgrades: Record<string, number>;
+  /** 皮肤穿戴（cosmetic，slot→skinId）。纯外观，随同步段上行。 */
   equipped: Record<string, string>;
   flags: Record<string, boolean>;
+
+  // —— 装备系统（服务器权威，客户端只读，EQUIPMENT_DESIGN §3.1）——
+  // 独立于 cosmetic `equipped`（皮肤）；由 /equipment/* 服务器端点写，不进同步段。
+  equipmentInv: Record<string, EquipmentInstance>;
+  gear: GearLoadout;
 }
 
 /**
@@ -57,7 +91,8 @@ export type SyncPatch = Partial<Pick<SaveData, 'equipped' | 'flags'>>;
 /** 客户端同步段的字段名（push 抽取 / merge 用单一来源）。 */
 export const SYNC_KEYS = ['equipped', 'flags'] as const;
 
-export const SAVE_VERSION = 1;
+// v2（2026-06-21）：新增 equipmentInv + gear（装备系统 E0）。migrate v1→v2 见 migrate.ts。
+export const SAVE_VERSION = 2;
 
 /** 本地存档主 key（IPlatform.storage）。 */
 export const SAVE_STORAGE_KEY = 'nw_save_v1';
@@ -79,6 +114,8 @@ export function makeNewSave(accountId = '', now = 0): SaveData {
     pveUpgrades: {},
     equipped: {},
     flags: {},
+    equipmentInv: {},
+    gear: {},
   };
 }
 

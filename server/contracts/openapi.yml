@@ -137,6 +137,41 @@ components:
         flags:
           type: object
           additionalProperties: { type: boolean }
+        # —— 装备系统（服务器权威，EQUIPMENT_DESIGN §3.1）。legacy 档可缺，故非 required ——
+        # 仅 /equipment/* 端点写，PUT /save 不可写（不在 SyncPatch）。
+        equipmentInv:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/EquipmentInstance' }
+        gear:
+          type: object
+          description: 穿戴 loadout（global 全军 / byUnit 按兵种预留），槽位→实例 id。
+          properties:
+            global:
+              type: object
+              additionalProperties: { type: string }
+            byUnit:
+              type: object
+              additionalProperties:
+                type: object
+                additionalProperties: { type: string }
+
+    EquipmentInstance:
+      type: object
+      required: [id, defId, rarity, level, affixes]
+      properties:
+        id: { type: string }
+        defId: { type: string }
+        rarity: { type: string, enum: [common, fine, rare, epic] }
+        level: { type: integer, minimum: 0, maximum: 9 }
+        affixes:
+          type: array
+          items:
+            type: object
+            required: [id, value]
+            properties:
+              id: { type: string }
+              value: { type: number }
+        locked: { type: boolean }
 
     # —— 客户端同步段（PUT /save 仅接受这些字段，§2.2）——
     # PVE_INTEGRITY_PLAN §8 起 progress/materials/pveUpgrades 转服务器权威

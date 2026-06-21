@@ -10,6 +10,35 @@ export interface LevelRecord {
   [k: string]: unknown;
 }
 
+// ── 装备实例（EQUIPMENT_DESIGN §3.1）───────────────────────────────────────
+// 目录（defId→槽位/稀有度/媒材/配方）在 equipment.ts；战斗数值在 @nw/engine。
+import type { EquipRarity, EquipSlot } from './equipment';
+
+/** 词条（主/副/特技统一形态）；id 指向词条池，value 为 roll 出的数值。 */
+export interface Affix {
+  id: string;
+  value: number;
+}
+
+/** 装备实例（服务器权威；强化等级 / 词条 / 稀有度随件）。 */
+export interface EquipmentInstance {
+  id: string; // 实例 id（服务器生成）
+  defId: string; // 装备定义 id（决定基础属性/槽位/媒材，见 equipment.ts）
+  rarity: EquipRarity; // defId 的去规范化缓存，便于排序/查询
+  level: number; // 强化等级 0..9
+  affixes: Affix[]; // 词条（洗练可改）
+  locked?: boolean; // 防误用为强化燃料
+}
+
+/** 单套 loadout 的槽位→实例 id 映射。 */
+export type GearSlotMap = Partial<Record<EquipSlot, string /* instanceId */>>;
+
+/** 穿戴：阶段一 global 全军共享；byUnit 预留按兵种（EQUIPMENT_DESIGN §3.1/§3.2）。 */
+export interface GearLoadout {
+  global?: GearSlotMap;
+  byUnit?: Record<string /* unitType */, GearSlotMap>;
+}
+
 export interface SaveData {
   version: number;
   accountId: string;
@@ -42,8 +71,15 @@ export interface SaveData {
   };
   materials: Record<string, number>;
   pveUpgrades: Record<string, number>;
+  /** 皮肤穿戴（cosmetic，slot→skinId）。纯外观、无战力，故仍随 PUT /save 同步段上行。 */
   equipped: Record<string, string>;
   flags: Record<string, boolean>;
+
+  // —— 装备系统（服务器权威，EQUIPMENT_DESIGN §3.1）。PUT /save 不可写，仅 /equipment/* 写 ——
+  // 注：刻意不复用 cosmetic 的 `equipped`（其已承载皮肤选择），装备 loadout 独立放 `gear`。
+  // 缺省（老存档）视为空——读取处一律 `?? {}` 兜底（无 migrate runner，惰性默认）。
+  equipmentInv: Record<string, EquipmentInstance>; // instanceId → 实例
+  gear: GearLoadout; // 穿戴 loadout
 }
 
 /**
@@ -53,7 +89,9 @@ export interface SaveData {
  */
 export type SyncPatch = Partial<Pick<SaveData, 'equipped' | 'flags'>>;
 
-export const SAVE_VERSION = 1;
+// v2（2026-06-21）：新增 equipmentInv + gear（装备系统 E0）。纯增字段、不动 equipped，
+// 老存档惰性默认（读取处 `?? {}`），无破坏性迁移。
+export const SAVE_VERSION = 2;
 
 /** 新账号的默认存档。所有权威段从零起步。 */
 export function makeNewSave(accountId: string, now: number): SaveData {
@@ -72,5 +110,7 @@ export function makeNewSave(accountId: string, now: number): SaveData {
     pveUpgrades: {},
     equipped: {},
     flags: {},
+    equipmentInv: {},
+    gear: {},
   };
 }
