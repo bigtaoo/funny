@@ -25,6 +25,7 @@ import {
   RENAME_COST,
 } from '@nw/shared';
 import { CHAT_SEND_RATE_PER_MIN, regionFromAcceptLanguage } from '@nw/shared';
+import { ACHIEVEMENTS, findAchievement, validateClaim } from '@nw/shared';
 import { getOrCreateSave, putSave } from './save.js';
 import {
   changePassword,
@@ -526,6 +527,73 @@ export class MetaService {
       return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
     }
     return ok({ save: out.save });
+  }
+
+  // ── 成就（S9，ACHIEVEMENT_DESIGN）：统计里程碑 → 一次性金币。计数只在 PvE/PvP 权威结算点写
+  //    （S9-3/S9-6），此处只提供「读定义+进度」与「领取发币」。──────────────────────────
+  /** 成就定义表 + 我的 stats + 已领进度（客户端本地算阶，§4.1/§6）。 */
+  async getAchievements(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const save = await getOrCreateSave(this.deps.cols, accountId, this.deps.now());
+    return ok({
+      defs: ACHIEVEMENTS,
+      stats: save.stats ?? {},
+      achievements: save.achievements ?? {},
+    });
+  }
+
+  /**
+   * 领取某成就某阶金币（§4.3）：服务器二次校验 stat≥阈值 + 未领 → 原子记 claimedTiers（幂等守卫）
+   * → commercial 发币（确定性 orderId 防重复发）→ 钱包镜像回推。
+   * 先记阶（唯一获胜者）再发币：并发双击只有一个记成功并发币，另一个见已领即拒；崩溃窗口（已记未发）
+   * 靠确定性 orderId 可后续补发，金额小一次性可接受。
+   */
+  async claimAchievement(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.ensureCommercial(reply)) return;
+    const accountId = accountIdOf(req);
+    const { achId, tier } = req.body as { achId: string; tier: number };
+    if (!findAchievement(achId)) {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown achievement'));
+    }
+
+    // 原子记阶：校验 + $addToSet 等价（transform 内判已领/未达）。成功 = 本调用是唯一获胜者。
+    const recorded = await this.mutateSave(accountId, (s) => {
+      const claimed = s.achievements?.[achId]?.claimedTiers ?? [];
+      const v = validateClaim(achId, tier, s.stats, claimed);
+      if (!v.ok) return v.error; // NOT_REACHED / ALREADY_CLAIMED / BAD_REQUEST
+      return {
+        ...s,
+        achievements: {
+          ...s.achievements,
+          [achId]: { claimedTiers: [...claimed, tier] },
+        },
+      };
+    });
+    if ('error' in recorded) {
+      if (recorded.error === 'NOT_REACHED') {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'threshold not reached'));
+      }
+      if (recorded.error === 'ALREADY_CLAIMED') {
+        return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'tier already claimed'));
+      }
+      if (recorded.error === 'BAD_REQUEST') {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'invalid tier'));
+      }
+      return reply.code(409).send(err(ErrorCode.REV_CONFLICT, recorded.error));
+    }
+
+    // 阶已落库 → 发币（确定性 orderId 幂等）+ 钱包镜像。金额取定义（已被校验过的阶）。
+    const def = findAchievement(achId)!;
+    const coins = def.tiers[tier - 1]?.coins ?? 0;
+    const { cols, commercial, now } = this.deps;
+    const orderId = `ach:${accountId}:${achId}:${tier}`;
+    const g = await commercial.grant({ accountId, amount: coins, reason: 'achievement', orderId });
+    if (!g.ok) {
+      // 阶已记但发币失败：返回当前存档（阶已领），granted=0；orderId 确定性可补发。
+      return ok({ save: recorded.save, granted: 0 });
+    }
+    const save = await mirrorCoins(cols, accountId, g.coinsAfter, now());
+    return ok({ save, granted: coins });
   }
 
   /** 最近对战历史（ranked / friendly），从归档 matches 取当前账号视角的精简摘要。 */
