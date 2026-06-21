@@ -13,6 +13,10 @@ export interface MetaEnv extends ServerEnv {
    * null = 不下发（客户端退回自身配置/推导）。形如 ws://host:8082/gw 或 wss://host/gw。
    */
   gatewayPublicUrl: string | null;
+  /** 成就反作弊离线抽查批间隔（ms）。0 = 禁用（缺省 60000）。需配 gatewayInternalUrl 才有裁判可复算。 */
+  auditIntervalMs: number;
+  /** 每次抽查批检视的候选 ranked 局数（缺省 5）。 */
+  auditSampleLimit: number;
 }
 
 export function loadMetaEnv(): MetaEnv {
@@ -24,5 +28,7 @@ export function loadMetaEnv(): MetaEnv {
     commercialUrl: process.env.NW_COMMERCIAL_INTERNAL_URL ?? null,
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL ?? null,
     gatewayPublicUrl: process.env.NW_GATEWAY_PUBLIC_WS_URL ?? null,
+    auditIntervalMs: Number(process.env.NW_ACHIEVEMENT_AUDIT_INTERVAL_MS ?? 60000),
+    auditSampleLimit: Number(process.env.NW_ACHIEVEMENT_AUDIT_SAMPLE_LIMIT ?? 5),
   };
 }

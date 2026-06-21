@@ -1,6 +1,6 @@
 # 成就系统设计 — Achievements
 
-> 状态：实现中（服务端基座 S9-1/2/4 + PvE 章节计数 S9-3 + 客户端成就墙 S9-5 + 达成 toast S9-5b + 引擎分类型埋点地基 S9-3b + PvP 计数/L1 S9-6 + **PvE kill/cast 喂入 S9-3b-PvE** 已落地，见 §11；剩 S9-7 反作弊 L2-L3 / S9-8 埋点+校准）· 权威：**本文（成就系统机制单一来源）**；数值（阈值/金币）镜像并最终落 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)（DRAFT 初值）· 更新：2026-06-21
+> 状态：**全部落地**（服务端基座 S9-1/2/4 + PvE 章节计数 S9-3 + 客户端成就墙 S9-5 + 达成 toast S9-5b + 引擎分类型埋点地基 S9-3b + PvP 计数/L1 S9-6 + PvE kill/cast 喂入 S9-3b-PvE + **反作弊 L2/L3 离线抽查 S9-7 + 埋点漏斗/红线单测/金币池校准 S9-8**，见 §11）· 权威：**本文（成就系统机制单一来源）**；数值（阈值/金币）镜像并最终落 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)（DRAFT 初值）· 更新：2026-06-21
 
 本文是成就子系统的**机制设计基准**：定位、数据模型、统计来源、解锁/领取流程、服务器权威与防刷、接口契约、UI、经济联动、实现拆解。
 **具体阈值/金币不在本文拍死**——初值见 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)；本文只镜像示例并标注权威指针，条目/阈值后期慢慢扩。
@@ -195,7 +195,7 @@ POST /achievements/claim        (JWT) { achId, tier:1|2|3 }
 - [x] **L1 硬边界来源（S9-6 已落粗上界，2026-06-21）**：`@nw/shared.PVP_STAT_MATCH_CAP` 给出单局每 statKey 粗上界（kill 200 / cast 100，远大于正常单局值，只挡明显伪造），`sanitizePvpReportedStats` 据此做 L1 异常复查（越界整份拒收）。精确从引擎约束（费用/帧数/单位数）推导仍可后续收紧。
 - [x] **PvE kill/cast 喂入（S9-3b PvE 半，已落，2026-06-21）**：裁判复算（`runPveJudge`）通关时算 `achievementStatDelta(stats[0])` → `JudgeVerdict.stats_json` 经 gateway 透传回 meta → `/pve/verify` **仅 `status==='verified'`（裁判成功复算，非 benefit-of-doubt 的 `unverified`）** 时过 L1 caps 清洗后 `accrueStats` 入账（见 §11）。仅抽检命中且裁判可裁的局可信（覆盖有限，普通通关不跑引擎仍无分项计数，符合设计预期）。
 - [x] **PvE 计数粒度（S9-3 已对齐，2026-06-21）**：PvE **唯一能服务器权威产出**的成就 stat 是 `campaign.chaptersCleared`（由 `levelId` 派生，首通 `$max`，不依赖客户端上报）。`kill.archer`/`kill.guard`/`cast.meteor` 设计上（§3.1）也想由 PvE 喂，但**当前不可权威产出**：① `@nw/engine` 只在 `PlayerStats` 累计聚合 `unitsKilled`/`spellHits`，**无分兵种击杀、无分法术 cast**；② 普通通关服务器**不跑引擎**（只信客户端 stars + 抽样录像复算），裁判 verdict 也只回 `stars`，故无法当场拿到分项计数；③ A2 铁律禁止客户端直写「无法复算的计数」。→ 故 S9-3 只落 `campaign.chaptersCleared`；PvE 的 kill/cast 喂入拆为后续 **S9-3b**：需「引擎分类型埋点（per-victimType kill / per-spellType cast）进 deterministic snapshot → 裁判 verdict 扩展回这些计数 → `/pve/verify` 比对后入账」。在此之前 `kill.*`/`cast.*` 仅由 PvP 上报（S9-6）喂。
-- [ ] **L1 硬边界来源**：单局各 statKey 的理论上限怎么从 `@nw/engine` 约束推出（费用/帧数/单位数），需与引擎侧确认可取。
+- [ ] **L1 硬边界精确化**：单局各 statKey 的理论上限怎么从 `@nw/engine` 约束推出（费用/帧数/单位数），需与引擎侧确认可取。当前 `PVP_STAT_MATCH_CAP` 为粗上界（已够挡明显伪造）；L2 离线抽查（S9-7）已补「逐局复算 vs 上报」精确比对，故 L1 精确化优先级降低。
 
 ---
 
@@ -337,4 +337,23 @@ POST /achievements/claim        (JWT) { achId, tier:1|2|3 }
 - **覆盖边界（设计预期）**：仅「被抽检（首通/异常/随机）且裁判可裁」的 PvE 局产出 kill/cast；普通通关不跑引擎 → 无分项计数。符合 §6.2「仅抽检局可信，覆盖有限」。
 - **测试**：`pve.e2e.test.ts` +4 e2e（注入可配假裁判：verified 累加 kill/cast+材料照发 / L1 越界整份拒收不入账但仍发材料 / benefit-of-doubt 发材料但不喂 / rejected 不发不喂）；`gateway/judge.test.ts` PvE 用例增 `stats_json` 透传断言 + PvP 用例补 `statsJson:''`。**meta 159 + gameserver 42 + gateway judge 4 + 引擎 combat 10 全绿**，`tsc -b shared engine gameserver metaserver commercial gateway worldsvc` 干净，client `tsc --noEmit` + webpack 成功。（gateway `matchsvcClient.test.ts` 1 失败为既有、与本改动无关。）
 
-> **下一会话接续点**：S9-7（反作弊 L2/L3：离线 replay 复算抽查 + `statSuspicion` 升档 + OPS 审查队列）→ S9-8（埋点漏斗 + 红线/幂等单测 + 金币池模拟校准）。任务跟踪见 `META_TASKS.md` S9。
+### S9-7 反作弊 L2/L3 离线抽查（2026-06-21）
+
+- **范围**：补齐 §4.4 的 L2（随机抽查 replay 复算）+ L3（作弊者升档）+ 回滚超报 + OPS 审查队列。L1（上报越界拒收）S9-6 已落。
+- **架构约束**：服务器把对局指令帧存为 base64 **opaque**、永不解码（M12），故 L2 复算**必须经在线 peer 裁判**（同 Phase C `gateway.judge`）——meta 不能自行跑引擎。无裁判可用 / 复算失败 / 旧引擎 → 跳过（benefit-of-doubt，绝不无据定罪）。
+- **链路**：
+  - **裁判侧** `client/src/net/judgeRunner.ts` PvP 分支：`statsJson` 从空串改为**双方 per-side map** `{"0":achievementStatDelta(stats[0]),"1":…}`（PvE 分支仍单对象不破 S9-3b）。
+  - **归档** `metaserver/internal.ts /internal/match/report`：仅 ranked 正常结算时把 L1 清洗后已入账的 per-side 上报值写进 `MatchDoc.reportedStats`（作离线比对基准；`pvp.wins` 不含，mismatch 局为空）。
+  - **抽查批** `metaserver/anticheatAudit.ts auditOnce`：meta 定时器（`index.ts`，`NW_ACHIEVEMENT_AUDIT_INTERVAL_MS` 缺省 60s，留 buildApp 外、e2e 直调）周期取未审计 ranked 局（`audited` 不存在、最旧优先）→ **suspicion 加权抽样**（取双方 `statSuspicion` 较大值，clean p0=2% / flagged p_flagged=35%）→ `gateway.judge` 复算 → `compareAudit(reportedStats[side], 复算)` 查**超报**（少报/相等=clean）→ 超报方：`applyRollback`（0 下限扣回超报量，**金币不追回**）+ `statSuspicion++` + `lastFlaggedTs` + 入 `antiCheatReviews`（`_id=roomId:accountId` review-first 作幂等锁防重复回滚）；最后给局打 `audited:{verdict:'clean'|'overclaim'|'skipped'}`。
+  - **OPS** meta `GET /internal/anticheat/reviews?accountId=&status=&limit=`（X-Internal-Key）→ admin `clients.ts HttpAntiCheatClient` 代理 → `httpApi.ts GET /admin/anticheat/reviews`（新能力 `anticheat.view`，super/ops）+ `service.ts listAntiCheatReviews`（审计 `anticheat.view`）→ `tools/ops pageSuspicions`（审查队列页：上报/复算/超报/已回滚/suspicion/状态）。
+- **铁律守护**：A2（计数只在服务器结算点写）——回滚也只经 rev-guard 改 `save.stats`；A3（不发战力）——回滚不动 elo/装备/材料，金币不追回（红线测试见 S9-8）。
+- **`@nw/shared` 新增纯函数** `antiCheatAudit.ts`：`AUDIT_SAMPLE_P0/P_FLAGGED`/`auditSampleProbability`/`shouldAuditSample`/`compareAudit`/`applyRollback`（注入随机/时钟，便于测试）。`mongo.ts` 加 `MatchDoc.reportedStats`/`audited` + `AntiCheatReviewDoc` 集合 + 索引。`SaveData.antiCheat` 首次被写入。
+- **测试**：`anticheat-audit.test.ts`（18 纯函数）+ `anticheat-audit.e2e.test.ts`（9 e2e：超报回滚+升档+审查+标记 / 重跑幂等 / clean / 无裁判全 0 留局 / 裁判失败 skipped / 少报 clean / suspicion 加权 / 回滚 0 下限 / 内部端点鉴权）+ `internal.test.ts` 补 ranked 归档 `reportedStats` / friendly 空。**meta 191 全绿**，admin 18 绿，`tsc -b` 全包干净，client tsc+webpack 成功。
+
+### S9-8 埋点漏斗 + 红线/幂等单测 + 金币池校准（2026-06-21）
+
+- **A-8 埋点漏斗**：客户端补成就漏斗中段 `achievement_view_wall`（打开成就墙 `goAchievements` 时发，带 `online`）——与既有 `achievement_unlock_toast`（解锁）/`achievement_claim`（领取）构成漏斗 `解锁→看墙→领取`。`analyticsvc DEFAULT_CONFIG` 加三事件 `sample:1.0`（此前 unlock_toast/claim 漏配，落 0.1 默认；现全采）。「无人达成条目」=查询侧分析（非事件）。详见 ANALYTICS_DESIGN §5.7。
+- **A-9 红线/幂等单测**：`achievements.e2e.test.ts` 加红线测试——领取一阶后断言 save **仅 `wallet.coins` +50**，`pvp`/`equipped`/`materials`/`pveUpgrades`/`progress`/`stats` 逐一不变（A3 不发战力）。既有 claim 幂等/未达拒发/并发恰一发（S9-4）+ L1 `sanitizePvpReportedStats`（S9-6）单测已覆盖。
+- **A-10 金币池校准**：`coin-pool.test.ts` 锁定当前一次性总池 = **2250**（5 条 ×3 阶：archer/guard/meteor 各 350、chapters 700、wins 500），护栏：单条满阶 ∈[350,700]、均值 ≤500、25 条投影落 8–12k 目标带。校准结论记 `ECONOMY_BALANCE §2.4`。
+
+> **成就系统全部落地**（S9-1~8 + 3b 全 ✅）。后续仅余可选打磨：L1 硬边界精确化（§6.2 待办，优先级因 L2 已补而降低）、运营扩条目（新 statKey 不回填语义 §10-2）、成就顶阶发称号（待 S10 称号系统）。任务跟踪见 `META_TASKS.md` S9。

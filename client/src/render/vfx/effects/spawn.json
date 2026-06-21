@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "spawn",
+  "duration": 0.3,
+  "loop": false,
+  "defaultColor": "0x222222",
+  "layers": [
+    {
+      "type": "ring",
+      "params": {
+        "radius": { "from": 20, "to": 0, "ease": "easeOut" },
+        "alpha": { "from": 1, "to": 0, "ease": "easeOut" },
+        "lineWidth": 2
+      }
+    },
+    {
+      "type": "spokes",
+      "count": 4,
+      "params": {
+        "innerR": { "from": 16, "to": 0, "ease": "easeOut" },
+        "outerR": { "from": 26, "to": 0, "ease": "easeOut" },
+        "alpha": { "from": 1, "to": 0, "ease": "easeOut" },
+        "lineWidth": 2
+      }
+    }
+  ]
+}

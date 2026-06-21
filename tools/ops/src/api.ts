@@ -2,6 +2,7 @@
 // 不直连业务服务——一切经 admin 后端（§7）。
 import type {
   AdminAccountView,
+  AntiCheatReviewView,
   AuditEntryView,
   CompMailContent,
   CompScope,
@@ -128,6 +129,16 @@ export class Api {
   async player(publicId: string): Promise<PlayerProfile> {
     const r = await this.req<{ player: PlayerProfile }>('GET', `/admin/player/${encodeURIComponent(publicId)}`);
     return r.player;
+  }
+
+  // —— 成就反作弊审查队列（S9-7）——
+  async antiCheatReviews(opts?: { accountId?: string; status?: string; limit?: number }): Promise<AntiCheatReviewView[]> {
+    const qs = new URLSearchParams();
+    if (opts?.accountId) qs.set('accountId', opts.accountId);
+    if (opts?.status) qs.set('status', opts.status);
+    if (opts?.limit) qs.set('limit', String(opts.limit));
+    const r = await this.req<{ reviews: AntiCheatReviewView[] }>('GET', `/admin/anticheat/reviews?${qs}`);
+    return r.reviews;
   }
 
   // —— 补偿工单 ——

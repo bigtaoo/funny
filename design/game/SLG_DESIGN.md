@@ -305,7 +305,7 @@
 
 - **服务器权威段**（不可信客户端）：地图态/领地归属/资源/兵力/养成/钱包/拍卖成交 —— 全在服务器，客户端只读。
 - **关键战斗权威**（SLG11，**已按 §16/ADR-007 改**）：关键围攻 = 双方预布兵的确定性自动战斗，**服务器跑引擎算权威结果即时落地**，伪造战报无效。~~（旧：judgeRunner 复算后才落地——已废）~~
-- **拍卖行反 RMT**（SLG9）：高税 + 限额 + 禁挂 + 异常模式 admin 审计。
+- **拍卖行反 RMT**（SLG9）：高税 + 限额 + 禁挂 + 价格护栏（下单硬闸）+ **异常模式离线检测 + admin 审计队列**（§17.13，事后核查合谋倒货）。
 - **天梯隔离**（SLG7）：养成/SLG 战力对天梯零影响，电竞公平不被付费污染。
 
 ---
@@ -1030,7 +1030,17 @@ if (path.startsWith('/admin/world/')) {
 - `worldClient`（admin→worldsvc 内部 HTTP，X-Internal-Key）：`openWorld/settleWorld/resetWorld/closeWorld/listWorlds`。
 - admin REST（管理员鉴权，OPS 复用）：`POST /admin/slg/season/{open,settle,reset,close}` + `GET /admin/slg/worlds`（列各大区 status/population/resetAt）。
 - **运维序列约束**（admin 后端 enforce）：reset 前必须 settle（否则丢 `seasonResults`），UI 按钮顺序 open→（运营期）→settle→reset→close；临近 `openAt + SEASON_LENGTH_DAYS` 高亮（不自动切，同天梯手动 roll）。
-- **异常交易审计工单**（SLG9 反 RMT，G7 半截）：复用 OPS 补偿工单基建，拍卖异常模式（高频自卖自买/定向倒货）进审计队列——本轮列规格，落地随 OPS 专项（§17.12）。
+- **异常交易审计工单 ✅（2026-06-21，反 RMT，G7）**：见 §17.13。
+
+### 17.13 异常交易审计（D / G7 反 RMT，2026-06-21 落地）
+
+> C/E/F/G 闸门是「下单时的硬护栏」（限流/禁挂/冻结/价格带），但绕不过「两个合谋账号在价格带内反复定向倒货」这类事后才显形的洗钱/搬砖。本节加**离线检测层 + admin 审计队列**：worldsvc 扫已成交记录聚合可疑配对，运维在 admin 立工单单人裁定。与补偿工单平行但独立（补偿=发奖、双人审批；审计=核查违规、单人裁定+留痕，处置封禁/扣回走外联）。
+
+- **检测（`@nw/shared`，纯函数可调参可单测）**：`detectAuctionAnomalies(trades, thresholds?)` 把成交记录按「卖家→买家」**有向配对**聚合，命中任一信号即报异常——`repeated`（配对成交 ≥ `AUDIT_PAIR_MIN_TRADES`=5，反复对敲）/ `designated`（定向受拍成交 ≥ `AUDIT_PAIR_MIN_DESIGNATED`=3，定向倒货）/ `high_value`（累计金币 ≥ `AUDIT_PAIR_MIN_COINS`=50000，大额转移）；`severity=high` 当 designated+high_value 同时命中（最像真钱 RMT），否则 medium。常量 + `AUDIT_WINDOW_SEC`=7 天 DRAFT，待 ECONOMY_NUMBERS 调参。
+- **worldsvc**：`AuctionDoc.soldAt`（status→sold 时写；旧档回退解析 `auctionId` 内挂单 ts）；`AuctionService.scanAnomalies(worldId, windowSec?, thresholds?)` 拉近期 sold 投影成 `AuctionTradeRecord[]` 跑检测；内部端点 `GET /admin/world/audit/anomalies?worldId=&windowSec=`（X-Internal-Key，并入既有 `/admin/world/*` 内部分支）。只读，不改状态。
+- **admin**：`WorldClient.listAuctionAnomalies` 代理 worldsvc；新集合 `tradeAuditTickets`（独立库 `notebook_wars_admin`，`pairKey` 去重 + status/filedAt 索引）；`AdminService` 加 `slgScanAnomalies`/`slgFileAuditTicket`（冻结快照 + pairKey 同配对 open 去重幂等）/`slgListAuditTickets`/`slgResolveAuditTicket`（open→dismissed|actioned 原子守卫，审计 `slg.audit.file`/`slg.audit.resolve`）；REST `GET /admin/slg/audit/anomalies`·`GET|POST /admin/slg/audit/tickets`·`POST /admin/slg/audit/tickets/{id}/resolve`。能力 `slg.audit.view`（super/ops/viewer）/ `slg.audit.manage`（super/ops）。
+- **验收**：server `tsc -b`（10 包）全绿；worldsvc e2e 167（+6 `auction-audit`：repeated/designated+high_value/正常无异常/窗口外不计/soldAt 回退/方向区分）；admin e2e 24（+6 `season-audit`：扫描代理/立单 pairKey 去重/裁定 open→actioned+重复裁定拒/结案后可重立/无效裁定+无效快照拒/审计留痕）。
+- **未尽**：ops 前端审计页（SLG season admin 同样暂无 ops UI，一并后置）；确认违规后的自动处置（封禁/扣回）走外联流程，本轮只到「立单 + 裁定 + 留痕」。
 
 ### 17.8 G6 多大区 + 按宗门强弱平衡分配（数据地基 + 算法规格，运行时延后）
 
@@ -1086,7 +1096,7 @@ if (path.startsWith('/admin/world/')) {
 - **G6 运行时 ✅（2026-06-21，§20）**：多 shard 实际开区编排（`allocateNextSeason`）、人口溢出开新区（`resolveShardForJoin`）、玩家 join 自动路由（宗门>家族>单随）、跨区隔离巡检（`patrolShardIsolation`）已落地。剩赛季中主动转区/合区（运营专项）+ 赛季元数据下发（待 S11）。
 - **SLG 战令增益（C6/G4，属 S8-8 战令专项）**：`hasBattlePass` 当前死字段——增益效果（加速/产率/额外奖励档）随 SLG 赛季战令专项落地，与天梯战令独立（OVERVIEW §2/§4）。
 - **称号（C1 TODO）**：`SETTLE_REWARDS.titleId` 的 `grantTitle` 接入待 `TITLE_DESIGN` S10；本轮仅邮件正文写明（仪式感先到位，同天梯 §13A.0-C4）。
-- **异常交易审计工单（G7 半截）**：拍卖反 RMT 审计落地随 OPS 专项（§17.7 已列规格）。
+- **异常交易审计工单 ✅（2026-06-21，G7）**：检测层 + admin 审计队列已落地（§17.13）。剩 ops 前端审计页 + 确认违规的自动处置（封禁/扣回）外联，后置。
 - **G5 视野系统 / G8 险地**：与赛季正交，各自专项（§15.2）。G5 已启动 → §18。
 
 ---

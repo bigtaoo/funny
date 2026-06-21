@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "death_unit",
+  "duration": 0.45,
+  "loop": false,
+  "defaultColor": "0x222222",
+  "layers": [
+    {
+      "type": "burst",
+      "count": 8,
+      "params": {
+        "nearR": { "from": 0, "to": 8 },
+        "farR": { "from": 0, "to": 32 },
+        "alpha": { "from": 1, "to": 0 },
+        "lineWidth": 2
+      }
+    },
+    {
+      "type": "dots",
+      "count": 1,
+      "params": {
+        "spreadR": 0,
+        "dotSize": { "from": 5, "to": 0 },
+        "alpha": { "from": 1, "to": 0 }
+      }
+    }
+  ]
+}
