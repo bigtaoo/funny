@@ -91,7 +91,8 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
   });
 
   it('未进入：getMe joined=false', async () => {
-    expect(await svc.getMe(W, 'a')).toEqual({ joined: false });
+    // worldId 始终回传（G6/§20 R3：join-season 解析结果，未进入时也带所查 shard）。
+    expect(await svc.getMe(W, 'a')).toEqual({ joined: false, worldId: W });
   });
 
   it('进入世界：建主城 + 保护罩 + 满兵力 + 起步产率；幂等', async () => {

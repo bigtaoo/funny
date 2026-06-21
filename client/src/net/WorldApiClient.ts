@@ -109,6 +109,21 @@ export class WorldApiClient {
     return this.req('POST', '/world/join', { worldId, x, y });
   }
 
+  /**
+   * 按赛季解析本账号应进的 shard（G6/§20）：只解析不落城，进图前拿真实 worldId（粘性>家族>单随，溢出开新区）。
+   */
+  async resolveSeason(season: number): Promise<{ worldId: string }> {
+    return this.req('POST', '/world/season/resolve', { season });
+  }
+
+  /**
+   * 按赛季 join（G6/§20）：服务端解析本账号应进的 shard（宗门>家族>单随，溢出开新区）后落城。
+   * 返回的 PlayerWorldView 含解析出的 `worldId`，客户端据此进图。
+   */
+  async joinSeason(season: number, x: number, y: number): Promise<PlayerWorldView> {
+    return this.req('POST', '/world/season/join', { season, x, y });
+  }
+
   async occupyTile(worldId: string, x: number, y: number): Promise<{ ok: true }> {
     return this.req('POST', '/world/occupy', { worldId, x, y });
   }

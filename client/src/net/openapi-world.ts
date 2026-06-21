@@ -814,6 +814,8 @@ export interface components {
         };
         PlayerWorldView: {
             joined: boolean;
+            /** @description 所在 shard worldId（G6/§20：join-season 解析结果回传，客户端进图依据） */
+            worldId?: string;
             troops?: number;
             troopCap?: number;
             resources?: {

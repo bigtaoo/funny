@@ -95,6 +95,9 @@ components:
       properties:
         joined:
           type: boolean
+        worldId:
+          type: string
+          description: 所在 shard worldId（G6/§20：join-season 解析结果回传，客户端进图依据）
         troops:
           type: integer
         troopCap:

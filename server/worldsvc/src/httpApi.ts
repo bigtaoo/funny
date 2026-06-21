@@ -93,8 +93,24 @@ export function startHttpApi(
           if (method === 'GET' && aurl.pathname === '/admin/world/list') {
             return send(res, 200, ok(await svc.listWorlds()));
           }
+          // 跨区隔离巡检（G6/§20）：跨区行军 / 玩家双开 / 孤儿格扫描。
+          if (method === 'GET' && aurl.pathname === '/admin/world/patrol') {
+            return send(res, 200, ok(await svc.patrolShardIsolation()));
+          }
           if (method !== 'POST') return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
           const body = await readJson(req);
+          // 新赛季开区编排（G6/§20）：按上季宗门强弱蛇形均衡开 N 区，无 worldId（先于 worldId 门）。
+          if (aurl.pathname === '/admin/world/allocate') {
+            try {
+              const seasonNum = Number(body.season);
+              if (!Number.isFinite(seasonNum)) return sendErr(res, ErrorCode.BAD_REQUEST, 'season required');
+              const cap = body.capacity != null ? Number(body.capacity) : undefined;
+              return send(res, 200, ok(await svc.allocateNextSeason(seasonNum, cap)));
+            } catch (e) {
+              if (e instanceof SlgError) return sendErr(res, e.code, e.message);
+              return send(res, 500, err(ErrorCode.INTERNAL, (e as Error).message));
+            }
+          }
           const worldId = typeof body.worldId === 'string' ? body.worldId : null;
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           try {
@@ -174,6 +190,25 @@ export function startHttpApi(
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           return send(res, 200, ok(await svc.getMarches(worldId, accountId)));
+        }
+
+        // ── 按赛季解析 shard（G6/§20）：只解析不落城，客户端进图前拿 worldId ──
+        if (method === 'POST' && path === '/world/season/resolve') {
+          const body = await readJson(req);
+          const season = Number(body.season);
+          if (!Number.isFinite(season)) return sendErr(res, ErrorCode.BAD_REQUEST, 'season required');
+          return send(res, 200, ok(await svc.resolveSeasonShard(season, accountId)));
+        }
+
+        // ── 按赛季 join（G6/§20）：服务端解析 shard 自动路由（宗门>家族>单随，溢出开新区）──
+        if (method === 'POST' && path === '/world/season/join') {
+          const body = await readJson(req);
+          const season = Number(body.season);
+          const x = Number(body.x);
+          const y = Number(body.y);
+          if (!Number.isFinite(season)) return sendErr(res, ErrorCode.BAD_REQUEST, 'season required');
+          if (!Number.isFinite(x) || !Number.isFinite(y)) return sendErr(res, ErrorCode.BAD_REQUEST, 'x/y required');
+          return send(res, 200, ok(await svc.joinSeason(season, accountId, x, y)));
         }
 
         // ── 进入世界 / 占领 / 放弃（S8-1，做实）──
