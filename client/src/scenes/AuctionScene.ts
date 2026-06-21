@@ -22,7 +22,6 @@ const ROW_H = 56;
 const HUD_H = 50;
 const TAB_H = 36;
 const FILTER_H = 34;
-const CREATE_H = 250;
 
 // Material types available for auction
 const MATERIALS = ['scrap', 'lead', 'binding'] as const;
@@ -52,11 +51,18 @@ export class AuctionScene implements Scene {
 
   // Create form state
   private createMaterial: typeof MATERIALS[number] = 'scrap';
+  private createSaleMode: 'fixed' | 'auction' = 'fixed';
   private createQty = 1;
-  private createPrice = 10;
+  private createPrice = 10;        // fixed buy-now unit price
+  private createStartPrice = 10;   // auction starting unit price
+  private createBuyoutPrice = 0;   // auction buyout (0 = none)
   private createDuration: typeof DURATIONS[number] = 21600;
   private createBuyer = '';
   private createOpen = false;
+
+  // Bid form state (auction listings)
+  private bidAuction: AuctionView | null = null;
+  private bidAmount = 0;
 
   // Scroll
   private scrollY = 0;
@@ -221,15 +227,33 @@ export class AuctionScene implements Scene {
       row.x = 6; row.y = cy;
       this.bodyLayer.addChild(row);
 
+      const isAuction = auc.saleMode === 'auction';
+
       // 材料名在 item.material（itemType 恒为 'material'/'equipment'）；装备暂无 material 字段时回退 itemType。
       const matKey = (auc.item?.['material'] as string | undefined) ?? auc.itemType;
       const itemLbl = txt(`${t(`auction.${matKey as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`, 13, C.dark);
       itemLbl.x = 14; itemLbl.y = cy + 6;
       this.bodyLayer.addChild(itemLbl);
 
-      const priceLbl = txt(`${t('auction.price')}: ${auc.price}`, 12, C.accent);
+      if (isAuction) {
+        const tag = txt(`[${t('auction.auctionTag')}]`, 10, C.red);
+        tag.x = itemLbl.x + itemLbl.width + 6; tag.y = cy + 8;
+        this.bodyLayer.addChild(tag);
+      }
+
+      // 一口价：显示成交单价；竞拍：显示当前出价（无人出价则起拍价）。
+      const priceText = isAuction
+        ? `${t(auc.topBid ? 'auction.currentBid' : 'auction.startPrice')}: ${auc.price}`
+        : `${t('auction.price')}: ${auc.price}`;
+      const priceLbl = txt(priceText, 12, C.accent);
       priceLbl.x = 14; priceLbl.y = cy + 24;
       this.bodyLayer.addChild(priceLbl);
+
+      if (isAuction && auc.buyoutPrice) {
+        const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), 10, C.mid);
+        boLbl.x = 14; boLbl.y = cy + 40;
+        this.bodyLayer.addChild(boLbl);
+      }
 
       const remaining = Math.max(0, Math.ceil((auc.expireAt - now) / 60000));
       const expLbl = txt(`${remaining}m`, 11, C.mid);
@@ -237,14 +261,17 @@ export class AuctionScene implements Scene {
       this.bodyLayer.addChild(expLbl);
 
       if (this.activeTab === 'all') {
-        const buyBtn = sketchPanel(54, 26, { fill: C.dark, border: C.accent, seed: seedFor(cy, 0, 54) });
-        buyBtn.x = w - 62; buyBtn.y = cy + 14;
-        this.bodyLayer.addChild(buyBtn);
-        const bl = txt(t('auction.buy'), 12, C.light);
+        const aucId = auc.auctionId;
+        const btn = sketchPanel(54, 26, { fill: C.dark, border: C.accent, seed: seedFor(cy, 0, 54) });
+        btn.x = w - 62; btn.y = cy + 14;
+        this.bodyLayer.addChild(btn);
+        const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), 12, C.light);
         bl.anchor.set(0.5, 0.5); bl.x = w - 35; bl.y = cy + 27;
         this.bodyLayer.addChild(bl);
-        const aucId = auc.auctionId;
-        this.hitRects.push({ rect: { x: w - 62, y: cy + 14, w: 54, h: 26 }, action: () => this.confirmBuy(aucId, auc.price) });
+        this.hitRects.push({
+          rect: { x: w - 62, y: cy + 14, w: 54, h: 26 },
+          action: isAuction ? () => this.openBidForm(auc) : () => this.confirmBuy(aucId, auc.price),
+        });
       } else {
         const cancelBtn = sketchPanel(54, 26, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 1, 54) });
         cancelBtn.x = w - 62; cancelBtn.y = cy + 14;
@@ -281,10 +308,14 @@ export class AuctionScene implements Scene {
     this.modalHits = [];
     this.modalOpen = true;
 
+    const auctionMode = this.createSaleMode === 'auction';
+    const ROW = 40;
     const mw = Math.min(320, w - 24);
-    const mh = CREATE_H;
+    const priceRowsH = auctionMode ? ROW * 2 : ROW; // auction: startPrice + buyout
+    // item + saleMode + qty + price(s) + duration + buyer(label+field=52) + info(24) + buttons(44) + pads(22)
+    const mh = 14 + ROW * 4 + priceRowsH + 52 + 24 + 44 + 8;
     const mx = (w - mw) / 2;
-    const my = (h - mh) / 2;
+    const my = Math.max(HUD_H + 4, (h - mh) / 2);
 
     const dim = new PIXI.Graphics();
     dim.beginFill(0x000000, 0.4).drawRect(0, 0, w, h).endFill();
@@ -294,88 +325,121 @@ export class AuctionScene implements Scene {
     panel.x = mx; panel.y = my;
     ml.addChild(panel);
 
-    // Item type selector
-    const typeY = my + 14;
-    const tl0 = txt(t('auction.item') + ':', 12, C.dark);
-    tl0.x = mx + 10; tl0.y = typeY;
-    ml.addChild(tl0);
+    let cy = my + 14;
 
+    // Item type selector (materials only for now; equipment listing is E5)
+    const tl0 = txt(t('auction.item') + ':', 12, C.dark);
+    tl0.x = mx + 10; tl0.y = cy;
+    ml.addChild(tl0);
     let bx = mx + 10 + tl0.width + 8;
     for (const mat of MATERIALS) {
       const active = mat === this.createMaterial;
       const matIdx = MATERIALS.indexOf(mat);
       const btn = sketchPanel(60, 24, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(matIdx, 0, 60) });
-      btn.x = bx; btn.y = typeY - 2;
+      btn.x = bx; btn.y = cy - 2;
       ml.addChild(btn);
       const bl = txt(t(`auction.${mat}` as 'auction.scrap' | 'auction.lead' | 'auction.binding'), 11, active ? C.light : C.dark);
-      bl.anchor.set(0.5, 0.5); bl.x = bx + 30; bl.y = typeY + 10;
+      bl.anchor.set(0.5, 0.5); bl.x = bx + 30; bl.y = cy + 10;
       ml.addChild(bl);
       const m = mat;
-      this.modalHits.push({ rect: { x: bx, y: typeY - 2, w: 60, h: 24 }, action: () => { this.createMaterial = m; this.openCreateForm(); } });
+      this.modalHits.push({ rect: { x: bx, y: cy - 2, w: 60, h: 24 }, action: () => { this.createMaterial = m; this.openCreateForm(); } });
       bx += 64;
     }
+    cy += ROW;
 
-    // Qty / Price
-    const qpY = my + 54;
-    this.addNumInput(ml, mx, qpY, t('auction.qty') + ':', this.createQty, (v) => { this.createQty = Math.max(1, v); this.openCreateForm(); });
+    // Sale mode toggle (fixed buy-now / auction)
+    const sm0 = txt(t('auction.saleMode') + ':', 12, C.dark);
+    sm0.x = mx + 10; sm0.y = cy;
+    ml.addChild(sm0);
+    let sx = mx + 10 + sm0.width + 8;
+    const modes: { key: 'fixed' | 'auction'; label: string }[] = [
+      { key: 'fixed', label: t('auction.saleFixed') },
+      { key: 'auction', label: t('auction.saleAuction') },
+    ];
+    for (let i = 0; i < modes.length; i++) {
+      const md = modes[i]!;
+      const active = md.key === this.createSaleMode;
+      const btn = sketchPanel(72, 24, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(i, 5, 72) });
+      btn.x = sx; btn.y = cy - 2;
+      ml.addChild(btn);
+      const bl = txt(md.label, 11, active ? C.light : C.dark);
+      bl.anchor.set(0.5, 0.5); bl.x = sx + 36; bl.y = cy + 10;
+      ml.addChild(bl);
+      this.modalHits.push({ rect: { x: sx, y: cy - 2, w: 72, h: 24 }, action: () => { this.createSaleMode = md.key; this.openCreateForm(); } });
+      sx += 76;
+    }
+    cy += ROW;
 
-    const priceY = my + 94;
-    this.addNumInput(ml, mx, priceY, t('auction.price') + ':', this.createPrice, (v) => { this.createPrice = Math.max(1, v); this.openCreateForm(); });
+    // Qty
+    this.addNumInput(ml, mx, cy, t('auction.qty') + ':', this.createQty, (v) => { this.createQty = Math.max(1, v); this.openCreateForm(); });
+    cy += ROW;
+
+    // Price(s) — fixed: single buy-now price; auction: startPrice + optional buyout
+    if (auctionMode) {
+      this.addNumInput(ml, mx, cy, t('auction.startPrice') + ':', this.createStartPrice, (v) => { this.createStartPrice = Math.max(1, v); this.openCreateForm(); });
+      cy += ROW;
+      this.addNumInput(ml, mx, cy, t('auction.buyout') + ':', this.createBuyoutPrice, (v) => { this.createBuyoutPrice = Math.max(0, v); this.openCreateForm(); });
+      cy += ROW;
+    } else {
+      this.addNumInput(ml, mx, cy, t('auction.price') + ':', this.createPrice, (v) => { this.createPrice = Math.max(1, v); this.openCreateForm(); });
+      cy += ROW;
+    }
 
     // Duration
-    const durY = my + 134;
     const dl0 = txt(t('auction.duration') + ':', 12, C.dark);
-    dl0.x = mx + 10; dl0.y = durY;
+    dl0.x = mx + 10; dl0.y = cy;
     ml.addChild(dl0);
     const durKeys: Record<typeof DURATIONS[number], 'auction.dur6h' | 'auction.dur12h' | 'auction.dur24h'> = { 21600: 'auction.dur6h', 43200: 'auction.dur12h', 86400: 'auction.dur24h' };
     let dx = mx + 10 + dl0.width + 8;
     for (const dur of DURATIONS) {
       const active = dur === this.createDuration;
       const btn = sketchPanel(52, 24, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(dur, 0, 52) });
-      btn.x = dx; btn.y = durY - 2;
+      btn.x = dx; btn.y = cy - 2;
       ml.addChild(btn);
       const bl = txt(t(durKeys[dur]), 10, active ? C.light : C.dark);
-      bl.anchor.set(0.5, 0.5); bl.x = dx + 26; bl.y = durY + 10;
+      bl.anchor.set(0.5, 0.5); bl.x = dx + 26; bl.y = cy + 10;
       ml.addChild(bl);
       const d = dur as typeof DURATIONS[number];
-      this.modalHits.push({ rect: { x: dx, y: durY - 2, w: 52, h: 24 }, action: () => { this.createDuration = d; this.openCreateForm(); } });
+      this.modalHits.push({ rect: { x: dx, y: cy - 2, w: 52, h: 24 }, action: () => { this.createDuration = d; this.openCreateForm(); } });
       dx += 56;
     }
+    cy += ROW;
 
     // Designated buyer (optional) — private sale to a specific account.
-    const buyerY = my + 174;
     const bl0 = txt(t('auction.buyer') + ':', 11, C.dark);
-    bl0.x = mx + 10; bl0.y = buyerY;
+    bl0.x = mx + 10; bl0.y = cy;
     ml.addChild(bl0);
-    const buyerField = sketchPanel(mw - 20, 26, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(buyerY, 0, mw - 20) });
-    buyerField.x = mx + 10; buyerField.y = buyerY + 16;
+    const buyerField = sketchPanel(mw - 20, 26, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 0, mw - 20) });
+    buyerField.x = mx + 10; buyerField.y = cy + 16;
     ml.addChild(buyerField);
     const bfl = txt(this.createBuyer || t('auction.buyerPlaceholder'), 11, this.createBuyer ? C.dark : C.mid);
-    bfl.x = mx + 16; bfl.y = buyerY + 23;
+    bfl.x = mx + 16; bfl.y = cy + 23;
     ml.addChild(bfl);
-    this.modalHits.push({ rect: { x: mx + 10, y: buyerY + 16, w: mw - 20, h: 26 }, action: () => this.openBuyerInput() });
+    this.modalHits.push({ rect: { x: mx + 10, y: cy + 16, w: mw - 20, h: 26 }, action: () => this.openBuyerInput() });
+    cy += 52;
 
-    // Tax info
-    const tax = Math.floor(this.createPrice * 0.1);
-    const youGet = this.createPrice - tax;
+    // Tax info — estimate seller proceeds at the floor price (start/buy-now).
+    const refPrice = auctionMode ? this.createStartPrice : this.createPrice;
+    const youGet = refPrice - Math.floor(refPrice * 0.1);
     const taxLbl = txt(`${t('auction.youGet')}: ${youGet}`, 11, C.mid);
-    taxLbl.x = mx + 10; taxLbl.y = my + mh - 52;
+    taxLbl.x = mx + 10; taxLbl.y = cy;
     ml.addChild(taxLbl);
+    cy += 24;
 
     // OK / Cancel
     const okBtn = sketchPanel(80, 28, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, 80) });
-    okBtn.x = mx + mw / 2 - 88; okBtn.y = my + mh - 36;
+    okBtn.x = mx + mw / 2 - 88; okBtn.y = cy;
     ml.addChild(okBtn);
     const ol = txt(t('auction.create'), 12, C.light);
-    ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 48; ol.y = my + mh - 22;
+    ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 48; ol.y = cy + 14;
     ml.addChild(ol);
     this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: 80, h: 28 }, action: () => void this.doCreate() });
 
     const caBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 1, 80) });
-    caBtn.x = mx + mw / 2 + 8; caBtn.y = my + mh - 36;
+    caBtn.x = mx + mw / 2 + 8; caBtn.y = cy;
     ml.addChild(caBtn);
     const cl = txt('✕', 12, C.dark);
-    cl.anchor.set(0.5, 0.5); cl.x = mx + mw / 2 + 48; cl.y = my + mh - 22;
+    cl.anchor.set(0.5, 0.5); cl.x = mx + mw / 2 + 48; cl.y = cy + 14;
     ml.addChild(cl);
     this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: 80, h: 28 }, action: () => this.closeModal() });
   }
@@ -434,12 +498,20 @@ export class AuctionScene implements Scene {
 
   private async doCreate(): Promise<void> {
     const buyer = this.createBuyer.trim();
+    const auctionMode = this.createSaleMode === 'auction';
     this.closeModal();
     try {
       await this.cb.worldApi.createAuction(
         this.cb.worldId, 'material', { material: this.createMaterial },
         this.createQty, this.createDuration,
-        { price: this.createPrice, designatedBuyerId: buyer || undefined },
+        auctionMode
+          ? {
+              saleMode: 'auction',
+              startPrice: this.createStartPrice,
+              buyoutPrice: this.createBuyoutPrice > 0 ? this.createBuyoutPrice : undefined,
+              designatedBuyerId: buyer || undefined,
+            }
+          : { saleMode: 'fixed', price: this.createPrice, designatedBuyerId: buyer || undefined },
       );
       this.createBuyer = '';
       this.showToast(t('auction.created'));
@@ -447,6 +519,98 @@ export class AuctionScene implements Scene {
     } catch (e) {
       this.showToast(this.errorMsg(e), C.red);
     }
+  }
+
+  // ── Bid (auction listings) ──────────────────────────────────────────────────
+
+  /** auc.price = 当前最高出价（有出价时）或起拍价。有出价则要求至少 +5% 加价（服务端权威）。 */
+  private minBidFor(auc: AuctionView): number {
+    return auc.topBid ? Math.max(auc.price + 1, Math.ceil(auc.price * 1.05)) : auc.price;
+  }
+
+  private openBidForm(auc: AuctionView): void {
+    const fresh = this.bidAuction?.auctionId !== auc.auctionId;
+    const minBid = this.minBidFor(auc);
+    this.bidAuction = auc;
+    if (fresh) this.bidAmount = minBid;
+    this.bidAmount = Math.max(this.bidAmount, minBid);
+
+    const { w, h } = this;
+    const ml = this.modalLayer;
+    ml.removeChildren();
+    this.modalHits = [];
+    this.modalOpen = true;
+
+    const mw = Math.min(300, w - 30);
+    const mh = 184;
+    const mx = (w - mw) / 2;
+    const my = (h - mh) / 2;
+
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.4).drawRect(0, 0, w, h).endFill();
+    ml.addChild(dim);
+    const panel = sketchPanel(mw, mh, { fill: C.paper, border: C.dark, seed: seedFor(0, 0, mw) });
+    panel.x = mx; panel.y = my;
+    ml.addChild(panel);
+
+    let cy = my + 14;
+    const matKey = (auc.item?.['material'] as string | undefined) ?? auc.itemType;
+    const titleLbl = txt(`${t(`auction.${matKey as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`, 13, C.dark);
+    titleLbl.x = mx + 12; titleLbl.y = cy;
+    ml.addChild(titleLbl);
+    cy += 24;
+
+    const curLbl = txt(`${t(auc.topBid ? 'auction.currentBid' : 'auction.startPrice')}: ${auc.price}`, 11, C.accent);
+    curLbl.x = mx + 12; curLbl.y = cy;
+    ml.addChild(curLbl);
+    cy += 20;
+
+    if (auc.buyoutPrice) {
+      const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), 10, C.mid);
+      boLbl.x = mx + 12; boLbl.y = cy;
+      ml.addChild(boLbl);
+      cy += 18;
+    }
+
+    this.addNumInput(ml, mx, cy + 6, t('auction.bid') + ':', this.bidAmount, (v) => { this.bidAmount = Math.max(minBid, v); this.openBidForm(auc); });
+
+    const okBtn = sketchPanel(80, 28, { fill: C.dark, border: C.accent, seed: seedFor(0, 3, 80) });
+    okBtn.x = mx + mw / 2 - 88; okBtn.y = my + mh - 36;
+    ml.addChild(okBtn);
+    const ol = txt(t('auction.bid'), 12, C.light);
+    ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 48; ol.y = my + mh - 22;
+    ml.addChild(ol);
+    this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: 80, h: 28 }, action: () => this.confirmBid(auc) });
+
+    const caBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 4, 80) });
+    caBtn.x = mx + mw / 2 + 8; caBtn.y = my + mh - 36;
+    ml.addChild(caBtn);
+    const cl = txt('✕', 12, C.dark);
+    cl.anchor.set(0.5, 0.5); cl.x = mx + mw / 2 + 48; cl.y = my + mh - 22;
+    ml.addChild(cl);
+    this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: 80, h: 28 }, action: () => this.closeBidModal() });
+  }
+
+  private confirmBid(auc: AuctionView): void {
+    const amount = this.bidAmount;
+    const msg = t('auction.confirmBid').replace('{price}', String(amount));
+    this.showConfirmModal(msg, () => void this.doBid(auc.auctionId, amount));
+  }
+
+  private async doBid(auctionId: string, amount: number): Promise<void> {
+    this.closeBidModal();
+    try {
+      await this.cb.worldApi.placeBid(auctionId, this.cb.worldId, amount);
+      this.showToast(t('auction.bidPlaced'));
+      await this.loadData();
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  private closeBidModal(): void {
+    this.bidAuction = null;
+    this.closeModal();
   }
 
   private confirmBuy(auctionId: string, price: number): void {
@@ -543,12 +707,21 @@ export class AuctionScene implements Scene {
     if (e instanceof WorldApiError) {
       const map: Record<string, string> = {
         AUCTION_CLOSED:          t('auction.err.closed'),
+        AUCTION_NOT_FOUND:       t('auction.err.closed'),
         NOT_DESIGNATED_BUYER:    t('auction.err.selfBuy'),
         AUCTION_LIMIT_REACHED:   t('auction.err.limitReached'),
         INSUFFICIENT_FUNDS:      t('auction.err.insufficientFunds'),
+        INSUFFICIENT_RESOURCES:  t('auction.err.insufficientFunds'),
         NOT_OWNER:               t('auction.err.notOwner'),
+        NO_PERMISSION:           t('auction.err.notOwner'),
         INSUFFICIENT_MATERIALS:  t('auction.err.noMaterial'),
         NOT_IMPLEMENTED:         t('auction.err.notImpl'),
+        BID_TOO_LOW:             t('auction.err.bidTooLow'),
+        PRICE_OUT_OF_RANGE:      t('auction.err.priceRange'),
+        MATERIAL_NOT_TRADEABLE:  t('auction.err.notTradeable'),
+        WORLD_CLOSED:            t('auction.err.worldClosed'),
+        EQUIP_LOCKED:            t('auction.err.equipLocked'),
+        EQUIP_IN_USE:            t('auction.err.equipInUse'),
       };
       return map[e.code] ?? e.message;
     }
