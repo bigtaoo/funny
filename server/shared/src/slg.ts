@@ -405,6 +405,16 @@ export function allocateSectsToShards(sects: SectStrength[], shardCount: number)
   return out;
 }
 
+// ── G6 运行时调度（§20）：id 格式 + shard 数推导 ─────────────
+/** 世界 id 权威格式（= WorldDoc._id），替客户端硬编码。 */
+export function worldShardId(season: number, shard: number): string {
+  return `s${season}-${shard}`;
+}
+/** 人口 → 所需 shard 数（§17.8 第 2 步，向上取整，至少 1）。可单测。 */
+export function shardCountForPopulation(totalPlayers: number, capacity: number): number {
+  return Math.max(1, Math.ceil(Math.max(0, totalPlayers) / Math.max(1, capacity)));
+}
+
 // ── 确定性噪声（纯函数，无随机源；同输入同输出）─────────────
 /** 32-bit 整数哈希（两坐标 + seed → uint32）。 */
 function hash2(x: number, y: number, seed: number): number {

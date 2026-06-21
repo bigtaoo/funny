@@ -276,8 +276,23 @@ export interface SeasonResultDoc {
     nationCount: number;
     capitalIdxs: number[];
     prosperity?: number;       // 结算时繁荣度快照（sect scope 才有意义）
+    memberFamilyIds?: string[]; // 成员家族名单（sect scope 才记，G6 下季 familyShard 展开输入，§20 R2）
     tier: SettleTier;
   }>;
+}
+
+/**
+ * G6 多 shard 赛季分配（§20.2）。settle 时按上季宗门强弱蛇形均衡分配，落库本季 familyId→shardIndex；
+ * 下季玩家 join 时按账号上季家族查表路由（宗门>家族>单随）。
+ * `_id = `s${season}``（本赛季）。shardCount 可因人口溢出 $inc 递增。
+ */
+export interface ShardAllocationDoc {
+  _id: string;        // `s${season}`
+  season: number;
+  shardCount: number;
+  capacity: number;
+  familyShard: Record<string, number>; // 上季 familyId → 本季 shardIndex
+  createdAt: number;
 }
 
 export interface WorldCollections {
@@ -296,6 +311,7 @@ export interface WorldCollections {
   sieges: Collection<SiegeDoc>;
   nations: Collection<NationDoc>;
   seasonResults: Collection<SeasonResultDoc>;
+  shardAllocations: Collection<ShardAllocationDoc>;
 }
 
 export interface WorldMongo {
@@ -339,6 +355,7 @@ export async function createWorldMongo(
     sieges: db.collection<SiegeDoc>('sieges'),
     nations: db.collection<NationDoc>('nations'),
     seasonResults: db.collection<SeasonResultDoc>('seasonResults'),
+    shardAllocations: db.collection<ShardAllocationDoc>('shardAllocations'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -380,6 +397,8 @@ export async function createWorldMongo(
     await collections.nations.createIndex({ ownerId: 1 });
     // 赛季结算历史（C2/§17.2）：按 worldId 取最近季；G6 分配读上季排名。
     await collections.seasonResults.createIndex({ worldId: 1, season: -1 });
+    // G6 多 shard 分配（§20）：按 season 取本季分配表（join 路由查 familyShard）。
+    await collections.shardAllocations.createIndex({ season: 1 });
     // 建宗门门槛 / G6 分配按繁荣度查（§17.2）。
     await collections.families.createIndex({ worldId: 1, prosperity: -1 });
   }

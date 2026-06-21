@@ -58,6 +58,11 @@ import {
   CENTER_CAPITAL_IDX,
   CENTER_CAPITAL_MULT,
   RESET_DELETE_BATCH,
+  WORLD_CAPACITY,
+  worldShardId,
+  shardCountForPopulation,
+  allocateSectsToShards,
+  type SectStrength,
   SlgError,
   type SettleTier,
   type PathCell,
@@ -137,6 +142,8 @@ export interface WorldMapView {
 
 export interface PlayerWorldView {
   joined: boolean;
+  /** 所在 shard worldId（G6/§20 R3：join-season 解析结果回传，客户端进图依据）。 */
+  worldId?: string;
   troops?: number;
   troopCap?: number;
   resources?: Record<ResourceType, number>;
@@ -512,10 +519,11 @@ export class WorldService {
     const doc = await this.deps.cols.playerWorld.findOne({
       _id: playerWorldId(worldId, accountId),
     });
-    if (!doc) return { joined: false };
+    if (!doc) return { joined: false, worldId };
     const resources = this.settle(doc, this.deps.now());
     return {
       joined: true,
+      worldId, // G6（§20 R3）：join-season 解析出的 shard worldId 回传客户端进图
       troops: doc.troops,
       troopCap: doc.troopCap,
       resources,
@@ -2188,7 +2196,6 @@ export class WorldService {
           _id: worldId,
           season,
           shard,
-          status: 'open' as const,
           mapW: this.deps.mapW,
           mapH: this.deps.mapH,
           openAt: now(),
@@ -2196,6 +2203,7 @@ export class WorldService {
           population: 0,
           rev: 0,
         },
+        // status 仅在 $set（首次插入 + 重开都置 open）；不可与 $setOnInsert 同写同字段（Mongo upsert 冲突）。
         // 开服 pin 引擎版本（C7/§17.9）：围攻权威/重播一致性锚点。重开同步 pin 当前进程版本。
         $set: { status: 'open' as const, engineVersion: ENGINE_VERSION },
       },
@@ -2293,13 +2301,15 @@ export class WorldService {
 
     // 落库历史 + 发奖（C1/C2）仅在有 world 文档时（需 season 锚 dispatchKey/幂等键）。
     if (w) {
-      // 宗门繁荣度快照（settle 时聚合刷新，§17.4）。
+      // 宗门繁荣度快照（settle 时聚合刷新，§17.4）+ 成员家族名单快照（G6 下季 familyShard 展开，§20 R2）。
       const sectProsperity = new Map<string, number>();
+      const sectMemberFamilyIds = new Map<string, string[]>();
       for (const r of ranking) {
         if (r.scope === 'sect') {
           const memberFams = await cols.families.find({ sectId: r.familyId }).toArray();
           const sum = memberFams.reduce((acc, f) => acc + effectiveProsperity(f, now()), 0);
           sectProsperity.set(r.familyId, sum);
+          sectMemberFamilyIds.set(r.familyId, memberFams.map((f) => f._id));
           await cols.sects.updateOne({ _id: r.familyId }, { $set: { prosperity: sum } });
         }
       }
@@ -2320,7 +2330,10 @@ export class WorldService {
               nationCount: r.nationCount,
               capitalIdxs: r.capitalIdxs,
               tier: settleTier(r.rank),
-              ...(r.scope === 'sect' ? { prosperity: sectProsperity.get(r.familyId) ?? 0 } : {}),
+              ...(r.scope === 'sect' ? {
+                prosperity: sectProsperity.get(r.familyId) ?? 0,
+                memberFamilyIds: sectMemberFamilyIds.get(r.familyId) ?? [],
+              } : {}),
             })),
           },
         },
@@ -2420,6 +2433,220 @@ export class WorldService {
       { _id: worldId },
       { $set: { status: 'closed' as const }, $inc: { rev: 1 } },
     );
+  }
+
+  // ── G6 多 shard 运行时调度（§20）────────────────────────────
+
+  /**
+   * 新赛季开区编排（admin，§20.4）：读上季 seasonResults 按宗门强弱蛇形均衡分配，
+   * 落 shardAllocations.familyShard（同宗门成员家族同 shard；散家族最少家族数补位），
+   * 并对每个 shardIndex 调 openSeason。幂等（openSeason $setOnInsert + alloc upsert，重调不重复建）。
+   */
+  async allocateNextSeason(season: number, capacity: number = WORLD_CAPACITY): Promise<{
+    shardCount: number; worldIds: string[]; allocatedFamilies: number;
+  }> {
+    const { cols, now } = this.deps;
+    const prevSeason = season - 1;
+
+    // ① 读上季全 shard 结算历史 → SectStrength[] + 每宗门成员家族名单。
+    const prevResults = await cols.seasonResults.find({ season: prevSeason }).toArray();
+    const sectStrengths: SectStrength[] = [];
+    const sectFamilies = new Map<string, string[]>(); // sectId(上季) → 成员 familyIds
+    const sectFamilyAll = new Set<string>();          // 已归宗门的家族（用于散家族补位区分）
+    for (const res of prevResults) {
+      for (const r of res.ranking) {
+        if (r.scope !== 'sect') continue;
+        const memberFamilyIds = r.memberFamilyIds ?? [];
+        sectStrengths.push({
+          sectId: r.id,
+          lastSeasonRank: r.rank,
+          memberFamilyCount: memberFamilyIds.length,
+          prosperity: r.prosperity ?? 0,
+        });
+        sectFamilies.set(r.id, memberFamilyIds);
+        for (const fid of memberFamilyIds) sectFamilyAll.add(fid);
+      }
+    }
+
+    // ② shardCount = ceil(上季全 shard 人口 / capacity)（首季无上季 → 0 → 1 区）。
+    const prevWorldIds = (await cols.worlds.find({ season: prevSeason }).project({ _id: 1 }).toArray()).map((w) => w._id);
+    const totalPlayers = prevWorldIds.length > 0
+      ? await cols.familyMembers.countDocuments({ worldId: { $in: prevWorldIds } })
+      : 0;
+    const shardCount = shardCountForPopulation(totalPlayers, capacity);
+
+    // ③ 蛇形均衡分配 sect → shardIdx，展开到成员家族粒度。
+    const assignment = allocateSectsToShards(sectStrengths, shardCount);
+    const familyShard: Record<string, number> = {};
+    for (const [sectId, idx] of assignment) {
+      for (const fid of sectFamilies.get(sectId) ?? []) familyShard[fid] = idx;
+    }
+    // ④ 散家族（上季有族无门）按最少家族数 shard 确定性补位（均摊）。
+    const shardLoad = new Array(shardCount).fill(0);
+    for (const idx of Object.values(familyShard)) if (idx < shardCount) shardLoad[idx]++;
+    if (prevWorldIds.length > 0) {
+      const looseFams = await cols.families
+        .find({ worldId: { $in: prevWorldIds }, _id: { $nin: [...sectFamilyAll] } })
+        .project({ _id: 1 }).sort({ _id: 1 }).toArray();
+      for (const f of looseFams) {
+        let min = 0;
+        for (let i = 1; i < shardCount; i++) if (shardLoad[i] < shardLoad[min]) min = i;
+        familyShard[f._id] = min;
+        shardLoad[min]++;
+      }
+    }
+
+    // ⑤ 落 shardAllocations（幂等 upsert：重调覆盖最新分配；shardCount 后续溢出 $inc）。
+    await cols.shardAllocations.updateOne(
+      { _id: `s${season}` },
+      { $set: { season, shardCount, capacity, familyShard }, $setOnInsert: { createdAt: now() } },
+      { upsert: true },
+    );
+
+    // ⑥ 开 N 个 shard 世界。
+    const worldIds: string[] = [];
+    for (let i = 0; i < shardCount; i++) {
+      const wid = worldShardId(season, i);
+      await this.openSeason(wid, season, i, capacity);
+      worldIds.push(wid);
+    }
+    return { shardCount, worldIds, allocatedFamilies: Object.keys(familyShard).length };
+  }
+
+  /**
+   * 解析账号本赛季应进的 shard worldId（§20.4）：粘性 > 家族查表 > 最空开区 > 溢出开新区。
+   */
+  private async resolveShardForJoin(season: number, accountId: string): Promise<string> {
+    const { cols } = this.deps;
+
+    // ① 粘性：已在本季某 shard 有 playerWorld → 返回该 worldId（防跨 shard 双开）。
+    const existing = await cols.playerWorld.findOne(
+      { accountId, worldId: { $regex: `^s${season}-` } },
+      { projection: { worldId: 1 } },
+    );
+    if (existing) return existing.worldId;
+
+    const alloc = await cols.shardAllocations.findOne({ _id: `s${season}` });
+
+    // ② 家族查表：账号上季家族 → familyShard 命中 shard（须 open/active 且未满）。
+    if (alloc) {
+      const prevMember = await cols.familyMembers.findOne(
+        { accountId, worldId: { $regex: `^s${season - 1}-` } },
+        { projection: { familyId: 1 } },
+      );
+      const idx = prevMember ? alloc.familyShard[prevMember.familyId] : undefined;
+      if (idx != null) {
+        const wid = worldShardId(season, idx);
+        const w = await cols.worlds.findOne({ _id: wid });
+        if (w && (w.status === 'open' || w.status === 'active') && w.population < w.capacity) return wid;
+        // 命中区已满/未开 → 落溢出补位（不破坏均衡：仍优先最空开区）。
+      }
+    }
+
+    // ③ 最空开区：本季 open/active 且未满，按 population 升序取最空。
+    const open = await cols.worlds
+      .find({ season, status: { $in: ['open', 'active'] }, $expr: { $lt: ['$population', '$capacity'] } })
+      .sort({ population: 1 }).limit(1).toArray();
+    if (open.length > 0) return open[0]!._id;
+
+    // ④ 溢出：无可用 → 开新 shard（idx = alloc.shardCount 或现有 world 数），$inc shardCount。
+    const capacity = alloc?.capacity ?? WORLD_CAPACITY;
+    const nextIdx = alloc?.shardCount ?? await cols.worlds.countDocuments({ season });
+    const wid = worldShardId(season, nextIdx);
+    await this.openSeason(wid, season, nextIdx, capacity);
+    await cols.shardAllocations.updateOne({ _id: `s${season}` }, { $inc: { shardCount: 1 } });
+    return wid;
+  }
+
+  /**
+   * 仅解析本账号本赛季应进的 shard（玩家端浏览入口，§20.5）：不落城，供客户端进图前拿 worldId。
+   * 与 joinSeason 共用 resolveShardForJoin（粘性>家族查表>最空开区>溢出开新区）。
+   */
+  async resolveSeasonShard(season: number, accountId: string): Promise<{ worldId: string }> {
+    return { worldId: await this.resolveShardForJoin(season, accountId) };
+  }
+
+  /**
+   * 按赛季 join（玩家端，§20.4）：服务端解析 shard → joinWorld。
+   * WORLD_FULL（并发满员）兜底重解析一跳（多半落溢出新区）。返回含 worldId 的玩家视图。
+   */
+  async joinSeason(season: number, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
+    let worldId = await this.resolveShardForJoin(season, accountId);
+    try {
+      return await this.joinWorld(worldId, accountId, x, y);
+    } catch (e) {
+      if (e instanceof SlgError && e.code === 'WORLD_FULL') {
+        worldId = await this.resolveShardForJoin(season, accountId);
+        return await this.joinWorld(worldId, accountId, x, y);
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * 跨区隔离巡检（admin 只读，§20.4）：扫描跨 shard 泄漏 —— 跨区行军 / 玩家双开 / 孤儿格。
+   */
+  async patrolShardIsolation(): Promise<{
+    scannedWorlds: number;
+    crossWorldMarches: { count: number; samples: string[] };
+    multiShardPlayers: { count: number; samples: string[] };
+    orphanTiles: { count: number; samples: string[] };
+  }> {
+    const { cols } = this.deps;
+    const SAMPLE = 20;
+    const scannedWorlds = await cols.worlds.countDocuments({});
+
+    // ① 跨区行军：fromTile/toTile 前缀 ≠ worldId（行军引用他区格）。
+    const crossMarches: string[] = [];
+    let crossCount = 0;
+    for await (const m of cols.marches.find({}, { projection: { worldId: 1, fromTile: 1, toTile: 1 } })) {
+      const pfx = `${m.worldId}:`;
+      if (!m.fromTile.startsWith(pfx) || !m.toTile.startsWith(pfx)) {
+        crossCount++;
+        if (crossMarches.length < SAMPLE) crossMarches.push(m._id);
+      }
+    }
+
+    // ② 玩家双开：同 season 跨多个 worldId 有 playerWorld 的账号。
+    const worldSeason = new Map<string, number>(
+      (await cols.worlds.find({}, { projection: { season: 1 } }).toArray()).map((w) => [w._id, w.season]),
+    );
+    const acctWorlds = new Map<string, Map<number, Set<string>>>();
+    for await (const p of cols.playerWorld.find({}, { projection: { accountId: 1, worldId: 1 } })) {
+      const season = worldSeason.get(p.worldId) ?? -1;
+      let byS = acctWorlds.get(p.accountId);
+      if (!byS) { byS = new Map(); acctWorlds.set(p.accountId, byS); }
+      let set = byS.get(season);
+      if (!set) { set = new Set(); byS.set(season, set); }
+      set.add(p.worldId);
+    }
+    const multiSamples: string[] = [];
+    let multiCount = 0;
+    for (const [acct, byS] of acctWorlds) {
+      for (const [season, set] of byS) {
+        if (set.size > 1) {
+          multiCount++;
+          if (multiSamples.length < SAMPLE) multiSamples.push(`${acct}@s${season}:${[...set].join(',')}`);
+        }
+      }
+    }
+
+    // ③ 孤儿格：tiles._id 前缀 ≠ worldId 字段。
+    const orphanSamples: string[] = [];
+    let orphanCount = 0;
+    for await (const t of cols.tiles.find({}, { projection: { worldId: 1 } })) {
+      if (!t._id.startsWith(`${t.worldId}:`)) {
+        orphanCount++;
+        if (orphanSamples.length < SAMPLE) orphanSamples.push(t._id);
+      }
+    }
+
+    return {
+      scannedWorlds,
+      crossWorldMarches: { count: crossCount, samples: crossMarches },
+      multiShardPlayers: { count: multiCount, samples: multiSamples },
+      orphanTiles: { count: orphanCount, samples: orphanSamples },
+    };
   }
 
   // ── S8-8：SLG 商店 ────────────────────────────────────────

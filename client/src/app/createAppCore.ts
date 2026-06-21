@@ -46,6 +46,11 @@ const PLAYER_NAME_KEY = 'nw_player_name';
 const PLAYER_PUBLIC_ID_KEY = 'nw_player_public_id';
 /** Coin cost to change the display name. Mirrors server RENAME_COST; server authoritative. */
 const RENAME_COST = 500;
+/**
+ * 当前 SLG 赛季号（G6/§20）：worldsvc 按 `s{season}-{shard}` 多 shard 路由，客户端进图前
+ * 用它 resolveSeason 拿真实 worldId。暂为常量，待 S11 天梯赛季元数据下发后由 metaserver 提供（§20.8）。
+ */
+const CURRENT_SEASON = 1;
 
 export interface AppCore {
   /** First launch → intro; otherwise entry gating (login vs lobby). Call once. */
@@ -482,10 +487,12 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const token = platform.storage.getItem(TOKEN_KEY);
     if (!token) { analytics.track('login_gate_hit', { scene: 'WorldMapScene' }); goLogin(); return; }
     const worldApi = new WorldApiClient(platform.storage);
-    // Use a fixed world ID for now; in future this would come from the server
-    const worldId = 'world:1:0';
     inLobby = false;
-    goWorldMap(worldApi, worldId);
+    // G6/§20：按当前赛季解析本账号应进的 shard（粘性>家族>单随，溢出开新区），不再硬编码 worldId。
+    // CURRENT_SEASON 暂为客户端常量，待 S11 天梯赛季元数据下发后由 metaserver 提供（§20.8）。
+    void worldApi.resolveSeason(CURRENT_SEASON)
+      .then((r) => { goWorldMap(worldApi, r.worldId); })
+      .catch(() => { goWorldMap(worldApi, `s${CURRENT_SEASON}-0`); }); // 解析失败兜底进 0 区（worldShardId 格式）
   }
 
   function goWorldMap(worldApi: WorldApiClient, worldId: string): void {

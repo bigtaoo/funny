@@ -540,7 +540,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 | # | 缺口 | 现状 | 影响 |
 |---|---|---|---|
 | **G5** | ~~**地图迷雾 / 侦察视野 / 宗门视野共享 / 盟友土地标记**~~ ✅ **四片全落地（2026-06-21，§18）** | G5-1 读路径门控 + G5-2 反向视野推送 + G5-3 客户端渲染（灰雾/友敌色/敌军显形）+ 联盟领地黄标（§18.7）全 ✅；共享降级为家族级（§18.1 V2）。scout 侦察行军（§18.8）+ 瞭望塔建筑（§18.9）全 ✅，V2 余项全部兑现 | §8.2 视野共享 + 盟友标记、§2.1 视野订阅核心战略玩法已兑现 |
-| **G6** | **多大区 + 赛季分配规则**（数据地基+纯算法 ✅ **2026-06-21，§17.8**；多 shard 运行时仍延后） | 数据地基已就位：`seasonResults` 集合落库本季宗门排名 + 繁荣度快照（C2 闭）；`sectStrengthScore`/`allocateSectsToShards`（蛇形均衡）纯函数 + 单测。**仍缺**多 shard 运行时调度（按人口开新区/跨区迁移/隔离巡检），单列后续任务 | 规模化数据/算法地基兑现；运行时调度待专项 |
+| **G6** | **多大区 + 赛季分配规则**（数据地基+纯算法 ✅ **2026-06-21，§17.8**；**多 shard 运行时调度 ✅ 2026-06-21，§20**） | 数据地基：`seasonResults` 落库宗门排名 + 繁荣度快照（C2 闭）；`sectStrengthScore`/`allocateSectsToShards`（蛇形均衡）纯函数 + 单测。运行时（§20）：`allocateNextSeason` 编排开 N 区 + 落 `shardAllocations.familyShard`；`joinSeason`/`resolveShardForJoin` 自动路由（粘性>家族查表>最空开区>溢出开新区）；`patrolShardIsolation` 跨区隔离巡检。**剩**赛季中主动转区/合区（运营专项）+ 赛季元数据下发（待 S11） | 规模化数据/算法地基 + 运行时调度兑现；赛季中迁移待专项 |
 | **G7** | **admin 运营后台 SLG 接入**（赛季运维 ✅ **2026-06-21，§17.7**；异常交易审计仍随 OPS 专项） | worldsvc `/admin/world/*` 迁出 JWT 改 X-Internal-Key（**C4 安全洞已堵**，任意玩家不再可清区）+ 新增 `GET /admin/world/list`；admin 后端加 `worldClient` + `POST /admin/slg/season/{open,settle,reset,close}` + `GET /admin/slg/worlds`（能力 `slg.season.view/manage`，reset 前必 settle 约束 + 审计）。**仍缺**异常交易审计工单（随 OPS 专项）+ 商品价格可调 + ops 前端 UI | S8-8 赛季运维侧兑现；反 RMT 审计待 OPS |
 | **G8** | ~~**险地（Stronghold）格子类型**~~ ✅ **已落地（2026-06-21，§19）** | 新增 `'stronghold'` TileType + `proceduralTile` 稀疏生成（~0.3%，比 familyKeep 稀疏 ~16×）+ `strongholdGarrison` 系统超强守军 + worldsvc `applyStrongholdSiege`（无主险地 PvE 围攻：权威引擎跑系统守军，攻克占为领地 + 一次性丰厚奖励，攻败残兵撤退）；occupy/sweep/落城/重生全拦截险地；契约 enum + 客户端渲染/交互/i18n。worldsvc 5 e2e | 高战略价值 PvE 格兑现（§3.1） |
 
@@ -1083,7 +1083,7 @@ if (path.startsWith('/admin/world/')) {
 ### 17.12 DRAFT 数值 / 后续任务（待拍板/调参/单列）
 
 - **数值（→ ECONOMY_NUMBERS §13-SLG 登记 + 经济模拟）**：`PROSPERITY_W_*`/`PROSPERITY_DECAY_PER_DAY`/`SECT_FOUND_PROSPERITY_MIN`；`SETTLE_REWARDS` 各档材料/皮肤量 + `CENTER_CAPITAL_MULT`；`sectStrengthScore` 权重；`WORLD_CAPACITY`/`RESET_DELETE_BATCH`。settle coin 若 >0 须经经济总预算批准（OVERVIEW §3.3）。
-- **G6 运行时（单列任务）**：多 shard 实际开区调度、人口溢出触发开新区、跨区玩家/宗门迁移、行军/拍卖跨区隔离巡检（§17.8 只到算法+数据）。
+- **G6 运行时 ✅（2026-06-21，§20）**：多 shard 实际开区编排（`allocateNextSeason`）、人口溢出开新区（`resolveShardForJoin`）、玩家 join 自动路由（宗门>家族>单随）、跨区隔离巡检（`patrolShardIsolation`）已落地。剩赛季中主动转区/合区（运营专项）+ 赛季元数据下发（待 S11）。
 - **SLG 战令增益（C6/G4，属 S8-8 战令专项）**：`hasBattlePass` 当前死字段——增益效果（加速/产率/额外奖励档）随 SLG 赛季战令专项落地，与天梯战令独立（OVERVIEW §2/§4）。
 - **称号（C1 TODO）**：`SETTLE_REWARDS.titleId` 的 `grantTitle` 接入待 `TITLE_DESIGN` S10；本轮仅邮件正文写明（仪式感先到位，同天梯 §13A.0-C4）。
 - **异常交易审计工单（G7 半截）**：拍卖反 RMT 审计落地随 OPS 专项（§17.7 已列规格）。
@@ -1226,6 +1226,94 @@ if (path.startsWith('/admin/world/')) {
 - 数值调参：`STRONGHOLD_GARRISON_PER_LEVEL`/`STRONGHOLD_LOOT_PER_LEVEL`/`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL`/生成密度（`strongholdThreshold`）待经济与战力模拟细化（§16.5 同批）。
 - **攻克奖励材料 ✅（2026-06-21，随 G4 §15.6 落地）**：除单资源即时入袋，额外掉落养成材料 `binding`（`strongholdMaterialLoot(level)` 按等级线性，**DRAFT** `STRONGHOLD_LOOT_MATERIAL_PER_LEVEL=4`）——攻克胜经 `meta.grantMaterial` 发到 `SaveData.materials` 养成统一池（跨进程 best-effort，orderId=`stronghold_loot:{worldId}:{toTile}:{arriveAt}` 幂等），攻克败不掉。复用 G4 打通的材料通道，险地养成价值兑现。装备掉落仍待装备库 E2~E4。worldsvc `stronghold.e2e` 加掉落断言（胜掉/败不掉/orderId 幂等键）。
 - 险地系统守军当前为合成步兵；后续可换更强兵种/自定义系统布阵 config（§16.5 满血容量表/兵种当量调参后）。
+
+---
+
+## 20. G6 多 shard 运行时调度实现记录（2026-06-21，§2.2/§17.8 收口）
+
+> §17.8 只到「数据地基 + 纯算法」（`allocateSectsToShards` + `seasonResults`）。本节兑现 §17.12 单列的**运行时调度**：多 shard 实际开区编排、按宗门强弱均衡分配落库、玩家 join 自动路由（宗门>家族>单随）、人口溢出开新区、跨区隔离巡检。**契约前提（2026-06-21 拍板）**见 §20.1。
+
+### 20.1 三项契约前提（消解 §17.8 鸡生蛋）
+
+| # | 问题 | 结论 |
+|---|---|---|
+| **R1 sect 赛季作用域** | sects `_id=s:{worldId}:{TAG}` 赛季级，`resetSeason` 删 `sects` + unset `families.sectId` → 新赛季 open 时**无 sect 可分配**。 | 跨季持久社交单位 = **family**（`resetSeason` 保编制只清赛季态）。均衡分配在**上季 settle 时快照**，落 `shardAllocations.familyShard`（上季 familyId→本季 shardIndex），下季 join 时按账号上季家族查表路由。`allocateSectsToShards` 仍按 sect 强弱分配，但展开到**成员家族粒度**落库（同宗门家族同 shard）。 |
+| **R2 分配输入数据源** | 上季 sect 成员家族名单 `seasonResults.ranking` 此前不记。 | `settleSeason` 扩展：sect scope 排名条目记 `memberFamilyIds`（settle 时 families 仍带 sectId，免二次查）。下季 `allocateNextSeason` 读上季 `seasonResults`（跨 shard）构造 `SectStrength[]` + 展开 familyShard。 |
+| **R3 join 路由入口** | 客户端硬编码 `worldId`（`world:1:0`，格式都不对），无「按赛季选服」入口。 | 新增玩家端 `POST /world/season/join {season,x,y}` → 服务端 `resolveShardForJoin` 解析 worldId（粘性>家族查表>最空开区>溢出开新区）→ joinWorld。`PlayerWorldView` 加 `worldId` 字段回传解析结果（客户端据此进图）。`worldShardId(season,shard)=s{season}-{shard}` 统一 id 格式。 |
+
+### 20.2 数据模型
+
+- **新集合 `shardAllocations`**（world 库）`ShardAllocationDoc`：
+  ```
+  _id: `s{season}`          // 本赛季分配（下季 join 路由查表）
+  season, shardCount, capacity
+  familyShard: Record<familyId, shardIndex>   // 上季 familyId → 本季 shardIndex（同宗门家族同区；散家族补位）
+  createdAt
+  ```
+  索引 `{season:1}`。`shardCount` 可因溢出**递增**（`allocateNextSeason` 写初值，`resolveShardForJoin` 溢出时 `$inc`）。
+- **`SeasonResultDoc.ranking[]` 扩展**：sect scope 条目加 `memberFamilyIds?: string[]`（R2）。
+
+### 20.3 `@nw/shared`（`slg.ts`）
+
+- `worldShardId(season, shard) = `s${season}-${shard}``（id 格式权威，替客户端硬编码 + 与 `WorldDoc._id` 对齐）。
+- `shardCountForPopulation(totalPlayers, capacity) = max(1, ceil(total / max(1,capacity)))`（§17.8 第 2 步抽函数，可单测）。
+- 复用既有 `sectStrengthScore` / `allocateSectsToShards`（蛇形均衡）。
+
+### 20.4 worldsvc（`service.ts`）
+
+- **`settleSeason` 扩展**：sect scope 排名条目落 `memberFamilyIds`（复用已查的 `memberFams`，无新查询）。family/solo scope 不记（无需展开）。
+- **`allocateNextSeason(season, capacity)`**（admin 编排开区）：
+  1. 读上季 `season-1` 全 shard `seasonResults`；sect 条目 → `SectStrength[]`（`lastSeasonRank`=rank、`memberFamilyCount`=memberFamilyIds.length、`prosperity`）+ 收集每 sect 成员 familyIds。
+  2. `totalPlayers` = 上季全 shard `familyMembers` 计数（首季无 → 0 → shardCount=1）。`shardCount = shardCountForPopulation(totalPlayers, capacity)`。
+  3. `assignment = allocateSectsToShards(SectStrength[], shardCount)`（sect→shardIdx）。
+  4. 展开 `familyShard`：sect 成员家族随 sect 进同 shard；散家族（上季有族无门）按**最少家族数 shard 补位**（确定性贪心，均摊）。
+  5. upsert `shardAllocations` `s{season}`；对 `i∈[0,shardCount)` 调 `openSeason(worldShardId(season,i), season, i, capacity)`。
+  6. 返回 `{ shardCount, worldIds, allocatedFamilies }`。幂等：openSeason `$setOnInsert` + alloc upsert，重调不重复建。
+- **`resolveShardForJoin(season, accountId)`**（私有）：
+  1. **粘性**：账号已在某 `s{season}-*` 有 `playerWorld` → 返回该 worldId（防跨 shard 双开）。
+  2. **家族查表**：`shardAllocations[s{season}].familyShard[上季家族]` 命中 → `worldShardId(season, idx)`（须该 world 已 open/active 且未满；满则落溢出）。账号上季家族 = `familyMembers`（`s{season-1}-*` 内 accountId）。
+  3. **最空开区**：`s{season}-*` 中 open/active 且 `population<capacity` 的最空者。
+  4. **溢出开新区**：无可用 → `idx=shardAllocations.shardCount`（无 alloc 则 = 现有 world 数），`openSeason(worldShardId(season,idx),…)` + `$inc shardCount`，返回新 worldId。
+- **`joinSeason(season, accountId, x, y)`**：`resolveShardForJoin` → `joinWorld(worldId,…)`；回传 `PlayerWorldView`（含 `worldId`）。`WORLD_FULL` 兜底再解析一次（并发满员重试一跳）。
+- **`patrolShardIsolation()`**（admin 只读巡检）：扫描跨区泄漏 →
+  - `crossWorldMarches`：`marches` 中 `fromTile`/`toTile` 前缀 ≠ `worldId` 的（行军引用他区格）。
+  - `multiShardPlayers`：同 season 跨多个 `worldId` 有 `playerWorld` 的账号（双开）。
+  - `orphanTiles`：`tiles._id` 前缀 ≠ `worldId` 字段。
+  返回 `{ scannedWorlds, crossWorldMarches, multiShardPlayers, orphanTiles }`（各含 count + ≤20 样本）。纯读不改。
+- **`getMe` / `joinWorld` 视图**：补 `worldId`（解析结果回传客户端，未进入时也带所查 shard）。
+- **`openSeason` upsert 修复（顺带）**：原 `status:'open'` 同时写 `$setOnInsert` 与 `$set` → Mongo upsert 报 `Updating the path 'status' would create a conflict`（既有潜伏 bug，此前无测试跑 openSeason 真实 upsert 路径，G6 多 shard 开区首次密集触发）。修为 `status` 仅入 `$set`（首插 + 重开都置 open），`$setOnInsert` 留不可变初始字段。
+
+### 20.5 契约 + 客户端
+
+- **`openapi-world.yml`**：`PlayerWorldView` 加 `worldId: string`（join-season 回传解析 shard，客户端进图依据）；`npm run rest:gen` 重生成 `openapi-world.ts`。新端点路径不入 openapi（`WorldApiClient` 手写路径，仅 DTO 类型来自契约）。
+- **`WorldApiClient`**：`resolveSeason(season): Promise<{worldId}>`（`POST /world/season/resolve`，**只解析不落城**，进图前拿 worldId）+ `joinSeason(season,x,y): Promise<PlayerWorldView>`（`POST /world/season/join`，解析+落城，读回 `.worldId`）。**两步分离**：客户端浏览地图须先有 worldId（`WorldMapScene` 用 `worldId` 拉图 + tile pick 时 `joinWorld` 落城），故进图走 resolve；落城仍走既有 `joinWorld(worldId,x,y)`（落城在解析出的同一 shard）。`joinSeason`=resolve+落城一体原语（自动落城/API 完整性 + e2e 覆盖）。
+- **`createAppCore.ts`**：去 `worldId='world:1:0'` 硬编码 → `goWorldEntry` 先 `resolveSeason(CURRENT_SEASON)` 拿真实 `s{season}-{shard}` → `goWorldMap(worldApi, worldId)`；解析失败兜底 `s{CURRENT_SEASON}-0`。`CURRENT_SEASON` 暂客户端常量（赛季元数据下发待 S11 天梯赛季打通后接，§20.8）。
+
+### 20.6 httpApi 端点
+
+| 端点 | 鉴权 | 说明 |
+|---|---|---|
+| `POST /admin/world/allocate {season,capacity}` | X-Internal-Key | `allocateNextSeason`，开 N 区 + 落 familyShard（admin 新赛季操作） |
+| `GET /admin/world/patrol` | X-Internal-Key | `patrolShardIsolation` 巡检报告 |
+| `POST /world/season/resolve {season}` | 玩家 JWT | `resolveSeasonShard` 只解析不落城（进图前拿 worldId） |
+| `POST /world/season/join {season,x,y}` | 玩家 JWT | `joinSeason` 自动路由进区（解析+落城一体） |
+
+### 20.7 测试（`shard.e2e.test.ts`）
+
+- `shardCountForPopulation` / `allocateSectsToShards` 已有纯函数单测（§17.11）；本节加 `worldShardId`。
+- **e2e（真实 Mongo）**：
+  - allocate 首季（无上季 results）→ shardCount=1 + 开 `s{season}-0`。
+  - allocate 次季：造上季两 shard `seasonResults`（两 sect 强弱差），断言 `familyShard` 同宗门家族同 shard + 蛇形均衡（强弱搭配）+ 开足 shardCount 个 world。
+  - join 路由：①粘性（重 join 同 shard）②家族查表（上季同族两账号 → 同 shard）③散人最空开区 ④溢出（填满 → 自动开新区 + shardCount $inc）。
+  - patrol：植入跨区 march / 双开 playerWorld → 巡检命中；干净库 → 全 0。
+  - admin 端点 X-Internal-Key 门控（无 key 401，JWT 玩家调 allocate 被拒）。
+
+### 20.8 DRAFT / 后续
+
+- **散家族补位 + 单随路由**当前为「最少家族数/最空开区」确定性贪心；大规模下家族大小方差大时可换按成员数加权（待压测 U12）。
+- **赛季元数据下发**：`CURRENT_SEASON` 客户端暂常量；待 S11 天梯赛季打通后由 metaserver 下发当前赛季号（SLG 赛季与天梯赛季是否同步另议）。
+- **跨区迁移（赛季中）**：本节只做 join 时一次性路由；赛季中主动转区/合区（人口骤降合并低活 shard）仍待规模化运营专项。
+- **`resolveShardForJoin` 单点**：高并发开服瞬时大量 join 经 worldsvc 单进程，与 U12 march 调度单点同源，规模化需选主/分片。
 
 ---
 
