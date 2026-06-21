@@ -435,8 +435,8 @@ export class AuctionScene implements Scene {
     try {
       await this.cb.worldApi.createAuction(
         this.cb.worldId, 'material', { mat: this.createMaterial },
-        this.createQty, this.createPrice, this.createDuration,
-        buyer || undefined,
+        this.createQty, this.createDuration,
+        { price: this.createPrice, designatedBuyerId: buyer || undefined },
       );
       this.createBuyer = '';
       this.showToast(t('auction.created'));

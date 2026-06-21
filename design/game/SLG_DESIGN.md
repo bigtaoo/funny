@@ -217,7 +217,7 @@
 ### 7.3 赛季经济
 
 - 赛季资源（粮/铁/木 + 赛季存量）季末清空，养成材料/金币/外观跨季留存（SLG4）。
-- 拍卖行季末结算/冻结策略 DRAFT。
+- 拍卖行季末结算/冻结策略 ✅（2026-06-21，AUCTION_DESIGN §4.F）：settling 世界拒新挂单，resetSeason 前 clearWorldOnReset 清算退还。
 
 ---
 
@@ -336,7 +336,7 @@
   - **契约/客户端 ✅**：`openapi-world.yml`（`/world/relocate`）+ `transport.proto`（`SectBroadcast`→`SectMsg`）已改并 codegen（`openapi-world.ts`/`proto/transport.ts`）；`WorldApiClient.relocateBase`；`NetSession.onSectMsg` 路由 `msg.sectMsg`；`WorldMapScene` 中立格菜单加「迁城到此」（确认弹层显花费）+ `doRelocate`；`SectScene.applySectMsg` 实时插入频道（去重）+ `createAppCore.goSectHub` 转发 `onSectMsg`；i18n `world.actRelocate/relocateTitle/relocateConfirm/relocateBtn/relocated` zh/en/de。
   - **部署接线**：gateway 加 `NW_GW_REDIS_URL`（与 worldsvc 同 Redis）+ `ioredis` 依赖；写入 `.env.example`/`dev-up.ps1`/`ecosystem.config.cjs`/`docker-compose.{prod,local}.yml`。
   - 验证：服务端 `tsc -b shared worldsvc gateway` 全绿 + worldsvc **81 e2e**（+主动迁城/迁城校验/宗门频道扇出 3 例，含被动迁城断言改写）；client `tsc --noEmit` 0 错 + **273 测试** + `build:web` 通过。
-- **S8-5 拍卖行**：材料/装备挂单（赛季资源禁挂）/竞拍/指定受拍人/10% 手续费（coin）/每日限额/反 RMT 审计。
+- **S8-5 拍卖行**：材料挂单（赛季资源禁挂）/一口价 + 竞拍/指定受拍人/10% 手续费（coin）/每日限额/价格护栏滑窗/绑定禁挂机制/季末冻结清算 全 ✅（2026-06-21）；仅装备交易（依赖装备库）+ 异常审计（依赖 admin G7）待依赖。**机制权威见 [`AUCTION_DESIGN.md`](AUCTION_DESIGN.md)**。
 - **S8-6 养成统一**：`buildSiegeBlueprints` + PvE/SLG 材料统一 + 服务器权威扩展 + 战力单调性单测。
 - **S8-6.5 国家系统**：10 首府固定坐标写入 `shared/slg.ts`、Voronoi 分区计算、立国/灭国状态机、国民加成注入围攻蓝图。
 - **S8-6.6 关隘/桥 + A\* 寻路 ✅（2026-06-18）**：

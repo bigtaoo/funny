@@ -1,6 +1,6 @@
 # Notebook Wars — 拍卖行设计（Auction House）
 
-> 状态：实现中（主干 ✅，A–G 缺口设计中） · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-06-21
+> 状态：主干 ✅ + 反 RMT 闸门 C/E/G/F + 竞拍 B 全 ✅；仅 A 装备 / D 异常审计 待依赖就位 · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-06-21
 >
 > 配套阅读：[`SLG_DESIGN.md`](SLG_DESIGN.md)（§7 经济与交易、§9 架构、§14 契约层——拍卖行是 SLG 大世界的交易子系统）、[`COMMERCIAL_DESIGN.md`](COMMERCIAL_DESIGN.md)（金币钱包 spend/grant，拍卖结算走它）、[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（货币政策/反通胀哲学）、[`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)（数值演算）、[`SERVER_API.md`](SERVER_API.md)（接口契约）、[`OPS_DESIGN.md`](OPS_DESIGN.md)（反 RMT 审计工单复用）。
 >
@@ -14,8 +14,8 @@
 - **可交易品 = 材料 + 装备**（PvE/SLG 统一养成材料 `scrap/lead/binding` + 锻造装备）；**赛季资源（粮/铁/木）禁挂**（季末清零、防套利、维持 biome 物产差异价值）。
 - **计价货币 = 金币（coins，跨季留存的 premium 货币）**；系统抽 **10% 手续费**；**禁止以赛季资源/局内 ink 计价**（防与天梯/付费体系串味）。
 - **承重墙**：拍卖行不碰战斗/地图，是纯经济子系统——挂存与发放走 **meta 材料库**（幂等 orderId），扣款/收款走 **commercial 金币钱包**，状态机权威在 **worldsvc `auctions` 集合**。
-- **反 RMT 是持续对抗**（R3）：10% 高税 + 挂单上限 + （待补）每日限额 + 绑定材料禁挂 + 价格护栏 + 异常模式 admin 审计。
-- **当前状态**：**一口价交易主干已实跑**（S8-5）；A–G 七项缺口（装备/竞拍/日限/审计/禁挂/季末/价格护栏）见 §4，本文给出建议决策。
+- **反 RMT 是持续对抗**（R3）：10% 高税 + 并发挂单上限 + 每日限额（C ✅）+ 绑定材料禁挂（E ✅，清单暂空）+ 价格护栏动态滑窗（G ✅）+ 异常模式 admin 审计（D ⛔ 依赖 admin G7）。
+- **当前状态**（2026-06-21 实现）：**一口价主干 + 竞拍（B ✅）+ 每日限额（C ✅）+ 绑定禁挂机制（E ✅）+ 价格护栏滑窗（G ✅）+ 季末冻结/清算（F ✅）全实跑**（worldsvc `auctionService.ts` + 20 条 e2e）；**仅剩 A 装备交易（依赖装备库存）/ D 异常审计（依赖 admin G7）** 待依赖就位，见 §4。
 
 ---
 
@@ -106,7 +106,9 @@
   - 价格护栏（G）对装备按稀有度/词条估值设区间，防一件神装天价洗钱。
 - **优先级**：中（材料交易已能验证拍卖行闭环；装备等 EQUIPMENT_DESIGN）。
 
-### B. 竞拍（出价）✅ 拍板：v1 做
+### B. 竞拍（出价）✅ 拍板：v1 做 · ✅ 已实现（2026-06-21）
+
+> 实现：`saleMode='auction'` 与一口价并存。`placeBid(amount=出价单价)` → commercial 托管 `amount×qty` → rev 守卫原子写 `topBid` → 退还前一出价者 → 防狙击顺延 `expireAt`（`AUCTION_ANTI_SNIPE_WINDOW_SEC`）→ 达/超 `buyoutPrice` 立即结拍。到期扫描器命中竞拍单且有 `topBid` → `settleAuctionWin`（金币已托管，发标的 + 卖方收税后款）；无人出价 → 同 expired 退还卖方。有出价的竞拍单不可撤。`AUCTION_MIN_INCREMENT_RATIO` 控最小加价。
 
 - **现状**：§7.1 写「买方竞拍或一口价」，实现只做了一口价（buy-now）。**拍板（2026-06-21）：v1 接入竞拍，与一口价并存。**
 - **设计**（两种售卖形态，挂单时由卖方选）：
@@ -123,7 +125,9 @@
 - **反 RMT 加压**（竞拍是搬砖重灾区，与 §4.D 联动）：自买自抬（seller 关联账号出价抬价）、串拍进异常审计；出价计入每日限额（C）。
 - **优先级**：中（主干一口价已闭环；竞拍是体验增强 + §7.1 兑现，可独立切片）。
 
-### C. 每日限额（反搬砖）
+### C. 每日限额（反搬砖）✅ 已实现（2026-06-21）
+
+> 实现：`auctionDaily` 集合按 `${worldId}:${accountId}:${dayKey}`（UTC 日界）计数，`lists`/`buys` 两计数器，`expiresAt`（Date）TTL 自清（`AUCTION_DAILY_TTL_SEC`）。挂单占 `lists`、购买/出价占 `buys`，先占名额（超限回滚 + 抛 `AUCTION_LIMIT_REACHED`）。上限 `AUCTION_DAILY_LIST_CAP=30` / `AUCTION_DAILY_BUY_CAP=30`（DRAFT）。
 
 - **现状**：只有并发上限 `AUCTION_MAX_LISTINGS=20`（同时 open 的挂单数），无「每日挂单/成交次数」上限。SLG9 明确要每日限额。
 - **建议设计**：
@@ -147,7 +151,9 @@
   - **失败补发工单**（§2.3）：扣款成功但发放失败的 `sold` 单凭 orderId 自动进工单队列。
 - **优先级**：中（依赖 admin SLG 接入 G7；上线前必须有，自由市场必出搬砖 R3）。
 
-### E. 绑定材料禁挂
+### E. 绑定材料禁挂 ✅ 机制已实现（2026-06-21，清单暂空）
+
+> 实现：`createAuction` 校验材料 ∈ `AUCTION_BANNED_MATERIALS`（`shared/slg.ts`，初期空集）→ 抛 `MATERIAL_NOT_TRADEABLE`。机制位就绪，禁挂清单随经济运营填。
 
 - **现状**：所有材料都可挂；SLG9 要「部分绑定材料禁挂」。
 - **建议设计**：
@@ -156,7 +162,9 @@
   - 与 A 的「绑定装备禁挂」同源——「绑定」是统一的不可交易标记。
 - **优先级**：低（先有机制位，禁挂清单随经济运营填）。
 
-### F. 季末冻结 / 结算
+### F. 季末冻结 / 结算 ✅ 已实现（2026-06-21）
+
+> 实现：(1) **冻结**——`createAuction` 校验 `world.status`，`settling`/`closed` 拒新挂单（`WORLD_CLOSED`）；`settleSeason` 置 `settling` 后即自动冻结。买/撤/结拍不受限。(2) **清算**——`/admin/world/reset` 先调 `auctionSvc.clearWorldOnReset`：批量 `open→cancelled` + 退还卖方标的 + 退还竞拍托管出价 + 清空该 world 价格滑窗（新赛季市场重启），再调 `svc.resetSeason` 清地图态。标的（材料/装备）属养成侧退回安全（SLG4）。
 
 - **现状**：§7.3 标 DRAFT；赛季切换（`settleSeason`/`resetSeason`）时拍卖行行为未定。
 - **建议设计**（赛季 2 个月，SLG4）：
@@ -166,7 +174,9 @@
   - 与 SLG4 重置表一致：领地/兵力/赛季资源清，养成/coins/外观留——拍卖标的（材料/装备）属「养成」侧，退回即可。
 - **优先级**：中（首个赛季结算前必须有；MVP 单赛季可暂缓）。
 
-### G. 价格护栏 / 反通胀 ✅ 拍板：动态滑窗
+### G. 价格护栏 / 反通胀 ✅ 拍板：动态滑窗 · ✅ 已实现（2026-06-21）
+
+> 实现：每品类（`material:{mat}`）滑窗存近 `AUCTION_PRICE_WINDOW_N=20` 笔成交单价于 `auctionPrices` 集合（`$push $slice`）；`refPrice` = 样本 ≥ `AUCTION_PRICE_WINDOW_MIN_SAMPLES=5` 时取**中位数**（抗极端值），否则回退 `AUCTION_STATIC_REF_PRICE`（scrap=10/lead=30/binding=80，DRAFT），都无则放行（冷启动不误杀）。挂单/出价单价须落 `[refPrice×0.5, refPrice×2.0]`（`AUCTION_PRICE_FLOOR_RATIO/CEIL_RATIO`），越界抛 `PRICE_OUT_OF_RANGE`。滑窗按 worldId 隔离，赛季重置随 `clearWorldOnReset` 清空。
 
 - **现状**：`price > 0` 之外无任何区间限制，可挂任意天价/地板价 → 洗钱（高价定向）/倾销温床。
 - **拍板（2026-06-21）：用动态滑窗护栏**（随市场自适应，而非运营手调静态值）。
@@ -203,31 +213,36 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 |---|---|---|
 | GET | `/auction/list?itemType&limit` | 浏览 open 挂单（按 price 升序，limit ≤50） |
 | GET | `/auction/mine` | 我的挂单（全状态，≤20） |
-| POST | `/auction/create` | 挂单（material；equipment 待 A；可带 designatedBuyerId） |
-| POST | `/auction/{id}/buy` | 一口价购买 |
-| POST | `/auction/{id}/cancel` | 撤单（仅卖方，open） |
+| POST | `/auction/create` | 挂单（material；equipment 待 A；`saleMode=fixed`→price / `auction`→startPrice+可选 buyoutPrice；可带 designatedBuyerId） |
+| POST | `/auction/{id}/buy` | 一口价购买（仅 fixed 单） |
+| POST | `/auction/{id}/bid` | 竞拍出价（仅 auction 单，amount=出价单价；达 buyoutPrice 立即结拍） |
+| POST | `/auction/{id}/cancel` | 撤单（仅卖方，open；竞拍单有出价不可撤） |
 
 > 鉴权复用 meta JWT（worldsvc 仅验签，§14.1 P1）。SERVER_API.md 契约同步。
 
 ### 5.3 shared 常量 / 错误码（`shared/slg.ts`，数值权威）
 
-- 常量（DRAFT）：`AUCTION_TAX_RATE=0.1`、`AUCTION_MAX_LISTINGS=20`、`AUCTION_DURATIONS_SEC=[6h,12h,24h]`；**待补**：`AUCTION_DAILY_LIST_CAP/BUY_CAP`（C）、`AUCTION_BANNED_MATERIALS`（E）、竞拍 `AUCTION_MIN_INCREMENT/ANTI_SNIPE_WINDOW_SEC`（B）、滑窗护栏 `PRICE_WINDOW_N/PRICE_WINDOW_SEC/PRICE_FLOOR_RATIO/PRICE_CEIL_RATIO/PRICE_WINDOW_MIN_SAMPLES`（G）。
-- 错误码：`AUCTION_NOT_FOUND`、`AUCTION_CLOSED`、`NOT_DESIGNATED_BUYER`、`AUCTION_LIMIT_REACHED`、`NO_PERMISSION`、`INSUFFICIENT_RESOURCES`、`NOT_IMPLEMENTED`、`BAD_REQUEST`；**待补**：`PRICE_OUT_OF_RANGE`（G）、`MATERIAL_NOT_TRADEABLE`（E，或复用 BAD_REQUEST）、`BID_TOO_LOW`（B）。
+- 常量（DRAFT，均已落 `shared/slg.ts`）：`AUCTION_TAX_RATE=0.1`、`AUCTION_MAX_LISTINGS=20`、`AUCTION_DURATIONS_SEC=[6h,12h,24h]`；**C** `AUCTION_DAILY_LIST_CAP=30`/`AUCTION_DAILY_BUY_CAP=30`/`AUCTION_DAILY_TTL_SEC`；**E** `AUCTION_BANNED_MATERIALS`（空集）；**B** `AUCTION_MIN_INCREMENT_RATIO=0.05`/`AUCTION_ANTI_SNIPE_WINDOW_SEC=5min`；**G** `AUCTION_PRICE_WINDOW_N=20`/`AUCTION_PRICE_WINDOW_MIN_SAMPLES=5`/`AUCTION_PRICE_FLOOR_RATIO=0.5`/`AUCTION_PRICE_CEIL_RATIO=2.0`/`AUCTION_STATIC_REF_PRICE`。
+- 错误码（均已落 `shared/api.ts`）：`AUCTION_NOT_FOUND`、`AUCTION_CLOSED`、`NOT_DESIGNATED_BUYER`、`AUCTION_LIMIT_REACHED`、`NO_PERMISSION`、`INSUFFICIENT_RESOURCES`、`NOT_IMPLEMENTED`、`BAD_REQUEST`、`WORLD_CLOSED`（F）、`PRICE_OUT_OF_RANGE`（G）、`MATERIAL_NOT_TRADEABLE`（E）、`BID_TOO_LOW`（B）。
+- 新增集合：`auctionDaily`（C，TTL `{expiresAt}`）、`auctionPrices`（G，`_id=worldId:category`）；`auctions` 加 `saleMode/startPrice/buyoutPrice/topBid`（B）。
 
 ---
 
 ## 6. 实现状态（S8-5）
 
-**✅ 已实跑**（`server/worldsvc/src/auctionService.ts` + `auction.e2e.test.ts`）：
+**✅ 已实跑**（`server/worldsvc/src/auctionService.ts` + `test/auction.e2e.test.ts` 20 条全绿 + 111 条 worldsvc 全绿）：
 - 挂单 / 我的挂单 / 一口价购买 / 撤单 / 过期回收全套 CRUD
 - 材料交易（meta deduct/grant 托管+发放，orderId 幂等）
 - 金币计价 + 10% 税（commercial spend/grant）
 - 指定受拍人（定向交易）
 - 并发安全（原子状态转移 + rev + 买方失败退款）
-- 过期扫描器（scheduler 每 2s，非 TTL，退还卖方挂存）
+- 过期扫描器（scheduler 每 2s，非 TTL，退还卖方挂存 / 竞拍结拍）
 - 挂单上限 20、时长 [6h/12h/24h]
+- **C 每日限额**（auctionDaily TTL 计数）/ **E 绑定禁挂机制**（空清单）/ **G 价格护栏动态滑窗**（中位数 + 静态回退）/ **F 季末冻结+清算**（settling 拒挂 + clearWorldOnReset）/ **B 竞拍**（起拍/加价/托管/防狙击/买断/结拍）
+- 契约同步：`openapi-world.yml` + 客户端 `openapi-world.ts`/`WorldApiClient`（createAuction saleMode/placeBid）
 
-**⛔ 缺口**（§4，按建议优先级）：C 每日限额 + G 价格护栏-动态滑窗（反搬砖第一梯队）> D 异常审计（依赖 admin G7）> A 装备（依赖装备库）+ F 季末 > B 竞拍（体验增强，独立切片）> E 绑定禁挂。
+**⛔ 剩余缺口**（均依赖外部系统就位）：**A 装备交易**（依赖 EQUIPMENT 装备库存）、**D 异常审计**（依赖 §15.1 G7 admin SLG 接入）。
+**注**：客户端 `AuctionScene` 一口价 item 字段形状错配（发 `{mat}` vs 服务端读 `item.material`；展示把 itemType 当材料名）为独立既存 bug，单列修复，竞拍 UI 亦待补。
 
 ---
 
@@ -237,9 +252,9 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 |---|---|---|
 | 高税 | 10% 成交手续费（coin sink） | ✅ |
 | 并发上限 | 同时 open 挂单 ≤20 | ✅ |
-| 每日限额 | 日挂单/购买/金币流次数上限 | ⛔ C |
-| 绑定禁挂 | 账号绑定材料/装备不可交易 | ⛔ E |
-| 价格护栏 | 单价限定动态滑窗参考区间，封天价洗钱 | ⛔ G |
+| 每日限额 | 日挂单/购买（含出价）次数上限 | ✅ C |
+| 绑定禁挂 | 账号绑定材料/装备不可交易（清单暂空） | ✅ E（机制） |
+| 价格护栏 | 单价限定动态滑窗参考区间（中位数 + 静态回退），封天价洗钱 | ✅ G |
 | 异常审计 | 对敲/定向异价/大额单向 → OPS 工单 | ⛔ D（依赖 admin G7） |
 | 货币隔离 | 仅 coin 计价，禁赛季资源/ink，防体系串味 | ✅ |
 | 服务器权威 | 库存/扣发/状态全服务器，客户端只读 | ✅ |
@@ -251,7 +266,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 > B（竞拍）/ G（价格护栏）已于 2026-06-21 拍板（B=做竞拍、G=动态滑窗），见 §4。
 
 - **DRAFT 数值**：每日限额、竞拍最小加价/防狙击窗口、滑窗护栏（窗口大小/浮动带/最小样本）、绑定材料清单、季末冻结提前量——上线后随经济运营调参（数值落 `shared/slg.ts`，演算去 ECONOMY_NUMBERS）。
-- **G 算法**：refPrice 用均值还是中位数（抗极端值）、滑窗按笔数还是时间——实现期定。
+- ~~**G 算法**：refPrice 用均值还是中位数、滑窗按笔数还是时间~~——已定：**中位数 + 按笔数（近 20 笔）**。
 - **A 时序**：装备交易依赖 EQUIPMENT_DESIGN 库存系统落地节奏。
 - **D 时序**：异常审计依赖 §15.1 G7「admin SLG 接入」。
 

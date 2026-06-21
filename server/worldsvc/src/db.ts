@@ -153,13 +153,37 @@ export interface AuctionDoc {
   itemType: string;
   item: Record<string, unknown>;
   qty: number;
-  price: number;
+  price: number; // 一口价：成交单价；竞拍：起拍后无意义（用 startPrice/topBid），保留兼容旧浏览排序
   currency: string;
   designatedBuyerId?: string;
-  expireAt: number; // ms（过期由扫描器结算：退还卖方挂存，非 TTL 自删，见 ensureIndexes 注）
+  expireAt: number; // ms（过期由扫描器结算：退还卖方挂存 / 竞拍结拍，非 TTL 自删，见 ensureIndexes 注）
   status: AuctionStatus;
   buyerId?: string;
+  // ── B 竞拍（AUCTION_DESIGN §4.B）。saleMode 缺省视为 'fixed'（兼容既有一口价单）──
+  saleMode?: 'fixed' | 'auction';
+  startPrice?: number;   // 竞拍起拍总价（整批，非单价）
+  buyoutPrice?: number;  // 竞拍一口价保底总价（可选）
+  topBid?: { bidderId: string; amount: number; ts: number }; // 当前最高出价（总价，金币已托管）
   rev: number;
+}
+
+/** C 每日限额计数（AUCTION_DESIGN §4.C）。_id = `${worldId}:${accountId}:${dayKey}`，TTL 自清。 */
+export interface AuctionDailyDoc {
+  _id: string;
+  worldId: string;
+  accountId: string;
+  dayKey: string; // 服务器 UTC 日界 YYYY-MM-DD
+  lists: number;  // 当日新挂单次数
+  buys: number;   // 当日购买/出价次数
+  expiresAt: Date; // BSON Date，TTL 锚字段
+}
+
+/** G 价格护栏滑窗（AUCTION_DESIGN §4.G）。_id = `${worldId}:${category}`，存近 N 笔成交单价。 */
+export interface AuctionPriceDoc {
+  _id: string;
+  worldId: string;
+  category: string; // 材料种类（material:scrap…）；装备品类待 A
+  prices: number[]; // 近 N 笔成交单价（队尾最新，长度 ≤ AUCTION_PRICE_WINDOW_N）
 }
 
 /**
@@ -236,6 +260,8 @@ export interface WorldCollections {
   sects: Collection<SectDoc>;
   sectMessages: Collection<SectMessageDoc>;
   auctions: Collection<AuctionDoc>;
+  auctionDaily: Collection<AuctionDailyDoc>;
+  auctionPrices: Collection<AuctionPriceDoc>;
   sieges: Collection<SiegeDoc>;
   nations: Collection<NationDoc>;
 }
@@ -276,6 +302,8 @@ export async function createWorldMongo(
     sects: db.collection<SectDoc>('sects'),
     sectMessages: db.collection<SectMessageDoc>('sectMessages'),
     auctions: db.collection<AuctionDoc>('auctions'),
+    auctionDaily: db.collection<AuctionDailyDoc>('auctionDaily'),
+    auctionPrices: db.collection<AuctionPriceDoc>('auctionPrices'),
     sieges: db.collection<SiegeDoc>('sieges'),
     nations: db.collection<NationDoc>('nations'),
   };
@@ -309,6 +337,9 @@ export async function createWorldMongo(
     // 注：auctions.expireAt 故意 NOT TTL —— 过期需结算（退还卖方挂存），由扫描器按此索引处理；
     // TTL 自删会在结算前丢掉托管物（U13）。§14.3 表里的「TTL {expireAt}」按此实现期决定改为普通索引。
     await collections.auctions.createIndex({ expireAt: 1 });
+    // C 每日限额：TTL 自清（expiresAt 为 BSON Date，Mongo TTL 只对 Date 生效）。
+    await collections.auctionDaily.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    // G 价格滑窗：_id = `${worldId}:${category}` 直查，无需额外索引（主键足够）。
     await collections.sieges.createIndex({ worldId: 1, ts: -1 });
     await collections.sieges.createIndex({ attackerId: 1 });
     // 国家：worldId 内按首府索引唯一

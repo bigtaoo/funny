@@ -549,6 +549,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auction/{auctionId}/bid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["placeBid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auction/{auctionId}/cancel": {
         parameters: {
             query?: never;
@@ -848,13 +864,30 @@ export interface components {
                 [key: string]: unknown;
             };
             qty: number;
+            /** @description 当前有效单价（一口价=成交单价；竞拍=当前最高出价单价，无人出价则起拍价） */
             price: number;
+            /** @description 当前有效单价 × qty */
+            totalPrice?: number;
+            /** @enum {string} */
+            currency?: "coins";
             /** @enum {string} */
             status: "open" | "sold" | "cancelled" | "expired";
             expireAt: number;
             designatedBuyerId?: string;
             taxPaid?: number;
             buyerId?: string;
+            /** @enum {string} */
+            saleMode: "fixed" | "auction";
+            /** @description 竞拍起拍单价 */
+            startPrice?: number;
+            /** @description 竞拍一口价保底单价（可选） */
+            buyoutPrice?: number;
+            /** @description 当前最高出价（单价，金币已托管） */
+            topBid?: {
+                bidderId: string;
+                amount: number;
+                ts: number;
+            };
         };
         SectView: {
             sectId: string;
@@ -1935,9 +1968,19 @@ export interface operations {
                         [key: string]: unknown;
                     };
                     qty: number;
-                    price: number;
                     durationSec: number;
                     designatedBuyerId?: string;
+                    /**
+                     * @description 缺省 fixed（一口价）
+                     * @enum {string}
+                     */
+                    saleMode?: "fixed" | "auction";
+                    /** @description fixed 模式一口价单价（fixed 必填） */
+                    price?: number;
+                    /** @description auction 模式起拍单价（auction 必填） */
+                    startPrice?: number;
+                    /** @description auction 模式一口价保底单价（可选） */
+                    buyoutPrice?: number;
                 };
             };
         };
@@ -1979,6 +2022,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    placeBid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                auctionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    /** @description 出价单价（金币/件） */
+                    amount: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Bid placed（达/超 buyoutPrice 则返回已结拍的 AuctionView） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["AuctionView"];
+                    };
                 };
             };
         };
