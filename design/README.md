@@ -33,6 +33,8 @@
 | [BALANCE.md](game/BALANCE.md) | **战斗数值快照（镜像 config.ts）— 文档侧唯一数值参考** | 实现中 |
 | [ECONOMY_BALANCE.md](game/ECONOMY_BALANCE.md) | 经济**哲学/政策**（faucet/sink、鲸鱼天花板、反通胀） | 实现中 |
 | [ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | **经济/养成数值演算表（数字权威：体力/合成/护甲/金币/皮肤）** | 设计中 |
+| [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 设计中 |
+| [ACHIEVEMENT_DESIGN.md](game/ACHIEVEMENT_DESIGN.md) | **成就系统机制基准（统计里程碑→一次性金币；服务器权威/领取；数字→ECONOMY_BALANCE §2.4）** | 设计中 |
 | [CAMPAIGN_DESIGN.md](game/CAMPAIGN_DESIGN.md) | 战役 PvE 设计基准（数据权威见 PVE_INTEGRITY_PLAN） | 实现中 |
 | [CAMPAIGN_P0_PLAN.md](game/CAMPAIGN_P0_PLAN.md) | 战役 P0 试玩切片计划 | 实现中 |
 | [CAMPAIGN_STORY.md](game/CAMPAIGN_STORY.md) | 战役剧情文案（叙事铁律见 world.md / ADR） | 设计中 |
@@ -86,6 +88,8 @@
 | 战斗运行数值（HP/攻/速/费/上限/计时/卡池） | `server/engine/src/config.ts`（`@nw/engine`；client 经 alias） | [game/BALANCE.md](game/BALANCE.md) 快照 |
 | 经济/养成**数值**（体力/合成/护甲/金币/皮肤价） | [game/ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | 演算沙盘，可调参数集中 §10 |
 | 经济**政策**/货币命名/盲盒哲学 | [game/ECONOMY_BALANCE.md](game/ECONOMY_BALANCE.md) | 货币：局内 `ink`（墨滴，清零）、持久 `coins`（金币，服务器权威） |
+| 装备系统**机制**（槽位/获取/强化/洗练/注入/红线） | [game/EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | 数字去 ECONOMY_NUMBERS §5；强化升级取代旧"5件确定性合成"(ADR-009) |
+| 成就系统**机制**（统计/解锁/领取/服务器权威） | [game/ACHIEVEMENT_DESIGN.md](game/ACHIEVEMENT_DESIGN.md) | 阈值/金币数字去 ECONOMY_BALANCE §2.4；纯一次性 faucet，不可刷 |
 | PvE 关卡定义 | `client/src/game/campaign/levels/*.json`（+ level-editor 编辑、`parseLevelDefinition` 校验） | — |
 | PvE 奖励 / 养成数据权威 | 服务器 `server/shared/pveRewards.ts` + [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md)（方案 B：服务器权威） | 客户端 JSON 仅参考/编辑器用 |
 | 接口契约（REST/WS/proto/DB 集合） | [game/SERVER_API.md](game/SERVER_API.md) + `server/contracts/` | — |
