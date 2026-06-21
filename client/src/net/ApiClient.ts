@@ -6,7 +6,7 @@
 // 其云同步随微信联机合规一并排期；当前 SaveManager 在无 baseUrl / fetch 时退化为纯本地（离线优先）。
 
 import type { AuthCredential } from '../platform/IPlatform';
-import type { SaveData, SyncPatch } from '../game/meta/SaveData';
+import type { SaveData, SyncPatch, EquipmentInstance, EquipSlot } from '../game/meta/SaveData';
 import type { components, operations } from './openapi';
 import { netLog } from './log';
 
@@ -208,6 +208,62 @@ export class ApiClient {
    */
   async pveMerge(unitId: string, level: number): Promise<{ save: SaveData }> {
     return this.post<{ save: SaveData }>('/pve/merge', { unitId, level });
+  }
+
+  // ── 装备系统（E2 合成 / E3 强化·分解 / E4 穿戴，服务器权威，需登录 token）────
+  // 所有装备动作返回服务器回推的权威 SaveData（equipmentInv/gear/materials/wallet 以服务器为准）。
+  // idempotencyKey 由调用方生成（强化绑定掷骰结果，重放不改命）。
+
+  /** 合成一件 +0 基础装备（E2）：扣文具材料 → 入库。材料不足 → 402；满仓 → 409 INVENTORY_FULL。 */
+  async craftEquipment(
+    defId: string,
+    idempotencyKey: string,
+  ): Promise<{ save: SaveData; instance: EquipmentInstance }> {
+    return this.post<{ save: SaveData; instance: EquipmentInstance }>('/equipment/craft', {
+      defId,
+      idempotencyKey,
+    });
+  }
+
+  /**
+   * 强化一件装备（E3）：服务器掷骰，成功则 level+1，失败不掉级（success=false）；两种结果都已扣材料+金币。
+   * 满级 → 409 ENHANCE_MAX_LEVEL；材料不足 → 402 INSUFFICIENT_MATERIALS；金币不足 → 402 INSUFFICIENT_FUNDS。
+   */
+  async enhanceEquipment(
+    instanceId: string,
+    idempotencyKey: string,
+  ): Promise<{ success: boolean; instance: EquipmentInstance; save: SaveData }> {
+    return this.post<{ success: boolean; instance: EquipmentInstance; save: SaveData }>(
+      '/equipment/enhance',
+      { instanceId, idempotencyKey },
+    );
+  }
+
+  /** 分解一批装备（E3）：+0~4 件返 70% 打造材料、移出库存。+5/穿戴/锁定 → 409。返回返还材料合计。 */
+  async salvageEquipment(
+    instanceIds: string[],
+    idempotencyKey: string,
+  ): Promise<{ refunded: Record<string, number>; save: SaveData }> {
+    return this.post<{ refunded: Record<string, number>; save: SaveData }>('/equipment/salvage', {
+      instanceIds,
+      idempotencyKey,
+    });
+  }
+
+  /**
+   * 穿戴 / 卸下一件装备（E4）：instanceId=null 卸下该槽。unitType 缺省=全军共享（gear.global）。
+   * 槽位与装备定义不符 → 400 INVALID_SLOT；实例不存在 → 404。
+   */
+  async equipEquipment(
+    slot: EquipSlot,
+    instanceId: string | null,
+    unitType?: string,
+  ): Promise<{ save: SaveData }> {
+    return this.post<{ save: SaveData }>('/equipment/equip', {
+      slot,
+      instanceId,
+      ...(unitType ? { unitType } : {}),
+    });
   }
 
   /** 最近对战历史（ranked / friendly，按时间倒序；需登录 token）。 */

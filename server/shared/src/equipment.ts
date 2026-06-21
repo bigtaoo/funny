@@ -73,6 +73,65 @@ export const EQUIPMENT_IDEM_TTL_SEC = 7 * 24 * 3600;
 export const SALVAGE_REFUND_RATIO = 0.7;
 export const SALVAGE_MAX_LEVEL = 4; // +5 及以上不可分解
 
+// ── 强化（E3，EQUIPMENT_DESIGN §6 / ECONOMY_NUMBERS §5.2，DRAFT [可调]）────────
+//
+// 强化把实例 level +1（0→9），走概率、可失败。失败不掉级不碎，只损耗本次材料 + 金币
+// （温和档，§6.1）。金币/材料的主 sink 来自高级低成功率的持续失败损耗（§6.2）。
+// 数值终点是 ECONOMY_NUMBERS §5（待铺），下方先给可跑占位（README §0：数值活在代码）。
+
+/**
+ * 强化成功率（按当前等级 fromLevel，0→1 起算）。EQUIPMENT_DESIGN §6.1：每升一级 −10%，
+ * 0→1=90%、1→2=80%…8→9=10%（与 ECONOMY_NUMBERS §5.2 的 +1→2=80%…+8→9=10% 衔接，
+ * §6.1 起点 0→1=90%）。fromLevel ≥ 9 = 已满级（返回 0，调用方先拦 ENHANCE_MAX_LEVEL）。
+ */
+export function enhanceSuccessRate(fromLevel: number): number {
+  if (fromLevel < 0 || fromLevel >= EQUIP_MAX_LEVEL) return 0;
+  return (EQUIP_MAX_LEVEL - fromLevel) / 10; // 0→0.9, 8→0.1
+}
+
+/** 强化单次消耗（材料 + 金币），随等级递增（DRAFT，权威 ECONOMY_NUMBERS §5.2）。 */
+export interface EnhanceCost {
+  materials: Record<string, number>;
+  coins: number;
+}
+
+/**
+ * 强化 fromLevel→fromLevel+1 的消耗（DRAFT [可调]）：低级吃碎屑、中级起加铅芯、高级起加装订线，
+ * 金币随级线性增。成功/失败都扣（失败损耗是核心 sink，§6.2）。
+ */
+export function enhanceCost(fromLevel: number): EnhanceCost {
+  const lv = Math.max(0, Math.min(fromLevel, EQUIP_MAX_LEVEL - 1));
+  const materials: Record<string, number> = { scrap: 4 + 2 * lv };
+  if (lv >= 3) materials.lead = lv - 2; // +3 起需铅芯
+  if (lv >= 6) materials.binding = lv - 5; // +6 起需装订线
+  return { materials, coins: 40 * (lv + 1) };
+}
+
+/**
+ * 强化掷骰（**服务器权威**，确定性绑定 idempotencyKey + fromLevel）：同 key 重放/重试结果固定，
+ * 杜绝"网络重试改命"（§18.2）。种子混入 fromLevel，使同 key 连续强化不同级各自独立。
+ */
+export function rollEnhanceSuccess(seedKey: string, fromLevel: number): boolean {
+  const rng = seededRng(hashSeed(`enhance:${seedKey}:${fromLevel}`));
+  return rng() < enhanceSuccessRate(fromLevel);
+}
+
+/**
+ * 分解返还（§6.3，ADR-012）：返还该 defId **打造基础成本**的 SALVAGE_REFUND_RATIO（70%，向下取整），
+ * 强化投入不返还（失败损耗是核心 sink，不能靠分解漏回）。不可合成件（无 craftCost）返还空。
+ * 调用方负责先校验 level ≤ SALVAGE_MAX_LEVEL（+5 起不可分解）。
+ */
+export function salvageRefund(defId: string): Record<string, number> {
+  const def = EQUIPMENT_DEFS[defId];
+  if (!def?.craftCost) return {};
+  const out: Record<string, number> = {};
+  for (const [mat, qty] of Object.entries(def.craftCost)) {
+    const r = Math.floor(qty * SALVAGE_REFUND_RATIO);
+    if (r > 0) out[mat] = r;
+  }
+  return out;
+}
+
 // ── 合成词条 roll（E2，EQUIPMENT_DESIGN §7.2/§7.4/§7.5，DRAFT [可调]）─────────
 //
 // 合成产出一件 +0 基础装备：1 条槽位锁定主词条（m_*）+ 按稀有度 N 条副词条（s_*）。

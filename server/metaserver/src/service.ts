@@ -32,7 +32,7 @@ import {
 import { CHAT_SEND_RATE_PER_MIN, regionFromAcceptLanguage } from '@nw/shared';
 import { ACHIEVEMENTS, findAchievement, validateClaim } from '@nw/shared';
 import { getOrCreateSave, putSave } from './save.js';
-import { craftEquipment } from './equipment.js';
+import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment } from './equipment.js';
 import {
   changePassword,
   ensurePublicId,
@@ -1152,5 +1152,48 @@ export class MetaService {
     const r = await craftEquipment(cols, now, accountId, defId, idempotencyKey);
     if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
     return ok({ save: r.save, instance: r.instance });
+  }
+
+  /**
+   * 装备强化（E3，EQUIPMENT_DESIGN §6）：服务器掷骰（成功率表）→ 扣材料 + 金币（commercial 权威）→
+   * 成功 level+1，失败不掉级。idempotencyKey 幂等（掷骰/扣料绑定 key，重放返回首次结果）。
+   */
+  async enhanceEquipment(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { instanceId, idempotencyKey } = req.body as { instanceId: string; idempotencyKey: string };
+    const { cols, commercial, now } = this.deps;
+    const r = await enhanceEquipment(cols, commercial, now, accountId, instanceId, idempotencyKey);
+    if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
+    return ok({ success: r.success, instance: r.instance, save: r.save });
+  }
+
+  /**
+   * 装备分解（E3，EQUIPMENT_DESIGN §6.3）：+0~4 件返 70% 打造材料、移出库存；+5 拒、穿戴/锁定拒。
+   * 批量 + idempotencyKey 幂等（重放返回首次返还）。
+   */
+  async salvageEquipment(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { instanceIds, idempotencyKey } = req.body as { instanceIds: string[]; idempotencyKey: string };
+    const { cols, now } = this.deps;
+    const r = await salvageEquipment(cols, now, accountId, instanceIds, idempotencyKey);
+    if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
+    return ok({ refunded: r.refunded, save: r.save });
+  }
+
+  /**
+   * 装备穿戴 / 卸下（E4，EQUIPMENT_DESIGN §3.4）：校验槽位匹配 → 写 gear.global[slot]（或 byUnit）。
+   * instanceId=null 卸下。纯状态、无 idem（天然幂等）。
+   */
+  async equipEquipment(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { slot, instanceId, unitType } = req.body as {
+      slot: string;
+      instanceId: string | null;
+      unitType?: string;
+    };
+    const { cols, now } = this.deps;
+    const r = await equipEquipment(cols, now, accountId, slot, instanceId ?? null, unitType);
+    if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
+    return ok({ save: r.save });
   }
 }

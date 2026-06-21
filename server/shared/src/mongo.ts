@@ -229,8 +229,14 @@ export interface MailDoc {
 export interface EquipmentIdemDoc {
   _id: string; // idempotencyKey / orderId
   accountId: string;
-  op: 'craft' | 'escrow';
-  /** 首次执行结果快照（craft: 产出实例；escrow: 托管走的实例快照）。重放原样回。 */
+  op: 'craft' | 'escrow' | 'enhance' | 'salvage';
+  /**
+   * 首次执行结果快照，重放原样回：
+   *   craft   → 产出实例（EquipmentInstance）
+   *   escrow  → 托管走的实例快照
+   *   enhance → { success, instance }（掷骰结果 + 强化后实例，E3）
+   *   salvage → { refunded }（返还材料合计，E3）
+   */
   result: unknown;
   expireAt: Date; // BSON Date，TTL 锚
 }
