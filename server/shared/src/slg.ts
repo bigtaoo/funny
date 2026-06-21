@@ -166,6 +166,38 @@ export const SECT_REMOVAL_VOTE_RATIO = 2 / 3;
 export const AUCTION_TAX_RATE = 0.1; // U1 推迟到 S8-5，先占位
 export const AUCTION_MAX_LISTINGS = 20;
 export const AUCTION_DURATIONS_SEC: readonly number[] = [6 * 3600, 12 * 3600, 24 * 3600];
+
+// ── 拍卖行反 RMT 闸门（AUCTION_DESIGN §4，DRAFT 数值上线后调参）──────────────
+/** C 每日限额：单账号每日新挂单次数上限（按服务器 UTC 日界计）。 */
+export const AUCTION_DAILY_LIST_CAP = 30;
+/** C 每日限额：单账号每日购买/出价次数上限。 */
+export const AUCTION_DAILY_BUY_CAP = 30;
+/** C 每日限额计数文档 TTL（秒）：超 2 日自然过期清理（按 dayKey 隔离，留足跨日界缓冲）。 */
+export const AUCTION_DAILY_TTL_SEC = 2 * 24 * 3600;
+/**
+ * E 绑定材料禁挂：列入此集合的材料禁止上拍（账号绑定/赛季活动专属）。
+ * 初期为空——机制位先就绪，禁挂清单随经济运营填（AUCTION_DESIGN §4.E）。
+ */
+export const AUCTION_BANNED_MATERIALS: ReadonlySet<string> = new Set<string>();
+/**
+ * G 价格护栏（动态滑窗，AUCTION_DESIGN §4.G）：每品类维护近 N 笔成交单价滑窗算 refPrice，
+ * 挂单/出价单价须落在 [refPrice×FLOOR, refPrice×CEIL]；样本不足回退静态估值；无静态值则放行（冷启动不裸奔但不误杀）。
+ */
+export const AUCTION_PRICE_WINDOW_N = 20; // 滑窗保留近 N 笔成交单价
+export const AUCTION_PRICE_WINDOW_MIN_SAMPLES = 5; // 少于此样本数走静态回退
+export const AUCTION_PRICE_FLOOR_RATIO = 0.5; // 单价下限 = refPrice × 0.5（封地板倾销）
+export const AUCTION_PRICE_CEIL_RATIO = 2.0; // 单价上限 = refPrice × 2.0（封天价洗钱）
+/** G 冷启动静态参考单价（每件，DRAFT）：滑窗样本不足时用，演算去 ECONOMY_NUMBERS。未列品类则放行。 */
+export const AUCTION_STATIC_REF_PRICE: Readonly<Record<string, number>> = {
+  scrap: 10,
+  lead: 30,
+  binding: 80,
+};
+// ── B 竞拍（AUCTION_DESIGN §4.B，DRAFT）──────────────────────────────────────
+/** 竞拍最小加价幅度 = 当前最高价 × 此比例（不足则按起拍价绝对值兜底）。 */
+export const AUCTION_MIN_INCREMENT_RATIO = 0.05;
+/** 防狙击窗口（秒）：到期前此窗口内有新出价 → expireAt 顺延同等窗口，封末段秒杀。 */
+export const AUCTION_ANTI_SNIPE_WINDOW_SEC = 5 * 60;
 export const GARRISON_PER_TILE = 500;
 /** 占领格至少需带的驻军（到点占领后即成该格 garrison；不足拒绝出征）。 */
 export const OCCUPY_MIN_TROOPS = GARRISON_PER_TILE;

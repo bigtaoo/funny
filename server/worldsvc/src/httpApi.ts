@@ -106,7 +106,10 @@ export function startHttpApi(
               return send(res, 200, ok(await svc.settleSeason(worldId)));
             }
             if (aurl.pathname === '/admin/world/reset') {
-              return send(res, 200, ok(await svc.resetSeason(worldId)));
+              // F 季末清算：先清算拍卖行（退还卖方挂存 + 退还竞拍托管 + 清价格滑窗），再清地图态。
+              const auctionCleared = await auctionSvc.clearWorldOnReset(worldId);
+              const reset = await svc.resetSeason(worldId);
+              return send(res, 200, ok({ ...reset, auctionCleared }));
             }
             if (aurl.pathname === '/admin/world/close') {
               await svc.closeSeason(worldId);
@@ -485,16 +488,41 @@ export function startHttpApi(
           const itemType = typeof body.itemType === 'string' ? body.itemType : null;
           const item = typeof body.item === 'object' && body.item && !Array.isArray(body.item) ? body.item as Record<string, unknown> : null;
           const qty = Number(body.qty);
-          const price = Number(body.price);
           const durationSec = Number(body.durationSec);
           const designatedBuyerId = typeof body.designatedBuyerId === 'string' ? body.designatedBuyerId : undefined;
-          if (!worldId || !itemType || !item || !Number.isFinite(qty) || !Number.isFinite(price) || !Number.isFinite(durationSec)) {
-            return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + itemType + item + qty + price + durationSec required');
+          const saleMode = body.saleMode === 'auction' ? 'auction' : 'fixed';
+          if (!worldId || !itemType || !item || !Number.isFinite(qty) || !Number.isFinite(durationSec)) {
+            return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + itemType + item + qty + durationSec required');
+          }
+          // fixed → price 必填；auction → startPrice 必填，buyoutPrice 可选
+          const price = body.price != null ? Number(body.price) : undefined;
+          const startPrice = body.startPrice != null ? Number(body.startPrice) : undefined;
+          const buyoutPrice = body.buyoutPrice != null ? Number(body.buyoutPrice) : undefined;
+          if (saleMode === 'fixed' && !Number.isFinite(price ?? NaN)) {
+            return sendErr(res, ErrorCode.BAD_REQUEST, 'price required for fixed sale');
+          }
+          if (saleMode === 'auction' && !Number.isFinite(startPrice ?? NaN)) {
+            return sendErr(res, ErrorCode.BAD_REQUEST, 'startPrice required for auction sale');
           }
           return send(res, 200, ok(await auctionSvc.createAuction({
             worldId, sellerId: accountId, itemType: itemType as 'material' | 'equipment',
-            item, qty, price, durationSec, designatedBuyerId,
+            item, qty, durationSec, designatedBuyerId, saleMode,
+            ...(price != null ? { price } : {}),
+            ...(startPrice != null ? { startPrice } : {}),
+            ...(buyoutPrice != null ? { buyoutPrice } : {}),
           })));
+        }
+        {
+          const m = /^\/auction\/([^/]+)\/bid$/.exec(path);
+          if (method === 'POST' && m) {
+            const body = await readJson(req);
+            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+            const amount = Number(body.amount);
+            if (!worldId || !Number.isFinite(amount)) {
+              return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + amount required');
+            }
+            return send(res, 200, ok(await auctionSvc.placeBid(worldId, accountId, decodeURIComponent(m[1]!), amount)));
+          }
         }
         {
           const m = /^\/auction\/([^/]+)\/buy$/.exec(path);
@@ -555,6 +583,7 @@ export function startHttpApi(
         }
 
         // 赛季管理 /admin/world/* 已迁出 JWT 分支，改 X-Internal-Key（C4/§17.7，见上方内部分支）。
+        // F 季末清算（拍卖行 clearWorldOnReset）已并入上方内部 /admin/world/reset 处理。
 
         return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
       } catch (e) {

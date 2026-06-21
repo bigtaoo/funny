@@ -26,7 +26,8 @@ const CREATE_H = 250;
 
 // Material types available for auction
 const MATERIALS = ['scrap', 'lead', 'binding'] as const;
-const DURATIONS = [3600, 14400, 86400] as const; // 1h, 4h, 24h
+// 须与服务端 AUCTION_DURATIONS_SEC（shared/slg.ts）一致，否则 createAuction 抛 BAD_REQUEST。
+const DURATIONS = [21600, 43200, 86400] as const; // 6h, 12h, 24h
 // Category filter for the market tab — matches AuctionView.itemType ('' = no filter).
 const FILTERS = ['', 'material', 'equipment'] as const;
 type AucFilter = typeof FILTERS[number];
@@ -53,7 +54,7 @@ export class AuctionScene implements Scene {
   private createMaterial: typeof MATERIALS[number] = 'scrap';
   private createQty = 1;
   private createPrice = 10;
-  private createDuration: typeof DURATIONS[number] = 3600;
+  private createDuration: typeof DURATIONS[number] = 21600;
   private createBuyer = '';
   private createOpen = false;
 
@@ -220,7 +221,9 @@ export class AuctionScene implements Scene {
       row.x = 6; row.y = cy;
       this.bodyLayer.addChild(row);
 
-      const itemLbl = txt(`${t(`auction.${auc.itemType as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`, 13, C.dark);
+      // 材料名在 item.material（itemType 恒为 'material'/'equipment'）；装备暂无 material 字段时回退 itemType。
+      const matKey = (auc.item?.['material'] as string | undefined) ?? auc.itemType;
+      const itemLbl = txt(`${t(`auction.${matKey as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`, 13, C.dark);
       itemLbl.x = 14; itemLbl.y = cy + 6;
       this.bodyLayer.addChild(itemLbl);
 
@@ -324,7 +327,7 @@ export class AuctionScene implements Scene {
     const dl0 = txt(t('auction.duration') + ':', 12, C.dark);
     dl0.x = mx + 10; dl0.y = durY;
     ml.addChild(dl0);
-    const durKeys: Record<typeof DURATIONS[number], 'auction.dur1h' | 'auction.dur4h' | 'auction.dur24h'> = { 3600: 'auction.dur1h', 14400: 'auction.dur4h', 86400: 'auction.dur24h' };
+    const durKeys: Record<typeof DURATIONS[number], 'auction.dur6h' | 'auction.dur12h' | 'auction.dur24h'> = { 21600: 'auction.dur6h', 43200: 'auction.dur12h', 86400: 'auction.dur24h' };
     let dx = mx + 10 + dl0.width + 8;
     for (const dur of DURATIONS) {
       const active = dur === this.createDuration;
@@ -434,9 +437,9 @@ export class AuctionScene implements Scene {
     this.closeModal();
     try {
       await this.cb.worldApi.createAuction(
-        this.cb.worldId, 'material', { mat: this.createMaterial },
-        this.createQty, this.createPrice, this.createDuration,
-        buyer || undefined,
+        this.cb.worldId, 'material', { material: this.createMaterial },
+        this.createQty, this.createDuration,
+        { price: this.createPrice, designatedBuyerId: buyer || undefined },
       );
       this.createBuyer = '';
       this.showToast(t('auction.created'));

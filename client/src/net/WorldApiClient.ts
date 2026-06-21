@@ -277,23 +277,41 @@ export class WorldApiClient {
     return this.req('GET', `/auction/mine?worldId=${encodeURIComponent(worldId)}`);
   }
 
+  /**
+   * 挂拍。fixed 模式传 price（一口价单价）；auction 模式传 saleMode='auction' + startPrice（起拍单价）
+   * + 可选 buyoutPrice（一口价保底单价）。
+   */
   async createAuction(
     worldId: string,
     itemType: 'material' | 'equipment',
     item: Record<string, unknown>,
     qty: number,
-    price: number,
     durationSec: number,
-    designatedBuyerId?: string,
+    opts?: {
+      saleMode?: 'fixed' | 'auction';
+      price?: number;
+      startPrice?: number;
+      buyoutPrice?: number;
+      designatedBuyerId?: string;
+    },
   ): Promise<AuctionView> {
     return this.req('POST', '/auction/create', {
-      worldId, itemType, item, qty, price, durationSec,
-      ...(designatedBuyerId ? { designatedBuyerId } : {}),
+      worldId, itemType, item, qty, durationSec,
+      saleMode: opts?.saleMode ?? 'fixed',
+      ...(opts?.price != null ? { price: opts.price } : {}),
+      ...(opts?.startPrice != null ? { startPrice: opts.startPrice } : {}),
+      ...(opts?.buyoutPrice != null ? { buyoutPrice: opts.buyoutPrice } : {}),
+      ...(opts?.designatedBuyerId ? { designatedBuyerId: opts.designatedBuyerId } : {}),
     });
   }
 
   async buyAuction(auctionId: string, worldId: string): Promise<{ ok: true }> {
     return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/buy`, { worldId });
+  }
+
+  /** 竞拍出价（saleMode='auction'）。amount = 出价单价；达/超 buyoutPrice 立即结拍。 */
+  async placeBid(auctionId: string, worldId: string, amount: number): Promise<AuctionView> {
+    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/bid`, { worldId, amount });
   }
 
   async cancelAuction(auctionId: string, worldId: string): Promise<{ ok: true }> {
