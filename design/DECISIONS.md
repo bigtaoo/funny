@@ -113,4 +113,15 @@
   - **[`game/SERVER_API.md`](game/SERVER_API.md)** 补四组端点契约（兑现 ADR-006 / ADR-012 / ADR-013 / ADR-014 的「待补 SERVER_API」）：§2.7 `/pve/clear|verify|upgrade`、§2.8 `/equipment/craft|enhance|salvage|reforge|equip`、§2.9 `/events|claim|redeem`、§2.10 `/account/delete`；顺带 §2.11 赛季/排行榜/战令端点（SEASON §10 指向）+ §5 DB 集合扩 `pveDaily`/`pveVerifications`/`ladderSeasons`。
 - **为什么**：用户拍板「先把文档补全再实现」。这些缺口此前散记在各 ADR 的「待补」字样里，集中收口避免实现时无契约可依。
 - **影响**：上述文档 + README §1.2/§2 登记 COMPLIANCE_CN。**注**：契约最终落地仍以 `server/contracts/openapi.yml` codegen 为准（SERVER_API §1.2），本轮只补人类可读契约摘要。各「机制设计中、数值 [可调]/[DRAFT]」项不属文档缺口，留实现期配合代码定参。
+
+## ADR-016 角色卡 = 6 张（陶3＝现有兵转具名·锚点 + Anna3＝新画变体） — Accepted — 2026-06-21
+
+- **决策**（用户拍板）：每定位（剑士/盾卫/弓手）做**东西双版本，共 6 张卡**：
+  - **陶 / 方家三人 = 现有三张通用兵直接转为具名，数值原样不动**：李川＝普通兵、陈守＝盾兵、苏远＝弓箭兵。三者是**全套战斗数值的锚点/地基**，**首版零机制**（纯保平衡，二期再议 signature）。
+  - **Anna / Hartmann 三人 = 重新绘制 + 重新设计**，以陶对位兵为数值参照做差异化变体（同定位、不同打法）：**Max** 出1强单体·强击啃肉（vs 李川出2脆快铺场，刻意拉大对比度）；**Lena** 纪律固定减伤·站定加成（vs 陈守高裸血肉墙）；**Mara** 标记敌人团队增伤（vs 苏远高单发独狼）。每张须「一句话验收」与对位陶卡的差异。
+  - **获取**：**PvP 六张全部直送**（竞技不拼卡池、防 P2W）；**PvE/SLG 通关对应章节各送一张**（Ch2→Max / Ch4→Lena / Ch6→Mara）；**抽卡/活动获更多**（重复获取转养成材料/碎片/皮肤）。
+  - **同定位允许超过 2 张**（未来第三家族/神话层/联动），新卡须与已有两张都拉足差异。
+  - **东西羁绊 = 未来大系统，本期只记录、不做、不留接口**。
+- **为什么**：3 张会浪费一半美术且抹掉东西碰撞；6 张「同定位异打法」既全用美术又加构筑深度。陶侧锁为锚点 = 不动现有战斗平衡地基（数值参考系稳定）；Anna 侧承载新机制与收集。PvP 全送 / PvE 解锁分层 = 竞技公平与养成收集两不误（同 ADR-009 经济基调）。
+- **影响**：新增 [`game/CHARACTER_DESIGN.md`](game/CHARACTER_DESIGN.md) 为角色卡**机制/流派**权威（数值锚点占位，落地进 `config.ts` + 同步 [BALANCE.md](game/BALANCE.md)）。落地需在 `server/engine/src/config.ts` 加 Anna 三单位 + 三卡定义、机制走单位特性字段（参考 PvE `aura_heal` 等范式）；PvE 解锁写 `server/shared/pveRewards.ts`；新美术绑骨走 animator。叙事遵 ADR-008（陶东/Anna西）。README §1.2/§2 登记。
 </content>

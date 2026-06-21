@@ -40,6 +40,7 @@
 | [TITLE_DESIGN.md](game/TITLE_DESIGN.md) | **称号系统机制基准（公开身份名片；统一 titleId 容器/赛季快照/四处展示；段位金币→ECONOMY_BALANCE §2.3）** | 设计中 |
 | [SEASON_OVERVIEW.md](game/SEASON_OVERVIEW.md) | **两套赛季（天梯6周/SLG大区2月）的独立性契约·边界·对照（不重述机制，只锁边界）** | 设计中 |
 | [SEASON_DESIGN.md](game/SEASON_DESIGN.md) | **天梯赛季/战令/排行榜机制基准（6周赛季·软重置·峰值奖励·Top100·Battle Pass；数字→ECONOMY_NUMBERS §13）** | 设计中 |
+| [CHARACTER_DESIGN.md](game/CHARACTER_DESIGN.md) | **角色卡机制/流派基准（6张＝陶3现有兵转具名·锚点 + Anna3新画变体；数值锚点占位→config.ts/BALANCE）** | 设计中 |
 | [CAMPAIGN_DESIGN.md](game/CAMPAIGN_DESIGN.md) | 战役 PvE 设计基准（数据权威见 PVE_INTEGRITY_PLAN） | 实现中 |
 | [CAMPAIGN_P0_PLAN.md](game/CAMPAIGN_P0_PLAN.md) | 战役 P0 试玩切片计划 | 实现中 |
 | [CAMPAIGN_STORY.md](game/CAMPAIGN_STORY.md) | 战役剧情文案（叙事铁律见 world.md / ADR） | 设计中 |
@@ -106,6 +107,7 @@
 | 拍卖行**机制**（交易模型/挂单状态机/定向受拍/税/反 RMT） | [game/AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | 从 SLG §7/§14 抽出，机制以本文为准；数字去 `shared/slg.ts`（`AUCTION_*`）；仅 coin 计价、赛季资源禁挂 |
 | 两套赛季的**独立性契约/边界/对照**（天梯 vs SLG 大区谁重置谁、共享资产归属） | [game/SEASON_OVERVIEW.md](game/SEASON_OVERVIEW.md) | 不重述机制；机制权威仍归 SEASON_DESIGN / SLG_DESIGN；锁「两条时钟互不触发 + 重置写入域隔离 + 共享 coin/称号归属」 |
 | 天梯赛季/战令/排行榜**机制**（赛季时钟·软重置·惰性迁移·峰值奖励·Top100·Battle Pass） | [game/SEASON_DESIGN.md](game/SEASON_DESIGN.md) | 数字去 ECONOMY_NUMBERS §13；天梯赛季6周 ≠ SLG大区赛季2个月（两条独立时钟）；赛季切换 = admin 手动开启 |
+| 角色卡**机制/流派**（6张·东西双版本·获取分层） | [game/CHARACTER_DESIGN.md](game/CHARACTER_DESIGN.md) | 数值锚点占位→落 `config.ts`+[BALANCE.md](game/BALANCE.md)；陶3＝现有兵转具名(数值不动·锚点)，Anna3＝新画变体；PvP全送/PvE章节解锁(ADR-016) |
 | PvE 关卡定义 | `client/src/game/campaign/levels/*.json`（+ level-editor 编辑、`parseLevelDefinition` 校验） | — |
 | PvE 奖励 / 养成数据权威 | 服务器 `server/shared/pveRewards.ts` + [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md)（方案 B：服务器权威） | 客户端 JSON 仅参考/编辑器用 |
 | 接口契约（REST/WS/proto/DB 集合） | [game/SERVER_API.md](game/SERVER_API.md) + `server/contracts/` | — |
