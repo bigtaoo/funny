@@ -60,6 +60,8 @@ export const ErrorCode = {
   NOT_IN_SECT: 'NOT_IN_SECT',
   ALREADY_IN_SECT: 'ALREADY_IN_SECT',
   ALLY_CAP_REACHED: 'ALLY_CAP_REACHED',
+  // —— G2 繁荣度（建宗门门槛，§17.4）——
+  PROSPERITY_TOO_LOW: 'PROSPERITY_TOO_LOW',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -126,4 +128,5 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.NOT_IN_SECT]: 403,
   [ErrorCode.ALREADY_IN_SECT]: 409,
   [ErrorCode.ALLY_CAP_REACHED]: 409,
+  [ErrorCode.PROSPERITY_TOO_LOW]: 400,
 };

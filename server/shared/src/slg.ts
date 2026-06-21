@@ -36,7 +36,7 @@ export type ResourceType = 'food' | 'iron' | 'wood';
 export type MarchKind = 'attack' | 'reinforce' | 'occupy' | 'sweep' | 'scout' | 'return';
 export type SiegeOutcome = 'attacker_win' | 'defender_win' | 'draw';
 export type FamilyRole = 'leader' | 'elder' | 'member';
-export type WorldStatus = 'open' | 'active' | 'settling' | 'closed';
+export type WorldStatus = 'open' | 'active' | 'settling' | 'resetting' | 'closed';
 export type AuctionStatus = 'open' | 'sold' | 'expired' | 'cancelled';
 
 export const RESOURCE_TYPES: readonly ResourceType[] = ['food', 'iron', 'wood'];
@@ -304,6 +304,92 @@ export const SLG_SHOP_ITEMS: readonly SlgShopItem[] = [
   // 赛季战令
   { id: 'slg_battle_pass', cost: 9800, kind: 'battle_pass', effect: { pass_season: 1 }, description: '赛季战令（当季有效）' },
 ] as const;
+
+// ── 繁荣度（G2 / §8.1 / SLG_DESIGN §17.1）────────────────────
+/** 繁荣度评分权重（DRAFT，→ ECONOMY_NUMBERS §13-SLG 登记）。 */
+export const PROSPERITY_W_TERRITORY = 10;   // 每块领地
+export const PROSPERITY_W_MEMBER    = 50;   // 每个成员
+export const PROSPERITY_W_ACTIVITY  = 5;    // 每点赛季活跃（新占领数 + 战斗场次，§17.4 来源）
+/** 长期无活跃衰减：每自然日衰减比例（读时惰性结算，类比资源 yield）。 */
+export const PROSPERITY_DECAY_PER_DAY = 0.05; // 5%/日
+/** 建宗门繁荣度中等门槛（§8.2，U5 数值占位）。 */
+export const SECT_FOUND_PROSPERITY_MIN = 2000;
+
+/** 家族繁荣度纯函数：可单测、双端可算、整数化。activity = 赛季累计活跃点（§17.4）。 */
+export function familyProsperity(territoryCount: number, memberCount: number, activity: number): number {
+  return Math.floor(
+    territoryCount * PROSPERITY_W_TERRITORY +
+    memberCount * PROSPERITY_W_MEMBER +
+    activity * PROSPERITY_W_ACTIVITY,
+  );
+}
+/** 衰减：base 经过 dtDays 天后的衰减值（无活跃则缩水），floor 整数。 */
+export function decayProsperity(base: number, dtDays: number): number {
+  return Math.floor(base * Math.pow(1 - PROSPERITY_DECAY_PER_DAY, Math.max(0, dtDays)));
+}
+
+// ── 赛季结算奖励（§8.3，DRAFT → ECONOMY_NUMBERS §13-SLG）─────
+/** 大比档位（按宗门占国数排名名次切档）。 */
+export type SettleTier = 'champion' | 'top3' | 'top10' | 'participant';
+export function settleTier(rank: number): SettleTier {
+  if (rank === 1) return 'champion';
+  if (rank <= 3) return 'top3';
+  if (rank <= 10) return 'top10';
+  return 'participant';
+}
+/** 各档奖励（材料 item / 皮肤 skin / 称号 titleId）。占位数值待经济模拟。 */
+export interface SettleReward {
+  items: Record<string, number>;     // 材料：{ scrap: N, lead: M, binding: K }
+  skins: string[];                   // 皮肤 id（限定）
+  titleId?: string;                  // 称号（grantTitle TODO S10，本轮仅邮件正文）
+  coins?: number;                    // 可选 coin（须并入经济总预算，OVERVIEW §3.3）
+}
+export const SETTLE_REWARDS: Record<SettleTier, SettleReward> = {
+  champion:    { items: { scrap: 500, lead: 200, binding: 50 }, skins: ['slg_champion_frame'], titleId: 'slg.champion', coins: 0 },
+  top3:        { items: { scrap: 300, lead: 120, binding: 25 }, skins: [], titleId: 'slg.top3' },
+  top10:       { items: { scrap: 150, lead: 60,  binding: 10 }, skins: [] },
+  participant: { items: { scrap: 50,  lead: 20,  binding: 0  }, skins: [] },
+};
+/** 中原首府（capitalIdx 9，§2.4）占领加权：该档奖励材料 ×CENTER_CAPITAL_MULT。 */
+export const CENTER_CAPITAL_IDX = 9;
+export const CENTER_CAPITAL_MULT = 2;
+
+// ── G6 多大区分配（数据地基 + 纯算法，运行时延后，§17.8）─────
+/** 单大区容量（openSeason capacity 默认值，替代硬编码）。 */
+export const WORLD_CAPACITY = 10000;
+/** resetSeason 大集合分批删每批条数（§17.6）。 */
+export const RESET_DELETE_BATCH = 2000;
+
+/** 一个宗门的「综合实力」输入（来自上季 seasonResults + 当前规模/繁荣度）。 */
+export interface SectStrength {
+  sectId: string;
+  lastSeasonRank?: number;   // 上季大比名次（无 = 新宗门）
+  memberFamilyCount: number;
+  prosperity: number;        // 当前繁荣度聚合
+}
+/** 实力评分（越高越强）：历史排名为主（名次越小越强），规模/繁荣度为辅。DRAFT 权重。 */
+export function sectStrengthScore(s: SectStrength): number {
+  const rankScore = s.lastSeasonRank ? Math.max(0, 100 - s.lastSeasonRank) * 100 : 500; // 新宗门给中位
+  return rankScore + s.memberFamilyCount * 50 + Math.floor(s.prosperity / 100);
+}
+/**
+ * 蛇形（snake）均衡分配：按 score 降序，蛇形发牌到 shardCount 个大区，
+ * 使各区强弱总和尽量持平（强宗门与弱宗门搭配，SLG3）。返回 sectId→shardIndex。
+ * shardCount 由「∑成员人数 / 单区容量 向上取整」预先算出（§17.8），调用方保证 ≥ 1。
+ */
+export function allocateSectsToShards(sects: SectStrength[], shardCount: number): Map<string, number> {
+  const out = new Map<string, number>();
+  const n = Math.max(1, Math.floor(shardCount));
+  const sorted = [...sects].sort((a, b) => sectStrengthScore(b) - sectStrengthScore(a));
+  // 蛇形游标：0,1,..,n-1,n-1,..,1,0,0,..（每 n 个翻转方向）。
+  for (let i = 0; i < sorted.length; i++) {
+    const cycle = Math.floor(i / n);
+    const pos = i % n;
+    const shard = cycle % 2 === 0 ? pos : n - 1 - pos;
+    out.set(sorted[i]!.sectId, shard);
+  }
+  return out;
+}
 
 // ── 确定性噪声（纯函数，无随机源；同输入同输出）─────────────
 /** 32-bit 整数哈希（两坐标 + seed → uint32）。 */

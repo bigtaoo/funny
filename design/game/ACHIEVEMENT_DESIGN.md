@@ -1,6 +1,6 @@
 # 成就系统设计 — Achievements
 
-> 状态：实现中（服务端基座 S9-1/2/4 + PvE 章节计数 S9-3 已落地，见 §11）· 权威：**本文（成就系统机制单一来源）**；数值（阈值/金币）镜像并最终落 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)（DRAFT 初值）· 更新：2026-06-21
+> 状态：实现中（服务端基座 S9-1/2/4 + PvE 章节计数 S9-3 + 客户端成就墙 S9-5 + 达成 toast S9-5b 已落地，见 §11；剩 S9-6 PvP 计数 / S9-3b 引擎埋点 / S9-7/8）· 权威：**本文（成就系统机制单一来源）**；数值（阈值/金币）镜像并最终落 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)（DRAFT 初值）· 更新：2026-06-21
 
 本文是成就子系统的**机制设计基准**：定位、数据模型、统计来源、解锁/领取流程、服务器权威与防刷、接口契约、UI、经济联动、实现拆解。
 **具体阈值/金币不在本文拍死**——初值见 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)；本文只镜像示例并标注权威指针，条目/阈值后期慢慢扩。
@@ -294,4 +294,24 @@ POST /achievements/claim        (JWT) { achId, tier:1|2|3 }
 - **挂载点** `metaserver/service.ts` `writeClearProgress`：折进既有 `mutateSave` 事务（与 progress/stars 同一 rev 守卫的原子写，**天然权威、与 S9-4 claim 解耦**）。`$max` 语义：`chapters > prev` 才写，且无章节通关+无既有 stats 时不实例化 `stats`（懒创建，省存储）。普通通关 / 抽检通关（`writeClearProgress` 在抽检分支也照写 progress）两路都覆盖。
 - **测试**：`chapters-cleared.test.ts`（7 纯函数单测：空/章内非终关不计/终关计 1/多章去重/重复去重/`ch_stress` 不计/单调）+ `pve.e2e.test.ts` 新增 1 e2e（非终关不涨 / 种 9 关后通终关 +1 / 重打不涨 / 二章 +1）。**meta 全套 140 测试绿**（+8），`tsc -b shared metaserver gameserver commercial gateway` 干净。
 
-> **下一会话接续点**：S9-5（客户端成就墙 UI + i18n `achievement.*`，并 `npm run rest:gen` 重生 openapi 客户端类型）→ S9-6（PvP `match/report` 上报 `kill.*`/`cast.*` + meta 累加 + L1 异常复查）→ **S9-3b**（引擎分类型埋点，让 PvE 也能喂 kill/cast，§6.2）→ S9-7/8。任务跟踪见 `META_TASKS.md` S9。
+### S9-5 客户端成就墙 UI（2026-06-21）
+
+- **入口决策**：设计 §7 写的 `ProfileScene` 当前不存在；实际「自看档案」=`StatsScene`（大厅底部 nav「stats」槽）。故成就墙做成**独立 `AchievementScene`**，入口 = `StatsScene` 顶栏右上「🏆 成就」按钮（`stats.achievements` i18n）。符合 §7「成就只在自己档案出现、不对外」。
+- **场景** `client/src/scenes/AchievementScene.ts`（仿 `StatsScene` 手绘面板 + hit-test）：分类 tab（pve/pvp/collection/progression，**空分类自动隐藏**，默认选首个非空）+ 每分类成就卡：成就名/描述 + 三阶横向进度条（`min(stat,阈值)/阈值`）+ 各阶状态（未达=灰「+N 金币」/可领=金色「领取 +N」按钮/已领=绿「已领取」）。**tab 红点 + 卡片红点**两级（`achievementClaimable`）。领取成功底部 toast（`update` 计时淡出）。离线/未登录显「登录后查看」，加载中显「加载中…」。
+- **客户端纯逻辑** `client/src/game/meta/achievements.ts`：只镜像 §4.1 `tierState`/`hasClaimable`/`achievementClaimable` 十几行**无状态阶推导**；**不镜像 `ACHIEVEMENTS` 定义表**——`defs` 由 `GET /achievements` 服务端下发（codegen `Achievement` 类型），免定义表漂移。`Achievement` 类型 = openapi 生成 schema。
+- **数据/契约**：客户端 `SaveData` 镜像（`game/meta/SaveData.ts`）补 `stats?`/`achievements?`（懒创建、只读，A2 不上行；`antiCheat` 不下发不镜像）。`ApiClient.getAchievements()`/`claimAchievement(achId,tier)` + 类型 `Achievement`/`AchievementsView`（`operations` 派生）。`npm run rest:gen` 重生 `net/openapi.ts`（含 Achievement schema + 两端点）。
+- **布线**：`AppViews.showAchievements` + `LobbyView.applyAchievementBadge` 接口；`app.ts` 实现（含 showLobby 返回的 LobbyView stub 补 `applyAchievementBadge`）；`createAppCore.goAchievements()`（登录在线才给 `loadAchievements`/`onClaim`，`onClaim` 走 `claimAchievement`→`adoptServer`→埋点 `achievement_claim`，回 granted；`onBack`→`goStats`）。`StatsScene` 加 `onOpenAchievements?` 回调 + 顶栏入口按钮。
+- **大厅入口红点**：`LobbyScene.applyAchievementBadge(claimable)` 在 stats nav 槽画红点（独立 layer，仿 socialBadge）；`createAppCore` lobby 入口 `refreshAchievementBadge` 拉 `getAchievements` 算 `hasClaimable`（best-effort，登录态），缓存 `achievementClaimable` 跨 resize 重画。
+- **i18n**：`achievement.*`（标题/返回/分类×4/领取/已领/奖励/进度/离线/加载/各成就 name+desc）三语 zh/en/de 全覆盖（编译约束）。禁韩文。
+- **验证**：`tsc --noEmit` 干净；`webpack build:web` 编译成功（仅既有体积告警）。**未做游戏内截图**（CLAUDE.md 约定）。
+- **拆出 S9-5b**：跨场景「成就达成 toast」（结算/回大厅 stats delta 汇总弹一次、点击跳墙，§7）需大厅瞬时通知层 + 解锁阶 delta 跟踪，较独立，单列。当前**领取 toast + 大厅入口/tab/卡红点**已提供解锁与领取反馈闭环。
+
+### S9-5b 跨场景达成 toast（2026-06-21）
+
+- **触发**：回大厅刷新 stats 后比对新解锁阶（§7 的「回到大厅刷新 stats 后比对」路径——覆盖 PvE/PvP 战后返回的主路径）。**PvE 结算页内嵌 toast 暂未做**（结算后必经大厅，回大厅即弹已覆盖；结算页变体后置，红线无影响）。
+- **delta 跟踪**：客户端纯逻辑加 `reachedTierKeys(defs, stats): Set<'achId#tier'>`（`client/src/game/meta/achievements.ts`，只看 `stat≥阈值`，与是否已领无关 → 随累计**单调递增**，差集只增不减）。`createAppCore` 持基线 `achievementReached: Set|null`，折进既有 `refreshAchievementBadge`（lobby 入口拉 `getAchievements` 的同一处，不另开请求）：首次拉取 `null`→**只播种不弹**（避免把登录前已解锁的阶全弹出来）；后续差集非空→汇总成**一条** toast；登出/离线分支清 `null`，重登重新播种。**领取不改 reached**（reached 独立于 claimed）→ 领完回大厅不会重弹。
+- **toast 表现**：`LobbyScene.showAchievementToast(text)`——独立顶层瞬时层（`container.addChild` 置顶，盖过 vsLayer），头部下方金边深底横幅，4s 计时淡出（最后 0.4s alpha 渐隐，复用既有 `update(dt)`）；点击命中 `toastRect`（`handleDown` 最先判，优先于导航槽）→ 清 toast + `onOpenAchievements`（仅 online 接 `goAchievements`）跳成就墙。契约：`LobbyView.showAchievementToast` + `app.ts` stub + `LobbySceneCallbacks.onOpenAchievements?`。
+- **文案**：单条→`achievement.unlockToast{name}`（`name` 由 `achievement.{id}.name` 解析）、多条→`achievement.unlockToastMulti{n}`，i18n 三语 zh/en/de 在 S9-5 时已预置。埋点 `achievement_unlock_toast{count}`。
+- **验证**：`tsc --noEmit` 干净；`webpack build:web` 编译成功（仅既有体积告警）。未做游戏内截图（CLAUDE.md 约定）。
+
+> **下一会话接续点**：S9-6（PvP `match/report` 上报 `kill.*`/`cast.*` + meta 累加 + L1 异常复查）→ **S9-3b**（引擎分类型埋点，让 PvE 也能喂 kill/cast，§6.2）→ S9-7/8。任务跟踪见 `META_TASKS.md` S9。

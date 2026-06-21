@@ -10,6 +10,7 @@ import {
   err,
   extractBearer,
   verifyToken,
+  loadInternalAuth,
   SlgError,
   type MarchKind,
 } from '@nw/shared';
@@ -42,7 +43,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
     'content-type': 'application/json',
     // 公网面：CORS 与 meta 对齐（dev 全开，生产由反代收紧）。
     'access-control-allow-origin': '*',
-    'access-control-allow-headers': 'authorization,content-type',
+    'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller',
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
   });
   res.end(JSON.stringify(body));
@@ -61,12 +62,14 @@ const numQ = (v: string | null, d: number): number => {
 };
 
 export function startHttpApi(
-  opts: { host: string; port: number; jwtSecret: string },
+  opts: { host: string; port: number; jwtSecret: string; internalKey: string },
   svc: WorldService,
   familySvc: FamilyService,
   sectSvc: SectService,
   auctionSvc: AuctionService,
 ): Server {
+  // 内部运维鉴权（C4/§17.7）：/admin/world/* 走 X-Internal-Key，不走玩家 JWT。
+  const internalAuth = loadInternalAuth(opts.internalKey);
   const server = createServer((req, res) => {
     void (async () => {
       const method = req.method ?? 'GET';
@@ -76,6 +79,48 @@ export function startHttpApi(
       }
       if (method === 'OPTIONS') {
         return send(res, 204, {});
+      }
+
+      // —— 内部运维分支（C4/§17.7）：/admin/world/* 走 X-Internal-Key，先于 JWT。——
+      // 任意登录玩家曾可调 /admin/world/reset 清整个大区（C4 安全洞）；现迁出 JWT 分支。
+      {
+        const aurl = new URL(req.url ?? '', `http://${req.headers.host ?? 'world'}`);
+        if (aurl.pathname.startsWith('/admin/world/')) {
+          if (!internalAuth.verify(req.headers).ok) {
+            return sendErr(res, ErrorCode.UNAUTHENTICATED, '内部端点需 X-Internal-Key');
+          }
+          // 列出各大区概要（G7/§17.7 admin 后台）。
+          if (method === 'GET' && aurl.pathname === '/admin/world/list') {
+            return send(res, 200, ok(await svc.listWorlds()));
+          }
+          if (method !== 'POST') return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          try {
+            if (aurl.pathname === '/admin/world/open') {
+              await svc.openSeason(worldId, Number(body.season ?? 1), Number(body.shard ?? 1), Number(body.capacity ?? 10000));
+              return send(res, 200, ok({}));
+            }
+            if (aurl.pathname === '/admin/world/settle') {
+              return send(res, 200, ok(await svc.settleSeason(worldId)));
+            }
+            if (aurl.pathname === '/admin/world/reset') {
+              // F 季末清算：先清算拍卖行（退还卖方挂存 + 退还竞拍托管 + 清价格滑窗），再清地图态。
+              const auctionCleared = await auctionSvc.clearWorldOnReset(worldId);
+              const reset = await svc.resetSeason(worldId);
+              return send(res, 200, ok({ ...reset, auctionCleared }));
+            }
+            if (aurl.pathname === '/admin/world/close') {
+              await svc.closeSeason(worldId);
+              return send(res, 200, ok({}));
+            }
+            return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
+          } catch (e) {
+            if (e instanceof SlgError) return sendErr(res, e.code, e.message);
+            return send(res, 500, err(ErrorCode.INTERNAL, (e as Error).message));
+          }
+        }
       }
 
       // —— JWT 验签（P1：仅取 accountId，不连库）——
@@ -537,36 +582,8 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.buySlgShopItem(worldId, accountId, itemId)));
         }
 
-        // ── 赛季管理（运营操作，内部用；生产应加 X-Internal-Key，P2 补）──
-        if (method === 'POST' && path === '/admin/world/open') {
-          const body = await readJson(req);
-          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
-          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-          await svc.openSeason(worldId, Number(body.season ?? 1), Number(body.shard ?? 1), Number(body.capacity ?? 10000));
-          return send(res, 200, ok({}));
-        }
-        if (method === 'POST' && path === '/admin/world/settle') {
-          const body = await readJson(req);
-          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
-          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-          return send(res, 200, ok(await svc.settleSeason(worldId)));
-        }
-        if (method === 'POST' && path === '/admin/world/reset') {
-          const body = await readJson(req);
-          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
-          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-          // F 季末清算：先清算拍卖行（退还卖方挂存 + 退还竞拍托管 + 清价格滑窗），再清地图态。
-          const auctionCleared = await auctionSvc.clearWorldOnReset(worldId);
-          const reset = await svc.resetSeason(worldId);
-          return send(res, 200, ok({ ...reset, auctionCleared }));
-        }
-        if (method === 'POST' && path === '/admin/world/close') {
-          const body = await readJson(req);
-          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
-          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-          await svc.closeSeason(worldId);
-          return send(res, 200, ok({}));
-        }
+        // 赛季管理 /admin/world/* 已迁出 JWT 分支，改 X-Internal-Key（C4/§17.7，见上方内部分支）。
+        // F 季末清算（拍卖行 clearWorldOnReset）已并入上方内部 /admin/world/reset 处理。
 
         return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
       } catch (e) {

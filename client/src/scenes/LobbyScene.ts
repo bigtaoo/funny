@@ -70,6 +70,11 @@ export interface LobbySceneCallbacks {
   onOpenCards(): void;
   /** Open the stats / match-record screen. Bottom-nav "stats" slot. */
   onOpenStats(): void;
+  /**
+   * Jump straight to the achievement wall. Wired only when online; invoked when the
+   * player taps an "achievement unlocked" toast (ACHIEVEMENT_DESIGN §7, S9-5b).
+   */
+  onOpenAchievements?(): void;
   /** Open the personal profile / settings screen (top-left profile chip). */
   onOpenProfile(): void;
   /** Player display name shown in the top-left profile chip. */
@@ -131,6 +136,14 @@ export class LobbyScene implements Scene {
   private socialBadge = 0;
   /** Re-drawn layer for the social badge so updates don't rebuild the whole nav bar. */
   private socialBadgeLayer: PIXI.Container | null = null;
+  /** Any achievement tier is claimable (ACHIEVEMENT_DESIGN §4.1) → red dot on the stats nav slot. */
+  private achievementBadge = false;
+  /** Re-drawn layer for the achievement dot (cheap refresh, no nav rebuild). */
+  private achievementBadgeLayer: PIXI.Container | null = null;
+  /** Transient "achievement unlocked" toast (S9-5b): own top-most layer + auto-fade timer + tap-to-open rect. */
+  private toastLayer: PIXI.Container | null = null;
+  private toastTimer = 0;
+  private toastRect: Rect | null = null;
   /** Set on destroy so a late-resolving badge fetch skips touching a dead container. */
   private destroyed = false;
 
@@ -162,6 +175,11 @@ export class LobbyScene implements Scene {
       this.vsTimer += dt;
       if (this.vsTimer >= 2.5) this.cb.onStartGame(this.opponentName);
     }
+    if (this.toastTimer > 0) {
+      this.toastTimer -= dt;
+      if (this.toastTimer <= 0) this.clearToast();
+      else if (this.toastLayer) this.toastLayer.alpha = Math.min(1, this.toastTimer / 0.4);
+    }
   }
 
   destroy(): void {
@@ -170,6 +188,9 @@ export class LobbyScene implements Scene {
     this.titleBoil?.destroy();
     this.titleBoil = null;
     this.socialBadgeLayer = null;
+    this.achievementBadgeLayer = null;
+    this.toastLayer = null;
+    this.toastRect = null;
   }
 
   /**
@@ -183,10 +204,74 @@ export class LobbyScene implements Scene {
     this.drawSocialBadge();
   }
 
+  /**
+   * Mark whether any achievement tier is claimable. The core fetches
+   * GET /achievements on lobby entry and computes hasClaimable; we redraw just
+   * the dot on the stats nav slot, not the nav bar.
+   */
+  applyAchievementBadge(claimable: boolean): void {
+    if (this.destroyed) return;
+    this.achievementBadge = claimable;
+    this.drawAchievementBadge();
+  }
+
+  /**
+   * Show a transient "achievement unlocked" toast banner (ACHIEVEMENT_DESIGN §7, S9-5b).
+   * The core computes the unlock delta after a stats refresh and passes one aggregated
+   * message (never one-per-tier); tapping the banner routes to the achievement wall.
+   */
+  showAchievementToast(text: string): void {
+    if (this.destroyed || !text) return;
+    this.toastTimer = 4.0;
+    this.drawAchievementToast(text);
+  }
+
+  private clearToast(): void {
+    this.toastTimer = 0;
+    this.toastRect = null;
+    if (this.toastLayer) { this.toastLayer.destroy({ children: true }); this.toastLayer = null; }
+  }
+
+  /** Draw the toast banner near the top of the lobby (below the header), in its own top-most layer. */
+  private drawAchievementToast(text: string): void {
+    if (this.toastLayer) { this.toastLayer.destroy({ children: true }); this.toastLayer = null; }
+    const { w, h } = this;
+    const layer = new PIXI.Container();
+    const bw = Math.round(w * 0.82);
+    const bh = Math.round(h * 0.072);
+    const bx = (w - bw) / 2;
+    const by = Math.round(h * 0.165);
+
+    const box = new PIXI.Graphics();
+    box.beginFill(C.dark, 0.95);
+    box.lineStyle(2, C.gold, 0.95);
+    box.drawRoundedRect(bx, by, bw, bh, Math.round(bh * 0.28));
+    box.endFill();
+    layer.addChild(box);
+
+    const lbl = txt('🏆 ' + text, Math.round(bh * 0.34), 0xffffff, true);
+    lbl.anchor.set(0.5, 0.5);
+    lbl.x = w / 2; lbl.y = by + bh / 2;
+    if (lbl.width > bw * 0.92) lbl.scale.set((bw * 0.92) / lbl.width);
+    layer.addChild(lbl);
+
+    this.container.addChild(layer); // top-most, above vsLayer
+    this.toastLayer = layer;
+    this.toastRect = { x: bx, y: by, w: bw, h: bh };
+  }
+
   // ── Input ──────────────────────────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
     if (this.state !== 'idle') return;
+    // Achievement-unlock toast tap → jump to the wall (S9-5b). Checked first so it wins over nav slots.
+    const tr = this.toastRect;
+    if (tr && x >= tr.x && x <= tr.x + tr.w && y >= tr.y && y <= tr.y + tr.h) {
+      const open = this.cb.onOpenAchievements;
+      this.clearToast();
+      if (open) open();
+      return;
+    }
     const p = this.profileChipRect;
     if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) {
       this.cb.onOpenProfile();
@@ -450,6 +535,11 @@ export class LobbyScene implements Scene {
     navBg.addChild(this.socialBadgeLayer);
     this.drawSocialBadge();
 
+    // Achievement claimable dot over the stats slot (its own layer for cheap refresh).
+    this.achievementBadgeLayer = new PIXI.Container();
+    navBg.addChild(this.achievementBadgeLayer);
+    this.drawAchievementBadge();
+
     // VS overlay
     this.vsLayer = this.buildVsLayer(w, h);
     this.vsLayer.visible = false;
@@ -482,6 +572,28 @@ export class LobbyScene implements Scene {
     layer.addChild(g);
     txtNode.x = cx; txtNode.y = cy;
     layer.addChild(txtNode);
+  }
+
+  /** Draw (or clear) a small red dot at the top-right of the stats nav dot when a reward is claimable. */
+  private drawAchievementBadge(): void {
+    const layer = this.achievementBadgeLayer;
+    if (!layer) return;
+    layer.removeChildren();
+    if (!this.achievementBadge) return;
+
+    const s = this.statsNavRect;
+    const navH = s.h;
+    const dotR = Math.round(navH * 0.17);
+    const cx = s.x + s.w / 2 + dotR;
+    const cy = s.y + navH / 2 - Math.round(navH * 0.18) - dotR;
+    const r = Math.round(navH * 0.12);
+
+    const g = new PIXI.Graphics();
+    g.beginFill(C.red);
+    g.lineStyle(2, C.light, 0.9);
+    g.drawCircle(cx, cy, r);
+    g.endFill();
+    layer.addChild(g);
   }
 
   /**

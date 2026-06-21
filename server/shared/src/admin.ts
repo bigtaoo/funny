@@ -24,6 +24,8 @@ export type AdminCapability =
   | 'comp.view' // 查看工单 / 已发邮件
   | 'audit.view.all' // 看全部审计
   | 'audit.view.self' // 看自己操作
+  | 'slg.season.view' // 看 SLG 各大区状态（G7/§17.7）
+  | 'slg.season.manage' // SLG 赛季运维：开/结算/重置/关闭大区（G7/§17.7，高危）
   | 'admin.manage'; // 账号 / 角色管理
 
 /**
@@ -43,6 +45,8 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'comp.view',
     'audit.view.all',
     'audit.view.self',
+    'slg.season.view',
+    'slg.season.manage',
     'admin.manage',
   ],
   ops: [
@@ -54,6 +58,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'comp.approve.single',
     'comp.view',
     'audit.view.self',
+    'slg.season.view',
   ],
   support: [
     'monitor.view',
@@ -62,7 +67,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'comp.view',
     'audit.view.self',
   ],
-  viewer: ['monitor.view', 'analytics.view', 'comp.view', 'audit.view.self'],
+  viewer: ['monitor.view', 'analytics.view', 'comp.view', 'audit.view.self', 'slg.season.view'],
 };
 
 export function capabilitiesForRole(role: AdminRole): AdminCapability[] {
@@ -198,7 +203,11 @@ export type AuditAction =
   | 'comp.reject'
   | 'comp.cancel'
   | 'comp.execute'
-  | 'comp.execute.failed';
+  | 'comp.execute.failed'
+  | 'slg.season.open'
+  | 'slg.season.settle'
+  | 'slg.season.reset'
+  | 'slg.season.close';
 
 export interface AuditEntryView {
   id: string;

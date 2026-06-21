@@ -282,3 +282,84 @@ export class HttpMailDispatcher implements MailDispatcher {
     }
   }
 }
+
+// ── SLG 赛季运维（worldsvc /admin/world/*，G7/§17.7）────────
+/** 一个大区的运维概要（列表用）。 */
+export interface SlgWorldSummary {
+  worldId: string;
+  season: number;
+  shard: number;
+  status: string;
+  population: number;
+  capacity: number;
+  openAt: number;
+  resetAt?: number;
+  engineVersion?: number;
+}
+
+export interface WorldClient {
+  readonly available: boolean;
+  listWorlds(): Promise<SlgWorldSummary[]>;
+  openWorld(worldId: string, season: number, shard: number, capacity: number): Promise<void>;
+  settleWorld(worldId: string): Promise<unknown>;
+  resetWorld(worldId: string): Promise<unknown>;
+  closeWorld(worldId: string): Promise<void>;
+}
+
+/** admin → worldsvc 内部 HTTP（X-Internal-Key）。worldsvc 端点见 httpApi.ts 内部分支。 */
+export class HttpWorldClient implements WorldClient {
+  constructor(
+    private readonly baseUrl: string | null,
+    private readonly internalKey: string,
+  ) {}
+
+  get available(): boolean {
+    return this.baseUrl !== null;
+  }
+
+  async listWorlds(): Promise<SlgWorldSummary[]> {
+    if (!this.baseUrl) return [];
+    const res = await fetch(`${this.baseUrl}/admin/world/list`, {
+      headers: internalHeaders('admin', this.internalKey),
+    });
+    if (!res.ok) throw new Error(`listWorlds failed: HTTP ${res.status}`);
+    const body = (await res.json()) as { ok?: boolean; data?: SlgWorldSummary[] };
+    return body.data ?? [];
+  }
+
+  private async post(path: string, payload: Record<string, unknown>): Promise<unknown> {
+    if (!this.baseUrl) throw new Error('worldsvc not configured');
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...internalHeaders('admin', this.internalKey) },
+      body: JSON.stringify(payload),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; data?: unknown; error?: { message?: string } };
+    if (!res.ok || body.ok === false) {
+      throw new Error(body.error?.message ?? `${path} failed: HTTP ${res.status}`);
+    }
+    return body.data;
+  }
+
+  async openWorld(worldId: string, season: number, shard: number, capacity: number): Promise<void> {
+    await this.post('/admin/world/open', { worldId, season, shard, capacity });
+  }
+  async settleWorld(worldId: string): Promise<unknown> {
+    return this.post('/admin/world/settle', { worldId });
+  }
+  async resetWorld(worldId: string): Promise<unknown> {
+    return this.post('/admin/world/reset', { worldId });
+  }
+  async closeWorld(worldId: string): Promise<void> {
+    await this.post('/admin/world/close', { worldId });
+  }
+}
+
+export const nullWorldClient: WorldClient = {
+  available: false,
+  async listWorlds() { return []; },
+  async openWorld() { throw new Error('worldsvc not configured'); },
+  async settleWorld() { throw new Error('worldsvc not configured'); },
+  async resetWorld() { throw new Error('worldsvc not configured'); },
+  async closeWorld() { throw new Error('worldsvc not configured'); },
+};

@@ -17,6 +17,7 @@ import type { OwnerId, PlayerStats, MatchStartInfo, Replay, LevelDefinition } fr
 import { computeStars, remainingHpPct } from '../game/meta/campaignRewards';
 import { initI18n, t, type TranslationKey } from '../i18n';
 import { LocalSaveStore, SaveManager, ReplayStore } from '../game/meta';
+import { hasClaimable, reachedTierKeys } from '../game/meta/achievements';
 import { ApiClient, ApiError, type AuthResult } from '../net/ApiClient';
 import { serverReplayToReplay } from '../net/serverReplay';
 import { getApiBaseUrl, getGatewayWsUrl } from '../net/config';
@@ -108,6 +109,15 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
    * refetch; refreshed on lobby entry + nudged by live social pushes.
    */
   let socialBadgeTotal = 0;
+  /** Cached achievement-claimable flag, kept across lobby re-shows (mirrors socialBadgeTotal). */
+  let achievementClaimable = false;
+  /**
+   * Baseline set of reached achievement tiers (`achId#tier`) from the last refresh (S9-5b).
+   * `null` until the first post-login fetch — the first fetch only seeds the baseline (no toast
+   * for already-unlocked tiers); subsequent refreshes (e.g. on returning to the lobby after a
+   * PvE/PvP battle) diff against it and aggregate any new unlocks into a single toast (§7).
+   */
+  let achievementReached: Set<string> | null = null;
 
   /** Re-fetch the authoritative social badge total and push it into the lobby. */
   async function refreshSocialBadge(view: LobbyView): Promise<void> {
@@ -116,6 +126,35 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       const b = await api.getSocialBadges();
       socialBadgeTotal = b.total;
       view.applySocialBadge(b.total);
+    } catch { /* best-effort red dot — leave the cached value in place */ }
+  }
+
+  /** Re-fetch achievements and push the "any tier claimable" dot into the lobby (best-effort). */
+  async function refreshAchievementBadge(view: LobbyView): Promise<void> {
+    if (!api || offlineMode || !platform.storage.getItem(TOKEN_KEY)) return;
+    try {
+      const d = await api.getAchievements();
+      achievementClaimable = hasClaimable(d.defs, d.stats, d.achievements);
+      view.applyAchievementBadge(achievementClaimable);
+
+      // S9-5b: diff reached tiers vs the baseline → one aggregated "unlocked" toast (§7).
+      const reached = reachedTierKeys(d.defs, d.stats);
+      if (achievementReached !== null) {
+        const freshIds = new Set<string>();
+        reached.forEach((k) => {
+          if (!achievementReached!.has(k)) freshIds.add(k.slice(0, k.lastIndexOf('#')));
+        });
+        if (freshIds.size > 0) {
+          const msg = freshIds.size === 1
+            ? t('achievement.unlockToast', {
+                name: t(('achievement.' + [...freshIds][0] + '.name') as TranslationKey),
+              })
+            : t('achievement.unlockToastMulti', { n: freshIds.size });
+          view.showAchievementToast(msg);
+          analytics.track('achievement_unlock_toast', { count: freshIds.size });
+        }
+      }
+      achievementReached = reached;
     } catch { /* best-effort red dot — leave the cached value in place */ }
   }
 
@@ -154,6 +193,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onOpenShop() { goShop(); },
       onOpenCards() { goCollection(goLobby, 'cards'); },
       onOpenStats() { goStats(); },
+      ...(online ? { onOpenAchievements: () => goAchievements() } : {}),
       onOpenWorld() { goWorldEntry(); },
       onOpenProfile() { goSettings(); },
       playerName: playerName(),
@@ -166,6 +206,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     // Paint the cached social total immediately so the dot survives a resize
     // rebuild without flicker; then refresh from the server (skip on resize).
     lobby.applySocialBadge(socialBadgeTotal);
+    lobby.applyAchievementBadge(achievementClaimable);
     if (online) {
       // Keep the gateway connected while idling in the lobby so presence + live
       // social pushes (request / chat / mail) update the red dot in real time.
@@ -182,8 +223,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         session.connect();
       }
       if (!opts?.fromResize) void refreshSocialBadge(lobby);
+      if (!opts?.fromResize) void refreshAchievementBadge(lobby);
     } else {
       socialBadgeTotal = 0;
+      achievementClaimable = false;
+      achievementReached = null; // drop the unlock baseline so a later login re-seeds without a stale toast
     }
   }
 
@@ -766,6 +810,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             },
           }
         : {}),
+      ...(client && loggedIn ? { onOpenAchievements: () => goAchievements() } : {}),
       getStats: () => {
         const save = saveManager.get();
         const stars = Object.values(save.progress.stars).reduce((a, b) => a + b, 0);
@@ -784,6 +829,28 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           materials: save.materials,
         };
       },
+    });
+  }
+
+  function goAchievements(): void {
+    inLobby = false;
+    analytics.track('screen_view', { scene: 'AchievementScene' });
+    const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
+    const client = api;
+    views.showAchievements({
+      onBack: () => goStats(),
+      // 仅登录在线时拉成就 + 领取；离线 / 未登录则页面显示「登录后查看」。
+      ...(client && loggedIn
+        ? {
+            loadAchievements: () => client.getAchievements(),
+            onClaim: async (achId: string, tier: number) => {
+              const { save, granted } = await client.claimAchievement(achId, tier);
+              saveManager.adoptServer(save);
+              analytics.track('achievement_claim', { ach_id: achId, tier, coins: granted });
+              return granted;
+            },
+          }
+        : {}),
     });
   }
 

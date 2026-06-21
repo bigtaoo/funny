@@ -144,6 +144,25 @@ describe.skipIf(!mongo)('social mail e2e', () => {
     expect(comm.bal(a.accountId)).toBe(500);
   });
 
+  it('system mail: 内部 accountId 直投（worldsvc 结算路径，§17.5）→ 收件箱', async () => {
+    const a = await newAccount('mail-acct');
+    await get(a.token, '/save');
+    // 无 publicId / 无 target，仅 accountId —— worldsvc 等内部调用方走此分支。
+    const s = b(await internal('/internal/mail/system/send', {
+      dispatchKey: 'slg-settle:s5-ops:s5',
+      accountId: a.accountId,
+      subject: 'slg.settle.subject',
+      body: 'slg.settle.body|rank=1|tier=champion',
+      attachments: [{ kind: 'item', id: 'scrap', count: 1000 }],
+      expireDays: 30,
+    }));
+    expect(s.ok).toBe(true);
+    expect(s.recipientCount).toBe(1);
+    const inbox = b(await get(a.token, '/mail'));
+    expect(inbox.data.mail).toHaveLength(1);
+    expect(inbox.data.mail[0].attachments[0]).toMatchObject({ kind: 'item', id: 'scrap', count: 1000 });
+  });
+
   it('claims a skin attachment into inventory', async () => {
     const a = await newAccount('mail-aaaa');
     await get(a.token, '/save');
