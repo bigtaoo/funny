@@ -27,13 +27,13 @@ jobs:
             client/package-lock.json
             server/package-lock.json
 
-      # —— 服务端：九包 tsc -b ——
+      # —— 服务端：十包 tsc -b（含确定性引擎 @nw/engine）——
       - name: server install
         working-directory: server
         run: npm ci
       - name: server typecheck (tsc -b)
         working-directory: server
-        run: npx tsc -b shared metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc
+        run: npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc
 
       # —— 客户端：单测 + web 构建 ——
       - name: client install

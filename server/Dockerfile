@@ -3,7 +3,7 @@
 # compose 用 `command` 选择跑哪个进程（node metaserver|gateway|matchsvc|gameserver|commercial|worldsvc|admin /dist/index.js）。
 #
 # 多阶段：
-#   build   —— npm ci 整个 workspace + tsc -b 八包
+#   build   —— npm ci 整个 workspace + tsc -b 十包（含确定性引擎 @nw/engine，worldsvc 运行期 require）
 #   runtime —— 只保留 node_modules + 各包 dist + contracts（meta 读 openapi.yml；gateway/game 运行期读 transport.proto）
 
 FROM node:20-alpine AS build
@@ -11,6 +11,7 @@ WORKDIR /app
 # 先拷 manifest 命中 npm ci 缓存层（源码变动不必重装依赖）
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY shared/package.json ./shared/
+COPY engine/package.json ./engine/
 COPY metaserver/package.json ./metaserver/
 COPY gateway/package.json ./gateway/
 COPY matchsvc/package.json ./matchsvc/
@@ -21,7 +22,7 @@ COPY admin/package.json ./admin/
 COPY analyticsvc/package.json ./analyticsvc/
 RUN npm ci
 COPY . .
-RUN npx tsc -b shared metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc
+RUN npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc
 
 FROM node:20-alpine AS runtime
 WORKDIR /app
@@ -31,6 +32,9 @@ COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/shared/dist ./shared/dist
+# worldsvc 运行期 require('@nw/engine')（确定性围攻引擎）→ node_modules/@nw/engine 是指向 ../engine 的 workspace 符号链接 → 需拷 engine/dist。
+COPY --from=build /app/engine/package.json ./engine/package.json
+COPY --from=build /app/engine/dist ./engine/dist
 COPY --from=build /app/metaserver/package.json ./metaserver/package.json
 COPY --from=build /app/metaserver/dist ./metaserver/dist
 COPY --from=build /app/gateway/package.json ./gateway/package.json
