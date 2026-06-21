@@ -2,7 +2,10 @@
 // 用 node:http（commercial 不引 fastify）。契约见 SERVER_API.md §9 / COMMERCIAL_DESIGN §5。
 // 协议错误（鉴权/方法/解析）→ 4xx；业务结果（含 INSUFFICIENT_FUNDS 等）→ 200 + {ok,...} 由 meta 映射。
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
+import { createLogger, type InternalAuthVerifier } from '@nw/shared';
 import type { CommercialService } from './service';
+
+const log = createLogger('commercial:internal');
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -31,17 +34,22 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown, d: number): number => (typeof v === 'number' ? v : d);
 
 export function startInternalHttp(
-  opts: { host: string; port: number; internalKey: string },
+  opts: { host: string; port: number; internalAuth: InternalAuthVerifier },
   svc: CommercialService,
 ): Server {
   const server = createServer((req, res) => {
     void (async () => {
-      // 存活探针（无需 X-Internal-Key）：docker healthcheck / CI 等待用。
+      // 存活探针（无需鉴权）：docker healthcheck / CI 等待用。
       if (req.method === 'GET' && req.url === '/health') {
         send(res, 200, { ok: true, service: 'commercial' });
         return;
       }
-      if (req.headers['x-internal-key'] !== opts.internalKey) {
+      const authz = opts.internalAuth.verify(req.headers);
+      if (!authz.ok) {
+        log.warn('internal request rejected: bad X-Internal-Key', {
+          url: req.url,
+          caller: req.headers['x-internal-caller'],
+        });
         send(res, 401, { ok: false, error: 'unauthorized' });
         return;
       }

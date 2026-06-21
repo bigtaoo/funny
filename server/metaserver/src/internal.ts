@@ -13,6 +13,7 @@ import {
   nextStreak,
   victoryCoinsForRank,
   createLogger,
+  createInternalAuth,
 } from '@nw/shared';
 import type { GatewayClient } from './gatewayClient.js';
 import type { CommercialClient } from './commercialClient.js';
@@ -57,7 +58,10 @@ interface ReportBody {
 
 export interface InternalDeps {
   cols: Collections;
+  /** 单一共享密钥（legacy 回退 + ticket HMAC 用）。 */
   internalKey: string;
+  /** 可选 per-caller 密钥注册表（NW_INTERNAL_KEYS 解析）；非空则启用严格 per-caller 鉴权。 */
+  internalKeys?: Record<string, string>;
   now: () => number;
   /** 对等裁判客户端（Phase C）。未配置则 available=false，ranked 不一致直接作废。 */
   gateway: GatewayClient;
@@ -66,9 +70,12 @@ export interface InternalDeps {
 }
 
 export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps): void {
-  const { cols, internalKey, now, gateway, commercial } = deps;
+  const { cols, internalKey, internalKeys, now, gateway, commercial } = deps;
 
-  const authed = (key: unknown): boolean => key === internalKey;
+  // 集中校验器：timing-safe + per-caller 严格（NW_INTERNAL_KEYS）+ 单一共享密钥回退。
+  const auth = createInternalAuth({ keys: internalKeys, legacyKey: internalKey });
+  const authed = (key: unknown): boolean =>
+    auth.verify({ 'x-internal-key': typeof key === 'string' ? key : undefined }).ok;
 
   // ── GET /internal/elo?accountId= ──────────────────────────────────────
   app.get('/internal/elo', async (req, reply) => {

@@ -2,6 +2,8 @@
 // commercial 内部 HTTP（/internal/spend · /internal/grant）与 meta 同形，X-Internal-Key 鉴权。
 // 未配置 NW_COMMERCIAL_INTERNAL_URL → available=false → 拍卖金币交易不可用（降级提示玩家）。
 
+import { internalHeaders } from '@nw/shared';
+
 export interface WorldCommercialClient {
   readonly available: boolean;
   /** 买方扣金币（购买拍卖品）。insufficient → 抛含 INSUFFICIENT_FUNDS 的 Error。 */
@@ -24,7 +26,7 @@ export class HttpWorldCommercialClient implements WorldCommercialClient {
     if (!this.baseUrl) throw new Error('commercial service not configured');
     const res = await fetch(`${this.baseUrl}/internal/spend`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+      headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
       body: JSON.stringify({ accountId, amount, orderId }),
     });
     if (!res.ok) {
@@ -38,7 +40,7 @@ export class HttpWorldCommercialClient implements WorldCommercialClient {
     try {
       await fetch(`${this.baseUrl}/internal/grant`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
         body: JSON.stringify({ accountId, amount, orderId }),
       });
     } catch (e) {

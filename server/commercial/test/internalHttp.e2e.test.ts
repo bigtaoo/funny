@@ -9,6 +9,7 @@ import type { AddressInfo } from 'net';
 import { createCommercialMongo, type CommercialMongo } from '../src/db';
 import { CommercialService } from '../src/service';
 import { startInternalHttp } from '../src/internalHttp';
+import { createInternalAuth } from '@nw/shared';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_commercial_http_test';
@@ -36,7 +37,10 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
     await m.db.dropDatabase();
     await m.ensureIndexes();
     const svc = new CommercialService({ cols: m.collections, now: () => t++ });
-    server = startInternalHttp({ host: '127.0.0.1', port: 0, internalKey: KEY }, svc);
+    server = startInternalHttp(
+      { host: '127.0.0.1', port: 0, internalAuth: createInternalAuth({ legacyKey: KEY }) },
+      svc,
+    );
     await new Promise<void>((res) => server.on('listening', res));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });

@@ -6,8 +6,12 @@ export interface ServerEnv {
   mongoDb: string;
   /**
    * 内部服务鉴权密钥（gateway / matchsvc / game / meta 共用一把，S1-M）。
-   * 用于：matchsvc 签 match ticket（HMAC）+ 服务间内部 HTTP 的 X-Internal-Key /
-   * Authorization bearer。永不暴露公网；生产必改。
+   * 用于：matchsvc 签 match ticket（HMAC）+ 服务间内部 HTTP 的 X-Internal-Key 回退密钥。
+   * 永不暴露公网；生产必改。
+   *
+   * 进阶：可选 NW_INTERNAL_KEYS（`caller=key,...`，见 @nw/shared/internalAuth）给每个调用方一把独立
+   * 密钥，启用 per-caller 严格鉴权（识别 + 局部化 + 按服务轮换）；未配则退回此单一共享密钥。
+   * 注意 ticket HMAC 永远只用本 internalKey（matchsvc↔gameserver 必须同一把），不走 per-caller 注册表。
    */
   internalKey: string;
 }

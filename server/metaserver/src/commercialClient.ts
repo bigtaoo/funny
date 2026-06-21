@@ -1,6 +1,6 @@
 // commercial 内部客户端（S5-5）：meta 经内部 HTTP（X-Internal-Key）调 commercial 完成
 // 扣币/随机/记账。契约见 SERVER_API.md §9 / COMMERCIAL_DESIGN §5。meta 是 commercial 唯一调用方。
-import type { Rarity } from '@nw/shared';
+import { internalHeaders, type Rarity } from '@nw/shared';
 
 export interface GachaResultEntry {
   itemId: string;
@@ -78,7 +78,7 @@ export class HttpCommercialClient implements CommercialClient {
   }
 
   private headers(): Record<string, string> {
-    return { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey };
+    return { 'content-type': 'application/json', ...internalHeaders('meta', this.internalKey) };
   }
 
   private async post<T>(path: string, body: unknown): Promise<Body<T>> {

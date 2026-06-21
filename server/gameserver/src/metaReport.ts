@@ -2,6 +2,7 @@
 // reason, 非空帧录像} POST 到 meta /internal/match/report（内部密钥、room_id 幂等）。
 // meta 比对 + 算 ELO 写 saves.pvp + 归档 matches；ranked 把每方 ELO 变化回给 game →
 // 转进 match_over.elo。meta 不可用时排队重试（进行中对局不依赖 meta 实时在线，M16）。
+import { internalHeaders } from '@nw/shared';
 import type { EloBySide, MatchReport } from './Room';
 
 interface QueuedReport {
@@ -68,7 +69,7 @@ export class MetaReporter {
     if (!this.baseUrl) return null;
     const res = await fetch(`${this.baseUrl}/internal/match/report`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+      headers: { 'content-type': 'application/json', ...internalHeaders('gameserver', this.internalKey) },
       body: JSON.stringify(body),
     });
     if (!res.ok) return null;

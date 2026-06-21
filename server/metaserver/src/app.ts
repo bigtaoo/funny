@@ -5,7 +5,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import openapiGlue from 'fastify-openapi-glue';
 import type { Collections, JwtConfig } from '@nw/shared';
-import { createLogger } from '@nw/shared';
+import { createLogger, internalKeysFromEnv } from '@nw/shared';
 import { MetaService } from './service.js';
 
 const log = createLogger('meta');
@@ -82,6 +82,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   registerInternalRoutes(app, {
     cols: opts.cols,
     internalKey: opts.internalKey,
+    internalKeys: internalKeysFromEnv(),
     now,
     gateway,
     commercial,

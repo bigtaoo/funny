@@ -361,6 +361,23 @@ message Replay {
 >
 > **实现状态（2026-06-14，S1-M1~M5 已落地）**：matchsvc(§8.1/8.2) 自 **S1-M5 起为独立进程** `server/matchsvc`（不再在 gateway 内）；gateway↔matchsvc 走内部 HTTP（gateway `MatchsvcClient` → matchsvc `src/internalHttp.ts`；matchsvc `GatewayClient` → gateway `src/internalHttp.ts` 的 `/gw/push`），game 注册/心跳直指 matchsvc。game→meta 上报(§8.3) = `server/gameserver/src/metaReport.ts` → `server/metaserver/src/internal.ts`；gateway 控制面 WS(§8.4) = `server/gateway/src/Gateway.ts`（复用 `transport.proto` 子集，`match_found` 新增）；取 ELO(§8.5) = `MetaClient`。**差异**：§8.3 `match/report` 响应在 ranked 下额外回 `{ elo: {side:{delta,after,rankAfter}} }`，game 转进 `match_over.elo`；ranked 入队复用 `room_create{mode:RANKED}`（未单设 `mm_enqueue` 线消息），取消用 `room_leave`；**实现端点路径与形态**：enqueue=`/mm/queue/enqueue`、连接生命周期=`/mm/conn/{connected,disconnected}`，且所有控制命令为 **fire-and-forget**（返回 `{ok}`，房间态/ticket 经 `/gw/push` 异步推回，不在 HTTP 响应里），下方 §8.1 列出的 `{state}`/`{tickets}` 同步返回为早期设计，以实现为准。服务间通信选型见 `META_DESIGN §6.7`。
 
+### 8.0 内部认证模型（S12-1，2026-06-21，`@nw/shared/internalAuth.ts`）
+
+内部端口（commercial / matchsvc / gateway 内部面 / meta `/internal/*` / analyticsvc `/internal/query`）**玩家不可达**，三道纵深防御：
+
+1. **网络隔离（第一道，最重要）**：内部 HTTP 端口**不绑公网、不经反代暴露**——`docker-compose.local/prod` 内仅 docker 内网可达，`client/nginx.conf` 只反代 `/api /gw /ws /world /family /auction /analytics` 公网面。生产部署须保证内部端口（matchsvc 8091 / commercial 18082 / admin 18083 / analyticsvc 18085 / gateway 内部面）防火墙隔离，**玩家根本到不了**。`X-Internal-Key` 是第二道，不是唯一一道。
+
+2. **玩家 / 服务密钥命名空间分离（不变量）**：内部路由**从不校验玩家 JWT**——只认 `X-Internal-Key`。玩家 JWT（`NW_JWT_SECRET` 签）与内部密钥（`NW_INTERNAL_KEY`/`NW_INTERNAL_KEYS`）天然不同命名空间，玩家把 JWT 放 `Authorization` 头也命不中 `X-Internal-Key` → **结构性 401**。admin 后台另用第三套 `NW_ADMIN_JWT_SECRET`，与玩家 JWT 严格隔离（§2.10 / OPS_DESIGN）。回归测试见 `metaserver/test/internal.test.ts`。
+
+3. **集中校验器（`createInternalAuth`）**：所有被调方收口为一个校验器，提供 timing-safe 比对 + 命中调用方识别（审计日志带 `caller`）+ **可选 per-caller 密钥**：
+   - **默认（单一共享密钥回退）**：只配 `NW_INTERNAL_KEY` → 所有调用方共用一把（行为同旧版，零变更）。
+   - **进阶（per-caller 严格）**：配 `NW_INTERNAL_KEYS=gateway=k1,meta=k2,...`（`caller=key` 列表）→ 每个调用方一把独立密钥；身份由密钥本身证明（`x-internal-caller` 头仅审计提示，不可信），泄露**局部化**、可**按服务轮换**、可识别。严格模式下旧的单一共享密钥**不再被接受**，迁移须同时给所有进程配 `NW_INTERNAL_KEYS`。
+   - 调用方统一经 `internalHeaders(caller, NW_INTERNAL_KEY)` 出站：自动按 `caller` 从注册表取专属密钥（无注册表则回退共享密钥）+ 附 `x-internal-caller`。
+
+> **与 ticket HMAC 解耦**：match ticket（§8.2，matchsvc 签 / gameserver 验）**永远只用 `NW_INTERNAL_KEY`**（双方须同一把），不走 per-caller 注册表。`NW_INTERNAL_KEYS` 仅作用于内部 HTTP 鉴权。
+>
+> **登记的调用方**（`InternalCaller`）：gateway / gameserver / matchsvc / meta / commercial / worldsvc / admin / analyticsvc。新增进程在 `internalAuth.ts` 登记并在 `NW_INTERNAL_KEYS` 给一把密钥。
+
 ### 8.1 matchsvc（单点，M17）— 仅 gateway 调它 / game 注册它
 
 **gateway → matchsvc**（玩家操作由 gateway 转发，玩家永不直连 matchsvc）：

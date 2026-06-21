@@ -5,7 +5,7 @@
 //
 // 注：worldsvc 侧 SlgPushMsg 的 kind/字段须与 gateway matchsvcClient.PushMsg 的 SLG 分支逐字对齐
 // （JSON 线契约，camelCase discriminator=kind）。
-import { GW_PUSH_REDIS_CHANNEL } from '@nw/shared';
+import { GW_PUSH_REDIS_CHANNEL, internalHeaders } from '@nw/shared';
 
 export type SlgPushMsg =
   | {
@@ -108,7 +108,7 @@ export class HttpWorldGatewayClient implements WorldGatewayClient {
     try {
       await fetch(`${this.baseUrl}/gw/push`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
         body: JSON.stringify({ accountId, msg }),
       });
     } catch {

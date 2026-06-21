@@ -5,7 +5,7 @@
 //
 // 内部鉴权：X-Internal-Key（共用 NW_INTERNAL_KEY）。fire-and-forget——玩家离线 / gateway 抖动
 // 时丢弃即可（房间态是最新快照，下次变更会重发；match_found 丢失则玩家停在房间，可重试开局）。
-import { createLogger } from '@nw/shared';
+import { createLogger, internalHeaders } from '@nw/shared';
 import type { PushMsg } from './Matchsvc';
 
 const log = createLogger('matchsvc:gw');
@@ -27,7 +27,7 @@ export class GatewayClient {
     }
     void fetch(`${this.baseUrl}/gw/push`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+      headers: { 'content-type': 'application/json', ...internalHeaders('matchsvc', this.internalKey) },
       body: JSON.stringify({ accountId, msg, roomId }),
     })
       .then((res) => {

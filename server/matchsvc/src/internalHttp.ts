@@ -5,7 +5,7 @@
 // 用 node:http（matchsvc 不引 fastify）。命令均为「收到即处理、异步事件经 GatewayClient 回推」，
 // 故响应只回 {ok:true}（不在 HTTP 响应里带房间态）。
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
-import { createLogger } from '@nw/shared';
+import { createLogger, type InternalAuthVerifier } from '@nw/shared';
 import type { Matchsvc } from './Matchsvc';
 
 const log = createLogger('matchsvc:internal');
@@ -37,18 +37,21 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown, d: number): number => (typeof v === 'number' ? v : d);
 
 export function startInternalHttp(
-  opts: { host: string; port: number; internalKey: string },
+  opts: { host: string; port: number; internalAuth: InternalAuthVerifier },
   svc: Matchsvc,
 ): Server {
   const server = createServer((req, res) => {
     void (async () => {
-      // 存活探针（无需 X-Internal-Key）：docker healthcheck / CI 等待用。
+      // 存活探针（无需鉴权）：docker healthcheck / CI 等待用。
       if (req.method === 'GET' && req.url === '/health') {
         send(res, 200, { ok: true, service: 'matchsvc' });
         return;
       }
-      if (req.headers['x-internal-key'] !== opts.internalKey) {
-        log.warn('internal request rejected: bad X-Internal-Key', { url: req.url });
+      if (!opts.internalAuth.verify(req.headers).ok) {
+        log.warn('internal request rejected: bad X-Internal-Key', {
+          url: req.url,
+          caller: req.headers['x-internal-caller'],
+        });
         send(res, 401, { ok: false, error: 'unauthorized' });
         return;
       }

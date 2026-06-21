@@ -2,7 +2,7 @@
 // 反代将 /ws 转到本进程（SERVER_API.md §0）。
 import { createServer } from 'http';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { verifyTicket, createLogger } from '@nw/shared';
+import { verifyTicket, createLogger, internalHeaders } from '@nw/shared';
 
 const log = createLogger('game');
 import { loadGameEnv } from './config';
@@ -19,7 +19,7 @@ type WsWithConn = WebSocket & { [CONN]?: Connection };
 
 async function registerWithMatchsvc(env: ReturnType<typeof loadGameEnv>): Promise<void> {
   if (!env.matchsvcInternalUrl || !env.publicWsUrl) return;
-  const headers = { 'content-type': 'application/json', 'X-Internal-Key': env.internalKey };
+  const headers = { 'content-type': 'application/json', ...internalHeaders('gameserver', env.internalKey) };
   try {
     await fetch(`${env.matchsvcInternalUrl}/mm/game/register`, {
       method: 'POST',
@@ -130,7 +130,7 @@ function main(): void {
     if (!env.matchsvcInternalUrl) return;
     void fetch(`${env.matchsvcInternalUrl}/mm/game/heartbeat`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'X-Internal-Key': env.internalKey },
+      headers: { 'content-type': 'application/json', ...internalHeaders('gameserver', env.internalKey) },
       body: JSON.stringify({ gameId: env.gameId, load: wss.clients.size, rooms: 0 }),
     }).catch(() => {
       /* 下个周期再试 */

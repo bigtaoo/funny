@@ -1,6 +1,12 @@
 // admin → 业务服务的内部调用（OPS_DESIGN §4.1）。admin 持 X-Internal-Key 作内部特权调用方。
 // 与 commercialClient / gatewayClient 同形：HTTP 实现 + 接口（便于测试注入假实现）。
-import { createLogger, type CompAttachment, type CompTarget, type LiveStats } from '@nw/shared';
+import {
+  createLogger,
+  internalHeaders,
+  type CompAttachment,
+  type CompTarget,
+  type LiveStats,
+} from '@nw/shared';
 
 const log = createLogger('admin:clients');
 
@@ -55,7 +61,7 @@ export class HttpStatsClient implements StatsClient {
 
   private async get<T>(url: string, tag: string): Promise<T | null> {
     try {
-      const res = await fetch(url, { headers: { 'X-Internal-Key': this.internalKey } });
+      const res = await fetch(url, { headers: internalHeaders('admin', this.internalKey) });
       if (!res.ok) {
         log.warn('stats fetch non-2xx', { tag, status: res.status });
         return null;
@@ -100,7 +106,7 @@ export class HttpPlayerClient implements PlayerClient {
     try {
       const res = await fetch(
         `${this.metaBaseUrl}/internal/player?publicId=${encodeURIComponent(publicId)}`,
-        { headers: { 'X-Internal-Key': this.internalKey } },
+        { headers: internalHeaders('admin', this.internalKey) },
       );
       if (res.status === 404) return null;
       if (!res.ok) {
@@ -161,7 +167,7 @@ export class HttpAnalyticsClient implements AnalyticsClient {
       const qs = new URLSearchParams({ type, days: String(days) });
       if (platform) qs.set('platform', platform);
       const res = await fetch(`${this.analyticsUrl}/internal/query?${qs}`, {
-        headers: { 'X-Internal-Key': this.internalKey },
+        headers: internalHeaders('admin', this.internalKey),
       });
       if (!res.ok) {
         log.warn('analytics query non-2xx', { type, status: res.status });
@@ -245,7 +251,7 @@ export class HttpMailDispatcher implements MailDispatcher {
     try {
       const res = await fetch(`${this.metaBaseUrl}/internal/mail/system/send`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+        headers: { 'content-type': 'application/json', ...internalHeaders('admin', this.internalKey) },
         body: JSON.stringify(req),
       });
       if (res.status === 404 || res.status === 501) {
@@ -263,7 +269,7 @@ export class HttpMailDispatcher implements MailDispatcher {
     try {
       const res = await fetch(`${this.metaBaseUrl}/internal/mail/system/preview`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+        headers: { 'content-type': 'application/json', ...internalHeaders('admin', this.internalKey) },
         body: JSON.stringify(req),
       });
       if (res.status === 404 || res.status === 501) {

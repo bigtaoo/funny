@@ -5,7 +5,15 @@
 //   POST /analytics/events    JWT 可选（有 token 附 user_id，否则匿名）
 //   GET  /internal/query      X-Internal-Key（ops 后台聚合查询）
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
-import { extractBearer, verifyToken, ErrorCode, ERROR_HTTP_STATUS, ok, err } from '@nw/shared';
+import {
+  extractBearer,
+  verifyToken,
+  ErrorCode,
+  ERROR_HTTP_STATUS,
+  ok,
+  err,
+  type InternalAuthVerifier,
+} from '@nw/shared';
 import type { AnalyticsService, EventBatch } from './service';
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -41,7 +49,7 @@ function sendErr(res: ServerResponse, code: ErrorCode, message: string): void {
 }
 
 export function startHttpApi(
-  opts: { host: string; port: number; jwtSecret: string; internalKey: string },
+  opts: { host: string; port: number; jwtSecret: string; internalAuth: InternalAuthVerifier },
   svc: AnalyticsService,
 ): Server {
   const server = createServer((req, res) => {
@@ -95,8 +103,7 @@ export function startHttpApi(
 
       // ─── GET /internal/query（X-Internal-Key，ops 后台用，A9-6）─────────
       if (method === 'GET' && url.startsWith('/internal/query')) {
-        const key = req.headers['x-internal-key'];
-        if (key !== opts.internalKey) {
+        if (!opts.internalAuth.verify(req.headers).ok) {
           return sendErr(res, ErrorCode.UNAUTHENTICATED, 'invalid internal key');
         }
         const qs = new URL(req.url ?? '/', 'http://x').searchParams;

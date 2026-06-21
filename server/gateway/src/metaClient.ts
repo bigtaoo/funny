@@ -1,7 +1,7 @@
 // gateway → meta 内部调用（M17）。目前只用一处：ranked 入队前取玩家当前 ELO，
 // 带进 matchsvc enqueue，让 matchsvc 保持 DB-free（SERVER_API.md §8.5）。
 // 内部鉴权：X-Internal-Key（共用 NW_INTERNAL_KEY）。meta 不可用 → 退回初始分。
-import { INITIAL_ELO } from '@nw/shared';
+import { INITIAL_ELO, internalHeaders } from '@nw/shared';
 
 export class MetaClient {
   constructor(
@@ -18,7 +18,7 @@ export class MetaClient {
     if (!this.baseUrl) return INITIAL_ELO;
     try {
       const url = `${this.baseUrl}/internal/elo?accountId=${encodeURIComponent(accountId)}`;
-      const res = await fetch(url, { headers: { 'X-Internal-Key': this.internalKey } });
+      const res = await fetch(url, { headers: internalHeaders('gateway', this.internalKey) });
       if (!res.ok) return INITIAL_ELO;
       const body = (await res.json()) as { elo?: number };
       return typeof body.elo === 'number' ? body.elo : INITIAL_ELO;
@@ -35,7 +35,7 @@ export class MetaClient {
     if (!this.baseUrl) return {};
     try {
       const url = `${this.baseUrl}/internal/profile?accountId=${encodeURIComponent(accountId)}`;
-      const res = await fetch(url, { headers: { 'X-Internal-Key': this.internalKey } });
+      const res = await fetch(url, { headers: internalHeaders('gateway', this.internalKey) });
       if (!res.ok) return {};
       return (await res.json()) as { displayName?: string; publicId?: string };
     } catch {
@@ -50,7 +50,7 @@ export class MetaClient {
     if (!this.baseUrl) return [];
     try {
       const url = `${this.baseUrl}/internal/social/friends?accountId=${encodeURIComponent(accountId)}`;
-      const res = await fetch(url, { headers: { 'X-Internal-Key': this.internalKey } });
+      const res = await fetch(url, { headers: internalHeaders('gateway', this.internalKey) });
       if (!res.ok) return [];
       const body = (await res.json()) as { friends?: string[] };
       return Array.isArray(body.friends) ? body.friends : [];

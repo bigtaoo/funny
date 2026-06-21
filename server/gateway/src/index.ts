@@ -5,7 +5,7 @@
 //   • ranked 入队前向 meta 取 ELO 带入。
 //
 // 反代：/gw → 本进程公开 WS 端口；内部 HTTP 端口不暴露。
-import type { JwtConfig } from '@nw/shared';
+import { loadInternalAuth, type JwtConfig } from '@nw/shared';
 import { loadGatewayEnv } from './config';
 import { Gateway } from './Gateway';
 import { MatchsvcClient } from './matchsvcClient';
@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   const gateway = new Gateway({ host: env.host, port: env.port }, jwt, matchsvc, meta);
 
   const internal = startInternalHttp(
-    { host: '0.0.0.0', port: env.internalPort, internalKey: env.internalKey },
+    { host: '0.0.0.0', port: env.internalPort, internalAuth: loadInternalAuth(env.internalKey) },
     gateway,
   );
 

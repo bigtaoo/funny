@@ -6,7 +6,7 @@
 // 这里的 PushMsg / PlayerView 是 matchsvc 同名类型的 JSON 镜像（跨进程的线契约是 JSON，
 // 两侧各持结构相同的本地类型，与 REST/JSON 内部通信约定一致，见 META_DESIGN §6.7）。
 
-import { createLogger } from '@nw/shared';
+import { createLogger, internalHeaders } from '@nw/shared';
 
 const log = createLogger('gateway:matchsvc');
 
@@ -85,7 +85,7 @@ export class MatchsvcClient {
     }
     void fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+      headers: { 'content-type': 'application/json', ...internalHeaders('gateway', this.internalKey) },
       body: JSON.stringify(body),
     })
       .then((res) => {

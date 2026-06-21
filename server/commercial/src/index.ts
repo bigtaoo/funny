@@ -4,6 +4,7 @@ import { createCommercialMongo } from './db';
 import { CommercialService } from './service';
 import { startInternalHttp } from './internalHttp';
 import { loadCommercialEnv } from './config';
+import { loadInternalAuth } from '@nw/shared';
 
 async function main(): Promise<void> {
   const env = loadCommercialEnv();
@@ -13,7 +14,7 @@ async function main(): Promise<void> {
 
   const svc = new CommercialService({ cols: mongo.collections, now: () => Date.now() });
   const server = startInternalHttp(
-    { host: env.host, port: env.port, internalKey: env.internalKey },
+    { host: env.host, port: env.port, internalAuth: loadInternalAuth(env.internalKey) },
     svc,
   );
 

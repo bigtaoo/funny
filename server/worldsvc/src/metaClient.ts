@@ -2,6 +2,8 @@
 // meta 内部 HTTP（/internal/materials/* · /internal/profile），X-Internal-Key 鉴权。
 // 未配置 NW_META_INTERNAL_URL → available=false → 拍卖材料交易 + owner 昵称不可用。
 
+import { internalHeaders } from '@nw/shared';
+
 export interface PlayerProfile {
   publicId?: string;
   displayName?: string;
@@ -31,7 +33,7 @@ export class HttpWorldMetaClient implements WorldMetaClient {
     if (!this.baseUrl) throw new Error('meta service not configured');
     const res = await fetch(`${this.baseUrl}/internal/materials/deduct`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+      headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
       body: JSON.stringify({ accountId, material, qty, orderId }),
     });
     if (!res.ok) {
@@ -45,7 +47,7 @@ export class HttpWorldMetaClient implements WorldMetaClient {
     try {
       await fetch(`${this.baseUrl}/internal/materials/grant`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
         body: JSON.stringify({ accountId, material, qty, orderId }),
       });
     } catch (e) {
@@ -58,7 +60,7 @@ export class HttpWorldMetaClient implements WorldMetaClient {
     try {
       const res = await fetch(
         `${this.baseUrl}/internal/profile?accountId=${encodeURIComponent(accountId)}`,
-        { headers: { 'X-Internal-Key': this.internalKey } },
+        { headers: internalHeaders('worldsvc', this.internalKey) },
       );
       if (!res.ok) return null;
       return (await res.json()) as PlayerProfile;

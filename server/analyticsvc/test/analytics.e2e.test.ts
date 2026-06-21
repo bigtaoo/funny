@@ -10,6 +10,7 @@ import type { AddressInfo } from 'net';
 import { createAnalyticsMongo, type AnalyticsMongo } from '../src/db';
 import { AnalyticsService } from '../src/service';
 import { startHttpApi } from '../src/httpApi';
+import { createInternalAuth } from '@nw/shared';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_analytics_test';
@@ -41,7 +42,15 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     await mongo!.ensureIndexes();
 
     svc = new AnalyticsService(mongo!.collections);
-    server = startHttpApi({ host: '127.0.0.1', port: 0, jwtSecret: SECRET, internalKey: INTERNAL_KEY }, svc);
+    server = startHttpApi(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        jwtSecret: SECRET,
+        internalAuth: createInternalAuth({ legacyKey: INTERNAL_KEY }),
+      },
+      svc,
+    );
     await new Promise<void>((resolve) => server.once('listening', resolve));
     const addr = server.address() as AddressInfo;
     base = `http://127.0.0.1:${addr.port}`;

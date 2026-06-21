@@ -4,6 +4,8 @@
 //
 // 与 commercialClient 同形：HTTP 实现 + 接口（便于测试注入假裁判）。
 
+import { internalHeaders } from '@nw/shared';
+
 /** 录像帧（command bytes 用 base64 传输，JSON 安全；gateway 解回 bytes 推给裁判客户端）。 */
 export interface JudgeFrame {
   frame: number;
@@ -70,7 +72,7 @@ export class HttpGatewayClient implements GatewayClient {
     try {
       const res = await fetch(`${this.baseUrl}/gw/judge`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+        headers: { 'content-type': 'application/json', ...internalHeaders('meta', this.internalKey) },
         body: JSON.stringify(req),
       });
       if (!res.ok) return { ok: false };
@@ -85,7 +87,7 @@ export class HttpGatewayClient implements GatewayClient {
     try {
       await fetch(`${this.baseUrl}/gw/push`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+        headers: { 'content-type': 'application/json', ...internalHeaders('meta', this.internalKey) },
         body: JSON.stringify({ accountId, msg }),
       });
     } catch {
@@ -98,7 +100,7 @@ export class HttpGatewayClient implements GatewayClient {
     try {
       const qs = encodeURIComponent(accountIds.join(','));
       const res = await fetch(`${this.baseUrl}/gw/presence?accounts=${qs}`, {
-        headers: { 'X-Internal-Key': this.internalKey },
+        headers: internalHeaders('meta', this.internalKey),
       });
       if (!res.ok) return {};
       return (await res.json()) as Record<string, boolean>;
@@ -112,7 +114,7 @@ export class HttpGatewayClient implements GatewayClient {
     try {
       await fetch(`${this.baseUrl}/gw/social/invalidate`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
+        headers: { 'content-type': 'application/json', ...internalHeaders('meta', this.internalKey) },
         body: JSON.stringify({ accountId }),
       });
     } catch {

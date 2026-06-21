@@ -9,6 +9,7 @@ import { Matchsvc } from './Matchsvc';
 import { GameRegistry } from './GameRegistry';
 import { GatewayClient } from './gatewayClient';
 import { startInternalHttp } from './internalHttp';
+import { loadInternalAuth } from '@nw/shared';
 
 function main(): void {
   const env = loadMatchsvcEnv();
@@ -20,7 +21,7 @@ function main(): void {
   });
 
   const internal = startInternalHttp(
-    { host: env.host, port: env.internalPort, internalKey: env.internalKey },
+    { host: env.host, port: env.internalPort, internalAuth: loadInternalAuth(env.internalKey) },
     matchsvc,
   );
 

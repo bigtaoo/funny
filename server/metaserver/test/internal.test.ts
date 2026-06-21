@@ -74,9 +74,17 @@ function build(
   cols: Collections,
   gateway: GatewayClient = fakeGateway(),
   commercial: CommercialClient = fakeCommercial(false),
+  internalKeys?: Record<string, string>,
 ): FastifyInstance {
   const app = Fastify();
-  registerInternalRoutes(app, { cols, internalKey: KEY, now: () => 1000, gateway, commercial });
+  registerInternalRoutes(app, {
+    cols,
+    internalKey: KEY,
+    ...(internalKeys ? { internalKeys } : {}),
+    now: () => 1000,
+    gateway,
+    commercial,
+  });
   return app;
 }
 
@@ -89,6 +97,46 @@ describe('internal routes', () => {
     const app = build(fakeCols({}).cols);
     const res = await app.inject({ method: 'GET', url: '/internal/elo?accountId=a' });
     expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  // 内部认证模型（S12-1）：内部路由从不校验玩家 JWT——只认 X-Internal-Key。
+  // 玩家 JWT 与内部密钥不同命名空间，放 Authorization 头也命不中 → 401。
+  it('GET /internal/elo 带玩家 JWT 但无 X-Internal-Key → 401（拒绝玩家越权）', async () => {
+    const app = build(fakeCols({}).cols);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/internal/elo?accountId=a',
+      // 伪造一个看似合法的玩家 Authorization bearer——内部路由根本不看它。
+      headers: { authorization: 'Bearer player.jwt.token' },
+    });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  // per-caller 严格模式（NW_INTERNAL_KEYS）：各调用方一把独立密钥；旧单一共享密钥不再被接受。
+  it('严格模式：登记的 per-caller 密钥放行，单一共享密钥被拒', async () => {
+    const a = makeNewSave('a');
+    a.pvp.elo = 777;
+    const app = build(fakeCols({ a }).cols, fakeGateway(), fakeCommercial(false), {
+      gateway: 'gw-key',
+      gameserver: 'gs-key',
+    });
+    // gateway 用自己的密钥 → 放行。
+    const okRes = await app.inject({
+      method: 'GET',
+      url: '/internal/elo?accountId=a',
+      headers: { 'x-internal-key': 'gw-key', 'x-internal-caller': 'gateway' },
+    });
+    expect(okRes.statusCode).toBe(200);
+    expect(okRes.json()).toEqual({ elo: 777 });
+    // 旧的单一共享密钥（KEY）在严格模式下被拒。
+    const rejRes = await app.inject({
+      method: 'GET',
+      url: '/internal/elo?accountId=a',
+      headers: { 'x-internal-key': KEY },
+    });
+    expect(rejRes.statusCode).toBe(401);
     await app.close();
   });
 

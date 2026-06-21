@@ -14,4 +14,5 @@ export * from './slg';
 export * from './chatFilter';
 export * from './admin';
 export * from './config';
+export * from './internalAuth';
 export * from './logger';

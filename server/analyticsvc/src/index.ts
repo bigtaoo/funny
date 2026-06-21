@@ -4,6 +4,7 @@ import { createAnalyticsMongo } from './db';
 import { AnalyticsService } from './service';
 import { startHttpApi } from './httpApi';
 import { startEtlScheduler } from './scheduler';
+import { loadInternalAuth } from '@nw/shared';
 
 async function main(): Promise<void> {
   const env = loadAnalyticssvcEnv();
@@ -13,7 +14,12 @@ async function main(): Promise<void> {
   const svc = new AnalyticsService(mongo.collections);
   const stopEtl = startEtlScheduler(svc);
   const server = startHttpApi(
-    { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },
+    {
+      host: env.host,
+      port: env.port,
+      jwtSecret: env.jwtSecret,
+      internalAuth: loadInternalAuth(env.internalKey),
+    },
     svc,
   );
 
