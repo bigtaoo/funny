@@ -1,6 +1,6 @@
 # 成就系统设计 — Achievements
 
-> 状态：实现中（服务端基座 S9-1/2/4 + PvE 章节计数 S9-3 + 客户端成就墙 S9-5 已落地，见 §11；剩 S9-5b toast / S9-6 PvP 计数 / S9-3b 引擎埋点 / S9-7/8）· 权威：**本文（成就系统机制单一来源）**；数值（阈值/金币）镜像并最终落 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)（DRAFT 初值）· 更新：2026-06-21
+> 状态：实现中（服务端基座 S9-1/2/4 + PvE 章节计数 S9-3 + 客户端成就墙 S9-5 + 达成 toast S9-5b 已落地，见 §11；剩 S9-6 PvP 计数 / S9-3b 引擎埋点 / S9-7/8）· 权威：**本文（成就系统机制单一来源）**；数值（阈值/金币）镜像并最终落 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)（DRAFT 初值）· 更新：2026-06-21
 
 本文是成就子系统的**机制设计基准**：定位、数据模型、统计来源、解锁/领取流程、服务器权威与防刷、接口契约、UI、经济联动、实现拆解。
 **具体阈值/金币不在本文拍死**——初值见 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)；本文只镜像示例并标注权威指针，条目/阈值后期慢慢扩。
@@ -306,4 +306,12 @@ POST /achievements/claim        (JWT) { achId, tier:1|2|3 }
 - **验证**：`tsc --noEmit` 干净；`webpack build:web` 编译成功（仅既有体积告警）。**未做游戏内截图**（CLAUDE.md 约定）。
 - **拆出 S9-5b**：跨场景「成就达成 toast」（结算/回大厅 stats delta 汇总弹一次、点击跳墙，§7）需大厅瞬时通知层 + 解锁阶 delta 跟踪，较独立，单列。当前**领取 toast + 大厅入口/tab/卡红点**已提供解锁与领取反馈闭环。
 
-> **下一会话接续点**：S9-5b（跨场景成就达成 toast）；S9-6（PvP `match/report` 上报 `kill.*`/`cast.*` + meta 累加 + L1 异常复查）→ **S9-3b**（引擎分类型埋点，让 PvE 也能喂 kill/cast，§6.2）→ S9-7/8。任务跟踪见 `META_TASKS.md` S9。
+### S9-5b 跨场景达成 toast（2026-06-21）
+
+- **触发**：回大厅刷新 stats 后比对新解锁阶（§7 的「回到大厅刷新 stats 后比对」路径——覆盖 PvE/PvP 战后返回的主路径）。**PvE 结算页内嵌 toast 暂未做**（结算后必经大厅，回大厅即弹已覆盖；结算页变体后置，红线无影响）。
+- **delta 跟踪**：客户端纯逻辑加 `reachedTierKeys(defs, stats): Set<'achId#tier'>`（`client/src/game/meta/achievements.ts`，只看 `stat≥阈值`，与是否已领无关 → 随累计**单调递增**，差集只增不减）。`createAppCore` 持基线 `achievementReached: Set|null`，折进既有 `refreshAchievementBadge`（lobby 入口拉 `getAchievements` 的同一处，不另开请求）：首次拉取 `null`→**只播种不弹**（避免把登录前已解锁的阶全弹出来）；后续差集非空→汇总成**一条** toast；登出/离线分支清 `null`，重登重新播种。**领取不改 reached**（reached 独立于 claimed）→ 领完回大厅不会重弹。
+- **toast 表现**：`LobbyScene.showAchievementToast(text)`——独立顶层瞬时层（`container.addChild` 置顶，盖过 vsLayer），头部下方金边深底横幅，4s 计时淡出（最后 0.4s alpha 渐隐，复用既有 `update(dt)`）；点击命中 `toastRect`（`handleDown` 最先判，优先于导航槽）→ 清 toast + `onOpenAchievements`（仅 online 接 `goAchievements`）跳成就墙。契约：`LobbyView.showAchievementToast` + `app.ts` stub + `LobbySceneCallbacks.onOpenAchievements?`。
+- **文案**：单条→`achievement.unlockToast{name}`（`name` 由 `achievement.{id}.name` 解析）、多条→`achievement.unlockToastMulti{n}`，i18n 三语 zh/en/de 在 S9-5 时已预置。埋点 `achievement_unlock_toast{count}`。
+- **验证**：`tsc --noEmit` 干净；`webpack build:web` 编译成功（仅既有体积告警）。未做游戏内截图（CLAUDE.md 约定）。
+
+> **下一会话接续点**：S9-6（PvP `match/report` 上报 `kill.*`/`cast.*` + meta 累加 + L1 异常复查）→ **S9-3b**（引擎分类型埋点，让 PvE 也能喂 kill/cast，§6.2）→ S9-7/8。任务跟踪见 `META_TASKS.md` S9。

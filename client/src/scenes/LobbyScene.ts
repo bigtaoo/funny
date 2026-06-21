@@ -70,6 +70,11 @@ export interface LobbySceneCallbacks {
   onOpenCards(): void;
   /** Open the stats / match-record screen. Bottom-nav "stats" slot. */
   onOpenStats(): void;
+  /**
+   * Jump straight to the achievement wall. Wired only when online; invoked when the
+   * player taps an "achievement unlocked" toast (ACHIEVEMENT_DESIGN §7, S9-5b).
+   */
+  onOpenAchievements?(): void;
   /** Open the personal profile / settings screen (top-left profile chip). */
   onOpenProfile(): void;
   /** Player display name shown in the top-left profile chip. */
@@ -135,6 +140,10 @@ export class LobbyScene implements Scene {
   private achievementBadge = false;
   /** Re-drawn layer for the achievement dot (cheap refresh, no nav rebuild). */
   private achievementBadgeLayer: PIXI.Container | null = null;
+  /** Transient "achievement unlocked" toast (S9-5b): own top-most layer + auto-fade timer + tap-to-open rect. */
+  private toastLayer: PIXI.Container | null = null;
+  private toastTimer = 0;
+  private toastRect: Rect | null = null;
   /** Set on destroy so a late-resolving badge fetch skips touching a dead container. */
   private destroyed = false;
 
@@ -166,6 +175,11 @@ export class LobbyScene implements Scene {
       this.vsTimer += dt;
       if (this.vsTimer >= 2.5) this.cb.onStartGame(this.opponentName);
     }
+    if (this.toastTimer > 0) {
+      this.toastTimer -= dt;
+      if (this.toastTimer <= 0) this.clearToast();
+      else if (this.toastLayer) this.toastLayer.alpha = Math.min(1, this.toastTimer / 0.4);
+    }
   }
 
   destroy(): void {
@@ -175,6 +189,8 @@ export class LobbyScene implements Scene {
     this.titleBoil = null;
     this.socialBadgeLayer = null;
     this.achievementBadgeLayer = null;
+    this.toastLayer = null;
+    this.toastRect = null;
   }
 
   /**
@@ -199,10 +215,63 @@ export class LobbyScene implements Scene {
     this.drawAchievementBadge();
   }
 
+  /**
+   * Show a transient "achievement unlocked" toast banner (ACHIEVEMENT_DESIGN §7, S9-5b).
+   * The core computes the unlock delta after a stats refresh and passes one aggregated
+   * message (never one-per-tier); tapping the banner routes to the achievement wall.
+   */
+  showAchievementToast(text: string): void {
+    if (this.destroyed || !text) return;
+    this.toastTimer = 4.0;
+    this.drawAchievementToast(text);
+  }
+
+  private clearToast(): void {
+    this.toastTimer = 0;
+    this.toastRect = null;
+    if (this.toastLayer) { this.toastLayer.destroy({ children: true }); this.toastLayer = null; }
+  }
+
+  /** Draw the toast banner near the top of the lobby (below the header), in its own top-most layer. */
+  private drawAchievementToast(text: string): void {
+    if (this.toastLayer) { this.toastLayer.destroy({ children: true }); this.toastLayer = null; }
+    const { w, h } = this;
+    const layer = new PIXI.Container();
+    const bw = Math.round(w * 0.82);
+    const bh = Math.round(h * 0.072);
+    const bx = (w - bw) / 2;
+    const by = Math.round(h * 0.165);
+
+    const box = new PIXI.Graphics();
+    box.beginFill(C.dark, 0.95);
+    box.lineStyle(2, C.gold, 0.95);
+    box.drawRoundedRect(bx, by, bw, bh, Math.round(bh * 0.28));
+    box.endFill();
+    layer.addChild(box);
+
+    const lbl = txt('🏆 ' + text, Math.round(bh * 0.34), 0xffffff, true);
+    lbl.anchor.set(0.5, 0.5);
+    lbl.x = w / 2; lbl.y = by + bh / 2;
+    if (lbl.width > bw * 0.92) lbl.scale.set((bw * 0.92) / lbl.width);
+    layer.addChild(lbl);
+
+    this.container.addChild(layer); // top-most, above vsLayer
+    this.toastLayer = layer;
+    this.toastRect = { x: bx, y: by, w: bw, h: bh };
+  }
+
   // ── Input ──────────────────────────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
     if (this.state !== 'idle') return;
+    // Achievement-unlock toast tap → jump to the wall (S9-5b). Checked first so it wins over nav slots.
+    const tr = this.toastRect;
+    if (tr && x >= tr.x && x <= tr.x + tr.w && y >= tr.y && y <= tr.y + tr.h) {
+      const open = this.cb.onOpenAchievements;
+      this.clearToast();
+      if (open) open();
+      return;
+    }
     const p = this.profileChipRect;
     if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) {
       this.cb.onOpenProfile();

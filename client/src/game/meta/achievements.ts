@@ -62,3 +62,19 @@ export function hasClaimable(
 ): boolean {
   return defs.some((def) => achievementClaimable(def, stats, achievements));
 }
+
+/**
+ * 当前已达成（reached）阶的稳定键集合，键 = `${achId}#${tier}`（S9-5b）。
+ * 用于跨场景刷新 stats 后做「新解锁阶」差集 → 汇总弹一次达成 toast（ACHIEVEMENT_DESIGN §7）。
+ * 注意：reached 只看 stat≥阈值（与是否已领无关），随累计单调递增，故差集只会新增不会消失。
+ */
+export function reachedTierKeys(defs: Achievement[], stats: SaveData['stats']): Set<string> {
+  const out = new Set<string>();
+  for (const def of defs) {
+    const v = stats?.[def.statKey] ?? 0;
+    def.tiers.forEach((tDef, i) => {
+      if (v >= tDef.threshold) out.add(`${def.id}#${i + 1}`);
+    });
+  }
+  return out;
+}

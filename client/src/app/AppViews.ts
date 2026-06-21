@@ -50,6 +50,12 @@ export interface LobbyView {
   applySocialBadge(total: number): void;
   /** Toggle the achievement-claimable red dot on the stats nav slot (ACHIEVEMENT_DESIGN §4.1). */
   applyAchievementBadge(claimable: boolean): void;
+  /**
+   * Show a transient "achievement unlocked" toast over the lobby (ACHIEVEMENT_DESIGN §7, S9-5b).
+   * The core computes the unlock delta after refreshing stats and aggregates a single message;
+   * tapping the toast jumps to the achievement wall.
+   */
+  showAchievementToast(text: string): void;
 }
 
 /** Live handle for the room scene — the core forwards NetSession control events to it. */
