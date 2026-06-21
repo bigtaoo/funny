@@ -20,7 +20,9 @@
 | 集成 / review | — | `main` | `funny\`（主目录）| ✅ 钉 main，集成区 |
 | S9 成就系统 | achievement | `feat/achievement-system` | `.claude\worktrees\achievement` | ✅ 进行中（S9-3 已提交 f9a61ac5）|
 | G5 联盟领地视野 | slg-g5-alliance-vision | `feat/slg-g5-alliance-vision` | `.claude\worktrees\slg-g5-alliance-vision` | ✅ 已建（tip c6188745）|
-| SLG 拍卖行 | auction-house | `worktree-auction-house` ⚠️ | `.claude\worktrees\auction-house` | ⚠️ 有未提交 WIP（动了 openapi.yml / @nw/shared / equipment.ts）；分支名不符约定（应为 `feat/auction-house`），待先提交 WIP 再决定改名/合并 |
+| SLG 拍卖行/装备 | auction-house | `feat/auction-house` | `.claude\worktrees\auction-house` | ✅ WIP 已提交（5243ae9，equipment 模块 + 存档迁移 + openapi 契约）；改了 @nw/shared/openapi 公共依赖，**合 main 优先**，其余 worktree 随后 rebase |
+
+> 历史遗留：旧分支 `feat/auction-house` 实为成就重复（内容是 `feat/achievement-system` 旧子集），已改名归档为 `archive/achievement-dup-8bf14bfa`，确认无用后可 `git branch -D` 删除。
 
 > 改并行线时同步更新本表（增删 worktree、状态变化）。
 
