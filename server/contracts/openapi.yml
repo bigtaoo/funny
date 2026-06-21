@@ -137,6 +137,40 @@ components:
         flags:
           type: object
           additionalProperties: { type: boolean }
+        # —— 成就系统（服务器权威，ACHIEVEMENT_DESIGN §3）。懒创建，legacy 档可缺，非 required ——
+        stats:
+          type: object
+          additionalProperties: { type: integer }
+          description: 终身累计统计（StatKey→值），单调递增，服务器权威
+        achievements:
+          type: object
+          additionalProperties:
+            type: object
+            required: [claimedTiers]
+            properties:
+              claimedTiers:
+                type: array
+                items: { type: integer, minimum: 1, maximum: 3 }
+          description: achId→已领阶号子集，幂等防重领
+
+    # 成就定义（硬编码 @nw/shared，GET /achievements 下发；客户端据此 + stats 本地算阶）。
+    Achievement:
+      type: object
+      required: [id, statKey, category, tiers]
+      properties:
+        id: { type: string }
+        statKey: { type: string }
+        category: { type: string, enum: [pve, pvp, collection, progression] }
+        titleId: { type: string }
+        hidden: { type: boolean }
+        tiers:
+          type: array
+          items:
+            type: object
+            required: [threshold, coins]
+            properties:
+              threshold: { type: integer }
+              coins: { type: integer }
 
     # —— 客户端同步段（PUT /save 仅接受这些字段，§2.2）——
     # PVE_INTEGRITY_PLAN §8 起 progress/materials/pveUpgrades 转服务器权威
@@ -849,6 +883,73 @@ paths:
         '400': { $ref: '#/components/responses/ErrorResp' }
         '401': { $ref: '#/components/responses/ErrorResp' }
         '402': { $ref: '#/components/responses/ErrorResp' }
+
+  /achievements:
+    get:
+      operationId: getAchievements
+      tags: [save]
+      summary: 成就定义表 + 我的 stats + 已领进度（客户端本地算阶，ACHIEVEMENT_DESIGN §6）
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [defs, stats, achievements]
+                    properties:
+                      defs:
+                        type: array
+                        items: { $ref: '#/components/schemas/Achievement' }
+                      stats:
+                        type: object
+                        additionalProperties: { type: integer }
+                      achievements:
+                        $ref: '#/components/schemas/SaveData/properties/achievements'
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /achievements/claim:
+    post:
+      operationId: claimAchievement
+      tags: [save]
+      summary: 领取某成就某阶金币（服务器二次校验 stat≥阈值 + $addToSet 幂等发币，§4.3）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [achId, tier]
+              properties:
+                achId: { type: string }
+                tier: { type: integer, minimum: 1, maximum: 3 }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, granted]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      granted: { type: integer, description: 本次发放金币 }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
 
   /shop/items:
     get:

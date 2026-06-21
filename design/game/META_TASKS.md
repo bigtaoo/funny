@@ -243,10 +243,10 @@
 > **定位**：与天梯/称号正交的一次性金币 faucet，纯一次性不可刷（~8–9k 池）。可先做 PvE 半，PvP 半随上报扩展跟进。
 > **关键拍板（2026-06-21）**：PvP 计数**直接上报 + 三层抽查**（异常复查/随机抽查/作弊者升档），不逐局复算；**仅计 ranked 局**（friendly 防串刷）；定义**硬编码** `@nw/shared`；成就**纯自看不对外**（炫耀走称号）；与日常任务计数互不复用。
 
-- [ ] **S9-1** `@nw/shared`：`StatKey`/`AchId` 类型 + 硬编码 `Achievement` 定义表（5 条初值）+ `tierState` 纯函数（A-1）
-- [ ] **S9-2** SaveData 扩 `stats`/`achievements`/`antiCheat`，列入 `PUT /save` 服务器权威只读字段（A-2）
-- [ ] **S9-3** PvE 结算累加 stats（挂 `pveRewards.ts` 提交点，与发奖同事务）（A-3）
-- [ ] **S9-4** `GET /achievements` + `POST /achievements/claim`（二次校验 + `$addToSet` 幂等发币）（A-4）
+- [x] **S9-1** `@nw/shared`：`StatKey`/`AchId`/`AchCategory` 类型 + 硬编码 `ACHIEVEMENTS` 定义表（5 条初值，§3.1）+ `tierState`/`hasClaimable`/`validateClaim` 纯函数（A-1）✅ `shared/src/achievements.ts`，barrel 导出；12 纯函数单测（`metaserver/test/achievements.test.ts`，无 Mongo 总跑）。
+- [x] **S9-2** SaveData 扩 `stats?`/`achievements?`/`antiCheat?`（懒创建，缺省视全 0/空）（A-2）✅ `shared/types.ts` + `openapi.yml` SaveData schema（stats/achievements 非 required）。**PUT 守卫无需改**：`applySyncPatch` 是白名单（仅 `equipped`/`flags`），三段结构性丢弃。**`antiCheat` 不进 wire schema**（§3 服务器侧只读、不下发；S9-7 前永不写入）。
+- [x] **S9-3** PvE 结算累加 stats（A-3）✅ `campaign.chaptersCleared`：`chaptersClearedCount`（`shared/pveRewards.ts`，章节终关 `ch{N}_lv{max}` 计数，纯函数由 `PVE_LEVELS` 派生）折进 `writeClearProgress` 的 `mutateSave` 事务（与 progress/stars 同一 rev 守卫写，`$max` 语义=首通才涨/重打不涨/懒创建）。7 纯函数单测（`chapters-cleared.test.ts`）+ 1 e2e（终关累加/重打不涨/二章 +1）。**`kill.archer`/`kill.guard`/`cast.meteor` 的 PvE 喂入暂缺**：引擎只产出聚合 `unitsKilled`/`spellHits`（无分兵种/分法术），且普通通关服务器不跑引擎（A2 禁客户端直写不可复算计数）→ 需引擎分类型埋点进 snapshot + 裁判 verdict 扩展 + verify 比对，列为后续 **S9-3b**（见 ACHIEVEMENT_DESIGN §6.2）。
+- [x] **S9-4** `GET /achievements` + `POST /achievements/claim`（A-4）✅ `openapi.yml` 两端点 + `Achievement` schema；`MetaService.getAchievements/claimAchievement`：先原子记 `claimedTiers`（`mutateSave` rev 守卫=唯一获胜者）再 `commercial.grant`（确定性 orderId `ach:acct:achId:tier` 幂等）+ 钱包镜像回推。**发币走 commercial.grant 而非 §5「meta 直接记账」**——S5 后钱包权威在 commercial，save.wallet 仅镜像（同 mail/ads/victory 路径）。7 e2e（未达拒发/达阈发币/重复 409/**并发恰一发**/越界 400/逐阶累加）。
 - [ ] **S9-5** 客户端成就墙 UI（ProfileScene，分类 tab + 红点 + 解锁 toast）+ i18n `achievement.*`（A-5）
 - [ ] **S9-6** PvP 计数：扩 `match/report` 带 `kill.*`/`cast.*`（仅 ranked）+ meta 累加 + L1 异常复查（A-6）
 - [ ] **S9-7** 反作弊 L2/L3：离线随机抽查（replay 复算）+ `statSuspicion` 升档 + OPS 审查队列（A-7）

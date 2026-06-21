@@ -8,6 +8,7 @@ export * from './mongo';
 export * from './roomRegistry';
 export * from './ladder';
 export * from './economy';
+export * from './achievements';
 export * from './pveRewards';
 export * from './social';
 export * from './slg';
