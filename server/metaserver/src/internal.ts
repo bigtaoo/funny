@@ -24,7 +24,9 @@ import { adsDayKey } from './economy.js';
 import { getProfile, resolveByPublicId } from './accounts.js';
 import { friendAccountIds } from './social.js';
 import { insertSystemMail, bulkInsertSystemMail } from './mail.js';
-import type { CompAttachment, CompTarget } from '@nw/shared';
+import { escrowEquipment, grantEquipment } from './equipment.js';
+import type { CompAttachment, CompTarget, EquipmentInstance } from '@nw/shared';
+import { ERROR_HTTP_STATUS } from '@nw/shared';
 
 const log = createLogger('meta:internal');
 
@@ -423,6 +425,43 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       }
     }
     return reply.code(409).send({ ok: false, error: 'rev conflict, retry' });
+  });
+
+  // ── 装备托管 / 转移（E2，worldsvc 拍卖装备交易调用）─────────────────────────────
+  // POST /internal/equipment/escrow  { accountId, instanceId, orderId } → { instance }
+  //   挂拍托管：校验未穿戴/未锁 → 移出卖方库存 → 回快照（worldsvc 存进挂单 doc）。orderId 幂等。
+  app.post('/internal/equipment/escrow', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const { accountId, instanceId, orderId } = req.body as {
+      accountId?: string;
+      instanceId?: string;
+      orderId?: string;
+    };
+    if (!accountId || !instanceId || !orderId) {
+      return reply.code(400).send({ ok: false, error: 'accountId + instanceId + orderId required' });
+    }
+    const r = await escrowEquipment(cols, now, accountId, instanceId, orderId);
+    if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send({ ok: false, error: r.error, code: r.code });
+    log.info('equipment escrowed', { accountId, instanceId, orderId });
+    return reply.send({ ok: true, instance: r.instance });
+  });
+
+  // POST /internal/equipment/grant  { accountId, instance, orderId } → { ok }
+  //   成交转移（给买方）/ 撤单·过期·季末退回（给卖方）：把实例快照写入库存（按 id 覆盖即幂等）。
+  app.post('/internal/equipment/grant', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const { accountId, instance, orderId } = req.body as {
+      accountId?: string;
+      instance?: EquipmentInstance;
+      orderId?: string;
+    };
+    if (!accountId || !instance?.id) {
+      return reply.code(400).send({ ok: false, error: 'accountId + instance required' });
+    }
+    const r = await grantEquipment(cols, now, accountId, instance);
+    if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send({ ok: false, error: r.error, code: r.code });
+    log.info('equipment granted', { accountId, instanceId: instance.id, orderId });
+    return reply.send({ ok: true });
   });
 }
 

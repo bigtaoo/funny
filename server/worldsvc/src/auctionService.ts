@@ -26,8 +26,11 @@ import {
   AUCTION_STATIC_REF_PRICE,
   AUCTION_MIN_INCREMENT_RATIO,
   AUCTION_ANTI_SNIPE_WINDOW_SEC,
+  EQUIPMENT_DEFS,
+  EQUIP_AUCTION_REF_PRICE_BY_RARITY,
   SlgError,
   type AuctionStatus,
+  type EquipmentInstance,
 } from '@nw/shared';
 import type { WorldCollections, AuctionDoc } from './db';
 import type { WorldCommercialClient } from './commercialClient';
@@ -64,13 +67,23 @@ export interface AuctionServiceDeps {
 /** 进程内序号防同毫秒多挂撞键。 */
 let auctionSeq = 0;
 
-/** 标的品类键（价格滑窗按品类隔离）。材料 = `material:{mat}`；装备品类待 A。 */
+/** 装备挂单标的载荷（A）：整件实例快照托管（qty 恒 1，非堆叠唯一实例）。 */
+function equipInstanceOf(item: Record<string, unknown>): EquipmentInstance | null {
+  const inst = item['instance'];
+  return inst && typeof inst === 'object' ? (inst as EquipmentInstance) : null;
+}
+
+/** 标的品类键（价格滑窗按品类隔离）。材料 = `material:{mat}`；装备 = `equip:{defId}`（A，按定义/稀有度隔离）。 */
 function categoryOf(doc: Pick<AuctionDoc, 'itemType' | 'item'>): string | null {
   if (doc.itemType === 'material') {
     const mat = doc.item['material'] as string | undefined;
     return mat ? `material:${mat}` : null;
   }
-  return null; // equipment 待 A，暂不入滑窗
+  if (doc.itemType === 'equipment') {
+    const inst = equipInstanceOf(doc.item);
+    return inst?.defId ? `equip:${inst.defId}` : null;
+  }
+  return null;
 }
 
 function docToView(doc: AuctionDoc): AuctionView {
@@ -145,6 +158,12 @@ export class AuctionService {
       const stat = AUCTION_STATIC_REF_PRICE[mat];
       if (stat != null) return stat;
     }
+    if (category.startsWith('equip:')) {
+      // 装备冷启动按稀有度估值（§4.A：价格护栏按稀有度设区间）。
+      const defId = category.slice('equip:'.length);
+      const def = EQUIPMENT_DEFS[defId];
+      if (def) return EQUIP_AUCTION_REF_PRICE_BY_RARITY[def.rarity];
+    }
     return null;
   }
 
@@ -169,6 +188,21 @@ export class AuctionService {
       },
       { upsert: true },
     );
+  }
+
+  /**
+   * 把挂单标的发给目标账号（成交给买方 / 撤单·过期·季末退给卖方）。
+   * 材料 → grantMaterial；装备 → grantEquipment（转移整件实例快照）。均 best-effort + orderId 幂等。
+   */
+  private async deliverItem(toAccountId: string, doc: AuctionDoc, orderId: string): Promise<void> {
+    const { meta } = this.deps;
+    if (doc.itemType === 'material') {
+      const material = doc.item['material'] as string;
+      await meta.grantMaterial(toAccountId, material, doc.qty, orderId);
+    } else if (doc.itemType === 'equipment') {
+      const inst = equipInstanceOf(doc.item);
+      if (inst) await meta.grantEquipment(toAccountId, inst, orderId);
+    }
   }
 
   // ── F 季末冻结：settling/closed 世界拒新挂单（买/撤/结拍不受限）─────────────
@@ -229,9 +263,10 @@ export class AuctionService {
     const saleMode = params.saleMode ?? 'fixed';
     const { cols, now, meta } = this.deps;
 
-    if (itemType === 'equipment') throw new SlgError('NOT_IMPLEMENTED');
     if (!AUCTION_DURATIONS_SEC.includes(durationSec)) throw new SlgError('BAD_REQUEST');
-    if (qty <= 0) throw new SlgError('BAD_REQUEST');
+    // 装备 qty 恒 1（非堆叠唯一实例，§4.A）；材料 qty>0。
+    const effectiveQty = itemType === 'equipment' ? 1 : qty;
+    if (effectiveQty <= 0) throw new SlgError('BAD_REQUEST');
 
     // 售卖形态参数校验 + 确定挂单单价（用于浏览排序 + 护栏校验）
     let unitPrice: number; // 一口价单价 / 竞拍起拍单价
@@ -251,32 +286,46 @@ export class AuctionService {
     // F 季末冻结
     await this.assertWorldAcceptsListings(worldId);
 
-    // E 绑定材料禁挂
-    if (itemType === 'material') {
-      const material = item['material'] as string | undefined;
-      if (!material) throw new SlgError('BAD_REQUEST');
-      if (AUCTION_BANNED_MATERIALS.has(material)) throw new SlgError('MATERIAL_NOT_TRADEABLE');
-    }
-
-    // G 价格护栏（按品类参考价校验单价）
-    await this.checkPriceGuard(worldId, categoryOf({ itemType, item }), unitPrice);
-
-    // 并发挂单数上限
-    const openCount = await cols.auctions.countDocuments({ worldId, sellerId, status: 'open' });
-    if (openCount >= AUCTION_MAX_LISTINGS) throw new SlgError('AUCTION_LIMIT_REACHED');
-
-    // C 每日新挂单上限（占名额）
-    await this.bumpDaily(worldId, sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
-
     const ts = now();
     const seq = ++auctionSeq;
     const aid = makeAuctionId(worldId, sellerId, ts, seq);
     const orderId = `auction_list:${aid}`;
+    let storedItem: Record<string, unknown> = item;
 
-    // 材料：从 meta 扣除（托管）
     if (itemType === 'material') {
-      const material = item['material'] as string;
+      // E 绑定材料禁挂
+      const material = item['material'] as string | undefined;
+      if (!material) throw new SlgError('BAD_REQUEST');
+      if (AUCTION_BANNED_MATERIALS.has(material)) throw new SlgError('MATERIAL_NOT_TRADEABLE');
+      // G 价格护栏（按品类参考价校验单价）
+      await this.checkPriceGuard(worldId, categoryOf({ itemType, item }), unitPrice);
+      // 并发挂单数上限
+      const openCount = await cols.auctions.countDocuments({ worldId, sellerId, status: 'open' });
+      if (openCount >= AUCTION_MAX_LISTINGS) throw new SlgError('AUCTION_LIMIT_REACHED');
+      // C 每日新挂单上限（占名额）
+      await this.bumpDaily(worldId, sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
+      // 从 meta 扣除材料（托管）
       await meta.deductMaterial(sellerId, material, qty, orderId);
+    } else if (itemType === 'equipment') {
+      // A 装备交易：客户端传 instanceId，服务器托管整件实例（移出卖方库存）→ 存快照。
+      const instanceId = item['instanceId'];
+      if (typeof instanceId !== 'string') throw new SlgError('BAD_REQUEST');
+      // 并发挂单数上限（托管前先卡，避免无谓托管再退）
+      const openCount = await cols.auctions.countDocuments({ worldId, sellerId, status: 'open' });
+      if (openCount >= AUCTION_MAX_LISTINGS) throw new SlgError('AUCTION_LIMIT_REACHED');
+      // 托管：穿戴中/锁定/不存在由 meta 抛 SlgError（EQUIP_IN_USE/EQUIP_LOCKED/EQUIP_NOT_FOUND）。
+      const instance = await meta.escrowEquipment(sellerId, instanceId, orderId);
+      storedItem = { instance };
+      try {
+        // G 价格护栏（装备按 defId/稀有度品类）+ C 每日上限——失败则退还托管实例。
+        await this.checkPriceGuard(worldId, `equip:${instance.defId}`, unitPrice);
+        await this.bumpDaily(worldId, sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
+      } catch (e) {
+        await meta.grantEquipment(sellerId, instance, `${orderId}:return`);
+        throw e;
+      }
+    } else {
+      throw new SlgError('BAD_REQUEST');
     }
 
     const doc: AuctionDoc = {
@@ -284,8 +333,8 @@ export class AuctionService {
       worldId,
       sellerId,
       itemType,
-      item,
-      qty,
+      item: storedItem,
+      qty: effectiveQty,
       price: unitPrice,
       currency: 'coins',
       ...(designatedBuyerId ? { designatedBuyerId } : {}),
@@ -307,7 +356,7 @@ export class AuctionService {
    * 竞拍单（saleMode='auction'）不走此路径——出价/买断走 placeBid。
    */
   async buyAuction(worldId: string, buyerId: string, auctionId: string): Promise<AuctionView> {
-    const { cols, now, commercial, meta } = this.deps;
+    const { cols, now, commercial } = this.deps;
 
     const doc = await cols.auctions.findOne({ _id: auctionId, worldId });
     if (!doc) throw new SlgError('AUCTION_NOT_FOUND');
@@ -343,11 +392,8 @@ export class AuctionService {
       throw new SlgError('AUCTION_CLOSED');
     }
 
-    // 3. 发放标的给买方
-    if (doc.itemType === 'material') {
-      const material = doc.item['material'] as string;
-      await meta.grantMaterial(buyerId, material, doc.qty, `${buyOrderId}:item`);
-    }
+    // 3. 发放标的给买方（材料发材料 / 装备转移实例）
+    await this.deliverItem(buyerId, doc, `${buyOrderId}:item`);
 
     // 4. 卖方收金币（税后，best-effort）
     await commercial.grant(doc.sellerId, sellerReceives, `${buyOrderId}:seller`);
@@ -365,7 +411,7 @@ export class AuctionService {
    * 达/超 buyoutPrice → 立即结拍（标的给出价者，卖方收税后款，金币已托管无需二次扣）。
    */
   async placeBid(worldId: string, bidderId: string, auctionId: string, amount: number): Promise<AuctionView> {
-    const { cols, now, commercial, meta } = this.deps;
+    const { cols, now, commercial } = this.deps;
     if (amount <= 0) throw new SlgError('BAD_REQUEST');
 
     const doc = await cols.auctions.findOne({ _id: auctionId, worldId });
@@ -430,7 +476,7 @@ export class AuctionService {
 
     // 5. 买断：达/超 buyoutPrice → 立即结拍
     if (doc.buyoutPrice != null && amount >= doc.buyoutPrice) {
-      return this.settleAuctionWin(updated, meta, commercial);
+      return this.settleAuctionWin(updated, commercial);
     }
     return docToView(updated);
   }
@@ -441,7 +487,6 @@ export class AuctionService {
    */
   private async settleAuctionWin(
     doc: AuctionDoc,
-    meta: WorldMetaClient,
     commercial: WorldCommercialClient,
   ): Promise<AuctionView> {
     const top = doc.topBid!;
@@ -460,11 +505,8 @@ export class AuctionService {
     const sellerReceives = totalPrice - tax;
     const orderId = `auction_settle:${doc._id}`;
 
-    // 发标的给得标者
-    if (doc.itemType === 'material') {
-      const material = doc.item['material'] as string;
-      await meta.grantMaterial(top.bidderId, material, doc.qty, `${orderId}:item`);
-    }
+    // 发标的给得标者（材料 / 装备实例）
+    await this.deliverItem(top.bidderId, doc, `${orderId}:item`);
     // 卖方收税后款
     await commercial.grant(doc.sellerId, sellerReceives, `${orderId}:seller`);
     // G 记录成交单价
@@ -476,10 +518,10 @@ export class AuctionService {
   /**
    * 取消挂拍（仅 seller，status=open）。
    * 竞拍单已有出价 → 拒绝取消（保护出价者）；无出价可撤。
-   * 退还材料（best-effort）；装备退还留 TODO。
+   * 退还标的（材料 / 装备实例，best-effort）。
    */
   async cancelAuction(worldId: string, sellerId: string, auctionId: string): Promise<AuctionView> {
-    const { cols, meta } = this.deps;
+    const { cols } = this.deps;
 
     const doc = await cols.auctions.findOne({ _id: auctionId, worldId });
     if (!doc) throw new SlgError('AUCTION_NOT_FOUND');
@@ -494,11 +536,8 @@ export class AuctionService {
     );
     if (!updated) throw new SlgError('AUCTION_CLOSED');
 
-    // 退还标的
-    if (doc.itemType === 'material') {
-      const material = doc.item['material'] as string;
-      await meta.grantMaterial(sellerId, material, doc.qty, `auction_cancel:${auctionId}`);
-    }
+    // 退还标的（材料 / 装备实例）
+    await this.deliverItem(sellerId, doc, `auction_cancel:${auctionId}`);
 
     return docToView(updated);
   }
@@ -511,7 +550,7 @@ export class AuctionService {
    * 每批最多处理 50 条，防止单次扫描过长。
    */
   async processExpiredAuctions(): Promise<number> {
-    const { cols, now, meta, commercial } = this.deps;
+    const { cols, now, commercial } = this.deps;
     const ts = now();
     const expired = await cols.auctions
       .find({ status: 'open', expireAt: { $lt: ts } })
@@ -523,7 +562,7 @@ export class AuctionService {
       const isAuctionWin = (doc.saleMode ?? 'fixed') === 'auction' && !!doc.topBid;
       if (isAuctionWin) {
         // 竞拍结拍（settleAuctionWin 内含原子 open→sold 防并发）
-        await this.settleAuctionWin(doc, meta, commercial);
+        await this.settleAuctionWin(doc, commercial);
         processed++;
         continue;
       }
@@ -536,11 +575,8 @@ export class AuctionService {
       );
       if (!res) continue; // 并发被抢，跳过
 
-      // 退还卖方标的（best-effort）
-      if (doc.itemType === 'material') {
-        const material = doc.item['material'] as string;
-        await meta.grantMaterial(doc.sellerId, material, doc.qty, `auction_expire:${doc._id}`);
-      }
+      // 退还卖方标的（材料 / 装备实例，best-effort）
+      await this.deliverItem(doc.sellerId, doc, `auction_expire:${doc._id}`);
       processed++;
     }
     return processed;
@@ -552,7 +588,7 @@ export class AuctionService {
    * 由 /admin/world/reset 在 svc.resetSeason 之外调用（拍卖标的属养成侧，退回安全，SLG4）。
    */
   async clearWorldOnReset(worldId: string): Promise<{ cancelled: number }> {
-    const { cols, meta, commercial } = this.deps;
+    const { cols, commercial } = this.deps;
     let cancelled = 0;
     // 循环处理直到无 open（量大时分批，每批 ≤100）
     for (;;) {
@@ -565,11 +601,8 @@ export class AuctionService {
           { returnDocument: 'after' },
         );
         if (!res) continue;
-        // 退还卖方标的
-        if (doc.itemType === 'material') {
-          const material = doc.item['material'] as string;
-          await meta.grantMaterial(doc.sellerId, material, doc.qty, `auction_reset:${doc._id}`);
-        }
+        // 退还卖方标的（材料 / 装备实例）
+        await this.deliverItem(doc.sellerId, doc, `auction_reset:${doc._id}`);
         // 退还竞拍托管出价（若有）
         if ((doc.saleMode ?? 'fixed') === 'auction' && doc.topBid) {
           await commercial.grant(

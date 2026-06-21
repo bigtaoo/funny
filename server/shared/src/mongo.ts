@@ -220,6 +220,20 @@ export interface MailDoc {
   claimOrderId?: string; // 领取幂等（commercial orderId）
 }
 
+/**
+ * 装备操作幂等账本（E2，EQUIPMENT_DESIGN §18.2）：合成/托管等"扣料 + 产/移实例"类操作，
+ * 重复请求重放首次结果（不二次扣料、不二次 roll）。_id = idempotencyKey（合成）/ orderId（托管）。
+ * TTL 自清（保留近 N 天足够覆盖客户端重试 + worldsvc 退还窗口）。
+ */
+export interface EquipmentIdemDoc {
+  _id: string; // idempotencyKey / orderId
+  accountId: string;
+  op: 'craft' | 'escrow';
+  /** 首次执行结果快照（craft: 产出实例；escrow: 托管走的实例快照）。重放原样回。 */
+  result: unknown;
+  expireAt: Date; // BSON Date，TTL 锚
+}
+
 export interface Collections {
   saves: Collection<SaveDoc>;
   accounts: Collection<AccountDoc>;
@@ -235,6 +249,8 @@ export interface Collections {
   conversations: Collection<ConversationDoc>;
   chatMessages: Collection<ChatMessageDoc>;
   mail: Collection<MailDoc>;
+  // 装备（E2）
+  equipmentIdem: Collection<EquipmentIdemDoc>;
 }
 
 export interface MongoHandle {
@@ -283,6 +299,7 @@ export async function createMongo(
     conversations: db.collection<ConversationDoc>('conversations'),
     chatMessages: db.collection<ChatMessageDoc>('chatMessages'),
     mail: db.collection<MailDoc>('mail'),
+    equipmentIdem: db.collection<EquipmentIdemDoc>('equipmentIdem'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -325,6 +342,8 @@ export async function createMongo(
     await collections.mail.createIndex({ to: 1, createdAt: -1 });
     // 邮件到期自动回收（expireAt 是到期绝对时间戳 → expireAfterSeconds:0，SOC5）。
     await collections.mail.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+    // 装备幂等账本到期自清（E2，expireAt 到期绝对时间 → expireAfterSeconds:0）。
+    await collections.equipmentIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
   }
 
   return {

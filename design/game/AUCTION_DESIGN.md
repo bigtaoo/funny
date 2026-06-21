@@ -1,6 +1,6 @@
 # Notebook Wars — 拍卖行设计（Auction House）
 
-> 状态：主干 ✅ + 反 RMT 闸门 C/E/G/F + 竞拍 B 全 ✅；仅 A 装备 / D 异常审计 待依赖就位 · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-06-21
+> 状态：主干 ✅ + 反 RMT 闸门 C/E/G/F + 竞拍 B + **装备交易 A** 全 ✅；仅 D 异常审计 待依赖（admin G7） · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-06-21
 >
 > 配套阅读：[`SLG_DESIGN.md`](SLG_DESIGN.md)（§7 经济与交易、§9 架构、§14 契约层——拍卖行是 SLG 大世界的交易子系统）、[`COMMERCIAL_DESIGN.md`](COMMERCIAL_DESIGN.md)（金币钱包 spend/grant，拍卖结算走它）、[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（货币政策/反通胀哲学）、[`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)（数值演算）、[`SERVER_API.md`](SERVER_API.md)（接口契约）、[`OPS_DESIGN.md`](OPS_DESIGN.md)（反 RMT 审计工单复用）。
 >
@@ -11,11 +11,11 @@
 ## 0. TL;DR
 
 - **拍卖行 = SLG 大世界唯一交易机制**（SLG9）：单一机制覆盖「公开市场」与「点对点定向交易」（挂单时指定受拍人）。
-- **可交易品 = 材料 + 装备**（PvE/SLG 统一养成材料 `scrap/lead/binding` + 锻造装备）；**赛季资源（粮/铁/木）禁挂**（季末清零、防套利、维持 biome 物产差异价值）。
+- **可交易品 = 材料 + 装备（A ✅）**（PvE/SLG 统一养成材料 `scrap/lead/binding` + 锻造装备实例，整件托管转移）；**赛季资源（粮/铁/木）禁挂**（季末清零、防套利、维持 biome 物产差异价值）。
 - **计价货币 = 金币（coins，跨季留存的 premium 货币）**；系统抽 **10% 手续费**；**禁止以赛季资源/局内 ink 计价**（防与天梯/付费体系串味）。
-- **承重墙**：拍卖行不碰战斗/地图，是纯经济子系统——挂存与发放走 **meta 材料库**（幂等 orderId），扣款/收款走 **commercial 金币钱包**，状态机权威在 **worldsvc `auctions` 集合**。
+- **承重墙**：拍卖行不碰战斗/地图，是纯经济子系统——挂存与发放走 **meta 材料库 + 装备库**（幂等 orderId），扣款/收款走 **commercial 金币钱包**，状态机权威在 **worldsvc `auctions` 集合**。
 - **反 RMT 是持续对抗**（R3）：10% 高税 + 并发挂单上限 + 每日限额（C ✅）+ 绑定材料禁挂（E ✅，清单暂空）+ 价格护栏动态滑窗（G ✅）+ 异常模式 admin 审计（D ⛔ 依赖 admin G7）。
-- **当前状态**（2026-06-21 实现）：**一口价主干 + 竞拍（B ✅）+ 每日限额（C ✅）+ 绑定禁挂机制（E ✅）+ 价格护栏滑窗（G ✅）+ 季末冻结/清算（F ✅）全实跑**（worldsvc `auctionService.ts` + 20 条 e2e）；**仅剩 A 装备交易（依赖装备库存）/ D 异常审计（依赖 admin G7）** 待依赖就位，见 §4。
+- **当前状态**（2026-06-21 实现）：**一口价主干 + 竞拍（B ✅）+ 每日限额（C ✅）+ 绑定禁挂机制（E ✅）+ 价格护栏滑窗（G ✅）+ 季末冻结/清算（F ✅）+ 装备交易（A ✅）全实跑**（worldsvc `auctionService.ts` + 28 条 e2e；装备库存后端 meta `equipment.ts` + 12 条 e2e）；**仅剩 D 异常审计（依赖 admin G7）** 待依赖就位，见 §4。
 
 ---
 
@@ -42,7 +42,7 @@
 | itemType | item 载荷 | 挂存（扣） | 发放（给买方） | 状态 |
 |---|---|---|---|---|
 | `material` | `{material: 'scrap'\|'lead'\|'binding'\|…}` | meta `deductMaterial(seller, mat, qty, orderId)` | meta `grantMaterial(buyer, mat, qty, orderId)` | ✅ 实跑 |
-| `equipment` | `{equipId, …装备实例快照}` | meta 装备库扣（**待 EQUIPMENT_DESIGN 库存落地**） | meta 装备库发 | ⛔ 当前 `NOT_IMPLEMENTED`（A） |
+| `equipment` | 挂单入参 `{instanceId}`；存储 `{instance: 完整快照}`（qty 恒 1） | meta `escrowEquipment(seller, instanceId, orderId)`（移出库存回快照） | meta `grantEquipment(buyer, instance, orderId)`（按 id 写入即幂等） | ✅ 实跑（A） |
 
 - **挂单即托管**：挂单时立刻从卖方库存扣除标的（托管在挂单文档里），撤单/过期/未成交时退还卖方——避免「挂着卖但库存已被花掉」的超卖。
 - **qty/price**：`price` = 每件单价（金币），`totalPrice = price × qty`；材料按堆叠数量挂，装备 v1 单件挂（qty=1，A 节细化）。
@@ -95,16 +95,16 @@
 
 > 主干（挂/买/撤/过期/材料/金币/税/定向/并发）已实跑（§6）。以下七项是 SLG_DESIGN 承诺但未兑现的，本文给出**建议决策**；标 ⚠️ 的是需你拍板的产品/数值分叉，标 DRAFT 的是上线后调参。
 
-### A. 装备交易
+### A. 装备交易 ✅ 已实现（2026-06-21）
 
-- **现状**：`createAuction` 对 `itemType==='equipment'` 直接抛 `NOT_IMPLEMENTED`。
-- **阻塞点**：依赖 `EQUIPMENT_DESIGN` 的装备库存系统（实例化装备、可序列化快照、扣/发接口）落地。
-- **建议设计**（待装备库就位即可接）：
-  - `item` = 装备实例快照（`{equipId, slot, level, affixes…}`，整件托管，**qty 固定 1**——装备是非堆叠唯一实例）。
-  - 挂存 = meta 装备库「冻结/转托管」该实例；发放 = 转移实例归属给买方；撤单/过期 = 实例退回卖方。
-  - **绑定装备禁挂**（与 E 同源）：账号绑定/灵魂绑定的装备 `equipBound=true` → 拒挂。
-  - 价格护栏（G）对装备按稀有度/词条估值设区间，防一件神装天价洗钱。
-- **优先级**：中（材料交易已能验证拍卖行闭环；装备等 EQUIPMENT_DESIGN）。
+> 实现：先建**装备库存后端**（EQUIPMENT_DESIGN E2）解阻塞——meta `equipment.ts`（`craftEquipment` 合成 faucet + `escrowEquipment`/`grantEquipment` 托管转移）+ 内部端点 `/internal/equipment/{escrow,grant}`；worldsvc `auctionService` 接 A 全链路。e2e：meta 12 条 + worldsvc 装备 8 条。
+
+- **挂单入参** `{instanceId}`；服务器 `escrowEquipment` 校验后**移出卖方库存**、回完整实例快照存进挂单 `item.instance`（**qty 强制 1**——装备是非堆叠唯一实例，传 99 也归 1）。
+- **托管 = 移出库存**：挂存调 meta `escrowEquipment`（orderId 幂等，账本存快照）；**发放 = 转移实例归属**（成交给买方）；**撤单/过期/季末清算 = 实例退回卖方**——全走 `grantEquipment(account, instance, orderId)`（按 `instance.id` 覆盖写即幂等）。
+- **禁挂闸门**（meta escrow 侧拒绝，错误码透传 worldsvc）：`locked`（防误用为燃料）→ `EQUIP_LOCKED`；**穿戴中**（`gear.global`/`gear.byUnit` 引用）→ `EQUIP_IN_USE`；不存在 → `EQUIP_NOT_FOUND`。绑定装备禁挂（`equipBound`）与 E 同源，待经济运营填规则。
+- **价格护栏（G）按 `equip:{defId}` 品类**：冷启动静态参考价按稀有度（`EQUIP_AUCTION_REF_PRICE_BY_RARITY`，DRAFT），滑窗样本足后转中位数；越界拒绝（拒绝后退还托管实例，不吞）。
+- **满仓口径**：成交转移**不卡 300 库存上限**（买方有意获得，阻断成交会资损；满仓溢出转邮件暂存是 §13 后续）；上限只在 craft/掉落 faucet 侧卡。
+- **遗留**：E3 强化/分解、E4 穿戴、E5 UI、关卡掉落 faucet 仍待做（EQUIPMENT_DESIGN §14）；本切片只交付「能合成 → 能上拍卖交易」闭环。
 
 ### B. 竞拍（出价）✅ 拍板：v1 做 · ✅ 已实现（2026-06-21）
 
@@ -230,7 +230,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 
 ## 6. 实现状态（S8-5）
 
-**✅ 已实跑**（`server/worldsvc/src/auctionService.ts` + `test/auction.e2e.test.ts` 20 条全绿 + 111 条 worldsvc 全绿）：
+**✅ 已实跑**（`server/worldsvc/src/auctionService.ts` + `test/auction.e2e.test.ts` 28 条全绿 + 142 条 worldsvc 全绿；装备库存后端 meta `equipment.ts` + `test/equipment.e2e.test.ts` 12 条 + 167 条 metaserver 全绿）：
 - 挂单 / 我的挂单 / 一口价购买 / 撤单 / 过期回收全套 CRUD
 - 材料交易（meta deduct/grant 托管+发放，orderId 幂等）
 - 金币计价 + 10% 税（commercial spend/grant）
@@ -239,9 +239,10 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - 过期扫描器（scheduler 每 2s，非 TTL，退还卖方挂存 / 竞拍结拍）
 - 挂单上限 20、时长 [6h/12h/24h]
 - **C 每日限额**（auctionDaily TTL 计数）/ **E 绑定禁挂机制**（空清单）/ **G 价格护栏动态滑窗**（中位数 + 静态回退）/ **F 季末冻结+清算**（settling 拒挂 + clearWorldOnReset）/ **B 竞拍**（起拍/加价/托管/防狙击/买断/结拍）
-- 契约同步：`openapi-world.yml` + 客户端 `openapi-world.ts`/`WorldApiClient`（createAuction saleMode/placeBid）
+- **A 装备交易**（2026-06-21）：先建装备库存后端（meta `equipment.ts`：`craftEquipment` 合成 + `escrowEquipment`/`grantEquipment` 托管转移 + `/internal/equipment/{escrow,grant}` + 玩家 `POST /equipment/craft`）→ worldsvc `auctionService` 装备分支（挂/买/竞拍结拍/撤/过期/季末退回全转移实例；按 `equip:{defId}` 稀有度价格护栏；穿戴中/locked 禁挂）。新增 `equipmentIdem` 集合（合成/托管幂等）。
+- 契约同步：`openapi-world.yml` + 客户端 `openapi-world.ts`/`WorldApiClient`（createAuction saleMode/placeBid）；meta `openapi.yml` 新增 `/equipment/craft`。
 
-**⛔ 剩余缺口**（均依赖外部系统就位）：**A 装备交易**（依赖 EQUIPMENT 装备库存）、**D 异常审计**（依赖 §15.1 G7 admin SLG 接入）。
+**⛔ 剩余缺口**：**D 异常审计**（依赖 §15.1 G7 admin SLG 接入）。
 **客户端契约对齐 ✅（2026-06-21）**：`AuctionScene` 既存错配已修——挂单 item 改发 `{material}`（原 `{mat}` 服务端读不到）、展示改读 `item.material`（原把 itemType 当材料名）、时长改 `[6h/12h/24h]` 对齐 `AUCTION_DURATIONS_SEC`（原 `[1h/4h/24h]` 2/3 选项触 BAD_REQUEST），i18n `dur1h/dur4h`→`dur6h/dur12h`。一口价挂单/展示链路打通。**竞拍 UI（saleMode 切换/出价/买断）仍待补**——API/契约已就绪（`createAuction` saleMode + `placeBid`）。
 
 ---
@@ -253,8 +254,8 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 | 高税 | 10% 成交手续费（coin sink） | ✅ |
 | 并发上限 | 同时 open 挂单 ≤20 | ✅ |
 | 每日限额 | 日挂单/购买（含出价）次数上限 | ✅ C |
-| 绑定禁挂 | 账号绑定材料/装备不可交易（清单暂空） | ✅ E（机制） |
-| 价格护栏 | 单价限定动态滑窗参考区间（中位数 + 静态回退），封天价洗钱 | ✅ G |
+| 绑定禁挂 | 账号绑定材料/装备不可交易（清单暂空）；装备 locked/穿戴中拒挂 | ✅ E（机制）+ A |
+| 价格护栏 | 单价限定动态滑窗参考区间（中位数 + 静态回退），封天价洗钱；装备按 defId/稀有度品类 | ✅ G + A |
 | 异常审计 | 对敲/定向异价/大额单向 → OPS 工单 | ⛔ D（依赖 admin G7） |
 | 货币隔离 | 仅 coin 计价，禁赛季资源/ink，防体系串味 | ✅ |
 | 服务器权威 | 库存/扣发/状态全服务器，客户端只读 | ✅ |
@@ -267,7 +268,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 
 - **DRAFT 数值**：每日限额、竞拍最小加价/防狙击窗口、滑窗护栏（窗口大小/浮动带/最小样本）、绑定材料清单、季末冻结提前量——上线后随经济运营调参（数值落 `shared/slg.ts`，演算去 ECONOMY_NUMBERS）。
 - ~~**G 算法**：refPrice 用均值还是中位数、滑窗按笔数还是时间~~——已定：**中位数 + 按笔数（近 20 笔）**。
-- **A 时序**：装备交易依赖 EQUIPMENT_DESIGN 库存系统落地节奏。
+- ~~**A 时序**：装备交易依赖 EQUIPMENT_DESIGN 库存系统落地节奏。~~——已实现（2026-06-21）：随本切片把装备库存后端 E2（合成 + 托管转移）一并建好。装备的**深度养成**（E3 强化/分解、E4 穿戴、E5 UI、关卡掉落 faucet）仍待做，但不阻塞拍卖交易闭环。
 - **D 时序**：异常审计依赖 §15.1 G7「admin SLG 接入」。
 
 ---

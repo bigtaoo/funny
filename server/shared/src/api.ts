@@ -62,6 +62,12 @@ export const ErrorCode = {
   ALLY_CAP_REACHED: 'ALLY_CAP_REACHED',
   // —— G2 繁荣度（建宗门门槛，§17.4）——
   PROSPERITY_TOO_LOW: 'PROSPERITY_TOO_LOW',
+  // —— 装备系统（E2 合成 + 拍卖装备交易，EQUIPMENT_DESIGN §4.A/§18）——
+  INSUFFICIENT_MATERIALS: 'INSUFFICIENT_MATERIALS', // 合成材料不足
+  INVENTORY_FULL: 'INVENTORY_FULL',                 // 装备库存达 300 上限
+  EQUIP_NOT_FOUND: 'EQUIP_NOT_FOUND',               // 装备实例不存在
+  EQUIP_LOCKED: 'EQUIP_LOCKED',                     // 装备被锁（防误用为燃料）→ 不可挂拍
+  EQUIP_IN_USE: 'EQUIP_IN_USE',                     // 装备穿戴中 → 不可挂拍
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -129,4 +135,9 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.ALREADY_IN_SECT]: 409,
   [ErrorCode.ALLY_CAP_REACHED]: 409,
   [ErrorCode.PROSPERITY_TOO_LOW]: 400,
+  [ErrorCode.INSUFFICIENT_MATERIALS]: 402,
+  [ErrorCode.INVENTORY_FULL]: 409,
+  [ErrorCode.EQUIP_NOT_FOUND]: 404,
+  [ErrorCode.EQUIP_LOCKED]: 409,
+  [ErrorCode.EQUIP_IN_USE]: 409,
 };
