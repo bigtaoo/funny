@@ -19,6 +19,7 @@
 | **S4** | IAP 验单 + 反作弊 hash + 上线加固 | 充值安全，对局 hash 比对 |
 | **S9** | 成就系统（统计里程碑 → 一次性金币） | 计数服务器权威、领取幂等、成就墙；红线单测绿 |
 | **S10** | 称号系统（公开身份名片 / 统一 titleId 容器） | 多来源授予、赛季快照、四处展示；依赖天梯+赛季，**先文档占位** |
+| **S11** | 天梯赛季 + 战令 + 排行榜 | 6周赛季软重置 + 峰值奖励/段位称号 + 全服Top100 + Battle Pass；赛季切换 admin 手动开启，**先文档占位** |
 
 > 先打通 S0/S1（云存档 + 好友联机，核心诉求），再铺 SA/S5/S2/S3。
 > **2026-06-14 新增三块**（细分设计见各专文）：**SA 账号系统**（`ACCOUNT_DESIGN.md`）、**S5 commercial 商业服务**（`COMMERCIAL_DESIGN.md`，钱包权威迁出 meta saves）、**S1-M1~M4 gateway/matchsvc 拆分**（`MATCHSVC_DESIGN.md` + `GATEWAY_DESIGN.md`，已在 §S1 架构修订迁移登记）。建议顺序：SA（登录门槛，门面）→ S5（经济权威底座）→ S1-M（联机拓扑拆分，动链路最大放最后）。
@@ -269,6 +270,28 @@
 - [x] **S10-6 序表已定**：跨来源等级序 = `weight` 数据驱动（声望档 T1–T6 交错，非按来源分带），见 `TITLE_DESIGN §6.1`；实现期把每条 `weight` 写进 `TITLE_DEFS`。剩 **短标签限长/截断规则 + 新号默认佩戴策略**（实现期定）
 
 > **依赖**：S1-R 天梯（段位称号源）；赛季系统（`ECONOMY_BALANCE §2.6`，赛季快照/结算时机）；S9 成就（顶阶→称号）；S6 social（聊天前缀）；S8 SLG（赛季称号源）。
+
+---
+
+## S11 — 天梯赛季 + 战令 + 排行榜
+
+> 机制权威 = [`SEASON_DESIGN.md`](SEASON_DESIGN.md)；数值 → `ECONOMY_NUMBERS §13`（待铺）；段位/首达金币 → `ECONOMY_BALANCE §2.3`。
+>
+> **关键拍板（2026-06-21）**：天梯赛季 **6 周**（独立于 SLG 大区 2 个月赛季，两条时钟）；赛季末**软重置·向基准回归**（`elo>基准?(elo+基准)/2:elo`，基准初定 1200）；赛季切换 = **admin 手动开启新赛季**（meta 无定时器，ops 后台按钮触发）；逐玩家结算走**惰性迁移**（不全表 fan-out）；排行榜 = **全服 Top100 + 我的排名**；战令双轨（免费 + 付费 Pass ¥6 区间）；顺带**补齐段位首达金币现状缺口**（当前 `applyPvp` 只发了分段胜利金币）。**先写设计文档占位**，依赖落地后实现。
+
+- [ ] **S11-SE-1** `@nw/shared`：`LadderSeasonDoc` 类型 + `SEASON_DURATION`/`SEASON_RESET_BASELINE` 常量 + `softReset()`/`migrateIfStale()` 纯函数 + `firstReachCoins()`；`pvp` 扩字段（`seasonNo/seasonPeakElo/seasonPeakRank/reachedRanks`）+ `makeNewSave` 初值
+- [ ] **S11-SE-2** meta：`ladderSeasons` 集合 + 懒创建当前赛季；`migrateIfStale` 接入 `GET /save` reconcile 与 ranked 结算前；`applyPvp` 补**峰值追踪 + 段位首达金币**（修现状缺口）
+- [ ] **S11-SE-3** meta：`POST /admin/ladder/season/roll`（CAS 幂等）；S7 ops 后台「开启新赛季」按钮（手动）+ 临近 `endAt` 高亮
+- [ ] **S11-SE-4** meta：`settleSeasonForPlayer`（峰值金币走邮件 + `grantTitle` 段位称号，幂等）接入迁移点（依赖 S6 邮件 / S10 称号）
+- [ ] **S11-SE-5** meta：`GET /leaderboard`（Top100 缓存 60s + 我的名次实算 + 称号 join）+ `saves` 复合索引 `{pvp.seasonNo:1, pvp.elo:-1}`
+- [ ] **S11-SE-6** 客户端：赛季横幅 + 排行榜面板 + 赛季结算弹层 + i18n（`season.*`/`leaderboard.*`，zh/en/de）
+- [ ] **S11-SE-7** `@nw/shared` `BATTLEPASS_DEFS` + `battlePass` 块入 SaveData 权威段；赛季经验在留存/ranked 结算点累加（依赖 RETENTION）
+- [ ] **S11-SE-8** meta：`POST /battlepass/claim`（双轨二次校验 + 幂等）+ `/buy`（commercial 发货置 hasPass）+ 迁移点补发未领
+- [ ] **S11-SE-9** 客户端：战令面板（双轨/四态/红点/购 Pass）+ i18n `battlepass.*`
+- [ ] **S11-SE-10** 数值校准：赛季峰值金币 + 战令金币入 `ECONOMY_NUMBERS §13`，跑总产出模拟（`ECONOMY §9` 遗留）
+
+> **依赖**：S1-R 天梯（✅ 已落地，ELO 结算在 meta）；`RETENTION_DESIGN`（战令经验来源，C 块前置）；S6 social 邮件（赛季奖励发放）；S2/S5 金币路径；`TITLE_DESIGN`/S10（段位称号授予下游，可后置——先发金币、称号待 S10）；S7 admin（赛季开启按钮）。
+> **优先级**：A 赛季时钟+软重置（SE-1~4）/ B 排行榜（SE-5~6）为 P0；C 战令（SE-7~9）为 P1。
 
 ---
 

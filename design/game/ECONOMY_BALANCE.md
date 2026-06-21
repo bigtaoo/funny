@@ -127,7 +127,9 @@ PvP 天梯 **9 个段位/称号**。两类金币产出：
 
 ### 2.6 赛季 + 战令（Battle Pass）— DRAFT
 
-通用赛季规则，系统设计见 `META_DESIGN.md §11.2`。
+> **机制权威 = [`SEASON_DESIGN.md`](SEASON_DESIGN.md)**（天梯赛季时钟/软重置/惰性迁移/峰值奖励/排行榜/Battle Pass）；本节只管**数字**（周期/奖励额度）。
+> ⚠️ 澄清：**天梯赛季 = 6 周**（本表）、**SLG 大区赛季 = 2 个月**（`SLG_DESIGN §SLG3`）是**两条独立时钟**——「赛季末天梯重置」指天梯 6 周这条，SLG 大区重置永不动天梯段位（`SLG_DESIGN §SLG4`）。赛季切换由 **admin 手动开启**（无定时器，`SEASON_DESIGN §3.1`）。
+> 赛季峰值金币、战令奖励曲线等数字最终落 [`ECONOMY_NUMBERS.md §13`](ECONOMY_NUMBERS.md)。
 
 | 项 | 初值 |
 |---|---|
