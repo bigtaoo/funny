@@ -842,6 +842,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   function goAchievements(): void {
     inLobby = false;
     analytics.track('screen_view', { scene: 'AchievementScene' });
+    // 成就漏斗中段（S9-8，ANALYTICS_DESIGN §5.7）：解锁 toast → 看墙 → 领取。online 才算有效漏斗步。
+    const onlineWall = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
+    analytics.track('achievement_view_wall', { online: onlineWall });
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const client = api;
     views.showAchievements({

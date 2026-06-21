@@ -132,6 +132,28 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     });
   });
 
+  // ── GET /internal/anticheat/reviews?accountId=&status=&limit= ────────
+  // admin 后台反作弊审查队列（S9-7，ACHIEVEMENT_DESIGN §4.4）：列离线抽查实锤的超报记录。
+  // 默认 status=open；可按 accountId 过滤；limit 1..100。
+  app.get('/internal/anticheat/reviews', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const q = req.query as { accountId?: string; status?: string; limit?: string };
+    const filter: Record<string, unknown> = {};
+    if (q.accountId) filter.accountId = q.accountId;
+    if (q.status === 'open' || q.status === 'reviewed') filter.status = q.status;
+    else if (q.status === undefined) filter.status = 'open';
+    // status=all（或其它）→ 不限状态
+    const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 100);
+    const reviews = await cols.antiCheatReviews
+      .find(filter)
+      .sort({ ts: -1 })
+      .limit(limit)
+      .toArray();
+    return reply.send({ reviews });
+  });
+
   // ── GET /internal/social/friends?accountId= ──────────────────────────
   // gateway 据此算 presence 广播范围（连/断时向该用户的在线好友 push friend_presence）。
   app.get('/internal/social/friends', async (req, reply) => {
@@ -267,14 +289,17 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       body.mode === 'ranked' && body.winner_side >= 0 && body.reason !== 'mismatch';
     let eloBySide: Record<number, EloResult> | null = null;
     let cheat: { side: number; accountId: string; judgeAccountId?: string } | undefined;
+    // S9-7：归档已入账的 per-side 上报值作离线抽查比对基准（仅 ranked 正常结算；mismatch 局不喂故为空）。
+    let reportedStats: Record<string, Partial<Record<StatKey, number>>> | undefined;
     if (settleRanked) {
       const winner = body.players.find((p) => p.side === body.winner_side);
       const loser = body.players.find((p) => p.side !== body.winner_side);
       if (winner && loser) {
         // S9-6: 清洗各方上报的本局成就计数（L1 异常复查，§4.4）。越界/非法 → null 拒收该方 kill/cast
-        // （pvp.wins/ELO 仍照常）；嫌疑升档（statSuspicion）属 S9-7，此处仅记日志。
+        // （pvp.wins/ELO 仍照常）；嫌疑升档（statSuspicion）属 S9-7（离线抽查 anticheatAudit.ts）。
         const wStats = statDeltaForSide(body, winner.side);
         const lStats = statDeltaForSide(body, loser.side);
+        reportedStats = { [String(winner.side)]: wStats, [String(loser.side)]: lStats };
         try {
           eloBySide = await settleElo(cols, now, commercial, winner, loser, wStats, lStats);
         } catch (e) {
@@ -350,6 +375,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         hashOk: body.hash_ok,
         ...(inline ? { replay: replayDoc } : { replayRef: body.room_id }),
         ...(cheat ? { cheat } : {}),
+        ...(reportedStats ? { reportedStats } : {}),
         ts: now(),
       })
       .catch((e) => {

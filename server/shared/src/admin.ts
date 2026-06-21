@@ -16,6 +16,7 @@ export type AdminCapability =
   | 'monitor.view' // 在线 / 匹配池 / 趋势
   | 'analytics.view' // 数据分析
   | 'player.lookup' // 查玩家档案
+  | 'anticheat.view' // 查成就反作弊审查队列（S9-7）
   | 'comp.initiate.single' // 发起个人补偿
   | 'comp.initiate.global' // 发起全服补偿
   | 'comp.approve.single' // 审批个人补偿（额度内）
@@ -37,6 +38,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'monitor.view',
     'analytics.view',
     'player.lookup',
+    'anticheat.view',
     'comp.initiate.single',
     'comp.initiate.global',
     'comp.approve.single',
@@ -53,6 +55,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'monitor.view',
     'analytics.view',
     'player.lookup',
+    'anticheat.view',
     'comp.initiate.single',
     'comp.initiate.global',
     'comp.approve.single',
@@ -204,6 +207,7 @@ export type AuditAction =
   | 'comp.cancel'
   | 'comp.execute'
   | 'comp.execute.failed'
+  | 'anticheat.view'
   | 'slg.season.open'
   | 'slg.season.settle'
   | 'slg.season.reset'

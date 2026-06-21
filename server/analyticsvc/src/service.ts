@@ -36,6 +36,10 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
     friend_add:     { sample: 1.0 },
     pvp_room_create:{ sample: 1.0 },
     pvp_match_start:{ sample: 1.0 },
+    // 成就漏斗（S9-8，ANALYTICS_DESIGN §5.7）：解锁 toast → 看墙 → 领取，全采（低频高价值）。
+    achievement_unlock_toast: { sample: 1.0 },
+    achievement_view_wall:    { sample: 1.0 },
+    achievement_claim:        { sample: 1.0 },
     tutorial_skip:  { sample: 1.0 },
     login_gate_hit: { sample: 1.0 },
     churn_signal:   { sample: 1.0 },

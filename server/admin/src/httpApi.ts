@@ -161,6 +161,20 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, player: await svc.lookupPlayer(publicId) });
         }
 
+        // ── 成就反作弊审查队列（S9-7）──
+        if (method === 'GET' && path === '/admin/anticheat/reviews') {
+          requireCap(actor, 'anticheat.view');
+          const accountId = url.searchParams.get('accountId') ?? undefined;
+          const status = url.searchParams.get('status') ?? undefined;
+          const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? '50')));
+          const reviews = await svc.listAntiCheatReviews(actor.adminId, {
+            ...(accountId ? { accountId } : {}),
+            ...(status ? { status } : {}),
+            limit,
+          });
+          return send(res, 200, { ok: true, reviews });
+        }
+
         // ── 补偿工单 ──
         if (method === 'POST' && path === '/admin/comp/tickets') {
           const b = await readJson(req);
