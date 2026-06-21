@@ -13,6 +13,7 @@ import {
   playerWorldId,
   strongholdGarrison,
   STRONGHOLD_LOOT_PER_LEVEL,
+  strongholdMaterialLoot,
   SLG_MAP_W,
   SLG_MAP_H,
   TROOP_CAP_BASE,
@@ -20,6 +21,7 @@ import {
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
 import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
+import type { WorldMetaClient } from '../src/metaClient';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_stronghold_test';
@@ -74,6 +76,7 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
   const now = () => nowMs;
   let svc: WorldService;
   let pushes: { accountId: string; msg: SlgPushMsg }[];
+  let matGrants: { accountId: string; material: string; qty: number; orderId: string }[];
 
   const fakeGateway: WorldGatewayClient = {
     available: true,
@@ -83,6 +86,14 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     async broadcast(recipients, msg) {
       for (const accountId of recipients) pushes.push({ accountId, msg });
     },
+  };
+
+  // 捕获 grantMaterial（验险地材料掉落进养成统一池，§19.5 / G4 §15.6）。
+  const fakeMeta: WorldMetaClient = {
+    available: true,
+    async deductMaterial() { /* 险地不扣材料 */ },
+    async grantMaterial(accountId, material, qty, orderId) { matGrants.push({ accountId, material, qty, orderId }); },
+    async getProfile() { return null; },
   };
 
   const sh = findStronghold();
@@ -101,10 +112,12 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     await m.ensureIndexes();
     nowMs = 1_000_000;
     pushes = [];
+    matGrants = [];
     svc = new WorldService({
       cols: m.collections,
       redis: null,
       gateway: fakeGateway,
+      meta: fakeMeta,
       mapW: SLG_MAP_W,
       mapH: SLG_MAP_H,
       now,
@@ -165,6 +178,12 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
       STRONGHOLD_LOOT_PER_LEVEL * sh.level,
     );
 
+    // 额外掉落养成材料进统一池（§19.5 / G4）：grantMaterial 按等级线性，orderId 幂等。
+    const expected = strongholdMaterialLoot(sh.level);
+    const grant = matGrants.find((g) => g.accountId === 'a');
+    expect(grant).toMatchObject({ material: expected.material, qty: expected.qty });
+    expect(grant!.orderId).toBe(`stronghold_loot:${W}:${tileId(W, sh.x, sh.y)}:${mv.arriveAt}`);
+
     // sieges attacker_win（NPC 防守 → 无 defenderId）+ siege_result 推攻方 + tile_update。
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege).toMatchObject({ outcome: 'attacker_win', tile: tileId(W, sh.x, sh.y) });
@@ -199,5 +218,7 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
 
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('defender_win');
+    // 攻克败 → 不掉材料。
+    expect(matGrants).toHaveLength(0);
   });
 });
