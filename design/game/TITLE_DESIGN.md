@@ -30,6 +30,7 @@ equipped['title'] = titleId;   // 当前佩戴展示的 titleId
 - `titles` 进**服务器权威段**：仅由 ranked 赛季结算 / worldsvc SLG 结算 / 成就 claim / admin 授予，玩家无法伪造。
 - 佩戴走**已有 `SyncPatch`（`equipped`）**，零新写接口；服务端在 `PUT /save` 校验 **`equipped.title ∈ titles`**，否则拒绝/落回。
 - 赛季峰值追踪：`pvp` 段加 `seasonPeakRank`（赛季内最高段位，赛季结算时读它授称号再清零）。
+- **定义表**：`@nw/shared` 维护 `TITLE_DEFS: Record<TitleId, { weight: number; source; ... }>`（硬编码，同 `Achievement` 定义表风格），`weight` 即跨来源序的唯一来源（§6.1）。赛季类 titleId 按模板生成（`ladder.s{N}.{rank}` 共用同 `rank` 的 weight）。
 
 ---
 
@@ -77,8 +78,43 @@ meta 内部单点 `grantTitle(accountId, titleId)`：
 ## 6. 自动佩戴（拍板：自动佩戴最高/最新）
 
 - 获得**更高等级**称号时自动换上，玩家无感即享炫耀；仍可在资料页手动改回任意已拥有称号。
-- 「等级」排序需定义跨来源的可比序（建议：天梯段位序 > SLG > 成就 > 活动，同源按赛季/阶序）。具体序表实现期定。
+- 「最高」= `weight` 最大；并列取**最新获得**（§6.1）。
 - 新号默认无佩戴（`equipped.title` 缺省），或给一枚 `event.newbie` 起步称号（实现期定）。
+
+### 6.1 跨来源等级序（`weight` 数据驱动，2026-06-21 定）
+
+**为什么按声望档分带、而非按来源分带**：若整源排序（如「SLG 整源 > 天梯整源」），纯 PvP 玩家的 `王者` 会被一个低阶 SLG 参与称号自动顶掉——体感很糟。改为**按声望档（T1…T6）交错**：每个称号定义带一个整数 `weight`，跨来源同档可比，自动佩戴 = `argmax(weight)`。
+
+**单一序源**：每个称号定义在 `@nw/shared` 的 `TITLE_DEFS` 表里带 `weight: number`。序完全由该字段决定，`grantTitle` / 客户端 / 榜单全读同一字段，**不在任何地方写 source 比较逻辑**。
+
+**weight 公式**：`weight = 档位基数(T*1000) + 来源偏移 + 档内序`。来源偏移仅用于**同档内**给确定性全序（避免并列），不表达「来源谁高」。
+
+| 声望档 | 基数 | 天梯段位 | SLG 赛季 | 成就 | 活动 |
+|---|---|---|---|---|---|
+| **T6 传奇/唯一** | 6000 | — | 十冠王（连续赛季成就）/ 赛季占国第一门主 | 全成就集齐（元成就） | 内测创始 `event.founder` |
+| **T5 顶级** | 5000 | 王者 king | 赛季冠军宗门成员 | 标志性顶阶（如全章节三星通关） | 大型赛事冠军 |
+| **T4 高级** | 4000 | 宗师 grandmaster / 大师 master | 赛季高排名（占国前列） | 高阶里程碑（满阶稀有条目） | — |
+| **T3 中级** | 3000 | 星耀 star / 钻石 diamond | 赛季中排名 | 中阶里程碑 | — |
+| **T2 进阶** | 2000 | 铂金 platinum / 黄金 gold | 赛季参与（达标即得） | 普通满阶 | 节日参与 `event.*` |
+| **T1 基础** | 1000 | 白银 silver / 青铜 bronze | — | 入门里程碑 | `event.newbie` 起步 |
+
+> 来源偏移建议：天梯 `+0`、SLG `+100`、成就 `+200`、活动 `+300`（仅决定同档并列时的稳定序，无声望含义）。档内序再 `+0…+9`（如天梯同档两段：钻石 3000，星耀 3009）。
+
+**并列与新鲜度**：`weight` 完全相等时（极少，仅同源同档跨赛季，如 `ladder.s3.king` vs `ladder.s4.king` 都是 5000）取**最新获得**。`titles: string[]` 数组顺序即获得顺序（`$addToSet` 新元素追加末尾），故「最新」= **末位索引更大者**，无需额外时间戳。
+
+**授予时自动佩戴算法**（`grantTitle` 内）：
+```
+grant(t):
+  if t ∉ titles: titles.push(t)              // $addToSet
+  cur = equipped.title
+  if cur == null
+     or TITLE_DEFS[t].weight > TITLE_DEFS[cur].weight
+     or (weight 相等 且 t 在 titles 中索引更大):
+       equipped.title = t                      // 自动换上更高/更新的
+```
+> 玩家手动改佩戴后，下次获得**更高 weight** 仍会自动覆盖（符合「自动佩戴最高」语义）；只有获得**同档或更低**的不抢佩戴位。
+
+**段位称号跨赛季**：每季 king 是不同 titleId（`ladder.s{N}.king`）但同 `weight=5000`；获得 S4 king 时与在戴的 S3 king 并列 → 取新（末位索引大）→ 自动戴 S4。展示短标签拼当季 `S{N}`。
 
 ---
 
@@ -106,8 +142,8 @@ meta 内部单点 `grantTitle(accountId, titleId)`：
 
 ## 9. 待实现 / 遗留
 
-- [ ] 依赖 ranked 队列（`META_TASKS S1-R`）+ 赛季系统（`ECONOMY_BALANCE §2.6`）先落地。
-- [ ] 跨来源「等级」可比序表（§6 自动佩戴用）。
+- [x] 依赖 ranked 队列（`META_TASKS S1-R`，已在他会话落地）；仍待赛季快照时机（`ECONOMY_BALANCE §2.6`）。
+- [x] 跨来源「等级」可比序：**已定 = `weight` 数据驱动（§6.1）**；实现期把 `weight` 写进 `@nw/shared` `TITLE_DEFS`，具体每条数值随条目落表。
 - [ ] i18n 文案表 `title.*`（full/short）。
 - [ ] `equipped.title` 短标签限长与 UI 截断规则。
 - [ ] 新号默认佩戴策略（无 / `event.newbie`）。

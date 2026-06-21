@@ -261,12 +261,12 @@
 >
 > **关键拍板（2026-06-21）**：统一身份容器（多来源 titleId 聚合，拥有多枚佩戴其一）；段位称号**按赛季快照**（每季峰值一枚、掉段不丢）；成就**部分顶阶发永久称号**；获得**自动佩戴最高/最新**（仍可手动改）；**四处展示**（资料弹层/对战名牌/聊天前缀/排行榜）；与经济解耦（首达金币仅首次、称号每季快照）；**先写设计文档占位**，待天梯+赛季落地再实现。
 
-- [ ] **S10-1** `@nw/shared`：`TitleId` 命名约定 + `titles: string[]` 入 SaveData 服务器权威段；`pvp.seasonPeakRank` 字段；`PUT /save` 校验 `equipped.title ∈ titles`
-- [ ] **S10-2** meta `grantTitle(accountId, titleId)`（`$addToSet` 幂等 + 自动佩戴最高 + 回推 SaveData）
+- [ ] **S10-1** `@nw/shared`：`TitleId` 命名约定 + `TITLE_DEFS`（含 `weight` 序，§6.1）+ `titles: string[]` 入 SaveData 服务器权威段；`pvp.seasonPeakRank` 字段；`PUT /save` 校验 `equipped.title ∈ titles`
+- [ ] **S10-2** meta `grantTitle(accountId, titleId)`（`$addToSet` 幂等 + 自动佩戴最高 weight/并列取新 + 回推 SaveData，算法见 `TITLE_DESIGN §6.1`）
 - [ ] **S10-3** 授予接入：ranked 赛季结算（读 seasonPeakRank 授段位称号清零）/ worldsvc SLG 赛季 / 成就顶阶（`Achievement.titleId?`）/ admin 活动授予
 - [ ] **S10-4** 下发：`GET /internal/profile` 加 `equippedTitle`；ticket→`match_start` 加 `opponentTitle`；social 消息附 sender 称号；天梯/SLG 榜 join
 - [ ] **S10-5** 客户端：资料弹层佩戴位 + 称号墙（全部 titles，可切换佩戴）；对战名牌/聊天前缀/榜短标签渲染 + i18n `title.*`（full/short）
-- [ ] **S10-6** 跨来源等级序表（自动佩戴用）+ 短标签限长/截断规则 + 新号默认佩戴策略
+- [x] **S10-6 序表已定**：跨来源等级序 = `weight` 数据驱动（声望档 T1–T6 交错，非按来源分带），见 `TITLE_DESIGN §6.1`；实现期把每条 `weight` 写进 `TITLE_DEFS`。剩 **短标签限长/截断规则 + 新号默认佩戴策略**（实现期定）
 
 > **依赖**：S1-R 天梯（段位称号源）；赛季系统（`ECONOMY_BALANCE §2.6`，赛季快照/结算时机）；S9 成就（顶阶→称号）；S6 social（聊天前缀）；S8 SLG（赛季称号源）。
 
