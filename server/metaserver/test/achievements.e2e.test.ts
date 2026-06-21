@@ -156,4 +156,21 @@ describe.skipIf(!mongo)('meta achievements e2e', () => {
     expect(comm.bal(accountId)).toBe(150);
     expect(r2.data.save.achievements['ach.kill.archer'].claimedTiers.sort()).toEqual([1, 2]);
   });
+
+  it('红线（A9 / A3）：领取只改金币，绝不动 ELO/段位/装备/材料/PvE 进度', async () => {
+    await seedStats({ 'kill.archer': 120 });
+    const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() })).data.save;
+    const r = body(await claim('ach.kill.archer', 1));
+    const after = r.data.save;
+    // 唯一变化 = 钱包金币（+50）。
+    expect(after.wallet.coins).toBe(before.wallet.coins + 50);
+    // 战力/竞技相关字段逐一不变（成就不发战力，META_DESIGN §11 红线）。
+    expect(after.pvp).toEqual(before.pvp); // elo/rank/wins/losses/streak…
+    expect(after.equipped).toEqual(before.equipped);
+    expect(after.materials ?? {}).toEqual(before.materials ?? {});
+    expect(after.pveUpgrades ?? {}).toEqual(before.pveUpgrades ?? {});
+    expect(after.progress).toEqual(before.progress);
+    // 终身 stats 不因领取而改（领取只动 claimedTiers，stats 由结算累加）。
+    expect(after.stats).toEqual(before.stats);
+  });
 });

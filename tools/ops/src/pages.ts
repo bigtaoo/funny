@@ -4,6 +4,7 @@ import { ApiError } from './api';
 import { clear, fmtTime, h, pill } from './dom';
 import type {
   AdminAccountView,
+  AntiCheatReviewView,
   CompAttachment,
   CompScope,
   CompTarget,
@@ -370,6 +371,84 @@ export function pagePlayer(ctx: Ctx): void {
     }
   };
   root.append(h('div', { class: 'card' }, h('div', { class: 'row' }, input, h('button', { onclick: go }, '查询')), err), out);
+}
+
+// ───────────────────────── 反作弊审查队列（S9-7）─────────────────────────
+/** 把 statKey→数量 map 渲染成紧凑文本（空 → —）。 */
+function fmtStats(m: Record<string, number> | undefined): string {
+  const ks = Object.keys(m ?? {});
+  if (ks.length === 0) return '—';
+  return ks.map((k) => `${k}:${m![k]}`).join(', ');
+}
+
+export async function pageSuspicions(ctx: Ctx): Promise<void> {
+  const { api, root } = ctx;
+  clear(root);
+  root.append(h('h2', {}, '反作弊审查（成就统计超报）'));
+  const err = h('div', { class: 'err' });
+  const acct = h('input', { placeholder: '按 accountId 过滤（可空）' });
+  const statusSel = h(
+    'select',
+    {},
+    h('option', { value: 'open' }, '待复核 (open)'),
+    h('option', { value: 'reviewed' }, '已复核 (reviewed)'),
+    h('option', { value: 'all' }, '全部'),
+  ) as HTMLSelectElement;
+  const out = h('div', { class: 'card' });
+
+  const load = async (): Promise<void> => {
+    err.textContent = '';
+    clear(out);
+    try {
+      const rows = await api.antiCheatReviews({
+        ...(acct.value.trim() ? { accountId: acct.value.trim() } : {}),
+        status: statusSel.value,
+        limit: 100,
+      });
+      if (rows.length === 0) {
+        out.append(h('div', { class: 'muted' }, '无审查记录。'));
+        return;
+      }
+      const t = h('table', {});
+      t.append(
+        h('tr', {},
+          h('th', {}, '时间'),
+          h('th', {}, '玩家'),
+          h('th', {}, '对局'),
+          h('th', {}, '上报'),
+          h('th', {}, '复算'),
+          h('th', {}, '超报'),
+          h('th', {}, '已回滚'),
+          h('th', {}, 'suspicion'),
+          h('th', {}, '状态'),
+        ),
+      );
+      for (const r of rows as AntiCheatReviewView[]) {
+        t.append(
+          h('tr', {},
+            h('td', {}, fmtTime(r.ts)),
+            h('td', {}, r.publicId ? '#' + r.publicId : r.accountId),
+            h('td', {}, r.roomId + ` (side ${r.side})`),
+            h('td', {}, fmtStats(r.reported)),
+            h('td', {}, fmtStats(r.authoritative)),
+            h('td', {}, fmtStats(r.overclaim)),
+            h('td', {}, fmtStats(r.rolledBack)),
+            h('td', {}, String(r.suspicionAfter)),
+            h('td', {}, pill(r.status, r.status === 'open' ? 'warn' : 'ok')),
+          ),
+        );
+      }
+      out.append(t);
+    } catch (e) {
+      showErr(err, e);
+    }
+  };
+
+  root.append(
+    h('div', { class: 'card' }, h('div', { class: 'row' }, acct, statusSel, h('button', { onclick: load }, '查询')), err),
+    out,
+  );
+  await load();
 }
 
 // ───────────────────────── 补偿工单 ─────────────────────────

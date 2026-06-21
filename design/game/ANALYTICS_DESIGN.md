@@ -237,6 +237,18 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 | `tutorial_skip` | `step` | 跳过引导 |
 | `login_gate_hit` | `scene` | 离线功能门控弹「需要登录」 |
 
+### 5.7 成就漏斗（Achievement，S9-8）
+
+成就系统留存漏斗 = `session_start → achievement_unlock_toast → achievement_view_wall → achievement_claim`：达阈解锁（红点）→ 进成就墙 → 领金币。三事件均 `sample:1.0`（低频高价值，全采）。
+
+| 事件 | 必填属性 | 说明 |
+|---|---|---|
+| `achievement_unlock_toast` | `count` | 回大厅比对 stats 新解锁阶汇总弹一次（count=本次新解锁阶数）|
+| `achievement_view_wall` | `online` | 打开成就墙（漏斗中段；online=登录在线才是有效领取入口）|
+| `achievement_claim` | `ach_id, tier, coins` | 领取某阶成功、发金币 |
+
+> 漏斗分析关注：解锁→看墙转化（红点是否驱动点进）、看墙→领取转化（领取摩擦）。**「无人达成条目」**（某成就长期零 `unlock_toast`）= 查询侧聚合分析（阈值过高/路径稀有），非独立事件——据此调阈值或下线冷门条目。
+
 ---
 
 ## §6 数据库

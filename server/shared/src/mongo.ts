@@ -2,6 +2,7 @@
 // 部署配单节点副本集解锁跨集合事务；钱包/发货走单文档原子更新。
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
 import type { SaveData } from './types';
+import type { StatKey } from './achievements';
 import type { ChatRegion } from './chatFilter';
 import { CHAT_RETENTION_SEC } from './social';
 
@@ -90,6 +91,23 @@ export interface MatchDoc {
    * 不符的一方判负 + 记此标记。`judgeAccountId` 为复算裁判（审计用）。
    */
   cheat?: { side: number; accountId: string; judgeAccountId?: string };
+  /**
+   * 成就 PvP 统计上报值（S9-7 L2 离线抽查的比对基准，仅 ranked）。per-side：side 号转字符串 key →
+   * 该方 L1 清洗后**已入账**的 kill/cast 增量（即 `statDeltaForSide` 算出并 accrue 的值）。
+   * `pvp.wins` 不含（服务器自算、不审计）。服务器侧只读、不进 wire schema、不下发。
+   */
+  reportedStats?: Record<string, Partial<Record<StatKey, number>>>;
+  /**
+   * 成就 PvP 统计离线抽查结果（S9-7 L2，§4.4）。**存在即幂等闸**——抽查批只查 `audited` 缺省的局。
+   * `verdict`：`clean`=上报与复算一致 / `overclaim`=有方超报（已回滚 + 升档 + 入审查队列）/
+   * `skipped`=无裁判可裁/复算失败/旧引擎（benefit-of-doubt，不定罪）。`overclaim` 记 per-side 实际回滚量。
+   */
+  audited?: {
+    ts: number;
+    verdict: 'clean' | 'overclaim' | 'skipped';
+    judgeAccountId?: string;
+    overclaim?: Record<string, Partial<Record<StatKey, number>>>;
+  };
   ts: number;
 }
 
@@ -143,6 +161,28 @@ export interface PveVerificationDoc {
   /** 复算得到的星数（verified/rejected 时存）。 */
   judgedStars?: number;
   judgeAccountId?: string;
+  ts: number;
+}
+
+/**
+ * 成就 PvP 统计反作弊审查队列（S9-7 L2/L3，ACHIEVEMENT_DESIGN §4.4）。离线抽查复算实锤某方
+ * 超报 kill/cast → 回滚超报 + 升 statSuspicion + 记此条供运维后台（OPS）人工复核/封禁。
+ * 业务库（meta），由 admin 经 `GET /internal/anticheat/reviews` 代理读取（admin 库物理隔离）。
+ * `_id = `${roomId}:${accountId}``：每局每作弊方一条，天然幂等（防重复回滚）。
+ */
+export interface AntiCheatReviewDoc {
+  _id: string; // `${roomId}:${accountId}`
+  roomId: string;
+  accountId: string;
+  publicId?: string; // 归档当刻快照（OPS 展示）
+  side: number;
+  reported: Partial<Record<StatKey, number>>; // 该方上报值
+  authoritative: Partial<Record<StatKey, number>>; // 裁判复算权威值
+  overclaim: Partial<Record<StatKey, number>>; // 理论超报量（reported - authoritative）
+  rolledBack: Partial<Record<StatKey, number>>; // 实际回滚量（0 下限钳制后）
+  suspicionAfter: number; // 升档后该账号 statSuspicion
+  judgeAccountId?: string; // 复算裁判（审计）
+  status: 'open' | 'reviewed';
   ts: number;
 }
 
@@ -228,6 +268,7 @@ export interface Collections {
   replayBlobs: Collection<ReplayBlobDoc>;
   pveDaily: Collection<PveDailyDoc>;
   pveVerifications: Collection<PveVerificationDoc>;
+  antiCheatReviews: Collection<AntiCheatReviewDoc>;
   // 社交（S6）
   friendEdges: Collection<FriendEdgeDoc>;
   friendRequests: Collection<FriendRequestDoc>;
@@ -277,6 +318,7 @@ export async function createMongo(
     replayBlobs: db.collection<ReplayBlobDoc>('replayBlobs'),
     pveDaily: db.collection<PveDailyDoc>('pveDaily'),
     pveVerifications: db.collection<PveVerificationDoc>('pveVerifications'),
+    antiCheatReviews: db.collection<AntiCheatReviewDoc>('antiCheatReviews'),
     friendEdges: db.collection<FriendEdgeDoc>('friendEdges'),
     friendRequests: db.collection<FriendRequestDoc>('friendRequests'),
     blocks: db.collection<BlockDoc>('blocks'),
@@ -304,8 +346,13 @@ export async function createMongo(
     await collections.matches.createIndex({ roomId: 1 }, { unique: true });
     // 按玩家查对局/回放历史（S1-RP 分享、ranked 战绩）。
     await collections.matches.createIndex({ 'players.accountId': 1, ts: -1 });
+    // 成就反作弊离线抽查（S9-7）：取未审计的 ranked 局、最旧优先 drain backlog。
+    await collections.matches.createIndex({ mode: 1, audited: 1, ts: 1 });
     // PvE 抽检记录：按账号 + 时间查（审计 / 清理待结算）。
     await collections.pveVerifications.createIndex({ accountId: 1, ts: -1 });
+    // 成就反作弊审查队列（S9-7）：按账号查历史 + open 队列。
+    await collections.antiCheatReviews.createIndex({ accountId: 1, ts: -1 });
+    await collections.antiCheatReviews.createIndex({ status: 1, ts: -1 });
     // —— 社交（S6，SOCIAL_DESIGN §3）——
     await collections.friendEdges.createIndex({ owner: 1 });
     // 收件箱（待处理申请）+ 防重复申请（同方向去重）。

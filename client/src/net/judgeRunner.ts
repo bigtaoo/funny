@@ -32,9 +32,10 @@ export interface JudgeOutcome {
   /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：复算得到的星数（0 = 未通关）。PvP 恒 0。 */
   stars: number;
   /**
-   * PvE 喂入（S9-3b，ACHIEVEMENT_DESIGN §6.2）：复算出的玩家(owner 0)本局成就计数 JSON
-   * （`achievementStatDelta`，`{"kill.archer":n,…}`）。裁判权威 → meta verified 时 L1 校验后累加。
-   * PvP/siege 复算与未通关恒空串。
+   * 复算出的本局成就计数 JSON（`achievementStatDelta`），两种形态按 mode 区分：
+   * - **PvE 喂入**（S9-3b，§6.2）：玩家(owner 0)单对象 `{"kill.archer":n,…}` → meta verified 时 L1 后累加。
+   * - **PvP 离线抽查**（S9-7 L2，§4.4）：双方 per-side map `{"0":{…},"1":{…}}` → meta 与归档 reportedStats 比对查超报。
+   * siege 复算与未通关恒空串。
    */
   statsJson: string;
 }
@@ -61,12 +62,17 @@ export function runJudge(req: JudgeRequest): JudgeOutcome {
 
     const winner = stateWinner(engine.state.winner);
     const stats = engine.state.snapshotStats();
+    // S9-7 L2 离线抽查：PvP 复算回报**双方** per-side 成就计数（side 号→该方 achievementStatDelta），
+    // meta 与归档的 reportedStats 逐方比对查超报。owner↔side 恒等（0=Bottom/1=Top）。
     return {
       ok: true,
       stateHash: matchStateHash(winner, stats),
       winnerSide: winner ?? 0,
       stars: 0,
-      statsJson: '',
+      statsJson: JSON.stringify({
+        '0': achievementStatDelta(stats[0]),
+        '1': achievementStatDelta(stats[1]),
+      }),
     };
   } catch {
     return FAIL;

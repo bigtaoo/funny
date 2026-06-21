@@ -32,7 +32,7 @@ import {
 } from '@nw/shared';
 import { METRIC_KEYS } from '@nw/shared';
 import type { AdminAccountDoc, AdminCollections, AuditDoc, CompTicketDoc } from './db';
-import type { AnalyticsClient, AnalyticsQueryResult, MailDispatcher, PlayerClient, PlayerProfile, StatsClient, WorldClient, SlgWorldSummary } from './clients';
+import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, MailDispatcher, PlayerClient, PlayerProfile, StatsClient, WorldClient, SlgWorldSummary } from './clients';
 
 const log = createLogger('admin:service');
 
@@ -60,6 +60,7 @@ export interface AdminServiceDeps {
   cols: AdminCollections;
   stats: StatsClient;
   players: PlayerClient;
+  antiCheat: AntiCheatClient;
   mail: MailDispatcher;
   analytics: AnalyticsClient;
   world: WorldClient;
@@ -92,6 +93,7 @@ export class AdminService {
   private readonly cols: AdminCollections;
   private readonly stats: StatsClient;
   private readonly players: PlayerClient;
+  private readonly antiCheat: AntiCheatClient;
   private readonly mail: MailDispatcher;
   private readonly analytics: AnalyticsClient;
   private readonly world: WorldClient;
@@ -103,6 +105,7 @@ export class AdminService {
     this.cols = deps.cols;
     this.stats = deps.stats;
     this.players = deps.players;
+    this.antiCheat = deps.antiCheat;
     this.mail = deps.mail;
     this.analytics = deps.analytics;
     this.world = deps.world;
@@ -589,6 +592,22 @@ export class AdminService {
     const p = await this.players.lookupByPublicId(pid);
     if (!p) throw new AdminError(404, 'not_found', 'no such player');
     return p;
+  }
+
+  /** 成就反作弊审查队列（anticheat.view，S9-7）。默认 open；可按 accountId 过滤。审计。 */
+  async listAntiCheatReviews(
+    actor: string,
+    opts: { accountId?: string; status?: string; limit?: number } = {},
+  ): Promise<AntiCheatReviewRow[]> {
+    if (!this.antiCheat.available) {
+      throw new AdminError(503, 'unavailable', 'anti-cheat backend unavailable');
+    }
+    const rows = await this.antiCheat.listReviews(opts);
+    await this.audit(actor, 'anticheat.view', {
+      ...(opts.accountId ? { target: opts.accountId } : {}),
+      summary: `${rows.length} reviews (status=${opts.status ?? 'open'})`,
+    });
+    return rows;
   }
 
   // ───────────────────────── 采样（OPS_DESIGN §5）─────────────────────────

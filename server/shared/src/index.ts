@@ -10,6 +10,7 @@ export * from './roomRegistry';
 export * from './ladder';
 export * from './economy';
 export * from './achievements';
+export * from './antiCheatAudit';
 export * from './pveRewards';
 export * from './social';
 export * from './slg';

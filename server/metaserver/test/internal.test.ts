@@ -187,7 +187,7 @@ describe('internal routes', () => {
   it('S9-6 ranked 累加成就计数：双方 kill/cast 入账 + 仅胜方 stats.pvp.wins +1', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
-    const { cols } = fakeCols({ a, b });
+    const { cols, matches } = fakeCols({ a, b });
     const app = build(cols);
     await app.inject({
       method: 'POST',
@@ -209,6 +209,11 @@ describe('internal routes', () => {
     expect(sa!.save.stats).toEqual({ 'kill.archer': 3, 'cast.meteor': 2, 'pvp.wins': 1 });
     // 负方 b：kill/cast 入账；自报的 pvp.wins:999 被丢弃，且非胜方不自增 pvp.wins。
     expect(sb!.save.stats).toEqual({ 'kill.guard': 1 });
+    // S9-7：归档 per-side reportedStats（L1 清洗后已入账值），供离线抽查比对（pvp.wins 不含）。
+    expect((matches[0] as { reportedStats?: unknown }).reportedStats).toEqual({
+      '0': { 'kill.archer': 3, 'cast.meteor': 2 },
+      '1': { 'kill.guard': 1 },
+    });
     await app.close();
   });
 
@@ -244,7 +249,7 @@ describe('internal routes', () => {
   it('S9-6 friendly 上报带 stats → 不累加（仅 ranked 喂）', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
-    const { cols } = fakeCols({ a, b });
+    const { cols, matches } = fakeCols({ a, b });
     const app = build(cols);
     await app.inject({
       method: 'POST',
@@ -262,6 +267,8 @@ describe('internal routes', () => {
     });
     const sa = await cols.saves.findOne({ _id: 'a' });
     expect(sa!.save.stats).toBeUndefined(); // friendly 不结算 → 不喂 stats
+    // S9-7：friendly 不归档 reportedStats（离线抽查只查 ranked，天然不审 friendly）。
+    expect((matches[0] as { reportedStats?: unknown }).reportedStats).toBeUndefined();
     await app.close();
   });
 

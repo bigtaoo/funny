@@ -1,7 +1,7 @@
 // 运维后台前端壳（OPS_DESIGN §7）：登录页 → 主框架按 capabilities 渲染导航。
 import { Api, ApiError } from './api';
 import { clear, h } from './dom';
-import { pageAccounts, pageAnalytics, pageAudit, pageMonitor, pagePlayer, pageTickets } from './pages';
+import { pageAccounts, pageAnalytics, pageAudit, pageMonitor, pagePlayer, pageSuspicions, pageTickets } from './pages';
 import type { AdminCapability, Session } from './types';
 
 interface NavItem {
@@ -20,6 +20,7 @@ const NAV: NavItem[] = [
   { id: 'monitor', label: '监控', cap: 'monitor.view', render: pageMonitor },
   { id: 'analytics', label: '数据分析', cap: 'analytics.view', render: pageAnalytics },
   { id: 'player', label: '玩家查询', cap: 'player.lookup', render: pagePlayer },
+  { id: 'suspicions', label: '反作弊审查', cap: 'anticheat.view', render: pageSuspicions },
   { id: 'tickets', label: '补偿工单', cap: 'comp.view', render: pageTickets },
   { id: 'audit', label: '审计', cap: 'audit.view.self', render: pageAudit },
   { id: 'accounts', label: '账号管理', cap: 'admin.manage', render: pageAccounts },

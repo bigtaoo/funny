@@ -6,6 +6,7 @@ export type AdminCapability =
   | 'monitor.view'
   | 'analytics.view'
   | 'player.lookup'
+  | 'anticheat.view'
   | 'comp.initiate.single'
   | 'comp.initiate.global'
   | 'comp.approve.single'
@@ -94,6 +95,23 @@ export interface TrendPoint {
   ts: number;
   value: number;
 }
+/** 成就反作弊审查记录（S9-7；= meta AntiCheatReviewDoc 只读视图）。 */
+export interface AntiCheatReviewView {
+  _id: string;
+  roomId: string;
+  accountId: string;
+  publicId?: string;
+  side: number;
+  reported: Record<string, number>;
+  authoritative: Record<string, number>;
+  overclaim: Record<string, number>;
+  rolledBack: Record<string, number>;
+  suspicionAfter: number;
+  judgeAccountId?: string;
+  status: 'open' | 'reviewed';
+  ts: number;
+}
+
 export interface PlayerProfile {
   publicId: string;
   accountId?: string;
