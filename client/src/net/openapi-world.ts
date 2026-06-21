@@ -749,7 +749,7 @@ export interface components {
             x: number;
             y: number;
             /** @enum {string} */
-            type: "neutral" | "resource" | "territory" | "familyKeep" | "center" | "base" | "obstacle" | "gate";
+            type: "neutral" | "resource" | "territory" | "familyKeep" | "center" | "base" | "obstacle" | "gate" | "stronghold";
             level: number;
             /** @enum {string} */
             resType?: "food" | "iron" | "wood";

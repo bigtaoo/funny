@@ -447,6 +447,8 @@ export const en: Record<TranslationKey, string> = {
   'world.garrison': 'Garrison {n}',
   'world.center': 'World Center',
   'world.familyKeep': 'Family Keep',
+  'world.stronghold': 'Stronghold',
+  'world.strongholdHint': 'Heavily-defended NPC bastion — take it by siege; capturing claims it as territory and grants a large resource reward',
   'world.marchList': 'Marches',
   'world.noMarches': 'No active marches',
   'world.marchTo': '→ ({x},{y})',

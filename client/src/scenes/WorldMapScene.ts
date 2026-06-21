@@ -70,6 +70,7 @@ const TERRAIN_COLORS: Record<string, number> = {
   center:     0xffe88a, // 世界中心
   obstacle:   0x9a9488, // 阻挡地形（山脉/河流，不可通行）
   gate:       0xc8a878, // 关隘/桥（通道）
+  stronghold: 0x8a4a4a, // 险地（G8）：暗红石垒，系统超强 NPC 据点（攻克前未占领）
   territory:  0xf5f0e8, // 兜底（territory 一定被 own/enemy 覆盖）
   base:       0xf5f0e8,
 };
@@ -703,6 +704,20 @@ export class WorldMapScene implements Scene {
 
     if (tile?.type === 'center') {
       this.showToast(t('world.center'));
+      return;
+    }
+
+    // 险地（G8 §3.1）：未占领时系统超强 NPC 据点——不可直占/扫荡，只能围攻（挂队出征）攻克。
+    // 占领后即转 territory，走上面 mine/occupied 分支。
+    if (tile?.type === 'stronghold') {
+      this.showModal(
+        [t('world.stronghold'), t('world.strongholdHint'), `(${tx}, ${ty})`],
+        [
+          { label: t('world.actAttack'), action: () => void this.showAttackTeamPicker(tx, ty) },
+          { label: t('world.actScout'), action: () => void this.doScout(tx, ty) },
+          { label: '✕', action: () => this.closeModal() },
+        ],
+      );
       return;
     }
 

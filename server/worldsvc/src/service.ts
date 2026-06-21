@@ -13,6 +13,8 @@ import {
   siegeSeedFromId,
   buildSiegeBattle,
   npcGarrison,
+  strongholdGarrison,
+  STRONGHOLD_LOOT_PER_LEVEL,
   findMarchPath,
   marchDurationFromPath,
   capitalPositions,
@@ -60,6 +62,7 @@ import {
   type MarchKind,
   type SiegeOutcome,
   type SiegeResolution,
+  type ProceduralTile,
 } from '@nw/shared';
 import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseConfig, scaleArmyHp } from './siegeEngine';
 import type { GarrisonEntry } from '@nw/engine';
@@ -530,6 +533,7 @@ export class WorldService {
     const proc = proceduralTile(worldId, x, y);
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可落城');
     if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', '障碍/关隘不可落城');
+    if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', '险地不可落城');
 
     const tid = tileId(worldId, x, y);
     const occ = await cols.tiles.findOne({ _id: tid });
@@ -692,6 +696,7 @@ export class WorldService {
     const proc = proceduralTile(worldId, x, y);
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可落城');
     if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', '障碍/关隘不可落城');
+    if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', '险地不可落城');
     const occ = await cols.tiles.findOne({ _id: newTid });
     if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', '该格已被占领');
 
@@ -795,6 +800,10 @@ export class WorldService {
     let defenderId: string | undefined; // attack：被攻击方 accountId（出征即推 under_attack 预警）
     if (kind === 'occupy') {
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可直占');
+      // 险地（G8 §3.1）：系统超强 NPC 驻守，不可直占，须围攻 attack 攻克。
+      if (proc.type === 'stronghold' && !toTile?.ownerId) {
+        throw new SlgError('TILE_OCCUPIED', '险地不可直占，须围攻 attack 攻克');
+      }
       if (toTile?.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', '该格已是己方领地（用增援）');
       if (toTile?.ownerId) {
         if (toTile.protectedUntil && toTile.protectedUntil > now()) {
@@ -805,21 +814,28 @@ export class WorldService {
     } else if (kind === 'reinforce') {
       if (!toTile || toTile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', '只能增援己方格');
     } else if (kind === 'attack') {
-      // 围攻：目标必须是他人领地/主城（中立无主格请用占领/扫荡）。
+      // 围攻：目标须是他人领地/主城，或无主险地（G8 PvE 攻克系统守军）。中立无主格请用占领/扫荡。
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心由宗门争夺，不可围攻');
-      if (!toTile?.ownerId) throw new SlgError('TILE_NOT_OWNED', '围攻目标无主（用占领/扫荡）');
-      if (toTile.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', '不能围攻己方领地');
-      if (toTile.protectedUntil && toTile.protectedUntil > now()) {
-        throw new SlgError('PROTECTED', '目标处于保护期');
+      if (!toTile?.ownerId) {
+        // 无主：仅险地可围攻（打系统超强 NPC）；其余无主格走占领/扫荡。
+        if (proc.type !== 'stronghold') throw new SlgError('TILE_NOT_OWNED', '围攻目标无主（用占领/扫荡）');
+        // 险地 PvE：defenderId 留空（NPC 无 under_attack 预警）。
+      } else {
+        if (toTile.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', '不能围攻己方领地');
+        if (toTile.protectedUntil && toTile.protectedUntil > now()) {
+          throw new SlgError('PROTECTED', '目标处于保护期');
+        }
+        defenderId = toTile.ownerId;
       }
       if (troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `围攻至少需带 ${OCCUPY_MIN_TROOPS} 兵`);
-      defenderId = toTile.ownerId;
     } else if (kind === 'scout') {
       // 侦察：不打不占，派少量兵到任意非障碍格（含敌方/保护中/中立/中心）探视野后自动回师。
       // 无归属/中心/保护期限制——已在上方拦掉障碍地形即可。不设 defenderId（不发 under_attack 预警）。
     } else {
       // sweep：清中立 / 资源格的 NPC 守军（不占地，回师带回缴获）。
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可扫荡');
+      // 险地（G8）：系统超强守军，不可扫荡掠夺，须围攻 attack 攻克占领。
+      if (proc.type === 'stronghold') throw new SlgError('TILE_OCCUPIED', '险地须围攻 attack 攻克，不可扫荡');
       if (toTile?.ownerId) throw new SlgError('TILE_OCCUPIED', '目标已被占领（夺地用围攻 attack）');
     }
 
@@ -1070,6 +1086,15 @@ export class WorldService {
   private async applySiege(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
     const { cols } = this.deps;
     const target = await cols.tiles.findOne({ _id: m.toTile });
+    // 险地 PvE 攻克（G8 §3.1）：目标无主且程序化类型为 stronghold → 打系统超强 NPC 守军，
+    // 攻克即占领为领地 + 一次性丰厚奖励；攻败残兵撤退回师。先于「扑空退兵」分支拦截。
+    if (!target?.ownerId) {
+      const proc = proceduralTile(m.worldId, this.coordX(m.toTile), this.coordY(m.toTile));
+      if (proc.type === 'stronghold') {
+        await this.applyStrongholdSiege(m, pw, t, proc);
+        return;
+      }
+    }
     // 到达时目标已非敌方（被弃/已转己方/无主）或进入保护期 → 视作扑空，退兵回师。
     if (
       !target?.ownerId ||
@@ -1122,6 +1147,94 @@ export class WorldService {
     const defender = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defenderId) });
     // 重播输入：持久化到 SiegeDoc，客户端凭 seed + 双方布阵本地重播观战（§16.3）。
     await this.landSiege(m, pw, target, defenderId, defender, res, t, replay);
+  }
+
+  /**
+   * 险地 PvE 围攻攻克（G8 §3.1）：无主 stronghold 格，系统按格等级派生超强 NPC 守军 + 高基地，
+   * 走权威引擎围攻（坏布阵/异常 → 廉价兜底）。攻克 → 写 territory 领地（survivors 成驻军）+ 一次性
+   * 丰厚资源奖励 + 立国/活跃刷新；攻败 → 残兵撤退回师（NPC 守军不持久——procedural 不落库，下次重置）。
+   * 防守方为 NPC，全程无 defenderId、无掠夺玩家、无保护罩。
+   */
+  private async applyStrongholdSiege(
+    m: MarchDoc,
+    pw: PlayerWorldDoc,
+    t: number,
+    proc: ProceduralTile,
+  ): Promise<void> {
+    const { cols } = this.deps;
+    const x = this.coordX(m.toTile);
+    const y = this.coordY(m.toTile);
+    // 到点重校验：已被他人/自己抢先占（含同时攻克）→ 不打 NPC，退兵扑空。
+    const occ = await cols.tiles.findOne({ _id: m.toTile });
+    if (occ?.ownerId) {
+      await this.refundTroops(pw, m.troops, t);
+      void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'recalled' }));
+      return;
+    }
+
+    const garrison = strongholdGarrison(proc.level);
+    const attackerArmy: GarrisonEntry[] =
+      m.army && m.army.length > 0 ? (m.army as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker');
+    // 系统超强默认守军 + 高基地（defenderBaseLevel 由 buildSiegeLevel 按 tileLevel 派生并 clamp）。
+    const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender') };
+    const tileLevel = proc.level;
+    const seed = siegeSeedFromId(m._id);
+
+    let res: SiegeResolution;
+    let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
+    try {
+      res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed });
+    } catch (err) {
+      console.error('[worldsvc] stronghold siege engine failed — fallback to cheap resolve', {
+        tile: m.toTile,
+        err: (err as Error).message,
+      });
+      res = resolveSiege(m.troops, garrison);
+      replay = null;
+    }
+
+    const member = await cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
+
+    if (res.outcome === 'attacker_win') {
+      const tileDoc: TileDoc = {
+        _id: m.toTile,
+        worldId: m.worldId,
+        x,
+        y,
+        type: 'territory',
+        level: proc.level,
+        ...(proc.resType ? { resType: proc.resType } : {}),
+        ownerId: m.ownerId,
+        garrison: res.attackerSurvivors,
+        rev: 0,
+      };
+      await cols.tiles.updateOne({ _id: m.toTile }, { $set: tileDoc }, { upsert: true });
+      // 一次性攻克奖励（§3.1「大幅资源」）：按格等级 + 资源种类并入攻方资源池（封顶）。
+      const rt: ResourceType = proc.resType ?? 'food';
+      const reward = emptyResources();
+      reward[rt] = STRONGHOLD_LOOT_PER_LEVEL * Math.max(1, proc.level);
+      const resources = this.settle(pw, t);
+      for (const r of RESOURCE_TYPES) resources[r] = Math.min(RESOURCE_CAP, (resources[r] ?? 0) + reward[r]);
+      const yieldRate = await this.recomputeYield(m.worldId, m.ownerId);
+      await cols.playerWorld.updateOne(
+        { _id: pw._id },
+        { $set: { resources, yieldRate, lastTickAt: t }, $inc: { rev: 1 } },
+      );
+      void this.applyNationChange(m.worldId, x, y, m.ownerId, member?.familyId);
+      void this.bumpFamilyActivity(m.worldId, member?.familyId, 1);
+      const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
+      void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
+      void this.pushSiege(m.ownerId, siege, lootSummary(reward));
+      void this.pushTile(m.ownerId, tileDoc);
+      await this.pushTileToObservers(tileDoc, new Set([m.ownerId])); // G5-2：攻克到点对观察者可见
+    } else {
+      // 攻克失败：攻方残存撤退回师折回兵力池（出征已扣兵；阵亡永久损失）。NPC 守军不落库，无减员写入。
+      if (res.attackerSurvivors > 0) await this.refundTroops(pw, res.attackerSurvivors, t);
+      void this.bumpFamilyActivity(m.worldId, member?.familyId, 1);
+      const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
+      void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
+      void this.pushSiege(m.ownerId, siege, '');
+    }
   }
 
   /**
@@ -1459,7 +1572,14 @@ export class WorldService {
       const x = Math.floor(Math.random() * mapW);
       const y = Math.floor(Math.random() * mapH);
       const proc = proceduralTile(worldId, x, y);
-      if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'gate') continue;
+      if (
+        proc.type === 'center' ||
+        proc.type === 'obstacle' ||
+        proc.type === 'gate' ||
+        proc.type === 'stronghold' // 险地系统据点，不可作主城重生落点（G8）
+      ) {
+        continue;
+      }
       const occ = await cols.tiles.findOne({ _id: tileId(worldId, x, y) });
       if (occ?.ownerId) continue;
       return { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
