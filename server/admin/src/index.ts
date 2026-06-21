@@ -10,7 +10,7 @@ import { createAdminMongo } from './db';
 import { AdminService } from './service';
 import { startHttpApi } from './httpApi';
 import { seedSuperAdmin } from './seed';
-import { HttpAnalyticsClient, HttpMailDispatcher, HttpPlayerClient, HttpStatsClient } from './clients';
+import { HttpAnalyticsClient, HttpMailDispatcher, HttpPlayerClient, HttpStatsClient, HttpWorldClient } from './clients';
 
 const log = createLogger('admin');
 
@@ -25,8 +25,9 @@ async function main(): Promise<void> {
   const players = new HttpPlayerClient(env.metaBaseUrl, env.internalKey);
   const mail = new HttpMailDispatcher(env.metaBaseUrl, env.internalKey);
   const analytics = new HttpAnalyticsClient(env.analyticsBaseUrl, env.internalKey);
+  const world = new HttpWorldClient(env.worldInternalUrl, env.internalKey);
 
-  const svc = new AdminService({ cols: mongo.collections, stats, players, mail, analytics, now: () => Date.now() });
+  const svc = new AdminService({ cols: mongo.collections, stats, players, mail, analytics, world, now: () => Date.now() });
 
   const jwt: JwtConfig = { secret: env.adminJwtSecret, expiresIn: env.adminJwtTtl };
   const server = startHttpApi({ host: env.host, port: env.port, jwt }, svc);

@@ -11,6 +11,7 @@ import type {
   WorldStatus,
   AuctionStatus,
   SiegeOutcome,
+  SettleTier,
 } from '@nw/shared';
 import { FAMILY_MSG_RETENTION_SEC } from '@nw/shared';
 
@@ -46,6 +47,8 @@ export interface WorldDoc {
   resetAt?: number;
   capacity: number;
   population: number;
+  /** 开服时 pin 的引擎版本（C7/§17.9，= @nw/engine ENGINE_VERSION）；缺省视为未 pin（旧世界）。 */
+  engineVersion?: number;
   rev: number;
 }
 
@@ -118,6 +121,12 @@ export interface FamilyDoc {
   memberCount: number;
   territoryCount: number;
   sectId?: string; // 所属宗门（S8-4b，无 = 散家族）
+  /** 家族繁荣度（G2/§17.4，familyProsperity 算，读时惰性衰减）。缺省视 0（旧家族懒创建）。 */
+  prosperity?: number;
+  /** 繁荣度衰减锚点 ms（读时按 now-该值 惰性衰减）。 */
+  prosperityUpdatedAt?: number;
+  /** 赛季累计活跃点（新占领数 + 战斗场次，服务器权威 $inc，无客户端写口）。缺省视 0。 */
+  activity?: number;
   rev: number;
 }
 
@@ -131,7 +140,7 @@ export interface SectDoc {
   leaderId: string;       // 门主账号（= 门主家族的 leader），用于权限校验
   memberFamilyCount: number;
   allySectIds: string[];  // 联盟宗门（≤ SECT_ALLY_CAP）
-  prosperity: number;     // 繁荣度（DRAFT，赛季内有效）
+  prosperity: number;     // 繁荣度 = 成员家族繁荣度之和（G2/§17.4，settle/建门/G6 分配时聚合刷新）
   /** 罢免门主投票（§8.2，超 2/3 族长同意 + 提名）。换届/解决后清空。 */
   removalVote?: { nomineeFamilyId: string; voterFamilyIds: string[] };
   rev: number;
@@ -225,6 +234,27 @@ export interface NationDoc {
   rev: number;
 }
 
+/**
+ * 赛季结算历史（C2/§17.2）。settleSeason 落库本季排名 + 繁荣度快照，作为下季 G6 分配输入。
+ * `_id = `${worldId}:s${season}`` = 幂等键（同季重入 $setOnInsert 不覆盖）。
+ */
+export interface SeasonResultDoc {
+  _id: string;
+  worldId: string;
+  season: number;
+  settledAt: number;
+  ranking: Array<{
+    rank: number;
+    scope: 'sect' | 'family' | 'solo';
+    id: string;                // sectId / familyId / ownerId
+    name?: string;
+    nationCount: number;
+    capitalIdxs: number[];
+    prosperity?: number;       // 结算时繁荣度快照（sect scope 才有意义）
+    tier: SettleTier;
+  }>;
+}
+
 export interface WorldCollections {
   worlds: Collection<WorldDoc>;
   tiles: Collection<TileDoc>;
@@ -238,6 +268,7 @@ export interface WorldCollections {
   auctions: Collection<AuctionDoc>;
   sieges: Collection<SiegeDoc>;
   nations: Collection<NationDoc>;
+  seasonResults: Collection<SeasonResultDoc>;
 }
 
 export interface WorldMongo {
@@ -278,6 +309,7 @@ export async function createWorldMongo(
     auctions: db.collection<AuctionDoc>('auctions'),
     sieges: db.collection<SiegeDoc>('sieges'),
     nations: db.collection<NationDoc>('nations'),
+    seasonResults: db.collection<SeasonResultDoc>('seasonResults'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -314,6 +346,10 @@ export async function createWorldMongo(
     // 国家：worldId 内按首府索引唯一
     await collections.nations.createIndex({ worldId: 1, capitalIdx: 1 }, { unique: true });
     await collections.nations.createIndex({ ownerId: 1 });
+    // 赛季结算历史（C2/§17.2）：按 worldId 取最近季；G6 分配读上季排名。
+    await collections.seasonResults.createIndex({ worldId: 1, season: -1 });
+    // 建宗门门槛 / G6 分配按繁荣度查（§17.2）。
+    await collections.families.createIndex({ worldId: 1, prosperity: -1 });
   }
 
   return {

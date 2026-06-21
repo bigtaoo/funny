@@ -16,9 +16,11 @@ import {
   SECT_ALLY_CAP,
   SECT_REMOVAL_VOTE_RATIO,
   FAMILY_MSG_BODY_MAX,
+  SECT_FOUND_PROSPERITY_MIN,
   SlgError,
 } from '@nw/shared';
 import type { WorldCollections, SectDoc, FamilyDoc, SectMessageDoc } from './db';
+import { refreshFamilyProsperity } from './prosperity';
 import type { WorldCommercialClient } from './commercialClient';
 import { nullWorldCommercialClient } from './commercialClient';
 import type { WorldGatewayClient } from './gatewayClient';
@@ -145,6 +147,12 @@ export class SectService {
     const tagUpper = tag.toUpperCase();
     if (!/^[A-Z0-9]{2,5}$/.test(tagUpper)) throw new SlgError('BAD_REQUEST', 'tag 须 2–5 位大写字母数字');
     if (!name || name.length < 2 || name.length > 20) throw new SlgError('BAD_REQUEST', 'name 长度 2–20');
+
+    // 建宗门繁荣度中等门槛（G2/§17.4）：先刷新发起家族繁荣度（刚写即无需衰减），不足拒绝。
+    const prosperity = await refreshFamilyProsperity(cols, worldId, fam._id, this.deps.now());
+    if (prosperity < SECT_FOUND_PROSPERITY_MIN) {
+      throw new SlgError('PROSPERITY_TOO_LOW', `家族繁荣度不足（需 ≥ ${SECT_FOUND_PROSPERITY_MIN}，当前 ${prosperity}）`);
+    }
 
     const sid = makeSectId(worldId, tagUpper);
 
