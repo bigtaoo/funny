@@ -17,6 +17,7 @@
 | **S5** ✅ | commercial 商业服务（钱包/充值/消费/盲盒，独立库） | 钱包权威迁 commercial，扣币+发货 saga 收敛（已实现） |
 | **S3** | PvE 养成（材料 + 硬墙）+ 收集 + 选关 | 养成 / 收集 / 选关闭环；硬墙单测绿 |
 | **S4** | IAP 验单 + 反作弊 hash + 上线加固 | 充值安全，对局 hash 比对 |
+| **S9** | 成就系统（统计里程碑 → 一次性金币） | 计数服务器权威、领取幂等、成就墙；红线单测绿 |
 
 > 先打通 S0/S1（云存档 + 好友联机，核心诉求），再铺 SA/S5/S2/S3。
 > **2026-06-14 新增三块**（细分设计见各专文）：**SA 账号系统**（`ACCOUNT_DESIGN.md`）、**S5 commercial 商业服务**（`COMMERCIAL_DESIGN.md`，钱包权威迁出 meta saves）、**S1-M1~M4 gateway/matchsvc 拆分**（`MATCHSVC_DESIGN.md` + `GATEWAY_DESIGN.md`，已在 §S1 架构修订迁移登记）。建议顺序：SA（登录门槛，门面）→ S5（经济权威底座）→ S1-M（联机拓扑拆分，动链路最大放最后）。
@@ -231,6 +232,25 @@
 
 > **MVP 切片**：S8-0~3（单服、无家族、无拍卖、无赛季重置）先跑通「战斗接大地图」承重墙，再叠加家族/拍卖/赛季。
 > **依赖**：Redis（首次引入）；`PVE_INTEGRITY_PLAN` 方案 B（养成服务器权威）；social S6（家族升级其基建）；commercial S5（变现）；admin S7（运维）。
+
+---
+
+## S9 — 成就系统（统计里程碑 → 一次性金币）
+
+> 机制权威 = [`ACHIEVEMENT_DESIGN.md`](ACHIEVEMENT_DESIGN.md)；数值 = `ECONOMY_BALANCE.md §2.4`。任务细分见该文 §9（A-1~A-10）。
+> **定位**：与天梯/称号正交的一次性金币 faucet，纯一次性不可刷（~8–9k 池）。可先做 PvE 半，PvP 半随上报扩展跟进。
+> **关键拍板（2026-06-21）**：PvP 计数**直接上报 + 三层抽查**（异常复查/随机抽查/作弊者升档），不逐局复算；**仅计 ranked 局**（friendly 防串刷）；定义**硬编码** `@nw/shared`；成就**纯自看不对外**（炫耀走称号）；与日常任务计数互不复用。
+
+- [ ] **S9-1** `@nw/shared`：`StatKey`/`AchId` 类型 + 硬编码 `Achievement` 定义表（5 条初值）+ `tierState` 纯函数（A-1）
+- [ ] **S9-2** SaveData 扩 `stats`/`achievements`/`antiCheat`，列入 `PUT /save` 服务器权威只读字段（A-2）
+- [ ] **S9-3** PvE 结算累加 stats（挂 `pveRewards.ts` 提交点，与发奖同事务）（A-3）
+- [ ] **S9-4** `GET /achievements` + `POST /achievements/claim`（二次校验 + `$addToSet` 幂等发币）（A-4）
+- [ ] **S9-5** 客户端成就墙 UI（ProfileScene，分类 tab + 红点 + 解锁 toast）+ i18n `achievement.*`（A-5）
+- [ ] **S9-6** PvP 计数：扩 `match/report` 带 `kill.*`/`cast.*`（仅 ranked）+ meta 累加 + L1 异常复查（A-6）
+- [ ] **S9-7** 反作弊 L2/L3：离线随机抽查（replay 复算）+ `statSuspicion` 升档 + OPS 审查队列（A-7）
+- [ ] **S9-8** 埋点上报 analyticsvc（解锁/领取漏斗）（A-8）+ 红线/幂等单测（A-9）+ 金币池模拟校准（A-10）
+
+> **依赖**：S3（PvE 结算 + 方案 B，PvE 半的前提）；S1-R 天梯（PvP 半计 ranked 的前提）；S7 admin（L2/L3 审查队列）；S2/S5（金币发放路径）。
 
 ---
 
