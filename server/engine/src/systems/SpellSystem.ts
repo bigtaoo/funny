@@ -1,7 +1,13 @@
 import { BRIDGE_COLLAPSE_DURATION_TICKS, HASTE_DURATION_TICKS, HASTE_SPEED_MULT, METEOR_DAMAGE, ROCKSLIDE_DAMAGE } from '../config';
 import { fp, scaleFp, toFp } from '../math/fixed';
 import { GameState } from '../GameState';
-import { ActiveSpell, Side, SpellType } from '../types';
+import { ActiveSpell, OwnerId, Side, SpellType } from '../types';
+
+/** S9-3b: tally one cast of `spell` for `owner` (per-spell-type; feeds achievement cast.* stats). */
+function bumpCast(state: GameState, owner: OwnerId, spell: SpellType): void {
+  const cm = state.stats[owner].castsByType;
+  cm[spell] = (cm[spell] ?? 0) + 1;
+}
 
 /**
  * SpellSystem — cast and expire spells.
@@ -27,6 +33,7 @@ export class SpellSystem {
       remainingTicks: HASTE_DURATION_TICKS,
     });
 
+    bumpCast(state, state.ownerOf(side), SpellType.Haste);
     state.pushEvent({
       type:      'spell_cast',
       spellType: SpellType.Haste,
@@ -67,6 +74,7 @@ export class SpellSystem {
 
     // Track spell hits for badge stats
     state.stats[owner].spellHits += hitsCount;
+    bumpCast(state, owner, SpellType.Meteor); // S9-3b: feeds cast.meteor
 
     state.pushEvent({
       type:      'spell_cast',
@@ -85,12 +93,14 @@ export class SpellSystem {
       if (unit.col === col) { unit.takeDamage(ROCKSLIDE_DAMAGE); hits++; }
     }
     state.stats[owner].spellHits += hits;
+    bumpCast(state, owner, SpellType.Rockslide);
     state.pushEvent({ type: 'spell_cast', spellType: SpellType.Rockslide, owner, center: { col, y_fp: fp(0) } });
   }
 
   /** Blocks an entire column for `BRIDGE_COLLAPSE_DURATION_TICKS` (PvE-only, §4.9.2). */
   castBridgeCollapse(side: Side, col: number, state: GameState, currentTick: number): void {
     state.tempBlockedCols.set(col, currentTick + BRIDGE_COLLAPSE_DURATION_TICKS);
+    bumpCast(state, state.ownerOf(side), SpellType.BridgeCollapse);
     state.pushEvent({ type: 'spell_cast', spellType: SpellType.BridgeCollapse, owner: state.ownerOf(side), center: { col, y_fp: fp(0) } });
   }
 

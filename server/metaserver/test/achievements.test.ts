@@ -7,6 +7,9 @@ import {
   tierState,
   hasClaimable,
   validateClaim,
+  sanitizePvpReportedStats,
+  accrueStats,
+  PVP_STAT_MATCH_CAP,
 } from '@nw/shared';
 
 describe('成就定义表', () => {
@@ -103,5 +106,74 @@ describe('validateClaim 领取校验（不信客户端）', () => {
       coins: 200,
       tier: 3,
     });
+  });
+});
+
+describe('sanitizePvpReportedStats（S9-6 L1 异常复查）', () => {
+  it('正常上报：保留可上报 key 非零项', () => {
+    expect(sanitizePvpReportedStats({ 'kill.archer': 3, 'kill.guard': 1, 'cast.meteor': 2 })).toEqual({
+      'kill.archer': 3,
+      'kill.guard': 1,
+      'cast.meteor': 2,
+    });
+  });
+
+  it('未知 / 不可上报 key 丢弃（不拒整份）：pvp.wins / campaign.* / 乱码', () => {
+    expect(
+      sanitizePvpReportedStats({ 'kill.archer': 5, 'pvp.wins': 99, 'campaign.chaptersCleared': 9, junk: 1 }),
+    ).toEqual({ 'kill.archer': 5 });
+  });
+
+  it('0 值省略（懒创建）', () => {
+    expect(sanitizePvpReportedStats({ 'kill.archer': 0, 'cast.meteor': 4 })).toEqual({ 'cast.meteor': 4 });
+  });
+
+  it('缺省 / 空 → 空增量', () => {
+    expect(sanitizePvpReportedStats(undefined)).toEqual({});
+    expect(sanitizePvpReportedStats({})).toEqual({});
+  });
+
+  it('L1 越界 → null（整份拒收）', () => {
+    expect(sanitizePvpReportedStats({ 'kill.archer': PVP_STAT_MATCH_CAP['kill.archer']! + 1 })).toBeNull();
+    expect(sanitizePvpReportedStats({ 'cast.meteor': 99999 })).toBeNull();
+  });
+
+  it('恰好等于硬边界 → 接受', () => {
+    expect(sanitizePvpReportedStats({ 'kill.archer': PVP_STAT_MATCH_CAP['kill.archer']! })).toEqual({
+      'kill.archer': PVP_STAT_MATCH_CAP['kill.archer'],
+    });
+  });
+
+  it('非整数 / 负数 → null', () => {
+    expect(sanitizePvpReportedStats({ 'kill.archer': -1 })).toBeNull();
+    expect(sanitizePvpReportedStats({ 'cast.meteor': 1.5 })).toBeNull();
+    expect(sanitizePvpReportedStats({ 'kill.guard': NaN })).toBeNull();
+  });
+});
+
+describe('accrueStats（S9-6 服务器累加）', () => {
+  it('懒创建：无增量 → 原样返回 prev（含 undefined）', () => {
+    expect(accrueStats(undefined, {})).toBeUndefined();
+    const prev = { 'kill.archer': 3 };
+    expect(accrueStats(prev, {})).toBe(prev); // 同引用，不实例化新对象
+  });
+
+  it('缺省 prev + 增量 → 新 stats', () => {
+    expect(accrueStats(undefined, { 'pvp.wins': 1, 'kill.archer': 2 })).toEqual({
+      'pvp.wins': 1,
+      'kill.archer': 2,
+    });
+  });
+
+  it('已有 prev → 逐 key 累加，不动未涉及 key', () => {
+    expect(
+      accrueStats({ 'kill.archer': 10, 'pvp.wins': 5 }, { 'kill.archer': 3, 'cast.meteor': 1 }),
+    ).toEqual({ 'kill.archer': 13, 'pvp.wins': 5, 'cast.meteor': 1 });
+  });
+
+  it('不可变：不改 prev', () => {
+    const prev = { 'kill.archer': 10 };
+    accrueStats(prev, { 'kill.archer': 5 });
+    expect(prev['kill.archer']).toBe(10);
   });
 });

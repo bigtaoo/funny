@@ -5,7 +5,7 @@ import { resetUnitIds } from './Unit';
 import { resetBuildingIds } from './Building';
 import { EscortUnit, resetEscortIds } from './EscortUnit';
 import { UNIT_BLUEPRINTS } from './config';
-import { ActiveSpell, GameEvent, GamePhase, OwnerId, PlayerStats, Side, UnitType, UnitBlueprint, sideToOwner } from './types';
+import { ActiveSpell, GameEvent, GamePhase, OwnerId, PlayerStats, Side, SpellType, UnitType, UnitBlueprint, sideToOwner } from './types';
 import type { HazardSpec } from './campaign/LevelDefinition';
 
 /** Mutable version of PlayerStats — accumulated throughout the game. */
@@ -15,6 +15,10 @@ export interface PlayerStatsMutable {
   unitsSent: number;
   unitsKilled: number;
   spellHits: number;
+  /** Per-victim-type kill counts (S9-3b); sparse, absent = 0. */
+  killsByType: Partial<Record<UnitType, number>>;
+  /** Per-spell-type cast counts (S9-3b); sparse, absent = 0. */
+  castsByType: Partial<Record<SpellType, number>>;
   buildingSurvivalTicks: number;
   goldSpent: number;
 }
@@ -26,6 +30,8 @@ function emptyStats(): PlayerStatsMutable {
     unitsSent: 0,
     unitsKilled: 0,
     spellHits: 0,
+    killsByType: {},
+    castsByType: {},
     buildingSurvivalTicks: 0,
     goldSpent: 0,
   };
@@ -128,9 +134,10 @@ export class GameState {
 
   /** Snapshot stats as the immutable PlayerStats type for game_stats event. */
   snapshotStats(): [PlayerStats, PlayerStats] {
+    // Copy the per-type maps so the snapshot never aliases the still-mutable accumulators.
     return [
-      { owner: 0, ...this.stats[0] },
-      { owner: 1, ...this.stats[1] },
+      { owner: 0, ...this.stats[0], killsByType: { ...this.stats[0].killsByType }, castsByType: { ...this.stats[0].castsByType } },
+      { owner: 1, ...this.stats[1], killsByType: { ...this.stats[1].killsByType }, castsByType: { ...this.stats[1].castsByType } },
     ];
   }
 

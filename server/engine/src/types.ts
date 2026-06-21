@@ -320,6 +320,16 @@ export interface PlayerStats {
   unitsKilled: number;
   /** Enemy units hit by spells → 精准打击 */
   spellHits: number;
+  /**
+   * Per-victim-type kill counts (S9-3b). Feeds achievement statKeys `kill.archer`/`kill.guard`.
+   * Deterministic (same replay → same counts). Absent types = 0 (sparse map).
+   */
+  killsByType: Partial<Record<UnitType, number>>;
+  /**
+   * Per-spell-type cast counts (S9-3b) — one per cast call, not per hit. Feeds `cast.meteor`.
+   * Deterministic; absent types = 0.
+   */
+  castsByType: Partial<Record<SpellType, number>>;
   /** Sum of survival ticks across all own buildings → 建筑大师 */
   buildingSurvivalTicks: number;
   /** Total gold spent (cards + upgrades) → 以少胜多 reference */

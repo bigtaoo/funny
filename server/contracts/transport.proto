@@ -52,7 +52,7 @@ message RoomReady  { bool ready = 1; }
 message RoomLeave  {}
 message RoomStart  {}
 message CmdSubmit  { bytes commands = 1; }          // 仅出牌时发
-message MatchResult{ string state_hash = 1; uint32 winner_side = 2; }   // winner_side: 客户端模拟权威判定的胜方（ranked 用，双方须一致；friendly 忽略）
+message MatchResult{ string state_hash = 1; uint32 winner_side = 2; string stats_json = 3; }   // winner_side: 客户端模拟权威判定的胜方（ranked 用，双方须一致；friendly 忽略）。stats_json: 本方本局成就计数 JSON（S9-6，{"kill.archer":n,…}；仅 ranked 喂，meta L1 校验后累加；friendly 忽略）
 message ConnResume { string room_id = 1; uint32 last_frame = 2; }
 message Ping {}
 

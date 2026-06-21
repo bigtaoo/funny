@@ -57,6 +57,8 @@ const zeroStats = (owner: 0 | 1): PlayerStats => ({
   unitsSent: 0,
   unitsKilled: 0,
   spellHits: 0,
+  killsByType: {},
+  castsByType: {},
   buildingSurvivalTicks: 0,
   goldSpent: 0,
 });

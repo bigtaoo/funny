@@ -12,7 +12,7 @@
 
 import type { IPlatform } from '../platform/IPlatform';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView } from './AppViews';
-import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, RecordingInputSource, ENGINE_VERSION } from '../game';
+import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, RecordingInputSource, ENGINE_VERSION, achievementStatDelta } from '../game';
 import type { OwnerId, PlayerStats, MatchStartInfo, Replay, LevelDefinition } from '../game';
 import { computeStars, remainingHpPct } from '../game/meta/campaignRewards';
 import { initI18n, t, type TranslationKey } from '../i18n';
@@ -962,7 +962,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
     const view: NetGameView = views.showGameNet(localOwner, {
       onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
-        session.reportResult(matchStateHash(winner, stats), winner ?? 0);
+        // S9-6: 附本方本局成就计数（kill.*/cast.*）。meta 仅 ranked 累加 + L1 校验；friendly 忽略。
+        session.reportResult(matchStateHash(winner, stats), winner ?? 0, achievementStatDelta(stats[localOwner]));
         const replay = buildNetReplay(winner);
         const result = winner === null ? 'draw' : winner === localOwner ? 'win' : 'loss';
         analytics.track('game_end', {

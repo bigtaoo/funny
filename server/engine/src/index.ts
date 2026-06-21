@@ -49,6 +49,9 @@ export type {
  */
 export { ENGINE_VERSION } from './types';
 
+// ── Achievement stat mapping (S9-3b/S9-6) — engine counts → statKey deltas ────
+export { achievementStatDelta } from './achievementStats';
+
 export {
   UnitType,
   BuildingType,

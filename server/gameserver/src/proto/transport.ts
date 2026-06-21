@@ -41,7 +41,7 @@ export type ClientMsg =
   | { case: 'room_leave' }
   | { case: 'room_start' }
   | { case: 'cmd_submit'; commands: Uint8Array }
-  | { case: 'match_result'; stateHash: string; winnerSide: number }
+  | { case: 'match_result'; stateHash: string; winnerSide: number; stats?: Record<string, number> }
   | { case: 'conn_resume'; roomId: string; lastFrame: number }
   | { case: 'ping' }
   | { case: 'unknown' };
@@ -109,6 +109,25 @@ const root = protobuf.parse(fs.readFileSync(resolveProtoPath(), 'utf8'), {
 
 const Envelope = root.lookupType('nw.transport.Envelope');
 
+/**
+ * S9-6: 防御性解析 match_result.stats_json（客户端上报的本局成就计数）。
+ * 仅接受 `{ [k:string]: number }` 形态；任何异常 → undefined（gameserver 透传，meta 再做 L1 校验）。
+ */
+function parseStatsJson(raw: unknown): Record<string, number> | undefined {
+  if (typeof raw !== 'string' || raw.length === 0) return undefined;
+  try {
+    const obj = JSON.parse(raw) as unknown;
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return undefined;
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // ── 解码：bytes → ClientMsg ──────────────────────────────
 export function decodeClient(buf: Uint8Array): ClientMsg {
   const env = Envelope.decode(buf) as protobuf.Message & Record<string, unknown>;
@@ -142,6 +161,8 @@ export function decodeClient(buf: Uint8Array): ClientMsg {
         case: 'match_result',
         stateHash: String(get('match_result')['state_hash'] ?? ''),
         winnerSide: Number(get('match_result')['winner_side'] ?? 0),
+        // S9-6: 本方本局成就计数（JSON 字符串）。防御性解析；非法/缺失 → undefined（meta 视无统计）。
+        stats: parseStatsJson(get('match_result')['stats_json']),
       };
     case 'conn_resume':
       return {

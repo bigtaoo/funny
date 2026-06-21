@@ -109,8 +109,10 @@ export class NetClient {
   submitCmd(commands: Uint8Array): void {
     this.sendClient({ cmdSubmit: { commands } });
   }
-  reportResult(stateHash: string, winnerSide: number): void {
-    this.sendClient({ matchResult: { stateHash, winnerSide } });
+  reportResult(stateHash: string, winnerSide: number, stats?: Record<string, number>): void {
+    // S9-6: 附本方本局成就计数 JSON（仅 ranked 有意义，meta L1 校验后累加；friendly 忽略）。
+    const statsJson = stats && Object.keys(stats).length > 0 ? JSON.stringify(stats) : '';
+    this.sendClient({ matchResult: { stateHash, winnerSide, statsJson } });
   }
   /** 重连续局（onReconnect 后调）。 */
   resume(roomId: string, lastFrame: number): void {
