@@ -134,7 +134,7 @@ components:
           type: string
         kind:
           type: string
-          enum: [attack, reinforce, occupy, sweep, return]
+          enum: [attack, reinforce, occupy, sweep, scout, return]
         fromTile:
           type: string
         toTile:
@@ -656,7 +656,7 @@ paths:
                 fromY: { type: integer }
                 toX: { type: integer }
                 toY: { type: integer }
-                kind: { type: string, enum: [occupy, reinforce, attack, sweep] }
+                kind: { type: string, enum: [occupy, reinforce, attack, sweep, scout] }
                 troops: { type: integer }
                 teamId:
                   type: string

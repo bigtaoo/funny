@@ -47,7 +47,7 @@ export interface WorldMapCallbacks {
 }
 
 /** March kinds the deploy dialog can dispatch (occupy/reinforce/attack/sweep). */
-type DeployKind = 'occupy' | 'reinforce' | 'attack' | 'sweep';
+type DeployKind = 'occupy' | 'reinforce' | 'attack' | 'sweep' | 'scout';
 
 /** Live-push handle returned by showWorldMap — app forwards NetSession pushes here. */
 export interface WorldMapView {
@@ -385,6 +385,7 @@ export class WorldMapScene implements Scene {
         : march.kind === 'return' ? 0x44cc88
         : march.kind === 'attack' ? 0xcc3333
         : march.kind === 'reinforce' ? 0x44aacc
+        : march.kind === 'scout' ? 0x9b59b6
         : 0xcc8844;
       g.lineStyle(enemy ? 2.5 : 1.5, col, enemy ? 0.75 : 0.55);
       g.moveTo(fpx, fpy);
@@ -462,7 +463,7 @@ export class WorldMapScene implements Scene {
         const m = myMarches[i];
         const [tx, ty] = this.parseTileId(m.toTile);
         const remaining = Math.max(0, Math.ceil((m.arriveAt - now) / 1000));
-        const kindIcon = m.kind === 'attack' ? '⚔' : m.kind === 'reinforce' ? '🛡' : m.kind === 'return' ? '↩' : '→';
+        const kindIcon = m.kind === 'attack' ? '⚔' : m.kind === 'reinforce' ? '🛡' : m.kind === 'scout' ? '🔭' : m.kind === 'return' ? '↩' : '→';
         const rowY = ROW_Y0 + i * MARCH_ROW_H;
         const rowLbl = txt(`${kindIcon}(${tx},${ty}) ${remaining}s`, 10, C.dark);
         rowLbl.x = 10; rowLbl.y = rowY + 3;
@@ -693,6 +694,8 @@ export class WorldMapScene implements Scene {
       if (!protectedNow) {
         buttons.push({ label: t('world.actAttack'), action: () => void this.showAttackTeamPicker(tx, ty) });
       }
+      // 侦察：不打不占，派斥候探敌情/防守后自动回师（保护期内亦可侦察）。
+      buttons.push({ label: t('world.actScout'), action: () => void this.doScout(tx, ty) });
       buttons.push({ label: '✕', action: () => this.closeModal() });
       this.showModal([t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`], buttons);
       return;
@@ -712,6 +715,8 @@ export class WorldMapScene implements Scene {
     if (garrison > 0) {
       buttons.push({ label: t('world.actSweep'), action: () => this.showDeployDialog(tx, ty, 'sweep') });
     }
+    // 侦察：派斥候照亮远处迷雾 / 探未知格后自动回师（不占地）。
+    buttons.push({ label: t('world.actScout'), action: () => void this.doScout(tx, ty) });
     // 主动迁城（§3.4）：已有主城且目标可落城（非障碍/关隘）→ 花 500 金币把主城迁到此格。
     const relocatable = this.me?.mainBaseTile && tile?.type !== 'obstacle' && tile?.type !== 'gate';
     if (relocatable) {
@@ -803,6 +808,27 @@ export class WorldMapScene implements Scene {
       this.marches = await this.cb.worldApi.getMarches(this.cb.worldId);
       this.me = await this.cb.worldApi.getMe(this.cb.worldId);
       this.showToast(t('world.dispatched'));
+      this.renderMap(); this.renderHud();
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  /**
+   * 侦察出征：派 1 名斥候（最小兵力，不锁大军）到目标格，沿途 + 抵达点照亮更大视野（VISION_SCOUT_RADIUS）
+   * 后自动回师。不打不占——直接发，不走派兵数对话框（侦察讲究轻量）。
+   */
+  private async doScout(tx: number, ty: number): Promise<void> {
+    this.closeModal();
+    const me = this.me;
+    if (!me?.mainBaseTile) { this.showToast(t('world.needBase'), C.red); return; }
+    if ((me.troops ?? 0) < 1) { this.showToast(t('world.err.noTroops'), C.red); return; }
+    const [fx, fy] = this.parseTileId(me.mainBaseTile);
+    try {
+      await this.cb.worldApi.startMarch(this.cb.worldId, fx, fy, tx, ty, 'scout', 1);
+      this.marches = await this.cb.worldApi.getMarches(this.cb.worldId);
+      this.me = await this.cb.worldApi.getMe(this.cb.worldId);
+      this.showToast(t('world.scoutSent'));
       this.renderMap(); this.renderHud();
     } catch (e) {
       this.showToast(this.errorMsg(e), C.red);

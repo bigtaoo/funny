@@ -179,7 +179,7 @@ message MailNew { string mail_id = 1; bool has_attachment = 2; }
 // tile 字段一律用 tileId 字符串（`{worldId}:{x}:{y}`），客户端自解析坐标。
 message MarchUpdate {
   string march_id = 1;
-  string kind      = 2;   // attack | reinforce | occupy | sweep | return
+  string kind      = 2;   // attack | reinforce | occupy | sweep | scout | return
   string from_tile = 3;
   string to_tile   = 4;
   uint64 arrive_at = 5;   // ms

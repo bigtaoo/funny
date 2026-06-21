@@ -38,6 +38,7 @@ import {
   VISION_TERRITORY_RADIUS,
   VISION_BASE_RADIUS,
   VISION_MARCH_RADIUS,
+  VISION_SCOUT_RADIUS,
   isInVision,
   marchInterpPos,
   type VisionSource,
@@ -163,7 +164,12 @@ export interface WorldServiceDeps {
 const emptyResources = (): Record<ResourceType, number> => ({ food: 0, iron: 0, wood: 0 });
 
 /** 出征许可的玩家面 kind（return 仅内部撤军腿，禁止外部直接发起）。 */
-const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'attack', 'sweep']);
+const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'attack', 'sweep', 'scout']);
+
+/** 在途行军的视野半径：侦察行军（scout）探得更深（VISION_SCOUT_RADIUS），其余按普通行军（VISION_MARCH_RADIUS）。 */
+function marchVisionRadius(kind: MarchKind): number {
+  return kind === 'scout' ? VISION_SCOUT_RADIUS : VISION_MARCH_RADIUS;
+}
 
 export class WorldService {
   private readonly gateway: WorldGatewayClient;
@@ -392,7 +398,7 @@ export class WorldService {
         this.coordX(m.toTile), this.coordY(m.toTile),
         m.departAt, m.arriveAt, t,
       );
-      sources.push({ x: pos.x, y: pos.y, radius: VISION_MARCH_RADIUS });
+      sources.push({ x: pos.x, y: pos.y, radius: marchVisionRadius(m.kind) });
     }
     return sources;
   }
@@ -767,6 +773,9 @@ export class WorldService {
       }
       if (troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `围攻至少需带 ${OCCUPY_MIN_TROOPS} 兵`);
       defenderId = toTile.ownerId;
+    } else if (kind === 'scout') {
+      // 侦察：不打不占，派少量兵到任意非障碍格（含敌方/保护中/中立/中心）探视野后自动回师。
+      // 无归属/中心/保护期限制——已在上方拦掉障碍地形即可。不设 defenderId（不发 under_attack 预警）。
     } else {
       // sweep：清中立 / 资源格的 NPC 守军（不占地，回师带回缴获）。
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可扫荡');
@@ -926,6 +935,11 @@ export class WorldService {
 
     if (m.kind === 'sweep') {
       await this.applySweep(m, pw, t);
+      return;
+    }
+
+    if (m.kind === 'scout') {
+      await this.autoReturnScout(m, t);
       return;
     }
 
@@ -1151,6 +1165,30 @@ export class WorldService {
    * 扫荡中立 / 资源格的 NPC 守军（sweep 到点）。不占地：得手缴获资源 + 生还回师退兵池，
    * 失手则攻方兵力损耗（生还回池，可能为 0）。到达时若该格已被某玩家占领 → 退兵（扑空）。
    */
+  /**
+   * 侦察行军抵达目标：不打不占，自动翻转为返程腿（原兵力原路返回出发格，途中继续提供视野），
+   * 到点（return）退回兵力池。返程耗时 = 去程耗时（对称近似，免再算一次路径）。
+   */
+  private async autoReturnScout(m: MarchDoc, t: number): Promise<void> {
+    const { cols } = this.deps;
+    const back: MarchDoc = {
+      _id: marchId(m.worldId, m.ownerId, t, ++this.marchSeq),
+      worldId: m.worldId,
+      ownerId: m.ownerId,
+      fromTile: m.toTile,
+      toTile: m.fromTile,
+      kind: 'return',
+      troops: m.troops,
+      departAt: t,
+      arriveAt: t + Math.max(0, m.arriveAt - m.departAt),
+      status: 'marching',
+      rev: 0,
+    };
+    await cols.marches.insertOne(back);
+    await this.scheduleMarch(m.worldId, back._id, back.arriveAt);
+    void this.pushMarch(m.ownerId, this.marchView(back));
+  }
+
   private async applySweep(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
     const { cols } = this.deps;
     const occ = await cols.tiles.findOne({ _id: m.toTile });
