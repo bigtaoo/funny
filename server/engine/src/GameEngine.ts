@@ -126,9 +126,9 @@ class GameEngineImpl implements IGameEngine {
     // distinctly-named builder, keeping the red line explicit.
     this.state.unitBlueprints =
       this.mode === 'campaign'
-        ? buildCampaignBlueprints(config.pveUpgrades ?? {})
+        ? buildCampaignBlueprints(config.pveUpgrades ?? {}, config.equipment)
         : this.mode === 'siege'
-        ? buildSiegeBlueprints(config.pveUpgrades ?? {})
+        ? buildSiegeBlueprints(config.pveUpgrades ?? {}, config.equipment)
         : buildPvpBlueprints();
 
     if (pve) {

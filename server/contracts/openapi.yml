@@ -152,6 +152,23 @@ components:
                 type: array
                 items: { type: integer, minimum: 1, maximum: 3 }
           description: achId→已领阶号子集，幂等防重领
+        # —— 装备系统（服务器权威，EQUIPMENT_DESIGN §3.1）。legacy 档可缺，故非 required ——
+        # 仅 /equipment/* 端点写，PUT /save 不可写（不在 SyncPatch）。
+        equipmentInv:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/EquipmentInstance' }
+        gear:
+          type: object
+          description: 穿戴 loadout（global 全军 / byUnit 按兵种预留），槽位→实例 id。
+          properties:
+            global:
+              type: object
+              additionalProperties: { type: string }
+            byUnit:
+              type: object
+              additionalProperties:
+                type: object
+                additionalProperties: { type: string }
 
     # 成就定义（硬编码 @nw/shared，GET /achievements 下发；客户端据此 + stats 本地算阶）。
     Achievement:
@@ -171,6 +188,24 @@ components:
             properties:
               threshold: { type: integer }
               coins: { type: integer }
+
+    EquipmentInstance:
+      type: object
+      required: [id, defId, rarity, level, affixes]
+      properties:
+        id: { type: string }
+        defId: { type: string }
+        rarity: { type: string, enum: [common, fine, rare, epic] }
+        level: { type: integer, minimum: 0, maximum: 9 }
+        affixes:
+          type: array
+          items:
+            type: object
+            required: [id, value]
+            properties:
+              id: { type: string }
+              value: { type: number }
+        locked: { type: boolean }
 
     # —— 客户端同步段（PUT /save 仅接受这些字段，§2.2）——
     # PVE_INTEGRITY_PLAN §8 起 progress/materials/pveUpgrades 转服务器权威

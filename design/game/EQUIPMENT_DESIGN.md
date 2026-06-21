@@ -340,6 +340,16 @@ buildSiegeBlueprints(levels, equipped, inv)
 - `buildPvpBlueprints()` **签名里永远不出现 equipped/equipmentInv** → 编译期不可能串味；扩展 `hardwall.test.ts`：满装备存档下 `buildPvpBlueprints()` 仍与 `UNIT_BLUEPRINTS` 逐字相等。
 - 新增单测：**战力单调性**（装备等级↑ → campaign/siege 蓝图战力↑，SLG_DESIGN §6.2 同款）+ **封顶生效**（trait+装备三源同效果叠加后不超 §7.7 上限）。
 
+#### E1 实现记录（2026-06-21，✅）
+
+落地 = `server/engine/src/balance/equipment.ts`（注入逻辑）+ `pveUpgrades.ts`（三步链）+ `GameConfig.equipment`（管线）+ `client/test/equipment.test.ts`（17 项）。三条关键工程决策：
+
+1. **engine 零依赖红线**：客户端 webpack 直接 alias 打包 `@nw/engine` **源码**，而 `@nw/shared` 依赖 mongodb/jsonwebtoken。故 `applyEquipment` **绝不 import `@nw/shared`**——用结构化等价的引擎本地输入类型（`EngineEquipmentInput` = `{ gear, inv }`）接收，调用方直接把 `SaveData.gear`/`equipmentInv` 传进来（TS 结构化子类型，多余字段无害）。词条→引擎字段映射（`AFFIX_FIELD_MAP`）+ 强化系数 + 封顶都活在本模块，是「数值活在 engine」的兑现。
+2. **词条 id 命名空间判主/副**：E0 的 `EquipmentInstance.affixes` 是扁平 `Affix[]`，无主/副标记。约定用 id 前缀自描述——`m_*` 主词条（**唯一随强化等级放大**，`base × (1 + 0.1×level)`，DRAFT 系数）/ `s_*` 副词条（固定 roll 值）/ `k_*` 特技（proc 框架未落地 → 识别但 no-op）/ 未知 id 安全忽略。新增词条入 `AFFIX_FIELD_MAP` 即可，无需动实例结构。
+3. **封顶两段落点**：乘算百分比（atk/hp/atkspd）的**装备贡献**在 `applyEquipment` 累加阶段钳（烘焙进绝对值后不可反算）；绝对字段（lifestealPct/armor）由 `clampEffectCaps` 在注入末尾**统一钳一次**，实现 §7.7④「trait + 装备求和后钳」的跨源语义。
+   - ⚠️ **待办（非本切片）**：暴击（`m_crit`）依赖未落地的引擎暴击机制（§7.4 注）→ 当前占位 no-op；trait 的攻速/攻击/生命增益走 TraitSystem **运行期**、不在蓝图烘焙阶段 → 乘算类的「trait+装备求和封顶」尚未完全合一。待暴击/proc 框架与 trait 数值同表时收口（上限归 ECONOMY_NUMBERS §5）。
+   - **作用范围**：与 `applyPveUpgrades` 一致，只加成玩家发牌兵种（`PLAYER_EQUIPPABLE_UNITS` = Infantry/ShieldBearer/Archer）的**共享蓝图表**；siege 攻防共用同一张表的既有语义原样保留（§9「同一处注入」），攻防分离不在 E1 扩大。`gear.byUnit` 优先于 `gear.global`（阶段二按兵种已可用）。
+
 ---
 
 ## 10. 服务器权威与反作弊（L2）
@@ -396,8 +406,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 | 阶段 | 内容 | 依赖 |
 |---|---|---|
-| E0 数据模型 | `EquipmentInstance` / `equipmentInv` / `equipped` 新结构 + 存档迁移 + `SyncPatch` 收窄 | types/contracts |
-| E1 引擎注入 | `applyEquipment` + 三套蓝图接入 + 硬墙/单调性单测 | @nw/engine |
+| E0 数据模型 ✅ | `EquipmentInstance` / `equipmentInv` / `gear` 新结构（types/SaveData/openapi）+ 存档 v1→v2 迁移 + `SyncPatch` 收窄（装备段不进 `PUT /save`） | types/contracts |
+| E1 引擎注入 ✅ | `applyEquipment` + `clampEffectCaps` + campaign/siege 三步链接入 + `GameConfig.equipment` 管线 + 硬墙/单调性/封顶单测（`client/test/equipment.test.ts` 17 项）。见 §9 实现记录 | @nw/engine |
 | E2 获取 | 关卡掉装备（pveRewards）+ `/equipment/craft` 合成 | metaserver |
 | E3 强化 | `/equipment/enhance` 服务器掷骰 + 成功率表 + 失败损耗；`/equipment/salvage` 分解回收（70%/+5 锁定，§6.3）+ 300 库存上限校验 | metaserver |
 | E4 穿戴 | `/equipment/equip` + loadout（global 起步） | metaserver + client |

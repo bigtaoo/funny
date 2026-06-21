@@ -1,5 +1,7 @@
 import type { Fp } from './math/fixed';
 import type { LevelDefinition } from './campaign/LevelDefinition';
+// 仅类型引用（编译期擦除）→ 与 balance/equipment.ts 对 UnitType 的运行期引用不构成运行期环。
+import type { EngineEquipmentInput } from './balance/equipment';
 
 // i18n display keys are plain strings inside the engine — the simulation never
 // resolves them. The render/UI layer (client) re-narrows them to TranslationKey
@@ -135,6 +137,15 @@ export interface GameConfig {
    * pvp/netplay ignore it entirely. Pass save.pveUpgrades when launching campaign.
    */
   pveUpgrades?: Record<string, number>;
+  /**
+   * Equipment loadout + instance inventory (SaveData.gear + equipmentInv),
+   * read ONLY on the PvE-shaped paths (campaign / siege) — same hard wall as
+   * `pveUpgrades` (EQUIPMENT_DESIGN §9 / L1): `buildPvpBlueprints()` has no
+   * equipment param, so equipment power can't leak into ladder/duel PvP.
+   * Structurally compatible with `@nw/shared` (SaveData.gear/equipmentInv) — the
+   * engine takes its own dependency-free shape; callers pass the save fields directly.
+   */
+  equipment?: EngineEquipmentInput;
 }
 
 export interface PlayerConfig {

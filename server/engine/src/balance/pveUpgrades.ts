@@ -10,6 +10,7 @@
 
 import { UNIT_BLUEPRINTS } from '../config';
 import { UnitType, type UnitBlueprint } from '../types';
+import { applyEquipment, clampEffectCaps, type EngineEquipmentInput } from './equipment';
 
 // ── 材料（关卡掉落，PvE 升级货币）────────────────────────────────────────────
 //
@@ -97,14 +98,19 @@ export function buildPvpBlueprints(): Record<UnitType, UnitBlueprint> {
 }
 
 /**
- * campaign 路径：常量克隆 + 唯一注入点 applyPveUpgrades。
+ * campaign 路径：常量克隆 + 三步注入链（EQUIPMENT_DESIGN §9）：
+ *   applyPveUpgrades（单位养成/trait）→ applyEquipment（装备词条）→ clampEffectCaps（跨源封顶）。
  * @param levels SaveData.pveUpgrades（升级 id → 等级）。
+ * @param equip  穿戴装备 + 实例库存（SaveData.gear + equipmentInv）；缺省 = 无装备，链退化为仅 upgrades。
  */
 export function buildCampaignBlueprints(
   levels: Record<string, number>,
+  equip?: EngineEquipmentInput,
 ): Record<UnitType, UnitBlueprint> {
   const bp = cloneBlueprints();
   applyPveUpgrades(bp, levels);
+  applyEquipment(bp, equip);
+  clampEffectCaps(bp);
   return bp;
 }
 
@@ -115,12 +121,17 @@ export function buildCampaignBlueprints(
  *     后者签名无升级参 → 编译期不可能串味，§6.1 硬墙单测原样守护）；
  *   ②给未来 SLG 专属 buff（科技/家族增益，不影响 PvE）留唯一落点。
  * @param levels 服务器权威 pveUpgrades（升级 id → 等级）。
+ * @param equip  攻方权威养成快照里的装备（SaveData.gear + equipmentInv）；服务器复算围攻时随快照传入
+ *               （EQUIPMENT_DESIGN §10：客户端篡改本地穿戴改不了「这套装备能否破城」）。缺省 = 无装备。
  */
 export function buildSiegeBlueprints(
   levels: Record<string, number>,
+  equip?: EngineEquipmentInput,
 ): Record<UnitType, UnitBlueprint> {
   const bp = cloneBlueprints();
   applyPveUpgrades(bp, levels);
+  applyEquipment(bp, equip);
+  clampEffectCaps(bp);
   return bp;
 }
 

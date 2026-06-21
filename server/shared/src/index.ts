@@ -1,5 +1,6 @@
 // @nw/shared 公共 API barrel。
 export * from './types';
+export * from './equipment';
 export * from './api';
 export * from './jwt';
 export * from './ticket';
