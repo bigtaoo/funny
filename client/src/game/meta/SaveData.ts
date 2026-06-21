@@ -78,6 +78,11 @@ export interface SaveData {
   // 独立于 cosmetic `equipped`（皮肤）；由 /equipment/* 服务器端点写，不进同步段。
   equipmentInv: Record<string, EquipmentInstance>;
   gear: GearLoadout;
+
+  // —— 成就系统（服务器权威，ACHIEVEMENT_DESIGN §3）。懒创建：缺省视为全 0 / 空，
+  //    legacy 档不迁移；客户端只读（PUT /save 不上行，A2）。antiCheat 不下发，故镜像不含。——
+  stats?: Record<string, number>; // 终身累计统计（StatKey→值），单调递增
+  achievements?: Record<string, { claimedTiers: number[] }>; // achId→已领阶号子集
 }
 
 /**
