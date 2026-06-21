@@ -766,6 +766,8 @@ export interface components {
             visible?: boolean;
             /** @description G5：该格归同家族盟友所有（视野内、非己方）。客户端用友方色渲染。 */
             ally?: boolean;
+            /** @description G5：该格归本宗门「联盟宗门」成员所有（视野内、非己方、非家族）。联盟不共享视野， 仅在地图上用黄描边标记区分（§8.2，盟友间禁止进攻/夺地）。 */
+            allySect?: boolean;
         };
         WorldMapView: {
             worldId: string;
@@ -799,7 +801,7 @@ export interface components {
         MarchView: {
             marchId: string;
             /** @enum {string} */
-            kind: "attack" | "reinforce" | "occupy" | "sweep" | "return";
+            kind: "attack" | "reinforce" | "occupy" | "sweep" | "scout" | "return";
             fromTile: string;
             toTile: string;
             troops: number;
@@ -1197,7 +1199,7 @@ export interface operations {
                     toX: number;
                     toY: number;
                     /** @enum {string} */
-                    kind: "occupy" | "reinforce" | "attack" | "sweep";
+                    kind: "occupy" | "reinforce" | "attack" | "sweep" | "scout";
                     troops: number;
                     /** @description 围攻挂队（G3-2c）：attack 时用此进攻布阵模板；committed 兵力 = 队伍各单位分配之和（覆盖 troops） */
                     teamId?: string;

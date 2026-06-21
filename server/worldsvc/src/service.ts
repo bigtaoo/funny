@@ -38,6 +38,7 @@ import {
   VISION_TERRITORY_RADIUS,
   VISION_BASE_RADIUS,
   VISION_MARCH_RADIUS,
+  VISION_SCOUT_RADIUS,
   isInVision,
   marchInterpPos,
   type VisionSource,
@@ -93,6 +94,11 @@ export interface WorldTileView {
    * 盟友领地不应再显示为敌色（占领不写 tile.familyId，故由服务端按家族成员集判定后置此标记）。
    */
   ally?: boolean;
+  /**
+   * G5：该格归本宗门「联盟宗门」成员所有（视野内、非己方、非家族）。联盟不共享视野，
+   * 仅地图黄描边标记区分（§8.2）。家族盟友走 `ally`；本字段专指跨宗门联盟。
+   */
+  allySect?: boolean;
   /**
    * G5 视野：该格是否在请求者当前视野内。
    * - true：动态层（归属/驻军/防守/保护罩）如实返回；
@@ -158,7 +164,12 @@ export interface WorldServiceDeps {
 const emptyResources = (): Record<ResourceType, number> => ({ food: 0, iron: 0, wood: 0 });
 
 /** 出征许可的玩家面 kind（return 仅内部撤军腿，禁止外部直接发起）。 */
-const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'attack', 'sweep']);
+const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'attack', 'sweep', 'scout']);
+
+/** 在途行军的视野半径：侦察行军（scout）探得更深（VISION_SCOUT_RADIUS），其余按普通行军（VISION_MARCH_RADIUS）。 */
+function marchVisionRadius(kind: MarchKind): number {
+  return kind === 'scout' ? VISION_SCOUT_RADIUS : VISION_MARCH_RADIUS;
+}
 
 export class WorldService {
   private readonly gateway: WorldGatewayClient;
@@ -262,6 +273,8 @@ export class WorldService {
     const vis = (x: number, y: number): boolean => isInVision(sources, x, y);
     // 家族成员集（含自己）：可见的家族盟友领地标 ally（客户端用友方色，不显敌色）。
     const family = await this.familyMemberIds(worldId, accountId);
+    // 联盟宗门成员集（≤2 联盟宗门）：可见的联盟领地标 allySect（客户端黄描边，§8.2）。
+    const allySect = await this.allySectMemberIds(worldId, accountId);
 
     // 批量解析他人领地昵称：只对「可见的他人领地」拉档（视野外不显归属，无需 profile）。
     const otherOwnerIds = [...new Set(
@@ -292,7 +305,14 @@ export class WorldService {
           ? profileMap.get(o.ownerId) : undefined;
         const view = o ? this.tileDocView(o, accountId, ownerProfile) : this.proceduralView(worldId, x, y);
         const ally = !!o?.ownerId && o.ownerId !== accountId && family.has(o.ownerId);
-        tiles.push({ ...view, visible: true, ...(ally ? { ally: true } : {}) });
+        // 联盟标记：可见、非己方、非家族、属联盟宗门成员（家族盟友优先，二者互斥）。
+        const allied = !ally && !!o?.ownerId && o.ownerId !== accountId && allySect.has(o.ownerId);
+        tiles.push({
+          ...view,
+          visible: true,
+          ...(ally ? { ally: true } : {}),
+          ...(allied ? { allySect: true } : {}),
+        });
       }
     }
     return { worldId, cx: Math.floor(cx), cy: Math.floor(cy), r: rad, tiles };
@@ -307,6 +327,33 @@ export class WorldService {
       for (const m of mates) ids.add(m.accountId);
     }
     return ids;
+  }
+
+  /**
+   * G5：本宗门「联盟宗门」（`sect.allySectIds`，≤2）全体成员的 accountId 集。
+   * 链路：accountId → familyMembers → family.sectId → sect.allySectIds → 各联盟宗门成员家族 → 成员。
+   * 联盟**不共享视野**（§8.2），仅供 getMap 标记联盟领地（黄描边）。无宗门/无联盟 → 空集。
+   * 不含自己/同家族（那些走 `familyMemberIds`）。
+   */
+  private async allySectMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
+    const { cols } = this.deps;
+    const result = new Set<string>();
+    const myMember = await cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
+    if (!myMember?.familyId) return result;
+    const myFam = await cols.families.findOne({ _id: myMember.familyId });
+    if (!myFam?.sectId) return result;
+    const mySect = await cols.sects.findOne({ _id: myFam.sectId });
+    const allyIds = mySect?.allySectIds ?? [];
+    if (allyIds.length === 0) return result;
+    const allyFamilies = await cols.families
+      .find({ worldId, sectId: { $in: allyIds } })
+      .project<{ _id: string }>({ _id: 1 })
+      .toArray();
+    const famIds = allyFamilies.map((f) => f._id);
+    if (famIds.length === 0) return result;
+    const members = await cols.familyMembers.find({ familyId: { $in: famIds } }).toArray();
+    for (const m of members) result.add(m.accountId);
+    return result;
   }
 
   /**
@@ -351,7 +398,7 @@ export class WorldService {
         this.coordX(m.toTile), this.coordY(m.toTile),
         m.departAt, m.arriveAt, t,
       );
-      sources.push({ x: pos.x, y: pos.y, radius: VISION_MARCH_RADIUS });
+      sources.push({ x: pos.x, y: pos.y, radius: marchVisionRadius(m.kind) });
     }
     return sources;
   }
@@ -726,6 +773,9 @@ export class WorldService {
       }
       if (troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `围攻至少需带 ${OCCUPY_MIN_TROOPS} 兵`);
       defenderId = toTile.ownerId;
+    } else if (kind === 'scout') {
+      // 侦察：不打不占，派少量兵到任意非障碍格（含敌方/保护中/中立/中心）探视野后自动回师。
+      // 无归属/中心/保护期限制——已在上方拦掉障碍地形即可。不设 defenderId（不发 under_attack 预警）。
     } else {
       // sweep：清中立 / 资源格的 NPC 守军（不占地，回师带回缴获）。
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可扫荡');
@@ -885,6 +935,11 @@ export class WorldService {
 
     if (m.kind === 'sweep') {
       await this.applySweep(m, pw, t);
+      return;
+    }
+
+    if (m.kind === 'scout') {
+      await this.autoReturnScout(m, t);
       return;
     }
 
@@ -1110,6 +1165,30 @@ export class WorldService {
    * 扫荡中立 / 资源格的 NPC 守军（sweep 到点）。不占地：得手缴获资源 + 生还回师退兵池，
    * 失手则攻方兵力损耗（生还回池，可能为 0）。到达时若该格已被某玩家占领 → 退兵（扑空）。
    */
+  /**
+   * 侦察行军抵达目标：不打不占，自动翻转为返程腿（原兵力原路返回出发格，途中继续提供视野），
+   * 到点（return）退回兵力池。返程耗时 = 去程耗时（对称近似，免再算一次路径）。
+   */
+  private async autoReturnScout(m: MarchDoc, t: number): Promise<void> {
+    const { cols } = this.deps;
+    const back: MarchDoc = {
+      _id: marchId(m.worldId, m.ownerId, t, ++this.marchSeq),
+      worldId: m.worldId,
+      ownerId: m.ownerId,
+      fromTile: m.toTile,
+      toTile: m.fromTile,
+      kind: 'return',
+      troops: m.troops,
+      departAt: t,
+      arriveAt: t + Math.max(0, m.arriveAt - m.departAt),
+      status: 'marching',
+      rev: 0,
+    };
+    await cols.marches.insertOne(back);
+    await this.scheduleMarch(m.worldId, back._id, back.arriveAt);
+    void this.pushMarch(m.ownerId, this.marchView(back));
+  }
+
   private async applySweep(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
     const { cols } = this.deps;
     const occ = await cols.tiles.findOne({ _id: m.toTile });

@@ -33,7 +33,7 @@ export type TileType =
   | 'gate'; // 关隘/桥（嵌于阻挡带；占领方及盟友可通行；未占领视为阻挡，S8-6.6）
 
 export type ResourceType = 'food' | 'iron' | 'wood';
-export type MarchKind = 'attack' | 'reinforce' | 'occupy' | 'sweep' | 'return';
+export type MarchKind = 'attack' | 'reinforce' | 'occupy' | 'sweep' | 'scout' | 'return';
 export type SiegeOutcome = 'attacker_win' | 'defender_win' | 'draw';
 export type FamilyRole = 'leader' | 'elder' | 'member';
 export type WorldStatus = 'open' | 'active' | 'settling' | 'closed';
@@ -623,6 +623,11 @@ export const VISION_TERRITORY_RADIUS = 2;
 export const VISION_BASE_RADIUS = 5;
 /** 在途行军视野半径（侦察行军价值的来源，DRAFT）。 */
 export const VISION_MARCH_RADIUS = 2;
+/**
+ * 侦察行军（scout kind）视野半径（G5 V2 余项，DRAFT）。比普通行军大——侦察的价值就在于
+ * 「探得更深」：不打不占，派少量兵到任意非障碍格，沿途 + 抵达点照亮一片更大的视野后自动回师。
+ */
+export const VISION_SCOUT_RADIUS = 4;
 
 /** 视野源：一个中心点 + 半径（Chebyshev）。 */
 export interface VisionSource {

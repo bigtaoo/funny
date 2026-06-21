@@ -63,6 +63,11 @@ components:
         ally:
           type: boolean
           description: G5：该格归同家族盟友所有（视野内、非己方）。客户端用友方色渲染。
+        allySect:
+          type: boolean
+          description: >-
+            G5：该格归本宗门「联盟宗门」成员所有（视野内、非己方、非家族）。联盟不共享视野，
+            仅在地图上用黄描边标记区分（§8.2，盟友间禁止进攻/夺地）。
 
     WorldMapView:
       type: object
@@ -129,7 +134,7 @@ components:
           type: string
         kind:
           type: string
-          enum: [attack, reinforce, occupy, sweep, return]
+          enum: [attack, reinforce, occupy, sweep, scout, return]
         fromTile:
           type: string
         toTile:
@@ -651,7 +656,7 @@ paths:
                 fromY: { type: integer }
                 toX: { type: integer }
                 toY: { type: integer }
-                kind: { type: string, enum: [occupy, reinforce, attack, sweep] }
+                kind: { type: string, enum: [occupy, reinforce, attack, sweep, scout] }
                 troops: { type: integer }
                 teamId:
                   type: string
