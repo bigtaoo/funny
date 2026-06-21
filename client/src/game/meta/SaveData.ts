@@ -69,7 +69,16 @@ export interface SaveData {
     best: Record<string, LevelRecord>;
   };
   materials: Record<string, number>;
+  /**
+   * @deprecated S3-2 per-stat 材料升级。S12 起单位养成改单一等级 + 集卡合成（unitLevels/cardInventory），
+   * 引擎不再读此跑养成。保留供老存档兼容，S12 清理后退役。
+   */
   pveUpgrades: Record<string, number>;
+  // —— 单位养成（S12，ECONOMY_NUMBERS §4）。服务器权威，客户端只读（不在 SyncPatch）——
+  /** 单位强度等级 unitId→1..9，由 cardInventory 派生，引擎读此跑蓝图。 */
+  unitLevels: Record<string, number>;
+  /** 单位卡库存 `${unitId}:${level}`→张数，集卡合成（5→1）原始来源。 */
+  cardInventory: Record<string, number>;
   /** 皮肤穿戴（cosmetic，slot→skinId）。纯外观，随同步段上行。 */
   equipped: Record<string, string>;
   flags: Record<string, boolean>;
@@ -97,7 +106,8 @@ export type SyncPatch = Partial<Pick<SaveData, 'equipped' | 'flags'>>;
 export const SYNC_KEYS = ['equipped', 'flags'] as const;
 
 // v2（2026-06-21）：新增 equipmentInv + gear（装备系统 E0）。migrate v1→v2 见 migrate.ts。
-export const SAVE_VERSION = 2;
+// v3（2026-06-21）：单位养成重做（S12）——新增 unitLevels + cardInventory，pveUpgrades 改 deprecated。
+export const SAVE_VERSION = 3;
 
 /** 本地存档主 key（IPlatform.storage）。 */
 export const SAVE_STORAGE_KEY = 'nw_save_v1';
@@ -117,6 +127,8 @@ export function makeNewSave(accountId = '', now = 0): SaveData {
     progress: { cleared: [], stars: {}, best: {} },
     materials: {},
     pveUpgrades: {},
+    unitLevels: {},
+    cardInventory: {},
     equipped: {},
     flags: {},
     equipmentInv: {},

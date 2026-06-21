@@ -75,7 +75,7 @@ export function clampUnitLevel(level: number | undefined): number {
  */
 export function applyUnitLevels(
   bp: Record<UnitType, UnitBlueprint>,
-  levels: Partial<Record<UnitType, number>> | undefined,
+  levels: Record<string, number> | undefined,
 ): void {
   if (!levels) return;
   for (const unitType of PROGRESSABLE_UNITS) {

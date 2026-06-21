@@ -19,8 +19,10 @@ import {
 export interface LocalMatchOpts {
   /** When set, runs the PvE campaign level instead of a PvP-vs-AI match. */
   level?: LevelDefinition;
-  /** PvE upgrade levels threaded into the engine (hard wall, §5.2); campaign + siege. */
+  /** @deprecated S12: per-stat 升级；单位养成改 unitLevels。仍透传以兼容过渡。 */
   pveUpgrades?: Record<string, number>;
+  /** 单位养成等级（SaveData.unitLevels）threaded into the engine (hard wall, §5.2); campaign + siege. */
+  unitLevels?: Record<string, number>;
   /**
    * Engine mode override. Defaults to 'campaign' when a level is given, else 'pvp'.
    * Pass 'siege' (SLG 围攻, S8-3) to drive the same PvE-shaped engine with the
@@ -53,7 +55,9 @@ export function createLocalMatch(opts: LocalMatchOpts = {}): LocalMatch {
       seed,
       players: [{ id: 0 }, { id: 1 }],
       mode,
-      ...(opts.level ? { level: opts.level, pveUpgrades: opts.pveUpgrades ?? {} } : {}),
+      ...(opts.level
+        ? { level: opts.level, pveUpgrades: opts.pveUpgrades ?? {}, unitLevels: opts.unitLevels ?? {} }
+        : {}),
     },
     recorder,
   );

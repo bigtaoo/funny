@@ -209,6 +209,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pve/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 单位养成合成（S12，服务器权威：校验库存→消耗 5 张 N 级卡→+1 张 N+1→重算 unitLevels→回推）；仅在线 */
+        post: operations["pveMerge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/equipment/craft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 装备合成（E2，服务器权威：扣文具材料→roll 一件 +0 基础装备→入库[300 上限]）。idempotencyKey 幂等 */
+        post: operations["craftEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/achievements": {
         parameters: {
             query?: never;
@@ -741,6 +775,14 @@ export interface components {
                 [key: string]: number;
             };
             pveUpgrades: {
+                [key: string]: number;
+            };
+            /** @description 单位强度等级 unitId→1..9，由 cardInventory 派生，引擎读此跑蓝图 */
+            unitLevels?: {
+                [key: string]: number;
+            };
+            /** @description 单位卡库存 `${unitId}:${level}`→张数，集卡合成原始来源 */
+            cardInventory?: {
                 [key: string]: number;
             };
             equipped: {
@@ -1468,6 +1510,84 @@ export interface operations {
             400: components["responses"]["ErrorResp"];
             401: components["responses"]["ErrorResp"];
             402: components["responses"]["ErrorResp"];
+        };
+    };
+    pveMerge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 兵种 id（infantry/shieldbearer/archer） */
+                    unitId: string;
+                    /** @description 被合成的源卡等级 N（产出 N+1） */
+                    level: number;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+        };
+    };
+    craftEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 装备定义 id（EQUIPMENT_DEFS，决定槽位/稀有度/配方） */
+                    defId: string;
+                    /** @description 客户端生成幂等键；重放返回首次结果（不二次扣料/roll） */
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            instance: components["schemas"]["EquipmentInstance"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
         };
     };
     getAchievements: {

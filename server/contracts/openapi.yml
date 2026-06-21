@@ -128,9 +128,19 @@ components:
         materials:
           type: object
           additionalProperties: { type: integer }
+        # @deprecated S3-2 per-stat 升级；S12 起单位养成改集卡合成（见 unitLevels/cardInventory）。
         pveUpgrades:
           type: object
           additionalProperties: { type: integer }
+        # —— 单位养成（S12，ECONOMY_NUMBERS §4）。服务器权威，legacy 档可缺，非 required ——
+        unitLevels:
+          type: object
+          additionalProperties: { type: integer, minimum: 1, maximum: 9 }
+          description: 单位强度等级 unitId→1..9，由 cardInventory 派生，引擎读此跑蓝图
+        cardInventory:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+          description: 单位卡库存 `${unitId}:${level}`→张数，集卡合成原始来源
         equipped:
           type: object
           additionalProperties: { type: string }
@@ -900,6 +910,41 @@ paths:
               required: [upgradeId]
               properties:
                 upgradeId: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+
+  /pve/merge:
+    post:
+      operationId: pveMerge
+      tags: [save]
+      summary: 单位养成合成（S12，服务器权威：校验库存→消耗 5 张 N 级卡→+1 张 N+1→重算 unitLevels→回推）；仅在线
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [unitId, level]
+              properties:
+                unitId: { type: string, description: 兵种 id（infantry/shieldbearer/archer） }
+                level: { type: integer, minimum: 1, maximum: 8, description: 被合成的源卡等级 N（产出 N+1） }
       responses:
         '200':
           description: 成功

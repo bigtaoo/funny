@@ -46,6 +46,12 @@ export interface GameSceneOptions {
    */
   pveUpgrades?: Record<string, number>;
   /**
+   * Unit progression levels (SaveData.unitLevels) for the campaign path (S12).
+   * Threaded into the engine to build progression-buffed blueprints (hard wall,
+   * §5.2); ignored unless `level` is set.
+   */
+  unitLevels?: Record<string, number>;
+  /**
    * A pre-built engine to drive the scene (online netplay, S1-8): app.ts builds
    * it with mode 'netplay' + a NetInputSource. Takes precedence over `level`.
    */
@@ -81,6 +87,7 @@ export class GameScene implements Scene {
       const match = createLocalMatch({
         ...(opts.level ? { level: opts.level } : {}),
         ...(opts.pveUpgrades ? { pveUpgrades: opts.pveUpgrades } : {}),
+        ...(opts.unitLevels ? { unitLevels: opts.unitLevels } : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
       });
       engine = match.engine;

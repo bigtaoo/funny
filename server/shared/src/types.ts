@@ -81,7 +81,16 @@ export interface SaveData {
     best: Record<string, LevelRecord>;
   };
   materials: Record<string, number>;
+  /**
+   * @deprecated S3-2 的 per-stat 材料升级（inf_hp/inf_dmg…）。S12 起单位养成改单一等级 + 集卡
+   * 合成（见 unitLevels / cardInventory），引擎不再读此字段跑养成。保留供老存档兼容，S12 清理后退役。
+   */
   pveUpgrades: Record<string, number>;
+  // —— 单位养成（S12，ECONOMY_NUMBERS §4 / ADR-009）。服务器权威，PUT /save 不可写 ——
+  /** 单位强度等级（unitId→1..9）= 各兵种最高拥有卡级，由 cardInventory 派生（deriveUnitLevels）。引擎读此跑蓝图。 */
+  unitLevels: Record<string, number>;
+  /** 单位卡库存：`${unitId}:${level}` → 张数。集卡合成（5→1）的原始来源。 */
+  cardInventory: Record<string, number>;
   /** 皮肤穿戴（cosmetic，slot→skinId）。纯外观、无战力，故仍随 PUT /save 同步段上行。 */
   equipped: Record<string, string>;
   flags: Record<string, boolean>;
@@ -102,7 +111,9 @@ export type SyncPatch = Partial<Pick<SaveData, 'equipped' | 'flags'>>;
 
 // v2（2026-06-21）：新增 equipmentInv + gear（装备系统 E0）。纯增字段、不动 equipped，
 // 老存档惰性默认（读取处 `?? {}`），无破坏性迁移。
-export const SAVE_VERSION = 2;
+// v3（2026-06-21）：单位养成重做（S12）——新增 unitLevels + cardInventory；pveUpgrades 改 deprecated。
+// 纯增字段，老存档惰性默认空（游戏未上线、无真实档，养成从 L1 重起，不做 pveUpgrades→unitLevels 换算）。
+export const SAVE_VERSION = 3;
 
 /** 新账号的默认存档。所有权威段从零起步。 */
 export function makeNewSave(accountId: string, now: number): SaveData {
@@ -119,6 +130,8 @@ export function makeNewSave(accountId: string, now: number): SaveData {
     progress: { cleared: [], stars: {}, best: {} },
     materials: {},
     pveUpgrades: {},
+    unitLevels: {},
+    cardInventory: {},
     equipped: {},
     flags: {},
     equipmentInv: {},

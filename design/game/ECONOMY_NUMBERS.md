@@ -63,7 +63,7 @@
 **机制**（ADR-009）：每个单位卡分 1–9 级；**5 张 N 级 → 合成 1 张 (N+1) 级，100% 成功**。
 单位的强度等级 = 当前最高合成到的卡级。
 
-> **实现状态（2026-06-21，META_TASKS S12）**：引擎脊柱已落地——`@nw/engine/balance/progression.ts`（`applyUnitLevels` = 等级→蓝图唯一注入点，§4.2 连续属性 + §4.4 三档 trait；暴击机制走 `GameState.combatPrng` + `CombatSystem`，PvP 硬墙不读）。**§4.2 / §4.4 的数值即代码常量**（`STAT_GROWTH_PER_LEVEL` / `TRAIT_BREAKPOINTS`），调参只动那里。**待落地**：§4.1 合成数据流（5→1 卡片库存、meta 合成端点、盲盒产卡）与客户端 UI（S12-B/C/D）；当前等级来源 SaveData 字段仍是 S3-2 的 per-stat `pveUpgrades`，S12-B 迁移成 `unitLevels`。
+> **实现状态（2026-06-21，META_TASKS S12）**：引擎脊柱已落地——`@nw/engine/balance/progression.ts`（`applyUnitLevels` = 等级→蓝图唯一注入点，§4.2 连续属性 + §4.4 三档 trait；暴击机制走 `GameState.combatPrng` + `CombatSystem`，PvP 硬墙不读）。**§4.2 / §4.4 的数值即代码常量**（`STAT_GROWTH_PER_LEVEL` / `TRAIT_BREAKPOINTS`），调参只动那里。**已落地（S12-B，2026-06-21）**：§4.1 合成核心——`@nw/shared/unitCards.ts`（`applyCardMerge` 5→1 + `deriveUnitLevels`）+ SaveData `unitLevels`/`cardInventory`（服务器权威，SAVE_VERSION→3）+ meta `POST /pve/merge`（真 Mongo e2e 绿）+ 引擎 `GameConfig.unitLevels`。**待落地**：§4.1 卡片来源（盲盒/关卡掉落，S12-C）、客户端养成/合成 UI 与实际对局 play-wiring + anti-cheat judge 对齐（S12-D）。
 
 ### 4.1 合成成本（以 T1 卡为单位）
 

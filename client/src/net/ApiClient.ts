@@ -194,9 +194,20 @@ export class ApiClient {
     }>('/pve/verify', { verifyId, endFrame, frames });
   }
 
-  /** PvE 升级：服务器校验材料 → 扣材料 + pveUpgrades+1 → 回推。材料不足 → ApiError('INSUFFICIENT_FUNDS')（402）。 */
+  /**
+   * @deprecated S3-2 per-stat 升级。S12 起单位养成走集卡合成（{@link pveMerge}）。
+   * PvE 升级：服务器校验材料 → 扣材料 + pveUpgrades+1 → 回推。材料不足 → ApiError('INSUFFICIENT_FUNDS')（402）。
+   */
   async pveUpgrade(upgradeId: string): Promise<{ save: SaveData }> {
     return this.post<{ save: SaveData }>('/pve/upgrade', { upgradeId });
+  }
+
+  /**
+   * 单位养成合成（S12）：服务器校验库存 → 消耗 5 张 N 级卡 → +1 张 N+1 → 重算 unitLevels → 回推。
+   * 卡片不足 → ApiError('INSUFFICIENT_FUNDS')（402）；非法兵种/等级 → ApiError('BAD_REQUEST')（400）。
+   */
+  async pveMerge(unitId: string, level: number): Promise<{ save: SaveData }> {
+    return this.post<{ save: SaveData }>('/pve/merge', { unitId, level });
   }
 
   /** 最近对战历史（ranked / friendly，按时间倒序；需登录 token）。 */

@@ -122,6 +122,68 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
   });
 });
 
+// S12 单位养成合成 /pve/merge：服务器权威校验库存 → 5 张 N → 1 张 N+1 → 重算 unitLevels → 回推。
+describe.skipIf(!mongo)('pve unit-card merge (S12) e2e', () => {
+  const m = mongo!;
+  let app: FastifyInstance;
+  let token: string;
+  let accountId: string;
+  const body = (r: { payload: string }) => JSON.parse(r.payload);
+  const auth = () => ({ authorization: `Bearer ${token}` });
+  const merge = (unitId: string, level: number) =>
+    app.inject({ method: 'POST', url: '/pve/merge', headers: auth(), payload: { unitId, level } });
+  const seedCards = (inv: Record<string, number>) =>
+    m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.cardInventory': inv } });
+
+  beforeEach(async () => {
+    await m.db.dropDatabase();
+    await m.ensureIndexes();
+    if (app) await app.close();
+    app = await buildApp({ cols: m.collections, jwt, internalKey: 'k' });
+    const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'pve-merge-1' } }));
+    token = r.data.token;
+    accountId = r.data.accountId;
+    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // 建档
+  });
+  afterAll(async () => { if (app) await app.close(); });
+
+  it('5 张 L1 → 1 张 L2：扣库存 + unitLevels 派生到 2（服务器权威）', async () => {
+    await seedCards({ 'infantry:1': 7 });
+    const r = body(await merge('infantry', 1));
+    expect(r.data.save.cardInventory['infantry:1']).toBe(2); // 7 - 5
+    expect(r.data.save.cardInventory['infantry:2']).toBe(1);
+    expect(r.data.save.unitLevels['infantry']).toBe(2);
+  });
+
+  it('卡片不足（4 < 5）→ 402，库存不变', async () => {
+    await seedCards({ 'archer:1': 4 });
+    const res = await merge('archer', 1);
+    expect(res.statusCode).toBe(402);
+    const s = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(s.data.save.cardInventory['archer:1']).toBe(4);
+  });
+
+  it('链式合成到 L3：unitLevels 跟随最高拥有卡级', async () => {
+    await seedCards({ 'shieldbearer:1': 25 });
+    await merge('shieldbearer', 1); // 25→20 L1, +1 L2
+    await merge('shieldbearer', 1);
+    await merge('shieldbearer', 1);
+    await merge('shieldbearer', 1);
+    const r5 = body(await merge('shieldbearer', 1)); // 5 次 → 5 张 L2, 0 L1
+    expect(r5.data.save.cardInventory['shieldbearer:2']).toBe(5);
+    expect(r5.data.save.unitLevels['shieldbearer']).toBe(2);
+    const r6 = body(await merge('shieldbearer', 2)); // 5 张 L2 → 1 张 L3
+    expect(r6.data.save.cardInventory['shieldbearer:3']).toBe(1);
+    expect(r6.data.save.unitLevels['shieldbearer']).toBe(3);
+  });
+
+  it('非法兵种 / 越界等级 → 400', async () => {
+    expect((await merge('dragon', 1)).statusCode).toBe(400);   // 未知兵种
+    expect((await merge('infantry', 9)).statusCode).toBe(400); // L9 不可再合成
+    expect((await merge('infantry', 0)).statusCode).toBe(400);
+  });
+});
+
 // S9-3b PvE 喂入：裁判复算回传 kill/cast（verdict.statsJson）→ /pve/verify verified 时累加进 stats。
 // 需注入「可用 + 可配裁决」的假裁判触发抽检 + 复算（首通恒触发抽检 → needsReplay → verify）。
 describe.skipIf(!mongo)('pve achievement feed (S9-3b) e2e', () => {

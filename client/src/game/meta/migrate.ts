@@ -24,6 +24,12 @@ const MIGRATIONS: Array<(d: AnyObj) => AnyObj> = [
     d.version = 2;
     return d;
   },
+  // v2 → v3：单位养成重做（S12）。unitLevels / cardInventory 为纯增字段，fillDefaults 补 {}；
+  // 游戏未上线、无真实档，老 pveUpgrades 不换算成 unitLevels（养成从 L1 重起）。只钉版本号。
+  (d) => {
+    d.version = 3;
+    return d;
+  },
 ];
 
 /** 深合并默认值：obj 缺的键用 def 补；已有键保留（对象递归，数组/标量直接保留）。 */

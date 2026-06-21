@@ -11,6 +11,7 @@ export * from './ladder';
 export * from './economy';
 export * from './achievements';
 export * from './pveRewards';
+export * from './unitCards';
 export * from './social';
 export * from './slg';
 export * from './chatFilter';

@@ -135,8 +135,17 @@ export interface GameConfig {
    * PvE upgrade levels (SaveData.pveUpgrades), read ONLY on the campaign path to
    * build buffed blueprints. The hard wall (§5.2) keeps this off the PvP path:
    * pvp/netplay ignore it entirely. Pass save.pveUpgrades when launching campaign.
+   * @deprecated S12: unit progression moved to single level + card merge (see `unitLevels`).
+   *   Engine no longer reads this for progression; kept for transition compat.
    */
   pveUpgrades?: Record<string, number>;
+  /**
+   * Unit progression levels (SaveData.unitLevels, unitId→1..9), read ONLY on the
+   * PvE-shaped paths (campaign / siege) — same hard wall as `equipment` /
+   * `pveUpgrades`: `buildPvpBlueprints()` has no level param, so progression power
+   * can't leak into ladder/duel PvP. Pass save.unitLevels when launching campaign/siege.
+   */
+  unitLevels?: Record<string, number>;
   /**
    * Equipment loadout + instance inventory (SaveData.gear + equipmentInv),
    * read ONLY on the PvE-shaped paths (campaign / siege) — same hard wall as

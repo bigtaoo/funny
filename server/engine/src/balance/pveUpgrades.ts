@@ -107,7 +107,7 @@ export function buildPvpBlueprints(): Record<UnitType, UnitBlueprint> {
 export function buildCampaignBlueprints(
   levels: Record<string, number>,
   equip?: EngineEquipmentInput,
-  unitLevels?: Partial<Record<UnitType, number>>,
+  unitLevels?: Record<string, number>,
 ): Record<UnitType, UnitBlueprint> {
   const bp = cloneBlueprints();
   applyPveUpgrades(bp, levels);
@@ -130,7 +130,7 @@ export function buildCampaignBlueprints(
 export function buildSiegeBlueprints(
   levels: Record<string, number>,
   equip?: EngineEquipmentInput,
-  unitLevels?: Partial<Record<UnitType, number>>,
+  unitLevels?: Record<string, number>,
 ): Record<UnitType, UnitBlueprint> {
   const bp = cloneBlueprints();
   applyPveUpgrades(bp, levels);

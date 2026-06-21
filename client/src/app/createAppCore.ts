@@ -895,6 +895,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     }, {
       level,
       pveUpgrades: saveManager.get().pveUpgrades,
+      // S12: unitLevels 暂不在此传入实际对局——anti-cheat spot-check（judge）尚未对齐 unitLevels，
+      // 现在传会让被抽检的高养成玩家因 judge 弱蓝图复算星数偏低而误判。play + judge 对齐一起在 S12-D 做。
       equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
     });
   }

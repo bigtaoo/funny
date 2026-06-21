@@ -14,6 +14,8 @@ import {
   chaptersClearedCount,
   sanitizePvpReportedStats,
   accrueStats,
+  applyCardMerge,
+  deriveUnitLevels,
 } from '@nw/shared';
 import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import {
@@ -566,6 +568,31 @@ export class MetaService {
       }
       if (out.error === 'MAXED') {
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'upgrade maxed'));
+      }
+      return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
+    }
+    return ok({ save: out.save });
+  }
+
+  /**
+   * 单位养成合成（S12，ECONOMY_NUMBERS §4.1）：服务器权威校验库存 → 消耗 5 张 N 级卡 → +1 张
+   * (N+1) → 重算 unitLevels → 回推（仅在线）。卡片库存/等级是服务器权威段，putSave 不接受（§8.3）。
+   */
+  async pveMerge(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { unitId, level } = req.body as { unitId: string; level: number };
+
+    const out = await this.mutateSave(accountId, (s) => {
+      const merged = applyCardMerge(s.cardInventory ?? {}, unitId, level);
+      if (typeof merged === 'string') return merged; // INVALID_UNIT / INVALID_LEVEL / INSUFFICIENT
+      return { ...s, cardInventory: merged, unitLevels: deriveUnitLevels(merged) };
+    });
+    if ('error' in out) {
+      if (out.error === 'INSUFFICIENT') {
+        return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough cards'));
+      }
+      if (out.error === 'INVALID_UNIT' || out.error === 'INVALID_LEVEL') {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, out.error));
       }
       return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
     }
