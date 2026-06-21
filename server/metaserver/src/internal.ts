@@ -25,7 +25,7 @@ import { getProfile, resolveByPublicId } from './accounts.js';
 import { friendAccountIds } from './social.js';
 import { insertSystemMail, bulkInsertSystemMail } from './mail.js';
 import { escrowEquipment, grantEquipment } from './equipment.js';
-import type { CompAttachment, CompTarget, EquipmentInstance } from '@nw/shared';
+import type { CompTarget, EquipmentInstance, MailAttachmentDoc } from '@nw/shared';
 import { ERROR_HTTP_STATUS } from '@nw/shared';
 
 const log = createLogger('meta:internal');
@@ -154,7 +154,9 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     target?: CompTarget;
     subject: string;
     body: string;
-    attachments: CompAttachment[];
+    // MailAttachmentDoc（非 CompAttachment）：除 OPS 补偿的 coins/item/skin，还含 worldsvc 赛季奖励的
+    // 'material'（→ SaveData.materials 养成统一池，SLG8）。CompAttachment 是其子集。
+    attachments: MailAttachmentDoc[];
     expireDays: number;
   }
 

@@ -411,6 +411,7 @@ export const en: Record<TranslationKey, string> = {
   'mail.attCoins': 'Coins ×{n}',
   'mail.attSkin': 'Skin {id}',
   'mail.attItem': 'Item {id} ×{n}',
+  'mail.attMaterial': 'Material {id} ×{n}',
   'mail.claim': 'Claim',
   'mail.claimed': 'Claimed',
   'mail.claimDone': 'Claimed!',

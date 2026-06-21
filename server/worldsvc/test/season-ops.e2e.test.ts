@@ -93,11 +93,12 @@ describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
     expect(doc).toBeTruthy();
     expect(doc!.ranking[0]).toMatchObject({ rank: 1, tier: 'champion', id: familyId(W, 'AA') });
 
-    // 冠军 alice 收奖邮件：中原首府 → scrap ×2。
+    // 冠军 alice 收奖邮件：中原首府 → scrap ×2。材料走 kind:'material'（→ SaveData.materials
+    // 养成统一池，SLG8），非泛用 'item'（后者落 inventory.items 孤儿桶）。
     const aliceMail = mailCalls.find((x) => x.accountId === 'alice');
     expect(aliceMail).toBeTruthy();
     expect(aliceMail!.dispatchKey).toBe(`slg-settle:${W}:s${SEASON}`);
-    const scrap = aliceMail!.content.attachments!.find((a) => a.kind === 'item' && a.id === 'scrap');
+    const scrap = aliceMail!.content.attachments!.find((a) => a.kind === 'material' && a.id === 'scrap');
     expect(scrap!.count).toBe(SETTLE_REWARDS.champion.items.scrap * CENTER_CAPITAL_MULT);
 
     // 重入：world 已 settling，再 settle 不重复落库（$setOnInsert）。

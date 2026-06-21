@@ -144,23 +144,30 @@ describe.skipIf(!mongo)('social mail e2e', () => {
     expect(comm.bal(a.accountId)).toBe(500);
   });
 
-  it('system mail: 内部 accountId 直投（worldsvc 结算路径，§17.5）→ 收件箱', async () => {
+  it('system mail: 内部 accountId 直投（worldsvc 结算路径，§17.5）→ 收件箱 + 材料领进养成统一池', async () => {
     const a = await newAccount('mail-acct');
     await get(a.token, '/save');
     // 无 publicId / 无 target，仅 accountId —— worldsvc 等内部调用方走此分支。
+    // 赛季奖励材料走 kind:'material'（SLG8）：领取后落 SaveData.materials 养成统一池
+    // （PvE/装备/拍卖共用），而非泛用 inventory.items。
     const s = b(await internal('/internal/mail/system/send', {
       dispatchKey: 'slg-settle:s5-ops:s5',
       accountId: a.accountId,
       subject: 'slg.settle.subject',
       body: 'slg.settle.body|rank=1|tier=champion',
-      attachments: [{ kind: 'item', id: 'scrap', count: 1000 }],
+      attachments: [{ kind: 'material', id: 'scrap', count: 1000 }],
       expireDays: 30,
     }));
     expect(s.ok).toBe(true);
     expect(s.recipientCount).toBe(1);
     const inbox = b(await get(a.token, '/mail'));
     expect(inbox.data.mail).toHaveLength(1);
-    expect(inbox.data.mail[0].attachments[0]).toMatchObject({ kind: 'item', id: 'scrap', count: 1000 });
+    expect(inbox.data.mail[0].attachments[0]).toMatchObject({ kind: 'material', id: 'scrap', count: 1000 });
+
+    // 领取 → 材料进 save.materials 统一池（不进 inventory.items 孤儿桶）。
+    const claim = b(await post(a.token, `/mail/${inbox.data.mail[0].mailId}/claim`, {}));
+    expect(claim.data.save.materials.scrap).toBe(1000);
+    expect(claim.data.save.inventory.items.scrap ?? 0).toBe(0);
   });
 
   it('claims a skin attachment into inventory', async () => {

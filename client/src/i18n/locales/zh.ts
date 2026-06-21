@@ -414,6 +414,7 @@ export const zh = {
   'mail.attCoins': '金币 ×{n}',
   'mail.attSkin': '皮肤 {id}',
   'mail.attItem': '物品 {id} ×{n}',
+  'mail.attMaterial': '材料 {id} ×{n}',
   'mail.claim': '领取附件',
   'mail.claimed': '已领取',
   'mail.claimDone': '领取成功',

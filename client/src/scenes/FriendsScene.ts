@@ -934,6 +934,7 @@ function attachmentLabel(a: MailAttachmentView): string {
   const n = a.count ?? 1;
   if (a.kind === 'coins') return t('mail.attCoins', { n });
   if (a.kind === 'skin') return t('mail.attSkin', { id: a.id ?? '' });
+  if (a.kind === 'material') return t('mail.attMaterial', { id: a.id ?? '', n });
   return t('mail.attItem', { id: a.id ?? '', n });
 }
 

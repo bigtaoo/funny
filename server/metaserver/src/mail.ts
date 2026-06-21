@@ -79,22 +79,29 @@ export async function claimMailAtomic(
   return { doc: claimed };
 }
 
-/** 把附件按类型拆开（金币求和 / 皮肤 id / 物品 id→数量），供 service 发货。 */
+/**
+ * 把附件按类型拆开（金币求和 / 皮肤 id / 物品 id→数量 / 材料 id→数量），供 service 发货。
+ * `materials` 与 `items` 刻意分桶：material → SaveData.materials 养成统一池（PvE/装备/拍卖共用，
+ * SLG8）；item → inventory.items 泛用桶。
+ */
 export function splitAttachments(attachments: MailAttachmentDoc[]): {
   coins: number;
   skins: string[];
   items: Record<string, number>;
+  materials: Record<string, number>;
 } {
   let coins = 0;
   const skins: string[] = [];
   const items: Record<string, number> = {};
+  const materials: Record<string, number> = {};
   for (const a of attachments) {
     const n = Math.max(0, Math.floor(a.count ?? (a.kind === 'coins' ? 0 : 1)));
     if (a.kind === 'coins') coins += n;
     else if (a.kind === 'skin' && a.id) skins.push(a.id);
     else if (a.kind === 'item' && a.id) items[a.id] = (items[a.id] ?? 0) + n;
+    else if (a.kind === 'material' && a.id) materials[a.id] = (materials[a.id] ?? 0) + n;
   }
-  return { coins, skins, items };
+  return { coins, skins, items, materials };
 }
 
 export type SendMailErr = 'NOT_FOUND' | 'NOT_FRIEND' | 'BAD_REQUEST';

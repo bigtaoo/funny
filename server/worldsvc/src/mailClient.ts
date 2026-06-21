@@ -6,7 +6,8 @@
 import { internalHeaders } from '@nw/shared';
 
 export interface WorldMailAttachment {
-  kind: 'coins' | 'skin' | 'item';
+  // 'material' → SaveData.materials 养成统一池（SLG8 赛季奖励）；'item' → inventory.items 泛用桶。
+  kind: 'coins' | 'skin' | 'item' | 'material';
   id?: string;
   count?: number;
 }

@@ -2332,7 +2332,9 @@ export class WorldService {
         const accounts = await this.expandToAccounts(worldId, r.scope, r.familyId);
         const dispatchKey = `slg-settle:${worldId}:s${w.season}`;
         const attachments = [
-          ...Object.entries(items).filter(([, n]) => n > 0).map(([id, count]) => ({ kind: 'item' as const, id, count })),
+          // 材料（scrap/lead/binding）发到 SaveData.materials 养成统一池（SLG8），故 kind:'material'
+          // 而非泛用 'item'（后者落 inventory.items，养成/装备/拍卖读不到 → 孤儿）。
+          ...Object.entries(items).filter(([, n]) => n > 0).map(([id, count]) => ({ kind: 'material' as const, id, count })),
           ...base.skins.map((id) => ({ kind: 'skin' as const, id })),
           ...(base.coins ? [{ kind: 'coins' as const, count: base.coins }] : []),
         ];

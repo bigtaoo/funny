@@ -948,7 +948,7 @@ export class MetaService {
     // 发 inventory（皮肤幂等 set / 物品 $inc）+ 钱包镜像 + deliveredOrders 幂等账本。
     const cur = await getOrCreateSave(cols, accountId, now());
     const newSkins = split.skins.filter((s) => !cur.inventory.skins.includes(s));
-    const save = await deliverMailGrant(cols, accountId, orderId, newSkins, split.items, coinsAfter, now());
+    const save = await deliverMailGrant(cols, accountId, orderId, newSkins, split.items, coinsAfter, now(), split.materials);
     return ok({ save });
   }
 

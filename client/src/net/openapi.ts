@@ -922,7 +922,7 @@ export interface components {
         };
         MailAttachmentView: {
             /** @enum {string} */
-            kind: "coins" | "item" | "skin";
+            kind: "coins" | "item" | "skin" | "material";
             id?: string;
             count?: number;
         };

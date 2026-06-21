@@ -197,7 +197,8 @@ export interface ChatMessageDoc {
 }
 
 export interface MailAttachmentDoc {
-  kind: 'coins' | 'item' | 'skin';
+  // 'material' → SaveData.materials 养成统一池（SLG8）；'item' → inventory.items 泛用桶。
+  kind: 'coins' | 'item' | 'skin' | 'material';
   id?: string;
   count?: number;
 }

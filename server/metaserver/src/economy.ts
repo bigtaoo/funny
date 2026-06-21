@@ -64,7 +64,8 @@ export async function deliverGrant(
 
 /**
  * 邮件附件发货（S6-3）：单文档原子 + 幂等（deliveredOrders $addToSet 去重）。
- * 皮肤进 inventory.skins（set 去重）、物品 $inc inventory.items.{id}、金币写镜像（coinsAfter 非 null 时）。
+ * 皮肤进 inventory.skins（set 去重）、物品 $inc inventory.items.{id}、材料 $inc materials.{id}
+ * （养成统一池，SLG8 赛季奖励等）、金币写镜像（coinsAfter 非 null 时）。
  * `orderId` = mail.claimOrderId；重发同 orderId 不重复加物品（$addToSet 去重 + 金币以 commercial 权威镜像）。
  */
 export async function deliverMailGrant(
@@ -75,11 +76,13 @@ export async function deliverMailGrant(
   itemInc: Record<string, number>,
   coinsAfter: number | null,
   now: number,
+  materialInc: Record<string, number> = {},
 ): Promise<SaveData> {
   const set: Record<string, unknown> = { 'save.updatedAt': now };
   if (coinsAfter !== null) set['save.wallet.coins'] = coinsAfter;
   const inc: Record<string, number> = { 'save.rev': 1, rev: 1 };
   for (const [id, n] of Object.entries(itemInc)) if (n > 0) inc[`save.inventory.items.${id}`] = n;
+  for (const [id, n] of Object.entries(materialInc)) if (n > 0) inc[`save.materials.${id}`] = n;
   const res = await cols.saves.findOneAndUpdate(
     { _id: accountId },
     {
