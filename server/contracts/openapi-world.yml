@@ -388,24 +388,6 @@ components:
 
     # 攻方可打的围攻防守关卡（C2 复盘）。level 形态对齐客户端 LevelDefinition（loose object），
     # 其 seed 由 siegeId 派生，客户端须以此 seed 在 siege 模式实打后再上传录像复算。
-    SiegeDefenseView:
-      type: object
-      required: [siegeId, level]
-      properties:
-        siegeId: { type: string }
-        level:
-          type: object
-          additionalProperties: true
-
-    SiegeResolveResult:
-      type: object
-      required: [recomputed]
-      properties:
-        recomputed:
-          type: boolean
-        judgeOutcome:
-          type: string
-
     # 围攻重播观战关卡（G3-2c）：seed + 双方布阵 重建的 LevelDefinition；客户端以同 seed headless 重跑。
     SiegeReplayView:
       type: object
@@ -883,71 +865,6 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/SiegeReplayView' }
-
-  /world/siege/{siegeId}/defense:
-    get:
-      operationId: getSiegeDefense
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: siegeId, in: path, required: true, schema: { type: string } }
-        - { name: worldId, in: query, required: true, schema: { type: string } }
-      responses:
-        '200':
-          description: Playable siege defense level (attacker-only)
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/OkResponse'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/SiegeDefenseView' }
-
-  /world/siege/{siegeId}/resolve:
-    post:
-      operationId: resolveSiege
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: siegeId, in: path, required: true, schema: { type: string } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [worldId, seed, mode, endFrame, frames]
-              properties:
-                worldId: { type: string }
-                seed: { type: integer }
-                mode: { type: integer }
-                endFrame: { type: integer }
-                frames:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      frame: { type: integer }
-                      cmds:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            side: { type: integer }
-                            commands: { type: string }
-                pveUpgrades:
-                  type: object
-                  additionalProperties: { type: number }
-      responses:
-        '200':
-          description: Siege recomputed
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/OkResponse'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/SiegeResolveResult' }
 
   /world/nations:
     get:

@@ -80,9 +80,6 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     async broadcast(recipients, msg) {
       for (const accountId of recipients) pushes.push({ accountId, msg });
     },
-    async judge() {
-      return { ok: false };
-    },
   };
 
   async function setupDefender(accountId: string, x: number, y: number, garrison: number, food = 0): Promise<void> {

@@ -25,10 +25,9 @@ export interface WorldMapCallbacks {
   onOpenFamily(): void;
   onOpenAuction(): void;
   /**
-   * Replay a finished siege the local player attacked: app fetches the defender
-   * config, runs GameScene in 'siege' mode, then uploads the recording to
-   * resolveSiege (anti-cheat reconciliation, C2 / S8-3b). Scene-side this is just
-   * a hand-off — the app owns the GameScene transition + replay upload.
+   * Spectate a finished siege (G3-2c): app fetches the replay (seed + both armies)
+   * and runs it headless in spectator mode — pure play-back, non-authoritative
+   * (worldsvc already ran the authoritative engine battle). Either combatant can watch.
    */
   onReplaySiege(siegeId: string): void;
   /**

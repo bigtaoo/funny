@@ -55,7 +55,6 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     async broadcast(recipients, msg) {
       broadcasts.push({ recipients, kind: msg.kind, body: (msg as { body?: string }).body });
     },
-    async judge() { return { ok: false }; },
   };
 
   beforeEach(async () => {

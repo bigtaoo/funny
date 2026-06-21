@@ -25,8 +25,6 @@ export type AuctionView = components['schemas']['AuctionView'];
 export type NationView = components['schemas']['NationView'];
 export type SeasonView = components['schemas']['SeasonView'];
 export type SlgShopItemView = components['schemas']['SlgShopItemView'];
-export type SiegeResolveResult = components['schemas']['SiegeResolveResult'];
-export type SiegeDefenseView = components['schemas']['SiegeDefenseView'];
 export type SiegeReplayView = components['schemas']['SiegeReplayView'];
 export type DefenseConfig = components['schemas']['DefenseConfig'];
 export type TeamTemplate = components['schemas']['TeamTemplate'];
@@ -40,15 +38,6 @@ export type SectVoteResult = components['schemas']['SectVoteResult'];
 // Derived enum types for method parameters
 type MarchKind = Exclude<MarchView['kind'], 'return'>;
 type FamilyRole = FamilyMemberView['role'];
-
-/** 围攻录像复算载荷（来自 RecordingInputSource snapshot → Replay 的精简映射）。 */
-export interface SiegeResolvePayload {
-  seed: number;
-  mode: number;
-  endFrame: number;
-  frames: { frame: number; cmds: { side: number; commands: string }[] }[];
-  pveUpgrades?: Record<string, number>;
-}
 
 const TOKEN_KEY = 'nw_token';
 
@@ -195,21 +184,6 @@ export class WorldApiClient {
    */
   async getSiegeReplay(worldId: string, siegeId: string): Promise<SiegeReplayView> {
     return this.req('GET', `/world/siege/${encodeURIComponent(siegeId)}/replay?worldId=${encodeURIComponent(worldId)}`);
-  }
-
-  // ── Siege（围攻录像复算，S8-3b）─────────────────────────────────────────────
-
-  /**
-   * 取一份「攻方可打」的围攻防守关卡（C2 复盘）。返回 level 形态对齐引擎 LevelDefinition，
-   * 其 seed 须原样用于 GameScene siege 实打 + 后续 resolveSiege 上传，方能确定性复算。
-   */
-  async getSiegeDefense(worldId: string, siegeId: string): Promise<SiegeDefenseView> {
-    return this.req('GET', `/world/siege/${encodeURIComponent(siegeId)}/defense?worldId=${encodeURIComponent(worldId)}`);
-  }
-
-  /** 上传围攻录像帧，服务端 judgeRunner 复算落地。 */
-  async resolveSiege(worldId: string, siegeId: string, payload: SiegeResolvePayload): Promise<SiegeResolveResult> {
-    return this.req('POST', `/world/siege/${encodeURIComponent(siegeId)}/resolve`, { worldId, ...payload });
   }
 
   // ── Nations（国家系统 S8-6.5）───────────────────────────────────────────────

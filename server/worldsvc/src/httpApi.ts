@@ -267,33 +267,6 @@ export function startHttpApi(
           }
         }
 
-        // ── 围攻防守关卡读取（C2 复盘 / 录像复算同源）──
-        {
-          const m = /^\/world\/siege\/([^/]+)\/defense$/.exec(path);
-          if (method === 'GET' && m) {
-            const worldId = q.get('worldId');
-            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-            return send(res, 200, ok(await svc.getSiegeDefense(worldId, accountId, decodeURIComponent(m[1]!))));
-          }
-        }
-
-        // ── 围攻录像复算（S8-3b，做实）──
-        {
-          const m = /^\/world\/siege\/([^/]+)\/resolve$/.exec(path);
-          if (method === 'POST' && m) {
-            const body = await readJson(req);
-            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
-            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-            const judgeArgs = {
-              seed: Number(body.seed ?? 0),
-              mode: Number(body.mode ?? 0),
-              endFrame: Number(body.endFrame ?? 0),
-              frames: Array.isArray(body.frames) ? body.frames as { frame: number; cmds: { side: number; commands: string }[] }[] : [],
-              pveUpgrades: typeof body.pveUpgrades === 'object' && body.pveUpgrades ? body.pveUpgrades as Record<string, number> : undefined,
-            };
-            return send(res, 200, ok(await svc.resolveSiegeWithJudge(worldId, accountId, decodeURIComponent(m[1]!), judgeArgs)));
-          }
-        }
 
         // ── 家族（S8-4，做实）──────────────────────────────────────────
         if (method === 'GET' && path === '/family/list') {

@@ -59,25 +59,6 @@ export type SlgPushMsg =
       ts: number; // ms（epoch，非 Date）
     };
 
-/** S8-3b：worldsvc → gateway judge 请求（关键围攻录像复算）。 */
-export interface WorldJudgeArgs {
-  seed: number;
-  mode: number;
-  endFrame: number;
-  frames: { frame: number; cmds: { side: number; commands: string }[] }[];
-  exclude: string[];
-  /** 防守 config JSON 字符串（siege 模式，gateway judge 用来重建防守关）。 */
-  defenseJson?: string;
-  pveUpgrades?: Record<string, number>;
-}
-
-export interface WorldJudgeResult {
-  ok: boolean;
-  winnerSide?: number;
-  stateHash?: string;
-  judgeAccountId?: string;
-}
-
 export interface WorldGatewayClient {
   readonly available: boolean;
   /** 据 accountId 定向推一条 SLG 事件（离线 / 未配置 gateway → 丢弃）。best-effort，不抛。 */
@@ -88,9 +69,9 @@ export interface WorldGatewayClient {
    * 无 Redis → 降级逐个 HTTP push 兜底。best-effort，不抛。
    */
   broadcast(recipients: string[], msg: SlgPushMsg): Promise<void>;
-  /** S8-3b：关键围攻录像送 gateway 裁判复算。gateway 未配置 → 返回 { ok: false }。 */
-  judge(args: WorldJudgeArgs): Promise<WorldJudgeResult>;
 }
+// 注：G3-2b 后关键围攻由 worldsvc 直接 import @nw/engine headless 跑权威结果（§16.8），不再走
+// gateway 录像 judge 复算。原 worldsvc→gateway `judge()` 客户端（S8-3b）已随手操方案作废删除。
 
 /** broadcast 用到的最小 Redis 接口（publish）；与 worldsvc/redis.ts 的 WorldRedis 结构相容。 */
 export interface BroadcastRedis {
@@ -134,21 +115,6 @@ export class HttpWorldGatewayClient implements WorldGatewayClient {
       // best-effort：推送失败不影响已落库的权威状态；客户端下次 REST 轮询拉到。
     }
   }
-
-  async judge(args: WorldJudgeArgs): Promise<WorldJudgeResult> {
-    if (!this.baseUrl) return { ok: false };
-    try {
-      const res = await fetch(`${this.baseUrl}/gw/judge`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'X-Internal-Key': this.internalKey },
-        body: JSON.stringify(args),
-      });
-      if (!res.ok) return { ok: false };
-      return (await res.json()) as WorldJudgeResult;
-    } catch {
-      return { ok: false };
-    }
-  }
 }
 
 /** 测试/无 gateway 时的空实现。 */
@@ -156,5 +122,4 @@ export const nullWorldGatewayClient: WorldGatewayClient = {
   available: false,
   async push() { /* no-op */ },
   async broadcast() { /* no-op */ },
-  async judge() { return { ok: false }; },
 };

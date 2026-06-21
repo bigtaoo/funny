@@ -87,9 +87,6 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     async broadcast(recipients, msg) {
       for (const accountId of recipients) pushes.push({ accountId, msg });
     },
-    async judge() {
-      return { ok: false };
-    },
   };
 
   /** 直接落一个防守方（playerWorld + 一块防守格），绕过保护期/直占约束，全控 garrison/资源。 */

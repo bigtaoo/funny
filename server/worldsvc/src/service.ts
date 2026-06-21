@@ -11,7 +11,6 @@ import {
   tileYield,
   resolveSiege,
   siegeSeedFromId,
-  buildSiegeLevel,
   buildSiegeBattle,
   npcGarrison,
   findMarchPath,
@@ -53,7 +52,7 @@ import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseCo
 import type { GarrisonEntry } from '@nw/engine';
 import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry, DefenseConfig, ArmyEntry, TeamTemplate } from './db';
 import type { WorldRedis } from './redis';
-import { nullWorldGatewayClient, type WorldGatewayClient, type WorldJudgeArgs } from './gatewayClient';
+import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient';
 import { nullWorldMetaClient, type WorldMetaClient, type PlayerProfile } from './metaClient';
 import { nullWorldCommercialClient, type WorldCommercialClient } from './commercialClient';
 
@@ -1554,46 +1553,7 @@ export class WorldService {
     return (tile.defense as Record<string, unknown> | undefined) ?? null;
   }
 
-  // ── S8-3b / C2：围攻防守 config 读取 + 复盘关卡 ────────────
-
-  /** 取一条围攻战报关联的防守 config（领地 tile 优先，否则主城 playerWorld）+ 目标格等级。 */
-  private async siegeDefenseConfig(
-    worldId: string,
-    siege: SiegeDoc,
-  ): Promise<{ config: Record<string, unknown> | null; tileLevel: number }> {
-    const { cols } = this.deps;
-    let config: Record<string, unknown> | null = null;
-    let tileLevel = 1;
-    const targetTile = await cols.tiles.findOne({ _id: siege.tile });
-    if (targetTile) {
-      tileLevel = targetTile.level ?? 1;
-      if (targetTile.defense) config = targetTile.defense as Record<string, unknown>;
-    }
-    if (!config && siege.defenderId) {
-      const defPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, siege.defenderId) });
-      if (defPw?.defense) config = defPw.defense as Record<string, unknown>;
-    }
-    return { config, tileLevel };
-  }
-
-  /**
-   * 取一份「攻方可打」的围攻防守关卡（C2 客户端复盘 + 录像复算同源）。仅进攻方可读。
-   * 返回的 level 形态对齐客户端 LevelDefinition；其 seed = siegeSeedFromId(sid)，客户端必须用此
-   * seed 在 siege 模式实打，复算（resolveSiegeWithJudge）方能逐字复现。
-   */
-  async getSiegeDefense(
-    worldId: string,
-    accountId: string,
-    sid: string,
-  ): Promise<{ siegeId: string; level: Record<string, unknown> }> {
-    const { cols } = this.deps;
-    const siege = await cols.sieges.findOne({ _id: sid, worldId });
-    if (!siege) throw new SlgError('NOT_FOUND', '战报不存在');
-    if (siege.attackerId !== accountId) throw new SlgError('NO_PERMISSION', '只有进攻方可复盘');
-    const { config, tileLevel } = await this.siegeDefenseConfig(worldId, siege);
-    const seed = siegeSeedFromId(sid);
-    return { siegeId: sid, level: buildSiegeLevel(config, tileLevel, seed) };
-  }
+  // ── G3-2c：围攻重播观战 ───────────────────────────────────
 
   /**
    * 取一场关键围攻的「重播观战」关卡（G3-2c，§16.3）。攻守双方均可读（旁观非权威，纯演出）。
@@ -1621,73 +1581,6 @@ export class WorldService {
       siege.seed,
     );
     return { siegeId: sid, seed: siege.seed, outcome: siege.outcome, level };
-  }
-
-  // ── S8-3b：judgeRunner 接入（关键围攻录像复算）────────────
-
-  /**
-   * 接收客户端提交的围攻录像，调 gateway /gw/judge 复算，更新 SiegeDoc。
-   * 流程：
-   *   1. 验证 siegeId 属于 accountId + 对应 tile 有防守 config；
-   *   2. 调 gateway.judge(replay + defenseJson + pveUpgrades)；
-   *   3. 更新 siege.recomputed=true, siege.replayRef；
-   *   4. 若复算结果与廉价结算不同 → log（反作弊标记），暂不自动翻转
-   *      （S8-3b server-only：翻转逻辑等 client UI 完整后再启用）。
-   */
-  async resolveSiegeWithJudge(
-    worldId: string,
-    accountId: string,
-    sid: string,
-    judgeArgs: Pick<WorldJudgeArgs, 'seed' | 'mode' | 'endFrame' | 'frames' | 'pveUpgrades'>,
-  ): Promise<{ recomputed: boolean; judgeOutcome?: string }> {
-    const { cols } = this.deps;
-    const siege = await cols.sieges.findOne({ _id: sid, worldId });
-    if (!siege) throw new SlgError('NOT_FOUND', '战报不存在');
-    if (siege.attackerId !== accountId) throw new SlgError('NO_PERMISSION', '只有进攻方可提交录像');
-    if (siege.recomputed) return { recomputed: true }; // 已复算过，幂等返回
-
-    // 取防守 config（领地 tile 或主城 playerWorld）→ 规整成可玩围攻关卡（与 getSiegeDefense 同源），
-    // 作为 judge 的 defenseJson。seed 用 siegeId 派生的 canonical 值（客户端必须用同 seed 实打）。
-    const { config, tileLevel } = await this.siegeDefenseConfig(worldId, siege);
-    const seed = siegeSeedFromId(sid);
-    const defenseJson = JSON.stringify(buildSiegeLevel(config, tileLevel, seed));
-
-    const result = await this.gateway.judge({
-      ...judgeArgs,
-      seed,
-      exclude: [accountId],
-      defenseJson,
-    });
-
-    const replayRef = result.judgeAccountId
-      ? `judge:${result.judgeAccountId}:${sid}`
-      : undefined;
-
-    await cols.sieges.updateOne(
-      { _id: sid },
-      {
-        $set: {
-          recomputed: result.ok,
-          ...(replayRef ? { replayRef } : {}),
-        },
-      },
-    );
-
-    if (result.ok && result.winnerSide !== undefined) {
-      // winnerSide: 0=attacker win, 1=defender win
-      const judgeOutcome: SiegeOutcome = result.winnerSide === 0 ? 'attacker_win' : 'defender_win';
-      if (judgeOutcome !== siege.outcome) {
-        // 廉价结算与引擎复算不一致 → 记录（反作弊，后续决策）
-        console.warn('[worldsvc] siege outcome mismatch', {
-          sid,
-          cheap: siege.outcome,
-          judge: judgeOutcome,
-          attackerId: accountId,
-        });
-      }
-      return { recomputed: true, judgeOutcome };
-    }
-    return { recomputed: result.ok };
   }
 
   // ── S8-6.5：国家系统 ──────────────────────────────────────

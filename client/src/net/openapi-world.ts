@@ -245,38 +245,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/world/siege/{siegeId}/defense": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getSiegeDefense"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/world/siege/{siegeId}/resolve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["resolveSiege"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/world/nations": {
         parameters: {
             query?: never;
@@ -953,16 +921,6 @@ export interface components {
             };
             description: string;
         };
-        SiegeDefenseView: {
-            siegeId: string;
-            level: {
-                [key: string]: unknown;
-            };
-        };
-        SiegeResolveResult: {
-            recomputed: boolean;
-            judgeOutcome?: string;
-        };
         SiegeReplayView: {
             siegeId: string;
             seed: number;
@@ -1500,75 +1458,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
                         data?: components["schemas"]["SiegeReplayView"];
-                    };
-                };
-            };
-        };
-    };
-    getSiegeDefense: {
-        parameters: {
-            query: {
-                worldId: string;
-            };
-            header?: never;
-            path: {
-                siegeId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Playable siege defense level (attacker-only) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["SiegeDefenseView"];
-                    };
-                };
-            };
-        };
-    };
-    resolveSiege: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                siegeId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    worldId: string;
-                    seed: number;
-                    mode: number;
-                    endFrame: number;
-                    frames: {
-                        frame?: number;
-                        cmds?: {
-                            side?: number;
-                            commands?: string;
-                        }[];
-                    }[];
-                    pveUpgrades?: {
-                        [key: string]: number;
-                    };
-                };
-            };
-        };
-        responses: {
-            /** @description Siege recomputed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["SiegeResolveResult"];
                     };
                 };
             };

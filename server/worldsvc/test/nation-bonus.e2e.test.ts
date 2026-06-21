@@ -80,9 +80,6 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     async broadcast(recipients, msg) {
       for (const accountId of recipients) pushes.push({ accountId, msg });
     },
-    async judge() {
-      return { ok: false };
-    },
   };
 
   /** 让某账号占领某首府（直接落 NationDoc，绕过围攻立国流程）。 */
