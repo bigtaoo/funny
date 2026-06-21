@@ -122,6 +122,11 @@ export class WorldApiClient {
     return this.req('POST', '/world/relocate', { worldId, x, y });
   }
 
+  /** 建瞭望塔（在己方领地 (x,y) 花 WATCHTOWER_COST 资源建大半径持久视野源；§18 G5 V2）。返回建塔后该格视图。 */
+  async buildWatchtower(worldId: string, x: number, y: number): Promise<WorldTileView> {
+    return this.req('POST', '/world/watchtower', { worldId, x, y });
+  }
+
   async startMarch(
     worldId: string,
     fromX: number, fromY: number,
