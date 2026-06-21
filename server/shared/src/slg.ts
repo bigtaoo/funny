@@ -634,6 +634,9 @@ function clampBaseLevel(n: number): number {
  */
 export const SIEGE_BATTLE_TIMEOUT_TICKS = 10 * 60 * 30;
 
+/** 进攻布阵模板（队伍）上限（§16.2，前期 5 支 = 可保存模板数 + 并发上限）。 */
+export const SIEGE_TEAM_CAP = 5;
+
 /**
  * 规整防守 config → 完整围攻关卡对象。`config` 为防守方自定义（可空）；`tileLevel` 用于无自定义时
  * 派生一个象征性的基地等级防守。返回形态对齐客户端 LevelDefinition（loose object，避免在 shared

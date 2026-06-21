@@ -12,6 +12,7 @@ import {
   resolveSiege,
   siegeSeedFromId,
   buildSiegeLevel,
+  buildSiegeBattle,
   npcGarrison,
   findMarchPath,
   marchDurationFromPath,
@@ -33,7 +34,9 @@ import {
   TROOP_TRAIN_QUEUE_MAX,
   TROOP_SPEEDUP_SECS_PER_COIN,
   NATION_BONUS_PRODUCTION,
+  NATION_BONUS_DEFENSE,
   nationDefenseStrength,
+  SIEGE_TEAM_CAP,
   SECT_LEADER_PENALTY_RATE,
   RELOCATE_COST,
   SLG_SHOP_ITEMS,
@@ -46,12 +49,21 @@ import {
   type SiegeOutcome,
   type SiegeResolution,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy } from './siegeEngine';
-import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry, DefenseConfig } from './db';
+import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseConfig, scaleArmyHp } from './siegeEngine';
+import type { GarrisonEntry } from '@nw/engine';
+import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry, DefenseConfig, ArmyEntry, TeamTemplate } from './db';
 import type { WorldRedis } from './redis';
 import { nullWorldGatewayClient, type WorldGatewayClient, type WorldJudgeArgs } from './gatewayClient';
 import { nullWorldMetaClient, type WorldMetaClient, type PlayerProfile } from './metaClient';
 import { nullWorldCommercialClient, type WorldCommercialClient } from './commercialClient';
+
+/** 一场关键围攻的可重播输入（G3-2c）：seed + 双方布阵 + 格等级，持久化到 SiegeDoc 供客户端重播观战。 */
+export interface SiegeReplayInputs {
+  seed: number;
+  attackerArmy: GarrisonEntry[];
+  defenderConfig: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null;
+  tileLevel: number;
+}
 
 /** 视区单格视图（REST 响应）。`mine` 标识是否归请求者；`ownerPublicId`/`ownerName` 为他人领地昵称（需 meta 可用）。 */
 export interface WorldTileView {
@@ -510,6 +522,7 @@ export class WorldService {
     toY: number,
     kind: MarchKind,
     troops: number,
+    teamId?: string,
   ): Promise<MarchView> {
     const { cols, now } = this.deps;
     if (!MARCHABLE_KINDS.has(kind)) {
@@ -519,6 +532,15 @@ export class WorldService {
     if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
     if (!this.inBounds(fromX, fromY) || !this.inBounds(toX, toY)) {
       throw new SlgError('OUT_OF_RANGE', '坐标越界');
+    }
+    // 围攻挂队（G3-2c）：从保存的进攻布阵模板取军，committed 兵力 = 各单位分配兵力之和。
+    // 出征后队伍可改不影响在途军（army 快照随 MarchDoc 落库）。非 attack 或未挂队 → 走扁平 troops。
+    let army: ArmyEntry[] | undefined;
+    if (kind === 'attack' && teamId) {
+      const team = (pw.teams ?? []).find((t) => t.id === teamId);
+      if (!team || team.army.length === 0) throw new SlgError('BAD_REQUEST', '队伍不存在或为空');
+      army = team.army;
+      troops = team.army.reduce((s, e) => s + Math.max(1, Math.floor(e.initialHp ?? 0)), 0);
     }
     if (!Number.isFinite(troops) || troops < MARCH_MIN_TROOPS) {
       throw new SlgError('NO_TROOPS', '出征兵力无效');
@@ -583,6 +605,7 @@ export class WorldService {
       toTile: toTid,
       kind,
       troops,
+      ...(army && army.length > 0 ? { army } : {}),
       departAt,
       arriveAt,
       status: 'marching',
@@ -799,27 +822,32 @@ export class WorldService {
     const inOwnNation = !!nation?.ownerId && nation.ownerId === defenderId;
     const effGarrison = nationDefenseStrength(target.garrison ?? 0, inOwnNation);
 
+    // 攻方布阵（G3-2c）：挂队出征 → 用真实布阵快照（m.army）；否则由扁平兵力合成兜底（v1 桥）。
+    const attackerArmy: GarrisonEntry[] =
+      m.army && m.army.length > 0 ? (m.army as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker');
+    const defenderConfig = this.buildDefenderConfig(target, effGarrison, inOwnNation);
+    const tileLevel = target.level ?? 1;
+    const seed = siegeSeedFromId(m._id);
+
     // 关键围攻（G3-2b，§16）：worldsvc 直接 import `@nw/engine` headless 跑「双方预布兵确定性
     // 自动战斗」拿权威胜负 + 真实残存血量，替代廉价线性公式。坏布阵 / 引擎异常 → 兜底回退
     // 廉价 resolveSiege，绝不让一场围攻卡死行军。
     let res: SiegeResolution;
+    let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
     try {
-      res = runSiegeBattle({
-        attackerArmy: synthesizeArmy(m.troops, 'attacker'),
-        defenderConfig: this.buildDefenderConfig(target, effGarrison),
-        tileLevel: target.level ?? 1,
-        seed: siegeSeedFromId(m._id),
-      });
+      res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed });
     } catch (err) {
       console.error('[worldsvc] siege engine failed — fallback to cheap resolve', {
         tile: m.toTile,
         err: (err as Error).message,
       });
       res = resolveSiege(m.troops, effGarrison);
+      replay = null; // 廉价兜底的结果与引擎重播不一致 → 不存重播输入（重播按钮降级隐藏）。
     }
 
     const defender = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defenderId) });
-    await this.landSiege(m, pw, target, defenderId, defender, res, t);
+    // 重播输入：持久化到 SiegeDoc，客户端凭 seed + 双方布阵本地重播观战（§16.3）。
+    await this.landSiege(m, pw, target, defenderId, defender, res, t, replay);
   }
 
   /**
@@ -827,16 +855,22 @@ export class WorldService {
    * 否则由有效守军兵力数（含国民加成）合成确定性默认布阵。空守军（无自定义且 0 兵）→ null，
    * buildSiegeBattle 派生象征性基地防守。
    *
-   * 注：v1 国民加成只作用于合成路径（兵力数 → 多铺单位）；自定义布阵的加成留 G3-2c 跟进。
+   * 国民加成（§2.4 / G1 item②，G3-2c 补齐）：守军处于己方首府 Voronoi 区（inOwnNation）时，
+   * **合成路径**已由 effGarrison（nationDefenseStrength 放大的兵力数）多铺单位享得；**自定义布阵**
+   * 路径则对各单位 initialHp 按 (1+NATION_BONUS_DEFENSE) 放大（scaleArmyHp，引擎封顶满血）。
    */
   private buildDefenderConfig(
     target: TileDoc,
     effGarrison: number,
+    inOwnNation: boolean,
   ): { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null {
     const custom = target.defense as DefenseConfig | undefined;
-    if (custom && Array.isArray((custom as { garrison?: unknown }).garrison) &&
-        (custom as { garrison: unknown[] }).garrison.length > 0) {
-      return custom;
+    const customGarrison = custom && (custom as { garrison?: unknown }).garrison;
+    if (Array.isArray(customGarrison) && customGarrison.length > 0) {
+      const garrison = inOwnNation
+        ? scaleArmyHp(customGarrison as GarrisonEntry[], 1 + NATION_BONUS_DEFENSE)
+        : (customGarrison as GarrisonEntry[]);
+      return { ...custom, garrison };
     }
     return effGarrison > 0 ? { garrison: synthesizeArmy(effGarrison, 'defender') } : null;
   }
@@ -855,6 +889,7 @@ export class WorldService {
     defender: PlayerWorldDoc | null,
     res: SiegeResolution,
     t: number,
+    replay: SiegeReplayInputs | null,
   ): Promise<void> {
     const { cols } = this.deps;
     let loot = emptyResources();
@@ -904,7 +939,7 @@ export class WorldService {
       if (res.attackerSurvivors > 0) await this.refundTroops(pw, res.attackerSurvivors, t);
     }
 
-    const siege = await this.recordSiege(m, defenderId, res.outcome, t);
+    const siege = await this.recordSiege(m, defenderId, res.outcome, t, replay);
     const lootStr = lootSummary(loot);
     void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
     void this.pushSiege(m.ownerId, siege, lootStr);
@@ -939,17 +974,21 @@ export class WorldService {
     }
     // 生还回师（缴获并入攻方资源，封顶）。
     await this.refundTroops(pw, res.attackerSurvivors, t, loot);
-    const siege = await this.recordSiege(m, undefined, res.outcome, t);
+    const siege = await this.recordSiege(m, undefined, res.outcome, t, null);
     void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
     void this.pushSiege(m.ownerId, siege, lootSummary(loot));
   }
 
-  /** 写一条围攻战报（瞬态记录，§14.3 sieges）。replayRef 留空（S8-3b judge 复算后填）。 */
+  /**
+   * 写一条围攻战报（瞬态记录，§14.3 sieges）。replay 非空（关键围攻走引擎）时持久化 seed + 双方
+   * 布阵 + 格等级，供客户端重播观战（getSiegeReplay）；廉价兜底 / NPC 扫荡 replay=null（无重播）。
+   */
   private async recordSiege(
     m: MarchDoc,
     defenderId: string | undefined,
     outcome: SiegeOutcome,
     t: number,
+    replay: SiegeReplayInputs | null,
   ): Promise<SiegeDoc> {
     const doc: SiegeDoc = {
       _id: siegeId(m.worldId, m.ownerId, t, ++this.siegeSeq),
@@ -960,6 +999,14 @@ export class WorldService {
       outcome,
       recomputed: false,
       ts: t,
+      ...(replay
+        ? {
+            seed: replay.seed,
+            attackerArmy: replay.attackerArmy as ArmyEntry[],
+            defenderConfig: (replay.defenderConfig as DefenseConfig | null) ?? null,
+            tileLevel: replay.tileLevel,
+          }
+        : {}),
     };
     await this.deps.cols.sieges.insertOne(doc);
     return doc;
@@ -1414,6 +1461,12 @@ export class WorldService {
     defenseConfig: Record<string, unknown>,
   ): Promise<void> {
     const { cols } = this.deps;
+    // G3-2c：编辑器写入结构化布阵 → 保存时即过引擎 levelSchema 校验（非法 unitType/列/行 → 拒）。
+    try {
+      validateDefenseConfig(defenseConfig);
+    } catch (err) {
+      throw new SlgError('BAD_REQUEST', `防守布阵非法：${(err as Error).message}`);
+    }
     if (tileKey === 'base') {
       const pwId = playerWorldId(worldId, accountId);
       const pw = await cols.playerWorld.findOne({ _id: pwId });
@@ -1424,12 +1477,60 @@ export class WorldService {
       );
     } else {
       const tile = await cols.tiles.findOne({ _id: tileKey });
-      if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', '非己方领地');
+      if (!tile?.ownerId) throw new SlgError('TILE_NOT_OWNED', '非领地');
+      // 己方领地，或同家族盟军领地（§4 代守；盟友宗门通行待联盟系统）均可布防。
+      if (tile.ownerId !== accountId && !(await this.sameFamily(worldId, accountId, tile.ownerId))) {
+        throw new SlgError('TILE_NOT_OWNED', '非己方/盟军领地');
+      }
       await cols.tiles.updateOne(
         { _id: tileKey },
         { $set: { defense: defenseConfig }, $inc: { rev: 1 } },
       );
     }
+  }
+
+  /** 两个账号是否同属一个家族（§4 代守 / 关隘通行的盟友判定，与 computeMarchPath 一致）。 */
+  private async sameFamily(worldId: string, a: string, b: string): Promise<boolean> {
+    if (a === b) return true;
+    const { cols } = this.deps;
+    const [ma, mb] = await Promise.all([
+      cols.familyMembers.findOne({ _id: `${worldId}:${a}` }),
+      cols.familyMembers.findOne({ _id: `${worldId}:${b}` }),
+    ]);
+    return !!ma?.familyId && ma.familyId === mb?.familyId;
+  }
+
+  // ── G3-2c：进攻布阵模板（队伍）─────────────────────────────
+
+  /** 读玩家在某世界的进攻布阵模板列表（编辑器/出征预填）。未进入世界抛 TILE_NOT_OWNED。 */
+  async getTeams(worldId: string, accountId: string): Promise<TeamTemplate[]> {
+    const pw = await this.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+    return pw.teams ?? [];
+  }
+
+  /**
+   * 覆盖写玩家进攻布阵模板（编辑器保存，§16.2）。校验：≤ SIEGE_TEAM_CAP 支、id 唯一、每支队
+   * army 过引擎 levelSchema（validateAttackerArmy）。整组覆盖（前端传全量）。
+   */
+  async setTeams(worldId: string, accountId: string, teams: TeamTemplate[]): Promise<void> {
+    if (!Array.isArray(teams)) throw new SlgError('BAD_REQUEST', 'teams 须为数组');
+    if (teams.length > SIEGE_TEAM_CAP) throw new SlgError('BAD_REQUEST', `队伍数超上限 ${SIEGE_TEAM_CAP}`);
+    const ids = new Set<string>();
+    for (const team of teams) {
+      if (!team || typeof team.id !== 'string' || !team.id) throw new SlgError('BAD_REQUEST', '队伍 id 非法');
+      if (ids.has(team.id)) throw new SlgError('BAD_REQUEST', `队伍 id 重复：${team.id}`);
+      ids.add(team.id);
+      try {
+        validateAttackerArmy(team.army);
+      } catch (err) {
+        throw new SlgError('BAD_REQUEST', `队伍 ${team.id} 布阵非法：${(err as Error).message}`);
+      }
+    }
+    const pwId = playerWorldId(worldId, accountId);
+    const pw = await this.deps.cols.playerWorld.findOne({ _id: pwId });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+    await this.deps.cols.playerWorld.updateOne({ _id: pwId }, { $set: { teams }, $inc: { rev: 1 } });
   }
 
   /**
@@ -1492,6 +1593,34 @@ export class WorldService {
     const { config, tileLevel } = await this.siegeDefenseConfig(worldId, siege);
     const seed = siegeSeedFromId(sid);
     return { siegeId: sid, level: buildSiegeLevel(config, tileLevel, seed) };
+  }
+
+  /**
+   * 取一场关键围攻的「重播观战」关卡（G3-2c，§16.3）。攻守双方均可读（旁观非权威，纯演出）。
+   * 用 landSiege 持久化的 seed + 双方布阵 + 格等级重建 buildSiegeBattle → 形态对齐客户端
+   * LevelDefinition。客户端凭同 seed 以空 ReplayInputSource 在 siege 模式 headless 重跑，
+   * 逐字复现 worldsvc 跑过的那一场。缺重播输入（廉价兜底 / NPC 扫荡 / 旧战报）→ REPLAY_UNAVAILABLE。
+   */
+  async getSiegeReplay(
+    worldId: string,
+    accountId: string,
+    sid: string,
+  ): Promise<{ siegeId: string; seed: number; outcome: SiegeOutcome; level: Record<string, unknown> }> {
+    const siege = await this.deps.cols.sieges.findOne({ _id: sid, worldId });
+    if (!siege) throw new SlgError('NOT_FOUND', '战报不存在');
+    if (siege.attackerId !== accountId && siege.defenderId !== accountId) {
+      throw new SlgError('NO_PERMISSION', '只有交战双方可观战');
+    }
+    if (typeof siege.seed !== 'number' || !Array.isArray(siege.attackerArmy)) {
+      throw new SlgError('NOT_FOUND', '该战报无可重播记录');
+    }
+    const level = buildSiegeBattle(
+      { army: siege.attackerArmy },
+      siege.defenderConfig ?? null,
+      siege.tileLevel ?? 1,
+      siege.seed,
+    );
+    return { siegeId: sid, seed: siege.seed, outcome: siege.outcome, level };
   }
 
   // ── S8-3b：judgeRunner 接入（关键围攻录像复算）────────────

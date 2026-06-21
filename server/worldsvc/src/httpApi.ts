@@ -14,6 +14,7 @@ import {
   type MarchKind,
 } from '@nw/shared';
 import type { WorldService } from './service';
+import type { TeamTemplate } from './db';
 import type { FamilyService } from './familyService';
 import type { SectService } from './sectService';
 import type { AuctionService } from './auctionService';
@@ -165,6 +166,7 @@ export function startHttpApi(
           const toY = Number(body.toY);
           const kind = typeof body.kind === 'string' ? body.kind : '';
           const troops = Number(body.troops);
+          const teamId = typeof body.teamId === 'string' ? body.teamId : undefined;
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           if (![fromX, fromY, toX, toY].every(Number.isFinite)) {
             return sendErr(res, ErrorCode.BAD_REQUEST, 'fromX/fromY/toX/toY required');
@@ -172,7 +174,7 @@ export function startHttpApi(
           return send(
             res,
             200,
-            ok(await svc.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind as MarchKind, troops)),
+            ok(await svc.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind as MarchKind, troops, teamId)),
           );
         }
         {
@@ -221,6 +223,22 @@ export function startHttpApi(
           return send(res, 200, ok({}));
         }
 
+        // ── 进攻布阵模板（队伍，G3-2c）──
+        if (method === 'GET' && path === '/world/teams') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await svc.getTeams(worldId, accountId)));
+        }
+        if (method === 'PUT' && path === '/world/teams') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const teams = Array.isArray(body.teams) ? (body.teams as TeamTemplate[]) : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (!teams) return sendErr(res, ErrorCode.BAD_REQUEST, 'teams required');
+          await svc.setTeams(worldId, accountId, teams);
+          return send(res, 200, ok({}));
+        }
+
         // ── 训练队列（S8-2，做实）──
         if (method === 'POST' && path === '/world/troops/train') {
           const body = await readJson(req);
@@ -237,6 +255,16 @@ export function startHttpApi(
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           if (!Number.isFinite(coins) || coins < 1) return sendErr(res, ErrorCode.BAD_REQUEST, 'coins required');
           return send(res, 200, ok(await svc.speedupTraining(worldId, accountId, coins)));
+        }
+
+        // ── 围攻重播观战关卡（G3-2c，seed + 双方布阵，攻守双方可读）──
+        {
+          const m = /^\/world\/siege\/([^/]+)\/replay$/.exec(path);
+          if (method === 'GET' && m) {
+            const worldId = q.get('worldId');
+            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+            return send(res, 200, ok(await svc.getSiegeReplay(worldId, accountId, decodeURIComponent(m[1]!))));
+          }
         }
 
         // ── 围攻防守关卡读取（C2 复盘 / 录像复算同源）──

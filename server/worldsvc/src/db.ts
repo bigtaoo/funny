@@ -17,6 +17,24 @@ import { FAMILY_MSG_RETENTION_SEC } from '@nw/shared';
 /** 防守配置：引擎 LevelDefinition 的受限子集（P2/P5，内嵌不建独立集合）。S8-3 接引擎前为 opaque 占位。 */
 export type DefenseConfig = Record<string, unknown>;
 
+/**
+ * 布阵单位（GarrisonEntry 的可序列化镜像，G3-2c）。unitType/col/row 合法性由引擎侧 levelSchema
+ * 在 buildSiegeBattle→parseLevelDefinition 时校验；initialHp = 分配给该单位的兵力（= 血量，§16.1）。
+ */
+export interface ArmyEntry {
+  unitType: string;
+  col: number;
+  row: number;
+  initialHp?: number;
+}
+
+/** 进攻布阵模板（队伍，§16.2）。≤ SIEGE_TEAM_CAP 支，出征挂一支队 → army 快照进 MarchDoc。 */
+export interface TeamTemplate {
+  id: string;   // 槽位 id（'t1'..'t5'）
+  name: string;
+  army: ArmyEntry[];
+}
+
 export interface WorldDoc {
   _id: string; // worldId = `s{season}-{shard}`
   season: number;
@@ -68,6 +86,7 @@ export interface PlayerWorldDoc {
   lastTickAt: number; // ms，惰性结算锚点
   mainBaseTile?: string;
   defense?: DefenseConfig; // 主城防守（P5 内嵌）
+  teams?: TeamTemplate[];  // 进攻布阵模板（G3-2c，≤ SIEGE_TEAM_CAP 支）
   familyId?: string;
   trainingQueue?: TrainingEntry[]; // 训练队列（S8-2，≤ TROOP_TRAIN_QUEUE_MAX 条）
   hasBattlePass?: boolean;         // 当赛季战令（S8-8，赛季重置时清除）
@@ -82,6 +101,8 @@ export interface MarchDoc {
   toTile: string;
   kind: MarchKind;
   troops: number;
+  /** 攻方布阵快照（G3-2c，attack 挂队时从 TeamTemplate.army 拷入；出征后队伍可改不影响在途军）。 */
+  army?: ArmyEntry[];
   departAt: number;
   arriveAt: number;
   status: 'marching' | 'arrived' | 'recalled';
@@ -179,6 +200,15 @@ export interface SiegeDoc {
   replayRef?: string;
   recomputed: boolean;
   ts: number;
+  /**
+   * G3-2c 重播观战：持久化权威战斗的输入（seed + 双方布阵 + 格等级）。客户端凭此重建
+   * buildSiegeBattle 并以同 seed headless 重跑 → 逐字复现 worldsvc 跑过的那一场（纯演出，非权威）。
+   * 旧战报 / 兜底廉价结算路径可缺省（重播降级为不可用）。
+   */
+  seed?: number;
+  attackerArmy?: ArmyEntry[];
+  defenderConfig?: DefenseConfig | null;
+  tileLevel?: number;
 }
 
 /** 国家文档（S8-6.5）。每个首府对应一条记录，无主时无 ownerId/nationName。 */

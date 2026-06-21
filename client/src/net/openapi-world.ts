@@ -213,6 +213,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getTeams"];
+        put: operations["setTeams"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/siege/{siegeId}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSiegeReplay"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/siege/{siegeId}/defense": {
         parameters: {
             query?: never;
@@ -931,6 +963,26 @@ export interface components {
             recomputed: boolean;
             judgeOutcome?: string;
         };
+        SiegeReplayView: {
+            siegeId: string;
+            seed: number;
+            /** @enum {string} */
+            outcome: "attacker_win" | "defender_win" | "draw";
+            level: {
+                [key: string]: unknown;
+            };
+        };
+        ArmyEntry: {
+            unitType: string;
+            col: number;
+            row: number;
+            initialHp?: number;
+        };
+        TeamTemplate: {
+            id: string;
+            name: string;
+            army: components["schemas"]["ArmyEntry"][];
+        };
         DefenseConfig: {
             [key: string]: unknown;
         };
@@ -1183,6 +1235,8 @@ export interface operations {
                     /** @enum {string} */
                     kind: "occupy" | "reinforce" | "attack" | "sweep";
                     troops: number;
+                    /** @description 围攻挂队（G3-2c）：attack 时用此进攻布阵模板；committed 兵力 = 队伍各单位分配之和（覆盖 troops） */
+                    teamId?: string;
                 };
             };
         };
@@ -1370,6 +1424,83 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    getTeams: {
+        parameters: {
+            query: {
+                worldId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Attack formation templates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["TeamTemplate"][];
+                    };
+                };
+            };
+        };
+    };
+    setTeams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    teams: components["schemas"]["TeamTemplate"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Teams saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    getSiegeReplay: {
+        parameters: {
+            query: {
+                worldId: string;
+            };
+            header?: never;
+            path: {
+                siegeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Replayable siege battle (both combatants; spectator-only, non-authoritative) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["SiegeReplayView"];
+                    };
                 };
             };
         };

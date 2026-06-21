@@ -406,6 +406,40 @@ components:
         judgeOutcome:
           type: string
 
+    # 围攻重播观战关卡（G3-2c）：seed + 双方布阵 重建的 LevelDefinition；客户端以同 seed headless 重跑。
+    SiegeReplayView:
+      type: object
+      required: [siegeId, seed, outcome, level]
+      properties:
+        siegeId: { type: string }
+        seed: { type: integer }
+        outcome: { type: string, enum: [attacker_win, defender_win, draw] }
+        level:
+          type: object
+          additionalProperties: true
+
+    # 布阵单位（GarrisonEntry 镜像，G3-2c）。unitType/col/row 合法性由引擎 levelSchema 校验；
+    # initialHp = 分配给该单位的兵力（= 血量，§16.1）。
+    ArmyEntry:
+      type: object
+      required: [unitType, col, row]
+      properties:
+        unitType: { type: string }
+        col: { type: integer }
+        row: { type: integer }
+        initialHp: { type: integer }
+
+    # 进攻布阵模板（队伍，G3-2c，≤ 5 支）。出征挂一支队 → army 快照进 march。
+    TeamTemplate:
+      type: object
+      required: [id, name, army]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        army:
+          type: array
+          items: { $ref: '#/components/schemas/ArmyEntry' }
+
     # 防守 config = 引擎 LevelDefinition 的受限子集（garrison/defenderBuildings/defenderBaseLevel）。
     # 形态由客户端自有 meta 镜像约束，契约层用 loose object（避免重复引擎 schema）。
     DefenseConfig:
@@ -626,6 +660,9 @@ paths:
                 toY: { type: integer }
                 kind: { type: string, enum: [occupy, reinforce, attack, sweep] }
                 troops: { type: integer }
+                teamId:
+                  type: string
+                  description: "围攻挂队（G3-2c）：attack 时用此进攻布阵模板；committed 兵力 = 队伍各单位分配之和（覆盖 troops）"
       responses:
         '200':
           description: March started
@@ -786,6 +823,66 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /world/teams:
+    get:
+      operationId: getTeams
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Attack formation templates
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/TeamTemplate' }
+    put:
+      operationId: setTeams
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, teams]
+              properties:
+                worldId: { type: string }
+                teams:
+                  type: array
+                  items: { $ref: '#/components/schemas/TeamTemplate' }
+      responses:
+        '200':
+          description: Teams saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /world/siege/{siegeId}/replay:
+    get:
+      operationId: getSiegeReplay
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: siegeId, in: path, required: true, schema: { type: string } }
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Replayable siege battle (both combatants; spectator-only, non-authoritative)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SiegeReplayView' }
 
   /world/siege/{siegeId}/defense:
     get:

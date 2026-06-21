@@ -69,6 +69,46 @@ export function synthesizeArmy(troops: number, role: 'attacker' | 'defender'): G
   return army;
 }
 
+/**
+ * 校验一份进攻布阵（队伍模板保存时，G3-2c）。复用引擎侧 levelSchema：把 army 塞进一场象征性
+ * siege 关卡过 `parseLevelDefinition`，非法 unitType/列/行/越界即抛错（调用方映射为 SlgError）。
+ * 纯校验、无副作用。空军（[]）合法（= 空队伍槽位）。
+ */
+export function validateAttackerArmy(army: unknown): void {
+  if (!Array.isArray(army)) throw new Error('army must be an array');
+  if (army.length === 0) return;
+  const levelObj = buildSiegeBattle({ army }, null, 1, 0);
+  parseLevelDefinition(levelObj); // 抛 = 非法布阵
+}
+
+/**
+ * 校验一份守方防守 config（编辑器保存时，G3-2c）。同 validateAttackerArmy，但走守方半场：
+ * 把 config（garrison/defenderBuildings/defenderBaseLevel）塞进象征性 siege 关卡过 levelSchema。
+ * 非法即抛。空 config / 无 garrison 合法（= 仅基地防守）。
+ */
+export function validateDefenseConfig(config: unknown): void {
+  if (config == null) return;
+  if (typeof config !== 'object' || Array.isArray(config)) throw new Error('defense config must be an object');
+  const levelObj = buildSiegeBattle(null, config as Record<string, unknown>, 1, 0);
+  parseLevelDefinition(levelObj); // 抛 = 非法布阵
+}
+
+/**
+ * 按 factor 放大一份布阵各单位的 initialHp（向下取整，≥1）。用于自定义守方布阵的国民加成
+ * （§2.4 / G1 item②）：己方首府 Voronoi 区内守军强度抬高。引擎 Unit 构造会把 hp 封顶在蓝图满血，
+ * 故未满血的单位受益、已满血的单位天然封顶（v1 行为，DRAFT 调参）。纯函数。
+ */
+export function scaleArmyHp(
+  army: ReadonlyArray<GarrisonEntry>,
+  factor: number,
+): GarrisonEntry[] {
+  if (factor <= 1) return army.map((e) => ({ ...e }));
+  return army.map((e) => ({
+    ...e,
+    initialHp: Math.max(1, Math.floor((e.initialHp ?? UNIT_BLUEPRINTS[e.unitType].hp) * factor)),
+  }));
+}
+
 /** 围攻战斗的双方布阵 + 关卡参数（attacker 必有；defender 可空 = 仅基地）。 */
 export interface SiegeBattleInput {
   /** 攻方布阵（GarrisonEntry[]，含每单位 initialHp = 分配兵力）。 */
