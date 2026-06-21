@@ -90,4 +90,18 @@
   - **槽位维持 3 槽**（武器/护具/饰品）：否决"头盔/衣/裤/双手/双脚/腰带 8 件解剖槽"提案。理由：战力上限固定（35%/1.5×），加槽=稀释非增强；单位是出兵的小兵群非换装英雄；解剖槽无独立机制轴；破坏文具叙事皮；小涂鸦兵美术 + 存档双爆。深度走 `byUnit` 每兵种 loadout，不靠加槽。
 - **为什么**：旧"无销毁"导致实例只增不减、存档膨胀无阀；有限回收 + 硬上限既治膨胀又添温和 sink，且 +5 保护 + 拍卖出口保住高投入件价值。数值全部缩小（库存 300 而非 500/1000、挂拍 5）符合"攒一套满级装备本就极难"的稀缺基调。
 - **影响**：[`game/EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) L4 改写 + §3.3 / §6.3（新增分解）/ §4 / §13 / §14 / §16 更新为权威；[`game/ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §5.1 / §5.3 / §6.3 / §10 同步去"无销毁"口径并补参数。`/equipment/salvage` 端点待进 SERVER_API.md。
+
+## ADR-013 合规拆分为 Global / CN 两份，海外先行 — Accepted — 2026-06-21
+
+- **决策**（用户拍板）：合规义务按地区拆两份文档，**互相解耦**：
+  - **海外（先做）= [`game/COMPLIANCE_GLOBAL.md`](game/COMPLIANCE_GLOBAL.md)**：Web + iOS + Google Play 三渠道。硬门 = 隐私政策 / 年龄分级（IARC·ESRB·PEGI·Apple）/ **抽卡概率公示**（Apple 3.1.1 + Google Play，中外通吃）/ 平台 IAP 强制 / 应用内删账号（Apple 5.1.1(v)）/ GDPR·COPPA / UGC 治理。
+  - **中国（跟版号走，可推迟）= `COMPLIANCE_CN.md`**（占位，未建）：版号(ISBN) / 实名认证 / 防沉迷（未成年限时限额）/ PIPL / 分龄充值限额。
+- **为什么**：实名 + 防沉迷 + 版号是**中国区特有**，海外测试期不触发；但海外有自己（更轻）的一套，且**抽卡概率公示**和**平台支付强制**最易在审核卡审。先海外测试、同时申国内版号，两条线并行不阻断。
+- **影响**：新增 COMPLIANCE_GLOBAL.md 为海外合规权威；README §1.2 / §2 登记。挂钩既有系统：analyticsvc §10（同意/删除）、commercial GachaPool weight（概率公示数据源）、account（删账号端点待补 SERVER_API）、social 敏感词（UGC）。`iapVerify` dev 桩上线前换平台 SDK。
+
+## ADR-014 活动/Live-ops = 叠加既有系统的受控容器，不新增金币龙头 — Accepted — 2026-06-21
+
+- **决策**（用户拍板）：运营活动作为**有时效的内容容器**引入（回答 ECONOMY_BALANCE §299「是否引入限时活动池/双倍掉落」=引入但严格受控），且**不另造平行子系统**——发奖走 OPS 邮件路径、任务计数复用 RETENTION/ACHIEVEMENT 的 statKey 累加链、限定直购复用 commercial 商店、时钟服务器权威（同 dayKey 思路）。经济红线：①**不新增金币龙头**（活动金币计入月度 ~300 预算，主发软通货/限定皮肤碎片/活动积分，同 ADR-011）；②双倍/加成期有**硬封顶**且只作用于受体力闸门约束的 PvE 产出（ADR-009 体力总闸）；③限定直购**不破皮肤稀有度铁律**（不把高级 epic/legendary 降为金币直购）；④活动积分活动期清零、不沉淀；⑤**PvP 硬墙恒不读活动加成**（ADR-009）。
+- **为什么**：活动是最容易冲垮 F2P 经济预算与公平性的运营口子；锁死「叠加正向收益、从不削弱常态、可错过不可剥夺」+ 复用既有发奖/计数/售卖路径，避免造第二条发奖通道与数值漂移。活动有**自己的第三条时钟**，与天梯6周/SLG大区2月赛季时钟解耦（SEASON_OVERVIEW），纯由 window 决定。
+- **影响**：新增 [`game/EVENTS_DESIGN.md`](game/EVENTS_DESIGN.md) 为活动系统编排权威；数字落 [`game/ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §14（待建）；ECONOMY_BALANCE §299 待决项关闭。`/events` 端点待补 SERVER_API.md。README §1.2 / §2 登记。
 </content>

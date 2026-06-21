@@ -36,7 +36,9 @@
 | [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 设计中 |
 | [ACHIEVEMENT_DESIGN.md](game/ACHIEVEMENT_DESIGN.md) | **成就系统机制基准（统计里程碑→一次性金币；服务器权威/领取；数字→ECONOMY_BALANCE §2.4）** | 设计中 |
 | [RETENTION_DESIGN.md](game/RETENTION_DESIGN.md) | **留存系统机制基准（签到/每日任务/周常；服务器权威+dayKey；不新增金币龙头；数字→ECONOMY_NUMBERS §12）** | 设计中 |
+| [EVENTS_DESIGN.md](game/EVENTS_DESIGN.md) | **活动/Live-ops 编排（配置/生命周期/限定直购/双倍期；发奖走邮件、计数复用 statKey；不新增金币龙头 ADR-014）** | 设计中 |
 | [TITLE_DESIGN.md](game/TITLE_DESIGN.md) | **称号系统机制基准（公开身份名片；统一 titleId 容器/赛季快照/四处展示；段位金币→ECONOMY_BALANCE §2.3）** | 设计中 |
+| [SEASON_OVERVIEW.md](game/SEASON_OVERVIEW.md) | **两套赛季（天梯6周/SLG大区2月）的独立性契约·边界·对照（不重述机制，只锁边界）** | 设计中 |
 | [SEASON_DESIGN.md](game/SEASON_DESIGN.md) | **天梯赛季/战令/排行榜机制基准（6周赛季·软重置·峰值奖励·Top100·Battle Pass；数字→ECONOMY_NUMBERS §13）** | 设计中 |
 | [CAMPAIGN_DESIGN.md](game/CAMPAIGN_DESIGN.md) | 战役 PvE 设计基准（数据权威见 PVE_INTEGRITY_PLAN） | 实现中 |
 | [CAMPAIGN_P0_PLAN.md](game/CAMPAIGN_P0_PLAN.md) | 战役 P0 试玩切片计划 | 实现中 |
@@ -53,7 +55,11 @@
 | [SOCIAL_DESIGN.md](game/SOCIAL_DESIGN.md) | 好友 / 私聊 / 邮件 | 已实现 |
 | [OPS_DESIGN.md](game/OPS_DESIGN.md) | 运维后台（监控/匹配池/补偿工单） | 已实现 |
 | [ANALYTICS_DESIGN.md](game/ANALYTICS_DESIGN.md) | 埋点分析（analyticsvc:18085） | 已实现 |
+| [COMPLIANCE_GLOBAL.md](game/COMPLIANCE_GLOBAL.md) | **海外合规（Web/iOS/Android：隐私/分级/抽卡概率公示/平台支付/删账号/UGC）** | 设计中 |
+| [AUDIO_DESIGN.md](game/AUDIO_DESIGN.md) | **音频系统（资产/触发表/播放层/混音/设置/平台约束；美学仍归 art-direction）** | 设计中 |
+| [ONBOARDING_DESIGN.md](game/ONBOARDING_DESIGN.md) | **新手引导/FTUE 编排（首会话动线/战斗教学覆盖层/功能渐进解锁/合规门；不重述故事/关卡）** | 设计中 |
 | [SLG_DESIGN.md](game/SLG_DESIGN.md) | SLG 大世界（worldsvc:18084） | 实现中 |
+| [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→shared/slg.ts）** | 实现中 |
 | [UI_DESIGN.md](game/UI_DESIGN.md) | **菜单 / 元系统客户端 UI**（与战斗 UI 分工，见 §3） | 实现中 |
 | [IMPROVEMENT_PLAN.md](game/IMPROVEMENT_PLAN.md) | 6 项工程改进（全完成） | 已归档 |
 | [PROFILE_POPUP_PLAN.md](game/PROFILE_POPUP_PLAN.md) | 资料弹层（已实现） | 已归档 |
@@ -95,6 +101,9 @@
 | 成就系统**机制**（统计/解锁/领取/服务器权威） | [game/ACHIEVEMENT_DESIGN.md](game/ACHIEVEMENT_DESIGN.md) | 阈值/金币数字去 ECONOMY_BALANCE §2.4；纯一次性 faucet，不可刷 |
 | 称号系统**机制**（公开身份名片/统一容器/授予/展示） | [game/TITLE_DESIGN.md](game/TITLE_DESIGN.md) | 段位首达金币数字去 ECONOMY_BALANCE §2.3；与成就解耦（成就纯自看，炫耀走称号） |
 | 留存系统**机制**（签到/每日任务/周常/dayKey/领取） | [game/RETENTION_DESIGN.md](game/RETENTION_DESIGN.md) | 数字去 ECONOMY_NUMBERS §12；金币只从每日任务满点出、收敛 ~60/月，不新增龙头 |
+| 活动/Live-ops **编排**（配置/生命周期/类型/经济约束） | [game/EVENTS_DESIGN.md](game/EVENTS_DESIGN.md) | 数字去 ECONOMY_NUMBERS §14；发奖复用 OPS 邮件、计数复用 statKey、限定直购复用 commercial；不新增金币龙头（ADR-014） |
+| 拍卖行**机制**（交易模型/挂单状态机/定向受拍/税/反 RMT） | [game/AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | 从 SLG §7/§14 抽出，机制以本文为准；数字去 `shared/slg.ts`（`AUCTION_*`）；仅 coin 计价、赛季资源禁挂 |
+| 两套赛季的**独立性契约/边界/对照**（天梯 vs SLG 大区谁重置谁、共享资产归属） | [game/SEASON_OVERVIEW.md](game/SEASON_OVERVIEW.md) | 不重述机制；机制权威仍归 SEASON_DESIGN / SLG_DESIGN；锁「两条时钟互不触发 + 重置写入域隔离 + 共享 coin/称号归属」 |
 | 天梯赛季/战令/排行榜**机制**（赛季时钟·软重置·惰性迁移·峰值奖励·Top100·Battle Pass） | [game/SEASON_DESIGN.md](game/SEASON_DESIGN.md) | 数字去 ECONOMY_NUMBERS §13；天梯赛季6周 ≠ SLG大区赛季2个月（两条独立时钟）；赛季切换 = admin 手动开启 |
 | PvE 关卡定义 | `client/src/game/campaign/levels/*.json`（+ level-editor 编辑、`parseLevelDefinition` 校验） | — |
 | PvE 奖励 / 养成数据权威 | 服务器 `server/shared/pveRewards.ts` + [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md)（方案 B：服务器权威） | 客户端 JSON 仅参考/编辑器用 |
@@ -104,6 +113,9 @@
 | 客户端 UI | 菜单/元系统 → [game/UI_DESIGN.md](game/UI_DESIGN.md)；战斗内 → [product/ui-design.md](product/ui-design.md) | 互补分工，见 §3 |
 | 实现状态 / 任务进度 | [game/META_TASKS.md](game/META_TASKS.md) + 各文档「实现记录」节 | — |
 | 叙事铁律 | [product/world.md](product/world.md) + ADR-008 | 陶(东方)/Anna(西方)/两本笔记本 |
+| 海外合规（隐私/分级/抽卡公示/平台支付/删账号/UGC） | [game/COMPLIANCE_GLOBAL.md](game/COMPLIANCE_GLOBAL.md) | 中国版（版号/实名/防沉迷/PIPL）另见 COMPLIANCE_CN（待建，ADR-013） |
+| 音频系统（资产/触发/播放层/混音/设置/平台约束） | [game/AUDIO_DESIGN.md](game/AUDIO_DESIGN.md) | **美学方向**（音色/禁用清单）仍归 [product/art-direction.md](product/art-direction.md) §声音 |
+| 新手引导/FTUE 编排（动线/教学覆盖层/渐进解锁/合规门） | [game/ONBOARDING_DESIGN.md](game/ONBOARDING_DESIGN.md) | 故事归 CAMPAIGN_STORY/world；教学关定义归 CAMPAIGN_DESIGN；埋点字段归 ANALYTICS |
 
 ---
 
