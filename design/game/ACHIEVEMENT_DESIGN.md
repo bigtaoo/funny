@@ -1,6 +1,6 @@
 # 成就系统设计 — Achievements
 
-> 状态：实现中（服务端基座 S9-1/2/4 + PvE 章节计数 S9-3 + 客户端成就墙 S9-5 + 达成 toast S9-5b + 引擎分类型埋点地基 S9-3b + PvP 计数/L1 S9-6 已落地，见 §11；剩 S9-3b PvE 喂入半 / S9-7 反作弊 L2-L3 / S9-8 埋点+校准）· 权威：**本文（成就系统机制单一来源）**；数值（阈值/金币）镜像并最终落 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)（DRAFT 初值）· 更新：2026-06-21
+> 状态：实现中（服务端基座 S9-1/2/4 + PvE 章节计数 S9-3 + 客户端成就墙 S9-5 + 达成 toast S9-5b + 引擎分类型埋点地基 S9-3b + PvP 计数/L1 S9-6 + **PvE kill/cast 喂入 S9-3b-PvE** 已落地，见 §11；剩 S9-7 反作弊 L2-L3 / S9-8 埋点+校准）· 权威：**本文（成就系统机制单一来源）**；数值（阈值/金币）镜像并最终落 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)（DRAFT 初值）· 更新：2026-06-21
 
 本文是成就子系统的**机制设计基准**：定位、数据模型、统计来源、解锁/领取流程、服务器权威与防刷、接口契约、UI、经济联动、实现拆解。
 **具体阈值/金币不在本文拍死**——初值见 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)；本文只镜像示例并标注权威指针，条目/阈值后期慢慢扩。
@@ -193,7 +193,7 @@ POST /achievements/claim        (JWT) { achId, tier:1|2|3 }
 
 - [x] **引擎分类型埋点（S9-3b 地基已落，2026-06-21）**：`@nw/engine` `PlayerStats` 现已产出 `killsByType`（per-victimType）/`castsByType`（per-spellType），`achievementStatDelta` 集中映射到 `kill.archer`/`kill.guard`/`cast.meteor`。**PvP 半（S9-6）已用它上报喂入**；**PvE 半仍缺**——见下「PvE 喂入」。
 - [x] **L1 硬边界来源（S9-6 已落粗上界，2026-06-21）**：`@nw/shared.PVP_STAT_MATCH_CAP` 给出单局每 statKey 粗上界（kill 200 / cast 100，远大于正常单局值，只挡明显伪造），`sanitizePvpReportedStats` 据此做 L1 异常复查（越界整份拒收）。精确从引擎约束（费用/帧数/单位数）推导仍可后续收紧。
-- [ ] **PvE kill/cast 喂入（S9-3b PvE 半，待做）**：地基已就绪，但 A2 禁客户端直写不可复算计数 → 需「PvE 抽检 judge verdict 扩展回 `killsByType`/`castsByType` + `/pve/verify` 比对后入账」，且仅抽检命中的局可信（覆盖有限）。普通通关不跑引擎仍无法权威产出分项计数。
+- [x] **PvE kill/cast 喂入（S9-3b PvE 半，已落，2026-06-21）**：裁判复算（`runPveJudge`）通关时算 `achievementStatDelta(stats[0])` → `JudgeVerdict.stats_json` 经 gateway 透传回 meta → `/pve/verify` **仅 `status==='verified'`（裁判成功复算，非 benefit-of-doubt 的 `unverified`）** 时过 L1 caps 清洗后 `accrueStats` 入账（见 §11）。仅抽检命中且裁判可裁的局可信（覆盖有限，普通通关不跑引擎仍无分项计数，符合设计预期）。
 - [x] **PvE 计数粒度（S9-3 已对齐，2026-06-21）**：PvE **唯一能服务器权威产出**的成就 stat 是 `campaign.chaptersCleared`（由 `levelId` 派生，首通 `$max`，不依赖客户端上报）。`kill.archer`/`kill.guard`/`cast.meteor` 设计上（§3.1）也想由 PvE 喂，但**当前不可权威产出**：① `@nw/engine` 只在 `PlayerStats` 累计聚合 `unitsKilled`/`spellHits`，**无分兵种击杀、无分法术 cast**；② 普通通关服务器**不跑引擎**（只信客户端 stars + 抽样录像复算），裁判 verdict 也只回 `stars`，故无法当场拿到分项计数；③ A2 铁律禁止客户端直写「无法复算的计数」。→ 故 S9-3 只落 `campaign.chaptersCleared`；PvE 的 kill/cast 喂入拆为后续 **S9-3b**：需「引擎分类型埋点（per-victimType kill / per-spellType cast）进 deterministic snapshot → 裁判 verdict 扩展回这些计数 → `/pve/verify` 比对后入账」。在此之前 `kill.*`/`cast.*` 仅由 PvP 上报（S9-6）喂。
 - [ ] **L1 硬边界来源**：单局各 statKey 的理论上限怎么从 `@nw/engine` 约束推出（费用/帧数/单位数），需与引擎侧确认可取。
 
@@ -325,4 +325,16 @@ POST /achievements/claim        (JWT) { achId, tier:1|2|3 }
 - **`@nw/shared` 新增纯函数**：`PVP_REPORTED_STAT_KEYS`（kill.archer/kill.guard/cast.meteor，**pvp.wins 不在列**=服务器自算）/`PVP_STAT_MATCH_CAP`（L1 粗上界）/`sanitizePvpReportedStats`/`accrueStats`。
 - **测试**：`achievements.test.ts` +11 纯函数（sanitize 各分支 + accrue 懒创建/累加/不可变）；`internal.test.ts` +3 e2e（ranked 双方 kill/cast 入账+仅胜方 stats.pvp.wins / L1 越界拒收仍结算 ELO+wins / friendly 带 stats 不喂）；`CombatSystem.test.ts` +3 引擎（per-type kill / cast 计数 / achievementStatDelta 映射）。**meta 144 + gameserver 42 + 引擎 combat 10 全绿**，`tsc -b shared engine gameserver metaserver commercial gateway worldsvc` 干净，client webpack 成功。
 
-> **下一会话接续点**：S9-3b **PvE 喂入半**（裁判 verdict 扩展回 kill/cast + `/pve/verify` 比对入账，§6.2，仅抽检局可信）→ S9-7（反作弊 L2/L3：离线 replay 复算抽查 + `statSuspicion` 升档 + OPS 审查队列）→ S9-8（埋点漏斗 + 红线/幂等单测 + 金币池模拟校准）。任务跟踪见 `META_TASKS.md` S9。
+### S9-3b PvE kill/cast 喂入（2026-06-21）
+
+- **范围**：补齐 §6.2 的「PvE 喂入半」——`kill.archer`/`kill.guard`/`cast.meteor` 在 PvE 由**裁判复算权威产出**入账（A2：禁客户端直写不可复算计数；唯一权威产出点 = L1 抽检的 judge 复算）。
+- **链路**（裁判客户端 → gateway → meta）：
+  - **proto** `transport.proto` `JudgeVerdict` 加 `string stats_json = 6`（裁判复算出的玩家本局成就计数 JSON；PvP/siege 恒空）。客户端 ts-proto codec（`client/src/net/proto/transport.ts`）手改对齐（interface/createBase/encode tag 50/decode case 6/fromPartial）；gateway 用 protobufjs 动态读 .proto，仅 `proto.ts` `toClientMsg` 加读 `stats_json` + ClientMsg `judge_verdict` 分支补字段。
+  - **裁判侧** `client/src/net/judgeRunner.ts`：`runPveJudge` 通关（玩家 owner 0 胜）时 `JSON.stringify(achievementStatDelta(stats[0]))` 填 `JudgeOutcome.statsJson`；未通关 / PvP / siege 恒空串。`NetSession`→`NetClient.sendJudgeVerdict` 透传。
+  - **gateway** `Gateway.ts` `JudgeResult` 加 `statsJson?` + verdict 回传时携带；`internalHttp` `/gw/judge` 直接 JSON 序列化回 meta（无需改）。
+  - **meta** `gatewayClient.ts` `JudgeRes` 加 `statsJson?`；`service.ts` `pveVerify` 在 `status==='verified'`（裁判**成功复算**，排除 benefit-of-doubt 的 `unverified` 与 `rejected`）时调新私有方法 `accrueJudgedPveStats`：解析 statsJson → `sanitizePvpReportedStats`（**复用 PvP 的 L1 caps 作「玩家串通裁判刷量」廉价兜底**，越界整份丢弃）→ `accrueStats` 同 `mutateSave` 懒创建入账。喂入是 best-effort 附加，解析失败 / 越界 / 空增量都**不阻塞发材料主路径**（金币池小且一次性，§4.4）。
+- **铁律守护**：A2（计数只在服务器权威结算点写）——meta 仅在裁判成功复算分支累加，普通通关 / unverified / rejected 都不喂；A3（不发战力）——只喂金币领取用 stats。
+- **覆盖边界（设计预期）**：仅「被抽检（首通/异常/随机）且裁判可裁」的 PvE 局产出 kill/cast；普通通关不跑引擎 → 无分项计数。符合 §6.2「仅抽检局可信，覆盖有限」。
+- **测试**：`pve.e2e.test.ts` +4 e2e（注入可配假裁判：verified 累加 kill/cast+材料照发 / L1 越界整份拒收不入账但仍发材料 / benefit-of-doubt 发材料但不喂 / rejected 不发不喂）；`gateway/judge.test.ts` PvE 用例增 `stats_json` 透传断言 + PvP 用例补 `statsJson:''`。**meta 159 + gameserver 42 + gateway judge 4 + 引擎 combat 10 全绿**，`tsc -b shared engine gameserver metaserver commercial gateway worldsvc` 干净，client `tsc --noEmit` + webpack 成功。（gateway `matchsvcClient.test.ts` 1 失败为既有、与本改动无关。）
+
+> **下一会话接续点**：S9-7（反作弊 L2/L3：离线 replay 复算抽查 + `statSuspicion` 升档 + OPS 审查队列）→ S9-8（埋点漏斗 + 红线/幂等单测 + 金币池模拟校准）。任务跟踪见 `META_TASKS.md` S9。

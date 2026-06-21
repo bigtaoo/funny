@@ -86,7 +86,7 @@ describe('Gateway peer judge', () => {
 
     await sleep(50); // 让 client_caps 先到达 gateway
     const verdict = await gw.judge({ seed: 7, mode: 1, endFrame: 0, frames: [], exclude: ['a', 'b'] });
-    expect(verdict).toEqual({ ok: true, stateHash: 'HONEST', winnerSide: 0, stars: 0, judgeAccountId: 'c' });
+    expect(verdict).toEqual({ ok: true, stateHash: 'HONEST', winnerSide: 0, stars: 0, statsJson: '', judgeAccountId: 'c' });
     void a; void b;
   });
 
@@ -104,7 +104,11 @@ describe('Gateway peer judge', () => {
       seenReq = req;
       j.send(
         encodeClient({
-          judge_verdict: { request_id: req['request_id'], state_hash: '', winner_side: 0, ok: true, stars: 2 },
+          // S9-3b：PvE 抽检复算回报本局成就计数 stats_json，gateway 透传回 meta。
+          judge_verdict: {
+            request_id: req['request_id'], state_hash: '', winner_side: 0, ok: true, stars: 2,
+            stats_json: '{"kill.archer":3}',
+          },
         }),
       );
     });
@@ -114,7 +118,9 @@ describe('Gateway peer judge', () => {
       seed: 0, mode: 0, endFrame: 99, frames: [], exclude: ['p'],
       levelId: 'ch1_lv2', pveUpgrades: { inf_hp: 3 },
     });
-    expect(verdict).toEqual({ ok: true, stateHash: '', winnerSide: 0, stars: 2, judgeAccountId: 'j' });
+    expect(verdict).toEqual({
+      ok: true, stateHash: '', winnerSide: 0, stars: 2, statsJson: '{"kill.archer":3}', judgeAccountId: 'j',
+    });
     // 裁判收到 PvE 复算参数（level_id + 权威蓝图快照）。
     expect(seenReq?.['level_id']).toBe('ch1_lv2');
     expect(seenReq?.['pve_upgrades']).toEqual({ inf_hp: 3 });

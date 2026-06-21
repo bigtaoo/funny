@@ -54,6 +54,8 @@ export interface JudgeResult {
   winnerSide?: number;
   /** PvE 复算得到的星数（PVE_INTEGRITY §8.6 L1）。 */
   stars?: number;
+  /** PvE 喂入（S9-3b）：复算出的玩家本局成就计数 JSON；PvP/siege 恒空。 */
+  statsJson?: string;
   judgeAccountId?: string;
 }
 
@@ -309,6 +311,7 @@ export class Gateway {
                   stateHash: msg.stateHash,
                   winnerSide: msg.winnerSide,
                   stars: msg.stars,
+                  statsJson: msg.statsJson,
                   judgeAccountId: accountId,
                 }
               : { ok: false },

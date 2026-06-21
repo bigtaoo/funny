@@ -67,6 +67,7 @@ message JudgeVerdict {
   uint32 winner_side = 3;
   bool   ok          = 4;   // 复算成功（版本匹配 + 跑到终局）
   uint32 stars       = 5;   // PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：复算得到的星数（0=未通关）
+  string stats_json  = 6;   // PvE 喂入（S9-3b）：复算出的玩家(owner 0)本局成就计数 JSON（{"kill.archer":n,…}）；裁判权威，meta verified 时 L1 校验后累加。PvP/siege 恒空
 }
 
 message ClientMsg {

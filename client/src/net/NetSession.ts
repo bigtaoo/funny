@@ -212,7 +212,7 @@ export class NetSession {
       // party (never one of the two players in that match).
       const r = msg.judgeRequest;
       const out = runJudge(r);
-      this.gateway.sendJudgeVerdict(r.requestId, out.stateHash, out.winnerSide, out.ok, out.stars);
+      this.gateway.sendJudgeVerdict(r.requestId, out.stateHash, out.winnerSide, out.ok, out.stars, out.statsJson);
     } else if (msg.friendPresence) {
       this.handlers.onFriendPresence?.(msg.friendPresence);
     } else if (msg.friendRequest) {

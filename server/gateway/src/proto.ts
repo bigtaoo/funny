@@ -38,6 +38,8 @@ export type ClientMsg =
       winnerSide: number;
       ok: boolean;
       stars: number;
+      /** PvE 喂入（S9-3b）：复算出的玩家本局成就计数 JSON；PvP/siege 恒空 */
+      statsJson: string;
     }
   | { case: 'unknown' };
 
@@ -170,6 +172,7 @@ export function decodeClient(buf: Uint8Array): ClientMsg {
         winnerSide: Number(v['winner_side'] ?? 0),
         ok: Boolean(v['ok']),
         stars: Number(v['stars'] ?? 0),
+        statsJson: String(v['stats_json'] ?? ''),
       };
     }
     default:
