@@ -78,9 +78,14 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     await mongo?.close();
   });
 
-  /** 建一个家族并返回族长 accountId（每个家族一个 leader）。name 兜底补足 ≥2 字符。 */
+  /**
+   * 建一个家族并返回族长 accountId（每个家族一个 leader）。name 兜底补足 ≥2 字符。
+   * 种入足量 activity（§17.4）：createSect 会 refreshFamilyProsperity 重算繁荣度（50 + activity*5），
+   * 需 ≥ SECT_FOUND_PROSPERITY_MIN(2000) 才能建门；不关心门槛的用例由此默认满足。
+   */
   async function makeFamily(leader: string, name: string, tag: string): Promise<string> {
     await fam.createFamily(W, leader, name.length >= 2 ? name : `Fam${name}`, tag);
+    await mongo!.collections.families.updateOne({ _id: familyId(W, tag) }, { $set: { activity: 500 } });
     return leader;
   }
 
@@ -92,6 +97,12 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(detail.leaderFamilyId).toBe(familyId(W, 'AW'));
     expect(detail.memberFamilyCount).toBe(1);
     expect(spends).toEqual([{ accountId: 'alice', amount: SECT_CREATE_COST }]);
+  });
+
+  it('建宗门繁荣度门槛：低繁荣度家族 → PROSPERITY_TOO_LOW（G2/§17.4）', async () => {
+    // 直接建族不补 activity → 繁荣度仅 = memberCount*50 = 50 < 2000，应被拦。
+    await fam.createFamily(W, 'poor', 'Poor', 'PR');
+    await expect(sect.createSect(W, 'poor', 'Broke', 'BRK')).rejects.toMatchObject({ code: 'PROSPERITY_TOO_LOW' });
   });
 
   it('非族长不能建宗门 → NO_PERMISSION', async () => {

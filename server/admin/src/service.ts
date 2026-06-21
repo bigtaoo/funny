@@ -32,7 +32,7 @@ import {
 } from '@nw/shared';
 import { METRIC_KEYS } from '@nw/shared';
 import type { AdminAccountDoc, AdminCollections, AuditDoc, CompTicketDoc } from './db';
-import type { AnalyticsClient, AnalyticsQueryResult, MailDispatcher, PlayerClient, PlayerProfile, StatsClient } from './clients';
+import type { AnalyticsClient, AnalyticsQueryResult, MailDispatcher, PlayerClient, PlayerProfile, StatsClient, WorldClient, SlgWorldSummary } from './clients';
 
 const log = createLogger('admin:service');
 
@@ -62,6 +62,7 @@ export interface AdminServiceDeps {
   players: PlayerClient;
   mail: MailDispatcher;
   analytics: AnalyticsClient;
+  world: WorldClient;
   now: () => number;
 }
 
@@ -93,6 +94,7 @@ export class AdminService {
   private readonly players: PlayerClient;
   private readonly mail: MailDispatcher;
   private readonly analytics: AnalyticsClient;
+  private readonly world: WorldClient;
   private readonly now: () => number;
   /** 登录失败限流表（按登录名，内存态）。 */
   private readonly loginAttempts = new Map<string, LoginAttempt>();
@@ -103,7 +105,51 @@ export class AdminService {
     this.players = deps.players;
     this.mail = deps.mail;
     this.analytics = deps.analytics;
+    this.world = deps.world;
     this.now = deps.now;
+  }
+
+  // ───────────────────── SLG 赛季运维（G7/§17.7）─────────────────────
+  // worldsvc /admin/world/* 代理 + 审计 + 运维序列约束（reset 前必须 settle，防丢历史）。
+
+  /** 列出各大区运维概要（capability slg.season.view）。worldsvc 不可达 → 空表。 */
+  async slgListWorlds(): Promise<SlgWorldSummary[]> {
+    if (!this.world.available) return [];
+    return this.world.listWorlds();
+  }
+
+  /** 开新大区（高危，仅 super）。审计。 */
+  async slgOpenSeason(actor: string, worldId: string, season: number, shard: number, capacity: number): Promise<void> {
+    await this.world.openWorld(worldId, season, shard, capacity);
+    await this.audit(actor, 'slg.season.open', { target: worldId, summary: `s${season}-${shard} cap=${capacity}` });
+  }
+
+  /** 结算大区（落 seasonResults + 发奖）。审计。 */
+  async slgSettleSeason(actor: string, worldId: string): Promise<unknown> {
+    const r = await this.world.settleWorld(worldId);
+    await this.audit(actor, 'slg.season.settle', { target: worldId });
+    return r;
+  }
+
+  /**
+   * 重置大区（清档重开，高危）。运维序列约束：reset 前必须已 settle（status=settling/resetting），
+   * 否则拒绝（防跳过结算丢 seasonResults 历史，§17.7）。worldsvc 端亦有同守卫（双保险）。
+   */
+  async slgResetSeason(actor: string, worldId: string): Promise<unknown> {
+    const worlds = await this.world.listWorlds();
+    const w = worlds.find((x) => x.worldId === worldId);
+    if (w && w.status !== 'settling' && w.status !== 'resetting') {
+      throw new AdminError(409, 'conflict', `重置前须先结算（当前 status=${w.status}，应为 settling）`);
+    }
+    const r = await this.world.resetWorld(worldId);
+    await this.audit(actor, 'slg.season.reset', { target: worldId });
+    return r;
+  }
+
+  /** 关闭大区（归档）。审计。 */
+  async slgCloseSeason(actor: string, worldId: string): Promise<void> {
+    await this.world.closeWorld(worldId);
+    await this.audit(actor, 'slg.season.close', { target: worldId });
   }
 
   // ───────────────────────── 认证 ─────────────────────────

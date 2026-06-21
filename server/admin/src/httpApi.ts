@@ -252,6 +252,37 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true });
         }
 
+        // ── SLG 赛季运维（G7/§17.7）──
+        if (method === 'GET' && path === '/admin/slg/worlds') {
+          requireCap(actor, 'slg.season.view');
+          const worlds = await svc.slgListWorlds();
+          return send(res, 200, { ok: true, worlds });
+        }
+        if (method === 'POST' && path === '/admin/slg/season/open') {
+          requireCap(actor, 'slg.season.manage');
+          const b = await readJson(req);
+          await svc.slgOpenSeason(actor.adminId, str(b.worldId), Number(b.season ?? 1), Number(b.shard ?? 1), Number(b.capacity ?? 10000));
+          return send(res, 200, { ok: true });
+        }
+        if (method === 'POST' && path === '/admin/slg/season/settle') {
+          requireCap(actor, 'slg.season.manage');
+          const b = await readJson(req);
+          const ranking = await svc.slgSettleSeason(actor.adminId, str(b.worldId));
+          return send(res, 200, { ok: true, ranking });
+        }
+        if (method === 'POST' && path === '/admin/slg/season/reset') {
+          requireCap(actor, 'slg.season.manage');
+          const b = await readJson(req);
+          const result = await svc.slgResetSeason(actor.adminId, str(b.worldId));
+          return send(res, 200, { ok: true, result });
+        }
+        if (method === 'POST' && path === '/admin/slg/season/close') {
+          requireCap(actor, 'slg.season.manage');
+          const b = await readJson(req);
+          await svc.slgCloseSeason(actor.adminId, str(b.worldId));
+          return send(res, 200, { ok: true });
+        }
+
         send(res, 404, { ok: false, error: 'not found' });
       } catch (e) {
         if (e instanceof AdminError) {

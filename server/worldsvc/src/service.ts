@@ -47,7 +47,13 @@ import {
   RELOCATE_COST,
   SLG_SHOP_ITEMS,
   CAPITAL_FRACTIONS,
+  SETTLE_REWARDS,
+  settleTier,
+  CENTER_CAPITAL_IDX,
+  CENTER_CAPITAL_MULT,
+  RESET_DELETE_BATCH,
   SlgError,
+  type SettleTier,
   type PathCell,
   type TileType,
   type ResourceType,
@@ -57,11 +63,14 @@ import {
 } from '@nw/shared';
 import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseConfig, scaleArmyHp } from './siegeEngine';
 import type { GarrisonEntry } from '@nw/engine';
+import { ENGINE_VERSION } from '@nw/engine';
+import { refreshFamilyProsperity, effectiveProsperity } from './prosperity';
 import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry, DefenseConfig, ArmyEntry, TeamTemplate } from './db';
 import type { WorldRedis } from './redis';
 import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient';
 import { nullWorldMetaClient, type WorldMetaClient, type PlayerProfile } from './metaClient';
 import { nullWorldCommercialClient, type WorldCommercialClient } from './commercialClient';
+import { nullWorldMailClient, type WorldMailClient } from './mailClient';
 
 /** 一场关键围攻的可重播输入（G3-2c）：seed + 双方布阵 + 格等级，持久化到 SiegeDoc 供客户端重播观战。 */
 export interface SiegeReplayInputs {
@@ -159,9 +168,32 @@ export interface WorldServiceDeps {
   meta?: WorldMetaClient;
   /** 金币扣费（训练加速/SLG 商店）；缺省 = 金币操作不可用。 */
   commercial?: WorldCommercialClient;
+  /** 系统邮件（赛季结算发奖，§17.5）；缺省 = 不发奖（best-effort）。 */
+  mail?: WorldMailClient;
 }
 
 const emptyResources = (): Record<ResourceType, number> => ({ food: 0, iron: 0, wood: 0 });
+
+/**
+ * 分批删除（§17.6）：万人级集合一次 deleteMany 会长时间占锁/阻塞事件循环；改为按 _id 批量循环删，
+ * 每批 ≤ batch 条，让出事件循环。幂等：重入对已删的是 no-op，最终一致。返回累计删除数。
+ */
+async function deleteInBatches(
+  col: { find: (f: object) => { project: (p: object) => { limit: (n: number) => { toArray: () => Promise<Array<{ _id: string }>> } } }; deleteMany: (f: object) => Promise<{ deletedCount: number }> },
+  filter: object,
+  batch: number,
+): Promise<number> {
+  let total = 0;
+  for (;;) {
+    const docs = await col.find(filter).project({ _id: 1 }).limit(batch).toArray();
+    if (docs.length === 0) break;
+    const ids = docs.map((d) => d._id);
+    const r = await col.deleteMany({ _id: { $in: ids } });
+    total += r.deletedCount;
+    if (docs.length < batch) break;
+  }
+  return total;
+}
 
 /** 出征许可的玩家面 kind（return 仅内部撤军腿，禁止外部直接发起）。 */
 const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'attack', 'sweep', 'scout']);
@@ -175,6 +207,7 @@ export class WorldService {
   private readonly gateway: WorldGatewayClient;
   private readonly meta: WorldMetaClient;
   private readonly commercial: WorldCommercialClient;
+  private readonly mail: WorldMailClient;
   /** 进程内单调序号，保证同毫秒多次出征 marchId 不撞键。 */
   private marchSeq = 0;
   /** 进程内单调序号，保证同毫秒多次围攻 siegeId 不撞键。 */
@@ -186,6 +219,7 @@ export class WorldService {
     this.gateway = deps.gateway ?? nullWorldGatewayClient;
     this.meta = deps.meta ?? nullWorldMetaClient;
     this.commercial = deps.commercial ?? nullWorldCommercialClient;
+    this.mail = deps.mail ?? nullWorldMailClient;
   }
 
   private get capitals(): [number, number][] {
@@ -512,6 +546,10 @@ export class WorldService {
         { $inc: { population: 1 } },
       );
       if (!inc) throw new SlgError('WORLD_FULL', '世界已满员');
+      // 首位玩家 join 把世界从 open 推进到 active（§17.3 状态机；修 `active` 死值）。CAS 幂等。
+      if (inc.status === 'open') {
+        await cols.worlds.updateOne({ _id: worldId, status: 'open' }, { $set: { status: 'active' as const } });
+      }
     }
 
     const t = now();
@@ -603,6 +641,9 @@ export class WorldService {
     );
     const after = await cols.tiles.findOne({ _id: tid });
     if (after) await this.pushTileToObservers(after, new Set([accountId])); // G5-2：新领地对视野内观察者可见
+    // §17.4 活跃累加：直占（S8-1 路径）→ 占领者所属家族 +1（含繁荣度刷新）。
+    const occMember = await cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
+    void this.bumpFamilyActivity(worldId, occMember?.familyId, 1);
     return this.tileDocView(after!, accountId);
   }
 
@@ -917,6 +958,20 @@ export class WorldService {
   }
 
   /** 落地单个到达的行军（已从 marches 删除）。 */
+  /**
+   * 家族活跃 +delta 并刷新繁荣度（§17.4，服务器权威，无客户端写口）。
+   * best-effort：失败 log 不阻断占领/围攻主流程。familyId 缺省（散人）则跳过。
+   */
+  private async bumpFamilyActivity(worldId: string, familyId: string | undefined, delta: number): Promise<void> {
+    if (!familyId) return;
+    try {
+      await this.deps.cols.families.updateOne({ _id: familyId }, { $inc: { activity: delta } });
+      await refreshFamilyProsperity(this.deps.cols, worldId, familyId, this.deps.now());
+    } catch (e) {
+      console.error('[worldsvc] bumpFamilyActivity failed', { worldId, familyId, err: (e as Error).message });
+    }
+  }
+
   private async applyArrival(m: MarchDoc, t: number): Promise<void> {
     const { cols } = this.deps;
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, m.ownerId) });
@@ -984,6 +1039,8 @@ export class WorldService {
       // 首府格占领 → 触发立国（S8-6.5）
       const pwMem = await this.deps.cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
       void this.applyNationChange(m.worldId, x, y, m.ownerId, pwMem?.familyId);
+      // §17.4 活跃累加：占领新领地 → 占领者所属家族 +1（含繁荣度刷新）。
+      void this.bumpFamilyActivity(m.worldId, pwMem?.familyId, 1);
       return;
     }
 
@@ -1037,6 +1094,14 @@ export class WorldService {
     const defenderConfig = this.buildDefenderConfig(target, effGarrison, inOwnNation);
     const tileLevel = target.level ?? 1;
     const seed = siegeSeedFromId(m._id);
+
+    // C7/§17.9：赛季中途引擎漂移检测（不阻断，仅告警——重播可能逐帧漂移，运维口径见 §17.9）。
+    const wv = await cols.worlds.findOne({ _id: m.worldId }, { projection: { engineVersion: 1 } });
+    if (wv?.engineVersion != null && wv.engineVersion !== ENGINE_VERSION) {
+      console.warn('[worldsvc] siege engineVersion drift（赛季中途引擎升级未重开区）', {
+        worldId: m.worldId, pinned: wv.engineVersion, runtime: ENGINE_VERSION,
+      });
+    }
 
     // 关键围攻（G3-2b，§16）：worldsvc 直接 import `@nw/engine` headless 跑「双方预布兵确定性
     // 自动战斗」拿权威胜负 + 真实残存血量，替代廉价线性公式。坏布阵 / 引擎异常 → 兜底回退
@@ -1149,6 +1214,11 @@ export class WorldService {
     }
 
     const siege = await this.recordSiege(m, defenderId, res.outcome, t, replay);
+    // §17.4 活跃累加：围攻战（攻/守）→ 双方家族各 +1（关键战斗落地点）。
+    const atkMember = await cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
+    const defMember = await cols.familyMembers.findOne({ _id: `${m.worldId}:${defenderId}` });
+    void this.bumpFamilyActivity(m.worldId, atkMember?.familyId, 1);
+    void this.bumpFamilyActivity(m.worldId, defMember?.familyId, 1);
     const lootStr = lootSummary(loot);
     void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
     void this.pushSiege(m.ownerId, siege, lootStr);
@@ -1949,12 +2019,28 @@ export class WorldService {
           population: 0,
           rev: 0,
         },
-        $set: { status: 'open' as const },
+        // 开服 pin 引擎版本（C7/§17.9）：围攻权威/重播一致性锚点。重开同步 pin 当前进程版本。
+        $set: { status: 'open' as const, engineVersion: ENGINE_VERSION },
       },
       { upsert: true },
     );
     // 初始化 10 个首府文档
     await this.initNations(worldId);
+  }
+
+  /**
+   * 把排名主体展开到「该主体下所有玩家账号」（§17.5 发奖收件人）。
+   * sect → 成员家族的全部成员；family → 家族全部成员；solo → 占领者本人。去重。
+   */
+  private async expandToAccounts(worldId: string, scope: 'sect' | 'family' | 'solo', id: string): Promise<string[]> {
+    const { cols } = this.deps;
+    if (scope === 'solo') return [id];
+    const familyIds = scope === 'sect'
+      ? (await cols.families.find({ sectId: id }).project({ _id: 1 }).toArray()).map((f) => f._id as string)
+      : [id];
+    if (familyIds.length === 0) return [];
+    const members = await cols.familyMembers.find({ familyId: { $in: familyIds } }).project({ accountId: 1 }).toArray();
+    return [...new Set(members.map((m) => (m as unknown as { accountId: string }).accountId))];
   }
 
   /**
@@ -1972,13 +2058,18 @@ export class WorldService {
     nationCount: number;
     capitalIdxs: number[];
   }>> {
-    const { cols } = this.deps;
+    const { cols, now } = this.deps;
 
-    // 标记赛季进入结算状态
-    await cols.worlds.updateOne(
-      { _id: worldId },
-      { $set: { status: 'settling' as const } },
-    );
+    // 标记赛季进入结算状态（§17.3 守卫：仅 active/settling 可结算，重入安全）。
+    // dev/test 无 world 文档时不强制（同 joinWorld 容量守卫口径），直接算排名。
+    const w = await cols.worlds.findOne({ _id: worldId });
+    if (w) {
+      const moved = await cols.worlds.findOneAndUpdate(
+        { _id: worldId, status: { $in: ['active', 'settling'] } },
+        { $set: { status: 'settling' as const } },
+      );
+      if (!moved) throw new SlgError('WORLD_CLOSED', '世界不可结算（须 active/settling）');
+    }
 
     const nations = await cols.nations.find({ worldId, ownerId: { $exists: true } }).toArray();
 
@@ -2012,7 +2103,7 @@ export class WorldService {
       agg.set(key, cur);
     }
 
-    return [...agg.entries()]
+    const ranking = [...agg.entries()]
       .sort((a, b) => b[1].capitalIdxs.length - a[1].capitalIdxs.length)
       .map(([id, v], i) => ({
         rank: i + 1,
@@ -2022,48 +2113,126 @@ export class WorldService {
         nationCount: v.capitalIdxs.length,
         capitalIdxs: v.capitalIdxs,
       }));
+
+    // 落库历史 + 发奖（C1/C2）仅在有 world 文档时（需 season 锚 dispatchKey/幂等键）。
+    if (w) {
+      // 宗门繁荣度快照（settle 时聚合刷新，§17.4）。
+      const sectProsperity = new Map<string, number>();
+      for (const r of ranking) {
+        if (r.scope === 'sect') {
+          const memberFams = await cols.families.find({ sectId: r.familyId }).toArray();
+          const sum = memberFams.reduce((acc, f) => acc + effectiveProsperity(f, now()), 0);
+          sectProsperity.set(r.familyId, sum);
+          await cols.sects.updateOne({ _id: r.familyId }, { $set: { prosperity: sum } });
+        }
+      }
+
+      // ① 落库历史（C2，幂等：_id = `${worldId}:s${season}`，$setOnInsert）。
+      await cols.seasonResults.updateOne(
+        { _id: `${worldId}:s${w.season}` },
+        {
+          $setOnInsert: {
+            worldId,
+            season: w.season,
+            settledAt: now(),
+            ranking: ranking.map((r) => ({
+              rank: r.rank,
+              scope: r.scope,
+              id: r.familyId,
+              ...(r.name ? { name: r.name } : {}),
+              nationCount: r.nationCount,
+              capitalIdxs: r.capitalIdxs,
+              tier: settleTier(r.rank),
+              ...(r.scope === 'sect' ? { prosperity: sectProsperity.get(r.familyId) ?? 0 } : {}),
+            })),
+          },
+        },
+        { upsert: true },
+      );
+
+      // ② 发奖（C1）——逐排名主体展开到「该主体下所有玩家账号」发系统邮件附件（dispatchKey 幂等）。
+      for (const r of ranking) {
+        const tier = settleTier(r.rank);
+        const base = SETTLE_REWARDS[tier];
+        const mult = r.capitalIdxs.includes(CENTER_CAPITAL_IDX) ? CENTER_CAPITAL_MULT : 1; // 中原首府加权（§2.4）
+        const items: Record<string, number> = {};
+        for (const [id, n] of Object.entries(base.items)) items[id] = n * mult;
+        const accounts = await this.expandToAccounts(worldId, r.scope, r.familyId);
+        const dispatchKey = `slg-settle:${worldId}:s${w.season}`;
+        const attachments = [
+          ...Object.entries(items).filter(([, n]) => n > 0).map(([id, count]) => ({ kind: 'item' as const, id, count })),
+          ...base.skins.map((id) => ({ kind: 'skin' as const, id })),
+          ...(base.coins ? [{ kind: 'coins' as const, count: base.coins }] : []),
+        ];
+        for (const acct of accounts) {
+          void this.mail.sendSystemMail(acct, dispatchKey, {
+            subject: 'slg.settle.subject',
+            body: `slg.settle.body|rank=${r.rank}|tier=${tier}|nations=${r.nationCount}`,
+            attachments,
+            expireDays: 30,
+          });
+          // TODO(S10): if (base.titleId) grantTitle(acct, base.titleId) —— 称号系统未实现（同天梯 §13A.0-C4）。
+        }
+      }
+    }
+
+    return ranking;
   }
 
   /**
-   * 赛季重置（清地图态、保养成 + 外观 + 段位，§2.3 SLG4）。
-   * 清除：tiles / marches / playerWorld / nations（对应 worldId）。
-   * 重置后 world.status → 'open'，population → 0，resetAt 更新。
-   * ⚠ 大批量删除，生产环境建议分批执行。
+   * 赛季重置（清地图态、保养成 + 外观 + 段位，§2.3 SLG4 / §17.6）。
+   * 守卫（C5）：仅 settling/resetting 可重置（先 settle 落 seasonResults 再 reset，防跳过结算丢历史）。
+   * 状态机：settling → resetting（中间态）→ 清档 → open；resetting 中途崩溃重调从 resetting 续跑（幂等）。
+   * 清档分批（万人级让出事件循环）；家族编制保留但赛季态归零；engineVersion 重 pin 当前进程版本（C7）。
    */
   async resetSeason(worldId: string): Promise<{ deleted: Record<string, number> }> {
     const { cols, now } = this.deps;
-    const [r1, r2, r3, r4, r5, r6, r7] = await Promise.all([
-      cols.tiles.deleteMany({ worldId }),
-      cols.marches.deleteMany({ worldId }),
-      cols.playerWorld.deleteMany({ worldId }),
-      cols.nations.deleteMany({ worldId }),
-      cols.sieges.deleteMany({ worldId }),
-      // 宗门编制每季重组（§2.3）：删宗门 + 频道。
-      cols.sects.deleteMany({ worldId }),
-      cols.sectMessages.deleteMany({ worldId }),
-    ]);
-    // 重置家族繁荣度（赛季归零，但不删除家族成员关系——S8-4 待细化）；清宗门归属。
-    await cols.families.updateMany({ worldId }, { $set: { territoryCount: 0 }, $unset: { sectId: '' } });
+    // ① 状态守卫 + 中间态（幂等：已 resetting 直接续跑）。
+    const w = await cols.worlds.findOneAndUpdate(
+      { _id: worldId, status: { $in: ['settling', 'resetting'] } },
+      { $set: { status: 'resetting' as const } },
+    );
+    if (!w) throw new SlgError('WORLD_CLOSED', '须先 settle 再 reset');
+
+    // ② 分批删大集合（tiles/marches/playerWorld/sieges 可能万级）。
+    const deleted: Record<string, number> = {};
+    for (const c of ['tiles', 'marches', 'playerWorld', 'nations', 'sieges', 'sects', 'sectMessages'] as const) {
+      deleted[c] = await deleteInBatches(cols[c] as never, { worldId }, RESET_DELETE_BATCH);
+    }
+
+    // ③ 家族编制保留（成员关系跨季留存）但清赛季态：territory/繁荣度/活跃归零 + 清宗门归属。
+    await cols.families.updateMany(
+      { worldId },
+      { $set: { territoryCount: 0, prosperity: 0, activity: 0, prosperityUpdatedAt: now() }, $unset: { sectId: '' } },
+    );
+
+    // ④ 重开（engineVersion 重 pin 当前进程版本，C7）。
     await cols.worlds.updateOne(
       { _id: worldId },
-      {
-        $set: { status: 'open' as const, population: 0, resetAt: now() },
-        $inc: { rev: 1 },
-      },
+      { $set: { status: 'open' as const, population: 0, resetAt: now(), engineVersion: ENGINE_VERSION }, $inc: { rev: 1 } },
     );
     // 重新初始化首府文档
     await this.initNations(worldId);
-    return {
-      deleted: {
-        tiles: r1.deletedCount,
-        marches: r2.deletedCount,
-        playerWorld: r3.deletedCount,
-        nations: r4.deletedCount,
-        sieges: r5.deletedCount,
-        sects: r6.deletedCount,
-        sectMessages: r7.deletedCount,
-      },
-    };
+    return { deleted };
+  }
+
+  /** 列出所有大区运维概要（G7/§17.7 admin 后台用，内部端点）。 */
+  async listWorlds(): Promise<Array<{
+    worldId: string; season: number; shard: number; status: string;
+    population: number; capacity: number; openAt: number; resetAt?: number; engineVersion?: number;
+  }>> {
+    const worlds = await this.deps.cols.worlds.find({}).sort({ season: -1, shard: 1 }).toArray();
+    return worlds.map((w) => ({
+      worldId: w._id,
+      season: w.season,
+      shard: w.shard,
+      status: w.status,
+      population: w.population,
+      capacity: w.capacity,
+      openAt: w.openAt,
+      ...(w.resetAt ? { resetAt: w.resetAt } : {}),
+      ...(w.engineVersion != null ? { engineVersion: w.engineVersion } : {}),
+    }));
   }
 
   /** 关闭世界（赛季结束归档）。 */

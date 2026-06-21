@@ -12,6 +12,7 @@ import { startScheduler } from './scheduler';
 import { HttpWorldGatewayClient } from './gatewayClient';
 import { HttpWorldCommercialClient, nullWorldCommercialClient } from './commercialClient';
 import { HttpWorldMetaClient, nullWorldMetaClient } from './metaClient';
+import { HttpWorldMailClient, nullWorldMailClient } from './mailClient';
 import { loadWorldsvcEnv } from './config';
 
 async function main(): Promise<void> {
@@ -33,12 +34,18 @@ async function main(): Promise<void> {
     ? new HttpWorldMetaClient(env.metaInternalUrl, env.internalKey)
     : nullWorldMetaClient;
 
+  // 系统邮件复用 meta 内部端点（赛季结算发奖，§17.5）。
+  const mail = env.metaInternalUrl
+    ? new HttpWorldMailClient(env.metaInternalUrl, env.internalKey)
+    : nullWorldMailClient;
+
   const svc = new WorldService({
     cols: mongo.collections,
     redis,
     gateway,
     commercial,
     meta,
+    mail,
     mapW: SLG_MAP_W,
     mapH: SLG_MAP_H,
     now: () => Date.now(),
@@ -67,7 +74,7 @@ async function main(): Promise<void> {
   const scheduler = startScheduler(svc, auctionSvc);
 
   const server = startHttpApi(
-    { host: env.host, port: env.port, jwtSecret: env.jwtSecret },
+    { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },
     svc,
     familySvc,
     sectSvc,

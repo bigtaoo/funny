@@ -531,7 +531,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 | # | 缺口 | 现状 | 影响 |
 |---|---|---|---|
 | **G1** | **国民加成未生效** | `NATION_BONUS_PRODUCTION=0.10`/`NATION_BONUS_DEFENSE=0.15`（`shared/slg.ts`）仅 import、worldsvc 全程未使用；`resolveSiege` 与 `recomputeYield` 都不读 | 国家系统沦为「占国数计分牌」，对产出/战斗零影响，违背 SLG2 / §2.4「国民加成」 |
-| **G2** | **繁荣度系统是死字段**（→ **可编码规格 §17.1/§17.4**） | 勘误：`prosperity` 实际在 **`SectDoc`**（`db.ts:134`，建宗门设 0、永不更新），**`FamilyDoc` 根本无 prosperity 字段**（仅 `territoryCount`）；service 零评分/衰减/赛季档位奖励；连带「建宗门需繁荣度中等门槛」未做（仅扣 coin） | §8.1 繁荣度循环、SLG3「按宗门综合实力分配大区」缺基础数据 |
+| **G2** | ~~**繁荣度系统是死字段**~~ ✅ **已落地（2026-06-21，§17.1/§17.4）** | `FamilyDoc` 补 `prosperity/prosperityUpdatedAt/activity`；`familyProsperity`/`decayProsperity` 纯函数 + 读时惰性衰减（`prosperity.ts`）；占领/围攻 `$inc activity` 并刷新；`SectDoc.prosperity` = 成员家族聚合；建宗门加繁荣度门槛（`SECT_FOUND_PROSPERITY_MIN`，不足抛 `PROSPERITY_TOO_LOW`） | §8.1 繁荣度循环兑现；G6 分配基础数据就位 |
 | **G3** | ~~**围攻反作弊判负翻转未启用**~~ ✅ **已由 G3-2b 解决（2026-06-21）** | 围攻重构为「服务器跑引擎权威即时落地」（§16/§16.8），从根上不存在「先信客户端再复算翻转」——客户端无战报上传通道，伪造无从谈起 | 承重墙 SLG11 兑现：关键战斗权威在 worldsvc 进程内 |
 | **G4** | **养成统一的「材料流转」半截** | `buildSiegeBlueprints(养成)` 注入装备/科技战力已通；但 SLG8 承诺的 PvE↔SLG 材料（scrap/lead/binding）统一流转 + 上拍卖行未接；战令 `hasBattlePass` 写了但增益效果为空 | SLG7/SLG8「养成统一」「赚钱区=卖战力」闭环未合 |
 
@@ -540,8 +540,8 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 | # | 缺口 | 现状 | 影响 |
 |---|---|---|---|
 | **G5** | ~~**地图迷雾 / 侦察视野 / 宗门视野共享 / 盟友土地标记**~~ ✅ **四片全落地（2026-06-21，§18）** | G5-1 读路径门控 + G5-2 反向视野推送 + G5-3 客户端渲染（灰雾/友敌色/敌军显形）+ 联盟领地黄标（§18.7）全 ✅；共享降级为家族级（§18.1 V2）。scout 侦察行军已落地（§18.8）；剩瞭望塔（V2 最后余项） | §8.2 视野共享 + 盟友标记、§2.1 视野订阅核心战略玩法已兑现 |
-| **G6** | **多大区 + 赛季分配规则**（→ **可编码规格 §17.8**，数据地基+算法已细化，运行时延后） | 单世界；`settleSeason`/`resetSeason` 有，但 SLG3「按宗门强弱平衡分配大区 / 超 ~1 万人开新大区」未做；分配硬依赖历史排名而 `settleSeason` 排名**不落库**（C2，=天梯「战令依赖 RETENTION」同构数据源缺口） | 规模化与生态平衡（SLG3）未兑现 |
-| **G7** | **admin 运营后台 SLG 接入**（→ **可编码规格 §17.7**） | 异常交易审计工单 / 赛季运维 UI / 商品价格可调基本未接 admin；且 worldsvc `/admin/world/*` 四端点**未鉴权**（JWT handler 内无 X-Internal-Key，任意玩家可清区，C4 安全洞） | S8-8 运营侧、SLG9 反 RMT 审计闭环缺口 |
+| **G6** | **多大区 + 赛季分配规则**（数据地基+纯算法 ✅ **2026-06-21，§17.8**；多 shard 运行时仍延后） | 数据地基已就位：`seasonResults` 集合落库本季宗门排名 + 繁荣度快照（C2 闭）；`sectStrengthScore`/`allocateSectsToShards`（蛇形均衡）纯函数 + 单测。**仍缺**多 shard 运行时调度（按人口开新区/跨区迁移/隔离巡检），单列后续任务 | 规模化数据/算法地基兑现；运行时调度待专项 |
+| **G7** | **admin 运营后台 SLG 接入**（赛季运维 ✅ **2026-06-21，§17.7**；异常交易审计仍随 OPS 专项） | worldsvc `/admin/world/*` 迁出 JWT 改 X-Internal-Key（**C4 安全洞已堵**，任意玩家不再可清区）+ 新增 `GET /admin/world/list`；admin 后端加 `worldClient` + `POST /admin/slg/season/{open,settle,reset,close}` + `GET /admin/slg/worlds`（能力 `slg.season.view/manage`，reset 前必 settle 约束 + 审计）。**仍缺**异常交易审计工单（随 OPS 专项）+ 商品价格可调 + ops 前端 UI | S8-8 赛季运维侧兑现；反 RMT 审计待 OPS |
 | **G8** | **险地（Stronghold）格子类型** | 设计 §3.1 列出，服务端 grep `stronghold/险地` 零命中 | 高战略价值 PvE 格缺失 |
 
 ### 15.3 第三档——DRAFT 数值 / 打磨
@@ -723,6 +723,17 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 
 ## 17. SLG 大区赛季可编码实现规格（S8-7 + G2/G6/G7 收口）
 
+> **✅ 已落地（2026-06-21）**：§17.1–§17.9 全部实现并测试通过（worldsvc 122 / admin 18 / metaserver 140 测试绿，全量 `tsc -b` 0 错）。
+> - **§17.1 `@nw/shared`**（`slg.ts`/`api.ts`）：繁荣度常量 + `familyProsperity`/`decayProsperity` + `settleTier`/`SETTLE_REWARDS` + `sectStrengthScore`/`allocateSectsToShards`（蛇形均衡）+ `WORLD_CAPACITY`/`RESET_DELETE_BATCH`；`WorldStatus` 加 `resetting`；`PROSPERITY_TOO_LOW` 错误码。
+> - **§17.2 `worldsvc/db.ts`**：`FamilyDoc` 补 `prosperity/prosperityUpdatedAt/activity`；`WorldDoc` 补 `engineVersion`；新集合 `seasonResults`（C2）+ 索引。
+> - **§17.3 状态机**：`joinWorld` open→active CAS；settle 守卫 active/settling；reset 守卫 settling/resetting（dev/test 无 world 文档时容量守卫口径放行）。
+> - **§17.4 繁荣度**：`prosperity.ts`（refresh/effective/aggregate）；占领/围攻 `bumpFamilyActivity`（$inc + 刷新）；建宗门门槛（`sectService`）。
+> - **§17.5 发奖+落库**：worldsvc `mailClient`（复用 meta `/internal/mail/system/send`，meta 加 `accountId` 直投分支）；`settleSeason` 落 `seasonResults`（$setOnInsert 幂等）+ 逐主体 `expandToAccounts` 发奖（中原首府材料 ×2，dispatchKey 幂等）。
+> - **§17.6 resetSeason**：resetting 中间态 + 幂等续跑 + `deleteInBatches` 分批删 + 家族赛季态归零 + `engineVersion` 重 pin。
+> - **§17.7 admin（C4/G7）**：worldsvc `/admin/world/*` 迁出 JWT 改 `X-Internal-Key` + `GET /admin/world/list`；admin 后端 `worldClient` + `/admin/slg/season/*` + `/admin/slg/worlds`（能力 `slg.season.view/manage`，reset 前必 settle + 审计）。
+> - **§17.9 engineVersion pin**：`openSeason`/`resetSeason` pin `ENGINE_VERSION`；`applySiege` 跑前漂移告警（不阻断）。
+> - **DRAFT/后续（§17.12）**：数值待经济模拟；G6 多 shard 运行时调度、SLG 战令增益、称号 grantTitle(S10)、异常交易审计工单（OPS 专项）仍待。
+>
 > 本节把 §2.3 / §8.3 / S8-7 + 缺口 G2（繁荣度）/ G6（多大区分配）/ G7（admin 接入）细化到**字段/常量/函数签名/端点伪代码**级别，对齐现行 `worldsvc`（`service.ts` 1657–1837 五个赛季函数 + `db.ts` schema + `commercialClient`/`metaClient`）与 `metaserver`（`mail.ts`/`internal.ts`）代码。
 > **范式同源**：与天梯 [`SEASON_DESIGN §13A/§13B`](SEASON_DESIGN.md)（commit 1c3f46cf）并列；天梯那轮逐文件核对发现 4 处代码冲突，本节核对 worldsvc 发现 **7 处**（§17.0）。
 > **边界铁律**：本节任何实现**不得**触碰 meta `saves.pvp.*`（OVERVIEW §3.1 写入域隔离）——§17.10 给出代码层自检证明「无需改动即合规」。

@@ -143,8 +143,10 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   // 钱在玩家领邮件时才经 commercial/inventory 入账（admin 从不直接写钱包）。dispatchKey 幂等。
   interface SystemMailBody {
     dispatchKey: string;
-    scope: 'single' | 'global';
-    target: CompTarget;
+    scope?: 'single' | 'global';
+    /** 内部直投 accountId（§17.5，worldsvc 等无 publicId 的内部调用方）；与 target 二选一。 */
+    accountId?: string;
+    target?: CompTarget;
     subject: string;
     body: string;
     attachments: CompAttachment[];
@@ -161,7 +163,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       const recipientCount = await cols.accounts.countDocuments({});
       return reply.send({ ok: true, recipientCount });
     }
-    const publicId = 'publicId' in b.target ? b.target.publicId : '';
+    const publicId = b.target && 'publicId' in b.target ? b.target.publicId : '';
     const accountId = await resolveByPublicId(cols, publicId);
     return reply.send({ ok: true, recipientCount: accountId ? 1 : 0 });
   });
@@ -218,8 +220,13 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       return reply.send({ ok: true, recipientCount });
     }
 
-    const publicId = 'publicId' in b.target ? b.target.publicId : '';
-    const accountId = await resolveByPublicId(cols, publicId);
+    // 内部直投分支（§17.5）：worldsvc 等内部调用方按 accountId 直投（无 publicId），跳过解析。
+    const directAccountId =
+      typeof (b as { accountId?: unknown }).accountId === 'string'
+        ? (b as { accountId: string }).accountId
+        : null;
+    const publicId = b.target && 'publicId' in b.target ? b.target.publicId : '';
+    const accountId = directAccountId ?? (await resolveByPublicId(cols, publicId));
     if (!accountId) return reply.send({ ok: false, recipientCount: 0, error: 'recipient not found' });
     const r = await insertSystemMail(cols, b.dispatchKey, accountId, content, now());
     if (r.inserted) {
