@@ -197,8 +197,9 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     await setupDefender('b', tgt.x, tgt.y, 500);
     await ownNation(nearestCapitalIdx(tgt.x, tgt.y, CAPS), 'b');
 
-    // 550 > 500（无加成本会破城），但 < floor(500*1.15)=575 → 守方反胜。
-    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 550);
+    // 引擎权威（G3-2b，§16）：820 兵力可破 500 守军（见下方对照用例），但破不了国民加成后的
+    // floor(500*1.15)=575 守军 → 守方反胜（同 march seed，唯一变量 = 国籍带来的 +75 有效守军）。
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 820);
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
@@ -212,7 +213,8 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     const tgt = findCoord(NON_BLOCKING, 10, 5);
     await setupDefender('b', tgt.x, tgt.y, 500); // 不给 b 任何首府
 
-    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 550);
+    // 同 820 兵力、同 march seed，但守军无国籍加成（500）→ 破城易主，反证上例的反胜确来自国籍。
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 820);
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 

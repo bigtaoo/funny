@@ -46,7 +46,8 @@ import {
   type SiegeOutcome,
   type SiegeResolution,
 } from '@nw/shared';
-import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry } from './db';
+import { runSiegeBattle, synthesizeArmy } from './siegeEngine';
+import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry, DefenseConfig } from './db';
 import type { WorldRedis } from './redis';
 import { nullWorldGatewayClient, type WorldGatewayClient, type WorldJudgeArgs } from './gatewayClient';
 import { nullWorldMetaClient, type WorldMetaClient, type PlayerProfile } from './metaClient';
@@ -796,9 +797,48 @@ export class WorldService {
     const capIdx = nearestCapitalIdx(target.x, target.y, this.capitals);
     const nation = await cols.nations.findOne({ _id: `nation:${m.worldId}:${capIdx}` });
     const inOwnNation = !!nation?.ownerId && nation.ownerId === defenderId;
-    const res = resolveSiege(m.troops, nationDefenseStrength(target.garrison ?? 0, inOwnNation));
+    const effGarrison = nationDefenseStrength(target.garrison ?? 0, inOwnNation);
+
+    // 关键围攻（G3-2b，§16）：worldsvc 直接 import `@nw/engine` headless 跑「双方预布兵确定性
+    // 自动战斗」拿权威胜负 + 真实残存血量，替代廉价线性公式。坏布阵 / 引擎异常 → 兜底回退
+    // 廉价 resolveSiege，绝不让一场围攻卡死行军。
+    let res: SiegeResolution;
+    try {
+      res = runSiegeBattle({
+        attackerArmy: synthesizeArmy(m.troops, 'attacker'),
+        defenderConfig: this.buildDefenderConfig(target, effGarrison),
+        tileLevel: target.level ?? 1,
+        seed: siegeSeedFromId(m._id),
+      });
+    } catch (err) {
+      console.error('[worldsvc] siege engine failed — fallback to cheap resolve', {
+        tile: m.toTile,
+        err: (err as Error).message,
+      });
+      res = resolveSiege(m.troops, effGarrison);
+    }
+
     const defender = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defenderId) });
     await this.landSiege(m, pw, target, defenderId, defender, res, t);
+  }
+
+  /**
+   * 围攻防守方布阵（G3-2b）：自定义布阵（`tile.defense` 含 garrison 数组，G3-2c 编辑器写入）优先；
+   * 否则由有效守军兵力数（含国民加成）合成确定性默认布阵。空守军（无自定义且 0 兵）→ null，
+   * buildSiegeBattle 派生象征性基地防守。
+   *
+   * 注：v1 国民加成只作用于合成路径（兵力数 → 多铺单位）；自定义布阵的加成留 G3-2c 跟进。
+   */
+  private buildDefenderConfig(
+    target: TileDoc,
+    effGarrison: number,
+  ): { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null {
+    const custom = target.defense as DefenseConfig | undefined;
+    if (custom && Array.isArray((custom as { garrison?: unknown }).garrison) &&
+        (custom as { garrison: unknown[] }).garrison.length > 0) {
+      return custom;
+    }
+    return effGarrison > 0 ? { garrison: synthesizeArmy(effGarrison, 'defender') } : null;
   }
 
   /**
@@ -855,11 +895,13 @@ export class WorldService {
         void this.applyNationChange(m.worldId, target.x, target.y, m.ownerId, atkMem?.familyId);
       }
     } else {
-      // 守方胜：守军减员到 survivors；攻方 committed 兵全灭（出征已扣，无回师）。
+      // 守方胜：守军减员到 survivors；攻方残存撤退回师折回兵力池（§16.5 生还折回，引擎给真实残存），
+      // 阵亡兵力永久损失。廉价兜底路径 attackerSurvivors=0 时天然无回师，行为不变。
       await cols.tiles.updateOne(
         { _id: m.toTile },
         { $set: { garrison: res.defenderSurvivors }, $inc: { rev: 1 } },
       );
+      if (res.attackerSurvivors > 0) await this.refundTroops(pw, res.attackerSurvivors, t);
     }
 
     const siege = await this.recordSiege(m, defenderId, res.outcome, t);

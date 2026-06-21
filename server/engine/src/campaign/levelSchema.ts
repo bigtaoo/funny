@@ -164,10 +164,14 @@ function parseWaveEntry(v: unknown, path: string): WaveEntry {
   return entry;
 }
 
-function parseWaves(v: unknown, path: string): WaveScript {
+function parseWaves(v: unknown, path: string, allowEmpty: boolean): WaveScript {
   if (!isObject(v)) fail(path, 'expected a waves object');
   if (!Array.isArray(v.entries)) fail(`${path}.entries`, 'expected an array of wave entries');
-  if (v.entries.length === 0) fail(`${path}.entries`, 'a level must have at least one wave entry');
+  // SLG siege battles (G3, §16) are pure pre-placed (attackerArmy + garrison), no scripted
+  // waves — so an empty entries[] is valid there. Campaign levels still require ≥1 wave.
+  if (v.entries.length === 0 && !allowEmpty) {
+    fail(`${path}.entries`, 'a level must have at least one wave entry');
+  }
   return { entries: v.entries.map((e, i) => parseWaveEntry(e, `${path}.entries[${i}]`)) };
 }
 
@@ -388,12 +392,16 @@ function parseRewards(v: unknown, path: string): LevelRewards | undefined {
 export function parseLevelDefinition(raw: unknown, ctx = 'level'): LevelDefinition {
   if (!isObject(raw)) fail(ctx, 'expected a level object');
 
+  // A siege battle (pre-placed attacker army / hard time limit, §16) carries no scripted
+  // waves; everywhere else ≥1 wave entry is still required.
+  const isSiegeBattle = raw.attackerArmy !== undefined || raw.battleTimeoutTicks !== undefined;
+
   const level: LevelDefinition = {
     id: str(raw.id, `${ctx}.id`),
     chapter: int(raw.chapter, `${ctx}.chapter`),
     seed: num(raw.seed, `${ctx}.seed`),
     objective: parseObjective(raw.objective, `${ctx}.objective`),
-    waves: parseWaves(raw.waves, `${ctx}.waves`),
+    waves: parseWaves(raw.waves, `${ctx}.waves`, isSiegeBattle),
   };
   if (level.id.length === 0) fail(`${ctx}.id`, 'must be a non-empty id');
 

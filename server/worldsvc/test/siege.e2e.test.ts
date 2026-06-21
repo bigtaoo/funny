@@ -1,10 +1,14 @@
-// worldsvc 围攻 / 扫荡端到端（S8-3，廉价数值结算路径 §5.3）：真实 Mongo + 假时钟 + 捕获 push。
-//   出征即推 under_attack 预警 / 到点 resolveSiege：
-//   ① 攻领地 attacker_win → 领地易主 + 掠夺资源 + 双方产率重算 + sieges + siege_result；
-//   ② 攻领地 defender_win → 攻方committed 全灭 + 守军减员；
-//   ③ 攻主城 attacker_win → 不可夺：守军清零 + 保护罩 + 掠夺 + 攻方生还回师退兵；
+// worldsvc 围攻 / 扫荡端到端（S8-3 + G3-2b 引擎权威）：真实 Mongo + 假时钟 + 捕获 push。
+//   关键围攻（攻领地 / 攻主城）= worldsvc import `@nw/engine` headless 跑「双方预布兵确定性
+//   自动战斗」拿权威胜负 + 真实残存血量（§16）；扫荡 NPC = 廉价 resolveSiege（§5.3 非关键）。
+//   出征即推 under_attack 预警 / 到点结算：
+//   ① 攻领地 attacker_win → 领地易主（残存折回成新驻军）+ 掠夺资源 + 双方产率重算 + sieges + siege_result；
+//   ② 攻领地 defender_win → 守军减员（攻方更弱 → 全灭无回师）；
+//   ③ 攻主城 attacker_win → 不可夺：守军清零 + 保护罩 + 掠夺 + 攻方残存回师退兵；
 //   ④ 扫荡 NPC attacker_win → 缴获 + 回师退兵；defender_win → 兵损耗无缴获；
 //   ⑤ 校验：攻无主格 / 攻己方 / 扫已占 / 攻保护期。
+// 注：兵力数 → 引擎布阵走 synthesizeArmy 合成（G3-2c 编辑器前的 v1 桥），故残存兵力由引擎战斗
+//   决定（非线性公式），断言只校验「方向 + 结构效应」（易主 / 残存>0 / 减员），不锁定具体残存数。
 // 需 `cd server && docker compose up -d`。
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -161,9 +165,10 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    // 领地易主：现归 a，garrison = 生还 300。
+    // 领地易主：现归 a，garrison = 引擎残存折回（>0，攻方 800 兵力优势胜 500 守军）。
     const tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
-    expect(tile).toMatchObject({ type: 'territory', mine: true, garrison: 300 });
+    expect(tile).toMatchObject({ type: 'territory', mine: true });
+    expect(tile.garrison).toBeGreaterThan(0);
     const me = await svc.getMe(W, 'a');
     expect(me.territoryCount).toBe(2);
     // 掠夺 25%：a +250 food，b -250 → 750。
@@ -190,11 +195,12 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    // 守方胜：攻方 600 committed 全灭（不回池），守军 800-600=200，格仍归 b。
+    // 守方胜（攻方 600 < 守军 800 兵力劣势 → 全灭无回师）：攻方 committed 不回池，守军减员但 >0，格仍归 b。
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - 600);
     const tile = await svc.getTile(W, 'b', tgt.x, tgt.y);
     expect(tile.mine).toBe(true);
-    expect(tile.garrison).toBe(200);
+    expect(tile.garrison).toBeGreaterThan(0);
+    expect(tile.garrison).toBeLessThan(800);
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('defender_win');
   });
@@ -231,8 +237,8 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(newBase?.type).toBe('base');
     expect(newBase?.garrison).toBe(0);
     expect(newBase?.protectedUntil).toBeGreaterThan(nowMs);
-    // 攻方生还 300 回师退兵池：2000 - 800(出征) + 300(回师) = 1500。
-    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - 800 + 300);
+    // 攻方残存回师退兵池：2000 - 800(出征) + 引擎残存(>0) > 1200。
+    expect((await svc.getMe(W, 'a')).troops).toBeGreaterThan(TROOP_CAP_BASE - 800);
     // 掠夺 250。
     expect((await svc.getMe(W, 'a')).resources?.food).toBe(Math.floor(1000 * SIEGE_LOOT_RATE));
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });

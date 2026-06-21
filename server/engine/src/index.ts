@@ -65,6 +65,20 @@ export {
 export { FP_SCALE, TICK_RATE, fromFp } from './math/fixed';
 export type { Fp } from './math/fixed';
 
+// ── Board / blueprint constants (worldsvc siege army synthesis, G3-2b) ────────
+// Exposed so the authoritative siege runner reads board geometry + unit HP caps
+// from the SAME source the engine simulates with — no hand-mirrored copies.
+export {
+  BOARD_COLS,
+  BOARD_ROWS,
+  ATTACK_LANES,
+  BASE_COLS,
+  BOTTOM_SPAWN_ROW,
+  TOP_SPAWN_ROW,
+  UNIT_BLUEPRINTS,
+} from './config';
+export type { UnitBlueprint } from './types';
+
 // ── GameState exposed as a type only (state inspection after a headless run) ──
 export type { GameState } from './GameState';
 
