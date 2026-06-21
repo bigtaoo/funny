@@ -608,6 +608,61 @@ export function nationDefenseStrength(garrison: number, inOwnNation: boolean): n
   return inOwnNation ? Math.floor(g * (1 + NATION_BONUS_DEFENSE)) : g;
 }
 
+// ── 视野 / 迷雾（G5，§8.2 / §2.1 / §15.2）─────────────────────────────────────
+// 拍板（2026-06-21）：迷雾模型 2a —— 地形层（程序化、确定性）全图始终可见；动态层（归属/
+// 驻军/防守/保护罩/行军）仅在「当前视野」内显示，视野外一律退回 proceduralTile 的底层地形
+// （连「该格已被占领」这一信号都不泄露）。视野不落库：读时按视野源实时计算 + 短 TTL 缓存。
+// 视野源 = 己方领地（半径 VISION_TERRITORY）+ 主城（半径 VISION_BASE）+ 在途己方/家族行军
+// （半径 VISION_MARCH，按 departAt/arriveAt 线性插值当前位置）+ 同家族成员领地（共享，≤30 人，
+// §8.2 拍板降级为家族级而非宗门级，避免 900 人并集让迷雾名存实亡）。视野形状用 Chebyshev
+// （方形）距离——格子网格上最简、双端可算。
+
+/** 己方领地视野半径（Chebyshev，DRAFT）。 */
+export const VISION_TERRITORY_RADIUS = 2;
+/** 主城视野半径（比领地大，DRAFT）。 */
+export const VISION_BASE_RADIUS = 5;
+/** 在途行军视野半径（侦察行军价值的来源，DRAFT）。 */
+export const VISION_MARCH_RADIUS = 2;
+
+/** 视野源：一个中心点 + 半径（Chebyshev）。 */
+export interface VisionSource {
+  x: number;
+  y: number;
+  radius: number;
+}
+
+/**
+ * 某格 (x,y) 是否落在任一视野源的 Chebyshev 半径内。纯函数、双端可算。
+ * 源数量在视区内有界（己方/家族领地 + 主城 + 在途行军），逐格调用代价可接受。
+ */
+export function isInVision(sources: readonly VisionSource[], x: number, y: number): boolean {
+  for (const s of sources) {
+    if (Math.abs(x - s.x) <= s.radius && Math.abs(y - s.y) <= s.radius) return true;
+  }
+  return false;
+}
+
+/**
+ * 行军当前位置（fromTile→toTile 线性插值；G5 视野用，路径可能绕障故为近似，足够圈视野）。
+ * frac 由 (now-departAt)/(arriveAt-departAt) 钳在 [0,1]；退化（arriveAt≤departAt）取终点。
+ */
+export function marchInterpPos(
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  departAt: number,
+  arriveAt: number,
+  now: number,
+): { x: number; y: number } {
+  const span = arriveAt - departAt;
+  const frac = span > 0 ? Math.max(0, Math.min(1, (now - departAt) / span)) : 1;
+  return {
+    x: Math.round(fromX + (toX - fromX) * frac),
+    y: Math.round(fromY + (toY - fromY) * frac),
+  };
+}
+
 // ── 围攻可玩防守关卡（S8-3b / C2）─────────────────────────────────────────────
 // 把存储的防守 config（DefenseConfig 子集：garrison/defenderBuildings/defenderBaseLevel）规整成一份
 // 「攻方可打」的完整 LevelDefinition 形态对象（objective=destroy_base，无脚本波次）。客户端用它在

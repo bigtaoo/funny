@@ -89,6 +89,11 @@ export interface WorldTileView {
   garrison?: number;
   protectedUntil?: number;
   /**
+   * G5：该格归同家族盟友所有（非己方、视野内）。客户端据此用「友方色」渲染——家族共享视野后
+   * 盟友领地不应再显示为敌色（占领不写 tile.familyId，故由服务端按家族成员集判定后置此标记）。
+   */
+  ally?: boolean;
+  /**
    * G5 视野：该格是否在请求者当前视野内。
    * - true：动态层（归属/驻军/防守/保护罩）如实返回；
    * - false：视野外，仅返回程序化底层地形（type/level/resType），动态层全部隐去
@@ -129,6 +134,8 @@ export interface MarchView {
   departAt: number;
   arriveAt: number;
   status: MarchDoc['status'];
+  /** G5：是否为请求者自己的行军（getMarches 区分己方/视野内敌方行军；推送载荷不含）。 */
+  mine?: boolean;
 }
 
 /** 视区半径上限（防一次拉太多格；P9 视区订阅模型规模化前的硬上限）。 */
@@ -253,6 +260,8 @@ export class WorldService {
     // G5 视野：算请求者当前可见格集（己方/家族领地 + 主城 + 在途行军），逐格门控动态层。
     const sources = await this.computeVisionSources(worldId, accountId, x0, x1, y0, y1);
     const vis = (x: number, y: number): boolean => isInVision(sources, x, y);
+    // 家族成员集（含自己）：可见的家族盟友领地标 ally（客户端用友方色，不显敌色）。
+    const family = await this.familyMemberIds(worldId, accountId);
 
     // 批量解析他人领地昵称：只对「可见的他人领地」拉档（视野外不显归属，无需 profile）。
     const otherOwnerIds = [...new Set(
@@ -282,10 +291,22 @@ export class WorldService {
         const ownerProfile = (o?.ownerId && o.ownerId !== accountId)
           ? profileMap.get(o.ownerId) : undefined;
         const view = o ? this.tileDocView(o, accountId, ownerProfile) : this.proceduralView(worldId, x, y);
-        tiles.push({ ...view, visible: true });
+        const ally = !!o?.ownerId && o.ownerId !== accountId && family.has(o.ownerId);
+        tiles.push({ ...view, visible: true, ...(ally ? { ally: true } : {}) });
       }
     }
     return { worldId, cx: Math.floor(cx), cy: Math.floor(cy), r: rad, tiles };
+  }
+
+  /** 自己 + 同家族成员的 accountId 集（家族级视野共享 / 友方判定，§8.2；含自己）。 */
+  private async familyMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
+    const ids = new Set<string>([accountId]);
+    const myMember = await this.deps.cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
+    if (myMember?.familyId) {
+      const mates = await this.deps.cols.familyMembers.find({ familyId: myMember.familyId }).toArray();
+      for (const m of mates) ids.add(m.accountId);
+    }
+    return ids;
   }
 
   /**
@@ -304,13 +325,7 @@ export class WorldService {
   ): Promise<VisionSource[]> {
     const { cols, now } = this.deps;
     // 视野源主人 = 自己 + 同家族成员（家族级共享，§8.2 拍板）。
-    const ownerIds = new Set<string>([accountId]);
-    const myMember = await cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
-    if (myMember?.familyId) {
-      const mates = await cols.familyMembers.find({ familyId: myMember.familyId }).toArray();
-      for (const m of mates) ownerIds.add(m.accountId);
-    }
-    const ids = [...ownerIds];
+    const ids = [...(await this.familyMemberIds(worldId, accountId))];
 
     // 源领地：在视区基础上按最大视野半径外扩（半径外的领地也能照亮视区边缘）。
     const pad = VISION_BASE_RADIUS;
@@ -805,20 +820,26 @@ export class WorldService {
 
   /** 玩家当前世界所有在途行军列表（scheduler 到点删档，查到的均为未到达行军）。 */
   async getMarches(worldId: string, accountId: string): Promise<MarchView[]> {
-    const docs = await this.deps.cols.marches
-      .find({ worldId, ownerId: accountId })
-      .sort({ arriveAt: 1 })
-      .toArray();
-    return docs.map((d) => ({
-      marchId: d._id,
-      kind: d.kind,
-      fromTile: d.fromTile,
-      toTile: d.toTile,
-      troops: d.troops,
-      departAt: d.departAt,
-      arriveAt: d.arriveAt,
-      status: d.status,
-    }));
+    const { cols, mapW, mapH, now } = this.deps;
+    const own = await cols.marches.find({ worldId, ownerId: accountId }).sort({ arriveAt: 1 }).toArray();
+    const result: MarchView[] = own.map((d) => ({ ...this.marchView(d), mine: true }));
+
+    // G5：视野内的敌方行军（reverse-push 后客户端 refreshMarches 据此渲染）。家族友军行军不计入
+    // （友方判定靠家族集），只取真正非家族他人的在途行军且其插值当前位置落在我视野内。
+    const family = await this.familyMemberIds(worldId, accountId);
+    const sources = await this.computeVisionSources(worldId, accountId, 0, mapW - 1, 0, mapH - 1);
+    const t = now();
+    const others = await cols.marches.find({ worldId, status: 'marching' }).toArray();
+    for (const d of others) {
+      if (family.has(d.ownerId)) continue; // 己方/家族不重复 + 不当敌方
+      const pos = marchInterpPos(
+        this.coordX(d.fromTile), this.coordY(d.fromTile),
+        this.coordX(d.toTile), this.coordY(d.toTile),
+        d.departAt, d.arriveAt, t,
+      );
+      if (isInVision(sources, pos.x, pos.y)) result.push({ ...this.marchView(d), mine: false });
+    }
+    return result;
   }
 
   /**

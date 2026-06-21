@@ -762,6 +762,10 @@ export interface components {
             familyId?: string;
             garrison?: number;
             protectedUntil?: number;
+            /** @description G5 视野：该格是否在请求者当前视野内。true=动态层如实返回；false=视野外，仅程序化 底层地形（动态层全部隐去，含「已被占领」信号）。仅 /world/map 视区读填充。 */
+            visible?: boolean;
+            /** @description G5：该格归同家族盟友所有（视野内、非己方）。客户端用友方色渲染。 */
+            ally?: boolean;
         };
         WorldMapView: {
             worldId: string;
@@ -803,6 +807,8 @@ export interface components {
             arriveAt: number;
             /** @enum {string} */
             status: "marching" | "returning" | "arrived";
+            /** @description G5：是否为请求者自己的行军（false = 视野内的敌方行军） */
+            mine?: boolean;
         };
         FamilyMemberView: {
             accountId: string;

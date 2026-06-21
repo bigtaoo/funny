@@ -84,9 +84,13 @@ const MINE_TINT      = 0xe69090; // 我方领地（红墨淡）
 const MINE_BASE_TINT = 0xcc3333; // 我方主城（红墨浓）
 const ENEMY_TINT     = 0x90a8e6; // 敌方领地（蓝墨淡）
 const ENEMY_BASE_TINT= 0x4477cc; // 敌方主城（蓝墨浓）
+const ALLY_TINT      = 0x9cd6a4; // 家族盟友领地（绿墨淡，G5 友方第三色）
+const ALLY_BASE_TINT = 0x46a85a; // 家族盟友主城（绿墨浓）
+const FOG_COLOR      = 0x6b6458; // 视野外灰雾（铅笔灰，覆盖在地形上）
 
 function tileColor(tile: WorldTileView): number {
   if (tile.mine)     return tile.type === 'base' ? MINE_BASE_TINT : MINE_TINT;
+  if (tile.ally)     return tile.type === 'base' ? ALLY_BASE_TINT : ALLY_TINT;
   if (tile.occupied) return tile.type === 'base' ? ENEMY_BASE_TINT : ENEMY_TINT;
   if (tile.type === 'resource' && tile.resType) {
     return RES_COLORS[tile.resType] ?? TERRAIN_COLORS.resource!;
@@ -315,16 +319,22 @@ export class WorldMapScene implements Scene {
         const py = this.panY + ty * TILE_PX;
 
         const color = tile ? tileColor(tile) : TERRAIN_COLORS.neutral!;
+        // G5：视野外格（visible===false）= 地形可见但局势看不清——画底层地形后罩一层铅笔灰雾。
+        const fogged = tile?.visible === false;
 
         g.beginFill(color, 0.85);
         g.lineStyle(0.5, 0xccbbaa, 0.5);
         g.drawRect(px, py, TILE_PX - 1, TILE_PX - 1);
         g.endFill();
 
-        // Level label for resource tiles
-        if (tile && tile.level > 1) {
-          // Draw a small level indicator using a dot
-          const dotColor = tile.mine ? 0xcc2222 : (tile.occupied ? 0x2266cc : 0x888888);
+        if (fogged) {
+          g.beginFill(FOG_COLOR, 0.4);
+          g.lineStyle(0);
+          g.drawRect(px, py, TILE_PX - 1, TILE_PX - 1);
+          g.endFill();
+        } else if (tile && tile.level > 1) {
+          // Level indicator dot（视野内才画——视野外不暴露格的等级细节标记）。
+          const dotColor = tile.mine ? 0xcc2222 : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0x2266cc : 0x888888));
           g.beginFill(dotColor, 0.9);
           g.drawCircle(px + TILE_PX - 4, py + 4, 2);
           g.endFill();
@@ -351,7 +361,9 @@ export class WorldMapScene implements Scene {
       this.drawStar(g, cx, cy, TILE_PX * 0.7, n.ownerId ? 0xffcc00 : 0xccb890, !!n.ownerId);
     }
 
-    // March arrows (line from→to + dot at destination)
+    // March arrows (line from→to + dot at destination).
+    // G5：敌方行军（mine===false，视野内才会下发）统一用敌色（蓝）+ 更粗描边，突出威胁；
+    // 己方行军按 kind 上色。
     for (const march of this.marches) {
       const [fx, fy] = this.parseTileId(march.fromTile);
       const [tx2, ty2] = this.parseTileId(march.toTile);
@@ -359,16 +371,18 @@ export class WorldMapScene implements Scene {
       const fpy = this.panY + fy * TILE_PX + TILE_PX / 2;
       const px = this.panX + tx2 * TILE_PX + TILE_PX / 2;
       const py = this.panY + ty2 * TILE_PX + TILE_PX / 2;
-      const col = march.kind === 'return' ? 0x44cc88
+      const enemy = march.mine === false;
+      const col = enemy ? ENEMY_BASE_TINT
+        : march.kind === 'return' ? 0x44cc88
         : march.kind === 'attack' ? 0xcc3333
         : march.kind === 'reinforce' ? 0x44aacc
         : 0xcc8844;
-      g.lineStyle(1.5, col, 0.55);
+      g.lineStyle(enemy ? 2.5 : 1.5, col, enemy ? 0.75 : 0.55);
       g.moveTo(fpx, fpy);
       g.lineTo(px, py);
       g.lineStyle(0);
       g.beginFill(col, 0.9);
-      g.drawCircle(px, py, 4);
+      g.drawCircle(px, py, enemy ? 5 : 4);
       g.endFill();
     }
   }
@@ -426,15 +440,17 @@ export class WorldMapScene implements Scene {
       }
     }
 
-    // Active marches list (one row per march, recall button)
+    // Active marches list (one row per march, recall button) — own marches only
+    // (G5: this.marches may also hold in-vision enemy marches, which can't be recalled).
     this.marchRowRects = [];
-    if (this.marches.length > 0) {
+    const myMarches = this.marches.filter((m) => m.mine !== false);
+    if (myMarches.length > 0) {
       const now = Date.now();
       const MARCH_ROW_H = 22;
       const ROW_Y0 = h - HUD_H + 40;
       const RECALL_W = 46;
-      for (let i = 0; i < this.marches.length; i++) {
-        const m = this.marches[i];
+      for (let i = 0; i < myMarches.length; i++) {
+        const m = myMarches[i];
         const [tx, ty] = this.parseTileId(m.toTile);
         const remaining = Math.max(0, Math.ceil((m.arriveAt - now) / 1000));
         const kindIcon = m.kind === 'attack' ? '⚔' : m.kind === 'reinforce' ? '🛡' : m.kind === 'return' ? '↩' : '→';

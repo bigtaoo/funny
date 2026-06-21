@@ -144,4 +144,29 @@ describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
     const obsTu = tileUpdatesTo('obs').filter((p) => (p.msg as { ownerId: string }).ownerId === 'a');
     expect(obsTu.length).toBeGreaterThan(0);
   });
+
+  it('getMarches：己方行军 mine:true + 视野内敌方行军 mine:false + 视野外敌方不返回', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'e', 8, 8);        // 落在 a 基地视野内（chebyshev 3 ≤ 5）
+    await svc.joinWorld(W, 'far', 250, 250);  // 视野外
+
+    // a 自己的占领行军。
+    const aDst = findCoord(NEUTRAL, 5, 9);
+    await svc.startMarch(W, 'a', 5, 5, aDst.x, aDst.y, 'occupy', OCCUPY_MIN_TROOPS);
+    // e 的行军：出发点 (8,8) 在 a 视野内 → 出征瞬间 interp≈(8,8) 可见。
+    const eDst = findCoord(NEUTRAL, 8, 12);
+    await svc.startMarch(W, 'e', 8, 8, eDst.x, eDst.y, 'occupy', OCCUPY_MIN_TROOPS);
+    // far 的行军：远端，a 视野够不着。
+    const fDst = findCoord(NEUTRAL, 250, 255);
+    await svc.startMarch(W, 'far', 250, 250, fDst.x, fDst.y, 'occupy', OCCUPY_MIN_TROOPS);
+
+    const marches = await svc.getMarches(W, 'a');
+    const own = marches.filter((m) => m.mine);
+    const enemy = marches.filter((m) => m.mine === false);
+    expect(own.length).toBe(1);
+    expect(own[0]!.fromTile).toBe(`${W}:5:5`);
+    // 视野内的敌方行军 e 返回（mine:false）；视野外的 far 不返回。
+    expect(enemy.length).toBe(1);
+    expect(enemy[0]!.fromTile).toBe(`${W}:8:8`);
+  });
 });

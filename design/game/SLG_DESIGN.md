@@ -539,7 +539,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 
 | # | 缺口 | 现状 | 影响 |
 |---|---|---|---|
-| **G5** | **地图迷雾 / 侦察视野 / 宗门视野共享 / 盟友土地标记** | **G5-1 读路径门控 + G5-2 反向视野推送 ✅（2026-06-21，§18）**——getMap/getTile 按视野隐动态层、家族级共享；行军/易主反向推给视野内观察者；剩 G5-3 客户端渲染 | §8.2 宗门视野共享、§2.1「视野订阅」核心战略玩法（拍板降级为家族级，§18.1 V2） |
+| **G5** | ~~**地图迷雾 / 侦察视野 / 宗门视野共享 / 盟友土地标记**~~ ✅ **三片全落地（2026-06-21，§18）** | G5-1 读路径门控 + G5-2 反向视野推送 + G5-3 客户端渲染（灰雾/友敌色/敌军显形）全 ✅；共享降级为家族级（§18.1 V2）。剩联盟黄标 + scout/瞭望塔（V2 余项） | §8.2 视野共享、§2.1 视野订阅核心战略玩法已兑现 |
 | **G6** | **多大区 + 赛季分配规则**（→ **可编码规格 §17.8**，数据地基+算法已细化，运行时延后） | 单世界；`settleSeason`/`resetSeason` 有，但 SLG3「按宗门强弱平衡分配大区 / 超 ~1 万人开新大区」未做；分配硬依赖历史排名而 `settleSeason` 排名**不落库**（C2，=天梯「战令依赖 RETENTION」同构数据源缺口） | 规模化与生态平衡（SLG3）未兑现 |
 | **G7** | **admin 运营后台 SLG 接入**（→ **可编码规格 §17.7**） | 异常交易审计工单 / 赛季运维 UI / 商品价格可调基本未接 admin；且 worldsvc `/admin/world/*` 四端点**未鉴权**（JWT handler 内无 X-Internal-Key，任意玩家可清区，C4 安全洞） | S8-8 运营侧、SLG9 反 RMT 审计闭环缺口 |
 | **G8** | **险地（Stronghold）格子类型** | 设计 §3.1 列出，服务端 grep `stronghold/险地` 零命中 | 高战略价值 PvE 格缺失 |
@@ -551,11 +551,11 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 
 ### 15.4 收尾优先级建议
 
-1. **G1（国民加成）+ G3（判负翻转）**：「承诺了但空转」，工作量小、对玩法完整性影响最大，先收口。
-2. **G5（视野系统）**：「加家族才守得住」留存逻辑的关键拼图，工作量大可单列切片。
+1. ~~**G1（国民加成）+ G3（判负翻转）**~~ ✅：「承诺了但空转」，先收口。
+2. ~~**G5（视野系统）**~~ ✅：「加家族才守得住」留存逻辑的关键拼图，三片全落地（§18）。
 3. **G2/G4/G6/G7/G8**：随对应经济/运营/规模化专项推进。
 
-> **进度**：**G1 国民加成已落地（2026-06-20）**——见 §15.5。
+> **进度**：**G1 国民加成已落地（2026-06-20）**——见 §15.5。**G5 视野/迷雾三片全落地（2026-06-21）**——见 §18。
 
 ### 15.5 G1 国民加成实现记录（2026-06-20）
 
@@ -1091,7 +1091,7 @@ if (path.startsWith('/admin/world/')) {
 
 - **G5-1 shared 原语 + 服务端读路径门控 ✅（2026-06-21）**：见 §18.4。
 - **G5-2 反向视野推送 ✅（2026-06-21）**：`startMarch` / 格易主（occupy/landSiege/relocate）做一次反向视野查询 → 给视野内观察者推 `march_update`/`tile_update`（敌方行军进我视野即推，V4）。见 §18.5。
-- **G5-3 客户端渲染**：`WorldMapScene` 灰雾覆盖 + 友/敌/联盟标记色 + 反向推送的敌军渲染。
+- **G5-3 客户端渲染 ✅（2026-06-21）**：`WorldMapScene` 灰雾覆盖 + 友/敌标记色 + 视野内敌军渲染（含 server 侧 `ally`/`getMarches` 视野门控）。见 §18.6。
 
 ### 18.4 G5-1 实现记录（2026-06-21）
 
@@ -1115,6 +1115,24 @@ if (path.startsWith('/admin/world/')) {
 - **关键修复（async 时序）**：观察者推送内含 DB 查询（`visionObservers` await），不能 `void` fire-and-forget——否则事件函数返回时推送尚未发出（owner 的同步 `pushTile`/`pushMarch` 不受影响，但观察者推送会丢）。五处 `pushTileToObservers` 与 startMarch 的观察者推送全部 **`await`**，确保 `processDueArrivals`/`startMarch` 返回时推送已落。
 - **契约**：proto / openapi 均无改动——`march_update`/`tile_update` 推送通道既有，G5-2 纯服务端逻辑（推送给更多收件人，载荷不变）。
 - **验收**：server `tsc -b` 全绿；worldsvc **96 e2e**（新增 `vision-push.e2e.test.ts` 3 例：行军进观察者视野推 march_update + 远端不推 / 直占新领地推 tile_update + 占领者不重复推 + 远端不推 / 围攻易主对第三方观察者推；既有 93 不破——awaited 观察者推送不改既有 owner/defender 推送断言）。
+
+### 18.6 G5-3 实现记录（2026-06-21）
+
+> 客户端把迷雾「画出来」+ 友/敌正确上色 + 让 G5-2 反向推送的敌军真正显形。为正确性需配套两处小 server 改动（家族盟友领地原本会显示为敌色；`getMarches` 原只返己方行军，敌军推送后客户端 refetch 拿不到）。
+
+- **server（小补）**：
+  - `WorldTileView.ally?:boolean`——`getMap` 用家族成员集（`familyMemberIds`，从 `computeVisionSources` 抽出复用）标记「可见、非己方、同家族」的格。解决家族共享视野后盟友领地显示为敌色的正确性 bug（`tile.familyId` 占领不写，靠成员集判定）。
+  - `MarchView.mine?:boolean` + `getMarches` 扩展：己方行军（mine:true）+ **视野内的非家族敌方在途行军**（mine:false，按 `marchInterpPos` 当前位置过 `isInVision`，视野源取全图 `computeVisionSources(0,mapW-1,0,mapH-1)`）。这是 G5-2 反向 `march_update` 推送在客户端「refetch-on-push」模型下真正显形的数据源。家族友军行军不计入（友方靠家族集）。
+  - 契约 `openapi-world.yml`：`WorldTileView.ally` + `MarchView.mine`；`rest:gen` 重生。proto 无改动。
+- **client `WorldMapScene.ts`**：
+  - **灰雾**：`tile.visible===false` 的格画底层地形后罩一层 `FOG_COLOR=0x6b6458 @0.4` 铅笔灰（地形可见、局势看不清，对齐迷雾模型 2a）；视野外不画等级点（不暴露细节）。
+  - **标记色**（沿用本场景既有「敌蓝我红」约定）：自己=红（`MINE_*`）、**家族盟友=绿（新 `ALLY_TINT/ALLY_BASE_TINT`，友方第三色）**、敌方=蓝（`ENEMY_*`）、中立=纸面。`tileColor` 加 `ally→绿` 分支（在 mine 之后、occupied 之前）。
+  - **敌军行军**：march 箭头 `march.mine===false` → 统一敌色（蓝）+ 更粗描边 + 更大终点点，突出威胁；己方按 kind 上色。HUD 行军列表过滤为 `mine!==false`（敌方行军不可撤、不进列表）。
+  - 既有 `applyMarchUpdate`→`refreshMarches()` / `applyTileUpdate`→`loadMapViewport()` 的 refetch-on-push 通道不变——G5-2 推送触发 refetch，新 `getMarches`/`getMap` 门控返回视野内敌情，自动显形。
+- **联盟（宗门）领地黄描边标记 + scout 行军/瞭望塔**：列后续（V2/V5 余项）——联盟视野不共享、仅标记，且 tile 无 sect-ally 数据，待联盟系统补；当前 G5 闭环=家族级视野 + 迷雾 + 反向推送。
+- **验收**：client `tsc --noEmit` + **293 测试** + `build:web` 全绿；server `tsc -b` 全绿；worldsvc **97 e2e**（vision-push +1：`getMarches` 己方 mine:true / 视野内敌方 mine:false / 视野外不返回；fog 家族用例加 `ally:true` 断言）。
+
+> **G5 视野/迷雾三片全 ✅（2026-06-21）**：读路径门控（G5-1）+ 反向视野推送（G5-2）+ 客户端渲染（G5-3）。「加家族才守得住」的视野维度闭环——地形全见、敌情藏雾、家族共享、侦察行军照路、敌军进视野即现。剩联盟黄标 + scout/瞭望塔（V2 余项）。
 
 ---
 
