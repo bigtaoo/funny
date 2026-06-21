@@ -127,6 +127,14 @@ export class ImageController {
     this.bus.emit('images:change', slotId);
   }
 
+  /** Remove every loaded image (used when switching / creating projects). */
+  clearAll(): void {
+    for (const slotId of [...this._textures.keys()]) {
+      this.clearSlot(slotId);
+      this.bus.emit('images:change', slotId);
+    }
+  }
+
   // ── Internal ────────────────────────────────────────────────────────────────
 
   private clearSlot(slotId: string): void {

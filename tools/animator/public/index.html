@@ -448,6 +448,14 @@
 
 <!-- ═══ BOTTOM BAR ═══ -->
 <div class="bottom-bar">
+  <label style="color:var(--text-dim)">Project</label>
+  <select id="project-select" style="min-width:130px;max-width:200px"></select>
+  <button class="sm" id="btn-project-new" title="New project">＋</button>
+  <button class="sm" id="btn-project-rename" title="Rename project">✎</button>
+  <button class="sm" id="btn-project-dup" title="Duplicate project">⎘</button>
+  <button class="sm danger" id="btn-project-del" title="Delete project">🗑</button>
+  <span id="autosave-indicator" title="Auto-save status" style="font-size:14px;color:var(--text-dim)">●</span>
+  <div style="width:1px;height:24px;background:var(--border);margin:0 2px"></div>
   <button id="btn-save-editor" class="primary">💾 Save .editor</button>
   <button id="btn-load-editor">📂 Load .editor</button>
   <div style="width:1px;height:24px;background:var(--border);margin:0 2px"></div>

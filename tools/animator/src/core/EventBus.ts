@@ -33,6 +33,11 @@ export interface AppEvents {
   // Editor mode (skin vs animate)
   'editor:mode':    'skin' | 'animate';
 
+  // Project library (auto-save to IndexedDB)
+  'project:list':   void;                                    // library changed (create/delete/rename/save)
+  'project:active': { id: string; name: string };            // active project switched
+  'autosave:state': 'idle' | 'dirty' | 'saving' | 'saved';   // auto-save status indicator
+
   // Misc
   'status':         string;
   'pose:reset':     void;
