@@ -919,6 +919,43 @@ paths:
         '401': { $ref: '#/components/responses/ErrorResp' }
         '402': { $ref: '#/components/responses/ErrorResp' }
 
+  /equipment/craft:
+    post:
+      operationId: craftEquipment
+      tags: [save]
+      summary: 装备合成（E2，服务器权威：扣文具材料→roll 一件 +0 基础装备→入库[300 上限]）。idempotencyKey 幂等
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [defId, idempotencyKey]
+              properties:
+                defId: { type: string, description: 装备定义 id（EQUIPMENT_DEFS，决定槽位/稀有度/配方） }
+                idempotencyKey: { type: string, description: 客户端生成幂等键；重放返回首次结果（不二次扣料/roll） }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, instance]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      instance: { $ref: '#/components/schemas/EquipmentInstance' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+
   /achievements:
     get:
       operationId: getAchievements

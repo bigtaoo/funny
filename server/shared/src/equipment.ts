@@ -66,6 +66,107 @@ export const EQUIP_MAX_LEVEL = 9;
 /** 背包独立实例硬上限（EQUIPMENT_DESIGN §3.3，ADR-012，DRAFT [可调]）。 */
 export const EQUIPMENT_INV_CAP = 300;
 
+/** 装备幂等账本（合成/托管）TTL（秒）：保留 7 天，覆盖客户端重试 + worldsvc 退还窗口（§18.2）。 */
+export const EQUIPMENT_IDEM_TTL_SEC = 7 * 24 * 3600;
+
 /** 分解返还比例 / 等级门槛（§6.3，ADR-012）。 */
 export const SALVAGE_REFUND_RATIO = 0.7;
 export const SALVAGE_MAX_LEVEL = 4; // +5 及以上不可分解
+
+// ── 合成词条 roll（E2，EQUIPMENT_DESIGN §7.2/§7.4/§7.5，DRAFT [可调]）─────────
+//
+// 合成产出一件 +0 基础装备：1 条槽位锁定主词条（m_*）+ 按稀有度 N 条副词条（s_*）。
+// 词条 id ↔ 引擎字段映射 + 强化放大活在 @nw/engine（balance/equipment.ts AFFIX_FIELD_MAP）；
+// 本处只决定「开出哪些 id + roll 什么值」。具体数值区间/权重终点是 ECONOMY_NUMBERS §5（待铺），
+// 下方常量先给可跑占位（README §0：数值活在代码，调参只动这些常量）。
+
+/** 主词条按槽位锁定（§7.4；暴击未落地 → trinket 退化 m_spd）。value = +0 基础值（百分比/flat）。 */
+export const MAIN_AFFIX_BY_SLOT: Record<EquipSlot, { id: string; base: number }> = {
+  weapon: { id: 'm_atk', base: 8 }, // 攻击 +8%（base，随强化放大）
+  armor: { id: 'm_hp', base: 10 }, // 生命 +10%
+  trinket: { id: 'm_spd', base: 6 }, // 移速 +6%
+};
+
+/** 副词条池（§7.5 战力类，rare/epic 才 roll）。每条 [id, 最小值, 最大值]（DRAFT）。 */
+export const SUB_AFFIX_POOL: ReadonlyArray<readonly [string, number, number]> = [
+  ['s_atk', 3, 6],
+  ['s_hp', 4, 8],
+  ['s_armor', 2, 5],
+  ['s_spd', 2, 5],
+  ['s_atkspd', 3, 6],
+];
+
+/** 稀有度 → 合成时 roll 的副词条条数（§7.2；epic 的特技槽 proc 框架未落地，本切片不 roll k_*）。 */
+export const CRAFT_SUB_AFFIX_COUNT: Record<EquipRarity, number> = {
+  common: 0,
+  fine: 1,
+  rare: 2,
+  epic: 2,
+};
+
+/**
+ * 确定性小 PRNG（mulberry32）：合成 roll 用，种子由 idempotencyKey 派生，
+ * 同 key 重放产同一件（即便幂等账本未命中也可复现，杜绝"重试改命"）。
+ */
+function seededRng(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** 字符串 → 32 位整型种子（FNV-1a）。 */
+function hashSeed(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/**
+ * 合成一件 +0 基础装备的词条（主词条 + 按稀有度 N 条不重复副词条）。
+ * @param defId 装备定义 id（决定槽位/稀有度）。
+ * @param seedKey 确定性种子源（用 idempotencyKey，保证重放一致）。
+ * @returns affixes 数组（Affix[] 结构，{id,value}），未知 defId → 抛错由调用方处理。
+ */
+export function rollCraftedAffixes(defId: string, seedKey: string): { id: string; value: number }[] {
+  const def = EQUIPMENT_DEFS[defId];
+  if (!def) throw new Error(`unknown defId: ${defId}`);
+  const rng = seededRng(hashSeed(`${defId}:${seedKey}`));
+  const out: { id: string; value: number }[] = [];
+  // 主词条（槽位锁定，base 值；随强化由 engine 放大）
+  const main = MAIN_AFFIX_BY_SLOT[def.slot];
+  out.push({ id: main.id, value: main.base });
+  // 副词条：从池中不重复抽 N 条
+  const n = CRAFT_SUB_AFFIX_COUNT[def.rarity];
+  const pool = [...SUB_AFFIX_POOL];
+  for (let i = 0; i < n && pool.length > 0; i++) {
+    const idx = Math.floor(rng() * pool.length);
+    const [id, lo, hi] = pool.splice(idx, 1)[0]!;
+    const value = lo + Math.floor(rng() * (hi - lo + 1));
+    out.push({ id, value });
+  }
+  return out;
+}
+
+/** 背包独立实例数（堆叠件不计；本切片实例库存全为独立件，直接计 key 数）。 */
+export function equipmentInvCount(inv: Record<string, unknown> | undefined): number {
+  return inv ? Object.keys(inv).length : 0;
+}
+
+/**
+ * 装备拍卖冷启动参考单价（每件，按稀有度，DRAFT）：价格护栏滑窗样本不足时回退（AUCTION_DESIGN §4.A/§4.G）。
+ * 装备 qty 恒 1，故"单价"即整件估值。演算去 ECONOMY_NUMBERS §5。
+ */
+export const EQUIP_AUCTION_REF_PRICE_BY_RARITY: Record<EquipRarity, number> = {
+  common: 50,
+  fine: 150,
+  rare: 400,
+  epic: 1200,
+};

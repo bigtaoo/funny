@@ -8,6 +8,8 @@ import {
   AUCTION_MAX_LISTINGS,
   AUCTION_TAX_RATE,
   AUCTION_DAILY_LIST_CAP,
+  SlgError,
+  type EquipmentInstance,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { AuctionService } from '../src/auctionService';
@@ -36,6 +38,14 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
   const grants: Array<{ account: string; amount: number; orderId: string }> = [];
   const materialDeducts: Array<{ account: string; material: string; qty: number; orderId: string }> = [];
   const materialGrants: Array<{ account: string; material: string; qty: number; orderId: string }> = [];
+  // 装备：模拟 meta 库存（Map<account, Map<instanceId, instance>>）+ 托管/转移流水。
+  const equipInv = new Map<string, Map<string, EquipmentInstance>>();
+  const equipEscrows: Array<{ account: string; instanceId: string; orderId: string }> = [];
+  const equipGrants: Array<{ account: string; instanceId: string; orderId: string }> = [];
+  const seedEquip = (acct: string, inst: EquipmentInstance): void => {
+    if (!equipInv.has(acct)) equipInv.set(acct, new Map());
+    equipInv.get(acct)!.set(inst.id, inst);
+  };
 
   const commercial: WorldCommercialClient = {
     available: true,
@@ -55,6 +65,22 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     async grantMaterial(accountId, material, qty, orderId) {
       materialGrants.push({ account: accountId, material, qty, orderId });
     },
+    async getProfile() {
+      return null;
+    },
+    async escrowEquipment(accountId, instanceId, orderId) {
+      const inv = equipInv.get(accountId);
+      const inst = inv?.get(instanceId);
+      if (!inst) throw new SlgError('EQUIP_NOT_FOUND');
+      if (inst.locked) throw new SlgError('EQUIP_LOCKED');
+      inv!.delete(instanceId);
+      equipEscrows.push({ account: accountId, instanceId, orderId });
+      return inst;
+    },
+    async grantEquipment(accountId, instance, orderId) {
+      seedEquip(accountId, instance);
+      equipGrants.push({ account: accountId, instanceId: instance.id, orderId });
+    },
   };
 
   let svc: AuctionService;
@@ -68,6 +94,9 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     grants.length = 0;
     materialDeducts.length = 0;
     materialGrants.length = 0;
+    equipInv.clear();
+    equipEscrows.length = 0;
+    equipGrants.length = 0;
     nowMs = Date.now();
 
     svc = new AuctionService({
@@ -96,11 +125,12 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(materialDeducts[0]).toMatchObject({ account: 'alice', material: 'scrap', qty: 5 });
   });
 
-  it('装备未实现 → NOT_IMPLEMENTED', async () => {
+  it('装备挂拍缺 instanceId → BAD_REQUEST（不触发托管）', async () => {
     await expect(svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'equipment',
-      item: { equipId: 'sword1' }, qty: 1, price: 100, durationSec: DUR,
-    })).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' });
+      item: { foo: 'bar' }, qty: 1, price: 400, durationSec: DUR,
+    })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(equipEscrows).toHaveLength(0);
   });
 
   it('无效时长 → BAD_REQUEST', async () => {
@@ -322,5 +352,92 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(grants.find((g) => g.orderId.startsWith('auction_reset_refund:') && g.account === 'bob' && g.amount === 30)).toBeTruthy();
     const remaining = await svc.listAuctions(W);
     expect(remaining.length).toBe(0);
+  });
+
+  // ── A 装备交易（EQUIPMENT_DESIGN §4.A）。wp_marker 稀有，护栏静态参考价 400 → 带 [200,800]。──
+  const mkInst = (id: string, defId = 'wp_marker', extra: Partial<EquipmentInstance> = {}): EquipmentInstance => ({
+    id, defId, rarity: 'rare', level: 0, affixes: [{ id: 'm_atk', value: 8 }], ...extra,
+  });
+
+  it('A 装备挂拍 → 托管移出卖方库存 + 存实例快照 + qty 恒 1', async () => {
+    seedEquip('alice', mkInst('eq1'));
+    const view = await svc.createAuction({
+      worldId: W, sellerId: 'alice', itemType: 'equipment',
+      item: { instanceId: 'eq1' }, qty: 1, price: 400, durationSec: DUR,
+    });
+    expect(view.status).toBe('open');
+    expect(view.qty).toBe(1);
+    expect(view.itemType).toBe('equipment');
+    expect((view.item.instance as EquipmentInstance).id).toBe('eq1');
+    expect(equipEscrows).toHaveLength(1);
+    expect(equipInv.get('alice')?.has('eq1')).toBe(false); // 已移出卖方库存
+  });
+
+  it('A 装备挂拍 qty 传 99 也被强制为 1', async () => {
+    seedEquip('alice', mkInst('eq1'));
+    const view = await svc.createAuction({
+      worldId: W, sellerId: 'alice', itemType: 'equipment',
+      item: { instanceId: 'eq1' }, qty: 99, price: 400, durationSec: DUR,
+    });
+    expect(view.qty).toBe(1);
+  });
+
+  it('A 装备购买 → 实例转移给买方（含完整词条快照）', async () => {
+    seedEquip('alice', mkInst('eq1', 'wp_marker', { level: 3, affixes: [{ id: 'm_atk', value: 8 }, { id: 's_hp', value: 5 }] }));
+    const view = await svc.createAuction({
+      worldId: W, sellerId: 'alice', itemType: 'equipment',
+      item: { instanceId: 'eq1' }, qty: 1, price: 400, durationSec: DUR,
+    });
+    const bought = await svc.buyAuction(W, 'bob', view.auctionId);
+    expect(bought.status).toBe('sold');
+    expect(spends[0]).toMatchObject({ account: 'bob', amount: 400 });
+    // 买方拿到实例（id + 强化等级 + 词条快照原样转移）
+    const bobInst = equipInv.get('bob')?.get('eq1');
+    expect(bobInst).toMatchObject({ id: 'eq1', level: 3 });
+    expect(bobInst?.affixes).toHaveLength(2);
+    // 卖方收税后款
+    const tax = Math.floor(400 * AUCTION_TAX_RATE);
+    expect(grants.find((g) => g.account === 'alice' && g.amount === 400 - tax)).toBeTruthy();
+  });
+
+  it('A 装备取消 → 退回卖方库存', async () => {
+    seedEquip('alice', mkInst('eq1'));
+    const view = await svc.createAuction({
+      worldId: W, sellerId: 'alice', itemType: 'equipment',
+      item: { instanceId: 'eq1' }, qty: 1, price: 400, durationSec: DUR,
+    });
+    await svc.cancelAuction(W, 'alice', view.auctionId);
+    expect(equipInv.get('alice')?.has('eq1')).toBe(true);
+    expect(equipGrants.find((g) => g.orderId.startsWith('auction_cancel:') && g.account === 'alice')).toBeTruthy();
+  });
+
+  it('A 装备过期扫描 → 退回卖方库存', async () => {
+    seedEquip('alice', mkInst('eq1'));
+    const view = await svc.createAuction({
+      worldId: W, sellerId: 'alice', itemType: 'equipment',
+      item: { instanceId: 'eq1' }, qty: 1, price: 400, durationSec: DUR,
+    });
+    await mongo!.collections.auctions.updateOne({ _id: view.auctionId }, { $set: { expireAt: nowMs - 1000 } });
+    const count = await svc.processExpiredAuctions();
+    expect(count).toBe(1);
+    expect(equipInv.get('alice')?.has('eq1')).toBe(true);
+  });
+
+  it('A 装备天价挂单 → PRICE_OUT_OF_RANGE（且退还托管实例）', async () => {
+    seedEquip('alice', mkInst('eq1'));
+    await expect(svc.createAuction({
+      worldId: W, sellerId: 'alice', itemType: 'equipment',
+      item: { instanceId: 'eq1' }, qty: 1, price: 5000, durationSec: DUR,
+    })).rejects.toMatchObject({ code: 'PRICE_OUT_OF_RANGE' });
+    // 护栏拒绝后实例已退回卖方（不被吞）
+    expect(equipInv.get('alice')?.has('eq1')).toBe(true);
+  });
+
+  it('A locked 装备挂拍 → EQUIP_LOCKED（meta 托管拒绝透传）', async () => {
+    seedEquip('alice', mkInst('eq1', 'wp_marker', { locked: true }));
+    await expect(svc.createAuction({
+      worldId: W, sellerId: 'alice', itemType: 'equipment',
+      item: { instanceId: 'eq1' }, qty: 1, price: 400, durationSec: DUR,
+    })).rejects.toMatchObject({ code: 'EQUIP_LOCKED' });
   });
 });

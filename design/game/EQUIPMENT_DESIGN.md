@@ -1,6 +1,6 @@
 # 装备系统设计 — Equipment
 
-> 状态：设计中 · 权威：**本文（装备系统机制单一来源）**；数值见 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §5（数字权威）、战斗运行值见 `@nw/engine` config.ts · 更新：2026-06-21
+> 状态：E0 数据模型 ✅ + E1 引擎注入 ✅ + E2 合成 ✅ + E2.5 拍卖托管转移 ✅（解锁拍卖行 A，2026-06-21）；E3 强化/分解 · E4 穿戴 · E5 UI · 关卡掉落 faucet 待做 · 权威：**本文（装备系统机制单一来源）**；数值见 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §5（数字权威）、战斗运行值见 `@nw/engine` config.ts · 更新：2026-06-21
 
 本文是装备子系统的**机制设计基准**：数据模型、槽位、获取/强化/洗练、稀有度、战力挂钩、引擎注入、服务器权威、UI、经济联动、实现拆解。
 **数字不在本文定**——成功率/成本/掉率等去 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §5；本文只镜像并标注权威指针。
@@ -412,7 +412,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 |---|---|---|
 | E0 数据模型 ✅ | `EquipmentInstance` / `equipmentInv` / `gear` 新结构（types/SaveData/openapi）+ 存档 v1→v2 迁移 + `SyncPatch` 收窄（装备段不进 `PUT /save`） | types/contracts |
 | E1 引擎注入 ✅ | `applyEquipment` + `clampEffectCaps` + campaign/siege 三步链接入 + `GameConfig.equipment` 管线 + 硬墙/单调性/封顶单测（`client/test/equipment.test.ts` 17 项）。见 §9 实现记录 | @nw/engine |
-| E2 获取 | 关卡掉装备（pveRewards）+ `/equipment/craft` 合成 | metaserver |
+| E2 获取 | **合成 `/equipment/craft` ✅**（扣材料→roll 主+副词条→入库[300 上限]，idemKey 幂等）；关卡掉装备（pveRewards）仍待做 | metaserver |
+| E2.5 拍卖托管 ✅ | meta `escrowEquipment`/`grantEquipment` + `/internal/equipment/{escrow,grant}`（worldsvc 拍卖 A 调用：移出库存托管 / 转移归属 / 退回；穿戴中·locked 拒挂）。见下方实现记录 | metaserver + worldsvc |
 | E3 强化 | `/equipment/enhance` 服务器掷骰 + 成功率表 + 失败损耗；`/equipment/salvage` 分解回收（70%/+5 锁定，§6.3）+ 300 库存上限校验 | metaserver |
 | E4 穿戴 | `/equipment/equip` + loadout（global 起步） | metaserver + client |
 | E5 UI | 背包/锻造/强化/穿戴界面 | client + UI_DESIGN |
@@ -421,6 +422,16 @@ buildSiegeBlueprints(levels, equipped, inv)
 | E8 SLG 接入 | 装备进 `buildSiegeBlueprints` + 拍卖挂装备 | worldsvc（SLG 阶段） |
 
 > 接口/DB/幂等草图见 §18，埋点见 §19；落地时正式契约进 SERVER_API.md（craft/enhance/equip/reforge + `equipment` 集合）。
+
+#### E2 + E2.5 实现记录（2026-06-21，✅）— 解锁拍卖行 A
+
+落地 = `server/metaserver/src/equipment.ts`（服务层）+ `service.ts` `craftEquipment` handler + `internal.ts` `/internal/equipment/{escrow,grant}` + `contracts/openapi.yml` `POST /equipment/craft` + `@nw/shared`（`rollCraftedAffixes`/`MAIN_AFFIX_BY_SLOT`/`SUB_AFFIX_POOL`/`CRAFT_SUB_AFFIX_COUNT`/`equipmentInvCount`/`EQUIP_AUCTION_REF_PRICE_BY_RARITY` + `equipmentIdem` 集合）+ `equipment.e2e.test.ts`（12 条）。关键决策：
+
+1. **合成 roll 确定性**：实例 id（`eq_${idemKey}`）+ 词条值均由 idempotencyKey 派生（mulberry32 + FNV-1a 种子）。重试/重放产同一件，杜绝"网络重试改命"。主词条按槽位锁定（§7.4：weapon→`m_atk`/armor→`m_hp`/trinket→`m_spd`，暴击未落地退化移速），副词条按稀有度从池抽 N 条不重复（common 0 / fine 1 / rare·epic 2）。数值 DRAFT，权威终点 ECONOMY_NUMBERS §5。
+2. **幂等闸门**：`equipmentIdem` 集合（TTL 7 天）。合成先抢占 idemKey 唯一 _id（dup → 重放首次结果，不二次扣料）；托管按 orderId 记快照（重放返回同实例，防二次移出）；转移按 `instance.id` 覆盖写天然幂等。扣料/移实例走乐观锁 rev 守卫 + 重试（同 internal.ts 材料范式）。
+3. **库存权威 + 拍卖托管语义**：`equipmentInv` 仅 `/equipment/*` + `/internal/equipment/*` 写（PUT /save 不可写，SyncPatch 已收窄）。挂拍 = `escrowEquipment` 移出卖方库存回快照（拍卖单存整件快照）；成交 = `grantEquipment` 转移给买方；撤单/过期/季末 = 退回卖方。**穿戴中（gear 引用）/ locked 拒挂**（`EQUIP_IN_USE`/`EQUIP_LOCKED`）。
+4. **满仓口径**：300 上限只卡 craft（faucet 侧）；**成交转移不卡**（买方有意获得，阻断会资损；满仓溢出转邮件暂存是 §13 SLG 后续）。
+   - ⚠️ **本切片范围**：只交付「合成 → 上拍卖交易」闭环以解锁拍卖行 A。**关卡掉落 faucet + E3 强化/分解 + E4 穿戴 + E5 UI 仍待做**（见上表）。
 
 ---
 
@@ -504,7 +515,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 | 端点 | 入参 | 回执 | 服务器职责 |
 |---|---|---|---|
-| `POST /equipment/craft` | `{ defId, idempotencyKey }` | `{ instance \| stackDelta }` | 校验+扣材料，产 0 级基础装备（堆叠或新实例，§3.3） |
+| `POST /equipment/craft` ✅ | `{ defId, idempotencyKey }` | `{ save, instance }` | 校验+扣材料，产 0 级基础装备（本切片产独立实例；堆叠优化待 E 后续） |
 | `POST /equipment/enhance` | `{ instanceId, idempotencyKey }` | `{ success, instance, consumed }` | **服务器掷骰**（成功率表）、扣材料/金币、成功则 level+1、回执 |
 | `POST /equipment/salvage` | `{ instanceIds[], idempotencyKey }` | `{ refunded }` \| `NOT_SALVAGEABLE` | 分解回收：返 70% 打造材料，+5↑ 拒（§6.3，ADR-012）；可批量含堆叠 0 级件 |
 | `POST /equipment/reforge` | `{ instanceId, fuelInstanceId, lockedIndex?, idempotencyKey }` | `{ instance, consumed }` | 校验燃料（低一级同类）、扣金币、重 roll 副词条/特技 |

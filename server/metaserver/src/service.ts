@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Collections, JwtConfig, SyncPatch, SaveData } from '@nw/shared';
-import { ErrorCode, err, ok, signToken } from '@nw/shared';
+import { ErrorCode, ERROR_HTTP_STATUS, err, ok, signToken } from '@nw/shared';
 import {
   findPveLevel,
   findPveUpgrade,
@@ -30,6 +30,7 @@ import {
 import { CHAT_SEND_RATE_PER_MIN, regionFromAcceptLanguage } from '@nw/shared';
 import { ACHIEVEMENTS, findAchievement, validateClaim } from '@nw/shared';
 import { getOrCreateSave, putSave } from './save.js';
+import { craftEquipment } from './equipment.js';
 import {
   changePassword,
   ensurePublicId,
@@ -1111,5 +1112,18 @@ export class MetaService {
     }
     const save = await mirrorCoins(cols, accountId, v.coinsAfter, now());
     return ok({ save, granted: v.coinsGranted });
+  }
+
+  /**
+   * 装备合成（E2，EQUIPMENT_DESIGN §4/§7）：扣文具材料 → roll 一件 +0 基础装备 → 入库（300 上限）。
+   * idempotencyKey 幂等（客户端生成）：重放返回首次结果，不二次扣料、不二次 roll。
+   */
+  async craftEquipment(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { defId, idempotencyKey } = req.body as { defId: string; idempotencyKey: string };
+    const { cols, now } = this.deps;
+    const r = await craftEquipment(cols, now, accountId, defId, idempotencyKey);
+    if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
+    return ok({ save: r.save, instance: r.instance });
   }
 }
