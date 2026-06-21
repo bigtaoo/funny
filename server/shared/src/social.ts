@@ -87,7 +87,9 @@ export interface ChatMessageView {
   ts: number;
 }
 
-export type MailAttachmentKind = 'coins' | 'item' | 'skin';
+// 'material' = 养成材料（scrap/lead/binding），发到 SaveData.materials 统一池（PvE/装备/拍卖共用，
+// SLG8 材料统一流转）；'item' 进 inventory.items 泛用桶。两者刻意分桶，材料不混入泛用物品。
+export type MailAttachmentKind = 'coins' | 'item' | 'skin' | 'material';
 export interface MailAttachmentView {
   kind: MailAttachmentKind;
   id?: string;

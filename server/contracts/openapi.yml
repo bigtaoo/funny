@@ -381,7 +381,7 @@ components:
       type: object
       required: [kind]
       properties:
-        kind: { type: string, enum: [coins, item, skin] }
+        kind: { type: string, enum: [coins, item, skin, material] }
         id: { type: string }
         count: { type: integer }
 

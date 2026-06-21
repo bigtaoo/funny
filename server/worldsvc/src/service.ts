@@ -15,6 +15,7 @@ import {
   npcGarrison,
   strongholdGarrison,
   STRONGHOLD_LOOT_PER_LEVEL,
+  strongholdMaterialLoot,
   findMarchPath,
   marchDurationFromPath,
   capitalPositions,
@@ -1271,11 +1272,15 @@ export class WorldService {
         { _id: pw._id },
         { $set: { resources, yieldRate, lastTickAt: t }, $inc: { rev: 1 } },
       );
+      // 额外掉落养成材料（§19.5 + G4 §15.6）：发到 meta SaveData.materials 养成统一池（跨进程、
+      // best-effort、orderId 幂等；march 一次性解算，(worldId,toTile,arriveAt) 稳定可作幂等键）。
+      const matLoot = strongholdMaterialLoot(proc.level);
+      void this.meta.grantMaterial(m.ownerId, matLoot.material, matLoot.qty, `stronghold_loot:${m.worldId}:${m.toTile}:${m.arriveAt}`);
       void this.applyNationChange(m.worldId, x, y, m.ownerId, member?.familyId);
       void this.bumpFamilyActivity(m.worldId, member?.familyId, 1);
       const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
       void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
-      void this.pushSiege(m.ownerId, siege, lootSummary(reward));
+      void this.pushSiege(m.ownerId, siege, `${lootSummary(reward)},${matLoot.material}+${matLoot.qty}`);
       void this.pushTile(m.ownerId, tileDoc);
       await this.pushTileToObservers(tileDoc, new Set([m.ownerId])); // G5-2：攻克到点对观察者可见
     } else {
@@ -2332,7 +2337,9 @@ export class WorldService {
         const accounts = await this.expandToAccounts(worldId, r.scope, r.familyId);
         const dispatchKey = `slg-settle:${worldId}:s${w.season}`;
         const attachments = [
-          ...Object.entries(items).filter(([, n]) => n > 0).map(([id, count]) => ({ kind: 'item' as const, id, count })),
+          // 材料（scrap/lead/binding）发到 SaveData.materials 养成统一池（SLG8），故 kind:'material'
+          // 而非泛用 'item'（后者落 inventory.items，养成/装备/拍卖读不到 → 孤儿）。
+          ...Object.entries(items).filter(([, n]) => n > 0).map(([id, count]) => ({ kind: 'material' as const, id, count })),
           ...base.skins.map((id) => ({ kind: 'skin' as const, id })),
           ...(base.coins ? [{ kind: 'coins' as const, count: base.coins }] : []),
         ];

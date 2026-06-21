@@ -734,6 +734,18 @@ export function strongholdGarrison(level: number): number {
 /** 险地攻克后一次性资源奖励（按格等级，单资源；§3.1「大幅资源」）。 */
 export const STRONGHOLD_LOOT_PER_LEVEL = 5000;
 
+/**
+ * 险地攻克后额外掉落的养成材料（§19.5「随 G4 养成材料流转统一」）：单一稀有材料 `binding`
+ * （gates rare/epic 装备，地图常规途径稀缺），按格等级线性，发到 SaveData.materials 养成统一池
+ * （非赛季资源，跨季留存，SLG4）。**DRAFT [可调]**：量待经济模拟（§16.5 同批）。
+ */
+export const STRONGHOLD_LOOT_MATERIAL = 'binding';
+export const STRONGHOLD_LOOT_MATERIAL_PER_LEVEL = 4;
+/** 险地材料掉落（纯函数，双端可算）：{material, qty}，qty 按格等级线性。 */
+export function strongholdMaterialLoot(level: number): { material: string; qty: number } {
+  return { material: STRONGHOLD_LOOT_MATERIAL, qty: STRONGHOLD_LOOT_MATERIAL_PER_LEVEL * Math.max(1, level) };
+}
+
 export interface SiegeResolution {
   outcome: SiegeOutcome;
   /** 攻方生还兵力（attacker_win 时可成新驻军 / 回师；defender_win = 0 全灭）。 */
