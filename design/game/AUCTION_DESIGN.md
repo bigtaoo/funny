@@ -242,7 +242,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - 契约同步：`openapi-world.yml` + 客户端 `openapi-world.ts`/`WorldApiClient`（createAuction saleMode/placeBid）
 
 **⛔ 剩余缺口**（均依赖外部系统就位）：**A 装备交易**（依赖 EQUIPMENT 装备库存）、**D 异常审计**（依赖 §15.1 G7 admin SLG 接入）。
-**注**：客户端 `AuctionScene` 一口价 item 字段形状错配（发 `{mat}` vs 服务端读 `item.material`；展示把 itemType 当材料名）为独立既存 bug，单列修复，竞拍 UI 亦待补。
+**客户端契约对齐 ✅（2026-06-21）**：`AuctionScene` 既存错配已修——挂单 item 改发 `{material}`（原 `{mat}` 服务端读不到）、展示改读 `item.material`（原把 itemType 当材料名）、时长改 `[6h/12h/24h]` 对齐 `AUCTION_DURATIONS_SEC`（原 `[1h/4h/24h]` 2/3 选项触 BAD_REQUEST），i18n `dur1h/dur4h`→`dur6h/dur12h`。一口价挂单/展示链路打通。**竞拍 UI（saleMode 切换/出价/买断）仍待补**——API/契约已就绪（`createAuction` saleMode + `placeBid`）。
 
 ---
 
