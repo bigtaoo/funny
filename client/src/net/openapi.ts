@@ -1409,6 +1409,10 @@ export interface operations {
                             granted: {
                                 [key: string]: number;
                             };
+                            /** @description 本次实发单位卡（cardKey→张数，S12-C；capped / 抽检暂扣时为空） */
+                            grantedCards?: {
+                                [key: string]: number;
+                            };
                             /** @description 当日发材料通关已达上限 */
                             capped: boolean;
                             /** @description 被 L1 抽中——材料暂扣，客户端须补传录像走 /pve/verify 复算入账 */
@@ -1463,6 +1467,10 @@ export interface operations {
                             save: components["schemas"]["SaveData"];
                             /** @description 复算通过后实发材料（rejected / capped 时为空） */
                             granted: {
+                                [key: string]: number;
+                            };
+                            /** @description 复算通过后实发单位卡（cardKey→张数，S12-C；rejected / capped 时为空） */
+                            grantedCards?: {
                                 [key: string]: number;
                             };
                             capped: boolean;

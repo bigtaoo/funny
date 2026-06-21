@@ -2,6 +2,7 @@
 // meta 用它列商品/盲盒池 + 算 dupe 退币；commercial 用它跑盲盒 RNG。两端同源避免漂移。
 import type { Rarity } from './types';
 import type { RankId } from './ladder';
+import { UNIT_CARD_POOL_ID, unitCardPoolItems } from './unitCards';
 
 export const RARITY_ORDER: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
 
@@ -38,6 +39,19 @@ export const GACHA_POOLS: GachaPoolDef[] = [
       epic: ['skin_e1', 'skin_e2'],
       legendary: ['skin_l1'],
     },
+  },
+  // 单位卡池（S12-C，养成 ≠ 外观，独立池）：item = cardKey（infantry:1 …），稀有度映射卡级见
+  // unitCards.GACHA_RARITY_TO_CARD_LEVEL（common→T1 … legendary→T4）。发货端按 poolId 走单位卡
+  // 入库（cardInventory + 重算 unitLevels），**不走皮肤 dupe 退币**（集卡天然重复，全部入库）。
+  // 定价/保底沿用皮肤池占位 `[可调]`（§3.2）；dupePolicy 仅 openapi 顶层兼容字段，单位卡发货不读。
+  {
+    id: UNIT_CARD_POOL_ID,
+    costSingle: 150,
+    costTen: 1350,
+    pityThreshold: 90,
+    tenFloor: 'epic',
+    dupePolicy: 'coins',
+    itemsByRarity: unitCardPoolItems(),
   },
 ];
 

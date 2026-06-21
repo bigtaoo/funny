@@ -203,6 +203,41 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_l1')).toHaveLength(1);
   });
 
+  it('盲盒单位卡池（S12-C）：扣币 → 卡入 cardInventory + 派生 unitLevels，不当皮肤', async () => {
+    comm.coins.set(accountId, 2000);
+    comm.nextResults = [{ itemId: 'archer:3', rarity: 'epic' }]; // epic→T3
+    const r = body(
+      await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'units', count: 1 } }),
+    );
+    // 单位卡：duplicate 恒 false，入 cardInventory，unitLevels 派生（单张 T3 → archer=3）。
+    expect(r.data.results[0]).toMatchObject({ itemId: 'archer:3', rarity: 'epic', duplicate: false });
+    expect(r.data.save.cardInventory['archer:3']).toBe(1);
+    expect(r.data.save.unitLevels.archer).toBe(3);
+    expect(r.data.save.inventory.skins).not.toContain('archer:3'); // 绝不进皮肤库
+    expect(r.data.save.gacha.pity.units).toBe(1);
+    // 再抽同卡 → 库存累加（集卡天然重复，不退币、不去重）。
+    const r2 = body(
+      await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'units', count: 1 } }),
+    );
+    expect(r2.data.results[0].duplicate).toBe(false);
+    expect(r2.data.save.cardInventory['archer:3']).toBe(2);
+  });
+
+  it('单位卡池对账（S12-C）：扣币后崩溃 → GET /save 补发入 cardInventory，不丢不重', async () => {
+    comm.coins.set(accountId, 2000);
+    // 模拟 commercial 已扣币建 charged units 订单但 meta 未发货。
+    await comm.gachaDraw({ accountId, poolId: 'units', count: 1, orderId: 'orphan-units-1' });
+    comm.orders.get('orphan-units-1')!.result.results = [{ itemId: 'infantry:2', rarity: 'rare' }];
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(1);
+    const r1 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(r1.data.save.cardInventory['infantry:2']).toBe(1); // 补发入卡库（非皮肤）
+    expect(r1.data.save.inventory.skins).not.toContain('infantry:2');
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(0);
+    // 再 GET /save：幂等不重复 $inc。
+    const r2 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(r2.data.save.cardInventory['infantry:2']).toBe(1);
+  });
+
   it('广告 cap：超过 5 次 → 429', async () => {
     for (let i = 0; i < 5; i++) {
       const r = await app.inject({ method: 'POST', url: '/ads/reward', headers: auth(), payload: { adToken: 'ok' } });

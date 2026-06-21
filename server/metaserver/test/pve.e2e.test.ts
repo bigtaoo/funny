@@ -57,6 +57,41 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(r.data.save.materials.scrap).toBe(6);
   });
 
+  it('关卡掉单位卡（S12-C）：首章关掉 T1 卡入 cardInventory + grantedCards', async () => {
+    const r = body(await clear('ch1_lv1', 3)); // ch1 → infantry T1 ×1
+    expect(r.data.grantedCards).toEqual({ 'infantry:1': 1 });
+    expect(r.data.save.cardInventory['infantry:1']).toBe(1);
+    // 单张 T1 不抬等级（deriveUnitLevels 仅产 level>1）。
+    expect(r.data.save.unitLevels.infantry ?? 1).toBe(1);
+    // 终关（lv10）双倍。
+    await seedCleared([
+      'ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch1_lv4', 'ch1_lv5',
+      'ch1_lv6', 'ch1_lv7', 'ch1_lv8', 'ch1_lv9',
+    ]);
+    const r10 = body(await clear('ch1_lv10', 3));
+    expect(r10.data.grantedCards).toEqual({ 'infantry:1': 2 });
+  });
+
+  it('后期章关掉高级卡（S12-C）：ch3 掉 T2 → unitLevels 派生跟随', async () => {
+    // 解锁 ch3_lv1（前置 ch2_lv10）。
+    const upto = ['ch1_lv1'];
+    for (let c = 1; c <= 2; c++) for (let l = 1; l <= 10; l++) upto.push(`ch${c}_lv${l}`);
+    await seedCleared(upto);
+    const r = body(await clear('ch3_lv1', 3)); // ch3 → archer T2 ×1
+    expect(r.data.grantedCards).toEqual({ 'archer:2': 1 });
+    expect(r.data.save.cardInventory['archer:2']).toBe(1);
+    expect(r.data.save.unitLevels.archer).toBe(2); // 单张 T2 即抬到 2
+  });
+
+  it('每日上限：capped 时材料与单位卡都不发（S12-C）', async () => {
+    for (let i = 0; i < PVE_DAILY_CLEAR_REWARD_CAP; i++) await clear('ch1_lv1', 2);
+    const over = body(await clear('ch1_lv1', 2));
+    expect(over.data.capped).toBe(true);
+    expect(over.data.granted).toEqual({});
+    expect(over.data.grantedCards).toEqual({});
+    expect(over.data.save.cardInventory['infantry:1']).toBe(PVE_DAILY_CLEAR_REWARD_CAP); // 未再加
+  });
+
   it('锁住的关（前置未通关）→ 400', async () => {
     const res = await clear('ch1_lv2', 3); // 需先过 ch1_lv1
     expect(res.statusCode).toBe(400);

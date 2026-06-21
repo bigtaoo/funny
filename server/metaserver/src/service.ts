@@ -16,6 +16,9 @@ import {
   accrueStats,
   applyCardMerge,
   deriveUnitLevels,
+  grantCards,
+  levelCardReward,
+  UNIT_CARD_POOL_ID,
 } from '@nw/shared';
 import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import {
@@ -77,6 +80,7 @@ import type { GatewayClient } from './gatewayClient.js';
 import {
   markDuplicates,
   deliverGrant,
+  deliverCardGrant,
   deliverMailGrant,
   mirrorCoins,
   mirrorWalletFrom,
@@ -394,21 +398,36 @@ export class MetaService {
     });
   }
 
-  /** 当日上限内发材料（reward 已是权威表）。返回实发 reward（capped → {}）+ 是否 capped + 回推 save。 */
+  /**
+   * 当日上限内发关卡产出（材料 reward + 单位卡 levelCardReward，S12-C）。同一每日闸门（材料/卡
+   * 同被 cap），同一 mutateSave 事务原子写：materials $+ / cardInventory 经 grantCards / unitLevels
+   * 经 deriveUnitLevels 重算（与盲盒/合成同口径，服务器权威）。返回实发（capped → 都空）+ capped + save。
+   */
   private async grantClearReward(
     accountId: string,
+    levelId: string,
     reward: Record<string, number>,
-  ): Promise<{ save: SaveData; granted: Record<string, number>; capped: boolean } | { error: string }> {
-    const hasReward = Object.keys(reward).length > 0;
+  ): Promise<{
+    save: SaveData;
+    granted: Record<string, number>;
+    grantedCards: Record<string, number>;
+    capped: boolean;
+  } | { error: string }> {
+    const cardReward = levelCardReward(levelId);
+    const hasReward = Object.keys(reward).length > 0 || Object.keys(cardReward).length > 0;
     const capped = hasReward ? !(await this.bumpPveRewardCap(accountId, this.deps.now())) : false;
     const grant: Record<string, number> = capped ? {} : { ...reward };
+    const cardGrant: Record<string, number> = capped ? {} : { ...cardReward };
     const out = await this.mutateSave(accountId, (s) => {
       const materials = { ...s.materials };
       for (const [m, n] of Object.entries(grant)) materials[m] = (materials[m] ?? 0) + n;
-      return { ...s, materials };
+      if (Object.keys(cardGrant).length === 0) return { ...s, materials };
+      const cardInventory = grantCards(s.cardInventory ?? {}, cardGrant);
+      const unitLevels = deriveUnitLevels(cardInventory);
+      return { ...s, materials, cardInventory, unitLevels };
     });
     if ('error' in out) return out;
-    return { save: out.save, granted: grant, capped };
+    return { save: out.save, granted: grant, grantedCards: cardGrant, capped };
   }
 
   /**
@@ -437,9 +456,11 @@ export class MetaService {
     if (level.requires && !cur.progress.cleared.includes(level.requires)) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level locked'));
     }
-    const hasReward = Object.keys(level.reward).length > 0;
+    // 有可套利产出 = 材料 reward 或单位卡掉落任一非空（S12-C：卡也是可作弊产出）。
+    const hasReward =
+      Object.keys(level.reward).length > 0 || Object.keys(levelCardReward(levelId)).length > 0;
 
-    // L1 抽检决策：仅在「有材料可发 + 裁判可用」时考虑（否则没有可被作弊套利的产出）。
+    // L1 抽检决策：仅在「有产出可发 + 裁判可用」时考虑（否则没有可被作弊套利的产出）。
     if (hasReward && gateway.available) {
       const isFirstClear = !cur.progress.cleared.includes(levelId);
       // L0 异常（§0「开局战力不符 → 必作弊」）：客户端上报蓝图快照与服务器权威 pveUpgrades 不符。
@@ -462,16 +483,28 @@ export class MetaService {
           status: 'pending',
           ts: now(),
         });
-        return ok({ save: prog.save, granted: {}, capped: false, needsReplay: true, verifyId });
+        return ok({
+          save: prog.save,
+          granted: {},
+          grantedCards: {},
+          capped: false,
+          needsReplay: true,
+          verifyId,
+        });
       }
     }
 
-    // 普通通关：写 progress/stars 后发材料（当日上限内）。
+    // 普通通关：写 progress/stars 后发材料 + 单位卡（当日上限内，S12-C）。
     const prog = await this.writeClearProgress(accountId, levelId, stars);
     if ('error' in prog) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, prog.error));
-    const granted = await this.grantClearReward(accountId, level.reward);
+    const granted = await this.grantClearReward(accountId, levelId, level.reward);
     if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
-    return ok({ save: granted.save, granted: granted.granted, capped: granted.capped });
+    return ok({
+      save: granted.save,
+      granted: granted.granted,
+      grantedCards: granted.grantedCards,
+      capped: granted.capped,
+    });
   }
 
   /**
@@ -539,9 +572,15 @@ export class MetaService {
     // 裁判是随机第三方无头复算 → 玩家无法伪造；仍过 L1 caps 作为「玩家串通裁判刷量」的廉价兜底
     // （越界整份丢弃，不阻塞发材料）。A2：计数只在此服务器权威结算点写。
     if (status === 'verified') await this.accrueJudgedPveStats(accountId, verdict.statsJson);
-    const granted = await this.grantClearReward(accountId, level.reward);
+    const granted = await this.grantClearReward(accountId, doc.levelId, level.reward);
     if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
-    return ok({ save: granted.save, granted: granted.granted, capped: granted.capped, verified: true });
+    return ok({
+      save: granted.save,
+      granted: granted.granted,
+      grantedCards: granted.grantedCards,
+      capped: granted.capped,
+      verified: true,
+    });
   }
 
   /** PvE 升级：服务器校验材料足够 → 扣材料 + pveUpgrades+1 → 回推（仅在线）。 */
@@ -1085,7 +1124,31 @@ export class MetaService {
       }
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, draw.error));
     }
-    // 发货：新皮肤进 inventory（幂等），重复转化 S5 暂缓（见 economy.ts 注释）。
+    // 发货按池分流（独立单位卡池，S12-C）：
+    //  • 单位卡池 → results.itemId 是 cardKey，入 cardInventory + 重算 unitLevels（不走 dupe 退币，
+    //    集卡天然重复全部入库；duplicate 恒 false 仅作展示）。
+    //  • 皮肤池 → 新皮肤进 inventory.skins（幂等），重复转化 S5 暂缓（见 economy.ts 注释）。
+    await getOrCreateSave(cols, accountId, now());
+    if (poolId === UNIT_CARD_POOL_ID) {
+      const cardGrants: Record<string, number> = {};
+      for (const r of draw.results) cardGrants[r.itemId] = (cardGrants[r.itemId] ?? 0) + 1;
+      const save = await deliverCardGrant(
+        cols,
+        accountId,
+        orderId,
+        cardGrants,
+        draw.coinsAfter,
+        { [poolId]: draw.pityAfter },
+        now(),
+      );
+      await commercial.orderDelivered({ orderId });
+      const marked = draw.results.map((r) => ({
+        itemId: r.itemId,
+        rarity: r.rarity,
+        duplicate: false,
+      }));
+      return ok({ save, results: marked });
+    }
     const cur = await getOrCreateSave(cols, accountId, now());
     const { newSkins, marked } = markDuplicates(cur.inventory.skins, draw.results);
     const save = await deliverGrant(

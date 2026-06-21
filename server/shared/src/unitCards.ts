@@ -96,3 +96,51 @@ export function grantCards(
   }
   return next;
 }
+
+// ── 卡片来源（S12-C，ECONOMY_NUMBERS §3 关卡掉落 / §4.1 抽奖出卡）────────────────
+// 卡片两条来源：①盲盒（独立单位卡池，commercial 滚 RNG）②关卡掉落（PvE 通关确定性整数）。
+// 入库统一走 grantCards → cardInventory，unitLevels 由 deriveUnitLevels 重算（服务器权威）。
+
+/** 单位卡盲盒池 id（与皮肤池 `standard` 分离：养成 ≠ 外观，抽卡动机/调参互不干扰）。 */
+export const UNIT_CARD_POOL_ID = 'units';
+
+/**
+ * gacha 稀有度 → 单位卡级映射（独立单位卡池，§4.1「抽奖出卡」补充源）。
+ * 盲盒产 T1–T4：common→T1 / rare→T2 / epic→T3 / legendary→T4（高级卡加速，T5+ 仍靠合成/拍卖）。
+ * 与皮肤池同权重（economy.ts `RARITY_WEIGHTS`）；卡片天然集卡 → **不走 dupe 退币**，全部入库。
+ */
+export const GACHA_RARITY_TO_CARD_LEVEL: Record<string, number> = {
+  common: 1,
+  rare: 2,
+  epic: 3,
+  legendary: 4,
+};
+
+/**
+ * 构建单位卡池 itemsByRarity（cardKey 作 itemId，3 兵种 × 1 tier/稀有度）。
+ * economy.ts 拼装 GACHA_POOLS 时调用，使「池内 item = 合法 cardKey」，发货端 parseCardKey 即可识别。
+ */
+export function unitCardPoolItems(): Record<'common' | 'rare' | 'epic' | 'legendary', string[]> {
+  const at = (rarity: string) =>
+    PROGRESSABLE_UNIT_IDS.map((u) => cardKey(u, GACHA_RARITY_TO_CARD_LEVEL[rarity]!));
+  return { common: at('common'), rare: at('rare'), epic: at('epic'), legendary: at('legendary') };
+}
+
+/**
+ * 关卡掉单位卡（确定性整数，§3 体力门控 + §4.1「后期关产 T3 卡」）。
+ * 从 levelId `ch{N}_lv{M}` 派生：章节越后 tier 越高（ch1–2→T1 / ch3–4→T2 / ch5–6→T3），
+ * 单位按章节轮换（inf/shd/arc）；终关（lv10）双倍。非章节关（如 `ch_stress`）不掉卡。
+ * `[可调]`：tier/张数是「高级卡获取速率」旋钮（与盲盒/拍卖供给一起调），**不动 5→1 合成系数**。
+ * 纯函数、不引入 RNG（保 PvE 抽检幂等 + 服务器权威确定性）。
+ */
+export function levelCardReward(levelId: string): Record<string, number> {
+  const m = /^ch(\d+)_lv(\d+)$/.exec(levelId);
+  if (!m) return {};
+  const chapter = Number(m[1]);
+  const lv = Number(m[2]);
+  if (!chapter || !lv) return {};
+  const tier = Math.min(3, Math.floor((chapter - 1) / 2) + 1);
+  const unitId = PROGRESSABLE_UNIT_IDS[(chapter - 1) % PROGRESSABLE_UNIT_IDS.length]!;
+  const count = lv >= 10 ? 2 : 1;
+  return { [cardKey(unitId, tier)]: count };
+}

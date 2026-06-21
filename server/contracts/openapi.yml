@@ -826,6 +826,10 @@ paths:
                         type: object
                         additionalProperties: { type: integer }
                         description: 本次实发材料（capped / 抽检暂扣时为空）
+                      grantedCards:
+                        type: object
+                        additionalProperties: { type: integer }
+                        description: 本次实发单位卡（cardKey→张数，S12-C；capped / 抽检暂扣时为空）
                       capped: { type: boolean, description: 当日发材料通关已达上限 }
                       needsReplay:
                         type: boolean
@@ -887,6 +891,10 @@ paths:
                         type: object
                         additionalProperties: { type: integer }
                         description: 复算通过后实发材料（rejected / capped 时为空）
+                      grantedCards:
+                        type: object
+                        additionalProperties: { type: integer }
+                        description: 复算通过后实发单位卡（cardKey→张数，S12-C；rejected / capped 时为空）
                       capped: { type: boolean }
                       verified:
                         type: boolean

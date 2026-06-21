@@ -1,6 +1,12 @@
 // 盲盒 RNG + 保底单测（S5-3）。注入确定随机源复现：权重映射、大保底命中、十连保底、出货清零。
 import { describe, it, expect } from 'vitest';
-import { GACHA_POOLS } from '@nw/shared';
+import {
+  GACHA_POOLS,
+  UNIT_CARD_POOL_ID,
+  GACHA_RARITY_TO_CARD_LEVEL,
+  findGachaPool,
+  parseCardKey,
+} from '@nw/shared';
 import { rollGacha, type RandInt } from '../src/gacha';
 
 const pool = GACHA_POOLS[0]!; // standard：single 150 / ten 1350 / pity 90 / tenFloor epic
@@ -49,5 +55,33 @@ describe('rollGacha', () => {
     const { results } = rollGacha(pool, 10, 0, seq([960, 0]));
     expect(results[0]!.rarity).toBe('epic');
     expect(results[9]!.rarity).toBe('common'); // 末抽不被提升
+  });
+});
+
+// 单位卡池（S12-C）：item = 合法 cardKey，稀有度按 GACHA_RARITY_TO_CARD_LEVEL 映射卡级。
+describe('rollGacha 单位卡池', () => {
+  const units = findGachaPool(UNIT_CARD_POOL_ID)!;
+
+  it('池内每个 item 都是合法 cardKey，且卡级匹配稀有度映射', () => {
+    for (const rarity of ['common', 'rare', 'epic', 'legendary'] as const) {
+      const expectLevel = GACHA_RARITY_TO_CARD_LEVEL[rarity]!;
+      for (const itemId of units.itemsByRarity[rarity]) {
+        const parsed = parseCardKey(itemId);
+        expect(parsed).not.toBeNull();
+        expect(parsed!.level).toBe(expectLevel);
+      }
+    }
+  });
+
+  it('rng=0 → common 首卡 = infantry:1（T1）', () => {
+    const { results } = rollGacha(units, 1, 0, zero);
+    expect(results[0]!.rarity).toBe('common');
+    expect(parseCardKey(results[0]!.itemId)!.level).toBe(1);
+  });
+
+  it('legendary 落点 → T4 卡', () => {
+    const { results } = rollGacha(units, 1, units.pityThreshold - 1, zero); // 大保底必出 legendary
+    expect(results[0]!.rarity).toBe('legendary');
+    expect(parseCardKey(results[0]!.itemId)!.level).toBe(4);
   });
 });

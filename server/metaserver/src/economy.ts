@@ -4,6 +4,7 @@
 //  • 钱包镜像——wallet.coins / gacha.pity 权威在 commercial，meta 只在回执后写镜像段供离线展示。
 //  • 重复转化（退币/碎片）S5 暂缓（§4.3 退币额待定 + 补发重算非幂等），只发新皮肤；通道在 commercial 已备。
 import type { Collections, SaveData, Rarity } from '@nw/shared';
+import { grantCards, deriveUnitLevels, UNIT_CARD_POOL_ID } from '@nw/shared';
 import type { CommercialClient, GachaResultEntry } from './commercialClient.js';
 
 /** 逐结果标记是否重复（对照当前库存 + 同批已发，供客户端展示开箱）。 */
@@ -60,6 +61,52 @@ export async function deliverGrant(
   const cur = await cols.saves.findOne({ _id: accountId });
   if (!cur) throw new Error('save missing after grant');
   return cur.save;
+}
+
+/**
+ * 单位卡盲盒发货（S12-C，独立单位卡池）：把 cardGrants（cardKey→张数）入 cardInventory +
+ * 重算 unitLevels（服务器权威，引擎读此跑蓝图）。**乐观锁 read-modify-write**（rev CAS + 重试，
+ * 同 service.mutateSave）——因 unitLevels = deriveUnitLevels(cardInventory) 是派生值，无法用单次
+ * $inc 表达，须在内存重算。幂等：deliveredOrders 已含 orderId 则直接返回当前 save（防 $inc 重复加，
+ * 比皮肤 set 更需此守卫）。同笔顺带写钱包镜像 + pity（与皮肤池 deliverGrant 对称）。
+ */
+export async function deliverCardGrant(
+  cols: Collections,
+  accountId: string,
+  orderId: string,
+  cardGrants: Record<string, number>,
+  coinsAfter: number,
+  pityPatch: Record<string, number> | null,
+  now: number,
+): Promise<SaveData> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const doc = await cols.saves.findOne({ _id: accountId });
+    if (!doc) throw new Error('save missing before card grant');
+    if (doc.save.deliveredOrders?.includes(orderId)) return doc.save; // 幂等：已发过不重复 $inc
+    const cardInventory = grantCards(doc.save.cardInventory ?? {}, cardGrants);
+    const unitLevels = deriveUnitLevels(cardInventory);
+    const set: Record<string, unknown> = {
+      'save.updatedAt': now,
+      'save.wallet.coins': coinsAfter,
+      'save.cardInventory': cardInventory,
+      'save.unitLevels': unitLevels,
+    };
+    if (pityPatch) {
+      for (const [pool, v] of Object.entries(pityPatch)) set[`save.gacha.pity.${pool}`] = v;
+    }
+    const res = await cols.saves.findOneAndUpdate(
+      { _id: accountId, rev: doc.rev },
+      {
+        $addToSet: { 'save.deliveredOrders': orderId },
+        $inc: { 'save.rev': 1, rev: 1 },
+        $set: set,
+      },
+      { returnDocument: 'after' },
+    );
+    if (res) return res.save;
+    // rev 冲突（并发 PUT equipped/flags 或并发 pve 写）→ 重读重试。
+  }
+  throw new Error('rev conflict delivering card grant');
 }
 
 /**
@@ -146,11 +193,23 @@ async function deliverOrder(
   cols: Collections,
   commercial: CommercialClient,
   accountId: string,
-  order: { _id: string; kind: 'shop' | 'gacha'; result: { itemId?: string; results?: GachaResultEntry[] } },
+  order: {
+    _id: string;
+    kind: 'shop' | 'gacha';
+    result: { itemId?: string; results?: GachaResultEntry[]; poolId?: string };
+  },
   coinsAfter: number,
   pityPatch: Record<string, number> | null,
   now: number,
 ): Promise<SaveData> {
+  // 单位卡池订单（S12-C）：results.itemId 是 cardKey，入 cardInventory（不当皮肤）。
+  if (order.kind === 'gacha' && order.result.poolId === UNIT_CARD_POOL_ID) {
+    const cardGrants: Record<string, number> = {};
+    for (const r of order.result.results ?? []) cardGrants[r.itemId] = (cardGrants[r.itemId] ?? 0) + 1;
+    const save = await deliverCardGrant(cols, accountId, order._id, cardGrants, coinsAfter, pityPatch, now);
+    await commercial.orderDelivered({ orderId: order._id });
+    return save;
+  }
   const cur = await cols.saves.findOne({ _id: accountId });
   const owned = cur?.save.inventory.skins ?? [];
   let newSkins: string[];

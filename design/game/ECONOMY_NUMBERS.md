@@ -63,7 +63,9 @@
 **机制**（ADR-009）：每个单位卡分 1–9 级；**5 张 N 级 → 合成 1 张 (N+1) 级，100% 成功**。
 单位的强度等级 = 当前最高合成到的卡级。
 
-> **实现状态（2026-06-21，META_TASKS S12）**：引擎脊柱已落地——`@nw/engine/balance/progression.ts`（`applyUnitLevels` = 等级→蓝图唯一注入点，§4.2 连续属性 + §4.4 三档 trait；暴击机制走 `GameState.combatPrng` + `CombatSystem`，PvP 硬墙不读）。**§4.2 / §4.4 的数值即代码常量**（`STAT_GROWTH_PER_LEVEL` / `TRAIT_BREAKPOINTS`），调参只动那里。**已落地（S12-B，2026-06-21）**：§4.1 合成核心——`@nw/shared/unitCards.ts`（`applyCardMerge` 5→1 + `deriveUnitLevels`）+ SaveData `unitLevels`/`cardInventory`（服务器权威，SAVE_VERSION→3）+ meta `POST /pve/merge`（真 Mongo e2e 绿）+ 引擎 `GameConfig.unitLevels`。**待落地**：§4.1 卡片来源（盲盒/关卡掉落，S12-C）、客户端养成/合成 UI 与实际对局 play-wiring + anti-cheat judge 对齐（S12-D）。
+> **实现状态（2026-06-21，META_TASKS S12）**：引擎脊柱已落地——`@nw/engine/balance/progression.ts`（`applyUnitLevels` = 等级→蓝图唯一注入点，§4.2 连续属性 + §4.4 三档 trait；暴击机制走 `GameState.combatPrng` + `CombatSystem`，PvP 硬墙不读）。**§4.2 / §4.4 的数值即代码常量**（`STAT_GROWTH_PER_LEVEL` / `TRAIT_BREAKPOINTS`），调参只动那里。**已落地（S12-B，2026-06-21）**：§4.1 合成核心——`@nw/shared/unitCards.ts`（`applyCardMerge` 5→1 + `deriveUnitLevels`）+ SaveData `unitLevels`/`cardInventory`（服务器权威，SAVE_VERSION→3）+ meta `POST /pve/merge`（真 Mongo e2e 绿）+ 引擎 `GameConfig.unitLevels`。**已落地（S12-C，2026-06-21）**：§4.1 卡片**两条来源**——①独立单位卡盲盒池（`UNIT_CARD_POOL_ID`+`unitCardPoolItems`，稀有度→卡级 `GACHA_RARITY_TO_CARD_LEVEL` common→T1…legendary→T4）②关卡掉卡（`levelCardReward(levelId)` 确定性整数，ch1–2→T1/ch3–4→T2/ch5–6→T3，终关双倍）；meta `deliverCardGrant` 乐观锁发货入 cardInventory + 重算 unitLevels（不走皮肤 dupe 退币），`/pve/clear`+`/pve/verify` 响应加 `grantedCards`。**待落地**：客户端养成/合成 UI 与实际对局 play-wiring + anti-cheat judge 对齐（S12-D）。
+
+> **§3 单位卡掉落口径落地（S12-C）**：表内「期望 ~0.5/次」概率掉落实现为**确定性整数**（每关固定张数，服务器权威 + L1 抽检幂等优先）；tier/张数即 `levelCardReward` 常量，调「高级卡获取速率」动那里。盲盒补充源映射见 `GACHA_RARITY_TO_CARD_LEVEL`。
 
 ### 4.1 合成成本（以 T1 卡为单位）
 
