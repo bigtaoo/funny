@@ -66,8 +66,12 @@ export const ErrorCode = {
   INSUFFICIENT_MATERIALS: 'INSUFFICIENT_MATERIALS', // 合成材料不足
   INVENTORY_FULL: 'INVENTORY_FULL',                 // 装备库存达 300 上限
   EQUIP_NOT_FOUND: 'EQUIP_NOT_FOUND',               // 装备实例不存在
-  EQUIP_LOCKED: 'EQUIP_LOCKED',                     // 装备被锁（防误用为燃料）→ 不可挂拍
-  EQUIP_IN_USE: 'EQUIP_IN_USE',                     // 装备穿戴中 → 不可挂拍
+  EQUIP_LOCKED: 'EQUIP_LOCKED',                     // 装备被锁（防误用为燃料）→ 不可挂拍/分解
+  EQUIP_IN_USE: 'EQUIP_IN_USE',                     // 装备穿戴中 → 不可挂拍/分解
+  // —— 装备 E3 强化/分解 + E4 穿戴（EQUIPMENT_DESIGN §6/§18）——
+  ENHANCE_MAX_LEVEL: 'ENHANCE_MAX_LEVEL',           // 已 +9 满级，不可再强化
+  NOT_SALVAGEABLE: 'NOT_SALVAGEABLE',               // 不可分解（+5 及以上，§6.3）
+  INVALID_SLOT: 'INVALID_SLOT',                     // 穿戴槽位与装备定义槽位不匹配
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -140,4 +144,7 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.EQUIP_NOT_FOUND]: 404,
   [ErrorCode.EQUIP_LOCKED]: 409,
   [ErrorCode.EQUIP_IN_USE]: 409,
+  [ErrorCode.ENHANCE_MAX_LEVEL]: 409,
+  [ErrorCode.NOT_SALVAGEABLE]: 409,
+  [ErrorCode.INVALID_SLOT]: 400,
 };

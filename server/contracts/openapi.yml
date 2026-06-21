@@ -956,6 +956,129 @@ paths:
         '402': { $ref: '#/components/responses/ErrorResp' }
         '409': { $ref: '#/components/responses/ErrorResp' }
 
+  /equipment/enhance:
+    post:
+      operationId: enhanceEquipment
+      tags: [save]
+      summary: 装备强化（E3，服务器掷骰：成功率表→扣材料+金币→成功 level+1，失败不掉级）。idempotencyKey 幂等
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [instanceId, idempotencyKey]
+              properties:
+                instanceId: { type: string, description: 待强化的装备实例 id（equipmentInv 内） }
+                idempotencyKey: { type: string, description: 客户端生成幂等键；掷骰/扣料绑定此键，重放返回首次结果 }
+      responses:
+        '200':
+          description: 成功（success=false 表示掷骰失败，已损耗材料/金币、等级不变）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [success, instance, save]
+                    properties:
+                      success: { type: boolean, description: 本次强化是否成功（成功则 instance.level+1） }
+                      instance: { $ref: '#/components/schemas/EquipmentInstance' }
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+
+  /equipment/salvage:
+    post:
+      operationId: salvageEquipment
+      tags: [save]
+      summary: 装备分解（E3，+0~4 返 70% 打造材料、移出库存；+5/穿戴中/锁定拒）。批量、idempotencyKey 幂等
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [instanceIds, idempotencyKey]
+              properties:
+                instanceIds:
+                  type: array
+                  items: { type: string }
+                  minItems: 1
+                  description: 待分解的装备实例 id 列表（含 +0 冗余件，可批量）
+                idempotencyKey: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [refunded, save]
+                    properties:
+                      refunded:
+                        type: object
+                        additionalProperties: { type: integer }
+                        description: 返还的材料合计（材料 id→数量）
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+
+  /equipment/equip:
+    post:
+      operationId: equipEquipment
+      tags: [save]
+      summary: 装备穿戴/卸下（E4，校验槽位匹配→写 gear.global[slot] 或 byUnit）。instanceId=null 卸下。纯状态
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slot, instanceId]
+              properties:
+                slot: { type: string, enum: [weapon, armor, trinket], description: 目标槽位 }
+                instanceId:
+                  type: string
+                  nullable: true
+                  description: 要穿上的实例 id；null 卸下该槽
+                unitType: { type: string, description: '缺省=gear.global 全军共享；给定=gear.byUnit 对应兵种（阶段二）' }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+
   /achievements:
     get:
       operationId: getAchievements

@@ -209,6 +209,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/equipment/craft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 装备合成（E2，服务器权威：扣文具材料→roll 一件 +0 基础装备→入库[300 上限]）。idempotencyKey 幂等 */
+        post: operations["craftEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/equipment/enhance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 装备强化（E3，服务器掷骰：成功率表→扣材料+金币→成功 level+1，失败不掉级）。idempotencyKey 幂等 */
+        post: operations["enhanceEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/equipment/salvage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 装备分解（E3，+0~4 返 70% 打造材料、移出库存；+5/穿戴中/锁定拒）。批量、idempotencyKey 幂等 */
+        post: operations["salvageEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/equipment/equip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 装备穿戴/卸下（E4，校验槽位匹配→写 gear.global[slot] 或 byUnit）。instanceId=null 卸下。纯状态 */
+        post: operations["equipEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/achievements": {
         parameters: {
             query?: never;
@@ -1468,6 +1536,175 @@ export interface operations {
             400: components["responses"]["ErrorResp"];
             401: components["responses"]["ErrorResp"];
             402: components["responses"]["ErrorResp"];
+        };
+    };
+    craftEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 装备定义 id（EQUIPMENT_DEFS，决定槽位/稀有度/配方） */
+                    defId: string;
+                    /** @description 客户端生成幂等键；重放返回首次结果（不二次扣料/roll） */
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            instance: components["schemas"]["EquipmentInstance"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    enhanceEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 待强化的装备实例 id（equipmentInv 内） */
+                    instanceId: string;
+                    /** @description 客户端生成幂等键；掷骰/扣料绑定此键，重放返回首次结果 */
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功（success=false 表示掷骰失败，已损耗材料/金币、等级不变） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @description 本次强化是否成功（成功则 instance.level+1） */
+                            success: boolean;
+                            instance: components["schemas"]["EquipmentInstance"];
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    salvageEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 待分解的装备实例 id 列表（含 +0 冗余件，可批量） */
+                    instanceIds: string[];
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @description 返还的材料合计（材料 id→数量） */
+                            refunded: {
+                                [key: string]: number;
+                            };
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    equipEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description 目标槽位
+                     * @enum {string}
+                     */
+                    slot: "weapon" | "armor" | "trinket";
+                    /** @description 要穿上的实例 id；null 卸下该槽 */
+                    instanceId: string | null;
+                    /** @description 缺省=gear.global 全军共享；给定=gear.byUnit 对应兵种（阶段二） */
+                    unitType?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
         };
     };
     getAchievements: {
