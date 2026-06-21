@@ -453,6 +453,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onOpenAuction() { goAuctionHouse(worldApi, worldId); },
       onReplaySiege(siegeId) { void goSiegeReplay(worldApi, worldId, siegeId); },
       onOpenDefense(tileKey) { goDefenseEditor(worldApi, worldId, tileKey); },
+      onOpenTeams() { goTeams(worldApi, worldId); },
       worldApi,
       worldId,
       playerName: playerName(),
@@ -526,7 +527,29 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onBack() { goWorldMap(worldApi, worldId); },
       worldApi,
       worldId,
-      tileKey,
+      target: { mode: 'defense', tileKey },
+    });
+  }
+
+  /** Open the attack-team list (G3-2c); back → map, edit → team formation editor. */
+  function goTeams(worldApi: WorldApiClient, worldId: string): void {
+    inLobby = false;
+    views.showTeams({
+      onBack() { goWorldMap(worldApi, worldId); },
+      onEditTeam(teamId, teamName) { goTeamEditor(worldApi, worldId, teamId, teamName); },
+      worldApi,
+      worldId,
+    });
+  }
+
+  /** Open the formation editor for one attack-team slot; back → team list. */
+  function goTeamEditor(worldApi: WorldApiClient, worldId: string, teamId: string, teamName: string): void {
+    inLobby = false;
+    views.showDefenseEditor({
+      onBack() { goTeams(worldApi, worldId); },
+      worldApi,
+      worldId,
+      target: { mode: 'attack', teamId, teamName },
     });
   }
 

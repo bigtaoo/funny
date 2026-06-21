@@ -41,6 +41,7 @@ import type { FamilySceneCallbacks } from '../scenes/FamilyScene';
 import type { SectSceneCallbacks, SectSceneView } from '../scenes/SectScene';
 import type { AuctionSceneCallbacks } from '../scenes/AuctionScene';
 import type { DefenseEditorCallbacks } from '../scenes/DefenseEditorScene';
+import type { TeamsCallbacks } from '../scenes/TeamsScene';
 
 /** Live handle for the lobby scene — the core pushes the aggregate social badge into it. */
 export interface LobbyView {
@@ -129,6 +130,7 @@ export interface AppViews {
   showAuction(cb: AuctionSceneCallbacks): void;
   /** SLG simplified defense placement editor (S8-9 C3). */
   showDefenseEditor(cb: DefenseEditorCallbacks): void;
+  showTeams(cb: TeamsCallbacks): void;
   /**
    * Netplay match. The core passes the pre-built engine in `opts.engine` plus the
    * local side; the view turns `localSide` into the side-flipped layout.

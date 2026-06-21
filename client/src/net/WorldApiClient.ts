@@ -27,7 +27,10 @@ export type SeasonView = components['schemas']['SeasonView'];
 export type SlgShopItemView = components['schemas']['SlgShopItemView'];
 export type SiegeResolveResult = components['schemas']['SiegeResolveResult'];
 export type SiegeDefenseView = components['schemas']['SiegeDefenseView'];
+export type SiegeReplayView = components['schemas']['SiegeReplayView'];
 export type DefenseConfig = components['schemas']['DefenseConfig'];
+export type TeamTemplate = components['schemas']['TeamTemplate'];
+export type ArmyEntry = components['schemas']['ArmyEntry'];
 export type SectView = components['schemas']['SectView'];
 export type SectDetailView = components['schemas']['SectDetailView'];
 export type SectMemberFamilyView = components['schemas']['SectMemberFamilyView'];
@@ -136,8 +139,12 @@ export class WorldApiClient {
     toX: number, toY: number,
     kind: MarchKind,
     troops: number,
+    teamId?: string,
   ): Promise<MarchView> {
-    return this.req('POST', '/world/march', { worldId, fromX, fromY, toX, toY, kind, troops });
+    return this.req('POST', '/world/march', {
+      worldId, fromX, fromY, toX, toY, kind, troops,
+      ...(teamId ? { teamId } : {}),
+    });
   }
 
   async recallMarch(marchId: string, worldId: string): Promise<{ ok: true }> {
@@ -166,6 +173,28 @@ export class WorldApiClient {
   /** 设/改防守 config。tileKey='base' 主城 或 '{x}:{y}' 领地。 */
   async setDefense(worldId: string, tileKey: string, defenseConfig: DefenseConfig): Promise<{ ok: true }> {
     return this.req('PUT', '/world/defense', { worldId, tileKey, defenseConfig });
+  }
+
+  // ── Teams（进攻布阵模板，G3-2c）─────────────────────────────────────────────
+
+  /** 读进攻布阵模板列表（队伍编辑器 / 出征选队预填）。 */
+  async getTeams(worldId: string): Promise<TeamTemplate[]> {
+    return this.req('GET', `/world/teams?worldId=${encodeURIComponent(worldId)}`);
+  }
+
+  /** 覆盖写进攻布阵模板（整组传全量，≤5 支）。 */
+  async setTeams(worldId: string, teams: TeamTemplate[]): Promise<{ ok: true }> {
+    return this.req('PUT', '/world/teams', { worldId, teams });
+  }
+
+  // ── Siege replay（重播观战，G3-2c）──────────────────────────────────────────
+
+  /**
+   * 取一场关键围攻的重播关卡（seed + 双方布阵重建的 LevelDefinition）。攻守双方可读。
+   * 客户端凭返回的 seed 以空 ReplayInputSource 在 siege 模式 headless 重跑 → 逐字复现。
+   */
+  async getSiegeReplay(worldId: string, siegeId: string): Promise<SiegeReplayView> {
+    return this.req('GET', `/world/siege/${encodeURIComponent(siegeId)}/replay?worldId=${encodeURIComponent(worldId)}`);
   }
 
   // ── Siege（围攻录像复算，S8-3b）─────────────────────────────────────────────

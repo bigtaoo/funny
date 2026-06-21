@@ -28,6 +28,7 @@ import { FamilyScene, type FamilySceneCallbacks } from './scenes/FamilyScene';
 import { SectScene, type SectSceneCallbacks, type SectSceneView } from './scenes/SectScene';
 import { AuctionScene, type AuctionSceneCallbacks } from './scenes/AuctionScene';
 import { DefenseEditorScene, type DefenseEditorCallbacks } from './scenes/DefenseEditorScene';
+import { TeamsScene, type TeamsCallbacks } from './scenes/TeamsScene';
 import { OwnerId, ownerToSide } from './game';
 import type { Replay } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
@@ -213,6 +214,11 @@ class PixiAppViews implements AppViews {
   showDefenseEditor(cb: DefenseEditorCallbacks): void {
     this.leaveLobby();
     this.manager.goto(new DefenseEditorScene(this.layout, this.input, cb));
+  }
+
+  showTeams(cb: TeamsCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new TeamsScene(this.layout, this.input, cb));
   }
 
   showGameNet(localSide: OwnerId, cb: GameSceneCallbacks, opts: GameSceneOptions): NetGameView {

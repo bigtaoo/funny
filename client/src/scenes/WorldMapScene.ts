@@ -36,6 +36,8 @@ export interface WorldMapCallbacks {
    * main city or the full tileId `{worldId}:{x}:{y}` for an owned territory.
    */
   onOpenDefense(tileKey: string): void;
+  /** Open the attack-team manager (G3-2c) — 5 formation templates used when sieging. */
+  onOpenTeams(): void;
   worldApi: WorldApiClient;
   worldId: string;
   playerName: string;
@@ -638,6 +640,7 @@ export class WorldMapScene implements Scene {
           [t('world.myBase'), `(${tx}, ${ty})`],
           [
             { label: t('world.actDefense'), action: () => { this.closeModal(); this.cb.onOpenDefense('base'); } },
+            { label: t('world.team.manage'), action: () => { this.closeModal(); this.cb.onOpenTeams(); } },
             { label: '✕', action: () => this.closeModal() },
           ],
         );
@@ -664,7 +667,7 @@ export class WorldMapScene implements Scene {
       const buttons: { label: string; action: () => void }[] = [];
       const protectedNow = (tile.protectedUntil ?? 0) > Date.now();
       if (!protectedNow) {
-        buttons.push({ label: t('world.actAttack'), action: () => this.showDeployDialog(tx, ty, 'attack') });
+        buttons.push({ label: t('world.actAttack'), action: () => void this.showAttackTeamPicker(tx, ty) });
       }
       buttons.push({ label: '✕', action: () => this.closeModal() });
       this.showModal([t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`], buttons);
@@ -718,6 +721,50 @@ export class WorldMapScene implements Scene {
         { label: '✕', action: () => this.closeModal() },
       ],
     );
+  }
+
+  // ── 围攻选队（G3-2c §16.2）────────────────────────────────────────────────
+  // 围攻必须挂一支进攻布阵模板（队伍）出征——committed 兵力 = 队伍各单位满血之和，由服务端
+  // 推导（覆盖派兵数）。空队伍列表 → 引导去管理队伍。
+
+  private async showAttackTeamPicker(tx: number, ty: number): Promise<void> {
+    const me = this.me;
+    if (!me?.joined || !me.mainBaseTile) { this.showToast(t('world.needBase'), C.red); return; }
+    let teams: { id: string; name: string; army: { initialHp?: number }[] }[] = [];
+    try {
+      teams = await this.cb.worldApi.getTeams(this.cb.worldId);
+    } catch { /* offline — treat as empty */ }
+    const usable = teams.filter((tm) => tm.army.length > 0);
+    const buttons: { label: string; action: () => void }[] = [];
+    for (const tm of usable) {
+      const committed = tm.army.reduce((s, e) => s + Math.max(0, Math.floor(e.initialHp ?? 0)), 0);
+      buttons.push({
+        label: `${tm.name} · ${t('world.team.committed').replace('{n}', String(committed))}`,
+        action: () => void this.doMarchTeam(tx, ty, tm.id),
+      });
+    }
+    buttons.push({ label: t('world.team.manage'), action: () => this.cb.onOpenTeams() });
+    buttons.push({ label: '✕', action: () => this.closeModal() });
+    const head = usable.length > 0 ? t('world.team.pickTitle') : t('world.team.noTeams');
+    this.showModal([head, `(${tx}, ${ty})`], buttons);
+  }
+
+  private async doMarchTeam(tx: number, ty: number, teamId: string): Promise<void> {
+    this.closeModal();
+    const me = this.me;
+    if (!me?.mainBaseTile) { this.showToast(t('world.needBase'), C.red); return; }
+    const [fx, fy] = this.parseTileId(me.mainBaseTile);
+    try {
+      // troops=1 占位，服务端按队伍 committed 兵力覆盖（§16.2）。
+      const march = await this.cb.worldApi.startMarch(this.cb.worldId, fx, fy, tx, ty, 'attack', 1, teamId);
+      this.myAttackTiles.add(march.toTile);
+      this.marches = await this.cb.worldApi.getMarches(this.cb.worldId);
+      this.me = await this.cb.worldApi.getMe(this.cb.worldId);
+      this.showToast(t('world.dispatched'));
+      this.renderMap(); this.renderHud();
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
   }
 
   private async doMarch(tx: number, ty: number, kind: DeployKind, troops: number): Promise<void> {

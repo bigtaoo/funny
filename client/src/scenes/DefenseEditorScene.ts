@@ -1,17 +1,17 @@
-// DefenseEditorScene — SLG 简化摆位防守编辑器（S8-9 C3）
+// DefenseEditorScene — SLG 通用半场布兵编辑器（S8-9 C3 + G3-2c 推广为攻守两用）
 //
-// 玩家为主城（tileKey='base'）或某块己方领地（tileKey='{x}:{y}'）编辑一份防守 config，
-// 形态 = 引擎 LevelDefinition 的受限子集（U8 / U10）：
-//   - garrison           驻军：在防守方（Top）半场预置已收集单位（步兵/盾兵/弓手）
-//   - defenderBuildings  防守建筑：在建筑行（TOP_BUILDING_ROW）放箭塔/兵营
-//   - defenderBaseLevel  基地强化：0–3 级
-// 围攻发生时 worldsvc / 客户端用 buildSiegeLevel(config) 把它规整成可打的围攻关卡。
+// 两种形态，由 target.mode 区分：
 //
-// 「已收集单位」约束（U8）：调色板只列出有卡牌（CARD_DEFINITIONS）的单位/建筑类型，
-// PvE-only 单位（Ironclad/Runner/…，无卡）天然不出现，玩家无法摆放未收集内容。
+// ① 防守（mode='defense'）：为主城（tileKey='base'）或己方/盟军领地（tileKey='{x}:{y}'）
+//    编辑防守 config = 引擎 LevelDefinition 受限子集（U8 / U10）——守方（Top）半场 garrison +
+//    建筑行 defenderBuildings + defenderBaseLevel(0–3)。保存走 setDefense（覆盖写）。
 //
-// 交互：选调色板工具（单位/建筑/擦除）→ 点格子摆放/替换/移除；基地强化用上下步进。
-// 预填：进入时拉 getDefense 还原上次配置。保存走 setDefense（覆盖写）。
+// ② 进攻（mode='attack'，G3-2c §16.2）：编辑一支进攻布阵模板（队伍）——攻方（Bottom）半场预布
+//    已收集单位；无建筑 / 无基地强化（攻方只摆兵）。每单位以满血容量出战（= 兵力当量，§16.1；
+//    v1 不做每单位兵力滑杆，committed 兵力 = 单位数 × 满血）。保存走 getTeams→替换该槽→setTeams。
+//
+// 「已收集单位」约束（U8）：调色板只列有卡牌（CARD_DEFINITIONS）的单位/建筑，PvE-only 单位天然
+// 不出现。围攻发生时 worldsvc headless 跑引擎用攻方军 + 守方 config 算权威结果（§16.8）。
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';
@@ -19,17 +19,21 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
-import type { WorldApiClient } from '../net/WorldApiClient';
+import type { WorldApiClient, TeamTemplate, ArmyEntry } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
-import { ATTACK_LANES, BASE_COLS, CARD_DEFINITIONS } from '../game/config';
+import { ATTACK_LANES, BASE_COLS, CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '../game/config';
 import { CardType, UnitType, BuildingType } from '../game/types';
+
+/** 编辑目标：防守某格 / 编辑某支进攻队伍（G3-2c）。 */
+export type DefenseEditorTarget =
+  | { mode: 'defense'; tileKey: string }
+  | { mode: 'attack'; teamId: string; teamName: string };
 
 export interface DefenseEditorCallbacks {
   onBack(): void;
   worldApi: WorldApiClient;
   worldId: string;
-  /** 'base' 主城 或 '{x}:{y}' 己方领地键。 */
-  tileKey: string;
+  target: DefenseEditorTarget;
 }
 
 // ── Collected pool (U8) ───────────────────────────────────────────────────────
@@ -68,7 +72,9 @@ type Tool =
 // Defender deployment zone shown top→bottom: building row first, then garrison rows
 // 16..9 (defender's own half). Garrison schema allows rows 1..16; we expose the back
 // half which is where a defender realistically forts up — keeps the grid mobile-sized.
-const GARRISON_ROWS = [16, 15, 14, 13, 12, 11, 10, 9] as const;
+const DEFENSE_ROWS = [16, 15, 14, 13, 12, 11, 10, 9] as const;
+// Attacker (Bottom) half shown top→bottom: rows 8..1 (1 = home spawn row at the bottom).
+const ATTACK_ROWS = [8, 7, 6, 5, 4, 3, 2, 1] as const;
 
 const MAX_GARRISON = 30;
 
@@ -88,10 +94,17 @@ export class DefenseEditorScene implements Scene {
   private readonly h: number;
   private readonly cb: DefenseEditorCallbacks;
 
+  // Mode-derived layout (G3-2c)
+  private readonly mode: 'defense' | 'attack';
+  private readonly gRows: readonly number[];      // garrison/army rows shown (top→bottom)
+  private readonly hasBuildingRow: boolean;        // defense only: building row + base level
+
   // Config state
   private buildings = new Map<number, BuildingType>();        // col → building (building row)
   private garrison = new Map<string, UnitType>();             // "col:row" → unit
   private baseLevel = 0;
+  // Attack mode: the full team list (loaded once) so save merges this slot without clobbering others.
+  private teams: TeamTemplate[] = [];
 
   private tool: Tool = { kind: 'erase' };
   private loading = true;
@@ -118,6 +131,10 @@ export class DefenseEditorScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
+    this.mode = cb.target.mode;
+    this.gRows = this.mode === 'attack' ? ATTACK_ROWS : DEFENSE_ROWS;
+    this.hasBuildingRow = this.mode === 'defense';
+    if (this.mode === 'attack') this.tool = { kind: 'unit', type: COLLECTED_UNITS[0] ?? UnitType.Infantry };
     this.container = new PIXI.Container();
 
     const bg = buildPaperBackground('defense', this.w, this.h);
@@ -137,11 +154,34 @@ export class DefenseEditorScene implements Scene {
 
   private async loadData(): Promise<void> {
     try {
-      const cfg = await this.cb.worldApi.getDefense(this.cb.worldId, this.cb.tileKey);
-      if (cfg && !this.destroyed) this.applyConfig(cfg as Record<string, unknown>);
+      if (this.cb.target.mode === 'attack') {
+        const teams = await this.cb.worldApi.getTeams(this.cb.worldId);
+        if (!this.destroyed) {
+          this.teams = teams;
+          const team = teams.find((tm) => tm.id === (this.cb.target as { teamId: string }).teamId);
+          if (team) this.applyArmy(team.army);
+        }
+      } else {
+        const cfg = await this.cb.worldApi.getDefense(this.cb.worldId, this.cb.target.tileKey);
+        if (cfg && !this.destroyed) this.applyConfig(cfg as Record<string, unknown>);
+      }
     } catch { /* offline / unset — start blank */ }
     this.loading = false;
     if (!this.destroyed) this.render();
+  }
+
+  /** Decode a stored attacker army (G3-2c) into the garrison map (units only, attacker rows). */
+  private applyArmy(army: ArmyEntry[]): void {
+    this.garrison.clear();
+    for (const e of army) {
+      if (!e || typeof e !== 'object') continue;
+      const { unitType, col, row } = e;
+      if (typeof unitType === 'string' && (COLLECTED_UNITS as string[]).includes(unitType)
+        && typeof col === 'number' && (ATTACK_LANES as readonly number[]).includes(col)
+        && typeof row === 'number' && (this.gRows as readonly number[]).includes(row)) {
+        this.garrison.set(`${col}:${row}`, unitType as UnitType);
+      }
+    }
   }
 
   /** Decode a stored DefenseConfig subset back into editor state (tolerant of junk). */
@@ -155,7 +195,7 @@ export class DefenseEditorScene implements Scene {
         const { unitType, col, row } = e as Record<string, unknown>;
         if (typeof unitType === 'string' && (COLLECTED_UNITS as string[]).includes(unitType)
           && typeof col === 'number' && (ATTACK_LANES as readonly number[]).includes(col)
-          && typeof row === 'number' && (GARRISON_ROWS as readonly number[]).includes(row)) {
+          && typeof row === 'number' && (this.gRows as readonly number[]).includes(row)) {
           this.garrison.set(`${col}:${row}`, unitType as UnitType);
         }
       }
@@ -175,19 +215,35 @@ export class DefenseEditorScene implements Scene {
     this.baseLevel = typeof lv === 'number' ? Math.max(0, Math.min(3, Math.floor(lv))) : 0;
   }
 
+  /** 攻方军：每单位以满血容量出战（initialHp = 蓝图满血 = 兵力当量，§16.1）。 */
+  private buildArmy(): ArmyEntry[] {
+    return [...this.garrison.entries()].map(([key, unitType]) => {
+      const [col, row] = key.split(':').map(Number);
+      return { unitType, col: col!, row: row!, initialHp: UNIT_BLUEPRINTS[unitType].hp };
+    });
+  }
+
   private async doSave(): Promise<void> {
     if (this.saving) return;
     this.saving = true;
-    const config = {
-      garrison: [...this.garrison.entries()].map(([key, unitType]) => {
-        const [col, row] = key.split(':').map(Number);
-        return { unitType, col, row };
-      }),
-      defenderBuildings: [...this.buildings.entries()].map(([col, buildingType]) => ({ buildingType, col })),
-      defenderBaseLevel: this.baseLevel,
-    };
     try {
-      await this.cb.worldApi.setDefense(this.cb.worldId, this.cb.tileKey, config);
+      if (this.cb.target.mode === 'attack') {
+        const { teamId, teamName } = this.cb.target;
+        const army = this.buildArmy();
+        const next = this.teams.filter((tm) => tm.id !== teamId);
+        next.push({ id: teamId, name: teamName, army });
+        await this.cb.worldApi.setTeams(this.cb.worldId, next);
+      } else {
+        const config = {
+          garrison: [...this.garrison.entries()].map(([key, unitType]) => {
+            const [col, row] = key.split(':').map(Number);
+            return { unitType, col, row };
+          }),
+          defenderBuildings: [...this.buildings.entries()].map(([col, buildingType]) => ({ buildingType, col })),
+          defenderBaseLevel: this.baseLevel,
+        };
+        await this.cb.worldApi.setDefense(this.cb.worldId, this.cb.target.tileKey, config);
+      }
       this.showToast(t('world.defense.saved'));
       this.saving = false;
       this.cb.onBack();
@@ -221,17 +277,18 @@ export class DefenseEditorScene implements Scene {
     this.bodyLayer.addChild(back);
     this.hits.push({ rect: { x: 0, y: 0, w: 90, h: HEADER_H }, action: () => this.cb.onBack() });
 
-    const isBase = this.cb.tileKey === 'base';
-    const titleStr = isBase
-      ? t('world.defense.titleBase')
-      : t('world.defense.titleTile').replace('{tile}', this.cb.tileKey);
+    const titleStr = this.cb.target.mode === 'attack'
+      ? t('world.team.editTitle').replace('{name}', this.cb.target.teamName)
+      : this.cb.target.tileKey === 'base'
+        ? t('world.defense.titleBase')
+        : t('world.defense.titleTile').replace('{tile}', this.cb.target.tileKey);
     const title = txt(titleStr, 14, C.dark, true);
     title.anchor.set(0.5, 0);
     title.x = w / 2; title.y = (HEADER_H - title.height) / 2;
     this.bodyLayer.addChild(title);
 
-    // Base-level stepper (right side of header)
-    this.renderBaseStepper(w - PAD, 8);
+    // Base-level stepper (defense only — attacker has no base/buildings)
+    if (this.hasBuildingRow) this.renderBaseStepper(w - PAD, 8);
 
     // Palette
     this.renderPalette(HEADER_H + 4);
@@ -284,9 +341,10 @@ export class DefenseEditorScene implements Scene {
   private renderPalette(top: number): void {
     const { w } = this;
     const tools: { tool: Tool; label: string; tint: number }[] = [
-      ...COLLECTED_BUILDINGS.map((bt) => ({
+      // 建筑仅防守模式（攻方只摆兵）。
+      ...(this.hasBuildingRow ? COLLECTED_BUILDINGS.map((bt) => ({
         tool: { kind: 'building', type: bt } as Tool, label: t(nameKeyFor('building', bt)), tint: C.gold,
-      })),
+      })) : []),
       ...COLLECTED_UNITS.map((ut) => ({
         tool: { kind: 'unit', type: ut } as Tool, label: t(nameKeyFor('unit', ut)), tint: C.accent,
       })),
@@ -325,7 +383,8 @@ export class DefenseEditorScene implements Scene {
 
   private renderGrid(top: number, bottom: number): void {
     const { w } = this;
-    const rows = 1 + GARRISON_ROWS.length; // building row + garrison rows
+    const buildRows = this.hasBuildingRow ? 1 : 0;
+    const rows = buildRows + this.gRows.length; // (defense: building row +) garrison rows
     const availW = w - PAD * 2;
     const availH = bottom - top;
     const cellW = availW / 12;
@@ -342,9 +401,9 @@ export class DefenseEditorScene implements Scene {
     const attackSet = new Set<number>(ATTACK_LANES as readonly number[]);
     const [baseLo, baseHi] = BASE_COLS;
 
-    // Display rows: 0 = building row (TOP_BUILDING_ROW), 1..n = GARRISON_ROWS
+    // Display rows: (defense only) dr 0 = building row; remaining = this.gRows
     for (let dr = 0; dr < rows; dr++) {
-      const isBuildingRow = dr === 0;
+      const isBuildingRow = this.hasBuildingRow && dr === 0;
       const py = gridY + dr * cellH;
       for (let col = 0; col < 12; col++) {
         const px = gridX + col * cellW;
@@ -353,7 +412,7 @@ export class DefenseEditorScene implements Scene {
 
         // Cell background
         let fill = 0xf2ece0;
-        if (isBaseCol) fill = isBuildingRow ? 0xd9b3b3 : 0xe6dccb; // defender base column tint
+        if (isBaseCol) fill = isBuildingRow ? 0xd9b3b3 : 0xe6dccb; // base column tint
         g.beginFill(fill, 0.85);
         g.lineStyle(0.6, 0xc8bba8, 0.7);
         g.drawRect(px + 0.5, py + 0.5, cellW - 1, cellH - 1);
@@ -362,7 +421,6 @@ export class DefenseEditorScene implements Scene {
         // Content
         if (isBuildingRow) {
           if (isBaseCol && col === baseLo) {
-            // Defender base marker spanning the two base cols
             g.beginFill(0xcc3333, 0.5);
             g.drawRect(px + 2, py + 2, cellW * 2 - 4, cellH - 4);
             g.endFill();
@@ -372,7 +430,7 @@ export class DefenseEditorScene implements Scene {
             if (b) this.drawBuilding(g, px, py, cellW, cellH, b);
           }
         } else {
-          const row = GARRISON_ROWS[dr - 1]!;
+          const row = this.gRows[dr - buildRows]!;
           if (isAttack) {
             const u = this.garrison.get(`${col}:${row}`);
             if (u) this.drawUnit(g, px, py, cellW, cellH, u);
@@ -381,11 +439,12 @@ export class DefenseEditorScene implements Scene {
       }
     }
 
-    // Row labels (left): build / 16..9
-    const buildLbl = txt(t('world.defense.buildRow'), 9, C.mid);
-    buildLbl.anchor.set(1, 0.5);
-    buildLbl.x = gridX - 3; buildLbl.y = gridY + cellH / 2;
-    this.bodyLayer.addChild(buildLbl);
+    // Row label (left): defense → 建筑行; attack → 出兵行 at the home row (bottom).
+    const lbl = txt(this.hasBuildingRow ? t('world.defense.buildRow') : t('world.team.frontRow'), 9, C.mid);
+    lbl.anchor.set(1, 0.5);
+    lbl.x = gridX - 3;
+    lbl.y = this.hasBuildingRow ? gridY + cellH / 2 : gridY + (rows - 0.5) * cellH;
+    this.bodyLayer.addChild(lbl);
   }
 
   private drawBuilding(g: PIXI.Graphics, px: number, py: number, cw: number, ch: number, type: BuildingType): void {
@@ -423,14 +482,15 @@ export class DefenseEditorScene implements Scene {
     panel.y = top;
     this.bodyLayer.addChild(panel);
 
-    const counts = txt(
-      `${t('world.defense.buildings')} ${this.buildings.size}   ${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}`,
-      11, C.dark,
-    );
+    const countsStr = this.mode === 'attack'
+      // committed 兵力 = 各单位满血之和（出征即扣此数，§16.2）。
+      ? `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}`
+      : `${t('world.defense.buildings')} ${this.buildings.size}   ${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}`;
+    const counts = txt(countsStr, 11, C.dark);
     counts.x = PAD; counts.y = top + 8;
     this.bodyLayer.addChild(counts);
 
-    const hint = txt(t('world.defense.hint'), 9, C.mid);
+    const hint = txt(this.mode === 'attack' ? t('world.team.hint') : t('world.defense.hint'), 9, C.mid);
     hint.x = PAD; hint.y = top + 26;
     this.bodyLayer.addChild(hint);
 
@@ -457,21 +517,29 @@ export class DefenseEditorScene implements Scene {
     } });
   }
 
+  /** 攻方军 committed 兵力 = 各单位满血之和（与 buildArmy / 服务端求和一致）。 */
+  private committedTroops(): number {
+    let sum = 0;
+    for (const unitType of this.garrison.values()) sum += UNIT_BLUEPRINTS[unitType].hp;
+    return sum;
+  }
+
   // ── Cell placement ───────────────────────────────────────────────────────────
 
   private onGridTap(sx: number, sy: number): void {
     if (this.cellW <= 0) return;
     const col = Math.floor((sx - this.gridX) / this.cellW);
     const dr = Math.floor((sy - this.gridY) / this.cellH);
-    const rows = 1 + GARRISON_ROWS.length;
+    const buildRows = this.hasBuildingRow ? 1 : 0;
+    const rows = buildRows + this.gRows.length;
     if (col < 0 || col > 11 || dr < 0 || dr >= rows) return;
     if (!(ATTACK_LANES as readonly number[]).includes(col)) {
       this.showToast(t('world.defense.baseColBlocked'), C.red);
       return;
     }
 
-    if (dr === 0) {
-      // Building row
+    if (this.hasBuildingRow && dr === 0) {
+      // Building row (defense only)
       if (this.tool.kind === 'erase') {
         this.buildings.delete(col);
       } else if (this.tool.kind === 'building') {
@@ -481,8 +549,8 @@ export class DefenseEditorScene implements Scene {
         return;
       }
     } else {
-      // Garrison row
-      const row = GARRISON_ROWS[dr - 1]!;
+      // Garrison / army row
+      const row = this.gRows[dr - buildRows]!;
       const key = `${col}:${row}`;
       if (this.tool.kind === 'erase') {
         this.garrison.delete(key);
