@@ -63,6 +63,8 @@
 **机制**（ADR-009）：每个单位卡分 1–9 级；**5 张 N 级 → 合成 1 张 (N+1) 级，100% 成功**。
 单位的强度等级 = 当前最高合成到的卡级。
 
+> **实现状态（2026-06-21，META_TASKS S12）**：引擎脊柱已落地——`@nw/engine/balance/progression.ts`（`applyUnitLevels` = 等级→蓝图唯一注入点，§4.2 连续属性 + §4.4 三档 trait；暴击机制走 `GameState.combatPrng` + `CombatSystem`，PvP 硬墙不读）。**§4.2 / §4.4 的数值即代码常量**（`STAT_GROWTH_PER_LEVEL` / `TRAIT_BREAKPOINTS`），调参只动那里。**待落地**：§4.1 合成数据流（5→1 卡片库存、meta 合成端点、盲盒产卡）与客户端 UI（S12-B/C/D）；当前等级来源 SaveData 字段仍是 S3-2 的 per-stat `pveUpgrades`，S12-B 迁移成 `unitLevels`。
+
 ### 4.1 合成成本（以 T1 卡为单位）
 
 | 目标级 | 该级 = 多少张 T1 卡 | 累计到该级总消耗(T1) |

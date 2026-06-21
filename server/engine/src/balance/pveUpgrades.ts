@@ -11,6 +11,7 @@
 import { UNIT_BLUEPRINTS } from '../config';
 import { UnitType, type UnitBlueprint } from '../types';
 import { applyEquipment, clampEffectCaps, type EngineEquipmentInput } from './equipment';
+import { applyUnitLevels } from './progression';
 
 // ── 材料（关卡掉落，PvE 升级货币）────────────────────────────────────────────
 //
@@ -106,9 +107,11 @@ export function buildPvpBlueprints(): Record<UnitType, UnitBlueprint> {
 export function buildCampaignBlueprints(
   levels: Record<string, number>,
   equip?: EngineEquipmentInput,
+  unitLevels?: Partial<Record<UnitType, number>>,
 ): Record<UnitType, UnitBlueprint> {
   const bp = cloneBlueprints();
   applyPveUpgrades(bp, levels);
+  applyUnitLevels(bp, unitLevels);
   applyEquipment(bp, equip);
   clampEffectCaps(bp);
   return bp;
@@ -127,9 +130,11 @@ export function buildCampaignBlueprints(
 export function buildSiegeBlueprints(
   levels: Record<string, number>,
   equip?: EngineEquipmentInput,
+  unitLevels?: Partial<Record<UnitType, number>>,
 ): Record<UnitType, UnitBlueprint> {
   const bp = cloneBlueprints();
   applyPveUpgrades(bp, levels);
+  applyUnitLevels(bp, unitLevels);
   applyEquipment(bp, equip);
   clampEffectCaps(bp);
   return bp;

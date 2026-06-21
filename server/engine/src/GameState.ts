@@ -41,6 +41,8 @@ export class GameState {
   readonly bottomPlayer: Player;
   readonly topPlayer: Player;
   readonly board: Board;
+  /** Deterministic PRNG for combat rolls (crit). Advances only on crit-capable units. */
+  readonly combatPrng: Prng;
 
   phase: GamePhase = GamePhase.Idle;
 
@@ -118,6 +120,12 @@ export class GameState {
     this.bottomPlayer = new Player(Side.Bottom, cardPrng0, timerPrng0);
     this.topPlayer    = new Player(Side.Top,    cardPrng1, timerPrng1);
     this.board        = new Board();
+
+    // Dedicated PRNG for combat rolls (crit, unit progression T3). Distinct seed so
+    // it never aliases card/timer streams. Only advances when a unit has critPct>0
+    // (PvE/SLG only) → PvP combat never touches it, so existing PvP replays are
+    // bit-identical (hard wall, §5.2).
+    this.combatPrng = new Prng(seed ^ 0x5eed1234);
   }
 
   getPlayer(side: Side): Player {

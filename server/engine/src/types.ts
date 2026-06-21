@@ -257,6 +257,10 @@ export interface UnitBlueprint {
 
   // ── Offensive traits (PvE) ────────────────────────────────────────────────
   onDeathSpawn?: { type: UnitType; count: number };
+  /** Crit chance 0–100; on a roll under it, damage ×critMult (unit progression T3). 0/undefined = no crit. */
+  critPct?: number;
+  /** Crit damage multiplier when a crit lands (default 1 = no bonus). */
+  critMult?: number;
   splashRadius?: number;        // Chebyshev radius of splash damage (0 = no splash)
   piercing?: boolean;           // hit all enemies in same column
   slowOnHit?: { mult: number; durationSec: number };

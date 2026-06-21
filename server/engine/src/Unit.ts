@@ -108,6 +108,10 @@ export class Unit {
   readonly berserkerThreshold: number;
   /** Spawn N units of given type on death (PvE). */
   readonly onDeathSpawn: { type: UnitType; count: number } | null;
+  /** Crit chance 0–100 (unit progression T3); 0 = no crit roll (PvP units always 0). */
+  readonly critPct: number;
+  /** Crit damage multiplier applied when a crit lands. */
+  readonly critMult: number;
   /** Chebyshev radius of bonus splash damage applied around the primary target. 0 = no splash. */
   readonly splashRadius: number;
   /** Hit all enemies in the same column on each attack (PvE). */
@@ -189,6 +193,8 @@ export class Unit {
     this.undying         = bp.undying         ?? false;
     this.berserkerThreshold = bp.berserkerThreshold ?? 0;
     this.onDeathSpawn    = bp.onDeathSpawn    ?? null;
+    this.critPct         = bp.critPct         ?? 0;
+    this.critMult        = bp.critMult        ?? 1;
     this.splashRadius    = bp.splashRadius    ?? 0;
     this.piercing        = bp.piercing        ?? false;
     this.slowOnHit       = bp.slowOnHit

@@ -240,7 +240,14 @@ export class CombatSystem {
     state: GameState,
     attackMult: number,
   ): void {
-    const rawDamage = attacker.attack * attackMult;
+    // Crit roll (unit progression T3): deterministic PRNG roll under critPct → ×critMult.
+    // critPct is 0 for all PvP units, so combatPrng never advances in PvP — existing
+    // PvP replays stay bit-identical. Crit boosts rawDamage, so splash/pierce/lifesteal
+    // (all derived from rawDamage/actualDamage below) inherit the crit consistently.
+    let rawDamage = attacker.attack * attackMult;
+    if (attacker.critPct > 0 && state.combatPrng.nextInt(100) < attacker.critPct) {
+      rawDamage = Math.round(rawDamage * attacker.critMult);
+    }
 
     // Apply damage to primary target; capture actual HP lost for lifesteal.
     let actualDamage: number;

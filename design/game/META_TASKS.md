@@ -297,6 +297,20 @@
 
 ---
 
+## S12 — 单位养成重做（单一等级 1–9 + 集卡合成 + trait）
+
+> 拍板 2026-06-21：把 S3-2 的「每属性一条材料升级轨（maxLevel 5）」**替换**为 `ECONOMY_NUMBERS §4`（ADR-009）的设计模型——**每兵种一个等级 1–9**，5 张 N 级卡 → 合成 1 张 (N+1) 级（集卡指数 sink），各级连续缩放 HP/攻/攻速/移速/armor，并在 **T3/T6/T9** 解锁通用 trait（暴击/吸血/+1 出兵）。承重墙：全程守 PvP 公平硬墙（`buildPvpBlueprints()` 签名无等级参）。按可独立验收切片推进。
+>
+> **现状基线**：引擎机制大半已存在——CombatSystem 已实现吸血/溅射/穿透/减速/召唤；缺口是①暴击机制；②「养成等级→解锁 trait」从未接线；③economy 侧 9 级/集卡模型与代码 maxLevel-5 材料模型不一致。
+
+- [x] **S12-A 引擎脊柱（暴击机制 + 单位等级模型 + trait 解锁）** ✅（2026-06-21）：新增 `@nw/engine/balance/progression.ts`——`UNIT_MAX_LEVEL=9` + `PROGRESSABLE_UNITS`（Infantry/ShieldBearer/Archer，与 equipment 同源）+ `STAT_GROWTH_PER_LEVEL`（HP+12%/攻+10%/攻速+4%/移速+3%/armor+2，逐级 additive，对齐 §4.2）+ `TRAIT_BREAKPOINTS`（T3 暴击 10%×1.5 / T6 吸血 15% / T9 +1 出兵，对齐 §4.4）+ `applyUnitLevels(bp, unitLevels)`（唯一「等级→蓝图」注入点，钳 1–9，L1 no-op）。**暴击机制**：`UnitBlueprint.critPct/critMult` + `Unit` 运行期字段 + `GameState.combatPrng`（独立种子 `seed^0x5eed1234`，**仅 critPct>0 才前进** → PvP 永不触碰，金回放 bit 一致）+ `CombatSystem.performUnitAttack` 暴击 roll（减护甲前 ×倍率，splash/pierce/lifesteal 随之继承，§4.4 口径）。接入 `buildCampaign/buildSiegeBlueprints` 新增可选 `unitLevels` 参（`buildPvp` 不动）；吸血/armor 由既有 `clampEffectCaps` 跨源封顶（≤30 / ≤20）。`client/test/progression.test.ts` 12 例（硬墙满级仍逐字相等、线性公式、钳制、PvE 怪种不动、三档断点解锁边界、crit 字段 blueprint→Unit 传递）。验证：client `tsc --noEmit` 绿 + progression/hardwall/equipment/siege-battle 全绿、零回归（3 个预存失败 headless-nav/pve-judge/siege 与本切片无关）。**注**：S3-2 的 `PVE_UPGRADE_DEFS`/`applyPveUpgrades` 暂保留共存（meta/UI/SaveData 仍读），S12-B 迁移后退役。
+- [ ] **S12-B SaveData 迁移 + meta 合成端点**：`SaveData.pveUpgrades`（per-stat）→ `unitLevels: Record<UnitType, number>` + `cardInventory`（按卡级存重复卡数）；meta `POST /pve/merge`（5 张 N 级 → 1 张 N+1，服务器权威事务 + 幂等，复用 `pveRewards` 安全口径）替换 `POST /pve/upgrade`；引擎构造改读 `unitLevels`，退役 `applyPveUpgrades`/`PVE_UPGRADE_DEFS`；惰性迁移老存档（pveUpgrades→unitLevels 近似换算或清零重发）。**依赖**：S4-4 PVE 完整性（服务器权威）。
+- [ ] **S12-C 盲盒产单位卡 + 合成数据流**：commercial gacha 池加单位卡产出（`ECONOMY_BALANCE §3` legendary 仅盲盒）；后期关卡掉高级卡（§4.1「后期关产 T3 卡」）；卡片库存进 inventory 镜像。**依赖**：S5 commercial、S12-B。
+- [ ] **S12-D 客户端养成/合成 UI**：`LevelPrepScene`/`CollectionScene` 升级树改为「单位等级 + 合成（5→1）+ trait 解锁可视化（T3/T6/T9 图标）」；卡片库存展示；i18n `progression.*`。**依赖**：S12-B/C。
+- [ ] **S12-E armor 落地后的战斗平衡重算**：养成注入 armor 后 TTK/交战速算全变（§4.3 已点明），配套重做一轮 PvE/SLG 战斗数值校准。**依赖**：S12-A（armor 已入引擎）。
+
+---
+
 ## i18n（贯穿，随场景落地）
 
 - [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`auth.*`（登录界面，SA）/ `meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；`auth.*` **已随 SA-3 落地**（zh/en/de 全翻）；其余随后续场景。
