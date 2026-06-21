@@ -3,8 +3,10 @@ import { GameState } from '../src/game/GameState';
 import { Unit } from '../src/game/Unit';
 import { Building } from '../src/game/Building';
 import { CombatSystem } from '../src/game/systems/CombatSystem';
+import { SpellSystem } from '../src/game/systems/SpellSystem';
 import { ATTACK_MULT_THRESHOLD_TICKS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '../src/game/config';
-import { Side, UnitType, BuildingType, UnitState } from '../src/game/types';
+import { Side, UnitType, BuildingType, UnitState, SpellType } from '../src/game/types';
+import { achievementStatDelta } from '../src/game';
 
 describe('CombatSystem — units', () => {
   it('a unit attacks an enemy directly ahead within range', () => {
@@ -53,6 +55,9 @@ describe('CombatSystem — units', () => {
     expect(state.events.some((e) => e.type === 'unit_died')).toBe(true);
     // Killer is Bottom (owner 0).
     expect(state.stats[0].unitsKilled).toBe(1);
+    // S9-3b: per-victim-type tally — the slain unit was an Archer.
+    expect(state.stats[0].killsByType[UnitType.Archer]).toBe(1);
+    expect(state.stats[0].killsByType[UnitType.ShieldBearer]).toBeUndefined();
   });
 
   it('late-game attack multiplier doubles damage', () => {
@@ -77,6 +82,44 @@ describe('CombatSystem — units', () => {
     const normalDmg = e1.maxHp - e1.hp;
     const lateDmg = e2.maxHp - e2.hp;
     expect(lateDmg).toBe(normalDmg * 2);
+  });
+});
+
+describe('成就分类型埋点（S9-3b / S9-6）', () => {
+  it('castMeteor 累加 castsByType[Meteor]（按释放次数，非命中数）', () => {
+    const state = new GameState(1);
+    const spells = new SpellSystem();
+    // 空场释放两次陨石：0 命中，但 cast 计数 = 2。
+    spells.castMeteor(Side.Bottom, 2, 2, state);
+    spells.castMeteor(Side.Bottom, 2, 2, state);
+    expect(state.stats[0].castsByType[SpellType.Meteor]).toBe(2);
+    expect(state.stats[0].spellHits).toBe(0); // 命中数与释放次数解耦
+  });
+
+  it('achievementStatDelta 映射：Archer→kill.archer、ShieldBearer→kill.guard、Meteor→cast.meteor', () => {
+    const state = new GameState(1);
+    const combat = new CombatSystem();
+    const spells = new SpellSystem();
+    // 杀一个弓箭手 + 一个盾兵（守卫）。
+    const archer = new Unit(UnitType.Archer, Side.Bottom, 0, 5);
+    const e1 = new Unit(UnitType.Archer, Side.Top, 0, 6); e1.hp = 1;
+    const e2 = new Unit(UnitType.ShieldBearer, Side.Top, 1, 6); e2.hp = 1;
+    const archer2 = new Unit(UnitType.Archer, Side.Bottom, 1, 5);
+    state.board.addUnit(archer); state.board.addUnit(e1);
+    state.board.addUnit(archer2); state.board.addUnit(e2);
+    combat.tick(state);
+    spells.castMeteor(Side.Bottom, 2, 2, state);
+
+    const delta = achievementStatDelta({ owner: 0, ...state.stats[0] });
+    expect(delta['kill.archer']).toBe(1);
+    expect(delta['kill.guard']).toBe(1);
+    expect(delta['cast.meteor']).toBe(1);
+    // 零项不出现（懒创建语义）。
+    expect(Object.keys(delta).sort()).toEqual(['cast.meteor', 'kill.archer', 'kill.guard']);
+  });
+
+  it('achievementStatDelta 空局 → 空增量', () => {
+    expect(achievementStatDelta({ owner: 0, ...new GameState(1).stats[0] })).toEqual({});
   });
 });
 

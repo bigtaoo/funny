@@ -49,7 +49,7 @@ export class RoomManager {
         room?.submitCmd(conn.side, msg.commands);
         break;
       case 'match_result':
-        room?.reportResult(conn.side, msg.stateHash, msg.winnerSide);
+        room?.reportResult(conn.side, msg.stateHash, msg.winnerSide, msg.stats);
         break;
       case 'conn_resume':
         room?.resume(conn, msg.lastFrame);

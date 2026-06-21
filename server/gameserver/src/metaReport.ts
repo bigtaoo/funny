@@ -36,6 +36,7 @@ export class MetaReporter {
         side: x.side,
         state_hash: x.stateHash,
         winner_side: x.winnerSide,
+        ...(x.stats ? { stats: x.stats } : {}), // S9-6: 本方本局成就计数（meta L1 校验后累加，仅 ranked）
       })),
       // 非空帧录像（M19/S1-RP）。opaque command bytes 经 internal HTTP JSON 传输 →
       // base64 编码（meta 原样存 matches.replay，回放时 base64 解码；commands 不解码 M12）。

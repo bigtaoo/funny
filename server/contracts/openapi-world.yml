@@ -33,7 +33,7 @@ components:
           type: integer
         type:
           type: string
-          enum: [neutral, resource, territory, familyKeep, center, base, obstacle, gate]
+          enum: [neutral, resource, territory, familyKeep, center, base, obstacle, gate, stronghold]
         level:
           type: integer
         resType:

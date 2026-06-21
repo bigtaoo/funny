@@ -450,6 +450,8 @@ export const zh = {
   'world.garrison': '驻军 {n}',
   'world.center': '世界中心',
   'world.familyKeep': '家族驻地',
+  'world.stronghold': '险地',
+  'world.strongholdHint': '系统超强守军据点，须围攻攻克；得手占为领地并获大量资源',
   'world.marchList': '行军列表',
   'world.noMarches': '暂无行军',
   'world.marchTo': '→ ({x},{y})',

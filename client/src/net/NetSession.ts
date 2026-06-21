@@ -166,8 +166,8 @@ export class NetSession {
 
   // ── Match actions (data plane) ────────────────────────────────────────────────
 
-  reportResult(stateHash: string, winnerSide: number): void {
-    this.game?.reportResult(stateHash, winnerSide);
+  reportResult(stateHash: string, winnerSide: number, stats?: Record<string, number>): void {
+    this.game?.reportResult(stateHash, winnerSide, stats);
   }
 
   getLocalSide(): number {

@@ -184,6 +184,87 @@ describe('internal routes', () => {
     await app.close();
   });
 
+  it('S9-6 ranked 累加成就计数：双方 kill/cast 入账 + 仅胜方 stats.pvp.wins +1', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols } = fakeCols({ a, b });
+    const app = build(cols);
+    await app.inject({
+      method: 'POST',
+      url: '/internal/match/report',
+      headers: { 'x-internal-key': KEY },
+      payload: {
+        room_id: 'RS', seed: '1', mode: 'ranked', reason: 'base', winner_side: 0, hash_ok: true,
+        players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
+        results: [
+          { side: 0, state_hash: 'H', winner_side: 0, stats: { 'kill.archer': 3, 'cast.meteor': 2 } },
+          { side: 1, state_hash: 'H', winner_side: 0, stats: { 'kill.guard': 1, 'pvp.wins': 999 } }, // pvp.wins 上报被丢弃
+        ],
+        replay: emptyReplay(),
+      },
+    });
+    const sa = await cols.saves.findOne({ _id: 'a' });
+    const sb = await cols.saves.findOne({ _id: 'b' });
+    // 胜方 a：kill/cast 入账 + 服务器自算 pvp.wins=1（非客户端上报）。
+    expect(sa!.save.stats).toEqual({ 'kill.archer': 3, 'cast.meteor': 2, 'pvp.wins': 1 });
+    // 负方 b：kill/cast 入账；自报的 pvp.wins:999 被丢弃，且非胜方不自增 pvp.wins。
+    expect(sb!.save.stats).toEqual({ 'kill.guard': 1 });
+    await app.close();
+  });
+
+  it('S9-6 L1 越界：拒收该方 kill/cast，但 ELO/pvp.wins 仍照常结算', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols } = fakeCols({ a, b });
+    const app = build(cols);
+    await app.inject({
+      method: 'POST',
+      url: '/internal/match/report',
+      headers: { 'x-internal-key': KEY },
+      payload: {
+        room_id: 'RL', seed: '1', mode: 'ranked', reason: 'base', winner_side: 0, hash_ok: true,
+        players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
+        results: [
+          { side: 0, state_hash: 'H', winner_side: 0, stats: { 'kill.archer': 999999 } }, // L1 越界 → 整份拒收
+          { side: 1, state_hash: 'H', winner_side: 0, stats: { 'kill.guard': 2 } },
+        ],
+        replay: emptyReplay(),
+      },
+    });
+    const sa = await cols.saves.findOne({ _id: 'a' });
+    const sb = await cols.saves.findOne({ _id: 'b' });
+    // 胜方 a 的 kill.archer 被 L1 拒收，但 pvp.wins 仍自算；ELO 照常。
+    expect(sa!.save.stats).toEqual({ 'pvp.wins': 1 });
+    expect(sa!.save.pvp.elo).toBe(1016);
+    // 负方 b 正常 kill.guard 入账。
+    expect(sb!.save.stats).toEqual({ 'kill.guard': 2 });
+    await app.close();
+  });
+
+  it('S9-6 friendly 上报带 stats → 不累加（仅 ranked 喂）', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols } = fakeCols({ a, b });
+    const app = build(cols);
+    await app.inject({
+      method: 'POST',
+      url: '/internal/match/report',
+      headers: { 'x-internal-key': KEY },
+      payload: {
+        room_id: 'FS', seed: '1', mode: 'friendly', reason: 'base', winner_side: -1, hash_ok: true,
+        players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
+        results: [
+          { side: 0, state_hash: 'H', winner_side: 0, stats: { 'kill.archer': 5 } },
+          { side: 1, state_hash: 'H', winner_side: 0, stats: { 'kill.guard': 5 } },
+        ],
+        replay: emptyReplay(),
+      },
+    });
+    const sa = await cols.saves.findOne({ _id: 'a' });
+    expect(sa!.save.stats).toBeUndefined(); // friendly 不结算 → 不喂 stats
+    await app.close();
+  });
+
   it('ranked 胜者发分段胜利金币（按结算后段位，仅胜方）', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');

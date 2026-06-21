@@ -55,7 +55,7 @@ export interface MatchReport {
   winnerSide: number; // -1 = 未知
   hashOk: boolean;
   players: { side: number; accountId: string }[];
-  results: { side: number; stateHash: string; winnerSide: number }[];
+  results: { side: number; stateHash: string; winnerSide: number; stats?: Record<string, number> }[];
   replay: MatchReplay;
 }
 
@@ -88,7 +88,7 @@ export class Room {
   private graceTimer: NodeJS.Timeout | null = null;
   private launchTimer: NodeJS.Timeout | null = null;
 
-  private results = new Map<number, { hash: string; winner: number }>();
+  private results = new Map<number, { hash: string; winner: number; stats?: Record<string, number> }>();
   private settled = false;
 
   constructor(
@@ -182,10 +182,10 @@ export class Room {
   }
 
   /** 局末上报 hash + 客户端判定胜方 → 双方齐 → 比对 + 结算（meta 权威算 ELO）。 */
-  reportResult(side: number, stateHash: string, winnerSide: number): void {
+  reportResult(side: number, stateHash: string, winnerSide: number, stats?: Record<string, number>): void {
     if (this.phase !== RoomPhase.IN_MATCH || this.settled) return;
     if (!this.hasSide(side)) return;
-    this.results.set(side, { hash: stateHash, winner: winnerSide });
+    this.results.set(side, { hash: stateHash, winner: winnerSide, ...(stats ? { stats } : {}) });
     if (this.results.size < this.slots.length) return;
 
     const reports = [...this.results.values()];
@@ -325,6 +325,7 @@ export class Room {
         side,
         stateHash: r.hash,
         winnerSide: r.winner,
+        ...(r.stats ? { stats: r.stats } : {}),
       })),
       replay: this.buildReplay(opts.winnerSide),
     };

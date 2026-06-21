@@ -14,6 +14,9 @@ import {
   victoryCoinsForRank,
   createLogger,
   createInternalAuth,
+  sanitizePvpReportedStats,
+  accrueStats,
+  type StatKey,
 } from '@nw/shared';
 import type { GatewayClient } from './gatewayClient.js';
 import type { CommercialClient } from './commercialClient.js';
@@ -45,7 +48,7 @@ interface ReportBody {
   winner_side: number;
   hash_ok: boolean;
   players: { side: number; accountId: string }[];
-  results: { side: number; state_hash: string; winner_side: number }[];
+  results: { side: number; state_hash: string; winner_side: number; stats?: Record<string, number> }[];
   replay: {
     engineVersion: number;
     mode: string;
@@ -264,8 +267,12 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       const winner = body.players.find((p) => p.side === body.winner_side);
       const loser = body.players.find((p) => p.side !== body.winner_side);
       if (winner && loser) {
+        // S9-6: 清洗各方上报的本局成就计数（L1 异常复查，§4.4）。越界/非法 → null 拒收该方 kill/cast
+        // （pvp.wins/ELO 仍照常）；嫌疑升档（statSuspicion）属 S9-7，此处仅记日志。
+        const wStats = statDeltaForSide(body, winner.side);
+        const lStats = statDeltaForSide(body, loser.side);
         try {
-          eloBySide = await settleElo(cols, now, commercial, winner, loser);
+          eloBySide = await settleElo(cols, now, commercial, winner, loser, wStats, lStats);
         } catch (e) {
           log.error('ranked ELO settle failed', { err: (e as Error).message });
         }
@@ -275,7 +282,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       try {
         const verdict = await judgeMismatch(gateway, body);
         if (verdict) {
-          eloBySide = await settleElo(cols, now, commercial, verdict.honest, verdict.cheater);
+          // hash 不一致的局已是嫌疑局：不累加任一方自报 kill/cast（pvp.wins 仍随诚实方胜场计）。
+          eloBySide = await settleElo(cols, now, commercial, verdict.honest, verdict.cheater, {}, {});
           cheat = {
             side: verdict.cheater.side,
             accountId: verdict.cheater.accountId,
@@ -455,6 +463,20 @@ async function judgeMismatch(
   };
 }
 
+/**
+ * S9-6: 取某方上报的本局成就计数并经 L1 清洗（§4.4）。
+ * 返回 sanitize 后的 statKey 增量；越界/非法 → 记日志后返回 `{}`（拒收该方 kill/cast，pvp.wins 仍照常）。
+ */
+function statDeltaForSide(body: ReportBody, side: number): Partial<Record<StatKey, number>> {
+  const reported = body.results.find((r) => r.side === side)?.stats;
+  const clean = sanitizePvpReportedStats(reported);
+  if (clean === null) {
+    log.warn('PvP stat L1 reject (out-of-bounds reported stats)', { roomId: body.room_id, side });
+    return {};
+  }
+  return clean;
+}
+
 /** 双方 ELO 结算：读分 → 算分差 → 各自原子写 saves.pvp（乐观锁 rev 守卫 + 重试）。 */
 async function settleElo(
   cols: Collections,
@@ -462,6 +484,9 @@ async function settleElo(
   commercial: CommercialClient,
   winner: { side: number; accountId: string },
   loser: { side: number; accountId: string },
+  // S9-6: 已 L1 清洗的本局 kill/cast 增量（仅 ranked 喂）。pvp.wins 由 won 在 applyPvp 内自算。
+  winnerStats: Partial<Record<StatKey, number>> = {},
+  loserStats: Partial<Record<StatKey, number>> = {},
 ): Promise<Record<number, EloResult>> {
   const [wDoc, lDoc] = await Promise.all([
     cols.saves.findOne({ _id: winner.accountId }),
@@ -472,8 +497,8 @@ async function settleElo(
   const { winner: wDelta, loser: lDelta } = computeEloDelta(wElo, lElo);
   const out: Record<number, EloResult> = {};
   const [wRes, lRes] = await Promise.all([
-    applyPvp(cols, now, winner.accountId, wDoc, wDelta, true),
-    applyPvp(cols, now, loser.accountId, lDoc, lDelta, false),
+    applyPvp(cols, now, winner.accountId, wDoc, wDelta, true, winnerStats),
+    applyPvp(cols, now, loser.accountId, lDoc, lDelta, false, loserStats),
   ]);
   if (wRes) out[winner.side] = wRes;
   if (lRes) out[loser.side] = lRes;
@@ -506,7 +531,10 @@ async function applyPvp(
   doc: SaveDoc | null,
   delta: number,
   won: boolean,
+  statDelta: Partial<Record<StatKey, number>> = {},
 ): Promise<EloResult | null> {
+  // S9-6: 本局成就计数增量 = L1 清洗后的 kill/cast + 服务器自算的 pvp.wins（仅胜方 +1，不信客户端）。
+  const fullStatDelta: Partial<Record<StatKey, number>> = { ...statDelta, ...(won ? { 'pvp.wins': 1 } : {}) };
   for (let attempt = 0; attempt < 3; attempt++) {
     const cur = attempt === 0 && doc ? doc : await cols.saves.findOne({ _id: accountId });
     if (!cur) return null; // ranked 玩家应已有存档
@@ -514,10 +542,12 @@ async function applyPvp(
     const after = Math.max(ELO_FLOOR, pvp.elo + delta);
     const appliedDelta = after - pvp.elo;
     const rank = eloToRank(after);
+    const nextStats = accrueStats(cur.save.stats, fullStatDelta); // 懒创建：无增量则原样保留
     const next: SaveData = {
       ...cur.save,
       rev: cur.save.rev + 1,
       updatedAt: now(),
+      ...(nextStats ? { stats: nextStats } : {}),
       pvp: {
         ...pvp,
         elo: after,

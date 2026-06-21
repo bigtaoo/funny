@@ -182,3 +182,59 @@ export function validateClaim(
   if (claimedTiers.includes(tier)) return { ok: false, error: 'ALREADY_CLAIMED' };
   return { ok: true, coins: t.coins, tier };
 }
+
+// ─── PvP 战报计数（S9-6，§4.2 直接上报 + §4.4 L1 异常复查）─────────────────────
+
+/**
+ * 可由 PvP 战报上报喂入的 statKey（**仅 ranked**，§3.1）。
+ * `pvp.wins` **不在此列**——它由 meta 据已校验的 winner_side 服务器自算（§4.2），不信客户端上报。
+ * `campaign.chaptersCleared` 是 PvE 专属，也不在此列。
+ */
+export const PVP_REPORTED_STAT_KEYS: readonly StatKey[] = ['kill.archer', 'kill.guard', 'cast.meteor'];
+
+/**
+ * L1 单局硬边界（§4.4）：单局某 statKey 上报值超此上限即「离谱超界」→ 整份拒收 + 标记嫌疑。
+ * 当前为**粗上界**（按引擎极端规模估计：单局单位/法术出牌数量级），精确推导见 §6.2 待办。
+ * 远大于正常单局值（正常单局击杀几十、陨石个位数），只用于挡住明显伪造，不影响真实计数。
+ */
+export const PVP_STAT_MATCH_CAP: Readonly<Record<string, number>> = {
+  'kill.archer': 200,
+  'kill.guard': 200,
+  'cast.meteor': 100,
+};
+
+/**
+ * 清洗客户端上报的本局 PvP 统计（L1，§4.4）：
+ * - **未知/不可上报 key**：丢弃（向前兼容版本错位，不因此拒收整份）。
+ * - **非负整数校验 + L1 硬边界**：任一**已知可上报 key** 非法或越界 → 返回 `null`（拒收整份该方统计，
+ *   调用方应跳过 kill/cast 累加，但 `pvp.wins`/ELO 仍照常；嫌疑升档属 S9-7，此处仅清洗）。
+ * - 0 值省略（懒创建，不写 0）。
+ */
+export function sanitizePvpReportedStats(
+  reported: Record<string, number> | undefined,
+): Partial<Record<StatKey, number>> | null {
+  if (!reported) return {};
+  const out: Partial<Record<StatKey, number>> = {};
+  for (const [k, v] of Object.entries(reported)) {
+    if (!PVP_REPORTED_STAT_KEYS.includes(k as StatKey)) continue; // 未知 key → 丢弃（不拒整份）
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) return null; // 非法 → L1 拒收
+    if (v > (PVP_STAT_MATCH_CAP[k] ?? 0)) return null; // L1 越界 → 拒收
+    if (v > 0) out[k as StatKey] = v;
+  }
+  return out;
+}
+
+/**
+ * 把一份 statKey 增量累加进玩家终身 `stats`（懒创建：无增量则原样返回 prev、不实例化）。
+ * 服务器权威结算点（PvP applyPvp / PvE 结算）调用；纯函数便于单测。
+ */
+export function accrueStats(
+  prev: SaveData['stats'],
+  delta: Partial<Record<StatKey, number>>,
+): SaveData['stats'] {
+  const keys = Object.keys(delta) as StatKey[];
+  if (keys.length === 0) return prev;
+  const next: Record<string, number> = { ...(prev ?? {}) };
+  for (const k of keys) next[k] = (next[k] ?? 0) + (delta[k] ?? 0);
+  return next as SaveData['stats'];
+}

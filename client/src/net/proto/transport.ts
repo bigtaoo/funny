@@ -87,6 +87,8 @@ export interface CmdSubmit {
 export interface MatchResult {
   stateHash: string;
   winnerSide: number;
+  /** S9-6: 本方本局成就计数 JSON（{"kill.archer":n,…}）；仅 ranked 喂，meta L1 校验后累加。 */
+  statsJson: string;
 }
 
 export interface ConnResume {
@@ -892,7 +894,7 @@ export const CmdSubmit: MessageFns<CmdSubmit> = {
 };
 
 function createBaseMatchResult(): MatchResult {
-  return { stateHash: "", winnerSide: 0 };
+  return { stateHash: "", winnerSide: 0, statsJson: "" };
 }
 
 export const MatchResult: MessageFns<MatchResult> = {
@@ -902,6 +904,9 @@ export const MatchResult: MessageFns<MatchResult> = {
     }
     if (message.winnerSide !== 0) {
       writer.uint32(16).uint32(message.winnerSide);
+    }
+    if (message.statsJson !== "") {
+      writer.uint32(26).string(message.statsJson);
     }
     return writer;
   },
@@ -929,6 +934,14 @@ export const MatchResult: MessageFns<MatchResult> = {
           message.winnerSide = reader.uint32();
           continue;
         }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.statsJson = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -945,6 +958,7 @@ export const MatchResult: MessageFns<MatchResult> = {
     const message = createBaseMatchResult();
     message.stateHash = object.stateHash ?? "";
     message.winnerSide = object.winnerSide ?? 0;
+    message.statsJson = object.statsJson ?? "";
     return message;
   },
 };

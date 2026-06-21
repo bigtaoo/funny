@@ -447,6 +447,8 @@ export const de: Record<TranslationKey, string> = {
   'world.garrison': 'Garnison {n}',
   'world.center': 'Weltzentrum',
   'world.familyKeep': 'Familienburg',
+  'world.stronghold': 'Feste',
+  'world.strongholdHint': 'Stark verteidigte NPC-Bastion – nur durch Belagerung einnehmbar; bei Erfolg wird sie dein Gebiet und bringt eine große Ressourcenbelohnung',
   'world.marchList': 'Märsche',
   'world.noMarches': 'Keine aktiven Märsche',
   'world.marchTo': '→ ({x},{y})',

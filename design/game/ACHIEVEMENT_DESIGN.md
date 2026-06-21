@@ -1,6 +1,6 @@
 # 成就系统设计 — Achievements
 
-> 状态：实现中（服务端基座 S9-1/2/4 + PvE 章节计数 S9-3 + 客户端成就墙 S9-5 + 达成 toast S9-5b 已落地，见 §11；剩 S9-6 PvP 计数 / S9-3b 引擎埋点 / S9-7/8）· 权威：**本文（成就系统机制单一来源）**；数值（阈值/金币）镜像并最终落 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)（DRAFT 初值）· 更新：2026-06-21
+> 状态：实现中（服务端基座 S9-1/2/4 + PvE 章节计数 S9-3 + 客户端成就墙 S9-5 + 达成 toast S9-5b + 引擎分类型埋点地基 S9-3b + PvP 计数/L1 S9-6 已落地，见 §11；剩 S9-3b PvE 喂入半 / S9-7 反作弊 L2-L3 / S9-8 埋点+校准）· 权威：**本文（成就系统机制单一来源）**；数值（阈值/金币）镜像并最终落 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)（DRAFT 初值）· 更新：2026-06-21
 
 本文是成就子系统的**机制设计基准**：定位、数据模型、统计来源、解锁/领取流程、服务器权威与防刷、接口契约、UI、经济联动、实现拆解。
 **具体阈值/金币不在本文拍死**——初值见 [`ECONOMY_BALANCE.md §2.4`](ECONOMY_BALANCE.md)；本文只镜像示例并标注权威指针，条目/阈值后期慢慢扩。
@@ -191,6 +191,9 @@ POST /achievements/claim        (JWT) { achId, tier:1|2|3 }
 
 ### 6.2 实现前仍需对齐
 
+- [x] **引擎分类型埋点（S9-3b 地基已落，2026-06-21）**：`@nw/engine` `PlayerStats` 现已产出 `killsByType`（per-victimType）/`castsByType`（per-spellType），`achievementStatDelta` 集中映射到 `kill.archer`/`kill.guard`/`cast.meteor`。**PvP 半（S9-6）已用它上报喂入**；**PvE 半仍缺**——见下「PvE 喂入」。
+- [x] **L1 硬边界来源（S9-6 已落粗上界，2026-06-21）**：`@nw/shared.PVP_STAT_MATCH_CAP` 给出单局每 statKey 粗上界（kill 200 / cast 100，远大于正常单局值，只挡明显伪造），`sanitizePvpReportedStats` 据此做 L1 异常复查（越界整份拒收）。精确从引擎约束（费用/帧数/单位数）推导仍可后续收紧。
+- [ ] **PvE kill/cast 喂入（S9-3b PvE 半，待做）**：地基已就绪，但 A2 禁客户端直写不可复算计数 → 需「PvE 抽检 judge verdict 扩展回 `killsByType`/`castsByType` + `/pve/verify` 比对后入账」，且仅抽检命中的局可信（覆盖有限）。普通通关不跑引擎仍无法权威产出分项计数。
 - [x] **PvE 计数粒度（S9-3 已对齐，2026-06-21）**：PvE **唯一能服务器权威产出**的成就 stat 是 `campaign.chaptersCleared`（由 `levelId` 派生，首通 `$max`，不依赖客户端上报）。`kill.archer`/`kill.guard`/`cast.meteor` 设计上（§3.1）也想由 PvE 喂，但**当前不可权威产出**：① `@nw/engine` 只在 `PlayerStats` 累计聚合 `unitsKilled`/`spellHits`，**无分兵种击杀、无分法术 cast**；② 普通通关服务器**不跑引擎**（只信客户端 stars + 抽样录像复算），裁判 verdict 也只回 `stars`，故无法当场拿到分项计数；③ A2 铁律禁止客户端直写「无法复算的计数」。→ 故 S9-3 只落 `campaign.chaptersCleared`；PvE 的 kill/cast 喂入拆为后续 **S9-3b**：需「引擎分类型埋点（per-victimType kill / per-spellType cast）进 deterministic snapshot → 裁判 verdict 扩展回这些计数 → `/pve/verify` 比对后入账」。在此之前 `kill.*`/`cast.*` 仅由 PvP 上报（S9-6）喂。
 - [ ] **L1 硬边界来源**：单局各 statKey 的理论上限怎么从 `@nw/engine` 约束推出（费用/帧数/单位数），需与引擎侧确认可取。
 
@@ -314,4 +317,12 @@ POST /achievements/claim        (JWT) { achId, tier:1|2|3 }
 - **文案**：单条→`achievement.unlockToast{name}`（`name` 由 `achievement.{id}.name` 解析）、多条→`achievement.unlockToastMulti{n}`，i18n 三语 zh/en/de 在 S9-5 时已预置。埋点 `achievement_unlock_toast{count}`。
 - **验证**：`tsc --noEmit` 干净；`webpack build:web` 编译成功（仅既有体积告警）。未做游戏内截图（CLAUDE.md 约定）。
 
-> **下一会话接续点**：S9-6（PvP `match/report` 上报 `kill.*`/`cast.*` + meta 累加 + L1 异常复查）→ **S9-3b**（引擎分类型埋点，让 PvE 也能喂 kill/cast，§6.2）→ S9-7/8。任务跟踪见 `META_TASKS.md` S9。
+### S9-3b 引擎分类型埋点 + S9-6 PvP 计数/L1（2026-06-21）
+
+- **S9-3b 引擎地基**：`@nw/engine` `PlayerStats` + `PlayerStatsMutable` 加 `killsByType: Partial<Record<UnitType,number>>` / `castsByType: Partial<Record<SpellType,number>>`（稀疏、缺省 0）。累加单点：① CombatSystem 单位移除处（唯一击杀归属点，覆盖近战/箭塔/法术所有击杀）按 `unit.unitType` 计；② SpellSystem 各 `cast*` 方法按 `spellType` 计**释放次数**（非命中，与 `spellHits` 解耦）。`snapshotStats` 浅拷贝两 map 防快照别名仍变的 mutable。**确定性**：计数由同一指令处理驱动，同 replay 同结果。新模块 `achievementStats.ts` `achievementStatDelta(stats)` 集中映射 `Archer→kill.archer`/`ShieldBearer→kill.guard`（i18n「破盾者」=盾兵/守卫）/`Meteor→cast.meteor`，barrel 导出，**PvP 上报 + 将来 PvE 喂入同源**杜绝手抄漂移。
+- **S9-6 PvP 计数链**：`MatchResult` proto 加 `string stats_json = 3`（protobufjs 服务端 + ts-proto 客户端两套 codec 手改对齐）。客户端 `onGameEnd` → `achievementStatDelta(stats[localOwner])` → `NetClient.reportResult` JSON 序列化进 `statsJson`（空则不发）。gameserver 透传：`transport.decodeClient` 防御性 `parseStatsJson` → `Room.reportResult(…, stats)` 存 per-side → `MatchReport.results[].stats` → `metaReport` 上报体。meta `/internal/match/report`：**仅 settleRanked 路径**对每方 `statDeltaForSide` 经 `sanitizePvpReportedStats`（L1：未知/不可上报 key 丢弃；已知 key 越界·非整数·负 → 整份拒收该方 kill/cast，记 `warn`）→ 折进 `settleElo`→`applyPvp`，`accrueStats` 累加进 `save.stats`（同 rev 守卫原子写、懒创建）。**`pvp.wins` 由 meta 据 winner 自算**（won→+1，不信客户端上报；客户端塞的 `pvp.wins` 被 allowlist 丢弃）。mismatch 嫌疑局：两方 kill/cast 均不累加（传 `{}`），`pvp.wins` 仍随诚实方胜场计。
+- **铁律守护**：A2（计数只在服务器结算点写）——meta 只在 ranked 结算累加，friendly 不喂；L1 挡伪造（§4.4）；A3（不发战力）——成就 stat 只喂金币领取，不碰 pvp.elo/战力。`statSuspicion` 升档属 S9-7。
+- **`@nw/shared` 新增纯函数**：`PVP_REPORTED_STAT_KEYS`（kill.archer/kill.guard/cast.meteor，**pvp.wins 不在列**=服务器自算）/`PVP_STAT_MATCH_CAP`（L1 粗上界）/`sanitizePvpReportedStats`/`accrueStats`。
+- **测试**：`achievements.test.ts` +11 纯函数（sanitize 各分支 + accrue 懒创建/累加/不可变）；`internal.test.ts` +3 e2e（ranked 双方 kill/cast 入账+仅胜方 stats.pvp.wins / L1 越界拒收仍结算 ELO+wins / friendly 带 stats 不喂）；`CombatSystem.test.ts` +3 引擎（per-type kill / cast 计数 / achievementStatDelta 映射）。**meta 144 + gameserver 42 + 引擎 combat 10 全绿**，`tsc -b shared engine gameserver metaserver commercial gateway worldsvc` 干净，client webpack 成功。
+
+> **下一会话接续点**：S9-3b **PvE 喂入半**（裁判 verdict 扩展回 kill/cast + `/pve/verify` 比对入账，§6.2，仅抽检局可信）→ S9-7（反作弊 L2/L3：离线 replay 复算抽查 + `statSuspicion` 升档 + OPS 审查队列）→ S9-8（埋点漏斗 + 红线/幂等单测 + 金币池模拟校准）。任务跟踪见 `META_TASKS.md` S9。

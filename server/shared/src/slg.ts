@@ -30,7 +30,8 @@ export type TileType =
   | 'center' // 世界中心（宗门归属争夺点，唯一）
   | 'base' // 玩家主城落点（运行时写库）
   | 'obstacle' // 阻挡地形（山脉/河流，完全不可通行，S8-6.6）
-  | 'gate'; // 关隘/桥（嵌于阻挡带；占领方及盟友可通行；未占领视为阻挡，S8-6.6）
+  | 'gate' // 关隘/桥（嵌于阻挡带；占领方及盟友可通行；未占领视为阻挡，S8-6.6）
+  | 'stronghold'; // 险地（G8 §3.1）：系统超强 NPC 驻守的高战略价值格；不可直占，须围攻 attack 攻克
 
 export type ResourceType = 'food' | 'iron' | 'wood';
 export type MarchKind = 'attack' | 'reinforce' | 'occupy' | 'sweep' | 'scout' | 'return';
@@ -130,6 +131,13 @@ export const SLG_GEN = {
   gateFreq: 1 / 60,
   /** 关隘噪声阈值：障碍带内此值以上生成关隘（战略通道），极稀疏。 */
   gateThreshold: 0.99,
+  // ── G8 险地（stronghold，§3.1）──────────────────────────
+  /** 险地噪声频率（大尺度，比战略要点更稀疏的高价值点）。 */
+  strongholdFreq: 1 / 70,
+  /** 险地噪声阈值：超过此值才生成险地，极稀疏（约全图 0.3%，比 familyKeep 稀疏 ~16×）。 */
+  strongholdThreshold: 0.92,
+  /** 险地最低离中心距离比（避免贴中心刷险地，留出新手安全圈）。 */
+  strongholdMinDistRatio: 0.25,
 } as const;
 
 // ── 数值常量（U6 DRAFT，上线后调参）────────────────────
@@ -493,6 +501,13 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
   let level = Math.round((1 - dr) * (SLG_MAP_MAX_LEVEL - 1) + 1 + (lvlNoise - 0.5) * 1.5);
   level = Math.max(1, Math.min(SLG_MAP_MAX_LEVEL, level));
 
+  // 险地（G8 §3.1）：极稀疏的高战略价值 PvE 格，系统超强 NPC 驻守，离中心一定距离外。
+  // 比 familyKeep 更稀疏、固定满级、带资源种类（攻克后产出丰厚）。先于 familyKeep 判定（优先级更高）。
+  const strongholdNoise = valueNoise(x, y, SLG_GEN.strongholdFreq, seed ^ 0x0555);
+  if (strongholdNoise > SLG_GEN.strongholdThreshold && dr > SLG_GEN.strongholdMinDistRatio) {
+    return { type: 'stronghold', level: SLG_MAP_MAX_LEVEL, resType: biomeAt(x, y, seed) };
+  }
+
   // 战略要点 / 家族关隘：稀疏高峰，离中心一定距离外
   const keepNoise = valueNoise(x, y, SLG_GEN.keepFreq, seed ^ 0x0222);
   if (keepNoise > SLG_GEN.keepThreshold && dr > SLG_GEN.keepMinDistRatio) {
@@ -695,6 +710,23 @@ export const SWEEP_LOOT_PER_LEVEL = 200;
 export function npcGarrison(level: number): number {
   return NPC_GARRISON_PER_LEVEL * Math.max(1, level);
 }
+
+// ── G8 险地（stronghold，§3.1）数值（DRAFT，上线后调参）────────────
+/**
+ * 险地系统 NPC 守军每等级强度（满级 5 → 1800 兵力当量）。远强于普通格驻守（GARRISON_PER_TILE=500）
+ * 与扫荡 NPC（NPC_GARRISON_PER_LEVEL=120），「非常难攻占」（§3.1）：合成步兵下，零充值玩家即便满兵
+ * （TROOP_CAP_BASE=2000）也因防守占优（基地 + 超时判守方胜）几乎打不过，须靠科技/装备养成强化布阵
+ * 才攻得下（兑现 SLG7 卖战力 / U7 碾压级）。满级 1800 ÷ 单位满血 ≈ 60 单位（纵深 ~6），叠加攻方
+ * ≤2000 兵 ≈ 67 单位（纵深 ~7）合计 < 棋盘 16 行纵深 → 正常规模权威引擎可跑，不退化为廉价兜底；
+ * 仅鲸鱼级超大军（>5000 兵）才溢出棋盘走兜底。
+ */
+export const STRONGHOLD_GARRISON_PER_LEVEL = 360;
+/** 险地系统守军（按格等级线性，§3.1 系统超强默认防守 config）。 */
+export function strongholdGarrison(level: number): number {
+  return STRONGHOLD_GARRISON_PER_LEVEL * Math.max(1, level);
+}
+/** 险地攻克后一次性资源奖励（按格等级，单资源；§3.1「大幅资源」）。 */
+export const STRONGHOLD_LOOT_PER_LEVEL = 5000;
 
 export interface SiegeResolution {
   outcome: SiegeOutcome;

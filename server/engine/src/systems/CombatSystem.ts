@@ -67,6 +67,9 @@ export class CombatSystem {
         // Credit kill to the opponent
         const killerOwner = state.ownerOf(unit.side === Side.Bottom ? Side.Top : Side.Bottom);
         state.stats[killerOwner].unitsKilled++;
+        // Per-victim-type kill tally (S9-3b) — single removal site covers all killers (melee/arrow/spell).
+        const km = state.stats[killerOwner].killsByType;
+        km[unit.unitType] = (km[unit.unitType] ?? 0) + 1;
 
         state.pushEvent({ type: 'unit_died', unitId: unit.id, pos: { col: unit.col, y_fp: unit.y_fp } });
 
