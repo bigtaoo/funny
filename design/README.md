@@ -86,6 +86,7 @@
 |---|---|
 | [animator/ARCHITECTURE.md](tools/animator/ARCHITECTURE.md) · [REQUIREMENTS.md](tools/animator/REQUIREMENTS.md) | 骨骼动画编辑器（端口 9091） |
 | [level-editor/DESIGN.md](tools/level-editor/DESIGN.md) | 关卡编辑器（端口 9092） |
+| [vfx-editor/DESIGN.md](tools/vfx-editor/DESIGN.md) | 特效编辑器（端口 9094，方案 A 墨线矢量程序特效；状态：设计中） |
 
 ### 1.5 快查文档（`claudedocs/`，模块级速查，非设计基准）
 `animator.md` · `client-modules.md` · `file-formats.md` · **`server.md`（进程拓扑/端口权威）**
