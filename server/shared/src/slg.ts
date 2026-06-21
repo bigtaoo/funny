@@ -206,6 +206,12 @@ export const SEASON_LENGTH_DAYS = 60; // U3：2 个月
 export const RELOCATE_COST = 500;
 
 /**
+ * 瞭望塔建造资源花费（§18 G5 V2 余项「固定半径持久视野源」，DRAFT）。在己方领地（非主城）上建造，
+ * 该格升级为 VISION_WATCHTOWER_RADIUS 大半径视野源，落库随格子持久（丢地即失塔）。花资源（非金币）。
+ */
+export const WATCHTOWER_COST: Readonly<Record<ResourceType, number>> = { food: 0, iron: 2000, wood: 3000 };
+
+/**
  * gateway 横扩推送通道（SOC9 / §8.4）：worldsvc 把「一条消息 + 收件人列表」发到此 Redis
  * pub/sub channel，每个 gateway 实例订阅后向本机在线的收件人 socket 扇出。避免 worldsvc 对
  * ≤900 人宗门做 O(n) HTTP 直推（信息量过大），亦天然支持多 gateway 实例路由。
@@ -778,6 +784,19 @@ export const VISION_MARCH_RADIUS = 2;
  * 「探得更深」：不打不占，派少量兵到任意非障碍格，沿途 + 抵达点照亮一片更大的视野后自动回师。
  */
 export const VISION_SCOUT_RADIUS = 4;
+/**
+ * 瞭望塔视野半径（§18 G5 V2 余项，DRAFT）。最大的固定持久视野源——比主城（5）更远，
+ * 在己方领地建塔后该格成大半径瞭望点，照亮一片纵深，是「主动布点扩视野」的手段。
+ */
+export const VISION_WATCHTOWER_RADIUS = 8;
+/** 全部视野源半径的最大值（外扩查询 pad 用，须覆盖最大半径源以免漏照视区边缘）。 */
+export const VISION_MAX_RADIUS = Math.max(
+  VISION_TERRITORY_RADIUS,
+  VISION_BASE_RADIUS,
+  VISION_MARCH_RADIUS,
+  VISION_SCOUT_RADIUS,
+  VISION_WATCHTOWER_RADIUS,
+);
 
 /** 视野源：一个中心点 + 半径（Chebyshev）。 */
 export interface VisionSource {

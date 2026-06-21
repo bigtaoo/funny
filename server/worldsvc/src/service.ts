@@ -41,6 +41,9 @@ import {
   VISION_BASE_RADIUS,
   VISION_MARCH_RADIUS,
   VISION_SCOUT_RADIUS,
+  VISION_WATCHTOWER_RADIUS,
+  VISION_MAX_RADIUS,
+  WATCHTOWER_COST,
   isInVision,
   marchInterpPos,
   type VisionSource,
@@ -101,6 +104,8 @@ export interface WorldTileView {
   familyId?: string;
   garrison?: number;
   protectedUntil?: number;
+  /** §18 G5 V2：该格建有瞭望塔（己方可见格才透出）——大半径持久视野源，客户端渲染塔标记。 */
+  watchtower?: boolean;
   /**
    * G5：该格归同家族盟友所有（非己方、视野内）。客户端据此用「友方色」渲染——家族共享视野后
    * 盟友领地不应再显示为敌色（占领不写 tile.familyId，故由服务端按家族成员集判定后置此标记）。
@@ -204,6 +209,12 @@ const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'at
 /** 在途行军的视野半径：侦察行军（scout）探得更深（VISION_SCOUT_RADIUS），其余按普通行军（VISION_MARCH_RADIUS）。 */
 function marchVisionRadius(kind: MarchKind): number {
   return kind === 'scout' ? VISION_SCOUT_RADIUS : VISION_MARCH_RADIUS;
+}
+
+/** 静态视野源（领地/主城/瞭望塔）的半径：瞭望塔 > 主城 > 普通领地（§18 G5 V2）。 */
+function tileVisionRadius(t: { type: TileType; watchtower?: boolean }): number {
+  if (t.watchtower) return VISION_WATCHTOWER_RADIUS;
+  return t.type === 'base' ? VISION_BASE_RADIUS : VISION_TERRITORY_RADIUS;
 }
 
 export class WorldService {
@@ -411,8 +422,8 @@ export class WorldService {
     // 视野源主人 = 自己 + 同家族成员（家族级共享，§8.2 拍板）。
     const ids = [...(await this.familyMemberIds(worldId, accountId))];
 
-    // 源领地：在视区基础上按最大视野半径外扩（半径外的领地也能照亮视区边缘）。
-    const pad = VISION_BASE_RADIUS;
+    // 源领地：在视区基础上按最大视野半径外扩（半径外的领地/瞭望塔也能照亮视区边缘）。
+    const pad = VISION_MAX_RADIUS;
     const sources: VisionSource[] = [];
     const srcTiles = await cols.tiles
       .find({
@@ -423,7 +434,7 @@ export class WorldService {
       })
       .toArray();
     for (const t of srcTiles) {
-      sources.push({ x: t.x, y: t.y, radius: t.type === 'base' ? VISION_BASE_RADIUS : VISION_TERRITORY_RADIUS });
+      sources.push({ x: t.x, y: t.y, radius: tileVisionRadius(t) });
     }
 
     // 在途行军（己方 + 家族）：插值当前位置 → 小半径视野（侦察行军价值）。
@@ -455,8 +466,8 @@ export class WorldService {
     const { cols } = this.deps;
     const xs = cells.map((c) => c.x);
     const ys = cells.map((c) => c.y);
-    const pad = VISION_BASE_RADIUS;
-    // 视野源是领地/主城 → 在 cells 包围盒按最大视野半径外扩内查己方有主格。
+    const pad = VISION_MAX_RADIUS;
+    // 视野源是领地/主城/瞭望塔 → 在 cells 包围盒按最大视野半径外扩内查己方有主格。
     const owned = await cols.tiles
       .find({
         worldId,
@@ -467,7 +478,7 @@ export class WorldService {
     const seers = new Set<string>();
     for (const t of owned) {
       if (!t.ownerId || exclude.has(t.ownerId) || seers.has(t.ownerId)) continue;
-      const radius = t.type === 'base' ? VISION_BASE_RADIUS : VISION_TERRITORY_RADIUS;
+      const radius = tileVisionRadius(t);
       for (const c of cells) {
         if (Math.abs(t.x - c.x) <= radius && Math.abs(t.y - c.y) <= radius) {
           seers.add(t.ownerId);
@@ -739,6 +750,46 @@ export class WorldService {
       await this.pushTileToObservers(after, new Set([accountId])); // G5-2：迁城新主城对观察者可见
     }
     return this.getMe(worldId, accountId);
+  }
+
+  /**
+   * 建瞭望塔（§18 G5 V2）：在己方领地（非主城）花资源建塔，该格升级为大半径
+   * （VISION_WATCHTOWER_RADIUS）持久视野源。落库随 TileDoc 持久——丢地即随格子消失，无单独退还。
+   * 校验：已进入 + 己方领地 + 非主城（主城自带视野）。幂等：已有塔直接返回当前视图、不重复扣费。
+   */
+  async buildWatchtower(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
+    const { cols, now } = this.deps;
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+
+    const tid = tileId(worldId, x, y);
+    const tile = await cols.tiles.findOne({ _id: tid });
+    if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', '非己方领地');
+    if (tile.type === 'base') throw new SlgError('BAD_REQUEST', '主城自带视野，不可建瞭望塔');
+    if (tile.watchtower) return this.tileDocView(tile, accountId); // 幂等
+
+    // 结算资源后校验充足，再扣费（不足抛 INSUFFICIENT_RESOURCES，不动地图）。
+    const t = now();
+    const resources = this.settle(pw, t);
+    for (const rt of RESOURCE_TYPES) {
+      if ((resources[rt] ?? 0) < (WATCHTOWER_COST[rt] ?? 0)) {
+        throw new SlgError('INSUFFICIENT_RESOURCES', '资源不足以建造瞭望塔');
+      }
+    }
+    for (const rt of RESOURCE_TYPES) resources[rt] -= WATCHTOWER_COST[rt] ?? 0;
+
+    await cols.tiles.updateOne({ _id: tid }, { $set: { watchtower: true }, $inc: { rev: 1 } });
+    await cols.playerWorld.updateOne(
+      { _id: pw._id },
+      { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
+    );
+
+    const after = await cols.tiles.findOne({ _id: tid });
+    if (after) {
+      void this.pushTile(accountId, after); // owner refetch → 新塔扩张的视野下次 getMap 生效
+      await this.pushTileToObservers(after, new Set([accountId])); // 塔是可见结构，视野内观察者亦见
+    }
+    return this.tileDocView(after!, accountId);
   }
 
   // ── S8-2：行军 / 撤军 / 到点处理 ──────────────────────────
@@ -1647,6 +1698,7 @@ export class WorldService {
       ...(o.familyId ? { familyId: o.familyId } : {}),
       ...(o.garrison ? { garrison: o.garrison } : {}),
       ...(o.protectedUntil ? { protectedUntil: o.protectedUntil } : {}),
+      ...(o.watchtower ? { watchtower: true } : {}),
     };
   }
 

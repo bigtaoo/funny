@@ -117,6 +117,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/watchtower": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 建瞭望塔（在己方领地花 WATCHTOWER_COST 资源建大半径持久视野源；§18 G5 V2） */
+        post: operations["buildWatchtower"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/march": {
         parameters: {
             query?: never;
@@ -558,6 +575,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** 竞拍出价（saleMode='auction'，B）。amount = 出价单价，托管 = amount × qty。 */
         post: operations["placeBid"];
         delete?: never;
         options?: never;
@@ -778,6 +796,8 @@ export interface components {
             familyId?: string;
             garrison?: number;
             protectedUntil?: number;
+            /** @description §18 G5 V2：该格建有瞭望塔（大半径持久视野源）。客户端渲染塔标记。 */
+            watchtower?: boolean;
             /** @description G5 视野：该格是否在请求者当前视野内。true=动态层如实返回；false=视野外，仅程序化 底层地形（动态层全部隐去，含「已被占领」信号）。仅 /world/map 视区读填充。 */
             visible?: boolean;
             /** @description G5：该格归同家族盟友所有（视野内、非己方）。客户端用友方色渲染。 */
@@ -1187,6 +1207,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
                         data?: components["schemas"]["PlayerWorldView"];
+                    };
+                };
+            };
+        };
+    };
+    buildWatchtower: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    x: number;
+                    y: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Watchtower built */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["WorldTileView"];
                     };
                 };
             };

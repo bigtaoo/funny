@@ -117,6 +117,9 @@ const TRAIN_BATCH_MAX       = 500;
 const TRAIN_PRESETS         = [10, 50];
 /** 主动迁城金币花费（display only；server @nw/shared RELOCATE_COST 权威）。 */
 const RELOCATE_COST = 500;
+/** 瞭望塔资源花费（display only；server @nw/shared WATCHTOWER_COST 权威）。 */
+const WATCHTOWER_COST_IRON = 2000;
+const WATCHTOWER_COST_WOOD = 3000;
 
 // ── Scene ─────────────────────────────────────────────────────────────────────
 
@@ -347,6 +350,21 @@ export class WorldMapScene implements Scene {
           g.lineStyle(1.5, ALLY_SECT_BORDER, 0.95);
           g.beginFill(0, 0);
           g.drawRect(px + 1.5, py + 1.5, TILE_PX - 4, TILE_PX - 4);
+          g.endFill();
+        }
+
+        // §18 G5 V2 瞭望塔：可见格画一个手绘小塔（塔身 + 三角顶），标识大半径持久视野源。
+        if (tile?.watchtower && !fogged) {
+          const tcx = px + TILE_PX / 2;
+          const baseY = py + TILE_PX - 4;
+          const towerW = Math.max(3, TILE_PX * 0.22);
+          const towerH = Math.max(5, TILE_PX * 0.42);
+          g.lineStyle(1, 0x4a3520, 0.95);
+          g.beginFill(0xe8dcc0, 0.95); // 纸面米白塔身
+          g.drawRect(tcx - towerW / 2, baseY - towerH, towerW, towerH);
+          g.endFill();
+          g.beginFill(0x4a3520, 0.95); // 深墨三角顶
+          g.drawPolygon([tcx - towerW / 2 - 1, baseY - towerH, tcx + towerW / 2 + 1, baseY - towerH, tcx, baseY - towerH - towerW]);
           g.endFill();
         }
       }
@@ -673,15 +691,18 @@ export class WorldMapScene implements Scene {
         return;
       }
       const tileKey = `${this.cb.worldId}:${tx}:${ty}`;
-      this.showModal(
-        [t('world.mine'), `(${tx}, ${ty})`],
-        [
-          { label: t('world.actReinforce'), action: () => this.showDeployDialog(tx, ty, 'reinforce') },
-          { label: t('world.actDefense'), action: () => { this.closeModal(); this.cb.onOpenDefense(tileKey); } },
-          { label: t('world.actAbandon'), action: () => this.doAbandon(tx, ty) },
-          { label: '✕', action: () => this.closeModal() },
-        ],
-      );
+      const myButtons: { label: string; action: () => void }[] = [
+        { label: t('world.actReinforce'), action: () => this.showDeployDialog(tx, ty, 'reinforce') },
+        { label: t('world.actDefense'), action: () => { this.closeModal(); this.cb.onOpenDefense(tileKey); } },
+      ];
+      // 瞭望塔（§18 G5 V2）：己方领地建大半径持久视野源。已有塔则显状态行、不再提供按钮。
+      if (!tile.watchtower) {
+        myButtons.push({ label: t('world.actWatchtower'), action: () => this.confirmWatchtower(tx, ty) });
+      }
+      myButtons.push({ label: t('world.actAbandon'), action: () => this.doAbandon(tx, ty) });
+      myButtons.push({ label: '✕', action: () => this.closeModal() });
+      const head = tile.watchtower ? [t('world.mine'), t('world.hasWatchtower'), `(${tx}, ${ty})`] : [t('world.mine'), `(${tx}, ${ty})`];
+      this.showModal(head, myButtons);
       return;
     }
 
@@ -907,6 +928,36 @@ export class WorldMapScene implements Scene {
       }
       await this.loadMapViewport();
       this.showToast(t('world.relocated'));
+      this.renderMap(); this.renderHud();
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  /** 建瞭望塔前的二次确认（展示资源花费）；确认 → doWatchtower。 */
+  private confirmWatchtower(tx: number, ty: number): void {
+    this.showModal(
+      [
+        t('world.watchtowerTitle'),
+        t('world.watchtowerConfirm')
+          .replace('{wood}', String(WATCHTOWER_COST_WOOD))
+          .replace('{iron}', String(WATCHTOWER_COST_IRON)),
+      ],
+      [
+        { label: t('world.watchtowerBtn'), action: () => void this.doWatchtower(tx, ty) },
+        { label: '✕', action: () => this.closeModal() },
+      ],
+    );
+  }
+
+  private async doWatchtower(tx: number, ty: number): Promise<void> {
+    this.closeModal();
+    try {
+      await this.cb.worldApi.buildWatchtower(this.cb.worldId, tx, ty);
+      this.me = await this.cb.worldApi.getMe(this.cb.worldId); // 资源已扣，刷新本地态
+      this.tileCache.clear();                                  // 新塔扩张视野 → 整块视区重拉显形
+      await this.loadMapViewport();
+      this.showToast(t('world.watchtowerBuilt'));
       this.renderMap(); this.renderHud();
     } catch (e) {
       this.showToast(this.errorMsg(e), C.red);

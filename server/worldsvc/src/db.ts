@@ -66,6 +66,7 @@ export interface TileDoc {
   defense?: DefenseConfig; // 领地防守（P5 内嵌）
   garrison?: number;
   protectedUntil?: number; // ms
+  watchtower?: boolean; // 瞭望塔（§18 G5 V2）：建塔后该格成大半径持久视野源；丢地随 TileDoc 一并消失
   rev: number;
 }
 

@@ -55,6 +55,9 @@ components:
           type: integer
         protectedUntil:
           type: number
+        watchtower:
+          type: boolean
+          description: §18 G5 V2：该格建有瞭望塔（大半径持久视野源）。客户端渲染塔标记。
         visible:
           type: boolean
           description: >-
@@ -645,6 +648,34 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
+
+  /world/watchtower:
+    post:
+      operationId: buildWatchtower
+      summary: 建瞭望塔（在己方领地花 WATCHTOWER_COST 资源建大半径持久视野源；§18 G5 V2）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, x, y]
+              properties:
+                worldId: { type: string }
+                x: { type: integer }
+                y: { type: integer }
+      responses:
+        '200':
+          description: Watchtower built
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/WorldTileView' }
 
   /world/march:
     get:
