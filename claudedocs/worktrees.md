@@ -3,6 +3,28 @@
 > 解决「多会话并行开发」的两难：都在 main 会互踩提交；共用一个目录建分支会因 `git checkout` 全局切换打架。
 > worktree = 一个仓库挂多个工作目录，各自钉死在不同分支，互不切换。**每条并行线一个 worktree，一个会话进一个目录。**
 
+## 心智模型（先读这个）
+
+**一条线 = 一个文件夹 = 一个分支，三位一体。**
+
+```
+.claude\worktrees\auction-house\   ← 文件夹(worktree)：工作目录的壳，是你打开的「门」
+        ↓ 检出在
+feat/auction-house                 ← 分支：你的提交真正存放处，是「门后的房间和东西」
+```
+
+- **开会话靠「选文件夹」，不靠「切分支」。** 打开对应 worktree 文件夹，git 自动知道它在哪条分支，提交就落到那条分支。桌面 app 的分支切换器用不上、无视即可。
+- **「Couldn't switch branches」不是 bug**：同一分支不能被两个工作目录同时检出；它已被某 worktree 占用，所以别处切不过去。解法是开那个 worktree 的文件夹，而不是切分支。
+- **分支不能随便删。** 删 `feat/xxx` = 删那条线还没合进 main 的提交，且被 worktree 占用时 git 直接拒绝。只有「没绑 worktree 且内容已在别处」的游离/重复分支才能删。
+- **生命周期**：开文件夹干活 → 提交到自己分支 → 干完把**分支合进 main** → 然后才 `git worktree remove` 拆文件夹 + `git branch -d` 删分支。**合并之前，文件夹和分支都得留着。**
+
+| 新会话要做 | 打开这个文件夹 |
+|---|---|
+| 拍卖行/装备 | `funny\.claude\worktrees\auction-house` |
+| 成就系统 | `funny\.claude\worktrees\achievement` |
+| G5 视野 | `funny\.claude\worktrees\slg-g5-alliance-vision` |
+| 集成 / 合并 / review | `funny\`（主目录，钉 main）|
+
 ## 约定（规则）
 
 1. **位置**：所有 worktree 放在 `C:\Users\TaoWang\Documents\funny\.claude\worktrees\<task-slug>\`，已在 `.gitignore` 忽略，不会污染 main。
