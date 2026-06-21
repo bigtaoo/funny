@@ -2,21 +2,21 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "animator",
-      "runtimeExecutable": "wsl",
-      "runtimeArgs": ["-d", "ubuntu", "--", "bash", "-c", "cd ~/projects/funny/tools/animator && npm run start"],
-      "port": 9091
-    },
-    {
       "name": "game",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "cd /d C:\\Users\\TaoWang\\Documents\\funny\\code && npm run start"],
+      "runtimeArgs": ["/c", "npm", "run", "start", "--prefix", "C:\\Users\\TaoWang\\Documents\\funny\\client"],
       "port": 9090
+    },
+    {
+      "name": "animator",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npm", "run", "start", "--prefix", "C:\\Users\\TaoWang\\Documents\\funny\\tools\\animator"],
+      "port": 9091
     },
     {
       "name": "level-editor",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "cd /d C:\\Users\\TaoWang\\Documents\\funny\\tools\\level-editor && npm run start"],
+      "runtimeArgs": ["/c", "npm", "run", "start", "--prefix", "C:\\Users\\TaoWang\\Documents\\funny\\tools\\level-editor"],
       "port": 9092
     }
   ]
