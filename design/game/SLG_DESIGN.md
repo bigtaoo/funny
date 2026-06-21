@@ -539,7 +539,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 
 | # | 缺口 | 现状 | 影响 |
 |---|---|---|---|
-| **G5** | **地图迷雾 / 侦察视野 / 宗门视野共享 / 盟友土地标记** | **G5-1 服务端读路径门控 ✅（2026-06-21，§18）**——getMap/getTile 按视野隐动态层，家族级共享；剩 G5-2 反向视野推送 + G5-3 客户端渲染 | §8.2 宗门视野共享、§2.1「视野订阅」核心战略玩法（拍板降级为家族级，§18.1 V2） |
+| **G5** | **地图迷雾 / 侦察视野 / 宗门视野共享 / 盟友土地标记** | **G5-1 读路径门控 + G5-2 反向视野推送 ✅（2026-06-21，§18）**——getMap/getTile 按视野隐动态层、家族级共享；行军/易主反向推给视野内观察者；剩 G5-3 客户端渲染 | §8.2 宗门视野共享、§2.1「视野订阅」核心战略玩法（拍板降级为家族级，§18.1 V2） |
 | **G6** | **多大区 + 赛季分配规则**（→ **可编码规格 §17.8**，数据地基+算法已细化，运行时延后） | 单世界；`settleSeason`/`resetSeason` 有，但 SLG3「按宗门强弱平衡分配大区 / 超 ~1 万人开新大区」未做；分配硬依赖历史排名而 `settleSeason` 排名**不落库**（C2，=天梯「战令依赖 RETENTION」同构数据源缺口） | 规模化与生态平衡（SLG3）未兑现 |
 | **G7** | **admin 运营后台 SLG 接入**（→ **可编码规格 §17.7**） | 异常交易审计工单 / 赛季运维 UI / 商品价格可调基本未接 admin；且 worldsvc `/admin/world/*` 四端点**未鉴权**（JWT handler 内无 X-Internal-Key，任意玩家可清区，C4 安全洞） | S8-8 运营侧、SLG9 反 RMT 审计闭环缺口 |
 | **G8** | **险地（Stronghold）格子类型** | 设计 §3.1 列出，服务端 grep `stronghold/险地` 零命中 | 高战略价值 PvE 格缺失 |
@@ -1063,7 +1063,58 @@ if (path.startsWith('/admin/world/')) {
 - **SLG 战令增益（C6/G4，属 S8-8 战令专项）**：`hasBattlePass` 当前死字段——增益效果（加速/产率/额外奖励档）随 SLG 赛季战令专项落地，与天梯战令独立（OVERVIEW §2/§4）。
 - **称号（C1 TODO）**：`SETTLE_REWARDS.titleId` 的 `grantTitle` 接入待 `TITLE_DESIGN` S10；本轮仅邮件正文写明（仪式感先到位，同天梯 §13A.0-C4）。
 - **异常交易审计工单（G7 半截）**：拍卖反 RMT 审计落地随 OPS 专项（§17.7 已列规格）。
-- **G5 视野系统 / G8 险地**：与赛季正交，各自专项（§15.2）。
+- **G5 视野系统 / G8 险地**：与赛季正交，各自专项（§15.2）。G5 已启动 → §18。
+
+---
+
+## 18. G5 视野 / 迷雾系统（2026-06-21 拍板，§8.2 / §2.1 / §15.2 G5）
+
+> 兑现「加家族才守得住」留存逻辑的关键拼图：服务端此前整图全可见（grep `fog/vision/scout` 零命中）。本节定基准并记录实现。**拍板（2026-06-21，用户）见下表**；G5-1 服务端读路径门控已 ✅。
+
+### 18.1 五项拍板
+
+| # | 决策 | 结论 |
+|---|---|---|
+| **V1 迷雾模型** | 永久黑雾 vs 战争迷雾 | **2a**：地形层（程序化、确定性）**全图始终可见**；动态层（归属/驻军/防守/保护罩/行军）仅当前视野内可见，视野外**退回 `proceduralTile` 底层地形**（连「已被占领」信号都不泄露——type 不返 `territory`/`base`）。不做持久化 explored-set 黑雾——地形不是秘密，机密是动态层。 |
+| **V2 视野来源 + 共享** | 半径来源 / 共享到哪一级 | 己方领地半径 `VISION_TERRITORY_RADIUS=2` + 主城 `VISION_BASE_RADIUS=5` + 在途行军 `VISION_MARCH_RADIUS=2`（侦察行军价值）。**共享 = 家族级（≤30）**，复用 `sameFamily`/`familyMembers` 反查。**§8.2 字面「宗门级共享」降级为家族级**——宗门 900 人并集近乎整图，迷雾名存实亡；宗门/联盟只做领地颜色标记不并视野。瞭望塔建筑 / `scout` 行军 kind 列 v2。 |
+| **V3 计算/存储** | 实时算 vs 落库 | **实时算 + 短 TTL 缓存（缓存留后续），vision 零落库**（避 U11 规模爆炸）。视区半径有 `MAP_VIEW_MAX_RADIUS=40` 上限，计算量有界；源领地查询复用 `{ownerId}` 索引。 |
+| **V4 推送门控** | 读路径门控 / 反向视野推送 | **v1 即做反向视野推送**（用户拍板，覆盖初版「仅读路径」建议）。工程化:反向查询**只在「行军发起 / 格易主」两个低频事件点做一次**（查路径沿途半径内有视野源的玩家 → 一次性推完整 `march_update`/`tile_update`，客户端在自己视野内的路径段渲染），**不逐 tick 反向扇出**（避 U11）。`under_attack` 仍无条件发防守方（§16 布阵预设=反应窗口）。→ G5-2。 |
+| **V5 客户端表现** | 雾渲染 + 标记色 | 视野外铅笔灰雾半透明覆盖（手绘风，SketchPen 烘焙）、去动态层；标记色对齐「我蓝敌红」v0.3：自己=蓝、家族/同盟友=青/绿（第三友方色）、联盟宗门=黄描边标记（不共享视野，§8.2）、敌方=红、中立=纸面本色。→ G5-3。 |
+
+### 18.2 视野原语（`shared/slg.ts`）
+
+- 常量 `VISION_TERRITORY_RADIUS` / `VISION_BASE_RADIUS` / `VISION_MARCH_RADIUS`（DRAFT）。
+- `VisionSource{x,y,radius}`；`isInVision(sources, x, y)`：Chebyshev（方形）距离判可见，纯函数双端可算。
+- `marchInterpPos(fromX,fromY,toX,toY,departAt,arriveAt,now)`：行军当前位置线性插值（路径绕障故为近似，足够圈视野）。
+
+### 18.3 分片
+
+- **G5-1 shared 原语 + 服务端读路径门控 ✅（2026-06-21）**：见 §18.4。
+- **G5-2 反向视野推送 ✅（2026-06-21）**：`startMarch` / 格易主（occupy/landSiege/relocate）做一次反向视野查询 → 给视野内观察者推 `march_update`/`tile_update`（敌方行军进我视野即推，V4）。见 §18.5。
+- **G5-3 客户端渲染**：`WorldMapScene` 灰雾覆盖 + 友/敌/联盟标记色 + 反向推送的敌军渲染。
+
+### 18.4 G5-1 实现记录（2026-06-21）
+
+- **shared**：§18.2 原语（`VISION_*` 常量 + `VisionSource` + `isInVision` + `marchInterpPos`）。
+- **worldsvc `service.ts`**：
+  - `computeVisionSources(worldId,accountId,x0,x1,y0,y1)`：视野源主人 = 自己 ∪ 同家族成员（`familyMembers` 反查；**注意 `occupyTile` 不写 `tile.familyId`，故不能靠 tile.familyId，必须按 `ownerId:{$in: 成员}` 取源格**）。源领地在视区按 `VISION_BASE_RADIUS` 外扩查询（半径外的领地照亮视区边缘）；`type:'base'` 给大半径、其余领地小半径；在途己方/家族 `marching` 行军按 `marchInterpPos` 插值当前位置 + `VISION_MARCH_RADIUS`。
+  - `getMap`：建可见集 → 逐格门控。视野外 push `{...proceduralView, visible:false}`（隐去动态层 + 占领信号）；视野内 `{...tileDocView/proceduralView, visible:true}`。**profile 拉档仅对「可见的他人领地」**（视野外不显归属，省 meta 负载）。
+  - `getTile`：同口径门控（视野外 `{...proceduralView, visible:false}`），防 getTile 绕过迷雾。
+  - `WorldTileView.visible?:boolean`（仅 getMap/getTile 视区读填充；occupy 等单格响应不带）。
+- **契约**：`openapi-world.yml` `WorldTileView.visible`；`rest:gen` 重生 `openapi-world.ts`。proto 无改动（G5-1 不动推送）。
+- **验收**：server `tsc -b shared engine worldsvc gateway` 全绿；client `tsc --noEmit` 全绿；worldsvc **93 e2e**（新增 `fog.e2e.test.ts` 5 例：视野内动态可见 / 视野外退程序化地形隐占领 / getTile 同口径 / 家族共享远处领地 / 在途行军照亮路径 + 对照迷雾；既有 88 不破，因视野外退回 `proceduralView` 与原程序化默认逐字一致，且正向动态断言均落在请求者己方格=恒在视野）。
+
+### 18.5 G5-2 实现记录（2026-06-21）
+
+- **反向视野查询（`service.ts`）**：
+  - `visionObservers(worldId, cells, exclude)`：找出视野半径罩住 `cells` 中任一格的「领地/主城主人」账号集（`type:'base'` 用 `VISION_BASE_RADIUS`、领地用 `VISION_TERRITORY_RADIUS`，Chebyshev）。在 cells 包围盒按 `VISION_BASE_RADIUS` 外扩查有主格，逐格判命中即收。**只在低频事件点调用一次（非逐 tick）**，避 U11 反向扇出爆炸。**v1 只取领地主人本人**（家族成员实时扇出留后续——他们经家族共享 getMap 轮询亦可见）。
+  - `pushTileToObservers(tile, exclude)`：包一层，对单格变更推 `tile_update` 给观察者。
+- **事件点接入**：
+  - **行军发起 `startMarch`**：复用已算出的 `path`（A* 全路径，比直线包围盒更准）反向查观察者 → 推 `march_update`。守方（attack）已单独收 `under_attack`，连同行军主一起从观察者集排除（避重复）。`march_update` 载荷无 troops 字段——敌方观察者看得见行军路线/ETA/类型但**不知兵力**，合理的侦察信息粒度。
+  - **格易主/新领地**：直占 `occupyTile`、行军到点占领、围攻 `landSiege` 易主、主动/被动迁城新主城——五处在原 owner/defender `pushTile` 之后加 `pushTileToObservers`（排除已单独推过的当事人）。增援不接（garrison 不在 `tile_update` 载荷，无观察者价值）。
+- **关键修复（async 时序）**：观察者推送内含 DB 查询（`visionObservers` await），不能 `void` fire-and-forget——否则事件函数返回时推送尚未发出（owner 的同步 `pushTile`/`pushMarch` 不受影响，但观察者推送会丢）。五处 `pushTileToObservers` 与 startMarch 的观察者推送全部 **`await`**，确保 `processDueArrivals`/`startMarch` 返回时推送已落。
+- **契约**：proto / openapi 均无改动——`march_update`/`tile_update` 推送通道既有，G5-2 纯服务端逻辑（推送给更多收件人，载荷不变）。
+- **验收**：server `tsc -b` 全绿；worldsvc **96 e2e**（新增 `vision-push.e2e.test.ts` 3 例：行军进观察者视野推 march_update + 远端不推 / 直占新领地推 tile_update + 占领者不重复推 + 远端不推 / 围攻易主对第三方观察者推；既有 93 不破——awaited 观察者推送不改既有 owner/defender 推送断言）。
 
 ---
 

@@ -35,6 +35,12 @@ import {
   NATION_BONUS_PRODUCTION,
   NATION_BONUS_DEFENSE,
   nationDefenseStrength,
+  VISION_TERRITORY_RADIUS,
+  VISION_BASE_RADIUS,
+  VISION_MARCH_RADIUS,
+  isInVision,
+  marchInterpPos,
+  type VisionSource,
   SIEGE_TEAM_CAP,
   SECT_LEADER_PENALTY_RATE,
   RELOCATE_COST,
@@ -82,6 +88,14 @@ export interface WorldTileView {
   familyId?: string;
   garrison?: number;
   protectedUntil?: number;
+  /**
+   * G5 视野：该格是否在请求者当前视野内。
+   * - true：动态层（归属/驻军/防守/保护罩）如实返回；
+   * - false：视野外，仅返回程序化底层地形（type/level/resType），动态层全部隐去
+   *   （连「已被占领」都不泄露——type 退回底层而非 'territory'）。
+   * 仅 getMap 视区读填充；getTile/occupy 等单格响应不带此字段。
+   */
+  visible?: boolean;
 }
 
 export interface WorldMapView {
@@ -236,9 +250,15 @@ export class WorldService {
       .toArray();
     const byKey = new Map(overrides.map((t) => [`${t.x}:${t.y}`, t]));
 
-    // 批量解析他人领地昵称（去重 + Promise.allSettled，meta 不可用时降级为空 Map）
+    // G5 视野：算请求者当前可见格集（己方/家族领地 + 主城 + 在途行军），逐格门控动态层。
+    const sources = await this.computeVisionSources(worldId, accountId, x0, x1, y0, y1);
+    const vis = (x: number, y: number): boolean => isInVision(sources, x, y);
+
+    // 批量解析他人领地昵称：只对「可见的他人领地」拉档（视野外不显归属，无需 profile）。
     const otherOwnerIds = [...new Set(
-      overrides.filter((o) => o.ownerId && o.ownerId !== accountId).map((o) => o.ownerId!),
+      overrides
+        .filter((o) => o.ownerId && o.ownerId !== accountId && vis(o.x, o.y))
+        .map((o) => o.ownerId!),
     )];
     const profileMap = new Map<string, PlayerProfile>();
     if (otherOwnerIds.length > 0 && this.meta.available) {
@@ -253,22 +273,127 @@ export class WorldService {
     const tiles: WorldTileView[] = [];
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
+        if (!vis(x, y)) {
+          // 视野外：只给程序化底层地形，动态层（含「已被占领」信号）全部隐去。
+          tiles.push({ ...this.proceduralView(worldId, x, y), visible: false });
+          continue;
+        }
         const o = byKey.get(`${x}:${y}`);
         const ownerProfile = (o?.ownerId && o.ownerId !== accountId)
           ? profileMap.get(o.ownerId) : undefined;
-        tiles.push(o ? this.tileDocView(o, accountId, ownerProfile) : this.proceduralView(worldId, x, y));
+        const view = o ? this.tileDocView(o, accountId, ownerProfile) : this.proceduralView(worldId, x, y);
+        tiles.push({ ...view, visible: true });
       }
     }
     return { worldId, cx: Math.floor(cx), cy: Math.floor(cy), r: rad, tiles };
   }
 
-  /** 单格详情。DB 覆盖优先，否则程序化默认。 */
+  /**
+   * G5：计算请求者在给定视区（含半径外扩边缘）的视野源集合。
+   * 源 = 己方 + 同家族成员的领地（主城 type:'base' 给大半径，其余领地小半径）+ 在途己方/家族行军
+   * （按 departAt/arriveAt 线性插值当前位置）。家族成员经 familyMembers 反查（tile.familyId 在
+   * occupy 路径不写，不可依赖），≤30 人。视野不落库，每次读时实时算（短 TTL 缓存留 G5 后续优化）。
+   */
+  private async computeVisionSources(
+    worldId: string,
+    accountId: string,
+    x0: number,
+    x1: number,
+    y0: number,
+    y1: number,
+  ): Promise<VisionSource[]> {
+    const { cols, now } = this.deps;
+    // 视野源主人 = 自己 + 同家族成员（家族级共享，§8.2 拍板）。
+    const ownerIds = new Set<string>([accountId]);
+    const myMember = await cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
+    if (myMember?.familyId) {
+      const mates = await cols.familyMembers.find({ familyId: myMember.familyId }).toArray();
+      for (const m of mates) ownerIds.add(m.accountId);
+    }
+    const ids = [...ownerIds];
+
+    // 源领地：在视区基础上按最大视野半径外扩（半径外的领地也能照亮视区边缘）。
+    const pad = VISION_BASE_RADIUS;
+    const sources: VisionSource[] = [];
+    const srcTiles = await cols.tiles
+      .find({
+        worldId,
+        ownerId: { $in: ids },
+        x: { $gte: x0 - pad, $lte: x1 + pad },
+        y: { $gte: y0 - pad, $lte: y1 + pad },
+      })
+      .toArray();
+    for (const t of srcTiles) {
+      sources.push({ x: t.x, y: t.y, radius: t.type === 'base' ? VISION_BASE_RADIUS : VISION_TERRITORY_RADIUS });
+    }
+
+    // 在途行军（己方 + 家族）：插值当前位置 → 小半径视野（侦察行军价值）。
+    const marches = await cols.marches.find({ worldId, ownerId: { $in: ids }, status: 'marching' }).toArray();
+    const t = now();
+    for (const m of marches) {
+      const pos = marchInterpPos(
+        this.coordX(m.fromTile), this.coordY(m.fromTile),
+        this.coordX(m.toTile), this.coordY(m.toTile),
+        m.departAt, m.arriveAt, t,
+      );
+      sources.push({ x: pos.x, y: pos.y, radius: VISION_MARCH_RADIUS });
+    }
+    return sources;
+  }
+
+  /**
+   * G5-2 反向视野：找出「视野覆盖到给定格集（cells）的玩家」——即拥有领地/主城且其视野半径罩住
+   * 任一 cell 的账号。用于行军发起 / 格易主时把事件推给能看见的观察者（敌方行军进我视野即推，V4）。
+   * 只在低频事件点调用一次（非逐 tick），避 U11 反向扇出爆炸。v1 只取「领地主人」本人（家族成员
+   * 实时扇出留后续——他们经家族共享 getMap 轮询亦可见）。exclude = 已单独推过的当事人（行军主/守方）。
+   */
+  private async visionObservers(
+    worldId: string,
+    cells: readonly { x: number; y: number }[],
+    exclude: ReadonlySet<string>,
+  ): Promise<string[]> {
+    if (cells.length === 0) return [];
+    const { cols } = this.deps;
+    const xs = cells.map((c) => c.x);
+    const ys = cells.map((c) => c.y);
+    const pad = VISION_BASE_RADIUS;
+    // 视野源是领地/主城 → 在 cells 包围盒按最大视野半径外扩内查己方有主格。
+    const owned = await cols.tiles
+      .find({
+        worldId,
+        x: { $gte: Math.min(...xs) - pad, $lte: Math.max(...xs) + pad },
+        y: { $gte: Math.min(...ys) - pad, $lte: Math.max(...ys) + pad },
+      })
+      .toArray();
+    const seers = new Set<string>();
+    for (const t of owned) {
+      if (!t.ownerId || exclude.has(t.ownerId) || seers.has(t.ownerId)) continue;
+      const radius = t.type === 'base' ? VISION_BASE_RADIUS : VISION_TERRITORY_RADIUS;
+      for (const c of cells) {
+        if (Math.abs(t.x - c.x) <= radius && Math.abs(t.y - c.y) <= radius) {
+          seers.add(t.ownerId);
+          break;
+        }
+      }
+    }
+    return [...seers];
+  }
+
+  /** G5-2：把一格变更推给视野覆盖它的观察者（exclude 已单独推过的当事人，如格主/守方）。 */
+  private async pushTileToObservers(t: TileDoc, exclude: ReadonlySet<string>): Promise<void> {
+    const observers = await this.visionObservers(t.worldId, [{ x: t.x, y: t.y }], exclude);
+    for (const acct of observers) void this.pushTile(acct, t);
+  }
+
+  /** 单格详情。DB 覆盖优先，否则程序化默认。G5：视野外只给程序化地形（与 getMap 同口径，防 getTile 绕过迷雾）。 */
   async getTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     const o = await this.deps.cols.tiles.findOne({ _id: tileId(worldId, x, y) });
     if (!o) return this.proceduralView(worldId, x, y);
+    const sources = await this.computeVisionSources(worldId, accountId, x, x, y, y);
+    if (!isInVision(sources, x, y)) return { ...this.proceduralView(worldId, x, y), visible: false };
     const ownerProfile = (o.ownerId && o.ownerId !== accountId && this.meta.available)
       ? await this.meta.getProfile(o.ownerId).catch(() => null) : undefined;
-    return this.tileDocView(o, accountId, ownerProfile ?? undefined);
+    return { ...this.tileDocView(o, accountId, ownerProfile ?? undefined), visible: true };
   }
 
   /** 玩家在世界的状态：资源惰性结算（读时按 yieldRate × dt 补算并封顶）。§14.3。 */
@@ -415,6 +540,7 @@ export class WorldService {
       },
     );
     const after = await cols.tiles.findOne({ _id: tid });
+    if (after) await this.pushTileToObservers(after, new Set([accountId])); // G5-2：新领地对视野内观察者可见
     return this.tileDocView(after!, accountId);
   }
 
@@ -500,7 +626,10 @@ export class WorldService {
 
     // 推新旧两格变更（旧址回归中立、新址主城）。
     const after = await cols.tiles.findOne({ _id: newTid });
-    if (after) void this.pushTile(accountId, after);
+    if (after) {
+      void this.pushTile(accountId, after);
+      await this.pushTileToObservers(after, new Set([accountId])); // G5-2：迁城新主城对观察者可见
+    }
     return this.getMe(worldId, accountId);
   }
 
@@ -619,6 +748,10 @@ export class WorldService {
     await this.scheduleMarch(worldId, mid, arriveAt);
     const view = this.marchView(doc);
     void this.pushMarch(accountId, view);
+    // G5-2 反向视野推送：把这段行军推给视野覆盖其路径的观察者（敌方行军进我视野即推，V4）。
+    // 复用已算出的 path，一次反向查询（非逐 tick）。守方（attack）已单独收 under_attack，从观察者集排除。
+    const observers = await this.visionObservers(worldId, path, new Set([accountId, ...(defenderId ? [defenderId] : [])]));
+    for (const acct of observers) void this.pushMarch(acct, view);
     // 围攻：出征即向防守方推预警（§5 / §14.5）。attackerName/publicId 暂用 accountId，
     // publicId 解析（meta /internal/profile）待后补——与 S8-1/2 owner 标识 todo 一致。
     if (kind === 'attack' && defenderId) {
@@ -771,6 +904,7 @@ export class WorldService {
       );
       void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
       void this.pushTile(m.ownerId, tileDoc);
+      await this.pushTileToObservers(tileDoc, new Set([m.ownerId])); // G5-2：占领到点对观察者可见
       // 首府格占领 → 触发立国（S8-6.5）
       const pwMem = await this.deps.cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
       void this.applyNationChange(m.worldId, x, y, m.ownerId, pwMem?.familyId);
@@ -947,6 +1081,7 @@ export class WorldService {
     if (after) {
       void this.pushTile(m.ownerId, after);
       void this.pushTile(defenderId, after);
+      await this.pushTileToObservers(after, new Set([m.ownerId, defenderId])); // G5-2：易主对视野内观察者可见
     }
   }
 
@@ -1136,7 +1271,10 @@ export class WorldService {
       { $set: { yieldRate, mainBaseTile: newTid, lastTickAt: t }, $inc: { rev: 1 } },
     );
     const after = await cols.tiles.findOne({ _id: newTid });
-    if (after) void this.pushTile(defenderId, after);
+    if (after) {
+      void this.pushTile(defenderId, after);
+      await this.pushTileToObservers(after, new Set([defenderId])); // G5-2：被动迁城新主城对观察者可见
+    }
   }
 
   /**
