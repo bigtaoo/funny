@@ -169,6 +169,8 @@ export interface AuctionDoc {
   expireAt: number; // ms（过期由扫描器结算：退还卖方挂存 / 竞拍结拍，非 TTL 自删，见 ensureIndexes 注）
   status: AuctionStatus;
   buyerId?: string;
+  /** 成交时刻 ms（status→sold 时写）。异常审计（D/G7）按此窗口化；旧文档缺省回退解析 _id 内挂单 ts。 */
+  soldAt?: number;
   // ── B 竞拍（AUCTION_DESIGN §4.B）。saleMode 缺省视为 'fixed'（兼容既有一口价单）──
   saleMode?: 'fixed' | 'auction';
   startPrice?: number;   // 竞拍起拍总价（整批，非单价）

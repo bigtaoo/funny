@@ -198,6 +198,107 @@ export const AUCTION_STATIC_REF_PRICE: Readonly<Record<string, number>> = {
 export const AUCTION_MIN_INCREMENT_RATIO = 0.05;
 /** 防狙击窗口（秒）：到期前此窗口内有新出价 → expireAt 顺延同等窗口，封末段秒杀。 */
 export const AUCTION_ANTI_SNIPE_WINDOW_SEC = 5 * 60;
+
+// ── 异常交易审计（D / G7，反 RMT，SLG_DESIGN §17.7 / AUCTION_DESIGN §4.D，DRAFT）──
+// C/E/F/G 闸门是「下单时的硬护栏」（限流/禁挂/冻结/价格带），但绕不过「两个合谋账号在带内
+// 反复定向倒货」这种事后才显形的洗钱/搬砖模式。此处是离线检测层：扫描已成交记录，把可疑的
+// 「卖家→买家」配对聚合成异常，进 admin 审计队列由运维裁定。纯函数 + 数值阈值，可单测、可调参。
+/** 审计扫描默认回溯窗口（秒）：只看近期成交，避免跨季陈旧数据噪声。 */
+export const AUDIT_WINDOW_SEC = 7 * 24 * 3600;
+/** 同一「卖家→买家」配对在窗口内成交笔数达此值 → 触发「反复对敲」信号。 */
+export const AUDIT_PAIR_MIN_TRADES = 5;
+/** 同一配对中「定向受拍」（卖家指定该买家）成交达此值 → 触发「定向倒货」信号（RMT 强特征）。 */
+export const AUDIT_PAIR_MIN_DESIGNATED = 3;
+/** 同一配对窗口内累计成交金币达此值 → 触发「大额转移」信号。 */
+export const AUDIT_PAIR_MIN_COINS = 50000;
+
+/** 一笔已成交记录（喂给 detectAuctionAnomalies 的最小输入；由 worldsvc 从 sold 拍卖文档投影）。 */
+export interface AuctionTradeRecord {
+  sellerId: string;
+  buyerId: string;
+  /** 该笔是否走「定向受拍」（卖家挂单时指定了此买家）。定向倒货是 RMT 的强特征。 */
+  designated: boolean;
+  /** 成交毛额（金币，= 成交单价 × qty，未扣税）。 */
+  coins: number;
+  ts: number;
+}
+
+/** 检出的异常配对（一个「卖家→买家」方向的聚合）。 */
+export interface AuctionAnomaly {
+  sellerId: string;
+  buyerId: string;
+  trades: number;
+  designatedTrades: number;
+  totalCoins: number;
+  firstTs: number;
+  lastTs: number;
+  severity: 'medium' | 'high';
+  /** 命中的信号：repeated（反复对敲）/ designated（定向倒货）/ high_value（大额转移）。 */
+  reasons: Array<'repeated' | 'designated' | 'high_value'>;
+}
+
+/** detectAuctionAnomalies 可调阈值（缺省取上面常量；admin/worldsvc 可透传覆盖做调参）。 */
+export interface AuctionAuditThresholds {
+  minTrades?: number;
+  minDesignated?: number;
+  minCoins?: number;
+}
+
+/**
+ * 异常交易检测（纯函数，D/G7）：把成交记录按「卖家→买家」有向配对聚合，命中任一信号即报异常。
+ * - repeated：配对成交笔数 ≥ minTrades（反复对敲 / 自卖自买环）。
+ * - designated：定向受拍成交 ≥ minDesignated（卖家持续点名同一买家拍下 = 定向倒货）。
+ * - high_value：累计成交金币 ≥ minCoins（大额单向转移）。
+ * severity=high 当「定向倒货」且「大额转移」同时命中（最像真钱 RMT），否则 medium。
+ * 结果按累计金币降序，便于运维优先看大额。
+ */
+export function detectAuctionAnomalies(
+  trades: readonly AuctionTradeRecord[],
+  thresholds: AuctionAuditThresholds = {},
+): AuctionAnomaly[] {
+  const minTrades = thresholds.minTrades ?? AUDIT_PAIR_MIN_TRADES;
+  const minDesignated = thresholds.minDesignated ?? AUDIT_PAIR_MIN_DESIGNATED;
+  const minCoins = thresholds.minCoins ?? AUDIT_PAIR_MIN_COINS;
+
+  interface Agg {
+    sellerId: string;
+    buyerId: string;
+    trades: number;
+    designatedTrades: number;
+    totalCoins: number;
+    firstTs: number;
+    lastTs: number;
+  }
+  const byPair = new Map<string, Agg>();
+  for (const r of trades) {
+    if (!r.sellerId || !r.buyerId || r.sellerId === r.buyerId) continue; // 自成交不可能，防御
+    const key = `${r.sellerId} ${r.buyerId}`;
+    let a = byPair.get(key);
+    if (!a) {
+      a = { sellerId: r.sellerId, buyerId: r.buyerId, trades: 0, designatedTrades: 0, totalCoins: 0, firstTs: r.ts, lastTs: r.ts };
+      byPair.set(key, a);
+    }
+    a.trades += 1;
+    if (r.designated) a.designatedTrades += 1;
+    a.totalCoins += Math.max(0, r.coins);
+    if (r.ts < a.firstTs) a.firstTs = r.ts;
+    if (r.ts > a.lastTs) a.lastTs = r.ts;
+  }
+
+  const out: AuctionAnomaly[] = [];
+  for (const a of byPair.values()) {
+    const reasons: AuctionAnomaly['reasons'] = [];
+    if (a.trades >= minTrades) reasons.push('repeated');
+    if (a.designatedTrades >= minDesignated) reasons.push('designated');
+    if (a.totalCoins >= minCoins) reasons.push('high_value');
+    if (reasons.length === 0) continue;
+    const severity: AuctionAnomaly['severity'] =
+      reasons.includes('designated') && reasons.includes('high_value') ? 'high' : 'medium';
+    out.push({ ...a, severity, reasons });
+  }
+  out.sort((x, y) => y.totalCoins - x.totalCoins);
+  return out;
+}
 export const GARRISON_PER_TILE = 500;
 /** 占领格至少需带的驻军（到点占领后即成该格 garrison；不足拒绝出征）。 */
 export const OCCUPY_MIN_TROOPS = GARRISON_PER_TILE;

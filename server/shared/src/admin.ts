@@ -27,6 +27,8 @@ export type AdminCapability =
   | 'audit.view.self' // 看自己操作
   | 'slg.season.view' // 看 SLG 各大区状态（G7/§17.7）
   | 'slg.season.manage' // SLG 赛季运维：开/结算/重置/关闭大区（G7/§17.7，高危）
+  | 'slg.audit.view' // 看拍卖异常交易扫描 + 审计队列（G7 反 RMT）
+  | 'slg.audit.manage' // 立/裁定异常交易审计工单（G7 反 RMT）
   | 'admin.manage'; // 账号 / 角色管理
 
 /**
@@ -49,6 +51,8 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'audit.view.self',
     'slg.season.view',
     'slg.season.manage',
+    'slg.audit.view',
+    'slg.audit.manage',
     'admin.manage',
   ],
   ops: [
@@ -62,6 +66,8 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'comp.view',
     'audit.view.self',
     'slg.season.view',
+    'slg.audit.view',
+    'slg.audit.manage',
   ],
   support: [
     'monitor.view',
@@ -70,7 +76,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'comp.view',
     'audit.view.self',
   ],
-  viewer: ['monitor.view', 'analytics.view', 'comp.view', 'audit.view.self', 'slg.season.view'],
+  viewer: ['monitor.view', 'analytics.view', 'comp.view', 'audit.view.self', 'slg.season.view', 'slg.audit.view'],
 };
 
 export function capabilitiesForRole(role: AdminRole): AdminCapability[] {
@@ -193,6 +199,40 @@ export interface CompTicketView {
   error?: string;
 }
 
+// ── SLG 异常交易审计工单（G7 反 RMT，OPS_DESIGN §3 工单基建的同构复用）──────────
+// worldsvc 离线扫描出可疑「卖家→买家」配对（detectAuctionAnomalies），运维在 admin 把可疑配对
+// 立成审计工单，裁定为 dismissed（误报/正常交易）或 actioned（确认违规，处置走既有补偿/封禁流程外联）。
+// 与补偿工单平行但独立：补偿是「发奖」，审计是「核查违规」，不发奖、不走双人审批（核查由单人裁定 + 审计留痕）。
+export type TradeAuditTicketStatus = 'open' | 'dismissed' | 'actioned';
+
+/** 异常配对快照（立单时从 worldsvc 扫描结果拷入，冻结当时证据）。 */
+export interface TradeAuditSnapshot {
+  worldId: string;
+  sellerId: string;
+  buyerId: string;
+  trades: number;
+  designatedTrades: number;
+  totalCoins: number;
+  firstTs: number;
+  lastTs: number;
+  severity: 'medium' | 'high';
+  reasons: Array<'repeated' | 'designated' | 'high_value'>;
+}
+
+/** 审计工单视图（REST 响应；DB 文档形状在 server/admin/db.ts，字段同义）。 */
+export interface TradeAuditTicketView {
+  id: string;
+  snapshot: TradeAuditSnapshot;
+  status: TradeAuditTicketStatus;
+  filedBy: string;
+  filedByName?: string;
+  filedAt: number;
+  note?: string;
+  resolvedBy?: string;
+  resolvedByName?: string;
+  resolvedAt?: number;
+}
+
 // ── 审计 ───────────────────────────────────────────────
 export type AuditAction =
   | 'login'
@@ -211,7 +251,9 @@ export type AuditAction =
   | 'slg.season.open'
   | 'slg.season.settle'
   | 'slg.season.reset'
-  | 'slg.season.close';
+  | 'slg.season.close'
+  | 'slg.audit.file'
+  | 'slg.audit.resolve';
 
 export interface AuditEntryView {
   id: string;

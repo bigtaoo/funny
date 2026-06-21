@@ -10,6 +10,8 @@ import type {
   CompTarget,
   CompTicketStatus,
   MetricKey,
+  TradeAuditSnapshot,
+  TradeAuditTicketStatus,
 } from '@nw/shared';
 
 /** 运维账号（独立账号库，绝不复用玩家账号；§2.1）。 */
@@ -45,6 +47,20 @@ export interface CompTicketDoc {
   error?: string;
 }
 
+/** SLG 异常交易审计工单（G7 反 RMT）。立单时冻结异常快照；单人裁定 + 审计留痕。 */
+export interface TradeAuditTicketDoc {
+  _id: string; // uuid
+  /** 去重键 `${worldId}:${sellerId}:${buyerId}`：同配对存在 open 工单时不重复立。 */
+  pairKey: string;
+  snapshot: TradeAuditSnapshot;
+  status: TradeAuditTicketStatus;
+  filedBy: string; // adminId
+  filedAt: number;
+  note?: string;
+  resolvedBy?: string;
+  resolvedAt?: number;
+}
+
 /** 操作审计（§4.3）。 */
 export interface AuditDoc {
   _id: string; // uuid
@@ -70,6 +86,7 @@ export interface MetricSnapshotDoc {
 export interface AdminCollections {
   adminAccounts: Collection<AdminAccountDoc>;
   compTickets: Collection<CompTicketDoc>;
+  tradeAuditTickets: Collection<TradeAuditTicketDoc>;
   auditLog: Collection<AuditDoc>;
   metricSnapshots: Collection<MetricSnapshotDoc>;
 }
@@ -106,6 +123,7 @@ export async function createAdminMongo(
   const collections: AdminCollections = {
     adminAccounts: db.collection<AdminAccountDoc>('adminAccounts'),
     compTickets: db.collection<CompTicketDoc>('compTickets'),
+    tradeAuditTickets: db.collection<TradeAuditTicketDoc>('tradeAuditTickets'),
     auditLog: db.collection<AuditDoc>('auditLog'),
     metricSnapshots: db.collection<MetricSnapshotDoc>('metricSnapshots'),
   };
@@ -115,6 +133,9 @@ export async function createAdminMongo(
     await collections.compTickets.createIndex({ status: 1, initiatedAt: -1 });
     await collections.compTickets.createIndex({ initiatedBy: 1 });
     await collections.compTickets.createIndex({ dispatchKey: 1 }, { unique: true });
+    // 审计工单：按状态/时间列；pairKey 查同配对是否已有 open 工单（去重）。
+    await collections.tradeAuditTickets.createIndex({ status: 1, filedAt: -1 });
+    await collections.tradeAuditTickets.createIndex({ pairKey: 1 });
     await collections.auditLog.createIndex({ actor: 1, ts: -1 });
     await collections.auditLog.createIndex({ ts: -1 });
     // 趋势按 (metric, ts) 查；TTL 按保留窗口回收旧快照（Date 字段 at）。
