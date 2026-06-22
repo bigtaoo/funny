@@ -446,6 +446,124 @@ describe('CampaignMapScene — tap detection', () => {
   });
 });
 
+// ── LobbyScene: applyWorldAvailable badge 行为 ───────────────────────────────
+describe('LobbyScene — applyWorldAvailable', () => {
+  const [w, h] = PORTRAIT;
+
+  function buildLobby() {
+    return new LobbyScene(createLayout(w, h), new InputManager(), {
+      onStartGame() {},
+      onStartRanked() {},
+      online: true,
+      onOpenCampaign() {},
+      onOpenRoom() {},
+      onOpenSocial() {},
+      onOpenWorld() {},
+      onOpenShop() {},
+      onOpenCards() {},
+      onOpenStats() {},
+      onOpenProfile() {},
+      playerName: 'Tester',
+      pvp: { rank: 'bronze', elo: 1000 },
+    });
+  }
+
+  it('初始状态：worldOfflineBadgeLayer 为空（尚未检查）', () => {
+    const scene = buildLobby();
+    const layer = (scene as any).worldOfflineBadgeLayer as PIXI.Container;
+    expect(layer).toBeInstanceOf(PIXI.Container);
+    expect(layer.children).toHaveLength(0);
+    scene.destroy();
+  });
+
+  it('applyWorldAvailable(false) 绘制离线徽标', () => {
+    const scene = buildLobby();
+    scene.applyWorldAvailable(false);
+    const layer = (scene as any).worldOfflineBadgeLayer as PIXI.Container;
+    expect(layer.children.length).toBeGreaterThan(0);
+    scene.destroy();
+  });
+
+  it('applyWorldAvailable(true) 保持徽标层为空', () => {
+    const scene = buildLobby();
+    scene.applyWorldAvailable(true);
+    const layer = (scene as any).worldOfflineBadgeLayer as PIXI.Container;
+    expect(layer.children).toHaveLength(0);
+    scene.destroy();
+  });
+
+  it('false → true 切换后徽标被清除', () => {
+    const scene = buildLobby();
+    scene.applyWorldAvailable(false);
+    expect((scene as any).worldOfflineBadgeLayer.children.length).toBeGreaterThan(0);
+    scene.applyWorldAvailable(true);
+    expect((scene as any).worldOfflineBadgeLayer.children).toHaveLength(0);
+    scene.destroy();
+  });
+
+  it('destroy 后调用 applyWorldAvailable 不抛错', () => {
+    const scene = buildLobby();
+    scene.destroy();
+    expect(() => scene.applyWorldAvailable(false)).not.toThrow();
+    expect(() => scene.applyWorldAvailable(true)).not.toThrow();
+  });
+});
+
+// ── LobbyScene: hit rect 布局不重叠（大世界按钮可达性回归）────────────────────
+// 回归：worldNavRect 为中间 nav slot，若与 btnRect / campaignBtnRect 重叠，
+// 点击大世界按钮会被 Start/Campaign 拦截，导致按下无反应。
+describe('LobbyScene — hit rect 不重叠', () => {
+  for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
+    it(`worldNavRect 与 btnRect、campaignBtnRect、dailyBtnRect 均不重叠 — ${label}`, () => {
+      const scene = new LobbyScene(createLayout(w, h), new InputManager(), {
+        onStartGame() {},
+        onOpenCampaign() {},
+        onOpenRoom() {},
+        onOpenShop() {},
+        onOpenCards() {},
+        onOpenStats() {},
+        onOpenProfile() {},
+        onOpenDaily() {},
+        playerName: 'Tester',
+      });
+
+      const worldRect    = (scene as any).worldNavRect    as { x: number; y: number; w: number; h: number };
+      const btnRect      = (scene as any).btnRect         as { x: number; y: number; w: number; h: number };
+      const campaignRect = (scene as any).campaignBtnRect as { x: number; y: number; w: number; h: number };
+      const dailyRect    = (scene as any).dailyBtnRect    as { x: number; y: number; w: number; h: number };
+
+      expect(rectsOverlap(worldRect, btnRect)).toBe(false);
+      expect(rectsOverlap(worldRect, campaignRect)).toBe(false);
+      // dailyBtnRect is only set when onOpenDaily is wired (w > 0 check)
+      if (dailyRect.w > 0) expect(rectsOverlap(worldRect, dailyRect)).toBe(false);
+
+      scene.destroy();
+    });
+
+    it(`worldNavRect 宽高大于零、在设计区内 — ${label}`, () => {
+      const layout = createLayout(w, h);
+      const scene = new LobbyScene(layout, new InputManager(), {
+        onStartGame() {},
+        onOpenCampaign() {},
+        onOpenRoom() {},
+        onOpenShop() {},
+        onOpenCards() {},
+        onOpenStats() {},
+        onOpenProfile() {},
+        playerName: 'Tester',
+      });
+
+      const r = (scene as any).worldNavRect as { x: number; y: number; w: number; h: number };
+      expect(r.w).toBeGreaterThan(0);
+      expect(r.h).toBeGreaterThan(0);
+      expect(r.x).toBeGreaterThanOrEqual(0);
+      expect(r.y + r.h).toBeLessThanOrEqual(layout.designHeight);
+
+      scene.destroy();
+    });
+  }
+});
+
 // ── LevelPrepScene: layout invariants (regression for 6-row overflow bug) ────
 describe('LevelPrepScene — layout invariants', () => {
   function buildPrep(w: number, h: number, staminaCurrent = 120) {
