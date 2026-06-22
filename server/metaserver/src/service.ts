@@ -37,6 +37,8 @@ import { ACHIEVEMENTS, findAchievement, validateClaim } from '@nw/shared';
 import { getOrCreateSave, putSave } from './save.js';
 import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment } from './equipment.js';
 import {
+  bindOAuth,
+  bindPassword,
   changePassword,
   ensurePublicId,
   exchangeWxCode,
@@ -46,9 +48,11 @@ import {
   loginWithPassword,
   registerWithPassword,
   resolveByDevice,
+  resolveByOAuth,
   resolveByOpenid,
   setDisplayName,
 } from './accounts.js';
+import { createOAuthService, OAuthError, type OAuthProvider } from './oauth.js';
 import {
   getFriends,
   listRequests,
@@ -117,7 +121,28 @@ function normUpgrades(u: Record<string, number>): Record<string, number> {
   return out;
 }
 
+/** 进程内 IP/key 维度滑窗限流。 */
+class SlidingRateLimiter {
+  private readonly windows = new Map<string, number[]>();
+  constructor(
+    private readonly limit: number,
+    private readonly windowMs: number,
+  ) {}
+  allow(key: string, now: number): boolean {
+    const win = this.windows.get(key)?.filter((t) => now - t < this.windowMs) ?? [];
+    if (win.length >= this.limit) {
+      this.windows.set(key, win);
+      return false;
+    }
+    win.push(now);
+    this.windows.set(key, win);
+    return true;
+  }
+}
+
 export class MetaService {
+  private readonly oauth = createOAuthService();
+
   constructor(private readonly deps: ServiceDeps) {}
 
   /**
@@ -134,6 +159,16 @@ export class MetaService {
     win.push(now);
     this.chatRate.set(accountId, win);
     return true;
+  }
+
+  /**
+   * 登录/注册 IP 限流（S4-3）：每 IP 15 分钟内最多 20 次 auth 尝试（阻止暴力撞库）。
+   * 进程内近似（横扩时是 per-instance，足以抵御单机撞库；精确全局限流待 Redis）。
+   */
+  private readonly authRate = new SlidingRateLimiter(20, 15 * 60 * 1000);
+  private allowAuthAttempt(req: FastifyRequest, now: number): boolean {
+    const ip = req.ip ?? 'unknown';
+    return this.authRate.allow(ip, now);
   }
 
   /** gateway 公开 WS 地址（配置了才下发）。客户端据此连控制面，无需自身硬编码 gateway 地址。 */
@@ -172,6 +207,9 @@ export class MetaService {
   }
 
   async authRegister(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.allowAuthAttempt(req, this.deps.now())) {
+      return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many auth attempts, try later'));
+    }
     const { loginId, password, displayName } = req.body as {
       loginId: string;
       password: string;
@@ -201,6 +239,9 @@ export class MetaService {
   }
 
   async authLogin(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.allowAuthAttempt(req, this.deps.now())) {
+      return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many auth attempts, try later'));
+    }
     const { loginId, password } = req.body as { loginId: string; password: string };
     const region = regionFromAcceptLanguage(req.headers['accept-language']);
     const account = await loginWithPassword(this.deps.cols, loginId, password, region);
@@ -229,6 +270,112 @@ export class MetaService {
       return reply.code(401).send(err(ErrorCode.INVALID_CREDENTIALS, 'old password mismatch'));
     }
     return ok({ ok: true });
+  }
+
+  /**
+   * OAuth 第三方登录（SA-2）：授权码流，首期支持 Google。
+   * 服务端用 code 换 access_token → 取 sub → upsert 账号。
+   */
+  async authOAuth(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.allowAuthAttempt(req, this.deps.now())) {
+      return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many auth attempts, try later'));
+    }
+    const { provider, code, redirectUri } = req.body as {
+      provider: string;
+      code: string;
+      redirectUri: string;
+    };
+    if (!this.oauth.supports(provider)) {
+      return reply
+        .code(400)
+        .send(err(ErrorCode.OAUTH_FAILED, `unsupported or unconfigured OAuth provider: ${provider}`));
+    }
+    let sub: string;
+    try {
+      const result = await this.oauth.exchangeCode(provider as OAuthProvider, code, redirectUri);
+      sub = result.sub;
+    } catch (e) {
+      const msg = e instanceof OAuthError ? e.message : 'OAuth exchange failed';
+      return reply.code(400).send(err(ErrorCode.OAUTH_FAILED, msg));
+    }
+    const region = regionFromAcceptLanguage(req.headers['accept-language']);
+    const { accountId, isNew, isAnonymous, displayName } = await resolveByOAuth(
+      this.deps.cols,
+      provider,
+      sub,
+      this.deps.now(),
+      region,
+    );
+    const token = signToken(accountId, this.deps.jwt);
+    const publicId = await ensurePublicId(this.deps.cols, accountId);
+    return ok({
+      token,
+      accountId,
+      isNew,
+      isAnonymous,
+      publicId,
+      ...(displayName ? { displayName } : {}),
+      ...this.gatewayField,
+    });
+  }
+
+  /**
+   * 绑定凭证到当前账号（SA-2）：匿名转正 + 多凭证绑定。
+   * method='oauth'：同 authOAuth，但绑到 JWT 指定的已有账号（不建新账号）。
+   * method='password'：给账号设密码（已有密码则幂等）。
+   * 目标凭证已属另一账号 → ALREADY_BOUND。
+   */
+  async authBind(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { method } = req.body as { method: string };
+
+    if (method === 'oauth') {
+      const { provider, code, redirectUri } = req.body as {
+        provider?: string;
+        code?: string;
+        redirectUri?: string;
+      };
+      if (!provider || !code || !redirectUri) {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'provider, code, redirectUri required for oauth bind'));
+      }
+      if (!this.oauth.supports(provider)) {
+        return reply
+          .code(400)
+          .send(err(ErrorCode.OAUTH_FAILED, `unsupported or unconfigured OAuth provider: ${provider}`));
+      }
+      let sub: string;
+      try {
+        const result = await this.oauth.exchangeCode(provider as OAuthProvider, code, redirectUri);
+        sub = result.sub;
+      } catch (e) {
+        const msg = e instanceof OAuthError ? e.message : 'OAuth exchange failed';
+        return reply.code(400).send(err(ErrorCode.OAUTH_FAILED, msg));
+      }
+      const bindResult = await bindOAuth(this.deps.cols, accountId, provider, sub);
+      if (bindResult.kind === 'already_bound') {
+        return reply.code(409).send(err(ErrorCode.ALREADY_BOUND, 'credential already bound to another account'));
+      }
+      return ok({ ok: true, isAnonymous: false });
+    }
+
+    if (method === 'password') {
+      const { loginId, password } = req.body as { loginId?: string; password?: string };
+      if (!loginId || !password) {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'loginId and password required for password bind'));
+      }
+      const idErr = validateLoginId(loginId);
+      if (idErr) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, idErr));
+      const pwErr = validatePassword(password);
+      if (pwErr) return reply.code(400).send(err(ErrorCode.WEAK_PASSWORD, pwErr));
+
+      const bindResult = await bindPassword(this.deps.cols, accountId, loginId, password);
+      if (bindResult.kind === 'login_id_taken') {
+        return reply.code(409).send(err(ErrorCode.LOGIN_ID_TAKEN, 'loginId already registered to another account'));
+      }
+      return ok({ ok: true, isAnonymous: false });
+    }
+
+    return reply.code(400).send(err(ErrorCode.BAD_REQUEST, `unknown bind method: ${method}`));
   }
 
   // ── profile ───────────────────────────────────────

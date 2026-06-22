@@ -1,5 +1,5 @@
-// 账号解析（S0-4 / S0-7）+ 密码账号（SA-1）。
-// 匿名 device/wx → 稳定 accountId；密码注册/登录/改密。
+// 账号解析（S0-4 / S0-7）+ 密码账号（SA-1）+ OAuth（SA-2）。
+// 匿名 device/wx → 稳定 accountId；密码注册/登录/改密；OAuth 登录/绑定。
 import { randomUUID, randomInt } from 'node:crypto';
 import type { Collections, ChatRegion } from '@nw/shared';
 import {
@@ -215,6 +215,96 @@ export async function setDisplayName(
   displayName: string,
 ): Promise<void> {
   await cols.accounts.updateOne({ _id: accountId }, { $set: { displayName } });
+}
+
+// ── OAuth（SA-2）────────────────────────────────────────────────────────────
+
+/**
+ * OAuth 登录（SA-2）：给定已验证的 provider + sub，取/建账号。
+ * provider+sub 联合唯一索引守卫；首次登录建新账号，`isAnonymous=false`（OAuth = 可恢复凭证）。
+ */
+export async function resolveByOAuth(
+  cols: Collections,
+  provider: string,
+  sub: string,
+  now: number,
+  region: ChatRegion = 'global',
+): Promise<ResolvedAccount> {
+  const existing = await cols.accounts.findOne({ 'oauth.provider': provider, 'oauth.sub': sub });
+  if (existing) {
+    await touchRegion(cols, existing._id, region);
+    return { accountId: existing._id, isNew: false, isAnonymous: false, displayName: existing.displayName };
+  }
+  const accountId = randomUUID();
+  await cols.accounts.updateOne(
+    { 'oauth.provider': provider, 'oauth.sub': sub },
+    {
+      $setOnInsert: {
+        _id: accountId,
+        createdAt: now,
+        oauth: [{ provider, sub }],
+        ...(region !== 'global' ? { region } : {}),
+      },
+    },
+    { upsert: true },
+  );
+  const doc = await cols.accounts.findOne({ 'oauth.provider': provider, 'oauth.sub': sub });
+  return {
+    accountId: doc ? doc._id : accountId,
+    isNew: doc?._id === accountId,
+    isAnonymous: false,
+  };
+}
+
+export type BindResult =
+  | { kind: 'ok' }
+  | { kind: 'already_bound' }
+  | { kind: 'login_id_taken' };
+
+/**
+ * 绑定 OAuth 凭证到已有账号（SA-2）。
+ * - provider+sub 未被其他账号占用 → 追加到当前账号 oauth[]，`isAnonymous=false`。
+ * - 已被其他账号占用 → `already_bound`（前端提示改用登录该账号）。
+ */
+export async function bindOAuth(
+  cols: Collections,
+  accountId: string,
+  provider: string,
+  sub: string,
+): Promise<BindResult> {
+  const existing = await cols.accounts.findOne({ 'oauth.provider': provider, 'oauth.sub': sub });
+  if (existing && existing._id !== accountId) return { kind: 'already_bound' };
+  if (existing) return { kind: 'ok' }; // 已是本账号，幂等
+  await cols.accounts.updateOne(
+    { _id: accountId },
+    { $addToSet: { oauth: { provider, sub } } },
+  );
+  return { kind: 'ok' };
+}
+
+/**
+ * 绑定密码凭证到已有账号（SA-2）。
+ * - loginId 未被占用 → 设置 password 字段，`isAnonymous=false`。
+ * - 已被占用 → `login_id_taken`。
+ * - 本账号已有密码 → 幂等返回 ok（不覆盖已有密码；改密走 /auth/password/change）。
+ */
+export async function bindPassword(
+  cols: Collections,
+  accountId: string,
+  loginId: string,
+  password: string,
+): Promise<BindResult> {
+  const norm = normalizeLoginId(loginId);
+  const selfDoc = await cols.accounts.findOne({ _id: accountId });
+  if (selfDoc?.password) return { kind: 'ok' }; // 已有密码，幂等
+  const taken = await cols.accounts.findOne({ 'password.loginId': norm });
+  if (taken && taken._id !== accountId) return { kind: 'login_id_taken' };
+  const hash = await hashPassword(password);
+  await cols.accounts.updateOne(
+    { _id: accountId, password: { $exists: false } },
+    { $set: { 'password.loginId': norm, 'password.hash': hash } },
+  );
+  return { kind: 'ok' };
 }
 
 export type ChangePasswordResult = 'ok' | 'no-password' | 'invalid';
