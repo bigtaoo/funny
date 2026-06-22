@@ -20,7 +20,7 @@
 
 > **worktree 建议**：`git worktree add ../funny-track-a track-a`
 
-### A1  护甲机制入引擎（最优先，其余依赖此项）
+### ✅ A1  护甲机制入引擎（最优先，其余依赖此项）
 
 **范围**：`server/engine/src/` 新增 `armor` 字段（flat 减伤）；`config.ts` 六张卡 + 建筑加护甲参数；伤害计算 `max(0, damage - armor)`；`BALANCE.md` 快照。
 
