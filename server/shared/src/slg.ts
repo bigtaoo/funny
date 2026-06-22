@@ -989,6 +989,18 @@ export const SIEGE_BATTLE_TIMEOUT_TICKS = 10 * 60 * 30;
 /** 进攻布阵模板（队伍）上限（§16.2，前期 5 支 = 可保存模板数 + 并发上限）。 */
 export const SIEGE_TEAM_CAP = 5;
 
+// ── 每单位兵力滑杆（§16.5 A7 调参）────────────────────────────────────────────
+/**
+ * 布阵编辑器每单位 HP 下限比例（§16.5）：最少分配蓝图满血的 25%，保证每个单位能发挥
+ * 基本的伤害输出，避免出现「1HP 占格刷人数」的漏洞。编辑器将此值取整向上（≥1）。
+ */
+export const SIEGE_UNIT_HP_MIN_FRACTION = 0.25;
+/**
+ * 布阵编辑器每单位 HP 步数（§16.5）：4 档（25% / 50% / 75% / 100%）。
+ * 玩家每次点击格子即在档位间循环，committed 兵力 = 各单位 HP 之和。
+ */
+export const SIEGE_UNIT_HP_STEPS = 4;
+
 /**
  * 规整防守 config → 完整围攻关卡对象。`config` 为防守方自定义（可空）；`tileLevel` 用于无自定义时
  * 派生一个象征性的基地等级防守。返回形态对齐客户端 LevelDefinition（loose object，避免在 shared
