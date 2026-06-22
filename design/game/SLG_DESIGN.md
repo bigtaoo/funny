@@ -583,7 +583,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
   - **worldsvc**：`settleSeason` 发奖材料附件由 `kind:'item'` 改 `kind:'material'`；`WorldMailAttachment` 类型同步加 `'material'`。
   - **客户端**：`attachmentLabel` 加 `material` 分支 + i18n `mail.attMaterial`（zh/en/de）。
 - **测试**：`metaserver/social-mail.e2e`（内部直投材料 → 领取后 `save.materials.scrap=1000` 且 `inventory.items.scrap` 不增）；`worldsvc/season-ops.e2e`（断言改 `kind:'material'`）。`tsc -b shared metaserver worldsvc gateway commercial admin` + client `tsc --noEmit` 全绿。
-- **未尽**：战令 `hasBattlePass` 增益效果仍空（§17.12 列 S8-8 战令专项）；OPS 补偿工单若需发材料，`CompAttachmentKind` 可同样扩 `'material'`（随 OPS 专项）。
+- **未尽**：~~战令 `hasBattlePass` 增益效果仍空~~ **✅ 已实现（2026-06-22，S8-8）**：`trainTroops` hasBattlePass → 训练时长 ×0.8（+20%），`speedupTraining` → 每币加速 ÷0.85（-15%）；OPS 补偿工单若需发材料，`CompAttachmentKind` 可同样扩 `'material'`（随 OPS 专项）。
 
 ---
 
@@ -806,7 +806,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 | **C3 繁荣度死字段 + 定位错位** | `prosperity` 实际在 **`SectDoc`**（`db.ts:134`，建宗门设 0、永不更新）；**`FamilyDoc` 根本没有 prosperity 字段**（仅 `territoryCount`）。设计 §8.1/§15.1 G2 却都写「FamilyDoc.prosperity」 | `sectService.ts:164` 建门设 `prosperity:0`，无评分/衰减 | `FamilyDoc` 补 `prosperity` + `prosperityUpdatedAt`；`SectDoc.prosperity` 改为「成员家族繁荣度聚合」（§17.4）；建宗门门槛读家族繁荣度 |
 | **C4 admin 端点未鉴权** | `/admin/world/{open,settle,reset,close}`（`httpApi.ts:515–541`）在 **JWT handler 内、无 X-Internal-Key**——任意登录玩家可调 `/admin/world/reset` 清整个大区。代码自认「生产应加 X-Internal-Key，P2 补」 | 天梯 roll 走 `/internal/*`+X-Internal-Key+admin 后端 | 四端点迁出 JWT 分支、改 `X-Internal-Key` 门控（§17.7）；admin 后端加 SLG 赛季运维代理（G7） |
 | **C5 reset 非原子/非分批** | `resetSeason`（`service.ts:1795`）7×`deleteMany` 并发 `Promise.all`+2×update，万人级无分批、无幂等键、无中途失败保护；`status` 无中间态 | U13 列了原子性风险，未处理 | status 加 `resetting` 中间态 + 幂等守卫（settling→resetting→open）；大集合分批删（§17.6） |
-| **C6 battlePass 死增益** | `buySlgShopItem`（`service.ts:1908`）写 `hasBattlePass:true`，**全代码无处读取给增益**（reset 删 playerWorld 时随之清除，这条本身 OK） | G4 | 本节不补战令增益（属 SLG 战令专项 S8-8，列 §17.12 待定）；仅确认 reset 清除路径正确 |
+| ~~**C6 battlePass 死增益**~~ **✅ 已实现（2026-06-22）** | `buySlgShopItem`（`service.ts:1908`）写 `hasBattlePass:true`，~~全代码无处读取给增益~~ → `trainTroops`/`speedupTraining` 已读取并应用增益（S8-8）；reset 删 playerWorld 时随之清除，路径正确 | G4/S8-8 | `trainTroops` ×0.8 训练时长；`speedupTraining` 每币加速 ÷0.85 |
 | **C7 engineVersion 未 pin** | `WorldDoc` 无 `engineVersion`；`SiegeDoc` 存 seed+布阵未记引擎版本，赛季中途升引擎重播/权威围攻一致性无锚点（U9） | `@nw/engine` 已导出 `ENGINE_VERSION`（§16.7） | `WorldDoc.engineVersion` 开服时 pin = `ENGINE_VERSION`；worldsvc 跑围攻校验 world pin vs 进程版本（§17.9） |
 
 **死状态值修正**：`WorldStatus` 四段 `open/active/settling/closed` 中 **`active` 从无写入点**（join 接受 `open|active` 但从不置 `active`）。本节定义完整状态机（§17.3），首次有玩家 join 后 `open→active`。
@@ -1137,8 +1137,8 @@ if (path.startsWith('/admin/world/')) {
 
 - **数值（→ ECONOMY_NUMBERS §13-SLG 登记 + 经济模拟）**：`PROSPERITY_W_*`/`PROSPERITY_DECAY_PER_DAY`/`SECT_FOUND_PROSPERITY_MIN`；`SETTLE_REWARDS` 各档材料/皮肤量 + `CENTER_CAPITAL_MULT`；`sectStrengthScore` 权重；`WORLD_CAPACITY`/`RESET_DELETE_BATCH`。settle coin 若 >0 须经经济总预算批准（OVERVIEW §3.3）。
 - **G6 运行时 ✅（2026-06-21，§20）**：多 shard 实际开区编排（`allocateNextSeason`）、人口溢出开新区（`resolveShardForJoin`）、玩家 join 自动路由（宗门>家族>单随）、跨区隔离巡检（`patrolShardIsolation`）已落地。剩赛季中主动转区/合区（运营专项）+ 赛季元数据下发（待 S11）。
-- **SLG 战令增益（C6/G4，属 S8-8 战令专项）**：`hasBattlePass` 当前死字段——增益效果（加速/产率/额外奖励档）随 SLG 赛季战令专项落地，与天梯战令独立（OVERVIEW §2/§4）。
-- **称号（C1 TODO）**：`SETTLE_REWARDS.titleId` 的 `grantTitle` 接入待 `TITLE_DESIGN` S10；本轮仅邮件正文写明（仪式感先到位，同天梯 §13A.0-C4）。
+- **SLG 战令增益（C6/G4，S8-8）✅（2026-06-22）**：`hasBattlePass` 已接线——`trainTroops` 训练时长 ×0.8（+20%）、`speedupTraining` 每币加速时长 ÷0.85（消耗 -15%）；与天梯战令独立（OVERVIEW §2/§4）。产率/额外奖励档暂未扩，如需继续在 S8-8 专项内追加。
+- **称号（C1）✅（2026-06-22）**：`SETTLE_REWARDS.titleId` 的 `grantTitle` 已接入（S10-3）——`settleSeason` 发奖循环 best-effort 调 `meta.grantTitle(acct, base.titleId)`，经 `WorldMetaClient` → `POST /internal/title/grant`（metaserver）。
 - **异常交易审计工单 ✅（2026-06-21，G7）**：检测层 + admin 审计队列已落地（§17.13）。剩 ops 前端审计页 + 确认违规的自动处置（封禁/扣回）外联，后置。
 - **G5 视野系统 / G8 险地**：与赛季正交，各自专项（§15.2）。G5 已启动 → §18。
 
