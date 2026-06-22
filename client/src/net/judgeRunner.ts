@@ -96,7 +96,10 @@ function runPveJudge(req: JudgeRequest): JudgeOutcome {
         players: [{ id: 0 }, { id: 1 }],
         mode: 'campaign',
         level,
-        pveUpgrades: req.pveUpgrades,
+        // S12: 优先用 unitLevels（新养成模型），无则降级用 pveUpgrades（旧模型向后兼容）
+        ...(Object.keys(req.unitLevels ?? {}).length > 0
+          ? { unitLevels: req.unitLevels }
+          : { pveUpgrades: req.pveUpgrades }),
       },
       new ReplayInputSource(replay),
       req.endFrame + 600,
@@ -139,7 +142,9 @@ function runSiegeJudge(req: JudgeRequest): JudgeOutcome {
         players: [{ id: 0 }, { id: 1 }],
         mode: 'siege',
         level,
-        pveUpgrades: req.pveUpgrades,
+        ...(Object.keys(req.unitLevels ?? {}).length > 0
+          ? { unitLevels: req.unitLevels }
+          : { pveUpgrades: req.pveUpgrades }),
       },
       new ReplayInputSource(replay),
       req.endFrame + 600,

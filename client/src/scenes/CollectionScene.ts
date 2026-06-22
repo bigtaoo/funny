@@ -6,22 +6,23 @@ import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
 import { EQUIP_SLOT } from '../app/equipSlot';
 import { CARD_DEFINITIONS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '../game/config';
-import { CardType, type CardDefinition } from '../game/types';
+import { CardType, type CardDefinition, UnitType } from '../game/types';
+import { TRAIT_BREAKPOINTS, UNIT_MAX_LEVEL } from '../game/balance/progression';
+import {
+  PROGRESSABLE_UNIT_IDS,
+  MERGE_COPIES,
+  UNIT_CARD_MAX_LEVEL,
+  cardKey,
+} from '../game/balance/unitCards';
 
-// ── CollectionScene — 收藏中心 (S3-5 + cards codex) ─────────────────────────────
+// ── CollectionScene — 收藏中心 (S3-5 + cards codex + S12 unit cards) ────────────
 //
-// Two tabs:
-//  • Cards  — read-only codex of every card in the pool (CARD_DEFINITIONS), with
-//             its cost + combat stats pulled from the unit/building blueprints.
-//             Pure client data; nothing is owned/unlocked here (every card is in
-//             the random pool), it is purely a "what does this card do" reference.
-//  • Skins  — the original wardrobe: lists owned skins (inventory.skins, server-
-//             authoritative read-only) plus a "default look" tile. Tapping a tile
-//             equips it; the choice lives in the client-sync `equipped` segment.
-//             Rendering swaps texture only (S3-4) — never stats (§5.2).
+// Three tabs:
+//  • Cards  — read-only codex of every card in the pool (CARD_DEFINITIONS).
+//  • Skins  — wardrobe: owned skins + equip; stat-safe (§5.2).
+//  • Units  — S12 unit card inventory: per-unit level, owned cards by tier, merge.
 
-
-export type CollectionTab = 'cards' | 'skins';
+export type CollectionTab = 'cards' | 'skins' | 'units';
 
 export interface CollectionCallbacks {
   onBack(): void;
@@ -33,6 +34,14 @@ export interface CollectionCallbacks {
   equip(skinId: string | null): void;
   /** Which tab to open on (lobby "cards" nav → cards; campaign equip → skins). */
   initialTab?: CollectionTab;
+  /** unitId → current level (1–9). Required for the 'units' tab. */
+  getUnitLevels?(): Record<string, number>;
+  /** cardKey (unitId:level) → owned count. Required for the 'units' tab. */
+  getCardInventory?(): Record<string, number>;
+  /** Online = can reach /pve/merge. */
+  isOnline?(): boolean;
+  /** Server-authoritative merge (5 × unitId:level → 1 × unitId:(level+1)). */
+  tryMerge?(unitId: string, level: number): Promise<boolean>;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -41,6 +50,12 @@ interface Hit { rect: Rect; fn: () => void; }
 interface CodexEntry {
   card: CardDefinition;
 }
+
+const UNIT_NAME_KEY: Partial<Record<UnitType, TranslationKey>> = {
+  [UnitType.Infantry]: 'card.infantry.name',
+  [UnitType.ShieldBearer]: 'card.shieldbearer.name',
+  [UnitType.Archer]: 'card.archer.name',
+};
 
 export class CollectionScene implements Scene {
   readonly container: PIXI.Container;
@@ -51,6 +66,8 @@ export class CollectionScene implements Scene {
   private tab: CollectionTab;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  private merging = false;
+  private toast: { text: string; color: number } | null = null;
 
   constructor(layout: ILayout, input: InputManager, cb: CollectionCallbacks) {
     this.container = new PIXI.Container();
@@ -113,7 +130,10 @@ export class CollectionScene implements Scene {
     this.drawTabs(tabsY, tabsH);
 
     if (this.tab === 'cards') this.renderCards(contentY);
-    else this.renderSkins(contentY);
+    else if (this.tab === 'skins') this.renderSkins(contentY);
+    else this.renderUnits(contentY);
+
+    if (this.toast) this.drawToast();
   }
 
   private drawTabs(y: number, hgt: number): void {
@@ -121,10 +141,11 @@ export class CollectionScene implements Scene {
     const tabs: Array<{ id: CollectionTab; label: string }> = [
       { id: 'cards', label: t('collection.tab.cards') },
       { id: 'skins', label: t('collection.tab.skins') },
+      { id: 'units', label: t('collection.tab.units') },
     ];
     const pad = Math.round(w * 0.06);
-    const gap = Math.round(w * 0.03);
-    const tabW = Math.round((w - pad * 2 - gap) / 2);
+    const gap = Math.round(w * 0.025);
+    const tabW = Math.round((w - pad * 2 - gap * (tabs.length - 1)) / tabs.length);
     tabs.forEach((tabDef, i) => {
       const x = pad + i * (tabW + gap);
       const active = this.tab === tabDef.id;
@@ -292,6 +313,169 @@ export class CollectionScene implements Scene {
     if (!isEquipped) {
       this.hits.push({ rect: { x, y, w, h }, fn: () => this.select(tile.id) });
     }
+  }
+
+  // ── Units tab (S12 unit card progression) ───────────────────────────────────────
+
+  private renderUnits(top: number): void {
+    const { w, h } = this;
+    const unitLevels = this.cb.getUnitLevels?.() ?? {};
+    const inv = this.cb.getCardInventory?.() ?? {};
+
+    const listX = Math.round(w * 0.06);
+    const listW = w - listX * 2;
+    const rowH = Math.round(h * 0.13);
+    const gap = Math.round(h * 0.016);
+    let y = top;
+
+    for (const unitId of PROGRESSABLE_UNIT_IDS) {
+      this.drawUnitCardRow(unitId, unitLevels[unitId] ?? 1, inv, listX, y, listW, rowH);
+      y += rowH + gap;
+    }
+
+    // Card tier legend at bottom
+    y += Math.round(h * 0.01);
+    const legend = txt(
+      `${MERGE_COPIES} × Lv N  →  Lv N+1`,
+      Math.round(h * 0.022),
+      C.mid,
+      true,
+    );
+    legend.anchor.set(0.5, 0);
+    legend.x = w / 2;
+    legend.y = y;
+    this.container.addChild(legend);
+  }
+
+  private drawUnitCardRow(
+    unitId: string,
+    level: number,
+    inv: Record<string, number>,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void {
+    const box = sketchPanel(w, h, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
+    box.x = x; box.y = y;
+    sketchAccentBar(box, h, C.accent, seedFor(x, h, 5));
+    this.container.addChild(box);
+
+    const unitType = unitId as UnitType;
+    const unitName = UNIT_NAME_KEY[unitType] ? t(UNIT_NAME_KEY[unitType]!) : unitId;
+    const fs = Math.round(h * 0.22);
+    const nameTxt = txt(unitName, fs, C.dark, true);
+    nameTxt.anchor.set(0, 0.5);
+    nameTxt.x = x + Math.round(w * 0.04);
+    nameTxt.y = y + h * 0.3;
+    this.container.addChild(nameTxt);
+
+    const lvTxt = txt(
+      t('progression.lv', { lv: level }),
+      Math.round(h * 0.2),
+      level >= UNIT_MAX_LEVEL ? C.gold : C.mid,
+    );
+    lvTxt.anchor.set(0, 0.5);
+    lvTxt.x = x + Math.round(w * 0.04);
+    lvTxt.y = y + h * 0.72;
+    this.container.addChild(lvTxt);
+
+    // Trait badges
+    const traits: Array<{ key: TranslationKey; minLevel: number }> = [
+      { key: 'progression.trait.crit', minLevel: TRAIT_BREAKPOINTS.crit.level },
+      { key: 'progression.trait.lifesteal', minLevel: TRAIT_BREAKPOINTS.lifesteal.level },
+      { key: 'progression.trait.spawn', minLevel: TRAIT_BREAKPOINTS.bonusSpawn.level },
+    ];
+    let traitX = x + Math.round(w * 0.3);
+    const traitY = y + h * 0.5;
+    const traitFs = Math.round(h * 0.17);
+    for (const trait of traits) {
+      const unlocked = level >= trait.minLevel;
+      const badge = txt(t(trait.key), traitFs, unlocked ? C.green : C.btnOff, true);
+      badge.anchor.set(0, 0.5);
+      badge.x = traitX;
+      badge.y = traitY;
+      this.container.addChild(badge);
+      traitX += badge.width + Math.round(w * 0.015);
+    }
+
+    // Merge button
+    const mergeLevel = this.findMergeLevel(unitId, inv);
+    const bw = Math.round(w * 0.18);
+    const bh = Math.round(h * 0.55);
+    const bx = x + w - bw - Math.round(w * 0.03);
+    const by = y + (h - bh) / 2;
+    const online = this.cb.isOnline?.() ?? false;
+    const canMerge = mergeLevel !== null;
+    const enabled = canMerge && online && !this.merging;
+
+    const btn = sketchPanel(bw, bh, {
+      fill: enabled ? C.dark : C.btnDis,
+      border: enabled ? C.green : C.btnOff,
+      width: 2, seed: seedFor(bx, by, bw),
+    });
+    btn.x = bx; btn.y = by;
+    this.container.addChild(btn);
+    const blabel = txt(t('progression.merge'), Math.round(bh * 0.34), enabled ? 0xffffff : C.mid, true);
+    blabel.anchor.set(0.5, 0.5); blabel.x = bx + bw / 2; blabel.y = by + bh / 2;
+    this.container.addChild(blabel);
+
+    if (mergeLevel !== null) {
+      const cardCount = inv[cardKey(unitId, mergeLevel)] ?? 0;
+      const countTxt = txt(
+        t('progression.cards', { n: cardCount }),
+        Math.round(bh * 0.26),
+        online ? C.gold : C.mid,
+        true,
+      );
+      countTxt.anchor.set(0.5, 0);
+      countTxt.x = bx + bw / 2;
+      countTxt.y = by + bh;
+      this.container.addChild(countTxt);
+    }
+
+    if (enabled && mergeLevel !== null && this.cb.tryMerge) {
+      this.hits.push({
+        rect: { x: bx, y: by, w: bw, h: bh },
+        fn: () => this.onMerge(unitId, mergeLevel),
+      });
+    }
+  }
+
+  private findMergeLevel(unitId: string, inv: Record<string, number>): number | null {
+    for (let lv = 1; lv < UNIT_CARD_MAX_LEVEL; lv++) {
+      if ((inv[cardKey(unitId, lv)] ?? 0) >= MERGE_COPIES) return lv;
+    }
+    return null;
+  }
+
+  private onMerge(unitId: string, level: number): void {
+    if (this.merging || !this.cb.tryMerge) return;
+    this.merging = true;
+    void this.cb.tryMerge(unitId, level).then((ok) => {
+      this.merging = false;
+      this.toast = ok
+        ? { text: t('progression.merged'), color: C.green }
+        : { text: t('progression.mergeFail'), color: C.red };
+      this.render();
+    });
+  }
+
+  private drawToast(): void {
+    const { w, h } = this;
+    const toast = this.toast!;
+    const lbl = txt(toast.text, Math.round(h * 0.026), 0xffffff, true);
+    const padX = Math.round(w * 0.04);
+    const padY = Math.round(h * 0.012);
+    const bw = lbl.width + padX * 2;
+    const bh = lbl.height + padY * 2;
+    const bx = (w - bw) / 2;
+    const by = Math.round(h * 0.78);
+    const bg = sketchPanel(bw, bh, { fill: toast.color, fillAlpha: 0.95, border: toast.color, width: 2, seed: seedFor(bw, bh, 2) });
+    bg.x = bx; bg.y = by;
+    this.container.addChild(bg);
+    lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
+    this.container.addChild(lbl);
   }
 }
 

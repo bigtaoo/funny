@@ -769,13 +769,13 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onBack() { analytics.track('level_abandon', { level_id: levelId, phase: 'prep' }); goCampaignMap(); },
       onStart() { analytics.track('screen_view', { scene: 'GameScene' }); goCampaign(levelId); },
       levelNumber,
-      getMaterials: () => saveManager.get().materials,
-      getUpgradeLevel: (id) => saveManager.get().pveUpgrades[id] ?? 0,
-      // 升级是服务器权威扣费，仅在线可用（§8 决策 4）。
+      // S12: 单位等级 + 卡片库存（合成系统），取代旧 S3-2 材料/升级树。
+      getUnitLevels: () => saveManager.get().unitLevels,
+      getCardInventory: () => saveManager.get().cardInventory,
       isOnline: () => saveManager.online(),
-      tryUpgrade: async (id) => {
-        const ok = await saveManager.upgrade(id);
-        if (ok) analytics.track('upgrade', { upgrade_id: id, level_after: saveManager.get().pveUpgrades[id] ?? 0 });
+      tryMerge: async (unitId, lvl) => {
+        const ok = await saveManager.merge(unitId, lvl);
+        if (ok) analytics.track('unit_card_merge', { unit_id: unitId, from_level: lvl });
         return ok;
       },
       ...(level.briefKey ? { brief: t(level.briefKey as TranslationKey) } : {}),
@@ -783,7 +783,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  function goCollection(back: () => void, initialTab: 'cards' | 'skins' = 'cards'): void {
+  function goCollection(back: () => void, initialTab: 'cards' | 'skins' | 'units' = 'cards'): void {
     inLobby = false;
     analytics.track('screen_view', { scene: 'CollectionScene' });
     views.showCollection({
@@ -796,6 +796,15 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           if (skinId === null) delete d.equipped[EQUIP_SLOT];
           else d.equipped[EQUIP_SLOT] = skinId;
         });
+      },
+      // S12 unit card tab
+      getUnitLevels: () => saveManager.get().unitLevels,
+      getCardInventory: () => saveManager.get().cardInventory,
+      isOnline: () => saveManager.online(),
+      tryMerge: async (unitId, lvl) => {
+        const ok = await saveManager.merge(unitId, lvl);
+        if (ok) analytics.track('unit_card_merge', { unit_id: unitId, from_level: lvl });
+        return ok;
       },
     });
   }
@@ -969,9 +978,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       },
     }, {
       level,
-      pveUpgrades: saveManager.get().pveUpgrades,
-      // S12: unitLevels 暂不在此传入实际对局——anti-cheat spot-check（judge）尚未对齐 unitLevels，
-      // 现在传会让被抽检的高养成玩家因 judge 弱蓝图复算星数偏低而误判。play + judge 对齐一起在 S12-D 做。
+      unitLevels: saveManager.get().unitLevels,
       equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
     });
   }

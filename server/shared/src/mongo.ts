@@ -153,8 +153,10 @@ export interface PveVerificationDoc {
   levelId: string;
   /** 客户端声称的星数（待复算校验）。 */
   claimedStars: number;
-  /** 结算当刻服务器权威 pveUpgrades 快照（复算蓝图）。 */
+  /** @deprecated S3-2 快照，S12 起由 unitLevels 替代（旧记录保留兼容）。 */
   pveUpgrades: Record<string, number>;
+  /** S12 结算当刻服务器权威 unitLevels 快照（复算蓝图）。 */
+  unitLevels?: Record<string, number>;
   /** 触发原因（审计）：first | anomaly | sample。 */
   reason: string;
   status: 'pending' | 'verified' | 'unverified' | 'rejected';
