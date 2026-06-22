@@ -35,7 +35,7 @@ import {
 } from '@nw/shared';
 import { METRIC_KEYS } from '@nw/shared';
 import type { AdminAccountDoc, AdminCollections, AuditDoc, CompTicketDoc, TradeAuditTicketDoc } from './db';
-import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, MailDispatcher, PlayerClient, PlayerProfile, StatsClient, WorldClient, SlgWorldSummary } from './clients';
+import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, LadderClient, LadderSeasonInfo, MailDispatcher, PlayerClient, PlayerProfile, StatsClient, WorldClient, SlgWorldSummary } from './clients';
 import type { AuctionAnomaly } from '@nw/shared';
 
 const log = createLogger('admin:service');
@@ -68,6 +68,7 @@ export interface AdminServiceDeps {
   mail: MailDispatcher;
   analytics: AnalyticsClient;
   world: WorldClient;
+  ladder: LadderClient;
   now: () => number;
 }
 
@@ -101,6 +102,7 @@ export class AdminService {
   private readonly mail: MailDispatcher;
   private readonly analytics: AnalyticsClient;
   private readonly world: WorldClient;
+  private readonly ladder: LadderClient;
   private readonly now: () => number;
   /** 登录失败限流表（按登录名，内存态）。 */
   private readonly loginAttempts = new Map<string, LoginAttempt>();
@@ -113,7 +115,22 @@ export class AdminService {
     this.mail = deps.mail;
     this.analytics = deps.analytics;
     this.world = deps.world;
+    this.ladder = deps.ladder;
     this.now = deps.now;
+  }
+
+  // ───────────────────── 天梯赛季运维（SE-3）──────────────────────────
+  /** 读当前天梯赛季概要；meta 不可达返回 null（ops 前端用于临近 endAt 高亮）。 */
+  async getLadderCurrentSeason(): Promise<LadderSeasonInfo | null> {
+    if (!this.ladder.available) return null;
+    return this.ladder.getCurrentSeason();
+  }
+
+  /** CAS 幂等推进天梯赛季（开新赛季）。审计。 */
+  async rollLadderSeason(actor: string): Promise<LadderSeasonInfo> {
+    const season = await this.ladder.rollSeason();
+    await this.audit(actor, 'ladder.season.roll', { summary: `→ s${season.seasonNo}` });
+    return season;
   }
 
   // ───────────────────── SLG 赛季运维（G7/§17.7）─────────────────────

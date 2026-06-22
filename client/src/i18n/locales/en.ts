@@ -998,6 +998,26 @@ export const en: Record<TranslationKey, string> = {
   'battlepass.maxLevel': 'Max level!',
   'battlepass.openBattlePass': 'Battle Pass',
 
+  // ── Retention system (B5) ────────────────────────────────────────────────────
+  'daily.title': 'Daily',
+  'daily.back': '← Back',
+  'daily.loginRequired': 'Log in to check in',
+  'daily.checkin.title': 'Monthly Check-in',
+  'daily.checkin.day': 'Day {n}',
+  'daily.checkin.claim': 'Check in',
+  'daily.checkin.claimed': 'Claimed',
+  'daily.checkin.milestone': 'Milestone',
+  'daily.tasks.title': 'Daily Tasks',
+  'daily.tasks.pveLabel': 'Clear any PvE level',
+  'daily.tasks.pvpLabel': 'Play any PvP match',
+  'daily.tasks.adLabel': 'Watch an ad',
+  'daily.tasks.done': 'Done',
+  'daily.tasks.pending': 'In progress',
+  'daily.tasks.rewardCoins': 'Claim +{n} coins',
+  'daily.tasks.rewardClaimed': 'Claimed today',
+  'daily.tasks.claimFailed': 'Claim failed, please retry',
+  'daily.tasks.claimToast': 'Claimed +{n} coins',
+
   // ── Title system (S10) ───────────────────────────────────────────────────────
   'settings.titles': 'Titles',
   'settings.openTitles': 'My Titles',

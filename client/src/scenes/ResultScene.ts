@@ -4,6 +4,7 @@ import { OwnerId, PlayerStats } from '../game/types';
 import { t, TranslationKey } from '../i18n';
 import { ProfilePopup, type ProfileData } from '../render/ProfilePopup';
 import { ui, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 
 /** Optional player identities for the result screen's tap-to-view profile popup. */
 export interface ResultProfiles {
@@ -316,7 +317,24 @@ export class ResultScene implements Scene {
     line.cursor = 'pointer';
     line.on('pointertap', () => this.popup.show(data));
     this.container.addChild(line);
-    return line.y + line.height;
+    let bottom = line.y + line.height;
+    if (data.equippedTitle) {
+      const keys = getTitleKeys(data.equippedTitle);
+      const titleLabel = keys
+        ? t(keys.shortKey as TranslationKey) || formatLadderTitle(data.equippedTitle)
+        : formatLadderTitle(data.equippedTitle);
+      const sub = new PIXI.Text(`「${titleLabel}」`, {
+        fontSize: Math.round(h * 0.022),
+        fill: 0x8a7020,
+        fontFamily: 'monospace',
+      });
+      sub.anchor.set(0.5, 0);
+      sub.x = w / 2;
+      sub.y = bottom + h * 0.004;
+      this.container.addChild(sub);
+      bottom = sub.y + sub.height;
+    }
+    return bottom;
   }
 
   private addButton(

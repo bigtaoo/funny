@@ -120,7 +120,7 @@
 >
 > 全程零引擎改动。所有端点走 metaserver + commercial，存 Mongo 新集合。
 
-### B1  成就系统（S9）—— 最优先，其余依赖其 statKey 基础设施
+### ✅ B1  成就系统（S9）—— 最优先，其余依赖其 statKey 基础设施
 
 **服务端**：
 - `achievements` 集合 `{accountId, statKey, count, claimedMilestones[]}`。
@@ -138,7 +138,7 @@
 
 ---
 
-### B2  天梯赛季 + 排行榜（S11，可与 B1 并行）
+### ✅ B2  天梯赛季 + 排行榜（S11，可与 B1 并行）
 
 **服务端**：
 - `seasons` 集合 `{seasonId, startAt, endAt, status}`。
@@ -157,7 +157,7 @@
 
 ---
 
-### B3  称号系统（S10，依赖 B1 + B2 赛季快照就位）
+### ✅ B3  称号系统（S10，依赖 B1 + B2 赛季快照就位）
 
 **服务端**：
 - `titles` 集合 `{accountId, titleId, grantedAt, source, seasonId?}`。
@@ -172,7 +172,7 @@
 
 ---
 
-### B4  战令（S11 Battle Pass，依赖 B2 赛季）
+### ✅ B4  战令（S11 Battle Pass，依赖 B2 赛季）
 
 **服务端**：
 - `battlepass` 集合 `{accountId, seasonId, tasks[], freeTrack[], paidTrack[], paidUnlocked}`。
@@ -188,7 +188,7 @@
 
 ---
 
-### B5  每日签到 + 日常任务（ADR-011，依赖 B1 statKey）
+### ✅ B5  每日签到 + 日常任务（ADR-011，依赖 B1 statKey）
 
 **服务端**：
 - `dailyTasks` 集合 `{accountId, dayKey, tasks[]}`：每日重置，任务定义表（杀敌 N / 胜利 N / 刷关 N）。

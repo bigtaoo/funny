@@ -23,3 +23,4 @@ export * from './logger';
 export * from './season';
 export * from './battlepass';
 export * from './titles';
+export * from './retention';

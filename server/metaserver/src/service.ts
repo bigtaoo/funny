@@ -27,6 +27,19 @@ import {
   BATTLEPASS_BUY_COST,
   makeFreshBattlePass,
   claimBpReward,
+  accrueRetentionTask,
+  claimCheckinDay,
+  claimDailyReward as calcDailyReward,
+  CHECKIN_REWARDS,
+  DAILY_TASKS,
+  DAILY_POINTS_THRESHOLD,
+  DAILY_COINS_REWARD,
+  resetStaleRetention,
+  nextCheckinDay,
+  dailyRewardClaimable,
+  isDailyTaskDone,
+  makeDayKey,
+  makeMonthKey,
 } from '@nw/shared';
 import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import {
@@ -570,6 +583,16 @@ export class MetaService {
     });
   }
 
+  /** B5：幂等打点某每日任务（今日已打过则 no-op，不抛错）。fire-and-forget 调用方忽略失败。 */
+  private async bumpRetentionTask(accountId: string, taskId: import('@nw/shared').DailyTaskId): Promise<void> {
+    const tsMs = this.deps.now();
+    await this.mutateSave(accountId, (s) => {
+      const next = accrueRetentionTask(s.retention, taskId, tsMs);
+      if (next === s.retention) return s; // 今日已打过，no-op
+      return { ...s, retention: next };
+    }).catch(() => {/* 留存打点失败不影响主流程 */});
+  }
+
   /**
    * 当日上限内发关卡产出（材料 reward + 单位卡 levelCardReward，S12-C）。同一每日闸门（材料/卡
    * 同被 cap），同一 mutateSave 事务原子写：materials $+ / cardInventory 经 grantCards / unitLevels
@@ -702,6 +725,8 @@ export class MetaService {
     if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
     // S9-3b：非抽检路径，接受客户端上报统计，过 L1 caps 后写入成就计数器。
     if (clientStats) await this.accrueJudgedPveStats(accountId, JSON.stringify(clientStats));
+    // B5：每日任务「通关 PvE」打点（幂等，今日已打过则 no-op）。
+    await this.bumpRetentionTask(accountId, 'pve.clear');
     return ok({
       save: granted.save,
       granted: granted.granted,
@@ -965,6 +990,107 @@ export class MetaService {
     }
 
     return ok({ save, granted: coins });
+  }
+
+  // ── 留存（B5，RETENTION_DESIGN）：签到月历 + 每日任务。 ────────────────────────────────────
+
+  /** 读当前留存状态（含定义表，客户端用于渲染月历/任务卡）。 */
+  async getRetention(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { cols, now } = this.deps;
+    const tsMs = now();
+    const save = await getOrCreateSave(cols, accountId, tsMs);
+    const retention = resetStaleRetention(save.retention, tsMs);
+    return ok({
+      checkin: retention.checkin ?? null,
+      daily: retention.daily ?? null,
+      defs: { rewards: CHECKIN_REWARDS, tasks: DAILY_TASKS, pointsThreshold: DAILY_POINTS_THRESHOLD, dailyCoinsReward: DAILY_COINS_REWARD },
+      claimable: {
+        checkin: nextCheckinDay(retention, tsMs) !== null,
+        daily: dailyRewardClaimable(retention, tsMs),
+      },
+    });
+  }
+
+  /** 签到领当月下一格奖励（幂等：今天已领 → 409）。 */
+  async claimCheckin(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { now } = this.deps;
+    const tsMs = now();
+
+    let reward: import('@nw/shared').CheckinReward | null = null;
+    let claimedDay = 0;
+    const recorded = await this.mutateSave(accountId, (s) => {
+      const r = resetStaleRetention(s.retention, tsMs);
+      const result = claimCheckinDay(r, tsMs);
+      if (!result.ok) return result.error;
+      reward = result.reward;
+      claimedDay = result.day;
+      const newRetention = { ...r, checkin: result.newCheckin };
+      let next = { ...s, retention: newRetention };
+      // 签到奖励：体力类直接给材料；coins 类发币（商业服）
+      if (result.reward.kind === 'stamina') {
+        next = {
+          ...next,
+          materials: { ...next.materials, stamina: (next.materials['stamina'] ?? 0) + result.reward.count },
+        };
+      }
+      return next;
+    });
+    if ('error' in recorded) {
+      if (recorded.error === 'ALREADY_CLAIMED_TODAY') {
+        return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed today'));
+      }
+      if (recorded.error === 'MONTH_FULL') {
+        return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'month fully claimed'));
+      }
+      return reply.code(409).send(err(ErrorCode.REV_CONFLICT, recorded.error));
+    }
+    // coins 奖励（里程碑）需走 commercial 发币
+    let save = recorded.save;
+    if (reward && (reward as import('@nw/shared').CheckinReward).kind === 'coins') {
+      if (!this.ensureCommercial(reply)) return;
+      const { commercial, cols } = this.deps;
+      const coins = (reward as import('@nw/shared').CheckinReward).count;
+      const orderId = `checkin:${accountId}:${makeMonthKey(tsMs)}:${claimedDay}`;
+      const g = await commercial.grant({ accountId, amount: coins, reason: 'checkin', orderId });
+      if (g.ok) save = await mirrorCoins(cols, accountId, g.coinsAfter, tsMs);
+    }
+    return ok({ save, day: claimedDay, reward });
+  }
+
+  /** 领当日满点任务金币（幂等：未达阈值 → 400，已领 → 409）。 */
+  async claimDailyReward(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.ensureCommercial(reply)) return;
+    const accountId = accountIdOf(req);
+    const { commercial, cols, now } = this.deps;
+    const tsMs = now();
+
+    const recorded = await this.mutateSave(accountId, (s) => {
+      const r = resetStaleRetention(s.retention, tsMs);
+      const result = calcDailyReward(r, tsMs);
+      if (!result.ok) return result.error;
+      const daily = r.daily!;
+      const newRetention = { ...r, daily: { ...daily, rewardClaimed: true } };
+      return { ...s, retention: newRetention };
+    });
+    if ('error' in recorded) {
+      if (recorded.error === 'NOT_REACHED') {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'task points not reached'));
+      }
+      if (recorded.error === 'ALREADY_CLAIMED') {
+        return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'daily reward already claimed'));
+      }
+      if (recorded.error === 'WRONG_DAY') {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'no daily tasks completed today'));
+      }
+      return reply.code(409).send(err(ErrorCode.REV_CONFLICT, recorded.error));
+    }
+    const orderId = `daily:${accountId}:${makeDayKey(tsMs)}`;
+    const g = await commercial.grant({ accountId, amount: DAILY_COINS_REWARD, reason: 'daily_task', orderId });
+    if (!g.ok) return reply.code(502).send(err(ErrorCode.BAD_REQUEST, 'coin grant failed'));
+    const save = await mirrorCoins(cols, accountId, g.coinsAfter, tsMs);
+    return ok({ save, coins: DAILY_COINS_REWARD });
   }
 
   /** 最近对战历史（ranked / friendly），从归档 matches 取当前账号视角的精简摘要。 */
@@ -1442,6 +1568,8 @@ export class MetaService {
     const credit = await commercial.adsCredit({ accountId, amount: ADS_REWARD_COINS, dayKey });
     if (!credit.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, credit.error));
     const save = await mirrorCoins(cols, accountId, credit.coinsAfter, now());
+    // B5：每日任务「看广告」打点（幂等，fire-and-forget）。
+    await this.bumpRetentionTask(accountId, 'ad.watch');
     return ok({ save, granted: ADS_REWARD_COINS });
   }
 

@@ -15,6 +15,7 @@ export interface LevelRecord {
 import type { EquipRarity, EquipSlot } from './equipment';
 import type { RankId } from './ladder';
 import type { BattlePassData } from './battlepass';
+import type { RetentionSave } from './retention';
 
 /** 词条（主/副/特技统一形态）；id 指向词条池，value 为 roll 出的数值。 */
 export interface Affix {
@@ -80,6 +81,9 @@ export interface SaveData {
 
   // —— 战令（S11-C，SEASON_DESIGN §C）。服务器权威，PUT /save 不可写。缺省视为未参与，懒创建。 ——
   battlePass?: BattlePassData;
+
+  // —— 留存系统（B5，RETENTION_DESIGN）。服务器权威，PUT /save 不可写。懒创建。 ——
+  retention?: RetentionSave;
 
   // —— 成就系统（服务器权威，ACHIEVEMENT_DESIGN §3）。懒创建省存储；缺省视为全 0/空 ——
   // 计数只在 PvE/PvP 权威结算点写（A2）；PUT /save 白名单只收 equipped/flags，故这三段

@@ -20,6 +20,7 @@ import {
   BP_XP_PER_RANKED_WIN,
   BP_XP_PER_RANKED_LOSS,
   xpToLevel,
+  accrueRetentionTask,
   type StatKey,
   type RankId,
 } from '@nw/shared';
@@ -539,6 +540,16 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     }
   });
 
+  // ── GET /internal/ladder/season/current ──────────────────────────────────────────
+  // ops 后台拉取当前天梯赛季信息（endAt 临近高亮提示用）。
+  app.get('/internal/ladder/season/current', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const season = await getCurrentSeason(cols, now());
+    return reply.send({ ok: true, season });
+  });
+
   // ── POST /admin/grant-title ───────────────────────────────────────────────────────
   // admin 手动授予称号（S10，TITLE_DESIGN §8 admin 授予）。幂等：已拥有则 no-op。
   app.post('/admin/grant-title', async (req, reply) => {
@@ -732,12 +743,15 @@ async function applyPvp(
     const bpXpGain = won ? BP_XP_PER_RANKED_WIN : BP_XP_PER_RANKED_LOSS;
     const prevBp = cur.save.battlePass;
     const newBp = prevBp ? { ...prevBp, xp: prevBp.xp + bpXpGain, level: xpToLevel(prevBp.xp + bpXpGain) } : null;
+    // B5：每日任务「参与 PvP 对局」打点（幂等）。
+    const nextRetention = accrueRetentionTask(cur.save.retention, 'pvp.match', now());
     const next: SaveData = {
       ...cur.save,
       rev: cur.save.rev + 1,
       updatedAt: now(),
       ...(nextStats ? { stats: nextStats } : {}),
       ...(newBp ? { battlePass: newBp } : {}),
+      ...(nextRetention !== cur.save.retention ? { retention: nextRetention } : {}),
       pvp: {
         ...pvp,
         elo: after,
