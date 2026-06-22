@@ -407,4 +407,35 @@ describe('internal routes', () => {
     expect((matches[0] as { cheat?: unknown }).cheat).toBeUndefined();
     await app.close();
   });
+
+  // ── C6-d hash 不一致 + 无裁判 → hashMismatch=true 写入 matches（CI 守护）──
+  it('C6-d hash_ok=false + 裁判不可用 → matches.hashMismatch=true', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols, matches } = fakeCols({ a, b });
+    const app = build(cols, fakeGateway({ available: false }));
+    await app.inject({
+      method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: mismatchPayload,
+    });
+    expect((matches[0] as { hashMismatch?: boolean }).hashMismatch).toBe(true);
+    await app.close();
+  });
+
+  it('C6-d hash_ok=true → matches.hashMismatch 不写入', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols, matches } = fakeCols({ a, b });
+    const app = build(cols, fakeGateway({ available: false }));
+    const noMismatchPayload = {
+      room_id: 'HASH_OK', seed: '1', mode: 'ranked', reason: 'base', winner_side: 0, hash_ok: true,
+      players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
+      results: [{ side: 0, state_hash: 'SAME', winner_side: 0 }, { side: 1, state_hash: 'SAME', winner_side: 0 }],
+      replay: emptyReplay(),
+    };
+    await app.inject({
+      method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: noMismatchPayload,
+    });
+    expect((matches[0] as { hashMismatch?: boolean }).hashMismatch).toBeUndefined();
+    await app.close();
+  });
 });
