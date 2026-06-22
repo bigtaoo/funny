@@ -62,7 +62,6 @@ interface Flip {
 }
 
 const FLIP_DUR = 0.42; // seconds
-const TAP_SLOP = 30;   // px movement above which a touch is a drag, not a tap
 
 function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -86,9 +85,7 @@ export class CampaignMapScene implements Scene {
   private hits: Hit[] = [];
   private pulseT = 0;
 
-  // Tap detection (no scroll: every page fits one screen by construction).
-  private down: { x: number; y: number } | null = null;
-  private moved = false;
+  // No scroll — every page fits one screen by construction.
 
   constructor(layout: ILayout, input: InputManager, cb: CampaignMapCallbacks) {
     this.container = new PIXI.Container();
@@ -98,11 +95,7 @@ export class CampaignMapScene implements Scene {
 
     this.container.addChild(buildPaperBackground('campbg', this.w, this.h));
 
-    this.unsubs.push(input.onDown((x, y) => { this.down = { x, y }; this.moved = false; }));
-    this.unsubs.push(input.onMove((x, y) => {
-      if (this.down && (Math.abs(x - this.down.x) > TAP_SLOP || Math.abs(y - this.down.y) > TAP_SLOP)) this.moved = true;
-    }));
-    this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
+    this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
 
     // Open on the TOC, then flip to the current chapter — the book opening itself.
     this.chapter = currentChapter(new Set(this.cb.getCleared()));
@@ -169,10 +162,8 @@ export class CampaignMapScene implements Scene {
     }
   }
 
-  private handleUp(x: number, y: number): void {
-    const wasTap = this.down && !this.moved;
-    this.down = null;
-    if (!wasTap || this.flip) return;
+  private handleDown(x: number, y: number): void {
+    if (this.flip) return;
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); break; }

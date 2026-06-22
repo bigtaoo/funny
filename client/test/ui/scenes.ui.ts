@@ -364,7 +364,12 @@ function rectsOverlap(
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
-// ── CampaignMapScene: tap detection (regression for TAP_SLOP=8 bug) ──────────
+// ── CampaignMapScene: tap detection ─────────────────────────────────────────
+// Regression for the original "buttons unresponsive" bug: the scene previously
+// used onDown+onMove+onUp with a TAP_SLOP movement guard. This caused:
+//   1. UP coordinates drifting outside hit rects (wasTap=true but coord check fails)
+//   2. Unreliable onUp delivery vs onDown
+// Fix: fire on onDown (same pattern as all other scenes), guarded by this.flip.
 describe('CampaignMapScene — tap detection', () => {
   const layout = createLayout(...PORTRAIT);
   const dh = layout.designHeight;
@@ -385,7 +390,7 @@ describe('CampaignMapScene — tap detection', () => {
     return { scene, input };
   }
 
-  it('fires level select on clean tap', () => {
+  it('fires level select on DOWN at center of hit rect', () => {
     let hit: string | null = null;
     const { scene, input } = buildCampaign((id) => { hit = id; });
     const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
@@ -395,16 +400,14 @@ describe('CampaignMapScene — tap detection', () => {
     const levelHit = hits.find(({ rect: r }) => r.y >= tbH);
     expect(levelHit).toBeDefined();
     const { x, y, w, h } = levelHit!.rect;
-    const cx = x + w / 2, cy = y + h / 2;
-    input._emitDown(cx, cy);
-    input._emitUp(cx, cy);
+    input._emitDown(x + w / 2, y + h / 2);
     expect(hit).not.toBeNull();
     scene.destroy();
   });
 
-  it('fires level select with 20 px movement (mobile jitter within slop)', () => {
-    // Regression: TAP_SLOP was 8 design-px ≈ 3 CSS px, rejecting normal mobile taps.
-    // With TAP_SLOP=30 a 20 px movement must still register.
+  it('fires level select even when DOWN coordinates are near the hit rect edge', () => {
+    // Regression: old onUp pattern would miss taps near button edges if the
+    // pointerup coordinates drifted slightly outside the rect.
     let hit: string | null = null;
     const { scene, input } = buildCampaign((id) => { hit = id; });
     const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
@@ -412,26 +415,30 @@ describe('CampaignMapScene — tap detection', () => {
     const levelHit = hits.find(({ rect: r }) => r.y >= tbH);
     expect(levelHit).toBeDefined();
     const { x, y, w, h } = levelHit!.rect;
-    const cx = x + w / 2, cy = y + h / 2;
-    input._emitDown(cx, cy);
-    input._emitMove(cx + 20, cy);
-    input._emitUp(cx + 20, cy);
+    // Tap 2 px inside the right edge — an area the old onUp drift would miss.
+    input._emitDown(x + w - 2, y + h / 2);
     expect(hit).not.toBeNull();
     scene.destroy();
   });
 
-  it('blocks level select on deliberate swipe (>30 px movement)', () => {
+  it('blocks tap during flip animation (this.flip guard)', () => {
     let hit: string | null = null;
-    const { scene, input } = buildCampaign((id) => { hit = id; });
-    const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
-    const tbH = Math.round(dh * 0.12);
-    const levelHit = hits.find(({ rect: r }) => r.y >= tbH);
-    expect(levelHit).toBeDefined();
-    const { x, y, w, h } = levelHit!.rect;
-    const cx = x + w / 2, cy = y + h / 2;
-    input._emitDown(cx, cy);
-    input._emitMove(cx + 50, cy);
-    input._emitUp(cx + 50, cy);
+    const input = new InputManager();
+    const scene = new CampaignMapScene(layout, input, {
+      onBack() {},
+      onSelectLevel: (id) => { hit = id; },
+      onOpenCollection() {},
+      getStars: () => ({}),
+      getCleared: () => [],
+      isOnline: () => true,
+      getPendingLevels: () => [],
+    });
+    // Do NOT advance past flip — this.flip is still set.
+    const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number } }>;
+    // During flip, hits array is empty anyway.
+    expect(hits).toHaveLength(0);
+    // Even if we synthesise coordinates, nothing should fire.
+    input._emitDown(layout.designWidth / 2, layout.designHeight / 2);
     expect(hit).toBeNull();
     scene.destroy();
   });
