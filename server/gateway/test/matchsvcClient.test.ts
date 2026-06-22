@@ -19,7 +19,7 @@ function install(): Call[] {
     calls.push({
       url: String(url),
       body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
-      key: headers['X-Internal-Key'],
+      key: headers['x-internal-key'],
     });
     return { ok: true, json: async () => ({}) } as Response;
   }) as typeof fetch;
@@ -57,8 +57,8 @@ describe('MatchsvcClient', () => {
       `${BASE}/mm/conn/disconnected`,
     ]);
     expect(calls.every((x) => x.key === KEY)).toBe(true);
-    expect(calls[1]!.body).toEqual({ accountId: 'b', name: 'Bob', publicId: '100000002', code: 'ABC123' });
-    expect(calls[5]!.body).toEqual({ accountId: 'a', name: 'Alice', publicId: '100000001', elo: 1234 });
+    expect(calls[1]!.body).toEqual({ accountId: 'b', name: 'Bob', publicId: '100000002', code: 'ABC123', equippedTitle: '' });
+    expect(calls[5]!.body).toEqual({ accountId: 'a', name: 'Alice', publicId: '100000001', elo: 1234, equippedTitle: '' });
   });
 
   it('无 baseUrl → available=false 且不发请求', () => {

@@ -315,16 +315,16 @@ describe('HazardSystem — lava zone (DoT)', () => {
     const state = new GameState(1);
     const hazSys = new HazardSystem();
 
-    // Use low-HP Runner: hp=26 in blueprints.
+    // Use low-HP Runner: hp=30 in blueprints.
     const u = new Unit(UnitType.Runner, Side.Bottom, 3, 5);
     state.board.addUnit(u);
 
-    // High DPS: ceil(600/30) = 20 dmg/tick. Runner hp=26 → dead after 2 ticks.
+    // High DPS: ceil(600/30) = 20 dmg/tick. Runner hp=30 → dead after 2 ticks.
     state.hazards = [{ col: 3, rowRange: [3, 8], effect: 'lava', dps: 600 }];
 
-    hazSys.tick(state); // 26 - 20 = 6 hp
-    expect(u.hp).toBe(6);
-    hazSys.tick(state); // 6 - 20 = dead (takeDamage clamps hp to 0 / sets isDead)
+    hazSys.tick(state); // 30 - 20 = 10 hp
+    expect(u.hp).toBe(10);
+    hazSys.tick(state); // 10 - 20 = dead (takeDamage clamps hp to 0 / sets isDead)
     expect(u.isDead).toBe(true);
   });
 
