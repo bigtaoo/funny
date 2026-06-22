@@ -1,0 +1,331 @@
+import * as PIXI from 'pixi.js-legacy';
+import { Scene } from './SceneManager';
+import { ILayout, Rect } from '../layout/ILayout';
+import { InputManager } from '../inputSystem/InputManager';
+import { t } from '../i18n';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import type { SaveData } from '../game/meta/SaveData';
+import {
+  BATTLEPASS_DEFS, BATTLEPASS_MAX_LEVEL, BATTLEPASS_BUY_COST, BP_XP_PER_LEVEL,
+  xpToLevel, xpToNextLevel,
+} from '../game/balance/battlepassDefs';
+
+// ── BattlePassScene — 战令面板（SE-9）──────────────────────────────────────────
+//
+// 入口：StatsScene「战令」按钮（onOpenBattlePass）。
+// 显示：当前等级进度条 + 双轨（免费/付费）30 级奖励格，四态：
+//   · 可领（绿色）→ 点击 claim；· 已领（灰色）；· 未解锁（虚线）；· 付费锁（金色锁）。
+// 购买 Pass 按钮：未购买时常驻底部（走 commercial）。
+
+export interface BattlePassCallbacks {
+  onBack(): void;
+  /**
+   * 获取当前存档的战令数据。无时返回 undefined（未参与本季）。
+   * 离线/未登录时省略 → 显「登录后查看」。
+   */
+  getBattlePass?(): SaveData['battlePass'];
+  /** 购买当前赛季 Pass（600 金币）。 */
+  onBuy?(): Promise<void>;
+  /** 领取奖励。返回实际发放金币（0 = 非金币奖励）。 */
+  onClaim?(track: 'free' | 'paid', level: number): Promise<number>;
+}
+
+interface Hit { rect: Rect; fn: () => void; }
+
+/** 单格四态 */
+type CellState = 'claimable' | 'claimed' | 'locked' | 'pass_required';
+
+export class BattlePassScene implements Scene {
+  readonly container: PIXI.Container;
+  private readonly w: number;
+  private readonly h: number;
+  private readonly cb: BattlePassCallbacks;
+  private hits: Hit[] = [];
+  private readonly unsubs: Array<() => void> = [];
+
+  private busy = false;
+  private toast: string | null = null;
+  private toastTimer = 0;
+  private scrollY = 0;
+
+  constructor(layout: ILayout, input: InputManager, cb: BattlePassCallbacks) {
+    this.container = new PIXI.Container();
+    this.w = layout.designWidth;
+    this.h = layout.designHeight;
+    this.cb = cb;
+    this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.render();
+  }
+
+  update(dt: number): void {
+    if (this.toast !== null) {
+      this.toastTimer -= dt;
+      if (this.toastTimer <= 0) { this.toast = null; this.render(); }
+    }
+  }
+
+  destroy(): void { this.unsubs.forEach((u) => u()); }
+
+  private handleDown(x: number, y: number): void {
+    if (this.busy) return;
+    for (const hit of this.hits) {
+      const r = hit.rect;
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
+    }
+  }
+
+  private showToast(msg: string): void {
+    this.toast = msg;
+    this.toastTimer = 2.5;
+    this.render();
+  }
+
+  private render(): void {
+    this.container.removeChildren();
+    this.hits = [];
+    const { w, h } = this;
+
+    this.container.addChild(buildPaperBackground('bpbg', w, h));
+
+    // ── Title bar ────────────────────────────────────────────────────────────
+    const tbH = Math.round(h * 0.12);
+    const titleBg = new PIXI.Graphics();
+    titleBg.beginFill(C.dark); titleBg.drawRect(0, 0, w, tbH); titleBg.endFill();
+    this.container.addChild(titleBg);
+
+    const title = txt(t('battlepass.title'), Math.round(h * 0.034), 0xffffff, true);
+    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
+    this.container.addChild(title);
+
+    const back = txt(t('battlepass.back'), Math.round(h * 0.026), C.light);
+    back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
+    this.container.addChild(back);
+    this.hits.push({ rect: { x: 0, y: 0, w: back.x + back.width + Math.round(h * 0.02), h: tbH }, fn: () => this.cb.onBack() });
+
+    // ── Auth / offline guard ──────────────────────────────────────────────────
+    if (!this.cb.getBattlePass) {
+      const msg = txt(t('battlepass.loginRequired'), Math.round(h * 0.03), C.mid);
+      msg.anchor.set(0.5, 0.5); msg.x = w / 2; msg.y = h / 2;
+      this.container.addChild(msg);
+      this.renderToast();
+      return;
+    }
+
+    const bp = this.cb.getBattlePass();
+    const currentLevel = bp ? xpToLevel(bp.xp) : 1;
+    const xp = bp?.xp ?? 0;
+    const hasPass = bp?.hasPass ?? false;
+    const claimedFree = new Set(bp?.claimedFree ?? []);
+    const claimedPaid = new Set(bp?.claimedPaid ?? []);
+
+    const pad = Math.round(w * 0.05);
+    let y = tbH + Math.round(h * 0.02);
+
+    // ── XP progress bar ───────────────────────────────────────────────────────
+    const barH = Math.round(h * 0.07);
+    const barW = w - pad * 2;
+    const barBg = new PIXI.Graphics();
+    barBg.beginFill(C.line).drawRoundedRect(pad, y, barW, barH, barH / 2).endFill();
+    this.container.addChild(barBg);
+
+    const maxXp = BATTLEPASS_MAX_LEVEL * BP_XP_PER_LEVEL;
+    const fillFrac = Math.min(1, xp / maxXp);
+    if (fillFrac > 0) {
+      const fill = new PIXI.Graphics();
+      fill.beginFill(C.accent).drawRoundedRect(pad, y, Math.round(barW * fillFrac), barH, barH / 2).endFill();
+      this.container.addChild(fill);
+    }
+
+    const isMaxed = currentLevel >= BATTLEPASS_MAX_LEVEL;
+    const levelLbl = txt(
+      isMaxed ? t('battlepass.maxLevel') : t('battlepass.level', { n: String(currentLevel) }),
+      Math.round(barH * 0.55), 0xffffff, true,
+    );
+    levelLbl.anchor.set(0, 0.5); levelLbl.x = pad + Math.round(barW * 0.03); levelLbl.y = y + barH / 2;
+    this.container.addChild(levelLbl);
+
+    const xpLbl = txt(
+      isMaxed
+        ? t('battlepass.xpProgress', { xp: String(maxXp), total: String(maxXp) })
+        : t('battlepass.xpToNext', { n: String(xpToNextLevel(xp)) }),
+      Math.round(barH * 0.42), C.light,
+    );
+    xpLbl.anchor.set(1, 0.5); xpLbl.x = pad + barW - Math.round(barW * 0.03); xpLbl.y = y + barH / 2;
+    this.container.addChild(xpLbl);
+
+    y += barH + Math.round(h * 0.018);
+
+    // ── Buy Pass button (if not purchased) ────────────────────────────────────
+    const buyAreaH = Math.round(h * 0.072);
+    let bodyTopY = y;
+    if (!hasPass && this.cb.onBuy) {
+      const btnBox = sketchPanel(barW, buyAreaH, { fill: 0xfef8e0, border: C.gold, width: 2, seed: seedFor(0, y, barW) });
+      btnBox.x = pad; btnBox.y = y;
+      this.container.addChild(btnBox);
+      const btnLbl = txt(t('battlepass.buy', { coins: String(BATTLEPASS_BUY_COST) }), Math.round(buyAreaH * 0.5), C.gold, true);
+      btnLbl.anchor.set(0.5, 0.5); btnLbl.x = w / 2; btnLbl.y = y + buyAreaH / 2;
+      this.container.addChild(btnLbl);
+      this.hits.push({
+        rect: { x: pad, y, w: barW, h: buyAreaH },
+        fn: () => {
+          if (!this.cb.onBuy || this.busy) return;
+          this.busy = true;
+          this.render();
+          this.cb.onBuy!().then(() => { this.busy = false; this.render(); })
+            .catch(() => { this.busy = false; this.showToast(t('battlepass.buyFailed')); });
+        },
+      });
+      y += buyAreaH + Math.round(h * 0.015);
+      bodyTopY = y;
+    }
+
+    // ── Scrollable track grid ─────────────────────────────────────────────────
+    const headerH = Math.round(h * 0.05);
+    const cellH = Math.round(h * 0.075);
+    const cellGap = Math.round(h * 0.008);
+    const halfW = Math.floor((barW - Math.round(w * 0.02)) / 2);
+    const freeX = pad;
+    const paidX = pad + halfW + Math.round(w * 0.02);
+
+    const scrollBodyH = h - bodyTopY;
+    const totalContentH = headerH + BATTLEPASS_MAX_LEVEL * (cellH + cellGap);
+    const scrollMax = Math.max(0, totalContentH - scrollBodyH);
+    const sy = Math.min(this.scrollY, scrollMax);
+
+    const scrollContainer = new PIXI.Container();
+    scrollContainer.x = 0;
+    scrollContainer.y = bodyTopY - sy;
+
+    // Column headers
+    const freeHdr = txt(t('battlepass.free'), Math.round(headerH * 0.6), C.accent, true);
+    freeHdr.anchor.set(0.5, 0.5); freeHdr.x = freeX + halfW / 2; freeHdr.y = headerH / 2;
+    scrollContainer.addChild(freeHdr);
+
+    const paidHdr = txt(t('battlepass.paid'), Math.round(headerH * 0.6), C.gold, true);
+    paidHdr.anchor.set(0.5, 0.5); paidHdr.x = paidX + halfW / 2; paidHdr.y = headerH / 2;
+    scrollContainer.addChild(paidHdr);
+
+    // Level rows
+    for (let i = 0; i < BATTLEPASS_MAX_LEVEL; i++) {
+      const def = BATTLEPASS_DEFS[i]!;
+      const lvl = def.level;
+      const cellY = headerH + i * (cellH + cellGap);
+      const absY = bodyTopY - sy + cellY;
+
+      // Free track
+      const freeState = this.cellState('free', lvl, currentLevel, claimedFree, claimedPaid, hasPass);
+      this.drawCell(scrollContainer, freeX, cellY, halfW, cellH, lvl, def.free ?? null, freeState);
+      if (absY + cellH > bodyTopY && absY < bodyTopY + scrollBodyH && this.cb.onClaim && freeState === 'claimable') {
+        this.hits.push({
+          rect: { x: freeX, y: absY, w: halfW, h: cellH },
+          fn: () => this.doClaim('free', lvl),
+        });
+      }
+
+      // Paid track
+      const paidState = this.cellState('paid', lvl, currentLevel, claimedFree, claimedPaid, hasPass);
+      this.drawCell(scrollContainer, paidX, cellY, halfW, cellH, lvl, def.paid ?? null, paidState);
+      if (absY + cellH > bodyTopY && absY < bodyTopY + scrollBodyH && this.cb.onClaim && paidState === 'claimable') {
+        this.hits.push({
+          rect: { x: paidX, y: absY, w: halfW, h: cellH },
+          fn: () => this.doClaim('paid', lvl),
+        });
+      }
+    }
+
+    // Mask
+    const maskGfx = new PIXI.Graphics();
+    maskGfx.beginFill(0xffffff).drawRect(0, bodyTopY, w, scrollBodyH).endFill();
+    this.container.addChild(maskGfx);
+    scrollContainer.mask = maskGfx;
+    this.container.addChild(scrollContainer);
+
+    this.renderToast();
+  }
+
+  private cellState(
+    track: 'free' | 'paid',
+    level: number,
+    currentLevel: number,
+    claimedFree: Set<number>,
+    claimedPaid: Set<number>,
+    hasPass: boolean,
+  ): CellState {
+    const claimed = track === 'free' ? claimedFree.has(level) : claimedPaid.has(level);
+    if (claimed) return 'claimed';
+    if (level > currentLevel) return 'locked';
+    if (track === 'paid' && !hasPass) return 'pass_required';
+    return 'claimable';
+  }
+
+  private drawCell(
+    parent: PIXI.Container,
+    x: number, y: number, w: number, h: number,
+    level: number,
+    reward: { kind: string; count: number } | null,
+    state: CellState,
+  ): void {
+    const fillColor = state === 'claimable' ? 0xe8f5e9 : state === 'claimed' ? 0xf0f0f0 : C.paper;
+    const borderColor = state === 'claimable' ? C.green : state === 'claimed' ? C.line : state === 'pass_required' ? C.gold : C.line;
+    const borderW = state === 'claimable' ? 2 : 1.2;
+
+    const box = sketchPanel(w, h, { fill: fillColor, border: borderColor, width: borderW, seed: seedFor(x, y + level, w) });
+    box.x = x; box.y = y;
+    parent.addChild(box);
+
+    // Level badge
+    const lvlTxt = txt(t('battlepass.level', { n: String(level) }), Math.round(h * 0.32), C.mid);
+    lvlTxt.anchor.set(0, 0); lvlTxt.x = x + Math.round(w * 0.05); lvlTxt.y = y + Math.round(h * 0.08);
+    parent.addChild(lvlTxt);
+
+    // Reward label
+    if (reward) {
+      const rewardStr = reward.kind === 'coins'
+        ? t('battlepass.rewardCoins', { n: String(reward.count) })
+        : t('battlepass.rewardMaterial', { n: String(reward.count) });
+      const rewardColor = state === 'claimed' ? C.mid : reward.kind === 'coins' ? C.gold : C.accent;
+      const rew = txt(rewardStr, Math.round(h * 0.4), rewardColor, state === 'claimable');
+      rew.anchor.set(0.5, 0.5); rew.x = x + w / 2; rew.y = y + h * 0.62;
+      parent.addChild(rew);
+    }
+
+    // State overlay label
+    let stateLbl: string | null = null;
+    if (state === 'claimed') stateLbl = t('battlepass.claimed');
+    else if (state === 'locked') stateLbl = t('battlepass.locked');
+    else if (state === 'pass_required') stateLbl = '🔒';
+    else if (state === 'claimable') stateLbl = t('battlepass.claim');
+
+    if (stateLbl) {
+      const stateColor = state === 'claimable' ? C.green : state === 'pass_required' ? C.gold : C.mid;
+      const sl = txt(stateLbl, Math.round(h * 0.34), stateColor, state === 'claimable');
+      sl.anchor.set(1, 1); sl.x = x + w - Math.round(w * 0.05); sl.y = y + h - Math.round(h * 0.08);
+      parent.addChild(sl);
+    }
+  }
+
+  private doClaim(track: 'free' | 'paid', level: number): void {
+    if (!this.cb.onClaim || this.busy) return;
+    this.busy = true;
+    this.render();
+    this.cb.onClaim(track, level).then((coins) => {
+      this.busy = false;
+      if (coins > 0) this.showToast(t('battlepass.claimToast', { n: String(coins) }));
+      else this.render();
+    }).catch(() => {
+      this.busy = false;
+      this.showToast(t('battlepass.claimFailed'));
+    });
+  }
+
+  private renderToast(): void {
+    if (!this.toast) return;
+    const { w, h } = this;
+    const tBg = new PIXI.Graphics();
+    tBg.beginFill(C.dark, 0.88).drawRoundedRect(Math.round(w * 0.15), Math.round(h * 0.82), Math.round(w * 0.7), Math.round(h * 0.08), 8).endFill();
+    this.container.addChild(tBg);
+    const tTxt = txt(this.toast, Math.round(h * 0.028), 0xffffff);
+    tTxt.anchor.set(0.5, 0.5); tTxt.x = w / 2; tTxt.y = Math.round(h * 0.86);
+    this.container.addChild(tTxt);
+  }
+}

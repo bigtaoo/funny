@@ -25,6 +25,8 @@ import { CollectionScene, type CollectionCallbacks } from './scenes/CollectionSc
 import { EquipmentScene, type EquipmentCallbacks } from './scenes/EquipmentScene';
 import { StatsScene, type StatsCallbacks } from './scenes/StatsScene';
 import { AchievementScene, type AchievementCallbacks } from './scenes/AchievementScene';
+import { LeaderboardScene, type LeaderboardCallbacks } from './scenes/LeaderboardScene';
+import { BattlePassScene, type BattlePassCallbacks } from './scenes/BattlePassScene';
 import { WorldMapScene, type WorldMapCallbacks, type WorldMapView } from './scenes/WorldMapScene';
 import { FamilyScene, type FamilySceneCallbacks } from './scenes/FamilyScene';
 import { SectScene, type SectSceneCallbacks, type SectSceneView } from './scenes/SectScene';
@@ -88,6 +90,7 @@ class PixiAppViews implements AppViews {
       applySocialBadge: (n) => scene.applySocialBadge(n),
       applyAchievementBadge: (c) => scene.applyAchievementBadge(c),
       showAchievementToast: (m) => scene.showAchievementToast(m),
+      showSeasonSettlement: (o, p, n) => scene.showSeasonSettlement(o, p, n),
     };
   }
 
@@ -139,6 +142,16 @@ class PixiAppViews implements AppViews {
   showAchievements(cb: AchievementCallbacks): void {
     this.leaveLobby();
     this.manager.goto(new AchievementScene(this.layout, this.input, cb));
+  }
+
+  showLeaderboard(cb: LeaderboardCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new LeaderboardScene(this.layout, this.input, cb));
+  }
+
+  showBattlePass(cb: BattlePassCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new BattlePassScene(this.layout, this.input, cb));
   }
 
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void {

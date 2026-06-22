@@ -40,6 +40,12 @@ export interface StatsCallbacks {
   onWatchReplay?(roomId: string): void;
   /** Open the achievement wall (S9-5). Shown as a top-right entry in the title bar. */
   onOpenAchievements?(): void;
+  /** Open the global leaderboard (SE-6). Shown in the ranked section when online. */
+  onOpenLeaderboard?(): void;
+  /** Open the battle pass panel (SE-9). Shown in the ranked section when online. */
+  onOpenBattlePass?(): void;
+  /** Current season info for the banner (SE-6). */
+  season?: { seasonNo: number; endAt: number };
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -124,20 +130,35 @@ export class StatsScene implements Scene {
     let y = tbH + Math.round(h * 0.035);
     const gap = Math.round(h * 0.022);
 
-    // 1. Ranked
+    // 1. Ranked (+ season banner + leaderboard / battlepass entry rows)
     const total = s.pvp.wins + s.pvp.losses;
     const winrate = total > 0 ? `${Math.round((s.pvp.wins / total) * 100)}%` : '—';
     const streak = s.pvp.streak > 0 ? t('stats.streakWin', { n: s.pvp.streak })
       : s.pvp.streak < 0 ? t('stats.streakLose', { n: -s.pvp.streak })
       : t('stats.streakNone');
     const rankName = t(('rank.' + s.pvp.rank) as TranslationKey);
-    y = this.drawSection(pad, y, secW, t('stats.pvp'), C.accent, [
+
+    // Season banner row (SE-6)
+    let seasonBannerStr = '';
+    if (this.cb.season) {
+      const { seasonNo, endAt } = this.cb.season;
+      const daysLeft = Math.ceil((endAt - Date.now()) / (1000 * 60 * 60 * 24));
+      seasonBannerStr = daysLeft > 0
+        ? t('season.banner', { no: String(seasonNo), days: String(daysLeft) })
+        : t('season.bannerEnded', { no: String(seasonNo) });
+    }
+
+    const pvpRows: Row[] = [
+      ...(seasonBannerStr ? [{ label: '', value: seasonBannerStr, valueColor: C.gold }] : []),
       { label: t('stats.rank'), value: rankName, valueColor: C.gold },
       { label: t('stats.elo'), value: String(s.pvp.elo) },
       { label: t('stats.record'), value: `${s.pvp.wins} / ${s.pvp.losses}` },
       { label: t('stats.winrate'), value: winrate },
       { label: t('stats.streak'), value: streak, valueColor: s.pvp.streak > 0 ? C.green : s.pvp.streak < 0 ? C.red : C.mid },
-    ]);
+      ...(this.cb.onOpenLeaderboard ? [{ label: '', value: t('leaderboard.openLeaderboard') + ' →', valueColor: C.accent, rowHit: () => this.cb.onOpenLeaderboard!() }] : []),
+      ...(this.cb.onOpenBattlePass ? [{ label: '', value: t('battlepass.openBattlePass') + ' →', valueColor: C.gold, rowHit: () => this.cb.onOpenBattlePass!() }] : []),
+    ];
+    y = this.drawSection(pad, y, secW, t('stats.pvp'), C.accent, pvpRows);
     y += gap;
 
     // 2. Campaign

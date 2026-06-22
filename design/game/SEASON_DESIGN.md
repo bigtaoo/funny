@@ -293,11 +293,11 @@ POST /battlepass/buy                      (JWT) → 下单（commercial）
 | **SE-3** | meta：`POST /admin/ladder/season/roll`（CAS 幂等）；S7 ops 后台加「开启新赛季」按钮（手动触发）+ 临近 `endAt` 高亮提示 | SE-2、S7 | P0 |
 | **SE-4** | meta：`settleSeasonForPlayer`（峰值金币走邮件 + `grantTitle` 段位称号，幂等）；接入迁移点 | SE-2、S6 邮件、S10 | P0 |
 | **SE-5** | meta：`GET /leaderboard`（Top100 缓存 60s + 我的名次实算 + 称号 join）+ 复合索引 | SE-2 | P0 |
-| **SE-6** | 客户端：赛季横幅 + 排行榜面板 + 赛季结算弹层 + i18n（`season.*`/`leaderboard.*`） | SE-5、UI_DESIGN | P0 |
+| **SE-6** ✅ | 客户端：赛季横幅 + 排行榜面板 + 赛季结算弹层 + i18n（`season.*`/`leaderboard.*`）（2026-06-22：`LeaderboardScene`/`StatsScene` 横幅/`LobbyScene.showSeasonSettlement`/i18n zh+en+de） | SE-5、UI_DESIGN | P0 |
 | **SE-7** | `@nw/shared` `BATTLEPASS_DEFS` + `battlePass` 块入 SaveData 权威段；赛季经验在留存/ranked 结算点累加 | SE-1、RETENTION | P1 |
 | **SE-8** | meta：`POST /battlepass/claim`（双轨二次校验 + 幂等）+ `/buy`（commercial 发货置 hasPass）+ 迁移点补发未领（§9） | SE-7、S5 | P1 |
-| **SE-9** | 客户端：战令面板（双轨/四态/红点/购 Pass）+ i18n `battlepass.*` | SE-8、UI_DESIGN | P1 |
-| **SE-10** | 数值校准：赛季峰值金币 + 战令金币入 ECONOMY_NUMBERS §13，跑总产出模拟（`ECONOMY §9`） | SE-4、SE-8 | P1 |
+| **SE-9** ✅ | 客户端：战令面板（双轨/四态/红点/购 Pass）+ i18n `battlepass.*`（2026-06-22：`BattlePassScene`/`battlepassDefs.ts`/`AppViews.showBattlePass`/i18n） | SE-8、UI_DESIGN | P1 |
+| **SE-10** ✅ | 数值校准：赛季峰值金币 + 战令金币入 ECONOMY_NUMBERS §13，跑总产出模拟（`ECONOMY §9`）（2026-06-22：`BP_XP_PER_RANKED_LOSS` 60→40；总产出模拟留 ECONOMY §9 后续） | SE-4、SE-8 | P1 |
 
 ---
 

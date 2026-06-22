@@ -9,7 +9,7 @@ export const BATTLEPASS_BUY_COST = 600;
 
 /** ranked 局给予的赛季经验（胜利更多）。 */
 export const BP_XP_PER_RANKED_WIN = 120;
-export const BP_XP_PER_RANKED_LOSS = 60;
+export const BP_XP_PER_RANKED_LOSS = 40;
 
 /** 单个等级所需累计经验（每级固定）。 */
 export const BP_XP_PER_LEVEL = 600;

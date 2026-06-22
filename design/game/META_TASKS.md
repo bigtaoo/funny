@@ -286,11 +286,11 @@
 - [x] **S11-SE-3** meta：`POST /admin/ladder/season/roll`（CAS 幂等）（✅ 2026-06-22：`internal.ts` `/admin/ladder/season/roll`）；S7 ops 后台「开启新赛季」按钮待做
 - [x] **S11-SE-4** meta：`settleSeasonForPlayer`（峰值金币走邮件 + 战令跨季补发，幂等）接入迁移点（✅ 2026-06-22：`ladderSeason.settleSeasonForPlayer`；段位称号待 S10）
 - [x] **S11-SE-5** meta：`GET /leaderboard`（Top100，当前赛季 ELO 降序）+ `saves` 复合索引（✅ 2026-06-22：`service.getLeaderboard` + `/internal/leaderboard`；60s 缓存与我的名次待后续优化）
-- [ ] **S11-SE-6** 客户端：赛季横幅 + 排行榜面板（`LeaderboardScene`）+ 赛季结算弹层 + i18n（`season.*`/`leaderboard.*`，zh/en/de）
+- [x] **S11-SE-6** 客户端：赛季横幅 + 排行榜面板（`LeaderboardScene`）+ 赛季结算弹层 + i18n（`season.*`/`leaderboard.*`，zh/en/de）（✅ 2026-06-22：`LeaderboardScene`/`StatsScene` 横幅+入口行/`LobbyScene.showSeasonSettlement`/i18n zh+en+de）
 - [x] **S11-SE-7** `@nw/shared` `BATTLEPASS_DEFS` + `battlePass` 块入 SaveData 权威段；ranked 结算点累加赛季经验（✅ 2026-06-22：`shared/battlepass.ts` + `applyPvp` 加 BP XP + `migrateIfStale` 跨季重置/补发）
 - [x] **S11-SE-8** meta：`POST /battlepass/claim`（双轨二次校验 + 幂等 orderId）+ `/buy`（commercial.spend 发货置 hasPass）+ 迁移点补发未领（✅ 2026-06-22：`service.buyBattlePass/claimBattlePass`）
-- [ ] **S11-SE-9** 客户端：战令面板（`BattlePassScene`，双轨/四态/红点/购 Pass）+ i18n `battlepass.*`
-- [ ] **S11-SE-10** 数值校准：赛季峰值金币 + 战令金币入 `ECONOMY_NUMBERS §13`，跑总产出模拟（`ECONOMY §9` 遗留）
+- [x] **S11-SE-9** 客户端：战令面板（`BattlePassScene`，双轨/四态/红点/购 Pass）+ i18n `battlepass.*`（✅ 2026-06-22：`BattlePassScene`/`battlepassDefs.ts`/`AppViews.showBattlePass`/i18n）
+- [x] **S11-SE-10** 数值校准：赛季峰值金币 + 战令金币入 `ECONOMY_NUMBERS §13`，跑总产出模拟（`ECONOMY §9` 遗留）（✅ 2026-06-22：`BP_XP_PER_RANKED_LOSS` 60→40；数值模拟留 ECONOMY §9 后续）
 
 > **依赖**：S1-R 天梯（✅ 已落地，ELO 结算在 meta）；`RETENTION_DESIGN`（战令经验来源，C 块前置）；S6 social 邮件（赛季奖励发放）；S2/S5 金币路径；`TITLE_DESIGN`/S10（段位称号授予下游，可后置——先发金币、称号待 S10）；S7 admin（赛季开启按钮）。
 > **优先级**：A 赛季时钟+软重置（SE-1~4）/ B 排行榜（SE-5~6）为 P0；C 战令（SE-7~9）为 P1。

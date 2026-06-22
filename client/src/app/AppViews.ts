@@ -32,6 +32,8 @@ import type { CollectionCallbacks } from '../scenes/CollectionScene';
 import type { EquipmentCallbacks } from '../scenes/EquipmentScene';
 import type { StatsCallbacks } from '../scenes/StatsScene';
 import type { AchievementCallbacks } from '../scenes/AchievementScene';
+import type { LeaderboardCallbacks } from '../scenes/LeaderboardScene';
+import type { BattlePassCallbacks } from '../scenes/BattlePassScene';
 import type { ReplaySceneCallbacks } from '../scenes/ReplayScene';
 import type { ResultSceneCallbacks, EloResult } from '../scenes/ResultScene';
 import type { GameSceneCallbacks, GameSceneOptions } from '../scenes/GameScene';
@@ -57,6 +59,14 @@ export interface LobbyView {
    * tapping the toast jumps to the achievement wall.
    */
   showAchievementToast(text: string): void;
+  /**
+   * Show the season-settlement overlay once per season transition (SE-6).
+   * Called after the first lobby entry where pvp.seasonNo has advanced.
+   * @param oldNo  The season that just ended.
+   * @param peakRank  Peak rank achieved in that season (pvp.seasonPeakRank).
+   * @param newNo  The current (new) season number.
+   */
+  showSeasonSettlement(oldNo: number, peakRank: string, newNo: number): void;
 }
 
 /** Live handle for the room scene — the core forwards NetSession control events to it. */
@@ -121,6 +131,10 @@ export interface AppViews {
   showEquipment(cb: EquipmentCallbacks): void;
   showStats(cb: StatsCallbacks): void;
   showAchievements(cb: AchievementCallbacks): void;
+  /** 全服天梯排行榜（SE-6）。 */
+  showLeaderboard(cb: LeaderboardCallbacks): void;
+  /** 战令面板（SE-9）。 */
+  showBattlePass(cb: BattlePassCallbacks): void;
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void;
   showResult(props: ResultViewProps): void;
 
