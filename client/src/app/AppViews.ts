@@ -55,6 +55,11 @@ export interface LobbyView {
   /** Toggle the achievement-claimable red dot on the stats nav slot (ACHIEVEMENT_DESIGN §4.1). */
   applyAchievementBadge(claimable: boolean): void;
   /**
+   * Called after a worldsvc /health ping resolves. Shows a "×" badge on the 大世界
+   * nav slot when ok=false so developers immediately see the service is down.
+   */
+  applyWorldAvailable(ok: boolean): void;
+  /**
    * Show a transient "achievement unlocked" toast over the lobby (ACHIEVEMENT_DESIGN §7, S9-5b).
    * The core computes the unlock delta after refreshing stats and aggregates a single message;
    * tapping the toast jumps to the achievement wall.

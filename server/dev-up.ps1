@@ -87,3 +87,53 @@ foreach ($p in $procs) {
 Write-Host ""
 Write-Host "Done. Each process runs in its own window and auto-restarts on code change." -ForegroundColor Green
 Write-Host "Close: close each window; stop Mongo: docker compose down" -ForegroundColor DarkGray
+
+# ── Health-check summary ──────────────────────────────────────────────────────
+# Wait for processes to start, then ping every /health endpoint.
+# Skipped when -Only is used (only a subset of services was started).
+if (-not $Only) {
+  Write-Host ""
+  Write-Host "Waiting for services to start..." -ForegroundColor Yellow
+  Start-Sleep -Seconds 6
+
+  # service name → health URL (uses each service's default dev port)
+  $checks = [ordered]@{
+    meta       = 'http://127.0.0.1:18080/health'
+    gateway    = 'http://127.0.0.1:8090/health'   # internal listener
+    matchsvc   = 'http://127.0.0.1:8091/health'   # internal listener
+    game       = 'http://127.0.0.1:8081/health'
+    commercial = 'http://127.0.0.1:18082/health'
+    world      = 'http://127.0.0.1:18084/health'
+    admin      = 'http://127.0.0.1:18083/health'
+    analytics  = 'http://127.0.0.1:18085/health'
+  }
+
+  $anyDown = $false
+  Write-Host ""
+  Write-Host "  Service          Status   URL" -ForegroundColor Cyan
+  Write-Host "  ───────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+  foreach ($svc in $checks.Keys) {
+    $url = $checks[$svc]
+    $ok  = $false
+    try {
+      $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+      $ok = ($r.StatusCode -eq 200)
+    } catch { $ok = $false }
+
+    $pad  = ' ' * (16 - $svc.Length)
+    if ($ok) {
+      Write-Host ("  " + $svc + $pad + "  OK       " + $url) -ForegroundColor Green
+    } else {
+      Write-Host ("  " + $svc + $pad + "  DOWN  !! " + $url) -ForegroundColor Red
+      $anyDown = $true
+    }
+  }
+  Write-Host ""
+  if ($anyDown) {
+    Write-Host "  !! One or more services are not yet up." -ForegroundColor Red
+    Write-Host "     They may still be compiling. Re-run 'npm run dev:health' in ~10s to recheck." -ForegroundColor DarkGray
+  } else {
+    Write-Host "  All services healthy." -ForegroundColor Green
+  }
+  Write-Host ""
+}

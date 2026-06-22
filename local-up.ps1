@@ -53,8 +53,21 @@ foreach ($svc in $buildTargets) {
 Write-Host ">> Starting full stack ..." -ForegroundColor Cyan
 docker compose -f $compose up -d --wait
 if ($LASTEXITCODE -ne 0) {
-  Write-Host "!! Stack failed to come up (exit $LASTEXITCODE). Recent logs:" -ForegroundColor Red
+  Write-Host "!! Stack failed to come up (exit $LASTEXITCODE)." -ForegroundColor Red
+  Write-Host ""
+  Write-Host "Service status:" -ForegroundColor Yellow
   docker compose -f $compose ps
+  Write-Host ""
+  Write-Host "Unhealthy / exited services:" -ForegroundColor Yellow
+  # Show last 40 log lines for any container that isn't running+healthy.
+  $bad = docker compose -f $compose ps --format json 2>$null |
+         ConvertFrom-Json |
+         Where-Object { $_.State -ne 'running' -or $_.Health -eq 'unhealthy' }
+  foreach ($svc in $bad) {
+    Write-Host ("  -- " + $svc.Service + " (" + $svc.State + "/" + $svc.Health + ") --") -ForegroundColor Red
+    docker compose -f $compose logs --tail=40 $svc.Service
+    Write-Host ""
+  }
   exit $LASTEXITCODE
 }
 

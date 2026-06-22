@@ -146,6 +146,10 @@ export class LobbyScene implements Scene {
   private retentionBadge = false;
   /** Hit rect for the daily button (top-right area). */
   private dailyBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** null = not yet checked; true = reachable; false = unreachable → show badge. */
+  private worldOnline: boolean | null = null;
+  /** Cheap-refresh layer for the worldsvc-offline indicator on the world nav slot. */
+  private worldOfflineBadgeLayer: PIXI.Container | null = null;
   /** Transient "achievement unlocked" toast (S9-5b): own top-most layer + auto-fade timer + tap-to-open rect. */
   private toastLayer: PIXI.Container | null = null;
   private toastTimer = 0;
@@ -659,6 +663,10 @@ export class LobbyScene implements Scene {
     navBg.addChild(this.achievementBadgeLayer);
     this.drawAchievementBadge();
 
+    // World-offline indicator (redrawn when applyWorldAvailable() is called).
+    this.worldOfflineBadgeLayer = new PIXI.Container();
+    navBg.addChild(this.worldOfflineBadgeLayer);
+
     // VS overlay
     this.vsLayer = this.buildVsLayer(w, h);
     this.vsLayer.visible = false;
@@ -713,6 +721,38 @@ export class LobbyScene implements Scene {
     g.drawCircle(cx, cy, r);
     g.endFill();
     layer.addChild(g);
+  }
+
+  /**
+   * Called after a worldsvc reachability check (ping /health) resolves.
+   * Shows a small "×" badge on the 大世界 nav slot when the service is down,
+   * so developers see immediately that worldsvc isn't running — without having to
+   * click the button and wait for the 3-second timeout.
+   */
+  applyWorldAvailable(ok: boolean): void {
+    if (this.destroyed) return;
+    this.worldOnline = ok;
+    this.drawWorldOfflineBadge();
+  }
+
+  private drawWorldOfflineBadge(): void {
+    const layer = this.worldOfflineBadgeLayer;
+    if (!layer) return;
+    layer.removeChildren();
+    if (this.worldOnline !== false) return; // null (not yet checked) or true → nothing to show
+
+    const s = this.worldNavRect;
+    const navH = s.h;
+    // "×" rendered at the top-left corner of the world nav dot so it doesn't clash with the label.
+    const dotR = Math.round(navH * 0.17);
+    const cx = s.x + s.w / 2 - dotR - Math.round(navH * 0.06);
+    const cy = s.y + navH / 2 - Math.round(navH * 0.18) - dotR;
+
+    const lbl = txt('×', Math.round(navH * 0.30), C.red, true);
+    lbl.anchor.set(0.5, 0.5);
+    lbl.x = cx; lbl.y = cy;
+    lbl.alpha = 0.85;
+    layer.addChild(lbl);
   }
 
   /**

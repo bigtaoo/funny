@@ -229,6 +229,12 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     // rebuild without flicker; then refresh from the server (skip on resize).
     lobby.applySocialBadge(socialBadgeTotal);
     lobby.applyAchievementBadge(achievementClaimable);
+    // Ping worldsvc so the 大世界 nav button shows a "×" badge immediately when
+    // the service isn't running — visible feedback before the user clicks the button.
+    if (getWorldBaseUrl()) {
+      const worldHealthApi = new WorldApiClient(platform.storage);
+      void worldHealthApi.checkHealth().then((ok) => { if (inLobby) lobby.applyWorldAvailable(ok); });
+    }
     if (online) {
       // Keep the gateway connected while idling in the lobby so presence + live
       // social pushes (request / chat / mail) update the red dot in real time.
@@ -521,9 +527,14 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     inLobby = false;
     // G6/§20：按当前赛季解析本账号应进的 shard（粘性>家族>单随，溢出开新区），不再硬编码 worldId。
     // CURRENT_SEASON 暂为客户端常量，待 S11 天梯赛季元数据下发后由 metaserver 提供（§20.8）。
+    // 3 秒超时保证 worldsvc 未运行时按钮不挂死（Windows 防火墙可能拦截 TCP RST 导致长等）。
+    const fallbackId = `s${CURRENT_SEASON}-0`;
+    let navigated = false;
+    const nav = (worldId: string): void => { if (!navigated) { navigated = true; goWorldMap(worldApi, worldId); } };
+    const timer = setTimeout(() => nav(fallbackId), 3000);
     void worldApi.resolveSeason(CURRENT_SEASON)
-      .then((r) => { goWorldMap(worldApi, r.worldId); })
-      .catch(() => { goWorldMap(worldApi, `s${CURRENT_SEASON}-0`); }); // 解析失败兜底进 0 区（worldShardId 格式）
+      .then((r) => { clearTimeout(timer); nav(r.worldId); })
+      .catch(() => { clearTimeout(timer); nav(fallbackId); });
   }
 
   function goWorldMap(worldApi: WorldApiClient, worldId: string): void {

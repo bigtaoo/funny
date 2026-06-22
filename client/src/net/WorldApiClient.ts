@@ -59,6 +59,21 @@ export class WorldApiClient {
     return getWorldBaseUrl() !== '' || this.storage.getItem('nw_world_base') !== null;
   }
 
+  /** Ping worldsvc /health. Resolves false on network error or non-200 response. */
+  async checkHealth(): Promise<boolean> {
+    const base = getWorldBaseUrl();
+    if (!base) return false;
+    try {
+      const ctrl = new AbortController();
+      const id = setTimeout(() => ctrl.abort(), 3000);
+      const res = await fetch(`${base}/health`, { signal: ctrl.signal });
+      clearTimeout(id);
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   private token(): string | null {
     return this.storage.getItem(TOKEN_KEY);
   }
