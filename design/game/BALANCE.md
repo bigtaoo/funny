@@ -64,14 +64,14 @@
 ### 5.2 PvE 专属单位（无卡牌 → 永不进 PvP 池）
 | 单位 | HP | 攻 | 攻击间隔 | 移速 | 射程 | 半径 | 特性 | 基础护甲 |
 |---|---|---|---|---|---|---|---|---|
-| 重甲 Ironclad | 290 | 10 | 1.5s | 0.5 | 1 | 520 | 抗箭肉盾 | 0 |
+| 重甲 Ironclad | 290 | 10 | 1.5s | 0.5 | 1 | 520 | 抗箭肉盾 | **3**（A3，2026-06-22） |
 | 疾行 Runner | 30 | 9 | 0.7s | 1.9 | 1 | 250 | 快脆，密集冲锋 | 0 |
 | 哈耳庇厄 Harpy | 26 | 8 | 0.9s | 2.2 | 1 | 210 | flying（仅弓兵/箭塔可打），无视阻挡 | 0 |
 | 医护 Medic | 90 | 0 | — | 0.55 | 0 | 440 | aura_heal 半径 2、8 HP/s，无攻击 | 0 |
 | 狂战 Berserker | 110 | 18 | 1.1s | 1.1 | 1 | 420 | HP<40% 攻速 ×1.5 | 0 |
 | 分裂 Splitter | 65 | 7 | 1.0s | 0.8 | 1 | 470 | 死亡生成 Runner ×2 | 0 |
 
-> 基础护甲目前均为 0。A3（战斗数值重算）将根据 TTK 速算表按需给 PvE 敌方设置基础护甲（如 Ironclad 抗箭定位）。
+> Ironclad armor=3（A3 2026-06-22）：确立抗箭肉盾定位。箭塔 TTK 从 ~29 s → ~36 s，迫使玩家用法术/近战清除。
 
 ## 6. 建筑
 
@@ -114,4 +114,35 @@
 |---|---|---|
 | 落石 Rockslide | 3 | 伤害 80 |
 | 断桥 BridgeCollapse | 4 | 阻断 8 s |
+
+---
+
+## 9. TTK 速算表（A3，2026-06-22）
+
+> **公式**：TTK(s) = ceil(目标HP / max(1, 攻击-护甲)) × 攻击间隔(s)  
+> 护甲档位对应玩家单位养成等级：0→L1, 5→L6, 8→L9; 10/15/20 为装备+养成上限参考。
+
+### 9.1 PvP 单位互打（基础兵，护甲 0/5/10/15/20 五档）
+
+| 攻击方 | 防御方 | a=0 | a=5 | a=10 | a=15 | a=20 |
+|---|---|---|---|---|---|---|
+| Infantry | Infantry | 4.0s | 7.2s | 24.0s | 48.0s | 48.0s |
+| Infantry | ShieldBearer | 16.0s | 28.0s | 96.0s | 192.0s | 192.0s |
+| Infantry | Archer | 2.4s | 4.0s | 14.4s | 28.0s | 28.0s |
+| ShieldBearer | Infantry | 9.6s | 24.0s | 72.0s | 72.0s | 72.0s |
+| ShieldBearer | ShieldBearer | 36.0s | 96.0s | 288.0s | 288.0s | 288.0s |
+| ShieldBearer | Archer | 6.0s | 14.4s | 42.0s | 42.0s | 42.0s |
+| Archer | Infantry | 4.2s | 5.6s | 7.0s | 12.6s | 42.0s |
+| Archer | ShieldBearer | 15.4s | 21.0s | 28.0s | 49.0s | 168.0s |
+| Archer | Archer | 2.8s | 4.2s | 4.2s | 7.0s | 25.2s |
+
+### 9.2 箭塔 vs PvE 肉盾（armor 0 vs armor 3）
+
+| 目标 | HP | 护甲 | 箭塔 TTK | Infantry TTK |
+|---|---|---|---|---|
+| Ironclad（旧 armor=0） | 290 | 0 | ~29s (15 dmg/hit) | ~19s (12 dmg/hit) |
+| Ironclad（新 armor=3） | 290 | 3 | **~36s** (12 dmg/hit) | ~26s (9 dmg/hit) |
+| ShieldBearer（玩家L9+8甲） | 240 | 8 | ~22s (7 dmg/hit) | — |
+
+> Ironclad armor=3 后，箭塔单独需要 ~36s（原 ~29s），迫使玩家组合法术/近战才能快速清除。
 </content>
