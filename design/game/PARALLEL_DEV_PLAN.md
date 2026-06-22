@@ -237,7 +237,7 @@
 >
 > 服务端硬化 + 联调测试，零游戏玩法改动。
 
-### C1  IAP 真实渠道验签（发布阻断，最优先）
+### ✅ C1  IAP 真实渠道验签（发布阻断，最优先）
 
 **范围**（`commercial/src/iap.ts`）：
 - Apple：`POST https://buy.itunes.apple.com/verifyReceipt`（sandbox / prod 双重试）；提取 `in_app[].product_id` 与 tier 对应表核对；`receiptId` 幂等。
