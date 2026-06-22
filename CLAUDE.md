@@ -63,6 +63,23 @@ cd tools/level-editor && npm run start   # 端口 9092
 
 详见 `design/product/art-direction.md`：程序绘制（SketchPen）负责棋盘/网格/UI——`client/src/render/sketch.ts`；AI 图（位图）负责角色/兵种——`art/units/*`，animator 绑骨做动画。
 
+## 并行开发计划
+
+**计划文档**：[`design/game/PARALLEL_DEV_PLAN.md`](design/game/PARALLEL_DEV_PLAN.md)
+
+三条并行轨道，每条在独立 worktree 内进行：
+
+| 轨道 | 主题 | worktree 路径 |
+|---|---|---|
+| **Track A** | 引擎重做 + 深度养成（S12/装备/体力/Anna） | `../funny-track-a` / branch `track-a` |
+| **Track B** | 元系统留存（成就/赛季/称号/战令/日常/活动） | `../funny-track-b` / branch `track-b` |
+| **Track C** | 商业合规 + 验收加固（IAP/合规/反作弊/联调） | `../funny-track-c` / branch `track-c` |
+
+**触发约定**：
+- 收到「继续 Track A / B / C」或「并行开发 Track X」时，**先读 `PARALLEL_DEV_PLAN.md`**，找到对应轨道内第一个未完成的任务（按文档顺序，A1→A2→… 依此类推），直接开始实现，无需再问。
+- 每个任务完成后，在 `PARALLEL_DEV_PLAN.md` 对应任务标题前加 `✅ ` 标记，然后自动推进到下一个任务（会话 token 允许时）。
+- 任务结束工作流同常规：记录文档 → 提交 → 合并 main → 删 worktree。
+
 ## 会话说明
 
 - **⚠️ 必须在自己的 worktree 下开展任务，不要直接在 main 分支操作**：开始任务前先用 `git worktree` 建立独立工作目录 + 独立分支，所有改动在 worktree 内完成；约定见 `claudedocs/worktrees.md`。任务结束自行合并回 main 并清理 worktree，无需维护全局索引。仅有微小的文档订正可在主目录直接提交。
