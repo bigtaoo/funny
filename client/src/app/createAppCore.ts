@@ -951,7 +951,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           });
           // 服务器权威结算（§8）：在线 → POST /pve/clear（被抽中则用 kept 录像走 /pve/verify 复算）；
           // 离线 → 入队待结算（fire-and-forget，回到 CampaignMap 时重读 save / pending 反映状态）。
-          if (stars > 0) void saveManager.recordClear(levelId, stars, kept);
+          if (stars > 0) void saveManager.recordClear(levelId, stars, kept, achievementStatDelta(stats[0]));
         } else {
           analytics.track('game_end', {
             mode: 'campaign',

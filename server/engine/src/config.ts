@@ -177,7 +177,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
   // Very slow, so it does not outrun your reaction; it just refuses to die cheaply.
   [UnitType.Ironclad]: {
     type: UnitType.Ironclad,
-    hp: 260,
+    hp: 290,
     attack: 10,
     attackInterval: 1.5,
     speed: 0.5,
@@ -190,7 +190,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
   // threat is the swarm, not the individual — the counter to single-file queueing.
   [UnitType.Runner]: {
     type: UnitType.Runner,
-    hp: 26,
+    hp: 30,
     attack: 9,
     attackInterval: 0.7,
     speed: 1.9,
@@ -204,7 +204,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
   // pure barracks builds. Small radius keeps it visually distinct from runners.
   [UnitType.Harpy]: {
     type: UnitType.Harpy,
-    hp: 22,
+    hp: 26,
     attack: 8,
     attackInterval: 0.9,
     speed: 2.2,
@@ -234,7 +234,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
   // Burst it down before the threshold or it shreds buildings faster than expected.
   [UnitType.Berserker]: {
     type: UnitType.Berserker,
-    hp: 95,
+    hp: 110,
     attack: 18,
     attackInterval: 1.1,
     speed: 1.1,
@@ -249,7 +249,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
   // threat into two fast ones.
   [UnitType.Splitter]: {
     type: UnitType.Splitter,
-    hp: 55,
+    hp: 65,
     attack: 7,
     attackInterval: 1.0,
     speed: 0.8,

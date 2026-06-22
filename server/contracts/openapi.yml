@@ -786,6 +786,64 @@ paths:
         '401': { $ref: '#/components/responses/ErrorResp' }
         '404': { $ref: '#/components/responses/ErrorResp' }
 
+  /match/{roomId}/replay/share:
+    post:
+      operationId: createReplayShare
+      tags: [save]
+      summary: 创建录像分享链接（S1-RP）；仅本人参与的对局可分享；7 天 TTL
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [shareId]
+                    properties:
+                      shareId:
+                        type: string
+                        description: 分享 id（UUID）；客户端拼 /share/replay/{shareId} 分发
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+
+  /share/replay/{shareId}:
+    get:
+      operationId: getReplayByShare
+      tags: [save]
+      summary: 通过分享链接取录像（S1-RP）；无需登录；超期返回 404
+      parameters:
+        - name: shareId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [replay]
+                    properties:
+                      replay: { $ref: '#/components/schemas/MatchReplay' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+
   /pve/clear:
     post:
       operationId: pveClear
@@ -807,6 +865,10 @@ paths:
                   type: object
                   additionalProperties: { type: integer }
                   description: 客户端开局蓝图快照（L0 异常判定；与服务器权威不符触发抽检）
+                stats:
+                  type: object
+                  additionalProperties: { type: integer }
+                  description: 本局成就计数（kill.archer/kill.guard/cast.meteor；S9-3b，普通通关喂入，过 L1 caps）
       responses:
         '200':
           description: 成功

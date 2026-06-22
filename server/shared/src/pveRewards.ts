@@ -165,6 +165,9 @@ export function findPveUpgrade(id: string): PveUpgradeCost | undefined {
 /** 重复刷已通关关的随机抽检比例（首通/异常恒触发，不走此率）。DRAFT 待实测调。 */
 export const PVE_VERIFY_SAMPLE_RATE = 0.1;
 
+/** PvE 复算拒绝次数达此阈值 → 封号（pveBanned=true）。 */
+export const PVE_REJECT_BAN_THRESHOLD = 3;
+
 export interface SpotCheckInput {
   /** 是否首次通关该关（含解锁，高价值）。 */
   isFirstClear: boolean;

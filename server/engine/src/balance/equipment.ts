@@ -98,8 +98,8 @@ export const EFFECT_CAPS = {
   atkspdPct: 0.4,
   /** 吸血% 全来源（trait T6 + 副词条 + 特技）求和上限（§7.7 ≤ 30）。 */
   lifestealPct: 30,
-  /** 护甲 flat 装备贡献上限（§7.7「≤ 引擎单位基础攻击的某比例」防免伤；DRAFT 绝对值占位）。 */
-  armorFlat: 20,
+  /** 护甲 flat 装备贡献上限（S12-E 收紧：progression 改 armor:1/级，L9=+8；装备上限 12 → 合计 ≤20）。 */
+  armorFlat: 12,
 } as const;
 
 // ── 可被全局 loadout 加成的玩家兵种（§8「影响全军」）──────────────────────────

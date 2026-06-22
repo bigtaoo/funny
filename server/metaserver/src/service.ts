@@ -10,6 +10,7 @@ import {
   findPveUpgrade,
   pveUpgradeCost,
   PVE_DAILY_CLEAR_REWARD_CAP,
+  PVE_REJECT_BAN_THRESHOLD,
   shouldSpotCheck,
   chaptersClearedCount,
   sanitizePvpReportedStats,
@@ -438,10 +439,11 @@ export class MetaService {
   async pveClear(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
     const { cols, now, gateway } = this.deps;
-    const { levelId, stars: starsRaw, pveUpgrades: clientUpgrades } = req.body as {
+    const { levelId, stars: starsRaw, pveUpgrades: clientUpgrades, stats: clientStats } = req.body as {
       levelId: string;
       stars: number;
       pveUpgrades?: Record<string, number>;
+      stats?: Record<string, number>;
     };
     const level = findPveLevel(levelId);
     if (!level) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown level'));
@@ -452,6 +454,10 @@ export class MetaService {
     }
 
     const cur = await getOrCreateSave(cols, accountId, now());
+    // S4-4：PvE 复算三次封号，封号账号拒绝发奖。
+    if (cur.antiCheat?.pveBanned) {
+      return reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
+    }
     // 解锁前置：前置关须已通关（离线新解锁被拒，§8 决策 4）。
     if (level.requires && !cur.progress.cleared.includes(level.requires)) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level locked'));
@@ -499,6 +505,8 @@ export class MetaService {
     if ('error' in prog) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, prog.error));
     const granted = await this.grantClearReward(accountId, levelId, level.reward);
     if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
+    // S9-3b：普通通关（非抽检）喂入客户端上报的本局成就计数（L1 caps 兜底）。
+    if (clientStats) await this.accrueJudgedPveStats(accountId, JSON.stringify(clientStats));
     return ok({
       save: granted.save,
       granted: granted.granted,
@@ -564,7 +572,34 @@ export class MetaService {
     );
 
     if (rejected) {
-      const s = await getOrCreateSave(cols, accountId, now());
+      // S4-4：记拒绝次数，达阈值封号；写审计记录。
+      let banned = false;
+      let rejectCount = 1;
+      const saved = await this.mutateSave(accountId, (s) => {
+        const ac = s.antiCheat ?? { statSuspicion: 0 };
+        rejectCount = (ac.pveRejectCount ?? 0) + 1;
+        banned = rejectCount >= PVE_REJECT_BAN_THRESHOLD;
+        return {
+          ...s,
+          antiCheat: {
+            ...ac,
+            pveRejectCount: rejectCount,
+            lastFlaggedTs: now(),
+            ...(banned ? { pveBanned: true } : {}),
+          },
+        };
+      });
+      await cols.pveRejections.insertOne({
+        _id: verifyId,
+        accountId,
+        levelId: doc.levelId,
+        claimedStars: doc.claimedStars,
+        judgedStars,
+        rejectCountAfter: rejectCount,
+        banned,
+        ts: now(),
+      });
+      const s = 'error' in saved ? await getOrCreateSave(cols, accountId, now()) : saved.save;
       return ok({ save: s, granted: {}, capped: false, verified: false });
     }
     // PvE 喂入（S9-3b，ACHIEVEMENT_DESIGN §6.2）：仅**裁判成功复算**（status==='verified'，非
@@ -757,6 +792,54 @@ export class MetaService {
     if (!replay) {
       return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'replay unavailable'));
     }
+    return ok({ replay });
+  }
+
+  /**
+   * 创建录像分享链接（S1-RP）：仅本人参与的对局可分享 → 写 replayShares → 回 shareId。
+   * 分享链接 7 天 TTL，超期 Mongo TTL 自清，GET /share/replay/:shareId 返回 404。
+   */
+  async createReplayShare(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { cols, now } = this.deps;
+    const roomId = (req.params as { roomId?: string }).roomId;
+    if (!roomId) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing roomId'));
+    const doc = await cols.matches.findOne({ roomId });
+    if (!doc || !doc.players.some((p) => p.accountId === accountId)) {
+      return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'match not found'));
+    }
+    const shareId = randomUUID();
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    await cols.replayShares.insertOne({
+      _id: shareId,
+      roomId,
+      accountId,
+      expiresAt: new Date(now() + SEVEN_DAYS_MS),
+      ts: now(),
+    });
+    return ok({ shareId });
+  }
+
+  /**
+   * 通过分享链接取录像（S1-RP）：无需登录，任意人可访问。超期 / 不存在 → 404。
+   * 录像内容与 getMatchReplay 同口径（内嵌优先，大局回退 replayBlobs）。
+   */
+  async getReplayByShare(req: FastifyRequest, reply: FastifyReply) {
+    const { cols } = this.deps;
+    const shareId = (req.params as { shareId?: string }).shareId;
+    if (!shareId) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'share not found'));
+    const share = await cols.replayShares.findOne({ _id: shareId });
+    if (!share || share.expiresAt.getTime() < Date.now()) {
+      return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'share not found or expired'));
+    }
+    const doc = await cols.matches.findOne({ roomId: share.roomId });
+    if (!doc) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'match not found'));
+    let replay = doc.replay;
+    if (!replay && doc.replayRef) {
+      const blob = await cols.replayBlobs.findOne({ _id: doc.replayRef });
+      replay = blob?.replay;
+    }
+    if (!replay) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'replay unavailable'));
     return ok({ replay });
   }
 

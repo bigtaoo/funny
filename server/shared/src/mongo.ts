@@ -165,6 +165,33 @@ export interface PveVerificationDoc {
 }
 
 /**
+ * PvE 录像复算拒绝审计记录（S4-4）：每次 pveVerify 判 rejected 写一条。供运维后台查看可疑账号
+ * 历史 + pveRejectCount 三次封号审计。_id = verifyId（与 pveVerifications 一一对应）。
+ */
+export interface PveRejectDoc {
+  _id: string; // verifyId
+  accountId: string;
+  levelId: string;
+  claimedStars: number;
+  judgedStars: number;
+  rejectCountAfter: number; // bump 后的 pveRejectCount
+  banned: boolean; // 是否因此次达到封号阈值
+  ts: number;
+}
+
+/**
+ * 录像分享链接（S1-RP）：任意玩家可凭 shareId 取对局录像（无需登录）。
+ * `expiresAt` 超期后 TTL 自清；GET /share/replay/:shareId 超期返回 404。
+ */
+export interface ReplayShareDoc {
+  _id: string; // shareId（uuid）
+  roomId: string;
+  accountId: string; // 创建者（发起分享的一方）
+  expiresAt: Date; // BSON Date，TTL 锚（7 天）
+  ts: number;
+}
+
+/**
  * 成就 PvP 统计反作弊审查队列（S9-7 L2/L3，ACHIEVEMENT_DESIGN §4.4）。离线抽查复算实锤某方
  * 超报 kill/cast → 回滚超报 + 升 statSuspicion + 记此条供运维后台（OPS）人工复核/封禁。
  * 业务库（meta），由 admin 经 `GET /internal/anticheat/reviews` 代理读取（admin 库物理隔离）。
@@ -290,6 +317,10 @@ export interface Collections {
   pveDaily: Collection<PveDailyDoc>;
   pveVerifications: Collection<PveVerificationDoc>;
   antiCheatReviews: Collection<AntiCheatReviewDoc>;
+  // PvE 反作弊（S4-4）
+  pveRejections: Collection<PveRejectDoc>;
+  // 录像分享（S1-RP）
+  replayShares: Collection<ReplayShareDoc>;
   // 社交（S6）
   friendEdges: Collection<FriendEdgeDoc>;
   friendRequests: Collection<FriendRequestDoc>;
@@ -342,6 +373,8 @@ export async function createMongo(
     pveDaily: db.collection<PveDailyDoc>('pveDaily'),
     pveVerifications: db.collection<PveVerificationDoc>('pveVerifications'),
     antiCheatReviews: db.collection<AntiCheatReviewDoc>('antiCheatReviews'),
+    pveRejections: db.collection<PveRejectDoc>('pveRejections'),
+    replayShares: db.collection<ReplayShareDoc>('replayShares'),
     friendEdges: db.collection<FriendEdgeDoc>('friendEdges'),
     friendRequests: db.collection<FriendRequestDoc>('friendRequests'),
     blocks: db.collection<BlockDoc>('blocks'),
@@ -377,6 +410,12 @@ export async function createMongo(
     // 成就反作弊审查队列（S9-7）：按账号查历史 + open 队列。
     await collections.antiCheatReviews.createIndex({ accountId: 1, ts: -1 });
     await collections.antiCheatReviews.createIndex({ status: 1, ts: -1 });
+    // —— PvE 反作弊（S4-4）——
+    await collections.pveRejections.createIndex({ accountId: 1, ts: -1 });
+    // —— 录像分享（S1-RP）——
+    // TTL 自清（expiresAt 到期秒数 0 → Mongo 到点删）。
+    await collections.replayShares.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await collections.replayShares.createIndex({ roomId: 1 });
     // —— 社交（S6，SOCIAL_DESIGN §3）——
     await collections.friendEdges.createIndex({ owner: 1 });
     // 收件箱（待处理申请）+ 防重复申请（同方向去重）。

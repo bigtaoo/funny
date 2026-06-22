@@ -182,7 +182,10 @@ export class SaveManager {
    * 离线 / 请求失败 → 入队（不改本地权威值），上线后 flush。
    * L1 抽检（§8.6 第 3 步）：服务器回 `needsReplay` 时材料暂扣，用本局录像补传 /pve/verify 复算入账。
    */
-  async recordClear(levelId: string, stars: number, replay?: Replay): Promise<void> {
+  /**
+   * @param stats 本局成就计数（achievementStatDelta 产出）；S9-3b，普通通关喂入服务器计数。
+   */
+  async recordClear(levelId: string, stars: number, replay?: Replay, stats?: Record<string, number>): Promise<void> {
     if (stars <= 0) return;
     // 乐观本地解锁（离线优先）：立刻把通关写进本地 progress，回到 CampaignMap 时下一关即解锁，
     // 不必干等服务器回执（在线时 recordClear 是 fire-and-forget，回执前场景已重建会读到旧值）。
@@ -191,7 +194,7 @@ export class SaveManager {
     this.applyLocalClear(levelId, stars);
     if (this.online()) {
       try {
-        const res = await this.api!.pveClear(levelId, stars, this.save.pveUpgrades);
+        const res = await this.api!.pveClear(levelId, stars, this.save.pveUpgrades, stats);
         this.adoptServer(res.save);
         if (res.needsReplay && res.verifyId && replay) {
           await this.verifyReplay(res.verifyId, replay);
