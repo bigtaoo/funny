@@ -24,7 +24,21 @@ export interface GachaPoolDef {
   itemsByRarity: Record<Rarity, string[]>;
 }
 
+/**
+ * 盲盒材料奖励（E7 §4）：`mat_*` 前缀 itemId → 入库数量。
+ * 发货端（metaserver/economy.ts deliverOrder）据此分流到 save.materials，不走皮肤 dupe 退币。
+ * 数量 DRAFT [可调]：tier 越高稀有材料越多，但绝对量刻意压低（材料主 faucet 仍是关卡掉落）。
+ */
+export const GACHA_MATERIAL_GRANTS: Record<string, Record<string, number>> = {
+  mat_scrap: { scrap: 10 },
+  mat_lead: { lead: 3 },
+  mat_binding: { binding: 1 },
+};
+
 // 占位皮肤池（真实皮肤内容待美术）；RNG 先按稀有度 tier 滚，再 tier 内均匀挑。
+// E7：标准池加入材料格（mat_*，发货走材料分流）+ 装备格（defId，发货走装备分流）。
+// "材料为主 + 装备成品低概率彩头"（ADR-017）：common 材料占 3/7，rare 材料 2/8，
+// epic/legendary 装备格 ≤ 皮肤格数，保持装备为彩头（DRAFT [可调]）。
 export const GACHA_POOLS: GachaPoolDef[] = [
   {
     id: 'standard',
@@ -34,10 +48,14 @@ export const GACHA_POOLS: GachaPoolDef[] = [
     tenFloor: 'epic',
     dupePolicy: 'coins',
     itemsByRarity: {
-      common: ['skin_c1', 'skin_c2', 'skin_c3', 'skin_c4'],
-      rare: ['skin_r1', 'skin_r2', 'skin_r3'],
-      epic: ['skin_e1', 'skin_e2'],
-      legendary: ['skin_l1'],
+      // common: 4 皮肤 + 3 材料格 → 材料出率 43%
+      common: ['skin_c1', 'skin_c2', 'skin_c3', 'skin_c4', 'mat_scrap', 'mat_scrap', 'mat_scrap'],
+      // rare: 3 皮肤 + 2 材料格 + 3 精良装备 → 材料出率 25%，fine 装备 38%
+      rare: ['skin_r1', 'skin_r2', 'skin_r3', 'mat_lead', 'mat_lead', 'wp_pen', 'ar_cardstock', 'tk_bookmark'],
+      // epic: 2 皮肤 + 1 材料格 + 3 稀有装备 → 装备彩头 50%
+      epic: ['skin_e1', 'skin_e2', 'mat_binding', 'wp_marker', 'ar_leather', 'tk_sticker'],
+      // legendary: 1 皮肤 + 3 史诗装备 → 装备彩头 75%（极稀有 tier，每拉 ~2%）
+      legendary: ['skin_l1', 'wp_highlighter', 'ar_foil', 'tk_seal'],
     },
   },
   // 单位卡池（S12-C，养成 ≠ 外观，独立池）：item = cardKey（infantry:1 …），稀有度映射卡级见
@@ -64,10 +82,13 @@ export interface ShopItemDef {
 }
 
 // 商店直购定价（§3.1，legendary 仅盲盒产出不直售）。
+// protect_enhance：强化保护道具（E7 §6.2），失败时保留材料不损耗，大 R 向消耗品。
+// kind='item' → 发货写 save.inventory.items[grants]，而非 skins（见 metaserver/economy.ts deliverOrder）。
 export const SHOP_ITEMS: ShopItemDef[] = [
   { id: 'skin_shop_c1', cost: 300, kind: 'skin', grants: 'skin_shop_c1', rarity: 'common' },
   { id: 'skin_shop_r1', cost: 800, kind: 'skin', grants: 'skin_shop_r1', rarity: 'rare' },
   { id: 'skin_shop_e1', cost: 1800, kind: 'skin', grants: 'skin_shop_e1', rarity: 'epic' },
+  { id: 'protect_enhance', cost: 500, kind: 'item', grants: 'protect_enhance', rarity: 'rare' },
 ];
 
 // 重复转化（§4.3）。设计原意 common/rare → 碎片，epic/legendary → 退币；但碎片落在客户端同步段

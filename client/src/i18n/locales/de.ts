@@ -314,6 +314,7 @@ export const de: Record<TranslationKey, string> = {
   'equip.cost': 'Kosten',
   'equip.enhanceOk': 'Verstärkt → +{lv}',
   'equip.enhanceFail': 'Verstärkung fehlgeschlagen (Material verbraucht)',
+  'equip.protect': 'Schutzstein ×{n} (Material bei Fehlschlag behalten)',
   'equip.maxLevel': 'Maximalstufe +9',
   'equip.equip': 'Anlegen',
   'equip.unequip': 'Ablegen',

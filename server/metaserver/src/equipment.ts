@@ -19,6 +19,7 @@ import {
   EQUIP_SLOTS,
   SALVAGE_MAX_LEVEL,
   REFORGE_MATERIAL_RARITY,
+  PROTECT_ENHANCE_ITEM_ID,
   equipmentInvCount,
   rollCraftedAffixes,
   rollEnhanceSuccess,
@@ -273,6 +274,7 @@ export async function enhanceEquipment(
   accountId: string,
   instanceId: string,
   idempotencyKey: string,
+  useProtect = false,
 ): Promise<{ success: boolean; instance: EquipmentInstance; save: SaveData } | EquipError> {
   if (!instanceId) return { error: 'instanceId required', code: 'BAD_REQUEST' };
   if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
@@ -280,7 +282,7 @@ export async function enhanceEquipment(
   // 重放：返回首次掷骰结果 + 幂等补扣金币（覆盖"改档成功但扣币环节中断"窗口）。
   const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
   if (replay?.op === 'enhance') {
-    const r = replay.result as { success: boolean; instance: EquipmentInstance; coins: number };
+    const r = replay.result as { success: boolean; instance: EquipmentInstance; coins: number; skipMaterials?: boolean };
     const save = await settleEnhanceCoins(cols, commercial, now, accountId, idempotencyKey, r.coins);
     return { success: r.success, instance: r.instance, save };
   }
@@ -306,26 +308,32 @@ export async function enhanceEquipment(
   const success = rollEnhanceSuccess(idempotencyKey, fromLevel);
   const instanceAfter: EquipmentInstance = success ? { ...inst0, level: fromLevel + 1 } : { ...inst0 };
 
-  // 幂等抢占（结果含 coins，供重放补扣）。dup = 并发重复 → 走重放路径。
+  // 保护道具（E7 §6.2）：失败时消耗 1 个 protect_enhance → 跳过材料扣除（skipMaterials=true）。
+  // 金币依然扣（protect 不免强化费，只保材料）；成功时不消耗（成功本来就不"失败损耗"）。
+  const hasProtect = useProtect && (cur.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0) > 0;
+  const skipMaterials = hasProtect && !success;
+
+  // 幂等抢占（结果含 coins + skipMaterials，供重放补扣）。dup = 并发重复 → 走重放路径。
   try {
     await cols.equipmentIdem.insertOne({
       _id: idempotencyKey,
       accountId,
       op: 'enhance',
-      result: { success, instance: instanceAfter, coins: cost.coins },
+      result: { success, instance: instanceAfter, coins: cost.coins, skipMaterials },
       expireAt: idemExpireAt(now()),
     });
   } catch (e) {
     if ((e as { code?: number }).code === 11000) {
       const prev = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
-      const r = prev?.result as { success: boolean; instance: EquipmentInstance; coins: number };
+      const r = prev?.result as { success: boolean; instance: EquipmentInstance; coins: number; skipMaterials?: boolean };
       const save = await settleEnhanceCoins(cols, commercial, now, accountId, idempotencyKey, r.coins);
       return { success: r.success, instance: r.instance, save };
     }
     throw e;
   }
 
-  // 原子改档：扣材料 + 成功则 level+1（rev 守卫；instance 仍在且等级未变才生效）。
+  // 原子改档：扣材料（skipMaterials=false 时）+ 成功则 level+1 + 消耗 protect_enhance（skipMaterials=true 时）。
+  // rev 守卫；instance 仍在且等级未变才生效。
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) {
@@ -342,21 +350,32 @@ export async function enhanceEquipment(
       await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
       return { error: 'instance level changed, retry', code: 'REV_CONFLICT' };
     }
-    for (const [mat, qty] of Object.entries(cost.materials)) {
-      if ((save.materials?.[mat] ?? 0) < qty) {
-        await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
-        return { error: `insufficient ${mat}`, code: 'INSUFFICIENT_MATERIALS' };
+    if (!skipMaterials) {
+      // 无保护/成功：照常扣材料
+      for (const [mat, qty] of Object.entries(cost.materials)) {
+        if ((save.materials?.[mat] ?? 0) < qty) {
+          await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
+          return { error: `insufficient ${mat}`, code: 'INSUFFICIENT_MATERIALS' };
+        }
       }
     }
-    const nextMaterials = { ...save.materials };
-    for (const [mat, qty] of Object.entries(cost.materials)) nextMaterials[mat] = (nextMaterials[mat] ?? 0) - qty;
+    const nextMaterials = { ...(save.materials ?? {}) };
+    if (!skipMaterials) {
+      for (const [mat, qty] of Object.entries(cost.materials)) nextMaterials[mat] = (nextMaterials[mat] ?? 0) - qty;
+    }
     const nextInv = { ...(save.equipmentInv ?? {}), [instanceId]: instanceAfter };
+    const nextItems = { ...(save.inventory?.items ?? {}) };
+    if (skipMaterials) {
+      // 消耗保护道具
+      nextItems[PROTECT_ENHANCE_ITEM_ID] = Math.max(0, (nextItems[PROTECT_ENHANCE_ITEM_ID] ?? 0) - 1);
+    }
     const next: SaveData = {
       ...save,
       rev: save.rev + 1,
       updatedAt: now(),
       materials: nextMaterials,
       equipmentInv: nextInv,
+      inventory: { ...(save.inventory ?? { skins: [] }), items: nextItems },
     };
     const res = await cols.saves.findOneAndUpdate(
       { _id: accountId, rev: doc.rev },

@@ -105,3 +105,6 @@ export const REFORGE_MATERIAL_RARITY: Partial<Record<EquipRarity, EquipRarity>> 
   rare: 'fine',
   epic: 'rare',
 };
+
+/** 保护道具 id（E7）。存 save.inventory.items[PROTECT_ENHANCE_ITEM_ID]，值为持有数量。 */
+export const PROTECT_ENHANCE_ITEM_ID = 'protect_enhance';

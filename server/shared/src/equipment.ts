@@ -214,6 +214,30 @@ export function rollCraftedAffixes(defId: string, seedKey: string): { id: string
   return out;
 }
 
+// ── E7 盲盒装备产出 + 保护道具 ──────────────────────────────────────────────
+
+/** 保护道具 id（商店购买，强化失败时保留材料不损耗，E7）。存 `save.inventory.items[PROTECT_ENHANCE_ITEM_ID]`。 */
+export const PROTECT_ENHANCE_ITEM_ID = 'protect_enhance';
+
+/**
+ * 盲盒产装备实例（E7 §4）。defId 已由盲盒池决定，instanceId 作确定性种子（重放一致）。
+ * 与 `makeDropInstance` 区别：槽位由 defId 确定，无随机槽选步骤。
+ */
+export function makeGachaEquipInstance(
+  defId: string,
+  instanceId: string,
+): { id: string; defId: string; rarity: EquipRarity; level: number; affixes: { id: string; value: number }[] } {
+  const def = EQUIPMENT_DEFS[defId];
+  if (!def) throw new Error(`unknown defId: ${defId}`);
+  return {
+    id: instanceId,
+    defId,
+    rarity: def.rarity,
+    level: 0,
+    affixes: rollCraftedAffixes(defId, instanceId),
+  };
+}
+
 /** 背包独立实例数（堆叠件不计；本切片实例库存全为独立件，直接计 key 数）。 */
 export function equipmentInvCount(inv: Record<string, unknown> | undefined): number {
   return inv ? Object.keys(inv).length : 0;

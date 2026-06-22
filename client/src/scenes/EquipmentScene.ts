@@ -24,6 +24,7 @@ import {
   EQUIPMENT_INV_CAP,
   SALVAGE_MAX_LEVEL,
   REFORGE_MATERIAL_RARITY,
+  PROTECT_ENHANCE_ITEM_ID,
   type EnhanceCost,
 } from '../game/meta/equipmentDefs';
 import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
@@ -38,7 +39,8 @@ export interface EquipmentCallbacks {
   /** 读当前权威存档（每次动作后服务器回推 → adoptServer，本场景重读重绘）。 */
   getSave(): SaveData;
   craft(defId: string): Promise<EquipResult>;
-  enhance(instanceId: string): Promise<EnhanceResult>;
+  /** useProtect=true 时消耗保护道具，失败不损材料（E7 §6.2）。 */
+  enhance(instanceId: string, useProtect?: boolean): Promise<EnhanceResult>;
   salvage(instanceIds: string[]): Promise<EquipResult>;
   equip(slot: EquipSlot, instanceId: string | null): Promise<EquipResult>;
   /** 洗练（E6）：消耗 materialId 件，重 roll targetId 的副词条。 */
@@ -73,6 +75,8 @@ export class EquipmentScene implements Scene {
 
   private activeTab: EquipTab = 'inv';
   private busy = false;
+  /** 强化时是否使用保护道具（E7）；状态粘滞，玩家主动切换。 */
+  private useProtectEnhance = false;
 
   private bodyLayer!: PIXI.Container;
   private modalLayer!: PIXI.Container;
@@ -376,7 +380,9 @@ export class EquipmentScene implements Scene {
 
     const mw = Math.min(330, w - 24);
     const affixCount = inst.affixes.length;
-    const mh = 64 + affixCount * 20 + (maxed ? 24 : 64) + 44 + 24;
+    const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
+    // 未满级时额外 22px 显示保护道具行
+    const mh = 64 + affixCount * 20 + (maxed ? 24 : 64 + 22) + 44 + 24;
     const mx = (w - mw) / 2;
     const my = Math.max(HUD_H + 4, (h - mh) / 2);
 
@@ -422,7 +428,25 @@ export class EquipmentScene implements Scene {
       const costLbl = txt(`${t('equip.cost')}: ${this.enhanceCostStr(cost)}`, 10, this.canAffordEnhance(save, cost) ? C.mid : C.red);
       costLbl.x = mx + 12; costLbl.y = cy;
       ml.addChild(costLbl);
-      cy += 28;
+      cy += 18;
+      // 保护道具行（E7）：显示持有量 + 开关 toggle。
+      const canToggle = protectCount > 0;
+      const protecting = this.useProtectEnhance && canToggle;
+      const checkStr = protecting ? '[✓]' : '[ ]';
+      const protectColor = canToggle ? (protecting ? C.accent : C.dark) : C.mid;
+      const protectLbl = txt(
+        `${checkStr} ${t('equip.protect')} ×${protectCount}`,
+        10, protectColor,
+      );
+      protectLbl.x = mx + 12; protectLbl.y = cy;
+      ml.addChild(protectLbl);
+      if (canToggle && !this.busy) {
+        this.modalHits.push({
+          rect: { x: mx + 10, y: cy - 2, w: mw - 20, h: 18 },
+          action: () => { this.useProtectEnhance = !this.useProtectEnhance; this.render(); },
+        });
+      }
+      cy += 22;
     }
 
     // 洗练可用性
@@ -494,7 +518,10 @@ export class EquipmentScene implements Scene {
   private async doEnhance(instanceId: string): Promise<void> {
     if (this.busy) return;
     this.busy = true; this.render();
-    const res = await this.cb.enhance(instanceId);
+    const save = this.cb.getSave();
+    const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
+    const useProtect = this.useProtectEnhance && protectCount > 0;
+    const res = await this.cb.enhance(instanceId, useProtect || undefined);
     this.busy = false;
     if (res.ok) {
       this.showToast(res.success

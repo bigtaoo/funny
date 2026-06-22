@@ -269,7 +269,7 @@ export interface MailDoc {
 export interface EquipmentIdemDoc {
   _id: string; // idempotencyKey / orderId
   accountId: string;
-  op: 'craft' | 'escrow' | 'enhance' | 'salvage';
+  op: 'craft' | 'escrow' | 'enhance' | 'salvage' | 'reforge';
   /**
    * 首次执行结果快照，重放原样回：
    *   craft   → 产出实例（EquipmentInstance）

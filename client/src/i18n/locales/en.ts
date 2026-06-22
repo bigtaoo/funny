@@ -314,6 +314,7 @@ export const en: Record<TranslationKey, string> = {
   'equip.cost': 'Cost',
   'equip.enhanceOk': 'Enhanced → +{lv}',
   'equip.enhanceFail': 'Enhance failed (materials spent)',
+  'equip.protect': 'Protection Stone ×{n} (keep materials on fail)',
   'equip.maxLevel': 'Max level +9',
   'equip.equip': 'Equip',
   'equip.unequip': 'Unequip',

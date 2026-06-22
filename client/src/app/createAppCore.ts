@@ -836,11 +836,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           return { ok: true as const };
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
       },
-      async enhance(instanceId: string) {
+      async enhance(instanceId: string, useProtect?: boolean) {
         try {
-          const { success, instance, save } = await client.enhanceEquipment(instanceId, genUuid());
+          const { success, instance, save } = await client.enhanceEquipment(instanceId, genUuid(), useProtect);
           saveManager.adoptServer(save);
-          analytics.track('equip_enhance', { def_id: instance.defId, from_level: instance.level - (success ? 1 : 0), success });
+          analytics.track('equip_enhance', { def_id: instance.defId, from_level: instance.level - (success ? 1 : 0), success, use_protect: !!useProtect });
           return { ok: true as const, success, level: instance.level };
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
       },

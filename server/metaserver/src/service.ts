@@ -1248,9 +1248,9 @@ export class MetaService {
    */
   async enhanceEquipment(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
-    const { instanceId, idempotencyKey } = req.body as { instanceId: string; idempotencyKey: string };
+    const { instanceId, idempotencyKey, useProtect } = req.body as { instanceId: string; idempotencyKey: string; useProtect?: boolean };
     const { cols, commercial, now } = this.deps;
-    const r = await enhanceEquipment(cols, commercial, now, accountId, instanceId, idempotencyKey);
+    const r = await enhanceEquipment(cols, commercial, now, accountId, instanceId, idempotencyKey, useProtect === true);
     if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
     return ok({ success: r.success, instance: r.instance, save: r.save });
   }

@@ -313,6 +313,7 @@ export const zh = {
   'equip.cost': '消耗',
   'equip.enhanceOk': '强化成功 → +{lv}',
   'equip.enhanceFail': '强化失败（材料已消耗）',
+  'equip.protect': '保护石 ×{n}（失败不损材料）',
   'equip.maxLevel': '已满级 +9',
   'equip.equip': '穿戴',
   'equip.unequip': '卸下',

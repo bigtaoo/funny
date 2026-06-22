@@ -1031,6 +1031,7 @@ paths:
               properties:
                 instanceId: { type: string, description: 待强化的装备实例 id（equipmentInv 内） }
                 idempotencyKey: { type: string, description: 客户端生成幂等键；掷骰/扣料绑定此键，重放返回首次结果 }
+                useProtect: { type: boolean, description: 是否使用保护道具（E7）；true 且库存有 protect_enhance 时失败不损材料，消耗 1 个道具 }
       responses:
         '200':
           description: 成功（success=false 表示掷骰失败，已损耗材料/金币、等级不变）

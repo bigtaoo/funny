@@ -3,8 +3,8 @@
 //  • 发货幂等——save.deliveredOrders 记 orderId，$addToSet 天然去重；皮肤是 set，重发不重复给。
 //  • 钱包镜像——wallet.coins / gacha.pity 权威在 commercial，meta 只在回执后写镜像段供离线展示。
 //  • 重复转化（退币/碎片）S5 暂缓（§4.3 退币额待定 + 补发重算非幂等），只发新皮肤；通道在 commercial 已备。
-import type { Collections, SaveData, Rarity } from '@nw/shared';
-import { grantCards, deriveUnitLevels, UNIT_CARD_POOL_ID } from '@nw/shared';
+import type { Collections, SaveData, Rarity, EquipmentInstance } from '@nw/shared';
+import { grantCards, deriveUnitLevels, UNIT_CARD_POOL_ID, EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount } from '@nw/shared';
 import type { CommercialClient, GachaResultEntry } from './commercialClient.js';
 
 /** 逐结果标记是否重复（对照当前库存 + 同批已发，供客户端展示开箱）。 */
@@ -28,6 +28,7 @@ export function markDuplicates(
 /**
  * 发货 + 钱包镜像，单文档原子且幂等（deliveredOrders $addToSet 去重）。
  * 返回更新后的存档；orderId 已发过则返回当前存档（不重复发）。
+ * E7 扩展：可选 materialInc（材料增量）+ equipInstances（装备实例 map），同笔原子写入。
  */
 export async function deliverGrant(
   cols: Collections,
@@ -37,6 +38,8 @@ export async function deliverGrant(
   coinsAfter: number,
   pityPatch: Record<string, number> | null,
   now: number,
+  materialInc?: Record<string, number>,
+  equipInstances?: Record<string, EquipmentInstance>,
 ): Promise<SaveData> {
   const set: Record<string, unknown> = {
     'save.updatedAt': now,
@@ -45,6 +48,10 @@ export async function deliverGrant(
   if (pityPatch) {
     for (const [pool, v] of Object.entries(pityPatch)) set[`save.gacha.pity.${pool}`] = v;
   }
+  // 装备实例逐条 $set（不受 300 cap，盲盒有意获得；满仓溢出后续 §13 邮件暂存）。
+  for (const [id, inst] of Object.entries(equipInstances ?? {})) set[`save.equipmentInv.${id}`] = inst;
+  const inc: Record<string, number> = { 'save.rev': 1, rev: 1 };
+  for (const [mat, qty] of Object.entries(materialInc ?? {})) if (qty > 0) inc[`save.materials.${mat}`] = qty;
   const res = await cols.saves.findOneAndUpdate(
     { _id: accountId },
     {
@@ -52,7 +59,7 @@ export async function deliverGrant(
         'save.inventory.skins': { $each: newSkins },
         'save.deliveredOrders': orderId,
       },
-      $inc: { 'save.rev': 1, rev: 1 },
+      $inc: inc,
       $set: set,
     },
     { returnDocument: 'after' },
@@ -210,16 +217,65 @@ async function deliverOrder(
     await commercial.orderDelivered({ orderId: order._id });
     return save;
   }
+
   const cur = await cols.saves.findOne({ _id: accountId });
   const owned = cur?.save.inventory.skins ?? [];
-  let newSkins: string[];
+  const invCount = equipmentInvCount(cur?.save.equipmentInv);
+
+  // 商店直购：kind='item' → inventory.items；kind='skin' → skins（沿用现有路径）。
   if (order.kind === 'shop' && order.result.itemId) {
-    newSkins = owned.includes(order.result.itemId) ? [] : [order.result.itemId];
-  } else {
-    const { newSkins: ns } = markDuplicates(owned, order.result.results ?? []);
-    newSkins = ns;
+    const itemId = order.result.itemId;
+    if (itemId.startsWith('mat_') && GACHA_MATERIAL_GRANTS[itemId]) {
+      // 商店材料（未来扩展），当前无此品类，走 fallback 皮肤路径
+    } else if (EQUIPMENT_DEFS[itemId]) {
+      // 商店装备（未来扩展）
+    } else if (!owned.includes(itemId)) {
+      // 普通皮肤直购
+      const save = await deliverGrant(cols, accountId, order._id, [itemId], coinsAfter, pityPatch, now);
+      await commercial.orderDelivered({ orderId: order._id });
+      return save;
+    } else {
+      const save = await deliverGrant(cols, accountId, order._id, [], coinsAfter, pityPatch, now);
+      await commercial.orderDelivered({ orderId: order._id });
+      return save;
+    }
+    // kind='item'：写 inventory.items（保护道具等消耗品，E7）。
+    const itemInc: Record<string, number> = { [itemId]: 1 };
+    const save = await deliverMailGrant(cols, accountId, order._id, [], itemInc, coinsAfter, now);
+    await commercial.orderDelivered({ orderId: order._id });
+    return save;
   }
-  const save = await deliverGrant(cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now);
+
+  // 盲盒：按结果 itemId 分流 — mat_* → 材料，装备 defId → 装备实例，其他 → 皮肤。
+  const results = order.result.results ?? [];
+  const skinResults: GachaResultEntry[] = [];
+  const materialInc: Record<string, number> = {};
+  const equipInstances: Record<string, EquipmentInstance> = {};
+
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i]!;
+    const matGrant = GACHA_MATERIAL_GRANTS[r.itemId];
+    if (matGrant) {
+      // 材料格
+      for (const [mat, qty] of Object.entries(matGrant)) materialInc[mat] = (materialInc[mat] ?? 0) + qty;
+    } else if (EQUIPMENT_DEFS[r.itemId]) {
+      // 装备格：跳过满仓（300 上限，静默跳过；满仓补偿 §13 后续再做）
+      if (invCount + Object.keys(equipInstances).length < EQUIPMENT_INV_CAP) {
+        const instanceId = `eq_gacha_${order._id}_${i}`;
+        equipInstances[instanceId] = makeGachaEquipInstance(r.itemId, instanceId) as EquipmentInstance;
+      }
+    } else {
+      skinResults.push(r);
+    }
+  }
+
+  const { newSkins } = markDuplicates(owned, skinResults);
+  const hasMixed = Object.keys(materialInc).length > 0 || Object.keys(equipInstances).length > 0;
+  const save = await deliverGrant(
+    cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now,
+    hasMixed ? materialInc : undefined,
+    hasMixed ? equipInstances : undefined,
+  );
   await commercial.orderDelivered({ orderId: order._id });
   return save;
 }

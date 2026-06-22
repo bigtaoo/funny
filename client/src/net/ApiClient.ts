@@ -235,10 +235,11 @@ export class ApiClient {
   async enhanceEquipment(
     instanceId: string,
     idempotencyKey: string,
+    useProtect?: boolean,
   ): Promise<{ success: boolean; instance: EquipmentInstance; save: SaveData }> {
     return this.post<{ success: boolean; instance: EquipmentInstance; save: SaveData }>(
       '/equipment/enhance',
-      { instanceId, idempotencyKey },
+      { instanceId, idempotencyKey, ...(useProtect ? { useProtect: true } : {}) },
     );
   }
 
