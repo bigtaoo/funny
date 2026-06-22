@@ -770,6 +770,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Top-100 排行榜（当前赛季 ELO 降序） */
+        get: operations["getLeaderboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/battlepass/buy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 购买当前赛季战令（600 金币） */
+        post: operations["buyBattlePass"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/battlepass/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 领取战令奖励（免费轨 or 付费轨某等级） */
+        post: operations["claimBattlePass"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -812,7 +863,16 @@ export interface components {
                 wins: number;
                 losses: number;
                 streak: number;
+                /** @description 当前赛季编号 */
+                seasonNo?: number;
+                /** @description 本赛季最高 ELO */
+                seasonPeakElo?: number;
+                /** @description 本赛季最高段位 */
+                seasonPeakRank?: string;
+                /** @description 历史首达段位列表（终身账本） */
+                reachedRanks?: string[];
             };
+            battlePass?: components["schemas"]["BattlePassData"];
             progress: {
                 cleared: string[];
                 stars: {
@@ -1035,6 +1095,14 @@ export interface components {
         AnalyticsEventConfig: {
             enabled?: boolean;
             sample?: number;
+        };
+        BattlePassData: {
+            seasonNo: number;
+            xp: number;
+            level: number;
+            hasPass: boolean;
+            claimedFree: number[];
+            claimedPaid: number[];
         };
         AnalyticsConfig: {
             enabled?: boolean;
@@ -2653,7 +2721,109 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    getLeaderboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 排行榜列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            seasonNo: number;
+                            entries: {
+                                /** @description 名次 1-based */
+                                rank: number;
+                                displayName: string;
+                                publicId: string;
+                                elo: number;
+                                pvpRank: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    buyBattlePass: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 购买成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            battlePass: components["schemas"]["BattlePassData"];
+                        };
+                    };
+                };
+            };
             400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    claimBattlePass: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    track: "free" | "paid";
+                    level: number;
+                };
+            };
+        };
+        responses: {
+            /** @description 领取成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            battlePass: components["schemas"]["BattlePassData"];
+                            reward: {
+                                kind: string;
+                                count: number;
+                            };
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
         };
     };
 }

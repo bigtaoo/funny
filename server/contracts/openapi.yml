@@ -29,6 +29,10 @@ tags:
     description: 私聊（S6-2，SOCIAL_DESIGN §5.2）
   - name: mail
     description: 邮件（S6-3，SOCIAL_DESIGN §5.3）
+  - name: ranked
+    description: 天梯排行榜（S11，SEASON_DESIGN §5）
+  - name: battlepass
+    description: 战令（S11，SEASON_DESIGN §9）
 
 components:
   securitySchemes:
@@ -112,6 +116,17 @@ components:
             wins: { type: integer }
             losses: { type: integer }
             streak: { type: integer }
+            # —— S11 赛季字段（legacy 档可缺） ——
+            seasonNo: { type: integer, description: 当前赛季编号 }
+            seasonPeakElo: { type: integer, description: 本赛季最高 ELO }
+            seasonPeakRank: { type: string, description: 本赛季最高段位 }
+            reachedRanks:
+              type: array
+              items: { type: string }
+              description: 历史首达段位列表（终身账本）
+        # —— S11 战令 ——
+        battlePass:
+          $ref: '#/components/schemas/BattlePassData'
         progress:
           type: object
           required: [cleared, stars, best]
@@ -418,6 +433,22 @@ components:
       properties:
         enabled: { type: boolean }
         sample:  { type: number }
+
+    # —— S11 战令数据（BattlePassData）——
+    BattlePassData:
+      type: object
+      required: [seasonNo, xp, level, hasPass, claimedFree, claimedPaid]
+      properties:
+        seasonNo: { type: integer }
+        xp: { type: integer }
+        level: { type: integer, minimum: 0, maximum: 30 }
+        hasPass: { type: boolean }
+        claimedFree:
+          type: array
+          items: { type: integer }
+        claimedPaid:
+          type: array
+          items: { type: integer }
 
     AnalyticsConfig:
       type: object
@@ -1971,4 +2002,103 @@ paths:
                 properties:
                   ok: { type: boolean, enum: [true] }
                   data: { nullable: true }
+
+  # —— S11 天梯赛季 / 排行榜 / 战令 ——
+
+  /leaderboard:
+    get:
+      operationId: getLeaderboard
+      tags: [ranked]
+      summary: Top-100 排行榜（当前赛季 ELO 降序）
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 排行榜列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [seasonNo, entries]
+                    properties:
+                      seasonNo: { type: integer }
+                      entries:
+                        type: array
+                        items:
+                          type: object
+                          required: [rank, displayName, publicId, elo, pvpRank]
+                          properties:
+                            rank: { type: integer, description: 名次 1-based }
+                            displayName: { type: string }
+                            publicId: { type: string }
+                            elo: { type: integer }
+                            pvpRank: { type: string }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /battlepass/buy:
+    post:
+      operationId: buyBattlePass
+      tags: [battlepass]
+      summary: 购买当前赛季战令（600 金币）
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 购买成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [battlePass]
+                    properties:
+                      battlePass: { $ref: '#/components/schemas/BattlePassData' }
         '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /battlepass/claim:
+    post:
+      operationId: claimBattlePass
+      tags: [battlepass]
+      summary: 领取战令奖励（免费轨 or 付费轨某等级）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [track, level]
+              properties:
+                track: { type: string, enum: [free, paid] }
+                level: { type: integer, minimum: 1, maximum: 30 }
+      responses:
+        '200':
+          description: 领取成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [battlePass, reward]
+                    properties:
+                      battlePass: { $ref: '#/components/schemas/BattlePassData' }
+                      reward:
+                        type: object
+                        required: [kind, count]
+                        properties:
+                          kind: { type: string }
+                          count: { type: integer }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }

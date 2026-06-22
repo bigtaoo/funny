@@ -20,3 +20,5 @@ export * from './admin';
 export * from './config';
 export * from './internalAuth';
 export * from './logger';
+export * from './season';
+export * from './battlepass';

@@ -452,6 +452,34 @@ export class ApiClient {
     return data.mailId;
   }
 
+  // ── S11 排行榜 / 战令 ──────────────────────────────────────────────────────
+  /** Top-100 天梯排行榜（当前赛季 ELO 降序）。 */
+  async getLeaderboard(): Promise<{
+    seasonNo: number;
+    entries: { rank: number; displayName: string; publicId: string; elo: number; pvpRank: string }[];
+  }> {
+    return this.request<{
+      seasonNo: number;
+      entries: { rank: number; displayName: string; publicId: string; elo: number; pvpRank: string }[];
+    }>('GET', '/leaderboard');
+  }
+
+  /** 购买当前赛季战令（600 金币）。 */
+  async buyBattlePass(): Promise<{ battlePass: SaveData['battlePass'] }> {
+    return this.post<{ battlePass: SaveData['battlePass'] }>('/battlepass/buy', {});
+  }
+
+  /** 领取战令奖励（免费轨 or 付费轨）。 */
+  async claimBattlePass(
+    track: 'free' | 'paid',
+    level: number,
+  ): Promise<{ battlePass: SaveData['battlePass']; reward: { kind: string; count: number } }> {
+    return this.post<{ battlePass: SaveData['battlePass']; reward: { kind: string; count: number } }>(
+      '/battlepass/claim',
+      { track, level },
+    );
+  }
+
   // ── 内部 ────────────────────────────────────────────────
   private async post<T>(path: string, body: unknown): Promise<T> {
     return this.request<T>('POST', path, body);

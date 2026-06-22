@@ -1,7 +1,9 @@
 // save-service 逻辑（S0-7）。乐观锁走单文档原子更新（META_DESIGN.md §6.3）：
 // findOneAndUpdate 用 {_id, rev} 做守卫，并发 PUT 只有一个赢，另一个收 409。
 import type { Collections, SaveData, SyncPatch } from '@nw/shared';
-import { makeNewSave } from '@nw/shared';
+import { makeNewSave, createLogger } from '@nw/shared';
+
+const log = createLogger('meta:save');
 
 export type PutResult =
   | { kind: 'ok'; save: SaveData }
@@ -81,4 +83,36 @@ export async function putSave(
     return { kind: 'conflict', save: fresh };
   }
   return { kind: 'ok', save: res.save };
+}
+
+/**
+ * 把迁移后存档（含 rev+1）原子写库，最多 3 次重试。
+ * 用于「读到存档 → migrateIfStale 得到新 save → 写回」场景。
+ * 并发冲突时重读当前存档再次迁移后写（幂等：重入迁移不重复结算/重置）。
+ * 返回最终落库的存档。
+ */
+export async function writeMigratedSave(
+  cols: Collections,
+  migratedSave: SaveData,
+  now: number,
+  migrate: (save: SaveData) => Promise<{ migrated: boolean; save: SaveData }>,
+): Promise<SaveData> {
+  let save = migratedSave;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const next: SaveData = { ...save, rev: save.rev + 1, updatedAt: now };
+    const res = await cols.saves.findOneAndUpdate(
+      { _id: save.accountId, rev: save.rev },
+      { $set: { save: next, rev: next.rev } },
+      { returnDocument: 'after' },
+    );
+    if (res) return res.save;
+    // 并发冲突：重读 + 再次迁移后重试
+    const cur = await cols.saves.findOne({ _id: save.accountId });
+    if (!cur) return save;
+    const r = await migrate(cur.save);
+    if (!r.migrated) return cur.save; // 已被并发迁移
+    save = r.save;
+    log.info('writeMigratedSave: retrying after conflict', { accountId: save.accountId, attempt });
+  }
+  return save;
 }

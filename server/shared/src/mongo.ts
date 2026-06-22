@@ -3,6 +3,7 @@
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
 import type { SaveData } from './types';
 import type { StatKey } from './achievements';
+import type { LadderSeasonDoc } from './season';
 import type { ChatRegion } from './chatFilter';
 import { CHAT_RETENTION_SEC } from './social';
 
@@ -299,6 +300,8 @@ export interface Collections {
   mail: Collection<MailDoc>;
   // 装备（E2）
   equipmentIdem: Collection<EquipmentIdemDoc>;
+  // 天梯赛季（S11）：全局单文档（_id='current'）
+  ladderSeasons: Collection<LadderSeasonDoc>;
 }
 
 export interface MongoHandle {
@@ -349,6 +352,7 @@ export async function createMongo(
     chatMessages: db.collection<ChatMessageDoc>('chatMessages'),
     mail: db.collection<MailDoc>('mail'),
     equipmentIdem: db.collection<EquipmentIdemDoc>('equipmentIdem'),
+    ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -398,6 +402,12 @@ export async function createMongo(
     await collections.mail.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // 装备幂等账本到期自清（E2，expireAt 到期绝对时间 → expireAfterSeconds:0）。
     await collections.equipmentIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+    // 天梯排行榜：全服 Top100 + 我的名次计数（S11-SE-5）。
+    // pvp.seasonNo 先过滤本季，再 elo 倒序取前 100。
+    await collections.saves.createIndex(
+      { 'save.pvp.seasonNo': 1, 'save.pvp.elo': -1 },
+      { name: 'pvp_season_elo' },
+    );
   }
 
   return {

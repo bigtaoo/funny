@@ -13,6 +13,8 @@ export interface LevelRecord {
 // ── 装备实例（EQUIPMENT_DESIGN §3.1）───────────────────────────────────────
 // 目录（defId→槽位/稀有度/媒材/配方）在 equipment.ts；战斗数值在 @nw/engine。
 import type { EquipRarity, EquipSlot } from './equipment';
+import type { RankId } from './ladder';
+import type { BattlePassData } from './battlepass';
 
 /** 词条（主/副/特技统一形态）；id 指向词条池，value 为 roll 出的数值。 */
 export interface Affix {
@@ -61,7 +63,19 @@ export interface SaveData {
     wins: number;
     losses: number;
     streak: number;
+    // —— S11 赛季字段（SEASON_DESIGN §4）——
+    /** pvp 数据所属赛季号；落后于时钟 current 即触发惰性迁移。 */
+    seasonNo: number;
+    /** 本赛季达到过的最高 ELO（每局结算时 max 追踪）。 */
+    seasonPeakElo: number;
+    /** 本赛季峰值段位（由 seasonPeakElo 推导；TITLE_DESIGN 赛季结算读此授称号）。 */
+    seasonPeakRank: RankId;
+    /** 历史首达过的段位 id（终身账本，首达金币幂等守卫，跨季不清）。 */
+    reachedRanks: RankId[];
   };
+
+  // —— 战令（S11-C，SEASON_DESIGN §C）。服务器权威，PUT /save 不可写。缺省视为未参与，懒创建。 ——
+  battlePass?: BattlePassData;
 
   // —— 成就系统（服务器权威，ACHIEVEMENT_DESIGN §3）。懒创建省存储；缺省视为全 0/空 ——
   // 计数只在 PvE/PvP 权威结算点写（A2）；PUT /save 白名单只收 equipped/flags，故这三段
@@ -126,7 +140,17 @@ export function makeNewSave(accountId: string, now: number): SaveData {
     inventory: { skins: [], items: {} },
     gacha: { pity: {} },
     deliveredOrders: [],
-    pvp: { elo: 1000, rank: 'unranked', wins: 0, losses: 0, streak: 0 },
+    pvp: {
+      elo: 1000,
+      rank: 'unranked',
+      wins: 0,
+      losses: 0,
+      streak: 0,
+      seasonNo: 1,
+      seasonPeakElo: 1000,
+      seasonPeakRank: 'bronze' as RankId,
+      reachedRanks: [],
+    },
     progress: { cleared: [], stars: {}, best: {} },
     materials: {},
     pveUpgrades: {},
