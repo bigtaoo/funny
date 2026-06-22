@@ -96,6 +96,10 @@ export function startHttpApi(
           return sendErr(res, ErrorCode.BAD_REQUEST, 'events 最多 100 条/请求');
         }
 
+        // C5-c GDPR：已识别用户（userId 存在）必须携带 consent=true 才落库；匿名用户直接通过。
+        if (userId && !batch.consent) {
+          return send(res, 200, ok(null)); // 无同意静默丢弃，不返回错误（不影响体验）
+        }
         // fire-and-forget：上报失败静默返回 200（不影响游戏体验）
         svc.ingestEvents(batch, userId).catch(() => {/* 静默 */});
         return send(res, 200, ok(null));

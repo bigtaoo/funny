@@ -194,9 +194,13 @@ export class MetaService {
 
   // ── auth ──────────────────────────────────────────
 
-  /** C4：检查账号级封号标记（accounts.flags.banned），封号则 reject。 */
+  /** C4/C5-b：检查账号级封号 / 软删除标记；命中则 reject 并返回 true。 */
   private async rejectIfBanned(cols: typeof this.deps.cols, accountId: string, reply: FastifyReply): Promise<boolean> {
-    const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { flags: 1 } });
+    const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { flags: 1, deletedAt: 1 } });
+    if (doc?.deletedAt) {
+      void reply.code(410).send(err(ErrorCode.ACCOUNT_DELETED, 'account deleted'));
+      return true;
+    }
     if (doc?.flags?.banned) {
       void reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
       return true;
@@ -299,6 +303,31 @@ export class MetaService {
     if (result === 'invalid') {
       return reply.code(401).send(err(ErrorCode.INVALID_CREDENTIALS, 'old password mismatch'));
     }
+    return ok({ ok: true });
+  }
+
+  /**
+   * C5-b 账号软删除（Apple 5.1.1(v) 要求）。
+   * 写 accounts.deletedAt；后续 auth 返 ACCOUNT_DELETED（410）。
+   * 7 天宽限期后异步清理由 admin/cron 触发（本期仅标记）。
+   */
+  async deleteAccount(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { cols, now } = this.deps;
+    const confirmToken = randomUUID();
+    await cols.accounts.updateOne({ _id: accountId }, { $set: { deletedAt: now() } });
+    return ok({ confirmToken });
+  }
+
+  /** C5-c GDPR 同意记录：设 accounts.flags.gdprConsent=true。 */
+  async recordGdprConsent(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { consent } = req.body as { consent: boolean };
+    const { cols } = this.deps;
+    await cols.accounts.updateOne(
+      { _id: accountId },
+      { $set: { 'flags.gdprConsent': consent } },
+    );
     return ok({ ok: true });
   }
 
@@ -1372,14 +1401,22 @@ export class MetaService {
 
   /** 盲盒池列表（展开 entries 供客户端展示）。 */
   async getGachaPools() {
-    const pools = GACHA_POOLS.map((p) => ({
-      id: p.id,
-      costSingle: p.costSingle,
-      costTen: p.costTen,
-      pityThreshold: p.pityThreshold,
-      dupePolicy: p.dupePolicy,
-      entries: poolEntries(p),
-    }));
+    const pools = GACHA_POOLS.map((p) => {
+      const entries = poolEntries(p);
+      const totalWeight = entries.reduce((s, e) => s + e.weight, 0);
+      return {
+        id: p.id,
+        costSingle: p.costSingle,
+        costTen: p.costTen,
+        pityThreshold: p.pityThreshold,
+        dupePolicy: p.dupePolicy,
+        // C5-a：每条目附带 probability（Apple 3.1.1 要求）。
+        entries: entries.map((e) => ({
+          ...e,
+          probability: totalWeight > 0 ? e.weight / totalWeight : 0,
+        })),
+      };
+    });
     return ok({ pools });
   }
 

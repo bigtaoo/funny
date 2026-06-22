@@ -282,7 +282,7 @@
 
 ---
 
-### C5  合规接口（ADR-013/015，发布阻断）
+### ✅ C5  合规接口（ADR-013/015，发布阻断）
 
 **C5-a 抽卡概率公示**
 - `GET /gacha/pools`（已有）扩展：每个 `GachaPool` 返回 `weightTable[]`（itemId / rarity / probability，按 ADR-013 Apple 3.1.1 要求）。

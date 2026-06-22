@@ -39,7 +39,10 @@ export interface AccountDoc {
   flags?: {
     pveWarnings?: number; // 累计 PvE 可疑次数
     banned?: boolean;     // 达到阈值后封号；auth 时返 ACCOUNT_BANNED
+    gdprConsent?: boolean; // C5-c GDPR 同意（必须为 true 才记录分析埋点）
   };
+  /** C5-b 软删除时间戳；写入后 auth 返 ACCOUNT_DELETED，7 天后异步清理数据。 */
+  deletedAt?: number;
 }
 
 /**
