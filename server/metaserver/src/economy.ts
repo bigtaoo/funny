@@ -3,6 +3,7 @@
 //  • 发货幂等——save.deliveredOrders 记 orderId，$addToSet 天然去重；皮肤是 set，重发不重复给。
 //  • 钱包镜像——wallet.coins / gacha.pity 权威在 commercial，meta 只在回执后写镜像段供离线展示。
 //  • 重复转化（退币/碎片）S5 暂缓（§4.3 退币额待定 + 补发重算非幂等），只发新皮肤；通道在 commercial 已备。
+import { createHash } from 'node:crypto';
 import type { Collections, SaveData, Rarity, EquipmentInstance } from '@nw/shared';
 import { grantCards, deriveUnitLevels, UNIT_CARD_POOL_ID, EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount } from '@nw/shared';
 import type { CommercialClient, GachaResultEntry } from './commercialClient.js';
@@ -328,6 +329,60 @@ export async function bumpAdsCap(
   const res = await cols.adsDaily.findOneAndUpdate(
     { _id: id, count: { $lt: cap } },
     { $inc: { count: 1 }, $set: { ts: now } },
+    { returnDocument: 'after' },
+  );
+  return !!res;
+}
+
+/** SHA-256 hash ad token（hex）。用于 adsTokens 唯一性去重。 */
+export function hashAdToken(adToken: string): string {
+  return createHash('sha256').update(adToken).digest('hex');
+}
+
+/**
+ * 广告凭证唯一性校验（C2）：hash 落 adsTokens，重放返回 false。
+ * MongoDB 唯一 _id 冲突 → 自然去重；TTL 48h 自清。
+ */
+export async function recordAdToken(
+  cols: Collections,
+  tokenHash: string,
+  accountId: string,
+  now: number,
+): Promise<boolean> {
+  try {
+    await cols.adsTokens.insertOne({
+      _id: tokenHash,
+      accountId,
+      ts: now,
+      expireAt: new Date(now + 48 * 3600 * 1000),
+    });
+    return true;
+  } catch {
+    // 唯一 _id 冲突 = 重放；其他错误向上抛。
+    return false;
+  }
+}
+
+/** 30min 间隔门（C2）：原子更新 lastAdAt，距离上次不足 minIntervalMs 返回 false。 */
+export async function checkAdInterval(
+  cols: Collections,
+  accountId: string,
+  dayKey: string,
+  now: number,
+  minIntervalMs: number,
+): Promise<boolean> {
+  const id = `${accountId}:${dayKey}`;
+  await cols.adsDaily.updateOne(
+    { _id: id },
+    { $setOnInsert: { _id: id, accountId, dayKey, count: 0, ts: now } },
+    { upsert: true },
+  );
+  const res = await cols.adsDaily.findOneAndUpdate(
+    {
+      _id: id,
+      $or: [{ lastAdAt: { $exists: false } }, { lastAdAt: { $lte: now - minIntervalMs } }],
+    },
+    { $set: { lastAdAt: now } },
     { returnDocument: 'after' },
   );
   return !!res;

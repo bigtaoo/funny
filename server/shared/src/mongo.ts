@@ -119,6 +119,15 @@ export interface AdsDailyDoc {
   dayKey: string;
   count: number;
   ts: number;
+  lastAdAt?: number; // 上次广告时间戳（30min 间隔门）
+}
+
+/** 广告凭证唯一性（C2）：adToken SHA-256 hash，TTL 48h 自清。_id = tokenHash。 */
+export interface AdsTokenDoc {
+  _id: string;   // SHA-256(adToken) hex
+  accountId: string;
+  ts: number;
+  expireAt: Date; // TTL 锚（48h）
 }
 
 /**
@@ -335,6 +344,8 @@ export interface Collections {
   equipmentIdem: Collection<EquipmentIdemDoc>;
   // 天梯赛季（S11）：全局单文档（_id='current'）
   ladderSeasons: Collection<LadderSeasonDoc>;
+  // 广告凭证唯一性（C2）
+  adsTokens: Collection<AdsTokenDoc>;
 }
 
 export interface MongoHandle {
@@ -388,6 +399,7 @@ export async function createMongo(
     mail: db.collection<MailDoc>('mail'),
     equipmentIdem: db.collection<EquipmentIdemDoc>('equipmentIdem'),
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
+    adsTokens: db.collection<AdsTokenDoc>('adsTokens'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -443,6 +455,8 @@ export async function createMongo(
     await collections.mail.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // 装备幂等账本到期自清（E2，expireAt 到期绝对时间 → expireAfterSeconds:0）。
     await collections.equipmentIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+    // 广告凭证唯一性 TTL 自清（C2，48h）。
+    await collections.adsTokens.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // 天梯排行榜：全服 Top100 + 我的名次计数（S11-SE-5）。
     // pvp.seasonNo 先过滤本季，再 elo 倒序取前 100。
     await collections.saves.createIndex(

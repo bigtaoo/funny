@@ -38,6 +38,7 @@ import {
   gachaCost,
   ADS_REWARD_COINS,
   ADS_DAILY_CAP,
+  ADS_MIN_INTERVAL_MS,
   RENAME_COST,
 } from '@nw/shared';
 import { CHAT_SEND_RATE_PER_MIN, regionFromAcceptLanguage } from '@nw/shared';
@@ -100,8 +101,12 @@ import {
   reconcileUndelivered,
   adsDayKey,
   bumpAdsCap,
+  hashAdToken,
+  recordAdToken,
+  checkAdInterval,
 } from './economy.js';
 import { grantTitleToPlayer } from './titles.js';
+import { verifyAdPlatformToken } from './ads.js';
 
 export interface ServiceDeps {
   cols: Collections;
@@ -1429,19 +1434,42 @@ export class MetaService {
   async adsReward(req: FastifyRequest, reply: FastifyReply) {
     if (!this.ensureCommercial(reply)) return;
     const accountId = accountIdOf(req);
-    const { adToken } = req.body as { adToken: string };
-    // dev 桩：校验广告凭证非空（真实广告平台回调验签待接）。
+    const { adToken, platform } = req.body as { adToken: string; platform?: string };
     if (!adToken) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing adToken'));
 
     const { cols, commercial, now } = this.deps;
-    const dayKey = adsDayKey(now());
-    const allowed = await bumpAdsCap(cols, accountId, dayKey, ADS_DAILY_CAP, now());
+    const ts = now();
+    const dayKey = adsDayKey(ts);
+
+    // 30min 间隔门（C2）。
+    const intervalOk = await checkAdInterval(cols, accountId, dayKey, ts, ADS_MIN_INTERVAL_MS);
+    if (!intervalOk) {
+      return reply.code(429).send(err(ErrorCode.DAILY_CAP_REACHED, 'ad cooldown not elapsed'));
+    }
+
+    // 日 cap（C2）。
+    const allowed = await bumpAdsCap(cols, accountId, dayKey, ADS_DAILY_CAP, ts);
     if (!allowed) {
       return reply.code(429).send(err(ErrorCode.DAILY_CAP_REACHED, 'daily ad cap reached'));
     }
+
+    // 凭证唯一性（C2）：hash 落库，重放拒绝。
+    const tokenHash = hashAdToken(adToken);
+    const unique = await recordAdToken(cols, tokenHash, accountId, ts);
+    if (!unique) {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'duplicate adToken'));
+    }
+
+    // 平台验签（C2）：非 dev 时验。
+    const plat = platform ?? 'dev';
+    if (plat !== 'dev') {
+      const sigOk = verifyAdPlatformToken(plat, adToken);
+      if (!sigOk) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'invalid ad signature'));
+    }
+
     const credit = await commercial.adsCredit({ accountId, amount: ADS_REWARD_COINS, dayKey });
     if (!credit.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, credit.error));
-    const save = await mirrorCoins(cols, accountId, credit.coinsAfter, now());
+    const save = await mirrorCoins(cols, accountId, credit.coinsAfter, ts);
     return ok({ save, granted: ADS_REWARD_COINS });
   }
 

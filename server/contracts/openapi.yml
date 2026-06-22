@@ -1547,6 +1547,7 @@ paths:
               required: [adToken]
               properties:
                 adToken: { type: string }
+                platform: { type: string, enum: [dev, admob_client, wechat_client], description: 广告平台（C2）}
       responses:
         '200':
           description: 成功

@@ -104,6 +104,7 @@ export const DUPE_REFUND_COINS: Record<Rarity, number> = {
 /** 激励广告（§2.1）。 */
 export const ADS_REWARD_COINS = 50;
 export const ADS_DAILY_CAP = 5;
+export const ADS_MIN_INTERVAL_MS = 30 * 60 * 1000; // 30min 两条广告最短间隔（C2）
 
 /** 改名消耗（金币）。改一次展示名扣此数（commercial 钱包扣币 → meta 改名）。 */
 export const RENAME_COST = 500;

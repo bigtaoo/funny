@@ -249,7 +249,7 @@
 
 ---
 
-### C2  广告奖励服务端校验（S2-4）
+### ✅ C2  广告奖励服务端校验（S2-4）
 
 **范围**（`metaserver/src/ads.ts`）：
 - `POST /ads/reward` 现在只做了客户端 UI，补服务端：平台回调签名校验（AdMob server-side verification / 微信广告回调）。
