@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(./node_modules/.bin/tsc -b)",
+      "PowerShell($tsc = \"C:\\\\Users\\\\TaoWang\\\\Documents\\\\funny\\\\node_modules\\\\.bin\\\\tsc.cmd\"; cd \"C:\\\\Users\\\\TaoWang\\\\Documents\\\\funny\\\\.claude\\\\worktrees\\\\season-client\\\\client\"; & $tsc --noEmit 2>&1 | Select-Object -First 60)"
     ],
     "defaultMode": "bypassPermissions"
   }
