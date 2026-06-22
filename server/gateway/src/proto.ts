@@ -68,8 +68,10 @@ export type ServerMsg =
       frames: FrameCmdsOut[];
       /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：非空 → 裁判按战役模式复算该关。 */
       levelId: string;
-      /** 服务器权威蓝图快照（升级等级），保证 PvE 复算确定性。 */
+      /** @deprecated S3-2 蓝图快照，S12 起由 unitLevels 替代。 */
       pveUpgrades: Record<string, number>;
+      /** S12 单位养成等级快照（unitId→1..9），保证复算确定性（优先于 pveUpgrades）。 */
+      unitLevels: Record<string, number>;
     }
   // —— 社交推送（S6，SOCIAL_DESIGN §4.2）——
   | { case: 'friend_presence'; publicId: string; online: boolean }
@@ -217,6 +219,7 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
           })),
           level_id: msg.levelId,
           pve_upgrades: msg.pveUpgrades,
+          unit_levels: msg.unitLevels,
         },
       };
       break;

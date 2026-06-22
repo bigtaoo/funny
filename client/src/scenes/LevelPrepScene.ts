@@ -4,22 +4,22 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, type TranslationKey } from '../i18n';
 import { UnitType } from '../game';
+import { TRAIT_BREAKPOINTS, UNIT_MAX_LEVEL } from '../game/balance/progression';
 import {
-  PVE_UPGRADE_DEFS,
-  MATERIAL_ORDER,
-  upgradeCost,
-  type PveUpgradeDef,
-} from '../game/balance/pveUpgrades';
+  PROGRESSABLE_UNIT_IDS,
+  MERGE_COPIES,
+  cardKey,
+} from '../game/balance/unitCards';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
 
-// ── LevelPrepScene (S3-5) — pre-battle upgrades (养成) + start ──────────────────
+// ── LevelPrepScene (S12) — unit card level view + merge + Start ─────────────
 //
-// Spend level-drop materials on the unit upgrade tree (game/balance/pveUpgrades),
-// then launch the battle. Upgrades / materials live in the client-sync SaveData
-// segment; the app applies the spend via SaveManager (this scene calls back and
-// re-reads). The hard wall (§5.2) means these only ever buff the campaign engine.
+// Shows each progressable unit's current level (derived from cardInventory),
+// any unlocked traits (T3/T6/T9 breakpoints), and a per-level merge button
+// (5 cards of level N → 1 card of level N+1). Replaces the S3-2 material +
+// upgrade-tree system. The hard wall (§5.2) means levels only ever buff the
+// campaign engine; buildPvpBlueprints never receives unitLevels.
 
-/** i18n key for each upgradable unit's display name (reuses the card names). */
 const UNIT_NAME_KEY: Partial<Record<UnitType, TranslationKey>> = {
   [UnitType.Infantry]: 'card.infantry.name',
   [UnitType.ShieldBearer]: 'card.shieldbearer.name',
@@ -29,17 +29,17 @@ const UNIT_NAME_KEY: Partial<Record<UnitType, TranslationKey>> = {
 export interface LevelPrepCallbacks {
   onBack(): void;
   onStart(): void;
-  /** Material id → owned amount. */
-  getMaterials(): Record<string, number>;
-  /** Upgrade id → current level. */
-  getUpgradeLevel(id: string): number;
-  /** Online = can reach /pve/upgrade (upgrades are server-authoritative, §8). Offline disables upgrading. */
+  /** unitId → current level (1–9); missing key = Lv 1. */
+  getUnitLevels(): Record<string, number>;
+  /** cardKey (unitId:level) → owned count. */
+  getCardInventory(): Record<string, number>;
+  /** Online = can reach /pve/merge. Offline disables merging. */
   isOnline(): boolean;
-  /** Buy one level of `id` (server-authoritative spend); resolves true on success. */
-  tryUpgrade(id: string): Promise<boolean>;
+  /** Server-authoritative merge (5 × unitId:level → 1 × unitId:(level+1)); true on success. */
+  tryMerge(unitId: string, level: number): Promise<boolean>;
   /** 1-based level number for the header label. */
   levelNumber: number;
-  /** Pre-translated story brief shown in a panel above the upgrade list. */
+  /** Pre-translated story brief shown in a panel above the unit list. */
   brief?: string;
   /** Pre-translated story intro shown as a tap-through overlay when the player hits Start. */
   intro?: string;
@@ -56,6 +56,15 @@ export class LevelPrepScene implements Scene {
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
   private toast: { text: string; color: number } | null = null;
+  private merging = false;
+
+  // ── Intro story animation state ───────────────────────────────────────────
+  private showingIntro = false;
+  private introLines: string[] = [];
+  private introShownCount = 0;
+  private introFadeT = 0;
+  private introLineTexts: PIXI.Text[] = [];
+  private introSkipRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
   constructor(layout: ILayout, input: InputManager, cb: LevelPrepCallbacks) {
     this.container = new PIXI.Container();
@@ -76,17 +85,15 @@ export class LevelPrepScene implements Scene {
       }
     }
   }
+
   destroy(): void { this.unsubs.forEach((u) => u()); }
 
   private handleDown(x: number, y: number): void {
     if (this.showingIntro) {
-      // Skip button
       const sr = this.introSkipRect;
       if (x >= sr.x && x <= sr.x + sr.w && y >= sr.y && y <= sr.y + sr.h) {
-        this.finishIntro();
-        return;
+        this.finishIntro(); return;
       }
-      // Tap: complete in-progress fade → advance → finish
       const current = this.introLineTexts[this.introShownCount - 1];
       if (current && current.alpha < 1) {
         current.alpha = 1;
@@ -111,30 +118,20 @@ export class LevelPrepScene implements Scene {
     this.cb.onStart();
   }
 
-  private upgrading = false;
-
-  // ── Intro story animation state (IntroScene-style line-by-line fade-in) ──
-  private showingIntro = false;
-  private introLines: string[] = [];
-  private introShownCount = 0;  // lines requested so far
-  private introFadeT = 0;       // current line fade progress (seconds)
-  private introLineTexts: PIXI.Text[] = [];
-  private introSkipRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
-
-  private onUpgrade(def: PveUpgradeDef): void {
-    if (this.upgrading) return; // 防连点重复扣费（服务器端点在途）
+  private onMerge(unitId: string, level: number): void {
+    if (this.merging) return;
     if (!this.cb.isOnline()) {
-      this.toast = { text: t('prep.offlineUpgrade'), color: C.red };
+      this.toast = { text: t('progression.offlineMerge'), color: C.red };
       this.render();
       return;
     }
-    this.upgrading = true;
-    void this.cb.tryUpgrade(def.id).then((ok) => {
-      this.upgrading = false;
+    this.merging = true;
+    void this.cb.tryMerge(unitId, level).then((ok) => {
+      this.merging = false;
       this.toast = ok
-        ? { text: t('prep.upgraded'), color: C.green }
-        : { text: t('prep.insufficient'), color: C.red };
-      this.render(); // 重读 save 镜像（已被回推刷新）
+        ? { text: t('progression.merged'), color: C.green }
+        : { text: t('progression.mergeFail'), color: C.red };
+      this.render();
     });
   }
 
@@ -143,7 +140,6 @@ export class LevelPrepScene implements Scene {
     this.hits = [];
     const { w, h } = this;
 
-    // ── Intro story overlay (shown when player taps Start and introKey is set) ──
     if (this.showingIntro) {
       this.buildIntroLines();
       return;
@@ -151,7 +147,7 @@ export class LevelPrepScene implements Scene {
 
     this.container.addChild(buildPaperBackground('prepbg', w, h));
 
-    // Header: back + level label + start.
+    // Header
     const tbH = Math.round(h * 0.12);
     const titleBg = new PIXI.Graphics();
     titleBg.beginFill(C.dark); titleBg.drawRect(0, 0, w, tbH); titleBg.endFill();
@@ -164,34 +160,39 @@ export class LevelPrepScene implements Scene {
     const back = txt(t('prep.back'), Math.round(h * 0.024), C.light);
     back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
     this.container.addChild(back);
-    this.hits.push({ rect: { x: 0, y: 0, w: back.x + back.width + Math.round(h * 0.02), h: tbH }, fn: () => this.cb.onBack() });
+    this.hits.push({
+      rect: { x: 0, y: 0, w: back.x + back.width + Math.round(h * 0.02), h: tbH },
+      fn: () => this.cb.onBack(),
+    });
 
-    // ── Story brief panel (briefKey) ─────────────────────────────────────────
     let y = tbH + Math.round(h * 0.02);
+
     if (this.cb.brief) {
       y = this.drawBrief(y);
     }
 
-    // Materials strip.
-    y += Math.round(h * 0.01);
-    y = this.drawMaterials(y);
+    // Section title
+    const secLbl = txt(t('progression.unitsTitle'), Math.round(h * 0.026), C.dark, true);
+    secLbl.anchor.set(0, 0.5);
+    secLbl.x = Math.round(w * 0.08);
+    secLbl.y = y + Math.round(h * 0.018);
+    this.container.addChild(secLbl);
+    y += Math.round(h * 0.048);
 
-    // Upgrade list.
-    const lbl = txt(t('prep.upgradesTitle'), Math.round(h * 0.026), C.dark, true);
-    lbl.anchor.set(0, 0.5); lbl.x = Math.round(w * 0.08); lbl.y = y + Math.round(h * 0.02);
-    this.container.addChild(lbl);
-    y += Math.round(h * 0.05);
-
+    // Unit card rows
     const listX = Math.round(w * 0.06);
     const listW = w - listX * 2;
-    const rowH = Math.round(h * 0.085);
-    const gap = Math.round(h * 0.014);
-    for (const def of PVE_UPGRADE_DEFS) {
-      this.drawUpgradeRow(def, listX, y, listW, rowH);
+    const rowH = Math.round(h * 0.13);
+    const gap = Math.round(h * 0.016);
+    const unitLevels = this.cb.getUnitLevels();
+    const inv = this.cb.getCardInventory();
+
+    for (const unitId of PROGRESSABLE_UNIT_IDS) {
+      this.drawUnitRow(unitId, unitLevels[unitId] ?? 1, inv, listX, y, listW, rowH);
       y += rowH + gap;
     }
 
-    // Start button (bottom).
+    // Start button
     const sbW = Math.round(w * 0.6);
     const sbH = Math.round(h * 0.08);
     const sbX = (w - sbW) / 2;
@@ -202,76 +203,83 @@ export class LevelPrepScene implements Scene {
     const sl = txt(t('prep.start'), Math.round(sbH * 0.42), 0xffffff, true);
     sl.anchor.set(0.5, 0.5); sl.x = sbX + sbW / 2; sl.y = sbY + sbH / 2;
     this.container.addChild(sl);
-    this.hits.push({ rect: { x: sbX, y: sbY, w: sbW, h: sbH }, fn: () => {
-      if (this.cb.intro) {
-        this.introLines = this.cb.intro.split('\n').filter((l) => l.trim().length > 0);
-        this.introShownCount = 0;
-        this.introFadeT = 0;
-        this.introLineTexts = [];
-        this.showingIntro = true;
-        this.render();
-      } else {
-        this.cb.onStart();
-      }
-    } });
+    this.hits.push({
+      rect: { x: sbX, y: sbY, w: sbW, h: sbH },
+      fn: () => {
+        if (this.cb.intro) {
+          this.introLines = this.cb.intro.split('\n').filter((l) => l.trim().length > 0);
+          this.introShownCount = 0;
+          this.introFadeT = 0;
+          this.introLineTexts = [];
+          this.showingIntro = true;
+          this.render();
+        } else {
+          this.cb.onStart();
+        }
+      },
+    });
 
     if (this.toast) this.drawToast();
   }
 
-  /** Owned-materials row; returns the y just below it. */
-  private drawMaterials(y: number): number {
-    const { w, h } = this;
-    const mats = this.cb.getMaterials();
-    const cellW = Math.round((w - Math.round(w * 0.12)) / MATERIAL_ORDER.length);
-    const cellH = Math.round(h * 0.06);
-    const startX = Math.round(w * 0.06);
-    MATERIAL_ORDER.forEach((mat, i) => {
-      const x = startX + i * cellW;
-      const lbl = txt(`${t(('material.' + mat) as TranslationKey)} ${mats[mat] ?? 0}`,
-        Math.round(cellH * 0.42), C.dark, true);
-      lbl.anchor.set(0.5, 0.5); lbl.x = x + cellW / 2; lbl.y = y + cellH / 2;
-      this.container.addChild(lbl);
-    });
-    return y + cellH + Math.round(h * 0.02);
-  }
-
-  private drawUpgradeRow(def: PveUpgradeDef, x: number, y: number, w: number, h: number): void {
-    const lvl = this.cb.getUpgradeLevel(def.id);
-    const maxed = lvl >= def.maxLevel;
-    const cost = upgradeCost(def, lvl);
-    const owned = this.cb.getMaterials()[def.material] ?? 0;
-    const affordable = cost !== null && owned >= cost.amount;
-
+  private drawUnitRow(
+    unitId: string,
+    level: number,
+    inv: Record<string, number>,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void {
     const box = sketchPanel(w, h, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
     box.x = x; box.y = y;
     sketchAccentBar(box, h, C.accent, seedFor(x, h, 5));
     this.container.addChild(box);
 
-    // "<Unit> · <stat>"
-    const unitName = UNIT_NAME_KEY[def.unitType] ? t(UNIT_NAME_KEY[def.unitType]!) : def.unitType;
-    const statName = t(('prep.stat.' + def.stat) as TranslationKey);
-    const name = txt(`${unitName} · ${statName}`, Math.round(h * 0.26), C.dark, true);
-    name.anchor.set(0, 0.5); name.x = x + Math.round(w * 0.04); name.y = y + h * 0.36;
-    this.container.addChild(name);
+    const unitType = unitId as UnitType;
+    const unitName = UNIT_NAME_KEY[unitType] ? t(UNIT_NAME_KEY[unitType]!) : unitId;
+    const fs = Math.round(h * 0.22);
+    const nameTxt = txt(unitName, fs, C.dark, true);
+    nameTxt.anchor.set(0, 0.5);
+    nameTxt.x = x + Math.round(w * 0.04);
+    nameTxt.y = y + h * 0.3;
+    this.container.addChild(nameTxt);
 
-    // Level + cost line.
-    const lvlStr = t('prep.lv', { lv: lvl, max: def.maxLevel });
-    const costStr = maxed
-      ? t('prep.maxed')
-      : `${t(('material.' + def.material) as TranslationKey)} ×${cost!.amount}`;
-    const sub = txt(`${lvlStr}   ${costStr}`, Math.round(h * 0.22),
-      maxed ? C.mid : (affordable ? C.gold : C.mid));
-    sub.anchor.set(0, 0.5); sub.x = x + Math.round(w * 0.04); sub.y = y + h * 0.72;
-    this.container.addChild(sub);
+    const lvTxt = txt(t('progression.lv', { lv: level }), Math.round(h * 0.2), level >= UNIT_MAX_LEVEL ? C.gold : C.mid);
+    lvTxt.anchor.set(0, 0.5);
+    lvTxt.x = x + Math.round(w * 0.04);
+    lvTxt.y = y + h * 0.72;
+    this.container.addChild(lvTxt);
 
-    // Upgrade button (right). Server-authoritative spend → disabled offline (§8).
-    const online = this.cb.isOnline();
-    const canAfford = !maxed && affordable;
-    const enabled = canAfford && online; // 视觉可用：能买得起且在线
-    const bw = Math.round(w * 0.22);
-    const bh = Math.round(h * 0.6);
+    // Trait badges (T3/T6/T9)
+    const traits: Array<{ key: TranslationKey; minLevel: number }> = [
+      { key: 'progression.trait.crit', minLevel: TRAIT_BREAKPOINTS.crit.level },
+      { key: 'progression.trait.lifesteal', minLevel: TRAIT_BREAKPOINTS.lifesteal.level },
+      { key: 'progression.trait.spawn', minLevel: TRAIT_BREAKPOINTS.bonusSpawn.level },
+    ];
+    let traitX = x + Math.round(w * 0.3);
+    const traitY = y + h * 0.5;
+    const traitFs = Math.round(h * 0.17);
+    for (const trait of traits) {
+      const unlocked = level >= trait.minLevel;
+      const badge = txt(t(trait.key), traitFs, unlocked ? C.green : C.btnOff, true);
+      badge.anchor.set(0, 0.5);
+      badge.x = traitX;
+      badge.y = traitY;
+      this.container.addChild(badge);
+      traitX += badge.width + Math.round(w * 0.015);
+    }
+
+    // Merge button: find lowest level with ≥ MERGE_COPIES cards that can still be merged
+    const mergeLevel = this.findMergeLevel(unitId, inv);
+    const bw = Math.round(w * 0.18);
+    const bh = Math.round(h * 0.55);
     const bx = x + w - bw - Math.round(w * 0.03);
     const by = y + (h - bh) / 2;
+    const online = this.cb.isOnline();
+    const canMerge = mergeLevel !== null;
+    const enabled = canMerge && online;
+
     const btn = sketchPanel(bw, bh, {
       fill: enabled ? C.dark : C.btnDis,
       border: enabled ? C.green : C.btnOff,
@@ -279,18 +287,41 @@ export class LevelPrepScene implements Scene {
     });
     btn.x = bx; btn.y = by;
     this.container.addChild(btn);
-    const blabel = txt(maxed ? t('prep.maxed') : t('prep.upgrade'),
-      Math.round(bh * 0.34), enabled ? 0xffffff : C.mid, true);
+    const blabel = txt(t('progression.merge'), Math.round(bh * 0.34), enabled ? 0xffffff : C.mid, true);
     blabel.anchor.set(0.5, 0.5); blabel.x = bx + bw / 2; blabel.y = by + bh / 2;
     this.container.addChild(blabel);
 
-    // 仍买得起就接受点击：在线 → 升级；离线 → onUpgrade 弹「联网升级」提示。
-    if (canAfford) {
-      this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: () => this.onUpgrade(def) });
+    if (mergeLevel !== null) {
+      const cardCount = inv[cardKey(unitId, mergeLevel)] ?? 0;
+      const countTxt = txt(
+        t('progression.cards', { n: cardCount }),
+        Math.round(bh * 0.26),
+        online ? C.gold : C.mid,
+        true,
+      );
+      countTxt.anchor.set(0.5, 0);
+      countTxt.x = bx + bw / 2;
+      countTxt.y = by + bh;
+      this.container.addChild(countTxt);
+    }
+
+    if (enabled && mergeLevel !== null) {
+      this.hits.push({
+        rect: { x: bx, y: by, w: bw, h: bh },
+        fn: () => this.onMerge(unitId, mergeLevel),
+      });
     }
   }
 
-  /** Compact story-brief panel, returns the y just below it. */
+  /** Returns lowest card level with ≥ MERGE_COPIES cards that is < UNIT_MAX_LEVEL, or null. */
+  private findMergeLevel(unitId: string, inv: Record<string, number>): number | null {
+    for (let lv = 1; lv < UNIT_MAX_LEVEL; lv++) {
+      const count = inv[cardKey(unitId, lv)] ?? 0;
+      if (count >= MERGE_COPIES) return lv;
+    }
+    return null;
+  }
+
   private drawBrief(y: number): number {
     const { w, h } = this;
     const padX = Math.round(w * 0.06);
@@ -307,7 +338,6 @@ export class LevelPrepScene implements Scene {
     sketchAccentBar(bg, panH, C.accent, seedFor(padX, panH, 7));
     this.container.addChild(bg);
 
-    // Word-wrap to maxLines using a scratch Text for measurement.
     const scratch = txt(this.cb.brief!, fontSize, C.mid);
     scratch.style.wordWrap = true;
     scratch.style.wordWrapWidth = panW - Math.round(panW * 0.12);
@@ -319,7 +349,6 @@ export class LevelPrepScene implements Scene {
     return y + panH + Math.round(h * 0.015);
   }
 
-  /** Builds the IntroScene-style line-by-line intro overlay. Called from render() when showingIntro. */
   private buildIntroLines(): void {
     this.container.removeChildren();
     const { w, h } = this;
@@ -380,7 +409,6 @@ export class LevelPrepScene implements Scene {
       h: skipText.height + pad * 2,
     };
 
-    // Start fading in the first line.
     this.introShownCount = 1;
     this.introFadeT = 0;
   }

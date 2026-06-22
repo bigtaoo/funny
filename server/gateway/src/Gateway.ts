@@ -42,8 +42,10 @@ export interface JudgeArgs {
   exclude: string[];
   /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：非空 → 裁判按战役模式复算该关。 */
   levelId?: string;
-  /** 服务器权威蓝图快照（升级等级），保证 PvE 复算确定性。 */
+  /** @deprecated S3-2 蓝图快照，S12 起由 unitLevels 替代（保留向后兼容）。 */
   pveUpgrades?: Record<string, number>;
+  /** S12 单位养成等级快照（unitId→1..9），保证 PvE/siege 复算确定性。优先于 pveUpgrades。 */
+  unitLevels?: Record<string, number>;
   /** SLG 围攻防守 config JSON 字符串（S8-3b）：非空 → 裁判按 siege 模式复算。 */
   defenseJson?: string;
 }
@@ -356,6 +358,7 @@ export class Gateway {
             frames: args.frames,
             levelId: args.levelId ?? '',
             pveUpgrades: args.pveUpgrades ?? {},
+            unitLevels: args.unitLevels ?? {},
           }),
         );
       } catch {

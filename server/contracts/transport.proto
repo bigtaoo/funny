@@ -150,6 +150,9 @@ message JudgeRequest {
   // 仅客户端引擎解释）；裁判用 seed + 该 config + pve_upgrades（攻方服务器权威养成快照）+ frames
   // （攻方指令）跑到终局，winner_side=0 → 攻方破城（attacker_win），经 judge_verdict 回报。
   string                 defense_json = 8;
+  // S12 单位养成复算：unit_levels 非空 → 裁判用此等级映射重建蓝图（替代 pve_upgrades，保证
+  // 高养成玩家抽检时复算使用与对局完全一致的蓝图，防止弱蓝图误判）。
+  map<string, uint32>    unit_levels  = 9;
 }
 
 // ── 社交实时推送（S6，SOCIAL_DESIGN §4.2）─────────────────

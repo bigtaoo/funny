@@ -285,6 +285,19 @@ export const en: Record<TranslationKey, string> = {
   'prep.stat.hp': 'HP',
   'prep.stat.damage': 'Damage',
   'prep.stat.speed': 'Speed',
+
+  // ── Unit Progression (S12) ────────────────────────────────────────────────
+  'progression.unitsTitle': 'Unit Cards',
+  'progression.lv': 'Lv {lv}',
+  'progression.cards': '{n} cards',
+  'progression.merge': 'Merge',
+  'progression.merged': 'Merged!',
+  'progression.mergeFail': 'Merge failed',
+  'progression.offlineMerge': 'Connect to merge',
+  'progression.trait.crit': 'Crit T3',
+  'progression.trait.lifesteal': 'Lifesteal T6',
+  'progression.trait.spawn': '+Spawn T9',
+
   'material.scrap': 'Scraps',
   'material.lead': 'Lead',
   'material.binding': 'Binding',
@@ -369,6 +382,7 @@ export const en: Record<TranslationKey, string> = {
   // Collection-center tabs + card codex
   'collection.tab.cards': 'Cards',
   'collection.tab.skins': 'Skins',
+  'collection.tab.units': 'Units',
   'collection.cardType.unit': 'Unit',
   'collection.cardType.building': 'Building',
   'collection.cardType.spell': 'Spell',

@@ -227,9 +227,16 @@ export interface JudgeRequest {
    * （攻方指令）跑到终局，winner_side=0 → 攻方破城（attacker_win），经 judge_verdict 回报。
    */
   defenseJson: string;
+  /** S12 单位养成等级快照（unitId→1..9），优先于 pve_upgrades 保证复算确定性。 */
+  unitLevels: { [key: string]: number };
 }
 
 export interface JudgeRequest_PveUpgradesEntry {
+  key: string;
+  value: number;
+}
+
+export interface JudgeRequest_UnitLevelsEntry {
   key: string;
   value: number;
 }
@@ -2038,7 +2045,7 @@ export const Pong: MessageFns<Pong> = {
 };
 
 function createBaseJudgeRequest(): JudgeRequest {
-  return { requestId: "", seed: 0, mode: 0, endFrame: 0, frames: [], levelId: "", pveUpgrades: {}, defenseJson: "" };
+  return { requestId: "", seed: 0, mode: 0, endFrame: 0, frames: [], levelId: "", pveUpgrades: {}, defenseJson: "", unitLevels: {} };
 }
 
 export const JudgeRequest: MessageFns<JudgeRequest> = {
@@ -2067,6 +2074,9 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
     if (message.defenseJson !== "") {
       writer.uint32(66).string(message.defenseJson);
     }
+    globalThis.Object.entries(message.unitLevels).forEach(([key, value]: [string, number]) => {
+      JudgeRequest_UnitLevelsEntry.encode({ key: key as any, value }, writer.uint32(74).fork()).join();
+    });
     return writer;
   },
 
@@ -2144,6 +2154,17 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
           message.defenseJson = reader.string();
           continue;
         }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          const entry9 = JudgeRequest_UnitLevelsEntry.decode(reader, reader.uint32());
+          if (entry9.value !== undefined) {
+            message.unitLevels[entry9.key] = entry9.value;
+          }
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2174,6 +2195,15 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
       {},
     );
     message.defenseJson = object.defenseJson ?? "";
+    message.unitLevels = (globalThis.Object.entries(object.unitLevels ?? {}) as [string, number][]).reduce(
+      (acc: { [key: string]: number }, [key, value]: [string, number]) => {
+        if (value !== undefined) {
+          acc[key] = globalThis.Number(value);
+        }
+        return acc;
+      },
+      {},
+    );
     return message;
   },
 };
@@ -2232,6 +2262,58 @@ export const JudgeRequest_PveUpgradesEntry: MessageFns<JudgeRequest_PveUpgradesE
     object: I,
   ): JudgeRequest_PveUpgradesEntry {
     const message = createBaseJudgeRequest_PveUpgradesEntry();
+    message.key = object.key ?? "";
+    message.value = object.value ?? 0;
+    return message;
+  },
+};
+
+function createBaseJudgeRequest_UnitLevelsEntry(): JudgeRequest_UnitLevelsEntry {
+  return { key: "", value: 0 };
+}
+
+export const JudgeRequest_UnitLevelsEntry: MessageFns<JudgeRequest_UnitLevelsEntry> = {
+  encode(message: JudgeRequest_UnitLevelsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== 0) {
+      writer.uint32(16).uint32(message.value);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): JudgeRequest_UnitLevelsEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseJudgeRequest_UnitLevelsEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) { break; }
+          message.key = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) { break; }
+          message.value = reader.uint32();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) { break; }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<JudgeRequest_UnitLevelsEntry>, I>>(base?: I): JudgeRequest_UnitLevelsEntry {
+    return JudgeRequest_UnitLevelsEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<JudgeRequest_UnitLevelsEntry>, I>>(
+    object: I,
+  ): JudgeRequest_UnitLevelsEntry {
+    const message = createBaseJudgeRequest_UnitLevelsEntry();
     message.key = object.key ?? "";
     message.value = object.value ?? 0;
     return message;

@@ -284,6 +284,18 @@ export const zh = {
   'prep.stat.hp': '生命',
   'prep.stat.damage': '攻击',
   'prep.stat.speed': '速度',
+
+  // ── 单位养成（S12，卡牌合成系统）────────────────────────────────────────────
+  'progression.unitsTitle': '单位卡牌',
+  'progression.lv': 'Lv {lv}',
+  'progression.cards': '{n} 张',
+  'progression.merge': '合成',
+  'progression.merged': '合成成功！',
+  'progression.mergeFail': '合成失败',
+  'progression.offlineMerge': '联网后可合成',
+  'progression.trait.crit': '暴击 T3',
+  'progression.trait.lifesteal': '吸血 T6',
+  'progression.trait.spawn': '+出兵 T9',
   'material.scrap': '碎屑',
   'material.lead': '铅芯',
   'material.binding': '装订线',
@@ -370,6 +382,7 @@ export const zh = {
   // 收藏中心 Tab + 卡牌图鉴
   'collection.tab.cards': '卡牌',
   'collection.tab.skins': '皮肤',
+  'collection.tab.units': '单位',
   'collection.cardType.unit': '士兵',
   'collection.cardType.building': '建筑',
   'collection.cardType.spell': '法术',

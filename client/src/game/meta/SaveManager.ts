@@ -191,7 +191,7 @@ export class SaveManager {
     this.applyLocalClear(levelId, stars);
     if (this.online()) {
       try {
-        const res = await this.api!.pveClear(levelId, stars, this.save.pveUpgrades);
+        const res = await this.api!.pveClear(levelId, stars, this.save.unitLevels);
         this.adoptServer(res.save);
         if (res.needsReplay && res.verifyId && replay) {
           await this.verifyReplay(res.verifyId, replay);
@@ -222,13 +222,27 @@ export class SaveManager {
   }
 
   /**
-   * PvE 升级（仅在线，服务器权威扣费）。POST /pve/upgrade → adopt 回推。
-   * 离线 / 失败（材料不足等）→ 返回 false，不改本地。
+   * @deprecated S3-2 per-stat 升级。S12 起单位养成改集卡合成，改用 {@link merge}。
    */
   async upgrade(upgradeId: string): Promise<boolean> {
     if (!this.online()) return false;
     try {
       const res = await this.api!.pveUpgrade(upgradeId);
+      this.adoptServer(res.save);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 单位卡合成（S12）：5 张 N 级卡 → 1 张 N+1 级。仅在线，服务器权威扣库存。
+   * 卡片不足 / 非法参数 / 离线 → 返回 false，不改本地。
+   */
+  async merge(unitId: string, level: number): Promise<boolean> {
+    if (!this.online()) return false;
+    try {
+      const res = await this.api!.pveMerge(unitId, level);
       this.adoptServer(res.save);
       return true;
     } catch {
@@ -256,7 +270,7 @@ export class SaveManager {
     while (this.pending.length > 0) {
       const head = this.pending[0];
       try {
-        const res = await this.api!.pveClear(head.levelId, head.stars, this.save.pveUpgrades);
+        const res = await this.api!.pveClear(head.levelId, head.stars, this.save.unitLevels);
         this.adoptServer(res.save);
         // L1 抽中：取回本地录像补传复算（已被 ReplayStore 淘汰则跳过，材料本轮不入账）。
         if (res.needsReplay && res.verifyId && head.replayId && this.loadReplay) {

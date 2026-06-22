@@ -461,10 +461,13 @@ export class MetaService {
   async pveClear(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
     const { cols, now, gateway } = this.deps;
-    const { levelId, stars: starsRaw, pveUpgrades: clientUpgrades } = req.body as {
+    const { levelId, stars: starsRaw, pveUpgrades: clientUpgradesLegacy, unitLevels: clientUnitLevels } = req.body as {
       levelId: string;
       stars: number;
+      /** @deprecated S3-2，S12 起由 unitLevels 替代。 */
       pveUpgrades?: Record<string, number>;
+      /** S12 单位养成等级快照（客户端开局快照，用于 L0 异常判定）。 */
+      unitLevels?: Record<string, number>;
     };
     const level = findPveLevel(levelId);
     if (!level) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown level'));
@@ -486,10 +489,11 @@ export class MetaService {
     // L1 抽检决策：仅在「有产出可发 + 裁判可用」时考虑（否则没有可被作弊套利的产出）。
     if (hasReward && gateway.available) {
       const isFirstClear = !cur.progress.cleared.includes(levelId);
-      // L0 异常（§0「开局战力不符 → 必作弊」）：客户端上报蓝图快照与服务器权威 pveUpgrades 不符。
-      const blueprintMismatch =
-        clientUpgrades !== undefined &&
-        JSON.stringify(normUpgrades(clientUpgrades)) !== JSON.stringify(normUpgrades(cur.pveUpgrades));
+      // L0 异常（§0「开局战力不符 → 必作弊」）：S12 优先比 unitLevels，无则降级比 pveUpgrades。
+      const blueprintMismatch = clientUnitLevels !== undefined
+        ? JSON.stringify(normUpgrades(clientUnitLevels)) !== JSON.stringify(normUpgrades(cur.unitLevels ?? {}))
+        : clientUpgradesLegacy !== undefined &&
+          JSON.stringify(normUpgrades(clientUpgradesLegacy)) !== JSON.stringify(normUpgrades(cur.pveUpgrades));
       if (shouldSpotCheck({ isFirstClear, blueprintMismatch, rand: Math.random() })) {
         const reason = blueprintMismatch ? 'anomaly' : isFirstClear ? 'first' : 'sample';
         // 写 progress/stars（解锁照常）但不发材料；记抽检，等客户端补传录像复算。
@@ -501,7 +505,8 @@ export class MetaService {
           accountId,
           levelId,
           claimedStars: stars,
-          pveUpgrades: { ...cur.pveUpgrades }, // 服务器权威蓝图快照（复算用，防漂移）
+          pveUpgrades: { ...cur.pveUpgrades }, // 旧快照（保留兼容）
+          unitLevels: { ...(cur.unitLevels ?? {}) }, // S12 服务器权威快照（复算用，防漂移）
           reason,
           status: 'pending',
           ts: now(),
@@ -566,6 +571,7 @@ export class MetaService {
       exclude: [accountId],
       levelId: doc.levelId,
       pveUpgrades: doc.pveUpgrades,
+      ...(doc.unitLevels ? { unitLevels: doc.unitLevels } : {}),
     });
 
     const judgedStars = verdict.stars ?? 0;

@@ -285,6 +285,19 @@ export const de: Record<TranslationKey, string> = {
   'prep.stat.hp': 'LP',
   'prep.stat.damage': 'Schaden',
   'prep.stat.speed': 'Tempo',
+
+  // ── Einheitenentwicklung (S12) ────────────────────────────────────────────
+  'progression.unitsTitle': 'Einheiten-Karten',
+  'progression.lv': 'Lv {lv}',
+  'progression.cards': '{n} Karten',
+  'progression.merge': 'Zusammenfügen',
+  'progression.merged': 'Zusammengefügt!',
+  'progression.mergeFail': 'Fehler',
+  'progression.offlineMerge': 'Online verbinden',
+  'progression.trait.crit': 'Krit T3',
+  'progression.trait.lifesteal': 'Lebensstahl T6',
+  'progression.trait.spawn': '+Beschwörung T9',
+
   'material.scrap': 'Schnipsel',
   'material.lead': 'Blei',
   'material.binding': 'Bindung',
@@ -369,6 +382,7 @@ export const de: Record<TranslationKey, string> = {
   // Sammlungszentrum-Tabs + Kartenkompendium
   'collection.tab.cards': 'Karten',
   'collection.tab.skins': 'Skins',
+  'collection.tab.units': 'Einheiten',
   'collection.cardType.unit': 'Einheit',
   'collection.cardType.building': 'Gebäude',
   'collection.cardType.spell': 'Zauber',
