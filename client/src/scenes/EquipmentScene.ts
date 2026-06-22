@@ -10,7 +10,8 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../game/meta/SaveData';
 import {
   EQUIPMENT_DEFS,
@@ -74,13 +75,14 @@ export class EquipmentScene implements Scene {
   private readonly cb: EquipmentCallbacks;
 
   private activeTab: EquipTab = 'inv';
-  private busy = false;
+  private readonly bt = new BusyTracker();
   /** 强化时是否使用保护道具（E7）；状态粘滞，玩家主动切换。 */
   private useProtectEnhance = false;
 
   private bodyLayer!: PIXI.Container;
   private modalLayer!: PIXI.Container;
   private toastLayer!: PIXI.Container;
+  private loadingLayer!: PIXI.Container;
 
   /** 当前打开详情的实例 id（null = 无）。每次重绘从 save 重读实例（被分解则关闭）。 */
   private detailId: string | null = null;
@@ -119,6 +121,8 @@ export class EquipmentScene implements Scene {
     this.container.addChild(this.modalLayer);
     this.toastLayer = new PIXI.Container();
     this.container.addChild(this.toastLayer);
+    this.loadingLayer = new PIXI.Container();
+    this.container.addChild(this.loadingLayer);
 
     // Static header (back + title).
     const panel = sketchPanel(w, HUD_H, { fill: C.paper, border: C.mid, seed: seedFor(0, 0, w) });
@@ -137,6 +141,7 @@ export class EquipmentScene implements Scene {
     if (this.destroyed) return;
     this.bodyLayer.removeChildren();
     this.hitRects = [];
+    this.loadingLayer.removeChildren();
     // Back button (header is static art; its hit lives here so re-render keeps it).
     this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: HUD_H }, action: () => this.cb.onBack() });
 
@@ -149,6 +154,8 @@ export class EquipmentScene implements Scene {
     // otherwise ensure no stale modal (e.g. confirm) lingers after it cleared detailId.
     if (this.detailId) this.openDetail(this.detailId);
     else if (this.modalOpen) this.closeModal();
+
+    if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
   private renderTabs(): void {
@@ -348,7 +355,7 @@ export class EquipmentScene implements Scene {
     costLbl.x = 14; costLbl.y = cy + 28;
     this.bodyLayer.addChild(costLbl);
 
-    const enabled = affordable && !full && !this.busy;
+    const enabled = affordable && !full && !this.bt.busy;
     const btn = sketchPanel(60, 28, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(cy, 2, 60) });
     btn.x = w - 70; btn.y = cy + 12;
     this.bodyLayer.addChild(btn);
@@ -440,7 +447,7 @@ export class EquipmentScene implements Scene {
       );
       protectLbl.x = mx + 12; protectLbl.y = cy;
       ml.addChild(protectLbl);
-      if (canToggle && !this.busy) {
+      if (canToggle && !this.bt.busy) {
         this.modalHits.push({
           rect: { x: mx + 10, y: cy - 2, w: mw - 20, h: 18 },
           action: () => { this.useProtectEnhance = !this.useProtectEnhance; this.render(); },
@@ -456,7 +463,7 @@ export class EquipmentScene implements Scene {
           (m) => m.id !== inst.id && getEquipDef(m.defId)?.slot === slot && m.rarity === requiredMatRarity && !this.equippedIds(save).has(m.id),
         )
       : false;
-    const reforgeOn = !!requiredMatRarity && hasMaterials && !equipped && !inst.locked && !this.busy;
+    const reforgeOn = !!requiredMatRarity && hasMaterials && !equipped && !inst.locked && !this.bt.busy;
 
     // Action buttons row.
     const btnY = my + mh - 40;
@@ -464,19 +471,19 @@ export class EquipmentScene implements Scene {
     const buttons: { label: string; fill: number; stroke: number; fn: () => void; on: boolean }[] = [];
     if (!maxed) {
       const cost = enhanceCost(inst.level);
-      const on = this.canAffordEnhance(save, cost) && !this.busy;
+      const on = this.canAffordEnhance(save, cost) && !this.bt.busy;
       buttons.push({ label: t('equip.enhance'), fill: on ? C.dark : C.btnOff, stroke: on ? C.accent : C.mid, on, fn: () => void this.doEnhance(inst.id) });
     }
     if (slot) {
       buttons.push(equipped
-        ? { label: t('equip.unequip'), fill: 0xf0e0e0, stroke: C.red, on: !this.busy, fn: () => void this.doEquip(slot, null) }
-        : { label: t('equip.equip'), fill: C.dark, stroke: C.green, on: !this.busy, fn: () => void this.doEquip(slot, inst.id) });
+        ? { label: t('equip.unequip'), fill: 0xf0e0e0, stroke: C.red, on: !this.bt.busy, fn: () => void this.doEquip(slot, null) }
+        : { label: t('equip.equip'), fill: C.dark, stroke: C.green, on: !this.bt.busy, fn: () => void this.doEquip(slot, inst.id) });
     }
     if (requiredMatRarity) {
       buttons.push({ label: t('equip.reforge'), fill: reforgeOn ? 0x3355aa : C.btnOff, stroke: reforgeOn ? 0x6688dd : C.mid, on: reforgeOn, fn: () => this.openReforgeSelect(inst) });
     }
     if (salvageable) {
-      buttons.push({ label: t('equip.salvage'), fill: 0xeeeeee, stroke: C.mid, on: !this.busy, fn: () => this.confirmSalvage(inst) });
+      buttons.push({ label: t('equip.salvage'), fill: 0xeeeeee, stroke: C.mid, on: !this.bt.busy, fn: () => this.confirmSalvage(inst) });
     }
     const n = buttons.length;
     const gap = 8;
@@ -506,31 +513,41 @@ export class EquipmentScene implements Scene {
   // ── Actions ───────────────────────────────────────────────────────────────
 
   private async doCraft(defId: string): Promise<void> {
-    if (this.busy) return;
-    this.busy = true; this.render();
-    const res = await this.cb.craft(defId);
-    this.busy = false;
-    if (res.ok) this.showToast(t('equip.crafted').replace('{name}', this.itemName(defId)), C.green);
-    else this.showToast(t(res.key), C.red);
-    this.render();
+    if (this.bt.busy) return;
+    this.bt.start(); this.render();
+    try {
+      const res = await withTimeout(this.cb.craft(defId));
+      if (res.ok) this.showToast(t('equip.crafted').replace('{name}', this.itemName(defId)), C.green);
+      else this.showToast(t(res.key), C.red);
+    } catch (e) {
+      this.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
+    } finally {
+      this.bt.stop();
+      this.render();
+    }
   }
 
   private async doEnhance(instanceId: string): Promise<void> {
-    if (this.busy) return;
-    this.busy = true; this.render();
+    if (this.bt.busy) return;
+    this.bt.start(); this.render();
     const save = this.cb.getSave();
     const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
     const useProtect = this.useProtectEnhance && protectCount > 0;
-    const res = await this.cb.enhance(instanceId, useProtect || undefined);
-    this.busy = false;
-    if (res.ok) {
-      this.showToast(res.success
-        ? t('equip.enhanceOk').replace('{lv}', String(res.level))
-        : t('equip.enhanceFail'), res.success ? C.green : C.red);
-    } else {
-      this.showToast(t(res.key), C.red);
+    try {
+      const res = await withTimeout(this.cb.enhance(instanceId, useProtect || undefined));
+      if (res.ok) {
+        this.showToast(res.success
+          ? t('equip.enhanceOk').replace('{lv}', String(res.level))
+          : t('equip.enhanceFail'), res.success ? C.green : C.red);
+      } else {
+        this.showToast(t(res.key), C.red);
+      }
+    } catch (e) {
+      this.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
+    } finally {
+      this.bt.stop();
+      this.render();
     }
-    this.render();
   }
 
   private confirmSalvage(inst: EquipmentInstance): void {
@@ -542,23 +559,33 @@ export class EquipmentScene implements Scene {
   }
 
   private async doSalvage(instanceId: string): Promise<void> {
-    if (this.busy) return;
-    this.busy = true;
-    const res = await this.cb.salvage([instanceId]);
-    this.busy = false;
-    if (res.ok) { this.showToast(t('equip.salvaged'), C.green); this.detailId = null; }
-    else this.showToast(t(res.key), C.red);
-    this.render();
+    if (this.bt.busy) return;
+    this.bt.start();
+    try {
+      const res = await withTimeout(this.cb.salvage([instanceId]));
+      if (res.ok) { this.showToast(t('equip.salvaged'), C.green); this.detailId = null; }
+      else this.showToast(t(res.key), C.red);
+    } catch (e) {
+      this.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
+    } finally {
+      this.bt.stop();
+      this.render();
+    }
   }
 
   private async doEquip(slot: EquipSlot, instanceId: string | null): Promise<void> {
-    if (this.busy) return;
-    this.busy = true;
-    const res = await this.cb.equip(slot, instanceId);
-    this.busy = false;
-    if (res.ok) this.showToast(instanceId ? t('equip.equipped') : t('equip.unequipped'), C.green);
-    else this.showToast(t(res.key), C.red);
-    this.render();
+    if (this.bt.busy) return;
+    this.bt.start();
+    try {
+      const res = await withTimeout(this.cb.equip(slot, instanceId));
+      if (res.ok) this.showToast(instanceId ? t('equip.equipped') : t('equip.unequipped'), C.green);
+      else this.showToast(t(res.key), C.red);
+    } catch (e) {
+      this.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
+    } finally {
+      this.bt.stop();
+      this.render();
+    }
   }
 
   /** 打开洗练素材选择 modal（目标已在 detailId）。 */
@@ -641,13 +668,18 @@ export class EquipmentScene implements Scene {
   }
 
   private async doReforge(targetId: string, materialId: string): Promise<void> {
-    if (this.busy) return;
-    this.busy = true;
-    const res = await this.cb.reforge(targetId, materialId);
-    this.busy = false;
-    if (res.ok) this.showToast(t('equip.reforged'), C.green);
-    else this.showToast(t(res.key), C.red);
-    this.render();
+    if (this.bt.busy) return;
+    this.bt.start();
+    try {
+      const res = await withTimeout(this.cb.reforge(targetId, materialId));
+      if (res.ok) this.showToast(t('equip.reforged'), C.green);
+      else this.showToast(t(res.key), C.red);
+    } catch (e) {
+      this.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
+    } finally {
+      this.bt.stop();
+      this.render();
+    }
   }
 
   // ── Confirm modal ───────────────────────────────────────────────────────────
@@ -773,6 +805,7 @@ export class EquipmentScene implements Scene {
   // ── Scene interface / input ───────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
+    if (this.bt.busy) return;
     if (this.modalOpen) {
       for (const { rect, action } of this.modalHits) {
         if (this.inRect(x, y, rect)) { action(); return; }
@@ -803,6 +836,7 @@ export class EquipmentScene implements Scene {
   }
 
   update(dt: number): void {
+    if (this.bt.tick(dt)) this.render();
     if (this.toastTimer > 0) {
       this.toastTimer -= dt * 1000;
       if (this.toastTimer <= 0) this.toastLayer.removeChildren();

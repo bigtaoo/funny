@@ -3,7 +3,8 @@ import { Scene } from './SceneManager';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
 // ── EventScene — 限时活动（B6，ADR-014）──────────────────────────────────────
 //
@@ -57,7 +58,7 @@ export class EventScene implements Scene {
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
 
-  private busy = false;
+  private readonly bt = new BusyTracker();
   private toast: string | null = null;
   private toastTimer = 0;
   private events: EventView[] = [];
@@ -78,6 +79,7 @@ export class EventScene implements Scene {
       this.toastTimer -= dt;
       if (this.toastTimer <= 0) { this.toast = null; this.render(); }
     }
+    if (this.bt.tick(dt)) this.render();
   }
 
   destroy(): void {
@@ -94,7 +96,7 @@ export class EventScene implements Scene {
   }
 
   private handleDown(x: number, y: number): void {
-    if (this.busy) return;
+    if (this.bt.busy) return;
     for (const h of this.hits) {
       if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
         h.fn();
@@ -136,11 +138,16 @@ export class EventScene implements Scene {
       empty.x = w / 2; empty.y = h * 0.5;
       this.container.addChild(empty);
       this.renderToast();
+      if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
       return;
     }
 
     const event = this.events[this.selectedIdx];
-    if (!event) { this.renderToast(); return; }
+    if (!event) {
+      this.renderToast();
+      if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
+      return;
+    }
 
     const contentTop = h * 0.12;
 
@@ -152,6 +159,7 @@ export class EventScene implements Scene {
 
     this.renderEvent(event, bodyTop, h - bodyTop - h * 0.03);
     this.renderToast();
+    if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
   }
 
   private renderTabs(top: number, tabH: number): void {
@@ -321,16 +329,16 @@ export class EventScene implements Scene {
   }
 
   private async doClaim(eventId: string, rewardId: string): Promise<void> {
-    if (this.busy || !this.cb.onClaimReward) return;
-    this.busy = true;
+    if (this.bt.busy || !this.cb.onClaimReward) return;
+    this.bt.start();
     try {
-      const r = await this.cb.onClaimReward(eventId, rewardId);
+      const r = await withTimeout(this.cb.onClaimReward(eventId, rewardId));
       this.showToast(t('event.rewards.claimToast', { n: r.pointsLeft }));
       await this.load();
-    } catch {
-      this.showToast(t('event.rewards.claimFailed'));
+    } catch (e) {
+      this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('event.rewards.claimFailed'));
     } finally {
-      this.busy = false;
+      this.bt.stop();
     }
   }
 }
