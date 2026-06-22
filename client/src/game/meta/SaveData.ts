@@ -60,6 +60,20 @@ export interface SaveData {
     wins: number;
     losses: number;
     streak: number;
+    // —— S11 赛季字段（legacy 档可缺）——
+    seasonNo?: number;
+    seasonPeakElo?: number;
+    seasonPeakRank?: string;
+    reachedRanks?: string[];
+  };
+  // —— S11 战令（懒创建；本季首次打 ranked 或购买后出现）——
+  battlePass?: {
+    seasonNo: number;
+    xp: number;
+    level: number;
+    hasPass: boolean;
+    claimedFree: number[];
+    claimedPaid: number[];
   };
 
   // —— 客户端同步段（轻校验，§2）——

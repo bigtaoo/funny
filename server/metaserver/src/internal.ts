@@ -16,8 +16,19 @@ import {
   createInternalAuth,
   sanitizePvpReportedStats,
   accrueStats,
+  computeFirstReachGrant,
+  BP_XP_PER_RANKED_WIN,
+  BP_XP_PER_RANKED_LOSS,
+  xpToLevel,
   type StatKey,
+  type RankId,
 } from '@nw/shared';
+import {
+  getCurrentSeason,
+  migrateIfStale,
+  rollSeason,
+} from './ladderSeason.js';
+import { writeMigratedSave } from './save.js';
 import type { GatewayClient } from './gatewayClient.js';
 import type { CommercialClient } from './commercialClient.js';
 import { adsDayKey } from './economy.js';
@@ -509,6 +520,50 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       equipmentInv: s?.equipmentInv ?? {},
     });
   });
+
+  // ── POST /admin/ladder/season/roll ────────────────────────────────────────
+  // admin（ops 后台）手动开启新赛季（S11-SE-3，SEASON_DESIGN §3.1）。
+  // CAS 幂等：并发/误点重入返回当前赛季，不重复推进。
+  app.post('/admin/ladder/season/roll', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    try {
+      const season = await rollSeason(cols, now());
+      log.info('POST /admin/ladder/season/roll', { seasonNo: season.seasonNo });
+      return reply.send({ ok: true, season });
+    } catch (e) {
+      log.error('rollSeason failed', { err: (e as Error).message });
+      return reply.code(500).send({ ok: false, error: 'roll failed' });
+    }
+  });
+
+  // ── GET /internal/leaderboard ─────────────────────────────────────────────────────
+  // 全服 Top100（S11-SE-5，SEASON_DESIGN §5）。X-Internal-Key 鉴权，供 admin 查询；玩家侧见 service.ts getLeaderboard。
+  app.get('/internal/leaderboard', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const season = await getCurrentSeason(cols, now());
+    const top = await cols.saves
+      .find({ 'save.pvp.seasonNo': season.seasonNo })
+      .sort({ 'save.pvp.elo': -1 })
+      .limit(100)
+      .project({ _id: 1, 'save.pvp': 1, 'save.equipped': 1 })
+      .toArray();
+    const accounts = await Promise.all(
+      top.map((d) => cols.accounts.findOne({ _id: d._id }, { projection: { displayName: 1, publicId: 1 } })),
+    );
+    const entries = top.map((d, i) => ({
+      rank: i + 1,
+      accountId: d._id,
+      displayName: accounts[i]?.displayName,
+      publicId: accounts[i]?.publicId,
+      elo: (d as unknown as { save: { pvp: { elo: number; rank: string } } }).save.pvp.elo,
+      rankId: (d as unknown as { save: { pvp: { rank: string } } }).save.pvp.rank,
+    }));
+    return reply.send({ season, top: entries });
+  });
 }
 
 /**
@@ -582,8 +637,8 @@ async function settleElo(
   const { winner: wDelta, loser: lDelta } = computeEloDelta(wElo, lElo);
   const out: Record<number, EloResult> = {};
   const [wRes, lRes] = await Promise.all([
-    applyPvp(cols, now, winner.accountId, wDoc, wDelta, true, winnerStats),
-    applyPvp(cols, now, loser.accountId, lDoc, lDelta, false, loserStats),
+    applyPvp(cols, now, commercial, winner.accountId, wDoc, wDelta, true, winnerStats),
+    applyPvp(cols, now, commercial, loser.accountId, lDoc, lDelta, false, loserStats),
   ]);
   if (wRes) out[winner.side] = wRes;
   if (lRes) out[loser.side] = lRes;
@@ -612,6 +667,7 @@ async function settleElo(
 async function applyPvp(
   cols: Collections,
   now: () => number,
+  commercial: CommercialClient,
   accountId: string,
   doc: SaveDoc | null,
   delta: number,
@@ -620,19 +676,47 @@ async function applyPvp(
 ): Promise<EloResult | null> {
   // S9-6: 本局成就计数增量 = L1 清洗后的 kill/cast + 服务器自算的 pvp.wins（仅胜方 +1，不信客户端）。
   const fullStatDelta: Partial<Record<StatKey, number>> = { ...statDelta, ...(won ? { 'pvp.wins': 1 } : {}) };
+  // S11：ranked 结算前先过惰性迁移（季末才触发，通常 no-op）。
+  const currentSeason = await getCurrentSeason(cols, now()).catch(() => null);
   for (let attempt = 0; attempt < 3; attempt++) {
-    const cur = attempt === 0 && doc ? doc : await cols.saves.findOne({ _id: accountId });
+    let cur = attempt === 0 && doc ? doc : await cols.saves.findOne({ _id: accountId });
     if (!cur) return null; // ranked 玩家应已有存档
+    // 惰性迁移：若落后赛季则先结算上季并软重置（极少触发，通常 no-op）。
+    if (currentSeason) {
+      const mr = await migrateIfStale(cols, commercial, cur.save, currentSeason, now());
+      if (mr.migrated) {
+        // 迁移产出的 save 需先落库，再做 ELO 更新；否则迁移结果丢失。
+        const migrated = await writeMigratedSave(
+          cols,
+          mr.save,
+          now(),
+          (s) => migrateIfStale(cols, commercial, s, currentSeason, now()),
+        );
+        cur = { _id: cur._id, save: migrated, rev: migrated.rev };
+      }
+    }
     const pvp = cur.save.pvp;
     const after = Math.max(ELO_FLOOR, pvp.elo + delta);
     const appliedDelta = after - pvp.elo;
-    const rank = eloToRank(after);
+    const rank = eloToRank(after) as RankId;
+
+    // S11：段位首达金币 + 峰值追踪（§4.3）
+    const reachedRanks: RankId[] = pvp.reachedRanks ?? [];
+    const { coins: firstReachAmt, newly } = computeFirstReachGrant(rank, reachedRanks);
+
     const nextStats = accrueStats(cur.save.stats, fullStatDelta); // 懒创建：无增量则原样保留
+    const newPeakElo = Math.max(pvp.seasonPeakElo ?? after, after);
+    const newPeakRank = eloToRank(newPeakElo) as RankId;
+    // S11：每局 ranked 给予赛季经验（战令进度，§C）。
+    const bpXpGain = won ? BP_XP_PER_RANKED_WIN : BP_XP_PER_RANKED_LOSS;
+    const prevBp = cur.save.battlePass;
+    const newBp = prevBp ? { ...prevBp, xp: prevBp.xp + bpXpGain, level: xpToLevel(prevBp.xp + bpXpGain) } : null;
     const next: SaveData = {
       ...cur.save,
       rev: cur.save.rev + 1,
       updatedAt: now(),
       ...(nextStats ? { stats: nextStats } : {}),
+      ...(newBp ? { battlePass: newBp } : {}),
       pvp: {
         ...pvp,
         elo: after,
@@ -640,14 +724,33 @@ async function applyPvp(
         streak: nextStreak(pvp.streak, won),
         wins: pvp.wins + (won ? 1 : 0),
         losses: pvp.losses + (won ? 0 : 1),
+        seasonNo: pvp.seasonNo ?? (currentSeason?.seasonNo ?? 1),
+        seasonPeakElo: newPeakElo,
+        seasonPeakRank: newPeakRank,
+        reachedRanks: newly.length > 0 ? [...reachedRanks, ...newly] : reachedRanks,
       },
     };
     const res = await cols.saves.findOneAndUpdate(
-      { _id: accountId, rev: cur.rev },
+      { _id: accountId, rev: cur.save.rev },
       { $set: { save: next, rev: next.rev } },
       { returnDocument: 'after' },
     );
-    if (res) return { delta: appliedDelta, after, rankAfter: rank };
+    if (res) {
+      // 首达金币：玩家在场，直接记账（同成就/称号路径，即时反馈）。
+      if (firstReachAmt > 0 && commercial.available) {
+        try {
+          await commercial.grant({
+            accountId,
+            amount: firstReachAmt,
+            reason: 'rank_first_reach',
+            orderId: `rank.first.${accountId}.${newly.join('.')}`,
+          });
+        } catch (e) {
+          log.error('firstReach coin grant failed', { accountId, err: (e as Error).message });
+        }
+      }
+      return { delta: appliedDelta, after, rankAfter: rank };
+    }
     // rev 冲突（客户端并发 PUT /save）→ 重读重试
   }
   return null;

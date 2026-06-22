@@ -23,6 +23,9 @@ import {
   EQUIPMENT_INV_CAP,
   equipmentInvCount,
   type EquipmentInstance,
+  BATTLEPASS_BUY_COST,
+  makeFreshBattlePass,
+  claimBpReward,
 } from '@nw/shared';
 import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import {
@@ -38,7 +41,8 @@ import {
 } from '@nw/shared';
 import { CHAT_SEND_RATE_PER_MIN, regionFromAcceptLanguage } from '@nw/shared';
 import { ACHIEVEMENTS, findAchievement, validateClaim } from '@nw/shared';
-import { getOrCreateSave, putSave } from './save.js';
+import { getOrCreateSave, putSave, writeMigratedSave } from './save.js';
+import { getCurrentSeason, migrateIfStale } from './ladderSeason.js';
 import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment, reforgeEquipment } from './equipment.js';
 import {
   changePassword,
@@ -277,7 +281,22 @@ export class MetaService {
         req.log.warn({ err: e }, 'commercial reconcile/mirror failed (serving local save)');
       }
     }
-    const save = await getOrCreateSave(cols, accountId, now());
+    let save = await getOrCreateSave(cols, accountId, now());
+    // 惰性赛季迁移（S11）：pvp.seasonNo 落后则结算上季奖励 + 软重置 + 更新战令。
+    try {
+      const currentSeason = await getCurrentSeason(cols, now());
+      const r = await migrateIfStale(cols, commercial, save, currentSeason, now());
+      if (r.migrated) {
+        save = await writeMigratedSave(
+          cols,
+          r.save,
+          now(),
+          (s) => migrateIfStale(cols, commercial, s, currentSeason, now()),
+        );
+      }
+    } catch (e) {
+      req.log.warn({ err: e }, 'season migrate failed (serving pre-migration save)');
+    }
     const displayName = await getDisplayName(cols, accountId);
     const publicId = await ensurePublicId(cols, accountId);
     return ok({ save, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
@@ -1306,5 +1325,126 @@ export class MetaService {
     const r = await reforgeEquipment(cols, now, accountId, targetId, materialId, idempotencyKey);
     if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
     return ok({ instance: r.instance, save: r.save });
+  }
+
+  // ── S11 排行榜 / 战令 ──────────────────────────────────────────────────────
+
+  /** Top-100 天梯排行榜（当前赛季 ELO 降序，S11 §5）。 */
+  async getLeaderboard(req: FastifyRequest) {
+    const { cols, now } = this.deps;
+    const season = await getCurrentSeason(cols, now());
+    const top = await cols.saves
+      .find({ 'save.pvp.seasonNo': season.seasonNo })
+      .sort({ 'save.pvp.elo': -1 })
+      .limit(100)
+      .project({ _id: 1, 'save.pvp': 1 })
+      .toArray();
+    const accountIds = top.map((d) => d._id);
+    const accounts = await cols.accounts
+      .find({ _id: { $in: accountIds } }, { projection: { _id: 1, displayName: 1, publicId: 1 } })
+      .toArray();
+    const byId = new Map(accounts.map((a) => [a._id, a]));
+    const entries = top.map((d, i) => {
+      const a = byId.get(d._id);
+      const pvp = (d as unknown as { save: { pvp: { elo: number; rank: string } } }).save.pvp;
+      return {
+        rank: i + 1,
+        displayName: a?.displayName ?? '',
+        publicId: a?.publicId ?? '',
+        elo: pvp.elo,
+        pvpRank: pvp.rank,
+      };
+    });
+    return ok({ seasonNo: season.seasonNo, entries });
+  }
+
+  /** 购买当前赛季战令（600 金币，S11 §9）。 */
+  async buyBattlePass(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.ensureCommercial(reply)) return;
+    const accountId = accountIdOf(req);
+    const { cols, commercial, now } = this.deps;
+
+    // 先确认/创建战令数据（惰性创建：本季首次购买时初始化）。
+    const save = await getOrCreateSave(cols, accountId, now());
+    const currentSeason = await getCurrentSeason(cols, now());
+    let bp = save.battlePass?.seasonNo === currentSeason.seasonNo
+      ? save.battlePass
+      : makeFreshBattlePass(currentSeason.seasonNo);
+    if (bp.hasPass) {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'battle pass already purchased'));
+    }
+
+    const orderId = randomUUID();
+    const charge = await commercial.spend({ accountId, amount: BATTLEPASS_BUY_COST, reason: 'battlepass', orderId });
+    if (!charge.ok) {
+      if (charge.error === 'INSUFFICIENT_FUNDS') {
+        return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough coins'));
+      }
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, charge.error));
+    }
+
+    // 原子写 hasPass=true（乐观锁）。
+    const out = await this.mutateSave(accountId, (s) => {
+      const curBp = s.battlePass?.seasonNo === currentSeason.seasonNo
+        ? s.battlePass
+        : makeFreshBattlePass(currentSeason.seasonNo);
+      if (curBp.hasPass) return 'ALREADY_PURCHASED';
+      return { ...s, battlePass: { ...curBp, hasPass: true } };
+    });
+    if ('error' in out) {
+      if (out.error === 'ALREADY_PURCHASED') {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'battle pass already purchased'));
+      }
+      return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
+    }
+    bp = out.save.battlePass!;
+    const finalSave = await mirrorCoins(cols, accountId, charge.coinsAfter, now());
+    return ok({ battlePass: { ...bp, ...finalSave.battlePass } });
+  }
+
+  /** 领取战令奖励（免费轨 or 付费轨，S11 §9）。 */
+  async claimBattlePass(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { track, level } = req.body as { track: 'free' | 'paid'; level: number };
+    const { cols, commercial, now } = this.deps;
+
+    // 原子校验 + 记领取（乐观锁防双击）。
+    let claimedReward: { kind: string; count: number } | null = null;
+    const out = await this.mutateSave(accountId, (s) => {
+      const bp = s.battlePass;
+      if (!bp) return 'NO_BATTLEPASS';
+      const r = claimBpReward(bp, track, level);
+      if (!r.ok) return r.error;
+      claimedReward = r.reward;
+      return { ...s, battlePass: r.bp };
+    });
+    if ('error' in out) {
+      switch (out.error) {
+        case 'NO_BATTLEPASS':
+        case 'BAD_REQUEST':
+          return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'bad request'));
+        case 'NOT_REACHED':
+          return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level not reached'));
+        case 'PASS_REQUIRED':
+          return reply.code(403).send(err(ErrorCode.NOT_FOUND, 'battle pass not purchased'));
+        case 'ALREADY_CLAIMED':
+          return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
+        default:
+          return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
+      }
+    }
+    const reward = claimedReward!;
+    let finalSave = out.save;
+    // 若奖励含金币，经 commercial 发放后镜像钱包。
+    if (reward.kind === 'coins' && reward.count > 0 && commercial.available) {
+      try {
+        const orderId = `bp.claim.${accountId}.${track}.${level}`;
+        const g = await commercial.grant({ accountId, amount: reward.count, reason: 'battlepass_claim', orderId });
+        if (g.ok) finalSave = await mirrorCoins(cols, accountId, g.coinsAfter, now());
+      } catch (e) {
+        req.log.warn({ err: e }, 'battlepass claim coin grant failed (coins may be delayed)');
+      }
+    }
+    return ok({ battlePass: finalSave.battlePass!, reward });
   }
 }
