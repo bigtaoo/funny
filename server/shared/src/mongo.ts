@@ -83,6 +83,8 @@ export interface MatchDoc {
   winner: number;
   reason: string;
   hashOk: boolean;
+  /** C3：hash 不一致且对等裁判未能介入时置 true（admin /admin/mismatches 可见）。 */
+  hashMismatch?: boolean;
   /** Pointer to externally-stored replay (large matches); reserved, not yet used. */
   replayRef?: string;
   /** Embedded replay (small matches) — the retained frame log, zero extra cost. */

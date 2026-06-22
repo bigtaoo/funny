@@ -260,7 +260,7 @@
 
 ---
 
-### C3  PvP hash 对比（S4-2）
+### ✅ C3  PvP hash 对比（S4-2）
 
 **范围**（`metaserver/src/internal.ts`）：
 - `match_over` 已有 `hashOk` 落库，补：hash mismatch 时除 S1-J 裁判路径外，服务器主动记录 `matches.hashMismatch` 事件并触发警报（admin 后台可见）。

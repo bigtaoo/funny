@@ -385,6 +385,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         winner: cheat ? body.players.find((p) => p.side !== cheat!.side)!.side : body.winner_side,
         reason: body.reason,
         hashOk: body.hash_ok,
+        // C3：hash 不一致且对等裁判未介入（无 cheat 定罪）→ 标记供 admin 审查。
+        ...(!body.hash_ok && !cheat ? { hashMismatch: true } : {}),
         ...(inline ? { replay: replayDoc } : { replayRef: body.room_id }),
         ...(cheat ? { cheat } : {}),
         ...(reportedStats ? { reportedStats } : {}),
@@ -395,7 +397,32 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         if ((e as { code?: number }).code !== 11000) log.error('archive match failed', { err: (e as Error).message });
       });
 
+    // C3：hash 不一致且未经对等裁判 → 告警日志（admin /admin/mismatches 可见）。
+    if (!body.hash_ok && !cheat) {
+      log.warn('hash mismatch unresolved', {
+        roomId: body.room_id,
+        mode: body.mode,
+        accountIds: body.players.map((p) => p.accountId),
+      });
+    }
+
     return reply.send({ ok: true, ...(eloBySide ? { elo: eloBySide } : {}) });
+  });
+
+  // ── GET /internal/mismatches（C3）─────────────────────────────────────────
+  // 返回 24h 内 hashMismatch=true 的对局列表（admin 调用）。
+  app.get('/internal/mismatches', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const since = now() - 24 * 3600 * 1000;
+    const matches = await cols.matches
+      .find({ hashMismatch: true, ts: { $gte: since } })
+      .sort({ ts: -1 })
+      .limit(200)
+      .project({ roomId: 1, mode: 1, players: 1, reason: 1, ts: 1 })
+      .toArray();
+    return reply.send({ ok: true, matches });
   });
 
   // ── 材料扣除 / 发放（S8-5，worldsvc 拍卖场调用）─────────────────────────────────

@@ -161,6 +161,13 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, player: await svc.lookupPlayer(publicId) });
         }
 
+        // ── hash mismatch 对局列表（C3）──
+        if (method === 'GET' && path === '/admin/mismatches') {
+          requireCap(actor, 'anticheat.view');
+          const rows = await svc.listMismatches();
+          return send(res, 200, { ok: true, mismatches: rows });
+        }
+
         // ── 成就反作弊审查队列（S9-7）──
         if (method === 'GET' && path === '/admin/anticheat/reviews') {
           requireCap(actor, 'anticheat.view');

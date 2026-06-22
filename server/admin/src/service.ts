@@ -35,7 +35,7 @@ import {
 } from '@nw/shared';
 import { METRIC_KEYS } from '@nw/shared';
 import type { AdminAccountDoc, AdminCollections, AuditDoc, CompTicketDoc, TradeAuditTicketDoc } from './db';
-import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, MailDispatcher, PlayerClient, PlayerProfile, StatsClient, WorldClient, SlgWorldSummary } from './clients';
+import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, MailDispatcher, MismatchClient, MismatchRow, PlayerClient, PlayerProfile, StatsClient, WorldClient, SlgWorldSummary } from './clients';
 import type { AuctionAnomaly } from '@nw/shared';
 
 const log = createLogger('admin:service');
@@ -65,6 +65,7 @@ export interface AdminServiceDeps {
   stats: StatsClient;
   players: PlayerClient;
   antiCheat: AntiCheatClient;
+  mismatches: MismatchClient;
   mail: MailDispatcher;
   analytics: AnalyticsClient;
   world: WorldClient;
@@ -98,6 +99,7 @@ export class AdminService {
   private readonly stats: StatsClient;
   private readonly players: PlayerClient;
   private readonly antiCheat: AntiCheatClient;
+  private readonly mismatches: MismatchClient;
   private readonly mail: MailDispatcher;
   private readonly analytics: AnalyticsClient;
   private readonly world: WorldClient;
@@ -110,10 +112,17 @@ export class AdminService {
     this.stats = deps.stats;
     this.players = deps.players;
     this.antiCheat = deps.antiCheat;
+    this.mismatches = deps.mismatches;
     this.mail = deps.mail;
     this.analytics = deps.analytics;
     this.world = deps.world;
     this.now = deps.now;
+  }
+
+  /** 24h 内 hash mismatch 对局列表（C3，anticheat.view 权限）。 */
+  async listMismatches(): Promise<MismatchRow[]> {
+    if (!this.mismatches.available) return [];
+    return this.mismatches.listMismatches();
   }
 
   // ───────────────────── SLG 赛季运维（G7/§17.7）─────────────────────
