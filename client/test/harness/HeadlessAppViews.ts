@@ -28,6 +28,7 @@ import type { GachaSceneCallbacks } from '../../src/scenes/GachaScene';
 import type { CampaignMapCallbacks } from '../../src/scenes/CampaignMapScene';
 import type { LevelPrepCallbacks } from '../../src/scenes/LevelPrepScene';
 import type { CollectionCallbacks } from '../../src/scenes/CollectionScene';
+import type { EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
 import type { StatsCallbacks } from '../../src/scenes/StatsScene';
 import type { ReplaySceneCallbacks } from '../../src/scenes/ReplayScene';
 import type { RoomSceneCallbacks } from '../../src/scenes/RoomScene';
@@ -42,7 +43,7 @@ import type { DefenseEditorCallbacks } from '../../src/scenes/DefenseEditorScene
 
 export type ScreenName =
   | 'none' | 'intro' | 'lobby' | 'settings' | 'login' | 'shop' | 'gacha'
-  | 'campaignMap' | 'levelPrep' | 'collection' | 'stats' | 'replay' | 'result' | 'room' | 'friends'
+  | 'campaignMap' | 'levelPrep' | 'collection' | 'equipment' | 'stats' | 'replay' | 'result' | 'room' | 'friends'
   | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor';
 
 interface ActiveMatch {
@@ -71,6 +72,7 @@ export class HeadlessAppViews implements AppViews {
   campaignMap?: CampaignMapCallbacks;
   levelPrep?: LevelPrepCallbacks;
   collection?: CollectionCallbacks;
+  equipment?: EquipmentCallbacks;
   stats?: StatsCallbacks;
   replay?: ReplaySceneCallbacks;
   result?: ResultViewProps;
@@ -93,7 +95,10 @@ export class HeadlessAppViews implements AppViews {
     this.screen = 'lobby';
     this.lobby = cb;
     this.lastSocialBadge = undefined;
-    return { applySocialBadge: (n) => { this.lastSocialBadge = n; } };
+    return {
+      applySocialBadge: (n) => { this.lastSocialBadge = n; },
+      applyAchievementBadge: () => {},
+    };
   }
   showSettings(cb: SettingsSceneCallbacks): void { this.screen = 'settings'; this.settings = cb; }
   showLogin(cb: LoginSceneCallbacks): void { this.screen = 'login'; this.login = cb; }
@@ -102,6 +107,7 @@ export class HeadlessAppViews implements AppViews {
   showCampaignMap(cb: CampaignMapCallbacks): void { this.screen = 'campaignMap'; this.campaignMap = cb; }
   showLevelPrep(cb: LevelPrepCallbacks): void { this.screen = 'levelPrep'; this.levelPrep = cb; }
   showCollection(cb: CollectionCallbacks): void { this.screen = 'collection'; this.collection = cb; }
+  showEquipment(cb: EquipmentCallbacks): void { this.screen = 'equipment'; this.equipment = cb; }
   showStats(cb: StatsCallbacks): void { this.screen = 'stats'; this.stats = cb; }
   showReplay(replay: Replay, cb: ReplaySceneCallbacks): void {
     this.screen = 'replay';

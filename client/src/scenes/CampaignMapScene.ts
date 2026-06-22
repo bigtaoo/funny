@@ -32,6 +32,8 @@ export interface CampaignMapCallbacks {
   onSelectLevel(levelId: string): void;
   /** Open the collection (wardrobe) scene. */
   onOpenCollection(): void;
+  /** Open the equipment scene (E5). Absent when offline (server-authoritative). */
+  onOpenEquipment?(): void;
   /** Stars earned per level id (0..3); absent = 0. */
   getStars(): Record<string, 1 | 2 | 3>;
   /** Cleared level ids — drives the sequential unlock gate. */
@@ -214,6 +216,19 @@ export class CampaignMapScene implements Scene {
       rect: { x: coll.x - coll.width - Math.round(w * 0.03), y: 0, w: coll.width + Math.round(w * 0.06), h: tbH },
       fn: () => this.cb.onOpenCollection(),
     });
+
+    // Equipment entry (E5) — to the left of collection; only when online (server-authoritative).
+    if (this.cb.onOpenEquipment) {
+      const equip = txt(t('campaign.equipment'), Math.round(h * 0.024), C.accent, true);
+      equip.anchor.set(1, 0.5);
+      equip.x = coll.x - coll.width - Math.round(w * 0.05); equip.y = tbH / 2;
+      root.addChild(equip);
+      const open = this.cb.onOpenEquipment;
+      hits.push({
+        rect: { x: equip.x - equip.width - Math.round(w * 0.02), y: 0, w: equip.width + Math.round(w * 0.04), h: tbH },
+        fn: () => open(),
+      });
+    }
 
     return tbH;
   }

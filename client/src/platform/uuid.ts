@@ -6,7 +6,7 @@ import type { IStorage } from './IPlatform';
 const DEVICE_ID_KEY = 'nw_device_id';
 
 /** RFC4122 v4，优先用 crypto.randomUUID，缺省回退手搓。 */
-function genUuid(): string {
+export function genUuid(): string {
   const c = (globalThis as { crypto?: Crypto }).crypto;
   if (c && typeof c.randomUUID === 'function') {
     return c.randomUUID();

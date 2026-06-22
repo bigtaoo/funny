@@ -29,6 +29,7 @@ import type { GachaSceneCallbacks } from '../scenes/GachaScene';
 import type { CampaignMapCallbacks } from '../scenes/CampaignMapScene';
 import type { LevelPrepCallbacks } from '../scenes/LevelPrepScene';
 import type { CollectionCallbacks } from '../scenes/CollectionScene';
+import type { EquipmentCallbacks } from '../scenes/EquipmentScene';
 import type { StatsCallbacks } from '../scenes/StatsScene';
 import type { AchievementCallbacks } from '../scenes/AchievementScene';
 import type { ReplaySceneCallbacks } from '../scenes/ReplayScene';
@@ -116,6 +117,8 @@ export interface AppViews {
   showCampaignMap(cb: CampaignMapCallbacks): void;
   showLevelPrep(cb: LevelPrepCallbacks): void;
   showCollection(cb: CollectionCallbacks): void;
+  /** 装备系统（E5）：背包/锻造/强化/分解/穿戴。服务器权威，需登录在线。 */
+  showEquipment(cb: EquipmentCallbacks): void;
   showStats(cb: StatsCallbacks): void;
   showAchievements(cb: AchievementCallbacks): void;
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void;
