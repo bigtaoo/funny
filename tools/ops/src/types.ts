@@ -15,6 +15,11 @@ export type AdminCapability =
   | 'comp.view'
   | 'audit.view.all'
   | 'audit.view.self'
+  | 'ladder.season.manage'
+  | 'slg.season.view'
+  | 'slg.season.manage'
+  | 'slg.audit.view'
+  | 'slg.audit.manage'
   | 'admin.manage';
 
 export interface AdminAccountView {

@@ -230,6 +230,7 @@ export const en: Record<TranslationKey, string> = {
   'shop.tapToType': 'Tap to type',
   'shop.skinLabel': 'Skin',
   'shop.loading': 'Loading…',
+  'shop.processing': 'Processing',
   'shop.empty': 'No items',
 
   // ── Gacha (S2-6) ─────────────────────────────────────────────────────────────

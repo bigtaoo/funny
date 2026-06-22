@@ -121,6 +121,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 ```
 - 商品来自服务端 `shopItems`；购买走 `EconomyClient`（服务器权威，§META S2-2）。
 - i18n：`shop.*`。
+- **充值码 overlay**：Canvas 画伪输入框，背后挂隐藏 `<input>` 捕获键盘。光标用 `|` 以 0.5s 交替闪烁；空输入时光标-on 显示 `|`、光标-off 显示 placeholder，确保聚焦即可见光标（不依赖已有字符才显示）。
 
 ### 4.4 GachaScene（盲盒，S2）
 ```

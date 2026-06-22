@@ -54,6 +54,12 @@ export class ShopScene implements Scene {
   private caretOn = true;
   private caretTimer = 0;
 
+  /** Loading indicator: shown when a request has been in-flight for >1 s. */
+  private busyElapsed = 0;
+  private loadingVisible = false;
+  private loadingDots = 0;
+  private loadingDotTimer = 0;
+
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
   private hiddenInput: HTMLInputElement | null = null;
@@ -78,6 +84,21 @@ export class ShopScene implements Scene {
         this.caretTimer = 0;
         this.caretOn = !this.caretOn;
         this.render();
+      }
+    }
+    if (this.busy) {
+      this.busyElapsed += dt;
+      if (!this.loadingVisible && this.busyElapsed >= 1.0) {
+        this.loadingVisible = true;
+        this.render();
+      }
+      if (this.loadingVisible) {
+        this.loadingDotTimer += dt;
+        if (this.loadingDotTimer >= 0.4) {
+          this.loadingDotTimer = 0;
+          this.loadingDots = (this.loadingDots + 1) % 3;
+          this.render();
+        }
       }
     }
   }
@@ -141,12 +162,12 @@ export class ShopScene implements Scene {
     if (this.busy) return;
     const code = this.rechargeCode.trim();
     if (!code) { this.closeRecharge(); return; }
-    this.busy = true;
+    this.startBusy();
     this.rechargeOpen = false;
     this.hiddenInput?.blur();
     this.render();
     const res = await this.cb.recharge(code);
-    this.busy = false;
+    this.stopBusy();
     this.toast = res.ok
       ? { text: t('shop.rechargeOk', { coins: res.coins ?? 0 }), color: C.green }
       : { text: t('shop.rechargeFail'), color: C.red };
@@ -157,15 +178,28 @@ export class ShopScene implements Scene {
 
   private async onBuy(itemId: string): Promise<void> {
     if (this.busy) return;
-    this.busy = true;
+    this.startBusy();
     this.toast = null;
     this.render();
     const res = await this.cb.buy(itemId);
-    this.busy = false;
+    this.stopBusy();
     this.toast = res.ok
       ? { text: t('shop.bought'), color: C.green }
       : { text: t(res.key), color: C.red };
     this.render();
+  }
+
+  private startBusy(): void {
+    this.busy = true;
+    this.busyElapsed = 0;
+    this.loadingVisible = false;
+    this.loadingDots = 0;
+    this.loadingDotTimer = 0;
+  }
+
+  private stopBusy(): void {
+    this.busy = false;
+    this.loadingVisible = false;
   }
 
   // ── Input ──────────────────────────────────────────────────────────────────────
@@ -189,6 +223,7 @@ export class ShopScene implements Scene {
     this.drawFooter();
     if (this.toast) this.drawToast();
     if (this.rechargeOpen) this.drawRechargeOverlay();
+    if (this.loadingVisible) this.drawLoadingOverlay();
   }
 
   private drawBackground(): void {
@@ -365,8 +400,11 @@ export class ShopScene implements Scene {
     this.container.addChild(box);
 
     const hasText = this.rechargeCode.length > 0;
-    const display = (hasText ? this.rechargeCode : t('shop.tapToType')) + (hasText && this.caretOn ? '|' : '');
-    const valTxt = txt(display, Math.round(fieldH * 0.40), hasText ? C.dark : C.light);
+    // When empty: caret-on shows '|' (so user knows it's focused), caret-off shows placeholder.
+    const display = hasText
+      ? this.rechargeCode + (this.caretOn ? '|' : '')
+      : (this.caretOn ? '|' : t('shop.tapToType'));
+    const valTxt = txt(display, Math.round(fieldH * 0.40), hasText || this.caretOn ? C.dark : C.light);
     valTxt.anchor.set(0, 0.5); valTxt.x = fieldX + Math.round(fieldW * 0.04); valTxt.y = fieldY + fieldH / 2;
     this.container.addChild(valTxt);
     this.hits.push({ rect: { x: fieldX, y: fieldY, w: fieldW, h: fieldH }, fn: () => this.hiddenInput?.focus() });
@@ -387,6 +425,30 @@ export class ShopScene implements Scene {
     // tap anywhere outside the panel dismisses it, but taps inside don't.
     this.hits.push({ rect: { x: px, y: py, w: panelW, h: panelH }, fn: () => { /* keep open */ } });
     this.hits.push({ rect: { x: 0, y: 0, w, h }, fn: () => this.closeRecharge() });
+  }
+
+  private drawLoadingOverlay(): void {
+    const { w, h } = this;
+    // Full-screen dim — blocks all taps while request is in flight.
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.55); dim.drawRect(0, 0, w, h); dim.endFill();
+    this.container.addChild(dim);
+    this.hits = [{ rect: { x: 0, y: 0, w, h }, fn: () => { /* absorb taps */ } }];
+
+    const dots = '.'.repeat(this.loadingDots + 1);
+    const label = t('shop.processing') + dots;
+    const lbl = txt(label, Math.round(h * 0.030), 0xffffff, true);
+    const padX = Math.round(w * 0.08);
+    const padY = Math.round(h * 0.022);
+    const bw = Math.max(lbl.width + padX * 2, Math.round(w * 0.40));
+    const bh = lbl.height + padY * 2;
+    const bx = (w - bw) / 2;
+    const by = (h - bh) / 2;
+    const panel = sketchPanel(bw, bh, { fill: C.dark, fillAlpha: 0.92, border: C.gold, width: 2, seed: seedFor(bw, bh, 9) });
+    panel.x = bx; panel.y = by;
+    this.container.addChild(panel);
+    lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
+    this.container.addChild(lbl);
   }
 
   private addButton(

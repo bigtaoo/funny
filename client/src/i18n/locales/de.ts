@@ -230,6 +230,7 @@ export const de: Record<TranslationKey, string> = {
   'shop.tapToType': 'Zum Tippen tippen',
   'shop.skinLabel': 'Skin',
   'shop.loading': 'Lädt…',
+  'shop.processing': 'Verarbeitung',
   'shop.empty': 'Keine Artikel',
 
   // ── Lootbox (S2-6) ───────────────────────────────────────────────────────────

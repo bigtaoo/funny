@@ -229,6 +229,7 @@ export const zh = {
   'shop.tapToType': '点此输入',
   'shop.skinLabel': '皮肤',
   'shop.loading': '加载中…',
+  'shop.processing': '处理中',
   'shop.empty': '暂无商品',
 
   // ── 盲盒（S2-6） ──────────────────────────────────────────────────────────────
