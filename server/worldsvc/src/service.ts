@@ -1843,7 +1843,9 @@ export class WorldService {
 
     // 训练开始时间紧接上一批结束（队列串联），没有在训批次则立即开始。
     const lastComplete = queue.length > 0 ? queue[queue.length - 1]!.completeAt : t;
-    const duration = qty * TROOP_TRAIN_TIME_SEC * 1000;
+    // 战令增益（S8-8）：hasBattlePass → 训练速度 +20%（时长 ×0.8）。
+    const trainSpeedMult = pw.hasBattlePass ? 0.8 : 1;
+    const duration = Math.round(qty * TROOP_TRAIN_TIME_SEC * 1000 * trainSpeedMult);
     const entry: TrainingEntry = {
       qty,
       foodCost,
@@ -1874,7 +1876,9 @@ export class WorldService {
     const queue = pw.trainingQueue ?? [];
     if (queue.length === 0) throw new SlgError('BAD_REQUEST', '当前没有训练中的队列');
 
-    const speedSec = coins * TROOP_SPEEDUP_SECS_PER_COIN;
+    // 战令增益（S8-8）：hasBattlePass → 加速消耗金币 -15%（每币加速时长 ÷0.85）。
+    const speedupDiscountMult = pw.hasBattlePass ? 1 / 0.85 : 1;
+    const speedSec = coins * TROOP_SPEEDUP_SECS_PER_COIN * speedupDiscountMult;
     const orderId = `slg_speedup:${worldId}:${accountId}:${now()}`;
     await this.commercial.spend(accountId, coins, orderId);
 
@@ -2381,7 +2385,11 @@ export class WorldService {
             attachments,
             expireDays: 30,
           });
-          // TODO(S10): if (base.titleId) grantTitle(acct, base.titleId) —— 称号系统未实现（同天梯 §13A.0-C4）。
+          if (base.titleId) {
+            void this.meta.grantTitle(acct, base.titleId).catch((e) =>
+              console.error('[worldsvc] settle grantTitle failed', { acct, titleId: base.titleId, err: (e as Error).message }),
+            );
+          }
         }
       }
     }
