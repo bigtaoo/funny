@@ -95,7 +95,7 @@ describe('judgeRunner — PvE 抽检复算', () => {
       levelId: 'no_such_level',
       pveUpgrades: {},
     };
-    expect(runJudge(req)).toEqual({ ok: false, stateHash: '', winnerSide: 0, stars: 0 });
+    expect(runJudge(req)).toEqual({ ok: false, stateHash: '', winnerSide: 0, stars: 0, statsJson: '' });
   });
 
   it('levelId 为空 → 走 PvP 分支（非 PvE）', () => {

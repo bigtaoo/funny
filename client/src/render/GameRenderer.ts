@@ -112,6 +112,9 @@ export class GameRenderer {
   private escortLayer!:  PIXI.Container;
   /** Escort sprite containers keyed by escortId (campaign escort levels only). */
   private readonly escortSprites: Map<string, PIXI.Container> = new Map();
+  /** In-flight projectile sprites (arrows) keyed by projectileId. */
+  private projectileLayer!: PIXI.Container;
+  private readonly projectileSprites: Map<number, PIXI.Container> = new Map();
   private handView!:     HandView;
   private hudView!:      HUDView;
   private netStatus!:    NetStatusView;
@@ -271,11 +274,13 @@ export class GameRenderer {
     this.vfxSystem    = new VFXSystem();
 
     this.escortLayer = new PIXI.Container();
+    this.projectileLayer = new PIXI.Container();
 
     this.container.addChild(this.boardView.container);
     this.container.addChild(this.unitView.container);
     this.container.addChild(this.buildingView.container);
     this.container.addChild(this.escortLayer);           // escort units above buildings
+    this.container.addChild(this.projectileLayer);       // arrows above units, below VFX
     this.container.addChild(this.vfxSystem.container);  // above units, below HUD
 
     // Worn-notebook overlay (art-direction §3.1) — faint static grain/creases
@@ -489,6 +494,36 @@ export class GameRenderer {
         }
         break;
       }
+      case 'projectile_fired': {
+        const pos = this.boardView.gridToScreen(event.from.col, fromFp(event.from.y_fp));
+        const sprite = this.buildProjectileSprite(event.kind);
+        sprite.x = pos.x;
+        sprite.y = pos.y;
+        this.projectileSprites.set(event.projectileId, sprite);
+        this.projectileLayer.addChild(sprite);
+        break;
+      }
+      case 'projectile_moved': {
+        const sprite = this.projectileSprites.get(event.projectileId);
+        if (!sprite) break;
+        const pos = this.boardView.gridToScreen(fromFp(event.col_fp), fromFp(event.y_fp));
+        // Point the arrow along its travel direction.
+        const dx = pos.x - sprite.x;
+        const dy = pos.y - sprite.y;
+        if (dx !== 0 || dy !== 0) sprite.rotation = Math.atan2(dy, dx);
+        sprite.x = pos.x;
+        sprite.y = pos.y;
+        break;
+      }
+      case 'projectile_hit':
+      case 'projectile_expired': {
+        const sprite = this.projectileSprites.get(event.projectileId);
+        if (!sprite) break;
+        this.projectileSprites.delete(event.projectileId);
+        sprite.parent?.removeChild(sprite);
+        sprite.destroy();
+        break;
+      }
       case 'unit_died': {
         this.unitView.playDeathEffect(event.unitId);
         // Vec2_fp carries the authoritative death position
@@ -600,6 +635,27 @@ export class GameRenderer {
         break;
       }
     }
+  }
+
+  /**
+   * A small ink-sketch arrow, drawn pointing along +x so the handler can rotate
+   * it to the travel direction. `kind` is reserved for future projectile looks
+   * (e.g. magic bolt); only 'arrow' exists today.
+   */
+  private buildProjectileSprite(_kind: string): PIXI.Container {
+    const c = new PIXI.Container();
+    const g = new PIXI.Graphics();
+    // Shaft.
+    g.lineStyle(2, 0x2b2b2b, 1);
+    g.moveTo(-7, 0);
+    g.lineTo(5, 0);
+    // Arrowhead.
+    g.moveTo(5, 0);
+    g.lineTo(1, -3);
+    g.moveTo(5, 0);
+    g.lineTo(1, 3);
+    c.addChild(g);
+    return c;
   }
 
   private buildEscortSprite(x: number, y: number, hp: number, maxHp: number): PIXI.Container {

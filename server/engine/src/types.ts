@@ -186,7 +186,11 @@ export type PlayerCommand =
  * playback** — `ReplayInputSource` refuses to drive an engine if the replay's
  * `engineVersion` differs, so a mismatch fails loudly instead of replaying garbage.
  */
-export const ENGINE_VERSION = 1;
+export const ENGINE_VERSION = 2;
+// v2 (projectile system): ranged attacks (archer / arrow tower) no longer apply
+// instant damage — they spawn a homing projectile that travels and resolves
+// damage on impact (config.ts `projectile` flag). This shifts combat timing, so
+// any v1 replay would diverge on playback → bump forces a loud version mismatch.
 
 /**
  * One recorded tick. Sparse: only ticks whose confirmed command set is
@@ -243,6 +247,19 @@ export type TraitSpec =
 
 // ─── Data blueprints (immutable, not runtime state) ───────────────────────────
 
+/**
+ * Projectile spec (ranged attacks). When present on a unit/building blueprint,
+ * an attack no longer applies instant damage — it spawns a homing projectile
+ * that travels at `speed` grid/s and resolves damage when it reaches the target
+ * (CombatSystem.tickProjectiles). Absent ⇒ instant melee-style hit (unchanged).
+ */
+export interface ProjectileSpec {
+  /** Flight speed in grid cells/second (converted to fp/tick in the constructor). */
+  speed: number;
+  /** Visual kind key — the render layer narrows it to a sprite (e.g. 'arrow'). */
+  kind: string;
+}
+
 export interface UnitBlueprint {
   type: UnitType;
   hp: number;
@@ -253,6 +270,10 @@ export interface UnitBlueprint {
   spawnCount: number;     // units spawned per card play
   /** Collision radius in pre-scaled fixed-point (e.g. 400 = 0.4 grid). */
   radius_fp: number;
+
+  // ── Ranged attack (projectile) ─────────────────────────────────────────────
+  /** Ranged units fire a homing projectile instead of dealing instant damage. */
+  projectile?: ProjectileSpec;
 
   // ── Flying system (§4.4b) ──────────────────────────────────────────────────
   flying?: boolean;
@@ -293,6 +314,8 @@ export interface BuildingBlueprint {
   spawnUnit?: UnitType;     // barracks only
   spawnInterval?: number;   // seconds — converted to ticks in Building constructor
   canTargetFlying?: boolean;
+  /** Ranged defenders (arrow tower) fire a homing projectile instead of instant damage. */
+  projectile?: ProjectileSpec;
 }
 
 export interface CardDefinition {
@@ -411,6 +434,26 @@ export type GameEvent =
   | { type: 'unit_attack_hit';
       unitId: number; targetId: number;
       damage: number; targetHpRemaining: number }
+
+  // ── Projectiles (ranged attacks) ─────────────────────────────────────────────
+  /** A homing projectile was launched. Render spawns an arrow at `from`, then
+   *  follows the authoritative per-tick `projectile_moved` positions. */
+  | { type: 'projectile_fired';
+      projectileId: number; attackerId: number; from: Vec2_fp; kind: string }
+
+  /** Authoritative projectile position this tick (mirrors escort_moved). */
+  | { type: 'projectile_moved';
+      projectileId: number; col_fp: Fp; y_fp: Fp }
+
+  /** Projectile reached its target and resolved damage (unit_attack_hit fires the
+   *  same tick). Render removes the arrow + the hit VFX plays on the target. */
+  | { type: 'projectile_hit';
+      projectileId: number }
+
+  /** Projectile's target vanished (died / removed) before impact — it fizzles
+   *  with no damage. Render removes the arrow. */
+  | { type: 'projectile_expired';
+      projectileId: number }
 
   // ── Buildings ──────────────────────────────────────────────────────────────
   | { type: 'building_placed';

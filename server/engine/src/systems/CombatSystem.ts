@@ -3,7 +3,8 @@ import { GameState } from '../GameState';
 import { Unit } from '../Unit';
 import { Building } from '../Building';
 import { EscortUnit } from '../EscortUnit';
-import { fp, fromFp, toFp } from '../math/fixed';
+import { Projectile, type ProjectilePayload, type ProjectileTargetKind } from '../Projectile';
+import { addFp, fp, fromFp, isqrt, mulFp, toFp, TICK_DT_FP, type Fp } from '../math/fixed';
 import { Side, UnitState } from '../types';
 
 /**
@@ -60,6 +61,12 @@ export class CombatSystem {
         }
       }
     }
+
+    // ── Advance projectiles & resolve impacts ────────────────────────────────
+    // Runs after both fire loops (so this-tick shots advance once immediately)
+    // and before dead removal (so arrow kills are cleaned up in the same tick,
+    // identical to melee kills).
+    this.tickProjectiles(state);
 
     // ── Remove dead units ──────────────────────────────────────────────────
     for (const unit of Array.from(board.units.values())) {
@@ -249,6 +256,65 @@ export class CombatSystem {
       rawDamage = Math.round(rawDamage * attacker.critMult);
     }
 
+    // Snapshot the hit payload at fire time (crit + traits frozen). Ranged units
+    // launch a projectile that resolves this exact payload on impact; melee units
+    // resolve it immediately (identical events to the pre-projectile behaviour).
+    const payload: ProjectilePayload = {
+      attackerId:   attacker.id,
+      side:         attacker.side,
+      rawDamage,
+      splashRadius: attacker.splashRadius,
+      piercing:     attacker.piercing,
+      lifestealPct: attacker.lifestealPct,
+      slowOnHit:    attacker.slowOnHit,
+    };
+
+    if (attacker.projectile) {
+      this.fireProjectile(state, attacker.x_fp, attacker.y_fp, attacker.projectile, target, payload);
+    } else {
+      this.resolveAttackHit(state, payload, target);
+    }
+  }
+
+  private performBuildingAttack(
+    building: Building,
+    target: Unit,
+    state: GameState,
+    attackMult: number,
+  ): void {
+    // Buildings carry no offensive traits — a plain damage payload.
+    const payload: ProjectilePayload = {
+      attackerId:   building.id,
+      side:         building.side,
+      rawDamage:    building.attack * attackMult,
+      splashRadius: 0,
+      piercing:     false,
+      lifestealPct: 0,
+      slowOnHit:    null,
+    };
+
+    if (building.projectile) {
+      this.fireProjectile(state, toFp(building.col), toFp(building.row), building.projectile, target, payload);
+    } else {
+      this.resolveAttackHit(state, payload, target);
+    }
+  }
+
+  // ─── Hit resolution (shared by melee hits and projectile impacts) ──────────
+
+  /**
+   * Apply a (frozen) attack payload to a live target: primary damage + events,
+   * then lifesteal / slow / splash / piercing. Called immediately for melee, and
+   * at impact for projectiles. Event order matches the original inline melee path
+   * exactly, so existing melee replays stay bit-identical.
+   */
+  private resolveAttackHit(
+    state: GameState,
+    payload: ProjectilePayload,
+    target: Unit | Building | EscortUnit,
+  ): void {
+    const rawDamage = payload.rawDamage;
+
     // Apply damage to primary target; capture actual HP lost for lifesteal.
     let actualDamage: number;
     if (target instanceof Unit) {
@@ -261,7 +327,7 @@ export class CombatSystem {
     if (target instanceof EscortUnit) {
       state.pushEvent({
         type:              'unit_attack_hit',
-        unitId:            attacker.id,
+        unitId:            payload.attackerId,
         targetId:          target.numericId,
         damage:            actualDamage,
         targetHpRemaining: target.hp,
@@ -275,7 +341,7 @@ export class CombatSystem {
     } else {
       state.pushEvent({
         type:              'unit_attack_hit',
-        unitId:            attacker.id,
+        unitId:            payload.attackerId,
         targetId:          target.id,
         damage:            actualDamage,
         targetHpRemaining: target.hp,
@@ -293,29 +359,33 @@ export class CombatSystem {
 
     // ── Offensive trait effects (applied after primary hit) ───────────────
 
-    // Lifesteal: heal attacker by % of actual damage dealt (Units only).
-    if (attacker.lifestealPct > 0 && actualDamage > 0) {
-      const heal = Math.floor(actualDamage * attacker.lifestealPct / 100);
-      if (heal > 0) attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
+    // Lifesteal: heal the firing unit by % of actual damage dealt — only if it is
+    // still alive on the board (a projectile may outlive its archer).
+    if (payload.lifestealPct > 0 && actualDamage > 0) {
+      const attacker = state.board.units.get(payload.attackerId);
+      if (attacker && !attacker.isDead) {
+        const heal = Math.floor(actualDamage * payload.lifestealPct / 100);
+        if (heal > 0) attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
+      }
     }
 
     // Slow on hit: reduce target speed for N ticks (Units only).
-    if (attacker.slowOnHit && target instanceof Unit) {
-      target.slowRemainingTicks = attacker.slowOnHit.durationTicks;
-      target.speed_fp = fp(Math.max(1, Math.round(target.baseSpeed_fp * attacker.slowOnHit.mult)));
+    if (payload.slowOnHit && target instanceof Unit) {
+      target.slowRemainingTicks = payload.slowOnHit.durationTicks;
+      target.speed_fp = fp(Math.max(1, Math.round(target.baseSpeed_fp * payload.slowOnHit.mult)));
     }
 
     // Splash: deal rawDamage to enemies within splashRadius Chebyshev of the primary target.
-    if (attacker.splashRadius > 0 && target instanceof Unit) {
+    if (payload.splashRadius > 0 && target instanceof Unit) {
       const tRow = target.row;
       const tCol = target.col;
       for (const u of state.board.units.values()) {
-        if (u === target || u.isDead || u.side === attacker.side) continue;
-        if (attacker.splashRadius < Math.max(Math.abs(u.row - tRow), Math.abs(u.col - tCol))) continue;
+        if (u === target || u.isDead || u.side === payload.side) continue;
+        if (payload.splashRadius < Math.max(Math.abs(u.row - tRow), Math.abs(u.col - tCol))) continue;
         const splashActual = u.takeDamage(rawDamage);
         state.pushEvent({
           type:              'unit_attack_hit',
-          unitId:            attacker.id,
+          unitId:            payload.attackerId,
           targetId:          u.id,
           damage:            splashActual,
           targetHpRemaining: u.hp,
@@ -324,15 +394,15 @@ export class CombatSystem {
     }
 
     // Piercing: hit all other enemies in the same column as the primary target.
-    if (attacker.piercing && target instanceof Unit) {
+    if (payload.piercing && target instanceof Unit) {
       const tCol = target.col;
       for (const u of state.board.units.values()) {
-        if (u === target || u.isDead || u.side === attacker.side) continue;
+        if (u === target || u.isDead || u.side === payload.side) continue;
         if (u.col !== tCol) continue;
         const pierceActual = u.takeDamage(rawDamage);
         state.pushEvent({
           type:              'unit_attack_hit',
-          unitId:            attacker.id,
+          unitId:            payload.attackerId,
           targetId:          u.id,
           damage:            pierceActual,
           targetHpRemaining: u.hp,
@@ -341,20 +411,95 @@ export class CombatSystem {
     }
   }
 
-  private performBuildingAttack(
-    building: Building,
-    target: Unit,
+  // ─── Projectiles (ranged attacks) ──────────────────────────────────────────
+
+  private targetRef(target: Unit | Building | EscortUnit): { targetId: number; targetKind: ProjectileTargetKind } {
+    if (target instanceof Unit)     return { targetId: target.id,        targetKind: 'unit' };
+    if (target instanceof Building) return { targetId: target.id,        targetKind: 'building' };
+    return                                 { targetId: target.numericId, targetKind: 'escort' };
+  }
+
+  /** Spawn a homing projectile carrying `payload`, and emit projectile_fired. */
+  private fireProjectile(
     state: GameState,
-    attackMult: number,
+    startCol_fp: Fp,
+    startRow_fp: Fp,
+    spec: { speed: number; kind: string },
+    target: Unit | Building | EscortUnit,
+    payload: ProjectilePayload,
   ): void {
-    const damage = building.attack * attackMult;
-    const actual = target.takeDamage(damage);
+    const { targetId, targetKind } = this.targetRef(target);
+    const proj = new Projectile(startCol_fp, startRow_fp, spec.speed, targetId, targetKind, payload, spec.kind);
+    state.projectiles.push(proj);
     state.pushEvent({
-      type:              'unit_attack_hit',
-      unitId:            building.id,
-      targetId:          target.id,
-      damage:            actual,
-      targetHpRemaining: target.hp,
+      type:         'projectile_fired',
+      projectileId: proj.id,
+      attackerId:   payload.attackerId,
+      from:         { col: Math.round(fromFp(startCol_fp)), y_fp: startRow_fp },
+      kind:         spec.kind,
     });
+  }
+
+  /** Resolve a projectile's homing target to the live entity, or null if it is gone. */
+  private resolveProjectileTarget(proj: Projectile, state: GameState): Unit | Building | EscortUnit | null {
+    if (proj.targetKind === 'unit') {
+      const u = state.board.units.get(proj.targetId);
+      return u && !u.isDead ? u : null;
+    }
+    if (proj.targetKind === 'building') {
+      const b = state.board.buildings.get(proj.targetId);
+      return b && !b.isDead ? b : null;
+    }
+    const e = state.escorts.find((esc) => esc.numericId === proj.targetId);
+    return e && e.status === 'moving' ? e : null;
+  }
+
+  /**
+   * Advance every in-flight projectile one tick toward its (moving) target. On
+   * arrival it resolves its frozen payload (damage + traits) exactly as a melee
+   * hit would; if its target vanished first it fizzles. Pure fixed-point homing
+   * — deterministic, no RNG.
+   */
+  private tickProjectiles(state: GameState): void {
+    if (state.projectiles.length === 0) return;
+
+    const survivors: Projectile[] = [];
+    for (const proj of state.projectiles) {
+      const target = this.resolveProjectileTarget(proj, state);
+      if (!target) {
+        state.pushEvent({ type: 'projectile_expired', projectileId: proj.id });
+        continue;
+      }
+
+      // Target's current fixed-point centre.
+      let tx: Fp, ty: Fp;
+      if (target instanceof Unit) {
+        tx = target.x_fp; ty = target.y_fp;
+      } else if (target instanceof Building) {
+        tx = toFp(target.col); ty = toFp(target.row);
+      } else {
+        tx = target.col_fp; ty = target.row_fp;
+      }
+
+      const dx   = tx - proj.x_fp;
+      const dy   = ty - proj.y_fp;
+      const dist = isqrt(dx * dx + dy * dy);       // fp distance to target
+      const step = mulFp(proj.speed_fp, TICK_DT_FP); // fp travelled this tick
+
+      if (dist === 0 || dist <= step) {
+        // Impact: resolve the frozen payload at the target, then retire the arrow.
+        this.resolveAttackHit(state, proj.payload, target);
+        state.pushEvent({ type: 'projectile_hit', projectileId: proj.id });
+        continue;
+      }
+
+      // Move toward the target by `step`, scaling the direction with integer-exact
+      // arithmetic (dx·step/dist keeps fp scale; trunc keeps it deterministic).
+      proj.x_fp = addFp(proj.x_fp, fp(Math.trunc((dx * step) / dist)));
+      proj.y_fp = addFp(proj.y_fp, fp(Math.trunc((dy * step) / dist)));
+      state.pushEvent({ type: 'projectile_moved', projectileId: proj.id, col_fp: proj.x_fp, y_fp: proj.y_fp });
+      survivors.push(proj);
+    }
+    state.projectiles = survivors;
   }
 }

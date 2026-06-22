@@ -28,6 +28,8 @@ export class Building {
   readonly attack: number;
   readonly attackRange: number;
   readonly canTargetFlying: boolean;
+  /** Ranged defender: fire a homing projectile instead of instant damage. null = none. */
+  readonly projectile: { speed: number; kind: string } | null;
 
   /**
    * Attack interval in integer ticks.
@@ -60,6 +62,9 @@ export class Building {
     this.attack           = bp.attack ?? 0;
     this.attackRange      = bp.attackRange ?? 0;
     this.canTargetFlying  = bp.canTargetFlying ?? false;
+    this.projectile       = bp.projectile
+      ? { speed: bp.projectile.speed, kind: bp.projectile.kind }
+      : null;
 
     // Convert seconds → ticks (integer, no float retained after construction)
     this.attackIntervalTicks = bp.attackInterval !== undefined

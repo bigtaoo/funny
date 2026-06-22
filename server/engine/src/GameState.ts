@@ -4,6 +4,7 @@ import { Player } from './Player';
 import { resetUnitIds } from './Unit';
 import { resetBuildingIds } from './Building';
 import { EscortUnit, resetEscortIds } from './EscortUnit';
+import { Projectile, resetProjectileIds } from './Projectile';
 import { UNIT_BLUEPRINTS } from './config';
 import { ActiveSpell, GameEvent, GamePhase, OwnerId, PlayerStats, Side, SpellType, UnitType, UnitBlueprint, sideToOwner } from './types';
 import type { HazardSpec } from './campaign/LevelDefinition';
@@ -90,6 +91,12 @@ export class GameState {
    */
   escorts: EscortUnit[] = [];
 
+  /**
+   * Projectiles in flight (ranged attacks). Push order = fire order = deterministic
+   * iteration. Advanced + impact-resolved each tick by CombatSystem.tickProjectiles.
+   */
+  projectiles: Projectile[] = [];
+
   /** Per-player accumulated stats. Index matches OwnerId (0 = bottom, 1 = top). */
   readonly stats: [PlayerStatsMutable, PlayerStatsMutable] = [emptyStats(), emptyStats()];
 
@@ -110,6 +117,7 @@ export class GameState {
     resetUnitIds();
     resetBuildingIds();
     resetEscortIds();
+    resetProjectileIds();
 
     // Each player gets separate PRNGs: one for card draws, one for timer stagger offsets.
     const cardPrng0  = new Prng(seed);

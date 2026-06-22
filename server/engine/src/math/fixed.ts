@@ -96,6 +96,34 @@ export function negFp(a: Fp): Fp {
   return (-a) as Fp;
 }
 
+/**
+ * Deterministic integer square root: floor(√n) for n ≥ 0, using only integer
+ * arithmetic (no Math.sqrt → no platform float divergence). Used by the
+ * projectile system to measure fp distance to a homing target.
+ *
+ * Bit-by-bit ("digit-by-digit") method — O(log n), exact for all safe integers.
+ * Input must be a non-negative integer (e.g. dx*dx + dy*dy in fp²); a negative
+ * input clamps to 0.
+ */
+export function isqrt(n: number): number {
+  if (n <= 0) return 0;
+  // Highest power of 4 ≤ n.
+  let bit = 1;
+  while (bit * 4 <= n) bit *= 4;
+  let res = 0;
+  let rem = n;
+  while (bit !== 0) {
+    if (rem >= res + bit) {
+      rem -= res + bit;
+      res = (res >> 1) + bit;
+    } else {
+      res >>= 1;
+    }
+    bit = Math.trunc(bit / 4);
+  }
+  return res;
+}
+
 // ── Conversion (render layer ONLY — never use in logic) ──────────────────────
 
 /**
