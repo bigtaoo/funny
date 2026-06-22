@@ -1,6 +1,6 @@
 # 战斗数值快照（BALANCE）
 
-> 状态：实现中 · **权威：`server/engine/src/config.ts`（`@nw/engine`；本文是它的快照，非权威）** · 更新：2026-06-22（A1 护甲机制落地）
+> 状态：实现中 · **权威：`server/engine/src/config.ts`（`@nw/engine`；本文是它的快照，非权威）** · 更新：2026-06-22（A7/S12-E 数值拍板）
 >
 > ⚠️ 改数值改 `config.ts`，然后同步本文 + 注明日期。**不要**只改本文。
 > 本文取代 `product/v1-balance.md`（未落地）与 `core-gameplay-loop.md` 内联数值（设计意图）作为文档侧数值参考。
@@ -117,10 +117,11 @@
 
 ---
 
-## 9. TTK 速算表（A3，2026-06-22）
+## 9. TTK 速算表（S12-E 重算，2026-06-22）
 
 > **公式**：TTK(s) = ceil(目标HP / max(1, 攻击-护甲)) × 攻击间隔(s)  
-> 护甲档位对应玩家单位养成等级：0→L1, 5→L6, 8→L9; 10/15/20 为装备+养成上限参考。
+> 护甲档位对应玩家单位养成等级：0→L1, 5→L6, 8→L9; 10/15/20 为装备+养成上限参考。  
+> S12-E 校准：armor 成长 2→1 flat/级，L9 最高 +8；装备封顶 12；综合上限 ≤20。
 
 ### 9.1 PvP 单位互打（基础兵，护甲 0/5/10/15/20 五档）
 
@@ -136,15 +137,33 @@
 | Archer | ShieldBearer | 15.4s | 21.0s | 28.0s | 49.0s | 168.0s |
 | Archer | Archer | 2.8s | 4.2s | 4.2s | 7.0s | 25.2s |
 
+> a=15/20 处 Infantry 攻（12-15=−3，取 max(1)→1 dmg/hit）：TTK = ceil(60/1)×0.8 = 48.0s；同理 ShieldBearer 攻（8-15→1）= 288.0s，到 a=10 也触发 max(1)，故 a=10/15/20 相同。
+
 ### 9.2 箭塔 vs PvE 肉盾（armor 0 vs armor 3）
 
 | 目标 | HP | 护甲 | 箭塔 TTK | Infantry TTK |
 |---|---|---|---|---|
-| Ironclad（旧 armor=0） | 290 | 0 | ~29s (15 dmg/hit) | ~19s (12 dmg/hit) |
-| Ironclad（新 armor=3） | 290 | 3 | **~36s** (12 dmg/hit) | ~26s (9 dmg/hit) |
+| Ironclad（旧 armor=0） | 290 | 0 | ~30s (15 dmg/hit) | ~20s (12 dmg/hit) |
+| Ironclad（新 armor=3） | 290 | 3 | **~37.5s** (12 dmg/hit) | ~26.4s (9 dmg/hit) |
 | ShieldBearer（玩家L9+8甲） | 240 | 8 | ~22s (7 dmg/hit) | — |
 
-> Ironclad armor=3 后，箭塔单独需要 ~36s（原 ~29s），迫使玩家组合法术/近战才能快速清除。
+> Ironclad armor=3 后箭塔 TTK ~37.5s（原 ~30s），迫使玩家用近战/法术组合清除；单靠箭塔守不住。
+
+### 9.3 PvE ch1–6 难度梯度评估（S12-E 校准后，2026-06-22）
+
+> **结论：关卡文件无需修改，难度梯度在 Ironclad armor=3 后仍合理。**
+
+| 章 | 首次引入 Ironclad | 对比 armor=0 变化 | 玩法影响 |
+|---|---|---|---|
+| ch1（简单） | lv2（tick 300，1–2 个/波） | 单近战 TTK +3s（13s→16s 约 2 infantry） | 仍可快速以步兵清除；教导「近战克装甲」 |
+| ch2–3（入门） | 早期出现，数量增加 | 单波 Ironclad 需 4 infantry 才能在道路上清除 | 迫使玩家建兵营组合箭塔+步兵 |
+| ch4–5（中级） | 多 Ironclad + 其他威胁混合 | 同波次威胁增加，需法术/兵营/箭塔三选 | 考验多线反应能力 |
+| ch6（挑战） | 高密度 Ironclad + Berserker/Medic | 全阵 armor 叠加，裸箭塔已无法单一应对 | 需要关卡专属法术（Rockslide/BridgeCollapse）配合 |
+
+**关键数值**（2 infantry 对 1 Ironclad armor=3）：
+- DPS = 2 × max(1, 12−3) / 0.8s = 22.5 DPS
+- TTK = ceil(290/9) × 0.8 = 33 × 0.8 = **26.4s**（单 infantry 序列；实际两兵同攻约 13s）
+- Ironclad 行进速度 0.5 格/s，穿越 14 行战斗区需 28s → 2 infantry 部署后可在到达基地前清除
 
 ---
 

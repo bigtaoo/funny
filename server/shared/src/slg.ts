@@ -334,9 +334,9 @@ export const TROOP_SPEEDUP_SECS_PER_COIN = 60;
 // ── 国家系统（S8-6.5，§2.4）──────────────────────────────────
 /** 国家数量（10 首府 = 10 国）。*/
 export const NATION_COUNT = 10;
-/** 国民加成：本国 Voronoi 区内资源产出加成（分数，0.10 = +10%，DRAFT）。 */
+/** 国民加成：本国 Voronoi 区内资源产出加成（分数，0.10 = +10%，§16.5 A7 拍板）。 */
 export const NATION_BONUS_PRODUCTION = 0.10;
-/** 国民加成：本国 Voronoi 区内防御战斗加成（分数，0.15 = +15%，DRAFT）。 */
+/** 国民加成：本国 Voronoi 区内防御战斗加成（分数，0.15 = +15%，§16.5 A7 拍板）。 */
 export const NATION_BONUS_DEFENSE = 0.15;
 /**
  * 10 首府相对坐标（分数 0~1，乘以 mapW-1/mapH-1 得实际格子）。
@@ -427,7 +427,7 @@ export const PROSPERITY_W_MEMBER    = 50;   // 每个成员
 export const PROSPERITY_W_ACTIVITY  = 5;    // 每点赛季活跃（新占领数 + 战斗场次，§17.4 来源）
 /** 长期无活跃衰减：每自然日衰减比例（读时惰性结算，类比资源 yield）。 */
 export const PROSPERITY_DECAY_PER_DAY = 0.05; // 5%/日
-/** 建宗门繁荣度中等门槛（§8.2，U5 数值占位）。 */
+/** 建宗门繁荣度中等门槛（§8.2，§16.5 A7 拍板）：30 人+30 地=1800 基础，需一定活跃度。 */
 export const SECT_FOUND_PROSPERITY_MIN = 2000;
 
 /** 家族繁荣度纯函数：可单测、双端可算、整数化。activity = 赛季累计活跃点（§17.4）。 */
@@ -981,10 +981,18 @@ function clampBaseLevel(n: number): number {
 }
 
 /**
- * 围攻战斗硬时限（ticks，§16.1 DRAFT）：~10 分钟游戏时间 × 60 × 30 Hz = 18000 ticks。
- * 超时双基地皆存 → 防守方胜（防守占优）+ headless 复算算力封顶。调参细化见 §16.5。
+ * 围攻战斗硬时限（ticks，§16.5 A7 拍板）：10 分钟游戏时间 × 60 × 30 Hz = 18000 ticks。
+ * 超时双基地皆存 → 防守方胜（防守占优）+ headless 复算算力封顶。
  */
 export const SIEGE_BATTLE_TIMEOUT_TICKS = 10 * 60 * 30;
+
+/**
+ * 碾压级廉价结算比值（§14.10 U7，§16.5 A7 拍板）：攻方兵力 / 守方有效驻军 ≥ 此值时，
+ * 跳过确定性引擎直接走廉价线性 resolveSiege（outcome 必然 attacker_win，省算力）。
+ * 10 对应「攻方 10× 守军」——Lanchester 线性下差距悬殊，结果确定性极高。
+ * U7 「100:1 满装备碾压」是极端上限；10:1 已足够安全省引擎。
+ */
+export const SIEGE_CHEAP_RATIO = 10;
 
 /** 进攻布阵模板（队伍）上限（§16.2，前期 5 支 = 可保存模板数 + 并发上限）。 */
 export const SIEGE_TEAM_CAP = 5;
