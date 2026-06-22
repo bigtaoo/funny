@@ -336,6 +336,13 @@ export const CARD_DEFINITIONS: CardDefinition[] = [
   { id: 'shieldbearer_2',  nameKey: 'card.shieldbearer.name',  descKey: 'card.shieldbearer.desc',  cardType: CardType.Unit,     cost: 6,  unitType: UnitType.ShieldBearer        },
   { id: 'archer_1',    nameKey: 'card.archer.name',    descKey: 'card.archer.desc',    cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
   { id: 'archer_2',    nameKey: 'card.archer.name',    descKey: 'card.archer.desc',    cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
+  // Anna-side units (A6 — unlocked via PvE ch2/ch4/ch6; available in PvP deck once unlocked)
+  { id: 'max_1',  nameKey: 'card.max.name',  descKey: 'card.max.desc',  cardType: CardType.Unit, cost: 5, unitType: UnitType.Max  },
+  { id: 'max_2',  nameKey: 'card.max.name',  descKey: 'card.max.desc',  cardType: CardType.Unit, cost: 5, unitType: UnitType.Max  },
+  { id: 'lena_1', nameKey: 'card.lena.name', descKey: 'card.lena.desc', cardType: CardType.Unit, cost: 7, unitType: UnitType.Lena },
+  { id: 'lena_2', nameKey: 'card.lena.name', descKey: 'card.lena.desc', cardType: CardType.Unit, cost: 7, unitType: UnitType.Lena },
+  { id: 'mara_1', nameKey: 'card.mara.name', descKey: 'card.mara.desc', cardType: CardType.Unit, cost: 5, unitType: UnitType.Mara },
+  { id: 'mara_2', nameKey: 'card.mara.name', descKey: 'card.mara.desc', cardType: CardType.Unit, cost: 5, unitType: UnitType.Mara },
   { id: 'barracks_1',  nameKey: 'card.barracks.name',  descKey: 'card.barracks.desc',  cardType: CardType.Building, cost: 14, buildingType: BuildingType.Barracks   },
   { id: 'barracks_2',  nameKey: 'card.barracks.name',  descKey: 'card.barracks.desc',  cardType: CardType.Building, cost: 14, buildingType: BuildingType.Barracks   },
   { id: 'tower_1',     nameKey: 'card.tower.name',     descKey: 'card.tower.desc',     cardType: CardType.Building, cost: 12, buildingType: BuildingType.ArrowTower },

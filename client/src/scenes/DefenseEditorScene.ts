@@ -6,9 +6,10 @@
 //    编辑防守 config = 引擎 LevelDefinition 受限子集（U8 / U10）——守方（Top）半场 garrison +
 //    建筑行 defenderBuildings + defenderBaseLevel(0–3)。保存走 setDefense（覆盖写）。
 //
-// ② 进攻（mode='attack'，G3-2c §16.2）：编辑一支进攻布阵模板（队伍）——攻方（Bottom）半场预布
-//    已收集单位；无建筑 / 无基地强化（攻方只摆兵）。每单位以满血容量出战（= 兵力当量，§16.1；
-//    v1 不做每单位兵力滑杆，committed 兵力 = 单位数 × 满血）。保存走 getTeams→替换该槽→setTeams。
+// ② 进攻（mode='attack'，G3-2c §16.2 / A7 §16.5）：编辑一支进攻布阵模板（队伍）——攻方（Bottom）
+//    半场预布已收集单位；无建筑 / 无基地强化（攻方只摆兵）。点击已放置单位可循环 HP 档位：
+//    100%→75%→50%→25%→100%（§16.5 SIEGE_UNIT_HP_MIN_FRACTION=0.25，4 步），committed 兵力
+//    = 各单位分配 HP 之和。保存走 getTeams→替换该槽→setTeams。
 //
 // 「已收集单位」约束（U8）：调色板只列有卡牌（CARD_DEFINITIONS）的单位/建筑，PvE-only 单位天然
 // 不出现。围攻发生时 worldsvc headless 跑引擎用攻方军 + 守方 config 算权威结果（§16.8）。
@@ -78,6 +79,12 @@ const ATTACK_ROWS = [8, 7, 6, 5, 4, 3, 2, 1] as const;
 
 const MAX_GARRISON = 30;
 
+// §16.5 每单位兵力滑杆（A7 调参）：4 档位 25%/50%/75%/100%，与 server/shared SIEGE_UNIT_HP_MIN_FRACTION 同值。
+const UNIT_HP_STEPS = 4;      // 档位数
+const UNIT_HP_MIN_FRAC = 0.25; // 最低档 = 蓝图满血的 25%
+
+type GarrisonEntry = { unitType: UnitType; hp: number };
+
 // ── Caps / layout ────────────────────────────────────────────────────────────
 
 const HEADER_H = 46;
@@ -101,7 +108,7 @@ export class DefenseEditorScene implements Scene {
 
   // Config state
   private buildings = new Map<number, BuildingType>();        // col → building (building row)
-  private garrison = new Map<string, UnitType>();             // "col:row" → unit
+  private garrison = new Map<string, GarrisonEntry>();        // "col:row" → { unitType, hp }
   private baseLevel = 0;
   // Attack mode: the full team list (loaded once) so save merges this slot without clobbering others.
   private teams: TeamTemplate[] = [];
@@ -175,11 +182,15 @@ export class DefenseEditorScene implements Scene {
     this.garrison.clear();
     for (const e of army) {
       if (!e || typeof e !== 'object') continue;
-      const { unitType, col, row } = e;
+      const { unitType, col, row, initialHp } = e;
       if (typeof unitType === 'string' && (COLLECTED_UNITS as string[]).includes(unitType)
         && typeof col === 'number' && (ATTACK_LANES as readonly number[]).includes(col)
         && typeof row === 'number' && (this.gRows as readonly number[]).includes(row)) {
-        this.garrison.set(`${col}:${row}`, unitType as UnitType);
+        const ut = unitType as UnitType;
+        const maxHp = UNIT_BLUEPRINTS[ut].hp;
+        const hp = (typeof initialHp === 'number' && initialHp >= 1 && initialHp <= maxHp)
+          ? initialHp : maxHp;
+        this.garrison.set(`${col}:${row}`, { unitType: ut, hp });
       }
     }
   }
@@ -196,7 +207,8 @@ export class DefenseEditorScene implements Scene {
         if (typeof unitType === 'string' && (COLLECTED_UNITS as string[]).includes(unitType)
           && typeof col === 'number' && (ATTACK_LANES as readonly number[]).includes(col)
           && typeof row === 'number' && (this.gRows as readonly number[]).includes(row)) {
-          this.garrison.set(`${col}:${row}`, unitType as UnitType);
+          const ut = unitType as UnitType;
+          this.garrison.set(`${col}:${row}`, { unitType: ut, hp: UNIT_BLUEPRINTS[ut].hp });
         }
       }
     }
@@ -215,11 +227,11 @@ export class DefenseEditorScene implements Scene {
     this.baseLevel = typeof lv === 'number' ? Math.max(0, Math.min(3, Math.floor(lv))) : 0;
   }
 
-  /** 攻方军：每单位以满血容量出战（initialHp = 蓝图满血 = 兵力当量，§16.1）。 */
+  /** 攻方军：每单位 initialHp = 玩家分配的兵力（§16.5 滑杆 25%–100%）。 */
   private buildArmy(): ArmyEntry[] {
-    return [...this.garrison.entries()].map(([key, unitType]) => {
+    return [...this.garrison.entries()].map(([key, entry]) => {
       const [col, row] = key.split(':').map(Number);
-      return { unitType, col: col!, row: row!, initialHp: UNIT_BLUEPRINTS[unitType].hp };
+      return { unitType: entry.unitType, col: col!, row: row!, initialHp: entry.hp };
     });
   }
 
@@ -235,9 +247,9 @@ export class DefenseEditorScene implements Scene {
         await this.cb.worldApi.setTeams(this.cb.worldId, next);
       } else {
         const config = {
-          garrison: [...this.garrison.entries()].map(([key, unitType]) => {
+          garrison: [...this.garrison.entries()].map(([key, entry]) => {
             const [col, row] = key.split(':').map(Number);
-            return { unitType, col, row };
+            return { unitType: entry.unitType, col, row };
           }),
           defenderBuildings: [...this.buildings.entries()].map(([col, buildingType]) => ({ buildingType, col })),
           defenderBaseLevel: this.baseLevel,
@@ -433,7 +445,7 @@ export class DefenseEditorScene implements Scene {
           const row = this.gRows[dr - buildRows]!;
           if (isAttack) {
             const u = this.garrison.get(`${col}:${row}`);
-            if (u) this.drawUnit(g, px, py, cellW, cellH, u);
+            if (u) this.drawUnit(g, px, py, cellW, cellH, u.unitType, u.hp);
           }
         }
       }
@@ -464,16 +476,28 @@ export class DefenseEditorScene implements Scene {
     }
   }
 
-  private drawUnit(g: PIXI.Graphics, px: number, py: number, cw: number, ch: number, type: UnitType): void {
+  private drawUnit(g: PIXI.Graphics, px: number, py: number, cw: number, ch: number, type: UnitType, hp?: number): void {
     const cx = px + cw / 2, cy = py + ch / 2;
     const r = Math.min(cw, ch) * 0.3;
-    const col = type === UnitType.Archer ? 0x44aa66
-      : type === UnitType.ShieldBearer ? 0x8866cc
+    const col = type === UnitType.Archer || type === UnitType.Mara ? 0x44aa66
+      : type === UnitType.ShieldBearer || type === UnitType.Lena ? 0x8866cc
+      : type === UnitType.Max ? 0xcc6633
       : 0x4477cc;
     g.lineStyle(1.2, 0x33425a, 1);
     g.beginFill(col, 0.92);
     g.drawCircle(cx, cy, r);
     g.endFill();
+
+    // Attack mode: draw HP fraction bar below circle (§16.5 滑杆).
+    if (hp !== undefined && this.mode === 'attack') {
+      const maxHp = UNIT_BLUEPRINTS[type].hp;
+      const frac = maxHp > 0 ? Math.min(1, hp / maxHp) : 1;
+      const barW = cw * 0.7, barH = 3;
+      const bx = px + (cw - barW) / 2, by = cy + r + 2;
+      g.lineStyle(0);
+      g.beginFill(0xcccccc, 0.5); g.drawRect(bx, by, barW, barH); g.endFill();
+      g.beginFill(0x3388ff, 0.9); g.drawRect(bx, by, barW * frac, barH); g.endFill();
+    }
   }
 
   private renderFooter(top: number): void {
@@ -483,7 +507,7 @@ export class DefenseEditorScene implements Scene {
     this.bodyLayer.addChild(panel);
 
     const countsStr = this.mode === 'attack'
-      // committed 兵力 = 各单位满血之和（出征即扣此数，§16.2）。
+      // committed 兵力 = 各单位分配 HP 之和（§16.5 点击格子循环档位；出征扣此数）。
       ? `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}`
       : `${t('world.defense.buildings')} ${this.buildings.size}   ${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}`;
     const counts = txt(countsStr, 11, C.dark);
@@ -517,10 +541,10 @@ export class DefenseEditorScene implements Scene {
     } });
   }
 
-  /** 攻方军 committed 兵力 = 各单位满血之和（与 buildArmy / 服务端求和一致）。 */
+  /** 攻方军 committed 兵力 = 各单位分配 HP 之和（§16.5 滑杆调整后与 buildArmy / 服务端一致）。 */
   private committedTroops(): number {
     let sum = 0;
-    for (const unitType of this.garrison.values()) sum += UNIT_BLUEPRINTS[unitType].hp;
+    for (const entry of this.garrison.values()) sum += entry.hp;
     return sum;
   }
 
@@ -555,11 +579,22 @@ export class DefenseEditorScene implements Scene {
       if (this.tool.kind === 'erase') {
         this.garrison.delete(key);
       } else if (this.tool.kind === 'unit') {
-        if (!this.garrison.has(key) && this.garrison.size >= MAX_GARRISON) {
-          this.showToast(t('world.defense.full'), C.red);
-          return;
+        const existing = this.garrison.get(key);
+        if (existing && existing.unitType === this.tool.type && this.mode === 'attack') {
+          // Same unit already here in attack mode → cycle HP through UNIT_HP_STEPS steps.
+          const maxHp = UNIT_BLUEPRINTS[this.tool.type].hp;
+          const minHp = Math.max(1, Math.ceil(maxHp * UNIT_HP_MIN_FRAC));
+          const step = Math.round((maxHp - minHp) / (UNIT_HP_STEPS - 1));
+          const nextHp = existing.hp + step > maxHp ? minHp : existing.hp + step;
+          this.garrison.set(key, { unitType: this.tool.type, hp: nextHp });
+        } else {
+          if (!existing && this.garrison.size >= MAX_GARRISON) {
+            this.showToast(t('world.defense.full'), C.red);
+            return;
+          }
+          const maxHp = UNIT_BLUEPRINTS[this.tool.type].hp;
+          this.garrison.set(key, { unitType: this.tool.type, hp: maxHp });
         }
-        this.garrison.set(key, this.tool.type);
       } else {
         this.showToast(t('world.defense.buildingsNotHere'), C.red);
         return;
