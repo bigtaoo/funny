@@ -18,6 +18,7 @@ import type { WorldService } from './service';
 import type { TeamTemplate } from './db';
 import type { FamilyService } from './familyService';
 import type { SectService } from './sectService';
+import type { NationChannelService } from './nationChannelService';
 import type { AuctionService } from './auctionService';
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -66,6 +67,7 @@ export function startHttpApi(
   svc: WorldService,
   familySvc: FamilyService,
   sectSvc: SectService,
+  nationChannelSvc: NationChannelService,
   auctionSvc: AuctionService,
 ): Server {
   // 内部运维鉴权（C4/§17.7）：/admin/world/* 走 X-Internal-Key，不走玩家 JWT。
@@ -514,6 +516,23 @@ export function startHttpApi(
           const before = q.get('before') ? Number(q.get('before')) : undefined;
           const limit = numQ(q.get('limit'), 30);
           return send(res, 200, ok(await sectSvc.getChannel(worldId, accountId, before, limit)));
+        }
+
+        // ── 国家/世界公频（B7，§6.4）────────────────────────────────────
+        if (method === 'POST' && path === '/nation/message') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const msgBody = typeof body.body === 'string' ? body.body : null;
+          const senderName = typeof body.senderName === 'string' ? body.senderName : accountId;
+          if (!worldId || !msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + body required');
+          return send(res, 200, ok(await nationChannelSvc.sendMessage(worldId, accountId, senderName, msgBody)));
+        }
+        if (method === 'GET' && path === '/nation/channel') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          const before = q.get('before') ? Number(q.get('before')) : undefined;
+          const limit = numQ(q.get('limit'), 30);
+          return send(res, 200, ok(await nationChannelSvc.getChannel(worldId, accountId, before, limit)));
         }
 
         // ── 拍卖（S8-5，做实）──────────────────────────────────────────

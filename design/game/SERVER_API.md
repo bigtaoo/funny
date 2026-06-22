@@ -244,6 +244,7 @@ POST /internal/ladder/season/roll          (X-Internal-Key) → { season }   # a
 | `match_over` | `{ winner_side, reason, mismatch?, elo?: { delta, after, rank_after } }` | 结束；`reason: base|disconnect|mismatch`；ranked 带 ELO 变化 |
 | `room_error` | `{ code, message }` | 房间错误（不存在 / 已满） |
 | `pong` | `{}` | 心跳回应 |
+| `nation_msg` | `{ world_id, from_public_id, from_name, text, ts }` | 国家/世界公频新消息（B7，worldsvc 经 Redis pub/sub → gateway 扇出给同 world 在线玩家；REST 拉历史 `/nation/channel` 离线补全） |
 
 ```proto
 // transport.proto（节选；服务器认得这一层）
