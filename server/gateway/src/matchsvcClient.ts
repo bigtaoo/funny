@@ -99,11 +99,11 @@ export class MatchsvcClient {
       });
   }
 
-  roomCreate(accountId: string, name: string, publicId: string): void {
-    this.post('/mm/room/create', { accountId, name, publicId });
+  roomCreate(accountId: string, name: string, publicId: string, equippedTitle = ''): void {
+    this.post('/mm/room/create', { accountId, name, publicId, equippedTitle });
   }
-  roomJoin(accountId: string, name: string, publicId: string, code: string): void {
-    this.post('/mm/room/join', { accountId, name, publicId, code });
+  roomJoin(accountId: string, name: string, publicId: string, code: string, equippedTitle = ''): void {
+    this.post('/mm/room/join', { accountId, name, publicId, code, equippedTitle });
   }
   roomReady(accountId: string, ready: boolean): void {
     this.post('/mm/room/ready', { accountId, ready });
@@ -114,8 +114,8 @@ export class MatchsvcClient {
   roomLeave(accountId: string): void {
     this.post('/mm/room/leave', { accountId });
   }
-  enqueue(accountId: string, name: string, publicId: string, elo: number): void {
-    this.post('/mm/queue/enqueue', { accountId, name, publicId, elo });
+  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = ''): void {
+    this.post('/mm/queue/enqueue', { accountId, name, publicId, elo, equippedTitle });
   }
   connected(accountId: string): void {
     this.post('/mm/conn/connected', { accountId });

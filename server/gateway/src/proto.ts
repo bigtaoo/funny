@@ -116,6 +116,7 @@ export type ServerMsg =
     }
   | { case: 'family_msg'; familyId: string; fromPublicId: string; fromName: string; body: string; ts: number }
   | { case: 'sect_msg'; sectId: string; fromPublicId: string; fromName: string; body: string; ts: number }
+  | { case: 'nation_msg'; worldId: string; fromPublicId: string; fromName: string; body: string; ts: number }
   | { case: 'pong' };
 
 function resolveProtoPath(): string {
@@ -315,6 +316,17 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
       server = {
         sect_msg: {
           sect_id: msg.sectId,
+          from_public_id: msg.fromPublicId,
+          from_name: msg.fromName,
+          text: msg.body,
+          ts: msg.ts,
+        },
+      };
+      break;
+    case 'nation_msg':
+      server = {
+        nation_msg: {
+          world_id: msg.worldId,
           from_public_id: msg.fromPublicId,
           from_name: msg.fromName,
           text: msg.body,
