@@ -5,12 +5,26 @@
 
 export type PveMaterial = 'scrap' | 'lead' | 'binding';
 
+/** 装备掉落配置（EQUIPMENT_DESIGN §4 关卡掉落 faucet，DRAFT [可调]）。 */
+export interface EquipmentDropConfig {
+  /** 掉落稀有度（对应 EquipRarity；槽位在落地时随机选三槽之一）。 */
+  rarity: 'common' | 'fine' | 'rare' | 'epic';
+  /** 掉落概率 0..1（每次通关独立 roll，不受每日材料 cap 约束，DRAFT [可调]）。 */
+  rate: number;
+}
+
 export interface PveLevelConfig {
   id: string;
   /** 解锁前置：须先通关的关卡 id（null = 首关无前置）。顺序解锁。 */
   requires: string | null;
   /** 每次通关发放的材料（§8 决策 3：可重复刷，受每日上限）。空 = 不发材料（如压力关）。 */
   reward: Partial<Record<PveMaterial, number>>;
+  /**
+   * 关卡装备掉落（Boss/精英关专属额外奖励，EQUIPMENT_DESIGN §4）。
+   * 概率独立 roll（不受每日材料 cap 影响）；满仓时静默跳过。
+   * 仅 lv5（章节中期精英）和 lv10（章节 Boss）有配置；其余普通关无掉落。
+   */
+  equipmentDrop?: EquipmentDropConfig;
 }
 
 /**
@@ -23,67 +37,67 @@ export const PVE_LEVELS: PveLevelConfig[] = [
   { id: 'ch1_lv2',  requires: 'ch1_lv1',  reward: { scrap: 8,  lead: 3,  binding: 1 } },
   { id: 'ch1_lv3',  requires: 'ch1_lv2',  reward: { scrap: 10, lead: 4,  binding: 2 } },
   { id: 'ch1_lv4',  requires: 'ch1_lv3',  reward: { scrap: 8,  lead: 3 } },
-  { id: 'ch1_lv5',  requires: 'ch1_lv4',  reward: { scrap: 10, lead: 4 } },
+  { id: 'ch1_lv5',  requires: 'ch1_lv4',  reward: { scrap: 10, lead: 4 },          equipmentDrop: { rarity: 'common', rate: 0.10 } },
   { id: 'ch1_lv6',  requires: 'ch1_lv5',  reward: { scrap: 10, lead: 4,  binding: 1 } },
   { id: 'ch1_lv7',  requires: 'ch1_lv6',  reward: { scrap: 12, lead: 5 } },
   { id: 'ch1_lv8',  requires: 'ch1_lv7',  reward: { scrap: 14, lead: 6,  binding: 1 } },
   { id: 'ch1_lv9',  requires: 'ch1_lv8',  reward: { scrap: 16, lead: 7,  binding: 2 } },
-  { id: 'ch1_lv10', requires: 'ch1_lv9',  reward: { scrap: 18, lead: 8,  binding: 3 } },
+  { id: 'ch1_lv10', requires: 'ch1_lv9',  reward: { scrap: 18, lead: 8,  binding: 3 }, equipmentDrop: { rarity: 'common', rate: 0.18 } },
   // ── Chapter 2 ────────────────────────────────────────────────────────────
   { id: 'ch2_lv1',  requires: 'ch1_lv10', reward: { scrap: 6,  lead: 5 } },
   { id: 'ch2_lv2',  requires: 'ch2_lv1',  reward: { scrap: 7,  lead: 5 } },
   { id: 'ch2_lv3',  requires: 'ch2_lv2',  reward: { scrap: 8,  lead: 6 } },
   { id: 'ch2_lv4',  requires: 'ch2_lv3',  reward: { scrap: 9,  lead: 6,  binding: 1 } },
-  { id: 'ch2_lv5',  requires: 'ch2_lv4',  reward: { scrap: 8,  lead: 7 } },
+  { id: 'ch2_lv5',  requires: 'ch2_lv4',  reward: { scrap: 8,  lead: 7 },           equipmentDrop: { rarity: 'common', rate: 0.12 } },
   { id: 'ch2_lv6',  requires: 'ch2_lv5',  reward: { scrap: 9,  lead: 7,  binding: 1 } },
   { id: 'ch2_lv7',  requires: 'ch2_lv6',  reward: { scrap: 10, lead: 8,  binding: 1 } },
   { id: 'ch2_lv8',  requires: 'ch2_lv7',  reward: { scrap: 10, lead: 8,  binding: 1 } },
   { id: 'ch2_lv9',  requires: 'ch2_lv8',  reward: { scrap: 9,  lead: 8,  binding: 2 } },
-  { id: 'ch2_lv10', requires: 'ch2_lv9',  reward: { scrap: 12, lead: 10, binding: 2 } },
+  { id: 'ch2_lv10', requires: 'ch2_lv9',  reward: { scrap: 12, lead: 10, binding: 2 }, equipmentDrop: { rarity: 'fine',   rate: 0.15 } },
   // ── Chapter 3 ────────────────────────────────────────────────────────────
   { id: 'ch3_lv1',  requires: 'ch2_lv10', reward: { scrap: 8,  lead: 4 } },
   { id: 'ch3_lv2',  requires: 'ch3_lv1',  reward: { scrap: 8,  lead: 4 } },
   { id: 'ch3_lv3',  requires: 'ch3_lv2',  reward: { scrap: 9,  lead: 5 } },
   { id: 'ch3_lv4',  requires: 'ch3_lv3',  reward: { scrap: 9,  lead: 5 } },
-  { id: 'ch3_lv5',  requires: 'ch3_lv4',  reward: { scrap: 9,  lead: 6,  binding: 1 } },
+  { id: 'ch3_lv5',  requires: 'ch3_lv4',  reward: { scrap: 9,  lead: 6,  binding: 1 }, equipmentDrop: { rarity: 'fine',   rate: 0.10 } },
   { id: 'ch3_lv6',  requires: 'ch3_lv5',  reward: { scrap: 10, lead: 6,  binding: 1 } },
   { id: 'ch3_lv7',  requires: 'ch3_lv6',  reward: { scrap: 10, lead: 7,  binding: 2 } },
   { id: 'ch3_lv8',  requires: 'ch3_lv7',  reward: { scrap: 11, lead: 7,  binding: 2 } },
   { id: 'ch3_lv9',  requires: 'ch3_lv8',  reward: { scrap: 11, lead: 8,  binding: 2 } },
-  { id: 'ch3_lv10', requires: 'ch3_lv9',  reward: { scrap: 12, lead: 8,  binding: 3 } },
+  { id: 'ch3_lv10', requires: 'ch3_lv9',  reward: { scrap: 12, lead: 8,  binding: 3 }, equipmentDrop: { rarity: 'rare',   rate: 0.12 } },
   // ── Chapter 4 ────────────────────────────────────────────────────────────
   { id: 'ch4_lv1',  requires: 'ch3_lv10', reward: { scrap: 10, lead: 7,  binding: 2 } },
   { id: 'ch4_lv2',  requires: 'ch4_lv1',  reward: { scrap: 10, lead: 7,  binding: 2 } },
   { id: 'ch4_lv3',  requires: 'ch4_lv2',  reward: { scrap: 11, lead: 8,  binding: 2 } },
   { id: 'ch4_lv4',  requires: 'ch4_lv3',  reward: { scrap: 11, lead: 8,  binding: 3 } },
-  { id: 'ch4_lv5',  requires: 'ch4_lv4',  reward: { scrap: 12, lead: 9,  binding: 3 } },
+  { id: 'ch4_lv5',  requires: 'ch4_lv4',  reward: { scrap: 12, lead: 9,  binding: 3 }, equipmentDrop: { rarity: 'fine',   rate: 0.10 } },
   { id: 'ch4_lv6',  requires: 'ch4_lv5',  reward: { scrap: 12, lead: 9,  binding: 3 } },
   { id: 'ch4_lv7',  requires: 'ch4_lv6',  reward: { scrap: 13, lead: 10, binding: 3 } },
   { id: 'ch4_lv8',  requires: 'ch4_lv7',  reward: { scrap: 13, lead: 10, binding: 4 } },
   { id: 'ch4_lv9',  requires: 'ch4_lv8',  reward: { scrap: 14, lead: 11, binding: 4 } },
-  { id: 'ch4_lv10', requires: 'ch4_lv9',  reward: { scrap: 15, lead: 12, binding: 4 } },
+  { id: 'ch4_lv10', requires: 'ch4_lv9',  reward: { scrap: 15, lead: 12, binding: 4 }, equipmentDrop: { rarity: 'rare',   rate: 0.12 } },
   // ── Chapter 5 ────────────────────────────────────────────────────────────
   { id: 'ch5_lv1',  requires: 'ch4_lv10', reward: { scrap: 14, lead: 10, binding: 4 } },
   { id: 'ch5_lv2',  requires: 'ch5_lv1',  reward: { scrap: 14, lead: 11, binding: 4 } },
   { id: 'ch5_lv3',  requires: 'ch5_lv2',  reward: { scrap: 15, lead: 11, binding: 4 } },
   { id: 'ch5_lv4',  requires: 'ch5_lv3',  reward: { scrap: 15, lead: 12, binding: 4 } },
-  { id: 'ch5_lv5',  requires: 'ch5_lv4',  reward: { scrap: 16, lead: 12, binding: 4 } },
+  { id: 'ch5_lv5',  requires: 'ch5_lv4',  reward: { scrap: 16, lead: 12, binding: 4 }, equipmentDrop: { rarity: 'rare',   rate: 0.08 } },
   { id: 'ch5_lv6',  requires: 'ch5_lv5',  reward: { scrap: 16, lead: 13, binding: 5 } },
   { id: 'ch5_lv7',  requires: 'ch5_lv6',  reward: { scrap: 17, lead: 13, binding: 5 } },
   { id: 'ch5_lv8',  requires: 'ch5_lv7',  reward: { scrap: 18, lead: 14, binding: 5 } },
   { id: 'ch5_lv9',  requires: 'ch5_lv8',  reward: { scrap: 19, lead: 14, binding: 5 } },
-  { id: 'ch5_lv10', requires: 'ch5_lv9',  reward: { scrap: 20, lead: 15, binding: 6 } },
+  { id: 'ch5_lv10', requires: 'ch5_lv9',  reward: { scrap: 20, lead: 15, binding: 6 }, equipmentDrop: { rarity: 'rare',   rate: 0.12 } },
   // ── Chapter 6 ────────────────────────────────────────────────────────────
   { id: 'ch6_lv1',  requires: 'ch5_lv10', reward: { scrap: 18, lead: 14, binding: 6 } },
   { id: 'ch6_lv2',  requires: 'ch6_lv1',  reward: { scrap: 19, lead: 15, binding: 7 } },
   { id: 'ch6_lv3',  requires: 'ch6_lv2',  reward: { scrap: 20, lead: 15, binding: 7 } },
   { id: 'ch6_lv4',  requires: 'ch6_lv3',  reward: { scrap: 20, lead: 16, binding: 7 } },
-  { id: 'ch6_lv5',  requires: 'ch6_lv4',  reward: { scrap: 21, lead: 16, binding: 8 } },
+  { id: 'ch6_lv5',  requires: 'ch6_lv4',  reward: { scrap: 21, lead: 16, binding: 8 }, equipmentDrop: { rarity: 'rare',   rate: 0.10 } },
   { id: 'ch6_lv6',  requires: 'ch6_lv5',  reward: { scrap: 22, lead: 17, binding: 8 } },
   { id: 'ch6_lv7',  requires: 'ch6_lv6',  reward: { scrap: 22, lead: 17, binding: 8 } },
   { id: 'ch6_lv8',  requires: 'ch6_lv7',  reward: { scrap: 24, lead: 18, binding: 9 } },
   { id: 'ch6_lv9',  requires: 'ch6_lv8',  reward: { scrap: 25, lead: 19, binding: 9 } },
-  { id: 'ch6_lv10', requires: 'ch6_lv9',  reward: { scrap: 28, lead: 20, binding: 10 } },
+  { id: 'ch6_lv10', requires: 'ch6_lv9',  reward: { scrap: 28, lead: 20, binding: 10 }, equipmentDrop: { rarity: 'epic',   rate: 0.08 } },
   // ── Extras ───────────────────────────────────────────────────────────────
   { id: 'ch_stress', requires: 'ch1_lv3', reward: {} },
 ];

@@ -98,3 +98,10 @@ export function affixKind(id: string): 'main' | 'sub' | 'skill' | 'unknown' {
   if (id.startsWith('k_')) return 'skill';
   return 'unknown';
 }
+
+/** 洗练消耗：目标稀有度 → 需消耗的素材装备稀有度（与 server/shared REFORGE_MATERIAL_RARITY 同源）。 */
+export const REFORGE_MATERIAL_RARITY: Partial<Record<EquipRarity, EquipRarity>> = {
+  fine: 'common',
+  rare: 'fine',
+  epic: 'rare',
+};

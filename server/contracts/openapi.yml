@@ -830,6 +830,9 @@ paths:
                         type: object
                         additionalProperties: { type: integer }
                         description: 本次实发单位卡（cardKey→张数，S12-C；capped / 抽检暂扣时为空）
+                      grantedEquipment:
+                        $ref: '#/components/schemas/EquipmentInstance'
+                        description: 本次关卡掉落的装备实例（E2 §4；未掉落 / 满仓时缺省）
                       capped: { type: boolean, description: 当日发材料通关已达上限 }
                       needsReplay:
                         type: boolean
@@ -895,6 +898,9 @@ paths:
                         type: object
                         additionalProperties: { type: integer }
                         description: 复算通过后实发单位卡（cardKey→张数，S12-C；rejected / capped 时为空）
+                      grantedEquipment:
+                        $ref: '#/components/schemas/EquipmentInstance'
+                        description: 复算通过后关卡掉落的装备实例（E2 §4；未掉落 / 满仓时缺省）
                       capped: { type: boolean }
                       verified:
                         type: boolean
@@ -1126,6 +1132,44 @@ paths:
                     type: object
                     required: [save]
                     properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+
+  /equipment/reforge:
+    post:
+      operationId: reforgeEquipment
+      tags: [save]
+      summary: 装备洗练（E6，保留主词条，重 roll 副词条；消耗同槽低档素材件）。idempotencyKey 幂等
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetId, materialId, idempotencyKey]
+              properties:
+                targetId: { type: string, description: 待洗练的装备实例 id }
+                materialId: { type: string, description: 消耗的素材装备实例 id（同槽低一档，如 rare→需fine） }
+                idempotencyKey: { type: string, description: 客户端生成幂等键；重 roll 绑定此键，重放返回首次结果 }
+      responses:
+        '200':
+          description: 成功（instance 已含新副词条）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [instance, save]
+                    properties:
+                      instance: { $ref: '#/components/schemas/EquipmentInstance' }
                       save: { $ref: '#/components/schemas/SaveData' }
         '400': { $ref: '#/components/responses/ErrorResp' }
         '401': { $ref: '#/components/responses/ErrorResp' }

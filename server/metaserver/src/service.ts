@@ -19,6 +19,10 @@ import {
   grantCards,
   levelCardReward,
   UNIT_CARD_POOL_ID,
+  makeDropInstance,
+  EQUIPMENT_INV_CAP,
+  equipmentInvCount,
+  type EquipmentInstance,
 } from '@nw/shared';
 import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import {
@@ -35,7 +39,7 @@ import {
 import { CHAT_SEND_RATE_PER_MIN, regionFromAcceptLanguage } from '@nw/shared';
 import { ACHIEVEMENTS, findAchievement, validateClaim } from '@nw/shared';
 import { getOrCreateSave, putSave } from './save.js';
-import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment } from './equipment.js';
+import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment, reforgeEquipment } from './equipment.js';
 import {
   changePassword,
   ensurePublicId,
@@ -411,6 +415,7 @@ export class MetaService {
     save: SaveData;
     granted: Record<string, number>;
     grantedCards: Record<string, number>;
+    grantedEquipment?: EquipmentInstance;
     capped: boolean;
   } | { error: string }> {
     const cardReward = levelCardReward(levelId);
@@ -418,16 +423,34 @@ export class MetaService {
     const capped = hasReward ? !(await this.bumpPveRewardCap(accountId, this.deps.now())) : false;
     const grant: Record<string, number> = capped ? {} : { ...reward };
     const cardGrant: Record<string, number> = capped ? {} : { ...cardReward };
+
+    // 装备掉落 roll（独立于每日 cap；先于 mutateSave 在外部 roll，避免事务内 Math.random 不确定性）
+    const dropCfg = findPveLevel(levelId)?.equipmentDrop;
+    const pendingDrop: EquipmentInstance | undefined =
+      dropCfg && Math.random() < dropCfg.rate
+        ? (makeDropInstance(dropCfg.rarity, `drop_${randomUUID()}`) as EquipmentInstance)
+        : undefined;
+
     const out = await this.mutateSave(accountId, (s) => {
       const materials = { ...s.materials };
       for (const [m, n] of Object.entries(grant)) materials[m] = (materials[m] ?? 0) + n;
-      if (Object.keys(cardGrant).length === 0) return { ...s, materials };
-      const cardInventory = grantCards(s.cardInventory ?? {}, cardGrant);
-      const unitLevels = deriveUnitLevels(cardInventory);
-      return { ...s, materials, cardInventory, unitLevels };
+      let next = { ...s, materials };
+      if (Object.keys(cardGrant).length > 0) {
+        const cardInventory = grantCards(s.cardInventory ?? {}, cardGrant);
+        const unitLevels = deriveUnitLevels(cardInventory);
+        next = { ...next, cardInventory, unitLevels };
+      }
+      // 装备入库（满仓时静默跳过）
+      if (pendingDrop && equipmentInvCount(next) < EQUIPMENT_INV_CAP) {
+        next = { ...next, equipmentInv: { ...(next.equipmentInv ?? {}), [pendingDrop.id]: pendingDrop } };
+      }
+      return next;
     });
     if ('error' in out) return out;
-    return { save: out.save, granted: grant, grantedCards: cardGrant, capped };
+    // 确认掉落实际写入（满仓时 pendingDrop 未入库）
+    const grantedEquipment =
+      pendingDrop && out.save.equipmentInv?.[pendingDrop.id] ? pendingDrop : undefined;
+    return { save: out.save, granted: grant, grantedCards: cardGrant, grantedEquipment, capped };
   }
 
   /**
@@ -503,6 +526,7 @@ export class MetaService {
       save: granted.save,
       granted: granted.granted,
       grantedCards: granted.grantedCards,
+      ...(granted.grantedEquipment ? { grantedEquipment: granted.grantedEquipment } : {}),
       capped: granted.capped,
     });
   }
@@ -578,6 +602,7 @@ export class MetaService {
       save: granted.save,
       granted: granted.granted,
       grantedCards: granted.grantedCards,
+      ...(granted.grantedEquipment ? { grantedEquipment: granted.grantedEquipment } : {}),
       capped: granted.capped,
       verified: true,
     });
@@ -1258,5 +1283,22 @@ export class MetaService {
     const r = await equipEquipment(cols, now, accountId, slot, instanceId ?? null, unitType);
     if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
     return ok({ save: r.save });
+  }
+
+  /**
+   * 装备洗练（E6，EQUIPMENT_DESIGN §7.8）：消耗同槽低档素材件，保留主词条，重 roll 副词条。
+   * fine/rare/epic 可洗练；素材须同槽且恰低一档。idempotencyKey 幂等。
+   */
+  async reforgeEquipment(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { targetId, materialId, idempotencyKey } = req.body as {
+      targetId: string;
+      materialId: string;
+      idempotencyKey: string;
+    };
+    const { cols, now } = this.deps;
+    const r = await reforgeEquipment(cols, now, accountId, targetId, materialId, idempotencyKey);
+    if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
+    return ok({ instance: r.instance, save: r.save });
   }
 }
