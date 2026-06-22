@@ -315,9 +315,11 @@ export class CombatSystem {
   ): void {
     const rawDamage = payload.rawDamage;
 
-    // Apply damage to primary target; capture actual HP lost for lifesteal.
+    // Apply damage to primary target; capture actual HP lost (after armor) for lifesteal + events.
     let actualDamage: number;
     if (target instanceof Unit) {
+      actualDamage = target.takeDamage(rawDamage);
+    } else if (target instanceof Building) {
       actualDamage = target.takeDamage(rawDamage);
     } else {
       target.takeDamage(rawDamage);

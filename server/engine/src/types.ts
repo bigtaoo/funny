@@ -316,6 +316,8 @@ export interface BuildingBlueprint {
   canTargetFlying?: boolean;
   /** Ranged defenders (arrow tower) fire a homing projectile instead of instant damage. */
   projectile?: ProjectileSpec;
+  /** Flat damage reduction per hit; absorbed damage minimum 1. */
+  armor?: number;
 }
 
 export interface CardDefinition {

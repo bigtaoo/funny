@@ -1,6 +1,6 @@
 import { toFp, TICK_RATE } from './math/fixed';
 import { BUILDING_BLUEPRINTS } from './config';
-import { BuildingType, Side, Vec2_fp } from './types';
+import { BuildingBlueprint, BuildingType, Side, Vec2_fp } from './types';
 
 // Buildings are few (capped by board cells, well under 1000) so they take the
 // low id range starting at 0. Units start at 1000, so the namespaces never collide
@@ -49,19 +49,29 @@ export class Building {
    */
   spawnCooldownTicks: number = 0;
 
-  constructor(buildingType: BuildingType, side: Side, col: number, row: number) {
+  /** Flat damage reduction per hit; absorbed damage minimum 1. */
+  readonly armor: number;
+
+  constructor(
+    buildingType: BuildingType,
+    side: Side,
+    col: number,
+    row: number,
+    blueprint: BuildingBlueprint = BUILDING_BLUEPRINTS[buildingType],
+  ) {
     this.id           = nextId++;
     this.buildingType = buildingType;
     this.side         = side;
     this.col          = col;
     this.row          = row;
 
-    const bp = BUILDING_BLUEPRINTS[buildingType];
+    const bp = blueprint;
     this.hp               = bp.hp;
     this.maxHp            = bp.hp;
     this.attack           = bp.attack ?? 0;
     this.attackRange      = bp.attackRange ?? 0;
     this.canTargetFlying  = bp.canTargetFlying ?? false;
+    this.armor            = bp.armor ?? 0;
     this.projectile       = bp.projectile
       ? { speed: bp.projectile.speed, kind: bp.projectile.kind }
       : null;
@@ -89,7 +99,14 @@ export class Building {
     return { col: this.col, y_fp: toFp(this.row) };
   }
 
-  takeDamage(amount: number): void {
-    this.hp = Math.max(0, this.hp - amount);
+  /**
+   * Apply damage, accounting for armor (flat reduction, minimum 1 per hit).
+   * Returns actual HP lost.
+   */
+  takeDamage(amount: number): number {
+    const effective = this.armor > 0 ? Math.max(1, amount - this.armor) : amount;
+    const actual = Math.min(this.hp, effective);
+    this.hp = Math.max(0, this.hp - effective);
+    return actual;
   }
 }
