@@ -10,6 +10,7 @@ import {
   type GameMode,
   type Replay,
 } from '../game';
+import type { EngineEquipmentInput } from '@nw/engine';
 import { createLocalMatch } from '../app/matchEngine';
 import type { NetState } from '../net/NetClient';
 import type { MatchOver, PeerDc } from '../net/proto/transport';
@@ -65,6 +66,12 @@ export interface GameSceneOptions {
   profiles?: GameProfiles;
   /** Equipped skin id (S3-4) — swaps unit textures only; null/absent = default look. */
   equippedSkin?: string | null;
+  /**
+   * Equipment loadout + inventory for PvE/siege paths (A5 hard wall).
+   * Passed to the engine so affixes are applied to campaign blueprints.
+   * Omit for PvP — no equipment power in competitive matches.
+   */
+  equipment?: EngineEquipmentInput;
 }
 
 export class GameScene implements Scene {
@@ -89,6 +96,7 @@ export class GameScene implements Scene {
         ...(opts.pveUpgrades ? { pveUpgrades: opts.pveUpgrades } : {}),
         ...(opts.unitLevels ? { unitLevels: opts.unitLevels } : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
+        ...(opts.equipment ? { equipment: opts.equipment } : {}),
       });
       engine = match.engine;
       buildReplay = match.buildReplay;

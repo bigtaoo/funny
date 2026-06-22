@@ -1081,6 +1081,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       level,
       unitLevels: saveManager.get().unitLevels,
       equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
+      equipment: { gear: saveManager.get().gear, inv: saveManager.get().equipmentInv },
     });
   }
 
