@@ -20,6 +20,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { buildAvatar } from './avatar';
 import { palette } from './theme';
 import { t, type TranslationKey } from '../i18n';
+import { getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 
 export interface ProfileData {
   /** Display name (nickname). */
@@ -32,6 +33,8 @@ export interface ProfileData {
   elo?: number;
   /** Marks this card as the local player (adds a "you" tag to the name). */
   isSelf?: boolean;
+  /** Equipped title id (S10); omit or empty to hide the title line. */
+  equippedTitle?: string;
   /**
    * Optional action buttons rendered above Close (e.g. 发消息 / 拉黑 from the friends
    * list). Each runs its `fn` then auto-closes the popup. Omit for display-only cards.
@@ -138,6 +141,23 @@ export class ProfilePopup {
       idLine.y = yBottom + cardH * 0.03;
       this.card.addChild(idLine);
       yBottom = idLine.y + idLine.height;
+    }
+
+    // Equipped title line (S10 — optional).
+    if (data.equippedTitle) {
+      const keys = getTitleKeys(data.equippedTitle);
+      const titleLabel = keys
+        ? t(keys.shortKey as TranslationKey) || formatLadderTitle(data.equippedTitle)
+        : formatLadderTitle(data.equippedTitle);
+      const titleLine = new PIXI.Text(`「${titleLabel}」`, {
+        fontSize: Math.round(cardH * 0.048), fill: palette.inkBlue,
+        fontFamily: 'monospace',
+      });
+      titleLine.anchor.set(0.5, 0);
+      titleLine.x = cardW / 2;
+      titleLine.y = yBottom + cardH * 0.025;
+      this.card.addChild(titleLine);
+      yBottom = titleLine.y + titleLine.height;
     }
 
     // Rank / ELO line (optional — only the local player carries this today).

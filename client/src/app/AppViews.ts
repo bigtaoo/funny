@@ -46,6 +46,7 @@ import type { SectSceneCallbacks, SectSceneView } from '../scenes/SectScene';
 import type { AuctionSceneCallbacks } from '../scenes/AuctionScene';
 import type { DefenseEditorCallbacks } from '../scenes/DefenseEditorScene';
 import type { TeamsCallbacks } from '../scenes/TeamsScene';
+import type { TitlesSceneCallbacks } from '../scenes/TitlesScene';
 
 /** Live handle for the lobby scene — the core pushes the aggregate social badge into it. */
 export interface LobbyView {
@@ -135,6 +136,8 @@ export interface AppViews {
   showLeaderboard(cb: LeaderboardCallbacks): void;
   /** 战令面板（SE-9）。 */
   showBattlePass(cb: BattlePassCallbacks): void;
+  /** 称号墙（S10）。 */
+  showTitles(cb: TitlesSceneCallbacks): void;
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void;
   showResult(props: ResultViewProps): void;
 

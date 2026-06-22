@@ -96,6 +96,7 @@ import {
   adsDayKey,
   bumpAdsCap,
 } from './economy.js';
+import { grantTitleToPlayer } from './titles.js';
 
 export interface ServiceDeps {
   cols: Collections;
@@ -752,6 +753,12 @@ export class MetaService {
       return ok({ save: recorded.save, granted: 0 });
     }
     const save = await mirrorCoins(cols, accountId, g.coinsAfter, now());
+
+    // 顶阶达成且该成就有绑定称号 → 授予（幂等，best-effort）
+    if (tier === def.tiers.length && def.titleId) {
+      await grantTitleToPlayer(cols, accountId, def.titleId, now()).catch(() => {/* ignore */});
+    }
+
     return ok({ save, granted: coins });
   }
 
@@ -1337,7 +1344,7 @@ export class MetaService {
       .find({ 'save.pvp.seasonNo': season.seasonNo })
       .sort({ 'save.pvp.elo': -1 })
       .limit(100)
-      .project({ _id: 1, 'save.pvp': 1 })
+      .project({ _id: 1, 'save.pvp': 1, 'save.equipped': 1 })
       .toArray();
     const accountIds = top.map((d) => d._id);
     const accounts = await cols.accounts
@@ -1346,13 +1353,16 @@ export class MetaService {
     const byId = new Map(accounts.map((a) => [a._id, a]));
     const entries = top.map((d, i) => {
       const a = byId.get(d._id);
-      const pvp = (d as unknown as { save: { pvp: { elo: number; rank: string } } }).save.pvp;
+      const pvp = (d as unknown as { save: { pvp: { elo: number; rank: string }; equipped?: Record<string, string> } }).save.pvp;
+      const equipped = (d as unknown as { save: { equipped?: Record<string, string> } }).save.equipped;
+      const equippedTitle = equipped?.['title'];
       return {
         rank: i + 1,
         displayName: a?.displayName ?? '',
         publicId: a?.publicId ?? '',
         elo: pvp.elo,
         pvpRank: pvp.rank,
+        ...(equippedTitle ? { equippedTitle } : {}),
       };
     });
     return ok({ seasonNo: season.seasonNo, entries });

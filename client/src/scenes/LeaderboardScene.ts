@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { formatLadderTitle, getTitleKeys } from '../game/meta/titles';
 
 // ── LeaderboardScene — 全服天梯排行榜（SE-6）─────────────────────────────────────
 //
@@ -17,6 +18,7 @@ export interface LeaderboardEntry {
   publicId: string;
   elo: number;
   pvpRank: string;
+  equippedTitle?: string;
 }
 
 export interface LeaderboardCallbacks {
@@ -199,6 +201,16 @@ export class LeaderboardScene implements Scene {
     const nameLbl = txt(e.displayName || `#${e.publicId}`, Math.round(rowH * 0.48), C.dark);
     nameLbl.anchor.set(0, 0.5); nameLbl.x = x + Math.round(w * 0.18); nameLbl.y = y + rowH / 2;
     parent.addChild(nameLbl);
+
+    if (e.equippedTitle) {
+      const keys = getTitleKeys(e.equippedTitle);
+      const tLabel = keys
+        ? (t(keys.shortKey as import('../i18n').TranslationKey) || formatLadderTitle(e.equippedTitle))
+        : formatLadderTitle(e.equippedTitle);
+      const titleLbl = txt(`「${tLabel}」`, Math.round(rowH * 0.3), C.mid);
+      titleLbl.anchor.set(0, 0.5); titleLbl.x = nameLbl.x + nameLbl.width + 4; titleLbl.y = y + rowH / 2;
+      parent.addChild(titleLbl);
+    }
 
     const pvpRankLbl = txt(e.pvpRank, Math.round(rowH * 0.38), C.mid);
     pvpRankLbl.anchor.set(0.5, 0.5); pvpRankLbl.x = x + Math.round(w * 0.68); pvpRankLbl.y = y + rowH / 2;

@@ -74,6 +74,10 @@ export interface SaveData {
     reachedRanks: RankId[];
   };
 
+  // —— 称号（S10，TITLE_DESIGN §2）。服务器权威，PUT /save 不可写。缺省视为空集合，懒创建。 ——
+  // 赛季结算 / 成就 claim / admin 授予写；equipped['title'] 是佩戴位（客户端同步段）。
+  titles?: string[];
+
   // —— 战令（S11-C，SEASON_DESIGN §C）。服务器权威，PUT /save 不可写。缺省视为未参与，懒创建。 ——
   battlePass?: BattlePassData;
 

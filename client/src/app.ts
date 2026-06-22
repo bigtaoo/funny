@@ -27,6 +27,7 @@ import { StatsScene, type StatsCallbacks } from './scenes/StatsScene';
 import { AchievementScene, type AchievementCallbacks } from './scenes/AchievementScene';
 import { LeaderboardScene, type LeaderboardCallbacks } from './scenes/LeaderboardScene';
 import { BattlePassScene, type BattlePassCallbacks } from './scenes/BattlePassScene';
+import { TitlesScene, type TitlesSceneCallbacks } from './scenes/TitlesScene';
 import { WorldMapScene, type WorldMapCallbacks, type WorldMapView } from './scenes/WorldMapScene';
 import { FamilyScene, type FamilySceneCallbacks } from './scenes/FamilyScene';
 import { SectScene, type SectSceneCallbacks, type SectSceneView } from './scenes/SectScene';
@@ -152,6 +153,11 @@ class PixiAppViews implements AppViews {
   showBattlePass(cb: BattlePassCallbacks): void {
     this.leaveLobby();
     this.manager.goto(new BattlePassScene(this.layout, this.input, cb));
+  }
+
+  showTitles(cb: TitlesSceneCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new TitlesScene(this.layout, this.input, cb));
   }
 
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void {

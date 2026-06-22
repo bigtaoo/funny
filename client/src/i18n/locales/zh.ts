@@ -1001,6 +1001,26 @@ export const zh = {
   'battlepass.buyToast': 'Pass 已激活！',
   'battlepass.maxLevel': '满级！',
   'battlepass.openBattlePass': '战令',
+
+  // ── 称号系统（S10，TITLE_DESIGN）────────────────────────────────────────────
+  'settings.titles': '称号',
+  'settings.openTitles': '我的称号',
+  'titles.title': '称号墙',
+  'titles.back': '← 返回',
+  'titles.empty': '暂无称号',
+  'titles.equipped': '已佩戴',
+  // 称号名称（TITLE_DESIGN §6）。
+  'title.event.newbie.full': '新手上路',
+  'title.event.newbie.short': '新手',
+  'title.event.founder.full': '先行者',
+  'title.event.founder.short': '先行者',
+  'title.ach.all_chapters.full': '笔记本征服者',
+  'title.ach.all_chapters.short': '征服者',
+  'title.ach.pvp.veteran.full': '排位老兵',
+  'title.ach.pvp.veteran.short': '老兵',
+  // 天梯赛季称号（ladder.s{N}.{rank}）由 formatLadderTitle 拼动态部分。
+  'title.ladder.full': '天梯达人',
+  'title.ladder.short': '天梯',
 };
 
 export type TranslationKey = keyof typeof zh;

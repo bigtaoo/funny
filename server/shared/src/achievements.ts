@@ -86,6 +86,7 @@ export const ACHIEVEMENTS: Achievement[] = [
       { threshold: 3, coins: 200 },
       { threshold: 9, coins: 400 }, // 「全部」占位：暂按 9 章，章节扩充时同步
     ],
+    titleId: 'ach.all_chapters', // 顶阶（全通关）额外授予永久称号（§7）
   },
   {
     id: 'ach.pvp.wins',
@@ -97,6 +98,7 @@ export const ACHIEVEMENTS: Achievement[] = [
       { threshold: 50, coins: 150 },
       { threshold: 200, coins: 300 },
     ],
+    titleId: 'ach.pvp.veteran', // 顶阶（200 胜）额外授予永久称号（§7）
   },
 ];
 

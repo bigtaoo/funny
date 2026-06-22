@@ -61,6 +61,8 @@ export interface MatchStartInfo {
   opponentName: string;
   /** Opponent 9-digit public id (UI only; empty if unknown). */
   opponentPublicId: string;
+  /** Opponent equipped title id (S10; empty if none). */
+  opponentTitle: string;
 }
 
 export interface NetInputSourceOptions {
@@ -174,6 +176,7 @@ export class NetInputSource implements InputSource {
       localSide: m.localSide,
       opponentName: m.opponentName,
       opponentPublicId: m.opponentPublicId,
+      opponentTitle: m.opponentTitle,
     };
     this.startFrame = m.startFrame;
     // The start frame is playable immediately (its command set is empty — the

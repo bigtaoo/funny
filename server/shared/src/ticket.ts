@@ -19,6 +19,8 @@ export interface TicketClaims {
   opponent: string;
   /** 对手 9 位数字公开 id（UI 用，纯展示；缺省空串）。 */
   opponentPublicId: string;
+  /** 对手当前佩戴称号 id（UI 用，纯展示；缺省空串）。 */
+  opponentTitle?: string;
   /** 分配到的 gameserver 公开 WS 地址（写进 match_found.game_url）。 */
   gameUrl: string;
   /**
