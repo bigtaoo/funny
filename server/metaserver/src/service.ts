@@ -88,6 +88,7 @@ import {
   claimMailAtomic,
   splitAttachments,
   sendPlayerMail,
+  insertSystemMail,
 } from './mail.js';
 import type { CommercialClient } from './commercialClient.js';
 import type { GatewayClient } from './gatewayClient.js';
@@ -192,7 +193,18 @@ export class MetaService {
   }
 
   // ── auth ──────────────────────────────────────────
-  async authWx(req: FastifyRequest) {
+
+  /** C4：检查账号级封号标记（accounts.flags.banned），封号则 reject。 */
+  private async rejectIfBanned(cols: typeof this.deps.cols, accountId: string, reply: FastifyReply): Promise<boolean> {
+    const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { flags: 1 } });
+    if (doc?.flags?.banned) {
+      void reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
+      return true;
+    }
+    return false;
+  }
+
+  async authWx(req: FastifyRequest, reply: FastifyReply) {
     const { code } = req.body as { code: string };
     const openid = await exchangeWxCode(code);
     const region = regionFromAcceptLanguage(req.headers['accept-language']);
@@ -202,12 +214,13 @@ export class MetaService {
       this.deps.now(),
       region,
     );
+    if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
     return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
-  async authDevice(req: FastifyRequest) {
+  async authDevice(req: FastifyRequest, reply: FastifyReply) {
     const { deviceId } = req.body as { deviceId: string };
     const region = regionFromAcceptLanguage(req.headers['accept-language']);
     const { accountId, isNew, isAnonymous, displayName } = await resolveByDevice(
@@ -216,6 +229,7 @@ export class MetaService {
       this.deps.now(),
       region,
     );
+    if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
     return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
@@ -264,6 +278,7 @@ export class MetaService {
       return reply.code(401).send(err(ErrorCode.INVALID_CREDENTIALS, 'invalid loginId or password'));
     }
     const { accountId, isNew, isAnonymous, displayName } = account;
+    if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
     return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
@@ -321,6 +336,7 @@ export class MetaService {
       this.deps.now(),
       region,
     );
+    if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
     return ok({
@@ -800,6 +816,25 @@ export class MetaService {
         banned,
         ts: now(),
       });
+
+      // C4：账号层面 pveWarnings 计数 + 警告邮件 + 封号（auth 层拦截）。
+      const updatedAcc = await cols.accounts.findOneAndUpdate(
+        { _id: accountId },
+        { $inc: { 'flags.pveWarnings': 1 } },
+        { returnDocument: 'after', projection: { 'flags.pveWarnings': 1 } },
+      );
+      const newWarnings = updatedAcc?.flags?.pveWarnings ?? 1;
+      if (newWarnings === 1) {
+        await insertSystemMail(cols, `pve-warn-${verifyId}`, accountId, {
+          subject: 'Fair Play Warning',
+          body: 'Unusual PvE activity was detected. Continued violations may result in account suspension.',
+          expireDays: 30,
+        }, now());
+      }
+      if (newWarnings >= PVE_REJECT_BAN_THRESHOLD) {
+        await cols.accounts.updateOne({ _id: accountId }, { $set: { 'flags.banned': true } });
+      }
+
       const s = 'error' in saved ? await getOrCreateSave(cols, accountId, now()) : saved.save;
       return ok({ save: s, granted: {}, capped: false, verified: false });
     }

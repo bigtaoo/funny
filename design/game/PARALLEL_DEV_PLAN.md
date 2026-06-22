@@ -270,7 +270,7 @@
 
 ---
 
-### C4  PvE 反作弊处置（S4-4 待办）
+### ✅ C4  PvE 反作弊处置（S4-4 待办）
 
 **范围**：
 - `pveVerifications` 已有 `status: 'suspicious'`，补后续处置：

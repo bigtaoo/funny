@@ -168,6 +168,13 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, mismatches: rows });
         }
 
+        // ── PvE 可疑账号列表（C4）──
+        if (method === 'GET' && path === '/admin/suspicious-pve') {
+          requireCap(actor, 'anticheat.view');
+          const rows = await svc.listSuspiciousPve();
+          return send(res, 200, { ok: true, accounts: rows });
+        }
+
         // ── 成就反作弊审查队列（S9-7）──
         if (method === 'GET' && path === '/admin/anticheat/reviews') {
           requireCap(actor, 'anticheat.view');

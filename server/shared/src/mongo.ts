@@ -35,6 +35,11 @@ export interface AccountDoc {
    * 私聊敏感词按发送方此字段选词表；缺省 / 旧账号无此字段 → `'global'`（仅基础词表）。
    */
   region?: ChatRegion;
+  /** C4 PvE 反作弊：可疑次数 + 封号标记（账号层面，auth 拦截用）。 */
+  flags?: {
+    pveWarnings?: number; // 累计 PvE 可疑次数
+    banned?: boolean;     // 达到阈值后封号；auth 时返 ACCOUNT_BANNED
+  };
 }
 
 /**

@@ -425,6 +425,21 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     return reply.send({ ok: true, matches });
   });
 
+  // ── GET /internal/suspicious-pve（C4）─────────────────────────────────────────
+  // 返回 pveWarnings > 0 的账号列表（admin 人工审核用）。
+  app.get('/internal/suspicious-pve', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const accounts = await cols.accounts
+      .find({ 'flags.pveWarnings': { $gt: 0 } })
+      .sort({ 'flags.pveWarnings': -1 })
+      .limit(200)
+      .project({ _id: 1, displayName: 1, publicId: 1, 'flags.pveWarnings': 1, 'flags.banned': 1, createdAt: 1 })
+      .toArray();
+    return reply.send({ ok: true, accounts });
+  });
+
   // ── 材料扣除 / 发放（S8-5，worldsvc 拍卖场调用）─────────────────────────────────
   // 不经 openapi glue，X-Internal-Key 鉴权。
   // POST /internal/materials/deduct  { accountId, material, qty, orderId }

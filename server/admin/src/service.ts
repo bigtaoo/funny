@@ -35,7 +35,7 @@ import {
 } from '@nw/shared';
 import { METRIC_KEYS } from '@nw/shared';
 import type { AdminAccountDoc, AdminCollections, AuditDoc, CompTicketDoc, TradeAuditTicketDoc } from './db';
-import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, MailDispatcher, MismatchClient, MismatchRow, PlayerClient, PlayerProfile, StatsClient, WorldClient, SlgWorldSummary } from './clients';
+import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, MailDispatcher, MismatchClient, MismatchRow, PlayerClient, PlayerProfile, StatsClient, SuspiciousPveClient, SuspiciousPveRow, WorldClient, SlgWorldSummary } from './clients';
 import type { AuctionAnomaly } from '@nw/shared';
 
 const log = createLogger('admin:service');
@@ -66,6 +66,7 @@ export interface AdminServiceDeps {
   players: PlayerClient;
   antiCheat: AntiCheatClient;
   mismatches: MismatchClient;
+  suspiciousPve: SuspiciousPveClient;
   mail: MailDispatcher;
   analytics: AnalyticsClient;
   world: WorldClient;
@@ -100,6 +101,7 @@ export class AdminService {
   private readonly players: PlayerClient;
   private readonly antiCheat: AntiCheatClient;
   private readonly mismatches: MismatchClient;
+  private readonly suspiciousPve: SuspiciousPveClient;
   private readonly mail: MailDispatcher;
   private readonly analytics: AnalyticsClient;
   private readonly world: WorldClient;
@@ -113,6 +115,7 @@ export class AdminService {
     this.players = deps.players;
     this.antiCheat = deps.antiCheat;
     this.mismatches = deps.mismatches;
+    this.suspiciousPve = deps.suspiciousPve;
     this.mail = deps.mail;
     this.analytics = deps.analytics;
     this.world = deps.world;
@@ -123,6 +126,12 @@ export class AdminService {
   async listMismatches(): Promise<MismatchRow[]> {
     if (!this.mismatches.available) return [];
     return this.mismatches.listMismatches();
+  }
+
+  /** C4：pveWarnings > 0 的可疑账号列表（anticheat.view 权限）。 */
+  async listSuspiciousPve(): Promise<SuspiciousPveRow[]> {
+    if (!this.suspiciousPve.available) return [];
+    return this.suspiciousPve.listSuspiciousPve();
   }
 
   // ───────────────────── SLG 赛季运维（G7/§17.7）─────────────────────
