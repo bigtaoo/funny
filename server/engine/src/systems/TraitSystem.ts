@@ -60,6 +60,9 @@ export class TraitSystem {
         }
       }
 
+      // Mark expiry (Mara's markEnemies debuff).
+      if (unit.markedTicks > 0) unit.markedTicks--;
+
       // summonOnTimer: spawn a unit at the summoner's position.
       if (unit.summonOnTimer && unit.summonCooldownTicks > 0) {
         unit.summonCooldownTicks--;

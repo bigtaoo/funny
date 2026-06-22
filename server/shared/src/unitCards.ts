@@ -14,10 +14,12 @@ export const MERGE_COPIES = 5;
 export const UNIT_CARD_MAX_LEVEL = 9;
 
 /**
- * 可养成兵种 id —— 须与 @nw/engine `UnitType` 的字符串值逐字一致
- * （'infantry' / 'shieldbearer' / 'archer'），这样 SaveData.unitLevels 的键能直接喂引擎。
+ * 可养成兵种 id —— 须与 @nw/engine `UnitType` 的字符串值逐字一致，SaveData.unitLevels 的键直接喂引擎。
+ * 顺序决定 levelCardReward 的章节轮换（ch1→index0，ch2→index1，…）：
+ *   奇章（Tao）: infantry / shieldbearer / archer
+ *   偶章（Anna）: max / lena / mara
  */
-export const PROGRESSABLE_UNIT_IDS = ['infantry', 'shieldbearer', 'archer'] as const;
+export const PROGRESSABLE_UNIT_IDS = ['infantry', 'max', 'shieldbearer', 'lena', 'archer', 'mara'] as const;
 export type ProgressableUnitId = (typeof PROGRESSABLE_UNIT_IDS)[number];
 
 export function isProgressableUnit(id: string): id is ProgressableUnitId {

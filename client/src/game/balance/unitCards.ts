@@ -3,7 +3,7 @@
 export const MERGE_COPIES = 5;
 export const UNIT_CARD_MAX_LEVEL = 9;
 
-export const PROGRESSABLE_UNIT_IDS = ['infantry', 'shieldbearer', 'archer'] as const;
+export const PROGRESSABLE_UNIT_IDS = ['infantry', 'max', 'shieldbearer', 'lena', 'archer', 'mara'] as const;
 export type ProgressableUnitId = (typeof PROGRESSABLE_UNIT_IDS)[number];
 
 export function cardKey(unitId: string, level: number): string {

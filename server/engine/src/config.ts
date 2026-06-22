@@ -260,6 +260,50 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     radius_fp: 470,
     onDeathSpawn: { type: UnitType.Runner, count: 2 },
   },
+  // Max: Anna-side vanguard. burstOnSingle deals 2× damage when he is the last
+  // standing enemy — a clean-up finisher that rewards holding him for the kill.
+  // Light armor (2) makes him resilient to towers but not melee-proof.
+  [UnitType.Max]: {
+    type: UnitType.Max,
+    hp: 190,
+    attack: 22,
+    attackInterval: 1.3,
+    speed: 1.0,
+    range: 1,
+    spawnCount: 1,
+    radius_fp: 490,
+    armor: 2,
+    burstOnSingle: true,
+  },
+  // Lena: Anna-side sentinel. disciplineArmor = armor 8; every hit reduced by 8
+  // (minimum 1), making rapid light strikes nearly harmless while heavy single hits
+  // still connect. Slow but nearly unkillable by arrow towers alone.
+  [UnitType.Lena]: {
+    type: UnitType.Lena,
+    hp: 150,
+    attack: 10,
+    attackInterval: 1.0,
+    speed: 0.75,
+    range: 1,
+    spawnCount: 1,
+    radius_fp: 510,
+    armor: 8,
+  },
+  // Mara: Anna-side skirmisher. markEnemies: arrows mark targets for +25 % bonus
+  // damage from all sources for 3 s. Fragile and dies fast to melee; best behind
+  // a tank. The mark synergises with any unit focusing the same target.
+  [UnitType.Mara]: {
+    type: UnitType.Mara,
+    hp: 40,
+    attack: 12,
+    attackInterval: 1.3,
+    speed: 1.4,
+    range: 2,
+    spawnCount: 1,
+    radius_fp: 320,
+    markEnemies: true,
+    projectile: { speed: 14, kind: 'arrow' },
+  },
 };
 
 // ─── Building blueprints ──────────────────────────────────────────────────────

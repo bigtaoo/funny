@@ -30,6 +30,12 @@ export enum UnitType {
   /** PvE-only bomb unit: dies and spawns 2 Runners, making it worse to ignore.
    *  Kill it with area damage or it becomes a swarm on death. No card → never in PvP. */
   Splitter = 'splitter',
+  /** Anna-side vanguard: burstOnSingle deals 2× damage when only one enemy remains. Unlocked via PvE ch2. */
+  Max = 'max',
+  /** Anna-side sentinel: disciplineArmor=8 reduces every hit by 8 (min 1). Unlocked via PvE ch4. */
+  Lena = 'lena',
+  /** Anna-side skirmisher: markEnemies marks targets for +25 % bonus damage from all sources. Unlocked via PvE ch6. */
+  Mara = 'mara',
 }
 
 export enum BuildingType {
@@ -303,6 +309,12 @@ export interface UnitBlueprint {
   // ── Special traits (PvE) ──────────────────────────────────────────────────
   stealth?: boolean;            // invisible to findTarget at Chebyshev dist > 2
   summonOnTimer?: { type: UnitType; intervalSec: number };
+
+  // ── Anna-side unit traits (A6) ────────────────────────────────────────────
+  /** 2× damage when only one live enemy remains on target side (Max). */
+  burstOnSingle?: boolean;
+  /** Marks the target on hit; marked units take +25 % damage from all sources for 3 s (Mara). */
+  markEnemies?: boolean;
 }
 
 export interface BuildingBlueprint {
