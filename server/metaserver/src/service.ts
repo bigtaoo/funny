@@ -879,6 +879,8 @@ export class MetaService {
           unitLevels: { ...(cur.unitLevels ?? {}) }, // S12 服务器权威快照（复算用，防漂移）
           reason,
           status: 'pending',
+          // S9-3b：存客户端上报计数作审计比对基准（verdict.statsJson 是权威来源，报告仅供 ops 可视）。
+          ...(clientStats ? { reportedStats: clientStats } : {}),
           ts: now(),
         });
         const saveWithSt = { ...prog.save, stamina: { current: staminaResult.current, regenAt: staminaResult.regenAt } };

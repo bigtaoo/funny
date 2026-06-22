@@ -181,6 +181,8 @@ export interface PveVerificationDoc {
   /** 触发原因（审计）：first | anomaly | sample。 */
   reason: string;
   status: 'pending' | 'verified' | 'unverified' | 'rejected';
+  /** 客户端上报的本局成就计数（S9-3b）：kill/cast 各类型计数，审计用比对基准。 */
+  reportedStats?: Record<string, number>;
   /** 复算得到的星数（verified/rejected 时存）。 */
   judgedStars?: number;
   judgeAccountId?: string;
