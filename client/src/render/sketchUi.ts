@@ -134,3 +134,34 @@ export function sketchPanel(w: number, h: number, opts: PanelOpts): PIXI.Graphic
 export function sketchAccentBar(g: PIXI.Graphics, h: number, color: number, seed = 9): void {
   new SketchPen(g, seed).line(4, 5, 4, h - 5, { color, width: 4.5, jitter: 0.8, taper: 0.85 });
 }
+
+/**
+ * Full-screen loading overlay: semi-transparent dim + centred panel +
+ * animated processing text. Purely visual — caller must block input
+ * (typically `if (bt.busy) return` at the top of handleDown).
+ * @param dots 0–2, drives the trailing-dot animation
+ * @param label Already-translated label string (dots appended automatically)
+ */
+export function drawLoadingOverlay(
+  container: PIXI.Container, w: number, h: number, dots: number, label: string,
+): void {
+  const dim = new PIXI.Graphics();
+  dim.beginFill(0x000000, 0.55); dim.drawRect(0, 0, w, h); dim.endFill();
+  container.addChild(dim);
+
+  const display = label + '.'.repeat(dots + 1);
+  const lbl = txt(display, Math.round(h * 0.030), 0xffffff, true);
+  const padX = Math.round(w * 0.08);
+  const padY = Math.round(h * 0.022);
+  const bw = Math.max(lbl.width + padX * 2, Math.round(w * 0.40));
+  const bh = lbl.height + padY * 2;
+  const bx = (w - bw) / 2;
+  const by = (h - bh) / 2;
+  const panel = sketchPanel(bw, bh, {
+    fill: ui.dark, fillAlpha: 0.92, border: ui.gold, width: 2, seed: seedFor(bw, bh, 9),
+  });
+  panel.x = bx; panel.y = by;
+  container.addChild(panel);
+  lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
+  container.addChild(lbl);
+}

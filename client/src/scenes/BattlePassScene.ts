@@ -3,7 +3,8 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
 import {
   BATTLEPASS_DEFS, BATTLEPASS_MAX_LEVEL, BATTLEPASS_BUY_COST, BP_XP_PER_LEVEL,
@@ -43,7 +44,7 @@ export class BattlePassScene implements Scene {
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
 
-  private busy = false;
+  private readonly bt = new BusyTracker();
   private toast: string | null = null;
   private toastTimer = 0;
   private scrollY = 0;
@@ -62,12 +63,13 @@ export class BattlePassScene implements Scene {
       this.toastTimer -= dt;
       if (this.toastTimer <= 0) { this.toast = null; this.render(); }
     }
+    if (this.bt.tick(dt)) this.render();
   }
 
   destroy(): void { this.unsubs.forEach((u) => u()); }
 
   private handleDown(x: number, y: number): void {
-    if (this.busy) return;
+    if (this.bt.busy) return;
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
@@ -108,6 +110,7 @@ export class BattlePassScene implements Scene {
       msg.anchor.set(0.5, 0.5); msg.x = w / 2; msg.y = h / 2;
       this.container.addChild(msg);
       this.renderToast();
+      if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
       return;
     }
 
@@ -168,11 +171,12 @@ export class BattlePassScene implements Scene {
       this.hits.push({
         rect: { x: pad, y, w: barW, h: buyAreaH },
         fn: () => {
-          if (!this.cb.onBuy || this.busy) return;
-          this.busy = true;
+          if (!this.cb.onBuy || this.bt.busy) return;
+          this.bt.start();
           this.render();
-          this.cb.onBuy!().then(() => { this.busy = false; this.render(); })
-            .catch(() => { this.busy = false; this.showToast(t('battlepass.buyFailed')); });
+          withTimeout(this.cb.onBuy!())
+            .then(() => { this.bt.stop(); this.render(); })
+            .catch((e) => { this.bt.stop(); this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('battlepass.buyFailed')); });
         },
       });
       y += buyAreaH + Math.round(h * 0.015);
@@ -241,6 +245,7 @@ export class BattlePassScene implements Scene {
     this.container.addChild(scrollContainer);
 
     this.renderToast();
+    if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
   }
 
   private cellState(
@@ -305,17 +310,19 @@ export class BattlePassScene implements Scene {
   }
 
   private doClaim(track: 'free' | 'paid', level: number): void {
-    if (!this.cb.onClaim || this.busy) return;
-    this.busy = true;
+    if (!this.cb.onClaim || this.bt.busy) return;
+    this.bt.start();
     this.render();
-    this.cb.onClaim(track, level).then((coins) => {
-      this.busy = false;
-      if (coins > 0) this.showToast(t('battlepass.claimToast', { n: String(coins) }));
-      else this.render();
-    }).catch(() => {
-      this.busy = false;
-      this.showToast(t('battlepass.claimFailed'));
-    });
+    withTimeout(this.cb.onClaim(track, level))
+      .then((coins) => {
+        this.bt.stop();
+        if (coins > 0) this.showToast(t('battlepass.claimToast', { n: String(coins) }));
+        else this.render();
+      })
+      .catch((e) => {
+        this.bt.stop();
+        this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('battlepass.claimFailed'));
+      });
   }
 
   private renderToast(): void {

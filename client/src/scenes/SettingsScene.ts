@@ -5,7 +5,8 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, getLocale, setLocale, getSupportedLocales, Locale, TranslationKey } from '../i18n';
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
-import { sketchPanel, seedFor } from '../render/sketchUi';
+import { sketchPanel, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { buildAvatar } from '../render/avatar';
 
 // ── SettingsScene — personal profile + settings ────────────────────────────────
@@ -86,7 +87,7 @@ export class SettingsScene implements Scene {
   // Rename overlay state.
   private renameOpen = false;
   private renameText = '';
-  private busy = false;
+  private readonly bt = new BusyTracker();
   private caretOn = true;
   private caretTimer = 0;
   private toast: { text: string; color: number } | null = null;
@@ -108,6 +109,7 @@ export class SettingsScene implements Scene {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
     }
+    if (this.bt.tick(dt)) this.render();
   }
 
   destroy(): void {
@@ -116,6 +118,7 @@ export class SettingsScene implements Scene {
   }
 
   private handleDown(x: number, y: number): void {
+    if (this.bt.busy) return;
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
@@ -162,22 +165,27 @@ export class SettingsScene implements Scene {
   }
 
   private async submitRename(): Promise<void> {
-    if (this.busy || !this.cb.onRename) return;
+    if (this.bt.busy || !this.cb.onRename) return;
     const name = this.renameText.trim();
     if (!name) { this.closeRename(); return; }
-    this.busy = true;
     this.renameOpen = false;
     this.hiddenInput?.blur();
+    this.bt.start();
     this.render();
-    const res = await this.cb.onRename(name);
-    this.busy = false;
-    if (res.ok) {
-      this.playerName = res.name;
-      this.toast = { text: t('settings.renameOk'), color: C.green };
-    } else {
-      this.toast = { text: t(res.key), color: C.red };
+    try {
+      const res = await withTimeout(this.cb.onRename(name));
+      if (res.ok) {
+        this.playerName = res.name;
+        this.toast = { text: t('settings.renameOk'), color: C.green };
+      } else {
+        this.toast = { text: t(res.key), color: C.red };
+      }
+    } catch (e) {
+      this.toast = { text: e instanceof TimeoutError ? t('common.networkTimeout') : t('settings.renameFail'), color: C.red };
+    } finally {
+      this.bt.stop();
+      this.render();
     }
-    this.render();
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -194,6 +202,7 @@ export class SettingsScene implements Scene {
     this.drawAccount();
     if (this.toast) this.drawToast();
     if (this.renameOpen) this.drawRenameOverlay();
+    if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
   private drawBackground(): void {
@@ -273,7 +282,7 @@ export class SettingsScene implements Scene {
     if (this.cb.onRename && this.cb.renameCost != null) {
       const cost = this.cb.renameCost;
       const coins = this.cb.getCoins?.() ?? 0;
-      const affordable = coins >= cost && !this.busy;
+      const affordable = coins >= cost && !this.bt.busy;
       const btnY = cardY + av + Math.round(h * 0.02);
       const label = t('settings.rename', { cost });
       this.addButton(label, btnY, affordable ? C.accent : C.light, affordable ? () => this.openRename() : null, Math.round(w * 0.46));

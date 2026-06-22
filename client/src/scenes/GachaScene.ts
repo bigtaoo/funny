@@ -5,7 +5,8 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { Rarity } from '../game/meta/SaveData';
 import type { GachaPool, GachaResultEntry } from '../net/ApiClient';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
 // ── GachaScene (S2-6) — single / ten-pull lootbox with pity + reveal ───────────
 //
@@ -46,7 +47,7 @@ export class GachaScene implements Scene {
 
   private pool: GachaPool | null = null;
   private loading = true;
-  private busy = false;
+  private readonly bt = new BusyTracker();
 
   private toast: { text: string; color: number } | null = null;
   /** Reveal overlay: non-null while showing the latest draw's results. */
@@ -65,7 +66,9 @@ export class GachaScene implements Scene {
     void this.loadPools();
   }
 
-  update(_dt: number): void { /* static */ }
+  update(dt: number): void {
+    if (this.bt.tick(dt)) this.render();
+  }
 
   destroy(): void {
     this.unsubs.forEach((u) => u());
@@ -85,18 +88,20 @@ export class GachaScene implements Scene {
   // ── Draw ───────────────────────────────────────────────────────────────────
 
   private async onDraw(count: 1 | 10): Promise<void> {
-    if (this.busy || !this.pool) return;
-    this.busy = true;
+    if (this.bt.busy || !this.pool) return;
+    this.bt.start();
     this.toast = null;
     this.render();
-    const res = await this.cb.draw(this.pool.id, count);
-    this.busy = false;
-    if (res.ok) {
-      this.reveal = res.results;
-    } else {
-      this.toast = { text: t(res.key), color: C.red };
+    try {
+      const res = await withTimeout(this.cb.draw(this.pool.id, count));
+      if (res.ok) this.reveal = res.results;
+      else this.toast = { text: t(res.key), color: C.red };
+    } catch (e) {
+      this.toast = { text: t(e instanceof TimeoutError ? 'common.networkTimeout' : 'gacha.error'), color: C.red };
+    } finally {
+      this.bt.stop();
+      this.render();
     }
-    this.render();
   }
 
   private dismissReveal(): void {
@@ -107,6 +112,7 @@ export class GachaScene implements Scene {
   // ── Input ─────────────────────────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
+    if (this.bt.busy) return;
     // While revealing, any tap continues.
     if (this.reveal) { this.dismissReveal(); return; }
     for (const hit of this.hits) {
@@ -126,6 +132,7 @@ export class GachaScene implements Scene {
     this.drawBody(tbH);
     if (this.toast) this.drawToast();
     if (this.reveal) this.drawReveal(this.reveal);
+    if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
   private drawBackground(): void {
@@ -234,8 +241,8 @@ export class GachaScene implements Scene {
     let btnY = Math.round(h * 0.68);
     const single = pool.costSingle;
     const ten = pool.costTen ?? pool.costSingle * 10;
-    const canSingle = !this.busy && this.cb.getCoins() >= single;
-    const canTen = !this.busy && this.cb.getCoins() >= ten;
+    const canSingle = !this.bt.busy && this.cb.getCoins() >= single;
+    const canTen = !this.bt.busy && this.cb.getCoins() >= ten;
 
     this.addButton(t('gacha.drawOne', { cost: single }), btnX, btnY, btnW, btnH,
       canSingle ? C.dark : C.btnOff, canSingle ? C.accent : C.light,

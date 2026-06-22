@@ -3,7 +3,8 @@ import { Scene } from './SceneManager';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
 import type { RetentionView } from '../net/ApiClient';
 import {
@@ -37,7 +38,7 @@ export class DailyScene implements Scene {
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
 
-  private busy = false;
+  private readonly bt = new BusyTracker();
   private toast: string | null = null;
   private toastTimer = 0;
 
@@ -58,6 +59,7 @@ export class DailyScene implements Scene {
       this.toastTimer -= dt;
       if (this.toastTimer <= 0) { this.toast = null; this.render(); }
     }
+    if (this.bt.tick(dt)) this.render();
   }
 
   destroy(): void {
@@ -73,7 +75,7 @@ export class DailyScene implements Scene {
   }
 
   private handleDown(x: number, y: number): void {
-    if (this.busy) return;
+    if (this.bt.busy) return;
     for (const h of this.hits) {
       if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
         h.fn();
@@ -135,6 +137,7 @@ export class DailyScene implements Scene {
       toastTxt.x = w / 2; toastTxt.y = h * 0.855;
       this.container.addChild(toastBg, toastTxt);
     }
+    if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
   }
 
   private renderCheckin(top: number, areaH: number, save: SaveData, nowMs: number): void {
@@ -276,32 +279,32 @@ export class DailyScene implements Scene {
   }
 
   private async doCheckin(): Promise<void> {
-    if (this.busy || !this.cb.onCheckin) return;
-    this.busy = true;
+    if (this.bt.busy || !this.cb.onCheckin) return;
+    this.bt.start();
     try {
-      const r = await this.cb.onCheckin();
+      const r = await withTimeout(this.cb.onCheckin());
       const rewardDesc = r.reward.kind === 'coins'
         ? t('daily.tasks.rewardCoins', { n: r.reward.count })
         : `+${r.reward.count} 体力`;
       this.showToast(`${t('daily.checkin.day', { n: r.day })} ${rewardDesc}`);
-    } catch {
-      this.showToast(t('daily.tasks.claimFailed'));
+    } catch (e) {
+      this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'));
     } finally {
-      this.busy = false;
+      this.bt.stop();
       void this.load();
     }
   }
 
   private async doClaim(): Promise<void> {
-    if (this.busy || !this.cb.onClaimDaily) return;
-    this.busy = true;
+    if (this.bt.busy || !this.cb.onClaimDaily) return;
+    this.bt.start();
     try {
-      const r = await this.cb.onClaimDaily();
+      const r = await withTimeout(this.cb.onClaimDaily());
       this.showToast(t('daily.tasks.claimToast', { n: r.coins }));
-    } catch {
-      this.showToast(t('daily.tasks.claimFailed'));
+    } catch (e) {
+      this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'));
     } finally {
-      this.busy = false;
+      this.bt.stop();
       void this.load();
     }
   }

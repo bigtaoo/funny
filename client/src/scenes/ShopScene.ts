@@ -4,7 +4,8 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { ShopItem } from '../net/ApiClient';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
 // ── ShopScene (S2-6) — direct-purchase shop + virtual top-up entry ─────────────
 //
@@ -43,7 +44,7 @@ export class ShopScene implements Scene {
 
   private items: ShopItem[] | null = null;
   private loading = true;
-  private busy = false; // a buy/top-up is in flight — block further taps
+  private readonly bt = new BusyTracker();
 
   /** Transient toast message (success / error), cleared on next action. */
   private toast: { text: string; color: number } | null = null;
@@ -74,12 +75,9 @@ export class ShopScene implements Scene {
   update(dt: number): void {
     if (this.rechargeOpen) {
       this.caretTimer += dt;
-      if (this.caretTimer >= 0.5) {
-        this.caretTimer = 0;
-        this.caretOn = !this.caretOn;
-        this.render();
-      }
+      if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
     }
+    if (this.bt.tick(dt)) this.render();
   }
 
   destroy(): void {
@@ -138,39 +136,50 @@ export class ShopScene implements Scene {
   }
 
   private async submitRecharge(): Promise<void> {
-    if (this.busy) return;
+    if (this.bt.busy) return;
     const code = this.rechargeCode.trim();
     if (!code) { this.closeRecharge(); return; }
-    this.busy = true;
+    this.bt.start();
     this.rechargeOpen = false;
     this.hiddenInput?.blur();
     this.render();
-    const res = await this.cb.recharge(code);
-    this.busy = false;
-    this.toast = res.ok
-      ? { text: t('shop.rechargeOk', { coins: res.coins ?? 0 }), color: C.green }
-      : { text: t('shop.rechargeFail'), color: C.red };
-    this.render();
+    try {
+      const res = await withTimeout(this.cb.recharge(code));
+      this.toast = res.ok
+        ? { text: t('shop.rechargeOk', { coins: res.coins ?? 0 }), color: C.green }
+        : { text: t('shop.rechargeFail'), color: C.red };
+    } catch (e) {
+      this.toast = { text: t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.rechargeFail'), color: C.red };
+    } finally {
+      this.bt.stop();
+      this.render();
+    }
   }
 
   // ── Buy ──────────────────────────────────────────────────────────────────────
 
   private async onBuy(itemId: string): Promise<void> {
-    if (this.busy) return;
-    this.busy = true;
+    if (this.bt.busy) return;
+    this.bt.start();
     this.toast = null;
     this.render();
-    const res = await this.cb.buy(itemId);
-    this.busy = false;
-    this.toast = res.ok
-      ? { text: t('shop.bought'), color: C.green }
-      : { text: t(res.key), color: C.red };
-    this.render();
+    try {
+      const res = await withTimeout(this.cb.buy(itemId));
+      this.toast = res.ok
+        ? { text: t('shop.bought'), color: C.green }
+        : { text: t(res.key), color: C.red };
+    } catch (e) {
+      this.toast = { text: t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.error'), color: C.red };
+    } finally {
+      this.bt.stop();
+      this.render();
+    }
   }
 
   // ── Input ──────────────────────────────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
+    if (this.bt.busy) return;
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
@@ -189,6 +198,7 @@ export class ShopScene implements Scene {
     this.drawFooter();
     if (this.toast) this.drawToast();
     if (this.rechargeOpen) this.drawRechargeOverlay();
+    if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
   private drawBackground(): void {
@@ -271,7 +281,7 @@ export class ShopScene implements Scene {
     const bh = Math.round(h * 0.56);
     const bx = x + w - bw - Math.round(w * 0.03);
     const by = y + (h - bh) / 2;
-    const canBuy = !isOwned && !this.busy && this.cb.getCoins() >= item.cost;
+    const canBuy = !isOwned && !this.bt.busy && this.cb.getCoins() >= item.cost;
 
     const btn = sketchPanel(bw, bh, {
       fill: isOwned ? C.btnOff : (canBuy ? C.dark : C.btnOff),
@@ -286,7 +296,7 @@ export class ShopScene implements Scene {
     blabel.anchor.set(0.5, 0.5); blabel.x = bx + bw / 2; blabel.y = by + bh / 2;
     this.container.addChild(blabel);
 
-    if (!isOwned && !this.busy) {
+    if (!isOwned && !this.bt.busy) {
       this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: () => void this.onBuy(item.id) });
     }
   }

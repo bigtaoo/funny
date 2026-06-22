@@ -2,6 +2,10 @@ import type { TranslationKey } from './zh';
 
 // English — must cover every key defined in zh.ts (compile-enforced).
 export const en: Record<TranslationKey, string> = {
+  // ── Common ────────────────────────────────────────────────────────────────
+  'common.networkTimeout': 'Network timeout — please retry',
+  'common.processing': 'Processing',
+
   // ── Cards ─────────────────────────────────────────────────────────────────
   'card.infantry.name': 'Infantry',
   'card.infantry.desc': 'A doodle soldier from the notebook margin — cheap, sturdy, always first into battle.',

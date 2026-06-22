@@ -2,6 +2,10 @@ import type { TranslationKey } from './zh';
 
 // Deutsch — must cover every key defined in zh.ts (compile-enforced).
 export const de: Record<TranslationKey, string> = {
+  // ── Allgemein ─────────────────────────────────────────────────────────────
+  'common.networkTimeout': 'Zeitüberschreitung — bitte erneut versuchen',
+  'common.processing': 'Verarbeitung',
+
   // ── Karten ────────────────────────────────────────────────────────────────
   'card.infantry.name': 'Infanterie',
   'card.infantry.desc': 'Ein Kritzel-Soldat vom Heftrand – billig, robust und immer als Erster in der Schlacht.',
