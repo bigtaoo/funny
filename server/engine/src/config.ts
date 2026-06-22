@@ -172,9 +172,10 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     projectile: { speed: 14, kind: 'arrow' },
   },
   // ── PvE-only enemy types (no card → never enter the PvP pool) ────────────────
-  // Ironclad: anti-arrow damage sponge. Arrow tower (10 dps) needs ~26 s to kill
-  // one, so it monopolizes a defender instead of dying — forces meteor / melee.
-  // Very slow, so it does not outrun your reaction; it just refuses to die cheaply.
+  // Ironclad: anti-arrow damage sponge. armor=3 makes arrow tower (15 dmg) deal
+  // max(1, 15-3)=12 per hit (8 dps) → TTK ≈ 36 s, vs 29 s without armor. Forces
+  // meteor / melee to clear it before it reaches buildings. Very slow; does not
+  // outrun your reaction; it just refuses to die cheaply to ranged fire alone.
   [UnitType.Ironclad]: {
     type: UnitType.Ironclad,
     hp: 290,
@@ -184,6 +185,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     range: 1,
     spawnCount: 1,
     radius_fp: 520,       // diameter 1040fp ≈ 1.04 格 — fills its lane, leads stacks
+    armor: 3,             // anti-arrow identity: arrow tower needs ~36 s (vs 29 s at armor 0)
   },
   // Runner: fast fragile rusher. One arrow-tower hit one-shots it, but it arrives
   // fast, wide and dense (small radius packs ~2× tighter than a infantry), so the
