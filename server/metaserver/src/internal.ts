@@ -647,6 +647,23 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     }));
     return reply.send({ season, top: entries });
   });
+
+  // POST /internal/title/grant  { accountId, titleId }
+  //   → 授予称号（幂等，来自 SLG/worldsvc 赛季结算）。X-Internal-Key 鉴权。
+  app.post('/internal/title/grant', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const { accountId, titleId } = req.body as { accountId?: string; titleId?: string };
+    if (!accountId || !titleId) {
+      return reply.code(400).send({ ok: false, error: 'accountId + titleId required' });
+    }
+    try {
+      await grantTitleToPlayer(cols, accountId, titleId, now());
+      return reply.send({ ok: true });
+    } catch (e) {
+      log.error('/internal/title/grant failed', { accountId, titleId, err: (e as Error).message });
+      return reply.code(500).send({ ok: false, error: 'grant failed' });
+    }
+  });
 }
 
 /**

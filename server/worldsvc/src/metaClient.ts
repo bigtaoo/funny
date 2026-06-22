@@ -31,6 +31,8 @@ export interface WorldMetaClient {
   escrowEquipment(accountId: string, instanceId: string, orderId: string): Promise<EquipmentInstance>;
   /** 装备转移/退回：把实例快照写入目标账号库存（成交给买方 / 撤单过期退卖方）。best-effort，失败 log 不回滚。 */
   grantEquipment(accountId: string, instance: EquipmentInstance, orderId: string): Promise<void>;
+  /** 授予称号（S10，SLG 赛季结算 → meta 写入）。best-effort，失败 log 不阻断结算。 */
+  grantTitle(accountId: string, titleId: string): Promise<void>;
 }
 
 export class HttpWorldMetaClient implements WorldMetaClient {
@@ -126,6 +128,19 @@ export class HttpWorldMetaClient implements WorldMetaClient {
       console.error('[worldsvc] meta.grantEquipment failed', { accountId, instanceId: instance.id, orderId, err: (e as Error).message });
     }
   }
+
+  async grantTitle(accountId: string, titleId: string): Promise<void> {
+    if (!this.baseUrl) return;
+    try {
+      await fetch(`${this.baseUrl}/internal/title/grant`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
+        body: JSON.stringify({ accountId, titleId }),
+      });
+    } catch (e) {
+      console.error('[worldsvc] meta.grantTitle failed', { accountId, titleId, err: (e as Error).message });
+    }
+  }
 }
 
 export const nullWorldMetaClient: WorldMetaClient = {
@@ -136,4 +151,5 @@ export const nullWorldMetaClient: WorldMetaClient = {
   async getSaveFields() { return null; },
   async escrowEquipment() { throw new Error('meta service not configured'); },
   async grantEquipment() { /* no-op */ },
+  async grantTitle() { /* no-op */ },
 };
