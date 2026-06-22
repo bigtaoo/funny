@@ -6,7 +6,8 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsc -b && node --test dist/__tests__/armor.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
