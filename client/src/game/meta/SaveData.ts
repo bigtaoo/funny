@@ -76,6 +76,12 @@ export interface SaveData {
     claimedPaid: number[];
   };
 
+  // —— 留存（B5，RETENTION_DESIGN）。服务器权威，PUT /save 不上行（客户端只读）。 ——
+  retention?: {
+    checkin?: { monthKey: string; claimedDays: number[] };
+    daily?: { dayKey: string; completedTasks: Record<string, number>; taskPoints: number; rewardClaimed: boolean };
+  };
+
   // —— 称号（S10，TITLE_DESIGN §2）。服务器权威，PUT /save 不上行（客户端只读）。
   // 佩戴位在 equipped['title']（同步段，客户端可写），servers 据此广播对手称号。
   titles?: string[];

@@ -42,6 +42,19 @@ export type Achievement = Schemas['Achievement'];
 /** GET /achievements 回包：定义表 + 我的 stats + 已领进度。 */
 export type AchievementsView =
   operations['getAchievements']['responses']['200']['content']['application/json']['data'];
+// —— 留存系统（B5，RETENTION_DESIGN）——
+/** GET /retention 回包：签到月历 + 每日任务 + 定义表 + 红点。 */
+export interface RetentionView {
+  checkin: { monthKey: string; claimedDays: number[] } | null;
+  daily: { dayKey: string; completedTasks: Record<string, number>; taskPoints: number; rewardClaimed: boolean } | null;
+  defs: {
+    rewards: { kind: string; count: number }[];
+    tasks: { id: string; points: number }[];
+    pointsThreshold: number;
+    dailyCoinsReward: number;
+  };
+  claimable: { checkin: boolean; daily: boolean };
+}
 
 type ApiResp<T> =
   | { ok: true; data: T }
@@ -371,6 +384,20 @@ export class ApiClient {
   /** 领取某成就某阶金币：服务器二次校验 stat≥阈值 + 幂等发币 → 回推权威存档 + 本次发放数。 */
   async claimAchievement(achId: string, tier: number): Promise<{ save: SaveData; granted: number }> {
     return this.post<{ save: SaveData; granted: number }>('/achievements/claim', { achId, tier });
+  }
+
+  // ── 留存（B5，RETENTION_DESIGN）：签到月历 + 每日任务。 ───────────────────────────────
+  /** 读留存状态（月历/每日进度 + 定义表）。 */
+  async getRetention(): Promise<RetentionView> {
+    return this.request<RetentionView>('GET', '/retention');
+  }
+  /** 签到领当月下一格奖励（幂等）。 */
+  async claimCheckin(): Promise<{ save: SaveData; day: number; reward: { kind: string; count: number } }> {
+    return this.post<{ save: SaveData; day: number; reward: { kind: string; count: number } }>('/retention/checkin', {});
+  }
+  /** 领当日满点任务金币（幂等）。 */
+  async claimDailyReward(): Promise<{ save: SaveData; coins: number }> {
+    return this.post<{ save: SaveData; coins: number }>('/retention/daily/claim', {});
   }
 
   // ── 社交：好友（S6-1，需登录 token）。发送/拉取走 REST，实时事件经 gateway push（NetSession）。──

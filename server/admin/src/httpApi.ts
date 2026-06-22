@@ -266,6 +266,18 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true });
         }
 
+        // ── 天梯赛季运维（SE-3）──
+        if (method === 'GET' && path === '/admin/ladder/season/current') {
+          requireCap(actor, 'ladder.season.manage');
+          const season = await svc.getLadderCurrentSeason();
+          return send(res, 200, { ok: true, season });
+        }
+        if (method === 'POST' && path === '/admin/ladder/season/roll') {
+          requireCap(actor, 'ladder.season.manage');
+          const season = await svc.rollLadderSeason(actor.adminId);
+          return send(res, 200, { ok: true, season });
+        }
+
         // ── SLG 赛季运维（G7/§17.7）──
         if (method === 'GET' && path === '/admin/slg/worlds') {
           requireCap(actor, 'slg.season.view');

@@ -1415,6 +1415,116 @@ paths:
         '402': { $ref: '#/components/responses/ErrorResp' }
         '409': { $ref: '#/components/responses/ErrorResp' }
 
+  /retention:
+    get:
+      operationId: getRetention
+      tags: [save]
+      summary: 读留存状态（签到月历 + 每日任务进度 + 定义表，B5 RETENTION_DESIGN）
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [defs, claimable]
+                    properties:
+                      checkin:
+                        type: object
+                        nullable: true
+                        properties:
+                          monthKey: { type: string }
+                          claimedDays: { type: array, items: { type: integer } }
+                      daily:
+                        type: object
+                        nullable: true
+                        properties:
+                          dayKey: { type: string }
+                          taskPoints: { type: integer }
+                          rewardClaimed: { type: boolean }
+                          completedTasks:
+                            type: object
+                            additionalProperties: { type: integer }
+                      defs:
+                        type: object
+                        required: [rewards, tasks, pointsThreshold, dailyCoinsReward]
+                        properties:
+                          rewards: { type: array, items: { type: object } }
+                          tasks: { type: array, items: { type: object } }
+                          pointsThreshold: { type: integer }
+                          dailyCoinsReward: { type: integer }
+                      claimable:
+                        type: object
+                        required: [checkin, daily]
+                        properties:
+                          checkin: { type: boolean }
+                          daily: { type: boolean }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /retention/checkin:
+    post:
+      operationId: claimCheckin
+      tags: [save]
+      summary: 签到领当月下一格奖励（幂等，今日已领则 409）
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, day, reward]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      day: { type: integer, description: 本次领取的格号（1-based） }
+                      reward:
+                        type: object
+                        required: [kind, count]
+                        properties:
+                          kind: { type: string, enum: [coins, stamina] }
+                          count: { type: integer }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+
+  /retention/daily/claim:
+    post:
+      operationId: claimDailyReward
+      tags: [save]
+      summary: 领当日每日任务满点金币（幂等，未达阈值 → 400，已领 → 409）
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, coins]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      coins: { type: integer, description: 本次发放金币 }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+
   /shop/items:
     get:
       operationId: getShopItems

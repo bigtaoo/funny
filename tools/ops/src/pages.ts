@@ -751,3 +751,60 @@ function accountRow(ctx: Ctx, a: AdminAccountView, onChange: () => void): HTMLEl
     h('td', {}, h('button', { class: a.disabled ? 'ghost' : 'danger', disabled: self, onclick: toggleDisable }, a.disabled ? '启用' : '禁用'), h('button', { class: 'ghost', onclick: reset }, '重置密码'), err),
   );
 }
+
+// ───────────────────────── 天梯赛季（SE-3）─────────────────────────
+export async function pageLadderSeason(ctx: Ctx): Promise<void> {
+  const { api, root } = ctx;
+  clear(root);
+  root.append(h('h2', {}, '天梯赛季管理'));
+
+  const info = h('div', { class: 'card' }, '加载中…');
+  const rollErr = h('div', { class: 'err' });
+  const rollBtn = h('button', {}, '开启新赛季') as HTMLButtonElement;
+
+  const MS_PER_DAY = 86400_000;
+  const WARNING_DAYS = 3;
+
+  const refresh = async (): Promise<void> => {
+    try {
+      const s = await api.ladderGetCurrentSeason();
+      if (!s) {
+        info.textContent = 'meta 不可达，无法读取赛季信息。';
+        return;
+      }
+      const now = Date.now();
+      const daysLeft = Math.ceil((s.endAt - now) / MS_PER_DAY);
+      const near = daysLeft <= WARNING_DAYS;
+      clear(info);
+      info.append(
+        h('table', {},
+          h('tr', {}, h('th', {}, '赛季'), h('td', {}, `第 ${s.seasonNo} 赛季`)),
+          h('tr', {}, h('th', {}, '开始'), h('td', {}, fmtTime(s.startAt))),
+          h('tr', {}, h('th', {}, '结束'), h('td', {}, fmtTime(s.endAt))),
+          h('tr', {}, h('th', {}, '状态'), h('td', {}, s.state)),
+          h('tr', {}, h('th', {}, '剩余'), h('td', { style: near ? 'color:var(--warn)' : '' },
+            daysLeft > 0 ? `${daysLeft} 天${near ? ' ⚠ 即将结束' : ''}` : '已到期')),
+        ),
+      );
+    } catch (e) {
+      info.textContent = (e as Error).message;
+    }
+  };
+
+  rollBtn.onclick = async (): Promise<void> => {
+    rollErr.textContent = '';
+    rollBtn.disabled = true;
+    try {
+      const s = await api.ladderRollSeason();
+      showOk(rollErr, `已推进至第 ${s.seasonNo} 赛季`);
+      await refresh();
+    } catch (e) {
+      showErr(rollErr, e);
+    } finally {
+      rollBtn.disabled = false;
+    }
+  };
+
+  root.append(info, h('div', { class: 'card' }, rollBtn, rollErr));
+  await refresh();
+}

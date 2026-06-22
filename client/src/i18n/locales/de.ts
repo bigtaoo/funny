@@ -998,6 +998,26 @@ export const de: Record<TranslationKey, string> = {
   'battlepass.maxLevel': 'Max-Level!',
   'battlepass.openBattlePass': 'Battle Pass',
 
+  // ── Bindungssystem (B5) ─────────────────────────────────────────────────────
+  'daily.title': 'Täglich',
+  'daily.back': '← Zurück',
+  'daily.loginRequired': 'Anmelden zum Einchecken',
+  'daily.checkin.title': 'Monats-Check-in',
+  'daily.checkin.day': 'Tag {n}',
+  'daily.checkin.claim': 'Einchecken',
+  'daily.checkin.claimed': 'Abgeholt',
+  'daily.checkin.milestone': 'Meilenstein',
+  'daily.tasks.title': 'Tagesaufgaben',
+  'daily.tasks.pveLabel': 'Beliebiges PvE-Level abschließen',
+  'daily.tasks.pvpLabel': 'An beliebigem PvP teilnehmen',
+  'daily.tasks.adLabel': 'Werbung ansehen',
+  'daily.tasks.done': 'Erledigt',
+  'daily.tasks.pending': 'Läuft',
+  'daily.tasks.rewardCoins': '+{n} Münzen abholen',
+  'daily.tasks.rewardClaimed': 'Heute abgeholt',
+  'daily.tasks.claimFailed': 'Fehler, erneut versuchen',
+  'daily.tasks.claimToast': '+{n} Münzen erhalten',
+
   // ── Titelsystem (S10) ────────────────────────────────────────────────────────
   'settings.titles': 'Titel',
   'settings.openTitles': 'Meine Titel',

@@ -1,6 +1,19 @@
 # 留存系统设计 — Daily Retention（签到 / 每日任务 / 周常）
 
-> 状态：设计中 · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-06-21
+> 状态：**P0 已实现（2026-06-22）** · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-06-22
+>
+> **实现记录（B5 2026-06-22）**：
+> - `server/shared/src/retention.ts` — 纯函数 + 类型（`RetentionSave`, `CHECKIN_REWARDS[30]`, `DAILY_TASKS[3]`, `accrueRetentionTask`, `claimCheckinDay`, `claimDailyReward`）
+> - `server/shared/src/types.ts` — `SaveData.retention?: RetentionSave`
+> - `server/metaserver/src/service.ts` — `getRetention` / `claimCheckin` / `claimDailyReward` + PvE/ads 打点
+> - `server/metaserver/src/internal.ts` — PvP 结算时 `pvp.match` 打点（内嵌 `applyPvp`）
+> - `server/contracts/openapi.yml` — `GET /retention` / `POST /retention/checkin` / `POST /retention/daily/claim`
+> - `client/src/game/meta/retention.ts` — 客户端镜像纯函数
+> - `client/src/game/meta/SaveData.ts` — `retention?` 字段
+> - `client/src/net/ApiClient.ts` — `getRetention/claimCheckin/claimDailyReward` + `RetentionView` 类型
+> - `client/src/scenes/DailyScene.ts` — 月历 + 每日任务 UI（新建）
+> - `client/src/scenes/LobbyScene.ts` — `onOpenDaily` 回调 + 「每日」按钮 + `applyRetentionBadge`
+> - i18n `daily.*` / `checkin.*` (zh/en/de)
 
 本文是留存子系统的**机制设计基准**：定位、三层结构、数据模型、dayKey 防刷、解锁/领取流程、服务器权威、接口契约、UI、经济联动、实现拆解。
 **具体数额不在本文拍死**——初值见 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)；本文只镜像示例并标注权威指针。

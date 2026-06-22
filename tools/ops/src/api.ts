@@ -178,6 +178,16 @@ export class Api {
     return r.entries;
   }
 
+  // —— 天梯赛季运维 ——
+  async ladderGetCurrentSeason(): Promise<{ seasonNo: number; startAt: number; endAt: number; state: string } | null> {
+    const r = await this.req<{ season: { seasonNo: number; startAt: number; endAt: number; state: string } | null }>('GET', '/admin/ladder/season/current');
+    return r.season;
+  }
+  async ladderRollSeason(): Promise<{ seasonNo: number; startAt: number; endAt: number; state: string }> {
+    const r = await this.req<{ season: { seasonNo: number; startAt: number; endAt: number; state: string } }>('POST', '/admin/ladder/season/roll');
+    return r.season;
+  }
+
   // —— 账号管理 ——
   async accounts(): Promise<AdminAccountView[]> {
     const r = await this.req<{ accounts: AdminAccountView[] }>('GET', '/admin/accounts');

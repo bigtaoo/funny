@@ -25,6 +25,7 @@ export type AdminCapability =
   | 'comp.view' // 查看工单 / 已发邮件
   | 'audit.view.all' // 看全部审计
   | 'audit.view.self' // 看自己操作
+  | 'ladder.season.manage' // 天梯赛季推进（开新赛季/SE-3）
   | 'slg.season.view' // 看 SLG 各大区状态（G7/§17.7）
   | 'slg.season.manage' // SLG 赛季运维：开/结算/重置/关闭大区（G7/§17.7，高危）
   | 'slg.audit.view' // 看拍卖异常交易扫描 + 审计队列（G7 反 RMT）
@@ -49,6 +50,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'comp.view',
     'audit.view.all',
     'audit.view.self',
+    'ladder.season.manage',
     'slg.season.view',
     'slg.season.manage',
     'slg.audit.view',
@@ -65,6 +67,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'comp.approve.single',
     'comp.view',
     'audit.view.self',
+    'ladder.season.manage',
     'slg.season.view',
     'slg.audit.view',
     'slg.audit.manage',
@@ -248,6 +251,7 @@ export type AuditAction =
   | 'comp.execute'
   | 'comp.execute.failed'
   | 'anticheat.view'
+  | 'ladder.season.roll'
   | 'slg.season.open'
   | 'slg.season.settle'
   | 'slg.season.reset'

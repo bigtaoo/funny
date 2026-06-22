@@ -75,6 +75,8 @@ export interface LobbySceneCallbacks {
    * player taps an "achievement unlocked" toast (ACHIEVEMENT_DESIGN §7, S9-5b).
    */
   onOpenAchievements?(): void;
+  /** Open the daily check-in + task screen (B5, RETENTION_DESIGN). */
+  onOpenDaily?(): void;
   /** Open the personal profile / settings screen (top-left profile chip). */
   onOpenProfile(): void;
   /** Player display name shown in the top-left profile chip. */
@@ -140,6 +142,10 @@ export class LobbyScene implements Scene {
   private achievementBadge = false;
   /** Re-drawn layer for the achievement dot (cheap refresh, no nav rebuild). */
   private achievementBadgeLayer: PIXI.Container | null = null;
+  /** Retention claimable (B5: checkin or daily reward) → red dot on the daily button. */
+  private retentionBadge = false;
+  /** Hit rect for the daily button (top-right area). */
+  private dailyBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Transient "achievement unlocked" toast (S9-5b): own top-most layer + auto-fade timer + tap-to-open rect. */
   private toastLayer: PIXI.Container | null = null;
   private toastTimer = 0;
@@ -218,6 +224,21 @@ export class LobbyScene implements Scene {
     if (this.destroyed) return;
     this.achievementBadge = claimable;
     this.drawAchievementBadge();
+  }
+
+  /** B5: mark whether any retention reward is claimable → red dot on the daily button. */
+  applyRetentionBadge(claimable: boolean): void {
+    if (this.destroyed) return;
+    if (this.retentionBadge === claimable) return;
+    this.retentionBadge = claimable;
+    // Full rebuild needed since the daily button is part of the main layout.
+    this.container.removeChildren();
+    this.toastLayer = null;
+    this.settlementLayer = null;
+    this.achievementBadgeLayer = null;
+    this.socialBadgeLayer = null;
+    this.titleBoil = null;
+    this.build();
   }
 
   /**
@@ -354,6 +375,12 @@ export class LobbyScene implements Scene {
     const camp = this.campaignBtnRect;
     if (x >= camp.x && x <= camp.x + camp.w && y >= camp.y && y <= camp.y + camp.h) {
       this.cb.onOpenCampaign();
+      return;
+    }
+    const daily = this.dailyBtnRect;
+    if (this.cb.onOpenDaily && daily.w > 0 &&
+        x >= daily.x && x <= daily.x + daily.w && y >= daily.y && y <= daily.y + daily.h) {
+      this.cb.onOpenDaily();
       return;
     }
     const ac = this.accountChipRect;
@@ -551,6 +578,29 @@ export class LobbyScene implements Scene {
     this.container.addChild(cbg);
     // Gold ink accent stroke down the left edge — echoes the feature blocks.
     new SketchPen(cbg, 0x55).line(4, 5, 4, campH - 5, { color: C.gold, width: 5, jitter: 0.8, taper: 0.85 });
+
+    // Daily check-in shortcut below campaign button (B5).
+    if (this.cb.onOpenDaily) {
+      const dailyH = Math.round(campH * 0.75);
+      const dailyY = campY + campH + Math.round(h * 0.012);
+      const dailyW = Math.round(btnW * 0.45);
+      this.dailyBtnRect = { x: btnX, y: dailyY, w: dailyW, h: dailyH };
+      const dbg = this.sketchPanel(dailyW, dailyH, { fill: this.retentionBadge ? 0xfff3cc : C.paper, border: C.gold, width: 1.8, seed: 71 });
+      dbg.x = btnX; dbg.y = dailyY;
+      this.container.addChild(dbg);
+      const dlabel = txt(t('daily.title'), Math.round(dailyH * 0.44), C.dark);
+      dlabel.anchor.set(0.5, 0.5);
+      dlabel.x = btnX + dailyW / 2; dlabel.y = dailyY + dailyH / 2;
+      this.container.addChild(dlabel);
+      if (this.retentionBadge) {
+        const dot = new PIXI.Graphics();
+        dot.beginFill(0xff3333);
+        dot.lineStyle(2, 0xffffff, 0.9);
+        dot.drawCircle(btnX + dailyW - 6, dailyY + 6, 6);
+        dot.endFill();
+        this.container.addChild(dot);
+      }
+    }
 
     const campLabel = txt(t('lobby.campaign'), Math.round(campH * 0.4), C.dark, true);
     campLabel.anchor.set(0.5, 0.5);

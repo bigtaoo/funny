@@ -1002,6 +1002,26 @@ export const zh = {
   'battlepass.maxLevel': '满级！',
   'battlepass.openBattlePass': '战令',
 
+  // ── 留存系统（B5，RETENTION_DESIGN）──────────────────────────────────────────
+  'daily.title': '每日',
+  'daily.back': '← 返回',
+  'daily.loginRequired': '登录后可签到',
+  'daily.checkin.title': '签到月历',
+  'daily.checkin.day': '第 {n} 天',
+  'daily.checkin.claim': '签到',
+  'daily.checkin.claimed': '已签',
+  'daily.checkin.milestone': '里程碑',
+  'daily.tasks.title': '每日任务',
+  'daily.tasks.pveLabel': '通关任意 PvE 关卡',
+  'daily.tasks.pvpLabel': '参与任意 PvP 对局',
+  'daily.tasks.adLabel': '观看广告',
+  'daily.tasks.done': '完成',
+  'daily.tasks.pending': '进行中',
+  'daily.tasks.rewardCoins': '领取 +{n} 金币',
+  'daily.tasks.rewardClaimed': '今日已领',
+  'daily.tasks.claimFailed': '领取失败，请重试',
+  'daily.tasks.claimToast': '已领取 +{n} 金币',
+
   // ── 称号系统（S10，TITLE_DESIGN）────────────────────────────────────────────
   'settings.titles': '称号',
   'settings.openTitles': '我的称号',
