@@ -8,6 +8,16 @@ import { ATTACK_MULT_THRESHOLD_TICKS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } fro
 import { Side, UnitType, BuildingType, UnitState, SpellType } from '../src/game/types';
 import { achievementStatDelta } from '../src/game';
 
+/**
+ * Advance the combat system until `cond` holds (or `max` ticks elapse). Ranged
+ * attackers (archer / arrow tower) now fire a homing projectile, so their damage
+ * lands a few ticks after the shot rather than instantly — tests that observe a
+ * ranged hit must let the arrow fly.
+ */
+function tickUntil(sys: CombatSystem, state: GameState, cond: () => boolean, max = 30): void {
+  for (let i = 0; i < max && !cond(); i++) sys.tick(state);
+}
+
 describe('CombatSystem — units', () => {
   it('a unit attacks an enemy directly ahead within range', () => {
     const state = new GameState(1);
@@ -46,11 +56,12 @@ describe('CombatSystem — units', () => {
     const sys = new CombatSystem();
     const me = new Unit(UnitType.Archer, Side.Bottom, 0, 5);
     const enemy = new Unit(UnitType.Archer, Side.Top, 0, 6);
-    enemy.hp = 1; // one hit kills
+    enemy.hp = 1; // one arrow kills
     state.board.addUnit(me);
     state.board.addUnit(enemy);
 
-    sys.tick(state);
+    // Archer is ranged: fire, then let the arrow reach the target.
+    tickUntil(sys, state, () => !state.board.units.has(enemy.id));
     expect(state.board.units.has(enemy.id)).toBe(false);
     expect(state.events.some((e) => e.type === 'unit_died')).toBe(true);
     // Killer is Bottom (owner 0).
@@ -100,14 +111,16 @@ describe('成就分类型埋点（S9-3b / S9-6）', () => {
     const state = new GameState(1);
     const combat = new CombatSystem();
     const spells = new SpellSystem();
-    // 杀一个弓箭手 + 一个盾兵（守卫）。
+    // 杀一个弓箭手 + 一个盾兵（守卫）。各自一列、相距远于射程，避免两名弓箭手
+    // 在箭落地前都锁定同一目标（投射物语义下的 overkill）——各打各的。
     const archer = new Unit(UnitType.Archer, Side.Bottom, 0, 5);
     const e1 = new Unit(UnitType.Archer, Side.Top, 0, 6); e1.hp = 1;
-    const e2 = new Unit(UnitType.ShieldBearer, Side.Top, 1, 6); e2.hp = 1;
-    const archer2 = new Unit(UnitType.Archer, Side.Bottom, 1, 5);
+    const e2 = new Unit(UnitType.ShieldBearer, Side.Top, 5, 6); e2.hp = 1;
+    const archer2 = new Unit(UnitType.Archer, Side.Bottom, 5, 5);
     state.board.addUnit(archer); state.board.addUnit(e1);
     state.board.addUnit(archer2); state.board.addUnit(e2);
-    combat.tick(state);
+    // Archers are ranged — let both arrows land so the kills register.
+    tickUntil(combat, state, () => !state.board.units.has(e1.id) && !state.board.units.has(e2.id));
     spells.castMeteor(Side.Bottom, 2, 2, state);
 
     const delta = achievementStatDelta({ owner: 0, ...state.stats[0] });
@@ -134,7 +147,8 @@ describe('CombatSystem — arrow tower (Chebyshev all-direction targeting)', () 
     state.board.addUnit(enemy);
 
     const hp0 = enemy.hp;
-    sys.tick(state); // tower cooldown starts at 0 → fires this tick
+    // Tower fires this tick; its arrow then flies to the (2-cell-away) target.
+    tickUntil(sys, state, () => enemy.hp < hp0);
     expect(enemy.hp).toBe(hp0 - BUILDING_BLUEPRINTS[BuildingType.ArrowTower].attack!);
   });
 
@@ -149,9 +163,10 @@ describe('CombatSystem — arrow tower (Chebyshev all-direction targeting)', () 
     state.board.addUnit(crosser);
 
     const hp0 = crosser.hp;
-    sys.tick(state);
     // Targeting is grid/Chebyshev-based and state-agnostic — the crossing enemy
-    // is hit (the original forward-only scan would have missed it entirely).
+    // is hit (the original forward-only scan would have missed it entirely). The
+    // tower's arrow flies a tick or two before it lands.
+    tickUntil(sys, state, () => crosser.hp < hp0);
     expect(crosser.hp).toBeLessThan(hp0);
   });
 

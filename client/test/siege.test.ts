@@ -169,6 +169,6 @@ describe('judgeRunner — 围攻复算闭环', () => {
       pveUpgrades: {},
       defenseJson: '{not json',
     };
-    expect(runJudge(req)).toEqual({ ok: false, stateHash: '', winnerSide: 0, stars: 0 });
+    expect(runJudge(req)).toEqual({ ok: false, stateHash: '', winnerSide: 0, stars: 0, statsJson: '' });
   });
 });

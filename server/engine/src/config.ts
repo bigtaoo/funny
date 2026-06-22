@@ -166,6 +166,10 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     range: 2,             // 2-grid range (down from 3)
     spawnCount: 1,
     radius_fp: 350,       // diameter 700fp = 0.7 格
+    // Fires an arrow that travels to its target rather than dealing instant damage.
+    // 14 grid/s over a ≤2-cell range ≈ 0.15 s flight — visibly a shot, but fast
+    // enough that it rarely whiffs except when the target dies/flees mid-air.
+    projectile: { speed: 14, kind: 'arrow' },
   },
   // ── PvE-only enemy types (no card → never enter the PvP pool) ────────────────
   // Ironclad: anti-arrow damage sponge. Arrow tower (10 dps) needs ~26 s to kill
@@ -272,6 +276,8 @@ export const BUILDING_BLUEPRINTS: Record<BuildingType, BuildingBlueprint> = {
     attackInterval: 1.5,      // seconds (converted to ticks in Building constructor)
     attackRange: 2,            // 2-grid range (down from 3)
     canTargetFlying: true,
+    // Arrow tower also lobs an arrow rather than zapping instantly (same as archers).
+    projectile: { speed: 14, kind: 'arrow' },
   },
 };
 

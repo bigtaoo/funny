@@ -194,6 +194,42 @@ hudView.container        ← HUD（最顶层）
 
 ---
 
+## 6b. 投射物系统（弓箭手 / 箭塔）
+
+远程攻击（弓箭手、箭塔）不再瞬时扣血，而是**发射一枚归属引擎状态的投射物**，飞抵目标那一刻才结算伤害。近战（range=1）攻击不变，仍当场结算。
+
+### 触发与配置
+
+- 蓝图显式标记：`UnitBlueprint.projectile` / `BuildingBlueprint.projectile = { speed, kind }`（`server/engine/src/config.ts`，权威数值源）。
+  - 当前：弓箭手 / 箭塔均 `{ speed: 14, kind: 'arrow' }`（14 格/秒，≤2 格射程约 0.15s 飞行）。
+- 有 `projectile` → 发射投射物；无 → 瞬时命中（旧近战行为）。
+
+### 机制（确定性）
+
+- 投射物存于 `GameState.projectiles[]`（push 序 = 发射序 = 确定性迭代），实体类 `server/engine/src/Projectile.ts`。
+- **跟踪制导·必中**：每 tick 用定点数（整数开方 `isqrt`，无浮点）朝目标**当前**位置推进 `speed`；箭速远高于任何单位移速，必然追上。
+- **伤害开火瞬间冻结**：暴击（PvP 恒不触发，`combatPrng` 不前进）+ 全部进攻特性（溅射/穿刺/吸血/减速）在发射时快照进载荷 `ProjectilePayload`，落点用同一套 `CombatSystem.resolveAttackHit` 结算——与近战逐字共用，事件顺序不变，故旧近战回放字节一致。
+- **真实玩法变化**：射手开火后立即死亡，箭仍在飞并生效；目标在箭落地前死亡/到达/消失 → 箭 **fizzle 消失**（无伤害）；两名射手在箭落地前可同时锁定同一目标 → overkill 浪费。
+- 投射物推进在 `CombatSystem.tick` 的两个开火循环之后、清死单位之前——本 tick 发射的箭立即推进一步，箭杀的单位与近战杀的同 tick 清除。
+
+### 事件协议（引擎 → 渲染，沿用 `escort_moved` 范式）
+
+| 事件 | 时机 | 渲染响应 |
+|---|---|---|
+| `projectile_fired` | 发射 | 在 `from` 生成 arrow 精灵（`GameRenderer.buildProjectileSprite`） |
+| `projectile_moved` | 每 tick | 跟随权威坐标 + 按方向旋转 |
+| `projectile_hit` | 命中 | 移除箭精灵（命中 VFX 由同 tick 的 `unit_attack_hit` 播 `hit` 效果） |
+| `projectile_expired` | fizzle | 移除箭精灵 |
+
+> 渲染层级：arrow 图层在单位之上、VFX 之下（`GameRenderer.projectileLayer`）。
+
+### 围攻 / 回放
+
+- worldsvc 围攻（`siegeEngine.ts` 经 `runHeadless`）跑同一套引擎，自动套用，无需改。
+- 远程伤害时序变化使旧回放发散 → **`ENGINE_VERSION` 1→2**（`server/engine/src/types.ts`），版本不符的回放会直接报错而非播放出错结果。
+
+---
+
 ## 7. 卡牌放置交互
 
 `GameRenderer` 支持两种互不冲突的放置方式：

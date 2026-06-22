@@ -94,6 +94,9 @@ export class Unit {
 
   // ── Blueprint-derived trait data (§4.4b–c) ────────────────────────────────
 
+  /** Ranged attack: fire a homing projectile (speed grid/s + visual kind) instead
+   *  of instant damage. null = melee (instant hit). */
+  readonly projectile: { speed: number; kind: string } | null;
   /** Flying units bypass blocked cells and don't collide with ground units. */
   readonly flying: boolean;
   /** Unit can target flying enemies (archers = true, melee = false). */
@@ -186,6 +189,9 @@ export class Unit {
     this.baseSpeed_fp = this.speed_fp;
 
     // ── Trait fields from blueprint ──────────────────────────────────────────
+    this.projectile      = bp.projectile
+      ? { speed: bp.projectile.speed, kind: bp.projectile.kind }
+      : null;
     this.flying          = bp.flying          ?? false;
     this.canTargetFlying = bp.canTargetFlying ?? false;
     this.armor           = bp.armor           ?? 0;
