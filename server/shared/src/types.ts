@@ -90,6 +90,9 @@ export interface SaveData {
     // PvP 统计反作弊（§4.4），服务器权威，客户端只读甚至不下发
     statSuspicion: number; // 造假命中累计 → 决定抽查档位
     lastFlaggedTs?: number;
+    // PvE 反作弊（S4-4）：录像复算不符计数；达阈值封号（pveBanned）。
+    pveRejectCount?: number;
+    pveBanned?: boolean;
   };
 
   // —— 客户端同步段（轻校验，§2）——

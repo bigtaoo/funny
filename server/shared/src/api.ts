@@ -72,6 +72,8 @@ export const ErrorCode = {
   ENHANCE_MAX_LEVEL: 'ENHANCE_MAX_LEVEL',           // 已 +9 满级，不可再强化
   NOT_SALVAGEABLE: 'NOT_SALVAGEABLE',               // 不可分解（+5 及以上，§6.3）
   INVALID_SLOT: 'INVALID_SLOT',                     // 穿戴槽位与装备定义槽位不匹配
+  // —— PvE 反作弊（S4-4）——
+  ACCOUNT_BANNED: 'ACCOUNT_BANNED',                 // 录像复算三次拒绝封号
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -147,4 +149,5 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.ENHANCE_MAX_LEVEL]: 409,
   [ErrorCode.NOT_SALVAGEABLE]: 409,
   [ErrorCode.INVALID_SLOT]: 400,
+  [ErrorCode.ACCOUNT_BANNED]: 403,
 };

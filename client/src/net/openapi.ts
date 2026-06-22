@@ -1508,6 +1508,59 @@ export interface operations {
             404: components["responses"]["ErrorResp"];
         };
     };
+    createReplayShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roomId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: { [name: string]: unknown };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: { shareId: string };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+        };
+    };
+    getReplayByShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                shareId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: { [name: string]: unknown };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            replay: components["schemas"]["MatchReplay"];
+                        };
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResp"];
+        };
+    };
     pveClear: {
         parameters: {
             query?: never;
@@ -1524,6 +1577,10 @@ export interface operations {
                     replayRef?: string;
                     /** @description 客户端开局蓝图快照（L0 异常判定；与服务器权威不符触发抽检） */
                     pveUpgrades?: {
+                        [key: string]: number;
+                    };
+                    /** @description 本局成就计数（kill.archer/kill.guard/cast.meteor；S9-3b） */
+                    stats?: {
                         [key: string]: number;
                     };
                 };

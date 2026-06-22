@@ -164,6 +164,7 @@ export class ApiClient {
     levelId: string,
     stars: number,
     unitLevels?: Record<string, number>,
+    stats?: Record<string, number>,
   ): Promise<{
     save: SaveData;
     granted: Record<string, number>;
@@ -179,7 +180,22 @@ export class ApiClient {
       needsReplay?: boolean;
       verifyId?: string;
       grantedEquipment?: EquipmentInstance;
-    }>('/pve/clear', { levelId, stars, ...(unitLevels ? { unitLevels } : {}) });
+    }>('/pve/clear', {
+      levelId,
+      stars,
+      ...(unitLevels ? { unitLevels } : {}),
+      ...(stats ? { stats } : {}),
+    });
+  }
+
+  /** 创建录像分享链接（S1-RP）：7 天 TTL，任意人可凭 shareId 取录像（无需登录）。 */
+  async createReplayShare(roomId: string): Promise<{ shareId: string }> {
+    return this.post<{ shareId: string }>(`/match/${roomId}/replay/share`, {});
+  }
+
+  /** 通过分享链接取录像（S1-RP）：无需登录。 */
+  async getReplayByShare(shareId: string): Promise<{ replay: unknown }> {
+    return this.request<{ replay: unknown }>('GET', `/share/replay/${shareId}`);
   }
 
   /** L1 录像抽检复算：补传被抽中通关的录像帧 → 第三方无头复算 → 复算星数 ≥ 声称才发材料。 */

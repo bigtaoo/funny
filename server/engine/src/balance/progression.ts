@@ -40,8 +40,8 @@ export const STAT_GROWTH_PER_LEVEL = {
   atkspd: 0.04,
   /** 移速%：speed × (1 + spd×steps)。 */
   spd: 0.03,
-  /** 护甲 flat/级（加算）。 */
-  armor: 2,
+  /** 护甲 flat/级（加算）。S12-E 下调：armor:2 时 L9+16 让箭兵 22 攻仅造 6 实伤（73% 减免），过强。 */
+  armor: 1,
 } as const;
 
 /** 攻速封顶：攻击间隔不得低于基础的此比例（防破帧；§4.2「有下限封顶」）。 */
