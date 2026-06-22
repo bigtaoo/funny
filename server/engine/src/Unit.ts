@@ -131,6 +131,10 @@ export class Unit {
   readonly stealth: boolean;
   /** Periodically summon units of given type; intervalTicks between spawns. */
   readonly summonOnTimer: { type: UnitType; intervalTicks: number } | null;
+  /** 2× damage when only one live enemy remains (Max, A6). */
+  readonly burstOnSingle: boolean;
+  /** Marks target on hit; marked units take +25 % damage for 3 s (Mara, A6). */
+  readonly markEnemies: boolean;
 
   // ── Runtime trait state ────────────────────────────────────────────────────
 
@@ -142,6 +146,8 @@ export class Unit {
   summonCooldownTicks: number = 0;
   /** Fractional HP accumulator for regen and aura_heal (fp units = 1/1000 HP). */
   healAccFp: number = 0;
+  /** Ticks remaining on Mara's mark debuff. 0 = not marked. */
+  markedTicks: number = 0;
 
   /**
    * @param blueprint Resolved stats for this unit. Defaults to the read-only PvP
@@ -216,6 +222,8 @@ export class Unit {
       ? { type: bp.summonOnTimer.type, intervalTicks: Math.round(bp.summonOnTimer.intervalSec * TICK_RATE) }
       : null;
     this.summonCooldownTicks = this.summonOnTimer?.intervalTicks ?? 0;
+    this.burstOnSingle   = bp.burstOnSingle   ?? false;
+    this.markEnemies     = bp.markEnemies     ?? false;
   }
 
   // ── Derived / compatibility getters ───────────────────────────────────────

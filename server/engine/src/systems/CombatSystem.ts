@@ -260,13 +260,15 @@ export class CombatSystem {
     // launch a projectile that resolves this exact payload on impact; melee units
     // resolve it immediately (identical events to the pre-projectile behaviour).
     const payload: ProjectilePayload = {
-      attackerId:   attacker.id,
-      side:         attacker.side,
+      attackerId:    attacker.id,
+      side:          attacker.side,
       rawDamage,
-      splashRadius: attacker.splashRadius,
-      piercing:     attacker.piercing,
-      lifestealPct: attacker.lifestealPct,
-      slowOnHit:    attacker.slowOnHit,
+      splashRadius:  attacker.splashRadius,
+      piercing:      attacker.piercing,
+      lifestealPct:  attacker.lifestealPct,
+      slowOnHit:     attacker.slowOnHit,
+      burstOnSingle: attacker.burstOnSingle,
+      markEnemies:   attacker.markEnemies,
     };
 
     if (attacker.projectile) {
@@ -284,13 +286,15 @@ export class CombatSystem {
   ): void {
     // Buildings carry no offensive traits — a plain damage payload.
     const payload: ProjectilePayload = {
-      attackerId:   building.id,
-      side:         building.side,
-      rawDamage:    building.attack * attackMult,
-      splashRadius: 0,
-      piercing:     false,
-      lifestealPct: 0,
-      slowOnHit:    null,
+      attackerId:    building.id,
+      side:          building.side,
+      rawDamage:     building.attack * attackMult,
+      splashRadius:  0,
+      piercing:      false,
+      lifestealPct:  0,
+      slowOnHit:     null,
+      burstOnSingle: false,
+      markEnemies:   false,
     };
 
     if (building.projectile) {
@@ -313,7 +317,21 @@ export class CombatSystem {
     payload: ProjectilePayload,
     target: Unit | Building | EscortUnit,
   ): void {
-    const rawDamage = payload.rawDamage;
+    let rawDamage = payload.rawDamage;
+
+    // burstOnSingle (Max): 2× damage when only one live enemy remains on target side.
+    if (payload.burstOnSingle && target instanceof Unit) {
+      let liveCount = 0;
+      for (const u of state.board.units.values()) {
+        if (!u.isDead && u.side === target.side) { liveCount++; if (liveCount > 1) break; }
+      }
+      if (liveCount === 1) rawDamage = rawDamage * 2;
+    }
+
+    // markEnemies (Mara): +25 % bonus damage on a marked target.
+    if (target instanceof Unit && target.markedTicks > 0) {
+      rawDamage = Math.round(rawDamage * 1.25);
+    }
 
     // Apply damage to primary target; capture actual HP lost (after armor) for lifesteal + events.
     let actualDamage: number;
@@ -357,6 +375,11 @@ export class CombatSystem {
           maxHp:      target.maxHp,
         });
       }
+    }
+
+    // markEnemies (Mara): apply mark debuff after primary hit (3 s = 90 ticks at 30 Hz).
+    if (payload.markEnemies && target instanceof Unit && !target.isDead) {
+      target.markedTicks = 90;
     }
 
     // ── Offensive trait effects (applied after primary hit) ───────────────

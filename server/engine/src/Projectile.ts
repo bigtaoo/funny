@@ -37,6 +37,8 @@ export interface ProjectilePayload {
   piercing: boolean;
   lifestealPct: number;
   slowOnHit: { mult: number; durationTicks: number } | null;
+  burstOnSingle: boolean;
+  markEnemies: boolean;
 }
 
 /**
