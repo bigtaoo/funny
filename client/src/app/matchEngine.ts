@@ -15,6 +15,7 @@ import {
   type GameMode,
   type Replay,
 } from '../game';
+import type { EngineEquipmentInput } from '@nw/engine';
 
 export interface LocalMatchOpts {
   /** When set, runs the PvE campaign level instead of a PvP-vs-AI match. */
@@ -30,6 +31,11 @@ export interface LocalMatchOpts {
    * (garrison / defenderBuildings / defenderBaseLevel).
    */
   mode?: GameMode;
+  /**
+   * Equipment loadout + inventory for PvE/siege paths (A5 §5.2 hard wall).
+   * Structurally compatible with EngineEquipmentInput; omit for PvP.
+   */
+  equipment?: EngineEquipmentInput;
 }
 
 export interface LocalMatch {
@@ -56,7 +62,12 @@ export function createLocalMatch(opts: LocalMatchOpts = {}): LocalMatch {
       players: [{ id: 0 }, { id: 1 }],
       mode,
       ...(opts.level
-        ? { level: opts.level, pveUpgrades: opts.pveUpgrades ?? {}, unitLevels: opts.unitLevels ?? {} }
+        ? {
+            level: opts.level,
+            pveUpgrades: opts.pveUpgrades ?? {},
+            unitLevels: opts.unitLevels ?? {},
+            ...(opts.equipment ? { equipment: opts.equipment } : {}),
+          }
         : {}),
     },
     recorder,
