@@ -115,6 +115,11 @@ import {
   bumpAdsCap,
 } from './economy.js';
 import { grantTitleToPlayer } from './titles.js';
+import {
+  getEventsForAccount,
+  accrueEventTask,
+  claimEventReward,
+} from './events.js';
 
 export interface ServiceDeps {
   cols: Collections;
@@ -847,6 +852,8 @@ export class MetaService {
     if (clientStats) await this.accrueJudgedPveStats(accountId, JSON.stringify(clientStats));
     // B5：每日任务「通关 PvE」打点（幂等，今日已打过则 no-op）。
     await this.bumpRetentionTask(accountId, 'pve.clear');
+    // B6：活动任务「pve.clear」打点（best-effort）。
+    accrueEventTask(cols, accountId, 'pve.clear', now()).catch(() => {});
     const saveWithSt = { ...granted.save, stamina: { current: staminaResult.current, regenAt: staminaResult.regenAt } };
     return ok({
       save: saveWithSt,
@@ -1691,6 +1698,8 @@ export class MetaService {
     const save = await mirrorCoins(cols, accountId, credit.coinsAfter, now());
     // B5：每日任务「看广告」打点（幂等，fire-and-forget）。
     await this.bumpRetentionTask(accountId, 'ad.watch');
+    // B6：活动任务「ad.watch」打点（best-effort）。
+    accrueEventTask(cols, accountId, 'ad.watch', now()).catch(() => {});
     return ok({ save, granted: ADS_REWARD_COINS });
   }
 
@@ -1910,5 +1919,36 @@ export class MetaService {
       }
     }
     return ok({ battlePass: finalSave.battlePass!, reward });
+  }
+
+  // ── B6 限时活动 ───────────────────────────────────────────────────────────
+
+  async getEvents(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { cols, now } = this.deps;
+    const events = await getEventsForAccount(cols, accountId, now());
+    return reply.send({ ok: true, data: { events } });
+  }
+
+  async claimEventReward(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { eventId, rewardId } = req.body as { eventId: string; rewardId: string };
+    if (!eventId || !rewardId) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing eventId/rewardId'));
+    const { cols, now, commercial } = this.deps;
+    const result = await claimEventReward(cols, accountId, eventId, rewardId, now(), commercial);
+    if (!result.ok) {
+      const code =
+        result.error === 'NOT_FOUND' ? 404 :
+        result.error === 'EVENT_CLOSED' ? 403 :
+        result.error === 'INSUFFICIENT_POINTS' ? 402 :
+        409;
+      const errCode =
+        result.error === 'NOT_FOUND' ? ErrorCode.NOT_FOUND :
+        result.error === 'EVENT_CLOSED' ? ErrorCode.BAD_REQUEST :
+        result.error === 'INSUFFICIENT_POINTS' ? ErrorCode.INSUFFICIENT_FUNDS :
+        ErrorCode.ALREADY_CLAIMED;
+      return reply.code(code).send(err(errCode, result.error));
+    }
+    return reply.send({ ok: true, data: { pointsLeft: result.pointsLeft, reward: result.reward } });
   }
 }

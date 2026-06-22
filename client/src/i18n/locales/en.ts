@@ -1039,4 +1039,21 @@ export const en: Record<TranslationKey, string> = {
   'title.ach.pvp.veteran.short': 'Veteran',
   'title.ladder.full': 'Ladder Ace',
   'title.ladder.short': 'Ladder',
+
+  // ── Limited-time events (B6) ─────────────────────────────────────────────
+  'event.title': 'Events',
+  'event.back': '← Back',
+  'event.noEvents': 'No active events right now',
+  'event.points': 'Points: {n}',
+  'event.daysLeft': '{n} days left',
+  'event.ending': 'Ending soon',
+  'event.tasks.title': 'Event Tasks',
+  'event.tasks.pve.clear': 'Clear a PvE level',
+  'event.tasks.pvp.win': 'Win a PvP match',
+  'event.tasks.ad.watch': 'Watch an ad',
+  'event.rewards.title': 'Point Shop',
+  'event.rewards.coins': '+{n} coins',
+  'event.rewards.claim': 'Redeem',
+  'event.rewards.claimToast': 'Redeemed! Points left: {n}',
+  'event.rewards.claimFailed': 'Redeem failed, please retry',
 };

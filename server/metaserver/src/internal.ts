@@ -35,6 +35,7 @@ import type { CommercialClient } from './commercialClient.js';
 import { adsDayKey } from './economy.js';
 import { getProfile, resolveByPublicId } from './accounts.js';
 import { grantTitleToPlayer } from './titles.js';
+import { accrueEventTask } from './events.js';
 import { friendAccountIds } from './social.js';
 import { insertSystemMail, bulkInsertSystemMail } from './mail.js';
 import { escrowEquipment, grantEquipment } from './equipment.js';
@@ -395,6 +396,14 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         // 幂等竞态：唯一索引冲突说明并发已归档，忽略。
         if ((e as { code?: number }).code !== 11000) log.error('archive match failed', { err: (e as Error).message });
       });
+
+    // B6：活动任务「pvp.win」打点——胜方（best-effort）。
+    if (body.winner_side >= 0) {
+      const winner = body.players.find((p) => p.side === body.winner_side);
+      if (winner) {
+        accrueEventTask(cols, winner.accountId, 'pvp.win', now()).catch(() => {});
+      }
+    }
 
     return reply.send({ ok: true, ...(eloBySide ? { elo: eloBySide } : {}) });
   });

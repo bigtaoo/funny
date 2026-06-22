@@ -1039,4 +1039,21 @@ export const de: Record<TranslationKey, string> = {
   'title.ach.pvp.veteran.short': 'Veteran',
   'title.ladder.full': 'Ranglistenprofi',
   'title.ladder.short': 'Rangliste',
+
+  // ── Zeitlich begrenzte Events (B6) ──────────────────────────────────────
+  'event.title': 'Events',
+  'event.back': '← Zurück',
+  'event.noEvents': 'Keine aktiven Events im Moment',
+  'event.points': 'Punkte: {n}',
+  'event.daysLeft': 'Noch {n} Tage',
+  'event.ending': 'Endet bald',
+  'event.tasks.title': 'Event-Aufgaben',
+  'event.tasks.pve.clear': 'PvE-Level abschließen',
+  'event.tasks.pvp.win': 'PvP-Partie gewinnen',
+  'event.tasks.ad.watch': 'Werbung ansehen',
+  'event.rewards.title': 'Punkteshop',
+  'event.rewards.coins': '+{n} Münzen',
+  'event.rewards.claim': 'Einlösen',
+  'event.rewards.claimToast': 'Eingelöst! Verbleibende Punkte: {n}',
+  'event.rewards.claimFailed': 'Einlösen fehlgeschlagen, bitte erneut versuchen',
 };

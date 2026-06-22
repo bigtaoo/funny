@@ -1045,6 +1045,23 @@ export const zh = {
   // 天梯赛季称号（ladder.s{N}.{rank}）由 formatLadderTitle 拼动态部分。
   'title.ladder.full': '天梯达人',
   'title.ladder.short': '天梯',
+
+  // ── 限时活动（B6）────────────────────────────────────────────────────────────
+  'event.title': '限时活动',
+  'event.back': '← 返回',
+  'event.noEvents': '当前没有进行中的活动',
+  'event.points': '积分：{n}',
+  'event.daysLeft': '剩余 {n} 天',
+  'event.ending': '即将结束',
+  'event.tasks.title': '活动任务',
+  'event.tasks.pve.clear': '通关 PvE 关卡',
+  'event.tasks.pvp.win': '赢得 PvP 对局',
+  'event.tasks.ad.watch': '观看广告',
+  'event.rewards.title': '积分商店',
+  'event.rewards.coins': '+{n} 金币',
+  'event.rewards.claim': '兑换',
+  'event.rewards.claimToast': '兑换成功，剩余积分：{n}',
+  'event.rewards.claimFailed': '兑换失败，请重试',
 };
 
 export type TranslationKey = keyof typeof zh;
