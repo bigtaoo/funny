@@ -8,6 +8,8 @@ export interface QueueEntry {
   name: string;
   /** 9 位数字公开 id（UI 用，纯展示；缺省空串）。 */
   publicId: string;
+  /** 佩戴称号 id（来自 meta /internal/profile；空串=无称号）。 */
+  equippedTitle: string;
   elo: number;
   enqueuedAt: number;
 }
@@ -56,9 +58,9 @@ export class Matchmaking {
   }
 
   /** 入队（同账号再次入队覆盖旧条目，重置等待）。入队后尝试一次配对。 */
-  enqueue(accountId: string, name: string, publicId: string, elo: number): void {
+  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = ''): void {
     this.remove(accountId);
-    this.queue.push({ accountId, name, publicId, elo, enqueuedAt: this.now() });
+    this.queue.push({ accountId, name, publicId, equippedTitle, elo, enqueuedAt: this.now() });
     this.ensureTimer();
     this.tick();
   }

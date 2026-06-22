@@ -33,6 +33,7 @@ import type { GatewayClient } from './gatewayClient.js';
 import type { CommercialClient } from './commercialClient.js';
 import { adsDayKey } from './economy.js';
 import { getProfile, resolveByPublicId } from './accounts.js';
+import { grantTitleToPlayer } from './titles.js';
 import { friendAccountIds } from './social.js';
 import { insertSystemMail, bulkInsertSystemMail } from './mail.js';
 import { escrowEquipment, grantEquipment } from './equipment.js';
@@ -535,6 +536,26 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     } catch (e) {
       log.error('rollSeason failed', { err: (e as Error).message });
       return reply.code(500).send({ ok: false, error: 'roll failed' });
+    }
+  });
+
+  // ── POST /admin/grant-title ───────────────────────────────────────────────────────
+  // admin 手动授予称号（S10，TITLE_DESIGN §8 admin 授予）。幂等：已拥有则 no-op。
+  app.post('/admin/grant-title', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const { accountId, titleId } = req.body as { accountId?: string; titleId?: string };
+    if (!accountId || !titleId) {
+      return reply.code(400).send({ ok: false, error: 'accountId and titleId required' });
+    }
+    try {
+      await grantTitleToPlayer(cols, accountId, titleId, now());
+      log.info('POST /admin/grant-title', { accountId, titleId });
+      return reply.send({ ok: true });
+    } catch (e) {
+      log.error('grant-title failed', { accountId, titleId, err: (e as Error).message });
+      return reply.code(500).send({ ok: false, error: 'grant failed' });
     }
   });
 

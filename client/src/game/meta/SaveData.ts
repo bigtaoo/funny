@@ -76,6 +76,10 @@ export interface SaveData {
     claimedPaid: number[];
   };
 
+  // —— 称号（S10，TITLE_DESIGN §2）。服务器权威，PUT /save 不上行（客户端只读）。
+  // 佩戴位在 equipped['title']（同步段，客户端可写），servers 据此广播对手称号。
+  titles?: string[];
+
   // —— 客户端同步段（轻校验，§2）——
   progress: {
     cleared: string[];

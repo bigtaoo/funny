@@ -997,4 +997,22 @@ export const en: Record<TranslationKey, string> = {
   'battlepass.buyToast': 'Pass activated!',
   'battlepass.maxLevel': 'Max level!',
   'battlepass.openBattlePass': 'Battle Pass',
+
+  // ── Title system (S10) ───────────────────────────────────────────────────────
+  'settings.titles': 'Titles',
+  'settings.openTitles': 'My Titles',
+  'titles.title': 'Title Wall',
+  'titles.back': '← Back',
+  'titles.empty': 'No titles yet',
+  'titles.equipped': 'Equipped',
+  'title.event.newbie.full': 'New Player',
+  'title.event.newbie.short': 'Newbie',
+  'title.event.founder.full': 'Founder',
+  'title.event.founder.short': 'Founder',
+  'title.ach.all_chapters.full': 'Notebook Conqueror',
+  'title.ach.all_chapters.short': 'Conqueror',
+  'title.ach.pvp.veteran.full': 'Ranked Veteran',
+  'title.ach.pvp.veteran.short': 'Veteran',
+  'title.ladder.full': 'Ladder Ace',
+  'title.ladder.short': 'Ladder',
 };

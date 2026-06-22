@@ -31,13 +31,13 @@ export class MetaClient {
    * 取玩家公开资料（展示名 + 9 位数字公开 id），用于房间显示。meta 未配置 / 出错 →
    * 返回空（gateway 退回 accountId 前缀做名字、publicId 为空）。
    */
-  async getProfile(accountId: string): Promise<{ displayName?: string; publicId?: string }> {
+  async getProfile(accountId: string): Promise<{ displayName?: string; publicId?: string; equippedTitle?: string }> {
     if (!this.baseUrl) return {};
     try {
       const url = `${this.baseUrl}/internal/profile?accountId=${encodeURIComponent(accountId)}`;
       const res = await fetch(url, { headers: internalHeaders('gateway', this.internalKey) });
       if (!res.ok) return {};
-      return (await res.json()) as { displayName?: string; publicId?: string };
+      return (await res.json()) as { displayName?: string; publicId?: string; equippedTitle?: string };
     } catch {
       return {};
     }

@@ -273,16 +273,16 @@ export class Gateway {
           void this.enqueueRanked(accountId);
         } else {
           log.info('-> matchsvc roomCreate', { accountId });
-          void this.resolveProfile(accountId).then(({ name, publicId }) =>
-            this.matchsvc.roomCreate(accountId, name, publicId),
+          void this.resolveProfile(accountId).then(({ name, publicId, equippedTitle }) =>
+            this.matchsvc.roomCreate(accountId, name, publicId, equippedTitle),
           );
         }
         break;
       case 'room_join': {
         const code = msg.code;
         log.info('-> matchsvc roomJoin', { accountId, code });
-        void this.resolveProfile(accountId).then(({ name, publicId }) =>
-          this.matchsvc.roomJoin(accountId, name, publicId, code),
+        void this.resolveProfile(accountId).then(({ name, publicId, equippedTitle }) =>
+          this.matchsvc.roomJoin(accountId, name, publicId, code, equippedTitle),
         );
         break;
       }
@@ -397,19 +397,19 @@ export class Gateway {
       log.warn('ranked enqueue aborted: account dropped during ELO fetch', { accountId });
       return;
     }
-    const { name, publicId } = await this.resolveProfile(accountId);
+    const { name, publicId, equippedTitle } = await this.resolveProfile(accountId);
     if (!this.conns.has(accountId)) return;
     log.info('-> matchsvc enqueue', { accountId, elo });
-    this.matchsvc.enqueue(accountId, name, publicId, elo);
+    this.matchsvc.enqueue(accountId, name, publicId, elo, equippedTitle);
   }
 
   /**
    * 玩家展示资料：向 meta 取真实昵称 + 9 位数字公开 id。meta 不可用 / 无资料 →
    * 名字退回 accountId 前 12 位、publicId 空串（房间仍可建，只是名字不友好）。
    */
-  private async resolveProfile(accountId: string): Promise<{ name: string; publicId: string }> {
+  private async resolveProfile(accountId: string): Promise<{ name: string; publicId: string; equippedTitle: string }> {
     const p = await this.meta.getProfile(accountId);
-    return { name: p.displayName || displayName(accountId), publicId: p.publicId ?? '' };
+    return { name: p.displayName || displayName(accountId), publicId: p.publicId ?? '', equippedTitle: p.equippedTitle ?? '' };
   }
 
   private sendPong(accountId: string): void {

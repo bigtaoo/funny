@@ -64,6 +64,8 @@ export type ServerMsg =
       localSide: number;
       opponentName: string;
       opponentPublicId: string;
+      /** 对手佩戴称号 id（空串=无称号；S10）。 */
+      opponentTitle?: string;
     }
   | { case: 'frame_batch'; toFrame: number; frames: FrameCmds[] }
   | {
@@ -212,6 +214,7 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
           local_side: msg.localSide,
           opponent_name: msg.opponentName,
           opponent_public_id: msg.opponentPublicId,
+          ...(msg.opponentTitle ? { opponent_title: msg.opponentTitle } : {}),
         },
       };
       break;

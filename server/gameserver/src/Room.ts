@@ -74,6 +74,7 @@ interface Slot {
   accountId: string;
   name: string; // 对手展示名（来自对方 ticket.opponent → 实为本方 name；UI 用）
   publicId: string; // 对手 9 位数字公开 id（UI 用，纯展示）
+  opponentTitle: string; // 对手佩戴称号 id（空串=无称号；S10）
   conn: Connection | null;
 }
 
@@ -118,10 +119,10 @@ export class Room {
   }
 
   /** 按 ticket 加入指定 side；两人凑齐即开局。重复 side 忽略。 */
-  addPlayer(conn: Connection, name: string, publicId: string): void {
+  addPlayer(conn: Connection, name: string, publicId: string, opponentTitle = ''): void {
     if (this.phase >= RoomPhase.IN_MATCH) return; // 已开局，新增走 resume
     if (this.hasSide(conn.side)) return;
-    this.slots.push({ side: conn.side, accountId: conn.accountId, name, publicId, conn });
+    this.slots.push({ side: conn.side, accountId: conn.accountId, name, publicId, opponentTitle, conn });
     if (this.slots.length === 2) {
       this.launch();
     } else if (!this.launchTimer) {
@@ -170,6 +171,7 @@ export class Room {
         localSide: s.side,
         opponentName: s.name, // slot.name 即该 slot 的对手名（来自对方 ticket.opponent）
         opponentPublicId: s.publicId,
+        ...(s.opponentTitle ? { opponentTitle: s.opponentTitle } : {}),
       });
     }
     this.startMetronome();

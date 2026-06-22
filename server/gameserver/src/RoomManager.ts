@@ -20,13 +20,13 @@ export class RoomManager {
    * 交叉核对——第二张 ticket 的 seed/mode 必须与房间（第一张 ticket 建立的）一致，
    * 否则拒绝（防伪造 / 错配）。返回 false 表示拒绝（调用方关连接）。
    */
-  join(conn: Connection, name: string, publicId: string, seed: number, mode: MatchModeVal): boolean {
+  join(conn: Connection, name: string, publicId: string, seed: number, mode: MatchModeVal, opponentTitle = ''): boolean {
     let room = this.rooms.get(conn.roomId);
     if (room) {
       // 已有房：核对 seed/mode 一致（防伪造 / 错配）。
       if (room.seedValue !== seed || room.mode !== mode) return false;
       // 该 side 已在房 = 重连：不重复 addPlayer，slot.conn 由后续 conn_resume 重绑。
-      if (!room.hasSide(conn.side)) room.addPlayer(conn, name, publicId);
+      if (!room.hasSide(conn.side)) room.addPlayer(conn, name, publicId, opponentTitle);
       return true;
     }
     room = new Room(conn.roomId, seed, mode, {
@@ -34,7 +34,7 @@ export class RoomManager {
       report: this.deps.report,
     });
     this.rooms.set(conn.roomId, room);
-    room.addPlayer(conn, name, publicId);
+    room.addPlayer(conn, name, publicId, opponentTitle);
     return true;
   }
 

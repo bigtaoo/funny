@@ -259,6 +259,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const pvp = saveManager.get().pvp;
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const canRename = !offlineMode && !!api && loggedIn;
+    const hasTitles = (saveManager.get().titles?.length ?? 0) > 0;
     views.showSettings({
       onBack() { goLobby(); },
       playerName: playerName(),
@@ -276,6 +277,19 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             onRename: doRename,
           }
         : {}),
+      ...(hasTitles ? { onOpenTitles: () => goTitles() } : {}),
+    });
+  }
+
+  function goTitles(): void {
+    const save = saveManager.get();
+    views.showTitles({
+      onBack() { goSettings(); },
+      titles: save.titles ?? [],
+      equippedTitle: save.equipped['title'] ?? '',
+      onEquip(titleId: string) {
+        saveManager.update((d) => { d.equipped['title'] = titleId; });
+      },
     });
   }
 
@@ -1077,7 +1091,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const localOwner = info.localSide as OwnerId;
 
     const localPvp = saveManager.get().pvp;
-    const oppProfile: ProfileData = { name: info.opponentName, publicId: info.opponentPublicId };
+    const oppProfile: ProfileData = {
+      name: info.opponentName,
+      publicId: info.opponentPublicId,
+      ...(info.opponentTitle ? { equippedTitle: info.opponentTitle } : {}),
+    };
     const localProfile: ProfileData = {
       name: playerName(),
       publicId: platform.storage.getItem(PLAYER_PUBLIC_ID_KEY) ?? '',

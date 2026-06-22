@@ -101,6 +101,7 @@ message MatchStart {
   uint32    local_side         = 5;
   string    opponent_name      = 6;   // 对手展示名（UI 用，纯展示）
   string    opponent_public_id = 7;   // 对手 9 位数字公开 id（UI 用，纯展示）
+  string    opponent_title     = 8;   // 对手佩戴称号 id（UI 用，纯展示；空串=无称号）
 }
 
 message ConnResync {

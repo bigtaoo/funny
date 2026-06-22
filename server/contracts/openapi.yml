@@ -124,6 +124,11 @@ components:
               type: array
               items: { type: string }
               description: 历史首达段位列表（终身账本）
+        # —— S10 称号（服务器权威，懒创建；PUT /save 不可写）——
+        titles:
+          type: array
+          items: { type: string }
+          description: 拥有的称号 id 集合（赛季结算/成就/admin 授予，顺序即获得顺序）
         # —— S11 战令 ——
         battlePass:
           $ref: '#/components/schemas/BattlePassData'
@@ -349,6 +354,7 @@ components:
         publicId: { type: string }
         displayName: { type: string }
         rank: { type: string }
+        equippedTitle: { type: string, description: "当前佩戴称号 id（空=无称号）" }
 
     FriendView:
       type: object

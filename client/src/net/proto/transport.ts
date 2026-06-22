@@ -153,6 +153,8 @@ export interface MatchStart {
   opponentName: string;
   /** 对手 9 位数字公开 id（UI 用，纯展示） */
   opponentPublicId: string;
+  /** 对手佩戴称号 id（空串=无称号；S10）。 */
+  opponentTitle: string;
 }
 
 export interface ConnResync {
@@ -1485,7 +1487,7 @@ export const RoomState: MessageFns<RoomState> = {
 };
 
 function createBaseMatchStart(): MatchStart {
-  return { roomId: "", mode: 0, seed: 0, startFrame: 0, localSide: 0, opponentName: "", opponentPublicId: "" };
+  return { roomId: "", mode: 0, seed: 0, startFrame: 0, localSide: 0, opponentName: "", opponentPublicId: "", opponentTitle: "" };
 }
 
 export const MatchStart: MessageFns<MatchStart> = {
@@ -1510,6 +1512,9 @@ export const MatchStart: MessageFns<MatchStart> = {
     }
     if (message.opponentPublicId !== "") {
       writer.uint32(58).string(message.opponentPublicId);
+    }
+    if (message.opponentTitle !== "") {
+      writer.uint32(66).string(message.opponentTitle);
     }
     return writer;
   },
@@ -1577,6 +1582,14 @@ export const MatchStart: MessageFns<MatchStart> = {
           message.opponentPublicId = reader.string();
           continue;
         }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.opponentTitle = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1598,6 +1611,7 @@ export const MatchStart: MessageFns<MatchStart> = {
     message.localSide = object.localSide ?? 0;
     message.opponentName = object.opponentName ?? "";
     message.opponentPublicId = object.opponentPublicId ?? "";
+    message.opponentTitle = object.opponentTitle ?? "";
     return message;
   },
 };

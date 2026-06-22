@@ -166,10 +166,18 @@ export async function getDisplayName(
 export async function getProfile(
   cols: Collections,
   accountId: string,
-): Promise<{ displayName?: string; publicId: string }> {
-  const doc = await cols.accounts.findOne({ _id: accountId });
-  const publicId = await ensurePublicId(cols, accountId);
-  return { ...(doc?.displayName ? { displayName: doc.displayName } : {}), publicId };
+): Promise<{ displayName?: string; publicId: string; equippedTitle?: string }> {
+  const [doc, saveDoc, publicId] = await Promise.all([
+    cols.accounts.findOne({ _id: accountId }),
+    cols.saves.findOne({ _id: accountId }, { projection: { 'save.equipped': 1 } }),
+    ensurePublicId(cols, accountId),
+  ]);
+  const equippedTitle = (saveDoc?.save.equipped as Record<string, string> | undefined)?.['title'];
+  return {
+    ...(doc?.displayName ? { displayName: doc.displayName } : {}),
+    publicId,
+    ...(equippedTitle ? { equippedTitle } : {}),
+  };
 }
 
 /**

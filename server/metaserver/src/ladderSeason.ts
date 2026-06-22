@@ -10,12 +10,14 @@ import {
   eloToRank,
   pendingBpRewards,
   makeFreshBattlePass,
+  ladderTitleId,
   type LadderSeasonDoc,
   type RankId,
   createLogger,
 } from '@nw/shared';
 import type { CommercialClient } from './commercialClient.js';
 import { insertSystemMail } from './mail.js';
+import { grantTitleToPlayer } from './titles.js';
 
 const log = createLogger('meta:ladderSeason');
 
@@ -108,8 +110,13 @@ export async function settleSeasonForPlayer(
     .reduce((s, r) => s + r.reward.count, 0);
   const totalCoins = coins + bpCoins;
 
+  // 授予赛季段位称号（S10，幂等，best-effort）
+  await grantTitleToPlayer(cols, accountId, ladderTitleId(prevSeasonNo, peakRank), now).catch((e) =>
+    log.error('settleSeasonForPlayer: grantTitle failed', { accountId, prevSeasonNo, peakRank, err: (e as Error).message }),
+  );
+
   if (totalCoins <= 0) {
-    log.info('settleSeasonForPlayer: no reward', { accountId, prevSeasonNo, peakRank });
+    log.info('settleSeasonForPlayer: no coin reward', { accountId, prevSeasonNo, peakRank });
     return;
   }
 

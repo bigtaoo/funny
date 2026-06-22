@@ -49,6 +49,8 @@ interface Slot {
   accountId: string;
   name: string;
   publicId: string;
+  /** 佩戴称号 id（来自 meta /internal/profile；空串=无称号）。 */
+  equippedTitle: string;
   side: 0 | 1;
   ready: boolean;
   connected: boolean;
@@ -119,12 +121,12 @@ export class Matchsvc {
    * publicId 随队列条目带入：ranked 不展示房间 slot，但开局后要把对手 publicId 写进
    * ticket → match_start，供对局内资料弹层展示。
    */
-  enqueue(accountId: string, name: string, publicId: string, elo: number): void {
+  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = ''): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       log.warn('enqueue ignored: already in room/queue', { accountId });
       return;
     }
-    this.matchmaking.enqueue(accountId, name, publicId, elo);
+    this.matchmaking.enqueue(accountId, name, publicId, elo, equippedTitle);
     log.info('enqueued for ranked', { accountId, elo, queueSize: this.matchmaking.size });
   }
 
@@ -137,14 +139,14 @@ export class Matchsvc {
     log.info('ranked pair matched', { a: a.accountId, b: b.accountId, eloA: a.elo, eloB: b.elo });
     this.startMatch(
       'ranked',
-      { accountId: a.accountId, name: a.name, publicId: a.publicId },
-      { accountId: b.accountId, name: b.name, publicId: b.publicId },
+      { accountId: a.accountId, name: a.name, publicId: a.publicId, equippedTitle: a.equippedTitle },
+      { accountId: b.accountId, name: b.name, publicId: b.publicId, equippedTitle: b.equippedTitle },
     );
   }
 
   // ───────────────────────── friendly 房间 ─────────────────────────
 
-  roomCreate(accountId: string, name: string, publicId: string): void {
+  roomCreate(accountId: string, name: string, publicId: string, equippedTitle = ''): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       this.push(accountId, { kind: 'room_error', code: 'ALREADY_IN_ROOM', message: 'leave first' });
       return;
@@ -154,7 +156,7 @@ export class Matchsvc {
     const room: Room = {
       roomId,
       code,
-      slots: [{ accountId, name, publicId, side: 0, ready: false, connected: true }],
+      slots: [{ accountId, name, publicId, equippedTitle, side: 0, ready: false, connected: true }],
       phase: RoomPhase.WAITING,
       reapTimer: null,
     };
@@ -165,7 +167,7 @@ export class Matchsvc {
     this.broadcast(room);
   }
 
-  roomJoin(accountId: string, name: string, publicId: string, code: string): void {
+  roomJoin(accountId: string, name: string, publicId: string, code: string, equippedTitle = ''): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       this.push(accountId, { kind: 'room_error', code: 'ALREADY_IN_ROOM', message: 'leave first' });
       return;
@@ -182,7 +184,7 @@ export class Matchsvc {
       this.push(accountId, { kind: 'room_error', code: 'ROOM_FULL', message: 'room is full' });
       return;
     }
-    room.slots.push({ accountId, name, publicId, side: 1, ready: false, connected: true });
+    room.slots.push({ accountId, name, publicId, equippedTitle, side: 1, ready: false, connected: true });
     this.accountRoom.set(accountId, room.roomId);
     log.info('room joined', { accountId, code, roomId: room.roomId });
     this.broadcast(room);
@@ -206,8 +208,8 @@ export class Matchsvc {
       this.destroyRoom(room); // 大厅房使命完成；对局态归 gameserver
       this.startMatch(
         'friendly',
-        { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId },
-        { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId },
+        { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle },
+        { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId, equippedTitle: s1!.equippedTitle },
       );
     }
   }
@@ -227,8 +229,8 @@ export class Matchsvc {
     this.destroyRoom(room); // 大厅房使命完成；对局态归 gameserver
     this.startMatch(
       'friendly',
-      { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId },
-      { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId },
+      { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle },
+      { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId, equippedTitle: s1!.equippedTitle },
     );
   }
 
@@ -288,8 +290,8 @@ export class Matchsvc {
 
   private startMatch(
     mode: 'friendly' | 'ranked',
-    a: { accountId: string; name: string; publicId: string },
-    b: { accountId: string; name: string; publicId: string },
+    a: { accountId: string; name: string; publicId: string; equippedTitle: string },
+    b: { accountId: string; name: string; publicId: string; equippedTitle: string },
   ): void {
     const gameUrl = this.games.pick();
     if (!gameUrl) {
@@ -308,8 +310,8 @@ export class Matchsvc {
     log.info('match starting', { mode, roomId, gameUrl, a: a.accountId, b: b.accountId, seed });
 
     const sign = (
-      self: { accountId: string; name: string; publicId: string },
-      opp: { accountId: string; name: string; publicId: string },
+      self: { accountId: string; name: string; publicId: string; equippedTitle: string },
+      opp: { accountId: string; name: string; publicId: string; equippedTitle: string },
       side: 0 | 1,
     ): string => {
       const claims: TicketClaims = {
@@ -319,6 +321,7 @@ export class Matchsvc {
         mode,
         opponent: opp.name,
         opponentPublicId: opp.publicId,
+        opponentTitle: opp.equippedTitle || undefined,
         gameUrl,
         accountId: self.accountId,
       };

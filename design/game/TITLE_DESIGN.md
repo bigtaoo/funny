@@ -1,6 +1,6 @@
 # 称号系统设计（Title / 公开身份名片）— DRAFT
 
-> **状态**：设计占位（2026-06-21 拍板）。**未实现**——依赖 ranked 队列（`META_TASKS.md S1-R`）与赛季系统，待二者落地后实现，见 `META_TASKS.md S10`。
+> **状态**：✅ **已实现**（2026-06-22，`META_TASKS.md S10-1～5` 全 ✅）。ranked 队列（S1-R）已落地；赛季结算（S11-SE-4）已接入称号授予。
 > **机制权威 = 本文**。数值（段位首达金币）去 [`ECONOMY_BALANCE.md §2.3`](ECONOMY_BALANCE.md)；成就→称号映射机制基准见 [`ACHIEVEMENT_DESIGN.md`](ACHIEVEMENT_DESIGN.md)。
 
 ---
@@ -140,11 +140,23 @@ grant(t):
 
 ---
 
-## 9. 待实现 / 遗留
+## 9. 实现记录 / 遗留
 
-- [x] 依赖 ranked 队列（`META_TASKS S1-R`，已在他会话落地）；仍待赛季快照时机（`ECONOMY_BALANCE §2.6`）。
-- [x] 跨来源「等级」可比序：**已定 = `weight` 数据驱动（§6.1）**；实现期把 `weight` 写进 `@nw/shared` `TITLE_DEFS`，具体每条数值随条目落表。
-- [ ] i18n 文案表 `title.*`（full/short）。
-- [ ] `equipped.title` 短标签限长与 UI 截断规则。
-- [ ] 新号默认佩戴策略（无 / `event.newbie`）。
-- [ ] 成就→称号映射的具体条目清单（§7，与 `ACHIEVEMENT_DESIGN` 条目对齐）。
+- [x] `@nw/shared/src/titles.ts`：`TITLE_DEFS`（4条永久称号）、`grantTitle` 纯函数、`ladderTitleId`、`titleWeight`、`LADDER_RANK_WEIGHTS`
+- [x] `@nw/shared/src/types.ts`：`SaveData.titles?: string[]`（服务器权威段）
+- [x] `@nw/shared/src/ticket.ts`：`TicketClaims.opponentTitle?: string`
+- [x] `server/metaserver/src/titles.ts`：`grantTitleToPlayer` DB 写帮助函数（`$addToSet` 幂等 + 条件 `$set equipped.title`）
+- [x] `server/metaserver/src/accounts.ts`：`getProfile` 返 `equippedTitle`
+- [x] `server/metaserver/src/service.ts`：`claimAchievement` 顶阶→称号；`getLeaderboard` 含 `equippedTitle`
+- [x] `server/metaserver/src/ladderSeason.ts`：`settleSeasonForPlayer` → `grantTitleToPlayer(ladderTitleId(prevSeasonNo, peakRank))`
+- [x] `server/metaserver/src/internal.ts`：`POST /admin/grant-title` 活动授予
+- [x] matchsvc：`QueueEntry.equippedTitle` → `sign()` → `TicketClaims.opponentTitle`
+- [x] gameserver：`match_start` proto field 8（tag 66）`opponentTitle`；`Room.Slot.opponentTitle`；`RoomManager.join` 透传
+- [x] 客户端 `client/src/game/meta/titles.ts`：mirror TITLE_DEFS + `titleWeight`/`getTitleKeys`/`formatLadderTitle`/`highestTitle`
+- [x] 客户端 `client/src/net/proto/transport.ts`：`MatchStart.opponentTitle` field 8 encode/decode
+- [x] 客户端 UI：`ProfilePopup` 称号行 + `LeaderboardScene` 称号芯片 + `TitlesScene` 称号墙 + `SettingsScene` 入口
+- [x] i18n zh/en/de：`settings.titles`/`titles.*`/`title.*` 全文案
+- [ ] 社交消息 sender 前缀（`[称号]`）— 待 S6 social 消息体扩展
+- [ ] SLG 赛季称号授予 — 待 worldsvc SLG 赛季结算落地
+- [ ] `equipped.title` 短标签限长 UI 截断（建议 ≤ 4 字，前端展示截断即可）
+- [ ] 成就→称号具体条目清单（§7，与 ACHIEVEMENT_DESIGN 对齐）
