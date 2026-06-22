@@ -229,3 +229,71 @@ export const EQUIP_AUCTION_REF_PRICE_BY_RARITY: Record<EquipRarity, number> = {
   rare: 400,
   epic: 1200,
 };
+
+// 确定性掉落：instanceId 作种子，同 id 重放同结果（调用方传 randomUUID，保证 id 唯一）。
+// 槽位按 instanceId hash 随机选（三槽等概率），稀有度由调用方（pveRewards 配置）决定。
+
+/**
+ * 关卡掉落：产一件 +0 基础装备实例（E2 §4）。
+ * @param rarity 稀有度（由关卡配置决定）。
+ * @param instanceId 唯一实例 id（通常是 `drop_${randomUUID()}`）；兼作确定性种子。
+ */
+export function makeDropInstance(
+  rarity: EquipRarity,
+  instanceId: string,
+): { id: string; defId: string; rarity: EquipRarity; level: number; affixes: { id: string; value: number }[] } {
+  const rng = seededRng(hashSeed(`drop:${instanceId}`));
+  const slotIdx = Math.floor(rng() * EQUIP_SLOTS.length);
+  const slot = EQUIP_SLOTS[slotIdx]!;
+  const def = Object.values(EQUIPMENT_DEFS).find((d) => d.slot === slot && d.rarity === rarity);
+  if (!def) throw new Error(`no equipment def for slot=${slot} rarity=${rarity}`);
+  return {
+    id: instanceId,
+    defId: def.defId,
+    rarity,
+    level: 0,
+    affixes: rollCraftedAffixes(def.defId, instanceId),
+  };
+}
+
+// ── 洗练（E6，EQUIPMENT_DESIGN §7.8）────────────────────────────────────────
+//
+// 洗练：保留主词条（slot 锁定），重新 roll 全部副词条（sub + 未来 skill）。
+// 消耗：同槽同稀有度 × 1 件（自身降稀：fine→common, rare→fine, epic→rare）。
+// common（0 副词条）无法洗练。
+
+/** 洗练消耗：目标稀有度 → 需消耗的素材装备稀有度（EQUIPMENT_DESIGN §7.8，ADR-017）。 */
+export const REFORGE_MATERIAL_RARITY: Partial<Record<EquipRarity, EquipRarity>> = {
+  fine: 'common',
+  rare: 'fine',
+  epic: 'rare',
+};
+
+/**
+ * 洗练重 roll 副词条（保留主词条不变）。
+ * @param defId   被洗练的装备 defId。
+ * @param seedKey 幂等键（同 key 重放同结果）。
+ * @returns 新的 affixes 数组（主词条 + 重 roll 副词条）。
+ */
+export function rollReforgedAffixes(
+  defId: string,
+  seedKey: string,
+): { id: string; value: number }[] {
+  const def = EQUIPMENT_DEFS[defId];
+  if (!def) throw new Error(`unknown defId: ${defId}`);
+  const rng = seededRng(hashSeed(`reforge:${defId}:${seedKey}`));
+  const out: { id: string; value: number }[] = [];
+  // 主词条保留（base 值不变，强化放大由 engine 管）
+  const main = MAIN_AFFIX_BY_SLOT[def.slot];
+  out.push({ id: main.id, value: main.base });
+  // 副词条全量重 roll
+  const n = CRAFT_SUB_AFFIX_COUNT[def.rarity];
+  const pool = [...SUB_AFFIX_POOL];
+  for (let i = 0; i < n && pool.length > 0; i++) {
+    const idx = Math.floor(rng() * pool.length);
+    const [id, lo, hi] = pool.splice(idx, 1)[0]!;
+    const value = lo + Math.floor(rng() * (hi - lo + 1));
+    out.push({ id, value });
+  }
+  return out;
+}

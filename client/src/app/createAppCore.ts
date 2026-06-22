@@ -812,6 +812,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         case 'INVALID_SLOT':           return 'equip.err.invalidSlot';
         case 'EQUIP_LOCKED':           return 'equip.err.locked';
         case 'EQUIP_IN_USE':           return 'equip.err.inUse';
+        case 'NOT_REFORGE_ELIGIBLE':   return 'equip.err.notReforgeEligible';
+        case 'INVALID_RARITY':         return 'equip.err.invalidRarity';
       }
     }
     return 'equip.err.generic';
@@ -855,6 +857,14 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           const { save } = await client.equipEquipment(slot, instanceId);
           saveManager.adoptServer(save);
           analytics.track('equip_equip', { slot, instance_id: instanceId ?? '' });
+          return { ok: true as const };
+        } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
+      },
+      async reforge(targetId: string, materialId: string) {
+        try {
+          const { save } = await client.reforgeEquipment(targetId, materialId, genUuid());
+          saveManager.adoptServer(save);
+          analytics.track('equip_reforge', { target_id: targetId });
           return { ok: true as const };
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
       },

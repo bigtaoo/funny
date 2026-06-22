@@ -10,8 +10,7 @@
 //   · enhanceEquipment 玩家强化（E3）：服务器掷骰（成功率表）→ 扣材料 + 金币（commercial 权威）→ 成功 level+1。idemKey 幂等。
 //   · salvageEquipment 玩家分解（E3）：+0~4 件返 70% 打造材料、移出库存（+5 拒、穿戴中/锁定拒），批量。idemKey 幂等。
 //   · equipEquipment   玩家穿戴（E4）：校验槽位匹配 → 写 gear.global[slot]（或 byUnit），instanceId=null 卸下。纯状态。
-//
-// 关卡掉落 faucet（E2 剩余）、洗练（E6）不在本切片。
+//   · reforgeEquipment 玩家洗练（E6）：消耗同槽低档素材件 → 重 roll 副词条（主词条保留）。idemKey 幂等。
 import {
   EQUIPMENT_DEFS,
   EQUIPMENT_INV_CAP,
@@ -19,9 +18,11 @@ import {
   EQUIP_MAX_LEVEL,
   EQUIP_SLOTS,
   SALVAGE_MAX_LEVEL,
+  REFORGE_MATERIAL_RARITY,
   equipmentInvCount,
   rollCraftedAffixes,
   rollEnhanceSuccess,
+  rollReforgedAffixes,
   enhanceCost,
   salvageRefund,
   type Collections,
@@ -47,7 +48,9 @@ export type EquipErrorCode =
   | 'EQUIP_IN_USE'
   | 'ENHANCE_MAX_LEVEL'
   | 'NOT_SALVAGEABLE'
+  | 'NOT_REFORGE_ELIGIBLE'
   | 'INVALID_SLOT'
+  | 'INVALID_RARITY'
   | 'REV_CONFLICT';
 
 export interface EquipError {
@@ -472,6 +475,104 @@ export async function salvageEquipment(
       { $set: { save: next, rev: next.rev } },
     );
     if (res) return { refunded, save: next };
+  }
+  await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
+  return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
+}
+
+// ── E6 洗练（EQUIPMENT_DESIGN §7.8 / ADR-017）──────────────────────────────────
+
+/**
+ * 洗练一件装备（E6，EQUIPMENT_DESIGN §7.8）：消耗同槽低档素材件，保留主词条，重 roll 全部副词条。
+ * 仅 fine/rare/epic 可洗练（common 无副词条）；素材稀有度须恰好低一档（REFORGE_MATERIAL_RARITY）。
+ * idempotencyKey 幂等（同 key 重放首次结果）。
+ */
+export async function reforgeEquipment(
+  cols: Collections,
+  now: () => number,
+  accountId: string,
+  targetId: string,
+  materialId: string,
+  idempotencyKey: string,
+): Promise<{ instance: EquipmentInstance; save: SaveData } | EquipError> {
+  if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
+  if (targetId === materialId) return { error: 'target and material must differ', code: 'BAD_REQUEST' };
+
+  // 幂等重放检查
+  const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
+  if (replay?.op === 'reforge') {
+    const r = replay.result as { instance: EquipmentInstance };
+    return { instance: r.instance, save: await getOrCreateSave(cols, accountId, now()) };
+  }
+
+  const cur = await getOrCreateSave(cols, accountId, now());
+  const target = cur.equipmentInv?.[targetId];
+  if (!target) return { error: 'target equipment not found', code: 'EQUIP_NOT_FOUND' };
+  if (isEquipped(cur, targetId)) return { error: 'target is equipped', code: 'EQUIP_IN_USE' };
+  if (target.locked) return { error: 'target is locked', code: 'EQUIP_LOCKED' };
+
+  const requiredMatRarity = REFORGE_MATERIAL_RARITY[target.rarity];
+  if (!requiredMatRarity) return { error: `${target.rarity} equipment cannot be reforged`, code: 'NOT_REFORGE_ELIGIBLE' };
+
+  const material = cur.equipmentInv?.[materialId];
+  if (!material) return { error: 'material equipment not found', code: 'EQUIP_NOT_FOUND' };
+  if (isEquipped(cur, materialId)) return { error: 'material is equipped', code: 'EQUIP_IN_USE' };
+
+  const targetDef = EQUIPMENT_DEFS[target.defId];
+  const matDef = EQUIPMENT_DEFS[material.defId];
+  if (!targetDef || !matDef) return { error: 'unknown equipment def', code: 'BAD_REQUEST' };
+  if (matDef.slot !== targetDef.slot) return { error: `material slot ${matDef.slot} must match target slot ${targetDef.slot}`, code: 'INVALID_SLOT' };
+  if (material.rarity !== requiredMatRarity) {
+    return { error: `material must be ${requiredMatRarity} (got ${material.rarity})`, code: 'INVALID_RARITY' };
+  }
+
+  // 确定性重 roll（idempotencyKey 作种子）
+  const newAffixes = rollReforgedAffixes(target.defId, idempotencyKey);
+  const reforged: EquipmentInstance = { ...target, affixes: newAffixes };
+
+  // 幂等抢占
+  try {
+    await cols.equipmentIdem.insertOne({
+      _id: idempotencyKey,
+      accountId,
+      op: 'reforge',
+      result: { instance: reforged },
+      expireAt: idemExpireAt(now()),
+    });
+  } catch (e) {
+    if ((e as { code?: number }).code === 11000) {
+      const prev = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
+      const r = prev?.result as { instance: EquipmentInstance };
+      return { instance: r.instance, save: await getOrCreateSave(cols, accountId, now()) };
+    }
+    throw e;
+  }
+
+  // 原子写：更新 target 词条 + 移除 material（rev 守卫）
+  for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
+    const doc = await cols.saves.findOne({ _id: accountId });
+    if (!doc) {
+      await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
+      return { error: 'save not found', code: 'NOT_FOUND' };
+    }
+    const save = doc.save;
+    // rev 循环内复查：两件都须仍在、target 未被穿戴/锁定
+    if (!save.equipmentInv?.[targetId] || !save.equipmentInv?.[materialId]) {
+      await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
+      return { error: 'equipment no longer available', code: 'REV_CONFLICT' };
+    }
+    if (save.equipmentInv[targetId]!.locked || isEquipped(save, targetId)) {
+      await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
+      return { error: 'target no longer reformable', code: 'REV_CONFLICT' };
+    }
+    const nextInv = { ...(save.equipmentInv ?? {}), [targetId]: reforged };
+    delete nextInv[materialId];
+    const next: SaveData = { ...save, rev: save.rev + 1, updatedAt: now(), equipmentInv: nextInv };
+    const res = await cols.saves.findOneAndUpdate(
+      { _id: accountId, rev: doc.rev },
+      { $set: { save: next, rev: next.rev } },
+    );
+    if (res) return { instance: reforged, save: next };
   }
   await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };

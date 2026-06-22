@@ -294,6 +294,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/equipment/reforge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 装备洗练（E6，保留主词条，重 roll 副词条；消耗同槽低档素材件）。idempotencyKey 幂等 */
+        post: operations["reforgeEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/achievements": {
         parameters: {
             query?: never;
@@ -1464,6 +1481,8 @@ export interface operations {
                             grantedCards?: {
                                 [key: string]: number;
                             };
+                            /** @description 本次关卡掉落的装备实例（E2 §4；未掉落 / 满仓时缺省） */
+                            grantedEquipment?: components["schemas"]["EquipmentInstance"];
                             /** @description 当日发材料通关已达上限 */
                             capped: boolean;
                             /** @description 被 L1 抽中——材料暂扣，客户端须补传录像走 /pve/verify 复算入账 */
@@ -1524,6 +1543,8 @@ export interface operations {
                             grantedCards?: {
                                 [key: string]: number;
                             };
+                            /** @description 复算通过后关卡掉落的装备实例（E2 §4；未掉落 / 满仓时缺省） */
+                            grantedEquipment?: components["schemas"]["EquipmentInstance"];
                             capped: boolean;
                             /** @description 复算是否通过（false=星数不符判可疑，未发材料） */
                             verified: boolean;
@@ -1767,6 +1788,48 @@ export interface operations {
                         /** @enum {boolean} */
                         ok: true;
                         data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    reforgeEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 待洗练的装备实例 id */
+                    targetId: string;
+                    /** @description 消耗的素材装备实例 id（同槽低一档，如 rare→需fine） */
+                    materialId: string;
+                    /** @description 客户端生成幂等键；重 roll 绑定此键，重放返回首次结果 */
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功（instance 已含新副词条） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            instance: components["schemas"]["EquipmentInstance"];
                             save: components["schemas"]["SaveData"];
                         };
                     };

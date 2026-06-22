@@ -170,6 +170,7 @@ export class ApiClient {
     capped: boolean;
     needsReplay?: boolean;
     verifyId?: string;
+    grantedEquipment?: EquipmentInstance;
   }> {
     return this.post<{
       save: SaveData;
@@ -177,6 +178,7 @@ export class ApiClient {
       capped: boolean;
       needsReplay?: boolean;
       verifyId?: string;
+      grantedEquipment?: EquipmentInstance;
     }>('/pve/clear', { levelId, stars, ...(pveUpgrades ? { pveUpgrades } : {}) });
   }
 
@@ -185,12 +187,13 @@ export class ApiClient {
     verifyId: string,
     endFrame: number,
     frames: { frame: number; cmds: { side: number; commands: string }[] }[],
-  ): Promise<{ save: SaveData; granted: Record<string, number>; capped: boolean; verified: boolean }> {
+  ): Promise<{ save: SaveData; granted: Record<string, number>; capped: boolean; verified: boolean; grantedEquipment?: EquipmentInstance }> {
     return this.post<{
       save: SaveData;
       granted: Record<string, number>;
       capped: boolean;
       verified: boolean;
+      grantedEquipment?: EquipmentInstance;
     }>('/pve/verify', { verifyId, endFrame, frames });
   }
 
@@ -263,6 +266,19 @@ export class ApiClient {
       slot,
       instanceId,
       ...(unitType ? { unitType } : {}),
+    });
+  }
+
+  /** 洗练一件装备（E6）：消耗 materialId，重 roll targetId 副词条；主词条不变。 */
+  async reforgeEquipment(
+    targetId: string,
+    materialId: string,
+    idempotencyKey: string,
+  ): Promise<{ instance: EquipmentInstance; save: SaveData }> {
+    return this.post<{ instance: EquipmentInstance; save: SaveData }>('/equipment/reforge', {
+      targetId,
+      materialId,
+      idempotencyKey,
     });
   }
 
