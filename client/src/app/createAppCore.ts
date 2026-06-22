@@ -519,8 +519,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   function goWorldEntry(): void {
-    const worldBase = getWorldBaseUrl();
-    if (!worldBase) { goLobby(); return; }
+    // Note: getWorldBaseUrl() returns '' in Docker/production (same-origin nginx proxy,
+    // where /world/* is forwarded to worldsvc). Do NOT guard on empty string — it is valid.
     const token = platform.storage.getItem(TOKEN_KEY);
     if (!token) { analytics.track('login_gate_hit', { scene: 'WorldMapScene' }); goLogin(); return; }
     const worldApi = new WorldApiClient(platform.storage);

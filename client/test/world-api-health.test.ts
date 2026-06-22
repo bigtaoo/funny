@@ -40,23 +40,24 @@ afterEach(() => {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('WorldApiClient.checkHealth()', () => {
-  it('worldBase 为空时直接返回 false，不发请求', async () => {
+  it('worldBase 为空（同源代理）时直接返回 true，不发请求', async () => {
     setWorldBase('');
     const fetchSpy = vi.fn();
     (globalThis as Record<string, unknown>).fetch = fetchSpy;
     const client = new WorldApiClient(noopStorage);
 
-    expect(await client.checkHealth()).toBe(false);
+    // '' = Docker/prod same-origin nginx proxy; worldsvc is guaranteed up by healthcheck.
+    expect(await client.checkHealth()).toBe(true);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('__NW_WORLD_BASE__ 未设置时同样返回 false', async () => {
-    clearWorldBase(); // globalThis 里没有该 key
+  it('__NW_WORLD_BASE__ 未设置时同样视为同源代理返回 true', async () => {
+    clearWorldBase(); // globalThis 里没有该 key → getWorldBaseUrl() 返回 ''
     const fetchSpy = vi.fn();
     (globalThis as Record<string, unknown>).fetch = fetchSpy;
     const client = new WorldApiClient(noopStorage);
 
-    expect(await client.checkHealth()).toBe(false);
+    expect(await client.checkHealth()).toBe(true);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

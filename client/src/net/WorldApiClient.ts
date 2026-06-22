@@ -56,13 +56,18 @@ export class WorldApiClient {
   constructor(private readonly storage: IStorage) {}
 
   get available(): boolean {
-    return getWorldBaseUrl() !== '' || this.storage.getItem('nw_world_base') !== null;
+    // '' (Docker/prod same-origin proxy) and 'http://...' (dev explicit URL) are both valid
+    // — worldsvc is reachable in any standard build. The old `!== ''` guard was wrong.
+    return true;
   }
 
   /** Ping worldsvc /health. Resolves false on network error or non-200 response. */
   async checkHealth(): Promise<boolean> {
     const base = getWorldBaseUrl();
-    if (!base) return false;
+    // Empty base = same-origin nginx proxy (Docker/production). worldsvc is guaranteed
+    // up by the Docker healthcheck; no external ping needed or possible (nginx only
+    // routes /world* /family* /auction*, not /health). Return true immediately.
+    if (!base) return true;
     try {
       const ctrl = new AbortController();
       const id = setTimeout(() => ctrl.abort(), 3000);
