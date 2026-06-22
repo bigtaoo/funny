@@ -74,6 +74,8 @@ export const ErrorCode = {
   INVALID_SLOT: 'INVALID_SLOT',                     // 穿戴槽位与装备定义槽位不匹配
   // —— PvE 反作弊（S4-4）——
   ACCOUNT_BANNED: 'ACCOUNT_BANNED',                 // 录像复算三次拒绝封号
+  // —— 合规（C5）——
+  ACCOUNT_DELETED: 'ACCOUNT_DELETED',               // 软删除账号，auth 返 410
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

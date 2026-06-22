@@ -35,6 +35,14 @@ export interface AccountDoc {
    * 私聊敏感词按发送方此字段选词表；缺省 / 旧账号无此字段 → `'global'`（仅基础词表）。
    */
   region?: ChatRegion;
+  /** C4 PvE 反作弊：可疑次数 + 封号标记（账号层面，auth 拦截用）。 */
+  flags?: {
+    pveWarnings?: number; // 累计 PvE 可疑次数
+    banned?: boolean;     // 达到阈值后封号；auth 时返 ACCOUNT_BANNED
+    gdprConsent?: boolean; // C5-c GDPR 同意（必须为 true 才记录分析埋点）
+  };
+  /** C5-b 软删除时间戳；写入后 auth 返 ACCOUNT_DELETED，7 天后异步清理数据。 */
+  deletedAt?: number;
 }
 
 /**
@@ -83,6 +91,8 @@ export interface MatchDoc {
   winner: number;
   reason: string;
   hashOk: boolean;
+  /** C3：hash 不一致且对等裁判未能介入时置 true（admin /admin/mismatches 可见）。 */
+  hashMismatch?: boolean;
   /** Pointer to externally-stored replay (large matches); reserved, not yet used. */
   replayRef?: string;
   /** Embedded replay (small matches) — the retained frame log, zero extra cost. */
@@ -119,6 +129,15 @@ export interface AdsDailyDoc {
   dayKey: string;
   count: number;
   ts: number;
+  lastAdAt?: number; // 上次广告时间戳（30min 间隔门）
+}
+
+/** 广告凭证唯一性（C2）：adToken SHA-256 hash，TTL 48h 自清。_id = tokenHash。 */
+export interface AdsTokenDoc {
+  _id: string;   // SHA-256(adToken) hex
+  accountId: string;
+  ts: number;
+  expireAt: Date; // TTL 锚（48h）
 }
 
 /**
@@ -335,6 +354,8 @@ export interface Collections {
   equipmentIdem: Collection<EquipmentIdemDoc>;
   // 天梯赛季（S11）：全局单文档（_id='current'）
   ladderSeasons: Collection<LadderSeasonDoc>;
+  // 广告凭证唯一性（C2）
+  adsTokens: Collection<AdsTokenDoc>;
 }
 
 export interface MongoHandle {
@@ -388,6 +409,7 @@ export async function createMongo(
     mail: db.collection<MailDoc>('mail'),
     equipmentIdem: db.collection<EquipmentIdemDoc>('equipmentIdem'),
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
+    adsTokens: db.collection<AdsTokenDoc>('adsTokens'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -443,6 +465,8 @@ export async function createMongo(
     await collections.mail.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // 装备幂等账本到期自清（E2，expireAt 到期绝对时间 → expireAfterSeconds:0）。
     await collections.equipmentIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+    // 广告凭证唯一性 TTL 自清（C2，48h）。
+    await collections.adsTokens.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // 天梯排行榜：全服 Top100 + 我的名次计数（S11-SE-5）。
     // pvp.seasonNo 先过滤本季，再 elo 倒序取前 100。
     await collections.saves.createIndex(
