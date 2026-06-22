@@ -124,6 +124,13 @@ components:
               type: array
               items: { type: string }
               description: 历史首达段位列表（终身账本）
+        # —— 体力（A4，服务器权威；缺省视为满格 current=120）——
+        stamina:
+          type: object
+          required: [current, regenAt]
+          properties:
+            current: { type: integer, minimum: 0, maximum: 120, description: 当前体力 }
+            regenAt: { type: integer, description: 下次回 1 点的时间戳(ms)；满格时为 0 }
         # —— S10 称号（服务器权威，懒创建；PUT /save 不可写）——
         titles:
           type: array
@@ -1079,6 +1086,45 @@ paths:
         '400': { $ref: '#/components/responses/ErrorResp' }
         '401': { $ref: '#/components/responses/ErrorResp' }
         '404': { $ref: '#/components/responses/ErrorResp' }
+
+  /pve/stamina/purchase:
+    post:
+      operationId: purchaseStamina
+      tags: [save]
+      summary: 补体力（A4，扣 30 金币换 60 点体力；商店路由）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: integer, enum: [60], description: 每次补 60 点（唯一档位）}
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [stamina]
+                    properties:
+                      stamina:
+                        type: object
+                        required: [current, regenAt]
+                        properties:
+                          current: { type: integer }
+                          regenAt: { type: integer }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
 
   /pve/upgrade:
     post:

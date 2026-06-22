@@ -311,6 +311,13 @@ export interface EquipmentIdemDoc {
   expireAt: Date; // BSON Date，TTL 锚
 }
 
+/** 体力实时状态（A4）。_id = accountId。整行原子 findOneAndUpdate 扣除，无 rev lock。 */
+export interface StaminaDoc {
+  _id: string; // accountId
+  current: number; // 当前体力 (0..120)
+  regenAt: number; // 下次回复 1 点的时间戳(ms)；已满时为 0
+}
+
 export interface Collections {
   saves: Collection<SaveDoc>;
   accounts: Collection<AccountDoc>;
@@ -335,6 +342,8 @@ export interface Collections {
   equipmentIdem: Collection<EquipmentIdemDoc>;
   // 天梯赛季（S11）：全局单文档（_id='current'）
   ladderSeasons: Collection<LadderSeasonDoc>;
+  // 体力（A4）：实时扣；_id = accountId
+  pveStamina: Collection<StaminaDoc>;
 }
 
 export interface MongoHandle {
@@ -388,6 +397,7 @@ export async function createMongo(
     mail: db.collection<MailDoc>('mail'),
     equipmentIdem: db.collection<EquipmentIdemDoc>('equipmentIdem'),
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
+    pveStamina: db.collection<StaminaDoc>('pveStamina'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -449,6 +459,7 @@ export async function createMongo(
       { 'save.pvp.seasonNo': 1, 'save.pvp.elo': -1 },
       { name: 'pvp_season_elo' },
     );
+    // 体力（A4）：_id = accountId，单文档集合，无额外索引。
   }
 
   return {

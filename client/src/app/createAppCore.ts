@@ -661,7 +661,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  function goShop(): void {
+  function goShop(onBack?: () => void): void {
     if (!api) { goLobby(); return; }
     const client = api;
     inLobby = false;
@@ -673,7 +673,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     views.showShop({
       onBack() {
         analytics.track('shop_close', { converted, time_sec: Math.round((Date.now() - shopOpenTs) / 1000) });
-        goLobby();
+        if (onBack) onBack(); else goLobby();
       },
       getCoins: () => saveManager.get().wallet.coins,
       getOwnedSkins: () => saveManager.get().inventory.skins,
@@ -809,6 +809,20 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       },
       ...(level.briefKey ? { brief: t(level.briefKey as TranslationKey) } : {}),
       ...(level.story?.introKey ? { intro: t(level.story.introKey as TranslationKey) } : {}),
+      // A4 体力系统
+      staminaCost: level.staminaCost ?? 1,
+      getStamina: () => saveManager.get().stamina ?? { current: 120, regenAt: 0 },
+      onBuyStamina() {
+        if (!api) return;
+        void api.purchaseStamina().then((res) => {
+          // 更新本地 stamina 镜像，重入 LevelPrep 刷新 UI。
+          saveManager.update((s) => { s.stamina = res.stamina; });
+          goLevelPrep(levelId);
+        }).catch(() => {
+          // 金币不足时静默失败 → 商店路由兜底
+          goShop(() => goLevelPrep(levelId));
+        });
+      },
     });
   }
 

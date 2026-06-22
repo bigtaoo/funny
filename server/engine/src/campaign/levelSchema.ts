@@ -468,6 +468,12 @@ export function parseLevelDefinition(raw: unknown, ctx = 'level'): LevelDefiniti
   const rewards = parseRewards(raw.rewards, `${ctx}.rewards`);
   if (rewards) level.rewards = rewards;
 
+  if (raw.staminaCost !== undefined) {
+    const sc = int(raw.staminaCost, `${ctx}.staminaCost`);
+    if (sc < 1 || sc > 5) fail(`${ctx}.staminaCost`, `must be 1..5, got ${sc}`);
+    level.staminaCost = sc;
+  }
+
   if (raw.nameKey !== undefined) {
     level.nameKey = str(raw.nameKey, `${ctx}.nameKey`) as LevelDefinition['nameKey'];
   }

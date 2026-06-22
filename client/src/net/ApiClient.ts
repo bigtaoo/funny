@@ -229,6 +229,15 @@ export class ApiClient {
     return this.post<{ save: SaveData }>('/pve/merge', { unitId, level });
   }
 
+  // ── 体力系统（A4）──────────────────────────────────────────────────────────
+
+  /** 补体力（A4）：扣 30 金币 → +60 点体力（上限 120）。金币不足 → 402。 */
+  async purchaseStamina(): Promise<{ stamina: { current: number; regenAt: number } }> {
+    return this.post<{ stamina: { current: number; regenAt: number } }>('/pve/stamina/purchase', {
+      amount: 60,
+    });
+  }
+
   // ── 装备系统（E2 合成 / E3 强化·分解 / E4 穿戴，服务器权威，需登录 token）────
   // 所有装备动作返回服务器回推的权威 SaveData（equipmentInv/gear/materials/wallet 以服务器为准）。
   // idempotencyKey 由调用方生成（强化绑定掷骰结果，重放不改命）。

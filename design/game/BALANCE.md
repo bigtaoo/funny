@@ -145,4 +145,23 @@
 | ShieldBearer（玩家L9+8甲） | 240 | 8 | ~22s (7 dmg/hit) | — |
 
 > Ironclad armor=3 后，箭塔单独需要 ~36s（原 ~29s），迫使玩家组合法术/近战才能快速清除。
+
+---
+
+## 10. 体力系统（A4，2026-06-22）
+
+| 项 | 值 |
+|---|---|
+| 体力上限 | **120** |
+| 自然恢复速率 | **1 点 / 6 分钟** |
+| 关卡消耗默认 | **1**（level JSON 未指定时） |
+| 关卡消耗范围 | 1–5（在 level JSON `staminaCost` 字段定义） |
+| 付费补充 | **30 金币 → +60 体力**（走 commercial.spend） |
+| 错误码 | `INSUFFICIENT_STAMINA`（HTTP 402）|
+
+**实现说明**：
+- 服务端 `pveStamina` 集合（`_id=accountId`），原子 `findOneAndUpdate` + `$gte` 守卫，与 SaveData rev-lock 分离。
+- `regenAt=0` 表示已满（无需计时）；`regenAt>0` 表示下次 +1 点的时间戳(ms)。
+- 体力快照在 `getSave` / `pveClear` 返回时注入 `save.stamina`，不写回 saves 集合。
+- 客户端 `LevelPrepScene` 红色提示不足 + "补充体力"按钮（先尝试直接 purchaseStamina，失败则路由到商店）。
 </content>

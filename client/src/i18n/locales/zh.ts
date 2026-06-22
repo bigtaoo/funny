@@ -285,6 +285,10 @@ export const zh = {
   'prep.stat.damage': '攻击',
   'prep.stat.speed': '速度',
 
+  // ── 体力系统（A4）────────────────────────────────────────────────────────────
+  'stamina.cost': '体力 {current} / 120 · 本关消耗 {cost}',
+  'stamina.buy': '补充体力（30 金币 → +60）',
+
   // ── 单位养成（S12，卡牌合成系统）────────────────────────────────────────────
   'progression.unitsTitle': '单位卡牌',
   'progression.lv': 'Lv {lv}',

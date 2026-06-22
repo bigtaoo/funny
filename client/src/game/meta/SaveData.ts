@@ -76,6 +76,9 @@ export interface SaveData {
     claimedPaid: number[];
   };
 
+  // —— 体力（A4，服务器权威，PUT /save 不上行）。每 6 min 恢复 1 点，上限 120。缺省视为满格。
+  stamina?: { current: number; regenAt: number };
+
   // —— 称号（S10，TITLE_DESIGN §2）。服务器权威，PUT /save 不上行（客户端只读）。
   // 佩戴位在 equipped['title']（同步段，客户端可写），servers 据此广播对手称号。
   titles?: string[];

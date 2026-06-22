@@ -81,6 +81,11 @@ export interface LevelDefinition {
    * signals investment level. Valid for 'siege' mode; silently clamped in 'campaign'.
    */
   defenderBaseLevel?: number;
+  /**
+   * Stamina cost to attempt this level (A4). Range 1–5 (default 1 when omitted).
+   * Deducted server-side on /pve/clear; client shows it in LevelPrepScene.
+   */
+  staminaCost?: number;
   /** Clear rewards: coins, exclusive skin, story unlock, star thresholds (§7). */
   rewards?: LevelRewards;
   /** i18n story keys for intro / outro narration (§8). */

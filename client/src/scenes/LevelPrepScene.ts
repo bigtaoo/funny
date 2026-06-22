@@ -43,6 +43,12 @@ export interface LevelPrepCallbacks {
   brief?: string;
   /** Pre-translated story intro shown as a tap-through overlay when the player hits Start. */
   intro?: string;
+  /** Stamina cost to play this level (A4). Default = 1. */
+  staminaCost: number;
+  /** Current stamina snapshot (A4): { current, regenAt }. */
+  getStamina(): { current: number; regenAt: number };
+  /** Navigate to shop/commercial to purchase stamina (A4). */
+  onBuyStamina(): void;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -192,20 +198,53 @@ export class LevelPrepScene implements Scene {
       y += rowH + gap;
     }
 
+    // —— 体力栏（A4）: 消耗 + 当前余量，不足时变红 + 补给按钮 ——
+    const stamina = this.cb.getStamina();
+    const stCost = this.cb.staminaCost;
+    const stInsufficient = stamina.current < stCost;
+    const stBarH = Math.round(h * 0.055);
+    const stBarY = h - stBarH - Math.round(h * 0.14);
+    const stColor = stInsufficient ? C.red : C.accent;
+    const stTxt = txt(
+      t('stamina.cost', { cost: stCost, current: stamina.current }),
+      Math.round(stBarH * 0.48),
+      stColor,
+      true,
+    );
+    stTxt.anchor.set(0.5, 0.5); stTxt.x = w / 2; stTxt.y = stBarY + stBarH / 2;
+    this.container.addChild(stTxt);
+    if (stInsufficient) {
+      const buyW = Math.round(w * 0.45);
+      const buyH = Math.round(h * 0.065);
+      const buyX = (w - buyW) / 2;
+      const buyY = stBarY + stBarH + Math.round(h * 0.008);
+      const buyBg = sketchPanel(buyW, buyH, { fill: C.red, border: C.dark, width: 1.6, seed: seedFor(buyX, buyY, buyW) });
+      buyBg.x = buyX; buyBg.y = buyY;
+      this.container.addChild(buyBg);
+      const buyLbl = txt(t('stamina.buy'), Math.round(buyH * 0.4), 0xffffff, true);
+      buyLbl.anchor.set(0.5, 0.5); buyLbl.x = buyX + buyW / 2; buyLbl.y = buyY + buyH / 2;
+      this.container.addChild(buyLbl);
+      this.hits.push({ rect: { x: buyX, y: buyY, w: buyW, h: buyH }, fn: () => this.cb.onBuyStamina() });
+    }
+
     // Start button
     const sbW = Math.round(w * 0.6);
     const sbH = Math.round(h * 0.08);
     const sbX = (w - sbW) / 2;
     const sbY = h - sbH - Math.round(h * 0.03);
-    const sb = sketchPanel(sbW, sbH, { fill: C.dark, border: C.green, width: 2.6, seed: seedFor(sbX, sbY, sbW) });
+    // 体力不足时 Start 按钮置灰，阻止进关。
+    const sbFill = stInsufficient ? C.btnOff : C.dark;
+    const sbBorder = stInsufficient ? C.mid : C.green;
+    const sb = sketchPanel(sbW, sbH, { fill: sbFill, border: sbBorder, width: 2.6, seed: seedFor(sbX, sbY, sbW) });
     sb.x = sbX; sb.y = sbY;
     this.container.addChild(sb);
-    const sl = txt(t('prep.start'), Math.round(sbH * 0.42), 0xffffff, true);
+    const sl = txt(t('prep.start'), Math.round(sbH * 0.42), stInsufficient ? C.mid : 0xffffff, true);
     sl.anchor.set(0.5, 0.5); sl.x = sbX + sbW / 2; sl.y = sbY + sbH / 2;
     this.container.addChild(sl);
     this.hits.push({
       rect: { x: sbX, y: sbY, w: sbW, h: sbH },
       fn: () => {
+        if (stInsufficient) return; // 体力不足，拦截点击
         if (this.cb.intro) {
           this.introLines = this.cb.intro.split('\n').filter((l) => l.trim().length > 0);
           this.introShownCount = 0;
