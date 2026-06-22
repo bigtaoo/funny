@@ -297,6 +297,35 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true });
         }
 
+        // ── SLG 异常交易审计（G7 反 RMT，§17.7）──
+        if (method === 'GET' && path === '/admin/slg/audit/anomalies') {
+          requireCap(actor, 'slg.audit.view');
+          const worldId = url.searchParams.get('worldId') ?? '';
+          if (!worldId) throw new AdminError(400, 'bad_request', 'worldId required');
+          const anomalies = await svc.slgScanAnomalies(worldId, numOpt(url.searchParams.get('windowSec')));
+          return send(res, 200, { ok: true, anomalies });
+        }
+        if (method === 'GET' && path === '/admin/slg/audit/tickets') {
+          requireCap(actor, 'slg.audit.view');
+          const status = url.searchParams.get('status');
+          const tickets = await svc.slgListAuditTickets(status ? { status } : {});
+          return send(res, 200, { ok: true, tickets });
+        }
+        if (method === 'POST' && path === '/admin/slg/audit/tickets') {
+          requireCap(actor, 'slg.audit.manage');
+          const b = await readJson(req);
+          const ticket = await svc.slgFileAuditTicket(actor, b.snapshot as never);
+          return send(res, 200, { ok: true, ticket });
+        }
+        const auditResolve = /^\/admin\/slg\/audit\/tickets\/([^/]+)\/resolve$/.exec(path);
+        if (method === 'POST' && auditResolve) {
+          requireCap(actor, 'slg.audit.manage');
+          const id = decodeURIComponent(auditResolve[1]!);
+          const b = await readJson(req);
+          const ticket = await svc.slgResolveAuditTicket(actor, id, str(b.disposition), str(b.note));
+          return send(res, 200, { ok: true, ticket });
+        }
+
         send(res, 404, { ok: false, error: 'not found' });
       } catch (e) {
         if (e instanceof AdminError) {

@@ -4,6 +4,7 @@ import {
   createLogger,
   internalHeaders,
   type AntiCheatReviewDoc,
+  type AuctionAnomaly,
   type CompAttachment,
   type CompTarget,
   type LiveStats,
@@ -348,6 +349,8 @@ export interface WorldClient {
   settleWorld(worldId: string): Promise<unknown>;
   resetWorld(worldId: string): Promise<unknown>;
   closeWorld(worldId: string): Promise<void>;
+  /** 拍卖异常交易扫描（G7 反 RMT）。worldsvc 离线聚合可疑配对，admin 立审计工单据此。 */
+  listAuctionAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]>;
 }
 
 /** admin → worldsvc 内部 HTTP（X-Internal-Key）。worldsvc 端点见 httpApi.ts 内部分支。 */
@@ -397,6 +400,18 @@ export class HttpWorldClient implements WorldClient {
   async closeWorld(worldId: string): Promise<void> {
     await this.post('/admin/world/close', { worldId });
   }
+
+  async listAuctionAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]> {
+    if (!this.baseUrl) return [];
+    const qs = new URLSearchParams({ worldId });
+    if (windowSec != null) qs.set('windowSec', String(windowSec));
+    const res = await fetch(`${this.baseUrl}/admin/world/audit/anomalies?${qs}`, {
+      headers: internalHeaders('admin', this.internalKey),
+    });
+    if (!res.ok) throw new Error(`listAuctionAnomalies failed: HTTP ${res.status}`);
+    const body = (await res.json()) as { ok?: boolean; data?: AuctionAnomaly[] };
+    return body.data ?? [];
+  }
 }
 
 export const nullWorldClient: WorldClient = {
@@ -406,4 +421,5 @@ export const nullWorldClient: WorldClient = {
   async settleWorld() { throw new Error('worldsvc not configured'); },
   async resetWorld() { throw new Error('worldsvc not configured'); },
   async closeWorld() { throw new Error('worldsvc not configured'); },
+  async listAuctionAnomalies() { return []; },
 };

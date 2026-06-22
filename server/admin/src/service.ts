@@ -28,11 +28,15 @@ import {
   type CompTicketView,
   type LiveStats,
   type MetricKey,
+  type TradeAuditSnapshot,
+  type TradeAuditTicketStatus,
+  type TradeAuditTicketView,
   type TrendPoint,
 } from '@nw/shared';
 import { METRIC_KEYS } from '@nw/shared';
-import type { AdminAccountDoc, AdminCollections, AuditDoc, CompTicketDoc } from './db';
+import type { AdminAccountDoc, AdminCollections, AuditDoc, CompTicketDoc, TradeAuditTicketDoc } from './db';
 import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, MailDispatcher, PlayerClient, PlayerProfile, StatsClient, WorldClient, SlgWorldSummary } from './clients';
+import type { AuctionAnomaly } from '@nw/shared';
 
 const log = createLogger('admin:service');
 
@@ -153,6 +157,107 @@ export class AdminService {
   async slgCloseSeason(actor: string, worldId: string): Promise<void> {
     await this.world.closeWorld(worldId);
     await this.audit(actor, 'slg.season.close', { target: worldId });
+  }
+
+  // ───────────────── SLG 异常交易审计（G7 反 RMT，§17.7）─────────────────
+  // worldsvc 离线扫出可疑「卖家→买家」配对，运维立审计工单 → 单人裁定（误报 dismiss / 确认 action）。
+  // 与补偿工单平行：不发奖、不双人审批，核查由单人裁定 + 审计留痕；处置（封禁/扣回）走外联流程。
+
+  /** 拉一个大区的拍卖异常扫描（capability slg.audit.view）。worldsvc 不可达 → 空表。 */
+  async slgScanAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]> {
+    if (!this.world.available) return [];
+    return this.world.listAuctionAnomalies(worldId, windowSec);
+  }
+
+  /**
+   * 立异常交易审计工单（capability slg.audit.manage）。冻结快照 + pairKey 去重：
+   * 同配对已有 open 工单则直接返回那一张（幂等，不重复立）。审计 slg.audit.file。
+   */
+  async slgFileAuditTicket(actor: Actor, snapshot: TradeAuditSnapshot): Promise<TradeAuditTicketView> {
+    const snap = validateAuditSnapshot(snapshot);
+    const pairKey = `${snap.worldId}:${snap.sellerId}:${snap.buyerId}`;
+    const existing = await this.cols.tradeAuditTickets.findOne({ pairKey, status: 'open' });
+    if (existing) return this.toAuditTicketView(existing);
+    const doc: TradeAuditTicketDoc = {
+      _id: randomUUID(),
+      pairKey,
+      snapshot: snap,
+      status: 'open',
+      filedBy: actor.adminId,
+      filedAt: this.now(),
+    };
+    await this.cols.tradeAuditTickets.insertOne(doc);
+    await this.audit(actor.adminId, 'slg.audit.file', {
+      target: doc._id,
+      summary: `${snap.worldId} ${snap.sellerId}→${snap.buyerId} ${snap.severity} coins=${snap.totalCoins}`,
+    });
+    return this.toAuditTicketView(doc);
+  }
+
+  /** 列审计工单（capability slg.audit.view），可按状态过滤，按立单时间倒序。 */
+  async slgListAuditTickets(filter: { status?: string }): Promise<TradeAuditTicketView[]> {
+    const q: Partial<Record<'status', TradeAuditTicketStatus>> = {};
+    if (filter.status) {
+      if (filter.status !== 'open' && filter.status !== 'dismissed' && filter.status !== 'actioned') {
+        throw new AdminError(400, 'bad_request', 'invalid status');
+      }
+      q.status = filter.status;
+    }
+    const docs = await this.cols.tradeAuditTickets.find(q).sort({ filedAt: -1 }).limit(200).toArray();
+    return Promise.all(docs.map((d) => this.toAuditTicketView(d)));
+  }
+
+  /**
+   * 裁定审计工单（capability slg.audit.manage）：open → dismissed（误报）/ actioned（确认违规）。
+   * 仅 open 可裁定（原子守卫防并发双裁）。审计 slg.audit.resolve。
+   */
+  async slgResolveAuditTicket(
+    actor: Actor,
+    id: string,
+    disposition: string,
+    note: string,
+  ): Promise<TradeAuditTicketView> {
+    if (disposition !== 'dismissed' && disposition !== 'actioned') {
+      throw new AdminError(400, 'bad_request', 'disposition must be dismissed|actioned');
+    }
+    const doc = await this.cols.tradeAuditTickets.findOne({ _id: id });
+    if (!doc) throw new AdminError(404, 'not_found', 'no such ticket');
+    if (doc.status !== 'open') throw new AdminError(409, 'conflict', `ticket is ${doc.status}`);
+    const trimmedNote = (note ?? '').trim();
+    const res = await this.cols.tradeAuditTickets.findOneAndUpdate(
+      { _id: id, status: 'open' },
+      {
+        $set: {
+          status: disposition,
+          resolvedBy: actor.adminId,
+          resolvedAt: this.now(),
+          ...(trimmedNote ? { note: trimmedNote } : {}),
+        },
+      },
+      { returnDocument: 'after' },
+    );
+    if (!res) throw new AdminError(409, 'conflict', 'ticket no longer open');
+    await this.audit(actor.adminId, 'slg.audit.resolve', {
+      target: id,
+      summary: `${disposition}${trimmedNote ? `: ${trimmedNote}` : ''}`,
+    });
+    return this.toAuditTicketView(res);
+  }
+
+  private async toAuditTicketView(doc: TradeAuditTicketDoc): Promise<TradeAuditTicketView> {
+    const names = await this.actorNames([doc.filedBy, doc.resolvedBy].filter((x): x is string => !!x));
+    return {
+      id: doc._id,
+      snapshot: doc.snapshot,
+      status: doc.status,
+      filedBy: doc.filedBy,
+      ...(names.get(doc.filedBy) ? { filedByName: names.get(doc.filedBy)! } : {}),
+      filedAt: doc.filedAt,
+      ...(doc.note ? { note: doc.note } : {}),
+      ...(doc.resolvedBy ? { resolvedBy: doc.resolvedBy } : {}),
+      ...(doc.resolvedBy && names.get(doc.resolvedBy) ? { resolvedByName: names.get(doc.resolvedBy)! } : {}),
+      ...(doc.resolvedAt ? { resolvedAt: doc.resolvedAt } : {}),
+    };
   }
 
   // ───────────────────────── 认证 ─────────────────────────
@@ -706,6 +811,33 @@ function toAccountView(doc: AdminAccountDoc): AdminAccountView {
     createdAt: doc.createdAt,
     ...(doc.createdBy ? { createdBy: doc.createdBy } : {}),
     ...(doc.lastLoginAt ? { lastLoginAt: doc.lastLoginAt } : {}),
+  };
+}
+
+function validateAuditSnapshot(s: TradeAuditSnapshot | undefined): TradeAuditSnapshot {
+  if (!s || typeof s !== 'object') throw new AdminError(400, 'bad_request', 'snapshot required');
+  const worldId = (s.worldId ?? '').trim();
+  const sellerId = (s.sellerId ?? '').trim();
+  const buyerId = (s.buyerId ?? '').trim();
+  if (!worldId || !sellerId || !buyerId) {
+    throw new AdminError(400, 'bad_request', 'snapshot requires worldId/sellerId/buyerId');
+  }
+  if (sellerId === buyerId) throw new AdminError(400, 'bad_request', 'seller and buyer must differ');
+  const severity = s.severity === 'high' ? 'high' : 'medium';
+  const allowed = new Set(['repeated', 'designated', 'high_value']);
+  const reasons = (Array.isArray(s.reasons) ? s.reasons : []).filter((r) => allowed.has(r));
+  const num = (v: unknown): number => (Number.isFinite(v as number) && (v as number) >= 0 ? Math.floor(v as number) : 0);
+  return {
+    worldId,
+    sellerId,
+    buyerId,
+    trades: num(s.trades),
+    designatedTrades: num(s.designatedTrades),
+    totalCoins: num(s.totalCoins),
+    firstTs: num(s.firstTs),
+    lastTs: num(s.lastTs),
+    severity,
+    reasons,
   };
 }
 

@@ -97,6 +97,14 @@ export function startHttpApi(
           if (method === 'GET' && aurl.pathname === '/admin/world/patrol') {
             return send(res, 200, ok(await svc.patrolShardIsolation()));
           }
+          // 拍卖异常交易审计扫描（D/G7/§17.7）：近期 sold 配对聚合，供 admin 审计队列拉取。
+          if (method === 'GET' && aurl.pathname === '/admin/world/audit/anomalies') {
+            const wid = aurl.searchParams.get('worldId');
+            if (!wid) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+            const winQ = aurl.searchParams.get('windowSec');
+            const windowSec = winQ != null && Number.isFinite(Number(winQ)) ? Number(winQ) : undefined;
+            return send(res, 200, ok(await auctionSvc.scanAnomalies(wid, windowSec)));
+          }
           if (method !== 'POST') return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
           const body = await readJson(req);
           // 新赛季开区编排（G6/§20）：按上季宗门强弱蛇形均衡开 N 区，无 worldId（先于 worldId 门）。

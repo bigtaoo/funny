@@ -72,6 +72,8 @@ interface AdminAccountDoc {
 | `comp.approve.single.overquota` 审批超额个人补偿 | ✓ | – | – | – |
 | `comp.approve.global` 审批全服补偿 | ✓ | – | – | – |
 | `comp.view` 查看工单/已发邮件 | ✓ | ✓ | ✓ | ✓ |
+| `slg.audit.view` 看拍卖异常扫描+审计队列（G7 反 RMT） | ✓ | ✓ | – | ✓ |
+| `slg.audit.manage` 立/裁定异常交易审计工单（G7 反 RMT） | ✓ | ✓ | – | – |
 | `audit.view.all` 看全部审计 | ✓ | – | – | – |
 | `audit.view.self` 看自己操作（登录即有） | ✓ | ✓ | ✓ | ✓ |
 | `admin.manage` 账号/角色管理 | ✓ | – | – | – |
@@ -192,6 +194,12 @@ POST /admin/comp/tickets/{id}/reject  { note }       → { ok }
 POST /admin/comp/tickets/{id}/cancel                 → { ok }
 POST /admin/comp/preview       { scope, target }     → { recipientCount }              // dry-run
 
+# SLG 拍卖异常交易审计（G7 反 RMT，SLG_DESIGN §17.13）
+GET  /admin/slg/audit/anomalies?worldId=&windowSec=  → { anomalies: [...] }            // slg.audit.view（代理 worldsvc 扫描）
+GET  /admin/slg/audit/tickets?status=                → { tickets: [...] }              // slg.audit.view
+POST /admin/slg/audit/tickets   { snapshot }         → { ticket }                      // slg.audit.manage（立单，pairKey 去重）
+POST /admin/slg/audit/tickets/{id}/resolve { disposition, note }  → { ticket }         // slg.audit.manage（dismissed|actioned）
+
 # 审计
 GET  /admin/audit?actor=&from=&to=                   → { entries: [...] }              // all=超管 / self=本人
 
@@ -208,6 +216,7 @@ POST   /admin/accounts/{id}/reset-password { password }
 |---|---|
 | `adminAccounts` | 运维账号（§2.1） |
 | `compTickets` | 补偿工单（§3.1） |
+| `tradeAuditTickets` | SLG 拍卖异常交易审计工单（G7 反 RMT，SLG_DESIGN §17.13）：冻结异常快照 + pairKey 去重 + open→dismissed/actioned 单人裁定 |
 | `auditLog` | 操作审计（actor/action/target/payload 摘要/ts/ip） |
 | `metricSnapshots` | 自采时序（`{ metric, ts, value, dims? }`，TTL 保留窗口可配） |
 

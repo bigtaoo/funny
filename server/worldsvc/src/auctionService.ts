@@ -26,10 +26,15 @@ import {
   AUCTION_STATIC_REF_PRICE,
   AUCTION_MIN_INCREMENT_RATIO,
   AUCTION_ANTI_SNIPE_WINDOW_SEC,
+  AUDIT_WINDOW_SEC,
+  detectAuctionAnomalies,
   EQUIPMENT_DEFS,
   EQUIP_AUCTION_REF_PRICE_BY_RARITY,
   SlgError,
+  type AuctionAnomaly,
+  type AuctionAuditThresholds,
   type AuctionStatus,
+  type AuctionTradeRecord,
   type EquipmentInstance,
 } from '@nw/shared';
 import type { WorldCollections, AuctionDoc } from './db';
@@ -383,7 +388,7 @@ export class AuctionService {
     // 2. 原子 status open→sold（防并发重复购买）
     const updated = await cols.auctions.findOneAndUpdate(
       { _id: auctionId, status: 'open' },
-      { $set: { status: 'sold', buyerId, rev: doc.rev + 1 } },
+      { $set: { status: 'sold', buyerId, soldAt: now(), rev: doc.rev + 1 } },
       { returnDocument: 'after' },
     );
     if (!updated) {
@@ -492,7 +497,7 @@ export class AuctionService {
     const top = doc.topBid!;
     const updated = await this.deps.cols.auctions.findOneAndUpdate(
       { _id: doc._id, status: 'open' },
-      { $set: { status: 'sold', buyerId: top.bidderId, rev: doc.rev + 1 } },
+      { $set: { status: 'sold', buyerId: top.bidderId, soldAt: this.deps.now(), rev: doc.rev + 1 } },
       { returnDocument: 'after' },
     );
     if (!updated) {
@@ -617,5 +622,55 @@ export class AuctionService {
     // 清空该世界价格滑窗（新赛季市场重启，refPrice 不跨季污染）
     await cols.auctionPrices.deleteMany({ worldId });
     return { cancelled };
+  }
+
+  // ── D / G7 异常交易审计扫描（反 RMT，SLG_DESIGN §17.7）─────────────────────
+  /** 旧文档无 soldAt 时从 auctionId（`a:{worldId}:{sellerId}:{ts}:{seq}`）回退解析挂单 ts。 */
+  private soldTs(doc: AuctionDoc): number {
+    if (typeof doc.soldAt === 'number') return doc.soldAt;
+    const parts = doc._id.split(':');
+    const ts = Number(parts[3]);
+    return Number.isFinite(ts) ? ts : 0;
+  }
+
+  /** 某 sold 文档的成交毛额（金币，未扣税）。竞拍取最高出价单价，一口价取 price，× qty。 */
+  private grossCoins(doc: AuctionDoc): number {
+    const unit = (doc.saleMode ?? 'fixed') === 'auction'
+      ? (doc.topBid?.amount ?? doc.startPrice ?? doc.price)
+      : doc.price;
+    return unit * doc.qty;
+  }
+
+  /**
+   * 扫描世界内近期 sold 拍卖，聚合可疑「卖家→买家」配对（detectAuctionAnomalies）。
+   * 离线只读，不改任何状态——供 admin 后台拉取进审计队列由运维裁定（G7）。
+   * windowSec 缺省 AUDIT_WINDOW_SEC；thresholds 可透传覆盖做调参。
+   */
+  async scanAnomalies(
+    worldId: string,
+    windowSec: number = AUDIT_WINDOW_SEC,
+    thresholds: AuctionAuditThresholds = {},
+  ): Promise<AuctionAnomaly[]> {
+    const since = this.deps.now() - windowSec * 1000;
+    // sold 文档可能含旧无 soldAt 数据 → 不在 Mongo 端按 soldAt 过滤（避免漏旧档），拉全量 sold
+    // 再在内存按 soldTs 窗口化（sold 量级远小于 open，且按 worldId 隔离，可接受）。
+    const docs = await this.deps.cols.auctions
+      .find({ worldId, status: 'sold' })
+      .limit(5000)
+      .toArray();
+    const trades: AuctionTradeRecord[] = [];
+    for (const doc of docs) {
+      if (!doc.buyerId) continue;
+      const ts = this.soldTs(doc);
+      if (ts < since) continue;
+      trades.push({
+        sellerId: doc.sellerId,
+        buyerId: doc.buyerId,
+        designated: !!doc.designatedBuyerId && doc.designatedBuyerId === doc.buyerId,
+        coins: this.grossCoins(doc),
+        ts,
+      });
+    }
+    return detectAuctionAnomalies(trades, thresholds);
   }
 }
