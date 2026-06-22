@@ -198,11 +198,14 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
       new LevelPrepScene(createLayout(w, h), new InputManager(), {
         onBack() {},
         onStart() {},
-        getMaterials: () => ({}),
-        getUpgradeLevel: () => 0,
+        getUnitLevels: () => ({}),
+        getCardInventory: () => ({}),
         isOnline: () => true,
-        tryUpgrade: async () => false,
+        tryMerge: async () => false,
         levelNumber: 1,
+        staminaCost: 1,
+        getStamina: () => ({ current: 120, regenAt: 0 }),
+        onBuyStamina() {},
       }),
   },
   {
@@ -350,3 +353,157 @@ for (const [label, [w, h]] of [
     }
   });
 }
+
+// ── Targeted regression tests ────────────────────────────────────────────────
+
+/** Rects overlap iff they share any area. */
+function rectsOverlap(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+// ── CampaignMapScene: tap detection (regression for TAP_SLOP=8 bug) ──────────
+describe('CampaignMapScene — tap detection', () => {
+  const layout = createLayout(...PORTRAIT);
+  const dh = layout.designHeight;
+
+  function buildCampaign(onSelectLevel: (id: string) => void) {
+    const input = new InputManager();
+    const scene = new CampaignMapScene(layout, input, {
+      onBack() {},
+      onSelectLevel,
+      onOpenCollection() {},
+      getStars: () => ({}),
+      getCleared: () => [],
+      isOnline: () => true,
+      getPendingLevels: () => [],
+    });
+    // Advance past the opening flip animation (FLIP_DUR = 0.42 s)
+    scene.update(1.0);
+    return { scene, input };
+  }
+
+  it('fires level select on clean tap', () => {
+    let hit: string | null = null;
+    const { scene, input } = buildCampaign((id) => { hit = id; });
+    const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
+    // hits[0] = back button, hits[1] = collection button (both in header).
+    // Level node hits are below the header (rect.y >= tbH).
+    const tbH = Math.round(dh * 0.12);
+    const levelHit = hits.find(({ rect: r }) => r.y >= tbH);
+    expect(levelHit).toBeDefined();
+    const { x, y, w, h } = levelHit!.rect;
+    const cx = x + w / 2, cy = y + h / 2;
+    input._emitDown(cx, cy);
+    input._emitUp(cx, cy);
+    expect(hit).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('fires level select with 20 px movement (mobile jitter within slop)', () => {
+    // Regression: TAP_SLOP was 8 design-px ≈ 3 CSS px, rejecting normal mobile taps.
+    // With TAP_SLOP=30 a 20 px movement must still register.
+    let hit: string | null = null;
+    const { scene, input } = buildCampaign((id) => { hit = id; });
+    const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
+    const tbH = Math.round(dh * 0.12);
+    const levelHit = hits.find(({ rect: r }) => r.y >= tbH);
+    expect(levelHit).toBeDefined();
+    const { x, y, w, h } = levelHit!.rect;
+    const cx = x + w / 2, cy = y + h / 2;
+    input._emitDown(cx, cy);
+    input._emitMove(cx + 20, cy);
+    input._emitUp(cx + 20, cy);
+    expect(hit).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('blocks level select on deliberate swipe (>30 px movement)', () => {
+    let hit: string | null = null;
+    const { scene, input } = buildCampaign((id) => { hit = id; });
+    const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
+    const tbH = Math.round(dh * 0.12);
+    const levelHit = hits.find(({ rect: r }) => r.y >= tbH);
+    expect(levelHit).toBeDefined();
+    const { x, y, w, h } = levelHit!.rect;
+    const cx = x + w / 2, cy = y + h / 2;
+    input._emitDown(cx, cy);
+    input._emitMove(cx + 50, cy);
+    input._emitUp(cx + 50, cy);
+    expect(hit).toBeNull();
+    scene.destroy();
+  });
+
+  it('all level-node hit rects are within design height', () => {
+    const { scene } = buildCampaign(() => {});
+    const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number } }>;
+    for (const { rect: r } of hits) {
+      expect(r.y + r.h).toBeLessThanOrEqual(dh);
+    }
+    scene.destroy();
+  });
+});
+
+// ── LevelPrepScene: layout invariants (regression for 6-row overflow bug) ────
+describe('LevelPrepScene — layout invariants', () => {
+  function buildPrep(w: number, h: number, staminaCurrent = 120) {
+    const layout = createLayout(w, h);
+    const input = new InputManager();
+    const scene = new LevelPrepScene(layout, input, {
+      onBack() {},
+      onStart() {},
+      getUnitLevels: () => ({}),
+      getCardInventory: () => ({}),
+      isOnline: () => true,
+      tryMerge: async () => false,
+      levelNumber: 1,
+      staminaCost: 1,
+      getStamina: () => ({ current: staminaCurrent, regenAt: 0 }),
+      onBuyStamina() {},
+    });
+    return { scene, layout };
+  }
+
+  for (const [label, [w, h]] of [
+    ['portrait', PORTRAIT],
+    ['landscape', LANDSCAPE],
+  ] as const) {
+    it(`all hit areas within design bounds — ${label}`, () => {
+      const { scene, layout } = buildPrep(w, h);
+      const dw = layout.designWidth, dh = layout.designHeight;
+      const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number } }>;
+      expect(hits.length).toBeGreaterThan(0);
+      for (const { rect: r } of hits) {
+        expect(r.x).toBeGreaterThanOrEqual(0);
+        expect(r.y).toBeGreaterThanOrEqual(0);
+        expect(r.x + r.w).toBeLessThanOrEqual(dw);
+        expect(r.y + r.h).toBeLessThanOrEqual(dh);
+      }
+      scene.destroy();
+    });
+
+    it(`no two hit areas overlap — ${label}`, () => {
+      const { scene } = buildPrep(w, h);
+      const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number } }>;
+      for (let i = 0; i < hits.length; i++) {
+        for (let j = i + 1; j < hits.length; j++) {
+          const a = hits[i]!.rect, b = hits[j]!.rect;
+          expect(rectsOverlap(a, b)).toBe(false);
+        }
+      }
+      scene.destroy();
+    });
+
+    it(`hit areas within bounds when stamina insufficient — ${label}`, () => {
+      const { scene, layout } = buildPrep(w, h, 0); // current=0, insufficient
+      const dh = layout.designHeight;
+      const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number } }>;
+      for (const { rect: r } of hits) {
+        expect(r.y + r.h).toBeLessThanOrEqual(dh);
+      }
+      scene.destroy();
+    });
+  }
+});
