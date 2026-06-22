@@ -1,6 +1,6 @@
 # 生产/联调全栈（C-3 / S1-M / S5）：mongo(单节点副本集) + metaserver + gateway + matchsvc + gameserver + commercial + caddy 反代。
-# 一条命令起全栈：
-#   docker compose -f docker/docker-compose.server-prod.yml --env-file .env up -d --build
+# 一条命令起全栈（见 deploy/up.sh）：
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 #
 # 出口：https://{NW_DOMAIN}/api/...（REST）、wss://{NW_DOMAIN}/gw（控制面：房间/匹配）、wss://{NW_DOMAIN}/ws（数据面：锁步）、
 #       https://{NW_DOMAIN}/world|/family|/auction（SLG 大世界 REST，S8）。
@@ -12,7 +12,7 @@
 #           NW_GAME_PUBLIC_WS_URL = 客户端可达的数据面地址（如 wss://域名/ws），写进 ticket + 分配兜底。
 # 缺省 NW_DOMAIN=:80 → 走 HTTP/WS（本机联调）；设真域名则 Caddy 自动 HTTPS/WSS。
 #
-# 与开发版 docker-compose.dev.yml 的差异：本文件起全部进程（不只 mongo）、mongo 挂命名卷持久化、
+# 与开发版 docker-compose.yml 的差异：本文件起全部进程（不只 mongo）、mongo 挂命名卷持久化、
 # 副本集成员 host 用容器名 mongo（供服务间 DNS 解析），故服务连 mongodb://mongo:27017/?replicaSet=rs0。
 
 services:
@@ -48,7 +48,7 @@ services:
 
   metaserver:
     build:
-      context: ../server
+      context: .
       dockerfile: Dockerfile
     image: nw-server:latest
     command: ["node", "metaserver/dist/index.js"]
@@ -76,7 +76,7 @@ services:
   # 商业服务（钱包/充值/消费/盲盒 RNG/流水，S5）。玩家不可达，仅 meta 经内部网络可达；连专属库。
   commercial:
     build:
-      context: ../server
+      context: .
       dockerfile: Dockerfile
     image: nw-server:latest
     command: ["node", "commercial/dist/index.js"]
@@ -95,7 +95,7 @@ services:
   # 控制面 WS（房间/匹配，S1-M1）。薄连接层，不连 Mongo；向 meta 取 ELO，命令转发 matchsvc。
   gateway:
     build:
-      context: ../server
+      context: .
       dockerfile: Dockerfile
     image: nw-server:latest
     command: ["node", "gateway/dist/index.js"]
@@ -118,7 +118,7 @@ services:
   # 私有匹配大脑（S1-M5，独立进程，不暴露公网）。匹配/房间/game 注册表/签 ticket；不连库。
   matchsvc:
     build:
-      context: ../server
+      context: .
       dockerfile: Dockerfile
     image: nw-server:latest
     command: ["node", "matchsvc/dist/index.js"]
@@ -135,7 +135,7 @@ services:
   # 数据面 WS（瘦锁步中继，S1-M2）。?ticket= 验签，永不连库；局末上报 meta。
   gameserver:
     build:
-      context: ../server
+      context: .
       dockerfile: Dockerfile
     image: nw-server:latest
     command: ["node", "gameserver/dist/index.js"]
@@ -155,7 +155,7 @@ services:
   # 复用 meta JWT 仅验签（不连 accounts 库）；连专属库 notebook_wars_world。Redis 可选（S8-2/S8-4 才需）。
   worldsvc:
     build:
-      context: ../server
+      context: .
       dockerfile: Dockerfile
     image: nw-server:latest
     command: ["node", "worldsvc/dist/index.js"]
@@ -181,7 +181,7 @@ services:
   # 连独立库 notebook_wars_admin；调 meta(player/mail) + gateway/matchsvc(/internal/stats)。
   admin:
     build:
-      context: ../server
+      context: .
       dockerfile: Dockerfile
     image: nw-server:latest
     command: ["node", "admin/dist/index.js"]
@@ -206,7 +206,7 @@ services:
   # 事件采集服务（A9，第九进程，玩家不可达，反代不路由）。连专属库 notebook_wars_analytics。
   analyticsvc:
     build:
-      context: ../server
+      context: .
       dockerfile: Dockerfile
     image: nw-server:latest
     command: ["node", "analyticsvc/dist/index.js"]
@@ -232,7 +232,7 @@ services:
     environment:
       NW_DOMAIN: ${NW_DOMAIN:-:80}
     volumes:
-      - ../server/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

@@ -1,11 +1,11 @@
-# 本地开发依赖（MongoDB 单节点副本集 + Redis）。
+# 本地开发依赖（MongoDB 单节点副本集）。
 # 单节点副本集（非单机 mongod）是文档要求：解锁跨集合事务 + change streams（META_DESIGN §6.3）。
 # healthcheck 首次启动时自动 rs.initiate()，幂等（已初始化则跳过）。
 #
-#   docker compose -f docker/docker-compose.dev.yml up -d            # 起 mongo + redis
-#   docker compose -f docker/docker-compose.dev.yml ps               # 看健康状态（healthy 后即可连）
-#   docker compose -f docker/docker-compose.dev.yml down             # 停（保留数据卷）
-#   docker compose -f docker/docker-compose.dev.yml down -v          # 停并清空数据
+#   docker compose up -d            # 起 mongo
+#   docker compose ps               # 看健康状态（healthy 后即可连）
+#   docker compose down             # 停（保留数据卷）
+#   docker compose down -v          # 停并清空数据
 #
 # 连接串（与 NW_MONGO_URI 默认值一致）：mongodb://127.0.0.1:27017/?replicaSet=rs0
 

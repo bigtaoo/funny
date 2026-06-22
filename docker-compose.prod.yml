@@ -6,9 +6,9 @@
 #   - 镜像 tag 由 CI 注入（IMAGE_TAG 环境变量）
 #   - Redis 加持久化（RDB + AOF），worldsvc / gateway 共用同一实例
 #
-# 启动：IMAGE_TAG=v1.2.3 docker compose -f docker/docker-compose.prod.yml up -d
-# 停止：docker compose -f docker/docker-compose.prod.yml down
-# 更新：IMAGE_TAG=v1.2.4 docker compose -f docker/docker-compose.prod.yml pull && up -d
+# 启动：IMAGE_TAG=v1.2.3 docker compose -f docker-compose.prod.yml up -d
+# 停止：docker compose -f docker-compose.prod.yml down
+# 更新：IMAGE_TAG=v1.2.4 docker compose -f docker-compose.prod.yml pull && up -d
 
 services:
   # ── 基础设施 ─────────────────────────────────────────────────────────────────
@@ -187,6 +187,7 @@ services:
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
       NW_ANALYTICS_BASE_URL: http://analyticsvc:18085
+      NW_WORLD_INTERNAL_URL: http://worldsvc:18084
     ports:
       - "127.0.0.1:18083:18083"  # 仅本机 / VPN 可达
     depends_on:
