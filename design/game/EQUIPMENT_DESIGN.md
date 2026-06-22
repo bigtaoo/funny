@@ -1,6 +1,6 @@
 # 装备系统设计 — Equipment
 
-> 状态：E0 数据模型 ✅ + E1 引擎注入 ✅ + E2 合成 ✅ + E2.5 拍卖托管转移 ✅（解锁拍卖行 A）+ E3 强化/分解 ✅ + E4 穿戴 ✅（2026-06-21）；E5 UI · 关卡掉落 faucet · E6 洗练 · E7 抽卡/保护道具 · E8 SLG 接入 待做 · 权威：**本文（装备系统机制单一来源）**；数值见 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §5（数字权威）、战斗运行值见 `@nw/engine` config.ts · 更新：2026-06-21
+> 状态：E0 数据模型 ✅ + E1 引擎注入 ✅ + E2 合成 ✅ + E2.5 拍卖托管转移 ✅（解锁拍卖行 A）+ E3 强化/分解 ✅ + E4 穿戴 ✅（2026-06-21）+ E5 客户端 UI ✅（2026-06-22）；关卡掉落 faucet · E6 洗练 · E7 抽卡/保护道具 · E8 SLG 接入 待做 · 权威：**本文（装备系统机制单一来源）**；数值见 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §5（数字权威）、战斗运行值见 `@nw/engine` config.ts · 更新：2026-06-22
 
 本文是装备子系统的**机制设计基准**：数据模型、槽位、获取/强化/洗练、稀有度、战力挂钩、引擎注入、服务器权威、UI、经济联动、实现拆解。
 **数字不在本文定**——成功率/成本/掉率等去 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §5；本文只镜像并标注权威指针。
@@ -416,7 +416,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 | E2.5 拍卖托管 ✅ | meta `escrowEquipment`/`grantEquipment` + `/internal/equipment/{escrow,grant}`（worldsvc 拍卖 A 调用：移出库存托管 / 转移归属 / 退回；穿戴中·locked 拒挂）。见下方实现记录 | metaserver + worldsvc |
 | E3 强化/分解 ✅ | `/equipment/enhance` 服务器掷骰 + 成功率表 + 材料/金币损耗（commercial 走币）；`/equipment/salvage` 分解回收（70%/+5 锁定，§6.3，批量）。见下方实现记录 | metaserver |
 | E4 穿戴 ✅ | `/equipment/equip` + loadout（global/byUnit）+ 客户端 ApiClient 方法。见下方实现记录 | metaserver + client |
-| E5 UI | 背包/锻造/强化/穿戴界面 | client + UI_DESIGN |
+| E5 UI ✅ | 背包/锻造/强化/分解/穿戴界面（`EquipmentScene`，从战役地图进入，仅在线）。见下方实现记录 | client + UI_DESIGN |
 | E6 词条/洗练 | Affix 池 + `/equipment/reforge`（大 R） | metaserver |
 | E7 抽卡/保护道具 | 装备池 + 强化保护（变现） | commercial |
 | E8 SLG 接入 | 装备进 `buildSiegeBlueprints` + 拍卖挂装备 | worldsvc（SLG 阶段） |
@@ -442,6 +442,16 @@ buildSiegeBlueprints(levels, equipped, inv)
 3. **分解整批原子 + 校验前置**：`salvageEquipment` 全批先校验（存在 / 未锁 / 未穿戴 / level ≤ +4），任一不合规整批拒（不留半完成态），再单 `findOneAndUpdate` 移实例 + 入材料（rev 循环内复查）。返还 `salvageRefund(defId)` = 打造成本 × 70% 向下取整（强化投入不返还，§6.3）；不可合成件（无 craftCost）返还空。idemKey 幂等。
 4. **穿戴纯状态、无幂等键**：`equipEquipment` 无随机、无资源消耗 → 天然幂等，不收 idemKey。校验 `def.slot === slot`（不符 → INVALID_SLOT；openapi `slot` enum 在契约层先拦非法槽名为 BAD_REQUEST）。`unitType` 缺省写 `gear.global`（阶段一全军），给定写 `gear.byUnit[unitType]`（阶段二预留已可用）；`instanceId=null` 卸下。穿戴中实例经既有 `isEquipped` 守卫，自动挡住挂拍（escrow）/分解（salvage）。
    - ⚠️ **本切片范围**：交付 E3 强化/分解 + E4 穿戴的**服务器权威端点 + 客户端 API 方法**。**E5 背包/锻造/强化/穿戴 UI 仍待做**（ApiClient 已就绪供其调用）；关卡掉落 faucet（E2 剩余）、E6 洗练、暴击/proc 框架（§7.4/§7.6 注）不在本切片。
+
+#### E5 实现记录（2026-06-22，✅）— 客户端 UI
+
+落地 = `client/src/scenes/EquipmentScene.ts`（689 行，单场景双 Tab）+ `client/src/game/meta/equipmentDefs.ts`（目录/数值客户端镜像）+ 视图接线（`AppViews.showEquipment` / `app.ts` PixiAppViews / `createAppCore.goEquipment` / `HeadlessAppViews`）+ 入口（`CampaignMapScene` 顶栏「装备」按钮，仅在线）+ i18n 三语（zh/en/de，`equip.*` / `campaign.equipment` / `affix.*` / `rarity.fine`）。`platform/uuid.ts` 的 `genUuid` 导出供 idempotencyKey 生成。关键决策：
+
+1. **客户端目录镜像（不 import `@nw/shared`）**：客户端 webpack 只 alias `@nw/engine`（零依赖），`@nw/shared` 带 mongodb/jsonwebtoken 无法打包。故 UI 展示所需的「目录 EQUIPMENT_DEFS / 合成成本 craftCost / 强化成功率·成本 enhanceSuccessRate·enhanceCost / 分解返还 salvageRefund / 上限常量」在 `equipmentDefs.ts` 镜像一份（与 `SaveData.ts` 同纪律：**改字段三处同步** 本文件 ↔ `server/shared/src/equipment.ts`）。主词条放大系数 `ENHANCE_COEFF_PER_LEVEL` 直接从 `@nw/engine` 取，不重复。**服务器仍是唯一权威**：UI 据镜像**预览**成本/成功率，真实扣费/掷骰以回推 SaveData 为准。
+2. **单场景双 Tab（背包/锻造）**：仿 `AuctionScene` 结构——静态 header + `bodyLayer` 重绘 + 拖拽滚动 + modal 叠层 + toast + 错误码映射。背包 tab 顶部三槽 global loadout 带 + 实例列表（按稀有度色 §2/最近稀有度色统一：common 灰 / fine 墨蓝 / rare 橙 `#e08a2c` / epic 紫）；点实例开详情 modal（强化预览成功率+成本 / 穿戴·卸下 / 分解，受 +5·穿戴·锁定门控）。锻造 tab 列可合成 12 件中有 craftCost 者 + 成本 + 合成按钮（满仓/材料不足置灰）。
+3. **服务器权威贯穿（L2）**：场景只发意图、读回执；每动作后 `saveManager.adoptServer(save)` 重读重绘（被分解的实例自动关详情）。错误码 → i18n 全映射（INSUFFICIENT_MATERIALS/FUNDS、INVENTORY_FULL、ENHANCE_MAX_LEVEL、NOT_SALVAGEABLE、INVALID_SLOT、EQUIP_LOCKED、EQUIP_IN_USE → `equip.err.*`）。每个 craft/enhance/salvage 自生成 `genUuid()` idempotencyKey（穿戴 equip 纯状态无 key）。
+4. **入口门控 + 埋点**：从战役地图进入（装备是 PvE 成长线，§0），**仅 `api` 在线时挂入口**（强化掷骰/扣费/库存皆服务器权威，离线无意义）。埋点对齐 §19：`equip_craft`/`equip_enhance`（含 from_level/success）/`equip_salvage`/`equip_equip` + `screen_view`。
+   - ⚠️ **本切片范围**：交付 E5 背包/锻造/强化/分解/穿戴 UI（单件分解；批量分解走同端点但 UI 暂单选）。**关卡掉落 faucet（E2 剩余）、E6 洗练 UI、E7 抽卡/保护道具、E8 SLG 接入、按兵种 loadout（§3.1 byUnit，UI 暂只 global）、装备 bone-slot 立绘叠加（§2/§11，占位文字）不在本切片**。验证：client `tsc --noEmit` + webpack 生产构建全绿。
 
 ---
 

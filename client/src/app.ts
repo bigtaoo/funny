@@ -22,6 +22,7 @@ import { SettingsScene, type SettingsSceneCallbacks } from './scenes/SettingsSce
 import { CampaignMapScene, type CampaignMapCallbacks } from './scenes/CampaignMapScene';
 import { LevelPrepScene, type LevelPrepCallbacks } from './scenes/LevelPrepScene';
 import { CollectionScene, type CollectionCallbacks } from './scenes/CollectionScene';
+import { EquipmentScene, type EquipmentCallbacks } from './scenes/EquipmentScene';
 import { StatsScene, type StatsCallbacks } from './scenes/StatsScene';
 import { AchievementScene, type AchievementCallbacks } from './scenes/AchievementScene';
 import { WorldMapScene, type WorldMapCallbacks, type WorldMapView } from './scenes/WorldMapScene';
@@ -123,6 +124,11 @@ class PixiAppViews implements AppViews {
   showCollection(cb: CollectionCallbacks): void {
     this.leaveLobby();
     this.manager.goto(new CollectionScene(this.layout, this.input, cb));
+  }
+
+  showEquipment(cb: EquipmentCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new EquipmentScene(this.layout, this.input, cb));
   }
 
   showStats(cb: StatsCallbacks): void {

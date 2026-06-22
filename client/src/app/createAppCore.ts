@@ -26,6 +26,8 @@ import { netLog } from '../net/log';
 import { matchStateHash } from '../net/judgeRunner';
 import { MatchMode } from '../net/proto/transport';
 import { EQUIP_SLOT } from './equipSlot';
+import { genUuid } from '../platform/uuid';
+import type { EquipSlot } from '../game/meta/SaveData';
 import type { ProfileData } from '../render/ProfilePopup';
 import type { AuthOutcome } from '../scenes/LoginScene';
 import type { RenameOutcome } from '../scenes/SettingsScene';
@@ -743,6 +745,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onBack() { goLobby(); },
       onSelectLevel(levelId) { goLevelPrep(levelId); },
       onOpenCollection() { goCollection(goCampaignMap, 'skins'); },
+      // 装备系统服务器权威（强化掷骰/扣费/库存）→ 仅登录在线时提供入口（E5）。
+      ...(api ? { onOpenEquipment: () => goEquipment() } : {}),
       getStars: () => saveManager.get().progress.stars,
       getCleared: () => saveManager.get().progress.cleared,
       // PvE 服务器权威：通关/解锁须联网（§8 决策 4）。离线只能重刷已解锁关，新解锁锁住。
@@ -792,6 +796,67 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           if (skinId === null) delete d.equipped[EQUIP_SLOT];
           else d.equipped[EQUIP_SLOT] = skinId;
         });
+      },
+    });
+  }
+
+  /** 装备端点错误码 → i18n key（E5）。 */
+  function equipErrKey(e: unknown): TranslationKey {
+    if (e instanceof ApiError) {
+      switch (e.code) {
+        case 'INSUFFICIENT_MATERIALS': return 'equip.err.materials';
+        case 'INSUFFICIENT_FUNDS':     return 'equip.err.coins';
+        case 'INVENTORY_FULL':         return 'equip.err.full';
+        case 'ENHANCE_MAX_LEVEL':      return 'equip.err.maxLevel';
+        case 'NOT_SALVAGEABLE':        return 'equip.err.notSalvageable';
+        case 'INVALID_SLOT':           return 'equip.err.invalidSlot';
+        case 'EQUIP_LOCKED':           return 'equip.err.locked';
+        case 'EQUIP_IN_USE':           return 'equip.err.inUse';
+      }
+    }
+    return 'equip.err.generic';
+  }
+
+  /** 装备系统（E5）。服务器权威，需登录在线；从战役地图进入，返回战役地图。 */
+  function goEquipment(): void {
+    if (!api) { goCampaignMap(); return; }
+    const client = api;
+    inLobby = false;
+    analytics.track('screen_view', { scene: 'EquipmentScene' });
+    views.showEquipment({
+      onBack() { goCampaignMap(); },
+      getSave: () => saveManager.get(),
+      async craft(defId: string) {
+        try {
+          const { save } = await client.craftEquipment(defId, genUuid());
+          saveManager.adoptServer(save);
+          analytics.track('equip_craft', { def_id: defId });
+          return { ok: true as const };
+        } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
+      },
+      async enhance(instanceId: string) {
+        try {
+          const { success, instance, save } = await client.enhanceEquipment(instanceId, genUuid());
+          saveManager.adoptServer(save);
+          analytics.track('equip_enhance', { def_id: instance.defId, from_level: instance.level - (success ? 1 : 0), success });
+          return { ok: true as const, success, level: instance.level };
+        } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
+      },
+      async salvage(instanceIds: string[]) {
+        try {
+          const { save } = await client.salvageEquipment(instanceIds, genUuid());
+          saveManager.adoptServer(save);
+          analytics.track('equip_salvage', { count: instanceIds.length });
+          return { ok: true as const };
+        } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
+      },
+      async equip(slot: EquipSlot, instanceId: string | null) {
+        try {
+          const { save } = await client.equipEquipment(slot, instanceId);
+          saveManager.adoptServer(save);
+          analytics.track('equip_equip', { slot, instance_id: instanceId ?? '' });
+          return { ok: true as const };
+        } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
       },
     });
   }
