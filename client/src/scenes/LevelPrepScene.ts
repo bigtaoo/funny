@@ -185,11 +185,18 @@ export class LevelPrepScene implements Scene {
     this.container.addChild(secLbl);
     y += Math.round(h * 0.048);
 
-    // Unit card rows
+    // Unit card rows — height computed dynamically so rows never push past the stamina bar,
+    // regardless of how many units are in PROGRESSABLE_UNIT_IDS or whether a brief is shown.
     const listX = Math.round(w * 0.06);
     const listW = w - listX * 2;
-    const rowH = Math.round(h * 0.13);
-    const gap = Math.round(h * 0.016);
+    const unitCount = PROGRESSABLE_UNIT_IDS.length;
+    const stBarStart = h - Math.round(h * 0.055) - Math.round(h * 0.14);
+    const listEndY = stBarStart - Math.round(h * 0.012);
+    const gap = Math.round(h * 0.01);
+    const rowH = Math.max(
+      Math.round(h * 0.06),
+      Math.floor((listEndY - y - gap * Math.max(0, unitCount - 1)) / unitCount),
+    );
     const unitLevels = this.cb.getUnitLevels();
     const inv = this.cb.getCardInventory();
 

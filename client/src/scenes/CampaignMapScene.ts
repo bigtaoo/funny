@@ -62,7 +62,7 @@ interface Flip {
 }
 
 const FLIP_DUR = 0.42; // seconds
-const TAP_SLOP = 8;    // px movement above which a touch is a drag, not a tap
+const TAP_SLOP = 30;   // px movement above which a touch is a drag, not a tap
 
 function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
