@@ -616,6 +616,78 @@ paths:
                   data: { $ref: '#/components/schemas/AuthResult' }
         '401': { $ref: '#/components/responses/ErrorResp' }
 
+  /auth/oauth:
+    post:
+      operationId: authOAuth
+      tags: [auth]
+      summary: OAuth 第三方登录（授权码流，首期支持 google）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, code, redirectUri]
+              properties:
+                provider: { type: string, enum: [google] }
+                code: { type: string }
+                redirectUri: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/AuthResult' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+
+  /auth/bind:
+    post:
+      operationId: authBind
+      tags: [auth]
+      summary: 绑定凭证到当前账号（匿名升级转正 / 多凭证绑定）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method]
+              properties:
+                method:
+                  type: string
+                  enum: [oauth, password]
+                # OAuth 绑定
+                provider: { type: string, enum: [google] }
+                code: { type: string }
+                redirectUri: { type: string }
+                # 密码绑定
+                loginId: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [ok, isAnonymous]
+                    properties:
+                      ok: { type: boolean, enum: [true] }
+                      isAnonymous: { type: boolean }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+
   /auth/password/change:
     post:
       operationId: authPasswordChange

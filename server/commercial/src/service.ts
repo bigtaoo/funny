@@ -30,11 +30,15 @@ export interface CommercialDeps {
   now: () => number;
   /** 盲盒随机源（默认 crypto 真随机；测试注入复现保底）。 */
   rng?: RandInt;
-  /** dev 充值桩：校验平台票据。默认 dev 接受非空 receipt（真实渠道验签留 TODO）。 */
-  verifyReceipt?: (platform: string, receipt: string) => { ok: boolean; coins: number };
+  /**
+   * 充值票据验单函数（S4-1）。
+   * 支持 async（微信/Stripe 需网络请求）；不传则用内置 dev 桩。
+   * dev 桩：receipt 形如 `tier:small|mid|large`，按档发币；其余非空一律给小档。
+   */
+  verifyReceipt?: (platform: string, receipt: string) => Promise<{ ok: boolean; coins: number }> | { ok: boolean; coins: number };
 }
 
-/** dev 桩：receipt 形如 `tier:small|mid|large`，按档发币；其余非空一律给小档。真实验签待接渠道。 */
+/** dev 桩（仅单元测试 / 不配置真实渠道时回退）。 */
 function devVerifyReceipt(_platform: string, receipt: string): { ok: boolean; coins: number } {
   if (!receipt) return { ok: false, coins: 0 };
   const tier = receipt.startsWith('tier:') ? receipt.slice(5) : 'small';
@@ -46,13 +50,15 @@ export class CommercialService {
   private readonly cols: CommercialCollections;
   private readonly now: () => number;
   private readonly rng?: RandInt;
-  private readonly verifyReceipt: NonNullable<CommercialDeps['verifyReceipt']>;
+  private readonly verifyReceipt: (platform: string, receipt: string) => Promise<{ ok: boolean; coins: number }>;
 
   constructor(deps: CommercialDeps) {
     this.cols = deps.cols;
     this.now = deps.now;
     this.rng = deps.rng;
-    this.verifyReceipt = deps.verifyReceipt ?? devVerifyReceipt;
+    const raw = deps.verifyReceipt ?? devVerifyReceipt;
+    // 统一包装为 async，兼容同步 dev 桩与 async 真实验单。
+    this.verifyReceipt = (p, r) => Promise.resolve(raw(p, r));
   }
 
   /** 取/建钱包（首次操作 upsert coins:0 rev:0）。 */
@@ -357,7 +363,7 @@ export class CommercialService {
       const w = await this.cols.wallets.findOne({ _id: existing.accountId });
       return { ok: true, coinsAfter: w?.coins ?? 0, coinsGranted: existing.coinsGranted };
     }
-    const v = this.verifyReceipt(args.platform, args.receipt);
+    const v = await this.verifyReceipt(args.platform, args.receipt);
     if (!v.ok) return { ok: false, error: 'INVALID_RECEIPT' };
 
     // 先落票据（receiptId 唯一防并发重复发币），再加币。

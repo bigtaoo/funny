@@ -8,6 +8,36 @@ import { auditOnce } from './anticheatAudit.js';
 
 const log = createLogger('meta');
 
+/**
+ * 进程级错误告警（S4-3）。
+ * NW_ALERT_WEBHOOK_URL：填 Slack/Discord/企微 webhook 地址时，uncaughtException/
+ * unhandledRejection 额外 POST 一条告警消息（fire-and-forget，不影响主流程）。
+ */
+function setupAlerts(): void {
+  const webhook = process.env.NW_ALERT_WEBHOOK_URL;
+  const sendAlert = webhook
+    ? (text: string) => {
+        void fetch(webhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: `[NW metaserver] ${text}` }),
+        }).catch(() => {/* ignore webhook delivery failures */});
+      }
+    : null;
+
+  process.on('uncaughtException', (e: Error) => {
+    log.error('uncaughtException', { err: e.stack ?? String(e) });
+    sendAlert?.(`uncaughtException: ${e.message}`);
+  });
+  process.on('unhandledRejection', (reason: unknown) => {
+    const msg = reason instanceof Error ? reason.stack ?? reason.message : String(reason);
+    log.error('unhandledRejection', { reason: msg });
+    sendAlert?.(`unhandledRejection: ${msg}`);
+  });
+}
+
+setupAlerts();
+
 async function main() {
   const env = loadMetaEnv();
   const jwt: JwtConfig = { secret: env.jwtSecret };

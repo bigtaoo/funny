@@ -4,7 +4,8 @@ import { createCommercialMongo } from './db';
 import { CommercialService } from './service';
 import { startInternalHttp } from './internalHttp';
 import { loadCommercialEnv } from './config';
-import { loadInternalAuth } from '@nw/shared';
+import { loadInternalAuth, IAP_TIERS } from '@nw/shared';
+import { createReceiptVerifier } from './iap';
 
 async function main(): Promise<void> {
   const env = loadCommercialEnv();
@@ -12,7 +13,11 @@ async function main(): Promise<void> {
   const mongo = await createCommercialMongo(env.commMongoUri, env.commMongoDb);
   await mongo.ensureIndexes();
 
-  const svc = new CommercialService({ cols: mongo.collections, now: () => Date.now() });
+  // verifyReceipt：微信/Stripe 真实验单 + dev 桩回退（S4-1）。
+  const verifyReceipt = (platform: string, receipt: string) =>
+    createReceiptVerifier(IAP_TIERS)(platform, receipt);
+
+  const svc = new CommercialService({ cols: mongo.collections, now: () => Date.now(), verifyReceipt });
   const server = startInternalHttp(
     { host: env.host, port: env.port, internalAuth: loadInternalAuth(env.internalKey) },
     svc,
