@@ -25,6 +25,8 @@ export interface PveLevelConfig {
    * 仅 lv5（章节中期精英）和 lv10（章节 Boss）有配置；其余普通关无掉落。
    */
   equipmentDrop?: EquipmentDropConfig;
+  /** 体力消耗（A4）。缺省 = 1。Boss 关（lv10）= 3，精英关（lv5）= 2，普通关 = 1。 */
+  staminaCost?: number;
 }
 
 /**

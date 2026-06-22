@@ -286,6 +286,10 @@ export const en: Record<TranslationKey, string> = {
   'prep.stat.damage': 'Damage',
   'prep.stat.speed': 'Speed',
 
+  // ── Stamina (A4) ──────────────────────────────────────────────────────────
+  'stamina.cost': 'Stamina {current}/120 · Cost {cost}',
+  'stamina.buy': 'Refill Stamina (30 coins → +60)',
+
   // ── Unit Progression (S12) ────────────────────────────────────────────────
   'progression.unitsTitle': 'Unit Cards',
   'progression.lv': 'Lv {lv}',

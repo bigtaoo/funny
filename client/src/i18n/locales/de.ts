@@ -286,6 +286,10 @@ export const de: Record<TranslationKey, string> = {
   'prep.stat.damage': 'Schaden',
   'prep.stat.speed': 'Tempo',
 
+  // ── Ausdauer (A4) ─────────────────────────────────────────────────────────
+  'stamina.cost': 'Ausdauer {current}/120 · Kosten {cost}',
+  'stamina.buy': 'Ausdauer auffüllen (30 Münzen → +60)',
+
   // ── Einheitenentwicklung (S12) ────────────────────────────────────────────
   'progression.unitsTitle': 'Einheiten-Karten',
   'progression.lv': 'Lv {lv}',

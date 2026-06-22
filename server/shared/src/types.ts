@@ -75,6 +75,10 @@ export interface SaveData {
     reachedRanks: RankId[];
   };
 
+  // —— 体力（A4）。服务器权威，实时扣；自然恢复 1 点/6 min，上限 120。缺省（老存档）视为满格。 ——
+  // regenAt = 下一次回复 1 点的时间戳(ms)；已满时为 0（无需计时）。
+  stamina?: { current: number; regenAt: number };
+
   // —— 称号（S10，TITLE_DESIGN §2）。服务器权威，PUT /save 不可写。缺省视为空集合，懒创建。 ——
   // 赛季结算 / 成就 claim / admin 授予写；equipped['title'] 是佩戴位（客户端同步段）。
   titles?: string[];

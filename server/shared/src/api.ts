@@ -76,6 +76,8 @@ export const ErrorCode = {
   ACCOUNT_BANNED: 'ACCOUNT_BANNED',                 // 录像复算三次拒绝封号
   // —— 合规（C5）——
   ACCOUNT_DELETED: 'ACCOUNT_DELETED',               // 软删除账号，auth 返 410
+  // —— 体力系统（A4）——
+  INSUFFICIENT_STAMINA: 'INSUFFICIENT_STAMINA',     // 体力不足，无法进关
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -152,4 +154,5 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.NOT_SALVAGEABLE]: 409,
   [ErrorCode.INVALID_SLOT]: 400,
   [ErrorCode.ACCOUNT_BANNED]: 403,
+  [ErrorCode.INSUFFICIENT_STAMINA]: 402,
 };

@@ -459,6 +459,9 @@ export class MetaService {
     } catch (e) {
       req.log.warn({ err: e }, 'season migrate failed (serving pre-migration save)');
     }
+    // 体力快照注入（A4）：stamina 存于独立集合，回传时合并进 save 镜像。
+    const stamina = await this.readStaminaSnapshot(accountId, now());
+    save = { ...save, stamina };
     const displayName = await getDisplayName(cols, accountId);
     const publicId = await ensurePublicId(cols, accountId);
     return ok({ save, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
@@ -533,6 +536,114 @@ export class MetaService {
       { returnDocument: 'after' },
     );
     return !!res;
+  }
+
+  // ── 体力系统（A4）──────────────────────────────────────────────────────────
+
+  private static readonly STAMINA_CAP = 120;
+  private static readonly STAMINA_REGEN_MS = 6 * 60 * 1000; // 6 min per point
+
+  /**
+   * 原子扣体力：读 pveStamina → 应用自然回复 → $inc 检查余额。
+   * 返回 { ok: true, current } 或 { ok: false }（余额不足）。
+   */
+  private async deductStamina(
+    accountId: string,
+    cost: number,
+    now: number,
+  ): Promise<{ ok: true; current: number; regenAt: number } | { ok: false }> {
+    const { cols } = this.deps;
+    const CAP = MetaService.STAMINA_CAP;
+    const REGEN_MS = MetaService.STAMINA_REGEN_MS;
+
+    // 懒建文档（新账号首次进关）。
+    await cols.pveStamina.updateOne(
+      { _id: accountId },
+      { $setOnInsert: { _id: accountId, current: CAP, regenAt: 0 } },
+      { upsert: true },
+    );
+
+    // 先应用自然回复（两步：读→算→写；允许极小并发窗口多发 1 点，概率极低且对玩家友好）。
+    const stDoc = await cols.pveStamina.findOne({ _id: accountId });
+    if (!stDoc) return { ok: false }; // 理论不可达（upsert 已建）
+
+    let { current, regenAt } = stDoc;
+    if (current < CAP && regenAt > 0 && now >= regenAt) {
+      const ticks = Math.floor((now - regenAt) / REGEN_MS) + 1;
+      current = Math.min(CAP, current + ticks);
+      regenAt = current >= CAP ? 0 : regenAt + ticks * REGEN_MS;
+      await cols.pveStamina.updateOne({ _id: accountId }, { $set: { current, regenAt } });
+    }
+
+    if (current < cost) return { ok: false };
+
+    // 原子扣除（$inc 带 $gte 守卫防并发超扣）。
+    const newCurrent = current - cost;
+    // 回复计时：若扣后从满降到 < 满，开始计时；若已在计时，维持 regenAt 不变。
+    const newRegenAt =
+      regenAt !== 0
+        ? regenAt
+        : newCurrent < CAP
+          ? now + REGEN_MS
+          : 0;
+    const res = await cols.pveStamina.findOneAndUpdate(
+      { _id: accountId, current: { $gte: cost } },
+      { $inc: { current: -cost }, $set: { regenAt: newRegenAt } },
+      { returnDocument: 'after' },
+    );
+    if (!res) return { ok: false }; // 并发竞争失败
+    return { ok: true, current: res.current, regenAt: res.regenAt };
+  }
+
+  /** 读取当前体力（含自然回复计算），用于回传 SaveData.stamina 快照。 */
+  private async readStaminaSnapshot(
+    accountId: string,
+    now: number,
+  ): Promise<{ current: number; regenAt: number }> {
+    const { cols } = this.deps;
+    const CAP = MetaService.STAMINA_CAP;
+    const REGEN_MS = MetaService.STAMINA_REGEN_MS;
+    const doc = await cols.pveStamina.findOne({ _id: accountId });
+    if (!doc) return { current: CAP, regenAt: 0 };
+    let { current, regenAt } = doc;
+    if (current < CAP && regenAt > 0 && now >= regenAt) {
+      const ticks = Math.floor((now - regenAt) / REGEN_MS) + 1;
+      current = Math.min(CAP, current + ticks);
+      regenAt = current >= CAP ? 0 : regenAt + ticks * REGEN_MS;
+    }
+    return { current, regenAt };
+  }
+
+  /** 补体力（走 commercial 扣金币；60 体力 = 30 金币，§A4）。 */
+  async purchaseStamina(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { commercial, now: nowFn } = this.deps;
+    const now = nowFn();
+    const CAP = MetaService.STAMINA_CAP;
+    const REGEN_MS = MetaService.STAMINA_REGEN_MS;
+    const { amount } = req.body as { amount: number };
+    if (amount !== 60) {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'amount must be 60'));
+    }
+    const COST_COINS = 30;
+    const orderId = randomUUID();
+    const spendRes = await commercial.spend({ accountId, amount: COST_COINS, reason: 'stamina_purchase', orderId });
+    if (!spendRes.ok) {
+      return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough coins'));
+    }
+    // 添加体力（最多补到 CAP，多余体力丢弃）。
+    const { cols } = this.deps;
+    await cols.pveStamina.updateOne(
+      { _id: accountId },
+      { $setOnInsert: { _id: accountId, current: CAP, regenAt: 0 } },
+      { upsert: true },
+    );
+    const stDoc = await cols.pveStamina.findOne({ _id: accountId });
+    const curCurrent = stDoc?.current ?? CAP;
+    const newCurrent = Math.min(CAP, curCurrent + amount);
+    const newRegenAt = newCurrent >= CAP ? 0 : (stDoc?.regenAt ?? 0) !== 0 ? (stDoc?.regenAt ?? 0) : now + REGEN_MS;
+    await cols.pveStamina.updateOne({ _id: accountId }, { $set: { current: newCurrent, regenAt: newRegenAt } });
+    return ok({ stamina: { current: newCurrent, regenAt: newRegenAt } });
   }
 
   /** 写 progress/stars（解锁 + 记星，取 max），不动 materials。 */
@@ -678,6 +789,14 @@ export class MetaService {
     if (level.requires && !cur.progress.cleared.includes(level.requires)) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level locked'));
     }
+
+    // 体力扣除（A4）：先扣再结算，防止先结算再被拒。
+    const staminaCost = level.staminaCost ?? 1;
+    const staminaResult = await this.deductStamina(accountId, staminaCost, now());
+    if (!staminaResult.ok) {
+      return reply.code(402).send(err(ErrorCode.INSUFFICIENT_STAMINA, 'not enough stamina'));
+    }
+
     // 有可套利产出 = 材料 reward 或单位卡掉落任一非空（S12-C：卡也是可作弊产出）。
     const hasReward =
       Object.keys(level.reward).length > 0 || Object.keys(levelCardReward(levelId)).length > 0;
@@ -707,8 +826,9 @@ export class MetaService {
           status: 'pending',
           ts: now(),
         });
+        const saveWithSt = { ...prog.save, stamina: { current: staminaResult.current, regenAt: staminaResult.regenAt } };
         return ok({
-          save: prog.save,
+          save: saveWithSt,
           granted: {},
           grantedCards: {},
           capped: false,
@@ -727,8 +847,9 @@ export class MetaService {
     if (clientStats) await this.accrueJudgedPveStats(accountId, JSON.stringify(clientStats));
     // B5：每日任务「通关 PvE」打点（幂等，今日已打过则 no-op）。
     await this.bumpRetentionTask(accountId, 'pve.clear');
+    const saveWithSt = { ...granted.save, stamina: { current: staminaResult.current, regenAt: staminaResult.regenAt } };
     return ok({
-      save: granted.save,
+      save: saveWithSt,
       granted: granted.granted,
       grantedCards: granted.grantedCards,
       ...(granted.grantedEquipment ? { grantedEquipment: granted.grantedEquipment } : {}),
