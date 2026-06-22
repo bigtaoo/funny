@@ -40,6 +40,8 @@ const log = netLog('app');
 
 /** flags key — set after the first-launch intro has been seen. */
 const SEEN_INTRO_FLAG = 'seen_intro';
+/** Last seen ladder season number — used to detect season transitions and show the settlement popup (SE-6). */
+const LAST_SEEN_SEASON_KEY = 'nw_last_seen_season';
 /** Persisted JWT for a real (non-anonymous) account, so logins survive restarts. */
 const TOKEN_KEY = 'nw_token';
 /** Persisted display name shown in the lobby profile chip / settings screen. */
@@ -209,6 +211,19 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onLogin: () => goLogin(),
       onLogout: loggedIn ? () => doLogout() : undefined,
     });
+
+    // Season settlement popup (SE-6): detect first lobby entry after a season transition.
+    // Store and compare pvp.seasonNo in localStorage so it survives restarts.
+    if (!opts?.fromResize && (pvp.seasonNo ?? 1) > 0) {
+      const lastSeen = parseInt(platform.storage.getItem(LAST_SEEN_SEASON_KEY) ?? '0', 10);
+      const currentSeason = pvp.seasonNo ?? 1;
+      if (lastSeen > 0 && currentSeason > lastSeen) {
+        // Season transitioned — show the settlement overlay once.
+        const peakRank = pvp.seasonPeakRank ?? pvp.rank;
+        lobby.showSeasonSettlement(lastSeen, peakRank, currentSeason);
+      }
+      platform.storage.setItem(LAST_SEEN_SEASON_KEY, String(currentSeason));
+    }
 
     // Paint the cached social total immediately so the dot survives a resize
     // rebuild without flicker; then refresh from the server (skip on resize).
@@ -885,6 +900,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     analytics.track('screen_view', { scene: 'StatsScene' });
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const client = api;
+    const pvp = saveManager.get().pvp;
     views.showStats({
       onBack: () => goLobby(),
       // 仅登录在线时拉服务端对战历史 + 看回放；离线 / 未登录则不提供（页面显示离线提示）。
@@ -902,6 +918,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           }
         : {}),
       ...(client && loggedIn ? { onOpenAchievements: () => goAchievements() } : {}),
+      ...(client && loggedIn ? { onOpenLeaderboard: () => goLeaderboard() } : {}),
+      ...(client && loggedIn ? { onOpenBattlePass: () => goBattlePass() } : {}),
+      // 赛季横幅：从存档 pvp.seasonNo 读取，endAt 从 leaderboard 缓存或留 undefined（显「已结束」）。
+      ...(pvp.seasonNo ? { season: { seasonNo: pvp.seasonNo, endAt: 0 } } : {}),
       getStats: () => {
         const save = saveManager.get();
         const stars = Object.values(save.progress.stars).reduce((a, b) => a + b, 0);
@@ -920,6 +940,49 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           materials: save.materials,
         };
       },
+    });
+  }
+
+  function goLeaderboard(): void {
+    inLobby = false;
+    analytics.track('screen_view', { scene: 'LeaderboardScene' });
+    const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
+    const client = api;
+    views.showLeaderboard({
+      onBack: () => goStats(),
+      ...(client && loggedIn
+        ? { loadLeaderboard: () => client.getLeaderboard() }
+        : {}),
+    });
+  }
+
+  function goBattlePass(): void {
+    inLobby = false;
+    analytics.track('screen_view', { scene: 'BattlePassScene' });
+    const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
+    const client = api;
+    views.showBattlePass({
+      onBack: () => goStats(),
+      ...(loggedIn
+        ? {
+            getBattlePass: () => saveManager.get().battlePass,
+            ...(client
+              ? {
+                  onBuy: async () => {
+                    const { battlePass } = await client.buyBattlePass();
+                    if (battlePass) saveManager.adoptServer({ ...saveManager.get(), battlePass });
+                    analytics.track('battlepass_buy', {});
+                  },
+                  onClaim: async (track: 'free' | 'paid', level: number) => {
+                    const { battlePass, reward } = await client.claimBattlePass(track, level);
+                    if (battlePass) saveManager.adoptServer({ ...saveManager.get(), battlePass });
+                    analytics.track('battlepass_claim', { track, level, reward_kind: reward.kind, reward_count: reward.count });
+                    return reward.kind === 'coins' ? reward.count : 0;
+                  },
+                }
+              : {}),
+          }
+        : {}),
     });
   }
 

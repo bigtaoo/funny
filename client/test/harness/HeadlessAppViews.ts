@@ -40,11 +40,17 @@ import type { FamilySceneCallbacks } from '../../src/scenes/FamilyScene';
 import type { SectSceneCallbacks, SectSceneView } from '../../src/scenes/SectScene';
 import type { AuctionSceneCallbacks } from '../../src/scenes/AuctionScene';
 import type { DefenseEditorCallbacks } from '../../src/scenes/DefenseEditorScene';
+import type { AchievementCallbacks } from '../../src/scenes/AchievementScene';
+import type { LeaderboardCallbacks } from '../../src/scenes/LeaderboardScene';
+import type { BattlePassCallbacks } from '../../src/scenes/BattlePassScene';
+import type { TeamsCallbacks } from '../../src/scenes/TeamsScene';
+import type { WorldMapView } from '../../src/scenes/WorldMapScene';
 
 export type ScreenName =
   | 'none' | 'intro' | 'lobby' | 'settings' | 'login' | 'shop' | 'gacha'
-  | 'campaignMap' | 'levelPrep' | 'collection' | 'equipment' | 'stats' | 'replay' | 'result' | 'room' | 'friends'
-  | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor';
+  | 'campaignMap' | 'levelPrep' | 'collection' | 'equipment' | 'stats' | 'achievements'
+  | 'leaderboard' | 'battlePass' | 'replay' | 'result' | 'room' | 'friends'
+  | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams';
 
 interface ActiveMatch {
   engine: IGameEngine;
@@ -98,6 +104,8 @@ export class HeadlessAppViews implements AppViews {
     return {
       applySocialBadge: (n) => { this.lastSocialBadge = n; },
       applyAchievementBadge: () => {},
+      showAchievementToast: () => {},
+      showSeasonSettlement: () => {},
     };
   }
   showSettings(cb: SettingsSceneCallbacks): void { this.screen = 'settings'; this.settings = cb; }
@@ -109,6 +117,9 @@ export class HeadlessAppViews implements AppViews {
   showCollection(cb: CollectionCallbacks): void { this.screen = 'collection'; this.collection = cb; }
   showEquipment(cb: EquipmentCallbacks): void { this.screen = 'equipment'; this.equipment = cb; }
   showStats(cb: StatsCallbacks): void { this.screen = 'stats'; this.stats = cb; }
+  showAchievements(_cb: AchievementCallbacks): void { this.screen = 'achievements'; }
+  showLeaderboard(_cb: LeaderboardCallbacks): void { this.screen = 'leaderboard'; }
+  showBattlePass(_cb: BattlePassCallbacks): void { this.screen = 'battlePass'; }
   showReplay(replay: Replay, cb: ReplaySceneCallbacks): void {
     this.screen = 'replay';
     this.replay = cb;
@@ -165,11 +176,15 @@ export class HeadlessAppViews implements AppViews {
     return { applyIncoming: () => {} };
   }
 
-  showWorldMap(_cb: WorldMapCallbacks): void { this.screen = 'worldMap'; }
+  showWorldMap(_cb: WorldMapCallbacks): WorldMapView {
+    this.screen = 'worldMap';
+    return { applyMarchUpdate: () => {}, applyTileUpdate: () => {}, applyUnderAttack: () => {}, applySiegeResult: () => {} };
+  }
   showFamily(_cb: FamilySceneCallbacks): void { this.screen = 'family'; }
   showSect(_cb: SectSceneCallbacks): SectSceneView { this.screen = 'sect'; return { applySectMsg() {} }; }
   showAuction(_cb: AuctionSceneCallbacks): void { this.screen = 'auction'; }
   showDefenseEditor(_cb: DefenseEditorCallbacks): void { this.screen = 'defenseEditor'; }
+  showTeams(_cb: TeamsCallbacks): void { this.screen = 'teams'; }
 
   showGameNet(localSide: OwnerId, cb: GameSceneCallbacks, opts: GameSceneOptions): NetGameView {
     this.screen = 'gameNet';

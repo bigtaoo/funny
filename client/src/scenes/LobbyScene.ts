@@ -144,6 +144,9 @@ export class LobbyScene implements Scene {
   private toastLayer: PIXI.Container | null = null;
   private toastTimer = 0;
   private toastRect: Rect | null = null;
+  /** Season-settlement modal overlay (SE-6). Blocks lobby taps until dismissed. */
+  private settlementLayer: PIXI.Container | null = null;
+  private settlementDismissRect: Rect | null = null;
   /** Set on destroy so a late-resolving badge fetch skips touching a dead container. */
   private destroyed = false;
 
@@ -191,6 +194,8 @@ export class LobbyScene implements Scene {
     this.achievementBadgeLayer = null;
     this.toastLayer = null;
     this.toastRect = null;
+    this.settlementLayer = null;
+    this.settlementDismissRect = null;
   }
 
   /**
@@ -232,6 +237,65 @@ export class LobbyScene implements Scene {
     if (this.toastLayer) { this.toastLayer.destroy({ children: true }); this.toastLayer = null; }
   }
 
+  /** Show season-settlement modal (SE-6). Called once per season transition by the core. */
+  showSeasonSettlement(oldNo: number, peakRank: string, newNo: number): void {
+    if (this.destroyed || this.settlementLayer) return;
+    const { w, h } = this;
+    const layer = new PIXI.Container();
+
+    // Dim backdrop
+    const backdrop = new PIXI.Graphics();
+    backdrop.beginFill(0x000000, 0.6).drawRect(0, 0, w, h).endFill();
+    layer.addChild(backdrop);
+
+    // Card
+    const cw = Math.round(w * 0.78);
+    const ch = Math.round(h * 0.44);
+    const cx = (w - cw) / 2;
+    const cy = (h - ch) / 2;
+    const card = new PIXI.Graphics();
+    card.lineStyle(2, C.gold, 1);
+    card.beginFill(C.paper).drawRoundedRect(cx, cy, cw, ch, 12).endFill();
+    layer.addChild(card);
+
+    const titleLbl = txt(t('season.settlement.title', { no: String(oldNo) }), Math.round(ch * 0.13), C.dark, true);
+    titleLbl.anchor.set(0.5, 0); titleLbl.x = w / 2; titleLbl.y = cy + Math.round(ch * 0.08);
+    layer.addChild(titleLbl);
+
+    const peakLbl = txt(t('season.settlement.peak'), Math.round(ch * 0.1), C.mid);
+    peakLbl.anchor.set(0.5, 0); peakLbl.x = w / 2; peakLbl.y = cy + Math.round(ch * 0.27);
+    layer.addChild(peakLbl);
+
+    const peakVal = txt(peakRank, Math.round(ch * 0.14), C.gold, true);
+    peakVal.anchor.set(0.5, 0); peakVal.x = w / 2; peakVal.y = cy + Math.round(ch * 0.38);
+    layer.addChild(peakVal);
+
+    const newSeasonLbl = txt(t('season.settlement.newSeason', { no: String(newNo) }), Math.round(ch * 0.09), C.accent);
+    newSeasonLbl.anchor.set(0.5, 0); newSeasonLbl.x = w / 2; newSeasonLbl.y = cy + Math.round(ch * 0.56);
+    layer.addChild(newSeasonLbl);
+
+    // Dismiss button
+    const btnH = Math.round(ch * 0.16);
+    const btnW = Math.round(cw * 0.5);
+    const btnX = (w - btnW) / 2;
+    const btnY = cy + Math.round(ch * 0.76);
+    const btn = new PIXI.Graphics();
+    btn.beginFill(C.dark).drawRoundedRect(btnX, btnY, btnW, btnH, Math.round(btnH * 0.3)).endFill();
+    layer.addChild(btn);
+    const btnLbl = txt(t('season.settlement.close'), Math.round(btnH * 0.5), 0xffffff, true);
+    btnLbl.anchor.set(0.5, 0.5); btnLbl.x = w / 2; btnLbl.y = btnY + btnH / 2;
+    layer.addChild(btnLbl);
+
+    this.container.addChild(layer);
+    this.settlementLayer = layer;
+    this.settlementDismissRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+  }
+
+  private clearSettlement(): void {
+    this.settlementDismissRect = null;
+    if (this.settlementLayer) { this.settlementLayer.destroy({ children: true }); this.settlementLayer = null; }
+  }
+
   /** Draw the toast banner near the top of the lobby (below the header), in its own top-most layer. */
   private drawAchievementToast(text: string): void {
     if (this.toastLayer) { this.toastLayer.destroy({ children: true }); this.toastLayer = null; }
@@ -264,6 +328,11 @@ export class LobbyScene implements Scene {
 
   private handleDown(x: number, y: number): void {
     if (this.state !== 'idle') return;
+    // Season settlement modal (SE-6): dismiss button or anywhere on backdrop dismisses it.
+    if (this.settlementLayer) {
+      this.clearSettlement();
+      return;
+    }
     // Achievement-unlock toast tap → jump to the wall (S9-5b). Checked first so it wins over nav slots.
     const tr = this.toastRect;
     if (tr && x >= tr.x && x <= tr.x + tr.w && y >= tr.y && y <= tr.y + tr.h) {

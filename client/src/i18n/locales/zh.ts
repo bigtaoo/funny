@@ -955,6 +955,52 @@ export const zh = {
   'campaign.ch5.outro': '决赛的对面，走出来的是 Hartmann。\nMara 看见了苏远，两个人都停了一下。\n苏远知道今天会是他们打过的最好的一场。\n不是因为赢，是因为对面那支队会让他们把每一件会的事情都用上。',
   'campaign.ch6.intro': '从输给方家那天起，Mara 一直带着一个问题。\n他们之间不说话，没有信号，但每个人都知道彼此下一步。\n那个东西，叫什么名字？\n宗门大比开始了，Mara 还没有答案。',
   'campaign.ch6.outro': '那场对决之后，Mara 终于找到了答案。\n不是赢了才找到的，是在打的过程里找到的。\n三个人，各自清晰，合在一起更强。\n那个东西，叫做：彼此知道对方是谁。',
+
+  // ── 天梯赛季横幅 / 结算弹层（SE-6）────────────────────────────────────────────
+  'season.banner': '赛季 {no} · 剩余 {days} 天',
+  'season.bannerEnded': '赛季 {no} · 已结束',
+  'season.settlement.title': '赛季 {no} 结算',
+  'season.settlement.peak': '本赛季最高段位',
+  'season.settlement.soft': '软重置后段位',
+  'season.settlement.newSeason': '新赛季 {no} 已开始',
+  'season.settlement.close': '知道了',
+
+  // ── 排行榜（SE-6）────────────────────────────────────────────────────────────
+  'leaderboard.title': '全服排行榜',
+  'leaderboard.back': '← 返回',
+  'leaderboard.loading': '加载中…',
+  'leaderboard.empty': '暂无上榜玩家',
+  'leaderboard.loginRequired': '登录后查看排行榜',
+  'leaderboard.season': '赛季 {no}',
+  'leaderboard.myRank': '我的排名：#{rank}',
+  'leaderboard.myRankNone': '打一场 ranked 即可上榜',
+  'leaderboard.openLeaderboard': '排行榜',
+  'leaderboard.rank': '排名',
+  'leaderboard.elo': 'ELO',
+
+  // ── 战令（SE-9）──────────────────────────────────────────────────────────────
+  'battlepass.title': '战令',
+  'battlepass.back': '← 返回',
+  'battlepass.free': '免费轨',
+  'battlepass.paid': '付费轨',
+  'battlepass.buy': '购买 Pass（{coins} 金币）',
+  'battlepass.level': 'Lv.{n}',
+  'battlepass.xpProgress': '{xp} / {total} XP',
+  'battlepass.xpToNext': '距下一级 {n} XP',
+  'battlepass.claim': '领取',
+  'battlepass.claimed': '已领',
+  'battlepass.locked': '未解锁',
+  'battlepass.passRequired': '需要 Pass',
+  'battlepass.rewardCoins': '+{n} 金币',
+  'battlepass.rewardMaterial': '+{n}',
+  'battlepass.loginRequired': '登录后查看',
+  'battlepass.noData': '本赛季尚未激活',
+  'battlepass.claimFailed': '领取失败，请重试',
+  'battlepass.claimToast': '已领取 +{n} 金币',
+  'battlepass.buyFailed': '购买失败，请重试',
+  'battlepass.buyToast': 'Pass 已激活！',
+  'battlepass.maxLevel': '满级！',
+  'battlepass.openBattlePass': '战令',
 };
 
 export type TranslationKey = keyof typeof zh;
