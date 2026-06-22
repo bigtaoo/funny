@@ -33,6 +33,8 @@ tags:
     description: 天梯排行榜（S11，SEASON_DESIGN §5）
   - name: battlepass
     description: 战令（S11，SEASON_DESIGN §9）
+  - name: events
+    description: 限时活动（B6，ADR-014）
 
 components:
   securitySchemes:
@@ -2500,3 +2502,107 @@ paths:
                           count: { type: integer }
         '400': { $ref: '#/components/responses/ErrorResp' }
         '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /events:
+    get:
+      operationId: getEvents
+      tags: [events]
+      summary: 获取当前有效活动列表（含本账号参与进度）
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 活动列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [events]
+                    properties:
+                      events:
+                        type: array
+                        items:
+                          type: object
+                          required: [eventId, title, windowStart, windowEnd, myPoints, tasks, rewards]
+                          properties:
+                            eventId:     { type: string }
+                            title:       { type: string }
+                            description: { type: string }
+                            windowStart: { type: integer }
+                            windowEnd:   { type: integer }
+                            myPoints:    { type: integer }
+                            tasks:
+                              type: array
+                              items:
+                                type: object
+                                required: [taskId, kind, target, points, progress, done]
+                                properties:
+                                  taskId:   { type: string }
+                                  kind:     { type: string }
+                                  target:   { type: integer }
+                                  points:   { type: integer }
+                                  progress: { type: integer }
+                                  done:     { type: boolean }
+                            rewards:
+                              type: array
+                              items:
+                                type: object
+                                required: [rewardId, cost, kind, claimedCount]
+                                properties:
+                                  rewardId:     { type: string }
+                                  cost:         { type: integer }
+                                  kind:         { type: string }
+                                  id:           { type: string }
+                                  count:        { type: integer }
+                                  maxClaims:    { type: integer }
+                                  claimedCount: { type: integer }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /events/claim:
+    post:
+      operationId: claimEventReward
+      tags: [events]
+      summary: 消耗活动积分兑换奖励
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId, rewardId]
+              properties:
+                eventId:  { type: string }
+                rewardId: { type: string }
+      responses:
+        '200':
+          description: 兑换成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [pointsLeft, reward]
+                    properties:
+                      pointsLeft: { type: integer }
+                      reward:
+                        type: object
+                        required: [kind]
+                        properties:
+                          kind:  { type: string }
+                          id:    { type: string }
+                          count: { type: integer }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }

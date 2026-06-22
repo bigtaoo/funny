@@ -205,7 +205,7 @@
 
 ---
 
-### B6  限时活动容器（ADR-014，依赖 B1/B5 基础设施）
+### ✅ B6  限时活动容器（ADR-014，依赖 B1/B5 基础设施）
 
 **服务端**：
 - `events` 集合 `{eventId, title, windowStart, windowEnd, tasks[], rewards[]}`（admin 写入）。

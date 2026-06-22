@@ -4,6 +4,7 @@ import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
 import type { SaveData } from './types';
 import type { StatKey } from './achievements';
 import type { LadderSeasonDoc } from './season';
+import type { EventTaskDef, EventRewardDef, EventTaskProgress } from './events';
 import type { ChatRegion } from './chatFilter';
 import { CHAT_RETENTION_SEC } from './social';
 
@@ -337,6 +338,36 @@ export interface StaminaDoc {
   regenAt: number; // 下次回复 1 点的时间戳(ms)；已满时为 0
 }
 
+/**
+ * 限时活动定义（B6，ADR-014）。_id = eventId（admin 写入）。
+ * admin 通过 POST /admin/events 写入；无 admin UI 写 openapi（纯运营后台，非本次范围）。
+ */
+export interface EventDoc {
+  _id: string; // eventId（UUID 或运营自定义字符串）
+  title: string; // 活动名称（显示用）
+  description?: string; // 简介（可选）
+  windowStart: number; // 活动开始时间戳 ms（含）
+  windowEnd: number;   // 活动结束时间戳 ms（不含）
+  tasks: EventTaskDef[];
+  rewards: EventRewardDef[];
+  createdAt: number;
+}
+
+/**
+ * 活动参与记录（B6）。_id = `${eventId}:${accountId}`，天然幂等。
+ * points 可增不可减；claimedRewards 是 rewardId 列表（允许同 id 重复表示多次领取）。
+ */
+export interface EventParticipantDoc {
+  _id: string; // `${eventId}:${accountId}`
+  eventId: string;
+  accountId: string;
+  points: number; // 已积累的活动积分（原子 $inc）
+  taskProgress: EventTaskProgress[]; // 各任务完成进度
+  /** 已兑换奖励 rewardId 列表（重复领则 push 多条，计数方式）。 */
+  claimedRewards: string[];
+  updatedAt: number;
+}
+
 export interface Collections {
   saves: Collection<SaveDoc>;
   accounts: Collection<AccountDoc>;
@@ -365,6 +396,9 @@ export interface Collections {
   adsTokens: Collection<AdsTokenDoc>;
   // 体力（A4）：实时扣；_id = accountId
   pveStamina: Collection<StaminaDoc>;
+  // 限时活动（B6）
+  events: Collection<EventDoc>;
+  eventParticipants: Collection<EventParticipantDoc>;
 }
 
 export interface MongoHandle {
@@ -420,6 +454,8 @@ export async function createMongo(
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
     adsTokens: db.collection<AdsTokenDoc>('adsTokens'),
     pveStamina: db.collection<StaminaDoc>('pveStamina'),
+    events: db.collection<EventDoc>('events'),
+    eventParticipants: db.collection<EventParticipantDoc>('eventParticipants'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -484,6 +520,10 @@ export async function createMongo(
       { name: 'pvp_season_elo' },
     );
     // 体力（A4）：_id = accountId，单文档集合，无额外索引。
+    // 限时活动（B6）：按活动窗口查找有效活动。
+    await collections.events.createIndex({ windowStart: 1, windowEnd: 1 });
+    // 参与记录：按活动 + 账号点查（_id 已是复合）；额外按 accountId 查全账号参与的活动。
+    await collections.eventParticipants.createIndex({ accountId: 1, eventId: 1 });
   }
 
   return {
