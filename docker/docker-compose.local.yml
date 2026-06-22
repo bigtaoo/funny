@@ -1,9 +1,11 @@
 # 本地「真实发布」模拟全栈：服务端 9 进程 + 主客户端 + 3 个工具 + mongo + redis，全部 Docker。
 #
-#   一键起（重建最新代码）：  docker compose -f docker-compose.local.yml up -d --build
-#   停（保留数据）：          docker compose -f docker-compose.local.yml down
-#   停并清空 DB：             docker compose -f docker-compose.local.yml down -v
-#   看日志：                  docker compose -f docker-compose.local.yml logs -f nginx metaserver worldsvc
+#   一键起（重建最新代码）：  docker compose -f docker/docker-compose.local.yml up -d --build
+#   停（保留数据）：          docker compose -f docker/docker-compose.local.yml down
+#   停并清空 DB：             docker compose -f docker/docker-compose.local.yml down -v
+#   看日志：                  docker compose -f docker/docker-compose.local.yml logs -f nginx metaserver worldsvc
+#
+# 推荐：直接用根目录 ./local-up.ps1 / ./local-down.ps1 脚本（封装了串行构建和常用参数）。
 #
 # 前端地址（宿主机端口）：
 #   http://localhost:8088   主游戏（nginx 同源托管 SPA + /api REST + /gw 控制面 WS + /ws 数据面 WS
@@ -50,7 +52,7 @@ services:
     restart: unless-stopped
 
   metaserver:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "metaserver/dist/index.js"]
     environment:
@@ -76,7 +78,7 @@ services:
     restart: unless-stopped
 
   commercial:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "commercial/dist/index.js"]
     environment:
@@ -90,7 +92,7 @@ services:
     restart: unless-stopped
 
   gateway:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "gateway/dist/index.js"]
     environment:
@@ -110,7 +112,7 @@ services:
     restart: unless-stopped
 
   matchsvc:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "matchsvc/dist/index.js"]
     environment:
@@ -124,7 +126,7 @@ services:
     restart: unless-stopped
 
   gameserver:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "gameserver/dist/index.js"]
     environment:
@@ -141,7 +143,7 @@ services:
 
   # worldsvc：SLG 大世界第四公网面（/world /family /auction）。需 redis；经 nginx 同源反代。
   worldsvc:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "worldsvc/dist/index.js"]
     environment:
@@ -165,7 +167,7 @@ services:
 
   # analyticsvc：第九进程，埋点采集 + 内网查询。玩家侧仅经 nginx /analytics 投递事件。
   analyticsvc:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "analyticsvc/dist/index.js"]
     environment:
@@ -182,7 +184,7 @@ services:
 
   # admin：运维后端。唯一暴露宿主的「后端」（ops 前端跨源访问 :18083）。
   admin:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "admin/dist/index.js"]
     environment:
@@ -211,7 +213,7 @@ services:
   # nginx = 客户端镜像（静态 SPA + 反向代理）。主游戏唯一暴露到宿主的服务。
   nginx:
     build:
-      context: ./client
+      context: ../client
       dockerfile: Dockerfile
       args:
         NW_API_BASE: ${NW_PUBLIC_API:-http://localhost:8088/api}
@@ -230,7 +232,7 @@ services:
 
   # ── 工具前端（纯静态，各自 nginx 容器；端口沿用 dev 约定 9091/9092/9093）──
   animator:
-    build: { context: ./tools/animator, dockerfile: Dockerfile }
+    build: { context: ../tools/animator, dockerfile: Dockerfile }
     image: nw-animator:local
     container_name: nw-local-animator
     ports:
@@ -239,7 +241,7 @@ services:
 
   # level-editor：构建上下文是「仓库根」（webpack @game alias 引用 client/src/game）。
   level-editor:
-    build: { context: ., dockerfile: tools/level-editor/Dockerfile }
+    build: { context: .., dockerfile: tools/level-editor/Dockerfile }
     image: nw-level-editor:local
     container_name: nw-local-level-editor
     ports:
@@ -248,7 +250,7 @@ services:
 
   # ops：运维后台前端；浏览器跨源调 admin（默认 http://localhost:18083）。
   ops:
-    build: { context: ./tools/ops, dockerfile: Dockerfile }
+    build: { context: ../tools/ops, dockerfile: Dockerfile }
     image: nw-ops:local
     container_name: nw-local-ops
     ports:

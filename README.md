@@ -1,6 +1,6 @@
 # Notebook Wars
 
-一款**手绘风格回合制策略游戏**，支持浏览器与微信小游戏双端，配套独立的骨骼动画编辑器。
+一款**手绘风格回合制策略游戏**，支持浏览器与微信小游戏双端，配套骨骼动画编辑器与关卡编辑器。
 
 ---
 
@@ -50,19 +50,28 @@ Row  0 ── 己方建筑行（含基地，占中央 2 列）
 - `AISystem`：对手 AI，威胁驱动决策（防守 / 经济 / 升级规划，难度分级），确定性 PRNG
 - `SpellSystem`：法术效果处理
 
-### 动画编辑器（`tools/animator/`）
+### 服务端（`server/`）— 九进程
 
-独立运行的骨骼动画编辑工具，用于制作游戏角色动画。
+| 进程 | 职责 |
+|---|---|
+| `metaserver` | REST 无状态：账号/存档/经济/社交/PvE/战报 |
+| `gateway` | 控制面 WS：房间/匹配中转，account→socket 映射 |
+| `matchsvc` | 私有匹配大脑：ELO 配对/房间/game 注册，不连库 |
+| `gameserver` | 数据面 WS：瘦锁步中继，ticket 验签，永不连库 |
+| `commercial` | 钱包/充值/盲盒 RNG，玩家不可达 |
+| `worldsvc` | SLG 大世界：领地/宗门/拍卖行（Redis + Mongo） |
+| `admin` | 运维后台后端：监控/补偿审批/数据分析 |
+| `analyticsvc` | 埋点采集，玩家不可达 |
 
-- **11 根固定骨骼**，FK 正向运动学
-- 关键帧时间轴，支持多 clip 管理
-- Undo/Redo 命令模式（100 步）
-- 导出 `.tao`（ZIP：spritesheet + animation.json）供游戏 Runtime 读取（`StickmanRuntime`，普通兵已接入）
+Mongo 单节点副本集（事务 + change streams）；Redis 供 worldsvc 行军调度和宗门频道扇出。
 
-```bash
-cd tools/animator
-npm run start   # 开发服务器，端口 9091
-```
+### 工具（`tools/`）
+
+| 工具 | 说明 |
+|---|---|
+| `animator/` | 骨骼动画编辑器（11 根固定骨骼 FK，关键帧时间轴，导出 `.tao`） |
+| `level-editor/` | 战役关卡编辑器（纯 Canvas，直接引用游戏侧 `LevelDefinition`） |
+| `ops/` | 运维后台前端（监控面板 / 匹配池 / 补偿工单） |
 
 ---
 
@@ -95,11 +104,15 @@ npm run start   # 开发服务器，端口 9091
 `metaserver`(REST) · `commercial`(钱包) · `gateway`(控制面 WS) · `matchsvc`(匹配) · `gameserver`(对战数据面 WS) · `worldsvc`(SLG 第四公网面) · `admin`(运维) · `analyticsvc`(埋点)。
 对玩家暴露的入口只有主游戏 `:8088`（同源），其余服务经 nginx 反代或仅内网可达。
 
-编排见 [`docker-compose.local.yml`](docker-compose.local.yml)。
+编排见 [`docker/docker-compose.local.yml`](docker/docker-compose.local.yml)。
 
-### 方式二：单模块 dev server（改前端时热更最快）
+### 方式二：仅起本地依赖（dev server 热更）
 
 ```bash
+# 起 Mongo + Redis（服务端开发依赖）
+docker compose -f docker/docker-compose.dev.yml up -d
+
+# 各前端 dev server
 cd client && npm install && npm run start          # 主游戏，端口 19090
 cd tools/animator && npm install && npm run start  # 动画编辑器，端口 9091
 cd tools/level-editor && npm install && npm run start  # 关卡编辑器，端口 9092
@@ -120,6 +133,13 @@ funny/
 │   ├── level-editor/  战役关卡编辑器（TypeScript + 纯 Canvas）
 │   └── ops/           运维后台前端（TypeScript）
 ├── server/        Node.js 后端（npm workspaces，九进程）
+├── docker/        Docker 编排文件
+│   ├── docker-compose.local.yml     本地全栈模拟（9 进程 + 4 前端 + Mongo + Redis）
+│   ├── docker-compose.prod.yml      生产（预构建镜像，无工具前端）
+│   ├── docker-compose.server-prod.yml  服务端生产（含 Caddy 反代，自构建）
+│   ├── docker-compose.dev.yml       本地开发依赖（Mongo + Redis）
+│   └── docker-compose.ci.yml        CI E2E 叠加层（与 server-prod 合并使用）
 ├── art/           地图 & 角色概念图
-└── design/        产品 & 美术设计文档
+├── design/        产品 & 美术设计文档
+└── claudedocs/    模块级快查文档
 ```

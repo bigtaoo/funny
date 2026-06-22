@@ -1,5 +1,5 @@
-# CI 叠加层（与 docker-compose.prod.yml 合并使用）。专供 GitHub Actions 跑全链路 E2E：
-#   docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml up -d --wait \
+# CI 叠加层（与 docker-compose.server-prod.yml 合并使用）。专供 GitHub Actions 跑全链路 E2E：
+#   docker compose -f docker/docker-compose.server-prod.yml -f docker/docker-compose.ci.yml up -d --wait \
 #       mongo metaserver commercial gateway matchsvc gameserver
 #
 # 与 prod 的差异（仅为「E2E 在 runner 宿主机上以 Node 进程直连」服务）：

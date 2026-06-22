@@ -7,7 +7,7 @@
 #>
 param([switch]$Fresh)
 # No ErrorActionPreference=Stop: docker writes to stderr, which PS 5.1 would treat as fatal.
-$compose = Join-Path $PSScriptRoot 'docker-compose.local.yml'
+$compose = Join-Path $PSScriptRoot 'docker\docker-compose.local.yml'
 if ($Fresh) {
   docker compose -f $compose down -v
   Write-Host "OK. Stopped and wiped data volume." -ForegroundColor Green
