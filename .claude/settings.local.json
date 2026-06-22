@@ -1,11 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cd \"C:\\\\Users\\\\TaoWang\\\\Documents\\\\funny\" && grep -n \"S11\\\\|SEASON_DESIGN\\\\|天梯赛季\\\\|战令\\\\|排行榜\\\\|battlepass\\\\|leaderboard\" design/game/META_TASKS.md | grep -v \"^80:\\\\|^81:\\\\|^82:\\\\|^83:\\\\|^84:\\\\|^85:\\\\|^86:\\\\|^87:\\\\|^88:\" | head -60)",
-      "Bash(npm run *)",
-      "Bash(npx tsc *)",
-      "Bash(node_modules/.bin/tsc --noEmit)"
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ],
-    "defaultMode": "acceptEdits"
+    "defaultMode": "bypassPermissions"
   }
 }
