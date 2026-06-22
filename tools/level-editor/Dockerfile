@@ -11,6 +11,8 @@ ENV npm_config_fetch_retries=5 \
 COPY tools/level-editor/package.json tools/level-editor/package-lock.json ./
 RUN npm ci
 # 数据单一来源：游戏侧 LevelDefinition / parseLevelDefinition / 棋盘常量（@game → ../../client/src/game）。
+# @game 里的 re-export shim 依赖 @nw/engine，需一并拷入。
+COPY server/engine /app/server/engine
 COPY client/src /app/client/src
 COPY tools/level-editor /app/tools/level-editor
 RUN npm run build

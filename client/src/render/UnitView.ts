@@ -59,6 +59,9 @@ const DRAFT_HEIGHT: Record<UnitType, number> = {
   [UnitType.Medic]:        28,  // civilian healer, unarmed pose
   [UnitType.Berserker]:    35,  // bulkier than infantry — rage fighter
   [UnitType.Splitter]:     26,  // stocky bomb shape
+  [UnitType.Max]:          33,  // vanguard — slightly taller than infantry
+  [UnitType.Lena]:         36,  // sentinel — armored, bulky
+  [UnitType.Mara]:         27,  // skirmisher — lean, agile
 };
 
 /** Stable pen seed per type so each draft scrawls consistently. */
@@ -72,6 +75,9 @@ const DRAFT_SEED: Record<UnitType, number> = {
   [UnitType.Medic]:        7103,
   [UnitType.Berserker]:    8117,
   [UnitType.Splitter]:     9131,
+  [UnitType.Max]:          10147,
+  [UnitType.Lena]:         11161,
+  [UnitType.Mara]:         12173,
 };
 
 const RADIUS        = 10;

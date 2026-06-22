@@ -17,6 +17,9 @@ module.exports = (env, argv) => {
         // Single source of truth: the editor imports the game's pure-data level
         // schema / constants directly (see tools/level-editor/DESIGN.md §6.5).
         '@game': path.resolve(__dirname, '../../client/src/game'),
+        // @game shims re-export from @nw/engine — wire up the same alias.
+        '@nw/engine$': path.resolve(__dirname, '../../server/engine/src/index.ts'),
+        '@nw/engine': path.resolve(__dirname, '../../server/engine/src'),
       },
     },
     module: {
