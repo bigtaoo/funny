@@ -1,0 +1,200 @@
+# 生产环境 Docker Compose（C7，Notebook Wars）
+# 与 docker-compose.local.yml 的区别：
+#   - 无本地工具（animator / level-editor / ops / admin 前端不部署到生产）
+#   - 无 nginx 客户端镜像（SPA 单独 CDN 部署）
+#   - 所有服务无 ports 暴露宿主（由外部 LB / nginx 反代），仅 admin 开 VPN 入口
+#   - 镜像 tag 由 CI 注入（IMAGE_TAG 环境变量）
+#   - Redis 加持久化（RDB + AOF），worldsvc / gateway 共用同一实例
+#
+# 启动：IMAGE_TAG=v1.2.3 docker compose -f docker-compose.prod.yml up -d
+# 停止：docker compose -f docker-compose.prod.yml down
+# 更新：IMAGE_TAG=v1.2.4 docker compose -f docker-compose.prod.yml pull && up -d
+
+services:
+  # ── 基础设施 ─────────────────────────────────────────────────────────────────
+
+  mongo:
+    image: mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: >
+        mongosh --quiet --eval "try { rs.status().ok } catch (e) {
+        rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }"
+      interval: 10s
+      timeout: 10s
+      start_period: 10s
+      retries: 15
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { memory: 2g }
+
+  # C7：Redis 服务（RDB + AOF 双持久化；worldsvc 行军调度 / 频道扇出 / C7 RoomRegistry）
+  redis:
+    image: redis:7-alpine
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --save 900 1 --save 300 10 --save 60 10000
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { memory: 640m }
+
+  # ── 应用进程 ─────────────────────────────────────────────────────────────────
+
+  metaserver:
+    image: nw-server:${IMAGE_TAG:-latest}
+    command: ["node", "metaserver/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY}
+      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_MONGO_DB: ${NW_MONGO_DB:-notebook_wars}
+      NW_META_PORT: "8080"
+      NW_META_HOST: 0.0.0.0
+      NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_GATEWAY_PUBLIC_WS_URL: ${NW_GATEWAY_PUBLIC_WS_URL}
+    depends_on:
+      mongo: { condition: service_healthy }
+      commercial: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8080/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 10
+    restart: unless-stopped
+
+  commercial:
+    image: nw-server:${IMAGE_TAG:-latest}
+    command: ["node", "commercial/dist/index.js"]
+    environment:
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY}
+      NW_COMM_PORT: "8092"
+      NW_COMM_HOST: 0.0.0.0
+      NW_COMM_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_COMM_MONGO_DB: ${NW_COMM_MONGO_DB:-notebook_wars_commercial}
+    depends_on:
+      mongo: { condition: service_healthy }
+    restart: unless-stopped
+
+  gateway:
+    image: nw-server:${IMAGE_TAG:-latest}
+    command: ["node", "gateway/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY}
+      NW_GW_PORT: "8082"
+      NW_GW_HOST: 0.0.0.0
+      NW_GW_INTERNAL_PORT: "8090"
+      NW_META_BASE_URL: http://metaserver:8080
+      NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+      # C7：Redis RoomRegistry（环境变量缺省 → 回退到 InMemoryRoomRegistry）
+      NW_GW_REDIS_URL: redis://redis:6379
+    depends_on:
+      - metaserver
+      - matchsvc
+      - redis
+    restart: unless-stopped
+
+  matchsvc:
+    image: nw-server:${IMAGE_TAG:-latest}
+    command: ["node", "matchsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY}
+      NW_MM_INTERNAL_PORT: "8091"
+      NW_MM_HOST: 0.0.0.0
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_GAME_PUBLIC_WS_URL: ${NW_GAME_PUBLIC_WS_URL}
+    restart: unless-stopped
+
+  gameserver:
+    image: nw-server:${IMAGE_TAG:-latest}
+    command: ["node", "gameserver/dist/index.js"]
+    environment:
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY}
+      NW_GAME_PORT: "8081"
+      NW_GAME_HOST: 0.0.0.0
+      NW_META_BASE_URL: http://metaserver:8080
+      NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+      NW_GAME_PUBLIC_WS_URL: ${NW_GAME_PUBLIC_WS_URL}
+    depends_on:
+      - metaserver
+      - matchsvc
+    restart: unless-stopped
+
+  worldsvc:
+    image: nw-server:${IMAGE_TAG:-latest}
+    command: ["node", "worldsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY}
+      NW_WORLD_PORT: "18084"
+      NW_WORLD_HOST: 0.0.0.0
+      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_WORLD_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_WORLD_MONGO_DB: ${NW_WORLD_MONGO_DB:-notebook_wars_world}
+      NW_WORLD_REDIS_URL: redis://redis:6379
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
+      NW_META_INTERNAL_URL: http://metaserver:8080
+    depends_on:
+      mongo: { condition: service_healthy }
+      redis: { condition: service_started }
+      gateway: { condition: service_started }
+      commercial: { condition: service_started }
+    restart: unless-stopped
+
+  analyticsvc:
+    image: nw-server:${IMAGE_TAG:-latest}
+    command: ["node", "analyticsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY}
+      NW_ANALYTICS_PORT: "18085"
+      NW_ANALYTICS_HOST: 0.0.0.0
+      NW_ANALYTICS_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_ANALYTICS_MONGO_DB: ${NW_ANALYTICS_MONGO_DB:-notebook_wars_analytics}
+    depends_on:
+      mongo: { condition: service_healthy }
+    restart: unless-stopped
+
+  # admin：仅 VPN / IP allowlist 可达；不经公网 LB。
+  admin:
+    image: nw-server:${IMAGE_TAG:-latest}
+    command: ["node", "admin/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY}
+      NW_ADMIN_PORT: "18083"
+      NW_ADMIN_HOST: 0.0.0.0
+      NW_ADMIN_JWT_SECRET: ${NW_ADMIN_JWT_SECRET}
+      NW_ADMIN_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_ADMIN_MONGO_DB: ${NW_ADMIN_MONGO_DB:-notebook_wars_admin}
+      NW_ADMIN_SEED_USER: ${NW_ADMIN_SEED_USER}
+      NW_ADMIN_SEED_PASS: ${NW_ADMIN_SEED_PASS}
+      NW_META_BASE_URL: http://metaserver:8080
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+      NW_ANALYTICS_BASE_URL: http://analyticsvc:18085
+      NW_WORLD_INTERNAL_URL: http://worldsvc:18084
+    ports:
+      - "127.0.0.1:18083:18083"  # 仅本机 / VPN 可达
+    depends_on:
+      mongo: { condition: service_healthy }
+      analyticsvc: { condition: service_started }
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+  redis-data:

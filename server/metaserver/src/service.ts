@@ -51,6 +51,7 @@ import {
   gachaCost,
   ADS_REWARD_COINS,
   ADS_DAILY_CAP,
+  ADS_MIN_INTERVAL_MS,
   RENAME_COST,
 } from '@nw/shared';
 import { CHAT_SEND_RATE_PER_MIN, regionFromAcceptLanguage } from '@nw/shared';
@@ -100,6 +101,7 @@ import {
   claimMailAtomic,
   splitAttachments,
   sendPlayerMail,
+  insertSystemMail,
 } from './mail.js';
 import type { CommercialClient } from './commercialClient.js';
 import type { GatewayClient } from './gatewayClient.js';
@@ -113,8 +115,12 @@ import {
   reconcileUndelivered,
   adsDayKey,
   bumpAdsCap,
+  hashAdToken,
+  recordAdToken,
+  checkAdInterval,
 } from './economy.js';
 import { grantTitleToPlayer } from './titles.js';
+import { verifyAdPlatformToken } from './ads.js';
 
 export interface ServiceDeps {
   cols: Collections;
@@ -200,7 +206,22 @@ export class MetaService {
   }
 
   // ── auth ──────────────────────────────────────────
-  async authWx(req: FastifyRequest) {
+
+  /** C4/C5-b：检查账号级封号 / 软删除标记；命中则 reject 并返回 true。 */
+  private async rejectIfBanned(cols: typeof this.deps.cols, accountId: string, reply: FastifyReply): Promise<boolean> {
+    const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { flags: 1, deletedAt: 1 } });
+    if (doc?.deletedAt) {
+      void reply.code(410).send(err(ErrorCode.ACCOUNT_DELETED, 'account deleted'));
+      return true;
+    }
+    if (doc?.flags?.banned) {
+      void reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
+      return true;
+    }
+    return false;
+  }
+
+  async authWx(req: FastifyRequest, reply: FastifyReply) {
     const { code } = req.body as { code: string };
     const openid = await exchangeWxCode(code);
     const region = regionFromAcceptLanguage(req.headers['accept-language']);
@@ -210,12 +231,13 @@ export class MetaService {
       this.deps.now(),
       region,
     );
+    if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
     return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
-  async authDevice(req: FastifyRequest) {
+  async authDevice(req: FastifyRequest, reply: FastifyReply) {
     const { deviceId } = req.body as { deviceId: string };
     const region = regionFromAcceptLanguage(req.headers['accept-language']);
     const { accountId, isNew, isAnonymous, displayName } = await resolveByDevice(
@@ -224,6 +246,7 @@ export class MetaService {
       this.deps.now(),
       region,
     );
+    if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
     return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
@@ -272,6 +295,7 @@ export class MetaService {
       return reply.code(401).send(err(ErrorCode.INVALID_CREDENTIALS, 'invalid loginId or password'));
     }
     const { accountId, isNew, isAnonymous, displayName } = account;
+    if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
     return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
@@ -292,6 +316,31 @@ export class MetaService {
     if (result === 'invalid') {
       return reply.code(401).send(err(ErrorCode.INVALID_CREDENTIALS, 'old password mismatch'));
     }
+    return ok({ ok: true });
+  }
+
+  /**
+   * C5-b 账号软删除（Apple 5.1.1(v) 要求）。
+   * 写 accounts.deletedAt；后续 auth 返 ACCOUNT_DELETED（410）。
+   * 7 天宽限期后异步清理由 admin/cron 触发（本期仅标记）。
+   */
+  async deleteAccount(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { cols, now } = this.deps;
+    const confirmToken = randomUUID();
+    await cols.accounts.updateOne({ _id: accountId }, { $set: { deletedAt: now() } });
+    return ok({ confirmToken });
+  }
+
+  /** C5-c GDPR 同意记录：设 accounts.flags.gdprConsent=true。 */
+  async recordGdprConsent(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const { consent } = req.body as { consent: boolean };
+    const { cols } = this.deps;
+    await cols.accounts.updateOne(
+      { _id: accountId },
+      { $set: { 'flags.gdprConsent': consent } },
+    );
     return ok({ ok: true });
   }
 
@@ -329,6 +378,7 @@ export class MetaService {
       this.deps.now(),
       region,
     );
+    if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
     return ok({
@@ -941,6 +991,25 @@ export class MetaService {
         banned,
         ts: now(),
       });
+
+      // C4：账号层面 pveWarnings 计数 + 警告邮件 + 封号（auth 层拦截）。
+      const updatedAcc = await cols.accounts.findOneAndUpdate(
+        { _id: accountId },
+        { $inc: { 'flags.pveWarnings': 1 } },
+        { returnDocument: 'after', projection: { 'flags.pveWarnings': 1 } },
+      );
+      const newWarnings = updatedAcc?.flags?.pveWarnings ?? 1;
+      if (newWarnings === 1) {
+        await insertSystemMail(cols, `pve-warn-${verifyId}`, accountId, {
+          subject: 'Fair Play Warning',
+          body: 'Unusual PvE activity was detected. Continued violations may result in account suspension.',
+          expireDays: 30,
+        }, now());
+      }
+      if (newWarnings >= PVE_REJECT_BAN_THRESHOLD) {
+        await cols.accounts.updateOne({ _id: accountId }, { $set: { 'flags.banned': true } });
+      }
+
       const s = 'error' in saved ? await getOrCreateSave(cols, accountId, now()) : saved.save;
       return ok({ save: s, granted: {}, capped: false, verified: false });
     }
@@ -1579,14 +1648,22 @@ export class MetaService {
 
   /** 盲盒池列表（展开 entries 供客户端展示）。 */
   async getGachaPools() {
-    const pools = GACHA_POOLS.map((p) => ({
-      id: p.id,
-      costSingle: p.costSingle,
-      costTen: p.costTen,
-      pityThreshold: p.pityThreshold,
-      dupePolicy: p.dupePolicy,
-      entries: poolEntries(p),
-    }));
+    const pools = GACHA_POOLS.map((p) => {
+      const entries = poolEntries(p);
+      const totalWeight = entries.reduce((s, e) => s + e.weight, 0);
+      return {
+        id: p.id,
+        costSingle: p.costSingle,
+        costTen: p.costTen,
+        pityThreshold: p.pityThreshold,
+        dupePolicy: p.dupePolicy,
+        // C5-a：每条目附带 probability（Apple 3.1.1 要求）。
+        entries: entries.map((e) => ({
+          ...e,
+          probability: totalWeight > 0 ? e.weight / totalWeight : 0,
+        })),
+      };
+    });
     return ok({ pools });
   }
 
@@ -1676,16 +1753,39 @@ export class MetaService {
   async adsReward(req: FastifyRequest, reply: FastifyReply) {
     if (!this.ensureCommercial(reply)) return;
     const accountId = accountIdOf(req);
-    const { adToken } = req.body as { adToken: string };
-    // dev 桩：校验广告凭证非空（真实广告平台回调验签待接）。
+    const { adToken, platform } = req.body as { adToken: string; platform?: string };
     if (!adToken) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing adToken'));
 
     const { cols, commercial, now } = this.deps;
-    const dayKey = adsDayKey(now());
-    const allowed = await bumpAdsCap(cols, accountId, dayKey, ADS_DAILY_CAP, now());
+    const ts = now();
+    const dayKey = adsDayKey(ts);
+
+    // 30min 间隔门（C2）。
+    const intervalOk = await checkAdInterval(cols, accountId, dayKey, ts, ADS_MIN_INTERVAL_MS);
+    if (!intervalOk) {
+      return reply.code(429).send(err(ErrorCode.DAILY_CAP_REACHED, 'ad cooldown not elapsed'));
+    }
+
+    // 日 cap（C2）。
+    const allowed = await bumpAdsCap(cols, accountId, dayKey, ADS_DAILY_CAP, ts);
     if (!allowed) {
       return reply.code(429).send(err(ErrorCode.DAILY_CAP_REACHED, 'daily ad cap reached'));
     }
+
+    // 凭证唯一性（C2）：hash 落库，重放拒绝。
+    const tokenHash = hashAdToken(adToken);
+    const unique = await recordAdToken(cols, tokenHash, accountId, ts);
+    if (!unique) {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'duplicate adToken'));
+    }
+
+    // 平台验签（C2）：非 dev 时验。
+    const plat = platform ?? 'dev';
+    if (plat !== 'dev') {
+      const sigOk = verifyAdPlatformToken(plat, adToken);
+      if (!sigOk) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'invalid ad signature'));
+    }
+
     const credit = await commercial.adsCredit({ accountId, amount: ADS_REWARD_COINS, dayKey });
     if (!credit.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, credit.error));
     const save = await mirrorCoins(cols, accountId, credit.coinsAfter, now());

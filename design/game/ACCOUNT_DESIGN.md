@@ -208,3 +208,9 @@ initI18n
 > - `bindOAuth` / `bindPassword`（`accounts.ts`）：`$addToSet oauth` 或设 `password`；凭证已被其他账号占用时返 `already_bound`。
 > - IP 滑动窗口限流（`SlidingRateLimiter` 20次/15min）应用于 `authLogin`/`authRegister`/`authOAuth` 三端点。
 > - 客户端唤起 OAuth（`oauthWait` 视图）尚未实现，等有可联调回调域名时补。
+
+> 实现备注（C4 PvE 反作弊 + C5 合规接口，2026-06-22 落地）：
+> - **C4**：`AccountDoc.flags.pveWarnings`（可疑次数）+ `flags.banned`（账号封号）；pveVerify rejected 路径原子递增 `$inc flags.pveWarnings`，首次写警告系统邮件（`insertSystemMail`），达 `PVE_REJECT_BAN_THRESHOLD` 设 `flags.banned=true`；auth 层（authWx/authDevice/authLogin/authOAuth）在签 token 前执行 `rejectIfBanned`（查 `flags.banned` → 403 `ACCOUNT_BANNED`）；`GET /internal/suspicious-pve`（admin 审核）+ `GET /admin/suspicious-pve`（前端入口）。
+> - **C5-a**：`GET /gacha/pools` 返回的每个 entry 新增 `probability = weight/totalWeight`（Apple 3.1.1 概率公示要求）。
+> - **C5-b**：`DELETE /account` → 软删除 `accounts.deletedAt = now()`（Apple 5.1.1(v) 要求）；`rejectIfBanned` 同时检查 `deletedAt`，命中返 410 `ACCOUNT_DELETED`；7 天后由 admin/cron 异步清理数据。
+> - **C5-c**：`POST /account/gdpr-consent` → 设 `accounts.flags.gdprConsent=true/false`；analyticsvc POST /analytics/events：已识别用户（有 JWT）且 `batch.consent !== true` 时静默丢弃（无 PII 的匿名请求不受约束）。

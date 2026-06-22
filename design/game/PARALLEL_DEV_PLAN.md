@@ -237,7 +237,7 @@
 >
 > 服务端硬化 + 联调测试，零游戏玩法改动。
 
-### C1  IAP 真实渠道验签（发布阻断，最优先）
+### ✅ C1  IAP 真实渠道验签（发布阻断，最优先）
 
 **范围**（`commercial/src/iap.ts`）：
 - Apple：`POST https://buy.itunes.apple.com/verifyReceipt`（sandbox / prod 双重试）；提取 `in_app[].product_id` 与 tier 对应表核对；`receiptId` 幂等。
@@ -249,7 +249,7 @@
 
 ---
 
-### C2  广告奖励服务端校验（S2-4）
+### ✅ C2  广告奖励服务端校验（S2-4）
 
 **范围**（`metaserver/src/ads.ts`）：
 - `POST /ads/reward` 现在只做了客户端 UI，补服务端：平台回调签名校验（AdMob server-side verification / 微信广告回调）。
@@ -260,7 +260,7 @@
 
 ---
 
-### C3  PvP hash 对比（S4-2）
+### ✅ C3  PvP hash 对比（S4-2）
 
 **范围**（`metaserver/src/internal.ts`）：
 - `match_over` 已有 `hashOk` 落库，补：hash mismatch 时除 S1-J 裁判路径外，服务器主动记录 `matches.hashMismatch` 事件并触发警报（admin 后台可见）。
@@ -270,7 +270,7 @@
 
 ---
 
-### C4  PvE 反作弊处置（S4-4 待办）
+### ✅ C4  PvE 反作弊处置（S4-4 待办）
 
 **范围**：
 - `pveVerifications` 已有 `status: 'suspicious'`，补后续处置：
@@ -282,7 +282,7 @@
 
 ---
 
-### C5  合规接口（ADR-013/015，发布阻断）
+### ✅ C5  合规接口（ADR-013/015，发布阻断）
 
 **C5-a 抽卡概率公示**
 - `GET /gacha/pools`（已有）扩展：每个 `GachaPool` 返回 `weightTable[]`（itemId / rarity / probability，按 ADR-013 Apple 3.1.1 要求）。
@@ -301,7 +301,7 @@
 
 ---
 
-### C6  验收联调（三项手动 + 一项 CI）
+### ✅ C6  验收联调（三项手动 + 一项 CI）
 
 **C6-a 多设备存档同步（S0-8）**：A 设备改存档 push → B 设备 bootstrap pull → 数据一致；离线改 → 上线 409 合并不丢。
 
@@ -313,7 +313,7 @@
 
 ---
 
-### C7  基础设施（为 B7 铺路）
+### ✅ C7  基础设施（为 B7 铺路）
 
 **Redis 接入**：
 - `docker-compose.prod.yml` 加 `redis` 服务（`redis:7-alpine`）。

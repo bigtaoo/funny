@@ -7,6 +7,7 @@ import openapiGlue from 'fastify-openapi-glue';
 import type { Collections, JwtConfig } from '@nw/shared';
 import { createLogger, internalKeysFromEnv } from '@nw/shared';
 import { MetaService } from './service.js';
+import { registerAdCallbackRoutes } from './ads.js';
 
 const log = createLogger('meta');
 import { makeSecurityHandlers } from './auth.js';
@@ -77,6 +78,9 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     gatewayPublicUrl: opts.gatewayPublicUrl ?? null,
     gateway,
   });
+
+  // 广告平台 SSV 回调（平台主动调用，不经 openapi glue，无玩家鉴权）。
+  registerAdCallbackRoutes(app, { cols: opts.cols, commercial, now });
 
   // 内部路由（玩家不可见，X-Internal-Key 鉴权，不经 openapi glue）：取 ELO + 局末上报 + 对等裁判。
   registerInternalRoutes(app, {

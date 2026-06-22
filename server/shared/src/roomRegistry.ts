@@ -45,6 +45,7 @@ export class InMemoryRoomRegistry implements RoomRegistry {
 
 /**
  * C7 Redis 实现：横扩多实例时 roomId → 任意节点均可查。
+ * 用 HSET nw:rooms:<roomId> field value 存储（TTL 24h 防泄漏）。
  * 动态 import ioredis（与 worldsvc/gateway/redis.ts 同形，dev 未装也能编译）。
  * 工厂 `createRedisRoomRegistry` 连接失败时返回 null → 调用方回退到 InMemoryRoomRegistry。
  */
@@ -92,6 +93,7 @@ export class RedisRoomRegistry implements RoomRegistry {
 
 /**
  * 工厂：连接 Redis 并返回 RedisRoomRegistry；失败时返回 null（调用方降级到内存）。
+ * 示例：`const reg = await createRedisRoomRegistry(url) ?? new InMemoryRoomRegistry()`
  */
 export async function createRedisRoomRegistry(url: string): Promise<RedisRoomRegistry | null> {
   try {

@@ -66,6 +66,8 @@ export interface EventBatch {
   game_version: string;
   locale: string;
   events: RawEvent[];
+  /** C5-c GDPR 同意标记。已识别用户（有 JWT）必须为 true 才记录；匿名用户无需（无 PII）。 */
+  consent?: boolean;
 }
 
 // ─── 查询结果类型（A9-6）───────────────────────────────────────────────────────

@@ -334,11 +334,12 @@ components:
           type: array
           items:
             type: object
-            required: [itemId, weight, rarity]
+            required: [itemId, weight, rarity, probability]
             properties:
               itemId: { type: string }
               weight: { type: integer }
               rarity: { $ref: '#/components/schemas/Rarity' }
+              probability: { type: number, description: '抽中概率 0-1（Apple 3.1.1 概率公示）' }
 
     GachaResult:
       type: object
@@ -728,6 +729,61 @@ paths:
                     properties:
                       ok: { type: boolean, enum: [true] }
         '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /account:
+    delete:
+      operationId: deleteAccount
+      tags: [auth]
+      summary: 软删除账号（C5-b Apple 5.1.1(v)）——7 天宽限后异步清数据
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [confirmToken]
+                    properties:
+                      confirmToken: { type: string }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /account/gdpr-consent:
+    post:
+      operationId: recordGdprConsent
+      tags: [auth]
+      summary: 记录 GDPR 同意（C5-c）——设 flags.gdprConsent=true
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [consent]
+              properties:
+                consent: { type: boolean }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [ok]
+                    properties:
+                      ok: { type: boolean, enum: [true] }
         '401': { $ref: '#/components/responses/ErrorResp' }
 
   /profile/rename:
@@ -1703,6 +1759,7 @@ paths:
               required: [adToken]
               properties:
                 adToken: { type: string }
+                platform: { type: string, enum: [dev, admob_client, wechat_client], description: 广告平台（C2）}
       responses:
         '200':
           description: 成功

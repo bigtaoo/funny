@@ -10,7 +10,7 @@ import { createAdminMongo } from './db';
 import { AdminService } from './service';
 import { startHttpApi } from './httpApi';
 import { seedSuperAdmin } from './seed';
-import { HttpAnalyticsClient, HttpAntiCheatClient, HttpLadderClient, HttpMailDispatcher, HttpPlayerClient, HttpStatsClient, HttpWorldClient } from './clients';
+import { HttpAnalyticsClient, HttpAntiCheatClient, HttpLadderClient, HttpMailDispatcher, HttpMismatchClient, HttpPlayerClient, HttpStatsClient, HttpSuspiciousPveClient, HttpWorldClient } from './clients';
 
 const log = createLogger('admin');
 
@@ -24,12 +24,14 @@ async function main(): Promise<void> {
   const stats = new HttpStatsClient(env.gatewayInternalUrl, env.matchsvcInternalUrl, env.internalKey);
   const players = new HttpPlayerClient(env.metaBaseUrl, env.internalKey);
   const antiCheat = new HttpAntiCheatClient(env.metaBaseUrl, env.internalKey);
+  const mismatches = new HttpMismatchClient(env.metaBaseUrl, env.internalKey);
+  const suspiciousPve = new HttpSuspiciousPveClient(env.metaBaseUrl, env.internalKey);
   const mail = new HttpMailDispatcher(env.metaBaseUrl, env.internalKey);
   const analytics = new HttpAnalyticsClient(env.analyticsBaseUrl, env.internalKey);
   const world = new HttpWorldClient(env.worldInternalUrl, env.internalKey);
   const ladder = new HttpLadderClient(env.metaBaseUrl, env.internalKey);
 
-  const svc = new AdminService({ cols: mongo.collections, stats, players, antiCheat, mail, analytics, world, ladder, now: () => Date.now() });
+  const svc = new AdminService({ cols: mongo.collections, stats, players, antiCheat, mismatches, suspiciousPve, mail, analytics, world, ladder, now: () => Date.now() });
 
   const jwt: JwtConfig = { secret: env.adminJwtSecret, expiresIn: env.adminJwtTtl };
   const server = startHttpApi({ host: env.host, port: env.port, jwt }, svc);
