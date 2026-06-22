@@ -30,7 +30,7 @@
 
 ---
 
-### A2  单位 1–9 级 + 集卡合成 + trait（依赖 A1）
+### ✅ A2  单位 1–9 级 + 集卡合成 + trait（依赖 A1）
 
 **A2-a 等级与合成**
 - `server/engine/src/config.ts`：每单位九档 `UnitLevel[1..9]`（HP/ATK/SPD/armor 乘算），`5 × N → N+1` 合成配方表。
