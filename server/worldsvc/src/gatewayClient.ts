@@ -57,6 +57,14 @@ export type SlgPushMsg =
       fromName: string;
       body: string;
       ts: number; // ms（epoch，非 Date）
+    }
+  | {
+      kind: 'nation_msg'; // B7：国家/世界公频新消息（经 Redis 扇出给同 world 内在线玩家）
+      worldId: string;
+      fromPublicId: string;
+      fromName: string;
+      body: string;
+      ts: number; // ms（epoch，非 Date）
     };
 
 export interface WorldGatewayClient {

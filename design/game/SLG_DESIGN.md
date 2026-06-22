@@ -348,6 +348,13 @@
   - 验证：`shared` + `worldsvc` 两包 `tsc --noEmit` 全绿（无 `marchDurationSec` 遗留引用）。
 - **S8-7 赛季**：大区分配（宗门强弱平衡匹配）/赛季开启/赛季重置（清领地/兵力/繁荣度/国家归属）/结算（按宗门占国数排名/奖励材料皮肤称号）。**→ 可编码实现规格见 §17**（赛季四段式现状盘点 + 7 处代码冲突修正 + settle 发奖/排名落库/reset 原子化/admin 鉴权/繁荣度评分/G6 分配算法）。
 - **S8-8 变现 + 运营**：加速/资源包/科技直购/战令（commercial）+ admin 赛季运维。
+- **B7 国家/世界公频 ✅（2026-06-22，§6.4）**：同 world 内所有玩家均可发言的公开频道（选项对称家族/宗门/公频三级）。
+  - **服务端**：`NationMessageDoc`（`nationMessages` 集合，TTL 7 天，`worldId + ts` 复合索引）；`NationChannelService.sendMessage`（校验 `playerWorld` 入驻 → 落库 → `gateway.broadcast(worldMemberAccountIds, nation_msg)`）+ `getChannel`（分页历史）。`worldsvc/httpApi.ts` 加 `POST /nation/message` + `GET /nation/channel`；`worldsvc/index.ts` 实例化 `NationChannelService` 传入 `startHttpApi`。
+  - **广播**：复用 `HttpWorldGatewayClient.broadcast`——Redis 可用 → 一条到 `GW_PUSH_REDIS_CHANNEL`，各 gateway 扇出在线成员；无 Redis → O(n) HTTP push 兜底。`SlgPushMsg` 新增 `nation_msg` 分支（`worldId/fromPublicId/fromName/body/ts`）。
+  - **proto / gateway**：`transport.proto` 加 `NationMsg`（field 23）；`matchsvcClient.PushMsg` 加 `nation_msg`；`Gateway.toServerMsg` 加 `case 'nation_msg'`。
+  - **错误码**：`api.ts` 加 `NOT_IN_WORLD`(403)——玩家未入驻该 world 时拒绝收发。
+  - **gateway 掉线重连自动补订阅**：`gateway/redis.ts` 显式设 `autoResubscribe: true`（ioredis 默认已是，显式便于审计）+ 加 `ready` 事件 log；Redis 重连后自动重订 `GW_PUSH_REDIS_CHANNEL`，期间漏的 push 客户端 REST 拉 `/nation/channel` 历史补全。
+  - 验证：`shared` + `worldsvc` + `gateway` `tsc --noEmit` 全绿。
 
 **MVP 切片建议**：S8-0~3（地图+领地+兵力+围攻战，单服、无家族、无拍卖、无赛季重置）先验证「战斗接大地图」这条承重墙跑通，再叠加家族/拍卖/赛季。
 

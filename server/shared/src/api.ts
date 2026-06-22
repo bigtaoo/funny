@@ -78,6 +78,8 @@ export const ErrorCode = {
   ACCOUNT_DELETED: 'ACCOUNT_DELETED',               // 软删除账号，auth 返 410
   // —— 体力系统（A4）——
   INSUFFICIENT_STAMINA: 'INSUFFICIENT_STAMINA',     // 体力不足，无法进关
+  // —— 社交频道（B7）——
+  NOT_IN_WORLD: 'NOT_IN_WORLD',                     // 玩家尚未入驻该世界（无 playerWorld 记录）
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -155,4 +157,5 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.INVALID_SLOT]: 400,
   [ErrorCode.ACCOUNT_BANNED]: 403,
   [ErrorCode.INSUFFICIENT_STAMINA]: 402,
+  [ErrorCode.NOT_IN_WORLD]: 403,
 };

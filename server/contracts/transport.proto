@@ -228,6 +228,15 @@ message SectMsg {
   string text           = 4;
   uint64 ts             = 5;
 }
+// 国家/世界公频消息（B7，§6.4 社交频道）。worldsvc 经 Redis pub/sub 扇给同 worldId 内
+// 所有在线玩家；无 Redis 降级为 O(n) HTTP push。离线成员靠 REST 拉历史（TTL 7 天）。
+message NationMsg {
+  string world_id       = 1;
+  string from_public_id = 2;
+  string from_name      = 3;
+  string text           = 4;
+  uint64 ts             = 5;
+}
 message WorldEvent {
   string kind    = 1;   // season_open | season_settle | grand_tourney | …
   string payload = 2;   // JSON（DRAFT，结构随事件类型）
@@ -257,6 +266,7 @@ message ServerMsg {
     FamilyMsg         family_msg      = 20;
     SectMsg           sect_msg        = 21;
     WorldEvent        world_event     = 22;
+    NationMsg         nation_msg      = 23;
   }
 }
 

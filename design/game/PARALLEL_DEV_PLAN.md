@@ -222,7 +222,7 @@
 
 ---
 
-### B7  社交频道 S6-4（依赖 Track C Redis 就位，最后做）
+### ✅ B7  社交频道 S6-4（依赖 Track C Redis 就位，最后做）
 
 - 独立 `social` 服务 + Redis pub/sub + gateway 订阅投递。
 - 帮会/家族/国家频道（SLG 世界内）。

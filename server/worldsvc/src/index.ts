@@ -6,6 +6,7 @@ import { connectRedis } from './redis';
 import { WorldService } from './service';
 import { FamilyService } from './familyService';
 import { SectService } from './sectService';
+import { NationChannelService } from './nationChannelService';
 import { AuctionService } from './auctionService';
 import { startHttpApi } from './httpApi';
 import { startScheduler } from './scheduler';
@@ -64,6 +65,12 @@ async function main(): Promise<void> {
     now: () => Date.now(),
   });
 
+  const nationChannelSvc = new NationChannelService({
+    cols: mongo.collections,
+    gateway,
+    now: () => Date.now(),
+  });
+
   const auctionSvc = new AuctionService({
     cols: mongo.collections,
     commercial,
@@ -78,6 +85,7 @@ async function main(): Promise<void> {
     svc,
     familySvc,
     sectSvc,
+    nationChannelSvc,
     auctionSvc,
   );
 

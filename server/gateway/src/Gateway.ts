@@ -535,5 +535,14 @@ function toServerMsg(msg: PushMsg): ServerMsg {
         body: msg.body,
         ts: msg.ts,
       };
+    case 'nation_msg':
+      return {
+        case: 'nation_msg',
+        worldId: msg.worldId,
+        fromPublicId: msg.fromPublicId,
+        fromName: msg.fromName,
+        body: msg.body,
+        ts: msg.ts,
+      };
   }
 }

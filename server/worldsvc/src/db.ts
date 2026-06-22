@@ -226,6 +226,16 @@ export interface SectMessageDoc {
   ts: Date;
 }
 
+/** 国家/世界公频消息（B7，§6.4）。ts 须 BSON Date（TTL 锚字段，7 天自清）。 */
+export interface NationMessageDoc {
+  _id: string; // `nm:{worldId}:{ts_epoch}:{seq}`
+  worldId: string;
+  senderId: string;
+  senderName: string;
+  body: string;
+  ts: Date;
+}
+
 export interface SiegeDoc {
   _id: string; // siegeId
   worldId: string;
@@ -307,6 +317,7 @@ export interface WorldCollections {
   familyMessages: Collection<FamilyMessageDoc>;
   sects: Collection<SectDoc>;
   sectMessages: Collection<SectMessageDoc>;
+  nationMessages: Collection<NationMessageDoc>;
   auctions: Collection<AuctionDoc>;
   auctionDaily: Collection<AuctionDailyDoc>;
   auctionPrices: Collection<AuctionPriceDoc>;
@@ -351,6 +362,7 @@ export async function createWorldMongo(
     familyMessages: db.collection<FamilyMessageDoc>('familyMessages'),
     sects: db.collection<SectDoc>('sects'),
     sectMessages: db.collection<SectMessageDoc>('sectMessages'),
+    nationMessages: db.collection<NationMessageDoc>('nationMessages'),
     auctions: db.collection<AuctionDoc>('auctions'),
     auctionDaily: db.collection<AuctionDailyDoc>('auctionDaily'),
     auctionPrices: db.collection<AuctionPriceDoc>('auctionPrices'),
@@ -383,6 +395,9 @@ export async function createWorldMongo(
     await collections.families.createIndex({ sectId: 1 });
     await collections.sectMessages.createIndex({ sectId: 1, ts: -1 });
     await collections.sectMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
+    // 国家/世界公频（B7）：按 worldId + 时间倒序分页；TTL 同家族/宗门频道 7 天。
+    await collections.nationMessages.createIndex({ worldId: 1, ts: -1 });
+    await collections.nationMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
     await collections.auctions.createIndex({ worldId: 1, itemType: 1, status: 1 });
     await collections.auctions.createIndex({ sellerId: 1 });
     await collections.auctions.createIndex({ designatedBuyerId: 1 });
