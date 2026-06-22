@@ -417,7 +417,7 @@ export class GameRenderer {
     }
 
     // Tap-select hover: update Meteor target preview as pointer moves over board
-    if (this.tapSelect?.cardType === CardType.Spell && this.tapSelect.spellType === SpellType.Meteor) {
+    if (this.tapSelect?.cardType === CardType.Spell && this.tapSelect?.spellType === SpellType.Meteor) {
       if (!this.layout.isOutsideBoard(x, y)) {
         const col = this.layout.screenToCol(x, y);
         const row = this.layout.screenToRow(x, y);

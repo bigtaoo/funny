@@ -209,10 +209,11 @@ services:
     restart: unless-stopped
 
   # nginx = 客户端镜像（静态 SPA + 反向代理）。主游戏唯一暴露到宿主的服务。
+  # 上下文必须是仓库根（context: .），webpack @nw/engine alias 引用 server/engine/src。
   nginx:
     build:
-      context: ./client
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: client/Dockerfile
       args:
         NW_API_BASE: ${NW_PUBLIC_API:-http://localhost:8088/api}
         NW_GATEWAY_WS: ${NW_PUBLIC_GW:-ws://localhost:8088/gw}

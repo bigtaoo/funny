@@ -381,6 +381,7 @@ export class HandView {
       case CardType.Unit:     return 'U';
       case CardType.Building: return 'B';
       case CardType.Spell:    return 'S';
+      default:                return '?';
     }
   }
 }
