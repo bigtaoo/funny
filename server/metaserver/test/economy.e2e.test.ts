@@ -2,7 +2,7 @@
 //   shop/gacha 扣币→发物品→镜像、ads cap、iap 镜像、对账补发（崩溃在发货前）不丢不重。
 // 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
+import { createMongo, type JwtConfig, type MongoHandle, ADS_MIN_INTERVAL_MS } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 import type {
@@ -115,6 +115,7 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
   let comm: FakeCommercial;
   let token: string;
   let accountId: string;
+  let fakeNow = 0;
 
   const body = (r: { payload: string }) => JSON.parse(r.payload);
   const auth = () => ({ authorization: `Bearer ${token}` });
@@ -124,7 +125,8 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     await m.ensureIndexes();
     if (app) await app.close();
     comm = new FakeCommercial();
-    app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', commercial: comm });
+    fakeNow = Date.now();
+    app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', commercial: comm, now: () => fakeNow });
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'device-econ-1' } }));
     token = r.data.token;
     accountId = r.data.accountId;
@@ -240,10 +242,12 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
 
   it('广告 cap：超过 5 次 → 429', async () => {
     for (let i = 0; i < 5; i++) {
-      const r = await app.inject({ method: 'POST', url: '/ads/reward', headers: auth(), payload: { adToken: 'ok' } });
+      fakeNow += ADS_MIN_INTERVAL_MS + 1000;
+      const r = await app.inject({ method: 'POST', url: '/ads/reward', headers: auth(), payload: { adToken: `ok-${i}` } });
       expect(r.statusCode).toBe(200);
     }
-    const sixth = await app.inject({ method: 'POST', url: '/ads/reward', headers: auth(), payload: { adToken: 'ok' } });
+    fakeNow += ADS_MIN_INTERVAL_MS + 1000;
+    const sixth = await app.inject({ method: 'POST', url: '/ads/reward', headers: auth(), payload: { adToken: 'ok-5' } });
     expect(sixth.statusCode).toBe(429);
   });
 

@@ -77,10 +77,10 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     const upto = ['ch1_lv1'];
     for (let c = 1; c <= 2; c++) for (let l = 1; l <= 10; l++) upto.push(`ch${c}_lv${l}`);
     await seedCleared(upto);
-    const r = body(await clear('ch3_lv1', 3)); // ch3 → archer T2 ×1
-    expect(r.data.grantedCards).toEqual({ 'archer:2': 1 });
-    expect(r.data.save.cardInventory['archer:2']).toBe(1);
-    expect(r.data.save.unitLevels.archer).toBe(2); // 单张 T2 即抬到 2
+    const r = body(await clear('ch3_lv1', 3)); // ch3 → shieldbearer T2 ×1
+    expect(r.data.grantedCards).toEqual({ 'shieldbearer:2': 1 });
+    expect(r.data.save.cardInventory['shieldbearer:2']).toBe(1);
+    expect(r.data.save.unitLevels.shieldbearer).toBe(2); // 单张 T2 即抬到 2
   });
 
   it('每日上限：capped 时材料与单位卡都不发（S12-C）', async () => {
