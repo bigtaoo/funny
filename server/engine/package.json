@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
-    "test": "tsc -b && node --test dist/__tests__/armor.test.js"
+    "test": "tsc -b && node --test dist/__tests__/armor.test.js dist/__tests__/pvp_hardwall.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
