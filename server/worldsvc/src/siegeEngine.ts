@@ -24,6 +24,7 @@ import {
   UNIT_BLUEPRINTS,
   parseLevelDefinition,
   type GarrisonEntry,
+  type EngineEquipmentInput,
 } from '@nw/engine';
 import {
   buildSiegeBattle,
@@ -119,6 +120,10 @@ export interface SiegeBattleInput {
   tileLevel: number;
   /** 关卡 seed（围攻同 seed → 复算/重播逐字一致）。 */
   seed: number;
+  /** 攻方养成快照（E8 SLG 接入）：缺省 = 无养成蓝图保持基础值（不阻断行军）。 */
+  pveUpgrades?: Record<string, number>;
+  unitLevels?: Record<string, number>;
+  equipment?: EngineEquipmentInput;
 }
 
 /**
@@ -132,7 +137,7 @@ export interface SiegeBattleInput {
  * 唯一落地点（G3-1），与本函数解耦。
  */
 export function runSiegeBattle(input: SiegeBattleInput): SiegeResolution {
-  const { attackerArmy, defenderConfig, tileLevel, seed } = input;
+  const { attackerArmy, defenderConfig, tileLevel, seed, pveUpgrades, unitLevels, equipment } = input;
 
   const levelObj = buildSiegeBattle({ army: attackerArmy }, defenderConfig, tileLevel, seed);
   // P2：防守 config = 引擎 LevelDefinition 的受限子集，过 levelSchema 校验（坏 config 抛错，
@@ -149,7 +154,8 @@ export function runSiegeBattle(input: SiegeBattleInput): SiegeResolution {
   });
 
   const { engine } = runHeadless(
-    { seed, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level },
+    { seed, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level,
+      pveUpgrades, unitLevels, equipment },
     input$,
     timeout + TICK_MARGIN,
   );

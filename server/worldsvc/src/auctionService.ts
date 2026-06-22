@@ -243,7 +243,7 @@ export class AuctionService {
   /**
    * 挂拍。
    * itemType='material' → 从 meta 扣除材料（orderId 幂等）。
-   * itemType='equipment' → TODO（装备库 S8-x 后补），当前拒绝。
+   * itemType='equipment' → meta.escrowEquipment 托管实例（穿戴中/锁定/不存在 → SlgError）。
    * saleMode='fixed'（缺省）：price=一口价单价。
    * saleMode='auction'：startPrice=起拍单价，buyoutPrice?=一口价保底单价。
    * durationSec 必须是 AUCTION_DURATIONS_SEC 之一；同账号 open 挂单 ≤ AUCTION_MAX_LISTINGS；

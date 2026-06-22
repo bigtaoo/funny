@@ -74,7 +74,7 @@ import {
   type ProceduralTile,
 } from '@nw/shared';
 import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseConfig, scaleArmyHp } from './siegeEngine';
-import type { GarrisonEntry } from '@nw/engine';
+import type { GarrisonEntry, EngineEquipmentInput } from '@nw/engine';
 import { ENGINE_VERSION } from '@nw/engine';
 import { refreshFamilyProsperity, effectiveProsperity } from './prosperity';
 import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry, DefenseConfig, ArmyEntry, TeamTemplate } from './db';
@@ -1191,10 +1191,19 @@ export class WorldService {
     // 关键围攻（G3-2b，§16）：worldsvc 直接 import `@nw/engine` headless 跑「双方预布兵确定性
     // 自动战斗」拿权威胜负 + 真实残存血量，替代廉价线性公式。坏布阵 / 引擎异常 → 兜底回退
     // 廉价 resolveSiege，绝不让一场围攻卡死行军。
+    // E8：取攻方养成快照，注入 buildSiegeBlueprints（失败降级无装备，不阻断行军）。
+    const attackerSave = await this.meta.getSaveFields(m.ownerId).catch(() => null);
+    const siegeEquip: EngineEquipmentInput | undefined =
+      attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
     let res: SiegeResolution;
     let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
     try {
-      res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed });
+      res = runSiegeBattle({
+        attackerArmy, defenderConfig, tileLevel, seed,
+        pveUpgrades: attackerSave?.pveUpgrades,
+        unitLevels: attackerSave?.unitLevels,
+        equipment: siegeEquip,
+      });
     } catch (err) {
       console.error('[worldsvc] siege engine failed — fallback to cheap resolve', {
         tile: m.toTile,
@@ -1240,10 +1249,19 @@ export class WorldService {
     const tileLevel = proc.level;
     const seed = siegeSeedFromId(m._id);
 
+    // E8：stronghold 亦是 PvE-like 围攻，攻方装备同样生效。
+    const attackerSave = await this.meta.getSaveFields(m.ownerId).catch(() => null);
+    const siegeEquip: EngineEquipmentInput | undefined =
+      attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
     let res: SiegeResolution;
     let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
     try {
-      res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed });
+      res = runSiegeBattle({
+        attackerArmy, defenderConfig, tileLevel, seed,
+        pveUpgrades: attackerSave?.pveUpgrades,
+        unitLevels: attackerSave?.unitLevels,
+        equipment: siegeEquip,
+      });
     } catch (err) {
       console.error('[worldsvc] stronghold siege engine failed — fallback to cheap resolve', {
         tile: m.toTile,

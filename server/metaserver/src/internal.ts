@@ -491,6 +491,24 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     log.info('equipment granted', { accountId, instanceId: instance.id, orderId });
     return reply.send({ ok: true });
   });
+
+  // ── 养成快照（E8，worldsvc 围攻引擎权威计算调用）────────────────────────────────
+  // GET /internal/save-fields?accountId=  → { pveUpgrades, unitLevels, gear, equipmentInv }
+  //   返回攻方养成相关字段，供 worldsvc 传入 buildSiegeBlueprints 计算权威蓝图。
+  //   账号不存在视为新账号（返回空默认），不返回 404，避免冻结行军。
+  app.get('/internal/save-fields', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const accountId = (req.query as Record<string, string>).accountId;
+    if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
+    const doc = await cols.saves.findOne({ _id: accountId });
+    const s = doc?.save;
+    return reply.send({
+      pveUpgrades: s?.pveUpgrades ?? {},
+      unitLevels: s?.unitLevels ?? {},
+      gear: s?.gear ?? {},
+      equipmentInv: s?.equipmentInv ?? {},
+    });
+  });
 }
 
 /**

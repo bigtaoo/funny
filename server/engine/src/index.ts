@@ -85,6 +85,9 @@ export type { UnitBlueprint } from './types';
 // ── GameState exposed as a type only (state inspection after a headless run) ──
 export type { GameState } from './GameState';
 
+// ── Equipment input type (E8: worldsvc passes attacker gear to buildSiegeBlueprints) ────────────
+export type { EngineEquipmentInput } from './balance/equipment';
+
 // ── Campaign / level data model + validator ───────────────────────────────────
 export type {
   LevelDefinition,
