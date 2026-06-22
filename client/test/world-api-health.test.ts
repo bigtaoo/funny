@@ -39,6 +39,18 @@ afterEach(() => {
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
+describe('WorldApiClient.available', () => {
+  it('同源代理（空 base）下为 true', () => {
+    setWorldBase('');
+    expect(new WorldApiClient(noopStorage).available).toBe(true);
+  });
+
+  it('显式 dev URL 下为 true', () => {
+    setWorldBase('http://localhost:18084');
+    expect(new WorldApiClient(noopStorage).available).toBe(true);
+  });
+});
+
 describe('WorldApiClient.checkHealth()', () => {
   it('worldBase 为空（同源代理）时直接返回 true，不发请求', async () => {
     setWorldBase('');
