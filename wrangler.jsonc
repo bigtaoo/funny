@@ -3,7 +3,7 @@
   // CF 构建：build = `cd tools/animator && npm install && npm run build`（产出 tools/animator/dist），
   // deploy = `npx wrangler deploy`（从仓库根读本文件，把 dist 作为静态资源发布，无 Worker 脚本）。
   // 设计：design/tools/animator/WORKSPACE_SYNC.md
-  "name": "funny-animator",
+  "name": "animator",
   "compatibility_date": "2025-06-01",
   "assets": {
     "directory": "./tools/animator/dist",
