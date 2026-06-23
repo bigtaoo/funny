@@ -548,6 +548,31 @@ function triggerDownload(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+/** First accepted extension declared in `types` (e.g. ".tao.editor"), or '' if none. */
+function primaryExt(types: Array<{ accept: Record<string, string[]> }>): string {
+  for (const t of types) {
+    for (const exts of Object.values(t.accept)) {
+      if (exts[0]) return exts[0];
+    }
+  }
+  return '';
+}
+
+/** Guarantee `name` ends with exactly one `ext`. Collapses an accidentally
+ *  doubled compound extension (e.g. "x.tao.editor.tao.editor" → "x.tao.editor")
+ *  and appends `ext` when missing. This is what prevents the File System Access
+ *  picker from re-appending a compound extension (Chrome appends the accepted
+ *  extension when the chosen name doesn't already end with it, and historically
+ *  double-appends multi-dot extensions like ".tao.editor"). */
+function ensureSingleExt(name: string, ext: string): string {
+  if (!ext) return name;
+  const lower = ext.toLowerCase();
+  let n = name;
+  while (n.toLowerCase().endsWith(lower + lower)) n = n.slice(0, -ext.length);
+  if (!n.toLowerCase().endsWith(lower)) n += ext;
+  return n;
+}
+
 /** Save blob via the File System Access API (native save dialog with folder + filename).
  *  Falls back to a filename prompt + triggerDownload for browsers without the API (e.g. Firefox). */
 async function saveWithPicker(
@@ -555,12 +580,17 @@ async function saveWithPicker(
   suggestedName: string,
   types: Array<{ description?: string; accept: Record<string, string[]> }>,
 ): Promise<void> {
+  // Pass a name that already carries exactly one canonical extension so neither
+  // the native picker nor the user prompt can produce a doubled ".tao.editor".
+  const ext       = primaryExt(types);
+  const suggested = ensureSingleExt(suggestedName, ext);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const picker = (window as any).showSaveFilePicker;
   if (typeof picker === 'function') {
     let handle: { createWritable(): Promise<{ write(b: Blob): Promise<void>; close(): Promise<void> }> };
     try {
-      handle = await picker({ suggestedName, types });
+      handle = await picker({ suggestedName: suggested, types });
     } catch (e) {
       if ((e as DOMException).name === 'AbortError') return;  // user cancelled
       throw e;
@@ -572,8 +602,8 @@ async function saveWithPicker(
     // Firefox / Safari fallback: prompt for filename, then trigger download.
     // The save path is controlled by the browser's download settings
     // (Firefox: Settings → Downloads → "Always ask you where to save files").
-    const name = window.prompt('Save as:', suggestedName);
+    const name = window.prompt('Save as:', suggested);
     if (name === null) return;  // user cancelled
-    triggerDownload(blob, name.trim() || suggestedName);
+    triggerDownload(blob, ensureSingleExt(name.trim() || suggested, ext));
   }
 }
