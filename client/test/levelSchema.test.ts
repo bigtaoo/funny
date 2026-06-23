@@ -47,7 +47,7 @@ describe('parseLevelDefinition', () => {
     const lv1 = CAMPAIGN_LEVELS['ch1_lv1']!;
     // First entry was s(2) = round(2 × 30) = 60.
     expect(lv1.waves.entries[0]!.atTick).toBe(60);
-    expect(lv1.waves.entries[0]!.unitType).toBe(UnitType.Infantry);
+    expect(lv1.waves.entries[0]!.unitType).toBe(UnitType.Max); // Anna-side vanguard
     expect(lv1.waves.entries[0]!.spacingTicks).toBe(24); // s(0.8)
 
     const lv2 = CAMPAIGN_LEVELS['ch1_lv2']!;
