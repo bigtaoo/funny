@@ -103,10 +103,41 @@ function tileColor(tile: WorldTileView): number {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_MAP_SIZE = 1500; // 服务端默认 1500×1500；实际从 getSeason 取
-const TILE_PX  = 20;   // logical pixels per tile when fully zoomed out
 const HUD_H    = 80;   // bottom HUD bar height
 const MARGIN   = 4;    // margin inside modal
 const CONFIRM_H = 140;
+
+// ── Zoom system ───────────────────────────────────────────────────────────────
+// 三档缩放，通过按钮循环切换：
+//   L1 detail   25×≈14 格, 76px/格（1920px 设计宽度）— 完整标记（等级点/瞭望塔/宗门描边）
+//   L2 medium   50×≈27 格, 38px/格 — 仅展示占领色 + 首府星标 + 行军箭头
+//   L3 overview ~96×≈50 格, 20px/格 — 批量色块渲染，最粗略，看大势
+// TILE_PX 由 designWidth 动态计算，保证各分辨率下可见格数基本一致。
+
+interface ZoomCfg {
+  tile: number;   // px per tile
+  visW: number;   // visible tile columns
+  visH: number;   // visible tile rows (mapH area)
+  poolW: number;  // pool columns = visW + 2 (one buffer on each side)
+  poolH: number;  // pool rows = visH + 2
+}
+
+function makeZoomCfgs(w: number, h: number): [ZoomCfg, ZoomCfg, ZoomCfg] {
+  const mh = h - HUD_H;
+  const mk = (tile: number): ZoomCfg => {
+    const visW = Math.ceil(w / tile);
+    const visH = Math.ceil(mh / tile);
+    return { tile, visW, visH, poolW: visW + 2, poolH: visH + 2 };
+  };
+  return [mk(Math.floor(w / 25)), mk(Math.floor(w / 50)), mk(20)];
+}
+
+/** A single pooled tile object — one PIXI.Graphics reused for many map positions. */
+interface PoolSlot {
+  g: PIXI.Graphics;
+  tx: number; // map tile currently displayed (-1 = unassigned)
+  ty: number;
+}
 
 // Train economy mirrors (DRAFT; server @nw/shared is authoritative — these only
 // size the client's preview/cost estimates for the C4 panel). Keep in sync with
@@ -154,9 +185,24 @@ export class WorldMapScene implements Scene {
   private infoTab: 'nations' | 'season' | 'shop' = 'nations';
   private hiddenInput: HTMLInputElement | null = null;
 
-  // Graphics layers
-  private mapGfx!: PIXI.Graphics;
+  // ── Zoom & tile pool ──────────────────────────────────────────────────────
+  private zoom: 1 | 2 | 3 = 1;
+  private zoomCfgs!: [ZoomCfg, ZoomCfg, ZoomCfg];
+  private get zc(): ZoomCfg { return this.zoomCfgs[this.zoom - 1]; }
+  private get tp(): number  { return this.zc.tile; }   // current TILE_PX
+
+  // Pool (L1/L2): (poolW × poolH) slot objects, indexed modulo.
+  private pool: PoolSlot[] = [];
+  private poolContainer!: PIXI.Container;
+
+  // L3 overview: single batched Graphics (dirty-flag, rendered in update()).
+  private mapGfxL3!: PIXI.Graphics;
+  private l3Dirty = false;
+
+  // Overlay: march arrows, selected tile highlight, capital stars (fast, always redrawn).
   private overlayGfx!: PIXI.Graphics;
+
+  // Layers
   private hudLayer!: PIXI.Container;
   private modalLayer!: PIXI.Container;
   private toastLayer!: PIXI.Container;
@@ -185,6 +231,7 @@ export class WorldMapScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
+    this.zoomCfgs = makeZoomCfgs(this.w, this.h);
     this.container = new PIXI.Container();
     this.build();
     this.loadData();
@@ -216,9 +263,15 @@ export class WorldMapScene implements Scene {
     mapClip.addChild(mask);
     this.container.addChild(mapClip);
 
-    this.mapGfx = new PIXI.Graphics();
-    mapClip.addChild(this.mapGfx);
+    // L3 overview graphics (underneath pool)
+    this.mapGfxL3 = new PIXI.Graphics();
+    mapClip.addChild(this.mapGfxL3);
 
+    // Tile pool container (L1/L2)
+    this.poolContainer = new PIXI.Container();
+    mapClip.addChild(this.poolContainer);
+
+    // Overlay: capitals, march arrows, selected tile highlight
     this.overlayGfx = new PIXI.Graphics();
     mapClip.addChild(this.overlayGfx);
 
@@ -232,8 +285,9 @@ export class WorldMapScene implements Scene {
     this.toastLayer = new PIXI.Container();
     this.container.addChild(this.toastLayer);
 
+    this.buildPool();
     this.renderHud();
-    this.renderMap();
+    this.invalidatePool();
   }
 
   // ── Data loading ───────────────────────────────────────────────────────────
@@ -296,124 +350,264 @@ export class WorldMapScene implements Scene {
 
   /** Returns the tile coordinate of the viewport center + a radius to fetch. */
   private viewportCenter(): { cx: number; cy: number; r: number } {
-    const cx = Math.floor(-this.panX / TILE_PX + this.w / 2 / TILE_PX);
-    const cy = Math.floor(-this.panY / TILE_PX + (this.h - HUD_H) / 2 / TILE_PX);
-    const r  = Math.ceil(Math.max(this.w, this.h - HUD_H) / TILE_PX / 2) + 4;
+    const tp = this.tp;
+    const cx = Math.floor(-this.panX / tp + this.w / 2 / tp);
+    const cy = Math.floor(-this.panY / tp + (this.h - HUD_H) / 2 / tp);
+    const r  = Math.ceil(Math.max(this.w, this.h - HUD_H) / tp / 2) + 4;
     return { cx: Math.max(0, Math.min(this.mapW - 1, cx)), cy: Math.max(0, Math.min(this.mapH - 1, cy)), r };
   }
 
-  // ── Rendering ──────────────────────────────────────────────────────────────
+  // ── Zoom control ───────────────────────────────────────────────────────────
 
-  private renderMap(): void {
-    const g = this.mapGfx;
+  private setZoom(z: 1 | 2 | 3): void {
+    if (this.zoom === z) return;
+    // Keep map center stable across zoom levels.
+    const oldTp = this.tp;
+    const centerTileX = (-this.panX + this.w / 2) / oldTp;
+    const centerTileY = (-this.panY + (this.h - HUD_H) / 2) / oldTp;
+    this.zoom = z;
+    this.panX = this.w / 2 - centerTileX * this.tp;
+    this.panY = (this.h - HUD_H) / 2 - centerTileY * this.tp;
+    this.clampPan();
+    this.buildPool();
+    this.invalidatePool();
+    this.renderHud();
+  }
+
+  // ── Tile pool (L1 / L2) ────────────────────────────────────────────────────
+
+  private buildPool(): void {
+    // Destroy old slots.
+    for (const s of this.pool) s.g.destroy();
+    this.pool = [];
+    this.poolContainer.removeChildren();
+    if (this.zoom === 3) {
+      // L3 uses the batched Graphics path — pool stays empty.
+      this.poolContainer.visible = false;
+      this.mapGfxL3.visible = true;
+      this.l3Dirty = true;
+      return;
+    }
+    this.poolContainer.visible = true;
+    this.mapGfxL3.visible = false;
+    const { poolW, poolH } = this.zc;
+    for (let i = 0; i < poolW * poolH; i++) {
+      const g = new PIXI.Graphics();
+      this.pool.push({ g, tx: -999999, ty: -999999 });
+      this.poolContainer.addChild(g);
+    }
+  }
+
+  /** Mark all pool slots stale and refresh — called after data changes. */
+  private invalidatePool(): void {
+    if (this.zoom === 3) { this.l3Dirty = true; this.renderOverlay(); return; }
+    for (const s of this.pool) { s.tx = -999999; s.ty = -999999; }
+    this.refreshPool();
+    this.renderOverlay();
+  }
+
+  /** Modulo-wrap pool update: reposition all slots, redraw only those whose
+   *  tile content changed (i.e. that scrolled to a new map position). */
+  private refreshPool(): void {
+    if (this.zoom === 3) return;
+    const { tile: tp, poolW, poolH } = this.zc;
+    const x0 = Math.floor(-this.panX / tp);
+    const y0 = Math.floor(-this.panY / tp);
+    for (let dy = 0; dy < poolH; dy++) {
+      for (let dx = 0; dx < poolW; dx++) {
+        const tx = x0 + dx;
+        const ty = y0 + dy;
+        const si = (((ty % poolH) + poolH) % poolH) * poolW + (((tx % poolW) + poolW) % poolW);
+        const slot = this.pool[si]!;
+        slot.g.x = this.panX + tx * tp;
+        slot.g.y = this.panY + ty * tp;
+        if (slot.tx === tx && slot.ty === ty) continue;
+        slot.tx = tx; slot.ty = ty;
+        this.drawTileSlot(slot, tx, ty);
+      }
+    }
+  }
+
+  /** Redraw a single pool slot for the given map position. */
+  private drawTileSlot(slot: PoolSlot, tx: number, ty: number): void {
+    const g = slot.g;
     g.clear();
+    const tp = this.tp;
+    const inBounds = tx >= 0 && ty >= 0 && tx < this.mapW && ty < this.mapH;
+    if (!inBounds) { g.visible = false; return; }
+    g.visible = true;
 
-    const { w, h } = this;
+    const tile = this.tileCache.get(`${tx}:${ty}`);
+    const color = tile ? tileColor(tile) : TERRAIN_COLORS.neutral!;
+    const fogged = tile?.visible === false;
+
+    if (this.zoom === 1) {
+      this.drawTileL1(g, tile ?? null, color, fogged, tp);
+    } else {
+      this.drawTileL2(g, color, fogged, tp);
+    }
+  }
+
+  /** L1 detail tile: full markers — border, level dot, watchtower, fog, allySect. */
+  private drawTileL1(
+    g: PIXI.Graphics, tile: WorldTileView | null,
+    color: number, fogged: boolean, tp: number,
+  ): void {
+    g.lineStyle(0.8, 0xccbbaa, 0.5);
+    g.beginFill(color, 0.85);
+    g.drawRect(0, 0, tp - 1, tp - 1);
+    g.endFill();
+
+    if (fogged) {
+      g.lineStyle(0);
+      g.beginFill(FOG_COLOR, 0.4);
+      g.drawRect(0, 0, tp - 1, tp - 1);
+      g.endFill();
+      return;
+    }
+
+    if (tile && tile.level > 1) {
+      const dotColor = tile.mine ? 0xcc2222 : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0x2266cc : 0x888888));
+      g.lineStyle(0);
+      g.beginFill(dotColor, 0.9);
+      g.drawCircle(tp - 6, 6, 3);
+      g.endFill();
+    }
+
+    if (tile?.allySect) {
+      g.lineStyle(2, ALLY_SECT_BORDER, 0.95);
+      g.beginFill(0, 0);
+      g.drawRect(2, 2, tp - 5, tp - 5);
+      g.endFill();
+    }
+
+    if (tile?.watchtower) {
+      const tcx = tp / 2;
+      const baseY = tp - 5;
+      const towerW = Math.max(4, tp * 0.18);
+      const towerH = Math.max(7, tp * 0.36);
+      g.lineStyle(1, 0x4a3520, 0.9);
+      g.beginFill(0xe8dcc0, 0.95);
+      g.drawRect(tcx - towerW / 2, baseY - towerH, towerW, towerH);
+      g.endFill();
+      g.beginFill(0x4a3520, 0.95);
+      g.drawPolygon([
+        tcx - towerW / 2 - 1, baseY - towerH,
+        tcx + towerW / 2 + 1, baseY - towerH,
+        tcx, baseY - towerH - towerW,
+      ]);
+      g.endFill();
+    }
+  }
+
+  /** L2 medium tile: occupation color + fog only, no markers. */
+  private drawTileL2(g: PIXI.Graphics, color: number, fogged: boolean, tp: number): void {
+    g.lineStyle(0);
+    g.beginFill(color, 0.88);
+    g.drawRect(0, 0, tp - 1, tp - 1);
+    g.endFill();
+    if (fogged) {
+      g.beginFill(FOG_COLOR, 0.38);
+      g.drawRect(0, 0, tp - 1, tp - 1);
+      g.endFill();
+    }
+  }
+
+  // ── L3 overview (batched Graphics) ─────────────────────────────────────────
+  // Renders on a dirty flag in update(), so mousemove spam doesn't trigger it.
+  // Tiles grouped by color → one beginFill + N drawRect per color group (fast).
+
+  private renderMapL3(): void {
+    this.l3Dirty = false;
+    const g = this.mapGfxL3;
+    g.clear();
+    const tp = 20;
+    const { w, h, panX, panY } = this;
     const mapH = h - HUD_H;
+    const x0 = Math.floor(-panX / tp);
+    const y0 = Math.floor(-panY / tp);
+    const x1 = Math.ceil((-panX + w) / tp);
+    const y1 = Math.ceil((-panY + mapH) / tp);
 
-    // Visible tile range
-    const x0 = Math.floor(-this.panX / TILE_PX);
-    const y0 = Math.floor(-this.panY / TILE_PX);
-    const x1 = Math.ceil((-this.panX + w) / TILE_PX);
-    const y1 = Math.ceil((-this.panY + mapH) / TILE_PX);
-
+    // Group tiles by fill color for batched rendering.
+    const groups = new Map<number, number[]>(); // color → [x0,y0, x1,y1, ...]
     for (let ty = Math.max(0, y0); ty <= Math.min(this.mapH - 1, y1); ty++) {
       for (let tx = Math.max(0, x0); tx <= Math.min(this.mapW - 1, x1); tx++) {
         const tile = this.tileCache.get(`${tx}:${ty}`);
-        const px = this.panX + tx * TILE_PX;
-        const py = this.panY + ty * TILE_PX;
-
-        const color = tile ? tileColor(tile) : TERRAIN_COLORS.neutral!;
-        // G5：视野外格（visible===false）= 地形可见但局势看不清——画底层地形后罩一层铅笔灰雾。
-        const fogged = tile?.visible === false;
-
-        g.beginFill(color, 0.85);
-        g.lineStyle(0.5, 0xccbbaa, 0.5);
-        g.drawRect(px, py, TILE_PX - 1, TILE_PX - 1);
-        g.endFill();
-
-        if (fogged) {
-          g.beginFill(FOG_COLOR, 0.4);
-          g.lineStyle(0);
-          g.drawRect(px, py, TILE_PX - 1, TILE_PX - 1);
-          g.endFill();
-        } else if (tile && tile.level > 1) {
-          // Level indicator dot（视野内才画——视野外不暴露格的等级细节标记）。
-          const dotColor = tile.mine ? 0xcc2222 : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0x2266cc : 0x888888));
-          g.beginFill(dotColor, 0.9);
-          g.drawCircle(px + TILE_PX - 4, py + 4, 2);
-          g.endFill();
-        }
-
-        // G5：联盟宗门领地——金琥珀内描边标记（区别于首府星标/选区的亮黄 0xffcc00；不共享视野仅标记）。
-        if (tile?.allySect && !fogged) {
-          g.lineStyle(1.5, ALLY_SECT_BORDER, 0.95);
-          g.beginFill(0, 0);
-          g.drawRect(px + 1.5, py + 1.5, TILE_PX - 4, TILE_PX - 4);
-          g.endFill();
-        }
-
-        // §18 G5 V2 瞭望塔：可见格画一个手绘小塔（塔身 + 三角顶），标识大半径持久视野源。
-        if (tile?.watchtower && !fogged) {
-          const tcx = px + TILE_PX / 2;
-          const baseY = py + TILE_PX - 4;
-          const towerW = Math.max(3, TILE_PX * 0.22);
-          const towerH = Math.max(5, TILE_PX * 0.42);
-          g.lineStyle(1, 0x4a3520, 0.95);
-          g.beginFill(0xe8dcc0, 0.95); // 纸面米白塔身
-          g.drawRect(tcx - towerW / 2, baseY - towerH, towerW, towerH);
-          g.endFill();
-          g.beginFill(0x4a3520, 0.95); // 深墨三角顶
-          g.drawPolygon([tcx - towerW / 2 - 1, baseY - towerH, tcx + towerW / 2 + 1, baseY - towerH, tcx, baseY - towerH - towerW]);
-          g.endFill();
-        }
+        let color = tile ? tileColor(tile) : TERRAIN_COLORS.neutral!;
+        if (tile?.visible === false) color = (color & 0x7f7f7f) | 0x404040; // darken fogged
+        if (!groups.has(color)) groups.set(color, []);
+        groups.get(color)!.push(panX + tx * tp, panY + ty * tp);
       }
     }
+    for (const [color, coords] of groups) {
+      g.lineStyle(0);
+      g.beginFill(color, 0.88);
+      for (let i = 0; i < coords.length; i += 2) {
+        g.drawRect(coords[i]!, coords[i + 1]!, tp - 1, tp - 1);
+      }
+      g.endFill();
+    }
+  }
 
-    // Selected tile highlight
+  // ── Overlay (march arrows, capitals, selected tile) ────────────────────────
+  // Drawn into a separate Graphics above the tile pool. Fast to redraw (~few dozen objects).
+
+  private renderOverlay(): void {
+    const g = this.overlayGfx;
+    g.clear();
+    const tp = this.tp;
+
+    // Selected tile highlight.
     if (this.selectedTile) {
       const { x: tx, y: ty } = this.selectedTile;
-      const px = this.panX + tx * TILE_PX;
-      const py = this.panY + ty * TILE_PX;
+      const px = this.panX + tx * tp;
+      const py = this.panY + ty * tp;
       g.lineStyle(2, 0xffcc00, 1);
       g.beginFill(0xffff00, 0.15);
-      g.drawRect(px, py, TILE_PX, TILE_PX);
+      g.drawRect(px, py, tp, tp);
       g.endFill();
     }
 
-    // Capital star markers (10 nations) — drawn above tiles so they stay visible.
+    // Capital star markers (10 nations).
+    const starR = Math.max(6, tp * 0.45);
     for (const n of this.nations) {
-      const cx = this.panX + n.x * TILE_PX + TILE_PX / 2;
-      const cy = this.panY + n.y * TILE_PX + TILE_PX / 2;
-      if (cx < -TILE_PX || cy < -TILE_PX || cx > this.w + TILE_PX || cy > this.h - HUD_H + TILE_PX) continue;
-      this.drawStar(g, cx, cy, TILE_PX * 0.7, n.ownerId ? 0xffcc00 : 0xccb890, !!n.ownerId);
+      const cx = this.panX + n.x * tp + tp / 2;
+      const cy = this.panY + n.y * tp + tp / 2;
+      if (cx < -tp || cy < -tp || cx > this.w + tp || cy > this.h - HUD_H + tp) continue;
+      this.drawStar(g, cx, cy, starR, n.ownerId ? 0xffcc00 : 0xccb890, !!n.ownerId);
     }
 
-    // March arrows (line from→to + dot at destination).
-    // G5：敌方行军（mine===false，视野内才会下发）统一用敌色（蓝）+ 更粗描边，突出威胁；
-    // 己方行军按 kind 上色。
-    for (const march of this.marches) {
-      const [fx, fy] = this.parseTileId(march.fromTile);
-      const [tx2, ty2] = this.parseTileId(march.toTile);
-      const fpx = this.panX + fx * TILE_PX + TILE_PX / 2;
-      const fpy = this.panY + fy * TILE_PX + TILE_PX / 2;
-      const px = this.panX + tx2 * TILE_PX + TILE_PX / 2;
-      const py = this.panY + ty2 * TILE_PX + TILE_PX / 2;
-      const enemy = march.mine === false;
-      const col = enemy ? ENEMY_BASE_TINT
-        : march.kind === 'return' ? 0x44cc88
-        : march.kind === 'attack' ? 0xcc3333
-        : march.kind === 'reinforce' ? 0x44aacc
-        : march.kind === 'scout' ? 0x9b59b6
-        : 0xcc8844;
-      g.lineStyle(enemy ? 2.5 : 1.5, col, enemy ? 0.75 : 0.55);
-      g.moveTo(fpx, fpy);
-      g.lineTo(px, py);
-      g.lineStyle(0);
-      g.beginFill(col, 0.9);
-      g.drawCircle(px, py, enemy ? 5 : 4);
-      g.endFill();
+    // March arrows (L1/L2 only; L3 is too zoomed-out for detail).
+    if (this.zoom < 3) {
+      for (const march of this.marches) {
+        const [fx, fy] = this.parseTileId(march.fromTile);
+        const [tx2, ty2] = this.parseTileId(march.toTile);
+        const fpx = this.panX + fx * tp + tp / 2;
+        const fpy = this.panY + fy * tp + tp / 2;
+        const px  = this.panX + tx2 * tp + tp / 2;
+        const py  = this.panY + ty2 * tp + tp / 2;
+        const enemy = march.mine === false;
+        const col = enemy ? ENEMY_BASE_TINT
+          : march.kind === 'return'   ? 0x44cc88
+          : march.kind === 'attack'   ? 0xcc3333
+          : march.kind === 'reinforce'? 0x44aacc
+          : march.kind === 'scout'    ? 0x9b59b6
+          : 0xcc8844;
+        g.lineStyle(enemy ? 2.5 : 1.5, col, enemy ? 0.75 : 0.55);
+        g.moveTo(fpx, fpy);
+        g.lineTo(px, py);
+        g.lineStyle(0);
+        g.beginFill(col, 0.9);
+        g.drawCircle(px, py, enemy ? 5 : 4);
+        g.endFill();
+      }
     }
+  }
+
+  /** Legacy entry point — called from action handlers after data changes. */
+  private renderMap(): void {
+    this.invalidatePool();
   }
 
   /** Draw a 5-point star (capital marker). Filled when the nation is owned. */
@@ -562,6 +756,18 @@ export class WorldMapScene implements Scene {
     infoLbl.x = infoBtn.x + infoW / 2; infoLbl.y = infoBtn.y + infoH / 2;
     hud.addChild(infoLbl);
     this.infoBtnRect = { x: infoBtn.x, y: infoBtn.y, w: infoW, h: infoH };
+
+    // Zoom cycle button — top-left over the map, cycles L1→L2→L3→L1.
+    const zoomLabels: Record<number, string> = { 1: '🔍×1', 2: '🔍×2', 3: '🔍×3' };
+    const zoomW = 56, zoomH = 26;
+    const zoomBtn = sketchPanel(zoomW, zoomH, { fill: C.dark, border: C.accent, seed: seedFor(4, 2, zoomW) });
+    zoomBtn.x = 8; zoomBtn.y = 8;
+    hud.addChild(zoomBtn);
+    const zoomLbl = txt(zoomLabels[this.zoom] ?? '🔍', 11, C.light);
+    zoomLbl.anchor.set(0.5, 0.5);
+    zoomLbl.x = zoomBtn.x + zoomW / 2; zoomLbl.y = zoomBtn.y + zoomH / 2;
+    hud.addChild(zoomLbl);
+    this.zoomBtnRect = { x: zoomBtn.x, y: zoomBtn.y, w: zoomW, h: zoomH };
   }
 
   // ── Hit rects ──────────────────────────────────────────────────────────────
@@ -571,6 +777,7 @@ export class WorldMapScene implements Scene {
   private famBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   private aucBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   private infoBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  private zoomBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   private marchRowRects: {
     marchId: string; worldId: string; destX: number; destY: number;
     rowRect: { x: number; y: number; w: number; h: number };
@@ -1410,24 +1617,27 @@ export class WorldMapScene implements Scene {
   // ── Pan ───────────────────────────────────────────────────────────────────
 
   private centerAt(tx: number, ty: number): void {
-    this.panX = this.w / 2 - tx * TILE_PX - TILE_PX / 2;
-    this.panY = (this.h - HUD_H) / 2 - ty * TILE_PX - TILE_PX / 2;
+    const tp = this.tp;
+    this.panX = this.w / 2 - tx * tp - tp / 2;
+    this.panY = (this.h - HUD_H) / 2 - ty * tp - tp / 2;
     this.clampPan();
   }
 
   private clampPan(): void {
-    const maxX = TILE_PX * 2;
-    const maxY = TILE_PX * 2;
-    const minX = this.w - this.mapW * TILE_PX - TILE_PX * 2;
-    const minY = (this.h - HUD_H) - this.mapH * TILE_PX - TILE_PX * 2;
+    const tp = this.tp;
+    const maxX = tp * 2;
+    const maxY = tp * 2;
+    const minX = this.w - this.mapW * tp - tp * 2;
+    const minY = (this.h - HUD_H) - this.mapH * tp - tp * 2;
     this.panX = Math.min(maxX, Math.max(minX, this.panX));
     this.panY = Math.min(maxY, Math.max(minY, this.panY));
   }
 
   private screenToTile(sx: number, sy: number): { x: number; y: number } {
+    const tp = this.tp;
     return {
-      x: Math.floor((sx - this.panX) / TILE_PX),
-      y: Math.floor((sy - this.panY) / TILE_PX),
+      x: Math.floor((sx - this.panX) / tp),
+      y: Math.floor((sy - this.panY) / tp),
     };
   }
 
@@ -1443,6 +1653,13 @@ export class WorldMapScene implements Scene {
         }
       }
       this.closeModal();
+      return;
+    }
+
+    // Zoom button (top-left over the map)
+    const zb = this.zoomBtnRect;
+    if (zb.w > 0 && x >= zb.x && x <= zb.x + zb.w && y >= zb.y && y <= zb.y + zb.h) {
+      this.setZoom(((this.zoom % 3) + 1) as 1 | 2 | 3);
       return;
     }
 
@@ -1512,7 +1729,15 @@ export class WorldMapScene implements Scene {
       this.panX = x - this.dragStartX;
       this.panY = y - this.dragStartY;
       this.clampPan();
-      this.renderMap();
+      // L1/L2: pool reposition — cheap, no Graphics.clear() needed.
+      // L3: just flag dirty; actual redraw happens in update() at most 60fps.
+      if (this.zoom < 3) {
+        this.refreshPool();
+        this.renderOverlay();
+      } else {
+        this.l3Dirty = true;
+        this.renderOverlay();
+      }
     }
   }
 
@@ -1537,6 +1762,10 @@ export class WorldMapScene implements Scene {
       this.toastTimer -= dt * 1000;
       if (this.toastTimer <= 0) this.toastLayer.removeChildren();
     }
+    // L3 overview: flush dirty flag at most once per frame (60fps cap).
+    if (this.l3Dirty && this.zoom === 3) {
+      this.renderMapL3();
+    }
     // Tick the train panel's queue countdowns once per second while open.
     if (this.trainPanelOpen) {
       this.panelRepaint += dt;
@@ -1553,6 +1782,8 @@ export class WorldMapScene implements Scene {
     if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
+    for (const s of this.pool) s.g.destroy();
+    this.pool = [];
     this.container.destroy({ children: true });
   }
 }
