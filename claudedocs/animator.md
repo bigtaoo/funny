@@ -1,6 +1,6 @@
 # 动画编辑器（tools/animator）
 
-设计文档：`design/tools/animator/REQUIREMENTS.md`（§2 §3 §8）、`ARCHITECTURE.md`（§1 §2 §5 §3）、`WORKSPACE_SYNC.md`（在线工作区 + 云盘→仓库同步桥，设计中）
+设计文档：`design/tools/animator/REQUIREMENTS.md`（§2 §3 §8）、`ARCHITECTURE.md`（§1 §2 §5 §3）、`WORKSPACE_SYNC.md`（在线工作区 + 云盘→仓库同步桥，已上线 `animator.tao-wang-go.workers.dev`：Supabase 工作区 + 云端自动同步 + GitHub Action 同步桥）
 
 ```bash
 cd tools/animator && npm run start   # 端口 9091

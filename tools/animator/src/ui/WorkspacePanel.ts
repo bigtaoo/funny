@@ -12,10 +12,26 @@
 import type { EventBus, AppEvents } from '../core/EventBus';
 import type { IOController } from '../io/IOController';
 import type { WorkspaceStore, WorkspaceFile } from '../io/WorkspaceStore';
+import { DIRTY_EVENTS } from '../io/AutoSaveController';
+
+// localStorage key for the "auto-sync to workspace" preference (survives reload).
+const LS_AUTOSYNC = 'nw-animator:workspaceAutoSync';
+// Debounced upload delay. Longer than the local IndexedDB autosave (1.5s) so a
+// burst of edits batches into one cloud write instead of hammering Supabase.
+const SYNC_DEBOUNCE_MS = 4000;
 
 export class WorkspacePanel {
   private overlay: HTMLElement | null = null;
   private email: string | null = null;
+
+  // ── Cloud auto-sync state ──────────────────────────────────────────────────
+  // The workspace slot the current project is bound to. Set when the artist
+  // saves to / opens from the workspace; auto-sync keeps writing to this slot.
+  private bound: { unitKey: string; name: string } | null = null;
+  private autoSync   = false;            // toggle (persisted)
+  private syncTimer:  number | null = null;
+  private syncing     = false;           // an upload is in flight
+  private syncDirty   = false;           // edits arrived since the last upload
 
   constructor(
     private readonly bus:   EventBus<AppEvents>,
@@ -23,14 +39,24 @@ export class WorkspacePanel {
     private readonly io:    IOController,
   ) {
     document.getElementById('btn-workspace')?.addEventListener('click', () => void this.open());
+    this.autoSync = localStorage.getItem(LS_AUTOSYNC) === '1';
 
     // Keep cached email fresh so the panel renders the right state on open.
     if (this.store.isConfigured()) {
       this.store.onAuthChange(email => {
         this.email = email;
+        if (!email) { this.bound = null; this.cancelSync(); }   // signed out → stop syncing
         if (this.overlay) void this.render();
       });
       void this.store.currentEmail().then(e => { this.email = e; });
+
+      // Mirror local edits up to the bound workspace slot (debounced).
+      const schedule = () => this.scheduleSync();
+      for (const ev of DIRTY_EVENTS) this.bus.on(ev, schedule);
+      // Best-effort flush on tab-hide (more reliable than beforeunload for fetch).
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') void this.flushSyncNow();
+      });
     }
   }
 
@@ -145,6 +171,7 @@ export class WorkspacePanel {
     body.appendChild(who);
 
     body.appendChild(this.saveSection());
+    body.appendChild(this.autoSyncSection());
 
     const listHdr = document.createElement('div');
     listHdr.textContent = '工作区动画';
@@ -196,6 +223,41 @@ export class WorkspacePanel {
     return wrap;
   }
 
+  private autoSyncSection(): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-dim)';
+
+    const label = document.createElement('label');
+    label.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = this.autoSync;
+    cb.style.cssText = 'width:auto;margin:0';
+    cb.addEventListener('change', () => {
+      this.autoSync = cb.checked;
+      localStorage.setItem(LS_AUTOSYNC, cb.checked ? '1' : '0');
+      if (!cb.checked) this.cancelSync();
+      if (this.overlay) void this.render();   // refresh the hint
+    });
+    const text = document.createElement('span');
+    text.textContent = '自动同步到工作区';
+    label.append(cb, text);
+
+    const hint = document.createElement('span');
+    hint.style.cssText = 'margin-left:auto;font-size:10px';
+    if (!this.autoSync) {
+      hint.textContent = '关';
+    } else if (this.bound) {
+      hint.textContent = `→ ${this.bound.unitKey}/${this.bound.name}`;
+      hint.style.color = 'var(--accent)';
+    } else {
+      hint.textContent = '待绑定（先保存或打开一个）';
+    }
+
+    wrap.append(label, hint);
+    return wrap;
+  }
+
   private async saveCurrent(unitKey: string, name: string): Promise<void> {
     this.bus.emit('status', '正在上传到工作区…');
     try {
@@ -204,11 +266,62 @@ export class WorkspacePanel {
         this.io.buildTaoBlob(),
       ]);
       await this.store.save(unitKey, name, editorBlob, taoBlob);
+      this.bindTo(unitKey, name);              // future edits auto-sync to this slot
       this.bus.emit('status', `已保存 ${unitKey}/${name} 到工作区`);
       if (this.overlay) await this.render();   // refresh list
     } catch (err) {
       this.bus.emit('status', `保存失败：${(err as Error).message}`);
     }
+  }
+
+  // ── Cloud auto-sync ─────────────────────────────────────────────────────────
+
+  /** Bind the current project to a workspace slot; a fresh save clears the dirty flag. */
+  private bindTo(unitKey: string, name: string): void {
+    this.bound = { unitKey, name };
+    this.syncDirty = false;
+    if (this.syncTimer !== null) { clearTimeout(this.syncTimer); this.syncTimer = null; }
+  }
+
+  private cancelSync(): void {
+    if (this.syncTimer !== null) { clearTimeout(this.syncTimer); this.syncTimer = null; }
+    this.syncDirty = false;
+  }
+
+  private scheduleSync(): void {
+    if (!this.autoSync || !this.bound || !this.email || !this.store.isConfigured()) return;
+    this.syncDirty = true;
+    if (this.syncTimer !== null) clearTimeout(this.syncTimer);
+    this.syncTimer = window.setTimeout(() => { void this.flushSync(); }, SYNC_DEBOUNCE_MS);
+  }
+
+  private async flushSync(): Promise<void> {
+    this.syncTimer = null;
+    if (!this.autoSync || !this.bound || !this.email || !this.syncDirty) return;
+    if (this.syncing) { this.scheduleSync(); return; }   // retry after the in-flight upload
+    const { unitKey, name } = this.bound;
+    this.syncing = true;
+    this.syncDirty = false;
+    this.bus.emit('status', `正在同步 ${unitKey}/${name} 到工作区…`);
+    try {
+      const [editorBlob, taoBlob] = await Promise.all([
+        this.io.buildEditorBlob(),
+        this.io.buildTaoBlob(),
+      ]);
+      await this.store.save(unitKey, name, editorBlob, taoBlob);
+      this.bus.emit('status', `已自动同步 ${unitKey}/${name} · ${new Date().toLocaleTimeString()}`);
+    } catch (err) {
+      this.syncDirty = true;   // keep dirty so the next edit/flush retries
+      this.bus.emit('status', `自动同步失败：${(err as Error).message}`);
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  /** Cancel the debounce and upload immediately if there are unsynced edits. */
+  private async flushSyncNow(): Promise<void> {
+    if (this.syncTimer !== null) { clearTimeout(this.syncTimer); this.syncTimer = null; }
+    if (this.autoSync && this.bound && this.email && this.syncDirty) await this.flushSync();
   }
 
   private fileRow(f: WorkspaceFile): HTMLElement {
@@ -236,6 +349,7 @@ export class WorkspacePanel {
     try {
       const blob = await this.store.download(f.editorPath);
       await this.io.loadEditorBlob(blob, `${f.name}.tao.editor`);
+      this.bindTo(f.unitKey, f.name);          // future edits auto-sync back to this slot
       this.bus.emit('status', `已打开 ${f.unitKey}/${f.name}`);
       this.close();
     } catch (err) {

@@ -17,8 +17,9 @@ import { ProjectStore } from './ProjectStore';
 const LS_ACTIVE_KEY = 'nw-animator:activeProject';
 const DEBOUNCE_MS   = 1500;
 
-/** Events whose firing means the project content changed and should be saved. */
-const DIRTY_EVENTS: ReadonlyArray<keyof AppEvents> = [
+/** Events whose firing means the project content changed and should be saved.
+ *  Exported so the workspace cloud auto-sync reuses the exact same trigger set. */
+export const DIRTY_EVENTS: ReadonlyArray<keyof AppEvents> = [
   'kf:change', 'binding:change', 'attachment:change', 'rig:change', 'anim:list', 'images:change',
 ];
 
