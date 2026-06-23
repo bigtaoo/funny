@@ -13,7 +13,7 @@
     "paths": {
       "@nw/engine": ["../server/engine/src/index.ts"],
       "@nw/engine/*": ["../server/engine/src/*"],
-      "@nw/shared": ["../server/shared/src/index.ts"]
+      "@nw/shared": ["../server/shared/src/slg.ts"]
     }
   },
   "include": ["src/**/*", "../server/engine/src/**/*", "../server/shared/src/**/*"],
