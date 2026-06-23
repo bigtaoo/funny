@@ -5,28 +5,46 @@
   "objective": {
     "kind": "destroy_base"
   },
-  "inkRegenMult": 0.5,
+  "enemyScale": {
+    "hp": 1.63,
+    "damage": 1.45
+  },
+  "loadout": [
+    "max_1",
+    "max_2",
+    "lena_1",
+    "lena_2",
+    "mara_1",
+    "mara_2",
+    "barracks_1",
+    "barracks_2",
+    "tower_1",
+    "tower_2",
+    "haste_1",
+    "meteor_1"
+  ],
   "bannedCards": [
     "meteor_1",
     "haste_1"
   ],
+  "inkRegenMult": 0.5,
   "waves": {
     "entries": [
       {
         "atTick": 60,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 4,
         "count": 1
       },
       {
         "atTick": 60,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 7,
         "count": 1
       },
       {
         "atTick": 60,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 0,
         "count": 3,
         "spacingTicks": 10
@@ -47,21 +65,21 @@
       },
       {
         "atTick": 240,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 11,
         "count": 3,
         "spacingTicks": 10
       },
       {
         "atTick": 480,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 1,
         "count": 2,
         "spacingTicks": 40
       },
       {
         "atTick": 480,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 10,
         "count": 2,
         "spacingTicks": 40
@@ -82,42 +100,42 @@
       },
       {
         "atTick": 720,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 3,
         "count": 2,
         "spacingTicks": 35
       },
       {
         "atTick": 720,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 8,
         "count": 2,
         "spacingTicks": 35
       },
       {
         "atTick": 720,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 4,
         "count": 5,
         "spacingTicks": 7
       },
       {
         "atTick": 720,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 7,
         "count": 5,
         "spacingTicks": 7
       },
       {
         "atTick": 960,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 4,
         "count": 3,
         "spacingTicks": 32
       },
       {
         "atTick": 960,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 7,
         "count": 3,
         "spacingTicks": 32
@@ -138,28 +156,28 @@
       },
       {
         "atTick": 1200,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 0,
         "count": 3,
         "spacingTicks": 30
       },
       {
         "atTick": 1200,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 11,
         "count": 3,
         "spacingTicks": 30
       },
       {
         "atTick": 1200,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 3,
         "count": 6,
         "spacingTicks": 6
       },
       {
         "atTick": 1200,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 8,
         "count": 6,
         "spacingTicks": 6
@@ -180,5 +198,7 @@
   },
   "nameKey": "campaign.ch2.lv10.name",
   "briefKey": "campaign.ch2.lv10.brief",
-  "story": { "outroKey": "campaign.ch2.outro" }
+  "story": {
+    "outroKey": "campaign.ch2.outro"
+  }
 }

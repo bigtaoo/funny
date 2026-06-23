@@ -6,113 +6,131 @@
     "kind": "timed_defense",
     "durationTicks": 1650
   },
+  "enemyScale": {
+    "hp": 1.07,
+    "damage": 1.05
+  },
+  "loadout": [
+    "infantry_1",
+    "infantry_2",
+    "shieldbearer_1",
+    "shieldbearer_2",
+    "archer_1",
+    "archer_2",
+    "barracks_1",
+    "barracks_2",
+    "tower_1",
+    "tower_2",
+    "haste_1",
+    "meteor_1"
+  ],
   "startInk": 8,
   "waves": {
     "entries": [
       {
         "atTick": 30,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 3,
         "count": 3,
         "spacingTicks": 24
       },
       {
         "atTick": 30,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 8,
         "count": 3,
         "spacingTicks": 24
       },
       {
         "atTick": 300,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 4,
         "count": 1
       },
       {
         "atTick": 300,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 7,
         "count": 1
       },
       {
         "atTick": 360,
-        "unitType": "archer",
+        "unitType": "mara",
         "col": 4,
         "count": 2,
         "spacingTicks": 45
       },
       {
         "atTick": 360,
-        "unitType": "archer",
+        "unitType": "mara",
         "col": 7,
         "count": 2,
         "spacingTicks": 45
       },
       {
         "atTick": 720,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 1,
         "count": 4,
         "spacingTicks": 10
       },
       {
         "atTick": 720,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 10,
         "count": 4,
         "spacingTicks": 10
       },
       {
         "atTick": 1020,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 3,
         "count": 1
       },
       {
         "atTick": 1020,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 8,
         "count": 1
       },
       {
         "atTick": 1080,
-        "unitType": "archer",
+        "unitType": "mara",
         "col": 3,
         "count": 3,
         "spacingTicks": 40
       },
       {
         "atTick": 1080,
-        "unitType": "archer",
+        "unitType": "mara",
         "col": 8,
         "count": 3,
         "spacingTicks": 40
       },
       {
         "atTick": 1350,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 2,
         "count": 3,
         "spacingTicks": 15
       },
       {
         "atTick": 1350,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 4,
         "count": 3,
         "spacingTicks": 15
       },
       {
         "atTick": 1350,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 7,
         "count": 3,
         "spacingTicks": 15
       },
       {
         "atTick": 1350,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 9,
         "count": 3,
         "spacingTicks": 15

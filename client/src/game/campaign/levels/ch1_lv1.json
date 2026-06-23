@@ -5,102 +5,120 @@
   "objective": {
     "kind": "survive"
   },
+  "enemyScale": {
+    "hp": 1,
+    "damage": 1
+  },
+  "loadout": [
+    "infantry_1",
+    "infantry_2",
+    "shieldbearer_1",
+    "shieldbearer_2",
+    "archer_1",
+    "archer_2",
+    "barracks_1",
+    "barracks_2",
+    "tower_1",
+    "tower_2",
+    "haste_1",
+    "meteor_1"
+  ],
   "waves": {
     "entries": [
       {
         "atTick": 60,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 4,
         "count": 2,
         "spacingTicks": 24
       },
       {
         "atTick": 60,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 7,
         "count": 2,
         "spacingTicks": 24
       },
       {
         "atTick": 300,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 2,
         "count": 3,
         "spacingTicks": 18
       },
       {
         "atTick": 300,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 9,
         "count": 3,
         "spacingTicks": 18
       },
       {
         "atTick": 600,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 3,
         "count": 3,
         "spacingTicks": 12
       },
       {
         "atTick": 600,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 8,
         "count": 3,
         "spacingTicks": 12
       },
       {
         "atTick": 900,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 1,
         "count": 3,
         "spacingTicks": 18
       },
       {
         "atTick": 900,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 4,
         "count": 3,
         "spacingTicks": 18
       },
       {
         "atTick": 900,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 7,
         "count": 3,
         "spacingTicks": 18
       },
       {
         "atTick": 900,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 10,
         "count": 3,
         "spacingTicks": 18
       },
       {
         "atTick": 1260,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 4,
         "count": 1,
         "isBoss": true
       },
       {
         "atTick": 1260,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 7,
         "count": 1,
         "isBoss": true
       },
       {
         "atTick": 1290,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 2,
         "count": 2,
         "spacingTicks": 15
       },
       {
         "atTick": 1290,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 9,
         "count": 2,
         "spacingTicks": 15
@@ -120,5 +138,7 @@
   },
   "nameKey": "campaign.ch1.lv1.name",
   "briefKey": "campaign.ch1.lv1.brief",
-  "story": { "introKey": "campaign.ch1.intro" }
+  "story": {
+    "introKey": "campaign.ch1.intro"
+  }
 }

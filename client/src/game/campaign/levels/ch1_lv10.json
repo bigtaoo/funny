@@ -5,158 +5,176 @@
   "objective": {
     "kind": "boss"
   },
+  "enemyScale": {
+    "hp": 1.63,
+    "damage": 1.45
+  },
+  "loadout": [
+    "infantry_1",
+    "infantry_2",
+    "shieldbearer_1",
+    "shieldbearer_2",
+    "archer_1",
+    "archer_2",
+    "barracks_1",
+    "barracks_2",
+    "tower_1",
+    "tower_2",
+    "haste_1",
+    "meteor_1"
+  ],
   "waves": {
     "entries": [
       {
         "atTick": 60,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 1,
         "count": 3,
         "spacingTicks": 15
       },
       {
         "atTick": 60,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 10,
         "count": 3,
         "spacingTicks": 15
       },
       {
         "atTick": 240,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 4,
         "count": 4,
         "spacingTicks": 8
       },
       {
         "atTick": 240,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 7,
         "count": 4,
         "spacingTicks": 8
       },
       {
         "atTick": 480,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 3,
         "count": 3,
         "spacingTicks": 20
       },
       {
         "atTick": 480,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 8,
         "count": 3,
         "spacingTicks": 20
       },
       {
         "atTick": 480,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 0,
         "count": 2,
         "spacingTicks": 40
       },
       {
         "atTick": 480,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 11,
         "count": 2,
         "spacingTicks": 40
       },
       {
         "atTick": 720,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 1,
         "count": 5,
         "spacingTicks": 6
       },
       {
         "atTick": 720,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 10,
         "count": 5,
         "spacingTicks": 6
       },
       {
         "atTick": 720,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 4,
         "count": 2,
         "spacingTicks": 35
       },
       {
         "atTick": 720,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 7,
         "count": 2,
         "spacingTicks": 35
       },
       {
         "atTick": 960,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 2,
         "count": 3,
         "spacingTicks": 30
       },
       {
         "atTick": 960,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 9,
         "count": 3,
         "spacingTicks": 30
       },
       {
         "atTick": 960,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 4,
         "count": 3,
         "spacingTicks": 18
       },
       {
         "atTick": 960,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 7,
         "count": 3,
         "spacingTicks": 18
       },
       {
         "atTick": 1200,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 4,
         "count": 1,
         "isBoss": true
       },
       {
         "atTick": 1200,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 7,
         "count": 1,
         "isBoss": true
       },
       {
         "atTick": 1200,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 0,
         "count": 5,
         "spacingTicks": 6
       },
       {
         "atTick": 1200,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 11,
         "count": 5,
         "spacingTicks": 6
       },
       {
         "atTick": 1200,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 3,
         "count": 3,
         "spacingTicks": 18
       },
       {
         "atTick": 1200,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 8,
         "count": 3,
         "spacingTicks": 18
@@ -177,5 +195,7 @@
   },
   "nameKey": "campaign.ch1.lv10.name",
   "briefKey": "campaign.ch1.lv10.brief",
-  "story": { "outroKey": "campaign.ch1.outro" }
+  "story": {
+    "outroKey": "campaign.ch1.outro"
+  }
 }

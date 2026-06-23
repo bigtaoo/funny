@@ -5,6 +5,24 @@
   "objective": {
     "kind": "survive"
   },
+  "enemyScale": {
+    "hp": 1.07,
+    "damage": 1.05
+  },
+  "loadout": [
+    "max_1",
+    "max_2",
+    "lena_1",
+    "lena_2",
+    "mara_1",
+    "mara_2",
+    "barracks_1",
+    "barracks_2",
+    "tower_1",
+    "tower_2",
+    "haste_1",
+    "meteor_1"
+  ],
   "startInk": 10,
   "waves": {
     "entries": [
@@ -24,14 +42,14 @@
       },
       {
         "atTick": 420,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 3,
         "count": 3,
         "spacingTicks": 12
       },
       {
         "atTick": 420,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 8,
         "count": 3,
         "spacingTicks": 12
@@ -59,14 +77,14 @@
       },
       {
         "atTick": 900,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 0,
         "count": 4,
         "spacingTicks": 9
       },
       {
         "atTick": 900,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 11,
         "count": 4,
         "spacingTicks": 9
@@ -94,14 +112,14 @@
       },
       {
         "atTick": 1140,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 4,
         "count": 4,
         "spacingTicks": 8
       },
       {
         "atTick": 1140,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 7,
         "count": 4,
         "spacingTicks": 8

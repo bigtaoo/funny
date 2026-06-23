@@ -5,6 +5,24 @@
   "objective": {
     "kind": "survive"
   },
+  "enemyScale": {
+    "hp": 1,
+    "damage": 1
+  },
+  "loadout": [
+    "max_1",
+    "max_2",
+    "lena_1",
+    "lena_2",
+    "mara_1",
+    "mara_2",
+    "barracks_1",
+    "barracks_2",
+    "tower_1",
+    "tower_2",
+    "haste_1",
+    "meteor_1"
+  ],
   "inkRegenMult": 0.7,
   "waves": {
     "entries": [
@@ -30,14 +48,14 @@
       },
       {
         "atTick": 330,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 1,
         "count": 3,
         "spacingTicks": 12
       },
       {
         "atTick": 330,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 10,
         "count": 3,
         "spacingTicks": 12
@@ -65,14 +83,14 @@
       },
       {
         "atTick": 810,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 4,
         "count": 4,
         "spacingTicks": 9
       },
       {
         "atTick": 810,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 7,
         "count": 4,
         "spacingTicks": 9
@@ -120,5 +138,7 @@
   },
   "nameKey": "campaign.ch2.lv1.name",
   "briefKey": "campaign.ch2.lv1.brief",
-  "story": { "introKey": "campaign.ch2.intro" }
+  "story": {
+    "introKey": "campaign.ch2.intro"
+  }
 }

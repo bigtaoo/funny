@@ -28,6 +28,14 @@ export interface LevelDefinition {
   objective: ObjectiveSpec;
   /** Scripted enemy wave timeline. */
   waves: WaveScript;
+  /**
+   * Per-level enemy (Top side) stat scaling (§4.10). When present, wave-spawned
+   * enemies use an INDEPENDENT base blueprint (cloned from the PvP constants, free
+   * of the player's own progression — closes the "敌人白嫖玩家养成" leak) multiplied
+   * by these factors. Omitted → enemies share the player's campaign blueprints
+   * (legacy behavior; ch3~ch6 untouched). hp/damage default to 1 when partial.
+   */
+  enemyScale?: { hp?: number; damage?: number };
 
   // ── Reserved for later steps (typed now, not yet consumed in P0) ──────────
   /** Board shaping: disabled lanes / non-buildable / impassable cells (§4.1). */

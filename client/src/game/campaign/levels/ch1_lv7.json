@@ -5,198 +5,216 @@
   "objective": {
     "kind": "survive"
   },
+  "enemyScale": {
+    "hp": 1.42,
+    "damage": 1.3
+  },
+  "loadout": [
+    "infantry_1",
+    "infantry_2",
+    "shieldbearer_1",
+    "shieldbearer_2",
+    "archer_1",
+    "archer_2",
+    "barracks_1",
+    "barracks_2",
+    "tower_1",
+    "tower_2",
+    "haste_1",
+    "meteor_1"
+  ],
   "waves": {
     "entries": [
       {
         "atTick": 60,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 0,
         "count": 2,
         "spacingTicks": 18
       },
       {
         "atTick": 60,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 4,
         "count": 2,
         "spacingTicks": 18
       },
       {
         "atTick": 60,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 7,
         "count": 2,
         "spacingTicks": 18
       },
       {
         "atTick": 60,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 11,
         "count": 2,
         "spacingTicks": 18
       },
       {
         "atTick": 300,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 1,
         "count": 3,
         "spacingTicks": 10
       },
       {
         "atTick": 300,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 3,
         "count": 3,
         "spacingTicks": 10
       },
       {
         "atTick": 300,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 8,
         "count": 3,
         "spacingTicks": 10
       },
       {
         "atTick": 300,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 10,
         "count": 3,
         "spacingTicks": 10
       },
       {
         "atTick": 540,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 4,
         "count": 2,
         "spacingTicks": 25
       },
       {
         "atTick": 540,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 7,
         "count": 2,
         "spacingTicks": 25
       },
       {
         "atTick": 540,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 0,
         "count": 3,
         "spacingTicks": 15
       },
       {
         "atTick": 540,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 11,
         "count": 3,
         "spacingTicks": 15
       },
       {
         "atTick": 780,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 2,
         "count": 1
       },
       {
         "atTick": 780,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 9,
         "count": 1
       },
       {
         "atTick": 780,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 4,
         "count": 4,
         "spacingTicks": 8
       },
       {
         "atTick": 780,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 7,
         "count": 4,
         "spacingTicks": 8
       },
       {
         "atTick": 1020,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 1,
         "count": 2,
         "spacingTicks": 20
       },
       {
         "atTick": 1020,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 10,
         "count": 2,
         "spacingTicks": 20
       },
       {
         "atTick": 1020,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 3,
         "count": 2,
         "spacingTicks": 35
       },
       {
         "atTick": 1020,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 8,
         "count": 2,
         "spacingTicks": 35
       },
       {
         "atTick": 1020,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 0,
         "count": 3,
         "spacingTicks": 8
       },
       {
         "atTick": 1020,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 11,
         "count": 3,
         "spacingTicks": 8
       },
       {
         "atTick": 1320,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 4,
         "count": 2,
         "spacingTicks": 35
       },
       {
         "atTick": 1320,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 7,
         "count": 2,
         "spacingTicks": 35
       },
       {
         "atTick": 1320,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 2,
         "count": 3,
         "spacingTicks": 18
       },
       {
         "atTick": 1320,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 9,
         "count": 3,
         "spacingTicks": 18
       },
       {
         "atTick": 1320,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 1,
         "count": 4,
         "spacingTicks": 6
       },
       {
         "atTick": 1320,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 10,
         "count": 4,
         "spacingTicks": 6

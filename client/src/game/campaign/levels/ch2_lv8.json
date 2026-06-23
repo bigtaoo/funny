@@ -5,9 +5,13 @@
   "objective": {
     "kind": "survive"
   },
+  "enemyScale": {
+    "hp": 1.49,
+    "damage": 1.35
+  },
   "loadout": [
-    "infantry_1",
-    "infantry_2",
+    "max_1",
+    "max_2",
     "meteor_1",
     "haste_1"
   ],
@@ -29,20 +33,20 @@
       },
       {
         "atTick": 300,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 3,
         "count": 1
       },
       {
         "atTick": 300,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 1,
         "count": 4,
         "spacingTicks": 9
       },
       {
         "atTick": 300,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 10,
         "count": 4,
         "spacingTicks": 9
@@ -63,21 +67,21 @@
       },
       {
         "atTick": 540,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 0,
         "count": 4,
         "spacingTicks": 8
       },
       {
         "atTick": 780,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 4,
         "count": 2,
         "spacingTicks": 38
       },
       {
         "atTick": 780,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 7,
         "count": 2,
         "spacingTicks": 38
@@ -98,42 +102,42 @@
       },
       {
         "atTick": 1020,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 0,
         "count": 2,
         "spacingTicks": 35
       },
       {
         "atTick": 1020,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 11,
         "count": 2,
         "spacingTicks": 35
       },
       {
         "atTick": 1020,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 3,
         "count": 5,
         "spacingTicks": 7
       },
       {
         "atTick": 1020,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 8,
         "count": 5,
         "spacingTicks": 7
       },
       {
         "atTick": 1260,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 3,
         "count": 3,
         "spacingTicks": 32
       },
       {
         "atTick": 1260,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 8,
         "count": 3,
         "spacingTicks": 32

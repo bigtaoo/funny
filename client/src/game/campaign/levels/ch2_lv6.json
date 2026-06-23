@@ -5,6 +5,24 @@
   "objective": {
     "kind": "survive"
   },
+  "enemyScale": {
+    "hp": 1.35,
+    "damage": 1.25
+  },
+  "loadout": [
+    "max_1",
+    "max_2",
+    "lena_1",
+    "lena_2",
+    "mara_1",
+    "mara_2",
+    "barracks_1",
+    "barracks_2",
+    "tower_1",
+    "tower_2",
+    "haste_1",
+    "meteor_1"
+  ],
   "bannedCards": [
     "tower_1",
     "tower_2"
@@ -12,7 +30,10 @@
   "hazards": [
     {
       "col": 5,
-      "rowRange": [3, 14],
+      "rowRange": [
+        3,
+        14
+      ],
       "effect": "fog"
     }
   ],
@@ -48,7 +69,7 @@
       },
       {
         "atTick": 300,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 4,
         "count": 3,
         "spacingTicks": 9
@@ -76,14 +97,14 @@
       },
       {
         "atTick": 780,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 1,
         "count": 5,
         "spacingTicks": 7
       },
       {
         "atTick": 780,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 10,
         "count": 5,
         "spacingTicks": 7
@@ -104,14 +125,14 @@
       },
       {
         "atTick": 1020,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 4,
         "count": 2,
         "spacingTicks": 40
       },
       {
         "atTick": 1020,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 7,
         "count": 2,
         "spacingTicks": 40
@@ -132,28 +153,28 @@
       },
       {
         "atTick": 1260,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 0,
         "count": 2,
         "spacingTicks": 35
       },
       {
         "atTick": 1260,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 11,
         "count": 2,
         "spacingTicks": 35
       },
       {
         "atTick": 1260,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 3,
         "count": 5,
         "spacingTicks": 7
       },
       {
         "atTick": 1260,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 8,
         "count": 5,
         "spacingTicks": 7

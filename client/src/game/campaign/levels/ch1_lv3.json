@@ -5,7 +5,24 @@
   "objective": {
     "kind": "survive"
   },
-  "startInk": 6,
+  "enemyScale": {
+    "hp": 1.14,
+    "damage": 1.1
+  },
+  "loadout": [
+    "infantry_1",
+    "infantry_2",
+    "shieldbearer_1",
+    "shieldbearer_2",
+    "archer_1",
+    "archer_2",
+    "barracks_1",
+    "barracks_2",
+    "tower_1",
+    "tower_2",
+    "haste_1",
+    "meteor_1"
+  ],
   "board": {
     "cellMask": {
       "noBuild": [
@@ -28,180 +45,181 @@
       ]
     }
   },
+  "startInk": 6,
   "waves": {
     "entries": [
       {
         "atTick": 60,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 0,
         "count": 4,
         "spacingTicks": 10
       },
       {
         "atTick": 60,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 11,
         "count": 4,
         "spacingTicks": 10
       },
       {
         "atTick": 240,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 3,
         "count": 3,
         "spacingTicks": 15
       },
       {
         "atTick": 240,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 8,
         "count": 3,
         "spacingTicks": 15
       },
       {
         "atTick": 480,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 4,
         "count": 1
       },
       {
         "atTick": 480,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 7,
         "count": 1
       },
       {
         "atTick": 540,
-        "unitType": "archer",
+        "unitType": "mara",
         "col": 4,
         "count": 3,
         "spacingTicks": 42
       },
       {
         "atTick": 540,
-        "unitType": "archer",
+        "unitType": "mara",
         "col": 7,
         "count": 3,
         "spacingTicks": 42
       },
       {
         "atTick": 840,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 1,
         "count": 5,
         "spacingTicks": 8
       },
       {
         "atTick": 840,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 2,
         "count": 5,
         "spacingTicks": 8
       },
       {
         "atTick": 840,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 9,
         "count": 5,
         "spacingTicks": 8
       },
       {
         "atTick": 840,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 10,
         "count": 5,
         "spacingTicks": 8
       },
       {
         "atTick": 1140,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 3,
         "count": 1
       },
       {
         "atTick": 1140,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 8,
         "count": 1
       },
       {
         "atTick": 1200,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 3,
         "count": 3,
         "spacingTicks": 15
       },
       {
         "atTick": 1200,
-        "unitType": "infantry",
+        "unitType": "max",
         "col": 8,
         "count": 3,
         "spacingTicks": 15
       },
       {
         "atTick": 1260,
-        "unitType": "archer",
+        "unitType": "mara",
         "col": 3,
         "count": 2,
         "spacingTicks": 40
       },
       {
         "atTick": 1260,
-        "unitType": "archer",
+        "unitType": "mara",
         "col": 8,
         "count": 2,
         "spacingTicks": 40
       },
       {
         "atTick": 1500,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 4,
         "count": 1,
         "isBoss": true
       },
       {
         "atTick": 1500,
-        "unitType": "shieldbearer",
+        "unitType": "lena",
         "col": 7,
         "count": 1,
         "isBoss": true
       },
       {
         "atTick": 1500,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 2,
         "count": 1
       },
       {
         "atTick": 1500,
-        "unitType": "ironclad",
+        "unitType": "lena",
         "col": 9,
         "count": 1
       },
       {
         "atTick": 1530,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 0,
         "count": 4,
         "spacingTicks": 8
       },
       {
         "atTick": 1530,
-        "unitType": "runner",
+        "unitType": "max",
         "col": 11,
         "count": 4,
         "spacingTicks": 8
       },
       {
         "atTick": 1560,
-        "unitType": "archer",
+        "unitType": "mara",
         "col": 4,
         "count": 3,
         "spacingTicks": 36
       },
       {
         "atTick": 1560,
-        "unitType": "archer",
+        "unitType": "mara",
         "col": 7,
         "count": 3,
         "spacingTicks": 36

@@ -473,6 +473,34 @@ if (total - dead < needed - arrived) → 无法完成，玩家败
 
 ---
 
+## 4.10 单阵营大关锁定 + 敌人按关缩放（2026-06-23 拍板并实现）
+
+**目的**：第一、二章是玩家认识两位主角与世界观的关键，故把它们做成**单阵营对单阵营**的教学/叙事关：
+
+| 大关（= 章节） | 玩家卡池（`loadout`） | 敌人波次（`waves[].unitType`） |
+|---|---|---|
+| 第一章 ch1（Tao） | Tao 三卡 `infantry/shieldbearer/archer`（各 _1/_2）+ 建筑/法术 | 只出 Anna 三卡 `max/lena/mara` |
+| 第二章 ch2（Anna） | Anna 三卡 `max/lena/mara`（各 _1/_2）+ 建筑/法术 | 只出 Tao 三卡 `infantry/shieldbearer/archer` |
+| ch3~ch6 | 不动（保持原设计） | 不动 |
+
+- **建筑/法术不变**：`barracks/tower` + `haste/meteor` 仍进每关 `loadout`；关卡原有的建筑/法术 `bannedCards`（ch2_lv3 禁 barracks、ch2_lv6 禁 tower、ch2_lv10 禁 meteor/haste）与 `levelSpells`（rockslide/bridge_collapse）保留。
+- **敌人 5 种收敛为对方 3 卡**（角色对应）：轻/快 `infantry/runner`→先锋（`max`/`infantry`）；重/坦 `shieldbearer/ironclad`→哨卫（`lena`/`shieldbearer`）；远程 `archer`→游击（`mara`/`archer`）。
+- **受限 loadout 保意图换阵营**：ch2_lv4（双近战）、ch2_lv8（近战+法术）原是 Tao 受限阵容，按 `infantry→max / shieldbearer→lena` 等价改成 Anna。
+- 玩家卡池后期若新增建筑/法术，沿用「整章 `loadout` 白名单」即可继续锁定。
+
+### 敌人按关缩放：`LevelDef.enemyScale?: { hp?: number; damage?: number }`
+
+| 字段 | `enemyScale?: { hp?: number; damage?: number }`（缺省 = 旧行为，ch3~ch6 不受影响） |
+|---|---|
+| 语义 | 配置后，**波次敌人（Top 侧）改用一套独立的、无玩家养成的基础蓝图**（`buildPvpBlueprints()` 的克隆），再乘以 hp/damage 系数 |
+| 解决的问题 | 修复「敌人白嫖玩家养成」漏洞——蓝图按 `unitType` 敌我共享，第二章敌人用的正是玩家第一章练满级的 Tao 卡；独立基础蓝图把敌人强度与玩家养成解耦 |
+| 引擎 | `GameEngine` 构造时按 `level.enemyScale` 预算 `enemyWaveBlueprints`；`spawnEnemyUnit()` 改用它（不再用 `state.unitBlueprints`）。仅 `campaign` 模式生效，`siege` 的 garrison/attackerArmy 不受影响 |
+| 本期曲线 | ch1/ch2 各 10 关：`hp = 1+(lv-1)*0.07`、`damage = 1+(lv-1)*0.05`（lv1=1.0 基线即享受解耦，lv10 ≈ hp1.63/dmg1.45） |
+
+**接线**：`LevelDefinition`（`enemyScale` 字段）、`levelSchema.ts`（解析+校验 >0）、`GameEngine.ts`（`enemyWaveBlueprints` + 缩放构造 + `spawnEnemyUnit` 改用）。20 个关卡 JSON 经一次性脚本批量改写。**验证**：engine `tsc --noEmit` + `npm test`（16/16）+ 20 关 `parseLevelDefinition` 全通过；client `tsc --noEmit` + `build:web` 生产构建通过。
+
+---
+
 ## 5. 数据结构草案
 
 > 与现有类型对齐：`PlayerCommand`、`UnitType`、`col/row`、tick 计时。字段名最终以实现为准。

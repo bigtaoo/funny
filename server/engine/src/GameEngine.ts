@@ -51,6 +51,7 @@ import {
   SpellType,
   sideToOwner,
   UnitType,
+  UnitBlueprint,
 } from './types';
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
@@ -98,6 +99,12 @@ class GameEngineImpl implements IGameEngine {
   private readonly attackerArmyUnits: Unit[] = [];
   /** Defender buildings (U10): pre-placed buildings awaiting their placed events. */
   private readonly defenderBuildingList: Building[] = [];
+  /**
+   * Blueprints used by wave-spawned enemies (§4.10). Defaults to the shared
+   * {@link GameState.unitBlueprints}; when a campaign level sets `enemyScale`,
+   * it's an independent, progression-free, per-level-scaled set instead.
+   */
+  private enemyWaveBlueprints!: Record<UnitType, UnitBlueprint>;
 
   constructor(config: GameConfig, input: InputSource) {
     this.input      = input;
@@ -130,6 +137,26 @@ class GameEngineImpl implements IGameEngine {
         : this.mode === 'siege'
         ? buildSiegeBlueprints(config.pveUpgrades ?? {}, config.equipment, config.unitLevels)
         : buildPvpBlueprints();
+
+    // Enemy (Top side) wave blueprints (§4.10). By default enemies share the
+    // player's campaign blueprints. When a campaign level sets `enemyScale`,
+    // wave enemies instead use a progression-free base set (so the player's own
+    // unit levels / equipment / upgrades can't leak into same-type enemies —
+    // matters in ch2 where the bot fields the player's ch1-leveled Tao units)
+    // multiplied by the per-level hp / damage factors.
+    this.enemyWaveBlueprints = this.state.unitBlueprints;
+    const enemyScale = this.mode === 'campaign' ? config.level?.enemyScale : undefined;
+    if (enemyScale) {
+      const hpMult  = enemyScale.hp     ?? 1;
+      const dmgMult = enemyScale.damage ?? 1;
+      const scaled = buildPvpBlueprints();
+      for (const key of Object.keys(scaled) as UnitType[]) {
+        const bp = scaled[key];
+        bp.hp     = Math.max(1, Math.round(bp.hp * hpMult));
+        bp.attack = Math.max(1, Math.round(bp.attack * dmgMult));
+      }
+      this.enemyWaveBlueprints = scaled;
+    }
 
     if (pve) {
       if (!config.level) throw new Error(`${this.mode} mode requires a level definition`);
@@ -740,7 +767,7 @@ class GameEngineImpl implements IGameEngine {
     const laneLen  = this.level?.board?.laneLength;
     const lane = laneLen?.[String(col)];
     const spawnRow = lane !== undefined ? BOARD_ROWS - lane : TOP_SPAWN_ROW;
-    const unit = new Unit(unitType, side, col, spawnRow, this.state.unitBlueprints[unitType]);
+    const unit = new Unit(unitType, side, col, spawnRow, this.enemyWaveBlueprints[unitType]);
     if (isBoss) {
       unit.isBoss = true;
       this.state.bossUnitIds.add(unit.id);

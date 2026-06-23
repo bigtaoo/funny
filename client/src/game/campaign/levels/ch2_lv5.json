@@ -5,11 +5,35 @@
   "objective": {
     "kind": "survive"
   },
-  "inkRegenMult": 0.5,
-  "levelSpells": [
-    { "cardId": "rockslide", "initialCount": 1 },
-    { "cardId": "bridge_collapse", "initialCount": 1 }
+  "enemyScale": {
+    "hp": 1.28,
+    "damage": 1.2
+  },
+  "loadout": [
+    "max_1",
+    "max_2",
+    "lena_1",
+    "lena_2",
+    "mara_1",
+    "mara_2",
+    "barracks_1",
+    "barracks_2",
+    "tower_1",
+    "tower_2",
+    "haste_1",
+    "meteor_1"
   ],
+  "levelSpells": [
+    {
+      "cardId": "rockslide",
+      "initialCount": 1
+    },
+    {
+      "cardId": "bridge_collapse",
+      "initialCount": 1
+    }
+  ],
+  "inkRegenMult": 0.5,
   "waves": {
     "entries": [
       {
@@ -28,14 +52,14 @@
       },
       {
         "atTick": 360,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 3,
         "count": 3,
         "spacingTicks": 10
       },
       {
         "atTick": 360,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 8,
         "count": 3,
         "spacingTicks": 10
@@ -56,27 +80,27 @@
       },
       {
         "atTick": 840,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 4,
         "count": 1
       },
       {
         "atTick": 840,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 2,
         "count": 4,
         "spacingTicks": 9
       },
       {
         "atTick": 840,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 9,
         "count": 4,
         "spacingTicks": 9
       },
       {
         "atTick": 1080,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 7,
         "count": 1
       },
@@ -103,28 +127,28 @@
       },
       {
         "atTick": 1320,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 3,
         "count": 2,
         "spacingTicks": 38
       },
       {
         "atTick": 1320,
-        "unitType": "ironclad",
+        "unitType": "shieldbearer",
         "col": 8,
         "count": 2,
         "spacingTicks": 38
       },
       {
         "atTick": 1320,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 4,
         "count": 4,
         "spacingTicks": 8
       },
       {
         "atTick": 1320,
-        "unitType": "runner",
+        "unitType": "infantry",
         "col": 7,
         "count": 4,
         "spacingTicks": 8

@@ -439,6 +439,22 @@ export function parseLevelDefinition(raw: unknown, ctx = 'level'): LevelDefiniti
     });
   }
 
+  if (raw.enemyScale !== undefined) {
+    if (!isObject(raw.enemyScale)) fail(`${ctx}.enemyScale`, 'expected an {hp?, damage?} object');
+    const es: NonNullable<LevelDefinition['enemyScale']> = {};
+    if (raw.enemyScale.hp !== undefined) {
+      const hp = num(raw.enemyScale.hp, `${ctx}.enemyScale.hp`);
+      if (hp <= 0) fail(`${ctx}.enemyScale.hp`, `must be > 0, got ${hp}`);
+      es.hp = hp;
+    }
+    if (raw.enemyScale.damage !== undefined) {
+      const dmg = num(raw.enemyScale.damage, `${ctx}.enemyScale.damage`);
+      if (dmg <= 0) fail(`${ctx}.enemyScale.damage`, `must be > 0, got ${dmg}`);
+      es.damage = dmg;
+    }
+    if (es.hp !== undefined || es.damage !== undefined) level.enemyScale = es;
+  }
+
   const escorts = parseEscorts(raw.escorts, `${ctx}.escorts`);
   if (escorts && escorts.length > 0) level.escorts = escorts;
 
