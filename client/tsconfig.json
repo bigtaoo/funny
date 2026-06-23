@@ -16,7 +16,7 @@
       "@nw/shared": ["../server/shared/src/slg.ts"]
     }
   },
-  "include": ["src/**/*", "../server/engine/src/**/*", "../server/shared/src/**/*"],
+  "include": ["src/**/*", "../server/engine/src/**/*", "../server/shared/src/slg.ts"],
   "exclude": [
     "node_modules",
     "dist",
