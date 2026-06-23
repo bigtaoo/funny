@@ -22,6 +22,8 @@ services:
     environment:
       # 客户端连这个地址做房间/匹配；E2E 断言 gateway socket 用的是这个、不是 meta base。
       NW_GATEWAY_PUBLIC_WS_URL: ws://localhost:8086/gw
+      # CI 所有请求都来自同一 IP，禁用限流避免 E2E+负载冒烟互相消耗 auth 配额。
+      NW_AUTH_RATE_LIMIT: '0'
     ports:
       - "18080:8080"
     healthcheck:
