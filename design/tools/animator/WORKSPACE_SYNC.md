@@ -99,6 +99,7 @@
   1. checkout 仓库。
   2. 用 repo secret `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` 列出并下载 `animations` 桶全部对象。
   3. 按 `art/units/manifest.json` 把每个 `unitKey` 的 `.tao.editor` / `.tao` 写入对应仓库路径，并复制 `.tao` → `gameCopy`。**仅内容真变更才写**（见下「ZIP 内容比对」）。
+  3b. **自动发现兜底**：再列举 `units/` 全部子目录，凡 **manifest 未登记**的 `unitKey`，把其 `.tao.editor`（源主文件）+ `.tao` 写到默认路径 `art/units/<unitKey>/<name>.tao(.editor)`——保证美术新建的兵种源文件不会因没人手填 manifest 而漏同步、误删即丢。**不写 `gameCopy`**：接入游戏构建仍需人工补 manifest 条目这一明确动作。路径段含 `/ \ ..` 的一律跳过（防越界写）。
   4. 若有 diff：用 `peter-evans/create-pull-request` 开/更新 PR（分支 `anim-sync/auto`，标题 `chore(anim): 从工作区同步动画`，正文列出变更的 unit + 最后保存者）。
 - **不直接推 main**：始终 PR，维护者 review 后 merge → 触发 client 重新构建。
 
@@ -157,6 +158,9 @@
   - **v1 限制**：绑定为会话级（刷新后需重新打开/保存才再绑定；开关偏好持久），避免刷新后把内容错写到旧槽位；本地 IndexedDB 自动存仍兜底内容不丢。
 - 历史双扩展名残件已清理（commit 3e78fb7d）。
 - **登录会话持久化（2026-06-23）**：此前 `currentEmail()` 用 `getUser()`（拿 token 去服务器 revalidate），access token 默认 1h 过期后即判登出、被打回 magic-link。改为 `getSession()`（读本地持久会话 + 用 refresh token 自动续签）；并在 `createClient` 显式开 `persistSession / autoRefreshToken / detectSessionInUrl` + 固定 `storageKey: 'nw-animator-auth'`。登录后长期免重登（除非主动登出或 refresh token 失效）。
+- **保存反馈进弹窗 + 自动发现兜底（2026-06-23）**：
+  - `ui/WorkspacePanel.ts`：「保存到工作区」按钮在 unitKey/name 未填 / 保存失败时，原本只 emit 底栏 `status`（一闪即逝、易漏），看着像按钮无效。新增模态内联提示行 `setSaveHint(msg, kind)`——未填字段时提示「请先填 unitKey 和 name」并聚焦缺失输入框；保存失败时在弹窗内显示错误 + 「若未登录请重发登录链接」。
+  - `tools/animator/scripts/anim-sync.mjs`：新增 `listChildren(prefix)`（Storage REST `object/list`）做**自动发现**——manifest 未登记的 unitKey 也把 `.tao.editor`+`.tao` 写到 `art/units/<unitKey>/<name>`，杜绝新建兵种源文件因漏填 manifest 而丢失；不写 `gameCopy`（接入游戏构建仍需人工补 manifest）；路径段含 `/ \ ..` 跳过。列举失败时 graceful 降级（manifest 单元照常同步）。`tsc --noEmit` + `node --check` 通过。
 
 ---
 

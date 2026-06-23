@@ -23,6 +23,9 @@ const SYNC_DEBOUNCE_MS = 4000;
 export class WorkspacePanel {
   private overlay: HTMLElement | null = null;
   private email: string | null = null;
+  // Inline message slot under the save button (rebuilt on each render). Routes
+  // "what you still need to do" feedback into the modal instead of the bottom bar.
+  private saveHint: HTMLElement | null = null;
 
   // ── Cloud auto-sync state ──────────────────────────────────────────────────
   // The workspace slot the current project is bound to. Set when the artist
@@ -199,9 +202,12 @@ export class WorkspacePanel {
   }
 
   private saveSection(): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.style.cssText =
-      'display:flex;gap:6px;align-items:center;border-top:1px solid var(--border);padding-top:10px';
+    const col = document.createElement('div');
+    col.style.cssText =
+      'display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--border);padding-top:10px';
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:6px;align-items:center';
     const unit = document.createElement('input');
     unit.type = 'text';
     unit.placeholder = 'unitKey (如 archer)';
@@ -215,12 +221,38 @@ export class WorkspacePanel {
     btn.className = 'primary sm';
     btn.addEventListener('click', () => {
       const u = unit.value.trim(), n = name.value.trim();
-      if (!u || !n) { this.bus.emit('status', '请填写 unitKey 和 name'); return; }
+      if (!u || !n) {
+        // The button looks dead when fields are blank — say what's missing,
+        // in the modal, instead of a status-bar flash the artist won't notice.
+        this.setSaveHint('⚠ 请先填写 unitKey 和 name（如 archer / archer），再点保存到工作区。', 'warn');
+        (!u ? unit : name).focus();
+        return;
+      }
+      this.setSaveHint('');
       btn.disabled = true;
       void this.saveCurrent(u, n).finally(() => { btn.disabled = false; });
     });
-    wrap.append(unit, name, btn);
-    return wrap;
+    row.append(unit, name, btn);
+
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:11px;line-height:1.5;display:none';
+    this.saveHint = hint;
+
+    col.append(row, hint);
+    return col;
+  }
+
+  /** Show an actionable message right under the save button (inside the modal),
+   *  so feedback isn't lost in the bottom status bar. Empty msg hides it. */
+  private setSaveHint(msg: string, kind: 'warn' | 'error' | 'ok' = 'warn'): void {
+    const el = this.saveHint;
+    if (!el) return;
+    if (!msg) { el.style.display = 'none'; el.textContent = ''; return; }
+    el.textContent = msg;
+    el.style.color = kind === 'error' ? 'var(--danger, #e66)'
+                   : kind === 'ok'    ? 'var(--accent)'
+                   :                    'var(--warn, #d80)';
+    el.style.display = 'block';
   }
 
   private autoSyncSection(): HTMLElement {
@@ -270,7 +302,11 @@ export class WorkspacePanel {
       this.bus.emit('status', `已保存 ${unitKey}/${name} 到工作区`);
       if (this.overlay) await this.render();   // refresh list
     } catch (err) {
-      this.bus.emit('status', `保存失败：${(err as Error).message}`);
+      const msg = (err as Error).message;
+      this.bus.emit('status', `保存失败：${msg}`);
+      // Surface failures in the modal too — e.g. signed out, or a workspace
+      // permission/RLS error the artist needs to act on.
+      this.setSaveHint(`保存失败：${msg}。若提示未登录，请重新发送登录链接后再试。`, 'error');
     }
   }
 
