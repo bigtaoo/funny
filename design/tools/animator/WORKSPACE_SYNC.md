@@ -156,6 +156,7 @@
   - **云端自动同步**：`ui/WorkspacePanel.ts` 新增——绑定槽位（手动存 / 打开时 `bindTo`）、勾选框（偏好存 `localStorage` key `nw-animator:workspaceAutoSync`）、防抖 4s 上传、`visibilitychange` 隐藏时抢存；`io/AutoSaveController.ts` 导出 `DIRTY_EVENTS` 供复用。`tsc` + `webpack` 通过。
   - **v1 限制**：绑定为会话级（刷新后需重新打开/保存才再绑定；开关偏好持久），避免刷新后把内容错写到旧槽位；本地 IndexedDB 自动存仍兜底内容不丢。
 - 历史双扩展名残件已清理（commit 3e78fb7d）。
+- **登录会话持久化（2026-06-23）**：此前 `currentEmail()` 用 `getUser()`（拿 token 去服务器 revalidate），access token 默认 1h 过期后即判登出、被打回 magic-link。改为 `getSession()`（读本地持久会话 + 用 refresh token 自动续签）；并在 `createClient` 显式开 `persistSession / autoRefreshToken / detectSessionInUrl` + 固定 `storageKey: 'nw-animator-auth'`。登录后长期免重登（除非主动登出或 refresh token 失效）。
 
 ---
 

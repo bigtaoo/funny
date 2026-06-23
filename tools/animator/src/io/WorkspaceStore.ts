@@ -32,7 +32,18 @@ export class WorkspaceStore {
 
   constructor() {
     this.client = isWorkspaceConfigured()
-      ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+      ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: {
+            // Persist the session in localStorage and silently refresh the
+            // access token before it expires, so the artist stays signed in
+            // across reloads instead of being kicked back to magic-link login
+            // every ~hour when the JWT lapses.
+            persistSession:     true,
+            autoRefreshToken:   true,
+            detectSessionInUrl: true,
+            storageKey:         'nw-animator-auth',
+          },
+        })
       : null;
   }
 
@@ -42,11 +53,14 @@ export class WorkspaceStore {
 
   // ── Auth ────────────────────────────────────────────────────────────────
 
-  /** Email of the signed-in user, or null if signed out / unconfigured. */
+  /** Email of the signed-in user, or null if signed out / unconfigured.
+   *  Uses getSession() (reads persisted session + auto-refreshes an expired
+   *  access token) rather than getUser() (revalidates against the server and
+   *  reports signed-out the moment the JWT lapses). */
   async currentEmail(): Promise<string | null> {
     if (!this.client) return null;
-    const { data } = await this.client.auth.getUser();
-    return data.user?.email ?? null;
+    const { data } = await this.client.auth.getSession();
+    return data.session?.user?.email ?? null;
   }
 
   /** Send a magic-link to `email`. The user clicks it to complete sign-in;
