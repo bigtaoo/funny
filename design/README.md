@@ -86,6 +86,7 @@
 | 文档 | 范围 |
 |---|---|
 | [animator/ARCHITECTURE.md](tools/animator/ARCHITECTURE.md) · [REQUIREMENTS.md](tools/animator/REQUIREMENTS.md) | 骨骼动画编辑器（端口 9091） |
+| [animator/WORKSPACE_SYNC.md](tools/animator/WORKSPACE_SYNC.md) | **animator 在线工作区 + 云盘→仓库同步桥（Cloudflare Pages + Supabase + 自动 PR；状态：设计中）** |
 | [level-editor/DESIGN.md](tools/level-editor/DESIGN.md) | 关卡编辑器（端口 9092） |
 | [vfx-editor/DESIGN.md](tools/vfx-editor/DESIGN.md) | 特效编辑器（端口 9094，方案 A 墨线矢量程序特效；状态：设计中） |
 
