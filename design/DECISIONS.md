@@ -148,3 +148,14 @@
 - **为什么这么切**：① `gameserver`/`matchsvc` 均不连库、`gameserver` 永不触库且 ticket 动态携带 `gameUrl` → 对战层可自由就近部署、加机器即插即用；② 现状 `matchsvc.pick()` 只看负载、**无区域感知**，故**绝不能把欧美 gameserver 注册到同一 matchsvc**（会跨洋乱发）→ 用「每区一套独立 matchsvc」让区域隔离来自部署结构，**匹配核心零改动**；③ MongoDB 单主欧洲、**禁跨大西洋副本集写**（跨洋写拖垮 meta），游戏帧不触库故不受影响；④ 中国跨 GFW 实时竞技不可行 + 监管/数据出境/支付渠道全不同 → 必须独立。
 - **未采用**：单一 matchsvc 服务两区（需给注册加 region 标签 + QueueEntry 加 region + 改 pick/配对分桶）——动匹配核心代码、要自防跨区兜底，收益不及成本。
 - **影响**：新增 [`game/DEPLOY_TOPOLOGY.md`](game/DEPLOY_TOPOLOGY.md) 为多区域部署权威；实现期需参数化 gateway/match-report→metaserver 地址、每台 gameserver 设区域 `NW_GAME_PUBLIC_WS_URL`、客户端加选区/测速逻辑（清单见该文 §4.1）。进程拓扑/端口仍归 [claudedocs/server.md](../claudedocs/server.md)。README §1.2/§2 登记。
+
+## ADR-020 跨平台账号/钱包隔离边界 — Accepted — 2026-06-23
+
+- **背景**：上线规划时确认「某些平台是否不允许共享用户、需把用户隔离」。审 [`accounts.ts`](../server/metaserver/src/accounts.ts) 后澄清：**身份层默认就隔离**——device(web/CrazyGames)/openid(微信)/oauth/password 各映射独立 `accountId`，跨端合并是用户主动 `bind*`，不存在"被迫隔离身份"的问题。真正逼迫隔离的是**数据合规**与**支付渠道**，与身份无关。
+- **决策**（用户拍板）：
+  - **身份/存档/天梯**：web + CrazyGames **共享同一套全球部署**（Cloudflare 前端 + 欧洲 VPS + Atlas）。两端用户可共存、可绑定合并。
+  - **中国（微信）= 物理独立部署**：中国大陆玩家个人信息按 PIPL/网络安全法须**境内存储** → 微信线跑完全独立的境内栈（境内云 + 境内 Mongo），账号/存档/钱包均不与全球区互通。承接 ADR-019「中国独立」与 ADR-013「Global/CN 合规拆分」，此处补「数据驻留」为隔离的法律根因。**延后实现**，先做全球区。
+  - **钱包/充值币按支付渠道隔离**：`SaveData.wallet.coins` 当前为全局单一钱包。上线微信/苹果/谷歌前必须改造——**站外渠道（如 Stripe）购买的虚拟货币不得在微信/苹果内消费**（违反各平台"不得消费站外购买虚拟货币"条款）。落地方式：充值币标记来源渠道，或钱包按平台隔离。**现在就要记入数据结构设计**，避免后期迁移。
+  - **CrazyGames**：门户限制主要在前端行为（禁站外支付/外链跳转），账号层可与 web 共享，无需隔离。
+- **未决/待查**：微信小游戏、CrazyGames、苹果/谷歌的开发者协议中"虚拟货币跨渠道流通"的具体条款原文（上线对应平台前逐条核实）。
+- **影响**：[`product/deploy-cloudflare.md`](product/deploy-cloudflare.md) 新增「平台隔离边界」节为现行口径；钱包改造待在 [`game/ECONOMY_BALANCE.md`](game/ECONOMY_BALANCE.md) / [`game/ACCOUNT_DESIGN.md`](game/ACCOUNT_DESIGN.md) 补「充值币渠道标记」字段设计（缺口，上线渠道前收口）。

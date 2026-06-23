@@ -78,6 +78,7 @@
 | [world.md](product/world.md) | 世界观 / 叙事 | 设计中 |
 | [market-analysis.md](product/market-analysis.md) | 市场分析 | 参考 |
 | [mvp-gaps.md](product/mvp-gaps.md) | MVP 缺口盘点 | 实现中 |
+| [deploy-cloudflare.md](product/deploy-cloudflare.md) | **线上部署拓扑权威**（Cloudflare 前端 + VPS 后端 + Atlas Mongo + 平台隔离边界，见 ADR-020） | 实现中 |
 | [client-rendering-cache.md](product/client-rendering-cache.md) | 渲染缓存 / 对象池 | 实现中 |
 | [v1-balance.md](product/v1-balance.md) | 早期数值提案（**未落地，已被 config.ts 取代**） | 已归档 |
 | [v1-simulation.md](product/v1-simulation.md) | 基于 v1-balance 的推演（同上归档） | 已归档 |
