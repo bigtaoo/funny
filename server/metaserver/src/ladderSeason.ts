@@ -53,12 +53,17 @@ export async function getCurrentSeason(
 }
 
 /**
- * 推进到下一赛季（admin 手动触发，`POST /admin/ladder/season/roll`）。
- * CAS 幂等：只有 state='active' 时才推进（防运维连点两次）。
- * @returns 新的赛季文档，若已在 settling/已经是同 seasonNo 则返回当前文档。
+ * 收束当前赛季并开启下一赛季（admin 手动触发，`POST /admin/ladder/season/roll`）。
+ * 闭环（L2-1）：CAS 进入 settling 后，先主动结算上一季全部参与者（发段位奖励邮件 + 授予赛季称号 +
+ * 写结算快照），再把赛季时钟推进到下一季。这样不再有玩家「不回归就拿不到赛季奖」的断裂链路。
+ *
+ * CAS 幂等：只有 state='active' 时才推进（防运维连点两次的并发窗口）。结算本身经
+ * settleSeasonParticipants 三重幂等，与惰性迁移并行执行也不会双发。
+ * @returns 新的赛季文档，若已在 settling/不存在则返回当前文档。
  */
 export async function rollSeason(
   cols: Collections,
+  commercial: CommercialClient,
   now: number,
 ): Promise<LadderSeasonDoc> {
   // CAS：仅 state=active 时推进
@@ -72,6 +77,13 @@ export async function rollSeason(
     return getCurrentSeason(cols, now);
   }
   const prev = res;
+
+  // 闭环结算：在推进时钟之前结清上一季所有参与者（幂等，失败不阻断推进——单玩家失败已内部吞掉日志，
+  // 漏结的玩家回归时仍由 migrateIfStale 惰性补结，同样幂等）。
+  await settleSeasonParticipants(cols, commercial, prev.seasonNo, now).catch((e) =>
+    log.error('rollSeason: settle participants failed', { seasonNo: prev.seasonNo, err: (e as Error).message }),
+  );
+
   const newDoc: LadderSeasonDoc = {
     _id: 'current',
     seasonNo: prev.seasonNo + 1,
@@ -99,9 +111,11 @@ export async function settleSeasonForPlayer(
   save: SaveData,
   prevSeasonNo: number,
   now: number,
-): Promise<void> {
+): Promise<SeasonSettleSummary> {
   const peakRank = (save.pvp.seasonPeakRank ?? eloToRank(save.pvp.seasonPeakElo ?? save.pvp.elo)) as RankId;
+  const peakElo = save.pvp.seasonPeakElo ?? save.pvp.elo;
   const coins = seasonPeakCoins(peakRank);
+  const titleId = ladderTitleId(prevSeasonNo, peakRank);
 
   // 战令补发（温和，S6：已挣未领不没收）
   const bpPending = save.battlePass ? pendingBpRewards(save.battlePass) : [];
@@ -111,13 +125,13 @@ export async function settleSeasonForPlayer(
   const totalCoins = coins + bpCoins;
 
   // 授予赛季段位称号（S10，幂等，best-effort）
-  await grantTitleToPlayer(cols, accountId, ladderTitleId(prevSeasonNo, peakRank), now).catch((e) =>
+  await grantTitleToPlayer(cols, accountId, titleId, now).catch((e) =>
     log.error('settleSeasonForPlayer: grantTitle failed', { accountId, prevSeasonNo, peakRank, err: (e as Error).message }),
   );
 
   if (totalCoins <= 0) {
     log.info('settleSeasonForPlayer: no coin reward', { accountId, prevSeasonNo, peakRank });
-    return;
+    return { peakRank, peakElo, coins: 0, titleId };
   }
 
   // 走邮件：异步发放，玩家登录后收到通知 + 仪式感
@@ -142,6 +156,68 @@ export async function settleSeasonForPlayer(
     bpCoins,
     totalCoins,
   });
+  return { peakRank, peakElo, coins: totalCoins, titleId };
+}
+
+/** 单玩家赛季结算摘要（写快照 + 统计用）。 */
+export interface SeasonSettleSummary {
+  peakRank: RankId;
+  peakElo: number;
+  /** 实际发放金币（峰值 + 战令补发；0 = 仅授予称号无金币）。 */
+  coins: number;
+  titleId: string;
+}
+
+/**
+ * 赛季收束闭环（L2-1）：对刚收束赛季 `seasonNo` 的所有参与者主动结算。
+ * 与惰性迁移（migrateIfStale）共用 settleSeasonForPlayer，保证「主动批量」与「玩家回归再结算」
+ * 两条路径完全幂等（结算邮件 dispatchKey + 称号 $addToSet + 快照 _id 三重去重，重复 close 同季不双发）。
+ * 解决断裂链路：不再依赖玩家登录才发奖，季末一次性结清全部参与者。
+ *
+ * **不做软重置**：软重置/战令重置仍由玩家下次 pvp 读写时的 migrateIfStale 惰性执行（季末批量改全表写
+ * 风险高且无必要——结算只读 + 写邮件/称号/快照，玩家档案的 elo 留待回归时迁移，幂等不会双发）。
+ */
+export async function settleSeasonParticipants(
+  cols: Collections,
+  commercial: CommercialClient,
+  seasonNo: number,
+  now: number,
+): Promise<{ settled: number; rewarded: number }> {
+  let settled = 0;
+  let rewarded = 0;
+  const cursor = cols.saves.find({ 'save.pvp.seasonNo': seasonNo });
+  for await (const doc of cursor) {
+    try {
+      const summary = await settleSeasonForPlayer(cols, commercial, doc._id, doc.save, seasonNo, now);
+      settled++;
+      if (summary.coins > 0) rewarded++;
+      // 快照兼幂等账本：_id 复合键，$setOnInsert 保证重复 close 同季不覆写已结算记录。
+      await cols.ladderSeasonSnapshots.updateOne(
+        { _id: `${seasonNo}:${doc._id}` },
+        {
+          $setOnInsert: {
+            _id: `${seasonNo}:${doc._id}`,
+            seasonNo,
+            accountId: doc._id,
+            peakElo: summary.peakElo,
+            peakRank: summary.peakRank,
+            coins: summary.coins,
+            titleId: summary.titleId,
+            ts: now,
+          },
+        },
+        { upsert: true },
+      );
+    } catch (e) {
+      log.error('settleSeasonParticipants: player settle failed', {
+        accountId: doc._id,
+        seasonNo,
+        err: (e as Error).message,
+      });
+    }
+  }
+  log.info('settleSeasonParticipants done', { seasonNo, settled, rewarded });
+  return { settled, rewarded };
 }
 
 // ── 惰性迁移（核心，每次 pvp 读写前调用）────────────────────────────────────

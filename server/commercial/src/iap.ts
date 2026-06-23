@@ -367,6 +367,9 @@ export type VerifyReceipt = (platform: string, receipt: string) => Promise<IapVe
  * - wechat：NW_WX_PAY_MCH_ID + NW_WX_PAY_API_KEY_V3
  * - stripe：NW_STRIPE_SECRET_KEY
  * - dev 桩：NW_IAP_DEV=true 或所有真实凭据均缺失时，tier:xxx receipt 命中桩逻辑。
+ *   **加固（L2-3）**：生产环境（NODE_ENV=production）下 dev 桩一律强制关闭——既不因
+ *   NW_IAP_DEV=true 误开，也不因「缺凭据」自动回退。生产缺凭据 → 验签返失败（fail closed），
+ *   绝不发币。误设 NW_IAP_DEV=true 的进程由 commercial 引导期拒启（index.ts），此处为第二道防线。
  */
 export function createReceiptVerifier(tierMap: IapTierMap): VerifyReceipt {
   const applePassword = process.env.NW_APPLE_PASSWORD ?? '';
@@ -375,9 +378,11 @@ export function createReceiptVerifier(tierMap: IapTierMap): VerifyReceipt {
   const mchId = process.env.NW_WX_PAY_MCH_ID ?? '';
   const wxApiKey = process.env.NW_WX_PAY_API_KEY_V3 ?? '';
   const stripeKey = process.env.NW_STRIPE_SECRET_KEY ?? '';
+  const isProd = process.env.NODE_ENV === 'production';
   const devEnabled =
-    process.env.NW_IAP_DEV === 'true' ||
-    (!applePassword && !googleSaJson && !mchId && !stripeKey);
+    !isProd &&
+    (process.env.NW_IAP_DEV === 'true' ||
+      (!applePassword && !googleSaJson && !mchId && !stripeKey));
 
   let googleSa: GoogleServiceAccount | null = null;
   if (googleSaJson) {

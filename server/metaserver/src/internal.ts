@@ -575,14 +575,15 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // ── POST /admin/ladder/season/roll ────────────────────────────────────────
-  // admin（ops 后台）手动开启新赛季（S11-SE-3，SEASON_DESIGN §3.1）。
+  // admin（ops 后台）手动收束当季并开启新赛季（S11-SE-3，SEASON_DESIGN §3.1；闭环 L2-1）。
+  // 推进前先主动结算上一季全部参与者（段位奖励邮件 + 赛季称号 + 快照，幂等）。
   // CAS 幂等：并发/误点重入返回当前赛季，不重复推进。
   app.post('/admin/ladder/season/roll', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     try {
-      const season = await rollSeason(cols, now());
+      const season = await rollSeason(cols, commercial, now());
       log.info('POST /admin/ladder/season/roll', { seasonNo: season.seasonNo });
       return reply.send({ ok: true, season });
     } catch (e) {

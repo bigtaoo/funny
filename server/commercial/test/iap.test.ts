@@ -22,6 +22,8 @@ function jsonResp(body: unknown, status = 200): Response {
   });
 }
 
+const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+
 afterEach(() => {
   vi.unstubAllGlobals();
   // 清除测试中可能设置的环境变量
@@ -31,6 +33,7 @@ afterEach(() => {
   delete process.env.NW_IAP_BUNDLE;
   delete process.env.NW_IAP_PRODUCT_MAP;
   delete process.env.NW_IAP_DEV;
+  process.env.NODE_ENV = ORIGINAL_NODE_ENV;
 });
 
 // ── Apple ────────────────────────────────────────────────────────────────────
@@ -267,5 +270,31 @@ describe('dev stub', () => {
     // tier: prefix 不再走桩，而是走真实 apple 验签（返回失败）
     const result = await verify('apple', 'tier:small');
     expect(result).toEqual({ ok: false, coins: 0 });
+  });
+});
+
+// ── 生产加固（L2-3）：dev 桩在 NODE_ENV=production 下强制关闭，缺凭据 fail closed ──
+
+describe('production hardening (L2-3)', () => {
+  it('production + 无凭据 → dev 桩关闭，验签 fail closed（不发币）', async () => {
+    process.env.NODE_ENV = 'production';
+    // 无任何真实凭据；非生产时这会自动开启 dev 桩，但生产下必须关闭。
+    const verify = createReceiptVerifier(TIER_MAP);
+    expect(await verify('dev', 'tier:large')).toEqual({ ok: false, coins: 0 });
+    expect(await verify('apple', 'tier:small')).toEqual({ ok: false, coins: 0 });
+    expect(await verify('stripe', 'tier:mid')).toEqual({ ok: false, coins: 0 });
+  });
+
+  it('production + NW_IAP_DEV=true → dev 桩仍强制关闭（第二道防线）', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.NW_IAP_DEV = 'true'; // 误开
+    const verify = createReceiptVerifier(TIER_MAP);
+    expect(await verify('dev', 'tier:large')).toEqual({ ok: false, coins: 0 });
+  });
+
+  it('非生产 + 无凭据 → dev 桩照常开启（本地联调不受影响）', async () => {
+    process.env.NODE_ENV = 'development';
+    const verify = createReceiptVerifier(TIER_MAP);
+    expect(await verify('dev', 'tier:large')).toEqual({ ok: true, coins: 11800 });
   });
 });

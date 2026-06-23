@@ -156,6 +156,12 @@ grant(t):
 - [x] 客户端 `client/src/net/proto/transport.ts`：`MatchStart.opponentTitle` field 8 encode/decode
 - [x] 客户端 UI：`ProfilePopup` 称号行 + `LeaderboardScene` 称号芯片 + `TitlesScene` 称号墙 + `SettingsScene` 入口
 - [x] i18n zh/en/de：`settings.titles`/`titles.*`/`title.*` 全文案
+- [x] **L2-2（2026-06-23）独立称号端点**（设计对齐，此前仅靠 SaveData 回推展示）：
+  - `GET /titles` → `{ titles: {id, source, seasonNo?}[], equipped }`；`source`/`seasonNo` 由 `parseTitleId` 从 titleId 命名约定派生（与客户端展示同源）。**授予时间 grantedAt 不入库**（`titles` 仅存 id 顺序），故端点不返回 grantedAt。
+  - `PUT /title/equip` body `{titleId}` → 仅允许已授予称号（未授予 403）；空串 = 卸下；写 `save.equipped.title` 并回推完整 `SaveData`。
+  - `@nw/shared/src/titles.ts`：新增 `parseTitleId(titleId) → {source, seasonNo?}`（纯函数，服务端/客户端可共用）。
+  - `openapi.yml` 登记两端点（operationId `getTitles`/`equipTitle`），客户端 codegen 重生（顺带修复了此前累积的 codegen 漂移，使 `openapi.ts` 与 spec 完全同步）。
+  - 存储仍复用 `save.titles[]` / `save.equipped.title`（服务器权威，PUT /save 不可写此二字段），未引入新存储。测试 `metaserver/test/titles.test.ts`。
 - [ ] 社交消息 sender 前缀（`[称号]`）— 待 S6 social 消息体扩展
 - [ ] SLG 赛季称号授予 — 待 worldsvc SLG 赛季结算落地
 - [ ] `equipped.title` 短标签限长 UI 截断（建议 ≤ 4 字，前端展示截断即可）

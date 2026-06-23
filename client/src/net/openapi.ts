@@ -1042,6 +1042,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/titles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前账号全量已授予称号（含派生 source/seasonNo）+ 当前佩戴称号 */
+        get: operations["getTitles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/title/equip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 选用当前显示称号（仅限已授予；空串=卸下），写 equipped.title 并回推存档 */
+        put: operations["equipTitle"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3563,6 +3597,78 @@ export interface operations {
             402: components["responses"]["ErrorResp"];
             403: components["responses"]["ErrorResp"];
             404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    getTitles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            titles: {
+                                /** @description 称号 id（ladder.s{N}.{rank} / slg.s{N}.{key} / ach.{key} / event.{key}） */
+                                id: string;
+                                /** @enum {string} */
+                                source: "ladder" | "slg" | "achievement" | "event";
+                                /** @description 赛季号（ladder/slg 类称号才有） */
+                                seasonNo?: number;
+                            }[];
+                            /** @description 当前佩戴称号 id；未佩戴为 null */
+                            equipped: string | null;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    equipTitle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 要佩戴的称号 id；空串表示卸下显示称号 */
+                    titleId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
             409: components["responses"]["ErrorResp"];
         };
     };
