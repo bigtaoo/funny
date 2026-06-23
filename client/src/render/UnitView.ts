@@ -9,6 +9,9 @@ import type { TaoAsset } from './stickman/StickmanRuntime';
 import infantryTaoUrl from '../assets/infantry.tao';
 import archerTaoUrl from '../assets/archer.tao';
 import shieldBearerTaoUrl from '../assets/shieldbearer.tao';
+import maxTaoUrl from '../assets/max.tao';
+import lenaTaoUrl from '../assets/lena.tao';
+import maraTaoUrl from '../assets/mara.tao';
 import { fx, factionInk } from './theme';
 import { drawStickmanDraft } from './stickmanDraft';
 
@@ -20,6 +23,10 @@ const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
   [UnitType.Infantry]: infantryTaoUrl     as unknown as string,
   [UnitType.Archer]:    archerTaoUrl       as unknown as string,
   [UnitType.ShieldBearer]:  shieldBearerTaoUrl as unknown as string, // 盾兵
+  // Anna 阵营三人 —— 当前三份 .tao 为占位（同一份导出），后续在 animator 分别重导
+  [UnitType.Max]:   maxTaoUrl  as unknown as string,
+  [UnitType.Lena]:  lenaTaoUrl as unknown as string,
+  [UnitType.Mara]:  maraTaoUrl as unknown as string,
 };
 
 /**
