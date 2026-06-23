@@ -1,0 +1,52 @@
+name: anim-sync
+
+# 把动画工作区（Supabase Storage）的 .tao(.editor) 同步回仓库，开 PR 让维护者审核合并。
+# 单向：云 → 仓库，永不删仓库文件。设计：design/tools/animator/WORKSPACE_SYNC.md §5
+#
+# 需要的 repo secrets：SUPABASE_URL、SUPABASE_SERVICE_KEY（service role key）。
+
+on:
+  schedule:
+    - cron: '0 3 * * *'      # 每日 03:00 UTC
+  workflow_dispatch: {}        # 也可手动触发
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # 未配置 SUPABASE_URL secret 时整个 job 跳过（避免配好前每日 cron 报红）。
+    if: ${{ vars.ANIM_SYNC_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Pull animations from workspace
+        id: pull
+        run: node tools/animator/scripts/anim-sync.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Open / update sync PR
+        if: steps.pull.outputs.changed_count != '0'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: anim-sync/auto
+          base: main
+          title: 'chore(anim): 从工作区同步动画'
+          commit-message: 'chore(anim): 从工作区同步动画'
+          body: |
+            自动同步：从动画工作区（Supabase）拉取 `.tao`/`.tao.editor` 写回仓库。
+
+            - 映射来源：`art/units/manifest.json`
+            - 单向（云 → 仓库），合并后游戏构建即用新动画。
+            - 变更文件数见运行日志（`anim-sync` step）。
+
+            由 `.github/workflows/anim-sync.yml` 生成。
+          delete-branch: false

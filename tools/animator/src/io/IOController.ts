@@ -221,32 +221,40 @@ export class IOController {
 
   // ── Export ────────────────────────────────────────────────────────────────
 
+  /** Build the `.tao` runtime bundle (animation.json + optional spritesheet) as a
+   *  Blob, WITHOUT triggering a download. Shared by `exportTao()` (download) and the
+   *  online workspace (upload) — the CI sync bridge cannot rebuild the spritesheet, so
+   *  the browser-built `.tao` must be persisted alongside the `.tao.editor`. */
+  async buildTaoBlob(): Promise<Blob> {
+    const animJson = this.buildAnimationJson();
+
+    // Bake each image down to the largest size it is ever displayed at (×headroom),
+    // capped at the source resolution, then rewrite binding.scaleX/Y to compensate.
+    // The game renders sprite.scale = keyframe.scale × binding.scale, so pre-scaling
+    // the pixels and dividing binding.scale by the same factor is visually identical
+    // while shrinking the spritesheet — no runtime change needed.
+    const items = await this.buildExportImages(animJson);
+
+    const zip = new JSZip();
+    zip.file('animation.json', JSON.stringify(animJson, null, 2));
+
+    if (items.length > 0) {
+      const { canvas, rects } = await this.buildSpritesheet(items);
+      const ssJson = this.buildSpritesheetJson(rects, canvas.width, canvas.height);
+      const pngBlob = await canvasToBlob(canvas);
+
+      zip.file('spritesheet.json', JSON.stringify(ssJson, null, 2));
+      zip.file('spritesheet.png',  pngBlob);
+    }
+
+    return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  }
+
   async exportTao(): Promise<void> {
     this.bus.emit('status', 'Building .tao…');
 
     try {
-      const animJson = this.buildAnimationJson();
-
-      // Bake each image down to the largest size it is ever displayed at (×headroom),
-      // capped at the source resolution, then rewrite binding.scaleX/Y to compensate.
-      // The game renders sprite.scale = keyframe.scale × binding.scale, so pre-scaling
-      // the pixels and dividing binding.scale by the same factor is visually identical
-      // while shrinking the spritesheet — no runtime change needed.
-      const items = await this.buildExportImages(animJson);
-
-      const zip = new JSZip();
-      zip.file('animation.json', JSON.stringify(animJson, null, 2));
-
-      if (items.length > 0) {
-        const { canvas, rects } = await this.buildSpritesheet(items);
-        const ssJson = this.buildSpritesheetJson(rects, canvas.width, canvas.height);
-        const pngBlob = await canvasToBlob(canvas);
-
-        zip.file('spritesheet.json', JSON.stringify(ssJson, null, 2));
-        zip.file('spritesheet.png',  pngBlob);
-      }
-
-      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const blob = await this.buildTaoBlob();
       await saveWithPicker(blob, 'animation', [
         { description: 'Tao Animation', accept: { 'application/octet-stream': ['.tao'] } },
       ]);
