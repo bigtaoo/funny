@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { ShopItem } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
 // ── ShopScene (S2-6) — direct-purchase shop + virtual top-up entry ─────────────
@@ -375,8 +376,8 @@ export class ShopScene implements Scene {
     this.container.addChild(box);
 
     const hasText = this.rechargeCode.length > 0;
-    const display = (hasText ? this.rechargeCode : t('shop.tapToType')) + (hasText && this.caretOn ? '|' : '');
-    const valTxt = txt(display, Math.round(fieldH * 0.40), hasText ? C.dark : C.light);
+    const display = caretDisplay(this.rechargeCode, this.caretOn, t('shop.tapToType'));
+    const valTxt = txt(display, Math.round(fieldH * 0.40), (hasText || this.caretOn) ? C.dark : C.light);
     valTxt.anchor.set(0, 0.5); valTxt.x = fieldX + Math.round(fieldW * 0.04); valTxt.y = fieldY + fieldH / 2;
     this.container.addChild(valTxt);
     this.hits.push({ rect: { x: fieldX, y: fieldY, w: fieldW, h: fieldH }, fn: () => this.hiddenInput?.focus() });
