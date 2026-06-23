@@ -98,9 +98,11 @@
 - 步骤：
   1. checkout 仓库。
   2. 用 repo secret `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` 列出并下载 `animations` 桶全部对象。
-  3. 按 `art/units/manifest.json` 把每个 `unitKey` 的 `.tao.editor` / `.tao` 写入对应仓库路径，并复制 `.tao` → `gameCopy`。
+  3. 按 `art/units/manifest.json` 把每个 `unitKey` 的 `.tao.editor` / `.tao` 写入对应仓库路径，并复制 `.tao` → `gameCopy`。**仅内容真变更才写**（见下「ZIP 内容比对」）。
   4. 若有 diff：用 `peter-evans/create-pull-request` 开/更新 PR（分支 `anim-sync/auto`，标题 `chore(anim): 从工作区同步动画`，正文列出变更的 unit + 最后保存者）。
 - **不直接推 main**：始终 PR，维护者 review 后 merge → 触发 client 重新构建。
+
+**ZIP 内容比对（避免无谓 PR）**：`.tao`/`.tao.editor` 都是 ZIP，浏览器每次保存会写入新的「最后修改时间」到每个条目头，导致同内容不同字节。若按整包字节比对，没人编辑也会判为变更、开空 PR。故 `anim-sync.mjs` 的 `writeIfChanged` 先做字节比对，不等时再解析 ZIP **中央目录**取每个条目的 `名字 + CRC32 + 解压大小` 组成规范签名比对——签名相同（仅时间戳等打包元数据不同）则不写、不计入变更；CRC 不同（真改动）才写并开 PR。纯 Node 内置解析，无依赖；非 ZIP 退回字节比对。
 
 ---
 
