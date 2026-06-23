@@ -8,6 +8,16 @@ import { loadInternalAuth, IAP_TIERS } from '@nw/shared';
 import { createReceiptVerifier } from './iap';
 
 async function main(): Promise<void> {
+  // 加固（L2-3）：生产环境严禁开启 IAP dev 桩——误开会让 `tier:`/`dev` 收据无验签直接发币。
+  // 引导期拒启（fail fast），比静默放行安全。dev 桩本身在 createReceiptVerifier 内也对 prod 二次封死。
+  if (process.env.NODE_ENV === 'production' && process.env.NW_IAP_DEV === 'true') {
+    console.error(
+      'FATAL: NW_IAP_DEV=true 在生产环境（NODE_ENV=production）下被拒绝启动——' +
+        'IAP dev 桩会让伪造收据无验签发币。请移除 NW_IAP_DEV 或设为 false 后重启。',
+    );
+    process.exit(1);
+  }
+
   const env = loadCommercialEnv();
 
   const mongo = await createCommercialMongo(env.commMongoUri, env.commMongoDb);

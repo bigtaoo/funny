@@ -25,6 +25,29 @@ export interface LadderSeasonDoc {
   state: 'active' | 'settling';
 }
 
+/**
+ * 赛季结算快照（`ladderSeasonSnapshots` 集合，每账号每季至多一条）。
+ * 季末闭环（rollSeason → settleSeasonParticipants）按峰值段位结算时写入；
+ * 复合 `_id = ${seasonNo}:${accountId}` 兼作幂等账本（重复 close 同季不双写）。
+ */
+export interface LadderSeasonSnapshotDoc {
+  /** `${seasonNo}:${accountId}` 复合幂等键。 */
+  _id: string;
+  /** 结算的赛季号（即将收束的那一季）。 */
+  seasonNo: number;
+  accountId: string;
+  /** 赛季内最高 ELO（pvp.seasonPeakElo）。 */
+  peakElo: number;
+  /** 峰值 ELO 对应段位。 */
+  peakRank: RankId;
+  /** 本季结算发放金币（峰值金币 + 战令补发，与结算邮件一致）。 */
+  coins: number;
+  /** 授予的赛季段位称号 id（ladder.s{N}.{rank}）。 */
+  titleId: string;
+  /** 结算时间戳（ms）。 */
+  ts: number;
+}
+
 // ── 软重置算法（§4.1）──────────────────────────────────────────────────────
 
 /**

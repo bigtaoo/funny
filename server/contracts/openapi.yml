@@ -2606,3 +2606,73 @@ paths:
         '403': { $ref: '#/components/responses/ErrorResp' }
         '404': { $ref: '#/components/responses/ErrorResp' }
         '409': { $ref: '#/components/responses/ErrorResp' }
+
+  # —— S10 称号（L2-2，TITLE_DESIGN）：读已授予称号 + 选用显示称号 ——
+  /titles:
+    get:
+      operationId: getTitles
+      tags: [save]
+      summary: 当前账号全量已授予称号（含派生 source/seasonNo）+ 当前佩戴称号
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [titles, equipped]
+                    properties:
+                      titles:
+                        type: array
+                        items:
+                          type: object
+                          required: [id, source]
+                          properties:
+                            id: { type: string, description: '称号 id（ladder.s{N}.{rank} / slg.s{N}.{key} / ach.{key} / event.{key}）' }
+                            source: { type: string, enum: [ladder, slg, achievement, event] }
+                            seasonNo: { type: integer, description: 赛季号（ladder/slg 类称号才有） }
+                      equipped:
+                        type: string
+                        nullable: true
+                        description: 当前佩戴称号 id；未佩戴为 null
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
+  /title/equip:
+    put:
+      operationId: equipTitle
+      tags: [save]
+      summary: 选用当前显示称号（仅限已授予；空串=卸下），写 equipped.title 并回推存档
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [titleId]
+              properties:
+                titleId: { type: string, description: 要佩戴的称号 id；空串表示卸下显示称号 }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }

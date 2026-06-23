@@ -95,3 +95,9 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 - **运维后台（S7）**：两层鉴权（admin JWT ≠ 玩家 JWT）；补偿一律走邮件（不直接写钱包）；审批人 ≠ 发起人
 - **SLG 赛季运维 + 异常交易审计（G7，2026-06-21）**：admin `worldClient` 经 X-Internal-Key 代理 worldsvc `/admin/world/*`（season open/settle/reset/close + 拍卖异常扫描）。异常交易审计工单 = 独立集合 `tradeAuditTickets`（与 compTickets 平行：补偿发奖+双人审批 vs 审计核查违规+单人裁定）：`slgScanAnomalies`/`slgFileAuditTicket`（pairKey 去重）/`slgListAuditTickets`/`slgResolveAuditTicket`（open→dismissed|actioned），能力 `slg.audit.view|manage`，REST `/admin/slg/audit/*`。处置（封禁/扣回）走外联，本轮只到立单+裁定+留痕
 - **埋点（A9）**：`/analytics/events` fire-and-forget（`writeConcern:{w:0}`）；`analyticsvc/src/scheduler.ts` 每小时 ETL 漏斗
+
+## 上线收口（Track 2，2026-06-23）
+
+- **赛季收束闭环（L2-1）**：`POST /admin/ladder/season/roll` 现在「先结算上一季全部参与者，再推进时钟」——`rollSeason(cols, commercial, now)` → `settleSeasonParticipants` 游标遍历 `pvp.seasonNo===上季` 的存档发段位奖励邮件 + 授赛季称号 + 写 `ladderSeasonSnapshots` 快照（`_id=${seasonNo}:${accountId}` 幂等账本）。与玩家回归惰性迁移（`migrateIfStale`）三重幂等并存。软重置仍惰性做。详见 `design/game/SEASON_DESIGN.md §15.1`
+- **称号端点（L2-2）**：`GET /titles`（含 `parseTitleId` 派生 source/seasonNo）+ `PUT /title/equip`（仅已授予；空串卸下；回推 SaveData）。存储复用 `save.titles[]`/`save.equipped.title`。codegen 重生顺带修复了 `client/src/net/openapi.ts` 此前累积的漂移
+- **IAP 凭据加固（L2-3）**：`createReceiptVerifier` 在 `NODE_ENV=production` 下强制关闭 dev 桩（缺凭据 fail closed，不发币）；`commercial/src/index.ts` 引导期对 `production+NW_IAP_DEV=true` 拒启。凭据申请/配置/上线 checklist 见 `design/game/IAP_CREDENTIALS.md`，环境变量样板见 `server/.env.example`

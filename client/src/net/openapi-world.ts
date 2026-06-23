@@ -20,6 +20,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/map/sparse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getWorldMapSparse"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/tile/{tileId}": {
         parameters: {
             query?: never;
@@ -812,6 +828,28 @@ export interface components {
             r: number;
             tiles: components["schemas"]["WorldTileView"][];
         };
+        /** @description 稀疏占领格视图（zoom 2/3 鸟瞰层）。只含被占领格；未占领格客户端从 proceduralTile 本地渲染。 无 profile RPC、无视野计算。 */
+        WorldTileSparseView: {
+            x: number;
+            y: number;
+            /** @enum {string} */
+            type: "neutral" | "resource" | "territory" | "familyKeep" | "center" | "base" | "obstacle" | "gate" | "stronghold";
+            mine?: boolean;
+            /** @description lod=mid：同家族盟友 */
+            ally?: boolean;
+            /** @description lod=mid：联盟宗门成员（非家族） */
+            allySect?: boolean;
+        };
+        WorldMapSparseView: {
+            worldId: string;
+            cx: number;
+            cy: number;
+            r: number;
+            /** @enum {string} */
+            lod: "thin" | "mid";
+            /** @description 仅占领格，稀疏数组 */
+            tiles: components["schemas"]["WorldTileSparseView"][];
+        };
         PlayerWorldView: {
             joined: boolean;
             /** @description 所在 shard worldId（G6/§20：join-season 解析结果回传，客户端进图依据） */
@@ -1045,6 +1083,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
                         data?: components["schemas"]["WorldMapView"];
+                    };
+                };
+            };
+        };
+    };
+    getWorldMapSparse: {
+        parameters: {
+            query: {
+                worldId: string;
+                cx: number;
+                cy: number;
+                r: number;
+                /** @description thin=仅 mine 标记（zoom 3）；mid=含 ally/allySect（zoom 2） */
+                lod?: "thin" | "mid";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sparse ownership overlay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["WorldMapSparseView"];
                     };
                 };
             };

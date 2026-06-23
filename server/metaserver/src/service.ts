@@ -56,6 +56,7 @@ import {
 } from '@nw/shared';
 import { CHAT_SEND_RATE_PER_MIN, regionFromAcceptLanguage } from '@nw/shared';
 import { ACHIEVEMENTS, findAchievement, validateClaim } from '@nw/shared';
+import { parseTitleId } from '@nw/shared';
 import { getOrCreateSave, putSave, writeMigratedSave } from './save.js';
 import { getCurrentSeason, migrateIfStale } from './ladderSeason.js';
 import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment, reforgeEquipment } from './equipment.js';
@@ -2059,5 +2060,46 @@ export class MetaService {
       return reply.code(code).send(err(errCode, result.error));
     }
     return reply.send({ ok: true, data: { pointsLeft: result.pointsLeft, reward: result.reward } });
+  }
+
+  // ── S10 称号端点（L2-2，TITLE_DESIGN）：玩家侧读取已授予称号 + 选用显示称号。 ────────────
+  // 存储复用 save.titles[] / save.equipped.title（服务器权威，PUT /save 不可写此二字段）；
+  // 称号 source/seasonNo 由 titleId 命名约定派生（parseTitleId，与客户端展示同源），授予时间不入库。
+
+  /** 读当前账号全量已授予称号（含派生 source/seasonNo）+ 当前佩戴称号。 */
+  async getTitles(req: FastifyRequest) {
+    const accountId = accountIdOf(req);
+    const save = await getOrCreateSave(this.deps.cols, accountId, this.deps.now());
+    const titles = (save.titles ?? []).map((id) => {
+      const { source, seasonNo } = parseTitleId(id);
+      return { id, source, ...(seasonNo != null ? { seasonNo } : {}) };
+    });
+    return ok({ titles, equipped: save.equipped?.title ?? null });
+  }
+
+  /**
+   * 选用当前显示称号 → 写 save.equipped.title → 回推完整存档。
+   * 仅允许已授予的称号；空串 titleId 视为卸下（清空佩戴）。
+   */
+  async equipTitle(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { titleId } = req.body as { titleId?: string };
+    const out = await this.mutateSave(accountId, (s) => {
+      const owned = s.titles ?? [];
+      // 空串 = 卸下显示称号
+      if (titleId === '' || titleId == null) {
+        const { title: _drop, ...restEquipped } = s.equipped ?? {};
+        return { ...s, equipped: restEquipped };
+      }
+      if (!owned.includes(titleId)) return 'NOT_OWNED';
+      return { ...s, equipped: { ...s.equipped, title: titleId } };
+    });
+    if ('error' in out) {
+      if (out.error === 'NOT_OWNED') {
+        return reply.code(403).send(err(ErrorCode.BAD_REQUEST, 'title not owned'));
+      }
+      return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
+    }
+    return ok({ save: out.save });
   }
 }

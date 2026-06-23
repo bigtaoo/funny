@@ -129,3 +129,19 @@ export function grantTitle(
 export function ladderTitleId(seasonNo: number, rank: RankId): string {
   return `ladder.s${seasonNo}.${rank}`;
 }
+
+/**
+ * 从 titleId 派生来源 + 赛季号（纯函数，服务端 GET /titles 与客户端展示同源）。
+ * 命名约定：ladder.s{N}.{rank} | slg.s{N}.{key} | ach.{key} | event.{key}。
+ * 注：授予时间（grantedAt）不入库（titles 仅存 id 顺序），故不在此派生。
+ */
+export function parseTitleId(titleId: string): { source: TitleSource; seasonNo?: number } {
+  const lm = titleId.match(/^ladder\.s(\d+)\./);
+  if (lm) return { source: 'ladder', seasonNo: Number(lm[1]) };
+  const sm = titleId.match(/^slg\.s(\d+)\./);
+  if (sm) return { source: 'slg', seasonNo: Number(sm[1]) };
+  if (titleId.startsWith('event.')) return { source: 'event' };
+  // 其余（ach.* 及表内定义）按成就来源；表内有显式 source 时优先取之。
+  if (titleId in TITLE_DEFS) return { source: TITLE_DEFS[titleId]!.source };
+  return { source: 'achievement' };
+}

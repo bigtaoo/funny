@@ -3,7 +3,7 @@
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
 import type { SaveData } from './types';
 import type { StatKey } from './achievements';
-import type { LadderSeasonDoc } from './season';
+import type { LadderSeasonDoc, LadderSeasonSnapshotDoc } from './season';
 import type { EventTaskDef, EventRewardDef, EventTaskProgress } from './events';
 import type { ChatRegion } from './chatFilter';
 import { CHAT_RETENTION_SEC } from './social';
@@ -394,6 +394,8 @@ export interface Collections {
   equipmentIdem: Collection<EquipmentIdemDoc>;
   // 天梯赛季（S11）：全局单文档（_id='current'）
   ladderSeasons: Collection<LadderSeasonDoc>;
+  // 天梯赛季结算快照（L2-1）：每账号每季一条，季末闭环写入，兼作幂等账本
+  ladderSeasonSnapshots: Collection<LadderSeasonSnapshotDoc>;
   // 广告凭证唯一性（C2）
   adsTokens: Collection<AdsTokenDoc>;
   // 体力（A4）：实时扣；_id = accountId
@@ -454,6 +456,7 @@ export async function createMongo(
     mail: db.collection<MailDoc>('mail'),
     equipmentIdem: db.collection<EquipmentIdemDoc>('equipmentIdem'),
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
+    ladderSeasonSnapshots: db.collection<LadderSeasonSnapshotDoc>('ladderSeasonSnapshots'),
     adsTokens: db.collection<AdsTokenDoc>('adsTokens'),
     pveStamina: db.collection<StaminaDoc>('pveStamina'),
     events: db.collection<EventDoc>('events'),
@@ -521,6 +524,9 @@ export async function createMongo(
       { 'save.pvp.seasonNo': 1, 'save.pvp.elo': -1 },
       { name: 'pvp_season_elo' },
     );
+    // 天梯赛季结算快照（L2-1）：按季拉取本季结算名单（_id 已是 ${seasonNo}:${accountId} 幂等键）。
+    await collections.ladderSeasonSnapshots.createIndex({ seasonNo: 1 });
+    await collections.ladderSeasonSnapshots.createIndex({ accountId: 1, seasonNo: -1 });
     // 体力（A4）：_id = accountId，单文档集合，无额外索引。
     // 限时活动（B6）：按活动窗口查找有效活动。
     await collections.events.createIndex({ windowStart: 1, windowEnd: 1 });

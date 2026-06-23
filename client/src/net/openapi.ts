@@ -72,6 +72,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/oauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** OAuth 第三方登录（授权码流，首期支持 google） */
+        post: operations["authOAuth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/bind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 绑定凭证到当前账号（匿名升级转正 / 多凭证绑定） */
+        post: operations["authBind"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/password/change": {
         parameters: {
             query?: never;
@@ -83,6 +117,40 @@ export interface paths {
         put?: never;
         /** 改密（需登录；校验旧密码） */
         post: operations["authPasswordChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 软删除账号（C5-b Apple 5.1.1(v)）——7 天宽限后异步清数据 */
+        delete: operations["deleteAccount"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/gdpr-consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 记录 GDPR 同意（C5-c）——设 flags.gdprConsent=true */
+        post: operations["recordGdprConsent"];
         delete?: never;
         options?: never;
         head?: never;
@@ -158,6 +226,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/match/{roomId}/replay/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 创建录像分享链接（S1-RP）；仅本人参与的对局可分享；7 天 TTL */
+        post: operations["createReplayShare"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/share/replay/{shareId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 通过分享链接取录像（S1-RP）；无需登录；超期返回 404 */
+        get: operations["getReplayByShare"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pve/clear": {
         parameters: {
             query?: never;
@@ -186,6 +288,23 @@ export interface paths {
         put?: never;
         /** PvE L1 录像抽检复算（补传被抽中通关的录像→第三方无头复算→复算星数≥声称才发材料） */
         post: operations["pveVerify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pve/stamina/purchase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 补体力（A4，扣 30 金币换 60 点体力；商店路由） */
+        post: operations["purchaseStamina"];
         delete?: never;
         options?: never;
         head?: never;
@@ -339,6 +458,57 @@ export interface paths {
         put?: never;
         /** 领取某成就某阶金币（服务器二次校验 stat≥阈值 + $addToSet 幂等发币，§4.3） */
         post: operations["claimAchievement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读留存状态（签到月历 + 每日任务进度 + 定义表，B5 RETENTION_DESIGN） */
+        get: operations["getRetention"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retention/checkin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 签到领当月下一格奖励（幂等，今日已领则 409） */
+        post: operations["claimCheckin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retention/daily/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 领当日每日任务满点金币（幂等，未达阈值 → 400，已领 → 409） */
+        post: operations["claimDailyReward"];
         delete?: never;
         options?: never;
         head?: never;
@@ -838,6 +1008,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 获取当前有效活动列表（含本账号参与进度） */
+        get: operations["getEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 消耗活动积分兑换奖励 */
+        post: operations["claimEventReward"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/titles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前账号全量已授予称号（含派生 source/seasonNo）+ 当前佩戴称号 */
+        get: operations["getTitles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/title/equip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 选用当前显示称号（仅限已授予；空串=卸下），写 equipped.title 并回推存档 */
+        put: operations["equipTitle"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -889,6 +1127,14 @@ export interface components {
                 /** @description 历史首达段位列表（终身账本） */
                 reachedRanks?: string[];
             };
+            stamina?: {
+                /** @description 当前体力 */
+                current: number;
+                /** @description 下次回 1 点的时间戳(ms)；满格时为 0 */
+                regenAt: number;
+            };
+            /** @description 拥有的称号 id 集合（赛季结算/成就/admin 授予，顺序即获得顺序） */
+            titles?: string[];
             battlePass?: components["schemas"]["BattlePassData"];
             progress: {
                 cleared: string[];
@@ -1034,6 +1280,8 @@ export interface components {
                 itemId: string;
                 weight: number;
                 rarity: components["schemas"]["Rarity"];
+                /** @description 抽中概率 0-1（Apple 3.1.1 概率公示） */
+                probability: number;
             }[];
         };
         GachaResult: {
@@ -1050,6 +1298,8 @@ export interface components {
             publicId: string;
             displayName: string;
             rank?: string;
+            /** @description 当前佩戴称号 id（空=无称号） */
+            equippedTitle?: string;
         };
         FriendView: {
             publicId: string;
@@ -1295,6 +1545,83 @@ export interface operations {
             401: components["responses"]["ErrorResp"];
         };
     };
+    authOAuth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    provider: "google";
+                    code: string;
+                    redirectUri: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: components["schemas"]["AuthResult"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+        };
+    };
+    authBind: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    method: "oauth" | "password";
+                    /** @enum {string} */
+                    provider?: "google";
+                    code?: string;
+                    redirectUri?: string;
+                    loginId?: string;
+                    password?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @enum {boolean} */
+                            ok: true;
+                            isAnonymous: boolean;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
     authPasswordChange: {
         parameters: {
             query?: never;
@@ -1328,6 +1655,67 @@ export interface operations {
                 };
             };
             400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    deleteAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            confirmToken: string;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    recordGdprConsent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    consent: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @enum {boolean} */
+                            ok: true;
+                        };
+                    };
+                };
+            };
             401: components["responses"]["ErrorResp"];
         };
     };
@@ -1521,12 +1909,17 @@ export interface operations {
         responses: {
             /** @description 成功 */
             200: {
-                headers: { [name: string]: unknown };
+                headers: {
+                    [name: string]: unknown;
+                };
                 content: {
                     "application/json": {
                         /** @enum {boolean} */
                         ok: true;
-                        data: { shareId: string };
+                        data: {
+                            /** @description 分享 id（UUID）；客户端拼 /share/replay/{shareId} 分发 */
+                            shareId: string;
+                        };
                     };
                 };
             };
@@ -1547,7 +1940,9 @@ export interface operations {
         responses: {
             /** @description 成功 */
             200: {
-                headers: { [name: string]: unknown };
+                headers: {
+                    [name: string]: unknown;
+                };
                 content: {
                     "application/json": {
                         /** @enum {boolean} */
@@ -1579,7 +1974,7 @@ export interface operations {
                     pveUpgrades?: {
                         [key: string]: number;
                     };
-                    /** @description 本局成就计数（kill.archer/kill.guard/cast.meteor；S9-3b） */
+                    /** @description 本局成就计数（kill.archer/kill.guard/cast.meteor；S9-3b，普通通关喂入，过 L1 caps） */
                     stats?: {
                         [key: string]: number;
                     };
@@ -1680,6 +2075,48 @@ export interface operations {
             400: components["responses"]["ErrorResp"];
             401: components["responses"]["ErrorResp"];
             404: components["responses"]["ErrorResp"];
+        };
+    };
+    purchaseStamina: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description 每次补 60 点（唯一档位）
+                     * @enum {integer}
+                     */
+                    amount: 60;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            stamina: {
+                                current: number;
+                                regenAt: number;
+                            };
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
         };
     };
     pveUpgrade: {
@@ -1809,6 +2246,8 @@ export interface operations {
                     instanceId: string;
                     /** @description 客户端生成幂等键；掷骰/扣料绑定此键，重放返回首次结果 */
                     idempotencyKey: string;
+                    /** @description 是否使用保护道具（E7）；true 且库存有 protect_enhance 时失败不损材料，消耗 1 个道具 */
+                    useProtect?: boolean;
                 };
             };
         };
@@ -2036,6 +2475,121 @@ export interface operations {
             409: components["responses"]["ErrorResp"];
         };
     };
+    getRetention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            checkin?: {
+                                monthKey?: string;
+                                claimedDays?: number[];
+                            } | null;
+                            daily?: {
+                                dayKey?: string;
+                                taskPoints?: number;
+                                rewardClaimed?: boolean;
+                                completedTasks?: {
+                                    [key: string]: number;
+                                };
+                            } | null;
+                            defs: {
+                                rewards: Record<string, never>[];
+                                tasks: Record<string, never>[];
+                                pointsThreshold: number;
+                                dailyCoinsReward: number;
+                            };
+                            claimable: {
+                                checkin: boolean;
+                                daily: boolean;
+                            };
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    claimCheckin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            /** @description 本次领取的格号（1-based） */
+                            day: number;
+                            reward: {
+                                /** @enum {string} */
+                                kind: "coins" | "stamina";
+                                count: number;
+                            };
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    claimDailyReward: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            /** @description 本次发放金币 */
+                            coins: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
     getShopItems: {
         parameters: {
             query?: never;
@@ -2169,6 +2723,11 @@ export interface operations {
             content: {
                 "application/json": {
                     adToken: string;
+                    /**
+                     * @description 广告平台（C2）
+                     * @enum {string}
+                     */
+                    platform?: "dev" | "admob_client" | "wechat_client";
                 };
             };
         };
@@ -2944,6 +3503,173 @@ export interface operations {
             };
             400: components["responses"]["ErrorResp"];
             401: components["responses"]["ErrorResp"];
+        };
+    };
+    getEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 活动列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            events: {
+                                eventId: string;
+                                title: string;
+                                description?: string;
+                                windowStart: number;
+                                windowEnd: number;
+                                myPoints: number;
+                                tasks: {
+                                    taskId: string;
+                                    kind: string;
+                                    target: number;
+                                    points: number;
+                                    progress: number;
+                                    done: boolean;
+                                }[];
+                                rewards: {
+                                    rewardId: string;
+                                    cost: number;
+                                    kind: string;
+                                    id?: string;
+                                    count?: number;
+                                    maxClaims?: number;
+                                    claimedCount: number;
+                                }[];
+                            }[];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    claimEventReward: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    eventId: string;
+                    rewardId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 兑换成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            pointsLeft: number;
+                            reward: {
+                                kind: string;
+                                id?: string;
+                                count?: number;
+                            };
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    getTitles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            titles: {
+                                /** @description 称号 id（ladder.s{N}.{rank} / slg.s{N}.{key} / ach.{key} / event.{key}） */
+                                id: string;
+                                /** @enum {string} */
+                                source: "ladder" | "slg" | "achievement" | "event";
+                                /** @description 赛季号（ladder/slg 类称号才有） */
+                                seasonNo?: number;
+                            }[];
+                            /** @description 当前佩戴称号 id；未佩戴为 null */
+                            equipped: string | null;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    equipTitle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 要佩戴的称号 id；空串表示卸下显示称号 */
+                    titleId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
         };
     };
 }
