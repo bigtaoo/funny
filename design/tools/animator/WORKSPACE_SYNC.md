@@ -131,6 +131,17 @@
 - **P2**：仓库纳入 `.tao.editor` 主文件 + `art/units/manifest.json`；`anim-sync.yml` 同步桥 + 自动 PR。→ 维护者"只点合并"。
 - **P3**（可选）：把仓库现有 `.tao`/`.tao.editor` 回灌进工作区作初始种子。
 
+### 8.1 实现记录
+
+- **P1 前端切片（2026-06-23，feat/animator-workspace）✅ 代码完成**：
+  - `io/workspaceConfig.ts` + `globals.d.ts`：Supabase 连接走 webpack DefinePlugin 注入（`NW_SUPABASE_URL` / `NW_SUPABASE_ANON_KEY`），未配置则空串、工作区静默禁用，离线编辑不受影响。
+  - `io/WorkspaceStore.ts`：`@supabase/supabase-js` 封装——magic-link 登录（`signInWithOtp`）+ Storage 读写；对象布局 `units/<unitKey>/<name>.tao.editor` + `.tao`；`list()` 遍历 unit 文件夹列出 `.tao.editor` 主文件。
+  - `io/IOController.ts`：抽出 `buildTaoBlob()`（不触发下载），供工作区上传浏览器构建好的 `.tao`（CI 桥无法重建 spritesheet）。
+  - `ui/WorkspacePanel.ts`：底栏 `☁ Workspace` 按钮 → 自建模态：登录 / 列表 / 打开（载入 `.tao.editor`）/ 保存当前（上传 `.tao.editor`+`.tao`）。
+  - 接线 `App.ts`，按钮入 `index.html`。验证：`tsc --noEmit` 通过 + `webpack --mode production` 构建通过。
+  - **待用户提供方能端到端跑通**：①创建 Supabase 项目（桶 `animations` + Auth + RLS 仅 authenticated 可读写）；②Cloudflare Pages 连仓库（构建 `cd tools/animator && npm i && npm run build`，输出 `tools/animator/dist`，环境变量 `NW_SUPABASE_URL` / `NW_SUPABASE_ANON_KEY`）。
+- P2（同步桥）、P3（种子回灌）未开始。
+
 ---
 
 ## 9. 开放问题（实现期定）

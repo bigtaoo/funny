@@ -19,6 +19,8 @@ import { IOController }          from './io/IOController';
 import { ProjectStore }          from './io/ProjectStore';
 import { AutoSaveController }     from './io/AutoSaveController';
 import { ProjectPanel }          from './ui/ProjectPanel';
+import { WorkspaceStore }         from './io/WorkspaceStore';
+import { WorkspacePanel }         from './ui/WorkspacePanel';
 import type { AttachmentPoint }  from './core/types';
 import type { AppEvents }        from './core/EventBus';
 
@@ -72,6 +74,7 @@ export class App {
       bus, state,
     );
     const ioCtrl = new IOController(state, animCtrl, imageCtrl, cmdManager, bus);
+    new WorkspacePanel(bus, new WorkspaceStore(), ioCtrl);
     new ResizablePanels(rootEl);
 
     // ── 6. Auto-binding when images are loaded ───────────────────────────────

@@ -16,6 +16,7 @@
     "webpack-dev-server": "^5.2.3"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
     "jszip": "^3.10.1",
     "pixi.js": "^7.4.2"
   }
