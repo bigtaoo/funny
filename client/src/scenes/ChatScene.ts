@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { caretDisplay } from '../render/inputDisplay';
 import type { ChatMessageView } from '../net/ApiClient';
 import type { ChatMessagePush } from '../net/proto/transport';
 
@@ -53,6 +54,9 @@ export class ChatScene implements Scene {
   /** True while there may be older pages to fetch. */
   private hasMore = false;
   private draft = '';
+  private composeFocused = false;
+  private caretOn = true;
+  private caretTimer = 0;
   private toastKey: TranslationKey | null = null;
   private toastT = 0;
 
@@ -91,6 +95,10 @@ export class ChatScene implements Scene {
     if (this.toastKey) {
       this.toastT -= dt;
       if (this.toastT <= 0) { this.toastKey = null; this.render(); }
+    }
+    if (this.composeFocused) {
+      this.caretTimer += dt;
+      if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
     }
   }
 
@@ -183,6 +191,8 @@ export class ChatScene implements Scene {
     el.setAttribute('autocapitalize', 'sentences');
     el.style.cssText =
       'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;border:0;padding:0;margin:0;font-size:16px;z-index:-1;';
+    el.addEventListener('focus', () => { this.composeFocused = true; this.caretOn = true; this.caretTimer = 0; this.render(); });
+    el.addEventListener('blur', () => { this.composeFocused = false; this.render(); });
     el.addEventListener('input', () => { this.draft = el.value; this.render(); });
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); void this.doSend(); }
@@ -360,11 +370,11 @@ export class ChatScene implements Scene {
     const fieldW = w - fieldX * 2 - sendW - gap;
     const fieldH = Math.round(composeH * 0.66);
     const fieldY = cy + (composeH - fieldH) / 2;
-    const field = sketchPanel(fieldW, fieldH, { fill: C.paper, border: this.draft ? C.accent : C.line, width: 2, seed: seedFor(fieldX, 0, fieldW) });
+    const field = sketchPanel(fieldW, fieldH, { fill: C.paper, border: (this.draft || this.composeFocused) ? C.accent : C.line, width: 2, seed: seedFor(fieldX, 0, fieldW) });
     field.x = fieldX; field.y = fieldY;
     this.container.addChild(field);
-    const shown = this.draft || t('chat.placeholder');
-    const ft = txt(shown, Math.round(fieldH * 0.4), this.draft ? C.dark : C.mid);
+    const display = caretDisplay(this.draft, this.composeFocused ? this.caretOn : false, t('chat.placeholder'));
+    const ft = txt(display, Math.round(fieldH * 0.4), (this.draft || this.composeFocused) ? C.dark : C.mid);
     ft.anchor.set(0, 0.5); ft.x = fieldX + Math.round(w * 0.025); ft.y = fieldY + fieldH / 2;
     this.container.addChild(ft);
     this.hits.push({ rect: { x: fieldX, y: fieldY, w: fieldW, h: fieldH }, fn: () => this.focusCompose() });

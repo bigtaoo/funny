@@ -6,6 +6,7 @@ import { t, getLocale, setLocale, getSupportedLocales, Locale, TranslationKey } 
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
 import { sketchPanel, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { buildAvatar } from '../render/avatar';
 
@@ -430,9 +431,8 @@ export class SettingsScene implements Scene {
     // Tapping the field (re)focuses the hidden input on touch devices.
     this.hits.push({ rect: { x: ibX, y: ibY, w: ibW, h: ibH }, fn: () => this.hiddenInput?.focus() });
 
-    const shown = this.renameText + (this.caretOn ? '|' : '');
-    const display = this.renameText ? shown : t('settings.renamePlaceholder');
-    const field = txt(display, Math.round(ibH * 0.42), this.renameText ? C.dark : C.mid);
+    const display = caretDisplay(this.renameText, this.caretOn, t('settings.renamePlaceholder'));
+    const field = txt(display, Math.round(ibH * 0.42), (this.renameText || this.caretOn) ? C.dark : C.mid);
     field.anchor.set(0, 0.5); field.x = ibX + Math.round(ibW * 0.04); field.y = ibY + ibH / 2;
     this.container.addChild(field);
 
