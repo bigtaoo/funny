@@ -3,7 +3,8 @@ name: anim-sync
 # 把动画工作区（Supabase Storage）的 .tao(.editor) 同步回仓库，开 PR 让维护者审核合并。
 # 单向：云 → 仓库，永不删仓库文件。设计：design/tools/animator/WORKSPACE_SYNC.md §5
 #
-# 需要的 repo secrets：SUPABASE_URL、SUPABASE_SERVICE_KEY（service role key）。
+# 需要的 repo secrets：NW_SUPABASE_URL、SUPABASE_SERVICE_KEY（service role key）。
+# 启用开关：repo variable ANIM_SYNC_ENABLED = true（未设则整个 job 跳过，避免每日 cron 报红）。
 
 on:
   schedule:
@@ -17,7 +18,7 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    # 未配置 SUPABASE_URL secret 时整个 job 跳过（避免配好前每日 cron 报红）。
+    # 未设 repo variable ANIM_SYNC_ENABLED=true 时整个 job 跳过（避免配好前每日 cron 报红）。
     if: ${{ vars.ANIM_SYNC_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +31,7 @@ jobs:
         id: pull
         run: node tools/animator/scripts/anim-sync.mjs
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NW_SUPABASE_URL: ${{ secrets.NW_SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
       - name: Open / update sync PR

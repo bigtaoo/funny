@@ -7,21 +7,21 @@
 // One-way only (cloud → repo, PR-gated). Never deletes repo files; a unit absent
 // from the workspace is simply skipped. No npm deps — Node 20 global fetch + fs.
 //
-// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY (service role; repo secrets).
+// Env: NW_SUPABASE_URL, SUPABASE_SERVICE_KEY (service role; repo secrets).
 // Design: design/tools/animator/WORKSPACE_SYNC.md §5
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_URL = process.env.NW_SUPABASE_URL;
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY;
 const BUCKET       = 'animations';
 const PREFIX       = 'units';
 const MANIFEST     = 'art/units/manifest.json';
 
 if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error('[anim-sync] 缺少 SUPABASE_URL / SUPABASE_SERVICE_KEY 环境变量');
+  console.error('[anim-sync] 缺少 NW_SUPABASE_URL / SUPABASE_SERVICE_KEY 环境变量');
   process.exit(1);
 }
 
