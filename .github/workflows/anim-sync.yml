@@ -25,7 +25,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Pull animations from workspace
         id: pull
@@ -36,7 +36,7 @@ jobs:
 
       - name: Open / update sync PR
         if: steps.pull.outputs.changed_count != '0'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v7
         with:
           branch: anim-sync/auto
           base: main

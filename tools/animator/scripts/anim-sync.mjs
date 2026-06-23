@@ -5,7 +5,7 @@
 // anim-sync GitHub Action, which then opens a PR with whatever changed.
 //
 // One-way only (cloud → repo, PR-gated). Never deletes repo files; a unit absent
-// from the workspace is simply skipped. No npm deps — Node 20 global fetch + fs.
+// from the workspace is simply skipped. No npm deps — Node 18+ global fetch + fs.
 //
 // Env: NW_SUPABASE_URL, SUPABASE_SERVICE_KEY (service role; repo secrets).
 // Design: design/tools/animator/WORKSPACE_SYNC.md §5
