@@ -17,6 +17,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../ren
 import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView, SeasonView, SlgShopItemView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/proto/transport';
+import { proceduralTile } from '@nw/shared';
 
 // ── Public callbacks ────────────────────────────────────────────────────────
 
@@ -98,6 +99,13 @@ function tileColor(tile: WorldTileView): number {
     return RES_COLORS[tile.resType] ?? TERRAIN_COLORS.resource!;
   }
   return TERRAIN_COLORS[tile.type] ?? TERRAIN_COLORS.neutral!;
+}
+
+/** 未缓存格的程序化地形色（无网络请求，纯本地计算）。 */
+function proceduralTileColor(worldId: string, x: number, y: number): number {
+  const p = proceduralTile(worldId, x, y);
+  if (p.type === 'resource' && p.resType) return RES_COLORS[p.resType] ?? TERRAIN_COLORS.resource!;
+  return TERRAIN_COLORS[p.type] ?? TERRAIN_COLORS.neutral!;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -325,9 +333,29 @@ export class WorldMapScene implements Scene {
     if (this.destroyed) return;
     const { cx, cy, r } = this.viewportCenter();
     try {
-      const map = await this.cb.worldApi.getMap(this.cb.worldId, cx, cy, r);
-      for (const tile of map.tiles) {
-        this.tileCache.set(`${tile.x}:${tile.y}`, tile);
+      if (this.zoom === 1) {
+        // 全量详情：owner 名称 / 驻军 / 瞭望塔 / 视野门控
+        const map = await this.cb.worldApi.getMap(this.cb.worldId, cx, cy, r);
+        for (const tile of map.tiles) {
+          this.tileCache.set(`${tile.x}:${tile.y}`, tile);
+        }
+      } else {
+        // 稀疏占领层：只含被占领格；未占领格客户端从 proceduralTile 本地渲染
+        const lod = this.zoom === 3 ? 'thin' : 'mid';
+        const sparse = await this.cb.worldApi.getMapSparse(this.cb.worldId, cx, cy, r, lod);
+        for (const s of sparse.tiles) {
+          // 合成最小 WorldTileView；zoom 1 加载时会覆盖为完整数据
+          this.tileCache.set(`${s.x}:${s.y}`, {
+            x: s.x,
+            y: s.y,
+            type: s.type as WorldTileView['type'],
+            level: 1,
+            occupied: true,
+            ...(s.mine ? { mine: true } : {}),
+            ...(s.ally ? { ally: true } : {}),
+            ...(s.allySect ? { allySect: true } : {}),
+          });
+        }
       }
     } catch { /* offline */ }
   }
@@ -372,6 +400,8 @@ export class WorldMapScene implements Scene {
     this.buildPool();
     this.invalidatePool();
     this.renderHud();
+    // 换档后按新 LOD 重新拉取视口数据（不同档要求不同端点 / 字段集）
+    void this.loadMapViewport();
   }
 
   // ── Tile pool (L1 / L2) ────────────────────────────────────────────────────
@@ -438,7 +468,7 @@ export class WorldMapScene implements Scene {
     g.visible = true;
 
     const tile = this.tileCache.get(`${tx}:${ty}`);
-    const color = tile ? tileColor(tile) : TERRAIN_COLORS.neutral!;
+    const color = tile ? tileColor(tile) : proceduralTileColor(this.cb.worldId, tx, ty);
     const fogged = tile?.visible === false;
 
     if (this.zoom === 1) {
@@ -534,7 +564,7 @@ export class WorldMapScene implements Scene {
     for (let ty = Math.max(0, y0); ty <= Math.min(this.mapH - 1, y1); ty++) {
       for (let tx = Math.max(0, x0); tx <= Math.min(this.mapW - 1, x1); tx++) {
         const tile = this.tileCache.get(`${tx}:${ty}`);
-        let color = tile ? tileColor(tile) : TERRAIN_COLORS.neutral!;
+        let color = tile ? tileColor(tile) : proceduralTileColor(this.cb.worldId, tx, ty);
         if (tile?.visible === false) color = (color & 0x7f7f7f) | 0x404040; // darken fogged
         if (!groups.has(color)) groups.set(color, []);
         groups.get(color)!.push(panX + tx * tp, panY + ty * tp);

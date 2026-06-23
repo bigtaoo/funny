@@ -12,10 +12,11 @@
     "baseUrl": ".",
     "paths": {
       "@nw/engine": ["../server/engine/src/index.ts"],
-      "@nw/engine/*": ["../server/engine/src/*"]
+      "@nw/engine/*": ["../server/engine/src/*"],
+      "@nw/shared": ["../server/shared/src/index.ts"]
     }
   },
-  "include": ["src/**/*", "../server/engine/src/**/*"],
+  "include": ["src/**/*", "../server/engine/src/**/*", "../server/shared/src/**/*"],
   "exclude": [
     "node_modules",
     "dist",

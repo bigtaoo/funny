@@ -182,6 +182,20 @@ export function startHttpApi(
           );
           return send(res, 200, ok(view));
         }
+        if (method === 'GET' && path === '/world/map/sparse') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          const lod = q.get('lod') === 'mid' ? 'mid' : 'thin';
+          const view = await svc.getMapSparse(
+            worldId,
+            accountId,
+            numQ(q.get('cx'), 0),
+            numQ(q.get('cy'), 0),
+            numQ(q.get('r'), 10),
+            lod,
+          );
+          return send(res, 200, ok(view));
+        }
         if (method === 'GET' && path.startsWith('/world/tile/')) {
           const tid = decodeURIComponent(path.slice('/world/tile/'.length));
           const parts = tid.split(':');

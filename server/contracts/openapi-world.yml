@@ -89,6 +89,50 @@ components:
           items:
             $ref: '#/components/schemas/WorldTileView'
 
+    WorldTileSparseView:
+      description: >-
+        稀疏占领格视图（zoom 2/3 鸟瞰层）。只含被占领格；未占领格客户端从 proceduralTile 本地渲染。
+        无 profile RPC、无视野计算。
+      type: object
+      required: [x, y, type]
+      properties:
+        x:
+          type: integer
+        y:
+          type: integer
+        type:
+          type: string
+          enum: [neutral, resource, territory, familyKeep, center, base, obstacle, gate, stronghold]
+        mine:
+          type: boolean
+        ally:
+          type: boolean
+          description: lod=mid：同家族盟友
+        allySect:
+          type: boolean
+          description: lod=mid：联盟宗门成员（非家族）
+
+    WorldMapSparseView:
+      type: object
+      required: [worldId, cx, cy, r, lod, tiles]
+      properties:
+        worldId:
+          type: string
+        cx:
+          type: integer
+        cy:
+          type: integer
+        r:
+          type: integer
+        lod:
+          type: string
+          enum: [thin, mid]
+        tiles:
+          type: array
+          description: 仅占领格，稀疏数组
+          items:
+            $ref: '#/components/schemas/WorldTileSparseView'
+
     PlayerWorldView:
       type: object
       required: [joined]
@@ -516,6 +560,32 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/WorldMapView' }
+
+  /world/map/sparse:
+    get:
+      operationId: getWorldMapSparse
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true,  schema: { type: string } }
+        - { name: cx,      in: query, required: true,  schema: { type: integer } }
+        - { name: cy,      in: query, required: true,  schema: { type: integer } }
+        - { name: r,       in: query, required: true,  schema: { type: integer } }
+        - name: lod
+          in: query
+          required: false
+          schema: { type: string, enum: [thin, mid], default: thin }
+          description: thin=仅 mine 标记（zoom 3）；mid=含 ally/allySect（zoom 2）
+      responses:
+        '200':
+          description: Sparse ownership overlay
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/WorldMapSparseView' }
 
   /world/tile/{tileId}:
     get:

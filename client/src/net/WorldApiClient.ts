@@ -16,6 +16,25 @@ import type { components } from './openapi-world';
 
 export type WorldTileView = components['schemas']['WorldTileView'];
 export type WorldMapView = components['schemas']['WorldMapView'];
+
+/** 稀疏占领格（zoom 2/3 鸟瞰层，只含被占领格）。 */
+export interface WorldTileSparseView {
+  x: number;
+  y: number;
+  type: string;
+  mine?: boolean;
+  ally?: boolean;
+  allySect?: boolean;
+}
+
+export interface WorldMapSparseView {
+  worldId: string;
+  cx: number;
+  cy: number;
+  r: number;
+  lod: 'thin' | 'mid';
+  tiles: WorldTileSparseView[];
+}
 export type PlayerWorldView = components['schemas']['PlayerWorldView'];
 export type MarchView = components['schemas']['MarchView'];
 export type FamilyMemberView = components['schemas']['FamilyMemberView'];
@@ -115,6 +134,11 @@ export class WorldApiClient {
 
   async getMap(worldId: string, cx: number, cy: number, r: number): Promise<WorldMapView> {
     return this.req('GET', `/world/map?worldId=${encodeURIComponent(worldId)}&cx=${cx}&cy=${cy}&r=${r}`);
+  }
+
+  /** 稀疏占领层（zoom 2/3）：只返回被占领格，无 profile RPC，无视野计算。 */
+  async getMapSparse(worldId: string, cx: number, cy: number, r: number, lod: 'thin' | 'mid'): Promise<WorldMapSparseView> {
+    return this.req('GET', `/world/map/sparse?worldId=${encodeURIComponent(worldId)}&cx=${cx}&cy=${cy}&r=${r}&lod=${lod}`);
   }
 
   async getTile(worldId: string, x: number, y: number): Promise<WorldTileView> {

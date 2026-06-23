@@ -140,6 +140,32 @@ export interface WorldMapView {
   tiles: WorldTileView[];
 }
 
+/**
+ * 稀疏占领格视图（zoom 2/3 鸟瞰层）。
+ * 只含被占领（ownerId 存在）的格子；未占领格由客户端从 proceduralTile 本地渲染。
+ * 无 profile RPC / 无视野计算 → 比 WorldTileView 快一个数量级。
+ */
+export interface WorldTileSparseView {
+  x: number;
+  y: number;
+  type: TileType;
+  mine?: boolean;
+  /** lod=mid 时填充（同家族盟友）。 */
+  ally?: boolean;
+  /** lod=mid 时填充（联盟宗门成员，非家族）。 */
+  allySect?: boolean;
+}
+
+export interface WorldMapSparseView {
+  worldId: string;
+  cx: number;
+  cy: number;
+  r: number;
+  lod: 'thin' | 'mid';
+  /** 仅占领格，稀疏数组。未在此列的格子客户端按 proceduralTile 渲染。 */
+  tiles: WorldTileSparseView[];
+}
+
 export interface PlayerWorldView {
   joined: boolean;
   /** 所在 shard worldId（G6/§20 R3：join-season 解析结果回传，客户端进图依据）。 */
@@ -372,6 +398,56 @@ export class WorldService {
       }
     }
     return { worldId, cx: Math.floor(cx), cy: Math.floor(cy), r: rad, tiles };
+  }
+
+  /**
+   * 稀疏占领层（zoom 2/3 鸟瞰专用，§LOD）。
+   * 只返回 DB 中有 ownerId 的格子——未占领格客户端用 proceduralTile 本地渲染。
+   * 跳过 profile RPC / vision 计算；lod=mid 时额外算家族+宗门联盟（仍无 profile RPC）。
+   */
+  async getMapSparse(
+    worldId: string,
+    accountId: string,
+    cx: number,
+    cy: number,
+    r: number,
+    lod: 'thin' | 'mid',
+  ): Promise<WorldMapSparseView> {
+    const { cols, mapW, mapH } = this.deps;
+    const rad = Math.max(0, Math.min(MAP_VIEW_MAX_RADIUS, Math.floor(r)));
+    const x0 = Math.max(0, Math.floor(cx) - rad);
+    const x1 = Math.min(mapW - 1, Math.floor(cx) + rad);
+    const y0 = Math.max(0, Math.floor(cy) - rad);
+    const y1 = Math.min(mapH - 1, Math.floor(cy) + rad);
+
+    // 只取有主人的格子（稀疏），用 projection 减少传输量
+    const owned = await cols.tiles
+      .find(
+        { worldId, x: { $gte: x0, $lte: x1 }, y: { $gte: y0, $lte: y1 }, ownerId: { $exists: true } },
+        { projection: { x: 1, y: 1, type: 1, ownerId: 1 } },
+      )
+      .toArray();
+
+    let family = new Set<string>([accountId]);
+    let allySectSet = new Set<string>();
+    if (lod === 'mid') {
+      family = await this.familyMemberIds(worldId, accountId);
+      allySectSet = await this.allySectMemberIds(worldId, accountId);
+    }
+
+    const tiles: WorldTileSparseView[] = owned.map((o) => {
+      const mine = o.ownerId === accountId;
+      const tile: WorldTileSparseView = { x: o.x, y: o.y, type: o.type };
+      if (mine) {
+        tile.mine = true;
+      } else if (lod === 'mid' && o.ownerId) {
+        if (family.has(o.ownerId)) tile.ally = true;
+        else if (allySectSet.has(o.ownerId)) tile.allySect = true;
+      }
+      return tile;
+    });
+
+    return { worldId, cx: Math.floor(cx), cy: Math.floor(cy), r: rad, lod, tiles };
   }
 
   /** 自己 + 同家族成员的 accountId 集（家族级视野共享 / 友方判定，§8.2；含自己）。 */

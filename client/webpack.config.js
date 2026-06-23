@@ -42,6 +42,9 @@ module.exports = (env, argv) => {
         // TS source via ts-loader. client's first cross-boundary bridge (§16.7).
         '@nw/engine$': path.resolve(__dirname, '../server/engine/src/index.ts'),
         '@nw/engine': path.resolve(__dirname, '../server/engine/src'),
+        // @nw/shared = shared types + proceduralTile (pure, deterministic).
+        // Client uses proceduralTile to render background terrain without a server round-trip.
+        '@nw/shared': path.resolve(__dirname, '../server/shared/src/index.ts'),
       },
     },
     output: {
