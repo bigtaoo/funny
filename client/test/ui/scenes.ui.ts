@@ -421,7 +421,12 @@ describe('CampaignMapScene — tap detection', () => {
     scene.destroy();
   });
 
-  it('blocks tap during flip animation (this.flip guard)', () => {
+  it('is interactive immediately on construction — no opening-flip gate', () => {
+    // Regression for the recurring「无法选择关卡/回不去大厅」bug: the scene used to
+    // open on the TOC and auto-flip to the chapter, gating EVERY hit behind that
+    // flip. The flip only settles from update(), so if the ticker stalled the scene
+    // loaded but was completely dead. The fix lands directly on the chapter page —
+    // hits must be live with NO update() / frame advance at all.
     let hit: string | null = null;
     const input = new InputManager();
     const scene = new CampaignMapScene(layout, input, {
@@ -433,13 +438,72 @@ describe('CampaignMapScene — tap detection', () => {
       isOnline: () => true,
       getPendingLevels: () => [],
     });
-    // Do NOT advance past flip — this.flip is still set.
-    const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number } }>;
-    // During flip, hits array is empty anyway.
-    expect(hits).toHaveLength(0);
-    // Even if we synthesise coordinates, nothing should fire.
-    input._emitDown(layout.designWidth / 2, layout.designHeight / 2);
-    expect(hit).toBeNull();
+    // Deliberately do NOT call scene.update(): a real ticker stall must not strand us.
+    expect((scene as any).flip).toBeNull();
+    const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
+    expect(hits.length).toBeGreaterThan(0);
+    const tbH = Math.round(dh * 0.12);
+    const levelHit = hits.find(({ rect: r }) => r.y >= tbH);
+    expect(levelHit).toBeDefined();
+    const { x, y, w, h } = levelHit!.rect;
+    input._emitDown(x + w / 2, y + h / 2);
+    expect(hit).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('back-to-lobby works without any frame advance (ticker-stall resilience)', () => {
+    // The header "back" on the chapter page flips to the TOC, whose back calls
+    // onBack(). Both steps must work with zero update() calls — proving neither the
+    // level select nor the path back to the lobby depends on the flip settling.
+    let backHits = 0;
+    const input = new InputManager();
+    const scene = new CampaignMapScene(layout, input, {
+      onBack() { backHits++; },
+      onSelectLevel() {},
+      onOpenCollection() {},
+      getStars: () => ({}),
+      getCleared: () => [],
+      isOnline: () => true,
+      getPendingLevels: () => [],
+    });
+    const headerBack = () => (scene as any).hits.find((hh: any) => hh.rect.x === 0 && hh.rect.y === 0);
+    // 1) chapter page → tap back → flips toward TOC (no frame advance).
+    let b = headerBack(); expect(b).toBeDefined();
+    input._emitDown(b.rect.x + 2, b.rect.y + 2);
+    // The flip toward the TOC is now genuinely in progress (we never advanced it)…
+    expect((scene as any).flip).not.toBeNull();
+    // …yet hits must stay live (this.hits = incoming page's hits) so the TOC's back
+    // still calls onBack() — proving taps work MID-FLIP, not just after it settles.
+    b = headerBack(); expect(b).toBeDefined();
+    input._emitDown(b.rect.x + 2, b.rect.y + 2);
+    expect(backHits).toBe(1);
+    scene.destroy();
+  });
+
+  it('lands interactive on the in-progress chapter for a partially-cleared save', () => {
+    // The opening page is whichever chapter holds the first uncleared level
+    // (currentChapter). With ch1 fully cleared the book opens on ch2 — and that
+    // landing must be immediately tappable too, with no update()/frame advance.
+    const ch1Cleared = Array.from({ length: 10 }, (_, i) => `ch1_lv${i + 1}`);
+    let hit: string | null = null;
+    const input = new InputManager();
+    const scene = new CampaignMapScene(layout, input, {
+      onBack() {},
+      onSelectLevel: (id) => { hit = id; },
+      onOpenCollection() {},
+      getStars: () => ({}),
+      getCleared: () => ch1Cleared,
+      isOnline: () => true,
+      getPendingLevels: () => [],
+    });
+    expect((scene as any).flip).toBeNull();
+    expect((scene as any).chapter).toBe(2);
+    const tbH = Math.round(dh * 0.12);
+    const levelHit = (scene as any).hits.find((hh: any) => hh.rect.y >= tbH);
+    expect(levelHit).toBeDefined();
+    input._emitDown(levelHit.rect.x + levelHit.rect.w / 2, levelHit.rect.y + levelHit.rect.h / 2);
+    // The fired level must belong to chapter 2 (the chapter we actually landed on).
+    expect(hit).toMatch(/^ch2_lv/);
     scene.destroy();
   });
 

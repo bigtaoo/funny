@@ -97,10 +97,19 @@ export class CampaignMapScene implements Scene {
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
 
-    // Open on the TOC, then flip to the current chapter — the book opening itself.
+    // Land DIRECTLY on the current chapter (progress landing, §12.2).
+    //
+    // This used to open on the TOC and auto-flip to the chapter — a cosmetic
+    // "book opening". But that gated EVERY tap target behind the opening flip:
+    // during a flip `this.hits = []` and `handleDown` is a no-op, and the flip
+    // only settles from `update()`. If the ticker stalled for any reason the
+    // scene rendered but was completely dead — no level select, no way back —
+    // which is exactly the recurring「无法选择关卡/回不去大厅」bug. Building the
+    // chapter page as the initial page keeps hits live from the first frame,
+    // independent of update()/ticker timing. (Tab-to-tab page turns still flip.)
     this.chapter = currentChapter(new Set(this.cb.getCleared()));
-    this.showPage(this.buildToc());
-    this.flipTo(() => this.buildChapter(this.chapter), 1, () => { this.mode = 'chapter'; });
+    this.mode = 'chapter';
+    this.showPage(this.buildChapter(this.chapter));
   }
 
   update(dt: number): void {
@@ -130,10 +139,13 @@ export class CampaignMapScene implements Scene {
     if (this.flip || !this.page) return;
     const neu = build();
     const out = this.page.root;
-    // The incoming page becomes the live one immediately (its pulse/hits take over);
-    // hits stay disabled until the flip settles.
+    // The incoming page becomes the live one immediately — its hits take over NOW,
+    // not after the flip settles. Keeping hits live mid-flip means a tap still works
+    // even if the ticker stalls before `update()` finishes the animation. Re-entrant
+    // flips are already prevented by the `this.flip` guards in flipTo/openChapter/
+    // backToToc, so unguarded hits here can't stack a second flip.
     this.page = neu;
-    this.hits = [];
+    this.hits = neu.hits;
     this.container.addChild(neu.root);
     neu.root.x = dir * this.w;
     neu.root.alpha = 0;
@@ -163,7 +175,8 @@ export class CampaignMapScene implements Scene {
   }
 
   private handleDown(x: number, y: number): void {
-    if (this.flip) return;
+    // No `this.flip` guard: hits are kept live across flips (see flipTo), so taps
+    // work even mid-animation or if the ticker stalls before a flip settles.
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); break; }
