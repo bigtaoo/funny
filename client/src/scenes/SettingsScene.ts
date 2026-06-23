@@ -59,6 +59,11 @@ export interface SettingsSceneCallbacks {
   offline?: boolean;
   onLogin?(): void;
   onLogout?(): void;
+  /**
+   * 删除账号（C5-b，Apple 5.1.1(v)）。仅登录在线提供；二次确认后调用。成功后核心清本地
+   * 并跳登录页，故无需返回值上的导航——失败返回 ok:false 触发 toast。
+   */
+  onDeleteAccount?(): Promise<{ ok: boolean }>;
   /** 称号系统（S10）入口；未提供则不显示。 */
   onOpenTitles?(): void;
   // ── rename (online only; absent → no rename UI) ──
@@ -88,6 +93,8 @@ export class SettingsScene implements Scene {
   // Rename overlay state.
   private renameOpen = false;
   private renameText = '';
+  /** Delete-account confirmation overlay (C5-b). */
+  private deleteConfirmOpen = false;
   private readonly bt = new BusyTracker();
   private caretOn = true;
   private caretTimer = 0;
@@ -203,6 +210,7 @@ export class SettingsScene implements Scene {
     this.drawAccount();
     if (this.toast) this.drawToast();
     if (this.renameOpen) this.drawRenameOverlay();
+    if (this.deleteConfirmOpen) this.drawDeleteConfirm();
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
@@ -359,8 +367,92 @@ export class SettingsScene implements Scene {
         this.addButton(t('auth.loginEntry'), secY + Math.round(h * 0.09), C.gold, () => this.cb.onLogin!());
       }
     } else if (this.cb.onLogout) {
-      this.addButton(t('auth.logout'), secY + Math.round(h * 0.045), C.red, () => this.cb.onLogout!());
+      this.addButton(t('auth.logout'), secY + Math.round(h * 0.045), C.dark, () => this.cb.onLogout!());
+      // Account deletion (C5-b, Apple 5.1.1(v)) — danger entry below logout, online only.
+      if (this.cb.onDeleteAccount) {
+        this.addButton(t('settings.deleteAccount'), secY + Math.round(h * 0.125), C.red, () => this.openDelete());
+      }
     }
+  }
+
+  private openDelete(): void {
+    this.deleteConfirmOpen = true;
+    this.toast = null;
+    this.render();
+  }
+
+  private closeDelete(): void {
+    this.deleteConfirmOpen = false;
+    this.render();
+  }
+
+  private async submitDelete(): Promise<void> {
+    if (this.bt.busy || !this.cb.onDeleteAccount) return;
+    this.deleteConfirmOpen = false;
+    this.bt.start();
+    this.render();
+    try {
+      const res = await withTimeout(this.cb.onDeleteAccount());
+      // On success the core navigates to the login screen (this scene is torn down);
+      // only a failure path returns here visibly.
+      if (!res.ok) this.toast = { text: t('settings.deleteAccount.failed'), color: C.red };
+    } catch (e) {
+      this.toast = { text: e instanceof TimeoutError ? t('common.networkTimeout') : t('settings.deleteAccount.failed'), color: C.red };
+    } finally {
+      this.bt.stop();
+      this.render();
+    }
+  }
+
+  private drawDeleteConfirm(): void {
+    const { w, h } = this;
+    // Modal: discard base-scene hits so only the overlay's controls are tappable.
+    this.hits = [];
+
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.7); dim.drawRect(0, 0, w, h); dim.endFill();
+    this.container.addChild(dim);
+
+    const pw = Math.round(w * 0.78), ph = Math.round(h * 0.36);
+    const px = (w - pw) / 2, py = (h - ph) / 2;
+    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.red, width: 2.6, seed: 37 });
+    panel.x = px; panel.y = py;
+    this.container.addChild(panel);
+
+    const title = txt(t('settings.deleteAccount.confirmTitle'), Math.round(h * 0.03), C.red, true);
+    title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.03);
+    this.container.addChild(title);
+
+    const body = new PIXI.Text(t('settings.deleteAccount.confirmBody'), {
+      fontSize: Math.round(h * 0.024), fill: C.dark, fontFamily: 'monospace',
+      wordWrap: true, wordWrapWidth: pw * 0.86, align: 'center', lineHeight: Math.round(h * 0.036),
+    });
+    body.anchor.set(0.5, 0); body.x = w / 2; body.y = py + Math.round(ph * 0.26);
+    this.container.addChild(body);
+
+    // Confirm (danger) / cancel.
+    const btnW = Math.round(pw * 0.4), btnH = Math.round(h * 0.06);
+    const byy = py + ph - btnH - Math.round(h * 0.03);
+    const delX = px + Math.round(pw * 0.08), cancelX = px + pw - Math.round(pw * 0.08) - btnW;
+
+    const delBox = new PIXI.Graphics();
+    delBox.beginFill(C.red); delBox.drawRect(delX, byy, btnW, btnH); delBox.endFill();
+    this.container.addChild(delBox);
+    const delLbl = txt(t('settings.deleteAccount.confirm'), Math.round(btnH * 0.32), 0xffffff, true);
+    delLbl.anchor.set(0.5, 0.5); delLbl.x = delX + btnW / 2; delLbl.y = byy + btnH / 2;
+    this.container.addChild(delLbl);
+    this.hits.push({ rect: { x: delX, y: byy, w: btnW, h: btnH }, fn: () => void this.submitDelete() });
+
+    const cBox = new PIXI.Graphics();
+    cBox.beginFill(C.mid); cBox.drawRect(cancelX, byy, btnW, btnH); cBox.endFill();
+    this.container.addChild(cBox);
+    const cLbl = txt(t('settings.deleteAccount.cancel'), Math.round(btnH * 0.36), 0xffffff, true);
+    cLbl.anchor.set(0.5, 0.5); cLbl.x = cancelX + btnW / 2; cLbl.y = byy + btnH / 2;
+    this.container.addChild(cLbl);
+    this.hits.push({ rect: { x: cancelX, y: byy, w: btnW, h: btnH }, fn: () => this.closeDelete() });
+
+    // Tap outside panel = cancel (registered last so the buttons win — first-match-wins).
+    this.hits.push({ rect: { x: 0, y: 0, w, h }, fn: () => this.closeDelete() });
   }
 
   /** A dark button with a hand-drawn border. `fn = null` → disabled (greyed, inert). */

@@ -1067,4 +1067,26 @@ export const de: Record<TranslationKey, string> = {
   'event.rewards.claim': 'Einlösen',
   'event.rewards.claimToast': 'Eingelöst! Verbleibende Punkte: {n}',
   'event.rewards.claimFailed': 'Einlösen fehlgeschlagen, bitte erneut versuchen',
+
+  // ── DSGVO-Einwilligung beim ersten Start (C5-c, L1-1) ───────────────────────
+  'consent.title': 'Datenschutz & Datennutzung',
+  'consent.body': 'Wir respektieren deine Privatsphäre. Bitte lies und akzeptiere vor dem Spielen unsere Datenschutzerklärung und Nutzungsbedingungen. Nur mit deiner Zustimmung erheben wir anonyme Spieldaten zur Verbesserung des Spiels, und du kannst dein Konto jederzeit in den Einstellungen löschen.',
+  'consent.privacyPolicy': 'Datenschutzerklärung',
+  'consent.terms': 'Nutzungsbedingungen',
+  'consent.accept': 'Zustimmen & Fortfahren',
+
+  // ── Gacha-Wahrscheinlichkeiten (Apple 3.1.1, L1-3) ──────────────────────────
+  'gacha.oddsDetail.button': 'Chancen',
+  'gacha.oddsDetail.title': 'Offenlegung der Droprate',
+  'gacha.oddsDetail.total': 'Gesamt: {pct}%',
+  'gacha.oddsDetail.pityRule': 'Pity: Die höchste Seltenheit ist innerhalb von je {n} Ziehungen garantiert.',
+  'gacha.oddsDetail.tapClose': 'Zum Schließen tippen',
+
+  // ── Kontolöschung (Apple 5.1.1(v), C5-b, L1-2) ──────────────────────────────
+  'settings.deleteAccount': 'Konto löschen',
+  'settings.deleteAccount.confirmTitle': 'Konto löschen?',
+  'settings.deleteAccount.confirmBody': 'Dein Konto erhält eine 7-tägige Karenzzeit — melde dich darin erneut an, um es wiederherzustellen. Nach 7 Tagen werden die Daten endgültig gelöscht. Wirklich löschen?',
+  'settings.deleteAccount.confirm': 'Löschen',
+  'settings.deleteAccount.cancel': 'Abbrechen',
+  'settings.deleteAccount.failed': 'Löschen fehlgeschlagen — bitte erneut versuchen',
 };

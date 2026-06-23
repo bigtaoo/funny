@@ -34,6 +34,9 @@ import { SectScene, type SectSceneCallbacks, type SectSceneView } from './scenes
 import { AuctionScene, type AuctionSceneCallbacks } from './scenes/AuctionScene';
 import { DefenseEditorScene, type DefenseEditorCallbacks } from './scenes/DefenseEditorScene';
 import { TeamsScene, type TeamsCallbacks } from './scenes/TeamsScene';
+import { DailyScene, type DailyCallbacks } from './scenes/DailyScene';
+import { EventScene, type EventCallbacks } from './scenes/EventScene';
+import { ConsentDialog, type ConsentCallbacks } from './render/ConsentDialog';
 import { OwnerId, ownerToSide } from './game';
 import type { Replay, LevelDefinition } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
@@ -83,6 +86,11 @@ class PixiAppViews implements AppViews {
     this.manager.goto(new IntroScene(this.layout, this.input, cb));
   }
 
+  showConsent(cb: ConsentCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new ConsentDialog(this.layout.designWidth, this.layout.designHeight, cb));
+  }
+
   showLobby(cb: LobbySceneCallbacks): LobbyView {
     const scene = new LobbyScene(this.layout, this.input, cb);
     this.manager.goto(scene);
@@ -90,6 +98,8 @@ class PixiAppViews implements AppViews {
     return {
       applySocialBadge: (n) => scene.applySocialBadge(n),
       applyAchievementBadge: (c) => scene.applyAchievementBadge(c),
+      applyRetentionBadge: (c) => scene.applyRetentionBadge(c),
+      applyEventsAvailable: (a) => scene.applyEventsAvailable(a),
       applyWorldAvailable: (ok) => scene.applyWorldAvailable(ok),
       showAchievementToast: (m) => scene.showAchievementToast(m),
       showSeasonSettlement: (o, p, n) => scene.showSeasonSettlement(o, p, n),
@@ -159,6 +169,16 @@ class PixiAppViews implements AppViews {
   showTitles(cb: TitlesSceneCallbacks): void {
     this.leaveLobby();
     this.manager.goto(new TitlesScene(this.layout, this.input, cb));
+  }
+
+  showDaily(cb: DailyCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new DailyScene(this.layout, this.input, cb));
+  }
+
+  showEvents(cb: EventCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new EventScene(this.layout, this.input, cb));
   }
 
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void {

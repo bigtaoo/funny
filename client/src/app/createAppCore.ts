@@ -40,6 +40,8 @@ const log = netLog('app');
 
 /** flags key — set after the first-launch intro has been seen. */
 const SEEN_INTRO_FLAG = 'seen_intro';
+/** flags key — set after the player accepts the GDPR / privacy consent (C5-c, L1-1). Mirrors server `flags.gdprConsent`. */
+const GDPR_CONSENT_FLAG = 'gdprConsent';
 /** Last seen ladder season number — used to detect season transitions and show the settlement popup (SE-6). */
 const LAST_SEEN_SEASON_KEY = 'nw_last_seen_season';
 /** Persisted JWT for a real (non-anonymous) account, so logins survive restarts. */
@@ -88,6 +90,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   });
 
   // Analytics SDK — fire and forget; config fetch failure degrades to disabled.
+  // GDPR gate (C5-c, L1-1): seed consent from the persisted flag BEFORE init so a
+  // returning consented user's session_start fires, while a not-yet-consented user
+  // emits nothing until they accept the dialog (setConsent in gateConsent).
+  analytics.setConsent(saveManager.getFlag(GDPR_CONSENT_FLAG) === true);
   void analytics.init(platform, api, baseUrl);
 
   // ── NetSession: online room + lockstep transport (three-channel, M20) ───────
@@ -167,6 +173,45 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     } catch { /* best-effort red dot — leave the cached value in place */ }
   }
 
+  /**
+   * GDPR consent gate (C5-c, L1-1). Runs `next()` immediately if consent was already
+   * given (local flag, mirrors server `flags.gdprConsent`); otherwise shows the blocking
+   * consent dialog and only proceeds once accepted. Anonymous / offline users see it too —
+   * acceptance lands the local flag (synced to the server later via SaveManager push), and
+   * the explicit recordGdprConsent fires immediately when a token is already present.
+   */
+  function gateConsent(next: () => void): void {
+    if (saveManager.getFlag(GDPR_CONSENT_FLAG) === true) { next(); return; }
+    views.showConsent({
+      onAccept() {
+        saveManager.setFlag(GDPR_CONSENT_FLAG, true);
+        analytics.setConsent(true);
+        analytics.track('gdpr_consent', { granted: true });
+        const token = platform.storage.getItem(TOKEN_KEY);
+        if (api && token) { api.setToken(token); void api.recordGdprConsent(true).catch(() => { /* best-effort; flag still syncs via SaveManager */ }); }
+        next();
+      },
+    });
+  }
+
+  /** Re-fetch retention claimable state and push the 每日 red dot into the lobby (B5, best-effort). */
+  async function refreshRetentionBadge(view: LobbyView): Promise<void> {
+    if (!api || offlineMode || !platform.storage.getItem(TOKEN_KEY)) { view.applyRetentionBadge(false); return; }
+    try {
+      const r = await api.getRetention();
+      view.applyRetentionBadge(r.claimable.checkin || r.claimable.daily);
+    } catch { /* leave the dot off on failure */ }
+  }
+
+  /** Probe for an active event window so the 活动 entry only appears when there's something to show (B6, best-effort). */
+  async function refreshEventsAvailable(view: LobbyView): Promise<void> {
+    if (!api || offlineMode || !platform.storage.getItem(TOKEN_KEY)) { view.applyEventsAvailable(false); return; }
+    try {
+      const events = await api.getEvents();
+      view.applyEventsAvailable(events.length > 0);
+    } catch { /* leave the entry hidden on failure */ }
+  }
+
   function goIntro(): void {
     inLobby = false;
     analytics.track('screen_view', { scene: 'IntroScene' });
@@ -174,7 +219,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onFinish(skipped) {
         if (skipped) analytics.track('tutorial_skip', { step: 'intro' });
         saveManager.setFlag(SEEN_INTRO_FLAG, true);
-        void resolveEntry();
+        gateConsent(() => void resolveEntry());
       },
     });
   }
@@ -203,6 +248,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onOpenCards() { goCollection(goLobby, 'cards'); },
       onOpenStats() { goStats(); },
       ...(online ? { onOpenAchievements: () => goAchievements() } : {}),
+      ...(online ? { onOpenDaily: () => goDaily(), onOpenEvents: () => goEvents() } : {}),
       onOpenWorld() { goWorldEntry(); },
       onOpenProfile() { goSettings(); },
       playerName: playerName(),
@@ -252,6 +298,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       }
       if (!opts?.fromResize) void refreshSocialBadge(lobby);
       if (!opts?.fromResize) void refreshAchievementBadge(lobby);
+      if (!opts?.fromResize) void refreshRetentionBadge(lobby);
+      if (!opts?.fromResize) void refreshEventsAvailable(lobby);
     } else {
       socialBadgeTotal = 0;
       achievementClaimable = false;
@@ -283,8 +331,31 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             onRename: doRename,
           }
         : {}),
+      // 账号删除（C5-b）：仅登录在线提供（离线无账号可删）。
+      ...(loggedIn && !!api ? { onDeleteAccount: doDeleteAccount } : {}),
       ...(hasTitles ? { onOpenTitles: () => goTitles() } : {}),
     });
+  }
+
+  /**
+   * 删除账号（C5-b，Apple 5.1.1(v)）：调软删端点 → 清本地 token/展示名/公开 id → 回登录页
+   * （7 天宽限期内重新登录可恢复，提示文案在确认弹层内）。失败返回 ok:false 让设置页 toast。
+   */
+  async function doDeleteAccount(): Promise<{ ok: boolean }> {
+    if (!api) return { ok: false };
+    try {
+      await api.deleteAccount();
+      analytics.track('account_delete', {});
+      platform.storage.removeItem(TOKEN_KEY);
+      platform.storage.removeItem(PLAYER_NAME_KEY);
+      platform.storage.removeItem(PLAYER_PUBLIC_ID_KEY);
+      api.setToken(null);
+      goLogin();
+      return { ok: true };
+    } catch (e) {
+      console.error('[account] delete failed', e);
+      return { ok: false };
+    }
   }
 
   function goTitles(): void {
@@ -744,6 +815,50 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
               ? 'gacha.insufficient' : 'gacha.error',
           };
         }
+      },
+    });
+  }
+
+  /** 每日签到 + 每日任务（B5）。服务器权威，需登录在线；从大厅进入，返回大厅。 */
+  function goDaily(): void {
+    if (!api) { goLobby(); return; }
+    const client = api;
+    inLobby = false;
+    analytics.track('screen_view', { scene: 'DailyScene' });
+    views.showDaily({
+      onBack() { goLobby(); },
+      getSave: () => saveManager.get(),
+      getRetention: () => client.getRetention(),
+      async onCheckin() {
+        const { save, day, reward } = await client.claimCheckin();
+        saveManager.adoptServer(save);
+        analytics.track('daily_checkin', { day });
+        return { day, reward };
+      },
+      async onClaimDaily() {
+        const { save, coins } = await client.claimDailyReward();
+        saveManager.adoptServer(save);
+        analytics.track('daily_reward_claim', { coins });
+        return { coins };
+      },
+    });
+  }
+
+  /** 限时活动（B6）。服务器权威，需登录在线；从大厅进入，返回大厅。 */
+  function goEvents(): void {
+    if (!api) { goLobby(); return; }
+    const client = api;
+    inLobby = false;
+    analytics.track('screen_view', { scene: 'EventScene' });
+    views.showEvents({
+      onBack() { goLobby(); },
+      getEvents: () => client.getEvents(),
+      async onClaimReward(eventId: string, rewardId: string) {
+        const { pointsLeft } = await client.claimEventReward(eventId, rewardId);
+        analytics.track('event_claim', { event_id: eventId, reward_id: rewardId });
+        // 奖励落邮件 / commercial 金币 → 拉一次权威存档刷新钱包（best-effort）。
+        void saveManager.refresh();
+        return { pointsLeft };
       },
     });
   }
@@ -1232,7 +1347,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
   function start(): void {
     if (saveManager.getFlag(SEEN_INTRO_FLAG)) {
-      void resolveEntry();
+      gateConsent(() => void resolveEntry());
     } else {
       goIntro();
     }

@@ -1067,4 +1067,26 @@ export const en: Record<TranslationKey, string> = {
   'event.rewards.claim': 'Redeem',
   'event.rewards.claimToast': 'Redeemed! Points left: {n}',
   'event.rewards.claimFailed': 'Redeem failed, please retry',
+
+  // ── GDPR first-launch consent (C5-c, L1-1) ──────────────────────────────────
+  'consent.title': 'Privacy & Data Use',
+  'consent.body': 'We respect your privacy. Before you play, please read and accept our Privacy Policy and Terms of Service. Only after you consent do we collect anonymous gameplay data to improve the game, and you can delete your account anytime in Settings.',
+  'consent.privacyPolicy': 'Privacy Policy',
+  'consent.terms': 'Terms of Service',
+  'consent.accept': 'Accept & Continue',
+
+  // ── Gacha odds disclosure (Apple 3.1.1, L1-3) ───────────────────────────────
+  'gacha.oddsDetail.button': 'Odds',
+  'gacha.oddsDetail.title': 'Drop Rate Disclosure',
+  'gacha.oddsDetail.total': 'Total: {pct}%',
+  'gacha.oddsDetail.pityRule': 'Pity: the highest rarity is guaranteed within every {n} pulls.',
+  'gacha.oddsDetail.tapClose': 'Tap anywhere to close',
+
+  // ── Account deletion (Apple 5.1.1(v), C5-b, L1-2) ───────────────────────────
+  'settings.deleteAccount': 'Delete Account',
+  'settings.deleteAccount.confirmTitle': 'Delete your account?',
+  'settings.deleteAccount.confirmBody': 'Your account enters a 7-day grace period — log back in within it to restore. After 7 days the data is permanently erased. Delete it?',
+  'settings.deleteAccount.confirm': 'Delete',
+  'settings.deleteAccount.cancel': 'Cancel',
+  'settings.deleteAccount.failed': 'Deletion failed — please retry',
 };

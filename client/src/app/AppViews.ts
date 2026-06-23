@@ -47,6 +47,9 @@ import type { AuctionSceneCallbacks } from '../scenes/AuctionScene';
 import type { DefenseEditorCallbacks } from '../scenes/DefenseEditorScene';
 import type { TeamsCallbacks } from '../scenes/TeamsScene';
 import type { TitlesSceneCallbacks } from '../scenes/TitlesScene';
+import type { DailyCallbacks } from '../scenes/DailyScene';
+import type { EventCallbacks } from '../scenes/EventScene';
+import type { ConsentCallbacks } from '../render/ConsentDialog';
 
 /** Live handle for the lobby scene — the core pushes the aggregate social badge into it. */
 export interface LobbyView {
@@ -65,6 +68,10 @@ export interface LobbyView {
    * tapping the toast jumps to the achievement wall.
    */
   showAchievementToast(text: string): void;
+  /** B5: toggle the daily-reward-claimable red dot on the lobby's 每日 button. */
+  applyRetentionBadge(claimable: boolean): void;
+  /** B6: show / hide the lobby's 活动 entry depending on whether a live event window exists. */
+  applyEventsAvailable(available: boolean): void;
   /**
    * Show the season-settlement overlay once per season transition (SE-6).
    * Called after the first lobby entry where pvp.seasonNo has advanced.
@@ -124,6 +131,8 @@ export interface ResultViewProps {
  */
 export interface AppViews {
   showIntro(cb: IntroSceneCallbacks): void;
+  /** First-launch GDPR / privacy consent gate (C5-c, L1-1). Blocks until accepted. */
+  showConsent(cb: ConsentCallbacks): void;
   /** Lobby (home). Returns a handle so the core can push live social-badge updates. */
   showLobby(cb: LobbySceneCallbacks): LobbyView;
   showSettings(cb: SettingsSceneCallbacks): void;
@@ -143,6 +152,10 @@ export interface AppViews {
   showBattlePass(cb: BattlePassCallbacks): void;
   /** 称号墙（S10）。 */
   showTitles(cb: TitlesSceneCallbacks): void;
+  /** 每日签到 + 每日任务（B5，RETENTION_DESIGN）。 */
+  showDaily(cb: DailyCallbacks): void;
+  /** 限时活动（B6，ADR-014）。 */
+  showEvents(cb: EventCallbacks): void;
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void;
   showResult(props: ResultViewProps): void;
 
