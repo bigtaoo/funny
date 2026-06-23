@@ -115,6 +115,8 @@ export class GameRenderer {
   /** In-flight projectile sprites (arrows) keyed by projectileId. */
   private projectileLayer!: PIXI.Container;
   private readonly projectileSprites: Map<number, PIXI.Container> = new Map();
+  /** Idle projectile containers ready for reuse. */
+  private readonly projectilePool: PIXI.Container[] = [];
   private handView!:     HandView;
   private hudView!:      HUDView;
   private netStatus!:    NetStatusView;
@@ -207,7 +209,7 @@ export class GameRenderer {
 
   update(dt: number): void {
     const prevTicks = this.engine.state.elapsedTicks;
-    this.engine.tick(dt);
+    if (!this.hudView.isPaused) this.engine.tick(dt);
     const state = this.engine.state;
     for (const event of state.events) this.handleEvent(event, state);
     this.boardView.update(dt);
@@ -257,6 +259,10 @@ export class GameRenderer {
     this.vfxSystem.destroy();
     for (const sprite of this.escortSprites.values()) sprite.destroy();
     this.escortSprites.clear();
+    for (const sprite of this.projectileSprites.values()) sprite.destroy();
+    this.projectileSprites.clear();
+    for (const sprite of this.projectilePool) sprite.destroy();
+    this.projectilePool.length = 0;
   }
 
   // ── Scene graph ────────────────────────────────────────────────────────────
@@ -496,7 +502,7 @@ export class GameRenderer {
       }
       case 'projectile_fired': {
         const pos = this.boardView.gridToScreen(event.from.col, fromFp(event.from.y_fp));
-        const sprite = this.buildProjectileSprite(event.kind);
+        const sprite = this.acquireProjectile(event.kind);
         sprite.x = pos.x;
         sprite.y = pos.y;
         this.projectileSprites.set(event.projectileId, sprite);
@@ -520,8 +526,7 @@ export class GameRenderer {
         const sprite = this.projectileSprites.get(event.projectileId);
         if (!sprite) break;
         this.projectileSprites.delete(event.projectileId);
-        sprite.parent?.removeChild(sprite);
-        sprite.destroy();
+        this.releaseProjectile(sprite);
         break;
       }
       case 'unit_died': {
@@ -638,24 +643,35 @@ export class GameRenderer {
   }
 
   /**
-   * A small ink-sketch arrow, drawn pointing along +x so the handler can rotate
-   * it to the travel direction. `kind` is reserved for future projectile looks
-   * (e.g. magic bolt); only 'arrow' exists today.
+   * Return a projectile container from the pool (or create one). The arrow is
+   * drawn along +x; callers rotate it to the travel direction each move event.
+   * `kind` is reserved for future looks (e.g. magic bolt); only 'arrow' today.
    */
-  private buildProjectileSprite(_kind: string): PIXI.Container {
-    const c = new PIXI.Container();
+  private acquireProjectile(_kind: string): PIXI.Container {
+    const c = this.projectilePool.pop();
+    if (c) {
+      c.rotation = 0;
+      c.alpha    = 1;
+      return c;
+    }
+    const container = new PIXI.Container();
     const g = new PIXI.Graphics();
-    // Shaft.
     g.lineStyle(2, 0x2b2b2b, 1);
     g.moveTo(-7, 0);
     g.lineTo(5, 0);
-    // Arrowhead.
     g.moveTo(5, 0);
     g.lineTo(1, -3);
     g.moveTo(5, 0);
     g.lineTo(1, 3);
-    c.addChild(g);
-    return c;
+    container.addChild(g);
+    return container;
+  }
+
+  private releaseProjectile(sprite: PIXI.Container): void {
+    sprite.removeFromParent();
+    sprite.rotation = 0;
+    sprite.alpha    = 1;
+    this.projectilePool.push(sprite);
   }
 
   private buildEscortSprite(x: number, y: number, hp: number, maxHp: number): PIXI.Container {

@@ -305,9 +305,15 @@ export class HandView {
       return;
     }
 
+    const url = CARD_ART_URLS[key];
+    if (!url) {
+      art.visible = false;
+      return;
+    }
+
     let tex = this.artTextures.get(key);
     if (!tex) {
-      tex = PIXI.Texture.from(CARD_ART_URLS[key]);
+      tex = PIXI.Texture.from(url);
       if (!tex.baseTexture.valid) {
         // Texture loads async — force a re-sync once ready so size can be computed
         tex.baseTexture.once('loaded', () => { this.lastSyncKey = ''; });
