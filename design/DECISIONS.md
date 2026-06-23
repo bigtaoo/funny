@@ -140,3 +140,11 @@
 - **为什么不定 6+**：曾考虑更低龄友好的 6+，但与现有设计两处硬冲突——①**真钱抽卡**面向儿童在欧盟是监管雷区（比利时禁付费开箱、USK 因内购+随机机制抬级）；②**开放陌生人聊天**对儿童是安全风险。要做 6+ 需大改（抽卡改软通货抽、聊天收预设短语）或单做儿童分版屏蔽抽卡，后者工程量大且效果存疑（孩子可用家长账号）。**改造代价 > 收益 → 定 13+**。
 - **影响**：13+ 下**抽卡与社交聊天保持原设计、无需儿童分版逻辑**；付费控制仍靠平台家长控制 + 鲸鱼天花板 + 广告每日上限（锦上添花非硬门）。[`game/COMPLIANCE_GLOBAL.md`](game/COMPLIANCE_GLOBAL.md) §2 COPPA 行 + §3.4 更新；分级问卷按 13+ 如实勾选，**铁律：不得勾成全年龄/含儿童**。COMPLIANCE_CN 防沉迷仍按中国法另算（与海外分级解耦，ADR-013）。
 </content>
+
+## ADR-019 多区域部署 = Meta 共享 + 对战层按区隔离 + 中国独立 — Accepted — 2026-06-23
+
+- **决策**（用户拍板）：全球部署切三个 Realm——**西方大区（欧洲+美洲单一 realm，账号/天梯/经济/SLG 共享）** 与 **中国区（完全独立整套栈，与西方不互通）**。西方大区内部再分层：**Meta 层（metaserver/MongoDB/worldsvc/commercial/social）单实例托管欧洲共享；匹配+对战层（gateway/matchsvc/gameserver）按地理区各一套**，两区都指向同一共享 metaserver。
+- **匹配规则**：天梯/随机匹配**同区优先**（每区独立 matchsvc 池天然隔离，杜绝跨洋锁步）；ELO 存共享 Meta → **全大区统一天梯**（区域匹配 + 全局天梯）；**好友房允许跨区**（邀请制非天梯，延迟玩家自担，不影响公平）。
+- **为什么这么切**：① `gameserver`/`matchsvc` 均不连库、`gameserver` 永不触库且 ticket 动态携带 `gameUrl` → 对战层可自由就近部署、加机器即插即用；② 现状 `matchsvc.pick()` 只看负载、**无区域感知**，故**绝不能把欧美 gameserver 注册到同一 matchsvc**（会跨洋乱发）→ 用「每区一套独立 matchsvc」让区域隔离来自部署结构，**匹配核心零改动**；③ MongoDB 单主欧洲、**禁跨大西洋副本集写**（跨洋写拖垮 meta），游戏帧不触库故不受影响；④ 中国跨 GFW 实时竞技不可行 + 监管/数据出境/支付渠道全不同 → 必须独立。
+- **未采用**：单一 matchsvc 服务两区（需给注册加 region 标签 + QueueEntry 加 region + 改 pick/配对分桶）——动匹配核心代码、要自防跨区兜底，收益不及成本。
+- **影响**：新增 [`game/DEPLOY_TOPOLOGY.md`](game/DEPLOY_TOPOLOGY.md) 为多区域部署权威；实现期需参数化 gateway/match-report→metaserver 地址、每台 gameserver 设区域 `NW_GAME_PUBLIC_WS_URL`、客户端加选区/测速逻辑（清单见该文 §4.1）。进程拓扑/端口仍归 [claudedocs/server.md](../claudedocs/server.md)。README §1.2/§2 登记。

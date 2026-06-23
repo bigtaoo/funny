@@ -47,6 +47,7 @@
 | [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md) | **PvE 反作弊 + 服务器权威方案（PvE 数据权威真源）** | 实现中 |
 | [MYTHOLOGY_DESIGN.md](game/MYTHOLOGY_DESIGN.md) | 神话「神力赋予」叠加层 | 设计中 |
 | [META_DESIGN.md](game/META_DESIGN.md) | 元系统 + 服务器架构基准（meta 范畴 6 组件） | 已实现 |
+| [DEPLOY_TOPOLOGY.md](game/DEPLOY_TOPOLOGY.md) | **多区域部署拓扑（Meta 共享 + 对战层按区隔离 + 中国独立；同区匹配/好友房跨区）** | 设计中 |
 | [META_TASKS.md](game/META_TASKS.md) | **实现任务清单 / 进度（实现状态真源）** | 实现中 |
 | [SERVER_API.md](game/SERVER_API.md) | **接口契约单一来源（REST/WS/proto/DB）** | 实现中 |
 | [ACCOUNT_DESIGN.md](game/ACCOUNT_DESIGN.md) | 账号系统（设备/密码/OAuth） | 实现中 |
@@ -113,6 +114,7 @@
 | PvE 奖励 / 养成数据权威 | 服务器 `server/shared/pveRewards.ts` + [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md)（方案 B：服务器权威） | 客户端 JSON 仅参考/编辑器用 |
 | 接口契约（REST/WS/proto/DB 集合） | [game/SERVER_API.md](game/SERVER_API.md) + `server/contracts/` | — |
 | 进程拓扑 / 端口 | [claudedocs/server.md](../claudedocs/server.md) | 8 个应用进程，见 §4 |
+| 多区域部署（区域划分/匹配域/数据驻留） | [game/DEPLOY_TOPOLOGY.md](game/DEPLOY_TOPOLOGY.md) | Meta 共享+对战层按区隔离+中国独立；同区匹配、好友房跨区（ADR-019）；进程拓扑仍归 server.md |
 | 配色 / 渲染 / 美术资产分工 | [product/art-direction.md](product/art-direction.md) + `client/src/render/theme.ts` | 阵营色 **我蓝敌红**（v0.3） |
 | 客户端 UI | 菜单/元系统 → [game/UI_DESIGN.md](game/UI_DESIGN.md)；战斗内 → [product/ui-design.md](product/ui-design.md) | 互补分工，见 §3 |
 | 实现状态 / 任务进度 | [game/META_TASKS.md](game/META_TASKS.md) + 各文档「实现记录」节 | — |
