@@ -1,0 +1,23 @@
+{
+  "_comment": "动画工作区 → 仓库 同步映射（唯一映射真源）。workspace 对象路径 = units/<unitKey>/<name>.tao(.editor)；同步桥 tools/animator/scripts/anim-sync.mjs 据此写回仓库。新增兵种：加一条目即可。设计：design/tools/animator/WORKSPACE_SYNC.md §4。",
+  "units": {
+    "archer": {
+      "name": "archer",
+      "editor": "art/units/archer/archer.tao.editor",
+      "tao": "art/units/archer/archer.tao",
+      "gameCopy": "client/src/assets/archer.tao"
+    },
+    "infantry": {
+      "name": "infantry",
+      "editor": "art/units/infantry/infantry.tao.editor",
+      "tao": "art/units/infantry/infantry.tao",
+      "gameCopy": "client/src/assets/infantry.tao"
+    },
+    "shield_bearer": {
+      "name": "shieldbearer",
+      "editor": "art/units/shield_bearer/shieldbearer.tao.editor",
+      "tao": "art/units/shield_bearer/shieldbearer.tao",
+      "gameCopy": "client/src/assets/shieldbearer.tao"
+    }
+  }
+}

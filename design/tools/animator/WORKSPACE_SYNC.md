@@ -140,12 +140,18 @@
   - `ui/WorkspacePanel.ts`：底栏 `☁ Workspace` 按钮 → 自建模态：登录 / 列表 / 打开（载入 `.tao.editor`）/ 保存当前（上传 `.tao.editor`+`.tao`）。
   - 接线 `App.ts`，按钮入 `index.html`。验证：`tsc --noEmit` 通过 + `webpack --mode production` 构建通过。
   - **待用户提供方能端到端跑通**：①创建 Supabase 项目（桶 `animations` + Auth + RLS 仅 authenticated 可读写）；②Cloudflare Pages 连仓库（构建 `cd tools/animator && npm i && npm run build`，输出 `tools/animator/dist`，环境变量 `NW_SUPABASE_URL` / `NW_SUPABASE_ANON_KEY`）。
-- P2（同步桥）、P3（种子回灌）未开始。
+- **P2 同步桥（2026-06-23，feat/animator-workspace）✅ 代码完成**：
+  - `art/units/manifest.json`：unitKey → `{name, editor, tao, gameCopy}` 映射真源（archer / infantry / shield_bearer）。workspace 对象 `units/<unitKey>/<name>.tao(.editor)` 据此写回仓库。
+  - `tools/animator/scripts/anim-sync.mjs`：Node 20 原生 fetch（无 npm 依赖），直连 Supabase Storage REST 下载每个 unit 的 `.tao.editor`+`.tao`，按 manifest 写入 `editor`/`tao`/`gameCopy`（仅内容变更才写）；单向、永不删仓库文件；缺对象则跳过。验证：`node --check` 通过、manifest 可解析、缺环境变量守卫 exit 1。
+  - `.github/workflows/anim-sync.yml`：每日 cron + 手动 dispatch；跑脚本 → 有变更则 `peter-evans/create-pull-request` 开/更新 PR（分支 `anim-sync/auto` → main）。
+  - **待用户提供**：repo secrets `SUPABASE_URL` + `SUPABASE_SERVICE_KEY`（service role key）；并设 repo variable `ANIM_SYNC_ENABLED=true` 启用同步 job（未设时 job 干净跳过，避免配好前每日 cron 报红）。
+  - **已知历史 cruft（非本任务范围）**：`art/units/archer/archer.tao.editor.tao.editor`、`.../shield_bearer/shieldbearer.tao.editor.tao.editor` 是早先保存 bug 留下的双扩展名文件；manifest 用规范单扩展名，首次同步会写正确文件，双扩展名残件待单独清理。
+- P3（种子回灌）未开始。
 
 ---
 
 ## 9. 开放问题（实现期定）
 - magic-link 邮箱是白名单还是开放注册 + 审批？
-- 同步桥定时频率（每日 / 每 6h / 仅手动）？
+- 同步桥定时频率（每日 / 每 6h / 仅手动）？目前定每日 03:00 UTC + 手动。
 - 是否需要"工作区软锁"（标记某 unit 正被谁编辑）以降低后写覆盖概率——v1 先不做，观察是否真冲突。
 - `.tao.editor` 含 PNG，体积偏大；Supabase 免费层 1GB 存储是否够，超了再上 R2。
