@@ -5,6 +5,8 @@
   "objective": {
     "kind": "survive"
   },
+  "startInk": 40,
+  "inkRegenMult": 1.6,
   "enemyScale": {
     "hp": 1,
     "damage": 1
@@ -26,101 +28,101 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "max",
         "col": 4,
         "count": 2,
         "spacingTicks": 24
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "max",
         "col": 7,
         "count": 2,
         "spacingTicks": 24
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "max",
         "col": 2,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 18
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "max",
         "col": 9,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 18
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "max",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 12
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "max",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 12
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "max",
         "col": 1,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 18
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "max",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 18
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "max",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 18
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "max",
         "col": 10,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 18
       },
       {
-        "atTick": 1260,
+        "atTick": 1320,
         "unitType": "lena",
         "col": 4,
         "count": 1,
         "isBoss": true
       },
       {
-        "atTick": 1260,
+        "atTick": 1320,
         "unitType": "lena",
         "col": 7,
         "count": 1,
         "isBoss": true
       },
       {
-        "atTick": 1290,
+        "atTick": 1350,
         "unitType": "max",
         "col": 2,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 15
       },
       {
-        "atTick": 1290,
+        "atTick": 1350,
         "unitType": "max",
         "col": 9,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 15
       }
     ]
