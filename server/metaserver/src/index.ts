@@ -52,6 +52,7 @@ async function main() {
     commercialUrl: env.commercialUrl,
     gatewayUrl: env.gatewayInternalUrl,
     gatewayPublicUrl: env.gatewayPublicUrl,
+    authRateLimit: env.authRateLimit,
     // 请求日志走 buildApp 里可读的 onResponse 钩子（@nw/shared logger），不用 pino JSON。
     logger: false,
   });

@@ -17,6 +17,11 @@ export interface MetaEnv extends ServerEnv {
   auditIntervalMs: number;
   /** 每次抽查批检视的候选 ranked 局数（缺省 5）。 */
   auditSampleLimit: number;
+  /**
+   * 每 IP 15 分钟内允许的最大 auth 尝试次数（register/login/oauth）。
+   * 0 = 禁用限流（测试/CI 环境用）。默认 20。
+   */
+  authRateLimit: number;
 }
 
 export function loadMetaEnv(): MetaEnv {
@@ -30,5 +35,6 @@ export function loadMetaEnv(): MetaEnv {
     gatewayPublicUrl: process.env.NW_GATEWAY_PUBLIC_WS_URL ?? null,
     auditIntervalMs: Number(process.env.NW_ACHIEVEMENT_AUDIT_INTERVAL_MS ?? 60000),
     auditSampleLimit: Number(process.env.NW_ACHIEVEMENT_AUDIT_SAMPLE_LIMIT ?? 5),
+    authRateLimit: Number(process.env.NW_AUTH_RATE_LIMIT ?? 20),
   };
 }

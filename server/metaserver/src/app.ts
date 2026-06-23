@@ -34,6 +34,8 @@ export interface BuildAppOpts {
   gatewayPublicUrl?: string | null;
   now?: () => number;
   logger?: boolean;
+  /** 每 IP 15 分钟内最大 auth 尝试数（0 = 禁用，测试用）。默认 20。 */
+  authRateLimit?: number;
 }
 
 export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
@@ -77,6 +79,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     commercial,
     gatewayPublicUrl: opts.gatewayPublicUrl ?? null,
     gateway,
+    authRateLimit: opts.authRateLimit ?? 20,
   });
 
   // 广告平台 SSV 回调（平台主动调用，不经 openapi glue，无玩家鉴权）。

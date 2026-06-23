@@ -136,6 +136,8 @@ export interface ServiceDeps {
   gatewayPublicUrl: string | null;
   /** gateway 内部客户端：PvE L1 录像抽检经 /gw/judge 派第三方无头复算。未配置则不抽检（直接发材料）。 */
   gateway: GatewayClient;
+  /** 每 IP 15 分钟内最大 auth 尝试数。0 = 禁用（测试/CI 用）。 */
+  authRateLimit: number;
 }
 
 /** 取安全处理器写入的 accountId（security handler 保证已鉴权）。 */
@@ -176,8 +178,13 @@ class SlidingRateLimiter {
 
 export class MetaService {
   private readonly oauth = createOAuthService();
+  private readonly authRate: { allow(key: string, now: number): boolean };
 
-  constructor(private readonly deps: ServiceDeps) {}
+  constructor(private readonly deps: ServiceDeps) {
+    this.authRate = deps.authRateLimit > 0
+      ? new SlidingRateLimiter(deps.authRateLimit, 15 * 60 * 1000)
+      : { allow: () => true };
+  }
 
   /**
    * 私聊发送限流（SOC2）：每账号近 60s 的发送时间戳滑窗。进程内（meta 无状态横扩时是 per-instance
@@ -196,10 +203,10 @@ export class MetaService {
   }
 
   /**
-   * 登录/注册 IP 限流（S4-3）：每 IP 15 分钟内最多 20 次 auth 尝试（阻止暴力撞库）。
+   * 登录/注册 IP 限流（S4-3）：每 IP 15 分钟内最多 authRateLimit 次 auth 尝试（阻止暴力撞库）。
    * 进程内近似（横扩时是 per-instance，足以抵御单机撞库；精确全局限流待 Redis）。
+   * authRateLimit=0 时禁用（CI/测试用）。
    */
-  private readonly authRate = new SlidingRateLimiter(20, 15 * 60 * 1000);
   private allowAuthAttempt(req: FastifyRequest, now: number): boolean {
     const ip = req.ip ?? 'unknown';
     return this.authRate.allow(ip, now);
