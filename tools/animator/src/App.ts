@@ -14,6 +14,7 @@ import { ImagePanel }            from './ui/ImagePanel';
 import { AttachmentPanel }       from './ui/AttachmentPanel';
 import { ToolbarPanel }          from './ui/ToolbarPanel';
 import { StatusBar }             from './ui/StatusBar';
+import { ErrorToast }            from './ui/ErrorToast';
 import { ResizablePanels }       from './ui/ResizablePanels';
 import { IOController }          from './io/IOController';
 import { ProjectStore }          from './io/ProjectStore';
@@ -69,6 +70,7 @@ export class App {
       rootEl.querySelector<HTMLElement>('#status-text')!,
       bus,
     );
+    new ErrorToast(bus);   // failures / blocked actions → floating popup
     new AttachmentPanel(
       rootEl.querySelector<HTMLElement>('#attachment-panel')!,
       bus, state,

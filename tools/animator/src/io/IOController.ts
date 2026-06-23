@@ -151,7 +151,7 @@ export class IOController {
       ]);
       this.bus.emit('status', 'Project saved');
     } catch (err) {
-      this.bus.emit('status', `Save failed: ${(err as Error).message}`);
+      this.bus.emit('error', `Save failed: ${(err as Error).message}`);
     }
   }
 
@@ -171,7 +171,7 @@ export class IOController {
       const project = JSON.parse(await jsonFile.async('string')) as EditorProject;
 
       if (project.version !== 1) {
-        this.bus.emit('status', `Unsupported editor version ${project.version}`);
+        this.bus.emit('error', `Unsupported editor version ${project.version}`);
         return;
       }
 
@@ -215,7 +215,7 @@ export class IOController {
 
       this.bus.emit('status', `Loaded ${label}`);
     } catch (err) {
-      this.bus.emit('status', `Load failed: ${(err as Error).message}`);
+      this.bus.emit('error', `Load failed: ${(err as Error).message}`);
     }
   }
 
@@ -260,7 +260,7 @@ export class IOController {
       ]);
       this.bus.emit('status', 'Exported .tao');
     } catch (err) {
-      this.bus.emit('status', `Export failed: ${(err as Error).message}`);
+      this.bus.emit('error', `Export failed: ${(err as Error).message}`);
     }
   }
 
@@ -279,7 +279,7 @@ export class IOController {
       const project = JSON.parse(await animFile.async('string')) as SerializedProject;
 
       if (project.version !== 2) {
-        this.bus.emit('status', `Unsupported version ${project.version} (expected 2)`);
+        this.bus.emit('error', `Unsupported version ${project.version} (expected 2)`);
         return;
       }
 
@@ -303,7 +303,7 @@ export class IOController {
 
       this.bus.emit('status', `Loaded ${file.name}`);
     } catch (err) {
-      this.bus.emit('status', `Import failed: ${(err as Error).message}`);
+      this.bus.emit('error', `Import failed: ${(err as Error).message}`);
     }
   }
 

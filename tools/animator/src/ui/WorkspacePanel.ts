@@ -152,7 +152,7 @@ export class WorkspacePanel {
       btn.disabled = true;
       this.store.signIn(email)
         .then(() => { body.appendChild(this.notice(`已发送登录链接到 ${email}，请查收邮箱。`)); })
-        .catch(err => { this.bus.emit('status', `登录失败：${(err as Error).message}`); })
+        .catch(err => { this.bus.emit('error', `登录失败：${(err as Error).message}`); })
         .finally(() => { btn.disabled = false; });
     });
     row.append(input, btn);
@@ -303,7 +303,7 @@ export class WorkspacePanel {
       if (this.overlay) await this.render();   // refresh list
     } catch (err) {
       const msg = (err as Error).message;
-      this.bus.emit('status', `保存失败：${msg}`);
+      this.bus.emit('error', `保存失败：${msg}`);
       // Surface failures in the modal too — e.g. signed out, or a workspace
       // permission/RLS error the artist needs to act on.
       this.setSaveHint(`保存失败：${msg}。若提示未登录，请重新发送登录链接后再试。`, 'error');
@@ -348,7 +348,7 @@ export class WorkspacePanel {
       this.bus.emit('status', `已自动同步 ${unitKey}/${name} · ${new Date().toLocaleTimeString()}`);
     } catch (err) {
       this.syncDirty = true;   // keep dirty so the next edit/flush retries
-      this.bus.emit('status', `自动同步失败：${(err as Error).message}`);
+      this.bus.emit('error', `自动同步失败：${(err as Error).message}`);
     } finally {
       this.syncing = false;
     }
@@ -389,7 +389,7 @@ export class WorkspacePanel {
       this.bus.emit('status', `已打开 ${f.unitKey}/${f.name}`);
       this.close();
     } catch (err) {
-      this.bus.emit('status', `打开失败：${(err as Error).message}`);
+      this.bus.emit('error', `打开失败：${(err as Error).message}`);
     }
   }
 }

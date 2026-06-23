@@ -114,7 +114,7 @@ export class ImageController {
       if (slot) {
         await this.setImage(slot, file);
       } else {
-        this.bus.emit('status', `Cannot auto-detect slot for "${file.name}" — assign manually`);
+        this.bus.emit('error', `Cannot auto-detect slot for "${file.name}" — assign manually`);
       }
     }
   }

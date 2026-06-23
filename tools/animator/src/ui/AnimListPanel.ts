@@ -70,7 +70,7 @@ export class AnimListPanel {
     const name = prompt('Animation name:')?.trim();
     if (!name) return;
     if (this.animCtrl.store.has(name)) {
-      alert(`"${name}" already exists.`);
+      this.bus.emit('error', `"${name}" already exists.`);
       return;
     }
     this.cmdManager.execute(new CreateClipCommand(this.animCtrl, name));
@@ -88,7 +88,7 @@ export class AnimListPanel {
     if (!old) return;
     const next = prompt('New name:', old)?.trim();
     if (!next || next === old) return;
-    if (this.animCtrl.store.has(next)) { alert(`"${next}" already exists.`); return; }
+    if (this.animCtrl.store.has(next)) { this.bus.emit('error', `"${next}" already exists.`); return; }
     this.cmdManager.execute(new RenameClipCommand(this.animCtrl, old, next));
   }
 }

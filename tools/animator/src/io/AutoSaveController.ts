@@ -82,7 +82,7 @@ export class AutoSaveController {
 
     const blob = await this.store.getBlob(id);
     const meta = (await this.store.listMeta()).find(m => m.id === id);
-    if (!blob || !meta) { this.bus.emit('status', 'Project not found'); return; }
+    if (!blob || !meta) { this.bus.emit('error', 'Project not found'); return; }
 
     await this.runSuspended(() => this.io.loadEditorBlob(blob, meta.name));
     this.setActive(id, meta.name);
@@ -166,7 +166,7 @@ export class AutoSaveController {
       this.bus.emit('autosave:state', 'saved');
       this.bus.emit('project:list');   // updatedAt changed → reorder dropdown
     } catch (err) {
-      this.bus.emit('status', `Auto-save failed: ${(err as Error).message}`);
+      this.bus.emit('error', `Auto-save failed: ${(err as Error).message}`);
     }
   }
 

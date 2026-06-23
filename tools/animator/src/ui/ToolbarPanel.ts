@@ -279,7 +279,7 @@ export class ToolbarPanel {
       const name = prompt(`Load preset (${names.join(', ')}):`);
       if (!name) return;
       const trimmed = name.trim();
-      if (!names.includes(trimmed)) { this.bus.emit('status', `Unknown preset: ${trimmed}`); return; }
+      if (!names.includes(trimmed)) { this.bus.emit('error', `Unknown preset: ${trimmed}`); return; }
       this.animCtrl.loadPreset(trimmed);
       this.animCtrl.selectClip(trimmed);
       this.bus.emit('status', `Loaded preset: ${trimmed}`);

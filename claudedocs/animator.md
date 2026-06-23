@@ -38,7 +38,9 @@ cd tools/animator && npm run start   # 端口 9091
 
 ## 事件总线（核心事件）
 
-`bone:select`、`bone:rotate`、`time:change`、`play:state`、`anim:select`、`anim:list`、`kf:change`、`images:change`、`binding:change`、`attachment:change`、`rig:change`、`preview:mode`、`editor:mode`、`history:change`、`status`、`pose:reset`
+`bone:select`、`bone:rotate`、`time:change`、`play:state`、`anim:select`、`anim:list`、`kf:change`、`images:change`、`binding:change`、`attachment:change`、`rig:change`、`preview:mode`、`editor:mode`、`history:change`、`status`、`error`、`pose:reset`
+
+**消息分流**：`status`=低风险进度提示（Saving…/Loaded/Ready）→ 底部 `StatusBar`（3s 自动清）；`error`=失败/被阻止的操作（保存/载入/导出失败、版本不支持、未选动画、重名等）→ 顶部居中红色浮层 `ErrorToast`（可手动 ✕，8s 自动消，多条堆叠）。新增错误务必发 `error` 而非 `status`，避免被一闪而过淹没；原生 `alert()` 一律改走 `error`。
 
 渲染层级（从下到上）：`gridGfx → onionGfx → boneGfx → spriteLayer → overlayGfx → selGfx`
 
@@ -56,5 +58,7 @@ cd tools/animator && npm run start   # 端口 9091
 | `src/io/ProjectStore.ts` | IndexedDB 工程库（`meta`+`blobs` 两 store） |
 | `src/io/AutoSaveController.ts` | 多工程自动保存 + 切换 + 启动恢复 |
 | `src/ui/ProjectPanel.ts` | 底部栏工程下拉 + 增删改复制 + 自动保存状态点 |
+| `src/ui/StatusBar.ts` | 底部低风险进度提示（`status` 事件，3s 自动清） |
+| `src/ui/ErrorToast.ts` | 顶部居中错误浮层（`error` 事件，红色卡片，可 ✕，8s 自动消） |
 | `src/timeline/TimelineView.ts` | Canvas 时间轴渲染 + 交互 |
 | `src/interaction/InteractionController.ts` | 鼠标拖拽 + 键盘快捷键 |

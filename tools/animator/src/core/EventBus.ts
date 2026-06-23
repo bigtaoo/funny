@@ -39,7 +39,8 @@ export interface AppEvents {
   'autosave:state': 'idle' | 'dirty' | 'saving' | 'saved';   // auto-save status indicator
 
   // Misc
-  'status':         string;
+  'status':         string;   // low-stakes progress chatter → bottom status bar
+  'error':          string;   // failures / blocked actions → floating popup (ErrorToast)
   'pose:reset':     void;
 }
 

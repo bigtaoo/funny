@@ -81,7 +81,7 @@ export class AnimationController {
   // ── Playback ────────────────────────────────────────────────────────────────
 
   play(): void {
-    if (!this._currentName) { this.bus.emit('status', 'Select an animation first'); return; }
+    if (!this._currentName) { this.bus.emit('error', 'Select an animation first'); return; }
     this.state.setPlaying(true);
     this._lastTs = null;
     this._rafId = requestAnimationFrame(ts => this.tick(ts));
@@ -257,7 +257,7 @@ export class AnimationController {
   autoFitDuration(): void {
     const clip = this.currentClip;
     if (!clip || clip.keyframes.length === 0) {
-      this.bus.emit('status', 'No keyframes to fit duration to');
+      this.bus.emit('error', 'No keyframes to fit duration to');
       return;
     }
     const maxTime = Math.max(...clip.keyframes.map(k => k.time));
