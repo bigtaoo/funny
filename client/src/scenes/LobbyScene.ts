@@ -77,6 +77,8 @@ export interface LobbySceneCallbacks {
   onOpenAchievements?(): void;
   /** Open the daily check-in + task screen (B5, RETENTION_DESIGN). */
   onOpenDaily?(): void;
+  /** Open the limited-time events screen (B6, ADR-014). Entry only appears when an event window is live. */
+  onOpenEvents?(): void;
   /** Open the personal profile / settings screen (top-left profile chip). */
   onOpenProfile(): void;
   /** Player display name shown in the top-left profile chip. */
@@ -146,6 +148,10 @@ export class LobbyScene implements Scene {
   private retentionBadge = false;
   /** Hit rect for the daily button (top-right area). */
   private dailyBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** B6: whether a live event window exists → show the 活动 entry. */
+  private eventsAvailable = false;
+  /** Hit rect for the events button (right of the daily button). */
+  private eventsBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** null = not yet checked; true = reachable; false = unreachable → show badge. */
   private worldOnline: boolean | null = null;
   /** Cheap-refresh layer for the worldsvc-offline indicator on the world nav slot. */
@@ -235,7 +241,20 @@ export class LobbyScene implements Scene {
     if (this.destroyed) return;
     if (this.retentionBadge === claimable) return;
     this.retentionBadge = claimable;
-    // Full rebuild needed since the daily button is part of the main layout.
+    this.rebuild();
+  }
+
+  /** B6: mark whether a live event window exists → show / hide the 活动 entry button. */
+  applyEventsAvailable(available: boolean): void {
+    if (this.destroyed) return;
+    if (this.eventsAvailable === available) return;
+    this.eventsAvailable = available;
+    this.rebuild();
+  }
+
+  /** Full teardown + rebuild — needed when a layout element (daily/events button) appears or changes. */
+  private rebuild(): void {
+    // Full rebuild needed since the daily / events buttons are part of the main layout.
     this.container.removeChildren();
     this.toastLayer = null;
     this.settlementLayer = null;
@@ -385,6 +404,12 @@ export class LobbyScene implements Scene {
     if (this.cb.onOpenDaily && daily.w > 0 &&
         x >= daily.x && x <= daily.x + daily.w && y >= daily.y && y <= daily.y + daily.h) {
       this.cb.onOpenDaily();
+      return;
+    }
+    const ev = this.eventsBtnRect;
+    if (this.cb.onOpenEvents && ev.w > 0 &&
+        x >= ev.x && x <= ev.x + ev.w && y >= ev.y && y <= ev.y + ev.h) {
+      this.cb.onOpenEvents();
       return;
     }
     const ac = this.accountChipRect;
@@ -603,6 +628,22 @@ export class LobbyScene implements Scene {
         dot.drawCircle(btnX + dailyW - 6, dailyY + 6, 6);
         dot.endFill();
         this.container.addChild(dot);
+      }
+
+      // Limited-time events shortcut on the right half — only when a live window exists (B6).
+      if (this.cb.onOpenEvents && this.eventsAvailable) {
+        const evW = dailyW;
+        const evX = btnX + btnW - evW;
+        this.eventsBtnRect = { x: evX, y: dailyY, w: evW, h: dailyH };
+        const ebg = this.sketchPanel(evW, dailyH, { fill: 0xfff3cc, border: C.red, width: 1.8, seed: 73 });
+        ebg.x = evX; ebg.y = dailyY;
+        this.container.addChild(ebg);
+        const elabel = txt(t('event.title'), Math.round(dailyH * 0.4), C.dark);
+        elabel.anchor.set(0.5, 0.5);
+        elabel.x = evX + evW / 2; elabel.y = dailyY + dailyH / 2;
+        this.container.addChild(elabel);
+      } else {
+        this.eventsBtnRect = { x: 0, y: 0, w: 0, h: 0 };
       }
     }
 

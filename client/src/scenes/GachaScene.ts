@@ -52,6 +52,8 @@ export class GachaScene implements Scene {
   private toast: { text: string; color: number } | null = null;
   /** Reveal overlay: non-null while showing the latest draw's results. */
   private reveal: GachaResultEntry[] | null = null;
+  /** Odds-detail overlay open (L1-3, Apple 3.1.1): lists per-item probability + pity rule. */
+  private oddsOpen = false;
 
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
@@ -115,6 +117,8 @@ export class GachaScene implements Scene {
     if (this.bt.busy) return;
     // While revealing, any tap continues.
     if (this.reveal) { this.dismissReveal(); return; }
+    // While showing the odds detail, any tap closes it (modal, no inner controls).
+    if (this.oddsOpen) { this.oddsOpen = false; this.render(); return; }
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
@@ -132,6 +136,7 @@ export class GachaScene implements Scene {
     this.drawBody(tbH);
     if (this.toast) this.drawToast();
     if (this.reveal) this.drawReveal(this.reveal);
+    if (this.oddsOpen && this.pool) this.drawOdds(this.pool);
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
@@ -207,6 +212,16 @@ export class GachaScene implements Scene {
       const lbl = txt(t(('rarity.' + rar) as TranslationKey), Math.round(h * 0.016), C.mid);
       lbl.anchor.set(0.5, 0); lbl.x = cx; lbl.y = legendY;
       this.container.addChild(lbl);
+    });
+
+    // 概率详情 button (L1-3, Apple 3.1.1) — top-right of the banner.
+    const oddsLbl = txt('ⓘ ' + t('gacha.oddsDetail.button'), Math.round(h * 0.02), C.accent, true);
+    oddsLbl.anchor.set(1, 0); oddsLbl.x = bx + bannerW - Math.round(w * 0.02); oddsLbl.y = by + Math.round(h * 0.015);
+    this.container.addChild(oddsLbl);
+    const oPad = Math.round(h * 0.012);
+    this.hits.push({
+      rect: { x: oddsLbl.x - oddsLbl.width - oPad, y: oddsLbl.y - oPad, w: oddsLbl.width + 2 * oPad, h: oddsLbl.height + 2 * oPad },
+      fn: () => { this.oddsOpen = true; this.render(); },
     });
 
     // Pity progress.
@@ -332,6 +347,76 @@ export class GachaScene implements Scene {
       Math.round(h * 0.11), r.duplicate ? C.mid : C.green, true);
     badge.anchor.set(0.5, 0.5); badge.x = x + w / 2; badge.y = y + h * 0.85;
     this.container.addChild(badge);
+  }
+
+  /**
+   * Odds-detail overlay (L1-3, Apple 3.1.1): a per-item probability table plus the
+   * pity rule. Probabilities come straight from the server (`entry.probability`,
+   * 0–1) — the client only renders, never computes. Any tap closes it.
+   */
+  private drawOdds(pool: GachaPool): void {
+    const { w, h } = this;
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.78); dim.drawRect(0, 0, w, h); dim.endFill();
+    this.container.addChild(dim);
+
+    const pw = Math.round(w * 0.86), ph = Math.round(h * 0.8);
+    const px = (w - pw) / 2, py = (h - ph) / 2;
+    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.gold, width: 2.6, seed: seedFor(pw, ph, 7) });
+    panel.x = px; panel.y = py;
+    this.container.addChild(panel);
+
+    const header = txt(t('gacha.oddsDetail.title'), Math.round(h * 0.032), C.dark, true);
+    header.anchor.set(0.5, 0); header.x = w / 2; header.y = py + Math.round(h * 0.025);
+    this.container.addChild(header);
+
+    const entries = pool.entries;
+    const listTop = py + Math.round(h * 0.08);
+    const listBottom = py + ph - Math.round(h * 0.13);
+    const rowH = Math.min(Math.round(h * 0.05), Math.max(1, (listBottom - listTop) / Math.max(1, entries.length)));
+    const colDotX = px + Math.round(pw * 0.08);
+    const colNameX = px + Math.round(pw * 0.14);
+    const colProbX = px + pw - Math.round(pw * 0.08);
+    const fontSize = Math.max(10, Math.round(rowH * 0.42));
+
+    let total = 0;
+    entries.forEach((e, i) => {
+      const cy = listTop + i * rowH + rowH / 2;
+      total += e.probability;
+      const dot = new PIXI.Graphics();
+      dot.beginFill(RARITY_COLOR[e.rarity]); dot.drawCircle(colDotX, cy, Math.round(rowH * 0.2)); dot.endFill();
+      this.container.addChild(dot);
+
+      const name = txt(e.itemId, fontSize, C.dark);
+      name.anchor.set(0, 0.5); name.x = colNameX; name.y = cy;
+      // Clamp overly long ids so the percentage column stays legible.
+      const nameMax = colProbX - colNameX - Math.round(pw * 0.16);
+      if (name.width > nameMax) name.scale.set(nameMax / name.width);
+      this.container.addChild(name);
+
+      const prob = txt(`${(e.probability * 100).toFixed(2)}%`, fontSize, C.accent, true);
+      prob.anchor.set(1, 0.5); prob.x = colProbX; prob.y = cy;
+      this.container.addChild(prob);
+    });
+
+    // Total + pity rule + close hint.
+    const totalLbl = txt(t('gacha.oddsDetail.total', { pct: (total * 100).toFixed(2) }), Math.round(h * 0.022), C.mid, true);
+    totalLbl.anchor.set(0.5, 1); totalLbl.x = w / 2; totalLbl.y = listBottom + Math.round(h * 0.005);
+    this.container.addChild(totalLbl);
+
+    const pity = pool.pityThreshold ?? 0;
+    if (pity > 0) {
+      const pityLbl = new PIXI.Text(t('gacha.oddsDetail.pityRule', { n: pity }), {
+        fontSize: Math.round(h * 0.02), fill: C.dark, fontFamily: 'monospace',
+        wordWrap: true, wordWrapWidth: pw * 0.84, align: 'center',
+      });
+      pityLbl.anchor.set(0.5, 0); pityLbl.x = w / 2; pityLbl.y = listBottom + Math.round(h * 0.02);
+      this.container.addChild(pityLbl);
+    }
+
+    const hint = txt(t('gacha.oddsDetail.tapClose'), Math.round(h * 0.02), C.mid);
+    hint.anchor.set(0.5, 1); hint.x = w / 2; hint.y = py + ph - Math.round(h * 0.02);
+    this.container.addChild(hint);
   }
 
   private addButton(

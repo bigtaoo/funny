@@ -45,12 +45,16 @@ import type { LeaderboardCallbacks } from '../../src/scenes/LeaderboardScene';
 import type { BattlePassCallbacks } from '../../src/scenes/BattlePassScene';
 import type { TeamsCallbacks } from '../../src/scenes/TeamsScene';
 import type { WorldMapView } from '../../src/scenes/WorldMapScene';
+import type { DailyCallbacks } from '../../src/scenes/DailyScene';
+import type { EventCallbacks } from '../../src/scenes/EventScene';
+import type { ConsentCallbacks } from '../../src/render/ConsentDialog';
 
 export type ScreenName =
   | 'none' | 'intro' | 'lobby' | 'settings' | 'login' | 'shop' | 'gacha'
   | 'campaignMap' | 'levelPrep' | 'collection' | 'equipment' | 'stats' | 'achievements'
   | 'leaderboard' | 'battlePass' | 'replay' | 'result' | 'room' | 'friends'
-  | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams';
+  | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams'
+  | 'consent' | 'daily' | 'events';
 
 interface ActiveMatch {
   engine: IGameEngine;
@@ -80,6 +84,13 @@ export class HeadlessAppViews implements AppViews {
   collection?: CollectionCallbacks;
   equipment?: EquipmentCallbacks;
   stats?: StatsCallbacks;
+  consent?: ConsentCallbacks;
+  daily?: DailyCallbacks;
+  events?: EventCallbacks;
+  /** Last daily-reward-claimable badge the core pushed into the lobby handle. */
+  lastRetentionBadge?: boolean;
+  /** Last events-available flag the core pushed into the lobby handle. */
+  lastEventsAvailable?: boolean;
   replay?: ReplaySceneCallbacks;
   result?: ResultViewProps;
   room?: RoomSceneCallbacks;
@@ -97,13 +108,18 @@ export class HeadlessAppViews implements AppViews {
   private replayMatch: { engine: IGameEngine; endFrame: number } | null = null;
 
   showIntro(cb: IntroSceneCallbacks): void { this.screen = 'intro'; this.intro = cb; }
+  showConsent(cb: ConsentCallbacks): void { this.screen = 'consent'; this.consent = cb; }
   showLobby(cb: LobbySceneCallbacks): LobbyView {
     this.screen = 'lobby';
     this.lobby = cb;
     this.lastSocialBadge = undefined;
+    this.lastRetentionBadge = undefined;
     return {
       applySocialBadge: (n) => { this.lastSocialBadge = n; },
       applyAchievementBadge: () => {},
+      applyRetentionBadge: (c) => { this.lastRetentionBadge = c; },
+      applyEventsAvailable: (a) => { this.lastEventsAvailable = a; },
+      applyWorldAvailable: () => {},
       showAchievementToast: () => {},
       showSeasonSettlement: () => {},
     };

@@ -15,7 +15,7 @@ import { HeadlessAppViews } from './harness/HeadlessAppViews';
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 describe('headless app core — offline navigation', () => {
-  it('first launch shows the intro, then routes to the offline lobby', async () => {
+  it('first launch shows the intro, then the GDPR consent gate, then the offline lobby', async () => {
     const platform = new HeadlessPlatform(); // no nw_api_base → offline single-player
     const views = new HeadlessAppViews();
     const core = createAppCore(platform, views);
@@ -23,11 +23,33 @@ describe('headless app core — offline navigation', () => {
     core.start();
     expect(views.screen).toBe('intro');
 
+    // After intro, the consent gate (L1-1) blocks entry to the lobby until accepted.
     views.intro!.onFinish();
+    expect(views.screen).toBe('consent');
+
+    views.consent!.onAccept();
     await settle();
     expect(views.screen).toBe('lobby');
     expect(views.lobby!.offline).toBe(true);
     expect(views.lobby!.online).toBe(false);
+  });
+
+  it('a second launch (consent already given) skips the consent gate', async () => {
+    const platform = new HeadlessPlatform();
+    // First run: see intro, accept consent → flag persists in the shared storage.
+    const first = new HeadlessAppViews();
+    const coreA = createAppCore(platform, first);
+    coreA.start();
+    first.intro!.onFinish();
+    first.consent!.onAccept();
+    await settle();
+
+    // Relaunch on the same platform/storage: no intro, no consent — straight to lobby.
+    const second = new HeadlessAppViews();
+    const coreB = createAppCore(platform, second);
+    coreB.start();
+    await settle();
+    expect(second.screen).toBe('lobby');
   });
 
   it('lobby → profile → back → lobby, and lobby → campaign map', async () => {
@@ -37,6 +59,7 @@ describe('headless app core — offline navigation', () => {
 
     core.start();
     views.intro!.onFinish();
+    views.consent!.onAccept();
     await settle();
     expect(views.screen).toBe('lobby');
 
@@ -57,6 +80,7 @@ describe('headless app core — offline navigation', () => {
 
     core.start();
     views.intro!.onFinish();
+    views.consent!.onAccept();
     await settle();
     expect(views.screen).toBe('lobby');
     // Offline: no /social/badges fetch, but the handle is still wired and the

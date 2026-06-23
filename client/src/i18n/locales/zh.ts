@@ -1073,6 +1073,28 @@ export const zh = {
   'event.rewards.claim': '兑换',
   'event.rewards.claimToast': '兑换成功，剩余积分：{n}',
   'event.rewards.claimFailed': '兑换失败，请重试',
+
+  // ── GDPR 首次同意（C5-c，L1-1）────────────────────────────────────────────
+  'consent.title': '隐私与数据使用',
+  'consent.body': '我们重视你的隐私。继续游戏前，请阅读并同意我们的隐私政策与用户协议。仅在你同意后，我们才会收集匿名游玩数据用于改进游戏；你可随时在设置中删除账号。',
+  'consent.privacyPolicy': '隐私政策',
+  'consent.terms': '用户协议',
+  'consent.accept': '同意并继续',
+
+  // ── 抽卡概率公示（Apple 3.1.1，L1-3）──────────────────────────────────────
+  'gacha.oddsDetail.button': '概率详情',
+  'gacha.oddsDetail.title': '掉落概率公示',
+  'gacha.oddsDetail.total': '合计：{pct}%',
+  'gacha.oddsDetail.pityRule': '保底：每 {n} 抽内必出最高稀有度。',
+  'gacha.oddsDetail.tapClose': '点击任意处关闭',
+
+  // ── 账号删除（Apple 5.1.1(v)，C5-b，L1-2）─────────────────────────────────
+  'settings.deleteAccount': '删除账号',
+  'settings.deleteAccount.confirmTitle': '确认删除账号？',
+  'settings.deleteAccount.confirmBody': '删除后账号进入 7 天宽限期，期间重新登录即可恢复；超过 7 天数据将被永久清除。确定删除吗？',
+  'settings.deleteAccount.confirm': '确认删除',
+  'settings.deleteAccount.cancel': '取消',
+  'settings.deleteAccount.failed': '删除失败，请重试',
 };
 
 export type TranslationKey = keyof typeof zh;

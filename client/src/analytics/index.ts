@@ -24,6 +24,29 @@ let getToken: () => string | undefined = () => undefined;
 let sessionStartTs = 0;
 let scenesVisited: string[] = [];
 
+/**
+ * GDPR consent gate (C5-c, L1-1). Default `false`: NO telemetry leaves the device
+ * until the player accepts the consent dialog. The core calls {@link setConsent}
+ * with the persisted flag before init (returning consented users), and again on
+ * accept (fresh users). `track()` is a no-op while this is false.
+ */
+let consentGranted = false;
+/** session_start props captured at init, re-emitted by setConsent when consent flips on post-init. */
+let sessionStartProps: Record<string, unknown> | null = null;
+
+/**
+ * Grant / revoke analytics consent (L1-1). When flipped on after init has already
+ * run (fresh user just accepted), re-emits the session_start that was gated out so
+ * the funnel still has a session anchor.
+ */
+export function setConsent(granted: boolean): void {
+  const was = consentGranted;
+  consentGranted = granted;
+  if (granted && !was && queue && sessionId && sessionStartProps) {
+    track('session_start', sessionStartProps);
+  }
+}
+
 function genSessionId(): string {
   const c = (globalThis as { crypto?: Crypto }).crypto;
   if (c && typeof c.randomUUID === 'function') return c.randomUUID();
@@ -74,8 +97,10 @@ export async function init(
   queue.start();
   bindSessionLifecycle();
 
-  // Emit session_start immediately (sample=1.0 by default).
-  track('session_start', { platform: platformName, os, locale: getLocale() });
+  // Emit session_start immediately (sample=1.0 by default). Gated by consent —
+  // if the player hasn't accepted yet this is a no-op and setConsent re-emits it.
+  sessionStartProps = { platform: platformName, os, locale: getLocale() };
+  track('session_start', sessionStartProps);
 }
 
 // ── Session lifecycle → churn_signal + session_end ───────────────────────────
@@ -109,6 +134,7 @@ function bindSessionLifecycle(): void {
 
 /** Track a named event with arbitrary props (synchronous, non-blocking). */
 export function track(event: string, props: Record<string, unknown> = {}): void {
+  if (!consentGranted) return; // GDPR gate (L1-1): no telemetry before consent
   if (!queue || !sessionId) return;
   if (!shouldTrack(event)) return;
 

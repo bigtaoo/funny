@@ -61,6 +61,7 @@ async function registerAndEnterLobby(c: Client): Promise<void> {
   c.core.start();
   if (!(await waitFor(() => c.views.screen === 'intro', 5_000))) throw new Error('no intro');
   c.views.intro!.onFinish();
+  c.views.consent!.onAccept(); // GDPR gate (L1-1) before entry
   if (!(await waitFor(() => c.views.screen === 'login', 10_000))) throw new Error('no login screen');
   const outcome = await c.views.login!.onRegister(uid(c.id), 'password123', `Load${c.id}`);
   if (!outcome.ok) throw new Error(`register failed: ${JSON.stringify(outcome)}`);

@@ -42,6 +42,10 @@ export type Achievement = Schemas['Achievement'];
 /** GET /achievements 回包：定义表 + 我的 stats + 已领进度。 */
 export type AchievementsView =
   operations['getAchievements']['responses']['200']['content']['application/json']['data'];
+// —— 限时活动（B6，ADR-014）——
+/** GET /events 回包一条活动（含任务进度 + 积分商店）。EventScene 的视图类型与此结构兼容。 */
+export type EventView =
+  operations['getEvents']['responses']['200']['content']['application/json']['data']['events'][number];
 // —— 留存系统（B5，RETENTION_DESIGN）——
 /** GET /retention 回包：签到月历 + 每日任务 + 定义表 + 红点。 */
 export interface RetentionView {
@@ -122,6 +126,20 @@ export class ApiClient {
   /** 改密（需已登录，token 已持有）。 */
   async changePassword(oldPassword: string, newPassword: string): Promise<void> {
     await this.post<{ ok: true }>('/auth/password/change', { oldPassword, newPassword });
+  }
+
+  // ── 账号合规（C5，需登录 token）────────────────────────────────────────────
+  /**
+   * 软删除账号（C5-b，Apple 5.1.1(v)）：服务端置 `deletedAt`，7 天宽限后异步清数据；
+   * 宽限期内重新登录可恢复。返回确认 token（审计用）。调用方清本地 token/存档并回登录页。
+   */
+  async deleteAccount(): Promise<{ confirmToken: string }> {
+    return this.request<{ confirmToken: string }>('DELETE', '/account');
+  }
+
+  /** 记录 GDPR 同意（C5-c）：服务端写 `flags.gdprConsent`。匿名/未登录无 token 时不应调用。 */
+  async recordGdprConsent(consent: boolean): Promise<void> {
+    await this.post<{ ok: true }>('/account/gdpr-consent', { consent });
   }
 
   // ── save（S0-7）─────────────────────────────────────────
@@ -407,6 +425,24 @@ export class ApiClient {
   /** 领当日满点任务金币（幂等）。 */
   async claimDailyReward(): Promise<{ save: SaveData; coins: number }> {
     return this.post<{ save: SaveData; coins: number }>('/retention/daily/claim', {});
+  }
+
+  // ── 限时活动（B6，ADR-014，需登录 token）──────────────────────────────────
+  /** 当前有效活动列表（含本账号参与进度 + 积分商店）。活动期外为空数组。 */
+  async getEvents(): Promise<EventView[]> {
+    const data = await this.request<{ events: EventView[] }>('GET', '/events');
+    return data.events;
+  }
+
+  /** 消耗活动积分兑换奖励：发奖落邮件 / commercial 金币。积分不足 → 402；活动期外 → 403。 */
+  async claimEventReward(
+    eventId: string,
+    rewardId: string,
+  ): Promise<{ pointsLeft: number; reward: { kind: string; id?: string; count?: number } }> {
+    return this.post<{ pointsLeft: number; reward: { kind: string; id?: string; count?: number } }>(
+      '/events/claim',
+      { eventId, rewardId },
+    );
   }
 
   // ── 社交：好友（S6-1，需登录 token）。发送/拉取走 REST，实时事件经 gateway push（NetSession）。──
