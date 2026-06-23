@@ -167,6 +167,19 @@ export class GameState {
     this._events = [];
   }
 
+  /**
+   * Replace the event queue with the per-*frame* union assembled by
+   * GameEngine.tick(). step() clears + rebuilds _events each sim step, so after a
+   * multi-step (catch-up) frame only the last step's events would survive, and on
+   * a 0-step render frame the previous step's events would linger and be consumed
+   * again. tick() collects every step's events and writes the union here so the
+   * renderer sees each event exactly once — no lost terminal events (leaking
+   * projectile sprites) and no re-processed stale ones (duplicate sprites).
+   */
+  setEvents(events: GameEvent[]): void {
+    this._events = events;
+  }
+
   get events(): readonly GameEvent[] {
     return this._events;
   }

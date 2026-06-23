@@ -312,6 +312,15 @@ class GameEngineImpl implements IGameEngine {
     const maxAccum = tickDt * GameEngineImpl.MAX_CATCHUP_TICKS;
     if (this.accumulatedTime > maxAccum) this.accumulatedTime = maxAccum;
 
+    // Collect every sim step's events into a per-frame union. The renderer
+    // consumes state.events once per render frame, but step() clears + rebuilds
+    // the queue each step — so without this a catch-up frame (≥2 steps) would
+    // drop all but the last step's events (losing terminal projectile_hit/
+    // expired → leaked arrow sprites), and a 0-step frame (render runs faster
+    // than TICK_RATE) would re-consume the previous step's events (duplicate
+    // projectile_fired → orphaned sprites). We assemble the union here and write
+    // it back at the end so state.events means "events produced this frame".
+    const frameEvents: GameEvent[] = [];
     while (this.accumulatedTime >= stepDt) {
       // Pull the confirmed command set for this frame from the input pipeline.
       // LocalInputSource never stalls; a net source returns null when the frame
@@ -328,8 +337,12 @@ class GameEngineImpl implements IGameEngine {
         break;
       }
       this.accumulatedTime -= stepDt;
-      this.step(this.currentTick++, cmds);
+      const stepEvents = this.step(this.currentTick++, cmds);
+      if (stepEvents.length) frameEvents.push(...stepEvents);
     }
+    // Always overwrite — on a 0-step frame this clears stale events so the
+    // renderer doesn't re-process them.
+    this.state.setEvents(frameEvents);
   }
 
   playCard(handIndex: number, col: number, row?: number): void {
