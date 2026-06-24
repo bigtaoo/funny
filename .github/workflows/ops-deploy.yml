@@ -1,0 +1,59 @@
+name: ops-deploy
+
+# 运维后台前端 ops（Worker nivara-ops）自动发布到 Cloudflare，对外 ops.gamestao.com。
+# 触发：push 到 main 且改动落在 ops 相关文件，或在 Actions 页手动 Run。
+# 流程：npm ci → npm run build（构建期把 git short hash 烘进 header 版本号）→ wrangler deploy。
+# 部署细节 / 同源反代 / CF Access：design/product/deploy-cloudflare.md §6。
+#
+# 需要的 repo secrets：
+#   CLOUDFLARE_API_TOKEN   —— CF「My Profile → API Tokens」建，权限至少 Workers Scripts:Edit
+#                              （含 Workers Routes / Workers KV / Account 读权限，用 "Edit Cloudflare Workers" 模板最省事）
+#   CLOUDFLARE_ACCOUNT_ID  —— 账号 ID（CF 控制台右栏可见；wrangler 多账号时需要）
+# 启用开关：repo variable OPS_DEPLOY_ENABLED = true（未设则 job 跳过，避免配好前每次 push 报红）。
+# wrangler secret（ADMIN_PROXY_SECRET）在 Worker 上持久保存，deploy 不会清除，无需每次重设。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/ops/**'
+      - 'wrangler.ops.jsonc'
+      - 'worker.ops.js'
+      - '.github/workflows/ops-deploy.yml'
+  workflow_dispatch: {}
+
+# 同时只跑一个 ops 部署，新的取消旧的，避免并发 deploy 打架。
+concurrency:
+  group: ops-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # 未设 repo variable OPS_DEPLOY_ENABLED=true 时整个 job 跳过（避免配好前每次 push 报红）。
+    if: ${{ vars.OPS_DEPLOY_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/ops/package-lock.json
+
+      - name: ops install
+        working-directory: tools/ops
+        run: npm ci
+
+      # 产出 tools/ops/dist；构建期 webpack 跑 git rev-parse 烘入 header 版本号。
+      - name: ops build
+        working-directory: tools/ops
+        run: npm run build
+
+      # 从仓库根用 -c 指定 ops 配置（assets 指向 ./tools/ops/dist）。
+      - name: deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy -c wrangler.ops.jsonc

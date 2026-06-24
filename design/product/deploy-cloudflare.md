@@ -157,6 +157,16 @@ npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler.ops.jsonc
 
 > admin 后端入口若不在 `api.gamestao.com/ops`（如改用 cloudflared tunnel 或独立子域），改 `wrangler.ops.jsonc` 的 `ADMIN_ORIGIN` 后重 deploy。
 
+#### 自动发布（GitHub Action，免手敲命令）
+
+`.github/workflows/ops-deploy.yml`：push 到 `main` 且改动落在 `tools/ops/**` / `wrangler.ops.jsonc` / `worker.ops.js` 时自动 `npm ci → build → wrangler deploy`；也可在 GitHub **Actions 页手动 Run**（`workflow_dispatch`）。一次性配置：
+
+1. **CF API Token**：Cloudflare「My Profile → API Tokens」用 *Edit Cloudflare Workers* 模板建一个 → 存为 repo secret `CLOUDFLARE_API_TOKEN`；账号 ID 存 `CLOUDFLARE_ACCOUNT_ID`（CF 控制台右栏，即 `e64b61f1...`）。
+2. **开关**：设 repo variable `OPS_DEPLOY_ENABLED = true`（未设则 job 跳过，避免配好前每次 push 报红，与 `anim-sync` 同套路）。
+3. wrangler secret（`ADMIN_PROXY_SECRET`）在 Worker 上持久保存，自动 deploy **不会清除**，无需在 CI 重设。
+
+> 手动两条命令的老路仍可用（上面命令块），适合本机临时发布或 CI 不可用时兜底。
+
 #### 上线闭环操作手册（admin 后端上线时一次性做）
 
 **Step 0 — 生成共享密钥**（一个值，两端同填）：
