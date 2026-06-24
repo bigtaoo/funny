@@ -11,6 +11,14 @@
 #
 # 前置：见 observability/README.md 「Phase 2 部署」——daemon.json 限日志体积 + CF 隧道/Access 配置。
 
+# 观测栈自身的日志也限体积（50m 一个、留最近 5 个、超了删最老 ≈ 250m/容器），
+# 即便 host daemon.json 还没配，obs 容器也不会撑爆盘。业务容器的同款限制走 daemon.json（全局）。
+x-logging: &obs-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   loki:
     image: grafana/loki:3.4.2
@@ -19,6 +27,7 @@ services:
     volumes:
       - ./loki/config.yml:/etc/loki/config.yml:ro
       - loki-data:/loki
+    logging: *obs-logging
     mem_limit: 512m
     restart: unless-stopped
 
@@ -35,6 +44,7 @@ services:
       - alloy-data:/var/lib/alloy/data
     depends_on:
       - loki
+    logging: *obs-logging
     mem_limit: 256m
     restart: unless-stopped
 
@@ -57,6 +67,7 @@ services:
       - "127.0.0.1:3000:3000"
     depends_on:
       - loki
+    logging: *obs-logging
     mem_limit: 256m
     restart: unless-stopped
 
@@ -76,6 +87,7 @@ services:
       TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN:-}
     depends_on:
       - grafana
+    logging: *obs-logging
     mem_limit: 128m
     restart: unless-stopped
 
