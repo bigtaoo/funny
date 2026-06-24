@@ -45,8 +45,8 @@ function findResource(): { x: number; y: number } {
   throw new Error('no resource tile');
 }
 
-/** 找一个可占领空闲格（非中心、非主城(5,5)）。 */
-function findFreeNear(sx: number, sy: number): { x: number; y: number } {
+/** 找一个可占领空闲格（非中心、非给定主城格 (exX,exY)）。 */
+function findFreeNear(sx: number, sy: number, exX: number, exY: number): { x: number; y: number } {
   for (let r = 0; r < 60; r++) {
     for (let dx = -r; dx <= r; dx++) {
       for (let dy = -r; dy <= r; dy++) {
@@ -54,7 +54,7 @@ function findFreeNear(sx: number, sy: number): { x: number; y: number } {
         const y = sy + dy;
         if (x < 0 || y < 0 || x >= SLG_MAP_W || y >= SLG_MAP_H) continue;
         if (x === CENTER_X && y === CENTER_Y) continue;
-        if (x === 5 && y === 5) continue;
+        if (x === exX && y === exY) continue;
         const t = proceduralTile(W, x, y).type;
         if (t === 'neutral' || t === 'resource') return { x, y };
       }
@@ -92,6 +92,9 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
   });
 
   const auth = { authorization: `Bearer ${token}` };
+  // 自动落城（§3.4）：落点由服务端选，join 测试捕获后供后续行军用。
+  let baseX = 0;
+  let baseY = 0;
 
   it('GET /health 无需鉴权', async () => {
     const r = await fetch(`${base}/health`);
@@ -118,19 +121,26 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(body.data.tiles.filter((tl: { type: string }) => tl.type === 'center')).toHaveLength(1);
   });
 
-  it('POST /world/join → /world/me joined, /world/tile base', async () => {
+  it('POST /world/join（系统自动落城，§3.4）→ /world/me joined, /world/tile base', async () => {
     const jr = await fetch(`${base}/world/join`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },
-      body: JSON.stringify({ worldId: W, x: 5, y: 5 }),
+      body: JSON.stringify({ worldId: W }), // 不传坐标——服务端自动选点
     });
     expect(jr.status).toBe(200);
-    expect((await jr.json()).data).toMatchObject({ joined: true, mainBaseTile: `${W}:5:5` });
+    const data = (await jr.json()).data as { joined: boolean; mainBaseTile: string };
+    expect(data.joined).toBe(true);
+    // 落点由服务端决定：捕获后断言确为合法 base 格（非中心/障碍等）。
+    expect(data.mainBaseTile).toMatch(new RegExp(`^${W}:\\d+:\\d+$`));
+    const parts = data.mainBaseTile.split(':');
+    baseX = Number(parts[parts.length - 2]);
+    baseY = Number(parts[parts.length - 1]);
+    expect(baseX === CENTER_X && baseY === CENTER_Y).toBe(false);
 
     const me = await fetch(`${base}/world/me?worldId=${W}`, { headers: auth });
     expect((await me.json()).data.joined).toBe(true);
 
-    const tile = await fetch(`${base}/world/tile/${encodeURIComponent(`${W}:5:5`)}`, {
+    const tile = await fetch(`${base}/world/tile/${encodeURIComponent(data.mainBaseTile)}`, {
       headers: auth,
     });
     expect((await tile.json()).data).toMatchObject({ type: 'base', mine: true });
@@ -157,15 +167,15 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
   });
 
   it('POST /world/march → occupy 行军（marching）', async () => {
-    // acct-1 已在 (5,5) 落城；向相邻空闲格发占领行军。
-    const free = findFreeNear(6, 6);
+    // acct-1 已自动落城（baseX,baseY）；向相邻空闲格发占领行军。
+    const free = findFreeNear(baseX, baseY, baseX, baseY);
     const r = await fetch(`${base}/world/march`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },
       body: JSON.stringify({
         worldId: W,
-        fromX: 5,
-        fromY: 5,
+        fromX: baseX,
+        fromY: baseY,
         toX: free.x,
         toY: free.y,
         kind: 'occupy',

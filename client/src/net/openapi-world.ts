@@ -77,6 +77,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description 进入世界，系统自动落城（§3.4：优先靠近家族→外环新手区→兜底）。玩家不传坐标，落点由服务端决定。 */
         post: operations["joinWorld"];
         delete?: never;
         options?: never;
@@ -1176,8 +1177,6 @@ export interface operations {
             content: {
                 "application/json": {
                     worldId: string;
-                    x: number;
-                    y: number;
                 };
             };
         };

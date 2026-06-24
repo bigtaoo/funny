@@ -149,8 +149,9 @@ export class WorldApiClient {
     return this.req('GET', `/world/march?worldId=${encodeURIComponent(worldId)}`);
   }
 
-  async joinWorld(worldId: string, x: number, y: number): Promise<PlayerWorldView> {
-    return this.req('POST', '/world/join', { worldId, x, y });
+  /** 进入世界：系统自动落城（§3.4，优先靠近家族→外环新手区），落点由服务端决定，玩家不传坐标。 */
+  async joinWorld(worldId: string): Promise<PlayerWorldView> {
+    return this.req('POST', '/world/join', { worldId });
   }
 
   /**
@@ -161,11 +162,11 @@ export class WorldApiClient {
   }
 
   /**
-   * 按赛季 join（G6/§20）：服务端解析本账号应进的 shard（宗门>家族>单随，溢出开新区）后落城。
-   * 返回的 PlayerWorldView 含解析出的 `worldId`，客户端据此进图。
+   * 按赛季 join（G6/§20）：服务端解析本账号应进的 shard（宗门>家族>单随，溢出开新区）后**系统自动落城**（§3.4）。
+   * 返回的 PlayerWorldView 含解析出的 `worldId`，客户端据此进图。玩家不传坐标。
    */
-  async joinSeason(season: number, x: number, y: number): Promise<PlayerWorldView> {
-    return this.req('POST', '/world/season/join', { season, x, y });
+  async joinSeason(season: number): Promise<PlayerWorldView> {
+    return this.req('POST', '/world/season/join', { season });
   }
 
   async occupyTile(worldId: string, x: number, y: number): Promise<{ ok: true }> {

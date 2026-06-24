@@ -314,6 +314,14 @@ export class WorldMapScene implements Scene {
     } catch { /* offline — no nation overlay */ }
     try {
       this.me = await this.cb.worldApi.getMe(this.cb.worldId);
+      // 首次进入：系统自动落城（§3.4，优先靠近家族）——玩家不再自选坐标。
+      // 满员/无空格则保持未落城态（用户可再点地图触发重试），不阻断进图。
+      if (!this.me.joined) {
+        try {
+          this.me = await this.cb.worldApi.joinWorld(this.cb.worldId);
+          this.showToast(t('world.myBase'));
+        } catch { /* 满员/无空格——保持未落城态 */ }
+      }
       if (this.me.mainBaseTile) {
         const [bx, by] = this.parseTileId(this.me.mainBaseTile);
         this.centerAt(bx, by);
@@ -900,11 +908,12 @@ export class WorldMapScene implements Scene {
     const me = this.me;
 
     if (!me?.joined) {
-      // Not yet in world — offer to join
+      // 尚未落城（一般在进图时已自动落城；此处是满员/无空格兜底的手动重试入口）。
+      // 系统自动选点，不再按点击坐标落城。
       this.showModal(
         [t('world.joinTitle'), t('world.confirmJoin')],
         [
-          { label: t('world.confirmJoinBtn'), action: () => this.doJoin(tx, ty) },
+          { label: t('world.confirmJoinBtn'), action: () => void this.doJoin() },
           { label: '✕', action: () => this.closeModal() },
         ],
       );
@@ -1108,11 +1117,16 @@ export class WorldMapScene implements Scene {
     }
   }
 
-  private async doJoin(tx: number, ty: number): Promise<void> {
+  /** 进入大区：系统自动落城（§3.4，优先靠近家族），落点由服务端决定；落城后把镜头移到新主城。 */
+  private async doJoin(): Promise<void> {
     this.closeModal();
     try {
-      this.me = await this.cb.worldApi.joinWorld(this.cb.worldId, tx, ty);
+      this.me = await this.cb.worldApi.joinWorld(this.cb.worldId);
       this.showToast(t('world.myBase'));
+      if (this.me.mainBaseTile) {
+        const [bx, by] = this.parseTileId(this.me.mainBaseTile);
+        this.centerAt(bx, by);
+      }
       await this.loadMapViewport();
       this.renderMap(); this.renderHud();
     } catch (e) {

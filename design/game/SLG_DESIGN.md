@@ -103,7 +103,7 @@
 | **首府（Capital）** | 10 个固定位置；占领即立国；Voronoi 分区给本国玩家提供加成；赛季终局争夺目标 | 围攻（关键战斗，服务器复算 + 录像） | 占领方自定义防守 config + 驻军 |
 | **关隘/桥（Gate/Bridge）** | 嵌于阻挡地形（山脉/河流）之间的唯一通道；可被占领；只有占领方及其盟友才能通过 | 围攻（占领通道） | 占领方驻军；未占领视为阻挡 |
 | **阻挡地形（Obstacle）** | 山脉/河流等完全不可通行格子（程序化分布，约占地图 10–15% DRAFT）；行军必须绕行或攻占关隘/桥 | 不可进攻 | — |
-| **出生地 / 主城** | 玩家不可被永久夺取的本营（被打=掠夺资源 + 自动迁移 + 保护罩，不丢主城资格） | 围攻（掠夺） | 主城防守 config |
+| **出生地 / 主城** | 玩家不可被永久夺取的本营（**首次进入=系统自动落城**，被打=掠夺资源 + 自动迁移 + 保护罩，不丢主城资格；只有付费迁城才可自选位置） | 围攻（掠夺） | 主城防守 config |
 
 ### 3.2 地图尺寸与地形布局
 
@@ -336,6 +336,12 @@
   - **契约/客户端 ✅**：`openapi-world.yml`（`/world/relocate`）+ `transport.proto`（`SectBroadcast`→`SectMsg`）已改并 codegen（`openapi-world.ts`/`proto/transport.ts`）；`WorldApiClient.relocateBase`；`NetSession.onSectMsg` 路由 `msg.sectMsg`；`WorldMapScene` 中立格菜单加「迁城到此」（确认弹层显花费）+ `doRelocate`；`SectScene.applySectMsg` 实时插入频道（去重）+ `createAppCore.goSectHub` 转发 `onSectMsg`；i18n `world.actRelocate/relocateTitle/relocateConfirm/relocateBtn/relocated` zh/en/de。
   - **部署接线**：gateway 加 `NW_GW_REDIS_URL`（与 worldsvc 同 Redis）+ `ioredis` 依赖；写入 `.env.example`/`dev-up.ps1`/`ecosystem.config.cjs`/`docker-compose.{prod,local}.yml`。
   - 验证：服务端 `tsc -b shared worldsvc gateway` 全绿 + worldsvc **81 e2e**（+主动迁城/迁城校验/宗门频道扇出 3 例，含被动迁城断言改写）；client `tsc --noEmit` 0 错 + **273 测试** + `build:web` 通过。
+- **首次进入系统自动落城 ✅（2026-06-24，用户拍板）**：落城三态归一——**首次进入=系统自动落城**（玩家不再自选坐标）/ 被破=被动随机迁城 / **仅付费迁城可自选位置**。
+  - **落点策略（用户拍板：优先靠近家族）**：`service.pickSpawnTile(worldId, accountId)`——① 有家族 → 在同家族成员主城周围逐环（切比雪夫 1..`SPAWN_NEAR_FAMILY_RADIUS=6`）找第一个合法空格（成员顺序 + 同环候选均随机打散，防新人扎堆同一位成员旁，SLG 抱团核心）② 退回外环新手区随机（`pickRandomEmptyTile` 加 `minDr` 参，只取 `dr > SPAWN_OUTER_MIN_DR=0.6` 的外圈，远离中心争夺区）③ 全图随机兜底。新增 `spiralFindEmpty`/`shuffled` 私有辅助；`pickRandomEmptyTile(worldId, minDr=0)` 被动迁城调用不传 minDr → 行为不变。
+  - **`joinWorld(worldId, accountId, x?, y?)`**：坐标改为**可选**——公网入口不传 → 走 `pickSpawnTile` 自动选点；仅保留显式坐标供内部/测试手动落点（原校验口径不变）。`joinSeason(season, accountId)` 去掉坐标。
+  - **契约/客户端 ✅**：`openapi-world.yml` `/world/join` 去掉必填 `x,y`（重生 `openapi-world.ts`）；`httpApi` `/world/join`、`/world/season/join` 不再收坐标；`WorldApiClient.joinWorld(worldId)`/`joinSeason(season)` 去坐标；`WorldMapScene.loadData` 进图若未落城 → 自动落城 + 居中镜头，`doJoin()` 去坐标（点击空地不再按坐标落城，保留作满员兜底手动重试入口）；i18n `world.joinDesc/confirmJoin/confirmJoinBtn` zh/en/de 改为「系统自动安排落点」。
+  - 验证：`tsc -b shared engine worldsvc gateway` 全绿 + client `tsc --noEmit` 0 错 + **366 测试** + `build:web` 通过；`httpApi.e2e.test.ts` 已同步改写（join 不传坐标、捕获服务端落点供后续行军），但本机 Docker 为 Windows 容器模式跑不起 Linux Mongo，worldsvc e2e 未实跑（其余用例传显式坐标走手动路径不受影响）。
+  - 备注：全新玩家首次进入通常尚未入家族 → 落「外环新手区随机」；「靠近家族」在玩家已属本区某家族时生效（落点逻辑已就位，为后续家族预分配/重进留接口）。
 - **S8-5 拍卖行**：材料挂单（赛季资源禁挂）/一口价 + 竞拍/指定受拍人/10% 手续费（coin）/每日限额/价格护栏滑窗/绑定禁挂机制/季末冻结清算 + **装备交易（A）** + **异常交易审计（D，反 RMT，§17.13）** 全 ✅（2026-06-21）。**机制权威见 [`AUCTION_DESIGN.md`](AUCTION_DESIGN.md)**。
 - **S8-6 养成统一**：`buildSiegeBlueprints` + PvE/SLG 材料统一 + 服务器权威扩展 + 战力单调性单测。
 - **S8-6.5 国家系统**：10 首府固定坐标写入 `shared/slg.ts`、Voronoi 分区计算、立国/灭国状态机、国民加成注入围攻蓝图。

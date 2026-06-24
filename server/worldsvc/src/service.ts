@@ -84,6 +84,11 @@ import { nullWorldMetaClient, type WorldMetaClient, type PlayerProfile } from '.
 import { nullWorldCommercialClient, type WorldCommercialClient } from './commercialClient';
 import { nullWorldMailClient, type WorldMailClient } from './mailClient';
 
+/** 自动落城靠近家族时，围绕成员主城逐环搜空格的最大切比雪夫半径（§3.4）。 */
+const SPAWN_NEAR_FAMILY_RADIUS = 6;
+/** 自动落城外环新手区门槛：只在 dr（到中心归一化距离）> 此值的外圈随机落城，远离中心争夺区（§3.4）。 */
+const SPAWN_OUTER_MIN_DR = 0.6;
+
 /** 一场关键围攻的可重播输入（G3-2c）：seed + 双方布阵 + 格等级，持久化到 SiegeDoc 供客户端重播观战。 */
 export interface SiegeReplayInputs {
   seed: number;
@@ -616,24 +621,37 @@ export class WorldService {
   // ── S8-1：进入世界 / 占领 / 放弃 ───────────────────────────
 
   /**
-   * 进入世界：在 (x,y) 落主城。幂等（已进入直接返回当前状态，不二次落城）。
-   * 校验：世界开放 + 未满员 + 坐标界内 + 目标格非世界中心 + 未被他人占领。
+   * 进入世界：落主城。幂等（已进入直接返回当前状态，不二次落城）。
+   *
+   * 落点（§3.4，2026-06-24 拍板）：**首次进入由系统自动落城**（优先靠近家族 → 退外环新手区 → 全图兜底），
+   * 玩家不再自选坐标——只有付费迁城（`relocateBase`）/ 被破城被动迁城（`passiveRelocate`）才换位。
+   * 仅保留可选 `(x,y)` 手动落点供内部/测试显式指定（公网入口不传坐标，恒走自动）。
+   * 校验：世界开放 + 未满员（+ 手动路径校验坐标界内 / 非中心/障碍/关隘/险地 / 未被占领）。
    * 落地：写 base TileDoc（带新手保护罩 PROTECTION_SEC）+ 建 playerWorld（满兵力 + 起步产率）。
    */
-  async joinWorld(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
+  async joinWorld(worldId: string, accountId: string, x?: number, y?: number): Promise<PlayerWorldView> {
     const { cols, now } = this.deps;
     const existing = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (existing) return this.getMe(worldId, accountId); // 幂等
 
-    if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', '主城坐标越界');
-    const proc = proceduralTile(worldId, x, y);
-    if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可落城');
-    if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', '障碍/关隘不可落城');
-    if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', '险地不可落城');
-
-    const tid = tileId(worldId, x, y);
-    const occ = await cols.tiles.findOne({ _id: tid });
-    if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', '该格已被占领');
+    let spawn: { x: number; y: number; level: number; resType?: ResourceType };
+    if (x !== undefined && y !== undefined) {
+      // 手动落点（内部/测试）：保留原校验口径。
+      if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', '主城坐标越界');
+      const proc = proceduralTile(worldId, x, y);
+      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可落城');
+      if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', '障碍/关隘不可落城');
+      if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', '险地不可落城');
+      const occ = await cols.tiles.findOne({ _id: tileId(worldId, x, y) });
+      if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', '该格已被占领');
+      spawn = { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
+    } else {
+      // 自动落城：优先靠近家族成员 → 外环新手区 → 全图兜底。
+      const spot = await this.pickSpawnTile(worldId, accountId);
+      if (!spot) throw new SlgError('WORLD_FULL', '无可落城空格');
+      spawn = spot;
+    }
+    const tid = tileId(worldId, spawn.x, spawn.y);
 
     // 容量守卫（仅在 world 文档存在时强制——dev 无 world 文档则不限）。
     const world = await cols.worlds.findOne({ _id: worldId });
@@ -653,15 +671,15 @@ export class WorldService {
     }
 
     const t = now();
-    const yieldRate = this.yieldRecord([{ type: 'base', level: proc.level }]);
+    const yieldRate = this.yieldRecord([{ type: 'base', level: spawn.level }]);
     const tileDoc: TileDoc = {
       _id: tid,
       worldId,
-      x,
-      y,
+      x: spawn.x,
+      y: spawn.y,
       type: 'base',
-      level: proc.level,
-      ...(proc.resType ? { resType: proc.resType } : {}),
+      level: spawn.level,
+      ...(spawn.resType ? { resType: spawn.resType } : {}),
       ownerId: accountId,
       garrison: GARRISON_PER_TILE,
       protectedUntil: t + PROTECTION_SEC * 1000,
@@ -1719,16 +1737,26 @@ export class WorldService {
   }
 
   /**
-   * 随机挑一个合法空格（界内、非中心/障碍/关隘、无人占领）。被动迁城落点用。
+   * 随机挑一个合法空格（界内、非中心/障碍/关隘/险地、无人占领）。被动迁城落点 + 自动落城兜底用。
+   * `minDr`>0 时只接受 dr（到中心归一化距离 0..1）> minDr 的外环格（自动落城远离中心争夺区）。
    * 服务端权威随机（非回放路径，Math.random 安全），最多试若干次，找不到返回 null。
    */
   private async pickRandomEmptyTile(
     worldId: string,
+    minDr = 0,
   ): Promise<{ x: number; y: number; level: number; resType?: ResourceType } | null> {
     const { cols, mapW, mapH } = this.deps;
+    const cx = mapW / 2;
+    const cy = mapH / 2;
+    const maxDist = Math.sqrt(cx * cx + cy * cy);
     for (let i = 0; i < 200; i++) {
       const x = Math.floor(Math.random() * mapW);
       const y = Math.floor(Math.random() * mapH);
+      if (minDr > 0) {
+        const dx = x - cx;
+        const dy = y - cy;
+        if (Math.sqrt(dx * dx + dy * dy) / maxDist <= minDr) continue; // 太靠中心，跳过
+      }
       const proc = proceduralTile(worldId, x, y);
       if (
         proc.type === 'center' ||
@@ -1743,6 +1771,76 @@ export class WorldService {
       return { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
     }
     return null;
+  }
+
+  /**
+   * 自动落城选点（§3.4，2026-06-24 拍板，首次进入系统落城，落点策略=优先靠近家族）：
+   *  1) 有家族 → 在同家族成员主城周围由近及远（切比雪夫环）找第一个合法空格（半径 ≤ SPAWN_NEAR_FAMILY_RADIUS），
+   *     成员顺序随机打散，避免新人总挤在同一位成员旁（SLG 抱团核心）。
+   *  2) 退回外环新手区随机（dr > SPAWN_OUTER_MIN_DR，远离中心争夺区）。
+   *  3) 兜底全图随机。找不到返回 null（视为世界已满/无空格）。
+   */
+  private async pickSpawnTile(
+    worldId: string,
+    accountId: string,
+  ): Promise<{ x: number; y: number; level: number; resType?: ResourceType } | null> {
+    const { cols } = this.deps;
+    const myMember = await cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
+    if (myMember?.familyId) {
+      const mates = await cols.familyMembers.find({ familyId: myMember.familyId }).toArray();
+      const mateIds = mates.map((m) => m.accountId).filter((id): id is string => !!id && id !== accountId);
+      if (mateIds.length > 0) {
+        const bases = await cols.tiles.find({ worldId, type: 'base', ownerId: { $in: mateIds } }).toArray();
+        for (const b of this.shuffled(bases)) {
+          const spot = await this.spiralFindEmpty(worldId, b.x, b.y, SPAWN_NEAR_FAMILY_RADIUS);
+          if (spot) return spot;
+        }
+      }
+    }
+    return (await this.pickRandomEmptyTile(worldId, SPAWN_OUTER_MIN_DR)) ?? (await this.pickRandomEmptyTile(worldId));
+  }
+
+  /**
+   * 从 (ox,oy) 由近及远逐环（切比雪夫距离 1..maxR）找第一个合法空格（界内、非中心/障碍/关隘/险地、无人占领）。
+   * 同环候选顺序随机打散，避免家族新人沿固定方向排队成一条线。自动落城靠近家族用。
+   */
+  private async spiralFindEmpty(
+    worldId: string,
+    ox: number,
+    oy: number,
+    maxR: number,
+  ): Promise<{ x: number; y: number; level: number; resType?: ResourceType } | null> {
+    const { cols } = this.deps;
+    for (let r = 1; r <= maxR; r++) {
+      const ring: [number, number][] = [];
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dy = -r; dy <= r; dy++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // 仅取该环边界
+          ring.push([ox + dx, oy + dy]);
+        }
+      }
+      for (const [x, y] of this.shuffled(ring)) {
+        if (!this.inBounds(x, y)) continue;
+        const proc = proceduralTile(worldId, x, y);
+        if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'gate' || proc.type === 'stronghold') {
+          continue;
+        }
+        const occ = await cols.tiles.findOne({ _id: tileId(worldId, x, y) });
+        if (occ?.ownerId) continue;
+        return { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
+      }
+    }
+    return null;
+  }
+
+  /** Fisher–Yates 洗牌（非回放路径，Math.random 安全）。返回新数组，不改原数组。 */
+  private shuffled<T>(arr: T[]): T[] {
+    const out = arr.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [out[i], out[j]] = [out[j]!, out[i]!];
+    }
+    return out;
   }
 
   // ── 内部辅助 ─────────────────────────────────────────────
@@ -2669,17 +2767,17 @@ export class WorldService {
   }
 
   /**
-   * 按赛季 join（玩家端，§20.4）：服务端解析 shard → joinWorld。
+   * 按赛季 join（玩家端，§20.4）：服务端解析 shard → joinWorld（系统自动落城，§3.4，玩家不传坐标）。
    * WORLD_FULL（并发满员）兜底重解析一跳（多半落溢出新区）。返回含 worldId 的玩家视图。
    */
-  async joinSeason(season: number, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
+  async joinSeason(season: number, accountId: string): Promise<PlayerWorldView> {
     let worldId = await this.resolveShardForJoin(season, accountId);
     try {
-      return await this.joinWorld(worldId, accountId, x, y);
+      return await this.joinWorld(worldId, accountId);
     } catch (e) {
       if (e instanceof SlgError && e.code === 'WORLD_FULL') {
         worldId = await this.resolveShardForJoin(season, accountId);
-        return await this.joinWorld(worldId, accountId, x, y);
+        return await this.joinWorld(worldId, accountId);
       }
       throw e;
     }

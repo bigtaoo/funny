@@ -228,17 +228,23 @@ export function startHttpApi(
         if (method === 'POST' && path === '/world/season/join') {
           const body = await readJson(req);
           const season = Number(body.season);
-          const x = Number(body.x);
-          const y = Number(body.y);
           if (!Number.isFinite(season)) return sendErr(res, ErrorCode.BAD_REQUEST, 'season required');
-          if (!Number.isFinite(x) || !Number.isFinite(y)) return sendErr(res, ErrorCode.BAD_REQUEST, 'x/y required');
-          return send(res, 200, ok(await svc.joinSeason(season, accountId, x, y)));
+          // 系统自动落城（§3.4）：不收坐标，服务端选点。
+          return send(res, 200, ok(await svc.joinSeason(season, accountId)));
         }
 
-        // ── 进入世界 / 占领 / 放弃（S8-1，做实）──
+        // ── 进入世界（S8-1）：系统自动落城（§3.4），仅需 worldId，不收坐标 ──
+        if (method === 'POST' && path === '/world/join') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await svc.joinWorld(worldId, accountId)));
+        }
+
+        // ── 占领 / 放弃 / 迁城 / 瞭望塔（S8-1，做实，需坐标）──
         if (
           method === 'POST' &&
-          (path === '/world/join' || path === '/world/occupy' || path === '/world/abandon' ||
+          (path === '/world/occupy' || path === '/world/abandon' ||
             path === '/world/relocate' || path === '/world/watchtower')
         ) {
           const body = await readJson(req);
@@ -248,9 +254,6 @@ export function startHttpApi(
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           if (!Number.isFinite(x) || !Number.isFinite(y)) {
             return sendErr(res, ErrorCode.BAD_REQUEST, 'x/y required');
-          }
-          if (path === '/world/join') {
-            return send(res, 200, ok(await svc.joinWorld(worldId, accountId, x, y)));
           }
           if (path === '/world/occupy') {
             return send(res, 200, ok(await svc.occupyTile(worldId, accountId, x, y)));

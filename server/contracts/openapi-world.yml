@@ -626,6 +626,7 @@ paths:
   /world/join:
     post:
       operationId: joinWorld
+      description: 进入世界，系统自动落城（§3.4：优先靠近家族→外环新手区→兜底）。玩家不传坐标，落点由服务端决定。
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -633,11 +634,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [worldId, x, y]
+              required: [worldId]
               properties:
                 worldId: { type: string }
-                x: { type: integer }
-                y: { type: integer }
       responses:
         '200':
           description: Joined
