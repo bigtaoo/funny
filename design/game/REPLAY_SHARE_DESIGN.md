@@ -137,11 +137,13 @@
 
 > 实现期已先定如下默认值（代码内常量，上线期可据实测调）：
 
-- 状态流字段最终集 + 量化精度 + 单局体量上限：字段见 `StateReplay.ts`（单位 id/type/side/col/row/hp/maxHp/state，建筑同少 state，基地 hp/maxHp）；坐标量化 2 位小数（`STATE_POS_QUANT=100`）、血量取整；客户端单槽采样上限 `MAX_FRAMES=12000`（30Hz≈6.7 分钟）。**真实一局实测后再定稿** —— 实测见下「2026-06-24 体量定稿」。
+- 状态流字段最终集 + 量化精度 + 单局体量上限：字段见 `StateReplay.ts`（单位 id/type/side/col/row/hp/maxHp/state，建筑同少 state，基地 hp/maxHp）；坐标量化 2 位小数（`STATE_POS_QUANT=100`）、血量取整；客户端单槽采样上限 `MAX_FRAMES=18000`（30Hz=10 分钟；体量已非瓶颈，此上限主要约束录制期内存）。**真实一局实测后再定稿** —— 实测见下「2026-06-24 体量定稿」。
 
 > **2026-06-24 体量定稿（真实对局实测）**：一局多兵种长局的状态流远超 512KB、甚至 >1MB，分享被 Fastify 默认 `bodyLimit`（1MB）抢先 413（`FST_ERR_CTP_BODY_TOO_LARGE`），优雅的 512KB→400 路径根本没机会跑。根因是旧 delta 编码「任一字段变化即整条重发」，而位置逐 tick 都在变 → 移动单位每帧全量重发，delta 几乎等于满帧。两处一并改：
-> - **关键帧抽稀**（`encodeStateReplay`）：位置逐 tick 变化**不再每帧重发**，仅在拐点（线性插值还原误差 > `POS_KEYFRAME_EPS=0.06` 格）/ 状态·血量切换 / 端点 / 间隔超 `MAX_KEYFRAME_GAP=90` tick 处落关键帧；空 delta 帧整帧丢弃。中间位置由哑播放器**按 tick 线性插值**还原 —— `StatePlayerScene` 本就按 `frac=(t-a.tick)/(b.tick-a.tick)` 插值，**解码侧零改动**。匀速直线行走塌缩为端点。
+> - **关键帧抽稀**（`encodeStateReplay`）：位置逐 tick 变化**不再每帧重发**，仅在拐点（线性插值还原误差 > `POS_KEYFRAME_EPS=0.06` 格）/ 状态·血量切换 / 端点 / 间隔超 `MAX_KEYFRAME_GAP=90` tick 处落关键帧；空 delta 帧整帧丢弃。匀速直线行走塌缩为端点。
+> - **解码按单位自身关键帧插值**（`decodeStateReplay`，⚠️ 多单位必需）：抽稀后单个单位只在自己的关键帧落点，而全局 delta 帧因多单位叠加是**密集**的；若像旧版「承前」（两关键帧间冻结位置），单位会到下一关键帧才突跳 → 实测 ~50 单位下满场瞬移（位置误差达 6.22 格）。故解码改两遍：聚每实体关键帧轨道 → 逐帧按**单位自身相邻关键帧**对位置线性插值（静态字段关键帧处切换、其间承前）。`StatePlayerScene` 再在相邻解码帧间按墙钟细插值（分段线性，精确）。**单单位单测不会暴露此 bug**（那时全局帧=该单位关键帧），故加 `stateReplaySize.perf.test.ts` 合成多单位长局做护栏。
 > - **gzip 压缩**：抽稀后的 delta JSON 仍高度重复，分享前客户端 `CompressionStream('gzip')` + base64（`net/replayCompress.ts`），服务端 opaque 存压缩串，取回客户端解压。分享仅 Web 可达（需 fetch + 在线），故直接用浏览器原生 API。
-> - **体量上限重定**：`STATE_REPLAY_MAX_BYTES=2MB`（压缩串；解压后约容纳数十 MB JSON，任意真实长局足够），Fastify `bodyLimit=4MB`（≥ 应用上限，令优雅 400 先于 413 触发）。openapi `blob` 类型由 `object` 改 `string`。两层抽稀+压缩后真实长局压缩串通常仅数十~一两百 KB。
+> - **体量上限重定**：`STATE_REPLAY_MAX_BYTES=2MB`（压缩串），Fastify `bodyLimit=4MB`（≥ 应用上限，令优雅 400 先于 413 触发）。openapi `blob` 类型由 `object` 改 `string`。
+> - **实测（确定性合成：整 10 分钟 / 18000 帧 / 场上 ~50 单位）**：满帧 JSON ~90MB → 抽稀省 94% → gzip 再省 95% → **base64 上传仅 ~367KB**（6.7 分钟约 245KB），均 << 2MB；还原最大位置误差 0.0085 格。体量已非瓶颈，故 `MAX_FRAMES` 由 12000（6.7min）上调到 **18000（10min）**；该上限现主要约束**录制期内存**（满帧逐 tick 驻留，所有平台都付，分享仅 Web 可用）—— 若内存吃紧再降。
 - 铸码限流阈值 / 分享过期策略：每账号 `STATE_REPLAY_SHARE_PER_HOUR=20`/小时（429）；`STATE_REPLAY_EXPIRE_DAYS=14` 天 TTL 自清。永久 vs N 天上线期再定。
 - 微信分享卡片封面：当前用 `shareAppMessage` 默认截图，静态图 vs 后续烤短动图待定。

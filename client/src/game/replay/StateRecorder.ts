@@ -31,10 +31,11 @@ import {
 } from './StateReplay';
 
 /**
- * 单局最大采样帧数（体量护栏）。30Hz 下约 ≈ 6.7 分钟；超限停止采样并标记 `capped`，
- * 已采样部分仍可分享（服务端另有 blob 体量上限二次把关）。最终上限实测再定（§7）。
+ * 单局最大采样帧数（体量护栏）。30Hz 下 18000 帧 = 10 分钟；超限停止采样并标记 `capped`，
+ * 已采样部分仍可分享。体量不再是瓶颈（关键帧抽稀 + gzip 后整 10 分钟 ~50 单位实测仅约 367KB
+ * 上传，远低于服务端 2MB 上限，§7）；此上限主要约束**录制期内存**（每 tick 满帧驻留内存）。
  */
-const MAX_FRAMES = 12000;
+const MAX_FRAMES = 18000;
 
 export interface BuildStateReplayOverrides {
   mode?: string;

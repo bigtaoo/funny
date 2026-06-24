@@ -26,8 +26,7 @@ function lcg(seed: number): () => number {
 
 const TICK_RATE = 30;
 const DURATION_S = 600; // 10 分钟
-const RAW_TICKS = DURATION_S * TICK_RATE; // 18000
-const MAX_FRAMES = 12000; // 录制器单槽上限（StateRecorder），10 分钟会被截到 ~6.7 分钟
+const RAW_TICKS = DURATION_S * TICK_RATE; // 18000 = 录制器单槽上限 MAX_FRAMES（StateRecorder）
 const TARGET_ALIVE = 50;
 const LANES = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11];
 
@@ -165,10 +164,8 @@ function kb(bytes: number): string {
 }
 
 describe('状态流分享体量实测（10 分钟 / ~50 单位）', () => {
-  // 两档：当前录制上限（MAX_FRAMES=12000≈6.7min）与「若放开上限」的整 10 分钟（18000 帧）。
-  for (const ticks of [Math.min(RAW_TICKS, MAX_FRAMES), RAW_TICKS]) {
-  it(`量分享 blob 大小 + 抽稀比 + gzip 比 + 保真度 @${ticks}帧(${(ticks / TICK_RATE / 60).toFixed(1)}min)`, () => {
-    const cappedTicks = ticks;
+  it(`量分享 blob 大小 + 抽稀比 + gzip 比 + 保真度 @10min(${RAW_TICKS}帧)`, () => {
+    const cappedTicks = RAW_TICKS;
     const replay = genReplay(cappedTicks);
 
     const totalUnits = new Set<number>();
@@ -227,7 +224,7 @@ describe('状态流分享体量实测（10 分钟 / ~50 单位）', () => {
 
     /* eslint-disable no-console */
     console.log('\n========= 状态流分享体量实测 =========');
-    console.log(`录制帧数:        ${replay.frames.length}（${(replay.frames.length / TICK_RATE / 60).toFixed(1)} 分钟 @${TICK_RATE}Hz；10 分钟被 MAX_FRAMES=${MAX_FRAMES} 截断）`);
+    console.log(`录制帧数:        ${replay.frames.length}（${(replay.frames.length / TICK_RATE / 60).toFixed(1)} 分钟 @${TICK_RATE}Hz = 录制器 MAX_FRAMES 满载）`);
     console.log(`场上峰值单位:    ${peakAlive}    全程不同单位总数: ${totalUnits.size}`);
     console.log(`单位·帧 采样数:  ${unitFrameCells.toLocaleString()}`);
     console.log('--------------------------------------');
@@ -247,5 +244,4 @@ describe('状态流分享体量实测（10 分钟 / ~50 单位）', () => {
     expect(maxPosErr).toBeLessThanOrEqual(EPS);
     expect(staticMismatch).toBe(0);
   }, 30000);
-  }
 });
