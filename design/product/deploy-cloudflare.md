@@ -149,7 +149,35 @@ CrazyGames 限制只在前端（禁站外支付/外链），账号层与 web 共
 | 证书 | Let's Encrypt（`CN=api.gamestao.com`），灰云下自动续签 |
 | 验证 | `POST https://api.gamestao.com/api/auth/device` → 200 建号发 token（外网 HTTPS 可达） |
 
-> **转橙云时**（隐藏 IP + DDoS）：CF 代理后 Caddy 的 HTTP-01/TLS-ALPN 验证到不了源站、LE 90 天续签会失败 → 换 **Cloudflare Origin Certificate**（15 年，装进 Caddy `tls` 指令）+ SSL 模式 Full(strict)，或给 Caddy 配 Cloudflare DNS-01 验证（CF API token）。
+> **转橙云时**（隐藏 IP + DDoS）：CF 代理后 Caddy 的 HTTP-01/TLS-ALPN 验证到不了源站、LE 90 天续签会失败 → 换 **Cloudflare Origin Certificate**（15 年，装进 Caddy `tls` 指令）+ SSL 模式 Full(strict)，或给 Caddy 配 Cloudflare DNS-01 验证（CF API token）。详见下「上线转橙云」。
+
+#### 上线转橙云（待办，公开上线前做）
+
+**现状**：内测期保持**灰云（DNS only）**，Caddy 自动签/续 LE，零维护、够用。**公开上线前**再转橙云拿隐藏源站 IP + DDoS 防护。
+
+**为什么不能直接开橙云**：橙云后 TLS 被切两段——玩家↔CF（CF 边缘证书，自动免费）、CF↔源站（需源站自己有证书）。LE 验证（HTTP-01/TLS-ALPN）请求被 CF 在边缘终止、到不了 Caddy → **90 天后 LE 续签失败、证书过期**（坑埋在 3 个月后，易忘）。
+
+**解法 = Cloudflare Origin Certificate**（**全程免费**，Free 套餐即有；橙云代理/DDoS/边缘证书/Origin Cert 全免费）：
+
+| 项 | 说明 |
+|---|---|
+| 有效期 | 最长 15 年，基本免续签 |
+| 信任范围 | 仅 Cloudflare 信任即可（只有 CF 连源站；玩家侧走 CF 边缘证书） |
+
+**操作（约 10 分钟）**：
+1. CF 控制台 SSL/TLS → Origin Server → Create Certificate → 拿 `cert.pem` + `key.pem`，传到 VPS（如 `/root/funny/server/certs/`）。
+2. 改 `Caddyfile`：站点块内加显式证书，Caddy 即停用 LE 自动签：
+   ```
+   {$NW_DOMAIN::80} {
+       tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+       ...
+   }
+   ```
+   并在 `docker-compose.cloud.yml` 把 certs 目录挂进 caddy 容器。
+3. CF DNS 把 `api` 这条记录**灰云切回橙云（Proxied）**。
+4. CF SSL/TLS → Overview 设 **Full (strict)**。
+
+> 替代方案：不装 Origin Cert，给 Caddy 配 Cloudflare DNS-01 验证（需 CF API token），LE 改走 DNS 验证即可在橙云下续签——多一个 token 要管，一般首选 Origin Cert。
 
 > **踩坑记录**：Atlas 报 `tlsv1 alert internal error: SSL alert number 80` = **来源 IP 不在 Atlas Network Access 白名单**（不是 TLS/证书问题）。新机 IP 须加进 Atlas 白名单（测试期 `0.0.0.0/0`，上线收紧到 `<VPS_IP>/32`）。
 > **注意**：连接串含 `&`，写 `.env` 时**别用 `sed` 替换**（`&` 是 sed 特殊字符会被展开）；用 `grep -v` 删行后 `printf` 追加。
