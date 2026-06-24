@@ -58,11 +58,16 @@ jobs:
           VPS_USER: ${{ vars.VPS_USER || 'root' }}
           VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH || '/root/funny' }}
         run: |
+          # 先删可能损坏的远端跟踪 ref（cancel-in-progress 中断 fetch 会留下
+          # old-value 不一致的 refs/remotes/origin/main，下次 fetch 报
+          # "incorrect old value provided"），再 fetch + reset 到 FETCH_HEAD，
+          # 不依赖跟踪 ref，彻底绕开该 compare-and-swap 坑。
           ssh -i ~/.ssh/deploy_key "${VPS_USER}@${VPS_HOST}" \
             "set -e; \
              cd '${VPS_DEPLOY_PATH}'; \
+             git update-ref -d refs/remotes/origin/main 2>/dev/null || true; \
              git fetch origin main; \
-             git reset --hard origin/main; \
+             git reset --hard FETCH_HEAD; \
              cd server; \
              docker compose -f docker-compose.cloud.yml --env-file .env up -d --build; \
              docker compose -f docker-compose.cloud.yml ps"
