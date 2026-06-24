@@ -217,6 +217,23 @@ export interface ReplayShareDoc {
 }
 
 /**
+ * 状态流录像分享（游戏外公开分享，REPLAY_SHARE_DESIGN §3）。与 {@link ReplayShareDoc}（输入流、
+ * 引用 roomId→replayBlobs、仅本人参与可分享）**正交**：状态流 blob 由客户端自产、直接随分享请求
+ * 上传，匿名可凭 shareCode 取回；**不可信**、仅供观赏，绝不进反作弊/结算。
+ * `expiresAt` TTL 自清；`GET /r/{shareCode}` 超期/不存在返回 404。
+ */
+export interface StateReplayShareDoc {
+  _id: string; // shareCode（不可猜随机串，≥128bit）
+  /** delta 编码的状态流录像（EncodedStateReplay）；opaque blob，meta 不解释其内部结构。 */
+  blob: unknown;
+  createdBy: string; // 创建者 accountId
+  createdAt: number;
+  expireAt: Date; // BSON Date，TTL 锚
+  viewCount: number;
+  sizeBytes: number;
+}
+
+/**
  * 成就 PvP 统计反作弊审查队列（S9-7 L2/L3，ACHIEVEMENT_DESIGN §4.4）。离线抽查复算实锤某方
  * 超报 kill/cast → 回滚超报 + 升 statSuspicion + 记此条供运维后台（OPS）人工复核/封禁。
  * 业务库（meta），由 admin 经 `GET /internal/anticheat/reviews` 代理读取（admin 库物理隔离）。
@@ -383,6 +400,8 @@ export interface Collections {
   pveRejections: Collection<PveRejectDoc>;
   // 录像分享（S1-RP）
   replayShares: Collection<ReplayShareDoc>;
+  // 状态流录像游戏外分享（REPLAY_SHARE_DESIGN）
+  stateReplayShares: Collection<StateReplayShareDoc>;
   // 社交（S6）
   friendEdges: Collection<FriendEdgeDoc>;
   friendRequests: Collection<FriendRequestDoc>;
@@ -448,6 +467,7 @@ export async function createMongo(
     antiCheatReviews: db.collection<AntiCheatReviewDoc>('antiCheatReviews'),
     pveRejections: db.collection<PveRejectDoc>('pveRejections'),
     replayShares: db.collection<ReplayShareDoc>('replayShares'),
+    stateReplayShares: db.collection<StateReplayShareDoc>('stateReplayShares'),
     friendEdges: db.collection<FriendEdgeDoc>('friendEdges'),
     friendRequests: db.collection<FriendRequestDoc>('friendRequests'),
     blocks: db.collection<BlockDoc>('blocks'),
@@ -495,6 +515,9 @@ export async function createMongo(
     // TTL 自清（expiresAt 到期秒数 0 → Mongo 到点删）。
     await collections.replayShares.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
     await collections.replayShares.createIndex({ roomId: 1 });
+    // 状态流分享：expireAt 到点 TTL 自清；按创建者建索引便于限流/审计查询。
+    await collections.stateReplayShares.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+    await collections.stateReplayShares.createIndex({ createdBy: 1, createdAt: -1 });
     // —— 社交（S6，SOCIAL_DESIGN §3）——
     await collections.friendEdges.createIndex({ owner: 1 });
     // 收件箱（待处理申请）+ 防重复申请（同方向去重）。

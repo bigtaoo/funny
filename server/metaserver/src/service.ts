@@ -1,7 +1,7 @@
 // metaserver serviceHandlers：openapi.yml 的 operationId → 方法（fastify-openapi-glue 装配）。
 // 校验/路由由 glue 按 spec 完成；此处只做业务。S0 实现 auth + save；
 // 经济/盲盒/IAP（S2/S4）先返回 NOT_IMPLEMENTED 占位，契约已就绪。
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Collections, JwtConfig, SyncPatch, SaveData } from '@nw/shared';
 import { ErrorCode, ERROR_HTTP_STATUS, err, ok, signToken } from '@nw/shared';
@@ -177,6 +177,13 @@ class SlidingRateLimiter {
   }
 }
 
+/** 状态流分享 blob 体量上限（512KB）。超限拒绝（提示这局太长）；最终上限实测再定（§7）。 */
+const STATE_REPLAY_MAX_BYTES = 512 * 1024;
+/** 状态流分享过期天数（先定 14 天；永久 vs N 天上线期再定，§7）。 */
+const STATE_REPLAY_EXPIRE_DAYS = 14;
+/** 每账号铸码限流：每小时上限。 */
+const STATE_REPLAY_SHARE_PER_HOUR = 20;
+
 export class MetaService {
   private readonly oauth = createOAuthService();
   private readonly authRate: { allow(key: string, now: number): boolean };
@@ -211,6 +218,22 @@ export class MetaService {
   private allowAuthAttempt(req: FastifyRequest, now: number): boolean {
     const ip = req.ip ?? 'unknown';
     return this.authRate.allow(ip, now);
+  }
+
+  /**
+   * 状态流铸码限流（REPLAY_SHARE_DESIGN §3.1）：每账号近 1 小时铸码次数滑窗。进程内近似
+   * （meta 横扩时 per-instance，足以挡刷屏）。返回 true=允许并记一次。
+   */
+  private readonly stateShareRate = new Map<string, number[]>();
+  private allowStateShare(accountId: string, now: number): boolean {
+    const win = this.stateShareRate.get(accountId)?.filter((t) => now - t < 3_600_000) ?? [];
+    if (win.length >= STATE_REPLAY_SHARE_PER_HOUR) {
+      this.stateShareRate.set(accountId, win);
+      return false;
+    }
+    win.push(now);
+    this.stateShareRate.set(accountId, win);
+    return true;
   }
 
   /** gateway 公开 WS 地址（配置了才下发）。客户端据此连控制面，无需自身硬编码 gateway 地址。 */
@@ -1069,6 +1092,58 @@ export class MetaService {
     const blob = await cols.replayBlobs.findOne({ _id: share.roomId });
     if (!blob) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'replay not found'));
     return ok({ replay: blob.replay });
+  }
+
+  /**
+   * 状态流录像游戏外分享 — 铸码（REPLAY_SHARE_DESIGN §3.1）。分享者本人已登录；客户端自产的
+   * 状态流 blob 随请求上传。服务端**不碰引擎、不碰数值表**，只做带访问控制的对象存储：校验体量
+   * 上限 + 每账号限流 → 写库 → 返回不可猜 shareCode。状态流**不可信**，绝不进反作弊/结算。
+   */
+  async createStateReplayShare(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { cols, now } = this.deps;
+    const ts = now();
+
+    if (!this.allowStateShare(accountId, ts)) {
+      return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many shares, try later'));
+    }
+
+    const blob = (req.body as { blob?: unknown }).blob;
+    if (blob === undefined || blob === null || typeof blob !== 'object') {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing replay blob'));
+    }
+    const sizeBytes = Buffer.byteLength(JSON.stringify(blob));
+    if (sizeBytes > STATE_REPLAY_MAX_BYTES) {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'replay too large'));
+    }
+
+    // 不可猜随机串（144bit base64url）防枚举。
+    const shareCode = randomBytes(18).toString('base64url');
+    const expireAt = new Date(ts + STATE_REPLAY_EXPIRE_DAYS * 24 * 60 * 60 * 1000);
+    await cols.stateReplayShares.insertOne({
+      _id: shareCode,
+      blob,
+      createdBy: accountId,
+      createdAt: ts,
+      expireAt,
+      viewCount: 0,
+      sizeBytes,
+    });
+    return ok({ shareCode });
+  }
+
+  /**
+   * 状态流录像 — 公开取（REPLAY_SHARE_DESIGN §3.2）。**无需登录**；取 blob 回传 + viewCount++；
+   * 不存在/过期 → 404（客户端落地页带「试玩」CTA）。
+   */
+  async getStateReplayShare(req: FastifyRequest, reply: FastifyReply) {
+    const { shareCode } = req.params as { shareCode: string };
+    const { cols } = this.deps;
+    const doc = await cols.stateReplayShares.findOne({ _id: shareCode });
+    if (!doc) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'share not found'));
+    // 浏览计数（不阻塞回包）。
+    void cols.stateReplayShares.updateOne({ _id: shareCode }, { $inc: { viewCount: 1 } });
+    return ok({ blob: doc.blob });
   }
 
   /** PvE 升级：服务器校验材料足够 → 扣材料 + pveUpgrades+1 → 回推（仅在线）。 */

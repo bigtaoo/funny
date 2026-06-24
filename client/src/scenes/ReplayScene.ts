@@ -28,6 +28,8 @@ import { ui, sketchPanel, seedFor } from '../render/sketchUi';
  */
 export interface ReplaySceneCallbacks {
   onExit(): void;
+  /** When set, a "share this match" button is shown (state-stream sharing, REPLAY_SHARE_DESIGN §4.3). */
+  onShare?(): void;
 }
 
 const SPEEDS = [1, 2, 4] as const;
@@ -151,10 +153,12 @@ export class ReplayScene implements Scene {
     // Transport row centred under the bar.
     const rowY = this.barY + 18;
     const gap = Math.round(w * 0.02);
+    const hasShare = !!this.cb.onShare;
     const playW = Math.round(w * 0.18);
     const speedW = Math.round(w * 0.16);
     const exitW = Math.round(w * 0.16);
-    const totalW = playW + speedW + exitW + gap * 2;
+    const shareW = hasShare ? Math.round(w * 0.16) : 0;
+    const totalW = playW + speedW + exitW + (hasShare ? shareW + gap : 0) + gap * 2;
     let x = Math.round((w - totalW) / 2);
 
     this.playLabel = this.makeButton(x, rowY, playW, btnH, t('replay.pause'), () => {
@@ -173,6 +177,10 @@ export class ReplayScene implements Scene {
       },
     );
     x += speedW + gap;
+    if (hasShare) {
+      this.makeButton(x, rowY, shareW, btnH, t('share.button'), () => this.cb.onShare!());
+      x += shareW + gap;
+    }
     this.makeButton(x, rowY, exitW, btnH, t('replay.exit'), () => this.cb.onExit());
 
     // Centre status text ("replay ended" / error), hidden until needed.

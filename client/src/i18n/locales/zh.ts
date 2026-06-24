@@ -182,6 +182,19 @@ export const zh = {
   'replay.ended': '回放结束',
   'replay.versionError': '录像版本不兼容，无法回放',
 
+  // ── 录像游戏外分享（REPLAY_SHARE_DESIGN） ────────────────────────────────────
+  'share.button': '分享',
+  'share.title': '来看我这一局！',
+  'stateplayer.tag': '录像分享',
+  'stateplayer.you': '蓝方',
+  'stateplayer.opponent': '红方',
+  'stateplayer.ended': '本局结束',
+  'stateplayer.bottomWon': '蓝方胜',
+  'stateplayer.topWon': '红方胜',
+  'stateplayer.replay': '重放',
+  'stateplayer.playDemo': '我也来玩',
+  'stateplayer.backToLogin': '返回登录',
+
   // ── 账号 / 登录（SA-3） ──────────────────────────────────────────────────────
   'auth.title': '登录 Notebook Wars',
   'auth.login': '登录',

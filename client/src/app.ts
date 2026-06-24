@@ -18,6 +18,8 @@ import { GachaScene, type GachaSceneCallbacks } from './scenes/GachaScene';
 import { LoginScene, type LoginSceneCallbacks } from './scenes/LoginScene';
 import { ResultScene } from './scenes/ResultScene';
 import { ReplayScene, type ReplaySceneCallbacks } from './scenes/ReplayScene';
+import { StatePlayerScene, type StatePlayerSceneCallbacks } from './scenes/StatePlayerScene';
+import type { StateReplay, EncodedStateReplay } from './game/replay/StateReplay';
 import { SettingsScene, type SettingsSceneCallbacks } from './scenes/SettingsScene';
 import { CampaignMapScene, type CampaignMapCallbacks } from './scenes/CampaignMapScene';
 import { LevelPrepScene, type LevelPrepCallbacks } from './scenes/LevelPrepScene';
@@ -184,6 +186,11 @@ class PixiAppViews implements AppViews {
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void {
     this.leaveLobby();
     this.manager.goto(new ReplayScene(this.layout, this.input, replay, cb, level));
+  }
+
+  showStatePlayer(replay: StateReplay, cb: StatePlayerSceneCallbacks, encoded?: EncodedStateReplay): void {
+    this.leaveLobby();
+    this.manager.goto(new StatePlayerScene(this.layout, replay, cb, encoded));
   }
 
   showResult(props: ResultViewProps): void {

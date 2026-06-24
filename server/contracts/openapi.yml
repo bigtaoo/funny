@@ -1018,6 +1018,78 @@ paths:
                       replay: { $ref: '#/components/schemas/MatchReplay' }
         '404': { $ref: '#/components/responses/ErrorResp' }
 
+  /replay/share:
+    post:
+      operationId: createStateReplayShare
+      tags: [save]
+      summary: >-
+        状态流录像游戏外分享 — 铸码（REPLAY_SHARE_DESIGN §3.1）。客户端自产的状态流 blob 随请求上传；
+        服务端只存 blob + 发不可猜 shareCode，不碰引擎/数值表。状态流不可信、仅供观赏，绝不进反作弊/结算。
+        体量超上限 / 铸码限流 → 400 / 429。
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [blob]
+              properties:
+                blob:
+                  type: object
+                  additionalProperties: true
+                  description: delta 编码的状态流录像（EncodedStateReplay）；opaque，服务端不解释内部结构
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [shareCode]
+                    properties:
+                      shareCode:
+                        type: string
+                        description: 不可猜随机分享码；客户端拼 /r/{shareCode} 分发
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '429': { $ref: '#/components/responses/ErrorResp' }
+
+  /r/{shareCode}:
+    get:
+      operationId: getStateReplayShare
+      tags: [save]
+      summary: 状态流录像公开取（REPLAY_SHARE_DESIGN §3.2）；无需登录；不存在/超期返回 404
+      parameters:
+        - name: shareCode
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [blob]
+                    properties:
+                      blob:
+                        type: object
+                        additionalProperties: true
+                        description: delta 编码的状态流录像（EncodedStateReplay）
+        '404': { $ref: '#/components/responses/ErrorResp' }
+
   /pve/clear:
     post:
       operationId: pveClear

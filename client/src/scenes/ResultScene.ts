@@ -82,6 +82,8 @@ export interface ResultSceneCallbacks {
   onPlayAgain(): void;
   /** When set, a "watch replay" button is shown (locally-recorded matches, S1-RP). */
   onWatchReplay?(): void;
+  /** When set, a "share this match" button is shown (state-stream sharing, REPLAY_SHARE_DESIGN §4.3). */
+  onShare?(): void;
   /** Override the "play again" button label (e.g. campaign uses 'Back to Map'). */
   playAgainLabel?: string;
 }
@@ -294,9 +296,15 @@ export class ResultScene implements Scene {
     const btnX = (w - btnW) / 2;
     const btnY = h * 0.82;
 
+    // Stack optional buttons above "play again": watch-replay then share (top-most).
+    let stackY = btnY;
     if (cb.onWatchReplay) {
-      this.addButton(btnX, btnY - btnH - h * 0.02, btnW, btnH, t('result.watchReplay'),
-        0x33503a, cb.onWatchReplay);
+      stackY -= btnH + h * 0.02;
+      this.addButton(btnX, stackY, btnW, btnH, t('result.watchReplay'), 0x33503a, cb.onWatchReplay);
+    }
+    if (cb.onShare) {
+      stackY -= btnH + h * 0.02;
+      this.addButton(btnX, stackY, btnW, btnH, t('share.button'), 0x2a4a6a, () => cb.onShare!());
     }
     this.addButton(btnX, btnY, btnW, btnH, cb.playAgainLabel ?? t('result.playAgain'), 0x2c2c2a, () => cb.onPlayAgain());
   }

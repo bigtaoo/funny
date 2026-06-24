@@ -20,6 +20,8 @@ import { LocalSaveStore, SaveManager, ReplayStore } from '../game/meta';
 import { hasClaimable, reachedTierKeys } from '../game/meta/achievements';
 import { ApiClient, ApiError, type AuthResult } from '../net/ApiClient';
 import { serverReplayToReplay } from '../net/serverReplay';
+import { stateRecorder } from '../game/replay/StateRecorder';
+import { decodeStateReplay, type EncodedStateReplay } from '../game/replay/StateReplay';
 import { getApiBaseUrl, getGatewayWsUrl } from '../net/config';
 import { NetSession } from '../net/NetSession';
 import { netLog } from '../net/log';
@@ -1231,7 +1233,54 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     platform.onGameplayStart();
     views.showReplay(replay, {
       onExit() { onExit(); },
+      ...(api ? { onShare: () => void doShareReplay({ mode: replay.mode, winner: replay.meta?.winner }) } : {}),
     });
+  }
+
+  /**
+   * 分享当前内存里的状态流录像（REPLAY_SHARE_DESIGN §4.3）。读 {@link stateRecorder} 单槽 → 上传
+   * 铸码 → 平台分享（Web 复制链接 / 微信卡片）。无引擎重跑、无服务端复算。需 api（在线）。
+   */
+  async function doShareReplay(overrides: { mode?: string; winner?: number } = {}): Promise<void> {
+    if (!api) return;
+    const players = [
+      { name: playerName(), side: 0 as const },
+      { name: '', side: 1 as const },
+    ];
+    const enc = stateRecorder.build({ ...overrides, players });
+    if (!enc) return;
+    try {
+      const { shareCode } = await api.createStateReplayShare(enc);
+      await platform.shareReplay(shareCode, t('share.title'));
+    } catch (e) {
+      log.error('state replay share failed', { err: String(e) });
+    }
+  }
+
+  /**
+   * 无登录直达哑状态播放器（REPLAY_SHARE_DESIGN §4.1）：凭分享码匿名拉 blob → 解码 → 进
+   * StatePlayerScene。失败（不存在/超期/网络）则退回登录（带试玩入口）。
+   */
+  async function goStatePlayer(shareCode: string): Promise<void> {
+    inLobby = false;
+    if (!api) { goLogin(); return; }
+    try {
+      const { blob } = await api.getStateReplayShare(shareCode);
+      const enc = blob as EncodedStateReplay;
+      const replay = decodeStateReplay(enc);
+      platform.onGameplayStart();
+      views.showStatePlayer(
+        replay,
+        {
+          onPlayDemo() { goLobby({ offline: !api }); },
+          onBackToLogin() { goLogin(); },
+        },
+        enc,
+      );
+    } catch (e) {
+      log.error('open shared state replay failed', { err: String(e) });
+      goLogin();
+    }
   }
 
   function goGameNet(info: MatchStartInfo): void {
@@ -1355,12 +1404,19 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       cb: {
         onPlayAgain() { (onPlayAgain ?? goLobby)(); },
         ...(replay ? { onWatchReplay: () => goReplay(replay) } : {}),
+        ...(api ? { onShare: () => void doShareReplay({ winner: winner ?? -1 }) } : {}),
         ...(playAgainLabel ? { playAgainLabel } : {}),
       },
     });
   }
 
   function start(): void {
+    // 录像分享落地（REPLAY_SHARE_DESIGN §4.1）：启动参数带分享码 → 跳过 intro/登录，直达哑播放器。
+    const shareCode = platform.getLaunchShareCode();
+    if (shareCode && api) {
+      void goStatePlayer(shareCode);
+      return;
+    }
     if (saveManager.getFlag(SEEN_INTRO_FLAG)) {
       gateConsent(() => void resolveEntry());
     } else {

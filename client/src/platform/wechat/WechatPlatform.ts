@@ -25,6 +25,8 @@ declare const wx: {
     fail(err: unknown): void;
   }): void;
   connectSocket(opts: { url: string }): WxSocketTask;
+  shareAppMessage(opts: { title?: string; query?: string; imageUrl?: string }): void;
+  getLaunchOptionsSync(): { query?: Record<string, string> };
 };
 
 /** wx.connectSocket 返回的 SocketTask（仅用到的子集）。 */
@@ -136,6 +138,21 @@ export class WechatPlatform implements IPlatform {
 
   onAppReady(): void {
     try { wx.setPreferredFramesPerSecond(60); } catch { /* ignore */ }
+  }
+
+  /** 不能分享任意外链：发成游戏卡片进聊天，收件人点开小游戏读 query.r 直达播放（§4.1）。 */
+  async shareReplay(shareCode: string, title: string): Promise<void> {
+    try {
+      wx.shareAppMessage({ title, query: `r=${shareCode}` });
+    } catch { /* ignore */ }
+  }
+
+  getLaunchShareCode(): string | null {
+    try {
+      return wx.getLaunchOptionsSync().query?.r ?? null;
+    } catch {
+      return null;
+    }
   }
 }
 

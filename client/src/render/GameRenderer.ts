@@ -32,6 +32,7 @@ import { VFXSystem } from './VFXSystem';
 import { buildWearOverlay } from './wearOverlay';
 import { ProfilePopup, type ProfileData } from './ProfilePopup';
 import { fromFp } from '../game';
+import { stateRecorder } from '../game/replay/StateRecorder';
 import { t, type TranslationKey } from '../i18n';
 
 /** Optional player identities for the in-battle profile popup (netplay, S1). */
@@ -211,6 +212,9 @@ export class GameRenderer {
     const prevTicks = this.engine.state.elapsedTicks;
     if (!this.hudView.isPaused) this.engine.tick(dt);
     const state = this.engine.state;
+    // 状态流录制（REPLAY_SHARE_DESIGN §2.1）：真打 + 看回放两路都在此抓帧；同一 tick / 未配置
+    // 时内部自动跳过，对引擎零侵入。
+    stateRecorder.capture(state);
     for (const event of state.events) this.handleEvent(event, state);
     this.boardView.update(dt);
     this.vfxSystem.update(dt);
@@ -268,6 +272,8 @@ export class GameRenderer {
   // ── Scene graph ────────────────────────────────────────────────────────────
 
   private buildSceneGraph(): void {
+    // 新一局 / 新一段回放开始：清空状态流单槽（REPLAY_SHARE_DESIGN §2.1）。
+    stateRecorder.reset();
     this.boardView    = new BoardView(this.layout);
     this.boardView.markNoBuildCells(this.engine.state.board.getNoBuildCells());
     this.boardView.markInactiveLanes(this.engine.state.board.getActiveLanes());
@@ -569,6 +575,7 @@ export class GameRenderer {
       case 'game_over': {
         if (this.gameEnded) break;
         this.gameEnded = true;
+        stateRecorder.setWinner(event.winner ?? -1);
         this.cancelDrag(); this.cancelTapSelect();
         this.netStatus.clear();
         this.hudView.showGameOver(event.winner, this.localOwner);
@@ -579,6 +586,7 @@ export class GameRenderer {
       case 'game_draw': {
         if (this.gameEnded) break;
         this.gameEnded = true;
+        stateRecorder.setWinner(-1);
         this.cancelDrag(); this.cancelTapSelect();
         this.netStatus.clear();
         this.hudView.showGameOver(null, this.localOwner);

@@ -95,6 +95,25 @@ export interface IPlatform {
    * WeChat: `wx.connectSocket` SocketTask.
    */
   connectSocket(url: string, handlers: SocketHandlers): IGameSocket;
+
+  // ── 录像游戏外分享（REPLAY_SHARE_DESIGN §4）─────────────────────────────────
+
+  /**
+   * 分享一段状态流录像（REPLAY_SHARE_DESIGN §4.1/§4.3）。平台分叉：
+   * - Web / CrazyGames：拼分享链接 `…?r=<shareCode>`，走 `navigator.share`，无则复制到剪贴板。
+   * - WeChat：`wx.shareAppMessage({ query: 'r=<shareCode>' })` 发成游戏卡片进聊天（不外链）。
+   *
+   * 解析为分享动作已发起（或已复制）；失败时 reject。
+   */
+  shareReplay(shareCode: string, title: string): Promise<void>;
+
+  /**
+   * 读取启动参数里的录像分享码（REPLAY_SHARE_DESIGN §4.1）。命中则启动时跳过登录直达哑播放器。
+   * - Web / CrazyGames：URL `?r=<shareCode>`。
+   * - WeChat：`wx.getLaunchOptionsSync().query.r`。
+   * 无则返回 null。
+   */
+  getLaunchShareCode(): string | null;
 }
 
 /** gameserver WS 事件回调（NetClient 提供，平台 socket 触发）。 */

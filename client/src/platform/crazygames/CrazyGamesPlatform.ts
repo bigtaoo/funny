@@ -122,4 +122,18 @@ export class CrazyGamesPlatform implements IPlatform {
   connectSocket(url: string, handlers: SocketHandlers): IGameSocket {
     return new BrowserGameSocket(url, handlers);
   }
+
+  async shareReplay(shareCode: string, title: string): Promise<void> {
+    const url = `${window.location.origin}${window.location.pathname}?r=${encodeURIComponent(shareCode)}`;
+    const nav = navigator as Navigator & { share?: (d: { title?: string; url?: string }) => Promise<void> };
+    if (nav.share) {
+      await nav.share({ title, url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+  }
+
+  getLaunchShareCode(): string | null {
+    return new URLSearchParams(window.location.search).get('r');
+  }
 }

@@ -183,6 +183,19 @@ export const de: Record<TranslationKey, string> = {
   'replay.ended': 'Wiederholung beendet',
   'replay.versionError': 'Wiederholungsversion inkompatibel — Abspielen nicht möglich',
 
+  // ── Spielexternes Teilen von Wiederholungen (REPLAY_SHARE_DESIGN) ────────────
+  'share.button': 'Teilen',
+  'share.title': 'Sieh dir mein Match an!',
+  'stateplayer.tag': 'Geteilte Wiederholung',
+  'stateplayer.you': 'Blau',
+  'stateplayer.opponent': 'Rot',
+  'stateplayer.ended': 'Match beendet',
+  'stateplayer.bottomWon': 'Blau gewinnt',
+  'stateplayer.topWon': 'Rot gewinnt',
+  'stateplayer.replay': 'Erneut',
+  'stateplayer.playDemo': 'Selbst spielen',
+  'stateplayer.backToLogin': 'Zum Login',
+
   // ── Konto / Anmeldung (SA-3) ────────────────────────────────────────────────
   'auth.title': 'Bei Notebook Wars anmelden',
   'auth.login': 'Anmelden',
