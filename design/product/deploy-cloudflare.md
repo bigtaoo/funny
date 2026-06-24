@@ -121,18 +121,74 @@ cd .. && npx wrangler deploy -c wrangler.client.jsonc
 - 构建命令：`cd client && NW_API_BASE=... NW_GATEWAY_WS=... NW_WORLD_BASE=... npm run build:web` → 产物 `client/dist`。
 - **localStorage 覆盖（内测神器）**：用一份默认构建即可，朋友在浏览器 DevTools console 跑 `localStorage.setItem('nw_api_base','http://<VPS_IP>/api'); localStorage.setItem('nw_gateway_ws','ws://<VPS_IP>/gw'); location.reload()` 就能连你的后端，无需为每个环境重新构建。
 
-### ops 部署（Cloudflare Workers static assets，对外 `ops.gamestao.com`）
+### ops 部署（Cloudflare Worker + static assets，对外 `ops.gamestao.com`）
 
-与 client 同模式，独立配置 `wrangler.ops.jsonc`（Worker `nivara-ops`，`custom_domain=true` 自动建 DNS+边缘证书）。**无需烘焙地址**——admin API 基址在登录页运行时填（输入框默认 `localhost:18083`，运行时存 localStorage `nw_admin_api`）。
+**架构（同源反代 + CF Access）**：ops 不是纯静态，而是「静态资源 + Worker 反代」。整个 `ops.gamestao.com` 由**一个 CF Access 应用**保护（网络级登录墙），ops 自己的 admin 账号密码是**第二层**。
 
-```bash
-# 1. 构建
-cd tools/ops && npm run build      # 产物 tools/ops/dist
-# 2. 部署（从仓库根）
-cd ../.. && npx wrangler deploy -c wrangler.ops.jsonc
+```
+浏览器 ──①CF Access登录墙──▶ ops.gamestao.com (Worker nivara-ops)
+                                  ├─ 其余路径 → 静态资源(ASSETS, SPA)
+                                  └─ /admin/*  → ②反代 + 注入 X-Ops-Proxy-Secret
+                                                   │
+                          api.gamestao.com/ops/* ◀─┘ (Caddy 校验密钥头, 无→403)
+                                  └─ strip /ops → ③ admin:8083 (容器内, 玩家不可达)
 ```
 
-> ⚠️ **admin 后端「玩家不可达」**：当前 `Caddyfile` 不公网暴露 admin/analyticsvc，ops 前端默认连不到线上后端。上线前两件事：(1) 给 `ops.gamestao.com` 加 **CF Access** 登录保护；(2) 让 admin 后端经受控入口（VPN / CF Access 反代 / Caddy 加内部子域）可达，再在登录页填该地址。静态页本身已上线，可先本地起 admin 后端联调。
+三道闸：① CF Access 身份门（边缘）→ ② Worker↔Caddy 共享密钥头（玩家直连 `/ops/*` 无密钥 → 403）→ ③ admin 自身账号密码。**要害是 admin 后端被保护，而非静态页**（页面只是公开 JS，无秘密）。
+
+- 前端 API 基址：`tools/ops/src/api.ts` 默认 = 本地 `localhost:18083` / 线上**同源空串**（→ 相对 `/admin/*`，由 Worker 反代）。运行时仍可在登录页输入框覆盖（localStorage `nw_admin_api`）。
+- 配置实体：`wrangler.ops.jsonc`（Worker `nivara-ops` + `run_worker_first:["/admin/*"]` + var `ADMIN_ORIGIN`）、`worker.ops.js`（反代逻辑）、`server/Caddyfile` 的 `/ops/*` 路由、`docker-compose.cloud.yml` caddy 的 `NW_OPS_PROXY_SECRET`。
+
+**静态页已上线（2026-06-24 ✅）**：Worker `nivara-ops` + `custom_domain` 自动建 `ops.gamestao.com`，HTTP 200、证书有效；`/admin/*` 已确认走 Worker 反代（非 SPA 回退）。**完整闭环（连到线上 admin）尚待**：admin 后端公网入口上线 + CF Access 配好（下面手册）。
+
+#### 部署命令（ops 前端 / Worker）
+
+```bash
+cd tools/ops && npm run build                      # 产物 tools/ops/dist
+cd ../.. && npx wrangler deploy -c wrangler.ops.jsonc
+# 共享密钥（与 VPS 端 NW_OPS_PROXY_SECRET 同值；首次 + 轮换时执行；交互粘贴，不进 git）：
+npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler.ops.jsonc
+```
+
+> admin 后端入口若不在 `api.gamestao.com/ops`（如改用 cloudflared tunnel 或独立子域），改 `wrangler.ops.jsonc` 的 `ADMIN_ORIGIN` 后重 deploy。
+
+#### 上线闭环操作手册（admin 后端上线时一次性做）
+
+**Step 0 — 生成共享密钥**（一个值，两端同填）：
+```bash
+openssl rand -hex 32        # 记下输出，下面 A/B 用同一个值
+```
+
+**Step A — 服务端（VPS）开 admin 入口**：
+1. VPS 上 `server/.env` 填 `NW_OPS_PROXY_SECRET=<Step0 的值>`。
+2. 拉新代码（已含 Caddyfile `/ops/*` 路由 + compose caddy 注入密钥 + caddy depends_on admin）后重部署：
+   ```bash
+   cd /root/funny && git pull && cd server
+   docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
+   ```
+3. 自检（无密钥应 403）：`curl -i https://api.gamestao.com/ops/admin/me` → 期望 `403`。
+
+**Step B — ops Worker 填同一密钥**（本机）：
+```bash
+npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler.ops.jsonc   # 粘贴 Step0 的值
+```
+
+**Step C — Cloudflare Zero Trust 配 CF Access**（控制台，约 5 分钟，Free 含 50 用户）：
+1. dash.cloudflare.com → 左栏 **Zero Trust**（首次会让你起一个 team name + 选 **Free** 方案，填完即可）。
+2. **Settings → Authentication → Login methods**：起步加 **One-time PIN**（邮箱验证码，零配置，自带）即可；想用 Google/GitHub 也可加。
+3. **Access → Applications → Add an application → Self-hosted**：
+   - Application name：`ops`
+   - Session Duration：`24h`（按需）
+   - **Public hostname**：subdomain `ops`、domain `gamestao.com`、path 留空（= 保护整个 `ops.gamestao.com`，含 `/admin/*` 反代）。
+4. 下一步 **Add policy**：
+   - Policy name：`ops-admins`，Action：**Allow**
+   - **Include → Emails**：列出授权邮箱（如 `tao.wang@elk.de`）。后续加人就来这里加邮箱。
+5. Save。完成后访问 `ops.gamestao.com` 会先弹 CF Access 登录（邮箱收验证码），通过才进 ops 自己的登录页；因同源，`/admin/*` 的 fetch 自动带第一方 `CF_Authorization` cookie，无跨域问题。
+
+**Step D — 验证闭环**：浏览器开 `https://ops.gamestao.com` → CF Access 邮箱验证码 → ops 登录页（API 基址留空=同源）→ 用 admin 账号登录 → 监控/账号页能拉到数据即通。
+
+> **为何不在 `api.gamestao.com` 上加 CF Access**：那是面向玩家的游戏 API，不能套登录墙。admin 通道 `/ops/*` 靠**共享密钥头**保护（只有持密钥的 ops Worker 能过），与玩家 API 同域共存、互不影响。
+> **密钥轮换**：重跑 Step0 生成新值 → 改 VPS `.env` 重部署（Step A）+ `wrangler secret put`（Step B），两端必须同步换。
 
 ## 7. 平台隔离边界（ADR-020）
 

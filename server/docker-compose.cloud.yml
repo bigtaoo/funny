@@ -184,6 +184,8 @@ services:
       - "443:443/udp" # HTTP/3
     environment:
       NW_DOMAIN: ${NW_DOMAIN:-:80}
+      # ops Worker 反代 admin 用的共享密钥头（/ops/* 路由校验；空=该路由全 403）。
+      NW_OPS_PROXY_SECRET: ${NW_OPS_PROXY_SECRET:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -193,6 +195,7 @@ services:
       - gateway
       - gameserver
       - worldsvc
+      - admin
     restart: unless-stopped
 
 volumes:

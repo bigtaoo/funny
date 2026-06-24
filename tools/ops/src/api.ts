@@ -36,7 +36,12 @@ export class Api {
   onUnauthorized: (() => void) | null = null;
 
   get baseUrl(): string {
-    return localStorage.getItem(API_KEY) ?? 'http://localhost:18083';
+    const saved = localStorage.getItem(API_KEY);
+    if (saved !== null) return saved;
+    // 默认：本地开发连本地 admin（18083）；线上同源（空串 → 相对路径 /admin/*，
+    // 由 ops Worker 反代到受 CF Access + 共享密钥保护的 admin 后端，见 deploy-cloudflare.md §6）。
+    const h = location.hostname;
+    return h === 'localhost' || h === '127.0.0.1' ? 'http://localhost:18083' : '';
   }
   setBaseUrl(url: string): void {
     localStorage.setItem(API_KEY, url.replace(/\/$/, ''));

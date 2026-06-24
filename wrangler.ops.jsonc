@@ -1,21 +1,32 @@
 {
-  // 运维后台前端 ops 的静态托管（Cloudflare Workers static assets），对外 ops.gamestao.com。
+  // 运维后台前端 ops 的托管（Cloudflare Worker + static assets），对外 ops.gamestao.com。
   // 与 animator / client 各一份 wrangler 配置、各一个 Worker，互不影响。
   //
-  // 构建（无需烘焙地址——admin API 基址在登录页运行时填，默认 localhost:18083）：
-  //   cd tools/ops && npm install && npm run build   ← 产出 tools/ops/dist
-  // 部署（从仓库根读本文件，把 tools/ops/dist 作为静态资源发布，无 Worker 脚本）：
-  //   npx wrangler deploy -c wrangler.ops.jsonc
+  // 同源反代：整站受一个 CF Access 应用保护；/admin/* 由 worker.ops.js 反代到 VPS 的
+  // admin 后端（ADMIN_ORIGIN），中间用共享密钥头闸（VPS Caddy 校验）。其余路径直出静态资源。
   //
-  // routes.custom_domain=true 会自动建 DNS + 边缘证书（橙云代理）。
-  // ⚠️ admin 后端「玩家不可达」——上线务必加 CF Access 登录保护，且 admin 后端需经受控入口可达。
-  // 设计：design/product/deploy-cloudflare.md §6
+  // 构建 + 部署：
+  //   cd tools/ops && npm run build          ← 产出 tools/ops/dist
+  //   cd ../.. && npx wrangler deploy -c wrangler.ops.jsonc
+  //   npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler.ops.jsonc   ← 与 VPS NW_OPS_PROXY_SECRET 同值
+  //
+  // CF Access 控制台操作 + 共享密钥生成：见 design/product/deploy-cloudflare.md §6。
   "name": "nivara-ops",
   "compatibility_date": "2025-06-01",
+  "main": "worker.ops.js",
   "assets": {
     "directory": "./tools/ops/dist",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // /admin/* 先进 Worker（反代），不被 SPA 回退当成未知路由吃成 index.html。
+    "run_worker_first": ["/admin/*"]
   },
+  "vars": {
+    // admin 后端入口基址（公开，非密钥）。admin 后端上线后按实际入口改；
+    // 默认指向 api.gamestao.com 上受密钥头保护的 /ops 通道（Caddy strip_prefix /ops → admin:8083）。
+    "ADMIN_ORIGIN": "https://api.gamestao.com/ops"
+  },
+  // ADMIN_PROXY_SECRET 走 wrangler secret（不写进本文件、不进 git）。
   "routes": [
     { "pattern": "ops.gamestao.com", "custom_domain": true }
   ]

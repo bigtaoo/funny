@@ -41,6 +41,16 @@
 		reverse_proxy metaserver:8080
 	}
 
+	# 运维后台 admin API（玩家不可达）：仅经 ops Worker 反代进来，必须带共享密钥头
+	# X-Ops-Proxy-Secret == {$NW_OPS_PROXY_SECRET}，否则 403。剥掉 /ops 前缀后转 admin:8083。
+	# 玩家直连 https://<域>/ops/* 无密钥 → 403。见 design/product/deploy-cloudflare.md §6。
+	handle /ops/* {
+		@noSecret not header X-Ops-Proxy-Secret {$NW_OPS_PROXY_SECRET}
+		respond @noSecret 403
+		uri strip_prefix /ops
+		reverse_proxy admin:8083
+	}
+
 	# 兜底
 	handle {
 		respond "Notebook Wars server" 200
