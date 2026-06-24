@@ -314,7 +314,7 @@ emitter 参数草案（占位，未冻结）：`texture, rate, lifetime{from,to}
 
 **分期**
 - ✅ P1：游戏侧 `vfx/` 核心（types/interpret/sampleParam/primitives/parseEffectDef）+ 现有 4 特效迁 JSON + `VFXSystem` 接解释器（**纯运行时重构，已落地**，§15）。
-- P2：编辑器脚手架（端口 9094）+ 预览 + **特效列表面板** + 图层/参数面板 + **颜色盘** + JSON 往返 + 自动保存。
+- ✅ P2：编辑器脚手架（端口 9094）+ 预览 + **特效列表面板** + 图层/参数面板 + **颜色盘** + JSON 往返 + 自动保存（**已落地**，§15）。
 - P3：补齐法术/Trait 特效（§5）+ boil/种子随机图元能力打磨。
 
 **已决问题**
@@ -369,3 +369,32 @@ _2026-06-24（补全施工细节）：_
 - **单测 `client/test/vfx.test.ts`**：12 例覆盖 `sampleParam`/`applyEase`/`parseEffectDef`（含 z 保留、未知图元丢弃、未知 ease 降级）。
 
 **仍属 P2（编辑器）**：特效列表面板、颜色盘、性能预算角标警告、导出回写 UI。
+
+### P2 — 独立 Web 编辑器（2026-06-24，已完成，`tsc --noEmit` + webpack 生产构建通过）
+
+新增 `tools/vfx-editor/`（端口 **9094**，仿 animator/level-editor 工程化）。解释器/类型/采样/校验**全部经 webpack alias + tsconfig paths 从游戏侧 import**（`@vfx`→`client/src/render/vfx`、`@game`→`client/src/game`、`@nw/engine`→`server/engine/src`，prng 走 engine 重导出 shim），绝无第二份解释器；预览用同款 `pixi.js-legacy`，所见即运行时。
+
+**工程骨架**
+- `webpack.config.js`：transpileOnly ts-loader（游戏文件由 client CI 类型把关）；`resolve.modules` 含本工具 node_modules，使游戏子树里的 `pixi.js-legacy` 裸导入也能解析（worktree 无 client/node_modules）；`@nw/engine` 别名同 level-editor。
+- `tsconfig.json`：`paths` 映射 `@vfx`/`@game`/`@nw/engine`/`pixi.js-legacy`，独立 `tsc --noEmit` 可全量类型检查（含游戏侧共享源）。
+- `public/index.html`：三栏布局（左=特效库+图层；中=预览+时间轴+JSON；右=特效属性+颜色盘+参数+性能），复用 level-editor 暗色主题；可拖分隔条。
+
+**核心/IO（`src/model`、`src/io`、`src/rendering`）**
+- `model/EffectModel.ts`：当前特效可变工作副本 + 图层/参数 CRUD + 快照式 undo/redo（Ctrl+Z / Ctrl+Shift+Z，cap 80）+ 性能预算指标计算（§9）。
+- `model/paramHints.ts`：各图元参数名提示（ParamPanel「+ 参数」下拉用，仅 UI 提示，非解释真源，需与 `primitives.ts` 同步）。
+- `model/color.ts`：固定颜色盘（默认/我蓝/敌红/墨黑/治疗绿/警示橙）+ `0xRRGGBB` 解析。
+- `io/ProjectStore.ts` + `io/Library.ts`：IndexedDB（库名 `nw-vfx`）工作副本；首次运行从仓库内置 4 特效（`@vfx/registry`）播种，去抖自动保存，记忆上次打开。**仓库 JSON 始终是真源**。
+- `io/IOController.ts`：导出/导入单特效 JSON，导出前经同一 `parseEffectDef` 校验；导出后提示「手动放入 `client/src/effects/` 并构建」（§8 回写流程 V12）。
+- `rendering/PreviewRenderer.ts`：PixiJS 预览，调游戏侧 `interpret()` 实时绘制 + 原点网格/十字 + 可选参考单位剪影（≈28px）。
+- `rendering/Playback.ts`：预览时钟（编辑器恒循环预览，独立于特效 `loop` 字段）；可拖拽 scrub 定帧。
+
+**UI 面板（`src/ui`）**
+- `EffectListPanel`：特效库浏览/切换/复制/删除（内置项标记，内部 id 稳定跨改名）。
+- `LayerPanel`：图层列表（增删改排序/复制），选中层展开结构字段（图元类型/count/z 顺序/seed/boil 开关；polyline 的 points 提示去 JSON 面板编辑）。
+- `ParamPanel`：参数三形态（常量/二点 ramp/多关键帧）+「形态」下拉互转 + 关键帧增删 + ease 选择（§3.3 多关键帧 UI 本期就开）。
+- `ColorPalette`：固定预览色切换（「默认色」解析特效 `defaultColor`），仅验证各阵营色，不做任意取色器（§3.8）。
+- JSON 面板：实时映射状态，手改后「应用」经游戏侧 `parseEffectDef` 校验回写（points 等复杂字段的逃生口）。
+- 性能预算面板：图层/count 峰值/估算顶点/时长对照软预算，超限黄色警告不阻断（§9）。
+
+**未做（后续）**：boil 烘焙轮播预览（数据已可编辑，渲染轮播待 P3）；法术/Trait 新特效素材（P3，§5）；导出→仓库的自动同步桥（沿用手动放盘，§8）。
+**验收备忘**：`tsc --noEmit` 干净、`webpack --mode production` 构建成功（仅 bundle 体积警告，PIXI 工具正常）；预览目视回归按项目约定不截图，留待手动 `npm run start`。

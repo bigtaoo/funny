@@ -20,7 +20,8 @@ funny/
 ├── tools/
 │   ├── animator/          骨骼动画编辑器（TypeScript + PixiJS，端口 9091）
 │   ├── level-editor/      战役关卡编辑器（TypeScript + 纯 Canvas，端口 9092）
-│   └── ops/               运维后台前端（TypeScript，端口 9093）
+│   ├── ops/               运维后台前端（TypeScript，端口 9093）
+│   └── vfx-editor/        战斗特效编辑器（TypeScript + PixiJS，端口 9094）
 │
 ├── server/                Node.js 后端（npm workspaces，8 个应用进程 + contracts/shared 包）
 │   ├── contracts/         openapi.yml + transport.proto + game.proto
@@ -47,6 +48,7 @@ funny/
 |---|---|---|
 | 动画编辑器（animator） | [`claudedocs/animator.md`](claudedocs/animator.md) | `design/tools/animator/` |
 | 关卡编辑器（level-editor） | — | `design/tools/level-editor/DESIGN.md` |
+| 特效编辑器（vfx-editor） | — | `design/tools/vfx-editor/DESIGN.md` |
 | 游戏主代码（client） | [`claudedocs/client-modules.md`](claudedocs/client-modules.md) | `design/game/` |
 | 服务端（server，8 个应用进程） | [`claudedocs/server.md`](claudedocs/server.md) | `design/game/META_DESIGN.md` |
 | 文件格式（.tao / .tao.editor） | [`claudedocs/file-formats.md`](claudedocs/file-formats.md) | — |
@@ -58,6 +60,14 @@ cd tools/level-editor && npm run start   # 端口 9092
 ```
 
 数据单一来源：直接 import 游戏侧 `LevelDefinition` / `parseLevelDefinition` / 棋盘常量（webpack `@game` alias）；关卡 JSON 存 `client/src/game/campaign/levels/*.json`。
+
+### 特效编辑器补充
+
+```bash
+cd tools/vfx-editor && npm install && npm run start   # 端口 9094
+```
+
+数据单一来源：解释器/类型/采样/校验直接 import 游戏侧 `client/src/render/vfx/`（webpack alias `@vfx`，prng 经 `@nw/engine`）；特效 JSON 存 `client/src/effects/*.json`，编辑器导出后**手动放入**该目录再构建（DESIGN §8 回写流程）。
 
 ### 美术资产分工
 
