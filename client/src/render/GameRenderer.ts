@@ -32,8 +32,23 @@ import { VFXSystem } from './VFXSystem';
 import { buildWearOverlay } from './wearOverlay';
 import { ProfilePopup, type ProfileData } from './ProfilePopup';
 import { fromFp } from '../game';
+import { factionInk } from './theme';
 import { stateRecorder } from '../game/replay/StateRecorder';
 import { t, type TranslationKey } from '../i18n';
+
+/**
+ * Spell → VFX id for the one-shot, spatially-anchored spells. Driven by the
+ * single `spell_cast` event (center + owner). Haste is intentionally absent: it
+ * is a per-unit `loop` buff (speed lines following each affected unit) with no
+ * cast-end signal on `spell_cast`, so it is wired with the trait/buff effects
+ * (aura_heal/shield/slow/summon) once a buff lifecycle event exists. The mapped
+ * ids must exist in `client/src/effects/` (see vfx-editor DESIGN §5).
+ */
+const SPELL_VFX: Partial<Record<SpellType, string>> = {
+  [SpellType.Meteor]:         'meteor',
+  [SpellType.Rockslide]:      'rockslide',
+  [SpellType.BridgeCollapse]: 'bridge_collapse',
+};
 
 /** Optional player identities for the in-battle profile popup (netplay, S1). */
 export interface GameProfiles {
@@ -546,6 +561,17 @@ export class GameRenderer {
         this.buildingView.playDestroyEffect(event.buildingId);
         const p = this.boardView.gridToScreen(event.col, event.row);
         this.vfxSystem.play('death_building', p.x, p.y, 0x222222);
+        break;
+      }
+      case 'spell_cast': {
+        const vfxId = SPELL_VFX[event.spellType];
+        if (vfxId) {
+          // Spell ink follows the caster's faction (us = blue / enemy = red,
+          // art-direction §3.2); the data's defaultColor is only an editor placeholder.
+          const color = event.owner === this.localOwner ? factionInk.friend : factionInk.enemy;
+          const p = this.boardView.gridToScreen(event.center.col, fromFp(event.center.y_fp));
+          this.vfxSystem.play(vfxId, p.x, p.y, color);
+        }
         break;
       }
       case 'building_hp_changed':
