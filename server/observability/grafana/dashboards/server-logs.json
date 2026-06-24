@@ -7,8 +7,8 @@
   "tags": ["notebook-wars", "logs"],
   "timezone": "",
   "schemaVersion": 39,
-  "version": 1,
-  "time": { "from": "now-1h", "to": "now" },
+  "version": 2,
+  "time": { "from": "now-6h", "to": "now" },
   "templating": {
     "list": [
       {
@@ -40,6 +40,12 @@
         "label": "关键字",
         "type": "textbox",
         "current": { "text": "", "value": "" }
+      },
+      {
+        "name": "roomId",
+        "label": "roomId(对战时间线)",
+        "type": "textbox",
+        "current": { "text": "", "value": "" }
       }
     ]
   },
@@ -49,29 +55,51 @@
       "title": "日志速率（按级别）",
       "type": "timeseries",
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 7, "w": 18, "x": 0, "y": 0 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 0 },
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } }, "overrides": [] },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
           "expr": "sum by (level) (count_over_time({svc=~\"$svc\", level=~\"$level\"} |~ \"(?i)$search\" [$__auto]))",
           "legendFormat": "{{level}}"
         }
       ]
     },
     {
+      "id": 4,
+      "title": "各服务错误数（时间窗内）",
+      "type": "bargauge",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "时间范围内各 svc 的 error 条数，一眼看谁在报错。",
+      "gridPos": { "h": 7, "w": 7, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "color": { "mode": "continuous-GrYlRd" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "queryType": "instant",
+          "expr": "sum by (svc) (count_over_time({level=\"error\"} [$__range]))",
+          "legendFormat": "{{svc}}"
+        }
+      ]
+    },
+    {
       "id": 2,
-      "title": "错误数（窗口内）",
+      "title": "错误总数（窗口内）",
       "type": "stat",
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 0 },
+      "gridPos": { "h": 7, "w": 5, "x": 19, "y": 0 },
       "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background", "graphMode": "area" },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
           "expr": "sum(count_over_time({svc=~\"$svc\", level=\"error\"} |~ \"(?i)$search\" [$__auto]))",
           "legendFormat": "errors"
         }
@@ -79,10 +107,10 @@
     },
     {
       "id": 3,
-      "title": "日志",
+      "title": "日志（按 服务 / 级别 / 关键字 过滤）",
       "type": "logs",
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 18, "w": 24, "x": 0, "y": 7 },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 7 },
       "options": {
         "showTime": true,
         "wrapLogMessage": true,
@@ -95,7 +123,83 @@
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
           "expr": "{svc=~\"$svc\", level=~\"$level\"} |~ \"(?i)$search\"",
+          "maxLines": 1000
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "仅错误日志（所选服务）",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "只看 level=error，受顶部「服务」下拉约束。",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 19 },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{svc=~\"$svc\", level=\"error\"}",
+          "maxLines": 500
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "匹配链路速查（入队→配对→开局）",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "gateway/matchsvc/gameserver 里匹配链路关键事件,排查开局失败用。",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 19 },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{svc=~\"gateway|matchsvc|gameserver\"} |~ \"enqueue|pair matched|match starting|match_found|GAME_UNAVAILABLE|room created|room_create\"",
+          "maxLines": 500
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "一局对战时间线（顶部填 roomId）",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "把 roomId 填进顶部输入框,将一局横跨 gateway→matchsvc→game→meta 的日志拉成一条时间线(升序)。留空则显示所有带 roomId 的行。",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 28 },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Ascending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{svc=~\"gateway|matchsvc|gameserver|meta\"} | logfmt | roomId=~\"$roomId\"",
           "maxLines": 1000
         }
       ]
