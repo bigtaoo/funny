@@ -56,4 +56,6 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # action 默认带的 wrangler 太旧（3.90 不认 assets.run_worker_first，4.x 才支持）；钉到新版。
+          wranglerVersion: '4.104.0'
           command: deploy -c wrangler.ops.jsonc
