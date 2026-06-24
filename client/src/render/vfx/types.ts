@@ -43,7 +43,6 @@ export type PrimitiveType =
   | 'dots'
   | 'burst'
   | 'polyline'
-  | 'text'
   | 'emitter'; // reserved, not implemented this phase (§9)
 
 /**
@@ -56,14 +55,14 @@ export interface LayerDef {
   count?: number;
   /** Optional seed for this layer's jitter/boil; derived from effect id + index if absent. */
   seed?: number;
+  /** Draw order within the effect; lower = drawn first (under). Default = array index. */
+  z?: number;
   /** Hand-drawn wobble (P3). */
   boil?: BoilSpec;
   /** Animated/constant numeric knobs, keyed by name (radius, alpha, lineWidth, …). */
   params?: Record<string, ParamTrack>;
   /** polyline geometry, in design pixels, before scale/rotation/translate. */
   points?: Array<[number, number]>;
-  /** text content (literal; i18n-sensitive, use sparingly). */
-  content?: string;
 }
 
 export interface EffectDef {

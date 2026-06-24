@@ -29,7 +29,14 @@ export function interpret(
   color: number,
   baseSeed = 1,
 ): void {
-  for (let i = 0; i < layers.length; i++) {
+  // Draw order = z ascending, falling back to array index (decision: z editable,
+  // default = array order). Seed stays tied to the ORIGINAL index for stability.
+  const order = layers.map((_, i) => i).sort((a, b) => {
+    const za = layers[a].z ?? a;
+    const zb = layers[b].z ?? b;
+    return za - zb || a - b;
+  });
+  for (const i of order) {
     const layer = layers[i];
     const draw = PRIMITIVES[layer.type];
     if (!draw) {
@@ -37,7 +44,8 @@ export function interpret(
       continue;
     }
     // Re-seed per frame with the same seed → identical jitter each frame
-    // (no flicker) and identical across replays (deterministic).
+    // (no flicker within an instance). baseSeed varies per instance (random by
+    // default) or is fixed when the caller passes a seed (replay-stable).
     const prng = new Prng(layerSeed(layer, baseSeed, i));
     draw(gfx, layer, t, color, prng);
   }

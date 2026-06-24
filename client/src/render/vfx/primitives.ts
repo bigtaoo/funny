@@ -142,12 +142,6 @@ const emitter: DrawPrimitive = () => {
   }
 };
 
-/**
- * `text` is drawn via VFXSystem (needs a PIXI.Text child, not Graphics).
- * Stubbed here so the registry is total; interpret routes text specially.
- */
-const text: DrawPrimitive = () => { /* handled by interpret/VFXSystem */ };
-
 export const PRIMITIVES: Readonly<Record<string, DrawPrimitive>> = {
-  ring, arc, spokes, burst, dots, polyline, text, emitter,
+  ring, arc, spokes, burst, dots, polyline, emitter,
 };

@@ -1,9 +1,10 @@
 /**
  * VFXSystem — data-driven visual effects via PIXI.Graphics.
  *
- * Effects are declarative JSON (client/src/render/vfx/effects/*.json), drawn by
- * a generic interpreter in the ink-line notebook aesthetic. No external assets;
- * everything is seeded vector geometry (deterministic, replay-safe — design §6).
+ * Effects are declarative JSON (client/src/effects/*.json), drawn by a generic
+ * interpreter in the ink-line notebook aesthetic. No external assets; geometry
+ * is seeded vector. Per-instance variation is random by default (each hit looks
+ * a little different); pass opts.seed to make an instance replay-stable (§6).
  *
  * Usage:
  *   const vfx = new VFXSystem();
@@ -32,6 +33,12 @@ export type FollowFn = () => { x: number; y: number } | null;
 export interface PlayOpts {
   /** Bind a looping/one-shot effect to a moving target's position. */
   follow?: FollowFn;
+  /**
+   * Fix the per-instance random seed for deterministic, replay-identical visuals.
+   * Omit (default) → a fresh random seed per instance (each play looks different).
+   * Pass a value derived from the game's init seed when replay visuals must match.
+   */
+  seed?: number;
 }
 
 /** Opaque handle returned by play(); pass to stop() to end a looping effect. */
@@ -61,14 +68,9 @@ function toColor(c: string | number | undefined, fallback: number): number {
   return fallback;
 }
 
-/** Stable 32-bit hash of an effect id → per-instance seed base (deterministic). */
-function hashId(id: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < id.length; i++) {
-    h ^= id.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0) || 1;
+/** Fresh non-zero 32-bit seed (visual-only randomness; never touches GameState). */
+function randomSeed(): number {
+  return (Math.floor(Math.random() * 0x100000000) >>> 0) || 1;
 }
 
 // ── VFXSystem ──────────────────────────────────────────────────────────────────
@@ -119,7 +121,7 @@ export class VFXSystem {
       loop:     def.loop === true,
       elapsed:  0,
       color:    color ?? toColor(def.defaultColor, DEFAULT_COLOR),
-      baseSeed: hashId(effectId),
+      baseSeed: opts?.seed !== undefined ? ((opts.seed >>> 0) || 1) : randomSeed(),
       follow:   opts?.follow,
     });
     return handle;
