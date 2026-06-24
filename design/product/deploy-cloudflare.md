@@ -236,6 +236,8 @@ npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler.ops.jsonc   # 粘贴 Step
 docker compose -f observability/docker-compose.obs.yml --env-file observability/.env up -d
 ```
 
+**自动发布**：`.github/workflows/obs-deploy.yml`——push 改动落在 `server/observability/**` 时自动 SSH 进 VPS `reset --hard + up -d --force-recreate`（预构建镜像，无 build；与 server-deploy 解耦，互不触发）。复用同套 `VPS_SSH_KEY`/`VPS_HOST`；开关 `OBS_DEPLOY_ENABLED=true`（首次需先在 VPS 手动建 `observability/.env`），可选 `OBS_TUNNEL_ENABLED=true` 才带 cloudflared。
+
 ## 7. 平台隔离边界（ADR-020）
 
 「某些平台是否不让共享用户」的结论：**身份层默认就隔离**——微信(openid)、web/CrazyGames(deviceId)、网站(oauth/密码)各映射独立账号，跨端合并是用户主动绑定。真正逼你隔离的是**数据合规**和**支付渠道**，不是身份。
