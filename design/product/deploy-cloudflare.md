@@ -143,8 +143,13 @@ CrazyGames 限制只在前端（禁站外支付/外链），账号层与 web 共
 | 公网 IPv4（`<VPS_IP>`） | `128.140.41.98` |
 | IPv6 | `2a01:4f8:1c1a:73ad::/64` |
 | 部署目录 | `/root/funny`（git clone，public repo `bigtaoo/funny`） |
-| 运行模式 | `NW_DOMAIN=:80`（HTTP，无域名）；10 容器全 Up；连 Atlas `cluster0.rpr2tnw` 成功 |
-| 验证 | `POST http://128.140.41.98/api/auth/device` → 200 建号发 token（外网可达） |
+| 运行模式 | `NW_DOMAIN=api.gamestao.com`（HTTPS，Caddy 自动签 LE）；10 容器全 Up；连 Atlas `cluster0.rpr2tnw` 成功 |
+| 对外入口 | REST `https://api.gamestao.com/api/...`、控制面 `wss://api.gamestao.com/gw`、数据面 `wss://api.gamestao.com/ws`（`NW_GAME_PUBLIC_WS_URL` 下发） |
+| DNS | Cloudflare A 记录 `api.gamestao.com`→`128.140.41.98`，**灰云（DNS only）**——Caddy 才能签/续 LE；橙云会卡续签 |
+| 证书 | Let's Encrypt（`CN=api.gamestao.com`），灰云下自动续签 |
+| 验证 | `POST https://api.gamestao.com/api/auth/device` → 200 建号发 token（外网 HTTPS 可达） |
+
+> **转橙云时**（隐藏 IP + DDoS）：CF 代理后 Caddy 的 HTTP-01/TLS-ALPN 验证到不了源站、LE 90 天续签会失败 → 换 **Cloudflare Origin Certificate**（15 年，装进 Caddy `tls` 指令）+ SSL 模式 Full(strict)，或给 Caddy 配 Cloudflare DNS-01 验证（CF API token）。
 
 > **踩坑记录**：Atlas 报 `tlsv1 alert internal error: SSL alert number 80` = **来源 IP 不在 Atlas Network Access 白名单**（不是 TLS/证书问题）。新机 IP 须加进 Atlas 白名单（测试期 `0.0.0.0/0`，上线收紧到 `<VPS_IP>/32`）。
 > **注意**：连接串含 `&`，写 `.env` 时**别用 `sed` 替换**（`&` 是 sed 特殊字符会被展开）；用 `grep -v` 删行后 `printf` 追加。
