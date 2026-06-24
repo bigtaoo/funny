@@ -637,7 +637,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 | 4 档稀有度视觉（媒材皮调色 + 笔触） | **theme 参数** | 一档 = 一组调色板/笔刷，与付费皮肤复用同一套文具稀有度语言 | `theme.ts` + `equipmentGlyph` 内 `MEDIA` 表 |
 | 强化等级 / 词条 / 成功率显示 | 纯文本 + i18n | 0 | `EquipmentScene` 已有 |
 | 稀有度边框/标签 | UI 色（已编码） | 0 | `RARITY_COLOR` |
-| **战斗内沿 bone-slot 的装备立绘叠加** | **程序绘制（待实现）** | 沿 `StickmanRuntime` attachment point 叠加文具笔触 | 见 §20.4 |
+| **战斗内沿 bone-slot 的装备立绘叠加** | **程序绘制（✅ 已落地）** | 沿 `StickmanRuntime` 骨骼叠加文具笔触（§20.3 同款 glyph，复用每帧 FK） | 见 §20.4 |
 
 **明确不需要的传统美术**：装备穿戴外观切件、每件独立手绘大图、拖拽预览位图——全程序合成。
 
@@ -645,7 +645,18 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 落地 = 新建 `client/src/render/equipmentGlyph.ts`（`drawEquipmentGlyph(g, slot, rarity, size, seed)` + `MEDIA` 媒材色表，用 `SketchPen` 画 3 类基形：weapon=笔杆+笔尖 / armor=封皮+书脊 / trinket=小配件，稀有度色驱动填充与点缀）+ 接入 `EquipmentScene`（loadout 三槽、背包实例行、锻造行把原"纯文字"替换为程序图标）。零位图资产，`tsc --noEmit` + webpack 构建验证。
 
-### 20.4 待实现切片 — 战斗内 bone-slot 立绘叠加
+### 20.4 实现记录（2026-06-24，✅）— 战斗内 bone-slot 立绘叠加
 
-§2/§11 的「把装备画到角色身上」在**战斗渲染**层尚未落地：`StickmanRuntime` 已有 attachment point 机制（`hit`/`shadow` 挂父骨骼 + 偏移），装备叠加可复用——按 `gear` 给 weapon/armor/trinket 槽在对应骨骼挂程序笔触。⚠️ 该路径是 swarm 热路径（对象池 + 内存看护），改动需配合运行时验证，故与 UI 图标（§20.3）拆为独立切片，本切片不含。
+§2/§11 的「把装备画到角色身上」已在**战斗渲染**层落地，按 `gear` 给 weapon/armor/trinket 槽沿骨骼挂 §20.3 同款 SketchPen glyph。
+
+**渲染（`StickmanRuntime`）**：新增 `gearLayer`（位于骨骼之上、命中描边之下）+ `setGear(specs)`。glyph 几何体按 `${slot}:${rarity}`（12 组合）全局共享一份模板，单位 gear sprite = `new PIXI.Graphics(template.geometry)`（几何体引用计数，销毁单位不毁模板）→ 满屏装备单位只 12 份几何体而非 12×N。定位**复用 `_applyPose` 已算的逐帧 FK**（不额外 `sampleClip`/`computeFK`，不加重 swarm 热路径）：
+- 默认骨骼锚点（animator 本地 px）：weapon→右前臂(`r_lower_arm`)末端=持笔的手；armor→脊柱(`spine`)中点=躯干；trinket→头骨(`head`)末端。glyph 仅平移、不随骨骼旋转（盲验路径下最稳，姿态甩动也不会"穿帮"）。
+- 美术可在 animator 标注 `gear_<slot>` attachment point（父骨骼+偏移）覆盖默认锚点做精修——当前 .tao 未标注则走默认骨骼，**今天即可见**。
+- 无 gear 的单位 `gearSprites` 为空，`_applyPose` 整段跳过 → 不付出任何代价。
+
+**数据流（PvP 硬墙复用）**：`GameScene.opts.equipment`（A5 已是 **PvE-only** 的 `EngineEquipmentInput`）→ `GameRenderer` → `UnitView`。PvP 永不传 equipment → 战斗内永不显装备（与引擎 `buildPvpBlueprints` 无装备参同源）。`UnitView.gearSpecsFor` 按兵种解析 loadout（`byUnit` ∪ `global`）→实例→`defId`→`{slot,rarity}`，仅 `PLAYER_EQUIPPABLE_UNITS`（与 `applyEquipment` §8 同源，避免"哪些兵种吃装备"漂移；为此 `@nw/engine` index 导出该常量）。
+
+**对象池正确性**：池按兵种分桶、不分敌我，同一 runtime 复用时可能换边。故 `setGear` 做**幂等键校验**（`gearKey` 不变即 no-op），`UnitView.applyGear` 在**每次** acquire（新建 + 池复用两条分支）按 `unit.side === localSide` 重申：己方军披玩家 loadout，同型敌军传 `[]` 清掉上一生命残留的装备。常见「同边同型复用」是 no-op，保住池化收益。
+
+**局限（记录待办，非本切片）**：① 精确锚点/旋转需一次有视角的打磨或美术补 `gear_*` 点（本项目不做截图验证，故默认骨骼为保守平移叠加）；② replay/spectator 路径不携带 equipment 输入 → 回放不显装备；③ glyph 不随骨骼旋转（持笔不会随挥击转动），如需"挥笔"需引入随 `wa` 的旋转项。
 

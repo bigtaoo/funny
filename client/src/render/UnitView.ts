@@ -6,7 +6,11 @@ import { BoardView } from './BoardView';
 import { ObjectPool } from '../cache/ObjectPool';
 import { registerPool } from '../cache/poolRegistry';
 import { StickmanRuntime } from './stickman/StickmanRuntime';
-import type { TaoAsset } from './stickman/StickmanRuntime';
+import type { TaoAsset, GearGlyphSpec } from './stickman/StickmanRuntime';
+import { PLAYER_EQUIPPABLE_UNITS } from '@nw/engine';
+import type { EngineEquipmentInput } from '@nw/engine';
+import { getEquipDef } from '../game/meta/equipmentDefs';
+import type { EquipSlot } from '../game/meta/SaveData';
 import infantryTaoUrl from '../assets/infantry.tao';
 import archerTaoUrl from '../assets/archer.tao';
 import shieldBearerTaoUrl from '../assets/shieldbearer.tao';
@@ -206,6 +210,16 @@ export class UnitView {
   /** Loaded .tao assets keyed by unit type; entries appear as each fetch resolves. */
   private readonly assets: Map<UnitType, TaoAsset> = new Map();
 
+  /**
+   * Equipment loadout + inventory for the battle-render gear overlay (§20.4).
+   * PvE/siege only — PvP passes nothing (A5 hard wall), so PvP units never show
+   * gear decals. Null/empty = no overlay.
+   */
+  private readonly equipment: EngineEquipmentInput | null;
+
+  /** Resolved gear glyph specs per equippable unit type (constant per match), memoized. */
+  private readonly gearSpecCache: Map<UnitType, GearGlyphSpec[]> = new Map();
+
   private readonly pool = new ObjectPool<PIXI.Container>(
     createUnitContainer,
     resetUnitContainer,
@@ -226,9 +240,15 @@ export class UnitView {
   /** 内存看护注销函数（stickman 池数据源），destroy() 时调用。 */
   private readonly unregisterStickmanStat: () => void;
 
-  constructor(boardView: BoardView, localSide: Side = Side.Bottom, equippedSkin: string | null = null) {
+  constructor(
+    boardView: BoardView,
+    localSide: Side = Side.Bottom,
+    equippedSkin: string | null = null,
+    equipment: EngineEquipmentInput | null = null,
+  ) {
     this.boardView = boardView;
     this.localSide = localSide;
+    this.equipment = equipment;
     this.container = new PIXI.Container();
 
     // stickman 池（按类型分桶）登记进内存看护：每个空闲单位是 wrapper + ~11 个 sprite + outline。
@@ -434,6 +454,48 @@ export class UnitView {
     else   drawFactionMarker(marker, side, 0, MARKER_Y, 12, 4.4);
   }
 
+  /**
+   * Resolve the equipment overlay glyphs for a unit type (§20.4): the worn loadout
+   * (byUnit override ∪ global) → each slot's instance → defId → {slot, rarity}.
+   * Restricted to PLAYER_EQUIPPABLE_UNITS to mirror applyEquipment (§8) so the
+   * decals match exactly which units the affixes actually buff. Memoized — gear is
+   * constant per match. Returns [] when there's no equipment (PvP) or nothing worn.
+   */
+  private gearSpecsFor(unitType: UnitType): GearGlyphSpec[] {
+    const cached = this.gearSpecCache.get(unitType);
+    if (cached) return cached;
+
+    const specs: GearGlyphSpec[] = [];
+    const equip = this.equipment;
+    if (equip?.gear && equip.inv && (PLAYER_EQUIPPABLE_UNITS as readonly UnitType[]).includes(unitType)) {
+      const slotMap = equip.gear.byUnit?.[unitType] ?? equip.gear.global;
+      if (slotMap) {
+        for (const slot of ['weapon', 'armor', 'trinket'] as EquipSlot[]) {
+          const instId = slotMap[slot];
+          if (!instId) continue;
+          const inst = equip.inv[instId];
+          if (!inst) continue;
+          const def = getEquipDef(inst.defId);
+          if (!def) continue;
+          specs.push({ slot: def.slot, rarity: def.rarity });
+        }
+      }
+    }
+    this.gearSpecCache.set(unitType, specs);
+    return specs;
+  }
+
+  /**
+   * Reconcile a runtime's equipment overlay (§20.4) to the unit it's now driving.
+   * The player's own army wears their loadout (§8); a same-type *enemy* shows none
+   * (its empty key clears any stale decals from a prior local-side life — pools are
+   * keyed by type, not side, so a runtime can flip sides on reuse). setGear is
+   * idempotent, so the common pooled-reuse-same-side case is a no-op.
+   */
+  private applyGear(runtime: StickmanRuntime, unit: Unit): void {
+    runtime.setGear(unit.side === this.localSide ? this.gearSpecsFor(unit.unitType) : []);
+  }
+
   private acquireSprite(unit: Unit): PIXI.Container {
     const asset = this.assets.get(unit.unitType);
     if (asset) return this.buildStickmanContainer(unit, asset);
@@ -462,6 +524,7 @@ export class UnitView {
       hpBg.visible = false;
       hpFill.visible = false;
       hpFill.clear();
+      this.applyGear(pooled.runtime, unit);
       this.stickmanRuntimes.set(unit.id, pooled.runtime);
       return pooled.wrapper;
     }
@@ -475,6 +538,7 @@ export class UnitView {
 
     const runtime = new StickmanRuntime(asset, { mirrorX });
     this.stickmanRuntimes.set(unit.id, runtime);
+    this.applyGear(runtime, unit);
     this.drawUnitMarker(marker, runtime, side);
 
     // ── HP bar (positioned above the character's head) ────────────────────
@@ -611,6 +675,7 @@ export class UnitView {
     this.sprites.clear();
     this.hpTimers.clear();
     this.assets.clear();
+    this.gearSpecCache.clear();
 
     this.container.destroy({ children: true });
   }

@@ -21,6 +21,8 @@ import JSZip from 'jszip';
 import { sampleClip } from './interpolate';
 import { Skeleton } from './skeleton';
 import type { AnimationClip, BoneKeyframe, SpriteBinding } from './types';
+import { drawEquipmentGlyph } from '../equipmentGlyph';
+import type { EquipSlot, EquipRarity } from '../../game/meta/SaveData';
 
 // ── TaoAsset (shared, loaded once per .tao file) ──────────────────────────────
 
@@ -73,6 +75,72 @@ const STICKMAN_SCALE = 0.27;
 const OUTLINE_GAP_PX   = 1.0;   // transparent gap between body edge and the line
 const OUTLINE_WIDTH_PX = 2.4;   // thickness of the contour line itself
 
+// ── Equipment overlay (EQUIPMENT_DESIGN §20.4) ─────────────────────────────────
+//
+// Procedural stationery decals drawn over the figure along the skeleton — the
+// battle-render half of "把装备画到角色身上" (§2/§11). Each equipped slot draws the
+// same SketchPen glyph used by the UI icons (`equipmentGlyph.ts`), positioned at a
+// bone anchor so it rides the animation. Reuses the per-frame FK already computed
+// in {@link StickmanRuntime._applyPose} (no extra sampleClip/computeFK on the swarm
+// hot path), and shares one tessellated geometry per (slot × rarity) across every
+// unit (12 combos total) so a screenful of equipped units costs 12 geometries, not
+// 12 × N. PvP never reaches here — equipment is a PvE-only input (A5 hard wall);
+// UnitView only calls setGear() for PLAYER_EQUIPPABLE_UNITS in PvE/siege.
+
+/** One equipped slot to overlay on the figure. */
+export interface GearGlyphSpec {
+  slot:   EquipSlot;
+  rarity: EquipRarity;
+}
+
+/** Where a slot's glyph rides on the skeleton, in animator-local px. */
+interface GearPlacement {
+  /** Parent bone whose FK drives the glyph. Falls back to spine→root if missing. */
+  bone:   string;
+  /** 'tip' = bone end (hand / head); 'mid' = bone midpoint (torso). */
+  anchor: 'tip' | 'mid';
+  /** Offset from the anchor, animator-local px (un-mirrored; container applies flip). */
+  ox:     number;
+  oy:     number;
+  /** Glyph box edge in animator px (container scale shrinks it to ~¼ on screen). */
+  size:   number;
+  /** Deterministic pen seed so the scrawl is stable across redraws. */
+  seed:   number;
+}
+
+/**
+ * Default slot → skeleton placement. weapon rides the right (attacking) forearm
+ * tip = the drawing hand; armor sits mid-spine = the torso; trinket hangs by the
+ * head. Glyphs stay axis-aligned (translate-only) — they read as equipped decals
+ * and never look "broken" if a pose swings hard, the conservative choice for a
+ * path we can't screenshot-verify. Artist-authored `gear_<slot>` attachment points
+ * (if present in the .tao) override `bone`/`ox`/`oy` for fine placement (§20.4).
+ */
+const GEAR_PLACEMENT: Record<EquipSlot, GearPlacement> = {
+  weapon:  { bone: 'r_lower_arm', anchor: 'tip', ox: 0, oy: 0,  size: 42, seed: 7001 },
+  armor:   { bone: 'spine',       anchor: 'mid', ox: 0, oy: 2,  size: 52, seed: 7013 },
+  trinket: { bone: 'head',        anchor: 'tip', ox: 6, oy: 0,  size: 26, seed: 7027 },
+};
+
+/**
+ * Shared glyph geometry per `${slot}:${rarity}` (12 combos). The template Graphics
+ * is kept alive in the cache so its tessellated geometry survives; per-unit gear
+ * sprites are `new PIXI.Graphics(template.geometry)` — geometry is reference-counted,
+ * so destroying a unit's gear sprite never disposes the shared template.
+ */
+const _gearGeomCache = new Map<string, PIXI.Graphics>();
+
+function gearTemplate(slot: EquipSlot, rarity: EquipRarity, size: number, seed: number): PIXI.Graphics {
+  const key = `${slot}:${rarity}`;
+  let tpl = _gearGeomCache.get(key);
+  if (!tpl) {
+    tpl = new PIXI.Graphics();
+    drawEquipmentGlyph(tpl, slot, rarity, size, seed);
+    _gearGeomCache.set(key, tpl);
+  }
+  return tpl;
+}
+
 /** Map logical UnitState values → animation clip names. */
 const STATE_ANIM: Record<string, string> = {
   moving:    'walk',
@@ -100,6 +168,12 @@ export class StickmanRuntime {
   private readonly outlineLayer: PIXI.Container;
   /** When false, outline sprites are hidden and not synced (the common case). */
   private outlineFlashing = false;
+  /** Equipment overlay glyphs (§20.4), each with its skeleton placement. Empty = no gear. */
+  private readonly gearSprites: Array<{ sprite: PIXI.Graphics; placement: GearPlacement }> = [];
+  /** Identity of the currently-applied gear, so {@link setGear} is a no-op when unchanged. */
+  private gearKey = '';
+  /** Container holding the gear decals, between the bones and the hit-flash outline. */
+  private readonly gearLayer: PIXI.Container;
   private readonly asset:   TaoAsset;
 
   private currentClip:     AnimationClip | null = null;
@@ -109,6 +183,7 @@ export class StickmanRuntime {
   constructor(asset: TaoAsset, options: StickmanOptions = {}) {
     this.asset        = asset;
     this.container    = new PIXI.Container();
+    this.gearLayer    = new PIXI.Container();
     this.outlineLayer = new PIXI.Container();
     this.outlineLayer.visible = false;   // shown only during a hit flash
     this.container.scale.set(
@@ -150,6 +225,9 @@ export class StickmanRuntime {
         this.outlineLayer.addChild(outline);
       }
     }
+    // Gear decals sit above the bones (an overlay) but below the outline so a hit
+    // flash still pops over everything. Empty until setGear() populates it.
+    this.container.addChild(this.gearLayer);
     // Outline layer on top so the flash pops over the body silhouette.
     this.container.addChild(this.outlineLayer);
 
@@ -170,6 +248,43 @@ export class StickmanRuntime {
     if (color != null) {
       for (const o of this.outlineSprites.values()) { o.tint = color; o.alpha = alpha; }
     }
+  }
+
+  /**
+   * Set the equipment overlay glyphs (§20.4). Builds one gear sprite per slot from
+   * the shared (slot × rarity) geometry, placed via {@link GEAR_PLACEMENT} or an
+   * artist-authored `gear_<slot>` attachment point when the .tao defines one. Pass
+   * `[]` to clear. Idempotent: a no-op when the requested gear matches what's already
+   * applied — so UnitView can call it on every (pooled) spawn to reconcile side flips
+   * without rebuilding sprites in the common unchanged case.
+   */
+  setGear(specs: GearGlyphSpec[]): void {
+    const key = specs.map(s => `${s.slot}:${s.rarity}`).join(',');
+    if (key === this.gearKey) return;
+    this.gearKey = key;
+
+    // Tear down any previous glyphs (geometry is shared + ref-counted, so this only
+    // drops this unit's reference — the template in the cache survives).
+    for (const { sprite } of this.gearSprites) sprite.destroy();
+    this.gearSprites.length = 0;
+
+    for (const spec of specs) {
+      const base = GEAR_PLACEMENT[spec.slot];
+      if (!base) continue;
+      const tpl    = gearTemplate(spec.slot, spec.rarity, base.size, base.seed);
+      const sprite = new PIXI.Graphics(tpl.geometry);
+
+      // An artist-authored attachment point fine-tunes bone + offset (§20.4).
+      const ap = this.asset.attachmentPoints.get(`gear_${spec.slot}`);
+      const placement: GearPlacement = ap
+        ? { ...base, bone: ap.parentBone, anchor: 'tip', ox: ap.offsetX, oy: ap.offsetY }
+        : base;
+
+      this.gearLayer.addChild(sprite);
+      this.gearSprites.push({ sprite, placement });
+    }
+    // Position immediately so a freshly-equipped unit isn't a frame late.
+    if (this.gearSprites.length && this.currentClip) this._applyPose();
   }
 
   // ── Animation control ─────────────────────────────────────────────────────
@@ -214,6 +329,9 @@ export class StickmanRuntime {
       STICKMAN_SCALE,
     );
     this.setOutlineFlash(null);   // a reused runtime must not carry a stale flash
+    // Gear glyphs are left in place here; UnitView re-asserts the correct gear on each
+    // (pooled) spawn via the idempotent setGear() — a no-op unless the unit's side or
+    // loadout changed, so the pooling win is kept while side flips reconcile (§20.4).
     this.currentClip     = null;
     this.currentClipName = '';
     this.time            = 0;
@@ -341,6 +459,22 @@ export class StickmanRuntime {
           outline.visible  = alpha > 0;
         }
       }
+    }
+
+    // ── Equipment overlay glyphs (§20.4) — reuse the FK we just computed ───────
+    // Translate-only decals anchored to a bone; mirroring + scale come from the
+    // container transform (same as the body sprites). Skipped entirely when the
+    // unit carries no gear, so an unequipped swarm pays nothing.
+    for (const { sprite, placement } of this.gearSprites) {
+      const pose = worldPos.get(placement.bone)
+        ?? worldPos.get('spine')
+        ?? worldPos.get('root');
+      if (!pose) { sprite.visible = false; continue; }
+      const ax = placement.anchor === 'mid' ? (pose.sx + pose.ex) / 2 : pose.ex;
+      const ay = placement.anchor === 'mid' ? (pose.sy + pose.ey) / 2 : pose.ey;
+      sprite.x       = ax + placement.ox;
+      sprite.y       = ay + placement.oy;
+      sprite.visible = true;
     }
   }
 

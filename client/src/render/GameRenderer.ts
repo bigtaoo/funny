@@ -28,6 +28,7 @@ import { HandView } from './HandView';
 import { HUDView } from './HUDView';
 import { NetStatusView } from './NetStatusView';
 import { UnitView } from './UnitView';
+import type { EngineEquipmentInput } from '@nw/engine';
 import { VFXSystem } from './VFXSystem';
 import { buildWearOverlay } from './wearOverlay';
 import { ProfilePopup, type ProfileData } from './ProfilePopup';
@@ -125,6 +126,8 @@ export class GameRenderer {
   private unitView!:     UnitView;
   /** Equipped skin id (S3-4), passed to UnitView for the texture swap; null = default. */
   private readonly equippedSkin: string | null = null;
+  /** Equipment loadout (PvE/siege only) for the battle-render gear overlay (§20.4); null = none. */
+  private readonly equipment: EngineEquipmentInput | null = null;
   private buildingView!: BuildingView;
   private escortLayer!:  PIXI.Container;
   /** Escort sprite containers keyed by escortId (campaign escort levels only). */
@@ -175,11 +178,13 @@ export class GameRenderer {
     spectator = false,
     profiles: GameProfiles = {},
     equippedSkin: string | null = null,
+    equipment: EngineEquipmentInput | null = null,
   ) {
     this.engine     = engine;
     this.layout     = layout;
     this.netEnabled = netEnabled;
     this.equippedSkin = equippedSkin;
+    this.equipment    = equipment;
     this.container  = new PIXI.Container();
     this.oppProfile  = profiles.opponent ?? null;
     this.selfProfile = profiles.local ?? null;
@@ -319,7 +324,7 @@ export class GameRenderer {
     this.boardView.markNoBuildCells(this.engine.state.board.getNoBuildCells());
     this.boardView.markInactiveLanes(this.engine.state.board.getActiveLanes());
     this.boardView.markBlockedCells(this.engine.state.board.getBlockedCells());
-    this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkin);
+    this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkin, this.equipment);
     this.buildingView = new BuildingView(this.boardView);
     this.handView     = new HandView(this.layout);
     this.hudView      = new HUDView(this.layout);
