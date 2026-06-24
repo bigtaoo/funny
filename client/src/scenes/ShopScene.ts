@@ -92,7 +92,9 @@ export class ShopScene implements Scene {
     try {
       this.items = await this.cb.loadItems();
     } catch {
+      // 加载失败别假装空店：明确提示玩家（返回重进即重试）。
       this.items = [];
+      this.toast = { text: t('common.networkError'), color: C.red };
     }
     this.loading = false;
     this.render();

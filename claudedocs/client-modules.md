@@ -28,7 +28,7 @@
 | `i18n/index.ts` | `t()` 取词 + 插值；`initI18n`/`setLocale`/`onLocaleChange` |
 | `game/meta/SaveData.ts` | 元系统单一权威根；`makeNewSave`/`SyncPatch`/`SAVE_VERSION` |
 | `game/meta/migrate.ts` | `migrate(raw)→SaveData`：顺序升级 + fillDefaults；改字段必加迁移步 |
-| `game/meta/SaveManager.ts` | 云同步：离线优先→bootstrap→防抖 push→409 reconcile；PvE 通关/升级走 `/pve/*` API |
+| `game/meta/SaveManager.ts` | 云同步：离线优先→bootstrap→防抖 push→409 reconcile；PvE 通关/升级走 `/pve/*` API。后台 push 连续失败达阈值（3 次）触发一次 `onSyncError`（接 `showToastMessage`，提示进度可能未上云），一次成功上行即复位，不刷屏 |
 | `net/ApiClient.ts` | metaserver REST 客户端（fetch + ApiResp 包络） |
 | `net/NetClient.ts` | WS 连接/重连（退避+代次）/ts-proto 编解码 |
 | `net/NetSession.ts` | 联机会话：gateway(控制面 `/gw`) + game(数据面 `?ticket=`) 双连接；跨场景存活；含社交 + **SLG 实时 push** 路由（`onMarchUpdate/onTileUpdate/onUnderAttack/onSiegeResult/onFamilyMsg`，worldsvc→gateway 下发） |
@@ -39,6 +39,9 @@
 | `scenes/RoomScene.ts` | 好友房 UI：idle→codeEntry→connecting→inRoom |
 | `render/sketch.ts` | `SketchPen`：确定性 Prng 抖动的手绘笔触 |
 | `render/sketchUi.ts` | 共享手绘 UI 原语（纸底/手绘按钮/面板/色板单一来源） |
+| `ui/GlobalToast.ts` | **全局兜底 toast**：浮在所有场景之上（挂 `app.stage` 屏幕坐标，不受 Contain 缩放/场景切换影响，跟随 resize），手绘风格梯形淡入淡出。专供漏网错误兜底，各场景仍用自身 `showToast`——「有提示则跳过、漏了才兜底」 |
+| `net/apiErrorMessage.ts` | `uncaughtErrorMessage(reason)`：未捕获 reason→玩家可读文案。duck-type（`err.name`+`err.code`，避免与 ApiClient 循环依赖）识别 `ApiError`/`WorldApiError`（按 code 映射 `common.err.*`，未知码→`common.actionFailed`）/ `TypeError`（fetch 网络失败→`common.networkError`）/ 超时；普通 JS 异常→`null`（不弹，不拿 bug 吓玩家） |
+| `net/log.ts` | 网络日志 + **全局错误兜底中枢**：`installGlobalErrorHandlers` 在 window `error`/`unhandledrejection` 把漏网错误经 `apiErrorMessage` 归类后弹 toast；`setToastSink`（app.ts 注入 `GlobalToast.show`）/ `showToastMessage`（定点本地化提示出口，供 SaveManager 云同步失败复用） |
 | `game/campaign/levels.ts` + `levelSchema.ts` | 关卡注册（`CAMPAIGN_LEVELS`/`CAMPAIGN_LEVEL_ORDER`，61 关 JSON 单一来源）+ `parseLevelDefinition` 运行时校验，加载即 fail-fast。⚠️ 出兵/`activeLanes` 的 col 必为 `ATTACK_LANES=[0,1,2,3,4,7,8,9,10,11]`（5/6 是中央基地列，非攻击道——棋盘 6→12 列迁移后的历史坑） |
 | `game/campaign/maps/` | 章节地图（CAMPAIGN_DESIGN §12）：`ChapterMap` 类型 + `parseChapterMap` 校验（节点 `levelId` 必在 `CAMPAIGN_LEVELS`，坐标 0..1 越界软告警）+ `CHAPTER_MAPS`/`getChapterMap` 注册；`chN.json` 存节点归一化坐标/`path`/`decor`，**只引 levelId**，与关卡数值分离 |
 | `scenes/CampaignMapScene.ts` | **战役笔记本**（PvE 正门，CAMPAIGN_DESIGN §12）：两类页——目录页（6 章卡片 + 进度/星数 + 锁章胶带遮罩）/ 章节页（节点按 `maps/chN.json` 归一化坐标摆放，`SketchPen` 铅笔虚线路径串联，已通关金圈星章 / 当前关蓝圈脉冲 / 未解锁淡铅笔轮廓 / decor 涂鸦）。进场落目录页→自动翻到「当前可打关」那章；翻页 = 横向 slide+fade（`update(dt)` 驱动，0.42s），左右箭头切章（下一章须通关方亮）；整章通关盖「第 N 章 · 通关」红章。章节页顶栏标题（「第 N 章 · 场地名」）下方补一行淡色叙事者归属「陶的笔记本 / Anna 的笔记本」（奇数章=陶/偶数章=Anna，对应 CAMPAIGN_STORY.md 框架表；`buildHeader` 的可选 `subtitleStr` 参数，TOC 页不传）。全程序绘制，零美术资产；回调 `CampaignMapCallbacks` 与旧扁平列表版同构。解锁/落点判断全走 `game/campaign/progress.ts`（不再内联） |

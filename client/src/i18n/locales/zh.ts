@@ -4,6 +4,14 @@ export const zh = {
   // ── 通用 ──────────────────────────────────────────────────────────────────
   'common.networkTimeout': '网络超时，请重试',
   'common.processing': '处理中',
+  // 全局兜底提示（未被场景自行 catch 的非 200 / 网络错误，GlobalToast 弹出）
+  'common.networkError': '网络连接失败，请检查网络后重试',
+  'common.actionFailed': '操作失败，请稍后重试',
+  'common.err.insufficientFunds': '余额不足',
+  'common.err.rateLimited': '操作太频繁，请稍后再试',
+  'common.err.unauthorized': '登录已失效，请重新登录',
+  'common.err.notFound': '内容不存在或已失效',
+  'common.syncFailed': '云存档同步失败，进度可能未保存',
 
   // ── 卡牌 ──────────────────────────────────────────────────────────────────
   'card.infantry.name': '普通兵',

@@ -5,6 +5,13 @@ export const de: Record<TranslationKey, string> = {
   // ── Allgemein ─────────────────────────────────────────────────────────────
   'common.networkTimeout': 'Zeitüberschreitung — bitte erneut versuchen',
   'common.processing': 'Verarbeitung',
+  'common.networkError': 'Netzwerkfehler — Verbindung prüfen und erneut versuchen',
+  'common.actionFailed': 'Etwas ist schiefgelaufen — bitte erneut versuchen',
+  'common.err.insufficientFunds': 'Nicht genügend Guthaben',
+  'common.err.rateLimited': 'Zu viele Anfragen — bitte langsamer',
+  'common.err.unauthorized': 'Sitzung abgelaufen — bitte erneut anmelden',
+  'common.err.notFound': 'Nicht gefunden oder nicht mehr verfügbar',
+  'common.syncFailed': 'Cloud-Speichern fehlgeschlagen — Fortschritt evtl. nicht gesichert',
 
   // ── Karten ────────────────────────────────────────────────────────────────
   'card.infantry.name': 'Infanterie',

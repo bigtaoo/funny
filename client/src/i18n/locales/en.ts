@@ -5,6 +5,13 @@ export const en: Record<TranslationKey, string> = {
   // ── Common ────────────────────────────────────────────────────────────────
   'common.networkTimeout': 'Network timeout — please retry',
   'common.processing': 'Processing',
+  'common.networkError': 'Network error — check your connection and retry',
+  'common.actionFailed': 'Something went wrong — please try again',
+  'common.err.insufficientFunds': 'Not enough balance',
+  'common.err.rateLimited': 'Too many requests — please slow down',
+  'common.err.unauthorized': 'Session expired — please log in again',
+  'common.err.notFound': 'Not found or no longer available',
+  'common.syncFailed': 'Cloud save failed — progress may not be saved',
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   'card.infantry.name': 'Infantry',

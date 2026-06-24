@@ -24,7 +24,7 @@ import { stateRecorder } from '../game/replay/StateRecorder';
 import { decodeStateReplay, type EncodedStateReplay } from '../game/replay/StateReplay';
 import { getApiBaseUrl, getGatewayWsUrl } from '../net/config';
 import { NetSession } from '../net/NetSession';
-import { netLog } from '../net/log';
+import { netLog, showToastMessage } from '../net/log';
 import { matchStateHash } from '../net/judgeRunner';
 import { MatchMode } from '../net/proto/transport';
 import { EQUIP_SLOT } from './equipSlot';
@@ -81,6 +81,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     getCredential: () => platform.getAuthCredential(),
     // L1 抽检（§8.6）：离线 flush 被抽中时据 replayId 取回本地录像补传复算。
     loadReplay: (id) => replayStore.load(id),
+    // 云存档后台同步持续失败 → 弹一次全局兜底提示（进度可能未上云）。
+    onSyncError: () => showToastMessage(t('common.syncFailed')),
     onProfile: ({ displayName, publicId, gatewayUrl: gw }) => {
       applyGatewayUrl(gw);
       if (publicId) platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, publicId);

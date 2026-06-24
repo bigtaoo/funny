@@ -44,7 +44,8 @@ import type { Replay, LevelDefinition } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
-import { installGlobalErrorHandlers } from './net/log';
+import { installGlobalErrorHandlers, setToastSink } from './net/log';
+import { GlobalToast } from './ui/GlobalToast';
 import { setBakeRenderer } from './render/bake';
 import { createAppCore } from './app/createAppCore';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps } from './app/AppViews';
@@ -319,6 +320,12 @@ export async function startApp(platform: IPlatform): Promise<void> {
 
   // Procedural art (sketch.ts) bakes static board layers to textures via this renderer.
   setBakeRenderer(app.renderer);
+
+  // 全局兜底提示：场景没自己接住的非 200 / 网络错误冒泡到 window 时，弹一条玩家可读 toast
+  // （场景自带的 showToast 不经过这里，所以「有提示则跳过、漏了才兜底」）。分类逻辑在 net/log，
+  // 这里只提供渲染出口。同一出口也供 SaveManager 云同步失败等定点提示复用。
+  const globalToast = new GlobalToast(app);
+  setToastSink((text) => globalToast.show(text));
 
   const layout: ILayout = createLayout(screenW, screenH);
   const scaling = new ScalingManager(app, layout);

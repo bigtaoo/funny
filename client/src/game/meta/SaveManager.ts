@@ -35,7 +35,15 @@ export interface SaveManagerOpts {
   /** 注入定时器（测试用）；默认走 globalThis。 */
   setTimer?: (cb: () => void, ms: number) => unknown;
   clearTimer?: (h: unknown) => void;
+  /**
+   * 云存档上行连续失败达阈值时回调一次（提示玩家进度可能未同步）。一次成功上行后复位，
+   * 故不会每 2s 刷屏。离线优先下后台同步本是静默的，这里只在「持续失败」时打破沉默。
+   */
+  onSyncError?: () => void;
 }
+
+/** 连续上行失败多少次后才提示玩家（避开一次性网络抖动）。 */
+const SYNC_FAIL_THRESHOLD = 3;
 
 export class SaveManager {
   private save: SaveData;
@@ -44,6 +52,9 @@ export class SaveManager {
   private readonly getCredential?: () => Promise<AuthCredential>;
   private readonly onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string }) => void;
   private readonly loadReplay?: (id: string) => Replay | null;
+  private readonly onSyncError?: () => void;
+  private syncFailStreak = 0;     // 连续上行失败计数
+  private syncErrorNotified = false; // 本轮持续失败是否已提示过（避免刷屏）
   private readonly debounceMs: number;
   private readonly setTimer: (cb: () => void, ms: number) => unknown;
   private readonly clearTimer: (h: unknown) => void;
@@ -59,6 +70,7 @@ export class SaveManager {
     this.getCredential = opts.getCredential;
     this.onProfile = opts.onProfile;
     this.loadReplay = opts.loadReplay;
+    this.onSyncError = opts.onSyncError;
     this.debounceMs = opts.debounceMs ?? 2000;
     this.setTimer =
       opts.setTimer ?? ((cb, ms) => (globalThis as typeof globalThis).setTimeout(cb, ms));
@@ -320,6 +332,9 @@ export class SaveManager {
     try {
       this.dirty = false;
       const res = await this.api.putSave(this.save.rev, extractSyncPatch(this.save));
+      // putSave 返回即代表服务器可达（含 409 冲突）→ 复位失败计数。
+      this.syncFailStreak = 0;
+      this.syncErrorNotified = false;
       if (res.kind === 'ok') {
         this.adoptCloud(res.save);
       } else {
@@ -331,6 +346,12 @@ export class SaveManager {
       }
     } catch {
       this.dirty = true; // 网络抖动 → 标脏，下次再试
+      // 连续失败到阈值才提示一次（离线优先下偶发失败不打扰，持续失败才打破沉默）。
+      this.syncFailStreak++;
+      if (this.syncFailStreak >= SYNC_FAIL_THRESHOLD && !this.syncErrorNotified) {
+        this.syncErrorNotified = true;
+        this.onSyncError?.();
+      }
     } finally {
       this.pushing = false;
     }
