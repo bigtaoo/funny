@@ -402,6 +402,41 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d
 # 升配（玩家上来后）：Hetzner Console → 关机 → Rescale → CPX21/CPX31 → 开机，数据盘不动
 ```
 
+#### 自动发布（GitHub Action，免手敲命令）
+
+`.github/workflows/server-deploy.yml`：push 到 `main` 且改动落在 `server/**` / 该 workflow 时，自动 SSH 进 VPS 跑 `git fetch + reset --hard origin/main → docker compose -f docker-compose.cloud.yml --env-file .env up -d --build`；也可在 Actions 页手动 Run（`workflow_dispatch`）。与 client-deploy / ops-deploy 同理念（裸 ssh，不用第三方 action，报错原样可见）。
+
+**镜像在 VPS 本机构建**（与手动运维命令一致，2 核机 + 2G swap 扛得住）；`.env` 是 gitignore，`reset --hard` 不动它。同步用 `reset --hard origin/main`（非 `git pull`）以消除 VPS 工作区漂移（如之前 ops 改容器留下的本地变动）。
+
+一次性配置：
+
+1. **专用 CI deploy SSH key**（与本机日常 `nivara_hetzner` 隔离，2026-06-24 生成）：
+
+   | 项 | 值 |
+   |---|---|
+   | 私钥（**保密，绝不进 git/聊天/截图**） | `C:\Users\TaoWang\.ssh\nivara_ci_deploy` |
+   | 公钥（贴 VPS `~/.ssh/authorized_keys`） | `C:\Users\TaoWang\.ssh\nivara_ci_deploy.pub` |
+   | 指纹 | `SHA256:abvzWEnBgcHyyRcoTPszMbX9sweQ8OseuXOGr4/YlYA` |
+   | 密码短语 | 无（CI 非交互） |
+
+   公钥串：
+   ```
+   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAooPPL64xUT3zopA6wugAAtQKi4YKjNPIgKqRV/czvA nivara-github-ci-deploy
+   ```
+
+   **装到 VPS**（本机一条命令，追加到 root 的 authorized_keys，不覆盖现有 key）：
+   ```bash
+   ssh -i ~/.ssh/nivara_hetzner root@128.140.41.98 \
+     "mkdir -p ~/.ssh && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAooPPL64xUT3zopA6wugAAtQKi4YKjNPIgKqRV/czvA nivara-github-ci-deploy' >> ~/.ssh/authorized_keys"
+   ```
+
+2. **repo secret** `VPS_SSH_KEY` = `nivara_ci_deploy` 私钥整段内容（含 `-----BEGIN/END OPENSSH PRIVATE KEY-----` 行）。
+3. **repo variables**：`VPS_HOST` = `128.140.41.98`（灰云时也可填 `api.gamestao.com`）；可选 `VPS_USER`（缺省 `root`）、`VPS_DEPLOY_PATH`（缺省 `/root/funny`）。
+4. **开关**：repo variable `SERVER_DEPLOY_ENABLED = true`（未设则 job 跳过，与 client/ops 同套路）。
+
+> 主机公钥由 workflow 内 `ssh-keyscan` 钉进 known_hosts（防 MITM）。VPS 重装/换 IP 后首跑会因 known_hosts 不符失败，属预期——换 IP 后改 `VPS_HOST` 即可。
+> 手动运维老路（上面「运维速查」两条命令）仍可用，适合本机临时发布或 CI 不可用时兜底。
+
 ## 9. 备注
 
 - 特效（client 特效）与关卡编辑器前端**暂缓**，优先级低。

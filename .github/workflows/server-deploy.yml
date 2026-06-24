@@ -1,0 +1,67 @@
+name: server-deploy
+
+# 后端 8 进程 + Redis + Caddy（docker compose）自动重部署到 Hetzner VPS（/root/funny）。
+# 触发：push 到 main 且改动落在 server 相关文件，或在 Actions 页手动 Run。
+# 流程：SSH 进 VPS → git fetch + reset --hard origin/main → docker compose up -d --build。
+# 镜像在 VPS 本机构建（与手动运维命令一致，2 核机 + 2G swap 扛得住）；.env 是 gitignore，
+# reset --hard 不会动它。部署细节 / 运维速查：design/product/deploy-cloudflare.md §8。
+#
+# 需要的 repo secrets：
+#   VPS_SSH_KEY        —— 专用 CI deploy 私钥（ed25519，nivara_ci_deploy，与本机日常 key 隔离）。
+#                          公钥已加到 VPS root 的 authorized_keys。整段私钥（含 BEGIN/END 行）贴进 secret。
+# 需要的 repo variables：
+#   SERVER_DEPLOY_ENABLED = true   —— 启用开关（未设则 job 跳过，避免配好前每次 push 报红）。
+#   VPS_HOST              = 128.140.41.98   —— VPS 公网 IP（或 api.gamestao.com；灰云时可用域名）。
+#   VPS_USER              = root            —— 登录用户（缺省 root）。
+#   VPS_DEPLOY_PATH       = /root/funny     —— 仓库在 VPS 上的克隆路径（缺省 /root/funny）。
+#
+# 不用第三方 ssh-action（会吞真实报错、运行时常过期）；直接用 runner 自带 ssh，报错原样可见——
+# 与 ops-deploy / client-deploy「裸 npx wrangler」同理念。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-deploy.yml'
+  workflow_dispatch: {}
+
+# 同时只跑一个 server 部署，新的取消旧的，避免并发 docker compose 打架。
+concurrency:
+  group: server-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # 未设 repo variable SERVER_DEPLOY_ENABLED=true 时整个 job 跳过。
+    if: ${{ vars.SERVER_DEPLOY_ENABLED == 'true' }}
+    steps:
+      # 写私钥 + 用 ssh-keyscan 把 VPS 主机公钥钉进 known_hosts（避免 TOFU/MITM）。
+      - name: set up SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ vars.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      # 在 VPS 上拉新代码并重部署。git fetch + reset --hard origin/main 消除工作区漂移；
+      # .env（gitignore）不受影响。docker compose 用 cloud 配置 + .env。
+      - name: deploy on VPS
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_USER: ${{ vars.VPS_USER || 'root' }}
+          VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH || '/root/funny' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "${VPS_USER}@${VPS_HOST}" \
+            "set -e; \
+             cd '${VPS_DEPLOY_PATH}'; \
+             git fetch origin main; \
+             git reset --hard origin/main; \
+             cd server; \
+             docker compose -f docker-compose.cloud.yml --env-file .env up -d --build; \
+             docker compose -f docker-compose.cloud.yml ps"
