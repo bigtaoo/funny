@@ -146,11 +146,14 @@ cd .. && npx wrangler deploy -c wrangler.client.jsonc
 #### 部署命令（ops 前端 / Worker）
 
 ```bash
-cd tools/ops && npm run build                      # 产物 tools/ops/dist
+git rev-parse --short HEAD                          # 记下目标提交号，发布后比对
+cd tools/ops && npm run build                      # 产物 tools/ops/dist（构建期烘入 git hash）
 cd ../.. && npx wrangler deploy -c wrangler.ops.jsonc
 # 共享密钥（与 VPS 端 NW_OPS_PROXY_SECRET 同值；首次 + 轮换时执行；交互粘贴，不进 git）：
 npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler.ops.jsonc
 ```
+
+> **构建版本号（确认线上是否旧 bundle）**：ops header 右侧显示 `v <git short hash>`（hover 出构建时间 UTC），由 webpack `DefinePlugin` 构建期注入 `git rev-parse --short HEAD`。发布后**硬刷新**（Ctrl+Shift+R，避开缓存的 `index.html`）并比对该号与上面记下的目标提交：一致＝发对了，仍是旧号＝旧 bundle 没覆盖需重发。号带 `-dirty` 后缀＝构建时工作区有未提交改动（非干净提交，不建议作为正式发布）。
 
 > admin 后端入口若不在 `api.gamestao.com/ops`（如改用 cloudflared tunnel 或独立子域），改 `wrangler.ops.jsonc` 的 `ADMIN_ORIGIN` 后重 deploy。
 

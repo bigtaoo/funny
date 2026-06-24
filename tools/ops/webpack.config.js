@@ -5,7 +5,10 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 function gitCommit() {
   try {
-    return execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim();
+    const hash = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim();
+    // 工作区有未提交改动 → 标 -dirty，区分干净提交构建与本地脏构建。
+    const dirty = execSync('git status --porcelain', { cwd: __dirname }).toString().trim().length > 0;
+    return dirty ? `${hash}-dirty` : hash;
   } catch {
     return 'unknown';
   }
