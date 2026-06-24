@@ -390,4 +390,18 @@ export class HandView {
       default:                return '?';
     }
   }
+
+  /**
+   * Tear down everything this view owns. Destroys the detached card-slot pool,
+   * then destroys the container subtree (active slots are children of it). Card
+   * art comes from the shared `PIXI.Texture.from` cache (reused across battles)
+   * and is intentionally only dereferenced, never destroyed.
+   */
+  destroy(): void {
+    this.pool.drain((c) => c.destroy({ children: true }));
+    this.slots = [];
+    this.artTextures.clear();
+    this.refreshFlashes.clear();
+    this.container.destroy({ children: true });
+  }
 }

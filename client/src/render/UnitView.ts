@@ -211,6 +211,15 @@ export class UnitView {
     20,
   );
 
+  /**
+   * In-flight hit/death effect ticks registered on the shared ticker. Tracked so
+   * teardown can unregister any still running — otherwise the closure (which
+   * captures the sprite/runtime → this UnitView → the whole battle scene) stays
+   * reachable from `PIXI.Ticker.shared` (a GC root) forever, pinning the entire
+   * match's display tree + textures in memory. This was the dominant client leak.
+   */
+  private readonly effectTicks = new Set<() => void>();
+
   constructor(boardView: BoardView, localSide: Side = Side.Bottom, equippedSkin: string | null = null) {
     this.boardView = boardView;
     this.localSide = localSide;
@@ -321,28 +330,28 @@ export class UnitView {
       const PEAK  = 0.7;
       let frames  = TOTAL;
       const tick = (): void => {
-        if (!this.sprites.has(unitId)) { PIXI.Ticker.shared.remove(tick); runtime.setOutlineFlash(null); return; }
+        if (!this.sprites.has(unitId)) { this.removeEffectTick(tick); runtime.setOutlineFlash(null); return; }
         runtime.setOutlineFlash(HIT_FLASH_COLOR, (frames / TOTAL) * PEAK);
         if (--frames <= 0) {
-          PIXI.Ticker.shared.remove(tick);
+          this.removeEffectTick(tick);
           runtime.setOutlineFlash(null);
         }
       };
-      PIXI.Ticker.shared.add(tick);
+      this.addEffectTick(tick);
       return;
     }
 
     // Circle / draft placeholder units (no outline textures): alpha blink fallback.
     let frames = 6;
     const tick = (): void => {
-      if (!this.sprites.has(unitId)) { PIXI.Ticker.shared.remove(tick); return; }
+      if (!this.sprites.has(unitId)) { this.removeEffectTick(tick); return; }
       sprite.alpha = frames % 2 === 0 ? 0.3 : 1;
       if (--frames <= 0) {
-        PIXI.Ticker.shared.remove(tick);
+        this.removeEffectTick(tick);
         sprite.alpha = 1;
       }
     };
-    PIXI.Ticker.shared.add(tick);
+    this.addEffectTick(tick);
   }
 
   playDeathEffect(unitId: number): void {
@@ -378,11 +387,11 @@ export class UnitView {
       sprite.alpha = remaining < FADE_SEC ? Math.max(0, remaining / FADE_SEC) : 1;
 
       if (elapsed >= total) {
-        PIXI.Ticker.shared.remove(tick);
+        this.removeEffectTick(tick);
         this.releaseUnit(unitId, sprite);
       }
     };
-    PIXI.Ticker.shared.add(tick);
+    this.addEffectTick(tick);
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
@@ -542,5 +551,49 @@ export class UnitView {
     } else {
       this.pool.release(sprite);
     }
+  }
+
+  // ─── Effect-tick bookkeeping ──────────────────────────────────────────────
+
+  private addEffectTick(tick: () => void): void {
+    this.effectTicks.add(tick);
+    PIXI.Ticker.shared.add(tick);
+  }
+
+  private removeEffectTick(tick: () => void): void {
+    PIXI.Ticker.shared.remove(tick);
+    this.effectTicks.delete(tick);
+  }
+
+  // ─── Teardown ─────────────────────────────────────────────────────────────
+
+  /**
+   * Release every resource this view holds when the match ends. Critically:
+   *  1. Unregister all in-flight effect ticks from the shared ticker (the leak
+   *     root — see {@link effectTicks}).
+   *  2. Destroy the pooled (detached) stickman pairs and circle containers — they
+   *     were `removeFromParent()`'d, so the container subtree below won't reach
+   *     them.
+   *  3. Destroy the container subtree (live sprites + their runtimes are children
+   *     of it). Shared spritesheet textures (cached per-url in StickmanRuntime)
+   *     are NOT destroyed — they're reused across battles.
+   */
+  destroy(): void {
+    for (const tick of this.effectTicks) PIXI.Ticker.shared.remove(tick);
+    this.effectTicks.clear();
+
+    for (const pool of this.stickmanPools.values()) {
+      for (const { wrapper } of pool) wrapper.destroy({ children: true });
+    }
+    this.stickmanPools.clear();
+    this.pool.drain((c) => c.destroy({ children: true }));
+
+    this.stickmanRuntimes.clear();
+    this.stickmanTypes.clear();
+    this.sprites.clear();
+    this.hpTimers.clear();
+    this.assets.clear();
+
+    this.container.destroy({ children: true });
   }
 }
