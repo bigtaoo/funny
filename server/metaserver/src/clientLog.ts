@@ -59,6 +59,51 @@ export function buildLokiPayload(
   return { streams };
 }
 
+// ── 客户端异常事件「全量」上报 → Loki（与上面的「日志定向采集」并列、互补，不受 allowPublicIds 约束）──
+//
+// 入 Loki 约定：label 仅 { source="client", kind="anomaly" }（低基数）；type/publicId/platform/detail/msg
+// 一律放**行内**（logfmt）。Grafana：`{source="client",kind="anomaly"} | logfmt | type="webgl_lost"`。
+
+/** 一条客户端异常事件（与客户端 net/anomaly.ts 的 AnomalyEvent 同形）。 */
+export interface ClientAnomalyEvent {
+  type: string; // mem | cpu | webgl_lost | anr | jserror | crash
+  msg: string;
+  ts: number; // epoch ms（客户端时钟）
+  detail?: string;
+}
+
+/** 允许入 Loki 的异常类型白名单（防客户端塞任意 type 撑高行内基数 / 误导查询）。 */
+const ALLOWED_ANOMALY_TYPES = new Set(['mem', 'cpu', 'webgl_lost', 'anr', 'jserror', 'crash']);
+
+/** 拼一行异常 logfmt：type/publicId 必带，platform/detail 可选，msg 末尾。 */
+function buildAnomalyLine(publicId: string, platform: string | undefined, e: ClientAnomalyEvent): string {
+  const type = ALLOWED_ANOMALY_TYPES.has(e.type) ? e.type : 'other';
+  const parts = [`type=${logfmtValue(type)}`, `publicId=${logfmtValue(publicId)}`];
+  if (platform) parts.push(`platform=${logfmtValue(platform)}`);
+  if (e.detail) parts.push(`detail=${logfmtValue(e.detail)}`);
+  parts.push(`msg=${logfmtValue(e.msg)}`);
+  return parts.join(' ');
+}
+
+/**
+ * 把一批客户端异常事件组装成 Loki push payload（单 stream，label={source,kind=anomaly}，低基数）。
+ * 返回 null = 无可发送条目（空）。
+ */
+export function buildAnomalyLokiPayload(
+  publicId: string,
+  events: ClientAnomalyEvent[],
+  platform: string | undefined,
+  fallbackNs: () => string,
+): { streams: { stream: Record<string, string>; values: [string, string][] }[] } | null {
+  const values: [string, string][] = [];
+  for (const e of events) {
+    const ns = Number.isFinite(e.ts) && e.ts > 0 ? (BigInt(Math.floor(e.ts)) * 1_000_000n).toString() : fallbackNs();
+    values.push([ns, buildAnomalyLine(publicId, platform, e)]);
+  }
+  if (values.length === 0) return null;
+  return { streams: [{ stream: { source: 'client', kind: 'anomaly' }, values }] };
+}
+
 /**
  * 转发到 Loki push API（fire-and-forget 语义；调用方不 await 结果亦可）。
  * 任何失败（url 为空 / 网络不可达 / 非 2xx）都吞掉——只在调试需要时经 onError 暴露。

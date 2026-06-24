@@ -238,6 +238,25 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 
 核心闭环 = 1–4（可端到端验证）；5/6 锦上添花可紧跟。验证只做 `tsc --noEmit` + webpack 构建。**全部已落地**（见 §8）。
 
+### 9.7 客户端异常事件「全量」上报通道（2026-06-24 · 已实现，见 §8）
+
+与 §9 的「日志定向采集」**并列、互补、反向**：定向采集只在被 `allowPublicIds` 点名的 publicId 上回捞日志；本通道相反——**任何**客户端遇到异常都**主动直报**，无需事先点名，专为「在全网定位野外异常」而设。
+
+- **上报的 6 类异常**（客户端 `net/anomaly.ts` 的 `AnomalyType`）：
+  - `mem` — JS 堆超阈值（`MemoryMonitor` 旁路喂入；与原有 `netLog('mem').warn` 入环形缓冲并行）。
+  - `cpu` — 主线程持续饱和（`PerfMonitor`，新增）：① `PerformanceObserver('longtask')` 长任务忙碌比 ≥ 0.5；② 持续低 FPS（连续 ≈10s < 30，用 `ticker.deltaMS` 估，微信亦可）。浏览器无直接 CPU API，主线程饱和是其可观测等价。
+  - `webgl_lost` — `webglcontextlost`（黑屏类故障关键信号）。
+  - `anr` — 主循环卡死：独立 wall-clock 看门狗，主线程冻结 >4s（恢复后据时间漂移反推；`document.hidden` 时不计，避免后台节流误报）。
+  - `jserror` — 未捕获异常 / Promise 拒绝（`log.ts` 经 `setErrorSink` 旁路）/ 微信 `wx.onError`。
+  - `crash` — **上次会话**异常退出（崩溃哨兵下次启动补报，见下）。
+- **崩溃捕获两路**（直答「客户端崩溃有机会上报吗」）：
+  - ① **离场 beacon**：`pagehide`/`visibilitychange→hidden` 用 `navigator.sendBeacon`（存活于页面卸载）抢发待发队列 + 最近 12 条面包屑——逮住「软崩溃 / 卡死后被关 / 报错后刷新」这类**有清理机会**的崩溃。
+  - ② **localStorage 会话哨兵**：真·硬崩溃（OOM / 渲染进程被杀 / 标签页被杀）当场无机会上报；改为启动写 `nw_session_sentinel` + 15s 心跳更新存活时刻、离场标记 `cleanExit`；**下次启动**若发现上次哨兵有标记却无 `cleanExit`，即判定崩溃，带「大约崩溃时刻 aliveMs + 最后一条错误」补报一条 `crash`。
+- **传输**：客户端 `POST /client/anomaly`（body `{ publicId?, platform, events:[{type,msg,ts,detail?}] }`）；正常 fetch（`keepalive`）+ 离场 sendBeacon 兜底。无 baseUrl / Loki 不可达 → 静默丢弃，绝不影响玩家。
+- **入 Loki 约定**：单 stream，**label 仅 `{source="client", kind="anomaly"}`**（低基数），`type/publicId/platform/detail/msg` 一律放**行内**（logfmt）。Grafana：`{source="client",kind="anomaly"} | logfmt | type="webgl_lost"`。
+- **防滥用四闸**：① 客户端每类冷却（mem/cpu 60s、anr 30s、jserror 10s 合一）② 单会话总量上限 50 ③ 单条 detail 截断 800 字符 ④ 服务端**按 IP 60s/30 次限流**（`SlidingRateLimiter`，超限静默丢弃）+ 最多取前 200 条 + 各字段截断。`POST /client/anomaly` **永远回 200**。
+- **与定向采集的关系**：`mem` 同时仍走 §9.4（被定向玩家可在 Loki 看到带完整池占用上下文的 warn 行）；本通道是「全网粗粒度异常计数 + 崩溃发现」，两者不冲突。
+
 ---
 
 ## 8. 实现记录
@@ -302,3 +321,24 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 - 验证：server 全 workspace typecheck 通过；metaserver 158 例 + shared 19 例 + matchsvc/gateway 单测通过；client tsc + webpack + 5 例 flag 单测通过；ops/admin tsc + ops build 通过。
 
 > F3 通道既已建起，后续客户端侧 flag（maintenance_mode kill switch / 新 UI 灰度）可直接复用 `FeatureFlags.isOn(key)`。
+
+### 2026-06-24 · 客户端异常事件「全量」上报通道（§9.7）
+
+「内存超标自动上报」之上扩出**全网异常监测**：新增 CPU/主线程饱和、WebGL 丢失、卡死、未捕获异常、上次崩溃五类信号，全量直报 Loki（不受定向白名单约束），用于定位野外客户端异常。
+
+**客户端**：
+- `net/anomaly.ts`（新）：`AnomalyReporter` 单例（冷却 + 会话上限 + detail 截断 + 合批 fetch + 离场 sendBeacon）；`reportAnomaly()` 统一入口；崩溃哨兵 `initCrashSentinel()`（启动检测上次异常退出并补报 + 心跳）+ `installAnomalyWatchers()`（错误旁路 / 离场 beacon / `webglcontextlost` / ANR 看门狗 / `wx.onError`）。
+- `cache/PerfMonitor.ts`（新）：挂 `app.ticker`，长任务忙碌比（`PerformanceObserver('longtask')`，Chromium）+ 持续低 FPS（处处可用）两路，越线报 `cpu`。阈值 localStorage 可调（`nw_fps_warn`/`nw_cpu_busy_warn`）。
+- `cache/MemoryMonitor.ts`：`dump()` 在原 `netLog('mem').warn` 之外**并行** `reportAnomaly('mem', ...)`（全网内存超标计数）。
+- `net/log.ts`：加 `recentClientLogs(n)`（崩溃面包屑 / 哨兵记最后错误）+ `setErrorSink`（未捕获异常旁路 → `jserror`，反向注入避免与 anomaly 成环）。
+- `app.ts`：`new PerfMonitor().install(app.ticker)` + `initCrashSentinel()` + `installAnomalyWatchers({ canvas: app.view })`。
+
+**metaserver**：
+- `clientLog.ts`：加 `ClientAnomalyEvent` + `buildAnomalyLokiPayload`（单 stream，label `{source=client, kind=anomaly}`，type/publicId/platform/detail/msg 入行内 logfmt）。
+- `service.ts`：`clientAnomaly`（`operationId`，**不受 allowPublicIds 约束**；按 IP 60s/30 次 `SlidingRateLimiter` 限流，超限静默 `accepted:0`；缺 publicId 记 `anon`；最多 200 条 + 各字段截断）。**永远回 200**。
+- `contracts/openapi.yml`：补 `POST /client/anomaly`（公开，`config` tag）。
+- 单测 `test/clientLog.test.ts` +6 例（payload 组装 + 未知 type→other + 全量转发不受定向约束 + anon + 400 + IP 限流）；route 装配经 `app.inject` 冒烟通过。
+
+**验证**：metaserver `tsc --noEmit` + client `tsc` + webpack web build 全通过；clientLog 13 例通过。
+
+**Grafana 待办**：可加「客户端异常」面板（`{source="client",kind="anomaly"} | logfmt`，按 `type` 分组速率 + crash 计数）；本次仅落地数据通道，面板后补。

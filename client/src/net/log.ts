@@ -63,6 +63,11 @@ export function snapshotClientLogs(thresholdRank: number, afterSeq: number): { e
   return { entries, lastSeq };
 }
 
+/** 取缓冲尾部最近 n 条（崩溃 / 离场 beacon 捎带「现场面包屑」、崩溃哨兵记最后一条错误用，不分级别）。 */
+export function recentClientLogs(n: number): ClientLogEntry[] {
+  return n <= 0 ? [] : ring.slice(-n);
+}
+
 function enabled(): boolean {
   try {
     return globalThis.localStorage?.getItem('nw_net_log') !== 'off';
@@ -113,6 +118,17 @@ export function showToastMessage(text: string): void {
 }
 
 /**
+ * 未捕获异常的旁路出口（net/anomaly 注入）：把 window 级未捕获错误 / Promise 拒绝同时喂给「全量异常上报」。
+ * 用 setter 注入而非直接 import，是为了不让 log.ts 反向依赖 anomaly（anomaly 依赖 log，避免环）。
+ */
+let errorSink: ((kind: 'uncaught' | 'unhandled', msg: string) => void) | null = null;
+
+/** 注册未捕获异常旁路出口（应用启动时调一次）。 */
+export function setErrorSink(fn: (kind: 'uncaught' | 'unhandled', msg: string) => void): void {
+  errorSink = fn;
+}
+
+/**
  * 安装全局未捕获异常 / Promise 拒绝处理器（应用启动时调一次）。
  * 之前未捕获错误只在 console 默认输出、且 unhandledrejection 常被忽略——这里统一加显眼前缀，
  * 确保「客户端输出所有的异常和错误」，并把漏网的 API / 网络错误归类后弹全局兜底 toast 提示玩家
@@ -128,12 +144,15 @@ export function installGlobalErrorHandlers(): void {
     console.error('[uncaught error]', ev.message, detail);
     // 入环形缓冲（定向采集）：未捕获错误是排障最关键的线索，务必能被远程捞到。
     recordClientLog('error', 'uncaught', `[uncaught error] ${ev.message}`, { source: ev.filename, line: ev.lineno, col: ev.colno });
+    errorSink?.('uncaught', `${ev.message} @ ${ev.filename}:${ev.lineno}`);
     const msg = uncaughtErrorMessage(ev.error ?? ev.message);
     if (msg) showToastMessage(msg);
   });
   g.addEventListener('unhandledrejection', (ev: PromiseRejectionEvent) => {
     console.error('[unhandled rejection]', ev.reason);
-    recordClientLog('error', 'unhandled', `[unhandled rejection] ${String((ev.reason as { message?: string })?.message ?? ev.reason)}`);
+    const reason = String((ev.reason as { message?: string })?.message ?? ev.reason);
+    recordClientLog('error', 'unhandled', `[unhandled rejection] ${reason}`);
+    errorSink?.('unhandled', reason);
     const msg = uncaughtErrorMessage(ev.reason);
     if (msg) showToastMessage(msg);
   });

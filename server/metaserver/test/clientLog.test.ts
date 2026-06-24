@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { FeatureFlagCache } from '@nw/shared';
-import { buildLokiPayload } from '../src/clientLog';
+import { buildLokiPayload, buildAnomalyLokiPayload } from '../src/clientLog';
 import { MetaService } from '../src/service';
 
 // ── buildLokiPayload（§9.4 入 Loki 约定）─────────────────────────────────────
@@ -35,6 +35,33 @@ describe('buildLokiPayload', () => {
     const p = buildLokiPayload('1', [{ level: 'bogus', msg: 'x', ts: 5 }], undefined, () => '0')!;
     expect(p.streams[0].stream.level).toBe('info');
     expect(buildLokiPayload('1', [], undefined, () => '0')).toBeNull();
+  });
+});
+
+// ── buildAnomalyLokiPayload（全量异常上报：单 stream、低基数 label，type/detail 入行内）──────────
+describe('buildAnomalyLokiPayload', () => {
+  it('单 stream label={source,kind=anomaly}；type/publicId/detail/msg 入行内（logfmt）', () => {
+    const p = buildAnomalyLokiPayload(
+      '123456789',
+      [{ type: 'webgl_lost', msg: 'context lost', ts: 1000, detail: '{"a":1}' }],
+      'web',
+      () => '0',
+    )!;
+    expect(p.streams).toHaveLength(1);
+    expect(p.streams[0].stream).toEqual({ source: 'client', kind: 'anomaly' });
+    expect(p.streams[0].values[0][0]).toBe('1000000000'); // ms→ns
+    const line = p.streams[0].values[0][1];
+    expect(line).toContain('type=webgl_lost');
+    expect(line).toContain('publicId=123456789');
+    expect(line).toContain('platform=web');
+    expect(line).toContain('detail=');
+    expect(line).toContain('msg="context lost"');
+  });
+
+  it('未知 type 归入 other；空入 → null', () => {
+    const p = buildAnomalyLokiPayload('1', [{ type: 'bogus', msg: 'x', ts: 5 }], undefined, () => '0')!;
+    expect(p.streams[0].values[0][1]).toContain('type=other');
+    expect(buildAnomalyLokiPayload('1', [], undefined, () => '0')).toBeNull();
   });
 });
 
@@ -135,5 +162,56 @@ describe('MetaService.clientLog（§9.4 定向守卫 + 转发）', () => {
     const rep = reply();
     await svc.clientLog(req({ body: { logs: [] } }), rep);
     expect(rep._code).toBe(400);
+  });
+});
+
+describe('MetaService.clientAnomaly（全量上报：不受定向白名单约束 + IP 限流）', () => {
+  const fetchMock = vi.fn(async () => ({ ok: true }) as Response);
+  beforeEach(() => { fetchMock.mockClear(); vi.stubGlobal('fetch', fetchMock); });
+  afterEach(() => vi.unstubAllGlobals());
+
+  function reply(): FastifyReply & { _code: number; _body: unknown } {
+    const r = { _code: 200, _body: undefined as unknown } as FastifyReply & { _code: number; _body: unknown };
+    r.code = ((c: number) => { r._code = c; return r; }) as never;
+    r.send = ((b: unknown) => { r._body = b; return r; }) as never;
+    return r;
+  }
+
+  it('无 flag 源 / 未定向也转发 Loki（全量），accepted=条数', async () => {
+    const svc = makeService(null, 'http://loki/push'); // 无 flag 源 = 任何 publicId 都不被定向
+    const out = (await svc.clientAnomaly(
+      req({ body: { publicId: '999', platform: 'web', events: [{ type: 'mem', msg: 'over', ts: 1 }] } }),
+      reply(),
+    )) as { data: { accepted: number } };
+    expect(out.data.accepted).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('http://loki/push');
+  });
+
+  it('缺 publicId → 仍接受（记为 anon）', async () => {
+    const svc = makeService(null, 'http://loki/push');
+    const out = (await svc.clientAnomaly(
+      req({ body: { events: [{ type: 'crash', msg: 'prev crash', ts: 1 }] } }),
+      reply(),
+    )) as { data: { accepted: number } };
+    expect(out.data.accepted).toBe(1);
+    expect(fetchMock.mock.calls[0][1]).toBeDefined();
+  });
+
+  it('缺 events → 400', async () => {
+    const svc = makeService(null, 'http://loki/push');
+    const rep = reply();
+    await svc.clientAnomaly(req({ body: {} }), rep);
+    expect(rep._code).toBe(400);
+  });
+
+  it('同 IP 超过 30 次/60s → 静默丢弃（accepted 0、不再转发）', async () => {
+    const svc = makeService(null, 'http://loki/push'); // now 恒 1000 → 同窗口内累计
+    const body = { body: { publicId: '1', events: [{ type: 'anr', msg: 'stall', ts: 1 }] } };
+    for (let i = 0; i < 30; i++) await svc.clientAnomaly(req(body), reply());
+    expect(fetchMock).toHaveBeenCalledTimes(30);
+    const over = (await svc.clientAnomaly(req(body), reply())) as { data: { accepted: number } };
+    expect(over.data.accepted).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(30); // 第 31 次未转发
   });
 });
