@@ -80,12 +80,32 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 
 | 项目 | 构建命令 | 产物 | 状态 |
 |---|---|---|---|
-| client（主游戏 web 包） | `npm run build:web`（按实际脚本） | `client/dist` | 待做 |
+| client（主游戏 web 包） | `npm run build:web` | `client/dist` | ✅ 已配置 → `a.gamestao.com`（Worker `nivara-client`，等首次 `wrangler login` 后 deploy） |
 | animator | — | — | ✅ 已上线 |
 | level-editor | — | — | 暂缓（不急） |
 | ops | — | — | 待做 |
 
 前端构建时需把 API/WS base 指到 `api.gamestao.com`（client 入口里地址烘焙，参考 animator 的部署方式）。
+
+### client 部署（Cloudflare Workers static assets，对外 `a.gamestao.com`）
+
+与 animator 同模式，但**各一份 wrangler 配置、各一个 Worker**，互不影响：
+
+- animator → 仓库根 `wrangler.jsonc`（Worker `animator`）
+- client → 仓库根 `wrangler.client.jsonc`（Worker `nivara-client`，`routes.custom_domain=true` 自动建 DNS+边缘证书，橙云）
+
+```bash
+# 1. 构建（地址烘焙到 api.gamestao.com）
+cd client && NW_API_BASE=https://api.gamestao.com/api \
+  NW_GATEWAY_WS=wss://api.gamestao.com/gw \
+  NW_WORLD_BASE=https://api.gamestao.com npm run build:web
+# 2. 部署（从仓库根，-c 指定 client 的配置）
+cd .. && npx wrangler deploy -c wrangler.client.jsonc
+```
+
+> **首次需登录 CF**：`npx wrangler login`（浏览器 OAuth，写本机凭证）后再 deploy；或设 `CLOUDFLARE_API_TOKEN` 环境变量走非交互。
+> `a.gamestao.com` 是**单层子域**，被免费 `*.gamestao.com` 通配证书覆盖（别用多层 `a.b.gamestao.com`）。
+> 数据面 WS（`/ws`）走 `match_found.game_url` 下发，缺省由 API base 自动推导 `/api`→`/ws`，前端无需单独配。
 
 **client web 包的地址烘焙（确切变量）**：`client/webpack.config.js` 用 DefinePlugin 注入，读三个构建期环境变量（生产默认空串 = 同源相对路径）：
 
@@ -123,6 +143,28 @@ CrazyGames 限制只在前端（禁站外支付/外链），账号层与 web 共
 **机器选型**：Hetzner Cloud **CX22**（2vCPU/4G/40G，~€4.5/月）+ 勾 Primary IPv4（~€0.6/月）；Location 选 Nuremberg/Falkenstein；Image 选 Ubuntu 24.04。库用 Atlas **M0 免费**集群（区域 AWS Frankfurt `eu-central-1`，与 VPS 同城）。
 
 8 个进程**共用一个镜像** `nw-server:latest`（只构建一次），2 核机扛得住；构建偶尔吃内存，挂 2G swap 保险。
+
+### Hetzner 计费速读（别被「两个价格」吓到，不会无故烧钱）
+
+控制台服务器卡片上的 **USAGE** 和 **PRICE** 不是两个价格，是两件事：
+
+| 字段 | 含义 |
+|---|---|
+| **USAGE**（如 €0.00） | 本计费周期(本月)**已实际产生**的费用；悬浮拆为 Traffic + Backup + Server 三项。新机刚开所以是 0，月底会涨到接近 PRICE。 |
+| **PRICE**（如 €6.53/mo） | 这台机型的**月租封顶价**。按小时计，跑满整月最多收这么多。 |
+
+一句话:左=已花,右=满月最多花,二者月底趋于一致。
+
+**为什么基本不会突然烧很多钱**：
+- **服务器费固定封顶**：不管 CPU/内存跑多满，CX23 服务器项就是固定 €6.53/月，**不存在按算力浮动暴涨**。
+- **流量额度极大**：每月含 **20 TB 出站**（卡片 `TRAFFIC OUT: 0/20 TB`），超出才 €1/TB（欧洲区）；回合制小游戏后端正常一辈子用不到。**入站流量全免费**。
+- **备份默认关闭**：Backup 是付费可选项（约 +20% 月租），不主动在 Backups 标签开就永远 €0。
+- **无按请求/调用的隐藏计费**：模型只有「固定月租 + 超额流量」，很简单。
+
+**唯一会加钱的动作都要你主动点**（不会自动发生）：开 Backups / 加 Volumes / 加 Floating IP / Rescale 升配。
+**重要**：仅关机(Power off)**仍按机器存在收费**，要彻底停止计费必须 **Delete**。
+顶栏 "Important status messages / Outage: N" 是 Hetzner 全网状态公告，**与你的账单无关**。
+> 心智模型：只要不开备份、不加卷、不加 IP、不升配，这台机器每月就是固定 ~€6.53 封顶，无意外。
 
 ### Hetzner 账号注册（首次，德国境内最顺）
 

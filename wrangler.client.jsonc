@@ -1,0 +1,23 @@
+{
+  // 主游戏 client（web 包）的静态托管（Cloudflare Workers static assets），对外 a.gamestao.com。
+  // 与 animator 各一份 wrangler 配置、各一个 Worker，互不影响。
+  //
+  // 构建（地址烘焙到 api.gamestao.com）：
+  //   cd client && NW_API_BASE=https://api.gamestao.com/api \
+  //     NW_GATEWAY_WS=wss://api.gamestao.com/gw \
+  //     NW_WORLD_BASE=https://api.gamestao.com npm run build:web
+  // 部署（从仓库根读本文件，把 client/dist 作为静态资源发布，无 Worker 脚本）：
+  //   npx wrangler deploy -c wrangler.client.jsonc
+  //
+  // routes.custom_domain=true 会自动建 DNS + 边缘证书（橙云代理）。
+  // 设计：design/product/deploy-cloudflare.md §6
+  "name": "nivara-client",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    "directory": "./client/dist",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    { "pattern": "a.gamestao.com", "custom_domain": true }
+  ]
+}
