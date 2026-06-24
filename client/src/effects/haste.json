@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "haste",
+  "duration": 0.5,
+  "loop": true,
+  "defaultColor": "0x3366cc",
+  "layers": [
+    {
+      "type": "polyline",
+      "points": [[-22, -8], [-6, -8]],
+      "boil": { "variants": 3, "fps": 12 },
+      "params": {
+        "lineWidth": 2,
+        "boilAmp": 1,
+        "translateX": [{ "t": 0, "v": 8 }, { "t": 1, "v": -12 }],
+        "alpha": [{ "t": 0, "v": 0 }, { "t": 0.3, "v": 0.9 }, { "t": 1, "v": 0 }]
+      }
+    },
+    {
+      "type": "polyline",
+      "points": [[-24, 0], [-4, 0]],
+      "boil": { "variants": 3, "fps": 12 },
+      "params": {
+        "lineWidth": 2.5,
+        "boilAmp": 1,
+        "translateX": [{ "t": 0, "v": 12 }, { "t": 1, "v": -14 }],
+        "alpha": [{ "t": 0, "v": 0.2 }, { "t": 0.4, "v": 1 }, { "t": 1, "v": 0 }]
+      }
+    },
+    {
+      "type": "polyline",
+      "points": [[-22, 8], [-6, 8]],
+      "boil": { "variants": 3, "fps": 12 },
+      "params": {
+        "lineWidth": 2,
+        "boilAmp": 1,
+        "translateX": [{ "t": 0, "v": 6 }, { "t": 1, "v": -10 }],
+        "alpha": [{ "t": 0, "v": 0 }, { "t": 0.35, "v": 0.85 }, { "t": 1, "v": 0 }]
+      }
+    }
+  ]
+}

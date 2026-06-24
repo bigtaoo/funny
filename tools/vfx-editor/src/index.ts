@@ -187,7 +187,8 @@ function frame(now: number): void {
   const dt = now - last;
   last = now;
   playback.advance(dt);
-  preview.render(model.effect, playback.t, palette.color, previewSeed);
+  // now/1000 is a free-running clock so boil variants cycle even while paused/scrubbing.
+  preview.render(model.effect, playback.t, palette.color, previewSeed, now / 1000);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

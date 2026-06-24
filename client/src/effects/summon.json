@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "summon",
+  "duration": 0.35,
+  "loop": false,
+  "defaultColor": "0x222222",
+  "layers": [
+    {
+      "type": "ring",
+      "params": {
+        "radius": { "from": 0, "to": 24, "ease": "easeOut" },
+        "alpha": { "from": 1, "to": 0, "ease": "easeOut" },
+        "lineWidth": 2
+      }
+    },
+    {
+      "type": "spokes",
+      "count": 5,
+      "boil": { "variants": 3, "fps": 12 },
+      "params": {
+        "innerR": { "from": 0, "to": 6, "ease": "easeOut" },
+        "outerR": { "from": 0, "to": 28, "ease": "easeOut" },
+        "alpha": { "from": 1, "to": 0 },
+        "lineWidth": 2,
+        "boilAmp": 1.2
+      }
+    },
+    {
+      "type": "dots",
+      "count": 5,
+      "params": {
+        "spreadR": { "from": 8, "to": 26, "ease": "easeOut" },
+        "dotSize": { "from": 3, "to": 0 },
+        "alpha": { "from": 1, "to": 0 },
+        "jitter": 3
+      }
+    }
+  ]
+}

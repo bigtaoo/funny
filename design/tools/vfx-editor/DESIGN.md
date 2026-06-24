@@ -315,7 +315,7 @@ emitter 参数草案（占位，未冻结）：`texture, rate, lifetime{from,to}
 **分期**
 - ✅ P1：游戏侧 `vfx/` 核心（types/interpret/sampleParam/primitives/parseEffectDef）+ 现有 4 特效迁 JSON + `VFXSystem` 接解释器（**纯运行时重构，已落地**，§15）。
 - ✅ P2：编辑器脚手架（端口 9094）+ 预览 + **特效列表面板** + 图层/参数面板 + **颜色盘** + JSON 往返 + 自动保存（**已落地**，§15）。
-- P3：补齐法术/Trait 特效（§5）+ boil/种子随机图元能力打磨。
+- ✅ P3：补齐法术/Trait 特效（§5，8 个新特效 JSON）+ boil 烘焙轮播图元能力（解释器/全图元接 boil + 编辑器预览轮播）（**已落地**，§15）。
 
 **已决问题**
 
@@ -398,3 +398,23 @@ _2026-06-24（补全施工细节）：_
 
 **未做（后续）**：boil 烘焙轮播预览（数据已可编辑，渲染轮播待 P3）；法术/Trait 新特效素材（P3，§5）；导出→仓库的自动同步桥（沿用手动放盘，§8）。
 **验收备忘**：`tsc --noEmit` 干净、`webpack --mode production` 构建成功（仅 bundle 体积警告，PIXI 工具正常）；预览目视回归按项目约定不截图，留待手动 `npm run start`。
+
+### P3 — boil 烘焙轮播 + 法术/Trait 新特效素材（2026-06-24，已完成，`tsc --noEmit` ×2 + 16 单测 + webpack 生产构建通过）
+
+落实 §14 分期 P3：把 `BoilSpec`（P1 起仅声明、未消费）接入解释器与全部图元，并按 §5 映射表补齐 8 个法术/Trait 特效 JSON。
+
+**boil 烘焙轮播（§6 兑现）**
+- `interpret(layers, t, gfx, color, baseSeed, boilTime)` 新增第 6 参 `boilTime`（墙钟秒）。带 `boil` 的图层按 `floor(boilTime*fps) % variants` 选当前变体，并把变体折进种子（`seed ^ imul(variant+1, 0x9e3779b1)`）——于是抖动图样**每 1/fps 跳变一次、帧内恒定**，正是手抖沸腾节奏（非逐帧噪点）。`variant` 用 `boilTime`（非进度 `t`）驱动，故 loop 特效与暂停 scrub 时也照常沸腾。
+- `primitives.ts`：新增 `boilAmp(layer,t)`（仅当层带 `boil` 时取 `boilAmp` 参，默认 1.5px）与 `wob(prng,amp)`（种子化 ±amp 偏移，amp≤0 时不抽 prng）。全部图元接 boil：`ring`/`arc` 带 boil 时改画**分段抖动多边形/弧线**（`strokeBoilCircle`/`strokeBoilArc`，段数随半径/弧长，圆首尾复用首段半径精确闭合）；`spokes`/`burst`/`polyline`/`dots` 对每个顶点加 `wob`。**无 boil 时 amp=0、走原 `drawCircle`/精确顶点路径——现有 4 特效逐像素不变（向后兼容）**。
+- `VFXSystem.update` 传 `inst.elapsed` 作 `boilTime`；编辑器 `PreviewRenderer.render(..., boilTime)` + rAF 传 `now/1000`（自由钟，暂停/scrub 仍轮播）。
+- 编辑器 `paramHints`：各 boil 适配图元补 `boilAmp` 提示项（默认 1.5），ParamPanel「+ 参数」下拉可见。
+
+**8 个新特效 JSON（`client/src/effects/`，经 `parseEffectDef` 入 registry）**
+- 一次性：`meteor`（下坠拖影 polyline→延时砸地 ring+spokes+debris dots，关键帧延时触发）、`rockslide`（多石块 polyline 沿列 translateX 错位 + translateY 下落 + 落地 dust dots）、`bridge_collapse`（桥面裂纹 polyline scale 扩展 + 坠块 dots）、`summon`（spawn 外爆变体：ring+spokes+sparkle dots）。
+- 循环（调用方持句柄 `stop()`）：`haste`（3 条速度线 polyline 横扫，漫画母语）、`aura_heal`（脉动 ring + 十字 polyline 上浮，绿；替代原拟声词 §3.4）、`slow`（下垂 arc 括号 + 沉重 V 标记下沉，慢 boil fps6）、`shield`（前后两道 arc 护盾括号 + 微光 ring，蓝）。
+- 多数线条层带 `boil` 展示沸腾；颜色用 `defaultColor` 占位（运行时由调用方按阵营传色 §3.8）。
+- 单测加 `parseEffectDef` boil 保留/类型校验 + registry 12 特效 id 全集与 loop 标志回归（共 16 例）。
+
+**未做（后续）**：8 个新特效尚未接入游戏战斗渲染层（`SpellSystem`/`TraitSystem` 当前不出特效，本期只产「素材」备用，待法术演出层开工时 `vfx.play(id,...)` 接入）；位图粒子 `emitter`（§13 扩展位，仍 no-op）。
+**验收备忘**：client `tsc --noEmit` + 16 vitest 通过；vfx-editor `tsc --noEmit` + `webpack --mode production` 通过（仅 PIXI bundle 体积警告）；boil 轮播 / 新特效观感目视回归按项目约定不截图，留待手动 `npm run start`（编辑器）或游戏内播放。
+> 工程备注：worktree 无 node_modules，本次 junction 主目录 `client`/`server`/根 node_modules 跑 client 校验，`tools/vfx-editor` 内 `npm install` 后跑工具校验（均 gitignore，不入提交）。

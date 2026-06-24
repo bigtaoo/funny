@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "shield",
+  "duration": 1.0,
+  "loop": true,
+  "defaultColor": "0x3366cc",
+  "layers": [
+    {
+      "type": "arc",
+      "boil": { "variants": 3, "fps": 8 },
+      "params": {
+        "radius": 20,
+        "startAngle": -0.8,
+        "sweep": 1.6,
+        "lineWidth": 3,
+        "boilAmp": 1.5,
+        "alpha": [{ "t": 0, "v": 0.35 }, { "t": 0.5, "v": 0.7 }, { "t": 1, "v": 0.35 }]
+      }
+    },
+    {
+      "type": "arc",
+      "boil": { "variants": 3, "fps": 8 },
+      "params": {
+        "radius": 20,
+        "startAngle": 2.34,
+        "sweep": 1.6,
+        "lineWidth": 3,
+        "boilAmp": 1.5,
+        "alpha": [{ "t": 0, "v": 0.35 }, { "t": 0.5, "v": 0.7 }, { "t": 1, "v": 0.35 }]
+      }
+    },
+    {
+      "type": "ring",
+      "boil": { "variants": 3, "fps": 8 },
+      "params": {
+        "radius": [{ "t": 0, "v": 22 }, { "t": 0.5, "v": 24 }, { "t": 1, "v": 22 }],
+        "alpha": [{ "t": 0, "v": 0.1 }, { "t": 0.5, "v": 0.3 }, { "t": 1, "v": 0.1 }],
+        "lineWidth": 1.5,
+        "boilAmp": 1.2
+      }
+    }
+  ]
+}
