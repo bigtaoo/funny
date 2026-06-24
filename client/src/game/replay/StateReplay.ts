@@ -315,27 +315,90 @@ export function encodeStateReplay(full: StateReplay): EncodedStateReplay {
 }
 
 /**
- * delta 编码 → 满帧序列（哑播放器消费）。维护运行态映射，逐帧 upsert/移除/承前，
- * 产出按 id 排序的满帧，保证与编码前逐帧深等（round-trip）。
+ * delta 编码 → 满帧序列（哑播放器消费）。
+ *
+ * ⚠️ 关键：关键帧抽稀后，单个单位只在自己的拐点/状态切换处落帧，而全局 delta 帧因多单位叠加是**密集**的
+ * —— 某单位在它两个关键帧之间的那些（属于别的单位的）帧上**没有数据**。若像旧版那样「承前」（保留上个
+ * 关键帧值不动），该单位会原地静止、到下一关键帧帧突跳，多单位下表现为满场瞬移（实测位置误差达数格）。
+ * 故解码必须按**每个单位自身的相邻关键帧**对位置线性插值（与 {@link StatePlayerScene} 的 tick 插值模型
+ * 一致），跨越中间那些无关帧。静态字段（type/side/hp/maxHp/state）在关键帧处离散切换、其间承前。
+ *
+ * 产出仍是每个 delta 帧 tick 一帧满状态；播放器再在相邻帧间按墙钟细插值（分段线性，精确）。
  */
 export function decodeStateReplay(enc: EncodedStateReplay): StateReplay {
-  const units = new Map<number, StateUnit>();
-  const buildings = new Map<number, StateBuilding>();
+  const dframes = enc.frames;
+  if (dframes.length === 0) return { header: enc.header, frames: [] };
+
+  // ── pass 1：聚出每个实体的关键帧轨道（tick 升序）+ 移除 tick；基地时间线。
+  const unitKf = new Map<number, { tick: number; u: StateUnit }[]>();
+  const unitRemoveAt = new Map<number, number>();
+  const buildingKf = new Map<number, { tick: number; b: StateBuilding }[]>();
+  const buildingRemoveAt = new Map<number, number>();
+  const baseTimeline: { tick: number; bases: StateBase[] }[] = [];
+  for (const df of dframes) {
+    if (df.u) for (const u of df.u) {
+      let arr = unitKf.get(u.id);
+      if (!arr) unitKf.set(u.id, (arr = []));
+      arr.push({ tick: df.tick, u });
+    }
+    if (df.ru) for (const id of df.ru) unitRemoveAt.set(id, df.tick);
+    if (df.b) for (const b of df.b) {
+      let arr = buildingKf.get(b.id);
+      if (!arr) buildingKf.set(b.id, (arr = []));
+      arr.push({ tick: df.tick, b });
+    }
+    if (df.rb) for (const id of df.rb) buildingRemoveAt.set(id, df.tick);
+    if (df.bs) baseTimeline.push({ tick: df.tick, bases: df.bs });
+  }
+
+  // ── pass 2：逐 delta 帧 tick 重建满状态。tick 单调递增，用每实体游标顺序推进。
+  const unitPtr = new Map<number, number>();
+  const buildingPtr = new Map<number, number>();
+  let basePtr = -1;
   let bases: StateBase[] = [];
 
-  const frames: StateFrame[] = enc.frames.map((df) => {
-    if (df.u) for (const u of df.u) units.set(u.id, u);
-    if (df.ru) for (const id of df.ru) units.delete(id);
-    if (df.b) for (const b of df.b) buildings.set(b.id, b);
-    if (df.rb) for (const id of df.rb) buildings.delete(id);
-    if (df.bs) bases = df.bs;
+  const frames: StateFrame[] = dframes.map((df) => {
+    const T = df.tick;
 
-    return {
-      tick: df.tick,
-      units: [...units.values()].sort((a, b) => a.id - b.id),
-      buildings: [...buildings.values()].sort((a, b) => a.id - b.id),
-      bases: bases.map((b) => ({ ...b })),
-    };
+    // 基地：阶梯承前（取最后一个 tick ≤ T 的全量）。
+    while (basePtr + 1 < baseTimeline.length && baseTimeline[basePtr + 1]!.tick <= T) {
+      basePtr++;
+      bases = baseTimeline[basePtr]!.bases;
+    }
+
+    const units: StateUnit[] = [];
+    for (const [id, kf] of unitKf) {
+      if (kf[0]!.tick > T) continue; // 尚未出生
+      const removeAt = unitRemoveAt.get(id);
+      if (removeAt !== undefined && T >= removeAt) continue; // 已移除
+      let p = unitPtr.get(id) ?? 0;
+      while (p + 1 < kf.length && kf[p + 1]!.tick <= T) p++;
+      unitPtr.set(id, p);
+      const a = kf[p]!;
+      const b = p + 1 < kf.length ? kf[p + 1]! : null;
+      if (!b) {
+        units.push({ ...a.u });
+      } else {
+        // 位置按 tick 在自身相邻关键帧 a→b 间线性插值；静态字段取 a（关键帧处才切换）。
+        const frac = (T - a.tick) / (b.tick - a.tick);
+        units.push({ ...a.u, col: a.u.col + (b.u.col - a.u.col) * frac, row: a.u.row + (b.u.row - a.u.row) * frac });
+      }
+    }
+    units.sort((x, y) => x.id - y.id);
+
+    const buildings: StateBuilding[] = [];
+    for (const [id, kf] of buildingKf) {
+      if (kf[0]!.tick > T) continue;
+      const removeAt = buildingRemoveAt.get(id);
+      if (removeAt !== undefined && T >= removeAt) continue;
+      let p = buildingPtr.get(id) ?? 0;
+      while (p + 1 < kf.length && kf[p + 1]!.tick <= T) p++;
+      buildingPtr.set(id, p);
+      buildings.push({ ...kf[p]!.b }); // 建筑不移动：承前即可
+    }
+    buildings.sort((x, y) => x.id - y.id);
+
+    return { tick: T, units, buildings, bases: bases.map((x) => ({ ...x })) };
   });
 
   return { header: enc.header, frames };
