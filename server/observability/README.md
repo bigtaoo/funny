@@ -83,18 +83,19 @@ cp .env.example .env
 # 填 GF_ADMIN_PASSWORD=$(openssl rand -hex 16)；CF_TUNNEL_TOKEN 在 Step 3 拿到后回填
 ```
 
-**Step 2 — 起观测栈**（在 `server/` 目录下）：
+**Step 2 — 起观测栈**（在 `server/` 目录下；默认不含 cloudflared，零停机即可看日志）：
 ```bash
 cd /root/funny/server
 docker compose -f observability/docker-compose.obs.yml --env-file observability/.env up -d
+# 此时 loki/alloy/grafana 已起。先 SSH 隧道看：ssh -L 3000:localhost:3000 → http://localhost:3000
 ```
 
 **Step 3 — Cloudflare Tunnel + Access**（控制台，约 5 分钟，同 ops 的「走 Cloudflare」选择）：
 1. dash.cloudflare.com → **Zero Trust → Networks → Tunnels → Create a tunnel**（Cloudflared 类型）。
    命名如 `nivara-grafana` → **复制 Tunnel token**（`eyJ...` 长串）填进 `observability/.env` 的
-   `CF_TUNNEL_TOKEN`，然后重起 cloudflared：
+   `CF_TUNNEL_TOKEN`，然后带起隧道（`--profile tunnel` 才启用 cloudflared）：
    ```bash
-   docker compose -f observability/docker-compose.obs.yml --env-file observability/.env up -d cloudflared
+   docker compose -f observability/docker-compose.obs.yml --env-file observability/.env --profile tunnel up -d
    ```
 2. 同隧道页 **Public Hostnames → Add**：subdomain `grafana`、domain `gamestao.com`、
    Service `HTTP` → `grafana:3000`（cloudflared 与 grafana 同 compose 网络，按服务名解析）。

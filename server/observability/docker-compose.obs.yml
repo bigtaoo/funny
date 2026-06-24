@@ -63,13 +63,17 @@ services:
   # 出站隧道（同 ops 的「走 Cloudflare」选择，但用 Tunnel 而非 Worker 反代——更适合整站 Web 应用）。
   # 令牌式（remote-managed）隧道：hostname→service 映射在 CF Zero Trust 控制台配（grafana.gamestao.com
   # → http://grafana:3000）；本容器只需令牌。CF Access 罩该域名当登录墙（第一层），Grafana 账号是第二层。
-  # 不配 CF_TUNNEL_TOKEN 时整个 obs 栈仍可起（Grafana 走本机 127.0.0.1:3000 + SSH 隧道访问）。
+  #
+  # 放在 profile "tunnel" 下：默认 `up -d` 只起 loki/alloy/grafana（无需 token，可先 SSH 隧道看日志）；
+  # 拿到 CF token 回填 .env 后再 `--profile tunnel up -d` 把隧道带起来。
   cloudflared:
     image: cloudflare/cloudflared:2025.2.1
     container_name: nw-cloudflared
+    profiles: ["tunnel"]
     command: ["tunnel", "--no-autoupdate", "run"]
     environment:
-      TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN:?set CF_TUNNEL_TOKEN in observability/.env (or comment out this service for SSH-only access)}
+      # 空令牌时 cloudflared 会自行报错退出（仅当 --profile tunnel 启用本服务时才会触发）。
+      TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN:-}
     depends_on:
       - grafana
     mem_limit: 128m
