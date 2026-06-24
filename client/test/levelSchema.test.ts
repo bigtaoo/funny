@@ -45,8 +45,8 @@ describe('parseLevelDefinition', () => {
 
   it('expands authored seconds to the exact ticks the old TS produced', () => {
     const lv1 = CAMPAIGN_LEVELS['ch1_lv1']!;
-    // First entry was s(2) = round(2 × 30) = 60.
-    expect(lv1.waves.entries[0]!.atTick).toBe(60);
+    // First entry is s(4) = round(4 × 30) = 120 (softened opener, balance 0233a645).
+    expect(lv1.waves.entries[0]!.atTick).toBe(120);
     expect(lv1.waves.entries[0]!.unitType).toBe(UnitType.Max); // Anna-side vanguard
     expect(lv1.waves.entries[0]!.spacingTicks).toBe(24); // s(0.8)
 
