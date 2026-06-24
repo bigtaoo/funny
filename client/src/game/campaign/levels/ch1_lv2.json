@@ -7,8 +7,8 @@
     "durationTicks": 1650
   },
   "enemyScale": {
-    "hp": 1.07,
-    "damage": 1.05
+    "hp": 1,
+    "damage": 1
   },
   "loadout": [
     "infantry_1",
@@ -24,115 +24,115 @@
     "haste_1",
     "meteor_1"
   ],
-  "startInk": 8,
+  "startInk": 24,
   "waves": {
     "entries": [
       {
-        "atTick": 30,
+        "atTick": 120,
         "unitType": "max",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 24
       },
       {
-        "atTick": 30,
+        "atTick": 120,
         "unitType": "max",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 24
       },
       {
-        "atTick": 300,
+        "atTick": 390,
         "unitType": "lena",
         "col": 4,
         "count": 1
       },
       {
-        "atTick": 300,
+        "atTick": 390,
         "unitType": "lena",
         "col": 7,
         "count": 1
       },
       {
-        "atTick": 360,
+        "atTick": 450,
         "unitType": "mara",
         "col": 4,
         "count": 2,
         "spacingTicks": 45
       },
       {
-        "atTick": 360,
+        "atTick": 450,
         "unitType": "mara",
         "col": 7,
         "count": 2,
         "spacingTicks": 45
       },
       {
-        "atTick": 720,
+        "atTick": 810,
         "unitType": "max",
         "col": 1,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 10
       },
       {
-        "atTick": 720,
+        "atTick": 810,
         "unitType": "max",
         "col": 10,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 10
       },
       {
-        "atTick": 1020,
+        "atTick": 1110,
         "unitType": "lena",
         "col": 3,
         "count": 1
       },
       {
-        "atTick": 1020,
+        "atTick": 1110,
         "unitType": "lena",
         "col": 8,
         "count": 1
       },
       {
-        "atTick": 1080,
+        "atTick": 1170,
         "unitType": "mara",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 40
       },
       {
-        "atTick": 1080,
+        "atTick": 1170,
         "unitType": "mara",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 40
       },
       {
-        "atTick": 1350,
+        "atTick": 1440,
         "unitType": "max",
         "col": 2,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 15
       },
       {
-        "atTick": 1350,
+        "atTick": 1440,
         "unitType": "max",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 15
       },
       {
-        "atTick": 1350,
+        "atTick": 1440,
         "unitType": "max",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 15
       },
       {
-        "atTick": 1350,
+        "atTick": 1440,
         "unitType": "max",
         "col": 9,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 15
       }
     ]
@@ -150,5 +150,6 @@
     }
   },
   "nameKey": "campaign.ch1.lv2.name",
-  "briefKey": "campaign.ch1.lv2.brief"
+  "briefKey": "campaign.ch1.lv2.brief",
+  "inkRegenMult": 1.3
 }

@@ -7,8 +7,8 @@
     "durationTicks": 2400
   },
   "enemyScale": {
-    "hp": 1.56,
-    "damage": 1.4
+    "hp": 1.12,
+    "damage": 1.09
   },
   "loadout": [
     "infantry_1",
@@ -27,255 +27,255 @@
   "waves": {
     "entries": [
       {
-        "atTick": 30,
+        "atTick": 120,
         "unitType": "max",
         "col": 0,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 8
       },
       {
-        "atTick": 30,
+        "atTick": 120,
         "unitType": "max",
         "col": 11,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 8
       },
       {
-        "atTick": 180,
+        "atTick": 270,
         "unitType": "max",
         "col": 3,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 15
       },
       {
-        "atTick": 180,
+        "atTick": 270,
         "unitType": "max",
         "col": 8,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 15
       },
       {
-        "atTick": 360,
+        "atTick": 450,
         "unitType": "lena",
         "col": 1,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 20
       },
       {
-        "atTick": 360,
+        "atTick": 450,
         "unitType": "lena",
         "col": 10,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 20
       },
       {
-        "atTick": 360,
+        "atTick": 450,
         "unitType": "max",
         "col": 4,
-        "count": 4,
+        "count": 1,
         "spacingTicks": 7
       },
       {
-        "atTick": 360,
+        "atTick": 450,
         "unitType": "max",
         "col": 7,
-        "count": 4,
+        "count": 1,
         "spacingTicks": 7
       },
       {
-        "atTick": 600,
+        "atTick": 690,
         "unitType": "lena",
         "col": 2,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 600,
+        "atTick": 690,
         "unitType": "lena",
         "col": 9,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 600,
+        "atTick": 690,
         "unitType": "max",
         "col": 4,
-        "count": 4,
+        "count": 1,
         "spacingTicks": 12
       },
       {
-        "atTick": 600,
+        "atTick": 690,
         "unitType": "max",
         "col": 7,
-        "count": 4,
+        "count": 1,
         "spacingTicks": 12
       },
       {
-        "atTick": 840,
+        "atTick": 930,
         "unitType": "max",
         "col": 0,
-        "count": 5,
+        "count": 2,
         "spacingTicks": 6
       },
       {
-        "atTick": 840,
+        "atTick": 930,
         "unitType": "max",
         "col": 11,
-        "count": 5,
+        "count": 2,
         "spacingTicks": 6
       },
       {
-        "atTick": 840,
+        "atTick": 930,
         "unitType": "lena",
         "col": 3,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 18
       },
       {
-        "atTick": 840,
+        "atTick": 930,
         "unitType": "lena",
         "col": 8,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 18
       },
       {
-        "atTick": 1080,
+        "atTick": 1170,
         "unitType": "lena",
         "col": 4,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 35
       },
       {
-        "atTick": 1080,
+        "atTick": 1170,
         "unitType": "lena",
         "col": 7,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 35
       },
       {
-        "atTick": 1080,
+        "atTick": 1170,
         "unitType": "max",
         "col": 1,
-        "count": 5,
+        "count": 2,
         "spacingTicks": 6
       },
       {
-        "atTick": 1080,
+        "atTick": 1170,
         "unitType": "max",
         "col": 10,
-        "count": 5,
+        "count": 2,
         "spacingTicks": 6
       },
       {
-        "atTick": 1320,
+        "atTick": 1410,
         "unitType": "lena",
         "col": 0,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 35
       },
       {
-        "atTick": 1320,
+        "atTick": 1410,
         "unitType": "lena",
         "col": 11,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 35
       },
       {
-        "atTick": 1320,
+        "atTick": 1410,
         "unitType": "lena",
         "col": 2,
-        "count": 4,
+        "count": 1,
         "spacingTicks": 15
       },
       {
-        "atTick": 1320,
+        "atTick": 1410,
         "unitType": "lena",
         "col": 9,
-        "count": 4,
+        "count": 1,
         "spacingTicks": 15
       },
       {
-        "atTick": 1320,
+        "atTick": 1410,
         "unitType": "max",
         "col": 4,
-        "count": 5,
+        "count": 2,
         "spacingTicks": 6
       },
       {
-        "atTick": 1320,
+        "atTick": 1410,
         "unitType": "max",
         "col": 7,
-        "count": 5,
+        "count": 2,
         "spacingTicks": 6
       },
       {
-        "atTick": 1620,
+        "atTick": 1710,
         "unitType": "lena",
         "col": 1,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 30
       },
       {
-        "atTick": 1620,
+        "atTick": 1710,
         "unitType": "lena",
         "col": 10,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 30
       },
       {
-        "atTick": 1620,
+        "atTick": 1710,
         "unitType": "max",
         "col": 3,
-        "count": 6,
+        "count": 2,
         "spacingTicks": 5
       },
       {
-        "atTick": 1620,
+        "atTick": 1710,
         "unitType": "max",
         "col": 8,
-        "count": 6,
+        "count": 2,
         "spacingTicks": 5
       },
       {
-        "atTick": 1920,
+        "atTick": 2010,
         "unitType": "lena",
         "col": 3,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 30
       },
       {
-        "atTick": 1920,
+        "atTick": 2010,
         "unitType": "lena",
         "col": 8,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 30
       },
       {
-        "atTick": 1920,
+        "atTick": 2010,
         "unitType": "lena",
         "col": 4,
-        "count": 4,
+        "count": 1,
         "spacingTicks": 15
       },
       {
-        "atTick": 1920,
+        "atTick": 2010,
         "unitType": "lena",
         "col": 7,
-        "count": 4,
+        "count": 1,
         "spacingTicks": 15
       },
       {
-        "atTick": 1920,
+        "atTick": 2010,
         "unitType": "max",
         "col": 0,
-        "count": 6,
+        "count": 2,
         "spacingTicks": 5
       },
       {
-        "atTick": 1920,
+        "atTick": 2010,
         "unitType": "max",
         "col": 11,
-        "count": 6,
+        "count": 2,
         "spacingTicks": 5
       }
     ]
@@ -293,5 +293,7 @@
     }
   },
   "nameKey": "campaign.ch1.lv9.name",
-  "briefKey": "campaign.ch1.lv9.brief"
+  "briefKey": "campaign.ch1.lv9.brief",
+  "startInk": 18,
+  "inkRegenMult": 1.25
 }

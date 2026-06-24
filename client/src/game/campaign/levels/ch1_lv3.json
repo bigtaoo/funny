@@ -6,8 +6,8 @@
     "kind": "survive"
   },
   "enemyScale": {
-    "hp": 1.14,
-    "damage": 1.1
+    "hp": 1,
+    "damage": 1
   },
   "loadout": [
     "infantry_1",
@@ -45,183 +45,183 @@
       ]
     }
   },
-  "startInk": 6,
+  "startInk": 40,
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "max",
         "col": 0,
-        "count": 4,
+        "count": 1,
         "spacingTicks": 10
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "max",
         "col": 11,
-        "count": 4,
+        "count": 1,
         "spacingTicks": 10
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "max",
         "col": 3,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 15
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "max",
         "col": 8,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 15
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "lena",
         "col": 4,
         "count": 1
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "lena",
         "col": 7,
         "count": 1
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "mara",
         "col": 4,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 42
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "mara",
         "col": 7,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 42
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "max",
         "col": 1,
-        "count": 5,
+        "count": 2,
         "spacingTicks": 8
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "max",
         "col": 2,
-        "count": 5,
+        "count": 2,
         "spacingTicks": 8
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "max",
         "col": 9,
-        "count": 5,
+        "count": 2,
         "spacingTicks": 8
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "max",
         "col": 10,
-        "count": 5,
+        "count": 2,
         "spacingTicks": 8
       },
       {
-        "atTick": 1140,
+        "atTick": 1200,
         "unitType": "lena",
         "col": 3,
-        "count": 1
-      },
-      {
-        "atTick": 1140,
-        "unitType": "lena",
-        "col": 8,
         "count": 1
       },
       {
         "atTick": 1200,
-        "unitType": "max",
-        "col": 3,
-        "count": 3,
-        "spacingTicks": 15
+        "unitType": "lena",
+        "col": 8,
+        "count": 1
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "max",
-        "col": 8,
-        "count": 3,
+        "col": 3,
+        "count": 1,
         "spacingTicks": 15
       },
       {
         "atTick": 1260,
+        "unitType": "max",
+        "col": 8,
+        "count": 1,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1320,
         "unitType": "mara",
         "col": 3,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 1260,
+        "atTick": 1320,
         "unitType": "mara",
         "col": 8,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 40
-      },
-      {
-        "atTick": 1500,
-        "unitType": "lena",
-        "col": 4,
-        "count": 1,
-        "isBoss": true
-      },
-      {
-        "atTick": 1500,
-        "unitType": "lena",
-        "col": 7,
-        "count": 1,
-        "isBoss": true
-      },
-      {
-        "atTick": 1500,
-        "unitType": "lena",
-        "col": 2,
-        "count": 1
-      },
-      {
-        "atTick": 1500,
-        "unitType": "lena",
-        "col": 9,
-        "count": 1
-      },
-      {
-        "atTick": 1530,
-        "unitType": "max",
-        "col": 0,
-        "count": 4,
-        "spacingTicks": 8
-      },
-      {
-        "atTick": 1530,
-        "unitType": "max",
-        "col": 11,
-        "count": 4,
-        "spacingTicks": 8
       },
       {
         "atTick": 1560,
+        "unitType": "lena",
+        "col": 4,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 1560,
+        "unitType": "lena",
+        "col": 7,
+        "count": 1,
+        "isBoss": true
+      },
+      {
+        "atTick": 1560,
+        "unitType": "lena",
+        "col": 2,
+        "count": 1
+      },
+      {
+        "atTick": 1560,
+        "unitType": "lena",
+        "col": 9,
+        "count": 1
+      },
+      {
+        "atTick": 1590,
+        "unitType": "max",
+        "col": 0,
+        "count": 1,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 1590,
+        "unitType": "max",
+        "col": 11,
+        "count": 1,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 1620,
         "unitType": "mara",
         "col": 4,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 36
       },
       {
-        "atTick": 1560,
+        "atTick": 1620,
         "unitType": "mara",
         "col": 7,
-        "count": 3,
+        "count": 1,
         "spacingTicks": 36
       }
     ]
@@ -239,5 +239,6 @@
     }
   },
   "nameKey": "campaign.ch1.lv3.name",
-  "briefKey": "campaign.ch1.lv3.brief"
+  "briefKey": "campaign.ch1.lv3.brief",
+  "inkRegenMult": 1.55
 }

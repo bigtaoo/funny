@@ -6,8 +6,8 @@
     "kind": "boss"
   },
   "enemyScale": {
-    "hp": 1.63,
-    "damage": 1.45
+    "hp": 1.1,
+    "damage": 1.08
   },
   "loadout": [
     "infantry_1",
@@ -26,157 +26,157 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "max",
         "col": 1,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 15
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "max",
         "col": 10,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 15
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "max",
         "col": 4,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 8
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "max",
         "col": 7,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 8
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "lena",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 20
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "lena",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 20
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "lena",
         "col": 0,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "lena",
         "col": 11,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 720,
+        "atTick": 780,
         "unitType": "max",
         "col": 1,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 720,
+        "atTick": 780,
         "unitType": "max",
         "col": 10,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 720,
+        "atTick": 780,
         "unitType": "lena",
         "col": 4,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 35
       },
       {
-        "atTick": 720,
+        "atTick": 780,
         "unitType": "lena",
         "col": 7,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 35
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "lena",
         "col": 2,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 30
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "lena",
         "col": 9,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 30
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "lena",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 18
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "lena",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 18
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "lena",
         "col": 4,
         "count": 1,
         "isBoss": true
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "lena",
         "col": 7,
         "count": 1,
         "isBoss": true
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "max",
         "col": 0,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "max",
         "col": 11,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "lena",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 18
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "lena",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 18
       }
     ]
@@ -197,5 +197,7 @@
   "briefKey": "campaign.ch1.lv10.brief",
   "story": {
     "outroKey": "campaign.ch1.outro"
-  }
+  },
+  "startInk": 30,
+  "inkRegenMult": 1.42
 }
