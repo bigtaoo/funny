@@ -55,6 +55,9 @@ export class BoardView {
     3,
   );
 
+  /** In-flight one-shot effect ticks (meteor), tracked so teardown can unregister them. */
+  private readonly fxTicks = new Set<() => void>();
+
   constructor(layout: ILayout) {
     this.layout    = layout;
     this.container = new PIXI.Container();
@@ -354,9 +357,11 @@ export class BoardView {
       gfx.alpha = frames / 30;
       if (--frames <= 0) {
         PIXI.Ticker.shared.remove(tick);
+        this.fxTicks.delete(tick);
         this.meteorPool.release(gfx);
       }
     };
+    this.fxTicks.add(tick);
     PIXI.Ticker.shared.add(tick);
   }
 
@@ -474,6 +479,22 @@ export class BoardView {
       gfx.position.set(r.x, r.y);
       this.container.addChild(gfx);
     }
+  }
+
+  /**
+   * Tear down everything this view owns. Unregisters in-flight effect ticks from
+   * the shared ticker (else they pin this view — and the whole battle scene — as
+   * a GC root forever), destroys the detached meteor-pool Graphics, then destroys
+   * the container subtree. The baked board texture lives in the shared bake cache
+   * (reused across battles) and is intentionally NOT destroyed here.
+   */
+  destroy(): void {
+    for (const tick of this.fxTicks) PIXI.Ticker.shared.remove(tick);
+    this.fxTicks.clear();
+    this.meteorPool.drain((gfx) => gfx.destroy());
+    this.playerBase = null;
+    this.enemyBase  = null;
+    this.container.destroy({ children: true });
   }
 
 }

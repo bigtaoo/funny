@@ -71,6 +71,9 @@ export class BuildingView {
   private texArcher:   PIXI.Texture | null = null;
   private time = 0;
 
+  /** In-flight effect ticks (spawn/destroy anims), tracked so teardown can unregister them. */
+  private readonly fxTicks = new Set<(dt: number) => void>();
+
   constructor(boardView: BoardView) {
     this.boardView = boardView;
     this.container = new PIXI.Container();
@@ -125,9 +128,11 @@ export class BuildingView {
       sprite.alpha  = frames / 20;
       if (--frames <= 0) {
         PIXI.Ticker.shared.remove(tick);
+        this.fxTicks.delete(tick);
         this.pool.release(sprite);
       }
     };
+    this.fxTicks.add(tick);
     PIXI.Ticker.shared.add(tick);
   }
 
@@ -159,8 +164,12 @@ export class BuildingView {
       const t     = Math.min(elapsed / DURATION, 1);
       const scale = 1 - Math.pow(1 - t, 3);
       c.scale.set(scale);
-      if (t >= 1) PIXI.Ticker.shared.remove(onTick);
+      if (t >= 1) {
+        PIXI.Ticker.shared.remove(onTick);
+        this.fxTicks.delete(onTick);
+      }
     };
+    this.fxTicks.add(onTick);
     PIXI.Ticker.shared.add(onTick);
 
     return c;
@@ -216,5 +225,22 @@ export class BuildingView {
       gfx.moveTo(px, fy);
       gfx.quadraticCurveTo(px + 7, fy + waveAmp, px + 13, fy + waveAmp * 0.3);
     }
+  }
+
+  /**
+   * Tear down everything this view owns. Unregisters in-flight effect ticks,
+   * destroys the detached pool sprites, then destroys the container subtree.
+   * texBarracks/texArcher come from the shared `PIXI.Texture.from` cache (reused
+   * across battles) and are intentionally only dereferenced, never destroyed.
+   */
+  destroy(): void {
+    for (const tick of this.fxTicks) PIXI.Ticker.shared.remove(tick);
+    this.fxTicks.clear();
+    this.pool.drain((c) => c.destroy({ children: true }));
+    this.sprites.clear();
+    this.phases.clear();
+    this.texBarracks = null;
+    this.texArcher   = null;
+    this.container.destroy({ children: true });
   }
 }

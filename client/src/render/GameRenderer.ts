@@ -276,12 +276,27 @@ export class GameRenderer {
     this.pendingCardDown = null;
     this.profilePopup?.destroy();
     this.vfxSystem.destroy();
+
+    // Tear down the sub-views. Each unregisters its in-flight ticker callbacks
+    // and drains its detached object pools, then destroys its own container.
+    // Without this the entire match's display tree + textures leaked on every
+    // match exit (no view had a destroy(), and the container was never freed) —
+    // the cause of multi-GB client growth over a long session.
+    this.boardView.destroy();
+    this.unitView.destroy();
+    this.buildingView.destroy();
+    this.handView.destroy();
+
     for (const sprite of this.escortSprites.values()) sprite.destroy();
     this.escortSprites.clear();
     for (const sprite of this.projectileSprites.values()) sprite.destroy();
     this.projectileSprites.clear();
     for (const sprite of this.projectilePool) sprite.destroy();
     this.projectilePool.length = 0;
+
+    // Mop up whatever is left under the root (HUD, net status, vignette, escort/
+    // projectile layers). Children destroyed above have removed themselves.
+    this.container.destroy({ children: true });
   }
 
   // ── Scene graph ────────────────────────────────────────────────────────────
