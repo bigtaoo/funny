@@ -1177,6 +1177,60 @@ paths:
                       accepted: { type: integer }
         '400': { $ref: '#/components/responses/ErrorResp' }
 
+  /client/anomaly:
+    post:
+      operationId: clientAnomaly
+      tags: [config]
+      summary: >-
+        客户端异常事件「全量」上报 → Loki（与 /client/log 的定向采集互补，**不受 allowPublicIds 约束**）。
+        任何客户端的内存超标 / CPU 持续饱和(cpu) / WebGL 上下文丢失(webgl_lost) / 主循环卡死(anr) /
+        未捕获异常(jserror) / 上次会话崩溃(crash) 都直报，便于全网定位野外异常。防滥用：按 IP 60s/30 次限流
+        （超限静默丢弃）、最多取前 200 条、各字段截断。**永远回 200**——Loki 不可达 / 限流亦不影响玩家。
+        label 仅 {source=client, kind=anomaly}，type/publicId/platform/detail/msg 入行内（logfmt）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                publicId:
+                  type: string
+                  description: 上报者的 9 位 publicId（可选；登录前异常缺省记为 anon）
+                platform:
+                  type: string
+                  enum: [web, wechat, crazygames]
+                events:
+                  type: array
+                  description: 一批异常事件；服务端最多取前 200 条
+                  items:
+                    type: object
+                    required: [type, msg, ts]
+                    properties:
+                      type:
+                        type: string
+                        description: 异常类型（mem/cpu/webgl_lost/anr/jserror/crash；未知归 other）
+                      msg: { type: string }
+                      ts: { type: number, description: epoch ms（客户端时钟） }
+                      detail: { type: string, description: 结构化补充（已在客户端压成单串、截断） }
+      responses:
+        '200':
+          description: 已接受（accepted=实际转发条数；限流 / 无效则为 0）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [accepted]
+                    properties:
+                      accepted: { type: integer }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+
   /pve/clear:
     post:
       operationId: pveClear

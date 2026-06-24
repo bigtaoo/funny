@@ -7,6 +7,8 @@
 import * as PIXI from 'pixi.js-legacy';
 import { IPlatform } from './platform/IPlatform';
 import { MemoryMonitor } from './cache/MemoryMonitor';
+import { PerfMonitor } from './cache/PerfMonitor';
+import { initCrashSentinel, installAnomalyWatchers } from './net/anomaly';
 import { SceneManager } from './scenes/SceneManager';
 import { IntroScene } from './scenes/IntroScene';
 import { LobbyScene, type LobbySceneCallbacks } from './scenes/LobbyScene';
@@ -325,6 +327,14 @@ export async function startApp(platform: IPlatform): Promise<void> {
   // 内存看护：每隔几秒采样 JS 堆，超阈值 console.warn 并 dump 各对象池占用；微信侧接 wx.onMemoryWarning。
   // 跨场景常驻（战斗退场后池注册表自动清空）。阈值可用 localStorage 'nw_mem_warn_mb' 调。
   new MemoryMonitor().install(app.ticker);
+
+  // CPU / 主线程饱和看护：长任务忙碌比 + 持续低 FPS，任一持续越线即上报 cpu 异常（net/anomaly 全量通道）。
+  new PerfMonitor().install(app.ticker);
+
+  // 全量异常上报：内存/CPU/WebGL丢失/卡死/未捕获异常直报 Loki（不受日志定向白名单约束），便于全网定位野外异常。
+  // 崩溃哨兵先于监听器装（读上次会话哨兵，异常退出则补报一条 crash）；监听器接管离场 beacon / webgl / 看门狗。
+  initCrashSentinel();
+  installAnomalyWatchers({ canvas: app.view as unknown as { addEventListener?: (t: string, cb: (e: unknown) => void) => void } });
 
   // 全局兜底提示：场景没自己接住的非 200 / 网络错误冒泡到 window 时，弹一条玩家可读 toast
   // （场景自带的 showToast 不经过这里，所以「有提示则跳过、漏了才兜底」）。分类逻辑在 net/log，

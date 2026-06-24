@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
+import { reportAnomaly } from '../net/anomaly';
 import { snapshotPools } from './poolRegistry';
 
 // 运行时内存看护：每隔几秒读 JS 堆占用，超阈值就 console.warn 一条，并把各对象池的
@@ -98,16 +99,17 @@ export class MemoryMonitor {
   private dump(reason: string): void {
     const heap = readHeap();
     const pools = snapshotPools();
+    const heapInfo = heap
+      ? { usedMB: round(heap.usedJSHeapSize / MB), totalMB: round(heap.totalJSHeapSize / MB), limitMB: round(heap.jsHeapSizeLimit / MB) }
+      : 'unavailable';
+    const poolTotal = { idle: pools.totalIdle, estMB: round(pools.totalBytes / MB, 2) };
     log.warn(reason, {
-      heap: heap
-        ? {
-            usedMB: round(heap.usedJSHeapSize / MB),
-            totalMB: round(heap.totalJSHeapSize / MB),
-            limitMB: round(heap.jsHeapSizeLimit / MB),
-          }
-        : 'unavailable',
+      heap: heapInfo,
       pools: pools.rows.map((r) => ({ label: r.label, idle: r.idle, estKB: round(r.estBytes / 1024) })),
-      poolTotal: { idle: pools.totalIdle, estMB: round(pools.totalBytes / MB, 2) },
+      poolTotal,
     });
+    // 同步进「全量异常上报」通道（与定向采集的环形缓冲并行）：全网任何客户端内存超标都直报 Loki。
+    // reportAnomaly 内对 mem 类有 60s 冷却，不会因 5s 采样而刷屏。
+    reportAnomaly('mem', reason, { heap: heapInfo, poolTotal });
   }
 }

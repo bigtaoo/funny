@@ -5,7 +5,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Collections, JwtConfig, SyncPatch, SaveData, FeatureFlagCache, FlagContext, FlagPlatform } from '@nw/shared';
 import { ErrorCode, ERROR_HTTP_STATUS, err, ok, signToken, FLAG_KEYS, flagDefault, extractBearer, verifyToken, FLAG_PLATFORMS } from '@nw/shared';
-import { buildLokiPayload, pushToLoki, type ClientLogEntry } from './clientLog.js';
+import { buildLokiPayload, buildAnomalyLokiPayload, pushToLoki, type ClientLogEntry, type ClientAnomalyEvent } from './clientLog.js';
 import {
   findPveLevel,
   findPveUpgrade,
@@ -198,6 +198,8 @@ const STATE_REPLAY_SHARE_PER_HOUR = 20;
 export class MetaService {
   private readonly oauth = createOAuthService();
   private readonly authRate: { allow(key: string, now: number): boolean };
+  /** 异常事件「全量」上报按 IP 限流：每 IP 60s 最多 30 次 POST /client/anomaly（挡刷 Loki）。进程内近似。 */
+  private readonly anomalyRate = new SlidingRateLimiter(30, 60 * 1000);
 
   constructor(private readonly deps: ServiceDeps) {
     this.authRate = deps.authRateLimit > 0
@@ -1245,6 +1247,45 @@ export class MetaService {
       void pushToLoki(this.deps.lokiPushUrl, payload);
     }
     return ok({ accepted: entries.length });
+  }
+
+  /**
+   * 客户端异常事件「全量」上报 → Loki（与定向采集互补，**不受 allowPublicIds 约束**：任何客户端的
+   * 内存超标 / CPU 持续饱和 / WebGL 丢失 / 卡死 / 未捕获异常 / 上次崩溃都直报，便于全网定位野外异常）。
+   * 防滥用：按 IP 60s/30 次限流（超限静默丢弃，仍回 200，绝不影响玩家）；最多取前 200 条、各字段截断。
+   * **永远回 200**（Loki 不可达 / 限流 / 无效亦不影响玩家）。
+   */
+  async clientAnomaly(req: FastifyRequest, reply: FastifyReply) {
+    const body = (req.body ?? {}) as { publicId?: unknown; platform?: unknown; events?: unknown };
+    if (!Array.isArray(body.events)) {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing events'));
+    }
+    // IP 限流：超限即静默丢弃（不 4xx，避免客户端据此重试 / 摸出限流阈值）。
+    if (!this.anomalyRate.allow(req.ip ?? 'unknown', this.deps.now())) return ok({ accepted: 0 });
+
+    // publicId 可选（异常可发生在登录前）；缺省归 'anon'，仍上报以便统计无主异常。
+    const publicId = typeof body.publicId === 'string' && body.publicId ? body.publicId : 'anon';
+    const platform = typeof body.platform === 'string' ? body.platform : undefined;
+    const events: ClientAnomalyEvent[] = (body.events as unknown[]).slice(0, 200).flatMap((raw) => {
+      if (!raw || typeof raw !== 'object') return [];
+      const o = raw as Record<string, unknown>;
+      const msg = typeof o.msg === 'string' ? o.msg.slice(0, 500) : '';
+      const type = typeof o.type === 'string' ? o.type.slice(0, 32) : '';
+      if (!msg || !type) return [];
+      const e: ClientAnomalyEvent = {
+        type,
+        msg,
+        ts: typeof o.ts === 'number' && Number.isFinite(o.ts) ? o.ts : this.deps.now(),
+      };
+      if (typeof o.detail === 'string' && o.detail) e.detail = o.detail.slice(0, 1000);
+      return [e];
+    });
+
+    const payload = buildAnomalyLokiPayload(publicId, events, platform, () =>
+      (BigInt(this.deps.now()) * 1_000_000n).toString(),
+    );
+    if (payload) void pushToLoki(this.deps.lokiPushUrl, payload);
+    return ok({ accepted: events.length });
   }
 
   /** PvE 升级：服务器校验材料足够 → 扣材料 + pveUpgrades+1 → 回推（仅在线）。 */
