@@ -3,8 +3,9 @@
 // 经济/盲盒/IAP（S2/S4）先返回 NOT_IMPLEMENTED 占位，契约已就绪。
 import { randomUUID, randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Collections, JwtConfig, SyncPatch, SaveData } from '@nw/shared';
-import { ErrorCode, ERROR_HTTP_STATUS, err, ok, signToken } from '@nw/shared';
+import type { Collections, JwtConfig, SyncPatch, SaveData, FeatureFlagCache, FlagContext, FlagPlatform } from '@nw/shared';
+import { ErrorCode, ERROR_HTTP_STATUS, err, ok, signToken, FLAG_KEYS, flagDefault, extractBearer, verifyToken, FLAG_PLATFORMS } from '@nw/shared';
+import { buildLokiPayload, pushToLoki, type ClientLogEntry } from './clientLog.js';
 import {
   findPveLevel,
   findPveUpgrade,
@@ -139,6 +140,12 @@ export interface ServiceDeps {
   gateway: GatewayClient;
   /** 每 IP 15 分钟内最大 auth 尝试数。0 = 禁用（测试/CI 用）。 */
   authRateLimit: number;
+  /** feature flag 缓存（公开 /bootstrap 求值；FEATURE_FLAGS_DESIGN §9.3）。null = 无 flag 源，bootstrap 恒空 map。 */
+  flags: FeatureFlagCache | null;
+  /** 部署区域（注入 flag 求值 ctx）。 */
+  region: string | null;
+  /** Loki push 地址（POST /client/log 转发客户端日志；null = 静默丢弃）。 */
+  lokiPushUrl: string | null;
 }
 
 /** 取安全处理器写入的 accountId（security handler 保证已鉴权）。 */
@@ -1149,6 +1156,95 @@ export class MetaService {
     // 浏览计数（不阻塞回包）。
     void cols.stateReplayShares.updateOne({ _id: shareCode }, { $inc: { viewCount: 1 } });
     return ok({ blob: doc.blob });
+  }
+
+  // ── F3 公开 bootstrap + 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）────────────────────
+  /** 4 个客户端日志分级 flag（按 verbose 程度排序，仅文档/守卫用）。 */
+  private static readonly CLIENT_LOG_KEYS = FLAG_KEYS.filter((k) => k.startsWith('client_log_'));
+
+  /** 从请求里解析 flag 求值上下文：query 的 platform/publicId + 可选 token 的 accountId。 */
+  private flagCtx(req: FastifyRequest): FlagContext {
+    const q = (req.query ?? {}) as { platform?: unknown; publicId?: unknown };
+    const ctx: FlagContext = {};
+    if (typeof q.publicId === 'string' && q.publicId) ctx.publicId = q.publicId;
+    if (typeof q.platform === 'string' && (FLAG_PLATFORMS as readonly string[]).includes(q.platform)) {
+      ctx.platform = q.platform as FlagPlatform;
+    }
+    if (this.deps.region) ctx.region = this.deps.region;
+    // 登录态可选：带 token 则解析 accountId 求值更精确；无 token / 无效 token 静默忽略（bootstrap 匿名可调）。
+    const token = extractBearer(req.headers['authorization']);
+    if (token) {
+      try { ctx.accountId = verifyToken(token, this.deps.jwt); } catch { /* anonymous */ }
+    }
+    return ctx;
+  }
+
+  /**
+   * 公开 bootstrap（§9.3）：匿名可调（带 token 则注入 accountId 求值更精确）。对全量白名单逐个求值，
+   * **只回与 default 不同的 flag**——绝大多数玩家拿到空 map → 零负担。规则/白名单绝不下发，只给布尔结果。
+   * 无 flag 源（未配 admin）→ 恒空 map。
+   */
+  async bootstrap(req: FastifyRequest) {
+    const flags: Record<string, boolean> = {};
+    const cache = this.deps.flags;
+    if (cache) {
+      const ctx = this.flagCtx(req);
+      for (const key of FLAG_KEYS) {
+        const resolved = cache.isOn(key, ctx);
+        if (resolved !== flagDefault(key)) flags[key] = resolved;
+      }
+    }
+    return ok({ flags });
+  }
+
+  /** 该 publicId 当前是否被任一 client_log_* flag 的 allowPublicIds 点名（防任意客户端往 Loki 灌日志）。 */
+  private isClientLogTargeted(publicId: string): boolean {
+    const cache = this.deps.flags;
+    if (!cache) return false;
+    for (const key of MetaService.CLIENT_LOG_KEYS) {
+      if (cache.rawDoc(key)?.rollout?.allowPublicIds?.includes(publicId)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * 客户端日志上报 → Loki（§9.4）。**永远回 200**（绝不影响玩家）。防滥用：仅当该 publicId 当前被
+   * client_log_* 定向时才转发，否则静默丢弃（非定向客户端 bootstrap 拿空 map、本就不会调本端点，此为兜底）。
+   * Loki 不可达亦静默丢弃。
+   */
+  async clientLog(req: FastifyRequest, reply: FastifyReply) {
+    const body = (req.body ?? {}) as { publicId?: unknown; platform?: unknown; logs?: unknown };
+    const publicId = typeof body.publicId === 'string' ? body.publicId : '';
+    if (!publicId || !Array.isArray(body.logs)) {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing publicId / logs'));
+    }
+    // 未被定向 → 接受但丢弃（不 4xx，避免泄露「谁在被采集」）。
+    if (!this.isClientLogTargeted(publicId)) return ok({ accepted: 0 });
+
+    const platform = typeof body.platform === 'string' ? body.platform : undefined;
+    // 兜底上限：最多 1000 条、每条 msg 截断 2000 字符（Fastify bodyLimit 已挡超大 body）。
+    const entries: ClientLogEntry[] = (body.logs as unknown[]).slice(0, 1000).flatMap((raw) => {
+      if (!raw || typeof raw !== 'object') return [];
+      const o = raw as Record<string, unknown>;
+      const msg = typeof o.msg === 'string' ? o.msg.slice(0, 2000) : '';
+      if (!msg) return [];
+      const e: ClientLogEntry = {
+        level: typeof o.level === 'string' ? o.level : 'info',
+        msg,
+        ts: typeof o.ts === 'number' && Number.isFinite(o.ts) ? o.ts : this.deps.now(),
+      };
+      if (typeof o.tag === 'string' && o.tag) e.tag = o.tag.slice(0, 64);
+      return [e];
+    });
+
+    const payload = buildLokiPayload(publicId, entries, platform, () =>
+      (BigInt(this.deps.now()) * 1_000_000n).toString(),
+    );
+    if (payload) {
+      // fire-and-forget：不阻塞回包，失败静默（onError 仅调试期需要时挂）。
+      void pushToLoki(this.deps.lokiPushUrl, payload);
+    }
+    return ok({ accepted: entries.length });
   }
 
   /** PvE 升级：服务器校验材料足够 → 扣材料 + pveUpgrades+1 → 回推（仅在线）。 */

@@ -66,6 +66,13 @@ services:
       # 对等裁判（Phase C）：ranked hash 不一致时经 gateway 挑第三方复算。不加 depends_on
       # 避免与 gateway→metaserver 成环；裁判仅在局末调用、gateway 不可达时优雅作废。
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      # 功能开关下发 + 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）。
+      # ⚠ 必坑（同 matchsvc）：缺 NW_ADMIN_INTERNAL_URL → flag 轮询禁用 → /bootstrap 恒空 map → 定向采集永不生效。
+      NW_ADMIN_INTERNAL_URL: http://admin:8083
+      NW_REGION: ${NW_REGION:-}
+      # Loki push 地址：obs 栈独立网络，metaserver 默认解析不到 loki（见 observability/README.md 网络坑）。
+      # 留空 = 静默丢弃；启用需填宿主可达地址或让 metaserver 接入 obs 网络。
+      NW_LOKI_PUSH_URL: ${NW_LOKI_PUSH_URL:-}
     depends_on:
       mongo:
         condition: service_healthy

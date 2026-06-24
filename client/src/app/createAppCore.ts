@@ -24,6 +24,7 @@ import { stateRecorder } from '../game/replay/StateRecorder';
 import { decodeStateReplay, type EncodedStateReplay } from '../game/replay/StateReplay';
 import { getApiBaseUrl, getGatewayWsUrl } from '../net/config';
 import { NetSession } from '../net/NetSession';
+import { FeatureFlags } from '../net/featureFlags';
 import { netLog, showToastMessage } from '../net/log';
 import { matchStateHash } from '../net/judgeRunner';
 import { MatchMode } from '../net/proto/transport';
@@ -39,6 +40,14 @@ import { WorldApiClient } from '../net/WorldApiClient';
 import { getWorldBaseUrl } from '../net/config';
 
 const log = netLog('app');
+
+/** 平台名（构建期注入的 TARGET 全局），随 bootstrap 求值带入。镜像 analytics.getPlatformName。 */
+function clientPlatformName(): 'web' | 'wechat' | 'crazygames' {
+  const t = (globalThis as { TARGET?: string }).TARGET ?? '';
+  if (t === 'wechat') return 'wechat';
+  if (t === 'crazygames') return 'crazygames';
+  return 'web';
+}
 
 /** flags key — set after the first-launch intro has been seen. */
 const SEEN_INTRO_FLAG = 'seen_intro';
@@ -85,7 +94,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     onSyncError: () => showToastMessage(t('common.syncFailed')),
     onProfile: ({ displayName, publicId, gatewayUrl: gw }) => {
       applyGatewayUrl(gw);
-      if (publicId) platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, publicId);
+      if (publicId) {
+        platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, publicId);
+        void featureFlags?.refresh(); // publicId 经存档回包到手 → 重拉 bootstrap 让定向采集即时生效
+      }
       if (!displayName) return;
       if (platform.storage.getItem(PLAYER_NAME_KEY) === displayName) return;
       platform.storage.setItem(PLAYER_NAME_KEY, displayName);
@@ -99,6 +111,17 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   // emits nothing until they accept the dialog (setConsent in gateConsent).
   analytics.setConsent(saveManager.getFlag(GDPR_CONSENT_FLAG) === true);
   void analytics.init(platform, api, baseUrl);
+
+  // ── FeatureFlags: 公开 bootstrap 轮询 + 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）─────
+  // 启动即轮询；命中 client_log_* 定向时把环形缓冲日志批量上报 Loki。需有 API 基址才有意义。
+  const featureFlags = api
+    ? new FeatureFlags({
+        api,
+        platform: clientPlatformName(),
+        getPublicId: () => platform.storage.getItem(PLAYER_PUBLIC_ID_KEY),
+      })
+    : null;
+  featureFlags?.start();
 
   // ── NetSession: online room + lockstep transport (three-channel, M20) ───────
   let gatewayUrl = getGatewayWsUrl(platform.storage);
@@ -414,6 +437,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       const resolvedName = res.displayName || name;
       if (resolvedName) platform.storage.setItem(PLAYER_NAME_KEY, resolvedName);
       if (res.publicId) platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, res.publicId);
+      // 拿到 publicId 后立刻重拉 bootstrap，定向采集无需等下个 120s 轮询周期（best-effort）。
+      void featureFlags?.refresh();
       await saveManager.adoptSession(res.accountId);
       goLobby({ offline: false });
       return { ok: true };

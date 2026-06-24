@@ -22,6 +22,16 @@ export interface MetaEnv extends ServerEnv {
    * 0 = 禁用限流（测试/CI 环境用）。默认 20。
    */
   authRateLimit: number;
+  /** admin 内部基址（轮询 GET /admin/internal/flags 拿 feature flag 原始规则；供公开 /bootstrap 求值）。null = 不读 flag（全 default → bootstrap 恒空 map）。 */
+  adminInternalUrl: string | null;
+  /** 部署区域（注入 feature flag 求值 ctx）。空 = 不按区定向。 */
+  region: string | null;
+  /**
+   * Loki push API 地址（POST /client/log 转发客户端日志至此，FEATURE_FLAGS_DESIGN §9.4）。
+   * null = 不转发（静默丢弃）。形如 http://loki:3100/loki/api/v1/push；需 metaserver 容器能解析到
+   * loki（obs 栈独立网络，见 observability/README.md「网络坑」）。不可达 → 静默丢弃，绝不影响玩家。
+   */
+  lokiPushUrl: string | null;
 }
 
 export function loadMetaEnv(): MetaEnv {
@@ -36,5 +46,8 @@ export function loadMetaEnv(): MetaEnv {
     auditIntervalMs: Number(process.env.NW_ACHIEVEMENT_AUDIT_INTERVAL_MS ?? 60000),
     auditSampleLimit: Number(process.env.NW_ACHIEVEMENT_AUDIT_SAMPLE_LIMIT ?? 5),
     authRateLimit: Number(process.env.NW_AUTH_RATE_LIMIT ?? 20),
+    adminInternalUrl: process.env.NW_ADMIN_INTERNAL_URL ?? null,
+    region: process.env.NW_REGION ?? null,
+    lokiPushUrl: process.env.NW_LOKI_PUSH_URL ?? null,
   };
 }

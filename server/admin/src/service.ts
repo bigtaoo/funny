@@ -1011,6 +1011,8 @@ function validateRollout(raw: unknown): FlagRollout | undefined {
   if (allow && allow.length) out.allowAccounts = allow;
   const deny = strArr(o.denyAccounts, 'denyAccounts');
   if (deny && deny.length) out.denyAccounts = deny;
+  const allowPublicIds = strArr(o.allowPublicIds, 'allowPublicIds');
+  if (allowPublicIds && allowPublicIds.length) out.allowPublicIds = allowPublicIds;
   return Object.keys(out).length ? out : undefined;
 }
 
@@ -1024,6 +1026,7 @@ function describeFlag(doc: FeatureFlagDoc | null): string {
   if (r?.platforms?.length) parts.push(`plat=${r.platforms.join('|')}`);
   if (r?.allowAccounts?.length) parts.push(`allow=${r.allowAccounts.length}`);
   if (r?.denyAccounts?.length) parts.push(`deny=${r.denyAccounts.length}`);
+  if (r?.allowPublicIds?.length) parts.push(`allowPid=${r.allowPublicIds.length}`);
   return parts.join(',');
 }
 

@@ -852,6 +852,8 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
       placeholder: 'accountId 逗号/换行分隔（命中即开）' }, (r.allowAccounts ?? []).join('\n')) as HTMLTextAreaElement;
     const deny = h('textarea', { rows: '2', style: 'width:100%',
       placeholder: 'accountId 逗号/换行分隔（命中即关）' }, (r.denyAccounts ?? []).join('\n')) as HTMLTextAreaElement;
+    const allowPublicIds = h('textarea', { rows: '2', style: 'width:100%',
+      placeholder: '9 位 publicId 逗号/换行分隔（命中即开）' }, (r.allowPublicIds ?? []).join('\n')) as HTMLTextAreaElement;
 
     const status = h('span', {});
     const saveBtn = h('button', {}, '保存') as HTMLButtonElement;
@@ -870,6 +872,8 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
         if (al.length) rollout.allowAccounts = al;
         const dn = parseList(deny.value);
         if (dn.length) rollout.denyAccounts = dn;
+        const apid = parseList(allowPublicIds.value);
+        if (apid.length) rollout.allowPublicIds = apid;
         await api.upsertFlag(row.key, {
           enabled: enabled.checked,
           ...(Object.keys(rollout).length ? { rollout } : {}),
@@ -905,6 +909,12 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
         h('span', {}, ...platBoxes.flatMap((b) => [h('label', { style: 'margin-right:12px' }, b.cb, ' ' + b.p)]))),
       fieldRow('白名单 allowAccounts（命中即开，盖过定向）', allow),
       fieldRow('黑名单 denyAccounts（命中即关，盖过一切定向）', deny),
+      fieldRow('publicId 白名单 allowPublicIds（9 位玩家 id，命中即开）', allowPublicIds),
+      ...(row.key.startsWith('client_log_')
+        ? [h('div', { class: 'muted', style: 'font-size:12px;color:var(--muted)' },
+            '定向单个玩家：灰度比例填 0（对其他人关），仅把目标 9 位 publicId 填进上面的 allowPublicIds。' +
+            '客户端取最 verbose 的已开级别（debug>info>warn>error）上报。查询：Grafana {source="client"} | logfmt | publicId="..."')]
+        : []),
       h('div', { style: 'margin-top:8px' }, saveBtn, ' ', status),
     );
   };

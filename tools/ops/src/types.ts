@@ -142,6 +142,8 @@ export interface FlagRollout {
   platforms?: FlagPlatform[];
   allowAccounts?: string[];
   denyAccounts?: string[];
+  /** publicId 白名单（9 位玩家可见 id；命中即开，与 allowAccounts 同优先级）。客户端日志定向采集用。 */
+  allowPublicIds?: string[];
 }
 export interface FeatureFlagDoc {
   _id: string;
