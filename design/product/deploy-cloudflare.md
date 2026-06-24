@@ -87,6 +87,18 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 
 前端构建时需把 API/WS base 指到 `api.gamestao.com`（client 入口里地址烘焙，参考 animator 的部署方式）。
 
+**client web 包的地址烘焙（确切变量）**：`client/webpack.config.js` 用 DefinePlugin 注入，读三个构建期环境变量（生产默认空串 = 同源相对路径）：
+
+| 环境变量 | 用途 | 形如 | 运行时 localStorage 覆盖键 |
+|---|---|---|---|
+| `NW_API_BASE` | REST 基址 | `https://api.gamestao.com/api`（无尾斜杠） | `nw_api_base` |
+| `NW_GATEWAY_WS` | 控制面 WS | `wss://api.gamestao.com/gw` | `nw_gateway_ws` |
+| `NW_WORLD_BASE` | SLG 世界 REST 基址 | `https://api.gamestao.com` | —（无覆盖） |
+
+- **数据面 WS（`/ws`）不烘焙**：由 metaserver 鉴权回包的 `match_found.game_url` 下发；缺省时 `client/src/net/config.ts` 从 API base 自动推导（`/api`→`/ws`）。`NW_GAME_PUBLIC_WS_URL`（后端 .env）就是这个下发地址的来源。
+- 构建命令：`cd client && NW_API_BASE=... NW_GATEWAY_WS=... NW_WORLD_BASE=... npm run build:web` → 产物 `client/dist`。
+- **localStorage 覆盖（内测神器）**：用一份默认构建即可，朋友在浏览器 DevTools console 跑 `localStorage.setItem('nw_api_base','http://<VPS_IP>/api'); localStorage.setItem('nw_gateway_ws','ws://<VPS_IP>/gw'); location.reload()` 就能连你的后端，无需为每个环境重新构建。
+
 ## 7. 平台隔离边界（ADR-020）
 
 「某些平台是否不让共享用户」的结论：**身份层默认就隔离**——微信(openid)、web/CrazyGames(deviceId)、网站(oauth/密码)各映射独立账号，跨端合并是用户主动绑定。真正逼你隔离的是**数据合规**和**支付渠道**，不是身份。
@@ -104,7 +116,117 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 
 CrazyGames 限制只在前端（禁站外支付/外链），账号层与 web 共享即可。
 
-## 8. 备注
+## 8. 测试环境快速部署（self + 朋友内测，€5/月）
+
+> 目标：最低配置先跑起来，自测 + 几个朋友联机。上平台后再 rescale 升配，数据盘不动。
+
+**机器选型**：Hetzner Cloud **CX22**（2vCPU/4G/40G，~€4.5/月）+ 勾 Primary IPv4（~€0.6/月）；Location 选 Nuremberg/Falkenstein；Image 选 Ubuntu 24.04。库用 Atlas **M0 免费**集群（区域 AWS Frankfurt `eu-central-1`，与 VPS 同城）。
+
+8 个进程**共用一个镜像** `nw-server:latest`（只构建一次），2 核机扛得住；构建偶尔吃内存，挂 2G swap 保险。
+
+### Hetzner 账号注册（首次，德国境内最顺）
+
+1. **注册**：https://console.hetzner.cloud → Register → 填邮箱+密码 → 收验证邮件激活。
+2. **完善账户资料**（决定能否过风控、能否开机，新号务必填真实）：
+   - 真实姓名 + 德国账单地址（要能对上）；个人选 *Privat*，公司选 *Geschäftskunde*（需填 USt-IdNr.）。
+   - **身份验证**：新号常被要求验证。德国境内用**信用卡**或 **PayPal** 最快；偶尔要求上传证件/自拍，按提示走。
+3. **绑定支付**：Settings → Payment 加 信用卡 / PayPal / SEPA 直接借记（SEPA 需先验证德国银行账户）。
+4. **上传 SSH 公钥**：把公钥内容贴到 Console → Security → SSH Keys（开机时勾选，避免密码登录）。本项目已生成专用密钥，见下「SSH 密钥」。
+5. **建项目**：Console → + New Project（如 `nivara-backend`），后续服务器都开在此项目下。
+
+#### 已开服务器（2026-06-24，✅ 已上线验证）
+
+| 项 | 值 |
+|---|---|
+| 名称 | `funny-backend`（Hetzner #144565403） |
+| 规格 | CX23（2 vCPU / 4 GB / 40 GB），Nuremberg，Ubuntu 26.04 |
+| 公网 IPv4（`<VPS_IP>`） | `128.140.41.98` |
+| IPv6 | `2a01:4f8:1c1a:73ad::/64` |
+| 部署目录 | `/root/funny`（git clone，public repo `bigtaoo/funny`） |
+| 运行模式 | `NW_DOMAIN=:80`（HTTP，无域名）；10 容器全 Up；连 Atlas `cluster0.rpr2tnw` 成功 |
+| 验证 | `POST http://128.140.41.98/api/auth/device` → 200 建号发 token（外网可达） |
+
+> **踩坑记录**：Atlas 报 `tlsv1 alert internal error: SSL alert number 80` = **来源 IP 不在 Atlas Network Access 白名单**（不是 TLS/证书问题）。新机 IP 须加进 Atlas 白名单（测试期 `0.0.0.0/0`，上线收紧到 `<VPS_IP>/32`）。
+> **注意**：连接串含 `&`，写 `.env` 时**别用 `sed` 替换**（`&` 是 sed 特殊字符会被展开）；用 `grep -v` 删行后 `printf` 追加。
+
+#### SSH 密钥（已生成，2026-06-24）
+
+专用 ed25519 密钥，**仅用于连 Hetzner VPS**：
+
+| 项 | 值 |
+|---|---|
+| 私钥（**保密，绝不进 git/聊天/截图**） | `C:\Users\TaoWang\.ssh\nivara_hetzner` |
+| 公钥（可公开，贴 Hetzner SSH keys 框） | `C:\Users\TaoWang\.ssh\nivara_hetzner.pub` |
+| 指纹 | `SHA256:I7/fC9iaEo7J5JaG3g3EdIachUGkFGc9JNDS/TF+aIc` |
+| 密码短语 | 无（方便自动化；如需加：`ssh-keygen -p -f ~/.ssh/nivara_hetzner`） |
+
+公钥串（开机前贴进 Hetzner）：
+```
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOFe/cne++J7QxMMJWxtJbn+dhnesYbIcvPIYlRSyCZP nivara-hetzner-20260624
+```
+
+登录命令（`-i` 指定私钥）：
+```bash
+ssh -i ~/.ssh/nivara_hetzner root@<VPS_IP>
+```
+> 私钥丢失 = 重新生成并在 Hetzner 换公钥即可；私钥泄露 = 立即在 Console 删旧 key、换新 key。
+
+> 新账号第一次开机偶尔卡「审核中」（几分钟到几小时，有时需回邮件补资料）——这是 Hetzner 防滥用的正常流程，不是出错。
+
+### 步骤
+
+1. **Atlas M0**（先做，拿连接串）：建 M0 集群 → 建库用户（密码避开 `@:/?`）→ Network Access 测试期先 `0.0.0.0/0` → Connect/Drivers 取串，末尾加 `&maxPoolSize=10`：
+   ```
+   mongodb+srv://USER:PASS@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority&maxPoolSize=10
+   ```
+
+2. **开 VPS**：Hetzner Console → New Server（CX22 / Ubuntu 24.04 / ✅ Public IPv4 / 加 SSH key）→ 记下公网 IP `<VPS_IP>`。
+
+3. **装 Docker**（SSH 进 VPS 后）：
+   ```bash
+   apt update && apt upgrade -y
+   curl -fsSL https://get.docker.com | sh
+   fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+   echo '/swapfile none swap sw 0 0' >> /etc/fstab
+   ```
+
+4. **弄代码上 VPS**：`git clone <repo> /root/funny`（推荐）或本地 `scp -r` 整个仓库到 `/root/funny`，然后 `cd /root/funny/server`。
+
+5. **配置 .env**（`cp .env.example .env` 后填）——测试阶段至少这 4 项：
+   ```bash
+   NW_JWT_SECRET=$(openssl rand -hex 32)        # 三把密钥各跑一次 openssl 生成不同串
+   NW_INTERNAL_KEY=$(openssl rand -hex 32)
+   NW_ADMIN_JWT_SECRET=$(openssl rand -hex 32)
+   NW_MONGO_URI=<步骤1的Atlas串，带 &maxPoolSize=10>
+   ```
+   域名二选一：
+   - **无域名（最快）**：`NW_DOMAIN=:80`、`NW_GAME_PUBLIC_WS_URL=ws://<VPS_IP>/ws`（走 HTTP/WS）
+   - **有域名**：Cloudflare DNS 加 `api.gamestao.com` A 记录→`<VPS_IP>`（**先关橙云**让 Caddy 签证书），`NW_DOMAIN=api.gamestao.com`、`NW_GAME_PUBLIC_WS_URL=wss://api.gamestao.com/ws`，证书稳定后再开橙云。
+
+6. **启动**（首次构建 5-10 分钟）：
+   ```bash
+   docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
+   docker compose -f docker-compose.cloud.yml ps
+   docker compose -f docker-compose.cloud.yml logs -f metaserver   # 确认连上 Atlas、无报错
+   ```
+
+7. **验证**：`curl http://<VPS_IP>/`（或 `https://api.gamestao.com/`）返回 `Notebook Wars server` 即通。Hetzner 默认不开防火墙，80/443 直达；若开了 Firewall 记得放行。
+
+8. **前端连后端**：见 §6「client web 包的地址烘焙」。内测最省事用 localStorage 覆盖，不必为测试环境单独构建。
+
+### 运维速查
+
+```bash
+# 更新代码重部署
+cd /root/funny && git pull && cd server
+docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
+# 停/启
+docker compose -f docker-compose.cloud.yml down
+docker compose -f docker-compose.cloud.yml --env-file .env up -d
+# 升配（玩家上来后）：Hetzner Console → 关机 → Rescale → CPX21/CPX31 → 开机，数据盘不动
+```
+
+## 9. 备注
 
 - 特效（client 特效）与关卡编辑器前端**暂缓**，优先级低。
 - 全球多区域演进见 `DEPLOY_TOPOLOGY.md`（ADR-019）：Meta 共享 + 对战层按区隔离。本文件是单区起步版，选 VPS 商时心里装着「以后每区复制一套 matchsvc/gameserver」。
