@@ -39,7 +39,10 @@ export interface BuildAppOpts {
 }
 
 export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
-  const app = Fastify({ logger: opts.logger ?? false });
+  // bodyLimit 设 4MB（默认仅 1MB）：状态流分享上传压缩 blob（上限 2MB，service.ts），需让 Fastify
+  // 体量闸 ≥ 应用层上限，否则 >1MB 的合法 blob 被 Fastify 抢先 413（FST_ERR_CTP_BODY_TOO_LARGE），
+  // 应用层的优雅 400「replay too large」永不触发。其余端点 body 远小于此，不受影响。
+  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 4 * 1024 * 1024 });
   await app.register(cors, { origin: true });
 
   // 可读的请求/响应日志（联调用，替代 pino JSON）。每条请求一行收尾：方法 路径 状态 耗时。

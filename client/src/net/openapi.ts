@@ -260,6 +260,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/replay/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 状态流录像游戏外分享 — 铸码（REPLAY_SHARE_DESIGN §3.1）。客户端自产的状态流 blob 随请求上传； 服务端只存 blob + 发不可猜 shareCode，不碰引擎/数值表。状态流不可信、仅供观赏，绝不进反作弊/结算。 体量超上限 / 铸码限流 → 400 / 429。 */
+        post: operations["createStateReplayShare"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/r/{shareCode}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 状态流录像公开取（REPLAY_SHARE_DESIGN §3.2）；无需登录；不存在/超期返回 404 */
+        get: operations["getStateReplayShare"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pve/clear": {
         parameters: {
             query?: never;
@@ -1949,6 +1983,73 @@ export interface operations {
                         ok: true;
                         data: {
                             replay: components["schemas"]["MatchReplay"];
+                        };
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResp"];
+        };
+    };
+    createStateReplayShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description gzip+base64 压缩的 delta 状态流录像（EncodedStateReplay）；opaque 压缩串，服务端不解压/不解释 */
+                    blob: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @description 不可猜随机分享码；客户端拼 /r/{shareCode} 分发 */
+                            shareCode: string;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            429: components["responses"]["ErrorResp"];
+        };
+    };
+    getStateReplayShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                shareCode: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @description gzip+base64 压缩的 delta 状态流录像（EncodedStateReplay）；客户端解压后哑播放 */
+                            blob: string;
                         };
                     };
                 };

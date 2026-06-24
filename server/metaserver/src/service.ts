@@ -177,8 +177,12 @@ class SlidingRateLimiter {
   }
 }
 
-/** 状态流分享 blob 体量上限（512KB）。超限拒绝（提示这局太长）；最终上限实测再定（§7）。 */
-const STATE_REPLAY_MAX_BYTES = 512 * 1024;
+/**
+ * 状态流分享 blob 体量上限。blob 是客户端 gzip+base64 后的**压缩串**（§7），压缩比 ~10-20×，故
+ * 2MB 压缩串足以容纳一局很长的对局；超限拒绝（提示这局太长）。Fastify bodyLimit 另设 ≥ 此值
+ * （见 app.ts），令本处优雅 400 先于 Fastify 413 触发。
+ */
+const STATE_REPLAY_MAX_BYTES = 2 * 1024 * 1024;
 /** 状态流分享过期天数（先定 14 天；永久 vs N 天上线期再定，§7）。 */
 const STATE_REPLAY_EXPIRE_DAYS = 14;
 /** 每账号铸码限流：每小时上限。 */
@@ -1108,11 +1112,12 @@ export class MetaService {
       return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many shares, try later'));
     }
 
+    // blob = 客户端 gzip+base64 后的压缩串（opaque，服务端不解压、不解释，§7）。
     const blob = (req.body as { blob?: unknown }).blob;
-    if (blob === undefined || blob === null || typeof blob !== 'object') {
+    if (typeof blob !== 'string' || blob.length === 0) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing replay blob'));
     }
-    const sizeBytes = Buffer.byteLength(JSON.stringify(blob));
+    const sizeBytes = Buffer.byteLength(blob);
     if (sizeBytes > STATE_REPLAY_MAX_BYTES) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'replay too large'));
     }

@@ -1036,9 +1036,8 @@ paths:
               required: [blob]
               properties:
                 blob:
-                  type: object
-                  additionalProperties: true
-                  description: delta 编码的状态流录像（EncodedStateReplay）；opaque，服务端不解释内部结构
+                  type: string
+                  description: gzip+base64 压缩的 delta 状态流录像（EncodedStateReplay）；opaque 压缩串，服务端不解压/不解释
       responses:
         '200':
           description: 成功
@@ -1085,9 +1084,8 @@ paths:
                     required: [blob]
                     properties:
                       blob:
-                        type: object
-                        additionalProperties: true
-                        description: delta 编码的状态流录像（EncodedStateReplay）
+                        type: string
+                        description: gzip+base64 压缩的 delta 状态流录像（EncodedStateReplay）；客户端解压后哑播放
         '404': { $ref: '#/components/responses/ErrorResp' }
 
   /pve/clear:

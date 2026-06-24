@@ -23,18 +23,9 @@ async function tryConnect(): Promise<MongoHandle | null> {
 const mongo = await tryConnect();
 if (!mongo) console.warn(`[state-replay-share.e2e] Mongo 不可达（${URI}）— 跳过。`);
 
-const sampleBlob = {
-  header: {
-    schemaVersion: 1, mode: 'pvp', tickRate: 30, endTick: 2, winner: 0,
-    board: { cols: 12, rows: 18, lanes: [0, 1, 2, 3, 4, 7, 8, 9, 10, 11] },
-    players: [{ name: 'Tao', side: 0 }, { name: 'Anna', side: 1 }],
-  },
-  frames: [
-    { tick: 0, u: [{ id: 1000, type: 'infantry', side: 0, col: 3, row: 1, hp: 100, maxHp: 100, state: 'moving' }], bs: [{ owner: 0, hp: 100, maxHp: 100 }, { owner: 1, hp: 100, maxHp: 100 }] },
-    { tick: 1 },
-    { tick: 2, ru: [1000] },
-  ],
-};
+// blob 是客户端 gzip+base64 后的 opaque 压缩串（服务端不解压/不解释，只存取 + 体量闸 + 限流）。
+// 测试只需任意非空串 round-trip 一致即可。
+const sampleBlob = 'H4sIAAAAAAAA_compressed-state-replay-blob-base64==';
 
 describe.skipIf(!mongo)('state replay share e2e', () => {
   const m = mongo!;
@@ -87,8 +78,10 @@ describe.skipIf(!mongo)('state replay share e2e', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('体量超限 → 400', async () => {
-    const big = { header: sampleBlob.header, frames: [{ tick: 0, pad: 'A'.repeat(600 * 1024) }] };
+  it('体量超限 → 优雅 400（而非 Fastify 413）', async () => {
+    // > 2MB 压缩串（仍 < 4MB Fastify bodyLimit），应命中应用层优雅 400「replay too large」，
+    // 不被 Fastify 抢先 413。
+    const big = 'A'.repeat(2 * 1024 * 1024 + 16);
     const res = await app.inject({
       method: 'POST', url: '/replay/share',
       headers: { authorization: `Bearer ${token}` },

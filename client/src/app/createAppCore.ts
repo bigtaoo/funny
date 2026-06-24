@@ -1253,7 +1253,12 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       const { shareCode } = await api.createStateReplayShare(enc);
       await platform.shareReplay(shareCode, t('share.title'));
     } catch (e) {
-      log.error('state replay share failed', { err: String(e) });
+      // 分享失败按因分类，便于联调定位 + 后续接 UI 提示。最常见两类：体量超限（这局太长，
+      // 已压缩仍 > 上限）/ 铸码限流（短时分享过多）。其余按网络/未知。
+      const code = e instanceof ApiError ? e.code : null;
+      const reason =
+        code === 'BAD_REQUEST' ? 'too_large' : code === 'RATE_LIMITED' ? 'rate_limited' : 'error';
+      log.error('state replay share failed', { reason, err: String(e) });
     }
   }
 

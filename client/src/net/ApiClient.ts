@@ -9,6 +9,7 @@ import type { AuthCredential } from '../platform/IPlatform';
 import type { SaveData, SyncPatch, EquipmentInstance, EquipSlot } from '../game/meta/SaveData';
 import type { components, operations } from './openapi';
 import { netLog } from './log';
+import { packReplayBlob, unpackReplayBlob } from './replayCompress';
 
 const log = netLog('api');
 
@@ -231,15 +232,19 @@ export class ApiClient {
 
   /**
    * 状态流录像游戏外分享 — 铸码（REPLAY_SHARE_DESIGN §3.1）：上传客户端自产的状态流 blob，
-   * 返回不可猜 shareCode。需登录。体量超限 / 限流 → ApiError('BAD_REQUEST' / 'RATE_LIMITED')。
+   * 返回不可猜 shareCode。需登录。blob 上传前 gzip+base64 压缩（重复 delta JSON 压缩比极高，§7），
+   * 服务端 opaque 存储。体量超限 / 限流 → ApiError('BAD_REQUEST' / 'RATE_LIMITED')。
    */
   async createStateReplayShare(blob: unknown): Promise<{ shareCode: string }> {
-    return this.post<{ shareCode: string }>('/replay/share', { blob });
+    const packed = await packReplayBlob(blob);
+    return this.post<{ shareCode: string }>('/replay/share', { blob: packed });
   }
 
-  /** 状态流录像公开取（REPLAY_SHARE_DESIGN §3.2）：无需登录；不存在/超期 → ApiError('NOT_FOUND')。 */
+  /** 状态流录像公开取（REPLAY_SHARE_DESIGN §3.2）：无需登录；取回后解压回 EncodedStateReplay。
+   *  不存在/超期 → ApiError('NOT_FOUND')。 */
   async getStateReplayShare(shareCode: string): Promise<{ blob: unknown }> {
-    return this.request<{ blob: unknown }>('GET', `/r/${shareCode}`);
+    const { blob } = await this.request<{ blob: unknown }>('GET', `/r/${shareCode}`);
+    return { blob: await unpackReplayBlob(blob) };
   }
 
   /** L1 录像抽检复算：补传被抽中通关的录像帧 → 第三方无头复算 → 复算星数 ≥ 声称才发材料。 */
