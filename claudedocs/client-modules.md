@@ -10,7 +10,7 @@
 - **多语言（i18n）**：`zh.ts` 为键唯一来源（`TranslationKey`），`en`/`de` 声明为 `Record<TranslationKey, string>` 漏翻报错；`t(key, params?)` 取词，支持 `{param}` 插值
 - **网络协议 codegen**：`transport.proto`/`game.proto` → ts-proto via buf → `src/net/proto/`；`openapi.yml` → openapi-typescript → `src/net/openapi.ts`；改契约须重跑 `npm run proto:gen` / `npm run rest:gen`
 - **统一输入管线（M13）**：`InputSource` 接口，`LocalInputSource`（单机）/ `NetInputSource`（联机锁步）/ `RecordingInputSource`（录制）/ `ReplayInputSource`（回放）
-- **⚠️ 渲染层销毁契约（防内存泄漏）**：每个战斗视图（`GameRenderer` 及其子视图 `BoardView`/`UnitView`/`BuildingView`/`HandView`）**必须**实现 `destroy()`，做到三件事：①把所有挂在 `PIXI.Ticker.shared` 上的一次性特效 tick 闭包（受击/死亡/陨石/建筑生成销毁动画）注销——这些闭包捕获 sprite→view→整局场景图，`Ticker.shared` 是 GC 根，漏一个就钉住整局对象树+纹理永不回收；②把对象池（`ObjectPool`/`stickmanPools`）里**已 `removeFromParent` 的游离对象** `destroy()`（容器树的 `destroy({children:true})` 触达不到它们）；③`this.container.destroy({children:true})` 销毁显示子树。**共享纹理不销毁**：spritesheet（`StickmanRuntime.loadAsset` 按 url 静态缓存）、`bake()` 烘焙底图、`PIXI.Texture.from(url)`（建筑/卡牌美术）均跨局复用，destroy 时只解引用不 `.destroy()`。历史教训：六个战斗视图原先全无 `destroy()` 且 `GameRenderer.destroy()` 不销毁容器，每局对战退出泄漏整张场景图，长时间游玩内存可涨到 10GB+。新增战斗视图务必遵守此契约。`SceneManager.goto` 已对旧场景 `removeChild + destroy()`，场景只要 `destroy()` 干净即可。
+- **⚠️ 渲染层销毁契约（防内存泄漏）**：每个战斗视图（`GameRenderer` 及子视图 `BoardView`/`UnitView`/`BuildingView`/`HandView`）**必须**实现 `destroy()`：①注销所有挂在 `PIXI.Ticker.shared` 上的一次性特效 tick（`Ticker.shared` 是 GC 根，漏一个就钉住整局场景图+纹理）；②`pool.drain()` 销毁池内已 `removeFromParent` 的游离对象；③`container.destroy({children:true})`。**共享纹理（spritesheet/`bake()`/`Texture.from`）只解引用不销毁。** 详见 **[`client-memory-leak.md`](client-memory-leak.md)**（事故复盘 + 完整契约 + heap snapshot 验证法）—— 2026-06 一次因六个视图全无 `destroy()` 导致每局退场泄漏整张场景图、2 小时涨到 16GB 的事故。
 
 ## 核心模块
 
