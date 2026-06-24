@@ -120,6 +120,7 @@ export class App {
       {},
       h('span', { class: 'brand' }, '🛠 运维后台'),
       h('span', { class: 'who' }, `${session.admin.displayName} · ${session.admin.role}`),
+      h('span', { class: 'build', title: `构建时间 ${__BUILD_TIME__} (UTC)` }, `v ${__BUILD_VERSION__}`),
       logout,
     );
     this.mount.append(header, navEl, main);

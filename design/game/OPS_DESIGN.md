@@ -248,6 +248,7 @@ POST   /admin/accounts/{id}/reset-password { password }
 - 登录页 → 主框架按 `capabilities` 渲染导航：监控看板 / 数据分析 / 玩家查询 / 补偿工单 / 审计 / 账号管理。
 - 调 admin 后端 REST（fetch + Bearer admin token）。
 - 不持任何密钥、不连库、不直连业务服务——一切经 admin 后端。
+- **构建版本标识（2026-06-24）**：header 右侧显示 `v <git short hash>`（hover 出构建时间 UTC），webpack `DefinePlugin` 在构建期注入 `__BUILD_VERSION__`/`__BUILD_TIME__`（取 `git rev-parse --short HEAD`）。用于排查"线上是否旧 bundle"——发布后比对该号与目标提交即可确认。
 
 ---
 
