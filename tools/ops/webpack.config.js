@@ -6,8 +6,12 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 function gitCommit() {
   try {
     const hash = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim();
-    // 工作区有未提交改动 → 标 -dirty，区分干净提交构建与本地脏构建。
-    const dirty = execSync('git status --porcelain', { cwd: __dirname }).toString().trim().length > 0;
+    // 仅看 ops 相关文件是否有未提交改动 → 标 -dirty（避免被仓库别处的并行改动误标）。
+    const root = execSync('git rev-parse --show-toplevel', { cwd: __dirname }).toString().trim();
+    const dirty = execSync(
+      'git status --porcelain -- tools/ops wrangler.ops.jsonc worker.ops.js',
+      { cwd: root },
+    ).toString().trim().length > 0;
     return dirty ? `${hash}-dirty` : hash;
   } catch {
     return 'unknown';
