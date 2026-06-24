@@ -1,0 +1,61 @@
+name: client-deploy
+
+# 主游戏 client（web 包，Worker nivara-client）自动发布到 Cloudflare，对外 a.gamestao.com。
+# 触发：push 到 main 且改动落在 client 相关文件，或在 Actions 页手动 Run。
+# 流程：npm ci → npm run build:web（把生产 API/WS 地址烘焙进 bundle）→ wrangler deploy。
+# 部署细节 / 地址烘焙变量：design/product/deploy-cloudflare.md §6。
+#
+# 复用 ops 那套 repo secrets（同一 CF 账号 e64b61f1...，"Edit Cloudflare Workers" token 覆盖全账号 Worker）：
+#   CLOUDFLARE_API_TOKEN   —— 权限至少 Workers Scripts:Edit（账号级，nivara-client 同样适用，无需新建）
+#   CLOUDFLARE_ACCOUNT_ID  —— 账号 ID（与 ops 同值）
+# 启用开关：repo variable CLIENT_DEPLOY_ENABLED = true（未设则 job 跳过，避免配好前每次 push 报红）。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/**'
+      - 'wrangler.client.jsonc'
+      - '.github/workflows/client-deploy.yml'
+  workflow_dispatch: {}
+
+# 同时只跑一个 client 部署，新的取消旧的，避免并发 deploy 打架。
+concurrency:
+  group: client-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # 未设 repo variable CLIENT_DEPLOY_ENABLED=true 时整个 job 跳过（避免配好前每次 push 报红）。
+    if: ${{ vars.CLIENT_DEPLOY_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: client install
+        working-directory: client
+        run: npm ci
+
+      # 产出 client/dist；生产地址烘焙到 api.gamestao.com（与手动部署命令一致）。
+      - name: client build (web)
+        working-directory: client
+        env:
+          NW_API_BASE: https://api.gamestao.com/api
+          NW_GATEWAY_WS: wss://api.gamestao.com/gw
+          NW_WORLD_BASE: https://api.gamestao.com
+        run: npm run build:web
+
+      # 从仓库根用 -c 指定 client 配置（assets 指向 ./client/dist，无 Worker 脚本）。
+      # 直接用 npx wrangler 跑（不用 wrangler-action），报错原样可见。
+      - name: deploy to Cloudflare
+        working-directory: .
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx -y wrangler@4.104.0 deploy -c wrangler.client.jsonc

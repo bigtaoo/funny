@@ -121,6 +121,16 @@ cd .. && npx wrangler deploy -c wrangler.client.jsonc
 - 构建命令：`cd client && NW_API_BASE=... NW_GATEWAY_WS=... NW_WORLD_BASE=... npm run build:web` → 产物 `client/dist`。
 - **localStorage 覆盖（内测神器）**：用一份默认构建即可，朋友在浏览器 DevTools console 跑 `localStorage.setItem('nw_api_base','http://<VPS_IP>/api'); localStorage.setItem('nw_gateway_ws','ws://<VPS_IP>/gw'); location.reload()` 就能连你的后端，无需为每个环境重新构建。
 
+#### 自动发布（GitHub Action，免手敲命令）
+
+`.github/workflows/client-deploy.yml`：push 到 `main` 且改动落在 `client/**` / `wrangler.client.jsonc` / 该 workflow 时自动 `npm ci → build:web（地址烘焙到 api.gamestao.com）→ wrangler deploy`；也可在 Actions 页手动 Run（`workflow_dispatch`）。与 ops-deploy 同套路：
+
+1. **复用 ops 那套 secrets**：`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` 已配（同一 CF 账号 `e64b61f1...`，"Edit Cloudflare Workers" token 是账号级 Workers 写权限，覆盖 `nivara-client`，**无需新建 token**）。
+2. **开关**：设 repo variable `CLIENT_DEPLOY_ENABLED = true`（未设则 job 跳过）。
+3. 地址烘焙的三个构建期环境变量写死在 workflow 里（与手动命令同值），改地址改 workflow 即可。
+
+> 手动两条命令的老路仍可用（上面命令块），适合本机临时发布或 CI 不可用时兜底。
+
 ### ops 部署（Cloudflare Worker + static assets，对外 `ops.gamestao.com`）
 
 **架构（同源反代 + CF Access）**：ops 不是纯静态，而是「静态资源 + Worker 反代」。整个 `ops.gamestao.com` 由**一个 CF Access 应用**保护（网络级登录墙），ops 自己的 admin 账号密码是**第二层**。
@@ -166,6 +176,11 @@ npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler.ops.jsonc
 3. wrangler secret（`ADMIN_PROXY_SECRET`）在 Worker 上持久保存，自动 deploy **不会清除**，无需在 CI 重设。
 
 > 手动两条命令的老路仍可用（上面命令块），适合本机临时发布或 CI 不可用时兜底。
+
+> **排错：CI 报 `Authentication error [code: 10000]` 但本地能部署**（2026-06-24 踩过）。
+> 这不是 token 权限不足，而是 **`CLOUDFLARE_ACCOUNT_ID` secret 指向了 token 够不着的账号**。
+> 本地不传 account id 时 wrangler 自动选中 token 唯一关联的账号（即 `e64b61f1...`）故成功；CI 显式传了一个**不匹配**的 account id 就打到别的账号上报 10000。
+> wrangler 失败时会自报 token 所属账号（`👋 You are logged in ... │ ... │ <account id> │`），对照修正 secret 即可。`nivara-ops` 所在账号 = `e64b61f1629ebcc49ee9b6eea2a95b82`。
 
 #### 上线闭环操作手册（admin 后端上线时一次性做）
 
