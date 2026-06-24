@@ -418,3 +418,14 @@ _2026-06-24（补全施工细节）：_
 **未做（后续）**：8 个新特效尚未接入游戏战斗渲染层（`SpellSystem`/`TraitSystem` 当前不出特效，本期只产「素材」备用，待法术演出层开工时 `vfx.play(id,...)` 接入）；位图粒子 `emitter`（§13 扩展位，仍 no-op）。
 **验收备忘**：client `tsc --noEmit` + 16 vitest 通过；vfx-editor `tsc --noEmit` + `webpack --mode production` 通过（仅 PIXI bundle 体积警告）；boil 轮播 / 新特效观感目视回归按项目约定不截图，留待手动 `npm run start`（编辑器）或游戏内播放。
 > 工程备注：worktree 无 node_modules，本次 junction 主目录 `client`/`server`/根 node_modules 跑 client 校验，`tools/vfx-editor` 内 `npm install` 后跑工具校验（均 gitignore，不入提交）。
+
+### P4 — 接通 one-shot 法术特效到战斗渲染层（2026-06-24，已完成，client `tsc --noEmit` 通过）
+
+落实 P3「未做」尾的第一块：把 P3 产出的法术素材真正在游戏内播出来。
+
+- **范围 = 3 个 one-shot 空间法术**：`meteor` / `rockslide` / `bridge_collapse`。引擎对全部法术只发**唯一**事件 `spell_cast { spellType, owner, center }`（`server/engine/src/systems/SpellSystem.ts`：meteor 的 center=2×2 落点，rockslide/bridge_collapse 的 center=整列 col），三者 `loop:false`，与 one-shot VFX 完美对应。
+- **接入点**：`client/src/render/GameRenderer.ts` `handleEvent` 新增 `case 'spell_cast'`——模块常量 `SPELL_VFX`（`SpellType→vfx id`）查表，`event.center` 经 `boardView.gridToScreen(col, fromFp(y_fp))` 转屏幕坐标，颜色按 `event.owner === localOwner ? factionInk.friend : factionInk.enemy`（我蓝敌红 §3.8，特效数据的 `defaultColor` 仅编辑占位）。
+- **haste 不接（归 P5）**：haste 是 `loop:true` 的**逐单位 buff 速度线**，单个 `spell_cast` 无 buff 结束信号、无法管理 loop 句柄生命周期；它和 aura_heal/shield/slow/summon 同属「需要 buff/trait 生命周期事件」的一组。
+- **`StatePlayerScene`（哑状态回放器）不接**：它从相邻状态帧 diff 合成特效，状态流只载 units/buildings/bases，不含 spell_cast，法术无法重建——保持现状。
+
+**P5（后续，需先做引擎/渲染支撑）**：4 个 Trait/buff 特效（`haste`/`aura_heal`/`shield`/`slow`）的逐单位 loop 接入 + `summon` 接 `unit_spawned`/`building_spawned_unit`。前者需引擎补 buff 起止事件，或渲染层按单位 trait 状态轮询并维护 `play()` 句柄随单位存续/销毁。
