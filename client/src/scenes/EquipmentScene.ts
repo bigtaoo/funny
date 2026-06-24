@@ -29,6 +29,7 @@ import {
   type EnhanceCost,
 } from '../game/meta/equipmentDefs';
 import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
+import { drawEquipmentGlyph } from '../render/equipmentGlyph';
 
 export type EquipResult = { ok: true } | { ok: false; key: TranslationKey };
 export type EnhanceResult =
@@ -269,13 +270,16 @@ export class EquipmentScene implements Scene {
       this.bodyLayer.addChild(slotLbl);
 
       if (inst) {
+        this.addGlyph(slot, inst.rarity, x + cellW / 2, cy + cellH * 0.4, 30, seedFor(i, 13, cellW));
         const nm = txt(`${this.itemName(inst.defId)} +${inst.level}`, 11, C.dark);
-        nm.anchor.set(0.5, 0.5); nm.x = x + cellW / 2; nm.y = cy + cellH * 0.62;
+        nm.anchor.set(0.5, 0.5); nm.x = x + cellW / 2; nm.y = cy + cellH * 0.82;
         this.bodyLayer.addChild(nm);
         this.hitRects.push({ rect: { x, y: cy, w: cellW, h: cellH }, action: () => this.openDetail(inst.id) });
       } else {
+        // Faint slot-shape hint (common media, dimmed) so empty cells still read as "weapon/armor/trinket".
+        this.addGlyph(slot, 'common', x + cellW / 2, cy + cellH * 0.4, 28, seedFor(i, 13, cellW), 0.28);
         const empty = txt(t('equip.slotEmpty'), 11, C.mid);
-        empty.anchor.set(0.5, 0.5); empty.x = x + cellW / 2; empty.y = cy + cellH * 0.62;
+        empty.anchor.set(0.5, 0.5); empty.x = x + cellW / 2; empty.y = cy + cellH * 0.82;
         this.bodyLayer.addChild(empty);
       }
     });
@@ -288,12 +292,16 @@ export class EquipmentScene implements Scene {
     row.x = 6; row.y = cy;
     this.bodyLayer.addChild(row);
 
+    const slot = getEquipDef(inst.defId)?.slot ?? 'weapon';
+    this.addGlyph(slot, inst.rarity, 32, cy + (ROW_H - 4) / 2, 38, seedFor(cy, 3, w));
+    const tx = 56;
+
     const name = txt(`${this.itemName(inst.defId)} +${inst.level}`, 13, C.dark, true);
-    name.x = 14; name.y = cy + 7;
+    name.x = tx; name.y = cy + 7;
     this.bodyLayer.addChild(name);
 
     const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), 10, color, true);
-    rar.x = 14; rar.y = cy + 28;
+    rar.x = tx; rar.y = cy + 28;
     this.bodyLayer.addChild(rar);
 
     let tagX = name.x + name.width + 8;
@@ -342,8 +350,11 @@ export class EquipmentScene implements Scene {
     row.x = 6; row.y = cy;
     this.bodyLayer.addChild(row);
 
+    this.addGlyph(def.slot, def.rarity, 32, cy + (ROW_H - 4) / 2, 38, seedFor(cy, 4, w));
+    const tx = 56;
+
     const name = txt(this.itemName(defId), 13, C.dark, true);
-    name.x = 14; name.y = cy + 7;
+    name.x = tx; name.y = cy + 7;
     this.bodyLayer.addChild(name);
     const rar = txt(t(`equip.rarity.${def.rarity}` as TranslationKey), 10, color, true);
     rar.x = name.x + name.width + 8; rar.y = cy + 9;
@@ -352,7 +363,7 @@ export class EquipmentScene implements Scene {
     const cost = def.craftCost ?? {};
     const affordable = this.canAffordMaterials(save, cost);
     const costLbl = txt(this.materialsStr(cost), 11, affordable ? C.mid : C.red);
-    costLbl.x = 14; costLbl.y = cy + 28;
+    costLbl.x = tx; costLbl.y = cy + 28;
     this.bodyLayer.addChild(costLbl);
 
     const enabled = affordable && !full && !this.bt.busy;
@@ -746,6 +757,18 @@ export class EquipmentScene implements Scene {
       }
     }
     return ids;
+  }
+
+  /**
+   * Draw a procedural stationery glyph (equipmentGlyph.ts) centered at (cx, cy)
+   * into a fresh Graphics on bodyLayer. Replaces the old "name-only" placeholder
+   * so each item shows its slot shape × rarity media (EQUIPMENT_DESIGN §20.3).
+   */
+  private addGlyph(slot: EquipSlot, rarity: EquipRarity, cx: number, cy: number, size: number, seed: number, alpha = 1): void {
+    const gfx = new PIXI.Graphics();
+    drawEquipmentGlyph(gfx, slot, rarity, size, seed);
+    gfx.x = cx; gfx.y = cy; gfx.alpha = alpha;
+    this.bodyLayer.addChild(gfx);
   }
 
   private itemName(defId: string): string {

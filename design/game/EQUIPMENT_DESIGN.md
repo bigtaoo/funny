@@ -619,3 +619,33 @@ buildSiegeBlueprints(levels, equipped, inv)
 - **运营看板**：强化漏斗（+N→+N+1 实际成功率）、金币/材料 sink 总量、背包逼近上限比例、装备战力分布 vs 35% 目标。
 - **风控联动**：异常强化频率、拍卖对敲（§13）入 ops 风控面（OPS_DESIGN）。
 
+---
+
+## 20. 美术资源需求（盘点）
+
+> 一句话结论：**装备系统刻意设计成「近零位图美术」**——视觉由 `SketchPen` 程序绘制 + theme 参数化，**不需要画师逐件出图**。下表把"需要做的视觉"按"程序 / 美术"归类，避免按传统游戏惯例误估成"12 张图标 + 穿戴切件"。口径权威同 §2 / [`art-direction.md`](../product/art-direction.md) §9.2。
+
+### 20.1 装备规模（决定参数化工作量，不是出图量）
+
+3 槽 × 4 稀有度 = **12 个 `defId`**（§17.2）。稀有度↔媒材皮：普通=铅笔(灰) / 精良=钢笔(蓝) / 稀有=马克笔(橙 `#e08a2c`) / 史诗=荧光笔·烫金(紫)。稀有度色已编码（`EquipmentScene.RARITY_COLOR` / 渲染层 `theme.ts`），**0 美术**。
+
+### 20.2 资源清单（按"程序 / 美术"归类）
+
+| 项目 | 性质 | 工作量 | 落点 |
+|---|---|---|---|
+| 背包/锻造/loadout 的装备图标 | **程序绘制** | 12 件无需逐件出图：按 (槽位基形 × 稀有度媒材色) 程序合成 | `client/src/render/equipmentGlyph.ts`（§20.3 已落地） |
+| 4 档稀有度视觉（媒材皮调色 + 笔触） | **theme 参数** | 一档 = 一组调色板/笔刷，与付费皮肤复用同一套文具稀有度语言 | `theme.ts` + `equipmentGlyph` 内 `MEDIA` 表 |
+| 强化等级 / 词条 / 成功率显示 | 纯文本 + i18n | 0 | `EquipmentScene` 已有 |
+| 稀有度边框/标签 | UI 色（已编码） | 0 | `RARITY_COLOR` |
+| **战斗内沿 bone-slot 的装备立绘叠加** | **程序绘制（待实现）** | 沿 `StickmanRuntime` attachment point 叠加文具笔触 | 见 §20.4 |
+
+**明确不需要的传统美术**：装备穿戴外观切件、每件独立手绘大图、拖拽预览位图——全程序合成。
+
+### 20.3 实现记录（2026-06-24，✅）— UI 装备图标程序化
+
+落地 = 新建 `client/src/render/equipmentGlyph.ts`（`drawEquipmentGlyph(g, slot, rarity, size, seed)` + `MEDIA` 媒材色表，用 `SketchPen` 画 3 类基形：weapon=笔杆+笔尖 / armor=封皮+书脊 / trinket=小配件，稀有度色驱动填充与点缀）+ 接入 `EquipmentScene`（loadout 三槽、背包实例行、锻造行把原"纯文字"替换为程序图标）。零位图资产，`tsc --noEmit` + webpack 构建验证。
+
+### 20.4 待实现切片 — 战斗内 bone-slot 立绘叠加
+
+§2/§11 的「把装备画到角色身上」在**战斗渲染**层尚未落地：`StickmanRuntime` 已有 attachment point 机制（`hit`/`shadow` 挂父骨骼 + 偏移），装备叠加可复用——按 `gear` 给 weapon/armor/trinket 槽在对应骨骼挂程序笔触。⚠️ 该路径是 swarm 热路径（对象池 + 内存看护），改动需配合运行时验证，故与 UI 图标（§20.3）拆为独立切片，本切片不含。
+
