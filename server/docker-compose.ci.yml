@@ -34,6 +34,12 @@ services:
       retries: 20
 
   commercial:
+    environment:
+      # CI 栈跑的是 prod 镜像（Dockerfile 写死 NODE_ENV=production），但 CI 没有真实支付凭据，
+      # 全链路 E2E 的充值断言依赖 `tier:` dev 桩。L2-3 加固在 NODE_ENV=production 下强制封死
+      # dev 桩（iap.ts）并拒启 NW_IAP_DEV=true（index.ts），故这里只能把 commercial 退出 prod 档：
+      # NODE_ENV != production → 缺凭据自动回退 dev 桩，prod 加固本身一行不改。
+      NODE_ENV: development
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8092/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 5s
