@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./src",
+    "paths": {
+      "@vfx/*": ["../../../client/src/render/vfx/*"],
+      "@game/*": ["../../../client/src/game/*"],
+      "@nw/engine": ["../../../server/engine/src/index.ts"],
+      "@nw/engine/*": ["../../../server/engine/src/*"],
+      "pixi.js-legacy": ["../node_modules/pixi.js-legacy/lib/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*"]
+}
