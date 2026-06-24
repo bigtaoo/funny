@@ -12,6 +12,12 @@ export interface MatchsvcEnv extends ServerEnv {
   gamePublicWsUrl: string | null;
   /** ticket 有效期秒数（match_found 到连 game 的容忍窗口）。默认 30。 */
   ticketTtlSec: number;
+  /** admin 内部基址（轮询 GET /admin/internal/flags 拿 feature flag 原始规则）。null = 不读 flag（全 default）。 */
+  adminInternalUrl: string | null;
+  /** 部署区域（注入 feature flag 求值 ctx）。空 = 不按区定向。 */
+  region: string | null;
+  /** ranked 匹配等待超此毫秒数 → 评估 match_bot_fallback 决定是否降级打 AI。默认 30000。 */
+  botFallbackMs: number;
 }
 
 export function loadMatchsvcEnv(): MatchsvcEnv {
@@ -22,5 +28,8 @@ export function loadMatchsvcEnv(): MatchsvcEnv {
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL ?? null,
     gamePublicWsUrl: process.env.NW_GAME_PUBLIC_WS_URL ?? null,
     ticketTtlSec: Number(process.env.NW_TICKET_TTL_SEC ?? 30),
+    adminInternalUrl: process.env.NW_ADMIN_INTERNAL_URL ?? null,
+    region: process.env.NW_REGION ?? null,
+    botFallbackMs: Number(process.env.NW_MM_BOT_FALLBACK_MS ?? 30000),
   };
 }

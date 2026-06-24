@@ -87,7 +87,7 @@ export function startInternalHttp(
             svc.roomLeave(str(b.accountId));
             break;
           case '/mm/queue/enqueue':
-            svc.enqueue(str(b.accountId), str(b.name), str(b.publicId), num(b.elo, 1000));
+            svc.enqueue(str(b.accountId), str(b.name), str(b.publicId), num(b.elo, 1000), str(b.equippedTitle), str(b.platform));
             break;
           case '/mm/conn/connected':
             svc.onConnected(str(b.accountId));

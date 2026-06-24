@@ -118,6 +118,15 @@ message MatchFound {
   string ticket   = 2;   // matchsvc 签名票据（含 room_id/seed/side/mode/opponent）
 }
 
+// 匹配超时降级打 AI（feature flag match_bot_fallback 开启时，ranked 等待超阈值无真人 → 本地 AI 局）。
+// 客户端据此直接开一场「本地 AI 对局」（不连 gameserver，引擎在客户端跑 AISystem），无 ticket。
+message MatchBot {
+  uint64 seed         = 1;   // 局内 RNG 种子（客户端本地引擎用）
+  string opponent_name = 2;  // AI 对手展示名
+  uint32 elo          = 3;   // 玩家 ELO（AI 难度/展示参考）
+  string difficulty   = 4;   // AI 难度档（normal | …，DRAFT）
+}
+
 message PeerDc { uint32 side = 1; uint32 grace_ms = 2; }
 
 message EloDelta { int32 delta = 1; int32 after = 2; string rank_after = 3; }
@@ -267,6 +276,7 @@ message ServerMsg {
     SectMsg           sect_msg        = 21;
     WorldEvent        world_event     = 22;
     NationMsg         nation_msg      = 23;
+    MatchBot          match_bot       = 24;
   }
 }
 

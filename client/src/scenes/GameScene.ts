@@ -67,6 +67,12 @@ export interface GameSceneOptions {
   /** Equipped skin id (S3-4) — swaps unit textures only; null/absent = default look. */
   equippedSkin?: string | null;
   /**
+   * Explicit RNG seed for the local PvP-vs-AI path (match-bot fallback). Lets the
+   * server-chosen seed drive a deterministic local AI match. Ignored when `level`
+   * or `engine` is set.
+   */
+  seed?: number;
+  /**
    * Equipment loadout + inventory for PvE/siege paths (A5 hard wall).
    * Passed to the engine so affixes are applied to campaign blueprints.
    * Omit for PvP — no equipment power in competitive matches.
@@ -97,6 +103,7 @@ export class GameScene implements Scene {
         ...(opts.unitLevels ? { unitLevels: opts.unitLevels } : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
         ...(opts.equipment ? { equipment: opts.equipment } : {}),
+        ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
       });
       engine = match.engine;
       buildReplay = match.buildReplay;

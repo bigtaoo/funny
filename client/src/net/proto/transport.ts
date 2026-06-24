@@ -87,7 +87,6 @@ export interface CmdSubmit {
 export interface MatchResult {
   stateHash: string;
   winnerSide: number;
-  /** S9-6: 本方本局成就计数 JSON（{"kill.archer":n,…}）；仅 ranked 喂，meta L1 校验后累加。 */
   statsJson: string;
 }
 
@@ -118,7 +117,7 @@ export interface JudgeVerdict {
   ok: boolean;
   /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：复算得到的星数（0=未通关） */
   stars: number;
-  /** PvE 喂入（S9-3b）：复算出的玩家本局成就计数 JSON；PvP/siege 恒空 */
+  /** PvE 喂入（S9-3b）：复算出的玩家(owner 0)本局成就计数 JSON（{"kill.archer":n,…}）；裁判权威，meta verified 时 L1 校验后累加。PvP/siege 恒空 */
   statsJson: string;
 }
 
@@ -153,7 +152,7 @@ export interface MatchStart {
   opponentName: string;
   /** 对手 9 位数字公开 id（UI 用，纯展示） */
   opponentPublicId: string;
-  /** 对手佩戴称号 id（空串=无称号；S10）。 */
+  /** 对手佩戴称号 id（UI 用，纯展示；空串=无称号） */
   opponentTitle: string;
 }
 
@@ -174,6 +173,21 @@ export interface MatchFound {
   gameUrl: string;
   /** matchsvc 签名票据（含 room_id/seed/side/mode/opponent） */
   ticket: string;
+}
+
+/**
+ * 匹配超时降级打 AI（feature flag match_bot_fallback 开启时，ranked 等待超阈值无真人 → 本地 AI 局）。
+ * 客户端据此直接开一场「本地 AI 对局」（不连 gameserver，引擎在客户端跑 AISystem），无 ticket。
+ */
+export interface MatchBot {
+  /** 局内 RNG 种子（客户端本地引擎用） */
+  seed: number;
+  /** AI 对手展示名 */
+  opponentName: string;
+  /** 玩家 ELO（AI 难度/展示参考） */
+  elo: number;
+  /** AI 难度档（normal | …，DRAFT） */
+  difficulty: string;
 }
 
 export interface PeerDc {
@@ -229,7 +243,10 @@ export interface JudgeRequest {
    * （攻方指令）跑到终局，winner_side=0 → 攻方破城（attacker_win），经 judge_verdict 回报。
    */
   defenseJson: string;
-  /** S12 单位养成等级快照（unitId→1..9），优先于 pve_upgrades 保证复算确定性。 */
+  /**
+   * S12 单位养成复算：unit_levels 非空 → 裁判用此等级映射重建蓝图（替代 pve_upgrades，保证
+   * 高养成玩家抽检时复算使用与对局完全一致的蓝图，防止弱蓝图误判）。
+   */
   unitLevels: { [key: string]: number };
 }
 
@@ -287,7 +304,7 @@ export interface MailNew {
  */
 export interface MarchUpdate {
   marchId: string;
-  /** attack | reinforce | occupy | sweep | return */
+  /** attack | reinforce | occupy | sweep | scout | return */
   kind: string;
   fromTile: string;
   toTile: string;
@@ -346,6 +363,18 @@ export interface SectMsg {
   ts: number;
 }
 
+/**
+ * 国家/世界公频消息（B7，§6.4 社交频道）。worldsvc 经 Redis pub/sub 扇给同 worldId 内
+ * 所有在线玩家；无 Redis 降级为 O(n) HTTP push。离线成员靠 REST 拉历史（TTL 7 天）。
+ */
+export interface NationMsg {
+  worldId: string;
+  fromPublicId: string;
+  fromName: string;
+  text: string;
+  ts: number;
+}
+
 export interface WorldEvent {
   /** season_open | season_settle | grand_tourney | … */
   kind: string;
@@ -376,6 +405,8 @@ export interface ServerMsg {
   familyMsg?: FamilyMsg | undefined;
   sectMsg?: SectMsg | undefined;
   worldEvent?: WorldEvent | undefined;
+  nationMsg?: NationMsg | undefined;
+  matchBot?: MatchBot | undefined;
 }
 
 /** 线上每帧一个 Envelope */
@@ -1487,7 +1518,16 @@ export const RoomState: MessageFns<RoomState> = {
 };
 
 function createBaseMatchStart(): MatchStart {
-  return { roomId: "", mode: 0, seed: 0, startFrame: 0, localSide: 0, opponentName: "", opponentPublicId: "", opponentTitle: "" };
+  return {
+    roomId: "",
+    mode: 0,
+    seed: 0,
+    startFrame: 0,
+    localSide: 0,
+    opponentName: "",
+    opponentPublicId: "",
+    opponentTitle: "",
+  };
 }
 
 export const MatchStart: MessageFns<MatchStart> = {
@@ -1752,6 +1792,88 @@ export const MatchFound: MessageFns<MatchFound> = {
     const message = createBaseMatchFound();
     message.gameUrl = object.gameUrl ?? "";
     message.ticket = object.ticket ?? "";
+    return message;
+  },
+};
+
+function createBaseMatchBot(): MatchBot {
+  return { seed: 0, opponentName: "", elo: 0, difficulty: "" };
+}
+
+export const MatchBot: MessageFns<MatchBot> = {
+  encode(message: MatchBot, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.seed !== 0) {
+      writer.uint32(8).uint64(message.seed);
+    }
+    if (message.opponentName !== "") {
+      writer.uint32(18).string(message.opponentName);
+    }
+    if (message.elo !== 0) {
+      writer.uint32(24).uint32(message.elo);
+    }
+    if (message.difficulty !== "") {
+      writer.uint32(34).string(message.difficulty);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): MatchBot {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMatchBot();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.seed = longToNumber(reader.uint64());
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.opponentName = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.elo = reader.uint32();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.difficulty = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<MatchBot>, I>>(base?: I): MatchBot {
+    return MatchBot.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<MatchBot>, I>>(object: I): MatchBot {
+    const message = createBaseMatchBot();
+    message.seed = object.seed ?? 0;
+    message.opponentName = object.opponentName ?? "";
+    message.elo = object.elo ?? 0;
+    message.difficulty = object.difficulty ?? "";
     return message;
   },
 };
@@ -2059,7 +2181,17 @@ export const Pong: MessageFns<Pong> = {
 };
 
 function createBaseJudgeRequest(): JudgeRequest {
-  return { requestId: "", seed: 0, mode: 0, endFrame: 0, frames: [], levelId: "", pveUpgrades: {}, defenseJson: "", unitLevels: {} };
+  return {
+    requestId: "",
+    seed: 0,
+    mode: 0,
+    endFrame: 0,
+    frames: [],
+    levelId: "",
+    pveUpgrades: {},
+    defenseJson: "",
+    unitLevels: {},
+  };
 }
 
 export const JudgeRequest: MessageFns<JudgeRequest> = {
@@ -2305,17 +2437,25 @@ export const JudgeRequest_UnitLevelsEntry: MessageFns<JudgeRequest_UnitLevelsEnt
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1: {
-          if (tag !== 10) { break; }
+          if (tag !== 10) {
+            break;
+          }
+
           message.key = reader.string();
           continue;
         }
         case 2: {
-          if (tag !== 16) { break; }
+          if (tag !== 16) {
+            break;
+          }
+
           message.value = reader.uint32();
           continue;
         }
       }
-      if ((tag & 7) === 4 || tag === 0) { break; }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
       reader.skip(tag & 7);
     }
     return message;
@@ -2324,9 +2464,7 @@ export const JudgeRequest_UnitLevelsEntry: MessageFns<JudgeRequest_UnitLevelsEnt
   create<I extends Exact<DeepPartial<JudgeRequest_UnitLevelsEntry>, I>>(base?: I): JudgeRequest_UnitLevelsEntry {
     return JudgeRequest_UnitLevelsEntry.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<JudgeRequest_UnitLevelsEntry>, I>>(
-    object: I,
-  ): JudgeRequest_UnitLevelsEntry {
+  fromPartial<I extends Exact<DeepPartial<JudgeRequest_UnitLevelsEntry>, I>>(object: I): JudgeRequest_UnitLevelsEntry {
     const message = createBaseJudgeRequest_UnitLevelsEntry();
     message.key = object.key ?? "";
     message.value = object.value ?? 0;
@@ -3272,6 +3410,100 @@ export const SectMsg: MessageFns<SectMsg> = {
   },
 };
 
+function createBaseNationMsg(): NationMsg {
+  return { worldId: "", fromPublicId: "", fromName: "", text: "", ts: 0 };
+}
+
+export const NationMsg: MessageFns<NationMsg> = {
+  encode(message: NationMsg, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.worldId !== "") {
+      writer.uint32(10).string(message.worldId);
+    }
+    if (message.fromPublicId !== "") {
+      writer.uint32(18).string(message.fromPublicId);
+    }
+    if (message.fromName !== "") {
+      writer.uint32(26).string(message.fromName);
+    }
+    if (message.text !== "") {
+      writer.uint32(34).string(message.text);
+    }
+    if (message.ts !== 0) {
+      writer.uint32(40).uint64(message.ts);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): NationMsg {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseNationMsg();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.worldId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.fromPublicId = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.fromName = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.text = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.ts = longToNumber(reader.uint64());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<NationMsg>, I>>(base?: I): NationMsg {
+    return NationMsg.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<NationMsg>, I>>(object: I): NationMsg {
+    const message = createBaseNationMsg();
+    message.worldId = object.worldId ?? "";
+    message.fromPublicId = object.fromPublicId ?? "";
+    message.fromName = object.fromName ?? "";
+    message.text = object.text ?? "";
+    message.ts = object.ts ?? 0;
+    return message;
+  },
+};
+
 function createBaseWorldEvent(): WorldEvent {
   return { kind: "", payload: "" };
 }
@@ -3354,6 +3586,8 @@ function createBaseServerMsg(): ServerMsg {
     familyMsg: undefined,
     sectMsg: undefined,
     worldEvent: undefined,
+    nationMsg: undefined,
+    matchBot: undefined,
   };
 }
 
@@ -3424,6 +3658,12 @@ export const ServerMsg: MessageFns<ServerMsg> = {
     }
     if (message.worldEvent !== undefined) {
       WorldEvent.encode(message.worldEvent, writer.uint32(178).fork()).join();
+    }
+    if (message.nationMsg !== undefined) {
+      NationMsg.encode(message.nationMsg, writer.uint32(186).fork()).join();
+    }
+    if (message.matchBot !== undefined) {
+      MatchBot.encode(message.matchBot, writer.uint32(194).fork()).join();
     }
     return writer;
   },
@@ -3611,6 +3851,22 @@ export const ServerMsg: MessageFns<ServerMsg> = {
           message.worldEvent = WorldEvent.decode(reader, reader.uint32());
           continue;
         }
+        case 23: {
+          if (tag !== 186) {
+            break;
+          }
+
+          message.nationMsg = NationMsg.decode(reader, reader.uint32());
+          continue;
+        }
+        case 24: {
+          if (tag !== 194) {
+            break;
+          }
+
+          message.matchBot = MatchBot.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3688,6 +3944,12 @@ export const ServerMsg: MessageFns<ServerMsg> = {
       : undefined;
     message.worldEvent = (object.worldEvent !== undefined && object.worldEvent !== null)
       ? WorldEvent.fromPartial(object.worldEvent)
+      : undefined;
+    message.nationMsg = (object.nationMsg !== undefined && object.nationMsg !== null)
+      ? NationMsg.fromPartial(object.nationMsg)
+      : undefined;
+    message.matchBot = (object.matchBot !== undefined && object.matchBot !== null)
+      ? MatchBot.fromPartial(object.matchBot)
       : undefined;
     return message;
   },

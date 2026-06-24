@@ -9,6 +9,9 @@ import type {
   CompScope,
   CompTarget,
   CompTicketView,
+  FeatureFlagRow,
+  FlagPlatform,
+  FlagRollout,
   Session,
 } from './types';
 
@@ -807,4 +810,114 @@ export async function pageLadderSeason(ctx: Ctx): Promise<void> {
 
   root.append(info, h('div', { class: 'card' }, rollBtn, rollErr));
   await refresh();
+}
+
+// ── 功能开关（feature flags，FEATURE_FLAGS_DESIGN §5）──
+const FLAG_PLATFORMS: FlagPlatform[] = ['web', 'wechat', 'crazygames'];
+
+/** 逗号/换行分隔字符串 → 去空裁剪数组。 */
+function parseList(raw: string): string[] {
+  return raw
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+export async function pageFlags(ctx: Ctx): Promise<void> {
+  const { api, root } = ctx;
+  clear(root);
+  root.append(
+    h('h2', {}, '功能开关 Feature Flags'),
+    h('div', { class: 'muted', style: 'margin-bottom:8px' },
+      '运营全局开关 + 定向（比例/区域/平台/白黑名单）。总闸关 = 任何人都关；服务端 ≤30s 内生效。'),
+  );
+  const list = h('div', {}, '加载中…');
+  root.append(list);
+
+  const buildCard = (row: FeatureFlagRow): HTMLElement => {
+    const doc = row.doc;
+    const r: FlagRollout = doc?.rollout ?? {};
+    const enabled = h('input', { type: 'checkbox' }) as HTMLInputElement;
+    enabled.checked = doc ? doc.enabled : false;
+    const pct = h('input', { type: 'number', min: '0', max: '100', style: 'width:80px',
+      value: r.pct !== undefined ? String(r.pct) : '' }) as HTMLInputElement;
+    const regions = h('input', { style: 'width:100%', value: (r.regions ?? []).join(', '),
+      placeholder: '如 eu, us, cn（空=不限）' }) as HTMLInputElement;
+    const platBoxes = FLAG_PLATFORMS.map((p) => {
+      const cb = h('input', { type: 'checkbox' }) as HTMLInputElement;
+      cb.checked = (r.platforms ?? []).includes(p);
+      return { p, cb };
+    });
+    const allow = h('textarea', { rows: '2', style: 'width:100%',
+      placeholder: 'accountId 逗号/换行分隔（命中即开）' }, (r.allowAccounts ?? []).join('\n')) as HTMLTextAreaElement;
+    const deny = h('textarea', { rows: '2', style: 'width:100%',
+      placeholder: 'accountId 逗号/换行分隔（命中即关）' }, (r.denyAccounts ?? []).join('\n')) as HTMLTextAreaElement;
+
+    const status = h('span', {});
+    const saveBtn = h('button', {}, '保存') as HTMLButtonElement;
+    saveBtn.onclick = async (): Promise<void> => {
+      status.textContent = '';
+      status.className = '';
+      saveBtn.disabled = true;
+      try {
+        const rollout: FlagRollout = {};
+        if (pct.value.trim() !== '') rollout.pct = Math.max(0, Math.min(100, Number(pct.value)));
+        const reg = parseList(regions.value);
+        if (reg.length) rollout.regions = reg;
+        const plats = platBoxes.filter((b) => b.cb.checked).map((b) => b.p);
+        if (plats.length) rollout.platforms = plats;
+        const al = parseList(allow.value);
+        if (al.length) rollout.allowAccounts = al;
+        const dn = parseList(deny.value);
+        if (dn.length) rollout.denyAccounts = dn;
+        await api.upsertFlag(row.key, {
+          enabled: enabled.checked,
+          ...(Object.keys(rollout).length ? { rollout } : {}),
+          ...(row.desc ? { desc: row.desc } : {}),
+        });
+        showOk(status, '已保存（服务端 ≤30s 生效）');
+      } catch (e) {
+        showErr(status, e);
+      } finally {
+        saveBtn.disabled = false;
+      }
+    };
+
+    const meta = doc
+      ? h('div', { class: 'muted', style: 'font-size:12px' },
+          `最近修改：${doc.updatedBy || '—'} · ${fmtTime(doc.updatedAt)}`)
+      : h('div', { class: 'muted', style: 'font-size:12px' }, `未覆盖，使用默认值（${row.default ? 'on' : 'off'}）`);
+
+    const fieldRow = (label: string, control: Node): HTMLElement =>
+      h('div', { style: 'margin:6px 0' }, h('label', { style: 'display:block;font-size:13px;color:var(--muted)' }, label), control);
+
+    return h('div', { class: 'card', style: 'margin-bottom:12px' },
+      h('div', { style: 'display:flex;align-items:center;gap:8px' },
+        h('strong', {}, row.key),
+        pill(row.side, 'info'),
+        h('span', { class: 'muted' }, row.desc),
+      ),
+      meta,
+      h('div', { style: 'margin:6px 0' }, h('label', {}, enabled, ' 总闸开启（关 = 任何人都关）')),
+      fieldRow('灰度比例 %（空=不按比例）', pct),
+      fieldRow('区域 regions（逗号分隔，空=不限）', regions),
+      fieldRow('平台 platforms（空=不限）',
+        h('span', {}, ...platBoxes.flatMap((b) => [h('label', { style: 'margin-right:12px' }, b.cb, ' ' + b.p)]))),
+      fieldRow('白名单 allowAccounts（命中即开，盖过定向）', allow),
+      fieldRow('黑名单 denyAccounts（命中即关，盖过一切定向）', deny),
+      h('div', { style: 'margin-top:8px' }, saveBtn, ' ', status),
+    );
+  };
+
+  try {
+    const rows = await api.flags();
+    clear(list);
+    if (!rows.length) {
+      list.append(h('div', { class: 'muted' }, '无登记的 flag。'));
+      return;
+    }
+    for (const row of rows) list.append(buildCard(row));
+  } catch (e) {
+    showErr(list, e);
+  }
 }

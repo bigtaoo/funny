@@ -108,6 +108,7 @@ export class Gateway {
       roomId,
       ...(msg.kind === 'room_state' ? { code: msg.code, phase: msg.phase, players: msg.players.length } : {}),
       ...(msg.kind === 'match_found' ? { gameUrl: msg.gameUrl } : {}),
+      ...(msg.kind === 'match_bot' ? { seed: msg.seed, opponentName: msg.opponentName } : {}),
       ...(msg.kind === 'room_error' ? { code: msg.code, message: msg.message } : {}),
     });
     try {
@@ -454,6 +455,14 @@ function toServerMsg(msg: PushMsg): ServerMsg {
       };
     case 'match_found':
       return { case: 'match_found', gameUrl: msg.gameUrl, ticket: msg.ticket };
+    case 'match_bot':
+      return {
+        case: 'match_bot',
+        seed: msg.seed,
+        opponentName: msg.opponentName,
+        elo: msg.elo,
+        difficulty: msg.difficulty,
+      };
     case 'room_error':
       return { case: 'room_error', code: msg.code, message: msg.message };
     case 'friend_presence':

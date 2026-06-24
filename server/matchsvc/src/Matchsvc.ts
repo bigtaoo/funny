@@ -10,7 +10,7 @@
 //
 // **不连任何库**：匹配要的 elo 由 gateway 入队前向 meta 取后带入（enqueue 的 elo 参数）。
 import { randomUUID, randomInt } from 'crypto';
-import { signTicket, createLogger, type TicketClaims } from '@nw/shared';
+import { signTicket, createLogger, type FeatureFlagCache, type TicketClaims } from '@nw/shared';
 import { Matchmaking, type QueueEntry } from './Matchmaking';
 import { GameRegistry } from './GameRegistry';
 
@@ -37,7 +37,12 @@ export interface PlayerView {
 export type PushMsg =
   | { kind: 'room_state'; code: string; players: PlayerView[]; phase: number }
   | { kind: 'match_found'; gameUrl: string; ticket: string }
+  // 匹配超时降级打 AI（feature flag match_bot_fallback）。客户端据此开本地 AI 局，无 ticket/gameUrl。
+  | { kind: 'match_bot'; seed: number; opponentName: string; elo: number; difficulty: string }
   | { kind: 'room_error'; code: string; message: string };
+
+/** bot-fallback 时随机挑选的 AI 对手展示名（纯展示，叙事统一为「红笔批改/假想敌」语气）。 */
+const BOT_NAMES = ['红笔小将', '草稿纸新兵', '橡皮擦练习生', '便利贴学徒', '修正液守卫'];
 /**
  * 推送回调。`roomId` 是跨进程关联 id（correlation id）——同一局在 matchsvc / gateway / game /
  * meta 的日志里都带它，Grafana 用 `| json | roomId="X"` 可把整局拉成一条时间线。仅用于日志，
@@ -74,6 +79,10 @@ export interface MatchsvcOpts {
   now?: () => number;
   /** Matchmaking 自动巡检开关（测试关掉手动 tick）。 */
   autoTick?: boolean;
+  /** 功能开关缓存（轮询 admin 原始规则 + 本地求值）。缺省 = 不可用，match_bot_fallback 视为关。 */
+  flags?: FeatureFlagCache;
+  /** 入队等待超过此毫秒数 → 评估 match_bot_fallback 决定是否降级打 AI。默认 30000。 */
+  botFallbackMs?: number;
 }
 
 export class Matchsvc {
@@ -84,6 +93,7 @@ export class Matchsvc {
   private readonly internalKey: string;
   private readonly ticketTtlSec: number;
   private readonly now: () => number;
+  private readonly flags?: FeatureFlagCache;
 
   constructor(
     private readonly push: Push,
@@ -94,9 +104,12 @@ export class Matchsvc {
     this.internalKey = internalKey;
     this.ticketTtlSec = opts.ticketTtlSec ?? 30;
     this.now = opts.now ?? Date.now;
+    if (opts.flags) this.flags = opts.flags;
     this.matchmaking = new Matchmaking((a, b) => this.onPair(a, b), {
       now: opts.now,
       autoTick: opts.autoTick,
+      botFallbackMs: opts.botFallbackMs ?? 30_000,
+      onTimeout: (e) => this.onQueueTimeout(e),
     });
   }
 
@@ -121,17 +134,39 @@ export class Matchsvc {
    * publicId 随队列条目带入：ranked 不展示房间 slot，但开局后要把对手 publicId 写进
    * ticket → match_start，供对局内资料弹层展示。
    */
-  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = ''): void {
+  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', platform = ''): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       log.warn('enqueue ignored: already in room/queue', { accountId });
       return;
     }
-    this.matchmaking.enqueue(accountId, name, publicId, elo, equippedTitle);
+    this.matchmaking.enqueue(accountId, name, publicId, elo, equippedTitle, platform);
     log.info('enqueued for ranked', { accountId, elo, queueSize: this.matchmaking.size });
   }
 
   cancel(accountId: string): void {
     this.matchmaking.remove(accountId);
+  }
+
+  /**
+   * 入队等待超阈值（默认 30s）的决策点：若 feature flag `match_bot_fallback` 对该玩家开启，
+   * 出队并推送 match_bot（客户端开本地 AI 局）；否则保持在队继续等真人（行为不变）。
+   * flags 缺省/admin 不可达 → 视为关（default false），优雅降级为「一直等」。
+   */
+  private onQueueTimeout(entry: QueueEntry): void {
+    const on =
+      this.flags?.isOn('match_bot_fallback', {
+        accountId: entry.accountId,
+        ...(entry.platform ? { platform: entry.platform as never } : {}),
+      }) ?? false;
+    if (!on) {
+      log.info('queue timeout: bot fallback OFF → keep waiting for human', { accountId: entry.accountId });
+      return;
+    }
+    this.matchmaking.remove(entry.accountId);
+    const seed = randomInt(1, 2 ** 48);
+    const opponentName = BOT_NAMES[randomInt(0, BOT_NAMES.length)]!;
+    log.info('queue timeout: bot fallback ON → match_bot', { accountId: entry.accountId, elo: entry.elo, seed });
+    this.push(entry.accountId, { kind: 'match_bot', seed, opponentName, elo: entry.elo, difficulty: 'normal' });
   }
 
   /** Matchmaking 配对成功 → 直接开局（无 ready / 房主环节）。 */

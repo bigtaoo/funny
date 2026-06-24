@@ -20,6 +20,12 @@ import type { EngineEquipmentInput } from '@nw/engine';
 export interface LocalMatchOpts {
   /** When set, runs the PvE campaign level instead of a PvP-vs-AI match. */
   level?: LevelDefinition;
+  /**
+   * Explicit RNG seed (PvP-vs-AI path). Used by the match-bot fallback so the
+   * server-chosen seed drives a deterministic local AI match. Ignored when a
+   * `level` is given (campaign seed comes from the level). Omit → random seed.
+   */
+  seed?: number;
   /** @deprecated S12: per-stat 升级；单位养成改 unitLevels。仍透传以兼容过渡。 */
   pveUpgrades?: Record<string, number>;
   /** 单位养成等级（SaveData.unitLevels）threaded into the engine (hard wall, §5.2); campaign + siege. */
@@ -52,7 +58,7 @@ export interface LocalMatch {
 export function createLocalMatch(opts: LocalMatchOpts = {}): LocalMatch {
   const seed = opts.level
     ? opts.level.seed
-    : (Date.now() ^ ((Math.random() * 0xffffff) | 0)) >>> 0;
+    : (opts.seed ?? (Date.now() ^ ((Math.random() * 0xffffff) | 0))) >>> 0;
   const mode: GameMode = opts.mode ?? (opts.level ? 'campaign' : 'pvp');
   const recorder = new RecordingInputSource(new LocalInputSource());
   const recordLevelId = opts.level?.id;

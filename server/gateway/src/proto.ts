@@ -58,6 +58,7 @@ export interface FrameCmdsOut {
 export type ServerMsg =
   | { case: 'room_state'; code: string; players: PlayerSlotOut[]; phase: number }
   | { case: 'match_found'; gameUrl: string; ticket: string }
+  | { case: 'match_bot'; seed: number; opponentName: string; elo: number; difficulty: string }
   | { case: 'room_error'; code: string; message: string }
   | {
       case: 'judge_request';
@@ -203,6 +204,16 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
       break;
     case 'match_found':
       server = { match_found: { game_url: msg.gameUrl, ticket: msg.ticket } };
+      break;
+    case 'match_bot':
+      server = {
+        match_bot: {
+          seed: msg.seed,
+          opponent_name: msg.opponentName,
+          elo: msg.elo,
+          difficulty: msg.difficulty,
+        },
+      };
       break;
     case 'room_error':
       server = { room_error: { code: msg.code, message: msg.message } };

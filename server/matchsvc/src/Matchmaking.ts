@@ -12,6 +12,10 @@ export interface QueueEntry {
   equippedTitle: string;
   elo: number;
   enqueuedAt: number;
+  /** 平台（feature flag 定向求值用；缺省空串）。 */
+  platform: string;
+  /** 已触发过 bot-fallback 超时回调（fire-once，防每 tick 重复触发）。 */
+  timedOut?: boolean;
 }
 
 export interface MatchmakingOpts {
@@ -25,6 +29,13 @@ export interface MatchmakingOpts {
   now?: () => number;
   /** 是否自动起定时器巡检。默认 true；测试可关掉手动 tick()。 */
   autoTick?: boolean;
+  /**
+   * 入队等待超过此毫秒数仍未配对 → 触发 onTimeout（bot-fallback 决策点）。0/缺省 = 关闭超时检测。
+   * 注意：超时检测对「单人独自在队」也生效（正是降级打 AI 的典型场景）。
+   */
+  botFallbackMs?: number;
+  /** 等待超时回调（每条目仅触发一次）。是否真降级由上层据 feature flag 决定。 */
+  onTimeout?: (entry: QueueEntry) => void;
 }
 
 export class Matchmaking {
@@ -36,6 +47,8 @@ export class Matchmaking {
   private readonly tickMs: number;
   private readonly now: () => number;
   private readonly autoTick: boolean;
+  private readonly botFallbackMs: number;
+  private readonly onTimeout?: (entry: QueueEntry) => void;
 
   constructor(
     /** 配对成功回调：移出队列由本类负责，建房由上层处理。 */
@@ -47,6 +60,8 @@ export class Matchmaking {
     this.tickMs = opts.tickMs ?? 1000;
     this.now = opts.now ?? Date.now;
     this.autoTick = opts.autoTick ?? true;
+    this.botFallbackMs = opts.botFallbackMs ?? 0;
+    if (opts.onTimeout) this.onTimeout = opts.onTimeout;
   }
 
   has(accountId: string): boolean {
@@ -58,9 +73,9 @@ export class Matchmaking {
   }
 
   /** 入队（同账号再次入队覆盖旧条目，重置等待）。入队后尝试一次配对。 */
-  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = ''): void {
+  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', platform = ''): void {
     this.remove(accountId);
-    this.queue.push({ accountId, name, publicId, equippedTitle, elo, enqueuedAt: this.now() });
+    this.queue.push({ accountId, name, publicId, equippedTitle, elo, enqueuedAt: this.now(), platform });
     this.ensureTimer();
     this.tick();
   }
@@ -76,31 +91,41 @@ export class Matchmaking {
    * 贪心相邻配对对「按分排序后的队列」足够好且确定（避免饥饿）。
    */
   tick(): void {
-    if (this.queue.length < 2) return;
     const t = this.now();
-    const sorted = [...this.queue].sort((a, b) => a.elo - b.elo);
-    const paired = new Set<string>();
 
-    for (let i = 0; i + 1 < sorted.length; i++) {
-      const a = sorted[i]!;
-      const b = sorted[i + 1]!;
-      if (paired.has(a.accountId) || paired.has(b.accountId)) continue;
-      const window = Math.max(this.windowFor(a, t), this.windowFor(b, t));
-      if (Math.abs(a.elo - b.elo) <= window) {
-        paired.add(a.accountId);
-        paired.add(b.accountId);
+    // ── 1) ELO 邻近配对（队列 ≥2 才有意义）──
+    if (this.queue.length >= 2) {
+      const sorted = [...this.queue].sort((a, b) => a.elo - b.elo);
+      const paired = new Set<string>();
+      for (let i = 0; i + 1 < sorted.length; i++) {
+        const a = sorted[i]!;
+        const b = sorted[i + 1]!;
+        if (paired.has(a.accountId) || paired.has(b.accountId)) continue;
+        const window = Math.max(this.windowFor(a, t), this.windowFor(b, t));
+        if (Math.abs(a.elo - b.elo) <= window) {
+          paired.add(a.accountId);
+          paired.add(b.accountId);
+        }
+      }
+      if (paired.size > 0) {
+        const pairs: [QueueEntry, QueueEntry][] = [];
+        const sortedPaired = sorted.filter((e) => paired.has(e.accountId));
+        for (let i = 0; i + 1 < sortedPaired.length; i += 2) {
+          pairs.push([sortedPaired[i]!, sortedPaired[i + 1]!]);
+        }
+        this.queue = this.queue.filter((e) => !paired.has(e.accountId));
+        if (this.queue.length === 0) this.stopTimer();
+        for (const [a, b] of pairs) this.onPair(a, b);
       }
     }
-    if (paired.size === 0) return;
 
-    const pairs: [QueueEntry, QueueEntry][] = [];
-    const sortedPaired = sorted.filter((e) => paired.has(e.accountId));
-    for (let i = 0; i + 1 < sortedPaired.length; i += 2) {
-      pairs.push([sortedPaired[i]!, sortedPaired[i + 1]!]);
+    // ── 2) bot-fallback 超时扫描（对仍在队的条目，含单人独自等待）──
+    // fire-once：先收集再回调（回调可能 remove 条目 → 避免遍历中改集合）。
+    if (this.onTimeout && this.botFallbackMs > 0 && this.queue.length > 0) {
+      const timedOut = this.queue.filter((e) => !e.timedOut && t - e.enqueuedAt >= this.botFallbackMs);
+      for (const e of timedOut) e.timedOut = true;
+      for (const e of timedOut) this.onTimeout(e);
     }
-    this.queue = this.queue.filter((e) => !paired.has(e.accountId));
-    if (this.queue.length === 0) this.stopTimer();
-    for (const [a, b] of pairs) this.onPair(a, b);
   }
 
   clear(): void {

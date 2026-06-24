@@ -62,4 +62,56 @@ describe('Matchmaking', () => {
     expect(pairs).toEqual([['a', 'c']]);
     expect(mm.has('b')).toBe(true);
   });
+
+  describe('bot-fallback 超时', () => {
+    it('单人独自等待超阈值 → 触发 onTimeout（fire-once）', () => {
+      const timeouts: string[] = [];
+      let t = 0;
+      const mm = new Matchmaking(() => {}, {
+        autoTick: false,
+        now: () => t,
+        botFallbackMs: 30_000,
+        onTimeout: (e) => timeouts.push(e.accountId),
+      });
+      mm.enqueue('a', 'a', '', 1000, '', 'web');
+      mm.tick();
+      expect(timeouts).toEqual([]); // 未到阈值
+      t = 30_000;
+      mm.tick();
+      expect(timeouts).toEqual(['a']);
+      // fire-once：再 tick 不重复触发
+      t = 60_000;
+      mm.tick();
+      expect(timeouts).toEqual(['a']);
+    });
+
+    it('botFallbackMs=0 关闭 → 永不触发', () => {
+      const timeouts: string[] = [];
+      let t = 0;
+      const mm = new Matchmaking(() => {}, {
+        autoTick: false,
+        now: () => t,
+        onTimeout: (e) => timeouts.push(e.accountId),
+      });
+      mm.enqueue('a', 'a', '', 1000);
+      t = 10 * 60_000;
+      mm.tick();
+      expect(timeouts).toEqual([]);
+    });
+
+    it('platform 随条目带入 onTimeout', () => {
+      const seen: string[] = [];
+      let t = 0;
+      const mm = new Matchmaking(() => {}, {
+        autoTick: false,
+        now: () => t,
+        botFallbackMs: 1000,
+        onTimeout: (e) => seen.push(e.platform),
+      });
+      mm.enqueue('a', 'a', '', 1000, '', 'wechat');
+      t = 1000;
+      mm.tick();
+      expect(seen).toEqual(['wechat']);
+    });
+  });
 });

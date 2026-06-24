@@ -20,6 +20,7 @@ export type AdminCapability =
   | 'slg.season.manage'
   | 'slg.audit.view'
   | 'slg.audit.manage'
+  | 'config.manage'
   | 'admin.manage';
 
 export interface AdminAccountView {
@@ -131,4 +132,30 @@ export interface Session {
   token: string;
   admin: AdminAccountView;
   capabilities: AdminCapability[];
+}
+
+// ── 功能开关（feature flags，与 @nw/shared featureFlags.ts 同义）──
+export type FlagPlatform = 'web' | 'wechat' | 'crazygames';
+export interface FlagRollout {
+  pct?: number;
+  regions?: string[];
+  platforms?: FlagPlatform[];
+  allowAccounts?: string[];
+  denyAccounts?: string[];
+}
+export interface FeatureFlagDoc {
+  _id: string;
+  enabled: boolean;
+  rollout?: FlagRollout;
+  desc?: string;
+  updatedAt: number;
+  updatedBy: string;
+}
+/** GET /admin/config/flags 行：白名单 flag + 默认值 + 当前覆盖规则（doc=null 表示用默认）。 */
+export interface FeatureFlagRow {
+  key: string;
+  default: boolean;
+  desc: string;
+  side: string;
+  doc: FeatureFlagDoc | null;
 }

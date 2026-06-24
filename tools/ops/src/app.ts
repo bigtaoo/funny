@@ -1,7 +1,7 @@
 // 运维后台前端壳（OPS_DESIGN §7）：登录页 → 主框架按 capabilities 渲染导航。
 import { Api, ApiError } from './api';
 import { clear, h } from './dom';
-import { pageAccounts, pageAnalytics, pageAudit, pageLadderSeason, pageMonitor, pagePlayer, pageSuspicions, pageTickets } from './pages';
+import { pageAccounts, pageAnalytics, pageAudit, pageFlags, pageLadderSeason, pageMonitor, pagePlayer, pageSuspicions, pageTickets } from './pages';
 import type { AdminCapability, Session } from './types';
 
 interface NavItem {
@@ -24,6 +24,7 @@ const NAV: NavItem[] = [
   { id: 'tickets', label: '补偿工单', cap: 'comp.view', render: pageTickets },
   { id: 'audit', label: '审计', cap: 'audit.view.self', render: pageAudit },
   { id: 'ladder', label: '天梯赛季', cap: 'ladder.season.manage', render: pageLadderSeason },
+  { id: 'flags', label: '功能开关', cap: 'config.manage', render: pageFlags },
   { id: 'accounts', label: '账号管理', cap: 'admin.manage', render: pageAccounts },
 ];
 
