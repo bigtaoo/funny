@@ -4,7 +4,7 @@ import { createCommercialMongo } from './db';
 import { CommercialService } from './service';
 import { startInternalHttp } from './internalHttp';
 import { loadCommercialEnv } from './config';
-import { loadInternalAuth, IAP_TIERS } from '@nw/shared';
+import { loadInternalAuth, IAP_TIERS, createLogger, startHeartbeat } from '@nw/shared';
 import { createReceiptVerifier } from './iap';
 
 async function main(): Promise<void> {
@@ -44,6 +44,7 @@ async function main(): Promise<void> {
   console.log(
     `commercial internal HTTP on :${env.port} (meta-only); db=${env.commMongoDb}`,
   );
+  startHeartbeat(createLogger('commercial')); // 存活心跳：空闲时每 5 分钟一条 info 日志
 }
 
 main().catch((e) => {

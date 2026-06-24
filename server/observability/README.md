@@ -124,6 +124,20 @@ Grafana 登录页（admin / `.env` 里的密码）→ 左栏「Dashboards → No
 
 仪表盘「服务端日志」顶部有 `服务 / 级别 / 关键字` 三个下拉/输入框，免手敲 LogQL。
 
+### 存活心跳（heartbeat，已落地）
+
+8 个业务进程启动即调 `@nw/shared` 的 `startHeartbeat(log)`（`shared/src/heartbeat.ts`）：**空闲时也每
+5 分钟打一条 `info` 级 `heartbeat` 日志**（带 `uptimeSec` / `rssMb`），作为「进程还活着 + 采集链路还通」
+的正向信号。即便没有玩家、没有业务日志，Grafana 里也能看到每个 svc 在按节奏跳。
+
+```logql
+{svc="meta"} |= "heartbeat"                                  # 看某服务的心跳
+sum by (svc) (count_over_time({svc=~".+"} |= "heartbeat" [5m]))  # 各服务心跳数(应≥1,断=可能挂了)
+```
+
+仪表盘顶部「**服务存活**」面板就是上面这条：每个 svc 一条线，掉到 0 或断开即该进程没在打心跳。
+心跳是 `info` 级，故生产即便 `NW_LOG_LEVEL=info` 也不会被过滤掉。间隔/字段可在 `startHeartbeat` 调。
+
 ### 跨进程关联（correlation id，已落地）
 
 一局对战横跨多个进程。用 **`roomId`** 作 correlation id 贯穿 gateway→matchsvc→game→meta：

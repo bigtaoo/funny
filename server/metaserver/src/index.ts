@@ -1,6 +1,6 @@
 // metaserver 进程引导：连 Mongo → buildApp → listen。
 // 反代将 /api/* 转到本进程（SERVER_API.md §0）。
-import { createMongo, createLogger, type JwtConfig } from '@nw/shared';
+import { createMongo, createLogger, startHeartbeat, type JwtConfig } from '@nw/shared';
 import { loadMetaEnv } from './config.js';
 import { buildApp, SPEC_PATH } from './app.js';
 import { HttpGatewayClient } from './gatewayClient.js';
@@ -93,6 +93,7 @@ async function main() {
     gateway: env.gatewayInternalUrl ?? 'disabled',
     gatewayPublic: env.gatewayPublicUrl ?? 'none',
   });
+  startHeartbeat(log); // 存活心跳：空闲时每 5 分钟一条 info 日志
 }
 
 main().catch((e) => {

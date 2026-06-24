@@ -9,7 +9,7 @@ import { Matchsvc } from './Matchsvc';
 import { GameRegistry } from './GameRegistry';
 import { GatewayClient } from './gatewayClient';
 import { startInternalHttp } from './internalHttp';
-import { createLogger, FeatureFlagCache, internalHeaders, loadInternalAuth } from '@nw/shared';
+import { createLogger, startHeartbeat, FeatureFlagCache, internalHeaders, loadInternalAuth } from '@nw/shared';
 
 const log = createLogger('matchsvc:flags');
 
@@ -62,6 +62,7 @@ function main(): void {
     `feature flags: ${adminUrl ? `poll ${adminUrl} (region=${env.region ?? 'none'})` : 'disabled (all default)'}; ` +
       `bot-fallback after ${env.botFallbackMs}ms`,
   );
+  startHeartbeat(createLogger('matchsvc')); // 存活心跳：空闲时每 5 分钟一条 info 日志
 }
 
 main();

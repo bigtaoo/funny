@@ -5,7 +5,7 @@
 //   • ranked 入队前向 meta 取 ELO 带入。
 //
 // 反代：/gw → 本进程公开 WS 端口；内部 HTTP 端口不暴露。
-import { loadInternalAuth, type JwtConfig } from '@nw/shared';
+import { loadInternalAuth, createLogger, startHeartbeat, type JwtConfig } from '@nw/shared';
 import { loadGatewayEnv } from './config';
 import { Gateway } from './Gateway';
 import { MatchsvcClient } from './matchsvcClient';
@@ -48,6 +48,7 @@ async function main(): Promise<void> {
       `meta ELO: ${meta.available ? env.metaBaseUrl : 'unavailable (ranked disabled)'}; ` +
       `redis push fan-out: ${subscriber ? 'on' : 'off'}`,
   );
+  startHeartbeat(createLogger('gateway')); // 存活心跳：空闲时每 5 分钟一条 info 日志
 }
 
 main().catch((e) => {

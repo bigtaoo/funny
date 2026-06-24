@@ -4,7 +4,7 @@ import { createAnalyticsMongo } from './db';
 import { AnalyticsService } from './service';
 import { startHttpApi } from './httpApi';
 import { startEtlScheduler } from './scheduler';
-import { loadInternalAuth } from '@nw/shared';
+import { loadInternalAuth, createLogger, startHeartbeat } from '@nw/shared';
 
 async function main(): Promise<void> {
   const env = loadAnalyticssvcEnv();
@@ -33,6 +33,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 
   console.log(`[analyticsvc] started port=${env.port} db=${env.analyticsMongoDb}`);
+  startHeartbeat(createLogger('analyticsvc')); // 存活心跳：空闲时每 5 分钟一条 info 日志
 }
 
 main().catch((e) => {

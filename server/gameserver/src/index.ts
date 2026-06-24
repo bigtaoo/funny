@@ -2,7 +2,7 @@
 // 反代将 /ws 转到本进程（SERVER_API.md §0）。
 import { createServer } from 'http';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { verifyTicket, createLogger, internalHeaders } from '@nw/shared';
+import { verifyTicket, createLogger, internalHeaders, startHeartbeat } from '@nw/shared';
 
 const log = createLogger('game');
 import { loadGameEnv } from './config';
@@ -157,6 +157,7 @@ function main(): void {
   http.listen(env.port, env.host);
   console.log(`gameserver (data-plane relay) listening on ws://${env.host}:${env.port}/ws`);
   console.log(`meta report: ${env.metaBaseUrl ?? 'disabled'}; matchsvc: ${env.matchsvcInternalUrl ?? 'static-fallback'}`);
+  startHeartbeat(log); // 存活心跳：空闲时每 5 分钟一条 info 日志
 }
 
 main();

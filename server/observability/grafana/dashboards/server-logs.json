@@ -7,8 +7,9 @@
   "tags": ["notebook-wars", "logs"],
   "timezone": "",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "time": { "from": "now-6h", "to": "now" },
+  "refresh": "1m",
   "templating": {
     "list": [
       {
@@ -51,11 +52,30 @@
   },
   "panels": [
     {
+      "id": 8,
+      "title": "服务存活（每个服务空闲时每 5 分钟一条心跳；线断=该服务可能挂了）",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "各 svc 5 分钟内的 heartbeat 条数。正常每条≥1;某服务的线掉到 0 或断开 = 进程没在打心跳,八成挂了或采集断了。",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "always", "pointSize": 6, "spanNulls": false }, "min": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "sum by (svc) (count_over_time({svc=~\".+\"} |= \"heartbeat\" [5m]))",
+          "legendFormat": "{{svc}}"
+        }
+      ]
+    },
+    {
       "id": 1,
       "title": "日志速率（按级别）",
       "type": "timeseries",
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 0 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } }, "overrides": [] },
       "targets": [
         {
@@ -73,7 +93,7 @@
       "type": "bargauge",
       "datasource": { "type": "loki", "uid": "loki" },
       "description": "时间范围内各 svc 的 error 条数，一眼看谁在报错。",
-      "gridPos": { "h": 7, "w": 7, "x": 12, "y": 0 },
+      "gridPos": { "h": 7, "w": 7, "x": 12, "y": 6 },
       "fieldConfig": { "defaults": { "color": { "mode": "continuous-GrYlRd" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true },
       "targets": [
@@ -92,7 +112,7 @@
       "title": "错误总数（窗口内）",
       "type": "stat",
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 7, "w": 5, "x": 19, "y": 0 },
+      "gridPos": { "h": 7, "w": 5, "x": 19, "y": 6 },
       "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background", "graphMode": "area" },
       "targets": [
@@ -110,7 +130,7 @@
       "title": "日志（按 服务 / 级别 / 关键字 过滤）",
       "type": "logs",
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 7 },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 13 },
       "options": {
         "showTime": true,
         "wrapLogMessage": true,
@@ -135,7 +155,7 @@
       "type": "logs",
       "datasource": { "type": "loki", "uid": "loki" },
       "description": "只看 level=error，受顶部「服务」下拉约束。",
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 19 },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 25 },
       "options": {
         "showTime": true,
         "wrapLogMessage": true,
@@ -160,7 +180,7 @@
       "type": "logs",
       "datasource": { "type": "loki", "uid": "loki" },
       "description": "gateway/matchsvc/gameserver 里匹配链路关键事件,排查开局失败用。",
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 19 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 25 },
       "options": {
         "showTime": true,
         "wrapLogMessage": true,
@@ -185,7 +205,7 @@
       "type": "logs",
       "datasource": { "type": "loki", "uid": "loki" },
       "description": "把 roomId 填进顶部输入框,将一局横跨 gateway→matchsvc→game→meta 的日志拉成一条时间线(升序)。留空则显示所有带 roomId 的行。",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 28 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 34 },
       "options": {
         "showTime": true,
         "wrapLogMessage": true,

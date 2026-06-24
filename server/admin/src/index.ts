@@ -4,7 +4,7 @@
 //   • 对运维前端的 HTTP API（admin JWT 鉴权）；
 //   • 自采采样定时器（拉 gateway/matchsvc /internal/stats 写 metricSnapshots）。
 // 反代不路由到 admin；API 端口只在内网/VPN/IP allowlist 可达（§6）。
-import { createLogger, loadInternalAuth, type JwtConfig } from '@nw/shared';
+import { createLogger, loadInternalAuth, startHeartbeat, type JwtConfig } from '@nw/shared';
 import { loadAdminEnv } from './config';
 import { createAdminMongo } from './db';
 import { AdminService } from './service';
@@ -63,6 +63,7 @@ async function main(): Promise<void> {
     `stats: gateway=${env.gatewayInternalUrl ?? 'none'} matchsvc=${env.matchsvcInternalUrl ?? 'none'}; ` +
       `meta(player/mail)=${env.metaBaseUrl ?? 'none'}; sample=${env.sampleIntervalMs}ms`,
   );
+  startHeartbeat(log); // 存活心跳：空闲时每 5 分钟一条 info 日志
 }
 
 main().catch((e) => {

@@ -1,6 +1,6 @@
 // worldsvc 进程引导（S8-0 + S8-4 + S8-5）：连专属库 → 可选 Redis → 各 Service → 公网 REST listen。
 // SLG_DESIGN §14.1 P1：worldsvc 是第四公网面（反代 /world,/family,/auction → 此进程）。
-import { SLG_MAP_W, SLG_MAP_H } from '@nw/shared';
+import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat } from '@nw/shared';
 import { createWorldMongo } from './db';
 import { connectRedis } from './redis';
 import { WorldService } from './service';
@@ -105,6 +105,7 @@ async function main(): Promise<void> {
       `gateway=${gateway.available ? 'on' : 'off'}; ` +
       `commercial=${commercial.available ? 'on' : 'off'}; meta=${meta.available ? 'on' : 'off'}`,
   );
+  startHeartbeat(createLogger('worldsvc')); // 存活心跳：空闲时每 5 分钟一条 info 日志
 }
 
 main().catch((e) => {
