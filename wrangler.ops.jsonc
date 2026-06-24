@@ -1,0 +1,22 @@
+{
+  // 运维后台前端 ops 的静态托管（Cloudflare Workers static assets），对外 ops.gamestao.com。
+  // 与 animator / client 各一份 wrangler 配置、各一个 Worker，互不影响。
+  //
+  // 构建（无需烘焙地址——admin API 基址在登录页运行时填，默认 localhost:18083）：
+  //   cd tools/ops && npm install && npm run build   ← 产出 tools/ops/dist
+  // 部署（从仓库根读本文件，把 tools/ops/dist 作为静态资源发布，无 Worker 脚本）：
+  //   npx wrangler deploy -c wrangler.ops.jsonc
+  //
+  // routes.custom_domain=true 会自动建 DNS + 边缘证书（橙云代理）。
+  // ⚠️ admin 后端「玩家不可达」——上线务必加 CF Access 登录保护，且 admin 后端需经受控入口可达。
+  // 设计：design/product/deploy-cloudflare.md §6
+  "name": "nivara-ops",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    "directory": "./tools/ops/dist",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    { "pattern": "ops.gamestao.com", "custom_domain": true }
+  ]
+}

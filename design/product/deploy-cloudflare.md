@@ -83,7 +83,7 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 | client（主游戏 web 包） | `npm run build:web` | `client/dist` | ✅ **已上线** `https://a.gamestao.com`（Worker `nivara-client`，2026-06-24 验证：HTTP 200 + 证书有效 + 可登录开局） |
 | animator | — | — | ✅ 已上线 |
 | level-editor | — | — | 暂缓（不急） |
-| ops | — | — | 待做 |
+| ops | `npm run build` | `tools/ops/dist` | ✅ **已上线** `https://ops.gamestao.com`（Worker `nivara-ops`，2026-06-24 验证：HTTP 200 + 标题正确 + 证书有效；首部署后本机系统 DNS 短暂未刷新，CF 1.1.1.1 已解析） |
 
 前端构建时需把 API/WS base 指到 `api.gamestao.com`（client 入口里地址烘焙，参考 animator 的部署方式）。
 
@@ -120,6 +120,19 @@ cd .. && npx wrangler deploy -c wrangler.client.jsonc
 - **数据面 WS（`/ws`）不烘焙**：由 metaserver 鉴权回包的 `match_found.game_url` 下发；缺省时 `client/src/net/config.ts` 从 API base 自动推导（`/api`→`/ws`）。`NW_GAME_PUBLIC_WS_URL`（后端 .env）就是这个下发地址的来源。
 - 构建命令：`cd client && NW_API_BASE=... NW_GATEWAY_WS=... NW_WORLD_BASE=... npm run build:web` → 产物 `client/dist`。
 - **localStorage 覆盖（内测神器）**：用一份默认构建即可，朋友在浏览器 DevTools console 跑 `localStorage.setItem('nw_api_base','http://<VPS_IP>/api'); localStorage.setItem('nw_gateway_ws','ws://<VPS_IP>/gw'); location.reload()` 就能连你的后端，无需为每个环境重新构建。
+
+### ops 部署（Cloudflare Workers static assets，对外 `ops.gamestao.com`）
+
+与 client 同模式，独立配置 `wrangler.ops.jsonc`（Worker `nivara-ops`，`custom_domain=true` 自动建 DNS+边缘证书）。**无需烘焙地址**——admin API 基址在登录页运行时填（输入框默认 `localhost:18083`，运行时存 localStorage `nw_admin_api`）。
+
+```bash
+# 1. 构建
+cd tools/ops && npm run build      # 产物 tools/ops/dist
+# 2. 部署（从仓库根）
+cd ../.. && npx wrangler deploy -c wrangler.ops.jsonc
+```
+
+> ⚠️ **admin 后端「玩家不可达」**：当前 `Caddyfile` 不公网暴露 admin/analyticsvc，ops 前端默认连不到线上后端。上线前两件事：(1) 给 `ops.gamestao.com` 加 **CF Access** 登录保护；(2) 让 admin 后端经受控入口（VPN / CF Access 反代 / Caddy 加内部子域）可达，再在登录页填该地址。静态页本身已上线，可先本地起 admin 后端联调。
 
 ## 7. 平台隔离边界（ADR-020）
 
