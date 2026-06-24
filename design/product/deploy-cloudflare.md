@@ -80,7 +80,7 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 
 | 项目 | 构建命令 | 产物 | 状态 |
 |---|---|---|---|
-| client（主游戏 web 包） | `npm run build:web` | `client/dist` | ✅ 已配置 → `a.gamestao.com`（Worker `nivara-client`，等首次 `wrangler login` 后 deploy） |
+| client（主游戏 web 包） | `npm run build:web` | `client/dist` | ✅ **已上线** `https://a.gamestao.com`（Worker `nivara-client`，2026-06-24 验证：HTTP 200 + 证书有效 + 可登录开局） |
 | animator | — | — | ✅ 已上线 |
 | level-editor | — | — | 暂缓（不急） |
 | ops | — | — | 待做 |
@@ -93,6 +93,8 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 
 - animator → 仓库根 `wrangler.jsonc`（Worker `animator`）
 - client → 仓库根 `wrangler.client.jsonc`（Worker `nivara-client`，`routes.custom_domain=true` 自动建 DNS+边缘证书，橙云）
+
+**首次上线记录（2026-06-24，✅ 已验证）**：CF 账号 `tao.wang.go@gmail.com`（Account ID `e64b61f1...`）；`wrangler login`（OAuth，凭证存本机）→ `wrangler deploy -c wrangler.client.jsonc` 一次成功，上传 14 个静态资源，`custom_domain` 自动建好 `a.gamestao.com`；外网 `https://a.gamestao.com` HTTP 200、证书有效、可登录开局并连到 `api.gamestao.com`。以后更新只需「重构建 → deploy」两条命令，无需再登录。
 
 ```bash
 # 1. 构建（地址烘焙到 api.gamestao.com）
