@@ -23,6 +23,7 @@ on:
     branches: [main]
     paths:
       - 'server/**'
+      - '!server/observability/**'   # 观测栈走 obs-deploy.yml,别为它白白 rebuild 整个后端
       - '.github/workflows/server-deploy.yml'
   workflow_dispatch: {}
 
