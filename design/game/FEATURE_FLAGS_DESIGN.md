@@ -1,6 +1,6 @@
 # Feature Flags — 功能开关系统设计基准
 
-> 状态：设计中 · 权威：本文（feature flag 机制）· 接口契约 → [SERVER_API.md](SERVER_API.md) + `server/contracts/openapi.yml` · 更新：2026-06-24
+> 状态：已上线（F1/F2/F4 + 首条 flag `match_bot_fallback` 端到端，见 §8）· F3（公开 `GET /bootstrap` + 客户端 `FeatureFlags.isOn`）**有意延后**，待出现客户端侧 flag（如 maintenance_mode kill switch / UI 灰度）时再做 · 权威：本文（feature flag 机制）· 接口契约 → [SERVER_API.md](SERVER_API.md) + `server/contracts/openapi.yml` · 更新：2026-06-24
 
 运营侧的**全局功能开关**：一处翻开关，线上（部分或全部用户）即时生效。用于 kill switch（关闭出故障的玩法）、灰度发布（新功能先放一部分人）、维护模式、按区域/平台分发。
 
