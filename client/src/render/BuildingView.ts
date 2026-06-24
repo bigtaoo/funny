@@ -65,6 +65,8 @@ export class BuildingView {
     createBuildingContainer,
     resetBuildingContainer,
     12,
+    // 建筑容器：sprite + hpBg/hpFill/flag Graphics。
+    { label: 'building', bytesEach: 6 * 1024 },
   );
 
   private texBarracks: PIXI.Texture | null = null;

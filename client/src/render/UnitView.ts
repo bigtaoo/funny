@@ -4,6 +4,7 @@ import { Unit } from '../game/Unit';
 import { Side, UnitState, UnitType } from '../game/types';
 import { BoardView } from './BoardView';
 import { ObjectPool } from '../cache/ObjectPool';
+import { registerPool } from '../cache/poolRegistry';
 import { StickmanRuntime } from './stickman/StickmanRuntime';
 import type { TaoAsset } from './stickman/StickmanRuntime';
 import infantryTaoUrl from '../assets/infantry.tao';
@@ -209,6 +210,8 @@ export class UnitView {
     createUnitContainer,
     resetUnitContainer,
     20,
+    // 圆形占位容器：body/ring/hpBg/hpFill 共 4 个 Graphics + 容器。
+    { label: 'unit.circle', bytesEach: 8 * 1024 },
   );
 
   /**
@@ -220,10 +223,24 @@ export class UnitView {
    */
   private readonly effectTicks = new Set<() => void>();
 
+  /** 内存看护注销函数（stickman 池数据源），destroy() 时调用。 */
+  private readonly unregisterStickmanStat: () => void;
+
   constructor(boardView: BoardView, localSide: Side = Side.Bottom, equippedSkin: string | null = null) {
     this.boardView = boardView;
     this.localSide = localSide;
     this.container = new PIXI.Container();
+
+    // stickman 池（按类型分桶）登记进内存看护：每个空闲单位是 wrapper + ~11 个 sprite + outline。
+    this.unregisterStickmanStat = registerPool({
+      label: 'unit.stickman',
+      idle: () => {
+        let n = 0;
+        for (const arr of this.stickmanPools.values()) n += arr.length;
+        return n;
+      },
+      bytesEach: 16 * 1024,
+    });
 
     // Start loading every stickman asset in the background. The game is playable
     // before the first unit can spawn, so by the time acquireSprite() runs for a
@@ -579,6 +596,7 @@ export class UnitView {
    *     are NOT destroyed — they're reused across battles.
    */
   destroy(): void {
+    this.unregisterStickmanStat();
     for (const tick of this.effectTicks) PIXI.Ticker.shared.remove(tick);
     this.effectTicks.clear();
 

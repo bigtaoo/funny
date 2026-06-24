@@ -34,6 +34,7 @@ import { ProfilePopup, type ProfileData } from './ProfilePopup';
 import { fromFp } from '../game';
 import { factionInk } from './theme';
 import { stateRecorder } from '../game/replay/StateRecorder';
+import { registerPool } from '../cache/poolRegistry';
 import { t, type TranslationKey } from '../i18n';
 
 /**
@@ -163,6 +164,9 @@ export class GameRenderer {
   // Unsubscribe functions from InputManager
   private readonly unsubs: Array<() => void> = [];
 
+  /** 内存看护注销函数（projectile 复用池），destroy() 时调用。 */
+  private readonly unregisterProjectileStat: () => void;
+
   constructor(
     engine: IGameEngine,
     layout: ILayout,
@@ -183,6 +187,12 @@ export class GameRenderer {
     this.localOwner    = sideToOwner(layout.localSide);
     this.localBuildRow = layout.localSide === Side.Bottom ? BOTTOM_BUILDING_ROW : TOP_BUILDING_ROW;
     this.localSpawnRow = layout.localSide === Side.Bottom ? BOTTOM_SPAWN_ROW    : TOP_SPAWN_ROW;
+
+    this.unregisterProjectileStat = registerPool({
+      label: 'projectile',
+      idle: () => this.projectilePool.length,
+      bytesEach: 3 * 1024,
+    });
 
     // Spectator (replay playback, S1-RP): the game layer is purely visual — skip
     // all input wiring so taps never select cards, drag, or open the pause menu.
@@ -269,6 +279,7 @@ export class GameRenderer {
   }
 
   destroy(): void {
+    this.unregisterProjectileStat();
     this.unsubs.forEach(u => u());
     this.drag?.ghost.destroy();
     this.drag            = null;

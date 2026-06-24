@@ -125,6 +125,8 @@ export class HandView {
     createCardSlot,
     resetCardSlot,
     6,
+    // 卡槽容器：bg/art/type/name/costBg/cost/overlay/bar/flash 等多个绘制对象。
+    { label: 'hand.slot', bytesEach: 6 * 1024 },
   );
 
   constructor(layout: ILayout) {

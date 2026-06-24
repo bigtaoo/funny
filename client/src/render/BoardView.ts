@@ -53,6 +53,7 @@ export class BoardView {
     () => new PIXI.Graphics(),
     (gfx) => { gfx.clear(); gfx.alpha = 1; gfx.removeFromParent(); },
     3,
+    { label: 'fx.meteor', bytesEach: 2 * 1024 },
   );
 
   /** In-flight one-shot effect ticks (meteor), tracked so teardown can unregister them. */

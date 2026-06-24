@@ -6,6 +6,7 @@
 
 import * as PIXI from 'pixi.js-legacy';
 import { IPlatform } from './platform/IPlatform';
+import { MemoryMonitor } from './cache/MemoryMonitor';
 import { SceneManager } from './scenes/SceneManager';
 import { IntroScene } from './scenes/IntroScene';
 import { LobbyScene, type LobbySceneCallbacks } from './scenes/LobbyScene';
@@ -320,6 +321,10 @@ export async function startApp(platform: IPlatform): Promise<void> {
 
   // Procedural art (sketch.ts) bakes static board layers to textures via this renderer.
   setBakeRenderer(app.renderer);
+
+  // 内存看护：每隔几秒采样 JS 堆，超阈值 console.warn 并 dump 各对象池占用；微信侧接 wx.onMemoryWarning。
+  // 跨场景常驻（战斗退场后池注册表自动清空）。阈值可用 localStorage 'nw_mem_warn_mb' 调。
+  new MemoryMonitor().install(app.ticker);
 
   // 全局兜底提示：场景没自己接住的非 200 / 网络错误冒泡到 window 时，弹一条玩家可读 toast
   // （场景自带的 showToast 不经过这里，所以「有提示则跳过、漏了才兜底」）。分类逻辑在 net/log，

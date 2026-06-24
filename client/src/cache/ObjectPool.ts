@@ -1,16 +1,36 @@
+import { registerPool } from './poolRegistry';
+
 type Factory<T> = () => T;
 type Resetter<T> = (obj: T) => void;
 
+/** 可选：把这个池登记进内存看护注册表（MemoryMonitor）。 */
+export interface PoolStatOpts {
+  /** 展示标签，如 'unit.circle' / 'building'。 */
+  label: string;
+  /** 单个空闲对象的粗估 JS 堆字节数（见 poolRegistry 文件头）。 */
+  bytesEach: number;
+}
+
 export class ObjectPool<T> {
   private pool: T[] = [];
+  /** 内存看护注销函数（drain() 时调用）；未登记则为 null。 */
+  private unregisterStat: (() => void) | null = null;
 
   constructor(
     private factory: Factory<T>,
     private resetter: Resetter<T>,
     prewarm = 0,
+    stat?: PoolStatOpts,
   ) {
     for (let i = 0; i < prewarm; i++) {
       this.pool.push(factory());
+    }
+    if (stat) {
+      this.unregisterStat = registerPool({
+        label: stat.label,
+        idle: () => this.pool.length,
+        bytesEach: stat.bytesEach,
+      });
     }
   }
 
@@ -36,5 +56,7 @@ export class ObjectPool<T> {
   drain(dispose?: (obj: T) => void): void {
     if (dispose) for (const obj of this.pool) dispose(obj);
     this.pool.length = 0;
+    this.unregisterStat?.();
+    this.unregisterStat = null;
   }
 }

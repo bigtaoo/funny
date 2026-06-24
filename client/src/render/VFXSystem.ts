@@ -24,6 +24,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { EFFECTS } from './vfx/registry';
 import { interpret } from './vfx/interpret';
 import { EffectDef } from './vfx/types';
+import { registerPool } from '../cache/poolRegistry';
 
 const DEFAULT_COLOR = 0x222222;
 
@@ -84,8 +85,16 @@ export class VFXSystem {
   private readonly pool: PIXI.Graphics[] = [];
   private nextHandle: VFXHandle = 1;
 
+  /** 内存看护注销函数（vfx Graphics 池），destroy() 时调用。 */
+  private readonly unregisterStat: () => void;
+
   constructor() {
     this.container = new PIXI.Container();
+    this.unregisterStat = registerPool({
+      label: 'fx.vfx',
+      idle: () => this.pool.length,
+      bytesEach: 2 * 1024,
+    });
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -168,6 +177,7 @@ export class VFXSystem {
 
   /** Clean up all resources. Call when the scene is torn down. */
   destroy(): void {
+    this.unregisterStat();
     for (const inst of this.active) inst.gfx.destroy();
     for (const gfx  of this.pool)   gfx.destroy();
     this.active.length = 0;
