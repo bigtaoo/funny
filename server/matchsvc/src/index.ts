@@ -9,15 +9,36 @@ import { Matchsvc } from './Matchsvc';
 import { GameRegistry } from './GameRegistry';
 import { GatewayClient } from './gatewayClient';
 import { startInternalHttp } from './internalHttp';
-import { loadInternalAuth } from '@nw/shared';
+import { createLogger, FeatureFlagCache, internalHeaders, loadInternalAuth } from '@nw/shared';
+
+const log = createLogger('matchsvc:flags');
 
 function main(): void {
   const env = loadMatchsvcEnv();
+
+  // 功能开关缓存：轮询 admin 原始规则 + 本地求值（不连库，30s 刷新，admin 不可达吃旧缓存）。
+  const adminUrl = env.adminInternalUrl;
+  const flags = new FeatureFlagCache({
+    fetchAll: async () => {
+      if (!adminUrl) return [];
+      const res = await fetch(`${adminUrl}/admin/internal/flags`, {
+        headers: internalHeaders('matchsvc', env.internalKey),
+      });
+      if (!res.ok) throw new Error(`admin flags ${res.status}`);
+      const body = (await res.json()) as { flags?: unknown[] };
+      return Array.isArray(body.flags) ? body.flags : [];
+    },
+    ...(env.region ? { region: env.region } : {}),
+    onError: (e) => log.warn('flag refresh failed (keeping cache)', { err: (e as Error).message }),
+  });
+  if (adminUrl) void flags.start();
 
   const games = new GameRegistry(Date.now, env.gamePublicWsUrl);
   const gateway = new GatewayClient(env.gatewayInternalUrl, env.internalKey);
   const matchsvc = new Matchsvc(gateway.push, games, env.internalKey, {
     ticketTtlSec: env.ticketTtlSec,
+    flags,
+    botFallbackMs: env.botFallbackMs,
   });
 
   const internal = startInternalHttp(
@@ -36,6 +57,10 @@ function main(): void {
   console.log(
     `gateway push: ${gateway.available ? env.gatewayInternalUrl : 'unavailable (events dropped)'}; ` +
       `game fallback: ${env.gamePublicWsUrl ?? 'none (register required)'}`,
+  );
+  console.log(
+    `feature flags: ${adminUrl ? `poll ${adminUrl} (region=${env.region ?? 'none'})` : 'disabled (all default)'}; ` +
+      `bot-fallback after ${env.botFallbackMs}ms`,
   );
 }
 

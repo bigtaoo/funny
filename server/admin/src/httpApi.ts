@@ -3,7 +3,7 @@
 // 用 node:http（admin 不引 fastify）。每个端点后端强校验能力（前端隐藏按钮不算数 §6）。
 // CORS：admin 仅内网，但前端是浏览器纯前端 → 放行（Bearer 头鉴权，非 cookie，无需 credentials）。
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
-import { signToken, verifyToken, createLogger, roleHasCapability, type AdminCapability, type JwtConfig } from '@nw/shared';
+import { signToken, verifyToken, createLogger, roleHasCapability, type AdminCapability, type InternalAuthVerifier, type JwtConfig } from '@nw/shared';
 import { AdminError, type Actor, type AdminService } from './service';
 import type { CompTarget } from '@nw/shared';
 
@@ -13,6 +13,8 @@ export interface HttpApiOpts {
   host: string;
   port: number;
   jwt: JwtConfig; // admin 专用 secret + ttl
+  /** 内部服务鉴权（X-Internal-Key）：不连库后端轮询 GET /admin/internal/flags 拿原始规则。 */
+  internalAuth: InternalAuthVerifier;
 }
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -37,7 +39,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PATCH,PUT,OPTIONS',
     'access-control-allow-headers': 'authorization,content-type',
   });
   res.end(JSON.stringify(body));
@@ -57,7 +59,7 @@ const numOpt = (v: string | null): number | undefined => {
 };
 
 export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
-  const { jwt } = opts;
+  const { jwt, internalAuth } = opts;
 
   /** 解出已认证主体；失败抛 AdminError(401)。 */
   const authenticate = async (req: IncomingMessage): Promise<Actor> => {
@@ -87,7 +89,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
       if (req.method === 'OPTIONS') {
         res.writeHead(204, {
           'access-control-allow-origin': '*',
-          'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS',
+          'access-control-allow-methods': 'GET,POST,PATCH,PUT,OPTIONS',
           'access-control-allow-headers': 'authorization,content-type',
         });
         res.end();
@@ -96,6 +98,25 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
       // 存活探针（无鉴权）。
       if (req.method === 'GET' && req.url === '/health') {
         send(res, 200, { ok: true, service: 'admin' });
+        return;
+      }
+      // ── 内部端点：功能开关原始规则（X-Internal-Key，非 admin JWT；不连库后端轮询此处）──
+      // 玩家 JWT 命不中 X-Internal-Key（结构性拒绝），且本端点只读原始规则、不求值——
+      // 消费者拿规则在自己进程内按当前 user 上下文 evaluateFlag。
+      if (req.method === 'GET' && (req.url ?? '').split('?')[0] === '/admin/internal/flags') {
+        if (!internalAuth.verify(req.headers).ok) {
+          log.warn('internal flags request rejected: bad X-Internal-Key', {
+            caller: req.headers['x-internal-caller'],
+          });
+          send(res, 401, { ok: false, error: 'unauthorized' });
+          return;
+        }
+        try {
+          send(res, 200, { ok: true, flags: await svc.getInternalFlags() });
+        } catch (e) {
+          log.error('internal flags fetch failed', { err: (e as Error).message });
+          send(res, 500, { ok: false, error: 'internal error' });
+        }
         return;
       }
 
@@ -241,6 +262,24 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
             to: numOpt(url.searchParams.get('to')),
           });
           return send(res, 200, { ok: true, entries });
+        }
+
+        // ── 功能开关（feature flags，config.manage）──
+        if (method === 'GET' && path === '/admin/config/flags') {
+          requireCap(actor, 'config.manage');
+          return send(res, 200, { ok: true, flags: await svc.getConfigFlags() });
+        }
+        const flagPut = /^\/admin\/config\/flags\/([^/]+)$/.exec(path);
+        if (method === 'PUT' && flagPut) {
+          requireCap(actor, 'config.manage');
+          const key = decodeURIComponent(flagPut[1]!);
+          const b = await readJson(req);
+          const flag = await svc.upsertFlag(actor, key, {
+            ...(typeof b.enabled === 'boolean' ? { enabled: b.enabled } : {}),
+            ...(b.rollout !== undefined ? { rollout: b.rollout } : {}),
+            ...(typeof b.desc === 'string' ? { desc: b.desc } : {}),
+          });
+          return send(res, 200, { ok: true, flag });
         }
 
         // ── 账号管理（超管）──

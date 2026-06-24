@@ -21,6 +21,8 @@ export interface PlayerView {
 export type PushMsg =
   | { kind: 'room_state'; code: string; players: PlayerView[]; phase: number }
   | { kind: 'match_found'; gameUrl: string; ticket: string }
+  // 匹配超时降级打 AI（feature flag match_bot_fallback）：客户端开本地 AI 局，无 ticket/gameUrl。
+  | { kind: 'match_bot'; seed: number; opponentName: string; elo: number; difficulty: string }
   | { kind: 'room_error'; code: string; message: string }
   // —— 社交实时推送（S6，meta 经 /gw/push 调用，与 matchsvc 共用此通道）——
   | { kind: 'friend_presence'; publicId: string; online: boolean }

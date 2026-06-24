@@ -8,6 +8,9 @@ import type {
   CompScope,
   CompTarget,
   CompTicketView,
+  FeatureFlagDoc,
+  FeatureFlagRow,
+  FlagRollout,
   LiveStats,
   PlayerProfile,
   Session,
@@ -203,5 +206,15 @@ export class Api {
   }
   async resetPassword(id: string, password: string): Promise<void> {
     await this.req('POST', `/admin/accounts/${encodeURIComponent(id)}/reset-password`, { password });
+  }
+
+  // ── 功能开关（config.manage）──
+  async flags(): Promise<FeatureFlagRow[]> {
+    const r = await this.req<{ flags: FeatureFlagRow[] }>('GET', '/admin/config/flags');
+    return r.flags;
+  }
+  async upsertFlag(key: string, input: { enabled: boolean; rollout?: FlagRollout; desc?: string }): Promise<FeatureFlagDoc> {
+    const r = await this.req<{ flag: FeatureFlagDoc }>('PUT', `/admin/config/flags/${encodeURIComponent(key)}`, input);
+    return r.flag;
   }
 }

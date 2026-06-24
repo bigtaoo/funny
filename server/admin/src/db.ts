@@ -9,6 +9,7 @@ import type {
   CompScope,
   CompTarget,
   CompTicketStatus,
+  FeatureFlagDoc,
   MetricKey,
   TradeAuditSnapshot,
   TradeAuditTicketStatus,
@@ -89,6 +90,8 @@ export interface AdminCollections {
   tradeAuditTickets: Collection<TradeAuditTicketDoc>;
   auditLog: Collection<AuditDoc>;
   metricSnapshots: Collection<MetricSnapshotDoc>;
+  // 功能开关规则（FEATURE_FLAGS_DESIGN §2.2）：_id = flag key，只存被运营覆盖过的 flag。
+  featureFlags: Collection<FeatureFlagDoc>;
 }
 
 export interface AdminMongo {
@@ -126,6 +129,7 @@ export async function createAdminMongo(
     tradeAuditTickets: db.collection<TradeAuditTicketDoc>('tradeAuditTickets'),
     auditLog: db.collection<AuditDoc>('auditLog'),
     metricSnapshots: db.collection<MetricSnapshotDoc>('metricSnapshots'),
+    featureFlags: db.collection<FeatureFlagDoc>('featureFlags'),
   };
 
   async function ensureIndexes(snapshotTtlSec: number): Promise<void> {
@@ -144,6 +148,8 @@ export async function createAdminMongo(
       { at: 1 },
       { expireAfterSeconds: snapshotTtlSec },
     );
+    // 功能开关：按最近修改时间列（_id 即 flag key，天然唯一，无需额外唯一索引）。
+    await collections.featureFlags.createIndex({ updatedAt: -1 });
   }
 
   return {

@@ -25,3 +25,4 @@ export * from './battlepass';
 export * from './titles';
 export * from './retention';
 export * from './events';
+export * from './featureFlags';

@@ -15,6 +15,10 @@ import {
   validatePassword,
   verifyPassword,
   createLogger,
+  FEATURE_FLAGS,
+  FLAG_KEYS,
+  FLAG_PLATFORMS,
+  isFlagKey,
   type AdminAccountView,
   type AdminCapability,
   type AdminRole,
@@ -26,6 +30,10 @@ import {
   type CompTarget,
   type CompTicketStatus,
   type CompTicketView,
+  type FeatureFlagDoc,
+  type FlagKey,
+  type FlagPlatform,
+  type FlagRollout,
   type LiveStats,
   type MetricKey,
   type TradeAuditSnapshot,
@@ -769,6 +777,61 @@ export class AdminService {
     );
   }
 
+  // ───────────────────── 功能开关（feature flags，§5）─────────────────────
+  // admin 是「处理中心」：唯一碰 flag 库、唯一写、对内出原始规则。运营在 ops 翻开关 →
+  // upsertFlag 写库 + 审计；不连库的后端轮询 getInternalFlags() 拿原始规则自己求值。
+
+  /**
+   * 列出全部白名单 flag + 当前覆盖规则 + 默认值（capability config.manage，ops 列表用）。
+   * 没被覆盖过的 flag doc=null，前端显示「默认（default）」。
+   */
+  async getConfigFlags(): Promise<
+    Array<{ key: FlagKey; default: boolean; desc: string; side: string; doc: FeatureFlagDoc | null }>
+  > {
+    const docs = await this.cols.featureFlags.find({}).toArray();
+    const byKey = new Map(docs.map((d) => [d._id, d]));
+    return FLAG_KEYS.map((key) => ({
+      key,
+      default: FEATURE_FLAGS[key].default,
+      desc: FEATURE_FLAGS[key].desc,
+      side: FEATURE_FLAGS[key].side,
+      doc: byKey.get(key) ?? null,
+    }));
+  }
+
+  /** 全量原始规则（admin 内部端点 GET /admin/internal/flags 用；不求值，给消费者本地求值）。 */
+  async getInternalFlags(): Promise<FeatureFlagDoc[]> {
+    return this.cols.featureFlags.find({}).toArray();
+  }
+
+  /**
+   * 写入/更新一条 flag 规则（capability config.manage）。校验 key 在白名单内、pct/平台合法值；
+   * 每次写 auditLog（actor / 前后值 / 时间），与补偿审批一致。
+   */
+  async upsertFlag(
+    actor: Actor,
+    key: string,
+    input: { enabled?: boolean; rollout?: unknown; desc?: string },
+  ): Promise<FeatureFlagDoc> {
+    if (!isFlagKey(key)) throw new AdminError(400, 'bad_request', `unknown flag key: ${key}`);
+    const before = await this.cols.featureFlags.findOne({ _id: key });
+    const rollout = validateRollout(input.rollout);
+    const doc: FeatureFlagDoc = {
+      _id: key,
+      enabled: input.enabled !== false, // 缺省视为开总闸（仅显式 false 关）
+      ...(rollout ? { rollout } : {}),
+      ...(typeof input.desc === 'string' && input.desc.trim() ? { desc: input.desc.trim() } : {}),
+      updatedAt: this.now(),
+      updatedBy: actor.adminId,
+    };
+    await this.cols.featureFlags.replaceOne({ _id: key }, doc, { upsert: true });
+    await this.audit(actor.adminId, 'config.update', {
+      target: key,
+      summary: `${describeFlag(before)} → ${describeFlag(doc)}`,
+    });
+    return doc;
+  }
+
   // ───────────────────────── 内部 ─────────────────────────
 
   private requireCap(actor: Actor, cap: AdminCapability): void {
@@ -912,6 +975,56 @@ function validateTarget(scope: CompScope, target: CompTarget | undefined): CompT
 
 function describeTarget(target: CompTarget): string {
   return 'publicId' in target ? `#${target.publicId}` : `filter:${target.filter.kind}`;
+}
+
+/** 校验/规整 flag 定向规则（越界/非法直接抛 400，与玩家可见配置不同——这里要严，防误配）。 */
+function validateRollout(raw: unknown): FlagRollout | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'object') throw new AdminError(400, 'bad_request', 'rollout must be an object');
+  const o = raw as Record<string, unknown>;
+  const out: FlagRollout = {};
+  if (o.pct !== undefined) {
+    if (typeof o.pct !== 'number' || !Number.isFinite(o.pct) || o.pct < 0 || o.pct > 100) {
+      throw new AdminError(400, 'bad_request', 'rollout.pct must be 0-100');
+    }
+    out.pct = Math.floor(o.pct);
+  }
+  const strArr = (v: unknown, field: string): string[] | undefined => {
+    if (v === undefined) return undefined;
+    if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) {
+      throw new AdminError(400, 'bad_request', `rollout.${field} must be string[]`);
+    }
+    return (v as string[]).map((s) => s.trim()).filter(Boolean);
+  };
+  const regions = strArr(o.regions, 'regions');
+  if (regions && regions.length) out.regions = regions;
+  const platforms = strArr(o.platforms, 'platforms');
+  if (platforms) {
+    for (const p of platforms) {
+      if (!(FLAG_PLATFORMS as readonly string[]).includes(p)) {
+        throw new AdminError(400, 'bad_request', `invalid platform: ${p}`);
+      }
+    }
+    if (platforms.length) out.platforms = platforms as FlagPlatform[];
+  }
+  const allow = strArr(o.allowAccounts, 'allowAccounts');
+  if (allow && allow.length) out.allowAccounts = allow;
+  const deny = strArr(o.denyAccounts, 'denyAccounts');
+  if (deny && deny.length) out.denyAccounts = deny;
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** 审计摘要：紧凑描述一条 flag 的态（before/after 对比用）。 */
+function describeFlag(doc: FeatureFlagDoc | null): string {
+  if (!doc) return 'default';
+  const r = doc.rollout;
+  const parts = [doc.enabled ? 'on' : 'OFF'];
+  if (r?.pct !== undefined) parts.push(`${r.pct}%`);
+  if (r?.regions?.length) parts.push(`region=${r.regions.join('|')}`);
+  if (r?.platforms?.length) parts.push(`plat=${r.platforms.join('|')}`);
+  if (r?.allowAccounts?.length) parts.push(`allow=${r.allowAccounts.length}`);
+  if (r?.denyAccounts?.length) parts.push(`deny=${r.denyAccounts.length}`);
+  return parts.join(',');
 }
 
 export { ADMIN_ROLES };

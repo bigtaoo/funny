@@ -486,6 +486,13 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (session) {
       session.handlers = {
         onMatchStart: (info) => goGameNet(info),
+        // 匹配超时降级打 AI（feature flag match_bot_fallback）：服务端推 match_bot →
+        // 退出排队 UI，开一场本地 AI 局（用 server seed）。
+        onMatchBot: (seed) => {
+          rankedQueued = false;
+          log.info('match_bot fallback → local AI match', { seed });
+          goGame({ seed, fromBotFallback: true });
+        },
         onRoomState: (s) => view.applyRoomState(s),
         onRoomError: (e) => view.applyRoomError(e),
         onPeerDc:    (p) => view.applyPeerDc(p),
@@ -872,25 +879,33 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     return replay;
   }
 
-  function goGame(): void {
+  /**
+   * 本地 PvP-vs-AI 对局。`opts.fromBotFallback` = 由匹配超时降级触发（feature flag
+   * match_bot_fallback）：带 server 给的 seed 保持确定性，analytics 标记区分主动练习 vs 降级。
+   */
+  function goGame(opts?: { seed?: number; fromBotFallback?: boolean }): void {
     inLobby = false;
     platform.onGameplayStart();
-    analytics.track('game_start', { mode: 'pvp_ai' });
+    const mode = opts?.fromBotFallback ? 'pvp_bot_fallback' : 'pvp_ai';
+    analytics.track('game_start', { mode });
     const gameStartTs = Date.now();
     views.showGame({
       onGameEnd(winner, stats, replay) {
         analytics.track('game_end', {
-          mode: 'pvp_ai',
+          mode,
           result: winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw',
           duration_sec: Math.round((Date.now() - gameStartTs) / 1000),
         });
         goResult(winner, stats, 0, keepReplay(replay));
       },
       onExitToLobby() {
-        analytics.track('game_end', { mode: 'pvp_ai', result: 'abandon', duration_ticks: 0 });
+        analytics.track('game_end', { mode, result: 'abandon', duration_ticks: 0 });
         goLobby();
       },
-    }, { equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null });
+    }, {
+      equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
+      ...(opts?.seed !== undefined ? { seed: opts.seed } : {}),
+    });
   }
 
   function goCampaignMap(): void {

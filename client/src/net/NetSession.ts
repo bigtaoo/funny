@@ -46,6 +46,11 @@ export interface NetSessionHandlers {
   onMatchOver?(m: MatchOver): void;
   /** Fired once the data-plane confirms match_start — app builds the engine here. */
   onMatchStart?(info: MatchStartInfo): void;
+  /**
+   * Ranked 匹配超时降级打 AI（feature flag match_bot_fallback）。无 gameConn / ticket，
+   * app 直接开一场本地 AI 局（PvP-vs-AI），用 server 给的 seed 保持确定性。
+   */
+  onMatchBot?(seed: number, opponentName: string, elo: number, difficulty: string): void;
   onNetState?(s: NetState): void;
   // —— 社交实时推送（S6，gateway 控制面 push）。UI 据此刷红点 / 在线态 / 收消息。——
   onFriendPresence?(p: FriendPresence): void;
@@ -206,6 +211,15 @@ export class NetSession {
     } else if (msg.matchFound) {
       log.info('match_found', { gameUrl: msg.matchFound.gameUrl });
       this.connectGame(msg.matchFound.gameUrl, msg.matchFound.ticket);
+    } else if (msg.matchBot) {
+      // 匹配超时降级打 AI：不连数据面，直接本地 AI 局。
+      log.info('match_bot', { seed: msg.matchBot.seed, opponent: msg.matchBot.opponentName });
+      this.handlers.onMatchBot?.(
+        msg.matchBot.seed,
+        msg.matchBot.opponentName,
+        msg.matchBot.elo,
+        msg.matchBot.difficulty,
+      );
     } else if (msg.judgeRequest) {
       // Phase C: the server asked us to recompute a desynced ranked match. Replay
       // it headlessly and report the verdict hash; this client is a neutral third

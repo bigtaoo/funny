@@ -1,7 +1,7 @@
 // matchsvc 单测（S1-M1）：friendly 建房/加入/ready/开局 + ranked 配对，均产出可验签的
 // match ticket（双方同 roomId/seed、各自 side）。push 回调录制；GameRegistry 用静态兜底地址。
-import { describe, it, expect } from 'vitest';
-import { verifyTicket } from '@nw/shared';
+import { describe, it, expect, vi } from 'vitest';
+import { verifyTicket, FeatureFlagCache } from '@nw/shared';
 import { Matchsvc, type PushMsg } from '../src/Matchsvc';
 import { GameRegistry } from '../src/GameRegistry';
 
@@ -130,5 +130,57 @@ describe('Matchsvc ranked', () => {
     svc.enqueue('a', 'A', '100000001', 1000);
     svc.enqueue('b', 'B', '100000002', 1000);
     expect(pushed.some((p) => p.msg.kind === 'room_error' && p.msg.code === 'GAME_UNAVAILABLE')).toBe(true);
+  });
+});
+
+describe('Matchsvc bot-fallback（feature flag match_bot_fallback）', () => {
+  async function makeCache(docs: unknown[]): Promise<FeatureFlagCache> {
+    const cache = new FeatureFlagCache({ fetchAll: async () => docs });
+    await cache.refresh();
+    return cache;
+  }
+
+  it('flag 开 + 单人等待超阈值 → 推 match_bot（出队，本地 AI 局）', async () => {
+    vi.useFakeTimers();
+    try {
+      const cache = await makeCache([{ _id: 'match_bot_fallback', enabled: true, rollout: { pct: 100 } }]);
+      const pushed: { acc: string; msg: PushMsg }[] = [];
+      const games = new GameRegistry(() => 0, GAME_URL);
+      const svc = new Matchsvc((acc, msg) => pushed.push({ acc, msg }), games, KEY, {
+        flags: cache,
+        botFallbackMs: 30_000,
+      });
+      svc.enqueue('lonely', 'L', '100000001', 1000, '', 'web');
+      vi.advanceTimersByTime(31_000);
+      const bot = pushed.find((p) => p.acc === 'lonely' && p.msg.kind === 'match_bot');
+      expect(bot).toBeDefined();
+      if (bot?.msg.kind !== 'match_bot') throw new Error();
+      expect(bot.msg.seed).toBeGreaterThan(0);
+      expect(bot.msg.opponentName).toBeTruthy();
+      expect(bot.msg.elo).toBe(1000);
+      expect(bot.msg.difficulty).toBe('normal');
+      expect(svc.stats().queue).toBe(0); // 已出队
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('flag 关 → 不降级，继续在队等真人', async () => {
+    vi.useFakeTimers();
+    try {
+      const cache = await makeCache([]); // 无覆盖 → default false
+      const pushed: { acc: string; msg: PushMsg }[] = [];
+      const games = new GameRegistry(() => 0, GAME_URL);
+      const svc = new Matchsvc((acc, msg) => pushed.push({ acc, msg }), games, KEY, {
+        flags: cache,
+        botFallbackMs: 30_000,
+      });
+      svc.enqueue('lonely', 'L', '100000001', 1000, '', 'web');
+      vi.advanceTimersByTime(60_000);
+      expect(pushed.some((p) => p.msg.kind === 'match_bot')).toBe(false);
+      expect(svc.stats().queue).toBe(1); // 仍在队
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
