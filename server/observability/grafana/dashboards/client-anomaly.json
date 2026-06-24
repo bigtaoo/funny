@@ -1,0 +1,152 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 0,
+  "title": "Notebook Wars — 客户端异常（全量上报）",
+  "uid": "nw-client-anomaly",
+  "tags": ["notebook-wars", "anomaly", "client"],
+  "timezone": "",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "1m",
+  "description": "全网客户端主动上报的异常事件（FEATURE_FLAGS_DESIGN §9.7）。与定向采集不同：不受 allowPublicIds 约束，任何客户端遇 内存超标(mem)/CPU 持续饱和(cpu)/WebGL 上下文丢失(webgl_lost)/主循环卡死(anr)/未捕获异常(jserror)/上次会话崩溃(crash) 都直报。label 仅 {source=client, kind=anomaly}，type/publicId/platform/detail/msg 入行内（logfmt）。",
+  "templating": {
+    "list": [
+      {
+        "name": "type",
+        "label": "异常类型",
+        "type": "custom",
+        "query": "mem,cpu,webgl_lost,anr,jserror,crash,other",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".+",
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "platform",
+        "label": "平台",
+        "type": "custom",
+        "query": "web,wechat,crazygames",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".+",
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "publicId",
+        "label": "玩家 publicId(9 位，留空=全部)",
+        "type": "textbox",
+        "current": { "text": "", "value": "" }
+      },
+      {
+        "name": "search",
+        "label": "关键字",
+        "type": "textbox",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "异常事件速率（按 type）",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "时间窗内 kind=anomaly 事件速率，按 type 堆叠。无数据 = 全网当前无客户端上报异常（或 metaserver 未配 NW_LOKI_PUSH_URL）。",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "sum by (type) (count_over_time({source=\"client\", kind=\"anomaly\"} | logfmt | type=~\"$type\" | platform=~\"$platform\" | publicId=~\"$publicId.*\" |~ \"(?i)$search\" [$__auto]))",
+          "legendFormat": "{{type}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "崩溃数（crash，窗口内）",
+      "type": "stat",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "上次会话异常退出（OOM / 进程被杀 / 标签页被杀）下次启动补报的 crash 事件数。",
+      "gridPos": { "h": 8, "w": 4, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({source=\"client\", kind=\"anomaly\"} | logfmt | type=\"crash\" | platform=~\"$platform\" | publicId=~\"$publicId.*\" [$__auto]))",
+          "legendFormat": "crash"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "异常事件总数（窗口内）",
+      "type": "stat",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 4, "x": 16, "y": 0 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({source=\"client\", kind=\"anomaly\"} | logfmt | type=~\"$type\" | platform=~\"$platform\" | publicId=~\"$publicId.*\" |~ \"(?i)$search\" [$__auto]))",
+          "legendFormat": "events"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "受影响玩家数（不同 publicId）",
+      "type": "stat",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "时间窗内有异常上报的不同 publicId 数（anon = 登录前异常，归并为一个）。",
+      "gridPos": { "h": 8, "w": 4, "x": 20, "y": 0 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "purple", "value": null } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "queryType": "instant",
+          "expr": "count(sum by (publicId) (count_over_time({source=\"client\", kind=\"anomaly\"} | logfmt | type=~\"$type\" | platform=~\"$platform\" [$__range])))",
+          "legendFormat": "players"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "异常事件明细（按 type / platform / publicId / 关键字 过滤）",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "每行末尾 type=…publicId=…platform=…detail=…msg=… 即客户端上报的结构化字段。detail 是已在客户端压成单串的补充（堆/池占用、FPS、stallMs、crash 的 aliveMs+lastError 等）。",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 8 },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{source=\"client\", kind=\"anomaly\"} | logfmt | type=~\"$type\" | platform=~\"$platform\" | publicId=~\"$publicId.*\" |~ \"(?i)$search\"",
+          "maxLines": 2000
+        }
+      ]
+    }
+  ]
+}

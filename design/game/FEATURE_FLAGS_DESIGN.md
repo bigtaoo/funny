@@ -254,6 +254,7 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
   - ② **localStorage 会话哨兵**：真·硬崩溃（OOM / 渲染进程被杀 / 标签页被杀）当场无机会上报；改为启动写 `nw_session_sentinel` + 15s 心跳更新存活时刻、离场标记 `cleanExit`；**下次启动**若发现上次哨兵有标记却无 `cleanExit`，即判定崩溃，带「大约崩溃时刻 aliveMs + 最后一条错误」补报一条 `crash`。
 - **传输**：客户端 `POST /client/anomaly`（body `{ publicId?, platform, events:[{type,msg,ts,detail?}] }`）；正常 fetch（`keepalive`）+ 离场 sendBeacon 兜底。无 baseUrl / Loki 不可达 → 静默丢弃，绝不影响玩家。
 - **入 Loki 约定**：单 stream，**label 仅 `{source="client", kind="anomaly"}`**（低基数），`type/publicId/platform/detail/msg` 一律放**行内**（logfmt）。Grafana：`{source="client",kind="anomaly"} | logfmt | type="webgl_lost"`。
+- **Grafana 面板**：`observability/grafana/dashboards/client-anomaly.json`（uid `nw-client-anomaly`）——按 type 堆叠的事件速率 + crash 计数 + 事件总数 + 受影响玩家数 + 明细日志；模板变量 type/platform（custom 枚举，因 type 在行内非 label）/publicId/关键字。
 - **防滥用四闸**：① 客户端每类冷却（mem/cpu 60s、anr 30s、jserror 10s 合一）② 单会话总量上限 50 ③ 单条 detail 截断 800 字符 ④ 服务端**按 IP 60s/30 次限流**（`SlidingRateLimiter`，超限静默丢弃）+ 最多取前 200 条 + 各字段截断。`POST /client/anomaly` **永远回 200**。
 - **与定向采集的关系**：`mem` 同时仍走 §9.4（被定向玩家可在 Loki 看到带完整池占用上下文的 warn 行）；本通道是「全网粗粒度异常计数 + 崩溃发现」，两者不冲突。
 
@@ -341,4 +342,4 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 
 **验证**：metaserver `tsc --noEmit` + client `tsc` + webpack web build 全通过；clientLog 13 例通过。
 
-**Grafana 待办**：可加「客户端异常」面板（`{source="client",kind="anomaly"} | logfmt`，按 `type` 分组速率 + crash 计数）；本次仅落地数据通道，面板后补。
+**Grafana**：已加「客户端异常（全量上报）」面板 `observability/grafana/dashboards/client-anomaly.json`（uid `nw-client-anomaly`，folder-provisioned 自动加载）——按 type 堆叠速率 + crash 计数 + 事件总数 + 受影响玩家数 + 明细日志，模板变量 type/platform/publicId/关键字。
