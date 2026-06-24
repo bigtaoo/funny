@@ -1,0 +1,12 @@
+# 开箱即用的 Loki 数据源（Grafana 启动自动注册，无需手点 Add data source）。
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    uid: loki                    # 固定 uid，供仪表盘 JSON 稳定引用
+    access: proxy
+    url: http://loki:3100
+    isDefault: true
+    jsonData:
+      maxLines: 1000

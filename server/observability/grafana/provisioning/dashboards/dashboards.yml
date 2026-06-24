@@ -1,0 +1,13 @@
+# 自动加载 /var/lib/grafana/dashboards 下的仪表盘 JSON（挂载自 observability/grafana/dashboards）。
+apiVersion: 1
+
+providers:
+  - name: nw
+    orgId: 1
+    folder: Notebook Wars
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
