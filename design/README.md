@@ -1,6 +1,6 @@
 # Notebook Wars — 设计文档索引与治理
 
-> 状态：实现中 · 权威：本文（文档治理的单一入口）· 更新：2026-06-21
+> 状态：实现中 · 权威：本文（文档治理的单一入口）· 更新：2026-06-24
 
 本文件是 **所有设计文档的统一入口**：去哪找、谁是权威、新文档放哪、数值怎么管。
 新增/搬动/废弃任何 `design/` 下文档，**必须同步更新本文的文档地图**。
@@ -56,6 +56,7 @@
 | [COMMERCIAL_DESIGN.md](game/COMMERCIAL_DESIGN.md) | 钱包 / 交易 / 充值 | 已实现 |
 | [SOCIAL_DESIGN.md](game/SOCIAL_DESIGN.md) | 好友 / 私聊 / 邮件 | 已实现 |
 | [OPS_DESIGN.md](game/OPS_DESIGN.md) | 运维后台（监控/匹配池/补偿工单） | 已实现 |
+| [FEATURE_FLAGS_DESIGN.md](game/FEATURE_FLAGS_DESIGN.md) | **功能开关（全局+定向灰度/区域/平台/白名单；统一服务端求值；公开 /bootstrap 下发+各进程缓存轮询；与 SaveData.flags 解耦）** | 设计中 |
 | [ANALYTICS_DESIGN.md](game/ANALYTICS_DESIGN.md) | 埋点分析（analyticsvc:18085） | 已实现 |
 | [COMPLIANCE_GLOBAL.md](game/COMPLIANCE_GLOBAL.md) | **海外合规（Web/iOS/Android：隐私/分级/抽卡概率公示/平台支付/删账号/UGC）** | 设计中 |
 | [COMPLIANCE_CN.md](game/COMPLIANCE_CN.md) | **中国大陆合规（版号/实名/未成年人防沉迷限时/分龄充值限额/PIPL；跟版号走，海外测试不阻断）** | 设计中 |
@@ -115,6 +116,7 @@
 | PvE 关卡定义 | `client/src/game/campaign/levels/*.json`（+ level-editor 编辑、`parseLevelDefinition` 校验） | — |
 | PvE 奖励 / 养成数据权威 | 服务器 `server/shared/pveRewards.ts` + [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md)（方案 B：服务器权威） | 客户端 JSON 仅参考/编辑器用 |
 | 接口契约（REST/WS/proto/DB 集合） | [game/SERVER_API.md](game/SERVER_API.md) + `server/contracts/` | — |
+| 功能开关机制（白名单/定向求值/分发/后台） | [game/FEATURE_FLAGS_DESIGN.md](game/FEATURE_FLAGS_DESIGN.md) | 接口落 SERVER_API/openapi；flag 白名单+default 真源 `server/shared/src/featureFlags.ts`；≠ SaveData.flags（玩家态） |
 | 进程拓扑 / 端口 | [claudedocs/server.md](../claudedocs/server.md) | 8 个应用进程，见 §4 |
 | 多区域部署（区域划分/匹配域/数据驻留） | [game/DEPLOY_TOPOLOGY.md](game/DEPLOY_TOPOLOGY.md) | Meta 共享+对战层按区隔离+中国独立；同区匹配、好友房跨区（ADR-019）；进程拓扑仍归 server.md |
 | 配色 / 渲染 / 美术资产分工 | [product/art-direction.md](product/art-direction.md) + `client/src/render/theme.ts` | 阵营色 **我蓝敌红**（v0.3） |
