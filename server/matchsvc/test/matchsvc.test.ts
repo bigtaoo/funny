@@ -183,4 +183,33 @@ describe('Matchsvc bot-fallback（feature flag match_bot_fallback）', () => {
       vi.useRealTimers();
     }
   });
+
+  it('flag 后开（玩家已超时过一次仍在队）→ 下一次重评即降级（非 fire-once）', async () => {
+    vi.useFakeTimers();
+    try {
+      const docs: unknown[] = []; // 起初无覆盖 → default false
+      const cache = new FeatureFlagCache({ fetchAll: async () => docs });
+      await cache.refresh();
+      const pushed: { acc: string; msg: PushMsg }[] = [];
+      const games = new GameRegistry(() => 0, GAME_URL);
+      const svc = new Matchsvc((acc, msg) => pushed.push({ acc, msg }), games, KEY, {
+        flags: cache,
+        botFallbackMs: 30_000,
+      });
+      svc.enqueue('lonely', 'L', '100000001', 1000, '', 'web');
+      vi.advanceTimersByTime(31_000); // 第一次超时：flag 关 → 继续等，条目仍在队
+      expect(pushed.some((p) => p.msg.kind === 'match_bot')).toBe(false);
+      expect(svc.stats().queue).toBe(1);
+
+      // 运营把开关后开
+      docs.push({ _id: 'match_bot_fallback', enabled: true, rollout: { pct: 100 } });
+      await cache.refresh();
+
+      vi.advanceTimersByTime(31_000); // 下一次重评窗口到 → 这次应降级
+      expect(pushed.some((p) => p.msg.kind === 'match_bot')).toBe(true);
+      expect(svc.stats().queue).toBe(0); // 已出队
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

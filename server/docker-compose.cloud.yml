@@ -100,6 +100,10 @@ services:
       NW_MM_HOST: 0.0.0.0
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_GAME_PUBLIC_WS_URL: ${NW_GAME_PUBLIC_WS_URL:-ws://localhost/ws}
+      # feature flag 轮询源（不配=禁用→match_bot_fallback 等开关恒为默认 false，永不生效）。
+      NW_ADMIN_INTERNAL_URL: http://admin:8083
+      NW_REGION: ${NW_REGION:-}
+      NW_MM_BOT_FALLBACK_MS: ${NW_MM_BOT_FALLBACK_MS:-30000}
     restart: unless-stopped
 
   gameserver:

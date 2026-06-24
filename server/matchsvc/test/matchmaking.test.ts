@@ -64,9 +64,10 @@ describe('Matchmaking', () => {
   });
 
   describe('bot-fallback 超时', () => {
-    it('单人独自等待超阈值 → 触发 onTimeout（fire-once）', () => {
+    it('单人独自等待超阈值 → 触发 onTimeout；仍在队则每 botFallbackMs 重评一次（非 fire-once）', () => {
       const timeouts: string[] = [];
       let t = 0;
+      // onTimeout 不出队（模拟 flag 关「继续等」）→ 条目留在队，应被周期性重评。
       const mm = new Matchmaking(() => {}, {
         autoTick: false,
         now: () => t,
@@ -78,11 +79,15 @@ describe('Matchmaking', () => {
       expect(timeouts).toEqual([]); // 未到阈值
       t = 30_000;
       mm.tick();
-      expect(timeouts).toEqual(['a']);
-      // fire-once：再 tick 不重复触发
-      t = 60_000;
+      expect(timeouts).toEqual(['a']); // 首次超时
+      // 节流：未满下一个 botFallbackMs 窗口不重复触发
+      t = 45_000;
       mm.tick();
       expect(timeouts).toEqual(['a']);
+      // 满一个窗口 → 重评再触发（保证 flag 后开能覆盖已在队条目）
+      t = 60_000;
+      mm.tick();
+      expect(timeouts).toEqual(['a', 'a']);
     });
 
     it('botFallbackMs=0 关闭 → 永不触发', () => {

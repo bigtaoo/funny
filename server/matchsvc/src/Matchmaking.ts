@@ -14,8 +14,12 @@ export interface QueueEntry {
   enqueuedAt: number;
   /** 平台（feature flag 定向求值用；缺省空串）。 */
   platform: string;
-  /** 已触发过 bot-fallback 超时回调（fire-once，防每 tick 重复触发）。 */
-  timedOut?: boolean;
+  /**
+   * 上次触发 bot-fallback 超时回调的时刻（ms）。缺省 = 从未触发（首判用 enqueuedAt）。
+   * 非 fire-once：开关关时保持在队，每隔 botFallbackMs 重评一次（节流防每 tick 触发），
+   * 这样运营把开关「后开」也能覆盖到已在排队的老条目。
+   */
+  lastTimeoutAt?: number;
 }
 
 export interface MatchmakingOpts {
@@ -120,11 +124,13 @@ export class Matchmaking {
     }
 
     // ── 2) bot-fallback 超时扫描（对仍在队的条目，含单人独自等待）──
-    // fire-once：先收集再回调（回调可能 remove 条目 → 避免遍历中改集合）。
+    // 非 fire-once：开关关时回调返回后条目仍在队，每隔 botFallbackMs 重评一次（节流），
+    // 故运营把 match_bot_fallback「后开」也能覆盖已在排队的老条目（旧的 fire-once 会漏判）。
+    // 先收集再回调（回调可能 remove 条目 → 避免遍历中改集合）。
     if (this.onTimeout && this.botFallbackMs > 0 && this.queue.length > 0) {
-      const timedOut = this.queue.filter((e) => !e.timedOut && t - e.enqueuedAt >= this.botFallbackMs);
-      for (const e of timedOut) e.timedOut = true;
-      for (const e of timedOut) this.onTimeout(e);
+      const due = this.queue.filter((e) => t - (e.lastTimeoutAt ?? e.enqueuedAt) >= this.botFallbackMs);
+      for (const e of due) e.lastTimeoutAt = t;
+      for (const e of due) this.onTimeout(e);
     }
   }
 

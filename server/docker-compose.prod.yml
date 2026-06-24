@@ -130,6 +130,10 @@ services:
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       # 数据面兜底地址（gameserver 注册前用）：客户端可达的 game WS。设真域名时改 wss://域名/ws。
       NW_GAME_PUBLIC_WS_URL: ${NW_GAME_PUBLIC_WS_URL:-ws://localhost/ws}
+      # feature flag 轮询源（不配=禁用→match_bot_fallback 等开关恒为默认 false，永不生效）。
+      NW_ADMIN_INTERNAL_URL: http://admin:8083
+      NW_REGION: ${NW_REGION:-}
+      NW_MM_BOT_FALLBACK_MS: ${NW_MM_BOT_FALLBACK_MS:-30000}
     restart: unless-stopped
 
   # 数据面 WS（瘦锁步中继，S1-M2）。?ticket= 验签，永不连库；局末上报 meta。
