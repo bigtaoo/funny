@@ -229,6 +229,19 @@ export class ApiClient {
     return this.request<{ replay: unknown }>('GET', `/share/replay/${shareId}`);
   }
 
+  /**
+   * 状态流录像游戏外分享 — 铸码（REPLAY_SHARE_DESIGN §3.1）：上传客户端自产的状态流 blob，
+   * 返回不可猜 shareCode。需登录。体量超限 / 限流 → ApiError('BAD_REQUEST' / 'RATE_LIMITED')。
+   */
+  async createStateReplayShare(blob: unknown): Promise<{ shareCode: string }> {
+    return this.post<{ shareCode: string }>('/replay/share', { blob });
+  }
+
+  /** 状态流录像公开取（REPLAY_SHARE_DESIGN §3.2）：无需登录；不存在/超期 → ApiError('NOT_FOUND')。 */
+  async getStateReplayShare(shareCode: string): Promise<{ blob: unknown }> {
+    return this.request<{ blob: unknown }>('GET', `/r/${shareCode}`);
+  }
+
   /** L1 录像抽检复算：补传被抽中通关的录像帧 → 第三方无头复算 → 复算星数 ≥ 声称才发材料。 */
   async pveVerify(
     verifyId: string,

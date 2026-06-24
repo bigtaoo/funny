@@ -99,6 +99,9 @@ export class HeadlessPlatform implements IPlatform {
     return new HeadlessSocket(url, handlers);
   }
 
+  async shareReplay(): Promise<void> { /* no-op in headless */ }
+  getLaunchShareCode(): string | null { return null; }
+
   // ── Render-only methods the core must never call ────────────────────────────
   getCanvas(): HTMLCanvasElement {
     throw new Error('HeadlessPlatform.getCanvas() called — core leaked a render dependency');

@@ -183,6 +183,19 @@ export const en: Record<TranslationKey, string> = {
   'replay.ended': 'Replay ended',
   'replay.versionError': 'Replay version incompatible — cannot play back',
 
+  // ── Out-of-game replay sharing (REPLAY_SHARE_DESIGN) ─────────────────────────
+  'share.button': 'Share',
+  'share.title': 'Watch my match!',
+  'stateplayer.tag': 'Shared replay',
+  'stateplayer.you': 'Blue',
+  'stateplayer.opponent': 'Red',
+  'stateplayer.ended': 'Match ended',
+  'stateplayer.bottomWon': 'Blue wins',
+  'stateplayer.topWon': 'Red wins',
+  'stateplayer.replay': 'Replay',
+  'stateplayer.playDemo': 'Play it too',
+  'stateplayer.backToLogin': 'Back to login',
+
   // ── Account / login (SA-3) ──────────────────────────────────────────────────
   'auth.title': 'Sign in to Notebook Wars',
   'auth.login': 'Log in',

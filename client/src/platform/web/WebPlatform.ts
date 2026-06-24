@@ -60,6 +60,21 @@ export class WebPlatform implements IPlatform {
     return new BrowserGameSocket(url, handlers);
   }
 
+  async shareReplay(shareCode: string, title: string): Promise<void> {
+    const url = `${window.location.origin}${window.location.pathname}?r=${encodeURIComponent(shareCode)}`;
+    const nav = navigator as Navigator & { share?: (d: { title?: string; url?: string }) => Promise<void> };
+    if (nav.share) {
+      await nav.share({ title, url });
+      return;
+    }
+    // 无原生分享 → 复制链接到剪贴板（桌面浏览器主路径）。
+    await navigator.clipboard.writeText(url);
+  }
+
+  getLaunchShareCode(): string | null {
+    return new URLSearchParams(window.location.search).get('r');
+  }
+
   onAppReady(): void {
     this.canvas.style.display = 'block';
     this.canvas.style.touchAction = 'none';

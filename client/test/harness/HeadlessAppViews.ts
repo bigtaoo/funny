@@ -54,7 +54,7 @@ export type ScreenName =
   | 'campaignMap' | 'levelPrep' | 'collection' | 'equipment' | 'stats' | 'achievements'
   | 'leaderboard' | 'battlePass' | 'replay' | 'result' | 'room' | 'friends'
   | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams'
-  | 'consent' | 'daily' | 'events';
+  | 'consent' | 'daily' | 'events' | 'statePlayer';
 
 interface ActiveMatch {
   engine: IGameEngine;
@@ -151,6 +151,7 @@ export class HeadlessAppViews implements AppViews {
     this.replayMatch = { engine, endFrame: Math.max(1, src.endFrame) };
   }
   showResult(props: ResultViewProps): void { this.screen = 'result'; this.result = props; }
+  showStatePlayer(): void { this.screen = 'statePlayer'; }
 
   showGame(cb: GameSceneCallbacks, opts: GameSceneOptions): void {
     this.screen = 'game';

@@ -1,6 +1,8 @@
 # 录像分享 — 游戏外分享设计基准
 
-> 状态：设计完成待实现（2026-06-24 拍板）· 权威：本文（录像分享机制）· 依赖底座：S1-RP 录像录制/回放（见 `META_TASKS.md`）· 契约 → `server/contracts/openapi.yml`
+> 状态：**已实现**（2026-06-24 拍板 → 2026-06-24 实现）· 权威：本文（录像分享机制）· 依赖底座：S1-RP 录像录制/回放（见 `META_TASKS.md`）· 契约 → `server/contracts/openapi.yml`
+
+> **实现落点速查**：状态流格式/编解码 `client/src/game/replay/StateReplay.ts`；录制器单例 `client/src/game/replay/StateRecorder.ts`（挂 `GameRenderer.update` 帧钩子）；哑播放器 `client/src/scenes/StatePlayerScene.ts`；分享入口 `ResultScene` / `ReplayScene`（`onShare` 回调 → `createAppCore.doShareReplay`）；平台分叉 `IPlatform.shareReplay` / `getLaunchShareCode`（web/wechat/crazygames 三实现）；启动路由 `createAppCore.start → goStatePlayer`；服务端 `server/shared/src/mongo.ts`（`stateReplayShares` 集合 + TTL）+ `server/metaserver/src/service.ts`（`createStateReplayShare` / `getStateReplayShare`）+ `openapi.yml`（`POST /replay/share` / 公开 `GET /r/{shareCode}`）；round-trip 单测 `client/test/stateReplay.test.ts`。
 
 把已有的「游戏内录像」延伸到**游戏外分享**：让没有账号、甚至没装游戏的人，点开一个链接 / 微信卡片就能直接看一局录像，并顺势引导下载试玩。
 
@@ -117,17 +119,24 @@
 
 ## 6. 实现任务切片（供编码会话）
 
-1. **`StateReplay` 类型 + `StateRecorder`**（client）：引擎 tick 抓状态、delta/量化、单槽 ring；接入 `GameRenderer` 帧钩子，真打 + 回放两路都录。
-2. **分享入口**：`ResultScene` / `ReplayScene` 加「分享这局」按钮 + 平台分叉（Web 链接 / 微信 `shareAppMessage`）；i18n `share.*`。
-3. **服务端**：`replayShares` 集合 + `POST /replay/share`（鉴权/限流/体量上限）+ 公开 `GET /r/{shareCode}`（匿名/限流/过期）；openapi.yml 登记。
-4. **`StatePlayerScene`**：哑状态播放器（复用渲染资产，无引擎）+ transport 覆盖层 + 退出三向。
-5. **启动路由**：Web `r=` 参数 + 微信 `query.r` → 跳过登录直达播放器。
-6. **验证**：tsc + webpack 构建；状态流 round-trip 单测；一局录制→上传→匿名取回→哑播放器逐帧可放；schemaVersion 容错。
+1. ✅ **`StateReplay` 类型 + `StateRecorder`**（client）：引擎 tick 抓状态、delta/量化、单槽 ring；接入 `GameRenderer` 帧钩子，真打 + 回放两路都录。
+2. ✅ **分享入口**：`ResultScene` / `ReplayScene` 加「分享这局」按钮 + 平台分叉（Web 链接 / 微信 `shareAppMessage`）；i18n `share.*` / `stateplayer.*`。
+3. ✅ **服务端**：**新** `stateReplayShares` 集合（与输入流 `replayShares` 正交，§3.3）+ `POST /replay/share`（鉴权/限流/体量上限）+ 公开 `GET /r/{shareCode}`（匿名/viewCount++/TTL 过期）；openapi.yml 登记。
+4. ✅ **`StatePlayerScene`**：哑状态播放器（复用 `BoardView`/`UnitView`/`BuildingView`/`VFXSystem`，无引擎）+ transport 覆盖层 + 退出三向。
+5. ✅ **启动路由**：`IPlatform.getLaunchShareCode`（Web `?r=` / 微信 `query.r`）→ `createAppCore.start` 跳过 intro/登录直达播放器。
+6. ✅ **验证**：client tsc + webpack（web）构建通过；状态流 round-trip 单测通过；`shared`/`metaserver` tsc 通过；openapi YAML 解析通过。
+
+> **实现期与设计的偏差/补充**：
+> - 服务端集合命名为 `stateReplayShares`（**非**复用 `replayShares` —— 后者是 S1-RP 输入流分享 `{roomId→replayBlobs}`，撞名会混淆，§3.3 要求正交）。
+> - 哑播放器**不另设事件通道**：离散特效（死亡/受击/裂痕/建筑摧毁）由相邻满帧的差异**合成**；projectile 特效 v1 暂略（§2.2 标「可选」）。坐标在相邻帧间线性插值，播放更顺。
+> - delta 粒度为「整条实体记录」级（变化实体整条记，未变实体省略 + 移除 id 列表），未做逐字段 diff —— 兼顾压缩与编解码简单/可测。
 
 ---
 
 ## 7. 待定参数（实现/上线期定）
 
-- 状态流字段最终集 + 量化精度 + 单局体量上限（跑真实一局实测）。
-- 铸码限流阈值 / 分享过期策略（永久 vs N 天）。
-- 微信分享卡片封面（静态图 vs 后续烤短动图）。
+> 实现期已先定如下默认值（代码内常量，上线期可据实测调）：
+
+- 状态流字段最终集 + 量化精度 + 单局体量上限：字段见 `StateReplay.ts`（单位 id/type/side/col/row/hp/maxHp/state，建筑同少 state，基地 hp/maxHp）；坐标量化 2 位小数（`STATE_POS_QUANT=100`）、血量取整；客户端单槽采样上限 `MAX_FRAMES=12000`（30Hz≈6.7 分钟），服务端 blob 上限 `STATE_REPLAY_MAX_BYTES=512KB`（超限 400）。**真实一局实测后再定稿**。
+- 铸码限流阈值 / 分享过期策略：每账号 `STATE_REPLAY_SHARE_PER_HOUR=20`/小时（429）；`STATE_REPLAY_EXPIRE_DAYS=14` 天 TTL 自清。永久 vs N 天上线期再定。
+- 微信分享卡片封面：当前用 `shareAppMessage` 默认截图，静态图 vs 后续烤短动图待定。

@@ -36,6 +36,8 @@ import type { LeaderboardCallbacks } from '../scenes/LeaderboardScene';
 import type { BattlePassCallbacks } from '../scenes/BattlePassScene';
 import type { ReplaySceneCallbacks } from '../scenes/ReplayScene';
 import type { ResultSceneCallbacks, EloResult } from '../scenes/ResultScene';
+import type { StatePlayerSceneCallbacks } from '../scenes/StatePlayerScene';
+import type { StateReplay, EncodedStateReplay } from '../game/replay/StateReplay';
 import type { GameSceneCallbacks, GameSceneOptions } from '../scenes/GameScene';
 import type { RoomSceneCallbacks } from '../scenes/RoomScene';
 import type { FriendsSceneCallbacks } from '../scenes/FriendsScene';
@@ -158,6 +160,11 @@ export interface AppViews {
   showEvents(cb: EventCallbacks): void;
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void;
   showResult(props: ResultViewProps): void;
+  /**
+   * 哑状态流播放器（REPLAY_SHARE_DESIGN §4.2）：无引擎、无登录直达。`encoded` 为原始编码流
+   * （若有），令「再分享」原样转发。
+   */
+  showStatePlayer(replay: StateReplay, cb: StatePlayerSceneCallbacks, encoded?: EncodedStateReplay): void;
 
   /** Local / campaign match (scene builds its own engine via createLocalMatch). */
   showGame(cb: GameSceneCallbacks, opts: GameSceneOptions): void;
