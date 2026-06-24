@@ -1,0 +1,12 @@
+{
+  // 战斗特效编辑器 vfx-editor 的静态托管（Cloudflare Workers static assets）。
+  // 纯静态 SPA（无 Worker 脚本、无 Supabase/后端依赖）：webpack production 产出 tools/vfx-editor/dist，
+  // wrangler deploy -c wrangler.vfx.jsonc 把 dist 作为静态资源发布。
+  // 设计：design/tools/vfx-editor/DESIGN.md
+  "name": "nivara-vfx",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    "directory": "./tools/vfx-editor/dist",
+    "not_found_handling": "single-page-application"
+  }
+}
