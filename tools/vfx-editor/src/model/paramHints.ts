@@ -10,12 +10,12 @@ import { PrimitiveType } from '@vfx/types';
 
 /** Param names each primitive samples (excludes layer-level fields count/points). */
 export const PARAM_HINTS: Record<PrimitiveType, string[]> = {
-  ring:     ['radius', 'alpha', 'lineWidth'],
-  arc:      ['radius', 'alpha', 'lineWidth', 'startAngle', 'sweep'],
-  spokes:   ['innerR', 'outerR', 'alpha', 'rotation', 'lineWidth', 'emphasisEvery', 'emphasisLineWidth'],
-  burst:    ['nearR', 'farR', 'alpha', 'rotation', 'lineWidth'],
-  dots:     ['spreadR', 'dotSize', 'alpha', 'angleOffset', 'jitter'],
-  polyline: ['alpha', 'lineWidth', 'scale', 'rotation', 'translateX', 'translateY'],
+  ring:     ['radius', 'alpha', 'lineWidth', 'boilAmp'],
+  arc:      ['radius', 'alpha', 'lineWidth', 'startAngle', 'sweep', 'boilAmp'],
+  spokes:   ['innerR', 'outerR', 'alpha', 'rotation', 'lineWidth', 'emphasisEvery', 'emphasisLineWidth', 'boilAmp'],
+  burst:    ['nearR', 'farR', 'alpha', 'rotation', 'lineWidth', 'boilAmp'],
+  dots:     ['spreadR', 'dotSize', 'alpha', 'angleOffset', 'jitter', 'boilAmp'],
+  polyline: ['alpha', 'lineWidth', 'scale', 'rotation', 'translateX', 'translateY', 'boilAmp'],
   emitter:  [],
 };
 
@@ -42,6 +42,7 @@ export function defaultParamValue(name: string): number {
     case 'dotSize':           return 2;
     case 'sweep':             return Math.PI;
     case 'emphasisLineWidth': return 4;
+    case 'boilAmp':           return 1.5;
     default:                  return 0;
   }
 }

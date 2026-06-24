@@ -9,6 +9,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sampleParam, applyEase } from '../src/render/vfx/sampleParam';
 import { parseEffectDef } from '../src/render/vfx/parseEffectDef';
+import { EFFECTS } from '../src/render/vfx/registry';
 
 describe('sampleParam', () => {
   it('returns fallback for null/undefined', () => {
@@ -100,5 +101,37 @@ describe('parseEffectDef', () => {
       { id: 'a', duration: 1, layers: [{ type: 'ring', z: 5 }] }, 's',
     );
     expect(def.layers[0].z).toBe(5);
+  });
+
+  it('preserves a boil spec (variants/fps) for P3 boiling layers', () => {
+    const def = parseEffectDef(
+      { id: 'a', duration: 1, layers: [{ type: 'ring', boil: { variants: 4, fps: 12 } }] }, 's',
+    );
+    expect(def.layers[0].boil).toEqual({ variants: 4, fps: 12 });
+  });
+
+  it('throws when boil is not an object', () => {
+    expect(() => parseEffectDef(
+      { id: 'a', duration: 1, layers: [{ type: 'ring', boil: 3 }] }, 's',
+    )).toThrow();
+  });
+});
+
+describe('effect registry (P1 baseline + P3 spell/Trait assets)', () => {
+  it('registers every shipped effect, parsed through parseEffectDef', () => {
+    const ids = Object.keys(EFFECTS).sort();
+    expect(ids).toEqual([
+      'aura_heal', 'bridge_collapse', 'death_building', 'death_unit',
+      'haste', 'hit', 'meteor', 'rockslide', 'shield', 'slow', 'spawn', 'summon',
+    ]);
+  });
+
+  it('flags persistent effects as loop, one-shots as non-loop', () => {
+    for (const id of ['haste', 'aura_heal', 'slow', 'shield']) {
+      expect(EFFECTS[id].loop).toBe(true);
+    }
+    for (const id of ['hit', 'meteor', 'rockslide', 'bridge_collapse', 'summon', 'spawn']) {
+      expect(EFFECTS[id].loop).toBe(false);
+    }
   });
 });

@@ -159,7 +159,8 @@ export class VFXSystem {
         : Math.min(1, inst.elapsed / inst.duration);
 
       inst.gfx.clear();
-      interpret(inst.def.layers, t, inst.gfx, inst.color, inst.baseSeed);
+      // elapsed (wall-clock) drives boil-variant cycling; t (progress) drives params.
+      interpret(inst.def.layers, t, inst.gfx, inst.color, inst.baseSeed, inst.elapsed);
 
       if (!inst.loop && t >= 1) this.recycle(i);
     }

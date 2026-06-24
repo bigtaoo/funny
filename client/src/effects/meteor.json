@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "meteor",
+  "duration": 0.6,
+  "loop": false,
+  "defaultColor": "0x222222",
+  "layers": [
+    {
+      "type": "polyline",
+      "points": [[-3, -50], [0, -22], [2, 0]],
+      "boil": { "variants": 3, "fps": 10 },
+      "params": {
+        "lineWidth": 3,
+        "boilAmp": 1.2,
+        "translateY": [{ "t": 0, "v": -24 }, { "t": 0.5, "v": 0, "ease": "easeIn" }],
+        "alpha": [{ "t": 0, "v": 0 }, { "t": 0.08, "v": 0.95 }, { "t": 0.5, "v": 0.95 }, { "t": 0.62, "v": 0 }]
+      }
+    },
+    {
+      "type": "ring",
+      "params": {
+        "radius": [{ "t": 0, "v": 0 }, { "t": 0.5, "v": 0 }, { "t": 0.58, "v": 14 }, { "t": 1, "v": 48, "ease": "easeOut" }],
+        "alpha": [{ "t": 0, "v": 0 }, { "t": 0.5, "v": 0 }, { "t": 0.55, "v": 1 }, { "t": 1, "v": 0 }],
+        "lineWidth": 2.5
+      }
+    },
+    {
+      "type": "spokes",
+      "count": 8,
+      "boil": { "variants": 3, "fps": 12 },
+      "params": {
+        "innerR": [{ "t": 0.5, "v": 0 }, { "t": 1, "v": 10 }],
+        "outerR": [{ "t": 0.5, "v": 0 }, { "t": 0.58, "v": 16 }, { "t": 1, "v": 36, "ease": "easeOut" }],
+        "alpha": [{ "t": 0, "v": 0 }, { "t": 0.5, "v": 0 }, { "t": 0.55, "v": 1 }, { "t": 1, "v": 0 }],
+        "lineWidth": 2,
+        "boilAmp": 1.4
+      }
+    },
+    {
+      "type": "dots",
+      "count": 6,
+      "params": {
+        "spreadR": [{ "t": 0.5, "v": 4 }, { "t": 1, "v": 40, "ease": "easeOut" }],
+        "dotSize": [{ "t": 0.5, "v": 4 }, { "t": 1, "v": 0 }],
+        "alpha": [{ "t": 0, "v": 0 }, { "t": 0.5, "v": 0.9 }, { "t": 1, "v": 0 }],
+        "jitter": 6
+      }
+    }
+  ]
+}

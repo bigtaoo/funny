@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "aura_heal",
+  "duration": 1.0,
+  "loop": true,
+  "defaultColor": "0x36b37e",
+  "layers": [
+    {
+      "type": "ring",
+      "boil": { "variants": 3, "fps": 8 },
+      "params": {
+        "radius": [{ "t": 0, "v": 6 }, { "t": 1, "v": 22, "ease": "easeOut" }],
+        "alpha": [{ "t": 0, "v": 0.8 }, { "t": 1, "v": 0 }],
+        "lineWidth": 2,
+        "boilAmp": 1.2
+      }
+    },
+    {
+      "type": "polyline",
+      "points": [[0, -6], [0, 6]],
+      "params": {
+        "lineWidth": 3,
+        "translateY": [{ "t": 0, "v": 4 }, { "t": 1, "v": -16 }],
+        "alpha": [{ "t": 0, "v": 0 }, { "t": 0.2, "v": 1 }, { "t": 0.8, "v": 0.8 }, { "t": 1, "v": 0 }]
+      }
+    },
+    {
+      "type": "polyline",
+      "points": [[-6, 0], [6, 0]],
+      "params": {
+        "lineWidth": 3,
+        "translateY": [{ "t": 0, "v": 4 }, { "t": 1, "v": -16 }],
+        "alpha": [{ "t": 0, "v": 0 }, { "t": 0.2, "v": 1 }, { "t": 0.8, "v": 0.8 }, { "t": 1, "v": 0 }]
+      }
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "slow",
+  "duration": 1.2,
+  "loop": true,
+  "defaultColor": "0x6e6e8a",
+  "layers": [
+    {
+      "type": "arc",
+      "boil": { "variants": 2, "fps": 6 },
+      "params": {
+        "radius": 16,
+        "startAngle": 0.5,
+        "sweep": 2.14,
+        "lineWidth": 2.5,
+        "boilAmp": 1.2,
+        "alpha": [{ "t": 0, "v": 0.2 }, { "t": 0.5, "v": 0.7 }, { "t": 1, "v": 0.2 }]
+      }
+    },
+    {
+      "type": "polyline",
+      "points": [[-6, -3], [0, 3], [6, -3]],
+      "boil": { "variants": 2, "fps": 6 },
+      "params": {
+        "lineWidth": 2,
+        "boilAmp": 1,
+        "translateX": -9,
+        "translateY": [{ "t": 0, "v": -4 }, { "t": 1, "v": 8, "ease": "easeIn" }],
+        "alpha": [{ "t": 0, "v": 0 }, { "t": 0.3, "v": 0.6 }, { "t": 1, "v": 0 }]
+      }
+    },
+    {
+      "type": "polyline",
+      "points": [[-6, -3], [0, 3], [6, -3]],
+      "boil": { "variants": 2, "fps": 6 },
+      "params": {
+        "lineWidth": 2,
+        "boilAmp": 1,
+        "translateX": 9,
+        "translateY": [{ "t": 0, "v": -8 }, { "t": 1, "v": 6, "ease": "easeIn" }],
+        "alpha": [{ "t": 0, "v": 0 }, { "t": 0.45, "v": 0.6 }, { "t": 1, "v": 0 }]
+      }
+    }
+  ]
+}

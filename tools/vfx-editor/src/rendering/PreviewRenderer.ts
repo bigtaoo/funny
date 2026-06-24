@@ -71,11 +71,14 @@ export class PreviewRenderer {
 
   setReferenceUnit(on: boolean): void { this.refUnit.visible = on; }
 
-  /** Paint one frame. t already clamped/wrapped by the caller. */
-  render(def: EffectDef | null, t: number, color: number, seed: number): void {
+  /**
+   * Paint one frame. t already clamped/wrapped by the caller; boilTime is a
+   * free-running wall-clock seconds value used to cycle boil variants (§6, P3).
+   */
+  render(def: EffectDef | null, t: number, color: number, seed: number, boilTime = 0): void {
     this.fx.clear();
     if (!def) return;
-    interpret(def.layers, Math.min(1, Math.max(0, t)), this.fx, color, seed);
+    interpret(def.layers, Math.min(1, Math.max(0, t)), this.fx, color, seed, boilTime);
   }
 
   destroy(): void {
