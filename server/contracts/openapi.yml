@@ -1772,8 +1772,22 @@ paths:
                         type: object
                         required: [rewards, tasks, pointsThreshold, dailyCoinsReward]
                         properties:
-                          rewards: { type: array, items: { type: object } }
-                          tasks: { type: array, items: { type: object } }
+                          rewards:
+                            type: array
+                            items:
+                              type: object
+                              required: [kind, count]
+                              properties:
+                                kind:  { type: string }
+                                count: { type: integer }
+                          tasks:
+                            type: array
+                            items:
+                              type: object
+                              required: [id, points]
+                              properties:
+                                id:     { type: string }
+                                points: { type: integer }
                           pointsThreshold: { type: integer }
                           dailyCoinsReward: { type: integer }
                       claimable:

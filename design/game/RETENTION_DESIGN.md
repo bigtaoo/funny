@@ -251,3 +251,13 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 ## 10. 实现记录
 
 > （待实现后追加：完成阶段、实际字段/端点形态、与设计的差异。）
+
+### 10.1 修复：签到月历奖励显示 `+undefined`（2026-06-24）
+
+**现象**：DailyScene 月历每格奖励全部显示 `+undefined`（无 `c` 后缀，说明 `reward.kind` 与 `reward.count` 同时为 undefined）；同页 `+N Münzen` 领取按钮正常。
+
+**根因**：`GET /retention` 经 `fastify-openapi-glue` 注册，Fastify 用 fast-json-stringify 按响应 schema 序列化回包。`openapi.yml` 中 `defs.rewards` / `defs.tasks` 仅声明为 `items: { type: object }`（无 `properties`），fast-json-stringify 对「无 properties 的 object」序列化为 `{}`，把 `kind`/`count`（及 tasks 的 `id`/`points`）全部剥掉。`dailyCoinsReward`（`type: integer`）不受影响，故按钮正常。服务端 `CHECKIN_REWARDS` 数据本身正确。
+
+**修复**：在 `openapi.yml` `/retention` 200 响应里给 `rewards.items` 补 `{ kind: string, count: integer }`、`tasks.items` 补 `{ id: string, points: integer }` 的 `properties`+`required`，序列化即保留字段。纯契约改动，无客户端/服务端逻辑变更。
+
+> 教训：经 openapi-glue 的端点，凡回包数组/对象需要客户端读字段的，schema 必须显式声明 `properties`，否则 fast-json-stringify 静默剥成 `{}`。
