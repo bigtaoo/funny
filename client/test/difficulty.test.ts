@@ -39,8 +39,8 @@ describe('难度模拟器', () => {
     const results: ThresholdResult[] = CH1.map((id) => findClearThreshold(id));
     // 打印到 stdout（vitest 默认显示 console）。
     console.log('\n' + formatThresholdTable(results) + '\n');
-    console.log('图例：✓N=通关(结束基地血N)  ✗Ns=失败(撑了N秒)  min通关=能过的最低养成');
-    console.log('注意：基线 AI 弱于熟练玩家，绝对通关偏保守，矩阵主要看“相对难度”。\n');
+    console.log('图例：每格=5 种子评估。N★P%=中位N星/通关率P%；✗P%=多数失败(通关率P%)。');
+    console.log('     min通关=通关率≥50% 的最低养成。注意：基线 AI 偏保守，绝对值仅供相对参考。\n');
 
     // 合理回归守卫：基线 AI 至少能在某关某预设下通关（证明 AI 与模拟链路是通的）。
     // 不在此断言具体关卡（难度本身正是待评估对象）。

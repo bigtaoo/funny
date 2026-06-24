@@ -23,6 +23,7 @@ import type { GameConfig } from '../src/game/types';
 import { Side, UnitType, CardType, GamePhase } from '../src/game/types';
 import { ATTACK_LANES } from '../src/game/config';
 import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
+import { computeStars } from '../src/game/meta/campaignRewards';
 
 const TICK_DT = 1 / 30;
 const TICK_RATE = 30;
@@ -63,8 +64,8 @@ export interface BaselineAiOptions {
 export const DEFAULT_AI: BaselineAiOptions = {
   towerCap: 6,
   barracksCap: 1,
-  upgradeToLevel: 2,
-  actionsPerSecond: 6,
+  upgradeToLevel: 3,
+  actionsPerSecond: 8,
   threatRows: 6,
   blockersPerLane: 2,
 };
@@ -82,6 +83,8 @@ interface LaneThreat {
   totalHp: number;
   /** 该车道上我方存活单位数（用于判断哪条道防守薄弱）。 */
   allyCount: number;
+  /** 该车道上我方坦克（盾兵）数——标准 TD：每条来敌道先有坦克扛线。 */
+  allyTanks: number;
 }
 
 // ─── 基线玩家 AI ────────────────────────────────────────────────────────────
@@ -131,9 +134,13 @@ export class BaselinePlayer {
     const consumed = new Set<number>();
     let ink = player.ink;
     let meteorFired = false;
-    // 本 tick 内已往各车道排队的我方单位（让分摊在 tick 内也生效）。
+    // 本 tick 内已往各车道排队的我方单位 / 坦克（让分摊在 tick 内也生效）。
     const queued = new Map<number, number>();
-    const reinforce = (lane: number) => queued.set(lane, (queued.get(lane) ?? 0) + 1);
+    const queuedTanks = new Map<number, number>();
+    const reinforce = (lane: number, tank: boolean) => {
+      queued.set(lane, (queued.get(lane) ?? 0) + 1);
+      if (tank) queuedTanks.set(lane, (queuedTanks.get(lane) ?? 0) + 1);
+    };
 
     const findCard = (pred: (kind: CardType, sub: string, cost: number) => boolean): number => {
       for (let i = 0; i < slots.length; i++) {
@@ -153,6 +160,21 @@ export class BaselinePlayer {
       engine.playCard(idx, col, row);
       this.tokens -= 1;
     };
+    /**
+     * 往某车道按「标准 TD 阵型」补一个兵并出手：该道还没坦克 → 先盾兵扛线；
+     * 否则优先弓手（高 DPS，清场主力），再退步兵。返回是否成功出手。
+     */
+    const reinforceLane = (lane: number): boolean => {
+      const t = laneThreat.get(lane)!;
+      const tanks = t.allyTanks + (queuedTanks.get(lane) ?? 0);
+      let idx = -1, isTank = false;
+      if (tanks === 0) { idx = findCard((k, sub) => k === CardType.Unit && sub === UnitType.ShieldBearer); isTank = idx >= 0; }
+      if (idx < 0) idx = findCard((k, sub) => k === CardType.Unit && sub === UnitType.Archer);
+      if (idx < 0) idx = findCard((k, sub) => k === CardType.Unit && sub === UnitType.Infantry);
+      if (idx < 0) { idx = findCard((k) => k === CardType.Unit); isTank = false; }
+      if (idx < 0) return false;
+      play(idx, lane); reinforce(lane, isTank); return true;
+    };
 
     // 令牌预算内，按优先级反复出手（concentrate：兵都堆 worstLane）。
     while (this.tokens >= 1 && ink > 0) {
@@ -164,20 +186,11 @@ export class BaselinePlayer {
           play(idx, clusterLane, row); meteorFired = true; continue;
         }
       }
-      // 2) 防线覆盖（最高战术优先）：任何来敌车道若我方阻挡 < blockersPerLane，
-      //    就先在最逼近的那条欠守车道补一个兵——保证每条道都有人守，不漏。
+      // 2) 防线覆盖（最高战术优先）：来敌车道若阻挡 < blockersPerLane，先在最逼近的
+      //    那条欠守道补兵——按阵型先盾兵扛、再弓手输出。保证每条道都有人守，不漏。
       {
         const lane = this.pickUnderBlockedLane(laneThreat, queued, this.opts.blockersPerLane);
-        if (lane >= 0) {
-          const t = laneThreat.get(lane)!;
-          // 敌人逼近(≤threatRows)用肉盾顶，否则步兵/弓手性价比消耗。
-          let idx = t.closestRow <= this.opts.threatRows
-            ? findCard((k, sub) => k === CardType.Unit && sub === UnitType.ShieldBearer)
-            : -1;
-          if (idx < 0) idx = findCard((k, sub) => k === CardType.Unit && sub === UnitType.Infantry);
-          if (idx < 0) idx = findCard((k) => k === CardType.Unit);
-          if (idx >= 0) { play(idx, lane); reinforce(lane); continue; }
-        }
+        if (lane >= 0 && reinforceLane(lane)) continue;
       }
       // 3) 防御骨架：所有来敌道都已有兵后，补箭塔做后排火力（威胁道优先）
       if (towers < this.opts.towerCap) {
@@ -195,15 +208,10 @@ export class BaselinePlayer {
           if (lane >= 0) { play(idx, lane); barracks++; occupiedTowerLanes.add(lane); continue; }
         }
       }
-      // 5) 余力加兵：把多余的墨继续分摊到防守最薄弱的来敌车道
+      // 5) 余力加兵：把多余的墨继续分摊到防守最薄弱的来敌车道（同样走阵型逻辑）
       {
         const lane = this.pickDefenseLane(laneThreat, queued);
-        if (lane >= 0) {
-          let idx = findCard((k, sub) => k === CardType.Unit && sub === UnitType.Infantry);
-          if (idx < 0) idx = findCard((k, sub) => k === CardType.Unit && sub === UnitType.Archer);
-          if (idx < 0) idx = findCard((k) => k === CardType.Unit);
-          if (idx >= 0) { play(idx, lane); reinforce(lane); continue; }
-        }
+        if (lane >= 0 && reinforceLane(lane)) continue;
       }
       // 6) 经济：安全且有余钱 → 升基地（提升回墨）
       if (!underThreat && player.upgradeLevel < this.opts.upgradeToLevel && player.canUpgradeBase()) {
@@ -217,7 +225,7 @@ export class BaselinePlayer {
   /** 扫描每条攻击车道上的存活敌人威胁 + 我方单位分布。 */
   private scanLanes(engine: Engine): Map<number, LaneThreat> {
     const m = new Map<number, LaneThreat>();
-    for (const lane of ATTACK_LANES) m.set(lane, { closestRow: Infinity, count: 0, totalHp: 0, allyCount: 0 });
+    for (const lane of ATTACK_LANES) m.set(lane, { closestRow: Infinity, count: 0, totalHp: 0, allyCount: 0, allyTanks: 0 });
     for (const u of engine.state.board.units.values()) {
       if (u.isDead) continue;
       const t = m.get(u.col);
@@ -229,6 +237,7 @@ export class BaselinePlayer {
         if (u.row < t.closestRow) t.closestRow = u.row;
       } else {
         t.allyCount++;
+        if (u.unitType === UnitType.ShieldBearer) t.allyTanks++;
       }
     }
     return m;
@@ -291,6 +300,8 @@ export interface SimResult {
   preset: ProgressionPreset;
   /** 是否通关（防住，winner === Bottom）。 */
   win: boolean;
+  /** 评星 0..3（按结束基地血% 对照 level.rewards.starThresholds；未通关=0）。 */
+  stars: 0 | 1 | 2 | 3;
   /** 引擎是否在 maxTicks 内打到 GameOver（false=被 maxTicks 截断，异常）。 */
   reachedGameOver: boolean;
   ticks: number;
@@ -312,6 +323,8 @@ export interface SimOptions {
   ai?: BaselineAiOptions;
   /** tick 上限（防卡死）。默认按最后一波 + 缓冲自动推算。 */
   maxTicks?: number;
+  /** 覆盖关卡 seed（多种子评估用：换 seed 即换发牌/抽卡顺序，抹平单局噪声）。 */
+  seed?: number;
 }
 
 export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOptions = {}): SimResult {
@@ -324,7 +337,7 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
   const ai = new BaselinePlayer(opts.ai ?? DEFAULT_AI);
 
   const config: GameConfig = {
-    seed: level.seed,
+    seed: opts.seed ?? level.seed,
     players: [{ id: 0 }, { id: 1 }],
     mode: 'campaign',
     level,
@@ -361,14 +374,20 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
     if (firstHitTick === null && bh < 100) firstHitTick = tick;
   }
 
+  const win = engine.state.winner === Side.Bottom;
+  const finalBaseHp = engine.state.bottomPlayer.baseHp;
+  // 评星：剩余基地血% == finalBaseHp（满血100、不回血）。未通关计 0。
+  const stars = win ? computeStars(level.rewards?.starThresholds, finalBaseHp) : 0;
+
   return {
     levelId,
     preset,
-    win: engine.state.winner === Side.Bottom,
+    win,
+    stars,
     reachedGameOver: engine.state.phase === GamePhase.GameOver,
     ticks: tick,
     seconds: Math.round((tick / TICK_RATE) * 10) / 10,
-    finalBaseHp: engine.state.bottomPlayer.baseHp,
+    finalBaseHp,
     minBaseHp,
     firstHitTick,
     peakEnemies,
@@ -386,25 +405,63 @@ function autoMaxTicks(level: LevelDefinition): number {
   return Math.max(60 * TICK_RATE, last + 60 * TICK_RATE); // 至少 60s，或末波后再给 60s
 }
 
-// ─── 阈值扫描：找通关某关所需的最低养成预设 ───────────────────────────────
+// ─── 多种子评估（抹平单局噪声，让星级可信）────────────────────────────────
 
 const PRESET_ORDER: ProgressionPreset[] = ['fresh', 'T2', 'T3', 'T4', 'T5', 'T6'];
 
-export interface ThresholdResult {
-  levelId: string;
-  /** 能通关的最低预设；null=连 T6 都过不了。 */
-  minClearPreset: ProgressionPreset | null;
-  /** 各预设的明细。 */
-  byPreset: SimResult[];
+/** 默认评估种子组——换 seed 即换发牌/抽卡顺序，跑多个取中位数才稳。 */
+export const EVAL_SEEDS = [65537, 1234567, 99991, 424242, 7777] as const;
+
+const median = (xs: number[]): number => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)]!;
+};
+
+export interface CellEval {
+  preset: ProgressionPreset;
+  /** 通关率（多种子里赢的比例）。 */
+  winRate: number;
+  /** 星级中位数（0..3）。 */
+  medianStars: number;
+  /** 结束基地血中位数。 */
+  medianHp: number;
+  runs: SimResult[];
 }
 
-export function findClearThreshold(levelId: string, ai?: BaselineAiOptions): ThresholdResult {
-  const byPreset: SimResult[] = [];
+/** 对（关卡, 预设）跑多个种子，给出稳健的通关率 / 中位星级。 */
+export function evalCell(
+  levelId: string, preset: ProgressionPreset,
+  ai?: BaselineAiOptions, seeds: readonly number[] = EVAL_SEEDS,
+): CellEval {
+  const runs = seeds.map((seed) => simulateLevel(levelId, { preset, ai, seed }));
+  const winRate = runs.filter((r) => r.win).length / runs.length;
+  return {
+    preset, winRate,
+    medianStars: median(runs.map((r) => r.stars)),
+    medianHp: median(runs.map((r) => r.finalBaseHp)),
+    runs,
+  };
+}
+
+// ─── 阈值扫描：找“多数种子能通关”的最低养成预设 ──────────────────────────────
+
+export interface ThresholdResult {
+  levelId: string;
+  /** 能稳定通关(通关率≥50%)的最低预设；null=连 T6 都过不了。 */
+  minClearPreset: ProgressionPreset | null;
+  /** 各预设的多种子评估。 */
+  byPreset: CellEval[];
+}
+
+export function findClearThreshold(
+  levelId: string, ai?: BaselineAiOptions, seeds: readonly number[] = EVAL_SEEDS,
+): ThresholdResult {
+  const byPreset: CellEval[] = [];
   let minClearPreset: ProgressionPreset | null = null;
   for (const preset of PRESET_ORDER) {
-    const r = simulateLevel(levelId, { preset, ai });
-    byPreset.push(r);
-    if (r.win && minClearPreset === null) minClearPreset = preset;
+    const c = evalCell(levelId, preset, ai, seeds);
+    byPreset.push(c);
+    if (c.winRate >= 0.5 && minClearPreset === null) minClearPreset = preset;
   }
   return { levelId, minClearPreset, byPreset };
 }
@@ -413,18 +470,20 @@ export function findClearThreshold(levelId: string, ai?: BaselineAiOptions): Thr
 
 export function formatThresholdTable(results: ThresholdResult[]): string {
   const lines: string[] = [];
-  const head = ['level', ...PRESET_ORDER, 'min通关'].map((s) => s.padEnd(8)).join('|');
+  const head = ['level', ...PRESET_ORDER, 'min通关'].map((s) => s.padEnd(9)).join('|');
   lines.push(head);
   lines.push('-'.repeat(head.length));
   for (const tr of results) {
-    const cells = [tr.levelId.padEnd(8)];
+    const cells = [tr.levelId.padEnd(9)];
     for (const preset of PRESET_ORDER) {
-      const r = tr.byPreset.find((x) => x.preset === preset)!;
-      // ✓ 通关(结束基地血) / ✗ 失败(秒数)
-      const cell = r.win ? `✓${r.finalBaseHp}` : `✗${r.seconds}s`;
-      cells.push(cell.padEnd(8));
+      const c = tr.byPreset.find((x) => x.preset === preset)!;
+      // 多数通关→中位星级+通关率(如 3★100%) / 否则→✗通关率
+      const cell = c.winRate >= 0.5
+        ? `${c.medianStars}★${Math.round(c.winRate * 100)}%`
+        : `✗${Math.round(c.winRate * 100)}%`;
+      cells.push(cell.padEnd(9));
     }
-    cells.push((tr.minClearPreset ?? '过不了').padEnd(8));
+    cells.push((tr.minClearPreset ?? '过不了').padEnd(9));
     lines.push(cells.join('|'));
   }
   return lines.join('\n');
