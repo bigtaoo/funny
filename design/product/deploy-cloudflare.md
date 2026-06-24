@@ -236,7 +236,19 @@ npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler.ops.jsonc   # 粘贴 Step
 docker compose -f observability/docker-compose.obs.yml --env-file observability/.env up -d
 ```
 
-**自动发布**：`.github/workflows/obs-deploy.yml`——push 改动落在 `server/observability/**` 时自动 SSH 进 VPS `reset --hard + up -d --force-recreate`（预构建镜像，无 build；与 server-deploy 解耦，互不触发）。复用同套 `VPS_SSH_KEY`/`VPS_HOST`；开关 `OBS_DEPLOY_ENABLED=true`（首次需先在 VPS 手动建 `observability/.env`），可选 `OBS_TUNNEL_ENABLED=true` 才带 cloudflared。
+**自动发布**：`.github/workflows/obs-deploy.yml`——push 改动落在 `server/observability/**` 时自动 SSH 进 VPS `reset --hard + up -d --force-recreate`（预构建镜像，无 build；与 server-deploy 解耦，互不触发）。复用同套 `VPS_SSH_KEY`/`VPS_HOST`；开关 `OBS_DEPLOY_ENABLED=true`（首次需先在 VPS 手动建 `observability/.env`），可选 `OBS_TUNNEL_ENABLED=true` 才带 cloudflared。`server-deploy.yml` 已 `!server/observability/**` 排除该子树，避免为日志配置白白 rebuild 后端。
+
+### 上线记录（2026-06-24 ✅ 已验证）
+
+完整闭环已上线，`https://grafana.gamestao.com` 外网可达。
+
+- **VPS（`128.140.41.98`，`/root/funny`）**：`daemon.json` 写 `log-opts max-size=50m,max-file=5` + 重启 docker + `up -d --force-recreate` 主栈（metaserver 已验证 `LogConfig.Config=map[max-file:5 max-size:50m]`，游戏容器日志已封顶）；obs 栈自身也在 compose 里自限同款（不依赖 daemon.json）。
+- **obs 栈**：`loki`(grafana/loki:3.4.2) + `alloy`(v1.7.5) + `grafana`(11.5.2) 三容器 Up；Loki `/ready` ok、Grafana `/api/health` db ok；Alloy 经 docker socket 抓日志、无 error。Loki labels 已含 `svc`(meta/gateway/matchsvc/admin…) + `level`(debug/info/warn)，可读单行正则解析生效（`[matchsvc:internal]` 正确归根 `svc=matchsvc`）。
+- **Grafana**：admin 密码在 VPS `server/observability/.env`（`GF_ADMIN_PASSWORD`，随机生成，建议登录后改）；起手仪表盘「服务端日志」(uid `nw-server-logs`) provision 成功，已扩为 7 面板（日志速率/各服务错误数/错误总数/主过滤日志/仅错误/匹配链路速查/对战时间线 roomId），变量 svc·level·search·roomId。
+- **Cloudflare（账号 `tao.wang.go@gmail.com`，account `e64b61f1…`）**：令牌式 Tunnel `nivara-grafana`，cloudflared 容器 4 条 QUIC 连边缘 ok；ingress `grafana.gamestao.com → http://grafana:3000`（远程托管配置已下发）；CF Access self-hosted 应用 `grafana` 罩 `grafana.gamestao.com`（policy `grafana`，邮箱白名单）。外网 `curl https://grafana.gamestao.com` → `302` 跳 `gamestao.cloudflareaccess.com/.../access/login`，证明边缘→隧道→Access 三段全通。
+- **访问**：浏览器开 `https://grafana.gamestao.com` → CF Access 邮箱验证码 → Grafana 账号登录。SSH 兜底 `ssh -i ~/.ssh/nivara_hetzner -L 3000:localhost:3000 root@128.140.41.98` → `http://localhost:3000` 仍可用。
+
+> 共享密钥/令牌两端：VPS `server/observability/.env` 的 `CF_TUNNEL_TOKEN` ＝ CF Tunnel `nivara-grafana` 令牌（`.env` 是 gitignore，不入库）。`OBS_DEPLOY_ENABLED`/`OBS_TUNNEL_ENABLED` 两个 repo variable 暂未开（手动部署已完成），需要 git push 自动发布时再开。
 
 ## 7. 平台隔离边界（ADR-020）
 
