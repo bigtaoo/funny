@@ -46,6 +46,13 @@ services:
       NW_WX_SECRET: ${NW_WX_SECRET:-}
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      # 功能开关下发 + 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）。
+      # ⚠ 必坑（同 matchsvc）：缺 NW_ADMIN_INTERNAL_URL → flag 轮询禁用 → /bootstrap 恒空 map → 定向采集永不生效。
+      NW_ADMIN_INTERNAL_URL: http://admin:8083
+      NW_REGION: ${NW_REGION:-}
+      # Loki push 地址：obs 栈是独立 compose/独立网络，metaserver 默认解析不到 loki（见 observability/README.md 网络坑）。
+      # 留空 = 静默丢弃（不影响玩家）；要启用定向采集需填宿主可达地址或让 metaserver 接入 obs 网络。
+      NW_LOKI_PUSH_URL: ${NW_LOKI_PUSH_URL:-}
     depends_on:
       commercial:
         condition: service_started

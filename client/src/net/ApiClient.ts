@@ -603,6 +603,25 @@ export class ApiClient {
     );
   }
 
+  // ── 公开启动配置 + 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9，无需登录）──────────────
+  /**
+   * 拉公开 bootstrap（匿名可调；持有 token 则带上、服务端注入 accountId 求值更精确）。
+   * 只回与默认值不同的 flag（多数玩家为空对象）。platform / publicId 经 query 带入。
+   */
+  async getBootstrap(platform: string, publicId?: string): Promise<{ flags: Record<string, boolean> }> {
+    const qs = `?platform=${encodeURIComponent(platform)}${publicId ? `&publicId=${encodeURIComponent(publicId)}` : ''}`;
+    return this.request<{ flags: Record<string, boolean> }>('GET', `/bootstrap${qs}`);
+  }
+
+  /** 上报一批客户端日志（仅被定向的 publicId 调用；服务端转发 Loki）。失败由调用方静默吞掉。 */
+  async postClientLog(body: {
+    publicId: string;
+    platform?: string;
+    logs: { level: string; msg: string; ts: number; tag?: string }[];
+  }): Promise<void> {
+    await this.post<{ accepted: number }>('/client/log', body);
+  }
+
   // ── 内部 ────────────────────────────────────────────────
   private async post<T>(path: string, body: unknown): Promise<T> {
     return this.request<T>('POST', path, body);

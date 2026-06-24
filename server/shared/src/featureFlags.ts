@@ -18,6 +18,15 @@ export const FEATURE_FLAGS = {
    * 即降级为「打 AI」（客户端本地 AI 对局）。关闭则一直等真人。
    */
   match_bot_fallback: { default: false, desc: '匹配超时降级打AI', side: 'server' },
+
+  // ── 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）────────────────────────────
+  // 级别用「多 flag」编码（flag 只有 true/false）：运营把目标玩家 publicId 填进**想要级别**那个 flag 的
+  // allowPublicIds。客户端取**最 verbose 的已开 flag**作上传阈值（debug>info>warn>error），上传该级别及以上；
+  // 无任何命中 = 不上报。default 全 false → 绝大多数玩家 bootstrap 拿到空 map、永不上报。
+  client_log_error: { default: false, desc: '客户端日志上报-error', side: 'client' },
+  client_log_warn: { default: false, desc: '客户端日志上报-warn', side: 'client' },
+  client_log_info: { default: false, desc: '客户端日志上报-info', side: 'client' },
+  client_log_debug: { default: false, desc: '客户端日志上报-debug', side: 'client' },
 } as const;
 
 export type FlagKey = keyof typeof FEATURE_FLAGS;
@@ -50,6 +59,13 @@ export interface FlagRollout {
   allowAccounts?: string[];
   /** 黑名单：命中即关（盖过 allow 之外的一切）。 */
   denyAccounts?: string[];
+  /**
+   * publicId 白名单（FEATURE_FLAGS_DESIGN §9.1）：命中即开，与 allowAccounts 同优先级。
+   * 定向键 = AccountDoc.publicId（9 位、玩家可见），**非**内部 accountId——运营在 ops 直接填最直观，
+   * 客户端轮询 bootstrap 时带上自己的 publicId，求值时注入 ctx.publicId，无需查库映射。
+   * 客户端日志定向采集（client_log_*）即用此维度精确点名单个玩家。
+   */
+  allowPublicIds?: string[];
 }
 
 /** flag 规则文档（admin 库 featureFlags 集合；_id = flag key）。 */
@@ -68,6 +84,8 @@ export interface FeatureFlagDoc {
 export interface FlagContext {
   /** 未登录时 undefined。 */
   accountId?: string;
+  /** 玩家可见的 9 位 publicId（§9.1 定向采集用；客户端 bootstrap 轮询时带入）。未知时 undefined。 */
+  publicId?: string;
   /** 部署区域（由进程注入，知道自己在哪区）。 */
   region?: string;
   platform?: FlagPlatform;
@@ -100,7 +118,7 @@ export function rolloutBucket(key: string, accountId: string): number {
  *  1. doc 不存在 → default；
  *  2. enabled===false → false（总闸优先于一切）；
  *  3. denyAccounts 命中 → false；
- *  4. allowAccounts 命中 → true（盖过 region/platform/pct）；
+ *  4. allowAccounts / allowPublicIds 命中 → true（盖过 region/platform/pct）；
  *  5. regions 有限定且当前 region 不在内 → false；platforms 同理；
  *  6. pct 有限定：bucket < pct → 否则 false；未登录无 accountId 时按 pct>=100 才算命中（保守）；
  *  7. 全部通过 → true。
@@ -113,6 +131,8 @@ export function evaluateFlag(key: FlagKey, doc: FeatureFlagDoc | null | undefine
 
   if (ctx.accountId && r.denyAccounts?.includes(ctx.accountId)) return false;
   if (ctx.accountId && r.allowAccounts?.includes(ctx.accountId)) return true;
+  // publicId 白名单与 allowAccounts 同优先级（§9.1）：命中即开，盖过 region/platform/pct。
+  if (ctx.publicId && r.allowPublicIds?.includes(ctx.publicId)) return true;
 
   if (r.regions && r.regions.length > 0) {
     if (!ctx.region || !r.regions.includes(ctx.region)) return false;
@@ -159,6 +179,8 @@ export function sanitizeFlagDoc(raw: unknown): FeatureFlagDoc | null {
     if (allow) rollout.allowAccounts = allow;
     const deny = strArr(rolloutIn.denyAccounts);
     if (deny) rollout.denyAccounts = deny;
+    const allowPublicIds = strArr(rolloutIn.allowPublicIds);
+    if (allowPublicIds) rollout.allowPublicIds = allowPublicIds;
     if (Object.keys(rollout).length === 0) rollout = undefined;
   }
   return {

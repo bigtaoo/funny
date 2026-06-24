@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import openapiGlue from 'fastify-openapi-glue';
-import type { Collections, JwtConfig } from '@nw/shared';
+import type { Collections, JwtConfig, FeatureFlagCache } from '@nw/shared';
 import { createLogger, internalKeysFromEnv } from '@nw/shared';
 import { MetaService } from './service.js';
 import { registerAdCallbackRoutes } from './ads.js';
@@ -36,6 +36,12 @@ export interface BuildAppOpts {
   logger?: boolean;
   /** 每 IP 15 分钟内最大 auth 尝试数（0 = 禁用，测试用）。默认 20。 */
   authRateLimit?: number;
+  /** feature flag 缓存（公开 /bootstrap 求值用）。null/缺省 = 无 flag 源，bootstrap 恒回空 map。 */
+  flags?: FeatureFlagCache | null;
+  /** 部署区域（注入 flag 求值 ctx）。 */
+  region?: string | null;
+  /** Loki push 地址（POST /client/log 转发；null = 静默丢弃）。 */
+  lokiPushUrl?: string | null;
 }
 
 export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
@@ -83,6 +89,9 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     gatewayPublicUrl: opts.gatewayPublicUrl ?? null,
     gateway,
     authRateLimit: opts.authRateLimit ?? 20,
+    flags: opts.flags ?? null,
+    region: opts.region ?? null,
+    lokiPushUrl: opts.lokiPushUrl ?? null,
   });
 
   // 广告平台 SSV 回调（平台主动调用，不经 openapi glue，无玩家鉴权）。

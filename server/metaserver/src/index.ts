@@ -1,6 +1,6 @@
 // metaserver 进程引导：连 Mongo → buildApp → listen。
 // 反代将 /api/* 转到本进程（SERVER_API.md §0）。
-import { createMongo, createLogger, startHeartbeat, type JwtConfig } from '@nw/shared';
+import { createMongo, createLogger, startHeartbeat, FeatureFlagCache, internalHeaders, type JwtConfig } from '@nw/shared';
 import { loadMetaEnv } from './config.js';
 import { buildApp, SPEC_PATH } from './app.js';
 import { HttpGatewayClient } from './gatewayClient.js';
@@ -45,6 +45,25 @@ async function main() {
   const mongo = await createMongo(env.mongoUri, env.mongoDb);
   await mongo.ensureIndexes();
 
+  // 功能开关缓存（公开 /bootstrap 求值用，FEATURE_FLAGS_DESIGN §9.3）：轮询 admin 原始规则 + 本地求值。
+  // ⚠ 必须注入 NW_ADMIN_INTERNAL_URL（指向 http://admin:8083），否则不启动轮询 → 所有 flag 恒 default
+  //   → bootstrap 恒回空 map → 客户端日志定向采集永不生效（同 matchsvc 的部署必坑）。
+  const adminUrl = env.adminInternalUrl;
+  const flags = new FeatureFlagCache({
+    fetchAll: async () => {
+      if (!adminUrl) return [];
+      const res = await fetch(`${adminUrl}/admin/internal/flags`, {
+        headers: internalHeaders('meta', env.internalKey),
+      });
+      if (!res.ok) throw new Error(`admin flags ${res.status}`);
+      const body = (await res.json()) as { flags?: unknown[] };
+      return Array.isArray(body.flags) ? body.flags : [];
+    },
+    ...(env.region ? { region: env.region } : {}),
+    onError: (e) => log.warn('flag refresh failed (keeping cache)', { err: (e as Error).message }),
+  });
+  if (adminUrl) await flags.start();
+
   const app = await buildApp({
     cols: mongo.collections,
     jwt,
@@ -53,6 +72,9 @@ async function main() {
     gatewayUrl: env.gatewayInternalUrl,
     gatewayPublicUrl: env.gatewayPublicUrl,
     authRateLimit: env.authRateLimit,
+    flags,
+    region: env.region,
+    lokiPushUrl: env.lokiPushUrl,
     // 请求日志走 buildApp 里可读的 onResponse 钩子（@nw/shared logger），不用 pino JSON。
     logger: false,
   });

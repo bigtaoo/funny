@@ -294,6 +294,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 公开启动配置（FEATURE_FLAGS_DESIGN §9.3）。匿名可调（带 token 则注入 accountId 求值更精确）； platform / publicId 经 query 带入。服务端对全量白名单逐个求值，**只回与默认值不同的 flag**（多数玩家拿空 map）。 绝不下发规则 / 白名单，只给布尔结果。客户端日志定向采集（client_log_*）即用此通道下发命中级别。 */
+        get: operations["bootstrap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 客户端日志定向上报 → Loki（FEATURE_FLAGS_DESIGN §9.4）。仅被 client_log_* 定向的 publicId 才会调用 （非定向客户端 bootstrap 拿空 map、永不上报）；服务端二次校验定向命中，未命中静默丢弃。**永远回 200**—— Loki 不可达 / 未定向亦不影响玩家。label 仅 {source=client, level}，publicId/tag/msg 入行内（logfmt）。 */
+        post: operations["clientLog"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pve/clear": {
         parameters: {
             query?: never;
@@ -2055,6 +2089,84 @@ export interface operations {
                 };
             };
             404: components["responses"]["ErrorResp"];
+        };
+    };
+    bootstrap: {
+        parameters: {
+            query?: {
+                platform?: "web" | "wechat" | "crazygames";
+                /** @description 玩家可见的 9 位 publicId（定向求值用）；缺省 = 匿名求值 */
+                publicId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @description 仅含「求值结果 ≠ 默认值」的 flag（key→bool）；多数玩家为空对象 */
+                            flags: {
+                                [key: string]: boolean;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+    };
+    clientLog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 上报者的 9 位 publicId（入 Loki 行内，供 Grafana `| logfmt | publicId="..."` 检索） */
+                    publicId: string;
+                    /** @enum {string} */
+                    platform?: "web" | "wechat" | "crazygames";
+                    /** @description 一批日志（环形缓冲里 ≥ 命中阈值的条目）；服务端最多取前 1000 条 */
+                    logs: {
+                        /** @enum {string} */
+                        level: "error" | "warn" | "info" | "debug";
+                        msg: string;
+                        /** @description epoch ms（客户端时钟） */
+                        ts: number;
+                        tag?: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description 已接受（accepted=实际转发条数；未定向 / 无效则为 0） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            accepted: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
         };
     };
     pveClear: {

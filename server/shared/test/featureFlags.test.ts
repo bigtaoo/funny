@@ -43,6 +43,21 @@ describe('evaluateFlag — 求值顺序', () => {
     expect(evaluateFlag(KEY, d, { accountId: 'a', region: 'cn', platform: 'wechat' })).toBe(true);
   });
 
+  it('4b. allowPublicIds 命中 → true（§9.1，盖过 region/platform/pct；与 accountId 解耦）', () => {
+    const d = doc({ rollout: { allowPublicIds: ['123456789'], regions: ['eu'], platforms: ['web'], pct: 0 } });
+    // 仅凭 publicId 命中（无 accountId 也行，且无视 region/platform/pct 限定）。
+    expect(evaluateFlag(KEY, d, { publicId: '123456789', region: 'cn', platform: 'wechat' })).toBe(true);
+    // publicId 不在名单 → 不靠它命中（其余限定不通过 → false）。
+    expect(evaluateFlag(KEY, d, { publicId: '999999999', region: 'cn' })).toBe(false);
+    // allowAccounts 与 allowPublicIds 互不串味：填了 publicId 名单不会因 accountId 同值而命中（pct:0 兜底验证不靠它放行）。
+    expect(evaluateFlag(KEY, doc({ rollout: { allowPublicIds: ['123456789'], pct: 0 } }), { accountId: '123456789' })).toBe(false);
+  });
+
+  it('总闸 enabled=false / denyAccounts 仍盖过 allowPublicIds', () => {
+    expect(evaluateFlag(KEY, doc({ enabled: false, rollout: { allowPublicIds: ['1'] } }), { publicId: '1' })).toBe(false);
+    expect(evaluateFlag(KEY, doc({ rollout: { denyAccounts: ['a'], allowPublicIds: ['1'] } }), { accountId: 'a', publicId: '1' })).toBe(false);
+  });
+
   it('5a. regions 限定且当前不在内 → false', () => {
     const d = doc({ rollout: { regions: ['eu', 'us'] } });
     expect(evaluateFlag(KEY, d, { accountId: 'a', region: 'cn' })).toBe(false);
@@ -98,6 +113,11 @@ describe('sanitizeFlagDoc', () => {
   });
   it('显式 enabled=false 保留', () => {
     expect(sanitizeFlagDoc({ _id: KEY, enabled: false })!.enabled).toBe(false);
+  });
+  it('解析 allowPublicIds（容错过滤非字符串，§9.1）', () => {
+    const d = sanitizeFlagDoc({ _id: 'client_log_debug', rollout: { allowPublicIds: ['123456789', 42, null] } });
+    expect(d).not.toBeNull();
+    expect(d!.rollout!.allowPublicIds).toEqual(['123456789']);
   });
 });
 
