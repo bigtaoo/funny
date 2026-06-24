@@ -21,6 +21,7 @@ export type AdminCapability =
   | 'slg.audit.view'
   | 'slg.audit.manage'
   | 'config.manage'
+  | 'events.manage'
   | 'admin.manage';
 
 export interface AdminAccountView {
@@ -160,4 +161,41 @@ export interface FeatureFlagRow {
   desc: string;
   side: string;
   doc: FeatureFlagDoc | null;
+}
+
+// ── 限时活动（B6，与 @nw/shared events.ts 同义）──
+export type EventTaskKind = 'pve.clear' | 'pvp.win' | 'ad.watch';
+export interface EventTaskDef {
+  taskId: string;
+  kind: EventTaskKind;
+  target: number;
+  points: number;
+}
+export interface EventRewardDef {
+  rewardId: string;
+  cost: number;
+  kind: 'coins' | 'material' | 'skin';
+  id?: string;
+  count?: number;
+  maxClaims?: number;
+}
+export interface EventDoc {
+  _id: string;
+  title: string;
+  description?: string;
+  windowStart: number;
+  windowEnd: number;
+  tasks: EventTaskDef[];
+  rewards: EventRewardDef[];
+  createdAt: number;
+}
+/** 创建/编辑入参（_id 可选指定；服务端补 createdAt）。 */
+export interface EventInput {
+  id?: string;
+  title: string;
+  description?: string;
+  windowStart: number;
+  windowEnd: number;
+  tasks: EventTaskDef[];
+  rewards: EventRewardDef[];
 }

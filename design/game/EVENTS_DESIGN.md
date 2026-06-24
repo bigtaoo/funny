@@ -117,24 +117,34 @@ draft(admin编辑) → scheduled(已排期未到点) → active(窗口内) → e
 
 ## 10. 实现挂钩与缺口
 
+> **实现记录（活动管理 CRUD，2026-06-24）**：补齐了「创建/编辑活动」这层运营入口——此前 `cols.events` 集合只有读、无任何写，线上永远空界面（玩家端 EventScene 显示「暂无活动」/字段 undefined）。
+> - `server/shared/src/events.ts` — 新增 `EventInput` 类型 + `validateEventInput()` 纯校验（kind 白名单 / 时间窗 / 正整数 / coins 需 count、material·skin 需 id / taskId·rewardId 去重）+ `EVENT_TASK_KINDS`·`EVENT_REWARD_KINDS` 常量。
+> - `server/shared/src/admin.ts` — 能力点 `events.manage`（授予 super/ops）；审计动作 `event.create/update/delete`。
+> - `server/metaserver/src/events.ts` — `adminListEvents/adminCreateEvent/adminUpdateEvent/adminDeleteEvent`（写库前必过校验，_id 去重，删除保留 eventParticipants 历史）。
+> - `server/metaserver/src/internal.ts` — `GET/POST /admin/events` + `PATCH/DELETE /admin/events/:id`（X-Internal-Key 鉴权）。
+> - `server/admin/` — `HttpEventsClient`+`EventsClientError`（clients.ts，透传 meta 校验/冲突原因）、service 方法+审计、httpApi 路由（`requireCap events.manage`、错误码透传）、index 装配；CORS 放行 DELETE。
+> - `tools/ops/` — 新增「限时活动」菜单 + `pageEvents`（活动列表带 进行中/未开始/已结束 状态、创建/编辑表单 datetime-local + tasks/rewards JSON 编辑框带 schema 提示与示例、删除带二次确认）。
+> - **上线注意**：`events.manage` 是后端下发能力（`capabilitiesForRole`），VPS admin 后端需 `--build` 重建重启菜单才出现（ops 前端发布≠看到新菜单）。
+> - **本期范围**：手动单条活动 CRUD + 校验。仍未建：生命周期调度器（scheduled→active→ended→settled 的自动结算/清积分/归档，目前靠窗口时间戳被动判定）、限定直购、双倍/加成期。
+
 | 项 | 复用/现状 | 待建 |
 |---|---|---|
-| 配置编辑/下发 | OPS admin 运营能力 | `EventDef` 模型 + admin 编辑页 + 校验 |
+| 配置编辑/下发 | ✅ OPS admin 活动管理 CRUD（GET/POST/PATCH/DELETE `/admin/events`，events.manage）+ `validateEventInput` 校验 | 生命周期自动调度器（settled 结算/清积分/归档） |
 | 时钟/生命周期 | RETENTION dayKey 思路 | 服务器活动调度器(scheduled→active→ended→settled) |
 | 发奖 | OPS 邮件 + commercial 发货幂等 | 活动结算 → 系统邮件 |
 | 任务计数 | RETENTION/ACHIEVEMENT statKey 累加链 | 活动任务挂既有结算点 |
 | 限定直购 | commercial 商店 | 商品带 window + 上下架 |
 | 数字 | ECONOMY_NUMBERS §14(乘子封顶/积分/月度归口已铺) | 每次活动具体配置(里程碑阈值/积分产出)随 admin 配置 |
 | 客户端 | ShopScene / 大厅 / 渐进解锁 | 活动面板 + banner + `event.*` i18n |
-| 契约 | SERVER_API §2.9 `/events|claim|redeem`(列表/进度/领取/兑换)已补 | admin 配置下发端点（运营侧）待补 |
+| 契约 | SERVER_API §2.9 `/events|claim|redeem`(列表/进度/领取/兑换)已补；admin 配置下发端点 ✅(meta `/admin/events` CRUD，X-Internal-Key) | — |
 
 ---
 
 ## 11. 待办（开发顺序）
 
-1. `EventDef` 配置模型 + 服务器调度器(生命周期 + window 权威校验)。
+1. `EventDef` 配置模型 ✅(EventDoc + `validateEventInput`) + 服务器调度器(生命周期自动结算)待建。
 2. 登录活动 + 活动任务(P0,复用 statKey + 邮件发奖)。
-3. `/events` 契约补进 SERVER_API + admin 编辑页。
+3. ✅ `/events` 契约补进 SERVER_API + admin 编辑页（OPS「限时活动」菜单 + `/admin/events` CRUD）。
 4. 客户端活动面板 + 大厅入口 + `event.*` i18n。
 5. 限定直购(commercial 商店带 window)。
 6. 双倍/加成期(乘子 + ECONOMY_NUMBERS §14 封顶) + 积分兑换商店(P1/P2)。

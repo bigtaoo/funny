@@ -5,7 +5,8 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import { signToken, verifyToken, createLogger, roleHasCapability, type AdminCapability, type InternalAuthVerifier, type JwtConfig } from '@nw/shared';
 import { AdminError, type Actor, type AdminService } from './service';
-import type { CompTarget } from '@nw/shared';
+import { EventsClientError } from './clients';
+import type { CompTarget, EventInput } from '@nw/shared';
 
 const log = createLogger('admin:http');
 
@@ -39,7 +40,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET,POST,PATCH,PUT,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
     'access-control-allow-headers': 'authorization,content-type',
   });
   res.end(JSON.stringify(body));
@@ -89,7 +90,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
       if (req.method === 'OPTIONS') {
         res.writeHead(204, {
           'access-control-allow-origin': '*',
-          'access-control-allow-methods': 'GET,POST,PATCH,PUT,OPTIONS',
+          'access-control-allow-methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
           'access-control-allow-headers': 'authorization,content-type',
         });
         res.end();
@@ -391,10 +392,40 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, ticket });
         }
 
+        // ── 限时活动管理（B6，events.manage）──
+        if (method === 'GET' && path === '/admin/events') {
+          requireCap(actor, 'events.manage');
+          return send(res, 200, { ok: true, events: await svc.listEvents() });
+        }
+        if (method === 'POST' && path === '/admin/events') {
+          requireCap(actor, 'events.manage');
+          const b = await readJson(req);
+          const event = await svc.createEvent(actor, b as unknown as EventInput);
+          return send(res, 200, { ok: true, event });
+        }
+        const eventPut = /^\/admin\/events\/([^/]+)$/.exec(path);
+        if (method === 'PATCH' && eventPut) {
+          requireCap(actor, 'events.manage');
+          const id = decodeURIComponent(eventPut[1]!);
+          const b = await readJson(req);
+          const event = await svc.updateEvent(actor, id, b as unknown as EventInput);
+          return send(res, 200, { ok: true, event });
+        }
+        const eventDel = /^\/admin\/events\/([^/]+)$/.exec(path);
+        if (method === 'DELETE' && eventDel) {
+          requireCap(actor, 'events.manage');
+          const id = decodeURIComponent(eventDel[1]!);
+          await svc.deleteEvent(actor, id);
+          return send(res, 200, { ok: true });
+        }
+
         send(res, 404, { ok: false, error: 'not found' });
       } catch (e) {
         if (e instanceof AdminError) {
           send(res, e.status, { ok: false, code: e.code, error: e.message });
+        } else if (e instanceof EventsClientError) {
+          // meta 端校验/冲突/未找到 → 透传状态码与原因（detail 给运营看）。
+          send(res, e.status >= 400 && e.status < 600 ? e.status : 502, { ok: false, error: e.message });
         } else {
           log.error('unhandled error', { url: req.url, err: (e as Error).message });
           send(res, 500, { ok: false, error: 'internal error' });

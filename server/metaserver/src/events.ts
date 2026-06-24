@@ -4,7 +4,7 @@
 // claimEventReward: 积分兑换奖励，发奖走邮件 / commercial 金币。
 import { randomUUID } from 'node:crypto';
 import type { Collections, EventDoc, EventParticipantDoc } from '@nw/shared';
-import { isEventActive, type EventTaskKind } from '@nw/shared';
+import { isEventActive, validateEventInput, type EventInput, type EventTaskKind } from '@nw/shared';
 import type { CommercialClient } from './commercialClient.js';
 import { insertSystemMail } from './mail.js';
 
@@ -185,6 +185,74 @@ export async function accrueEventTask(
       }
     }
   }
+}
+
+// ── admin 活动管理 CRUD（B6，运维后台 events.manage）────────────────────────
+// 玩家侧 getEventsForAccount 只拉「窗口内」活动；以下供运维列出/创建/编辑/删除全部活动。
+
+/** 列出全部活动定义（含未开始/已结束），按开始时间倒序。 */
+export async function adminListEvents(cols: Collections): Promise<EventDoc[]> {
+  return cols.events.find({}).sort({ windowStart: -1 }).toArray();
+}
+
+export type AdminEventError = 'VALIDATION' | 'NOT_FOUND' | 'DUPLICATE_ID';
+
+/** 创建活动；校验入参 + _id 去重。 */
+export async function adminCreateEvent(
+  cols: Collections,
+  input: EventInput,
+  now: number,
+): Promise<{ ok: true; event: EventDoc } | { ok: false; error: AdminEventError; detail?: string }> {
+  const detail = validateEventInput(input);
+  if (detail) return { ok: false, error: 'VALIDATION', detail };
+  const _id = input.id?.trim() || randomUUID();
+  if (await cols.events.findOne({ _id })) return { ok: false, error: 'DUPLICATE_ID', detail: _id };
+  const doc: EventDoc = {
+    _id,
+    title: input.title.trim(),
+    ...(input.description ? { description: input.description } : {}),
+    windowStart: input.windowStart,
+    windowEnd: input.windowEnd,
+    tasks: input.tasks,
+    rewards: input.rewards,
+    createdAt: now,
+  };
+  await cols.events.insertOne(doc);
+  return { ok: true, event: doc };
+}
+
+/** 全量替换活动定义（_id/createdAt 保持）。已产生的参与进度不动（task/reward 改动可能让旧进度对不上，运营自负）。 */
+export async function adminUpdateEvent(
+  cols: Collections,
+  eventId: string,
+  input: EventInput,
+): Promise<{ ok: true; event: EventDoc } | { ok: false; error: AdminEventError; detail?: string }> {
+  const detail = validateEventInput(input);
+  if (detail) return { ok: false, error: 'VALIDATION', detail };
+  const existing = await cols.events.findOne({ _id: eventId });
+  if (!existing) return { ok: false, error: 'NOT_FOUND' };
+  const next: EventDoc = {
+    _id: eventId,
+    title: input.title.trim(),
+    ...(input.description ? { description: input.description } : {}),
+    windowStart: input.windowStart,
+    windowEnd: input.windowEnd,
+    tasks: input.tasks,
+    rewards: input.rewards,
+    createdAt: existing.createdAt,
+  };
+  await cols.events.replaceOne({ _id: eventId }, next);
+  return { ok: true, event: next };
+}
+
+/** 删除活动定义（不级联删 eventParticipants：保留历史，且过期活动不再被读取）。 */
+export async function adminDeleteEvent(
+  cols: Collections,
+  eventId: string,
+): Promise<{ ok: true } | { ok: false; error: 'NOT_FOUND' }> {
+  const res = await cols.events.deleteOne({ _id: eventId });
+  if (res.deletedCount === 0) return { ok: false, error: 'NOT_FOUND' };
+  return { ok: true };
 }
 
 // ── 奖励兑换 ─────────────────────────────────────────────────────────────────

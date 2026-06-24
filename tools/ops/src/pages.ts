@@ -9,6 +9,10 @@ import type {
   CompScope,
   CompTarget,
   CompTicketView,
+  EventDoc,
+  EventInput,
+  EventRewardDef,
+  EventTaskDef,
   FeatureFlagRow,
   FlagPlatform,
   FlagRollout,
@@ -930,4 +934,181 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
   } catch (e) {
     showErr(list, e);
   }
+}
+
+// ── 限时活动管理（B6，events.manage；ADR-014）──
+/** ms ↔ datetime-local（"YYYY-MM-DDTHH:mm"，本地时区）。 */
+function msToLocalInput(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function localInputToMs(v: string): number {
+  const t = new Date(v).getTime();
+  return Number.isFinite(t) ? t : NaN;
+}
+function eventStatus(ev: { windowStart: number; windowEnd: number }): { label: string; cls: string } {
+  const now = Date.now();
+  if (now < ev.windowStart) return { label: '未开始', cls: 'info' };
+  if (now >= ev.windowEnd) return { label: '已结束', cls: '' };
+  return { label: '进行中', cls: 'ok' };
+}
+
+export async function pageEvents(ctx: Ctx): Promise<void> {
+  const { api, root } = ctx;
+  clear(root);
+  root.append(
+    h('h2', {}, '限时活动管理'),
+    h('div', { class: 'muted', style: 'margin-bottom:8px' },
+      '创建/编辑限时活动（B6）。玩家端仅在「进行中」窗口可见。任务 kind 仅 pve.clear / pvp.win / ad.watch；' +
+      '奖励 kind 仅 coins（需正整数 count）/ material / skin（需 id）。'),
+  );
+
+  const formBox = h('div', { class: 'card', style: 'margin-bottom:12px' });
+  const list = h('div', {}, '加载中…');
+  root.append(formBox, list);
+
+  // 默认任务/奖励示例（运营照此改）。
+  const SAMPLE_TASKS: EventTaskDef[] = [
+    { taskId: 'pve3', kind: 'pve.clear', target: 3, points: 1 },
+    { taskId: 'pvp1', kind: 'pvp.win', target: 1, points: 2 },
+  ];
+  const SAMPLE_REWARDS: EventRewardDef[] = [
+    { rewardId: 'r1', cost: 3, kind: 'coins', count: 2, maxClaims: 1 },
+    { rewardId: 'r2', cost: 6, kind: 'material', id: 'ink_blue', count: 5, maxClaims: 3 },
+  ];
+
+  // 编辑态：null = 新建；否则编辑该活动。
+  let editing: EventDoc | null = null;
+
+  const renderForm = (): void => {
+    clear(formBox);
+    const isEdit = editing !== null;
+    const idInput = h('input', { style: 'width:100%', placeholder: '留空=自动生成 UUID',
+      value: editing?._id ?? '' }) as HTMLInputElement;
+    if (isEdit) idInput.disabled = true;
+    const titleInput = h('input', { style: 'width:100%', value: editing?.title ?? '' }) as HTMLInputElement;
+    const descInput = h('input', { style: 'width:100%', value: editing?.description ?? '' }) as HTMLInputElement;
+    const now = Date.now();
+    const startInput = h('input', { type: 'datetime-local',
+      value: msToLocalInput(editing?.windowStart ?? now) }) as HTMLInputElement;
+    const endInput = h('input', { type: 'datetime-local',
+      value: msToLocalInput(editing?.windowEnd ?? now + 7 * 86400_000) }) as HTMLInputElement;
+    const tasksTa = h('textarea', { rows: '6', style: 'width:100%;font-family:monospace' },
+      JSON.stringify(editing?.tasks ?? SAMPLE_TASKS, null, 2)) as HTMLTextAreaElement;
+    const rewardsTa = h('textarea', { rows: '6', style: 'width:100%;font-family:monospace' },
+      JSON.stringify(editing?.rewards ?? SAMPLE_REWARDS, null, 2)) as HTMLTextAreaElement;
+    const status = h('span', {});
+    const saveBtn = h('button', {}, isEdit ? '保存修改' : '创建活动') as HTMLButtonElement;
+
+    const fieldRow = (label: string, control: Node): HTMLElement =>
+      h('div', { style: 'margin:6px 0' },
+        h('label', { style: 'display:block;font-size:13px;color:var(--muted)' }, label), control);
+
+    saveBtn.onclick = async (): Promise<void> => {
+      status.textContent = '';
+      status.className = '';
+      let tasks: EventTaskDef[];
+      let rewards: EventRewardDef[];
+      try {
+        tasks = JSON.parse(tasksTa.value) as EventTaskDef[];
+        rewards = JSON.parse(rewardsTa.value) as EventRewardDef[];
+      } catch (e) {
+        showErr(status, new Error(`任务/奖励 JSON 解析失败：${(e as Error).message}`));
+        return;
+      }
+      const windowStart = localInputToMs(startInput.value);
+      const windowEnd = localInputToMs(endInput.value);
+      if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd)) {
+        showErr(status, new Error('开始/结束时间无效'));
+        return;
+      }
+      const input: EventInput = {
+        title: titleInput.value.trim(),
+        ...(descInput.value.trim() ? { description: descInput.value.trim() } : {}),
+        windowStart,
+        windowEnd,
+        tasks,
+        rewards,
+      };
+      if (!isEdit && idInput.value.trim()) input.id = idInput.value.trim();
+      saveBtn.disabled = true;
+      try {
+        if (isEdit) await api.updateEvent(editing!._id, input);
+        else await api.createEvent(input);
+        editing = null;
+        renderForm();
+        await refresh();
+      } catch (e) {
+        showErr(status, e);
+      } finally {
+        saveBtn.disabled = false;
+      }
+    };
+
+    formBox.append(
+      h('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:6px' },
+        h('strong', {}, isEdit ? `编辑活动 ${editing!._id}` : '新建活动'),
+        isEdit && h('button', { class: 'ghost', onclick: () => { editing = null; renderForm(); } }, '取消编辑'),
+      ),
+      fieldRow('eventId', idInput),
+      fieldRow('活动名称 title（≤80）', titleInput),
+      fieldRow('简介 description（可选）', descInput),
+      h('div', { style: 'display:flex;gap:16px' },
+        fieldRow('开始时间', startInput),
+        fieldRow('结束时间', endInput),
+      ),
+      fieldRow('任务 tasks（JSON 数组：{taskId,kind,target,points}）', tasksTa),
+      fieldRow('奖励 rewards（JSON 数组：{rewardId,cost,kind,id?,count?,maxClaims?}）', rewardsTa),
+      h('div', { style: 'margin-top:8px' }, saveBtn, ' ', status),
+    );
+  };
+
+  const refresh = async (): Promise<void> => {
+    try {
+      const events = await api.events();
+      clear(list);
+      if (!events.length) {
+        list.append(h('div', { class: 'muted' }, '暂无活动。用上方表单创建。'));
+        return;
+      }
+      for (const ev of events) {
+        const st = eventStatus(ev);
+        const delErr = h('span', {});
+        const editBtn = h('button', { class: 'ghost', onclick: () => { editing = ev; renderForm(); window.scrollTo(0, 0); } }, '编辑');
+        const delBtn = h('button', { class: 'ghost danger' }, '删除') as HTMLButtonElement;
+        delBtn.onclick = async (): Promise<void> => {
+          if (!confirm(`确认删除活动「${ev.title}」？参与历史保留，但活动立即对玩家不可见。`)) return;
+          delBtn.disabled = true;
+          try {
+            await api.deleteEvent(ev._id);
+            await refresh();
+          } catch (e) {
+            showErr(delErr, e);
+            delBtn.disabled = false;
+          }
+        };
+        list.append(
+          h('div', { class: 'card', style: 'margin-bottom:10px' },
+            h('div', { style: 'display:flex;align-items:center;gap:8px' },
+              h('strong', {}, ev.title),
+              pill(st.label, st.cls),
+              h('span', { class: 'muted', style: 'font-size:12px' }, ev._id),
+            ),
+            ev.description && h('div', { class: 'muted', style: 'font-size:13px' }, ev.description),
+            h('div', { class: 'muted', style: 'font-size:12px' },
+              `${fmtTime(ev.windowStart)} → ${fmtTime(ev.windowEnd)}`),
+            h('div', { style: 'font-size:13px;margin-top:4px' },
+              `任务 ${ev.tasks.length} · 奖励 ${ev.rewards.length}`),
+            h('div', { style: 'margin-top:6px' }, editBtn, ' ', delBtn, ' ', delErr),
+          ),
+        );
+      }
+    } catch (e) {
+      showErr(list, e);
+    }
+  };
+
+  renderForm();
+  await refresh();
 }

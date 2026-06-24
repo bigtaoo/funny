@@ -261,3 +261,7 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 **修复**：在 `openapi.yml` `/retention` 200 响应里给 `rewards.items` 补 `{ kind: string, count: integer }`、`tasks.items` 补 `{ id: string, points: integer }` 的 `properties`+`required`，序列化即保留字段。纯契约改动，无客户端/服务端逻辑变更。
 
 > 教训：经 openapi-glue 的端点，凡回包数组/对象需要客户端读字段的，schema 必须显式声明 `properties`，否则 fast-json-stringify 静默剥成 `{}`。
+
+**回归测试**（`server/metaserver/test/`）：
+- `retention.e2e.test.ts` — GET /retention 断言 `defs.rewards`（30 格、`rewards[0]={stamina,30}`、`rewards[6]={coins,5}`、每格 kind/count 类型正确）+ `defs.tasks` 字段；需真实 Mongo，否则跳过。
+- `openapi-response-schema.test.ts` — **契约守卫**（无需 Mongo）：遍历 `openapi.yml` 所有响应 schema（含 $ref 解引用），任何缺 `properties`/`additionalProperties`/组合的 object 节点即判红，钉死整类「序列化剥空字段」bug；新端点漏写会在 CI 直接失败。该守卫已对照修复前 spec 验证能精确命中本次两处。

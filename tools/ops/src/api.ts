@@ -8,6 +8,8 @@ import type {
   CompScope,
   CompTarget,
   CompTicketView,
+  EventDoc,
+  EventInput,
   FeatureFlagDoc,
   FeatureFlagRow,
   FlagRollout,
@@ -221,5 +223,22 @@ export class Api {
   async upsertFlag(key: string, input: { enabled: boolean; rollout?: FlagRollout; desc?: string }): Promise<FeatureFlagDoc> {
     const r = await this.req<{ flag: FeatureFlagDoc }>('PUT', `/admin/config/flags/${encodeURIComponent(key)}`, input);
     return r.flag;
+  }
+
+  // ── 限时活动管理（events.manage）──
+  async events(): Promise<EventDoc[]> {
+    const r = await this.req<{ events: EventDoc[] }>('GET', '/admin/events');
+    return r.events;
+  }
+  async createEvent(input: EventInput): Promise<EventDoc> {
+    const r = await this.req<{ event: EventDoc }>('POST', '/admin/events', input);
+    return r.event;
+  }
+  async updateEvent(id: string, input: EventInput): Promise<EventDoc> {
+    const r = await this.req<{ event: EventDoc }>('PATCH', `/admin/events/${encodeURIComponent(id)}`, input);
+    return r.event;
+  }
+  async deleteEvent(id: string): Promise<void> {
+    await this.req('DELETE', `/admin/events/${encodeURIComponent(id)}`);
   }
 }

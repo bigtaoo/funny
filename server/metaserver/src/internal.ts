@@ -23,6 +23,7 @@ import {
   accrueRetentionTask,
   type StatKey,
   type RankId,
+  type EventInput,
 } from '@nw/shared';
 import {
   getCurrentSeason,
@@ -35,7 +36,7 @@ import type { CommercialClient } from './commercialClient.js';
 import { adsDayKey } from './economy.js';
 import { getProfile, resolveByPublicId } from './accounts.js';
 import { grantTitleToPlayer } from './titles.js';
-import { accrueEventTask } from './events.js';
+import { accrueEventTask, adminListEvents, adminCreateEvent, adminUpdateEvent, adminDeleteEvent } from './events.js';
 import { friendAccountIds } from './social.js';
 import { insertSystemMail, bulkInsertSystemMail } from './mail.js';
 import { escrowEquipment, grantEquipment } from './equipment.js';
@@ -647,6 +648,47 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       rankId: (d as unknown as { save: { pvp: { rank: string } } }).save.pvp.rank,
     }));
     return reply.send({ season, top: entries });
+  });
+
+  // ── 限时活动管理（B6，admin events.manage；ADR-014）─────────────────────────
+  // 玩家侧 GET /events 只拉窗口内活动；以下供运维后台列出/创建/编辑/删除全部活动。
+  // GET /admin/events — 全部活动（含未开始/已结束）。
+  app.get('/admin/events', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const events = await adminListEvents(cols);
+    return reply.send({ ok: true, events });
+  });
+  // POST /admin/events — 创建活动。body = EventInput。
+  app.post('/admin/events', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const r = await adminCreateEvent(cols, req.body as EventInput, now());
+    if (!r.ok) {
+      const code = r.error === 'DUPLICATE_ID' ? 409 : 400;
+      return reply.code(code).send({ ok: false, error: r.error, detail: r.detail });
+    }
+    log.info('POST /admin/events', { eventId: r.event._id });
+    return reply.send({ ok: true, event: r.event });
+  });
+  // PATCH /admin/events/:id — 全量替换活动定义。body = EventInput。
+  app.patch('/admin/events/:id', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const { id } = req.params as { id: string };
+    const r = await adminUpdateEvent(cols, id, req.body as EventInput);
+    if (!r.ok) {
+      const code = r.error === 'NOT_FOUND' ? 404 : 400;
+      return reply.code(code).send({ ok: false, error: r.error, detail: r.detail });
+    }
+    log.info('PATCH /admin/events/:id', { eventId: id });
+    return reply.send({ ok: true, event: r.event });
+  });
+  // DELETE /admin/events/:id — 删除活动定义（保留参与历史）。
+  app.delete('/admin/events/:id', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const { id } = req.params as { id: string };
+    const r = await adminDeleteEvent(cols, id);
+    if (!r.ok) return reply.code(404).send({ ok: false, error: r.error });
+    log.info('DELETE /admin/events/:id', { eventId: id });
+    return reply.send({ ok: true });
   });
 
   // POST /internal/title/grant  { accountId, titleId }

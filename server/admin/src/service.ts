@@ -43,8 +43,8 @@ import {
 } from '@nw/shared';
 import { METRIC_KEYS } from '@nw/shared';
 import type { AdminAccountDoc, AdminCollections, AuditDoc, CompTicketDoc, TradeAuditTicketDoc } from './db';
-import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, LadderClient, LadderSeasonInfo, MailDispatcher, MismatchClient, MismatchRow, PlayerClient, PlayerProfile, StatsClient, SuspiciousPveClient, SuspiciousPveRow, WorldClient, SlgWorldSummary } from './clients';
-import type { AuctionAnomaly } from '@nw/shared';
+import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, EventsClient, LadderClient, LadderSeasonInfo, MailDispatcher, MismatchClient, MismatchRow, PlayerClient, PlayerProfile, StatsClient, SuspiciousPveClient, SuspiciousPveRow, WorldClient, SlgWorldSummary } from './clients';
+import type { AuctionAnomaly, EventDoc, EventInput } from '@nw/shared';
 
 const log = createLogger('admin:service');
 
@@ -79,6 +79,7 @@ export interface AdminServiceDeps {
   analytics: AnalyticsClient;
   world: WorldClient;
   ladder: LadderClient;
+  events: EventsClient;
   now: () => number;
 }
 
@@ -115,6 +116,7 @@ export class AdminService {
   private readonly analytics: AnalyticsClient;
   private readonly world: WorldClient;
   private readonly ladder: LadderClient;
+  private readonly events: EventsClient;
   private readonly now: () => number;
   /** 登录失败限流表（按登录名，内存态）。 */
   private readonly loginAttempts = new Map<string, LoginAttempt>();
@@ -130,7 +132,35 @@ export class AdminService {
     this.analytics = deps.analytics;
     this.world = deps.world;
     this.ladder = deps.ladder;
+    this.events = deps.events;
     this.now = deps.now;
+  }
+
+  // ───────────────────── 限时活动管理（B6，events.manage）──────────────────
+  /** 列出全部活动定义（含未开始/已结束）。meta 不可达返回空。 */
+  async listEvents(): Promise<EventDoc[]> {
+    if (!this.events.available) return [];
+    return this.events.list();
+  }
+
+  /** 创建活动；meta 端校验失败 → EventsClientError（httpApi 映射 4xx）。审计。 */
+  async createEvent(actor: Actor, input: EventInput): Promise<EventDoc> {
+    const ev = await this.events.create(input);
+    await this.audit(actor.adminId, 'event.create', { target: ev._id, summary: ev.title });
+    return ev;
+  }
+
+  /** 全量替换活动定义。审计。 */
+  async updateEvent(actor: Actor, eventId: string, input: EventInput): Promise<EventDoc> {
+    const ev = await this.events.update(eventId, input);
+    await this.audit(actor.adminId, 'event.update', { target: ev._id, summary: ev.title });
+    return ev;
+  }
+
+  /** 删除活动定义。审计。 */
+  async deleteEvent(actor: Actor, eventId: string): Promise<void> {
+    await this.events.remove(eventId);
+    await this.audit(actor.adminId, 'event.delete', { target: eventId });
   }
 
   // ───────────────────── 天梯赛季运维（SE-3）──────────────────────────

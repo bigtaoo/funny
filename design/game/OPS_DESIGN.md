@@ -76,6 +76,7 @@ interface AdminAccountDoc {
 | `slg.audit.manage` 立/裁定异常交易审计工单（G7 反 RMT） | ✓ | ✓ | – | – |
 | `audit.view.all` 看全部审计 | ✓ | – | – | – |
 | `audit.view.self` 看自己操作（登录即有） | ✓ | ✓ | ✓ | ✓ |
+| `events.manage` 限时活动创建/编辑/下线（B6，EVENTS_DESIGN §10） | ✓ | ✓ | – | – |
 | `admin.manage` 账号/角色管理 | ✓ | – | – | – |
 
 > 角色→能力映射是后端**单一真相**（`shared/admin.ts` 或 admin 内 `roles.ts`）；前端按返回的能力集渲染可见按钮，但**真正的权限校验在后端每个端点**（前端隐藏只是体验，不是安全边界）。
