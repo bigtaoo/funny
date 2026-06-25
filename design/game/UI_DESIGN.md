@@ -41,7 +41,7 @@
 | `RarityFrame` | 按 rarity 上四色描边/光效 | 盲盒、收集册、商店复用 |
 | `NavBar` | 底部 5 槽导航 | 已在 LobbyScene，提取为共享组件（§3） |
 
-> 这些组件统一放 `client/src/ui/widgets/`（当前尚未建，**首个落地场景负责开目录**）。
+> 这些组件统一放 `client/src/ui/widgets/`。**已落地（2026-06-25）**：`uiCache.ts`（§2.1 缓存底座）+ `SceneHeader.ts`（§3.1 统一返回/标题栏）。其余组件（Button/Panel/CurrencyBar/…）随后续场景按需沉淀到此目录。
 
 ---
 
@@ -61,6 +61,8 @@
 > **手绘抖动注意**：笔记本风的手绘抖动（stroke jitter）一旦烘焙就被冻结，同一部件每个实例长一样。这对 UI chrome（按钮/边框）正是我们要的**一致性**，且省 CPU；只有需要"每次不同抖动"的装饰元素才不缓存。
 >
 > **依赖 renderer**：`generateTexture` 需要 `renderer` 句柄。组件套件初始化时由 `MenuShell`/App 注入一次，缓存模块持有引用即可。
+
+> **已落地（2026-06-25）**：`client/src/ui/widgets/uiCache.ts`，导出 `getCachedTexture(key, draw, w, h)` 与 `getCachedDisplay(key, draw, w, h)`。它是 `render/bake.ts` 新增的 `bakeLazy(key, draw, w, h)` 的薄封装——renderer 仍由 `app.ts` 的 `setBakeRenderer` 一次性注入、纹理 `Map` 仍在 `bake.ts`；与原 `bake()` 的区别是**命中缓存时不调用 `draw()`**（零开销），未命中才 `draw → render → 存表 → 销毁源对象`。headless（无 renderer）自动回退 live draw，调用方无需分支。key 约定 `部件+尺寸+变体`；含文案的部件须把已解析文案折进 key，避免运行时切语言后取到冻结纹理。
 
 ---
 
@@ -108,6 +110,12 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 > 大厅（LobbyScene）用底部 NavBar 切换，不出现返回按钮；战斗内（GameScene）用暂停/退出而非返回，均不受此约定约束。
 >
 > **落地方式**：返回按钮走 §2.1 纹理缓存（`back` 部件烘焙一次复用）。迁移时各场景删掉自绘返回逻辑，改挂 `SceneHeader`。
+
+> **已落地（2026-06-25）**：`client/src/ui/widgets/SceneHeader.ts`。
+> - API：`drawSceneHeader(container, w, h, title, opts?)` → `{ headerH, backRect }`。深色顶栏 + 左上返回 glyph 作为**整块 chrome 经 §2.1 缓存**（同朝向同语言只烘焙一次，全场景共用一张纹理）；标题为每场景动态文本，live 绘制。返回文案统一 `'← ' + t('common.back')`（色 `C.accent`），命中区固定 `{0,0,160,headerH}`。各场景保留自己的 hit 数组，只把 `hdr.backRect` push 进去（不强求统一 hit 结构）。
+> - `title` 传 `null` 时只画 chrome、不画标题（供有副标题需抬升标题的场景自绘，如 CampaignMap）；`opts.titleSize`/`opts.headerH` 用于保真个别场景的大标题/矮栏（如 Settings/Titles 0.042、Chat 0.11 栏高）。
+> - **已迁移（14 个标准深色顶栏菜单场景）**：Achievement / BattlePass / Collection / Gacha / Friends / Leaderboard / Stats / Shop / Settings / Titles / Room / LevelPrep / CampaignMap / Chat。统一新增 i18n `common.back`（原各场景 `xxx.back` 键保留未删，部分仍被未迁场景使用）。
+> - **本轮未迁（视觉异质，待 SceneHeader 增 variant 后再收敛）**：SLG `sketchPanel` 纸面顶栏且头部塞了额外控件（Auction / Equipment / Family / Sect / Teams / DefenseEditor，其返回已在 `x=10`）；底部 HUD 的 WorldMap；无深色顶栏的纸面浮动返回（Daily / Event）；以及 LoginScene（返回仅在 password/register 视图条件出现，属登录前流程）。
 
 ---
 

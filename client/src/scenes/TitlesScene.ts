@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { sortTitlesByWeight, getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 
 // ── TitlesScene — 称号墙（S10，TITLE_DESIGN §7）────────────────────────────────
@@ -75,23 +76,9 @@ export class TitlesScene implements Scene {
 
   private drawHeader(): void {
     const { w, h } = this;
-    const tbH = Math.round(h * 0.12);
-    const bar = new PIXI.Graphics();
-    bar.beginFill(0x2c2c2a); bar.drawRect(0, 0, w, tbH); bar.endFill();
-    this.container.addChild(bar);
-
-    const title = txt(t('titles.title'), Math.round(h * 0.042), 0xffffff, true);
-    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
-    this.container.addChild(title);
-
-    const back = txt(t('titles.back'), Math.round(h * 0.026), 0xdddddd);
-    back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
-    this.container.addChild(back);
-    const pad = Math.round(h * 0.018);
-    this.hits.push({
-      rect: { x: back.x - pad, y: back.y - back.height / 2 - pad, w: back.width + 2 * pad, h: back.height + 2 * pad },
-      fn: () => this.cb.onBack(),
-    });
+    const hdr = drawSceneHeader(this.container, w, h, t('titles.title'), { titleSize: Math.round(h * 0.042) });
+    const tbH = hdr.headerH;
+    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
   }
 
   private drawTitleList(): void {

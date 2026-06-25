@@ -11,6 +11,7 @@ import {
   cardKey,
 } from '../game/balance/unitCards';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 
 // ── LevelPrepScene (S12) — unit card level view + merge + Start ─────────────
 //
@@ -154,22 +155,9 @@ export class LevelPrepScene implements Scene {
     this.container.addChild(buildPaperBackground('prepbg', w, h));
 
     // Header
-    const tbH = Math.round(h * 0.12);
-    const titleBg = new PIXI.Graphics();
-    titleBg.beginFill(C.dark); titleBg.drawRect(0, 0, w, tbH); titleBg.endFill();
-    this.container.addChild(titleBg);
-
-    const title = txt(t('campaign.levelLabel', { n: this.cb.levelNumber }), Math.round(h * 0.032), 0xffffff, true);
-    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
-    this.container.addChild(title);
-
-    const back = txt(t('prep.back'), Math.round(h * 0.024), C.light);
-    back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
-    this.container.addChild(back);
-    this.hits.push({
-      rect: { x: 0, y: 0, w: back.x + back.width + Math.round(h * 0.02), h: tbH },
-      fn: () => this.cb.onBack(),
-    });
+    const hdr = drawSceneHeader(this.container, w, h, t('campaign.levelLabel', { n: this.cb.levelNumber }), { titleSize: Math.round(h * 0.032) });
+    const tbH = hdr.headerH;
+    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
     let y = tbH + Math.round(h * 0.02);
 

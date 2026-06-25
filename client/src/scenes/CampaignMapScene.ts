@@ -7,6 +7,7 @@ import { CHAPTER_ORDER, getChapterMap } from '../game';
 import type { ChapterMap, ChapterNode } from '../game';
 import { parseLevelId, isLevelUnlocked, currentChapter, currentLevelIdInChapter } from '../game/campaign/progress';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
 
@@ -188,11 +189,10 @@ export class CampaignMapScene implements Scene {
   /** Draws the fixed top band into `root`; returns its height. Pushes its hits. */
   private buildHeader(root: PIXI.Container, hits: Hit[], titleStr: string, onBack: () => void, subtitleStr?: string): number {
     const { w, h } = this;
-    const tbH = Math.round(h * 0.12);
-
-    const bar = new PIXI.Graphics();
-    bar.beginFill(C.dark); bar.drawRect(0, 0, w, tbH); bar.endFill();
-    root.addChild(bar);
+    // 顶栏 chrome（深色条 + 左上返回）走 SceneHeader；标题由本场景自绘
+    // （有副标题时需抬升，§3.1 允许 title=null 让场景接管标题）。
+    const hdr = drawSceneHeader(root, w, h, null);
+    const tbH = hdr.headerH;
 
     // With a subtitle (chapter pages: notebook owner), the title rides slightly
     // above center so the dim owner line tucks beneath it; without one it centers.
@@ -208,10 +208,7 @@ export class CampaignMapScene implements Scene {
       root.addChild(sub);
     }
 
-    const back = txt(t('campaign.back'), Math.round(h * 0.026), C.light);
-    back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
-    root.addChild(back);
-    hits.push({ rect: { x: 0, y: 0, w: back.x + back.width + Math.round(h * 0.02), h: tbH }, fn: onBack });
+    hits.push({ rect: hdr.backRect, fn: onBack });
 
     const coll = txt(t('campaign.collection'), Math.round(h * 0.024), C.gold, true);
     coll.anchor.set(1, 0.5); coll.x = w - Math.round(w * 0.04); coll.y = tbH / 2;

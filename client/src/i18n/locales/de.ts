@@ -12,6 +12,8 @@ export const de: Record<TranslationKey, string> = {
   'common.err.unauthorized': 'Sitzung abgelaufen — bitte erneut anmelden',
   'common.err.notFound': 'Nicht gefunden oder nicht mehr verfügbar',
   'common.syncFailed': 'Cloud-Speichern fehlgeschlagen — Fortschritt evtl. nicht gesichert',
+  // Einheitliches Zurück-Label (SceneHeader stellt "← " voran, siehe UI_DESIGN §3.1).
+  'common.back': 'Zurück',
 
   // ── Karten ────────────────────────────────────────────────────────────────
   'card.infantry.name': 'Infanterie',

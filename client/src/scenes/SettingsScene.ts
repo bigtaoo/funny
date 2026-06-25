@@ -6,6 +6,7 @@ import { t, getLocale, setLocale, getSupportedLocales, Locale, TranslationKey } 
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
 import { sketchPanel, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { buildAvatar } from '../render/avatar';
@@ -230,23 +231,9 @@ export class SettingsScene implements Scene {
 
   private drawHeader(): number {
     const { w, h } = this;
-    const tbH = Math.round(h * 0.12);
-    const bar = new PIXI.Graphics();
-    bar.beginFill(C.dark); bar.drawRect(0, 0, w, tbH); bar.endFill();
-    this.container.addChild(bar);
-
-    const title = txt(t('settings.title'), Math.round(h * 0.042), 0xffffff, true);
-    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
-    this.container.addChild(title);
-
-    const back = txt(t('settings.back'), Math.round(h * 0.026), C.light);
-    back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
-    this.container.addChild(back);
-    const pad = Math.round(h * 0.018);
-    this.hits.push({
-      rect: { x: back.x - pad, y: back.y - back.height / 2 - pad, w: back.width + 2 * pad, h: back.height + 2 * pad },
-      fn: () => this.cb.onBack(),
-    });
+    const hdr = drawSceneHeader(this.container, w, h, t('settings.title'), { titleSize: Math.round(h * 0.042) });
+    const tbH = hdr.headerH;
+    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
     return tbH;
   }

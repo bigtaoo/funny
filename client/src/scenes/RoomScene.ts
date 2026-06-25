@@ -7,6 +7,7 @@ import type { NetState } from '../net/NetClient';
 import type { PeerDc, RoomError, RoomState, PlayerSlot } from '../net/proto/transport';
 import { ProfilePopup } from '../render/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 
 // ── RoomScene (S1-8) — friendly online room ──────────────────────────────────
 //
@@ -284,24 +285,9 @@ export class RoomScene implements Scene {
 
   private drawHeader(): void {
     const { w, h } = this;
-    const tbH = Math.round(h * 0.12);
-    const titleBg = new PIXI.Graphics();
-    titleBg.beginFill(C.dark); titleBg.drawRect(0, 0, w, tbH); titleBg.endFill();
-    this.container.addChild(titleBg);
-
-    const title = txt(t('room.title'), Math.round(h * 0.04), 0xffffff, true);
-    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
-    this.container.addChild(title);
-
-    // Back button (top-left).
-    const back = txt(t('room.back'), Math.round(h * 0.026), C.light);
-    back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
-    this.container.addChild(back);
-    const pad = Math.round(h * 0.02);
-    this.hits.push({
-      rect: { x: 0, y: 0, w: back.x + back.width + pad, h: tbH },
-      fn: () => this.onBack(),
-    });
+    const hdr = drawSceneHeader(this.container, w, h, t('room.title'), { titleSize: Math.round(h * 0.04) });
+    const tbH = hdr.headerH;
+    this.hits.push({ rect: hdr.backRect, fn: () => this.onBack() });
   }
 
   private drawIdle(): void {

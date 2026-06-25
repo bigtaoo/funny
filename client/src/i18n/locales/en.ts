@@ -12,6 +12,8 @@ export const en: Record<TranslationKey, string> = {
   'common.err.unauthorized': 'Session expired — please log in again',
   'common.err.notFound': 'Not found or no longer available',
   'common.syncFailed': 'Cloud save failed — progress may not be saved',
+  // Unified back-button label (SceneHeader prepends "← ", see UI_DESIGN §3.1).
+  'common.back': 'Back',
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   'card.infantry.name': 'Infantry',

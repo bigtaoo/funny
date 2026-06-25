@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { AchievementsView, Achievement } from '../net/ApiClient';
 import { tierState, achievementClaimable, type TierState } from '../game/meta/achievements';
 
@@ -135,20 +136,10 @@ export class AchievementScene implements Scene {
 
     this.container.addChild(buildPaperBackground('achbg', w, h));
 
-    // 标题栏。
-    const tbH = Math.round(h * 0.12);
-    const titleBg = new PIXI.Graphics();
-    titleBg.beginFill(C.dark); titleBg.drawRect(0, 0, w, tbH); titleBg.endFill();
-    this.container.addChild(titleBg);
-
-    const title = txt(t('achievement.title'), Math.round(h * 0.034), 0xffffff, true);
-    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
-    this.container.addChild(title);
-
-    const back = txt(t('achievement.back'), Math.round(h * 0.026), C.light);
-    back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
-    this.container.addChild(back);
-    this.hits.push({ rect: { x: 0, y: 0, w: back.x + back.width + Math.round(h * 0.02), h: tbH }, fn: () => this.cb.onBack() });
+    // 标题栏（统一 SceneHeader：返回左上 + 缓存 chrome，UI_DESIGN §3.1/§2.1）。
+    const hdr = drawSceneHeader(this.container, w, h, t('achievement.title'));
+    const tbH = hdr.headerH;
+    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
     // 离线 / 加载中。
     if (!this.cb.loadAchievements) { this.drawCentered(tbH, t('achievement.loginRequired')); return; }

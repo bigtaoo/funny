@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import type { ChatMessageView } from '../net/ApiClient';
 import type { ChatMessagePush } from '../net/proto/transport';
@@ -250,19 +251,9 @@ export class ChatScene implements Scene {
 
   private drawHeader(): void {
     const { w, h } = this;
-    const tbH = Math.round(h * 0.11);
-    const bg = new PIXI.Graphics();
-    bg.beginFill(C.dark); bg.drawRect(0, 0, w, tbH); bg.endFill();
-    this.container.addChild(bg);
-
-    const title = txt(this.cb.peerName || `#${this.cb.peerPublicId}`, Math.round(h * 0.034), 0xffffff, true);
-    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
-    this.container.addChild(title);
-
-    const back = txt(t('chat.back'), Math.round(h * 0.026), C.light);
-    back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
-    this.container.addChild(back);
-    this.hits.push({ rect: { x: 0, y: 0, w: Math.round(w * 0.22), h: tbH }, fn: () => this.cb.onBack() });
+    const hdr = drawSceneHeader(this.container, w, h, this.cb.peerName || `#${this.cb.peerPublicId}`, { headerH: Math.round(h * 0.11) });
+    const tbH = hdr.headerH;
+    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
   }
 
   private drawThread(): void {

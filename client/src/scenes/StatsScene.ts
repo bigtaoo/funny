@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { MATERIAL_ORDER } from '../game/balance/pveUpgrades';
 import type { MatchHistoryEntry } from '../net/ApiClient';
 
@@ -99,19 +100,9 @@ export class StatsScene implements Scene {
 
     this.container.addChild(buildPaperBackground('statsbg', w, h));
 
-    const tbH = Math.round(h * 0.12);
-    const titleBg = new PIXI.Graphics();
-    titleBg.beginFill(C.dark); titleBg.drawRect(0, 0, w, tbH); titleBg.endFill();
-    this.container.addChild(titleBg);
-
-    const title = txt(t('stats.title'), Math.round(h * 0.034), 0xffffff, true);
-    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
-    this.container.addChild(title);
-
-    const back = txt(t('stats.back'), Math.round(h * 0.026), C.light);
-    back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
-    this.container.addChild(back);
-    this.hits.push({ rect: { x: 0, y: 0, w: back.x + back.width + Math.round(h * 0.02), h: tbH }, fn: () => this.cb.onBack() });
+    const hdr = drawSceneHeader(this.container, w, h, t('stats.title'));
+    const tbH = hdr.headerH;
+    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
     // 成就墙入口（顶栏右上，ACHIEVEMENT_DESIGN §7：成就只在自己档案出现）。
     if (this.cb.onOpenAchievements) {

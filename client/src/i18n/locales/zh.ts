@@ -12,6 +12,8 @@ export const zh = {
   'common.err.unauthorized': '登录已失效，请重新登录',
   'common.err.notFound': '内容不存在或已失效',
   'common.syncFailed': '云存档同步失败，进度可能未保存',
+  // 统一返回按钮文案（SceneHeader 自动前置「← 」，见 UI_DESIGN §3.1）。
+  'common.back': '返回',
 
   // ── 卡牌 ──────────────────────────────────────────────────────────────────
   'card.infantry.name': '普通兵',

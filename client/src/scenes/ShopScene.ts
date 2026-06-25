@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { ShopItem } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
@@ -211,20 +212,9 @@ export class ShopScene implements Scene {
   /** Header bar with title, back, and coin balance. Returns its height. */
   private drawHeader(): number {
     const { w, h } = this;
-    const tbH = Math.round(h * 0.12);
-    const titleBg = new PIXI.Graphics();
-    titleBg.beginFill(C.dark); titleBg.drawRect(0, 0, w, tbH); titleBg.endFill();
-    this.container.addChild(titleBg);
-
-    const title = txt(t('shop.title'), Math.round(h * 0.034), 0xffffff, true);
-    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
-    this.container.addChild(title);
-
-    const back = txt(t('shop.back'), Math.round(h * 0.026), C.light);
-    back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
-    this.container.addChild(back);
-    const pad = Math.round(h * 0.02);
-    this.hits.push({ rect: { x: 0, y: 0, w: back.x + back.width + pad, h: tbH }, fn: () => this.cb.onBack() });
+    const hdr = drawSceneHeader(this.container, w, h, t('shop.title'));
+    const tbH = hdr.headerH;
+    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
     // Coin balance (top-right).
     const coins = txt(t('shop.coins', { coins: this.cb.getCoins() }), Math.round(h * 0.026), C.gold, true);

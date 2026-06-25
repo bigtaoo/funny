@@ -48,6 +48,33 @@ export function bake(key: string, displayObject: PIXI.DisplayObject, w: number, 
   return tex;
 }
 
+/**
+ * Lazy variant of {@link bake}: only invokes `draw()` on a cache miss, so a
+ * cache hit costs nothing (no Graphics built, no layout). The drawn object is
+ * rendered into the texture and then destroyed — the caller never sees it; it
+ * gets a fresh `PIXI.Sprite(tex)` instead. Returns null with no renderer wired
+ * (headless tests), in which case the caller should draw live.
+ *
+ * This is the primitive behind {@link ./uiCache} (`getCachedTexture`): shared UI
+ * chrome (back button, frames, rarity borders) is drawn once and reused.
+ */
+export function bakeLazy(key: string, draw: () => PIXI.DisplayObject, w: number, h: number): PIXI.Texture | null {
+  if (!renderer) return null;
+  const hit = cache.get(key);
+  if (hit) return hit;
+
+  const obj = draw();
+  const tex = PIXI.RenderTexture.create({
+    width:      Math.ceil(w),
+    height:     Math.ceil(h),
+    resolution: renderer.resolution,
+  });
+  renderer.render(obj, { renderTexture: tex });
+  cache.set(key, tex);
+  obj.destroy({ children: true });
+  return tex;
+}
+
 /** Drop all cached textures (e.g. on a hard relayout). */
 export function clearBakeCache(): void {
   for (const tex of cache.values()) tex.destroy(true);
