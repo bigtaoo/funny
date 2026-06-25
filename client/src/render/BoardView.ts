@@ -7,6 +7,7 @@ import baseTexUrl from '../assets/game_base.png';
 import { SketchPen } from './sketch';
 import { palette, fx } from './theme';
 import { bake } from './bake';
+import { buildDecorLayer } from './decorLayer';
 
 /** State/highlight colors sourced from theme.fx (art-direction §3.3). */
 const HIGHLIGHT_LANE     = fx.laneValid;     // valid attack lane
@@ -68,6 +69,7 @@ export class BoardView {
     this.highlightLayer = new PIXI.Graphics();
 
     this.drawBoard();
+    this.drawDecorations();
     this.drawBases(layout);
     this.container.addChild(this.inactiveLaneLayer); // below no-build + highlights
     this.container.addChild(this.noBuildLayer);
@@ -480,6 +482,18 @@ export class BoardView {
       gfx.position.set(r.x, r.y);
       this.container.addChild(gfx);
     }
+  }
+
+  /**
+   * Snap hand-drawn doodles onto the paper margins just outside the grid and
+   * bake them into a static layer (art-direction §6.2). Added directly above the
+   * baked board and below every dynamic/game layer; the doodles sit outside the
+   * board rect so they never touch cells, bases, or HUD. No-op until the atlas
+   * has loaded (decorations are optional ambience). See decorLayer.ts.
+   */
+  private drawDecorations(): void {
+    const layer = buildDecorLayer(this.layout);
+    if (layer) this.container.addChild(layer);
   }
 
   /**

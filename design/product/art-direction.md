@@ -287,7 +287,12 @@ client/src/assets/decor/   # 最终透明 PNG
 - PNG-32 RGBA，透明底，单色；A 组 ~48–64px / B 组 ~96px 宽 / C 组 ~128–256px
 - 风格须与 `sketch.ts` 程序笔触同频，不要卡通描边
 
-> **实现状态**：装饰层渲染（锚点系统 + snap + 烘焙缓存）**代码尚未落地**，目前仅出素材阶段。素材齐后再做程序侧。
+> **实现状态**：A 组装饰层渲染**已落地**（2026-06-25，战斗场景内）。落地做法：
+> - **图集加载**：`client/src/render/decorAtlas.ts` 用 `PIXI.Spritesheet` 加载 `client/src/assets/decor/battle/decor_atlas.png/.json`（帧名不带扩展名，如 `decor_sun`）。App 启动时 `loadDecorAtlas()` 后台预解码（fire-and-forget，纯装饰，失败不阻塞启动）；图集很小，进战斗前一般已就绪，未就绪则该局无装饰（可接受）。线条为原墨色，**不 `tint`**。
+> - **锚点系统**：`client/src/render/decorLayer.ts`。沿棋盘**左右两侧**外缘纸条（`boardRect` 之外、其纵向区间内的两条边带）取锚点——边带由 `boardRect` 推导，天然落在顶部 HUD 之下、底部 HUD/手牌之上，故**绝不与战斗格/基地/HUD 重叠**。每槽按确定性 PRNG 随机挑帧 + 轻微旋转/缩放/位置抖动；`SKIP_PROB` 留空使其稀疏克制；faint alpha（0.4~0.62）不抢前景。竖屏边带仅 36px → 小号涂鸦；横屏边带宽裕 → 至多 64px。
+> - **静态烘焙**：每条边带的涂鸦烘成一张静态纹理（`bake()`，key=`decor:{orientation}:{side}:{w}x{h}:{cell}`），运行期零开销。`BoardView` 在 `drawBoard()` 之后 `drawDecorations()` 加入，位于棋盘静态层之上、所有动态/游戏层之下；`interactiveChildren=false` 不吃指针。绝不烘焙文字/数字（§5 铁律）。
+> - **确定性 vs「换局再变」**：布局按 `orientation+side` 固定种子，**跨局稳定**（与烘焙棋盘网格一致）。未做逐局重掷——那会产生无界的边带纹理缓存，对边角氛围不值当。
+> - B 组（角落手写标注）/C 组（UI 大背景）尚未出图，未接入。
 
 ### 6.3 基地视觉
 
