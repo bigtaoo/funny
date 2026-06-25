@@ -202,14 +202,90 @@
 - 纸张略有纹理感（非纯色填充）
 - **翻了一年的笔记本**：边缘泛黄、折痕、手蹭花、透印——独立静态 overlay 层（§3.1）
 
-### 6.2 战场装饰（涂鸦层）
+### 6.2 装饰物（涂鸦层）
 
-在地图**非战斗区域边缘**点缀少量涂鸦，强化"用过的笔记本"质感，**只出现在格子外侧边缘**，不进战斗区、不干扰信息：
+在地图**非战斗区域边缘**、以及 UI 大背景纸面上点缀少量涂鸦，强化"用过的笔记本"质感，**不进战斗区、不压前景信息**（§7.1：装饰层可乱，功能层须清晰）。装饰作为离散精灵 snap 到锚点；错位无妨，纯氛围。
 
-- 边角偶尔有小太阳、星星、箭头、感叹号
-- 偶尔一行被划掉的"草稿字"
-- 基地旁可有"BOSS"/`[START]`手写标注
-- 装饰作为离散精灵 snap 到锚点；错位无妨，纯氛围（手绘 PNG 或程序画皆可，但须同一支笔）
+**资产生产方式**：AI 出图（单色手绘涂鸦）→ GIMP 抠白底存透明 PNG → 程序侧 `tint` 出蓝（我）/红（敌）。分三组（A 战场边缘小涂鸦 / B 战场角落手写标注 / C UI 大背景装饰）。
+
+#### 共用 prompt 前缀（贴在每个 prompt 主体前）
+
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art,
+slightly wobbly imperfect strokes like a teenager sketching in the margins
+during class, quick careless 5-second sketch, very loose, no shading or only
+light pencil hatching, no outline cleanup. Isolated single object, centered,
+on a plain pure-white background, no grid lines, no other elements. Flat 2D,
+no 3D, no gradients, no glossy highlights, no thick cartoon outline. Style of
+West of Loathing / doodle art.
+```
+
+#### 共用负向提示
+
+```
+color, painterly, shading, gradient, 3d render, photorealistic, thick bold
+outline, clean vector, multiple objects, text watermark, gray background,
+notebook grid lines, drop shadow
+```
+
+> **单色生成**，程序侧 `tint`。每件抽 2–3 张挑一张；标 ★ 的多抽几张存成随机变体（运行期随机选，避免重复得假）。C 组（UI 背景）把前缀里 `single dark-ink pen` 改成 `light grey pencil, faint`，直接出淡色衬底。
+
+#### A 组 — 战场边缘小涂鸦（PvP + PvE 通用，~48–64px）
+
+| 资产名 | 笔色 | prompt 主体（接前缀后） | 状态 |
+|---|---|---|---|
+| `decor_sun` | 铅笔 | `a tiny doodle sun with a few short radiating rays, childlike`（已采用带笑脸版，归 ~80–96px 档，小尺寸笑脸糊掉可接受） | ✅ 定稿 |
+| `decor_star` ★ | 铅笔 | `a small lopsided five-pointed doodle star drawn in one stroke`（已采用开口星，当"大星"档；变体需补一张更接近实心轮廓的小尺寸星） | ✅ 定稿 |
+| `decor_sparkle` ★ | 铅笔 | `a small four-point sparkle / twinkle shine mark` | 待定 |
+| `decor_arrow` | 蓝钢笔 | `a short curved hand-drawn arrow pointing to the side` | 待定 |
+| `decor_exclaim` | 红圆珠笔 | `a single bold exclamation mark, gone over twice for emphasis` | 待定 |
+| `decor_question` | 红圆珠笔 | `a casual doodle question mark` | 待定 |
+| `decor_scribble_out` ★ | 铅笔 | `a line of scribbled-out crossed-through illegible draft text` | 待定 |
+| `decor_heart` | 红圆珠笔 | `a tiny doodle heart drawn in one careless stroke` | 待定 |
+| `decor_spiral` ★ | 铅笔 | `a small idle bored spiral loop scribble` | 待定 |
+| `decor_cloud` | 铅笔 | `a small simple doodle cloud outline, a few bumps` | 待定 |
+| `decor_lightning` | 铅笔 | `a tiny doodle lightning bolt zigzag` | 待定 |
+| `decor_flower` | 铅笔 | `a tiny simple doodle flower, five round petals` | 待定 |
+
+#### B 组 — 战场角落手写标注（~96px 宽；PvE 战役感更强，PvP 可只用 START）
+
+| 资产名 | 笔色 | prompt 主体 | 状态 |
+|---|---|---|---|
+| `label_boss` | 红马克笔 | `the word "BOSS" hand-lettered in messy block capitals, underlined twice` | 待定 |
+| `label_start` | 蓝钢笔 | `the text "[START]" hand-lettered in casual block capitals with square brackets` | 待定 |
+| `label_win` | 蓝钢笔 | `the word "WIN!" hand-lettered cheerfully, slightly bouncing letters` | 待定 |
+| `label_arrow_here` | 红圆珠笔 | `a long curved hand-drawn arrow with the scribbled word "here"` | 待定 |
+
+#### C 组 — UI 大背景装饰（菜单/大厅纸面后方，浅铅笔淡色，~128–256px）
+
+| 资产名 | 笔色 | prompt 主体 | 状态 |
+|---|---|---|---|
+| `bg_stick_soldier` ★ | 浅铅笔 | `a simple doodle stick-figure soldier holding a tiny spear, childlike` | 待定 |
+| `bg_stick_squad` | 浅铅笔 | `a small row of three doodle stick-figure soldiers marching in a line` | 待定 |
+| `bg_castle` | 浅铅笔 | `a simple doodle castle with two towers and a flag, hand-drawn, childlike` | 待定 |
+| `bg_crossed_swords` | 浅铅笔 | `two simple doodle swords crossed in an X` | 待定 |
+| `bg_shield` | 浅铅笔 | `a simple doodle kite shield with a plain cross emblem` | 待定 |
+| `bg_banner_flag` | 浅铅笔 | `a small doodle triangular pennant flag on a pole, fluttering` | 待定 |
+| `bg_catapult` | 浅铅笔 | `a tiny simple doodle catapult / trebuchet, childlike sketch` | 待定 |
+| `bg_paper_plane` ★ | 浅铅笔 | `a small doodle paper airplane, simple folded-paper triangle shape` | 待定 |
+| `bg_compass` | 浅铅笔 | `a small doodle compass rose with N S E W marks, hand-drawn` | 待定 |
+| `bg_crown` | 浅铅笔 | `a tiny simple doodle crown, three points with dots` | 待定 |
+| `bg_ink_splat` ★ | 浅铅笔/蓝 | `a small ink blot splatter stain, irregular, like a leaked pen` | 待定 |
+| `bg_scribble_cloud` | 浅铅笔 | `a loose scribbled scratch cloud / thinking-scribble mass` | 待定 |
+
+#### 资产目录约定
+
+```
+art/decor/                 # 源图 + GIMP .xcf 切件
+client/src/assets/decor/   # 最终透明 PNG
+  battle/  decor_*.png label_*.png   (A+B 组)
+  ui/      bg_*.png                  (C 组)
+```
+
+- PNG-32 RGBA，透明底，单色；A 组 ~48–64px / B 组 ~96px 宽 / C 组 ~128–256px
+- 风格须与 `sketch.ts` 程序笔触同频，不要卡通描边
+
+> **实现状态**：装饰层渲染（锚点系统 + snap + 烘焙缓存）**代码尚未落地**，目前仅出素材阶段。素材齐后再做程序侧。
 
 ### 6.3 基地视觉
 
