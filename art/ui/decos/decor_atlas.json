@@ -1,0 +1,254 @@
+{
+  "frames": {
+    "decor_arrow": {
+      "frame": {
+        "x": 2,
+        "y": 134,
+        "w": 64,
+        "h": 43
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 64,
+        "h": 43
+      },
+      "sourceSize": {
+        "w": 64,
+        "h": 43
+      }
+    },
+    "decor_cloud": {
+      "frame": {
+        "x": 68,
+        "y": 134,
+        "w": 64,
+        "h": 37
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 64,
+        "h": 37
+      },
+      "sourceSize": {
+        "w": 64,
+        "h": 37
+      }
+    },
+    "decor_exclaim": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 16,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 64
+      }
+    },
+    "decor_flower": {
+      "frame": {
+        "x": 20,
+        "y": 2,
+        "w": 62,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 62,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 62,
+        "h": 64
+      }
+    },
+    "decor_heart": {
+      "frame": {
+        "x": 84,
+        "y": 2,
+        "w": 57,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 57,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 57,
+        "h": 64
+      }
+    },
+    "decor_lightning": {
+      "frame": {
+        "x": 143,
+        "y": 2,
+        "w": 22,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 22,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 22,
+        "h": 64
+      }
+    },
+    "decor_question": {
+      "frame": {
+        "x": 167,
+        "y": 2,
+        "w": 32,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 32,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 32,
+        "h": 64
+      }
+    },
+    "decor_scribble_out": {
+      "frame": {
+        "x": 134,
+        "y": 134,
+        "w": 64,
+        "h": 13
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 64,
+        "h": 13
+      },
+      "sourceSize": {
+        "w": 64,
+        "h": 13
+      }
+    },
+    "decor_sparkle": {
+      "frame": {
+        "x": 201,
+        "y": 2,
+        "w": 44,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 44,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 44,
+        "h": 64
+      }
+    },
+    "decor_spiral": {
+      "frame": {
+        "x": 2,
+        "y": 68,
+        "w": 61,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 61,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 61,
+        "h": 64
+      }
+    },
+    "decor_star": {
+      "frame": {
+        "x": 65,
+        "y": 68,
+        "w": 60,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 60,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 60,
+        "h": 64
+      }
+    },
+    "decor_sun": {
+      "frame": {
+        "x": 127,
+        "y": 68,
+        "w": 64,
+        "h": 57
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 64,
+        "h": 57
+      },
+      "sourceSize": {
+        "w": 64,
+        "h": 57
+      }
+    }
+  },
+  "meta": {
+    "app": "pack_decos.cjs",
+    "image": "decor_atlas.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 256,
+      "h": 256
+    },
+    "scale": "1"
+  }
+}

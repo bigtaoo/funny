@@ -236,16 +236,18 @@ notebook grid lines, drop shadow
 |---|---|---|---|
 | `decor_sun` | 铅笔 | `a tiny doodle sun with a few short radiating rays, childlike`（已采用带笑脸版，归 ~80–96px 档，小尺寸笑脸糊掉可接受） | ✅ 定稿 |
 | `decor_star` ★ | 铅笔 | `a small lopsided five-pointed doodle star drawn in one stroke`（已采用开口星，当"大星"档；变体需补一张更接近实心轮廓的小尺寸星） | ✅ 定稿 |
-| `decor_sparkle` ★ | 铅笔 | `a small four-point sparkle / twinkle shine mark` | 待定 |
-| `decor_arrow` | 蓝钢笔 | `a short curved hand-drawn arrow pointing to the side` | 待定 |
-| `decor_exclaim` | 红圆珠笔 | `a single bold exclamation mark, gone over twice for emphasis` | 待定 |
-| `decor_question` | 红圆珠笔 | `a casual doodle question mark` | 待定 |
-| `decor_scribble_out` ★ | 铅笔 | `a line of scribbled-out crossed-through illegible draft text` | 待定 |
-| `decor_heart` | 红圆珠笔 | `a tiny doodle heart drawn in one careless stroke` | 待定 |
-| `decor_spiral` ★ | 铅笔 | `a small idle bored spiral loop scribble` | 待定 |
-| `decor_cloud` | 铅笔 | `a small simple doodle cloud outline, a few bumps` | 待定 |
-| `decor_lightning` | 铅笔 | `a tiny doodle lightning bolt zigzag` | 待定 |
-| `decor_flower` | 铅笔 | `a tiny simple doodle flower, five round petals` | 待定 |
+| `decor_sparkle` ★ | 铅笔 | `a small four-point sparkle / twinkle shine mark`（已采用空心四角闪光，当大/中档；变体需补一张实心短尖的小尺寸闪光） | ✅ 定稿 |
+| `decor_arrow` | 蓝钢笔 | `a short curved hand-drawn arrow pointing to the side` | ✅ 定稿 |
+| `decor_exclaim` | 红圆珠笔 | `a single bold exclamation mark, gone over twice for emphasis` | ✅ 定稿 |
+| `decor_question` | 红圆珠笔 | `a casual doodle question mark` | ✅ 定稿 |
+| `decor_scribble_out` ★ | 铅笔 | `a line of scribbled-out crossed-through illegible draft text` | ✅ 定稿 |
+| `decor_heart` | 红圆珠笔 | `a tiny doodle heart drawn in one careless stroke` | ✅ 定稿 |
+| `decor_spiral` ★ | 铅笔 | `a small idle bored spiral loop scribble` | ✅ 定稿 |
+| `decor_cloud` | 铅笔 | `a small simple doodle cloud outline, a few bumps` | ✅ 定稿 |
+| `decor_lightning` | 铅笔 | `a tiny doodle lightning bolt zigzag` | ✅ 定稿 |
+| `decor_flower` | 铅笔 | `a tiny simple doodle flower, five round petals` | ✅ 定稿 |
+
+> **A 组已全部出图并打包**（2026-06-25）：源图（白底 webp/png）在 `art/ui/decos/`，打包脚本 `art/ui/decos/pack_decos.cjs`（复用 client 的 sharp：白底转透明 + 裁留白 + 等比缩放长边 64 + shelf-pack）。产物 `decor_atlas.png`(256×256) + `decor_atlas.json`（TexturePacker JSON-Hash，帧名不带扩展名，如 `decor_sun`）。改图后重跑 `node pack_decos.cjs` 即可。**注**：线条为原墨色、非白色，故不可直接 `tint` 上阵营色；红圆珠笔类（exclaim/heart/question）若要染红需另出白线版或单独红色图。
 
 #### B 组 — 战场角落手写标注（~96px 宽；PvE 战役感更强，PvP 可只用 START）
 
