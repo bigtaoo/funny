@@ -1,7 +1,14 @@
 # Anna 方三角色设计文档
 
-> 版本 v1.0 · 2026-06-22  
+> 版本 v1.1 · 2026-06-25  
 > 对应引擎定义见 `design/game/CHARACTER_DESIGN.md`；叙事铁律见 `design/product/characters.md`；美术规范见 `design/product/art-direction.md`
+
+> **出图进度**（截至 2026-06-25，三角色全部定稿 ✅）：
+> - **Max** 全身立绘已定稿（朝右 / 全身 / 面罩上翻露脸 / 冷钢蓝水彩）。
+> - **Lena** 全身立绘已定稿（朝右 / 壮实低重心坦克体型 / 链甲+皮革+护腿步兵甲 / 深钴蓝几何打格圆盾 / 战辫无盔 / 短剑插腰）。
+> - **Mara** 全身立绘已定稿（朝右 / 纤细高挑最轻盈 / 皮革无甲+单肩箭筒 / 长弓箭未满 / 腕缠蓝绳 / 松散波浪发 / 眼神望远）。三人完成度有意拉开层次：Max 凌厉、Lena 厚实、Mara 最轻最透（铅笔线最细、水彩最透）。
+>
+> **出图工具首选**：**ChatGPT（GPT-4o / DALL·E 3 出图）**——本项目"单段长自然语言 prompt、不分正负段、storybook 水彩"的需求由它支持最好，三角色定稿均出自 ChatGPT（Max/Lena/Mara）。免费备用：**Bing Image Creator**（同引擎）、**Mistral Le Chat**（FLUX，默认偏卡通，需 prompt 拉回写实）。Leonardo 免费档是每日刷新 token、单次生成贵模型/高清会一次吃上百 token，不是"低于 100 被锁"。⚠️ 上线前需核对所选工具的**商用授权**。
 
 ---
 
@@ -74,13 +81,12 @@ Anna 画他时加了一道旧的铅笔划痕贯穿他的盔甲——那是他第
 
 > 风格基准：手绘笔记本插画，铅笔线稿 + 水彩/马克笔上色，少年战记风，蓝灰冷色调。
 
-**Prompt 1 — 全身立绘（角色卡用途）**
+**Prompt 1 — 全身立绘（角色卡用途 · 定稿所用，单段肯定句）**
+
+> 朝向交给后期镜像；划痕后期手绘补；结尾压顶句压住"度"。
+
 ```
-a young male knight in angular full plate armor, half-open helmet revealing cold determined eyes, single-handed broad sword lowered at ready stance, worn diagonal slash scar across chest plate, notebook sketch illustration style, pencil outlines with blue-grey watercolor fill, cool steel blue palette, side-profile pose, white background, children's storybook art, western medieval fantasy, clean linework, 13-year-old artist aesthetic, slight rough edges on armor plates, silver highlights on blade and pauldrons
-```
-*Negative prompt*:
-```
-photorealistic, 3D render, anime, chibi, overly muscular, adult proportions, dark background, horror, gore, modern clothing, japanese aesthetic, complex background
+A full-length head-to-toe character illustration of a slender teenage boy knight standing in a clean side profile view, his whole body turned sideways as if about to walk forward, youthful lean build with thin arms and legs and clear adolescent proportions. He wears angular full plate armor made of flat faceted metal plates with sharp simple edges, the naive blocky shapes a child would draw for a knight. His visor is flipped fully up above his forehead so his entire face is clearly visible in profile: a calm serious realistic European boy face with a soft natural eye, light eyebrow, a small straight nose and a tight closed mouth, short slightly messy hair, an ordinary believable human face with grounded proportions. In his near hand he holds a single-handed broad straight steel sword lowered with the blade tip angled down toward the ground in a quiet ready stance, weight settled on the back leg. His other hand is open and empty at his side, carrying no shield, no extra objects floating in the air around him. Hand-drawn children's storybook notebook sketch, visible pencil outlines with slightly rough wobbly amateur lines, soft watercolor and marker fill, cool steel blue-grey armor tones around hex 6E8CAB, silver-white highlights along the plate edges and the sword blade, deep blue-grey shadows in the recesses, plain clean white paper background with faint paper texture, western medieval fantasy, gentle innocent picture-book tone. keep it clearly a talented teenager's notebook drawing not professional concept art, visible wobbly pencil construction lines, flat watercolor washes with rough brush edges, simple un-rendered faceted shapes, no smooth digital shading no realistic metallic reflections
 ```
 
 **Prompt 2 — 动作瞬间（技能卡用途）**
@@ -304,3 +310,35 @@ Anna 的三个角色在她的笔记本世界观里是同一支骑士队伍，但
 - 生成后需要检查：线稿是否有铅笔质感、是否保留了手绘边缘、颜色是否偏蓝系
 - 若生成结果太精致（接近专业插画），可以在 prompt 中加强：`rough pencil sketch, amateur teenage artist style, slightly wobbly lines`
 - Stable Diffusion 推荐模型：`dreamshaper` 或 `ghostmix`，配合 `pencil sketch` LoRA
+
+#### 实操要点（2026-06-25 出图经验）
+
+- **朝向**：立绘必须**朝右**（己方单位面朝右约定 + animator 骨骼 `rwa` 朝右设定，见 `design/product/art-direction.md` §朝向约定）。但图像模型有强烈"朝左偏好"，文字硬掰命中率低——**生成后水平镜像翻转即可**，无损，不必为方向烧次数。
+- **划痕等手绘细节别交给 AI**：Max 的对角铅笔划痕反复被模型画成半空中的乱涂。结论：**从生成 prompt 删掉，定稿后手绘补一条线**。
+- **否定句不可靠**：本项目所用工具对 `negative prompt` / `no xxx` 支持弱，**全部要素改写成肯定句**，单段输入（不分正/负两段）。
+
+### 关于两本笔记本的画风差异（"度"的把控 · 2026-06-25 拍板）
+
+Tao 阵营现有立绘是**单色圆珠笔/钢笔的火柴人涂鸦**，Anna 阵营（Max 定稿）是**铅笔线 + 水彩淡彩的写实少年**。拍板结论：**画风差异保留**——两个主角、一东一西、一男一女、一糙一工，差异本身合理（对应 Tao 随性 / Anna 精算的人设），**不硬拉统一**。但必须"控制好度"，靠下面三条共同地基锚住同属一本游戏的观感。
+
+**共同地基（两侧都必须满足，任何一侧不得破）**：
+
+1. **同纸张同构图**：纯白笔记本纸 + 极淡纸纹，角色居中、留白一致，不加背景。
+2. **手绘会抖的线**：保留可见手绘线、轻微歪斜；**绝不**出现矢量般干净描边或 3D 渲染。
+3. **文具媒介、禁数码渲染**：无气泡高光、无平滑渐变、无写实金属反光；上色只能是看得见笔触边缘的**平涂水彩/马克笔**，不是打光。
+
+**允许的差异**：
+
+| | Tao（陶·东方男孩） | Anna（西方女孩） |
+|---|---|---|
+| 笔 | 单色圆珠笔/钢笔涂鸦 | 铅笔线 + 克制水彩淡彩 |
+| 造型 | 火柴人、大圆头两点眼、随性 | 真实少年比例、五官完整、更工整 |
+| 气质 | 原始、冲、随手 | 一丝不苟、算过的工整感 |
+
+**"度"的上限 —— Anna 侧 prompt 固定加这句"压顶句"**（防止滑向专业概念图）：
+
+```
+keep it clearly a talented teenager's notebook drawing not professional concept art, visible wobbly pencil construction lines, flat watercolor washes with rough brush edges, simple un-rendered faceted shapes, no smooth digital shading no realistic metallic reflections
+```
+
+> Max 定稿那张的金属渲染/脸已踩上限边缘，Lena、Mara 出图时往回收一档：盔甲/护具靠铅笔线区分块面、平涂淡彩，别渲染反光；五官保持少年手笔的简单。
