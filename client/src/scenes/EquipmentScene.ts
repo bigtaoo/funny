@@ -11,6 +11,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../game/meta/SaveData';
 import {
@@ -80,6 +81,7 @@ export class EquipmentScene implements Scene {
   /** 强化时是否使用保护道具（E7）；状态粘滞，玩家主动切换。 */
   private useProtectEnhance = false;
 
+  private backRect = { x: 0, y: 0, w: 0, h: 0 };
   private bodyLayer!: PIXI.Container;
   private modalLayer!: PIXI.Container;
   private toastLayer!: PIXI.Container;
@@ -125,15 +127,11 @@ export class EquipmentScene implements Scene {
     this.loadingLayer = new PIXI.Container();
     this.container.addChild(this.loadingLayer);
 
-    // Static header (back + title).
-    const panel = sketchPanel(w, HUD_H, { fill: C.paper, border: C.mid, seed: seedFor(0, 0, w) });
-    this.container.addChild(panel);
-    const back = txt(t('equip.back'), 13, C.accent);
-    back.x = 10; back.y = 16;
-    this.container.addChild(back);
-    const title = txt(t('equip.title'), 15, C.dark, true);
-    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = HUD_H / 2;
-    this.container.addChild(title);
+    // Static header (back + title); the back hit is (re)registered in render().
+    const hdr = drawSceneHeader(this.container, w, h, t('equip.title'), {
+      variant: 'paper', headerH: HUD_H, titleSize: 15,
+    });
+    this.backRect = hdr.backRect;
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -144,7 +142,7 @@ export class EquipmentScene implements Scene {
     this.hitRects = [];
     this.loadingLayer.removeChildren();
     // Back button (header is static art; its hit lives here so re-render keeps it).
-    this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: HUD_H }, action: () => this.cb.onBack() });
+    this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
 
     this.renderTabs();
     this.renderResourceBar();

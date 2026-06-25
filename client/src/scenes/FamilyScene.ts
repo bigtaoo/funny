@@ -7,6 +7,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, FamilyView, FamilyMemberView, FamilyMessageView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 
@@ -97,18 +98,10 @@ export class FamilyScene implements Scene {
 
   private renderHeader(): void {
     const { w } = this;
-    const panel = sketchPanel(w, HUD_H, { fill: C.paper, border: C.mid, seed: seedFor(0, 0, w) });
-    this.container.addChild(panel);
-
-    const backLbl = txt(t('family.back'), 13, C.accent);
-    backLbl.x = 10; backLbl.y = 15;
-    this.container.addChild(backLbl);
-    this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: HUD_H }, action: () => this.cb.onBack() });
-
-    const title = txt(t('family.title'), 15, C.dark);
-    title.anchor.set(0.5, 0.5);
-    title.x = w / 2; title.y = HUD_H / 2;
-    this.container.addChild(title);
+    const hdr = drawSceneHeader(this.container, w, this.h, t('family.title'), {
+      variant: 'paper', headerH: HUD_H, titleSize: 15,
+    });
+    this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
   }
 
   // ── Data ──────────────────────────────────────────────────────────────────

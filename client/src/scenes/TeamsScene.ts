@@ -10,6 +10,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, TeamTemplate } from '../net/WorldApiClient';
 
 /** 队伍槽位上限（UI 常量；服务端 SIEGE_TEAM_CAP 为权威）。 */
@@ -85,16 +86,10 @@ export class TeamsScene implements Scene {
     const { w } = this;
 
     // Header
-    const header = sketchPanel(w, HEADER_H, { fill: C.paper, border: C.mid, seed: seedFor(0, 0, w) });
-    this.bodyLayer.addChild(header);
-    const back = txt(t('world.back'), 13, C.accent);
-    back.x = PAD; back.y = (HEADER_H - back.height) / 2;
-    this.bodyLayer.addChild(back);
-    this.hits.push({ rect: { x: 0, y: 0, w: 90, h: HEADER_H }, action: () => this.cb.onBack() });
-    const title = txt(t('world.team.title'), 14, C.dark, true);
-    title.anchor.set(0.5, 0);
-    title.x = w / 2; title.y = (HEADER_H - title.height) / 2;
-    this.bodyLayer.addChild(title);
+    const hdr = drawSceneHeader(this.bodyLayer, w, this.h, t('world.team.title'), {
+      variant: 'paper', headerH: HEADER_H, titleSize: 14,
+    });
+    this.hits.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
 
     if (this.loading) {
       const lbl = txt(t('world.loading'), 13, C.mid);

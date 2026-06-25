@@ -7,6 +7,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, AuctionView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 
@@ -106,18 +107,10 @@ export class AuctionScene implements Scene {
     this.container.addChild(this.toastLayer);
 
     // Static header
-    const panel = sketchPanel(w, HUD_H, { fill: C.paper, border: C.mid, seed: seedFor(0, 0, w) });
-    this.container.addChild(panel);
-
-    const back = txt(t('auction.back'), 13, C.accent);
-    back.x = 10; back.y = 15;
-    this.container.addChild(back);
-    this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: HUD_H }, action: () => this.cb.onBack() });
-
-    const title = txt(t('auction.title'), 15, C.dark);
-    title.anchor.set(0.5, 0.5);
-    title.x = w / 2; title.y = HUD_H / 2;
-    this.container.addChild(title);
+    const hdr = drawSceneHeader(this.container, w, this.h, t('auction.title'), {
+      variant: 'paper', headerH: HUD_H, titleSize: 15,
+    });
+    this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
   }
 
   // ── Data ──────────────────────────────────────────────────────────────────

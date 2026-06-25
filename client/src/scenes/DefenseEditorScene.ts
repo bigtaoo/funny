@@ -20,6 +20,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, TeamTemplate, ArmyEntry } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 import { ATTACK_LANES, BASE_COLS, CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '../game/config';
@@ -280,24 +281,16 @@ export class DefenseEditorScene implements Scene {
     this.hits = [];
     const { w, h } = this;
 
-    // Header: back + title + base-level stepper
-    const header = sketchPanel(w, HEADER_H, { fill: C.paper, border: C.mid, seed: seedFor(0, 0, w) });
-    this.bodyLayer.addChild(header);
-
-    const back = txt(t('world.back'), 13, C.accent);
-    back.x = PAD; back.y = (HEADER_H - back.height) / 2;
-    this.bodyLayer.addChild(back);
-    this.hits.push({ rect: { x: 0, y: 0, w: 90, h: HEADER_H }, action: () => this.cb.onBack() });
-
+    // Header: back + title + base-level stepper (drawn on the right slot below)
     const titleStr = this.cb.target.mode === 'attack'
       ? t('world.team.editTitle').replace('{name}', this.cb.target.teamName)
       : this.cb.target.tileKey === 'base'
         ? t('world.defense.titleBase')
         : t('world.defense.titleTile').replace('{tile}', this.cb.target.tileKey);
-    const title = txt(titleStr, 14, C.dark, true);
-    title.anchor.set(0.5, 0);
-    title.x = w / 2; title.y = (HEADER_H - title.height) / 2;
-    this.bodyLayer.addChild(title);
+    const hdr = drawSceneHeader(this.bodyLayer, w, this.h, titleStr, {
+      variant: 'paper', headerH: HEADER_H, titleSize: 14,
+    });
+    this.hits.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
 
     // Base-level stepper (defense only — attacker has no base/buildings)
     if (this.hasBuildingRow) this.renderBaseStepper(w - PAD, 8);

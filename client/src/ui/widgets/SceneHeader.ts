@@ -30,8 +30,21 @@
 import * as PIXI from 'pixi.js-legacy';
 import type { Rect } from '../../layout/ILayout';
 import { t } from '../../i18n';
-import { ui as C, txt } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { getCachedDisplay } from './uiCache';
+
+/**
+ * Bar styling:
+ *   - 'dark'  : solid dark fill, white title — the default for lobby-side menu
+ *               scenes (Achievement, Shop, Gacha, …).
+ *   - 'paper' : hand-drawn paper panel (paper fill + mid sketch border), dark
+ *               title — matches the SLG / editor scenes (World, Family, Sect,
+ *               Auction, Equipment, Teams, DefenseEditor) whose bodies sit on
+ *               the paper background. The right side of the bar is left free, so
+ *               callers may draw their own controls (e.g. a level stepper) on
+ *               top of the baked chrome after this returns.
+ */
+export type SceneHeaderVariant = 'dark' | 'paper';
 
 /** Hit-area width of the back button in design space (§3.1). */
 const BACK_HIT_W = 160;
@@ -55,15 +68,21 @@ function backSize(h: number): number {
   return Math.round(h * 0.026);
 }
 
-/** Build the static bar chrome (dark fill + back glyph) at local origin. */
-function buildChrome(w: number, headerH: number, label: string, size: number): PIXI.Container {
+/** Build the static bar chrome (fill + back glyph) at local origin. */
+function buildChrome(
+  w: number, headerH: number, label: string, size: number, variant: SceneHeaderVariant,
+): PIXI.Container {
   const c = new PIXI.Container();
 
-  const bar = new PIXI.Graphics();
-  bar.beginFill(C.dark);
-  bar.drawRect(0, 0, w, headerH);
-  bar.endFill();
-  c.addChild(bar);
+  if (variant === 'paper') {
+    c.addChild(sketchPanel(w, headerH, { fill: C.paper, border: C.mid, seed: seedFor(0, 0, w) }));
+  } else {
+    const bar = new PIXI.Graphics();
+    bar.beginFill(C.dark);
+    bar.drawRect(0, 0, w, headerH);
+    bar.endFill();
+    c.addChild(bar);
+  }
 
   const back = txt(label, size, C.accent);
   back.anchor.set(0, 0.5);
@@ -83,25 +102,30 @@ function buildChrome(w: number, headerH: number, label: string, size: number): P
  *   its own title (e.g. a raised title above a subtitle) — only the bar +
  *   back glyph are rendered.
  * @param opts.headerH Override the bar height (rare; defaults to {@link sceneHeaderHeight}).
+ *   The SLG/editor scenes pass their own fixed bar height here so their body
+ *   layout (laid out below a fixed `HUD_H`/`HEADER_H` constant) stays put.
  * @param opts.titleSize Override the title font size (defaults to 3.4% of height).
+ * @param opts.variant Bar styling — see {@link SceneHeaderVariant} (default 'dark').
  */
 export function drawSceneHeader(
   container: PIXI.Container, w: number, h: number, title: string | null,
-  opts?: { headerH?: number; titleSize?: number },
+  opts?: { headerH?: number; titleSize?: number; variant?: SceneHeaderVariant },
 ): SceneHeaderResult {
   const headerH = opts?.headerH ?? sceneHeaderHeight(h);
+  const variant = opts?.variant ?? 'dark';
   const size = backSize(h);
   const label = `← ${t('common.back')}`; // "← " + back
 
   const chrome = getCachedDisplay(
-    `hdr:${Math.round(w)}x${headerH}:${size}:${label}`,
-    () => buildChrome(w, headerH, label, size),
+    `hdr:${variant}:${Math.round(w)}x${headerH}:${size}:${label}`,
+    () => buildChrome(w, headerH, label, size, variant),
     w, headerH,
   );
   container.addChild(chrome);
 
   if (title !== null) {
-    const titleNode = txt(title, opts?.titleSize ?? Math.round(h * 0.034), 0xffffff, true);
+    const titleColor = variant === 'paper' ? C.dark : 0xffffff;
+    const titleNode = txt(title, opts?.titleSize ?? Math.round(h * 0.034), titleColor, true);
     titleNode.anchor.set(0.5, 0.5);
     titleNode.x = w / 2;
     titleNode.y = headerH / 2;

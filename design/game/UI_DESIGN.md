@@ -112,10 +112,12 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 > **落地方式**：返回按钮走 §2.1 纹理缓存（`back` 部件烘焙一次复用）。迁移时各场景删掉自绘返回逻辑，改挂 `SceneHeader`。
 
 > **已落地（2026-06-25）**：`client/src/ui/widgets/SceneHeader.ts`。
-> - API：`drawSceneHeader(container, w, h, title, opts?)` → `{ headerH, backRect }`。深色顶栏 + 左上返回 glyph 作为**整块 chrome 经 §2.1 缓存**（同朝向同语言只烘焙一次，全场景共用一张纹理）；标题为每场景动态文本，live 绘制。返回文案统一 `'← ' + t('common.back')`（色 `C.accent`），命中区固定 `{0,0,160,headerH}`。各场景保留自己的 hit 数组，只把 `hdr.backRect` push 进去（不强求统一 hit 结构）。
+> - API：`drawSceneHeader(container, w, h, title, opts?)` → `{ headerH, backRect }`。顶栏 chrome（底 + 左上返回 glyph）作为**整块经 §2.1 缓存**（缓存键含 variant/朝向/语言，同类只烘焙一次复用）；标题为每场景动态文本，live 绘制。返回文案统一 `'← ' + t('common.back')`（色 `C.accent`），命中区固定 `{0,0,160,headerH}`。各场景保留自己的 hit 数组，只把 `hdr.backRect` push 进去（不强求统一 hit 结构）。
 > - `title` 传 `null` 时只画 chrome、不画标题（供有副标题需抬升标题的场景自绘，如 CampaignMap）；`opts.titleSize`/`opts.headerH` 用于保真个别场景的大标题/矮栏（如 Settings/Titles 0.042、Chat 0.11 栏高）。
+> - `opts.variant`（`'dark'` 默认 / `'paper'`）：`'paper'` = `sketchPanel` 纸面底（`C.paper` 填充 + `C.mid` 手绘边）+ 深色标题，供 SLG/编辑器场景（其正文坐在纸面背景上）使用；返回在左、标题居中，右侧留空可由调用方在 chrome 之上自绘控件（如 DefenseEditor 的基地等级 stepper）。`'dark'` = 实心深色底 + 白色标题。
 > - **已迁移（14 个标准深色顶栏菜单场景）**：Achievement / BattlePass / Collection / Gacha / Friends / Leaderboard / Stats / Shop / Settings / Titles / Room / LevelPrep / CampaignMap / Chat。统一新增 i18n `common.back`（原各场景 `xxx.back` 键保留未删，部分仍被未迁场景使用）。
-> - **本轮未迁（视觉异质，待 SceneHeader 增 variant 后再收敛）**：SLG `sketchPanel` 纸面顶栏且头部塞了额外控件（Auction / Equipment / Family / Sect / Teams / DefenseEditor，其返回已在 `x=10`）；底部 HUD 的 WorldMap；无深色顶栏的纸面浮动返回（Daily / Event）；以及 LoginScene（返回仅在 password/register 视图条件出现，属登录前流程）。
+> - **已迁移（6 个 SLG/编辑器纸面顶栏场景，2026-06-25，variant `'paper'`）**：Auction / Equipment / Family / Sect / Teams / DefenseEditor。各自传自己固定的 `HUD_H`/`HEADER_H` 作 `opts.headerH`（正文布局沿用该常量不动）+ `titleSize`（15 / 14）。DefenseEditor 的基地 stepper 仍由场景自绘在 chrome 右侧之上。
+> - **仍未迁**：底部 HUD 的 WorldMap（非顶栏）；无深色顶栏的纸面浮动返回（Daily / Event）；LoginScene（返回仅在 password/register 视图条件出现，属登录前流程）。
 
 ---
 
