@@ -22,8 +22,13 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 //
 // Copy in the i18n `room.*` namespace. Layout follows LobbyScene (notebook bg).
 
-/** Server room-code charset — mirrors gameserver RoomManager (no 0/O/1/I/L). */
-const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+/**
+ * Server room-code charset — MUST stay identical to matchsvc Matchsvc.ts, or the
+ * server can hand out a code containing a character the keypad can't type.
+ * 10 digits + 11 letters = 21 chars → exactly 3 rows of 7 on the keypad (fits one
+ * screen). Letters skip I/O/L so they don't read as 0/1.
+ */
+export const CODE_ALPHABET = '0123456789ABCDEFGHJKM';
 const CODE_LEN = 6;
 
 export interface RoomSceneCallbacks {
@@ -365,12 +370,21 @@ export class RoomScene implements Scene {
       this.container.addChild(cl);
     }
 
-    // Character keypad (7 per row).
+    // Character keypad (7 per row). Cells are square and sized to fit the
+    // vertical budget between the code boxes and the bottom action row, so the
+    // grid never overflows / pushes the actions off-screen in landscape.
     const perRow = 7;
+    const rows = Math.ceil(CODE_ALPHABET.length / perRow);
     const kY = Math.round(h * 0.40);
     const kGap = Math.round(w * 0.015);
-    const kW = Math.round((w * 0.84 - (perRow - 1) * kGap) / perRow);
-    const kH = Math.round(kW * 0.95);
+    const aH = Math.round(h * 0.08);            // bottom action row height (mirrors below)
+    const gapBeforeAction = Math.round(h * 0.02);
+    const bottomMargin = Math.round(h * 0.04);
+    const vBudget = h - kY - gapBeforeAction - aH - bottomMargin;
+    const cellByW = (w * 0.84 - (perRow - 1) * kGap) / perRow;
+    const cellByH = vBudget / rows - kGap;
+    const kW = Math.floor(Math.min(cellByW, cellByH));
+    const kH = kW;
     const kX0 = (w - (perRow * kW + (perRow - 1) * kGap)) / 2;
     for (let i = 0; i < CODE_ALPHABET.length; i++) {
       const ch = CODE_ALPHABET[i]!;
@@ -384,9 +398,7 @@ export class RoomScene implements Scene {
     }
 
     // Bottom action row: clear / backspace / confirm.
-    const rows = Math.ceil(CODE_ALPHABET.length / perRow);
-    const aY = kY + rows * (kH + kGap) + Math.round(h * 0.02);
-    const aH = Math.round(h * 0.08);
+    const aY = kY + rows * (kH + kGap) + gapBeforeAction;
     const aGap = Math.round(w * 0.03);
     const aW = Math.round((w * 0.84 - 2 * aGap) / 3);
     const aX0 = (w - (3 * aW + 2 * aGap)) / 2;

@@ -25,7 +25,7 @@ import { CampaignMapScene } from '../../src/scenes/CampaignMapScene';
 import { LevelPrepScene } from '../../src/scenes/LevelPrepScene';
 import { CollectionScene } from '../../src/scenes/CollectionScene';
 import { StatsScene } from '../../src/scenes/StatsScene';
-import { RoomScene } from '../../src/scenes/RoomScene';
+import { RoomScene, CODE_ALPHABET } from '../../src/scenes/RoomScene';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { ChatScene } from '../../src/scenes/ChatScene';
 import { ResultScene } from '../../src/scenes/ResultScene';
@@ -690,6 +690,51 @@ describe('LevelPrepScene — layout invariants', () => {
       const dh = layout.designHeight;
       const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number } }>;
       for (const { rect: r } of hits) {
+        expect(r.y + r.h).toBeLessThanOrEqual(dh);
+      }
+      scene.destroy();
+    });
+  }
+});
+
+// ── RoomScene: code-entry keypad fits one screen ────────────────────────────
+// Regression for "验证码键盘溢出": the keypad had 31 chars × 7/row = 5 rows and
+// cells sized purely off width, so in landscape the rows + Clear/⌫/Confirm row
+// fell off the bottom (no scroll, canvas keypad rejects the OS keyboard). Fix:
+// 21-char charset (10 digits + 11 letters) = 3 rows, cells bounded by the
+// vertical budget. Charset must equal the server generator (matchsvc).
+function buildRoomCodeEntry(w: number, h: number) {
+  const layout = createLayout(w, h);
+  const scene = new RoomScene(layout, new InputManager(), {
+    onBack() {}, createRoom() {}, joinRoom() {}, setReady() {},
+    startMatch() {}, createRanked() {}, cancelQueue() {}, available: true,
+  });
+  (scene as any).onJoinPressed(); // → 'codeEntry' view, re-renders the keypad
+  return { scene, layout };
+}
+
+describe('RoomScene — code-entry keypad', () => {
+  it('charset is 10 digits + 11 letters (skips I/O/L), 21 chars = 3 rows', () => {
+    // Must match server matchsvc CODE_ALPHABET — its test asserts the same literal.
+    expect(CODE_ALPHABET).toBe('0123456789ABCDEFGHJKM');
+    expect(CODE_ALPHABET).toHaveLength(21);
+    expect(CODE_ALPHABET).not.toMatch(/[IOL]/);
+  });
+
+  for (const [label, [w, h]] of [
+    ['portrait', PORTRAIT],
+    ['landscape', LANDSCAPE],
+  ] as const) {
+    it(`all keys + actions stay within bounds — ${label}`, () => {
+      const { scene, layout } = buildRoomCodeEntry(w, h);
+      const dw = layout.designWidth, dh = layout.designHeight;
+      const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number } }>;
+      // back + 21 keypad chars + clear/⌫/confirm = 25 tappable areas, all on-screen.
+      expect(hits.length).toBe(1 + CODE_ALPHABET.length + 3);
+      for (const { rect: r } of hits) {
+        expect(r.x).toBeGreaterThanOrEqual(0);
+        expect(r.y).toBeGreaterThanOrEqual(0);
+        expect(r.x + r.w).toBeLessThanOrEqual(dw);
         expect(r.y + r.h).toBeLessThanOrEqual(dh);
       }
       scene.destroy();

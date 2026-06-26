@@ -69,7 +69,9 @@ interface Room {
   reapTimer: NodeJS.Timeout | null;
 }
 
-const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // 去 0/O/1/I/L
+// MUST stay identical to client RoomScene.ts (its keypad can only type these
+// chars). 10 digits + 11 letters; letters skip I/O/L so they don't read as 0/1.
+export const CODE_ALPHABET = '0123456789ABCDEFGHJKM';
 const CODE_LEN = 6;
 const REAP_MS = 60_000; // 全员掉线后保留房间的宽限
 

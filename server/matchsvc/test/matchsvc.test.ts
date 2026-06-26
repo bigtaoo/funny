@@ -2,7 +2,7 @@
 // match ticket（双方同 roomId/seed、各自 side）。push 回调录制；GameRegistry 用静态兜底地址。
 import { describe, it, expect, vi } from 'vitest';
 import { verifyTicket, FeatureFlagCache } from '@nw/shared';
-import { Matchsvc, type PushMsg } from '../src/Matchsvc';
+import { Matchsvc, CODE_ALPHABET, type PushMsg } from '../src/Matchsvc';
 import { GameRegistry } from '../src/GameRegistry';
 
 const KEY = 'test-internal-key';
@@ -29,7 +29,7 @@ describe('Matchsvc friendly', () => {
     expect(rs?.kind).toBe('room_state');
     if (rs?.kind !== 'room_state') throw new Error();
     expect(rs.code).toHaveLength(6);
-    expect(rs.code).toMatch(/^[A-HJ-NP-Z2-9]+$/);
+    expect(rs.code).toMatch(/^[0-9A-HJKM]+$/);
     expect(rs.players[0]!.side).toBe(0);
   });
 
@@ -210,6 +210,30 @@ describe('Matchsvc bot-fallback（feature flag match_bot_fallback）', () => {
       expect(svc.stats().queue).toBe(0); // 已出队
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+// ── 房间码字符集 ─────────────────────────────────────────────────────────────
+// 服务端生成器与客户端键盘必须用同一字符集，否则会发出键盘打不出来的码。
+// 这里固定字符集为 10 数字 + 11 字母（跳过 I/O/L），与 client RoomScene.ts 的
+// CODE_ALPHABET 一字不差；客户端侧有对应断言，任一侧改动都会被另一侧测试抓到。
+describe('Matchsvc room-code charset', () => {
+  it('字符集 = 10 数字 + 11 字母（与客户端键盘一致，跳过 I/O/L）', () => {
+    expect(CODE_ALPHABET).toBe('0123456789ABCDEFGHJKM');
+    expect(CODE_ALPHABET).toHaveLength(21); // 刚好 3 行 × 7 = 一屏
+    expect(CODE_ALPHABET).not.toMatch(/[IOL]/); // 避免与 0/1 混淆
+    expect(new Set(CODE_ALPHABET).size).toBe(CODE_ALPHABET.length); // 无重复
+  });
+
+  it('生成的码只含字符集内字符（多次采样）', () => {
+    const inSet = new RegExp(`^[${CODE_ALPHABET}]{6}$`);
+    for (let i = 0; i < 200; i++) {
+      const { svc, last } = setup();
+      svc.roomCreate(`acc${i}`, 'P', '100000001');
+      const rs = last(`acc${i}`, 'room_state');
+      if (rs?.kind !== 'room_state') throw new Error('no room_state');
+      expect(rs.code).toMatch(inSet);
     }
   });
 });
