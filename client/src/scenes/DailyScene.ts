@@ -153,8 +153,6 @@ export class DailyScene implements Scene {
     const gridTop = top + sec.height + h * 0.015;
 
     const monthKey = makeMonthKey(nowMs);
-    const dayKey = makeDayKey(nowMs);
-    const todayNum = Number(dayKey.slice(8));
     const claimedDays = (save.retention?.checkin?.monthKey === monthKey
       ? save.retention.checkin.claimedDays
       : []) as number[];
@@ -172,19 +170,21 @@ export class DailyScene implements Scene {
       const cw = cellW * 0.92;
       const ch = cellH * 0.92;
 
+      // 顺序累计模型：已领格（≤ 已领数）打勾；下一未领格 = 可领（高亮）；其余 = 未解锁（暗）。
+      // claimable 由 nextCheckinDay 给出，可能为 null（今日已领/月满）→ 无高亮格。
       const isClaimed = claimedDays.includes(day);
-      const isToday = day <= todayNum && day === claimable;
-      const isFuture = day > todayNum;
+      const isClaimable = claimable !== null && day === claimable;
+      const isLocked = !isClaimed && !isClaimable;
       const isMilestone = milestones.has(day);
 
-      let fillColor = isClaimed ? 0xd0ccc0 : isFuture ? 0xf2ede0 : isToday ? 0xb8e0c0 : 0xe8e0d0;
-      if (isMilestone && !isClaimed) fillColor = isToday ? 0xffd88a : 0xfaf0c8;
+      let fillColor = isClaimed ? 0xd0ccc0 : isLocked ? 0xf2ede0 : 0xb8e0c0;
+      if (isMilestone && !isClaimed) fillColor = isClaimable ? 0xffd88a : 0xfaf0c8;
 
       const bg = sketchPanel(cw, ch, { fill: fillColor, border: isMilestone ? 0x8a7020 : C.line, width: isMilestone ? 1.8 : 1.2, seed: seedFor(x, y, day) });
       bg.x = x; bg.y = y;
       this.container.addChild(bg);
 
-      const numTxt = txt(String(day), Math.round(ch * 0.32), isClaimed ? 0x999999 : isFuture ? 0xaaaaaa : 0x333333);
+      const numTxt = txt(String(day), Math.round(ch * 0.32), isClaimed ? 0x999999 : isLocked ? 0xaaaaaa : 0x333333);
       numTxt.anchor.set(0.5, 0);
       numTxt.x = cx; numTxt.y = y + ch * 0.06;
       this.container.addChild(numTxt);
@@ -198,7 +198,16 @@ export class DailyScene implements Scene {
         this.container.addChild(rt);
       }
 
-      if (isToday && this.cb.onCheckin) {
+      // 已领格：盖一个绿色对勾（用户反馈：领取后在已领日期打勾）。
+      if (isClaimed) {
+        const tick = txt('✓', Math.round(ch * 0.5), 0x2e7d32, true);
+        tick.anchor.set(0.5, 0.5);
+        tick.x = cx; tick.y = cy;
+        tick.alpha = 0.85;
+        this.container.addChild(tick);
+      }
+
+      if (isClaimable && this.cb.onCheckin) {
         this.hits.push({ x, y, w: cw, h: ch, fn: () => void this.doCheckin() });
       }
     }

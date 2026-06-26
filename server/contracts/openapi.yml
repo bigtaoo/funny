@@ -210,6 +210,30 @@ components:
               additionalProperties:
                 type: object
                 additionalProperties: { type: string }
+        # —— 留存（B5，RETENTION_DESIGN §4）。服务器权威，PUT /save 不上行；legacy 档可缺，非 required。
+        # ⚠ 必须声明：否则响应序列化会剥掉 retention（同 §10.1 +undefined 回归）→ adoptServer 把本地
+        # save.retention 覆盖成 undefined → 签到 claimable 永远回到第 1 格（卡在第一天）。
+        retention:
+          type: object
+          properties:
+            checkin:
+              type: object
+              required: [monthKey, claimedDays]
+              properties:
+                monthKey: { type: string }
+                claimedDays:
+                  type: array
+                  items: { type: integer }
+            daily:
+              type: object
+              required: [dayKey, completedTasks, taskPoints, rewardClaimed]
+              properties:
+                dayKey: { type: string }
+                completedTasks:
+                  type: object
+                  additionalProperties: { type: integer }
+                taskPoints: { type: integer }
+                rewardClaimed: { type: boolean }
 
     # 成就定义（硬编码 @nw/shared，GET /achievements 下发；客户端据此 + stats 本地算阶）。
     Achievement:

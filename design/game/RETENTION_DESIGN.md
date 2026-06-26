@@ -265,3 +265,15 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 **回归测试**（`server/metaserver/test/`）：
 - `retention.e2e.test.ts` — GET /retention 断言 `defs.rewards`（30 格、`rewards[0]={stamina,30}`、`rewards[6]={coins,5}`、每格 kind/count 类型正确）+ `defs.tasks` 字段；需真实 Mongo，否则跳过。
 - `openapi-response-schema.test.ts` — **契约守卫**（无需 Mongo）：遍历 `openapi.yml` 所有响应 schema（含 $ref 解引用），任何缺 `properties`/`additionalProperties`/组合的 object 节点即判红，钉死整类「序列化剥空字段」bug；新端点漏写会在 CI 直接失败。该守卫已对照修复前 spec 验证能精确命中本次两处。
+
+### 10.2 修复：签到「每次只能领第一天」（2026-06-26）
+
+**现象**：每日签到无论领取多少次，可领/高亮格永远停在第 1 格；领取本身有效（奖励到账），但格子状态不前进。
+
+**根因**：§10.1 同源——`openapi.yml` 的 `SaveData` schema **完全没声明 `retention` 字段**。`POST /retention/checkin`（及 `GET /save`、`/retention/daily/claim` 等所有回 `SaveData` 的端点）经 fast-json-stringify 按 schema 序列化时，把回包 `save.retention` 整段剥掉。客户端 `saveManager.adoptServer(save)` → `reconcile()` 的 `{...cloud}` 把本地 `save.retention` 覆盖成 `undefined`。DailyScene 渲染从 `save.retention.checkin.claimedDays` 取已领格（而非 `GET /retention` 的 checkin 块），claimedDays 永远空 → `nextCheckinDay` 永远返回 `1`。服务端 Mongo 里 `claimedDays` 其实正常累加，只是回包路上被剥掉，客户端看不到。
+
+**修复**：
+- 契约：`openapi.yml` `SaveData.properties` 补 `retention`（`checkin{monthKey,claimedDays[]}` + `daily{dayKey,completedTasks{},taskPoints,rewardClaimed}`，均带 `properties`/`additionalProperties`），序列化即保留。
+- 客户端（`DailyScene.renderCheckin`）：按用户反馈把格子三态显式化——已领格盖绿色 ✓ 对勾；下一未领格（`claimable`）高亮可点；其余暗格。模型仍是顺序累计（§2.1，不引入日期对齐/打叉，断签不惩罚 R5）。移除随之失效的 `todayNum`/`isFuture` 旧判定。
+
+> 教训：§10.1 的守卫只能抓「object 节点存在但空（无 properties）」，抓不到「字段在 TS/运行时存在、schema 里整段缺失」。凡服务器权威、客户端要读的 SaveData 子块，新增时必须同步进 `openapi.yml` 的 `SaveData` schema，否则回包静默丢字段。
