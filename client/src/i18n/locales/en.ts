@@ -84,6 +84,7 @@ export const en: Record<TranslationKey, string> = {
   'hud.upgradeMax': 'MAX',
   'hud.upgradeCost': '↑ {cost}g',
   'hud.upgrade': '↑ Upgrade',
+  'hud.refreshCost': '⟳ {cost}g',
   'hud.win': 'You Win!',
   'hud.lose': 'You Lose',
   'hud.draw': 'Draw',

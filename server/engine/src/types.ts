@@ -182,6 +182,11 @@ export type PlayerCommand =
       type: 'upgrade_base';
       owner: OwnerId;
       tick: number;
+    }
+  | {
+      type: 'refresh_hand';
+      owner: OwnerId;
+      tick: number;
     };
 
 // ─── Replay (S1-RP / META_DESIGN §6.6, SERVER_API §6) ──────────────────────────
@@ -416,6 +421,9 @@ export interface IGameEngine {
 
   /** Queue an upgrade_base command for the local player (owner 0). */
   upgradeBase(): void;
+
+  /** Queue a refresh_hand command for the local player (owner 0). */
+  refreshHand(): void;
 }
 
 // ─── Game events (logic layer → render layer) ─────────────────────────────────

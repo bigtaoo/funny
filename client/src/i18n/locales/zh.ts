@@ -84,6 +84,7 @@ export const zh = {
   'hud.upgradeMax': '已满级',
   'hud.upgradeCost': '↑ {cost}g',
   'hud.upgrade': '↑ 升级',
+  'hud.refreshCost': '⟳ {cost}g',
   'hud.win': '你赢了！',
   'hud.lose': '你输了',
   'hud.draw': '平局',

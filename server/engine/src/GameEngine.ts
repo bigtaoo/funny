@@ -9,6 +9,7 @@ import {
   CARD_REFRESH_TICKS,
   COUNTDOWN_THRESHOLD_TICKS,
   FORCE_DRAW_THRESHOLD_TICKS,
+  HAND_REFRESH_COST,
   HAND_SIZE,
   ROCKSLIDE_DAMAGE,
   SPELL_CARD_DEFS,
@@ -380,6 +381,10 @@ class GameEngineImpl implements IGameEngine {
     this.input.submit({ type: 'upgrade_base', owner: 0, tick: this.currentTick });
   }
 
+  refreshHand(): void {
+    this.input.submit({ type: 'refresh_hand', owner: 0, tick: this.currentTick });
+  }
+
   // ─── IGameEngine ─────────────────────────────────────────────────────────
 
   /**
@@ -615,6 +620,20 @@ class GameEngineImpl implements IGameEngine {
         if (cost !== null) this.state.stats[cmd.owner].goldSpent += cost;
         this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, ink: player.ink });
       }
+      return;
+    }
+
+    if (cmd.type === 'refresh_hand') {
+      // Pay 10 ink, then redraw every hand slot with freshly-staggered timers —
+      // identical to the initial deal (random start within the 30 s refresh window).
+      if (!player.spendInk(HAND_REFRESH_COST)) return;
+      this.state.stats[cmd.owner].goldSpent += HAND_REFRESH_COST;
+      for (let i = 0; i < HAND_SIZE; i++) {
+        const stagger  = player.timerPrng.nextInt(CARD_REFRESH_INITIAL_OFFSET_MAX + 1);
+        const duration = cardRefreshDuration(stagger);
+        this.drawIntoSlot(player, cmd.owner, i, duration);
+      }
+      this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, ink: player.ink });
       return;
     }
 

@@ -218,17 +218,24 @@ export class NetInputSource implements InputSource {
 
 function toProto(cmd: PlayerCommand): ProtoPlayerCommand {
   if (cmd.type === 'upgrade_base') {
-    return { upgradeBase: {}, playCard: undefined };
+    return { upgradeBase: {}, playCard: undefined, refreshHand: undefined };
+  }
+  if (cmd.type === 'refresh_hand') {
+    return { refreshHand: {}, playCard: undefined, upgradeBase: undefined };
   }
   return {
     playCard: { handIndex: cmd.handIndex, col: cmd.col ?? 0, row: cmd.row ?? 0 },
     upgradeBase: undefined,
+    refreshHand: undefined,
   };
 }
 
 function fromProto(pc: ProtoPlayerCommand, owner: OwnerId, frame: number): PlayerCommand {
   if (pc.upgradeBase) {
     return { type: 'upgrade_base', owner, tick: frame };
+  }
+  if (pc.refreshHand) {
+    return { type: 'refresh_hand', owner, tick: frame };
   }
   const card = pc.playCard;
   return {

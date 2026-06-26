@@ -25,6 +25,7 @@ function base64ToBytes(b64: string): Uint8Array {
 /** game.proto PlayerCommand → 引擎 PlayerCommand（与 NetInputSource.fromProto 同逻辑）。 */
 function fromProto(pc: ProtoPlayerCommand, owner: OwnerId, frame: number): PlayerCommand {
   if (pc.upgradeBase) return { type: 'upgrade_base', owner, tick: frame };
+  if (pc.refreshHand) return { type: 'refresh_hand', owner, tick: frame };
   const card = pc.playCard;
   return {
     type: 'play_card',

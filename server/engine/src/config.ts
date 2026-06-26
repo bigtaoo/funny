@@ -45,6 +45,9 @@ export const INK_CAP = 300;
 export const BASE_UPGRADE_COSTS = [50, 100, 200] as const;
 export const BASE_UPGRADE_REGEN_BONUS = 1; // +1 ink/s per upgrade level
 
+/** Ink cost to manually refresh the whole hand (redraws all slots, like entry). */
+export const HAND_REFRESH_COST = 10;
+
 // ─── Tick-based ink regen (integer fp per tick, no floats) ──────────────────
 //
 //  Normal  : INK_REGEN_BASE ink/s           = trunc(2 * 1000 / 30)     =  66 fp/tick

@@ -21,9 +21,14 @@ export interface PlayCard {
 export interface UpgradeBase {
 }
 
+/** 花费 10 墨水立即刷新整副手牌（重抽全部槽位，计时器随机错开，同进场时） */
+export interface RefreshHand {
+}
+
 export interface PlayerCommand {
   playCard?: PlayCard | undefined;
   upgradeBase?: UpgradeBase | undefined;
+  refreshHand?: RefreshHand | undefined;
 }
 
 /** 一个 tick 内某一方提交的指令集（编码进 SideCmd.commands） */
@@ -135,8 +140,42 @@ export const UpgradeBase: MessageFns<UpgradeBase> = {
   },
 };
 
+function createBaseRefreshHand(): RefreshHand {
+  return {};
+}
+
+export const RefreshHand: MessageFns<RefreshHand> = {
+  encode(_: RefreshHand, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): RefreshHand {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseRefreshHand();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<RefreshHand>, I>>(base?: I): RefreshHand {
+    return RefreshHand.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RefreshHand>, I>>(_: I): RefreshHand {
+    const message = createBaseRefreshHand();
+    return message;
+  },
+};
+
 function createBasePlayerCommand(): PlayerCommand {
-  return { playCard: undefined, upgradeBase: undefined };
+  return { playCard: undefined, upgradeBase: undefined, refreshHand: undefined };
 }
 
 export const PlayerCommand: MessageFns<PlayerCommand> = {
@@ -146,6 +185,9 @@ export const PlayerCommand: MessageFns<PlayerCommand> = {
     }
     if (message.upgradeBase !== undefined) {
       UpgradeBase.encode(message.upgradeBase, writer.uint32(18).fork()).join();
+    }
+    if (message.refreshHand !== undefined) {
+      RefreshHand.encode(message.refreshHand, writer.uint32(26).fork()).join();
     }
     return writer;
   },
@@ -173,6 +215,14 @@ export const PlayerCommand: MessageFns<PlayerCommand> = {
           message.upgradeBase = UpgradeBase.decode(reader, reader.uint32());
           continue;
         }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.refreshHand = RefreshHand.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -192,6 +242,9 @@ export const PlayerCommand: MessageFns<PlayerCommand> = {
       : undefined;
     message.upgradeBase = (object.upgradeBase !== undefined && object.upgradeBase !== null)
       ? UpgradeBase.fromPartial(object.upgradeBase)
+      : undefined;
+    message.refreshHand = (object.refreshHand !== undefined && object.refreshHand !== null)
+      ? RefreshHand.fromPartial(object.refreshHand)
       : undefined;
     return message;
   },

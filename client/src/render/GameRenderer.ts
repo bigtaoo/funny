@@ -417,6 +417,14 @@ export class GameRenderer {
       return;
     }
 
+    // Refresh-hand button — simple tap (no drag): spend ink, redraw all cards.
+    if (this.hudView.refreshEnabled && this.overRect(x, y, this.hudView.getRefreshRect())) {
+      this.cancelTapSelect();
+      this.cancelDrag();
+      this.engine.refreshHand();
+      return;
+    }
+
     // Opponent profile (top strip, netplay only — no cards live up there).
     if (this.profilePopup && this.oppProfile && this.overRect(x, y, this.hudView.getEnemyInfoRect())) {
       this.profilePopup.show(this.oppProfile);

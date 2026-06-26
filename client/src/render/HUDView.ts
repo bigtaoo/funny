@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
-import { BASE_HP, BASE_UPGRADE_COSTS } from '../game/config';
+import { BASE_HP, BASE_UPGRADE_COSTS, HAND_REFRESH_COST } from '../game/config';
 import { GameState } from '../game/GameState';
 import { OwnerId } from '../game/types';
 import { ILayout, Rect } from '../layout/ILayout';
@@ -9,8 +9,11 @@ import { t } from '../i18n';
 
 const TEXT_STYLE  = { fontSize: 14, fill: 0x222222, fontFamily: 'monospace' } as const;
 const SMALL_STYLE = { fontSize: 11, fill: 0x555555, fontFamily: 'monospace' } as const;
+// Settings (gear) button — top strip.
 const BTN_W       = 88;
 const BTN_H       = 30;
+// Bottom action buttons (upgrade / refresh) — larger, laid out inside hudBottomRightRect.
+const ACTION_LABEL_STYLE = { fontSize: 15, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' } as const;
 
 const HP_CELLS    = 10;
 const HP_CELL_W   = 14;
@@ -44,13 +47,20 @@ export class HUDView {
   private enemyHpGfx!:      PIXI.Graphics;
   private upgradeBtnBg!:    PIXI.Graphics;
   private upgradeBtnLabel!: PIXI.Text;
+  private refreshBtnBg!:    PIXI.Graphics;
+  private refreshBtnLabel!: PIXI.Text;
   private settingsBtnBg!:   PIXI.Graphics;
+
+  /** Pixel size of the bottom action buttons (set in build, per orientation). */
+  private actionBtnW = 0;
+  private actionBtnH = 0;
 
   private readonly layout: ILayout;
 
   // ── Hit rects (design space) ──────────────────────────────────────────────
   private _settingsRect:    Rect = { x: 0, y: 0, w: 0, h: 0 };
   private _upgradeRect:     Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private _refreshRect:     Rect = { x: 0, y: 0, w: 0, h: 0 };
   private _pauseResumeRect: Rect | null = null;
   private _pauseExitRect:   Rect | null = null;
   /** Opponent info area (top strip, left of the settings button) — profile tap (S1 net). */
@@ -60,6 +70,8 @@ export class HUDView {
 
   /** True when upgrade is currently affordable (set each frame by sync). */
   upgradeEnabled = false;
+  /** True when hand-refresh is currently affordable (set each frame by sync). */
+  refreshEnabled = false;
 
   constructor(layout: ILayout) {
     this.container           = new PIXI.Container();
@@ -72,6 +84,7 @@ export class HUDView {
 
   getSettingsRect():    Rect        { return this._settingsRect; }
   getUpgradeRect():     Rect        { return this._upgradeRect; }
+  getRefreshRect():     Rect        { return this._refreshRect; }
   getPauseResumeRect(): Rect | null { return this._pauseResumeRect; }
   getPauseExitRect():   Rect | null { return this._pauseExitRect; }
   getEnemyInfoRect():   Rect        { return this._enemyInfoRect; }
@@ -102,6 +115,10 @@ export class HUDView {
       this.upgradeEnabled       = canAfford;
       this.setUpgradeBtnStyle(canAfford);
     }
+
+    const canRefresh = p.ink >= HAND_REFRESH_COST;
+    this.refreshEnabled = canRefresh;
+    this.setRefreshBtnStyle(canRefresh);
   }
 
   // ── Pause overlay ──────────────────────────────────────────────────────────
@@ -246,17 +263,49 @@ export class HUDView {
       this.playerHpGfx.y   = bLR.y + (bLR.h - HP_CELL_H) / 2;
     }
 
+    // Bottom action buttons (refresh + upgrade) — larger than the gear button,
+    // laid out inside the bottom-right rect. Portrait: side by side (wide, short
+    // rect); landscape: stacked (narrow, tall rect).
+    const MARGIN = 12;
+    const GAP    = 14;
+    let rRefresh: Rect;
+    let rUpgrade: Rect;
+    if (isLandscape) {
+      const bw = bRR.w - MARGIN * 2;
+      const bh = Math.round((bRR.h - MARGIN * 2 - GAP) / 2);
+      const bx = bRR.x + MARGIN;
+      rRefresh = { x: bx, y: bRR.y + MARGIN,           w: bw, h: bh };
+      rUpgrade = { x: bx, y: bRR.y + MARGIN + bh + GAP, w: bw, h: bh };
+    } else {
+      const bw = Math.round((bRR.w - MARGIN * 2 - GAP) / 2);
+      const bh = bRR.h - MARGIN * 2;
+      const by = bRR.y + MARGIN;
+      rRefresh = { x: bRR.x + MARGIN,           y: by, w: bw, h: bh };
+      rUpgrade = { x: bRR.x + MARGIN + bw + GAP, y: by, w: bw, h: bh };
+    }
+    this.actionBtnW = rRefresh.w;
+    this.actionBtnH = rRefresh.h;
+
+    // Refresh button — visual only, no interactive
+    this.refreshBtnBg    = new PIXI.Graphics();
+    this.refreshBtnLabel = new PIXI.Text(t('hud.refreshCost', { cost: HAND_REFRESH_COST }), ACTION_LABEL_STYLE);
+    this.refreshBtnBg.x  = rRefresh.x;
+    this.refreshBtnBg.y  = rRefresh.y;
+    this.refreshBtnLabel.anchor.set(0.5);
+    this.refreshBtnLabel.x = rRefresh.x + rRefresh.w / 2;
+    this.refreshBtnLabel.y = rRefresh.y + rRefresh.h / 2;
+    this._refreshRect      = rRefresh;
+    this.setRefreshBtnStyle(false);
+
     // Upgrade button — visual only, no interactive
     this.upgradeBtnBg    = new PIXI.Graphics();
-    this.upgradeBtnLabel = new PIXI.Text(t('hud.upgradeCost', { cost: BASE_UPGRADE_COSTS[0]! }), SMALL_STYLE);
-    const uBtnX = bRR.x + (bRR.w - BTN_W) / 2;
-    const uBtnY = bRR.y + (bRR.h - BTN_H) / 2;
-    this.upgradeBtnBg.x  = uBtnX;
-    this.upgradeBtnBg.y  = uBtnY;
+    this.upgradeBtnLabel = new PIXI.Text(t('hud.upgradeCost', { cost: BASE_UPGRADE_COSTS[0]! }), ACTION_LABEL_STYLE);
+    this.upgradeBtnBg.x  = rUpgrade.x;
+    this.upgradeBtnBg.y  = rUpgrade.y;
     this.upgradeBtnLabel.anchor.set(0.5);
-    this.upgradeBtnLabel.x = uBtnX + BTN_W / 2;
-    this.upgradeBtnLabel.y = uBtnY + BTN_H / 2;
-    this._upgradeRect      = { x: uBtnX, y: uBtnY, w: BTN_W, h: BTN_H };
+    this.upgradeBtnLabel.x = rUpgrade.x + rUpgrade.w / 2;
+    this.upgradeBtnLabel.y = rUpgrade.y + rUpgrade.h / 2;
+    this._upgradeRect      = rUpgrade;
     this.setUpgradeBtnStyle(false);
 
     // Profile-tap regions (used only in netplay, GameRenderer gates on netEnabled):
@@ -267,6 +316,7 @@ export class HUDView {
     this.container.addChild(
       topBg, this.timerText, this.enemyHpGfx, this.settingsBtnBg, sLabel,
       this.inkText,  this.playerHpGfx,
+      this.refreshBtnBg, this.refreshBtnLabel,
       this.upgradeBtnBg, this.upgradeBtnLabel,
     );
   }
@@ -321,9 +371,18 @@ export class HUDView {
     this.upgradeBtnBg.clear();
     this.upgradeBtnBg.beginFill(enabled ? 0x2c2c2a : 0x999999);
     this.upgradeBtnBg.lineStyle(1, 0x333333);
-    this.upgradeBtnBg.drawRoundedRect(0, 0, BTN_W, BTN_H, 4);
+    this.upgradeBtnBg.drawRoundedRect(0, 0, this.actionBtnW, this.actionBtnH, 6);
     this.upgradeBtnBg.endFill();
     this.upgradeBtnLabel.style.fill = enabled ? 0xffffff : 0xdddddd;
+  }
+
+  private setRefreshBtnStyle(enabled: boolean): void {
+    this.refreshBtnBg.clear();
+    this.refreshBtnBg.beginFill(enabled ? 0x3a6ea5 : 0x999999);
+    this.refreshBtnBg.lineStyle(1, 0x333333);
+    this.refreshBtnBg.drawRoundedRect(0, 0, this.actionBtnW, this.actionBtnH, 6);
+    this.refreshBtnBg.endFill();
+    this.refreshBtnLabel.style.fill = enabled ? 0xffffff : 0xdddddd;
   }
 
   private formatTime(seconds: number): string {

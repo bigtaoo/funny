@@ -17,10 +17,14 @@ message PlayCard {
 // 基地升级
 message UpgradeBase {}
 
+// 花费 10 墨水立即刷新整副手牌（重抽全部槽位，计时器随机错开，同进场时）
+message RefreshHand {}
+
 message PlayerCommand {
   oneof cmd {
     PlayCard    play_card    = 1;
     UpgradeBase upgrade_base = 2;
+    RefreshHand refresh_hand = 3;
   }
 }
 

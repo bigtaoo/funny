@@ -277,7 +277,9 @@ pendingCardDown: { x, y, handIndex } | null             // 按下卡牌后，判
 - 对象池回收时重置 `art`为空纹理并隐藏
 - 卡牌名走 i18n：`CardDefinition.nameKey` → `t(card.nameKey)`（见 §10）
 - **刷新倒计时进度条**：每张牌底部一条 3px 横条（`bar` Graphics），显示距下次自动刷新的剩余比例（`refreshRemainingTicks / refreshDurationTicks`）。颜色随剩余秒数变化：>10s 绿色 → ≤10s 黄色 → ≤5s 红色；最后 3 秒进度条 alpha 做 sin 波脉冲（0.6–1.0）。卡牌被自动刷新时触发 `card_expired` 事件，`GameRenderer` 调用 `handView.notifyCardExpired(slotIndex)`，令该槽渲染 250ms 白色淡出叠加层（`flash` Graphics）作为刷新反馈。倒计时时长由 `config.CARD_REFRESH_TICKS`（900 ticks = 30 s）控制；发牌时随机错峰 [0, 15 s]（`CARD_REFRESH_INITIAL_OFFSET_MAX`）防止所有槽同时刷新。
+- **手动刷新全牌（`refresh_hand` 指令）**：升级按钮旁的「⟳ 刷新」按钮，花费 `HAND_REFRESH_COST=10` 墨水立即重抽全部 6 个卡槽，每槽计时器用 `timerPrng` 随机错峰 [0, 15 s] 重置——与进场发牌完全同款逻辑（`和刚进入时一样`）。引擎侧 `GameEngine.processCommand` 处理 `refresh_hand`：墨水不足则忽略；成功则逐槽 `drawIntoSlot(随机 stagger)` + 发 `resource_changed`（不发 `card_expired`，故无逐槽白闪）。指令链路同 `upgrade_base`：`PlayerCommand` 联合 / `IGameEngine.refreshHand()` / `game.proto` `RefreshHand`（oneof 字段 3）/ `NetInputSource`·`replayUpload`·`judgeRunner`·`serverReplay` 四处 `toProto`/`fromProto` 各加分支。因是旧录像里不存在的新指令，老录像回放不受影响，无需 bump `ENGINE_VERSION`。
 - **手牌与 HUD 层级**：`HUDView` 的底部条带背景（`botBg`，全宽 alpha 0.92）拆到独立的 `backgroundContainer`，由 `GameRenderer` 挂在 `handView` **之前**渲染；HUD 前景（金币 / HP / 升级按钮 / 暂停 / 结算遮罩）仍在 `handView` **之后**。层级：`vfx → HUD底栏背景 → 手牌 → HUD前景/遮罩`。否则横屏下底栏背景会盖住中段手牌（仅选中卡牌抬升的顶部冒出上沿）
+- **底部动作按钮（升级 / 刷新）布局**：两个按钮放在 `hudBottomRightRect` 内，比顶栏齿轮键（`BTN_W/BTN_H`=88×30）明显加大并按方向自适应——竖屏并排（各 ~160×52），横屏上下叠放（各 ~176×67），尺寸由 `actionBtnW/actionBtnH` 在 `build()` 内按朝向算出。升级键是「拖到己方基地」触发，刷新键是单击即触发（`GameRenderer.handleDown` 命中 `getRefreshRect()` 直接 `engine.refreshHand()`）。两键均按当前墨水余额置灰（`upgradeEnabled` / `refreshEnabled`，`sync()` 每帧更新）。
 
 ---
 
