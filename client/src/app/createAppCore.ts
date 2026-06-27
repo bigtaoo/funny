@@ -856,18 +856,29 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           return { ok: false, key: 'shop.rechargeFail' };
         }
       },
-      openGacha() { goGacha(); },
-      ...(shopLoggedIn ? { openBattlePass: () => goBattlePass(() => goShop(onBack)) } : {}),
+      // 商城组同级 tab（LOBBY_IA_REDESIGN P1.5）：盲盒/战令上浮为顶部 tab，threading
+      // shopBack 让三页互相直达且返回到同一来源（lobby / level-prep）。
+      openGacha() { goGacha({ shopBack: onBack }); },
+      ...(shopLoggedIn ? { openBattlePass: () => goBattlePass({ shopBack: onBack }) } : {}),
     });
   }
 
-  function goGacha(): void {
+  /**
+   * 盲盒（S2-6）。`group` 存在 = 「商城」分组语境（顶部出现 [商城|盲盒|战令] tab 条，
+   * 同级直达）；缺省 = 独立入口（仅 back 回商城）。
+   */
+  function goGacha(group?: { shopBack?: () => void }): void {
     if (!api) { goLobby(); return; }
     const client = api;
     inLobby = false;
     analytics.track('screen_view', { scene: 'GachaScene' });
+    const inGroup = !!group;
+    const shopBack = group?.shopBack;
+    const bpAvail = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     views.showGacha({
-      onBack() { goShop(); },
+      onBack() { goShop(shopBack); },
+      ...(inGroup ? { openShop: () => goShop(shopBack) } : {}),
+      ...(inGroup && bpAvail ? { openBattlePass: () => goBattlePass({ shopBack }) } : {}),
       getCoins: () => saveManager.get().wallet.coins,
       getPity: (poolId) => saveManager.get().gacha.pity[poolId] ?? 0,
       loadPools: () => client.getGachaPools(),
@@ -1038,7 +1049,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     views.showCollection({
       onBack: back,
       initialTab,
-      ...(api && equipLoggedIn ? { onOpenEquipment: () => goEquipment(() => goCollection(back, initialTab)) } : {}),
+      ...(api && equipLoggedIn ? { onOpenEquipment: () => goEquipment(() => goCollection(back, initialTab), true) } : {}),
       getSkins: () => saveManager.get().inventory.skins,
       getEquipped: () => saveManager.get().equipped[EQUIP_SLOT] ?? null,
       equip: (skinId) => {
@@ -1082,13 +1093,16 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
    * 装备系统（E5）。服务器权威，需登录在线。可从战役地图（默认 back）或「养成」tab
    * （LOBBY_IA_REDESIGN §3，back=回收藏页）进入，`back` 决定返回去向。
    */
-  function goEquipment(back: () => void = goCampaignMap): void {
+  function goEquipment(back: () => void = goCampaignMap, inCollectionGroup = false): void {
     if (!api) { back(); return; }
     const client = api;
     inLobby = false;
     analytics.track('screen_view', { scene: 'EquipmentScene' });
     views.showEquipment({
       onBack() { back(); },
+      // 养成组同级 tab（LOBBY_IA_REDESIGN P1.5）：从收藏进入时顶部出现 [收藏|装备] tab 条，
+      // 点收藏回养成（= back）。战役入口（back=goCampaignMap）不注入 → 纯 back。
+      ...(inCollectionGroup ? { openCollection: () => back() } : {}),
       getSave: () => saveManager.get(),
       async craft(defId: string) {
         try {
@@ -1196,13 +1210,20 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   /** 战令面板（SE-9）。IA 重规划后从「商城」tab 进入（LOBBY_IA_REDESIGN §3），`back` 决定返回去向。 */
-  function goBattlePass(back: () => void = goLobby): void {
+  /**
+   * 战令（SE-9）。`group` 存在 = 「商城」分组语境（顶部 [商城|盲盒|战令] tab 条，back 回商城）；
+   * 缺省 = 独立入口（back 回大厅）。
+   */
+  function goBattlePass(group?: { shopBack?: () => void }): void {
     inLobby = false;
     analytics.track('screen_view', { scene: 'BattlePassScene' });
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const client = api;
+    const inGroup = !!group;
+    const shopBack = group?.shopBack;
     views.showBattlePass({
-      onBack: back,
+      onBack: inGroup ? () => goShop(shopBack) : goLobby,
+      ...(inGroup ? { openShop: () => goShop(shopBack), openGacha: () => goGacha({ shopBack }) } : {}),
       ...(loggedIn
         ? {
             getBattlePass: () => saveManager.get().battlePass,

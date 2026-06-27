@@ -12,6 +12,7 @@ import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../game/meta/SaveData';
 import {
@@ -39,6 +40,11 @@ export type EnhanceResult =
 
 export interface EquipmentCallbacks {
   onBack(): void;
+  /**
+   * 养成分组同级直达（LOBBY_IA_REDESIGN P1.5）。仅在「养成」分组语境（从收藏进入）
+   * 注入；注入后 header 下出现 [收藏|装备] tab 条，点收藏回养成。战役入口不注入 → 纯 back。
+   */
+  openCollection?(): void;
   /** 读当前权威存档（每次动作后服务器回推 → adoptServer，本场景重读重绘）。 */
   getSave(): SaveData;
   craft(defId: string): Promise<EquipResult>;
@@ -77,6 +83,11 @@ export class EquipmentScene implements Scene {
   private readonly cb: EquipmentCallbacks;
 
   private activeTab: EquipTab = 'inv';
+  /**
+   * 分组 strip 高度（养成组 [收藏|装备]）；仅当 openCollection 注入时 >0。body 全部按
+   * HUD_H + groupH 下移一条 strip（LOBBY_IA_REDESIGN P1.5）。
+   */
+  private readonly groupH: number;
   private readonly bt = new BusyTracker();
   /** 强化时是否使用保护道具（E7）；状态粘滞，玩家主动切换。 */
   private useProtectEnhance = false;
@@ -105,6 +116,7 @@ export class EquipmentScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
+    this.groupH = cb.openCollection ? hubTabsHeight(this.h) : 0;
     this.container = new PIXI.Container();
     this.build();
     this.render();
@@ -144,6 +156,7 @@ export class EquipmentScene implements Scene {
     // Back button (header is static art; its hit lives here so re-render keeps it).
     this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
 
+    this.renderGroupTabs();
     this.renderTabs();
     this.renderResourceBar();
     if (this.activeTab === 'inv') this.renderInventory();
@@ -157,8 +170,25 @@ export class EquipmentScene implements Scene {
     if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
+  /**
+   * 养成分组 tab 条 [收藏|装备]（LOBBY_IA_REDESIGN P1.5）：装备 active，点收藏回养成。
+   * 仅分组语境（openCollection 注入，groupH>0）绘制；画在 header 下、内容 tab 之上。
+   */
+  private renderGroupTabs(): void {
+    if (this.groupH <= 0) return;
+    const tabs: HubTab[] = [
+      { label: t('collection.title'), active: false },
+      { label: t('equip.title'), active: true },
+    ];
+    const hits = drawHubTabs(this.bodyLayer, this.w, HUD_H, this.groupH, tabs, (i) => {
+      if (i === 0) this.cb.openCollection?.();
+    });
+    for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
+  }
+
   private renderTabs(): void {
     const { w } = this;
+    const top = HUD_H + this.groupH;
     const tabs: { key: EquipTab; label: TranslationKey }[] = [
       { key: 'inv', label: 'equip.tabInv' },
       { key: 'craft', label: 'equip.tabCraft' },
@@ -167,13 +197,13 @@ export class EquipmentScene implements Scene {
     tabs.forEach((tab, i) => {
       const active = tab.key === this.activeTab;
       const tp = sketchPanel(tw, TAB_H, { fill: active ? C.paper : 0xddddcc, border: C.mid, seed: seedFor(i, 0, tw) });
-      tp.x = i * tw; tp.y = HUD_H;
+      tp.x = i * tw; tp.y = top;
       this.bodyLayer.addChild(tp);
       const tl = txt(t(tab.label), 13, active ? C.accent : C.dark, active);
-      tl.anchor.set(0.5, 0.5); tl.x = i * tw + tw / 2; tl.y = HUD_H + TAB_H / 2;
+      tl.anchor.set(0.5, 0.5); tl.x = i * tw + tw / 2; tl.y = top + TAB_H / 2;
       this.bodyLayer.addChild(tl);
       this.hitRects.push({
-        rect: { x: i * tw, y: HUD_H, w: tw, h: TAB_H },
+        rect: { x: i * tw, y: top, w: tw, h: TAB_H },
         action: () => { if (this.activeTab !== tab.key) { this.activeTab = tab.key; this.scrollY = 0; this.render(); } },
       });
     });
@@ -182,7 +212,7 @@ export class EquipmentScene implements Scene {
   private renderResourceBar(): void {
     const { w } = this;
     const save = this.cb.getSave();
-    const y = HUD_H + TAB_H;
+    const y = HUD_H + this.groupH + TAB_H;
     const bg = new PIXI.Graphics();
     bg.beginFill(0xf3f1ea).drawRect(0, y, w, RES_H).endFill();
     this.bodyLayer.addChild(bg);
@@ -206,7 +236,7 @@ export class EquipmentScene implements Scene {
   private renderInventory(): void {
     const { w, h } = this;
     const save = this.cb.getSave();
-    const loadoutY = HUD_H + TAB_H + RES_H;
+    const loadoutY = HUD_H + this.groupH + TAB_H + RES_H;
     this.renderLoadout(save, loadoutY);
 
     const listY = loadoutY + LOADOUT_H;
@@ -325,7 +355,7 @@ export class EquipmentScene implements Scene {
     const { w, h } = this;
     const save = this.cb.getSave();
     const defs = craftableDefs();
-    const listY = HUD_H + TAB_H + RES_H + 4;
+    const listY = HUD_H + this.groupH + TAB_H + RES_H + 4;
     const listH = h - listY - 8;
     const full = Object.keys(save.equipmentInv).length >= EQUIPMENT_INV_CAP;
 

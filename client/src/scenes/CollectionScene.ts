@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { EQUIP_SLOT } from '../app/equipSlot';
 import { CARD_DEFINITIONS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '../game/config';
 import { CardType, type CardDefinition, UnitType } from '../game/types';
@@ -160,8 +161,17 @@ export class CollectionScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // Tab bar
-    const tabsY = tbH + Math.round(h * 0.02);
+    // 养成分组 tab 条 [收藏|装备]（LOBBY_IA_REDESIGN P1.5）：装备从 launcher 上浮为同级
+    // tab。仅装备可达（登录在线）时出现；离线/未登录退化为原 3 内容 tab 布局。
+    let topY = tbH + Math.round(h * 0.02);
+    if (this.cb.onOpenEquipment) {
+      const stripH = hubTabsHeight(h);
+      this.drawGroupTabs(topY, stripH);
+      topY += stripH + Math.round(h * 0.015);
+    }
+
+    // Content sub-tab bar (卡牌/皮肤/单位)
+    const tabsY = topY;
     const tabsH = Math.round(h * 0.05);
     const contentY = tabsY + tabsH + Math.round(h * 0.025);
     this.drawTabs(tabsY, tabsH);
@@ -188,21 +198,32 @@ export class CollectionScene implements Scene {
     if (this.toast) this.drawToast();
   }
 
+  /**
+   * 养成分组 tab 条 [收藏|装备]（LOBBY_IA_REDESIGN P1.5）：收藏 active，装备点击
+   * 导航到 EquipmentScene（与 Equipment 端共用同一条 strip，互相直达）。
+   */
+  private drawGroupTabs(y: number, stripH: number): void {
+    const tabs: HubTab[] = [
+      { label: t('collection.title'), active: true },
+      { label: t('collection.tab.equipment'), active: false },
+    ];
+    const hits = drawHubTabs(this.container, this.w, y, stripH, tabs, (i) => {
+      if (i === 1) this.cb.onOpenEquipment?.();
+    });
+    this.hits.push(...hits);
+  }
+
+  /** Content sub-tab bar: 卡牌 / 皮肤 / 单位 (switches the scrollable content). */
   private drawTabs(y: number, hgt: number): void {
     const { w } = this;
-    // 3 switchable content tabs + a 4th 「装备」launcher (LOBBY_IA_REDESIGN §3/§5).
-    // The launcher navigates to EquipmentScene rather than switching content;
-    // greyed (no hit) when equipment isn't reachable (offline / not logged in).
     const tabs: Array<{ id: CollectionTab; label: string }> = [
       { id: 'cards', label: t('collection.tab.cards') },
       { id: 'skins', label: t('collection.tab.skins') },
       { id: 'units', label: t('collection.tab.units') },
     ];
-    const equipEnabled = !!this.cb.onOpenEquipment;
-    const cellCount = tabs.length + 1; // +1 for the equipment launcher
     const pad = Math.round(w * 0.04);
     const gap = Math.round(w * 0.02);
-    const tabW = Math.round((w - pad * 2 - gap * (cellCount - 1)) / cellCount);
+    const tabW = Math.round((w - pad * 2 - gap * (tabs.length - 1)) / tabs.length);
     tabs.forEach((tabDef, i) => {
       const x = pad + i * (tabW + gap);
       const active = this.tab === tabDef.id;
@@ -221,25 +242,6 @@ export class CollectionScene implements Scene {
 
       if (!active) this.hits.push({ rect: { x, y, w: tabW, h: hgt }, fn: () => this.switchTab(tabDef.id) });
     });
-
-    // 4th cell — 装备 launcher.
-    const ex = pad + tabs.length * (tabW + gap);
-    const ebox = sketchPanel(tabW, hgt, {
-      fill: C.paper,
-      border: equipEnabled ? C.gold : C.line,
-      width: equipEnabled ? 1.8 : 1.6,
-      seed: seedFor(ex, y, tabW),
-    });
-    ebox.x = ex; ebox.y = y;
-    ebox.alpha = equipEnabled ? 1 : 0.45;
-    this.container.addChild(ebox);
-
-    const elbl = txt(t('collection.tab.equipment'), Math.round(hgt * 0.42), equipEnabled ? C.gold : C.mid, true);
-    elbl.anchor.set(0.5, 0.5); elbl.x = ex + tabW / 2; elbl.y = y + hgt / 2;
-    elbl.alpha = equipEnabled ? 1 : 0.45;
-    this.container.addChild(elbl);
-
-    if (equipEnabled) this.hits.push({ rect: { x: ex, y, w: tabW, h: hgt }, fn: () => this.cb.onOpenEquipment!() });
   }
 
   // ── Cards codex ────────────────────────────────────────────────────────────────

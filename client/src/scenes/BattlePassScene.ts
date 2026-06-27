@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
 import {
@@ -30,6 +31,12 @@ export interface BattlePassCallbacks {
   onBuy?(): Promise<void>;
   /** 领取奖励。返回实际发放金币（0 = 非金币奖励）。 */
   onClaim?(track: 'free' | 'paid', level: number): Promise<number>;
+  /**
+   * 商城分组同级直达（LOBBY_IA_REDESIGN P1.5）。仅在「商城」分组语境下注入；
+   * 注入后顶部出现 [商城|盲盒|战令] tab 条，否则退化为纯 back（成就等单独入口）。
+   */
+  openShop?(): void;
+  openGacha?(): void;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -83,6 +90,24 @@ export class BattlePassScene implements Scene {
     this.render();
   }
 
+  /** 商城分组 tab 条（战令 active）。仅分组语境（openShop 注入）绘制；返回正文起点 y。 */
+  private drawGroupTabs(tbH: number): number {
+    if (!this.cb.openShop) return tbH;
+    const { w, h } = this;
+    const stripH = hubTabsHeight(h);
+    const tabs: HubTab[] = [
+      { label: t('shop.title'), active: false },
+      { label: t('gacha.title'), active: false },
+      { label: t('battlepass.title'), active: true },
+    ];
+    const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
+      if (i === 0) this.cb.openShop?.();
+      else if (i === 1) this.cb.openGacha?.();
+    });
+    this.hits.push(...hits);
+    return tbH + stripH;
+  }
+
   private render(): void {
     this.container.removeChildren();
     this.hits = [];
@@ -94,6 +119,9 @@ export class BattlePassScene implements Scene {
     const hdr = drawSceneHeader(this.container, w, h, t('battlepass.title'));
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+
+    // 商城分组 tab 条（LOBBY_IA_REDESIGN P1.5）：[商城|盲盒|战令]，战令 active。仅分组语境绘制。
+    const top = this.drawGroupTabs(tbH);
 
     // ── Auth / offline guard ──────────────────────────────────────────────────
     if (!this.cb.getBattlePass) {
@@ -113,7 +141,7 @@ export class BattlePassScene implements Scene {
     const claimedPaid = new Set(bp?.claimedPaid ?? []);
 
     const pad = Math.round(w * 0.05);
-    let y = tbH + Math.round(h * 0.02);
+    let y = top + Math.round(h * 0.02);
 
     // ── XP progress bar ───────────────────────────────────────────────────────
     const barH = Math.round(h * 0.07);

@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import type { ShopItem } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
@@ -203,7 +204,8 @@ export class ShopScene implements Scene {
 
     this.drawBackground();
     const tbH = this.drawHeader();
-    this.drawList(tbH);
+    const top = this.drawGroupTabs(tbH);
+    this.drawList(top);
     this.drawFooter();
     if (this.toast) this.drawToast();
     if (this.rechargeOpen) this.drawRechargeOverlay();
@@ -229,21 +231,41 @@ export class ShopScene implements Scene {
     return tbH;
   }
 
-  private drawList(tbH: number): void {
+  /**
+   * 商城分组 tab 条（LOBBY_IA_REDESIGN P1.5）：[商城|盲盒|战令]，商城 active。
+   * 战令格仅在 openBattlePass 提供（登录在线）时出现。返回正文起点 y（strip 下沿）。
+   */
+  private drawGroupTabs(tbH: number): number {
+    const { w, h } = this;
+    const stripH = hubTabsHeight(h);
+    const tabs: HubTab[] = [
+      { label: t('shop.title'), active: true },
+      { label: t('gacha.title'), active: false },
+    ];
+    if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false });
+    const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
+      if (i === 1) this.cb.openGacha();
+      else if (i === 2) this.cb.openBattlePass?.();
+    });
+    this.hits.push(...hits);
+    return tbH + stripH;
+  }
+
+  private drawList(top: number): void {
     const { w, h } = this;
     const listX = Math.round(w * 0.06);
     const listW = w - listX * 2;
-    let y = tbH + Math.round(h * 0.04);
+    let y = top + Math.round(h * 0.025);
 
     if (this.loading) {
       const lbl = txt(t('shop.loading'), Math.round(h * 0.028), C.mid);
-      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = tbH + Math.round(h * 0.18);
+      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = top + Math.round(h * 0.14);
       this.container.addChild(lbl);
       return;
     }
     if (!this.items || this.items.length === 0) {
       const lbl = txt(t('shop.empty'), Math.round(h * 0.028), C.mid);
-      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = tbH + Math.round(h * 0.18);
+      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = top + Math.round(h * 0.14);
       this.container.addChild(lbl);
       return;
     }
@@ -299,7 +321,11 @@ export class ShopScene implements Scene {
     }
   }
 
-  /** Bottom row: gacha + (battle pass) + top-up entries. */
+  /**
+   * Bottom row: top-up only. 盲盒/战令 moved up to the 商城 group tab strip
+   * (LOBBY_IA_REDESIGN P1.5) — 充值 stays here as it's a shop-self action, not a
+   * sibling page.
+   */
   private drawFooter(): void {
     const { w, h } = this;
     const navH = Math.round(h * 0.10);
@@ -308,22 +334,10 @@ export class ShopScene implements Scene {
     navBg.beginFill(C.dark, 0.92); navBg.drawRect(0, y, w, navH); navBg.endFill();
     this.container.addChild(navBg);
 
-    // 盲盒 / 战令(在线) / 充值 — 战令仅登录在线时出现（LOBBY_IA_REDESIGN §3 付费主轴并入商城）。
-    const hasBp = !!this.cb.openBattlePass;
-    const count = hasBp ? 3 : 2;
     const bh = Math.round(navH * 0.62);
     const by = y + (navH - bh) / 2;
-    const gap = Math.round(w * 0.03);
-    const bw = Math.round((w * 0.92 - gap * (count - 1)) / count);
-    const totalW = bw * count + gap * (count - 1);
-    let bx = (w - totalW) / 2;
-
-    this.addButton(t('shop.openGacha'), bx, by, bw, bh, C.dark, C.gold, () => this.cb.openGacha());
-    bx += bw + gap;
-    if (hasBp) {
-      this.addButton(t('battlepass.openBattlePass'), bx, by, bw, bh, C.dark, C.accent, () => this.cb.openBattlePass!());
-      bx += bw + gap;
-    }
+    const bw = Math.round(w * 0.6);
+    const bx = (w - bw) / 2;
     this.addButton(t('shop.recharge'), bx, by, bw, bh, C.dark, C.green, () => this.openRecharge());
   }
 

@@ -184,5 +184,18 @@
     （`onOpenTitles?`→`goTitles(goStats)`；`goTitles(back)` 参数化，设置页入口仍默认回设置）。
     成就（顶栏右上）/ 天梯榜（排位段「排行榜→」行，**首屏即天梯分区**，兑现「默认落地天梯」）/
     对战历史·录像 维持。
+- ✅ **P1.5**（完成 2026-06-27）：被并入二级页的「分组 tab 重排」——把 P1 的「导航层挂入口、点了跳独立场景再 back」升级为**持久顶部分组 tab 条**，让同组场景互相直达、读起来像同一个 hub 的并列 tab。**仍不内嵌内容**（维持「一场景一功能」），只在导航层加共享 tab 条 + 跨页直达。
+
+  **实现记录**（落代码细节，验收以此为准）：
+  - **共享组件** `client/src/ui/widgets/HubTabs.ts`：`drawHubTabs(container,w,y,stripH,tabs,onSelect)` 画一行等宽分组 tab 条（视觉沿用 Collection 现有 tab：选中 dark/accent，未选 paper/line），返回未选中格命中 rect；`hubTabsHeight(h)=round(h*0.05)`。
+  - **商城组** `[商城|盲盒|战令]`（战令格仅登录在线即 `openBattlePass` 可用时出现），三场景 header 下共绘同一条 strip：
+    - `ShopScene`：footer 去掉盲盒/战令两键、只留充值（充值是商城自身动作）；新增 `drawGroupTabs`（商城 active）。
+    - `GachaScene` / `BattlePassScene`：新增 `drawGroupTabs`（盲盒 / 战令 active），body 起点改 `tbH+stripH`。
+    - 跨页 callback **全部可选**，仅分组语境注入：Gacha 加 `openShop?`/`openBattlePass?`；BattlePass 加 `openShop?`/`openGacha?`；strip 仅在 `openShop`（Gacha/BP）存在时绘制，独立入口退化纯 back。
+  - **养成组** `[收藏|装备]`，两场景共用：
+    - `CollectionScene`：把原 `drawTabs` 第 4 格「装备 launcher」拆出，上移为分组 strip（收藏 active，装备点 `onOpenEquipment`），内容 tab 行回归 3 格 `[卡牌|皮肤|单位]` 并整体下移一条 strip；仅 `onOpenEquipment` 存在（登录在线）时出现 strip，离线退化原 3-tab 布局。
+    - `EquipmentScene`：新增可选 `openCollection?`；`groupH = openCollection ? hubTabsHeight(h) : 0`，header(`HUD_H`) 下画 strip（装备 active，点收藏回养成），body 基线 `HUD_H` → `HUD_H+groupH`（renderTabs/资源条/inventory loadout/craft listY）。
+  - **导航编排** `createAppCore.ts`：商城组 `goShop/goGacha/goBattlePass` 改用 `group?:{shopBack?}` 串联——三页互相直达且返回同一来源（lobby / level-prep）；养成组 `goEquipment(back, inCollectionGroup)` 仅从收藏进入（`goCollection` 传 `true`）时注入 `openCollection`，战役入口不注入。
+  - **架构延续**：与 P1 一致——「扩容/重排」落在导航层，不重写 875 行 EquipmentScene 等为内嵌内容；视觉资产打磨仍留 P3。
 - **P2**：主页**右侧竖栏**图标条（每日/邮件/活动/成就，可领时亮红点）+ 视觉留白打磨。
 - **P3**：图标资产（文具/简笔）替换底部 tab 色块。

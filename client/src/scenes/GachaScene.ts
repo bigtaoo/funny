@@ -7,6 +7,7 @@ import type { Rarity } from '../game/meta/SaveData';
 import type { GachaPool, GachaResultEntry } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
 // ── GachaScene (S2-6) — single / ten-pull lootbox with pity + reveal ───────────
@@ -35,6 +36,12 @@ export interface GachaSceneCallbacks {
   getPity(poolId: string): number;
   loadPools(): Promise<GachaPool[]>;
   draw(poolId: string, count: 1 | 10): Promise<GachaDrawResult>;
+  /**
+   * 商城分组同级直达（LOBBY_IA_REDESIGN P1.5）。仅在「商城」分组语境下注入；
+   * 注入后顶部出现 [商城|盲盒|战令] tab 条，否则退化为纯 back。
+   */
+  openShop?(): void;
+  openBattlePass?(): void;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -134,7 +141,7 @@ export class GachaScene implements Scene {
 
     this.drawBackground();
     const tbH = this.drawHeader();
-    this.drawBody(tbH);
+    this.drawBody(this.drawGroupTabs(tbH));
     if (this.toast) this.drawToast();
     if (this.reveal) this.drawReveal(this.reveal);
     if (this.oddsOpen && this.pool) this.drawOdds(this.pool);
@@ -156,6 +163,27 @@ export class GachaScene implements Scene {
     this.container.addChild(coins);
 
     return tbH;
+  }
+
+  /**
+   * 商城分组 tab 条（LOBBY_IA_REDESIGN P1.5）：[商城|盲盒|战令]，盲盒 active。
+   * 仅在分组语境（openShop 注入）时绘制；返回正文起点 y。否则原样返回 tbH。
+   */
+  private drawGroupTabs(tbH: number): number {
+    if (!this.cb.openShop) return tbH;
+    const { w, h } = this;
+    const stripH = hubTabsHeight(h);
+    const tabs: HubTab[] = [
+      { label: t('shop.title'), active: false },
+      { label: t('gacha.title'), active: true },
+    ];
+    if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false });
+    const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
+      if (i === 0) this.cb.openShop?.();
+      else if (i === 2) this.cb.openBattlePass?.();
+    });
+    this.hits.push(...hits);
+    return tbH + stripH;
   }
 
   private drawBody(tbH: number): void {
