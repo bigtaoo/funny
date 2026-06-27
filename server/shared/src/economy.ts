@@ -101,8 +101,8 @@ export const DUPE_REFUND_COINS: Record<Rarity, number> = {
   legendary: 1500,
 };
 
-/** 激励广告（§2.1）。 */
-export const ADS_REWARD_COINS = 50;
+/** 激励广告（§2.1）。10 coins/条（2026-06-27 拍板，原 50 偏高；上线后视效果再议）。 */
+export const ADS_REWARD_COINS = 10;
 export const ADS_DAILY_CAP = 5;
 export const ADS_MIN_INTERVAL_MS = 30 * 60 * 1000; // 30min 两条广告最短间隔（C2）
 
