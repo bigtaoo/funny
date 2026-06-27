@@ -56,7 +56,10 @@
 
 ## 测试 harness（test/harness/）
 
+> 测试分层总览（单元 / UI 冒烟 / 渲染泄漏 / E2E）+ headless PIXI 适配 + 上线前浏览器冒烟方案：见 [`client-testing.md`](client-testing.md)。
+
 | 文件 | 说明 |
 |---|---|
+| `pixiHeadless.ts` | UI 冒烟（`test:ui`）的 PIXI DOM adapter 桩：纯 JS canvas/context + 全局 `Image`/`HTMLImageElement`/`HTMLCanvasElement` 桩，让真实场景在 Node 里构建 PIXI 树、量文字，**不创建 Renderer**（不碰 WebGL）。配合 `vitest.ui.config.ts` 的 `stubBinaryAssets` 插件（`*.png`/`*.tao` import → 1×1 PNG data URI）跑通含完整 GameRenderer 的对战场景。 |
 | `HeadlessPlatform.ts` | 无渲染 IPlatform（E2E + headless 单测共用）。**⚠️ 默认预埋 `tutorial_done:true`**（via `nw_save_v1` JSON flags）：`goLobby()` 有 FTUE 一次性门控（`firstLobbyHandled`），首次进大厅若 `tutorial_done` 未置位会跳转 `goTutorial()` → screen='game'，绕过 lobby。headless 测试不跑 FTUE，故默认预埋；若需测 FTUE 路径可 `opts.storage={nw_save_v1:'{}'}` 覆盖。 |
 | `HeadlessAppViews.ts` | AppViews 空实现，记录当前 screen + callbacks；`driveToEnd()` / `driveReplayToEnd()` 无 ticker 驱动引擎到结束；`showGame()` 用 `createLocalMatch` 建本地引擎（`screen='game'`），`showGameNet()` 注入服务端引擎（`screen='gameNet'`）。 |

@@ -29,6 +29,28 @@ const gg = globalThis as unknown as {
 if (!gg.requestAnimationFrame) gg.requestAnimationFrame = (): number => 0;
 if (!gg.cancelAnimationFrame) gg.cancelAnimationFrame = (): void => undefined;
 
+// PIXI.Texture.from(pngUrl) routes through autoDetectResource → ImageResource, whose
+// `test()` is `typeof HTMLImageElement !== 'undefined' && typeof source === 'string'`
+// and whose constructor does `new Image()` then assigns `.src`. Node has neither
+// global, so provide one inert stub class for BOTH `Image` and `HTMLImageElement`.
+// We never drive a renderer, so the bytes are never fetched, decoded or uploaded —
+// the gameplay scenes only need the texture object to exist.
+class HeadlessImage {
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  crossOrigin: string | null = null;
+  width = 1;
+  height = 1;
+  private _src = '';
+  get src(): string { return this._src; }
+  set src(v: string) { this._src = v; /* never actually loads */ }
+  addEventListener(): void { /* no-op */ }
+  removeEventListener(): void { /* no-op */ }
+}
+const gImg = globalThis as unknown as { Image?: unknown; HTMLImageElement?: unknown };
+if (!gImg.Image) gImg.Image = HeadlessImage;
+if (!gImg.HTMLImageElement) gImg.HTMLImageElement = HeadlessImage;
+
 /** A pure-JS 2D context: real-ish measurement, everything else a no-op. */
 function createContext2D(): unknown {
   const ctx: Record<string, unknown> = {
