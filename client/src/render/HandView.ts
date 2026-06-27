@@ -252,24 +252,25 @@ export class HandView {
     }
 
     if (card) {
-      const isSpell = card.cardType === CardType.Spell;
+      // Each card type carries a colour signature (art-direction §3.3):
+      // Unit = ink-blue, Building = marker-gold, Spell = ink-red.
+      // A faint colour wash fills the card body; a hand-drawn dog-ear at the
+      // top-left corner replaces the plain type-glyph for all three types.
+      const washColor  = card.cardType === CardType.Spell    ? palette.inkRed
+                       : card.cardType === CardType.Unit     ? palette.inkBlue
+                       :                                       palette.marker;
+      const cornerSize = 17;
 
-      // Spell cards carry a distinct marker-red signature (art-direction §3.3:
-      // 法术 = 红马克笔): a faint red wash behind the icon + a hand-drawn red
-      // dog-ear at the top-left, replacing the plain 'S' type glyph. Layered on
-      // bg (below the art Sprite), seeded by slot index for stable wobble.
-      if (isSpell) {
-        bg.beginFill(palette.inkRed, 0.08);
-        bg.drawRoundedRect(2, 2, cardW - 4, cardH - 4, 4);
-        bg.endFill();
-        bg.beginFill(palette.inkRed, 0.85);
-        bg.moveTo(0, 0); bg.lineTo(17, 0); bg.lineTo(0, 17); bg.lineTo(0, 0);
-        bg.endFill();
-        const pen = new SketchPen(bg, (index + 7) * 0x85ebca6b >>> 0 || 1);
-        pen.line(17, 0, 0, 17, { color: palette.inkRed, width: 2, jitter: 1 });
-      }
+      bg.beginFill(washColor, 0.07);
+      bg.drawRoundedRect(2, 2, cardW - 4, cardH - 4, 4);
+      bg.endFill();
+      bg.beginFill(washColor, 0.85);
+      bg.moveTo(0, 0); bg.lineTo(cornerSize, 0); bg.lineTo(0, cornerSize); bg.lineTo(0, 0);
+      bg.endFill();
+      const pen = new SketchPen(bg, (index + 7) * 0x85ebca6b >>> 0 || 1);
+      pen.line(cornerSize, 0, 0, cornerSize, { color: washColor, width: 2, jitter: 1 });
 
-      (c.getChildByName('type') as PIXI.Text).text = isSpell ? '' : this.cardTypeChar(card);
+      (c.getChildByName('type') as PIXI.Text).text = '';
       const nameText = c.getChildByName('name') as PIXI.Text;
       nameText.text = t(card.nameKey as TranslationKey);
       nameText.x = (cardW - nameText.width) / 2;
@@ -378,15 +379,6 @@ export class HandView {
     gfx.beginFill(0xffffff, alpha);
     gfx.drawRoundedRect(1, 1, cardW - 2, cardH - 2, 4);
     gfx.endFill();
-  }
-
-  private cardTypeChar(card: CardDefinition): string {
-    switch (card.cardType) {
-      case CardType.Unit:     return 'U';
-      case CardType.Building: return 'B';
-      case CardType.Spell:    return 'S';
-      default:                return '?';
-    }
   }
 
   /**

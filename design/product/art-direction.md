@@ -406,7 +406,7 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
 
 单局内 4 种法术（PvP：`haste` 急速冲锋 / `meteor` 陨石打击；PvE 关卡专属：`rockslide` 石壁崩塌 / `bridge_collapse` 桥梁坍塌）原先**只有文字无图**，现补齐卡面图标 + 法术卡专属视觉签名。
 
-- **统一签名 = 红马克笔**（§3.3 法术=红马克笔；此处 UI 功能色，不受战场敌我蓝红约束）：法术卡比单位/建筑卡多两笔——①图标后垫一层极淡红晕染（alpha≈0.08）；②左上角一道手绘红马克笔**折角**，替代原先干巴巴的 `'S'` 类型字符。单位卡=纯纸底、法术卡=红折角，0.3 秒可辨。费用圈/名字/刷新条规则全卡统一，不破例（§7.1 功能层须清晰）。
+- **三色签名**（§3.3 法术=红马克笔；此处 UI 功能色，不受战场敌我蓝红约束）：三种牌型各带颜色标识——①卡面铺一层极淡颜色晕染（alpha≈0.07）；②左上角一道手绘**折角**替代原先干巴巴的类型字符。颜色对照：**单位卡 = ink-blue 蓝**（`palette.inkBlue`）、**建筑卡 = marker 金**（`palette.marker`）、**法术卡 = ink-red 红**（`palette.inkRed`），0.3 秒可辨。费用圈/名字/刷新条规则全卡统一，不破例（§7.1 功能层须清晰）。
 - **图标本身**：手绘墨线 doodle + 单道红马克笔重点（与 §3.3「红马克笔粗线」同频），白底出图。**红重点已烤进图、不 tint**（法术图标是卡面插画，非战场可染色单位）。
 - **资产管线**（同 §6.2 decor「抠白底」口径）：AI 出图（白底）→ `art/skills/pack_spells.cjs`（复用 client 的 sharp：近白→透明 + 裁透明边 + 长边缩 256）→ 导出 `client/src/assets/spell_${SpellType}.png` → [HandView.ts](../../client/src/render/HandView.ts) `CARD_ART_URLS` 按 `spell_${card.spellType}` 取用、`configureArt` 原样复用。改图后重命名覆盖源文件、重跑 `node pack_spells.cjs`。
 - **出图 prompt**（共用前缀 + 负向 + 4 条主体）存 art/skills 旁的脚本注释口径无关，记录于下，便于后续补图：
