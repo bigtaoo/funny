@@ -62,7 +62,7 @@
 | [COMPLIANCE_GLOBAL.md](game/COMPLIANCE_GLOBAL.md) | **海外合规（Web/iOS/Android：隐私/分级/抽卡概率公示/平台支付/删账号/UGC）** | 设计中 |
 | [COMPLIANCE_CN.md](game/COMPLIANCE_CN.md) | **中国大陆合规（版号/实名/未成年人防沉迷限时/分龄充值限额/PIPL；跟版号走，海外测试不阻断）** | 设计中 |
 | [AUDIO_DESIGN.md](game/AUDIO_DESIGN.md) | **音频系统（资产/触发表/播放层/混音/设置/平台约束；美学仍归 art-direction）** | 设计中 |
-| [ONBOARDING_DESIGN.md](game/ONBOARDING_DESIGN.md) | **新手引导/FTUE 编排（首会话动线/战斗教学覆盖层/功能渐进解锁/合规门；不重述故事/关卡）** | 设计中 |
+| [ONBOARDING_DESIGN.md](game/ONBOARDING_DESIGN.md) | **新手引导/FTUE 编排（首会话动线/专属教学关 ch0_tutorial 三阶段编排/首次功能引导/功能开放策略；合规已移出归 COMPLIANCE，不重述故事/关卡）** | 设计中 |
 | [SLG_DESIGN.md](game/SLG_DESIGN.md) | SLG 大世界（worldsvc:18084） | 实现中 |
 | [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→shared/slg.ts）** | 实现中 |
 | [UI_DESIGN.md](game/UI_DESIGN.md) | **菜单 / 元系统客户端 UI**（与战斗 UI 分工，见 §3） | 实现中 |
@@ -127,7 +127,7 @@
 | 海外合规（隐私/分级/抽卡公示/平台支付/删账号/UGC） | [game/COMPLIANCE_GLOBAL.md](game/COMPLIANCE_GLOBAL.md) | 与中国版 [COMPLIANCE_CN](game/COMPLIANCE_CN.md) 解耦（ADR-013，海外先行） |
 | 中国大陆合规（版号/实名/防沉迷/分龄充值限额/PIPL） | [game/COMPLIANCE_CN.md](game/COMPLIANCE_CN.md) | 跟版号流程走、海外测试不触发；抽卡概率公示与海外共用一套数据源（COMPLIANCE_GLOBAL §4） |
 | 音频系统（资产/触发/播放层/混音/设置/平台约束） | [game/AUDIO_DESIGN.md](game/AUDIO_DESIGN.md) | **美学方向**（音色/禁用清单）仍归 [product/art-direction.md](product/art-direction.md) §声音 |
-| 新手引导/FTUE 编排（动线/教学覆盖层/渐进解锁/合规门） | [game/ONBOARDING_DESIGN.md](game/ONBOARDING_DESIGN.md) | 故事归 CAMPAIGN_STORY/world；教学关定义归 CAMPAIGN_DESIGN；埋点字段归 ANALYTICS |
+| 新手引导/FTUE 编排（动线/专属教学关 ch0_tutorial/首次功能引导/功能开放策略） | [game/ONBOARDING_DESIGN.md](game/ONBOARDING_DESIGN.md) | 故事归 CAMPAIGN_STORY/world；引擎/波次结构归 @nw/engine；合规弹窗归 COMPLIANCE（开机层，非引导）；埋点字段归 ANALYTICS |
 
 ---
 
