@@ -71,7 +71,12 @@ export class HeadlessPlatform implements IPlatform {
   private readonly language: string;
 
   constructor(opts: HeadlessPlatformOpts = {}) {
-    this.mem = new MemoryStorage(opts.storage);
+    // Pre-seed tutorial_done inside nw_save_v1 so headless tests skip the FTUE
+    // tutorial gate. The flag lives in SaveData.flags (migrate preserves extra keys).
+    // Tests that explicitly want to exercise the tutorial can override via opts.storage.
+    const defaultSave = JSON.stringify({ flags: { tutorial_done: true } });
+    const defaultStorage: Record<string, string> = { nw_save_v1: defaultSave };
+    this.mem = new MemoryStorage({ ...defaultStorage, ...opts.storage });
     this.storage = this.mem;
     this.deviceId = opts.deviceId ?? `dev-${Math.random().toString(36).slice(2)}`;
     this.language = opts.language ?? 'en';

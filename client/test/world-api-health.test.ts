@@ -107,12 +107,14 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(await client.checkHealth()).toBe(false);
   });
 
-  it('fetch 抛错（连接被拒/网络中断）→ false', async () => {
+  it('fetch 抛错（连接被拒/网络中断）→ true（inconclusive，不误报离线）', async () => {
     setWorldBase('http://localhost:18084');
     stubFetch(async () => { throw new TypeError('Failed to fetch'); });
     const client = new WorldApiClient(noopStorage);
 
-    expect(await client.checkHealth()).toBe(false);
+    // Network errors are inconclusive (CORS in dev can reject /health even when
+    // the actual feature routes work) — return true to avoid false offline badge.
+    expect(await client.checkHealth()).toBe(true);
   });
 
   it('base URL 末尾斜杠被剥除，/health 路径不重复', async () => {
@@ -125,7 +127,7 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(capturedUrl).toBe('http://localhost:18084/health');
   });
 
-  it('3 秒后 AbortController 取消 fetch → false', async () => {
+  it('3 秒后 AbortController 取消 fetch → true（inconclusive，不误报离线）', async () => {
     setWorldBase('http://localhost:18084');
 
     // fetch 仅在 signal.abort 后才 reject，模拟 worldsvc 不响应
@@ -142,7 +144,8 @@ describe('WorldApiClient.checkHealth()', () => {
     // 推进到 3 秒超时点，同时 flush 微任务
     await vi.advanceTimersByTimeAsync(3001);
 
-    expect(await promise).toBe(false);
+    // Timeout is also treated as inconclusive (same CORS-false-negative rationale).
+    expect(await promise).toBe(true);
   });
 
   it('3 秒内正常响应时不触发 abort，返回 true', async () => {

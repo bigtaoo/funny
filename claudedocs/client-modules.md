@@ -38,7 +38,7 @@
 | `net/ApiClient.ts` | metaserver REST 客户端（fetch + ApiResp 包络） |
 | `net/NetClient.ts` | WS 连接/重连（退避+代次）/ts-proto 编解码 |
 | `net/NetSession.ts` | 联机会话：gateway(控制面 `/gw`) + game(数据面 `?ticket=`) 双连接；跨场景存活；含社交 + **SLG 实时 push** 路由（`onMarchUpdate/onTileUpdate/onUnderAttack/onSiegeResult/onFamilyMsg`，worldsvc→gateway 下发） |
-| `net/WorldApiClient.ts` | **SLG worldsvc REST 客户端**（第四公网面，独立 base URL）；DTO 由 `server/contracts/openapi-world.yml` → `npm run rest:gen` → `net/openapi-world.ts` 生成（勿手改）；覆盖 world/march/troops/siege/defense/nations/season/shop/family/auction 全端点 |
+| `net/WorldApiClient.ts` | **SLG worldsvc REST 客户端**（第四公网面，独立 base URL）；DTO 由 `server/contracts/openapi-world.yml` → `npm run rest:gen` → `net/openapi-world.ts` 生成（勿手改）；覆盖 world/march/troops/siege/defense/nations/season/shop/family/auction 全端点。**⚠️ `checkHealth()` 网络失败→true（inconclusive）**：dev 环境 `/health` 常缺 CORS 头而 fetch 抛错，但实际 feature 路由（`/world*`）完全正常——返回 false 会误标大世界离线。故所有 catch（连接被拒/超时/CORS）均视为"不确定"返 true，只有 HTTP 4xx/5xx 才返 false。单测断言需对应 true。 |
 | `scenes/WorldMapScene.ts` | **SLG 大世界地图**（视口裁剪+拖拽平移；瓦片类型对齐服务端 8 类型；敌蓝我红；首府星标；行军连线；地图尺寸从 `getSeason` 动态取）；HUD「练兵」面板（训练队列倒计时+招募预设+金币加速，C4）+ 右上「世界」面板（国家/赛季/商城三 Tab，C5） |
 | `scenes/FamilyScene.ts` / `scenes/AuctionScene.ts` | SLG 家族 / 拍卖行场景 |
 | `net/proto/{transport,game}.ts` | ts-proto 生成（勿手改） |
@@ -53,3 +53,10 @@
 | `scenes/CampaignMapScene.ts` | **战役笔记本**（PvE 正门，CAMPAIGN_DESIGN §12）：两类页——目录页（6 章卡片 + 进度/星数 + 锁章胶带遮罩）/ 章节页（节点按 `maps/chN.json` 归一化坐标摆放，`SketchPen` 铅笔虚线路径串联，已通关金圈星章 / 当前关蓝圈脉冲 / 未解锁淡铅笔轮廓 / decor 涂鸦）。进场落目录页→自动翻到「当前可打关」那章；翻页 = 横向 slide+fade（`update(dt)` 驱动，0.42s），左右箭头切章（下一章须通关方亮）；整章通关盖「第 N 章 · 通关」红章。章节页顶栏标题（「第 N 章 · 场地名」）下方补一行淡色叙事者归属「陶的笔记本 / Anna 的笔记本」（奇数章=陶/偶数章=Anna，对应 CAMPAIGN_STORY.md 框架表；`buildHeader` 的可选 `subtitleStr` 参数，TOC 页不传）。全程序绘制，零美术资产；回调 `CampaignMapCallbacks` 与旧扁平列表版同构。解锁/落点判断全走 `game/campaign/progress.ts`（不再内联） |
 | `game/campaign/progress.ts` | 战役进度纯逻辑（PIXI 无关，可单测）：`isLevelUnlocked`（前一关通关才解锁）/ `currentChapter`（第一个未通关关所在章）/ `currentLevelIdInChapter`（该章首个解锁未通关关=脉冲当前关）/ `parseLevelId`。节点 levelId 与 `CAMPAIGN_LEVEL_ORDER` 1:1 → 所见即所玩 |
 | `game/meta/campaignRewards.ts` | `computeStars(starThresholds, 剩余HP%)`：**通关保底 1★**（HP>0 即 ≥1★，门槛只升级 2★/3★；HP≤0=基地打爆=0★）+ `remainingHpPct`。客户端报星 + 裁判复算同口径。⚠️ 0★ 不算通关（不入账/不解锁）——故胜利必须保底 1★ |
+
+## 测试 harness（test/harness/）
+
+| 文件 | 说明 |
+|---|---|
+| `HeadlessPlatform.ts` | 无渲染 IPlatform（E2E + headless 单测共用）。**⚠️ 默认预埋 `tutorial_done:true`**（via `nw_save_v1` JSON flags）：`goLobby()` 有 FTUE 一次性门控（`firstLobbyHandled`），首次进大厅若 `tutorial_done` 未置位会跳转 `goTutorial()` → screen='game'，绕过 lobby。headless 测试不跑 FTUE，故默认预埋；若需测 FTUE 路径可 `opts.storage={nw_save_v1:'{}'}` 覆盖。 |
+| `HeadlessAppViews.ts` | AppViews 空实现，记录当前 screen + callbacks；`driveToEnd()` / `driveReplayToEnd()` 无 ticker 驱动引擎到结束；`showGame()` 用 `createLocalMatch` 建本地引擎（`screen='game'`），`showGameNet()` 注入服务端引擎（`screen='gameNet'`）。 |
