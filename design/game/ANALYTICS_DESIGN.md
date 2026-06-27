@@ -38,9 +38,10 @@
     │  GET /analytics/config   ← session 启动时拉一次采集配置
     │  POST /analytics/events  ← 批量上报（30s 定时 + 生命周期触发）
     ▼
-analyticsvc (第九进程, 端口 18085)
-    │  无状态，玩家不可达（反代不路由，仅内网）
-    │  JWT 验签复用 meta 公钥（不连 accounts 库）
+analyticsvc (第八应用进程, 端口 18085)
+    │  无状态；ingest 两端点（/analytics/config、/analytics/events）经反代**公开**给客户端，
+    │  /internal/query 仅内网（X-Internal-Key）；不连业务库，仅连 notebook_wars_analytics
+    │  JWT 验签复用 meta 公钥（可选，不连 accounts 库）
     │
     ├── MongoDB notebook_wars_analytics（独立数据库）
     │       collections: events(TTL 90d) / sessions / funnels_daily

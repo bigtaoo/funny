@@ -24,7 +24,7 @@ funny/
 │   └── vfx-editor/        战斗特效编辑器（TypeScript + PixiJS，端口 9094）
 │
 ├── server/                Node.js 后端（npm workspaces，8 个应用进程 + contracts/shared 包）
-│   ├── contracts/         openapi.yml + transport.proto + game.proto
+│   ├── contracts/         openapi.yml + openapi-world.yml + transport.proto + game.proto + replay.proto
 │   ├── shared/            @nw/shared（类型/JWT/ticket/Mongo/ladder/economy）
 │   ├── metaserver/        REST，无状态（auth/save/economy/social/pve/match-report）
 │   ├── gateway/           控制面 WS（/gw，account→socket，房间/匹配中转）

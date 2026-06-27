@@ -70,7 +70,7 @@ npm run start   # 开发服务器，端口 9091
 
 ### 方式一：Docker 一键全栈（推荐，模拟真实发布）
 
-需要 Docker Desktop。一条命令重建最新代码并拉起**全部 9 个服务端进程 + 主客户端 + 3 个工具 + MongoDB + Redis**：
+需要 Docker Desktop。一条命令重建最新代码并拉起**全部 8 个服务端进程 + 主客户端 + 3 个工具 + MongoDB + Redis**：
 
 ```powershell
 ./local-up.ps1            # 重建并启动；浏览器打开 http://localhost:8088
@@ -91,7 +91,7 @@ npm run start   # 开发服务器，端口 9091
 | http://localhost:9092 | **关卡编辑器** level-editor |
 | http://localhost:9093 | **运维后台** ops（跨源调 admin 后端 http://localhost:18083，种子账号 `admin` / `admin123`） |
 
-**服务端九进程**（均跑同一镜像 `nw-server:local`，由 `command` 选进程）：
+**服务端八进程**（均跑同一镜像 `nw-server:local`，由 `command` 选进程）：
 `metaserver`(REST) · `commercial`(钱包) · `gateway`(控制面 WS) · `matchsvc`(匹配) · `gameserver`(对战数据面 WS) · `worldsvc`(SLG 第四公网面) · `admin`(运维) · `analyticsvc`(埋点)。
 对玩家暴露的入口只有主游戏 `:8088`（同源），其余服务经 nginx 反代或仅内网可达。
 
@@ -118,8 +118,9 @@ funny/
 ├── tools/
 │   ├── animator/      骨骼动画编辑器（TypeScript + PixiJS）
 │   ├── level-editor/  战役关卡编辑器（TypeScript + 纯 Canvas）
-│   └── ops/           运维后台前端（TypeScript）
-├── server/        Node.js 后端（npm workspaces，九进程）
+│   ├── ops/           运维后台前端（TypeScript）
+│   └── vfx-editor/    战斗特效编辑器（TypeScript + PixiJS）
+├── server/        Node.js 后端（npm workspaces，八进程）
 ├── art/           地图 & 角色概念图
 └── design/        产品 & 美术设计文档
 ```

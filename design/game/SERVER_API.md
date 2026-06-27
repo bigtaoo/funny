@@ -2,26 +2,30 @@
 
 > 创建：2026-06-13。本文件是客户端 ↔ 服务器的**接口契约**：REST 端点 + WebSocket 消息 + 锁步时序。
 > 双端实现以本文件为准（客户端 `NetClient`/`SaveStore`/`EconomyClient` 与 `server/` 各 service）。
-> 配套：`META_DESIGN.md`（系统/架构）、`META_TASKS.md`（任务）、`ECONOMY_BALANCE.md`（数值）。
-> 契约单一来源在 `server/contracts/`（`openapi.yml` + `transport.proto`/`game.proto`），双端 codegen（见 `META_TASKS.md` C-2）。
+> 配套：`META_DESIGN.md`（系统/架构）、`META_TASKS.md`（任务）、`ECONOMY_BALANCE.md`（数值）；SLG 大世界（worldsvc）契约见 `SLG_DESIGN.md §14`；埋点见 `ANALYTICS_DESIGN.md §8`。
+> 契约单一来源在 `server/contracts/`（5 文件）：`openapi.yml`（meta REST）+ `openapi-world.yml`（worldsvc REST）+ `transport.proto`（WS 控制面/数据面）+ `game.proto`（PlayerCommand，对服务器 opaque）+ `replay.proto`（录像），双端 codegen（见 `META_TASKS.md` C-2）。
 
 ---
 
 ## 0. 总览
 
-> **架构修订（2026-06-13，`META_DESIGN.md §1.1/§6.1`）**：**5 组件 + 三面分离**。玩家只触达 **meta(REST，请求面)** + **gateway(WS，控制面)** + **game(WS，数据面)**；**matchsvc** 是玩家不可达的私有大脑（gateway 当其门面 / game 注册）。**房间/匹配/在线/通知等开局前操作走 gateway WS（双向实时）**，不再走 REST；**开局走 matchsvc 签名 ticket（经 gateway 推）**、**结算 game→meta 上报**（M16–M20）。S1 现实现是 gameserver 中心式（开局操作走 game WS、gameserver 自管匹配/结算），按本修订迁移。内部契约见 §8。
+> **架构现状（8 应用进程 + 4 公网面）**：服务端现为 **8 个应用进程**（外加包 `contracts`、`@nw/shared`、`@nw/engine`）。**公网面 = 4**：`meta`(REST 请求面) + `gateway`(WS 控制面) + `game`(WS 数据面) + `worldsvc`(SLG 大世界 REST 第四面，`/world` `/family` `/auction` `/sect` `/nation`)；**玩家不可达 = `matchsvc`/`commercial`/`admin`**（仅内网，反代不路由）；`analyticsvc` 的 ingest 两端点（`/analytics/config` `/analytics/events`）经反代公开、`/internal/query` 内网。早期「5 组件 + 三面分离」（`META_DESIGN.md §1.1/§6.1`）三面仍是 PvP 对战层骨架：玩家触达 meta + gateway + game，**matchsvc** 是玩家不可达的私有匹配大脑（gateway 当门面 / game 注册），开局走 matchsvc 签名 ticket、结算 game→meta 上报（M16–M20）。内部契约见 §8/§9。
 
-| 通道（面） | 协议 | 服务 | 承载 |
-|---|---|---|---|
-| 账号 / 存档 / 经济（请求面） | **HTTPS REST（JSON）** | `metaserver`（无状态，可横扩） | 登录、存档同步、商店、盲盒、广告、IAP（纯请求-响应） |
-| 房间 / 匹配 / 在线 / 通知（控制面） | **WSS（双向实时）** | `gateway`（有状态连接层，M20） | 常驻连接：开始/取消匹配、friendly 建房/加入/ready/start、match-found+ticket 下发、在线状态、（将来）聊天 |
-| 锁步对战（数据面） | **WSS（protobuf 二进制）** | `gameserver`（无状态哑中继，永不连库 M16） | 每局新建：ticket 握手 → 逐 tick 输入中继 / 重连 / 局末上报 meta |
-| **内部：匹配 + 分配** | 内部 RPC（gateway↔matchsvc）+ game 注册 | `matchsvc`（单点，玩家不可达 M17） | 匹配队列、房间状态、game 注册表/分配、签 ticket（§8.1） |
-| **内部：结算上报** | 内部 HTTP（game→meta，幂等） | game→`metaserver` | 局末录像 + hash + winner 上报，meta 判定/写库（§8.3） |
+| 通道（面） | 协议 | 服务 | 暴露 | 承载 |
+|---|---|---|---|---|
+| 账号 / 存档 / 经济（请求面） | **HTTPS REST（JSON）** | `metaserver`（无状态，可横扩） | 公网 `/api` | 登录、存档同步、商店、盲盒、广告、IAP、PvE/装备/活动养成、天梯/战令、称号（§2） |
+| 房间 / 匹配 / 在线 / 通知（控制面） | **WSS（双向实时）** | `gateway`（有状态连接层，M20） | 公网 `/gw` | 常驻连接：开始/取消匹配、friendly 建房/加入/ready/start、match-found+ticket 下发、在线状态、家族/宗门/国家频道扇出 |
+| 锁步对战（数据面） | **WSS（protobuf 二进制）** | `gameserver`（无状态哑中继，永不连库 M16） | 公网 `/ws` | 每局新建：ticket 握手 → 逐 tick 输入中继 / 重连 / 局末上报 meta |
+| **SLG 大世界（第四面）** | **HTTPS REST（JSON）** | `worldsvc`（连 `notebook_wars_world`，按赛季分服/shard） | 公网 `/world` `/family` `/auction` `/sect` `/nation` | 地图/行军/占领、家族、宗门、拍卖行、国家、赛季、围攻（§10；权威契约 `openapi-world.yml`） |
+| 埋点 ingest | HTTPS REST（JSON，fire-and-forget） | `analyticsvc`（连 `notebook_wars_analytics`，端口 18085） | 公网 `/analytics` | `GET /analytics/config`（拉采集配置）+ `POST /analytics/events`（批量上报，`w:0`）（§11） |
+| **内部：匹配 + 分配** | 内部 HTTP（gateway↔matchsvc）+ game 注册 | `matchsvc`（单点，玩家不可达 M17） | 仅内网 | 匹配队列、房间状态、game 注册表/分配、签 ticket（§8.1） |
+| **内部：钱包 / 交易** | 内部 HTTP（meta→commercial） | `commercial`（连 `notebook_wars_commercial`，玩家不可达 S5） | 仅内网 | 钱包/扣币/盲盒 RNG/充值/广告记账（§9） |
+| **内部：结算上报** | 内部 HTTP（game→meta，幂等） | game→`metaserver` | 仅内网 | 局末录像 + hash + winner 上报，meta 判定/写库（§8.3） |
+| **内部：运维后台** | 内部 HTTP（ops 前端→admin，admin JWT） | `admin`（玩家不可达 S7） | 仅内网 | 监控/匹配池/分析/补偿（走邮件）；与玩家 JWT 严格隔离 |
 
 > **线协议分层（M12）**：WS 用 protobuf（`transport.proto` = 控制层，服务器认得；`game.proto` = `PlayerCommand` 结构，仅客户端↔客户端）。服务器把 `PlayerCommand` 当 **`bytes` opaque 转发不解码** → 与游戏逻辑零依赖。REST 保持 JSON（低频、利于浏览器/支付回调/调试）。
 
-- 各服务可独立部署（`META_DESIGN.md §6.1`），共享 `@nw/shared`（协议类型 + JWT 校验 + Mongo client）。反代按 `/api/*`(meta)、`/gw`(gateway)、`/ws`(game) 分流；matchsvc 不暴露公网。gateway 与 matchsvc 各为独立进程，经内部 HTTP 互通（M22/M23，S1-M5）。
+- 各服务可独立部署（`META_DESIGN.md §6.1`），共享 `@nw/shared`（协议类型 + JWT 校验 + Mongo client + ladder/economy）；确定性战斗内核抽为 library 包 `@nw/engine`（PvP netplay / PvE / SLG 围攻共用）。反代按 `/api/*`(meta)、`/gw`(gateway)、`/ws`(game)、`/world` `/family` `/auction`(worldsvc)、`/analytics`(analyticsvc) 分流；matchsvc / commercial / admin 不暴露公网。gateway 与 matchsvc 各为独立进程，经内部 HTTP 互通（M22/M23，S1-M5）。
 - 服务器权威段（钱包 / 库存 / 盲盒 / IAP / **天梯**）只能经服务器改，**客户端永不直接写**（`META_DESIGN.md §2`）。
 - 所有时间戳由服务器盖，客户端不可信。
 
@@ -206,6 +210,19 @@ POST /internal/ladder/season/roll          (X-Internal-Key) → { season }   # a
 
 - **赛季时钟**随 `GET /save` / `GET /leaderboard` 带回 `{seasonNo,endAt}`；推进 = 运维在 ops 后台手动触发 `season/roll`（meta 不自带定时器），逐玩家结算走**惰性迁移**（下次访问按 `pvp.seasonNo` 落后即软重置 + 发上季峰值金币邮件）。
 - `pvp` 扩字段（`seasonNo/seasonPeakElo/seasonPeakRank/reachedRanks`）+ `battlePass` 块随 save 下发（客户端只读）。段位首达金币 / 赛季峰值金币 / 战令经验数值 → `ECONOMY_NUMBERS §13`。
+
+### 2.12 称号（服务器权威，`TITLE_DESIGN.md §9 L2-2`）
+
+> 称号是唯一对外身份名片：`SaveData.titles[]`（服务器权威，`$addToSet` 授予，`PUT /save` 不可写）+ `equipped.title`（佩戴位）。称号随 `GET /save` 回推可展示，下列两端点为 L2-2 补的独立读/换接口（设计对齐，机制权威见 `TITLE_DESIGN.md`）。
+
+```
+GET  /titles               (JWT) → { titles: { id, source, seasonNo? }[], equipped }
+PUT  /title/equip          (JWT) { titleId }  → { save: SaveData }  | 403（未授予）
+```
+
+- **`GET /titles`**：`source`/`seasonNo` 由 `parseTitleId`（`@nw/shared/titles.ts`，服务端/客户端共用）从 titleId 命名约定（`<来源>.<赛季?>.<key>`）派生。授予时间不入库，故不返回 `grantedAt`。
+- **`PUT /title/equip`**：仅允许已授予称号（未授予 403）；空串 = 卸下；写 `save.equipped.title` 并回推完整 `SaveData`。
+- 授予路径在 meta 内部单点 `grantTitle`（ranked 赛季结算 / SLG 赛季结算 / 成就 claim / admin 授予），非玩家可调。自动佩戴最高 `weight` 称号（`TITLE_DEFS`）。
 
 ---
 
@@ -512,3 +529,80 @@ POST /internal/ads/credit  { accountId, amount, dayKey } → { ok, coinsAfter }
 - **一致性**：扣币（commercial）+ 发货（meta）是 saga——meta 据回执发货后调 `/internal/order/delivered` 闭环；崩溃则下次 `GET /save` 拉 `orders/undelivered` 补发（皮肤 `SaveData.deliveredOrders` $addToSet 幂等）。详见 `COMMERCIAL_DESIGN.md §6`。
 - **库迁移**：`gachaHistory`/`walletLog`/`iapReceipts` 已从 meta 库（`shared/src/mongo.ts`）移除，在 commercial 库重建为 `gachaHistory`/`ledger`/`recharges`（+ `wallets`/`orders`）。meta 库新增 `adsDaily`（广告 cap 计数）。
 - **未实现**：`results[].dupeConverted` 改由 meta 据库存判重复（commercial 不持有 inventory）；重复退币 S5 暂缓（见 `COMMERCIAL_DESIGN §6`）；`recharge` 平台验签为 dev 桩。
+
+---
+
+## 10. worldsvc 公网接口（SLG 大世界，第四面）
+
+> SLG 大世界为**独立公网 REST 面**（与 meta 分离、不同 base URL，反代 `/world` `/family` `/auction` `/sect` `/nation` → worldsvc:18084 不剥前缀）。**机器契约单一来源 = `server/contracts/openapi-world.yml`**（客户端 `gen-openapi.mjs` 生成 `src/net/openapi-world.ts`）；设计权威见 **`SLG_DESIGN.md §14`（接口/进程/库归属）+ §14.6（REST 端点清单）**。所有玩家端点走 `Authorization: Bearer <JWT>`（与 meta 同 token），大多带 `worldId`（所在 shard）。下表为简明清单，字段/形态以 `openapi-world.yml` 为准，不在此重复 schema。
+
+### 10.1 World（地图 / 行军 / 养城）
+```
+GET  /world/map           ?worldId&cx&cy&r          → WorldMapView（视区，含视野 visible/ally）
+GET  /world/map/sparse    ?worldId&cx&cy&r&lod      → WorldMapSparseView（鸟瞰只含占领格，lod=thin|mid）
+GET  /world/tile/{tileId}                           → WorldTileView
+GET  /world/me            ?worldId                  → PlayerWorldView（兵力/资源/产率/训练队列）
+POST /world/join          { worldId }               → PlayerWorldView（自动落城）
+POST /world/occupy | /world/abandon                 { worldId, x, y } → ok
+POST /world/relocate      { worldId, x, y }         → PlayerWorldView（迁城，花 RELOCATE_COST）
+POST /world/watchtower    { worldId, x, y }         → WorldTileView（建瞭望塔视野源，G5 V2）
+GET  /world/march         ?worldId                  → MarchView[]
+POST /world/march         { worldId, fromX,fromY, toX,toY, kind, troops, teamId? } → MarchView
+POST /world/march/{marchId}/recall  { worldId }     → ok
+POST /world/sweep         { worldId, fromX,fromY, toX,toY, troops } → MarchView
+POST /world/troops/train  { worldId, qty }          → PlayerWorldView
+POST /world/troops/speedup{ worldId, coins }        → PlayerWorldView
+GET/PUT /world/defense    ?worldId&tileKey / { worldId, tileKey?, defenseConfig } → DefenseConfig（攻守两用布阵）
+GET/PUT /world/teams      ?worldId / { worldId, teams[] } → TeamTemplate[]（进攻布阵模板，≤5 支）
+GET  /world/siege/{siegeId}/replay  ?worldId        → SiegeReplayView（观战重播，客户端同 seed headless 重跑）
+```
+
+### 10.2 Nation / Season / SLG Shop
+```
+GET  /world/nations       ?worldId                  → NationView[]（10 首都）
+POST /world/nations/{capitalIdx}/name  { worldId, name } → ok
+GET  /world/season        ?worldId                  → SeasonView（赛季状态/容量/人口/地图尺寸）
+GET  /world/shop/items                              → SlgShopItemView[]
+POST /world/shop/buy      { worldId, itemId }       → ok
+```
+
+### 10.3 Family（家族）
+```
+GET  /family/list         ?worldId                  → FamilyView[]
+GET  /family/{familyId}                             → FamilyView（含成员）
+POST /family/create       { worldId, name, tag }    → FamilyView
+POST /family/join | /family/leave | /family/dissolve { worldId, familyId? } → ok
+POST /family/kick | /family/role  { worldId, targetId, role? } → ok
+POST /family/message      { worldId, body, senderName? } → { id }（经 gateway 扇出家族频道）
+GET  /family/channel      ?worldId&familyId&before?&limit? → FamilyMessageView[]
+```
+
+### 10.4 Sect（宗门，S8-4b）
+```
+GET  /sect/list  ?worldId  / GET /sect/{sectId}     → SectView[] / SectDetailView
+POST /sect/create { worldId, name, tag }            → SectDetailView
+POST /sect/join | /sect/leave | /sect/dissolve      { worldId, sectId? } → ok
+POST /sect/ally | /sect/unally  { worldId, targetSectId } → ok
+POST /sect/vote-remove-leader { worldId, nomineeFamilyId } → SectVoteResult
+POST /sect/message  { worldId, body, senderName? }  → SectMessageView（经 gateway 扇出宗门频道）
+GET  /sect/channel  ?worldId&before?&limit?         → SectMessageView[]
+```
+
+> **国家/世界公频**（`nation_msg`，§3.2）经 worldsvc Redis pub/sub → gateway 扇出给同 world 在线玩家；REST 拉历史端点（如 `/nation/channel`）随 SLG 频道收尾落地，以 `openapi-world.yml` 实际为准。
+> **内部/admin 端点**（`/admin/world/{open,settle,reset,close}`、`/admin/world/audit/anomalies`，X-Internal-Key 门控）玩家不可达，不入 openapi-world，见 `SLG_DESIGN.md §17.7 / §20.6`。
+
+---
+
+## 11. analyticsvc 公网接口（埋点 ingest，`ANALYTICS_DESIGN.md §8`）
+
+> 第八应用进程（端口 18085，连 `notebook_wars_analytics`，反代 `/analytics`）。无状态、不连业务库，仅复用 `NW_JWT_SECRET` 验签取 `accountId`。**写入 fire-and-forget**（`writeConcern:{w:0}`，客户端失败静默丢弃，不影响游戏）。机器契约（追加进 `openapi.yml`）见 `ANALYTICS_DESIGN.md §8`。
+
+```
+GET  /analytics/config                              → AnalyticsConfig   // 公开无鉴权；session 启动拉一次采集开关/采样率
+POST /analytics/events  (JWT 可选)  AnalyticsEventBatch → 200（不代表落盘）  // 批量 ≤100 条/请求；关闭场景用 navigator.sendBeacon
+GET  /internal/query    (X-Internal-Key)            → 聚合结果   // 仅 ops 后台调（漏斗/DAU/关卡通过率），玩家不可达
+```
+
+- **`AnalyticsConfig`**：`{ enabled, defaultSample, events: { [name]: { enabled?, sample? } } }`——服务端控制开关，不发版即可调粒度；客户端拉取失败回退 `enabled:false`（安全退化）。
+- **`AnalyticsEventBatch`**：公共属性（`session_id/device_id/platform/os/game_version/locale`）放 batch 根层，每条 event 仅 `{ event, ts, props? }`（减传输体积）。`POST /analytics/events` JWT 可选：有 token 附 `user_id`，否则匿名设备。
+- 不记请求 IP；账号注销按 `user_id` 批删事件（GDPR，§2.10）。事件分类 / 漏斗 / 数据库见 `ANALYTICS_DESIGN.md §5/§6/§9`。

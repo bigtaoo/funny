@@ -1,25 +1,36 @@
 # Notebook Wars — 服务端
 
-控制面/数据面分离（S1-M，2026-06-14）：`metaserver`(REST 云存档/经济编排/内部结算) + `gateway`(控制面 WS：房间/匹配门面) + `matchsvc`(私有匹配大脑，独立进程 S1-M5) + `gameserver`(数据面 WS：瘦锁步中继) + `commercial`(钱包/交易，独立进程 S5，玩家不可达)，共享 `@nw/shared`。服务间通信走内部 HTTP（`META_DESIGN §6.7` ADR）。
-契约单一来源在 `contracts/`。设计基准：`../design/game/META_DESIGN.md`、`SERVER_API.md`、`META_TASKS.md`、`GATEWAY_DESIGN.md`、`MATCHSVC_DESIGN.md`。
+**8 个应用进程 + 4 公网面**（控制面/数据面分离，S1-M 起逐步扩展）：
+
+- **公网面（玩家触达）**：`metaserver`(REST 云存档/经济编排/养成/天梯/称号，无状态) + `gateway`(控制面 WS：房间/匹配门面，不连库) + `gameserver`(数据面 WS：瘦锁步中继，永不连库) + `worldsvc`(SLG 大世界 REST 第四面 `/world` `/family` `/auction` `/sect` `/nation`，连 `notebook_wars_world`)。
+- **玩家不可达（仅内网）**：`matchsvc`(私有匹配大脑，独立进程 S1-M5，不连库) + `commercial`(钱包/交易，独立进程 S5，连 `notebook_wars_commercial`) + `admin`(运维后台后端 S7) + `analyticsvc`(埋点分析，端口 18085，连 `notebook_wars_analytics`；其 `/analytics/config`·`/analytics/events` 经反代公开，`/internal/query` 内网)。
+
+共享包：`@nw/shared`（类型/JWT/ticket/Mongo/ladder/economy）+ `@nw/engine`（确定性战斗内核 library，PvP/PvE/SLG 围攻共用）+ `contracts`（契约）。服务间通信走内部 HTTP（`META_DESIGN §6.7` ADR）。
+契约单一来源在 `contracts/`（5 文件，见下）。设计基准：`../design/game/META_DESIGN.md`、`SERVER_API.md`、`META_TASKS.md`、`GATEWAY_DESIGN.md`、`MATCHSVC_DESIGN.md`、`SLG_DESIGN.md`、`ANALYTICS_DESIGN.md`、`OPS_DESIGN.md`。
 
 ## 结构（npm workspaces）
 
 ```
 server/
-├── contracts/      openapi.yml（REST 契约，design-first M15）
+├── contracts/      openapi.yml（meta REST 契约，design-first M15）
+│                   openapi-world.yml（worldsvc REST 契约，独立 base URL）
 │                   transport.proto（WS 控制面+数据面，含 match_found；服务器认得）
 │                   game.proto（PlayerCommand，仅客户端↔客户端，服务器 opaque）
-├── shared/   @nw/shared   类型(SaveData) + JWT + ticket(HMAC) + Mongo 工厂 + RoomRegistry + ladder + api + config
-├── metaserver/  REST（无状态，ESM）  fastify + openapi-glue + internal.ts（/internal/elo·/match/report，M19）
-├── gateway/     控制面 WS（CJS）  /gw?token= 门面 + MatchsvcClient(转命令) + 内部 HTTP(/gw/push 收 matchsvc 事件)
+│                   replay.proto（录像 = seed + 配置 + 非空帧流，复用 FrameCmds）
+├── shared/   @nw/shared   类型(SaveData) + JWT + ticket(HMAC) + Mongo 工厂 + RoomRegistry + ladder + economy + titles + internalAuth + api + config
+├── engine/   @nw/engine   确定性战斗内核 library（prng/netplay/PvE/SLG 围攻共用，不是进程）
+├── metaserver/  REST（无状态，ESM）  fastify + openapi-glue + internal.ts（/internal/elo·/match/report·ladder/season·grant-title，M19）
+├── gateway/     控制面 WS（CJS）  /gw?token= 门面 + MatchsvcClient(转命令) + 内部 HTTP(/gw/push 收 matchsvc/worldsvc 事件，Redis 扇出家族/宗门频道)
 ├── matchsvc/    私有匹配大脑（CJS，独立进程 S1-M5）  内部 HTTP(gateway 命令 + game 注册/心跳) + 房间/ELO 配对/签 ticket + GatewayClient(/gw/push)
 ├── gameserver/  数据面 WS（CJS）  /ws?ticket= 验签 + 节拍器中继/帧日志/重连 + 局末上报 meta（永不连库 M16）
-└── commercial/  钱包/交易（CJS，独立进程 S5，玩家不可达）  node:http /internal/*（钱包/扣币/盲盒/充值/广告）+ 专属库 notebook_wars_commercial（wallets/ledger/orders/recharges/gachaHistory）
+├── commercial/  钱包/交易（CJS，独立进程 S5，玩家不可达）  node:http /internal/*（钱包/扣币/盲盒/充值/广告）+ 专属库 notebook_wars_commercial（wallets/ledger/orders/recharges/gachaHistory）
+├── worldsvc/    SLG 大世界（CJS，公网 REST 第四面）  /world /family /auction /sect /nation + 围攻跑 @nw/engine 权威 + 专属库 notebook_wars_world + Redis（频道/快照）
+├── admin/       运维后台后端（CJS，玩家不可达 S7）  admin JWT（≠ 玩家 JWT）+ 监控/匹配池/分析/补偿（走邮件）；ops 前端（tools/ops）跨源调
+└── analyticsvc/ 埋点分析（CJS，端口 18085）  /analytics/config·/analytics/events(w:0 fire-and-forget) + /internal/query(ops) + 专属库 notebook_wars_analytics
 ```
 
-> **本地五进程**：`docker compose up -d`（Mongo）→ `npm run dev:meta` + `npm run dev:gateway` + `npm run dev:matchsvc` + `npm run dev:game` + `npm run dev:commercial`。
-> dev 默认端口：meta 18080、gateway 8082（内部 HTTP 8090，收 matchsvc 推送）、matchsvc 内部 HTTP 8091、game 8081、commercial 内部 18082。内部链路：gateway `NW_MATCHSVC_INTERNAL_URL=http://127.0.0.1:8091`、matchsvc `NW_GATEWAY_INTERNAL_URL=http://127.0.0.1:8090`、game `NW_MATCHSVC_INTERNAL_URL=http://127.0.0.1:8091`；meta `NW_COMMERCIAL_INTERNAL_URL=http://127.0.0.1:18082`（缺省 null → 经济端点 503）；matchsvc/game 配 `NW_GAME_PUBLIC_WS_URL` 兜底分配；`NW_INTERNAL_KEY` 五进程一致。commercial 连专属库（`NW_COMM_MONGO_DB=notebook_wars_commercial`，URI 默认复用 `NW_MONGO_URI`）。
+> **本地多进程**：`docker compose up -d`（Mongo + Redis）→ 一键 `npm run dev:all`（见「本地开发」），或按需起 `npm run dev:meta` / `dev:gateway` / `dev:matchsvc` / `dev:game` / `dev:commercial` / `dev:world` / `dev:admin` / `dev:analytics`。
+> dev 默认端口：meta 18080、**gateway 8086（内部 HTTP 8090，收 matchsvc/worldsvc 推送；旧 8082/8083 曾被 WinNAT 保留已弃用）**、matchsvc 内部 HTTP 8091、game 8081、commercial 内部 18082、worldsvc 18084、admin 18083、analyticsvc 18085。内部链路：gateway `NW_MATCHSVC_INTERNAL_URL=http://127.0.0.1:8091`、matchsvc `NW_GATEWAY_INTERNAL_URL=http://127.0.0.1:8090`、game `NW_MATCHSVC_INTERNAL_URL=http://127.0.0.1:8091`；meta `NW_COMMERCIAL_INTERNAL_URL=http://127.0.0.1:18082`（缺省 null → 经济端点 503）；matchsvc/game 配 `NW_GAME_PUBLIC_WS_URL` 兜底分配；`NW_INTERNAL_KEY` 全进程一致（或 per-caller `NW_INTERNAL_KEYS`，`@nw/shared/internalAuth.ts`）。commercial/worldsvc/analyticsvc 各连专属库（`NW_COMM_MONGO_DB=notebook_wars_commercial` / worldsvc `notebook_wars_world` + Redis / `NW_ANALYTICS_MONGO_DB=notebook_wars_analytics`，URI 默认复用 `NW_MONGO_URI`）。
 
 ## 实现进度
 
@@ -57,21 +68,21 @@ cd server
 docker compose up -d
 docker compose ps          # 等 mongo 变 healthy（首启自动 rs.initiate）
 
-# 2) 装依赖 + 构建
+# 2) 装依赖 + 构建（全 workspace 一次 tsc -b）
 npm install
-npx tsc -b shared metaserver gameserver   # 类型检查 + 构建
+npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc   # 类型检查 + 构建
 
-# 3) 跑服务
+# 3) 跑服务（按需，或用下方 dev:all 一键起全套）
 npm run dev:meta    # metaserver（tsx watch）
 npm run dev:game    # gameserver 骨架
 
-# 端到端测试（需 mongo 在跑；tsc -b + vitest 6 用例）
+# 端到端测试（需 mongo 在跑；各 workspace tsc -b + vitest）
 npm test --workspace @nw/metaserver
 
 # 关依赖：docker compose down（保留数据）/ down -v（清空数据）
 ```
 
-> **一键起全套（Windows）**：`npm run dev:all`（`dev-up.ps1`）起 shared watch + meta/gateway/matchsvc/game/commercial 五进程，各自独立窗口 + `node --watch` 热重载，预设内部 URL 与 `NW_INTERNAL_KEY`。`-SkipMongo` 跳过 docker、`-Only meta,commercial` 只起部分。**每个窗口标题为 `nw:<服务名>`**（`nw:meta`/`nw:gateway`/…）：脚本直接 `node --watch …` 启动而非嵌套 `npm run`，避免 npm 在设标题后又把控制台标题改回命令名，故标题稳定可辨。
+> **一键起全套（Windows）**：`npm run dev:all`（`dev-up.ps1`）起 shared watch + 全部应用进程（meta/gateway/matchsvc/game/commercial/worldsvc/admin/analyticsvc），各自独立窗口 + `node --watch` 热重载，预设内部 URL 与 `NW_INTERNAL_KEY`。`-SkipMongo` 跳过 docker、`-Only meta,commercial` 只起部分。**每个窗口标题为 `nw:<服务名>`**（`nw:meta`/`nw:gateway`/…）：脚本直接 `node --watch …` 启动而非嵌套 `npm run`，避免 npm 在设标题后又把控制台标题改回命令名，故标题稳定可辨。
 
 > **Docker 引擎**：mongo:7 是 Linux 镜像，需 Docker Desktop 处于 **Linux containers** 模式（`docker version` 显示 `Server: linux/amd64`）。Windows 容器模式会报 `hcs::System::CreateProcess` / 命名卷 `invalid volume specification`。切换：`docker context use desktop-linux`，或 Docker Desktop 托盘「Switch to Linux containers」。
 
@@ -82,10 +93,14 @@ npm test --workspace @nw/metaserver
 | `NW_JWT_SECRET` | `dev-insecure-...` | JWT 签名密钥（生产必改） |
 | `NW_MONGO_URI` | `mongodb://127.0.0.1:27017/?replicaSet=rs0` | 与 compose 一致 |
 | `NW_MONGO_DB` | `notebook_wars` | 数据库名 |
-| `NW_META_PORT` / `NW_GAME_PORT` | 8080 / 8081 | 监听端口 |
+| `NW_META_PORT` / `NW_GAME_PORT` | 8080 / 8081 | meta / game 监听端口 |
+| `NW_GATEWAY_*` | dev 8086 / 内部 8090 | gateway 控制面 WS / 内部 HTTP（旧 8082/8083 弃用） |
+| `NW_WORLD_PORT` / `NW_ADMIN_PORT` / `NW_ANALYTICS_PORT` | 18084 / 18083 / 18085 | worldsvc / admin / analyticsvc 端口 |
+| `NW_INTERNAL_KEY`（或 `NW_INTERNAL_KEYS`） | dev 默认 | 服务间内部鉴权密钥（per-caller 见 `internalAuth.ts`） |
+| `NW_COMMERCIAL_INTERNAL_URL` / `NW_GW_REDIS_URL` | — | meta→commercial 基址 / gateway+worldsvc 共用 Redis（频道扇出） |
 | `NW_WX_APPID` / `NW_WX_SECRET` | — | 微信 `jscode2session`；缺省走 dev openid 回退 |
 
-反代（caddy/nginx）：`/api/*` → metaserver、`/ws` → gameserver，自动 HTTPS（C-3）。
+反代（caddy/nginx，`client/nginx.conf`）：`/api/*` → metaserver、`/gw` → gateway WS、`/ws` → gameserver WS、`/world` `/family` `/auction` → worldsvc(不剥前缀)、`/analytics` → analyticsvc，自动 HTTPS（C-3）。matchsvc / commercial / admin 不暴露公网。
 
 ## 设计要点
 

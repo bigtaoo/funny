@@ -41,10 +41,12 @@
 | [SEASON_OVERVIEW.md](game/SEASON_OVERVIEW.md) | **两套赛季（天梯6周/SLG大区2月）的独立性契约·边界·对照（不重述机制，只锁边界）** | 设计中 |
 | [SEASON_DESIGN.md](game/SEASON_DESIGN.md) | **天梯赛季/战令/排行榜机制基准（6周赛季·软重置·峰值奖励·Top100·Battle Pass；数字→ECONOMY_NUMBERS §13）** | 设计中 |
 | [CHARACTER_DESIGN.md](game/CHARACTER_DESIGN.md) | **角色卡机制/流派基准（6张＝陶3现有兵转具名·锚点 + Anna3新画变体；数值锚点占位→config.ts/BALANCE）** | 设计中 |
+| [ANNA_CHARACTERS.md](game/ANNA_CHARACTERS.md) | Anna 方三角色（Max/Lena/…）立绘与设定细化（引擎定义见 CHARACTER_DESIGN，叙事见 product/characters） | 设计中 |
 | [CAMPAIGN_DESIGN.md](game/CAMPAIGN_DESIGN.md) | 战役 PvE 设计基准（数据权威见 PVE_INTEGRITY_PLAN） | 实现中 |
 | [CAMPAIGN_P0_PLAN.md](game/CAMPAIGN_P0_PLAN.md) | 战役 P0 试玩切片计划 | 实现中 |
 | [CAMPAIGN_STORY.md](game/CAMPAIGN_STORY.md) | 战役剧情文案（叙事铁律见 world.md / ADR） | 设计中 |
 | [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md) | **PvE 反作弊 + 服务器权威方案（PvE 数据权威真源）** | 实现中 |
+| [DIFFICULTY_SIM.md](game/DIFFICULTY_SIM.md) | 关卡难度模拟器（真实引擎+基线 AI 量化战役难度；代码 `client/test/difficultySim.ts`） | 工具/实现中 |
 | [REPLAY_SHARE_DESIGN.md](game/REPLAY_SHARE_DESIGN.md) | **录像游戏外分享（状态流·客户端自产·无登录直达哑播放器·公开 /r/{code}·微信 shareAppMessage；与输入流录像分工）** | 待实现 |
 | [MYTHOLOGY_DESIGN.md](game/MYTHOLOGY_DESIGN.md) | 神话「神力赋予」叠加层 | 设计中 |
 | [META_DESIGN.md](game/META_DESIGN.md) | 元系统 + 服务器架构基准（meta 范畴 6 组件） | 已实现 |
@@ -64,10 +66,24 @@
 | [AUDIO_DESIGN.md](game/AUDIO_DESIGN.md) | **音频系统（资产/触发表/播放层/混音/设置/平台约束；美学仍归 art-direction）** | 设计中 |
 | [ONBOARDING_DESIGN.md](game/ONBOARDING_DESIGN.md) | **新手引导/FTUE 编排（首会话动线/专属教学关 ch0_tutorial 三阶段编排/首次功能引导/功能开放策略；合规已移出归 COMPLIANCE，不重述故事/关卡）** | 设计中 |
 | [SLG_DESIGN.md](game/SLG_DESIGN.md) | SLG 大世界（worldsvc:18084） | 实现中 |
-| [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→shared/slg.ts）** | 实现中 |
+| [WORLD_MAP_ART_SPEC.md](game/WORLD_MAP_ART_SPEC.md) | 大世界地图美术资产规格书（待替换的程序占位色块清单；权威=WorldMapScene.ts/SLG_DESIGN） | 实现中 |
+| [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→server/shared/src/slg.ts）** | 实现中 |
 | [UI_DESIGN.md](game/UI_DESIGN.md) | **菜单 / 元系统客户端 UI**（与战斗 UI 分工，见 §3） | 实现中 |
+| [LOBBY_IA_REDESIGN.md](game/LOBBY_IA_REDESIGN.md) | 大厅信息架构重规划（一级入口/底部 tab 重分组；装备并入养成、战绩升级为生涯、克制付费曝光） | 设计中 |
 | [IMPROVEMENT_PLAN.md](game/IMPROVEMENT_PLAN.md) | 6 项工程改进（全完成） | 已归档 |
 | [PROFILE_POPUP_PLAN.md](game/PROFILE_POPUP_PLAN.md) | 资料弹层（已实现） | 已归档 |
+| [PARALLEL_DEV_PLAN.md](game/PARALLEL_DEV_PLAN.md) | **并行开发计划（按依赖耦合分三条轨道 A/B/C，各自 worktree）** | 实现中 |
+| [LAUNCH_TRACK_1_CLIENT.md](game/LAUNCH_TRACK_1_CLIENT.md) | 上线收口 Track 1 — 客户端合规 UI + 孤儿场景接线（纯客户端轨道） | 实现中 |
+| [LAUNCH_TRACK_2_SERVER.md](game/LAUNCH_TRACK_2_SERVER.md) | 上线收口 Track 2 — 服务端闭环补全（纯服务端轨道） | 实现中 |
+| [LAUNCH_TRACK_3_RELEASE.md](game/LAUNCH_TRACK_3_RELEASE.md) | 上线收口 Track 3 — 法务素材 + 真机验收 + 发布物料（文本/手动轨道） | 实现中 |
+| [IAP_CREDENTIALS.md](game/IAP_CREDENTIALS.md) | IAP / 广告凭据上线手册（commercial 验单 + metaserver 广告验签；验签权威=iap.ts/ads.ts） | 实现中 |
+
+#### 1.2.1 验收清单（`design/game/release/`）
+| 文档 | 范围 |
+|---|---|
+| [release/acceptance-S0-8.md](game/release/acceptance-S0-8.md) | 验收清单：meta 阶段 S0–S8 |
+| [release/acceptance-S1-9.md](game/release/acceptance-S1-9.md) | 验收清单：阶段 S1–S9 |
+| [release/acceptance-smoke.md](game/release/acceptance-smoke.md) | 上线前冒烟验收清单 |
 
 ### 1.3 产品与玩法愿景（`design/product/`）
 | 文档 | 范围 | 状态 |
@@ -84,6 +100,17 @@
 | [client-rendering-cache.md](product/client-rendering-cache.md) | 渲染缓存 / 对象池 | 实现中 |
 | [v1-balance.md](product/v1-balance.md) | 早期数值提案（**未落地，已被 config.ts 取代**） | 已归档 |
 | [v1-simulation.md](product/v1-simulation.md) | 基于 v1-balance 的推演（同上归档） | 已归档 |
+
+#### 1.3.1 法务文档（`design/product/legal/`）
+| 文档 | 范围 |
+|---|---|
+| [legal/privacy-policy.zh.md](product/legal/privacy-policy.zh.md) · [.en](product/legal/privacy-policy.en.md) · [.de](product/legal/privacy-policy.de.md) | 隐私政策（中/英/德三语；合规口径见 COMPLIANCE_GLOBAL/COMPLIANCE_CN） |
+| [legal/terms-of-service.zh.md](product/legal/terms-of-service.zh.md) · [.en](product/legal/terms-of-service.en.md) · [.de](product/legal/terms-of-service.de.md) | 服务条款（中/英/德三语） |
+
+#### 1.3.2 发布物料（`design/product/release/`）
+| 文档 | 范围 |
+|---|---|
+| [release/store-assets-checklist.md](product/release/store-assets-checklist.md) | 商店上架素材清单（图标/截图/描述/分级等发布物料核对） |
 
 ### 1.4 工具（`design/tools/`）
 | 文档 | 范围 |
@@ -110,12 +137,12 @@
 | 称号系统**机制**（公开身份名片/统一容器/授予/展示） | [game/TITLE_DESIGN.md](game/TITLE_DESIGN.md) | 段位首达金币数字去 ECONOMY_BALANCE §2.3；与成就解耦（成就纯自看，炫耀走称号） |
 | 留存系统**机制**（签到/每日任务/周常/dayKey/领取） | [game/RETENTION_DESIGN.md](game/RETENTION_DESIGN.md) | 数字去 ECONOMY_NUMBERS §12；金币只从每日任务满点出、收敛 ~60/月，不新增龙头 |
 | 活动/Live-ops **编排**（配置/生命周期/类型/经济约束） | [game/EVENTS_DESIGN.md](game/EVENTS_DESIGN.md) | 数字去 ECONOMY_NUMBERS §14；发奖复用 OPS 邮件、计数复用 statKey、限定直购复用 commercial；不新增金币龙头（ADR-014） |
-| 拍卖行**机制**（交易模型/挂单状态机/定向受拍/税/反 RMT） | [game/AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | 从 SLG §7/§14 抽出，机制以本文为准；数字去 `shared/slg.ts`（`AUCTION_*`）；仅 coin 计价、赛季资源禁挂 |
+| 拍卖行**机制**（交易模型/挂单状态机/定向受拍/税/反 RMT） | [game/AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | 从 SLG §7/§14 抽出，机制以本文为准；数字去 `server/shared/src/slg.ts`（`AUCTION_*`）；仅 coin 计价、赛季资源禁挂 |
 | 两套赛季的**独立性契约/边界/对照**（天梯 vs SLG 大区谁重置谁、共享资产归属） | [game/SEASON_OVERVIEW.md](game/SEASON_OVERVIEW.md) | 不重述机制；机制权威仍归 SEASON_DESIGN / SLG_DESIGN；锁「两条时钟互不触发 + 重置写入域隔离 + 共享 coin/称号归属」 |
 | 天梯赛季/战令/排行榜**机制**（赛季时钟·软重置·惰性迁移·峰值奖励·Top100·Battle Pass） | [game/SEASON_DESIGN.md](game/SEASON_DESIGN.md) | 数字去 ECONOMY_NUMBERS §13；天梯赛季6周 ≠ SLG大区赛季2个月（两条独立时钟）；赛季切换 = admin 手动开启 |
 | 角色卡**机制/流派**（6张·东西双版本·获取分层） | [game/CHARACTER_DESIGN.md](game/CHARACTER_DESIGN.md) | 数值锚点占位→落 `config.ts`+[BALANCE.md](game/BALANCE.md)；陶3＝现有兵转具名(数值不动·锚点)，Anna3＝新画变体；PvP全送/PvE章节解锁(ADR-016) |
 | PvE 关卡定义 | `client/src/game/campaign/levels/*.json`（+ level-editor 编辑、`parseLevelDefinition` 校验） | — |
-| PvE 奖励 / 养成数据权威 | 服务器 `server/shared/pveRewards.ts` + [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md)（方案 B：服务器权威） | 客户端 JSON 仅参考/编辑器用 |
+| PvE 奖励 / 养成数据权威 | 服务器 `server/shared/src/pveRewards.ts` + [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md)（方案 B：服务器权威） | 客户端 JSON 仅参考/编辑器用 |
 | 接口契约（REST/WS/proto/DB 集合） | [game/SERVER_API.md](game/SERVER_API.md) + `server/contracts/` | — |
 | 功能开关机制（白名单/定向求值/分发/后台） | [game/FEATURE_FLAGS_DESIGN.md](game/FEATURE_FLAGS_DESIGN.md) | 接口落 SERVER_API/openapi；flag 白名单+default 真源 `server/shared/src/featureFlags.ts`；≠ SaveData.flags（玩家态） |
 | 进程拓扑 / 端口 | [claudedocs/server.md](../claudedocs/server.md) | 8 个应用进程，见 §4 |
