@@ -16,6 +16,8 @@ import type {
   FeatureFlagRow,
   FlagPlatform,
   FlagRollout,
+  PlayerProfile,
+  PlayerSummary,
   Session,
 } from './types';
 
@@ -352,18 +354,25 @@ export function pagePlayer(ctx: Ctx): void {
   const { api, root } = ctx;
   clear(root);
   root.append(h('h2', {}, '玩家查询'));
-  const input = h('input', { placeholder: '9 位公开 id', maxlength: '9' });
+  const input = h('input', { placeholder: '昵称 / 登录账号 / 公开 id / accountId（≥2 字符）' });
   const err = h('div', { class: 'err' });
-  const out = h('div', { class: 'card' });
-  out.style.display = 'none';
-  const go = async (): Promise<void> => {
+  const listOut = h('div', { class: 'card' });
+  listOut.style.display = 'none';
+  const detailOut = h('div', { class: 'card' });
+  detailOut.style.display = 'none';
+
+  // 选中某行 → 拉详情。优先按 publicId（与旧路径一致），无 publicId 则按 accountId。
+  const showDetail = async (row: PlayerSummary): Promise<void> => {
     err.textContent = '';
-    out.style.display = 'none';
+    detailOut.style.display = 'none';
     try {
-      const p = await api.player(input.value.trim());
-      clear(out);
+      const p: PlayerProfile = row.publicId
+        ? await api.player(row.publicId)
+        : await api.playerByAccount(row.accountId);
+      clear(detailOut);
       const rows: [string, string][] = [
-        ['公开 id', '#' + p.publicId],
+        ['公开 id', p.publicId ? '#' + p.publicId : '—'],
+        ['accountId', p.accountId ?? row.accountId],
         ['昵称', p.displayName ?? '—'],
         ['段位', p.rank ?? '—'],
         ['ELO', p.elo !== undefined ? String(p.elo) : '—'],
@@ -371,13 +380,56 @@ export function pagePlayer(ctx: Ctx): void {
       ];
       const t = h('table', {});
       for (const [k, v] of rows) t.append(h('tr', {}, h('th', {}, k), h('td', {}, v)));
-      out.append(t);
-      out.style.display = '';
+      detailOut.append(h('h3', {}, '玩家详情'), t);
+      detailOut.style.display = '';
     } catch (e) {
       showErr(err, e);
     }
   };
-  root.append(h('div', { class: 'card' }, h('div', { class: 'row' }, input, h('button', { onclick: go }, '查询')), err), out);
+
+  const go = async (): Promise<void> => {
+    err.textContent = '';
+    listOut.style.display = 'none';
+    detailOut.style.display = 'none';
+    try {
+      const hits = await api.searchPlayers(input.value.trim());
+      clear(listOut);
+      if (hits.length === 0) {
+        listOut.append(h('div', { class: 'muted' }, '无匹配玩家。'));
+        listOut.style.display = '';
+        return;
+      }
+      const t = h('table', {});
+      t.append(
+        h('tr', {}, h('th', {}, '公开 id'), h('th', {}, '昵称'), h('th', {}, '登录账号'), h('th', {}, '')),
+      );
+      for (const row of hits) {
+        t.append(
+          h(
+            'tr',
+            {},
+            h('td', {}, row.publicId ? '#' + row.publicId : '—'),
+            h('td', {}, row.displayName ?? '—'),
+            h('td', {}, row.loginId ?? '—'),
+            h('td', {}, h('button', { onclick: () => void showDetail(row) }, '详情')),
+          ),
+        );
+      }
+      listOut.append(h('div', { class: 'muted' }, `命中 ${hits.length} 条`), t);
+      listOut.style.display = '';
+    } catch (e) {
+      showErr(err, e);
+    }
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') void go();
+  });
+  root.append(
+    h('div', { class: 'card' }, h('div', { class: 'row' }, input, h('button', { onclick: go }, '搜索')), err),
+    listOut,
+    detailOut,
+  );
 }
 
 // ───────────────────────── 反作弊审查队列（S9-7）─────────────────────────

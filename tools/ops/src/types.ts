@@ -129,6 +129,13 @@ export interface PlayerProfile {
   losses?: number;
 }
 
+export interface PlayerSummary {
+  accountId: string;
+  publicId?: string;
+  displayName?: string;
+  loginId?: string;
+}
+
 export interface Session {
   token: string;
   admin: AdminAccountView;

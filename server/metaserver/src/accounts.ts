@@ -216,6 +216,51 @@ export async function resolveByPublicId(
   return doc?._id ?? null;
 }
 
+/** 正则元字符转义——把运营输入当字面量喂给 $regex，杜绝注入 / ReDoS。 */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** admin 玩家模糊搜命中行（OPS_DESIGN §4.1）：摘要字段，详情另查。 */
+export interface AccountSearchRow {
+  accountId: string;
+  publicId?: string;
+  displayName?: string;
+  loginId?: string;
+}
+
+/**
+ * admin 玩家模糊搜（OPS_DESIGN §4.1）：单关键词命中 publicId/accountId（精确）
+ * + loginId（前缀，吃唯一索引）+ displayName（子串，不区分大小写）。
+ * 关键词 < 2 字符直接返回空，避免全表扫；结果按 limit 截断。
+ */
+export async function searchAccounts(
+  cols: Collections,
+  q: string,
+  limit: number,
+): Promise<AccountSearchRow[]> {
+  const term = q.trim();
+  if (term.length < 2) return [];
+  const or: Record<string, unknown>[] = [
+    { _id: term },
+    { 'password.loginId': { $regex: '^' + escapeRegex(normalizeLoginId(term)) } },
+    { displayName: { $regex: escapeRegex(term), $options: 'i' } },
+  ];
+  if (/^\d{9}$/.test(term)) or.push({ publicId: term });
+  const docs = await cols.accounts
+    .find(
+      { $or: or },
+      { projection: { _id: 1, publicId: 1, displayName: 1, 'password.loginId': 1 }, limit },
+    )
+    .toArray();
+  return docs.map((d) => ({
+    accountId: d._id,
+    ...(d.publicId ? { publicId: d.publicId } : {}),
+    ...(d.displayName ? { displayName: d.displayName } : {}),
+    ...(d.password?.loginId ? { loginId: d.password.loginId } : {}),
+  }));
+}
+
 /** 改展示名（改名功能，已扣币后写入）。 */
 export async function setDisplayName(
   cols: Collections,

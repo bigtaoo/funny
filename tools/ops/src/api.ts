@@ -15,6 +15,7 @@ import type {
   FlagRollout,
   LiveStats,
   PlayerProfile,
+  PlayerSummary,
   Session,
   TrendPoint,
 } from './types';
@@ -139,6 +140,16 @@ export class Api {
   async player(publicId: string): Promise<PlayerProfile> {
     const r = await this.req<{ player: PlayerProfile }>('GET', `/admin/player/${encodeURIComponent(publicId)}`);
     return r.player;
+  }
+
+  async playerByAccount(accountId: string): Promise<PlayerProfile> {
+    const r = await this.req<{ player: PlayerProfile }>('GET', `/admin/player/account/${encodeURIComponent(accountId)}`);
+    return r.player;
+  }
+
+  async searchPlayers(q: string): Promise<PlayerSummary[]> {
+    const r = await this.req<{ players: PlayerSummary[] }>('GET', `/admin/players/search?q=${encodeURIComponent(q)}`);
+    return r.players;
   }
 
   // —— 成就反作弊审查队列（S9-7）——

@@ -163,7 +163,8 @@ admin 执行器（approved 后，可自动或手动触发）
 | `GET /internal/stats` | **gateway**（新增） | 在线连接数、presence 概览（按区/版本可选） | 待加 |
 | `GET /internal/stats` | **matchsvc**（新增） | 匹配队列长度/等待分布、房间数按 phase、game 实例负载 | 待加 |
 | `GET /internal/profile` | meta（已存在） | 查玩家昵称/publicId（player.lookup） | ✅ |
-| `GET /save`（内部查档变体，按需） | meta | 玩家档案/进度/钱包镜像（只读，player.lookup） | 待定（可加 `GET /internal/player/{publicId}`） |
+| `GET /internal/player?publicId=` \| `?accountId=` | meta | 玩家档案摘要（昵称/段位/ELO/胜负），player.lookup 详情 | ✅ |
+| `GET /internal/players/search?q=&limit=` | meta | 玩家模糊搜：单关键词命中 publicId/accountId（精确）+ loginId（前缀）+ displayName（子串，不分大小写）；q<2 字符返空、limit 1..50、正则元字符转义防注入/ReDoS | ✅ |
 | `POST /internal/mail/system/send` | **meta**（SOCIAL_DESIGN S6-3） | 执行补偿 = 创建系统邮件（单人/批量，幂等键） | ✅ 已联调 |
 | `POST /internal/mail/system/preview` | meta | 全服补偿 dry-run 估算命中人数 | ✅ 已联调 |
 
@@ -184,8 +185,10 @@ GET  /admin/monitor/trend?metric=&from=&to=          → { points: [{ ts, value 
 # 数据分析（analytics.view）
 GET  /admin/analytics/summary                        → { ... }                       // 自采指标聚合
 
-# 玩家查询（player.lookup）
-GET  /admin/player/{publicId}                        → { profile, ... }
+# 玩家查询（player.lookup）——两段式：先模糊搜列表 → 点行拉详情
+GET  /admin/players/search?q=                        → { players: [{accountId, publicId?, displayName?, loginId?}] }  // player.search 审计
+GET  /admin/player/{publicId}                        → { player, ... }                 // 详情（按 9 位公开 id）
+GET  /admin/player/account/{accountId}               → { player, ... }                 // 详情（按 accountId，模糊搜结果点击）
 
 # 补偿工单
 POST /admin/comp/tickets       { scope, target, mail, reason }  → { ticketId }        // comp.initiate.*

@@ -176,7 +176,21 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, ...(await svc.analyticsQuery(type, days, platform)) });
         }
 
-        // ── 玩家查询 ──
+        // ── 玩家模糊搜（昵称/登录账号/公开 id/accountId）──
+        if (method === 'GET' && path === '/admin/players/search') {
+          requireCap(actor, 'player.lookup');
+          const q = url.searchParams.get('q') ?? '';
+          return send(res, 200, { ok: true, players: await svc.searchPlayers(actor.adminId, q) });
+        }
+
+        // ── 玩家详情（按 accountId，模糊搜结果点击后取详情）──
+        if (method === 'GET' && path.startsWith('/admin/player/account/')) {
+          requireCap(actor, 'player.lookup');
+          const accountId = decodeURIComponent(path.slice('/admin/player/account/'.length));
+          return send(res, 200, { ok: true, player: await svc.lookupPlayerByAccountId(accountId) });
+        }
+
+        // ── 玩家详情（按 9 位公开 id）──
         if (method === 'GET' && path.startsWith('/admin/player/')) {
           requireCap(actor, 'player.lookup');
           const publicId = decodeURIComponent(path.slice('/admin/player/'.length));

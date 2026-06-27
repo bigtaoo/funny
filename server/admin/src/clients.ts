@@ -89,10 +89,22 @@ export interface PlayerProfile {
   losses?: number;
 }
 
+/** 模糊搜命中行（= meta AccountSearchRow，OPS 列表展示）。 */
+export interface PlayerSummary {
+  accountId: string;
+  publicId?: string;
+  displayName?: string;
+  loginId?: string;
+}
+
 export interface PlayerClient {
   readonly available: boolean;
   /** 按 9 位公开 id 查玩家档案；未找到返回 null。 */
   lookupByPublicId(publicId: string): Promise<PlayerProfile | null>;
+  /** 按 accountId 查玩家档案；未找到返回 null。 */
+  lookupByAccountId(accountId: string): Promise<PlayerProfile | null>;
+  /** 模糊搜（昵称/登录账号/公开 id/accountId）；返回命中摘要列表。 */
+  search(q: string, limit: number): Promise<PlayerSummary[]>;
 }
 
 export class HttpPlayerClient implements PlayerClient {
@@ -106,12 +118,19 @@ export class HttpPlayerClient implements PlayerClient {
   }
 
   async lookupByPublicId(publicId: string): Promise<PlayerProfile | null> {
+    return this.lookup(`publicId=${encodeURIComponent(publicId)}`);
+  }
+
+  async lookupByAccountId(accountId: string): Promise<PlayerProfile | null> {
+    return this.lookup(`accountId=${encodeURIComponent(accountId)}`);
+  }
+
+  private async lookup(qs: string): Promise<PlayerProfile | null> {
     if (!this.metaBaseUrl) return null;
     try {
-      const res = await fetch(
-        `${this.metaBaseUrl}/internal/player?publicId=${encodeURIComponent(publicId)}`,
-        { headers: internalHeaders('admin', this.internalKey) },
-      );
+      const res = await fetch(`${this.metaBaseUrl}/internal/player?${qs}`, {
+        headers: internalHeaders('admin', this.internalKey),
+      });
       if (res.status === 404) return null;
       if (!res.ok) {
         log.warn('player lookup non-2xx', { status: res.status });
@@ -121,6 +140,24 @@ export class HttpPlayerClient implements PlayerClient {
     } catch (e) {
       log.warn('player lookup failed', { err: (e as Error).message });
       return null;
+    }
+  }
+
+  async search(q: string, limit: number): Promise<PlayerSummary[]> {
+    if (!this.metaBaseUrl) return [];
+    try {
+      const res = await fetch(
+        `${this.metaBaseUrl}/internal/players/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+        { headers: internalHeaders('admin', this.internalKey) },
+      );
+      if (!res.ok) {
+        log.warn('player search non-2xx', { status: res.status });
+        return [];
+      }
+      return ((await res.json()) as { players: PlayerSummary[] }).players;
+    } catch (e) {
+      log.warn('player search failed', { err: (e as Error).message });
+      return [];
     }
   }
 }

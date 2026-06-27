@@ -43,7 +43,7 @@ import {
 } from '@nw/shared';
 import { METRIC_KEYS } from '@nw/shared';
 import type { AdminAccountDoc, AdminCollections, AuditDoc, CompTicketDoc, TradeAuditTicketDoc } from './db';
-import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, EventsClient, LadderClient, LadderSeasonInfo, MailDispatcher, MismatchClient, MismatchRow, PlayerClient, PlayerProfile, StatsClient, SuspiciousPveClient, SuspiciousPveRow, WorldClient, SlgWorldSummary } from './clients';
+import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, EventsClient, LadderClient, LadderSeasonInfo, MailDispatcher, MismatchClient, MismatchRow, PlayerClient, PlayerProfile, PlayerSummary, StatsClient, SuspiciousPveClient, SuspiciousPveRow, WorldClient, SlgWorldSummary } from './clients';
 import type { AuctionAnomaly, EventDoc, EventInput } from '@nw/shared';
 
 const log = createLogger('admin:service');
@@ -770,6 +770,30 @@ export class AdminService {
     const p = await this.players.lookupByPublicId(pid);
     if (!p) throw new AdminError(404, 'not_found', 'no such player');
     return p;
+  }
+
+  /** 按 accountId 查玩家详情（player.lookup，模糊搜结果点击后取详情）。 */
+  async lookupPlayerByAccountId(accountId: string): Promise<PlayerProfile> {
+    const id = (accountId ?? '').trim();
+    if (!id) throw new AdminError(400, 'bad_request', 'accountId required');
+    if (!this.players.available) {
+      throw new AdminError(503, 'unavailable', 'player lookup backend unavailable');
+    }
+    const p = await this.players.lookupByAccountId(id);
+    if (!p) throw new AdminError(404, 'not_found', 'no such player');
+    return p;
+  }
+
+  /** 玩家模糊搜（player.lookup）：昵称/登录账号/公开 id/accountId，返回命中摘要列表。审计。 */
+  async searchPlayers(actor: string, q: string): Promise<PlayerSummary[]> {
+    const term = (q ?? '').trim();
+    if (term.length < 2) throw new AdminError(400, 'bad_request', 'query too short (min 2)');
+    if (!this.players.available) {
+      throw new AdminError(503, 'unavailable', 'player lookup backend unavailable');
+    }
+    const rows = await this.players.search(term, 20);
+    await this.audit(actor, 'player.search', { summary: `q=${term} → ${rows.length} hits` });
+    return rows;
   }
 
   /** 成就反作弊审查队列（anticheat.view，S9-7）。默认 open；可按 accountId 过滤。审计。 */

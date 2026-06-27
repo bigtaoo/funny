@@ -34,7 +34,7 @@ import { writeMigratedSave } from './save.js';
 import type { GatewayClient } from './gatewayClient.js';
 import type { CommercialClient } from './commercialClient.js';
 import { adsDayKey } from './economy.js';
-import { getProfile, resolveByPublicId } from './accounts.js';
+import { getProfile, resolveByPublicId, searchAccounts } from './accounts.js';
 import { grantTitleToPlayer } from './titles.js';
 import { accrueEventTask, adminListEvents, adminCreateEvent, adminUpdateEvent, adminDeleteEvent } from './events.js';
 import { friendAccountIds } from './social.js';
@@ -122,15 +122,40 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     return reply.send(profile); // { displayName?, publicId }
   });
 
-  // ── GET /internal/player?publicId= ───────────────────────────────────
-  // admin 后台玩家查询（OPS_DESIGN §4.1 player.lookup）：按 9 位公开 id 反查档案摘要。
+  // ── GET /internal/players/search?q=&limit= ───────────────────────────
+  // admin 后台玩家模糊搜（OPS_DESIGN §4.1）：单关键词命中 publicId/accountId/loginId/昵称，
+  // 返回命中列表（摘要），详情再走 /internal/player。q < 2 字符返回空；limit 1..50。
+  app.get('/internal/players/search', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const q = (req.query as { q?: string }).q;
+    if (!q) return reply.code(400).send({ ok: false, error: 'q required' });
+    const limit = Math.min(Math.max(Number((req.query as { limit?: string }).limit) || 20, 1), 50);
+    const players = await searchAccounts(cols, q, limit);
+    return reply.send({ players });
+  });
+
+  // ── GET /internal/player?publicId= | ?accountId= ─────────────────────
+  // admin 后台玩家详情（OPS_DESIGN §4.1 player.lookup）：按 9 位公开 id 或 accountId 反查档案摘要。
   app.get('/internal/player', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
-    const publicId = (req.query as { publicId?: string }).publicId;
-    if (!publicId) return reply.code(400).send({ ok: false, error: 'publicId required' });
-    const accountId = await resolveByPublicId(cols, publicId);
+    const { publicId, accountId: accountIdQ } = req.query as {
+      publicId?: string;
+      accountId?: string;
+    };
+    if (!publicId && !accountIdQ) {
+      return reply.code(400).send({ ok: false, error: 'publicId or accountId required' });
+    }
+    let accountId: string | null;
+    if (publicId) {
+      accountId = await resolveByPublicId(cols, publicId);
+    } else {
+      const exists = await cols.accounts.findOne({ _id: accountIdQ! }, { projection: { _id: 1 } });
+      accountId = exists?._id ?? null;
+    }
     if (!accountId) return reply.code(404).send({ ok: false, error: 'not found' });
     const [profile, saveDoc] = await Promise.all([
       getProfile(cols, accountId),
@@ -138,7 +163,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     ]);
     const pvp = saveDoc?.save.pvp;
     return reply.send({
-      publicId,
+      publicId: profile.publicId,
       accountId,
       ...(profile.displayName ? { displayName: profile.displayName } : {}),
       ...(pvp

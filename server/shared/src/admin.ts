@@ -257,6 +257,7 @@ export type AuditAction =
   | 'comp.execute'
   | 'comp.execute.failed'
   | 'anticheat.view'
+  | 'player.search'
   | 'ladder.season.roll'
   | 'slg.season.open'
   | 'slg.season.settle'
