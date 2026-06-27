@@ -253,9 +253,13 @@ export class TutorialDirector {
   private renderOrientation(): void {
     const n = this.orientStep + 1; // O1..O7
     this.dim.visible = true;
+    const isLandscape = this.layout.orientation === 'landscape';
+    const bodyKey = (isLandscape && (n === 1 || n === 2))
+      ? `tutorial.o${n}.body.landscape`
+      : `tutorial.o${n}.body`;
     this.drawPanel(
       tk(`tutorial.o${n}.title`),
-      tk(`tutorial.o${n}.body`),
+      tk(bodyKey),
       t('tutorial.next' as TranslationKey),
       'next',
     );
