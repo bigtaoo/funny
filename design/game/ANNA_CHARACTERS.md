@@ -3,10 +3,16 @@
 > 版本 v1.1 · 2026-06-25  
 > 对应引擎定义见 `design/game/CHARACTER_DESIGN.md`；叙事铁律见 `design/product/characters.md`；美术规范见 `design/product/art-direction.md`
 
-> **出图进度**（截至 2026-06-25，三角色全部定稿 ✅）：
+> **出图进度**（截至 2026-06-27，三角色全部定稿并接入游戏 ✅）：
 > - **Max** 全身立绘已定稿（朝右 / 全身 / 面罩上翻露脸 / 冷钢蓝水彩）。
 > - **Lena** 全身立绘已定稿（朝右 / 壮实低重心坦克体型 / 链甲+皮革+护腿步兵甲 / 深钴蓝几何打格圆盾 / 战辫无盔 / 短剑插腰）。
 > - **Mara** 全身立绘已定稿（朝右 / 纤细高挑最轻盈 / 皮革无甲+单肩箭筒 / 长弓箭未满 / 腕缠蓝绳 / 松散波浪发 / 眼神望远）。三人完成度有意拉开层次：Max 凌厉、Lena 厚实、Mara 最轻最透（铅笔线最细、水彩最透）。
+>
+> **游戏接入状态**（2026-06-27 ✅）：
+> - `.png` 立绘 + `.tao` 骨骼动画已放入 `client/src/assets/`，战场动画路径（`UnitView.ts STICKMAN_ASSETS`）早已接好。
+> - `cardArt.ts CARD_ART_URLS` 补入三人（`unit_max/unit_lena/unit_mara`）——手牌立绘正常显示。
+> - `CollectionScene.ts UNIT_NAME_KEY` 补入三人名称翻译映射——大厅养成页名称正常显示。
+> - 翻译 key（`card.max/lena/mara.name/desc`）zh/en/de 均已存在，无需新增。
 >
 > **出图工具首选**：**ChatGPT（GPT-4o / DALL·E 3 出图）**——本项目"单段长自然语言 prompt、不分正负段、storybook 水彩"的需求由它支持最好，三角色定稿均出自 ChatGPT（Max/Lena/Mara）。免费备用：**Bing Image Creator**（同引擎）、**Mistral Le Chat**（FLUX，默认偏卡通，需 prompt 拉回写实）。Leonardo 免费档是每日刷新 token、单次生成贵模型/高清会一次吃上百 token，不是"低于 100 被锁"。⚠️ 上线前需核对所选工具的**商用授权**。
 

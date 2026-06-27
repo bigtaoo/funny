@@ -65,6 +65,9 @@ const UNIT_NAME_KEY: Partial<Record<UnitType, TranslationKey>> = {
   [UnitType.Infantry]: 'card.infantry.name',
   [UnitType.ShieldBearer]: 'card.shieldbearer.name',
   [UnitType.Archer]: 'card.archer.name',
+  [UnitType.Max]: 'card.max.name',
+  [UnitType.Lena]: 'card.lena.name',
+  [UnitType.Mara]: 'card.mara.name',
 };
 
 export class CollectionScene implements Scene {
