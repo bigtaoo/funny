@@ -8,6 +8,7 @@ import { palette } from '../render/theme';
 import { bake } from '../render/bake';
 import { buildIcon, IconKind } from '../render/icons';
 import { buildWearOverlay } from '../render/wearOverlay';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { BoilingSprite } from '../render/boil';
 import { buildAvatar } from '../render/avatar';
 
@@ -563,6 +564,11 @@ export class LobbyScene implements Scene {
 
     // Background — procedural notebook paper (sketch.ts), baked once per size.
     this.container.addChild(this.buildBackground());
+
+    // C-group background doodles (art-direction §6.2): scattered over the paper
+    // at very low alpha, below the wear overlay and all UI content.
+    const decoC = buildDecorCLayer(w, h);
+    if (decoC) this.container.addChild(decoC);
 
     // Worn-notebook overlay (art-direction §3.1) — faint grain/creases over the
     // page, below the header/panels so it never hurts UI readability.
