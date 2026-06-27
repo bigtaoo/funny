@@ -14,11 +14,10 @@ export const BONE_SLOTS = [
 
 export type BoneSlot = typeof BONE_SLOTS[number];
 
-/** The shadow attachment point image slot. */
-export const SHADOW_SLOT = 'shadow' as const;
-
-/** All image slots: 10 bones + shadow = 11. */
-export const ALL_SLOTS = [...BONE_SLOTS, SHADOW_SLOT] as const;
+/** All image slots. The shadow is no longer authored as an image — it's a unified
+ *  soft ellipse the runtime draws procedurally from the shadow attachment point's
+ *  shadowW/H — so only the 10 bone slots carry images. */
+export const ALL_SLOTS = [...BONE_SLOTS] as const;
 
 /** Default render layer order for bone sprites (higher = in front).
  *  r_lower_leg is furthest back, l_upper_arm is furthest forward. */

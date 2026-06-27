@@ -133,8 +133,7 @@ export class IOController {
 
     // images/ — one PNG per loaded slot (lossless, no spritesheet packing)
     const imgFolder = zip.folder('images')!;
-    const allSlots = [...this.state.boneBindings.keys(), 'shadow'];
-    for (const slotId of allSlots) {
+    for (const slotId of this.state.boneBindings.keys()) {
       const blob = this.imageCtrl.getBlob(slotId);
       if (blob) imgFolder.file(`${slotId}.png`, blob);
     }
@@ -367,8 +366,8 @@ export class IOController {
 
   /** Bake each loaded image down to the resolution it actually needs, and rewrite the
    *  corresponding binding.scaleX/Y in `animJson` so the on-screen result is unchanged.
-   *  Shadow has no binding (its size is driven by shadowW/H) but is resolution-independent,
-   *  so it is shrunk to its display size × headroom too. */
+   *  The shadow is not packed — it is drawn procedurally by the runtime from the shadow
+   *  attachment point's shadowW/H. */
   private async buildExportImages(
     animJson: SerializedProject,
   ): Promise<Array<{ id: string; src: CanvasImageSource; w: number; h: number }>> {
@@ -376,7 +375,9 @@ export class IOController {
     const maxKf    = this.computeMaxKeyframeScale();
     const out: Array<{ id: string; src: CanvasImageSource; w: number; h: number }> = [];
 
-    for (const slotId of [...this.state.boneBindings.keys(), 'shadow']) {
+    // Shadow is no longer packed: it's a unified soft ellipse the runtime draws
+    // procedurally from the shadow attachment point's shadowW/H (see file-formats.md).
+    for (const slotId of this.state.boneBindings.keys()) {
       const blob = this.imageCtrl.getBlob(slotId);
       if (!blob) continue;
 
@@ -386,23 +387,14 @@ export class IOController {
 
       let bakeX = 1, bakeY = 1;
 
-      if (slotId === 'shadow') {
-        // Shadow display size = shadowW*2 × shadowH*2 (animator px), independent of source.
-        const shadow = this.state.attachmentPoints.get('shadow');
-        const dispW  = (shadow?.shadowW ?? 20) * 2;
-        const dispH  = (shadow?.shadowH ?? 6)  * 2;
-        bakeX = clamp01((dispW * headroom) / sw);
-        bakeY = clamp01((dispH * headroom) / sh);
-      } else {
-        const binding = animJson.bindings[slotId];
-        if (binding) {
-          const kf = maxKf.get(slotId) ?? { x: 1, y: 1 };
-          bakeX = clamp01(Math.abs(binding.scaleX) * kf.x * headroom);
-          bakeY = clamp01(Math.abs(binding.scaleY) * kf.y * headroom);
-          // Compensate so keyframe.scale × binding.scale renders identical pixels.
-          binding.scaleX /= bakeX;
-          binding.scaleY /= bakeY;
-        }
+      const binding = animJson.bindings[slotId];
+      if (binding) {
+        const kf = maxKf.get(slotId) ?? { x: 1, y: 1 };
+        bakeX = clamp01(Math.abs(binding.scaleX) * kf.x * headroom);
+        bakeY = clamp01(Math.abs(binding.scaleY) * kf.y * headroom);
+        // Compensate so keyframe.scale × binding.scale renders identical pixels.
+        binding.scaleX /= bakeX;
+        binding.scaleY /= bakeY;
       }
 
       if (bakeX > 0.999 && bakeY > 0.999) {

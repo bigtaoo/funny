@@ -64,7 +64,7 @@ export class ImagePanel {
     for (const slotId of ALL_SLOTS) {
       const isBone    = (BONE_SLOTS as readonly string[]).includes(slotId);
       const boneDef   = Skeleton.BONE_MAP.get(slotId);
-      const label     = boneDef?.label ?? (slotId === 'shadow' ? 'Shadow' : slotId);
+      const label     = boneDef?.label ?? slotId;
       const filename  = this.imageCtrl.getFilename(slotId);
       const hasImage  = !!this.imageCtrl.getTexture(slotId);
       const binding   = isBone ? this.state.getBinding(slotId) : undefined;

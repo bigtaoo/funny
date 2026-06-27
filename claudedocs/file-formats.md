@@ -16,20 +16,19 @@ ZIP 内含 `animation.json`（v2）+ `spritesheet.png`（shelf bin-packing）+ `
 
 `boneLengthScales` 稀疏对象，只记录非 1.0 的骨骼；缺省或缺键均视为 1.0。
 
-### 阴影（shadow）—— 待定架构（2026-06-25 记录，未决）
+### 阴影（shadow）—— 统一程序绘制（方案 C，2026-06-27 落地）
 
-阴影**不画进角色立绘**，是 rig + 引擎单独处理的（立绘出图阶段无需管阴影；绑骨阶段补）：
+阴影**不画进角色立绘**，也**不再作为图片打包进 `.tao`**——是一张全局统一、运行时**程序绘制**的柔边椭圆，按挂点尺寸缩放：
 
-- `.tao` 里 `shadow` 是一个 `attachmentPoint`（`id === 'shadow'`），挂脚底骨，带可选 `shadowW/shadowH`（椭圆半径，animator 像素）。
-- 渲染：`shadow.png` 只是**一张通用柔边深色椭圆晕斑**，被引擎**缩放**到 `shadowW×shadowH`（`scale = shadowW*2 / tex.width`），`alpha=0.55`、`rotation=0` 永远贴地不随肢体转；其上再叠程序画的阵营地面标记（我蓝敌红，`UnitView.drawUnitMarker` / `drawFactionMarker`）。见 `client/src/render/stickman/StickmanRuntime.ts` 的 `_applyShadowPose` / `getShadowGround`。
-- **结论：阴影形状通用，差异只靠 `shadowW/H` 缩放参数**——不必为每个角色手绘定制阴影，多个单位可共享同一张 `shadow.png`。
+- `.tao` 里 `shadow` 只是一个 `attachmentPoint`（`id === 'shadow'`），挂脚底骨，带可选 `shadowW/shadowH`（椭圆半径，animator 像素）。**只有位置 + 尺寸参数，没有图片。**
+- 渲染：运行时用 canvas 径向渐变**一次性生成**一张 128×128 柔边深色椭圆纹理（全局共享），缩放到 `shadowW×shadowH`（`scale = shadowW*2 / tex.width`），`alpha=0.55`、`rotation=0` 永远贴地不随肢体转；其上再叠程序画的阵营地面标记（我蓝敌红，`UnitView.drawUnitMarker` / `drawFactionMarker`）。见 `client/src/render/stickman/StickmanRuntime.ts` 的 `getShadowTexture` / `_applyShadowPose` / `getShadowGround`。
+- **结论：阴影形状/纹理全局统一，单位间差异只靠 `shadowW/H` 缩放参数**——零贴图、零打包。
 
-**待决问题（用户在权衡，先不动）**：既然阴影是通用图，每个 `.tao` 各自打包一份 `shadow.png` 属冗余。三种处理：
-1. **A 现状**：每个 `.tao` 各自打包。冗余但便宜（柔边椭圆几十 KB）。
-2. **B 共享图**：抽一张公共 `shadow.png` 所有 rig 引用。去重，但仍保留贴图资源 + 特殊加载分支。
-3. **C 程序画（推荐方向）**：彻底不要这张图，像阵营地面标记那样用 `PIXI.Graphics` 画柔边椭圆，只吃 `shadowW/H`。最干净——零贴图、零打包、可删 `_applyShadowPose` 的 `textures.get('shadow')` 特殊分支。
-
-> C 的代价：要动 animator 导出（不再吐 shadow.png）+ runtime 加载/渲染 + 可能 level/vfx 编辑器对 `.tao` 的解析；收益是架构干净而非性能。另：现有 archer/infantry 的 `shadow.png` 字节数不同（~60KB / ~34KB），做 B/C 前需先确认能统一。要做时先摸完整调用链（animator 导出 → runtime → 各编辑器）出改动清单。
+实现要点（完整调用链）：
+- **animator 导出**（`tools/animator/src/io/IOController.ts`）：`buildExportImages` / `buildEditorBlob` 不再把 `shadow` 槽打进 spritesheet / `.tao.editor`。
+- **animator 编辑**：阴影槽已从图片面板（`ImageController.ALL_SLOTS` 去掉 shadow）移除，只在 `AttachmentPanel` 调挂点位置 + `shadowW/H`；预览（`Renderer.ts`）改用同一份程序生成纹理（`shadowTexture()`），与游戏一致。
+- **runtime**（`StickmanRuntime.ts`）：构造时若有 `shadow` 挂点就建一个底层 sprite 用程序纹理；加载 spritesheet 时**跳过任何 `shadow` 帧**，所以**旧 `.tao`（仍打包了 shadow.png）也走统一程序绘制**，无需重导出。
+- 旧 `.tao` 内残留的 `shadow.png` 成为死字节，运行时忽略；如需瘦身可在 animator 里重新导出覆盖。
 
 ## `.tao.editor`（编辑器存档）
 

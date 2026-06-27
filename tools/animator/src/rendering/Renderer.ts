@@ -13,6 +13,30 @@ function defaultShadowSize(): { w: number; h: number } {
   return (_defaultShadow ??= Skeleton.computeDefaultShadowSize());
 }
 
+// Unified procedural shadow — a single soft ellipse generated once, scaled to the
+// shadow attachment point's shadowW/H. Mirrors the runtime (StickmanRuntime.ts) so
+// the editor preview matches the game; shadows are no longer authored as images.
+let _shadowTex: PIXI.Texture | null = null;
+function shadowTexture(): PIXI.Texture {
+  if (_shadowTex) return _shadowTex;
+  const SIZE = 128;
+  const canvas  = document.createElement('canvas');
+  canvas.width  = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext('2d')!;
+  const r   = SIZE / 2;
+  const grad = ctx.createRadialGradient(r, r, 0, r, r, r);
+  grad.addColorStop(0,    'rgba(0,0,0,1)');
+  grad.addColorStop(0.55, 'rgba(0,0,0,0.85)');
+  grad.addColorStop(1,    'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(r, r, r, 0, Math.PI * 2);
+  ctx.fill();
+  _shadowTex = PIXI.Texture.from(canvas);
+  return _shadowTex;
+}
+
 // ── RenderData ────────────────────────────────────────────────────────────────
 
 export interface RenderData {
@@ -205,11 +229,11 @@ export class Renderer {
       });
     }
 
-    // Render shadow attachment point image (below all bone sprites)
+    // Render the unified procedural shadow (below all bone sprites)
     if (data.previewMode === 'sprite') {
       const shadowPt  = data.attachmentPoints.get('shadow');
-      const shadowTex = data.getTexture('shadow');
-      if (shadowPt && shadowTex) {
+      const shadowTex = shadowTexture();
+      if (shadowPt) {
         const parent = data.worldPose.get(shadowPt.parentBone) ?? data.worldPose.get('root');
         if (parent) {
           visible.add('shadow');
@@ -233,7 +257,7 @@ export class Renderer {
             (sw * 2) / shadowTex.width,
             (sh * 2) / shadowTex.height,
           );
-          sprite.alpha   = 1;
+          sprite.alpha   = 0.55;
           sprite.visible = true;
         }
       }

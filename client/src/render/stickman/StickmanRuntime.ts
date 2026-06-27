@@ -24,6 +24,31 @@ import type { AnimationClip, BoneKeyframe, SpriteBinding } from './types';
 import { drawEquipmentGlyph } from '../equipmentGlyph';
 import type { EquipSlot, EquipRarity } from '../../game/meta/SaveData';
 
+// ── Unified procedural shadow ─────────────────────────────────────────────────
+// Shadows are no longer packed per-.tao. A single soft-edged dark ellipse is
+// generated once and shared by every rig, scaled to each rig's shadowW/H at
+// render time. See claudedocs/file-formats.md (.tao shadow section).
+let _shadowTex: PIXI.Texture | null = null;
+function getShadowTexture(): PIXI.Texture {
+  if (_shadowTex) return _shadowTex;
+  const SIZE = 128;
+  const canvas  = document.createElement('canvas');
+  canvas.width  = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext('2d')!;
+  const r   = SIZE / 2;
+  const grad = ctx.createRadialGradient(r, r, 0, r, r, r);
+  grad.addColorStop(0,    'rgba(0,0,0,1)');
+  grad.addColorStop(0.55, 'rgba(0,0,0,0.85)');
+  grad.addColorStop(1,    'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(r, r, r, 0, Math.PI * 2);
+  ctx.fill();
+  _shadowTex = PIXI.Texture.from(canvas);
+  return _shadowTex;
+}
+
 // ── TaoAsset (shared, loaded once per .tao file) ──────────────────────────────
 
 /** Parsed attachment point from animation.json (includes optional shadow size). */
@@ -191,23 +216,30 @@ export class StickmanRuntime {
       STICKMAN_SCALE,
     );
 
+    // Unified procedural shadow: a single shared soft ellipse, scaled to this rig's
+    // shadowW/H. Added first so it always renders below every bone. No longer packed
+    // into the .tao spritesheet — the runtime draws it for any rig with a shadow
+    // attachment point, so old bundles (which still carry a shadow frame) get the
+    // same treatment once that frame is skipped at load.
+    if (asset.attachmentPoints.has('shadow')) {
+      const shadowSprite = new PIXI.Sprite(getShadowTexture());
+      shadowSprite.name  = 'shadow';
+      shadowSprite.anchor.set(0.5, 0.5);
+      this.sprites.set('shadow', shadowSprite);
+      this.container.addChild(shadowSprite);
+    }
+
     // Create one sprite per textured slot, sorted by zOrder (back to front).
-    // Shadow (if present) uses zOrder = -Infinity so it always renders below bones.
-    const boneIds = [...asset.textures.keys()].sort((a, b) => {
-      const za = a === 'shadow' ? -Infinity : (asset.bindings.get(a)?.zOrder ?? 0);
-      const zb = b === 'shadow' ? -Infinity : (asset.bindings.get(b)?.zOrder ?? 0);
-      return za - zb;
-    });
+    const boneIds = [...asset.textures.keys()].sort(
+      (a, b) => (asset.bindings.get(a)?.zOrder ?? 0) - (asset.bindings.get(b)?.zOrder ?? 0),
+    );
 
     for (const boneId of boneIds) {
       const tex     = asset.textures.get(boneId)!;
       const binding = asset.bindings.get(boneId);
       const sprite  = new PIXI.Sprite(tex);
       sprite.name   = boneId;
-      if (boneId === 'shadow') {
-        // Shadow is centred over its attachment position, stays below the bones.
-        sprite.anchor.set(0.5, 0.5);
-      } else if (binding) {
+      if (binding) {
         sprite.anchor.set(binding.anchorX, binding.anchorY);
       }
       this.sprites.set(boneId, sprite);
@@ -490,8 +522,8 @@ export class StickmanRuntime {
     worldPos: ReturnType<typeof Skeleton.computeFK>,
   ): void {
     const shadowPt = this.asset.attachmentPoints.get('shadow');
-    const tex      = this.asset.textures.get('shadow');
-    if (!shadowPt || !tex) { sprite.visible = false; return; }
+    const tex      = getShadowTexture();
+    if (!shadowPt) { sprite.visible = false; return; }
 
     const parent = worldPos.get(shadowPt.parentBone) ?? worldPos.get('root');
     if (!parent) { sprite.visible = false; return; }
@@ -589,6 +621,9 @@ export class StickmanRuntime {
 
     const textures = new Map<string, PIXI.Texture>();
     for (const [boneId, fd] of Object.entries(spRaw.frames as Record<string, any>)) {
+      // Shadow is drawn procedurally (unified soft ellipse); ignore any packed
+      // shadow frame so legacy bundles render the same as freshly-exported ones.
+      if (boneId === 'shadow') continue;
       const { x, y, w, h } = fd.frame;
       textures.set(boneId, new PIXI.Texture(baseTex, new PIXI.Rectangle(x, y, w, h)));
     }
