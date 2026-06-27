@@ -4,7 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { ShopItem } from '../net/ApiClient';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -193,7 +193,7 @@ export class ShopScene implements Scene {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   private render(): void {
-    this.container.removeChildren();
+    tearDownChildren(this.container); // caret blink (~2×/s) + per-keystroke recharge field → free Text textures
     this.hits = [];
 
     this.drawBackground();

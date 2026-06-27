@@ -6,7 +6,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, FamilyView, FamilyMemberView, FamilyMessageView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
@@ -142,7 +142,7 @@ export class FamilyScene implements Scene {
 
   private render(): void {
     if (this.destroyed) return;
-    this.bodyLayer.removeChildren();
+    tearDownChildren(this.bodyLayer); // create-form input re-renders per keystroke → free Text textures
     this.hitRects = [];
     this.renderHeader();
 

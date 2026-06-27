@@ -3,7 +3,7 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 
 // ── LoginScene (SA-3) — account login / register + single-player entry ─────────
 //
@@ -259,25 +259,9 @@ export class LoginScene implements Scene {
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  /**
-   * Destroy the current children before a re-render. Critical here because render()
-   * runs on **every keystroke** AND ~2×/s from the caret blink: each PIXI.Text owns
-   * its own GPU texture, and a bare removeChildren() orphans them for up to PIXI's
-   * ~60s texture-GC window. On iPad Safari's tiny WebGL memory budget that exhausts
-   * GPU memory while typing the nickname → context loss → Safari reloads the page
-   * ("一直崩溃"). Text textures are freed here; the paper background is a shared,
-   * bake()-cached RenderTexture, so its sprite is detached WITHOUT touching the
-   * texture (destroy default texture:false) — only PIXI.Text frees its texture.
-   */
-  private tearDownChildren(): void {
-    for (const child of this.container.removeChildren()) {
-      if (child instanceof PIXI.Text) child.destroy({ texture: true, baseTexture: true });
-      else child.destroy({ children: true }); // Graphics geometry freed; shared bake texture untouched
-    }
-  }
-
   private render(): void {
-    this.tearDownChildren();
+    tearDownChildren(this.container); // free per-keystroke/caret Text textures; see sketchUi
+
     this.hits = [];
     this.spinnerText = null;
 
