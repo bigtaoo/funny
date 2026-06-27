@@ -157,10 +157,32 @@
   - ✅ 大世界误判离线 —— `WorldApiClient.checkHealth()` 探针失败（CORS/超时/拒连）不再判离线，仅在可达但 5xx 时标红。
   - ✅ 限时活动灰态 —— 无 live 活动时**隐藏**该 chip，「每日」占满整行（不再常态灰一块）。
   - ⏭ 装备大厅入口 —— **不单独做**，归入 P1 的「养成」tab（避免临时入口被推翻）。
-- **P1**：底部 5 tab 重定义（养成/商城/主页/生涯/社交）+ 三个 tab 的功能归并：
+- ✅ **P1**（完成 2026-06-27）：底部 5 tab 重定义（养成/商城/主页/生涯/社交）+ 三个 tab 的功能归并：
   - 养成 = 收藏(CollectionScene) 扩容纳入 EquipmentScene（装备从战役上浮，保留战役准备页快捷入口）；
   - 商城 = ShopScene 扩容纳入 Gacha + BattlePass（红点提醒，不侵入主页）；
   - 生涯 = StatsScene 升级，纳入成就/天梯/称号/录像，**默认落地天梯**；
   - 离线时 商城/社交/生涯 整 tab **灰显**。
+
+  **实现记录**（落代码细节，验收以此为准）：
+  - **底部 5 tab** 改为固定顺序 **养成·商城·★主页·生涯·社交**（`LobbyScene.build()` 的 `slots[]`）。
+    i18n 复用原 nav key，仅改文案：`lobby.nav.cards→养成` / `lobby.nav.shop→商城` / `lobby.nav.stats→生涯`；
+    `stats.title→生涯`（en: Develop/Store/Career；de: Ausbau/Laden/Laufbahn）。
+  - **离线灰显**：5 tab 始终全绘；离线时 商城/生涯/社交 三 slot 降透明度（dot 0.35 / label 0.4）且
+    **不分配命中区**（点击纯 no-op，不再引导，§6 决策 6）。养成（收藏读本地档）与主页照常可用。
+    `handleDown` 给 养成/生涯 命中加 `w>0` 兜底，防灰显态零矩形误命中。
+  - **架构取舍**：「扩容纳入」按本仓「一场景一功能 + 导航核心」架构落在**导航层**——hub 场景新增入口，
+    点击启动被并入的独立场景，其 `onBack` 路由回 hub（而非旧父级）。不把 875 行的
+    EquipmentScene 等重写为内嵌 tab；视觉打磨留 P2/P3。
+  - **养成**：`CollectionScene` 在原三 tab（卡牌/皮肤/单位）后加第 4 个「装备」launcher tab；
+    新增回调 `onOpenEquipment?`，仅 `api && 登录` 时点亮（金边），否则灰显无命中。点击→
+    `goEquipment(back=回收藏页)`。`goEquipment(back=goCampaignMap)` 参数化 back，
+    **战役地图入口与战役准备页快捷入口保持不动**。
+  - **商城**：`ShopScene` 页脚由 2 键（盲盒/充值）扩为 3 键（盲盒/**战令**/充值）；新增回调
+    `openBattlePass?`，仅登录在线时出现，复用 `battlepass.openBattlePass` 文案。
+    `goBattlePass(back)` 参数化，商城进入时 back=回商城。
+  - **生涯**：`StatsScene` **移除战令入口行**（已移至商城），**新增「我的称号」入口行**
+    （`onOpenTitles?`→`goTitles(goStats)`；`goTitles(back)` 参数化，设置页入口仍默认回设置）。
+    成就（顶栏右上）/ 天梯榜（排位段「排行榜→」行，**首屏即天梯分区**，兑现「默认落地天梯」）/
+    对战历史·录像 维持。
 - **P2**：主页**右侧竖栏**图标条（每日/邮件/活动/成就，可领时亮红点）+ 视觉留白打磨。
 - **P3**：图标资产（文具/简笔）替换底部 tab 色块。

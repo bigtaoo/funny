@@ -43,8 +43,11 @@ export interface StatsCallbacks {
   onOpenAchievements?(): void;
   /** Open the global leaderboard (SE-6). Shown in the ranked section when online. */
   onOpenLeaderboard?(): void;
-  /** Open the battle pass panel (SE-9). Shown in the ranked section when online. */
-  onOpenBattlePass?(): void;
+  /**
+   * Open the titles wall (S10). Shown as a ranked-section entry (LOBBY_IA_REDESIGN §3:
+   * 称号并入「生涯」中心). 战令 Battle Pass moved to the 商城 tab — no longer linked here.
+   */
+  onOpenTitles?(): void;
   /** Current season info for the banner (SE-6). */
   season?: { seasonNo: number; endAt: number };
 }
@@ -147,7 +150,7 @@ export class StatsScene implements Scene {
       { label: t('stats.winrate'), value: winrate },
       { label: t('stats.streak'), value: streak, valueColor: s.pvp.streak > 0 ? C.green : s.pvp.streak < 0 ? C.red : C.mid },
       ...(this.cb.onOpenLeaderboard ? [{ label: '', value: t('leaderboard.openLeaderboard') + ' →', valueColor: C.accent, rowHit: () => this.cb.onOpenLeaderboard!() }] : []),
-      ...(this.cb.onOpenBattlePass ? [{ label: '', value: t('battlepass.openBattlePass') + ' →', valueColor: C.gold, rowHit: () => this.cb.onOpenBattlePass!() }] : []),
+      ...(this.cb.onOpenTitles ? [{ label: '', value: t('settings.openTitles') + ' →', valueColor: C.gold, rowHit: () => this.cb.onOpenTitles!() }] : []),
     ];
     y = this.drawSection(pad, y, secW, t('stats.pvp'), C.accent, pvpRows);
     y += gap;

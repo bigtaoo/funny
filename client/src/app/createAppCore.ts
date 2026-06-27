@@ -414,10 +414,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     }
   }
 
-  function goTitles(): void {
+  /** 称号墙（S10）。可从设置（默认 back）或「生涯」tab（back=goStats）进入。 */
+  function goTitles(back: () => void = goSettings): void {
     const save = saveManager.get();
     views.showTitles({
-      onBack() { goSettings(); },
+      onBack() { back(); },
       titles: save.titles ?? [],
       equippedTitle: save.equipped['title'] ?? '',
       onEquip(titleId: string) {
@@ -817,6 +818,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     // 转化标记：本次进店是否产生过购买，离店时随 shop_close 上报（漏斗末端，§9.3）。
     let converted = false;
     const shopOpenTs = Date.now();
+    // 战令并入商城（LOBBY_IA_REDESIGN §3）：仅登录在线时给出战令入口，返回回到商城。
+    const shopLoggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     views.showShop({
       onBack() {
         analytics.track('shop_close', { converted, time_sec: Math.round((Date.now() - shopOpenTs) / 1000) });
@@ -854,6 +857,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         }
       },
       openGacha() { goGacha(); },
+      ...(shopLoggedIn ? { openBattlePass: () => goBattlePass(() => goShop(onBack)) } : {}),
     });
   }
 
@@ -1028,9 +1032,13 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   function goCollection(back: () => void, initialTab: 'cards' | 'skins' | 'units' = 'cards'): void {
     inLobby = false;
     analytics.track('screen_view', { scene: 'CollectionScene' });
+    // 装备并入「养成」（LOBBY_IA_REDESIGN §3）：仅登录在线时点亮第 4 个「装备」tab；
+    // 进装备后返回回到本收藏页（保持来时的子 tab）。
+    const equipLoggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     views.showCollection({
       onBack: back,
       initialTab,
+      ...(api && equipLoggedIn ? { onOpenEquipment: () => goEquipment(() => goCollection(back, initialTab)) } : {}),
       getSkins: () => saveManager.get().inventory.skins,
       getEquipped: () => saveManager.get().equipped[EQUIP_SLOT] ?? null,
       equip: (skinId) => {
@@ -1070,14 +1078,17 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     return 'equip.err.generic';
   }
 
-  /** 装备系统（E5）。服务器权威，需登录在线；从战役地图进入，返回战役地图。 */
-  function goEquipment(): void {
-    if (!api) { goCampaignMap(); return; }
+  /**
+   * 装备系统（E5）。服务器权威，需登录在线。可从战役地图（默认 back）或「养成」tab
+   * （LOBBY_IA_REDESIGN §3，back=回收藏页）进入，`back` 决定返回去向。
+   */
+  function goEquipment(back: () => void = goCampaignMap): void {
+    if (!api) { back(); return; }
     const client = api;
     inLobby = false;
     analytics.track('screen_view', { scene: 'EquipmentScene' });
     views.showEquipment({
-      onBack() { goCampaignMap(); },
+      onBack() { back(); },
       getSave: () => saveManager.get(),
       async craft(defId: string) {
         try {
@@ -1146,7 +1157,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         : {}),
       ...(client && loggedIn ? { onOpenAchievements: () => goAchievements() } : {}),
       ...(client && loggedIn ? { onOpenLeaderboard: () => goLeaderboard() } : {}),
-      ...(client && loggedIn ? { onOpenBattlePass: () => goBattlePass() } : {}),
+      // 称号并入「生涯」（LOBBY_IA_REDESIGN §3）；战令已移至「商城」tab，此处不再链接。
+      ...(loggedIn ? { onOpenTitles: () => goTitles(goStats) } : {}),
       // 赛季横幅：从存档 pvp.seasonNo 读取，endAt 从 leaderboard 缓存或留 undefined（显「已结束」）。
       ...(pvp.seasonNo ? { season: { seasonNo: pvp.seasonNo, endAt: 0 } } : {}),
       getStats: () => {
@@ -1183,13 +1195,14 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  function goBattlePass(): void {
+  /** 战令面板（SE-9）。IA 重规划后从「商城」tab 进入（LOBBY_IA_REDESIGN §3），`back` 决定返回去向。 */
+  function goBattlePass(back: () => void = goLobby): void {
     inLobby = false;
     analytics.track('screen_view', { scene: 'BattlePassScene' });
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const client = api;
     views.showBattlePass({
-      onBack: () => goStats(),
+      onBack: back,
       ...(loggedIn
         ? {
             getBattlePass: () => saveManager.get().battlePass,

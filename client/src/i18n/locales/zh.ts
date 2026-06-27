@@ -61,10 +61,10 @@ export const zh = {
   'lobby.you': '你',
   'lobby.vs': 'VS',
   'lobby.loading': '战场加载中...',
-  'lobby.nav.cards': '卡组',
-  'lobby.nav.stats': '战绩',
+  'lobby.nav.cards': '养成',
+  'lobby.nav.stats': '生涯',
   'lobby.nav.home': '主页',
-  'lobby.nav.shop': '商店',
+  'lobby.nav.shop': '商城',
   'lobby.nav.social': '社交',
 
   // ── 个人设置 ──────────────────────────────────────────────────────────────
@@ -479,6 +479,7 @@ export const zh = {
   'collection.tab.cards': '卡牌',
   'collection.tab.skins': '皮肤',
   'collection.tab.units': '单位',
+  'collection.tab.equipment': '装备',
   'collection.cardType.unit': '士兵',
   'collection.cardType.building': '建筑',
   'collection.cardType.spell': '法术',
@@ -489,8 +490,8 @@ export const zh = {
   'collection.stat.spawn': '数量',
   'collection.stat.interval': '攻速',
 
-  // 战绩 / 统计页
-  'stats.title': '战绩',
+  // 战绩 / 统计页（IA 重规划后作为「生涯」中心）
+  'stats.title': '生涯',
   'stats.back': '← 返回',
   'stats.pvp': '排位对战',
   'stats.rank': '段位',

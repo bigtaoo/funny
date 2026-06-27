@@ -61,10 +61,10 @@ export const en: Record<TranslationKey, string> = {
   'lobby.you': 'YOU',
   'lobby.vs': 'VS',
   'lobby.loading': 'Loading battlefield...',
-  'lobby.nav.cards': 'Cards',
-  'lobby.nav.stats': 'Stats',
+  'lobby.nav.cards': 'Develop',
+  'lobby.nav.stats': 'Career',
   'lobby.nav.home': 'Home',
-  'lobby.nav.shop': 'Shop',
+  'lobby.nav.shop': 'Store',
   'lobby.nav.social': 'Social',
 
   // ── Personal settings ───────────────────────────────────────────────────────
@@ -478,6 +478,7 @@ export const en: Record<TranslationKey, string> = {
   'collection.tab.cards': 'Cards',
   'collection.tab.skins': 'Skins',
   'collection.tab.units': 'Units',
+  'collection.tab.equipment': 'Gear',
   'collection.cardType.unit': 'Unit',
   'collection.cardType.building': 'Building',
   'collection.cardType.spell': 'Spell',
@@ -488,8 +489,8 @@ export const en: Record<TranslationKey, string> = {
   'collection.stat.spawn': 'Count',
   'collection.stat.interval': 'Atk spd',
 
-  // Stats screen
-  'stats.title': 'Stats',
+  // Stats screen (IA redesign: now the "Career" hub)
+  'stats.title': 'Career',
   'stats.back': '← Back',
   'stats.pvp': 'Ranked',
   'stats.rank': 'Rank',
