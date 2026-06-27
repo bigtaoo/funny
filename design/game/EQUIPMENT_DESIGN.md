@@ -635,7 +635,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 |---|---|---|---|
 | 背包/锻造/loadout 的装备图标 | **程序绘制** | 12 件无需逐件出图：按 (槽位基形 × 稀有度媒材色) 程序合成 | `client/src/render/equipmentGlyph.ts`（§20.3 已落地） |
 | 4 档稀有度视觉（媒材皮调色 + 笔触） | **theme 参数** | 一档 = 一组调色板/笔刷，与付费皮肤复用同一套文具稀有度语言 | `theme.ts` + `equipmentGlyph` 内 `MEDIA` 表 |
-| 强化等级 / 词条 / 成功率显示 | 纯文本 + i18n | 0 | `EquipmentScene` 已有 |
+| 强化等级 / 成功率显示 | 纯文本 + i18n | 0 | `EquipmentScene` 已有 |
+| 词条统计 / 材料·金币消耗·余额图标 | **程序绘制** | 8 个手绘小图标（材料 3 + 统计 5），文字承载量降低 | `client/src/render/icons.ts`（§20.5 已落地） |
 | 稀有度边框/标签 | UI 色（已编码） | 0 | `RARITY_COLOR` |
 | **战斗内沿 bone-slot 的装备立绘叠加** | **程序绘制（✅ 已落地）** | 沿 `StickmanRuntime` 骨骼叠加文具笔触（§20.3 同款 glyph，复用每帧 FK） | 见 §20.4 |
 
@@ -659,4 +660,22 @@ buildSiegeBlueprints(levels, equipped, inv)
 **对象池正确性**：池按兵种分桶、不分敌我，同一 runtime 复用时可能换边。故 `setGear` 做**幂等键校验**（`gearKey` 不变即 no-op），`UnitView.applyGear` 在**每次** acquire（新建 + 池复用两条分支）按 `unit.side === localSide` 重申：己方军披玩家 loadout，同型敌军传 `[]` 清掉上一生命残留的装备。常见「同边同型复用」是 no-op，保住池化收益。
 
 **局限（记录待办，非本切片）**：① 精确锚点/旋转需一次有视角的打磨或美术补 `gear_*` 点（本项目不做截图验证，故默认骨骼为保守平移叠加）；② replay/spectator 路径不携带 equipment 输入 → 回放不显装备；③ glyph 不随骨骼旋转（持笔不会随挥击转动），如需"挥笔"需引入随 `wa` 的旋转项。
+
+### 20.5 实现记录（2026-06-27，✅）— 材料/词条图标化
+
+背景：装备页除装备本体 glyph（§20.3）外，材料余额、强化/锻造消耗、词条统计仍是密集纯文本，信息密度高、扫读慢。本切片把这些信息**图标化**，与 §20.3 同走 `SketchPen` 程序绘制 + 纹理缓存，零位图。
+
+落地 = `client/src/render/icons.ts` 扩 8 个手绘图标（沿用现有 `IconKind`/`buildIcon` 缓存框架，headless 自动回退 live draw）：
+- **材料**：`scrap`（撕角纸屑+横线）/ `lead`（削尖石墨条）/ `binding`（螺旋装订圈）；金币复用既有 `coin`。
+- **词条统计**：`atk`（剑刃）/ `hp`（涂鸦心）/ `armor`（盾）/ `spd`（双向尖角=移速）/ `atkspd`（闪电=攻速）。
+
+接入 `EquipmentScene`（4 处）：
+1. 顶部资源条：金币 + 三材料余额 → 图标 + 数量（无 `×`）。
+2. 详情模态·强化消耗：`消耗:` + `图标×数量` 链（买不起整体变红，逻辑不变）。
+3. 详情模态·词条行：每条属性前置统计图标，主词条墨蓝 / 副词条铅黑（颜色语义沿用）。
+4. 锻造行·配方成本：材料文字 → `图标×数量`。
+
+实现细节：① 新增共享方法 `drawCostChips(parent, x, midY, mats, coins, color, size, prefix)` 统一画消耗组，**未知材料/词条自动回退文字标签**（健壮，不因新增材料 id 漏图标而崩）；② 材料墨色 `MAT_COLOR`（纸灰/石墨/墨蓝）+ 映射函数 `matIconKind`/`affixIconKind`；③ i18n（`material.*`/`affix.*`）全保留——图标是文字的前缀增强，词条数值文字仍在；④ 删去因此变成死代码的 `enhanceCostStr()`。验证：client `tsc --noEmit` + webpack 生产构建全绿。
+
+**美术铁律遵守**：装备本体 glyph（§20.3）与角色立绘叠加（§20.4）不动；新图标全部手绘笔触、平面无渐变，符合 art-direction「三笔语言 + 程序优先」。
 

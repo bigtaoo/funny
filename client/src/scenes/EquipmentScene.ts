@@ -32,6 +32,7 @@ import {
 } from '../game/meta/equipmentDefs';
 import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
 import { drawEquipmentGlyph } from '../render/equipmentGlyph';
+import { buildIcon, type IconKind } from '../render/icons';
 
 export type EquipResult = { ok: true } | { ok: false; key: TranslationKey };
 export type EnhanceResult =
@@ -74,6 +75,27 @@ const RARITY_COLOR: Record<EquipRarity, number> = {
   rare: 0xe08a2c,
   epic: 0xaa55cc,
 };
+
+/** 材料图标墨色（三笔语言：碎屑=纸灰 / 铅芯=石墨黑 / 装订线=墨蓝）。 */
+const MAT_COLOR: Record<string, number> = {
+  scrap: 0x8a8278,
+  lead: 0x3a3632,
+  binding: 0x2b4f8c,
+};
+
+/** 材料 id → 图标种类（含金币）；未知材料返回 null（回退文字）。 */
+function matIconKind(id: string): IconKind | null {
+  if (id === 'scrap' || id === 'lead' || id === 'binding') return id;
+  if (id === 'coins' || id === 'coin') return 'coin';
+  return null;
+}
+
+/** 词条 id（去 m_/s_/k_ 前缀）→ 统计图标；未知返回 null。 */
+function affixIconKind(affixId: string): IconKind | null {
+  const stat = affixId.replace(/^[a-z]_/, '');
+  if (stat === 'atk' || stat === 'hp' || stat === 'armor' || stat === 'spd' || stat === 'atkspd') return stat;
+  return null;
+}
 
 export class EquipmentScene implements Scene {
   readonly container: PIXI.Container;
@@ -217,13 +239,17 @@ export class EquipmentScene implements Scene {
     bg.beginFill(0xf3f1ea).drawRect(0, y, w, RES_H).endFill();
     this.bodyLayer.addChild(bg);
 
-    const parts: string[] = [`${t('equip.coins')} ${save.wallet.coins}`];
-    for (const m of TRACKED_MATERIALS) {
-      parts.push(`${t(`material.${m}` as TranslationKey)} ${save.materials[m] ?? 0}`);
-    }
-    const line = txt(parts.join('   '), 11, C.dark);
-    line.x = 10; line.anchor.set(0, 0.5); line.y = y + RES_H / 2;
-    this.bodyLayer.addChild(line);
+    // 余额（非消耗）：图标 + 数量，无 '×' 前缀。
+    const midY = y + RES_H / 2;
+    const bal: Record<string, number> = {};
+    for (const m of TRACKED_MATERIALS) bal[m] = save.materials[m] ?? 0;
+    let cx = 10;
+    const coinIc = buildIcon('coin', 16, C.gold);
+    coinIc.x = cx; coinIc.y = midY - 8; this.bodyLayer.addChild(coinIc); cx += 18;
+    const coinLbl = txt(`${save.wallet.coins}`, 11, C.dark);
+    coinLbl.anchor.set(0, 0.5); coinLbl.x = cx; coinLbl.y = midY; this.bodyLayer.addChild(coinLbl);
+    cx += coinLbl.width + 12;
+    this.drawCostChips(this.bodyLayer, cx, midY, bal, null, C.dark, 16, '');
 
     const count = Object.keys(save.equipmentInv).length;
     const cnt = txt(`${count}/${EQUIPMENT_INV_CAP}`, 11, count >= EQUIPMENT_INV_CAP ? C.red : C.mid);
@@ -390,9 +416,7 @@ export class EquipmentScene implements Scene {
 
     const cost = def.craftCost ?? {};
     const affordable = this.canAffordMaterials(save, cost);
-    const costLbl = txt(this.materialsStr(cost), 11, affordable ? C.mid : C.red);
-    costLbl.x = tx; costLbl.y = cy + 28;
-    this.bodyLayer.addChild(costLbl);
+    this.drawCostChips(this.bodyLayer, tx, cy + 34, cost, null, affordable ? C.mid : C.red, 13);
 
     const enabled = affordable && !full && !this.bt.busy;
     const btn = sketchPanel(60, 28, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(cy, 2, 60) });
@@ -449,10 +473,19 @@ export class EquipmentScene implements Scene {
     ml.addChild(rar);
     cy += 26;
 
-    // Affix lines.
+    // Affix lines（统计图标 + 文字，主词条墨蓝强调）。
     for (const af of inst.affixes) {
-      const line = txt(this.affixDesc(af.id, af.value, inst.level), 11, affixKind(af.id) === 'main' ? C.accent : C.dark);
-      line.x = mx + 16; line.y = cy;
+      const col = affixKind(af.id) === 'main' ? C.accent : C.dark;
+      const kind = affixIconKind(af.id);
+      let tx = mx + 16;
+      if (kind) {
+        const ic = buildIcon(kind, 15, col);
+        ic.x = mx + 16; ic.y = cy - 1;
+        ml.addChild(ic);
+        tx = mx + 16 + 19;
+      }
+      const line = txt(this.affixDesc(af.id, af.value, inst.level), 11, col);
+      line.x = tx; line.y = cy;
       ml.addChild(line);
       cy += 20;
     }
@@ -471,9 +504,12 @@ export class EquipmentScene implements Scene {
       rateLbl.x = mx + 12; rateLbl.y = cy;
       ml.addChild(rateLbl);
       cy += 18;
-      const costLbl = txt(`${t('equip.cost')}: ${this.enhanceCostStr(cost)}`, 10, this.canAffordEnhance(save, cost) ? C.mid : C.red);
-      costLbl.x = mx + 12; costLbl.y = cy;
+      const affordable = this.canAffordEnhance(save, cost);
+      const costColor = affordable ? C.mid : C.red;
+      const costLbl = txt(`${t('equip.cost')}:`, 10, costColor);
+      costLbl.anchor.set(0, 0.5); costLbl.x = mx + 12; costLbl.y = cy + 7;
       ml.addChild(costLbl);
+      this.drawCostChips(ml, costLbl.x + costLbl.width + 8, cy + 7, cost.materials, cost.coins, costColor, 13);
       cy += 18;
       // 保护道具行（E7）：显示持有量 + 开关 toggle。
       const canToggle = protectCount > 0;
@@ -821,9 +857,42 @@ export class EquipmentScene implements Scene {
       .join(' ');
   }
 
-  private enhanceCostStr(cost: EnhanceCost): string {
-    const mats = this.materialsStr(cost.materials);
-    return `${mats} ${t('equip.coins')}×${cost.coins}`.trim();
+  /**
+   * 在 (x, midY) 起横排「图标 ×数量」消耗组（材料 + 可选金币），返回末端 x。
+   * 图标缺失时回退文字标签，保证未知材料仍可读。size=图标边长，prefix=每项前缀（默认 '×'）。
+   */
+  private drawCostChips(
+    parent: PIXI.Container,
+    x: number, midY: number,
+    mats: Record<string, number>,
+    coins: number | null,
+    color: number,
+    size = 13,
+    prefix = '×',
+  ): number {
+    let cx = x;
+    const item = (kind: IconKind | null, fallback: string, iconColor: number, n: number): void => {
+      if (kind) {
+        const ic = buildIcon(kind, size, iconColor);
+        ic.x = cx; ic.y = midY - size / 2;
+        parent.addChild(ic);
+        cx += size + 1;
+      } else {
+        const fl = txt(fallback, 10, color);
+        fl.anchor.set(0, 0.5); fl.x = cx; fl.y = midY;
+        parent.addChild(fl);
+        cx += fl.width + 1;
+      }
+      const lbl = txt(`${prefix}${n}`, 10, color);
+      lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = midY;
+      parent.addChild(lbl);
+      cx += lbl.width + 9;
+    };
+    for (const [m, n] of Object.entries(mats)) {
+      item(matIconKind(m), t(`material.${m}` as TranslationKey), MAT_COLOR[m] ?? color, n);
+    }
+    if (coins != null) item('coin', t('equip.coins'), C.gold, coins);
+    return cx;
   }
 
   private canAffordMaterials(save: SaveData, cost: Record<string, number>): boolean {
