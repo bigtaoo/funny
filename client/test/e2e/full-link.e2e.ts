@@ -85,8 +85,10 @@ describe('full-link E2E (live stack)', () => {
     const c = createClient();
     await registerAndEnterLobby(c, 'Economy Tester');
 
-    // Shop: real GET /shop/items
+    // Shop: real GET /shop/items (lobby entry now lands on gacha first)
     c.views.lobby!.onOpenShop();
+    expect(c.views.screen).toBe('gacha');
+    c.views.gacha!.openShop!();
     expect(c.views.screen).toBe('shop');
     const items = await c.views.shop!.loadItems();
     expect(items.length).toBeGreaterThan(0);
@@ -226,6 +228,8 @@ describe('full-link E2E (live stack)', () => {
 
     // Recharge (server-authoritative coins回推 into the save).
     a.views.lobby!.onOpenShop();
+    expect(a.views.screen).toBe('gacha');
+    a.views.gacha!.openShop!();
     expect(a.views.screen).toBe('shop');
     await a.views.shop!.loadItems();
     expect((await a.views.shop!.recharge('taowang')).ok, 'recharge failed').toBe(true);
@@ -251,6 +255,7 @@ describe('full-link E2E (live stack)', () => {
     await waitFor(() => b.views.lobby?.playerName === NEW_NAME, 'B name restored from cloud', 15_000);
     // Server-authoritative coins restored from cloud.
     b.views.lobby!.onOpenShop();
+    b.views.gacha!.openShop!();
     await b.views.shop!.loadItems();
     await waitFor(() => b.views.shop!.getCoins() === expectedCoins, 'B coins restored from cloud', 15_000);
 
@@ -333,6 +338,7 @@ describe('full-link E2E (live stack)', () => {
 
     // Fresh accounts start at 0 coins → buying the cheapest shop item fails (INSUFFICIENT_FUNDS).
     a.views.lobby!.onOpenShop();
+    a.views.gacha!.openShop!();
     const items = await a.views.shop!.loadItems();
     expect(items.length).toBeGreaterThan(0);
     expect(a.views.shop!.getCoins()).toBe(0);
