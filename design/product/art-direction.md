@@ -314,6 +314,34 @@ client/src/assets/decor/   # 最终透明 PNG
 - 卡面：单位/建筑/法术简笔图标（与游戏内一致）+ 费用数字（手写字体）
 - 底部轻微扇形展开；无法出牌时覆盖"涂改液白"半透明遮罩、费用数字被划掉
 
+#### 7.2.1 法术卡图标（已落地，2026-06-27）
+
+单局内 4 种法术（PvP：`haste` 急速冲锋 / `meteor` 陨石打击；PvE 关卡专属：`rockslide` 石壁崩塌 / `bridge_collapse` 桥梁坍塌）原先**只有文字无图**，现补齐卡面图标 + 法术卡专属视觉签名。
+
+- **统一签名 = 红马克笔**（§3.3 法术=红马克笔；此处 UI 功能色，不受战场敌我蓝红约束）：法术卡比单位/建筑卡多两笔——①图标后垫一层极淡红晕染（alpha≈0.08）；②左上角一道手绘红马克笔**折角**，替代原先干巴巴的 `'S'` 类型字符。单位卡=纯纸底、法术卡=红折角，0.3 秒可辨。费用圈/名字/刷新条规则全卡统一，不破例（§7.1 功能层须清晰）。
+- **图标本身**：手绘墨线 doodle + 单道红马克笔重点（与 §3.3「红马克笔粗线」同频），白底出图。**红重点已烤进图、不 tint**（法术图标是卡面插画，非战场可染色单位）。
+- **资产管线**（同 §6.2 decor「抠白底」口径）：AI 出图（白底）→ `art/skills/pack_spells.cjs`（复用 client 的 sharp：近白→透明 + 裁透明边 + 长边缩 256）→ 导出 `client/src/assets/spell_${SpellType}.png` → [HandView.ts](../../client/src/render/HandView.ts) `CARD_ART_URLS` 按 `spell_${card.spellType}` 取用、`configureArt` 原样复用。改图后重命名覆盖源文件、重跑 `node pack_spells.cjs`。
+- **出图 prompt**（共用前缀 + 负向 + 4 条主体）存 art/skills 旁的脚本注释口径无关，记录于下，便于后续补图：
+
+  共用前缀：
+  ```
+  Hand-drawn doodle icon for a game spell card, drawn in a worn school notebook.
+  Bold dark-ink pen line art with slightly wobbly imperfect strokes, plus ONE
+  strong red marker accent stroke highlighting the key action. Energetic, a bit
+  explosive, but still a quick loose sketch — not polished. Single clear icon,
+  centered, filling the frame, on a plain pure-white background, no grid lines,
+  no other elements. Flat 2D, no shading or only light pencil hatching. Style of
+  West of Loathing / doodle art.
+  ```
+  共用负向：`full color, painterly, soft shading, gradient, glow, 3d render, photorealistic, thick clean cartoon outline, vector art, multiple objects, text, letters, watermark, gray background, notebook grid lines, drop shadow, blue ink`
+
+  | 资产 | 主体 |
+  |---|---|
+  | `spell_haste` | parallel curved speed lines streaking sideways + wind-gust swirl + a running boot kicking dust; red accent traces the leading speed line |
+  | `spell_meteor` | a chunky lumpy meteor plunging diagonally from the top corner, thick streaking trail + impact spark; red accent is the burning trail |
+  | `spell_rockslide` | jagged boulders tumbling down a steep slope in a vertical cascade + dust puffs; red accent slashes across the falling rocks |
+  | `spell_bridge_collapse` | a plank bridge cracking and snapping in the middle, two halves tilting into a gap + broken planks; red accent marks the central crack |
+
 ### 7.3 金币与资源显示
 
 - 金币：手写数字字体 + 简笔硬币图标

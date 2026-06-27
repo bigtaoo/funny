@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Player } from '../game/Player';
-import { CardDefinition, CardType, UnitType, BuildingType } from '../game/types';
+import { CardDefinition, CardType, UnitType, BuildingType, SpellType } from '../game/types';
 import { ILayout } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
 import { t, type TranslationKey } from '../i18n';
@@ -12,6 +12,10 @@ import archerArtUrl from '../assets/archer.png';
 import shieldBearerArtUrl from '../assets/shieldbearer.png';
 import barracksArtUrl from '../assets/game_infantry_barracks.png';
 import towerArtUrl from '../assets/game_archer_barracks.png';
+import spellHasteArtUrl from '../assets/spell_haste.png';
+import spellMeteorArtUrl from '../assets/spell_meteor.png';
+import spellRockslideArtUrl from '../assets/spell_rockslide.png';
+import spellBridgeCollapseArtUrl from '../assets/spell_bridge_collapse.png';
 
 const CARD_BG              = 0xfaf6ee;
 const CARD_BORDER          = 0x333333;
@@ -27,13 +31,18 @@ const BAR_TRACK_ALPHA      = 0.15;
 
 const FLASH_DURATION_MS    = 250;
 
-// 卡牌插画：单位/建筑卡显示对应图片，法术卡无图（仅文字）
+// 卡牌插画：单位/建筑/法术卡均显示对应图片（法术图标为手绘墨线 + 红马克笔重点，
+// 已烤进图，不 tint；出图/打包见 art/skills/pack_spells.cjs）
 const CARD_ART_URLS: Record<string, string> = {
-  [`unit_${UnitType.Infantry}`]:         infantryArtUrl as string,
-  [`unit_${UnitType.Archer}`]:           archerArtUrl as string,
-  [`unit_${UnitType.ShieldBearer}`]:     shieldBearerArtUrl as string,
-  [`building_${BuildingType.Barracks}`]: barracksArtUrl as string,
+  [`unit_${UnitType.Infantry}`]:           infantryArtUrl as string,
+  [`unit_${UnitType.Archer}`]:             archerArtUrl as string,
+  [`unit_${UnitType.ShieldBearer}`]:       shieldBearerArtUrl as string,
+  [`building_${BuildingType.Barracks}`]:   barracksArtUrl as string,
   [`building_${BuildingType.ArrowTower}`]: towerArtUrl as string,
+  [`spell_${SpellType.Haste}`]:            spellHasteArtUrl as string,
+  [`spell_${SpellType.Meteor}`]:           spellMeteorArtUrl as string,
+  [`spell_${SpellType.Rockslide}`]:        spellRockslideArtUrl as string,
+  [`spell_${SpellType.BridgeCollapse}`]:   spellBridgeCollapseArtUrl as string,
 };
 
 function cardArtKey(card: CardDefinition): string | null {
@@ -42,6 +51,9 @@ function cardArtKey(card: CardDefinition): string | null {
   }
   if (card.cardType === CardType.Building && card.buildingType !== undefined) {
     return `building_${card.buildingType}`;
+  }
+  if (card.cardType === CardType.Spell && card.spellType !== undefined) {
+    return `spell_${card.spellType}`;
   }
   return null;
 }
@@ -273,7 +285,24 @@ export class HandView {
     }
 
     if (card) {
-      (c.getChildByName('type') as PIXI.Text).text = this.cardTypeChar(card);
+      const isSpell = card.cardType === CardType.Spell;
+
+      // Spell cards carry a distinct marker-red signature (art-direction §3.3:
+      // 法术 = 红马克笔): a faint red wash behind the icon + a hand-drawn red
+      // dog-ear at the top-left, replacing the plain 'S' type glyph. Layered on
+      // bg (below the art Sprite), seeded by slot index for stable wobble.
+      if (isSpell) {
+        bg.beginFill(palette.inkRed, 0.08);
+        bg.drawRoundedRect(2, 2, cardW - 4, cardH - 4, 4);
+        bg.endFill();
+        bg.beginFill(palette.inkRed, 0.85);
+        bg.moveTo(0, 0); bg.lineTo(17, 0); bg.lineTo(0, 17); bg.lineTo(0, 0);
+        bg.endFill();
+        const pen = new SketchPen(bg, (index + 7) * 0x85ebca6b >>> 0 || 1);
+        pen.line(17, 0, 0, 17, { color: palette.inkRed, width: 2, jitter: 1 });
+      }
+
+      (c.getChildByName('type') as PIXI.Text).text = isSpell ? '' : this.cardTypeChar(card);
       const nameText = c.getChildByName('name') as PIXI.Text;
       nameText.text = t(card.nameKey as TranslationKey);
       nameText.x = (cardW - nameText.width) / 2;
