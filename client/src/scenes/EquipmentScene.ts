@@ -64,6 +64,8 @@ const TAB_H = 36;
 const RES_H = 30;       // 资源条（金币 + 三材料 + 背包计数）
 const LOADOUT_H = 78;   // 背包 tab 顶部三槽 loadout 带
 const ROW_H = 56;
+const FILTER_H = 28;   // slot filter bar (全部/武器/护具/饰品)
+const SECTION_H = 20;  // section divider (已装备 / 背包)
 
 const SLOTS: readonly EquipSlot[] = ['weapon', 'armor', 'trinket'];
 const TRACKED_MATERIALS = ['scrap', 'lead', 'binding'] as const;
@@ -122,6 +124,8 @@ export class EquipmentScene implements Scene {
 
   /** 当前打开详情的实例 id（null = 无）。每次重绘从 save 重读实例（被分解则关闭）。 */
   private detailId: string | null = null;
+  /** 背包 tab 槽位筛选（'all' = 不筛选）。 */
+  private filterSlot: EquipSlot | 'all' = 'all';
 
   private scrollY = 0;
   private dragStart: { x: number; y: number; scroll: number } | null = null;
@@ -265,9 +269,15 @@ export class EquipmentScene implements Scene {
     const loadoutY = HUD_H + this.groupH + TAB_H + RES_H;
     this.renderLoadout(save, loadoutY);
 
-    const listY = loadoutY + LOADOUT_H;
+    const filterY = loadoutY + LOADOUT_H;
+    this.renderSlotFilter(filterY);
+    const listY = filterY + FILTER_H;
     const listH = h - listY - 8;
-    const instances = Object.values(save.equipmentInv);
+
+    const allInstances = Object.values(save.equipmentInv);
+    const instances = this.filterSlot === 'all'
+      ? allInstances
+      : allInstances.filter(x => getEquipDef(x.defId)?.slot === this.filterSlot);
 
     if (instances.length === 0) {
       const lbl = txt(t('equip.invEmpty'), 13, C.mid);
@@ -289,15 +299,114 @@ export class EquipmentScene implements Scene {
       return a.id < b.id ? -1 : 1;
     });
 
-    const totalH = instances.length * ROW_H;
+    const entries = this.buildDisplayEntries(instances, equippedIds);
+    const totalH = entries.reduce((s, e) => s + (e.kind === 'header' ? SECTION_H : ROW_H), 0);
     this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
     let cy = listY - this.scrollY;
-    for (const inst of instances) {
-      if (cy + ROW_H >= listY && cy <= listY + listH) {
-        this.renderInstanceRow(inst, cy, equippedIds.has(inst.id));
+    for (const entry of entries) {
+      const entryH = entry.kind === 'header' ? SECTION_H : ROW_H;
+      if (cy + entryH >= listY && cy <= listY + listH) {
+        if (entry.kind === 'header') {
+          this.renderSectionHeader(entry.label, cy);
+        } else {
+          this.renderInstanceRow(entry.inst, cy, entry.isEquipped, entry.count);
+        }
       }
-      cy += ROW_H;
+      cy += entryH;
     }
+  }
+
+  /** 槽位筛选条（全部 / 武器 / 护具 / 饰品）。 */
+  private renderSlotFilter(y: number): void {
+    const { w } = this;
+    const filters: { key: EquipSlot | 'all'; label: string }[] = [
+      { key: 'all',     label: t('equip.filterAll') },
+      { key: 'weapon',  label: t('equip.slot.weapon') },
+      { key: 'armor',   label: t('equip.slot.armor') },
+      { key: 'trinket', label: t('equip.slot.trinket') },
+    ];
+    const fw = w / filters.length;
+    const bg = new PIXI.Graphics();
+    bg.beginFill(0xe8e5da).drawRect(0, y, w, FILTER_H).endFill();
+    this.bodyLayer.addChild(bg);
+
+    filters.forEach((f, i) => {
+      const active = this.filterSlot === f.key;
+      const fx = i * fw;
+      if (active) {
+        const hlt = new PIXI.Graphics();
+        hlt.beginFill(0xfaf9f5).drawRoundedRect(fx + 3, y + 3, fw - 6, FILTER_H - 6, 3).endFill();
+        this.bodyLayer.addChild(hlt);
+      }
+      const lbl = txt(f.label, 11, active ? C.accent : C.dark, active);
+      lbl.anchor.set(0.5, 0.5); lbl.x = fx + fw / 2; lbl.y = y + FILTER_H / 2;
+      this.bodyLayer.addChild(lbl);
+      this.hitRects.push({
+        rect: { x: fx, y, w: fw, h: FILTER_H },
+        action: () => {
+          if (this.filterSlot !== f.key) { this.filterSlot = f.key; this.scrollY = 0; this.render(); }
+        },
+      });
+    });
+  }
+
+  /** 分组分割线（"已装备" / "背包"）。 */
+  private renderSectionHeader(label: string, cy: number): void {
+    const { w } = this;
+    const lbl = txt(label, 10, C.mid);
+    lbl.x = 14; lbl.y = cy + (SECTION_H - lbl.height) / 2;
+    this.bodyLayer.addChild(lbl);
+    const lineX = lbl.x + lbl.width + 6;
+    const lineY = cy + SECTION_H / 2;
+    const line = new PIXI.Graphics();
+    line.lineStyle(0.5, C.mid, 0.35).moveTo(lineX, lineY).lineTo(w - 14, lineY);
+    this.bodyLayer.addChild(line);
+  }
+
+  /**
+   * 将已排序的实例列表转为带分区标题和堆叠计数的展示条目。
+   * - 同 defId + rarity + level=0 且未穿戴未锁定 → 合并为一行（显示 ×N）。
+   * - 穿戴中 / 已锁定 / level>0 → 始终单独一行。
+   * - 已穿戴区 / 背包区各插一条分节标题。
+   */
+  private buildDisplayEntries(
+    sorted: EquipmentInstance[],
+    equippedIds: Set<string>,
+  ): DisplayEntry[] {
+    const entries: DisplayEntry[] = [];
+    let inEquippedSection = false;
+    let inBagSection = false;
+    const seenStacks = new Set<string>();
+
+    for (const inst of sorted) {
+      const isEquipped = equippedIds.has(inst.id);
+
+      if (isEquipped && !inEquippedSection) {
+        inEquippedSection = true;
+        entries.push({ kind: 'header', label: t('equip.sectionEquipped') });
+      }
+      if (!isEquipped && !inBagSection) {
+        inBagSection = true;
+        entries.push({ kind: 'header', label: t('equip.sectionBag') });
+      }
+
+      if (isEquipped || inst.locked || inst.level > 0) {
+        entries.push({ kind: 'item', inst, count: 1, isEquipped });
+        continue;
+      }
+
+      // 未强化可堆叠：同 defId+rarity 合并。
+      const key = `${inst.defId}:${inst.rarity}`;
+      if (seenStacks.has(key)) continue;
+      seenStacks.add(key);
+      const count = sorted.filter(
+        x => !equippedIds.has(x.id) && !x.locked && x.level === 0 &&
+             x.defId === inst.defId && x.rarity === inst.rarity,
+      ).length;
+      entries.push({ kind: 'item', inst, count, isEquipped: false });
+    }
+
+    return entries;
   }
 
   private renderLoadout(save: SaveData, y: number): void {
@@ -319,7 +428,8 @@ export class EquipmentScene implements Scene {
       cell.x = x; cell.y = cy;
       this.bodyLayer.addChild(cell);
 
-      const slotLbl = txt(t(`equip.slot.${slot}` as TranslationKey), 10, C.mid);
+      // 槽位标签：已装备时显示槽位类型（小字辅助），空槽时加粗显示让玩家容易识别。
+      const slotLbl = txt(t(`equip.slot.${slot}` as TranslationKey), inst ? 10 : 11, inst ? C.mid : C.dark, !inst);
       slotLbl.anchor.set(0.5, 0); slotLbl.x = x + cellW / 2; slotLbl.y = cy + 4;
       this.bodyLayer.addChild(slotLbl);
 
@@ -330,16 +440,16 @@ export class EquipmentScene implements Scene {
         this.bodyLayer.addChild(nm);
         this.hitRects.push({ rect: { x, y: cy, w: cellW, h: cellH }, action: () => this.openDetail(inst.id) });
       } else {
-        // Faint slot-shape hint (common media, dimmed) so empty cells still read as "weapon/armor/trinket".
-        this.addGlyph(slot, 'common', x + cellW / 2, cy + cellH * 0.4, 28, seedFor(i, 13, cellW), 0.28);
+        // 空槽：图形提示加深（0.40），配上"空"文字，让玩家清晰识别可装备位置。
+        this.addGlyph(slot, 'common', x + cellW / 2, cy + cellH * 0.45, 28, seedFor(i, 13, cellW), 0.40);
         const empty = txt(t('equip.slotEmpty'), 11, C.mid);
-        empty.anchor.set(0.5, 0.5); empty.x = x + cellW / 2; empty.y = cy + cellH * 0.82;
+        empty.anchor.set(0.5, 0.5); empty.x = x + cellW / 2; empty.y = cy + cellH * 0.88;
         this.bodyLayer.addChild(empty);
       }
     });
   }
 
-  private renderInstanceRow(inst: EquipmentInstance, cy: number, equipped: boolean): void {
+  private renderInstanceRow(inst: EquipmentInstance, cy: number, equipped: boolean, count = 1): void {
     const { w } = this;
     const color = RARITY_COLOR[inst.rarity];
     const row = sketchPanel(w - 12, ROW_H - 4, { fill: 0xfaf9f5, border: equipped ? color : C.mid, seed: seedFor(cy, 0, w) });
@@ -368,9 +478,20 @@ export class EquipmentScene implements Scene {
       l.x = tagX; l.y = cy + 8; this.bodyLayer.addChild(l);
     }
 
-    const chevron = txt('›', 18, C.mid);
-    chevron.anchor.set(1, 0.5); chevron.x = w - 16; chevron.y = cy + ROW_H / 2 - 2;
-    this.bodyLayer.addChild(chevron);
+    // 右侧：未穿戴时显示"装备 ›"（强调色提示可操作），穿戴中显示"›"（静默）。
+    // 堆叠数量（×N）紧靠行动提示左侧。
+    const midY = cy + ROW_H / 2 - 2;
+    const hintStr = equipped ? '›' : t('equip.hintEquip');
+    const hintColor = equipped ? C.mid : C.accent;
+    const hint = txt(hintStr, equipped ? 18 : 11, hintColor, !equipped);
+    hint.anchor.set(1, 0.5); hint.x = w - 14; hint.y = midY;
+    this.bodyLayer.addChild(hint);
+
+    if (count > 1) {
+      const badge = txt(`×${count}`, 11, C.mid);
+      badge.anchor.set(1, 0.5); badge.x = hint.x - hint.width - 5; badge.y = midY;
+      this.bodyLayer.addChild(badge);
+    }
 
     this.hitRects.push({ rect: { x: 6, y: cy, w: w - 12, h: ROW_H - 4 }, action: () => this.openDetail(inst.id) });
   }
@@ -972,3 +1093,7 @@ export class EquipmentScene implements Scene {
 }
 
 interface Rect { x: number; y: number; w: number; h: number; }
+
+type DisplayEntry =
+  | { kind: 'header'; label: string }
+  | { kind: 'item'; inst: EquipmentInstance; count: number; isEquipped: boolean };
