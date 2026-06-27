@@ -581,15 +581,16 @@ describe('LobbyScene — applyWorldAvailable', () => {
 });
 
 // ── LobbyScene: hit rect 布局不重叠（大世界按钮可达性回归）────────────────────
-// 回归：worldNavRect 为中间 nav slot，若与 btnRect / campaignBtnRect 重叠，
-// 点击大世界按钮会被 Start/Campaign 拦截，导致按下无反应。
+// 回归：worldPillarRect 为主布局中的 大世界 柱卡（已从底部 nav slot 提升为柱卡），
+// 若与 btnRect / campaignBtnRect / dailyBtnRect 重叠，点击大世界会被拦截，按下无反应。
 describe('LobbyScene — hit rect 不重叠', () => {
   for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
-    it(`worldNavRect 与 btnRect、campaignBtnRect、dailyBtnRect 均不重叠 — ${label}`, () => {
+    it(`worldPillarRect 与 btnRect、campaignBtnRect、dailyBtnRect 均不重叠 — ${label}`, () => {
       const scene = new LobbyScene(createLayout(w, h), new InputManager(), {
         onStartGame() {},
         onOpenCampaign() {},
         onOpenRoom() {},
+        onOpenWorld() {},
         onOpenShop() {},
         onOpenCards() {},
         onOpenStats() {},
@@ -598,7 +599,7 @@ describe('LobbyScene — hit rect 不重叠', () => {
         playerName: 'Tester',
       });
 
-      const worldRect    = (scene as any).worldNavRect    as { x: number; y: number; w: number; h: number };
+      const worldRect    = (scene as any).worldPillarRect  as { x: number; y: number; w: number; h: number };
       const btnRect      = (scene as any).btnRect         as { x: number; y: number; w: number; h: number };
       const campaignRect = (scene as any).campaignBtnRect as { x: number; y: number; w: number; h: number };
       const dailyRect    = (scene as any).dailyBtnRect    as { x: number; y: number; w: number; h: number };
@@ -611,12 +612,13 @@ describe('LobbyScene — hit rect 不重叠', () => {
       scene.destroy();
     });
 
-    it(`worldNavRect 宽高大于零、在设计区内 — ${label}`, () => {
+    it(`worldPillarRect 宽高大于零、在设计区内 — ${label}`, () => {
       const layout = createLayout(w, h);
       const scene = new LobbyScene(layout, new InputManager(), {
         onStartGame() {},
         onOpenCampaign() {},
         onOpenRoom() {},
+        onOpenWorld() {},
         onOpenShop() {},
         onOpenCards() {},
         onOpenStats() {},
@@ -624,7 +626,7 @@ describe('LobbyScene — hit rect 不重叠', () => {
         playerName: 'Tester',
       });
 
-      const r = (scene as any).worldNavRect as { x: number; y: number; w: number; h: number };
+      const r = (scene as any).worldPillarRect as { x: number; y: number; w: number; h: number };
       expect(r.w).toBeGreaterThan(0);
       expect(r.h).toBeGreaterThan(0);
       expect(r.x).toBeGreaterThanOrEqual(0);
