@@ -3,15 +3,16 @@
 #
 # Usage:  ./install.sh
 #
-# 自动探测 GIMP 3.x 配置目录，复制插件并设置可执行位（GIMP 在类 Unix 上要求插件可执行）。
-# 装好后重启 GIMP，菜单：File > Export Layers (Cropped to Content)
+# Auto-detects the GIMP 3.x config directory, copies the plugin and sets the executable bit
+# (GIMP requires plugins to be executable on Unix-like systems).
+# After installing, restart GIMP. Menu: File > Export Layers (Cropped to Content)
 
 set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")" && pwd)/export_layers_cropped.py"
-[ -f "$SRC" ] || { echo "找不到插件源文件: $SRC" >&2; exit 1; }
+[ -f "$SRC" ] || { echo "Plugin source file not found: $SRC" >&2; exit 1; }
 
-# 候选配置根目录：Linux 与 macOS
+# Candidate config root directories: Linux and macOS
 CANDIDATES=(
   "$HOME/.config/GIMP"
   "$HOME/Library/Application Support/GIMP"
@@ -26,15 +27,15 @@ for root in "${CANDIDATES[@]}"; do
     mkdir -p "$dest"
     cp -f "$SRC" "$dest/export_layers_cropped.py"
     chmod +x "$dest/export_layers_cropped.py"
-    echo "已安装到 $(basename "$vdir"): $dest"
+    echo "Installed to $(basename "$vdir"): $dest"
     found=1
   done
 done
 
 if [ "$found" -eq 0 ]; then
-  echo "未找到 GIMP 3.x 配置目录（请先运行一次 GIMP 再安装）。" >&2
+  echo "No GIMP 3.x config directory found (please run GIMP once before installing)." >&2
   exit 1
 fi
 
 echo
-echo "完成。重启 GIMP，菜单 File > Export Layers (Cropped to Content)。"
+echo "Done. Restart GIMP. Menu: File > Export Layers (Cropped to Content)."
