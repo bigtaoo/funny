@@ -576,15 +576,25 @@ function ticketRow(ctx: Ctx, tk: CompTicketView, onChange: () => void): HTMLElem
       : tk.amountTier === 'overquota'
         ? 'comp.approve.single.overquota'
         : 'comp.approve.single';
-  const canApprove = caps.includes(approveCap as never) && !isMine;
+  const hasApproveCap = caps.includes(approveCap as never);
   if (tk.status === 'pending') {
-    if (canApprove) {
+    if (hasApproveCap && !isMine) {
       buttons.push(h('button', { onclick: () => void act('approve') }, '批准'));
       buttons.push(h('button', { class: 'warn', onclick: () => void act('reject', prompt('拒绝原因？') ?? '') }, '拒绝'));
+    } else if (hasApproveCap && isMine) {
+      // 单超管自批过渡：UI 乐观显示「批准」；后端最终裁决——若存在第二合格审批人会 403（恢复四眼）。
+      // 拒绝无自批例外（用撤销代替），故自批时不显示「拒绝」。
+      buttons.push(
+        h(
+          'button',
+          { title: '无其他合格审批人时可自批（后端裁决，会留痕）', onclick: () => void act('approve') },
+          '批准（自批）',
+        ),
+      );
     }
     if (isMine || session.admin.role === 'super') buttons.push(h('button', { class: 'ghost', onclick: () => void act('cancel') }, '撤销'));
   }
-  if (tk.status === 'failed' && canApprove) buttons.push(h('button', { class: 'warn', onclick: () => void act('retry') }, '重试'));
+  if (tk.status === 'failed' && hasApproveCap) buttons.push(h('button', { class: 'warn', onclick: () => void act('retry') }, '重试'));
 
   return h(
     'tr',
