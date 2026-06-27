@@ -280,6 +280,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onOpenProfile() { goSettings(); },
       playerName: playerName(),
       pvp: { rank: pvp.rank, elo: pvp.elo },
+      coins: saveManager.get().wallet.coins,
       offline: offlineMode,
       onLogin: () => goLogin(),
       onLogout: loggedIn ? () => doLogout() : undefined,
