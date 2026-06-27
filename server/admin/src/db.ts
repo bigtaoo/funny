@@ -26,6 +26,12 @@ export interface AdminAccountDoc {
   createdAt: number;
   createdBy?: string; // 创建者 adminId
   lastLoginAt?: number;
+  /**
+   * 部署期种子超管标记（§2.1）。种子账号是「备份/应急 + 建号」用途，平时不登录，
+   * 不应被视作活跃运维。四眼原则判定「是否存在其他合格审批人」时排除它，
+   * 否则单超管（如 tao）发起的全服/超额工单会被这个休眠账号挡住、无法自批。
+   */
+  seed?: boolean;
 }
 
 /** 补偿工单（§3.1）。 */

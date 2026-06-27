@@ -21,7 +21,14 @@ export async function seedSuperAdmin(
   }
   const existing = await cols.adminAccounts.findOne({ username: user });
   if (existing) {
-    log.info('seed super admin already exists, skipping', { username: user });
+    // 幂等：已存在则不重建/不改密。但补打 seed 标记（老库无此字段），
+    // 否则种子账号会被四眼原则当成「其他合格审批人」，挡住单超管自批。
+    if (existing.seed !== true) {
+      await cols.adminAccounts.updateOne({ _id: existing._id }, { $set: { seed: true } });
+      log.info('backfilled seed flag on existing seed super admin', { username: user });
+    } else {
+      log.info('seed super admin already exists, skipping', { username: user });
+    }
     return;
   }
   const doc: AdminAccountDoc = {
@@ -32,6 +39,7 @@ export async function seedSuperAdmin(
     displayName: user,
     disabled: false,
     createdAt: now(),
+    seed: true,
   };
   try {
     await cols.adminAccounts.insertOne(doc);

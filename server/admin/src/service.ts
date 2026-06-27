@@ -586,6 +586,8 @@ export class AdminService {
     const count = await this.cols.adminAccounts.countDocuments({
       _id: { $ne: initiatorId },
       disabled: { $ne: true },
+      // 种子超管是休眠备份/建号账号，不算活跃运维，排除之（否则单超管永远被它挡住自批）。
+      seed: { $ne: true },
       role: { $in: eligibleRoles },
     });
     return count > 0;
