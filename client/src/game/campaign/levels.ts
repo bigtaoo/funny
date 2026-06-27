@@ -1,6 +1,7 @@
 import type { LevelDefinition } from './LevelDefinition';
 import { parseLevelDefinition } from './levelSchema';
 
+import ch0Tutorial from './levels/ch0_tutorial.json';
 import ch1Lv1  from './levels/ch1_lv1.json';
 import ch1Lv2  from './levels/ch1_lv2.json';
 import ch1Lv3  from './levels/ch1_lv3.json';
@@ -76,6 +77,9 @@ import chStress from './levels/ch_stress.json';
  * {@link CAMPAIGN_LEVEL_ORDER}.
  */
 
+// 专属教学关（ONBOARDING_DESIGN §3）。仅入 CAMPAIGN_LEVELS 供 getLevel 取，
+// 不入 CAMPAIGN_LEVEL_ORDER —— 不计章节进度、不占 ch1 序号、不参与解锁判定。
+const CH0_TUTORIAL = parseLevelDefinition(ch0Tutorial, 'ch0_tutorial.json');
 const CH1_LV1  = parseLevelDefinition(ch1Lv1,  'ch1_lv1.json');
 const CH1_LV2  = parseLevelDefinition(ch1Lv2,  'ch1_lv2.json');
 const CH1_LV3  = parseLevelDefinition(ch1Lv3,  'ch1_lv3.json');
@@ -140,6 +144,7 @@ const CH_STRESS = parseLevelDefinition(chStress, 'ch_stress.json');
 
 /** Registry of all campaign levels, keyed by id. */
 export const CAMPAIGN_LEVELS: Record<string, LevelDefinition> = {
+  [CH0_TUTORIAL.id]: CH0_TUTORIAL,
   [CH1_LV1.id]:  CH1_LV1,
   [CH1_LV2.id]:  CH1_LV2,
   [CH1_LV3.id]:  CH1_LV3,

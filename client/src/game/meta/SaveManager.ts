@@ -107,6 +107,19 @@ export class SaveManager {
   }
 
   /**
+   * 首次功能引导（ONBOARDING_DESIGN §4.1）：某功能页是否已看过首启引导。
+   * 扁平键 `featSeen.<id>` 落在同步段 flags（Record<string,boolean>），无需改 SaveData schema。
+   */
+  featSeen(featureId: string): boolean {
+    return this.save.flags[`featSeen.${featureId}`] === true;
+  }
+
+  /** 标记某功能引导已看过（看过/关掉后不再自动弹；页面「?」按钮可强制重看，不清此位）。 */
+  markFeatSeen(featureId: string): void {
+    this.setFlag(`featSeen.${featureId}`, true);
+  }
+
+  /**
    * 启动云同步：换 token → pull → reconcile → 必要时 push。
    * 任何网络/鉴权失败都被吞掉（保持本地可玩），仅返回是否成功联通。
    */

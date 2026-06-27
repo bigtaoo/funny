@@ -17,6 +17,15 @@ export function isLevelUnlocked(levelId: string, cleared: Set<string>): boolean 
   return cleared.has(CAMPAIGN_LEVEL_ORDER[i - 1]!);
 }
 
+/**
+ * SLG 大世界软门槛：是否通关第一章（ch1 全部关卡已清）。唯一一道功能解锁门槛
+ * （ONBOARDING_DESIGN §4）。教学关 ch0_tutorial 不在 CAMPAIGN_LEVEL_ORDER 里、不计入。
+ */
+export function isFirstChapterCleared(cleared: Set<string>): boolean {
+  const ch1 = CAMPAIGN_LEVEL_ORDER.filter((id) => parseLevelId(id)?.chapter === 1);
+  return ch1.length > 0 && ch1.every((id) => cleared.has(id));
+}
+
 /** Chapter holding the first uncleared level — where the book opens to (§12.2). */
 export function currentChapter(cleared: Set<string>): number {
   for (const lid of CAMPAIGN_LEVEL_ORDER) {

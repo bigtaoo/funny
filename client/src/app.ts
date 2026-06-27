@@ -110,6 +110,7 @@ class PixiAppViews implements AppViews {
       applyWorldAvailable: (ok) => scene.applyWorldAvailable(ok),
       showAchievementToast: (m) => scene.showAchievementToast(m),
       showSeasonSettlement: (o, p, n) => scene.showSeasonSettlement(o, p, n),
+      showFeatureGuide: (tk, bk, onDismiss) => scene.showFeatureGuide(tk, bk, onDismiss),
     };
   }
 

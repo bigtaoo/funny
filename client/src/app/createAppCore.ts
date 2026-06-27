@@ -13,6 +13,8 @@
 import type { IPlatform } from '../platform/IPlatform';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView } from './AppViews';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, createGameEngine, RecordingInputSource, ENGINE_VERSION, achievementStatDelta } from '../game';
+import { TUTORIAL_LEVEL_ID } from '@nw/engine';
+import { isFirstChapterCleared } from '../game/campaign/progress';
 import type { OwnerId, PlayerStats, MatchStartInfo, Replay, LevelDefinition } from '../game';
 import { computeStars, remainingHpPct } from '../game/meta/campaignRewards';
 import { initI18n, t, type TranslationKey } from '../i18n';
@@ -51,6 +53,8 @@ function clientPlatformName(): 'web' | 'wechat' | 'crazygames' {
 
 /** flags key — set after the first-launch intro has been seen. */
 const SEEN_INTRO_FLAG = 'seen_intro';
+/** 教学关完成/跳过后置位，之后不再自动进；设置「重看教学」可清后重进（ONBOARDING_DESIGN §3.4）。 */
+const TUTORIAL_DONE_FLAG = 'tutorial_done';
 /** flags key — set after the player accepts the GDPR / privacy consent (C5-c, L1-1). Mirrors server `flags.gdprConsent`. */
 const GDPR_CONSENT_FLAG = 'gdprConsent';
 /** Last seen ladder season number — used to detect season transitions and show the settlement popup (SE-6). */
@@ -145,6 +149,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   // ── Navigation state ────────────────────────────────────────────────────────
   let inLobby = false;
   let offlineMode = false;
+  /** 一次性：本会话是否已处理过「首次进大厅 → 教学关」分流（ONBOARDING §2 步骤 ⑤）。 */
+  let firstLobbyHandled = false;
   /**
    * Cached aggregate social unread (GET /social/badges). Kept across lobby
    * re-shows (e.g. window resize) so the red dot survives a rebuild without a
@@ -257,6 +263,16 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   function goLobby(opts?: { offline?: boolean; fromResize?: boolean }): void {
+    // FTUE 步骤 ⑤：本会话首次将要进大厅时，未完成教学则改走专属教学关（ONBOARDING_DESIGN §2）。
+    // 一次性闸门——后续从子场景返回大厅不再触发；resize 重绘也跳过。
+    if (!firstLobbyHandled && !opts?.fromResize) {
+      firstLobbyHandled = true;
+      if (!saveManager.getFlag(TUTORIAL_DONE_FLAG)) {
+        if (opts?.offline !== undefined) offlineMode = opts.offline;
+        goTutorial();
+        return;
+      }
+    }
     if (opts?.offline !== undefined) offlineMode = opts.offline;
     inLobby = true;
     platform.onGameplayStop();
@@ -264,19 +280,29 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const pvp = saveManager.get().pvp;
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const online = loggedIn && !!api && !!gatewayUrl;
+    // 首次功能引导（ONBOARDING_DESIGN §4.1）：某功能未看过引导 → 在大厅弹可关引导卡，
+    // 关闭后续接导航；看过则直接进。覆盖大厅可达的主要功能（拍卖在大世界内、各页「?」重看
+    // 复用同一 guide.* i18n + showFeatureGuide）。
+    function withGuide(featureId: string, titleKey: TranslationKey, bodyKey: TranslationKey, nav: () => void): void {
+      if (saveManager.featSeen(featureId)) { nav(); return; }
+      saveManager.markFeatSeen(featureId);
+      lobby.showFeatureGuide(titleKey, bodyKey, nav);
+    }
     const lobby = views.showLobby({
-      onStartGame(_opponentName: string) { goGame(); },
+      onStartGame(_opponentName: string) { withGuide('match', 'guide.match.title', 'guide.match.body', () => goGame()); },
       onStartRanked() { goRoom({ autoRanked: true }); },
       online,
       onOpenCampaign() { goCampaignMap(); },
       onOpenRoom() { goRoom(); },
-      onOpenSocial() { goFriends(); },
-      onOpenShop() { goShop(); },
-      onOpenCards() { goCollection(goLobby, 'cards'); },
+      onOpenSocial() { withGuide('social', 'guide.social.title', 'guide.social.body', () => goFriends()); },
+      onOpenShop() { withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => goShop()); },
+      onOpenCards() { withGuide('cards', 'guide.cards.title', 'guide.cards.body', () => goCollection(goLobby, 'cards')); },
       onOpenStats() { goStats(); },
       ...(online ? { onOpenAchievements: () => goAchievements() } : {}),
-      ...(online ? { onOpenDaily: () => goDaily(), onOpenEvents: () => goEvents() } : {}),
-      onOpenWorld() { goWorldEntry(); },
+      ...(online ? { onOpenDaily: () => withGuide('daily', 'guide.daily.title', 'guide.daily.body', () => goDaily()), onOpenEvents: () => goEvents() } : {}),
+      onOpenWorld() { withGuide('world', 'guide.world.title', 'guide.world.body', () => goWorldEntry()); },
+      // SLG 软门槛（ONBOARDING_DESIGN §4）：通关第一章前灰显 + 气泡，唯一一道功能门槛。
+      worldLocked: !isFirstChapterCleared(new Set(saveManager.get().progress.cleared)),
       onOpenProfile() { goSettings(); },
       playerName: playerName(),
       pvp: { rank: pvp.rank, elo: pvp.elo },
@@ -362,6 +388,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       // 账号删除（C5-b）：仅登录在线提供（离线无账号可删）。
       ...(loggedIn && !!api ? { onDeleteAccount: doDeleteAccount } : {}),
       ...(hasTitles ? { onOpenTitles: () => goTitles() } : {}),
+      // 重看新手教学（ONBOARDING_DESIGN §3.4）：直接重跑专属教学关（永不失败，可再跳过）。
+      onReplayTutorial: () => goTutorial(),
     });
   }
 
@@ -1254,6 +1282,31 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
       equipment: { gear: saveManager.get().gear, inv: saveManager.get().equipmentInv },
     });
+  }
+
+  /**
+   * 专属教学关 ch0_tutorial（FTUE 步骤 ⑤，ONBOARDING_DESIGN §3）。永不失败：导演独占终局，
+   * winner 恒为本地玩家。毕业 / 跳过都写 tutorial_done 后落大厅；不计战役进度（不调 recordClear）。
+   */
+  function goTutorial(): void {
+    const level = getLevel(TUTORIAL_LEVEL_ID);
+    if (!level) { goLobby(); return; }  // 教学关缺失时静默跳过，不卡住新手。
+    inLobby = false;
+    platform.onGameplayStart();
+    analytics.track('tutorial_start', { level_id: TUTORIAL_LEVEL_ID });
+    views.showGame({
+      onGameEnd(_winner, _stats, _replay) {
+        saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
+        analytics.track('tutorial_complete', { level_id: TUTORIAL_LEVEL_ID });
+        // §5 首胜钩子：毕业 = 首胜，引出每日签到由大厅红点承载，这里不新增金币龙头。
+        goLobby();
+      },
+      onExitToLobby() {  // 跳过教学
+        saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
+        analytics.track('tutorial_skip', { step: 'tutorial' });
+        goLobby();
+      },
+    }, { level, tutorial: true });
   }
 
   function goReplay(replay: Replay, onExit: () => void = goLobby): void {

@@ -13,6 +13,7 @@
 // runtime. Do NOT add a value import of any scene class.
 
 import type { OwnerId, PlayerStats, Replay, LevelDefinition } from '../game';
+import type { TranslationKey } from '../i18n';
 import type { NetState } from '../net/NetClient';
 import type {
   RoomState, RoomError, PeerDc, MatchOver,
@@ -82,6 +83,11 @@ export interface LobbyView {
    * @param newNo  The current (new) season number.
    */
   showSeasonSettlement(oldNo: number, peakRank: string, newNo: number): void;
+  /**
+   * 首次功能引导（ONBOARDING_DESIGN §4.1）：在大厅上弹一段可关的引导卡，关闭后回调
+   * 继续导航到该功能。core 据 SaveManager.featSeen 决定弹 / 直接进。
+   */
+  showFeatureGuide(titleKey: TranslationKey, bodyKey: TranslationKey, onDismiss: () => void): void;
 }
 
 /** Live handle for the room scene — the core forwards NetSession control events to it. */

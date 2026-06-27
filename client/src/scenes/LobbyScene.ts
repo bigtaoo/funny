@@ -72,6 +72,11 @@ export interface LobbySceneCallbacks {
   onOpenSocial?(): void;
   /** Open the SLG world map. Wired to the bottom-nav "home/world" slot (S8). */
   onOpenWorld?(): void;
+  /**
+   * SLG 软门槛（ONBOARDING_DESIGN §4）：未通关第一章时为 true → 大世界入口灰显，
+   * 点击弹「通关第一章解锁」气泡而非进入。通关后变 false 点亮。
+   */
+  worldLocked?: boolean;
   /** Open the shop (economy). Wired to the bottom-nav "shop" slot (S2-6). */
   onOpenShop(): void;
   /** Open the collection center (cards codex + skins). Bottom-nav "cards" slot. */
@@ -173,6 +178,10 @@ export class LobbyScene implements Scene {
   /** Season-settlement modal overlay (SE-6). Blocks lobby taps until dismissed. */
   private settlementLayer: PIXI.Container | null = null;
   private settlementDismissRect: Rect | null = null;
+  /** 首次功能引导覆盖层（ONBOARDING §4.1）。关闭后回调继续导航到该功能。 */
+  private guideLayer: PIXI.Container | null = null;
+  private guideDismissRect: Rect | null = null;
+  private guideOnDismiss: (() => void) | null = null;
   /** Set on destroy so a late-resolving badge fetch skips touching a dead container. */
   private destroyed = false;
 
@@ -291,6 +300,17 @@ export class LobbyScene implements Scene {
     if (this.toastLayer) { this.toastLayer.destroy({ children: true }); this.toastLayer = null; }
   }
 
+  /**
+   * 通用信息气泡（无 tap 路由）。用于 SLG 软门槛「通关第一章解锁」等提示（ONBOARDING §4）。
+   * 复用成就 toast 的横幅 + 自动淡出，但 toastRect 置空 → 点击不跳转。
+   */
+  showInfoToast(text: string, icon: IconKind = 'globe'): void {
+    if (this.destroyed || !text) return;
+    this.toastTimer = 3.0;
+    this.drawAchievementToast(text, icon);
+    this.toastRect = null;
+  }
+
   /** Show season-settlement modal (SE-6). Called once per season transition by the core. */
   showSeasonSettlement(oldNo: number, peakRank: string, newNo: number): void {
     if (this.destroyed || this.settlementLayer) return;
@@ -350,8 +370,65 @@ export class LobbyScene implements Scene {
     if (this.settlementLayer) { this.settlementLayer.destroy({ children: true }); this.settlementLayer = null; }
   }
 
+  /**
+   * 首次功能引导卡（ONBOARDING_DESIGN §4.1）：可关的覆盖层 + 「知道了」按钮。
+   * 关闭后 onDismiss 续接导航。与教学一致的轻提示风格，不阻断玩家用功能。
+   */
+  showFeatureGuide(titleKey: TranslationKey, bodyKey: TranslationKey, onDismiss: () => void): void {
+    if (this.destroyed || this.guideLayer) { onDismiss(); return; }
+    const { w, h } = this;
+    const layer = new PIXI.Container();
+
+    const backdrop = new PIXI.Graphics();
+    backdrop.beginFill(0x000000, 0.6).drawRect(0, 0, w, h).endFill();
+    layer.addChild(backdrop);
+
+    const cw = Math.round(w * 0.8);
+    const ch = Math.round(h * 0.34);
+    const cx = (w - cw) / 2;
+    const cy = (h - ch) / 2;
+    const card = this.sketchPanel(cw, ch, { fill: C.paper, border: C.accent, width: 2.6, seed: 91 });
+    card.x = cx; card.y = cy;
+    layer.addChild(card);
+
+    const titleLbl = txt(t(titleKey), Math.round(ch * 0.13), C.dark, true);
+    titleLbl.anchor.set(0.5, 0); titleLbl.x = w / 2; titleLbl.y = cy + Math.round(ch * 0.1);
+    layer.addChild(titleLbl);
+
+    const bodyLbl = new PIXI.Text(t(bodyKey), {
+      fontSize: Math.round(ch * 0.092), fill: C.mid, fontFamily: 'monospace',
+      wordWrap: true, wordWrapWidth: cw - Math.round(cw * 0.12), align: 'center',
+    });
+    bodyLbl.anchor.set(0.5, 0); bodyLbl.x = w / 2; bodyLbl.y = cy + Math.round(ch * 0.32);
+    layer.addChild(bodyLbl);
+
+    const btnW = Math.round(cw * 0.4);
+    const btnH = Math.round(ch * 0.2);
+    const btnX = (w - btnW) / 2;
+    const btnY = cy + ch - btnH - Math.round(ch * 0.1);
+    const btn = new PIXI.Graphics();
+    btn.beginFill(C.dark).drawRoundedRect(btnX, btnY, btnW, btnH, Math.round(btnH * 0.3)).endFill();
+    layer.addChild(btn);
+    const btnLbl = txt(t('guide.gotIt'), Math.round(btnH * 0.46), 0xffffff, true);
+    btnLbl.anchor.set(0.5, 0.5); btnLbl.x = w / 2; btnLbl.y = btnY + btnH / 2;
+    layer.addChild(btnLbl);
+
+    this.container.addChild(layer);
+    this.guideLayer = layer;
+    this.guideDismissRect = { x: cx, y: cy, w: cw, h: ch };
+    this.guideOnDismiss = onDismiss;
+  }
+
+  private clearGuide(): void {
+    this.guideDismissRect = null;
+    const cb = this.guideOnDismiss;
+    this.guideOnDismiss = null;
+    if (this.guideLayer) { this.guideLayer.destroy({ children: true }); this.guideLayer = null; }
+    cb?.();
+  }
+
   /** Draw the toast banner near the top of the lobby (below the header), in its own top-most layer. */
-  private drawAchievementToast(text: string): void {
+  private drawAchievementToast(text: string, icon: IconKind = 'trophy'): void {
     if (this.toastLayer) { this.toastLayer.destroy({ children: true }); this.toastLayer = null; }
     const { w, h } = this;
     const layer = new PIXI.Container();
@@ -377,7 +454,7 @@ export class LobbyScene implements Scene {
     const total = ti + gap + lbl.width;
     const left = (w - total) / 2;
 
-    const trophy = buildIcon('trophy', ti, C.gold);
+    const trophy = buildIcon(icon, ti, C.gold);
     trophy.x = Math.round(left); trophy.y = Math.round(by + bh / 2 - ti / 2);
     layer.addChild(trophy);
     lbl.x = left + ti + gap; lbl.y = by + bh / 2;
@@ -392,6 +469,11 @@ export class LobbyScene implements Scene {
 
   private handleDown(x: number, y: number): void {
     if (this.state !== 'idle') return;
+    // 首次功能引导（§4.1）：任意点击关闭并续接导航。优先于其它命中。
+    if (this.guideLayer) {
+      this.clearGuide();
+      return;
+    }
     // Season settlement modal (SE-6): dismiss button or anywhere on backdrop dismisses it.
     if (this.settlementLayer) {
       this.clearSettlement();
@@ -423,6 +505,8 @@ export class LobbyScene implements Scene {
     // 大世界 (SLG) pillar — promoted out of the bottom nav into the main layout.
     const wp = this.worldPillarRect;
     if (wp.w > 0 && x >= wp.x && x <= wp.x + wp.w && y >= wp.y && y <= wp.y + wp.h) {
+      // 软门槛（§4）：未通关第一章 → 灰显，点击弹气泡而非进入。
+      if (this.cb.worldLocked) { this.showInfoToast(t('lobby.world.locked')); return; }
       if (this.cb.onOpenWorld) this.cb.onOpenWorld();
       return;
     }
@@ -653,8 +737,10 @@ export class LobbyScene implements Scene {
     if (showWorld) {
       const worldX = contentX + pw + pillarGap;
       this.worldPillarRect = { x: worldX, y: pillarsY, w: pw, h: pillarH };
-      this.drawPillar(worldX, pillarsY, pw, pillarH, C.accent, 'globe',
-        t('lobby.world'), t('lobby.world.sub'), 53);
+      // 软门槛（§4）：未通关第一章 → 灰显 accent + 子标题改「通关第一章解锁」。
+      const locked = !!this.cb.worldLocked;
+      this.drawPillar(worldX, pillarsY, pw, pillarH, locked ? C.light : C.accent, 'globe',
+        t('lobby.world'), locked ? t('lobby.world.locked') : t('lobby.world.sub'), 53);
     } else {
       this.worldPillarRect = { x: 0, y: 0, w: 0, h: 0 };
     }
