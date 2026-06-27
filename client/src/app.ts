@@ -339,7 +339,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
 
   // 内存看护：每隔几秒采样 JS 堆，超阈值 console.warn 并 dump 各对象池占用；微信侧接 wx.onMemoryWarning。
   // 跨场景常驻（战斗退场后池注册表自动清空）。阈值可用 localStorage 'nw_mem_warn_mb' 调。
-  new MemoryMonitor().install(app.ticker);
+  new MemoryMonitor().install(app.ticker, app.stage);
 
   // CPU / 主线程饱和看护：长任务忙碌比 + 持续低 FPS，任一持续越线即上报 cpu 异常（net/anomaly 全量通道）。
   new PerfMonitor().install(app.ticker);

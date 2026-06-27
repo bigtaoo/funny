@@ -243,7 +243,7 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 与 §9 的「日志定向采集」**并列、互补、反向**：定向采集只在被 `allowPublicIds` 点名的 publicId 上回捞日志；本通道相反——**任何**客户端遇到异常都**主动直报**，无需事先点名，专为「在全网定位野外异常」而设。
 
 - **上报的 6 类异常**（客户端 `net/anomaly.ts` 的 `AnomalyType`）：
-  - `mem` — JS 堆超阈值（`MemoryMonitor` 旁路喂入；与原有 `netLog('mem').warn` 入环形缓冲并行）。
+  - `mem` — JS 堆超阈值（`MemoryMonitor` 旁路喂入；与原有 `netLog('mem').warn` 入环形缓冲并行）。detail 除 `heap`/`poolTotal` 外带 `gpu:{tex,baseTex,nodes,tickers}`（2026-06-27 加，见 §8）——池空（`poolTotal.estMB≈0`）却堆涨时，这三个数把纯 JS 保留型泄漏定性到具体一类：`tex/baseTex` 增=纹理缓存无界、`nodes` 增=退场不 destroy 的场景图残留、`tickers` 增=`ticker.add` 漏配对 `remove` 的闭包钉死。
   - `cpu` — 主线程持续饱和（`PerfMonitor`，新增）：① `PerformanceObserver('longtask')` 长任务忙碌比 ≥ 0.5；② 持续低 FPS（连续 ≈10s < 30，用 `ticker.deltaMS` 估，微信亦可）。浏览器无直接 CPU API，主线程饱和是其可观测等价。
   - `webgl_lost` — `webglcontextlost`（黑屏类故障关键信号）。
   - `anr` — 主循环卡死：独立 wall-clock 看门狗，主线程冻结 >4s（恢复后据时间漂移反推；`document.hidden` 时不计，避免后台节流误报）。
@@ -349,3 +349,15 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 **验证**：metaserver `tsc --noEmit` + client `tsc` + webpack web build 全通过；clientLog 13 例通过。
 
 **Grafana**：已加「客户端异常（全量上报）」面板 `observability/grafana/dashboards/client-anomaly.json`（uid `nw-client-anomaly`，folder-provisioned 自动加载）——按 type 堆叠速率 + crash 计数 + 事件总数 + 受影响玩家数 + 明细日志，模板变量 type/platform/publicId/关键字。
+
+### 2026-06-27 · `mem` 上报补 PIXI 级泄漏定性计数（§9.7 mem）
+
+**动机**：野外一台 web（publicId 233784986）堆从 ~1GB 4 分钟涨到 4012MB（贴 4192 上限）+ 伴 43/46/52s 真·可见卡死（ANR 看门狗 `!hidden` 才报，排除后台节流）。但 `poolTotal.estMB=0` → 不是战斗对象池，是纯 JS 保留型泄漏；原 `dump()` 只有「堆大 + 池空」，无法定位是哪一类。
+
+**改动**（`client/src/cache/MemoryMonitor.ts` + `app.ts`）：
+- `install(ticker, stage?)` 多收一个 `stage`（`app.ts` 传 `app.stage`——场景 `gameLayer` 在其下，计数是超集）。
+- `dump()` 新增 `gpu:{tex,baseTex,nodes,tickers}`：`PIXI.utils.TextureCache`/`BaseTextureCache` 条目数、`app.stage` 下显示对象总数（栈式遍历，封顶 `200000`，到顶记 `"200000+"`）、`ticker.count` 监听器数。同时进 `log.warn` 与 `reportAnomaly('mem',...)` 的 detail（detail 仍 ≤800 截断内）。
+- 仅告警时（mem 60s 冷却）跑一次，遍历封顶——不会让正在发生的卡死更重。
+- 下次复现据三数定性：`tex/baseTex` 增=纹理缓存无界、`nodes` 增=退场不 destroy 的场景图残留、`tickers` 增=`ticker.add` 漏 `remove` 的闭包钉死，定位后再做退场审计。
+
+**验证**：client `tsc --noEmit` 通过。
