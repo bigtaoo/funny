@@ -33,6 +33,11 @@ export interface ShopSceneCallbacks {
   /** Virtual top-up: a magic code credits coins (dev stub; real IAP SDK later). */
   recharge(code: string): Promise<ShopActionResult>;
   openGacha(): void;
+  /**
+   * 战令 Battle Pass 入口（LOBBY_IA_REDESIGN §3：付费主轴并入「商城」tab，主页不放 banner）。
+   * 仅登录在线时提供；缺省时不绘制该按钮。点击导航到 BattlePassScene（返回回到商城）。
+   */
+  openBattlePass?(): void;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -294,7 +299,7 @@ export class ShopScene implements Scene {
     }
   }
 
-  /** Bottom row: gacha + top-up entries. */
+  /** Bottom row: gacha + (battle pass) + top-up entries. */
   private drawFooter(): void {
     const { w, h } = this;
     const navH = Math.round(h * 0.10);
@@ -303,16 +308,23 @@ export class ShopScene implements Scene {
     navBg.beginFill(C.dark, 0.92); navBg.drawRect(0, y, w, navH); navBg.endFill();
     this.container.addChild(navBg);
 
-    const bw = Math.round(w * 0.40);
+    // 盲盒 / 战令(在线) / 充值 — 战令仅登录在线时出现（LOBBY_IA_REDESIGN §3 付费主轴并入商城）。
+    const hasBp = !!this.cb.openBattlePass;
+    const count = hasBp ? 3 : 2;
     const bh = Math.round(navH * 0.62);
     const by = y + (navH - bh) / 2;
-    const gap = Math.round(w * 0.04);
-    const totalW = bw * 2 + gap;
-    const startX = (w - totalW) / 2;
+    const gap = Math.round(w * 0.03);
+    const bw = Math.round((w * 0.92 - gap * (count - 1)) / count);
+    const totalW = bw * count + gap * (count - 1);
+    let bx = (w - totalW) / 2;
 
-    this.addButton(t('shop.openGacha'), startX, by, bw, bh, C.dark, C.gold, () => this.cb.openGacha());
-    this.addButton(t('shop.recharge'), startX + bw + gap, by, bw, bh, C.dark, C.green,
-      () => this.openRecharge());
+    this.addButton(t('shop.openGacha'), bx, by, bw, bh, C.dark, C.gold, () => this.cb.openGacha());
+    bx += bw + gap;
+    if (hasBp) {
+      this.addButton(t('battlepass.openBattlePass'), bx, by, bw, bh, C.dark, C.accent, () => this.cb.openBattlePass!());
+      bx += bw + gap;
+    }
+    this.addButton(t('shop.recharge'), bx, by, bw, bh, C.dark, C.green, () => this.openRecharge());
   }
 
   private drawToast(): void {

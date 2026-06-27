@@ -43,6 +43,12 @@ export interface CollectionCallbacks {
   isOnline?(): boolean;
   /** Server-authoritative merge (5 × unitId:level → 1 × unitId:(level+1)). */
   tryMerge?(unitId: string, level: number): Promise<boolean>;
+  /**
+   * 装备系统（E5）入口（LOBBY_IA_REDESIGN §3：装备并入「养成」一级可达）。装备服务器权威
+   * （强化掷骰/扣费/库存）→ 仅登录在线时提供；缺省 / 离线时第 4 个「装备」tab 灰显不可点。
+   * 点击导航到 EquipmentScene（独立场景，返回回到本页）。
+   */
+  onOpenEquipment?(): void;
 }
 
 interface Hit { rect: Rect; fn: () => void; scroll?: boolean; }
@@ -184,14 +190,19 @@ export class CollectionScene implements Scene {
 
   private drawTabs(y: number, hgt: number): void {
     const { w } = this;
+    // 3 switchable content tabs + a 4th 「装备」launcher (LOBBY_IA_REDESIGN §3/§5).
+    // The launcher navigates to EquipmentScene rather than switching content;
+    // greyed (no hit) when equipment isn't reachable (offline / not logged in).
     const tabs: Array<{ id: CollectionTab; label: string }> = [
       { id: 'cards', label: t('collection.tab.cards') },
       { id: 'skins', label: t('collection.tab.skins') },
       { id: 'units', label: t('collection.tab.units') },
     ];
-    const pad = Math.round(w * 0.06);
-    const gap = Math.round(w * 0.025);
-    const tabW = Math.round((w - pad * 2 - gap * (tabs.length - 1)) / tabs.length);
+    const equipEnabled = !!this.cb.onOpenEquipment;
+    const cellCount = tabs.length + 1; // +1 for the equipment launcher
+    const pad = Math.round(w * 0.04);
+    const gap = Math.round(w * 0.02);
+    const tabW = Math.round((w - pad * 2 - gap * (cellCount - 1)) / cellCount);
     tabs.forEach((tabDef, i) => {
       const x = pad + i * (tabW + gap);
       const active = this.tab === tabDef.id;
@@ -210,6 +221,25 @@ export class CollectionScene implements Scene {
 
       if (!active) this.hits.push({ rect: { x, y, w: tabW, h: hgt }, fn: () => this.switchTab(tabDef.id) });
     });
+
+    // 4th cell — 装备 launcher.
+    const ex = pad + tabs.length * (tabW + gap);
+    const ebox = sketchPanel(tabW, hgt, {
+      fill: C.paper,
+      border: equipEnabled ? C.gold : C.line,
+      width: equipEnabled ? 1.8 : 1.6,
+      seed: seedFor(ex, y, tabW),
+    });
+    ebox.x = ex; ebox.y = y;
+    ebox.alpha = equipEnabled ? 1 : 0.45;
+    this.container.addChild(ebox);
+
+    const elbl = txt(t('collection.tab.equipment'), Math.round(hgt * 0.42), equipEnabled ? C.gold : C.mid, true);
+    elbl.anchor.set(0.5, 0.5); elbl.x = ex + tabW / 2; elbl.y = y + hgt / 2;
+    elbl.alpha = equipEnabled ? 1 : 0.45;
+    this.container.addChild(elbl);
+
+    if (equipEnabled) this.hits.push({ rect: { x: ex, y, w: tabW, h: hgt }, fn: () => this.cb.onOpenEquipment!() });
   }
 
   // ── Cards codex ────────────────────────────────────────────────────────────────

@@ -542,14 +542,15 @@ export class LobbyScene implements Scene {
       this.cb.onOpenShop();
       return;
     }
-    // Cards (collection) and stats read local save data → work offline, no gate.
+    // 养成 (collection) reads local save data → works offline; rect always assigned.
+    // 生涯 (stats) is online-only now (§6 决策 6) → its rect is unassigned (w=0) offline.
     const cd = this.cardsNavRect;
-    if (x >= cd.x && x <= cd.x + cd.w && y >= cd.y && y <= cd.y + cd.h) {
+    if (cd.w > 0 && x >= cd.x && x <= cd.x + cd.w && y >= cd.y && y <= cd.y + cd.h) {
       this.cb.onOpenCards();
       return;
     }
     const st = this.statsNavRect;
-    if (x >= st.x && x <= st.x + st.w && y >= st.y && y <= st.y + st.h) {
+    if (st.w > 0 && x >= st.x && x <= st.x + st.w && y >= st.y && y <= st.y + st.h) {
       this.cb.onOpenStats();
       return;
     }
@@ -787,30 +788,35 @@ export class LobbyScene implements Scene {
       }
     }
 
-    // Bottom nav. The center slot is the lobby itself (was 大世界, promoted to a
-    // pillar above), so it renders as the active tab and is a no-op on tap.
-    // Shop + social need an account → omitted entirely in offline mode; the
-    // remaining slots (cards · home · stats read local save) redistribute evenly.
+    // Bottom nav (IA 重规划 §3). Five fixed slots; the center 主页 slot is the
+    // lobby itself (大世界 promoted to a pillar above), rendered active + no-op.
+    // 商城/生涯/社交 need an account → greyed (not removed) in offline mode so the
+    // tab layout stays stable; 养成 + 主页 stay live.
     const navBg = new PIXI.Graphics();
     navBg.beginFill(C.dark, 0.9);
     navBg.drawRect(0, h - navH, w, navH);
     navBg.endFill();
     this.container.addChild(navBg);
 
-    // Reset gated rects so a stale rect can't be hit when its slot isn't drawn.
+    // Reset gated rects so a stale rect can't be hit when its slot is disabled.
+    this.cardsNavRect  = { x: 0, y: 0, w: 0, h: 0 };
+    this.statsNavRect  = { x: 0, y: 0, w: 0, h: 0 };
     this.shopNavRect   = { x: 0, y: 0, w: 0, h: 0 };
     this.socialNavRect = { x: 0, y: 0, w: 0, h: 0 };
 
-    interface NavSlot { name: string; color: number; active?: boolean; assign?: (r: Rect) => void; }
+    // IA 重规划（LOBBY_IA_REDESIGN §3）：固定 5 tab，按动机分组 —
+    //   养成(cards) · 商城(shop) · 主页(home,中心) · 生涯(stats) · 社交(social)。
+    // 离线时商城/生涯/社交整 tab 灰显（§6 决策 6：不进入、不再引导）；养成(收藏读本地档)
+    // 与主页照常可用。
+    interface NavSlot { name: string; color: number; active?: boolean; disabled?: boolean; assign?: (r: Rect) => void; }
+    const off = !!this.cb.offline;
     const slots: NavSlot[] = [
-      { name: t('lobby.nav.cards'), color: C.red,    assign: r => { this.cardsNavRect = r; } },
-      { name: t('lobby.nav.stats'), color: C.accent, assign: r => { this.statsNavRect = r; } },
-      { name: t('lobby.nav.home'),  color: C.accent, active: true },
+      { name: t('lobby.nav.cards'),  color: C.red,    assign: r => { this.cardsNavRect = r; } },
+      { name: t('lobby.nav.shop'),   color: C.green,  disabled: off, assign: r => { this.shopNavRect = r; } },
+      { name: t('lobby.nav.home'),   color: C.accent, active: true },
+      { name: t('lobby.nav.stats'),  color: C.accent, disabled: off, assign: r => { this.statsNavRect = r; } },
+      { name: t('lobby.nav.social'), color: C.gold,   disabled: off, assign: r => { this.socialNavRect = r; } },
     ];
-    if (!this.cb.offline) {
-      slots.push({ name: t('lobby.nav.shop'),   color: C.green, assign: r => { this.shopNavRect = r; } });
-      slots.push({ name: t('lobby.nav.social'), color: C.gold,  assign: r => { this.socialNavRect = r; } });
-    }
 
     const n = slots.length;
     slots.forEach((slot, i) => {
@@ -818,7 +824,8 @@ export class LobbyScene implements Scene {
       const slotX = i * slotW + slotW / 2;
       const slotY = h - navH / 2;
       const active = !!slot.active;
-      const dotColor = slot.color;
+      const disabled = !!slot.disabled;
+      const dotColor = disabled ? C.mid : slot.color;
 
       // Active tab: a short accent bar across the top edge of the slot.
       if (active) {
@@ -831,7 +838,7 @@ export class LobbyScene implements Scene {
       }
 
       const dot = new PIXI.Graphics();
-      dot.beginFill(dotColor, active ? 1.0 : 0.7);
+      dot.beginFill(dotColor, disabled ? 0.35 : (active ? 1.0 : 0.7));
       dot.drawCircle(0, 0, Math.round(navH * (active ? 0.21 : 0.15)));
       dot.endFill();
       dot.x = slotX; dot.y = slotY - Math.round(navH * 0.18);
@@ -839,11 +846,12 @@ export class LobbyScene implements Scene {
 
       const navLabel = txt(slot.name, Math.round(navH * (active ? 0.24 : 0.21)), active ? 0xffffff : C.light, active);
       navLabel.anchor.set(0.5, 0);
-      navLabel.alpha = active ? 1.0 : 0.78;
+      navLabel.alpha = disabled ? 0.4 : (active ? 1.0 : 0.78);
       navLabel.x = slotX; navLabel.y = slotY + Math.round(navH * 0.04);
       navBg.addChild(navLabel);
 
-      slot.assign?.({ x: i * slotW, y: h - navH, w: slotW, h: navH });
+      // Disabled slots render greyed but receive no hit rect (tap = no-op).
+      if (!disabled) slot.assign?.({ x: i * slotW, y: h - navH, w: slotW, h: navH });
     });
 
     // Aggregate social unread badge (count bubble) drawn over the social slot.

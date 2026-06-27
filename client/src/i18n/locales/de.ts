@@ -61,10 +61,10 @@ export const de: Record<TranslationKey, string> = {
   'lobby.you': 'DU',
   'lobby.vs': 'VS',
   'lobby.loading': 'Schlachtfeld wird geladen...',
-  'lobby.nav.cards': 'Karten',
-  'lobby.nav.stats': 'Statistik',
+  'lobby.nav.cards': 'Ausbau',
+  'lobby.nav.stats': 'Laufbahn',
   'lobby.nav.home': 'Start',
-  'lobby.nav.shop': 'Shop',
+  'lobby.nav.shop': 'Laden',
   'lobby.nav.social': 'Sozial',
 
   // ── Persönliche Einstellungen ───────────────────────────────────────────────
@@ -478,6 +478,7 @@ export const de: Record<TranslationKey, string> = {
   'collection.tab.cards': 'Karten',
   'collection.tab.skins': 'Skins',
   'collection.tab.units': 'Einheiten',
+  'collection.tab.equipment': 'Ausrüstung',
   'collection.cardType.unit': 'Einheit',
   'collection.cardType.building': 'Gebäude',
   'collection.cardType.spell': 'Zauber',
@@ -488,8 +489,8 @@ export const de: Record<TranslationKey, string> = {
   'collection.stat.spawn': 'Anzahl',
   'collection.stat.interval': 'Angr.tempo',
 
-  // Statistik-Bildschirm
-  'stats.title': 'Statistik',
+  // Statistik-Bildschirm (IA-Redesign: jetzt die "Laufbahn"-Zentrale)
+  'stats.title': 'Laufbahn',
   'stats.back': '← Zurück',
   'stats.pvp': 'Rangliste',
   'stats.rank': 'Rang',
