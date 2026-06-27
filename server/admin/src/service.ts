@@ -549,10 +549,19 @@ export class AdminService {
     const doc = await this.cols.compTickets.findOne({ _id: id });
     if (!doc) throw new AdminError(404, 'not_found', 'no such ticket');
     if (doc.status !== 'pending') throw new AdminError(409, 'conflict', `ticket is ${doc.status}`);
+    const cap = requiredApproveCapability(doc.scope, doc.amountTier);
+    // 四眼原则：发起人原则上不能审批自己的工单。但当全场没有「其他可审批此单」的有效账号时
+    // （典型：当前仅一个超管，全服/超额工单只有超管能批），硬性四眼会导致工单永久死锁。
+    // 故仅在「存在其他合格审批人」时强制他人审批；否则允许发起人自批，并专门留痕（selfApproved）。
+    // TODO(single-super-exception): 招到第二名运维（具备对应审批能力）后删除此例外，恢复硬性发起≠审批。
+    let selfApproved = false;
     if (doc.initiatedBy === actor.adminId) {
-      throw new AdminError(403, 'forbidden', 'initiator cannot approve own ticket');
+      if (await this.hasOtherEligibleApprover(doc.initiatedBy, cap)) {
+        throw new AdminError(403, 'forbidden', 'initiator cannot approve own ticket');
+      }
+      selfApproved = true;
     }
-    this.requireCap(actor, requiredApproveCapability(doc.scope, doc.amountTier));
+    this.requireCap(actor, cap);
 
     const res = await this.cols.compTickets.findOneAndUpdate(
       { _id: id, status: 'pending' },
@@ -560,9 +569,26 @@ export class AdminService {
       { returnDocument: 'after' },
     );
     if (!res) throw new AdminError(409, 'conflict', 'ticket no longer pending');
-    await this.audit(actor.adminId, 'comp.approve', { target: id, summary: doc.scope });
+    await this.audit(actor.adminId, 'comp.approve', {
+      target: id,
+      summary: selfApproved ? `${doc.scope} [SELF-APPROVED:no-other-approver]` : doc.scope,
+    });
 
     return this.execute(res);
+  }
+
+  /**
+   * 是否存在「除发起人外、当前可用（未禁用）、且具备该审批能力」的其他管理员。
+   * 决定四眼原则能否真正落地：存在 → 必须他人审批；不存在 → 允许发起人自批（单超管例外，见 approveTicket）。
+   */
+  private async hasOtherEligibleApprover(initiatorId: string, cap: AdminCapability): Promise<boolean> {
+    const eligibleRoles = ADMIN_ROLES.filter((r) => roleHasCapability(r, cap));
+    const count = await this.cols.adminAccounts.countDocuments({
+      _id: { $ne: initiatorId },
+      disabled: { $ne: true },
+      role: { $in: eligibleRoles },
+    });
+    return count > 0;
   }
 
   async rejectTicket(actor: Actor, id: string, note: string): Promise<CompTicketView> {

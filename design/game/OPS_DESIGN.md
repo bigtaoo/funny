@@ -147,6 +147,7 @@ admin 执行器（approved 后，可自动或手动触发）
 ```
 
 - **执行 ≠ 入账**：执行只是把邮件投到玩家邮箱；玩家点"领取"时邮件附件才经 commercial（金币）/ meta inventory（物品/皮肤）真正发放，`deliveredOrders`/`claimOrderId` 幂等（见 `SOCIAL_DESIGN §3.3`）。
+- **⚠ 单超管自批例外（临时）**：硬性「发起≠审批」在只有一个超管时会让全服/个人超额工单永久死锁（这两类只有 super 能批，而 super 不能批自己发起的单）。故 `approveTicket` 改为**条件四眼**：仅当存在「**除发起人外、未禁用、且具备该单所需 `comp.approve.*` 能力**的其他账号」时才强制他人审批；若无第二合格审批人，允许发起人自批，并在审计 `comp.approve` 的 `summary` 打 `[SELF-APPROVED:no-other-approver]` 专门留痕。**这是前期单超管的过渡方案**——招到第二名具备对应审批能力的运维后，删除 `service.ts` 中标记 `TODO(single-super-exception)` 的分支，恢复硬性「发起≠审批」即可（届时该例外自然失效，因为已存在第二合格审批人）。reject 不开此例外（发起人想撤回自己的单走 cancel）。
 - **全服补偿安全阀**：
   - 发起时 **dry-run 预览命中人数**（admin 调 meta `/internal/mail/system/preview` 估算）。
   - `dispatchKey` 唯一索引防手抖重复执行。
@@ -275,7 +276,7 @@ POST   /admin/accounts/{id}/reset-password { password }
 - **业务侧新增端点**：gateway `GET /internal/stats`（`Gateway.stats()` 在线数）；matchsvc `GET /internal/stats`（`Matchsvc.stats()` + `GameRegistry.stats()` 队列/房间/game）；meta `GET /internal/player?publicId=`（`resolveByPublicId` 反查档案摘要，player.lookup）。
 - **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：`api.ts`（Bearer + localStorage 续登）/ `app.ts`（登录 + 按 capabilities 渲染导航）/ `pages.ts`（监控 sparkline / 分析 / 玩家 / 工单发起+审批 / 审计 / 账号）。不持密钥、不连库、不直连业务服务。
 - **部署接线**：`server/package.json` workspaces + `dev:admin`；`Dockerfile` 七包；`docker-compose.prod.yml` admin 服务（caddy 不路由）；`ecosystem.config.cjs` `nw-admin`；`.env.example` + `dev-up.ps1`（dev 种子 root/rootpass）。
-- **验证**：七包 `tsc -b` 全绿 + admin 11 e2e（登录/RBAC/发起≠审批/超额+全服走超管/dry-run/幂等执行+重试/审计可见性/player.lookup/采样 trend/账号管理）+ gateway 10 / matchsvc 17 / meta 74 不破 + `tools/ops` tsc + webpack 构建。
+- **验证**：七包 `tsc -b` 全绿 + admin 15 e2e（登录/RBAC/发起≠审批/超额+全服走超管/**单超管自批例外+留痕**/**有第二 super 时恢复四眼**/**禁用的第二审批人不算数**/dry-run/幂等执行+重试/审计可见性/player.lookup/采样 trend/账号管理）+ gateway 10 / matchsvc 17 / meta 74 不破 + `tools/ops` tsc + webpack 构建。
 - **补偿 ↔ 邮件跨进程联调（2026-06-16）**：S6-3 邮件后端就绪，补全 `server/admin/test/comp-mail.e2e.test.ts`——admin 真实 `HttpMailDispatcher`/`HttpPlayerClient` 经 `fetch` 打真实 `app.listen({port:0})` 的 meta 进程（非 fastify inject），6 用例跑通：①单人补偿全链（发起→审批→真 HTTP 投递→玩家收件箱→领取附件→commercial 入账+钱包镜像）②`dispatchKey` 幂等（同 key 重发仅一封，meta `$setOnInsert`）③全服 fan-out + `preview` 命中人数 ④`player.lookup` 经真 `/internal/player` ⑤鉴权边界（错 `X-Internal-Key`→401→工单 failed、玩家无信）⑥收件人不存在→工单 failed。admin e2e 12→18，七包 `tsc -b` 全绿（meta dist 须先 `tsc -b`）。
 - **待办**：§9 开放问题（金币当量换算表、GlobalFilter 维度、TOTP 二次审批）。
 

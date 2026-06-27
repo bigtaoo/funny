@@ -181,6 +181,57 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     expect(done.recipientCount).toBe(100);
   });
 
+  it('单超管例外：无其他合格审批人时，超管可自批自己发起的全服工单（专门留痕）', async () => {
+    // seed 只有 root 一个 super；全服仅 super 可审批 → 无第二审批人 → 允许自批。
+    const root = await actorOf(svc, 'root');
+    const g = await svc.initiateTicket(root, {
+      scope: 'global',
+      target: { filter: { kind: 'all' } },
+      mail: { subject: 's', body: 'b', attachments: [{ kind: 'coins', count: 10 }], expireDays: 30 },
+      reason: 'r',
+    });
+    const done = await svc.approveTicket(root, g.id);
+    expect(done.status).toBe('executed');
+    // 审计专门标记自批，便于后期审查/移除该例外。
+    const audit = await m.collections.auditLog.findOne({ action: 'comp.approve', target: g.id });
+    expect(audit?.summary).toContain('SELF-APPROVED');
+  });
+
+  it('存在第二个 super 时，发起人不能自批自己的全服工单（恢复四眼）', async () => {
+    const root = await actorOf(svc, 'root');
+    await svc.createAccount(root, { username: 'root2', password: 'root2pass', role: 'super', displayName: 'Root2' });
+    const g = await svc.initiateTicket(root, {
+      scope: 'global',
+      target: { filter: { kind: 'all' } },
+      mail: { subject: 's', body: 'b', attachments: [{ kind: 'coins', count: 10 }], expireDays: 30 },
+      reason: 'r',
+    });
+    await expect(svc.approveTicket(root, g.id)).rejects.toMatchObject({ status: 403 });
+    // 第二个 super 审批可放行。
+    const root2 = await actorOf(svc, 'root2');
+    const done = await svc.approveTicket(root2, g.id);
+    expect(done.status).toBe('executed');
+  });
+
+  it('被禁用的第二审批人不算数：仍允许超管自批', async () => {
+    const root = await actorOf(svc, 'root');
+    const r2 = await svc.createAccount(root, {
+      username: 'root2',
+      password: 'root2pass',
+      role: 'super',
+      displayName: 'Root2',
+    });
+    await svc.updateAccount(root, r2.id, { disabled: true }); // 停用第二 super
+    const g = await svc.initiateTicket(root, {
+      scope: 'global',
+      target: { filter: { kind: 'all' } },
+      mail: { subject: 's', body: 'b', attachments: [{ kind: 'coins', count: 10 }], expireDays: 30 },
+      reason: 'r',
+    });
+    const done = await svc.approveTicket(root, g.id);
+    expect(done.status).toBe('executed');
+  });
+
   it('dry-run 预览命中人数', async () => {
     const ops = await actorOf(svc, 'opsy');
     expect(await svc.preview({ scope: 'global', target: { filter: { kind: 'all' } } })).toMatchObject({
