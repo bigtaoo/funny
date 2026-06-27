@@ -1,0 +1,155 @@
+/**
+ * icons.ts — small hand-drawn UI glyphs (book / globe / coin / trophy).
+ *
+ * Replaces emoji placeholders in the lobby with SketchPen line-art so the icons
+ * share the worn-notebook ink language (art-direction: three stationery pens,
+ * flat scrawl, no gradients). Each icon is drawn once into an `s × s` box at
+ * local origin (0,0) and baked to a GPU texture via `uiCache` (cache key folds
+ * in kind + size + colour), so repeated lobby builds cost nothing. Headless
+ * tests with no renderer transparently fall back to a live draw.
+ *
+ * Coordinates are normalised to the box size `s` and content is centred, so a
+ * caller can position either the baked Sprite or the live Graphics by its
+ * top-left corner the same way.
+ */
+import * as PIXI from 'pixi.js-legacy';
+import { SketchPen } from './sketch';
+import { getCachedDisplay } from '../ui/widgets/uiCache';
+
+export type IconKind = 'book' | 'globe' | 'coin' | 'trophy';
+
+/** Open book — splayed pages over a centre spine, with a couple of text lines. */
+function drawBook(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x600d);
+  const w = Math.max(1.5, s * 0.05);
+  const cx = s / 2;
+  const outX = s * 0.14;
+  const outerTop = s * 0.30;     // pages rise to the outer top corners
+  const innerTop = s * 0.35;     // spine dips lower at the centre
+  const botY = s * 0.70;
+  const spineBot = botY + s * 0.02;
+
+  // Left + right page outlines (inner top → outer top → outer bottom → spine base).
+  pen.stroke([
+    { x: cx, y: innerTop }, { x: outX, y: outerTop },
+    { x: outX, y: botY }, { x: cx, y: spineBot },
+  ], { color, width: w, jitter: 0.7, taper: 0.9, double: false });
+  pen.stroke([
+    { x: cx, y: innerTop }, { x: s - outX, y: outerTop },
+    { x: s - outX, y: botY }, { x: cx, y: spineBot },
+  ], { color, width: w, jitter: 0.7, taper: 0.9, double: false });
+  // Spine.
+  pen.line(cx, innerTop, cx, spineBot, { color, width: w * 0.85, jitter: 0.4, taper: 0.9, double: false });
+
+  // Faint text lines on each page.
+  const lw = Math.max(1, s * 0.022);
+  for (let i = 0; i < 2; i++) {
+    const ly = innerTop + s * 0.08 + i * s * 0.11;
+    pen.line(outX + s * 0.04, ly + s * 0.01, cx - s * 0.04, ly,
+      { color, width: lw, jitter: 0.3, taper: 0.7, double: false, alpha: 0.7 });
+    pen.line(cx + s * 0.04, ly, s - outX - s * 0.04, ly + s * 0.01,
+      { color, width: lw, jitter: 0.3, taper: 0.7, double: false, alpha: 0.7 });
+  }
+}
+
+/** Globe — circle outline + vertical meridian ellipse + bowed equator + a latitude. */
+function drawGlobe(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x61b);
+  const w = Math.max(1.5, s * 0.045);
+  const cx = s / 2, cy = s / 2, r = s * 0.32;
+
+  pen.circle(cx, cy, r, { color, width: w, jitter: 0.6, taper: 0.95, double: false });
+
+  // Equator (slightly bowed horizontal).
+  pen.stroke([
+    { x: cx - r, y: cy }, { x: cx, y: cy + s * 0.02 }, { x: cx + r, y: cy },
+  ], { color, width: w * 0.8, jitter: 0.35, taper: 0.9, double: false });
+  // A latitude above the equator.
+  pen.stroke([
+    { x: cx - r * 0.86, y: cy - r * 0.5 }, { x: cx, y: cy - r * 0.42 }, { x: cx + r * 0.86, y: cy - r * 0.5 },
+  ], { color, width: w * 0.7, jitter: 0.3, taper: 0.9, double: false, alpha: 0.85 });
+  // Meridian — a vertical ellipse traced as a closed wobbled loop.
+  const rx = r * 0.42;
+  const mer = [];
+  for (let i = 0; i <= 20; i++) {
+    const a = (Math.PI * 2 * i) / 20;
+    mer.push({ x: cx + rx * Math.sin(a), y: cy - r * Math.cos(a) });
+  }
+  pen.stroke(mer, { color, width: w * 0.7, jitter: 0.3, taper: 0.95, double: false });
+}
+
+/** Coin — two concentric ink rings + a small centre sparkle (the shine). */
+function drawCoin(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x607);
+  const w = Math.max(1.5, s * 0.06);
+  const cx = s / 2, cy = s / 2, r = s * 0.34;
+
+  pen.circle(cx, cy, r, { color, width: w, jitter: 0.5, taper: 0.95, double: false });
+  pen.circle(cx, cy, r * 0.64, { color, width: w * 0.7, jitter: 0.4, taper: 0.95, double: false });
+
+  // 4-point sparkle in the centre — short tapered rays read as a coin's shine.
+  const sp = s * 0.13;
+  pen.line(cx - sp, cy, cx + sp, cy, { color, width: w * 0.7, jitter: 0.2, taper: 0.25, double: false });
+  pen.line(cx, cy - sp, cx, cy + sp, { color, width: w * 0.7, jitter: 0.2, taper: 0.25, double: false });
+}
+
+/** Trophy — bowl + two side handles + stem + pedestal base. */
+function drawTrophy(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x60c);
+  const w = Math.max(1.5, s * 0.05);
+  const cx = s / 2;
+  const cupTop = s * 0.26, cupBot = s * 0.52;
+  const halfTop = s * 0.20, halfBot = s * 0.11;
+
+  // Bowl sides + rim.
+  pen.stroke([
+    { x: cx - halfTop, y: cupTop }, { x: cx - halfBot, y: cupBot },
+    { x: cx + halfBot, y: cupBot }, { x: cx + halfTop, y: cupTop },
+  ], { color, width: w, jitter: 0.5, taper: 0.95, double: false });
+  pen.line(cx - halfTop, cupTop, cx + halfTop, cupTop, { color, width: w, jitter: 0.4, taper: 0.9, double: false });
+
+  // Side handles — half-ellipses bulging outward from the rim.
+  const handle = (dir: number) => {
+    const pts = [];
+    for (let i = 0; i <= 8; i++) {
+      const a = -Math.PI / 2 + (Math.PI * i) / 8;
+      pts.push({
+        x: cx + dir * (halfTop + Math.cos(a) * s * 0.1),
+        y: cupTop + s * 0.04 + (Math.sin(a) + 1) * s * 0.06,
+      });
+    }
+    pen.stroke(pts, { color, width: w * 0.8, jitter: 0.3, taper: 0.9, double: false });
+  };
+  handle(1);
+  handle(-1);
+
+  // Stem + pedestal base.
+  pen.line(cx, cupBot, cx, s * 0.66, { color, width: w, jitter: 0.3, taper: 0.9, double: false });
+  pen.stroke([
+    { x: cx - s * 0.07, y: s * 0.66 }, { x: cx - s * 0.14, y: s * 0.74 },
+    { x: cx + s * 0.14, y: s * 0.74 }, { x: cx + s * 0.07, y: s * 0.66 },
+  ], { color, width: w, jitter: 0.4, taper: 0.9, double: false });
+  pen.line(cx - s * 0.14, s * 0.74, cx + s * 0.14, s * 0.74, { color, width: w, jitter: 0.4, taper: 0.9, double: false });
+}
+
+const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
+  book:   drawBook,
+  globe:  drawGlobe,
+  coin:   drawCoin,
+  trophy: drawTrophy,
+};
+
+/**
+ * A baked, reusable hand-drawn icon sized `size × size`, drawn in `color`.
+ * Returns a `PIXI.Sprite` of the cached texture (or a live Graphics in headless
+ * tests). Position by its top-left corner; the artwork is centred in the box.
+ */
+export function buildIcon(kind: IconKind, size: number, color: number): PIXI.DisplayObject {
+  const s = Math.round(size);
+  const key = `icon:${kind}:${s}:${(color >>> 0).toString(16)}`;
+  return getCachedDisplay(key, () => {
+    const g = new PIXI.Graphics();
+    DRAW[kind](g, s, color);
+    return g;
+  }, s, s);
+}

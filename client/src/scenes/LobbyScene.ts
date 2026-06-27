@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
 import { bake } from '../render/bake';
+import { buildIcon, IconKind } from '../render/icons';
 import { buildWearOverlay } from '../render/wearOverlay';
 import { BoilingSprite } from '../render/boil';
 import { buildAvatar } from '../render/avatar';
@@ -366,10 +367,20 @@ export class LobbyScene implements Scene {
     box.endFill();
     layer.addChild(box);
 
-    const lbl = txt('🏆 ' + text, Math.round(bh * 0.34), 0xffffff, true);
-    lbl.anchor.set(0.5, 0.5);
-    lbl.x = w / 2; lbl.y = by + bh / 2;
-    if (lbl.width > bw * 0.92) lbl.scale.set((bw * 0.92) / lbl.width);
+    // Hand-drawn trophy icon + label, centred as a group (replaces the 🏆 glyph).
+    const ti = Math.round(bh * 0.58);
+    const gap = Math.round(bh * 0.2);
+    const lbl = txt(text, Math.round(bh * 0.34), 0xffffff, true);
+    lbl.anchor.set(0, 0.5);
+    const maxLblW = bw * 0.92 - ti - gap;
+    if (lbl.width > maxLblW) lbl.scale.set(maxLblW / lbl.width);
+    const total = ti + gap + lbl.width;
+    const left = (w - total) / 2;
+
+    const trophy = buildIcon('trophy', ti, C.gold);
+    trophy.x = Math.round(left); trophy.y = Math.round(by + bh / 2 - ti / 2);
+    layer.addChild(trophy);
+    lbl.x = left + ti + gap; lbl.y = by + bh / 2;
     layer.addChild(lbl);
 
     this.container.addChild(layer); // top-most, above vsLayer
@@ -551,9 +562,15 @@ export class LobbyScene implements Scene {
 
       // Soft-currency balance (server-authoritative mirror) — only meaningful online.
       if (typeof this.cb.coins === 'number') {
-        const coinLbl = txt('🪙 ' + fmtCoins(this.cb.coins), Math.round(h * 0.022), C.gold, true);
+        const coinLbl = txt(fmtCoins(this.cb.coins), Math.round(h * 0.022), C.gold, true);
         coinLbl.anchor.set(1, 0.5); coinLbl.x = chipX; coinLbl.y = coinsY;
         this.container.addChild(coinLbl);
+        // Hand-drawn coin icon to the left of the number (replaces the 🪙 glyph).
+        const ci = Math.round(h * 0.032);
+        const coinIcon = buildIcon('coin', ci, C.gold);
+        coinIcon.x = Math.round(chipX - coinLbl.width - Math.round(h * 0.01) - ci);
+        coinIcon.y = Math.round(coinsY - ci / 2);
+        this.container.addChild(coinIcon);
       }
 
       const rankName = t(('rank.' + pvp.rank) as TranslationKey);
@@ -630,13 +647,13 @@ export class LobbyScene implements Scene {
     const pw = showWorld ? Math.round((contentW - pillarGap) / 2) : contentW;
 
     this.campaignBtnRect = { x: contentX, y: pillarsY, w: pw, h: pillarH };
-    this.drawPillar(contentX, pillarsY, pw, pillarH, C.gold, '📖',
+    this.drawPillar(contentX, pillarsY, pw, pillarH, C.gold, 'book',
       t('lobby.campaign'), t('lobby.campaign.sub'), 51);
 
     if (showWorld) {
       const worldX = contentX + pw + pillarGap;
       this.worldPillarRect = { x: worldX, y: pillarsY, w: pw, h: pillarH };
-      this.drawPillar(worldX, pillarsY, pw, pillarH, C.accent, '🌍',
+      this.drawPillar(worldX, pillarsY, pw, pillarH, C.accent, 'globe',
         t('lobby.world'), t('lobby.world.sub'), 53);
     } else {
       this.worldPillarRect = { x: 0, y: 0, w: 0, h: 0 };
@@ -848,12 +865,13 @@ export class LobbyScene implements Scene {
 
   /**
    * A pillar card for the main lobby grid (战役 / 大世界): hand-drawn panel +
-   * coloured left-edge ink stroke + emoji glyph, title and subtitle. Shares the
-   * notebook-doodle language with the feature panels and VS cards.
+   * coloured left-edge ink stroke + a SketchPen line-art icon, title and
+   * subtitle. Shares the notebook-doodle language with the feature panels and
+   * VS cards (icons replace the old emoji placeholders).
    */
   private drawPillar(
     x: number, y: number, w: number, h: number,
-    accent: number, glyph: string, title: string, sub: string, seed: number,
+    accent: number, icon: IconKind, title: string, sub: string, seed: number,
   ): void {
     const bg = this.sketchPanel(w, h, { fill: C.paper, border: accent, width: 2.6, seed });
     bg.x = x; bg.y = y;
@@ -861,10 +879,13 @@ export class LobbyScene implements Scene {
     // Coloured ink accent stroke down the left edge.
     new SketchPen(bg, seed ^ 0x55).line(4, 6, 4, h - 6, { color: accent, width: 5, jitter: 0.8, taper: 0.85 });
 
-    const glyphLbl = txt(glyph, Math.round(h * 0.32), C.dark);
-    glyphLbl.anchor.set(0.5, 0.5);
-    glyphLbl.x = x + w / 2; glyphLbl.y = y + h * 0.32;
-    this.container.addChild(glyphLbl);
+    // Hand-drawn glyph, centred on the upper third like the old emoji did, in
+    // the pillar's accent ink so each pillar keeps its colour identity.
+    const iconSize = Math.round(h * 0.36);
+    const glyph = buildIcon(icon, iconSize, accent);
+    glyph.x = Math.round(x + w / 2 - iconSize / 2);
+    glyph.y = Math.round(y + h * 0.32 - iconSize / 2);
+    this.container.addChild(glyph);
 
     const titleLbl = txt(title, Math.round(h * 0.22), C.dark, true);
     titleLbl.anchor.set(0.5, 0.5);
