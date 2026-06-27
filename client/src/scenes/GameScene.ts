@@ -78,6 +78,11 @@ export interface GameSceneOptions {
    * Omit for PvP — no equipment power in competitive matches.
    */
   equipment?: EngineEquipmentInput;
+  /**
+   * 专属教学关 `ch0_tutorial`（ONBOARDING_DESIGN §3）。启用表现层教学导演：
+   * 认知导览 + 卡点三拍 + 自由发挥 + 永不失败。仅与 `level=ch0_tutorial` 搭配使用。
+   */
+  tutorial?: boolean;
 }
 
 export class GameScene implements Scene {
@@ -109,7 +114,7 @@ export class GameScene implements Scene {
       buildReplay = match.buildReplay;
     }
 
-    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkin ?? null, opts.equipment ?? null);
+    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkin ?? null, opts.equipment ?? null, opts.tutorial ?? false);
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats) => this.cb.onGameEnd(winner, stats, buildReplay(winner));

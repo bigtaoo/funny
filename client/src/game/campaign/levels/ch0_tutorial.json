@@ -1,0 +1,26 @@
+{
+  "id": "ch0_tutorial",
+  "chapter": 0,
+  "seed": 1,
+  "objective": { "kind": "survive" },
+  "startInk": 60,
+  "inkRegenMult": 2.0,
+  "enemyScale": { "hp": 1, "damage": 1 },
+  "loadout": [
+    "infantry_1", "infantry_2", "shieldbearer_1", "archer_1",
+    "barracks_1", "tower_1", "tower_2", "haste_1", "meteor_1"
+  ],
+  "waves": {
+    "entries": [
+      { "atTick": 20, "unitType": "max", "col": 4, "count": 1 },
+      { "atTick": 140, "unitType": "max", "col": 7, "count": 3, "spacingTicks": 24 },
+      { "atTick": 300, "unitType": "max", "col": 2, "count": 5, "spacingTicks": 4 }
+    ]
+  },
+  "rewards": {
+    "starThresholds": [100, 100, 100],
+    "materials": { "scrap": 4 }
+  },
+  "nameKey": "campaign.tutorial.name",
+  "briefKey": "campaign.tutorial.brief"
+}

@@ -67,6 +67,8 @@ export interface SettingsSceneCallbacks {
   onDeleteAccount?(): Promise<{ ok: boolean }>;
   /** 称号系统（S10）入口；未提供则不显示。 */
   onOpenTitles?(): void;
+  /** 重看新手教学（ONBOARDING_DESIGN §3.4）；未提供则不显示。 */
+  onReplayTutorial?(): void;
   // ── rename (online only; absent → no rename UI) ──
   /** Coin cost of a rename; presence enables the rename button. */
   renameCost?: number;
@@ -208,6 +210,7 @@ export class SettingsScene implements Scene {
     this.drawProfile(tbH);
     this.drawLanguage();
     if (this.cb.onOpenTitles) this.drawTitles();
+    if (this.cb.onReplayTutorial) this.drawHelp();
     this.drawAccount();
     if (this.toast) this.drawToast();
     if (this.renameOpen) this.drawRenameOverlay();
@@ -337,6 +340,15 @@ export class SettingsScene implements Scene {
     label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = secY;
     this.container.addChild(label);
     this.addButton(t('settings.openTitles'), secY + Math.round(h * 0.045), C.accent, () => this.cb.onOpenTitles!());
+  }
+
+  private drawHelp(): void {
+    const { w, h } = this;
+    const secY = Math.round(h * 0.655);
+    const label = txt(t('settings.help'), Math.round(h * 0.028), C.dark, true);
+    label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = secY;
+    this.container.addChild(label);
+    this.addButton(t('settings.replayTutorial'), secY + Math.round(h * 0.045), C.accent, () => this.cb.onReplayTutorial!());
   }
 
   private drawAccount(): void {

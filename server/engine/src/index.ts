@@ -105,3 +105,5 @@ export type {
   LevelRewards,
 } from './campaign/LevelDefinition';
 export { parseLevelDefinition, LevelParseError } from './campaign/levelSchema';
+export { TUTORIAL_LEVEL_ID, TUTORIAL_TEACHING_CARDS } from './campaign/tutorial';
+export { TutorialDrawPolicy } from './Card';

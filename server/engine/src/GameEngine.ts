@@ -18,7 +18,8 @@ import {
 } from './config';
 import { toFp, TICK_RATE } from './math/fixed';
 import { buildPvpBlueprints, buildCampaignBlueprints, buildSiegeBlueprints } from './balance/pveUpgrades';
-import { cardRefreshDuration, UniformCardDrawPolicy } from './Card';
+import { cardRefreshDuration, UniformCardDrawPolicy, TutorialDrawPolicy } from './Card';
+import { TUTORIAL_LEVEL_ID, TUTORIAL_TEACHING_CARDS } from './campaign/tutorial';
 import { Building } from './Building';
 import { Player } from './Player';
 import { Unit } from './Unit';
@@ -283,10 +284,24 @@ class GameEngineImpl implements IGameEngine {
           : undefined;
         // Use a separate PRNG so loadout levels are deterministic and don't
         // disturb levels that draw from the full CARD_DEFINITIONS pool.
-        this.state.bottomPlayer.drawPolicy = new UniformCardDrawPolicy(
-          new Prng(config.seed ^ 0xC0FFEE00),
-          finalPool,
-        );
+        const drawPrng = new Prng(config.seed ^ 0xC0FFEE00);
+        if (config.level.id === TUTORIAL_LEVEL_ID) {
+          // 专属教学关：scripted draw so the cap-point director always finds the
+          // teaching cards in order (ONBOARDING_DESIGN §3.3). The filler pool is
+          // the loadout minus the teaching cards so a played teaching card never
+          // refills into another teaching card. Stage C swaps this back to a
+          // UniformCardDrawPolicy in the render-layer director.
+          const teach: CardDefinition[] = [];
+          for (const id of TUTORIAL_TEACHING_CARDS) {
+            const def = pool.find((c) => c.id === id);
+            if (def) teach.push(def);
+          }
+          const teachSet = new Set<string>(TUTORIAL_TEACHING_CARDS);
+          const filler = pool.filter((c) => !teachSet.has(c.id));
+          this.state.bottomPlayer.drawPolicy = new TutorialDrawPolicy(teach, filler, drawPrng);
+        } else {
+          this.state.bottomPlayer.drawPolicy = new UniformCardDrawPolicy(drawPrng, finalPool);
+        }
       }
     } else {
       this.level        = null;

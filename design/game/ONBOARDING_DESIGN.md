@@ -231,14 +231,14 @@
 | 首启故事 IntroScene + `nw_seen_intro` | ✅ 已有（含跳过、`story.*`） |
 | 登录门控 + 单机试玩 | ✅ 已有（SA-3） |
 | 关卡数据结构 / WaveDirector（脚本波次、固定种子） | ✅ 已有（`@nw/engine campaign/`），教学关复用，无需改 schema |
-| **教学关 `ch0_tutorial` JSON**（满 loadout） | ❌ 待建（§3.3 草案） |
-| **TutorialDirector（认知导览 O1–O7 + 卡点暂停门 + 脚本反应 + 自由发挥窗）** | ❌ 待建（表现层，订阅引擎事件） |
-| **TutorialDrawPolicy（保证引导卡按拍到手，确定性纯引擎）** | ❌ 待建（替换 `Player.drawPolicy`） |
-| `flags.tutorial_step / tutorial_done` + 「重看教学」 | ❌ 待加 |
-| 教学关永不失败兜底（基地不可破） | ❌ 待建（优先表现层拦截） |
-| SLG 软门槛（通 ch1 解锁）+ 灰显气泡 | 🟡 `progress` 已有，门控常量 + 灰显待接 |
-| **首次功能引导机制（`flags.featSeen.*` + 各页「?」按钮）** | ❌ 待建 |
-| 首胜奖励 + 签到入口引出 | 🟡 结算/奖励链已有，引导话术/入口待接 |
+| **教学关 `ch0_tutorial` JSON**（满 loadout） | ✅ 已建。`client/src/game/campaign/levels/ch0_tutorial.json`，仅入 `CAMPAIGN_LEVELS` 不入 `CAMPAIGN_LEVEL_ORDER`（不计进度） |
+| **TutorialDirector（认知导览 O1–O7 + 卡点暂停门 + 脚本反应 + 自由发挥窗）** | ✅ 已建。`client/src/render/TutorialDirector.ts`（表现层：读同步态差分 + 控时钟 + 控 UI） |
+| **TutorialDrawPolicy（保证引导卡按拍到手，确定性纯引擎）** | ✅ 已建。`@nw/engine Card.ts`，`GameEngine` 据 `id===ch0_tutorial` 注入；含 `enterFreePlay()`（阶段 C 切随机） |
+| `flags.tutorial_done` + 「重看教学」 | ✅ 已加。`tutorial_done` 门控；设置「帮助 → 重看新手教学」重跑。**`tutorial_step` 未做**（见 §10） |
+| 教学关永不失败兜底（基地不可破） | ✅ 已建。导演每 tick 夹 `baseHp≥1` + GameRenderer 未毕业时吞 `game_over/game_draw`（导演独占终局） |
+| SLG 软门槛（通 ch1 解锁）+ 灰显气泡 | ✅ 已接。`progress.isFirstChapterCleared` + 大厅 `worldLocked` 灰显 + `showInfoToast`「通关第一章解锁」 |
+| **首次功能引导机制（`flags.featSeen.*`）** | ✅ 机制已建。`SaveManager.featSeen/markFeatSeen` + 大厅 `showFeatureGuide` + `withGuide`（match/shop/social/cards/daily/world）+ `guide.*` 全语种。**各子页内「?」按钮未逐页接**（见 §10） |
+| 首胜奖励 + 签到入口引出 | 🟡 毕业=首胜走既有结算链；签到由大厅红点承载，未新增金币龙头（§5） |
 | 年龄门 + EU/UK 同意弹窗 | ❌ 待建（合规，归 COMPLIANCE，开机层） |
 | FTUE 漏斗埋点 | 🟡 analyticsvc 就绪，埋点节点待接 |
 
@@ -246,10 +246,26 @@
 
 ## 9. 待办（开发顺序）
 
-1. **教学关 `ch0_tutorial.json`**（满 loadout）+ **TutorialDirector**（阶段 A 认知导览 O1–O7 → 阶段 B 卡点 Beat 1–3 + 脚本反应波 → 阶段 C 自由发挥 + 毕业 + 永不失败兜底）+ **TutorialDrawPolicy** + `flags.tutorial_step/done` + 跳过/重看。**FTUE 核心，先做。**
-2. **首次功能引导机制**：`flags.featSeen.*` + 各功能页「?」按钮 + `guide.*` i18n。
-3. **SLG 软门槛**：解锁阈值常量 + 大厅 SLG 入口灰显气泡（通 ch1 点亮）。
-4. **首胜钩子**：教学毕业奖励话术 + 引出每日签到入口。
+1. ✅ **教学关 `ch0_tutorial.json`** + **TutorialDirector**（阶段 A O1–O7 → 阶段 B Beat 1–3 + 脚本反应波 → 阶段 C 自由发挥 + 毕业 + 永不失败兜底）+ **TutorialDrawPolicy** + `flags.tutorial_done` + 跳过/重看。
+2. ✅ **首次功能引导机制**：`flags.featSeen.*` + `guide.*` i18n（各子页内「?」按钮待逐页接，§10）。
+3. ✅ **SLG 软门槛**：解锁阈值（`isFirstChapterCleared`）+ 大厅 SLG 入口灰显气泡（通 ch1 点亮）。
+4. **首胜钩子**：教学毕业奖励话术 + 引出每日签到入口（当前走既有结算 + 大厅红点，未做专门话术）。
 5. **合规开机层**（年龄门 + EU/UK 同意，与 COMPLIANCE 联动，海外测试前必须）。
-6. **FTUE 漏斗埋点**接入（§7 节点，重点逐 beat 完成率/卡住时长）。
+6. **FTUE 漏斗埋点**接入（§7 节点，重点逐 beat 完成率/卡住时长；已埋 `tutorial_start/complete/skip`，beat 级埋点待补）。
 7. 依教学完成率与 D1 数据迭代 beat 脚本与提示文案。
+
+---
+
+## 10. 实现记录（2026-06-27）
+
+落地 §9 第 1–3 项 + 部分 4/6。关键实现决策与对设计的偏离：
+
+- **引擎注入方式**：不改 level JSON schema。`GameEngine` 据 `config.level.id === TUTORIAL_LEVEL_ID('ch0_tutorial')` 注入 `TutorialDrawPolicy`；常量在 `@nw/engine campaign/tutorial.ts`（引擎/客户端单一来源）。
+- **TutorialDrawPolicy**：前 3 抽确定性返回 `infantry_1→tower_1→meteor_1`（开局手牌即含三张引导卡），其后从 loadout 去掉三张引导卡的 filler 池抽（打出引导卡不会补成另一张引导卡）；`enterFreePlay()` 阶段 C 切回整副 loadout 随机。纯种子化、不调 `Math.random`。
+- **导演时钟模型**（`TutorialDirector`）：开局先喂 1 tick 发牌（`emitInitialEvents` 在 `firstStep` 内）再冻结进导览；place 拍（兵/塔）= 冻结→玩家放→放行→反应波（关卡 atTick 20/140）→到 gate 冻结下一拍；clear 拍（法术）= 先放行刷铺垫敌团（atTick 300）到 setupTick 再冻结→玩家清场。判定走 `commitCardPlay` 钩子（allowCardPlay 否决误打）+ 读手牌槽差分高亮，不铺新引擎事件管线。
+- **永不失败**：导演每 tick 夹 `bottomPlayer.baseHp≥1` + GameRenderer 在 `tutorial && !finished` 时吞掉 `game_over/game_draw`，导演经 `forceTutorialVictory()` 独占终局。
+- **认知导览简化**：O1–O7 当前为「全屏暗化 + 居中指令卡 + 下一步」，**未做聚光灯挖洞/反向箭头**（设计原意），靠文案讲透。后续可加 spotlight cutout。
+- **`tutorial_step` 未持久化**：`SaveData.flags` 是 `Record<string,boolean>`，存不了数字步进；教学短且永不失败，未毕业（`tutorial_done=false`）下次启动从头重跑，不做断点续教。如需，另开 `SaveData` 字段。
+- **首次功能引导**：`featSeen.<id>` 用扁平 flag 键（不改 schema）。首启引导在**大厅**弹（`LobbyScene.showFeatureGuide` + core `withGuide` 包 match/shop/social/cards/daily/world），关闭后续接导航。**各子页内常驻「?」重看按钮未逐页接**——当前重看入口=设置「重看新手教学」(重跑教学关) + 各功能首次 `withGuide`；逐页「?」复用同一 `guide.*` i18n，后续在各 Scene 加按钮即可。拍卖在大世界内，未单独接首启引导。
+- **FTUE 注入点**：`createAppCore.goLobby` 一次性闸门——本会话首次将进大厅且 `!tutorial_done` → 改走 `goTutorial()`（步骤 ⑤，在登录/试玩之后、大厅之前）。
+- **验证**：engine `tsc -b` + 18 项引擎测试通过；client `tsc --noEmit` + 生产 webpack 构建通过。

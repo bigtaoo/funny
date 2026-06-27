@@ -29,6 +29,8 @@ import { HUDView } from './HUDView';
 import { NetStatusView } from './NetStatusView';
 import { UnitView } from './UnitView';
 import type { EngineEquipmentInput } from '@nw/engine';
+import { TutorialDrawPolicy } from '@nw/engine';
+import { TutorialDirector, type TutorialHost } from './TutorialDirector';
 import { VFXSystem } from './VFXSystem';
 import { buildWearOverlay } from './wearOverlay';
 import { ProfilePopup, type ProfileData } from './ProfilePopup';
@@ -170,6 +172,10 @@ export class GameRenderer {
   /** 内存看护注销函数（projectile 复用池），destroy() 时调用。 */
   private readonly unregisterProjectileStat: () => void;
 
+  /** 教学导演（仅专属教学关 ch0_tutorial 激活），表现层编排卡点/导览/永不失败。 */
+  private tutorial: TutorialDirector | null = null;
+  private tutorialEnabled = false;
+
   constructor(
     engine: IGameEngine,
     layout: ILayout,
@@ -179,6 +185,7 @@ export class GameRenderer {
     profiles: GameProfiles = {},
     equippedSkin: string | null = null,
     equipment: EngineEquipmentInput | null = null,
+    tutorial = false,
   ) {
     this.engine     = engine;
     this.layout     = layout;
@@ -207,6 +214,8 @@ export class GameRenderer {
       this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
       this.unsubs.push(input.onUp((x, y)   => this.handleUp(x, y)));
     }
+
+    this.tutorialEnabled = tutorial;
   }
 
   // ── Local player helper ──────────────────────────────────────────────────────
@@ -236,11 +245,46 @@ export class GameRenderer {
 
   init(): void {
     this.buildSceneGraph();
+    if (this.tutorialEnabled) {
+      const host: TutorialHost = {
+        container: this.container,
+        layout: this.layout,
+        highlightUnitLane: (col) => this.boardView.showUnitLaneHighlights([col], new Set(), col),
+        highlightBuildingLane: (col) => this.boardView.showBuildingHighlights([col], this.localBuildRow),
+        clearLaneHighlights: () => this.boardView.clearHighlights(),
+        handSlotCenter: (i) => this.handView.slotCenter(i),
+        switchToFreePlayDraw: () => {
+          const p = this.engine.state.bottomPlayer.drawPolicy;
+          if (p instanceof TutorialDrawPolicy) p.enterFreePlay();
+        },
+        forceVictory: () => this.forceTutorialVictory(),
+        onSkip: () => this.onExitToLobby?.(),
+      };
+      this.tutorial = new TutorialDirector(host);
+    }
+  }
+
+  /**
+   * 教学毕业：脚本胜利。复用 game_over 的本地胜利结算链（showGameOver → onGameEnd），
+   * 但由导演触发而非引擎判定（教学关永不真正分出胜负，§3.5）。
+   */
+  private forceTutorialVictory(): void {
+    if (this.gameEnded) return;
+    this.gameEnded = true;
+    const winner = this.localOwner;
+    stateRecorder.setWinner(winner);
+    this.cancelDrag(); this.cancelTapSelect();
+    this.hudView.showGameOver(winner, this.localOwner);
+    const stats = this.engine.state.snapshotStats();
+    setTimeout(() => { this.onGameEnd?.(winner, stats); }, 1500);
   }
 
   update(dt: number): void {
     const prevTicks = this.engine.state.elapsedTicks;
-    if (!this.hudView.isPaused) this.engine.tick(dt);
+    // 教学卡点 / 导览期间冻结引擎推进（敌人/波次/手牌计时全停）；玩家拖卡输入照常采集，
+    // 命中引导卡后导演放行（ONBOARDING_DESIGN §3.4）。
+    const tutorialFrozen = this.tutorial?.engineFrozen ?? false;
+    if (!this.hudView.isPaused && !tutorialFrozen) this.engine.tick(dt);
     const state = this.engine.state;
     // 状态流录制（REPLAY_SHARE_DESIGN §2.1）：真打 + 看回放两路都在此抓帧；同一 tick / 未配置
     // 时内部自动跳过，对引擎零侵入。
@@ -259,6 +303,7 @@ export class GameRenderer {
     this.hudView.sync(state, this.localOwner);
     if (this.netEnabled) this.updateNetWaiting(state, prevTicks, dt);
     this.netStatus.update(dt);
+    this.tutorial?.onTick(state, dt);
   }
 
   /**
@@ -284,6 +329,8 @@ export class GameRenderer {
   }
 
   destroy(): void {
+    this.tutorial?.destroy();
+    this.tutorial = null;
     this.unregisterProjectileStat();
     this.unsubs.forEach(u => u());
     this.drag?.ghost.destroy();
@@ -384,6 +431,10 @@ export class GameRenderer {
   private handleDown(x: number, y: number): void {
     this.downX = x;
     this.downY = y;
+
+    // 教学导演先吃 tap：命中其按钮（下一步/完成/跳过）或处于导览/毕业期 → 吞掉，
+    // 不落到棋盘/手牌（§3.4）。阶段 B 卡点期它放过非按钮 tap，让玩家正常拖卡。
+    if (this.tutorial?.handleDown(x, y)) return;
 
     // Profile popup open → its own dim backdrop (PIXI interactive) handles the
     // close tap; swallow the manual hit-test so nothing behind it fires.
@@ -638,6 +689,8 @@ export class GameRenderer {
         this.pendingStats = event.stats;
         break;
       case 'game_over': {
+        // 永不失败兜底（§3.5）：教学未毕业前，任何引擎判负/判胜都不结算——导演独占终局。
+        if (this.tutorial && !this.tutorial.isFinished) break;
         if (this.gameEnded) break;
         this.gameEnded = true;
         stateRecorder.setWinner(event.winner ?? -1);
@@ -649,6 +702,7 @@ export class GameRenderer {
         break;
       }
       case 'game_draw': {
+        if (this.tutorial && !this.tutorial.isFinished) break;
         if (this.gameEnded) break;
         this.gameEnded = true;
         stateRecorder.setWinner(-1);
@@ -832,6 +886,8 @@ export class GameRenderer {
     handIndex: number, cardType: CardType, spellType: SpellType | undefined,
     col: number, row: number,
   ): void {
+    // 教学卡点：本拍只放行对应类别的卡，误打被否决（避免浪费 / 走偏，§3.4）。
+    if (this.tutorial && !this.tutorial.allowCardPlay(cardType, spellType)) return;
     switch (cardType) {
       case CardType.Unit: {
         if (!(ATTACK_LANES as readonly number[]).includes(col)) return;
