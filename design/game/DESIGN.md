@@ -230,6 +230,22 @@ hudView.container        ← HUD（最顶层）
 
 ---
 
+## 6c. 单位车道交战与移动钳制
+
+单位沿所在列（车道）单文件推进，`CombatSystem.findTarget` 按 **Chebyshev 距离环由近到远**（`dist = 1…effectiveRange`）查找目标，命中即切 `Attacking`、`MovementSystem` 当 tick 跳过该单位 → 站定攻击。优先级：嘲讽 > 敌方单位 > 护送目标 > 敌方建筑。
+
+### 「近战兵略过可攻击单位」修复（2026-06-27）
+
+**问题**：移动用连续 fp 坐标推进，交战判定用整数格距，两套精度不一致。两名同列对冲的近战兵会各自向相反方向取整 —— 例如 Bottom 在 `y=5.49`（第 5 行）、Top 在 `y=6.51`（第 7 行），连续间距只有 ~1.0 格，**格距却读成 2**，range-1 近战这一 tick 不交战；下一 tick 两者都进到 `y≈6.0` → **同一格（格距 0）**，而 `findTarget` 从 `dist=1` 起扫**永远扫不到距离 0**，于是穿过彼此继续前进（单格 `unitGrid` 还会被进一步写坏）。表现为近战兵略过前面本可攻击的敌人、继续往前走。
+
+**修复**：`MovementSystem.moveForward` 推进前钳制 —— 调用新增的 `Board.getEnemyUnitAhead(unit)`（同列、前方、本单位**能打到的**最近敌军，飞行可达过滤沿用 `findTarget`），把与该敌军的中心间距钳到 **≥ 1 格**。这保证两者始终保持格距 ≥ 1，下一 tick `CombatSystem` 必然交战。
+
+- 钳制只对**非 `Attacking`** 单位生效（`MovementSystem` 开头就 `continue` 跳过 `Attacking` 单位）—— 即正是「战斗系统本 tick 漏判」那一窗口；正常交战完全不受影响。
+- 钳到 1 格中心距可证明取整后行距恒为 1（`round(a)` 与 `round(a+1)` 必差 1），故下一 tick `findTarget` 的 `dist=1` 环必然命中，不会卡死。
+- 回归测试：`server/engine/src/__tests__/melee_engage.test.ts`（构造取整不利的对冲位置，断言不穿过 + 必交战）。
+
+---
+
 ## 7. 卡牌放置交互
 
 `GameRenderer` 支持两种互不冲突的放置方式：

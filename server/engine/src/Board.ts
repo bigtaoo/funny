@@ -166,6 +166,56 @@ export class Board {
     return bestUnit;
   }
 
+  /**
+   * Returns the nearest living enemy unit directly ahead of `unit` in its lane
+   * (same column, in the direction of movement) that `unit` is able to engage,
+   * or null if none.
+   *
+   * Used by MovementSystem to stop a unit one cell short of an enemy it should be
+   * fighting. Without this, a unit advancing continuously can round straight from
+   * cell-distance 2 into the enemy's own cell (distance 0) between two combat
+   * checks — and CombatSystem.findTarget never scans distance 0 — so it walks
+   * through a target it should attack. Flying targetability mirrors findTarget:
+   * a unit only stops for an enemy it could actually hit.
+   */
+  getEnemyUnitAhead(unit: Unit): Unit | null {
+    const list = this.columnUnits.get(unit.col);
+    if (!list || list.length <= 1) return null;
+
+    const isBottom = unit.side === Side.Bottom;
+    let bestUnit: Unit | null = null;
+    let bestDist = Infinity;
+
+    for (const other of list) {
+      if (other.side === unit.side) continue;
+      if (other.isDead || other.state === UnitState.Dead) continue;
+      // Only stop for enemies this unit can target (matches findTarget's flying filter).
+      if (other.flying && !unit.canTargetFlying) continue;
+
+      if (isBottom) {
+        // Bottom moves toward higher y — "ahead" = larger y_fp
+        if (other.y_fp > unit.y_fp) {
+          const dist = other.y_fp - unit.y_fp;
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestUnit = other;
+          }
+        }
+      } else {
+        // Top moves toward lower y — "ahead" = smaller y_fp
+        if (other.y_fp < unit.y_fp) {
+          const dist = unit.y_fp - other.y_fp;
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestUnit = other;
+          }
+        }
+      }
+    }
+
+    return bestUnit;
+  }
+
   // ─── Building management ──────────────────────────────────────────────────
 
   addBuilding(building: Building): void {

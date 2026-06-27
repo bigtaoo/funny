@@ -149,12 +149,35 @@ export class MovementSystem {
 
     // ── Advance ────────────────────────────────────────────────────────────
     const dy: Fp = mulFp(unit.speed_fp, TICK_DT_FP);
-    unit.y_fp    = addFp(unit.y_fp, scaleFp(direction, dy));
-    unit.state   = UnitState.Moving;
+    let newY: Fp = addFp(unit.y_fp, scaleFp(direction, dy));
 
-    // Clamp so we don't overshoot
-    if (isBottom  && unit.y_fp > crossingY_fp) unit.y_fp = crossingY_fp;
-    if (!isBottom && unit.y_fp < crossingY_fp) unit.y_fp = crossingY_fp;
+    // Clamp so we don't overshoot the crossing threshold
+    if (isBottom  && newY > crossingY_fp) newY = crossingY_fp;
+    if (!isBottom && newY < crossingY_fp) newY = crossingY_fp;
+
+    // ── Enemy ahead — stop one cell short so CombatSystem can engage ─────────
+    // This unit is non-Attacking (Attacking units skip movement entirely), so
+    // CombatSystem did NOT engage an enemy this tick — typically because the two
+    // round to a cell-distance > range while their continuous gap is ~1 grid.
+    // Advancing freely would let it round straight into the enemy's own cell
+    // (distance 0), which findTarget never scans, and it would sail past. Keep
+    // the centre-to-centre gap >= 1 grid: that guarantees a cell-distance of 1,
+    // where CombatSystem picks the target up on the next tick.
+    const enemyAhead = board.getEnemyUnitAhead(unit);
+    if (enemyAhead) {
+      const oneCellFp: Fp = toFp(1);
+      if (isBottom) {
+        const limit = subFp(enemyAhead.y_fp, oneCellFp);
+        if (newY > limit) newY = limit;
+      } else {
+        const limit = addFp(enemyAhead.y_fp, oneCellFp);
+        if (newY < limit) newY = limit;
+      }
+    }
+
+    const advanced = newY !== unit.y_fp;
+    unit.y_fp  = newY;
+    unit.state = advanced ? UnitState.Moving : UnitState.Waiting;
   }
 
   // ─── Detour (lateral redirect around blocked cell or crossWaypoint) ─────────
