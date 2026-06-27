@@ -1114,7 +1114,7 @@ export const de: Record<TranslationKey, string> = {
   'daily.tasks.title': 'Tagesaufgaben',
   'daily.tasks.pveLabel': 'Beliebiges PvE-Level abschließen',
   'daily.tasks.pvpLabel': 'An beliebigem PvP teilnehmen',
-  'daily.tasks.adLabel': 'Werbung ansehen',
+  'daily.tasks.gachaLabel': 'Einmal Gacha öffnen',
   'daily.tasks.done': 'Erledigt',
   'daily.tasks.pending': 'Läuft',
   'daily.tasks.rewardCoins': '+{n} Münzen abholen',

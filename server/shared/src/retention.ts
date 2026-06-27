@@ -64,7 +64,7 @@ export const CHECKIN_MILESTONE_DAYS = [7, 14, 21, 30] as const;
 
 // ── 每日任务定义（ECONOMY_NUMBERS §12.2）────────────────────────────────────
 
-export type DailyTaskId = 'pve.clear' | 'pvp.match' | 'ad.watch';
+export type DailyTaskId = 'pve.clear' | 'pvp.match' | 'gacha.draw';
 
 export interface DailyTaskDef {
   id: DailyTaskId;
@@ -73,9 +73,9 @@ export interface DailyTaskDef {
 
 /** 当前任务池（固定 3 条，前期不随机派发）。 */
 export const DAILY_TASKS: DailyTaskDef[] = [
-  { id: 'pve.clear', points: 1 },  // 通关任意 PvE 关卡
-  { id: 'pvp.match', points: 1 },  // 参与任意 PvP 对局
-  { id: 'ad.watch',  points: 1 },  // 观看广告
+  { id: 'pve.clear',  points: 1 },  // 通关任意 PvE 关卡
+  { id: 'pvp.match',  points: 1 },  // 参与任意 PvP 对局
+  { id: 'gacha.draw', points: 1 },  // 开一次盲盒
 ];
 
 /** 当日满点阈值（= 完成所有任务）。 */
