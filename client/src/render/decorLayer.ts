@@ -28,8 +28,8 @@ const MIN_BAND_W   = 24;    // narrower strips aren't worth decorating
 const SIZE_FRAC    = 0.72;  // doodle longest side ≈ this × band width …
 const SIZE_MAX     = 64;    // … but never larger than the source frame
 const SIZE_MIN     = 16;
-const SPACING_FRAC = 3.4;   // slot pitch along the band = this × doodle size
-const SKIP_PROB    = 0.45;  // chance a slot stays empty → sparse scatter
+const SPACING_FRAC = 1.9;   // slot pitch along the band = this × doodle size
+const SKIP_PROB    = 0.12;  // chance a slot stays empty → sparse scatter
 const ROT_MAX      = 0.22;  // ± radians of careless tilt
 const SCALE_JITTER = 0.30;  // ± fraction of base scale
 const ALPHA_MIN    = 0.40;  // faint so it never competes with the play area
