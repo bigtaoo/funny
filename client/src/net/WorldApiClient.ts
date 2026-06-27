@@ -80,7 +80,18 @@ export class WorldApiClient {
     return true;
   }
 
-  /** Ping worldsvc /health. Resolves false on network error or non-200 response. */
+  /**
+   * Ping worldsvc /health. Returns false ONLY on a definitive non-200 response
+   * from a reachable server (e.g. 503 = up-but-unhealthy).
+   *
+   * A thrown fetch (timeout / CORS rejection / connection refused) is treated as
+   * INCONCLUSIVE → returns true (no offline badge). Rationale: in dev the /health
+   * route often lacks the CORS headers the real /world|/family|/auction routes
+   * carry, so the probe gets rejected even though the actual feature is fully
+   * reachable — that false negative wrongly greyed the 大世界 entry. Better to let
+   * the user click through and hit real error handling than to mislabel a working
+   * service as offline.
+   */
   async checkHealth(): Promise<boolean> {
     const base = getWorldBaseUrl();
     // Empty base = same-origin nginx proxy (Docker/production). worldsvc is guaranteed
@@ -94,7 +105,8 @@ export class WorldApiClient {
       clearTimeout(id);
       return res.ok;
     } catch {
-      return false;
+      // Inconclusive — do not claim offline (see method doc).
+      return true;
     }
   }
 

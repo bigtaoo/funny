@@ -748,7 +748,10 @@ export class LobbyScene implements Scene {
     // 3. Engagement row — 每日 | 限时活动 (only when wired, i.e. online).
     if (hasEngagement) {
       const chipGap = Math.round(w * 0.025);
-      const cw = Math.round((contentW - chipGap) / 2);
+      // 限时活动 only occupies a slot when a live window exists; otherwise it is
+      // hidden entirely (no permanently-greyed dead chip) and 每日 spans full width.
+      const live = !!this.cb.onOpenEvents && this.eventsAvailable;
+      const cw = live ? Math.round((contentW - chipGap) / 2) : contentW;
 
       // 每日 check-in (B5) — warm fill + red dot when a reward is claimable.
       this.dailyBtnRect = { x: contentX, y: chipsY, w: cw, h: chipH };
@@ -768,19 +771,20 @@ export class LobbyScene implements Scene {
         this.container.addChild(dot);
       }
 
-      // 限时活动 (B6) — always shown for balance; greyed + inert when no live window.
-      const evX = contentX + cw + chipGap;
-      const live = !!this.cb.onOpenEvents && this.eventsAvailable;
-      this.eventsBtnRect = live ? { x: evX, y: chipsY, w: cw, h: chipH } : { x: 0, y: 0, w: 0, h: 0 };
-      const ebg = this.sketchPanel(cw, chipH, {
-        fill: live ? 0xfff3cc : C.paper, border: live ? C.red : C.light, width: 1.8, seed: 73,
-      });
-      ebg.x = evX; ebg.y = chipsY;
-      this.container.addChild(ebg);
-      const elabel = txt(t('event.title'), Math.round(chipH * 0.38), live ? C.dark : C.mid, true);
-      elabel.anchor.set(0.5, 0.5);
-      elabel.x = evX + cw / 2; elabel.y = chipsY + chipH / 2;
-      this.container.addChild(elabel);
+      // 限时活动 (B6) — drawn only when a live window exists.
+      if (live) {
+        const evX = contentX + cw + chipGap;
+        this.eventsBtnRect = { x: evX, y: chipsY, w: cw, h: chipH };
+        const ebg = this.sketchPanel(cw, chipH, { fill: 0xfff3cc, border: C.red, width: 1.8, seed: 73 });
+        ebg.x = evX; ebg.y = chipsY;
+        this.container.addChild(ebg);
+        const elabel = txt(t('event.title'), Math.round(chipH * 0.38), C.dark, true);
+        elabel.anchor.set(0.5, 0.5);
+        elabel.x = evX + cw / 2; elabel.y = chipsY + chipH / 2;
+        this.container.addChild(elabel);
+      } else {
+        this.eventsBtnRect = { x: 0, y: 0, w: 0, h: 0 };
+      }
     }
 
     // Bottom nav. The center slot is the lobby itself (was 大世界, promoted to a
