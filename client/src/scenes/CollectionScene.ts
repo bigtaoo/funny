@@ -45,7 +45,7 @@ export interface CollectionCallbacks {
   tryMerge?(unitId: string, level: number): Promise<boolean>;
 }
 
-interface Hit { rect: Rect; fn: () => void; }
+interface Hit { rect: Rect; fn: () => void; scroll?: boolean; }
 
 /** One distinct codex entry — cards sharing a name (infantry_1/_2) collapse to one. */
 interface CodexEntry {
@@ -70,6 +70,19 @@ export class CollectionScene implements Scene {
   private merging = false;
   private toast: { text: string; color: number } | null = null;
 
+  // ── Scroll state ──────────────────────────────────────────────────────────────
+  // Content (cards/skins/units) lives in `layer`, masked to the region below the
+  // tabs. Dragging shifts `layer.y`; taps act on pointer-up unless a drag happened.
+  private layer!: PIXI.Container;
+  private scrollY = 0;
+  private maxScroll = 0;
+  private regionTop = 0;
+  private pointerActive = false;
+  private dragging = false;
+  private downX = 0;
+  private downY = 0;
+  private dragStartScroll = 0;
+
   constructor(layout: ILayout, input: InputManager, cb: CollectionCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -77,6 +90,8 @@ export class CollectionScene implements Scene {
     this.cb = cb;
     this.tab = cb.initialTab ?? 'cards';
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
+    this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
     this.render();
   }
 
@@ -84,9 +99,33 @@ export class CollectionScene implements Scene {
   destroy(): void { this.unsubs.forEach((u) => u()); }
 
   private handleDown(x: number, y: number): void {
+    this.pointerActive = true;
+    this.dragging = false;
+    this.downX = x; this.downY = y;
+    this.dragStartScroll = this.scrollY;
+  }
+
+  private handleMove(x: number, y: number): void {
+    if (!this.pointerActive || this.maxScroll <= 0) return;
+    if (!this.dragging && Math.hypot(x - this.downX, y - this.downY) > 8) this.dragging = true;
+    if (!this.dragging) return;
+    const next = Math.max(0, Math.min(this.dragStartScroll + (this.downY - y), this.maxScroll));
+    if (next !== this.scrollY) {
+      this.scrollY = next;
+      this.layer.y = -this.scrollY; // cheap re-position; hits stored in content space
+    }
+  }
+
+  private handleUp(x: number, y: number): void {
+    if (!this.pointerActive) return;
+    this.pointerActive = false;
+    if (this.dragging) { this.dragging = false; return; }
     for (const hit of this.hits) {
       const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
+      // Content hits live in unscrolled content space; chrome hits are screen space.
+      if (hit.scroll && y < this.regionTop) continue;
+      const py = hit.scroll ? y + this.scrollY : y;
+      if (x >= r.x && x <= r.x + r.w && py >= r.y && py <= r.y + r.h) { hit.fn(); return; }
     }
   }
 
@@ -98,6 +137,7 @@ export class CollectionScene implements Scene {
   private switchTab(tab: CollectionTab): void {
     if (this.tab === tab) return;
     this.tab = tab;
+    this.scrollY = 0; // each tab starts at the top
     this.render();
   }
 
@@ -120,9 +160,24 @@ export class CollectionScene implements Scene {
     const contentY = tabsY + tabsH + Math.round(h * 0.025);
     this.drawTabs(tabsY, tabsH);
 
-    if (this.tab === 'cards') this.renderCards(contentY);
-    else if (this.tab === 'skins') this.renderSkins(contentY);
-    else this.renderUnits(contentY);
+    // Masked, scrollable content layer below the tab bar.
+    this.regionTop = contentY;
+    const clip = new PIXI.Graphics();
+    clip.beginFill(0xffffff).drawRect(0, contentY, w, h - contentY).endFill();
+    this.container.addChild(clip);
+    const layer = new PIXI.Container();
+    layer.mask = clip;
+    this.container.addChild(layer);
+    this.layer = layer;
+
+    const bottom = this.tab === 'cards' ? this.renderCards(contentY)
+      : this.tab === 'skins' ? this.renderSkins(contentY)
+      : this.renderUnits(contentY);
+
+    const bottomPad = Math.round(h * 0.03);
+    this.maxScroll = Math.max(0, bottom + bottomPad - h);
+    this.scrollY = Math.max(0, Math.min(this.scrollY, this.maxScroll));
+    layer.y = -this.scrollY;
 
     if (this.toast) this.drawToast();
   }
@@ -159,7 +214,7 @@ export class CollectionScene implements Scene {
 
   // ── Cards codex ────────────────────────────────────────────────────────────────
 
-  private renderCards(top: number): void {
+  private renderCards(top: number): number {
     const { w, h } = this;
 
     // Collapse pool duplicates (infantry_1/_2) to one entry per display name.
@@ -185,6 +240,7 @@ export class CollectionScene implements Scene {
       if (col === 0 && i > 0) y += tileH + rowGap;
       this.drawCardTile(entry.card, x, y, tileW, tileH);
     });
+    return y + tileH;
   }
 
   /** A read-only codex tile: name + type·cost header, key stats, short blurb. */
@@ -194,18 +250,18 @@ export class CollectionScene implements Scene {
     const accent = card.cardType === CardType.Unit ? C.accent
       : card.cardType === CardType.Building ? C.gold : C.red;
     sketchAccentBar(box, h, accent, seedFor(x, h, 6));
-    this.container.addChild(box);
+    this.layer.addChild(box);
 
     const name = txt(t(card.nameKey as TranslationKey), Math.round(h * 0.15), C.dark, true);
     name.anchor.set(0, 0); name.x = x + Math.round(w * 0.07); name.y = y + Math.round(h * 0.10);
-    this.container.addChild(name);
+    this.layer.addChild(name);
 
     const typeLabel = card.cardType === CardType.Unit ? t('collection.cardType.unit')
       : card.cardType === CardType.Building ? t('collection.cardType.building')
       : t('collection.cardType.spell');
     const sub = txt(`${typeLabel} · ${t('collection.stat.cost')} ${card.cost}`, Math.round(h * 0.12), accent, true);
     sub.anchor.set(0, 0); sub.x = x + Math.round(w * 0.07); sub.y = y + Math.round(h * 0.32);
-    this.container.addChild(sub);
+    this.layer.addChild(sub);
 
     const stats = this.cardStatsLine(card);
     if (stats) {
@@ -214,14 +270,14 @@ export class CollectionScene implements Scene {
       // Keep the stat line inside the tile.
       const maxW = w * 0.86;
       if (st.width > maxW) st.scale.set(maxW / st.width);
-      this.container.addChild(st);
+      this.layer.addChild(st);
     }
 
     const desc = txt(t(card.descKey as TranslationKey), Math.round(h * 0.10), C.mid);
     desc.anchor.set(0, 0); desc.x = x + Math.round(w * 0.07); desc.y = y + Math.round(h * 0.75);
     const maxDescW = w * 0.86;
     if (desc.width > maxDescW) desc.scale.set(maxDescW / desc.width);
-    this.container.addChild(desc);
+    this.layer.addChild(desc);
   }
 
   /** Compact stat line from the unit/building blueprint; null for spells. */
@@ -244,7 +300,7 @@ export class CollectionScene implements Scene {
 
   // ── Skins wardrobe (original) ───────────────────────────────────────────────────
 
-  private renderSkins(top: number): void {
+  private renderSkins(top: number): number {
     const { w, h } = this;
     const skins = this.cb.getSkins();
     const equipped = this.cb.getEquipped();
@@ -258,7 +314,7 @@ export class CollectionScene implements Scene {
     if (skins.length === 0) {
       const empty = txt(t('collection.empty'), Math.round(h * 0.026), C.mid);
       empty.anchor.set(0.5, 0.5); empty.x = w / 2; empty.y = top + Math.round(h * 0.30);
-      this.container.addChild(empty);
+      this.layer.addChild(empty);
       // The default tile is still shown so the player can confirm the look.
     }
 
@@ -275,6 +331,7 @@ export class CollectionScene implements Scene {
       if (col === 0 && i > 0) y += tileH + gap;
       this.drawTile(tile, x, y, tileW, tileH, equipped);
     });
+    return y + tileH;
   }
 
   private drawTile(
@@ -290,25 +347,25 @@ export class CollectionScene implements Scene {
     });
     box.x = x; box.y = y;
     sketchAccentBar(box, h, isEquipped ? C.green : C.accent, seedFor(x, h, 6));
-    this.container.addChild(box);
+    this.layer.addChild(box);
 
     const name = txt(tile.label, Math.round(h * 0.16), C.dark, true);
     name.anchor.set(0.5, 0.5); name.x = x + w / 2; name.y = y + h * 0.4;
-    this.container.addChild(name);
+    this.layer.addChild(name);
 
     const status = txt(isEquipped ? t('collection.equipped') : t('collection.equip'),
       Math.round(h * 0.13), isEquipped ? C.green : C.gold, true);
     status.anchor.set(0.5, 0.5); status.x = x + w / 2; status.y = y + h * 0.74;
-    this.container.addChild(status);
+    this.layer.addChild(status);
 
     if (!isEquipped) {
-      this.hits.push({ rect: { x, y, w, h }, fn: () => this.select(tile.id) });
+      this.hits.push({ rect: { x, y, w, h }, fn: () => this.select(tile.id), scroll: true });
     }
   }
 
   // ── Units tab (S12 unit card progression) ───────────────────────────────────────
 
-  private renderUnits(top: number): void {
+  private renderUnits(top: number): number {
     const { w, h } = this;
     const unitLevels = this.cb.getUnitLevels?.() ?? {};
     const inv = this.cb.getCardInventory?.() ?? {};
@@ -335,7 +392,8 @@ export class CollectionScene implements Scene {
     legend.anchor.set(0.5, 0);
     legend.x = w / 2;
     legend.y = y;
-    this.container.addChild(legend);
+    this.layer.addChild(legend);
+    return y + legend.height;
   }
 
   private drawUnitCardRow(
@@ -350,7 +408,7 @@ export class CollectionScene implements Scene {
     const box = sketchPanel(w, h, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
     box.x = x; box.y = y;
     sketchAccentBar(box, h, C.accent, seedFor(x, h, 5));
-    this.container.addChild(box);
+    this.layer.addChild(box);
 
     const unitType = unitId as UnitType;
     const unitName = UNIT_NAME_KEY[unitType] ? t(UNIT_NAME_KEY[unitType]!) : unitId;
@@ -359,7 +417,7 @@ export class CollectionScene implements Scene {
     nameTxt.anchor.set(0, 0.5);
     nameTxt.x = x + Math.round(w * 0.04);
     nameTxt.y = y + h * 0.3;
-    this.container.addChild(nameTxt);
+    this.layer.addChild(nameTxt);
 
     const lvTxt = txt(
       t('progression.lv', { lv: level }),
@@ -369,7 +427,7 @@ export class CollectionScene implements Scene {
     lvTxt.anchor.set(0, 0.5);
     lvTxt.x = x + Math.round(w * 0.04);
     lvTxt.y = y + h * 0.72;
-    this.container.addChild(lvTxt);
+    this.layer.addChild(lvTxt);
 
     // Trait badges
     const traits: Array<{ key: TranslationKey; minLevel: number }> = [
@@ -386,7 +444,7 @@ export class CollectionScene implements Scene {
       badge.anchor.set(0, 0.5);
       badge.x = traitX;
       badge.y = traitY;
-      this.container.addChild(badge);
+      this.layer.addChild(badge);
       traitX += badge.width + Math.round(w * 0.015);
     }
 
@@ -406,10 +464,10 @@ export class CollectionScene implements Scene {
       width: 2, seed: seedFor(bx, by, bw),
     });
     btn.x = bx; btn.y = by;
-    this.container.addChild(btn);
+    this.layer.addChild(btn);
     const blabel = txt(t('progression.merge'), Math.round(bh * 0.34), enabled ? 0xffffff : C.mid, true);
     blabel.anchor.set(0.5, 0.5); blabel.x = bx + bw / 2; blabel.y = by + bh / 2;
-    this.container.addChild(blabel);
+    this.layer.addChild(blabel);
 
     if (mergeLevel !== null) {
       const cardCount = inv[cardKey(unitId, mergeLevel)] ?? 0;
@@ -422,13 +480,14 @@ export class CollectionScene implements Scene {
       countTxt.anchor.set(0.5, 0);
       countTxt.x = bx + bw / 2;
       countTxt.y = by + bh;
-      this.container.addChild(countTxt);
+      this.layer.addChild(countTxt);
     }
 
     if (enabled && mergeLevel !== null && this.cb.tryMerge) {
       this.hits.push({
         rect: { x: bx, y: by, w: bw, h: bh },
         fn: () => this.onMerge(unitId, mergeLevel),
+        scroll: true,
       });
     }
   }
