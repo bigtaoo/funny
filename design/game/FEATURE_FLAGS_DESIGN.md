@@ -261,6 +261,7 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 - **Grafana 面板**：`observability/grafana/dashboards/client-anomaly.json`（uid `nw-client-anomaly`）——按 type 堆叠的事件速率 + crash 计数 + 事件总数 + 受影响玩家数 + 明细日志；模板变量 type/platform（custom 枚举，因 type 在行内非 label）/publicId/关键字。
 - **防滥用四闸**：① 客户端每类冷却（mem/cpu 60s、anr 30s、jserror 10s 合一）② 单会话总量上限 50 ③ 单条 detail 截断 800 字符 ④ 服务端**按 IP 60s/30 次限流**（`SlidingRateLimiter`，超限静默丢弃）+ 最多取前 200 条 + 各字段截断。`POST /client/anomaly` **永远回 200**。
 - **与定向采集的关系**：`mem` 同时仍走 §9.4（被定向玩家可在 Loki 看到带完整池占用上下文的 warn 行）；本通道是「全网粗粒度异常计数 + 崩溃发现」，两者不冲突。
+- **测试覆盖（全链路）**：服务端那半条（handler 校验/IP 限流/anon 兜底/转发）在 `server/metaserver/test/clientLog.test.ts`；客户端那半条 + 全链路接缝在 `client/test/anomaly-chain.test.ts`——驱动 `AnomalyReporter`/崩溃哨兵/离场 beacon 发出真实 POST body，再把该 body 喂进服务端真实的 `buildAnomalyLokiPayload` 断言最终 Loki 行；含两处 bug 的回归用例（hidden 不标 cleanExit、补报立即 beacon）。
 - **⚠ 部署前置（2026-06-27 踩坑根因）**：本通道（及 §9.4 定向采集）入 Loki 全靠 metaserver 的 `NW_LOKI_PUSH_URL`。**生产此前为空** → 所有 anomaly 静默丢弃 → Grafana 永远空（与客户端是否上报无关）。已修：obs 栈的 loki 经 `observability/docker-compose.obs.yml` 接入主栈网络 `server_default`（别名 `nw-loki`），`docker-compose.prod/cloud.yml` 的 `NW_LOKI_PUSH_URL` 默认值改为 `http://nw-loki:3100/loki/api/v1/push`（详见 `observability/README.md` 网络坑）。**排查链路第一步永远是先确认这个 env 非空**：`docker exec server-metaserver-1 printenv NW_LOKI_PUSH_URL`。
 
 ---
