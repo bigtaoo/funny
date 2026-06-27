@@ -65,3 +65,9 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 5. 范围红线：不做截图 diff / 视觉回归（UI 未定型，post-launch 再议）。只保「能不能起来 + 进得去 + 不报错」。
 
 > 微信小游戏入口（`entries/wechat`）不能用 Playwright，需微信开发者工具的自动化（minium / 小程序自动化 SDK）单列，超出本冒烟范围，按需另立。
+
+## E2E / 冒烟 harness 维护红线：HeadlessAppViews 必须实现 AppViews 全接口
+
+`test/harness/HeadlessAppViews.ts` 是 `AppViews` 的 headless 实现，E2E（`createAppCore` 全链路）与导航冒烟都靠它。**`AppViews`（含 `showLobby` 返回的 `LobbyView` 句柄）新增方法时，必须同步在 HeadlessAppViews 补桩**，否则 core 调用未实现的句柄方法会在运行期抛 `xxx is not a function`——TS 不报（句柄是匿名对象字面量，结构子类型，缺方法不一定被 core 的调用点静态捕获）。
+
+典型坑（2026-06-27）：onboarding §4.1 的首次功能引导 `lobby.showFeatureGuide(...)` 加进 `AppViews.LobbyView` + 真 `LobbyScene`，但 headless `showLobby` 返回的句柄漏补，导致一切 guide-gated 入口（onOpenShop/social/cards/world/daily）E2E 一点就崩。headless 补桩约定：引导类方法**直接调 `onDismiss()`**（模拟玩家立刻关掉引导卡继续导航），不真渲染卡片。

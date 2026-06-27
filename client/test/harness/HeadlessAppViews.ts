@@ -122,6 +122,9 @@ export class HeadlessAppViews implements AppViews {
       applyWorldAvailable: () => {},
       showAchievementToast: () => {},
       showSeasonSettlement: () => {},
+      // Headless: skip the guide card entirely and continue straight to the
+      // wrapped navigation, matching a player who dismisses it immediately.
+      showFeatureGuide: (_tk, _bk, onDismiss) => { onDismiss(); },
     };
   }
   showSettings(cb: SettingsSceneCallbacks): void { this.screen = 'settings'; this.settings = cb; }
