@@ -50,13 +50,15 @@ export class SpellSystem {
     const maxCol = centerCol + 1;
     const maxRow = centerRow + 1;
 
-    // Damage ALL units whose integer position falls in the 2×2 area.
+    // Damage ENEMY units whose integer position falls in the 2×2 area.
+    // Friendly units (same side as caster) are spared — Meteor only hits the opponent.
     // Iterate units directly rather than using getUnitAt(): the unitGrid is updated
     // in the movement phase, but castMeteor fires in processCommand (before movement).
     // The grid can lag by 1 tick, causing getUnitAt() to miss units that moved rows
     // this step but haven't had updateUnitCell() called yet.
     for (const unit of board.units.values()) {
       if (unit.isDead) continue;
+      if (unit.side === side) continue; // never hit own units
       if (unit.col >= centerCol && unit.col <= maxCol &&
           unit.row >= centerRow && unit.row <= maxRow) {
         unit.takeDamage(METEOR_DAMAGE);
@@ -64,11 +66,11 @@ export class SpellSystem {
       }
     }
 
-    // Buildings: grid lookup is safe (at most one building per cell)
+    // Buildings: grid lookup is safe (at most one building per cell). Only hit enemy buildings.
     for (let dc = 0; dc <= 1; dc++) {
       for (let dr = 0; dr <= 1; dr++) {
         const building = board.getBuildingAt(centerCol + dc, centerRow + dr);
-        if (building && !building.isDead) building.takeDamage(METEOR_DAMAGE);
+        if (building && !building.isDead && building.side !== side) building.takeDamage(METEOR_DAMAGE);
       }
     }
 
