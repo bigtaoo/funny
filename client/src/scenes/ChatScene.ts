@@ -3,7 +3,7 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import type { ChatMessageView } from '../net/ApiClient';
@@ -240,7 +240,7 @@ export class ChatScene implements Scene {
   // ── Render ───────────────────────────────────────────────────────────────────
   private render(): void {
     if (this.dead) return;
-    this.container.removeChildren();
+    tearDownChildren(this.container); // caret blink (~2×/s) + per-keystroke compose → free Text textures
     this.hits = [];
     this.container.addChild(buildPaperBackground('chatbg', this.w, this.h));
     this.drawHeader();

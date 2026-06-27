@@ -13,7 +13,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView, SeasonView, SlgShopItemView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/proto/transport';
@@ -664,7 +664,7 @@ export class WorldMapScene implements Scene {
 
   private renderHud(): void {
     const hud = this.hudLayer;
-    hud.removeChildren();
+    tearDownChildren(hud); // rebuilt every ~5s by the march poll → free resource-count Text textures
     const { w, h } = this;
 
     // HUD background
@@ -1263,7 +1263,7 @@ export class WorldMapScene implements Scene {
     const me = this.me;
     if (!me?.joined) { this.closeModal(); return; }
     const ml = this.modalLayer;
-    ml.removeChildren();
+    tearDownChildren(ml); // repainted once/sec while open (queue countdowns) → free Text textures
     this.modalBtnRects = [];
 
     const { w, h } = this;

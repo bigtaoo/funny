@@ -5,7 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, getLocale, setLocale, getSupportedLocales, Locale, TranslationKey } from '../i18n';
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
-import { sketchPanel, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -200,7 +200,7 @@ export class SettingsScene implements Scene {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   private render(): void {
-    this.container.removeChildren();
+    tearDownChildren(this.container); // caret blink (~2×/s) + per-keystroke rename field → free Text textures
     this.hits = [];
 
     this.drawBackground();

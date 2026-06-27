@@ -61,6 +61,31 @@ export function txt(label: string, size: number, color: number, bold = false): P
 }
 
 /**
+ * Detach AND destroy a container's children before a full re-render — the safe
+ * replacement for a bare `container.removeChildren()` in any scene that re-renders
+ * on **every keystroke / per frame / on a timer** (LoginScene caret, chat compose,
+ * shop recharge field, settings rename, world-map train countdowns, …).
+ *
+ * Why this matters: `txt()` mints a fresh `PIXI.Text` each render, and every Text
+ * owns its own GPU texture. `removeChildren()` only detaches — it leaves those
+ * textures orphaned until PIXI's texture GC runs (~60s), so a high-frequency
+ * re-render piles up textures faster than they're reclaimed. On iPad Safari's tiny
+ * WebGL budget that exhausts GPU memory → context loss → Safari reloads the page
+ * (the "注册输昵称一直崩溃" crash, fixed in 29b0daea).
+ *
+ * Contract: `PIXI.Text` frees its own texture (`texture/baseTexture: true`);
+ * everything else (Graphics geometry, and crucially Sprites backed by a shared
+ * `bake()` RenderTexture like the paper background) is destroyed with the default
+ * `texture: false` so the shared bake cache is never touched.
+ */
+export function tearDownChildren(container: PIXI.Container): void {
+  for (const child of container.removeChildren()) {
+    if (child instanceof PIXI.Text) child.destroy({ texture: true, baseTexture: true });
+    else child.destroy({ children: true });
+  }
+}
+
+/**
  * Deterministic seed from a rect so a button/panel's scrawl is stable across the
  * frequent full re-renders these scenes do (otherwise the border would re-jitter
  * — "boil" — on every keystroke / tap). Same position → same hand-drawn border.
