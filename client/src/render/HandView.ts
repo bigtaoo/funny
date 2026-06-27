@@ -1,21 +1,13 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Player } from '../game/Player';
-import { CardDefinition, CardType, UnitType, BuildingType, SpellType } from '../game/types';
+import { CardDefinition, CardType } from '../game/types';
 import { ILayout } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
 import { t, type TranslationKey } from '../i18n';
 import { TICK_RATE } from '../game/math/fixed';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
-import infantryArtUrl from '../assets/infantry.png';
-import archerArtUrl from '../assets/archer.png';
-import shieldBearerArtUrl from '../assets/shieldbearer.png';
-import barracksArtUrl from '../assets/game_infantry_barracks.png';
-import towerArtUrl from '../assets/game_archer_barracks.png';
-import spellHasteArtUrl from '../assets/spell_haste.png';
-import spellMeteorArtUrl from '../assets/spell_meteor.png';
-import spellRockslideArtUrl from '../assets/spell_rockslide.png';
-import spellBridgeCollapseArtUrl from '../assets/spell_bridge_collapse.png';
+import { CARD_ART_URLS, cardArtKey } from './cardArt';
 
 const CARD_BG              = 0xfaf6ee;
 const CARD_BORDER          = 0x333333;
@@ -31,32 +23,7 @@ const BAR_TRACK_ALPHA      = 0.15;
 
 const FLASH_DURATION_MS    = 250;
 
-// 卡牌插画：单位/建筑/法术卡均显示对应图片（法术图标为手绘墨线 + 红马克笔重点，
-// 已烤进图，不 tint；出图/打包见 art/skills/pack_spells.cjs）
-const CARD_ART_URLS: Record<string, string> = {
-  [`unit_${UnitType.Infantry}`]:           infantryArtUrl as string,
-  [`unit_${UnitType.Archer}`]:             archerArtUrl as string,
-  [`unit_${UnitType.ShieldBearer}`]:       shieldBearerArtUrl as string,
-  [`building_${BuildingType.Barracks}`]:   barracksArtUrl as string,
-  [`building_${BuildingType.ArrowTower}`]: towerArtUrl as string,
-  [`spell_${SpellType.Haste}`]:            spellHasteArtUrl as string,
-  [`spell_${SpellType.Meteor}`]:           spellMeteorArtUrl as string,
-  [`spell_${SpellType.Rockslide}`]:        spellRockslideArtUrl as string,
-  [`spell_${SpellType.BridgeCollapse}`]:   spellBridgeCollapseArtUrl as string,
-};
-
-function cardArtKey(card: CardDefinition): string | null {
-  if (card.cardType === CardType.Unit && card.unitType !== undefined) {
-    return `unit_${card.unitType}`;
-  }
-  if (card.cardType === CardType.Building && card.buildingType !== undefined) {
-    return `building_${card.buildingType}`;
-  }
-  if (card.cardType === CardType.Spell && card.spellType !== undefined) {
-    return `spell_${card.spellType}`;
-  }
-  return null;
-}
+// 卡牌插画（单位/建筑/法术）的 url 映射 + key 解析现集中在 ./cardArt，与养成页共用。
 
 // ── Card slot structure ────────────────────────────────────────────────────────
 //

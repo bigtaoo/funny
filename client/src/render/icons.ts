@@ -21,7 +21,9 @@ export type IconKind =
   // 装备页材料 (EQUIPMENT_DESIGN)：碎屑 / 铅芯 / 装订线。
   | 'scrap' | 'lead' | 'binding'
   // 装备页词条统计：攻击 / 生命 / 护甲 / 移速 / 攻速。
-  | 'atk' | 'hp' | 'armor' | 'spd' | 'atkspd';
+  | 'atk' | 'hp' | 'armor' | 'spd' | 'atkspd'
+  // 养成页皮肤标签：外观笔刷（卡牌/单位用真实 png 立绘，见 cardArt.ts）。
+  | 'brush';
 
 /** Open book — splayed pages over a centre spine, with a couple of text lines. */
 function drawBook(g: PIXI.Graphics, s: number, color: number): void {
@@ -344,6 +346,22 @@ function drawAtkspd(g: PIXI.Graphics, s: number, color: number): void {
   ], { color, width: w, jitter: 0.35, taper: 0.88, double: false });
 }
 
+/** Brush (skin / appearance) — a paintbrush at a diagonal with a ferrule + paint tip. */
+function drawBrush(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x6b89);
+  const w = Math.max(1.4, s * 0.05);
+  const top = { x: s * 0.76, y: s * 0.20 }, neck = { x: s * 0.46, y: s * 0.50 }, tip = { x: s * 0.28, y: s * 0.72 };
+  pen.line(top.x, top.y, neck.x, neck.y, { color, width: w, jitter: 0.4, taper: 0.85, double: false }); // handle
+  const dx = neck.x - top.x, dy = neck.y - top.y, len = Math.hypot(dx, dy) || 1;
+  const px = (-dy / len) * s * 0.06, py = (dx / len) * s * 0.06;
+  pen.line(neck.x + px, neck.y + py, neck.x - px, neck.y - py, { color, width: w * 0.9, jitter: 0.3, taper: 0.8, double: false }); // ferrule
+  pen.stroke([
+    { x: neck.x + px, y: neck.y + py }, { x: tip.x, y: tip.y }, { x: neck.x - px, y: neck.y - py },
+  ], { color, width: w * 0.9, jitter: 0.45, taper: 0.9, double: false }); // bristles
+  pen.line(tip.x - s * 0.04, tip.y + s * 0.06, tip.x + s * 0.10, tip.y + s * 0.04,
+    { color, width: w * 0.7, jitter: 0.5, taper: 0.6, double: false, alpha: 0.8 }); // paint stroke
+}
+
 const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
   globe:   drawGlobe,
@@ -359,6 +377,7 @@ const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => voi
   armor:   drawArmor,
   spd:     drawSpd,
   atkspd:  drawAtkspd,
+  brush:   drawBrush,
 };
 
 /**

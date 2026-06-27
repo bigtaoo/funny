@@ -4,6 +4,8 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { buildIcon } from '../render/icons';
+import { cardArtUrl, UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { EQUIP_SLOT } from '../app/equipSlot';
@@ -76,6 +78,8 @@ export class CollectionScene implements Scene {
   private readonly unsubs: Array<() => void> = [];
   private merging = false;
   private toast: { text: string; color: number } | null = null;
+  /** Art urls whose async-load re-render hook is already attached (fire once each). */
+  private readonly artHooked = new Set<string>();
 
   // ── Scroll state ──────────────────────────────────────────────────────────────
   // Content (cards/skins/units) lives in `layer`, masked to the region below the
@@ -146,6 +150,29 @@ export class CollectionScene implements Scene {
     this.tab = tab;
     this.scrollY = 0; // each tab starts at the top
     this.render();
+  }
+
+  /**
+   * Draw a card/unit illustration fitted (aspect-kept) into the box at (x,y) of
+   * size box×box, added to the scroll layer. Textures load async — if not ready
+   * yet, skip this frame and schedule a single re-render once the bitmap arrives
+   * (battles usually warm the shared texture cache first, so this is rare).
+   */
+  private drawArtFit(url: string, x: number, y: number, box: number): void {
+    const tex = getArtTexture(url);
+    if (!tex.baseTexture.valid) {
+      if (!this.artHooked.has(url)) {
+        this.artHooked.add(url);
+        tex.baseTexture.once('loaded', () => this.render());
+      }
+      return;
+    }
+    const scale = Math.min(box / tex.width, box / tex.height);
+    const sp = new PIXI.Sprite(tex);
+    sp.anchor.set(0.5);
+    sp.scale.set(scale);
+    sp.position.set(x + box / 2, y + box / 2);
+    this.layer.addChild(sp);
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -284,15 +311,23 @@ export class CollectionScene implements Scene {
     sketchAccentBar(box, h, accent, seedFor(x, h, 6));
     this.layer.addChild(box);
 
+    // Real card illustration (same png as the battle hand) in the header; name +
+    // subtitle flow to its right. Falls back to text-only if the card has no art.
+    const icSize = Math.round(h * 0.30);
+    const icX = x + Math.round(w * 0.07), icY = y + Math.round(h * 0.10);
+    const art = cardArtUrl(card);
+    if (art) this.drawArtFit(art, icX, icY, icSize);
+    const textX = icX + icSize + Math.round(w * 0.04);
+
     const name = txt(t(card.nameKey as TranslationKey), Math.round(h * 0.15), C.dark, true);
-    name.anchor.set(0, 0); name.x = x + Math.round(w * 0.07); name.y = y + Math.round(h * 0.10);
+    name.anchor.set(0, 0); name.x = textX; name.y = y + Math.round(h * 0.10);
     this.layer.addChild(name);
 
     const typeLabel = card.cardType === CardType.Unit ? t('collection.cardType.unit')
       : card.cardType === CardType.Building ? t('collection.cardType.building')
       : t('collection.cardType.spell');
     const sub = txt(`${typeLabel} · ${t('collection.stat.cost')} ${card.cost}`, Math.round(h * 0.12), accent, true);
-    sub.anchor.set(0, 0); sub.x = x + Math.round(w * 0.07); sub.y = y + Math.round(h * 0.32);
+    sub.anchor.set(0, 0); sub.x = textX; sub.y = y + Math.round(h * 0.32);
     this.layer.addChild(sub);
 
     const stats = this.cardStatsLine(card);
@@ -381,13 +416,19 @@ export class CollectionScene implements Scene {
     sketchAccentBar(box, h, isEquipped ? C.green : C.accent, seedFor(x, h, 6));
     this.layer.addChild(box);
 
-    const name = txt(tile.label, Math.round(h * 0.16), C.dark, true);
-    name.anchor.set(0.5, 0.5); name.x = x + w / 2; name.y = y + h * 0.4;
+    // Appearance icon: default look = stationery pencils, owned skin = paintbrush.
+    const icSize = Math.round(h * 0.34);
+    const ic = buildIcon(tile.id === null ? 'pencils' : 'brush', icSize, isEquipped ? C.green : C.accent);
+    ic.x = x + (w - icSize) / 2; ic.y = y + Math.round(h * 0.12);
+    this.layer.addChild(ic);
+
+    const name = txt(tile.label, Math.round(h * 0.15), C.dark, true);
+    name.anchor.set(0.5, 0.5); name.x = x + w / 2; name.y = y + h * 0.62;
     this.layer.addChild(name);
 
     const status = txt(isEquipped ? t('collection.equipped') : t('collection.equip'),
-      Math.round(h * 0.13), isEquipped ? C.green : C.gold, true);
-    status.anchor.set(0.5, 0.5); status.x = x + w / 2; status.y = y + h * 0.74;
+      Math.round(h * 0.12), isEquipped ? C.green : C.gold, true);
+    status.anchor.set(0.5, 0.5); status.x = x + w / 2; status.y = y + h * 0.84;
     this.layer.addChild(status);
 
     if (!isEquipped) {
@@ -442,12 +483,20 @@ export class CollectionScene implements Scene {
     sketchAccentBar(box, h, C.accent, seedFor(x, h, 5));
     this.layer.addChild(box);
 
+    // Unit portrait (same png as the battle hand) at the far left; name + level
+    // flow to its right.
+    const icSize = Math.round(h * 0.7);
+    const icX = x + Math.round(w * 0.03), icY = y + (h - icSize) / 2;
+    const art = UNIT_ART_URLS[unitId];
+    if (art) this.drawArtFit(art, icX, icY, icSize);
+    const textX = icX + icSize + Math.round(w * 0.03);
+
     const unitType = unitId as UnitType;
     const unitName = UNIT_NAME_KEY[unitType] ? t(UNIT_NAME_KEY[unitType]!) : unitId;
     const fs = Math.round(h * 0.22);
     const nameTxt = txt(unitName, fs, C.dark, true);
     nameTxt.anchor.set(0, 0.5);
-    nameTxt.x = x + Math.round(w * 0.04);
+    nameTxt.x = textX;
     nameTxt.y = y + h * 0.3;
     this.layer.addChild(nameTxt);
 
@@ -457,7 +506,7 @@ export class CollectionScene implements Scene {
       level >= UNIT_MAX_LEVEL ? C.gold : C.mid,
     );
     lvTxt.anchor.set(0, 0.5);
-    lvTxt.x = x + Math.round(w * 0.04);
+    lvTxt.x = textX;
     lvTxt.y = y + h * 0.72;
     this.layer.addChild(lvTxt);
 

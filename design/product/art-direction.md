@@ -380,6 +380,7 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
 >   - **加载/散布**：`client/src/render/decorCAtlas.ts` 加载图集；`client/src/render/decorCLayer.ts` `buildDecorCLayer(w,h)` 在纸面背景上按确定性 PRNG 散布、整层 `bake()` 烘焙、`interactiveChildren=false`。大厅 `LobbyScene.build()` 调用接入。
 >   - **调参（2026-06-27）**：原 alpha `0.06–0.15` 几乎不可见 → 提到 `0.10–0.22`；散布改「边角密、中心疏」（`EDGE_SKIP=0.28 / CENTER_SKIP=0.80`），因为均匀网格会把涂鸦铺到中央内容带、被 hero/pillar 面板盖住浪费，反而显得"装饰太少"。现集中在四周边框区（笔记本涂鸦本就在边角）。
 > - **大厅核心卡片大号手绘母题（2026-06-27）**：不上位图照片（§6.1 分工：UI=程序绘制），改用 SketchPen 线稿母题作卡面主视觉。`client/src/render/icons.ts` 新增 `castle`（城垛+塔楼+拱门+小旗，大世界 pillar）、`pencils`（交叉铅笔，呼应文具三笔，盖在「开始匹配」hero 右侧）；战役 pillar 复用放大的 `book`。pillar 母题 `h*0.6`、alpha 0.6 填充卡面上半，标题随后绘制盖其上仍清晰。同时「开始匹配」hero 加高（`0.135h→0.165h`）、内容栈上偏居中收掉 header 下留白。
+> - **养成页内容图标按资产分工归位（2026-06-27）**：养成（CollectionScene）卡牌/单位/皮肤三 Tab 原为纯文字。按 §〇 资产分工——**角色/兵种=AI 图位图，UI=程序绘制**——落地：**卡牌图鉴 + 单位卡用真实位图立绘**（不是手绘符号），因其直接代表游戏内的卡牌/兵种，若另画一套手绘符号会和战斗里玩家看到的对不上、造成困惑。立绘 url 映射从 `HandView` 抽到 `render/cardArt.ts` 作单一真源（战斗手牌与养成页 import 同一份）；单位卡用 `UNIT_ART_URLS`（六兵种 png 全有）。**皮肤衣柜保留手绘图标**（`icons.ts` 新增 `brush` 笔刷 + 复用 `pencils`），因皮肤是服务器 id、无角色立绘可绑。期间一度尝试给卡牌/单位画手绘小人母题（`unit_melee/shield/archer` 等），按本条结论作废删除。详见 `design/game/UI_DESIGN.md` §4.5。
 
 ### 6.3 基地视觉
 

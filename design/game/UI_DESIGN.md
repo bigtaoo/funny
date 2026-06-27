@@ -214,6 +214,11 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - 装备写 `SaveData.equipped`（纯外观，客户端同步段）；渲染层 `UnitView`/`StickmanRuntime` 按 equipped 选贴图。
 - i18n：`collection.*`。
 - **滚动（2026-06-27）**：三个 Tab（卡牌图鉴 / 皮肤衣柜 / 单位卡）内容数量都会超出一屏，原先平铺无裁剪导致超出部分看不到。改为 tab 栏以下整块内容画进带 mask 的 `layer` 容器，拖拽改变 `scrollY` 平移 `layer`（模式同 `ChatScene`）；`maxScroll` 由内容实际高度算出并夹紧、底部留 padding。命中检测：点击改在 pointer-up 触发，拖动 > 8px 视为滚动不点；内容命中（装备 / 合成）标记 `scroll: true`，命中时对指针 y 做滚动偏移补偿并忽略落在 tab 栏区域的误触。切 Tab 时 `scrollY` 归零。
+- **内容图标化（2026-06-27）**：三个 Tab 原先纯文字，既累眼又「和游戏内容对不上」。改为：
+  - **卡牌图鉴**：卡片标题左侧显示**真实卡牌立绘**（与战斗手牌 `HandView` 同一张 png），名称/类型行右移让位。立绘 url 映射 + `cardArtKey()` 从 HandView 抽到 `render/cardArt.ts` 作单一真源，两端 import 同一份，杜绝「图标和游戏里对不上」的困惑。法术立绘已烤红马克笔重点，显示**不 tint**。
+  - **单位卡**：每行最左侧显示**单位立绘**（`cardArt.UNIT_ART_URLS`：infantry/archer/shieldbearer + Anna 的 max/lena/mara，六张 png 齐全），名称/等级右移。
+  - **皮肤衣柜**：皮肤是服务器侧 id、无立绘数据，保留**手绘图标**（`icons.ts`：默认外观=铅笔 `pencils`，已拥有皮肤=笔刷 `brush`，已装备转绿）。
+  - 立绘纹理异步解码、本场景是静态渲染：`drawArtFit()` 在纹理未 valid 时跳过本帧并挂一次性 `baseTexture.once('loaded', render)`，加载完重绘（战斗通常已暖共享纹理缓存，少触发）。
 
 ### 4.6 ProfileScene（档案，S0/S3）
 - 账号信息（匿名 id / 昵称）、云同步状态（已同步/同步中/离线，含「手动同步」按钮）、成就墙（后续）、设置入口（语言/音量，复用 i18n）。
