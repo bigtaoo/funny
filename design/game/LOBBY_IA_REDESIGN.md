@@ -195,7 +195,7 @@
   - **养成组** `[收藏|装备]`，两场景共用：
     - `CollectionScene`：把原 `drawTabs` 第 4 格「装备 launcher」拆出，上移为分组 strip（收藏 active，装备点 `onOpenEquipment`），内容 tab 行回归 3 格 `[卡牌|皮肤|单位]` 并整体下移一条 strip；仅 `onOpenEquipment` 存在（登录在线）时出现 strip，离线退化原 3-tab 布局。
     - `EquipmentScene`：新增可选 `openCollection?`；`groupH = openCollection ? hubTabsHeight(h) : 0`，header(`HUD_H`) 下画 strip（装备 active，点收藏回养成），body 基线 `HUD_H` → `HUD_H+groupH`（renderTabs/资源条/inventory loadout/craft listY）。
-  - **导航编排** `createAppCore.ts`：商城组 `goShop/goGacha/goBattlePass` 改用 `group?:{shopBack?}` 串联——三页互相直达且返回同一来源（lobby / level-prep）；养成组 `goEquipment(back, inCollectionGroup)` 仅从收藏进入（`goCollection` 传 `true`）时注入 `openCollection`，战役入口不注入。
+  - **导航编排** `createAppCore.ts`：商城组 `goShop/goGacha/goBattlePass` 改用 `group?:{shopBack?}` 串联——三页互相直达且返回同一来源（lobby / level-prep）；养成组 `goEquipment(back, inCollectionGroup)` 仅从收藏进入（`goCollection` 传 `true`）时注入 `openCollection`，战役入口不注入。大厅「商城」入口默认落地盲盒（`onOpenShop` 改为 `goGacha({})`），用户点商城 tab 再进 ShopScene。
   - **架构延续**：与 P1 一致——「扩容/重排」落在导航层，不重写 875 行 EquipmentScene 等为内嵌内容；视觉资产打磨仍留 P3。
 - **P2**：主页**右侧竖栏**图标条（每日/邮件/活动/成就，可领时亮红点）+ 视觉留白打磨。
 - **P3**：图标资产（文具/简笔）替换底部 tab 色块。

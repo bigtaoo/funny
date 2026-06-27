@@ -295,7 +295,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onOpenCampaign() { goCampaignMap(); },
       onOpenRoom() { goRoom(); },
       onOpenSocial() { withGuide('social', 'guide.social.title', 'guide.social.body', () => goFriends()); },
-      onOpenShop() { withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => goShop()); },
+      onOpenShop() { withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => goGacha({})); },
       onOpenCards() { withGuide('cards', 'guide.cards.title', 'guide.cards.body', () => goCollection(goLobby, 'cards')); },
       onOpenStats() { goStats(); },
       ...(online ? { onOpenAchievements: () => goAchievements() } : {}),
