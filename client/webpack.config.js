@@ -49,12 +49,35 @@ module.exports = (env, argv) => {
       },
     },
     output: {
-      filename: 'index.js',
+      filename: isProd ? '[contenthash].js' : 'index.js',
       path: path.resolve(__dirname, 'dist'),
       clean: true,
     },
     plugins: [
       new HtmlWebpackPlugin({ template: `./public/${targetPlatform}/index.html` }),
+      // 构建时写出 version.json（客户端轮询版本用）和 _headers（CF Workers / nginx 缓存策略）。
+      ...(isProd ? [{
+        apply(compiler) {
+          const version = process.env.NW_BUILD_VERSION || '0.0.0';
+          compiler.hooks.thisCompilation.tap('StaticMetaPlugin', (compilation) => {
+            compilation.hooks.processAssets.tap(
+              { name: 'StaticMetaPlugin', stage: webpack.Compilation.PROCESS_ASSETS_STAGE_ADDITIONAL },
+              () => {
+                compilation.emitAsset('version.json', new webpack.sources.RawSource(JSON.stringify({ v: version })));
+                // _headers：Cloudflare Workers static assets 支持此文件控制响应头。
+                // index.html / version.json 不缓存，JS 文件带 contenthash 可永久缓存。
+                const headers = [
+                  '/index.html',
+                  '  Cache-Control: no-cache, must-revalidate',
+                  '/version.json',
+                  '  Cache-Control: no-cache, must-revalidate',
+                ].join('\n');
+                compilation.emitAsset('_headers', new webpack.sources.RawSource(headers));
+              }
+            );
+          });
+        },
+      }] : []),
       new webpack.DefinePlugin({
         TARGET: JSON.stringify(targetPlatform),
         'globalThis.__NW_API_BASE__': JSON.stringify(apiBase),

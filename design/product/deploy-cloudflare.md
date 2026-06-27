@@ -122,6 +122,20 @@ cd .. && npx wrangler deploy -c wrangler.client.jsonc
 - 构建命令：`cd client && NW_API_BASE=... NW_GATEWAY_WS=... NW_WORLD_BASE=... npm run build:web` → 产物 `client/dist`。
 - **localStorage 覆盖（内测神器）**：用一份默认构建即可，朋友在浏览器 DevTools console 跑 `localStorage.setItem('nw_api_base','http://<VPS_IP>/api'); localStorage.setItem('nw_gateway_ws','ws://<VPS_IP>/gw'); location.reload()` 就能连你的后端，无需为每个环境重新构建。
 
+#### 缓存策略（防 iPad / Safari 服务旧版本）
+
+生产构建会输出三类文件，各有不同缓存策略：
+
+| 文件 | 命名规则 | Cache-Control | 原理 |
+|---|---|---|---|
+| `<hash>.js` | contenthash | `public, max-age=31536000, immutable` | 内容变 → 文件名变 → 新 URL，永久缓存安全 |
+| `index.html` | 固定名 | `no-cache, must-revalidate` | 每次加载都验证，拿到最新 JS 文件名 |
+| `version.json` | 固定名 | `no-cache, must-revalidate` | 客户端轮询用，必须实时 |
+
+**实现**：`webpack.config.js` 生产构建时自动输出 `_headers` 文件（CF Workers static assets 支持此格式），并将 JS 输出改为 `[contenthash].js`；`client/nginx.conf` 同步配置（Docker 环境用）。
+
+**客户端主动刷新**：`client/src/entries/web.ts` 在 `visibilitychange`（玩家切回前台）时拉 `/version.json`，与运行中的 `__NW_BUILD_VERSION__` 对比，版本不同则 `location.reload()`。确保已开着页面的玩家（尤其 iPad 后台切回）能立即获取新版本，无需手动刷新。
+
 #### 自动发布（GitHub Action，免手敲命令）
 
 `.github/workflows/client-deploy.yml`：push 到 `main` 且改动落在 `client/**` / `wrangler.client.jsonc` / 该 workflow 时自动 `npm ci → build:web（地址烘焙到 api.gamestao.com）→ wrangler deploy`；也可在 Actions 页手动 Run（`workflow_dispatch`）。与 ops-deploy 同套路：
