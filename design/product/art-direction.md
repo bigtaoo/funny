@@ -213,8 +213,8 @@ PvE 神话生物（无具名、东西双化身，见 `MYTHOLOGY_DESIGN.md`）不
 - 把 `G` 叠进现有 per-bone bake + `binding.scaleX /= bake` 补偿链——一处改动即接上，导出体积立刻按目标分辨率收敛，与美术画布大小解耦。
 - 阴影已不打包进图集（运行时程序生成，见 `file-formats.md` / §3.2），不受影响。
 
-**(C) 数据位置 / 入口**（实现时定）
-- 身高档枚举（S/M/L/XL）与「UnitType → 档位」映射建议落在渲染层一处常量（如 `client/src/render/` 下新增 `unitSize.ts`），与 §4.5.2 表对齐；本文是**美术/叙事侧权威**，代码映射须引用本表。
+**(C) 数据位置 / 入口**
+- 身高档枚举（S/M/L/XL）、各档目标屏高/animator 高、超采样系数、「UnitType → 档位」映射**已落代码**：`client/src/render/unitSize.ts`（`SizeTier` / `TARGET_SCREEN_PX` / `TARGET_ANIMATOR_PX` / `SUPERSAMPLE` / `UNIT_SIZE_TIER`）。**代码是运行用的单一来源**，本节及 §4.5.1/§4.5.2 表为记录/依据；二者数值须一致，改档位改代码、同步本表。
 - `.tao` 可考虑把导出时选定的目标档/目标高写进 `animation.json`（供运行时直接读，省去每次量 bbox）；具体字段实现时定，须同步 `claudedocs/file-formats.md`。
 
 **(D) 红线**：身高只管**视觉剪影**，**不碰任何战斗数值**（攻击半径 `radius`、移速等仍以 `@nw/engine` config 为准，见 §九 cosmetic 铁律的同款原则）。

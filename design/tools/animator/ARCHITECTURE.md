@@ -318,6 +318,8 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 
 **无损保证**：游戏 runtime `sprite.scale = 关键帧 × binding.scale` 为纯乘法，小图 × 放大后 binding 与原图 × 原 binding 像素级一致，**runtime 零改动**；1.5 余量覆盖高 DPI 与放大动画帧。烘焙仅作用于 `.tao` 导出路径，`.tao.editor` 存档继续保存无损原图。
 
+> **待办 · 按身高档烘到绝对目标分辨率**（设计见 [art-direction.md §4.5.3 (B)](../../product/art-direction.md)）：现有 bake 只相对 `binding.scale`、且不知道运行时还要乘 `STICKMAN_SCALE≈0.27`，故每张贴图约超分辨率 1/0.27≈3.7× 线性。计划在导出面板加**身高档下拉(S/M/L/XL)**，按角色**自然包围盒高度**（需补全身 bbox，现仅有 `Skeleton.computeDefaultShadowSize` 的腿宽）算全局烘缩系数 `G=目标屏高×超采样÷H_nat`，叠进 per-bone bake，用有依据的**超采样系数**取代拍脑袋的 1.5。⚠ 必须与运行时「按目标身高缩放取代 STICKMAN_SCALE」(art-direction §4.5.3 (A)) **同期落地**，否则糊/尺寸乱。
+
 **导出流程**（`IOController.exportTao`）：
 1. 从 `ImageController` 取各骨骼 Blob，`loadImageFromBlob` 加载为 `HTMLImageElement`
 2. `buildExportImages` 逐图按烘焙比例缩小（canvas）并改写 `animation.json` 的 binding 补偿
