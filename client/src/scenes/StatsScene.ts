@@ -39,14 +39,13 @@ export interface StatsCallbacks {
   loadHistory?(): Promise<MatchHistoryEntry[]>;
   /** Watch a recorded match by roomId (fetch + decode server replay). Omitted when offline. */
   onWatchReplay?(roomId: string): void;
-  /** Open the achievement wall (S9-5). Shown as a top-right entry in the title bar. */
+  /** Open the achievement wall (S9-5). Shown as a top-right header button. */
   onOpenAchievements?(): void;
+  /** Red dot on the achievements header button when any tier is claimable. */
+  hasClaimableAchievement?: boolean;
   /** Open the global leaderboard (SE-6). Shown in the ranked section when online. */
   onOpenLeaderboard?(): void;
-  /**
-   * Open the titles wall (S10). Shown as a ranked-section entry (LOBBY_IA_REDESIGN §3:
-   * 称号并入「生涯」中心). 战令 Battle Pass moved to the 商城 tab — no longer linked here.
-   */
+  /** Open the titles wall (S10). Shown as a header button to the left of achievements. */
   onOpenTitles?(): void;
   /** Current season info for the banner (SE-6). */
   season?: { seasonNo: number; endAt: number };
@@ -107,14 +106,37 @@ export class StatsScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // 成就墙入口（顶栏右上，ACHIEVEMENT_DESIGN §7：成就只在自己档案出现）。
+    // 顶栏右侧：成就（最右）+ 称号（其左），两者均在线才提供。
+    // 布局从右到左累积 nextRight，处理其中一个缺失的情况。
+    const rightPad = Math.round(w * 0.04);
+    const btnGap = Math.round(w * 0.03);
+    let nextRight = w - rightPad;
+
     if (this.cb.onOpenAchievements) {
       const ach = txt(t('stats.achievements'), Math.round(h * 0.026), C.gold, true);
-      ach.anchor.set(1, 0.5); ach.x = w - Math.round(w * 0.04); ach.y = tbH / 2;
+      ach.anchor.set(1, 0.5); ach.x = nextRight; ach.y = tbH / 2;
       this.container.addChild(ach);
       this.hits.push({
-        rect: { x: ach.x - ach.width - Math.round(w * 0.03), y: 0, w: ach.width + Math.round(w * 0.06), h: tbH },
+        rect: { x: nextRight - ach.width - Math.round(w * 0.02), y: 0, w: ach.width + Math.round(w * 0.04), h: tbH },
         fn: () => this.cb.onOpenAchievements!(),
+      });
+      if (this.cb.hasClaimableAchievement) {
+        const dot = new PIXI.Graphics();
+        const r = Math.round(h * 0.011);
+        dot.beginFill(0xee3333); dot.drawCircle(0, 0, r); dot.endFill();
+        dot.x = nextRight + r; dot.y = tbH / 2 - Math.round(h * 0.016);
+        this.container.addChild(dot);
+      }
+      nextRight = nextRight - ach.width - btnGap;
+    }
+
+    if (this.cb.onOpenTitles) {
+      const titl = txt(t('stats.titles'), Math.round(h * 0.026), C.gold, true);
+      titl.anchor.set(1, 0.5); titl.x = nextRight; titl.y = tbH / 2;
+      this.container.addChild(titl);
+      this.hits.push({
+        rect: { x: nextRight - titl.width - Math.round(w * 0.02), y: 0, w: titl.width + Math.round(w * 0.04), h: tbH },
+        fn: () => this.cb.onOpenTitles!(),
       });
     }
 
@@ -150,7 +172,6 @@ export class StatsScene implements Scene {
       { label: t('stats.winrate'), value: winrate },
       { label: t('stats.streak'), value: streak, valueColor: s.pvp.streak > 0 ? C.green : s.pvp.streak < 0 ? C.red : C.mid },
       ...(this.cb.onOpenLeaderboard ? [{ label: '', value: t('leaderboard.openLeaderboard') + ' →', valueColor: C.accent, rowHit: () => this.cb.onOpenLeaderboard!() }] : []),
-      ...(this.cb.onOpenTitles ? [{ label: '', value: t('settings.openTitles') + ' →', valueColor: C.gold, rowHit: () => this.cb.onOpenTitles!() }] : []),
     ];
     y = this.drawSection(pad, y, secW, t('stats.pvp'), C.accent, pvpRows);
     y += gap;

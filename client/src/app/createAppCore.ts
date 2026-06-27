@@ -367,7 +367,6 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const pvp = saveManager.get().pvp;
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const canRename = !offlineMode && !!api && loggedIn;
-    const hasTitles = (saveManager.get().titles?.length ?? 0) > 0;
     views.showSettings({
       onBack() { goLobby(); },
       playerName: playerName(),
@@ -387,7 +386,6 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         : {}),
       // 账号删除（C5-b）：仅登录在线提供（离线无账号可删）。
       ...(loggedIn && !!api ? { onDeleteAccount: doDeleteAccount } : {}),
-      ...(hasTitles ? { onOpenTitles: () => goTitles() } : {}),
       // 重看新手教学（ONBOARDING_DESIGN §3.4）：直接重跑专属教学关（永不失败，可再跳过）。
       onReplayTutorial: () => goTutorial(),
     });
@@ -414,8 +412,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     }
   }
 
-  /** 称号墙（S10）。可从设置（默认 back）或「生涯」tab（back=goStats）进入。 */
-  function goTitles(back: () => void = goSettings): void {
+  /** 称号墙（S10）。从「生涯」顶栏进入（back=goStats），不再从设置进入。 */
+  function goTitles(back: () => void = goStats): void {
     const save = saveManager.get();
     views.showTitles({
       onBack() { back(); },
@@ -1169,9 +1167,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             },
           }
         : {}),
-      ...(client && loggedIn ? { onOpenAchievements: () => goAchievements() } : {}),
+      ...(client && loggedIn ? { onOpenAchievements: () => goAchievements(), hasClaimableAchievement: achievementClaimable } : {}),
       ...(client && loggedIn ? { onOpenLeaderboard: () => goLeaderboard() } : {}),
-      // 称号并入「生涯」（LOBBY_IA_REDESIGN §3）；战令已移至「商城」tab，此处不再链接。
+      // 称号并入「生涯」顶栏（LOBBY_IA_REDESIGN §3）；战令已移至「商城」tab，此处不再链接。
       ...(loggedIn ? { onOpenTitles: () => goTitles(goStats) } : {}),
       // 赛季横幅：从存档 pvp.seasonNo 读取，endAt 从 leaderboard 缓存或留 undefined（显「已结束」）。
       ...(pvp.seasonNo ? { season: { seasonNo: pvp.seasonNo, endAt: 0 } } : {}),

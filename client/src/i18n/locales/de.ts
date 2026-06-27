@@ -523,6 +523,7 @@ export const de: Record<TranslationKey, string> = {
   'stats.win': 'Sieg',
   'stats.loss': 'Niederlage',
   'stats.achievements': '🏆 Erfolge',
+  'stats.titles': 'Titel',
 
   // ── Erfolgswand (S9-5) ───────────────────────────────────────────────────────
   'achievement.title': 'Erfolge',

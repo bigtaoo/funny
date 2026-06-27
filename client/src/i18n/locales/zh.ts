@@ -524,6 +524,7 @@ export const zh = {
   'stats.win': '胜',
   'stats.loss': '负',
   'stats.achievements': '🏆 成就',
+  'stats.titles': '称号',
 
   // ── 成就墙（S9-5） ────────────────────────────────────────────────────────────
   'achievement.title': '成就',

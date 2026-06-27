@@ -154,7 +154,7 @@ grant(t):
 - [x] gameserver：`match_start` proto field 8（tag 66）`opponentTitle`；`Room.Slot.opponentTitle`；`RoomManager.join` 透传
 - [x] 客户端 `client/src/game/meta/titles.ts`：mirror TITLE_DEFS + `titleWeight`/`getTitleKeys`/`formatLadderTitle`/`highestTitle`
 - [x] 客户端 `client/src/net/proto/transport.ts`：`MatchStart.opponentTitle` field 8 encode/decode
-- [x] 客户端 UI：`ProfilePopup` 称号行 + `LeaderboardScene` 称号芯片 + `TitlesScene` 称号墙 + `SettingsScene` 入口
+- [x] 客户端 UI：`ProfilePopup` 称号行 + `LeaderboardScene` 称号芯片 + `TitlesScene` 称号墙 + `StatsScene` 顶栏入口（原设置页入口已于 2026-06-27 迁移至生涯顶栏）
 - [x] i18n zh/en/de：`settings.titles`/`titles.*`/`title.*` 全文案
 - [x] **L2-2（2026-06-23）独立称号端点**（设计对齐，此前仅靠 SaveData 回推展示）：
   - `GET /titles` → `{ titles: {id, source, seasonNo?}[], equipped }`；`source`/`seasonNo` 由 `parseTitleId` 从 titleId 命名约定派生（与客户端展示同源）。**授予时间 grantedAt 不入库**（`titles` 仅存 id 顺序），故端点不返回 grantedAt。
