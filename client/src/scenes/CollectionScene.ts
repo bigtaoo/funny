@@ -3,7 +3,7 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildIcon } from '../render/icons';
 import { cardArtUrl, UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
@@ -181,7 +181,7 @@ export class CollectionScene implements Scene {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   private render(): void {
-    this.container.removeChildren();
+    tearDownChildren(this.container);
     this.hits = [];
     const { w, h } = this;
 

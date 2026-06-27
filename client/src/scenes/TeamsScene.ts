@@ -9,7 +9,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, TeamTemplate } from '../net/WorldApiClient';
 
@@ -81,7 +81,7 @@ export class TeamsScene implements Scene {
   }
 
   private render(): void {
-    this.bodyLayer.removeChildren();
+    tearDownChildren(this.bodyLayer);
     this.hits = [];
     const { w } = this;
 

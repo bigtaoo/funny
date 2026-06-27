@@ -19,7 +19,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, TeamTemplate, ArmyEntry } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
@@ -277,7 +277,7 @@ export class DefenseEditorScene implements Scene {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   private render(): void {
-    this.bodyLayer.removeChildren();
+    tearDownChildren(this.bodyLayer);
     this.hits = [];
     const { w, h } = this;
 

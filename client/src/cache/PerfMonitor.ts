@@ -15,7 +15,7 @@ import { reportAnomaly } from '../net/anomaly';
 
 const log = netLog('perf');
 
-const DEFAULT_FPS_WARN = 30;        // 持续低于此 FPS 视为卡顿
+const DEFAULT_FPS_WARN = 25;        // 持续低于此 FPS 视为卡顿（留 5fps 余量，避免 30Hz 锁帧设备假报）
 const DEFAULT_BUSY_WARN = 0.5;      // 长任务忙碌比 ≥ 此值视为主线程饱和
 const WINDOW_MS = 2_000;            // 采样窗口
 const SUSTAIN_WINDOWS = 5;          // 连续这么多个低 FPS 窗口（≈10s）才上报，避免瞬时尖峰误报

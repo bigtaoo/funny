@@ -10,7 +10,7 @@ import {
   MERGE_COPIES,
   cardKey,
 } from '../game/balance/unitCards';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 
 // ── LevelPrepScene (S12) — unit card level view + merge + Start ─────────────
@@ -143,7 +143,7 @@ export class LevelPrepScene implements Scene {
   }
 
   private render(): void {
-    this.container.removeChildren();
+    tearDownChildren(this.container);
     this.hits = [];
     const { w, h } = this;
 
@@ -384,7 +384,7 @@ export class LevelPrepScene implements Scene {
   }
 
   private buildIntroLines(): void {
-    this.container.removeChildren();
+    tearDownChildren(this.container);
     const { w, h } = this;
 
     const bg = new PIXI.Graphics();

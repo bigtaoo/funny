@@ -4,7 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ProfilePopup } from '../render/ProfilePopup';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type {
   FriendView,
@@ -339,7 +339,7 @@ export class FriendsScene implements Scene {
 
   private render(): void {
     if (this.dead) return;
-    this.container.removeChildren();
+    tearDownChildren(this.container);
     this.hits = [];
 
     this.container.addChild(buildPaperBackground('friendsbg', this.w, this.h));

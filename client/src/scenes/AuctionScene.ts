@@ -6,7 +6,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, AuctionView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
@@ -135,7 +135,7 @@ export class AuctionScene implements Scene {
 
   private render(): void {
     if (this.destroyed) return;
-    this.bodyLayer.removeChildren();
+    tearDownChildren(this.bodyLayer);
     // Keep static header; only rebuild body hits (not back button)
     this.hitRects = [];
     this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: HUD_H }, action: () => this.cb.onBack() });

@@ -11,6 +11,7 @@ import { buildWearOverlay } from '../render/wearOverlay';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { BoilingSprite } from '../render/boil';
 import { buildAvatar } from '../render/avatar';
+import { tearDownChildren } from '../render/sketchUi';
 
 // ── AI name pool ───────────────────────────────────────────────────────────────
 
@@ -275,7 +276,7 @@ export class LobbyScene implements Scene {
   /** Full teardown + rebuild — needed when a layout element (daily/events button) appears or changes. */
   private rebuild(): void {
     // Full rebuild needed since the daily / events buttons are part of the main layout.
-    this.container.removeChildren();
+    tearDownChildren(this.container);
     this.toastLayer = null;
     this.settlementLayer = null;
     this.achievementBadgeLayer = null;

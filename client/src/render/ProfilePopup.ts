@@ -21,6 +21,7 @@ import { buildAvatar } from './avatar';
 import { palette } from './theme';
 import { t, type TranslationKey } from '../i18n';
 import { getTitleKeys, formatLadderTitle } from '../game/meta/titles';
+import { tearDownChildren } from './sketchUi';
 
 export interface ProfileData {
   /** Display name (nickname). */
@@ -85,7 +86,7 @@ export class ProfilePopup {
 
   /** Build + reveal the card for `data`. */
   show(data: ProfileData): void {
-    this.card.removeChildren();
+    tearDownChildren(this.card);
 
     const cardW = Math.min(Math.round(this.w * 0.78), 420);
     const cardH = Math.round(Math.min(this.h * 0.5, 360));
@@ -234,7 +235,7 @@ export class ProfilePopup {
   hide(): void {
     this.open = false;
     this.container.visible = false;
-    this.card.removeChildren();
+    tearDownChildren(this.card);
   }
 
   destroy(): void {

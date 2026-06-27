@@ -8,6 +8,7 @@ import { TICK_RATE } from '../game/math/fixed';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
 import { CARD_ART_URLS, cardArtKey } from './cardArt';
+import { tearDownChildren } from './sketchUi';
 
 const CARD_BG              = 0xfaf6ee;
 const CARD_BORDER          = 0x333333;
@@ -138,7 +139,7 @@ export class HandView {
     this.lastSyncKey = syncKey;
 
     for (const slot of this.slots) this.pool.release(slot);
-    this.container.removeChildren();
+    tearDownChildren(this.container);
     this.slots = [];
 
     const { cardWidth: cw, cardHeight: ch, cardMargin: cm, handRect } = this.layout;

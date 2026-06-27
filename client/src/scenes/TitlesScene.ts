@@ -3,7 +3,7 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { sortTitlesByWeight, getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 
@@ -47,7 +47,7 @@ export class TitlesScene implements Scene {
   update(_dt: number): void {}
 
   destroy(): void {
-    this.container.removeChildren();
+    tearDownChildren(this.container);
   }
 
   private handleDown(x: number, y: number): void {
@@ -60,7 +60,7 @@ export class TitlesScene implements Scene {
   }
 
   private render(): void {
-    this.container.removeChildren();
+    tearDownChildren(this.container);
     this.hits = [];
 
     this.drawBackground();

@@ -10,7 +10,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -176,7 +176,7 @@ export class EquipmentScene implements Scene {
 
   private render(): void {
     if (this.destroyed) return;
-    this.bodyLayer.removeChildren();
+    tearDownChildren(this.bodyLayer);
     this.hitRects = [];
     this.loadingLayer.removeChildren();
     // Back button (header is static art; its hit lives here so re-render keeps it).

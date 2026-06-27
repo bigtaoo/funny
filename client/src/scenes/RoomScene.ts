@@ -6,7 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import type { NetState } from '../net/NetClient';
 import type { PeerDc, RoomError, RoomState, PlayerSlot } from '../net/proto/transport';
 import { ProfilePopup } from '../render/ProfilePopup';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 
 // ── RoomScene (S1-8) — friendly online room ──────────────────────────────────
@@ -253,7 +253,7 @@ export class RoomScene implements Scene {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   private render(): void {
-    this.container.removeChildren();
+    tearDownChildren(this.container);
     this.hits = [];
     this.spinnerText = null;
 

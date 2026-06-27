@@ -3,7 +3,7 @@ import { Scene } from './SceneManager';
 import { OwnerId, PlayerStats } from '../game/types';
 import { t, TranslationKey } from '../i18n';
 import { ProfilePopup, type ProfileData } from '../render/ProfilePopup';
-import { ui, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, IconKind } from '../render/icons';
 import { SketchPen } from '../render/sketch';
 import { getTitleKeys, formatLadderTitle } from '../game/meta/titles';
@@ -182,7 +182,7 @@ export class ResultScene implements Scene {
     this.container.interactive = true;
     this.container.once('pointerdown', () => {
       this.container.interactive = false;
-      this.container.removeChildren();
+      tearDownChildren(this.container);
       onDone();
     });
   }
