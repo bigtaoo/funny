@@ -693,8 +693,8 @@ export class LobbyScene implements Scene {
     const contentW = Math.round(w * 0.82);
     const contentX = Math.round((w - contentW) / 2);
 
-    const heroH   = Math.round(h * 0.135);
-    const pillarH = Math.round(h * 0.165);
+    const heroH   = Math.round(h * 0.165);  // ↑ from 0.135：开始匹配是主行动，给足视觉重量
+    const pillarH = Math.round(h * 0.155);
     const chipH   = Math.round(h * 0.082);
     const gapA    = Math.round(h * 0.04);  // hero → pillars
     const gapB    = Math.round(h * 0.03);  // pillars → chips
@@ -703,7 +703,8 @@ export class LobbyScene implements Scene {
     const stackH = heroH + gapA + pillarH + (hasEngagement ? gapB + chipH : 0);
     const usableTop = tbH;
     const usableH   = (h - navH) - tbH;
-    const startY = usableTop + Math.max(Math.round(h * 0.04), Math.round((usableH - stackH) / 2));
+    // 上偏居中（0.40 而非 0.5）：让 hero 往上顶，收掉 header 下那块大留白。
+    const startY = usableTop + Math.max(Math.round(h * 0.035), Math.round((usableH - stackH) * 0.40));
 
     const heroY    = startY;
     const pillarsY = heroY + heroH + gapA;
@@ -715,6 +716,15 @@ export class LobbyScene implements Scene {
     this.drawBtn(this.btnBg, contentW, heroH, true);
     this.btnBg.x = contentX; this.btnBg.y = heroY;
     this.container.addChild(this.btnBg);
+
+    // Crossed-pencils motif stamped on the right of the hero (faint accent ink on
+    // the dark fill) — adds content without a photo, off-centre to clear the label.
+    const heroMotifS = Math.round(heroH * 1.05);
+    const heroMotif = buildIcon('pencils', heroMotifS, C.accent);
+    heroMotif.alpha = 0.22;
+    heroMotif.x = Math.round(contentX + contentW - heroMotifS * 1.15);
+    heroMotif.y = Math.round(heroY + heroH / 2 - heroMotifS / 2);
+    this.container.addChild(heroMotif);
 
     this.btnLabel = txt(this.cb.offline ? t('lobby.startVsAI') : t('lobby.startMatch'), Math.round(heroH * 0.30), 0xffffff, true);
     this.btnLabel.anchor.set(0.5, 0.5);
@@ -746,7 +756,7 @@ export class LobbyScene implements Scene {
       this.worldPillarRect = { x: worldX, y: pillarsY, w: pw, h: pillarH };
       // 软门槛（§4）：未通关第一章 → 灰显 accent + 子标题改「通关第一章解锁」。
       const locked = !!this.cb.worldLocked;
-      this.drawPillar(worldX, pillarsY, pw, pillarH, locked ? C.light : C.accent, 'globe',
+      this.drawPillar(worldX, pillarsY, pw, pillarH, locked ? C.light : C.accent, 'castle',
         t('lobby.world'), locked ? t('lobby.world.locked') : t('lobby.world.sub'), 53);
     } else {
       this.worldPillarRect = { x: 0, y: 0, w: 0, h: 0 };
@@ -983,22 +993,23 @@ export class LobbyScene implements Scene {
     // Coloured ink accent stroke down the left edge.
     new SketchPen(bg, seed ^ 0x55).line(4, 6, 4, h - 6, { color: accent, width: 5, jitter: 0.8, taper: 0.85 });
 
-    // Hand-drawn glyph, centred on the upper third like the old emoji did, in
-    // the pillar's accent ink so each pillar keeps its colour identity.
-    const iconSize = Math.round(h * 0.36);
+    // Large hand-drawn motif filling the card's upper half (替代旧小图标)：accent
+    // 墨色、低 alpha 作"卡面涂鸦"，标题文字随后绘制盖在其上仍清晰。
+    const iconSize = Math.round(h * 0.6);
     const glyph = buildIcon(icon, iconSize, accent);
+    glyph.alpha = 0.6;
     glyph.x = Math.round(x + w / 2 - iconSize / 2);
-    glyph.y = Math.round(y + h * 0.32 - iconSize / 2);
+    glyph.y = Math.round(y + h * 0.40 - iconSize / 2);
     this.container.addChild(glyph);
 
     const titleLbl = txt(title, Math.round(h * 0.22), C.dark, true);
     titleLbl.anchor.set(0.5, 0.5);
-    titleLbl.x = x + w / 2; titleLbl.y = y + h * 0.64;
+    titleLbl.x = x + w / 2; titleLbl.y = y + h * 0.70;
     this.container.addChild(titleLbl);
 
     const subLbl = txt(sub, Math.round(h * 0.12), C.mid);
     subLbl.anchor.set(0.5, 0.5);
-    subLbl.x = x + w / 2; subLbl.y = y + h * 0.84;
+    subLbl.x = x + w / 2; subLbl.y = y + h * 0.88;
     this.container.addChild(subLbl);
   }
 
