@@ -52,7 +52,9 @@ services:
       NW_REGION: ${NW_REGION:-}
       # Loki push 地址：obs 栈是独立 compose/独立网络，metaserver 默认解析不到 loki（见 observability/README.md 网络坑）。
       # 留空 = 静默丢弃（不影响玩家）；要启用定向采集需填宿主可达地址或让 metaserver 接入 obs 网络。
-      NW_LOKI_PUSH_URL: ${NW_LOKI_PUSH_URL:-}
+      # loki 经 observability/docker-compose.obs.yml 接入本主栈网络（别名 nw-loki），容器名直达。
+      # obs 停了也无妨：解析不到 → 静默丢弃。可用 .env 覆盖。
+      NW_LOKI_PUSH_URL: ${NW_LOKI_PUSH_URL:-http://nw-loki:3100/loki/api/v1/push}
     depends_on:
       commercial:
         condition: service_started

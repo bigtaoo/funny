@@ -27,6 +27,12 @@ services:
     volumes:
       - ./loki/config.yml:/etc/loki/config.yml:ro
       - loki-data:/loki
+    # 同时挂在 obs 自身网络 + 主栈网络（server_default），让主栈 metaserver 用 nw-loki:3100 直推日志。
+    # 耦合方向：obs 依赖主栈（主栈先起、创建 server_default），绝不反过来——故主栈停不掉 obs 是可接受的。
+    networks:
+      default: {}
+      mainstack:
+        aliases: [nw-loki]
     logging: *obs-logging
     mem_limit: 512m
     restart: unless-stopped
@@ -90,6 +96,15 @@ services:
     logging: *obs-logging
     mem_limit: 128m
     restart: unless-stopped
+
+networks:
+  # obs 自身默认网（observability_default）：loki/alloy/grafana/cloudflared 互通。
+  default: {}
+  # 主栈网络（docker-compose.prod/cloud 的 server_default），external——须主栈先起好。
+  # loki 接入它，metaserver 才能用 nw-loki:3100 推日志（见 README 网络坑）。
+  mainstack:
+    external: true
+    name: server_default
 
 volumes:
   loki-data:

@@ -70,9 +70,10 @@ services:
       # ⚠ 必坑（同 matchsvc）：缺 NW_ADMIN_INTERNAL_URL → flag 轮询禁用 → /bootstrap 恒空 map → 定向采集永不生效。
       NW_ADMIN_INTERNAL_URL: http://admin:8083
       NW_REGION: ${NW_REGION:-}
-      # Loki push 地址：obs 栈独立网络，metaserver 默认解析不到 loki（见 observability/README.md 网络坑）。
-      # 留空 = 静默丢弃；启用需填宿主可达地址或让 metaserver 接入 obs 网络。
-      NW_LOKI_PUSH_URL: ${NW_LOKI_PUSH_URL:-}
+      # Loki push 地址（客户端异常全量上报 + 定向日志采集都靠它）。obs 栈的 loki 经
+      # observability/docker-compose.obs.yml 接入本主栈网络（server_default，别名 nw-loki），故这里
+      # 用容器名直达。obs 停了也无妨：pushToLoki 解析不到 → 静默丢弃，绝不影响玩家。可用 .env 覆盖。
+      NW_LOKI_PUSH_URL: ${NW_LOKI_PUSH_URL:-http://nw-loki:3100/loki/api/v1/push}
     depends_on:
       mongo:
         condition: service_healthy

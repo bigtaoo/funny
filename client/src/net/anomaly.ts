@@ -161,6 +161,9 @@ export function initCrashSentinel(): void {
           aliveMs,
           ...(prev.lastError ? { lastError: prev.lastError } : {}),
         });
+        // 立即用 beacon 抢发，不等 1.5s 合批 fetch：崩溃常成串（重载后又崩），若本次会话也在 1.5s 内
+        // 再崩，debounce 定时器永不触发 → 上次的 crash 补报永远发不出。beacon 当场离队、存活于即时再崩。
+        anomalyReporter.flushBeacon();
         log.warn('detected abnormal previous-session exit', { aliveMs });
       }
     } catch { /* 损坏的哨兵：忽略 */ }
@@ -199,12 +202,16 @@ export function installAnomalyWatchers(opts: AnomalyWatchersOpts = {}): void {
   // 1) 未捕获异常旁路 → jserror（向 log.ts 注册 sink；log.ts 不反向 import 本模块，故无环）。
   setErrorSink((kind, msg) => reportAnomaly('jserror', `[${kind}] ${msg}`));
 
-  // 2) 离场：标记干净退出 + beacon 抢发队列（pagehide 比 unload 更可靠、bfcache 友好）。
-  const onLeave = (): void => { markCleanExit(); anomalyReporter.flushBeacon(); };
+  // 2) 离场：beacon 抢发待发队列；干净退出标记只在**真·卸载**（pagehide）打。
+  //    ⚠ 关键区分：visibilitychange→hidden（切后台/切 App/弹键盘）**不算**退出——iOS 恰在转后台时
+  //    最易因内存压力杀标签页。若 hidden 也标 cleanExit，则「后台被杀」会被下次启动误判成正常退出、
+  //    永不补报 crash。故 hidden 只抢发队列、绝不标 cleanExit；只有 pagehide（页面确凿卸载）才标。
   if (typeof g.addEventListener === 'function') {
-    g.addEventListener('pagehide', onLeave);
+    g.addEventListener('pagehide', () => { markCleanExit(); anomalyReporter.flushBeacon(); });
     g.addEventListener('visibilitychange', () => {
-      if ((globalThis as { document?: { visibilityState?: string } }).document?.visibilityState === 'hidden') onLeave();
+      if ((globalThis as { document?: { visibilityState?: string } }).document?.visibilityState === 'hidden') {
+        anomalyReporter.flushBeacon(); // 抢发，但不标干净退出
+      }
     });
   }
 
