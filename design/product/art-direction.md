@@ -333,33 +333,36 @@ notebook grid lines, drop shadow
 
 > **B 组已出图**（2026-06-27）：源图（白底 webp）在 `art/ui/decos-b/`，打包脚本 `art/ui/decos-b/pack_labels.cjs`（同 A 组抠白底口径，额外**改色**：白底转透明算出 alpha 后覆盖线条 RGB 为目标墨色，保留抗锯齿边缘）。AI 出图为黑/深色线稿，**打包时按 spec 笔色 + 我蓝敌红改色**：`label_boss` / `label_arrow_here` → 红 `#d0262c`（权威/假想敌），`label_start` / `label_win` → 蓝 `#263a7a`（己方）。产物为透明底单色 PNG（长边 256 高分源，角落按需缩小）→ `client/src/assets/decor/battle/label_*.png`。改图/改色重跑 `node pack_labels.cjs`。**注**：角落标注放置逻辑（见下 §6.2 末）尚未接入代码。
 
-#### C 组 — UI 大背景装饰（菜单/大厅纸面后方，浅铅笔淡色，~128–256px）
+#### C 组 — UI 大背景装饰（菜单/大厅等纸面后方，~128px；与 hub 无绑定，通用纸面氛围）
 
-| 资产名 | 笔色 | prompt 主体 | 状态 |
-|---|---|---|---|
-| `bg_stick_soldier` ★ | 浅铅笔 | `a simple doodle stick-figure soldier holding a tiny spear, childlike` | 待定 |
-| `bg_stick_squad` | 浅铅笔 | `a small row of three doodle stick-figure soldiers marching in a line` | 待定 |
-| `bg_castle` | 浅铅笔 | `a simple doodle castle with two towers and a flag, hand-drawn, childlike` | 待定 |
-| `bg_crossed_swords` | 浅铅笔 | `two simple doodle swords crossed in an X` | 待定 |
-| `bg_shield` | 浅铅笔 | `a simple doodle kite shield with a plain cross emblem` | 待定 |
-| `bg_banner_flag` | 浅铅笔 | `a small doodle triangular pennant flag on a pole, fluttering` | 待定 |
-| `bg_catapult` | 浅铅笔 | `a tiny simple doodle catapult / trebuchet, childlike sketch` | 待定 |
-| `bg_paper_plane` ★ | 浅铅笔 | `a small doodle paper airplane, simple folded-paper triangle shape` | 待定 |
-| `bg_compass` | 浅铅笔 | `a small doodle compass rose with N S E W marks, hand-drawn` | 待定 |
-| `bg_crown` | 浅铅笔 | `a tiny simple doodle crown, three points with dots` | 待定 |
-| `bg_ink_splat` ★ | 浅铅笔/蓝 | `a small ink blot splatter stain, irregular, like a leaked pen` | 待定 |
-| `bg_scribble_cloud` | 浅铅笔 | `a loose scribbled scratch cloud / thinking-scribble mass` | 待定 |
+| 帧名（atlas frame） | 内容 | 状态 |
+|---|---|---|
+| `decoc_soldier` ★ | 单个戴罗马盔持长矛的火柴兵 | ✅ 打包 |
+| `decoc_soldiers` | 三个钢盔火柴兵列队行军 | ✅ 打包 |
+| `decoc_castle` | 双塔城堡 + 三面三角旗 + 城门 | ✅ 打包 |
+| `decoc_swords` | 交叉双剑 | ✅ 打包 |
+| `decoc_shield` | 鸢形盾 + 十字徽 | ✅ 打包 |
+| `decoc_catapult` | 侧视投石车（带轮） | ✅ 打包 |
+| `decoc_airplane` ★ | 纸飞机 | ✅ 打包 |
+| `decoc_compass` | 八角罗盘（N/E/S/W） | ✅ 打包 |
+| `decoc_crown` | 三尖皇冠 | ✅ 打包 |
+| `decoc_inkblot` ★ | 墨渍飞溅（实心填充） | ✅ 打包 |
+| `decoc_inkblot_outline` | 墨渍飞溅（仅描边） | ✅ 打包 |
+| `decoc_thinking` | 思考乱线团（思维气泡） | ✅ 打包 |
+| ~~`bg_banner_flag`~~ | 三角旗 | ✗ 剔除（源为实拍笔记本照片，带纸纹/暗封皮，抠白底出脏边，风格不符） |
+
+> **C 组已出图 + 打包**（2026-06-27）：源图（白底 webp）在 `art/ui/decos-c/`（语义名 `decoc_*.webp`，被剔除的 pennant 留原哈希名不参与 glob），打包脚本 `art/ui/decos-c/pack_decos_c.cjs`（沿用 **A 组**抠白底口径：白底转透明 + 裁留白 + 等比缩放 + shelf-pack + TexturePacker JSON-Hash，**保留原墨色不改色/不 tint**）。仅按 C 组精细度上调参数：长边 64→**128**、图集宽 256→**512**。产物 `decor_c_atlas.png`(512×512) + `decor_c_atlas.json`（帧名不带扩展名，如 `decoc_crown`）→ **直接放 `client/src/assets/decor/`**（非 battle/、非 hub/，通用）。改图后重跑 `node pack_decos_c.cjs`。**注**：① 线条为原黑墨、非白色，故不可直接 `tint` 上阵营色；作淡背景时由渲染期 alpha 压淡（同 A 组 faint alpha 做法）。② 加载/放置逻辑尚未接入代码，加载方式可复刻 `decorAtlas.ts`（改 import 路径到 `decor/decor_c_atlas.{png,json}`）。
 
 #### 资产目录约定
 
 ```
-art/decor/                 # 源图 + GIMP .xcf 切件
-client/src/assets/decor/   # 最终透明 PNG
-  battle/  decor_*.png label_*.png   (A+B 组)
-  ui/      bg_*.png                  (C 组)
+art/ui/decos{,-b,-c}/      # 源图（白底 webp/png）+ 打包脚本
+client/src/assets/decor/   # 最终透明 PNG / 图集
+  battle/  decor_atlas.* label_*.png   (A+B 组)
+  decor_c_atlas.*                      (C 组，根目录、通用)
 ```
 
-- PNG-32 RGBA，透明底，单色；A 组 ~48–64px / B 组 ~96px 宽 / C 组 ~128–256px
+- PNG-32 RGBA，透明底；A 组 ~48–64px / B 组 ~96px 宽 / C 组 ~128px。A/C 组保留原墨色不 tint，B 组打包时改阵营笔色
 - 风格须与 `sketch.ts` 程序笔触同频，不要卡通描边
 
 > **实现状态**：A 组装饰层渲染**已落地**（2026-06-25，战斗场景内）。落地做法：

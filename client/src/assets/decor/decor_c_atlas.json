@@ -1,0 +1,254 @@
+{
+  "frames": {
+    "decoc_airplane": {
+      "frame": {
+        "x": 2,
+        "y": 371,
+        "w": 128,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 70
+      }
+    },
+    "decoc_castle": {
+      "frame": {
+        "x": 2,
+        "y": 259,
+        "w": 128,
+        "h": 110
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 110
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 110
+      }
+    },
+    "decoc_catapult": {
+      "frame": {
+        "x": 132,
+        "y": 259,
+        "w": 128,
+        "h": 103
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 103
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 103
+      }
+    },
+    "decoc_compass": {
+      "frame": {
+        "x": 2,
+        "y": 132,
+        "w": 128,
+        "h": 125
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 125
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 125
+      }
+    },
+    "decoc_crown": {
+      "frame": {
+        "x": 262,
+        "y": 259,
+        "w": 128,
+        "h": 103
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 103
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 103
+      }
+    },
+    "decoc_inkblot": {
+      "frame": {
+        "x": 262,
+        "y": 132,
+        "w": 128,
+        "h": 121
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 121
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 121
+      }
+    },
+    "decoc_inkblot_outline": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 125,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 125,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 125,
+        "h": 128
+      }
+    },
+    "decoc_shield": {
+      "frame": {
+        "x": 129,
+        "y": 2,
+        "w": 82,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 82,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 82,
+        "h": 128
+      }
+    },
+    "decoc_soldier": {
+      "frame": {
+        "x": 213,
+        "y": 2,
+        "w": 60,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 60,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 60,
+        "h": 128
+      }
+    },
+    "decoc_soldiers": {
+      "frame": {
+        "x": 132,
+        "y": 371,
+        "w": 128,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 65
+      }
+    },
+    "decoc_swords": {
+      "frame": {
+        "x": 132,
+        "y": 132,
+        "w": 128,
+        "h": 124
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 124
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 124
+      }
+    },
+    "decoc_thinking": {
+      "frame": {
+        "x": 275,
+        "y": 2,
+        "w": 126,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 126,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 126,
+        "h": 128
+      }
+    }
+  },
+  "meta": {
+    "app": "pack_decos_c.cjs",
+    "image": "decor_c_atlas.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 512,
+      "h": 512
+    },
+    "scale": "1"
+  }
+}
