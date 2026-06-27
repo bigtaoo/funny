@@ -54,6 +54,14 @@ export type SectMemberFamilyView = components['schemas']['SectMemberFamilyView']
 export type SectMessageView = components['schemas']['SectMessageView'];
 export type SectVoteResult = components['schemas']['SectVoteResult'];
 
+export interface WorldChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  body: string;
+  ts: number;
+}
+
 // Derived enum types for method parameters
 type MarchKind = Exclude<MarchView['kind'], 'return'>;
 type FamilyRole = FamilyMemberView['role'];
@@ -445,5 +453,25 @@ export class WorldApiClient {
     if (opts?.before) params.set('before', String(opts.before));
     if (opts?.limit) params.set('limit', String(opts.limit));
     return this.req('GET', `/sect/channel?${params}`);
+  }
+
+  // ── 世界频道（国家/公频，S6-4，一次 50 金币）──────────────────────────────
+
+  async getWorldChannel(
+    worldId: string,
+    opts?: { before?: number; limit?: number },
+  ): Promise<WorldChatMessage[]> {
+    const params = new URLSearchParams({ worldId });
+    if (opts?.before) params.set('before', String(opts.before));
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    return this.req('GET', `/nation/channel?${params}`);
+  }
+
+  async sendWorldChannelMessage(
+    worldId: string,
+    body: string,
+    senderName: string,
+  ): Promise<WorldChatMessage> {
+    return this.req('POST', '/nation/message', { worldId, body, senderName });
   }
 }
