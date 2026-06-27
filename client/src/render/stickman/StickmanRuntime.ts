@@ -669,8 +669,8 @@ export class StickmanRuntime {
     const baseTex = new PIXI.BaseTexture(pngUrl);
     await new Promise<void>((resolve, reject) => {
       if (baseTex.valid) { resolve(); return; }
-      baseTex.on('loaded', resolve);
-      baseTex.on('error',  (err: any) => reject(new Error(`Spritesheet load error: ${err}`)));
+      baseTex.once('loaded', resolve);
+      baseTex.once('error',  (err: any) => reject(new Error(`Spritesheet load error: ${err}`)));
     });
 
     const textures = new Map<string, PIXI.Texture>();
@@ -690,6 +690,7 @@ export class StickmanRuntime {
     const outlineAnchors  = new Map<string, { ax: number; ay: number }>();
     try {
       const ssImg = await loadImageEl(pngUrl);
+      URL.revokeObjectURL(pngUrl);
       for (const [boneId, fd] of Object.entries(spRaw.frames as Record<string, any>)) {
         if (boneId === 'shadow') continue;
         const { x, y, w, h } = fd.frame;
@@ -706,6 +707,7 @@ export class StickmanRuntime {
         }
       }
     } catch (err) {
+      URL.revokeObjectURL(pngUrl);
       console.warn('[StickmanRuntime] outline generation skipped:', err);
     }
 

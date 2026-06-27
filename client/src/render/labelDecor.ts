@@ -61,8 +61,8 @@ export async function loadLabelDecor(): Promise<void> {
       const baseTex = new PIXI.BaseTexture(URLS[name]);
       return new Promise<PIXI.Texture>((resolve, reject) => {
         if (baseTex.valid) { resolve(new PIXI.Texture(baseTex)); return; }
-        baseTex.on('loaded', () => resolve(new PIXI.Texture(baseTex)));
-        baseTex.on('error', (err: unknown) => reject(new Error(`label decor load error (${name}): ${String(err)}`)));
+        baseTex.once('loaded', () => resolve(new PIXI.Texture(baseTex)));
+        baseTex.once('error', (err: unknown) => reject(new Error(`label decor load error (${name}): ${String(err)}`)));
       });
     }));
     const map = {} as Record<LabelName, PIXI.Texture>;

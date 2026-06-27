@@ -42,8 +42,8 @@ export async function loadDecorCAtlas(): Promise<void> {
     const baseTex = new PIXI.BaseTexture(atlasUrl as string);
     await new Promise<void>((resolve, reject) => {
       if (baseTex.valid) { resolve(); return; }
-      baseTex.on('loaded', () => resolve());
-      baseTex.on('error', (err: unknown) => reject(new Error(`decor-c atlas load error: ${String(err)}`)));
+      baseTex.once('loaded', () => resolve());
+      baseTex.once('error', (err: unknown) => reject(new Error(`decor-c atlas load error: ${String(err)}`)));
     });
     const ss = new PIXI.Spritesheet(baseTex, atlasData as PIXI.ISpritesheetData);
     await ss.parse();
