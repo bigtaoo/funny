@@ -4,6 +4,9 @@
 import { FAMILY_MSG_BODY_MAX, SlgError } from '@nw/shared';
 import type { WorldCollections, NationMessageDoc } from './db';
 import type { HttpWorldGatewayClient } from './gatewayClient';
+import type { WorldCommercialClient } from './commercialClient';
+
+const WORLD_CHAT_COST = 50;
 
 export interface NationMessageView {
   id: string;
@@ -16,6 +19,7 @@ export interface NationMessageView {
 interface Deps {
   cols: WorldCollections;
   gateway: HttpWorldGatewayClient;
+  commercial: WorldCommercialClient;
   now: () => number;
 }
 
@@ -41,6 +45,11 @@ export class NationChannelService {
     if (!body || body.length > FAMILY_MSG_BODY_MAX) throw new SlgError('BAD_REQUEST');
 
     const ts = this.deps.now();
+
+    if (this.deps.commercial.available) {
+      const orderId = `world_chat:${worldId}:${accountId}:${ts}`;
+      await this.deps.commercial.spend(accountId, WORLD_CHAT_COST, orderId);
+    }
     const seq = ++msgSeq;
     const msgId = `nm:${worldId}:${ts}:${seq}`;
 

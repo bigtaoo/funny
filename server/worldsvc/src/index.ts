@@ -68,6 +68,7 @@ async function main(): Promise<void> {
   const nationChannelSvc = new NationChannelService({
     cols: mongo.collections,
     gateway,
+    commercial,
     now: () => Date.now(),
   });
 

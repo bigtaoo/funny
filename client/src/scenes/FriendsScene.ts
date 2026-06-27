@@ -21,50 +21,58 @@ import type {
   ChatMessagePush,
   MailNew,
 } from '../net/proto/transport';
+import type { WorldChatMessage } from '../net/WorldApiClient';
 
-// ── FriendsScene (S6-1) — the lobby "social" hub: friends list + requests ─────
+// ── FriendsScene (S6-1/S6-2/S6-3/S6-4) — 社交 Hub ────────────────────────────
 //
-// A canvas-drawn social screen wired to ApiClient (REST) for data and to
-// NetSession's control-plane push (forwarded by app via apply*). Mirrors
-// RoomScene's view-only pattern: local taps fire the action callbacks; inbound
-// server pushes arrive via apply*, which reloads + re-renders.
-//
-// Views: list (friends + incoming requests + search/room buttons) → search
-// (numeric keypad to find a player by 9-digit publicId → add).
-//
-// The list region scrolls by drag (tap-vs-drag distinguished by an 8px
-// threshold, same as the in-battle card drag). Copy lives under i18n `friends.*`.
-//
-// Chat / mail tabs (S6-2 / S6-3) will join this scene later; for now it is the
-// friends-only first cut.
+// 五 Tab：好友 / 家族 / 宗门 / 世界 / 邮件
+// 家族 / 宗门 / 世界 Tab 需要 SLG 世界上下文（loadSLGStatus 可选回调）。
+// 世界频道每条发言扣 50 金币（server-side 扣）。
+// 私聊（1:1）入口保留在好友资料弹层 → 发消息，Tab bar 不再单独列出。
+
+export interface SLGSocialStatus {
+  worldId: string;
+  familyId?: string;
+  familyName?: string;
+  familyTag?: string;
+  sectId?: string;
+  sectName?: string;
+  /** 当前玩家是否为家族族长（仅族长可创建宗门）。 */
+  isLeader: boolean;
+}
 
 export interface FriendsSceneCallbacks {
   onBack(): void;
-  /** Open the online room (friendly room / ranked) flow. */
   onOpenRoom(): void;
   loadFriends(): Promise<FriendView[]>;
   loadRequests(): Promise<{ incoming: FriendRequestView[]; outgoing: FriendRequestView[] }>;
-  /** Look up a player by 9-digit public id. Rejects ApiError('NOT_FOUND'). */
   search(publicId: string): Promise<ProfileView>;
-  /** Send a friend request. Rejects with ALREADY_FRIEND / FRIEND_CAP_REACHED / BLOCKED / NOT_FOUND. */
   addFriend(publicId: string): Promise<void>;
   respond(requestId: string, accept: boolean): Promise<void>;
   removeFriend(publicId: string): Promise<void>;
-  /** Block a player (removes friendship + blocks requests/chat). */
   blockUser(publicId: string): Promise<void>;
-  // —— chat (S6-2) ——
-  loadConversations(): Promise<ConversationView[]>;
-  /** Open the 1:1 conversation window with this peer. */
+  // 私聊入口（从好友资料弹层触发，Tab bar 不再单列）
+  loadConversations?(): Promise<ConversationView[]>;
   openChat(peerPublicId: string, peerName: string): void;
-  // —— mail (S6-3) ——
+  // 邮件
   loadMail(): Promise<{ mail: MailView[]; unread: number }>;
   markMailRead(mailId: string): Promise<void>;
-  /** Claim a mail's attachments; resolves true on success. */
   claimMail(mailId: string): Promise<boolean>;
   deleteMail(mailId: string): Promise<void>;
+  // SLG 社交 Tab（可选）
+  loadSLGStatus?(): Promise<SLGSocialStatus | null>;
+  createFamily?(name: string, tag: string): Promise<void>;
+  joinFamily?(familyId: string): Promise<void>;
+  createSect?(name: string, tag: string): Promise<void>;
+  joinSect?(sectId: string): Promise<void>;
+  openFamilyHub?(): void;
+  openSectHub?(): void;
+  loadWorldChat?(before?: number): Promise<WorldChatMessage[]>;
+  sendWorldChat?(body: string, senderName: string): Promise<void>;
+  playerName?(): string;
 }
 
-type Tab = 'friends' | 'chat' | 'mail';
+type Tab = 'friends' | 'family' | 'sect' | 'world' | 'mail';
 type View = 'list' | 'search';
 
 interface Hit { rect: Rect; fn: () => void; scroll?: boolean; }
@@ -84,12 +92,9 @@ export class FriendsScene implements Scene {
   private friends: FriendView[] = [];
   private incoming: FriendRequestView[] = [];
 
-  // Chat tab.
-  private conversations: ConversationView[] = [];
   // Mail tab.
   private mail: MailView[] = [];
   private mailUnread = 0;
-  /** Mail detail overlay (null = list). */
   private openMailItem: MailView | null = null;
 
   // Search sub-view state.
@@ -97,10 +102,38 @@ export class FriendsScene implements Scene {
   private searchResult: ProfileView | null = null;
   private searchMsgKey: TranslationKey | null = null;
 
+  // ── SLG 状态 ─────────────────────────────────────────────────────────────────
+  private slgStatus: SLGSocialStatus | null = null;
+  private slgLoading = false;
+  private slgLoaded = false;
+
+  // 家族 Tab 子视图
+  private familySubview: 'info' | 'create' | 'joinById' = 'info';
+  private familyCreateName = '';
+  private familyCreateTag = '';
+  private familyJoinId = '';
+  private familyActiveInput: 'name' | 'tag' | 'id' | null = null;
+
+  // 宗门 Tab 子视图
+  private sectSubview: 'info' | 'create' | 'joinById' = 'info';
+  private sectCreateName = '';
+  private sectCreateTag = '';
+  private sectJoinId = '';
+  private sectActiveInput: 'name' | 'tag' | 'id' | null = null;
+
+  // 世界频道 Tab
+  private worldMessages: WorldChatMessage[] = [];
+  private worldLoaded = false;
+  private worldChatInput = '';
+  private worldChatActive = false;
+  private worldSending = false;
+
+  // 共享 HTML input（家族/宗门表单 + 世界频道输入框）
+  private hiddenInput: HTMLInputElement | null = null;
+
   private toastKey: TranslationKey | null = null;
   private toastT = 0;
 
-  // Scroll (drag) state for the list region.
   private scrollY = 0;
   private maxScroll = 0;
   private regionTop = 0;
@@ -114,7 +147,6 @@ export class FriendsScene implements Scene {
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
   private readonly popup: ProfilePopup;
-  /** Set on destroy so a late-resolving async refresh/search skips rendering. */
   private dead = false;
 
   constructor(layout: ILayout, input: InputManager, cb: FriendsSceneCallbacks) {
@@ -143,52 +175,37 @@ export class FriendsScene implements Scene {
 
   destroy(): void {
     this.dead = true;
+    this.clearHiddenInput();
     this.unsubs.forEach((u) => u());
     this.popup.destroy();
   }
 
-  // ── Inbound (app forwards NetSession control-plane push here) ─────────────────
+  // ── Inbound pushes ────────────────────────────────────────────────────────────
 
   applyFriendPresence(p: FriendPresence): void {
     const f = this.friends.find((x) => x.publicId === p.publicId);
     if (f) { f.online = p.online; this.render(); }
   }
 
-  applyFriendRequest(_r: FriendRequestPush): void {
-    void this.refresh();
-  }
-
-  applyFriendUpdate(_u: FriendUpdate): void {
-    void this.refresh();
-  }
-
-  applyChatMessage(_m: ChatMessagePush): void {
-    // Bump conversation list + unread badge (ChatScene handles the open window).
-    void this.refresh();
-  }
-
-  applyMailNew(_m: MailNew): void {
-    void this.refresh();
-  }
+  applyFriendRequest(_r: FriendRequestPush): void { void this.refresh(); }
+  applyFriendUpdate(_u: FriendUpdate): void { void this.refresh(); }
+  applyChatMessage(_m: ChatMessagePush): void { void this.refresh(); }
+  applyMailNew(_m: MailNew): void { void this.refresh(); }
 
   // ── Data ───────────────────────────────────────────────────────────────────
 
-  /** Load everything (friends/requests/conversations/mail) so tab badges stay accurate. */
   private async refresh(): Promise<void> {
     try {
-      const [friends, requests, conversations, mail] = await Promise.all([
+      const [friends, requests, mail] = await Promise.all([
         this.cb.loadFriends(),
         this.cb.loadRequests(),
-        this.cb.loadConversations(),
         this.cb.loadMail(),
       ]);
       this.friends = friends;
       this.incoming = requests.incoming;
-      this.conversations = conversations;
       this.mail = mail.mail;
       this.mailUnread = mail.unread;
     } catch {
-      // Leave whatever we have; surface a soft toast on first failure.
       if (this.loading) this.toast('friends.error');
     } finally {
       this.loading = false;
@@ -196,18 +213,31 @@ export class FriendsScene implements Scene {
     }
   }
 
-  private get chatUnread(): number {
-    return this.conversations.reduce((s, c) => s + (c.unread > 0 ? 1 : 0), 0);
+  private async loadSLGStatus(): Promise<void> {
+    if (!this.cb.loadSLGStatus || this.slgLoading) return;
+    this.slgLoading = true;
+    this.render();
+    try {
+      this.slgStatus = await this.cb.loadSLGStatus();
+    } catch {
+      this.slgStatus = null;
+    } finally {
+      this.slgLoading = false;
+      this.slgLoaded = true;
+      if (!this.dead) this.render();
+    }
   }
 
-  /**
-   * Viewport cull for scrolled lists: skip building rows whose on-screen span
-   * falls entirely outside the visible region. With the 100-friend cap a full
-   * rebuild is ~600-800 PIXI objects; since render() runs on every drag-move
-   * (~60 Hz), culling to the handful of visible rows keeps drag-scroll smooth on
-   * low-end / WeChat devices. Layout (cy) still advances for every row so the
-   * scroll height stays correct.
-   */
+  private async loadWorldMessages(): Promise<void> {
+    if (!this.cb.loadWorldChat) return;
+    try {
+      const msgs = await this.cb.loadWorldChat();
+      this.worldMessages = msgs.slice().reverse(); // server newest-first → oldest-first for display
+      this.worldLoaded = true;
+    } catch { /* keep existing */ }
+    if (!this.dead) this.render();
+  }
+
   private rowVisible(yTop: number, rowH: number): boolean {
     return yTop + rowH >= this.regionTop && yTop <= this.regionBottom;
   }
@@ -238,8 +268,6 @@ export class FriendsScene implements Scene {
     if (!this.pointerActive) return;
     this.pointerActive = false;
     if (this.dragging || this.popup.isOpen) { this.dragging = false; return; }
-    // A clean tap → run the first matching hit (scroll hits already carry their
-    // current on-screen rect; clip them to the visible scroll region).
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
@@ -290,22 +318,18 @@ export class FriendsScene implements Scene {
   }
 
   private async doRespond(requestId: string, accept: boolean): Promise<void> {
-    try {
-      await this.cb.respond(requestId, accept);
-    } catch {
-      this.toast('friends.error');
-    }
+    try { await this.cb.respond(requestId, accept); } catch { this.toast('friends.error'); }
     void this.refresh();
   }
 
   private async doRemove(publicId: string): Promise<void> {
     this.popup.hide();
-    try {
-      await this.cb.removeFriend(publicId);
-      this.toast('friends.removed');
-    } catch {
-      this.toast('friends.error');
-    }
+    try { await this.cb.removeFriend(publicId); this.toast('friends.removed'); } catch { this.toast('friends.error'); }
+    void this.refresh();
+  }
+
+  private async doBlock(publicId: string): Promise<void> {
+    try { await this.cb.blockUser(publicId); this.toast('friends.blockedDone'); } catch { this.toast('friends.error'); }
     void this.refresh();
   }
 
@@ -321,11 +345,19 @@ export class FriendsScene implements Scene {
     this.view = 'list';
     this.openMailItem = null;
     this.scrollY = 0;
+    this.clearHiddenInput();
+    this.familySubview = 'info';
+    this.sectSubview = 'info';
     this.render();
     void this.refresh();
+    if ((tab === 'family' || tab === 'sect' || tab === 'world') && !this.slgLoaded && !this.slgLoading) {
+      void this.loadSLGStatus();
+    }
+    if (tab === 'world' && !this.worldLoaded) {
+      void this.loadWorldMessages();
+    }
   }
 
-  /** Content region starts below header + tab bar. */
   private get bodyTop(): number {
     return Math.round(this.h * 0.12) + Math.round(this.h * 0.07);
   }
@@ -333,6 +365,48 @@ export class FriendsScene implements Scene {
   private toast(key: TranslationKey): void {
     this.toastKey = key;
     this.toastT = 2.5;
+  }
+
+  // ── HTML hidden input helpers ────────────────────────────────────────────────
+
+  private clearHiddenInput(): void {
+    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+    this.familyActiveInput = null;
+    this.sectActiveInput = null;
+    this.worldChatActive = false;
+  }
+
+  private openHiddenInput(opts: {
+    value: string;
+    maxLength: number;
+    placeholder?: string;
+    onInput(v: string): void;
+    onBlur?(): void;
+    onEnter?(): void;
+  }): void {
+    this.clearHiddenInput();
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = opts.value;
+    inp.maxLength = opts.maxLength;
+    inp.placeholder = opts.placeholder ?? '';
+    inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+    document.body.appendChild(inp);
+    inp.focus();
+    inp.addEventListener('input', () => {
+      opts.onInput(inp.value);
+      if (!this.dead) this.render();
+    });
+    if (opts.onEnter) {
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') opts.onEnter!(); });
+    }
+    inp.addEventListener('blur', () => {
+      opts.onBlur?.();
+      if (inp.parentNode) inp.remove();
+      if (this.hiddenInput === inp) this.hiddenInput = null;
+      if (!this.dead) this.render();
+    });
+    this.hiddenInput = inp;
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -353,7 +427,9 @@ export class FriendsScene implements Scene {
     } else {
       this.drawTabBar();
       if (this.tab === 'friends') this.drawList();
-      else if (this.tab === 'chat') this.drawChatList();
+      else if (this.tab === 'family') this.drawFamilyTab();
+      else if (this.tab === 'sect') this.drawSectTab();
+      else if (this.tab === 'world') this.drawWorldTab();
       else this.drawMailList();
     }
 
@@ -361,16 +437,21 @@ export class FriendsScene implements Scene {
     this.container.addChild(this.popup.container);
   }
 
+  // ── Tab bar (5 tabs) ──────────────────────────────────────────────────────────
+
   private drawTabBar(): void {
     const { w, h } = this;
     const tbH = Math.round(h * 0.12);
     const barH = Math.round(h * 0.07);
     const tabs: { id: Tab; key: TranslationKey; badge: number }[] = [
       { id: 'friends', key: 'friends.tab.friends', badge: this.incoming.length },
-      { id: 'chat', key: 'friends.tab.chat', badge: this.chatUnread },
-      { id: 'mail', key: 'friends.tab.mail', badge: this.mailUnread },
+      { id: 'family',  key: 'friends.tab.family',  badge: 0 },
+      { id: 'sect',    key: 'friends.tab.sect',     badge: 0 },
+      { id: 'world',   key: 'friends.tab.world',    badge: 0 },
+      { id: 'mail',    key: 'friends.tab.mail',     badge: this.mailUnread },
     ];
     const tw = Math.round(w / tabs.length);
+    const fontSize = Math.round(barH * 0.36);
     tabs.forEach((tabDef, i) => {
       const tx = i * tw;
       const active = this.tab === tabDef.id;
@@ -386,7 +467,7 @@ export class FriendsScene implements Scene {
         underline.endFill();
         this.container.addChild(underline);
       }
-      const label = txt(t(tabDef.key), Math.round(barH * 0.4), active ? C.dark : C.mid, active);
+      const label = txt(t(tabDef.key), fontSize, active ? C.dark : C.mid, active);
       label.anchor.set(0.5, 0.5); label.x = tx + tw / 2; label.y = tbH + barH / 2;
       this.container.addChild(label);
       if (tabDef.badge > 0) {
@@ -403,14 +484,13 @@ export class FriendsScene implements Scene {
   private drawHeader(): void {
     const { w, h } = this;
     const hdr = drawSceneHeader(this.container, w, h, t('friends.title'), { titleSize: Math.round(h * 0.04) });
-    const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.onBack() });
   }
 
+  // ── 好友 Tab ──────────────────────────────────────────────────────────────────
+
   private drawList(): void {
     const { w, h } = this;
-
-    // Action row: search (add) + online play (room).
     const aY = this.bodyTop + Math.round(h * 0.01);
     const aH = Math.round(h * 0.075);
     const aGap = Math.round(w * 0.04);
@@ -419,7 +499,6 @@ export class FriendsScene implements Scene {
     this.addButton(t('friends.search'), aX0, aY, aW, aH, C.dark, C.accent, () => this.openSearch());
     this.addButton(t('friends.room'), aX0 + aW + aGap, aY, aW, aH, C.dark, C.gold, () => this.cb.onOpenRoom());
 
-    // Scrollable content region below the action row.
     this.regionTop = aY + aH + Math.round(h * 0.02);
     this.regionBottom = h - Math.round(h * 0.02);
     const regionH = this.regionBottom - this.regionTop;
@@ -441,8 +520,6 @@ export class FriendsScene implements Scene {
       return;
     }
 
-    // Content is laid out in content-space (y from 0); the layer is shifted up by
-    // scrollY and the hit rects are recorded in on-screen space.
     let cy = 0;
     const rowGap = Math.round(h * 0.014);
     const screenY = (contentY: number) => this.regionTop + contentY - this.scrollY;
@@ -454,7 +531,6 @@ export class FriendsScene implements Scene {
       cy += Math.round(h * 0.045);
     };
 
-    // Incoming requests first (red-dot priority).
     if (this.incoming.length > 0) {
       sectionLabel('friends.requests', this.incoming.length);
       const reqH = Math.round(h * 0.09);
@@ -473,7 +549,6 @@ export class FriendsScene implements Scene {
       layer.addChild(empty);
       cy += Math.round(h * 0.08);
     } else {
-      // Online first, then by name for a stable order.
       const sorted = [...this.friends].sort(
         (a, b) => (a.online === b.online ? a.displayName.localeCompare(b.displayName) : a.online ? -1 : 1),
       );
@@ -486,7 +561,7 @@ export class FriendsScene implements Scene {
     }
 
     this.maxScroll = Math.max(0, cy - regionH);
-    if (this.scrollY > this.maxScroll) { this.scrollY = this.maxScroll; }
+    if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;
   }
 
   private drawRequestRow(layer: PIXI.Container, r: FriendRequestView, _contentY: number, y: number): void {
@@ -507,16 +582,15 @@ export class FriendsScene implements Scene {
     id.anchor.set(0, 0.5); id.x = rx + Math.round(rw * 0.06); id.y = y + rh * 0.70;
     layer.addChild(id);
 
-    // Accept / reject buttons on the right.
     const bW = Math.round(rw * 0.18);
     const bH = Math.round(rh * 0.5);
     const bY = y + (rh - bH) / 2;
     const rejX = rx + rw - bW - Math.round(rw * 0.03);
     const accX = rejX - bW - Math.round(rw * 0.02);
-    this.addButton(t('friends.accept'), accX, bY, bW, bH, C.green, C.green, () => void this.doRespond(r.requestId, true),
-      0xffffff, Math.round(bH * 0.4), layer);
-    this.addButton(t('friends.reject'), rejX, bY, bW, bH, C.paper, C.red, () => void this.doRespond(r.requestId, false),
-      C.red, Math.round(bH * 0.4), layer);
+    this.addButton(t('friends.accept'), accX, bY, bW, bH, C.green, C.green,
+      () => void this.doRespond(r.requestId, true), 0xffffff, Math.round(bH * 0.4), layer);
+    this.addButton(t('friends.reject'), rejX, bY, bW, bH, C.paper, C.red,
+      () => void this.doRespond(r.requestId, false), C.red, Math.round(bH * 0.4), layer);
   }
 
   private drawFriendRow(layer: PIXI.Container, f: FriendView, _contentY: number, y: number): void {
@@ -531,7 +605,6 @@ export class FriendsScene implements Scene {
     sketchAccentBar(bg, rh, accent, seedFor(rx, rh, 7));
     layer.addChild(bg);
 
-    // Online status dot.
     const dot = new PIXI.Graphics();
     dot.beginFill(f.online ? C.green : C.btnOff);
     dot.drawCircle(0, 0, Math.round(rh * 0.1));
@@ -550,14 +623,12 @@ export class FriendsScene implements Scene {
     sub.anchor.set(0, 0.5); sub.x = tx; sub.y = y + rh * 0.68;
     layer.addChild(sub);
 
-    // Trailing "✕" remove button (pushed BEFORE the row hit so it wins its sub-rect).
     const xW = Math.round(rh * 0.62);
     const xX = rx + rw - xW - Math.round(rw * 0.03);
     const xY = y + (rh - xW) / 2;
-    this.addButton('✕', xX, xY, xW, xW, C.paper, C.red, () => void this.doRemove(f.publicId),
-      C.red, Math.round(xW * 0.5), layer);
+    this.addButton('✕', xX, xY, xW, xW, C.paper, C.red,
+      () => void this.doRemove(f.publicId), C.red, Math.round(xW * 0.5), layer);
 
-    // Tapping the rest of the row opens its profile card.
     this.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.openFriendProfile(f) });
   }
 
@@ -573,75 +644,546 @@ export class FriendsScene implements Scene {
     });
   }
 
-  private async doBlock(publicId: string): Promise<void> {
-    try {
-      await this.cb.blockUser(publicId);
-      this.toast('friends.blockedDone');
-    } catch {
-      this.toast('friends.error');
-    }
-    void this.refresh();
-  }
+  // ── 家族 Tab ──────────────────────────────────────────────────────────────────
 
-  // ── Chat tab ──────────────────────────────────────────────────────────────
-  private drawChatList(): void {
+  private drawFamilyTab(): void {
     const { w, h } = this;
     this.regionTop = this.bodyTop + Math.round(h * 0.01);
     this.regionBottom = h - Math.round(h * 0.02);
+
+    if (!this.cb.loadSLGStatus) {
+      this.centerLabelFixed(t('social.noSlg'));
+      return;
+    }
+    if (!this.slgLoaded) {
+      if (!this.slgLoading) void this.loadSLGStatus();
+      this.centerLabelFixed(t('friends.loading'));
+      return;
+    }
+    if (!this.slgStatus) {
+      this.centerLabelFixed(t('social.noSlg'));
+      return;
+    }
+
+    const s = this.slgStatus;
+    const px = Math.round(w * 0.06);
+    const panelW = w - px * 2;
+    let cy = this.regionTop + Math.round(h * 0.03);
+
+    if (s.familyId) {
+      const ph = Math.round(h * 0.15);
+      const bg = sketchPanel(panelW, ph, { fill: C.paper, border: C.accent, width: 2, seed: seedFor(px, cy, panelW) });
+      bg.x = px; bg.y = cy;
+      sketchAccentBar(bg, ph, C.accent, seedFor(px, ph, 3));
+      this.container.addChild(bg);
+
+      const nameLabel = txt(s.familyName ?? s.familyId, Math.round(h * 0.034), C.dark, true);
+      nameLabel.anchor.set(0, 0.5); nameLabel.x = px + Math.round(panelW * 0.08); nameLabel.y = cy + ph * 0.38;
+      this.container.addChild(nameLabel);
+      if (s.familyTag) {
+        const tagLabel = txt(`[${s.familyTag}]`, Math.round(h * 0.024), C.mid);
+        tagLabel.anchor.set(0, 0.5); tagLabel.x = px + Math.round(panelW * 0.08); tagLabel.y = cy + ph * 0.68;
+        this.container.addChild(tagLabel);
+      }
+
+      cy += ph + Math.round(h * 0.03);
+      const bH = Math.round(h * 0.08);
+      this.addButton(t('social.family.enter'), px, cy, panelW, bH, C.dark, C.accent,
+        () => this.cb.openFamilyHub?.());
+    } else {
+      if (this.familySubview === 'info') {
+        const lbl = txt(t('social.family.none'), Math.round(h * 0.026), C.mid);
+        lbl.anchor.set(0.5, 0); lbl.x = w / 2; lbl.y = cy;
+        this.container.addChild(lbl);
+        cy += Math.round(h * 0.06);
+
+        const bH = Math.round(h * 0.08);
+        const bGap = Math.round(w * 0.04);
+        const bW = Math.round((panelW - bGap) / 2);
+        this.addButton(t('social.family.create'), px, cy, bW, bH, C.dark, C.accent,
+          () => { this.familySubview = 'create'; this.render(); });
+        this.addButton(t('social.family.joinById'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
+          () => { this.familySubview = 'joinById'; this.render(); }, C.dark);
+      } else if (this.familySubview === 'create') {
+        this.drawFamilyCreateForm(px, panelW, cy);
+      } else {
+        this.drawFamilyJoinForm(px, panelW, cy);
+      }
+    }
+  }
+
+  private drawFamilyCreateForm(px: number, panelW: number, startY: number): void {
+    const { w, h } = this;
+    const fH = Math.round(h * 0.07);
+    const gap = Math.round(h * 0.02);
+    let cy = startY;
+
+    const nameLbl = txt(t('social.family.namePlaceholder'), Math.round(h * 0.024), C.mid);
+    nameLbl.anchor.set(0, 0.5); nameLbl.x = px; nameLbl.y = cy + fH / 2;
+    this.container.addChild(nameLbl);
+    cy += fH + gap;
+
+    const nameBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.familyActiveInput === 'name' ? C.accent : C.line, width: 2, seed: seedFor(px, cy, panelW) });
+    nameBg.x = px; nameBg.y = cy;
+    this.container.addChild(nameBg);
+    const nameVal = txt(this.familyCreateName || ' ', Math.round(fH * 0.4), C.dark);
+    nameVal.anchor.set(0, 0.5); nameVal.x = px + Math.round(panelW * 0.04); nameVal.y = cy + fH / 2;
+    this.container.addChild(nameVal);
+    this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
+      this.familyActiveInput = 'name';
+      this.openHiddenInput({
+        value: this.familyCreateName, maxLength: 24,
+        onInput: (v) => { this.familyCreateName = v; },
+        onBlur: () => { this.familyActiveInput = null; },
+      });
+      this.render();
+    }});
+    cy += fH + gap;
+
+    const tagLbl = txt(t('social.family.tagPlaceholder'), Math.round(h * 0.024), C.mid);
+    tagLbl.anchor.set(0, 0.5); tagLbl.x = px; tagLbl.y = cy + fH / 2;
+    this.container.addChild(tagLbl);
+    cy += fH + gap;
+
+    const tagBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.familyActiveInput === 'tag' ? C.accent : C.line, width: 2, seed: seedFor(px, cy + 1, panelW) });
+    tagBg.x = px; tagBg.y = cy;
+    this.container.addChild(tagBg);
+    const tagVal = txt(this.familyCreateTag || ' ', Math.round(fH * 0.4), C.dark);
+    tagVal.anchor.set(0, 0.5); tagVal.x = px + Math.round(panelW * 0.04); tagVal.y = cy + fH / 2;
+    this.container.addChild(tagVal);
+    this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
+      this.familyActiveInput = 'tag';
+      this.openHiddenInput({
+        value: this.familyCreateTag, maxLength: 5,
+        onInput: (v) => { this.familyCreateTag = v.toUpperCase(); },
+        onBlur: () => { this.familyActiveInput = null; },
+      });
+      this.render();
+    }});
+    cy += fH + Math.round(h * 0.04);
+
+    const bH = Math.round(h * 0.08);
+    const bGap = Math.round(w * 0.04);
+    const bW = Math.round((panelW - bGap) / 2);
+    this.addButton(t('social.family.confirm'), px, cy, bW, bH, C.dark, C.accent, () => void this.doCreateFamily());
+    this.addButton(t('social.family.cancel'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
+      () => { this.familySubview = 'info'; this.clearHiddenInput(); this.render(); }, C.dark);
+  }
+
+  private drawFamilyJoinForm(px: number, panelW: number, startY: number): void {
+    const { w, h } = this;
+    const fH = Math.round(h * 0.07);
+    const gap = Math.round(h * 0.02);
+    let cy = startY;
+
+    const lbl = txt(t('social.family.idPlaceholder'), Math.round(h * 0.024), C.mid);
+    lbl.anchor.set(0, 0.5); lbl.x = px; lbl.y = cy + fH / 2;
+    this.container.addChild(lbl);
+    cy += fH + gap;
+
+    const idBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.familyActiveInput === 'id' ? C.accent : C.line, width: 2, seed: seedFor(px, cy, panelW) });
+    idBg.x = px; idBg.y = cy;
+    this.container.addChild(idBg);
+    const idVal = txt(this.familyJoinId || ' ', Math.round(fH * 0.4), C.dark);
+    idVal.anchor.set(0, 0.5); idVal.x = px + Math.round(panelW * 0.04); idVal.y = cy + fH / 2;
+    this.container.addChild(idVal);
+    this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
+      this.familyActiveInput = 'id';
+      this.openHiddenInput({
+        value: this.familyJoinId, maxLength: 64,
+        onInput: (v) => { this.familyJoinId = v; },
+        onBlur: () => { this.familyActiveInput = null; },
+      });
+      this.render();
+    }});
+    cy += fH + Math.round(h * 0.04);
+
+    const bH = Math.round(h * 0.08);
+    const bGap = Math.round(w * 0.04);
+    const bW = Math.round((panelW - bGap) / 2);
+    this.addButton(t('social.family.confirm'), px, cy, bW, bH, C.dark, C.accent, () => void this.doJoinFamily());
+    this.addButton(t('social.family.cancel'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
+      () => { this.familySubview = 'info'; this.clearHiddenInput(); this.render(); }, C.dark);
+  }
+
+  private async doCreateFamily(): Promise<void> {
+    const name = this.familyCreateName.trim();
+    const tag = this.familyCreateTag.trim().toUpperCase();
+    if (!name || !tag) return;
+    this.clearHiddenInput();
+    try {
+      await this.cb.createFamily?.(name, tag);
+      this.toast('social.family.created');
+      this.familySubview = 'info';
+      this.familyCreateName = '';
+      this.familyCreateTag = '';
+      this.slgLoaded = false;
+      void this.loadSLGStatus();
+    } catch {
+      this.toast('social.family.createFail');
+    }
+    this.render();
+  }
+
+  private async doJoinFamily(): Promise<void> {
+    const id = this.familyJoinId.trim();
+    if (!id) return;
+    this.clearHiddenInput();
+    try {
+      await this.cb.joinFamily?.(id);
+      this.toast('social.family.joined');
+      this.familySubview = 'info';
+      this.familyJoinId = '';
+      this.slgLoaded = false;
+      void this.loadSLGStatus();
+    } catch {
+      this.toast('social.family.joinFail');
+    }
+    this.render();
+  }
+
+  // ── 宗门 Tab ──────────────────────────────────────────────────────────────────
+
+  private drawSectTab(): void {
+    const { w, h } = this;
+    this.regionTop = this.bodyTop + Math.round(h * 0.01);
+    this.regionBottom = h - Math.round(h * 0.02);
+
+    if (!this.cb.loadSLGStatus) {
+      this.centerLabelFixed(t('social.noSlg'));
+      return;
+    }
+    if (!this.slgLoaded) {
+      if (!this.slgLoading) void this.loadSLGStatus();
+      this.centerLabelFixed(t('friends.loading'));
+      return;
+    }
+    if (!this.slgStatus) {
+      this.centerLabelFixed(t('social.noSlg'));
+      return;
+    }
+
+    const s = this.slgStatus;
+    const px = Math.round(w * 0.06);
+    const panelW = w - px * 2;
+    let cy = this.regionTop + Math.round(h * 0.03);
+
+    if (!s.familyId) {
+      this.centerLabelFixed(t('social.sect.noFamily'));
+      return;
+    }
+
+    if (s.sectId) {
+      const ph = Math.round(h * 0.13);
+      const bg = sketchPanel(panelW, ph, { fill: C.paper, border: C.gold, width: 2, seed: seedFor(px, cy, panelW) });
+      bg.x = px; bg.y = cy;
+      sketchAccentBar(bg, ph, C.gold, seedFor(px, ph, 5));
+      this.container.addChild(bg);
+
+      const nameLabel = txt(s.sectName ?? s.sectId, Math.round(h * 0.032), C.dark, true);
+      nameLabel.anchor.set(0.5, 0.5); nameLabel.x = w / 2; nameLabel.y = cy + ph / 2;
+      this.container.addChild(nameLabel);
+
+      cy += ph + Math.round(h * 0.03);
+      const bH = Math.round(h * 0.08);
+      this.addButton(t('social.sect.enter'), px, cy, panelW, bH, C.dark, C.gold,
+        () => this.cb.openSectHub?.());
+    } else {
+      if (this.sectSubview === 'info') {
+        const lbl = txt(t('social.sect.none'), Math.round(h * 0.026), C.mid);
+        lbl.anchor.set(0.5, 0); lbl.x = w / 2; lbl.y = cy;
+        this.container.addChild(lbl);
+        cy += Math.round(h * 0.06);
+
+        const bH = Math.round(h * 0.08);
+        const bGap = Math.round(w * 0.04);
+
+        if (s.isLeader) {
+          const bW = Math.round((panelW - bGap) / 2);
+          this.addButton(t('social.sect.create'), px, cy, bW, bH, C.dark, C.gold,
+            () => { this.sectSubview = 'create'; this.render(); });
+          this.addButton(t('social.sect.joinById'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
+            () => { this.sectSubview = 'joinById'; this.render(); }, C.dark);
+        } else {
+          const hint = txt(t('social.sect.leaderOnly'), Math.round(h * 0.022), C.mid);
+          hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = cy;
+          this.container.addChild(hint);
+          cy += Math.round(h * 0.05);
+          this.addButton(t('social.sect.joinById'), px, cy, panelW, bH, C.paper, C.line,
+            () => { this.sectSubview = 'joinById'; this.render(); }, C.dark);
+        }
+      } else if (this.sectSubview === 'create') {
+        this.drawSectCreateForm(px, panelW, cy);
+      } else {
+        this.drawSectJoinForm(px, panelW, cy);
+      }
+    }
+  }
+
+  private drawSectCreateForm(px: number, panelW: number, startY: number): void {
+    const { w, h } = this;
+    const fH = Math.round(h * 0.07);
+    const gap = Math.round(h * 0.02);
+    let cy = startY;
+
+    const nameLbl = txt(t('social.sect.namePlaceholder'), Math.round(h * 0.024), C.mid);
+    nameLbl.anchor.set(0, 0.5); nameLbl.x = px; nameLbl.y = cy + fH / 2;
+    this.container.addChild(nameLbl);
+    cy += fH + gap;
+
+    const nameBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.sectActiveInput === 'name' ? C.accent : C.line, width: 2, seed: seedFor(px, cy, panelW) });
+    nameBg.x = px; nameBg.y = cy;
+    this.container.addChild(nameBg);
+    const nameVal = txt(this.sectCreateName || ' ', Math.round(fH * 0.4), C.dark);
+    nameVal.anchor.set(0, 0.5); nameVal.x = px + Math.round(panelW * 0.04); nameVal.y = cy + fH / 2;
+    this.container.addChild(nameVal);
+    this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
+      this.sectActiveInput = 'name';
+      this.openHiddenInput({
+        value: this.sectCreateName, maxLength: 24,
+        onInput: (v) => { this.sectCreateName = v; },
+        onBlur: () => { this.sectActiveInput = null; },
+      });
+      this.render();
+    }});
+    cy += fH + gap;
+
+    const tagLbl = txt(t('social.sect.tagPlaceholder'), Math.round(h * 0.024), C.mid);
+    tagLbl.anchor.set(0, 0.5); tagLbl.x = px; tagLbl.y = cy + fH / 2;
+    this.container.addChild(tagLbl);
+    cy += fH + gap;
+
+    const tagBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.sectActiveInput === 'tag' ? C.accent : C.line, width: 2, seed: seedFor(px, cy + 1, panelW) });
+    tagBg.x = px; tagBg.y = cy;
+    this.container.addChild(tagBg);
+    const tagVal = txt(this.sectCreateTag || ' ', Math.round(fH * 0.4), C.dark);
+    tagVal.anchor.set(0, 0.5); tagVal.x = px + Math.round(panelW * 0.04); tagVal.y = cy + fH / 2;
+    this.container.addChild(tagVal);
+    this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
+      this.sectActiveInput = 'tag';
+      this.openHiddenInput({
+        value: this.sectCreateTag, maxLength: 5,
+        onInput: (v) => { this.sectCreateTag = v.toUpperCase(); },
+        onBlur: () => { this.sectActiveInput = null; },
+      });
+      this.render();
+    }});
+    cy += fH + Math.round(h * 0.04);
+
+    const bH = Math.round(h * 0.08);
+    const bGap = Math.round(w * 0.04);
+    const bW = Math.round((panelW - bGap) / 2);
+    this.addButton(t('social.sect.confirm'), px, cy, bW, bH, C.dark, C.gold, () => void this.doCreateSect());
+    this.addButton(t('social.sect.cancel'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
+      () => { this.sectSubview = 'info'; this.clearHiddenInput(); this.render(); }, C.dark);
+  }
+
+  private drawSectJoinForm(px: number, panelW: number, startY: number): void {
+    const { w, h } = this;
+    const fH = Math.round(h * 0.07);
+    const gap = Math.round(h * 0.02);
+    let cy = startY;
+
+    const lbl = txt(t('social.sect.idPlaceholder'), Math.round(h * 0.024), C.mid);
+    lbl.anchor.set(0, 0.5); lbl.x = px; lbl.y = cy + fH / 2;
+    this.container.addChild(lbl);
+    cy += fH + gap;
+
+    const idBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.sectActiveInput === 'id' ? C.accent : C.line, width: 2, seed: seedFor(px, cy, panelW) });
+    idBg.x = px; idBg.y = cy;
+    this.container.addChild(idBg);
+    const idVal = txt(this.sectJoinId || ' ', Math.round(fH * 0.4), C.dark);
+    idVal.anchor.set(0, 0.5); idVal.x = px + Math.round(panelW * 0.04); idVal.y = cy + fH / 2;
+    this.container.addChild(idVal);
+    this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
+      this.sectActiveInput = 'id';
+      this.openHiddenInput({
+        value: this.sectJoinId, maxLength: 64,
+        onInput: (v) => { this.sectJoinId = v; },
+        onBlur: () => { this.sectActiveInput = null; },
+      });
+      this.render();
+    }});
+    cy += fH + Math.round(h * 0.04);
+
+    const bH = Math.round(h * 0.08);
+    const bGap = Math.round(w * 0.04);
+    const bW = Math.round((panelW - bGap) / 2);
+    this.addButton(t('social.sect.confirm'), px, cy, bW, bH, C.dark, C.gold, () => void this.doJoinSect());
+    this.addButton(t('social.sect.cancel'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
+      () => { this.sectSubview = 'info'; this.clearHiddenInput(); this.render(); }, C.dark);
+  }
+
+  private async doCreateSect(): Promise<void> {
+    const name = this.sectCreateName.trim();
+    const tag = this.sectCreateTag.trim().toUpperCase();
+    if (!name || !tag) return;
+    this.clearHiddenInput();
+    try {
+      await this.cb.createSect?.(name, tag);
+      this.toast('social.sect.created');
+      this.sectSubview = 'info';
+      this.sectCreateName = '';
+      this.sectCreateTag = '';
+      this.slgLoaded = false;
+      void this.loadSLGStatus();
+    } catch {
+      this.toast('social.sect.createFail');
+    }
+    this.render();
+  }
+
+  private async doJoinSect(): Promise<void> {
+    const id = this.sectJoinId.trim();
+    if (!id) return;
+    this.clearHiddenInput();
+    try {
+      await this.cb.joinSect?.(id);
+      this.toast('social.sect.joined');
+      this.sectSubview = 'info';
+      this.sectJoinId = '';
+      this.slgLoaded = false;
+      void this.loadSLGStatus();
+    } catch {
+      this.toast('social.sect.joinFail');
+    }
+    this.render();
+  }
+
+  // ── 世界频道 Tab ────────────────────────────────────────────────────────────────
+
+  private drawWorldTab(): void {
+    const { w, h } = this;
+
+    if (!this.cb.loadSLGStatus || !this.cb.loadWorldChat) {
+      this.regionTop = this.bodyTop + Math.round(h * 0.01);
+      this.centerLabelFixed(t('social.noSlg'));
+      return;
+    }
+    if (!this.slgLoaded) {
+      this.regionTop = this.bodyTop + Math.round(h * 0.01);
+      if (!this.slgLoading) void this.loadSLGStatus();
+      this.centerLabelFixed(t('friends.loading'));
+      return;
+    }
+    if (!this.slgStatus) {
+      this.regionTop = this.bodyTop + Math.round(h * 0.01);
+      this.centerLabelFixed(t('social.noSlg'));
+      return;
+    }
+
+    // Input area pinned at the bottom
+    const inputH = Math.round(h * 0.1);
+    const inputY = h - inputH - Math.round(h * 0.01);
+    const px = Math.round(w * 0.04);
+    const sendBtnW = Math.round(w * 0.3);
+    const inputW = w - px * 2 - sendBtnW - Math.round(w * 0.02);
+
+    const inputBg = sketchPanel(inputW, Math.round(inputH * 0.75), {
+      fill: C.paper, border: this.worldChatActive ? C.accent : C.line, width: 2, seed: seedFor(px, inputY, inputW),
+    });
+    inputBg.x = px; inputBg.y = inputY + Math.round(inputH * 0.125);
+    this.container.addChild(inputBg);
+    const inputTxt = txt(
+      this.worldChatInput || t('social.world.placeholder'),
+      Math.round(inputH * 0.3),
+      this.worldChatInput ? C.dark : C.mid,
+    );
+    inputTxt.anchor.set(0, 0.5);
+    inputTxt.x = px + Math.round(inputW * 0.04);
+    inputTxt.y = inputY + inputH / 2;
+    this.container.addChild(inputTxt);
+    this.hits.push({ rect: { x: px, y: inputY, w: inputW, h: inputH }, fn: () => {
+      this.worldChatActive = true;
+      this.openHiddenInput({
+        value: this.worldChatInput, maxLength: 200,
+        onInput: (v) => { this.worldChatInput = v; },
+        onBlur: () => { this.worldChatActive = false; },
+        onEnter: () => { void this.doSendWorldChat(); },
+      });
+      this.render();
+    }});
+
+    const sendLabel = this.worldSending ? t('social.world.sending') : t('social.world.sendBtn');
+    const sendFill = this.worldSending ? C.btnOff : C.dark;
+    this.addButton(sendLabel,
+      px + inputW + Math.round(w * 0.02), inputY + Math.round(inputH * 0.125),
+      sendBtnW, Math.round(inputH * 0.75), sendFill, C.gold,
+      () => { if (!this.worldSending) void this.doSendWorldChat(); });
+
+    // Message list above input
+    this.regionTop = this.bodyTop + Math.round(h * 0.01);
+    this.regionBottom = inputY - Math.round(h * 0.01);
     const regionH = this.regionBottom - this.regionTop;
     const { layer } = this.scrollRegion(regionH);
 
-    if (this.loading) { this.centerLabel(layer, 'friends.loading', regionH); this.maxScroll = 0; return; }
-    if (this.conversations.length === 0) { this.centerLabel(layer, 'chat.noConversations', regionH); this.maxScroll = 0; return; }
+    if (!this.worldLoaded) {
+      this.centerLabel(layer, 'friends.loading', regionH);
+      this.maxScroll = 0;
+      return;
+    }
+    if (this.worldMessages.length === 0) {
+      this.centerLabel(layer, 'social.world.empty', regionH);
+      this.maxScroll = 0;
+      return;
+    }
 
+    const rh = Math.round(h * 0.095);
+    const rowGap = Math.round(h * 0.01);
     let cy = Math.round(h * 0.01);
     const screenY = (c: number) => this.regionTop + c - this.scrollY;
-    const rowGap = Math.round(h * 0.014);
-    const rh = Math.round(h * 0.10);
-    for (const c of this.conversations) {
+
+    for (const m of this.worldMessages) {
       const sy = screenY(cy);
-      if (this.rowVisible(sy, rh)) this.drawConvRow(layer, c, sy);
+      if (this.rowVisible(sy, rh)) this.drawWorldMsgRow(layer, m, sy);
       cy += rh + rowGap;
     }
     this.maxScroll = Math.max(0, cy - regionH);
+    // Auto-scroll to bottom on first load
+    if (this.scrollY === 0 && this.maxScroll > 0) this.scrollY = this.maxScroll;
     if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;
   }
 
-  private drawConvRow(layer: PIXI.Container, c: ConversationView, y: number): void {
+  private drawWorldMsgRow(layer: PIXI.Container, m: WorldChatMessage, y: number): void {
     const { w, h } = this;
-    const rh = Math.round(h * 0.10);
+    const rh = Math.round(h * 0.095);
     const rx = Math.round(w * 0.04);
     const rw = Math.round(w * 0.92);
-    const bg = sketchPanel(rw, rh, { fill: C.paper, border: c.unread > 0 ? C.accent : C.line, width: 2, seed: seedFor(rx, 2, rw) });
+    const bg = sketchPanel(rw, rh, { fill: C.paper, border: C.line, width: 1, seed: seedFor(rx, m.ts % 1000, rw) });
     bg.x = rx; bg.y = y;
-    sketchAccentBar(bg, rh, c.unread > 0 ? C.accent : C.mid, seedFor(rx, rh, 9));
     layer.addChild(bg);
 
-    const name = txt(c.peer.displayName, Math.round(rh * 0.3), C.dark, true);
-    name.anchor.set(0, 0.5); name.x = rx + Math.round(rw * 0.06); name.y = y + rh * 0.34;
-    layer.addChild(name);
+    const sender = txt(m.senderName, Math.round(rh * 0.28), C.accent, true);
+    sender.anchor.set(0, 0.5); sender.x = rx + Math.round(rw * 0.04); sender.y = y + rh * 0.32;
+    layer.addChild(sender);
 
-    const preview = (c.lastBody ?? '').slice(0, 28) || t('chat.empty');
-    const sub = txt(preview, Math.round(rh * 0.22), C.mid);
-    sub.anchor.set(0, 0.5); sub.x = rx + Math.round(rw * 0.06); sub.y = y + rh * 0.70;
-    layer.addChild(sub);
-
-    if (c.unread > 0) {
-      const badge = txt(String(c.unread), Math.round(rh * 0.26), 0xffffff, true);
-      const bw = Math.max(Math.round(rh * 0.4), badge.width + Math.round(rh * 0.2));
-      const dot = new PIXI.Graphics();
-      dot.beginFill(C.red);
-      dot.drawCircle(rx + rw - Math.round(rw * 0.06), y + rh / 2, bw / 2);
-      dot.endFill();
-      layer.addChild(dot);
-      badge.anchor.set(0.5, 0.5); badge.x = rx + rw - Math.round(rw * 0.06); badge.y = y + rh / 2;
-      layer.addChild(badge);
-    }
-
-    this.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.cb.openChat(c.peer.publicId, c.peer.displayName) });
+    const body = txt(m.body.slice(0, 60), Math.round(rh * 0.26), C.dark);
+    body.anchor.set(0, 0.5); body.x = rx + Math.round(rw * 0.04); body.y = y + rh * 0.68;
+    layer.addChild(body);
   }
 
-  // ── Mail tab ────────────────────────────────────────────────────────────────
+  private async doSendWorldChat(): Promise<void> {
+    const body = this.worldChatInput.trim();
+    if (!body || this.worldSending || !this.cb.sendWorldChat) return;
+    this.clearHiddenInput();
+    this.worldSending = true;
+    this.render();
+    try {
+      const senderName = this.cb.playerName?.() ?? '';
+      await this.cb.sendWorldChat(body, senderName);
+      this.worldChatInput = '';
+      this.toast('social.world.sent');
+      void this.loadWorldMessages();
+    } catch {
+      this.toast('social.world.sendFail');
+    } finally {
+      this.worldSending = false;
+    }
+    this.render();
+  }
+
+  // ── 邮件 Tab ──────────────────────────────────────────────────────────────────
+
   private drawMailList(): void {
     const { w, h } = this;
     this.regionTop = this.bodyTop + Math.round(h * 0.01);
@@ -747,9 +1289,9 @@ export class FriendsScene implements Scene {
       cy += bH + Math.round(h * 0.02);
     }
 
-    // Delete (always) at the bottom.
     const dH = Math.round(h * 0.07);
-    this.addButton(t('mail.delete'), px, h - dH - Math.round(h * 0.03), panelW, dH, C.paper, C.red, () => void this.doMailDelete(m), C.red);
+    this.addButton(t('mail.delete'), px, h - dH - Math.round(h * 0.03), panelW, dH, C.paper, C.red,
+      () => void this.doMailDelete(m), C.red);
   }
 
   private async doClaim(m: MailView): Promise<void> {
@@ -771,23 +1313,7 @@ export class FriendsScene implements Scene {
     void this.refresh();
   }
 
-  // ── Shared scroll-region + helpers ──────────────────────────────────────────
-  private scrollRegion(regionH: number): { layer: PIXI.Container } {
-    const { w } = this;
-    const clip = new PIXI.Graphics();
-    clip.beginFill(0xffffff); clip.drawRect(0, this.regionTop, w, regionH); clip.endFill();
-    this.container.addChild(clip);
-    const layer = new PIXI.Container();
-    layer.mask = clip;
-    this.container.addChild(layer);
-    return { layer };
-  }
-
-  private centerLabel(layer: PIXI.Container, key: TranslationKey, regionH: number): void {
-    const l = txt(t(key), Math.round(this.h * 0.026), C.mid);
-    l.anchor.set(0.5, 0.5); l.x = this.w / 2; l.y = this.regionTop + regionH / 2;
-    layer.addChild(l);
-  }
+  // ── 搜索子视图 ──────────────────────────────────────────────────────────────────
 
   private drawSearch(): void {
     const { w, h } = this;
@@ -797,7 +1323,6 @@ export class FriendsScene implements Scene {
     prompt.anchor.set(0.5, 0.5); prompt.x = w / 2; prompt.y = tbH + Math.round(h * 0.05);
     this.container.addChild(prompt);
 
-    // Entered-id field.
     const fW = Math.round(w * 0.7);
     const fH = Math.round(h * 0.08);
     const fX = (w - fW) / 2;
@@ -812,7 +1337,6 @@ export class FriendsScene implements Scene {
     fTxt.anchor.set(0.5, 0.5); fTxt.x = w / 2; fTxt.y = fY + fH / 2;
     this.container.addChild(fTxt);
 
-    // Numeric keypad (0-9) + backspace + clear, 3 per row.
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', t('friends.clear'), '0', '⌫'];
     const perRow = 3;
     const kY = fY + fH + Math.round(h * 0.03);
@@ -842,7 +1366,6 @@ export class FriendsScene implements Scene {
       enabled ? C.dark : C.btnOff, enabled ? C.accent : C.light,
       () => { if (enabled) void this.doSearch(); }, 0xffffff);
 
-    // Result / status line.
     const ry = sY + Math.round(h * 0.11);
     if (this.searchResult) {
       const res = this.searchResult;
@@ -869,6 +1392,8 @@ export class FriendsScene implements Scene {
     }
   }
 
+  // ── Toast & shared helpers ─────────────────────────────────────────────────────
+
   private drawToast(): void {
     if (!this.toastKey) return;
     const { w, h } = this;
@@ -886,12 +1411,31 @@ export class FriendsScene implements Scene {
     this.container.addChild(label);
   }
 
-  /**
-   * Draw a hand-drawn button + register its hit rect. When `layer` is given the
-   * button is drawn into that (masked, scrolling) container and its hit is marked
-   * `scroll` so the tap test clips it to the visible region; otherwise it is a
-   * fixed button on the scene container.
-   */
+  /** 中心标签（固定位置，不在滚动层）。 */
+  private centerLabelFixed(text: string): void {
+    const regionH = this.regionBottom - this.regionTop;
+    const lbl = txt(text, Math.round(this.h * 0.026), C.mid);
+    lbl.anchor.set(0.5, 0.5); lbl.x = this.w / 2; lbl.y = this.regionTop + regionH / 2;
+    this.container.addChild(lbl);
+  }
+
+  private scrollRegion(regionH: number): { layer: PIXI.Container } {
+    const { w } = this;
+    const clip = new PIXI.Graphics();
+    clip.beginFill(0xffffff); clip.drawRect(0, this.regionTop, w, regionH); clip.endFill();
+    this.container.addChild(clip);
+    const layer = new PIXI.Container();
+    layer.mask = clip;
+    this.container.addChild(layer);
+    return { layer };
+  }
+
+  private centerLabel(layer: PIXI.Container, key: TranslationKey, regionH: number): void {
+    const l = txt(t(key), Math.round(this.h * 0.026), C.mid);
+    l.anchor.set(0.5, 0.5); l.x = this.w / 2; l.y = this.regionTop + regionH / 2;
+    layer.addChild(l);
+  }
+
   private addButton(
     label: string, x: number, y: number, w: number, h: number,
     fill: number, stroke: number, fn: () => void,

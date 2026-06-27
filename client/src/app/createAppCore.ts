@@ -579,6 +579,19 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const restore = (): void => {
       if (session) session.handlers = { onMatchStart: (info) => goGameNet(info) };
     };
+
+    // SLG world API — lazy worldId resolved on first SLG-tab visit.
+    const worldBaseUrl = getWorldBaseUrl();
+    const worldApi = worldBaseUrl ? new WorldApiClient(platform.storage) : null;
+    let slgWorldId: string | null = null;
+    const ensureWorldId = async (): Promise<string> => {
+      if (slgWorldId) return slgWorldId;
+      if (!worldApi) throw new Error('no world api');
+      const w = await worldApi.resolveSeason(CURRENT_SEASON);
+      slgWorldId = w.worldId;
+      return slgWorldId;
+    };
+
     const view: FriendsView = views.showFriends({
       onBack() { restore(); goLobby(); },
       onOpenRoom() { goRoom(); },
@@ -593,7 +606,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       },
       removeFriend: (publicId) => client.removeFriend(publicId),
       blockUser: (publicId) => client.blockUser(publicId),
-      // chat (S6-2)
+      // 私聊（入口在好友资料弹层）
       loadConversations: () => client.getConversations(),
       openChat: (peerPublicId, peerName) => goChat(peerPublicId, peerName),
       // mail (S6-3)
@@ -605,6 +618,44 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         return true;
       },
       deleteMail: (mailId) => client.deleteMail(mailId),
+      // SLG 社交 Tab (S6-4)
+      ...(worldApi ? {
+        async loadSLGStatus() {
+          const wid = await ensureWorldId();
+          const me = await worldApi.getMe(wid);
+          const myAccountId = platform.storage.getItem('nw_account_id') ?? '';
+          const status: import('../scenes/FriendsScene').SLGSocialStatus = {
+            worldId: wid,
+            familyId: me.familyId,
+            isLeader: false,
+          };
+          if (me.familyId) {
+            try {
+              const fam = await worldApi.getFamily(me.familyId);
+              status.familyName = fam.name;
+              status.familyTag = fam.tag;
+              status.sectId = fam.sectId;
+              status.isLeader = !!myAccountId && fam.leaderId === myAccountId;
+              if (fam.sectId) {
+                try {
+                  const sect = await worldApi.getSect(fam.sectId);
+                  status.sectName = sect.name;
+                } catch { /* missing sect is non-fatal */ }
+              }
+            } catch { /* missing family is non-fatal */ }
+          }
+          return status;
+        },
+        createFamily: async (name, tag) => { const wid = await ensureWorldId(); await worldApi.createFamily(wid, name, tag); },
+        joinFamily:   async (familyId) => { const wid = await ensureWorldId(); await worldApi.joinFamily(wid, familyId); },
+        createSect:   async (name, tag) => { const wid = await ensureWorldId(); await worldApi.createSect(wid, name, tag); },
+        joinSect:     async (sectId) => { const wid = await ensureWorldId(); await worldApi.joinSect(wid, sectId); },
+        openFamilyHub: () => { if (slgWorldId) goFamilyHub(worldApi, slgWorldId); },
+        openSectHub:   () => { if (slgWorldId) goSectHub(worldApi, slgWorldId); },
+        loadWorldChat: async (before) => { const wid = await ensureWorldId(); return worldApi.getWorldChannel(wid, { before }); },
+        sendWorldChat: async (body, senderName) => { const wid = await ensureWorldId(); await worldApi.sendWorldChannelMessage(wid, body, senderName); },
+        playerName: () => platform.storage.getItem(PLAYER_PUBLIC_ID_KEY) ?? '',
+      } : {}),
     });
     // Live social pushes (presence / request / friend add-remove / chat / mail)
     // arrive over the gateway control plane; forward them so the tabs stay fresh.
