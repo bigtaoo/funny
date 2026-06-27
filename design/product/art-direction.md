@@ -326,10 +326,12 @@ notebook grid lines, drop shadow
 
 | 资产名 | 笔色 | prompt 主体 | 状态 |
 |---|---|---|---|
-| `label_boss` | 红马克笔 | `the word "BOSS" hand-lettered in messy block capitals, underlined twice` | 待定 |
-| `label_start` | 蓝钢笔 | `the text "[START]" hand-lettered in casual block capitals with square brackets` | 待定 |
-| `label_win` | 蓝钢笔 | `the word "WIN!" hand-lettered cheerfully, slightly bouncing letters` | 待定 |
-| `label_arrow_here` | 红圆珠笔 | `a long curved hand-drawn arrow with the scribbled word "here"` | 待定 |
+| `label_boss` | 红马克笔 | `the word "BOSS" hand-lettered in messy block capitals, underlined twice` | ✅ 出图 |
+| `label_start` | 蓝钢笔 | `the text "[START]" hand-lettered in casual block capitals with square brackets` | ✅ 出图 |
+| `label_win` | 蓝钢笔 | `the word "WIN!" hand-lettered cheerfully, slightly bouncing letters` | ✅ 出图 |
+| `label_arrow_here` | 红圆珠笔 | `a long curved hand-drawn arrow with the scribbled word "here"` | ✅ 出图 |
+
+> **B 组已出图**（2026-06-27）：源图（白底 webp）在 `art/ui/decos-b/`，打包脚本 `art/ui/decos-b/pack_labels.cjs`（同 A 组抠白底口径，额外**改色**：白底转透明算出 alpha 后覆盖线条 RGB 为目标墨色，保留抗锯齿边缘）。AI 出图为黑/深色线稿，**打包时按 spec 笔色 + 我蓝敌红改色**：`label_boss` / `label_arrow_here` → 红 `#d0262c`（权威/假想敌），`label_start` / `label_win` → 蓝 `#263a7a`（己方）。产物为透明底单色 PNG（长边 256 高分源，角落按需缩小）→ `client/src/assets/decor/battle/label_*.png`。改图/改色重跑 `node pack_labels.cjs`。**注**：角落标注放置逻辑（见下 §6.2 末）尚未接入代码。
 
 #### C 组 — UI 大背景装饰（菜单/大厅纸面后方，浅铅笔淡色，~128–256px）
 
@@ -365,7 +367,13 @@ client/src/assets/decor/   # 最终透明 PNG
 > - **锚点系统**：`client/src/render/decorLayer.ts`。沿棋盘**左右两侧**外缘纸条（`boardRect` 之外、其纵向区间内的两条边带）取锚点——边带由 `boardRect` 推导，天然落在顶部 HUD 之下、底部 HUD/手牌之上，故**绝不与战斗格/基地/HUD 重叠**。每槽按确定性 PRNG 随机挑帧 + 轻微旋转/缩放/位置抖动；`SKIP_PROB` 留空使其稀疏克制；faint alpha（0.4~0.62）不抢前景。竖屏边带仅 36px → 小号涂鸦；横屏边带宽裕 → 至多 64px。
 > - **静态烘焙**：每条边带的涂鸦烘成一张静态纹理（`bake()`，key=`decor:{orientation}:{side}:{w}x{h}:{cell}`），运行期零开销。`BoardView` 在 `drawBoard()` 之后 `drawDecorations()` 加入，位于棋盘静态层之上、所有动态/游戏层之下；`interactiveChildren=false` 不吃指针。绝不烘焙文字/数字（§5 铁律）。
 > - **确定性 vs「换局再变」**：布局按 `orientation+side` 固定种子，**跨局稳定**（与烘焙棋盘网格一致）。未做逐局重掷——那会产生无界的边带纹理缓存，对边角氛围不值当。
-> - B 组（角落手写标注）/C 组（UI 大背景）尚未出图，未接入。
+> - **B 组（角落手写标注）已出图 + 已接入**（2026-06-27）：
+>   - **加载**：`client/src/render/labelDecor.ts` —— 4 张独立 PNG（非图集），App 启动 `loadLabelDecor()` 后台预解码（fire-and-forget，纯装饰，失败不阻塞）；线条已是 spec 笔色，**不 `tint`**。
+>   - **角落放置**：`client/src/render/battleLabels.ts` `buildBattleLabels(layout, ctx)` —— 复用 A 组同款棋盘左右边带（`boardRect` 外缘，绝不碰格子/基地/HUD，`interactiveChildren=false`）。`[START]` 放本方基地侧、`BOSS` 放敌方基地侧；边带够宽则横排、窄则旋 90° 作侧栏批注。至多两张静态精灵，不烘焙（live 即可，headless 也安全）。`BoardView.showBattleLabels(ctx)` 在构造后由 `GameRenderer` 调用（战斗上下文构造期未知）。
+>   - **上下文**：`GameScene` 算 `BattleLabelContext`——非教学局一律 `start:true`（「PvP 可只用 START」），`level.objective.kind==='boss'` 追加 `boss:true`；教学局留空（导演自带分镜）。
+>   - **WIN!**：`label_win` 挂在胜利浮层（`HUDView.showGameOver`，仅本方获胜时），不走边带。
+>   - **→ here 箭头**（`label_arrow_here`）：已加载、保留给教学指向，暂未自动放置。
+> - C 组（UI 大背景）尚未出图，未接入。
 
 ### 6.3 基地视觉
 

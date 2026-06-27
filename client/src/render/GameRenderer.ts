@@ -23,6 +23,7 @@ import {
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { BoardView } from './BoardView';
+import type { BattleLabelContext } from './battleLabels';
 import { BuildingView } from './BuildingView';
 import { HandView } from './HandView';
 import { HUDView } from './HUDView';
@@ -130,6 +131,8 @@ export class GameRenderer {
   private readonly equippedSkin: string | null = null;
   /** Equipment loadout (PvE/siege only) for the battle-render gear overlay (§20.4); null = none. */
   private readonly equipment: EngineEquipmentInput | null = null;
+  /** Corner hand-lettering to scrawl in the margins (art-direction §6.2 B 组). */
+  private readonly battleLabelCtx: BattleLabelContext = {};
   private buildingView!: BuildingView;
   private escortLayer!:  PIXI.Container;
   /** Escort sprite containers keyed by escortId (campaign escort levels only). */
@@ -186,12 +189,14 @@ export class GameRenderer {
     equippedSkin: string | null = null,
     equipment: EngineEquipmentInput | null = null,
     tutorial = false,
+    battleLabels: BattleLabelContext = {},
   ) {
     this.engine     = engine;
     this.layout     = layout;
     this.netEnabled = netEnabled;
     this.equippedSkin = equippedSkin;
     this.equipment    = equipment;
+    this.battleLabelCtx = battleLabels;
     this.container  = new PIXI.Container();
     this.oppProfile  = profiles.opponent ?? null;
     this.selfProfile = profiles.local ?? null;
@@ -368,6 +373,7 @@ export class GameRenderer {
     // 新一局 / 新一段回放开始：清空状态流单槽（REPLAY_SHARE_DESIGN §2.1）。
     stateRecorder.reset();
     this.boardView    = new BoardView(this.layout);
+    this.boardView.showBattleLabels(this.battleLabelCtx);
     this.boardView.markNoBuildCells(this.engine.state.board.getNoBuildCells());
     this.boardView.markInactiveLanes(this.engine.state.board.getActiveLanes());
     this.boardView.markBlockedCells(this.engine.state.board.getBlockedCells());

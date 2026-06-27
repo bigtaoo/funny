@@ -1,5 +1,6 @@
 import { Scene } from './SceneManager';
 import { GameRenderer, type GameProfiles } from '../render/GameRenderer';
+import type { BattleLabelContext } from '../render/battleLabels';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import {
@@ -114,7 +115,14 @@ export class GameScene implements Scene {
       buildReplay = match.buildReplay;
     }
 
-    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkin ?? null, opts.equipment ?? null, opts.tutorial ?? false);
+    // Corner hand-lettering (art-direction §6.2 B 组): every battle gets `[START]`
+    // by the local base ("PvP 可只用 START"); boss campaign levels add `BOSS` by
+    // the enemy base. The tutorial runs its own guided staging, so keep it clean.
+    const battleLabels: BattleLabelContext = opts.tutorial
+      ? {}
+      : { start: true, boss: opts.level?.objective.kind === 'boss' };
+
+    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkin ?? null, opts.equipment ?? null, opts.tutorial ?? false, battleLabels);
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats) => this.cb.onGameEnd(winner, stats, buildReplay(winner));

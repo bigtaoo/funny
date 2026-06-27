@@ -4,6 +4,7 @@ import { GameState } from '../game/GameState';
 import { OwnerId } from '../game/types';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
+import { getLabelTexture } from './labelDecor';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -195,6 +196,20 @@ export class HUDView {
     const text = new PIXI.Text(msg, { fontSize: 38, fill: 0xffffff, fontWeight: 'bold' });
     text.anchor.set(0.5);
     overlay.addChild(bg, text);
+
+    // Hand-drawn `WIN!` flourish above the box on a local victory (art-direction
+    // §6.2 B 组). Cosmetic — skipped silently if the label PNG hasn't loaded.
+    if (winner === localOwner) {
+      const winTex = getLabelTexture('label_win');
+      if (winTex) {
+        const win = new PIXI.Sprite(winTex);
+        win.anchor.set(0.5);
+        win.scale.set(Math.min(200 / winTex.width, 96 / winTex.height));
+        win.rotation = -0.06;
+        win.y = -50 - win.height / 2 - 12;
+        overlay.addChild(win);
+      }
+    }
     overlay.x = this.layout.designWidth  / 2;
     overlay.y = this.layout.designHeight / 2;
     this.container.addChild(overlay);

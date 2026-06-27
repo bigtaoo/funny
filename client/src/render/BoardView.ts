@@ -8,6 +8,7 @@ import { SketchPen } from './sketch';
 import { palette, fx } from './theme';
 import { bake } from './bake';
 import { buildDecorLayer } from './decorLayer';
+import { buildBattleLabels, type BattleLabelContext } from './battleLabels';
 
 /** State/highlight colors sourced from theme.fx (art-direction §3.3). */
 const HIGHLIGHT_LANE     = fx.laneValid;     // valid attack lane
@@ -493,6 +494,18 @@ export class BoardView {
    */
   private drawDecorations(): void {
     const layer = buildDecorLayer(this.layout);
+    if (layer) this.container.addChild(layer);
+  }
+
+  /**
+   * Scrawl the B-group corner labels (art-direction §6.2) into the paper margins
+   * — `[START]` by the local base, `BOSS` by the enemy base on boss levels. Called
+   * by GameRenderer after construction (the battle context isn't known at ctor
+   * time). No-op until the label PNGs have loaded (optional ambience). The layer
+   * sits in the same margins as the doodle layer, so it never touches cells/HUD.
+   */
+  showBattleLabels(ctx: BattleLabelContext): void {
+    const layer = buildBattleLabels(this.layout, ctx);
     if (layer) this.container.addChild(layer);
   }
 

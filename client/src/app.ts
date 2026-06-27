@@ -51,6 +51,7 @@ import { installGlobalErrorHandlers, setToastSink } from './net/log';
 import { GlobalToast } from './ui/GlobalToast';
 import { setBakeRenderer } from './render/bake';
 import { loadDecorAtlas } from './render/decorAtlas';
+import { loadLabelDecor } from './render/labelDecor';
 import { createAppCore } from './app/createAppCore';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps } from './app/AppViews';
 
@@ -330,6 +331,8 @@ export async function startApp(platform: IPlatform): Promise<void> {
   // so the first battle's margin scrawl is ready by the time menus are crossed.
   // Fire-and-forget — purely cosmetic, so a load failure must never block boot.
   loadDecorAtlas().catch((err) => console.warn('[decor] atlas load failed', err));
+  // B-group corner hand-lettering ([START]/BOSS/WIN!) — same fire-and-forget rule.
+  loadLabelDecor().catch((err) => console.warn('[decor] labels load failed', err));
 
   // 内存看护：每隔几秒采样 JS 堆，超阈值 console.warn 并 dump 各对象池占用；微信侧接 wx.onMemoryWarning。
   // 跨场景常驻（战斗退场后池注册表自动清空）。阈值可用 localStorage 'nw_mem_warn_mb' 调。
