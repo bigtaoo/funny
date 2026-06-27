@@ -1457,7 +1457,19 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       netResultShown = true;
       if (eloWaitTimer) { clearTimeout(eloWaitTimer); eloWaitTimer = null; }
       if (isRanked) void saveManager.refresh();
-      void goResult(winner, stats, localOwner, keepReplay(replay), elo, profiles);
+      // Ranked: "play again" re-enters the ranked queue (fresh session), and a
+      // secondary "back to lobby" gives an explicit exit. Friendly/AI keep the
+      // default (play again == back to lobby), so no extra lobby button there.
+      const onPlayAgain = isRanked
+        ? () => { session.close(); netSession = null; goRoom({ autoRanked: true }); }
+        : undefined;
+      const onReturnToLobby = isRanked
+        ? () => { session.close(); netSession = null; goLobby(); }
+        : undefined;
+      void goResult(
+        winner, stats, localOwner, keepReplay(replay), elo, profiles,
+        undefined, onPlayAgain, undefined, onReturnToLobby,
+      );
     };
 
     const view: NetGameView = views.showGameNet(localOwner, {
@@ -1509,6 +1521,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     outroText?: string,
     onPlayAgain?: () => void,
     playAgainLabel?: string,
+    onReturnToLobby?: () => void,
   ): Promise<void> {
     inLobby = false;
     platform.onGameplayStop();
@@ -1525,6 +1538,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         onPlayAgain() { (onPlayAgain ?? goLobby)(); },
         ...(replay ? { onWatchReplay: () => goReplay(replay) } : {}),
         ...(api ? { onShare: () => void doShareReplay({ winner: winner ?? -1 }) } : {}),
+        ...(onReturnToLobby ? { onReturnToLobby } : {}),
         ...(playAgainLabel ? { playAgainLabel } : {}),
       },
     });

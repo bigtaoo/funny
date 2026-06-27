@@ -23,7 +23,9 @@ export type IconKind =
   // 装备页词条统计：攻击 / 生命 / 护甲 / 移速 / 攻速。
   | 'atk' | 'hp' | 'armor' | 'spd' | 'atkspd'
   // 养成页皮肤标签：外观笔刷（卡牌/单位用真实 png 立绘，见 cardArt.ts）。
-  | 'brush';
+  | 'brush'
+  // 结算页动作：再战（交叉刀）/ 回放（循环箭头）/ 分享（出框箭头）/ 返回大厅（小屋）。
+  | 'swords' | 'replay' | 'share' | 'home';
 
 /** Open book — splayed pages over a centre spine, with a couple of text lines. */
 function drawBook(g: PIXI.Graphics, s: number, color: number): void {
@@ -362,6 +364,77 @@ function drawBrush(g: PIXI.Graphics, s: number, color: number): void {
     { color, width: w * 0.7, jitter: 0.5, taper: 0.6, double: false, alpha: 0.8 }); // paint stroke
 }
 
+/** Crossed swords (play again / re-battle) — two diagonal blades with hilts. */
+function drawSwords(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x5c0d);
+  const w = Math.max(1.5, s * 0.05);
+  // Two blades crossing near centre.
+  pen.line(s * 0.20, s * 0.82, s * 0.80, s * 0.18, { color, width: w, jitter: 0.4, taper: 0.9, double: false });
+  pen.line(s * 0.80, s * 0.82, s * 0.20, s * 0.18, { color, width: w, jitter: 0.4, taper: 0.9, double: false });
+  // Crossguards near each lower hilt (perpendicular short ticks).
+  pen.line(s * 0.14, s * 0.72, s * 0.30, s * 0.80, { color, width: w * 0.85, jitter: 0.3, taper: 0.8, double: false });
+  pen.line(s * 0.70, s * 0.80, s * 0.86, s * 0.72, { color, width: w * 0.85, jitter: 0.3, taper: 0.8, double: false });
+}
+
+/** Replay — a ~300° circular arrow (refresh / watch again). */
+function drawReplay(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x73a1);
+  const w = Math.max(1.5, s * 0.05);
+  const cx = s / 2, cy = s / 2, r = s * 0.28;
+  const start = -Math.PI * 0.35, end = Math.PI * 1.5;
+  const N = 16;
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i <= N; i++) {
+    const a = start + (end - start) * (i / N);
+    pts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+  }
+  pen.stroke(pts, { color, width: w, jitter: 0.4, taper: 0.92, double: false });
+  // Arrowhead at the open end (tangent to the arc).
+  const head = pts[pts.length - 1]!;
+  const ta = end + Math.PI / 2; // tangent direction
+  const hl = s * 0.13;
+  pen.line(head.x, head.y, head.x + Math.cos(ta - 0.5) * hl, head.y + Math.sin(ta - 0.5) * hl,
+    { color, width: w * 0.9, jitter: 0.3, taper: 0.7, double: false });
+  pen.line(head.x, head.y, head.x + Math.cos(ta + 0.6) * hl, head.y + Math.sin(ta + 0.6) * hl,
+    { color, width: w * 0.9, jitter: 0.3, taper: 0.7, double: false });
+}
+
+/** Share — an up-arrow rising out of an open tray (export). */
+function drawShare(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x4f8b);
+  const w = Math.max(1.5, s * 0.05);
+  // Open-top tray.
+  pen.stroke([
+    { x: s * 0.28, y: s * 0.50 }, { x: s * 0.28, y: s * 0.82 },
+    { x: s * 0.72, y: s * 0.82 }, { x: s * 0.72, y: s * 0.50 },
+  ], { color, width: w, jitter: 0.35, taper: 0.9, double: false });
+  // Arrow shaft + head pointing up.
+  pen.line(s * 0.5, s * 0.66, s * 0.5, s * 0.20, { color, width: w, jitter: 0.3, taper: 0.88, double: false });
+  pen.stroke([
+    { x: s * 0.36, y: s * 0.34 }, { x: s * 0.5, y: s * 0.18 }, { x: s * 0.64, y: s * 0.34 },
+  ], { color, width: w * 0.9, jitter: 0.3, taper: 0.85, double: false });
+}
+
+/** Home (return to lobby) — a little house: triangular roof + square body + door. */
+function drawHome(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x682d);
+  const w = Math.max(1.5, s * 0.05);
+  // Roof.
+  pen.stroke([
+    { x: s * 0.16, y: s * 0.50 }, { x: s * 0.5, y: s * 0.22 }, { x: s * 0.84, y: s * 0.50 },
+  ], { color, width: w, jitter: 0.4, taper: 0.9, double: false });
+  // Body.
+  pen.stroke([
+    { x: s * 0.28, y: s * 0.46 }, { x: s * 0.28, y: s * 0.80 },
+    { x: s * 0.72, y: s * 0.80 }, { x: s * 0.72, y: s * 0.46 },
+  ], { color, width: w, jitter: 0.35, taper: 0.9, double: false });
+  // Door.
+  pen.stroke([
+    { x: s * 0.44, y: s * 0.80 }, { x: s * 0.44, y: s * 0.62 },
+    { x: s * 0.56, y: s * 0.62 }, { x: s * 0.56, y: s * 0.80 },
+  ], { color, width: w * 0.8, jitter: 0.3, taper: 0.85, double: false });
+}
+
 const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
   globe:   drawGlobe,
@@ -378,6 +451,10 @@ const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => voi
   spd:     drawSpd,
   atkspd:  drawAtkspd,
   brush:   drawBrush,
+  swords:  drawSwords,
+  replay:  drawReplay,
+  share:   drawShare,
+  home:    drawHome,
 };
 
 /**

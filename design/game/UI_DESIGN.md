@@ -247,6 +247,14 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 ### 4.9 ResultScene（结算，扩展现有）
 现状已有。**扩展**：评星动画（StarRow 逐颗点亮）、奖励发放（材料/物品 Toast）、解锁弹窗（新关/新皮肤 Modal）、（联机）胜负 + 段位变化。
 
+#### 4.9.1 按钮主次 + 图标 + 背景涂鸦（2026-06-27）
+结算页动作区重排为「一个主 CTA + 一行次要入口」，所有按钮配手绘图标：
+- **主按钮**：`再来一局`（胜利时文案换 `再战一场`）——大、`ui.gold` 金色填充、白色粗体、配 `swords`(交叉刀) 图标，视觉首位。
+- **次按钮**（底部横排一行，纸色幽灵风：描边 + 墨色字 + 小图标）：`观看回放`(`replay`) / `分享`(`share`) / `返回大厅`(`home`)。回放、分享条件性显示；返回大厅仅在「再来一局 ≠ 回大厅」时常驻（见下）。
+- **行为：天梯 PvP「再来一局」= 重进匹配**（旧实现里它其实回大厅）。`createAppCore.finishNet`：天梯局 `onPlayAgain = 关 session → goRoom({autoRanked})`（进排队 UI，可取消），并补 `onReturnToLobby = goLobby` 作为显式出口；好友/AI 局维持「再来一局 = 回大厅」，不显示返回大厅次按钮。
+- **背景情绪涂鸦**（`addMoodDeco`，低 z 序藏在文字/按钮后）：胜利→暖金四角星点；失败→断铅笔 + 红笔划叉（呼应"红笔批改"美术母题）；平局→角落中性等号。
+- 新增图标：`icons.ts` 的 `swords/replay/share/home`（SketchPen 线稿，烘焙缓存）；i18n 新增 `result.toLobby` / `result.playAgainWin`（三语）。
+
 ---
 
 ## 5. 战斗内 UI 的联机增量（GameScene/HUD）

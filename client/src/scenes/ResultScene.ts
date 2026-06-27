@@ -4,6 +4,8 @@ import { OwnerId, PlayerStats } from '../game/types';
 import { t, TranslationKey } from '../i18n';
 import { ProfilePopup, type ProfileData } from '../render/ProfilePopup';
 import { ui, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { buildIcon, IconKind } from '../render/icons';
+import { SketchPen } from '../render/sketch';
 import { getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 
 /** Optional player identities for the result screen's tap-to-view profile popup. */
@@ -84,6 +86,13 @@ export interface ResultSceneCallbacks {
   onWatchReplay?(): void;
   /** When set, a "share this match" button is shown (state-stream sharing, REPLAY_SHARE_DESIGN §4.3). */
   onShare?(): void;
+  /**
+   * When set, a secondary "back to lobby" button is shown. Used when "play again"
+   * does something other than return to the lobby (e.g. ranked PvP re-queues), so
+   * the player still has an explicit exit. Omit it for modes where "play again"
+   * already returns to the lobby/map (the button would be a duplicate).
+   */
+  onReturnToLobby?(): void;
   /** Override the "play again" button label (e.g. campaign uses 'Back to Map'). */
   playAgainLabel?: string;
 }
@@ -197,6 +206,11 @@ export class ResultScene implements Scene {
     const headline = isDraw ? t('result.draw') : (isWin ? t('result.victory') : t('result.defeat'));
     const headlineColor = isDraw ? 0x888888 : (isWin ? 0x226622 : 0xaa2222);
 
+    // Mood doodles scribbled in the margins (behind the text/buttons): a little
+    // notebook flourish that swings with the result — stars/sparkles on a win,
+    // a snapped pencil + cross-outs on a loss (echoes the "red-pen" art motif).
+    this.addMoodDeco(isDraw ? 'draw' : (isWin ? 'win' : 'loss'));
+
     const title = new PIXI.Text(headline, {
       fontSize: Math.round(h * 0.1),
       fill: headlineColor,
@@ -290,23 +304,84 @@ export class ResultScene implements Scene {
       this.container.addChild(no);
     }
 
-    // "Play again" button (and an optional "watch replay" above it, S1-RP).
-    const btnW = Math.round(w * 0.65);
-    const btnH = Math.round(h * 0.07);
-    const btnX = (w - btnW) / 2;
-    const btnY = h * 0.82;
+    // ── Action buttons: one primary CTA + a row of low-key secondary entries ──
+    // Primary "play again" is large and gold-filled so the eye lands on it first;
+    // watch-replay / share / back-to-lobby sit beneath as a quieter ghost-style row.
+    const primaryW = Math.round(w * 0.5);
+    const primaryH = Math.round(h * 0.085);
+    const primaryX = (w - primaryW) / 2;
+    const primaryY = Math.round(h * 0.78);
+    // On a win the CTA reads "fight again" (more triumphant); otherwise "play
+    // again". An explicit playAgainLabel (e.g. campaign's "back to map") wins.
+    const primaryLabel = cb.playAgainLabel ?? (isWin ? t('result.playAgainWin') : t('result.playAgain'));
+    this.addPrimaryButton(
+      primaryX, primaryY, primaryW, primaryH,
+      primaryLabel, 'swords', () => cb.onPlayAgain(),
+    );
 
-    // Stack optional buttons above "play again": watch-replay then share (top-most).
-    let stackY = btnY;
-    if (cb.onWatchReplay) {
-      stackY -= btnH + h * 0.02;
-      this.addButton(btnX, stackY, btnW, btnH, t('result.watchReplay'), 0x33503a, cb.onWatchReplay);
+    const secs: { label: string; icon: IconKind; tap: () => void }[] = [];
+    if (cb.onWatchReplay)   secs.push({ label: t('result.watchReplay'), icon: 'replay', tap: () => cb.onWatchReplay!() });
+    if (cb.onShare)         secs.push({ label: t('share.button'),       icon: 'share',  tap: () => cb.onShare!() });
+    if (cb.onReturnToLobby) secs.push({ label: t('result.toLobby'),     icon: 'home',   tap: () => cb.onReturnToLobby!() });
+
+    if (secs.length > 0) {
+      const gap   = Math.round(w * 0.018);
+      const rowW  = Math.round(w * 0.62);
+      const cellW = Math.round((rowW - gap * (secs.length - 1)) / secs.length);
+      const cellH = Math.round(h * 0.06);
+      const rowX  = (w - rowW) / 2;
+      const rowY  = primaryY + primaryH + Math.round(h * 0.028);
+      secs.forEach((s, i) => {
+        this.addSecondaryButton(rowX + i * (cellW + gap), rowY, cellW, cellH, s.label, s.icon, s.tap);
+      });
     }
-    if (cb.onShare) {
-      stackY -= btnH + h * 0.02;
-      this.addButton(btnX, stackY, btnW, btnH, t('share.button'), 0x2a4a6a, () => cb.onShare!());
+  }
+
+  /** Hand-drawn margin doodles that react to the result; drawn low in the z-order. */
+  private addMoodDeco(mood: 'win' | 'loss' | 'draw'): void {
+    const { w, h } = this;
+    const g = new PIXI.Graphics();
+    const pen = new SketchPen(g, 0x9e3 + (mood === 'win' ? 1 : mood === 'loss' ? 2 : 3));
+
+    if (mood === 'win') {
+      // A scatter of celebratory four-point sparkles in warm marker-gold.
+      const gold = ui.gold;
+      const spark = (cx: number, cy: number, r: number, alpha: number): void => {
+        pen.line(cx - r, cy, cx + r, cy, { color: gold, width: Math.max(1.4, r * 0.22), jitter: 0.3, taper: 0.95, double: false, alpha });
+        pen.line(cx, cy - r, cx, cy + r, { color: gold, width: Math.max(1.4, r * 0.22), jitter: 0.3, taper: 0.95, double: false, alpha });
+        pen.line(cx - r * 0.5, cy - r * 0.5, cx + r * 0.5, cy + r * 0.5, { color: gold, width: Math.max(1, r * 0.14), jitter: 0.3, taper: 0.9, double: false, alpha: alpha * 0.8 });
+        pen.line(cx - r * 0.5, cy + r * 0.5, cx + r * 0.5, cy - r * 0.5, { color: gold, width: Math.max(1, r * 0.14), jitter: 0.3, taper: 0.9, double: false, alpha: alpha * 0.8 });
+      };
+      spark(w * 0.18, h * 0.20, h * 0.045, 0.9);
+      spark(w * 0.83, h * 0.16, h * 0.060, 0.95);
+      spark(w * 0.74, h * 0.30, h * 0.030, 0.7);
+      spark(w * 0.27, h * 0.40, h * 0.034, 0.75);
+      spark(w * 0.88, h * 0.45, h * 0.040, 0.8);
+    } else if (mood === 'loss') {
+      // A snapped pencil low-left + a couple of red cross-out scribbles.
+      const wood = 0x9a7b40, lead = 0x444444, red = ui.red;
+      const pw = Math.max(2, h * 0.012);
+      // Pencil body (broken into two offset segments around a snap point).
+      pen.line(w * 0.10, h * 0.62, w * 0.20, h * 0.52, { color: wood, width: pw, jitter: 0.4, taper: 0.9, double: false, alpha: 0.85 });
+      pen.line(w * 0.22, h * 0.50, w * 0.30, h * 0.42, { color: wood, width: pw, jitter: 0.4, taper: 0.9, double: false, alpha: 0.85 });
+      // Exposed lead tips at the break.
+      pen.line(w * 0.20, h * 0.52, w * 0.205, h * 0.515, { color: lead, width: pw * 0.7, jitter: 0.3, taper: 0.8, double: false, alpha: 0.9 });
+      pen.line(w * 0.215, h * 0.505, w * 0.22, h * 0.50, { color: lead, width: pw * 0.7, jitter: 0.3, taper: 0.8, double: false, alpha: 0.9 });
+      // Red cross-out scribbles upper-right.
+      const xout = (cx: number, cy: number, s: number, alpha: number): void => {
+        pen.line(cx - s, cy - s * 0.6, cx + s, cy + s * 0.6, { color: red, width: Math.max(1.6, s * 0.18), jitter: 0.6, taper: 0.85, double: false, alpha });
+        pen.line(cx - s, cy + s * 0.6, cx + s, cy - s * 0.6, { color: red, width: Math.max(1.6, s * 0.18), jitter: 0.6, taper: 0.85, double: false, alpha });
+      };
+      xout(w * 0.82, h * 0.22, h * 0.05, 0.6);
+      xout(w * 0.88, h * 0.34, h * 0.035, 0.5);
+    } else {
+      // Draw — a neutral hand-drawn equals/tilde mark in the corner.
+      const ink = ui.line;
+      pen.line(w * 0.80, h * 0.20, w * 0.90, h * 0.20, { color: ink, width: Math.max(2, h * 0.01), jitter: 0.5, taper: 0.9, double: false, alpha: 0.6 });
+      pen.line(w * 0.80, h * 0.24, w * 0.90, h * 0.24, { color: ink, width: Math.max(2, h * 0.01), jitter: 0.5, taper: 0.9, double: false, alpha: 0.6 });
     }
-    this.addButton(btnX, btnY, btnW, btnH, cb.playAgainLabel ?? t('result.playAgain'), 0x2c2c2a, () => cb.onPlayAgain());
+
+    this.container.addChild(g);
   }
 
   /** A centred, tappable "name #id" line that opens its profile card. Returns new bottom y. */
@@ -345,27 +420,60 @@ export class ResultScene implements Scene {
     return bottom;
   }
 
-  private addButton(
-    x: number, y: number, w: number, h: number, text: string, fill: number, onTap: () => void,
+  /** Primary call-to-action: gold-filled, bold white label with a leading icon. */
+  private addPrimaryButton(
+    x: number, y: number, w: number, h: number, text: string, icon: IconKind, onTap: () => void,
   ): void {
-    const bg = sketchPanel(w, h, { fill, border: ui.btnOff, width: 2.2, seed: seedFor(x, y, w) });
+    const bg = sketchPanel(w, h, { fill: ui.gold, border: 0x6a5000, width: 2.6, seed: seedFor(x, y, w) });
     bg.x = x;
     bg.y = y;
     bg.interactive = true;
     bg.cursor = 'pointer';
     bg.on('pointertap', onTap);
+    this.container.addChild(bg);
+    this.addIconLabel(x, y, w, h, text, icon, 0xfffdf4, Math.round(h * 0.40), true);
+  }
 
+  /** Quieter secondary entry: paper-fill ghost panel, ink line border + ink label/icon. */
+  private addSecondaryButton(
+    x: number, y: number, w: number, h: number, text: string, icon: IconKind, onTap: () => void,
+  ): void {
+    const bg = sketchPanel(w, h, { fill: ui.paper, border: ui.line, width: 1.8, seed: seedFor(x, y, w) });
+    bg.x = x;
+    bg.y = y;
+    bg.interactive = true;
+    bg.cursor = 'pointer';
+    bg.on('pointertap', onTap);
+    this.container.addChild(bg);
+    this.addIconLabel(x, y, w, h, text, icon, 0x444444, Math.round(h * 0.34), false);
+  }
+
+  /** Centre an icon + label pair inside the button box. */
+  private addIconLabel(
+    x: number, y: number, w: number, h: number,
+    text: string, icon: IconKind, color: number, fontSize: number, bold: boolean,
+  ): void {
+    const iconSize = Math.round(h * 0.62);
     const label = new PIXI.Text(text, {
-      fontSize: Math.round(h * 0.44),
-      fill: 0xffffff,
-      fontWeight: 'bold',
+      fontSize,
+      fill: color,
+      fontWeight: bold ? 'bold' : 'normal',
       fontFamily: 'monospace',
     });
-    label.anchor.set(0.5, 0.5);
-    label.x = x + w / 2;
+    label.anchor.set(0, 0.5);
+
+    const gap = Math.round(w * 0.04);
+    const totalW = iconSize + gap + label.width;
+    const startX = x + (w - totalW) / 2;
+
+    const glyph = buildIcon(icon, iconSize, color);
+    glyph.x = startX;
+    glyph.y = y + (h - iconSize) / 2;
+
+    label.x = startX + iconSize + gap;
     label.y = y + h / 2;
 
-    this.container.addChild(bg, label);
+    this.container.addChild(glyph, label);
   }
 
   private buildBadgeCard(badge: Badge, stats: PlayerStats, width: number): PIXI.Container {
