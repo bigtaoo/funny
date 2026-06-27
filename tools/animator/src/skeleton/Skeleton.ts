@@ -1,4 +1,4 @@
-import type { BoneDef, WorldPose, WorldPositions, ResolvedBoneTransform } from '../core/types';
+import type { BoneDef, WorldPose, WorldPositions, ResolvedBoneTransform, AnimationClip } from '../core/types';
 
 // ── Bone definitions ──────────────────────────────────────────────────────────
 
@@ -44,6 +44,50 @@ export class Skeleton {
     const w = Math.ceil(span / 2 + legOuterW);
     const h = Math.max(4, Math.ceil(w * 0.3));
     return { w, h };
+  }
+
+  /**
+   * Natural bounding-box height (animator px) of the figure: the vertical extent
+   * (maxY − minY) of every FK joint point, unioned over the rest pose AND every
+   * keyframe of every clip (art-direction §4.5.3). This is H_nat — the export bake
+   * divides the target screen height into it to get the global bake factor, and the
+   * game runtime divides it into the target to get the per-unit display scale, so the
+   * two stay coupled. Joint points only (computeDefaultShadowSize covers leg width).
+   *
+   * Keep in sync with the game's StickmanRuntime-side Skeleton.computeNaturalHeight.
+   * Returns 0 when there are no clips (signals "unknown").
+   */
+  static computeNaturalHeight(
+    clips: Iterable<AnimationClip>,
+    lengthScales?: ReadonlyMap<string, number>,
+  ): number {
+    let minY = Infinity, maxY = -Infinity;
+    const scan = (transforms: Map<string, ResolvedBoneTransform>): void => {
+      const wp = Skeleton.computeFK(0, 0, transforms, lengthScales);
+      for (const p of wp.values()) {
+        if (p.sy < minY) minY = p.sy;
+        if (p.sy > maxY) maxY = p.sy;
+        if (p.ey < minY) minY = p.ey;
+        if (p.ey > maxY) maxY = p.ey;
+      }
+    };
+
+    scan(new Map());   // rest pose (empty transforms)
+    for (const clip of clips) {
+      for (const kf of clip.keyframes) {
+        const tf = new Map<string, ResolvedBoneTransform>();
+        // FK only reads .rotation; the rest are filled with identity defaults.
+        kf.bones.forEach((bkf, id) => tf.set(id, {
+          rotation:   bkf.rotation ?? 0,
+          scaleX:     1, scaleY: 1,
+          translateX: 0, translateY: 0,
+          alpha:      1,
+        }));
+        scan(tf);
+      }
+    }
+
+    return (Number.isFinite(minY) && maxY > minY) ? maxY - minY : 0;
   }
 
   /** Forward kinematics: compute world poses for every bone.

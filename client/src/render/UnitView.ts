@@ -19,6 +19,7 @@ import lenaTaoUrl from '../assets/lena.tao';
 import maraTaoUrl from '../assets/mara.tao';
 import { fx, factionInk } from './theme';
 import { drawStickmanDraft } from './stickmanDraft';
+import { targetScreenHeight } from './unitSize';
 
 /**
  * .tao skeletal-animation bundle URL per unit type. Types listed here render as
@@ -58,23 +59,12 @@ function resolveAssets(equippedSkin: string | null): Partial<Record<UnitType, st
  *
  * Placeholder units (PvE-only Ironclad/Runner, or any stickman type before its
  * .tao bundle loads) draw the procedural skeleton draft (stickmanDraft.ts) in
- * faction ink. Per-type figure height gives a silhouette cue (§3.2: types by
- * silhouette, not color — color is the faction).
+ * faction ink. The figure height now comes from the unit's size tier
+ * (targetScreenHeight → unitSize.ts), the SAME source the .tao runtime path uses,
+ * so a draft and its eventual .tao render at consistent tiered heights instead of
+ * the old hand-tuned per-type px (art-direction §4.5.3 A). Tier still gives the
+ * silhouette cue (§3.2: types by silhouette, not color — color is the faction).
  */
-const DRAFT_HEIGHT: Record<UnitType, number> = {
-  [UnitType.Infantry]:     30,
-  [UnitType.ShieldBearer]: 32,
-  [UnitType.Archer]:       29,
-  [UnitType.Ironclad]:     40,  // heavy — bulkier silhouette
-  [UnitType.Runner]:       24,  // small & fast
-  [UnitType.Harpy]:        22,  // flying — tiny, drawn slightly higher
-  [UnitType.Medic]:        28,  // civilian healer, unarmed pose
-  [UnitType.Berserker]:    35,  // bulkier than infantry — rage fighter
-  [UnitType.Splitter]:     26,  // stocky bomb shape
-  [UnitType.Max]:          33,  // vanguard — slightly taller than infantry
-  [UnitType.Lena]:         36,  // sentinel — armored, bulky
-  [UnitType.Mara]:         27,  // skirmisher — lean, agile
-};
 
 /** Stable pen seed per type so each draft scrawls consistently. */
 const DRAFT_SEED: Record<UnitType, number> = {
@@ -129,8 +119,19 @@ function drawFactionMarker(
 
 const HP_BAR_WIDTH  = 20;
 const HP_BAR_HEIGHT = 3;
-/** HP bar Y offset above the unit centre (works for both circle and stickman). */
+/** HP bar Y offset above the unit centre (circle placeholder units). */
 const HP_BAR_Y      = -(RADIUS + 8);
+
+/**
+ * HP bar Y for a stickman unit — sits just above the crown. Now that each tier
+ * renders at its own height (art-direction §4.5.3 A), this scales with the unit's
+ * target height instead of the old flat -32 (which would let an L/XL figure's head
+ * poke through the bar). ~0.6× target clears the crown for the shared rig
+ * proportions (head tip ≈ 0.54·H_nat above root → 0.54·target on screen).
+ */
+function stickmanHpBarY(type: UnitType): number {
+  return -Math.round(targetScreenHeight(type) * 0.6);
+}
 /** Render frames the HP bar stays fully visible after a hit (~2 s at 60 fps). */
 const HP_SHOW_FRAMES  = 120;
 /** Render frames to fade out after HP_SHOW_FRAMES. */
@@ -268,7 +269,7 @@ export class UnitView {
     // that unit falls back to the circle placeholder. The equipped skin (S3-4)
     // swaps the texture bundle per type; unmapped types use the default look.
     for (const [type, url] of Object.entries(resolveAssets(equippedSkin)) as [UnitType, string][]) {
-      StickmanRuntime.loadAsset(url)
+      StickmanRuntime.loadAsset(url, targetScreenHeight(type))
         .then(asset => { this.assets.set(type, asset); })
         .catch(err  => { console.warn(`[UnitView] ${type} .tao failed to load:`, err); });
     }
@@ -507,12 +508,13 @@ export class UnitView {
   private buildStickmanContainer(unit: Unit, asset: TaoAsset): PIXI.Container {
     const side    = this.renderSide(unit);
     const mirrorX = side === Side.Top;
+    const targetHeight = targetScreenHeight(unit.unitType);
     this.stickmanTypes.set(unit.id, unit.unitType);
 
     // Reuse a pooled (wrapper + runtime) pair of the same type when available.
     const pooled = this.stickmanPools.get(unit.unitType)?.pop();
     if (pooled) {
-      pooled.runtime.reset({ mirrorX });
+      pooled.runtime.reset({ mirrorX, targetHeight });
       pooled.wrapper.visible = true;
       pooled.wrapper.alpha   = 1;
       pooled.wrapper.scale.set(1);
@@ -536,15 +538,14 @@ export class UnitView {
     const marker = new PIXI.Graphics();
     marker.name = 'factionMarker';
 
-    const runtime = new StickmanRuntime(asset, { mirrorX });
+    const runtime = new StickmanRuntime(asset, { mirrorX, targetHeight });
     this.stickmanRuntimes.set(unit.id, runtime);
     this.applyGear(runtime, unit);
     this.drawUnitMarker(marker, runtime, side);
 
     // ── HP bar (positioned above the character's head) ────────────────────
-    // At STICKMAN_SCALE=0.27, spine (68px) + head (24px) ≈ 25px above root.
-    // We place the bar a few pixels higher than that.
-    const HP_BAR_Y_STICKMAN = -32;
+    // Tier-aware: clears the crown at the unit's rendered height (see stickmanHpBarY).
+    const HP_BAR_Y_STICKMAN = stickmanHpBarY(unit.unitType);
 
     const hpBg = new PIXI.Graphics();
     hpBg.name = 'hpBg';
@@ -571,7 +572,7 @@ export class UnitView {
     body.clear();
     // Procedural skeleton draft (§5.5) in faction ink — blue = us / red = enemy.
     // Keyed off render side so the joiner's own units stay "us"-colored.
-    drawStickmanDraft(body, this.renderSide(unit), DRAFT_HEIGHT[unit.unitType], DRAFT_SEED[unit.unitType]);
+    drawStickmanDraft(body, this.renderSide(unit), targetScreenHeight(unit.unitType), DRAFT_SEED[unit.unitType]);
 
     // Faction ground marker (also grounds the figure on the board).
     const ring = c.getChildByName('ring') as PIXI.Graphics;
@@ -596,7 +597,7 @@ export class UnitView {
 
     // Determine HP bar Y offset: stickman containers have their own y offset baked in.
     const isStickman = this.stickmanRuntimes.has(unit.id);
-    const barY = isStickman ? -32 : HP_BAR_Y;
+    const barY = isStickman ? stickmanHpBarY(unit.unitType) : HP_BAR_Y;
     hpFill.drawRect(-HP_BAR_WIDTH / 2, barY, HP_BAR_WIDTH * ratio, HP_BAR_HEIGHT);
     hpFill.endFill();
   }

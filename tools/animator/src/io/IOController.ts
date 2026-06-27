@@ -13,6 +13,8 @@ import type {
   Keyframe,
   SpriteBinding,
 } from '../core/types';
+import { Skeleton } from '../skeleton/Skeleton';
+import { TARGET_SCREEN_PX, SUPERSAMPLE, type SizeTierKey } from './unitSize';
 
 // ── Editor project format (version 1) ────────────────────────────────────────
 
@@ -55,6 +57,18 @@ interface SerializedProject {
   animations:        Record<string, SerializedClip>;
   attachmentPoints?: AttachmentPoint[];
   boneLengthScales?: Record<string, number>;
+  /**
+   * Size-tier the textures were baked for (art-direction §4.5.3 B). Informational /
+   * self-documenting — the runtime sizes units from its own unitSize.ts by UnitType,
+   * not from this block. `naturalHeight` is H_nat (animator px) at export time.
+   * Absent in pre-§4.5 bundles. See claudedocs/file-formats.md.
+   */
+  unitHeight?: {
+    tier:           SizeTierKey;
+    targetScreenPx: number;
+    naturalHeight:  number;
+    supersample:    number;
+  };
 }
 
 // ── Spritesheet types ─────────────────────────────────────────────────────────
@@ -225,14 +239,18 @@ export class IOController {
    *  online workspace (upload) — the CI sync bridge cannot rebuild the spritesheet, so
    *  the browser-built `.tao` must be persisted alongside the `.tao.editor`. */
   async buildTaoBlob(): Promise<Blob> {
-    const animJson = this.buildAnimationJson();
+    // Size tier (export panel) + the rig's natural FK height drive the bake-down to an
+    // absolute target resolution rather than the artist's canvas size (§4.5.3 B).
+    const tier = this.readExportTier();
+    const hNat = this.computeNaturalHeight();
+    const animJson = this.buildAnimationJson(tier, hNat);
 
-    // Bake each image down to the largest size it is ever displayed at (×headroom),
-    // capped at the source resolution, then rewrite binding.scaleX/Y to compensate.
+    // Bake each image down to the resolution it is actually displayed at (target
+    // screen height × supersample), then rewrite binding.scaleX/Y to compensate.
     // The game renders sprite.scale = keyframe.scale × binding.scale, so pre-scaling
     // the pixels and dividing binding.scale by the same factor is visually identical
     // while shrinking the spritesheet — no runtime change needed.
-    const items = await this.buildExportImages(animJson);
+    const items = await this.buildExportImages(animJson, tier, hNat);
 
     const zip = new JSZip();
     zip.file('animation.json', JSON.stringify(animJson, null, 2));
@@ -285,6 +303,14 @@ export class IOController {
       // Restore animation data
       this.restoreAnimationData(project);
 
+      // Restore the export tier dropdown from the bundle's meta (if present) so a
+      // round-trip re-export keeps the same tier (§4.5.3 B).
+      const tier = project.unitHeight?.tier;
+      if (tier) {
+        const sel = document.getElementById('sel-export-tier') as HTMLSelectElement | null;
+        if (sel) sel.value = tier;
+      }
+
       // Restore images from spritesheet if present
       const ssJsonFile = zip.file('spritesheet.json');
       const ssPngFile  = zip.file('spritesheet.png');
@@ -308,7 +334,7 @@ export class IOController {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  private buildAnimationJson(): SerializedProject {
+  private buildAnimationJson(tier: SizeTierKey, hNat: number): SerializedProject {
     const bindings: Record<string, SpriteBinding> = {};
     this.state.boneBindings.forEach((b, id) => { bindings[id] = { ...b }; });
 
@@ -326,6 +352,12 @@ export class IOController {
     return {
       version: 2, bindings, animations, attachmentPoints,
       ...(Object.keys(boneLengthScales).length > 0 && { boneLengthScales }),
+      unitHeight: {
+        tier,
+        targetScreenPx: TARGET_SCREEN_PX[tier],
+        naturalHeight:  Math.round(hNat),
+        supersample:    SUPERSAMPLE,
+      },
     };
   }
 
@@ -358,21 +390,51 @@ export class IOController {
     }
   }
 
+  /** Selected export size tier (export panel dropdown), default M. */
+  private readExportTier(): SizeTierKey {
+    const sel = document.getElementById('sel-export-tier') as HTMLSelectElement | null;
+    const v = sel?.value as SizeTierKey | undefined;
+    return (v === 'S' || v === 'M' || v === 'L' || v === 'XL') ? v : 'M';
+  }
+
+  /** H_nat — the rig's natural FK height (animator px) over rest pose + all keyframes. */
+  private computeNaturalHeight(): number {
+    return Skeleton.computeNaturalHeight(this.animCtrl.store.values(), this.state.boneLengthScales);
+  }
+
   // ── Spritesheet building ──────────────────────────────────────────────────
 
-  /** Headroom factor: bake images at 1.5× their largest displayed size so they stay
-   *  crisp on high-DPI screens and when an animation scales the bone up past 1.0. */
+  /** Fallback bake headroom, used only when H_nat is unknown (no clips → can't anchor
+   *  to an absolute target). Bakes at 1.5× the largest displayed size for DPI/animation
+   *  headroom — the legacy behaviour before per-tier absolute baking (§4.5.3 B). */
   private static readonly EXPORT_HEADROOM = 1.5;
 
   /** Bake each loaded image down to the resolution it actually needs, and rewrite the
    *  corresponding binding.scaleX/Y in `animJson` so the on-screen result is unchanged.
    *  The shadow is not packed — it is drawn procedurally by the runtime from the shadow
-   *  attachment point's shadowW/H. */
+   *  attachment point's shadowW/H.
+   *
+   *  §4.5.3 B: the bake is anchored to the ABSOLUTE target display size, not the
+   *  artist's canvas. Global factor G = SUPERSAMPLE × TARGET_SCREEN_PX[tier] / H_nat,
+   *  which folds in BOTH (1) the unit's real on-screen height and (2) the supersample
+   *  headroom that replaces the old guessed 1.5 — so the figure's baked texture
+   *  footprint becomes exactly TARGET_SCREEN_PX × SUPERSAMPLE px. Per-bone we still
+   *  multiply by |binding.scaleX| × max-keyframe-scale (a bone shown small / scaled up
+   *  needs proportionally fewer / more texels), then compensate binding.scaleX /= bake
+   *  so the runtime render is pixel-identical. (Uses SCREEN px, not authoring px: the
+   *  runtime scales the rig to TARGET_SCREEN_PX, so anchoring the texture to the same
+   *  number is what makes ~SUPERSAMPLE texels land per screen px — anchoring to the
+   *  ~3.7× larger authoring px would re-introduce the very oversampling we're removing.) */
   private async buildExportImages(
     animJson: SerializedProject,
+    tier: SizeTierKey,
+    hNat: number,
   ): Promise<Array<{ id: string; src: CanvasImageSource; w: number; h: number }>> {
-    const headroom = IOController.EXPORT_HEADROOM;
-    const maxKf    = this.computeMaxKeyframeScale();
+    // G replaces the old flat headroom: absolute target resolution per tier.
+    const G = hNat > 0
+      ? (SUPERSAMPLE * TARGET_SCREEN_PX[tier]) / hNat
+      : IOController.EXPORT_HEADROOM;
+    const maxKf = this.computeMaxKeyframeScale();
     const out: Array<{ id: string; src: CanvasImageSource; w: number; h: number }> = [];
 
     // Shadow is no longer packed: it's a unified soft ellipse the runtime draws
@@ -390,8 +452,8 @@ export class IOController {
       const binding = animJson.bindings[slotId];
       if (binding) {
         const kf = maxKf.get(slotId) ?? { x: 1, y: 1 };
-        bakeX = clamp01(Math.abs(binding.scaleX) * kf.x * headroom);
-        bakeY = clamp01(Math.abs(binding.scaleY) * kf.y * headroom);
+        bakeX = clamp01(Math.abs(binding.scaleX) * kf.x * G);
+        bakeY = clamp01(Math.abs(binding.scaleY) * kf.y * G);
         // Compensate so keyframe.scale × binding.scale renders identical pixels.
         binding.scaleX /= bakeX;
         binding.scaleY /= bakeY;

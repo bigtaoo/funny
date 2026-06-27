@@ -3,7 +3,7 @@
  * Verbatim copy from tools/animator/src/skeleton/Skeleton.ts.
  * Keep in sync with the animator.
  */
-import type { BoneDef, WorldPositions, WorldPose, ResolvedBoneTransform } from './types';
+import type { BoneDef, WorldPositions, WorldPose, ResolvedBoneTransform, AnimationClip } from './types';
 
 // Rest-pose world angles assume the character faces RIGHT.
 // Anatomical right (r_) = screen LEFT  → arm rwa≈180°, leg rwa≈120°
@@ -56,6 +56,51 @@ export class Skeleton {
     }
 
     return result;
+  }
+
+  /**
+   * Natural bounding-box height (animator px) of the figure: the vertical extent
+   * (maxY − minY) of every FK joint point, taken as the union over the rest pose
+   * AND every keyframe of every clip (art-direction §4.5.3). This is H_nat — the
+   * denominator the runtime divides the target screen height by to get the
+   * per-unit container scale (so same-tier units render the same height,
+   * replacing the flat STICKMAN_SCALE). Joint-points only (not texture overhang):
+   * the export bake uses the identical measure, so the two stay coupled.
+   *
+   * Keep in sync with the animator's Skeleton.computeNaturalHeight.
+   * Returns 0 when there are no clips (signals "unknown" → fall back to flat scale).
+   */
+  static computeNaturalHeight(
+    clips: Iterable<AnimationClip>,
+    lengthScales?: ReadonlyMap<string, number>,
+  ): number {
+    let minY = Infinity, maxY = -Infinity;
+    const scan = (transforms: Map<string, ResolvedBoneTransform>): void => {
+      const wp = Skeleton.computeFK(0, 0, transforms, lengthScales);
+      for (const p of wp.values()) {
+        if (p.sy < minY) minY = p.sy;
+        if (p.sy > maxY) maxY = p.sy;
+        if (p.ey < minY) minY = p.ey;
+        if (p.ey > maxY) maxY = p.ey;
+      }
+    };
+
+    scan(new Map());   // rest pose (empty transforms)
+    for (const clip of clips) {
+      for (const kf of clip.keyframes) {
+        const tf = new Map<string, ResolvedBoneTransform>();
+        // FK only reads .rotation; the rest are filled with identity defaults.
+        kf.bones.forEach((bkf, id) => tf.set(id, {
+          rotation:   bkf.rotation ?? 0,
+          scaleX:     1, scaleY: 1,
+          translateX: 0, translateY: 0,
+          alpha:      1,
+        }));
+        scan(tf);
+      }
+    }
+
+    return (Number.isFinite(minY) && maxY > minY) ? maxY - minY : 0;
   }
 }
 

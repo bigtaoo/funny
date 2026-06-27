@@ -312,13 +312,20 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 **spritesheet.png**：shelf-packing（按高度降序排列）合并至 1024px 宽 canvas，`canvas.toBlob('image/png')` 导出，JSZip DEFLATE 二次压缩。
 
 **导出烘焙（bake-down，缩小体积）**：编辑器里骨骼图通常被 `binding.scaleX/Y` 缩小显示，存原图浪费像素。导出时 `buildExportImages` 把每张图缩到「实际会用到的分辨率」：
-- 普通骨骼烘焙比例 = `|binding.scaleX| × 该骨骼跨所有 clip 的最大关键帧 scale × EXPORT_HEADROOM(1.5)`，`clamp01` 封顶 ≤1（永不放大源图）；canvas 高质量缩小后，把 `animation.json` 里该骨骼的 `binding.scaleX/Y` 除以同一比例补偿。
-- shadow 无 binding，但显示尺寸由 `shadowW/H` 决定、与源分辨率无关，缩到 `shadowW*2 × shadowH*2 × 1.5`。
+- 普通骨骼烘焙比例 = `|binding.scaleX| × 该骨骼跨所有 clip 的最大关键帧 scale × G`，`clamp01` 封顶 ≤1（永不放大源图）；canvas 高质量缩小后，把 `animation.json` 里该骨骼的 `binding.scaleX/Y` 除以同一比例补偿。
+- 全局系数 `G = SUPERSAMPLE × TARGET_SCREEN_PX[档] ÷ H_nat`（身高档下拉选 + 全身 FK bbox 算，见本节末「✅ 已落地」）。把烘焙锚到**绝对目标屏幕分辨率**，取代旧的拍脑袋 `EXPORT_HEADROOM(1.5)`（仅在无 clip→H_nat 未知时回退）。
+- shadow 不打包（运行时程序绘制，见 file-formats.md）。
 - 比例 ≈1 的图直接透传，不重编码。
 
-**无损保证**：游戏 runtime `sprite.scale = 关键帧 × binding.scale` 为纯乘法，小图 × 放大后 binding 与原图 × 原 binding 像素级一致，**runtime 零改动**；1.5 余量覆盖高 DPI 与放大动画帧。烘焙仅作用于 `.tao` 导出路径，`.tao.editor` 存档继续保存无损原图。
+**无损保证**：游戏 runtime `sprite.scale = 关键帧 × binding.scale` 为纯乘法，小图 × 放大后 binding 与原图 × 原 binding 像素级一致，**runtime 零改动**；`SUPERSAMPLE(2)` 余量覆盖高 DPI 与放大动画帧。烘焙仅作用于 `.tao` 导出路径，`.tao.editor` 存档继续保存无损原图。
 
-> **待办 · 按身高档烘到绝对目标分辨率**（设计见 [art-direction.md §4.5.3 (B)](../../product/art-direction.md)）：现有 bake 只相对 `binding.scale`、且不知道运行时还要乘 `STICKMAN_SCALE≈0.27`，故每张贴图约超分辨率 1/0.27≈3.7× 线性。计划在导出面板加**身高档下拉(S/M/L/XL)**，按角色**自然包围盒高度**（需补全身 bbox，现仅有 `Skeleton.computeDefaultShadowSize` 的腿宽）算全局烘缩系数 `G=目标屏高×超采样÷H_nat`，叠进 per-bone bake，用有依据的**超采样系数**取代拍脑袋的 1.5。⚠ 必须与运行时「按目标身高缩放取代 STICKMAN_SCALE」(art-direction §4.5.3 (A)) **同期落地**，否则糊/尺寸乱。
+> **✅ 已落地（2026-06-27）· 按身高档烘到绝对目标分辨率**（设计见 [art-direction.md §4.5.3 (B)](../../product/art-direction.md)，与运行时 (A) 同期实现）：
+> - **导出面板加身高档下拉** `#sel-export-tier`（S/M/L/XL，默认 M；XL 仅神话生物）。`IOController.readExportTier()` 读取，导入 `.tao` 时从 `unitHeight.tier` 回填。
+> - **全身 bbox**：`Skeleton.computeNaturalHeight(clips, lengthScales)` 遍历 rest pose + 全部关键帧 FK，取 joint 点 y 极值并集 = H_nat（与游戏侧 `StickmanRuntime` 的 `Skeleton.computeNaturalHeight` 镜像同步）。
+> - **绝对烘缩**：`buildExportImages` 用全局系数 `G = SUPERSAMPLE × TARGET_SCREEN_PX[tier] ÷ H_nat`（镜像常量 `src/io/unitSize.ts`，指回 `client/src/render/unitSize.ts`）取代旧的 `EXPORT_HEADROOM(1.5)`；per-bone 仍乘 `|binding.scaleX| × 关键帧最大 scale` 再 `clamp01`，`binding.scaleX/=bake` 补偿照旧 → runtime 画面不变、贴图分辨率收敛到 `目标屏高×超采样`。H_nat 无法计算（无 clip）时回退 1.5。
+> - **自描述**：`animation.json` 写 `unitHeight {tier,targetScreenPx,naturalHeight,supersample}`（见 file-formats.md）；runtime **不读**它（按 UnitType 自取），仅供记录/调试。
+> - **用 SCREEN px 不用 authoring px**：runtime 把角色缩到 `TARGET_SCREEN_PX`，故贴图也锚到这个数才得 ~SUPERSAMPLE texels/屏幕 px；锚到 ~3.7× 大的 authoring px 会把要消除的超分辨率又加回来。
+> - **收尾待办（需 GUI，非代码）**：`client/src/assets/*.tao` 各角色逐个在 animator 选档重导出后体积才实际收敛；未重导的旧包运行时仍按 UnitType 正确缩放，只是没瘦身。
 
 **导出流程**（`IOController.exportTao`）：
 1. 从 `ImageController` 取各骨骼 Blob，`loadImageFromBlob` 加载为 `HTMLImageElement`

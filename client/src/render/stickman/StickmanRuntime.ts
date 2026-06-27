@@ -80,13 +80,25 @@ export interface TaoAsset {
   outlineTextures:   Map<string, PIXI.Texture>;          // boneId → outline texture
   /** Outline texture anchor (the bordered texture shifts the bone pivot). */
   outlineAnchors:    Map<string, { ax: number; ay: number }>;
+  /**
+   * Natural bounding-box height (animator px) of the figure — H_nat, the union of
+   * FK joint extents over rest pose + all keyframes (see Skeleton.computeNaturalHeight).
+   * The per-unit container scale = targetScreenHeight / naturalHeight, which renders
+   * every same-tier unit at the same screen height regardless of the artist's canvas
+   * size (art-direction §4.5.3 A). 0 when unknown (no clips) → falls back to STICKMAN_SCALE.
+   */
+  naturalHeight:     number;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /**
- * Uniform scale applied to the stickman container to fit the game's visual space.
- * The animator works in ~200 px natural height; at 0.27 the character is ~50 px tall.
+ * Fallback uniform scale, used only when a unit's natural height or target height
+ * is unknown (no clips / no targetHeight passed). The normal path scales each unit
+ * by targetScreenHeight / asset.naturalHeight instead, so same-tier units render at
+ * the same screen height regardless of the artist's canvas size (art-direction §4.5.3 A).
+ * The animator works in ~200 px natural height; at 0.27 the character is ~50 px tall —
+ * which is why the per-tier TARGET_SCREEN_PX values cluster around 0.27 × H_nat.
  */
 const STICKMAN_SCALE = 0.27;
 
@@ -180,6 +192,13 @@ const STATE_ANIM: Record<string, string> = {
 export interface StickmanOptions {
   /** Mirror the character horizontally (for Top-side / enemy units). */
   mirrorX?: boolean;
+  /**
+   * Target on-screen height (px) for this unit — its size tier's TARGET_SCREEN_PX
+   * (see unitSize.ts / art-direction §4.5). The container is scaled by
+   * targetHeight / asset.naturalHeight so the figure renders at this height. Omit
+   * (or pass 0) to fall back to the flat STICKMAN_SCALE.
+   */
+  targetHeight?: number;
 }
 
 export class StickmanRuntime {
@@ -201,6 +220,13 @@ export class StickmanRuntime {
   private readonly gearLayer: PIXI.Container;
   private readonly asset:   TaoAsset;
 
+  /**
+   * Unsigned per-unit base scale = targetHeight / asset.naturalHeight (or the flat
+   * STICKMAN_SCALE fallback). Applied to the container with the mirror sign on X.
+   * Computed once from the constructor options and reused by reset().
+   */
+  private readonly baseScale: number;
+
   private currentClip:     AnimationClip | null = null;
   private currentClipName  = '';
   private time             = 0;
@@ -211,9 +237,17 @@ export class StickmanRuntime {
     this.gearLayer    = new PIXI.Container();
     this.outlineLayer = new PIXI.Container();
     this.outlineLayer.visible = false;   // shown only during a hit flash
+
+    // Per-unit scale: normalize the rig's natural height to the unit's target
+    // screen height (art-direction §4.5.3 A), so same-tier units are the same
+    // height on screen regardless of the artist's canvas size. Falls back to the
+    // flat STICKMAN_SCALE when either input is missing.
+    this.baseScale = (options.targetHeight && asset.naturalHeight > 0)
+      ? options.targetHeight / asset.naturalHeight
+      : STICKMAN_SCALE;
     this.container.scale.set(
-      STICKMAN_SCALE * (options.mirrorX ? -1 : 1),
-      STICKMAN_SCALE,
+      this.baseScale * (options.mirrorX ? -1 : 1),
+      this.baseScale,
     );
 
     // Unified procedural shadow: a single shared soft ellipse, scaled to this rig's
@@ -356,9 +390,11 @@ export class StickmanRuntime {
    * large swarms where Swordsmen spawn and die continuously.
    */
   reset(options: StickmanOptions = {}): void {
+    // baseScale is fixed for this rig (pools are keyed by unit type, so the target
+    // height never changes on reuse); only the mirror sign can flip between sides.
     this.container.scale.set(
-      STICKMAN_SCALE * (options.mirrorX ? -1 : 1),
-      STICKMAN_SCALE,
+      this.baseScale * (options.mirrorX ? -1 : 1),
+      this.baseScale,
     );
     this.setOutlineFlash(null);   // a reused runtime must not carry a stale flash
     // Gear glyphs are left in place here; UnitView re-asserts the correct gear on each
@@ -550,17 +586,22 @@ export class StickmanRuntime {
   /**
    * Load and parse a .tao bundle from `url`.
    * Results are cached by URL — subsequent calls return the same Promise.
+   *
+   * `targetHeight` (the unit tier's TARGET_SCREEN_PX) is used only to calibrate the
+   * shared hit-flash outline texture to the scale this rig will actually render at
+   * (a .tao url maps to one unit type → one target, so the cached outline is correct).
+   * The per-unit display scale itself is applied per instance from StickmanOptions.
    */
-  static loadAsset(url: string): Promise<TaoAsset> {
+  static loadAsset(url: string, targetHeight?: number): Promise<TaoAsset> {
     let p = this._cache.get(url);
     if (!p) {
-      p = StickmanRuntime._parse(url);
+      p = StickmanRuntime._parse(url, targetHeight);
       this._cache.set(url, p);
     }
     return p;
   }
 
-  private static async _parse(url: string): Promise<TaoAsset> {
+  private static async _parse(url: string, targetHeight?: number): Promise<TaoAsset> {
     // Fetch the .tao ZIP
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`StickmanRuntime: failed to fetch ${url} (${resp.status})`);
@@ -607,6 +648,19 @@ export class StickmanRuntime {
       }
     }
 
+    // H_nat — the figure's natural FK height (animator px), the denominator for the
+    // per-unit display scale (art-direction §4.5.3 A). Computed here so it's shared
+    // by every instance of this asset; the outline calibration below also needs it.
+    const naturalHeight = Skeleton.computeNaturalHeight(clips.values(), boneLengthScales);
+
+    // The scale this rig will actually render at on screen. Used to convert the
+    // screen-px outline geometry into texture px (so the hit-flash contour reads the
+    // same thickness whatever scale the rig ends up at — and whatever resolution the
+    // textures were baked to). Falls back to STICKMAN_SCALE when target/H_nat unknown.
+    const parseScale = (targetHeight && naturalHeight > 0)
+      ? targetHeight / naturalHeight
+      : STICKMAN_SCALE;
+
     // ── spritesheet ───────────────────────────────────────────────────────
     const spRaw  = JSON.parse(await zip.file('spritesheet.json')!.async('string')) as any;
     const pngBlob = await zip.file('spritesheet.png')!.async('blob');
@@ -642,7 +696,7 @@ export class StickmanRuntime {
         const binding = bindings.get(boneId);
         const sScale  = Math.abs(binding?.scaleX ?? 1) || 1;
         // Convert screen-px geometry → this bone's texture px (undo bake + render scale).
-        const texPerScreen = 1 / (STICKMAN_SCALE * sScale);
+        const texPerScreen = 1 / (parseScale * sScale);
         const gapTex   = clampInt(OUTLINE_GAP_PX   * texPerScreen, 1, 14);
         const widthTex = clampInt(OUTLINE_WIDTH_PX * texPerScreen, 1, 10);
         const built    = buildBoneOutline(ssImg, x, y, w, h, gapTex, widthTex, binding);
@@ -668,7 +722,7 @@ export class StickmanRuntime {
       });
     }
 
-    return { clips, textures, bindings, boneLengthScales, attachmentPoints, outlineTextures, outlineAnchors };
+    return { clips, textures, bindings, boneLengthScales, attachmentPoints, outlineTextures, outlineAnchors, naturalHeight };
   }
 }
 

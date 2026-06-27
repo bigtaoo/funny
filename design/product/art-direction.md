@@ -7,7 +7,7 @@
 
 > **v0.4 修正（2026-06-14）**：**角色不走程序绘制，改用 AI 图位图资产**（撤销 §5.5「沿骨骼草稿」北极星）。实测：程序笔触画好抽象 UI 没问题，但复刻一张已设计的角色（脸/身材/造型）达不到质感、人眼极敏感。故确立下方「〇、资产分工」分界。程序绘制路线本身**不变**，仅缩回到 UI/棋盘/特效。
 
-> **v0.5 新增（2026-06-27）**：确立 **单位身高三档标准（S/M/L + 神话专属 XL）**（§4.5）——把"角色多高"从美术手感收归规格，同职能东西方角色一一对应（呼应「红军即自己」镜像）。本次仅定标准，运行时按目标高自动缩放的落地为待办。
+> **v0.5 新增（2026-06-27）**：确立 **单位身高三档标准（S/M/L + 神话专属 XL）**（§4.5）——把"角色多高"从美术手感收归规格，同职能东西方角色一一对应（呼应「红军即自己」镜像）。**v0.5.1 落地（2026-06-27）**：(A) 运行时按目标身高缩放 + (B) animator 按目标分辨率烘缩贴图**两端均已实现**（§4.5.3 标 ✅）；剩 `client/src/assets/*.tao` 逐个选档重导出（需 GUI）才实际省体积。
 
 ---
 
@@ -154,7 +154,7 @@
 
 建筑为**简笔几何形态**，像学生随手画的房子、箭楼：兵营=方框加小旗（旗上画兵种图标）；箭塔=梯形塔身加三角顶加一支弓；城墙=矩形砖块斜线填充；炮塔=圆形炮管从方形炮台伸出。所有建筑线条略粗于单位线条，便于作为"地标"快速识别。
 
-### 4.5 单位身高三档标准（v0.5 新增 · 状态：设计中，未落地）
+### 4.5 单位身高三档标准（v0.5 新增 · 状态：✅ 代码两端已落地 2026-06-27，剩重导出资产）
 
 **问题**：在此之前，单位最终身高没有任何规格——由「美术在 animator 里随手画多大」+ 全局 `STICKMAN_SCALE`（`StickmanRuntime.ts`，把 animator 坐标统一缩到屏幕）一刀切共同决定。`.tao` 把美术当时的尺寸烘进 binding，谁也没对齐基准。结果：同一关里两个本应一样高的角色可能差一截，纯属偶然。本节确立**身高规格**，把"画多大"从美术的手感里收归标准。
 
@@ -196,22 +196,26 @@ PvE 神话生物（无具名、东西双化身，见 `MYTHOLOGY_DESIGN.md`）不
 
 身高档要在**两处**生效，且二者**必须同时落地**（缺一会糊或尺寸乱，见末尾耦合说明）：
 
-**(A) 运行时：按目标身高缩放，取代一刀切 `STICKMAN_SCALE`**
-- 取 `.tao`（或草图）的**自然包围盒高度** H_nat，算 per-unit 缩放 `目标 animator-px ÷ H_nat`，**取代当前对所有单位一律 `STICKMAN_SCALE`（≈0.27）的做法**（`StickmanRuntime.ts`）。同档角色因此屏幕等高，与美术画多大无关。
-- 收编占位草图的 `DRAFT_HEIGHT`（`UnitView.ts`，按兵种 22–40px）：改为「查身高档 → 得目标高」，与 `.tao` 路径同源。
+**(A) 运行时：按目标身高缩放，取代一刀切 `STICKMAN_SCALE`** — ✅ 已落地（2026-06-27）
+- 取 `.tao` 的**自然包围盒高度** H_nat（`Skeleton.computeNaturalHeight`：rest pose + 全部关键帧 FK 极值并集，joint 点），per-unit 容器缩放 = `targetScreenHeight(type) ÷ H_nat`（`StickmanRuntime`：`baseScale`、`StickmanOptions.targetHeight`，`UnitView` 按 UnitType 传入），**取代旧的一律 `STICKMAN_SCALE`（≈0.27，保留为 H_nat/target 缺失时的回退）**。同档角色因此屏幕等高，与美术画多大无关。
+  - 单位换算：`TARGET_SCREEN_PX = STICKMAN_SCALE × TARGET_ANIMATOR_PX`（表 §4.5.1 即按此设），故「target_screen ÷ H_nat」与「0.27 × target_animator ÷ H_nat」等价；代码直接用 screen px 写法，最直接、且不再依赖 0.27。
+  - 受击爆闪轮廓（`StickmanRuntime._parse` 的 `texPerScreen`）改用真实容器缩放（`targetHeight/H_nat`）换算 screen→texture px，不再硬用 0.27，故新旧贴图都对。
+  - HP 血条 Y（`UnitView.stickmanHpBarY`）随档高缩放（~0.6×target），避免 L/XL 角色头顶穿出血条。
+- 收编占位草图的 `DRAFT_HEIGHT`（`UnitView.ts`，旧按兵种 22–40px）：删除，改查 `targetScreenHeight(type)`，与 `.tao` 路径同源。
 
-**(B) 导出：按目标分辨率烘缩贴图，压体积**
+**(B) 导出：按目标分辨率烘缩贴图，压体积** — ✅ 已落地（2026-06-27）
 
-现状根因（要改的）：animator 导出已有 bake-down（`IOController.ts buildExportImages()`，公式 `|binding.scaleX| × 关键帧最大缩放 × 1.5 headroom`，并把 `binding.scaleX /= bake` 补偿、运行时画面不变），但它有两个盲点 → 体积压不下来：
-1. bake 是**相对** `binding.scale` 的，而 `binding.scale` 是美术随手设的、无绝对基准 → 画大了就存大。
-2. bake **不知道**运行时还要再乘 `STICKMAN_SCALE ≈ 0.27` → 每张贴图约存了屏幕实际所需 **1/0.27 ≈ 3.7× 线性（≈13× 面积）** 的像素（部分被设备 DPR 抵消），纯浪费。
+原现状根因（已改）：animator 导出 bake-down 是**相对** `binding.scale` 烘、且**不知道**运行时还要乘 `STICKMAN_SCALE≈0.27`，故每张贴图约超分辨率 1/0.27≈3.7×（再叠旧 1.5 headroom ≈5.5×）→ 纯浪费。
 
-改法——让导出从「相对 binding 烘」变成「**对准绝对目标屏幕尺寸**烘」：
-- animator 导出面板加一个**身高档下拉（S/M/L/XL）**，自动查 §4.5.1 表得目标屏高（XL 限神话角色）。这是美术唯一要选的，不必算数。
-- 导出时计算角色**自然包围盒高度** H_nat（animator px）——目前只有算腿宽给阴影用（`Skeleton.computeDefaultShadowSize`，`Skeleton.ts`），需**补一个整体 bbox**：遍历 rest pose + 所有关键帧的 FK 极值取并集。
-- 全局烘缩系数 `G = 目标屏高 × 超采样系数 ÷ H_nat`。**超采样系数**（建议 2×，给高 DPR 留清晰度）是有依据的清晰度旋钮，**取代现有那个拍脑袋的 1.5 headroom**。
-- 把 `G` 叠进现有 per-bone bake + `binding.scaleX /= bake` 补偿链——一处改动即接上，导出体积立刻按目标分辨率收敛，与美术画布大小解耦。
+落地做法——导出从「相对 binding 烘」变成「**对准绝对目标屏幕尺寸**烘」：
+- animator 导出面板加**身高档下拉 `#sel-export-tier`（S/M/L/XL，默认 M，XL 限神话）**。`IOController.readExportTier()` 读取。这是美术唯一要选的。
+- 导出时算角色**自然包围盒高度** H_nat（`Skeleton.computeNaturalHeight`，与运行时镜像同步：rest pose + 全部关键帧 FK 极值并集）。
+- 全局烘缩系数 `G = SUPERSAMPLE × TARGET_SCREEN_PX[档] ÷ H_nat`。**注意用屏幕 px 不用 authoring px**：runtime 把角色缩到 `TARGET_SCREEN_PX`，贴图锚到同一数才得 ~SUPERSAMPLE texels/屏幕 px；锚到 ~3.7× 大的 animator px 会把要消除的超分辨率又加回来。`SUPERSAMPLE(2)` 取代拍脑袋的 1.5 headroom（H_nat 未知时回退 1.5）。
+- `G` 叠进 per-bone bake（`|binding.scaleX| × 关键帧最大 scale × G`，`clamp01`）+ `binding.scaleX /= bake` 补偿链 → runtime 画面不变、贴图分辨率收敛、与美术画布大小解耦。
+- 值的镜像：animator 不能跨包 import `client/src/render/unitSize.ts`，故 `tools/animator/src/io/unitSize.ts` 镜像一份 `TARGET_SCREEN_PX`/`SUPERSAMPLE`（注释指回源）。
+- 自描述：`animation.json` 写 `unitHeight {tier,targetScreenPx,naturalHeight,supersample}`（runtime 不读、仅记录，见 `file-formats.md`）。
 - 阴影已不打包进图集（运行时程序生成，见 `file-formats.md` / §3.2），不受影响。
+- **收尾待办（需 GUI）**：`client/src/assets/*.tao` 各角色逐个在 animator 选档重导出后体积才实际收敛；未重导的旧包运行时仍按 (A) 正确缩放，只是没瘦身。
 
 **(C) 数据位置 / 入口**
 - 身高档枚举（S/M/L/XL）、各档目标屏高/animator 高、超采样系数、「UnitType → 档位」映射**已落代码**：`client/src/render/unitSize.ts`（`SizeTier` / `TARGET_SCREEN_PX` / `TARGET_ANIMATOR_PX` / `SUPERSAMPLE` / `UNIT_SIZE_TIER`）。**代码是运行用的单一来源**，本节及 §4.5.1/§4.5.2 表为记录/依据；二者数值须一致，改档位改代码、同步本表。
