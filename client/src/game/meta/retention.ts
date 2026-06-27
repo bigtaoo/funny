@@ -2,7 +2,7 @@
 // 与 server/shared/src/retention.ts 语义一致；不依赖 Node / DB。
 import type { SaveData } from './SaveData';
 
-export type DailyTaskId = 'pve.clear' | 'pvp.match' | 'ad.watch';
+export type DailyTaskId = 'pve.clear' | 'pvp.match' | 'gacha.draw';
 export type CheckinRewardKind = 'coins' | 'stamina';
 export interface CheckinReward { kind: CheckinRewardKind; count: number }
 

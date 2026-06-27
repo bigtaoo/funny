@@ -222,7 +222,7 @@ export class DailyScene implements Scene {
     const taskLabels: [string, string][] = [
       ['pve.clear', 'daily.tasks.pveLabel'],
       ['pvp.match', 'daily.tasks.pvpLabel'],
-      ['ad.watch',  'daily.tasks.adLabel'],
+      ['gacha.draw', 'daily.tasks.gachaLabel'],
     ];
 
     const dayKey = makeDayKey(nowMs);

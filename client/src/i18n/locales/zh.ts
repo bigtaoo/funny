@@ -1120,7 +1120,7 @@ export const zh = {
   'daily.tasks.title': '每日任务',
   'daily.tasks.pveLabel': '通关任意 PvE 关卡',
   'daily.tasks.pvpLabel': '参与任意 PvP 对局',
-  'daily.tasks.adLabel': '观看广告',
+  'daily.tasks.gachaLabel': '开一次盲盒',
   'daily.tasks.done': '完成',
   'daily.tasks.pending': '进行中',
   'daily.tasks.rewardCoins': '领取 +{n} 金币',

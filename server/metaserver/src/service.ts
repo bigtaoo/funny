@@ -950,7 +950,13 @@ export class MetaService {
     await this.bumpRetentionTask(accountId, 'pve.clear');
     // B6：活动任务「pve.clear」打点（best-effort）。
     accrueEventTask(cols, accountId, 'pve.clear', now()).catch(() => {});
-    const saveWithSt = { ...granted.save, stamina: { current: staminaResult.current, regenAt: staminaResult.regenAt } };
+    // 将 retention 更新合入返回的 save，确保客户端 adoptServer 后立即看到任务完成状态。
+    const nextRetention = accrueRetentionTask(granted.save.retention, 'pve.clear', now());
+    const saveWithSt = {
+      ...granted.save,
+      ...(nextRetention !== granted.save.retention ? { retention: nextRetention } : {}),
+      stamina: { current: staminaResult.current, regenAt: staminaResult.regenAt },
+    };
     return ok({
       save: saveWithSt,
       granted: granted.granted,
@@ -1967,7 +1973,11 @@ export class MetaService {
         rarity: r.rarity,
         duplicate: false,
       }));
-      return ok({ save, results: marked });
+      // B5：每日任务「开盲盒」打点，将 retention 合入返回 save，客户端立即看到任务完成。
+      await this.bumpRetentionTask(accountId, 'gacha.draw');
+      const nextRetention1 = accrueRetentionTask(save.retention, 'gacha.draw', now());
+      const saveWithRet1 = nextRetention1 !== save.retention ? { ...save, retention: nextRetention1 } : save;
+      return ok({ save: saveWithRet1, results: marked });
     }
     const cur = await getOrCreateSave(cols, accountId, now());
     const { newSkins, marked } = markDuplicates(cur.inventory.skins, draw.results);
@@ -1981,7 +1991,11 @@ export class MetaService {
       now(),
     );
     await commercial.orderDelivered({ orderId });
-    return ok({ save, results: marked });
+    // B5：每日任务「开盲盒」打点，将 retention 合入返回 save，客户端立即看到任务完成。
+    await this.bumpRetentionTask(accountId, 'gacha.draw');
+    const nextRetention2 = accrueRetentionTask(save.retention, 'gacha.draw', now());
+    const saveWithRet2 = nextRetention2 !== save.retention ? { ...save, retention: nextRetention2 } : save;
+    return ok({ save: saveWithRet2, results: marked });
   }
 
   async adsReward(req: FastifyRequest, reply: FastifyReply) {
@@ -2023,8 +2037,6 @@ export class MetaService {
     const credit = await commercial.adsCredit({ accountId, amount: ADS_REWARD_COINS, dayKey });
     if (!credit.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, credit.error));
     const save = await mirrorCoins(cols, accountId, credit.coinsAfter, now());
-    // B5：每日任务「看广告」打点（幂等，fire-and-forget）。
-    await this.bumpRetentionTask(accountId, 'ad.watch');
     // B6：活动任务「ad.watch」打点（best-effort）。
     accrueEventTask(cols, accountId, 'ad.watch', now()).catch(() => {});
     return ok({ save, granted: ADS_REWARD_COINS });

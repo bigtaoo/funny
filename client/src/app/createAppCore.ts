@@ -903,6 +903,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const client = api;
     inLobby = false;
     analytics.track('screen_view', { scene: 'DailyScene' });
+    // 进入每日页时拉一次权威存档，确保 PvP/PvE 完成后的 retention 立即显示。
+    void saveManager.refresh();
     views.showDaily({
       onBack() { goLobby(); },
       getSave: () => saveManager.get(),

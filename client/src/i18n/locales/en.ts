@@ -1115,7 +1115,7 @@ export const en: Record<TranslationKey, string> = {
   'daily.tasks.title': 'Daily Tasks',
   'daily.tasks.pveLabel': 'Clear any PvE level',
   'daily.tasks.pvpLabel': 'Play any PvP match',
-  'daily.tasks.adLabel': 'Watch an ad',
+  'daily.tasks.gachaLabel': 'Open a gacha once',
   'daily.tasks.done': 'Done',
   'daily.tasks.pending': 'In progress',
   'daily.tasks.rewardCoins': 'Claim +{n} coins',
