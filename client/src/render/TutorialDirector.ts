@@ -253,12 +253,13 @@ export class TutorialDirector {
   private renderOrientation(): void {
     const n = this.orientStep + 1; // O1..O7
     this.dim.visible = true;
-    const isLandscape = this.layout.orientation === 'landscape';
-    const bodyKey = (isLandscape && (n === 1 || n === 2))
-      ? `tutorial.o${n}.body.landscape`
-      : `tutorial.o${n}.body`;
+    const ls = this.layout.orientation === 'landscape';
+    // O1/O2/O4/O5 有方向性文案，横屏时换 landscape 变体（title 仅 O5 有变体）。
+    const LANDSCAPE_STEPS = new Set([1, 2, 4, 5]);
+    const titleKey = (ls && n === 5) ? `tutorial.o${n}.title.landscape` : `tutorial.o${n}.title`;
+    const bodyKey  = (ls && LANDSCAPE_STEPS.has(n)) ? `tutorial.o${n}.body.landscape` : `tutorial.o${n}.body`;
     this.drawPanel(
-      tk(`tutorial.o${n}.title`),
+      tk(titleKey),
       tk(bodyKey),
       t('tutorial.next' as TranslationKey),
       'next',
@@ -269,7 +270,9 @@ export class TutorialDirector {
     const beat = BEATS[this.beatIndex]!;
     this.dim.visible = false;
     const i = this.beatIndex + 1; // 1..3
-    this.drawPanel(tk(`tutorial.beat${i}.title`), tk(`tutorial.beat${i}.body`), null, 'beat');
+    const ls = this.layout.orientation === 'landscape';
+    const bodyKey = (ls && i === 1) ? `tutorial.beat${i}.body.landscape` : `tutorial.beat${i}.body`;
+    this.drawPanel(tk(`tutorial.beat${i}.title`), tk(bodyKey), null, 'beat');
 
     // 高亮目标道。
     if (beat.kind === 'unit') this.host.highlightUnitLane(beat.col);
@@ -291,7 +294,9 @@ export class TutorialDirector {
   /** 引导卡命中后的「收束」反馈：换正文、暂留。 */
   private showBeatCollapse(): void {
     const i = this.beatIndex + 1;
-    this.drawPanel(tk(`tutorial.beat${i}.title`), tk(`tutorial.beat${i}.done`), null, 'beat');
+    const ls = this.layout.orientation === 'landscape';
+    const doneKey = (ls && i === 1) ? `tutorial.beat${i}.done.landscape` : `tutorial.beat${i}.done`;
+    this.drawPanel(tk(`tutorial.beat${i}.title`), tk(doneKey), null, 'beat');
   }
 
   private renderFreePlay(): void {
