@@ -14,6 +14,7 @@ import { makeSecurityHandlers } from './auth.js';
 import { registerInternalRoutes } from './internal.js';
 import { HttpCommercialClient, type CommercialClient } from './commercialClient.js';
 import { HttpGatewayClient, type GatewayClient } from './gatewayClient.js';
+import { HttpMetaSocialsvcClient, nullMetaSocialsvcClient } from './socialsvcClient.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // dist/app.js 与 src/app.ts 都在 metaserver 下两级 → contracts。
@@ -42,6 +43,9 @@ export interface BuildAppOpts {
   region?: string | null;
   /** Loki push 地址（POST /client/log 转发；null = 静默丢弃）。 */
   lokiPushUrl?: string | null;
+  /** socialsvc 内部基址（P2：好友/私聊/邮件路由代理）；null = 仍由 metaserver 自身处理。 */
+  socialsvcUrl?: string | null;
+  socialsvc?: import('./socialsvcClient.js').MetaSocialsvcClient;
 }
 
 export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
@@ -81,6 +85,8 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     opts.commercial ?? new HttpCommercialClient(opts.commercialUrl ?? null, opts.internalKey);
   const gateway =
     opts.gateway ?? new HttpGatewayClient(opts.gatewayUrl ?? null, opts.internalKey);
+  const socialsvc =
+    opts.socialsvc ?? (opts.socialsvcUrl ? new HttpMetaSocialsvcClient(opts.socialsvcUrl, opts.internalKey) : nullMetaSocialsvcClient);
   const service = new MetaService({
     cols: opts.cols,
     jwt: opts.jwt,
@@ -92,6 +98,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     flags: opts.flags ?? null,
     region: opts.region ?? null,
     lokiPushUrl: opts.lokiPushUrl ?? null,
+    socialsvc,
   });
 
   // 广告平台 SSV 回调（平台主动调用，不经 openapi glue，无玩家鉴权）。

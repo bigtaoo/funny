@@ -2,8 +2,8 @@
 // P1 集合：families / familyMembers / familyMessages（无 worldId）。
 // P2 集合：friendEdges / friendRequests / blockList / conversations / chatMessages / mails。
 import { MongoClient, Db, Collection } from 'mongodb';
-import type { FamilyRole } from '@nw/shared';
-import { FAMILY_MSG_RETENTION_SEC } from '@nw/shared';
+import type { FamilyRole, FriendEdgeDoc, FriendRequestDoc, BlockDoc, ConversationDoc, ChatMessageDoc, MailDoc } from '@nw/shared';
+import { FAMILY_MSG_RETENTION_SEC, CHAT_RETENTION_SEC } from '@nw/shared';
 
 // ── 家族（SS2/SS3：全局持久实体，无 worldId）─────────────────────────────
 
@@ -57,10 +57,27 @@ export interface FamilyMessageDoc {
 // index: { familyId: 1, ts: -1 }
 // TTL index: { ts: 1 } expireAfterSeconds = FAMILY_MSG_RETENTION_SEC
 
+// ── P2：好友 / 私聊 / 邮件（从 metaserver 迁入）────────────────────────────
+// 文档结构复用 @nw/shared 中的 Doc 类型（与 notebook_wars 库一致，直接迁移）。
+// index hints（见 ensureIndexes）：
+//   friendEdges:    { owner: 1 } + { _id: 1 }（friendEdgeId 精确查）
+//   friendRequests: { from: 1, status: 1 } + { to: 1, status: 1 }
+//   blockList:      { owner: 1 }
+//   conversations:  { members: 1, lastTs: -1 }
+//   chatMessages:   { convId: 1, ts: -1 } TTL: { ts: 1 } expireAfterSeconds = CHAT_RETENTION_SEC
+//   mails:          { to: 1, createdAt: -1 } + { to: 1, expireAt: 1 } TTL: { expireAt: 1 }
+
 export interface SocialCollections {
   families: Collection<FamilyDoc>;
   familyMembers: Collection<FamilyMemberDoc>;
   familyMessages: Collection<FamilyMessageDoc>;
+  // P2
+  friendEdges: Collection<FriendEdgeDoc>;
+  friendRequests: Collection<FriendRequestDoc>;
+  blockList: Collection<BlockDoc>;
+  conversations: Collection<ConversationDoc>;
+  chatMessages: Collection<ChatMessageDoc>;
+  mails: Collection<MailDoc>;
 }
 
 export interface SocialMongo {
@@ -77,23 +94,50 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
   const families = db.collection<FamilyDoc>('families');
   const familyMembers = db.collection<FamilyMemberDoc>('familyMembers');
   const familyMessages = db.collection<FamilyMessageDoc>('familyMessages');
+  const friendEdges = db.collection<FriendEdgeDoc>('friendEdges');
+  const friendRequests = db.collection<FriendRequestDoc>('friendRequests');
+  const blockList = db.collection<BlockDoc>('blockList');
+  const conversations = db.collection<ConversationDoc>('conversations');
+  const chatMessages = db.collection<ChatMessageDoc>('chatMessages');
+  const mails = db.collection<MailDoc>('mails');
 
-  const collections: SocialCollections = { families, familyMembers, familyMessages };
+  const collections: SocialCollections = {
+    families, familyMembers, familyMessages,
+    friendEdges, friendRequests, blockList, conversations, chatMessages, mails,
+  };
 
   async function ensureIndexes(): Promise<void> {
-    // families: TAG 全局唯一
+    // families
     await families.createIndex({ tag: 1 }, { unique: true });
     await families.createIndex({ leaderId: 1 });
 
-    // familyMembers: 按 familyId 查成员
+    // familyMembers
     await familyMembers.createIndex({ familyId: 1 });
 
-    // familyMessages: 分页查询 + TTL 自清
+    // familyMessages: TTL 自清
     await familyMessages.createIndex({ familyId: 1, ts: -1 });
-    await familyMessages.createIndex(
-      { ts: 1 },
-      { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC },
-    );
+    await familyMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
+
+    // friendEdges
+    await friendEdges.createIndex({ owner: 1 });
+
+    // friendRequests
+    await friendRequests.createIndex({ from: 1, status: 1 });
+    await friendRequests.createIndex({ to: 1, status: 1 });
+
+    // blockList
+    await blockList.createIndex({ owner: 1 });
+
+    // conversations
+    await conversations.createIndex({ members: 1, lastTs: -1 });
+
+    // chatMessages: TTL 自清
+    await chatMessages.createIndex({ convId: 1, ts: -1 });
+    await chatMessages.createIndex({ ts: 1 }, { expireAfterSeconds: CHAT_RETENTION_SEC });
+
+    // mails: TTL 自清
+    await mails.createIndex({ to: 1, createdAt: -1 });
+    await mails.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
   }
 
   return {

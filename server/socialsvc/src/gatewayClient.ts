@@ -37,15 +37,21 @@ export type SocialPushMsg =
       body: string;
       ts: number;
     }
-  | {
-      kind: 'system_notify';
-      message: string;
-    };
+  | { kind: 'system_notify'; message: string }
+  // P2: 好友 / 私聊 / 邮件实时推送
+  | { kind: 'friend_request'; requestId: string; fromPublicId: string; fromName: string; message: string }
+  | { kind: 'friend_update'; publicId: string; added: boolean }
+  | { kind: 'chat_message'; convId: string; fromPublicId: string; fromName: string; body: string; ts: number }
+  | { kind: 'mail_new'; mailId: string; hasAttachment: boolean };
 
 export interface SocialGatewayClient {
   readonly available: boolean;
   push(accountId: string, msg: SocialPushMsg): Promise<void>;
   pushMany(accountIds: string[], msg: SocialPushMsg): Promise<void>;
+  /** 批量查在线态（好友列表用）。返回 accountId→bool map。 */
+  presence(accountIds: string[]): Promise<Record<string, boolean>>;
+  /** 好友关系变更后让 gateway 的好友缓存失效（presence 广播范围重拉）。best-effort。 */
+  invalidateFriends(accountId: string): Promise<void>;
 }
 
 export class HttpSocialGatewayClient implements SocialGatewayClient {
@@ -75,10 +81,39 @@ export class HttpSocialGatewayClient implements SocialGatewayClient {
     if (!this.baseUrl || accountIds.length === 0) return;
     await Promise.allSettled(accountIds.map((id) => this.push(id, msg)));
   }
+
+  async presence(accountIds: string[]): Promise<Record<string, boolean>> {
+    if (!this.baseUrl || accountIds.length === 0) return {};
+    try {
+      const qs = encodeURIComponent(accountIds.join(','));
+      const res = await fetch(`${this.baseUrl}/gw/presence?accounts=${qs}`, {
+        headers: internalHeaders('socialsvc', this.internalKey),
+      });
+      if (!res.ok) return {};
+      return (await res.json()) as Record<string, boolean>;
+    } catch {
+      return {};
+    }
+  }
+
+  async invalidateFriends(accountId: string): Promise<void> {
+    if (!this.baseUrl) return;
+    try {
+      await fetch(`${this.baseUrl}/gw/social/invalidate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...internalHeaders('socialsvc', this.internalKey) },
+        body: JSON.stringify({ accountId }),
+      });
+    } catch {
+      // best-effort
+    }
+  }
 }
 
 export const nullSocialGatewayClient: SocialGatewayClient = {
   available: false,
   async push() { /* no-op */ },
   async pushMany() { /* no-op */ },
+  async presence() { return {}; },
+  async invalidateFriends() { /* no-op */ },
 };

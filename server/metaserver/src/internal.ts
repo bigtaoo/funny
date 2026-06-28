@@ -37,7 +37,7 @@ import { adsDayKey } from './economy.js';
 import { getProfile, resolveByPublicId, searchAccounts } from './accounts.js';
 import { grantTitleToPlayer } from './titles.js';
 import { accrueEventTask, adminListEvents, adminCreateEvent, adminUpdateEvent, adminDeleteEvent } from './events.js';
-import { friendAccountIds } from './social.js';
+import { friendAccountIds, profileOf } from './social.js';
 import { insertSystemMail, bulkInsertSystemMail } from './mail.js';
 import { escrowEquipment, grantEquipment } from './equipment.js';
 import type { CompTarget, EquipmentInstance, MailAttachmentDoc } from '@nw/shared';
@@ -204,6 +204,38 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
     const friends = await friendAccountIds(cols, accountId);
     return reply.send({ friends });
+  });
+
+  // ── P2：socialsvc 账号反查 ──────────────────────────────────────────────
+  // socialsvc 不直连 accounts 库，通过这两个内部端点解析 publicId / 批量拉资料。
+
+  // GET /internal/account/by-public-id/:publicId → { accountId, profile }
+  app.get('/internal/account/by-public-id/:publicId', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const { publicId } = req.params as { publicId: string };
+    const found = await resolveByPublicId(cols, publicId);
+    if (!found) return reply.code(404).send({ ok: false, error: 'not found' });
+    return reply.send({ accountId: found.accountId, profile: found.profile });
+  });
+
+  // POST /internal/account/batch-profiles → { profiles: { [accountId]: ProfileView } }
+  app.post('/internal/account/batch-profiles', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const { accountIds } = req.body as { accountIds?: unknown };
+    if (!Array.isArray(accountIds) || accountIds.length === 0) {
+      return reply.send({ profiles: {} });
+    }
+    const ids = (accountIds as unknown[]).filter((id): id is string => typeof id === 'string').slice(0, 200);
+    const profiles: Record<string, object> = {};
+    await Promise.all(ids.map(async (id) => {
+      const p = await profileOf(cols, id);
+      if (p) profiles[id] = p;
+    }));
+    return reply.send({ profiles });
   });
 
   // ── 系统邮件（S6-3，OPS_DESIGN §3.3）：admin 补偿工单经 HttpMailDispatcher 调用。──

@@ -75,6 +75,7 @@ async function main() {
     flags,
     region: env.region,
     lokiPushUrl: env.lokiPushUrl,
+    socialsvcUrl: env.socialsvcInternalUrl,
     // 请求日志走 buildApp 里可读的 onResponse 钩子（@nw/shared logger），不用 pino JSON。
     logger: false,
   });
