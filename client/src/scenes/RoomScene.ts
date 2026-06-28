@@ -253,6 +253,7 @@ export class RoomScene implements Scene {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   private render(): void {
+    this.container.removeChild(this.popup.container);
     tearDownChildren(this.container);
     this.hits = [];
     this.spinnerText = null;
