@@ -70,6 +70,8 @@ export interface FriendsSceneCallbacks {
   loadWorldChat?(before?: number): Promise<WorldChatMessage[]>;
   sendWorldChat?(body: string, senderName: string): Promise<void>;
   playerName?(): string;
+  /** Pre-select a tab on open — used by the lobby mail shortcut to jump straight to the mail tab. */
+  defaultTab?: 'friends' | 'mail';
 }
 
 type Tab = 'friends' | 'family' | 'sect' | 'world' | 'mail';
@@ -154,6 +156,7 @@ export class FriendsScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
+    if (cb.defaultTab) this.tab = cb.defaultTab;
     this.popup = new ProfilePopup(this.w, this.h);
 
     this.unsubs.push(input.onDown((x, y) => this.onPointerDown(x, y)));
