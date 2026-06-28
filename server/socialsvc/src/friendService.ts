@@ -55,6 +55,23 @@ export class FriendService {
 
   // ── 好友 ──────────────────────────────────────────────────────────────────
 
+  /** 仅拿 accountId 列表（presence 扇出用，不需要资料）。 */
+  async getFriendAccountIds(accountId: string): Promise<string[]> {
+    const edges = await this.cols.friendEdges.find({ owner: accountId }, { projection: { friend: 1 } }).toArray();
+    return edges.map((e) => e.friend);
+  }
+
+  /** 批量 accountId → publicId（presence 扇出用）。缺失 accountId 直接跳过。 */
+  async batchPublicIds(accountIds: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (accountIds.length === 0) return out;
+    const profiles = await this.meta.batchProfiles(accountIds);
+    for (const [id, p] of profiles) {
+      if (p.publicId) out.set(id, p.publicId);
+    }
+    return out;
+  }
+
   async getFriends(accountId: string): Promise<FriendView[]> {
     const edges = await this.cols.friendEdges.find({ owner: accountId }).sort({ since: -1 }).toArray();
     if (edges.length === 0) return [];

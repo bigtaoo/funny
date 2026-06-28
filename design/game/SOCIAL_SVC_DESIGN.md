@@ -245,8 +245,8 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 
 ### P3（gateway presence 事件对接）— 随 P1/P2 完成后
 
-1. gateway 上线/下线时调 socialsvc `/internal/presence/online|offline`
-2. socialsvc 实现好友在线通知扇出
+1. ✅ gateway 上线/下线时调 socialsvc `/internal/presence/online|offline`（`NW_SOCIALSVC_INTERNAL_URL` 配置；未配置则降级到 meta 好友列表直接广播）
+2. ✅ socialsvc 实现好友在线通知扇出（查 `nw_social.friendEdges` → 调 `gateway.presence()` 过滤在线 → `gateway.pushMany` 发 `friend_presence`；上线时回推在线好友快照）
 
 ---
 
