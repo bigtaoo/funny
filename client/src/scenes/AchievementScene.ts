@@ -13,6 +13,7 @@ import { tierState, achievementClaimable, type TierState } from '../game/meta/ac
 // 入口：StatsScene 顶部「成就」按钮。分类 tab（pve/pvp/collection/progression）+ 成就卡
 // （每卡三阶进度 + 各阶状态：未达/可领[领取]/已领）+ 红点（tab/卡）。仅自看，不对外展示
 // （对外炫耀走称号系统）。defs/stats/进度由 GET /achievements 服务端下发，客户端本地算阶（§4.1）。
+// 横屏：卡片以两列排布，充分利用宽屏空间。
 
 /** 分类 tab 顺序（无成就的分类自动隐藏）。 */
 const CATEGORY_ORDER: Achievement['category'][] = ['pve', 'pvp', 'collection', 'progression'];
@@ -39,6 +40,7 @@ export class AchievementScene implements Scene {
 
   private readonly w: number;
   private readonly h: number;
+  private readonly landscape: boolean;
   private readonly cb: AchievementCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
@@ -57,6 +59,7 @@ export class AchievementScene implements Scene {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
@@ -156,12 +159,38 @@ export class AchievementScene implements Scene {
 
     // 当前分类下的成就卡。
     const pad = Math.round(w * 0.06);
-    const cardW = w - pad * 2;
     const gap = Math.round(h * 0.02);
     const defs = this.data.defs.filter((d) => d.category === this.activeCat && !d.hidden);
-    for (const def of defs) {
-      y = this.drawCard(def, pad, y, cardW);
-      y += gap;
+
+    if (this.landscape) {
+      // 横屏：两列排布，左右各半宽
+      const colGap = Math.round(w * 0.02);
+      const halfW = Math.round((w - pad * 2 - colGap) / 2);
+      const col1X = pad;
+      const col2X = pad + halfW + colGap;
+
+      let col = 0;
+      let rowStartY = y;
+      let leftBottom = y;
+
+      for (const def of defs) {
+        const cardX = col === 0 ? col1X : col2X;
+        const cardBottom = this.drawCard(def, cardX, rowStartY, halfW);
+        if (col === 0) {
+          leftBottom = cardBottom;
+          col = 1;
+        } else {
+          rowStartY = Math.max(leftBottom, cardBottom) + gap;
+          col = 0;
+        }
+      }
+    } else {
+      // 竖屏：单列
+      const cardW = w - pad * 2;
+      for (const def of defs) {
+        y = this.drawCard(def, pad, y, cardW);
+        y += gap;
+      }
     }
 
     this.drawToast();

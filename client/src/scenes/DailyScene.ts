@@ -17,8 +17,8 @@ import {
 // ── DailyScene — 每日签到 + 每日任务（B5，RETENTION_DESIGN）─────────────────────
 //
 // 入口：LobbyScene「每日」按钮（onOpenDaily）。
-// 上半：30 格月历签到（当日格高亮，今日可领=绿色；已领=灰色；未到=虚线）。
-// 下半：3 条每日任务卡片 + 满点领取按钮。
+// 竖屏：上半 = 30 格月历签到，下半 = 3 条每日任务卡片 + 满点领取按钮。
+// 横屏：左列（55%）= 签到历，右列（45%）= 任务卡片。
 
 export interface DailyCallbacks {
   onBack(): void;
@@ -34,6 +34,7 @@ export class DailyScene implements Scene {
   readonly container: PIXI.Container;
   private readonly w: number;
   private readonly h: number;
+  private readonly landscape: boolean;
   private readonly cb: DailyCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
@@ -48,6 +49,7 @@ export class DailyScene implements Scene {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
@@ -122,10 +124,22 @@ export class DailyScene implements Scene {
 
     const nowMs = Date.now();
     const contentTop = h * 0.12;
-    const halfH = (h - contentTop) / 2;
 
-    this.renderCheckin(contentTop, halfH, save, nowMs);
-    this.renderDailyTasks(contentTop + halfH, halfH - h * 0.03, save, nowMs);
+    if (this.landscape) {
+      // 横屏：签到历在左列，任务在右列
+      const colGap = Math.round(w * 0.015);
+      const leftW = Math.round((w - colGap) * 0.55);
+      const rightX = leftW + colGap;
+      const rightW = w - rightX;
+      const availH = h - contentTop - h * 0.03;
+      this.renderCheckin(0, contentTop, leftW, availH, save, nowMs);
+      this.renderDailyTasks(rightX, contentTop, rightW, availH, save, nowMs);
+    } else {
+      // 竖屏：签到历上半，任务下半
+      const halfH = (h - contentTop) / 2;
+      this.renderCheckin(0, contentTop, w, halfH, save, nowMs);
+      this.renderDailyTasks(0, contentTop + halfH, w, halfH - h * 0.03, save, nowMs);
+    }
 
     if (this.toast) {
       const toastBg = new PIXI.Graphics();
@@ -140,15 +154,15 @@ export class DailyScene implements Scene {
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
   }
 
-  private renderCheckin(top: number, areaH: number, save: SaveData, nowMs: number): void {
-    const { w, h } = this;
+  private renderCheckin(areaX: number, top: number, areaW: number, areaH: number, save: SaveData, nowMs: number): void {
+    const { h } = this;
     const sec = txt(t('daily.checkin.title'), Math.round(h * 0.03), C.dark, true);
-    sec.x = w * 0.05; sec.y = top;
+    sec.x = areaX + areaW * 0.05; sec.y = top;
     this.container.addChild(sec);
 
     const COLS = 6;
-    const PAD = w * 0.04;
-    const cellW = (w - PAD * 2) / COLS;
+    const innerPad = areaW * 0.04;
+    const cellW = (areaW - innerPad * 2) / COLS;
     const cellH = Math.min(areaH * 0.78 / 5, cellW * 0.8);
     const gridTop = top + sec.height + h * 0.015;
 
@@ -163,7 +177,7 @@ export class DailyScene implements Scene {
     for (let day = 1; day <= 30; day++) {
       const col = (day - 1) % COLS;
       const row = Math.floor((day - 1) / COLS);
-      const cx = PAD + col * cellW + cellW * 0.5;
+      const cx = areaX + innerPad + col * cellW + cellW * 0.5;
       const cy = gridTop + row * (cellH + h * 0.006) + cellH * 0.5;
       const x = cx - cellW * 0.46;
       const y = cy - cellH * 0.46;
@@ -213,10 +227,10 @@ export class DailyScene implements Scene {
     }
   }
 
-  private renderDailyTasks(top: number, areaH: number, save: SaveData, nowMs: number): void {
-    const { w, h } = this;
+  private renderDailyTasks(areaX: number, top: number, areaW: number, areaH: number, save: SaveData, nowMs: number): void {
+    const { h } = this;
     const sec = txt(t('daily.tasks.title'), Math.round(h * 0.03), C.dark, true);
-    sec.x = w * 0.05; sec.y = top;
+    sec.x = areaX + areaW * 0.05; sec.y = top;
     this.container.addChild(sec);
 
     const taskLabels: [string, string][] = [
@@ -234,8 +248,8 @@ export class DailyScene implements Scene {
 
     const cardH = areaH * 0.22;
     const cardY0 = top + sec.height + h * 0.015;
-    const PAD = w * 0.05;
-    const cardW = w - PAD * 2;
+    const PAD = areaX + areaW * 0.05;
+    const cardW = areaW * 0.9;
 
     taskLabels.forEach(([taskId, labelKey], i) => {
       const done = (completedTasks[taskId] ?? 0) > 0;
