@@ -244,6 +244,25 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - 关卡目标摘要、关前 loadout（若关卡限定卡池）、PvE 养成等级预览、`[开打]`。
 - 进 `GameScene`（campaign 模式）。
 
+### 4.10 StatsScene（生涯/战绩）
+
+**朝向自适应布局（2026-06-28）**：用 `layout.orientation` 分支。
+
+**横屏（1920×1080）— 左右两列**：
+```
+外边距 pad = w*4%，列间距 colGap = w*2.5%
+左列 54%：排位对战 / 战役进度（上下堆叠）
+右列 46%：收集 / 对战历史（上下堆叠）
+```
+
+**竖屏（1080×1920）— 单列**：
+```
+外边距 pad = w*4%，四个 section 纵向堆叠
+```
+
+各 section 用 `drawSection()`：手绘面板 + 左侧色条（`sketchAccentBar`）+ 标题 + label:value 行。  
+行高 `h*3%`，标题高 `h*3.4%`，文字大小随高度比例，命中区 `InputManager.onDown` 统一处理（可点行注册至 `hits[]`）。
+
 ### 4.9 ResultScene（结算，扩展现有）
 现状已有。**扩展**：评星动画（StarRow 逐颗点亮）、奖励发放（材料/物品 Toast）、解锁弹窗（新关/新皮肤 Modal）、（联机）胜负 + 段位变化。
 
@@ -324,7 +343,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 
 ## 10. 开放问题
 
-- [ ] 横屏菜单的具体分栏比例（竖屏为主，横屏待定稿）。
+- ✅ 横屏菜单分栏比例（2026-06-28）：StatsScene 落地为左 54% / 右 46%，`layout.orientation` 分支；其余菜单场景同此惯例。
 - ✅ NavBar 图标美术（2026-06-28）：复用 `icons.ts` 手绘字形，无需单独美术资产。
 - [ ] 盲盒开箱动画的炫度分级（legendary 特效预算）。
 

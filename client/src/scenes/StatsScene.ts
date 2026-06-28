@@ -59,6 +59,7 @@ export class StatsScene implements Scene {
 
   private readonly w: number;
   private readonly h: number;
+  private readonly landscape: boolean;
   private readonly cb: StatsCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
@@ -69,6 +70,7 @@ export class StatsScene implements Scene {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
@@ -140,13 +142,11 @@ export class StatsScene implements Scene {
       });
     }
 
-    // Sections, stacked.
-    const pad = Math.round(w * 0.06);
-    const secW = w - pad * 2;
-    let y = tbH + Math.round(h * 0.035);
+    const pad = Math.round(w * 0.04);
+    const topY = tbH + Math.round(h * 0.035);
     const gap = Math.round(h * 0.022);
 
-    // 1. Ranked (+ season banner + leaderboard / battlepass entry rows)
+    // Shared row data ─────────────────────────────────────────────────────────
     const total = s.pvp.wins + s.pvp.losses;
     const winrate = total > 0 ? `${Math.round((s.pvp.wins / total) * 100)}%` : '—';
     const streak = s.pvp.streak > 0 ? t('stats.streakWin', { n: s.pvp.streak })
@@ -154,7 +154,6 @@ export class StatsScene implements Scene {
       : t('stats.streakNone');
     const rankName = t(('rank.' + s.pvp.rank) as TranslationKey);
 
-    // Season banner row (SE-6)
     let seasonBannerStr = '';
     if (this.cb.season) {
       const { seasonNo, endAt } = this.cb.season;
@@ -173,29 +172,44 @@ export class StatsScene implements Scene {
       { label: t('stats.streak'), value: streak, valueColor: s.pvp.streak > 0 ? C.green : s.pvp.streak < 0 ? C.red : C.mid },
       ...(this.cb.onOpenLeaderboard ? [{ label: '', value: t('leaderboard.openLeaderboard') + ' →', valueColor: C.accent, rowHit: () => this.cb.onOpenLeaderboard!() }] : []),
     ];
-    y = this.drawSection(pad, y, secW, t('stats.pvp'), C.accent, pvpRows);
-    y += gap;
 
-    // 2. Campaign
-    y = this.drawSection(pad, y, secW, t('stats.campaign'), C.gold, [
-      { label: t('stats.cleared'), value: `${s.cleared} / ${s.totalLevels}` },
-      { label: t('stats.stars'), value: `★ ${s.stars}` },
-    ]);
-    y += gap;
-
-    // 3. Collection + materials (combined panel)
     const matRows: Row[] = MATERIAL_ORDER.map((id) => ({
       label: t(('material.' + id) as TranslationKey),
       value: String(s.materials[id] ?? 0),
     }));
-    y = this.drawSection(pad, y, secW, t('stats.collection'), C.green, [
-      { label: t('stats.skins'), value: String(s.skinsOwned) },
-      ...matRows,
-    ]);
-    y += gap;
+    const collectionRows: Row[] = [{ label: t('stats.skins'), value: String(s.skinsOwned) }, ...matRows];
+    const campaignRows: Row[] = [
+      { label: t('stats.cleared'), value: `${s.cleared} / ${s.totalLevels}` },
+      { label: t('stats.stars'), value: `★ ${s.stars}` },
+    ];
 
-    // 4. Match history — fetched from the server (GET /match/history).
-    this.drawSection(pad, y, secW, t('stats.history'), C.mid, this.historyRows());
+    if (this.landscape) {
+      // ── 横屏：左右两列 ───────────────────────────────────────────────────
+      const colGap = Math.round(w * 0.025);
+      const totalW = w - pad * 2;
+      const leftW = Math.round(totalW * 0.54);
+      const rightW = totalW - leftW - colGap;
+      const leftX = pad;
+      const rightX = pad + leftW + colGap;
+
+      // Left: ranked + campaign
+      let ly = this.drawSection(leftX, topY, leftW, t('stats.pvp'), C.accent, pvpRows);
+      ly += gap;
+      this.drawSection(leftX, ly, leftW, t('stats.campaign'), C.gold, campaignRows);
+
+      // Right: collection + history
+      let ry = this.drawSection(rightX, topY, rightW, t('stats.collection'), C.green, collectionRows);
+      ry += gap;
+      this.drawSection(rightX, ry, rightW, t('stats.history'), C.mid, this.historyRows());
+    } else {
+      // ── 竖屏：单列，收窄外边距 ──────────────────────────────────────────
+      const secW = w - pad * 2;
+      let y = topY;
+      y = this.drawSection(pad, y, secW, t('stats.pvp'), C.accent, pvpRows); y += gap;
+      y = this.drawSection(pad, y, secW, t('stats.campaign'), C.gold, campaignRows); y += gap;
+      y = this.drawSection(pad, y, secW, t('stats.collection'), C.green, collectionRows); y += gap;
+      this.drawSection(pad, y, secW, t('stats.history'), C.mid, this.historyRows());
+    }
   }
 
   /** Rows for the match-history section, reflecting fetch state. */
