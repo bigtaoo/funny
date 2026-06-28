@@ -65,6 +65,8 @@ const TOKEN_KEY = 'nw_token';
 const PLAYER_NAME_KEY = 'nw_player_name';
 /** Persisted 9-digit public id (player-facing identifier; accountId stays internal). */
 const PLAYER_PUBLIC_ID_KEY = 'nw_player_public_id';
+/** Persisted avatar token ('0'-'7'); absent = letter-initial fallback. */
+const PLAYER_AVATAR_KEY = 'nw_player_avatar';
 /** Coin cost to change the display name. Mirrors server RENAME_COST; server authoritative. */
 const RENAME_COST = 500;
 /**
@@ -262,6 +264,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     return platform.storage.getItem(PLAYER_NAME_KEY) || t('settings.guest');
   }
 
+  /** Selected avatar token, or undefined for letter-initial fallback. */
+  function avatarId(): string | undefined {
+    return platform.storage.getItem(PLAYER_AVATAR_KEY) ?? undefined;
+  }
+
   function goLobby(opts?: { offline?: boolean; fromResize?: boolean }): void {
     // FTUE 步骤 ⑤：本会话首次将要进大厅时，未完成教学则改走专属教学关（ONBOARDING_DESIGN §2）。
     // 一次性闸门——后续从子场景返回大厅不再触发；resize 重绘也跳过。
@@ -305,6 +312,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       worldLocked: !isFirstChapterCleared(new Set(saveManager.get().progress.cleared)),
       onOpenProfile() { goSettings(); },
       playerName: playerName(),
+      avatarId: avatarId(),
       pvp: { rank: pvp.rank, elo: pvp.elo },
       coins: saveManager.get().wallet.coins,
       offline: offlineMode,
@@ -370,6 +378,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     views.showSettings({
       onBack() { goLobby(); },
       playerName: playerName(),
+      avatarId: avatarId(),
+      onSetAvatar: (id) => { platform.storage.setItem(PLAYER_AVATAR_KEY, id); },
       ...(platform.storage.getItem(PLAYER_PUBLIC_ID_KEY)
         ? { publicId: platform.storage.getItem(PLAYER_PUBLIC_ID_KEY)! }
         : {}),

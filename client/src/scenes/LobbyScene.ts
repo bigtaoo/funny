@@ -108,6 +108,8 @@ export interface LobbySceneCallbacks {
   onLogin?(): void;
   /** Log out (clear persisted session) — shown when logged in. */
   onLogout?(): void;
+  /** Selected avatar token ('0'-'7'); absent = letter-initial fallback. */
+  avatarId?: string;
 }
 
 type LobbyState = 'idle' | 'matching' | 'vs';
@@ -597,7 +599,7 @@ export class LobbyScene implements Scene {
     const av = Math.round(tbH * 0.46);
     const avX = Math.round(w * 0.03);
     const avY = Math.round(tbH * 0.5 - av / 2);
-    const avatar = buildAvatar(av, this.cb.playerName, 21);
+    const avatar = buildAvatar(av, this.cb.playerName, 21, this.cb.avatarId);
     avatar.x = avX; avatar.y = avY;
     this.container.addChild(avatar);
 
@@ -690,7 +692,7 @@ export class LobbyScene implements Scene {
     //   3. Engagement row: 每日 | 限时活动 (online only)
     // The old new-player feature blurbs were removed — everyone sees the same
     // action-first home (UI_DESIGN: lobby redesign).
-    const navH = Math.round(h * 0.08);
+    const navH = Math.round(h * 0.105);
     const contentW = Math.round(w * 0.82);
     const contentX = Math.round((w - contentW) / 2);
 
@@ -766,32 +768,33 @@ export class LobbyScene implements Scene {
     // 3. Engagement row — 每日 | 限时活动 (only when wired, i.e. online).
     if (hasEngagement) {
       const chipGap = Math.round(w * 0.025);
-      // 限时活动 only occupies a slot when a live window exists; otherwise it is
-      // hidden entirely (no permanently-greyed dead chip) and 每日 spans full width.
+      // 每日 occupies the right ~44% of the content row; when a live event window
+      // exists, the events chip takes the left half and each half stays ~same width.
       const live = !!this.cb.onOpenEvents && this.eventsAvailable;
-      const cw = live ? Math.round((contentW - chipGap) / 2) : contentW;
+      const cw = Math.round(live ? (contentW - chipGap) / 2 : contentW * 0.44);
+      const dailyX = contentX + contentW - cw;
 
       // 每日 check-in (B5) — warm fill + red dot when a reward is claimable.
-      this.dailyBtnRect = { x: contentX, y: chipsY, w: cw, h: chipH };
+      this.dailyBtnRect = { x: dailyX, y: chipsY, w: cw, h: chipH };
       const dbg = this.sketchPanel(cw, chipH, { fill: this.retentionBadge ? 0xfff3cc : C.paper, border: C.gold, width: 1.8, seed: 71 });
-      dbg.x = contentX; dbg.y = chipsY;
+      dbg.x = dailyX; dbg.y = chipsY;
       this.container.addChild(dbg);
       const dlabel = txt(t('daily.title'), Math.round(chipH * 0.4), C.dark, true);
       dlabel.anchor.set(0.5, 0.5);
-      dlabel.x = contentX + cw / 2; dlabel.y = chipsY + chipH / 2;
+      dlabel.x = dailyX + cw / 2; dlabel.y = chipsY + chipH / 2;
       this.container.addChild(dlabel);
       if (this.retentionBadge) {
         const dot = new PIXI.Graphics();
         dot.beginFill(0xff3333);
         dot.lineStyle(2, 0xffffff, 0.9);
-        dot.drawCircle(contentX + cw - 8, chipsY + 8, 7);
+        dot.drawCircle(dailyX + cw - 8, chipsY + 8, 7);
         dot.endFill();
         this.container.addChild(dot);
       }
 
-      // 限时活动 (B6) — drawn only when a live window exists.
+      // 限时活动 (B6) — drawn only when a live window exists (left of 每日).
       if (live) {
-        const evX = contentX + cw + chipGap;
+        const evX = contentX;
         this.eventsBtnRect = { x: evX, y: chipsY, w: cw, h: chipH };
         const ebg = this.sketchPanel(cw, chipH, { fill: 0xfff3cc, border: C.red, width: 1.8, seed: 73 });
         ebg.x = evX; ebg.y = chipsY;
@@ -825,50 +828,54 @@ export class LobbyScene implements Scene {
     //   养成(cards) · 商城(shop) · 主页(home,中心) · 生涯(stats) · 社交(social)。
     // 离线时商城/生涯/社交整 tab 灰显（§6 决策 6：不进入、不再引导）；养成(收藏读本地档)
     // 与主页照常可用。
-    interface NavSlot { name: string; color: number; active?: boolean; disabled?: boolean; assign?: (r: Rect) => void; }
+    interface NavSlot { name: string; icon: IconKind; color: number; active?: boolean; disabled?: boolean; assign?: (r: Rect) => void; }
     const off = !!this.cb.offline;
     const slots: NavSlot[] = [
-      { name: t('lobby.nav.cards'),  color: C.red,    assign: r => { this.cardsNavRect = r; } },
-      { name: t('lobby.nav.shop'),   color: C.green,  disabled: off, assign: r => { this.shopNavRect = r; } },
-      { name: t('lobby.nav.home'),   color: C.accent, active: true },
-      { name: t('lobby.nav.stats'),  color: C.accent, disabled: off, assign: r => { this.statsNavRect = r; } },
-      { name: t('lobby.nav.social'), color: C.gold,   disabled: off, assign: r => { this.socialNavRect = r; } },
+      { name: t('lobby.nav.cards'),  icon: 'book',   color: C.red,    assign: r => { this.cardsNavRect = r; } },
+      { name: t('lobby.nav.shop'),   icon: 'coin',   color: C.green,  disabled: off, assign: r => { this.shopNavRect = r; } },
+      { name: t('lobby.nav.home'),   icon: 'home',   color: C.accent, active: true },
+      { name: t('lobby.nav.stats'),  icon: 'trophy', color: C.accent, disabled: off, assign: r => { this.statsNavRect = r; } },
+      { name: t('lobby.nav.social'), icon: 'globe',  color: C.gold,   disabled: off, assign: r => { this.socialNavRect = r; } },
     ];
 
     const n = slots.length;
+    const iconS = Math.round(navH * 0.38);
+    // Vertical layout: icon top at navTop + navH*0.10, label below icon + gap.
+    const navTop = h - navH;
+    const iconTopY = navTop + Math.round(navH * 0.10);
+    const labelTopY = iconTopY + iconS + Math.round(navH * 0.04);
+
     slots.forEach((slot, i) => {
       const slotW = w / n;
       const slotX = i * slotW + slotW / 2;
-      const slotY = h - navH / 2;
       const active = !!slot.active;
       const disabled = !!slot.disabled;
-      const dotColor = disabled ? C.mid : slot.color;
+      const iconColor = disabled ? C.mid : (active ? 0xffffff : C.light);
 
-      // Active tab: a short accent bar across the top edge of the slot.
+      // Active tab: a short accent bar at the top edge of the slot.
       if (active) {
         const barW = Math.round(slotW * 0.5);
         const bar = new PIXI.Graphics();
-        bar.beginFill(dotColor, 0.95);
-        bar.drawRect(slotX - barW / 2, h - navH, barW, Math.max(2, Math.round(navH * 0.05)));
+        bar.beginFill(slot.color, 0.95);
+        bar.drawRect(slotX - barW / 2, navTop, barW, Math.max(2, Math.round(navH * 0.04)));
         bar.endFill();
         navBg.addChild(bar);
       }
 
-      const dot = new PIXI.Graphics();
-      dot.beginFill(dotColor, disabled ? 0.35 : (active ? 1.0 : 0.7));
-      dot.drawCircle(0, 0, Math.round(navH * (active ? 0.21 : 0.15)));
-      dot.endFill();
-      dot.x = slotX; dot.y = slotY - Math.round(navH * 0.18);
-      navBg.addChild(dot);
+      const icon = buildIcon(slot.icon, iconS, iconColor);
+      icon.alpha = disabled ? 0.35 : (active ? 1.0 : 0.72);
+      icon.x = Math.round(slotX - iconS / 2);
+      icon.y = iconTopY;
+      navBg.addChild(icon);
 
-      const navLabel = txt(slot.name, Math.round(navH * (active ? 0.24 : 0.21)), active ? 0xffffff : C.light, active);
+      const navLabel = txt(slot.name, Math.round(navH * 0.20), active ? 0xffffff : C.light, active);
       navLabel.anchor.set(0.5, 0);
       navLabel.alpha = disabled ? 0.4 : (active ? 1.0 : 0.78);
-      navLabel.x = slotX; navLabel.y = slotY + Math.round(navH * 0.04);
+      navLabel.x = slotX; navLabel.y = labelTopY;
       navBg.addChild(navLabel);
 
       // Disabled slots render greyed but receive no hit rect (tap = no-op).
-      if (!disabled) slot.assign?.({ x: i * slotW, y: h - navH, w: slotW, h: navH });
+      if (!disabled) slot.assign?.({ x: i * slotW, y: navTop, w: slotW, h: navH });
     });
 
     // Aggregate social unread badge (count bubble) drawn over the social slot.

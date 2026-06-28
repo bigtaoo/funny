@@ -76,6 +76,7 @@ export const zh = {
   'settings.back': '← 返回',
   'settings.coins': '金币：{coins}',
   'settings.playerId': 'ID #{id}',
+  'settings.avatar': '头像',
   'settings.rename': '✎ 改名（{cost} 金币）',
   'settings.renameTitle': '输入新名字',
   'settings.renamePlaceholder': '点此输入新名字',
