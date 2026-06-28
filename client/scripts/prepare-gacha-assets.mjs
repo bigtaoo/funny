@@ -91,6 +91,14 @@ const TASKS = [
     note: '限定池 Banner · 少年指挥官 + LIMITED 印章',
   },
 
+  // ── 常驻池 Banner（900×340 横版）──────────────────────────────────
+  {
+    src: 'KT1nb2jF7RizX57ydrqVt4_1782637597867_na1fn_L2hvbWUvdWJ1bnR1L2dhY2hhX2Jhbm5lcl9ub3RlYm9va19kb29kbGU.webp',
+    out: 'banner_standard.png',
+    w: 900, h: 340, fit: 'cover',
+    note: '常驻池 Banner · 摊开笔记本 + 文具 flat lay',
+  },
+
   // ── 月卡（560×240 横版）───────────────────────────────────────────
   {
     src: 'yEgYxZsKRrn1YQPVnCz9WJ_1782637374947_na1fn_L2hvbWUvdWJ1bnR1L2dhbWVfc3Vic2NyaXB0aW9uX3RpY2tldA.webp',
@@ -144,8 +152,6 @@ if (SKIP.length) {
   for (const s of SKIP) console.log(`  - ${s}`);
 }
 
-console.log(`\n待补充（尚无源图）：`);
-console.log(`  - banner_standard.png  常驻池横幅（需重新生成）`);
 console.log(`\n⚠️  建议重生成：`);
 console.log(`  - frame_rare.png       蓝钢笔边框风格偏维多利亚，与游戏手绘学生本风格略偏`);
 console.log(`  - monthly_card.png     右侧印章是游戏手柄图案，宜改为月亮/日历印章`);
