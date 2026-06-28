@@ -94,6 +94,8 @@ export interface LobbySceneCallbacks {
   onOpenDaily?(): void;
   /** Open the limited-time events screen (B6, ADR-014). Entry only appears when an event window is live. */
   onOpenEvents?(): void;
+  /** Quick shortcut to the mail tab in the social hub (P2 right-strip). Online only. */
+  onOpenMail?(): void;
   /** Open the personal profile / settings screen (top-left profile chip). */
   onOpenProfile(): void;
   /** Player display name shown in the top-left profile chip. */
@@ -163,14 +165,20 @@ export class LobbyScene implements Scene {
   private achievementBadge = false;
   /** Re-drawn layer for the achievement dot (cheap refresh, no nav rebuild). */
   private achievementBadgeLayer: PIXI.Container | null = null;
-  /** Retention claimable (B5: checkin or daily reward) → red dot on the daily button. */
+  /** Retention claimable (B5: checkin or daily reward) → red dot on the daily strip item. */
   private retentionBadge = false;
-  /** Hit rect for the daily button (top-right area). */
+  /** Hit rect for the daily strip item. */
   private dailyBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
-  /** B6: whether a live event window exists → show the 活动 entry. */
+  /** B6: whether a live event window exists → show the 活动 strip item. */
   private eventsAvailable = false;
-  /** Hit rect for the events button (right of the daily button). */
+  /** Hit rect for the events strip item. */
   private eventsBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Hit rect for the mail strip item (P2). */
+  private mailStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Hit rect for the achievements strip item (P2). */
+  private achieveStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Cheap-refresh layer for the red dots on the right-side strip (daily/mail/achievement). */
+  private sideStripBadgeLayer: PIXI.Container | null = null;
   /** null = not yet checked; true = reachable; false = unreachable → show badge. */
   private worldOnline: boolean | null = null;
   /** Cheap-refresh layer for the worldsvc-offline indicator on the world nav slot. */
@@ -231,6 +239,7 @@ export class LobbyScene implements Scene {
     this.titleBoil = null;
     this.socialBadgeLayer = null;
     this.achievementBadgeLayer = null;
+    this.sideStripBadgeLayer = null;
     this.toastLayer = null;
     this.toastRect = null;
     this.settlementLayer = null;
@@ -246,6 +255,7 @@ export class LobbyScene implements Scene {
     if (this.destroyed) return;
     this.socialBadge = Math.max(0, total | 0);
     this.drawSocialBadge();
+    this.drawSideStripBadges();
   }
 
   /**
@@ -257,14 +267,15 @@ export class LobbyScene implements Scene {
     if (this.destroyed) return;
     this.achievementBadge = claimable;
     this.drawAchievementBadge();
+    this.drawSideStripBadges();
   }
 
-  /** B5: mark whether any retention reward is claimable → red dot on the daily button. */
+  /** B5: mark whether any retention reward is claimable → red dot on the daily strip item. */
   applyRetentionBadge(claimable: boolean): void {
     if (this.destroyed) return;
     if (this.retentionBadge === claimable) return;
     this.retentionBadge = claimable;
-    this.rebuild();
+    this.drawSideStripBadges();
   }
 
   /** B6: mark whether a live event window exists → show / hide the 活动 entry button. */
@@ -275,14 +286,14 @@ export class LobbyScene implements Scene {
     this.rebuild();
   }
 
-  /** Full teardown + rebuild — needed when a layout element (daily/events button) appears or changes. */
+  /** Full teardown + rebuild — needed when a layout element (strip item) appears or changes. */
   private rebuild(): void {
-    // Full rebuild needed since the daily / events buttons are part of the main layout.
     tearDownChildren(this.container);
     this.toastLayer = null;
     this.settlementLayer = null;
     this.achievementBadgeLayer = null;
     this.socialBadgeLayer = null;
+    this.sideStripBadgeLayer = null;
     this.titleBoil = null;
     this.build();
   }
@@ -526,9 +537,20 @@ export class LobbyScene implements Scene {
       this.cb.onOpenEvents();
       return;
     }
-    const ac = this.accountChipRect;
-    if (ac && this.accountChipFn &&
-        x >= ac.x && x <= ac.x + ac.w && y >= ac.y && y <= ac.y + ac.h) {
+    const ml = this.mailStripRect;
+    if (ml.w > 0 && x >= ml.x && x <= ml.x + ml.w && y >= ml.y && y <= ml.y + ml.h) {
+      if (this.cb.onOpenMail) this.cb.onOpenMail();
+      else if (this.cb.onOpenSocial) this.cb.onOpenSocial();
+      return;
+    }
+    const ach = this.achieveStripRect;
+    if (ach.w > 0 && x >= ach.x && x <= ach.x + ach.w && y >= ach.y && y <= ach.y + ach.h) {
+      if (this.cb.onOpenAchievements) this.cb.onOpenAchievements();
+      return;
+    }
+    const acc = this.accountChipRect;
+    if (acc && this.accountChipFn &&
+        x >= acc.x && x <= acc.x + acc.w && y >= acc.y && y <= acc.y + acc.h) {
       this.accountChipFn();
       return;
     }
@@ -689,21 +711,25 @@ export class LobbyScene implements Scene {
     // A vertically-centred column between the header and the bottom nav:
     //   1. Hero "开始匹配" button (primary action)
     //   2. Two equal pillars: 战役 (PvE) | 大世界 (SLG)
-    //   3. Engagement row: 每日 | 限时活动 (online only)
-    // The old new-player feature blurbs were removed — everyone sees the same
-    // action-first home (UI_DESIGN: lobby redesign).
+    //   3. Right-side vertical strip: 每日 / 邮件 / 活动 / 成就 (P2, online only)
     const navH = Math.round(h * 0.105);
-    const contentW = Math.round(w * 0.82);
-    const contentX = Math.round((w - contentW) / 2);
 
-    const heroH   = Math.round(h * 0.165);  // ↑ from 0.135：开始匹配是主行动，给足视觉重量
+    // Right-side strip: present only when online (daily wired implies online).
+    const hasSideStrip = !!this.cb.onOpenDaily && !this.cb.offline;
+    const sideItemSz = hasSideStrip ? Math.round(h * 0.082) : 0;  // square icon cell
+    const sideGap    = hasSideStrip ? Math.round(w * 0.018) : 0;
+
+    // Content narrows to make room for the strip; left margin unchanged.
+    const fullContentW = Math.round(w * 0.82);
+    const contentX     = Math.round((w - fullContentW) / 2);
+    const contentW     = fullContentW - sideItemSz - sideGap;
+    const sideX        = contentX + contentW + sideGap;
+
+    const heroH   = Math.round(h * 0.165);
     const pillarH = Math.round(h * 0.155);
-    const chipH   = Math.round(h * 0.082);
     const gapA    = Math.round(h * 0.04);  // hero → pillars
-    const gapB    = Math.round(h * 0.03);  // pillars → chips
-    const hasEngagement = !!this.cb.onOpenDaily;
 
-    const stackH = heroH + gapA + pillarH + (hasEngagement ? gapB + chipH : 0);
+    const stackH  = heroH + gapA + pillarH;
     const usableTop = tbH;
     const usableH   = (h - navH) - tbH;
     // 上偏居中（0.40 而非 0.5）：让 hero 往上顶，收掉 header 下那块大留白。
@@ -711,7 +737,6 @@ export class LobbyScene implements Scene {
 
     const heroY    = startY;
     const pillarsY = heroY + heroH + gapA;
-    const chipsY   = pillarsY + pillarH + gapB;
 
     // 1. Hero — start match. Offline → local 人机对战; online → PvP ranked.
     this.btnRect = { x: contentX, y: heroY, w: contentW, h: heroH };
@@ -765,47 +790,59 @@ export class LobbyScene implements Scene {
       this.worldPillarRect = { x: 0, y: 0, w: 0, h: 0 };
     }
 
-    // 3. Engagement row — 每日 | 限时活动 (only when wired, i.e. online).
-    if (hasEngagement) {
-      const chipGap = Math.round(w * 0.025);
-      // 每日 occupies the right ~44% of the content row; when a live event window
-      // exists, the events chip takes the left half and each half stays ~same width.
-      const live = !!this.cb.onOpenEvents && this.eventsAvailable;
-      const cw = Math.round(live ? (contentW - chipGap) / 2 : contentW * 0.44);
-      const dailyX = contentX + contentW - cw;
+    // 3. Right-side vertical strip — 每日 / 邮件 / 活动 / 成就 (P2).
+    // Replaces the old horizontal engagement chip row. Items are compact sketch
+    // panels stacked vertically alongside the hero + pillars area, each with a
+    // short 2-char label and a red dot when actionable.
+    this.dailyBtnRect   = { x: 0, y: 0, w: 0, h: 0 };
+    this.eventsBtnRect  = { x: 0, y: 0, w: 0, h: 0 };
+    this.mailStripRect  = { x: 0, y: 0, w: 0, h: 0 };
+    this.achieveStripRect = { x: 0, y: 0, w: 0, h: 0 };
+    if (hasSideStrip) {
+      const hasEvents  = !!this.cb.onOpenEvents && this.eventsAvailable;
+      const hasMail    = !!(this.cb.onOpenMail ?? this.cb.onOpenSocial);
+      const hasAchieve = !!this.cb.onOpenAchievements;
 
-      // 每日 check-in (B5) — warm fill + red dot when a reward is claimable.
-      this.dailyBtnRect = { x: dailyX, y: chipsY, w: cw, h: chipH };
-      const dbg = this.sketchPanel(cw, chipH, { fill: this.retentionBadge ? 0xfff3cc : C.paper, border: C.gold, width: 1.8, seed: 71 });
-      dbg.x = dailyX; dbg.y = chipsY;
-      this.container.addChild(dbg);
-      const dlabel = txt(t('daily.title'), Math.round(chipH * 0.4), C.dark, true);
-      dlabel.anchor.set(0.5, 0.5);
-      dlabel.x = dailyX + cw / 2; dlabel.y = chipsY + chipH / 2;
-      this.container.addChild(dlabel);
-      if (this.retentionBadge) {
-        const dot = new PIXI.Graphics();
-        dot.beginFill(0xff3333);
-        dot.lineStyle(2, 0xffffff, 0.9);
-        dot.drawCircle(dailyX + cw - 8, chipsY + 8, 7);
-        dot.endFill();
-        this.container.addChild(dot);
-      }
+      type StripEntry = { label: string; border: number; seed: number; tag: 'daily' | 'mail' | 'events' | 'achieve' };
+      const entries: StripEntry[] = [];
+      entries.push({ label: t('daily.title'),        border: C.gold,  seed: 71, tag: 'daily'   });
+      if (hasMail)    entries.push({ label: t('lobby.strip.mail'),   border: C.gold,  seed: 72, tag: 'mail'    });
+      if (hasEvents)  entries.push({ label: t('lobby.strip.events'), border: C.red,   seed: 73, tag: 'events'  });
+      if (hasAchieve) entries.push({ label: t('lobby.strip.achieve'),border: C.accent,seed: 74, tag: 'achieve' });
 
-      // 限时活动 (B6) — drawn only when a live window exists (left of 每日).
-      if (live) {
-        const evX = contentX;
-        this.eventsBtnRect = { x: evX, y: chipsY, w: cw, h: chipH };
-        const ebg = this.sketchPanel(cw, chipH, { fill: 0xfff3cc, border: C.red, width: 1.8, seed: 73 });
-        ebg.x = evX; ebg.y = chipsY;
-        this.container.addChild(ebg);
-        const elabel = txt(t('event.title'), Math.round(chipH * 0.38), C.dark, true);
-        elabel.anchor.set(0.5, 0.5);
-        elabel.x = evX + cw / 2; elabel.y = chipsY + chipH / 2;
-        this.container.addChild(elabel);
-      } else {
-        this.eventsBtnRect = { x: 0, y: 0, w: 0, h: 0 };
-      }
+      const itemGap  = Math.round(h * 0.014);
+      const totalH   = entries.length * sideItemSz + (entries.length - 1) * itemGap;
+      // Vertically centre the strip within the hero+pillars block.
+      const stripTopY = Math.round(heroY + (stackH - totalH) / 2);
+      const fontSize  = Math.round(sideItemSz * 0.30);
+
+      entries.forEach((entry, i) => {
+        const iy = stripTopY + i * (sideItemSz + itemGap);
+        const bg = this.sketchPanel(sideItemSz, sideItemSz, { fill: C.paper, border: entry.border, width: 1.8, seed: entry.seed });
+        bg.x = sideX; bg.y = iy;
+        this.container.addChild(bg);
+
+        const lbl = txt(entry.label, fontSize, C.dark, true);
+        lbl.anchor.set(0.5, 0.5);
+        lbl.x = sideX + sideItemSz / 2; lbl.y = iy + sideItemSz / 2;
+        // Scale down if label doesn't fit (e.g. longer EN strings).
+        const maxW = sideItemSz * 0.88;
+        if (lbl.width > maxW) lbl.scale.set(maxW / lbl.width);
+        this.container.addChild(lbl);
+
+        const rect: Rect = { x: sideX, y: iy, w: sideItemSz, h: sideItemSz };
+        switch (entry.tag) {
+          case 'daily':   this.dailyBtnRect   = rect; break;
+          case 'mail':    this.mailStripRect   = rect; break;
+          case 'events':  this.eventsBtnRect   = rect; break;
+          case 'achieve': this.achieveStripRect = rect; break;
+        }
+      });
+
+      // Badge layer for cheap dot redraws (no full rebuild needed for state changes).
+      this.sideStripBadgeLayer = new PIXI.Container();
+      this.container.addChild(this.sideStripBadgeLayer);
+      this.drawSideStripBadges();
     }
 
     // Bottom nav (IA 重规划 §3). Five fixed slots; the center 主页 slot is the
@@ -983,6 +1020,29 @@ export class LobbyScene implements Scene {
     lbl.anchor.set(0.5, 0.5);
     lbl.x = tagX + tagW / 2; lbl.y = tagY + tagH / 2;
     layer.addChild(lbl);
+  }
+
+  /** Draw (or clear) red dots on the right-side strip items. Cheap refresh — no layout rebuild. */
+  private drawSideStripBadges(): void {
+    const layer = this.sideStripBadgeLayer;
+    if (!layer) return;
+    layer.removeChildren();
+
+    const r = Math.round(this.h * 0.012);
+    const drawDot = (rect: Rect): void => {
+      if (rect.w <= 0) return;
+      const g = new PIXI.Graphics();
+      g.beginFill(C.red);
+      g.lineStyle(Math.max(1, Math.round(r * 0.5)), 0xffffff, 0.9);
+      g.drawCircle(rect.x + rect.w - r, rect.y + r, r);
+      g.endFill();
+      layer.addChild(g);
+    };
+
+    if (this.retentionBadge)      drawDot(this.dailyBtnRect);
+    if (this.socialBadge > 0)     drawDot(this.mailStripRect);
+    if (this.achievementBadge)    drawDot(this.achieveStripRect);
+    // Events strip item has no badge (it's a contextual entry, not a reward).
   }
 
   /**

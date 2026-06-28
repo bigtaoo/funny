@@ -66,6 +66,9 @@ export const zh = {
   'lobby.nav.home': '主页',
   'lobby.nav.shop': '商城',
   'lobby.nav.social': '社交',
+  'lobby.strip.events': '活动',
+  'lobby.strip.achieve': '成就',
+  'lobby.strip.mail': '邮件',
 
   // ── 个人设置 ──────────────────────────────────────────────────────────────
   'settings.title': '个人设置',

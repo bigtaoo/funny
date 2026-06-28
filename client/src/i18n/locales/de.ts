@@ -66,6 +66,9 @@ export const de: Record<TranslationKey, string> = {
   'lobby.nav.home': 'Start',
   'lobby.nav.shop': 'Laden',
   'lobby.nav.social': 'Sozial',
+  'lobby.strip.events': 'Events',
+  'lobby.strip.achieve': 'Erfolg',
+  'lobby.strip.mail': 'Post',
 
   // ── Persönliche Einstellungen ───────────────────────────────────────────────
   'settings.title': 'Profil',

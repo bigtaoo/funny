@@ -302,6 +302,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onOpenCampaign() { goCampaignMap(); },
       onOpenRoom() { goRoom(); },
       onOpenSocial() { withGuide('social', 'guide.social.title', 'guide.social.body', () => goFriends()); },
+      ...(online ? { onOpenMail: () => goMail() } : {}),
       onOpenShop() { withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => goGacha({})); },
       onOpenCards() { withGuide('cards', 'guide.cards.title', 'guide.cards.body', () => goCollection(goLobby, 'cards')); },
       onOpenStats() { goStats(); },
@@ -578,7 +579,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     }
   }
 
-  function goFriends(): void {
+  function goFriends(opts?: { defaultTab?: 'friends' | 'mail' }): void {
     // Social needs a server account; offline / no API → bounce to login.
     if (!api) { analytics.track('login_gate_hit', { scene: 'FriendsScene' }); goLogin(); return; }
     analytics.track('screen_view', { scene: 'FriendsScene' });
@@ -606,6 +607,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const view: FriendsView = views.showFriends({
       onBack() { restore(); goLobby(); },
       onOpenRoom() { goRoom(); },
+      ...(opts?.defaultTab ? { defaultTab: opts.defaultTab } : {}),
       loadFriends: () => client.getFriends(),
       loadRequests: () => client.getFriendRequests(),
       search: (publicId) => client.searchFriend(publicId),
@@ -682,6 +684,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       session.connect();
     }
   }
+
+  /** 右侧竖栏邮件快捷入口 → FriendsScene 直接落邮件 Tab。 */
+  function goMail(): void { goFriends({ defaultTab: 'mail' }); }
 
   function goChat(peerPublicId: string, peerName: string): void {
     if (!api) { goLogin(); return; }
