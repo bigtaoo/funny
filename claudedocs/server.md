@@ -13,7 +13,7 @@
 - **钱包权威**：`SaveData.wallet.coins` 是只读镜像；商业操作经 commercial → meta 编排 → 回推
 - **PvE 服务器权威**：通关/升级走 `/pve/clear`、`/pve/upgrade` API；`SyncPatch` 只同步 `equipped`/`flags`
 
-## 8 个应用进程（+ mongo/redis 基础设施）+ 端口
+## 9 个应用进程（+ mongo/redis 基础设施）+ 端口
 
 | 进程 | 端口 | 说明 |
 |---|---|---|
@@ -25,6 +25,7 @@
 | admin | 18083 | 运维后台后端，玩家不可达 |
 | worldsvc | 18084 | SLG 大世界，公网第四面 |
 | analyticsvc | 18085 | 埋点分析，fire-and-forget |
+| socialsvc | 8085 | 社交第五面（家族/好友/邮件/频道/push路由） |
 | mongo | 27017 | 副本集（单节点） |
 
 **Windows TCP 排除端口注意**：`netsh interface ipv4 show excludedportrange` 查被 WinNAT/Hyper-V 保留的端口段，撞上换端口（8082/8083 曾被保留，现用 8086）。
@@ -61,7 +62,7 @@ npm run dev:all             # 起全部进程（dev-up.ps1）
 | http://localhost:9093 | ops 运维后台（跨源调 admin :18083；种子账号 `admin`/`admin123`） |
 | http://localhost:18083 | admin 运维后端（仅 ops 前端访问） |
 
-nginx 同源反代（`client/nginx.conf`）：`/` SPA · `/api/`→metaserver:8080 · `/gw`→gateway WS · `/ws`→gameserver WS · `/world`,`/family`,`/auction`→worldsvc:18084（不剥前缀）· `/analytics`→analyticsvc:18085。worldsvc 内部需 redis + gateway/commercial/meta 内网基址；analyticsvc/worldsvc 不暴露宿主，仅经 nginx。
+nginx 同源反代（`client/nginx.conf`）：`/` SPA · `/api/`→metaserver:8080 · `/gw`→gateway WS · `/ws`→gameserver WS · `/world`,`/family`,`/auction`→worldsvc:18084（不剥前缀）· `/social`→socialsvc:8085 · `/analytics`→analyticsvc:18085。worldsvc 内部需 redis + gateway/commercial/meta 内网基址；socialsvc 内部需 gateway 内网基址；analyticsvc/worldsvc/socialsvc 不暴露宿主，仅经 nginx。
 
 **容器内端口与 dev 不同**：镜像里各进程固定监听 metaserver:8080 / gateway:8082(内部 8090) / gameserver:8081 / commercial:8092 / matchsvc:8091 / worldsvc:18084 / admin:18083 / analyticsvc:18085（dev 裸跑的 18080/8086 等仅 webpack 注入默认值用）。
 

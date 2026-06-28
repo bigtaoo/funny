@@ -28,7 +28,8 @@ export type InternalCaller =
   | 'commercial'
   | 'worldsvc'
   | 'admin'
-  | 'analyticsvc';
+  | 'analyticsvc'
+  | 'socialsvc';
 
 /** 字符串等长 timing-safe 比对（长度不同直接 false，不泄露长度外的逐字节信息）。 */
 function timingSafeEq(a: string, b: string): boolean {
