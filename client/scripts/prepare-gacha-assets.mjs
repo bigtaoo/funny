@@ -33,25 +33,25 @@ mkdirSync(DEST, { recursive: true });
 const TASKS = [
   // ── 结果卡背景（5:7 竖版，400×560）─────────────────────────────────
   {
-    src: '77be3b2a-463b-49c9-afd9-42e3ab154d74.png',
+    src: 'gacha_card_common.png',
     out: 'gacha_card_common.png',
     w: 400, h: 560, fit: 'cover',
     note: '普通 · 铅笔横线纸',
   },
   {
-    src: 'df51c9f3-cd64-4363-8e67-b10848b1268e.png',
+    src: 'gacha_card_rare.png',
     out: 'gacha_card_rare.png',
     w: 400, h: 560, fit: 'cover',
     note: '稀有 · 蓝墨水泼洒',
   },
   {
-    src: 'f0e04b6b-2b43-42f9-957c-c19f43a2a78c.png',
+    src: 'gacha_card_epic.png',
     out: 'gacha_card_epic.png',
     w: 400, h: 560, fit: 'cover',
     note: '史诗 · 紫马克笔全幅',
   },
   {
-    src: '318c5a97-3209-4348-8b48-a4551161388c.png',
+    src: 'gacha_card_legendary.png',
     out: 'gacha_card_legendary.png',
     w: 400, h: 560, fit: 'cover',
     note: '传说 · 烫金压花纸',
@@ -59,25 +59,25 @@ const TASKS = [
 
   // ── 稀有度边框（正方形，480×480，contain 保留角装饰）───────────────
   {
-    src: '897e5525-4f30-4b41-a9d3-3ddabc0c017c.png',
+    src: 'frame_common.png',
     out: 'frame_common.png',
     w: 480, h: 480, fit: 'contain', bg: { r:255,g:255,b:255,alpha:0 },
     note: '普通边框 · 铅笔歪框',
   },
   {
-    src: 'DUWCc4yClGGDwo7gxEM233_1782637112786_na1fn_L2hvbWUvdWJ1bnR1L2ZvdW50YWluX3Blbl9mcmFtZQ.webp',
+    src: 'frame_rare.webp',
     out: 'frame_rare.png',
     w: 480, h: 480, fit: 'contain', bg: { r:255,g:255,b:255,alpha:0 },
     note: '稀有边框 · 蓝钢笔卷草（风格偏正式，待重生成）',
   },
   {
-    src: 'JkIKdE5ibQIvZGNSpnhmYp_1782637180602_na1fn_L2hvbWUvdWJ1bnR1L3B1cnBsZV9tYXJrZXJfZnJhbWU.webp',
+    src: 'frame_epic.webp',
     out: 'frame_epic.png',
     w: 480, h: 480, fit: 'contain', bg: { r:255,g:255,b:255,alpha:0 },
     note: '史诗边框 · 紫马克笔粗框',
   },
   {
-    src: 'DNIlmycw0xCdd3X2FIw7dD_1782637302003_na1fn_L2hvbWUvdWJ1bnR1L2dvbGRfY2FsbGlncmFwaHlfZnJhbWU.webp',
+    src: 'frame_legendary.webp',
     out: 'frame_legendary.png',
     w: 480, h: 480, fit: 'contain', bg: { r:255,g:255,b:255,alpha:0 },
     note: '传说边框 · 金色书法卷草',
@@ -85,7 +85,7 @@ const TASKS = [
 
   // ── Banner（900×340 横版）──────────────────────────────────────────
   {
-    src: 'jyPqSRBEwL26UrLnONC1fY_1782637478736_na1fn_L2hvbWUvdWJ1bnR1L2dhY2hhX2Jhbm5lcl9pbGx1c3RyYXRpb24.webp',
+    src: 'banner_limited_01.webp',
     out: 'banner_limited_01.png',
     w: 900, h: 340, fit: 'cover',
     note: '限定池 Banner · 少年指挥官 + LIMITED 印章',
@@ -93,7 +93,7 @@ const TASKS = [
 
   // ── 常驻池 Banner（900×340 横版）──────────────────────────────────
   {
-    src: 'KT1nb2jF7RizX57ydrqVt4_1782637597867_na1fn_L2hvbWUvdWJ1bnR1L2dhY2hhX2Jhbm5lcl9ub3RlYm9va19kb29kbGU.webp',
+    src: 'banner_standard.webp',
     out: 'banner_standard.png',
     w: 900, h: 340, fit: 'cover',
     note: '常驻池 Banner · 摊开笔记本 + 文具 flat lay',
@@ -101,7 +101,7 @@ const TASKS = [
 
   // ── 月卡（560×240 横版）───────────────────────────────────────────
   {
-    src: 'yEgYxZsKRrn1YQPVnCz9WJ_1782637374947_na1fn_L2hvbWUvdWJ1bnR1L2dhbWVfc3Vic2NyaXB0aW9uX3RpY2tldA.webp',
+    src: 'monthly_card.webp',
     out: 'monthly_card.png',
     w: 560, h: 240, fit: 'cover',
     note: '月卡 · 便利贴造型（印章是游戏手柄，待重生成替换）',
@@ -110,7 +110,7 @@ const TASKS = [
 
 // ── 跳过（重复/备用）──────────────────────────────────────────────────
 const SKIP = [
-  '76d1b5c9-0a72-430f-8d60-92f8f0bc5aad.png', // rare 备用，与 df51c9f3 重复
+  'gacha_card_rare_alt.png', // rare 备用，与 gacha_card_rare.png 重复
 ];
 
 async function processOne(task) {
