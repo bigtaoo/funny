@@ -13,6 +13,8 @@ export interface GatewayEnv extends ServerEnv {
   matchsvcInternalUrl: string | null;
   /** Redis 连接串（S8-4b，订阅 GW_PUSH_REDIS_CHANNEL 做宗门频道扇出）；缺省 = 实时推送降级。 */
   redisUrl: string | undefined;
+  /** socialsvc 内部基址（P3：presence 事件 POST /internal/presence/online|offline）；缺省 = gateway 直接做在线好友广播。 */
+  socialsvcInternalUrl: string | null;
 }
 
 export function loadGatewayEnv(): GatewayEnv {
@@ -24,5 +26,6 @@ export function loadGatewayEnv(): GatewayEnv {
     metaBaseUrl: process.env.NW_META_BASE_URL ?? null,
     matchsvcInternalUrl: process.env.NW_MATCHSVC_INTERNAL_URL ?? null,
     redisUrl: process.env.NW_GW_REDIS_URL || undefined,
+    socialsvcInternalUrl: process.env.NW_SOCIALSVC_INTERNAL_URL ?? null,
   };
 }

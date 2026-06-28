@@ -19,6 +19,7 @@ import {
 } from './proto';
 import type { MatchsvcClient, PushMsg } from './matchsvcClient';
 import type { MetaClient } from './metaClient';
+import type { SocialsvcClient } from './socialsvcClient';
 
 const HEARTBEAT_MS = 30_000;
 /** 裁判复算 + 回报的等待上限（含网络往返 + 客户端跑完整局）。 */
@@ -89,6 +90,7 @@ export class Gateway {
     private readonly jwt: JwtConfig,
     private readonly matchsvc: MatchsvcClient,
     private readonly meta: MetaClient,
+    private readonly socialsvc?: SocialsvcClient,
   ) {
     this.wss = new WebSocketServer({ host: opts.host, port: opts.port, path: '/gw' });
     this.wss.on('connection', (ws, req) => this.onConnection(ws, req.url, req.headers.host));
@@ -174,9 +176,20 @@ export class Gateway {
 
   /**
    * 上/下线广播：向当前在线的好友 push 我的 friend_presence；上线时另给我推一份在线好友快照。
-   * meta 不可用（无好友来源）则跳过——presence 是好友功能，不影响联机主线。
+   * P3：若 socialsvc 已配置，委托 socialsvc 做扇出（好友数据权威在 nw_social）。
+   * 降级：socialsvc 未配置时沿用 meta.getFriends 直接广播（好友数据在 metaserver）。
    */
   private async broadcastPresence(accountId: string, online: boolean): Promise<void> {
+    if (this.socialsvc?.available) {
+      // P3 路径：gateway 仅触发事件，socialsvc 查 nw_social 好友边后扇出推送
+      if (online) {
+        await this.socialsvc.notifyOnline(accountId);
+      } else {
+        await this.socialsvc.notifyOffline(accountId);
+      }
+      return;
+    }
+    // 降级路径：socialsvc 未配置，gateway 直接用 meta 好友列表广播
     if (!this.meta.available) return;
     const [friends, myPid] = await Promise.all([
       this.friendsOf(accountId),

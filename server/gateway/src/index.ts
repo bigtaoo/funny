@@ -10,6 +10,7 @@ import { loadGatewayEnv } from './config';
 import { Gateway } from './Gateway';
 import { MatchsvcClient } from './matchsvcClient';
 import { MetaClient } from './metaClient';
+import { SocialsvcClient } from './socialsvcClient';
 import { startInternalHttp } from './internalHttp';
 import { connectGatewaySubscriber, type GatewaySubscriber } from './redis';
 
@@ -19,7 +20,8 @@ async function main(): Promise<void> {
 
   const meta = new MetaClient(env.metaBaseUrl, env.internalKey);
   const matchsvc = new MatchsvcClient(env.matchsvcInternalUrl, env.internalKey);
-  const gateway = new Gateway({ host: env.host, port: env.port }, jwt, matchsvc, meta);
+  const socialsvc = new SocialsvcClient(env.socialsvcInternalUrl, env.internalKey);
+  const gateway = new Gateway({ host: env.host, port: env.port }, jwt, matchsvc, meta, socialsvc);
 
   const internal = startInternalHttp(
     { host: '0.0.0.0', port: env.internalPort, internalAuth: loadInternalAuth(env.internalKey) },
@@ -46,6 +48,7 @@ async function main(): Promise<void> {
   console.log(
     `matchsvc: ${matchsvc.available ? env.matchsvcInternalUrl : 'unavailable (rooms/match disabled)'}; ` +
       `meta ELO: ${meta.available ? env.metaBaseUrl : 'unavailable (ranked disabled)'}; ` +
+      `socialsvc presence: ${socialsvc.available ? env.socialsvcInternalUrl : 'off (fallback to meta)'}; ` +
       `redis push fan-out: ${subscriber ? 'on' : 'off'}`,
   );
   startHeartbeat(createLogger('gateway')); // 存活心跳：空闲时每 5 分钟一条 info 日志

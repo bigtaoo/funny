@@ -12,14 +12,7 @@ export type SocialPushMsg =
       body: string;
       ts: number;
     }
-  | {
-      kind: 'friend_online';
-      accountId: string;
-    }
-  | {
-      kind: 'friend_offline';
-      accountId: string;
-    }
+  | { kind: 'friend_presence'; publicId: string; online: boolean }
   | {
       // 委托推送：来自 worldsvc/metaserver 的 /internal/push 转发
       kind: 'sect_msg';

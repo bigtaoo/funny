@@ -19,6 +19,49 @@ import type { MailService } from './mailService';
 import type { SocialGatewayClient, SocialPushMsg } from './gatewayClient';
 import { CHAT_SEND_RATE_PER_MIN, type ChatRegion } from '@nw/shared';
 
+/**
+ * 好友在线/下线通知扇出（P3，SOCIAL_SVC_DESIGN §5 Presence 推送链）。
+ * 上线：向在线好友推我上线 + 把在线好友状态回推给我。
+ * 下线：仅向在线好友推我下线（我已断连，无需回推）。
+ * 全部 best-effort：失败不影响主流程。
+ */
+async function presenceFanOut(
+  accountId: string,
+  online: boolean,
+  _familySvc: FamilyService,
+  friendSvc: FriendService,
+  gateway: SocialGatewayClient,
+): Promise<void> {
+  if (!gateway.available) return;
+  const friendIds = await friendSvc.getFriendAccountIds(accountId);
+  if (friendIds.length === 0) return;
+
+  const myProfiles = await friendSvc.batchPublicIds([accountId]);
+  const myPublicId = myProfiles.get(accountId);
+  if (!myPublicId) return; // 账号无 publicId，不广播
+
+  const presenceMap = await gateway.presence(friendIds);
+  const onlineFriendIds = friendIds.filter((id) => presenceMap[id]);
+  if (onlineFriendIds.length === 0 && !online) return;
+
+  // 推给在线好友：我上线/下线了
+  if (onlineFriendIds.length > 0) {
+    await gateway.pushMany(onlineFriendIds, { kind: 'friend_presence', publicId: myPublicId, online });
+  }
+
+  // 上线时：把在线好友的状态回推给我（让我知道谁在线）
+  if (online && onlineFriendIds.length > 0) {
+    const friendPids = await friendSvc.batchPublicIds(onlineFriendIds);
+    await Promise.allSettled(
+      onlineFriendIds.map((fid) => {
+        const pid = friendPids.get(fid);
+        if (!pid) return Promise.resolve();
+        return gateway.push(accountId, { kind: 'friend_presence', publicId: pid, online: true });
+      }),
+    );
+  }
+}
+
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -204,9 +247,13 @@ export function startHttpApi(
           return send(res, 200, ok({}));
         }
 
-        // Presence 事件（gateway 调用，P3）
+        // Presence 事件（gateway 调用，P3）：好友在线/下线通知扇出
         if (method === 'POST' && (path === '/internal/presence/online' || path === '/internal/presence/offline')) {
-          // P3 期实现好友在线通知扇出；当前仅 200 OK 占位
+          const body = await readJson(req);
+          const presenceAccountId = typeof body.accountId === 'string' ? body.accountId : null;
+          if (!presenceAccountId) return sendErr(res, ErrorCode.BAD_REQUEST, 'accountId required');
+          const isOnline = path.endsWith('/online');
+          void presenceFanOut(presenceAccountId, isOnline, familySvc, friendSvc, gateway).catch(() => { /* best-effort */ });
           return send(res, 200, ok({}));
         }
 
