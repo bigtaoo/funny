@@ -19,6 +19,8 @@ export interface WorldsvcEnv extends ServerEnv {
   commercialInternalUrl: string | undefined;
   /** meta 内部 HTTP 基址（拍卖场 S8-5：材料扣除 / 发放）；缺省 = 不支持材料交易。 */
   metaInternalUrl: string | undefined;
+  /** socialsvc 内部 HTTP 基址（P1：家族路由代理 + 频道推送委托）；缺省 = 不代理/不委托。 */
+  socialsvcInternalUrl: string | undefined;
 }
 
 export function loadWorldsvcEnv(): WorldsvcEnv {
@@ -33,5 +35,6 @@ export function loadWorldsvcEnv(): WorldsvcEnv {
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL || undefined,
     commercialInternalUrl: process.env.NW_COMMERCIAL_INTERNAL_URL || undefined,
     metaInternalUrl: process.env.NW_META_INTERNAL_URL || undefined,
+    socialsvcInternalUrl: process.env.NW_SOCIALSVC_INTERNAL_URL || undefined,
   };
 }

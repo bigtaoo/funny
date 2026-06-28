@@ -228,11 +228,11 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 1. ✅ 建 `server/socialsvc/` 服务（node:http，参照 worldsvc 骨架；`@nw/shared InternalCaller` 加 `socialsvc`）
 2. ✅ 建 `nw_social` 库 + families / familyMembers / familyMessages 集合（无 worldId，`FamilyMemberDoc._id = accountId`）
 3. ✅ 从 worldsvc 的 `familyService.ts` 搬移代码到 socialsvc，**去掉 worldId**，TAG 唯一索引改为全库唯一
-4. worldsvc `/family/*` 路由改为内部转发到 socialsvc（过渡期兼容，最终删除）
-5. worldsvc `playerWorld` 保留 `familyId` 字段（由"玩家分配大区"时调 `/internal/family/by-account` 填入）
-6. 频道 Redis 宿主切换到 socialsvc；worldsvc 宗门/世界公频改调 `/internal/push`
-7. 反代加 `/social/*` → socialsvc:8085 规则
-8. 存量家族数据迁移脚本：worldsvc families 集合 → nw_social families（去 worldId，TAG 冲突时加后缀）
+4. ✅ worldsvc `/family/*` 路由改为内部转发到 socialsvc（过渡期兼容，最终删除）
+5. ✅ worldsvc `playerWorld` 保留 `familyId` 字段（由"玩家分配大区"时调 `/internal/family/by-account` 填入）
+6. ✅ 频道 Redis 宿主切换到 socialsvc；worldsvc 宗门/世界公频改调 `/internal/push`
+7. ✅ 反代加 `/social/*` → socialsvc:8085 规则
+8. ✅ 存量家族数据迁移脚本：worldsvc families 集合 → nw_social families（去 worldId，TAG 冲突时加后缀）
 
 ### P2（好友 / 私聊 / 邮件迁移）— 第二优先级
 

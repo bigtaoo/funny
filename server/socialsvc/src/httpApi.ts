@@ -97,6 +97,8 @@ export function startHttpApi(
           const channel = body.channel as { kind: string; familyId?: string; sectId?: string; worldId?: string; accountId?: string } | undefined;
           const event = typeof body.event === 'string' ? body.event : '';
           const payload = body.payload;
+          // targets：调用方已计算好的收件人列表（P1 过渡，sect/world 频道 Redis pub/sub P3 实现前的兜底）。
+          const targets = Array.isArray(body.targets) ? (body.targets as string[]) : null;
           if (!channel || !event) return sendErr(res, ErrorCode.BAD_REQUEST, 'channel + event required');
 
           const msg: SocialPushMsg = {
@@ -104,7 +106,10 @@ export function startHttpApi(
             ...(payload as object),
           } as SocialPushMsg;
 
-          if (channel.kind === 'account' && channel.accountId) {
+          if (targets && targets.length > 0) {
+            // 调用方提供了明确收件人列表（sect/world 频道 P1 兜底）。
+            await gateway.pushMany(targets, msg);
+          } else if (channel.kind === 'account' && channel.accountId) {
             await gateway.push(channel.accountId, msg);
           } else if (channel.kind === 'family' && channel.familyId) {
             // 推给所有家族在线成员（O(n)，≤30 人）
@@ -113,6 +118,7 @@ export function startHttpApi(
               await gateway.pushMany(detail.members.map((m) => m.accountId), msg);
             }
           }
+          // sect/world channel 无 targets 时：P3 将改用 Redis pub/sub 路由（当前仅落库，无实时推送）。
           return send(res, 200, ok({}));
         }
 
