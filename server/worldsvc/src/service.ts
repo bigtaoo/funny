@@ -83,6 +83,7 @@ import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient
 import { nullWorldMetaClient, type WorldMetaClient, type PlayerProfile } from './metaClient';
 import { nullWorldCommercialClient, type WorldCommercialClient } from './commercialClient';
 import { nullWorldMailClient, type WorldMailClient } from './mailClient';
+import { nullWorldSocialsvcClient, type WorldSocialsvcClient } from './socialsvcClient';
 
 /** 自动落城靠近家族时，围绕成员主城逐环搜空格的最大切比雪夫半径（§3.4）。 */
 const SPAWN_NEAR_FAMILY_RADIUS = 6;
@@ -217,6 +218,8 @@ export interface WorldServiceDeps {
   commercial?: WorldCommercialClient;
   /** 系统邮件（赛季结算发奖，§17.5）；缺省 = 不发奖（best-effort）。 */
   mail?: WorldMailClient;
+  /** socialsvc 内部客户端（SS7：joinWorld 时同步 familyId 只读镜像）；缺省 = 不填充 familyId。 */
+  socialsvc?: WorldSocialsvcClient;
 }
 
 const emptyResources = (): Record<ResourceType, number> => ({ food: 0, iron: 0, wood: 0 });
@@ -268,11 +271,14 @@ export class WorldService {
   /** 缓存当前 mapW/mapH 派生的首府坐标列表（懒初始化）。 */
   private _capitals: [number, number][] | null = null;
 
+  private readonly socialsvc: WorldSocialsvcClient;
+
   constructor(private readonly deps: WorldServiceDeps) {
     this.gateway = deps.gateway ?? nullWorldGatewayClient;
     this.meta = deps.meta ?? nullWorldMetaClient;
     this.commercial = deps.commercial ?? nullWorldCommercialClient;
     this.mail = deps.mail ?? nullWorldMailClient;
+    this.socialsvc = deps.socialsvc ?? nullWorldSocialsvcClient;
   }
 
   private get capitals(): [number, number][] {
@@ -687,6 +693,9 @@ export class WorldService {
     };
     await cols.tiles.updateOne({ _id: tid }, { $setOnInsert: tileDoc }, { upsert: true });
 
+    // SS7：分配大区时同步一次 familyId 只读镜像（后续家族变更不再回写，客户端读 /social/family/mine）。
+    const familyId = await this.socialsvc.getFamilyId(accountId).catch(() => null) ?? undefined;
+
     const pw: PlayerWorldDoc = {
       _id: playerWorldId(worldId, accountId),
       worldId,
@@ -697,6 +706,7 @@ export class WorldService {
       yieldRate,
       lastTickAt: t,
       mainBaseTile: tid,
+      ...(familyId ? { familyId } : {}),
       rev: 0,
     };
     await cols.playerWorld.insertOne(pw);

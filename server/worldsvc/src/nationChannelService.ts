@@ -5,6 +5,7 @@ import { FAMILY_MSG_BODY_MAX, SlgError } from '@nw/shared';
 import type { WorldCollections, NationMessageDoc } from './db';
 import type { HttpWorldGatewayClient } from './gatewayClient';
 import type { WorldCommercialClient } from './commercialClient';
+import { nullWorldSocialsvcClient, type WorldSocialsvcClient } from './socialsvcClient';
 
 const WORLD_CHAT_COST = 50;
 
@@ -21,12 +22,17 @@ interface Deps {
   gateway: HttpWorldGatewayClient;
   commercial: WorldCommercialClient;
   now: () => number;
+  /** socialsvc 客户端（push 委托，SOCIAL_SVC_DESIGN §5）；缺省 = 降级直推 gateway。 */
+  socialsvc?: WorldSocialsvcClient;
 }
 
 let msgSeq = 0;
 
 export class NationChannelService {
-  constructor(private readonly deps: Deps) {}
+  private readonly socialsvc: WorldSocialsvcClient;
+  constructor(private readonly deps: Deps) {
+    this.socialsvc = deps.socialsvc ?? nullWorldSocialsvcClient;
+  }
 
   /**
    * 发国家/世界公频消息。玩家须已入驻该世界（playerWorld 记录存在），消息持久化后
@@ -63,16 +69,15 @@ export class NationChannelService {
     };
     await cols.nationMessages.insertOne(msgDoc);
 
-    // 收件人 = 同 world 内所有其他玩家 accountId。
-    const recipients = await this.worldMemberAccountIds(worldId, accountId);
-    void this.deps.gateway.broadcast(recipients, {
-      kind: 'nation_msg',
-      worldId,
-      fromPublicId: accountId,
-      fromName: senderName,
-      body,
-      ts,
-    });
+    // 推送：优先委托 socialsvc（push 中枢，§5）；无 socialsvc 时降级直推 gateway（O(n)）。
+    const payload = { worldId, fromPublicId: accountId, fromName: senderName, body, ts };
+    if (this.socialsvc.available) {
+      const recipients = await this.worldMemberAccountIds(worldId, accountId);
+      void this.socialsvc.push({ kind: 'world', worldId }, 'nation_msg', payload, recipients);
+    } else {
+      const recipients = await this.worldMemberAccountIds(worldId, accountId);
+      void this.deps.gateway.broadcast(recipients, { kind: 'nation_msg', ...payload });
+    }
 
     return { id: msgId, senderId: accountId, senderName, body, ts };
   }

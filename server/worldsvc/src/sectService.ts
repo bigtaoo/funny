@@ -25,6 +25,7 @@ import type { WorldCommercialClient } from './commercialClient';
 import { nullWorldCommercialClient } from './commercialClient';
 import type { WorldGatewayClient } from './gatewayClient';
 import { nullWorldGatewayClient } from './gatewayClient';
+import { nullWorldSocialsvcClient, type WorldSocialsvcClient } from './socialsvcClient';
 
 export interface SectView {
   sectId: string;
@@ -66,6 +67,8 @@ export interface SectServiceDeps {
   commercial?: WorldCommercialClient;
   /** 实时频道扇出（S8-4b）；缺省 = 无 gateway，仅 REST 轮询。 */
   gateway?: WorldGatewayClient;
+  /** socialsvc 客户端（宗门频道 push 委托，SOCIAL_SVC_DESIGN §5）；缺省 = 降级直推 gateway。 */
+  socialsvc?: WorldSocialsvcClient;
 }
 
 /** 进程内单调序号，防同毫秒多条消息 id 撞键。 */
@@ -88,10 +91,12 @@ function docToView(doc: SectDoc): SectView {
 export class SectService {
   private readonly commercial: WorldCommercialClient;
   private readonly gateway: WorldGatewayClient;
+  private readonly socialsvc: WorldSocialsvcClient;
 
   constructor(private readonly deps: SectServiceDeps) {
     this.commercial = deps.commercial ?? nullWorldCommercialClient;
     this.gateway = deps.gateway ?? nullWorldGatewayClient;
+    this.socialsvc = deps.socialsvc ?? nullWorldSocialsvcClient;
   }
 
   /** 取请求者所在家族（要求其为该家族族长），否则抛权限/未入族错误。 */
@@ -357,16 +362,15 @@ export class SectService {
     };
     await cols.sectMessages.insertOne(msgDoc);
 
-    // 实时扇出给宗门内其他在线成员（发送者自己不推——REST 回包即是其本地回显）。
-    const recipients = await this.sectMemberAccountIds(sectId, accountId);
-    void this.gateway.broadcast(recipients, {
-      kind: 'sect_msg',
-      sectId,
-      fromPublicId: accountId, // 暂用 accountId，publicId 解析待后补
-      fromName: senderName,
-      body,
-      ts,
-    });
+    // 推送：优先委托 socialsvc（push 中枢，§5）；无 socialsvc 时降级直推 gateway。
+    const payload = { sectId, fromPublicId: accountId, fromName: senderName, body, ts };
+    if (this.socialsvc.available) {
+      const recipients = await this.sectMemberAccountIds(sectId, accountId);
+      void this.socialsvc.push({ kind: 'sect', sectId }, 'sect_msg', payload, recipients);
+    } else {
+      const recipients = await this.sectMemberAccountIds(sectId, accountId);
+      void this.gateway.broadcast(recipients, { kind: 'sect_msg', ...payload });
+    }
 
     return { id: msgId, senderId: accountId, senderName, body, ts };
   }
