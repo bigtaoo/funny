@@ -370,9 +370,27 @@ export class SaveManager {
     }
   }
 
-  /** 用云端值整体覆盖本地（push 成功 / 首次 pull 且本地无独有改动时）。 */
+  /**
+   * 用云端值覆盖本地（push 成功回执）。
+   * putSave 只改 equipped/flags，不改 progress；若本地有云端尚未确认的通关（in-flight pveClear
+   * 的 applyLocalClear 或网络抖动入队待结算），保留它们，防止 push 回执把乐观写冲掉。
+   * best 是纯本地展示统计（永不上云）→ 并集取优，与 reconcile 保持一致。
+   */
   private adoptCloud(cloud: SaveData): void {
-    this.save = cloud;
+    const local = this.save;
+    // 本地有而云端无的通关：来自 in-flight pveClear（applyLocalClear 已写但服务器尚未落库）。
+    const localExtra = local.progress.cleared.filter((id) => !cloud.progress.cleared.includes(id));
+    this.save = {
+      ...cloud,
+      progress: {
+        cleared: localExtra.length > 0 ? [...cloud.progress.cleared, ...localExtra] : cloud.progress.cleared,
+        stars: localExtra.reduce((acc, id) => {
+          const v = local.progress.stars[id];
+          return v !== undefined ? { ...acc, [id]: Math.max((acc[id] ?? 0) as number, v) as 1 | 2 | 3 } : acc;
+        }, { ...cloud.progress.stars } as Record<string, 1 | 2 | 3>),
+        best: mergeBest(local.progress.best, cloud.progress.best),
+      },
+    };
     this.store.saveLocal(this.save);
   }
 
