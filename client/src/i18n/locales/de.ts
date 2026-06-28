@@ -76,6 +76,7 @@ export const de: Record<TranslationKey, string> = {
   'settings.back': '← Zurück',
   'settings.coins': 'Münzen: {coins}',
   'settings.playerId': 'ID #{id}',
+  'settings.avatar': 'Avatar',
   'settings.rename': '✎ Umbenennen ({cost} Münzen)',
   'settings.renameTitle': 'Neuen Namen eingeben',
   'settings.renamePlaceholder': 'Tippen zum Eingeben',

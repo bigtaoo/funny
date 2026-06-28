@@ -76,6 +76,7 @@ export const en: Record<TranslationKey, string> = {
   'settings.back': '← Back',
   'settings.coins': 'Coins: {coins}',
   'settings.playerId': 'ID #{id}',
+  'settings.avatar': 'Avatar',
   'settings.rename': '✎ Rename ({cost} coins)',
   'settings.renameTitle': 'Enter a new name',
   'settings.renamePlaceholder': 'Tap to type a new name',

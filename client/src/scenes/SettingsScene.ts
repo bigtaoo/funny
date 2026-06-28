@@ -9,7 +9,7 @@ import { sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../r
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
-import { buildAvatar } from '../render/avatar';
+import { buildAvatar, AVATAR_COUNT } from '../render/avatar';
 
 // ── SettingsScene — personal profile + settings ────────────────────────────────
 //
@@ -67,6 +67,10 @@ export interface SettingsSceneCallbacks {
   onDeleteAccount?(): Promise<{ ok: boolean }>;
   /** 重看新手教学（ONBOARDING_DESIGN §3.4）；未提供则不显示。 */
   onReplayTutorial?(): void;
+  /** Currently selected avatar token ('0'-'7'); absent = letter-initial fallback. */
+  avatarId?: string;
+  /** Called when the player picks a new avatar; absent = picker is read-only. */
+  onSetAvatar?(id: string): void;
   // ── rename (online only; absent → no rename UI) ──
   /** Coin cost of a rename; presence enables the rename button. */
   renameCost?: number;
@@ -87,6 +91,8 @@ export class SettingsScene implements Scene {
 
   /** Mutable so a successful rename updates the on-screen name without leaving. */
   private playerName: string;
+  /** Mutable: tracks the locally-selected avatar so the picker re-renders immediately. */
+  private currentAvatarId: string | undefined;
 
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
@@ -108,6 +114,7 @@ export class SettingsScene implements Scene {
     this.h = layout.designHeight;
     this.cb = cb;
     this.playerName = cb.playerName;
+    this.currentAvatarId = cb.avatarId;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.setupHiddenInput();
     this.render();
@@ -206,6 +213,7 @@ export class SettingsScene implements Scene {
     this.drawBackground();
     const tbH = this.drawHeader();
     this.drawProfile(tbH);
+    this.drawAvatarPicker();
     this.drawLanguage();
     if (this.cb.onReplayTutorial) this.drawHelp();
     this.drawAccount();
@@ -244,7 +252,7 @@ export class SettingsScene implements Scene {
     const cardY = tbH + Math.round(h * 0.05);
     const av = Math.round(h * 0.12);
 
-    const avatar = buildAvatar(av, this.playerName, 21);
+    const avatar = buildAvatar(av, this.playerName, 21, this.currentAvatarId);
     avatar.x = cardX; avatar.y = cardY;
     this.container.addChild(avatar);
 
@@ -289,9 +297,61 @@ export class SettingsScene implements Scene {
     }
   }
 
+  private drawAvatarPicker(): void {
+    const { w, h } = this;
+    const secX = Math.round(w * 0.12);
+    const secY = Math.round(h * 0.44);
+
+    const label = txt(t('settings.avatar'), Math.round(h * 0.028), C.dark, true);
+    label.anchor.set(0, 0.5); label.x = secX; label.y = secY;
+    this.container.addChild(label);
+
+    // 2 rows of 4 avatars (0-7). Size scales with h so it fits both portrait + landscape.
+    const avS  = Math.round(h * 0.065);
+    const cols = 4;
+    const totalW = Math.round(w * 0.76);
+    const gap  = Math.round((totalW - cols * avS) / (cols - 1));
+    const rowGap = Math.round(h * 0.012);
+    const gridY = secY + Math.round(h * 0.038);
+
+    for (let i = 0; i < AVATAR_COUNT; i++) {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const ax = secX + col * (avS + gap);
+      const ay = gridY + row * (avS + rowGap);
+      const id = String(i);
+      const selected = this.currentAvatarId === id;
+
+      // Selection ring drawn behind the avatar.
+      if (selected) {
+        const ring = new PIXI.Graphics();
+        ring.lineStyle(Math.max(2, Math.round(avS * 0.07)), C.gold, 1);
+        ring.drawCircle(ax + avS / 2, ay + avS / 2, avS / 2 + Math.round(avS * 0.06));
+        this.container.addChild(ring);
+      }
+
+      const av = buildAvatar(avS, '', 10 + i, id);
+      av.x = ax; av.y = ay;
+      av.alpha = (!this.cb.onSetAvatar) ? 0.75 : (selected ? 1.0 : 0.82);
+      this.container.addChild(av);
+
+      if (this.cb.onSetAvatar && !selected) {
+        this.hits.push({
+          rect: { x: ax, y: ay, w: avS, h: avS },
+          fn: () => {
+            this.currentAvatarId = id;
+            this.cb.onSetAvatar!(id);
+            this.render();
+          },
+        });
+      }
+    }
+
+  }
+
   private drawLanguage(): void {
     const { w, h } = this;
-    const secY = Math.round(h * 0.52);
+    const secY = Math.round(h * 0.63);
     const label = txt(t('settings.language'), Math.round(h * 0.028), C.dark, true);
     label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = secY;
     this.container.addChild(label);
@@ -332,7 +392,7 @@ export class SettingsScene implements Scene {
 
   private drawHelp(): void {
     const { w, h } = this;
-    const secY = Math.round(h * 0.655);
+    const secY = Math.round(h * 0.755);
     const label = txt(t('settings.help'), Math.round(h * 0.028), C.dark, true);
     label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = secY;
     this.container.addChild(label);
@@ -341,7 +401,7 @@ export class SettingsScene implements Scene {
 
   private drawAccount(): void {
     const { w, h } = this;
-    const secY = Math.round(h * 0.74);
+    const secY = Math.round(h * 0.83);
     const label = txt(t('settings.account'), Math.round(h * 0.028), C.dark, true);
     label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = secY;
     this.container.addChild(label);
