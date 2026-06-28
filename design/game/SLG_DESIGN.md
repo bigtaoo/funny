@@ -342,6 +342,9 @@
   - **契约/客户端 ✅**：`openapi-world.yml` `/world/join` 去掉必填 `x,y`（重生 `openapi-world.ts`）；`httpApi` `/world/join`、`/world/season/join` 不再收坐标；`WorldApiClient.joinWorld(worldId)`/`joinSeason(season)` 去坐标；`WorldMapScene.loadData` 进图若未落城 → 自动落城 + 居中镜头，`doJoin()` 去坐标（点击空地不再按坐标落城，保留作满员兜底手动重试入口）；i18n `world.joinDesc/confirmJoin/confirmJoinBtn` zh/en/de 改为「系统自动安排落点」。
   - 验证：`tsc -b shared engine worldsvc gateway` 全绿 + client `tsc --noEmit` 0 错 + **366 测试** + `build:web` 通过；`httpApi.e2e.test.ts` 已同步改写（join 不传坐标、捕获服务端落点供后续行军），但本机 Docker 为 Windows 容器模式跑不起 Linux Mongo，worldsvc e2e 未实跑（其余用例传显式坐标走手动路径不受影响）。
   - 备注：全新玩家首次进入通常尚未入家族 → 落「外环新手区随机」；「靠近家族」在玩家已属本区某家族时生效（落点逻辑已就位，为后续家族预分配/重进留接口）。
+- **客户端 SLG 社交标签修复 ✅（2026-06-28）**：修复家族/宗门/世界标签「加载中」永不结束 + 生产环境 SLG 标签静默禁用两个 bug。
+  - **`WorldApiClient.req` 超时**：原无 `AbortController`——worldsvc 接受 TCP 连接但内部卡住（如 MongoDB 慢查询）时 `fetch()` 永久挂起，`slgLoading=true` 永不清，标签永远转圈。现加 10s `AbortController`；超时后 abort 转 `TypeError`，被 `FriendsScene.loadSLGStatus` catch 捕获，`slgStatus=null`/`slgLoaded=true`，正常显示「暂不可用」。
+  - **`worldApi` 空串判断**：`createAppCore.ts` 原写 `worldBaseUrl ? new WorldApiClient() : null`——生产/Docker 环境 `getWorldBaseUrl()` 返回 `''`（同源 nginx 反代，是合法基址但 falsy），导致 `worldApi=null`、`loadSLGStatus` 回调缺失、家族/宗门/世界三标签全部静默显示「无 SLG」。现改为无条件 `new WorldApiClient()`，`''` 基址走同源路由。
 - **S8-5 拍卖行**：材料挂单（赛季资源禁挂）/一口价 + 竞拍/指定受拍人/10% 手续费（coin）/每日限额/价格护栏滑窗/绑定禁挂机制/季末冻结清算 + **装备交易（A）** + **异常交易审计（D，反 RMT，§17.13）** 全 ✅（2026-06-21）。**机制权威见 [`AUCTION_DESIGN.md`](AUCTION_DESIGN.md)**。
 - **S8-6 养成统一**：`buildSiegeBlueprints` + PvE/SLG 材料统一 + 服务器权威扩展 + 战力单调性单测。
 - **S8-6.5 国家系统**：10 首府固定坐标写入 `shared/slg.ts`、Voronoi 分区计算、立国/灭国状态机、国民加成注入围攻蓝图。
