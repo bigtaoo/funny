@@ -31,8 +31,8 @@
   "escorts": [
     {
       "id": "escort_1",
-      "hp": 180,
-      "speed": 0.38,
+      "hp": 260,
+      "speed": 0.25,
       "startCol": 3,
       "startRow": 2
     }

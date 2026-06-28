@@ -408,7 +408,7 @@ if (total - dead < needed - arrived) → 无法完成，玩家败
 | `levelSpells` rockslide×2 | ch1_lv5 | 引导教学：survive 关，法术帮助清 ironclad |
 | `levelSpells` rockslide×1+bridge_collapse×1 | ch2_lv5 | inkRegenMult:0.5 经济紧张，法术替代费用 |
 | `levelSpells` bridge_collapse×2 | ch4_lv4 | 岩浆+crossWaypoints，桥断强迫更绕路 |
-| `escort` required:'all' (1 护送) | ch2_lv3 | bannedCards 禁兵营，需主动清路护送 |
+| `escort` required:'all' (1 护送) | ch2_lv3 | bannedCards 禁兵营，需主动清路护送；护送单位 speed 0.38→0.25、hp 180→260（2026-06-28 调参：原值玩家无法通关） |
 | `escort` required:'any' (2 护送) | ch3_lv4 | activeLanes 5 路，任一到达即胜 |
 | `escort` required:'all' (2 护送) | ch5_lv5 | loadout 受限，双护送全部到达才胜 |
 | `harpy` 末段波次 | ch3_lv3 | 末段引入飞行单位，逼玩家前期有箭塔 |
