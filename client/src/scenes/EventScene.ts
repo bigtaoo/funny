@@ -10,6 +10,7 @@ import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 //
 // 入口：LobbyScene「活动」按钮（onOpenEvents）。
 // 布局：活动标签列表（若多个）→ 选中活动的任务进度卡 + 积分商店。
+// 竖屏：任务区在上半，兑换区在下半；横屏：任务在左列，兑换在右列。
 // 兑换走 POST /api/events/claim，发奖落邮件或 commercial 金币。
 
 export interface EventTaskView {
@@ -54,6 +55,7 @@ export class EventScene implements Scene {
   readonly container: PIXI.Container;
   private readonly w: number;
   private readonly h: number;
+  private readonly landscape: boolean;
   private readonly cb: EventCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
@@ -68,6 +70,7 @@ export class EventScene implements Scene {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
@@ -212,21 +215,36 @@ export class EventScene implements Scene {
     ptsTxt.x = PAD; ptsTxt.y = top + h * 0.05;
     this.container.addChild(ptsTxt);
 
-    const halfH = availH * 0.5;
-    this.renderTasks(event, top + h * 0.09, halfH - h * 0.04);
-    this.renderRewards(event, top + halfH, halfH);
+    const headerH = h * 0.09;
+    const bodyTop = top + headerH;
+    const bodyH = availH - headerH;
+
+    if (this.landscape) {
+      // 横屏：任务在左列，兑换区在右列
+      const colGap = Math.round(w * 0.015);
+      const leftW = Math.round((w - colGap) * 0.5);
+      const rightX = leftW + colGap;
+      const rightW = w - rightX;
+      this.renderTasks(event, 0, bodyTop, leftW, bodyH - h * 0.04);
+      this.renderRewards(event, rightX, bodyTop, rightW, bodyH);
+    } else {
+      // 竖屏：任务上半，兑换区下半
+      const halfH = bodyH * 0.5;
+      this.renderTasks(event, 0, bodyTop, w, halfH - h * 0.04);
+      this.renderRewards(event, 0, bodyTop + halfH, w, halfH);
+    }
   }
 
-  private renderTasks(event: EventView, top: number, areaH: number): void {
-    const { w, h } = this;
-    const PAD = w * 0.05;
+  private renderTasks(event: EventView, areaX: number, top: number, areaW: number, areaH: number): void {
+    const { h } = this;
+    const PAD = areaX + areaW * 0.05;
 
     const sec = txt(t('event.tasks.title'), Math.round(h * 0.03), C.dark, true);
     sec.x = PAD; sec.y = top;
     this.container.addChild(sec);
 
     const cardH = Math.min(areaH * 0.28, h * 0.1);
-    const cardW = w - PAD * 2;
+    const cardW = areaW * 0.9;
 
     event.tasks.forEach((task, i) => {
       const cy = top + sec.height + h * 0.01 + i * (cardH + h * 0.008);
@@ -255,16 +273,16 @@ export class EventScene implements Scene {
     });
   }
 
-  private renderRewards(event: EventView, top: number, areaH: number): void {
-    const { w, h } = this;
-    const PAD = w * 0.05;
+  private renderRewards(event: EventView, areaX: number, top: number, areaW: number, areaH: number): void {
+    const { h } = this;
+    const PAD = areaX + areaW * 0.05;
 
     const sec = txt(t('event.rewards.title'), Math.round(h * 0.03), C.dark, true);
     sec.x = PAD; sec.y = top;
     this.container.addChild(sec);
 
     const cardH = Math.min(areaH * 0.25, h * 0.09);
-    const cardW = w - PAD * 2;
+    const cardW = areaW * 0.9;
 
     event.rewards.forEach((reward, i) => {
       const cy = top + sec.height + h * 0.01 + i * (cardH + h * 0.008);
