@@ -198,7 +198,17 @@
     - `EquipmentScene`：新增可选 `openCollection?`；`groupH = openCollection ? hubTabsHeight(h) : 0`，header(`HUD_H`) 下画 strip（装备 active，点收藏回养成），body 基线 `HUD_H` → `HUD_H+groupH`（renderTabs/资源条/inventory loadout/craft listY）。
   - **导航编排** `createAppCore.ts`：商城组 `goShop/goGacha/goBattlePass` 改用 `group?:{shopBack?}` 串联——三页互相直达且返回同一来源（lobby / level-prep）；养成组 `goEquipment(back, inCollectionGroup)` 仅从收藏进入（`goCollection` 传 `true`）时注入 `openCollection`，战役入口不注入。大厅「商城」入口默认落地盲盒（`onOpenShop` 改为 `goGacha({})`），用户点商城 tab 再进 ShopScene。
   - **架构延续**：与 P1 一致——「扩容/重排」落在导航层，不重写 875 行 EquipmentScene 等为内嵌内容；视觉资产打磨仍留 P3。
-- **P2**：主页**右侧竖栏**图标条（每日/邮件/活动/成就，可领时亮红点）+ 视觉留白打磨。
+- ✅ **P2**（完成 2026-06-28）：主页**右侧竖栏**图标条（每日/邮件/活动/成就）。
+
+  **实现记录**（落代码细节，验收以此为准）：
+  - **删除水平 engagement chip 行**：P3 右对齐每日/活动两个横向 chip 整行移除。
+  - **右侧竖栏** `sideItemSz = h*0.082`（方形）竖排：
+    每日（`dailyBtnRect`）/ 邮件（`mailStripRect`，`onOpenMail`→`goMail()`）/
+    活动（`eventsBtnRect`，仅 `eventsAvailable` 时出现）/ 成就（`achieveStripRect`，仅 `onOpenAchievements` wired 时出现）。
+  - **contentW 收窄**：`fullContentW(w*0.82) - sideItemSz - sideGap(w*0.018)`，左 margin 不变；竖栏 X = 收窄后内容右边 + sideGap，竖向居中于 hero+pillars 区。
+  - **`sideStripBadgeLayer`**：廉价重绘红点（retentionBadge→每日，socialBadge→邮件，achievementBadge→成就）；`applyRetentionBadge` 不再 `rebuild()`，改调 `drawSideStripBadges()`。
+  - **邮件直达**：`FriendsSceneCallbacks.defaultTab?: 'friends'|'mail'`；`goMail()` → `goFriends({defaultTab:'mail'})`；大厅 `onOpenMail` 仅 online 注入。
+  - **i18n**：新增 `lobby.strip.events/achieve/mail`（zh/en/de）。
 - ✅ **P3**（完成 2026-06-28）：视觉打磨三项：
   1. **底部 tab 图标化 + 加高**：高度 `h*0.08` → `h*0.105`，彩色圆点换手绘图标
      （养成=book / 商城=coin / 主页=home / 生涯=trophy / 社交=globe，复用 `icons.ts` 已有字形）；
