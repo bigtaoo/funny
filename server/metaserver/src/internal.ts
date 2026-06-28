@@ -35,6 +35,7 @@ import type { GatewayClient } from './gatewayClient.js';
 import type { CommercialClient } from './commercialClient.js';
 import { adsDayKey } from './economy.js';
 import { getProfile, resolveByPublicId, searchAccounts } from './accounts.js';
+import { resolveByPublicId as resolveByPublicIdFull } from './social.js';
 import { grantTitleToPlayer } from './titles.js';
 import { accrueEventTask, adminListEvents, adminCreateEvent, adminUpdateEvent, adminDeleteEvent } from './events.js';
 import { friendAccountIds, profileOf } from './social.js';
@@ -215,7 +216,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const { publicId } = req.params as { publicId: string };
-    const found = await resolveByPublicId(cols, publicId);
+    const found = await resolveByPublicIdFull(cols, publicId);
     if (!found) return reply.code(404).send({ ok: false, error: 'not found' });
     return reply.send({ accountId: found.accountId, profile: found.profile });
   });
