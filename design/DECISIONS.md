@@ -159,3 +159,14 @@
   - **CrazyGames**：门户限制主要在前端行为（禁站外支付/外链跳转），账号层可与 web 共享，无需隔离。
 - **未决/待查**：微信小游戏、CrazyGames、苹果/谷歌的开发者协议中"虚拟货币跨渠道流通"的具体条款原文（上线对应平台前逐条核实）。
 - **影响**：[`product/deploy-cloudflare.md`](product/deploy-cloudflare.md) 新增「平台隔离边界」节为现行口径；钱包改造待在 [`game/ECONOMY_BALANCE.md`](game/ECONOMY_BALANCE.md) / [`game/ACCOUNT_DESIGN.md`](game/ACCOUNT_DESIGN.md) 补「充值币渠道标记」字段设计（缺口，上线渠道前收口）。
+
+## ADR-021 独立 socialsvc = 第五公网面，推翻 SOC1 — Accepted — 2026-06-28
+
+- **决策**（用户拍板）：*Supersedes SOC1*（"持久数据扩展 meta，不新建 social 进程"）。新建独立进程 `socialsvc`（第五公网面，`/social/*`），承接：
+  - **家族（全局持久，去掉 worldId）**：从 worldsvc 迁出，跨赛季长存；TAG 全局唯一；worldsvc 存 `familyId` 只读镜像供地图渲染用。
+  - **好友关系 / 私聊 / 邮件（P2 期）**：从 metaserver 迁出，集合搬入独立 `nw_social` 库。
+  - **所有频道 Redis pub/sub 宿主**：家族/宗门/世界公频统一由 socialsvc 管理；worldsvc 通过 `POST /internal/push` 委托推送。
+  - **push 路由中枢**：所有推送经 socialsvc → gateway `/gw/push`，gateway 不直接被多方调用。
+  - **Redis 随 socialsvc P1 引入**（取代原计划"随 worldsvc SLG 一起引入"，提前到位）。
+- **为什么**：家族被迫绑 worldId 导致每赛季重置（违背"公会是社交资产"直觉）；metaserver 持续臃肿；频道 Redis 无单一宿主；独立 socialsvc 关注点清晰且延时可接受（push 是最终一致、非关键路径）。
+- **影响**：新增 [`game/SOCIAL_SVC_DESIGN.md`](game/SOCIAL_SVC_DESIGN.md) 为 socialsvc 架构权威；[`game/SOCIAL_DESIGN.md`](game/SOCIAL_DESIGN.md) 数据模型细节仍有效（P2 迁移参考）；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §8.1 家族章节加"家族已迁 socialsvc"指针；CLAUDE.md 进程数由 8 → 9；[`claudedocs/server.md`](../claudedocs/server.md) 加 socialsvc 条目。README §1.2 登记。

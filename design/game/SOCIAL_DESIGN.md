@@ -1,8 +1,8 @@
 # Notebook Wars — 社交系统设计文档
 
-> 创建：2026-06-16。本文件是社交系统（好友 / 私聊 / 邮件，及 SLG 上线后的帮会 / 国家频道）的设计基准。
+> 创建：2026-06-16。本文件是社交系统（好友 / 私聊 / 邮件）的原始设计，**数据模型细节仍有效**，P2 迁移时参考。
+> ⚠️ **架构已更新（2026-06-28）**：SOC1（"持久数据扩展 meta，不新建 social 进程"）已被推翻。新架构见 [`SOCIAL_SVC_DESIGN.md`](SOCIAL_SVC_DESIGN.md)（独立 socialsvc 第五公网面）；家族已从 worldsvc 迁出，好友/邮件将在 P2 期从 metaserver 迁出。
 > 配套阅读：`META_DESIGN.md`（系统/架构）、`SERVER_API.md`（接口契约）、`GATEWAY_DESIGN.md`（控制面网关 + `/gw/push`）、`COMMERCIAL_DESIGN.md`（邮件附件领奖复用其发货幂等）、`META_TASKS.md`（任务进度）。
-> 拍板（2026-06-16，用户）：**持久化数据扩展 meta**（不新建 social 进程）；**第一期做好友 + 私聊 + 邮件全套**；帮会/家族/国家频道留 SLG 上线后。
 
 ---
 

@@ -23,16 +23,17 @@ funny/
 │   ├── ops/               运维后台前端（TypeScript，端口 9093）
 │   └── vfx-editor/        战斗特效编辑器（TypeScript + PixiJS，端口 9094）
 │
-├── server/                Node.js 后端（npm workspaces，8 个应用进程 + contracts/shared 包）
+├── server/                Node.js 后端（npm workspaces，9 个应用进程 + contracts/shared 包）
 │   ├── contracts/         openapi.yml + openapi-world.yml + transport.proto + game.proto + replay.proto
 │   ├── shared/            @nw/shared（类型/JWT/ticket/Mongo/ladder/economy）
-│   ├── metaserver/        REST，无状态（auth/save/economy/social/pve/match-report）
+│   ├── metaserver/        REST，无状态（auth/save/economy/pve/match-report）
 │   ├── gateway/           控制面 WS（/gw，account→socket，房间/匹配中转）
 │   ├── matchsvc/          私有匹配大脑（房间/ELO配对/game注册，不连库）
 │   ├── gameserver/        数据面 WS（?ticket= 握手，锁步中继，永不连库）
 │   ├── commercial/        钱包/交易（玩家不可达）
 │   ├── admin/             运维后台后端（玩家不可达）
-│   ├── worldsvc/          SLG 大世界（公网 REST 第四面，/world /family /auction）
+│   ├── worldsvc/          SLG 大世界（公网 REST 第四面，/world /auction）
+│   ├── socialsvc/         社交（公网 REST 第五面，/social/*；家族/好友/邮件/频道/push路由）
 │   └── analyticsvc/       埋点分析（端口 18085）
 │
 ├── art/                   地图/角色概念图
@@ -50,7 +51,7 @@ funny/
 | 关卡编辑器（level-editor） | — | `design/tools/level-editor/DESIGN.md` |
 | 特效编辑器（vfx-editor） | — | `design/tools/vfx-editor/DESIGN.md` |
 | 游戏主代码（client） | [`claudedocs/client-modules.md`](claudedocs/client-modules.md) | `design/game/` |
-| 服务端（server，8 个应用进程） | [`claudedocs/server.md`](claudedocs/server.md) | `design/game/META_DESIGN.md` |
+| 服务端（server，9 个应用进程） | [`claudedocs/server.md`](claudedocs/server.md) | `design/game/META_DESIGN.md` |
 | 文件格式（.tao / .tao.editor） | [`claudedocs/file-formats.md`](claudedocs/file-formats.md) | — |
 
 ### 关卡编辑器补充
