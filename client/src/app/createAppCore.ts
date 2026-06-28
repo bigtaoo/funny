@@ -591,8 +591,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     };
 
     // SLG world API — lazy worldId resolved on first SLG-tab visit.
-    const worldBaseUrl = getWorldBaseUrl();
-    const worldApi = worldBaseUrl ? new WorldApiClient(platform.storage) : null;
+    // getWorldBaseUrl() returns '' in Docker/prod (same-origin nginx proxy) — falsy
+    // but still valid. Do NOT guard on empty string; worldsvc is always reachable.
+    const worldApi = new WorldApiClient(platform.storage);
     let slgWorldId: string | null = null;
     const ensureWorldId = async (): Promise<string> => {
       if (slgWorldId) return slgWorldId;

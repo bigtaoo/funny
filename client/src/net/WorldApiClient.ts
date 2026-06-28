@@ -126,6 +126,7 @@ export class WorldApiClient {
     method: string,
     path: string,
     body?: unknown,
+    timeoutMs = 10_000,
   ): Promise<T> {
     const base = getWorldBaseUrl();
     const url = base + path;
@@ -133,11 +134,22 @@ export class WorldApiClient {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const res = await fetch(url, {
-      method,
-      headers,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method,
+        headers,
+        signal: ctrl.signal,
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+    } catch (e) {
+      // AbortError → convert to TypeError so callers see a consistent network failure.
+      throw new TypeError(`world api ${method} ${path} failed: ${String(e)}`);
+    } finally {
+      clearTimeout(timer);
+    }
 
     const json = await res.json() as { ok: boolean; data?: T; code?: string; message?: string };
     if (!json.ok) {
