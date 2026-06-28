@@ -23,7 +23,7 @@ funny/
 │   ├── ops/               运维后台前端（TypeScript，端口 9093）
 │   └── vfx-editor/        战斗特效编辑器（TypeScript + PixiJS，端口 9094）
 │
-├── server/                Node.js 后端（npm workspaces，9 个应用进程 + contracts/shared 包）
+├── server/                Node.js 后端（npm workspaces，10 个应用进程 + contracts/shared 包）
 │   ├── contracts/         openapi.yml + openapi-world.yml + transport.proto + game.proto + replay.proto
 │   ├── shared/            @nw/shared（类型/JWT/ticket/Mongo/ladder/economy）
 │   ├── metaserver/        REST，无状态（auth/save/economy/pve/match-report）
@@ -51,7 +51,7 @@ funny/
 | 关卡编辑器（level-editor） | — | `design/tools/level-editor/DESIGN.md` |
 | 特效编辑器（vfx-editor） | — | `design/tools/vfx-editor/DESIGN.md` |
 | 游戏主代码（client） | [`claudedocs/client-modules.md`](claudedocs/client-modules.md) | `design/game/` |
-| 服务端（server，9 个应用进程） | [`claudedocs/server.md`](claudedocs/server.md) | `design/game/META_DESIGN.md` |
+| 服务端（server，10 个应用进程） | [`claudedocs/server.md`](claudedocs/server.md) | `design/game/META_DESIGN.md` |
 | 文件格式（.tao / .tao.editor） | [`claudedocs/file-formats.md`](claudedocs/file-formats.md) | — |
 
 ### 关卡编辑器补充
