@@ -147,7 +147,7 @@
 
 1. **大世界误判离线**：`WorldApiClient.checkHealth()`（`client/src/net/WorldApiClient.ts:84`）dev 下 ping `/health`，3 秒超时/CORS 即判离线，但实际功能路由 `/world /family /auction` 是通的 → 误报。修法：探针失败不直接判离线（放宽为「未知」不标红），或改探功能路由；生产同源已返回 true。
 2. **限时活动灰态**：无活动时直接隐藏或显示倒计时，不常态灰一块。
-3. **底部 tab 图标**：纯色圆点辨识度低，改文具/简笔图标贴合手绘笔记本风（`design/product/art-direction.md`）。
+3. ✅ **底部 tab 图标**：纯色圆点辨识度低，改文具/简笔图标贴合手绘笔记本风（`design/product/art-direction.md`）。已于 2026-06-28 实现（见 P3 实现记录）。
 
 ---
 
@@ -199,4 +199,10 @@
   - **导航编排** `createAppCore.ts`：商城组 `goShop/goGacha/goBattlePass` 改用 `group?:{shopBack?}` 串联——三页互相直达且返回同一来源（lobby / level-prep）；养成组 `goEquipment(back, inCollectionGroup)` 仅从收藏进入（`goCollection` 传 `true`）时注入 `openCollection`，战役入口不注入。大厅「商城」入口默认落地盲盒（`onOpenShop` 改为 `goGacha({})`），用户点商城 tab 再进 ShopScene。
   - **架构延续**：与 P1 一致——「扩容/重排」落在导航层，不重写 875 行 EquipmentScene 等为内嵌内容；视觉资产打磨仍留 P3。
 - **P2**：主页**右侧竖栏**图标条（每日/邮件/活动/成就，可领时亮红点）+ 视觉留白打磨。
-- **P3**：图标资产（文具/简笔）替换底部 tab 色块。
+- ✅ **P3**（完成 2026-06-28）：视觉打磨三项：
+  1. **底部 tab 图标化 + 加高**：高度 `h*0.08` → `h*0.105`，彩色圆点换手绘图标
+     （养成=book / 商城=coin / 主页=home / 生涯=trophy / 社交=globe，复用 `icons.ts` 已有字形）；
+     图标居上、文字居下标准排布。
+  2. **每日按钮右对齐**：从全宽居中改为右对齐 44% 宽度，主页左侧留白更舒适；
+     限时活动有效时依然各占约一半（`dailyX = contentX + contentW - cw`）。
+  3. **头像选择器**：详见 `design/game/UI_DESIGN.md §头像系统`。

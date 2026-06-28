@@ -325,6 +325,39 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 ## 10. 开放问题
 
 - [ ] 横屏菜单的具体分栏比例（竖屏为主，横屏待定稿）。
-- [ ] NavBar 图标美术（现圆点占位）。
+- ✅ NavBar 图标美术（2026-06-28）：复用 `icons.ts` 手绘字形，无需单独美术资产。
 - [ ] 盲盒开箱动画的炫度分级（legendary 特效预算）。
-- [ ] 头像系统是否需要（联机对手展示）。
+
+## 11. 头像系统（2026-06-28）
+
+**结论**：已实现，8 种图标头像 + 本地持久化，无服务端依赖。
+
+### 设计决策
+
+- 不用照片/AI 图：保持手绘笔记本风，所有头像由 `icons.ts` 字形 + 背景色圆圈构成。
+- 8 种预设 token（索引 `'0'-'7'`），字符串存 `localStorage`（`nw_player_avatar`）。
+- 不选时退化字母缩写（旧行为），永远向后兼容。
+
+### 8 种头像一览
+
+| ID | 图标 | 底色 | 别名 |
+|----|------|------|------|
+| 0 | book | 0x4477cc (inkBlue) | 学者 |
+| 1 | trophy | 0xcc9900 (gold) | 冠军 |
+| 2 | swords | 0xcc3333 (red) | 战士 |
+| 3 | castle | 0x4a9e4a (green) | 王者 |
+| 4 | pencils | 0x9955cc (purple) | 创作者 |
+| 5 | globe | 0x44aacc (cyan) | 探险家 |
+| 6 | coin | 0xcc6633 (orange) | 商人 |
+| 7 | home | 0x667788 (grey-blue) | 守护者 |
+
+### 实现记录
+
+- `client/src/render/avatar.ts`：`buildAvatar(size, name, seed, avatarId?)` 新增第 4 参数；`AVATAR_COUNT=8` 导出供 UI picker。
+- `client/src/scenes/SettingsScene.ts`：`drawAvatarPicker()` 画 2×4 格选择器，选中金色高亮环，即点即生效；`SettingsSceneCallbacks` 新增 `avatarId?` + `onSetAvatar?(id)`。
+- `client/src/app/createAppCore.ts`：`PLAYER_AVATAR_KEY='nw_player_avatar'` 持久化；`onSetAvatar` 直接 `setItem`（无网络请求）。
+
+### 后续扩展
+
+- 联机对局：对手头像 id 可通过 MatchStartInfo 下发，`ResultScene` / `OpponentView` 渲染。
+- 服务端同步：如需跨设备同步，`accountProfile` 加 `avatarId` 字段即可（现为纯本地）。
