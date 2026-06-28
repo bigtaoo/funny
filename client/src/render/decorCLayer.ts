@@ -18,15 +18,15 @@ import { decorCFrameNames, getDecorCTexture, isDecorCReady } from './decorCAtlas
 // ── Tuning ────────────────────────────────────────────────────────────────────
 const SIZE_PX       = 96;    // target rendered size (px); C 组源帧 128px，稍缩
 const SIZE_JITTER   = 0.25;  // ± fraction of SIZE_PX
-const GRID_COLS     = 4;     // divide width into N columns for placement grid
-const GRID_ROWS     = 6;     // divide height into N rows
+const GRID_COLS     = 6;     // divide width into N columns for placement grid
+const GRID_ROWS     = 9;     // divide height into N rows
 // 边角密、中心疏：UI 主内容（hero/pillar）占中央纵带，铺在那里会被面板盖住浪费，
 // 反而让人觉得"装饰太少"。把涂鸦挤到四周边框区（笔记本涂鸦本就该在边角）。
-const EDGE_SKIP     = 0.28;  // edge columns / top+bottom rows — denser frame
+const EDGE_SKIP     = 0.20;  // edge columns / top+bottom rows — denser frame
 const CENTER_SKIP   = 0.80;  // interior cells behind content — kept sparse
 const ROT_MAX       = 0.45;  // ± radians; more relaxed than A 组 edge doodles
-const ALPHA_MIN     = 0.10;  // ↑ from 0.06：原来几乎不可见
-const ALPHA_RANGE   = 0.12;  // → 0.10–0.22，明显可见但不抢前景
+const ALPHA_MIN     = 0.25;  // random alpha 0.25–0.38
+const ALPHA_RANGE   = 0.13;
 const SEED          = 0xC09C_0FFE;  // "c coffee" — stable across UI redraws
 
 function frand(p: Prng): number { return p.nextInt(1_000_000) / 1_000_000; }
