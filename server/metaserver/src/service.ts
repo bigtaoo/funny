@@ -2220,7 +2220,7 @@ export class MetaService {
     const { track, level } = req.body as { track: 'free' | 'paid'; level: number };
     const { cols, commercial, now } = this.deps;
 
-    // 原子校验 + 记领取（乐观锁防双击）。
+    // 原子校验 + 记领取（乐观锁防双击）。材料奖励在同一事务内写入 save.materials。
     let claimedReward: { kind: string; count: number } | null = null;
     const out = await this.mutateSave(accountId, (s) => {
       const bp = s.battlePass;
@@ -2228,7 +2228,11 @@ export class MetaService {
       const r = claimBpReward(bp, track, level);
       if (!r.ok) return r.error;
       claimedReward = r.reward;
-      return { ...s, battlePass: r.bp };
+      const next = { ...s, battlePass: r.bp };
+      if (r.reward.kind === 'material' && r.reward.id && r.reward.count > 0) {
+        next.materials = { ...s.materials, [r.reward.id]: (s.materials[r.reward.id] ?? 0) + r.reward.count };
+      }
+      return next;
     });
     if ('error' in out) {
       switch (out.error) {

@@ -42,11 +42,17 @@ export const BATTLEPASS_DEFS: BpLevelDef[] = Array.from({ length: BATTLEPASS_MAX
   let free: BpReward | undefined;
   let paid: BpReward | undefined;
 
-  // 免费轨：每 5 级 50 金币
+  // 免费轨：整 5 级发金币；其余级发材料（前段 scrap / 中段 lead / 后段 binding）。
   if (level % 5 === 0) {
     free = { kind: 'coins', count: 50 };
+  } else if (level <= 10) {
+    free = { kind: 'material', id: 'scrap', count: 3 };
+  } else if (level <= 20) {
+    free = { kind: 'material', id: 'lead', count: 1 };
+  } else {
+    free = { kind: 'material', id: 'binding', count: 1 };
   }
-  // 特殊里程碑（免费轨额外发）
+  // 特殊里程碑覆盖
   if (level === 10) free = { kind: 'coins', count: 150 };
   if (level === 20) free = { kind: 'coins', count: 200 };
   if (level === 30) free = { kind: 'coins', count: 300 };

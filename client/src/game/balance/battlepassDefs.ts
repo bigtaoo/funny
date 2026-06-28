@@ -28,7 +28,15 @@ export const BATTLEPASS_DEFS: BpLevelDef[] = Array.from({ length: BATTLEPASS_MAX
   let free: BpReward | undefined;
   let paid: BpReward | undefined;
 
-  if (level % 5 === 0) free = { kind: 'coins', count: 50 };
+  if (level % 5 === 0) {
+    free = { kind: 'coins', count: 50 };
+  } else if (level <= 10) {
+    free = { kind: 'material', id: 'scrap', count: 3 };
+  } else if (level <= 20) {
+    free = { kind: 'material', id: 'lead', count: 1 };
+  } else {
+    free = { kind: 'material', id: 'binding', count: 1 };
+  }
   if (level === 10) free = { kind: 'coins', count: 150 };
   if (level === 20) free = { kind: 'coins', count: 200 };
   if (level === 30) free = { kind: 'coins', count: 300 };

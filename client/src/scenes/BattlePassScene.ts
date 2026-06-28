@@ -236,7 +236,7 @@ export class BattlePassScene implements Scene {
       const absY = bodyTopY - sy + cellY;
 
       // Free track
-      const freeState = this.cellState('free', lvl, currentLevel, claimedFree, claimedPaid, hasPass);
+      const freeState = this.cellState('free', lvl, currentLevel, claimedFree, claimedPaid, hasPass, !!def.free);
       this.drawCell(scrollContainer, freeX, cellY, halfW, cellH, lvl, def.free ?? null, freeState);
       if (absY + cellH > bodyTopY && absY < bodyTopY + scrollBodyH && this.cb.onClaim && freeState === 'claimable') {
         this.hits.push({
@@ -246,7 +246,7 @@ export class BattlePassScene implements Scene {
       }
 
       // Paid track
-      const paidState = this.cellState('paid', lvl, currentLevel, claimedFree, claimedPaid, hasPass);
+      const paidState = this.cellState('paid', lvl, currentLevel, claimedFree, claimedPaid, hasPass, !!def.paid);
       this.drawCell(scrollContainer, paidX, cellY, halfW, cellH, lvl, def.paid ?? null, paidState);
       if (absY + cellH > bodyTopY && absY < bodyTopY + scrollBodyH && this.cb.onClaim && paidState === 'claimable') {
         this.hits.push({
@@ -274,7 +274,9 @@ export class BattlePassScene implements Scene {
     claimedFree: Set<number>,
     claimedPaid: Set<number>,
     hasPass: boolean,
+    hasReward: boolean,
   ): CellState {
+    if (!hasReward) return 'locked';
     const claimed = track === 'free' ? claimedFree.has(level) : claimedPaid.has(level);
     if (claimed) return 'claimed';
     if (level > currentLevel) return 'locked';
