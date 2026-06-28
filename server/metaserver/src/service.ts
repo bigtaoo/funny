@@ -146,6 +146,8 @@ export interface ServiceDeps {
   region: string | null;
   /** Loki push 地址（POST /client/log 转发客户端日志；null = 静默丢弃）。 */
   lokiPushUrl: string | null;
+  /** socialsvc 内部客户端（P2）：好友/私聊/邮件路由代理 + 邮件原子领取。null = 路由仍由 metaserver 自身处理。 */
+  socialsvc: import('./socialsvcClient.js').MetaSocialsvcClient | null;
 }
 
 /** 取安全处理器写入的 accountId（security handler 保证已鉴权）。 */
@@ -1578,7 +1580,23 @@ export class MetaService {
     return ok({ replay });
   }
 
-  // ── 社交：好友（S6-1）。meta = 数据权威，写一处；实时投递经 gateway push（离线丢弃）。──
+  // ── 社交：好友/私聊/邮件（S6-1/2/3）。P2 起：若配置了 NW_SOCIALSVC_INTERNAL_URL，路由代理到 socialsvc。──
+
+  /** 代理到 socialsvc（透传 JWT + body）。socialsvc 路径 = /social/* （与 openapi /friends/* 对齐由此转换）。 */
+  private async proxySocial(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    socialPath: string,
+    body?: unknown,
+  ): Promise<boolean> {
+    if (!this.deps.socialsvc?.available) return false;
+    const auth = (req.headers.authorization ?? '') as string;
+    const method = req.method;
+    const r = await this.deps.socialsvc.proxy(method, socialPath, body ?? null, auth);
+    reply.status(r.status).send(r.data);
+    return true;
+  }
+
   /** SocialError → HTTP 状态 + ErrorCode。 */
   private sendSocialError(reply: FastifyReply, e: SocialError) {
     switch (e) {
@@ -1598,7 +1616,8 @@ export class MetaService {
     }
   }
 
-  async getFriends(req: FastifyRequest) {
+  async getFriends(req: FastifyRequest, reply: FastifyReply) {
+    if (await this.proxySocial(req, reply, '/social/friends')) return;
     const accountId = accountIdOf(req);
     const { cols, gateway } = this.deps;
     const friends = await getFriends(cols, accountId);
@@ -1619,20 +1638,22 @@ export class MetaService {
     return ok({ friends });
   }
 
-  async getFriendRequests(req: FastifyRequest) {
+  async getFriendRequests(req: FastifyRequest, reply: FastifyReply) {
+    if (await this.proxySocial(req, reply, '/social/friends/requests')) return;
     const accountId = accountIdOf(req);
     const { incoming, outgoing } = await listRequests(this.deps.cols, accountId);
     return ok({ incoming, outgoing });
   }
 
-  /** 离线红点聚合（SOC8）：登录后一次性拉总未读红点（申请 / 会话 / 邮件）。 */
-  async getSocialBadges(req: FastifyRequest) {
+  async getSocialBadges(req: FastifyRequest, reply: FastifyReply) {
+    if (await this.proxySocial(req, reply, '/social/badges')) return;
     const accountId = accountIdOf(req);
     const badges = await socialBadges(this.deps.cols, accountId, this.deps.now());
     return ok(badges);
   }
 
   async searchFriend(req: FastifyRequest, reply: FastifyReply) {
+    if (await this.proxySocial(req, reply, '/social/friends/search', req.body)) return;
     accountIdOf(req); // 须登录
     const { publicId } = req.body as { publicId: string };
     const found = await resolveByPublicId(this.deps.cols, publicId);
@@ -1641,6 +1662,7 @@ export class MetaService {
   }
 
   async requestFriend(req: FastifyRequest, reply: FastifyReply) {
+    if (await this.proxySocial(req, reply, '/social/friends/request', req.body)) return;
     const accountId = accountIdOf(req);
     const { publicId, message } = req.body as { publicId: string; message?: string };
     const res = await requestFriend(this.deps.cols, accountId, publicId, message, this.deps.now());
@@ -1657,6 +1679,7 @@ export class MetaService {
   }
 
   async respondFriend(req: FastifyRequest, reply: FastifyReply) {
+    if (await this.proxySocial(req, reply, '/social/friends/respond', req.body)) return;
     const accountId = accountIdOf(req);
     const { requestId, accept } = req.body as { requestId: string; accept: boolean };
     const res = await respondFriend(this.deps.cols, accountId, requestId, accept, this.deps.now());
@@ -1680,9 +1703,10 @@ export class MetaService {
     return ok({ ok: true });
   }
 
-  async removeFriend(req: FastifyRequest) {
-    const accountId = accountIdOf(req);
+  async removeFriend(req: FastifyRequest, reply: FastifyReply) {
     const { publicId } = req.params as { publicId: string };
+    if (await this.proxySocial(req, reply, `/social/friends/${encodeURIComponent(publicId)}`)) return;
+    const accountId = accountIdOf(req);
     const res = await removeFriend(this.deps.cols, accountId, publicId);
     if (res) {
       void this.deps.gateway.invalidateFriends(accountId);
@@ -1698,6 +1722,7 @@ export class MetaService {
   }
 
   async blockUser(req: FastifyRequest, reply: FastifyReply) {
+    if (await this.proxySocial(req, reply, '/social/friends/block', req.body)) return;
     const accountId = accountIdOf(req);
     const { publicId } = req.body as { publicId: string };
     const res = await blockUser(this.deps.cols, accountId, publicId, this.deps.now());
@@ -1713,24 +1738,31 @@ export class MetaService {
     return ok({ ok: true });
   }
 
-  async unblockUser(req: FastifyRequest) {
-    const accountId = accountIdOf(req);
+  async unblockUser(req: FastifyRequest, reply: FastifyReply) {
     const { publicId } = req.params as { publicId: string };
+    if (await this.proxySocial(req, reply, `/social/friends/block/${encodeURIComponent(publicId)}`)) return;
+    const accountId = accountIdOf(req);
     await unblockUser(this.deps.cols, accountId, publicId);
     return ok({ ok: true });
   }
 
   // ── 社交：私聊（S6-2）。发送走 REST（单一写者）；收消息经 gateway chat_message push。──
-  async getConversations(req: FastifyRequest) {
+  async getConversations(req: FastifyRequest, reply: FastifyReply) {
+    if (await this.proxySocial(req, reply, '/social/chat/conversations')) return;
     const accountId = accountIdOf(req);
     const conversations = await getConversations(this.deps.cols, accountId);
     return ok({ conversations });
   }
 
   async getMessages(req: FastifyRequest, reply: FastifyReply) {
-    const accountId = accountIdOf(req);
     const { convId } = req.params as { convId: string };
     const q = req.query as { before?: string | number; limit?: string | number };
+    const qs = new URLSearchParams();
+    if (q.before !== undefined) qs.set('before', String(q.before));
+    if (q.limit !== undefined) qs.set('limit', String(q.limit));
+    const qStr = qs.toString();
+    if (await this.proxySocial(req, reply, `/social/chat/${encodeURIComponent(convId)}/messages${qStr ? `?${qStr}` : ''}`)) return;
+    const accountId = accountIdOf(req);
     const before = q.before !== undefined ? Number(q.before) : undefined;
     const limit = q.limit !== undefined ? Number(q.limit) : 30;
     const messages = await getMessages(this.deps.cols, accountId, convId, before, limit);
@@ -1741,6 +1773,7 @@ export class MetaService {
   }
 
   async sendChat(req: FastifyRequest, reply: FastifyReply) {
+    if (await this.proxySocial(req, reply, '/social/chat/send', req.body)) return;
     const accountId = accountIdOf(req);
     const { toPublicId, body } = req.body as { toPublicId: string; body: string };
     if (!this.allowChat(accountId, this.deps.now())) {
@@ -1763,7 +1796,8 @@ export class MetaService {
     return ok({ messageId: res.messageId, ts: res.ts });
   }
 
-  async readChat(req: FastifyRequest) {
+  async readChat(req: FastifyRequest, reply: FastifyReply) {
+    if (await this.proxySocial(req, reply, '/social/chat/read', req.body)) return;
     const accountId = accountIdOf(req);
     const { convId } = req.body as { convId: string };
     await markConversationRead(this.deps.cols, accountId, convId);
@@ -1771,23 +1805,26 @@ export class MetaService {
   }
 
   // ── 社交：邮件（S6-3）。附件领取经 commercial 发金币 + meta 发 inventory，claimOrderId 幂等。──
-  async getMail(req: FastifyRequest) {
+  async getMail(req: FastifyRequest, reply: FastifyReply) {
+    if (await this.proxySocial(req, reply, '/social/mail')) return;
     const accountId = accountIdOf(req);
     const { mail, unread } = await getMail(this.deps.cols, accountId, this.deps.now());
     return ok({ mail, unread });
   }
 
   async readMail(req: FastifyRequest, reply: FastifyReply) {
-    const accountId = accountIdOf(req);
     const { id } = req.params as { id: string };
+    if (await this.proxySocial(req, reply, `/social/mail/${encodeURIComponent(id)}/read`, {})) return;
+    const accountId = accountIdOf(req);
     const okRead = await readMail(this.deps.cols, accountId, id, this.deps.now());
     if (!okRead) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));
     return ok({ ok: true });
   }
 
-  async deleteMail(req: FastifyRequest) {
-    const accountId = accountIdOf(req);
+  async deleteMail(req: FastifyRequest, reply: FastifyReply) {
     const { id } = req.params as { id: string };
+    if (await this.proxySocial(req, reply, `/social/mail/${encodeURIComponent(id)}`)) return;
+    const accountId = accountIdOf(req);
     await deleteMail(this.deps.cols, accountId, id);
     return ok({ ok: true });
   }
@@ -1796,6 +1833,37 @@ export class MetaService {
     const accountId = accountIdOf(req);
     const { id } = req.params as { id: string };
     const { cols, commercial, now } = this.deps;
+
+    // P2：若 socialsvc 可用，mail 数据已在 nw_social.mails，通过内部 atomic claim 拿回 doc。
+    if (this.deps.socialsvc?.available) {
+      const peekResult = await this.deps.socialsvc.claimMail(id, accountId, 'peek');
+      // peek 检查附件（用 orderId='peek' 不会真正标记 claimed，仅读文档结构）
+      // 实际: 直接走完整 claimMail 逻辑（socialsvc claimMailAtomic 是幂等的，orderId 相同不重复标记）
+      // 故用正式 orderId 一次到位。
+      const orderId = randomUUID();
+      const claimedResult = await this.deps.socialsvc.claimMail(id, accountId, orderId);
+      if ('error' in claimedResult) {
+        if (claimedResult.error === 'NOT_FOUND') return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));
+        if (claimedResult.error === 'NO_ATTACHMENT') return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
+        return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
+      }
+      const claimedDoc = claimedResult.doc;
+      const attachments = claimedDoc.attachments ?? [];
+      if (attachments.length === 0) return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
+      const split = splitAttachments(attachments);
+      if (split.coins > 0 && !commercial.available) {
+        return reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'commercial service unavailable'));
+      }
+      let coinsAfter: number | null = null;
+      if (split.coins > 0) {
+        const g = await commercial.grant({ accountId, amount: split.coins, reason: 'mail', orderId });
+        if (g.ok) coinsAfter = g.coinsAfter;
+      }
+      const cur = await getOrCreateSave(cols, accountId, now());
+      const newSkins = split.skins.filter((s) => !cur.inventory.skins.includes(s));
+      const save = await deliverMailGrant(cols, accountId, orderId, newSkins, split.items, coinsAfter, now(), split.materials);
+      return ok({ save });
+    }
 
     // 先看附件构成：含金币时需 commercial 可用（否则无法发币）→ 在领取前判，避免标记后无法发放。
     const peek = await cols.mail.findOne({ _id: id, to: accountId });
@@ -1837,6 +1905,7 @@ export class MetaService {
   }
 
   async sendMail(req: FastifyRequest, reply: FastifyReply) {
+    if (await this.proxySocial(req, reply, '/social/mail/send', req.body)) return;
     const accountId = accountIdOf(req);
     const { toPublicId, subject, body } = req.body as {
       toPublicId: string;

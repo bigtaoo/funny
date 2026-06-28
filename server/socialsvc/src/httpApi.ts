@@ -14,7 +14,10 @@ import {
   SlgError,
 } from '@nw/shared';
 import type { FamilyService } from './familyService';
+import type { FriendService } from './friendService';
+import type { MailService } from './mailService';
 import type { SocialGatewayClient, SocialPushMsg } from './gatewayClient';
+import { CHAT_SEND_RATE_PER_MIN, type ChatRegion } from '@nw/shared';
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -48,6 +51,18 @@ function sendErr(res: ServerResponse, code: ErrorCode, message: string): void {
   send(res, ERROR_HTTP_STATUS[code] ?? 400, err(code, message));
 }
 
+type SocialError = 'NOT_FOUND' | 'BAD_REQUEST' | 'ALREADY_FRIEND' | 'FRIEND_CAP_REACHED' | 'NOT_FRIEND' | 'BLOCKED';
+function sendSocialErr(res: ServerResponse, e: SocialError): void {
+  switch (e) {
+    case 'NOT_FOUND': return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
+    case 'ALREADY_FRIEND': return sendErr(res, ErrorCode.ALREADY_FRIEND, 'already friends');
+    case 'FRIEND_CAP_REACHED': return sendErr(res, ErrorCode.FRIEND_CAP_REACHED, 'friend cap reached');
+    case 'NOT_FRIEND': return sendErr(res, ErrorCode.NOT_FRIEND, 'not friends');
+    case 'BLOCKED': return sendErr(res, ErrorCode.BLOCKED, 'blocked');
+    default: return sendErr(res, ErrorCode.BAD_REQUEST, 'bad request');
+  }
+}
+
 const numQ = (v: string | null, d: number): number => {
   const n = v == null ? NaN : Number(v);
   return Number.isFinite(n) ? n : d;
@@ -56,6 +71,8 @@ const numQ = (v: string | null, d: number): number => {
 export function startHttpApi(
   opts: { host: string; port: number; jwtSecret: string; internalKey: string },
   familySvc: FamilyService,
+  friendSvc: FriendService,
+  mailSvc: MailService,
   gateway: SocialGatewayClient,
 ): Server {
   const internalAuth = loadInternalAuth(opts.internalKey);
@@ -120,6 +137,61 @@ export function startHttpApi(
           }
           // sect/world channel 无 targets 时：P3 将改用 Redis pub/sub 路由（当前仅落库，无实时推送）。
           return send(res, 200, ok({}));
+        }
+
+        // P2：邮件原子领取（metaserver 调用：标 claimed 取附件列表，metaserver 再发货）
+        {
+          const m = /^\/internal\/mail\/([^/]+)\/claim$/.exec(path);
+          if (method === 'POST' && m) {
+            const mailId = decodeURIComponent(m[1]!);
+            const body = await readJson(req);
+            const accountId = typeof body.accountId === 'string' ? body.accountId : null;
+            const orderId = typeof body.orderId === 'string' ? body.orderId : null;
+            if (!accountId || !orderId) return sendErr(res, ErrorCode.BAD_REQUEST, 'accountId + orderId required');
+            const result = await mailSvc.claimMailAtomic(accountId, mailId, orderId);
+            if ('error' in result) {
+              const code = result.error === 'NOT_FOUND' ? ErrorCode.NOT_FOUND
+                : result.error === 'ALREADY_CLAIMED' ? ErrorCode.ALREADY_CLAIMED
+                : ErrorCode.NO_ATTACHMENT;
+              return sendErr(res, code, result.error);
+            }
+            return send(res, 200, ok({ doc: result.doc }));
+          }
+        }
+
+        // P2：系统邮件单发（metaserver admin/赛季结算调用）
+        if (method === 'POST' && path === '/internal/mail/system') {
+          const body = await readJson(req);
+          const { dispatchKey, to, content } = body as {
+            dispatchKey: string;
+            to: string;
+            content: { subject: string; body: string; expireDays: number };
+          };
+          if (!dispatchKey || !to || !content?.subject) return sendErr(res, ErrorCode.BAD_REQUEST, 'dispatchKey + to + content required');
+          const r = await mailSvc.insertSystemMail(dispatchKey, to, content);
+          return send(res, 200, ok(r));
+        }
+
+        // P2：系统邮件批量 fan-out（metaserver admin/赛季结算调用）
+        if (method === 'POST' && path === '/internal/mail/system/bulk') {
+          const body = await readJson(req);
+          const { dispatchKey, accountIds, content } = body as {
+            dispatchKey: string;
+            accountIds: string[];
+            content: { subject: string; body: string; expireDays: number };
+          };
+          if (!dispatchKey || !Array.isArray(accountIds) || !content?.subject) {
+            return sendErr(res, ErrorCode.BAD_REQUEST, 'dispatchKey + accountIds + content required');
+          }
+          const r = await mailSvc.bulkInsertSystemMail(dispatchKey, accountIds, content);
+          // 对新插入的收件人 push 红点
+          if (r.insertedAccountIds.length > 0) {
+            for (const aid of r.insertedAccountIds) {
+              // best-effort，不影响本次响应
+              void gateway.push(aid, { kind: 'mail_new', mailId: `${dispatchKey}:${aid}`, hasAttachment: r.hasAttachment });
+            }
+          }
+          return send(res, 200, ok(r));
         }
 
         // 活跃度累加（worldsvc 占领/战斗时调用，SS7）
@@ -241,6 +313,136 @@ export function startHttpApi(
             }
             void familyId; // suppress unused var
           }
+        }
+
+        // ── 好友（P2）────────────────────────────────────────────────────
+        if (method === 'GET' && path === '/social/friends') {
+          return send(res, 200, ok({ friends: await friendSvc.getFriends(accountId) }));
+        }
+        if (method === 'GET' && path === '/social/friends/requests') {
+          return send(res, 200, ok(await friendSvc.listRequests(accountId)));
+        }
+        if (method === 'GET' && path === '/social/badges') {
+          return send(res, 200, ok(await friendSvc.getSocialBadges(accountId)));
+        }
+        if (method === 'POST' && path === '/social/friends/search') {
+          const body = await readJson(req);
+          const publicId = typeof body.publicId === 'string' ? body.publicId : null;
+          if (!publicId) return sendErr(res, ErrorCode.BAD_REQUEST, 'publicId required');
+          const found = await friendSvc.searchFriend(publicId);
+          if (!found) return sendErr(res, ErrorCode.NOT_FOUND, 'player not found');
+          return send(res, 200, ok(found));
+        }
+        if (method === 'POST' && path === '/social/friends/request') {
+          const body = await readJson(req);
+          const publicId = typeof body.publicId === 'string' ? body.publicId : null;
+          const message = typeof body.message === 'string' ? body.message : undefined;
+          if (!publicId) return sendErr(res, ErrorCode.BAD_REQUEST, 'publicId required');
+          const r2 = await friendSvc.requestFriend(accountId, publicId, message);
+          if (r2.kind === 'error') return sendSocialErr(res, r2.error);
+          return send(res, 200, ok({ requestId: r2.requestId }));
+        }
+        if (method === 'POST' && path === '/social/friends/respond') {
+          const body = await readJson(req);
+          const requestId = typeof body.requestId === 'string' ? body.requestId : null;
+          const accept = typeof body.accept === 'boolean' ? body.accept : null;
+          if (!requestId || accept === null) return sendErr(res, ErrorCode.BAD_REQUEST, 'requestId + accept required');
+          const r2 = await friendSvc.respondFriend(accountId, requestId, accept);
+          if (r2.kind === 'error') return sendSocialErr(res, r2.error);
+          return send(res, 200, ok({ ok: true }));
+        }
+        {
+          const m = /^\/social\/friends\/([^/]+)$/.exec(path);
+          if (method === 'DELETE' && m) {
+            await friendSvc.removeFriend(accountId, decodeURIComponent(m[1]!));
+            return send(res, 200, ok({ ok: true }));
+          }
+        }
+        if (method === 'POST' && path === '/social/friends/block') {
+          const body = await readJson(req);
+          const publicId = typeof body.publicId === 'string' ? body.publicId : null;
+          if (!publicId) return sendErr(res, ErrorCode.BAD_REQUEST, 'publicId required');
+          const ok2 = await friendSvc.blockUser(accountId, publicId);
+          if (!ok2) return sendErr(res, ErrorCode.NOT_FOUND, 'player not found');
+          return send(res, 200, ok({ ok: true }));
+        }
+        {
+          const m = /^\/social\/friends\/block\/([^/]+)$/.exec(path);
+          if (method === 'DELETE' && m) {
+            await friendSvc.unblockUser(accountId, decodeURIComponent(m[1]!));
+            return send(res, 200, ok({ ok: true }));
+          }
+        }
+
+        // ── 私聊（P2）────────────────────────────────────────────────────
+        if (method === 'GET' && path === '/social/chat/conversations') {
+          return send(res, 200, ok({ conversations: await friendSvc.getConversations(accountId) }));
+        }
+        {
+          const m = /^\/social\/chat\/([^/]+)\/messages$/.exec(path);
+          if (method === 'GET' && m) {
+            const convId = decodeURIComponent(m[1]!);
+            const before = q.get('before') ? Number(q.get('before')) : undefined;
+            const limit = numQ(q.get('limit'), 30);
+            const messages = await friendSvc.getMessages(accountId, convId, before, limit);
+            if (messages === null) return sendErr(res, ErrorCode.NOT_FOUND, 'conversation not found');
+            return send(res, 200, ok({ messages }));
+          }
+        }
+        if (method === 'POST' && path === '/social/chat/send') {
+          const body = await readJson(req);
+          const toPublicId = typeof body.toPublicId === 'string' ? body.toPublicId : null;
+          const msgBody = typeof body.body === 'string' ? body.body : null;
+          if (!toPublicId || !msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'toPublicId + body required');
+          if (!friendSvc.allowChat(accountId, Date.now(), CHAT_SEND_RATE_PER_MIN)) {
+            return sendErr(res, ErrorCode.RATE_LIMITED, 'too many messages');
+          }
+          const region = (req.headers['x-chat-region'] as ChatRegion | undefined) ?? 'global';
+          const r = await friendSvc.sendMessage(accountId, toPublicId, msgBody, region);
+          if (r.kind === 'error') return sendSocialErr(res, r.error);
+          return send(res, 200, ok({ messageId: r.messageId, ts: r.ts }));
+        }
+        if (method === 'POST' && path === '/social/chat/read') {
+          const body = await readJson(req);
+          const convId = typeof body.convId === 'string' ? body.convId : null;
+          if (!convId) return sendErr(res, ErrorCode.BAD_REQUEST, 'convId required');
+          await friendSvc.markConversationRead(accountId, convId);
+          return send(res, 200, ok({ ok: true }));
+        }
+
+        // ── 邮件（P2）────────────────────────────────────────────────────
+        if (method === 'GET' && path === '/social/mail') {
+          return send(res, 200, ok(await mailSvc.getMail(accountId)));
+        }
+        {
+          const m = /^\/social\/mail\/([^/]+)\/read$/.exec(path);
+          if (method === 'POST' && m) {
+            const mailId = decodeURIComponent(m[1]!);
+            const ok2 = await mailSvc.readMail(accountId, mailId);
+            if (!ok2) return sendErr(res, ErrorCode.NOT_FOUND, 'mail not found');
+            return send(res, 200, ok({ ok: true }));
+          }
+        }
+        {
+          const m = /^\/social\/mail\/([^/]+)$/.exec(path);
+          if (method === 'DELETE' && m) {
+            await mailSvc.deleteMail(accountId, decodeURIComponent(m[1]!));
+            return send(res, 200, ok({ ok: true }));
+          }
+        }
+        if (method === 'POST' && path === '/social/mail/send') {
+          const body = await readJson(req);
+          const toPublicId = typeof body.toPublicId === 'string' ? body.toPublicId : null;
+          const subject = typeof body.subject === 'string' ? body.subject : null;
+          const mailBody = typeof body.body === 'string' ? body.body : '';
+          if (!toPublicId || !subject) return sendErr(res, ErrorCode.BAD_REQUEST, 'toPublicId + subject required');
+          const r = await mailSvc.sendPlayerMail(accountId, toPublicId, subject, mailBody);
+          if (r.kind === 'error') {
+            if (r.error === 'NOT_FRIEND') return sendErr(res, ErrorCode.NOT_FRIEND, 'not friends');
+            if (r.error === 'NOT_FOUND') return sendErr(res, ErrorCode.NOT_FOUND, 'player not found');
+            return sendErr(res, ErrorCode.BAD_REQUEST, 'bad request');
+          }
+          return send(res, 200, ok({ mailId: r.mailId }));
         }
 
         return sendErr(res, ErrorCode.NOT_FOUND, '接口不存在');

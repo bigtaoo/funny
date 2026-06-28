@@ -12,6 +12,8 @@ export interface SocialsvcEnv extends ServerEnv {
   socialMongoDb: string;
   /** gateway 内部 HTTP 基址（socialsvc → /gw/push 推送实时事件）；缺省 = 不推送。 */
   gatewayInternalUrl: string | undefined;
+  /** metaserver 内部 HTTP 基址（P2：publicId 反查 + 批量资料）；缺省 = 账号查询降级。 */
+  metaInternalUrl: string | undefined;
 }
 
 export function loadSocialsvcEnv(): SocialsvcEnv {
@@ -23,5 +25,6 @@ export function loadSocialsvcEnv(): SocialsvcEnv {
     socialMongoUri: process.env.NW_SOCIAL_MONGO_URI ?? base.mongoUri,
     socialMongoDb: process.env.NW_SOCIAL_MONGO_DB ?? 'nw_social',
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL || undefined,
+    metaInternalUrl: process.env.NW_META_INTERNAL_URL || undefined,
   };
 }

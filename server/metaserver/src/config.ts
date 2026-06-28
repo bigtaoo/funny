@@ -24,6 +24,8 @@ export interface MetaEnv extends ServerEnv {
   authRateLimit: number;
   /** admin 内部基址（轮询 GET /admin/internal/flags 拿 feature flag 原始规则；供公开 /bootstrap 求值）。null = 不读 flag（全 default → bootstrap 恒空 map）。 */
   adminInternalUrl: string | null;
+  /** socialsvc 内部 HTTP 基址（P2：好友/私聊/邮件路由代理 + 邮件领取）。null = 不代理（路由仍由 metaserver 自身处理）。 */
+  socialsvcInternalUrl: string | null;
   /** 部署区域（注入 feature flag 求值 ctx）。空 = 不按区定向。 */
   region: string | null;
   /**
@@ -47,6 +49,7 @@ export function loadMetaEnv(): MetaEnv {
     auditSampleLimit: Number(process.env.NW_ACHIEVEMENT_AUDIT_SAMPLE_LIMIT ?? 5),
     authRateLimit: Number(process.env.NW_AUTH_RATE_LIMIT ?? 20),
     adminInternalUrl: process.env.NW_ADMIN_INTERNAL_URL ?? null,
+    socialsvcInternalUrl: process.env.NW_SOCIALSVC_INTERNAL_URL ?? null,
     region: process.env.NW_REGION ?? null,
     lokiPushUrl: process.env.NW_LOKI_PUSH_URL ?? null,
   };
