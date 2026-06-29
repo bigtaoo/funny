@@ -35,7 +35,6 @@ import type { GatewayClient } from './gatewayClient.js';
 import type { CommercialClient } from './commercialClient.js';
 import { adsDayKey } from './economy.js';
 import { getProfile, resolveByPublicId, searchAccounts } from './accounts.js';
-import { resolveByPublicId as resolveByPublicIdFull } from './social.js';
 import { grantTitleToPlayer } from './titles.js';
 import { accrueEventTask, adminListEvents, adminCreateEvent, adminUpdateEvent, adminDeleteEvent } from './events.js';
 import { profileOf } from './social.js';
@@ -216,9 +215,10 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const { publicId } = req.params as { publicId: string };
-    const found = await resolveByPublicIdFull(cols, publicId);
-    if (!found) return reply.code(404).send({ ok: false, error: 'not found' });
-    return reply.send({ accountId: found.accountId, profile: found.profile });
+    const accountId = await resolveByPublicId(cols, publicId);
+    if (!accountId) return reply.code(404).send({ ok: false, error: 'not found' });
+    const profile = await getProfile(cols, accountId);
+    return reply.send({ accountId, profile });
   });
 
   // POST /internal/account/batch-profiles → { profiles: { [accountId]: ProfileView } }
