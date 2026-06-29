@@ -9,6 +9,7 @@
  * App 启动时 fire-and-forget，纯装饰，失败不阻塞启动；线条为原黑墨，不 tint。
  */
 import * as PIXI from 'pixi.js-legacy';
+import { assetIO } from '../assets/assetIO';
 import atlasUrl from '../assets/decor/decor_c_atlas.png';
 import atlasData from '../assets/decor/decor_c_atlas.json';
 
@@ -39,7 +40,7 @@ export async function loadDecorCAtlas(): Promise<void> {
   if (sheet) return;
   if (loading) return loading;
   loading = (async () => {
-    const baseTex = new PIXI.BaseTexture(atlasUrl as string);
+    const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string));
     await new Promise<void>((resolve, reject) => {
       if (baseTex.valid) { resolve(); return; }
       baseTex.once('loaded', () => resolve());

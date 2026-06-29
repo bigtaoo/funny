@@ -23,6 +23,7 @@ import { Skeleton } from './skeleton';
 import type { AnimationClip, BoneKeyframe, SpriteBinding } from './types';
 import { drawEquipmentGlyph } from '../equipmentGlyph';
 import type { EquipSlot, EquipRarity } from '../../game/meta/SaveData';
+import { assetIO } from '../../assets/assetIO';
 
 // ── Unified procedural shadow ─────────────────────────────────────────────────
 // Shadows are no longer packed per-.tao. A single soft-edged dark ellipse is
@@ -602,11 +603,9 @@ export class StickmanRuntime {
   }
 
   private static async _parse(url: string, targetHeight?: number): Promise<TaoAsset> {
-    // Fetch the .tao ZIP
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`StickmanRuntime: failed to fetch ${url} (${resp.status})`);
-
-    const buf = await resp.arrayBuffer();
+    // Fetch the .tao ZIP bytes via the platform AssetIO (Web: fetch; WeChat: CDN +
+    // local cache — ASSET_PACKAGING §4.1).
+    const buf = await assetIO().loadBinary(url);
     const zip = await JSZip.loadAsync(buf);
 
     // ── animation.json ────────────────────────────────────────────────────

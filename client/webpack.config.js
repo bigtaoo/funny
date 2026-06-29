@@ -16,6 +16,9 @@ module.exports = (env, argv) => {
   const apiBase = process.env.NW_API_BASE || (isProd ? '' : 'http://localhost:18080');
   const gatewayWs = process.env.NW_GATEWAY_WS || (isProd ? '' : 'ws://localhost:8086/gw');
   const worldBase = process.env.NW_WORLD_BASE || (isProd ? '' : 'http://localhost:18084');
+  // 微信小游戏方案 A 资源 CDN 基址（ASSET_PACKAGING §4）。配了则 WechatAssetIO 走 CDN 下载+本地缓存；
+  // 留空（默认）则微信回退到打包内资源（identity），Web/CrazyGames 永远忽略此项。
+  const assetCdn = process.env.NW_ASSET_CDN || '';
 
   return {
     target: 'web',
@@ -84,6 +87,7 @@ module.exports = (env, argv) => {
         'globalThis.__NW_GATEWAY_WS__': JSON.stringify(gatewayWs),
         'globalThis.__NW_BUILD_VERSION__': JSON.stringify(process.env.NW_BUILD_VERSION || '0.0.0'),
         'globalThis.__NW_WORLD_BASE__': JSON.stringify(worldBase),
+        'globalThis.__NW_ASSET_CDN__': JSON.stringify(assetCdn),
       }),
     ],
     devServer: {

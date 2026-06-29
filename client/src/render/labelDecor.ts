@@ -18,6 +18,7 @@
  * NOT be tinted (same rule as §6.2 注 for the A group).
  */
 import * as PIXI from 'pixi.js-legacy';
+import { assetIO } from '../assets/assetIO';
 import bossUrl  from '../assets/decor/battle/label_boss.png';
 import startUrl from '../assets/decor/battle/label_start.png';
 import winUrl   from '../assets/decor/battle/label_win.png';
@@ -57,8 +58,8 @@ export async function loadLabelDecor(): Promise<void> {
   if (loading) return loading;
   loading = (async () => {
     const names = Object.keys(URLS) as LabelName[];
-    const decoded = await Promise.all(names.map((name) => {
-      const baseTex = new PIXI.BaseTexture(URLS[name]);
+    const decoded = await Promise.all(names.map(async (name) => {
+      const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(URLS[name]));
       return new Promise<PIXI.Texture>((resolve, reject) => {
         if (baseTex.valid) { resolve(new PIXI.Texture(baseTex)); return; }
         baseTex.once('loaded', () => resolve(new PIXI.Texture(baseTex)));

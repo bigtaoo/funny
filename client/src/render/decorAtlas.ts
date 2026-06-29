@@ -16,6 +16,7 @@
  * NOT be tinted to a faction colour (§6.2 注).
  */
 import * as PIXI from 'pixi.js-legacy';
+import { assetIO } from '../assets/assetIO';
 import atlasUrl from '../assets/decor/battle/decor_atlas.png';
 import atlasData from '../assets/decor/battle/decor_atlas.json';
 
@@ -47,7 +48,7 @@ export async function loadDecorAtlas(): Promise<void> {
   if (sheet) return;
   if (loading) return loading;
   loading = (async () => {
-    const baseTex = new PIXI.BaseTexture(atlasUrl as string);
+    const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string));
     await new Promise<void>((resolve, reject) => {
       if (baseTex.valid) { resolve(); return; }
       baseTex.once('loaded', () => resolve());

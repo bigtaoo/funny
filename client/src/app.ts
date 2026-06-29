@@ -50,9 +50,8 @@ import type { ILayout } from './layout/ILayout';
 import { installGlobalErrorHandlers, setToastSink } from './net/log';
 import { GlobalToast } from './ui/GlobalToast';
 import { setBakeRenderer } from './render/bake';
-import { loadDecorAtlas } from './render/decorAtlas';
-import { loadLabelDecor } from './render/labelDecor';
-import { loadDecorCAtlas } from './render/decorCAtlas';
+import { preloadBoot } from './assets/bootManifest';
+import { LoadingOverlay } from './render/LoadingOverlay';
 import { createAppCore } from './app/createAppCore';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps } from './app/AppViews';
 
@@ -328,15 +327,6 @@ export async function startApp(platform: IPlatform): Promise<void> {
   // Procedural art (sketch.ts) bakes static board layers to textures via this renderer.
   setBakeRenderer(app.renderer);
 
-  // Battlefield doodle atlas (art-direction §6.2): tiny, decoded in the background
-  // so the first battle's margin scrawl is ready by the time menus are crossed.
-  // Fire-and-forget — purely cosmetic, so a load failure must never block boot.
-  loadDecorAtlas().catch((err) => console.warn('[decor] atlas load failed', err));
-  // B-group corner hand-lettering ([START]/BOSS/WIN!) — same fire-and-forget rule.
-  loadLabelDecor().catch((err) => console.warn('[decor] labels load failed', err));
-  // C-group larger UI background doodles (lobby/menu paper atmosphere) — same rule.
-  loadDecorCAtlas().catch((err) => console.warn('[decor-c] atlas load failed', err));
-
   // 内存看护：每隔几秒采样 JS 堆，超阈值 console.warn 并 dump 各对象池占用；微信侧接 wx.onMemoryWarning。
   // 跨场景常驻（战斗退场后池注册表自动清空）。阈值可用 localStorage 'nw_mem_warn_mb' 调。
   new MemoryMonitor().install(app.ticker, app.stage);
@@ -361,6 +351,18 @@ export async function startApp(platform: IPlatform): Promise<void> {
 
   const input = new InputManager();
   platform.setupInput(app, input, (sx, sy) => scaling.toDesignSpace(sx, sy));
+
+  // ── L0 boot-tier preload gate (ASSET_PACKAGING §3) ──────────────────────────
+  // Show a loading screen (top-most: built after all other layers) and await the
+  // minimal asset set the first lobby + first battle need, so no unit ever renders
+  // as a placeholder circle on the player's first match. The three battle/lobby
+  // decor atlases (formerly fire-and-forget here) are part of this set now.
+  // preloadBoot never rejects — a flaky asset advances progress and degrades
+  // gracefully rather than wedging boot. On CrazyGames the SDK loading splash is
+  // dismissed by onLoadingComplete() *after* this gate, so it covers our preload.
+  const loading = new LoadingOverlay(app);
+  await preloadBoot((done, total) => loading.setProgress(total ? done / total : 1));
+  loading.destroy();
 
   platform.onAppReady();
   await platform.onLoadingComplete();
