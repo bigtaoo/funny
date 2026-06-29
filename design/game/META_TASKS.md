@@ -326,7 +326,7 @@
 
 ### 其余确认缺口
 
-- [ ] **S4-4 PvE 三振出局封禁**（META_TASKS 唯一未勾的主线项）：anti-cheat 累计判负 → 封禁执行尚未完整落地。
+- [x] **S4-4 PvE 三振出局封禁** ✅（2026-06-29）：pveClear 增加 `accounts.flags.banned` 检查（管理员手动封号即时生效）；pveVerify 开头增加 `pveBanned` 检查（被封账号无法补传录像）；新增 `POST /internal/accounts/:id/ban` + `unban` 内部端点；admin 层 `POST /admin/accounts/:id/ban` + `unban` 代理（需 `anticheat.action` 权限，super/ops 拥有）；AuditAction 补 `account.ban`/`account.unban`；`shared/admin` 新增 `anticheat.action` 权限；单测 +6（ban/unban 端点）+ e2e 补三振封禁用例。171 单测绿。
 - [ ] **皮肤 .tao 资产**：`client/src/render/UnitView.ts` `SKIN_ASSETS = {}` 为空——换肤管线（S3-4）已就绪但无资产，商店在售皮肤当前**视觉无变化**。美术阻塞。
 - [ ] **worldsvc publicId 解析**：`server/worldsvc/src/service.ts` 领主身份待经 meta `/internal/profile` 反查，否则 SLG 部分路径显示原始 id 而非昵称。
 - [ ] **实时赛季号下行**：`createAppCore` `CURRENT_SEASON = 1` 硬编码，待 S11 天梯赛季元数据由 metaserver 下发后接线（SLG 大区赛季）。
