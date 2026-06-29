@@ -366,6 +366,9 @@ export class CommercialService {
   }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
     const existing = await this.cols.recharges.findOne({ _id: args.receiptId });
     if (existing) {
+      // 票据已被消费：仅当属于同一账号时才回放（返回本账号余额），
+      // 否则拒绝——避免把他人账号余额镜像给请求方（跨账号余额泄露）。
+      if (existing.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
       const w = await this.cols.wallets.findOne({ _id: existing.accountId });
       return { ok: true, coinsAfter: w?.coins ?? 0, coinsGranted: existing.coinsGranted };
     }
@@ -386,8 +389,10 @@ export class CommercialService {
     } catch (e) {
       // 并发竞态：唯一冲突说明已有人处理，回读返回原结果。
       if ((e as { code?: number }).code === 11000) {
-        const w = await this.cols.wallets.findOne({ _id: args.accountId });
         const r = await this.cols.recharges.findOne({ _id: args.receiptId });
+        // 同跨账号防护：票据已被他账号落单则拒绝。
+        if (r && r.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
+        const w = await this.cols.wallets.findOne({ _id: args.accountId });
         return { ok: true, coinsAfter: w?.coins ?? 0, coinsGranted: r?.coinsGranted ?? v.coins };
       }
       throw e;

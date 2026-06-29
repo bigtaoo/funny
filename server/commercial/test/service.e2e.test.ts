@@ -56,6 +56,20 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     expect((await svc.getWallet('a')).coins).toBe(3300);
   });
 
+  it('同 receiptId 被他账号占用 → 拒绝（防跨账号余额泄露）', async () => {
+    // a 先用 rcShared 充值（余额 3300）。
+    const r1 = await svc.rechargeVerify({ accountId: 'a', platform: 'web', receipt: 'tier:mid', receiptId: 'rcShared' });
+    expect(r1).toMatchObject({ ok: true, coinsGranted: 3300, coinsAfter: 3300 });
+    // b 复用同一 receiptId：必须拒绝，绝不回放 a 的余额。
+    const r2 = await svc.rechargeVerify({ accountId: 'b', platform: 'web', receipt: 'tier:mid', receiptId: 'rcShared' });
+    expect(r2).toEqual({ ok: false, error: 'INVALID_RECEIPT' });
+    // b 钱包不受影响。
+    expect((await svc.getWallet('b')).coins).toBe(0);
+    // a 同 receiptId 重放仍正常（返回本账号余额）。
+    const r3 = await svc.rechargeVerify({ accountId: 'a', platform: 'web', receipt: 'tier:mid', receiptId: 'rcShared' });
+    expect(r3).toMatchObject({ ok: true, coinsGranted: 3300, coinsAfter: 3300 });
+  });
+
   it('余额不足拒绝扣币', async () => {
     const r = await svc.shopCharge({ accountId: 'b', itemId: 'skin_shop_c1', cost: 300, orderId: 'o1' });
     expect(r).toEqual({ ok: false, error: 'INSUFFICIENT_FUNDS' });
