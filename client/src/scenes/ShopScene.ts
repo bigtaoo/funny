@@ -30,6 +30,8 @@ export interface ShopSceneCallbacks {
   getOwnedSkins(): string[];
   loadItems(): Promise<ShopItem[]>;
   buy(itemId: string): Promise<ShopActionResult>;
+  /** Dev-only virtual top-up. Not rendered in production; exposed for E2E tests. */
+  recharge?(code: string): Promise<ShopActionResult>;
   openGacha(): void;
   /**
    * 战令 Battle Pass 入口（LOBBY_IA_REDESIGN §3：付费主轴并入「商城」tab，主页不放 banner）。

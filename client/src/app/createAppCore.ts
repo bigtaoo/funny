@@ -908,6 +908,15 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           };
         }
       },
+      async recharge(code) {
+        try {
+          const { save } = await client.iapVerify('dev', code);
+          saveManager.adoptServer(save);
+          return { ok: true };
+        } catch {
+          return { ok: false, key: 'shop.error' };
+        }
+      },
       // 商城组同级 tab（LOBBY_IA_REDESIGN P1.5）：盲盒/战令上浮为顶部 tab，threading
       // shopBack 让三页互相直达且返回到同一来源（lobby / level-prep）。
       openGacha() { goGacha({ shopBack: onBack }); },
