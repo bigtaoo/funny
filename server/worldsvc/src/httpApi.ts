@@ -1,4 +1,4 @@
-// worldsvc 公网 REST（S8-0，SLG_DESIGN §14.1 P1 / §14.6）。第四公网面：/world/* /family/* /auction/*。
+// worldsvc 公网 REST（S8-0，SLG_DESIGN §14.1 P1 / §14.6）。第四公网面：/world/* /auction/*（/family/* 已迁至 socialsvc）。
 // 鉴权：复用 meta JWT，仅 verifyToken 验签取 accountId（不连 accounts 库，P1）。
 // 用 node:http（worldsvc 不引 fastify）。响应走 @nw/shared ApiResp 包络，错误码 → HTTP 经 ERROR_HTTP_STATUS。
 // S8-0：地图/玩家状态做实；行军/防守/兵力/家族/拍卖/赛季返回 NOT_IMPLEMENTED（S8-1~5）。

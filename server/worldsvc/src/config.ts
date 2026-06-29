@@ -5,7 +5,7 @@
 import { loadServerEnv, type ServerEnv } from '@nw/shared';
 
 export interface WorldsvcEnv extends ServerEnv {
-  /** 公网 REST 端口（反代 /world,/family,/auction → 此端口）。默认 18084（避开 Windows 保留段）。 */
+  /** 公网 REST 端口（反代 /world,/auction → 此端口）。默认 18084（避开 Windows 保留段）。 */
   port: number;
   host: string;
   /** worldsvc 专属库 Mongo URI（默认复用 meta 同实例）。 */
