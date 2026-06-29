@@ -78,33 +78,8 @@ import {
   setDisplayName,
 } from './accounts.js';
 import { createOAuthService, OAuthError, type OAuthProvider } from './oauth.js';
-import {
-  getFriends,
-  listRequests,
-  resolveByPublicId,
-  requestFriend,
-  respondFriend,
-  removeFriend,
-  blockUser,
-  unblockUser,
-  friendAccountIds,
-  sendMessage,
-  getConversations,
-  getMessages,
-  markConversationRead,
-  socialBadges,
-  profileOf,
-  type SocialError,
-} from './social.js';
-import {
-  getMail,
-  readMail,
-  deleteMail,
-  claimMailAtomic,
-  splitAttachments,
-  sendPlayerMail,
-  insertSystemMail,
-} from './mail.js';
+import { profileOf } from './social.js';
+import { splitAttachments, insertSystemMail } from './mail.js';
 import type { CommercialClient } from './commercialClient.js';
 import type { GatewayClient } from './gatewayClient.js';
 import {
@@ -1582,176 +1557,64 @@ export class MetaService {
 
   // ── 社交：好友/私聊/邮件（S6-1/2/3）。P2 起：若配置了 NW_SOCIALSVC_INTERNAL_URL，路由代理到 socialsvc。──
 
-  /** 代理到 socialsvc（透传 JWT + body）。socialsvc 路径 = /social/* （与 openapi /friends/* 对齐由此转换）。 */
+  /** 代理到 socialsvc（透传 JWT + body）。socialsvc 未配置 → 503。 */
   private async proxySocial(
     req: FastifyRequest,
     reply: FastifyReply,
     socialPath: string,
     body?: unknown,
-  ): Promise<boolean> {
-    if (!this.deps.socialsvc?.available) return false;
+  ): Promise<void> {
+    if (!this.deps.socialsvc?.available) {
+      reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'socialsvc not configured'));
+      return;
+    }
     const auth = (req.headers.authorization ?? '') as string;
-    const method = req.method;
-    const r = await this.deps.socialsvc.proxy(method, socialPath, body ?? null, auth);
+    const r = await this.deps.socialsvc.proxy(req.method, socialPath, body ?? null, auth);
     reply.status(r.status).send(r.data);
-    return true;
   }
 
-  /** SocialError → HTTP 状态 + ErrorCode。 */
-  private sendSocialError(reply: FastifyReply, e: SocialError) {
-    switch (e) {
-      case 'NOT_FOUND':
-        return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'not found'));
-      case 'ALREADY_FRIEND':
-        return reply.code(409).send(err(ErrorCode.ALREADY_FRIEND, 'already friends'));
-      case 'FRIEND_CAP_REACHED':
-        return reply.code(409).send(err(ErrorCode.FRIEND_CAP_REACHED, 'friend cap reached'));
-      case 'NOT_FRIEND':
-        return reply.code(403).send(err(ErrorCode.NOT_FRIEND, 'not friends'));
-      case 'BLOCKED':
-        return reply.code(403).send(err(ErrorCode.BLOCKED, 'blocked'));
-      case 'BAD_REQUEST':
-      default:
-        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'bad request'));
-    }
-  }
+  // ── 社交：好友/私聊/邮件（P2 后全部代理到 socialsvc）──────────────────────────
 
   async getFriends(req: FastifyRequest, reply: FastifyReply) {
-    if (await this.proxySocial(req, reply, '/social/friends')) return;
-    const accountId = accountIdOf(req);
-    const { cols, gateway } = this.deps;
-    const friends = await getFriends(cols, accountId);
-    // 标在线态：拉好友 accountId → 向 gateway 批量查 presence。需 publicId→accountId 映射回填。
-    if (gateway.available && friends.length > 0) {
-      const ids = await friendAccountIds(cols, accountId);
-      const presence = await gateway.presence(ids);
-      // accountId → publicId 映射（仅这批好友）。
-      const docs = await cols.accounts
-        .find({ _id: { $in: ids } }, { projection: { publicId: 1 } })
-        .toArray();
-      const byPublic = new Map<string, boolean>();
-      for (const d of docs) {
-        if (d.publicId) byPublic.set(d.publicId, presence[d._id] ?? false);
-      }
-      for (const f of friends) f.online = byPublic.get(f.publicId) ?? false;
-    }
-    return ok({ friends });
+    return this.proxySocial(req, reply, '/social/friends');
   }
 
   async getFriendRequests(req: FastifyRequest, reply: FastifyReply) {
-    if (await this.proxySocial(req, reply, '/social/friends/requests')) return;
-    const accountId = accountIdOf(req);
-    const { incoming, outgoing } = await listRequests(this.deps.cols, accountId);
-    return ok({ incoming, outgoing });
+    return this.proxySocial(req, reply, '/social/friends/requests');
   }
 
   async getSocialBadges(req: FastifyRequest, reply: FastifyReply) {
-    if (await this.proxySocial(req, reply, '/social/badges')) return;
-    const accountId = accountIdOf(req);
-    const badges = await socialBadges(this.deps.cols, accountId, this.deps.now());
-    return ok(badges);
+    return this.proxySocial(req, reply, '/social/badges');
   }
 
   async searchFriend(req: FastifyRequest, reply: FastifyReply) {
-    if (await this.proxySocial(req, reply, '/social/friends/search', req.body)) return;
-    accountIdOf(req); // 须登录
-    const { publicId } = req.body as { publicId: string };
-    const found = await resolveByPublicId(this.deps.cols, publicId);
-    if (!found) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'player not found'));
-    return ok({ profile: found.profile });
+    return this.proxySocial(req, reply, '/social/friends/search', req.body);
   }
 
   async requestFriend(req: FastifyRequest, reply: FastifyReply) {
-    if (await this.proxySocial(req, reply, '/social/friends/request', req.body)) return;
-    const accountId = accountIdOf(req);
-    const { publicId, message } = req.body as { publicId: string; message?: string };
-    const res = await requestFriend(this.deps.cols, accountId, publicId, message, this.deps.now());
-    if (res.kind === 'error') return this.sendSocialError(reply, res.error);
-    // 推送给目标（在线则弹申请红点）。
-    void this.deps.gateway.push(res.to, {
-      kind: 'friend_request',
-      requestId: res.requestId,
-      fromPublicId: res.fromProfile.publicId,
-      fromName: res.fromProfile.displayName,
-      message: res.message ?? '',
-    });
-    return ok({ requestId: res.requestId });
+    return this.proxySocial(req, reply, '/social/friends/request', req.body);
   }
 
   async respondFriend(req: FastifyRequest, reply: FastifyReply) {
-    if (await this.proxySocial(req, reply, '/social/friends/respond', req.body)) return;
-    const accountId = accountIdOf(req);
-    const { requestId, accept } = req.body as { requestId: string; accept: boolean };
-    const res = await respondFriend(this.deps.cols, accountId, requestId, accept, this.deps.now());
-    if (res.kind === 'error') return this.sendSocialError(reply, res.error);
-    if (res.accepted) {
-      // 好友边变更 → 让 gateway presence 缓存失效（双方）。
-      void this.deps.gateway.invalidateFriends(accountId);
-      void this.deps.gateway.invalidateFriends(res.otherAccountId);
-      // 通知双方好友已建立（各自 push 对方的 publicId）。
-      void this.deps.gateway.push(res.otherAccountId, {
-        kind: 'friend_update',
-        publicId: res.meProfile.publicId,
-        added: true,
-      });
-      void this.deps.gateway.push(accountId, {
-        kind: 'friend_update',
-        publicId: res.otherProfile.publicId,
-        added: true,
-      });
-    }
-    return ok({ ok: true });
+    return this.proxySocial(req, reply, '/social/friends/respond', req.body);
   }
 
   async removeFriend(req: FastifyRequest, reply: FastifyReply) {
     const { publicId } = req.params as { publicId: string };
-    if (await this.proxySocial(req, reply, `/social/friends/${encodeURIComponent(publicId)}`)) return;
-    const accountId = accountIdOf(req);
-    const res = await removeFriend(this.deps.cols, accountId, publicId);
-    if (res) {
-      void this.deps.gateway.invalidateFriends(accountId);
-      void this.deps.gateway.invalidateFriends(res.otherAccountId);
-      const me = await getProfile(this.deps.cols, accountId);
-      void this.deps.gateway.push(res.otherAccountId, {
-        kind: 'friend_update',
-        publicId: me.publicId,
-        added: false,
-      });
-    }
-    return ok({ ok: true });
+    return this.proxySocial(req, reply, `/social/friends/${encodeURIComponent(publicId)}`);
   }
 
   async blockUser(req: FastifyRequest, reply: FastifyReply) {
-    if (await this.proxySocial(req, reply, '/social/friends/block', req.body)) return;
-    const accountId = accountIdOf(req);
-    const { publicId } = req.body as { publicId: string };
-    const res = await blockUser(this.deps.cols, accountId, publicId, this.deps.now());
-    if (!res) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'player not found'));
-    void this.deps.gateway.invalidateFriends(accountId);
-    void this.deps.gateway.invalidateFriends(res.otherAccountId);
-    const me = await getProfile(this.deps.cols, accountId);
-    void this.deps.gateway.push(res.otherAccountId, {
-      kind: 'friend_update',
-      publicId: me.publicId,
-      added: false,
-    });
-    return ok({ ok: true });
+    return this.proxySocial(req, reply, '/social/friends/block', req.body);
   }
 
   async unblockUser(req: FastifyRequest, reply: FastifyReply) {
     const { publicId } = req.params as { publicId: string };
-    if (await this.proxySocial(req, reply, `/social/friends/block/${encodeURIComponent(publicId)}`)) return;
-    const accountId = accountIdOf(req);
-    await unblockUser(this.deps.cols, accountId, publicId);
-    return ok({ ok: true });
+    return this.proxySocial(req, reply, `/social/friends/block/${encodeURIComponent(publicId)}`);
   }
 
-  // ── 社交：私聊（S6-2）。发送走 REST（单一写者）；收消息经 gateway chat_message push。──
   async getConversations(req: FastifyRequest, reply: FastifyReply) {
-    if (await this.proxySocial(req, reply, '/social/chat/conversations')) return;
-    const accountId = accountIdOf(req);
-    const conversations = await getConversations(this.deps.cols, accountId);
-    return ok({ conversations });
+    return this.proxySocial(req, reply, '/social/chat/conversations');
   }
 
   async getMessages(req: FastifyRequest, reply: FastifyReply) {
@@ -1761,72 +1624,30 @@ export class MetaService {
     if (q.before !== undefined) qs.set('before', String(q.before));
     if (q.limit !== undefined) qs.set('limit', String(q.limit));
     const qStr = qs.toString();
-    if (await this.proxySocial(req, reply, `/social/chat/${encodeURIComponent(convId)}/messages${qStr ? `?${qStr}` : ''}`)) return;
-    const accountId = accountIdOf(req);
-    const before = q.before !== undefined ? Number(q.before) : undefined;
-    const limit = q.limit !== undefined ? Number(q.limit) : 30;
-    const messages = await getMessages(this.deps.cols, accountId, convId, before, limit);
-    if (messages === null) {
-      return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'conversation not found'));
-    }
-    return ok({ messages });
+    return this.proxySocial(req, reply, `/social/chat/${encodeURIComponent(convId)}/messages${qStr ? `?${qStr}` : ''}`);
   }
 
   async sendChat(req: FastifyRequest, reply: FastifyReply) {
-    if (await this.proxySocial(req, reply, '/social/chat/send', req.body)) return;
-    const accountId = accountIdOf(req);
-    const { toPublicId, body } = req.body as { toPublicId: string; body: string };
-    if (!this.allowChat(accountId, this.deps.now())) {
-      return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many messages'));
-    }
-    // 敏感词地区：按发送方账号 region 选词表（SOC10）。auth 时由 Accept-Language 惰性打标，
-    // 缺省 / 旧账号 → 'global'（仅基础词表）。单条 body 只存一份，发送端过滤最自然。
-    const region = await getRegion(this.deps.cols, accountId);
-    const res = await sendMessage(this.deps.cols, accountId, toPublicId, body, region, this.deps.now());
-    if (res.kind === 'error') return this.sendSocialError(reply, res.error);
-    // 推送给收件方（在线则弹消息 / 红点）。
-    void this.deps.gateway.push(res.to, {
-      kind: 'chat_message',
-      convId: res.convId,
-      fromPublicId: res.fromProfile.publicId,
-      fromName: res.fromProfile.displayName,
-      body: res.body,
-      ts: res.ts,
-    });
-    return ok({ messageId: res.messageId, ts: res.ts });
+    return this.proxySocial(req, reply, '/social/chat/send', req.body);
   }
 
   async readChat(req: FastifyRequest, reply: FastifyReply) {
-    if (await this.proxySocial(req, reply, '/social/chat/read', req.body)) return;
-    const accountId = accountIdOf(req);
-    const { convId } = req.body as { convId: string };
-    await markConversationRead(this.deps.cols, accountId, convId);
-    return ok({ ok: true });
+    return this.proxySocial(req, reply, '/social/chat/read', req.body);
   }
 
-  // ── 社交：邮件（S6-3）。附件领取经 commercial 发金币 + meta 发 inventory，claimOrderId 幂等。──
+  // ── 社交：邮件（S6-3）。附件领取 claimMail 经 socialsvc 原子标记后 meta 负责发货。──
   async getMail(req: FastifyRequest, reply: FastifyReply) {
-    if (await this.proxySocial(req, reply, '/social/mail')) return;
-    const accountId = accountIdOf(req);
-    const { mail, unread } = await getMail(this.deps.cols, accountId, this.deps.now());
-    return ok({ mail, unread });
+    return this.proxySocial(req, reply, '/social/mail');
   }
 
   async readMail(req: FastifyRequest, reply: FastifyReply) {
     const { id } = req.params as { id: string };
-    if (await this.proxySocial(req, reply, `/social/mail/${encodeURIComponent(id)}/read`, {})) return;
-    const accountId = accountIdOf(req);
-    const okRead = await readMail(this.deps.cols, accountId, id, this.deps.now());
-    if (!okRead) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));
-    return ok({ ok: true });
+    return this.proxySocial(req, reply, `/social/mail/${encodeURIComponent(id)}/read`, {});
   }
 
   async deleteMail(req: FastifyRequest, reply: FastifyReply) {
     const { id } = req.params as { id: string };
-    if (await this.proxySocial(req, reply, `/social/mail/${encodeURIComponent(id)}`)) return;
-    const accountId = accountIdOf(req);
-    await deleteMail(this.deps.cols, accountId, id);
-    return ok({ ok: true });
+    return this.proxySocial(req, reply, `/social/mail/${encodeURIComponent(id)}`);
   }
 
   async claimMail(req: FastifyRequest, reply: FastifyReply) {
@@ -1834,70 +1655,27 @@ export class MetaService {
     const { id } = req.params as { id: string };
     const { cols, commercial, now } = this.deps;
 
-    // P2：若 socialsvc 可用，mail 数据已在 nw_social.mails，通过内部 atomic claim 拿回 doc。
-    if (this.deps.socialsvc?.available) {
-      const peekResult = await this.deps.socialsvc.claimMail(id, accountId, 'peek');
-      // peek 检查附件（用 orderId='peek' 不会真正标记 claimed，仅读文档结构）
-      // 实际: 直接走完整 claimMail 逻辑（socialsvc claimMailAtomic 是幂等的，orderId 相同不重复标记）
-      // 故用正式 orderId 一次到位。
-      const orderId = randomUUID();
-      const claimedResult = await this.deps.socialsvc.claimMail(id, accountId, orderId);
-      if ('error' in claimedResult) {
-        if (claimedResult.error === 'NOT_FOUND') return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));
-        if (claimedResult.error === 'NO_ATTACHMENT') return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
-        return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
-      }
-      const claimedDoc = claimedResult.doc;
-      const attachments = claimedDoc.attachments ?? [];
-      if (attachments.length === 0) return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
-      const split = splitAttachments(attachments);
-      if (split.coins > 0 && !commercial.available) {
-        return reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'commercial service unavailable'));
-      }
-      let coinsAfter: number | null = null;
-      if (split.coins > 0) {
-        const g = await commercial.grant({ accountId, amount: split.coins, reason: 'mail', orderId });
-        if (g.ok) coinsAfter = g.coinsAfter;
-      }
-      const cur = await getOrCreateSave(cols, accountId, now());
-      const newSkins = split.skins.filter((s) => !cur.inventory.skins.includes(s));
-      const save = await deliverMailGrant(cols, accountId, orderId, newSkins, split.items, coinsAfter, now(), split.materials);
-      return ok({ save });
+    if (!this.deps.socialsvc?.available) {
+      return reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'socialsvc not configured'));
     }
-
-    // 先看附件构成：含金币时需 commercial 可用（否则无法发币）→ 在领取前判，避免标记后无法发放。
-    const peek = await cols.mail.findOne({ _id: id, to: accountId });
-    if (!peek) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));
-    if (!peek.attachments || peek.attachments.length === 0) {
-      return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
-    }
-    if (peek.claimedAt !== undefined) {
+    const orderId = randomUUID();
+    const claimedResult = await this.deps.socialsvc.claimMail(id, accountId, orderId);
+    if ('error' in claimedResult) {
+      if (claimedResult.error === 'NOT_FOUND') return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));
+      if (claimedResult.error === 'NO_ATTACHMENT') return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
       return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
     }
-    const split = splitAttachments(peek.attachments);
+    const attachments = claimedResult.doc.attachments ?? [];
+    if (attachments.length === 0) return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
+    const split = splitAttachments(attachments);
     if (split.coins > 0 && !commercial.available) {
       return reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'commercial service unavailable'));
     }
-
-    const orderId = randomUUID();
-    const claimed = await claimMailAtomic(cols, accountId, id, orderId, now());
-    if ('error' in claimed) {
-      if (claimed.error === 'ALREADY_CLAIMED') {
-        return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
-      }
-      if (claimed.error === 'NO_ATTACHMENT') {
-        return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
-      }
-      return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));
-    }
-
-    // 发金币（commercial 权威，orderId 幂等）→ 取回权威余额做镜像；无金币则镜像不动。
     let coinsAfter: number | null = null;
     if (split.coins > 0) {
       const g = await commercial.grant({ accountId, amount: split.coins, reason: 'mail', orderId });
       if (g.ok) coinsAfter = g.coinsAfter;
     }
-    // 发 inventory（皮肤幂等 set / 物品 $inc）+ 钱包镜像 + deliveredOrders 幂等账本。
     const cur = await getOrCreateSave(cols, accountId, now());
     const newSkins = split.skins.filter((s) => !cur.inventory.skins.includes(s));
     const save = await deliverMailGrant(cols, accountId, orderId, newSkins, split.items, coinsAfter, now(), split.materials);
@@ -1905,35 +1683,7 @@ export class MetaService {
   }
 
   async sendMail(req: FastifyRequest, reply: FastifyReply) {
-    if (await this.proxySocial(req, reply, '/social/mail/send', req.body)) return;
-    const accountId = accountIdOf(req);
-    const { toPublicId, subject, body } = req.body as {
-      toPublicId: string;
-      subject: string;
-      body: string;
-    };
-    const fromProfile = await profileOf(this.deps.cols, accountId);
-    if (!fromProfile) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'sender profile missing'));
-    const res = await sendPlayerMail(
-      this.deps.cols,
-      accountId,
-      fromProfile,
-      toPublicId,
-      subject,
-      body,
-      this.deps.now(),
-    );
-    if (res.kind === 'error') {
-      if (res.error === 'NOT_FRIEND') {
-        return reply.code(403).send(err(ErrorCode.NOT_FRIEND, 'not friends'));
-      }
-      if (res.error === 'NOT_FOUND') {
-        return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'player not found'));
-      }
-      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'bad request'));
-    }
-    void this.deps.gateway.push(res.to, { kind: 'mail_new', mailId: res.mailId, hasAttachment: false });
-    return ok({ mailId: res.mailId });
+    return this.proxySocial(req, reply, '/social/mail/send', req.body);
   }
 
   // ── economy（S5：meta 编排 → commercial 扣币/随机 → 发货 → 镜像回推）──────
