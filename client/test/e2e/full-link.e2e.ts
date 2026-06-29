@@ -94,8 +94,10 @@ describe('full-link E2E (live stack)', () => {
     expect(items.length).toBeGreaterThan(0);
 
     // Virtual top-up (dev stub) → coins credited, server-authoritative回推.
+    // Receipt must be unique per account: rechargeVerify is globally idempotent on
+    // `dev:<receipt>`, so a shared constant would dedup against other tests' accounts.
     const coinsBefore = c.views.shop!.getCoins();
-    const r = await c.views.shop!.recharge('taowang');
+    const r = await c.views.shop!.recharge(`topup_${uid()}`);
     expect(r.ok, `recharge failed: ${JSON.stringify(r)}`).toBe(true);
     expect(c.views.shop!.getCoins()).toBeGreaterThan(coinsBefore);
 
@@ -232,7 +234,8 @@ describe('full-link E2E (live stack)', () => {
     a.views.gacha!.openShop!();
     expect(a.views.screen).toBe('shop');
     await a.views.shop!.loadItems();
-    expect((await a.views.shop!.recharge('taowang')).ok, 'recharge failed').toBe(true);
+    // Unique dev receipt (see note above): the `small` tier grants 600 coins (> 500 rename cost).
+    expect((await a.views.shop!.recharge(`topup_${uid()}`)).ok, 'recharge failed').toBe(true);
     const afterRecharge = a.views.shop!.getCoins();
     expect(afterRecharge, 'recharge should grant enough to rename').toBeGreaterThan(500);
     a.views.shop!.onBack();

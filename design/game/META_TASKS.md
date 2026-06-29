@@ -323,6 +323,7 @@
 - [x] **兑换接口**：玩家侧 metaserver REST `POST /promo/redeem { code }`（JWT 鉴权，operationId `redeemPromoCode`）。校验：码存在 / 未过期 / 未超总量 / **该玩家未用过** → 加币 + 回推 wallet mirror。
 - [x] **每玩家每码一次（幂等）+ commercial 记账**：commercial 新增 `promoCodes`（码定义；`_id=code 大写`，`redeemed` 原子 `$inc`）+ `promoRedemptions`（`_id = accountId:code` 天然唯一，复刻 `recharges.receiptId` 防重模式）两集合；兑换 = `credit(accountId, coins, 'promo')` 入 ledger；并发靠 `insertOne` 唯一冲突回 `PROMO_ALREADY_USED`。
 - [x] 契约：`openapi.yml` 加 `/promo/redeem`；`shared/admin.ts` 加 `promo.manage` 能力 + `promo.create` 审计 action。**主要文件**：`commercial/src/db.ts`（两集合）、`commercial/src/service.ts`（三方法）、`commercial/src/internalHttp.ts`（三端点）、`metaserver/src/commercialClient.ts`（三接口）、`metaserver/src/internal.ts`（两 admin 路由）、`metaserver/src/service.ts`（`redeemPromoCode` handler）、`admin/src/{clients,service,httpApi,index}.ts`。**验收**：`commercial/test/promo.test.ts` 13 e2e（Mongo 不在线 skip，同现有模式）；`tsc -b` shared/commercial/metaserver/admin 全绿。
+- [x] **E2E 收尾**（2026-06-29）：魔术码删除后 `full-link.e2e.ts` 仍以常量 `'taowang'` 调 `recharge()`，而该路径现走 `iapVerify` dev 桩、`receiptId` 全局幂等（`dev:<receipt>`）。两条用例共用同一收据 → 第二个账号命中去重分支、拿到**前一个账号**的余额（≈150）→ `expected 150 to be greater than 500` 失败。改为每账号唯一收据（`topup_${uid()}`，非 `tier:` 前缀走 `small`=600 档）。⚠遗留隐患（已记 background task）：`commercial rechargeVerify` 去重分支返回 `existing.accountId` 的钱包余额、`metaserver.iapVerify` 再 mirror 进请求方 → 跨账号余额泄漏；生产不可达（真实平台收据全局唯一），仅复用收据时暴露。
 
 ### 其余确认缺口
 
