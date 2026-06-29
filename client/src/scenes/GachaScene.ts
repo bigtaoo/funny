@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import type { Rarity } from '../game/meta/SaveData';
 import type { GachaPool, GachaResultEntry } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { gachaCardTexture, gachaFrameTexture, gachaBannerTexture } from '../render/gachaArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -203,18 +204,16 @@ export class GachaScene implements Scene {
 
     const pool = this.pool;
 
-    // Banner card (placeholder art pending; rarity legend as a flourish).
+    // Banner image.
     const bannerW = Math.round(w * 0.78);
     const bannerH = Math.round(h * 0.26);
     const bx = (w - bannerW) / 2;
     const by = tbH + Math.round(h * 0.05);
-    const banner = sketchPanel(bannerW, bannerH, { fill: C.paper, border: C.gold, width: 2.8, seed: seedFor(bannerW, bannerH, 5) });
-    banner.x = bx; banner.y = by;
-    this.container.addChild(banner);
-
-    const bTitle = txt(t('gacha.title'), Math.round(h * 0.045), C.dark, true);
-    bTitle.anchor.set(0.5, 0.5); bTitle.x = w / 2; bTitle.y = by + bannerH * 0.32;
-    this.container.addChild(bTitle);
+    const bannerTex = gachaBannerTexture(pool.id);
+    const bannerSpr = new PIXI.Sprite(bannerTex);
+    bannerSpr.x = bx; bannerSpr.y = by;
+    bannerSpr.width = bannerW; bannerSpr.height = bannerH;
+    this.container.addChild(bannerSpr);
 
     // Rarity legend dots.
     const dotR = Math.round(h * 0.012);
@@ -340,22 +339,13 @@ export class GachaScene implements Scene {
   }
 
   private drawResultCard(r: GachaResultEntry, x: number, y: number, w: number, h: number): void {
-    const color = RARITY_COLOR[r.rarity];
-    const card = sketchPanel(w, h, { fill: C.paper, border: color, width: 2.6, seed: seedFor(x, y, w) });
-    card.x = x; card.y = y;
-    this.container.addChild(card);
+    // Card background texture (rarity-specific).
+    const cardSpr = new PIXI.Sprite(gachaCardTexture(r.rarity));
+    cardSpr.x = x; cardSpr.y = y;
+    cardSpr.width = w; cardSpr.height = h;
+    this.container.addChild(cardSpr);
 
-    // Rarity band at top.
-    const band = new PIXI.Graphics();
-    band.beginFill(color); band.drawRect(0, 0, w, Math.round(h * 0.22)); band.endFill();
-    band.x = x; band.y = y;
-    this.container.addChild(band);
-
-    const rarLbl = txt(t(('rarity.' + r.rarity) as TranslationKey), Math.round(h * 0.12), 0xffffff, true);
-    rarLbl.anchor.set(0.5, 0.5); rarLbl.x = x + w / 2; rarLbl.y = y + Math.round(h * 0.11);
-    this.container.addChild(rarLbl);
-
-    // Item id (placeholder; real skin art pending).
+    // Item id.
     const idLbl = txt(r.itemId, Math.round(h * 0.10), C.dark);
     idLbl.anchor.set(0.5, 0.5); idLbl.x = x + w / 2; idLbl.y = y + h * 0.58;
     this.container.addChild(idLbl);
@@ -365,6 +355,12 @@ export class GachaScene implements Scene {
       Math.round(h * 0.11), r.duplicate ? C.mid : C.green, true);
     badge.anchor.set(0.5, 0.5); badge.x = x + w / 2; badge.y = y + h * 0.85;
     this.container.addChild(badge);
+
+    // Frame overlay — drawn last so it sits on top of the card art.
+    const frameSpr = new PIXI.Sprite(gachaFrameTexture(r.rarity));
+    frameSpr.x = x; frameSpr.y = y;
+    frameSpr.width = w; frameSpr.height = h;
+    this.container.addChild(frameSpr);
   }
 
   /**
