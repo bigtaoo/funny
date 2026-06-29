@@ -32,6 +32,7 @@ import {
 } from '../game/meta/equipmentDefs';
 import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
 import { drawEquipmentGlyph } from '../render/equipmentGlyph';
+import { getEquipIconTexture } from '../render/equipmentAtlas';
 import { buildIcon, type IconKind } from '../render/icons';
 
 export type EquipResult = { ok: true } | { ok: false; key: TranslationKey };
@@ -434,7 +435,7 @@ export class EquipmentScene implements Scene {
       this.bodyLayer.addChild(slotLbl);
 
       if (inst) {
-        this.addGlyph(slot, inst.rarity, x + cellW / 2, cy + cellH * 0.4, 30, seedFor(i, 13, cellW));
+        this.addGlyph(slot, inst.rarity, x + cellW / 2, cy + cellH * 0.4, 30, seedFor(i, 13, cellW), 1, inst.defId);
         const nm = txt(`${this.itemName(inst.defId)} +${inst.level}`, 11, C.dark);
         nm.anchor.set(0.5, 0.5); nm.x = x + cellW / 2; nm.y = cy + cellH * 0.82;
         this.bodyLayer.addChild(nm);
@@ -457,7 +458,7 @@ export class EquipmentScene implements Scene {
     this.bodyLayer.addChild(row);
 
     const slot = getEquipDef(inst.defId)?.slot ?? 'weapon';
-    this.addGlyph(slot, inst.rarity, 32, cy + (ROW_H - 4) / 2, 38, seedFor(cy, 3, w));
+    this.addGlyph(slot, inst.rarity, 32, cy + (ROW_H - 4) / 2, 38, seedFor(cy, 3, w), 1, inst.defId);
     const tx = 56;
 
     const name = txt(`${this.itemName(inst.defId)} +${inst.level}`, 13, C.dark, true);
@@ -525,7 +526,7 @@ export class EquipmentScene implements Scene {
     row.x = 6; row.y = cy;
     this.bodyLayer.addChild(row);
 
-    this.addGlyph(def.slot, def.rarity, 32, cy + (ROW_H - 4) / 2, 38, seedFor(cy, 4, w));
+    this.addGlyph(def.slot, def.rarity, 32, cy + (ROW_H - 4) / 2, 38, seedFor(cy, 4, w), 1, defId);
     const tx = 56;
 
     const name = txt(this.itemName(defId), 13, C.dark, true);
@@ -945,15 +946,26 @@ export class EquipmentScene implements Scene {
   }
 
   /**
-   * Draw a procedural stationery glyph (equipmentGlyph.ts) centered at (cx, cy)
-   * into a fresh Graphics on bodyLayer. Replaces the old "name-only" placeholder
-   * so each item shows its slot shape × rarity media (EQUIPMENT_DESIGN §20.3).
+   * Draw an equipment icon centered at (cx, cy) onto bodyLayer.
+   * When defId is provided and the atlas is ready, renders the AI bitmap sprite
+   * (EQUIPMENT_DESIGN §20.2); otherwise falls back to the procedural glyph (§20.3).
+   * The rarity border is always drawn by the surrounding sketchPanel, not here.
    */
-  private addGlyph(slot: EquipSlot, rarity: EquipRarity, cx: number, cy: number, size: number, seed: number, alpha = 1): void {
-    const gfx = new PIXI.Graphics();
-    drawEquipmentGlyph(gfx, slot, rarity, size, seed);
-    gfx.x = cx; gfx.y = cy; gfx.alpha = alpha;
-    this.bodyLayer.addChild(gfx);
+  private addGlyph(slot: EquipSlot, rarity: EquipRarity, cx: number, cy: number, size: number, seed: number, alpha = 1, defId?: string): void {
+    const tex = defId ? getEquipIconTexture(defId) : null;
+    if (tex) {
+      const sprite = new PIXI.Sprite(tex);
+      const scale = size / 128;
+      sprite.scale.set(scale);
+      sprite.anchor.set(0.5, 0.5);
+      sprite.x = cx; sprite.y = cy; sprite.alpha = alpha;
+      this.bodyLayer.addChild(sprite);
+    } else {
+      const gfx = new PIXI.Graphics();
+      drawEquipmentGlyph(gfx, slot, rarity, size, seed);
+      gfx.x = cx; gfx.y = cy; gfx.alpha = alpha;
+      this.bodyLayer.addChild(gfx);
+    }
   }
 
   private itemName(defId: string): string {
