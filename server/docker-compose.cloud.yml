@@ -1,19 +1,19 @@
-# 云部署版（外接托管 Mongo，如 MongoDB Atlas M0）：VPS 上只跑 8 个 Node 进程 + redis + caddy，
+# 云部署版（外接托管 Mongo，如 MongoDB Atlas M0）：VPS 上只跑 9 个 Node 进程 + redis + caddy，
 # Mongo 托管到云上，本机不再起 mongo 容器。
 #
 # 与 docker-compose.prod.yml 的唯一区别：
 #   · 删除 mongo 服务 + 所有 depends_on mongo（库在云上，本机无 mongo 容器）。
 #   · 所有 NW_*_MONGO_URI 改为从 .env 注入（NW_MONGO_URI，指向 Atlas 的 mongodb+srv:// 串）。
-#     5 个连库进程（meta/commercial/world/admin/analytics）共用同一 Atlas 集群、不同库名。
+#     6 个连库进程（meta/commercial/world/social/admin/analytics）共用同一 Atlas 集群、不同库名。
 #
 # 一条命令起全栈：
 #   docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 #
-# ⚠ Atlas M0 连接数上限 500：Mongo 驱动每进程默认 maxPoolSize=100，5 个连库进程会顶满。
-#   在 NW_MONGO_URI 末尾加 &maxPoolSize=10（见 .env.example 说明），5×10=50 远低于上限。
+# ⚠ Atlas M0 连接数上限 500：Mongo 驱动每进程默认 maxPoolSize=100，6 个连库进程会顶满。
+#   在 NW_MONGO_URI 末尾加 &maxPoolSize=10（见 .env.example 说明），6×10=60 远低于上限。
 #
 # 出口同 prod：https://{NW_DOMAIN}/api（REST）、wss://.../gw（控制面）、wss://.../ws（数据面）、
-#             https://.../world|/family|/auction（SLG REST）。
+#             https://.../world|/auction（SLG REST）、https://.../social（社交第五公网面，含家族）。
 
 services:
   redis:
@@ -46,6 +46,7 @@ services:
       NW_WX_SECRET: ${NW_WX_SECRET:-}
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
       # 功能开关下发 + 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）。
       # ⚠ 必坑（同 matchsvc）：缺 NW_ADMIN_INTERNAL_URL → flag 轮询禁用 → /bootstrap 恒空 map → 定向采集永不生效。
       NW_ADMIN_INTERNAL_URL: http://admin:8083
@@ -89,6 +90,7 @@ services:
       NW_GW_INTERNAL_PORT: "8090"
       NW_META_BASE_URL: http://metaserver:8080
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+      NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
       NW_GW_REDIS_URL: ${NW_GW_REDIS_URL:-redis://redis:6379}
     depends_on:
       - metaserver
@@ -153,6 +155,26 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # socialsvc：社交第五公网面（/social/*，含家族）。Caddy /social → 此进程；缺它则 social 全链路 502。
+  socialsvc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "socialsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
+      NW_SOCIAL_PORT: "8085"
+      NW_SOCIAL_HOST: 0.0.0.0
+      NW_SOCIAL_MONGO_URI: ${NW_MONGO_URI:?set NW_MONGO_URI in .env}
+      NW_SOCIAL_MONGO_DB: ${NW_SOCIAL_MONGO_DB:-nw_social}
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_META_INTERNAL_URL: http://metaserver:8080
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
   admin:
     build:
       context: .
@@ -208,6 +230,7 @@ services:
       - gateway
       - gameserver
       - worldsvc
+      - socialsvc
       - admin
     restart: unless-stopped
 

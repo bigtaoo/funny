@@ -1,6 +1,6 @@
 name: server-deploy
 
-# 后端 8 进程 + Redis + Caddy（docker compose）自动重部署到 Hetzner VPS（/root/funny）。
+# 后端 9 进程 + Redis + Caddy（docker compose）自动重部署到 Hetzner VPS（/root/funny）。
 # 触发：push 到 main 且改动落在 server 相关文件，或在 Actions 页手动 Run。
 # 流程：SSH 进 VPS → git fetch + reset --hard origin/main → docker compose up -d --build。
 # 镜像在 VPS 本机构建（与手动运维命令一致，2 核机 + 2G swap 扛得住）；.env 是 gitignore，
