@@ -908,19 +908,6 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           };
         }
       },
-      async recharge(code) {
-        const tier = rechargeTier(code);
-        if (!tier) return { ok: false, key: 'shop.rechargeFail' };
-        try {
-          const { save, granted } = await client.iapVerify(`dev-${Date.now()}`, `tier:${tier}`);
-          saveManager.adoptServer(save);
-          converted = true;
-          analytics.track('recharge', { tier });
-          return { ok: true, coins: granted };
-        } catch {
-          return { ok: false, key: 'shop.rechargeFail' };
-        }
-      },
       // 商城组同级 tab（LOBBY_IA_REDESIGN P1.5）：盲盒/战令上浮为顶部 tab，threading
       // shopBack 让三页互相直达且返回到同一来源（lobby / level-prep）。
       openGacha() { goGacha({ shopBack: onBack }); },
@@ -1630,16 +1617,6 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   return { start, onResized };
-}
-
-/** Map a virtual top-up code to an IAP tier (S2-6 dev entry). */
-function rechargeTier(code: string): 'small' | 'mid' | 'large' | null {
-  switch (code.trim().toLowerCase()) {
-    case 'taowang':   return 'mid';
-    case 'taowang-s': return 'small';
-    case 'taowang-l': return 'large';
-    default:          return null;
-  }
 }
 
 /** Map a server auth error code to a LoginScene message key (SA-3). */

@@ -311,6 +311,32 @@
 
 ---
 
+## 待办 / Backlog（未排期）
+
+> 来源：2026-06-29 全项目体检。下列为已确认的未完成项（功能缺口 / 美术阻塞 / 收尾），尚未排期。复杂项另起专文，简单项就地记录。
+
+### B-PROMO 优惠码兑换系统（替代已删除的 dev 魔术码）
+
+取代 S2-6 已删除的「魔术码充值」dev 桩（仅 dev、生产 fail-closed；2026-06-29 已整条删除：客户端 `ShopScene` 充值入口 + `createAppCore.rechargeTier`（`taowang*`）+ 相关 i18n）。新系统由后台显式发码，可控、可审计、每人一次：
+
+- [ ] **后台发码**（admin / ops）：新增「优惠码」管理项——创建 `code`（字符串）、兑换金币数、可选有效期 / 总量上限 / 备注。复用 admin capabilities 菜单 + 邮件/补偿同款鉴权。
+- [ ] **兑换接口**：玩家侧 metaserver REST `POST /promo/redeem { code }`（JWT 鉴权）。校验：码存在 / 未过期 / 未超总量 / **该玩家未用过** → 加币并回推新 SaveData。
+- [ ] **每玩家每码一次（幂等）+ commercial 记账**：commercial 新增 `promoCodes`（码定义 / 库存）+ `promoRedemptions`（`_id = accountId:code` 天然唯一，复刻 `recharges.receiptId` 防重模式）两集合；兑换 = `credit(accountId, coins, 'promo', { code })` 入 ledger；并发靠唯一冲突回读保不重复发币。
+- 契约：openapi 加 `/promo/redeem`；admin openapi / capabilities 加发码端点。**依赖**：S5 commercial、S7 admin。
+
+### 其余确认缺口
+
+- [ ] **S4-4 PvE 三振出局封禁**（META_TASKS 唯一未勾的主线项）：anti-cheat 累计判负 → 封禁执行尚未完整落地。
+- [ ] **皮肤 .tao 资产**：`client/src/render/UnitView.ts` `SKIN_ASSETS = {}` 为空——换肤管线（S3-4）已就绪但无资产，商店在售皮肤当前**视觉无变化**。美术阻塞。
+- [ ] **worldsvc publicId 解析**：`server/worldsvc/src/service.ts` 领主身份待经 meta `/internal/profile` 反查，否则 SLG 部分路径显示原始 id 而非昵称。
+- [ ] **实时赛季号下行**：`createAppCore` `CURRENT_SEASON = 1` 硬编码，待 S11 天梯赛季元数据由 metaserver 下发后接线（SLG 大区赛季）。
+- [ ] **VFX `emitter` 图元**：`client/src/render/vfx/{types,primitives}.ts` 设计内保留、未实现（当前 warn + skip）。低优先。
+- [ ] **真实 IAP 客户端 SDK**：服务端 `commercial/iap.ts` 验单（Apple/Google/微信/Stripe）已就绪且生产 fail-closed；客户端尚无真实下单 SDK 接入（魔术码删除后暂无任何充值入口，等本项或 B-PROMO）。
+
+> 说明：worldsvc `/family` 迁移残骸 + `openapi-world.yml` `/family` 契约漂移由另一会话（worktree）单独清理，不在此清单。
+
+---
+
 ## i18n（贯穿，随场景落地）
 
 - [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`auth.*`（登录界面，SA）/ `meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；`auth.*` **已随 SA-3 落地**（zh/en/de 全翻）；其余随后续场景。

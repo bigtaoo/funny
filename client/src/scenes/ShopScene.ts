@@ -7,18 +7,17 @@ import type { ShopItem } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
-import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
-// ── ShopScene (S2-6) — direct-purchase shop + virtual top-up entry ─────────────
+// ── ShopScene (S2-6) — direct-purchase shop ────────────────────────────────────
 //
 // Canvas-drawn (mirrors LoginScene/RoomScene): a render()-on-change tree with a
-// flat hit-list, plus a hidden <input> for the top-up code overlay. The economy
-// itself is server-authoritative — every buy/top-up returns a fresh SaveData that
-// the app adopts; this scene only reads the current wallet via getCoins() and
-// re-renders. Gacha lives in its own scene, reached via the 🎁 button.
+// flat hit-list. The economy itself is server-authoritative — every buy returns a
+// fresh SaveData that the app adopts; this scene only reads the current wallet via
+// getCoins() and re-renders. Gacha lives in its own scene, reached via the 🎁 tab.
+// (Top-up: the dev magic-code path was removed; real IAP / 优惠码兑换 lands later.)
 
-/** Outcome of a buy/top-up — ok, or a message key to surface as a toast. */
+/** Outcome of a buy — ok, or a message key to surface as a toast. */
 export type ShopActionResult =
   | { ok: true; coins?: number }
   | { ok: false; key: TranslationKey };
@@ -31,8 +30,6 @@ export interface ShopSceneCallbacks {
   getOwnedSkins(): string[];
   loadItems(): Promise<ShopItem[]>;
   buy(itemId: string): Promise<ShopActionResult>;
-  /** Virtual top-up: a magic code credits coins (dev stub; real IAP SDK later). */
-  recharge(code: string): Promise<ShopActionResult>;
   openGacha(): void;
   /**
    * 战令 Battle Pass 入口（LOBBY_IA_REDESIGN §3：付费主轴并入「商城」tab，主页不放 banner）。
@@ -57,15 +54,8 @@ export class ShopScene implements Scene {
   /** Transient toast message (success / error), cleared on next action. */
   private toast: { text: string; color: number } | null = null;
 
-  /** Top-up code overlay state. */
-  private rechargeOpen = false;
-  private rechargeCode = '';
-  private caretOn = true;
-  private caretTimer = 0;
-
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
-  private hiddenInput: HTMLInputElement | null = null;
 
   constructor(layout: ILayout, input: InputManager, cb: ShopSceneCallbacks) {
     this.container = new PIXI.Container();
@@ -73,7 +63,6 @@ export class ShopScene implements Scene {
     this.h = layout.designHeight;
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
-    this.setupHiddenInput();
     this.render();
     void this.loadItems();
   }
@@ -81,16 +70,11 @@ export class ShopScene implements Scene {
   // ── Scene interface ──────────────────────────────────────────────────────────
 
   update(dt: number): void {
-    if (this.rechargeOpen) {
-      this.caretTimer += dt;
-      if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
-    }
     if (this.bt.tick(dt)) this.render();
   }
 
   destroy(): void {
     this.unsubs.forEach((u) => u());
-    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
   }
 
   // ── Loading ──────────────────────────────────────────────────────────────────
@@ -105,65 +89,6 @@ export class ShopScene implements Scene {
     }
     this.loading = false;
     this.render();
-  }
-
-  // ── Hidden input (top-up code capture) ─────────────────────────────────────────
-
-  private setupHiddenInput(): void {
-    if (typeof document === 'undefined') return; // non-DOM platform
-    const el = document.createElement('input');
-    el.type = 'text';
-    el.autocomplete = 'off';
-    el.setAttribute('autocapitalize', 'off');
-    el.setAttribute('autocorrect', 'off');
-    el.style.cssText =
-      'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;' +
-      'border:0;padding:0;margin:0;font-size:16px;z-index:-1;';
-    el.addEventListener('input', () => {
-      if (this.rechargeOpen) { this.rechargeCode = el.value; this.render(); }
-    });
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); void this.submitRecharge(); }
-    });
-    document.body.appendChild(el);
-    this.hiddenInput = el;
-  }
-
-  private openRecharge(): void {
-    this.rechargeOpen = true;
-    this.rechargeCode = '';
-    this.toast = null;
-    this.caretOn = true; this.caretTimer = 0;
-    const el = this.hiddenInput;
-    if (el) { el.value = ''; el.focus(); }
-    this.render();
-  }
-
-  private closeRecharge(): void {
-    this.rechargeOpen = false;
-    this.hiddenInput?.blur();
-    this.render();
-  }
-
-  private async submitRecharge(): Promise<void> {
-    if (this.bt.busy) return;
-    const code = this.rechargeCode.trim();
-    if (!code) { this.closeRecharge(); return; }
-    this.bt.start();
-    this.rechargeOpen = false;
-    this.hiddenInput?.blur();
-    this.render();
-    try {
-      const res = await withTimeout(this.cb.recharge(code));
-      this.toast = res.ok
-        ? { text: t('shop.rechargeOk', { coins: res.coins ?? 0 }), color: C.green }
-        : { text: t('shop.rechargeFail'), color: C.red };
-    } catch (e) {
-      this.toast = { text: t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.rechargeFail'), color: C.red };
-    } finally {
-      this.bt.stop();
-      this.render();
-    }
   }
 
   // ── Buy ──────────────────────────────────────────────────────────────────────
@@ -199,16 +124,14 @@ export class ShopScene implements Scene {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   private render(): void {
-    tearDownChildren(this.container); // caret blink (~2×/s) + per-keystroke recharge field → free Text textures
+    tearDownChildren(this.container); // free Text textures on each rebuild
     this.hits = [];
 
     this.drawBackground();
     const tbH = this.drawHeader();
     const top = this.drawGroupTabs(tbH);
     this.drawList(top);
-    this.drawFooter();
     if (this.toast) this.drawToast();
-    if (this.rechargeOpen) this.drawRechargeOverlay();
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
@@ -321,26 +244,6 @@ export class ShopScene implements Scene {
     }
   }
 
-  /**
-   * Bottom row: top-up only. 盲盒/战令 moved up to the 商城 group tab strip
-   * (LOBBY_IA_REDESIGN P1.5) — 充值 stays here as it's a shop-self action, not a
-   * sibling page.
-   */
-  private drawFooter(): void {
-    const { w, h } = this;
-    const navH = Math.round(h * 0.10);
-    const y = h - navH;
-    const navBg = new PIXI.Graphics();
-    navBg.beginFill(C.dark, 0.92); navBg.drawRect(0, y, w, navH); navBg.endFill();
-    this.container.addChild(navBg);
-
-    const bh = Math.round(navH * 0.62);
-    const by = y + (navH - bh) / 2;
-    const bw = Math.round(w * 0.6);
-    const bx = (w - bw) / 2;
-    this.addButton(t('shop.recharge'), bx, by, bw, bh, C.dark, C.green, () => this.openRecharge());
-  }
-
   private drawToast(): void {
     const { w, h } = this;
     const toast = this.toast!;
@@ -356,80 +259,5 @@ export class ShopScene implements Scene {
     this.container.addChild(bg);
     lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
     this.container.addChild(lbl);
-  }
-
-  private drawRechargeOverlay(): void {
-    const { w, h } = this;
-    // Overlay is modal: discard the base-scene hits drawn underneath so only the
-    // overlay's controls are tappable (handleDown matches the first hit in order).
-    this.hits = [];
-
-    const dim = new PIXI.Graphics();
-    dim.beginFill(0x000000, 0.7); dim.drawRect(0, 0, w, h); dim.endFill();
-    this.container.addChild(dim);
-
-    const panelW = Math.round(w * 0.84);
-    const panelH = Math.round(h * 0.40);
-    const px = (w - panelW) / 2;
-    const py = (h - panelH) / 2;
-    const panel = sketchPanel(panelW, panelH, { fill: C.bg, border: C.gold, width: 2.4, seed: seedFor(panelW, panelH, 7) });
-    panel.x = px; panel.y = py;
-    this.container.addChild(panel);
-
-    const title = txt(t('shop.rechargeTitle'), Math.round(h * 0.030), C.dark, true);
-    title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.03);
-    this.container.addChild(title);
-
-    const hint = txt(t('shop.rechargeHint'), Math.round(h * 0.020), C.mid);
-    hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = py + Math.round(h * 0.075);
-    this.container.addChild(hint);
-
-    // Code field.
-    const fieldW = Math.round(panelW * 0.84);
-    const fieldH = Math.round(h * 0.072);
-    const fieldX = (w - fieldW) / 2;
-    const fieldY = py + Math.round(h * 0.13);
-    const box = sketchPanel(fieldW, fieldH, { fill: C.paper, border: C.accent, width: 2, seed: seedFor(fieldX, fieldY, fieldW) });
-    box.x = fieldX; box.y = fieldY;
-    this.container.addChild(box);
-
-    const hasText = this.rechargeCode.length > 0;
-    const display = caretDisplay(this.rechargeCode, this.caretOn, t('shop.tapToType'));
-    const valTxt = txt(display, Math.round(fieldH * 0.40), (hasText || this.caretOn) ? C.dark : C.light);
-    valTxt.anchor.set(0, 0.5); valTxt.x = fieldX + Math.round(fieldW * 0.04); valTxt.y = fieldY + fieldH / 2;
-    this.container.addChild(valTxt);
-    this.hits.push({ rect: { x: fieldX, y: fieldY, w: fieldW, h: fieldH }, fn: () => this.hiddenInput?.focus() });
-
-    // Confirm / cancel.
-    const btnW = Math.round(panelW * 0.40);
-    const btnH = Math.round(h * 0.072);
-    const btnY = py + panelH - btnH - Math.round(h * 0.03);
-    const btnGap = Math.round(panelW * 0.04);
-    const btnStartX = px + (panelW - btnW * 2 - btnGap) / 2;
-    this.addButton(t('shop.rechargeCancel'), btnStartX, btnY, btnW, btnH, C.paper, C.mid,
-      () => this.closeRecharge(), C.dark);
-    this.addButton(t('shop.rechargeConfirm'), btnStartX + btnW + btnGap, btnY, btnW, btnH, C.dark, C.green,
-      () => void this.submitRecharge());
-
-    // Hit priority (handleDown returns on first match): field + buttons above were
-    // pushed first; a panel-area no-op next; the full-screen cancel goes LAST so a
-    // tap anywhere outside the panel dismisses it, but taps inside don't.
-    this.hits.push({ rect: { x: px, y: py, w: panelW, h: panelH }, fn: () => { /* keep open */ } });
-    this.hits.push({ rect: { x: 0, y: 0, w, h }, fn: () => this.closeRecharge() });
-  }
-
-  private addButton(
-    label: string, x: number, y: number, w: number, h: number,
-    fill: number, stroke: number, fn: () => void, textColor = 0xffffff,
-  ): void {
-    const g = sketchPanel(w, h, { fill, border: stroke, width: 2, seed: seedFor(x, y, w) });
-    g.x = x; g.y = y;
-    this.container.addChild(g);
-
-    const tl = txt(label, Math.round(h * 0.38), textColor, true);
-    tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
-    this.container.addChild(tl);
-
-    this.hits.push({ rect: { x, y, w, h }, fn });
   }
 }

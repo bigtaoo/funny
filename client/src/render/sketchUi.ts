@@ -64,7 +64,7 @@ export function txt(label: string, size: number, color: number, bold = false): P
  * Detach AND destroy a container's children before a full re-render — the safe
  * replacement for a bare `container.removeChildren()` in any scene that re-renders
  * on **every keystroke / per frame / on a timer** (LoginScene caret, chat compose,
- * shop recharge field, settings rename, world-map train countdowns, …).
+ * settings rename, world-map train countdowns, …).
  *
  * Why this matters: `txt()` mints a fresh `PIXI.Text` each render, and every Text
  * owns its own GPU texture. `removeChildren()` only detaches — it leaves those
