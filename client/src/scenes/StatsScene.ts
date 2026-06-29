@@ -10,10 +10,9 @@ import type { MatchHistoryEntry } from '../net/ApiClient';
 
 // ── StatsScene — 战绩 / 统计页 (lobby "stats" nav) ──────────────────────────────
 //
-// Step 1: purely local data from SaveData (ranked standing, campaign progress,
-// collection count, materials). No backend. The "match history" section is a
-// placeholder until the server endpoint lands (step 2: enrich matches archive +
-// GET /match/history + ApiClient.getMatchHistory).
+// Local data from SaveData (ranked standing, campaign progress, collection count,
+// materials) plus the "match history" section, which is wired to the server via
+// GET /match/history (ApiClient.getMatchHistory; createAppCore fetches when online).
 
 export interface StatsView {
   /** Ranked standing (SaveData.pvp). */

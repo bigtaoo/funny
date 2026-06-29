@@ -8,12 +8,12 @@
 
 双方各持一个基地，通过打出手牌派遣士兵、建造建筑，争夺对方基地的血量。
 
-- **手牌系统**：6 张手牌自动轮换（30 秒未使用自动刷新），消耗金币打出
+- **手牌系统**：6 张手牌自动轮换（30 秒未使用自动刷新），消耗墨水打出
 - **兵种**：普通兵 Infantry（群体、廉价）、盾兵 ShieldBearer（高血量、缓慢）、弓箭兵 Archer（远程）
 - **建筑**：兵营（持续生产单位）、箭塔（全向攻击范围内所有敌人）
 - **法术**：急速冲锋（加速己方单位）、陨石打击（2×2 范围秒杀）
-- **基地升级**：消耗金币提升金币回速，最多升级 3 次
-- **时间加速**：随对局时长金币回速逐步加快（3/6/10 分钟三档），13 分钟后全军攻击力翻倍，17 分钟强制平局
+- **基地升级**：消耗墨水提升墨水回速，最多升级 3 次
+- **时间加速**：随对局时长墨水回速逐步加快（3/6/10 分钟三档），13 分钟后全军攻击力翻倍，17 分钟强制平局
 
 ### 战场规则
 
@@ -70,7 +70,7 @@ npm run start   # 开发服务器，端口 9091
 
 ### 方式一：Docker 一键全栈（推荐，模拟真实发布）
 
-需要 Docker Desktop。一条命令重建最新代码并拉起**全部 8 个服务端进程 + 主客户端 + 3 个工具 + MongoDB + Redis**：
+需要 Docker Desktop。一条命令重建最新代码并拉起**全部 9 个服务端进程 + 主客户端 + 3 个工具 + MongoDB + Redis**：
 
 ```powershell
 ./local-up.ps1            # 重建并启动；浏览器打开 http://localhost:8088
@@ -86,13 +86,13 @@ npm run start   # 开发服务器，端口 9091
 
 | 地址 | 说明 |
 |---|---|
-| http://localhost:8088 | **主游戏**——nginx 同源托管 SPA，并反代 `/api`(REST) `/gw`(控制面 WS) `/ws`(对战数据面 WS) `/world` `/family` `/auction`(SLG 大世界) `/analytics`(埋点) |
+| http://localhost:8088 | **主游戏**——nginx 同源托管 SPA，并反代 `/api`(REST) `/gw`(控制面 WS) `/ws`(对战数据面 WS) `/world` `/family` `/auction`(SLG 大世界) `/social`(社交第五公网面) `/analytics`(埋点) |
 | http://localhost:9091 | **动画编辑器** animator |
 | http://localhost:9092 | **关卡编辑器** level-editor |
 | http://localhost:9093 | **运维后台** ops（跨源调 admin 后端 http://localhost:18083，种子账号 `admin` / `admin123`） |
 
-**服务端八进程**（均跑同一镜像 `nw-server:local`，由 `command` 选进程）：
-`metaserver`(REST) · `commercial`(钱包) · `gateway`(控制面 WS) · `matchsvc`(匹配) · `gameserver`(对战数据面 WS) · `worldsvc`(SLG 第四公网面) · `admin`(运维) · `analyticsvc`(埋点)。
+**服务端九进程**（均跑同一镜像 `nw-server:local`，由 `command` 选进程）：
+`metaserver`(REST) · `commercial`(钱包) · `gateway`(控制面 WS) · `matchsvc`(匹配) · `gameserver`(对战数据面 WS) · `worldsvc`(SLG 第四公网面) · `socialsvc`(社交第五公网面) · `admin`(运维) · `analyticsvc`(埋点)。
 对玩家暴露的入口只有主游戏 `:8088`（同源），其余服务经 nginx 反代或仅内网可达。
 
 编排见 [`docker-compose.local.yml`](docker-compose.local.yml)。
@@ -120,7 +120,7 @@ funny/
 │   ├── level-editor/  战役关卡编辑器（TypeScript + 纯 Canvas）
 │   ├── ops/           运维后台前端（TypeScript）
 │   └── vfx-editor/    战斗特效编辑器（TypeScript + PixiJS）
-├── server/        Node.js 后端（npm workspaces，八进程）
+├── server/        Node.js 后端（npm workspaces，九进程）
 ├── art/           地图 & 角色概念图
 └── design/        产品 & 美术设计文档
 ```

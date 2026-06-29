@@ -43,7 +43,7 @@
 | [CHARACTER_DESIGN.md](game/CHARACTER_DESIGN.md) | **角色卡机制/流派基准（6张＝陶3现有兵转具名·锚点 + Anna3新画变体；数值锚点占位→config.ts/BALANCE）** | 设计中 |
 | [ANNA_CHARACTERS.md](game/ANNA_CHARACTERS.md) | Anna 方三角色（Max/Lena/…）立绘与设定细化（引擎定义见 CHARACTER_DESIGN，叙事见 product/characters） | 设计中 |
 | [CAMPAIGN_DESIGN.md](game/CAMPAIGN_DESIGN.md) | 战役 PvE 设计基准（数据权威见 PVE_INTEGRITY_PLAN） | 实现中 |
-| [CAMPAIGN_P0_PLAN.md](game/CAMPAIGN_P0_PLAN.md) | 战役 P0 试玩切片计划 | 实现中 |
+| [CAMPAIGN_P0_PLAN.md](game/archive/CAMPAIGN_P0_PLAN.md) | 战役 P0 试玩切片计划（试玩切片已完成） | 已归档 |
 | [CAMPAIGN_STORY.md](game/CAMPAIGN_STORY.md) | 战役剧情文案（叙事铁律见 world.md / ADR） | 设计中 |
 | [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md) | **PvE 反作弊 + 服务器权威方案（PvE 数据权威真源）** | 实现中 |
 | [DIFFICULTY_SIM.md](game/DIFFICULTY_SIM.md) | 关卡难度模拟器（真实引擎+基线 AI 量化战役难度；代码 `client/test/difficultySim.ts`） | 工具/实现中 |
@@ -58,7 +58,7 @@
 | [MATCHSVC_DESIGN.md](game/MATCHSVC_DESIGN.md) | matchsvc 匹配大脑 | 已实现 |
 | [COMMERCIAL_DESIGN.md](game/COMMERCIAL_DESIGN.md) | 钱包 / 交易 / 充值 | 已实现 |
 | [GACHA_DESIGN.md](game/GACHA_DESIGN.md) | **盲盒系统完整设计（限定池/软保底/月卡/新手包/命运点/美术资源清单；数字→ECONOMY_BALANCE §3–4）** | 设计中 |
-| [SOCIAL_DESIGN.md](game/SOCIAL_DESIGN.md) | 好友 / 私聊 / 邮件（原社交数据模型，P2 迁移参考） | 已实现 |
+| [SOCIAL_DESIGN.md](game/SOCIAL_DESIGN.md) | 好友 / 私聊 / 邮件（原社交数据模型；**已被 SOCIAL_SVC_DESIGN 取代**，仅留数据模型作迁移参考） | 已归档 |
 | [SOCIAL_SVC_DESIGN.md](game/SOCIAL_SVC_DESIGN.md) | **socialsvc 独立社交服务（家族/好友/邮件/频道/push 路由；推翻 SOC1，新增第五公网面）** | 设计中 |
 | [OPS_DESIGN.md](game/OPS_DESIGN.md) | 运维后台（监控/匹配池/补偿工单） | 已实现 |
 | [FEATURE_FLAGS_DESIGN.md](game/FEATURE_FLAGS_DESIGN.md) | **功能开关（全局+定向灰度/区域/平台/白名单；统一服务端求值；公开 /bootstrap 下发+各进程缓存轮询；与 SaveData.flags 解耦）** | 设计中 |
@@ -72,12 +72,12 @@
 | [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→server/shared/src/slg.ts）** | 实现中 |
 | [UI_DESIGN.md](game/UI_DESIGN.md) | **菜单 / 元系统客户端 UI**（与战斗 UI 分工，见 §3） | 实现中 |
 | [LOBBY_IA_REDESIGN.md](game/LOBBY_IA_REDESIGN.md) | 大厅信息架构重规划（一级入口/底部 tab 重分组；装备并入养成、战绩升级为生涯、克制付费曝光） | 设计中 |
-| [IMPROVEMENT_PLAN.md](game/IMPROVEMENT_PLAN.md) | 6 项工程改进（全完成） | 已归档 |
-| [PROFILE_POPUP_PLAN.md](game/PROFILE_POPUP_PLAN.md) | 资料弹层（已实现） | 已归档 |
-| [PARALLEL_DEV_PLAN.md](game/PARALLEL_DEV_PLAN.md) | **并行开发计划（按依赖耦合分三条轨道 A/B/C，各自 worktree）** | 实现中 |
-| [LAUNCH_TRACK_1_CLIENT.md](game/LAUNCH_TRACK_1_CLIENT.md) | 上线收口 Track 1 — 客户端合规 UI + 孤儿场景接线（纯客户端轨道） | 实现中 |
-| [LAUNCH_TRACK_2_SERVER.md](game/LAUNCH_TRACK_2_SERVER.md) | 上线收口 Track 2 — 服务端闭环补全（纯服务端轨道） | 实现中 |
-| [LAUNCH_TRACK_3_RELEASE.md](game/LAUNCH_TRACK_3_RELEASE.md) | 上线收口 Track 3 — 法务素材 + 真机验收 + 发布物料（文本/手动轨道） | 实现中 |
+| [IMPROVEMENT_PLAN.md](game/archive/IMPROVEMENT_PLAN.md) | 6 项工程改进（全完成） | 已归档 |
+| [PROFILE_POPUP_PLAN.md](game/archive/PROFILE_POPUP_PLAN.md) | 资料弹层（已实现） | 已归档 |
+| [PARALLEL_DEV_PLAN.md](game/PARALLEL_DEV_PLAN.md) | **并行开发计划（按依赖耦合分三条轨道 A/B/C，各自 worktree）** | 已完成 |
+| [LAUNCH_TRACK_1_CLIENT.md](game/archive/LAUNCH_TRACK_1_CLIENT.md) | 上线收口 Track 1 — 客户端合规 UI + 孤儿场景接线（已完成） | 已归档 |
+| [LAUNCH_TRACK_2_SERVER.md](game/archive/LAUNCH_TRACK_2_SERVER.md) | 上线收口 Track 2 — 服务端闭环补全（已完成） | 已归档 |
+| [LAUNCH_TRACK_3_RELEASE.md](game/archive/LAUNCH_TRACK_3_RELEASE.md) | 上线收口 Track 3 — 法务素材 + 真机验收 + 发布物料（已完成） | 已归档 |
 | [IAP_CREDENTIALS.md](game/IAP_CREDENTIALS.md) | IAP / 广告凭据上线手册（commercial 验单 + metaserver 广告验签；验签权威=iap.ts/ads.ts） | 实现中 |
 
 #### 1.2.1 验收清单（`design/game/release/`）
@@ -97,7 +97,7 @@
 | [characters.md](product/characters.md) | 角色设定 | 设计中 |
 | [world.md](product/world.md) | 世界观 / 叙事 | 设计中 |
 | [market-analysis.md](product/market-analysis.md) | 市场分析 | 参考 |
-| [mvp-gaps.md](product/mvp-gaps.md) | MVP 缺口盘点 | 实现中 |
+| [mvp-gaps.md](product/mvp-gaps.md) | MVP 缺口盘点（v0.2 早期，游戏已远超此范畴） | 已归档 |
 | [deploy-cloudflare.md](product/deploy-cloudflare.md) | **线上部署拓扑权威**（Cloudflare 前端 + VPS 后端 + Atlas Mongo + 平台隔离边界，见 ADR-020） | 实现中 |
 | [client-rendering-cache.md](product/client-rendering-cache.md) | 渲染缓存 / 对象池 | 实现中 |
 | [v1-balance.md](product/v1-balance.md) | 早期数值提案（**未落地，已被 config.ts 取代**） | 已归档 |
@@ -147,7 +147,7 @@
 | PvE 奖励 / 养成数据权威 | 服务器 `server/shared/src/pveRewards.ts` + [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md)（方案 B：服务器权威） | 客户端 JSON 仅参考/编辑器用 |
 | 接口契约（REST/WS/proto/DB 集合） | [game/SERVER_API.md](game/SERVER_API.md) + `server/contracts/` | — |
 | 功能开关机制（白名单/定向求值/分发/后台） | [game/FEATURE_FLAGS_DESIGN.md](game/FEATURE_FLAGS_DESIGN.md) | 接口落 SERVER_API/openapi；flag 白名单+default 真源 `server/shared/src/featureFlags.ts`；≠ SaveData.flags（玩家态） |
-| 进程拓扑 / 端口 | [claudedocs/server.md](../claudedocs/server.md) | 8 个应用进程，见 §4 |
+| 进程拓扑 / 端口 | [claudedocs/server.md](../claudedocs/server.md) | 9 个应用进程，见 §4 |
 | 多区域部署（区域划分/匹配域/数据驻留） | [game/DEPLOY_TOPOLOGY.md](game/DEPLOY_TOPOLOGY.md) | Meta 共享+对战层按区隔离+中国独立；同区匹配、好友房跨区（ADR-019）；进程拓扑仍归 server.md |
 | 配色 / 渲染 / 美术资产分工 | [product/art-direction.md](product/art-direction.md) + `client/src/render/theme.ts` | 阵营色 **我蓝敌红**（v0.3） |
 | 客户端 UI | 菜单/元系统 → [game/UI_DESIGN.md](game/UI_DESIGN.md)；战斗内 → [product/ui-design.md](product/ui-design.md) | 互补分工，见 §3 |
@@ -169,13 +169,13 @@
 
 ---
 
-## 4. 进程拓扑（8 个应用进程）
+## 4. 进程拓扑（9 个应用进程）
 
-权威清单见 [claudedocs/server.md](../claudedocs/server.md)。应用进程 = **8 个**（`shared` 是 npm 包不算进程，mongo/redis 是基础设施）：
+权威清单见 [claudedocs/server.md](../claudedocs/server.md)。应用进程 = **9 个**（`engine`/`shared`/`contracts` 是 npm 包不算进程，mongo/redis 是基础设施）：
 
-`metaserver` · `gateway` · `matchsvc` · `gameserver` · `commercial` · `admin` · `worldsvc` · `analyticsvc`
+`metaserver` · `gateway` · `matchsvc` · `gameserver` · `commercial` · `admin` · `worldsvc` · `socialsvc` · `analyticsvc`
 
-> [META_DESIGN.md](game/META_DESIGN.md) §6.1 的「6 组件」是 **meta 范畴**（S0–S5）的拓扑，不含后加的 admin/worldsvc/analyticsvc——以本节为全量。
+> [META_DESIGN.md](game/META_DESIGN.md) §6.1 的「6 组件」是 **meta 范畴**（S0–S5）的拓扑，不含后加的 admin/worldsvc/socialsvc/analyticsvc——以本节为全量。
 
 ---
 

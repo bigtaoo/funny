@@ -1,8 +1,12 @@
 # 逻辑层架构文档
 
 版本：v0.1  
-状态：草稿  
-适用范围：game-logic 包的实现规范，以及与 game-client 的交互约定
+状态：**历史参考**（早期单仓 `packages/` 设想，部分已过时）  
+适用范围：逻辑层的概念基准（坐标系/系统职责/录像流/事件契约仍有效）
+
+---
+
+> ⚠️ **过时提示（请勿照此目录结构实现）**：本文 §二 描述的 `packages/game-logic` + `game-client`（React/Canvas）单仓布局**已废弃**。实际代码为 `client/src/game/`（纯 TS）+ `client/src/render/`（**PixiJS，非 React**）；**数值权威已迁至 `server/engine/src/config.ts`（`@nw/engine`，ADR-001）**，不在 `client/src/game/config.ts`。另：手牌自动刷新为 **30 秒**（`CARD_REFRESH_TICKS`），文中「2 分钟」为旧值。坐标系、系统职责划分、录像/事件契约等概念仍可参考。
 
 ---
 

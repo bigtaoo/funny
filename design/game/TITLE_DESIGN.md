@@ -133,8 +133,8 @@ grant(t):
 
 | 展示位 | 形态 | 下发链路 |
 |---|---|---|
-| **资料弹层**（必做） | 佩戴称号 + 可展开「称号墙」看全部 `titles` | meta `GET /internal/profile` 已回 `{displayName, publicId}` → **加 `equippedTitle`**（`PROFILE_POPUP_PLAN` 链路）|
-| **对战内名牌** | 对手名旁短标签 | 复用 `PROFILE_POPUP_PLAN` 已建的 ticket→`match_start` opponent 身份链路 → 加 `opponentTitle` |
+| **资料弹层**（必做） | 佩戴称号 + 可展开「称号墙」看全部 `titles` | meta `GET /internal/profile` 已回 `{displayName, publicId}` → **加 `equippedTitle`**（`archive/PROFILE_POPUP_PLAN` 链路）|
+| **对战内名牌** | 对手名旁短标签 | 复用 `archive/PROFILE_POPUP_PLAN` 已建的 ticket→`match_start` opponent 身份链路 → 加 `opponentTitle` |
 | **聊天名前缀** | `[王者] 昵称`（短,限长） | social 渲染消息时附 sender 的 `equippedTitle`（`SOCIAL_DESIGN`）|
 | **排行榜** | 名字旁短标签 | 天梯 / SLG 榜查询 join `titles`（取 `equippedTitle`）|
 

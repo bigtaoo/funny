@@ -101,7 +101,7 @@ export async function rollSeason(
 /**
  * 对单个玩家发放「上赛季峰值奖励」，走系统邮件（异步/有仪式感/可审计）。
  * 幂等：dispatchKey = `ladder.season.${prevSeasonNo}.${accountId}` 去重。
- * 段位称号（grantTitle）属 S10，当前 stub（称号系统未上线时跳过）。
+ * 段位称号（S10）：通过 grantTitleToPlayer 幂等授予（见下方调用，best-effort）。
  * 同时补发未领战令奖励（§9，S6 温和）。
  */
 export async function settleSeasonForPlayer(

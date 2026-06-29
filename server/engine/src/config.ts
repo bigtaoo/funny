@@ -98,7 +98,7 @@ export const FORCE_DRAW_THRESHOLD_TICKS  = FORCE_DRAW_THRESHOLD * TICK_RATE; // 
 // ─── Hand / card refresh ──────────────────────────────────────────────────────
 //
 //  Each hand slot has an independent countdown timer.
-//  When it expires (2 min without playing), the card is auto-refreshed.
+//  When it expires (30 s without playing, see CARD_REFRESH_TICKS), the card is auto-refreshed.
 //  Initial timers are staggered by a random offset [0, CARD_REFRESH_INITIAL_OFFSET_MAX]
 //  to prevent all 6 slots from expiring simultaneously.
 
