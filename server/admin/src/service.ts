@@ -189,6 +189,18 @@ export class AdminService {
     return this.suspiciousPve.listSuspiciousPve();
   }
 
+  /** S4-4：手动封号（anticheat.action 权限）。 */
+  async banAccount(accountId: string): Promise<{ ok: boolean }> {
+    if (!this.suspiciousPve.available) return { ok: false };
+    return this.suspiciousPve.banAccount(accountId);
+  }
+
+  /** S4-4：手动解封（anticheat.action 权限）。 */
+  async unbanAccount(accountId: string): Promise<{ ok: boolean }> {
+    if (!this.suspiciousPve.available) return { ok: false };
+    return this.suspiciousPve.unbanAccount(accountId);
+  }
+
   // ───────────────────── SLG 赛季运维（G7/§17.7）─────────────────────
   // worldsvc /admin/world/* 代理 + 审计 + 运维序列约束（reset 前必须 settle，防丢历史）。
 

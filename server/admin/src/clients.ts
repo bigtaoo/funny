@@ -261,6 +261,8 @@ export interface SuspiciousPveRow {
 export interface SuspiciousPveClient {
   readonly available: boolean;
   listSuspiciousPve(): Promise<SuspiciousPveRow[]>;
+  banAccount(accountId: string): Promise<{ ok: boolean }>;
+  unbanAccount(accountId: string): Promise<{ ok: boolean }>;
 }
 
 export class HttpSuspiciousPveClient implements SuspiciousPveClient {
@@ -297,6 +299,34 @@ export class HttpSuspiciousPveClient implements SuspiciousPveClient {
     } catch (e) {
       log.warn('suspicious-pve fetch failed', { err: (e as Error).message });
       return [];
+    }
+  }
+
+  async banAccount(accountId: string): Promise<{ ok: boolean }> {
+    if (!this.metaBaseUrl) return { ok: false };
+    try {
+      const res = await fetch(`${this.metaBaseUrl}/internal/accounts/${encodeURIComponent(accountId)}/ban`, {
+        method: 'POST',
+        headers: internalHeaders('admin', this.internalKey),
+      });
+      return { ok: res.ok };
+    } catch (e) {
+      log.warn('ban-account failed', { err: (e as Error).message });
+      return { ok: false };
+    }
+  }
+
+  async unbanAccount(accountId: string): Promise<{ ok: boolean }> {
+    if (!this.metaBaseUrl) return { ok: false };
+    try {
+      const res = await fetch(`${this.metaBaseUrl}/internal/accounts/${encodeURIComponent(accountId)}/unban`, {
+        method: 'POST',
+        headers: internalHeaders('admin', this.internalKey),
+      });
+      return { ok: res.ok };
+    } catch (e) {
+      log.warn('unban-account failed', { err: (e as Error).message });
+      return { ok: false };
     }
   }
 }

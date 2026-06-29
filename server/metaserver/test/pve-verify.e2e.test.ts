@@ -113,6 +113,37 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
     expect((await verify('no-such-id')).statusCode).toBe(404);
   });
 
+  it('三振封禁：3 次复算拒绝后 pveClear 返回 403', async () => {
+    // PVE_REJECT_BAN_THRESHOLD = 3：触发 3 次 rejected → pveBanned = true → 后续 clear 403。
+    gateway.next = { ok: true, stars: 1 }; // 复算只 1 星，声称 3 星 → rejected
+
+    for (let i = 0; i < 3; i++) {
+      const c = b(await clear('ch1_lv1', 3));
+      // 若触发抽检则 verify，否则（非首通无法触发）模拟材料扣的路径
+      if (c.data.needsReplay) {
+        await verify(c.data.verifyId);
+      }
+    }
+
+    // 第 4 次 pveClear 应被封禁拦截（首通+3次拒绝后）
+    const blocked = await clear('ch1_lv1', 3);
+    expect(blocked.statusCode).toBe(403);
+  });
+
+  it('三振封禁：被封账号 pveVerify 返回 403', async () => {
+    gateway.next = { ok: true, stars: 3 }; // 正常首通
+    const c = b(await clear('ch1_lv1', 3));
+    // 手动在 save 里写 pveBanned（模拟已封）
+    await m.collections.saves.updateOne(
+      { _id: c.data.save._id ?? (await m.collections.saves.findOne({}))!._id },
+      { $set: { 'save.antiCheat.pveBanned': true } },
+    );
+    if (c.data.needsReplay) {
+      const r = await verify(c.data.verifyId);
+      expect(r.statusCode).toBe(403);
+    }
+  });
+
   it('无 gateway 配置 → 不抽检，首通直接发材料（回归既有行为）', async () => {
     const app2 = await buildApp({ cols: m.collections, jwt, internalKey: 'k' }); // 无 gateway
     const r2 = b(await app2.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'pve-verify-dev-2' } }));
