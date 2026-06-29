@@ -260,6 +260,13 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 8. ✅ `client/src/net/WorldApiClient.ts` 10 个家族方法切为直调 `/social/family/*`（删 worldId 参数，用 `getSocialBaseUrl()`）
 9. ✅ `client/src/scenes/FamilyScene.ts` + `createAppCore.ts` 更新 9+2 处调用签名
 
+**P4 补漏（残留清理）— 2026-06-29**：P4 主体合并后 worldsvc 仍有少量死残留，本次一并清除：
+
+- ✅ `worldsvc/test/family.e2e.test.ts` 删除（family 逻辑已迁 socialsvc，应由 socialsvc 自带测试覆盖）；`worldsvc/test/sect.e2e.test.ts` 解除对已删除 `FamilyService` 的依赖——SectService 仍只**读** `families`/`familyMembers` 两集合，故测试 fixture 改为直接 `insertOne`（新增 `insertFamily`/`makeFamily`/`joinFamily` 本地 helper，繁荣度门槛数学等价复现）。
+- ✅ `worldsvc/src/socialsvcClient.ts` 删除死方法 `proxy()`（接口 + `HttpWorldSocialsvcClient` + `nullWorldSocialsvcClient` 三处）——httpApi 已无 `/family/*` 路由，无人调用。
+- ✅ `contracts/openapi-world.yml` 删除 `/family/*` 路径块 + 仅被其引用的孤儿 schema（`FamilyMemberView`/`FamilyView`/`FamilyMessageView`）；`SectMemberFamilyView` 保留（宗门路径仍用）。**注：socialsvc 暂无 OpenAPI 契约**（`contracts/` 只覆盖 metaserver 与 worldsvc），迁出的 `/social/family/*` 公网路由当前无契约声明——为后续待办，本次未补。
+- ✅ 注释去 `/family`：`worldsvc` 的 `config.ts`/`httpApi.ts`/`index.ts`/`socialsvcClient.ts` 头部。
+
 ---
 
 ## 7. 部署拓扑（更新后）

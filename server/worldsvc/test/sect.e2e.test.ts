@@ -6,13 +6,13 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   sectId,
   familyId,
+  familyMemberId,
   SECT_CREATE_COST,
   SECT_ALLY_CAP,
   SLG_MAP_W,
   SLG_MAP_H,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo, type NationDoc } from '../src/db';
-import { FamilyService } from '../src/familyService';
 import { SectService } from '../src/sectService';
 import { WorldService } from '../src/service';
 import type { WorldCommercialClient } from '../src/commercialClient';
@@ -36,7 +36,6 @@ if (!mongo) {
 }
 
 describe.skipIf(!mongo)('SectService e2e', () => {
-  let fam: FamilyService;
   let sect: SectService;
   const spends: Array<{ accountId: string; amount: number }> = [];
   const grants: Array<{ accountId: string; amount: number }> = [];
@@ -70,7 +69,6 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     spends.length = 0;
     grants.length = 0;
     broadcasts.length = 0;
-    fam = new FamilyService({ cols, now: () => Date.now() });
     sect = new SectService({ cols, commercial, gateway: fakeGateway, now: () => Date.now() });
   });
 
@@ -79,14 +77,53 @@ describe.skipIf(!mongo)('SectService e2e', () => {
   });
 
   /**
-   * 建一个家族并返回族长 accountId（每个家族一个 leader）。name 兜底补足 ≥2 字符。
-   * 种入足量 activity（§17.4）：createSect 会 refreshFamilyProsperity 重算繁荣度（50 + activity*5），
-   * 需 ≥ SECT_FOUND_PROSPERITY_MIN(2000) 才能建门；不关心门槛的用例由此默认满足。
+   * 直接写库建家族（家族逻辑已迁至 socialsvc；worldsvc 仅余 SectService 读 families/familyMembers
+   * 这两个集合，故测试 fixture 直接 insert，不再依赖已删除的 FamilyService）。name 兜底补足 ≥2 字符。
+   * activity 控制繁荣度门槛（§17.4）：createSect 会 refreshFamilyProsperity 重算 familyProsperity(territory,
+   * memberCount, activity)，需 ≥ SECT_FOUND_PROSPERITY_MIN(2000) 才能建门。
    */
-  async function makeFamily(leader: string, name: string, tag: string): Promise<string> {
-    await fam.createFamily(W, leader, name.length >= 2 ? name : `Fam${name}`, tag);
-    await mongo!.collections.families.updateOne({ _id: familyId(W, tag) }, { $set: { activity: 500 } });
+  async function insertFamily(leader: string, name: string, tag: string, activity: number): Promise<string> {
+    const cols = mongo!.collections;
+    const fid = familyId(W, tag);
+    await cols.families.insertOne({
+      _id: fid,
+      worldId: W,
+      name: name.length >= 2 ? name : `Fam${name}`,
+      tag,
+      leaderId: leader,
+      memberCount: 1,
+      territoryCount: 0,
+      activity,
+      rev: 1,
+    });
+    await cols.familyMembers.insertOne({
+      _id: familyMemberId(W, leader),
+      worldId: W,
+      accountId: leader,
+      familyId: fid,
+      role: 'leader',
+      joinedAt: 0,
+    });
     return leader;
+  }
+
+  /** 建一个满足建门门槛的家族（activity=500 → 繁荣度足量）；不关心门槛的用例由此默认满足。 */
+  async function makeFamily(leader: string, name: string, tag: string): Promise<string> {
+    return insertFamily(leader, name, tag, 500);
+  }
+
+  /** 直接写库把 account 加入家族（成员身份 + memberCount++）。 */
+  async function joinFamily(account: string, fid: string): Promise<void> {
+    const cols = mongo!.collections;
+    await cols.familyMembers.insertOne({
+      _id: familyMemberId(W, account),
+      worldId: W,
+      accountId: account,
+      familyId: fid,
+      role: 'member',
+      joinedAt: 0,
+    });
+    await cols.families.updateOne({ _id: fid }, { $inc: { memberCount: 1 } });
   }
 
   it('建宗门：扣 5000 coin + 家族成为门主家族', async () => {
@@ -101,13 +138,13 @@ describe.skipIf(!mongo)('SectService e2e', () => {
 
   it('建宗门繁荣度门槛：低繁荣度家族 → PROSPERITY_TOO_LOW（G2/§17.4）', async () => {
     // 直接建族不补 activity → 繁荣度仅 = memberCount*50 = 50 < 2000，应被拦。
-    await fam.createFamily(W, 'poor', 'Poor', 'PR');
+    await insertFamily('poor', 'Poor', 'PR', 0);
     await expect(sect.createSect(W, 'poor', 'Broke', 'BRK')).rejects.toMatchObject({ code: 'PROSPERITY_TOO_LOW' });
   });
 
   it('非族长不能建宗门 → NO_PERMISSION', async () => {
     await makeFamily('alice', 'Alpha', 'AW');
-    await fam.joinFamily(W, 'bob', familyId(W, 'AW')); // bob = member
+    await joinFamily('bob', familyId(W, 'AW')); // bob = member
     await expect(sect.createSect(W, 'bob', 'X', 'XX')).rejects.toMatchObject({ code: 'NO_PERMISSION' });
   });
 
@@ -205,7 +242,7 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     await makeFamily('alice', 'A', 'AA');
     await makeFamily('bob', 'B', 'BB');
     await makeFamily('carol', 'C', 'CC');
-    await fam.joinFamily(W, 'bob2', familyId(W, 'BB'));
+    await joinFamily('bob2', familyId(W, 'BB'));
     const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
     await sect.joinSect(W, 'bob', s.sectId);
     await sect.joinSect(W, 'carol', s.sectId);
