@@ -248,6 +248,18 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 1. ✅ gateway 上线/下线时调 socialsvc `/internal/presence/online|offline`（`NW_SOCIALSVC_INTERNAL_URL` 配置；未配置则降级到 meta 好友列表直接广播）
 2. ✅ socialsvc 实现好友在线通知扇出（查 `nw_social.friendEdges` → 调 `gateway.presence()` 过滤在线 → `gateway.pushMany` 发 `friend_presence`；上线时回推在线好友快照）
 
+### P4（全链路清理）— 2026-06-29 完成
+
+1. ✅ 删除 `server/worldsvc/src/familyService.ts`（359 行死代码，已搬至 socialsvc）
+2. ✅ `worldsvc/httpApi.ts` 删除 `/family/*` 代理路由块 + FamilyService 类型导入 + `familySvc` 参数
+3. ✅ `worldsvc/index.ts` 删除 FamilyService 导入 + 实例化
+4. ✅ `server/Caddyfile` 删除 `/family*` → worldsvc 路由，新增 `/social*` → socialsvc:8085
+5. ✅ `server/docker-compose.prod.yml` 新增 socialsvc 服务，worldsvc/gateway 加 `NW_SOCIALSVC_INTERNAL_URL`，caddy depends_on 加 socialsvc
+6. ✅ `server/ecosystem.config.cjs` 新增 nw-social 进程，gateway/worldsvc 加 `NW_SOCIALSVC_INTERNAL_URL`
+7. ✅ `client/src/net/config.ts` 新增 `getSocialBaseUrl()`（同源生产返回 `''`，dev 从 worldBase 推导端口 8085）
+8. ✅ `client/src/net/WorldApiClient.ts` 10 个家族方法切为直调 `/social/family/*`（删 worldId 参数，用 `getSocialBaseUrl()`）
+9. ✅ `client/src/scenes/FamilyScene.ts` + `createAppCore.ts` 更新 9+2 处调用签名
+
 ---
 
 ## 7. 部署拓扑（更新后）
@@ -255,15 +267,15 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 ```
 公网入口（Cloudflare / Nginx 反代）
   /api/*        → metaserver:8080     账号 / 存档 / 经济 / PvE / 匹配上报
-  /world/*      → worldsvc:8084       SLG 地图 / 行军 / 拍卖
-  /family/*     → worldsvc:8084       过渡期，P1 完成后切 /social/family/*
-  /social/*     → socialsvc:8085      好友 / 家族 / 邮件 / 频道（P1 起）
-  /admin/*      → admin:8086          运维后台
+  /world/*      → worldsvc:18084      SLG 地图 / 行军 / 拍卖
+  /auction/*    → worldsvc:18084      拍卖行
+  /social/*     → socialsvc:8085      好友 / 家族 / 邮件 / 频道（P1 起，家族 P4 已切直连）
+  /admin/*      → admin:8083          运维后台
   /gw           → gateway:8082        控制面 WS
-  /ws           → gameserver:8083     数据面 WS
+  /ws           → gameserver:8081     数据面 WS
 
-新增进程：socialsvc（pm2 / docker compose 加一个 service）
-新增依赖：Redis（P1 随 socialsvc 一起引入，替代原计划随 worldsvc 引入）
+进程：socialsvc 已加入 docker-compose.prod.yml + ecosystem.config.cjs（nw-social，端口 8085）
+注：/family/* worldsvc 代理路由已删除（P4 完成，2026-06-29）；客户端直接调 /social/family/*
 ```
 
 ---

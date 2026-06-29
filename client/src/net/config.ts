@@ -59,3 +59,19 @@ export function getWorldBaseUrl(): string {
   const injected = (globalThis as { __NW_WORLD_BASE__?: string }).__NW_WORLD_BASE__ ?? '';
   return injected.replace(/\/+$/, '');
 }
+
+// socialsvc REST 基址解析（S6）。
+// 优先级：构建期注入 __NW_SOCIAL_BASE__ > '' (同源，Caddy /social/* 转 socialsvc)。
+// 生产未配则空字符串（同源路径），dev 通过 worldBase 同主机推导端口 8085。
+export function getSocialBaseUrl(): string {
+  const injected = (globalThis as { __NW_SOCIAL_BASE__?: string }).__NW_SOCIAL_BASE__ ?? '';
+  if (injected) return injected.replace(/\/+$/, '');
+  const world = getWorldBaseUrl();
+  if (!world) return ''; // 生产同源
+  try {
+    const u = new URL(world);
+    u.port = '8085';
+    u.pathname = '';
+    return u.origin;
+  } catch { return ''; }
+}

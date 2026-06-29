@@ -1,6 +1,7 @@
 // worldsvc 环境变量（S8-0，第七 workspace + 专属库）。
-// SLG_DESIGN §14.1 P1：worldsvc 自暴露公网 REST（第四公网面 /world/* /family/* /auction/*），
+// SLG_DESIGN §14.1：worldsvc 自暴露公网 REST（第四公网面 /world/* /auction/*），
 // 复用 meta JWT 仅 verifyToken 验签（不连 accounts 库）。内部事件经 gateway /gw/push 推回客户端。
+// 注：/family/* 路由已迁至 socialsvc（第五公网面 /social/*），worldsvc 不再代理家族请求。
 import { loadServerEnv, type ServerEnv } from '@nw/shared';
 
 export interface WorldsvcEnv extends ServerEnv {
@@ -19,7 +20,7 @@ export interface WorldsvcEnv extends ServerEnv {
   commercialInternalUrl: string | undefined;
   /** meta 内部 HTTP 基址（拍卖场 S8-5：材料扣除 / 发放）；缺省 = 不支持材料交易。 */
   metaInternalUrl: string | undefined;
-  /** socialsvc 内部 HTTP 基址（P1：家族路由代理 + 频道推送委托）；缺省 = 不代理/不委托。 */
+  /** socialsvc 内部 HTTP 基址（频道推送委托）；缺省 = 不委托。 */
   socialsvcInternalUrl: string | undefined;
 }
 

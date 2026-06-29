@@ -1,5 +1,5 @@
 # 反代（C-3 / S1-M / S8）：/api/* → metaserver、/gw → gateway(控制面 WS)、/ws → gameserver(数据面 WS)、
-# /world,/family,/auction → worldsvc(SLG 大世界 REST)。
+# /world,/auction → worldsvc(SLG 大世界 REST)、/social/* → socialsvc(社交第五公网面)。
 # 站点地址由 {$NW_DOMAIN} 注入：
 #   · 真域名（如 nw.example.com）→ Caddy 自动签 Let's Encrypt 证书，全程 HTTPS/WSS。
 #   · 缺省 :80 → 仅 HTTP（本机 / 无域名联调用；此时不签证书）。
@@ -20,15 +20,17 @@
 		reverse_proxy gameserver:8081
 	}
 
-	# SLG 大世界 REST（S8，第四公网面：地图/领地/家族/拍卖，保留路径）
+	# SLG 大世界 REST（S8，第四公网面：地图/领地/拍卖，保留路径）
 	handle /world* {
-		reverse_proxy worldsvc:18084
-	}
-	handle /family* {
 		reverse_proxy worldsvc:18084
 	}
 	handle /auction* {
 		reverse_proxy worldsvc:18084
+	}
+
+	# 社交服务（第五公网面：好友/私聊/邮件/家族，保留路径）
+	handle /social* {
+		reverse_proxy socialsvc:8085
 	}
 
 	# Analytics 事件采集（A9，公开端点 /analytics/config + /analytics/events；保留路径）
