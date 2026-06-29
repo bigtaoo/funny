@@ -419,6 +419,27 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, ticket });
         }
 
+        // ── 优惠码管理（B-PROMO，promo.manage）──
+        if (method === 'GET' && path === '/admin/promo/codes') {
+          requireCap(actor, 'promo.manage');
+          return send(res, 200, { ok: true, codes: await svc.listPromoCodes() });
+        }
+        if (method === 'POST' && path === '/admin/promo/codes') {
+          requireCap(actor, 'promo.manage');
+          const b = await readJson(req);
+          const code = typeof b.code === 'string' ? b.code : '';
+          const coins = typeof b.coins === 'number' ? b.coins : 0;
+          if (!code || coins <= 0) throw new AdminError(400, 'bad_request', 'code + coins required');
+          const result = await svc.createPromoCode(actor, {
+            code,
+            coins,
+            ...(typeof b.expiresAt === 'number' ? { expiresAt: b.expiresAt } : {}),
+            ...(typeof b.totalLimit === 'number' ? { totalLimit: b.totalLimit } : {}),
+            ...(typeof b.note === 'string' && b.note ? { note: b.note } : {}),
+          });
+          return send(res, 200, { ok: true, ...result });
+        }
+
         // ── 限时活动管理（B6，events.manage）──
         if (method === 'GET' && path === '/admin/events') {
           requireCap(actor, 'events.manage');

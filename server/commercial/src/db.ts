@@ -76,6 +76,27 @@ export interface VictoryDailyDoc {
   ts: number;
 }
 
+/** 优惠码定义（B-PROMO）。_id = code 字符串（大写规范化）。 */
+export interface PromoCodeDoc {
+  _id: string; // code（已规范化大写）
+  coins: number; // 兑换金币数
+  expiresAt?: number; // 过期时间戳（ms），缺省永不过期
+  totalLimit?: number; // 全局兑换上限（缺省无限）
+  redeemed: number; // 已兑换次数（原子 $inc）
+  note?: string; // 运营备注
+  createdBy: string; // adminId
+  createdAt: number;
+}
+
+/** 优惠码兑换记录（B-PROMO）。_id = `${accountId}:${code}` 天然唯一防重复。 */
+export interface PromoRedemptionDoc {
+  _id: string; // `${accountId}:${code}`
+  accountId: string;
+  code: string;
+  coinsGranted: number;
+  ts: number;
+}
+
 export interface CommercialCollections {
   wallets: Collection<WalletDoc>;
   ledger: Collection<LedgerDoc>;
@@ -83,6 +104,8 @@ export interface CommercialCollections {
   recharges: Collection<RechargeDoc>;
   gachaHistory: Collection<GachaHistoryDoc>;
   victoryDaily: Collection<VictoryDailyDoc>;
+  promoCodes: Collection<PromoCodeDoc>;
+  promoRedemptions: Collection<PromoRedemptionDoc>;
 }
 
 export interface CommercialMongo {
@@ -118,6 +141,8 @@ export async function createCommercialMongo(
     recharges: db.collection<RechargeDoc>('recharges'),
     gachaHistory: db.collection<GachaHistoryDoc>('gachaHistory'),
     victoryDaily: db.collection<VictoryDailyDoc>('victoryDaily'),
+    promoCodes: db.collection<PromoCodeDoc>('promoCodes'),
+    promoRedemptions: db.collection<PromoRedemptionDoc>('promoRedemptions'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -127,6 +152,8 @@ export async function createCommercialMongo(
     await collections.orders.createIndex({ status: 1, ts: 1 });
     await collections.gachaHistory.createIndex({ accountId: 1, ts: -1 });
     // recharges._id = receiptId 天然唯一；wallets._id = accountId 天然唯一。
+    // promoCodes._id = code 天然唯一；promoRedemptions._id = accountId:code 天然唯一。
+    await collections.promoRedemptions.createIndex({ accountId: 1, ts: -1 });
   }
 
   return {

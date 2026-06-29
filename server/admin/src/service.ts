@@ -43,7 +43,7 @@ import {
 } from '@nw/shared';
 import { METRIC_KEYS } from '@nw/shared';
 import type { AdminAccountDoc, AdminCollections, AuditDoc, CompTicketDoc, TradeAuditTicketDoc } from './db';
-import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, EventsClient, LadderClient, LadderSeasonInfo, MailDispatcher, MismatchClient, MismatchRow, PlayerClient, PlayerProfile, PlayerSummary, StatsClient, SuspiciousPveClient, SuspiciousPveRow, WorldClient, SlgWorldSummary } from './clients';
+import type { AnalyticsClient, AnalyticsQueryResult, AntiCheatClient, AntiCheatReviewRow, EventsClient, LadderClient, LadderSeasonInfo, MailDispatcher, MismatchClient, MismatchRow, PlayerClient, PlayerProfile, PlayerSummary, PromoClient, PromoCodeView, StatsClient, SuspiciousPveClient, SuspiciousPveRow, WorldClient, SlgWorldSummary } from './clients';
 import type { AuctionAnomaly, EventDoc, EventInput } from '@nw/shared';
 
 const log = createLogger('admin:service');
@@ -80,6 +80,7 @@ export interface AdminServiceDeps {
   world: WorldClient;
   ladder: LadderClient;
   events: EventsClient;
+  promo: PromoClient;
   now: () => number;
 }
 
@@ -117,6 +118,7 @@ export class AdminService {
   private readonly world: WorldClient;
   private readonly ladder: LadderClient;
   private readonly events: EventsClient;
+  private readonly promo: PromoClient;
   private readonly now: () => number;
   /** 登录失败限流表（按登录名，内存态）。 */
   private readonly loginAttempts = new Map<string, LoginAttempt>();
@@ -133,6 +135,7 @@ export class AdminService {
     this.world = deps.world;
     this.ladder = deps.ladder;
     this.events = deps.events;
+    this.promo = deps.promo;
     this.now = deps.now;
   }
 
@@ -161,6 +164,24 @@ export class AdminService {
   async deleteEvent(actor: Actor, eventId: string): Promise<void> {
     await this.events.remove(eventId);
     await this.audit(actor.adminId, 'event.delete', { target: eventId });
+  }
+
+  // ───────────────────── 优惠码管理（B-PROMO，promo.manage）──────────────────────────
+  /** 列出全部优惠码；commercial 不可达返回空列表。 */
+  async listPromoCodes(): Promise<PromoCodeView[]> {
+    if (!this.promo.available) return [];
+    return this.promo.list();
+  }
+
+  /** 创建优惠码。审计。commercial 不可达 / 重复码抛 AdminError。 */
+  async createPromoCode(
+    actor: Actor,
+    args: { code: string; coins: number; expiresAt?: number; totalLimit?: number; note?: string },
+  ): Promise<{ code: string }> {
+    if (!this.promo.available) throw new AdminError(503, 'promo_unavailable', 'commercial not configured');
+    const r = await this.promo.create({ ...args, createdBy: actor.adminId });
+    await this.audit(actor.adminId, 'promo.create', { target: r.code, summary: `${args.coins} coins` });
+    return r;
   }
 
   // ───────────────────── 天梯赛季运维（SE-3）──────────────────────────

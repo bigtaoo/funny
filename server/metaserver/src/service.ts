@@ -1888,6 +1888,30 @@ export class MetaService {
     return ok({ save, granted: v.coinsGranted });
   }
 
+  /** 优惠码兑换（B-PROMO）：校验 → 加币 → 回推存档。 */
+  async redeemPromoCode(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.ensureCommercial(reply)) return;
+    const accountId = accountIdOf(req);
+    const { code } = req.body as { code: string };
+    if (!code || typeof code !== 'string') {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'code required'));
+    }
+    const { cols, commercial, now } = this.deps;
+    const v = await commercial.promoRedeem({ accountId, code });
+    if (!v.ok) {
+      const statusMap: Record<string, number> = {
+        PROMO_NOT_FOUND: 404,
+        PROMO_EXPIRED: 400,
+        PROMO_EXHAUSTED: 400,
+        PROMO_ALREADY_USED: 400,
+      };
+      const status = statusMap[v.error] ?? 400;
+      return reply.code(status).send(err(ErrorCode.BAD_REQUEST, v.error));
+    }
+    const save = await mirrorCoins(cols, accountId, v.coinsAfter, now());
+    return ok({ coinsAfter: v.coinsAfter, coinsGranted: v.coinsGranted, save });
+  }
+
   /**
    * 装备合成（E2，EQUIPMENT_DESIGN §4/§7）：扣文具材料 → roll 一件 +0 基础装备 → 入库（300 上限）。
    * idempotencyKey 幂等（客户端生成）：重放返回首次结果，不二次扣料、不二次 roll。
