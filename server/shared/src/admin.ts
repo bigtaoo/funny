@@ -32,6 +32,7 @@ export type AdminCapability =
   | 'slg.audit.manage' // 立/裁定异常交易审计工单（G7 反 RMT）
   | 'config.manage' // 功能开关（feature flag）总闸/定向编辑（FEATURE_FLAGS_DESIGN §5）
   | 'events.manage' // 限时活动（B6）创建/编辑/下线（ADR-014）
+  | 'promo.manage' // 优惠码创建/查看（B-PROMO）
   | 'admin.manage'; // 账号 / 角色管理
 
 /**
@@ -59,6 +60,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'slg.audit.manage',
     'config.manage',
     'events.manage',
+    'promo.manage',
     'admin.manage',
   ],
   ops: [
@@ -77,6 +79,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'slg.audit.manage',
     'config.manage',
     'events.manage',
+    'promo.manage',
   ],
   support: [
     'monitor.view',
@@ -268,7 +271,8 @@ export type AuditAction =
   | 'config.update'
   | 'event.create'
   | 'event.update'
-  | 'event.delete';
+  | 'event.delete'
+  | 'promo.create';
 
 export interface AuditEntryView {
   id: string;

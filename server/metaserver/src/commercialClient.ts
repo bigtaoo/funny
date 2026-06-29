@@ -65,6 +65,30 @@ export interface CommercialClient {
     amount: number;
     dayKey: string;
   }): Promise<Body<{ coinsAfter: number; credited: number; capped: boolean }>>;
+  promoRedeem(args: {
+    accountId: string;
+    code: string;
+  }): Promise<Body<{ coinsAfter: number; coinsGranted: number }>>;
+  createPromoCode(args: {
+    code: string;
+    coins: number;
+    expiresAt?: number;
+    totalLimit?: number;
+    note?: string;
+    createdBy: string;
+  }): Promise<Body<{ code: string }>>;
+  listPromoCodes(): Promise<PromoCodeView[]>;
+}
+
+export interface PromoCodeView {
+  code: string;
+  coins: number;
+  expiresAt?: number;
+  totalLimit?: number;
+  redeemed: number;
+  note?: string;
+  createdBy: string;
+  createdAt: number;
 }
 
 /** 真实 HTTP 实现。baseUrl 为 null（未配 commercial）→ available=false，经济端点回 503。 */
@@ -156,5 +180,27 @@ export class HttpCommercialClient implements CommercialClient {
       '/internal/victory/credit',
       args,
     );
+  }
+
+  promoRedeem(args: { accountId: string; code: string }) {
+    return this.post<{ coinsAfter: number; coinsGranted: number }>('/internal/promo/redeem', args);
+  }
+
+  createPromoCode(args: {
+    code: string;
+    coins: number;
+    expiresAt?: number;
+    totalLimit?: number;
+    note?: string;
+    createdBy: string;
+  }) {
+    return this.post<{ code: string }>('/internal/promo/codes', args);
+  }
+
+  async listPromoCodes(): Promise<PromoCodeView[]> {
+    if (!this.baseUrl) return [];
+    const res = await fetch(`${this.baseUrl}/internal/promo/codes`, { headers: this.headers() });
+    const b = (await res.json()) as Body<{ codes: PromoCodeView[] }>;
+    return b.ok ? b.codes : [];
   }
 }

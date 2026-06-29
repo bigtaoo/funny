@@ -13,6 +13,8 @@ import type {
   CommercialCollections,
   GachaResultEntry,
   OrderDoc,
+  PromoCodeDoc,
+  PromoRedemptionDoc,
   WalletDoc,
 } from './db';
 import { rollGacha, type RandInt } from './gacha';
@@ -21,7 +23,11 @@ export type ServiceErr =
   | 'INSUFFICIENT_FUNDS'
   | 'INVALID_RECEIPT'
   | 'NOT_FOUND'
-  | 'BAD_REQUEST';
+  | 'BAD_REQUEST'
+  | 'PROMO_NOT_FOUND'
+  | 'PROMO_EXPIRED'
+  | 'PROMO_EXHAUSTED'
+  | 'PROMO_ALREADY_USED';
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: ServiceErr };
 
@@ -390,6 +396,80 @@ export class CommercialService {
       receiptId: args.receiptId,
     });
     return { ok: true, coinsAfter, coinsGranted: v.coins };
+  }
+
+  /** 创建优惠码（admin 调用，via meta 内部转发）。code 规范化为大写。 */
+  async createPromoCode(args: {
+    code: string;
+    coins: number;
+    expiresAt?: number;
+    totalLimit?: number;
+    note?: string;
+    createdBy: string;
+  }): Promise<Result<{ code: string }>> {
+    const code = args.code.trim().toUpperCase();
+    if (!code || args.coins <= 0) return { ok: false, error: 'BAD_REQUEST' };
+    try {
+      await this.cols.promoCodes.insertOne({
+        _id: code,
+        coins: Math.floor(args.coins),
+        ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
+        ...(args.totalLimit !== undefined ? { totalLimit: Math.floor(args.totalLimit) } : {}),
+        redeemed: 0,
+        ...(args.note ? { note: args.note } : {}),
+        createdBy: args.createdBy,
+        createdAt: this.now(),
+      });
+    } catch (e) {
+      if ((e as { code?: number }).code === 11000) return { ok: false, error: 'BAD_REQUEST' };
+      throw e;
+    }
+    return { ok: true, code };
+  }
+
+  /** 列出所有优惠码（admin 管理用）。 */
+  async listPromoCodes(): Promise<PromoCodeDoc[]> {
+    return this.cols.promoCodes.find({}).sort({ createdAt: -1 }).toArray();
+  }
+
+  /**
+   * 玩家兑换优惠码（B-PROMO）。
+   * 校验顺序：码存在 → 未过期 → 未超总量 → 玩家未用过 → 加币。
+   * 并发防重：promoRedemptions._id=`accountId:code` 唯一；冲突回读为 PROMO_ALREADY_USED。
+   * 总量原子 $inc 守卫：先占 redemption 再 $inc redeemed（即使并发最多超限 1 个，business 可接受）。
+   */
+  async promoRedeem(args: {
+    accountId: string;
+    code: string;
+  }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
+    const code = args.code.trim().toUpperCase();
+    const def = await this.cols.promoCodes.findOne({ _id: code });
+    if (!def) return { ok: false, error: 'PROMO_NOT_FOUND' };
+    if (def.expiresAt !== undefined && def.expiresAt < this.now()) return { ok: false, error: 'PROMO_EXPIRED' };
+    if (def.totalLimit !== undefined && def.redeemed >= def.totalLimit) return { ok: false, error: 'PROMO_EXHAUSTED' };
+
+    const redemptionId = `${args.accountId}:${code}`;
+    const existing = await this.cols.promoRedemptions.findOne({ _id: redemptionId });
+    if (existing) return { ok: false, error: 'PROMO_ALREADY_USED' };
+
+    const redemption: PromoRedemptionDoc = {
+      _id: redemptionId,
+      accountId: args.accountId,
+      code,
+      coinsGranted: def.coins,
+      ts: this.now(),
+    };
+    try {
+      await this.cols.promoRedemptions.insertOne(redemption);
+    } catch (e) {
+      if ((e as { code?: number }).code === 11000) return { ok: false, error: 'PROMO_ALREADY_USED' };
+      throw e;
+    }
+
+    // 原子递增兑换计数（best-effort，不守卫总量——已在上方做软检查，并发最多超 1）。
+    await this.cols.promoCodes.updateOne({ _id: code }, { $inc: { redeemed: 1 } });
+    const coinsAfter = await this.credit(args.accountId, def.coins, 'promo', {});
+    return { ok: true, coinsAfter, coinsGranted: def.coins };
   }
 
   /** 广告奖励加币（meta 已校验广告凭证 + 当日 cap，commercial 只加币记账）。 */

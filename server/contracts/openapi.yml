@@ -2926,4 +2926,39 @@ paths:
                       save: { $ref: '#/components/schemas/SaveData' }
         '401': { $ref: '#/components/responses/ErrorResp' }
         '403': { $ref: '#/components/responses/ErrorResp' }
+
+  /promo/redeem:
+    post:
+      operationId: redeemPromoCode
+      tags: [shop]
+      summary: 玩家兑换优惠码（每人每码一次）
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, description: 优惠码（不区分大小写） }
+      responses:
+        '200':
+          description: 兑换成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [coinsAfter, coinsGranted]
+                    properties:
+                      coinsAfter: { type: integer }
+                      coinsGranted: { type: integer }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
         '409': { $ref: '#/components/responses/ErrorResp' }

@@ -67,6 +67,10 @@ export function startInternalHttp(
           const orders = await svc.undeliveredOrders(accountId);
           return send(res, 200, { ok: true, orders });
         }
+        if (req.method === 'GET' && url.pathname === '/internal/promo/codes') {
+          const codes = await svc.listPromoCodes();
+          return send(res, 200, { ok: true, codes });
+        }
 
         if (req.method !== 'POST') return send(res, 404, { ok: false, error: 'not found' });
         const b = await readJson(req);
@@ -156,6 +160,31 @@ export function startInternalHttp(
                 dayKey: str(b.dayKey),
               }),
             );
+          case '/internal/promo/redeem':
+            return send(
+              res,
+              200,
+              await svc.promoRedeem({
+                accountId: str(b.accountId),
+                code: str(b.code),
+              }),
+            );
+          case '/internal/promo/codes': {
+            const expiresAt = typeof b.expiresAt === 'number' ? b.expiresAt : undefined;
+            const totalLimit = typeof b.totalLimit === 'number' ? b.totalLimit : undefined;
+            return send(
+              res,
+              200,
+              await svc.createPromoCode({
+                code: str(b.code),
+                coins: num(b.coins, 0),
+                expiresAt,
+                totalLimit,
+                note: typeof b.note === 'string' ? b.note : undefined,
+                createdBy: str(b.createdBy),
+              }),
+            );
+          }
           default:
             return send(res, 404, { ok: false, error: 'not found' });
         }

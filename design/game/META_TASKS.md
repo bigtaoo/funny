@@ -315,14 +315,14 @@
 
 > 来源：2026-06-29 全项目体检。下列为已确认的未完成项（功能缺口 / 美术阻塞 / 收尾），尚未排期。复杂项另起专文，简单项就地记录。
 
-### B-PROMO 优惠码兑换系统（替代已删除的 dev 魔术码）
+### B-PROMO 优惠码兑换系统（替代已删除的 dev 魔术码）✅（2026-06-29 已实现）
 
 取代 S2-6 已删除的「魔术码充值」dev 桩（仅 dev、生产 fail-closed；2026-06-29 已整条删除：客户端 `ShopScene` 充值入口 + `createAppCore.rechargeTier`（`taowang*`）+ 相关 i18n）。新系统由后台显式发码，可控、可审计、每人一次：
 
-- [ ] **后台发码**（admin / ops）：新增「优惠码」管理项——创建 `code`（字符串）、兑换金币数、可选有效期 / 总量上限 / 备注。复用 admin capabilities 菜单 + 邮件/补偿同款鉴权。
-- [ ] **兑换接口**：玩家侧 metaserver REST `POST /promo/redeem { code }`（JWT 鉴权）。校验：码存在 / 未过期 / 未超总量 / **该玩家未用过** → 加币并回推新 SaveData。
-- [ ] **每玩家每码一次（幂等）+ commercial 记账**：commercial 新增 `promoCodes`（码定义 / 库存）+ `promoRedemptions`（`_id = accountId:code` 天然唯一，复刻 `recharges.receiptId` 防重模式）两集合；兑换 = `credit(accountId, coins, 'promo', { code })` 入 ledger；并发靠唯一冲突回读保不重复发币。
-- 契约：openapi 加 `/promo/redeem`；admin openapi / capabilities 加发码端点。**依赖**：S5 commercial、S7 admin。
+- [x] **后台发码**（admin / ops）：admin `promo.manage` 能力点（super/ops）；`POST /admin/promo/codes { code, coins, expiresAt?, totalLimit?, note? }` + `GET /admin/promo/codes`；admin → meta `/admin/promo/codes` → commercial `/internal/promo/codes`；审计落 `promo.create`。
+- [x] **兑换接口**：玩家侧 metaserver REST `POST /promo/redeem { code }`（JWT 鉴权，operationId `redeemPromoCode`）。校验：码存在 / 未过期 / 未超总量 / **该玩家未用过** → 加币 + 回推 wallet mirror。
+- [x] **每玩家每码一次（幂等）+ commercial 记账**：commercial 新增 `promoCodes`（码定义；`_id=code 大写`，`redeemed` 原子 `$inc`）+ `promoRedemptions`（`_id = accountId:code` 天然唯一，复刻 `recharges.receiptId` 防重模式）两集合；兑换 = `credit(accountId, coins, 'promo')` 入 ledger；并发靠 `insertOne` 唯一冲突回 `PROMO_ALREADY_USED`。
+- [x] 契约：`openapi.yml` 加 `/promo/redeem`；`shared/admin.ts` 加 `promo.manage` 能力 + `promo.create` 审计 action。**主要文件**：`commercial/src/db.ts`（两集合）、`commercial/src/service.ts`（三方法）、`commercial/src/internalHttp.ts`（三端点）、`metaserver/src/commercialClient.ts`（三接口）、`metaserver/src/internal.ts`（两 admin 路由）、`metaserver/src/service.ts`（`redeemPromoCode` handler）、`admin/src/{clients,service,httpApi,index}.ts`。**验收**：`commercial/test/promo.test.ts` 13 e2e（Mongo 不在线 skip，同现有模式）；`tsc -b` shared/commercial/metaserver/admin 全绿。
 
 ### 其余确认缺口
 

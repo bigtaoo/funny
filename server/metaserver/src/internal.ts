@@ -765,6 +765,35 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       return reply.code(500).send({ ok: false, error: 'grant failed' });
     }
   });
+
+  // ── 优惠码管理（B-PROMO，admin promo.manage；经 commercial 存储）──────────────
+  // GET /admin/promo/codes — 列出全部优惠码。
+  app.get('/admin/promo/codes', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
+    const codes = await commercial.listPromoCodes();
+    return reply.send({ ok: true, codes });
+  });
+  // POST /admin/promo/codes — 创建优惠码。body = { code, coins, expiresAt?, totalLimit?, note?, createdBy }
+  app.post('/admin/promo/codes', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
+    const b = req.body as Record<string, unknown>;
+    const code = typeof b.code === 'string' ? b.code.trim().toUpperCase() : '';
+    const coins = typeof b.coins === 'number' ? b.coins : 0;
+    if (!code || coins <= 0) return reply.code(400).send({ ok: false, error: 'code + coins required' });
+    const r = await commercial.createPromoCode({
+      code,
+      coins,
+      expiresAt: typeof b.expiresAt === 'number' ? b.expiresAt : undefined,
+      totalLimit: typeof b.totalLimit === 'number' ? b.totalLimit : undefined,
+      note: typeof b.note === 'string' ? b.note : undefined,
+      createdBy: typeof b.createdBy === 'string' ? b.createdBy : 'unknown',
+    });
+    if (!r.ok) return reply.code(409).send({ ok: false, error: r.error });
+    log.info('POST /admin/promo/codes', { code: r.code, coins });
+    return reply.send({ ok: true, code: r.code });
+  });
 }
 
 /**
