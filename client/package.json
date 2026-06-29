@@ -8,7 +8,7 @@
     "start:crazygames": "webpack serve --mode development --port 9090 --env TARGET=crazygames",
     "build:web": "webpack --mode production --env TARGET=web",
     "build:crazygames": "webpack --mode production --env TARGET=crazygames",
-    "build:wechat": "rollup -c",
+    "build:wechat": "webpack --mode production --env TARGET=wechat",
     "build:native": "npm run build:web && npx cap sync",
     "cap:run:android": "npx cap run android",
     "cap:run:ios": "npx cap run ios",

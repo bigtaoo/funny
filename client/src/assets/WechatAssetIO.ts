@@ -1,14 +1,17 @@
 /**
- * WechatAssetIO — WeChat mini-game plan A (ASSET_PACKAGING §4.1).
+ * WechatAssetIO — WeChat mini-game asset IO (ASSET_PACKAGING §4).
  *
- * L1 (and, once the build splits them out, all non-trivial) assets are NOT packed
- * into the 4 MB main package; they live on a CDN. At runtime each asset is fetched
- * once via wx.downloadFile, persisted to USER_DATA_PATH, and served from that local
- * cache thereafter. The webpack-emitted url carries a contenthash basename that is
- * stable across a build, so it doubles as both the CDN path and the cache key.
+ * WeChat has no `fetch`, so every asset byte/texture-source request goes through
+ * wx.downloadFile + a USER_DATA_PATH local cache. Asset URLs are baked at build
+ * time by webpack's asset/resource `publicPath`:
+ *   - plan A (NW_ASSET_CDN set): absolute CDN url, e.g. https://cdn.example/cdn/<hash>.png
+ *     → downloaded once, then served from local cache.
+ *   - no CDN (local IDE full-package build): a package-relative path, e.g. cdn/<hash>.png
+ *     → read straight from the package (no download).
+ * The contenthash basename is unique, so it doubles as the cache key.
  *
- * Installed by entries/wechat.ts only when a CDN base is configured
- * (__NW_ASSET_CDN__); otherwise the default WebAssetIO keeps serving packed assets.
+ * Installed unconditionally by entries/wechat.ts (WeChat always needs this, CDN or
+ * not). On Web the default WebAssetIO (fetch / identity) stays in force.
  */
 import type { AssetIO } from './assetIO';
 
@@ -30,15 +33,18 @@ interface WxFileSystemManager {
   readFileSync(filePath: string): ArrayBuffer;
 }
 
+/** A baked-in absolute CDN url (vs a package-relative path for no-CDN builds). */
+function isRemote(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
 export class WechatAssetIO implements AssetIO {
-  private readonly cdnBase: string;
   private readonly cacheDir: string;
   private readonly fs: WxFileSystemManager;
   /** De-dupe concurrent fetches of the same asset (mirrors PIXI/Stickman url caches). */
   private readonly inflight = new Map<string, Promise<string>>();
 
-  constructor(cdnBase: string) {
-    this.cdnBase = cdnBase.replace(/\/+$/, '');
+  constructor() {
     this.fs = wx.getFileSystemManager();
     this.cacheDir = `${wx.env.USER_DATA_PATH}/nwassets`;
     try { this.fs.accessSync(this.cacheDir); }
@@ -46,17 +52,19 @@ export class WechatAssetIO implements AssetIO {
   }
 
   async loadBinary(url: string): Promise<ArrayBuffer> {
+    if (!isRemote(url)) return this.fs.readFileSync(url); // in-package file
     const local = await this.ensureLocal(url);
     return this.fs.readFileSync(local);
   }
 
   async textureSource(url: string): Promise<string> {
+    if (!isRemote(url)) return url; // in-package path — PIXI loads it directly
     return this.ensureLocal(url);
   }
 
-  /** Resolve `url` to a local cached path, downloading from the CDN on a miss. */
+  /** Resolve a remote `url` to a local cached path, downloading on a miss. */
   private ensureLocal(url: string): Promise<string> {
-    const name = url.split(/[?#]/)[0]!.split('/').pop() || url;
+    const name = url.split(/[?#]/)[0]!.split('/').pop() || encodeURIComponent(url);
     const dest = `${this.cacheDir}/${name}`;
 
     // Cache hit — file already on disk.
@@ -67,7 +75,7 @@ export class WechatAssetIO implements AssetIO {
 
     const p = new Promise<string>((resolve, reject) => {
       wx.downloadFile({
-        url: `${this.cdnBase}/${name}`,
+        url,
         success: (res) => {
           if (res.statusCode !== 200) { reject(new Error(`WechatAssetIO: ${name} HTTP ${res.statusCode}`)); return; }
           try { resolve(this.fs.saveFileSync(res.tempFilePath, dest)); }

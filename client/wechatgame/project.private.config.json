@@ -1,6 +1,12 @@
 {
   "libVersion": "3.15.1",
   "projectname": "wechatgame",
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "cdn" },
+      { "type": "suffix", "value": ".map" }
+    ]
+  },
   "setting": {
     "urlCheck": true,
     "coverView": false,

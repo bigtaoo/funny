@@ -6,6 +6,7 @@ const webpack = require('webpack');
 module.exports = (env, argv) => {
   const isProd = argv.mode === 'production';
   const targetPlatform = env.TARGET || 'web';
+  const isWechat = targetPlatform === 'wechat';
 
   // metaserver REST 基址 / gateway 控制面 WS：构建期注入全局，运行时 net/config.ts 读取。
   // 优先取环境变量（CI/生产用 NW_API_BASE=https://host/api）；dev 缺省指向本地 metaserver
@@ -16,24 +17,31 @@ module.exports = (env, argv) => {
   const apiBase = process.env.NW_API_BASE || (isProd ? '' : 'http://localhost:18080');
   const gatewayWs = process.env.NW_GATEWAY_WS || (isProd ? '' : 'ws://localhost:8086/gw');
   const worldBase = process.env.NW_WORLD_BASE || (isProd ? '' : 'http://localhost:18084');
-  // 微信小游戏方案 A 资源 CDN 基址（ASSET_PACKAGING §4）。配了则 WechatAssetIO 走 CDN 下载+本地缓存；
-  // 留空（默认）则微信回退到打包内资源（identity），Web/CrazyGames 永远忽略此项。
-  const assetCdn = process.env.NW_ASSET_CDN || '';
+  // 微信小游戏方案 A 资源 CDN 基址（ASSET_PACKAGING §4）。微信构建专用：asset/resource 的
+  // publicPath 设成它，import 直接烘焙成 `<CDN>/cdn/<hash>.png` 绝对 URL，资源文件发到 wechatgame/cdn/
+  // （由 project.config packOptions.ignore 排除出主包，单独上传 CDN）。留空则退化为包内相对路径（整包跑，
+  // 仅本地 IDE 自测用）。Web/CrazyGames 忽略此项（同源相对 URL）。
+  const assetCdn = (process.env.NW_ASSET_CDN || '').replace(/\/+$/, '');
 
   return {
     target: 'web',
     mode: isProd ? 'production' : 'development',
     entry: `./src/entries/${targetPlatform}.ts`,
-    devtool: isProd ? false : 'source-map',
+    devtool: isWechat ? 'source-map' : (isProd ? false : 'source-map'),
     module: {
       rules: [
         { test: /\.ts$/, use: 'ts-loader', exclude: /node_modules/ },
         {
           test: /\.(png|jpg|gif|webp|mp3|wav|ogg|tao)$/i,
           type: 'asset/resource',
-          // generator: {
-          //     'assets/[name].[contenthash][ext]'
-          // },
+          // 微信（方案 A）：资源发到 cdn/ 子目录并把 URL 烘焙成 CDN 绝对地址；运行时 WechatAssetIO
+          // downloadFile + 本地缓存（微信无 fetch）。Web/CrazyGames：默认行为（dist 根 + 同源相对 URL）。
+          ...(isWechat ? {
+            generator: {
+              filename: 'cdn/[contenthash][ext]',
+              publicPath: assetCdn ? `${assetCdn}/` : '',
+            },
+          } : {}),
         },
         { test: /\.css$/i, use: ['style-loader', 'css-loader'] },
       ],
@@ -51,15 +59,24 @@ module.exports = (env, argv) => {
         '@nw/shared': path.resolve(__dirname, '../server/shared/src/slg.ts'),
       },
     },
-    output: {
+    output: isWechat ? {
+      // 微信壳层 game.js 里 `require('./pixigame.js')`：单 IIFE 包，自执行。clean:false 保住
+      // 同目录的 game.js/game.json/assets/。globalObject=globalThis 适配微信运行时（无 window/self）。
+      filename: 'pixigame.js',
+      path: path.resolve(__dirname, 'wechatgame'),
+      clean: false,
+      iife: true,
+      globalObject: 'globalThis',
+    } : {
       filename: isProd ? '[contenthash].js' : 'index.js',
       path: path.resolve(__dirname, 'dist'),
       clean: true,
     },
     plugins: [
-      new HtmlWebpackPlugin({ template: `./public/${targetPlatform}/index.html` }),
+      // 微信无 HTML 宿主（game.js require pixigame.js）；HtmlWebpackPlugin / version.json / _headers 仅 Web。
+      ...(isWechat ? [] : [new HtmlWebpackPlugin({ template: `./public/${targetPlatform}/index.html` })]),
       // 构建时写出 version.json（客户端轮询版本用）和 _headers（CF Workers / nginx 缓存策略）。
-      ...(isProd ? [{
+      ...(isProd && !isWechat ? [{
         apply(compiler) {
           const version = process.env.NW_BUILD_VERSION || '0.0.0';
           compiler.hooks.thisCompilation.tap('StaticMetaPlugin', (compilation) => {
@@ -87,7 +104,6 @@ module.exports = (env, argv) => {
         'globalThis.__NW_GATEWAY_WS__': JSON.stringify(gatewayWs),
         'globalThis.__NW_BUILD_VERSION__': JSON.stringify(process.env.NW_BUILD_VERSION || '0.0.0'),
         'globalThis.__NW_WORLD_BASE__': JSON.stringify(worldBase),
-        'globalThis.__NW_ASSET_CDN__': JSON.stringify(assetCdn),
       }),
     ],
     devServer: {
