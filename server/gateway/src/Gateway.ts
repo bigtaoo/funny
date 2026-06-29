@@ -517,7 +517,8 @@ function toServerMsg(msg: PushMsg): ServerMsg {
         tileId: msg.tileId,
         type: msg.type,
         level: msg.level,
-        ownerId: msg.ownerId,
+        ownerPublicId: msg.ownerPublicId,
+        ownerName: msg.ownerName,
         familyId: msg.familyId,
         protectedUntil: msg.protectedUntil,
       };

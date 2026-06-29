@@ -200,12 +200,13 @@ message MarchUpdate {
   string status    = 6;
 }
 message TileUpdate {
-  string tile_id         = 1;
-  string type            = 2;   // TileType
-  uint32 level           = 3;
-  string owner_id        = 4;   // 占领者 publicId（空=中立）
-  string family_id       = 5;
-  uint64 protected_until = 6;   // ms（0=无保护）
+  string tile_id          = 1;
+  string type             = 2;   // TileType
+  uint32 level            = 3;
+  string owner_public_id  = 4;   // 占领者 9 位公开 id（空=中立）
+  string family_id        = 5;
+  uint64 protected_until  = 6;   // ms（0=无保护）
+  string owner_name       = 7;   // 占领者昵称（meta 不可用时为空）
 }
 message UnderAttack {
   string tile               = 1;

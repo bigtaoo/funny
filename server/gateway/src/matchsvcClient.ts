@@ -45,7 +45,8 @@ export type PushMsg =
       tileId: string;
       type: string;
       level: number;
-      ownerId: string;
+      ownerPublicId: string;
+      ownerName: string;
       familyId: string;
       protectedUntil: number;
     }

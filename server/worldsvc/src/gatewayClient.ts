@@ -22,7 +22,8 @@ export type SlgPushMsg =
       tileId: string;
       type: string; // TileType
       level: number;
-      ownerId: string; // 占领者标识（空=中立）；S8-2 暂用 accountId，publicId 解析待后补
+      ownerPublicId: string; // 占领者 9 位公开 id（空=中立）
+      ownerName: string;     // 占领者昵称（meta 不可用时为空）
       familyId: string;
       protectedUntil: number; // ms（0=无保护）
     }

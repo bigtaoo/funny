@@ -1038,17 +1038,20 @@ export class WorldService {
     // 复用已算出的 path，一次反向查询（非逐 tick）。守方（attack）已单独收 under_attack，从观察者集排除。
     const observers = await this.visionObservers(worldId, path, new Set([accountId, ...(defenderId ? [defenderId] : [])]));
     for (const acct of observers) void this.pushMarch(acct, view);
-    // 围攻：出征即向防守方推预警（§5 / §14.5）。attackerName/publicId 暂用 accountId，
-    // publicId 解析（meta /internal/profile）待后补——与 S8-1/2 owner 标识 todo 一致。
+    // 围攻：出征即向防守方推预警（§5 / §14.5）。
     if (kind === 'attack' && defenderId) {
-      void this.gateway.push(defenderId, {
+      const did = defenderId;
+      void (this.meta.available
+        ? this.meta.getProfile(accountId).catch(() => null)
+        : Promise.resolve(null)
+      ).then((p) => this.gateway.push(did, {
         kind: 'under_attack',
         tile: toTid,
-        attackerName: accountId,
-        attackerPublicId: '',
+        attackerName: p?.displayName ?? '',
+        attackerPublicId: p?.publicId ?? '',
         arriveAt,
         troopsHint: troops,
-      });
+      }));
     }
     return view;
   }
@@ -1980,12 +1983,16 @@ export class WorldService {
     });
   }
   private async pushTile(accountId: string, t: TileDoc): Promise<void> {
+    const ownerProfile = (t.ownerId && this.meta.available)
+      ? await this.meta.getProfile(t.ownerId).catch(() => null)
+      : null;
     await this.gateway.push(accountId, {
       kind: 'tile_update',
       tileId: t._id,
       type: t.type,
       level: t.level,
-      ownerId: t.ownerId ?? '',
+      ownerPublicId: ownerProfile?.publicId ?? '',
+      ownerName: ownerProfile?.displayName ?? '',
       familyId: t.familyId ?? '',
       protectedUntil: t.protectedUntil ?? 0,
     });

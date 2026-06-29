@@ -318,8 +318,10 @@ export interface TileUpdate {
   /** TileType */
   type: string;
   level: number;
-  /** 占领者 publicId（空=中立） */
-  ownerId: string;
+  /** 占领者 9 位公开 id（空=中立） */
+  ownerPublicId: string;
+  /** 占领者昵称（meta 不可用时为空） */
+  ownerName: string;
   familyId: string;
   /** ms（0=无保护） */
   protectedUntil: number;
@@ -2929,7 +2931,7 @@ export const MarchUpdate: MessageFns<MarchUpdate> = {
 };
 
 function createBaseTileUpdate(): TileUpdate {
-  return { tileId: "", type: "", level: 0, ownerId: "", familyId: "", protectedUntil: 0 };
+  return { tileId: "", type: "", level: 0, ownerPublicId: "", ownerName: "", familyId: "", protectedUntil: 0 };
 }
 
 export const TileUpdate: MessageFns<TileUpdate> = {
@@ -2943,14 +2945,17 @@ export const TileUpdate: MessageFns<TileUpdate> = {
     if (message.level !== 0) {
       writer.uint32(24).uint32(message.level);
     }
-    if (message.ownerId !== "") {
-      writer.uint32(34).string(message.ownerId);
+    if (message.ownerPublicId !== "") {
+      writer.uint32(34).string(message.ownerPublicId);
     }
     if (message.familyId !== "") {
       writer.uint32(42).string(message.familyId);
     }
     if (message.protectedUntil !== 0) {
       writer.uint32(48).uint64(message.protectedUntil);
+    }
+    if (message.ownerName !== "") {
+      writer.uint32(58).string(message.ownerName);
     }
     return writer;
   },
@@ -2991,7 +2996,7 @@ export const TileUpdate: MessageFns<TileUpdate> = {
             break;
           }
 
-          message.ownerId = reader.string();
+          message.ownerPublicId = reader.string();
           continue;
         }
         case 5: {
@@ -3008,6 +3013,14 @@ export const TileUpdate: MessageFns<TileUpdate> = {
           }
 
           message.protectedUntil = longToNumber(reader.uint64());
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.ownerName = reader.string();
           continue;
         }
       }
@@ -3027,7 +3040,8 @@ export const TileUpdate: MessageFns<TileUpdate> = {
     message.tileId = object.tileId ?? "";
     message.type = object.type ?? "";
     message.level = object.level ?? 0;
-    message.ownerId = object.ownerId ?? "";
+    message.ownerPublicId = object.ownerPublicId ?? "";
+    message.ownerName = object.ownerName ?? "";
     message.familyId = object.familyId ?? "";
     message.protectedUntil = object.protectedUntil ?? 0;
     return message;

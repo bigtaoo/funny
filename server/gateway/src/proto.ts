@@ -95,7 +95,8 @@ export type ServerMsg =
       tileId: string;
       type: string;
       level: number;
-      ownerId: string;
+      ownerPublicId: string;
+      ownerName: string;
       familyId: string;
       protectedUntil: number;
     }
@@ -284,7 +285,8 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
           tile_id: msg.tileId,
           type: msg.type,
           level: msg.level,
-          owner_id: msg.ownerId,
+          owner_public_id: msg.ownerPublicId,
+          owner_name: msg.ownerName,
           family_id: msg.familyId,
           protected_until: msg.protectedUntil,
         },
