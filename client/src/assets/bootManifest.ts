@@ -16,6 +16,7 @@ import { targetScreenHeight } from '../render/unitSize';
 import { loadDecorAtlas } from '../render/decorAtlas';
 import { loadLabelDecor } from '../render/labelDecor';
 import { loadDecorCAtlas } from '../render/decorCAtlas';
+import { loadEquipmentAtlas } from '../render/equipmentAtlas';
 import { assetIO } from './assetIO';
 
 // Starter-trio skeletal bundles + card illustrations — the only units the first
@@ -63,6 +64,7 @@ const STEPS: BootStep[] = [
   { id: 'decor:atlas',      run: () => loadDecorAtlas() },
   { id: 'decor:labels',     run: () => loadLabelDecor() },
   { id: 'decor:c',          run: () => loadDecorCAtlas() },
+  { id: 'equip:atlas',      run: () => loadEquipmentAtlas() },
 ];
 
 /**
