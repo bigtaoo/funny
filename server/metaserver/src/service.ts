@@ -857,6 +857,7 @@ export class MetaService {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'stars must be 1..3'));
     }
 
+    if (await this.rejectIfBanned(cols, accountId, reply)) return;
     const cur = await getOrCreateSave(cols, accountId, now());
     if (cur.antiCheat?.pveBanned) {
       return reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
@@ -957,6 +958,11 @@ export class MetaService {
       frames: { frame: number; cmds: { side: number; commands: string }[] }[];
       endFrame: number;
     };
+    // S4-4：被封号的账号无法提交验证。
+    const save = await cols.saves.findOne({ _id: accountId }, { projection: { 'save.antiCheat': 1 } });
+    if (save?.save?.antiCheat?.pveBanned) {
+      return reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
+    }
     const doc = await cols.pveVerifications.findOne({ _id: verifyId });
     if (!doc || doc.accountId !== accountId) {
       return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'verification not found'));

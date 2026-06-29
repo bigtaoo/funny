@@ -509,6 +509,34 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     return reply.send({ ok: true, accounts });
   });
 
+  // ── POST /internal/accounts/:id/ban（S4-4）─────────────────────────────────────
+  // 管理员手动封号：设 accounts.flags.banned = true。幂等。
+  app.post('/internal/accounts/:id/ban', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const { id } = req.params as { id: string };
+    const doc = await cols.accounts.findOne({ _id: id }, { projection: { _id: 1 } });
+    if (!doc) return reply.code(404).send({ ok: false, error: 'account not found' });
+    await cols.accounts.updateOne({ _id: id }, { $set: { 'flags.banned': true } });
+    return reply.send({ ok: true });
+  });
+
+  // ── POST /internal/accounts/:id/unban（S4-4）───────────────────────────────────
+  // 管理员解除封号：清除 accounts.flags.banned + antiCheat.pveBanned（清除 save 层封禁）。幂等。
+  app.post('/internal/accounts/:id/unban', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const { id } = req.params as { id: string };
+    const doc = await cols.accounts.findOne({ _id: id }, { projection: { _id: 1 } });
+    if (!doc) return reply.code(404).send({ ok: false, error: 'account not found' });
+    await cols.accounts.updateOne({ _id: id }, { $unset: { 'flags.banned': '' } });
+    // 同步清除 save 层的 pveBanned，防止解封后仍被 pveClear 挡。
+    await cols.saves.updateOne({ _id: id }, { $unset: { 'save.antiCheat.pveBanned': '' } });
+    return reply.send({ ok: true });
+  });
+
   // ── 材料扣除 / 发放（S8-5，worldsvc 拍卖场调用）─────────────────────────────────
   // 不经 openapi glue，X-Internal-Key 鉴权。
   // POST /internal/materials/deduct  { accountId, material, qty, orderId }

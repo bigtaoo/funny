@@ -43,9 +43,9 @@ function makeSave(accountId: string, extra?: Partial<SaveData>): SaveDoc {
 // 内存 fake collections（仅 suspicious-pve 端点需要的字段）。
 function fakeColsWithAccounts(
   accounts: { _id: string; flags?: { pveWarnings?: number; banned?: boolean }; displayName?: string; publicId?: string; createdAt: number }[],
-): { cols: Collections } {
-  const accountMap = new Map(accounts.map((a) => [a._id, a]));
-  const saves = new Map<string, SaveDoc>();
+): { cols: Collections; getAccount: (id: string) => (typeof accounts)[0] | undefined } {
+  const accountMap = new Map(accounts.map((a) => [a._id, { ...a }]));
+  const savesMap = new Map<string, SaveDoc>();
 
   const cols = {
     accounts: {
@@ -55,18 +55,27 @@ function fakeColsWithAccounts(
         limit: vi.fn().mockReturnThis(),
         project: vi.fn().mockReturnThis(),
         toArray: vi.fn(async () =>
-          accounts.filter((a) => (a.flags?.pveWarnings ?? 0) > 0)
+          [...accountMap.values()].filter((a) => (a.flags?.pveWarnings ?? 0) > 0)
             .sort((a, b) => (b.flags?.pveWarnings ?? 0) - (a.flags?.pveWarnings ?? 0))
             .slice(0, 200),
         ),
       })),
       findOneAndUpdate: vi.fn(),
-      updateOne: vi.fn(),
+      updateOne: vi.fn(async (q: Record<string, unknown>, update: Record<string, unknown>) => {
+        const id = q._id as string;
+        const acc = accountMap.get(id);
+        if (!acc) return;
+        const setOp = (update as { $set?: Record<string, unknown>; $unset?: Record<string, unknown> }).$set;
+        const unsetOp = (update as { $set?: Record<string, unknown>; $unset?: Record<string, unknown> }).$unset;
+        if (setOp?.['flags.banned'] === true) acc.flags = { ...acc.flags, banned: true };
+        if (unsetOp?.['flags.banned'] !== undefined) { if (acc.flags) delete acc.flags.banned; }
+      }),
       insertOne: vi.fn(),
     },
     saves: {
-      findOne: async (q: { _id: string }) => saves.get(q._id) ?? null,
+      findOne: async (q: { _id: string }) => savesMap.get(q._id) ?? null,
       findOneAndUpdate: vi.fn(async () => null),
+      updateOne: vi.fn(),
       insertOne: vi.fn(),
     },
     matches: {
@@ -104,7 +113,7 @@ function fakeColsWithAccounts(
     bpProgress: { findOne: vi.fn(async () => null), findOneAndUpdate: vi.fn() },
   } as unknown as Collections;
 
-  return { cols };
+  return { cols, getAccount: (id: string) => accountMap.get(id) };
 }
 
 const KEY = 'internal-key-c4';
@@ -167,6 +176,80 @@ describe('GET /internal/suspicious-pve', () => {
     expect(r.statusCode).toBe(200);
     const body = JSON.parse(r.payload) as { ok: boolean; accounts: unknown[] };
     expect(body.accounts).toHaveLength(0);
+    await app.close();
+  });
+});
+
+// ── POST /internal/accounts/:id/ban / unban（S4-4）──────────────────────────────
+
+describe('POST /internal/accounts/:id/ban', () => {
+  it('requires X-Internal-Key', async () => {
+    const { cols } = fakeColsWithAccounts([{ _id: 'acc-1', createdAt: 1000 }]);
+    const app = await buildInternalApp(cols);
+    const r = await app.inject({ method: 'POST', url: '/internal/accounts/acc-1/ban' });
+    expect(r.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('404 for unknown account', async () => {
+    const { cols } = fakeColsWithAccounts([]);
+    const app = await buildInternalApp(cols);
+    const r = await app.inject({
+      method: 'POST',
+      url: '/internal/accounts/no-such/ban',
+      headers: { 'x-internal-key': KEY },
+    });
+    expect(r.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('sets flags.banned on account', async () => {
+    const { cols, getAccount } = fakeColsWithAccounts([{ _id: 'acc-1', createdAt: 1000 }]);
+    const app = await buildInternalApp(cols);
+    const r = await app.inject({
+      method: 'POST',
+      url: '/internal/accounts/acc-1/ban',
+      headers: { 'x-internal-key': KEY },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(JSON.parse(r.payload).ok).toBe(true);
+    expect(getAccount('acc-1')?.flags?.banned).toBe(true);
+    await app.close();
+  });
+});
+
+describe('POST /internal/accounts/:id/unban', () => {
+  it('requires X-Internal-Key', async () => {
+    const { cols } = fakeColsWithAccounts([{ _id: 'acc-1', flags: { banned: true }, createdAt: 1000 }]);
+    const app = await buildInternalApp(cols);
+    const r = await app.inject({ method: 'POST', url: '/internal/accounts/acc-1/unban' });
+    expect(r.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('clears flags.banned on account', async () => {
+    const { cols, getAccount } = fakeColsWithAccounts([{ _id: 'acc-1', flags: { banned: true, pveWarnings: 3 }, createdAt: 1000 }]);
+    const app = await buildInternalApp(cols);
+    const r = await app.inject({
+      method: 'POST',
+      url: '/internal/accounts/acc-1/unban',
+      headers: { 'x-internal-key': KEY },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(JSON.parse(r.payload).ok).toBe(true);
+    expect(getAccount('acc-1')?.flags?.banned).toBeUndefined();
+    await app.close();
+  });
+
+  it('404 for unknown account', async () => {
+    const { cols } = fakeColsWithAccounts([]);
+    const app = await buildInternalApp(cols);
+    const r = await app.inject({
+      method: 'POST',
+      url: '/internal/accounts/ghost/unban',
+      headers: { 'x-internal-key': KEY },
+    });
+    expect(r.statusCode).toBe(404);
     await app.close();
   });
 });

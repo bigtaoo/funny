@@ -211,6 +211,19 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, accounts: rows });
         }
 
+        // ── 手动封号 / 解封（S4-4）──
+        const banMatch = path.match(/^\/admin\/accounts\/([^/]+)\/(ban|unban)$/);
+        if (method === 'POST' && banMatch) {
+          requireCap(actor, 'anticheat.action');
+          const accountId = decodeURIComponent(banMatch[1] ?? '');
+          const action = (banMatch[2] ?? 'ban') as 'ban' | 'unban';
+          const result = action === 'ban'
+            ? await svc.banAccount(accountId)
+            : await svc.unbanAccount(accountId);
+          await svc.audit(actor.adminId, action === 'ban' ? 'account.ban' : 'account.unban', { target: accountId });
+          return send(res, result.ok ? 200 : 502, { ok: result.ok });
+        }
+
         // ── 成就反作弊审查队列（S9-7）──
         if (method === 'GET' && path === '/admin/anticheat/reviews') {
           requireCap(actor, 'anticheat.view');
