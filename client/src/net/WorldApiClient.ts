@@ -94,7 +94,7 @@ export class WorldApiClient {
    *
    * A thrown fetch (timeout / CORS rejection / connection refused) is treated as
    * INCONCLUSIVE → returns true (no offline badge). Rationale: in dev the /health
-   * route often lacks the CORS headers the real /world|/family|/auction routes
+   * route often lacks the CORS headers the real /world|/auction routes
    * carry, so the probe gets rejected even though the actual feature is fully
    * reachable — that false negative wrongly greyed the 大世界 entry. Better to let
    * the user click through and hit real error handling than to mislabel a working
@@ -104,7 +104,8 @@ export class WorldApiClient {
     const base = getWorldBaseUrl();
     // Empty base = same-origin nginx proxy (Docker/production). worldsvc is guaranteed
     // up by the Docker healthcheck; no external ping needed or possible (nginx only
-    // routes /world* /family* /auction*, not /health). Return true immediately.
+    // routes /world* /auction* (family moved to socialsvc /social/family/*), not
+    // /health). Return true immediately.
     if (!base) return true;
     try {
       const ctrl = new AbortController();

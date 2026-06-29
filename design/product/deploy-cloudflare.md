@@ -51,7 +51,7 @@ cp .env.example .env
 docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 ```
 
-启动后：`https://api.gamestao.com/api/...`（REST）、`wss://api.gamestao.com/gw`（控制面）、`wss://api.gamestao.com/ws`（数据面）、`/world|/family|/auction`（SLG）。
+启动后：`https://api.gamestao.com/api/...`（REST）、`wss://api.gamestao.com/gw`（控制面）、`wss://api.gamestao.com/ws`（数据面）、`/world|/auction`（SLG）、`/social`（社交第五公网面，含家族 /social/family/*）。
 `admin`/`analyticsvc` 不经 Caddy 暴露（玩家不可达，仅集群内/VPN 访问）。
 
 ## 4. MongoDB Atlas M0（免费）配置

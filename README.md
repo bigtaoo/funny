@@ -86,7 +86,7 @@ npm run start   # 开发服务器，端口 9091
 
 | 地址 | 说明 |
 |---|---|
-| http://localhost:8088 | **主游戏**——nginx 同源托管 SPA，并反代 `/api`(REST) `/gw`(控制面 WS) `/ws`(对战数据面 WS) `/world` `/family` `/auction`(SLG 大世界) `/social`(社交第五公网面) `/analytics`(埋点) |
+| http://localhost:8088 | **主游戏**——nginx 同源托管 SPA，并反代 `/api`(REST) `/gw`(控制面 WS) `/ws`(对战数据面 WS) `/world` `/auction`(SLG 大世界) `/social`(社交第五公网面，含家族) `/analytics`(埋点) |
 | http://localhost:9091 | **动画编辑器** animator |
 | http://localhost:9092 | **关卡编辑器** level-editor |
 | http://localhost:9093 | **运维后台** ops（跨源调 admin 后端 http://localhost:18083，种子账号 `admin` / `admin123`） |
