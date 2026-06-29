@@ -8,7 +8,7 @@
 // DTO types are generated from server/contracts/openapi-world.yml via npm run rest:gen
 // → src/net/openapi-world.ts. Do NOT hand-edit these type aliases.
 
-import { getWorldBaseUrl } from './config';
+import { getWorldBaseUrl, getSocialBaseUrl } from './config';
 import type { IStorage } from '../platform/IPlatform';
 import type { components } from './openapi-world';
 
@@ -127,8 +127,9 @@ export class WorldApiClient {
     path: string,
     body?: unknown,
     timeoutMs = 10_000,
+    baseOverride?: string,
   ): Promise<T> {
-    const base = getWorldBaseUrl();
+    const base = baseOverride ?? getWorldBaseUrl();
     const url = base + path;
     const token = this.token();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -311,51 +312,58 @@ export class WorldApiClient {
 
   // ── Family ─────────────────────────────────────────────────────────────────
 
-  async listFamilies(worldId: string): Promise<FamilyView[]> {
-    return this.req('GET', `/family/list?worldId=${encodeURIComponent(worldId)}`);
+  async listFamilies(): Promise<FamilyView[]> {
+    const social = getSocialBaseUrl();
+    try {
+      const fam = await this.req<FamilyView>('GET', '/social/family/mine', undefined, 10_000, social);
+      return fam ? [fam] : [];
+    } catch (e) {
+      if (e instanceof WorldApiError && e.code === 'NOT_FOUND') return [];
+      throw e;
+    }
   }
 
   async getFamily(familyId: string): Promise<FamilyView> {
-    return this.req('GET', `/family/${encodeURIComponent(familyId)}`);
+    return this.req('GET', `/social/family/${encodeURIComponent(familyId)}`, undefined, 10_000, getSocialBaseUrl());
   }
 
-  async createFamily(worldId: string, name: string, tag: string): Promise<FamilyView> {
-    return this.req('POST', '/family/create', { worldId, name, tag });
+  async createFamily(name: string, tag: string): Promise<FamilyView> {
+    return this.req('POST', '/social/family', { name, tag }, 10_000, getSocialBaseUrl());
   }
 
-  async joinFamily(worldId: string, familyId: string): Promise<{ ok: true }> {
-    return this.req('POST', '/family/join', { worldId, familyId });
+  async joinFamily(familyId: string): Promise<{ ok: true }> {
+    return this.req('POST', `/social/family/${encodeURIComponent(familyId)}/join`, {}, 10_000, getSocialBaseUrl());
   }
 
-  async leaveFamily(worldId: string): Promise<{ ok: true }> {
-    return this.req('POST', '/family/leave', { worldId });
+  async leaveFamily(): Promise<{ ok: true }> {
+    return this.req('POST', '/social/family/leave', {}, 10_000, getSocialBaseUrl());
   }
 
-  async kickMember(worldId: string, targetId: string): Promise<{ ok: true }> {
-    return this.req('POST', '/family/kick', { worldId, targetId });
+  async kickMember(targetId: string): Promise<{ ok: true }> {
+    return this.req('POST', '/social/family/kick', { targetId }, 10_000, getSocialBaseUrl());
   }
 
-  async setRole(worldId: string, targetId: string, role: FamilyRole): Promise<{ ok: true }> {
-    return this.req('POST', '/family/role', { worldId, targetId, role });
+  async setRole(targetId: string, role: FamilyRole): Promise<{ ok: true }> {
+    return this.req('POST', '/social/family/role', { targetId, role }, 10_000, getSocialBaseUrl());
   }
 
-  async dissolveFamily(worldId: string): Promise<{ ok: true }> {
-    return this.req('POST', '/family/dissolve', { worldId });
+  async dissolveFamily(): Promise<{ ok: true }> {
+    return this.req('POST', '/social/family/disband', {}, 10_000, getSocialBaseUrl());
   }
 
-  async sendFamilyMessage(worldId: string, body: string, senderName?: string): Promise<{ id: string }> {
-    return this.req('POST', '/family/message', { worldId, body, ...(senderName ? { senderName } : {}) });
+  async sendFamilyMessage(familyId: string, body: string, senderName?: string): Promise<{ id: string }> {
+    return this.req('POST', `/social/family/${encodeURIComponent(familyId)}/messages`, { body, ...(senderName ? { senderName } : {}) }, 10_000, getSocialBaseUrl());
   }
 
   async getFamilyChannel(
-    worldId: string,
     familyId: string,
     opts?: { before?: number; limit?: number },
   ): Promise<FamilyMessageView[]> {
-    const params = new URLSearchParams({ worldId, familyId });
+    const params = new URLSearchParams();
     if (opts?.before) params.set('before', String(opts.before));
     if (opts?.limit) params.set('limit', String(opts.limit));
-    return this.req('GET', `/family/channel?${params}`);
+    const qs = params.toString() ? `?${params}` : '';
+    return this.req('GET', `/social/family/${encodeURIComponent(familyId)}/messages${qs}`, undefined, 10_000, getSocialBaseUrl());
   }
 
   // ── Auction ────────────────────────────────────────────────────────────────

@@ -17,6 +17,8 @@ const GW_INTERNAL = process.env.NW_GATEWAY_INTERNAL_URL || 'http://127.0.0.1:809
 const MM_INTERNAL = process.env.NW_MATCHSVC_INTERNAL_URL || 'http://127.0.0.1:8091';
 // commercial 内部基址（meta → commercial；玩家不可达，不暴露公网，S5）。
 const COMM_INTERNAL = process.env.NW_COMMERCIAL_INTERNAL_URL || 'http://127.0.0.1:8092';
+// socialsvc 内部基址（gateway/worldsvc → socialsvc 扇出/委托，S6）。
+const SOCIAL_INTERNAL = process.env.NW_SOCIALSVC_INTERNAL_URL || 'http://127.0.0.1:8085';
 
 const common = {
   NW_JWT_SECRET: process.env.NW_JWT_SECRET, // 生产必须由环境提供
@@ -79,6 +81,7 @@ module.exports = {
         NW_MATCHSVC_INTERNAL_URL: MM_INTERNAL,
         // 宗门频道实时扇出（S8-4b）：订阅与 worldsvc 同一 Redis。
         NW_GW_REDIS_URL: process.env.NW_GW_REDIS_URL || 'redis://127.0.0.1:6379',
+        NW_SOCIALSVC_INTERNAL_URL: SOCIAL_INTERNAL,
       },
     },
     {
@@ -128,6 +131,7 @@ module.exports = {
         NW_WORLD_MONGO_DB: process.env.NW_WORLD_MONGO_DB || 'notebook_wars_world',
         NW_WORLD_REDIS_URL: process.env.NW_WORLD_REDIS_URL || 'redis://127.0.0.1:6379',
         NW_GATEWAY_INTERNAL_URL: GW_INTERNAL, // 实时事件回推 /gw/push
+        NW_SOCIALSVC_INTERNAL_URL: SOCIAL_INTERNAL,
       },
     },
     {
@@ -152,6 +156,26 @@ module.exports = {
         NW_META_BASE_URL: META_BASE, // player.lookup / 系统邮件端点
         NW_GATEWAY_INTERNAL_URL: GW_INTERNAL, // GET /internal/stats 在线数
         NW_MATCHSVC_INTERNAL_URL: MM_INTERNAL, // GET /internal/stats 匹配池
+      },
+    },
+    {
+      // 社交服务（S6，第八进程，公网 REST 第五面 /social/*）。好友/私聊/邮件/家族；连专属库 nw_social。
+      name: 'nw-social',
+      cwd: __dirname,
+      script: 'socialsvc/dist/index.js',
+      exec_mode: 'fork', // 单实例；横扩需 Redis 分片
+      instances: 1,
+      env: {
+        ...common,
+        NW_SOCIAL_PORT: process.env.NW_SOCIAL_PORT || '8085',
+        NW_SOCIAL_HOST: process.env.NW_SOCIAL_HOST || '127.0.0.1',
+        NW_SOCIAL_MONGO_URI:
+          process.env.NW_SOCIAL_MONGO_URI ||
+          process.env.NW_MONGO_URI ||
+          'mongodb://127.0.0.1:27017/?replicaSet=rs0',
+        NW_SOCIAL_MONGO_DB: process.env.NW_SOCIAL_MONGO_DB || 'nw_social',
+        NW_GATEWAY_INTERNAL_URL: GW_INTERNAL,
+        NW_META_INTERNAL_URL: META_BASE,
       },
     },
     {

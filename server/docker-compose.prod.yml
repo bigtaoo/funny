@@ -117,10 +117,12 @@ services:
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
       # 宗门频道实时扇出（S8-4b）：订阅与 worldsvc 同一 Redis；覆盖 NW_GW_REDIS_URL='' 可降级。
       NW_GW_REDIS_URL: ${NW_GW_REDIS_URL:-redis://redis:6379}
+      NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
     depends_on:
       - metaserver
       - matchsvc
       - redis
+      - socialsvc
     restart: unless-stopped
 
   # 私有匹配大脑（S1-M5，独立进程，不暴露公网）。匹配/房间/game 注册表/签 ticket；不连库。
@@ -182,11 +184,14 @@ services:
       NW_WORLD_REDIS_URL: ${NW_WORLD_REDIS_URL:-redis://redis:6379}
       # 实时事件回推客户端（S8-1+ 经 gateway /gw/push）。
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
     depends_on:
       mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
+      socialsvc:
+        condition: service_started
     restart: unless-stopped
 
   # 运维后台后端（S7，OPS_DESIGN）。玩家不可达，caddy 不路由到它（仅内网/VPN/IP allowlist）；
@@ -234,6 +239,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # 社交服务（S6，第五公网面 /social/*）。好友/私聊/邮件/家族；连专属库 nw_social。
+  socialsvc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "socialsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
+      NW_SOCIAL_PORT: "8085"
+      NW_SOCIAL_HOST: 0.0.0.0
+      NW_SOCIAL_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_SOCIAL_MONGO_DB: ${NW_SOCIAL_MONGO_DB:-nw_social}
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      NW_META_INTERNAL_URL: http://metaserver:8080
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
   caddy:
     image: caddy:2
     container_name: nw-caddy
@@ -252,6 +278,7 @@ services:
       - gateway
       - gameserver
       - worldsvc
+      - socialsvc
     restart: unless-stopped
 
 volumes:

@@ -659,8 +659,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           }
           return status;
         },
-        createFamily: async (name, tag) => { const wid = await ensureWorldId(); await worldApi.createFamily(wid, name, tag); },
-        joinFamily:   async (familyId) => { const wid = await ensureWorldId(); await worldApi.joinFamily(wid, familyId); },
+        createFamily: async (name, tag) => { await worldApi.createFamily(name, tag); },
+        joinFamily:   async (familyId) => { await worldApi.joinFamily(familyId); },
         createSect:   async (name, tag) => { const wid = await ensureWorldId(); await worldApi.createSect(wid, name, tag); },
         joinSect:     async (sectId) => { const wid = await ensureWorldId(); await worldApi.joinSect(wid, sectId); },
         openFamilyHub: () => { if (slgWorldId) goFamilyHub(worldApi, slgWorldId); },

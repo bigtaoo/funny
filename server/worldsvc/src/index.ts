@@ -4,7 +4,6 @@ import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat } from '@nw/shared';
 import { createWorldMongo } from './db';
 import { connectRedis } from './redis';
 import { WorldService } from './service';
-import { FamilyService } from './familyService';
 import { SectService } from './sectService';
 import { NationChannelService } from './nationChannelService';
 import { AuctionService } from './auctionService';
@@ -59,12 +58,6 @@ async function main(): Promise<void> {
     now: () => Date.now(),
   });
 
-  const familySvc = new FamilyService({
-    cols: mongo.collections,
-    gateway,
-    now: () => Date.now(),
-  });
-
   const sectSvc = new SectService({
     cols: mongo.collections,
     commercial,
@@ -93,7 +86,6 @@ async function main(): Promise<void> {
   const server = startHttpApi(
     { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },
     svc,
-    familySvc,
     sectSvc,
     nationChannelSvc,
     auctionSvc,

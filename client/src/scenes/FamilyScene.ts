@@ -134,7 +134,7 @@ export class FamilyScene implements Scene {
 
   private async loadChannel(): Promise<void> {
     if (!this.family) return;
-    const ch = await this.cb.worldApi.getFamilyChannel(this.cb.worldId, this.family.familyId);
+    const ch = await this.cb.worldApi.getFamilyChannel(this.family.familyId);
     this.messages = ch;
   }
 
@@ -419,7 +419,7 @@ export class FamilyScene implements Scene {
         inp.remove();
         if (body && this.family) {
           try {
-            await this.cb.worldApi.sendFamilyMessage(this.cb.worldId, body);
+            await this.cb.worldApi.sendFamilyMessage(this.family.familyId, body);
             await this.loadChannel();
             if (!this.destroyed) this.render();
           } catch (err) {
@@ -438,7 +438,7 @@ export class FamilyScene implements Scene {
       this.showToast(t('family.err.badTag'), C.red); return;
     }
     try {
-      this.family = await this.cb.worldApi.createFamily(this.cb.worldId, this.createName.trim(), this.createTag.trim());
+      this.family = await this.cb.worldApi.createFamily(this.createName.trim(), this.createTag.trim());
       this.members = this.family.members ?? [];
       this.messages = [];
       this.mode = 'myFamily';
@@ -450,7 +450,7 @@ export class FamilyScene implements Scene {
 
   private async openJoinList(): Promise<void> {
     try {
-      const list = await this.cb.worldApi.listFamilies(this.cb.worldId);
+      const list = await this.cb.worldApi.listFamilies();
       this.showPickModal(list);
     } catch (e) {
       this.showToast(this.errorMsg(e), C.red);
@@ -502,7 +502,7 @@ export class FamilyScene implements Scene {
   private async doJoin(familyId: string): Promise<void> {
     this.closeModal();
     try {
-      await this.cb.worldApi.joinFamily(this.cb.worldId, familyId);
+      await this.cb.worldApi.joinFamily(familyId);
       await this.loadMyFamily(familyId);
       this.render();
     } catch (e) {
@@ -518,7 +518,7 @@ export class FamilyScene implements Scene {
     this.closeModal();
     if (!this.family) return;
     try {
-      await this.cb.worldApi.leaveFamily(this.cb.worldId);
+      await this.cb.worldApi.leaveFamily();
       this.family = null; this.members = []; this.messages = [];
       this.mode = 'noFamily';
       this.render();
@@ -535,7 +535,7 @@ export class FamilyScene implements Scene {
     this.closeModal();
     if (!this.family) return;
     try {
-      await this.cb.worldApi.dissolveFamily(this.cb.worldId);
+      await this.cb.worldApi.dissolveFamily();
       this.family = null; this.members = []; this.messages = [];
       this.mode = 'noFamily';
       this.render();
@@ -552,7 +552,7 @@ export class FamilyScene implements Scene {
     this.closeModal();
     if (!this.family) return;
     try {
-      await this.cb.worldApi.kickMember(this.cb.worldId, targetId);
+      await this.cb.worldApi.kickMember(targetId);
       this.members = this.members.filter(m => m.accountId !== targetId);
       this.render();
     } catch (e) {
@@ -563,7 +563,7 @@ export class FamilyScene implements Scene {
   private async doSetRole(targetId: string, role: 'elder' | 'member'): Promise<void> {
     if (!this.family) return;
     try {
-      await this.cb.worldApi.setRole(this.cb.worldId, targetId, role);
+      await this.cb.worldApi.setRole(targetId, role);
       const m = this.members.find(mem => mem.accountId === targetId);
       if (m) m.role = role;
       this.render();

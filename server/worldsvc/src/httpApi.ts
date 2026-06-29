@@ -16,7 +16,6 @@ import {
 } from '@nw/shared';
 import type { WorldService } from './service';
 import type { TeamTemplate } from './db';
-import type { FamilyService } from './familyService';
 import type { SectService } from './sectService';
 import type { NationChannelService } from './nationChannelService';
 import type { AuctionService } from './auctionService';
@@ -66,7 +65,6 @@ const numQ = (v: string | null, d: number): number => {
 export function startHttpApi(
   opts: { host: string; port: number; jwtSecret: string; internalKey: string },
   svc: WorldService,
-  familySvc: FamilyService,
   sectSvc: SectService,
   nationChannelSvc: NationChannelService,
   auctionSvc: AuctionService,
@@ -380,95 +378,6 @@ export function startHttpApi(
           }
         }
 
-
-        // ── 家族（P1 过渡期：转发到 socialsvc /social/family/*；SOCIAL_SVC_DESIGN §6 P1 step4）──
-        // socialsvc 未配置时降级返回 NOT_IMPLEMENTED，客户端应改用 /social/* 直连。
-        if (path.startsWith('/family/') || /^\/family\/[^/]+$/.test(path)) {
-          const authHdr = req.headers['authorization'] ?? '';
-          // GET /family/:id → GET /social/family/:id
-          {
-            const m = /^\/family\/([^/]+)$/.exec(path);
-            if (method === 'GET' && m) {
-              const r = await socialsvc.proxy('GET', `/social/family/${m[1]}`, null, authHdr);
-              return send(res, r.status, r.data);
-            }
-          }
-          // GET /family/list （家族已全局化，不再按 worldId 列；返回我所在家族）
-          if (method === 'GET' && path === '/family/list') {
-            const r = await socialsvc.proxy('GET', '/social/family/mine', null, authHdr);
-            const mine = (r.data as { data?: unknown })?.data;
-            return send(res, r.status, ok(mine ? [mine] : []));
-          }
-          // POST /family/create {worldId, name, tag} → POST /social/family {name, tag}
-          if (method === 'POST' && path === '/family/create') {
-            const body = await readJson(req);
-            const name = typeof body.name === 'string' ? body.name : null;
-            const tag = typeof body.tag === 'string' ? body.tag : null;
-            if (!name || !tag) return sendErr(res, ErrorCode.BAD_REQUEST, 'name + tag required');
-            const r = await socialsvc.proxy('POST', '/social/family', { name, tag }, authHdr);
-            return send(res, r.status, r.data);
-          }
-          // POST /family/join {worldId, familyId} → POST /social/family/:familyId/join
-          if (method === 'POST' && path === '/family/join') {
-            const body = await readJson(req);
-            const familyId = typeof body.familyId === 'string' ? body.familyId : null;
-            if (!familyId) return sendErr(res, ErrorCode.BAD_REQUEST, 'familyId required');
-            const r = await socialsvc.proxy('POST', `/social/family/${familyId}/join`, {}, authHdr);
-            return send(res, r.status, r.data);
-          }
-          // POST /family/leave → POST /social/family/leave
-          if (method === 'POST' && path === '/family/leave') {
-            const r = await socialsvc.proxy('POST', '/social/family/leave', {}, authHdr);
-            return send(res, r.status, r.data);
-          }
-          // POST /family/kick {worldId, targetId} → POST /social/family/kick {targetId}
-          if (method === 'POST' && path === '/family/kick') {
-            const body = await readJson(req);
-            const targetId = typeof body.targetId === 'string' ? body.targetId : null;
-            if (!targetId) return sendErr(res, ErrorCode.BAD_REQUEST, 'targetId required');
-            const r = await socialsvc.proxy('POST', '/social/family/kick', { targetId }, authHdr);
-            return send(res, r.status, r.data);
-          }
-          // POST /family/role → POST /social/family/role
-          if (method === 'POST' && path === '/family/role') {
-            const body = await readJson(req);
-            const targetId = typeof body.targetId === 'string' ? body.targetId : null;
-            const role = typeof body.role === 'string' ? body.role : null;
-            if (!targetId || !role) return sendErr(res, ErrorCode.BAD_REQUEST, 'targetId + role required');
-            const r = await socialsvc.proxy('POST', '/social/family/role', { targetId, role }, authHdr);
-            return send(res, r.status, r.data);
-          }
-          // POST /family/dissolve → POST /social/family/disband
-          if (method === 'POST' && path === '/family/dissolve') {
-            const r = await socialsvc.proxy('POST', '/social/family/disband', {}, authHdr);
-            return send(res, r.status, r.data);
-          }
-          // POST /family/message {body, senderName} → 先取 familyId，再发消息
-          if (method === 'POST' && path === '/family/message') {
-            const body = await readJson(req);
-            const msgBody = typeof body.body === 'string' ? body.body : null;
-            const senderName = typeof body.senderName === 'string' ? body.senderName : accountId;
-            if (!msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'body required');
-            const familyId = await socialsvc.getFamilyId(accountId);
-            if (!familyId) return sendErr(res, ErrorCode.BAD_REQUEST, '未加入家族');
-            const r = await socialsvc.proxy('POST', `/social/family/${familyId}/messages`, { body: msgBody, senderName }, authHdr);
-            return send(res, r.status, r.data);
-          }
-          // GET /family/channel → 先取 familyId，再拉历史
-          if (method === 'GET' && path === '/family/channel') {
-            const familyId = await socialsvc.getFamilyId(accountId);
-            if (!familyId) return send(res, 200, ok([]));
-            const before = q.get('before') ?? '';
-            const limit = q.get('limit') ?? '';
-            const qs = new URLSearchParams();
-            if (before) qs.set('before', before);
-            if (limit) qs.set('limit', limit);
-            const qStr = qs.toString() ? `?${qs.toString()}` : '';
-            const r = await socialsvc.proxy('GET', `/social/family/${familyId}/messages${qStr}`, null, authHdr);
-            return send(res, r.status, r.data);
-          }
-          return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
-        }
 
         // ── 宗门（S8-4b，做实）────────────────────────────────────────
         if (method === 'GET' && path === '/sect/list') {
