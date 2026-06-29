@@ -270,15 +270,16 @@
 
 ---
 
-### ✅ C4  PvE 反作弊处置（S4-4 待办）
+### ✅ C4  PvE 反作弊处置（S4-4 2026-06-29 完整收尾）
 
 **范围**：
 - `pveVerifications` 已有 `status: 'suspicious'`，补后续处置：
   - 首次可疑：发警告邮件（走 OPS 邮件）+ `accounts.flags.pveWarnings++`。
   - 累计 3 次：`accounts.flags.banned=true` + 封号逻辑（auth 返 `ACCOUNT_BANNED`）。
 - admin 后台 `GET /admin/suspicious-pve`：人工审核界面。
+- **S4-4 补全**（2026-06-29）：`pveClear` 增加 `accounts.flags.banned` 检查；`pveVerify` 增加 `pveBanned` 检查；`POST /internal/accounts/:id/ban` + `unban`（管理员手动操作）；admin `POST /admin/accounts/:id/ban` + `unban`（`anticheat.action` 权限）+ 审计留痕；`shared/admin` 新增 `anticheat.action` 权限（super/ops）。
 
-**验收**：三次触发封号单测；封号账号 auth 返 403；可疑记录 admin 可见。
+**验收**：三次触发封号单测 ✅；封号账号 auth 返 403 ✅；可疑记录 admin 可见 ✅；ban/unban 端点单测 +6 ✅；三振 e2e 用例 ✅。
 
 ---
 
