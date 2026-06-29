@@ -1,26 +1,26 @@
-// transport 线协议往返单测（M12）。
+﻿// Transport wire-protocol round-trip unit tests (M12).
 //
-// 服务器侧 decodeClient/encodeServer 是**手写**的 protobufjs snake_case 字段映射，
-// 与客户端 ts-proto codegen 是两份独立代码。最阴的失败模式：字段名拼错（如把
-// `state_hash` 写成 `stateHash` 喂给 protobufjs）→ 静默丢字段、不报错、运行期才炸。
-// 这里用独立加载的同一份 transport.proto 与 server 的编解码对拍，专抓字段丢失。
+// The server-side decodeClient/encodeServer is **hand-written** protobufjs snake_case field mapping,
+// independent from the client ts-proto codegen. The nastiest failure mode: a misspelled field name (e.g.
+// writing `stateHash` instead of `state_hash` when feeding protobufjs) → silently drops the field, no error, only blows up at runtime.
+// This suite cross-checks against the same transport.proto loaded independently to catch field-loss bugs.
 import { describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as protobuf from 'protobufjs';
 import { decodeClient, encodeServer, type ServerMsg } from '../src/proto/transport';
 
-// 独立加载契约（与被测模块同一份单一来源）。
+// Load the contract independently (same single source as the module under test).
 const PROTO = path.resolve(__dirname, '../../contracts/transport.proto');
 const root = protobuf.parse(fs.readFileSync(PROTO, 'utf8'), { keepCase: true }).root;
 const Envelope = root.lookupType('nw.transport.Envelope');
 
-/** 用 protobufjs 把 client oneof body 编码成线字节（喂给被测 decodeClient）。 */
+/** Encode a client oneof body into wire bytes using protobufjs (fed into the decodeClient under test). */
 function encodeClient(body: Record<string, unknown>): Uint8Array {
   const env = Envelope.fromObject({ client: body });
   return Envelope.encode(env).finish();
 }
-/** 把 encodeServer 产出的字节解回普通对象（longs→Number, bytes→数组），断言字段。 */
+/** Decode bytes produced by encodeServer back to a plain object (longs→Number, bytes→Array) for field assertions. */
 function decodeServerWire(bytes: Uint8Array): Record<string, any> {
   const msg = Envelope.decode(bytes);
   const obj = Envelope.toObject(msg, {
@@ -83,7 +83,7 @@ describe('transport decodeClient（client 线字节 → ClientMsg）', () => {
   });
 
   it('坏帧 / 非 client 方向 → unknown（不抛）', () => {
-    expect(decodeClient(encodeServer({ case: 'pong' })).case).toBe('unknown'); // server 方向
+    expect(decodeClient(encodeServer({ case: 'pong' })).case).toBe('unknown'); // server direction
   });
 });
 
@@ -107,7 +107,7 @@ describe('transport encodeServer（ServerMsg → 线字节）', () => {
   });
 
   it('match_start: seed(uint64) + room_id + local_side 全保留', () => {
-    const seed = 2 ** 40 + 123; // 大于 32 位，验证 uint64 不被截断
+    const seed = 2 ** 40 + 123; // larger than 32 bits — verifies uint64 is not truncated
     const wire = decodeServerWire(
       encodeServer({
         case: 'match_start',
@@ -199,7 +199,7 @@ describe('transport encodeServer（ServerMsg → 线字节）', () => {
   });
 });
 
-// 全 ServerMsg case 覆盖守卫：新增 case 但漏写 encodeServer 分支会在此暴露。
+// Coverage guard for all ServerMsg cases: adding a new case but forgetting the encodeServer branch will be caught here.
 describe('encodeServer 覆盖所有 ServerMsg case', () => {
   const samples: ServerMsg[] = [
     { case: 'room_state', code: 'C', players: [], phase: 0 },

@@ -1,7 +1,7 @@
-// worldsvc 业务层（S8-0 骨架 + S8-1 占领）。
-// S8-0：地图读取（程序化默认 + 稀疏 DB 覆盖合并）+ 玩家状态（资源惰性结算）。
-// S8-1：进入世界（建主城 + 保护罩）、占领格子（写 TileDoc + 更新 yieldRate + 驻军扣兵）、
-//        放弃格子（退还驻军 + 重算产率）。行军（旅行耗时）/ 围攻为 S8-2/S8-3，此处直占即生效。
+// worldsvc business layer (S8-0 skeleton + S8-1 occupation).
+// S8-0: map loading (procedural defaults + sparse DB override merge) + player state (lazy resource settlement).
+// S8-1: enter world (build capital + protection shield), occupy tile (write TileDoc + update yieldRate + deduct garrison),
+//        abandon tile (refund garrison + recompute yield). March (travel time) / siege are S8-2/S8-3; direct occupation takes effect immediately here.
 import {
   proceduralTile,
   tileId,
@@ -85,12 +85,12 @@ import { nullWorldCommercialClient, type WorldCommercialClient } from './commerc
 import { nullWorldMailClient, type WorldMailClient } from './mailClient';
 import { nullWorldSocialsvcClient, type WorldSocialsvcClient } from './socialsvcClient';
 
-/** 自动落城靠近家族时，围绕成员主城逐环搜空格的最大切比雪夫半径（§3.4）。 */
+/** Maximum Chebyshev radius for ring-by-ring empty-tile search around family members' capitals when auto-spawning near the family (§3.4). */
 const SPAWN_NEAR_FAMILY_RADIUS = 6;
-/** 自动落城外环新手区门槛：只在 dr（到中心归一化距离）> 此值的外圈随机落城，远离中心争夺区（§3.4）。 */
+/** Auto-spawn outer newbie zone threshold: only spawn randomly in the outer ring where dr (normalized distance to center) > this value, staying away from the central contest zone (§3.4). */
 const SPAWN_OUTER_MIN_DR = 0.6;
 
-/** 一场关键围攻的可重播输入（G3-2c）：seed + 双方布阵 + 格等级，持久化到 SiegeDoc 供客户端重播观战。 */
+/** Replayable inputs for a decisive siege (G3-2c): seed + both sides' formations + tile level, persisted to SiegeDoc for client-side replay spectating. */
 export interface SiegeReplayInputs {
   seed: number;
   attackerArmy: GarrisonEntry[];
@@ -98,42 +98,45 @@ export interface SiegeReplayInputs {
   tileLevel: number;
 }
 
-/** 视区单格视图（REST 响应）。`mine` 标识是否归请求者；`ownerPublicId`/`ownerName` 为他人领地昵称（需 meta 可用）。 */
+/** Single-tile view in the viewport (REST response). `mine` indicates whether the tile belongs to the requester; `ownerPublicId`/`ownerName` are the nickname of another player's territory (requires meta to be available). */
 export interface WorldTileView {
   x: number;
   y: number;
   type: TileType;
   level: number;
   resType?: ResourceType;
-  /** 是否已被任意玩家占领（中立/未占领=false 或缺省）。 */
+  /** Whether occupied by any player (neutral/unoccupied = false or omitted). */
   occupied?: boolean;
-  /** 是否归请求者所有。 */
+  /** Whether owned by the requester. */
   mine?: boolean;
-  /** 他人领地：占领者 9 位公开 id（meta 可用时填充）。 */
+  /** Another player's territory: occupier's 9-digit public id (populated when meta is available). */
   ownerPublicId?: string;
-  /** 他人领地：占领者昵称（meta 可用时填充）。 */
+  /** Another player's territory: occupier's display name (populated when meta is available). */
   ownerName?: string;
   familyId?: string;
   garrison?: number;
   protectedUntil?: number;
-  /** §18 G5 V2：该格建有瞭望塔（己方可见格才透出）——大半径持久视野源，客户端渲染塔标记。 */
+  /** §18 G5 V2: this tile has a watchtower (only exposed for tiles visible to the player) — large-radius persistent vision source; client renders the tower marker. */
   watchtower?: boolean;
   /**
-   * G5：该格归同家族盟友所有（非己方、视野内）。客户端据此用「友方色」渲染——家族共享视野后
-   * 盟友领地不应再显示为敌色（占领不写 tile.familyId，故由服务端按家族成员集判定后置此标记）。
+   * G5: this tile is owned by an ally in the same family (not the requester, within vision). The client
+   * renders it in "friendly color" — after family vision sharing, ally territory should no longer appear
+   * as enemy color (occupation does not write tile.familyId, so the server determines this flag based on
+   * the family member set and attaches it here).
    */
   ally?: boolean;
   /**
-   * G5：该格归本宗门「联盟宗门」成员所有（视野内、非己方、非家族）。联盟不共享视野，
-   * 仅地图黄描边标记区分（§8.2）。家族盟友走 `ally`；本字段专指跨宗门联盟。
+   * G5: this tile is owned by a member of an "allied sect" of the player's own sect (within vision, not the
+   * requester, not a family member). Alliances do not share vision; they are only distinguished by a yellow
+   * border marker on the map (§8.2). Family allies use `ally`; this field is specifically for cross-sect alliances.
    */
   allySect?: boolean;
   /**
-   * G5 视野：该格是否在请求者当前视野内。
-   * - true：动态层（归属/驻军/防守/保护罩）如实返回；
-   * - false：视野外，仅返回程序化底层地形（type/level/resType），动态层全部隐去
-   *   （连「已被占领」都不泄露——type 退回底层而非 'territory'）。
-   * 仅 getMap 视区读填充；getTile/occupy 等单格响应不带此字段。
+   * G5 vision: whether this tile is within the requester's current vision.
+   * - true: the dynamic layer (ownership/garrison/defense/protection shield) is returned as-is;
+   * - false: outside vision — only the procedural base terrain (type/level/resType) is returned;
+   *   all dynamic layers are hidden (not even "occupied" is leaked — type falls back to base terrain rather than 'territory').
+   * Populated only by getMap viewport reads; single-tile responses like getTile/occupy do not include this field.
    */
   visible?: boolean;
 }
@@ -147,18 +150,18 @@ export interface WorldMapView {
 }
 
 /**
- * 稀疏占领格视图（zoom 2/3 鸟瞰层）。
- * 只含被占领（ownerId 存在）的格子；未占领格由客户端从 proceduralTile 本地渲染。
- * 无 profile RPC / 无视野计算 → 比 WorldTileView 快一个数量级。
+ * Sparse occupied-tile view (zoom 2/3 bird's-eye layer).
+ * Contains only occupied tiles (ownerId present); unoccupied tiles are rendered locally by the client from proceduralTile.
+ * No profile RPC / no vision computation → an order of magnitude faster than WorldTileView.
  */
 export interface WorldTileSparseView {
   x: number;
   y: number;
   type: TileType;
   mine?: boolean;
-  /** lod=mid 时填充（同家族盟友）。 */
+  /** Populated when lod=mid (same-family ally). */
   ally?: boolean;
-  /** lod=mid 时填充（联盟宗门成员，非家族）。 */
+  /** Populated when lod=mid (allied sect member, not family). */
   allySect?: boolean;
 }
 
@@ -168,13 +171,13 @@ export interface WorldMapSparseView {
   cy: number;
   r: number;
   lod: 'thin' | 'mid';
-  /** 仅占领格，稀疏数组。未在此列的格子客户端按 proceduralTile 渲染。 */
+  /** Occupied tiles only, sparse array. Tiles not listed here are rendered by the client via proceduralTile. */
   tiles: WorldTileSparseView[];
 }
 
 export interface PlayerWorldView {
   joined: boolean;
-  /** 所在 shard worldId（G6/§20 R3：join-season 解析结果回传，客户端进图依据）。 */
+  /** shard worldId the player is in (G6/§20 R3: join-season resolution result returned to client as basis for entering the map). */
   worldId?: string;
   troops?: number;
   troopCap?: number;
@@ -183,11 +186,11 @@ export interface PlayerWorldView {
   mainBaseTile?: string;
   territoryCount?: number;
   familyId?: string;
-  /** 训练队列（S8-2，按 completeAt 升序）；客户端 C4 据此渲染倒计时。 */
+  /** Training queue (S8-2, sorted by completeAt ascending); client C4 renders countdowns based on this. */
   trainingQueue?: { qty: number; startAt: number; completeAt: number }[];
 }
 
-/** 行军视图（REST 响应 / push 载荷源）。 */
+/** March view (REST response / push payload source). */
 export interface MarchView {
   marchId: string;
   kind: MarchKind;
@@ -197,11 +200,11 @@ export interface MarchView {
   departAt: number;
   arriveAt: number;
   status: MarchDoc['status'];
-  /** G5：是否为请求者自己的行军（getMarches 区分己方/视野内敌方行军；推送载荷不含）。 */
+  /** G5: whether this is the requester's own march (getMarches distinguishes own vs. enemy marches in vision; not included in push payloads). */
   mine?: boolean;
 }
 
-/** 视区半径上限（防一次拉太多格；P9 视区订阅模型规模化前的硬上限）。 */
+/** Maximum viewport radius (prevents fetching too many tiles at once; hard cap before P9 viewport subscription model scales up). */
 const MAP_VIEW_MAX_RADIUS = 40;
 
 export interface WorldServiceDeps {
@@ -210,23 +213,25 @@ export interface WorldServiceDeps {
   mapW: number;
   mapH: number;
   now: () => number;
-  /** 实时事件推送（march_update/tile_update）；缺省 = 无 gateway，push no-op（REST 轮询）。 */
+  /** Real-time event push (march_update/tile_update); default = no gateway, push is no-op (REST polling). */
   gateway?: WorldGatewayClient;
-  /** 解析玩家档案（publicId/displayName）；缺省 = 不填充昵称。 */
+  /** Resolve player profile (publicId/displayName); default = display names are not populated. */
   meta?: WorldMetaClient;
-  /** 金币扣费（训练加速/SLG 商店）；缺省 = 金币操作不可用。 */
+  /** Coin deduction (troop training speedup / SLG shop); default = coin operations unavailable. */
   commercial?: WorldCommercialClient;
-  /** 系统邮件（赛季结算发奖，§17.5）；缺省 = 不发奖（best-effort）。 */
+  /** System mail (season settlement reward dispatch, §17.5); default = no rewards sent (best-effort). */
   mail?: WorldMailClient;
-  /** socialsvc 内部客户端（SS7：joinWorld 时同步 familyId 只读镜像）；缺省 = 不填充 familyId。 */
+  /** socialsvc internal client (SS7: syncs familyId read-only mirror on joinWorld); default = familyId not populated. */
   socialsvc?: WorldSocialsvcClient;
 }
 
 const emptyResources = (): Record<ResourceType, number> => ({ food: 0, iron: 0, wood: 0 });
 
 /**
- * 分批删除（§17.6）：万人级集合一次 deleteMany 会长时间占锁/阻塞事件循环；改为按 _id 批量循环删，
- * 每批 ≤ batch 条，让出事件循环。幂等：重入对已删的是 no-op，最终一致。返回累计删除数。
+ * Batch deletion (§17.6): a single deleteMany on a collection with tens of thousands of records would hold
+ * a lock for a long time and block the event loop. Instead, loop and delete by _id in batches of ≤ batch
+ * documents, yielding the event loop between iterations. Idempotent: re-entry on already-deleted docs is a
+ * no-op; eventually consistent. Returns the total number of deleted documents.
  */
 async function deleteInBatches(
   col: { find: (f: object) => { project: (p: object) => { limit: (n: number) => { toArray: () => Promise<Array<{ _id: string }>> } } }; deleteMany: (f: object) => Promise<{ deletedCount: number }> },
@@ -245,15 +250,15 @@ async function deleteInBatches(
   return total;
 }
 
-/** 出征许可的玩家面 kind（return 仅内部撤军腿，禁止外部直接发起）。 */
+/** Player-facing march kinds that are permitted (return is an internal recall leg only; external initiation is prohibited). */
 const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'attack', 'sweep', 'scout']);
 
-/** 在途行军的视野半径：侦察行军（scout）探得更深（VISION_SCOUT_RADIUS），其余按普通行军（VISION_MARCH_RADIUS）。 */
+/** Vision radius of an in-transit march: scout marches see farther (VISION_SCOUT_RADIUS); all others use normal march radius (VISION_MARCH_RADIUS). */
 function marchVisionRadius(kind: MarchKind): number {
   return kind === 'scout' ? VISION_SCOUT_RADIUS : VISION_MARCH_RADIUS;
 }
 
-/** 静态视野源（领地/主城/瞭望塔）的半径：瞭望塔 > 主城 > 普通领地（§18 G5 V2）。 */
+/** Vision radius of a static vision source (territory/capital/watchtower): watchtower > capital > normal territory (§18 G5 V2). */
 function tileVisionRadius(t: { type: TileType; watchtower?: boolean }): number {
   if (t.watchtower) return VISION_WATCHTOWER_RADIUS;
   return t.type === 'base' ? VISION_BASE_RADIUS : VISION_TERRITORY_RADIUS;
@@ -264,11 +269,11 @@ export class WorldService {
   private readonly meta: WorldMetaClient;
   private readonly commercial: WorldCommercialClient;
   private readonly mail: WorldMailClient;
-  /** 进程内单调序号，保证同毫秒多次出征 marchId 不撞键。 */
+  /** In-process monotonic sequence number — ensures marchIds do not collide when multiple marches depart within the same millisecond. */
   private marchSeq = 0;
-  /** 进程内单调序号，保证同毫秒多次围攻 siegeId 不撞键。 */
+  /** In-process monotonic sequence number — ensures siegeIds do not collide when multiple sieges resolve within the same millisecond. */
   private siegeSeq = 0;
-  /** 缓存当前 mapW/mapH 派生的首府坐标列表（懒初始化）。 */
+  /** Cached capital coordinate list derived from the current mapW/mapH (lazy-initialized). */
   private _capitals: [number, number][] | null = null;
 
   private readonly socialsvc: WorldSocialsvcClient;
@@ -293,10 +298,10 @@ export class WorldService {
   }
 
   /**
-   * A* 行军寻路：预取所有已占领关隘格，组装 passableGateKeys，再调 findMarchPath。
-   * 关隘通行规则（S8-4）：己方占领的关隘 + 同一家族成员占领的关隘均可通行
-   * （盟友宗门通行 S8-4+ 联盟系统 pending，当前仅己方家族内互通）。
-   * 无路 → throw PATH_BLOCKED (HTTP 400)。
+   * A* pathfinding for marches: pre-fetch all occupied gate tiles, assemble passableGateKeys, then call findMarchPath.
+   * Gate passage rules (S8-4): gates occupied by the requester and gates occupied by members of the same family are passable
+   * (allied sect passage is S8-4+ with the alliance system pending; currently only within the same family).
+   * No path found → throw PATH_BLOCKED (HTTP 400).
    */
   private async computeMarchPath(
     worldId: string,
@@ -306,13 +311,13 @@ export class WorldService {
     toY: number,
     requesterId: string,
   ): Promise<PathCell[]> {
-    // 取请求者当前家族（如果有），同族成员占领的关隘也视为可通行。
+    // Retrieve the requester's current family (if any); gates occupied by fellow family members are also passable.
     const memDoc = await this.deps.cols.familyMembers.findOne({
       _id: `${worldId}:${requesterId}`,
     });
     const allyFamilyId = memDoc?.familyId;
 
-    // 关隘稀疏（全图 ~20-40 个）；一次性取出再过滤，避免 A* 内异步。
+    // Gates are sparse (~20–40 across the whole map); fetch all at once and filter, to avoid async calls inside A*.
     const gateTiles = await this.deps.cols.tiles
       .find({ worldId, type: 'gate' })
       .project<{ _id: string; x: number; y: number; ownerId: string | undefined; familyId: string | undefined }>({
@@ -341,7 +346,7 @@ export class WorldService {
     return path;
   }
 
-  /** 视区格子：合并程序化默认（中立世界）与稀疏 DB 覆盖（被占领/改动的格）。§14.2。 */
+  /** Viewport tiles: merges procedural defaults (neutral world) with sparse DB overrides (occupied/modified tiles). §14.2. */
   async getMap(
     worldId: string,
     accountId: string,
@@ -361,15 +366,15 @@ export class WorldService {
       .toArray();
     const byKey = new Map(overrides.map((t) => [`${t.x}:${t.y}`, t]));
 
-    // G5 视野：算请求者当前可见格集（己方/家族领地 + 主城 + 在途行军），逐格门控动态层。
+    // G5 vision: compute the requester's currently visible tile set (own/family territory + capitals + in-transit marches), gate the dynamic layer per tile.
     const sources = await this.computeVisionSources(worldId, accountId, x0, x1, y0, y1);
     const vis = (x: number, y: number): boolean => isInVision(sources, x, y);
-    // 家族成员集（含自己）：可见的家族盟友领地标 ally（客户端用友方色，不显敌色）。
+    // Family member set (including self): visible family ally territory is tagged ally (client renders in friendly color, not enemy color).
     const family = await this.familyMemberIds(worldId, accountId);
-    // 联盟宗门成员集（≤2 联盟宗门）：可见的联盟领地标 allySect（客户端黄描边，§8.2）。
+    // Allied sect member set (≤2 allied sects): visible allied territory is tagged allySect (client renders yellow border, §8.2).
     const allySect = await this.allySectMemberIds(worldId, accountId);
 
-    // 批量解析他人领地昵称：只对「可见的他人领地」拉档（视野外不显归属，无需 profile）。
+    // Batch-resolve display names for other players' territory: only fetch profiles for "visible other players' territory" (outside vision, ownership is not shown, so no profile needed).
     const otherOwnerIds = [...new Set(
       overrides
         .filter((o) => o.ownerId && o.ownerId !== accountId && vis(o.x, o.y))
@@ -389,7 +394,7 @@ export class WorldService {
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         if (!vis(x, y)) {
-          // 视野外：只给程序化底层地形，动态层（含「已被占领」信号）全部隐去。
+          // Outside vision: return only procedural base terrain; all dynamic layers (including the "occupied" signal) are hidden.
           tiles.push({ ...this.proceduralView(worldId, x, y), visible: false });
           continue;
         }
@@ -398,7 +403,7 @@ export class WorldService {
           ? profileMap.get(o.ownerId) : undefined;
         const view = o ? this.tileDocView(o, accountId, ownerProfile) : this.proceduralView(worldId, x, y);
         const ally = !!o?.ownerId && o.ownerId !== accountId && family.has(o.ownerId);
-        // 联盟标记：可见、非己方、非家族、属联盟宗门成员（家族盟友优先，二者互斥）。
+        // Alliance tag: visible, not own tile, not family, belongs to an allied sect member (family ally takes priority; the two are mutually exclusive).
         const allied = !ally && !!o?.ownerId && o.ownerId !== accountId && allySect.has(o.ownerId);
         tiles.push({
           ...view,
@@ -412,9 +417,9 @@ export class WorldService {
   }
 
   /**
-   * 稀疏占领层（zoom 2/3 鸟瞰专用，§LOD）。
-   * 只返回 DB 中有 ownerId 的格子——未占领格客户端用 proceduralTile 本地渲染。
-   * 跳过 profile RPC / vision 计算；lod=mid 时额外算家族+宗门联盟（仍无 profile RPC）。
+   * Sparse occupied layer (zoom 2/3 bird's-eye exclusive, §LOD).
+   * Returns only tiles that have an ownerId in the DB — unoccupied tiles are rendered locally by the client via proceduralTile.
+   * Skips profile RPC / vision computation; at lod=mid, additionally computes family + sect alliance (still no profile RPC).
    */
   async getMapSparse(
     worldId: string,
@@ -431,7 +436,7 @@ export class WorldService {
     const y0 = Math.max(0, Math.floor(cy) - rad);
     const y1 = Math.min(mapH - 1, Math.floor(cy) + rad);
 
-    // 只取有主人的格子（稀疏），用 projection 减少传输量
+    // Fetch only tiles with an owner (sparse), using projection to reduce data transfer
     const owned = await cols.tiles
       .find(
         { worldId, x: { $gte: x0, $lte: x1 }, y: { $gte: y0, $lte: y1 }, ownerId: { $exists: true } },
@@ -461,7 +466,7 @@ export class WorldService {
     return { worldId, cx: Math.floor(cx), cy: Math.floor(cy), r: rad, lod, tiles };
   }
 
-  /** 自己 + 同家族成员的 accountId 集（家族级视野共享 / 友方判定，§8.2；含自己）。 */
+  /** Set of accountIds for the player plus all same-family members (family-level vision sharing / ally determination, §8.2; includes self). */
   private async familyMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
     const ids = new Set<string>([accountId]);
     const myMember = await this.deps.cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
@@ -473,10 +478,10 @@ export class WorldService {
   }
 
   /**
-   * G5：本宗门「联盟宗门」（`sect.allySectIds`，≤2）全体成员的 accountId 集。
-   * 链路：accountId → familyMembers → family.sectId → sect.allySectIds → 各联盟宗门成员家族 → 成员。
-   * 联盟**不共享视野**（§8.2），仅供 getMap 标记联盟领地（黄描边）。无宗门/无联盟 → 空集。
-   * 不含自己/同家族（那些走 `familyMemberIds`）。
+   * G5: set of accountIds of all members of the player's sect's "allied sects" (`sect.allySectIds`, ≤2).
+   * Chain: accountId → familyMembers → family.sectId → sect.allySectIds → member families of each allied sect → members.
+   * Alliances do **not** share vision (§8.2); used only by getMap to tag allied territory (yellow border). No sect / no alliance → empty set.
+   * Does not include self or same-family members (those go through `familyMemberIds`).
    */
   private async allySectMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
     const { cols } = this.deps;
@@ -500,10 +505,10 @@ export class WorldService {
   }
 
   /**
-   * G5：计算请求者在给定视区（含半径外扩边缘）的视野源集合。
-   * 源 = 己方 + 同家族成员的领地（主城 type:'base' 给大半径，其余领地小半径）+ 在途己方/家族行军
-   * （按 departAt/arriveAt 线性插值当前位置）。家族成员经 familyMembers 反查（tile.familyId 在
-   * occupy 路径不写，不可依赖），≤30 人。视野不落库，每次读时实时算（短 TTL 缓存留 G5 后续优化）。
+   * G5: compute the set of vision sources for the requester within the given viewport (including the radius-padded border).
+   * Sources = own + same-family members' territory (capital type:'base' gets large radius, other territory gets small radius) + own/family marches in transit
+   * (current position linearly interpolated from departAt/arriveAt). Family members are looked up via familyMembers (tile.familyId is not written on the occupy path
+   * and cannot be relied upon), ≤30 members. Vision is not persisted; computed fresh on each read (short-TTL cache deferred to G5 follow-up optimization).
    */
   private async computeVisionSources(
     worldId: string,
@@ -514,10 +519,10 @@ export class WorldService {
     y1: number,
   ): Promise<VisionSource[]> {
     const { cols, now } = this.deps;
-    // 视野源主人 = 自己 + 同家族成员（家族级共享，§8.2 拍板）。
+    // Vision source owners = self + same-family members (family-level sharing, decided in §8.2).
     const ids = [...(await this.familyMemberIds(worldId, accountId))];
 
-    // 源领地：在视区基础上按最大视野半径外扩（半径外的领地/瞭望塔也能照亮视区边缘）。
+    // Source territory: pad the viewport by the maximum vision radius (territory/watchtowers outside the viewport can still illuminate its edges).
     const pad = VISION_MAX_RADIUS;
     const sources: VisionSource[] = [];
     const srcTiles = await cols.tiles
@@ -532,7 +537,7 @@ export class WorldService {
       sources.push({ x: t.x, y: t.y, radius: tileVisionRadius(t) });
     }
 
-    // 在途行军（己方 + 家族）：插值当前位置 → 小半径视野（侦察行军价值）。
+    // In-transit marches (own + family): interpolate current position → small-radius vision (the value of scout marches).
     const marches = await cols.marches.find({ worldId, ownerId: { $in: ids }, status: 'marching' }).toArray();
     const t = now();
     for (const m of marches) {
@@ -547,10 +552,12 @@ export class WorldService {
   }
 
   /**
-   * G5-2 反向视野：找出「视野覆盖到给定格集（cells）的玩家」——即拥有领地/主城且其视野半径罩住
-   * 任一 cell 的账号。用于行军发起 / 格易主时把事件推给能看见的观察者（敌方行军进我视野即推，V4）。
-   * 只在低频事件点调用一次（非逐 tick），避 U11 反向扇出爆炸。v1 只取「领地主人」本人（家族成员
-   * 实时扇出留后续——他们经家族共享 getMap 轮询亦可见）。exclude = 已单独推过的当事人（行军主/守方）。
+   * G5-2 reverse vision: find "players whose vision covers any of the given cells" — i.e. accounts that own
+   * territory/capitals whose vision radius reaches any cell. Used to push events to visible observers when a march
+   * starts or a tile changes hands (enemy march entering your vision triggers a push, V4).
+   * Called once per low-frequency event (not per tick) to avoid the U11 reverse fan-out explosion. v1 only fetches
+   * the territory owner themselves (real-time fan-out to family members deferred — they see it via family-shared
+   * getMap polling too). exclude = parties already pushed individually (march owner / defender).
    */
   private async visionObservers(
     worldId: string,
@@ -562,7 +569,7 @@ export class WorldService {
     const xs = cells.map((c) => c.x);
     const ys = cells.map((c) => c.y);
     const pad = VISION_MAX_RADIUS;
-    // 视野源是领地/主城/瞭望塔 → 在 cells 包围盒按最大视野半径外扩内查己方有主格。
+    // Vision sources are territory/capitals/watchtowers → query owned tiles within the cells bounding-box padded by the maximum vision radius.
     const owned = await cols.tiles
       .find({
         worldId,
@@ -584,13 +591,13 @@ export class WorldService {
     return [...seers];
   }
 
-  /** G5-2：把一格变更推给视野覆盖它的观察者（exclude 已单独推过的当事人，如格主/守方）。 */
+  /** G5-2: push a tile change to all observers whose vision covers it (exclude parties already pushed individually, such as the tile owner / defender). */
   private async pushTileToObservers(t: TileDoc, exclude: ReadonlySet<string>): Promise<void> {
     const observers = await this.visionObservers(t.worldId, [{ x: t.x, y: t.y }], exclude);
     for (const acct of observers) void this.pushTile(acct, t);
   }
 
-  /** 单格详情。DB 覆盖优先，否则程序化默认。G5：视野外只给程序化地形（与 getMap 同口径，防 getTile 绕过迷雾）。 */
+  /** Single-tile details. DB override takes priority; otherwise falls back to procedural defaults. G5: outside vision, returns only procedural terrain (same as getMap, prevents getTile from bypassing the fog of war). */
   async getTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     const o = await this.deps.cols.tiles.findOne({ _id: tileId(worldId, x, y) });
     if (!o) return this.proceduralView(worldId, x, y);
@@ -601,7 +608,7 @@ export class WorldService {
     return { ...this.tileDocView(o, accountId, ownerProfile ?? undefined), visible: true };
   }
 
-  /** 玩家在世界的状态：资源惰性结算（读时按 yieldRate × dt 补算并封顶）。§14.3。 */
+  /** Player state in the world: resources are lazily settled (computed on read as yieldRate × dt, capped at RESOURCE_CAP). §14.3. */
   async getMe(worldId: string, accountId: string): Promise<PlayerWorldView> {
     const doc = await this.deps.cols.playerWorld.findOne({
       _id: playerWorldId(worldId, accountId),
@@ -610,7 +617,7 @@ export class WorldService {
     const resources = this.settle(doc, this.deps.now());
     return {
       joined: true,
-      worldId, // G6（§20 R3）：join-season 解析出的 shard worldId 回传客户端进图
+      worldId, // G6 (§20 R3): the shard worldId resolved by join-season is returned to the client for map entry
       troops: doc.troops,
       troopCap: doc.troopCap,
       resources,
@@ -624,25 +631,25 @@ export class WorldService {
     };
   }
 
-  // ── S8-1：进入世界 / 占领 / 放弃 ───────────────────────────
+  // ── S8-1: enter world / occupy / abandon ───────────────────────────
 
   /**
-   * 进入世界：落主城。幂等（已进入直接返回当前状态，不二次落城）。
+   * Enter the world: place the capital. Idempotent (returns current state immediately if already joined, no second placement).
    *
-   * 落点（§3.4，2026-06-24 拍板）：**首次进入由系统自动落城**（优先靠近家族 → 退外环新手区 → 全图兜底），
-   * 玩家不再自选坐标——只有付费迁城（`relocateBase`）/ 被破城被动迁城（`passiveRelocate`）才换位。
-   * 仅保留可选 `(x,y)` 手动落点供内部/测试显式指定（公网入口不传坐标，恒走自动）。
-   * 校验：世界开放 + 未满员（+ 手动路径校验坐标界内 / 非中心/障碍/关隘/险地 / 未被占领）。
-   * 落地：写 base TileDoc（带新手保护罩 PROTECTION_SEC）+ 建 playerWorld（满兵力 + 起步产率）。
+   * Spawn point (§3.4, decided 2026-06-24): **first entry uses system auto-placement** (prefer near family → fall back to outer newbie ring → whole-map fallback).
+   * Players no longer choose coordinates — only paid relocation (`relocateBase`) / passive relocation after base destruction (`passiveRelocate`) can change position.
+   * The optional `(x,y)` manual placement is retained for internal/test use only (public endpoints never pass coordinates; always auto-place).
+   * Validation: world open + not full (+ manual path: coordinates in bounds / not center/obstacle/gate/stronghold / unoccupied).
+   * Effect: write base TileDoc (with newbie protection shield PROTECTION_SEC) + create playerWorld (full troops + initial yield).
    */
   async joinWorld(worldId: string, accountId: string, x?: number, y?: number): Promise<PlayerWorldView> {
     const { cols, now } = this.deps;
     const existing = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (existing) return this.getMe(worldId, accountId); // 幂等
+    if (existing) return this.getMe(worldId, accountId); // idempotent
 
     let spawn: { x: number; y: number; level: number; resType?: ResourceType };
     if (x !== undefined && y !== undefined) {
-      // 手动落点（内部/测试）：保留原校验口径。
+      // Manual placement (internal/test): retain the original validation rules.
       if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', '主城坐标越界');
       const proc = proceduralTile(worldId, x, y);
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可落城');
@@ -652,14 +659,14 @@ export class WorldService {
       if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', '该格已被占领');
       spawn = { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
     } else {
-      // 自动落城：优先靠近家族成员 → 外环新手区 → 全图兜底。
+      // Auto-placement: prefer near family members → outer newbie ring → whole-map fallback.
       const spot = await this.pickSpawnTile(worldId, accountId);
       if (!spot) throw new SlgError('WORLD_FULL', '无可落城空格');
       spawn = spot;
     }
     const tid = tileId(worldId, spawn.x, spawn.y);
 
-    // 容量守卫（仅在 world 文档存在时强制——dev 无 world 文档则不限）。
+    // Capacity guard (enforced only when the world document exists — dev environments without a world document are uncapped).
     const world = await cols.worlds.findOne({ _id: worldId });
     if (world) {
       if (world.status !== 'open' && world.status !== 'active') {
@@ -670,7 +677,7 @@ export class WorldService {
         { $inc: { population: 1 } },
       );
       if (!inc) throw new SlgError('WORLD_FULL', '世界已满员');
-      // 首位玩家 join 把世界从 open 推进到 active（§17.3 状态机；修 `active` 死值）。CAS 幂等。
+      // The first player to join advances the world from open to active (§17.3 state machine; fixes the `active` stuck value). CAS idempotent.
       if (inc.status === 'open') {
         await cols.worlds.updateOne({ _id: worldId, status: 'open' }, { $set: { status: 'active' as const } });
       }
@@ -693,7 +700,7 @@ export class WorldService {
     };
     await cols.tiles.updateOne({ _id: tid }, { $setOnInsert: tileDoc }, { upsert: true });
 
-    // SS7：分配大区时同步一次 familyId 只读镜像（后续家族变更不再回写，客户端读 /social/family/mine）。
+    // SS7: sync the familyId read-only mirror once when assigning to a shard (subsequent family changes are not written back; clients read from /social/family/mine).
     const familyId = await this.socialsvc.getFamilyId(accountId).catch(() => null) ?? undefined;
 
     const pw: PlayerWorldDoc = {
@@ -714,9 +721,9 @@ export class WorldService {
   }
 
   /**
-   * 占领格子（S8-1 直占，无行军旅行；S8-2 改走 march occupy）。
-   * 校验：已进入 + 坐标界内 + 非中心 + 兵力够一队驻军 + 目标未被他人占领。
-   * 落地：先结算资源 → 扣 GARRISON_PER_TILE 兵 → 写 territory TileDoc（保留资源种类）→ 重算 yieldRate。
+   * Occupy a tile (S8-1 direct occupation, no march travel; S8-2 switches to march occupy).
+   * Validation: joined + coordinates in bounds + not center + enough troops for one garrison unit + target unoccupied by others.
+   * Effect: settle resources first → deduct GARRISON_PER_TILE troops → write territory TileDoc (preserve resource type) → recompute yieldRate.
    */
   async occupyTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     const { cols, now } = this.deps;
@@ -730,9 +737,9 @@ export class WorldService {
 
     const tid = tileId(worldId, x, y);
     const occ = await cols.tiles.findOne({ _id: tid });
-    if (occ?.ownerId === accountId) return this.tileDocView(occ, accountId); // 幂等
+    if (occ?.ownerId === accountId) return this.tileDocView(occ, accountId); // idempotent
     if (occ?.ownerId) {
-      // 他人领地：S8-1 无围攻，受保护或一律拒绝（夺地走 S8-3 siege）。
+      // Another player's territory: S8-1 has no siege; if protected or otherwise occupied, always reject (take via S8-3 siege).
       if (occ.protectedUntil && occ.protectedUntil > now()) {
         throw new SlgError('PROTECTED', '目标处于保护期');
       }
@@ -768,15 +775,15 @@ export class WorldService {
       },
     );
     const after = await cols.tiles.findOne({ _id: tid });
-    if (after) await this.pushTileToObservers(after, new Set([accountId])); // G5-2：新领地对视野内观察者可见
-    // §17.4 活跃累加：直占（S8-1 路径）→ 占领者所属家族 +1（含繁荣度刷新）。
+    if (after) await this.pushTileToObservers(after, new Set([accountId])); // G5-2: new territory is visible to observers within vision
+    // §17.4 activity increment: direct occupation (S8-1 path) → occupier's family +1 (including prosperity refresh).
     const occMember = await cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
     void this.bumpFamilyActivity(worldId, occMember?.familyId, 1);
     return this.tileDocView(after!, accountId);
   }
 
   /**
-   * 放弃格子：退还驻军 + 重算产率。不可放弃主城。
+   * Abandon a tile: refund garrison troops + recompute yield. The capital cannot be abandoned.
    */
   async abandonTile(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
     const { cols, now } = this.deps;
@@ -791,7 +798,7 @@ export class WorldService {
     const t = now();
     const resources = this.settle(pw, t);
     const refund = tile.garrison ?? 0;
-    await cols.tiles.deleteOne({ _id: tid }); // 放弃 → 回归程序化中立（稀疏存储不留空壳）
+    await cols.tiles.deleteOne({ _id: tid }); // abandon → revert to procedural neutral (sparse storage leaves no empty shell)
     const yieldRate = await this.recomputeYield(worldId, accountId);
     await cols.playerWorld.updateOne(
       { _id: pw._id },
@@ -804,9 +811,9 @@ export class WorldService {
   }
 
   /**
-   * 主动迁城（§3.4 / §8.2，所有玩家通用）：花 RELOCATE_COST 金币把主城迁到自选的合法空格。
-   * 校验：已进入 + 目标界内 + 非中心/障碍/关隘 + 未被任何人占领。保留全部领地（仅被动迁城失地）。
-   * 落地：扣币 → 删旧 base 格 → 在新址写 base 格（沿用旧城驻军与剩余保护罩）→ 改 mainBaseTile + 重算产率。
+   * Voluntary relocation (§3.4 / §8.2, available to all players): spend RELOCATE_COST coins to move the capital to a chosen legal empty tile.
+   * Validation: joined + target in bounds + not center/obstacle/gate + unoccupied by anyone. All territory is retained (only passive relocation loses territory).
+   * Effect: deduct coins → delete old base tile → write base tile at new location (carrying old garrison and remaining protection shield) → update mainBaseTile + recompute yield.
    */
   async relocateBase(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
     const { cols, now } = this.deps;
@@ -815,7 +822,7 @@ export class WorldService {
     if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', '迁城坐标越界');
 
     const newTid = tileId(worldId, x, y);
-    if (newTid === pw.mainBaseTile) return this.getMe(worldId, accountId); // 原地迁城 = no-op，不扣费
+    if (newTid === pw.mainBaseTile) return this.getMe(worldId, accountId); // relocating to the same tile = no-op, no charge
 
     const proc = proceduralTile(worldId, x, y);
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可落城');
@@ -824,14 +831,14 @@ export class WorldService {
     const occ = await cols.tiles.findOne({ _id: newTid });
     if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', '该格已被占领');
 
-    // 先扣金币（失败抛 INSUFFICIENT_FUNDS，不动地图）。
+    // Deduct coins first (failure throws INSUFFICIENT_FUNDS; map state is not modified).
     const orderId = `slg_relocate:${worldId}:${accountId}:${now()}`;
     await this.commercial.spend(accountId, RELOCATE_COST, orderId);
 
     const t = now();
     const oldBase = await cols.tiles.findOne({ _id: pw.mainBaseTile });
     const carryGarrison = oldBase?.garrison ?? GARRISON_PER_TILE;
-    const carryProtect = oldBase?.protectedUntil; // 沿用旧城剩余保护罩（自愿迁城不额外续）
+    const carryProtect = oldBase?.protectedUntil; // carry over the old capital's remaining protection shield (voluntary relocation grants no extension)
     await cols.tiles.deleteOne({ _id: pw.mainBaseTile });
 
     const tileDoc: TileDoc = {
@@ -856,19 +863,20 @@ export class WorldService {
       { $set: { resources, yieldRate, mainBaseTile: newTid, lastTickAt: t }, $inc: { rev: 1 } },
     );
 
-    // 推新旧两格变更（旧址回归中立、新址主城）。
+    // Push changes for both the old and new tiles (old address reverts to neutral, new address becomes the capital).
     const after = await cols.tiles.findOne({ _id: newTid });
     if (after) {
       void this.pushTile(accountId, after);
-      await this.pushTileToObservers(after, new Set([accountId])); // G5-2：迁城新主城对观察者可见
+      await this.pushTileToObservers(after, new Set([accountId])); // G5-2: new capital after relocation is visible to observers
     }
     return this.getMe(worldId, accountId);
   }
 
   /**
-   * 建瞭望塔（§18 G5 V2）：在己方领地（非主城）花资源建塔，该格升级为大半径
-   * （VISION_WATCHTOWER_RADIUS）持久视野源。落库随 TileDoc 持久——丢地即随格子消失，无单独退还。
-   * 校验：已进入 + 己方领地 + 非主城（主城自带视野）。幂等：已有塔直接返回当前视图、不重复扣费。
+   * Build a watchtower (§18 G5 V2): spend resources on a player-owned non-capital tile to upgrade it to a
+   * large-radius (VISION_WATCHTOWER_RADIUS) persistent vision source. Persisted with TileDoc — losing the tile
+   * also destroys the tower; no separate refund.
+   * Validation: joined + own territory + not capital (capital has built-in vision). Idempotent: if tower already exists, return current view without charging again.
    */
   async buildWatchtower(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     const { cols, now } = this.deps;
@@ -881,7 +889,7 @@ export class WorldService {
     if (tile.type === 'base') throw new SlgError('BAD_REQUEST', '主城自带视野，不可建瞭望塔');
     if (tile.watchtower) return this.tileDocView(tile, accountId); // 幂等
 
-    // 结算资源后校验充足，再扣费（不足抛 INSUFFICIENT_RESOURCES，不动地图）。
+    // Settle resources first, then validate sufficiency, then deduct (insufficient resources throw INSUFFICIENT_RESOURCES; map state is not modified).
     const t = now();
     const resources = this.settle(pw, t);
     for (const rt of RESOURCE_TYPES) {
@@ -899,19 +907,19 @@ export class WorldService {
 
     const after = await cols.tiles.findOne({ _id: tid });
     if (after) {
-      void this.pushTile(accountId, after); // owner refetch → 新塔扩张的视野下次 getMap 生效
-      await this.pushTileToObservers(after, new Set([accountId])); // 塔是可见结构，视野内观察者亦见
+      void this.pushTile(accountId, after); // owner refetch → expanded vision from the new tower takes effect on next getMap
+      await this.pushTileToObservers(after, new Set([accountId])); // tower is a visible structure; observers within vision also see it
     }
     return this.tileDocView(after!, accountId);
   }
 
-  // ── S8-2：行军 / 撤军 / 到点处理 ──────────────────────────
+  // ── S8-2: march / recall / arrival processing ──────────────────────────
 
   /**
-   * 发起行军（occupy / reinforce；attack/sweep=围攻 S8-3）。出征**即从兵力池扣兵**（在途），
-   * 到达时按 kind 落地（占领写 TileDoc / 增援加 garrison）；失败或撤军时退回兵力池。
-   * 校验（出征时刻）：已进入 + kind 合法 + from/to 界内 + from 是己方格 + 兵力够 +
-   *   occupy 目标为空闲格(非中心/未被占) 且带兵 ≥ OCCUPY_MIN_TROOPS / reinforce 目标为己方格。
+   * Start a march (occupy / reinforce; attack/sweep = siege S8-3). Troops are **immediately deducted from the pool** on departure (in-transit);
+   * on arrival they are applied according to kind (occupy writes TileDoc / reinforce adds garrison); on failure or recall, troops are refunded to the pool.
+   * Validation (at departure): joined + valid kind + from/to in bounds + from is own tile + enough troops +
+   *   occupy: target is an empty tile (not center / unoccupied) and troops ≥ OCCUPY_MIN_TROOPS / reinforce: target is own tile.
    */
   async startMarch(
     worldId: string,
@@ -933,8 +941,8 @@ export class WorldService {
     if (!this.inBounds(fromX, fromY) || !this.inBounds(toX, toY)) {
       throw new SlgError('OUT_OF_RANGE', '坐标越界');
     }
-    // 围攻挂队（G3-2c）：从保存的进攻布阵模板取军，committed 兵力 = 各单位分配兵力之和。
-    // 出征后队伍可改不影响在途军（army 快照随 MarchDoc 落库）。非 attack 或未挂队 → 走扁平 troops。
+    // Siege with a team (G3-2c): draw the army from the saved attack formation template; committed troops = sum of troops assigned to each unit.
+    // The team can be edited after departure without affecting the in-transit march (the army snapshot is persisted with MarchDoc). Not attack or no team → use flat troops.
     let army: ArmyEntry[] | undefined;
     if (kind === 'attack' && teamId) {
       const team = (pw.teams ?? []).find((t) => t.id === teamId);
@@ -956,15 +964,15 @@ export class WorldService {
       throw new SlgError('TILE_NOT_OWNED', '只能从己方格出征');
     }
 
-    // 目标格出征时校验（到达时会再校验一次，状态可能已变）。
+    // Validate the target tile at departure (will be re-validated on arrival since state may have changed).
     const toTid = tileId(worldId, toX, toY);
     const proc = proceduralTile(worldId, toX, toY);
     if (proc.type === 'obstacle') throw new SlgError('BAD_REQUEST', '阻挡地形不可进军');
     const toTile = await cols.tiles.findOne({ _id: toTid });
-    let defenderId: string | undefined; // attack：被攻击方 accountId（出征即推 under_attack 预警）
+    let defenderId: string | undefined; // attack: the attacked player's accountId (under_attack warning is pushed immediately on departure)
     if (kind === 'occupy') {
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可直占');
-      // 险地（G8 §3.1）：系统超强 NPC 驻守，不可直占，须围攻 attack 攻克。
+      // Stronghold (G8 §3.1): guarded by an extremely powerful system NPC; cannot be directly occupied — must be captured via attack siege.
       if (proc.type === 'stronghold' && !toTile?.ownerId) {
         throw new SlgError('TILE_OCCUPIED', '险地不可直占，须围攻 attack 攻克');
       }
@@ -978,12 +986,12 @@ export class WorldService {
     } else if (kind === 'reinforce') {
       if (!toTile || toTile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', '只能增援己方格');
     } else if (kind === 'attack') {
-      // 围攻：目标须是他人领地/主城，或无主险地（G8 PvE 攻克系统守军）。中立无主格请用占领/扫荡。
+      // Siege: target must be another player's territory/capital, or an ownerless stronghold (G8 PvE to defeat the system garrison). Use occupy/sweep for neutral ownerless tiles.
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心由宗门争夺，不可围攻');
       if (!toTile?.ownerId) {
-        // 无主：仅险地可围攻（打系统超强 NPC）；其余无主格走占领/扫荡。
+        // No owner: only strongholds can be sieged (defeating the ultra-strong system NPC); all other ownerless tiles use occupy/sweep.
         if (proc.type !== 'stronghold') throw new SlgError('TILE_NOT_OWNED', '围攻目标无主（用占领/扫荡）');
-        // 险地 PvE：defenderId 留空（NPC 无 under_attack 预警）。
+        // Stronghold PvE: leave defenderId unset (NPC does not receive an under_attack warning).
       } else {
         if (toTile.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', '不能围攻己方领地');
         if (toTile.protectedUntil && toTile.protectedUntil > now()) {
@@ -993,12 +1001,12 @@ export class WorldService {
       }
       if (troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `围攻至少需带 ${OCCUPY_MIN_TROOPS} 兵`);
     } else if (kind === 'scout') {
-      // 侦察：不打不占，派少量兵到任意非障碍格（含敌方/保护中/中立/中心）探视野后自动回师。
-      // 无归属/中心/保护期限制——已在上方拦掉障碍地形即可。不设 defenderId（不发 under_attack 预警）。
+      // Scout: no fighting or occupation; send a small force to any non-obstacle tile (including enemy/protected/neutral/center) to reveal vision, then auto-return.
+      // No ownership/center/protection-period restriction — blocking obstacle terrain above is sufficient. No defenderId (no under_attack warning).
     } else {
-      // sweep：清中立 / 资源格的 NPC 守军（不占地，回师带回缴获）。
+      // sweep: clear NPC garrison from neutral / resource tiles (no occupation; loot is carried back on return).
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可扫荡');
-      // 险地（G8）：系统超强守军，不可扫荡掠夺，须围攻 attack 攻克占领。
+      // Stronghold (G8): ultra-strong system garrison; cannot be swept for loot — must be captured via attack siege.
       if (proc.type === 'stronghold') throw new SlgError('TILE_OCCUPIED', '险地须围攻 attack 攻克，不可扫荡');
       if (toTile?.ownerId) throw new SlgError('TILE_OCCUPIED', '目标已被占领（夺地用围攻 attack）');
     }
@@ -1026,7 +1034,7 @@ export class WorldService {
       rev: 0,
     };
     await cols.marches.insertOne(doc);
-    // 出征扣兵（在途，不在池中）。
+    // Deduct troops on departure (in-transit; not in the pool).
     await cols.playerWorld.updateOne(
       { _id: pw._id },
       { $set: { resources, lastTickAt: t }, $inc: { troops: -troops, rev: 1 } },
@@ -1034,11 +1042,11 @@ export class WorldService {
     await this.scheduleMarch(worldId, mid, arriveAt);
     const view = this.marchView(doc);
     void this.pushMarch(accountId, view);
-    // G5-2 反向视野推送：把这段行军推给视野覆盖其路径的观察者（敌方行军进我视野即推，V4）。
-    // 复用已算出的 path，一次反向查询（非逐 tick）。守方（attack）已单独收 under_attack，从观察者集排除。
+    // G5-2 reverse vision push: push this march to observers whose vision covers its path (enemy march entering your vision triggers a push, V4).
+    // Reuse the already-computed path; one reverse query (not per tick). The defender (attack) already receives under_attack separately, so exclude them from observers.
     const observers = await this.visionObservers(worldId, path, new Set([accountId, ...(defenderId ? [defenderId] : [])]));
     for (const acct of observers) void this.pushMarch(acct, view);
-    // 围攻：出征即向防守方推预警（§5 / §14.5）。
+    // Siege: push an under_attack warning to the defender immediately on departure (§5 / §14.5).
     if (kind === 'attack' && defenderId) {
       const did = defenderId;
       void (this.meta.available
@@ -1057,8 +1065,8 @@ export class WorldService {
   }
 
   /**
-   * 撤军：把在途的去程行军翻转为返程腿（troops 原路返回出发格再退回兵力池）。
-   * 返程耗时 = 已走时长（min(已耗时, 总耗时)）。到达返程后退兵。已到达/已撤 → MARCH_NOT_FOUND。
+   * Recall a march: flip an in-transit outbound march into a return leg (troops travel back to the origin tile and are refunded to the troop pool).
+   * Return travel time = time already elapsed (min(elapsed, total)). Troops are refunded on the return arrival. Already arrived / already recalled → MARCH_NOT_FOUND.
    */
   async recallMarch(worldId: string, accountId: string, mid: string): Promise<MarchView> {
     const { cols, now } = this.deps;
@@ -1070,7 +1078,7 @@ export class WorldService {
     const total = m.arriveAt - m.departAt;
     const traveled = Math.max(0, Math.min(t - m.departAt, total));
     const backArrive = t + traveled;
-    // 原子认领（防与到点处理竞态）：仍处 marching 的去程才翻转为返程。
+    // Atomic claim (prevents race with arrival processing): only an outbound march still in 'marching' state is flipped to a return leg.
     const claimed = await cols.marches.findOneAndUpdate(
       { _id: mid, status: 'marching', kind: { $ne: 'return' } },
       {
@@ -1092,20 +1100,20 @@ export class WorldService {
     return view;
   }
 
-  /** 玩家当前世界所有在途行军列表（scheduler 到点删档，查到的均为未到达行军）。 */
+  /** List of all in-transit marches in the player's current world (the scheduler deletes them on arrival, so all results are marches that have not yet arrived). */
   async getMarches(worldId: string, accountId: string): Promise<MarchView[]> {
     const { cols, mapW, mapH, now } = this.deps;
     const own = await cols.marches.find({ worldId, ownerId: accountId }).sort({ arriveAt: 1 }).toArray();
     const result: MarchView[] = own.map((d) => ({ ...this.marchView(d), mine: true }));
 
-    // G5：视野内的敌方行军（reverse-push 后客户端 refreshMarches 据此渲染）。家族友军行军不计入
-    // （友方判定靠家族集），只取真正非家族他人的在途行军且其插值当前位置落在我视野内。
+    // G5: enemy marches within vision (after reverse-push, the client renders these via refreshMarches). Family ally marches are excluded
+    // (ally determination relies on the family set); only genuinely non-family others' in-transit marches whose interpolated current position falls within our vision are included.
     const family = await this.familyMemberIds(worldId, accountId);
     const sources = await this.computeVisionSources(worldId, accountId, 0, mapW - 1, 0, mapH - 1);
     const t = now();
     const others = await cols.marches.find({ worldId, status: 'marching' }).toArray();
     for (const d of others) {
-      if (family.has(d.ownerId)) continue; // 己方/家族不重复 + 不当敌方
+      if (family.has(d.ownerId)) continue; // own / family — no duplicate and not treated as enemy
       const pos = marchInterpPos(
         this.coordX(d.fromTile), this.coordY(d.fromTile),
         this.coordX(d.toTile), this.coordY(d.toTile),
@@ -1117,9 +1125,9 @@ export class WorldService {
   }
 
   /**
-   * 到点处理：扫描所有 arriveAt ≤ now 的在途行军，原子认领（findOneAndDelete）后按 kind 落地。
-   * 以 Mongo `arriveAt` 索引扫描为权威（跨世界、无 Redis 也正确）；Redis ZSET 仅作精确唤醒提示
-   * （scheduleMarch 维护，§14.4）。返回处理条数。worldsvc 单点消费（U12，前期单进程可接受）。
+   * Arrival processing: scan all in-transit marches with arriveAt ≤ now, atomically claim them (findOneAndDelete), then apply effects by kind.
+   * The Mongo `arriveAt` index scan is authoritative (works across worlds and without Redis); the Redis ZSET is only a precise wake-up hint
+   * (maintained by scheduleMarch, §14.4). Returns the number of marches processed. worldsvc single-consumer (U12; single-process is acceptable for early stage).
    */
   async processDueArrivals(nowMs?: number): Promise<number> {
     const { cols } = this.deps;
@@ -1130,7 +1138,7 @@ export class WorldService {
       .toArray();
     let n = 0;
     for (const m of due) {
-      // 原子认领 + 移除（到达即消费瞬态文档）；输给撤军/并发处理者则跳过。
+      // Atomic claim + delete (transient document consumed on arrival); skip if lost to a recall or concurrent processor.
       const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
       if (!claimed) continue;
       await this.unscheduleMarch(claimed.worldId, claimed._id);
@@ -1140,10 +1148,10 @@ export class WorldService {
     return n;
   }
 
-  /** 落地单个到达的行军（已从 marches 删除）。 */
+  /** Apply the effects of a single arrived march (already removed from marches collection). */
   /**
-   * 家族活跃 +delta 并刷新繁荣度（§17.4，服务器权威，无客户端写口）。
-   * best-effort：失败 log 不阻断占领/围攻主流程。familyId 缺省（散人）则跳过。
+   * Increment family activity by delta and refresh prosperity (§17.4, server-authoritative, no client write path).
+   * Best-effort: failure is logged but does not block the main occupy/siege flow. familyId absent (solo player) → skip.
    */
   private async bumpFamilyActivity(worldId: string, familyId: string | undefined, delta: number): Promise<void> {
     if (!familyId) return;
@@ -1158,7 +1166,7 @@ export class WorldService {
   private async applyArrival(m: MarchDoc, t: number): Promise<void> {
     const { cols } = this.deps;
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, m.ownerId) });
-    if (!pw) return; // 玩家状态丢失（不应发生）；兵力随之失，安全退出。
+    if (!pw) return; // player state missing (should not happen); troops are lost with it; exit safely.
 
     if (m.kind === 'return') {
       await this.refundTroops(pw, m.troops, t);
@@ -1189,7 +1197,7 @@ export class WorldService {
         (occ?.ownerId && occ.ownerId !== m.ownerId) ||
         (occ?.ownerId === m.ownerId && occ.type !== 'base'); // 已是己方领地（base 例外不会走到这）
       if (blocked) {
-        // 到达时目标已被占/不可占 → 兵力即时退回池（S8-3 可改返程撤退）。
+        // Target is occupied or non-occupiable on arrival → troops refunded to the pool immediately (S8-3 could instead use a return march).
         await this.refundTroops(pw, m.troops, t);
         void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'recalled' }));
         return;
@@ -1209,7 +1217,7 @@ export class WorldService {
         rev: 0,
       };
       await cols.tiles.updateOne({ _id: m.toTile }, { $set: tileDoc }, { upsert: true });
-      // 兵力已在出征时扣除 → 不再动 pool，只更产率。
+      // Troops were already deducted on departure → do not modify the pool again; only update the yield rate.
       const resources = this.settle(pw, t);
       const yieldRate = await this.recomputeYield(m.worldId, m.ownerId);
       await cols.playerWorld.updateOne(
@@ -1218,11 +1226,11 @@ export class WorldService {
       );
       void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
       void this.pushTile(m.ownerId, tileDoc);
-      await this.pushTileToObservers(tileDoc, new Set([m.ownerId])); // G5-2：占领到点对观察者可见
-      // 首府格占领 → 触发立国（S8-6.5）
+      await this.pushTileToObservers(tileDoc, new Set([m.ownerId])); // G5-2: occupation arrival is visible to observers
+      // Capital tile occupied → trigger nation founding (S8-6.5)
       const pwMem = await this.deps.cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
       void this.applyNationChange(m.worldId, x, y, m.ownerId, pwMem?.familyId);
-      // §17.4 活跃累加：占领新领地 → 占领者所属家族 +1（含繁荣度刷新）。
+      // §17.4 activity increment: occupying new territory → occupier's family +1 (including prosperity refresh).
       void this.bumpFamilyActivity(m.worldId, pwMem?.familyId, 1);
       return;
     }
@@ -1230,7 +1238,7 @@ export class WorldService {
     // reinforce
     const target = await cols.tiles.findOne({ _id: m.toTile });
     if (!target || target.ownerId !== m.ownerId) {
-      // 增援目标已非己方（被夺/放弃）→ 退兵。
+      // Reinforcement target is no longer own territory (captured / abandoned) → refund troops.
       await this.refundTroops(pw, m.troops, t);
       void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'recalled' }));
       return;
@@ -1241,20 +1249,20 @@ export class WorldService {
     if (after) void this.pushTile(m.ownerId, after);
   }
 
-  // ── S8-3：围攻 / 扫荡到点结算（廉价数值，§5.3；关键战斗的引擎复算 S8-3b 接 judge）──
+  // ── S8-3: siege / sweep arrival settlement (cheap formula, §5.3; decisive battles use engine re-computation in S8-3b via judge) ──
 
   /**
-   * 围攻他人领地/主城（attack 到点）。到达时重校验目标仍为敌方且未受保护，否则退兵。
-   * 廉价线性结算 resolveSiege(攻方兵, 守军)：
-   *   - attacker_win + territory → 领地易主（survivors 成新驻军）+ 掠夺败方资源 + 双方产率重算；
-   *   - attacker_win + base      → 主城不可夺：守军清零 + 给败方上保护罩 + 掠夺 + 攻方生还回师退兵池；
-   *   - defender_win             → 攻方committed 兵全灭（出征已扣，不回池）+ 守军减员。
+   * Siege another player's territory/capital (attack arrival). On arrival, re-validate that the target is still enemy-owned and unprotected; otherwise refund troops.
+   * Cheap linear settlement resolveSiege(attacker troops, garrison):
+   *   - attacker_win + territory → tile changes hands (survivors become the new garrison) + loot defeated player's resources + both sides recompute yield;
+   *   - attacker_win + base      → capital cannot be permanently taken: garrison wiped + defeated player gets a protection shield + loot taken + attacker survivors return to troop pool;
+   *   - defender_win             → all attacker committed troops destroyed (already deducted on departure, not refunded) + defender garrison takes casualties.
    */
   private async applySiege(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
     const { cols } = this.deps;
     const target = await cols.tiles.findOne({ _id: m.toTile });
-    // 险地 PvE 攻克（G8 §3.1）：目标无主且程序化类型为 stronghold → 打系统超强 NPC 守军，
-    // 攻克即占领为领地 + 一次性丰厚奖励；攻败残兵撤退回师。先于「扑空退兵」分支拦截。
+    // Stronghold PvE capture (G8 §3.1): target has no owner and procedural type is stronghold → fight the ultra-strong system NPC garrison;
+    // victory captures it as territory + grants a one-time rich reward; defeat causes surviving attackers to retreat and return. Intercept before the "miss and refund" branch.
     if (!target?.ownerId) {
       const proc = proceduralTile(m.worldId, this.coordX(m.toTile), this.coordY(m.toTile));
       if (proc.type === 'stronghold') {
@@ -1262,7 +1270,7 @@ export class WorldService {
         return;
       }
     }
-    // 到达时目标已非敌方（被弃/已转己方/无主）或进入保护期 → 视作扑空，退兵回师。
+    // On arrival, target is no longer enemy-owned (abandoned / transferred to own / ownerless) or is now protected → treat as a miss; refund and return troops.
     if (
       !target?.ownerId ||
       target.ownerId === m.ownerId ||
@@ -1274,31 +1282,31 @@ export class WorldService {
     }
 
     const defenderId = target.ownerId;
-    // 国民防御加成（§2.4 / G1）：守军处于「自己占领首府的 Voronoi 区」内 → 有效守军强度抬高。
+    // Nation defense bonus (§2.4 / G1): if the garrison tile is within the Voronoi region of a capital the defender occupies → effective garrison strength is increased.
     const capIdx = nearestCapitalIdx(target.x, target.y, this.capitals);
     const nation = await cols.nations.findOne({ _id: `nation:${m.worldId}:${capIdx}` });
     const inOwnNation = !!nation?.ownerId && nation.ownerId === defenderId;
     const effGarrison = nationDefenseStrength(target.garrison ?? 0, inOwnNation);
 
-    // 攻方布阵（G3-2c）：挂队出征 → 用真实布阵快照（m.army）；否则由扁平兵力合成兜底（v1 桥）。
+    // Attacker formation (G3-2c): marched with a team → use the real formation snapshot (m.army); otherwise synthesize from flat troop count as fallback (v1 bridge).
     const attackerArmy: GarrisonEntry[] =
       m.army && m.army.length > 0 ? (m.army as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker');
     const defenderConfig = this.buildDefenderConfig(target, effGarrison, inOwnNation);
     const tileLevel = target.level ?? 1;
     const seed = siegeSeedFromId(m._id);
 
-    // C7/§17.9：赛季中途引擎漂移检测（不阻断，仅告警——重播可能逐帧漂移，运维口径见 §17.9）。
+    // C7/§17.9: mid-season engine drift detection (non-blocking; warning only — replays may drift frame by frame; ops treatment in §17.9).
     const wv = await cols.worlds.findOne({ _id: m.worldId }, { projection: { engineVersion: 1 } });
     if (wv?.engineVersion != null && wv.engineVersion !== ENGINE_VERSION) {
-      console.warn('[worldsvc] siege engineVersion drift（赛季中途引擎升级未重开区）', {
+      console.warn('[worldsvc] siege engineVersion drift (engine upgraded mid-season without reopening the shard)', {
         worldId: m.worldId, pinned: wv.engineVersion, runtime: ENGINE_VERSION,
       });
     }
 
-    // 关键围攻（G3-2b，§16）：worldsvc 直接 import `@nw/engine` headless 跑「双方预布兵确定性
-    // 自动战斗」拿权威胜负 + 真实残存血量，替代廉价线性公式。坏布阵 / 引擎异常 → 兜底回退
-    // 廉价 resolveSiege，绝不让一场围攻卡死行军。
-    // E8：取攻方养成快照，注入 buildSiegeBlueprints（失败降级无装备，不阻断行军）。
+    // Decisive siege (G3-2b, §16): worldsvc directly imports `@nw/engine` headless to run "both-sides pre-formation
+    // deterministic auto-battle" for authoritative win/loss + true surviving HP, replacing the cheap linear formula.
+    // Bad formation / engine error → fall back to cheap resolveSiege; a single siege must never stall a march.
+    // E8: fetch the attacker's progression snapshot and inject into buildSiegeBlueprints (failure degrades to no equipment, does not block the march).
     const attackerSave = await this.meta.getSaveFields(m.ownerId).catch(() => null);
     const siegeEquip: EngineEquipmentInput | undefined =
       attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
@@ -1317,19 +1325,19 @@ export class WorldService {
         err: (err as Error).message,
       });
       res = resolveSiege(m.troops, effGarrison);
-      replay = null; // 廉价兜底的结果与引擎重播不一致 → 不存重播输入（重播按钮降级隐藏）。
+      replay = null; // cheap fallback result is inconsistent with engine replay → do not store replay inputs (replay button degrades to hidden).
     }
 
     const defender = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defenderId) });
-    // 重播输入：持久化到 SiegeDoc，客户端凭 seed + 双方布阵本地重播观战（§16.3）。
+    // Replay inputs: persisted to SiegeDoc; the client uses seed + both sides' formations to replay the battle locally for spectating (§16.3).
     await this.landSiege(m, pw, target, defenderId, defender, res, t, replay);
   }
 
   /**
-   * 险地 PvE 围攻攻克（G8 §3.1）：无主 stronghold 格，系统按格等级派生超强 NPC 守军 + 高基地，
-   * 走权威引擎围攻（坏布阵/异常 → 廉价兜底）。攻克 → 写 territory 领地（survivors 成驻军）+ 一次性
-   * 丰厚资源奖励 + 立国/活跃刷新；攻败 → 残兵撤退回师（NPC 守军不持久——procedural 不落库，下次重置）。
-   * 防守方为 NPC，全程无 defenderId、无掠夺玩家、无保护罩。
+   * Stronghold PvE siege capture (G8 §3.1): an ownerless stronghold tile; the system derives an ultra-strong NPC garrison + high base from the tile level.
+   * Uses the authoritative engine siege (bad formation / error → cheap fallback). Victory → write territory (survivors become garrison) + one-time rich resource reward + nation founding / activity refresh;
+   * Defeat → surviving attackers retreat and return (NPC garrison is not persisted — procedural, not stored in DB; resets next time).
+   * Defender is NPC throughout: no defenderId, no player loot, no protection shield.
    */
   private async applyStrongholdSiege(
     m: MarchDoc,
@@ -1340,7 +1348,7 @@ export class WorldService {
     const { cols } = this.deps;
     const x = this.coordX(m.toTile);
     const y = this.coordY(m.toTile);
-    // 到点重校验：已被他人/自己抢先占（含同时攻克）→ 不打 NPC，退兵扑空。
+    // Re-validate on arrival: already occupied by another player or self (including simultaneous captures) → skip NPC fight; refund troops as a miss.
     const occ = await cols.tiles.findOne({ _id: m.toTile });
     if (occ?.ownerId) {
       await this.refundTroops(pw, m.troops, t);
@@ -1351,12 +1359,12 @@ export class WorldService {
     const garrison = strongholdGarrison(proc.level);
     const attackerArmy: GarrisonEntry[] =
       m.army && m.army.length > 0 ? (m.army as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker');
-    // 系统超强默认守军 + 高基地（defenderBaseLevel 由 buildSiegeLevel 按 tileLevel 派生并 clamp）。
+    // System ultra-strong default garrison + elevated base (defenderBaseLevel is derived and clamped by buildSiegeLevel from tileLevel).
     const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender') };
     const tileLevel = proc.level;
     const seed = siegeSeedFromId(m._id);
 
-    // E8：stronghold 亦是 PvE-like 围攻，攻方装备同样生效。
+    // E8: stronghold is also a PvE-like siege; attacker equipment applies in the same way.
     const attackerSave = await this.meta.getSaveFields(m.ownerId).catch(() => null);
     const siegeEquip: EngineEquipmentInput | undefined =
       attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
@@ -1394,7 +1402,7 @@ export class WorldService {
         rev: 0,
       };
       await cols.tiles.updateOne({ _id: m.toTile }, { $set: tileDoc }, { upsert: true });
-      // 一次性攻克奖励（§3.1「大幅资源」）：按格等级 + 资源种类并入攻方资源池（封顶）。
+      // One-time capture reward (§3.1 "substantial resources"): add to the attacker's resource pool by tile level + resource type (capped).
       const rt: ResourceType = proc.resType ?? 'food';
       const reward = emptyResources();
       reward[rt] = STRONGHOLD_LOOT_PER_LEVEL * Math.max(1, proc.level);
@@ -1405,8 +1413,8 @@ export class WorldService {
         { _id: pw._id },
         { $set: { resources, yieldRate, lastTickAt: t }, $inc: { rev: 1 } },
       );
-      // 额外掉落养成材料（§19.5 + G4 §15.6）：发到 meta SaveData.materials 养成统一池（跨进程、
-      // best-effort、orderId 幂等；march 一次性解算，(worldId,toTile,arriveAt) 稳定可作幂等键）。
+      // Extra progression material drop (§19.5 + G4 §15.6): sent to meta SaveData.materials unified pool (cross-process,
+      // best-effort, orderId idempotent; march is settled once — (worldId, toTile, arriveAt) is stable as idempotent key).
       const matLoot = strongholdMaterialLoot(proc.level);
       void this.meta.grantMaterial(m.ownerId, matLoot.material, matLoot.qty, `stronghold_loot:${m.worldId}:${m.toTile}:${m.arriveAt}`);
       void this.applyNationChange(m.worldId, x, y, m.ownerId, member?.familyId);
@@ -1415,9 +1423,9 @@ export class WorldService {
       void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
       void this.pushSiege(m.ownerId, siege, `${lootSummary(reward)},${matLoot.material}+${matLoot.qty}`);
       void this.pushTile(m.ownerId, tileDoc);
-      await this.pushTileToObservers(tileDoc, new Set([m.ownerId])); // G5-2：攻克到点对观察者可见
+      await this.pushTileToObservers(tileDoc, new Set([m.ownerId])); // G5-2: stronghold capture arrival is visible to observers
     } else {
-      // 攻克失败：攻方残存撤退回师折回兵力池（出征已扣兵；阵亡永久损失）。NPC 守军不落库，无减员写入。
+      // Capture failed: surviving attacker troops retreat and return to the troop pool (troops were deducted on departure; casualties are a permanent loss). NPC garrison is not persisted; no casualty write.
       if (res.attackerSurvivors > 0) await this.refundTroops(pw, res.attackerSurvivors, t);
       void this.bumpFamilyActivity(m.worldId, member?.familyId, 1);
       const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
@@ -1427,13 +1435,13 @@ export class WorldService {
   }
 
   /**
-   * 围攻防守方布阵（G3-2b）：自定义布阵（`tile.defense` 含 garrison 数组，G3-2c 编辑器写入）优先；
-   * 否则由有效守军兵力数（含国民加成）合成确定性默认布阵。空守军（无自定义且 0 兵）→ null，
-   * buildSiegeBattle 派生象征性基地防守。
+   * Build the defender's formation for a siege (G3-2b): a custom formation (`tile.defense` contains a garrison array, written by the G3-2c editor) takes priority;
+   * otherwise, synthesize a deterministic default formation from the effective garrison size (including nation bonus). Empty garrison (no custom + 0 troops) → null;
+   * buildSiegeBattle derives a token base defense.
    *
-   * 国民加成（§2.4 / G1 item②，G3-2c 补齐）：守军处于己方首府 Voronoi 区（inOwnNation）时，
-   * **合成路径**已由 effGarrison（nationDefenseStrength 放大的兵力数）多铺单位享得；**自定义布阵**
-   * 路径则对各单位 initialHp 按 (1+NATION_BONUS_DEFENSE) 放大（scaleArmyHp，引擎封顶满血）。
+   * Nation bonus (§2.4 / G1 item②, completed in G3-2c): when the garrison tile is within the defender's own capital Voronoi region (inOwnNation):
+   * **synthesis path** already benefits by having extra units from effGarrison (troop count amplified by nationDefenseStrength);
+   * **custom formation path** scales each unit's initialHp by (1+NATION_BONUS_DEFENSE) (scaleArmyHp, engine caps at full HP).
    */
   private buildDefenderConfig(
     target: TileDoc,
@@ -1452,10 +1460,10 @@ export class WorldService {
   }
 
   /**
-   * 落地一次围攻结算（G3-1 抽取，§16.4）：按 res 写易主/掠夺/驻军/立国/被动迁城（attacker_win）
-   * 或守军减员（defender_win）+ 记 SiegeDoc + 推送 march/siege/tile。
-   * 当前 `applySiege` 即时调用（廉价结算路径不变）；G3-2 延迟落地后，judge 复算确认 / 超时兜底
-   * 两路将共用此唯一落地点。
+   * Apply a single siege settlement result (G3-1 extraction, §16.4): write tile hand-off / loot / garrison / nation founding / passive relocation (attacker_win)
+   * or defender garrison casualties (defender_win) according to res + record SiegeDoc + push march/siege/tile events.
+   * Currently called immediately by `applySiege` (cheap settlement path unchanged); after G3-2 delayed settlement, both the judge re-computation confirmation and
+   * the timeout fallback paths will share this single landing point.
    */
   private async landSiege(
     m: MarchDoc,
@@ -1471,18 +1479,18 @@ export class WorldService {
     let loot = emptyResources();
 
     if (res.outcome === 'attacker_win') {
-      // 掠夺败方资源（按比例从守方搬到攻方）。
+      // Loot the defeated player's resources (transfer a proportion from defender to attacker).
       if (defender) loot = await this.transferLoot(defender, pw, t);
 
       if (target.type === 'base') {
-        // 主城不可永久夺取，但被攻破 → 被动迁城（§3.4/§8.2，所有玩家通用）：
-        //   1) 攻方生还回师退兵池；2) 若守方是门主，全宗门成员资源 -50%（§8.2 重大惩罚）；
-        //   3) 守方主城随机迁到新空格 + 失去当前占领的所有领地（passiveRelocate）。
+        // The capital cannot be permanently taken, but being defeated triggers passive relocation (§3.4/§8.2, applies to all players):
+        //   1) attacker survivors return to the troop pool; 2) if the defender is a sect leader, all sect members lose 50% of resources (§8.2 major penalty);
+        //   3) defender's capital is randomly relocated to a new empty tile + all currently occupied territory is lost (passiveRelocate).
         await this.refundTroops(pw, res.attackerSurvivors, t);
         await this.applySectLeaderPenalty(m.worldId, defenderId, t);
         await this.passiveRelocate(m.worldId, defenderId, t);
       } else {
-        // 领地易主：survivors 成新驻军（出征已扣兵，不再动攻方池），双方产率重算。
+        // Territory changes hands: survivors become the new garrison (troops were deducted on departure; do not modify the attacker pool again); both sides recompute yield.
         await cols.tiles.updateOne(
           { _id: m.toTile },
           {
@@ -1501,13 +1509,13 @@ export class WorldService {
           { _id: playerWorldId(m.worldId, defenderId) },
           { $set: { yieldRate: defYield }, $inc: { rev: 1 } },
         );
-        // 首府格被夺 → 立国易主（S8-6.5）
+        // Capital tile captured → nation changes hands (S8-6.5)
         const atkMem = await cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
         void this.applyNationChange(m.worldId, target.x, target.y, m.ownerId, atkMem?.familyId);
       }
     } else {
-      // 守方胜：守军减员到 survivors；攻方残存撤退回师折回兵力池（§16.5 生还折回，引擎给真实残存），
-      // 阵亡兵力永久损失。廉价兜底路径 attackerSurvivors=0 时天然无回师，行为不变。
+      // Defender wins: garrison reduced to survivors; attacker survivors retreat and return to the troop pool (§16.5 survivor refund; engine provides real survivors);
+      // fallen troops are permanently lost. On the cheap fallback path where attackerSurvivors=0, there is naturally no return march; behavior is unchanged.
       await cols.tiles.updateOne(
         { _id: m.toTile },
         { $set: { garrison: res.defenderSurvivors }, $inc: { rev: 1 } },
@@ -1516,7 +1524,7 @@ export class WorldService {
     }
 
     const siege = await this.recordSiege(m, defenderId, res.outcome, t, replay);
-    // §17.4 活跃累加：围攻战（攻/守）→ 双方家族各 +1（关键战斗落地点）。
+    // §17.4 activity increment: siege (attacker / defender) → both sides' families +1 (landing point for decisive battles).
     const atkMember = await cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
     const defMember = await cols.familyMembers.findOne({ _id: `${m.worldId}:${defenderId}` });
     void this.bumpFamilyActivity(m.worldId, atkMember?.familyId, 1);
@@ -1529,17 +1537,17 @@ export class WorldService {
     if (after) {
       void this.pushTile(m.ownerId, after);
       void this.pushTile(defenderId, after);
-      await this.pushTileToObservers(after, new Set([m.ownerId, defenderId])); // G5-2：易主对视野内观察者可见
+      await this.pushTileToObservers(after, new Set([m.ownerId, defenderId])); // G5-2: tile hand-off is visible to observers within vision
     }
   }
 
   /**
-   * 扫荡中立 / 资源格的 NPC 守军（sweep 到点）。不占地：得手缴获资源 + 生还回师退兵池，
-   * 失手则攻方兵力损耗（生还回池，可能为 0）。到达时若该格已被某玩家占领 → 退兵（扑空）。
+   * Sweep NPC garrison from a neutral / resource tile (sweep arrival). No occupation: on success, loot resources + surviving troops return to the pool;
+   * on failure, attacker troop losses (survivors still return to the pool, possibly 0). If the tile is already player-occupied on arrival → refund troops (miss).
    */
   /**
-   * 侦察行军抵达目标：不打不占，自动翻转为返程腿（原兵力原路返回出发格，途中继续提供视野），
-   * 到点（return）退回兵力池。返程耗时 = 去程耗时（对称近似，免再算一次路径）。
+   * Scout march arrives at the target: no fighting or occupation; automatically flip to a return leg (same troops take the same route back to the origin tile, providing vision along the way);
+   * on return arrival, troops are refunded to the troop pool. Return travel time = outbound travel time (symmetric approximation; avoids recomputing the path).
    */
   private async autoReturnScout(m: MarchDoc, t: number): Promise<void> {
     const { cols } = this.deps;
@@ -1565,7 +1573,7 @@ export class WorldService {
     const { cols } = this.deps;
     const occ = await cols.tiles.findOne({ _id: m.toTile });
     if (occ?.ownerId) {
-      // 已被占领（应走 attack）→ 扑空退兵。
+      // Already occupied (should use attack) → miss; refund troops.
       await this.refundTroops(pw, m.troops, t);
       void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'recalled' }));
       return;
@@ -1578,7 +1586,7 @@ export class WorldService {
       loot = emptyResources();
       loot[rt] = SWEEP_LOOT_PER_LEVEL * Math.max(1, proc.level);
     }
-    // 生还回师（缴获并入攻方资源，封顶）。
+    // Surviving troops return (loot merged into attacker resources, capped).
     await this.refundTroops(pw, res.attackerSurvivors, t, loot);
     const siege = await this.recordSiege(m, undefined, res.outcome, t, null);
     void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
@@ -1586,8 +1594,8 @@ export class WorldService {
   }
 
   /**
-   * 写一条围攻战报（瞬态记录，§14.3 sieges）。replay 非空（关键围攻走引擎）时持久化 seed + 双方
-   * 布阵 + 格等级，供客户端重播观战（getSiegeReplay）；廉价兜底 / NPC 扫荡 replay=null（无重播）。
+   * Record a siege battle report (transient record, §14.3 sieges). When replay is non-null (decisive siege ran through the engine), persist seed + both sides'
+   * formations + tile level for client-side replay spectating (getSiegeReplay); cheap fallback / NPC sweep → replay=null (no replay available).
    */
   private async recordSiege(
     m: MarchDoc,
@@ -1618,7 +1626,7 @@ export class WorldService {
     return doc;
   }
 
-  /** 从败方搬走 SIEGE_LOOT_RATE 比例的资源到攻方（双方均结算 + 封顶）。返回实际掠得量。 */
+  /** Transfer SIEGE_LOOT_RATE proportion of resources from the defeated player to the attacker (both sides settle + cap). Returns the actual amount looted. */
   private async transferLoot(
     defender: PlayerWorldDoc,
     attacker: PlayerWorldDoc,
@@ -1633,20 +1641,20 @@ export class WorldService {
       { _id: defender._id },
       { $set: { resources: defAfter, lastTickAt: t }, $inc: { rev: 1 } },
     );
-    // 攻方收入掠夺（结算自身产出后并入，封顶）。
+    // Attacker receives the loot (merged after settling own production, capped).
     const atkRes = this.settle(attacker, t);
     for (const rt of RESOURCE_TYPES) atkRes[rt] = Math.min(RESOURCE_CAP, (atkRes[rt] ?? 0) + loot[rt]);
     await this.deps.cols.playerWorld.updateOne(
       { _id: attacker._id },
       { $set: { resources: atkRes, lastTickAt: t }, $inc: { rev: 1 } },
     );
-    // attacker 内存副本同步，供同一次结算后续不重复 settle 时一致（此处之后不再读 attacker）。
+    // Sync the in-memory attacker copy so subsequent code within the same settlement sees consistent state without re-settling (attacker is not read again after this point).
     attacker.resources = atkRes;
     attacker.lastTickAt = t;
     return loot;
   }
 
-  /** 退兵回池（封顶 troopCap）+ 结算资源；可选并入缴获 loot（封顶 RESOURCE_CAP）。 */
+  /** Refund troops to the pool (capped at troopCap) + settle resources; optionally merge loot into resources (capped at RESOURCE_CAP). */
   private async refundTroops(
     pw: PlayerWorldDoc,
     troops: number,
@@ -1667,9 +1675,9 @@ export class WorldService {
   }
 
   /**
-   * 门主主城被攻破惩罚（§8.2）：若 defenderId 是某宗门门主，全宗门成员当前资源 × (1-RATE)。
-   * 逐成员结算后扣减（大规模写，U13 标注的原子性风险——前期单进程可接受，规模化再分批/事务）。
-   * 非门主 / 无宗门 → no-op。
+   * Sect leader capital-destruction penalty (§8.2): if defenderId is a sect leader, all sect members' current resources are multiplied by (1-RATE).
+   * Each member is settled then reduced individually (large-scale write; U13 atomicity risk — single-process is acceptable for early stage; batch / transaction at scale).
+   * Not a sect leader / no sect → no-op.
    */
   private async applySectLeaderPenalty(worldId: string, defenderId: string, t: number): Promise<void> {
     const { cols } = this.deps;
@@ -1678,7 +1686,7 @@ export class WorldService {
     const fam = await cols.families.findOne({ _id: mem.familyId });
     if (!fam?.sectId) return;
     const sect = await cols.sects.findOne({ _id: fam.sectId });
-    if (!sect || sect.leaderId !== defenderId) return; // 仅门主被破触发
+    if (!sect || sect.leaderId !== defenderId) return; // only triggers when the sect leader's base is destroyed
 
     const memberFamilies = await cols.families.find({ sectId: sect._id }).project<{ _id: string }>({ _id: 1 }).toArray();
     const famIds = memberFamilies.map((f) => f._id);
@@ -1698,19 +1706,19 @@ export class WorldService {
   }
 
   /**
-   * 被动迁城（§3.4/§8.2）：主城被攻破后，守方主城随机迁到新空格，且**失去当前占领的所有领地**。
-   * 删掉该玩家全部己方格（旧主城 + 领地）→ 随机选合法空格写新主城（上保护罩）→ 改 mainBaseTile +
-   * 重算产率（此时仅剩新主城）。不退还领地驻军（失地即损耗，强惩罚）。
+   * Passive relocation (§3.4/§8.2): after the capital is destroyed, the defender's capital is randomly relocated to a new empty tile, and **all currently occupied territory is lost**.
+   * Delete all of the player's own tiles (old capital + territory) → randomly pick a legal empty tile and write a new capital (with a protection shield) → update mainBaseTile +
+   * recompute yield (only the new capital remains at this point). Garrison troops in lost territory are not refunded (losing territory means losing those troops — a severe penalty).
    */
   private async passiveRelocate(worldId: string, defenderId: string, t: number): Promise<void> {
     const { cols } = this.deps;
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, defenderId) });
     if (!pw) return;
 
-    // 失地：删除该玩家全部己方格（旧主城 + 全部领地），回归程序化中立。
+    // Lose territory: delete all of the player's own tiles (old capital + all territory); revert to procedural neutral.
     await cols.tiles.deleteMany({ worldId, ownerId: defenderId });
 
-    // 随机落新主城（找一个合法空格）。极端找不到 → 放弃迁城（仅失地，下次仍可主动迁）。
+    // Place the new capital at a random legal empty tile. In the extreme case where none is found → skip relocation (territory already lost; player can still voluntarily relocate later).
     const spot = await this.pickRandomEmptyTile(worldId);
     if (!spot) {
       const yieldRate = await this.recomputeYield(worldId, defenderId);
@@ -1732,7 +1740,7 @@ export class WorldService {
       ...(spot.resType ? { resType: spot.resType } : {}),
       ownerId: defenderId,
       garrison: 0,
-      protectedUntil: t + PROTECTION_SEC * 1000, // 迁往安全：上保护罩
+      protectedUntil: t + PROTECTION_SEC * 1000, // relocated to safety: apply protection shield
       rev: 0,
     };
     await cols.tiles.updateOne({ _id: newTid }, { $set: tileDoc }, { upsert: true });
@@ -1745,14 +1753,14 @@ export class WorldService {
     const after = await cols.tiles.findOne({ _id: newTid });
     if (after) {
       void this.pushTile(defenderId, after);
-      await this.pushTileToObservers(after, new Set([defenderId])); // G5-2：被动迁城新主城对观察者可见
+      await this.pushTileToObservers(after, new Set([defenderId])); // G5-2: new capital after passive relocation is visible to observers
     }
   }
 
   /**
-   * 随机挑一个合法空格（界内、非中心/障碍/关隘/险地、无人占领）。被动迁城落点 + 自动落城兜底用。
-   * `minDr`>0 时只接受 dr（到中心归一化距离 0..1）> minDr 的外环格（自动落城远离中心争夺区）。
-   * 服务端权威随机（非回放路径，Math.random 安全），最多试若干次，找不到返回 null。
+   * Pick a random legal empty tile (in bounds, not center/obstacle/gate/stronghold, unoccupied). Used for passive relocation placement and auto-spawn fallback.
+   * When `minDr`>0, only accept tiles where dr (normalized distance to center, 0..1) > minDr (outer ring), keeping auto-spawns away from the central contest zone.
+   * Server-authoritative random (not a replay path; Math.random is safe); tries up to a fixed number of times before returning null.
    */
   private async pickRandomEmptyTile(
     worldId: string,
@@ -1768,14 +1776,14 @@ export class WorldService {
       if (minDr > 0) {
         const dx = x - cx;
         const dy = y - cy;
-        if (Math.sqrt(dx * dx + dy * dy) / maxDist <= minDr) continue; // 太靠中心，跳过
+        if (Math.sqrt(dx * dx + dy * dy) / maxDist <= minDr) continue; // too close to the center, skip
       }
       const proc = proceduralTile(worldId, x, y);
       if (
         proc.type === 'center' ||
         proc.type === 'obstacle' ||
         proc.type === 'gate' ||
-        proc.type === 'stronghold' // 险地系统据点，不可作主城重生落点（G8）
+        proc.type === 'stronghold' // stronghold system strongpoint; cannot be used as a capital respawn location (G8)
       ) {
         continue;
       }
@@ -1787,11 +1795,11 @@ export class WorldService {
   }
 
   /**
-   * 自动落城选点（§3.4，2026-06-24 拍板，首次进入系统落城，落点策略=优先靠近家族）：
-   *  1) 有家族 → 在同家族成员主城周围由近及远（切比雪夫环）找第一个合法空格（半径 ≤ SPAWN_NEAR_FAMILY_RADIUS），
-   *     成员顺序随机打散，避免新人总挤在同一位成员旁（SLG 抱团核心）。
-   *  2) 退回外环新手区随机（dr > SPAWN_OUTER_MIN_DR，远离中心争夺区）。
-   *  3) 兜底全图随机。找不到返回 null（视为世界已满/无空格）。
+   * Auto-spawn point selection (§3.4, decided 2026-06-24; system auto-placement on first entry; placement strategy = prefer near family):
+   *  1) Has a family → search outward ring by ring (Chebyshev distance) around each family member's capital for the first legal empty tile (radius ≤ SPAWN_NEAR_FAMILY_RADIUS);
+   *     member order is randomly shuffled so new players don't always crowd the same member (core SLG clustering mechanic).
+   *  2) Fall back to outer newbie ring random (dr > SPAWN_OUTER_MIN_DR, away from the central contest zone).
+   *  3) Whole-map random fallback. If none found, return null (treated as world full / no empty tile).
    */
   private async pickSpawnTile(
     worldId: string,
@@ -1814,8 +1822,8 @@ export class WorldService {
   }
 
   /**
-   * 从 (ox,oy) 由近及远逐环（切比雪夫距离 1..maxR）找第一个合法空格（界内、非中心/障碍/关隘/险地、无人占领）。
-   * 同环候选顺序随机打散，避免家族新人沿固定方向排队成一条线。自动落城靠近家族用。
+   * Starting from (ox,oy), search ring by ring (Chebyshev distance 1..maxR) for the first legal empty tile (in bounds, not center/obstacle/gate/stronghold, unoccupied).
+   * Candidates within each ring are randomly shuffled so new family members don't line up in a fixed direction. Used by auto-spawn near family.
    */
   private async spiralFindEmpty(
     worldId: string,
@@ -1828,7 +1836,7 @@ export class WorldService {
       const ring: [number, number][] = [];
       for (let dx = -r; dx <= r; dx++) {
         for (let dy = -r; dy <= r; dy++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // 仅取该环边界
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // only include tiles on this ring's border
           ring.push([ox + dx, oy + dy]);
         }
       }
@@ -1846,7 +1854,7 @@ export class WorldService {
     return null;
   }
 
-  /** Fisher–Yates 洗牌（非回放路径，Math.random 安全）。返回新数组，不改原数组。 */
+  /** Fisher–Yates shuffle (not a replay path; Math.random is safe). Returns a new array; does not mutate the original. */
   private shuffled<T>(arr: T[]): T[] {
     const out = arr.slice();
     for (let i = out.length - 1; i > 0; i--) {
@@ -1856,9 +1864,9 @@ export class WorldService {
     return out;
   }
 
-  // ── 内部辅助 ─────────────────────────────────────────────
+  // ── Internal helpers ─────────────────────────────────────────────
 
-  /** 资源惰性结算：resources += yieldRate × dt(小时)，封顶 RESOURCE_CAP。 */
+  /** Lazy resource settlement: resources += yieldRate × dt (hours), capped at RESOURCE_CAP. */
   private settle(doc: PlayerWorldDoc, now: number): Record<ResourceType, number> {
     const dtHours = Math.max(0, (now - doc.lastTickAt) / 3_600_000);
     const out = emptyResources();
@@ -1869,7 +1877,7 @@ export class WorldService {
     return out;
   }
 
-  /** 把一组 {type,level,resType} 累加成每小时产率记录。 */
+  /** Aggregate a list of {type,level,resType} tiles into an hourly yield record. */
   private yieldRecord(
     tiles: { type: TileType; level: number; resType?: ResourceType }[],
   ): Record<ResourceType, number> {
@@ -1881,13 +1889,13 @@ export class WorldService {
     return acc;
   }
 
-  /** 从 DB 当前所有己方格子重算聚合产率（占领/放弃后调用）。 */
+  /** Recompute the aggregated yield from all currently owned tiles in the DB (called after occupy / abandon). */
   private async recomputeYield(
     worldId: string,
     accountId: string,
   ): Promise<Record<ResourceType, number>> {
     const owned = await this.deps.cols.tiles.find({ worldId, ownerId: accountId }).toArray();
-    // 国民产出加成（§2.4 / G1）：该玩家占领的首府 → 这些首府 Voronoi 区内的己方格享 +NATION_BONUS_PRODUCTION。
+    // Nation production bonus (§2.4 / G1): capitals occupied by this player → own tiles within those capitals' Voronoi regions receive +NATION_BONUS_PRODUCTION.
     const ownedNations = await this.deps.cols.nations.find({ worldId, ownerId: accountId }).toArray();
     const ownedCapIdx = new Set(ownedNations.map((n) => n.capitalIdx));
     if (ownedCapIdx.size === 0) return this.yieldRecord(owned);
@@ -1925,7 +1933,7 @@ export class WorldService {
     return { x, y, type: d.type, level: d.level, ...(d.resType ? { resType: d.resType } : {}) };
   }
 
-  // tileId = `{worldId}:{x}:{y}`，解出坐标（worldId 自身不含 ':'，取末两段）。
+  // tileId = `{worldId}:{x}:{y}`; extract coordinates (worldId itself contains no ':', so take the last two segments).
   private coordX(tid: string): number {
     const p = tid.split(':');
     return Number(p[p.length - 2]);
@@ -1948,8 +1956,8 @@ export class WorldService {
     };
   }
 
-  // ── Redis 调度（best-effort，§14.4 `world:{worldId}:march` ZSET，score=arriveAt）──
-  // 处理以 Mongo arriveAt 扫描为权威，ZSET 仅为未来精确唤醒；缺 Redis 时静默跳过。
+  // ── Redis scheduling (best-effort, §14.4 `world:{worldId}:march` ZSET, score=arriveAt) ──
+  // Processing uses the Mongo arriveAt scan as authoritative; the ZSET is only for future precise wake-ups; silently skipped when Redis is absent.
   private marchZsetKey(worldId: string): string {
     return `world:${worldId}:march`;
   }
@@ -1958,7 +1966,7 @@ export class WorldService {
     try {
       await this.deps.redis.zadd(this.marchZsetKey(worldId), arriveAt, mid);
     } catch {
-      /* best-effort：失败仅丢失精确唤醒，Mongo 扫描仍处理 */
+      /* best-effort: failure only loses the precise wake-up; the Mongo scan still processes arrivals */
     }
   }
   private async unscheduleMarch(worldId: string, mid: string): Promise<void> {
@@ -1970,7 +1978,7 @@ export class WorldService {
     }
   }
 
-  // ── 实时推送（best-effort，§14.5）──
+  // ── Real-time push (best-effort, §14.5) ──
   private async pushMarch(accountId: string, v: MarchView): Promise<void> {
     await this.gateway.push(accountId, {
       kind: 'march_update',
@@ -2008,11 +2016,11 @@ export class WorldService {
     });
   }
 
-  // ── S8-2：训练队列 ────────────────────────────────────────
+  // ── S8-2: training queue ────────────────────────────────────────
 
   /**
-   * 排入训练队列。消耗粮食，按 TROOP_TRAIN_TIME_SEC × qty 排期。
-   * 校验：已进入世界 + qty 合法 + 队列槽位未满 + 训练后兵力不超 troopCap + 粮食够。
+   * Enqueue a training batch. Consumes food; scheduled at TROOP_TRAIN_TIME_SEC × qty.
+   * Validation: joined world + qty is valid + queue slots not full + troops after training would not exceed troopCap + enough food.
    */
   async trainTroops(worldId: string, accountId: string, qty: number): Promise<PlayerWorldView> {
     const { cols, now } = this.deps;
@@ -2032,9 +2040,9 @@ export class WorldService {
     if ((resources.food ?? 0) < foodCost) throw new SlgError('INSUFFICIENT_RESOURCES', '粮食不足');
     resources.food = (resources.food ?? 0) - foodCost;
 
-    // 训练开始时间紧接上一批结束（队列串联），没有在训批次则立即开始。
+    // Training starts immediately after the previous batch finishes (chained queue); if no batch is in progress, start immediately.
     const lastComplete = queue.length > 0 ? queue[queue.length - 1]!.completeAt : t;
-    // 战令增益（S8-8）：hasBattlePass → 训练速度 +20%（时长 ×0.8）。
+    // Battle pass bonus (S8-8): hasBattlePass → training speed +20% (duration ×0.8).
     const trainSpeedMult = pw.hasBattlePass ? 0.8 : 1;
     const duration = Math.round(qty * TROOP_TRAIN_TIME_SEC * 1000 * trainSpeedMult);
     const entry: TrainingEntry = {
@@ -2055,9 +2063,9 @@ export class WorldService {
   }
 
   /**
-   * 金币加速训练。coins 换成缩短时长（TROOP_SPEEDUP_SECS_PER_COIN 秒/币），
-   * 从队首批次开始缩短，溢出部分移到下一批。到期的批次立即出队加兵。
-   * 调 commercial.spend() 扣金币（失败则不加速）。
+   * Spend coins to speed up training. Coins are converted to reduced duration (TROOP_SPEEDUP_SECS_PER_COIN seconds/coin);
+   * time is subtracted from the front of the queue, with overflow carrying to the next batch. Expired batches are immediately dequeued and added to troops.
+   * Calls commercial.spend() to deduct coins (no speedup if this fails).
    */
   async speedupTraining(worldId: string, accountId: string, coins: number): Promise<PlayerWorldView> {
     const { cols, now } = this.deps;
@@ -2067,13 +2075,13 @@ export class WorldService {
     const queue = pw.trainingQueue ?? [];
     if (queue.length === 0) throw new SlgError('BAD_REQUEST', '当前没有训练中的队列');
 
-    // 战令增益（S8-8）：hasBattlePass → 加速消耗金币 -15%（每币加速时长 ÷0.85）。
+    // Battle pass bonus (S8-8): hasBattlePass → speedup costs 15% fewer coins (time per coin ÷0.85).
     const speedupDiscountMult = pw.hasBattlePass ? 1 / 0.85 : 1;
     const speedSec = coins * TROOP_SPEEDUP_SECS_PER_COIN * speedupDiscountMult;
     const orderId = `slg_speedup:${worldId}:${accountId}:${now()}`;
     await this.commercial.spend(accountId, coins, orderId);
 
-    // 从 Mongo 取最新 doc（spend 调用后可能延迟，保证幂等）
+    // Re-fetch latest doc from Mongo (may have changed during the spend call; ensures idempotency)
     const fresh = await cols.playerWorld.findOne({ _id: pw._id });
     if (!fresh) return this.getMe(worldId, accountId);
 
@@ -2097,7 +2105,7 @@ export class WorldService {
       }
     }
 
-    // 同步后续批次的 startAt（completeAt 压缩后级联）
+    // Update startAt for remaining batches (cascade after compressing completeAt)
     for (let i = 1; i < newQueue.length; i++) {
       const prev = newQueue[i - 1]!;
       const cur = newQueue[i]!;
@@ -2114,14 +2122,14 @@ export class WorldService {
   }
 
   /**
-   * 处理到期训练批次（由 scheduler 每 2s 调用）。
-   * 遍历所有有 trainingQueue 的 playerWorld，取出 completeAt ≤ now 的批次，
-   * 原子 $inc troops + $pull 已完成条目。返回处理条数。
+   * Process completed training batches (called by the scheduler every 2s).
+   * Iterate all playerWorld documents with a trainingQueue; extract batches where completeAt ≤ now;
+   * atomically $inc troops + $pull completed entries. Returns the number of entries processed.
    */
   async processCompletedTraining(nowMs?: number): Promise<number> {
     const { cols } = this.deps;
     const t = nowMs ?? this.deps.now();
-    // 找所有队列非空且队首已到期的玩家（队首最早完成）
+    // Find all players with a non-empty queue whose first entry has completed (the first entry finishes earliest)
     const docs = await cols.playerWorld
       .find({ 'trainingQueue.0.completeAt': { $lte: t } })
       .project<{ _id: string; troops: number; troopCap: number; trainingQueue: TrainingEntry[] }>({
@@ -2136,7 +2144,7 @@ export class WorldService {
       if (done.length === 0) continue;
       const troopsReady = done.reduce((s, e) => s + e.qty, 0);
       const newTroops = Math.min(doc.troopCap, doc.troops + troopsReady);
-      // 原子：$inc troops + 移除已完成批次（按 completeAt 精确匹配）
+      // Atomic: $inc troops + remove completed batches (matched precisely by completeAt)
       for (const e of done) {
         await cols.playerWorld.updateOne(
           { _id: doc._id },
@@ -2152,12 +2160,12 @@ export class WorldService {
     return n;
   }
 
-  // ── S8-4 残留：防守 config ────────────────────────────────
+  // ── S8-4 residual: defense config ────────────────────────────────
 
   /**
-   * 设置领地或主城防守 config（玩家编辑防守关）。
-   * tileKey='base' → 写主城 playerWorld.defense；否则写该 tileId 的 tile.defense。
-   * 防守 config 内容在此层不校验（P2 延迟校验，§14.9），levelSchema 校验在引擎侧 S8-3b 后补。
+   * Set the defense config for a territory tile or capital (player editing the defense).
+   * tileKey='base' → write to the capital's playerWorld.defense; otherwise write to the corresponding tile.defense.
+   * Defense config contents are not validated at this layer (P2 deferred validation, §14.9); levelSchema validation on the engine side is added in S8-3b.
    */
   async setDefense(
     worldId: string,
@@ -2166,7 +2174,7 @@ export class WorldService {
     defenseConfig: Record<string, unknown>,
   ): Promise<void> {
     const { cols } = this.deps;
-    // G3-2c：编辑器写入结构化布阵 → 保存时即过引擎 levelSchema 校验（非法 unitType/列/行 → 拒）。
+    // G3-2c: editor writes a structured formation → validated against the engine levelSchema on save (invalid unitType/column/row → rejected).
     try {
       validateDefenseConfig(defenseConfig);
     } catch (err) {
@@ -2183,7 +2191,7 @@ export class WorldService {
     } else {
       const tile = await cols.tiles.findOne({ _id: tileKey });
       if (!tile?.ownerId) throw new SlgError('TILE_NOT_OWNED', '非领地');
-      // 己方领地，或同家族盟军领地（§4 代守；盟友宗门通行待联盟系统）均可布防。
+      // Own territory, or same-family ally territory (§4 proxy defense; allied sect passage pending alliance system) can both be set for defense.
       if (tile.ownerId !== accountId && !(await this.sameFamily(worldId, accountId, tile.ownerId))) {
         throw new SlgError('TILE_NOT_OWNED', '非己方/盟军领地');
       }
@@ -2194,7 +2202,7 @@ export class WorldService {
     }
   }
 
-  /** 两个账号是否同属一个家族（§4 代守 / 关隘通行的盟友判定，与 computeMarchPath 一致）。 */
+  /** Whether two accounts belong to the same family (ally determination for §4 proxy defense / gate passage, consistent with computeMarchPath). */
   private async sameFamily(worldId: string, a: string, b: string): Promise<boolean> {
     if (a === b) return true;
     const { cols } = this.deps;
@@ -2205,9 +2213,9 @@ export class WorldService {
     return !!ma?.familyId && ma.familyId === mb?.familyId;
   }
 
-  // ── G3-2c：进攻布阵模板（队伍）─────────────────────────────
+  // ── G3-2c: attack formation templates (teams) ─────────────────────────────
 
-  /** 读玩家在某世界的进攻布阵模板列表（编辑器/出征预填）。未进入世界抛 TILE_NOT_OWNED。 */
+  /** Read the player's list of attack formation templates in a given world (editor / pre-fill on departure). Throws TILE_NOT_OWNED if the player has not joined the world. */
   async getTeams(worldId: string, accountId: string): Promise<TeamTemplate[]> {
     const pw = await this.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
@@ -2215,8 +2223,7 @@ export class WorldService {
   }
 
   /**
-   * 覆盖写玩家进攻布阵模板（编辑器保存，§16.2）。校验：≤ SIEGE_TEAM_CAP 支、id 唯一、每支队
-   * army 过引擎 levelSchema（validateAttackerArmy）。整组覆盖（前端传全量）。
+   * Overwrite the player's attack formation templates (editor save, §16.2). Validation: ≤ SIEGE_TEAM_CAP teams, unique ids, each team's army validated by the engine levelSchema (validateAttackerArmy). Full-set overwrite (frontend sends the complete list).
    */
   async setTeams(worldId: string, accountId: string, teams: TeamTemplate[]): Promise<void> {
     if (!Array.isArray(teams)) throw new SlgError('BAD_REQUEST', 'teams 须为数组');
@@ -2239,9 +2246,9 @@ export class WorldService {
   }
 
   /**
-   * 读取领地或主城当前防守 config（C3 编辑器预填）。
-   * tileKey='base' → 主城 playerWorld.defense；否则该 tileId 的 tile.defense。
-   * 未设置返回 null；非己方领地抛 TILE_NOT_OWNED。
+   * Read the current defense config for a territory tile or capital (C3 editor pre-fill).
+   * tileKey='base' → capital's playerWorld.defense; otherwise the tile's tile.defense.
+   * Returns null if not set; throws TILE_NOT_OWNED for non-own territory.
    */
   async getDefense(
     worldId: string,
@@ -2259,13 +2266,13 @@ export class WorldService {
     return (tile.defense as Record<string, unknown> | undefined) ?? null;
   }
 
-  // ── G3-2c：围攻重播观战 ───────────────────────────────────
+  // ── G3-2c: siege replay spectating ───────────────────────────────────
 
   /**
-   * 取一场关键围攻的「重播观战」关卡（G3-2c，§16.3）。攻守双方均可读（旁观非权威，纯演出）。
-   * 用 landSiege 持久化的 seed + 双方布阵 + 格等级重建 buildSiegeBattle → 形态对齐客户端
-   * LevelDefinition。客户端凭同 seed 以空 ReplayInputSource 在 siege 模式 headless 重跑，
-   * 逐字复现 worldsvc 跑过的那一场。缺重播输入（廉价兜底 / NPC 扫荡 / 旧战报）→ REPLAY_UNAVAILABLE。
+   * Retrieve the "replay spectating" level for a decisive siege (G3-2c, §16.3). Both attacker and defender can read it (spectating is not authoritative; purely visual).
+   * Reconstructs buildSiegeBattle from the seed + both sides' formations + tile level persisted by landSiege → shape aligned with the client's LevelDefinition.
+   * The client reruns the same siege headless in siege mode using an empty ReplayInputSource and the same seed, reproducing exactly what worldsvc ran.
+   * If replay inputs are missing (cheap fallback / NPC sweep / old battle report) → REPLAY_UNAVAILABLE.
    */
   async getSiegeReplay(
     worldId: string,
@@ -2289,11 +2296,11 @@ export class WorldService {
     return { siegeId: sid, seed: siege.seed, outcome: siege.outcome, level };
   }
 
-  // ── S8-6.5：国家系统 ──────────────────────────────────────
+  // ── S8-6.5: nation system ──────────────────────────────────────
 
   /**
-   * 初始化世界的 10 个首府文档（赛季开服时调用，幂等）。
-   * 若已存在则跳过（$setOnInsert + _id 唯一防重复）。
+   * Initialize the 10 capital documents for a world (called when a season opens; idempotent).
+   * Skips existing documents ($setOnInsert + unique _id prevents duplicates).
    */
   async initNations(worldId: string): Promise<void> {
     const caps = this.capitals;
@@ -2305,15 +2312,15 @@ export class WorldService {
     }
   }
 
-  /** 获取世界所有国家状态。 */
+  /** Get the state of all nations in a world. */
   async getNations(worldId: string): Promise<NationDoc[]> {
     return this.deps.cols.nations.find({ worldId }).toArray();
   }
 
   /**
-   * 当围攻/占领到达目标格时检查是否是首府格，触发立国或灭国。
-   * winnerAccountId = 占领者；若此格原先属于另一国则灭其国。
-   * 返回是否触发了国家状态变更。
+   * Check whether the target tile on siege/occupation arrival is a capital tile; trigger nation founding or conquest.
+   * winnerAccountId = the occupier; if this tile previously belonged to another nation, that nation falls.
+   * Returns whether a nation state change was triggered.
    */
   private async applyNationChange(
     worldId: string,
@@ -2323,7 +2330,7 @@ export class WorldService {
     winnerFamilyId?: string,
   ): Promise<boolean> {
     const idx = capitalIdxAt(x, y, this.capitals);
-    if (idx < 0) return false; // 不是首府格
+    if (idx < 0) return false; // not a capital tile
     const nationId = `nation:${worldId}:${idx}`;
     await this.deps.cols.nations.updateOne(
       { _id: nationId },
@@ -2334,13 +2341,13 @@ export class WorldService {
           foundedAt: this.deps.now(),
           rev: 1, // 覆盖，不自增（简化，后续可改 $inc）
         },
-        $unset: { nationName: '' }, // 新占领重命名前清空旧国名
+        $unset: { nationName: '' }, // clear the old nation name before the new occupier renames it
       },
     );
     return true;
   }
 
-  /** 设置国家名称（仅首府占领者可命名）。 */
+  /** Set the nation name (only the capital occupier may name it). */
   async setNationName(worldId: string, accountId: string, capitalIdx: number, name: string): Promise<void> {
     if (!name || name.length < 1 || name.length > 10) throw new SlgError('BAD_REQUEST', '国名 1~10 字');
     const nationId = `nation:${worldId}:${capitalIdx}`;
@@ -2351,8 +2358,8 @@ export class WorldService {
   }
 
   /**
-   * 查询 (x,y) 对应的国家（Voronoi 分区最近首府）。
-   * 若最近首府当前无国家（无主），返回 null。
+   * Query the nation corresponding to (x,y) (nearest capital by Voronoi partition).
+   * Returns null if the nearest capital currently has no nation (ownerless).
    */
   async getNationAt(worldId: string, x: number, y: number): Promise<NationDoc | null> {
     const idx = nearestCapitalIdx(x, y, this.capitals);
@@ -2360,7 +2367,7 @@ export class WorldService {
     return this.deps.cols.nations.findOne({ _id: nationId });
   }
 
-  // ── S8-7：赛季管理 ────────────────────────────────────────
+  // ── S8-7: season management ────────────────────────────────────────
 
   /** 获取世界/赛季信息（GET /world/season）。 */
   async getSeason(worldId: string): Promise<{

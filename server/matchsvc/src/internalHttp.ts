@@ -1,9 +1,9 @@
-// matchsvc 内部 HTTP（S1-M5，不暴露公网）。两类调用方，鉴权均为 X-Internal-Key：
-//   • gateway（控制面网关）：转发玩家控制命令 → /mm/room/* · /mm/queue/* · /mm/conn/*；
-//   • gameserver（数据面）：启动注册 + 周期心跳 → /mm/game/register · /mm/game/heartbeat。
+// matchsvc internal HTTP (S1-M5, not exposed to the public internet). Two categories of callers, both authenticated via X-Internal-Key:
+//   • gateway (control-plane): forwards player control commands → /mm/room/* · /mm/queue/* · /mm/conn/*;
+//   • gameserver (data-plane): startup registration + periodic heartbeat → /mm/game/register · /mm/game/heartbeat.
 //
-// 用 node:http（matchsvc 不引 fastify）。命令均为「收到即处理、异步事件经 GatewayClient 回推」，
-// 故响应只回 {ok:true}（不在 HTTP 响应里带房间态）。
+// Uses node:http (matchsvc does not use fastify). Commands are "process on receipt; push async events back via GatewayClient",
+// so responses only return {ok:true} (no room state in the HTTP response).
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import { createLogger, type InternalAuthVerifier } from '@nw/shared';
 import type { Matchsvc } from './Matchsvc';
@@ -42,7 +42,7 @@ export function startInternalHttp(
 ): Server {
   const server = createServer((req, res) => {
     void (async () => {
-      // 存活探针（无需鉴权）：docker healthcheck / CI 等待用。
+      // Liveness probe (no auth required): used by docker healthcheck / CI wait.
       if (req.method === 'GET' && req.url === '/health') {
         send(res, 200, { ok: true, service: 'matchsvc' });
         return;
@@ -55,7 +55,7 @@ export function startInternalHttp(
         send(res, 401, { ok: false, error: 'unauthorized' });
         return;
       }
-      // 实时态聚合（admin 监控/采样，OPS_DESIGN §4.1）：队列/房间/game 实例。
+      // Real-time state aggregation (admin monitoring/sampling, OPS_DESIGN §4.1): queue / room / game instances.
       if (req.method === 'GET' && req.url === '/internal/stats') {
         send(res, 200, svc.stats());
         return;
@@ -66,11 +66,11 @@ export function startInternalHttp(
       }
       try {
         const b = await readJson(req);
-        // game 心跳每 10s 一次，噪声大 → debug；其余命令 info。
+        // Game heartbeat fires every 10s and is noisy → debug; all other commands use info.
         if (req.url === '/mm/game/heartbeat') log.debug(`recv ${req.url}`, { gameId: b.gameId });
         else log.info(`recv ${req.url}`, { accountId: b.accountId, code: b.code, gameId: b.gameId });
         switch (req.url) {
-          // —— gateway 控制命令 ——
+          // —— gateway control commands ——
           case '/mm/room/create':
             svc.roomCreate(str(b.accountId), str(b.name), str(b.publicId));
             break;
@@ -95,7 +95,7 @@ export function startInternalHttp(
           case '/mm/conn/disconnected':
             svc.onDisconnected(str(b.accountId));
             break;
-          // —— gameserver 注册 / 心跳 ——
+          // —— gameserver registration / heartbeat ——
           case '/mm/game/register':
             if (!b.gameId || !b.wsUrl) {
               send(res, 400, { ok: false, error: 'gameId and wsUrl required' });

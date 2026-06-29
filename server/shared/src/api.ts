@@ -1,4 +1,4 @@
-// 统一响应包络 + 错误码（SERVER_API.md §1.2 / §1.3）。
+﻿// Unified response envelope + error codes (SERVER_API.md §1.2 / §1.3).
 
 export type ApiResp<T> =
   | { ok: true; data: T }
@@ -17,20 +17,20 @@ export const ErrorCode = {
   NOT_IMPLEMENTED: 'NOT_IMPLEMENTED',
   BAD_REQUEST: 'BAD_REQUEST',
   INTERNAL: 'INTERNAL',
-  // —— 账号系统（SA-1/SA-2）——
+  // —— account system (SA-1/SA-2) ——
   LOGIN_ID_TAKEN: 'LOGIN_ID_TAKEN',
   INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
   WEAK_PASSWORD: 'WEAK_PASSWORD',
   ALREADY_BOUND: 'ALREADY_BOUND',
   OAUTH_FAILED: 'OAUTH_FAILED',
-  // —— 社交系统（S6，SOCIAL_DESIGN §5）——
+  // —— social system (S6, SOCIAL_DESIGN §5) ——
   FRIEND_CAP_REACHED: 'FRIEND_CAP_REACHED',
   ALREADY_FRIEND: 'ALREADY_FRIEND',
   NOT_FRIEND: 'NOT_FRIEND',
   BLOCKED: 'BLOCKED',
   ALREADY_CLAIMED: 'ALREADY_CLAIMED',
   NO_ATTACHMENT: 'NO_ATTACHMENT',
-  // —— SLG 大世界（S8，SLG_DESIGN §14.7）——
+  // —— SLG world map (S8, SLG_DESIGN §14.7) ——
   WORLD_FULL: 'WORLD_FULL',
   WORLD_CLOSED: 'WORLD_CLOSED',
   TILE_NOT_OWNED: 'TILE_NOT_OWNED',
@@ -48,38 +48,38 @@ export const ErrorCode = {
   NOT_DESIGNATED_BUYER: 'NOT_DESIGNATED_BUYER',
   INSUFFICIENT_RESOURCES: 'INSUFFICIENT_RESOURCES',
   AUCTION_LIMIT_REACHED: 'AUCTION_LIMIT_REACHED',
-  // —— S8-5 拍卖行反 RMT 缺口（C/E/G/B）——
-  PRICE_OUT_OF_RANGE: 'PRICE_OUT_OF_RANGE',       // G 价格护栏：单价越界
-  MATERIAL_NOT_TRADEABLE: 'MATERIAL_NOT_TRADEABLE', // E 绑定材料禁挂
-  BID_TOO_LOW: 'BID_TOO_LOW',                      // B 竞拍：出价低于起拍/加价幅度
+  // —— S8-5 auction house anti-RMT gaps (C/E/G/B) ——
+  PRICE_OUT_OF_RANGE: 'PRICE_OUT_OF_RANGE',       // G price guardrail: unit price out of range
+  MATERIAL_NOT_TRADEABLE: 'MATERIAL_NOT_TRADEABLE', // E bound material may not be listed
+  BID_TOO_LOW: 'BID_TOO_LOW',                      // B auction bid: bid below starting price or minimum increment
   NO_PERMISSION: 'NO_PERMISSION',
-  // —— S8-6.6 A* 寻路 ——
+  // —— S8-6.6 A* pathfinding ——
   PATH_BLOCKED: 'PATH_BLOCKED',
-  // —— S8-4b 宗门（Sect）——
+  // —— S8-4b Sect ——
   SECT_FULL: 'SECT_FULL',
   NOT_IN_SECT: 'NOT_IN_SECT',
   ALREADY_IN_SECT: 'ALREADY_IN_SECT',
   ALLY_CAP_REACHED: 'ALLY_CAP_REACHED',
-  // —— G2 繁荣度（建宗门门槛，§17.4）——
+  // —— G2 prosperity (sect founding threshold, §17.4) ——
   PROSPERITY_TOO_LOW: 'PROSPERITY_TOO_LOW',
-  // —— 装备系统（E2 合成 + 拍卖装备交易，EQUIPMENT_DESIGN §4.A/§18）——
-  INSUFFICIENT_MATERIALS: 'INSUFFICIENT_MATERIALS', // 合成材料不足
-  INVENTORY_FULL: 'INVENTORY_FULL',                 // 装备库存达 300 上限
-  EQUIP_NOT_FOUND: 'EQUIP_NOT_FOUND',               // 装备实例不存在
-  EQUIP_LOCKED: 'EQUIP_LOCKED',                     // 装备被锁（防误用为燃料）→ 不可挂拍/分解
-  EQUIP_IN_USE: 'EQUIP_IN_USE',                     // 装备穿戴中 → 不可挂拍/分解
-  // —— 装备 E3 强化/分解 + E4 穿戴（EQUIPMENT_DESIGN §6/§18）——
-  ENHANCE_MAX_LEVEL: 'ENHANCE_MAX_LEVEL',           // 已 +9 满级，不可再强化
-  NOT_SALVAGEABLE: 'NOT_SALVAGEABLE',               // 不可分解（+5 及以上，§6.3）
-  INVALID_SLOT: 'INVALID_SLOT',                     // 穿戴槽位与装备定义槽位不匹配
-  // —— PvE 反作弊（S4-4）——
-  ACCOUNT_BANNED: 'ACCOUNT_BANNED',                 // 录像复算三次拒绝封号
-  // —— 合规（C5）——
-  ACCOUNT_DELETED: 'ACCOUNT_DELETED',               // 软删除账号，auth 返 410
-  // —— 体力系统（A4）——
-  INSUFFICIENT_STAMINA: 'INSUFFICIENT_STAMINA',     // 体力不足，无法进关
-  // —— 社交频道（B7）——
-  NOT_IN_WORLD: 'NOT_IN_WORLD',                     // 玩家尚未入驻该世界（无 playerWorld 记录）
+  // —— equipment system (E2 crafting + auction equipment trading, EQUIPMENT_DESIGN §4.A/§18) ——
+  INSUFFICIENT_MATERIALS: 'INSUFFICIENT_MATERIALS', // insufficient crafting materials
+  INVENTORY_FULL: 'INVENTORY_FULL',                 // equipment inventory at 300-item cap
+  EQUIP_NOT_FOUND: 'EQUIP_NOT_FOUND',               // equipment instance not found
+  EQUIP_LOCKED: 'EQUIP_LOCKED',                     // equipment is locked (to prevent accidental use as fuel) → may not be listed/salvaged
+  EQUIP_IN_USE: 'EQUIP_IN_USE',                     // equipment is equipped → may not be listed/salvaged
+  // —— equipment E3 enhancement/salvage + E4 equip (EQUIPMENT_DESIGN §6/§18) ——
+  ENHANCE_MAX_LEVEL: 'ENHANCE_MAX_LEVEL',           // already at +9 max level, cannot enhance further
+  NOT_SALVAGEABLE: 'NOT_SALVAGEABLE',               // not salvageable (+5 and above, §6.3)
+  INVALID_SLOT: 'INVALID_SLOT',                     // equip slot does not match the equipment's defined slot
+  // —— PvE anti-cheat (S4-4) ——
+  ACCOUNT_BANNED: 'ACCOUNT_BANNED',                 // replay re-computation rejected three times — account banned
+  // —— compliance (C5) ——
+  ACCOUNT_DELETED: 'ACCOUNT_DELETED',               // soft-deleted account; auth returns 410
+  // —— stamina system (A4) ——
+  INSUFFICIENT_STAMINA: 'INSUFFICIENT_STAMINA',     // insufficient stamina to enter a stage
+  // —— social channel (B7) ——
+  NOT_IN_WORLD: 'NOT_IN_WORLD',                     // player has not yet joined this world (no playerWorld record)
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -95,7 +95,7 @@ export function err(code: ErrorCode, message: string): {
   return { ok: false, error: { code, message } };
 }
 
-/** HTTP 状态码 → 错误码的约定映射（SERVER_API.md §2 标注的状态码）。 */
+/** Conventional mapping from HTTP status codes to error codes (status codes noted in SERVER_API.md §2). */
 export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.UNAUTHENTICATED]: 401,
   [ErrorCode.REV_CONFLICT]: 409,

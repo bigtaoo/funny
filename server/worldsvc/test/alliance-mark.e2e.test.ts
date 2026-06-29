@@ -1,7 +1,7 @@
-// worldsvc 联盟领地标记 端到端（G5 余项，§8.2 / §18.1 V5）：真实 Mongo。Mongo 不可达整套 skip。
-//   联盟宗门（sect.allySectIds）成员的领地：**不共享视野**，仅在视野内时标 allySect=true（客户端黄描边）。
-//   链路：accountId → familyMembers → family.sectId → sect.allySectIds → 联盟宗门成员家族 → 成员。
-// 需 `cd server && docker compose up -d`。
+﻿// worldsvc alliance territory marking end-to-end (G5 remaining items, §8.2 / §18.1 V5): real Mongo. Entire suite skipped if Mongo is unreachable.
+//   Territory belonging to members of allied sects (sect.allySectIds): **vision is not shared** — only tiles within line-of-sight are marked allySect=true (client renders with yellow outline).
+//   Lookup chain: accountId → familyMembers → family.sectId → sect.allySectIds → allied-sect member families → members.
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { SLG_MAP_W, SLG_MAP_H } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -30,7 +30,7 @@ describe.skipIf(!mongo)('worldsvc 联盟领地标记 e2e (G5 / §8.2 V5)', () =>
   const now = () => nowMs;
   let svc: WorldService;
 
-  // 宗门/家族 id（建链：a∈famA∈sectA，sectA 联盟 sectB；ally1/ally2∈famB∈sectB；enemy∈famE∈sectC 无联盟）。
+  // Sect/family ids (chain: a∈famA∈sectA, sectA allied with sectB; ally1/ally2∈famB∈sectB; enemy∈famE∈sectC with no alliance).
   const sectA = `s:${W}:AAA`;
   const sectB = `s:${W}:BBB`;
   const sectC = `s:${W}:CCC`;
@@ -71,31 +71,31 @@ describe.skipIf(!mongo)('worldsvc 联盟领地标记 e2e (G5 / §8.2 V5)', () =>
 
   it('视野内的联盟宗门领地标 allySect（非 ally / 非 mine），敌方/家族不标', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    await svc.joinWorld(W, 'ally1', 9, 9);  // 联盟宗门成员，在 a 基地视野半径内（Chebyshev 4）
-    await svc.joinWorld(W, 'enemy', 8, 8);  // 非联盟，也在视野内
+    await svc.joinWorld(W, 'ally1', 9, 9);  // allied-sect member, within a's base vision radius (Chebyshev 4)
+    await svc.joinWorld(W, 'enemy', 8, 8);  // non-allied, also within vision
     await setupAlliance();
 
     const view = await svc.getMap(W, 'a', 6, 6, 5);
     const allyTile = view.tiles.find((t) => t.x === 9 && t.y === 9)!;
     expect(allyTile).toMatchObject({ type: 'base', occupied: true, visible: true, allySect: true });
     expect(allyTile.mine).toBeUndefined();
-    expect(allyTile.ally).toBeUndefined(); // 跨宗门联盟，非同家族
+    expect(allyTile.ally).toBeUndefined(); // cross-sect alliance — not the same family
 
     const enemyTile = view.tiles.find((t) => t.x === 8 && t.y === 8)!;
     expect(enemyTile).toMatchObject({ type: 'base', occupied: true, visible: true });
-    expect(enemyTile.allySect).toBeUndefined(); // 非联盟宗门 → 不标记
+    expect(enemyTile.allySect).toBeUndefined(); // not an allied sect → not marked
     expect(enemyTile.ally).toBeUndefined();
   });
 
   it('联盟不共享视野：远处联盟领地仍是迷雾（visible:false，不标 allySect）', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    await svc.joinWorld(W, 'ally2', 250, 250); // 联盟成员但远超 a 视野
+    await svc.joinWorld(W, 'ally2', 250, 250); // allied member but far beyond a's vision
     await setupAlliance();
 
     const view = await svc.getMap(W, 'a', 250, 250, 2);
     const far = view.tiles.find((t) => t.x === 250 && t.y === 250)!;
-    expect(far.visible).toBe(false);          // 联盟不共享视野 → 看不见
-    expect(far.allySect).toBeUndefined();     // 视野外不泄露任何动态层（含联盟标记）
+    expect(far.visible).toBe(false);          // alliance does not share vision → not visible
+    expect(far.allySect).toBeUndefined();     // nothing in the dynamic layer (including alliance marks) is leaked outside vision
     expect(far.occupied).toBeUndefined();
   });
 
@@ -103,7 +103,7 @@ describe.skipIf(!mongo)('worldsvc 联盟领地标记 e2e (G5 / §8.2 V5)', () =>
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.joinWorld(W, 'ally1', 9, 9);
     await setupAlliance();
-    // 解除 a 所在宗门的联盟 → ally1 领地虽可见，也不再标记。
+    // Remove the alliance of a's sect → ally1's territory is visible but no longer marked.
     await m.collections.sects.updateOne({ _id: sectA }, { $set: { allySectIds: [] } });
 
     const view = await svc.getMap(W, 'a', 6, 6, 5);

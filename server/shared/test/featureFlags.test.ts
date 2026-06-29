@@ -1,4 +1,4 @@
-// 功能开关核心单测（FEATURE_FLAGS_DESIGN §3 求值顺序 6 条 + hash 稳定 + 缓存降级）。
+// Feature flag core unit tests (FEATURE_FLAGS_DESIGN §3: 6-step evaluation order + hash stability + cache degradation).
 import { describe, it, expect, vi } from 'vitest';
 import {
   evaluateFlag,
@@ -45,11 +45,11 @@ describe('evaluateFlag — 求值顺序', () => {
 
   it('4b. allowPublicIds 命中 → true（§9.1，盖过 region/platform/pct；与 accountId 解耦）', () => {
     const d = doc({ rollout: { allowPublicIds: ['123456789'], regions: ['eu'], platforms: ['web'], pct: 0 } });
-    // 仅凭 publicId 命中（无 accountId 也行，且无视 region/platform/pct 限定）。
+    // Matched purely by publicId (accountId not required; region/platform/pct restrictions are bypassed).
     expect(evaluateFlag(KEY, d, { publicId: '123456789', region: 'cn', platform: 'wechat' })).toBe(true);
-    // publicId 不在名单 → 不靠它命中（其余限定不通过 → false）。
+    // publicId not in allowlist → not matched (other restrictions also fail → false).
     expect(evaluateFlag(KEY, d, { publicId: '999999999', region: 'cn' })).toBe(false);
-    // allowAccounts 与 allowPublicIds 互不串味：填了 publicId 名单不会因 accountId 同值而命中（pct:0 兜底验证不靠它放行）。
+    // allowAccounts and allowPublicIds are independent: an allowPublicIds list does not grant access via accountId with the same value (pct:0 fallback verifies it is not admitted).
     expect(evaluateFlag(KEY, doc({ rollout: { allowPublicIds: ['123456789'], pct: 0 } }), { accountId: '123456789' })).toBe(false);
   });
 
@@ -75,7 +75,7 @@ describe('evaluateFlag — 求值顺序', () => {
     expect(evaluateFlag(KEY, doc({ rollout: { pct: 100 } }), {})).toBe(true); // 未登录 + 全量
     expect(evaluateFlag(KEY, doc({ rollout: { pct: 0 } }), { accountId: 'a' })).toBe(false);
     expect(evaluateFlag(KEY, doc({ rollout: { pct: 50 } }), {})).toBe(false); // 未登录 + 非全量 → 保守关
-    // pct=50：随机 200 个账号命中比例应大致接近 50%（FNV 分布）。
+    // pct=50: hit rate across 200 random accounts should be approximately 50% (FNV distribution).
     let hit = 0;
     for (let i = 0; i < 200; i++) {
       if (evaluateFlag(KEY, doc({ rollout: { pct: 50 } }), { accountId: `acc-${i}` })) hit++;
@@ -139,7 +139,7 @@ describe('FeatureFlagCache', () => {
       },
       now: () => 0,
     });
-    // 冷启动从未拉到 → default
+    // Cold start — never fetched yet → default
     expect(cache.isOn(KEY, { accountId: 'a' })).toBe(false);
     expect(cache.hasLoaded).toBe(false);
 
@@ -147,7 +147,7 @@ describe('FeatureFlagCache', () => {
     expect(cache.hasLoaded).toBe(true);
     expect(cache.isOn(KEY, { accountId: 'a' })).toBe(true);
 
-    // admin 挂了：保留旧缓存
+    // admin is down: stale cache is retained
     fail = true;
     await cache.refresh();
     expect(cache.isOn(KEY, { accountId: 'a' })).toBe(true);
@@ -159,7 +159,7 @@ describe('FeatureFlagCache', () => {
       region: 'eu',
     });
     await cache.refresh();
-    expect(cache.isOn(KEY, { accountId: 'a' })).toBe(true); // region 缺省取 cache.region
-    expect(cache.isOn(KEY, { accountId: 'a', region: 'cn' })).toBe(false); // 显式覆盖
+    expect(cache.isOn(KEY, { accountId: 'a' })).toBe(true); // region defaults to cache.region
+    expect(cache.isOn(KEY, { accountId: 'a', region: 'cn' })).toBe(false); // explicit override
   });
 });

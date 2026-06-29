@@ -1,7 +1,7 @@
-// worldsvc AuctionService 端到端（S8-5）：真实 Mongo 专属库。Mongo 不可达整套 skip。
-// 挂拍 / 购买（扣金币+发标的+付卖方+10%税） / 取消（退标的） / 过期扫描（退标的）；
-// 校验：装备未实现 / 无效时长 / 上限 / 买自己 / 非拥有者取消 / 已成交不能再买 / NOT_DESIGNATED_BUYER。
-// 需 `cd server && docker compose up -d`。
+// worldsvc AuctionService end-to-end (S8-5): real Mongo with a dedicated database. Entire suite skipped if Mongo is unreachable.
+// Tests: listing / buying (deduct coins + deliver item + pay seller + 10% tax) / cancel (refund item) / expiry scan (refund item);
+// validation: equipment not implemented / invalid duration / listing cap / buying own auction / non-owner cancel / already sold / NOT_DESIGNATED_BUYER.
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   AUCTION_DURATIONS_SEC,
@@ -38,7 +38,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
   const grants: Array<{ account: string; amount: number; orderId: string }> = [];
   const materialDeducts: Array<{ account: string; material: string; qty: number; orderId: string }> = [];
   const materialGrants: Array<{ account: string; material: string; qty: number; orderId: string }> = [];
-  // 装备：模拟 meta 库存（Map<account, Map<instanceId, instance>>）+ 托管/转移流水。
+  // Equipment: simulated meta inventory (Map<account, Map<instanceId, instance>>) + escrow/transfer log.
   const equipInv = new Map<string, Map<string, EquipmentInstance>>();
   const equipEscrows: Array<{ account: string; instanceId: string; orderId: string }> = [];
   const equipGrants: Array<{ account: string; instanceId: string; orderId: string }> = [];
@@ -111,9 +111,9 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await mongo?.close();
   });
 
-  const DUR = AUCTION_DURATIONS_SEC[0]; // 最短时长（e.g. 3600s）
+  const DUR = AUCTION_DURATIONS_SEC[0]; // shortest duration (e.g. 3600s)
 
-  it('挂拍 → 扣材料托管', async () => {
+  it('list auction → deduct and escrow materials', async () => {
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 5, price: 10, durationSec: DUR,
@@ -125,7 +125,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(materialDeducts[0]).toMatchObject({ account: 'alice', material: 'scrap', qty: 5 });
   });
 
-  it('装备挂拍缺 instanceId → BAD_REQUEST（不触发托管）', async () => {
+  it('equipment listing missing instanceId → BAD_REQUEST (escrow not triggered)', async () => {
     await expect(svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'equipment',
       item: { foo: 'bar' }, qty: 1, price: 400, durationSec: DUR,
@@ -133,15 +133,15 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(equipEscrows).toHaveLength(0);
   });
 
-  it('无效时长 → BAD_REQUEST', async () => {
+  it('invalid duration → BAD_REQUEST', async () => {
     await expect(svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 1, price: 1, durationSec: 999,
     })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('挂单超上限 → AUCTION_LIMIT_REACHED', async () => {
-    // price 须落在 scrap 静态参考价护栏带内（ref=10 → [5,20]），用 10。
+  it('listing exceeds cap → AUCTION_LIMIT_REACHED', async () => {
+    // price must fall within the scrap static reference price guardrail band (ref=10 → [5,20]), use 10.
     for (let i = 0; i < AUCTION_MAX_LISTINGS; i++) {
       await svc.createAuction({
         worldId: W, sellerId: 'alice', itemType: 'material',
@@ -154,8 +154,8 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     })).rejects.toMatchObject({ code: 'AUCTION_LIMIT_REACHED' });
   });
 
-  it('购买：扣金币 + 发材料 + 付卖方（10%税）', async () => {
-    // lead 静态参考价 ref=30 → 护栏带 [15,60]，用单价 30。
+  it('buy: deduct coins + deliver materials + pay seller (10% tax)', async () => {
+    // lead static reference price ref=30 → guardrail band [15,60], use unit price 30.
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'lead' }, qty: 2, price: 30, durationSec: DUR,
@@ -172,7 +172,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(grants[0]).toMatchObject({ account: 'alice', amount: 60 - tax });
   });
 
-  it('买自己的拍卖 → BAD_REQUEST', async () => {
+  it('buy own auction → BAD_REQUEST', async () => {
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
@@ -180,7 +180,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await expect(svc.buyAuction(W, 'alice', view.auctionId)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('已成交后再次购买 → AUCTION_CLOSED', async () => {
+  it('buying an already-sold auction → AUCTION_CLOSED', async () => {
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
@@ -189,7 +189,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await expect(svc.buyAuction(W, 'carol', view.auctionId)).rejects.toMatchObject({ code: 'AUCTION_CLOSED' });
   });
 
-  it('指定买家：其他人购买 → NOT_DESIGNATED_BUYER', async () => {
+  it('designated buyer: another buyer → NOT_DESIGNATED_BUYER', async () => {
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'binding' }, qty: 1, price: 50, durationSec: DUR,
@@ -200,7 +200,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(bought.status).toBe('sold');
   });
 
-  it('卖方取消 → 退还材料', async () => {
+  it('seller cancels → refund materials', async () => {
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 3, price: 5, durationSec: DUR,
@@ -211,7 +211,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(refund).toMatchObject({ account: 'alice', material: 'scrap', qty: 3 });
   });
 
-  it('非卖方取消 → NO_PERMISSION', async () => {
+  it('non-seller cancels → NO_PERMISSION', async () => {
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
@@ -219,12 +219,12 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await expect(svc.cancelAuction(W, 'bob', view.auctionId)).rejects.toMatchObject({ code: 'NO_PERMISSION' });
   });
 
-  it('过期扫描：处理 expired + 退还卖方标的', async () => {
+  it('expiry scan: process expired listings + refund seller items', async () => {
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'lead' }, qty: 4, price: 20, durationSec: DUR,
     });
-    // 强制 expireAt 到过去
+    // force expireAt into the past
     await mongo!.collections.auctions.updateOne(
       { _id: view.auctionId },
       { $set: { expireAt: nowMs - 1000 } },
@@ -235,7 +235,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(refund).toMatchObject({ account: 'alice', material: 'lead', qty: 4 });
   });
 
-  it('列出 open 拍卖 + 我的挂单', async () => {
+  it('list open auctions + my listings', async () => {
     await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
@@ -248,24 +248,24 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(other.length).toBe(0);
   });
 
-  // ── G 价格护栏（冷启动用静态参考价：scrap ref=10 → 带 [5,20]）──────────────
-  it('G 天价挂单 → PRICE_OUT_OF_RANGE', async () => {
+  // ── G Price guardrail (cold-start static reference price: scrap ref=10 → band [5,20]) ──────────────
+  it('G overpriced listing → PRICE_OUT_OF_RANGE', async () => {
     await expect(svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 1, price: 100, durationSec: DUR,
     })).rejects.toMatchObject({ code: 'PRICE_OUT_OF_RANGE' });
   });
 
-  it('G 地板价挂单 → PRICE_OUT_OF_RANGE', async () => {
+  it('G floor-price listing → PRICE_OUT_OF_RANGE', async () => {
     await expect(svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 1, price: 2, durationSec: DUR,
     })).rejects.toMatchObject({ code: 'PRICE_OUT_OF_RANGE' });
   });
 
-  // ── C 每日挂单上限 ────────────────────────────────────────────────────────
-  it('C 每日挂单超 AUCTION_DAILY_LIST_CAP → AUCTION_LIMIT_REACHED', async () => {
-    // 挂一单即撤（不占 open 名额），循环到日上限；下一单触限。
+  // ── C Daily listing cap ────────────────────────────────────────────────────────
+  it('C daily listings exceed AUCTION_DAILY_LIST_CAP → AUCTION_LIMIT_REACHED', async () => {
+    // List one and immediately cancel (does not consume an open slot), repeat to reach the daily cap; next listing hits the limit.
     for (let i = 0; i < AUCTION_DAILY_LIST_CAP; i++) {
       const v = await svc.createAuction({
         worldId: W, sellerId: 'dave', itemType: 'material',
@@ -279,8 +279,8 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     })).rejects.toMatchObject({ code: 'AUCTION_LIMIT_REACHED' });
   });
 
-  // ── B 竞拍 ────────────────────────────────────────────────────────────────
-  it('B 出价低于起拍 → BID_TOO_LOW', async () => {
+  // ── B Bidding ────────────────────────────────────────────────────────────────
+  it('B bid below start price → BID_TOO_LOW', async () => {
     const v = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material', saleMode: 'auction',
       item: { material: 'scrap' }, qty: 1, startPrice: 10, durationSec: DUR,
@@ -288,19 +288,19 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await expect(svc.placeBid(W, 'bob', v.auctionId, 8)).rejects.toMatchObject({ code: 'BID_TOO_LOW' });
   });
 
-  it('B 出价 → 更高价覆盖退还前者 → 到期结拍', async () => {
+  it('B bid → higher bid replaces and refunds previous → auction closes on expiry', async () => {
     const v = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material', saleMode: 'auction',
       item: { material: 'scrap' }, qty: 1, startPrice: 10, durationSec: DUR,
     });
-    // bob 出价 12（托管 12）
+    // bob bids 12 (escrow 12)
     const b1 = await svc.placeBid(W, 'bob', v.auctionId, 12);
     expect(b1.topBid).toMatchObject({ bidderId: 'bob', amount: 12 });
     expect(spends.find((s) => s.account === 'bob' && s.amount === 12)).toBeTruthy();
-    // carol 出价 15（托管 15）→ 退还 bob 的 12
+    // carol bids 15 (escrow 15) → refund bob's 12
     await svc.placeBid(W, 'carol', v.auctionId, 15);
     expect(grants.find((g) => g.account === 'bob' && g.amount === 12)).toBeTruthy();
-    // 强制过期 → 扫描器结拍给 carol（卖方收 15 税后）
+    // force expiry → scanner closes auction for carol (seller receives 15 after tax)
     await mongo!.collections.auctions.updateOne({ _id: v.auctionId }, { $set: { expireAt: nowMs - 1000 } });
     const count = await svc.processExpiredAuctions();
     expect(count).toBe(1);
@@ -312,7 +312,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(grants.find((g) => g.account === 'alice' && g.amount === 15 - tax)).toBeTruthy();
   });
 
-  it('B 买断（buyout）→ 立即结拍', async () => {
+  it('B buyout → auction closes immediately', async () => {
     const v = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material', saleMode: 'auction',
       item: { material: 'scrap' }, qty: 1, startPrice: 10, buyoutPrice: 18, durationSec: DUR,
@@ -323,7 +323,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(materialGrants.find((g) => g.account === 'bob' && g.material === 'scrap')).toBeTruthy();
   });
 
-  it('B 竞拍有出价后不可撤单 → BAD_REQUEST', async () => {
+  it('B cannot cancel auction after a bid has been placed → BAD_REQUEST', async () => {
     const v = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material', saleMode: 'auction',
       item: { material: 'scrap' }, qty: 1, startPrice: 10, durationSec: DUR,
@@ -332,14 +332,14 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await expect(svc.cancelAuction(W, 'alice', v.auctionId)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  // ── F 季末清算 ────────────────────────────────────────────────────────────
-  it('F clearWorldOnReset：清算 open 挂单 + 退还卖方标的 + 退还竞拍托管', async () => {
-    // 一口价单（退还 alice 材料）
+  // ── F Season-end settlement ────────────────────────────────────────────────────────────
+  it('F clearWorldOnReset: settle open listings + refund seller items + refund bid escrows', async () => {
+    // fixed-price listing (refund alice materials)
     await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 3, price: 10, durationSec: DUR,
     });
-    // 竞拍单 + bob 出价（清算时退还 bob 托管）
+    // auction listing + bob's bid (settlement refunds bob's escrow)
     const v2 = await svc.createAuction({
       worldId: W, sellerId: 'eve', itemType: 'material', saleMode: 'auction',
       item: { material: 'lead' }, qty: 1, startPrice: 30, durationSec: DUR,
@@ -354,12 +354,12 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(remaining.length).toBe(0);
   });
 
-  // ── A 装备交易（EQUIPMENT_DESIGN §4.A）。wp_marker 稀有，护栏静态参考价 400 → 带 [200,800]。──
+  // ── A Equipment trading (EQUIPMENT_DESIGN §4.A). wp_marker is rare; static reference price guardrail 400 → band [200,800]. ──
   const mkInst = (id: string, defId = 'wp_marker', extra: Partial<EquipmentInstance> = {}): EquipmentInstance => ({
     id, defId, rarity: 'rare', level: 0, affixes: [{ id: 'm_atk', value: 8 }], ...extra,
   });
 
-  it('A 装备挂拍 → 托管移出卖方库存 + 存实例快照 + qty 恒 1', async () => {
+  it('A equipment listing → escrow removes from seller inventory + stores instance snapshot + qty always 1', async () => {
     seedEquip('alice', mkInst('eq1'));
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'equipment',
@@ -370,10 +370,10 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(view.itemType).toBe('equipment');
     expect((view.item.instance as EquipmentInstance).id).toBe('eq1');
     expect(equipEscrows).toHaveLength(1);
-    expect(equipInv.get('alice')?.has('eq1')).toBe(false); // 已移出卖方库存
+    expect(equipInv.get('alice')?.has('eq1')).toBe(false); // removed from seller inventory
   });
 
-  it('A 装备挂拍 qty 传 99 也被强制为 1', async () => {
+  it('A equipment listing with qty 99 is coerced to 1', async () => {
     seedEquip('alice', mkInst('eq1'));
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'equipment',
@@ -382,7 +382,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(view.qty).toBe(1);
   });
 
-  it('A 装备购买 → 实例转移给买方（含完整词条快照）', async () => {
+  it('A equipment buy → instance transferred to buyer (including full affix snapshot)', async () => {
     seedEquip('alice', mkInst('eq1', 'wp_marker', { level: 3, affixes: [{ id: 'm_atk', value: 8 }, { id: 's_hp', value: 5 }] }));
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'equipment',
@@ -391,16 +391,16 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     const bought = await svc.buyAuction(W, 'bob', view.auctionId);
     expect(bought.status).toBe('sold');
     expect(spends[0]).toMatchObject({ account: 'bob', amount: 400 });
-    // 买方拿到实例（id + 强化等级 + 词条快照原样转移）
+    // buyer receives the instance (id + enhancement level + affix snapshot transferred as-is)
     const bobInst = equipInv.get('bob')?.get('eq1');
     expect(bobInst).toMatchObject({ id: 'eq1', level: 3 });
     expect(bobInst?.affixes).toHaveLength(2);
-    // 卖方收税后款
+    // seller receives payment after tax
     const tax = Math.floor(400 * AUCTION_TAX_RATE);
     expect(grants.find((g) => g.account === 'alice' && g.amount === 400 - tax)).toBeTruthy();
   });
 
-  it('A 装备取消 → 退回卖方库存', async () => {
+  it('A equipment cancel → returned to seller inventory', async () => {
     seedEquip('alice', mkInst('eq1'));
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'equipment',
@@ -411,7 +411,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(equipGrants.find((g) => g.orderId.startsWith('auction_cancel:') && g.account === 'alice')).toBeTruthy();
   });
 
-  it('A 装备过期扫描 → 退回卖方库存', async () => {
+  it('A equipment expiry scan → returned to seller inventory', async () => {
     seedEquip('alice', mkInst('eq1'));
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'equipment',
@@ -423,17 +423,17 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(equipInv.get('alice')?.has('eq1')).toBe(true);
   });
 
-  it('A 装备天价挂单 → PRICE_OUT_OF_RANGE（且退还托管实例）', async () => {
+  it('A equipment overpriced listing → PRICE_OUT_OF_RANGE (and escrow instance is returned)', async () => {
     seedEquip('alice', mkInst('eq1'));
     await expect(svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'equipment',
       item: { instanceId: 'eq1' }, qty: 1, price: 5000, durationSec: DUR,
     })).rejects.toMatchObject({ code: 'PRICE_OUT_OF_RANGE' });
-    // 护栏拒绝后实例已退回卖方（不被吞）
+    // after guardrail rejection the instance is returned to the seller (not lost)
     expect(equipInv.get('alice')?.has('eq1')).toBe(true);
   });
 
-  it('A locked 装备挂拍 → EQUIP_LOCKED（meta 托管拒绝透传）', async () => {
+  it('A locked equipment listing → EQUIP_LOCKED (meta escrow rejection propagated)', async () => {
     seedEquip('alice', mkInst('eq1', 'wp_marker', { locked: true }));
     await expect(svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'equipment',

@@ -1,5 +1,5 @@
-// RoomManager 单测（S1-M2，瘦身后）：ticket 握手驱动——按 roomId 找/建房、按 side 入座、
-// 第二张 ticket 的 seed/mode 交叉核对一致才接纳、数据面消息路由、重连不重复入座。
+// RoomManager unit tests (S1-M2, slimmed): ticket-handshake driven — find/create room by roomId, seat by side,
+// cross-check that the second ticket's seed/mode match before accepting it, data-plane message routing, reconnect does not re-seat.
 import { describe, expect, it, vi } from 'vitest';
 import type { Connection } from '../src/Connection';
 import { RoomManager } from '../src/RoomManager';
@@ -45,18 +45,18 @@ function newManager(): RoomManager {
 const SEED = 999;
 
 describe('RoomManager (ticket relay)', () => {
-  it('两张同 roomId/seed ticket（side 0/1）凑齐 → 自动开局', () => {
+  it('two tickets with matching roomId/seed (side 0/1) both joined → match starts automatically', () => {
     const mgr = newManager();
     const c0 = makeConn('R', 0, 'a');
     const c1 = makeConn('R', 1, 'b');
     expect(mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY)).toBe(true);
-    expect(has(c0, 'match_start')).toBe(false); // 等第二人
+    expect(has(c0, 'match_start')).toBe(false); // waiting for second player
     expect(mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY)).toBe(true);
     expect(has(c0, 'match_start')).toBe(true);
     expect(has(c1, 'match_start')).toBe(true);
   });
 
-  it('第二张 ticket seed 不一致 → 拒绝', () => {
+  it('second ticket seed mismatch → rejected', () => {
     const mgr = newManager();
     const c0 = makeConn('R', 0, 'a');
     const c1 = makeConn('R', 1, 'b');
@@ -72,7 +72,7 @@ describe('RoomManager (ticket relay)', () => {
     expect(mgr.join(asConn(c1), 'b', '', SEED, MatchMode.RANKED)).toBe(false);
   });
 
-  it('cmd_submit 路由进房间 → 出现在 frame_batch', () => {
+  it('cmd_submit routed into the room → appears in frame_batch', () => {
     vi.useFakeTimers();
     const mgr = newManager();
     const c0 = makeConn('R', 0, 'a');
@@ -87,13 +87,13 @@ describe('RoomManager (ticket relay)', () => {
     vi.useRealTimers();
   });
 
-  it('重连：同 roomId/side 再 join 不重复入座（返回 true）', () => {
+  it('reconnect: re-join with same roomId/side does not duplicate seating (returns true)', () => {
     const mgr = newManager();
     const c0 = makeConn('R', 0, 'a');
     const c1 = makeConn('R', 1, 'b');
     mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY);
     mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY);
-    const c0b = makeConn('R', 0, 'a'); // 重连
+    const c0b = makeConn('R', 0, 'a'); // reconnect
     expect(mgr.join(asConn(c0b), 'a', '', SEED, MatchMode.FRIENDLY)).toBe(true);
   });
 });

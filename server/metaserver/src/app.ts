@@ -1,4 +1,4 @@
-// Fastify 应用装配（与进程引导分离，便于测试/inject）。
+// Fastify application assembly (separated from process bootstrap for testability/inject).
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -17,67 +17,68 @@ import { HttpGatewayClient, type GatewayClient } from './gatewayClient.js';
 import { HttpMetaSocialsvcClient, nullMetaSocialsvcClient } from './socialsvcClient.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-// dist/app.js 与 src/app.ts 都在 metaserver 下两级 → contracts。
+// Both dist/app.js and src/app.ts are two levels below metaserver → contracts.
 export const SPEC_PATH = resolve(here, '../../contracts/openapi.yml');
 
 export interface BuildAppOpts {
   cols: Collections;
   jwt: JwtConfig;
-  /** 内部服务鉴权密钥（gateway 取 ELO / gameserver 上报对局 / commercial 调用）。 */
+  /** Internal service auth key (used by gateway to fetch ELO / gameserver to report match results / commercial calls). */
   internalKey: string;
-  /** commercial 内部基址（null = 经济端点 503）；或直接注入 client（测试用）。 */
+  /** commercial internal base URL (null = economy endpoints return 503); or inject a client directly (for tests). */
   commercialUrl?: string | null;
   commercial?: CommercialClient;
-  /** gateway 内部基址（对等裁判 /gw/judge；null = 裁判不可用）；或直接注入 client（测试用）。 */
+  /** gateway internal base URL (peer judge /gw/judge; null = judge unavailable); or inject a client directly (for tests). */
   gatewayUrl?: string | null;
   gateway?: GatewayClient;
-  /** gateway 公开 WS 地址，随 auth/save 回包下发给客户端（null = 不下发）。 */
+  /** gateway public WS URL, sent to the client in auth/save responses (null = not sent). */
   gatewayPublicUrl?: string | null;
   now?: () => number;
   logger?: boolean;
-  /** 每 IP 15 分钟内最大 auth 尝试数（0 = 禁用，测试用）。默认 20。 */
+  /** Maximum auth attempts per IP within 15 minutes (0 = disabled, for tests). Default 20. */
   authRateLimit?: number;
-  /** feature flag 缓存（公开 /bootstrap 求值用）。null/缺省 = 无 flag 源，bootstrap 恒回空 map。 */
+  /** Feature flag cache (used for public /bootstrap evaluation). null/omitted = no flag source; bootstrap always returns an empty map. */
   flags?: FeatureFlagCache | null;
-  /** 部署区域（注入 flag 求值 ctx）。 */
+  /** Deployment region (injected into the flag evaluation context). */
   region?: string | null;
-  /** Loki push 地址（POST /client/log 转发；null = 静默丢弃）。 */
+  /** Loki push URL (POST /client/log is forwarded here; null = silently discarded). */
   lokiPushUrl?: string | null;
-  /** socialsvc 内部基址（P2：好友/私聊/邮件路由代理）；null = 仍由 metaserver 自身处理。 */
+  /** socialsvc internal base URL (P2: friend/chat/mail routing proxy); null = metaserver handles these itself. */
   socialsvcUrl?: string | null;
   socialsvc?: import('./socialsvcClient.js').MetaSocialsvcClient;
 }
 
 export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
-  // bodyLimit 设 4MB（默认仅 1MB）：状态流分享上传压缩 blob（上限 2MB，service.ts），需让 Fastify
-  // 体量闸 ≥ 应用层上限，否则 >1MB 的合法 blob 被 Fastify 抢先 413（FST_ERR_CTP_BODY_TOO_LARGE），
-  // 应用层的优雅 400「replay too large」永不触发。其余端点 body 远小于此，不受影响。
+  // bodyLimit set to 4MB (default is only 1MB): state-stream share upload compressed blob (capped at 2MB in service.ts).
+  // Fastify's body-size gate must be ≥ the application-layer cap; otherwise a legitimate blob >1MB is rejected by
+  // Fastify first with 413 (FST_ERR_CTP_BODY_TOO_LARGE) and the application's graceful 400 "replay too large" never fires.
+  // Other endpoints have bodies well below this limit and are unaffected.
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 4 * 1024 * 1024 });
   await app.register(cors, { origin: true });
 
-  // 可读的请求/响应日志（联调用，替代 pino JSON）。每条请求一行收尾：方法 路径 状态 耗时。
-  // 健康探针不打日志（巡检噪声）。
+  // Human-readable request/response log (for debugging, replacing pino JSON). One line per request on completion: method path status elapsed.
+  // Health probes are excluded from logging (polling noise).
   app.addHook('onResponse', async (req, reply) => {
     if (req.url === '/health') return;
     const ms = Math.round(reply.elapsedTime ?? 0);
     log.info(`${req.method} ${req.url} -> ${reply.statusCode}`, { ms });
   });
 
-  // 统一错误包络：校验失败 / 安全处理器抛错都转成 ApiResp。
-  // 必须在注册 glue 路由之前设置——fastify 在路由注册时即把 error handler
-  // 绑进路由上下文，之后再 setErrorHandler 对已注册路由不生效。
+  // Unified error envelope: validation failures and security-handler throws are all converted to ApiResp.
+  // Must be set before glue route registration — Fastify binds the error handler into the route context at
+  // registration time; calling setErrorHandler afterwards has no effect on already-registered routes.
   app.setErrorHandler((error: Error & { statusCode?: number }, req, reply) => {
     const status = error.statusCode ?? 500;
     const code =
       status === 401 ? 'UNAUTHENTICATED' : status === 400 ? 'BAD_REQUEST' : 'INTERNAL';
-    // 5xx 是真问题（带栈），4xx 是预期校验失败（仅一行）。
+    // 5xx = real problem (include stack), 4xx = expected validation failure (single line only).
     if (status >= 500) log.error(`${req.method} ${req.url} ${status} ${code}`, { err: error.stack ?? error.message });
     else log.warn(`${req.method} ${req.url} ${status} ${code}`, { message: error.message });
     reply.code(status).send({ ok: false, error: { code, message: error.message } });
   });
 
-  // 存活探针（不在 openapi.yml 内，glue 不接管）：反代 /api/health 剥前缀后命中 /health。
-  // 供 compose / 负载均衡 / C-3 部署冒烟用。
+  // Liveness probe (not in openapi.yml; glue does not take it over): reverse-proxy strips /api prefix and routes to /health.
+  // Used for compose / load-balancer / C-3 deployment smoke tests.
   app.get('/health', async () => ({ ok: true }));
 
   const now = opts.now ?? (() => Date.now());
@@ -101,10 +102,10 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     socialsvc,
   });
 
-  // 广告平台 SSV 回调（平台主动调用，不经 openapi glue，无玩家鉴权）。
+  // Ad platform SSV callbacks (platform-initiated; bypass openapi glue; no player authentication).
   registerAdCallbackRoutes(app, { cols: opts.cols, commercial, now });
 
-  // 内部路由（玩家不可见，X-Internal-Key 鉴权，不经 openapi glue）：取 ELO + 局末上报 + 对等裁判。
+  // Internal routes (not visible to players; X-Internal-Key auth; bypass openapi glue): fetch ELO + end-of-match reporting + peer judge.
   registerInternalRoutes(app, {
     cols: opts.cols,
     internalKey: opts.internalKey,

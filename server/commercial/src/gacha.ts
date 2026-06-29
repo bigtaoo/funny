@@ -1,6 +1,8 @@
-// 盲盒 RNG + 保底（S5-3，ECONOMY_BALANCE §4）。纯函数，注入随机源便于单测复现保底命中。
-// 先按稀有度权重滚 tier，再 tier 内均匀挑 item。保底：大保底累计 pityThreshold 必出 legendary；
-// 十连保底 count===10 时若全程无 epic+，把最后一抽提到 tenFloor。
+// Gacha RNG + pity system (S5-3, ECONOMY_BALANCE §4). Pure functions with an injected random
+// source so unit tests can reproduce pity hits deterministically. Rolls a rarity tier by
+// weight first, then picks an item uniformly within that tier. Pity: the hard pity counter
+// guarantees a legendary at pityThreshold cumulative pulls; the 10-pull pity floor upgrades
+// the last pull to tenFloor when count===10 and no epic+ appeared in the set.
 import {
   RARITY_ORDER,
   RARITY_WEIGHTS,
@@ -10,7 +12,7 @@ import {
 import { randomInt } from 'crypto';
 import type { GachaResultEntry } from './db';
 
-/** 随机源：返回 [0, n) 的整数。默认 crypto 真随机；测试可注入确定序列。 */
+/** Random source: returns an integer in [0, n). Defaults to crypto true-random; tests can inject a deterministic sequence. */
 export type RandInt = (n: number) => number;
 
 const cryptoRand: RandInt = (n) => (n <= 1 ? 0 : randomInt(n));
@@ -30,7 +32,7 @@ function rollRarity(rng: RandInt): Rarity {
 function pickItem(pool: GachaPoolDef, rarity: Rarity, rng: RandInt): string {
   const items = pool.itemsByRarity[rarity];
   if (items.length === 0) {
-    // 池内该稀有度无物品（理论不该发生）→ 退到 common 首个。
+    // No items of this rarity in the pool (should not happen in theory) → fall back to the first common item.
     const fallback = pool.itemsByRarity.common;
     return fallback[0] ?? `${pool.id}_${rarity}`;
   }
@@ -43,8 +45,8 @@ export interface RollOutcome {
 }
 
 /**
- * 滚 count 抽。prevPity = 该池距上次 legendary 的累计抽数。
- * 返回逐抽结果 + 滚完后的新 pity 计数。
+ * Roll count pulls. prevPity = cumulative pulls since the last legendary in this pool.
+ * Returns the per-pull results and the updated pity counter after the rolls.
  */
 export function rollGacha(
   pool: GachaPoolDef,
@@ -60,15 +62,15 @@ export function rollGacha(
     pity += 1;
     let rarity: Rarity;
     if (pity >= pool.pityThreshold) {
-      rarity = 'legendary'; // 大保底命中
+      rarity = 'legendary'; // hard pity triggered
     } else {
       rarity = rollRarity(rng);
     }
-    if (rarity === 'legendary') pity = 0; // 出货清零
+    if (rarity === 'legendary') pity = 0; // reset pity on legendary
     results.push({ itemId: pickItem(pool, rarity, rng), rarity });
   }
 
-  // 十连保底：count===10 且全程无 epic+ → 把最后一抽提到 tenFloor。
+  // 10-pull pity floor: count===10 and no epic+ in the set → upgrade the last pull to tenFloor.
   if (count === 10 && !results.some((r) => rarityRank(r.rarity) >= epicRank)) {
     const floor = pool.tenFloor;
     const last = results.length - 1;

@@ -1,7 +1,7 @@
-// save-service 端到端（S0-7 验收）：auth → JWT → GET/PUT save → 乐观锁 409 → 并发 → 硬墙。
-// 需真实 Mongo 单节点副本集：`cd server && docker compose up -d`。
-// Mongo 不可达时整套 skip（不阻塞无 DB 环境的 CI），并打印提示。
-// 导入构建产物 dist（NodeNext 的 .js 扩展名在 vitest 源解析下不便），跑前需 `tsc -b`。
+// save-service end-to-end (S0-7 acceptance): auth → JWT → GET/PUT save → optimistic lock 409 → concurrent writes → hard wall.
+// Requires a real Mongo single-node replica set: `cd server && docker compose up -d`.
+// Entire suite is skipped when Mongo is unreachable (does not block CI without a DB); prints a warning.
+// Imports from the build artifact dist (NodeNext .js extensions are awkward under vitest source resolution); run `tsc -b` first.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -11,7 +11,7 @@ const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=r
 const DB = 'nw_meta_test';
 const jwt: JwtConfig = { secret: 'test-secret' };
 
-// 短超时探测：不可达就 skip 整套。
+// Short-timeout probe: skip the entire suite if unreachable.
 async function tryConnect(): Promise<MongoHandle | null> {
   try {
     return await createMongo(URI, DB, { serverSelectionTimeoutMS: 1500 });
@@ -22,7 +22,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[save.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[save.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 describe.skipIf(!mongo)('metaserver save-service e2e', () => {
@@ -86,7 +86,7 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
       method: 'PUT',
       url: '/save',
       headers: { ...auth, 'if-match': '0' },
-      // materials 是服务器权威段（§8），PUT 不接受 → 仅 flags 落库。
+      // materials is a server-authoritative field (§8); PUT does not accept it → only flags are persisted.
       payload: { save: { flags: { seenIntro: true }, materials: { wood: 5 } } },
     });
     expect(ok.statusCode).toBe(200);

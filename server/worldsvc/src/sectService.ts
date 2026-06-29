@@ -1,13 +1,17 @@
-// 宗门业务层（S8-4b，SLG_DESIGN §2.1/§8.2）。
-// 宗门 = 大区内由「家族」组成的势力组织；成员单位是家族（不是个人），由 family.sectId 指向本门。
-// 门主 = leaderFamily 的 leader 账号。绝大多数操作要求请求者是「家族族长」（familyMembers.role==='leader'），
-// 代表整个家族加入/退出宗门。
-//   - 建立：花 SECT_CREATE_COST 金币（走 commercial），族长创建，其家族成为门主家族。
-//   - 加入/退出：族长操作；门主家族不能直接退（须解散或经投票换届）。
-//   - 联盟：门主发起，双向加 allySectIds，双方各 ≤ SECT_ALLY_CAP。
-//   - 换届：族长投票罢免门主 + 提名，票数/家族数 ≥ SECT_REMOVAL_VOTE_RATIO 即换届。
-//   - 频道：宗门成员发/取消息（持久化 TTL 7 天）；实时推送（sect_broadcast）规模化走 Redis pub/sub，
-//     本切片先 REST 轮询（gatewayClient O(n) 直推不适合 ≤900 人，见 SLG_DESIGN §9.3），故不实时推。
+// Sect business layer (S8-4b, SLG_DESIGN §2.1/§8.2).
+// A sect is a faction organization within a world region, composed of families (not individuals);
+// membership is at the family level, indicated by family.sectId pointing to the sect.
+// The sect leader is the leader account of the leaderFamily.
+// Most operations require the requester to be a family leader (familyMembers.role==='leader'),
+// acting on behalf of the entire family when joining/leaving a sect.
+//   - Found: costs SECT_CREATE_COST coins (via commercial); the founding family becomes the leader family.
+//   - Join/leave: performed by a family leader; the leader family cannot leave directly (must dissolve or go through a leadership vote).
+//   - Alliance: initiated by the sect leader; bidirectionally adds to allySectIds; each side capped at ≤ SECT_ALLY_CAP.
+//   - Leadership transition: family leaders vote to remove the current leader and nominate a replacement;
+//     votes/families ≥ SECT_REMOVAL_VOTE_RATIO triggers the transition.
+//   - Channel: sect members send/receive messages (persisted with TTL 7 days); real-time push (sect_broadcast)
+//     at scale uses Redis pub/sub; this slice uses REST polling for now
+//     (gatewayClient O(n) direct push is not suitable for ≤900 members, see SLG_DESIGN §9.3).
 import {
   sectId as makeSectId,
   familyMemberId,
@@ -58,20 +62,20 @@ export interface SectMessageView {
   senderId: string;
   senderName: string;
   body: string;
-  ts: number; // ms epoch
+  ts: number; // ms since epoch
 }
 
 export interface SectServiceDeps {
   cols: WorldCollections;
   now: () => number;
   commercial?: WorldCommercialClient;
-  /** 实时频道扇出（S8-4b）；缺省 = 无 gateway，仅 REST 轮询。 */
+  /** Real-time channel fan-out (S8-4b); default = no gateway, REST polling only. */
   gateway?: WorldGatewayClient;
-  /** socialsvc 客户端（宗门频道 push 委托，SOCIAL_SVC_DESIGN §5）；缺省 = 降级直推 gateway。 */
+  /** socialsvc client (sect channel push delegation, SOCIAL_SVC_DESIGN §5); default = falls back to direct gateway push. */
   socialsvc?: WorldSocialsvcClient;
 }
 
-/** 进程内单调序号，防同毫秒多条消息 id 撞键。 */
+/** In-process monotonic sequence number to prevent message id collisions within the same millisecond. */
 let msgSeq = 0;
 
 function docToView(doc: SectDoc): SectView {
@@ -99,7 +103,7 @@ export class SectService {
     this.socialsvc = deps.socialsvc ?? nullWorldSocialsvcClient;
   }
 
-  /** 取请求者所在家族（要求其为该家族族长），否则抛权限/未入族错误。 */
+  /** Fetches the requester's family (requires them to be the family leader); throws a permission/not-in-family error otherwise. */
   private async requireFamilyLeader(worldId: string, accountId: string): Promise<FamilyDoc> {
     const mem = await this.deps.cols.familyMembers.findOne({ _id: familyMemberId(worldId, accountId) });
     if (!mem) throw new SlgError('NOT_IN_FAMILY');
@@ -109,7 +113,7 @@ export class SectService {
     return fam;
   }
 
-  /** 列出世界内所有宗门（按成员家族数降序，上限 50）。 */
+  /** Lists all sects in the world (sorted by member family count descending, capped at 50). */
   async listSects(worldId: string): Promise<SectView[]> {
     const docs = await this.deps.cols.sects
       .find({ worldId })
@@ -119,7 +123,7 @@ export class SectService {
     return docs.map(docToView);
   }
 
-  /** 宗门详情（含成员家族列表）。 */
+  /** Sect detail (includes member family list). */
   async getSect(sectId: string): Promise<SectDetailView | null> {
     const doc = await this.deps.cols.sects.findOne({ _id: sectId });
     if (!doc) return null;
@@ -143,7 +147,7 @@ export class SectService {
     return view;
   }
 
-  /** 创建宗门：请求者须为族长且家族未入门；扣 SECT_CREATE_COST 金币；TAG 世界内唯一。 */
+  /** Create a sect: requester must be a family leader and their family must not already belong to a sect; deducts SECT_CREATE_COST coins; TAG must be unique within the world. */
   async createSect(worldId: string, requesterId: string, name: string, tag: string): Promise<SectDetailView> {
     const { cols } = this.deps;
     const fam = await this.requireFamilyLeader(worldId, requesterId);
@@ -153,7 +157,8 @@ export class SectService {
     if (!/^[A-Z0-9]{2,5}$/.test(tagUpper)) throw new SlgError('BAD_REQUEST', 'tag 须 2–5 位大写字母数字');
     if (!name || name.length < 2 || name.length > 20) throw new SlgError('BAD_REQUEST', 'name 长度 2–20');
 
-    // 建宗门繁荣度中等门槛（G2/§17.4）：先刷新发起家族繁荣度（刚写即无需衰减），不足拒绝。
+    // Moderate prosperity threshold for founding a sect (G2/§17.4): refresh the founding family's prosperity first
+    // (freshly written, so no decay needed); reject if insufficient.
     const prosperity = await refreshFamilyProsperity(cols, worldId, fam._id, this.deps.now());
     if (prosperity < SECT_FOUND_PROSPERITY_MIN) {
       throw new SlgError('PROSPERITY_TOO_LOW', `家族繁荣度不足（需 ≥ ${SECT_FOUND_PROSPERITY_MIN}，当前 ${prosperity}）`);
@@ -161,7 +166,7 @@ export class SectService {
 
     const sid = makeSectId(worldId, tagUpper);
 
-    // 先扣金币（建门成本）。失败 → 抛 INSUFFICIENT_FUNDS（commercial 映射），不写库。
+    // Deduct coins first (founding cost). Failure → throws INSUFFICIENT_FUNDS (mapped by commercial); nothing is written to the DB.
     const orderId = `sect_create:${sid}:${this.deps.now()}`;
     await this.commercial.spend(requesterId, SECT_CREATE_COST, orderId);
 
@@ -181,7 +186,7 @@ export class SectService {
       await cols.sects.insertOne(doc);
     } catch (e) {
       if ((e as { code?: number }).code === 11000) {
-        // TAG 撞键：退款（best-effort），抛已占用。
+        // TAG key collision: refund (best-effort) and throw already-taken error.
         await this.commercial.grant(requesterId, SECT_CREATE_COST, `${orderId}:refund`);
         throw new SlgError('ALREADY_IN_SECT', 'tag 已被占用');
       }
@@ -195,13 +200,13 @@ export class SectService {
     }] };
   }
 
-  /** 家族加入宗门（族长操作，上限 SECT_FAMILY_CAP 家族；家族不能已在门）。 */
+  /** Family joins a sect (family leader operation; capped at SECT_FAMILY_CAP families; family must not already be in a sect). */
   async joinSect(worldId: string, requesterId: string, sectId: string): Promise<void> {
     const { cols } = this.deps;
     const fam = await this.requireFamilyLeader(worldId, requesterId);
     if (fam.sectId) throw new SlgError('ALREADY_IN_SECT');
 
-    // 原子 $inc + 上限守卫。
+    // Atomic $inc with capacity guard.
     const res = await cols.sects.findOneAndUpdate(
       { _id: sectId, worldId, memberFamilyCount: { $lt: SECT_FAMILY_CAP } },
       { $inc: { memberFamilyCount: 1 } },
@@ -215,7 +220,7 @@ export class SectService {
     await cols.families.updateOne({ _id: fam._id }, { $set: { sectId } });
   }
 
-  /** 家族退出宗门（族长操作）。门主家族不能直接退——须解散或经投票换届。 */
+  /** Family leaves a sect (family leader operation). The leader family cannot leave directly — must dissolve the sect or go through a leadership vote first. */
   async leaveSect(worldId: string, requesterId: string): Promise<void> {
     const { cols } = this.deps;
     const fam = await this.requireFamilyLeader(worldId, requesterId);
@@ -228,7 +233,7 @@ export class SectService {
     await cols.sects.updateOne({ _id: fam.sectId }, { $inc: { memberFamilyCount: -1 } });
   }
 
-  /** 解散宗门（仅门主）。清所有成员家族 sectId、双向解盟、删宗门 + 频道。 */
+  /** Dissolve the sect (sect leader only). Clears sectId on all member families, removes all alliances bidirectionally, deletes the sect and its channel. */
   async dissolveSect(worldId: string, requesterId: string): Promise<void> {
     const { cols } = this.deps;
     const fam = await this.requireFamilyLeader(worldId, requesterId);
@@ -239,7 +244,7 @@ export class SectService {
 
     const sid = sect._id;
     await cols.families.updateMany({ sectId: sid }, { $unset: { sectId: '' } });
-    // 从所有盟友的 allySectIds 移除本门。
+    // Remove this sect from all allies' allySectIds.
     for (const ally of sect.allySectIds) {
       await cols.sects.updateOne({ _id: ally }, { $pull: { allySectIds: sid } });
     }
@@ -247,7 +252,7 @@ export class SectService {
     await cols.sects.deleteOne({ _id: sid });
   }
 
-  /** 结盟（门主发起，双向）。各方 ≤ SECT_ALLY_CAP；不能与自身/已盟结。 */
+  /** Form an alliance (initiated by the sect leader; bidirectional). Each side capped at ≤ SECT_ALLY_CAP; cannot ally with self or an already-allied sect. */
   async allySect(worldId: string, requesterId: string, targetSectId: string): Promise<void> {
     const { cols } = this.deps;
     const fam = await this.requireFamilyLeader(worldId, requesterId);
@@ -259,7 +264,7 @@ export class SectService {
 
     const target = await cols.sects.findOne({ _id: targetSectId, worldId });
     if (!target) throw new SlgError('NOT_FOUND', '目标宗门不存在');
-    if (self.allySectIds.includes(targetSectId)) return; // 幂等：已结盟
+    if (self.allySectIds.includes(targetSectId)) return; // idempotent: already allied
     if (self.allySectIds.length >= SECT_ALLY_CAP || target.allySectIds.length >= SECT_ALLY_CAP) {
       throw new SlgError('ALLY_CAP_REACHED');
     }
@@ -267,7 +272,7 @@ export class SectService {
     await cols.sects.updateOne({ _id: target._id }, { $addToSet: { allySectIds: self._id } });
   }
 
-  /** 解盟（门主发起，双向移除）。 */
+  /** Dissolve an alliance (initiated by the sect leader; bidirectionally removes the alliance). */
   async unallySect(worldId: string, requesterId: string, targetSectId: string): Promise<void> {
     const { cols } = this.deps;
     const fam = await this.requireFamilyLeader(worldId, requesterId);
@@ -280,10 +285,10 @@ export class SectService {
   }
 
   /**
-   * 罢免门主投票（族长发起 + 提名新门主家族）。
-   * 同提名累计票（家族去重）；票数 ≥ ceil(家族数 × 2/3) → 换届到提名家族。
-   * 换提名 → 票数重置为本次投票者。
-   * 返回 { passed, voteCount, needed }。
+   * Vote to remove the sect leader (initiated by a family leader, nominating a replacement family).
+   * Votes for the same nominee accumulate (deduplicated by family); votes ≥ ceil(familyCount × 2/3) → leadership transfers to the nominee.
+   * Changing the nominee resets the vote count to just the current voter.
+   * Returns { passed, voteCount, needed }.
    */
   async voteRemoveLeader(
     worldId: string,
@@ -299,19 +304,19 @@ export class SectService {
     const nominee = await cols.families.findOne({ _id: nomineeFamilyId, sectId: sect._id });
     if (!nominee) throw new SlgError('NOT_FOUND', '提名家族不在本门');
 
-    // 累计 / 重置投票（按提名对象）。
+    // Accumulate or reset votes (keyed by nominee).
     let voters: string[];
     if (sect.removalVote && sect.removalVote.nomineeFamilyId === nomineeFamilyId) {
       voters = sect.removalVote.voterFamilyIds.includes(fam._id)
         ? sect.removalVote.voterFamilyIds
         : [...sect.removalVote.voterFamilyIds, fam._id];
     } else {
-      voters = [fam._id]; // 换提名 → 重置
+      voters = [fam._id]; // nominee changed → reset
     }
 
     const needed = Math.ceil(sect.memberFamilyCount * SECT_REMOVAL_VOTE_RATIO);
     if (voters.length >= needed) {
-      // 换届：门主家族 + 门主账号转给提名家族。
+      // Leadership transition: transfer leader family and leader account to the nominee family.
       await cols.sects.updateOne(
         { _id: sect._id },
         {
@@ -330,9 +335,11 @@ export class SectService {
   }
 
   /**
-   * 发宗门频道消息（成员可发，持久化 + 实时推送）。落库后把消息经 Redis pub/sub 扇出给宗门内
-   * 其他在线成员（≤900 人，worldsvc 只发一条到 GW_PUSH_REDIS_CHANNEL，由各 gateway 据在线成员
-   * 扇出；无 Redis → gateway client 降级为 O(n) HTTP push）。离线成员靠 REST 拉历史（TTL 7 天）。
+   * Send a sect channel message (any member may send; persisted + real-time push).
+   * After writing to the DB, the message is fan-out to other online sect members via Redis pub/sub
+   * (≤900 members; worldsvc publishes a single message to GW_PUSH_REDIS_CHANNEL; each gateway delivers
+   * it to online members on that node; no Redis → gateway client falls back to O(n) HTTP push).
+   * Offline members retrieve history via REST polling (TTL 7 days).
    */
   async sendMessage(
     worldId: string,
@@ -362,7 +369,7 @@ export class SectService {
     };
     await cols.sectMessages.insertOne(msgDoc);
 
-    // 推送：优先委托 socialsvc（push 中枢，§5）；无 socialsvc 时降级直推 gateway。
+    // Push: prefer delegating to socialsvc (the push hub, §5); fall back to direct gateway push when socialsvc is unavailable.
     const payload = { sectId, fromPublicId: accountId, fromName: senderName, body, ts };
     if (this.socialsvc.available) {
       const recipients = await this.sectMemberAccountIds(sectId, accountId);
@@ -375,7 +382,7 @@ export class SectService {
     return { id: msgId, senderId: accountId, senderName, body, ts };
   }
 
-  /** 取宗门内全部成员 accountId（散在各成员家族里），可选排除某人（如发送者）。 */
+  /** Collects all member accountIds within the sect (spread across member families); optionally excludes one account (e.g., the sender). */
   private async sectMemberAccountIds(sectId: string, exclude?: string): Promise<string[]> {
     const fams = await this.deps.cols.families
       .find({ sectId })
@@ -388,11 +395,11 @@ export class SectService {
       .project<{ accountId: string }>({ accountId: 1 })
       .toArray();
     const ids = members.map((m) => m.accountId).filter((id) => id !== exclude);
-    // 去重（同一 accountId 理论上只在一个家族，稳妥起见）。
+    // Deduplicate (in theory each accountId belongs to only one family, but deduplicate for safety).
     return [...new Set(ids)];
   }
 
-  /** 取宗门频道历史（成员可读，按时间倒序分页）。 */
+  /** Retrieve sect channel history (readable by any member; paginated in reverse chronological order). */
   async getChannel(
     worldId: string,
     accountId: string,

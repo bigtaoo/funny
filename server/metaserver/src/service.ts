@@ -1,6 +1,6 @@
-// metaserver serviceHandlers：openapi.yml 的 operationId → 方法（fastify-openapi-glue 装配）。
-// 校验/路由由 glue 按 spec 完成；此处只做业务。S0 实现 auth + save；
-// 经济/盲盒/IAP（S2/S4）先返回 NOT_IMPLEMENTED 占位，契约已就绪。
+// metaserver serviceHandlers: operationId from openapi.yml → method (assembled by fastify-openapi-glue).
+// Validation/routing is handled by glue according to the spec; this file contains only business logic. S0 implements auth + save;
+// economy/gacha/IAP (S2/S4) return NOT_IMPLEMENTED as placeholders for now — contracts are ready.
 import { randomUUID, randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Collections, JwtConfig, SyncPatch, SaveData, FeatureFlagCache, FlagContext, FlagPlatform } from '@nw/shared';
@@ -109,30 +109,30 @@ export interface ServiceDeps {
   jwt: JwtConfig;
   now: () => number;
   commercial: CommercialClient;
-  /** gateway 公开 WS 地址，随 auth/save 回包下发；null = 不下发（客户端退回自身配置）。 */
+  /** Public WebSocket address of the gateway, sent down with auth/save responses; null = not sent (client falls back to its own config). */
   gatewayPublicUrl: string | null;
-  /** gateway 内部客户端：PvE L1 录像抽检经 /gw/judge 派第三方无头复算。未配置则不抽检（直接发材料）。 */
+  /** Internal gateway client: PvE L1 replay spot-checks dispatch a third-party headless re-simulation via /gw/judge. If not configured, spot-checking is skipped (materials are delivered directly). */
   gateway: GatewayClient;
-  /** 每 IP 15 分钟内最大 auth 尝试数。0 = 禁用（测试/CI 用）。 */
+  /** Maximum auth attempts per IP within 15 minutes. 0 = disabled (for tests/CI). */
   authRateLimit: number;
-  /** feature flag 缓存（公开 /bootstrap 求值；FEATURE_FLAGS_DESIGN §9.3）。null = 无 flag 源，bootstrap 恒空 map。 */
+  /** Feature flag cache (evaluated for the public /bootstrap endpoint; FEATURE_FLAGS_DESIGN §9.3). null = no flag source, bootstrap always returns an empty map. */
   flags: FeatureFlagCache | null;
-  /** 部署区域（注入 flag 求值 ctx）。 */
+  /** Deployment region (injected into flag evaluation context). */
   region: string | null;
-  /** Loki push 地址（POST /client/log 转发客户端日志；null = 静默丢弃）。 */
+  /** Loki push URL (POST /client/log forwards client logs; null = silently dropped). */
   lokiPushUrl: string | null;
-  /** socialsvc 内部客户端（P2）：好友/私聊/邮件路由代理 + 邮件原子领取。null = 路由仍由 metaserver 自身处理。 */
+  /** Internal socialsvc client (P2): friend/chat/mail routing proxy + atomic mail claim. null = routing is handled by metaserver itself. */
   socialsvc: import('./socialsvcClient.js').MetaSocialsvcClient | null;
 }
 
-/** 取安全处理器写入的 accountId（security handler 保证已鉴权）。 */
+/** Retrieve the accountId written by the security handler (the handler guarantees the request is authenticated). */
 function accountIdOf(req: FastifyRequest): string {
   const id = req.accountId;
   if (!id) throw new Error('accountId missing after auth');
   return id;
 }
 
-/** 规范化升级表（去 0 值 + 排序键）便于跨来源稳定比较（L0 蓝图异常判定）。 */
+/** Normalize the upgrade map (remove zero-value entries + sort keys) for stable cross-source comparison (L0 blueprint anomaly detection). */
 function normUpgrades(u: Record<string, number>): Record<string, number> {
   const out: Record<string, number> = {};
   for (const k of Object.keys(u).sort()) {
@@ -142,7 +142,7 @@ function normUpgrades(u: Record<string, number>): Record<string, number> {
   return out;
 }
 
-/** 进程内 IP/key 维度滑窗限流。 */
+/** In-process sliding-window rate limiter keyed by IP/key. */
 class SlidingRateLimiter {
   private readonly windows = new Map<string, number[]>();
   constructor(
@@ -162,20 +162,21 @@ class SlidingRateLimiter {
 }
 
 /**
- * 状态流分享 blob 体量上限。blob 是客户端 gzip+base64 后的**压缩串**（§7），压缩比 ~10-20×，故
- * 2MB 压缩串足以容纳一局很长的对局；超限拒绝（提示这局太长）。Fastify bodyLimit 另设 ≥ 此值
- * （见 app.ts），令本处优雅 400 先于 Fastify 413 触发。
+ * Maximum blob size for state-stream shares. The blob is a gzip+base64 **compressed string** produced by the client (§7),
+ * with a compression ratio of ~10-20×, so a 2 MB compressed string is sufficient for a very long match.
+ * Requests exceeding this limit are rejected (indicating the match is too long). Fastify bodyLimit is set to ≥ this value
+ * (see app.ts) so that our graceful 400 fires before Fastify's 413.
  */
 const STATE_REPLAY_MAX_BYTES = 2 * 1024 * 1024;
-/** 状态流分享过期天数（先定 14 天；永久 vs N 天上线期再定，§7）。 */
+/** Expiry duration in days for state-stream shares (initially 14 days; permanent vs. N-day policy to be decided at launch, §7). */
 const STATE_REPLAY_EXPIRE_DAYS = 14;
-/** 每账号铸码限流：每小时上限。 */
+/** Per-account share minting rate limit: maximum shares per hour. */
 const STATE_REPLAY_SHARE_PER_HOUR = 20;
 
 export class MetaService {
   private readonly oauth = createOAuthService();
   private readonly authRate: { allow(key: string, now: number): boolean };
-  /** 异常事件「全量」上报按 IP 限流：每 IP 60s 最多 30 次 POST /client/anomaly（挡刷 Loki）。进程内近似。 */
+  /** Rate limit for "full coverage" anomaly event uploads, keyed by IP: at most 30 POST /client/anomaly requests per IP per 60s (guards against Loki flooding). In-process approximation. */
   private readonly anomalyRate = new SlidingRateLimiter(30, 60 * 1000);
 
   constructor(private readonly deps: ServiceDeps) {
@@ -185,8 +186,9 @@ export class MetaService {
   }
 
   /**
-   * 私聊发送限流（SOC2）：每账号近 60s 的发送时间戳滑窗。进程内（meta 无状态横扩时是 per-instance
-   * 近似限流，足以挡刷屏；精确全局限流待 Redis）。返回 true=允许并记一次，false=超限。
+   * Direct-message send rate limit (SOC2): sliding window of send timestamps per account within the last 60s.
+   * In-process (when meta scales out stateless, this becomes a per-instance approximation — sufficient to prevent
+   * message flooding; precise global limiting requires Redis). Returns true = allowed and recorded, false = over limit.
    */
   private readonly chatRate = new Map<string, number[]>();
   private allowChat(accountId: string, now: number): boolean {
@@ -201,9 +203,9 @@ export class MetaService {
   }
 
   /**
-   * 登录/注册 IP 限流（S4-3）：每 IP 15 分钟内最多 authRateLimit 次 auth 尝试（阻止暴力撞库）。
-   * 进程内近似（横扩时是 per-instance，足以抵御单机撞库；精确全局限流待 Redis）。
-   * authRateLimit=0 时禁用（CI/测试用）。
+   * Login/register IP rate limit (S4-3): at most authRateLimit auth attempts per IP within 15 minutes (prevents brute-force credential stuffing).
+   * In-process approximation (per-instance when scaled out — sufficient to defend against single-machine attacks; precise global limiting requires Redis).
+   * Disabled when authRateLimit=0 (for CI/tests).
    */
   private allowAuthAttempt(req: FastifyRequest, now: number): boolean {
     const ip = req.ip ?? 'unknown';
@@ -211,8 +213,8 @@ export class MetaService {
   }
 
   /**
-   * 状态流铸码限流（REPLAY_SHARE_DESIGN §3.1）：每账号近 1 小时铸码次数滑窗。进程内近似
-   * （meta 横扩时 per-instance，足以挡刷屏）。返回 true=允许并记一次。
+   * State-stream share minting rate limit (REPLAY_SHARE_DESIGN §3.1): sliding window of mint counts per account within the last 1 hour.
+   * In-process approximation (per-instance when meta scales out — sufficient to prevent flooding). Returns true = allowed and recorded.
    */
   private readonly stateShareRate = new Map<string, number[]>();
   private allowStateShare(accountId: string, now: number): boolean {
@@ -226,14 +228,14 @@ export class MetaService {
     return true;
   }
 
-  /** gateway 公开 WS 地址（配置了才下发）。客户端据此连控制面，无需自身硬编码 gateway 地址。 */
+  /** Public WebSocket address of the gateway (only sent if configured). Clients use this to connect to the control plane without hardcoding the gateway address. */
   private get gatewayField(): { gatewayUrl?: string } {
     return this.deps.gatewayPublicUrl ? { gatewayUrl: this.deps.gatewayPublicUrl } : {};
   }
 
   // ── auth ──────────────────────────────────────────
 
-  /** C4/C5-b：检查账号级封号 / 软删除标记；命中则 reject 并返回 true。 */
+  /** C4/C5-b: Check account-level ban / soft-delete flags; if flagged, reject the request and return true. */
   private async rejectIfBanned(cols: typeof this.deps.cols, accountId: string, reply: FastifyReply): Promise<boolean> {
     const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { flags: 1, deletedAt: 1 } });
     if (doc?.deletedAt) {
@@ -346,9 +348,9 @@ export class MetaService {
   }
 
   /**
-   * C5-b 账号软删除（Apple 5.1.1(v) 要求）。
-   * 写 accounts.deletedAt；后续 auth 返 ACCOUNT_DELETED（410）。
-   * 7 天宽限期后异步清理由 admin/cron 触发（本期仅标记）。
+   * C5-b Account soft-delete (required by Apple 5.1.1(v)).
+   * Writes accounts.deletedAt; subsequent auth calls return ACCOUNT_DELETED (410).
+   * Async cleanup after the 7-day grace period is triggered by admin/cron (this phase only marks the account).
    */
   async deleteAccount(req: FastifyRequest) {
     const accountId = accountIdOf(req);
@@ -358,7 +360,7 @@ export class MetaService {
     return ok({ confirmToken });
   }
 
-  /** C5-c GDPR 同意记录：设 accounts.flags.gdprConsent=true。 */
+  /** C5-c GDPR consent recording: sets accounts.flags.gdprConsent=true. */
   async recordGdprConsent(req: FastifyRequest) {
     const accountId = accountIdOf(req);
     const { consent } = req.body as { consent: boolean };
@@ -371,8 +373,8 @@ export class MetaService {
   }
 
   /**
-   * OAuth 第三方登录（SA-2）：授权码流，首期支持 Google。
-   * 服务端用 code 换 access_token → 取 sub → upsert 账号。
+   * OAuth third-party login (SA-2): authorization code flow, initially supporting Google.
+   * The server exchanges the code for an access_token → retrieves sub → upserts the account.
    */
   async authOAuth(req: FastifyRequest, reply: FastifyReply) {
     if (!this.allowAuthAttempt(req, this.deps.now())) {
@@ -419,10 +421,10 @@ export class MetaService {
   }
 
   /**
-   * 绑定凭证到当前账号（SA-2）：匿名转正 + 多凭证绑定。
-   * method='oauth'：同 authOAuth，但绑到 JWT 指定的已有账号（不建新账号）。
-   * method='password'：给账号设密码（已有密码则幂等）。
-   * 目标凭证已属另一账号 → ALREADY_BOUND。
+   * Bind a credential to the current account (SA-2): convert anonymous account to registered + bind multiple credentials.
+   * method='oauth': same as authOAuth, but binds to the existing account identified by the JWT (no new account created).
+   * method='password': assigns a password to the account (idempotent if a password already exists).
+   * If the target credential already belongs to another account → ALREADY_BOUND.
    */
   async authBind(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
@@ -479,8 +481,9 @@ export class MetaService {
 
   // ── profile ───────────────────────────────────────
   /**
-   * 改展示名（消耗 RENAME_COST 金币）。先 commercial 扣币（余额不足则名不变），
-   * 扣成功后写新名 + 钱包镜像回推权威存档 + 返回新 displayName。需登录 + commercial 可用。
+   * Change display name (costs RENAME_COST coins). First deducts from commercial (name unchanged if insufficient balance);
+   * on success, writes the new name + mirrors the wallet back into the authoritative save + returns the new displayName.
+   * Requires login + commercial service available.
    */
   async profileRename(req: FastifyRequest, reply: FastifyReply) {
     if (!this.ensureCommercial(reply)) return;
@@ -508,8 +511,8 @@ export class MetaService {
   async getSave(req: FastifyRequest) {
     const accountId = accountIdOf(req);
     const { cols, commercial, now } = this.deps;
-    await getOrCreateSave(cols, accountId, now()); // 确保存档存在
-    // 顺带对账 + 钱包镜像刷新（commercial 可用时）：补发崩溃遗留订单 + 拉权威余额/pity 写镜像。
+    await getOrCreateSave(cols, accountId, now()); // ensure save document exists
+    // Also reconcile + refresh wallet mirror (when commercial is available): re-deliver orders left from crashes + pull authoritative balance/pity into the mirror.
     if (commercial.available) {
       try {
         await reconcileUndelivered(cols, commercial, accountId, now());
@@ -520,7 +523,7 @@ export class MetaService {
       }
     }
     let save = await getOrCreateSave(cols, accountId, now());
-    // 惰性赛季迁移（S11）：pvp.seasonNo 落后则结算上季奖励 + 软重置 + 更新战令。
+    // Lazy season migration (S11): if pvp.seasonNo is behind, settle previous-season rewards + soft-reset + update battle pass.
     try {
       const currentSeason = await getCurrentSeason(cols, now());
       const r = await migrateIfStale(cols, commercial, save, currentSeason, now());
@@ -535,7 +538,7 @@ export class MetaService {
     } catch (e) {
       req.log.warn({ err: e }, 'season migrate failed (serving pre-migration save)');
     }
-    // 体力快照注入（A4）：stamina 存于独立集合，回传时合并进 save 镜像。
+    // Stamina snapshot injection (A4): stamina is stored in a separate collection and merged into the save mirror on response.
     const stamina = await this.readStaminaSnapshot(accountId, now());
     save = { ...save, stamina };
     const displayName = await getDisplayName(cols, accountId);
@@ -570,10 +573,10 @@ export class MetaService {
     return ok({ save: result.save });
   }
 
-  // ── PvE 服务器权威（PVE_INTEGRITY_PLAN §8）：通关结算 + 升级。progress/stars/materials/
-  //    pveUpgrades 只由此处 + ranked 结算写，putSave 不接受（信任边界，§8.3）。──────────
+  // ── PvE server authority (PVE_INTEGRITY_PLAN §8): clear settlement + upgrades. progress/stars/materials/
+  //    pveUpgrades are only written here + in ranked settlement; putSave does not accept them (trust boundary, §8.3). ──────────
 
-  /** 乐观锁读-改-写存档（rev 守卫 + 重试，同 applyPvp）。transform 返回新 save 或业务错误码字符串。 */
+  /** Optimistic-lock read-modify-write on the save document (rev guard + retry, same as applyPvp). transform returns the new save or a business error code string. */
   private async mutateSave(
     accountId: string,
     transform: (s: SaveData) => SaveData | string,
@@ -592,12 +595,12 @@ export class MetaService {
         { returnDocument: 'after' },
       );
       if (res) return { save: res.save };
-      // rev 冲突（客户端并发 PUT equipped/flags 或并发 pve 写）→ 重读重试
+      // rev conflict (concurrent client PUT of equipped/flags or concurrent pve write) → re-read and retry
     }
     return { error: 'REV_CONFLICT' };
   }
 
-  /** 当日「发材料的通关」次数 +1（< cap 才占格并返 true），同 bumpAdsCap 两步法。 */
+  /** Increment today's "material-rewarding clear" count by 1 (only claims a slot and returns true when below cap), same two-step pattern as bumpAdsCap. */
   private async bumpPveRewardCap(accountId: string, now: number): Promise<boolean> {
     const dayKey = new Date(now).toISOString().slice(0, 10);
     const id = `${accountId}:${dayKey}`;
@@ -614,14 +617,14 @@ export class MetaService {
     return !!res;
   }
 
-  // ── 体力系统（A4）──────────────────────────────────────────────────────────
+  // ── Stamina system (A4) ──────────────────────────────────────────────────────────
 
   private static readonly STAMINA_CAP = 120;
   private static readonly STAMINA_REGEN_MS = 6 * 60 * 1000; // 6 min per point
 
   /**
-   * 原子扣体力：读 pveStamina → 应用自然回复 → $inc 检查余额。
-   * 返回 { ok: true, current } 或 { ok: false }（余额不足）。
+   * Atomically deduct stamina: read pveStamina → apply natural regen → $inc with balance check.
+   * Returns { ok: true, current } or { ok: false } (insufficient balance).
    */
   private async deductStamina(
     accountId: string,
@@ -632,16 +635,16 @@ export class MetaService {
     const CAP = MetaService.STAMINA_CAP;
     const REGEN_MS = MetaService.STAMINA_REGEN_MS;
 
-    // 懒建文档（新账号首次进关）。
+    // Lazily create the document (new account's first level entry).
     await cols.pveStamina.updateOne(
       { _id: accountId },
       { $setOnInsert: { _id: accountId, current: CAP, regenAt: 0 } },
       { upsert: true },
     );
 
-    // 先应用自然回复（两步：读→算→写；允许极小并发窗口多发 1 点，概率极低且对玩家友好）。
+    // Apply natural regen first (two-step: read → compute → write; a tiny concurrent window may grant 1 extra point, which is extremely unlikely and player-friendly).
     const stDoc = await cols.pveStamina.findOne({ _id: accountId });
-    if (!stDoc) return { ok: false }; // 理论不可达（upsert 已建）
+    if (!stDoc) return { ok: false }; // theoretically unreachable (upsert already created it)
 
     let { current, regenAt } = stDoc;
     if (current < CAP && regenAt > 0 && now >= regenAt) {
@@ -653,9 +656,9 @@ export class MetaService {
 
     if (current < cost) return { ok: false };
 
-    // 原子扣除（$inc 带 $gte 守卫防并发超扣）。
+    // Atomic deduction ($inc with $gte guard to prevent concurrent over-deduction).
     const newCurrent = current - cost;
-    // 回复计时：若扣后从满降到 < 满，开始计时；若已在计时，维持 regenAt 不变。
+    // Regen timer: if the deduction drops current below cap, start timing; if already counting, keep regenAt unchanged.
     const newRegenAt =
       regenAt !== 0
         ? regenAt
@@ -667,11 +670,11 @@ export class MetaService {
       { $inc: { current: -cost }, $set: { regenAt: newRegenAt } },
       { returnDocument: 'after' },
     );
-    if (!res) return { ok: false }; // 并发竞争失败
+    if (!res) return { ok: false }; // lost concurrent race
     return { ok: true, current: res.current, regenAt: res.regenAt };
   }
 
-  /** 读取当前体力（含自然回复计算），用于回传 SaveData.stamina 快照。 */
+  /** Read current stamina (including natural regen calculation), used to populate the SaveData.stamina snapshot in responses. */
   private async readStaminaSnapshot(
     accountId: string,
     now: number,
@@ -690,7 +693,7 @@ export class MetaService {
     return { current, regenAt };
   }
 
-  /** 补体力（走 commercial 扣金币；60 体力 = 30 金币，§A4）。 */
+  /** Purchase stamina (deducts coins via commercial; 60 stamina = 30 coins, §A4). */
   async purchaseStamina(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
     const { commercial, now: nowFn } = this.deps;
@@ -707,7 +710,7 @@ export class MetaService {
     if (!spendRes.ok) {
       return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough coins'));
     }
-    // 添加体力（最多补到 CAP，多余体力丢弃）。
+    // Add stamina (capped at CAP; excess is discarded).
     const { cols } = this.deps;
     await cols.pveStamina.updateOne(
       { _id: accountId },
@@ -722,16 +725,16 @@ export class MetaService {
     return ok({ stamina: { current: newCurrent, regenAt: newRegenAt } });
   }
 
-  /** 写 progress/stars（解锁 + 记星，取 max），不动 materials。 */
+  /** Write progress/stars (unlock + record stars, taking the max), without touching materials. */
   private async writeClearProgress(accountId: string, levelId: string, stars: number) {
     return this.mutateSave(accountId, (s) => {
       const cleared = s.progress.cleared.includes(levelId)
         ? s.progress.cleared
         : [...s.progress.cleared, levelId];
       const stars2 = Math.max(s.progress.stars[levelId] ?? 0, stars) as 1 | 2 | 3;
-      // 成就 stat（S9-3，ACHIEVEMENT_DESIGN §4.2.2）：章节首通累加 campaign.chaptersCleared，
-      // 与 progress 同一 mutateSave 事务（rev 守卫），天然权威防伪。$max 语义 → 首通才涨、重打不涨。
-      // 缺省懒创建：无章节通关（count=0）且无既有 stats 时不实例化 stats（省存储）。
+      // Achievement stat (S9-3, ACHIEVEMENT_DESIGN §4.2.2): accumulate campaign.chaptersCleared on first chapter clear,
+      // in the same mutateSave transaction as progress (rev guard) — naturally authoritative and tamper-resistant. $max semantics → increments only on first clear, not on replays.
+      // Lazy default creation: if no chapters cleared (count=0) and no existing stats, stats is not instantiated (saves storage).
       const chapters = chaptersClearedCount(cleared);
       const prevChapters = s.stats?.['campaign.chaptersCleared'] ?? 0;
       const stats =
@@ -747,10 +750,10 @@ export class MetaService {
   }
 
   /**
-   * PvE 喂入（S9-3b）：把裁判复算回传的本局成就计数（`kill.*`/`cast.*`）累加进玩家终身 stats。
-   * statsJson 解析失败 / 非对象 → 跳过；过 {@link sanitizePvpReportedStats}（L1 caps 兜底「串通裁判
-   * 刷量」，越界整份丢弃，不阻塞发材料）；空增量懒创建不实例化 stats。失败不抛（喂入是 best-effort
-   * 附加，绝不因此卡死发材料主路径——金币池小且一次性，§4.4）。
+   * PvE stat feed (S9-3b): accumulate the in-match achievement counters (`kill.*`/`cast.*`) returned by the judge's re-simulation into the player's lifetime stats.
+   * If statsJson fails to parse or is not an object → skip; passes through {@link sanitizePvpReportedStats} (L1 caps as a backstop against "colluding with the judge to farm stats";
+   * out-of-bounds data is discarded entirely, without blocking material delivery); empty increments do not instantiate stats (lazy creation).
+   * Errors are not thrown (stat feeding is a best-effort side effect and must never block the material delivery main path — the coin pool is small and one-time, §4.4).
    */
   private async accrueJudgedPveStats(accountId: string, statsJson: string | undefined): Promise<void> {
     if (!statsJson) return;
@@ -763,27 +766,28 @@ export class MetaService {
       return;
     }
     const clean = sanitizePvpReportedStats(reported);
-    if (!clean || Object.keys(clean).length === 0) return; // L1 越界拒收 / 无可累加
+    if (!clean || Object.keys(clean).length === 0) return; // L1 out-of-bounds rejected / nothing to accumulate
     await this.mutateSave(accountId, (s) => {
       const stats = accrueStats(s.stats, clean);
       return stats === s.stats ? s : { ...s, stats };
     });
   }
 
-  /** B5：幂等打点某每日任务（今日已打过则 no-op，不抛错）。fire-and-forget 调用方忽略失败。 */
+  /** B5: Idempotently record a daily task event (no-op if already recorded today, no error thrown). Callers fire-and-forget and ignore failures. */
   private async bumpRetentionTask(accountId: string, taskId: import('@nw/shared').DailyTaskId): Promise<void> {
     const tsMs = this.deps.now();
     await this.mutateSave(accountId, (s) => {
       const next = accrueRetentionTask(s.retention, taskId, tsMs);
-      if (next === s.retention) return s; // 今日已打过，no-op
+      if (next === s.retention) return s; // already recorded today, no-op
       return { ...s, retention: next };
-    }).catch(() => {/* 留存打点失败不影响主流程 */});
+    }).catch(() => {/* retention recording failure does not affect the main flow */});
   }
 
   /**
-   * 当日上限内发关卡产出（材料 reward + 单位卡 levelCardReward，S12-C）。同一每日闸门（材料/卡
-   * 同被 cap），同一 mutateSave 事务原子写：materials $+ / cardInventory 经 grantCards / unitLevels
-   * 经 deriveUnitLevels 重算（与盲盒/合成同口径，服务器权威）。返回实发（capped → 都空）+ capped + save。
+   * Deliver level rewards within the daily cap (material reward + unit card levelCardReward, S12-C).
+   * Both are subject to the same daily gate (materials/cards share the same cap), written atomically in a single mutateSave transaction:
+   * materials $+ / cardInventory via grantCards / unitLevels recomputed via deriveUnitLevels (same interface as gacha/merge, server-authoritative).
+   * Returns actually delivered amounts (all empty if capped) + capped flag + save.
    */
   private async grantClearReward(
     accountId: string,
@@ -802,7 +806,7 @@ export class MetaService {
     const grant: Record<string, number> = capped ? {} : { ...reward };
     const cardGrant: Record<string, number> = capped ? {} : { ...cardReward };
 
-    // 装备掉落 roll（独立于每日 cap；先于 mutateSave 在外部 roll，避免事务内 Math.random 不确定性）
+    // Equipment drop roll (independent of the daily cap; rolled outside mutateSave to avoid non-determinism from Math.random inside the transaction)
     const dropCfg = findPveLevel(levelId)?.equipmentDrop;
     const pendingDrop: EquipmentInstance | undefined =
       dropCfg && Math.random() < dropCfg.rate
@@ -818,23 +822,23 @@ export class MetaService {
         const unitLevels = deriveUnitLevels(cardInventory);
         next = { ...next, cardInventory, unitLevels };
       }
-      // 装备入库（满仓时静默跳过）
+      // Store equipment (silently skipped when inventory is full)
       if (pendingDrop && equipmentInvCount(next) < EQUIPMENT_INV_CAP) {
         next = { ...next, equipmentInv: { ...(next.equipmentInv ?? {}), [pendingDrop.id]: pendingDrop } };
       }
       return next;
     });
     if ('error' in out) return out;
-    // 确认掉落实际写入（满仓时 pendingDrop 未入库）
+    // Confirm the drop was actually written (pendingDrop is not stored when inventory is full)
     const grantedEquipment =
       pendingDrop && out.save.equipmentInv?.[pendingDrop.id] ? pendingDrop : undefined;
     return { save: out.save, granted: grant, grantedCards: cardGrant, grantedEquipment, capped };
   }
 
   /**
-   * PvE 通关结算：校验解锁 → 写 progress/stars → 发材料（当日上限内）→ 回推。
-   * L1 抽检（§8.6 第 3 步）：被抽中（首通 / 蓝图异常 / 随机）且裁判可用时 **暂不发材料**，
-   * 记 pveVerifications 并回执 `needsReplay + verifyId`，由客户端补传录像走 /pve/verify 复算入账。
+   * PvE clear settlement: validate unlock → write progress/stars → deliver materials (within daily cap) → push back.
+   * L1 spot-check (§8.6 step 3): if selected (first clear / blueprint anomaly / random) and a judge is available, **do not deliver materials yet**;
+   * record a pveVerifications entry and respond with `needsReplay + verifyId` so the client can submit the replay to /pve/verify for re-simulation and credit.
    */
   async pveClear(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
@@ -842,18 +846,18 @@ export class MetaService {
     const { levelId, stars: starsRaw, pveUpgrades: clientUpgradesLegacy, unitLevels: clientUnitLevels, stats: clientStats } = req.body as {
       levelId: string;
       stars: number;
-      /** @deprecated S3-2，S12 起由 unitLevels 替代。 */
+      /** @deprecated S3-2, replaced by unitLevels from S12 onwards. */
       pveUpgrades?: Record<string, number>;
-      /** S12 单位养成等级快照（客户端开局快照，用于 L0 异常判定）。 */
+      /** S12 unit progression level snapshot (client snapshot at match start, used for L0 anomaly detection). */
       unitLevels?: Record<string, number>;
-      /** S9-3b：客户端上报本局 kill/cast 统计（非抽检路径用于成就计数）。 */
+      /** S9-3b: client-reported in-match kill/cast stats (used for achievement counting on the non-spot-check path). */
       stats?: Record<string, number>;
     };
     const level = findPveLevel(levelId);
     if (!level) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown level'));
     const stars = Math.floor(starsRaw);
     if (stars < 1 || stars > 3) {
-      // 通关至少 1 星；0 星不算通关（与客户端 applyCampaignClear 的 stars>0 门一致）。
+      // A clear requires at least 1 star; 0 stars does not count as cleared (consistent with the stars>0 gate in the client's applyCampaignClear).
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'stars must be 1..3'));
     }
 
@@ -862,33 +866,33 @@ export class MetaService {
     if (cur.antiCheat?.pveBanned) {
       return reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
     }
-    // 解锁前置：前置关须已通关（离线新解锁被拒，§8 决策 4）。
+    // Prerequisite unlock check: the prerequisite level must already be cleared (newly offline-unlocked levels are rejected, §8 decision 4).
     if (level.requires && !cur.progress.cleared.includes(level.requires)) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level locked'));
     }
 
-    // 体力扣除（A4）：先扣再结算，防止先结算再被拒。
+    // Stamina deduction (A4): deduct before settling to prevent settle-then-reject scenarios.
     const staminaCost = level.staminaCost ?? 1;
     const staminaResult = await this.deductStamina(accountId, staminaCost, now());
     if (!staminaResult.ok) {
       return reply.code(402).send(err(ErrorCode.INSUFFICIENT_STAMINA, 'not enough stamina'));
     }
 
-    // 有可套利产出 = 材料 reward 或单位卡掉落任一非空（S12-C：卡也是可作弊产出）。
+    // Exploitable reward = either material reward or unit card drop is non-empty (S12-C: cards are also a cheatable reward).
     const hasReward =
       Object.keys(level.reward).length > 0 || Object.keys(levelCardReward(levelId)).length > 0;
 
-    // L1 抽检决策：仅在「有产出可发 + 裁判可用」时考虑（否则没有可被作弊套利的产出）。
+    // L1 spot-check decision: only considered when "rewards are available + judge is available" (otherwise there is no exploitable reward to cheat).
     if (hasReward && gateway.available) {
       const isFirstClear = !cur.progress.cleared.includes(levelId);
-      // L0 异常（§0「开局战力不符 → 必作弊」）：S12 优先比 unitLevels，无则降级比 pveUpgrades。
+      // L0 anomaly (§0 "combat power mismatch at match start → must be cheating"): S12 prefers comparing unitLevels; falls back to pveUpgrades if unavailable.
       const blueprintMismatch = clientUnitLevels !== undefined
         ? JSON.stringify(normUpgrades(clientUnitLevels)) !== JSON.stringify(normUpgrades(cur.unitLevels ?? {}))
         : clientUpgradesLegacy !== undefined &&
           JSON.stringify(normUpgrades(clientUpgradesLegacy)) !== JSON.stringify(normUpgrades(cur.pveUpgrades));
       if (shouldSpotCheck({ isFirstClear, blueprintMismatch, rand: Math.random() })) {
         const reason = blueprintMismatch ? 'anomaly' : isFirstClear ? 'first' : 'sample';
-        // 写 progress/stars（解锁照常）但不发材料；记抽检，等客户端补传录像复算。
+        // Write progress/stars (unlock proceeds normally) but do not deliver materials; record the spot-check and wait for the client to submit the replay for re-simulation.
         const prog = await this.writeClearProgress(accountId, levelId, stars);
         if ('error' in prog) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, prog.error));
         const verifyId = randomUUID();
@@ -897,11 +901,11 @@ export class MetaService {
           accountId,
           levelId,
           claimedStars: stars,
-          pveUpgrades: { ...cur.pveUpgrades }, // 旧快照（保留兼容）
-          unitLevels: { ...(cur.unitLevels ?? {}) }, // S12 服务器权威快照（复算用，防漂移）
+          pveUpgrades: { ...cur.pveUpgrades }, // legacy snapshot (kept for compatibility)
+          unitLevels: { ...(cur.unitLevels ?? {}) }, // S12 server-authoritative snapshot (used for re-simulation, prevents drift)
           reason,
           status: 'pending',
-          // S9-3b：存客户端上报计数作审计比对基准（verdict.statsJson 是权威来源，报告仅供 ops 可视）。
+          // S9-3b: store client-reported counts as an audit comparison baseline (verdict.statsJson is the authoritative source; the reported field is for ops visibility only).
           ...(clientStats ? { reportedStats: clientStats } : {}),
           ts: now(),
         });
@@ -917,18 +921,18 @@ export class MetaService {
       }
     }
 
-    // 普通通关：写 progress/stars 后发材料 + 单位卡（当日上限内，S12-C）。
+    // Normal clear: write progress/stars then deliver materials + unit cards (within the daily cap, S12-C).
     const prog = await this.writeClearProgress(accountId, levelId, stars);
     if ('error' in prog) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, prog.error));
     const granted = await this.grantClearReward(accountId, levelId, level.reward);
     if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
-    // S9-3b：非抽检路径，接受客户端上报统计，过 L1 caps 后写入成就计数器。
+    // S9-3b: non-spot-check path — accept client-reported stats, pass through L1 caps, then write to achievement counters.
     if (clientStats) await this.accrueJudgedPveStats(accountId, JSON.stringify(clientStats));
-    // B5：每日任务「通关 PvE」打点（幂等，今日已打过则 no-op）。
+    // B5: record daily task "clear PvE" (idempotent, no-op if already recorded today).
     await this.bumpRetentionTask(accountId, 'pve.clear');
-    // B6：活动任务「pve.clear」打点（best-effort）。
+    // B6: record event task "pve.clear" (best-effort).
     accrueEventTask(cols, accountId, 'pve.clear', now()).catch(() => {});
-    // 将 retention 更新合入返回的 save，确保客户端 adoptServer 后立即看到任务完成状态。
+    // Merge the retention update into the returned save so the client sees the task completion immediately after adoptServer.
     const nextRetention = accrueRetentionTask(granted.save.retention, 'pve.clear', now());
     const saveWithSt = {
       ...granted.save,
@@ -945,10 +949,10 @@ export class MetaService {
   }
 
   /**
-   * PvE L1 录像抽检复算（§8.6 第 3 步）：客户端补传被抽中通关的录像帧 → 经 gateway 派第三方
-   * 在线客户端无头复算（复用 S1-J，战役模式 + 服务器权威蓝图快照）→ 复算星数 ≥ 声称才发材料。
-   * 无裁判可裁（无候选 / 超时 / 复算失败）→ benefit-of-doubt 照发（不因缺裁判惩罚诚实玩家）；
-   * 复算星数 < 声称 → 判为可疑，不发材料 + 记 rejected。
+   * PvE L1 replay spot-check re-simulation (§8.6 step 3): client submits the replay frames of the flagged clear → dispatched via gateway to a third-party
+   * online client for headless re-simulation (reuses S1-J, campaign mode + server-authoritative blueprint snapshot) → materials delivered only if re-simulated stars ≥ claimed.
+   * If no judge is available (no candidates / timeout / re-simulation failure) → benefit-of-doubt: deliver anyway (honest players are not penalized for missing judges);
+   * if re-simulated stars < claimed → flagged as suspicious, materials not delivered + recorded as rejected.
    */
   async pveVerify(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
@@ -958,7 +962,7 @@ export class MetaService {
       frames: { frame: number; cmds: { side: number; commands: string }[] }[];
       endFrame: number;
     };
-    // S4-4：被封号的账号无法提交验证。
+    // S4-4: banned accounts cannot submit verifications.
     const save = await cols.saves.findOne({ _id: accountId }, { projection: { 'save.antiCheat': 1 } });
     if (save?.save?.antiCheat?.pveBanned) {
       return reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
@@ -968,14 +972,14 @@ export class MetaService {
       return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'verification not found'));
     }
     if (doc.status !== 'pending') {
-      // 已结算（重复上传）→ 幂等：回当前 save，不再发。
+      // Already settled (duplicate submission) → idempotent: return current save, do not deliver again.
       const s = await getOrCreateSave(cols, accountId, now());
       return ok({ save: s, granted: {}, capped: false, verified: doc.status !== 'rejected' });
     }
     const level = findPveLevel(doc.levelId);
     if (!level) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown level'));
 
-    // 派第三方无头复算（seed 由裁判本地查关卡 JSON 派生；mode 仅审计，PvE 看 levelId）。
+    // Dispatch third-party headless re-simulation (seed derived locally by the judge from the level JSON; mode is audit-only, PvE uses levelId).
     const verdict = await gateway.judge({
       seed: 0,
       mode: 0,
@@ -988,7 +992,7 @@ export class MetaService {
     });
 
     const judgedStars = verdict.stars ?? 0;
-    // 复算成功且星数 < 声称 → 可疑，不发材料。其余（通过 / 无裁判可裁）发材料。
+    // Re-simulation succeeded and stars < claimed → suspicious, do not deliver materials. All other outcomes (passed / no judge available) deliver materials.
     const rejected = verdict.ok && judgedStars < doc.claimedStars;
     const status: 'verified' | 'unverified' | 'rejected' = rejected
       ? 'rejected'
@@ -1034,7 +1038,7 @@ export class MetaService {
         ts: now(),
       });
 
-      // C4：账号层面 pveWarnings 计数 + 警告邮件 + 封号（auth 层拦截）。
+      // C4: account-level pveWarnings count + warning mail + ban (intercepted at the auth layer).
       const updatedAcc = await cols.accounts.findOneAndUpdate(
         { _id: accountId },
         { $inc: { 'flags.pveWarnings': 1 } },
@@ -1055,10 +1059,10 @@ export class MetaService {
       const s = 'error' in saved ? await getOrCreateSave(cols, accountId, now()) : saved.save;
       return ok({ save: s, granted: {}, capped: false, verified: false });
     }
-    // PvE 喂入（S9-3b，ACHIEVEMENT_DESIGN §6.2）：仅**裁判成功复算**（status==='verified'，非
-    // benefit-of-doubt 的 'unverified'）时，把裁判权威产出的本局 kill/cast 累加进终身 stats。
-    // 裁判是随机第三方无头复算 → 玩家无法伪造；仍过 L1 caps 作为「玩家串通裁判刷量」的廉价兜底
-    // （越界整份丢弃，不阻塞发材料）。A2：计数只在此服务器权威结算点写。
+    // PvE stat feed (S9-3b, ACHIEVEMENT_DESIGN §6.2): only when the **judge successfully re-simulated** (status==='verified', not benefit-of-doubt 'unverified'),
+    // accumulate the judge-authoritative in-match kill/cast counts into lifetime stats.
+    // The judge is a random third-party headless re-simulation → players cannot fabricate it; still passes through L1 caps as a cheap backstop against
+    // "player colluding with the judge to farm stats" (out-of-bounds data discarded entirely, does not block material delivery). A2: counts are only written at this server-authoritative settlement point.
     if (status === 'verified') await this.accrueJudgedPveStats(accountId, verdict.statsJson);
     const granted = await this.grantClearReward(accountId, doc.levelId, level.reward);
     if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
@@ -1072,7 +1076,7 @@ export class MetaService {
     });
   }
 
-  /** S1-RP：为已存 Mongo replayBlob 创建 7 天分享链接（shareId）。 */
+  /** S1-RP: Create a 7-day share link (shareId) for an existing Mongo replayBlob. */
   async createReplayShare(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
     const { roomId } = req.params as { roomId: string };
@@ -1085,7 +1089,7 @@ export class MetaService {
     return ok({ shareId });
   }
 
-  /** S1-RP：通过 shareId 读取录像（无需登录，TTL 到期自动失效）。 */
+  /** S1-RP: Retrieve a replay by shareId (no login required; automatically expires when the TTL elapses). */
   async getReplayByShare(req: FastifyRequest, reply: FastifyReply) {
     const { shareId } = req.params as { shareId: string };
     const { cols, now: _now } = this.deps;
@@ -1097,9 +1101,9 @@ export class MetaService {
   }
 
   /**
-   * 状态流录像游戏外分享 — 铸码（REPLAY_SHARE_DESIGN §3.1）。分享者本人已登录；客户端自产的
-   * 状态流 blob 随请求上传。服务端**不碰引擎、不碰数值表**，只做带访问控制的对象存储：校验体量
-   * 上限 + 每账号限流 → 写库 → 返回不可猜 shareCode。状态流**不可信**，绝不进反作弊/结算。
+   * State-stream replay out-of-game share — mint a share code (REPLAY_SHARE_DESIGN §3.1). The sharer must be logged in; the client-generated
+   * state-stream blob is uploaded with the request. The server **does not touch the engine or stat tables** — it acts purely as access-controlled object storage:
+   * validate size limit + per-account rate limit → write to DB → return an unguessable shareCode. State streams are **untrusted** and must never enter anti-cheat/settlement.
    */
   async createStateReplayShare(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
@@ -1110,7 +1114,7 @@ export class MetaService {
       return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many shares, try later'));
     }
 
-    // blob = 客户端 gzip+base64 后的压缩串（opaque，服务端不解压、不解释，§7）。
+    // blob = gzip+base64 compressed string produced by the client (opaque; the server does not decompress or interpret it, §7).
     const blob = (req.body as { blob?: unknown }).blob;
     if (typeof blob !== 'string' || blob.length === 0) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing replay blob'));
@@ -1120,7 +1124,7 @@ export class MetaService {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'replay too large'));
     }
 
-    // 不可猜随机串（144bit base64url）防枚举。
+    // Unguessable random string (144-bit base64url) to prevent enumeration.
     const shareCode = randomBytes(18).toString('base64url');
     const expireAt = new Date(ts + STATE_REPLAY_EXPIRE_DAYS * 24 * 60 * 60 * 1000);
     await cols.stateReplayShares.insertOne({
@@ -1136,24 +1140,24 @@ export class MetaService {
   }
 
   /**
-   * 状态流录像 — 公开取（REPLAY_SHARE_DESIGN §3.2）。**无需登录**；取 blob 回传 + viewCount++；
-   * 不存在/过期 → 404（客户端落地页带「试玩」CTA）。
+   * State-stream replay — public retrieval (REPLAY_SHARE_DESIGN §3.2). **No login required**; returns the blob + increments viewCount;
+   * not found / expired → 404 (client landing page shows a "Try the Game" CTA).
    */
   async getStateReplayShare(req: FastifyRequest, reply: FastifyReply) {
     const { shareCode } = req.params as { shareCode: string };
     const { cols } = this.deps;
     const doc = await cols.stateReplayShares.findOne({ _id: shareCode });
     if (!doc) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'share not found'));
-    // 浏览计数（不阻塞回包）。
+    // Increment view count (non-blocking, does not delay response).
     void cols.stateReplayShares.updateOne({ _id: shareCode }, { $inc: { viewCount: 1 } });
     return ok({ blob: doc.blob });
   }
 
-  // ── F3 公开 bootstrap + 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）────────────────────
-  /** 4 个客户端日志分级 flag（按 verbose 程度排序，仅文档/守卫用）。 */
+  // ── F3 public bootstrap + targeted client log collection (FEATURE_FLAGS_DESIGN §9) ────────────────────
+  /** 4 client log level flags (ordered by verbosity; for documentation/guard use only). */
   private static readonly CLIENT_LOG_KEYS = FLAG_KEYS.filter((k) => k.startsWith('client_log_'));
 
-  /** 从请求里解析 flag 求值上下文：query 的 platform/publicId + 可选 token 的 accountId。 */
+  /** Parse the flag evaluation context from the request: platform/publicId from query params + optional accountId from token. */
   private flagCtx(req: FastifyRequest): FlagContext {
     const q = (req.query ?? {}) as { platform?: unknown; publicId?: unknown };
     const ctx: FlagContext = {};
@@ -1162,7 +1166,7 @@ export class MetaService {
       ctx.platform = q.platform as FlagPlatform;
     }
     if (this.deps.region) ctx.region = this.deps.region;
-    // 登录态可选：带 token 则解析 accountId 求值更精确；无 token / 无效 token 静默忽略（bootstrap 匿名可调）。
+    // Login state is optional: if a token is provided, parse the accountId for more precise evaluation; missing/invalid token is silently ignored (bootstrap is callable anonymously).
     const token = extractBearer(req.headers['authorization']);
     if (token) {
       try { ctx.accountId = verifyToken(token, this.deps.jwt); } catch { /* anonymous */ }
@@ -1171,9 +1175,9 @@ export class MetaService {
   }
 
   /**
-   * 公开 bootstrap（§9.3）：匿名可调（带 token 则注入 accountId 求值更精确）。对全量白名单逐个求值，
-   * **只回与 default 不同的 flag**——绝大多数玩家拿到空 map → 零负担。规则/白名单绝不下发，只给布尔结果。
-   * 无 flag 源（未配 admin）→ 恒空 map。
+   * Public bootstrap (§9.3): callable anonymously (a token injects accountId for more precise evaluation). Evaluates all flags individually,
+   * **only returning flags that differ from their default** — the vast majority of players receive an empty map → zero overhead. Rules/allowlists are never sent down; only boolean results.
+   * No flag source (admin not configured) → always returns an empty map.
    */
   async bootstrap(req: FastifyRequest) {
     const flags: Record<string, boolean> = {};
@@ -1188,7 +1192,7 @@ export class MetaService {
     return ok({ flags });
   }
 
-  /** 该 publicId 当前是否被任一 client_log_* flag 的 allowPublicIds 点名（防任意客户端往 Loki 灌日志）。 */
+  /** Whether this publicId is currently named in the allowPublicIds of any client_log_* flag (prevents arbitrary clients from flooding Loki with logs). */
   private isClientLogTargeted(publicId: string): boolean {
     const cache = this.deps.flags;
     if (!cache) return false;
@@ -1199,9 +1203,9 @@ export class MetaService {
   }
 
   /**
-   * 客户端日志上报 → Loki（§9.4）。**永远回 200**（绝不影响玩家）。防滥用：仅当该 publicId 当前被
-   * client_log_* 定向时才转发，否则静默丢弃（非定向客户端 bootstrap 拿空 map、本就不会调本端点，此为兜底）。
-   * Loki 不可达亦静默丢弃。
+   * Client log upload → Loki (§9.4). **Always returns 200** (never affects players). Abuse prevention: only forwards when this publicId is currently targeted
+   * by a client_log_* flag; otherwise silently discarded (non-targeted clients receive an empty map from bootstrap and would not call this endpoint in the first place — this is a backstop).
+   * Silently discarded if Loki is unreachable.
    */
   async clientLog(req: FastifyRequest, reply: FastifyReply) {
     const body = (req.body ?? {}) as { publicId?: unknown; platform?: unknown; logs?: unknown };
@@ -1209,11 +1213,11 @@ export class MetaService {
     if (!publicId || !Array.isArray(body.logs)) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing publicId / logs'));
     }
-    // 未被定向 → 接受但丢弃（不 4xx，避免泄露「谁在被采集」）。
+    // Not targeted → accept but discard (no 4xx to avoid leaking "who is being collected").
     if (!this.isClientLogTargeted(publicId)) return ok({ accepted: 0 });
 
     const platform = typeof body.platform === 'string' ? body.platform : undefined;
-    // 兜底上限：最多 1000 条、每条 msg 截断 2000 字符（Fastify bodyLimit 已挡超大 body）。
+    // Safety cap: at most 1000 entries, each msg truncated to 2000 characters (Fastify bodyLimit already blocks oversized bodies).
     const entries: ClientLogEntry[] = (body.logs as unknown[]).slice(0, 1000).flatMap((raw) => {
       if (!raw || typeof raw !== 'object') return [];
       const o = raw as Record<string, unknown>;
@@ -1232,27 +1236,27 @@ export class MetaService {
       (BigInt(this.deps.now()) * 1_000_000n).toString(),
     );
     if (payload) {
-      // fire-and-forget：不阻塞回包，失败静默（onError 仅调试期需要时挂）。
+      // fire-and-forget: does not block the response; failures are silent (attach onError only when needed during debugging).
       void pushToLoki(this.deps.lokiPushUrl, payload);
     }
     return ok({ accepted: entries.length });
   }
 
   /**
-   * 客户端异常事件「全量」上报 → Loki（与定向采集互补，**不受 allowPublicIds 约束**：任何客户端的
-   * 内存超标 / CPU 持续饱和 / WebGL 丢失 / 卡死 / 未捕获异常 / 上次崩溃都直报，便于全网定位野外异常）。
-   * 防滥用：按 IP 60s/30 次限流（超限静默丢弃，仍回 200，绝不影响玩家）；最多取前 200 条、各字段截断。
-   * **永远回 200**（Loki 不可达 / 限流 / 无效亦不影响玩家）。
+   * "Full coverage" client anomaly event upload → Loki (complements targeted collection, **not subject to allowPublicIds constraints**:
+   * any client's memory overrun / sustained CPU saturation / WebGL context loss / freeze / uncaught exception / last crash is reported directly, enabling field anomaly diagnosis across the entire player base).
+   * Abuse prevention: rate-limited to 30 requests per IP per 60s (over-limit silently discarded, still returns 200 — never affects players); at most 200 events, all fields truncated.
+   * **Always returns 200** (Loki unreachable / rate-limited / invalid input also does not affect players).
    */
   async clientAnomaly(req: FastifyRequest, reply: FastifyReply) {
     const body = (req.body ?? {}) as { publicId?: unknown; platform?: unknown; events?: unknown };
     if (!Array.isArray(body.events)) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing events'));
     }
-    // IP 限流：超限即静默丢弃（不 4xx，避免客户端据此重试 / 摸出限流阈值）。
+    // IP rate limit: over-limit is silently discarded (no 4xx, to prevent clients from retrying based on the response / probing the rate limit threshold).
     if (!this.anomalyRate.allow(req.ip ?? 'unknown', this.deps.now())) return ok({ accepted: 0 });
 
-    // publicId 可选（异常可发生在登录前）；缺省归 'anon'，仍上报以便统计无主异常。
+    // publicId is optional (anomalies can occur before login); defaults to 'anon' and is still reported to enable statistics on anonymous anomalies.
     const publicId = typeof body.publicId === 'string' && body.publicId ? body.publicId : 'anon';
     const platform = typeof body.platform === 'string' ? body.platform : undefined;
     const events: ClientAnomalyEvent[] = (body.events as unknown[]).slice(0, 200).flatMap((raw) => {
@@ -1277,7 +1281,7 @@ export class MetaService {
     return ok({ accepted: events.length });
   }
 
-  /** PvE 升级：服务器校验材料足够 → 扣材料 + pveUpgrades+1 → 回推（仅在线）。 */
+  /** PvE upgrade: server validates sufficient materials → deduct materials + increment pveUpgrades by 1 → push back (online only). */
   async pveUpgrade(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
     const { upgradeId } = req.body as { upgradeId: string };
@@ -1308,8 +1312,8 @@ export class MetaService {
   }
 
   /**
-   * 单位养成合成（S12，ECONOMY_NUMBERS §4.1）：服务器权威校验库存 → 消耗 5 张 N 级卡 → +1 张
-   * (N+1) → 重算 unitLevels → 回推（仅在线）。卡片库存/等级是服务器权威段，putSave 不接受（§8.3）。
+   * Unit progression merge (S12, ECONOMY_NUMBERS §4.1): server-authoritative inventory validation → consume 5 level-N cards → grant 1 level-(N+1) card
+   * → recompute unitLevels → push back (online only). Card inventory/levels are a server-authoritative field; putSave does not accept them (§8.3).
    */
   async pveMerge(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
@@ -1332,9 +1336,9 @@ export class MetaService {
     return ok({ save: out.save });
   }
 
-  // ── 成就（S9，ACHIEVEMENT_DESIGN）：统计里程碑 → 一次性金币。计数只在 PvE/PvP 权威结算点写
-  //    （S9-3/S9-6），此处只提供「读定义+进度」与「领取发币」。──────────────────────────
-  /** 成就定义表 + 我的 stats + 已领进度（客户端本地算阶，§4.1/§6）。 */
+  // ── Achievements (S9, ACHIEVEMENT_DESIGN): stat milestones → one-time coins. Counts are only written at PvE/PvP authoritative settlement points
+  //    (S9-3/S9-6); this section only provides "read definitions + progress" and "claim coins". ──────────────────────────
+  /** Achievement definition table + my stats + claimed progress (tier computation is done client-side, §4.1/§6). */
   async getAchievements(req: FastifyRequest) {
     const accountId = accountIdOf(req);
     const save = await getOrCreateSave(this.deps.cols, accountId, this.deps.now());
@@ -1346,10 +1350,10 @@ export class MetaService {
   }
 
   /**
-   * 领取某成就某阶金币（§4.3）：服务器二次校验 stat≥阈值 + 未领 → 原子记 claimedTiers（幂等守卫）
-   * → commercial 发币（确定性 orderId 防重复发）→ 钱包镜像回推。
-   * 先记阶（唯一获胜者）再发币：并发双击只有一个记成功并发币，另一个见已领即拒；崩溃窗口（已记未发）
-   * 靠确定性 orderId 可后续补发，金额小一次性可接受。
+   * Claim coins for a specific achievement tier (§4.3): server re-validates stat ≥ threshold + not yet claimed → atomically record claimedTiers (idempotency guard)
+   * → commercial grants coins (deterministic orderId prevents double delivery) → mirror wallet back.
+   * Record the tier first (sole winner) then deliver coins: concurrent double-taps result in only one recording and one delivery, the other sees "already claimed" and is rejected;
+   * crash window (recorded but not delivered) can be compensated later via deterministic orderId — acceptable given the small one-time amount.
    */
   async claimAchievement(req: FastifyRequest, reply: FastifyReply) {
     if (!this.ensureCommercial(reply)) return;
@@ -1359,7 +1363,7 @@ export class MetaService {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown achievement'));
     }
 
-    // 原子记阶：校验 + $addToSet 等价（transform 内判已领/未达）。成功 = 本调用是唯一获胜者。
+    // Atomically record the tier: equivalent to validate + $addToSet (already-claimed/not-reached checked inside transform). Success = this call is the sole winner.
     const recorded = await this.mutateSave(accountId, (s) => {
       const claimed = s.achievements?.[achId]?.claimedTiers ?? [];
       const v = validateClaim(achId, tier, s.stats, claimed);
@@ -1385,19 +1389,19 @@ export class MetaService {
       return reply.code(409).send(err(ErrorCode.REV_CONFLICT, recorded.error));
     }
 
-    // 阶已落库 → 发币（确定性 orderId 幂等）+ 钱包镜像。金额取定义（已被校验过的阶）。
+    // Tier recorded → deliver coins (deterministic orderId, idempotent) + mirror wallet. Amount taken from the definition (the already-validated tier).
     const def = findAchievement(achId)!;
     const coins = def.tiers[tier - 1]?.coins ?? 0;
     const { cols, commercial, now } = this.deps;
     const orderId = `ach:${accountId}:${achId}:${tier}`;
     const g = await commercial.grant({ accountId, amount: coins, reason: 'achievement', orderId });
     if (!g.ok) {
-      // 阶已记但发币失败：返回当前存档（阶已领），granted=0；orderId 确定性可补发。
+      // Tier recorded but coin delivery failed: return current save (tier is claimed), granted=0; deterministic orderId allows later compensation.
       return ok({ save: recorded.save, granted: 0 });
     }
     const save = await mirrorCoins(cols, accountId, g.coinsAfter, now());
 
-    // 顶阶达成且该成就有绑定称号 → 授予（幂等，best-effort）
+    // Final tier reached and the achievement has an associated title → grant it (idempotent, best-effort)
     if (tier === def.tiers.length && def.titleId) {
       await grantTitleToPlayer(cols, accountId, def.titleId, now()).catch(() => {/* ignore */});
     }
@@ -1405,9 +1409,9 @@ export class MetaService {
     return ok({ save, granted: coins });
   }
 
-  // ── 留存（B5，RETENTION_DESIGN）：签到月历 + 每日任务。 ────────────────────────────────────
+  // ── Retention (B5, RETENTION_DESIGN): monthly check-in calendar + daily tasks. ────────────────────────────────────
 
-  /** 读当前留存状态（含定义表，客户端用于渲染月历/任务卡）。 */
+  /** Read current retention state (including definition tables; used by the client to render the calendar/task cards). */
   async getRetention(req: FastifyRequest) {
     const accountId = accountIdOf(req);
     const { cols, now } = this.deps;
@@ -1425,7 +1429,7 @@ export class MetaService {
     });
   }
 
-  /** 签到领当月下一格奖励（幂等：今天已领 → 409）。 */
+  /** Claim the next check-in reward for this month (idempotent: already claimed today → 409). */
   async claimCheckin(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
     const { now } = this.deps;
@@ -1441,7 +1445,7 @@ export class MetaService {
       claimedDay = result.day;
       const newRetention = { ...r, checkin: result.newCheckin };
       let next = { ...s, retention: newRetention };
-      // 签到奖励：体力类直接给材料；coins 类发币（商业服）
+      // Check-in reward: stamina type is written directly to materials; coins type is delivered via commercial service
       if (result.reward.kind === 'stamina') {
         next = {
           ...next,
@@ -1459,7 +1463,7 @@ export class MetaService {
       }
       return reply.code(409).send(err(ErrorCode.REV_CONFLICT, recorded.error));
     }
-    // coins 奖励（里程碑）需走 commercial 发币
+    // Coins reward (milestone) must be delivered via commercial
     let save = recorded.save;
     if (reward && (reward as import('@nw/shared').CheckinReward).kind === 'coins') {
       if (!this.ensureCommercial(reply)) return;
@@ -1472,7 +1476,7 @@ export class MetaService {
     return ok({ save, day: claimedDay, reward });
   }
 
-  /** 领当日满点任务金币（幂等：未达阈值 → 400，已领 → 409）。 */
+  /** Claim daily task completion coins (idempotent: threshold not reached → 400, already claimed → 409). */
   async claimDailyReward(req: FastifyRequest, reply: FastifyReply) {
     if (!this.ensureCommercial(reply)) return;
     const accountId = accountIdOf(req);
@@ -1506,7 +1510,7 @@ export class MetaService {
     return ok({ save, coins: DAILY_COINS_REWARD });
   }
 
-  /** 最近对战历史（ranked / friendly），从归档 matches 取当前账号视角的精简摘要。 */
+  /** Recent match history (ranked / friendly): retrieves a concise summary from archived matches from the current account's perspective. */
   async getMatchHistory(req: FastifyRequest) {
     const accountId = accountIdOf(req);
     const { cols } = this.deps;
@@ -1537,7 +1541,7 @@ export class MetaService {
     return ok({ matches });
   }
 
-  /** 取某局录像（仅本人参与的对局）；内嵌 replay 优先，大局回退 replayBlobs（S1-RP）。 */
+  /** Retrieve the replay for a specific match (only matches the current account participated in); inline replay takes priority, large matches fall back to replayBlobs (S1-RP). */
   async getMatchReplay(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
     const { cols } = this.deps;
@@ -1546,7 +1550,7 @@ export class MetaService {
       return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'match not found'));
     }
     const doc = await cols.matches.findOne({ roomId });
-    // 仅本人参与的对局可取（防越权拉别人录像）。
+    // Only matches the current account participated in can be retrieved (prevents unauthorized access to other players' replays).
     if (!doc || !doc.players.some((p) => p.accountId === accountId)) {
       return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'match not found'));
     }
@@ -1561,9 +1565,9 @@ export class MetaService {
     return ok({ replay });
   }
 
-  // ── 社交：好友/私聊/邮件（S6-1/2/3）。P2 起：若配置了 NW_SOCIALSVC_INTERNAL_URL，路由代理到 socialsvc。──
+  // ── Social: friends/chat/mail (S6-1/2/3). From P2 onwards: if NW_SOCIALSVC_INTERNAL_URL is configured, route is proxied to socialsvc. ──
 
-  /** 代理到 socialsvc（透传 JWT + body）。socialsvc 未配置 → 503。 */
+  /** Proxy to socialsvc (pass-through JWT + body). socialsvc not configured → 503. */
   private async proxySocial(
     req: FastifyRequest,
     reply: FastifyReply,
@@ -1579,7 +1583,7 @@ export class MetaService {
     reply.status(r.status).send(r.data);
   }
 
-  // ── 社交：好友/私聊/邮件（P2 后全部代理到 socialsvc）──────────────────────────
+  // ── Social: friends/chat/mail (all proxied to socialsvc from P2 onwards) ──────────────────────────
 
   async getFriends(req: FastifyRequest, reply: FastifyReply) {
     return this.proxySocial(req, reply, '/social/friends');
@@ -1641,7 +1645,7 @@ export class MetaService {
     return this.proxySocial(req, reply, '/social/chat/read', req.body);
   }
 
-  // ── 社交：邮件（S6-3）。附件领取 claimMail 经 socialsvc 原子标记后 meta 负责发货。──
+  // ── Social: mail (S6-3). Attachment claiming via claimMail is atomically marked by socialsvc; meta is responsible for actual delivery. ──
   async getMail(req: FastifyRequest, reply: FastifyReply) {
     return this.proxySocial(req, reply, '/social/mail');
   }
@@ -1692,15 +1696,15 @@ export class MetaService {
     return this.proxySocial(req, reply, '/social/mail/send', req.body);
   }
 
-  // ── economy（S5：meta 编排 → commercial 扣币/随机 → 发货 → 镜像回推）──────
-  /** commercial 未配置时经济端点不可用（503）。 */
+  // ── economy (S5: meta orchestrates → commercial deducts/randomizes → delivery → mirror push-back) ──────
+  /** Economy endpoints are unavailable when commercial is not configured (503). */
   private ensureCommercial(reply: FastifyReply): boolean {
     if (this.deps.commercial.available) return true;
     reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'commercial service unavailable'));
     return false;
   }
 
-  /** 商品列表（catalog 单一来源 @nw/shared）。 */
+  /** Shop item list (catalog single source of truth: @nw/shared). */
   async getShopItems() {
     const items = SHOP_ITEMS.map((i) => ({
       id: i.id,
@@ -1711,7 +1715,7 @@ export class MetaService {
     return ok({ items });
   }
 
-  /** 盲盒池列表（展开 entries 供客户端展示）。 */
+  /** Gacha pool list (entries expanded for client display). */
   async getGachaPools() {
     const pools = GACHA_POOLS.map((p) => {
       const entries = poolEntries(p);
@@ -1722,7 +1726,7 @@ export class MetaService {
         costTen: p.costTen,
         pityThreshold: p.pityThreshold,
         dupePolicy: p.dupePolicy,
-        // C5-a：每条目附带 probability（Apple 3.1.1 要求）。
+        // C5-a: each entry includes a probability field (required by Apple 3.1.1).
         entries: entries.map((e) => ({
           ...e,
           probability: totalWeight > 0 ? e.weight / totalWeight : 0,
@@ -1748,7 +1752,7 @@ export class MetaService {
       }
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, charge.error));
     }
-    // 发货：皮肤幂等加进 inventory + 标 delivered + 钱包镜像。
+    // Delivery: idempotently add skin to inventory + mark as delivered + mirror wallet.
     const cur = await getOrCreateSave(cols, accountId, now());
     const newSkins = cur.inventory.skins.includes(def.grants) ? [] : [def.grants];
     const save = await deliverGrant(cols, accountId, orderId, newSkins, charge.coinsAfter, null, now());
@@ -1764,7 +1768,7 @@ export class MetaService {
     if (!pool || (count !== 1 && count !== 10)) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'invalid pool/count'));
     }
-    void gachaCost; // 成本权威在 commercial（按池算）；此处仅校验池与抽数。
+    void gachaCost; // cost is authoritative in commercial (computed per pool); here we only validate pool and draw count.
 
     const { cols, commercial, now } = this.deps;
     const orderId = randomUUID();
@@ -1775,10 +1779,10 @@ export class MetaService {
       }
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, draw.error));
     }
-    // 发货按池分流（独立单位卡池，S12-C）：
-    //  • 单位卡池 → results.itemId 是 cardKey，入 cardInventory + 重算 unitLevels（不走 dupe 退币，
-    //    集卡天然重复全部入库；duplicate 恒 false 仅作展示）。
-    //  • 皮肤池 → 新皮肤进 inventory.skins（幂等），重复转化 S5 暂缓（见 economy.ts 注释）。
+    // Delivery is routed by pool type (separate unit card pool, S12-C):
+    //  • Unit card pool → results.itemId is a cardKey; added to cardInventory + unitLevels recomputed (no dupe refund —
+    //    card collecting naturally accepts all duplicates; duplicate is always false for display only).
+    //  • Skin pool → new skins added to inventory.skins (idempotent); duplicate-to-coin conversion deferred to S5 (see economy.ts comment).
     await getOrCreateSave(cols, accountId, now());
     if (poolId === UNIT_CARD_POOL_ID) {
       const cardGrants: Record<string, number> = {};
@@ -1798,7 +1802,7 @@ export class MetaService {
         rarity: r.rarity,
         duplicate: false,
       }));
-      // B5：每日任务「开盲盒」打点，将 retention 合入返回 save，客户端立即看到任务完成。
+      // B5: record daily task "open gacha"; merge retention into the returned save so the client immediately sees task completion.
       await this.bumpRetentionTask(accountId, 'gacha.draw');
       const nextRetention1 = accrueRetentionTask(save.retention, 'gacha.draw', now());
       const saveWithRet1 = nextRetention1 !== save.retention ? { ...save, retention: nextRetention1 } : save;
@@ -1816,7 +1820,7 @@ export class MetaService {
       now(),
     );
     await commercial.orderDelivered({ orderId });
-    // B5：每日任务「开盲盒」打点，将 retention 合入返回 save，客户端立即看到任务完成。
+    // B5: record daily task "open gacha"; merge retention into the returned save so the client immediately sees task completion.
     await this.bumpRetentionTask(accountId, 'gacha.draw');
     const nextRetention2 = accrueRetentionTask(save.retention, 'gacha.draw', now());
     const saveWithRet2 = nextRetention2 !== save.retention ? { ...save, retention: nextRetention2 } : save;
@@ -1833,26 +1837,26 @@ export class MetaService {
     const ts = now();
     const dayKey = adsDayKey(ts);
 
-    // 30min 间隔门（C2）。
+    // 30-minute interval gate (C2).
     const intervalOk = await checkAdInterval(cols, accountId, dayKey, ts, ADS_MIN_INTERVAL_MS);
     if (!intervalOk) {
       return reply.code(429).send(err(ErrorCode.DAILY_CAP_REACHED, 'ad cooldown not elapsed'));
     }
 
-    // 日 cap（C2）。
+    // Daily cap (C2).
     const allowed = await bumpAdsCap(cols, accountId, dayKey, ADS_DAILY_CAP, ts);
     if (!allowed) {
       return reply.code(429).send(err(ErrorCode.DAILY_CAP_REACHED, 'daily ad cap reached'));
     }
 
-    // 凭证唯一性（C2）：hash 落库，重放拒绝。
+    // Token uniqueness (C2): hash stored in DB; replays are rejected.
     const tokenHash = hashAdToken(adToken);
     const unique = await recordAdToken(cols, tokenHash, accountId, ts);
     if (!unique) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'duplicate adToken'));
     }
 
-    // 平台验签（C2）：非 dev 时验。
+    // Platform signature verification (C2): performed for all platforms except dev.
     const plat = platform ?? 'dev';
     if (plat !== 'dev') {
       const sigOk = verifyAdPlatformToken(plat, adToken);
@@ -1862,7 +1866,7 @@ export class MetaService {
     const credit = await commercial.adsCredit({ accountId, amount: ADS_REWARD_COINS, dayKey });
     if (!credit.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, credit.error));
     const save = await mirrorCoins(cols, accountId, credit.coinsAfter, now());
-    // B6：活动任务「ad.watch」打点（best-effort）。
+    // B6: record event task "ad.watch" (best-effort).
     accrueEventTask(cols, accountId, 'ad.watch', now()).catch(() => {});
     return ok({ save, granted: ADS_REWARD_COINS });
   }
@@ -1875,7 +1879,7 @@ export class MetaService {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing platform/receipt'));
     }
     const { cols, commercial, now } = this.deps;
-    // receiptId = 平台票据唯一 id（幂等键）。dev 桩用 platform:receipt；真实接渠道时取平台事务号。
+    // receiptId = unique platform receipt id (idempotency key). The dev stub uses platform:receipt; real channel integration uses the platform transaction id.
     const receiptId = `${platform}:${receipt}`;
     const v = await commercial.rechargeVerify({ accountId, platform, receipt, receiptId });
     if (!v.ok) {
@@ -1888,7 +1892,7 @@ export class MetaService {
     return ok({ save, granted: v.coinsGranted });
   }
 
-  /** 优惠码兑换（B-PROMO）：校验 → 加币 → 回推存档。 */
+  /** Promo code redemption (B-PROMO): validate → grant coins → push back save. */
   async redeemPromoCode(req: FastifyRequest, reply: FastifyReply) {
     if (!this.ensureCommercial(reply)) return;
     const accountId = accountIdOf(req);
@@ -1913,8 +1917,8 @@ export class MetaService {
   }
 
   /**
-   * 装备合成（E2，EQUIPMENT_DESIGN §4/§7）：扣文具材料 → roll 一件 +0 基础装备 → 入库（300 上限）。
-   * idempotencyKey 幂等（客户端生成）：重放返回首次结果，不二次扣料、不二次 roll。
+   * Equipment crafting (E2, EQUIPMENT_DESIGN §4/§7): deduct stationery materials → roll one +0 base equipment → store (300-item cap).
+   * idempotencyKey is idempotent (client-generated): replay returns the first result without re-deducting materials or re-rolling.
    */
   async craftEquipment(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
@@ -1926,8 +1930,8 @@ export class MetaService {
   }
 
   /**
-   * 装备强化（E3，EQUIPMENT_DESIGN §6）：服务器掷骰（成功率表）→ 扣材料 + 金币（commercial 权威）→
-   * 成功 level+1，失败不掉级。idempotencyKey 幂等（掷骰/扣料绑定 key，重放返回首次结果）。
+   * Equipment enhancement (E3, EQUIPMENT_DESIGN §6): server rolls the dice (success rate table) → deduct materials + coins (commercial is authoritative) →
+   * success increments level by 1, failure does not downgrade. idempotencyKey is idempotent (roll and deduction bound to key; replay returns the first result).
    */
   async enhanceEquipment(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
@@ -1939,8 +1943,8 @@ export class MetaService {
   }
 
   /**
-   * 装备分解（E3，EQUIPMENT_DESIGN §6.3）：+0~4 件返 70% 打造材料、移出库存；+5 拒、穿戴/锁定拒。
-   * 批量 + idempotencyKey 幂等（重放返回首次返还）。
+   * Equipment salvage (E3, EQUIPMENT_DESIGN §6.3): +0~4 items return 70% of crafting materials and are removed from inventory; +5 items rejected, equipped/locked items rejected.
+   * Batch operation + idempotencyKey is idempotent (replay returns the first refund).
    */
   async salvageEquipment(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
@@ -1952,8 +1956,8 @@ export class MetaService {
   }
 
   /**
-   * 装备穿戴 / 卸下（E4，EQUIPMENT_DESIGN §3.4）：校验槽位匹配 → 写 gear.global[slot]（或 byUnit）。
-   * instanceId=null 卸下。纯状态、无 idem（天然幂等）。
+   * Equip / unequip equipment (E4, EQUIPMENT_DESIGN §3.4): validate slot match → write gear.global[slot] (or byUnit).
+   * instanceId=null to unequip. Pure state change, no idempotency key needed (naturally idempotent).
    */
   async equipEquipment(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
@@ -1969,8 +1973,8 @@ export class MetaService {
   }
 
   /**
-   * 装备洗练（E6，EQUIPMENT_DESIGN §7.8）：消耗同槽低档素材件，保留主词条，重 roll 副词条。
-   * fine/rare/epic 可洗练；素材须同槽且恰低一档。idempotencyKey 幂等。
+   * Equipment reforging (E6, EQUIPMENT_DESIGN §7.8): consume a lower-tier material of the same slot, keep the primary stat, re-roll secondary stats.
+   * fine/rare/epic can be reforged; material must be the same slot and exactly one tier lower. idempotencyKey is idempotent.
    */
   async reforgeEquipment(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
@@ -1985,9 +1989,9 @@ export class MetaService {
     return ok({ instance: r.instance, save: r.save });
   }
 
-  // ── S11 排行榜 / 战令 ──────────────────────────────────────────────────────
+  // ── S11 Leaderboard / Battle Pass ──────────────────────────────────────────────────────
 
-  /** Top-100 天梯排行榜（当前赛季 ELO 降序，S11 §5）。 */
+  /** Top-100 ladder leaderboard (current season ELO descending, S11 §5). */
   async getLeaderboard(req: FastifyRequest) {
     const { cols, now } = this.deps;
     const season = await getCurrentSeason(cols, now());
@@ -2019,13 +2023,13 @@ export class MetaService {
     return ok({ seasonNo: season.seasonNo, entries });
   }
 
-  /** 购买当前赛季战令（600 金币，S11 §9）。 */
+  /** Purchase the current season's battle pass (600 coins, S11 §9). */
   async buyBattlePass(req: FastifyRequest, reply: FastifyReply) {
     if (!this.ensureCommercial(reply)) return;
     const accountId = accountIdOf(req);
     const { cols, commercial, now } = this.deps;
 
-    // 先确认/创建战令数据（惰性创建：本季首次购买时初始化）。
+    // Confirm/create battle pass data first (lazy creation: initialized on first purchase this season).
     const save = await getOrCreateSave(cols, accountId, now());
     const currentSeason = await getCurrentSeason(cols, now());
     let bp = save.battlePass?.seasonNo === currentSeason.seasonNo
@@ -2044,7 +2048,7 @@ export class MetaService {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, charge.error));
     }
 
-    // 原子写 hasPass=true（乐观锁）。
+    // Atomically write hasPass=true (optimistic lock).
     const out = await this.mutateSave(accountId, (s) => {
       const curBp = s.battlePass?.seasonNo === currentSeason.seasonNo
         ? s.battlePass
@@ -2063,13 +2067,13 @@ export class MetaService {
     return ok({ battlePass: { ...bp, ...finalSave.battlePass } });
   }
 
-  /** 领取战令奖励（免费轨 or 付费轨，S11 §9）。 */
+  /** Claim a battle pass reward (free track or paid track, S11 §9). */
   async claimBattlePass(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
     const { track, level } = req.body as { track: 'free' | 'paid'; level: number };
     const { cols, commercial, now } = this.deps;
 
-    // 原子校验 + 记领取（乐观锁防双击）。材料奖励在同一事务内写入 save.materials。
+    // Atomic validate + record claim (optimistic lock prevents double-tap). Material rewards are written to save.materials in the same transaction.
     let claimedReward: { kind: string; count: number } | null = null;
     const out = await this.mutateSave(accountId, (s) => {
       const bp = s.battlePass;
@@ -2100,7 +2104,7 @@ export class MetaService {
     }
     const reward = claimedReward!;
     let finalSave = out.save;
-    // 若奖励含金币，经 commercial 发放后镜像钱包。
+    // If the reward includes coins, mirror the wallet after delivery via commercial.
     if (reward.kind === 'coins' && reward.count > 0 && commercial.available) {
       try {
         const orderId = `bp.claim.${accountId}.${track}.${level}`;
@@ -2113,7 +2117,7 @@ export class MetaService {
     return ok({ battlePass: finalSave.battlePass!, reward });
   }
 
-  // ── B6 限时活动 ───────────────────────────────────────────────────────────
+  // ── B6 Limited-time events ───────────────────────────────────────────────────────────
 
   async getEvents(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
@@ -2144,11 +2148,11 @@ export class MetaService {
     return reply.send({ ok: true, data: { pointsLeft: result.pointsLeft, reward: result.reward } });
   }
 
-  // ── S10 称号端点（L2-2，TITLE_DESIGN）：玩家侧读取已授予称号 + 选用显示称号。 ────────────
-  // 存储复用 save.titles[] / save.equipped.title（服务器权威，PUT /save 不可写此二字段）；
-  // 称号 source/seasonNo 由 titleId 命名约定派生（parseTitleId，与客户端展示同源），授予时间不入库。
+  // ── S10 Title endpoints (L2-2, TITLE_DESIGN): player-side read of granted titles + selection of active display title. ────────────
+  // Storage reuses save.titles[] / save.equipped.title (server-authoritative; PUT /save cannot write these two fields);
+  // title source/seasonNo are derived from the titleId naming convention (parseTitleId, same source as client display); grant time is not stored.
 
-  /** 读当前账号全量已授予称号（含派生 source/seasonNo）+ 当前佩戴称号。 */
+  /** Read all titles granted to the current account (including derived source/seasonNo) + currently equipped title. */
   async getTitles(req: FastifyRequest) {
     const accountId = accountIdOf(req);
     const save = await getOrCreateSave(this.deps.cols, accountId, this.deps.now());
@@ -2160,15 +2164,15 @@ export class MetaService {
   }
 
   /**
-   * 选用当前显示称号 → 写 save.equipped.title → 回推完整存档。
-   * 仅允许已授予的称号；空串 titleId 视为卸下（清空佩戴）。
+   * Select the active display title → write save.equipped.title → push back the full save.
+   * Only granted titles are allowed; an empty string titleId is treated as unequipping (clears the equipped title).
    */
   async equipTitle(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
     const { titleId } = req.body as { titleId?: string };
     const out = await this.mutateSave(accountId, (s) => {
       const owned = s.titles ?? [];
-      // 空串 = 卸下显示称号
+      // empty string = unequip display title
       if (titleId === '' || titleId == null) {
         const { title: _drop, ...restEquipped } = s.equipped ?? {};
         return { ...s, equipped: restEquipped };

@@ -1,8 +1,8 @@
-// meta 内部路由（M17/M19，S1-M3）——玩家不可见，X-Internal-Key 鉴权，不经 openapi glue。
-//   GET  /internal/elo            gateway 入队前取 ELO（matchsvc 保持 DB-free，§8.5）
-//   POST /internal/match/report   gameserver 局末上报：比对 + 算 ELO 写 saves.pvp + 归档 matches（§8.3）
+// meta internal routes (M17/M19, S1-M3) — not visible to players, authenticated via X-Internal-Key, bypasses openapi glue.
+//   GET  /internal/elo            gateway fetches ELO before queuing (matchsvc stays DB-free, §8.5)
+//   POST /internal/match/report   gameserver end-of-match report: reconcile + compute ELO, write saves.pvp + archive matches (§8.3)
 //
-// ELO 结算 / 归档逻辑从 gameserver 迁来（M19）：天梯权威收归 meta。room_id 幂等（matches 唯一）。
+// ELO settlement / archive logic migrated from gameserver (M19): ladder authority consolidated into meta. room_id is idempotent (matches unique).
 import type { FastifyInstance } from 'fastify';
 import type { Collections, SaveDoc, SaveData } from '@nw/shared';
 import {
@@ -45,10 +45,10 @@ import { ERROR_HTTP_STATUS } from '@nw/shared';
 
 const log = createLogger('meta:internal');
 
-/** 内嵌录像帧字节上限；超过则外置 replayBlobs + replayRef（保持 matches 文档精简）。 */
+/** Maximum byte size for inline replay frames; if exceeded, frames are stored externally in replayBlobs + replayRef (keeps matches documents compact). */
 const REPLAY_INLINE_MAX_BYTES = 256 * 1024;
 
-/** 全服系统邮件 fan-out 每批账号数（一次 bulkWrite 的 op 数）。MongoDB 单批上限 1000，留余量。 */
+/** Number of accounts per batch in the server-wide system mail fan-out (ops per bulkWrite). MongoDB single-batch limit is 1000; leaving headroom. */
 const MAIL_FANOUT_BATCH = 500;
 
 interface EloResult {
@@ -78,21 +78,21 @@ interface ReportBody {
 
 export interface InternalDeps {
   cols: Collections;
-  /** 单一共享密钥（legacy 回退 + ticket HMAC 用）。 */
+  /** Single shared secret key (legacy fallback + ticket HMAC). */
   internalKey: string;
-  /** 可选 per-caller 密钥注册表（NW_INTERNAL_KEYS 解析）；非空则启用严格 per-caller 鉴权。 */
+  /** Optional per-caller key registry (parsed from NW_INTERNAL_KEYS); if non-empty, enables strict per-caller authentication. */
   internalKeys?: Record<string, string>;
   now: () => number;
-  /** 对等裁判客户端（Phase C）。未配置则 available=false，ranked 不一致直接作废。 */
+  /** Peer-judge client (Phase C). If unconfigured, available=false and ranked mismatches are voided directly. */
   gateway: GatewayClient;
-  /** commercial 客户端：ranked 胜者发分段胜利金币（§2.3b）。未配置则不发。 */
+  /** commercial client: sends ranked-victory coins by tier to the winner (§2.3b). If unconfigured, no coins are sent. */
   commercial: CommercialClient;
 }
 
 export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps): void {
   const { cols, internalKey, internalKeys, now, gateway, commercial } = deps;
 
-  // 集中校验器：timing-safe + per-caller 严格（NW_INTERNAL_KEYS）+ 单一共享密钥回退。
+  // Centralized verifier: timing-safe + strict per-caller (NW_INTERNAL_KEYS) + single shared-key fallback.
   const auth = createInternalAuth({ keys: internalKeys, legacyKey: internalKey });
   const authed = (key: unknown): boolean =>
     auth.verify({ 'x-internal-key': typeof key === 'string' ? key : undefined }).ok;
@@ -111,7 +111,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // ── GET /internal/profile?accountId= ──────────────────────────────────
-  // gateway 据此把房间玩家显示为昵称（#publicId），而非 accountId。publicId 惰性生成。
+  // gateway uses this to display room players by display name (#publicId) instead of accountId. publicId is lazily generated.
   app.get('/internal/profile', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -123,8 +123,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // ── GET /internal/players/search?q=&limit= ───────────────────────────
-  // admin 后台玩家模糊搜（OPS_DESIGN §4.1）：单关键词命中 publicId/accountId/loginId/昵称，
-  // 返回命中列表（摘要），详情再走 /internal/player。q < 2 字符返回空；limit 1..50。
+  // admin backend fuzzy player search (OPS_DESIGN §4.1): a single keyword matches publicId/accountId/loginId/display name,
+  // returns the hit list (summary); full details are fetched via /internal/player. q < 2 chars returns empty; limit 1..50.
   app.get('/internal/players/search', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -137,7 +137,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // ── GET /internal/player?publicId= | ?accountId= ─────────────────────
-  // admin 后台玩家详情（OPS_DESIGN §4.1 player.lookup）：按 9 位公开 id 或 accountId 反查档案摘要。
+  // admin backend player detail (OPS_DESIGN §4.1 player.lookup): reverse-lookup profile summary by 9-digit publicId or accountId.
   app.get('/internal/player', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -173,8 +173,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // ── GET /internal/anticheat/reviews?accountId=&status=&limit= ────────
-  // admin 后台反作弊审查队列（S9-7，ACHIEVEMENT_DESIGN §4.4）：列离线抽查实锤的超报记录。
-  // 默认 status=open；可按 accountId 过滤；limit 1..100。
+  // admin backend anti-cheat review queue (S9-7, ACHIEVEMENT_DESIGN §4.4): lists over-reported records flagged by offline sampling.
+  // Default status=open; can be filtered by accountId; limit 1..100.
   app.get('/internal/anticheat/reviews', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -184,7 +184,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     if (q.accountId) filter.accountId = q.accountId;
     if (q.status === 'open' || q.status === 'reviewed') filter.status = q.status;
     else if (q.status === undefined) filter.status = 'open';
-    // status=all（或其它）→ 不限状态
+    // status=all (or any other value) → no status filter
     const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 100);
     const reviews = await cols.antiCheatReviews
       .find(filter)
@@ -195,19 +195,19 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // ── GET /internal/social/friends?accountId= ──────────────────────────
-  // gateway 据此算 presence 广播范围（连/断时向该用户的在线好友 push friend_presence）。
+  // gateway uses this to determine the presence broadcast scope (pushes friend_presence to the user's online friends on connect/disconnect).
   app.get('/internal/social/friends', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const accountId = (req.query as { accountId?: string }).accountId;
     if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
-    // P2 后好友数据已迁至 socialsvc，此回退端点仅在 socialsvc 未配置时使用，返回空列表。
+    // After P2, friend data has been migrated to socialsvc; this fallback endpoint is only used when socialsvc is not configured and returns an empty list.
     return reply.send({ friends: [] as string[] });
   });
 
-  // ── P2：socialsvc 账号反查 ──────────────────────────────────────────────
-  // socialsvc 不直连 accounts 库，通过这两个内部端点解析 publicId / 批量拉资料。
+  // ── P2: socialsvc account reverse-lookup ──────────────────────────────────────────────
+  // socialsvc does not connect directly to the accounts collection; it resolves publicId and fetches profiles in bulk via these two internal endpoints.
 
   // GET /internal/account/by-public-id/:publicId → { accountId, profile }
   app.get('/internal/account/by-public-id/:publicId', async (req, reply) => {
@@ -239,18 +239,18 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     return reply.send({ profiles });
   });
 
-  // ── 系统邮件（S6-3，OPS_DESIGN §3.3）：admin 补偿工单经 HttpMailDispatcher 调用。──
-  // 钱在玩家领邮件时才经 commercial/inventory 入账（admin 从不直接写钱包）。dispatchKey 幂等。
+  // ── System mail (S6-3, OPS_DESIGN §3.3): admin compensation tickets go through HttpMailDispatcher. ──
+  // Funds are credited via commercial/inventory only when the player claims the mail (admin never writes to the wallet directly). dispatchKey is idempotent.
   interface SystemMailBody {
     dispatchKey: string;
     scope?: 'single' | 'global';
-    /** 内部直投 accountId（§17.5，worldsvc 等无 publicId 的内部调用方）；与 target 二选一。 */
+    /** Direct-delivery accountId for internal callers (§17.5, e.g. worldsvc) that have no publicId; mutually exclusive with target. */
     accountId?: string;
     target?: CompTarget;
     subject: string;
     body: string;
-    // MailAttachmentDoc（非 CompAttachment）：除 OPS 补偿的 coins/item/skin，还含 worldsvc 赛季奖励的
-    // 'material'（→ SaveData.materials 养成统一池，SLG8）。CompAttachment 是其子集。
+    // MailAttachmentDoc (not CompAttachment): in addition to OPS compensation coins/item/skin, it also includes worldsvc season-reward
+    // 'material' (→ SaveData.materials unified progression pool, SLG8). CompAttachment is a subset of this.
     attachments: MailAttachmentDoc[];
     expireDays: number;
   }
@@ -287,8 +287,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     };
 
     if (b.scope === 'global') {
-      // 全服 fan-out 分批：每批 MAIL_FANOUT_BATCH 个账号走一次 bulkWrite（unordered upsert），
-      // O(N) 次往返压成 O(N/批)。仅本批新插入的收件人推红点（dispatchKey 幂等，重试不重复推）。
+      // Server-wide fan-out in batches: each batch of MAIL_FANOUT_BATCH accounts performs one bulkWrite (unordered upsert),
+      // reducing O(N) round-trips to O(N/batch). Only newly inserted recipients in this batch receive a badge push (dispatchKey is idempotent; retries do not duplicate pushes).
       let recipientCount = 0;
       let insertedCount = 0;
       let batch: string[] = [];
@@ -300,7 +300,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         recipientCount += ids.length;
         insertedCount += r.insertedAccountIds.length;
         for (const accountId of r.insertedAccountIds) {
-          // 离线 gateway 自行丢弃；push fire-and-forget 不阻塞批次。
+          // Offline gateway discards on its own; push is fire-and-forget and does not block the batch.
           void gateway.push(accountId, {
             kind: 'mail_new',
             mailId: `${b.dispatchKey}:${accountId}`,
@@ -322,7 +322,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       return reply.send({ ok: true, recipientCount });
     }
 
-    // 内部直投分支（§17.5）：worldsvc 等内部调用方按 accountId 直投（无 publicId），跳过解析。
+    // Internal direct-delivery path (§17.5): internal callers like worldsvc deliver by accountId (no publicId), bypassing resolution.
     const directAccountId =
       typeof (b as { accountId?: unknown }).accountId === 'string'
         ? (b as { accountId: string }).accountId
@@ -353,23 +353,23 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       hashOk: body.hash_ok,
     });
 
-    // 幂等：同 room_id 已归档则直接 ok（重发不重复结算）。
+    // Idempotent: if the same room_id has already been archived, return ok immediately (resends do not re-settle).
     const existing = await cols.matches.findOne({ roomId: body.room_id });
     if (existing) return reply.send({ ok: true });
 
-    // ranked + 有胜方 + 未作废（base/disconnect）→ 服务器权威结算 ELO。
+    // ranked + has a winner + not voided (base/disconnect) → server-authoritative ELO settlement.
     const settleRanked =
       body.mode === 'ranked' && body.winner_side >= 0 && body.reason !== 'mismatch';
     let eloBySide: Record<number, EloResult> | null = null;
     let cheat: { side: number; accountId: string; judgeAccountId?: string } | undefined;
-    // S9-7：归档已入账的 per-side 上报值作离线抽查比对基准（仅 ranked 正常结算；mismatch 局不喂故为空）。
+    // S9-7: archive the credited per-side reported values as the baseline for offline sampling comparison (only for normally settled ranked matches; mismatch matches are intentionally not fed and remain empty).
     let reportedStats: Record<string, Partial<Record<StatKey, number>>> | undefined;
     if (settleRanked) {
       const winner = body.players.find((p) => p.side === body.winner_side);
       const loser = body.players.find((p) => p.side !== body.winner_side);
       if (winner && loser) {
-        // S9-6: 清洗各方上报的本局成就计数（L1 异常复查，§4.4）。越界/非法 → null 拒收该方 kill/cast
-        // （pvp.wins/ELO 仍照常）；嫌疑升档（statSuspicion）属 S9-7（离线抽查 anticheatAudit.ts）。
+        // S9-6: sanitize each side's reported in-match achievement counts (L1 anomaly re-check, §4.4). Out-of-bounds/invalid → null rejects that side's kill/cast
+        // (pvp.wins/ELO proceed normally); suspicion escalation (statSuspicion) belongs to S9-7 (offline sampling anticheatAudit.ts).
         const wStats = statDeltaForSide(body, winner.side);
         const lStats = statDeltaForSide(body, loser.side);
         reportedStats = { [String(winner.side)]: wStats, [String(loser.side)]: lStats };
@@ -380,11 +380,11 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         }
       }
     } else if (body.mode === 'ranked' && body.reason === 'mismatch' && gateway.available) {
-      // Phase C 对等裁判：两端 hash 不一致 → 挑第三方无头复算定罪（而非直接作废）。
+      // Phase C peer judge: the two sides' hashes disagree → pick a third-party headless re-computation to adjudicate (rather than voiding directly).
       try {
         const verdict = await judgeMismatch(gateway, body);
         if (verdict) {
-          // hash 不一致的局已是嫌疑局：不累加任一方自报 kill/cast（pvp.wins 仍随诚实方胜场计）。
+          // A hash-mismatched match is already suspicious: do not accumulate either side's self-reported kill/cast (pvp.wins still counts for the honest side's win).
           eloBySide = await settleElo(cols, now, commercial, verdict.honest, verdict.cheater, {}, {});
           cheat = {
             side: verdict.cheater.side,
@@ -397,8 +397,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       }
     }
 
-    // 归档前 enrich 每方身份快照（昵称 / publicId）+ ELO 结算结果（仅 ranked）。
-    // 快照在归档当刻定格，事后改名不回填——战绩历史按当时显示。
+    // Before archiving, enrich each side's identity snapshot (display name / publicId) + ELO settlement result (ranked only).
+    // The snapshot is frozen at the moment of archiving; subsequent name changes are not back-filled — match history shows the name at the time.
     const enrichedPlayers = await Promise.all(
       body.players.map(async (p) => {
         const profile = await getProfile(cols, p.accountId).catch(() => ({ publicId: undefined as string | undefined }));
@@ -415,20 +415,20 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       }),
     );
 
-    // 归档 matches。winner -1 = 未知（friendly 正常结束）。
-    // 录像：小局内嵌 `replay`；超阈值的大局外置 `replayBlobs` + `replayRef`（matches 文档保持精简）。
+    // Archive to matches. winner -1 = unknown (friendly match ended normally).
+    // Replay: small matches inline as `replay`; large matches that exceed the threshold are stored externally in `replayBlobs` + `replayRef` (keeps matches documents compact).
     const replayDoc = {
       engineVersion: body.replay.engineVersion,
       mode: body.replay.mode,
       seed: body.replay.seed,
       endFrame: body.replay.endFrame,
-      frames: body.replay.frames, // cmds[].commands 为 base64 opaque（不解码 M12）
+      frames: body.replay.frames, // cmds[].commands are base64 opaque (not decoded — M12)
       meta: body.replay.meta,
     };
     const replayBytes = JSON.stringify(replayDoc.frames).length;
     const inline = replayBytes <= REPLAY_INLINE_MAX_BYTES;
     if (!inline) {
-      // 先写 blob（roomId 幂等覆盖），matches 仅留 replayRef 指针。
+      // Write the blob first (roomId upsert is idempotent); matches only stores the replayRef pointer.
       await cols.replayBlobs
         .updateOne(
           { _id: body.room_id },
@@ -446,7 +446,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         winner: cheat ? body.players.find((p) => p.side !== cheat!.side)!.side : body.winner_side,
         reason: body.reason,
         hashOk: body.hash_ok,
-        // C3：hash 不一致且对等裁判未介入（无 cheat 定罪）→ 标记供 admin 审查。
+        // C3: hash mismatch and peer judge did not intervene (no cheat verdict) → flag for admin review.
         ...(!body.hash_ok && !cheat ? { hashMismatch: true } : {}),
         ...(inline ? { replay: replayDoc } : { replayRef: body.room_id }),
         ...(cheat ? { cheat } : {}),
@@ -454,11 +454,11 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         ts: now(),
       })
       .catch((e) => {
-        // 幂等竞态：唯一索引冲突说明并发已归档，忽略。
+        // Idempotency race: a unique-index conflict means a concurrent request already archived the match; ignore.
         if ((e as { code?: number }).code !== 11000) log.error('archive match failed', { err: (e as Error).message });
       });
 
-    // C3：hash 不一致且未经对等裁判 → 告警日志（admin /admin/mismatches 可见）。
+    // C3: hash mismatch and not adjudicated by the peer judge → warning log (visible to admin via /admin/mismatches).
     if (!body.hash_ok && !cheat) {
       log.warn('hash mismatch unresolved', {
         roomId: body.room_id,
@@ -467,7 +467,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       });
     }
 
-    // B6：活动任务「pvp.win」打点——胜方（best-effort）。
+    // B6: accrue event task 'pvp.win' for the winner (best-effort).
     if (body.winner_side >= 0) {
       const winner = body.players.find((p) => p.side === body.winner_side);
       if (winner) {
@@ -478,8 +478,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     return reply.send({ ok: true, ...(eloBySide ? { elo: eloBySide } : {}) });
   });
 
-  // ── GET /internal/mismatches（C3）─────────────────────────────────────────
-  // 返回 24h 内 hashMismatch=true 的对局列表（admin 调用）。
+  // ── GET /internal/mismatches (C3) ─────────────────────────────────────────
+  // Returns the list of matches with hashMismatch=true within the last 24h (admin call).
   app.get('/internal/mismatches', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -494,8 +494,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     return reply.send({ ok: true, matches });
   });
 
-  // ── GET /internal/suspicious-pve（C4）─────────────────────────────────────────
-  // 返回 pveWarnings > 0 的账号列表（admin 人工审核用）。
+  // ── GET /internal/suspicious-pve (C4) ─────────────────────────────────────────
+  // Returns the list of accounts with pveWarnings > 0 (for admin manual review).
   app.get('/internal/suspicious-pve', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -509,8 +509,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     return reply.send({ ok: true, accounts });
   });
 
-  // ── POST /internal/accounts/:id/ban（S4-4）─────────────────────────────────────
-  // 管理员手动封号：设 accounts.flags.banned = true。幂等。
+  // ── POST /internal/accounts/:id/ban (S4-4) ─────────────────────────────────────
+  // Admin manual ban: sets accounts.flags.banned = true. Idempotent.
   app.post('/internal/accounts/:id/ban', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -522,8 +522,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     return reply.send({ ok: true });
   });
 
-  // ── POST /internal/accounts/:id/unban（S4-4）───────────────────────────────────
-  // 管理员解除封号：清除 accounts.flags.banned + antiCheat.pveBanned（清除 save 层封禁）。幂等。
+  // ── POST /internal/accounts/:id/unban (S4-4) ───────────────────────────────────
+  // Admin unban: clears accounts.flags.banned + antiCheat.pveBanned (removes save-layer ban). Idempotent.
   app.post('/internal/accounts/:id/unban', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -532,15 +532,15 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     const doc = await cols.accounts.findOne({ _id: id }, { projection: { _id: 1 } });
     if (!doc) return reply.code(404).send({ ok: false, error: 'account not found' });
     await cols.accounts.updateOne({ _id: id }, { $unset: { 'flags.banned': '' } });
-    // 同步清除 save 层的 pveBanned，防止解封后仍被 pveClear 挡。
+    // Also clear the save-layer pveBanned flag to prevent the account from being blocked by pveClear after unbanning.
     await cols.saves.updateOne({ _id: id }, { $unset: { 'save.antiCheat.pveBanned': '' } });
     return reply.send({ ok: true });
   });
 
-  // ── 材料扣除 / 发放（S8-5，worldsvc 拍卖场调用）─────────────────────────────────
-  // 不经 openapi glue，X-Internal-Key 鉴权。
+  // ── Material deduction / grant (S8-5, called by worldsvc auction) ─────────────────────────────────
+  // Bypasses openapi glue, authenticated via X-Internal-Key.
   // POST /internal/materials/deduct  { accountId, material, qty, orderId }
-  //   → 扣除指定材料；不足 → 402；乐观锁冲突重试 3 次后 409。
+  //   → deduct the specified material; insufficient balance → 402; optimistic-lock conflict retried 3 times, then 409.
   app.post('/internal/materials/deduct', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const { accountId, material, qty } = req.body as {
@@ -572,7 +572,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // POST /internal/materials/grant  { accountId, material, qty, orderId }
-  //   → 发放指定材料；幂等（orderId 目前仅日志，无 dedup 集合，best-effort）。
+  //   → grant the specified material; idempotent (orderId is currently logged only, no dedup collection, best-effort).
   app.post('/internal/materials/grant', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const { accountId, material, qty, orderId } = req.body as {
@@ -606,9 +606,9 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     return reply.code(409).send({ ok: false, error: 'rev conflict, retry' });
   });
 
-  // ── 装备托管 / 转移（E2，worldsvc 拍卖装备交易调用）─────────────────────────────
+  // ── Equipment escrow / transfer (E2, called by worldsvc auction equipment transactions) ─────────────────────────────
   // POST /internal/equipment/escrow  { accountId, instanceId, orderId } → { instance }
-  //   挂拍托管：校验未穿戴/未锁 → 移出卖方库存 → 回快照（worldsvc 存进挂单 doc）。orderId 幂等。
+  //   Listing escrow: verify not equipped/locked → remove from seller's inventory → return snapshot (worldsvc stores it in the listing doc). orderId is idempotent.
   app.post('/internal/equipment/escrow', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const { accountId, instanceId, orderId } = req.body as {
@@ -626,7 +626,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // POST /internal/equipment/grant  { accountId, instance, orderId } → { ok }
-  //   成交转移（给买方）/ 撤单·过期·季末退回（给卖方）：把实例快照写入库存（按 id 覆盖即幂等）。
+  //   Sale transfer (to buyer) / cancellation·expiry·season-end return (to seller): writes the instance snapshot into inventory (upsert by id makes it idempotent).
   app.post('/internal/equipment/grant', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const { accountId, instance, orderId } = req.body as {
@@ -643,10 +643,10 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     return reply.send({ ok: true });
   });
 
-  // ── 养成快照（E8，worldsvc 围攻引擎权威计算调用）────────────────────────────────
+  // ── Progression snapshot (E8, called by worldsvc siege engine authoritative computation) ────────────────────────────────
   // GET /internal/save-fields?accountId=  → { pveUpgrades, unitLevels, gear, equipmentInv }
-  //   返回攻方养成相关字段，供 worldsvc 传入 buildSiegeBlueprints 计算权威蓝图。
-  //   账号不存在视为新账号（返回空默认），不返回 404，避免冻结行军。
+  //   Returns the attacker's progression-related fields for worldsvc to pass into buildSiegeBlueprints for authoritative blueprint computation.
+  //   If the account does not exist, treats it as a new account (returns empty defaults); does not return 404 to avoid freezing a march.
   app.get('/internal/save-fields', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const accountId = (req.query as Record<string, string>).accountId;
@@ -662,9 +662,9 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // ── POST /admin/ladder/season/roll ────────────────────────────────────────
-  // admin（ops 后台）手动收束当季并开启新赛季（S11-SE-3，SEASON_DESIGN §3.1；闭环 L2-1）。
-  // 推进前先主动结算上一季全部参与者（段位奖励邮件 + 赛季称号 + 快照，幂等）。
-  // CAS 幂等：并发/误点重入返回当前赛季，不重复推进。
+  // admin (ops backend) manually closes the current season and opens a new one (S11-SE-3, SEASON_DESIGN §3.1; closed-loop L2-1).
+  // Before rolling, eagerly settles all participants from the previous season (rank reward mail + season title + snapshot, idempotent).
+  // CAS idempotent: concurrent or accidental re-entry returns the current season without advancing again.
   app.post('/admin/ladder/season/roll', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -680,7 +680,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // ── GET /internal/ladder/season/current ──────────────────────────────────────────
-  // ops 后台拉取当前天梯赛季信息（endAt 临近高亮提示用）。
+  // ops backend fetches current ladder season info (used to highlight when endAt is approaching).
   app.get('/internal/ladder/season/current', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -690,7 +690,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // ── POST /admin/grant-title ───────────────────────────────────────────────────────
-  // admin 手动授予称号（S10，TITLE_DESIGN §8 admin 授予）。幂等：已拥有则 no-op。
+  // admin manually grants a title (S10, TITLE_DESIGN §8 admin grant). Idempotent: no-op if already owned.
   app.post('/admin/grant-title', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -710,7 +710,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // ── GET /internal/leaderboard ─────────────────────────────────────────────────────
-  // 全服 Top100（S11-SE-5，SEASON_DESIGN §5）。X-Internal-Key 鉴权，供 admin 查询；玩家侧见 service.ts getLeaderboard。
+  // Server-wide Top100 (S11-SE-5, SEASON_DESIGN §5). Authenticated via X-Internal-Key for admin queries; player-facing equivalent is service.ts getLeaderboard.
   app.get('/internal/leaderboard', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -736,15 +736,15 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     return reply.send({ season, top: entries });
   });
 
-  // ── 限时活动管理（B6，admin events.manage；ADR-014）─────────────────────────
-  // 玩家侧 GET /events 只拉窗口内活动；以下供运维后台列出/创建/编辑/删除全部活动。
-  // GET /admin/events — 全部活动（含未开始/已结束）。
+  // ── Time-limited event management (B6, admin events.manage; ADR-014) ─────────────────────────
+  // Player-facing GET /events only returns events within the active window; the following endpoints let the ops backend list/create/edit/delete all events.
+  // GET /admin/events — all events (including not-yet-started and ended).
   app.get('/admin/events', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const events = await adminListEvents(cols);
     return reply.send({ ok: true, events });
   });
-  // POST /admin/events — 创建活动。body = EventInput。
+  // POST /admin/events — create an event. body = EventInput.
   app.post('/admin/events', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const r = await adminCreateEvent(cols, req.body as EventInput, now());
@@ -755,7 +755,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     log.info('POST /admin/events', { eventId: r.event._id });
     return reply.send({ ok: true, event: r.event });
   });
-  // PATCH /admin/events/:id — 全量替换活动定义。body = EventInput。
+  // PATCH /admin/events/:id — full replacement of event definition. body = EventInput.
   app.patch('/admin/events/:id', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const { id } = req.params as { id: string };
@@ -767,7 +767,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     log.info('PATCH /admin/events/:id', { eventId: id });
     return reply.send({ ok: true, event: r.event });
   });
-  // DELETE /admin/events/:id — 删除活动定义（保留参与历史）。
+  // DELETE /admin/events/:id — delete event definition (participation history is retained).
   app.delete('/admin/events/:id', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const { id } = req.params as { id: string };
@@ -778,7 +778,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   });
 
   // POST /internal/title/grant  { accountId, titleId }
-  //   → 授予称号（幂等，来自 SLG/worldsvc 赛季结算）。X-Internal-Key 鉴权。
+  //   → Grant title (idempotent, called from SLG/worldsvc season settlement). Authenticated via X-Internal-Key.
   app.post('/internal/title/grant', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const { accountId, titleId } = req.body as { accountId?: string; titleId?: string };
@@ -794,15 +794,15 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     }
   });
 
-  // ── 优惠码管理（B-PROMO，admin promo.manage；经 commercial 存储）──────────────
-  // GET /admin/promo/codes — 列出全部优惠码。
+  // ── Promo code management (B-PROMO, admin promo.manage; stored via commercial) ──────────────
+  // GET /admin/promo/codes — list all promo codes.
   app.get('/admin/promo/codes', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
     const codes = await commercial.listPromoCodes();
     return reply.send({ ok: true, codes });
   });
-  // POST /admin/promo/codes — 创建优惠码。body = { code, coins, expiresAt?, totalLimit?, note?, createdBy }
+  // POST /admin/promo/codes — create a promo code. body = { code, coins, expiresAt?, totalLimit?, note?, createdBy }
   app.post('/admin/promo/codes', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
@@ -825,8 +825,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
 }
 
 /**
- * 对等裁判（Phase C）：把整局录像发给 gateway 挑第三方无头复算，按裁判 hash 判定哪方诚实。
- * 返回 {诚实方, 作弊方, 裁判 accountId}；裁判不可裁（无候选/超时/复算失败/结果对不上任一方）→ null。
+ * Peer judge (Phase C): sends the full match replay to gateway to pick a third-party headless re-computation, and determines which side is honest based on the judge's hash.
+ * Returns { honest side, cheating side, judge accountId }; if the judge cannot adjudicate (no candidates / timeout / re-computation failure / result does not match either side) → null.
  */
 async function judgeMismatch(
   gateway: GatewayClient,
@@ -839,15 +839,15 @@ async function judgeMismatch(
   if (body.results.length !== 2) return null;
   const verdict = await gateway.judge({
     seed: Number(body.seed),
-    mode: 1, // RANKED（裁判客户端按 netplay 复算，mode 仅审计语义）
+    mode: 1, // RANKED (judge client re-computes as netplay; mode is audit-semantic only)
     endFrame: body.replay.endFrame,
-    frames: body.replay.frames, // command bytes 已是 base64，原样转交
+    frames: body.replay.frames, // command bytes are already base64; passed through as-is
     exclude: body.players.map((p) => p.accountId),
   });
   if (!verdict.ok || !verdict.stateHash) return null;
 
-  // 裁判 hash 命中哪方 → 那方诚实；另一方（hash 不符）作弊。两端 hash 互不相同，
-  // 故至多一方命中；若都不命中（裁判结果对不上任何一方）则无法定罪 → 作废。
+  // Whichever side matches the judge's hash is honest; the other side (hash mismatch) is the cheater. The two sides' hashes are different from each other,
+  // so at most one side can match; if neither matches (judge result does not correspond to either side), adjudication fails → void.
   const honestRes = body.results.find((r) => r.state_hash === verdict.stateHash);
   const cheaterRes = body.results.find((r) => r.state_hash !== verdict.stateHash);
   if (!honestRes || !cheaterRes) return null;
@@ -862,8 +862,8 @@ async function judgeMismatch(
 }
 
 /**
- * S9-6: 取某方上报的本局成就计数并经 L1 清洗（§4.4）。
- * 返回 sanitize 后的 statKey 增量；越界/非法 → 记日志后返回 `{}`（拒收该方 kill/cast，pvp.wins 仍照常）。
+ * S9-6: Fetch one side's reported in-match achievement counts and run them through L1 sanitization (§4.4).
+ * Returns the sanitized statKey deltas; out-of-bounds/invalid → logs a warning and returns `{}` (rejects that side's kill/cast, pvp.wins proceed normally).
  */
 function statDeltaForSide(body: ReportBody, side: number): Partial<Record<StatKey, number>> {
   const reported = body.results.find((r) => r.side === side)?.stats;
@@ -875,14 +875,14 @@ function statDeltaForSide(body: ReportBody, side: number): Partial<Record<StatKe
   return clean;
 }
 
-/** 双方 ELO 结算：读分 → 算分差 → 各自原子写 saves.pvp（乐观锁 rev 守卫 + 重试）。 */
+/** Two-sided ELO settlement: read scores → compute delta → atomically write saves.pvp for each player (optimistic-lock rev guard + retry). */
 async function settleElo(
   cols: Collections,
   now: () => number,
   commercial: CommercialClient,
   winner: { side: number; accountId: string },
   loser: { side: number; accountId: string },
-  // S9-6: 已 L1 清洗的本局 kill/cast 增量（仅 ranked 喂）。pvp.wins 由 won 在 applyPvp 内自算。
+  // S9-6: L1-sanitized in-match kill/cast deltas (only fed for ranked). pvp.wins is computed internally in applyPvp from the `won` flag.
   winnerStats: Partial<Record<StatKey, number>> = {},
   loserStats: Partial<Record<StatKey, number>> = {},
 ): Promise<Record<number, EloResult>> {
@@ -901,8 +901,8 @@ async function settleElo(
   if (wRes) out[winner.side] = wRes;
   if (lRes) out[loser.side] = lRes;
 
-  // 分段胜利金币（§2.3b）：仅胜者，按结算后段位发，commercial 权威 enforce 每日上限。
-  // best-effort——发币失败不影响 ELO 结算（钱包是 commercial 权威，下次 GET /save 对账）。
+  // Ranked-victory coins (§2.3b): winner only, awarded at the post-settlement rank; commercial enforces the daily cap authoritatively.
+  // best-effort — a failed coin credit does not affect ELO settlement (wallet is commercial-authoritative; reconciled on the next GET /save).
   if (wRes && commercial.available) {
     const amount = victoryCoinsForRank(wRes.rankAfter);
     try {
@@ -921,7 +921,7 @@ async function settleElo(
   return out;
 }
 
-/** 单方 pvp 原子更新（整体替换 save，同 putSave 约定，避免与客户端 PUT /save 并发互覆盖）。 */
+/** Single-side pvp atomic update (full save replacement, following the putSave convention, to avoid clobbering concurrent client PUT /save writes). */
 async function applyPvp(
   cols: Collections,
   now: () => number,
@@ -932,18 +932,18 @@ async function applyPvp(
   won: boolean,
   statDelta: Partial<Record<StatKey, number>> = {},
 ): Promise<EloResult | null> {
-  // S9-6: 本局成就计数增量 = L1 清洗后的 kill/cast + 服务器自算的 pvp.wins（仅胜方 +1，不信客户端）。
+  // S9-6: in-match achievement count delta = L1-sanitized kill/cast + server-computed pvp.wins (winner +1 only; client value not trusted).
   const fullStatDelta: Partial<Record<StatKey, number>> = { ...statDelta, ...(won ? { 'pvp.wins': 1 } : {}) };
-  // S11：ranked 结算前先过惰性迁移（季末才触发，通常 no-op）。
+  // S11: run lazy migration before ranked settlement (only triggers at season end; normally a no-op).
   const currentSeason = await getCurrentSeason(cols, now()).catch(() => null);
   for (let attempt = 0; attempt < 3; attempt++) {
     let cur = attempt === 0 && doc ? doc : await cols.saves.findOne({ _id: accountId });
-    if (!cur) return null; // ranked 玩家应已有存档
-    // 惰性迁移：若落后赛季则先结算上季并软重置（极少触发，通常 no-op）。
+    if (!cur) return null; // ranked players should already have a save doc
+    // Lazy migration: if the save is behind the current season, settle the previous season and soft-reset first (rarely triggered; normally a no-op).
     if (currentSeason) {
       const mr = await migrateIfStale(cols, commercial, cur.save, currentSeason, now());
       if (mr.migrated) {
-        // 迁移产出的 save 需先落库，再做 ELO 更新；否则迁移结果丢失。
+        // The migrated save must be persisted before the ELO update; otherwise the migration result is lost.
         const migrated = await writeMigratedSave(
           cols,
           mr.save,
@@ -958,18 +958,18 @@ async function applyPvp(
     const appliedDelta = after - pvp.elo;
     const rank = eloToRank(after) as RankId;
 
-    // S11：段位首达金币 + 峰值追踪（§4.3）
+    // S11: first-reach rank coins + peak tracking (§4.3)
     const reachedRanks: RankId[] = pvp.reachedRanks ?? [];
     const { coins: firstReachAmt, newly } = computeFirstReachGrant(rank, reachedRanks);
 
-    const nextStats = accrueStats(cur.save.stats, fullStatDelta); // 懒创建：无增量则原样保留
+    const nextStats = accrueStats(cur.save.stats, fullStatDelta); // lazy-create: returns the original if there are no deltas
     const newPeakElo = Math.max(pvp.seasonPeakElo ?? after, after);
     const newPeakRank = eloToRank(newPeakElo) as RankId;
-    // S11：每局 ranked 给予赛季经验（战令进度，§C）。
+    // S11: each ranked match awards season XP (battle pass progress, §C).
     const bpXpGain = won ? BP_XP_PER_RANKED_WIN : BP_XP_PER_RANKED_LOSS;
     const prevBp = cur.save.battlePass;
     const newBp = prevBp ? { ...prevBp, xp: prevBp.xp + bpXpGain, level: xpToLevel(prevBp.xp + bpXpGain) } : null;
-    // B5：每日任务「参与 PvP 对局」打点（幂等）。
+    // B5: accrue daily task 'participate in a PvP match' (idempotent).
     const nextRetention = accrueRetentionTask(cur.save.retention, 'pvp.match', now());
     const next: SaveData = {
       ...cur.save,
@@ -997,7 +997,7 @@ async function applyPvp(
       { returnDocument: 'after' },
     );
     if (res) {
-      // 首达金币：玩家在场，直接记账（同成就/称号路径，即时反馈）。
+      // First-reach coins: player is online; credit immediately (same path as achievement/title grants, instant feedback).
       if (firstReachAmt > 0 && commercial.available) {
         try {
           await commercial.grant({
@@ -1012,7 +1012,7 @@ async function applyPvp(
       }
       return { delta: appliedDelta, after, rankAfter: rank };
     }
-    // rev 冲突（客户端并发 PUT /save）→ 重读重试
+    // rev conflict (concurrent client PUT /save) → re-read and retry
   }
   return null;
 }

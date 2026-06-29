@@ -1,7 +1,7 @@
-// analyticsvc 业务逻辑（A9-2 / A9-3 / A9-6）。
+// analyticsvc business logic (A9-2 / A9-3 / A9-6).
 import type { AnalyticsCollections, EventDoc, FunnelDailyDoc, SessionDoc } from './db';
 
-// ─── 采集配置（A9-2，一期硬编码；二期改 DB 可配）─────────────────────────────
+// ─── Collection config (A9-2, phase-1 hardcoded; phase-2 DB-configurable) ─────────────────────────────
 
 export interface EventConfig {
   enabled?: boolean;
@@ -36,7 +36,7 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
     friend_add:     { sample: 1.0 },
     pvp_room_create:{ sample: 1.0 },
     pvp_match_start:{ sample: 1.0 },
-    // 成就漏斗（S9-8，ANALYTICS_DESIGN §5.7）：解锁 toast → 看墙 → 领取，全采（低频高价值）。
+    // Achievement funnel (S9-8, ANALYTICS_DESIGN §5.7): unlock toast → view wall → claim; 100% sampled (low-frequency, high-value).
     achievement_unlock_toast: { sample: 1.0 },
     achievement_view_wall:    { sample: 1.0 },
     achievement_claim:        { sample: 1.0 },
@@ -50,7 +50,7 @@ export function getConfig(): AnalyticsConfig {
   return DEFAULT_CONFIG;
 }
 
-// ─── 事件摄入（A9-3）─────────────────────────────────────────────────────────
+// ─── Event ingestion (A9-3) ─────────────────────────────────────────────────────────
 
 export interface RawEvent {
   event: string;
@@ -66,11 +66,11 @@ export interface EventBatch {
   game_version: string;
   locale: string;
   events: RawEvent[];
-  /** C5-c GDPR 同意标记。已识别用户（有 JWT）必须为 true 才记录；匿名用户无需（无 PII）。 */
+  /** C5-c GDPR consent flag. Identified users (with a JWT) must set this to true before their events are recorded; anonymous users are exempt (no PII). */
   consent?: boolean;
 }
 
-// ─── 查询结果类型（A9-6）───────────────────────────────────────────────────────
+// ─── Query result types (A9-6) ───────────────────────────────────────────────────────
 
 export interface EventCountRow {
   date: string;
@@ -105,11 +105,11 @@ export interface QueryResult {
   retention?: RetentionRow[];
 }
 
-// 漏斗步骤定义（顺序即转化链，ETL 写入 funnels_daily 用同一列表）。
+// Funnel step definitions (order defines the conversion chain; the ETL uses the same list when writing funnels_daily).
 export const FUNNEL_STEPS = ['session_start', 'game_start', 'level_attempt', 'level_complete'] as const;
 export type FunnelStep = (typeof FUNNEL_STEPS)[number];
 
-// 一天起始时间戳（UTC）。
+// Start-of-day timestamp (UTC).
 function dayStart(ts: number): number {
   const d = new Date(ts);
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
@@ -128,9 +128,9 @@ export class AnalyticsService {
     return getConfig();
   }
 
-  // ─── 聚合查询（A9-6）─────────────────────────────────────────────────────
+  // ─── Aggregate queries (A9-6) ─────────────────────────────────────────────────────
 
-  /** 各事件类型每日计数（最近 N 天）。 */
+  /** Daily count per event type (last N days). */
   async queryEventCounts(days: number): Promise<EventCountRow[]> {
     const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
     const pipeline = [
@@ -150,7 +150,7 @@ export class AnalyticsService {
     return rows.map((r) => ({ date: r._id.date, event: r._id.event, count: r.count }));
   }
 
-  /** 每日活跃设备数（最近 N 天）。 */
+  /** Daily active devices (last N days). */
   async queryDau(days: number): Promise<DauRow[]> {
     const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
     const pipeline = [
@@ -175,7 +175,7 @@ export class AnalyticsService {
     return rows.map((r) => ({ date: r._id, dau: r.dau }));
   }
 
-  /** 读取漏斗预聚合数据（最近 N 天，可选 platform 过滤）。 */
+  /** Read pre-aggregated funnel data (last N days, optional platform filter). */
   async queryFunnel(days: number, platform?: string): Promise<FunnelDailyDoc[]> {
     const dates: string[] = [];
     for (let i = days - 1; i >= 0; i--) {
@@ -186,12 +186,12 @@ export class AnalyticsService {
     return this.cols.funnels_daily.find(filter).sort({ date: 1, platform: 1, funnel_step: 1 }).toArray();
   }
 
-  /** ETL：为指定日期（UTC date 字符串）按 platform 重算漏斗并 upsert funnels_daily（A9-7）。 */
+  /** ETL: recompute the funnel by platform for the given date (UTC date string) and upsert funnels_daily (A9-7). */
   async runFunnelEtl(dateStr: string): Promise<void> {
     const dayMs = Date.parse(dateStr + 'T00:00:00Z');
     const nextMs = dayMs + 86400_000;
 
-    // 按 platform × 漏斗步骤聚合 distinct device_id 数（每步独立窗口，非漏斗交集）。
+    // Aggregate distinct device_id count per platform × funnel step (each step has its own independent window, not an intersecting funnel).
     const pipeline = [
       { $match: { ts: { $gte: new Date(dayMs), $lt: new Date(nextMs) }, event: { $in: FUNNEL_STEPS as unknown as string[] } } },
       {
@@ -210,7 +210,7 @@ export class AnalyticsService {
       .aggregate<{ _id: { platform: string; event: string }; count: number }>(pipeline)
       .toArray();
 
-    // 按 platform 分组，计算各步骤计数和转化率。
+    // Group by platform, compute per-step counts and conversion rates.
     const byPlatform = new Map<string, Map<string, number>>();
     for (const r of rows) {
       const { platform, event } = r._id;
@@ -232,7 +232,7 @@ export class AnalyticsService {
       }
     }
 
-    // 并发 upsert（允许 0 行时跳过）。
+    // Concurrent upsert (skip when there are 0 rows).
     await Promise.all(
       ops.map(({ filter, doc }) =>
         this.cols.funnels_daily.updateOne(filter, { $set: doc }, { upsert: true }),
@@ -240,7 +240,7 @@ export class AnalyticsService {
     );
   }
 
-  /** 地区分布：按 locale 统计独立设备数（最近 N 天所有事件）。 */
+  /** Region distribution: unique device count by locale across all events (last N days). */
   async queryRegionDist(days: number): Promise<RegionRow[]> {
     const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
     const pipeline = [
@@ -255,7 +255,7 @@ export class AnalyticsService {
     return rows.map((r) => ({ locale: r._id || 'unknown', devices: r.devices }));
   }
 
-  /** 设备/OS 分布：按 os 统计独立设备数（最近 N 天 session_start）。 */
+  /** Device/OS distribution: unique device count by os from session_start events (last N days). */
   async queryOsDist(days: number): Promise<OsRow[]> {
     const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
     const pipeline = [
@@ -270,7 +270,7 @@ export class AnalyticsService {
     return rows.map((r) => ({ os: r._id || 'unknown', devices: r.devices }));
   }
 
-  /** 登录时段：按 UTC 小时统计 session_start 次数（最近 N 天，填满 0-23）。 */
+  /** Login-hour distribution: session_start count by UTC hour (last N days, all 24 hours filled). */
   async queryLoginHour(days: number): Promise<LoginHourRow[]> {
     const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
     const pipeline = [
@@ -286,14 +286,14 @@ export class AnalyticsService {
   }
 
   /**
-   * D1/D7 滚动留存：最近 N 天每日活跃设备中次日/第7日仍活跃的比例。
-   * 多取 7 天数据窗口以便计算早期队列的 D7。
+   * D1/D7 rolling retention: fraction of daily active devices in the last N days that are still active on day 1 / day 7.
+   * An extra 7-day data window is fetched to allow computing D7 for early cohorts.
    */
   async queryRetention(days: number): Promise<RetentionRow[]> {
     const extraDays = 7;
     const since = new Date(dayStart(this.now()) - (days - 1 + extraDays) * 86400_000);
 
-    // 去重 (date, device) → 每日独立活跃设备列表
+    // Deduplicate (date, device) → list of distinct active devices per day
     const pipeline = [
       { $match: { ts: { $gte: since }, event: 'session_start' } },
       { $group: { _id: { date: { $dateToString: { format: '%Y-%m-%d', date: '$ts' } }, device: '$device_id' } } },
@@ -347,10 +347,10 @@ export class AnalyticsService {
       ts: new Date(typeof e.ts === 'number' ? e.ts : this.now()),
     }));
 
-    // fire-and-forget：w:0 不等落盘确认，分析数据允许极少量丢失（A9-3 §7.3）
+    // fire-and-forget: w:0 does not wait for disk acknowledgement; a very small amount of event loss is acceptable for analytics data (A9-3 §7.3)
     await this.cols.events.insertMany(docs, { ordered: false, writeConcern: { w: 0 } });
 
-    // session 摘要 upsert（sessions 集合，session_start/session_end 驱动）
+    // session summary upsert (sessions collection, driven by session_start/session_end events)
     const sessionStart = batch.events.find((e) => e.event === 'session_start');
     const sessionEnd = batch.events.find((e) => e.event === 'session_end');
 

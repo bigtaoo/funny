@@ -1,6 +1,6 @@
-// meta 经济编排端到端（S5-5）：真实 Mongo（saves/adsDaily）+ 注入假 commercial client。
-//   shop/gacha 扣币→发物品→镜像、ads cap、iap 镜像、对账补发（崩溃在发货前）不丢不重。
-// 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// meta economy orchestration end-to-end (S5-5): real Mongo (saves/adsDaily) + injected fake commercial client.
+//   shop/gacha coin deduction → item delivery → mirror, ads cap, iap mirror, reconciliation re-delivery (crash before delivery) with no loss and no duplication.
+// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle, ADS_MIN_INTERVAL_MS } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -24,15 +24,15 @@ async function tryConnect(): Promise<MongoHandle | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[economy.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[economy.e2e] Mongo unreachable (${URI}) — skipping.`);
 
-/** 内存假 commercial：钱包 + 订单。扣币/发货/退币逻辑足够驱动 meta 编排测试。 */
+/** In-memory fake commercial: wallet + orders. Coin deduction/delivery/refund logic is sufficient to drive meta orchestration tests. */
 class FakeCommercial implements CommercialClient {
   readonly available = true;
   coins = new Map<string, number>();
   pity = new Map<string, Record<string, number>>();
   orders = new Map<string, { accountId: string; kind: 'shop' | 'gacha'; status: string; result: UndeliveredOrder['result']; refund?: number }>();
-  /** gacha 滚出的固定结果（测试预设）。 */
+  /** Fixed gacha results to be rolled out (preset for tests). */
   nextResults: GachaResultEntry[] = [{ itemId: 'skin_l1', rarity: 'legendary' }];
 
   bal(id: string): number {
@@ -139,7 +139,7 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     await m.close();
   });
 
-  it('商品列表 / 盲盒池来自 catalog', async () => {
+  it('item list / gacha pool comes from catalog', async () => {
     const items = body(await app.inject({ method: 'GET', url: '/shop/items', headers: auth() }));
     expect(items.data.items.length).toBeGreaterThan(0);
     expect(items.data.items[0]).toHaveProperty('cost');
@@ -148,23 +148,23 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(pools.data.pools[0].entries.length).toBeGreaterThan(0);
   });
 
-  it('充值 → 镜像余额回推', async () => {
+  it('top-up → mirrored balance pushed back', async () => {
     const r = body(await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:small' } }));
     expect(r.data.granted).toBe(600);
     expect(r.data.save.wallet.coins).toBe(600);
   });
 
-  it('改名：扣 500 金币 → 写展示名 → 镜像余额；GET /save 回带新名', async () => {
+  it('rename: deduct 500 coins → write display name → mirror balance; GET /save returns new name', async () => {
     comm.coins.set(accountId, 700);
     const r = body(await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: '  新名字  ' } }));
     expect(r.ok).toBe(true);
-    expect(r.data.displayName).toBe('新名字'); // trim
+    expect(r.data.displayName).toBe('新名字'); // trimmed
     expect(r.data.save.wallet.coins).toBe(200); // 700 - 500
     const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
     expect(save.data.displayName).toBe('新名字');
   });
 
-  it('改名：余额不足 → 402，名字不变', async () => {
+  it('rename: insufficient balance → 402, name unchanged', async () => {
     comm.coins.set(accountId, 100);
     const r = await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: 'Broke' } });
     expect(r.statusCode).toBe(402);
@@ -172,13 +172,13 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(save.data.displayName).toBeUndefined();
   });
 
-  it('改名：空名 → 400', async () => {
+  it('rename: empty name → 400', async () => {
     comm.coins.set(accountId, 700);
     const r = await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: '   ' } });
     expect(r.statusCode).toBe(400);
   });
 
-  it('商店直购：扣币 → 发皮肤 → 镜像', async () => {
+  it('shop direct purchase: deduct coins → deliver skin → mirror', async () => {
     comm.coins.set(accountId, 1000);
     const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'skin_shop_c1' } }));
     expect(r.data.granted).toBe('skin_shop_c1');
@@ -187,37 +187,37 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.data.save.deliveredOrders).toHaveLength(1);
   });
 
-  it('余额不足 → 402', async () => {
+  it('insufficient balance → 402', async () => {
     const r = await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'skin_shop_e1' } });
     expect(r.statusCode).toBe(402);
   });
 
-  it('盲盒：扣币 → 发新皮肤 + 标重复 + pity 镜像', async () => {
+  it('gacha: deduct coins → deliver new skin + mark duplicate + mirror pity', async () => {
     comm.coins.set(accountId, 1000);
     comm.nextResults = [{ itemId: 'skin_l1', rarity: 'legendary' }];
     const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
     expect(r1.data.results[0]).toMatchObject({ itemId: 'skin_l1', rarity: 'legendary', duplicate: false });
     expect(r1.data.save.inventory.skins).toContain('skin_l1');
     expect(r1.data.save.gacha.pity.standard).toBe(1);
-    // 再抽同物品 → 标 duplicate，皮肤不重复进库存。
+    // Draw the same item again → marked duplicate, skin not added to inventory again.
     const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
     expect(r2.data.results[0].duplicate).toBe(true);
     expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_l1')).toHaveLength(1);
   });
 
-  it('盲盒单位卡池（S12-C）：扣币 → 卡入 cardInventory + 派生 unitLevels，不当皮肤', async () => {
+  it('gacha unit card pool (S12-C): deduct coins → card goes into cardInventory + derives unitLevels, not treated as a skin', async () => {
     comm.coins.set(accountId, 2000);
     comm.nextResults = [{ itemId: 'archer:3', rarity: 'epic' }]; // epic→T3
     const r = body(
       await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'units', count: 1 } }),
     );
-    // 单位卡：duplicate 恒 false，入 cardInventory，unitLevels 派生（单张 T3 → archer=3）。
+    // Unit card: duplicate is always false, goes into cardInventory, unitLevels derived (single T3 card → archer=3).
     expect(r.data.results[0]).toMatchObject({ itemId: 'archer:3', rarity: 'epic', duplicate: false });
     expect(r.data.save.cardInventory['archer:3']).toBe(1);
     expect(r.data.save.unitLevels.archer).toBe(3);
-    expect(r.data.save.inventory.skins).not.toContain('archer:3'); // 绝不进皮肤库
+    expect(r.data.save.inventory.skins).not.toContain('archer:3'); // never goes into skin inventory
     expect(r.data.save.gacha.pity.units).toBe(1);
-    // 再抽同卡 → 库存累加（集卡天然重复，不退币、不去重）。
+    // Draw the same card again → inventory incremented (card collection naturally allows duplicates: no refund, no dedup).
     const r2 = body(
       await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'units', count: 1 } }),
     );
@@ -225,22 +225,22 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r2.data.save.cardInventory['archer:3']).toBe(2);
   });
 
-  it('单位卡池对账（S12-C）：扣币后崩溃 → GET /save 补发入 cardInventory，不丢不重', async () => {
+  it('unit card pool reconciliation (S12-C): crash after coin deduction → GET /save re-delivers into cardInventory, no loss no duplication', async () => {
     comm.coins.set(accountId, 2000);
-    // 模拟 commercial 已扣币建 charged units 订单但 meta 未发货。
+    // Simulate commercial having deducted coins and created a charged units order, but meta has not yet delivered.
     await comm.gachaDraw({ accountId, poolId: 'units', count: 1, orderId: 'orphan-units-1' });
     comm.orders.get('orphan-units-1')!.result.results = [{ itemId: 'infantry:2', rarity: 'rare' }];
     expect(await comm.undeliveredOrders(accountId)).toHaveLength(1);
     const r1 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
-    expect(r1.data.save.cardInventory['infantry:2']).toBe(1); // 补发入卡库（非皮肤）
+    expect(r1.data.save.cardInventory['infantry:2']).toBe(1); // re-delivered into card inventory (not skins)
     expect(r1.data.save.inventory.skins).not.toContain('infantry:2');
     expect(await comm.undeliveredOrders(accountId)).toHaveLength(0);
-    // 再 GET /save：幂等不重复 $inc。
+    // GET /save again: idempotent, no duplicate $inc.
     const r2 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
     expect(r2.data.save.cardInventory['infantry:2']).toBe(1);
   });
 
-  it('广告 cap：超过 5 次 → 429', async () => {
+  it('ad cap: more than 5 times → 429', async () => {
     for (let i = 0; i < 5; i++) {
       fakeNow += ADS_MIN_INTERVAL_MS + 1000;
       const r = await app.inject({ method: 'POST', url: '/ads/reward', headers: auth(), payload: { adToken: `ok-${i}` } });
@@ -251,21 +251,21 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(sixth.statusCode).toBe(429);
   });
 
-  it('对账：扣币后发货前崩溃 → 下次 GET /save 补发，不丢不重', async () => {
-    // 模拟「commercial 已扣币建 charged 订单，但 meta 未发货」：直接在 fake 上建订单。
+  it('reconciliation: crash after coin deduction but before delivery → next GET /save re-delivers, no loss no duplication', async () => {
+    // Simulate "commercial has deducted coins and created a charged order, but meta has not yet delivered": create the order directly on the fake.
     comm.coins.set(accountId, 1000);
     await comm.shopCharge({ accountId, itemId: 'skin_shop_r1', cost: 800, orderId: 'orphan-1' });
     expect(await comm.undeliveredOrders(accountId)).toHaveLength(1);
-    // GET /save 顺带对账补发。
+    // GET /save triggers reconciliation re-delivery as a side effect.
     const r1 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
     expect(r1.data.save.inventory.skins).toContain('skin_shop_r1');
-    expect(await comm.undeliveredOrders(accountId)).toHaveLength(0); // 已标 delivered
-    // 再次 GET /save：不重复发（皮肤仍只一份）。
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(0); // already marked delivered
+    // GET /save again: no duplicate delivery (skin still only one copy).
     const r2 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
     expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_shop_r1')).toHaveLength(1);
   });
 
-  it('commercial 未配置 → 经济端点 503', async () => {
+  it('commercial not configured → economy endpoints 503', async () => {
     const app2 = await buildApp({ cols: m.collections, jwt, internalKey: 'k', commercialUrl: null });
     const r = await app2.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'skin_shop_c1' } });
     expect(r.statusCode).toBe(503);

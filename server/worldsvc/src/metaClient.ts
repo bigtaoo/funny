@@ -1,6 +1,6 @@
-// worldsvc → meta 内部调用（S8-5：拍卖场材料 / S8 owner：玩家档案）。
-// meta 内部 HTTP（/internal/materials/* · /internal/profile），X-Internal-Key 鉴权。
-// 未配置 NW_META_INTERNAL_URL → available=false → 拍卖材料交易 + owner 昵称不可用。
+// worldsvc → meta internal calls (S8-5: auction material transfers / S8 owner: player profiles).
+// meta internal HTTP (/internal/materials/* · /internal/profile), authenticated with X-Internal-Key.
+// NW_META_INTERNAL_URL not configured → available=false → auction material transactions + owner display names unavailable.
 
 import { internalHeaders, SlgError, type EquipmentInstance, type GearLoadout } from '@nw/shared';
 
@@ -9,7 +9,7 @@ export interface PlayerProfile {
   displayName?: string;
 }
 
-/** 围攻引擎权威计算所需的攻方养成快照（E8，/internal/save-fields）。 */
+/** Attacker progression snapshot required for authoritative siege engine calculation (E8, /internal/save-fields). */
 export interface SaveFields {
   pveUpgrades: Record<string, number>;
   unitLevels: Record<string, number>;
@@ -19,19 +19,19 @@ export interface SaveFields {
 
 export interface WorldMetaClient {
   readonly available: boolean;
-  /** 扣除材料（挂拍卖 / 取消返还的逆操作）。insufficient → 抛含 INSUFFICIENT_RESOURCES 的 Error。 */
+  /** Deduct material (inverse of the cancel-and-refund operation for listing on auction). Throws an Error containing INSUFFICIENT_RESOURCES if insufficient. */
   deductMaterial(accountId: string, material: string, qty: number, orderId: string): Promise<void>;
-  /** 发放材料（拍卖成交给买家 / 取消/过期返还给卖家）。best-effort，失败 log 不回滚。 */
+  /** Grant material (to buyer on sale, or back to seller on cancel / expiry). Best-effort; failures are logged but not rolled back. */
   grantMaterial(accountId: string, material: string, qty: number, orderId: string): Promise<void>;
-  /** 取玩家公开档案（publicId / displayName）。失败返回 null，调用方降级不展示昵称。 */
+  /** Get a player's public profile (publicId / displayName). Returns null on failure; caller degrades gracefully without showing a display name. */
   getProfile(accountId: string): Promise<PlayerProfile | null>;
-  /** 取攻方养成快照（围攻引擎权威计算，E8）。失败返回 null → 引擎降级无装备计算（不阻断行军）。 */
+  /** Get the attacker's progression snapshot (authoritative siege engine calculation, E8). Returns null on failure → engine degrades without equipment calculation (march is not blocked). */
   getSaveFields(accountId: string): Promise<SaveFields | null>;
-  /** 装备挂拍托管：移出卖方库存，返回实例快照（存进挂单 doc）。穿戴中/锁定/不存在 → 抛 SlgError。 */
+  /** Escrow equipment for auction: removes from seller's inventory and returns an instance snapshot (stored in the listing doc). Equipped / locked / not found → throws SlgError. */
   escrowEquipment(accountId: string, instanceId: string, orderId: string): Promise<EquipmentInstance>;
-  /** 装备转移/退回：把实例快照写入目标账号库存（成交给买方 / 撤单过期退卖方）。best-effort，失败 log 不回滚。 */
+  /** Transfer or return equipment: writes the instance snapshot into the target account's inventory (to buyer on sale, or back to seller on cancel / expiry). Best-effort; failures are logged but not rolled back. */
   grantEquipment(accountId: string, instance: EquipmentInstance, orderId: string): Promise<void>;
-  /** 授予称号（S10，SLG 赛季结算 → meta 写入）。best-effort，失败 log 不阻断结算。 */
+  /** Grant a title (S10, SLG season settlement → write to meta). Best-effort; failures are logged but do not block settlement. */
   grantTitle(accountId: string, titleId: string): Promise<void>;
 }
 
@@ -108,7 +108,7 @@ export class HttpWorldMetaClient implements WorldMetaClient {
     });
     const body = (await res.json().catch(() => ({}))) as { instance?: EquipmentInstance; code?: string; error?: string };
     if (!res.ok || !body.instance) {
-      // 把 meta 的装备错误码透传为 SlgError（httpApi 据 ERROR_HTTP_STATUS 映射 HTTP）。
+      // Forward meta's equipment error code as a SlgError (httpApi maps it to an HTTP status via ERROR_HTTP_STATUS).
       const code = body.code;
       if (code === 'EQUIP_LOCKED' || code === 'EQUIP_IN_USE' || code === 'EQUIP_NOT_FOUND') throw new SlgError(code);
       throw new SlgError('BAD_REQUEST', body.error ?? `escrowEquipment failed: ${res.status}`);

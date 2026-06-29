@@ -1,28 +1,28 @@
-// 客户端日志 → Loki 转发（FEATURE_FLAGS_DESIGN §9.4 / observability/README.md Phase 3）。
+// Client log → Loki forwarding (FEATURE_FLAGS_DESIGN §9.4 / observability/README.md Phase 3).
 //
-// 入 Loki 约定：label 仅 { source="client", level=... }（低基数，防撑爆索引）；publicId / tag / msg
-// 一律放**行内**（logfmt），Grafana 用 `{source="client"} | logfmt | publicId="<9位>"` 捞单个玩家。
-// Loki 不可达 → 静默丢弃，绝不影响玩家（POST /client/log 永远回 200）。
+// Loki ingestion convention: labels are only { source="client", level=... } (low cardinality, prevents index bloat);
+// publicId / tag / msg are all placed **inline** (logfmt). Use `{source="client"} | logfmt | publicId="<9-digit>"` in Grafana to fetch a single player's logs.
+// If Loki is unreachable → silently discard, never affect the player (POST /client/log always returns 200).
 
-/** 一条客户端日志（与客户端环形缓冲条目同形）。 */
+/** A single client log entry (same shape as the client-side ring-buffer entry). */
 export interface ClientLogEntry {
   level: string; // error | warn | info | debug
   msg: string;
-  ts: number; // epoch ms（客户端时钟）
+  ts: number; // epoch ms (client clock)
   tag?: string;
 }
 
-/** 允许入 Loki 的级别白名单（防客户端塞任意 label 值撑高基数）。 */
+/** Allowlist of levels accepted into Loki (prevents clients from injecting arbitrary label values that inflate cardinality). */
 const ALLOWED_LEVELS = new Set(['error', 'warn', 'info', 'debug']);
 
-/** logfmt 值转义：含空格/引号/等号则加引号并转义内部引号与反斜杠。 */
+/** logfmt value escaping: wrap in quotes and escape internal quotes and backslashes when the value contains spaces, quotes, or equals signs. */
 function logfmtValue(v: string): string {
   if (v === '') return '""';
   if (!/[\s"=]/.test(v)) return v;
   return `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
-/** 拼一行 logfmt：publicId 必带，tag 可选，msg 末尾（人读时最显眼）。 */
+/** Build a logfmt line: publicId is mandatory, tag is optional, msg comes last (most visible when reading). */
 function buildLine(publicId: string, e: ClientLogEntry, platform?: string): string {
   const parts = [`publicId=${logfmtValue(publicId)}`];
   if (platform) parts.push(`platform=${logfmtValue(platform)}`);
@@ -32,9 +32,9 @@ function buildLine(publicId: string, e: ClientLogEntry, platform?: string): stri
 }
 
 /**
- * 把一批客户端日志组装成 Loki push payload（按 level 分流，低基数 label）。
- * 时间戳转纳秒字符串（Loki 要求 ns 精度，用 BigInt 避免 1e6 科学计数法/精度丢失）。
- * 返回 null = 无可发送条目（全部级别非法 / 空）。
+ * Assembles a batch of client logs into a Loki push payload (split by level, low-cardinality labels).
+ * Timestamps are converted to nanosecond strings (Loki requires ns precision; BigInt is used to avoid 1e6 scientific notation / precision loss).
+ * Returns null when there are no sendable entries (all levels invalid or batch is empty).
  */
 export function buildLokiPayload(
   publicId: string,
@@ -59,23 +59,23 @@ export function buildLokiPayload(
   return { streams };
 }
 
-// ── 客户端异常事件「全量」上报 → Loki（与上面的「日志定向采集」并列、互补，不受 allowPublicIds 约束）──
+// ── Client anomaly events reported in full → Loki (parallel and complementary to the targeted log collection above; not subject to allowPublicIds) ──
 //
-// 入 Loki 约定：label 仅 { source="client", kind="anomaly" }（低基数）；type/publicId/platform/detail/msg
-// 一律放**行内**（logfmt）。Grafana：`{source="client",kind="anomaly"} | logfmt | type="webgl_lost"`。
+// Loki ingestion convention: labels are only { source="client", kind="anomaly" } (low cardinality);
+// type/publicId/platform/detail/msg are all placed **inline** (logfmt). Grafana: `{source="client",kind="anomaly"} | logfmt | type="webgl_lost"`.
 
-/** 一条客户端异常事件（与客户端 net/anomaly.ts 的 AnomalyEvent 同形）。 */
+/** A single client anomaly event (same shape as AnomalyEvent in the client-side net/anomaly.ts). */
 export interface ClientAnomalyEvent {
   type: string; // mem | cpu | webgl_lost | anr | jserror | crash
   msg: string;
-  ts: number; // epoch ms（客户端时钟）
+  ts: number; // epoch ms (client clock)
   detail?: string;
 }
 
-/** 允许入 Loki 的异常类型白名单（防客户端塞任意 type 撑高行内基数 / 误导查询）。 */
+/** Allowlist of anomaly types accepted into Loki (prevents clients from injecting arbitrary types that inflate inline cardinality or mislead queries). */
 const ALLOWED_ANOMALY_TYPES = new Set(['mem', 'cpu', 'webgl_lost', 'anr', 'jserror', 'crash']);
 
-/** 拼一行异常 logfmt：type/publicId 必带，platform/detail 可选，msg 末尾。 */
+/** Build an anomaly logfmt line: type/publicId are mandatory, platform/detail are optional, msg comes last. */
 function buildAnomalyLine(publicId: string, platform: string | undefined, e: ClientAnomalyEvent): string {
   const type = ALLOWED_ANOMALY_TYPES.has(e.type) ? e.type : 'other';
   const parts = [`type=${logfmtValue(type)}`, `publicId=${logfmtValue(publicId)}`];
@@ -86,8 +86,8 @@ function buildAnomalyLine(publicId: string, platform: string | undefined, e: Cli
 }
 
 /**
- * 把一批客户端异常事件组装成 Loki push payload（单 stream，label={source,kind=anomaly}，低基数）。
- * 返回 null = 无可发送条目（空）。
+ * Assembles a batch of client anomaly events into a Loki push payload (single stream, label={source,kind=anomaly}, low cardinality).
+ * Returns null when there are no sendable entries (empty batch).
  */
 export function buildAnomalyLokiPayload(
   publicId: string,
@@ -105,8 +105,8 @@ export function buildAnomalyLokiPayload(
 }
 
 /**
- * 转发到 Loki push API（fire-and-forget 语义；调用方不 await 结果亦可）。
- * 任何失败（url 为空 / 网络不可达 / 非 2xx）都吞掉——只在调试需要时经 onError 暴露。
+ * Forwards to the Loki push API (fire-and-forget semantics; callers need not await the result).
+ * Any failure (null url / network unreachable / non-2xx) is silently swallowed — exposed via onError only when needed for debugging.
  */
 export async function pushToLoki(
   url: string | null,

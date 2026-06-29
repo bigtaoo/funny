@@ -3,8 +3,8 @@ info:
   title: Notebook Wars — worldsvc REST API
   version: "1.0"
   description: >
-    SLG 大世界（worldsvc）REST 契约。与 metaserver openapi.yml 分离，因 worldsvc 跑在不同 base URL。
-    客户端经 gen-openapi.mjs 生成 src/net/openapi-world.ts。
+    SLG world map (worldsvc) REST contract. Separated from the metaserver openapi.yml because worldsvc runs at a different base URL.
+    The client generates src/net/openapi-world.ts via gen-openapi.mjs.
 
 servers:
   - url: '{worldBase}'
@@ -45,10 +45,10 @@ components:
           type: boolean
         ownerPublicId:
           type: string
-          description: 占领者 9 位公开 id（meta 服务可用时填充）
+          description: Occupier's 9-digit public id (populated when meta service is available)
         ownerName:
           type: string
-          description: 占领者昵称（meta 服务可用时填充）
+          description: Occupier's display name (populated when meta service is available)
         familyId:
           type: string
         garrison:
@@ -57,20 +57,20 @@ components:
           type: number
         watchtower:
           type: boolean
-          description: §18 G5 V2：该格建有瞭望塔（大半径持久视野源）。客户端渲染塔标记。
+          description: §18 G5 V2：A watchtower has been built on this tile (large-radius persistent vision source). The client renders the tower marker.
         visible:
           type: boolean
           description: >-
-            G5 视野：该格是否在请求者当前视野内。true=动态层如实返回；false=视野外，仅程序化
-            底层地形（动态层全部隐去，含「已被占领」信号）。仅 /world/map 视区读填充。
+            G5 vision: whether this tile is within the requester's current field of view. true = dynamic layer returned as-is; false = outside vision range, only the procedurally-generated
+            base terrain is returned (all dynamic-layer data hidden, including the "occupied" signal). Populated only for /world/map viewport reads.
         ally:
           type: boolean
-          description: G5：该格归同家族盟友所有（视野内、非己方）。客户端用友方色渲染。
+          description: "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
         allySect:
           type: boolean
           description: >-
-            G5：该格归本宗门「联盟宗门」成员所有（视野内、非己方、非家族）。联盟不共享视野，
-            仅在地图上用黄描边标记区分（§8.2，盟友间禁止进攻/夺地）。
+            G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision;
+            only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden).
 
     WorldMapView:
       type: object
@@ -91,8 +91,8 @@ components:
 
     WorldTileSparseView:
       description: >-
-        稀疏占领格视图（zoom 2/3 鸟瞰层）。只含被占领格；未占领格客户端从 proceduralTile 本地渲染。
-        无 profile RPC、无视野计算。
+        Sparse occupied-tile view (zoom 2/3 bird's-eye layer). Contains only occupied tiles; unoccupied tiles are rendered locally by the client from proceduralTile.
+        No profile RPC, no vision calculation.
       type: object
       required: [x, y, type]
       properties:
@@ -107,10 +107,10 @@ components:
           type: boolean
         ally:
           type: boolean
-          description: lod=mid：同家族盟友
+          description: "lod=mid: same-family ally"
         allySect:
           type: boolean
-          description: lod=mid：联盟宗门成员（非家族）
+          description: "lod=mid: allied sect member (not family)"
 
     WorldMapSparseView:
       type: object
@@ -129,7 +129,7 @@ components:
           enum: [thin, mid]
         tiles:
           type: array
-          description: 仅占领格，稀疏数组
+          description: Occupied tiles only, sparse array
           items:
             $ref: '#/components/schemas/WorldTileSparseView'
 
@@ -141,7 +141,7 @@ components:
           type: boolean
         worldId:
           type: string
-          description: 所在 shard worldId（G6/§20：join-season 解析结果回传，客户端进图依据）
+          description: The shard worldId the player belongs to (G6/§20: returned from join-season resolution; the client uses this to enter the world)
         troops:
           type: integer
         troopCap:
@@ -162,7 +162,7 @@ components:
           type: integer
         trainingQueue:
           type: array
-          description: 训练队列（S8-2，按 completeAt 升序）。客户端据此渲染队列倒计时（C4）。
+          description: Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).
           items:
             type: object
             required: [qty, startAt, completeAt]
@@ -200,7 +200,7 @@ components:
           enum: [marching, returning, arrived]
         mine:
           type: boolean
-          description: G5：是否为请求者自己的行军（false = 视野内的敌方行军）
+          description: "G5: whether this march belongs to the requester (false = enemy march within vision range)"
 
     # ── Auction ────────────────────────────────────────────────────────────────
 
@@ -225,10 +225,10 @@ components:
           type: integer
         price:
           type: number
-          description: 当前有效单价（一口价=成交单价；竞拍=当前最高出价单价，无人出价则起拍价）
+          description: Current effective unit price (fixed-price = sale unit price; auction = current highest bid unit price, or the starting price if no bids placed)
         totalPrice:
           type: number
-          description: 当前有效单价 × qty
+          description: Current effective unit price × qty
         currency:
           type: string
           enum: [coins]
@@ -243,19 +243,19 @@ components:
           type: number
         buyerId:
           type: string
-        # ── B 竞拍字段（saleMode 缺省 'fixed'）────────────────────────────────
+        # ── B auction fields (saleMode defaults to 'fixed') ────────────────────────────────
         saleMode:
           type: string
           enum: [fixed, auction]
         startPrice:
           type: number
-          description: 竞拍起拍单价
+          description: Auction starting unit price
         buyoutPrice:
           type: number
-          description: 竞拍一口价保底单价（可选）
+          description: Auction buyout unit price floor (optional)
         topBid:
           type: object
-          description: 当前最高出价（单价，金币已托管）
+          description: Current highest bid (unit price; coins are held in escrow)
           required: [bidderId, amount, ts]
           properties:
             bidderId: { type: string }
@@ -419,9 +419,9 @@ components:
         description:
           type: string
 
-    # 攻方可打的围攻防守关卡（C2 复盘）。level 形态对齐客户端 LevelDefinition（loose object），
-    # 其 seed 由 siegeId 派生，客户端须以此 seed 在 siege 模式实打后再上传录像复算。
-    # 围攻重播观战关卡（G3-2c）：seed + 双方布阵 重建的 LevelDefinition；客户端以同 seed headless 重跑。
+    # Siege defense level that the attacker can play against (C2 post-match review). The level shape matches the client LevelDefinition (loose object);
+    # its seed is derived from siegeId; the client must play the level in siege mode with this seed before uploading the recording for re-simulation.
+    # Siege spectator replay level (G3-2c): LevelDefinition rebuilt from seed + both sides' formations; client headlessly replays with the same seed.
     SiegeReplayView:
       type: object
       required: [siegeId, seed, outcome, level]
@@ -433,8 +433,8 @@ components:
           type: object
           additionalProperties: true
 
-    # 布阵单位（GarrisonEntry 镜像，G3-2c）。unitType/col/row 合法性由引擎 levelSchema 校验；
-    # initialHp = 分配给该单位的兵力（= 血量，§16.1）。
+    # Formation unit (mirrors GarrisonEntry, G3-2c). Validity of unitType/col/row is checked by the engine levelSchema;
+    # initialHp = troops allocated to this unit (= HP, §16.1).
     ArmyEntry:
       type: object
       required: [unitType, col, row]
@@ -444,7 +444,7 @@ components:
         row: { type: integer }
         initialHp: { type: integer }
 
-    # 进攻布阵模板（队伍，G3-2c，≤ 5 支）。出征挂一支队 → army 快照进 march。
+    # Attack formation template (team, G3-2c, ≤ 5 teams). A march attaches one team → the army snapshot is stored with the march.
     TeamTemplate:
       type: object
       required: [id, name, army]
@@ -455,8 +455,8 @@ components:
           type: array
           items: { $ref: '#/components/schemas/ArmyEntry' }
 
-    # 防守 config = 引擎 LevelDefinition 的受限子集（garrison/defenderBuildings/defenderBaseLevel）。
-    # 形态由客户端自有 meta 镜像约束，契约层用 loose object（避免重复引擎 schema）。
+    # Defense config = constrained subset of the engine LevelDefinition (garrison/defenderBuildings/defenderBaseLevel).
+    # Shape is constrained by the client's own meta mirror; the contract layer uses a loose object (to avoid duplicating the engine schema).
     DefenseConfig:
       type: object
       additionalProperties: true
@@ -516,7 +516,7 @@ paths:
           in: query
           required: false
           schema: { type: string, enum: [thin, mid], default: thin }
-          description: thin=仅 mine 标记（zoom 3）；mid=含 ally/allySect（zoom 2）
+          description: "thin = mine marker only (zoom 3); mid = includes ally/allySect (zoom 2)"
       responses:
         '200':
           description: Sparse ownership overlay
@@ -568,7 +568,7 @@ paths:
   /world/join:
     post:
       operationId: joinWorld
-      description: 进入世界，系统自动落城（§3.4：优先靠近家族→外环新手区→兜底）。玩家不传坐标，落点由服务端决定。
+      description: "Join the world; the system automatically places the player's base (§3.4: priority order: near family → outer-ring starter area → fallback). The player does not submit coordinates; the spawn location is determined by the server."
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -638,7 +638,7 @@ paths:
   /world/relocate:
     post:
       operationId: relocateBase
-      summary: 主动迁城（花 RELOCATE_COST 金币把主城迁到 (x,y)，保留全部领地）
+      summary: Manual base relocation (spend RELOCATE_COST coins to move the main base to (x,y), all territories are retained)
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -666,7 +666,7 @@ paths:
   /world/watchtower:
     post:
       operationId: buildWatchtower
-      summary: 建瞭望塔（在己方领地花 WATCHTOWER_COST 资源建大半径持久视野源；§18 G5 V2）
+      summary: Build a watchtower (spend WATCHTOWER_COST resources on own territory to create a large-radius persistent vision source; §18 G5 V2)
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -857,7 +857,7 @@ paths:
           in: query
           required: false
           schema: { type: string }
-          description: "'base' 主城（缺省），或 '{x}:{y}' 领地键"
+          description: "'base' for the main base (default), or '{x}:{y}' for a territory tile key"
       responses:
         '200':
           description: Current defense config (data null when unset)
@@ -883,7 +883,7 @@ paths:
                 worldId: { type: string }
                 tileKey:
                   type: string
-                  description: "'base' 主城，或 '{x}:{y}' 领地键；缺省 'base'"
+                  description: "'base' for the main base, or '{x}:{y}' for a territory tile key; defaults to 'base'"
                 defenseConfig: { $ref: '#/components/schemas/DefenseConfig' }
       responses:
         '200':

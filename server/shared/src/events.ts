@@ -1,58 +1,58 @@
-// 限时活动容器机制单一来源（B6，ADR-014）。
-// 纯数据 + 纯函数，无 DB；服务端/客户端同用。
+// Single source of truth for the time-limited event container mechanism (B6, ADR-014).
+// Pure data + pure functions, no DB; shared between server and client.
 
-// ── 活动任务种类 ─────────────────────────────────────────────────────────────
+// ── Event task kinds ─────────────────────────────────────────────────────────────
 
-/** 活动任务触发种类（对应服务端可钩挂的事件来源）。 */
+/** Event task trigger kinds (correspond to hookable event sources on the server). */
 export type EventTaskKind = 'pve.clear' | 'pvp.win' | 'ad.watch';
 
-// ── 活动定义结构（存于 Mongo events 集合，admin 写入）──────────────────────
+// ── Event definition structure (stored in the Mongo events collection, written by admin) ──────────────────────
 
 export interface EventTaskDef {
-  /** 任务局部 id（活动内唯一，非全局 statKey）。 */
+  /** Task-local id (unique within the event, not a global statKey). */
   taskId: string;
-  /** 触发来源：与服务端钩点一一对应。 */
+  /** Trigger source: maps one-to-one with server hook points. */
   kind: EventTaskKind;
-  /** 完成所需触发次数。 */
+  /** Number of triggers required to complete the task. */
   target: number;
-  /** 完成后获得的活动积分。 */
+  /** Event points awarded upon task completion. */
   points: number;
 }
 
 export interface EventRewardDef {
   rewardId: string;
-  /** 兑换所需积分。 */
+  /** Points required to claim the reward. */
   cost: number;
-  /** 奖励种类（发奖走邮件附件 / commercial 金币）。 */
+  /** Reward kind (dispatched as mail attachment or commercial coin grant). */
   kind: 'coins' | 'material' | 'skin';
-  /** material/skin 的 id（coins 无需）。 */
+  /** Id for material/skin rewards (not needed for coins). */
   id?: string;
-  /** 数量（coins 的面额 / 材料数量）。 */
+  /** Quantity (coin amount / material quantity). */
   count?: number;
-  /** 每账号最多领取次数；undefined = 不限。 */
+  /** Maximum claims per account; undefined = unlimited. */
   maxClaims?: number;
 }
 
-// ── 参与数据（存于 Mongo eventParticipants 集合，per-account per-event）──
+// ── Participation data (stored in the Mongo eventParticipants collection, per-account per-event) ──
 
 export interface EventTaskProgress {
   taskId: string;
-  /** 已触发次数（单调递增，不超过 target）。 */
+  /** Number of triggers so far (monotonically increasing, never exceeds target). */
   progress: number;
-  /** 是否已获得本任务积分（幂等闸：满足 progress≥target 且未领过才 $inc points）。 */
+  /** Whether points for this task have already been granted (idempotency gate: only $inc points when progress≥target and not yet granted). */
   pointsGranted: boolean;
 }
 
-// ── admin 写入入参 + 校验（运维后台创建/编辑活动用）──────────────────────────
+// ── Admin write input + validation (used by the ops admin console to create/edit events) ──────────────────────────
 
-/** 合法任务种类（与 EventTaskKind 同源，供 admin 校验/前端下拉）。 */
+/** Valid task kinds (same source as EventTaskKind, for admin validation / frontend dropdowns). */
 export const EVENT_TASK_KINDS: readonly EventTaskKind[] = ['pve.clear', 'pvp.win', 'ad.watch'];
-/** 合法奖励种类。 */
+/** Valid reward kinds. */
 export const EVENT_REWARD_KINDS: readonly EventRewardDef['kind'][] = ['coins', 'material', 'skin'];
 
-/** 创建/编辑活动入参（_id/createdAt 由服务端补；id 可选指定 _id）。 */
+/** Input for creating/editing an event (_id/createdAt are filled in by the server; id optionally specifies _id). */
 export interface EventInput {
-  /** 指定 eventId（运营自定义；缺省则服务端生成 UUID）。 */
+  /** Specify eventId (ops-defined custom value; server generates a UUID if omitted). */
   id?: string;
   title: string;
   description?: string;
@@ -63,8 +63,9 @@ export interface EventInput {
 }
 
 /**
- * 校验活动入参，合法返回 null，否则返回错误说明（脏数据进库会让结算/兑换抛错）。
- * 服务端写库前必调；前端可同源调一遍做即时提示。
+ * Validate event input; returns null if valid, or an error description string if not
+ * (dirty data in the database will cause settlement/claim to throw).
+ * Must be called on the server before writing to DB; the client can call the same function for instant feedback.
  */
 export function validateEventInput(input: EventInput): string | null {
   if (typeof input.title !== 'string' || input.title.trim() === '' || input.title.length > 80) {
@@ -108,19 +109,19 @@ export function validateEventInput(input: EventInput): string | null {
   return null;
 }
 
-// ── 工具函数 ────────────────────────────────────────────────────────────────
+// ── Utility functions ────────────────────────────────────────────────────────────────
 
-/** 活动窗口是否有效（[windowStart, windowEnd) 区间）。 */
+/** Whether the event window is active ([windowStart, windowEnd) interval). */
 export function isEventActive(windowStart: number, windowEnd: number, now: number): boolean {
   return now >= windowStart && now < windowEnd;
 }
 
-/** 某任务在当前参与记录中的完成进度；缺省 = 0。 */
+/** Completion progress of a task in the current participation record; defaults to 0. */
 export function taskProgress(prog: EventTaskProgress[], taskId: string): number {
   return prog.find((p) => p.taskId === taskId)?.progress ?? 0;
 }
 
-/** 某奖励已领次数（参与记录 claimedRewards 是列表，重复领可多次）。 */
+/** Number of times a reward has been claimed (claimedRewards in the participation record is a list; the same reward can appear multiple times). */
 export function rewardClaimedCount(claimed: string[], rewardId: string): number {
   return claimed.filter((r) => r === rewardId).length;
 }

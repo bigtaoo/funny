@@ -1,7 +1,7 @@
-// admin 对运维前端的 HTTP API（OPS_DESIGN §4.2）。两层鉴权的第一层：admin JWT（运维用户）。
-// 第二层 X-Internal-Key 是 admin 调业务服务时持有（在 clients.ts），与此处无关。
-// 用 node:http（admin 不引 fastify）。每个端点后端强校验能力（前端隐藏按钮不算数 §6）。
-// CORS：admin 仅内网，但前端是浏览器纯前端 → 放行（Bearer 头鉴权，非 cookie，无需 credentials）。
+// HTTP API exposed to the ops frontend (OPS_DESIGN §4.2). First layer of two-layer auth: admin JWT (ops user).
+// The second layer, X-Internal-Key, is held by admin when calling business services (in clients.ts) and is unrelated here.
+// Uses node:http (admin does not import fastify). Every endpoint enforces capability checks server-side (hiding buttons in the frontend does not count, §6).
+// CORS: admin is internal-only, but the frontend is a pure browser client → allow all origins (Bearer header auth, not cookie, no credentials needed).
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import { signToken, verifyToken, createLogger, roleHasCapability, type AdminCapability, type InternalAuthVerifier, type JwtConfig } from '@nw/shared';
 import { AdminError, type Actor, type AdminService } from './service';
@@ -13,8 +13,8 @@ const log = createLogger('admin:http');
 export interface HttpApiOpts {
   host: string;
   port: number;
-  jwt: JwtConfig; // admin 专用 secret + ttl
-  /** 内部服务鉴权（X-Internal-Key）：不连库后端轮询 GET /admin/internal/flags 拿原始规则。 */
+  jwt: JwtConfig; // admin-specific secret + ttl
+  /** Internal service authentication (X-Internal-Key): database-less backends poll GET /admin/internal/flags to fetch raw flag rules. */
   internalAuth: InternalAuthVerifier;
 }
 
@@ -62,7 +62,7 @@ const numOpt = (v: string | null): number | undefined => {
 export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
   const { jwt, internalAuth } = opts;
 
-  /** 解出已认证主体；失败抛 AdminError(401)。 */
+  /** Extracts the authenticated actor; throws AdminError(401) on failure. */
   const authenticate = async (req: IncomingMessage): Promise<Actor> => {
     const header = req.headers['authorization'];
     const m = typeof header === 'string' ? /^Bearer\s+(.+)$/i.exec(header.trim()) : null;
@@ -86,7 +86,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
 
   const server = createServer((req, res) => {
     void (async () => {
-      // CORS 预检。
+      // CORS preflight.
       if (req.method === 'OPTIONS') {
         res.writeHead(204, {
           'access-control-allow-origin': '*',
@@ -96,14 +96,14 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
         res.end();
         return;
       }
-      // 存活探针（无鉴权）。
+      // Liveness probe (no auth).
       if (req.method === 'GET' && req.url === '/health') {
         send(res, 200, { ok: true, service: 'admin' });
         return;
       }
-      // ── 内部端点：功能开关原始规则（X-Internal-Key，非 admin JWT；不连库后端轮询此处）──
-      // 玩家 JWT 命不中 X-Internal-Key（结构性拒绝），且本端点只读原始规则、不求值——
-      // 消费者拿规则在自己进程内按当前 user 上下文 evaluateFlag。
+      // ── Internal endpoint: raw feature flag rules (X-Internal-Key, not admin JWT; database-less backends poll here) ──
+      // A player JWT cannot satisfy X-Internal-Key (structurally rejected), and this endpoint only reads raw rules without evaluating them —
+      // consumers fetch the rules and call evaluateFlag in their own process with the current user context.
       if (req.method === 'GET' && (req.url ?? '').split('?')[0] === '/admin/internal/flags') {
         if (!internalAuth.verify(req.headers).ok) {
           log.warn('internal flags request rejected: bad X-Internal-Key', {
@@ -126,7 +126,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
       const method = req.method ?? 'GET';
 
       try {
-        // ── 登录（无需会话）──
+        // ── Login (no session required) ──
         if (method === 'POST' && path === '/admin/login') {
           const b = await readJson(req);
           const doc = await svc.authenticate(str(b.username), str(b.password), clientIp(req));
@@ -135,7 +135,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, token, admin, capabilities });
         }
 
-        // 其余全部需会话。
+        // All other endpoints require a session.
         const actor = await authenticate(req);
 
         if (method === 'POST' && path === '/admin/logout') {
@@ -148,7 +148,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, ...svc.meView(doc) });
         }
 
-        // ── 监控 ──
+        // ── Monitoring ──
         if (method === 'GET' && path === '/admin/monitor/live') {
           requireCap(actor, 'monitor.view');
           return send(res, 200, { ok: true, ...(await svc.liveStats()) });
@@ -163,7 +163,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, points });
         }
 
-        // ── 数据分析 ──
+        // ── Analytics ──
         if (method === 'GET' && path === '/admin/analytics/summary') {
           requireCap(actor, 'analytics.view');
           return send(res, 200, { ok: true, ...(await svc.analyticsSummary()) });
@@ -176,42 +176,42 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, ...(await svc.analyticsQuery(type, days, platform)) });
         }
 
-        // ── 玩家模糊搜（昵称/登录账号/公开 id/accountId）──
+        // ── Player fuzzy search (nickname / login account / public id / accountId) ──
         if (method === 'GET' && path === '/admin/players/search') {
           requireCap(actor, 'player.lookup');
           const q = url.searchParams.get('q') ?? '';
           return send(res, 200, { ok: true, players: await svc.searchPlayers(actor.adminId, q) });
         }
 
-        // ── 玩家详情（按 accountId，模糊搜结果点击后取详情）──
+        // ── Player detail (by accountId, fetched after clicking a fuzzy search result) ──
         if (method === 'GET' && path.startsWith('/admin/player/account/')) {
           requireCap(actor, 'player.lookup');
           const accountId = decodeURIComponent(path.slice('/admin/player/account/'.length));
           return send(res, 200, { ok: true, player: await svc.lookupPlayerByAccountId(accountId) });
         }
 
-        // ── 玩家详情（按 9 位公开 id）──
+        // ── Player detail (by 9-digit public id) ──
         if (method === 'GET' && path.startsWith('/admin/player/')) {
           requireCap(actor, 'player.lookup');
           const publicId = decodeURIComponent(path.slice('/admin/player/'.length));
           return send(res, 200, { ok: true, player: await svc.lookupPlayer(publicId) });
         }
 
-        // ── hash mismatch 对局列表（C3）──
+        // ── Hash mismatch match list (C3) ──
         if (method === 'GET' && path === '/admin/mismatches') {
           requireCap(actor, 'anticheat.view');
           const rows = await svc.listMismatches();
           return send(res, 200, { ok: true, mismatches: rows });
         }
 
-        // ── PvE 可疑账号列表（C4）──
+        // ── PvE suspicious account list (C4) ──
         if (method === 'GET' && path === '/admin/suspicious-pve') {
           requireCap(actor, 'anticheat.view');
           const rows = await svc.listSuspiciousPve();
           return send(res, 200, { ok: true, accounts: rows });
         }
 
-        // ── 手动封号 / 解封（S4-4）──
+        // ── Manual ban / unban (S4-4) ──
         const banMatch = path.match(/^\/admin\/accounts\/([^/]+)\/(ban|unban)$/);
         if (method === 'POST' && banMatch) {
           requireCap(actor, 'anticheat.action');
@@ -224,7 +224,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, result.ok ? 200 : 502, { ok: result.ok });
         }
 
-        // ── 成就反作弊审查队列（S9-7）──
+        // ── Achievement anti-cheat review queue (S9-7) ──
         if (method === 'GET' && path === '/admin/anticheat/reviews') {
           requireCap(actor, 'anticheat.view');
           const accountId = url.searchParams.get('accountId') ?? undefined;
@@ -238,10 +238,10 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, reviews });
         }
 
-        // ── 补偿工单 ──
+        // ── Compensation tickets ──
         if (method === 'POST' && path === '/admin/comp/tickets') {
           const b = await readJson(req);
-          // 发起能力（single/global）由 service 据 scope 精确校验。
+          // Initiating capability (single/global) is precisely validated by service based on scope.
           const ticket = await svc.initiateTicket(actor, {
             scope: str(b.scope),
             target: b.target as CompTarget,
@@ -281,7 +281,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, ticket: await svc.retryTicket(actor, id) });
         }
 
-        // ── 审计 ──
+        // ── Audit ──
         if (method === 'GET' && path === '/admin/audit') {
           requireCap(actor, 'audit.view.self');
           const entries = await svc.listAudit(actor, {
@@ -292,7 +292,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, entries });
         }
 
-        // ── 功能开关（feature flags，config.manage）──
+        // ── Feature flags (config.manage) ──
         if (method === 'GET' && path === '/admin/config/flags') {
           requireCap(actor, 'config.manage');
           return send(res, 200, { ok: true, flags: await svc.getConfigFlags() });
@@ -310,7 +310,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, flag });
         }
 
-        // ── 账号管理（超管）──
+        // ── Account management (superadmin) ──
         if (method === 'GET' && path === '/admin/accounts') {
           requireCap(actor, 'admin.manage');
           return send(res, 200, { ok: true, accounts: await svc.listAccounts() });
@@ -347,7 +347,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true });
         }
 
-        // ── 天梯赛季运维（SE-3）──
+        // ── Ladder season operations (SE-3) ──
         if (method === 'GET' && path === '/admin/ladder/season/current') {
           requireCap(actor, 'ladder.season.manage');
           const season = await svc.getLadderCurrentSeason();
@@ -359,7 +359,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, season });
         }
 
-        // ── SLG 赛季运维（G7/§17.7）──
+        // ── SLG season operations (G7/§17.7) ──
         if (method === 'GET' && path === '/admin/slg/worlds') {
           requireCap(actor, 'slg.season.view');
           const worlds = await svc.slgListWorlds();
@@ -390,7 +390,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true });
         }
 
-        // ── SLG 异常交易审计（G7 反 RMT，§17.7）──
+        // ── SLG anomalous transaction audit (G7 anti-RMT, §17.7) ──
         if (method === 'GET' && path === '/admin/slg/audit/anomalies') {
           requireCap(actor, 'slg.audit.view');
           const worldId = url.searchParams.get('worldId') ?? '';
@@ -419,7 +419,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, ticket });
         }
 
-        // ── 优惠码管理（B-PROMO，promo.manage）──
+        // ── Promo code management (B-PROMO, promo.manage) ──
         if (method === 'GET' && path === '/admin/promo/codes') {
           requireCap(actor, 'promo.manage');
           return send(res, 200, { ok: true, codes: await svc.listPromoCodes() });
@@ -440,7 +440,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, ...result });
         }
 
-        // ── 限时活动管理（B6，events.manage）──
+        // ── Limited-time event management (B6, events.manage) ──
         if (method === 'GET' && path === '/admin/events') {
           requireCap(actor, 'events.manage');
           return send(res, 200, { ok: true, events: await svc.listEvents() });
@@ -472,7 +472,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
         if (e instanceof AdminError) {
           send(res, e.status, { ok: false, code: e.code, error: e.message });
         } else if (e instanceof EventsClientError) {
-          // meta 端校验/冲突/未找到 → 透传状态码与原因（detail 给运营看）。
+          // meta-side validation / conflict / not found → pass through status code and reason (detail for operator visibility).
           send(res, e.status >= 400 && e.status < 600 ? e.status : 502, { ok: false, error: e.message });
         } else {
           log.error('unhandled error', { url: req.url, err: (e as Error).message });

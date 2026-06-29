@@ -107,7 +107,7 @@ components:
             pity:
               type: object
               additionalProperties: { type: integer }
-        # 已发货消费订单（commercial orderId）；发货幂等账本（S5-5）。legacy 档可缺，故非 required。
+        # Delivered purchase orders (commercial orderId); idempotent delivery ledger (S5-5). May be absent in legacy saves, so not required.
         deliveredOrders:
           type: array
           items: { type: string }
@@ -120,7 +120,7 @@ components:
             wins: { type: integer }
             losses: { type: integer }
             streak: { type: integer }
-            # —— S11 赛季字段（legacy 档可缺） ——
+            # —— S11 season fields (may be absent in legacy saves) ——
             seasonNo: { type: integer, description: 当前赛季编号 }
             seasonPeakElo: { type: integer, description: 本赛季最高 ELO }
             seasonPeakRank: { type: string, description: 本赛季最高段位 }
@@ -128,19 +128,19 @@ components:
               type: array
               items: { type: string }
               description: 历史首达段位列表（终身账本）
-        # —— 体力（A4，服务器权威；缺省视为满格 current=120）——
+        # —— Stamina (A4, server-authoritative; defaults to full current=120 if absent) ——
         stamina:
           type: object
           required: [current, regenAt]
           properties:
             current: { type: integer, minimum: 0, maximum: 120, description: 当前体力 }
             regenAt: { type: integer, description: 下次回 1 点的时间戳(ms)；满格时为 0 }
-        # —— S10 称号（服务器权威，懒创建；PUT /save 不可写）——
+        # —— S10 titles (server-authoritative, lazily created; not writable via PUT /save) ——
         titles:
           type: array
           items: { type: string }
           description: 拥有的称号 id 集合（赛季结算/成就/admin 授予，顺序即获得顺序）
-        # —— S11 战令 ——
+        # —— S11 battle pass ——
         battlePass:
           $ref: '#/components/schemas/BattlePassData'
         progress:
@@ -159,11 +159,11 @@ components:
         materials:
           type: object
           additionalProperties: { type: integer }
-        # @deprecated S3-2 per-stat 升级；S12 起单位养成改集卡合成（见 unitLevels/cardInventory）。
+        # @deprecated S3-2 per-stat upgrades; from S12 onward unit progression switches to card-merging (see unitLevels/cardInventory).
         pveUpgrades:
           type: object
           additionalProperties: { type: integer }
-        # —— 单位养成（S12，ECONOMY_NUMBERS §4）。服务器权威，legacy 档可缺，非 required ——
+        # —— Unit progression (S12, ECONOMY_NUMBERS §4). Server-authoritative; may be absent in legacy saves, not required ——
         unitLevels:
           type: object
           additionalProperties: { type: integer, minimum: 1, maximum: 9 }
@@ -178,7 +178,7 @@ components:
         flags:
           type: object
           additionalProperties: { type: boolean }
-        # —— 成就系统（服务器权威，ACHIEVEMENT_DESIGN §3）。懒创建，legacy 档可缺，非 required ——
+        # —— Achievement system (server-authoritative, ACHIEVEMENT_DESIGN §3). Lazily created; may be absent in legacy saves, not required ——
         stats:
           type: object
           additionalProperties: { type: integer }
@@ -193,8 +193,8 @@ components:
                 type: array
                 items: { type: integer, minimum: 1, maximum: 3 }
           description: achId→已领阶号子集，幂等防重领
-        # —— 装备系统（服务器权威，EQUIPMENT_DESIGN §3.1）。legacy 档可缺，故非 required ——
-        # 仅 /equipment/* 端点写，PUT /save 不可写（不在 SyncPatch）。
+        # —— Equipment system (server-authoritative, EQUIPMENT_DESIGN §3.1). May be absent in legacy saves, not required ——
+        # Written only by /equipment/* endpoints; not writable via PUT /save (not in SyncPatch).
         equipmentInv:
           type: object
           additionalProperties: { $ref: '#/components/schemas/EquipmentInstance' }
@@ -210,9 +210,9 @@ components:
               additionalProperties:
                 type: object
                 additionalProperties: { type: string }
-        # —— 留存（B5，RETENTION_DESIGN §4）。服务器权威，PUT /save 不上行；legacy 档可缺，非 required。
-        # ⚠ 必须声明：否则响应序列化会剥掉 retention（同 §10.1 +undefined 回归）→ adoptServer 把本地
-        # save.retention 覆盖成 undefined → 签到 claimable 永远回到第 1 格（卡在第一天）。
+        # —— Retention (B5, RETENTION_DESIGN §4). Server-authoritative, not uploaded via PUT /save; may be absent in legacy saves, not required.
+        # ⚠ Must be declared: otherwise response serialization strips retention (same +undefined regression as §10.1) → adoptServer
+        # overwrites local save.retention with undefined → check-in claimable always resets to slot 1 (stuck on day 1).
         retention:
           type: object
           properties:
@@ -235,7 +235,7 @@ components:
                 taskPoints: { type: integer }
                 rewardClaimed: { type: boolean }
 
-    # 成就定义（硬编码 @nw/shared，GET /achievements 下发；客户端据此 + stats 本地算阶）。
+    # Achievement definitions (hardcoded in @nw/shared, served by GET /achievements; clients use these + stats to compute tier locally).
     Achievement:
       type: object
       required: [id, statKey, category, tiers]
@@ -272,9 +272,9 @@ components:
               value: { type: number }
         locked: { type: boolean }
 
-    # —— 客户端同步段（PUT /save 仅接受这些字段，§2.2）——
-    # PVE_INTEGRITY_PLAN §8 起 progress/materials/pveUpgrades 转服务器权威
-    # （只由 /pve/* + ranked 结算写），PUT /save 收窄为仅 equipped/flags。
+    # —— Client sync patch (PUT /save only accepts these fields, §2.2) ——
+    # From PVE_INTEGRITY_PLAN §8 onward, progress/materials/pveUpgrades become server-authoritative
+    # (written only by /pve/* + ranked settlement); PUT /save is narrowed to equipped/flags only.
     SyncPatch:
       type: object
       properties:
@@ -288,14 +288,14 @@ components:
         token: { type: string }
         accountId: { type: string }
         isNew: { type: boolean }
-        # 仅挂 device、无可恢复凭证（password/oauth/wx）→ true。联机/商店/充值要求 false（SA-1）。
+        # Device-only, no recoverable credential (password/oauth/wx) → true. Online/shop/IAP requires false (SA-1).
         isAnonymous: { type: boolean }
-        # 注册时填的展示名（可选）；客户端用于个人资料显示。未设置则缺省。
+        # Display name entered at registration (optional); used by client for profile display. Absent if not set.
         displayName: { type: string }
-        # 9 位数字公开 id（玩家交流/投诉用；accountId 仅服务器内部）。
+        # 9-digit numeric public ID (for player communication/support reports; accountId is internal to the server only).
         publicId: { type: string }
-        # gateway 公开控制面 WS 地址（房间/匹配）。客户端只硬编码 meta 地址，
-        # gateway 地址由本回包下发、game 地址由 match_found 下发。未配置则缺省。
+        # Public control-plane WS address for gateway (room/matchmaking). Client only hard-codes the meta address;
+        # gateway address is delivered in this response; game address is delivered in match_found. Absent if not configured.
         gatewayUrl: { type: string }
 
     MatchHistoryEntry:
@@ -382,7 +382,7 @@ components:
             kind: { type: string, enum: [shards, coins] }
             amount: { type: integer }
 
-    # —— 社交（S6，SOCIAL_DESIGN §5）——
+    # —— Social (S6, SOCIAL_DESIGN §5) ——
     ProfileView:
       type: object
       required: [publicId, displayName]
@@ -469,14 +469,14 @@ components:
         read: { type: boolean }
         claimed: { type: boolean }
 
-    # —— Analytics（A9-0）——
+    # —— Analytics (A9-0) ——
     AnalyticsEventConfig:
       type: object
       properties:
         enabled: { type: boolean }
         sample:  { type: number }
 
-    # —— S11 战令数据（BattlePassData）——
+    # —— S11 battle pass data (BattlePassData) ——
     BattlePassData:
       type: object
       required: [seasonNo, xp, level, hasPass, claimedFree, claimedPaid]
@@ -607,7 +607,7 @@ paths:
               required: [loginId, password]
               properties:
                 loginId: { type: string, minLength: 3, maxLength: 64 }
-                # 密码强度由 handler 校验，返回专属 WEAK_PASSWORD（schema 不设 minLength 以免被通用校验抢先）。
+                # Password strength is validated by the handler and returns a dedicated WEAK_PASSWORD error (schema does not set minLength to avoid being preempted by generic validation).
                 password: { type: string }
                 displayName: { type: string }
       responses:
@@ -698,11 +698,11 @@ paths:
                 method:
                   type: string
                   enum: [oauth, password]
-                # OAuth 绑定
+                # OAuth binding
                 provider: { type: string, enum: [google] }
                 code: { type: string }
                 redirectUri: { type: string }
-                # 密码绑定
+                # Password binding
                 loginId: { type: string }
                 password: { type: string }
       responses:
@@ -739,7 +739,7 @@ paths:
               required: [oldPassword, newPassword]
               properties:
                 oldPassword: { type: string }
-                # 强度由 handler 校验（WEAK_PASSWORD）。
+                # Strength validated by the handler (WEAK_PASSWORD).
                 newPassword: { type: string }
       responses:
         '200':
@@ -871,11 +871,11 @@ paths:
                     required: [save]
                     properties:
                       save: { $ref: '#/components/schemas/SaveData' }
-                      # 账号展示名（可选）；token 续登时客户端据此恢复个人资料。
+                      # Account display name (optional); client uses this to restore the profile on token re-login.
                       displayName: { type: string }
-                      # 9 位数字公开 id；token 续登时客户端据此恢复个人资料。
+                      # 9-digit numeric public ID; client uses this to restore the profile on token re-login.
                       publicId: { type: string }
-                      # gateway 公开 WS 地址（可选）；token 续登无 auth 回包，从这里取。
+                      # Public gateway WS address (optional); absent on token re-login since there is no auth response, fetch from here instead.
                       gatewayUrl: { type: string }
         '401': { $ref: '#/components/responses/ErrorResp' }
     put:
@@ -2065,7 +2065,7 @@ paths:
                       granted: { type: integer }
         '400': { $ref: '#/components/responses/ErrorResp' }
 
-  # ════════════ 社交（S6，SOCIAL_DESIGN §5）════════════
+  # ════════════ Social (S6, SOCIAL_DESIGN §5) ════════════
   /friends:
     get:
       operationId: getFriends
@@ -2654,7 +2654,7 @@ paths:
                   ok: { type: boolean, enum: [true] }
                   data: { nullable: true }
 
-  # —— S11 天梯赛季 / 排行榜 / 战令 ——
+  # —— S11 ranked season / leaderboard / battle pass ——
 
   /leaderboard:
     get:

@@ -1,7 +1,9 @@
-// gameserver → meta 局末上报（M19，S1-M3）。把 {room_id, seed, mode, 双方 hash/winner,
-// reason, 非空帧录像} POST 到 meta /internal/match/report（内部密钥、room_id 幂等）。
-// meta 比对 + 算 ELO 写 saves.pvp + 归档 matches；ranked 把每方 ELO 变化回给 game →
-// 转进 match_over.elo。meta 不可用时排队重试（进行中对局不依赖 meta 实时在线，M16）。
+// gameserver → meta end-of-match report (M19, S1-M3). POSTs {room_id, seed, mode, both sides'
+// hash/winner, reason, non-empty frame replay} to meta /internal/match/report (internal key,
+// idempotent on room_id). meta cross-checks, calculates ELO, writes saves.pvp, and archives
+// the match; for ranked matches it returns each side's ELO delta back to gameserver →
+// forwarded into match_over.elo. When meta is unavailable, reports are queued for background
+// retry (active matches do not depend on meta being reachable in real time, M16).
 import { internalHeaders } from '@nw/shared';
 import type { EloBySide, MatchReport } from './Room';
 
@@ -15,13 +17,15 @@ export class MetaReporter {
   private draining = false;
 
   constructor(
-    private readonly baseUrl: string | null, // 形如 http://meta:8080（内部直连，无 /api 前缀）
+    private readonly baseUrl: string | null, // e.g. http://meta:8080 (internal direct connection, no /api prefix)
     private readonly internalKey: string,
   ) {}
 
   /**
-   * 上报一局。返回每方 ELO 变化（ranked 结算成功时）；friendly / 失败 / meta 不可用 → null。
-   * 失败时把 body 入队后台重试（幂等键 room_id，重发不重复结算）。
+   * Report one match. Returns each side's ELO delta on successful ranked settlement;
+   * returns null for friendly matches, failures, or when meta is unavailable.
+   * On failure, enqueues the body for background retry (idempotent key room_id — retries
+   * do not trigger duplicate settlement).
    */
   async report(r: MatchReport): Promise<EloBySide | null> {
     const body = {
@@ -36,10 +40,11 @@ export class MetaReporter {
         side: x.side,
         state_hash: x.stateHash,
         winner_side: x.winnerSide,
-        ...(x.stats ? { stats: x.stats } : {}), // S9-6: 本方本局成就计数（meta L1 校验后累加，仅 ranked）
+        ...(x.stats ? { stats: x.stats } : {}), // S9-6: per-side per-match achievement counters (meta accumulates after L1 validation, ranked only)
       })),
-      // 非空帧录像（M19/S1-RP）。opaque command bytes 经 internal HTTP JSON 传输 →
-      // base64 编码（meta 原样存 matches.replay，回放时 base64 解码；commands 不解码 M12）。
+      // Non-empty frame replay (M19/S1-RP). Opaque command bytes are base64-encoded for
+      // internal HTTP JSON transport (meta stores them verbatim in matches.replay; base64
+      // is decoded at replay time; commands themselves are not decoded, M12).
       replay: {
         engineVersion: r.replay.engineVersion,
         mode: r.replay.mode,
@@ -82,7 +87,7 @@ export class MetaReporter {
     void this.drain();
   }
 
-  /** 后台重试队列（指数退避，幂等键 room_id 保证不重复结算）。 */
+  /** Background retry queue (exponential back-off; idempotent key room_id prevents duplicate settlement). */
   private async drain(): Promise<void> {
     if (this.draining || !this.baseUrl) return;
     this.draining = true;

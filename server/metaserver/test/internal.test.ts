@@ -1,5 +1,5 @@
-// 内部路由单测（S1-M3）：/internal/elo 取分 + /internal/match/report 结算 ELO/归档/幂等。
-// ELO 结算逻辑从 gameserver 迁来（M19，meta 权威）。用 fastify inject + 内存 fake cols（无 Mongo）。
+// Unit tests for internal routes (S1-M3): /internal/elo fetch score + /internal/match/report ELO settlement/archival/idempotency.
+// ELO settlement logic migrated from gameserver (M19, meta is authoritative). Uses fastify inject + in-memory fake cols (no Mongo).
 import { describe, it, expect } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { makeNewSave, type Collections, type SaveData, type SaveDoc } from '@nw/shared';
@@ -9,7 +9,7 @@ import type { CommercialClient } from '../src/commercialClient.js';
 
 const KEY = 'test-internal-key';
 
-/** 假裁判：可配 available + 固定裁决结果（不发真 HTTP）。 */
+/** Fake judge: configurable available flag + fixed verdict result (no real HTTP calls). */
 function fakeGateway(opts: { available?: boolean; res?: JudgeRes } = {}): GatewayClient {
   return {
     available: opts.available ?? false,
@@ -26,7 +26,7 @@ interface VictoryCall {
   dayKey: string;
 }
 
-/** 假 commercial：仅 internal.ts 用到的 available + victoryCredit，记录胜利金币调用供断言。 */
+/** Fake commercial: only the available + victoryCredit subset used by internal.ts, records victory coin calls for assertions. */
 function fakeCommercial(available = true): CommercialClient & { victoryCalls: VictoryCall[] } {
   const victoryCalls: VictoryCall[] = [];
   return {
@@ -39,7 +39,7 @@ function fakeCommercial(available = true): CommercialClient & { victoryCalls: Vi
   } as unknown as CommercialClient & { victoryCalls: VictoryCall[] };
 }
 
-/** 内存 saves + matches：findOne / 乐观锁 findOneAndUpdate / 唯一 roomId insertOne。 */
+/** In-memory saves + matches: findOne / optimistic-lock findOneAndUpdate / unique-roomId insertOne. */
 function fakeCols(seed: Record<string, SaveData>): { cols: Collections; matches: unknown[] } {
   const saves = new Map<string, SaveDoc>();
   for (const [id, s] of Object.entries(seed)) saves.set(id, { _id: id, save: s, rev: s.rev });
@@ -100,21 +100,21 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  // 内部认证模型（S12-1）：内部路由从不校验玩家 JWT——只认 X-Internal-Key。
-  // 玩家 JWT 与内部密钥不同命名空间，放 Authorization 头也命不中 → 401。
+  // Internal auth model (S12-1): internal routes never validate player JWTs — only X-Internal-Key is accepted.
+  // Player JWTs and internal keys are in different namespaces; placing one in the Authorization header will not match → 401.
   it('GET /internal/elo 带玩家 JWT 但无 X-Internal-Key → 401（拒绝玩家越权）', async () => {
     const app = build(fakeCols({}).cols);
     const res = await app.inject({
       method: 'GET',
       url: '/internal/elo?accountId=a',
-      // 伪造一个看似合法的玩家 Authorization bearer——内部路由根本不看它。
+      // Forge a seemingly valid player Authorization bearer — internal routes completely ignore it.
       headers: { authorization: 'Bearer player.jwt.token' },
     });
     expect(res.statusCode).toBe(401);
     await app.close();
   });
 
-  // per-caller 严格模式（NW_INTERNAL_KEYS）：各调用方一把独立密钥；旧单一共享密钥不再被接受。
+  // Per-caller strict mode (NW_INTERNAL_KEYS): each caller has its own dedicated key; the old single shared key is no longer accepted.
   it('严格模式：登记的 per-caller 密钥放行，单一共享密钥被拒', async () => {
     const a = makeNewSave('a');
     a.pvp.elo = 777;
@@ -122,7 +122,7 @@ describe('internal routes', () => {
       gateway: 'gw-key',
       gameserver: 'gs-key',
     });
-    // gateway 用自己的密钥 → 放行。
+    // gateway uses its own key → allowed.
     const okRes = await app.inject({
       method: 'GET',
       url: '/internal/elo?accountId=a',
@@ -130,7 +130,7 @@ describe('internal routes', () => {
     });
     expect(okRes.statusCode).toBe(200);
     expect(okRes.json()).toEqual({ elo: 777 });
-    // 旧的单一共享密钥（KEY）在严格模式下被拒。
+    // The old single shared key (KEY) is rejected in strict mode.
     const rejRes = await app.inject({
       method: 'GET',
       url: '/internal/elo?accountId=a',
@@ -198,18 +198,18 @@ describe('internal routes', () => {
         players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
         results: [
           { side: 0, state_hash: 'H', winner_side: 0, stats: { 'kill.archer': 3, 'cast.meteor': 2 } },
-          { side: 1, state_hash: 'H', winner_side: 0, stats: { 'kill.guard': 1, 'pvp.wins': 999 } }, // pvp.wins 上报被丢弃
+          { side: 1, state_hash: 'H', winner_side: 0, stats: { 'kill.guard': 1, 'pvp.wins': 999 } }, // pvp.wins report is discarded
         ],
         replay: emptyReplay(),
       },
     });
     const sa = await cols.saves.findOne({ _id: 'a' });
     const sb = await cols.saves.findOne({ _id: 'b' });
-    // 胜方 a：kill/cast 入账 + 服务器自算 pvp.wins=1（非客户端上报）。
+    // Winner a: kill/cast stats credited + server auto-computes pvp.wins=1 (not from client report).
     expect(sa!.save.stats).toEqual({ 'kill.archer': 3, 'cast.meteor': 2, 'pvp.wins': 1 });
-    // 负方 b：kill/cast 入账；自报的 pvp.wins:999 被丢弃，且非胜方不自增 pvp.wins。
+    // Loser b: kill/cast stats credited; self-reported pvp.wins:999 is discarded, and pvp.wins is not auto-incremented for the losing side.
     expect(sb!.save.stats).toEqual({ 'kill.guard': 1 });
-    // S9-7：归档 per-side reportedStats（L1 清洗后已入账值），供离线抽查比对（pvp.wins 不含）。
+    // S9-7: archive per-side reportedStats (values credited after L1 sanitization), for offline spot-check comparison (pvp.wins excluded).
     expect((matches[0] as { reportedStats?: unknown }).reportedStats).toEqual({
       '0': { 'kill.archer': 3, 'cast.meteor': 2 },
       '1': { 'kill.guard': 1 },
@@ -230,7 +230,7 @@ describe('internal routes', () => {
         room_id: 'RL', seed: '1', mode: 'ranked', reason: 'base', winner_side: 0, hash_ok: true,
         players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
         results: [
-          { side: 0, state_hash: 'H', winner_side: 0, stats: { 'kill.archer': 999999 } }, // L1 越界 → 整份拒收
+          { side: 0, state_hash: 'H', winner_side: 0, stats: { 'kill.archer': 999999 } }, // L1 out-of-bounds → entire stats rejected
           { side: 1, state_hash: 'H', winner_side: 0, stats: { 'kill.guard': 2 } },
         ],
         replay: emptyReplay(),
@@ -238,10 +238,10 @@ describe('internal routes', () => {
     });
     const sa = await cols.saves.findOne({ _id: 'a' });
     const sb = await cols.saves.findOne({ _id: 'b' });
-    // 胜方 a 的 kill.archer 被 L1 拒收，但 pvp.wins 仍自算；ELO 照常。
+    // Winner a's kill.archer is rejected by L1, but pvp.wins is still auto-computed; ELO proceeds normally.
     expect(sa!.save.stats).toEqual({ 'pvp.wins': 1 });
     expect(sa!.save.pvp.elo).toBe(1016);
-    // 负方 b 正常 kill.guard 入账。
+    // Loser b's kill.guard is credited normally.
     expect(sb!.save.stats).toEqual({ 'kill.guard': 2 });
     await app.close();
   });
@@ -266,8 +266,8 @@ describe('internal routes', () => {
       },
     });
     const sa = await cols.saves.findOne({ _id: 'a' });
-    expect(sa!.save.stats).toBeUndefined(); // friendly 不结算 → 不喂 stats
-    // S9-7：friendly 不归档 reportedStats（离线抽查只查 ranked，天然不审 friendly）。
+    expect(sa!.save.stats).toBeUndefined(); // friendly not settled → stats not credited
+    // S9-7: friendly does not archive reportedStats (offline spot-checks only cover ranked; friendly is naturally excluded).
     expect((matches[0] as { reportedStats?: unknown }).reportedStats).toBeUndefined();
     await app.close();
   });
@@ -294,7 +294,7 @@ describe('internal routes', () => {
         replay: emptyReplay(),
       },
     });
-    // 仅胜者 a 发币；结算后 ELO 1016 → bronze → 5 金币。
+    // Only winner a receives coins; post-settlement ELO 1016 → bronze → 5 coins.
     expect(comm.victoryCalls).toHaveLength(1);
     expect(comm.victoryCalls[0]!.accountId).toBe('a');
     expect(comm.victoryCalls[0]!.amount).toBe(5);
@@ -314,9 +314,9 @@ describe('internal routes', () => {
     };
     await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload });
     const r2 = await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload });
-    expect(r2.json()).toEqual({ ok: true }); // 幂等：无 elo（已结算过）
+    expect(r2.json()).toEqual({ ok: true }); // idempotent: no elo (already settled)
     const sa = await cols.saves.findOne({ _id: 'a' });
-    expect(sa!.save.pvp.elo).toBe(1016); // 仍是一次结算的值
+    expect(sa!.save.pvp.elo).toBe(1016); // still the value from a single settlement
     await app.close();
   });
 
@@ -336,18 +336,18 @@ describe('internal routes', () => {
         replay: emptyReplay(),
       },
     });
-    expect(res.json()).toEqual({ ok: true }); // friendly 无 elo
+    expect(res.json()).toEqual({ ok: true }); // friendly: no elo
     const sa = await cols.saves.findOne({ _id: 'a' });
-    expect(sa!.save.pvp.elo).toBe(1000); // 未变
+    expect(sa!.save.pvp.elo).toBe(1000); // unchanged
     expect((matches[0] as { winner: number }).winner).toBe(-1);
     await app.close();
   });
 
-  // ── Phase C 对等裁判 ─────────────────────────────────────────────────────
+  // ── Phase C peer judge ─────────────────────────────────────────────────────
   const mismatchPayload = {
     room_id: 'M1', seed: '1', mode: 'ranked', reason: 'mismatch', winner_side: 0, hash_ok: false,
     players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
-    // 两端 hash 不一致：a 报 HONEST，b 报 FAKE。
+    // Both sides report different hashes: a reports HONEST, b reports FAKE.
     results: [{ side: 0, state_hash: 'HONEST', winner_side: 0 }, { side: 1, state_hash: 'FAKE', winner_side: 1 }],
     replay: emptyReplay(),
   };
@@ -366,7 +366,7 @@ describe('internal routes', () => {
     });
     const body = res.json() as { ok: boolean; elo?: Record<number, { delta: number }> };
     expect(body.ok).toBe(true);
-    // 诚实方 a（side 0）赢 +16，作弊方 b（side 1）输 -16。
+    // Honest side a (side 0) wins +16, cheating side b (side 1) loses -16.
     expect(body.elo![0]!.delta).toBe(16);
     expect(body.elo![1]!.delta).toBe(-16);
     const sa = await cols.saves.findOne({ _id: 'a' });
@@ -375,7 +375,7 @@ describe('internal routes', () => {
     expect(sb!.save.pvp.elo).toBe(984);
     const m = matches[0] as { winner: number; cheat?: { side: number; accountId: string; judgeAccountId?: string } };
     expect(m.cheat).toEqual({ side: 1, accountId: 'b', judgeAccountId: 'c' });
-    expect(m.winner).toBe(0); // 诚实方
+    expect(m.winner).toBe(0); // honest side
     await app.close();
   });
 
@@ -387,7 +387,7 @@ describe('internal routes', () => {
     const res = await app.inject({
       method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: mismatchPayload,
     });
-    expect(res.json()).toEqual({ ok: true }); // 无 elo
+    expect(res.json()).toEqual({ ok: true }); // no elo
     expect((await cols.saves.findOne({ _id: 'a' }))!.save.pvp.elo).toBe(1000);
     expect((matches[0] as { cheat?: unknown }).cheat).toBeUndefined();
     await app.close();
@@ -408,7 +408,7 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  // ── C6-d hash 不一致 + 无裁判 → hashMismatch=true 写入 matches（CI 守护）──
+  // ── C6-d hash mismatch + no judge → hashMismatch=true written to matches (CI guard) ──
   it('C6-d hash_ok=false + 裁判不可用 → matches.hashMismatch=true', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');

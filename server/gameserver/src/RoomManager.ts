@@ -1,12 +1,14 @@
-// 数据面房间路由（S1-M2）。瘦身后 gameserver 不建房 / 不匹配 / 不连库：房间由 ticket
-// 握手按需创建——同 roomId 的两张 ticket（side 0/1，seed 一致）凑齐即开局。本类只做
-// 「按 roomId 找/建房 + 把数据面消息分发给房间」，并在局末上报 meta（注入 report）。
+// Data-plane room routing (S1-M2). After slimming down, the gameserver does not create rooms /
+// does not match players / does not connect to any database: rooms are created on demand by the
+// ticket handshake — once both tickets for the same roomId (side 0/1, matching seed) have arrived,
+// the match begins. This class only handles "find/create room by roomId + dispatch data-plane
+// messages to the room", and reports match results to meta at game end (via the injected report).
 import { Room, type EloBySide, type MatchReport } from './Room';
 import { MatchMode, type ClientMsg, type MatchModeVal } from './proto/transport';
 import type { Connection } from './Connection';
 
 export interface RoomManagerDeps {
-  /** 局末上报 meta（结算 + 归档）。 */
+  /** Report match result to meta at game end (settlement + archival). */
   report: (r: MatchReport) => Promise<EloBySide | null>;
 }
 
@@ -16,16 +18,17 @@ export class RoomManager {
   constructor(private readonly deps: RoomManagerDeps) {}
 
   /**
-   * ticket 握手后接入：按 roomId 找/建房，加入指定 side。
-   * 交叉核对——第二张 ticket 的 seed/mode 必须与房间（第一张 ticket 建立的）一致，
-   * 否则拒绝（防伪造 / 错配）。返回 false 表示拒绝（调用方关连接）。
+   * Called after a ticket handshake: find/create a room by roomId and join the specified side.
+   * Cross-validation — the second ticket's seed/mode must match the room established by the first
+   * ticket; otherwise the join is rejected (prevents forgery / mismatched pairing).
+   * Returns false to indicate rejection (caller should close the connection).
    */
   join(conn: Connection, name: string, publicId: string, seed: number, mode: MatchModeVal, opponentTitle = ''): boolean {
     let room = this.rooms.get(conn.roomId);
     if (room) {
-      // 已有房：核对 seed/mode 一致（防伪造 / 错配）。
+      // Room already exists: verify seed/mode match (prevents forgery / mismatched pairing).
       if (room.seedValue !== seed || room.mode !== mode) return false;
-      // 该 side 已在房 = 重连：不重复 addPlayer，slot.conn 由后续 conn_resume 重绑。
+      // Side already in room = reconnect: do not call addPlayer again; slot.conn is rebound by a subsequent conn_resume.
       if (!room.hasSide(conn.side)) room.addPlayer(conn, name, publicId, opponentTitle);
       return true;
     }
@@ -61,13 +64,13 @@ export class RoomManager {
         conn.alive = true;
         conn.send({ case: 'pong' });
         break;
-      // room_create/join/ready/start 属控制面（gateway），数据面忽略。
+      // room_create/join/ready/start belong to the control plane (gateway); ignored on the data plane.
       default:
         break;
     }
   }
 
-  /** 测试 / 关服用。 */
+  /** For testing / server shutdown. */
   destroyAll(): void {
     for (const room of [...this.rooms.values()]) room.destroy();
     this.rooms.clear();

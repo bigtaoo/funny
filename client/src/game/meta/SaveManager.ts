@@ -1,9 +1,9 @@
-// 云同步编排（S0-5）。离线优先 + 服务器权威：
-//   · 启动 loadLocal（立即可玩，断网无碍）。
-//   · bootstrap()：auth → pull → 按 rev/段权威 reconcile → 必要时 push。
-//   · update()：改客户端同步段 → 立即 saveLocal → 防抖 2s 上行 push。
-//   · push 带 If-Match: rev；409 → pull-merge（服务器权威段以服务器为准，progress 取并集）再重试一次。
-// 网络不可用 / 未配 ApiClient → 静默退化为纯本地（不抛错给调用方）。
+// Cloud sync orchestration (S0-5). Offline-first + server-authoritative:
+//   · On startup call loadLocal (immediately playable, works without network).
+//   · bootstrap(): auth → pull → reconcile by rev/section authority → push if needed.
+//   · update(): mutate the client-sync section → saveLocal immediately → debounce 2s then push.
+//   · push sends If-Match: rev; 409 → pull-merge (server-authoritative sections use server value, progress union-merged) then retry once.
+// Network unavailable / ApiClient not configured → silently degrade to local-only (no error thrown to caller).
 
 import type { AuthCredential } from '../../platform/IPlatform';
 import { ApiError, type ApiClient } from '../../net/ApiClient';
@@ -19,30 +19,30 @@ import type { PendingClear, SaveStore } from './SaveStore';
 
 export interface SaveManagerOpts {
   store: SaveStore;
-  /** 云客户端；缺省 → 纯本地（离线优先）。 */
+  /** Cloud client; omitted → local-only (offline-first). */
   api?: ApiClient;
-  /** 取平台匿名凭据（S0-4）；配了 api 才需要。 */
+  /** Retrieve the platform anonymous credential (S0-4); only needed when api is configured. */
   getCredential?: () => Promise<AuthCredential>;
-  /** 上行防抖窗口（ms），默认 2000（§3.3）。 */
+  /** Upload debounce window (ms), default 2000 (§3.3). */
   debounceMs?: number;
   /**
-   * 云端回带的账号资料；bootstrap/refresh 拉到后回调。用于客户端持久化 / 刷新 UI / 联网。
-   * `gatewayUrl`：服务器下发的控制面 WS 地址（客户端不硬编码，见 ApiClient.AuthResult）。
+   * Account profile returned from the cloud; called back after bootstrap/refresh pulls it. Used for client persistence / UI refresh / online connectivity.
+   * `gatewayUrl`: the control-plane WS address delivered by the server (not hardcoded on the client; see ApiClient.AuthResult).
    */
   onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string }) => void;
-  /** 取回本地录像（ReplayStore）；L1 抽检时离线 flush 据 replayId 取回上传复算（§8.6）。 */
+  /** Retrieve a local replay (ReplayStore); during L1 spot-check, offline flush uses replayId to fetch and upload for server re-validation (§8.6). */
   loadReplay?: (id: string) => Replay | null;
-  /** 注入定时器（测试用）；默认走 globalThis。 */
+  /** Inject timer functions (for testing); defaults to globalThis. */
   setTimer?: (cb: () => void, ms: number) => unknown;
   clearTimer?: (h: unknown) => void;
   /**
-   * 云存档上行连续失败达阈值时回调一次（提示玩家进度可能未同步）。一次成功上行后复位，
-   * 故不会每 2s 刷屏。离线优先下后台同步本是静默的，这里只在「持续失败」时打破沉默。
+   * Called once when cloud save uploads fail consecutively beyond the threshold (notifies the player that progress may not be synced). Resets after one successful upload,
+   * so it will not spam every 2s. Background sync is silent under offline-first; this only breaks silence on sustained failure.
    */
   onSyncError?: () => void;
 }
 
-/** 连续上行失败多少次后才提示玩家（避开一次性网络抖动）。 */
+/** Number of consecutive upload failures before notifying the player (avoids reacting to one-off network blips). */
 const SYNC_FAIL_THRESHOLD = 3;
 
 export class SaveManager {
@@ -53,16 +53,16 @@ export class SaveManager {
   private readonly onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string }) => void;
   private readonly loadReplay?: (id: string) => Replay | null;
   private readonly onSyncError?: () => void;
-  private syncFailStreak = 0;     // 连续上行失败计数
-  private syncErrorNotified = false; // 本轮持续失败是否已提示过（避免刷屏）
+  private syncFailStreak = 0;     // consecutive upload failure count
+  private syncErrorNotified = false; // whether the player has already been notified in the current failure streak (to avoid spamming)
   private readonly debounceMs: number;
   private readonly setTimer: (cb: () => void, ms: number) => unknown;
   private readonly clearTimer: (h: unknown) => void;
 
   private pushTimer: unknown = null;
   private pushing = false;
-  private dirty = false; // 防抖窗口内有未上行的本地改动
-  private pending: PendingClear[]; // 离线待结算通关队列（PVE_INTEGRITY_PLAN §8.4）
+  private dirty = false; // local changes within the debounce window not yet uploaded
+  private pending: PendingClear[]; // offline queue of clears awaiting settlement (PVE_INTEGRITY_PLAN §8.4)
 
   constructor(opts: SaveManagerOpts) {
     this.store = opts.store;

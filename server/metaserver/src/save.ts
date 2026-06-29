@@ -1,5 +1,5 @@
-// save-service 逻辑（S0-7）。乐观锁走单文档原子更新（META_DESIGN.md §6.3）：
-// findOneAndUpdate 用 {_id, rev} 做守卫，并发 PUT 只有一个赢，另一个收 409。
+// save-service logic (S0-7). Optimistic locking via single-document atomic update (META_DESIGN.md §6.3):
+// findOneAndUpdate uses {_id, rev} as a guard; among concurrent PUTs only one wins, the other gets 409.
 import type { Collections, SaveData, SyncPatch } from '@nw/shared';
 import { makeNewSave, createLogger } from '@nw/shared';
 
@@ -9,7 +9,7 @@ export type PutResult =
   | { kind: 'ok'; save: SaveData }
   | { kind: 'conflict'; save: SaveData };
 
-/** 拉取存档；不存在则创建新档落库。 */
+/** Fetch the save; if it does not exist, create a fresh one and persist it. */
 export async function getOrCreateSave(
   cols: Collections,
   accountId: string,
@@ -19,7 +19,7 @@ export async function getOrCreateSave(
   if (doc) return doc.save;
 
   const save = makeNewSave(accountId, now);
-  // upsert 防并发首建竞态：已存在则读回已有的。
+  // upsert prevents a first-create race under concurrency: if already present, the existing document is returned.
   await cols.saves.updateOne(
     { _id: accountId },
     { $setOnInsert: { _id: accountId, save, rev: save.rev } },
@@ -30,12 +30,13 @@ export async function getOrCreateSave(
 }
 
 /**
- * 仅把客户端同步段覆盖进存档；服务器权威段保持不变（SERVER_API.md §2.2）。
- * 信任边界硬墙：只读 patch 的 2 个白名单字段（equipped/flags），任何额外字段
- * （wallet/inventory/gacha/pvp 权威段，以及 PVE_INTEGRITY_PLAN §8 起转为服务器权威的
- * progress/materials/pveUpgrades）结构性丢弃——HTTP body 无类型，客户端塞了也不落库。
- * 后三段只由 /pve/* + ranked 结算写。
- * 导出供 always-run 单测（e2e 仅 Mongo 在跑时验，本函数纯逻辑应无条件覆盖）。
+ * Merges only the client-sync section into the save; server-authoritative sections remain unchanged (SERVER_API.md §2.2).
+ * Hard trust boundary: only the 2 whitelisted fields from the patch are read (equipped/flags); any extra fields
+ * (wallet/inventory/gacha/pvp authoritative sections, and progress/materials/pveUpgrades which became
+ * server-authoritative as of PVE_INTEGRITY_PLAN §8) are structurally discarded — the HTTP body is untyped,
+ * so client-supplied extras are never persisted.
+ * The latter three sections are written exclusively by /pve/* and ranked settlement.
+ * Exported for always-run unit tests (e2e verifies only when Mongo is running; this function is pure logic and must be covered unconditionally).
  */
 export function applySyncPatch(
   prev: SaveData,
@@ -53,8 +54,9 @@ export function applySyncPatch(
 }
 
 /**
- * 乐观锁推送同步段。clientRev 必须等于云端 rev，否则返回 conflict + 当前云端值。
- * 成功回推规范化后的存档（rev+1）。
+ * Optimistic-lock push for the sync section. clientRev must equal the server-side rev; otherwise returns
+ * conflict together with the current server-side save.
+ * On success, returns the normalised save (rev+1).
  */
 export async function putSave(
   cols: Collections,
@@ -70,7 +72,7 @@ export async function putSave(
   }
 
   const next = applySyncPatch(cur, patch, now, cur.rev + 1);
-  // rev 守卫保证原子性：并发同 rev 只有一个匹配成功。
+  // rev guard ensures atomicity: among concurrent writes with the same rev only one matches successfully.
   const res = await cols.saves.findOneAndUpdate(
     { _id: accountId, rev: clientRev },
     { $set: { save: next, rev: next.rev } },
@@ -78,7 +80,7 @@ export async function putSave(
   );
 
   if (!res) {
-    // 被并发写抢先，rev 已变 → 冲突，回读当前值。
+    // Preempted by a concurrent write; rev has already changed → conflict; re-read the current value.
     const fresh = await getOrCreateSave(cols, accountId, now);
     return { kind: 'conflict', save: fresh };
   }
@@ -86,10 +88,11 @@ export async function putSave(
 }
 
 /**
- * 把迁移后存档（含 rev+1）原子写库，最多 3 次重试。
- * 用于「读到存档 → migrateIfStale 得到新 save → 写回」场景。
- * 并发冲突时重读当前存档再次迁移后写（幂等：重入迁移不重复结算/重置）。
- * 返回最终落库的存档。
+ * Atomically writes the migrated save (including rev+1) to the database, retrying up to 3 times.
+ * Used in the "read save → migrateIfStale yields new save → write back" flow.
+ * On concurrent conflict, re-reads the current save, migrates it again, and retries
+ * (idempotent: re-entering migration does not double-settle or double-reset anything).
+ * Returns the save that was ultimately persisted.
  */
 export async function writeMigratedSave(
   cols: Collections,
@@ -106,11 +109,11 @@ export async function writeMigratedSave(
       { returnDocument: 'after' },
     );
     if (res) return res.save;
-    // 并发冲突：重读 + 再次迁移后重试
+    // Concurrent conflict: re-read + migrate again, then retry
     const cur = await cols.saves.findOne({ _id: save.accountId });
     if (!cur) return save;
     const r = await migrate(cur.save);
-    if (!r.migrated) return cur.save; // 已被并发迁移
+    if (!r.migrated) return cur.save; // already migrated by a concurrent writer
     save = r.save;
     log.info('writeMigratedSave: retrying after conflict', { accountId: save.accountId, attempt });
   }

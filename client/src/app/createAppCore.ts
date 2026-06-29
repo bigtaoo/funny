@@ -43,7 +43,7 @@ import { getWorldBaseUrl } from '../net/config';
 
 const log = netLog('app');
 
-/** 平台名（构建期注入的 TARGET 全局），随 bootstrap 求值带入。镜像 analytics.getPlatformName。 */
+/** Platform name (the TARGET global injected at build time), evaluated at bootstrap. Mirrors analytics.getPlatformName. */
 function clientPlatformName(): 'web' | 'wechat' | 'crazygames' {
   const t = (globalThis as { TARGET?: string }).TARGET ?? '';
   if (t === 'wechat') return 'wechat';
@@ -53,7 +53,7 @@ function clientPlatformName(): 'web' | 'wechat' | 'crazygames' {
 
 /** flags key — set after the first-launch intro has been seen. */
 const SEEN_INTRO_FLAG = 'seen_intro';
-/** 教学关完成/跳过后置位，之后不再自动进；设置「重看教学」可清后重进（ONBOARDING_DESIGN §3.4）。 */
+/** Set after the tutorial is completed or skipped; prevents auto-entry afterwards. Clearing it via "replay tutorial" in settings allows re-entry (ONBOARDING_DESIGN §3.4). */
 const TUTORIAL_DONE_FLAG = 'tutorial_done';
 /** flags key — set after the player accepts the GDPR / privacy consent (C5-c, L1-1). Mirrors server `flags.gdprConsent`. */
 const GDPR_CONSENT_FLAG = 'gdprConsent';
@@ -70,8 +70,10 @@ const PLAYER_AVATAR_KEY = 'nw_player_avatar';
 /** Coin cost to change the display name. Mirrors server RENAME_COST; server authoritative. */
 const RENAME_COST = 500;
 /**
- * 当前 SLG 赛季号（G6/§20）：worldsvc 按 `s{season}-{shard}` 多 shard 路由，客户端进图前
- * 用它 resolveSeason 拿真实 worldId。暂为常量，待 S11 天梯赛季元数据下发后由 metaserver 提供（§20.8）。
+ * Current SLG season number (G6/§20): worldsvc routes by `s{season}-{shard}` multi-shard scheme;
+ * the client calls resolveSeason with this value before entering the map to obtain the real worldId.
+ * Temporarily a client-side constant; will be provided by metaserver once S11 ladder-season metadata
+ * is delivered (§20.8).
  */
 const CURRENT_SEASON = 1;
 
@@ -94,15 +96,17 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     store: new LocalSaveStore(platform.storage),
     api,
     getCredential: () => platform.getAuthCredential(),
-    // L1 抽检（§8.6）：离线 flush 被抽中时据 replayId 取回本地录像补传复算。
+    // L1 spot-check (§8.6): when a queued offline flush is selected for verification, fetch the
+    // local replay by replayId and submit it for re-evaluation.
     loadReplay: (id) => replayStore.load(id),
-    // 云存档后台同步持续失败 → 弹一次全局兜底提示（进度可能未上云）。
+    // Cloud save background sync persistently failing → show a one-time global fallback toast
+    // (progress may not have reached the cloud).
     onSyncError: () => showToastMessage(t('common.syncFailed')),
     onProfile: ({ displayName, publicId, gatewayUrl: gw }) => {
       applyGatewayUrl(gw);
       if (publicId) {
         platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, publicId);
-        void featureFlags?.refresh(); // publicId 经存档回包到手 → 重拉 bootstrap 让定向采集即时生效
+        void featureFlags?.refresh(); // publicId received from save response → re-fetch bootstrap so targeted log capture takes effect immediately
       }
       if (!displayName) return;
       if (platform.storage.getItem(PLAYER_NAME_KEY) === displayName) return;
@@ -118,8 +122,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   analytics.setConsent(saveManager.getFlag(GDPR_CONSENT_FLAG) === true);
   void analytics.init(platform, api, baseUrl);
 
-  // ── FeatureFlags: 公开 bootstrap 轮询 + 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）─────
-  // 启动即轮询；命中 client_log_* 定向时把环形缓冲日志批量上报 Loki。需有 API 基址才有意义。
+  // ── FeatureFlags: public bootstrap polling + targeted client-log capture (FEATURE_FLAGS_DESIGN §9) ─────
+  // Polling starts immediately on launch; when a client_log_* targeting rule matches, the ring-buffer
+  // log is batch-uploaded to Loki. Requires an API base URL to be meaningful.
   const featureFlags = api
     ? new FeatureFlags({
         api,
@@ -151,7 +156,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   // ── Navigation state ────────────────────────────────────────────────────────
   let inLobby = false;
   let offlineMode = false;
-  /** 一次性：本会话是否已处理过「首次进大厅 → 教学关」分流（ONBOARDING §2 步骤 ⑤）。 */
+  /** One-shot: whether this session has already handled the "first lobby entry → tutorial" branch (ONBOARDING §2 step ⑤). */
   let firstLobbyHandled = false;
   /**
    * Cached aggregate social unread (GET /social/badges). Kept across lobby
@@ -229,7 +234,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  /** Re-fetch retention claimable state and push the 每日 red dot into the lobby (B5, best-effort). */
+  /** Re-fetch retention claimable state and push the daily red dot into the lobby (B5, best-effort). */
   async function refreshRetentionBadge(view: LobbyView): Promise<void> {
     if (!api || offlineMode || !platform.storage.getItem(TOKEN_KEY)) { view.applyRetentionBadge(false); return; }
     try {
@@ -238,7 +243,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     } catch { /* leave the dot off on failure */ }
   }
 
-  /** Probe for an active event window so the 活动 entry only appears when there's something to show (B6, best-effort). */
+  /** Probe for an active event window so the events entry only appears when there's something to show (B6, best-effort). */
   async function refreshEventsAvailable(view: LobbyView): Promise<void> {
     if (!api || offlineMode || !platform.storage.getItem(TOKEN_KEY)) { view.applyEventsAvailable(false); return; }
     try {
@@ -270,8 +275,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   function goLobby(opts?: { offline?: boolean; fromResize?: boolean }): void {
-    // FTUE 步骤 ⑤：本会话首次将要进大厅时，未完成教学则改走专属教学关（ONBOARDING_DESIGN §2）。
-    // 一次性闸门——后续从子场景返回大厅不再触发；resize 重绘也跳过。
+    // FTUE step ⑤: on the first lobby entry of this session, redirect to the dedicated tutorial
+    // level if it has not been completed (ONBOARDING_DESIGN §2).
+    // One-shot gate — subsequent returns to the lobby from child scenes do not re-trigger; resize redraws skip it too.
     if (!firstLobbyHandled && !opts?.fromResize) {
       firstLobbyHandled = true;
       if (!saveManager.getFlag(TUTORIAL_DONE_FLAG)) {
@@ -287,9 +293,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const pvp = saveManager.get().pvp;
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const online = loggedIn && !!api && !!gatewayUrl;
-    // 首次功能引导（ONBOARDING_DESIGN §4.1）：某功能未看过引导 → 在大厅弹可关引导卡，
-    // 关闭后续接导航；看过则直接进。覆盖大厅可达的主要功能（拍卖在大世界内、各页「?」重看
-    // 复用同一 guide.* i18n + showFeatureGuide）。
+    // First-time feature guide (ONBOARDING_DESIGN §4.1): if a feature's guide has not been seen,
+    // show a dismissible guide card in the lobby before navigating; if already seen, navigate directly.
+    // Covers all major lobby-reachable features (auction is inside the world map; each page's "?" button
+    // re-shows the same guide using guide.* i18n + showFeatureGuide).
     function withGuide(featureId: string, titleKey: TranslationKey, bodyKey: TranslationKey, nav: () => void): void {
       if (saveManager.featSeen(featureId)) { nav(); return; }
       saveManager.markFeatSeen(featureId);
@@ -309,7 +316,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       ...(online ? { onOpenAchievements: () => goAchievements() } : {}),
       ...(online ? { onOpenDaily: () => withGuide('daily', 'guide.daily.title', 'guide.daily.body', () => goDaily()), onOpenEvents: () => goEvents() } : {}),
       onOpenWorld() { withGuide('world', 'guide.world.title', 'guide.world.body', () => goWorldEntry()); },
-      // SLG 软门槛（ONBOARDING_DESIGN §4）：通关第一章前灰显 + 气泡，唯一一道功能门槛。
+      // SLG soft gate (ONBOARDING_DESIGN §4): grayed out with a tooltip bubble until the first chapter is cleared — the only feature gate.
       worldLocked: !isFirstChapterCleared(new Set(saveManager.get().progress.cleared)),
       onOpenProfile() { goSettings(); },
       playerName: playerName(),
@@ -338,7 +345,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     // rebuild without flicker; then refresh from the server (skip on resize).
     lobby.applySocialBadge(socialBadgeTotal);
     lobby.applyAchievementBadge(achievementClaimable);
-    // Ping worldsvc so the 大世界 nav button shows a "×" badge immediately when
+    // Ping worldsvc so the world-map nav button shows a "×" badge immediately when
     // the service isn't running — visible feedback before the user clicks the button.
     if (getWorldBaseUrl()) {
       const worldHealthApi = new WorldApiClient(platform.storage);
@@ -395,9 +402,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             onRename: doRename,
           }
         : {}),
-      // 账号删除（C5-b）：仅登录在线提供（离线无账号可删）。
+      // Account deletion (C5-b): only available when logged in online (no account to delete when offline).
       ...(loggedIn && !!api ? { onDeleteAccount: doDeleteAccount } : {}),
-      // 重看新手教学（ONBOARDING_DESIGN §3.4）：直接重跑专属教学关（永不失败，可再跳过）。
+      // Replay tutorial (ONBOARDING_DESIGN §3.4): directly re-runs the dedicated tutorial level (never fails, can be skipped again).
       onReplayTutorial: () => goTutorial(),
     });
   }

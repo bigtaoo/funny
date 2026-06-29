@@ -1,6 +1,7 @@
-// 密码哈希 + loginId 规范化（ACCOUNT_DESIGN.md §6、SA-1）。
-// 用 Node 内置 crypto.scrypt：零依赖、跨平台（无 argon2/bcrypt 原生编译），
-// 是合格的密码 KDF。哈希串自描述参数：scrypt$N$r$p$saltB64$hashB64。
+// Password hashing + loginId normalisation (ACCOUNT_DESIGN.md §6, SA-1).
+// Uses Node built-in crypto.scrypt: zero extra dependencies, cross-platform (no native
+// compilation like argon2/bcrypt), and is a suitable password KDF.
+// Hash string is self-describing: scrypt$N$r$p$saltB64$hashB64.
 import { randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto';
 
 // scrypt cost（128 * N * r ≈ 16MB 内存，在默认 maxmem 32MB 内）。

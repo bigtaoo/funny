@@ -1,5 +1,5 @@
-// admin → 业务服务的内部调用（OPS_DESIGN §4.1）。admin 持 X-Internal-Key 作内部特权调用方。
-// 与 commercialClient / gatewayClient 同形：HTTP 实现 + 接口（便于测试注入假实现）。
+// Internal calls from admin to business services (OPS_DESIGN §4.1). admin holds X-Internal-Key as a privileged internal caller.
+// Same shape as commercialClient / gatewayClient: HTTP implementation + interface (easy to inject fakes in tests).
 import {
   createLogger,
   internalHeaders,
@@ -14,10 +14,10 @@ import {
 
 const log = createLogger('admin:clients');
 
-// ── stats（gateway / matchsvc）────────────────────────────
+// ── Stats (gateway / matchsvc) ────────────────────────────
 export interface StatsClient {
   readonly available: boolean;
-  /** 拉一次聚合实时态；不可用 / 出错返回零值（采样不阻断）。 */
+  /** Fetches one aggregated live snapshot; returns zeros if unavailable or on error (sampling must not block). */
   fetchLive(): Promise<LiveStats>;
 }
 
@@ -31,7 +31,7 @@ interface MatchsvcStats {
   gameLoad: number;
 }
 
-/** 合并 gateway + matchsvc 的 GET /internal/stats。任一不可用其字段记 0。 */
+/** Merges GET /internal/stats from gateway + matchsvc. Fields from any unavailable service default to 0. */
 export class HttpStatsClient implements StatsClient {
   constructor(
     private readonly gatewayUrl: string | null,
@@ -78,7 +78,7 @@ export class HttpStatsClient implements StatsClient {
   }
 }
 
-// ── 玩家查询（meta，player.lookup）────────────────────────
+// ── Player lookup (meta, player.lookup) ────────────────────
 export interface PlayerProfile {
   publicId: string;
   accountId?: string;
@@ -89,7 +89,7 @@ export interface PlayerProfile {
   losses?: number;
 }
 
-/** 模糊搜命中行（= meta AccountSearchRow，OPS 列表展示）。 */
+/** Fuzzy search hit row (= meta AccountSearchRow, shown in OPS list views). */
 export interface PlayerSummary {
   accountId: string;
   publicId?: string;
@@ -99,11 +99,11 @@ export interface PlayerSummary {
 
 export interface PlayerClient {
   readonly available: boolean;
-  /** 按 9 位公开 id 查玩家档案；未找到返回 null。 */
+  /** Look up a player profile by 9-digit public id; returns null if not found. */
   lookupByPublicId(publicId: string): Promise<PlayerProfile | null>;
-  /** 按 accountId 查玩家档案；未找到返回 null。 */
+  /** Look up a player profile by accountId; returns null if not found. */
   lookupByAccountId(accountId: string): Promise<PlayerProfile | null>;
-  /** 模糊搜（昵称/登录账号/公开 id/accountId）；返回命中摘要列表。 */
+  /** Fuzzy search (display name / login id / public id / accountId); returns a list of matching summaries. */
   search(q: string, limit: number): Promise<PlayerSummary[]>;
 }
 
@@ -162,13 +162,13 @@ export class HttpPlayerClient implements PlayerClient {
   }
 }
 
-// ── 成就反作弊审查队列（meta /internal/anticheat/reviews，S9-7）──────────────
-/** 审查记录视图（= meta AntiCheatReviewDoc，OPS 只读展示）。 */
+// ── Achievement anti-cheat review queue (meta /internal/anticheat/reviews, S9-7) ──────────────
+/** Review record view (= meta AntiCheatReviewDoc, read-only display in OPS). */
 export type AntiCheatReviewRow = AntiCheatReviewDoc;
 
 export interface AntiCheatClient {
   readonly available: boolean;
-  /** 列反作弊审查记录（默认 open）；不可用 / 出错返回空。 */
+  /** List anti-cheat review records (defaults to open status); returns empty array if unavailable or on error. */
   listReviews(opts?: { accountId?: string; status?: string; limit?: number }): Promise<AntiCheatReviewRow[]>;
 }
 
@@ -248,7 +248,7 @@ export class HttpMismatchClient implements MismatchClient {
   }
 }
 
-// ── C4 PvE 可疑账号（/internal/suspicious-pve）──────────────────
+// ── C4 suspicious PvE accounts (/internal/suspicious-pve) ───────────
 export interface SuspiciousPveRow {
   _id: string;
   displayName?: string;
@@ -331,7 +331,7 @@ export class HttpSuspiciousPveClient implements SuspiciousPveClient {
   }
 }
 
-// ── analyticsvc 查询（/internal/query，A9-6）──────────────────
+// ── analyticsvc query (/internal/query, A9-6) ────────────────
 export interface AnalyticsEventCountRow { date: string; event: string; count: number }
 export interface AnalyticsDauRow { date: string; dau: number }
 export interface AnalyticsFunnelRow { date: string; platform: string; funnel_step: string; count: number; conversion_rate?: number }
@@ -411,12 +411,12 @@ export class HttpAnalyticsClient implements AnalyticsClient {
   }
 }
 
-// ── 邮件投递（meta 系统邮件端点，OPS_DESIGN §4.1 / §3.3）─────
-// 补偿执行 = 创建系统邮件（不碰钱包）。端点由 SOCIAL_DESIGN S6-3 落地，邮件后端并行做，
-// admin 先按契约形状对接。available=false（未配置）或端点不存在（404/501）时执行失败 → 工单
-// 标 failed 可重试，等邮件后端就绪后联调。
+// ── Mail delivery (meta system mail endpoint, OPS_DESIGN §4.1 / §3.3) ─────
+// Compensation execution = create a system mail (wallet is never touched). Endpoint implemented per SOCIAL_DESIGN S6-3, mail backend built in parallel;
+// admin wires the contract shape first. When available=false (not configured) or the endpoint is absent (404/501), execution fails → ticket
+// marked as failed and retryable, to be re-run after the mail backend is ready for integration.
 export interface MailSendReq {
-  /** 幂等键（工单 dispatchKey）——防重复执行。 */
+  /** Idempotency key (ticket dispatchKey) — prevents duplicate execution. */
   dispatchKey: string;
   scope: 'single' | 'global';
   target: CompTarget;
@@ -493,8 +493,8 @@ export class HttpMailDispatcher implements MailDispatcher {
   }
 }
 
-// ── SLG 赛季运维（worldsvc /admin/world/*，G7/§17.7）────────
-/** 一个大区的运维概要（列表用）。 */
+// ── SLG season operations (worldsvc /admin/world/*, G7/§17.7) ────────
+/** Operational summary for one world region (used in list views). */
 export interface SlgWorldSummary {
   worldId: string;
   season: number;
@@ -514,11 +514,11 @@ export interface WorldClient {
   settleWorld(worldId: string): Promise<unknown>;
   resetWorld(worldId: string): Promise<unknown>;
   closeWorld(worldId: string): Promise<void>;
-  /** 拍卖异常交易扫描（G7 反 RMT）。worldsvc 离线聚合可疑配对，admin 立审计工单据此。 */
+  /** Scan for anomalous auction transactions (G7 anti-RMT). worldsvc aggregates suspicious pairs offline; admin creates an audit ticket based on the results. */
   listAuctionAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]>;
 }
 
-/** admin → worldsvc 内部 HTTP（X-Internal-Key）。worldsvc 端点见 httpApi.ts 内部分支。 */
+/** admin → worldsvc internal HTTP (X-Internal-Key). worldsvc endpoints are in the internal branch of httpApi.ts. */
 export class HttpWorldClient implements WorldClient {
   constructor(
     private readonly baseUrl: string | null,
@@ -589,7 +589,7 @@ export const nullWorldClient: WorldClient = {
   async listAuctionAnomalies() { return []; },
 };
 
-// ── 天梯赛季（meta /admin/ladder/season/roll，SE-3）──────────────────────────
+// ── Ladder season (meta /admin/ladder/season/roll, SE-3) ─────────────────────
 export interface LadderSeasonInfo {
   seasonNo: number;
   startAt: number;
@@ -599,9 +599,9 @@ export interface LadderSeasonInfo {
 
 export interface LadderClient {
   readonly available: boolean;
-  /** CAS 幂等推进天梯赛季；返回新（或当前）赛季信息。 */
+  /** CAS-idempotent ladder season advance; returns the new (or current) season info. */
   rollSeason(): Promise<LadderSeasonInfo>;
-  /** 读当前赛季（GET /internal/ladder/season/current）。 */
+  /** Read the current season (GET /internal/ladder/season/current). */
   getCurrentSeason(): Promise<LadderSeasonInfo | null>;
 }
 
@@ -645,7 +645,7 @@ export const nullLadderClient: LadderClient = {
   async getCurrentSeason() { return null; },
 };
 
-// ── 限时活动管理（meta /admin/events，B6 events.manage）──────────────────────
+// ── Limited-time event management (meta /admin/events, B6 events.manage) ────────
 export interface EventsClient {
   readonly available: boolean;
   list(): Promise<EventDoc[]>;
@@ -654,7 +654,7 @@ export interface EventsClient {
   remove(eventId: string): Promise<void>;
 }
 
-/** meta 返回的业务错误（detail 给运营看校验原因）；admin httpApi 据此回 4xx。 */
+/** Business error returned by meta (detail lets operators see the validation reason); admin httpApi responds with 4xx accordingly. */
 export class EventsClientError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -721,7 +721,7 @@ export const nullEventsClient: EventsClient = {
   async remove() { throw new EventsClientError(503, 'meta not configured'); },
 };
 
-// ── 优惠码客户端（B-PROMO）────────────────────────────────
+// ── Promo code client (B-PROMO) ────────────────────────────
 
 export interface PromoCodeView {
   code: string;

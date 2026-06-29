@@ -1,16 +1,17 @@
-// 装备库存后端（E2 合成 + worldsvc 拍卖托管/转移）。EQUIPMENT_DESIGN §3 / §6 / §18。
+// Equipment inventory backend (E2 crafting + worldsvc auction escrow/transfer). EQUIPMENT_DESIGN §3 / §6 / §18.
 //
-// 全部服务器权威（L2）：装备实例库存 SaveData.equipmentInv 仅由本模块写，PUT /save 不可写
-// （SyncPatch 已收窄）。写入走乐观锁 rev 守卫 + 重试（同 internal.ts 材料扣发范式）。
+// Fully server-authoritative (L2): SaveData.equipmentInv is written exclusively by this
+// module; PUT /save cannot write it (SyncPatch has been narrowed). Writes use optimistic-lock
+// rev guards + retries (same pattern as internal.ts material deduction).
 //
-// 职责：
-//   · craftEquipment   玩家合成（E2）：扣文具材料 → roll 一件 +0 基础装备 → 入库（300 上限）。idemKey 幂等。
-//   · escrowEquipment  worldsvc 挂拍托管（E2.5）：校验未穿戴/未锁 → 移出卖方库存 → 回快照给 worldsvc 存挂单。
-//   · grantEquipment   worldsvc 成交转移 / 撤单过期退回（E2.5）：把实例快照写入目标账号库存（按 id 覆盖即幂等）。
-//   · enhanceEquipment 玩家强化（E3）：服务器掷骰（成功率表）→ 扣材料 + 金币（commercial 权威）→ 成功 level+1。idemKey 幂等。
-//   · salvageEquipment 玩家分解（E3）：+0~4 件返 70% 打造材料、移出库存（+5 拒、穿戴中/锁定拒），批量。idemKey 幂等。
-//   · equipEquipment   玩家穿戴（E4）：校验槽位匹配 → 写 gear.global[slot]（或 byUnit），instanceId=null 卸下。纯状态。
-//   · reforgeEquipment 玩家洗练（E6）：消耗同槽低档素材件 → 重 roll 副词条（主词条保留）。idemKey 幂等。
+// Responsibilities:
+//   · craftEquipment   Player crafting (E2): deduct stationery materials → roll a +0 base item → add to inventory (300 cap). idemKey idempotent.
+//   · escrowEquipment  worldsvc auction escrow (E2.5): verify not equipped/not locked → remove from seller inventory → return snapshot for worldsvc to store in the listing.
+//   · grantEquipment   worldsvc trade transfer / listing cancellation/expiry return (E2.5): write instance snapshot into target account inventory (overwrite by id = idempotent).
+//   · enhanceEquipment Player enhancement (E3): server rolls dice (success rate table) → deduct materials + coins (commercial authoritative) → on success level+1. idemKey idempotent.
+//   · salvageEquipment Player salvage (E3): +0–4 items refund 70% crafting materials, remove from inventory (+5 rejected; equipped/locked rejected), batch. idemKey idempotent.
+//   · equipEquipment   Player equip (E4): validate slot match → write gear.global[slot] (or byUnit); instanceId=null to unequip. Pure state change.
+//   · reforgeEquipment Player reforge (E6): consume same-slot lower-rarity material → re-roll secondary affixes (primary affix preserved). idemKey idempotent.
 import {
   EQUIPMENT_DEFS,
   EQUIPMENT_INV_CAP,
@@ -36,7 +37,7 @@ import { getOrCreateSave } from './save.js';
 import { mirrorCoins } from './economy.js';
 import type { CommercialClient } from './commercialClient.js';
 
-/** 业务错误码（HTTP 映射在路由层）。 */
+/** Business error codes (HTTP mapping is handled in the router layer). */
 export type EquipErrorCode =
   | 'BAD_REQUEST'
   | 'NOT_FOUND'
@@ -65,7 +66,7 @@ function idemExpireAt(now: number): Date {
   return new Date(now + EQUIPMENT_IDEM_TTL_SEC * 1000);
 }
 
-/** 某实例是否正被穿戴（gear.global / gear.byUnit 任一槽引用）。穿戴中不可挂拍/不可被移出。 */
+/** Returns whether an instance is currently equipped (referenced by any slot in gear.global or gear.byUnit). An equipped item cannot be listed for auction or removed from inventory. */
 function isEquipped(save: SaveData, instanceId: string): boolean {
   const gear = save.gear ?? {};
   const maps = [gear.global, ...Object.values(gear.byUnit ?? {})];
@@ -79,9 +80,9 @@ function isEquipped(save: SaveData, instanceId: string): boolean {
 }
 
 /**
- * 合成一件 +0 基础装备（E2，EQUIPMENT_DESIGN §4/§7）。
- * 扣 EQUIPMENT_DEFS[defId].craftCost 材料 → roll 主+副词条 → 入库（< 300 上限）。
- * idempotencyKey 幂等：重放返回首次结果（不二次扣料、不二次 roll；roll 本身由 key 派生确定性）。
+ * Crafts a +0 base equipment item (E2, EQUIPMENT_DESIGN §4/§7).
+ * Deducts EQUIPMENT_DEFS[defId].craftCost materials → rolls primary + secondary affixes → adds to inventory (< 300 cap).
+ * idempotencyKey idempotent: replays return the first result (no second material deduction, no second roll; the roll itself is deterministically derived from the key).
  */
 export async function craftEquipment(
   cols: Collections,
@@ -95,7 +96,7 @@ export async function craftEquipment(
   if (!def.craftCost) return { error: 'defId not craftable', code: 'BAD_REQUEST' };
   if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
 
-  // 确定性产出（id + 词条均由 idempotencyKey 派生 → 重放/重试一致，杜绝"重试改命"）。
+  // Deterministic output (id + affixes both derived from idempotencyKey → consistent across replays/retries, preventing "retry-reroll" exploits).
   const instance: EquipmentInstance = {
     id: `eq_${idempotencyKey}`,
     defId,
@@ -105,7 +106,7 @@ export async function craftEquipment(
   };
   const craftCost = def.craftCost;
 
-  // 预校验当前存档（友好报错；正式守卫在 rev 循环内复查）。
+  // Pre-validate current save (friendly early error; authoritative guard re-checks inside the rev loop).
   const cur = await getOrCreateSave(cols, accountId, now());
   for (const [mat, qty] of Object.entries(craftCost)) {
     if ((cur.materials?.[mat] ?? 0) < qty) return { error: `insufficient ${mat}`, code: 'INSUFFICIENT_MATERIALS' };
@@ -114,7 +115,7 @@ export async function craftEquipment(
     return { error: 'equipment inventory full', code: 'INVENTORY_FULL' };
   }
 
-  // 幂等闸门：先抢占 idemKey（唯一 _id）。抢占失败 = 已合成 → 重放首次结果。
+  // Idempotency gate: claim the idemKey first (unique _id). Claim failure = already crafted → replay first result.
   try {
     await cols.equipmentIdem.insertOne({
       _id: idempotencyKey,
@@ -132,7 +133,7 @@ export async function craftEquipment(
     throw e;
   }
 
-  // 抢占成功 → 扣料 + 入库（乐观锁 rev 守卫 + 重试）。
+  // Claim succeeded → deduct materials + add to inventory (optimistic-lock rev guard + retries).
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) {
@@ -140,7 +141,7 @@ export async function craftEquipment(
       return { error: 'save not found', code: 'NOT_FOUND' };
     }
     const save = doc.save;
-    // rev 循环内复查（并发耗材/满仓）。失败则释放 idem 抢占，让客户端纠正后重试。
+    // Re-validate inside rev loop (concurrent material consumption / full inventory). On failure release idem claim so client can correct and retry.
     for (const [mat, qty] of Object.entries(craftCost)) {
       if ((save.materials?.[mat] ?? 0) < qty) {
         await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
@@ -165,15 +166,16 @@ export async function craftEquipment(
       { $set: { save: next, rev: next.rev } },
     );
     if (res) return { instance, save: next };
-    // rev 冲突（并发 PUT /save / pve 写）→ 重读重试
+    // rev conflict (concurrent PUT /save / pve write) → re-read and retry
   }
-  // 重试耗尽：保留 idem 抢占（结果实例已记账，下次重放即回；不重复扣料）。
+  // Retries exhausted: retain the idem claim (result instance is recorded; next replay will return it without re-deducting materials).
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }
 
 /**
- * worldsvc 挂拍托管：把卖方一件装备实例移出库存，返回快照（worldsvc 存进挂单 doc，成交/退回时回放）。
- * 穿戴中（gear 引用）/ locked → 拒绝。orderId 幂等：重放返回首次托管的快照。
+ * worldsvc auction escrow: removes one equipment instance from the seller's inventory and
+ * returns a snapshot (worldsvc stores it in the listing doc; replayed on trade completion or return).
+ * Equipped (referenced by gear) / locked → rejected. orderId idempotent: replays return the first escrow snapshot.
  */
 export async function escrowEquipment(
   cols: Collections,
@@ -184,7 +186,7 @@ export async function escrowEquipment(
 ): Promise<{ instance: EquipmentInstance } | EquipError> {
   if (!instanceId || !orderId) return { error: 'instanceId + orderId required', code: 'BAD_REQUEST' };
 
-  // 重放
+  // Replay
   const existing = await cols.equipmentIdem.findOne({ _id: orderId });
   if (existing?.op === 'escrow') return { instance: existing.result as EquipmentInstance };
 
@@ -194,7 +196,7 @@ export async function escrowEquipment(
     const save = doc.save;
     const inst = save.equipmentInv?.[instanceId];
     if (!inst) {
-      // 并发已托管（idem 已写）→ 重放；否则确实不存在。
+      // Concurrently escrowed (idem already written) → replay; otherwise the instance genuinely does not exist.
       const replay = await cols.equipmentIdem.findOne({ _id: orderId });
       if (replay?.op === 'escrow') return { instance: replay.result as EquipmentInstance };
       return { error: 'equipment instance not found', code: 'EQUIP_NOT_FOUND' };
@@ -210,7 +212,7 @@ export async function escrowEquipment(
       { $set: { save: next, rev: next.rev } },
     );
     if (res) {
-      // 记账本（snapshot 用于成交转移 / 退回；$setOnInsert 防并发覆盖）。
+      // Record ledger entry (snapshot used for trade transfer / return; $setOnInsert prevents concurrent overwrites).
       await cols.equipmentIdem.updateOne(
         { _id: orderId },
         { $setOnInsert: { accountId, op: 'escrow', result: inst, expireAt: idemExpireAt(now()) } },
@@ -223,9 +225,11 @@ export async function escrowEquipment(
 }
 
 /**
- * worldsvc 成交转移（给买方）/ 撤单/过期/季末退回（给卖方）：把实例快照写入目标账号库存。
- * 按 instance.id 覆盖写 → 天然幂等（重发同一实例不重复增）。
- * 转移属"有意获得"，**不卡 300 上限**（满仓溢出转邮件暂存是 §13 后续，本切片不阻断成交防资损）。
+ * worldsvc trade transfer (to buyer) / listing cancellation/expiry/season-end return (to seller):
+ * writes the instance snapshot into the target account's inventory.
+ * Overwrites by instance.id → naturally idempotent (re-delivering the same instance does not duplicate it).
+ * Transfer is an "intentional gain" and **bypasses the 300-item cap** (overflow-to-mail fallback
+ * is §13 follow-up work; this slice does not block trade completion to prevent asset loss).
  */
 export async function grantEquipment(
   cols: Collections,
@@ -253,19 +257,26 @@ export async function grantEquipment(
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }
 
-// ── E3 强化（EQUIPMENT_DESIGN §6 / §18.2）──────────────────────────────────────
+// ── E3 Enhancement (EQUIPMENT_DESIGN §6 / §18.2) ──────────────────────────────────────
 
 /**
- * 强化一件装备（level → level+1）。EQUIPMENT_DESIGN §6：服务器掷骰（成功率表，每升一级 −10%），
- * 成功/失败都扣材料 + 金币（失败损耗是核心 sink，§6.2）；失败不掉级、不碎。
+ * Enhances one equipment item (level → level+1). EQUIPMENT_DESIGN §6: server rolls dice
+ * (success rate table, −10% per level), materials + coins are deducted on both success and
+ * failure (failed-attempt loss is the core sink, §6.2); failure does not reduce level or destroy the item.
  *
- * 金币走 commercial 权威（`save.wallet.coins` 仅镜像，economy.ts §0），故强化依赖 commercial 在线。
- * 幂等（idempotencyKey）：掷骰结果 + 消耗均绑定 key，重放返回首次结果（不二次掷骰/扣料）。
- * commercial.spend 以 idemKey 为 orderId 天然幂等 → 重放再调一次不会二次扣币。
+ * Coins go through commercial authority (`save.wallet.coins` is only a mirror, economy.ts §0),
+ * so enhancement requires commercial to be online.
+ * Idempotent (idempotencyKey): dice result + costs are all bound to the key; replays return
+ * the first result (no second roll / second material deduction).
+ * commercial.spend uses idemKey as orderId and is naturally idempotent → replaying the call
+ * does not double-charge coins.
  *
- * 排序（玩家安全）：先原子改存档（扣材料 + 成功则 level+1，rev 守卫），**再**扣金币。
- * 改档失败（rev 耗尽/材料不足）时金币未动，可安全释放幂等抢占重来；改档成功后即使扣币环节
- * 网络抖动，重放路径会幂等补扣（spend(idemKey)）+ 镜像，杜绝漏扣。
+ * Ordering (player safety): first atomically update the save (deduct materials + level+1 on
+ * success, rev guard), **then** deduct coins.
+ * If the save update fails (rev exhausted / insufficient materials), coins are untouched and
+ * the idempotency claim can safely be released for a retry; if the save update succeeds and the
+ * coin-deduction step hits a network hiccup, the replay path idempotently re-charges
+ * (spend(idemKey)) + mirrors, ensuring no charge is ever missed.
  */
 export async function enhanceEquipment(
   cols: Collections,
@@ -279,7 +290,7 @@ export async function enhanceEquipment(
   if (!instanceId) return { error: 'instanceId required', code: 'BAD_REQUEST' };
   if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
 
-  // 重放：返回首次掷骰结果 + 幂等补扣金币（覆盖"改档成功但扣币环节中断"窗口）。
+  // Replay: return first dice result + idempotently settle coins (covers the "save updated but coin deduction interrupted" window).
   const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
   if (replay?.op === 'enhance') {
     const r = replay.result as { success: boolean; instance: EquipmentInstance; coins: number; skipMaterials?: boolean };
@@ -287,7 +298,7 @@ export async function enhanceEquipment(
     return { success: r.success, instance: r.instance, save };
   }
 
-  // 金币走 commercial 权威；未配置则强化不可用（同 shop/gacha 503）。
+  // Coins go through commercial authority; if not configured, enhancement is unavailable (same 503 as shop/gacha).
   if (!commercial.available) return { error: 'commercial service unavailable', code: 'NOT_IMPLEMENTED' };
 
   const cur = await getOrCreateSave(cols, accountId, now());
@@ -297,23 +308,23 @@ export async function enhanceEquipment(
 
   const fromLevel = inst0.level;
   const cost = enhanceCost(fromLevel);
-  // 预校验材料（友好报错；rev 循环内复查）。
+  // Pre-validate materials (friendly early error; re-checked inside the rev loop).
   for (const [mat, qty] of Object.entries(cost.materials)) {
     if ((cur.materials?.[mat] ?? 0) < qty) return { error: `insufficient ${mat}`, code: 'INSUFFICIENT_MATERIALS' };
   }
-  // 预校验金币（commercial 权威；不足则不动任何状态，友好 402）。
+  // Pre-validate coins (commercial authoritative; insufficient → no state changes, friendly 402).
   const wallet = await commercial.getWallet(accountId);
   if ((wallet?.coins ?? 0) < cost.coins) return { error: 'not enough coins', code: 'INSUFFICIENT_FUNDS' };
 
   const success = rollEnhanceSuccess(idempotencyKey, fromLevel);
   const instanceAfter: EquipmentInstance = success ? { ...inst0, level: fromLevel + 1 } : { ...inst0 };
 
-  // 保护道具（E7 §6.2）：失败时消耗 1 个 protect_enhance → 跳过材料扣除（skipMaterials=true）。
-  // 金币依然扣（protect 不免强化费，只保材料）；成功时不消耗（成功本来就不"失败损耗"）。
+  // Protect item (E7 §6.2): on failure consumes 1 protect_enhance → skip material deduction (skipMaterials=true).
+  // Coins are still deducted (protect does not waive the enhancement fee, only saves materials); not consumed on success (success has no "failed-attempt loss" to begin with).
   const hasProtect = useProtect && (cur.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0) > 0;
   const skipMaterials = hasProtect && !success;
 
-  // 幂等抢占（结果含 coins + skipMaterials，供重放补扣）。dup = 并发重复 → 走重放路径。
+  // Idempotency claim (result includes coins + skipMaterials for replay re-settlement). dup = concurrent duplicate → takes the replay path.
   try {
     await cols.equipmentIdem.insertOne({
       _id: idempotencyKey,
@@ -332,8 +343,8 @@ export async function enhanceEquipment(
     throw e;
   }
 
-  // 原子改档：扣材料（skipMaterials=false 时）+ 成功则 level+1 + 消耗 protect_enhance（skipMaterials=true 时）。
-  // rev 守卫；instance 仍在且等级未变才生效。
+  // Atomic save update: deduct materials (when skipMaterials=false) + level+1 on success + consume protect_enhance (when skipMaterials=true).
+  // Rev guard; only applies if the instance still exists and its level has not changed.
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) {
@@ -351,7 +362,7 @@ export async function enhanceEquipment(
       return { error: 'instance level changed, retry', code: 'REV_CONFLICT' };
     }
     if (!skipMaterials) {
-      // 无保护/成功：照常扣材料
+      // No protect item / success path: deduct materials normally
       for (const [mat, qty] of Object.entries(cost.materials)) {
         if ((save.materials?.[mat] ?? 0) < qty) {
           await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
@@ -366,7 +377,7 @@ export async function enhanceEquipment(
     const nextInv = { ...(save.equipmentInv ?? {}), [instanceId]: instanceAfter };
     const nextItems = { ...(save.inventory?.items ?? {}) };
     if (skipMaterials) {
-      // 消耗保护道具
+      // Consume the protect item
       nextItems[PROTECT_ENHANCE_ITEM_ID] = Math.max(0, (nextItems[PROTECT_ENHANCE_ITEM_ID] ?? 0) - 1);
     }
     const next: SaveData = {
@@ -382,18 +393,18 @@ export async function enhanceEquipment(
       { $set: { save: next, rev: next.rev } },
     );
     if (res) {
-      // 改档已落 → 扣金币（idemKey 幂等）+ 镜像。扣币失败（并发耗尽）只是少扣，强化已成立（§6.2）。
+      // Save update committed → deduct coins (idemKey idempotent) + mirror. If coin deduction fails (concurrent exhaustion) it is merely under-charged; the enhancement is already finalized (§6.2).
       const saveFinal = await settleEnhanceCoins(cols, commercial, now, accountId, idempotencyKey, cost.coins);
       return { success, instance: instanceAfter, save: saveFinal };
     }
-    // rev 冲突 → 重读重试
+    // rev conflict → re-read and retry
   }
-  // 改档失败（金币未动）→ 释放抢占，客户端可安全重试。
+  // Save update failed (coins untouched) → release claim; client can safely retry.
   await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }
 
-/** 扣强化金币（commercial 权威，orderId=idemKey 幂等）+ 写镜像；commercial 不可用/失败则镜像不动。 */
+/** Deducts enhancement coins (commercial authoritative, orderId=idemKey idempotent) + writes mirror; if commercial is unavailable/fails, the mirror is not updated. */
 async function settleEnhanceCoins(
   cols: Collections,
   commercial: CommercialClient,
@@ -410,9 +421,12 @@ async function settleEnhanceCoins(
 }
 
 /**
- * 分解一批装备（EQUIPMENT_DESIGN §6.3，ADR-012）：返还 70% 打造材料、移出库存。
- * +5 及以上不可分解（NOT_SALVAGEABLE）；穿戴中（EQUIP_IN_USE）/ 锁定（EQUIP_LOCKED）拒。
- * 全批先校验、任一不合规整批拒（不留半完成态），再单原子写（移实例 + 入材料）。idemKey 幂等。
+ * Salvages a batch of equipment items (EQUIPMENT_DESIGN §6.3, ADR-012): refunds 70% crafting
+ * materials and removes items from inventory.
+ * +5 and above cannot be salvaged (NOT_SALVAGEABLE); equipped (EQUIP_IN_USE) / locked
+ * (EQUIP_LOCKED) items are rejected.
+ * The entire batch is validated first; any non-compliant item rejects the whole batch
+ * (no partial completion state), then a single atomic write removes instances and credits materials. idemKey idempotent.
  */
 export async function salvageEquipment(
   cols: Collections,
@@ -433,7 +447,7 @@ export async function salvageEquipment(
   }
 
   const ids = [...new Set(instanceIds)];
-  // 校验 + 累计返还（用当前存档；rev 循环内复查存在性）。
+  // Validate + accumulate refund (using current save; existence re-checked inside rev loop).
   const cur = await getOrCreateSave(cols, accountId, now());
   const refunded: Record<string, number> = {};
   for (const id of ids) {
@@ -445,7 +459,7 @@ export async function salvageEquipment(
     for (const [mat, qty] of Object.entries(salvageRefund(inst.defId))) refunded[mat] = (refunded[mat] ?? 0) + qty;
   }
 
-  // 幂等抢占。
+  // Idempotency claim.
   try {
     await cols.equipmentIdem.insertOne({
       _id: idempotencyKey,
@@ -463,7 +477,7 @@ export async function salvageEquipment(
     throw e;
   }
 
-  // 原子写：移实例 + 入材料（rev 守卫，循环内复查全部仍在且仍可分解）。
+  // Atomic write: remove instances + credit materials (rev guard; loop re-checks all are still present and salvageable).
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) {
@@ -499,12 +513,14 @@ export async function salvageEquipment(
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }
 
-// ── E6 洗练（EQUIPMENT_DESIGN §7.8 / ADR-017）──────────────────────────────────
+// ── E6 Reforge (EQUIPMENT_DESIGN §7.8 / ADR-017) ──────────────────────────────────
 
 /**
- * 洗练一件装备（E6，EQUIPMENT_DESIGN §7.8）：消耗同槽低档素材件，保留主词条，重 roll 全部副词条。
- * 仅 fine/rare/epic 可洗练（common 无副词条）；素材稀有度须恰好低一档（REFORGE_MATERIAL_RARITY）。
- * idempotencyKey 幂等（同 key 重放首次结果）。
+ * Reforges one equipment item (E6, EQUIPMENT_DESIGN §7.8): consumes a same-slot lower-rarity
+ * material item, preserves the primary affix, and re-rolls all secondary affixes.
+ * Only fine/rare/epic items can be reforged (common has no secondary affixes); material rarity
+ * must be exactly one tier lower (REFORGE_MATERIAL_RARITY).
+ * idempotencyKey idempotent (same key replays the first result).
  */
 export async function reforgeEquipment(
   cols: Collections,
@@ -517,7 +533,7 @@ export async function reforgeEquipment(
   if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
   if (targetId === materialId) return { error: 'target and material must differ', code: 'BAD_REQUEST' };
 
-  // 幂等重放检查
+  // Idempotency replay check
   const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
   if (replay?.op === 'reforge') {
     const r = replay.result as { instance: EquipmentInstance };
@@ -545,11 +561,11 @@ export async function reforgeEquipment(
     return { error: `material must be ${requiredMatRarity} (got ${material.rarity})`, code: 'INVALID_RARITY' };
   }
 
-  // 确定性重 roll（idempotencyKey 作种子）
+  // Deterministic re-roll (idempotencyKey used as seed)
   const newAffixes = rollReforgedAffixes(target.defId, idempotencyKey);
   const reforged: EquipmentInstance = { ...target, affixes: newAffixes };
 
-  // 幂等抢占
+  // Idempotency claim
   try {
     await cols.equipmentIdem.insertOne({
       _id: idempotencyKey,
@@ -567,7 +583,7 @@ export async function reforgeEquipment(
     throw e;
   }
 
-  // 原子写：更新 target 词条 + 移除 material（rev 守卫）
+  // Atomic write: update target affixes + remove material (rev guard)
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) {
@@ -575,7 +591,7 @@ export async function reforgeEquipment(
       return { error: 'save not found', code: 'NOT_FOUND' };
     }
     const save = doc.save;
-    // rev 循环内复查：两件都须仍在、target 未被穿戴/锁定
+    // Re-validate inside rev loop: both items must still exist, target must not be equipped/locked
     if (!save.equipmentInv?.[targetId] || !save.equipmentInv?.[materialId]) {
       await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
       return { error: 'equipment no longer available', code: 'REV_CONFLICT' };
@@ -597,13 +613,13 @@ export async function reforgeEquipment(
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }
 
-// ── E4 穿戴（EQUIPMENT_DESIGN §3.4 / §18）──────────────────────────────────────
+// ── E4 Equip (EQUIPMENT_DESIGN §3.4 / §18) ──────────────────────────────────────
 
 /**
- * 穿戴 / 卸下一件装备（EQUIPMENT_DESIGN §3.4）。纯状态、无随机、无资源 → 天然幂等，无需 idemKey。
- * instanceId=null 卸下该槽；否则校验实例存在 + 定义槽位匹配（INVALID_SLOT）。
- * unitType 缺省 → 写 gear.global（阶段一全军共享）；给定 → 写 gear.byUnit[unitType]（阶段二按兵种）。
- * 战斗中冻结由客户端/结算保证（§3.4），服务端只管状态。
+ * Equips or unequips one item (EQUIPMENT_DESIGN §3.4). Pure state change, no randomness, no resources → naturally idempotent, no idemKey needed.
+ * instanceId=null unequips the slot; otherwise validates instance existence + slot match against definition (INVALID_SLOT).
+ * unitType omitted → writes gear.global (phase 1 whole-army shared); provided → writes gear.byUnit[unitType] (phase 2 per-unit-type).
+ * In-combat freeze is guaranteed by the client / settlement layer (§3.4); the server only manages state.
  */
 export async function equipEquipment(
   cols: Collections,

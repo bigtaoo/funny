@@ -1,7 +1,7 @@
-// 社交好友端到端（S6-1）：真实 Mongo + 注入假 gateway（记录 push / presence）。
-//   搜索 → 申请（push friend_request）→ 同意（建双向边 + push friend_update 双方）→ 列表互见 →
-//   重复申请 ALREADY_FRIEND → 拉黑屏蔽对方申请 BLOCKED + 删双向边 → 删好友。
-// 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// Social friends end-to-end test (S6-1): real Mongo + injected fake gateway (records push / presence).
+//   Search → request (push friend_request) → accept (build bidirectional edges + push friend_update to both parties) → both see each other in list →
+//   duplicate request → ALREADY_FRIEND → block shields the target's request (BLOCKED) + removes bidirectional edges → remove friend.
+// Requires `cd server && docker compose up -d` + prior `tsc -b` (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -20,9 +20,9 @@ async function tryConnect(): Promise<MongoHandle | null> {
   }
 }
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[social-friends.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[social-friends.e2e] Mongo unreachable (${URI}) — skipping.`);
 
-/** 假 gateway：记录 push（断言推送目标/类型）；presence 可配置在线集。 */
+/** Fake gateway: records pushes (for asserting push targets/types); online set is configurable for presence. */
 class FakeGateway implements GatewayClient {
   available = true;
   pushes: { accountId: string; msg: SocialPushMsg }[] = [];
@@ -50,7 +50,7 @@ describe.skipIf(!mongo)('social friends e2e', () => {
   let gateway: FakeGateway;
   const b = (r: { payload: string }) => JSON.parse(r.payload);
 
-  // 注册一个设备账号，返回 { token, accountId, publicId }。
+  // Register a device account, returning { token, accountId, publicId }.
   async function newAccount(deviceId: string): Promise<{ token: string; accountId: string; publicId: string }> {
     const r = b(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId } }));
     return { token: r.data.token, accountId: r.data.accountId, publicId: r.data.publicId };
@@ -77,12 +77,12 @@ describe.skipIf(!mongo)('social friends e2e', () => {
     const a = await newAccount('social-aaaa');
     const c = await newAccount('social-bbbb');
 
-    // 搜索 c
+    // Search for c
     const search = b(await post(a.token, '/friends/search', { publicId: c.publicId }));
     expect(search.ok).toBe(true);
     expect(search.data.profile.publicId).toBe(c.publicId);
 
-    // a → c 申请：推送 friend_request 给 c
+    // a → c request: push friend_request to c
     const reqRes = b(await post(a.token, '/friends/request', { publicId: c.publicId, message: 'hi' }));
     expect(reqRes.ok).toBe(true);
     const requestId = reqRes.data.requestId;
@@ -90,13 +90,13 @@ describe.skipIf(!mongo)('social friends e2e', () => {
     expect(reqPush).toBeTruthy();
     expect((reqPush!.msg as { fromPublicId: string }).fromPublicId).toBe(a.publicId);
 
-    // c 收件箱有 1 条 incoming
+    // c's inbox has 1 incoming request
     const inbox = b(await get(c.token, '/friends/requests'));
     expect(inbox.data.incoming).toHaveLength(1);
     expect(inbox.data.incoming[0].fromPublicId).toBe(a.publicId);
     expect(inbox.data.incoming[0].requestId).toBe(requestId);
 
-    // c 同意 → 双向边 + push friend_update 双方 + 缓存失效双方
+    // c accepts → bidirectional edges + push friend_update to both parties + invalidate cache for both
     gateway.pushes = [];
     const resp = b(await post(c.token, '/friends/respond', { requestId, accept: true }));
     expect(resp.ok).toBe(true);
@@ -104,7 +104,7 @@ describe.skipIf(!mongo)('social friends e2e', () => {
     expect(updates.map((p) => p.accountId).sort()).toEqual([a.accountId, c.accountId].sort());
     expect(gateway.invalidated.sort()).toEqual([a.accountId, c.accountId].sort());
 
-    // 双方列表互见
+    // Both parties see each other in friend lists
     const aFriends = b(await get(a.token, '/friends'));
     const cFriends = b(await get(c.token, '/friends'));
     expect(aFriends.data.friends.map((f: { publicId: string }) => f.publicId)).toContain(c.publicId);
@@ -140,18 +140,18 @@ describe.skipIf(!mongo)('social friends e2e', () => {
     const reqRes = b(await post(a.token, '/friends/request', { publicId: c.publicId }));
     await post(c.token, '/friends/respond', { requestId: reqRes.data.requestId, accept: true });
 
-    // a 拉黑 c → 双向边删除
+    // a blocks c → bidirectional edges removed
     const blk = await post(a.token, '/friends/block', { publicId: c.publicId });
     expect(blk.statusCode).toBe(200);
     const aFriends = b(await get(a.token, '/friends'));
     expect(aFriends.data.friends).toHaveLength(0);
 
-    // c 再申请 a → BLOCKED
+    // c requests a again → BLOCKED
     const reReq = await post(c.token, '/friends/request', { publicId: a.publicId });
     expect(reReq.statusCode).toBe(403);
     expect(b(reReq).error.code).toBe('BLOCKED');
 
-    // a 取消拉黑 → c 可再申请
+    // a unblocks → c can request again
     await app.inject({ method: 'DELETE', url: `/friends/block/${c.publicId}`, headers: auth(a.token) });
     const reReq2 = await post(c.token, '/friends/request', { publicId: a.publicId });
     expect(reReq2.statusCode).toBe(200);

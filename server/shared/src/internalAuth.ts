@@ -1,25 +1,26 @@
-// 内部服务间 HTTP 鉴权（S12-1）。
+// Internal service-to-service HTTP authentication (S12-1).
 //
-// 背景：内部端口（commercial / matchsvc / gateway 内部面 / meta /internal/* / analyticsvc /internal/query）
-// 玩家不可达，靠共享密钥 `X-Internal-Key` 鉴权。本模块把分散在各被调方的 `=== internalKey` 收口为
-// 一个集中校验器，并补三件事：
-//   1. timing-safe 比对（避免逐字节计时侧信道）；
-//   2. per-caller 密钥注册表（NW_INTERNAL_KEYS）——每个调用方一把，泄露局部化 + 可识别 + 按服务轮换；
-//   3. 命中调用方识别（审计日志 / 拒绝告警带 caller hint）。
+// Background: Internal ports (commercial / matchsvc / gateway internal face / meta /internal/* / analyticsvc /internal/query)
+// are unreachable by players and are authenticated via a shared secret `X-Internal-Key`. This module consolidates
+// the scattered `=== internalKey` checks on the callee side into a single centralized verifier, adding three things:
+//   1. timing-safe comparison (avoids byte-by-byte timing side-channels);
+//   2. per-caller key registry (NW_INTERNAL_KEYS) — one key per caller, localizing exposure + enabling identification + per-service rotation;
+//   3. matched-caller identification (audit log / rejection alerts carry a caller hint).
 //
-// 与 ticket HMAC（@nw/shared/ticket）解耦：ticket 仍用单一 NW_INTERNAL_KEY 签验（matchsvc↔gameserver
-// 必须同一把），本模块只管内部 HTTP 鉴权。玩家 JWT 与内部密钥天然不同命名空间——内部路由从不校验 JWT，
-// 玩家 JWT 放到 Authorization 头也命不中 X-Internal-Key，结构性拒绝。
+// Decoupled from ticket HMAC (@nw/shared/ticket): tickets still use a single NW_INTERNAL_KEY for signing/verification
+// (matchsvc↔gameserver must share the same key); this module only handles internal HTTP authentication.
+// Player JWTs and internal keys are naturally in different namespaces — internal routes never validate JWTs,
+// and a player JWT placed in the Authorization header will never match X-Internal-Key; the mismatch is structural.
 //
-// 设计基准：SERVER_API.md「内部认证模型」/ META_DESIGN.md。
+// Design reference: SERVER_API.md "Internal Authentication Model" / META_DESIGN.md.
 import { timingSafeEqual } from 'node:crypto';
 
-/** 内部密钥请求头（小写——node http / fastify 的 req.headers 均已 lowercase）。 */
+/** Internal key header (lowercase — node http / fastify req.headers are always lowercased). */
 export const INTERNAL_KEY_HEADER = 'x-internal-key';
-/** 调用方身份请求头（审计用；严格模式下身份由密钥本身证明，此头仅提示）。 */
+/** Caller identity header (audit use only; in strict mode identity is proven by the key itself, this header is advisory). */
 export const INTERNAL_CALLER_HEADER = 'x-internal-caller';
 
-/** 已登记的内部调用方。新增进程在此登记，并在 NW_INTERNAL_KEYS 给一把独立密钥。 */
+/** Registered internal callers. New processes register here and receive an independent key in NW_INTERNAL_KEYS. */
 export type InternalCaller =
   | 'gateway'
   | 'gameserver'
@@ -31,7 +32,7 @@ export type InternalCaller =
   | 'analyticsvc'
   | 'socialsvc';
 
-/** 字符串等长 timing-safe 比对（长度不同直接 false，不泄露长度外的逐字节信息）。 */
+/** Timing-safe comparison of equal-length strings (returns false immediately on length mismatch, revealing no per-byte information beyond length). */
 function timingSafeEq(a: string, b: string): boolean {
   const ab = Buffer.from(a, 'utf8');
   const bb = Buffer.from(b, 'utf8');
@@ -40,8 +41,8 @@ function timingSafeEq(a: string, b: string): boolean {
 }
 
 /**
- * 解析 NW_INTERNAL_KEYS：形如 `gateway=k1,meta=k2,worldsvc=k3` → `{gateway:'k1', meta:'k2', worldsvc:'k3'}`。
- * 未配 / 空 → `{}`（→ 单一共享密钥回退模式）。容错：跳过无 `=` 或名/值为空的段。
+ * Parse NW_INTERNAL_KEYS: format `gateway=k1,meta=k2,worldsvc=k3` → `{gateway:'k1', meta:'k2', worldsvc:'k3'}`.
+ * Missing / empty → `{}` (→ single shared key fallback mode). Fault-tolerant: skips segments with no `=` or empty name/value.
  */
 export function parseInternalKeys(raw: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
@@ -57,15 +58,16 @@ export function parseInternalKeys(raw: string | undefined): Record<string, strin
 }
 
 let envKeysCache: Record<string, string> | undefined;
-/** 进程级缓存的 NW_INTERNAL_KEYS 解析结果（避免每次出站请求重复 split）。 */
+/** Process-level cached parse result for NW_INTERNAL_KEYS (avoids re-splitting on every outbound request). */
 export function internalKeysFromEnv(): Record<string, string> {
   if (envKeysCache === undefined) envKeysCache = parseInternalKeys(process.env.NW_INTERNAL_KEYS);
   return envKeysCache;
 }
 
 /**
- * 调用方出站应携带的密钥：per-caller 注册表里有自己的条目则用它，否则回退单一共享密钥（legacy）。
- * `registry` 缺省取 env（测试可显式传入避免读 env）。
+ * The key an outbound caller should include: uses its own entry from the per-caller registry if present,
+ * otherwise falls back to the single shared key (legacy).
+ * `registry` defaults to env (tests may pass it explicitly to avoid reading env).
  */
 export function outboundInternalKey(
   caller: InternalCaller,
@@ -76,8 +78,8 @@ export function outboundInternalKey(
 }
 
 /**
- * 出站请求头：`{x-internal-key, x-internal-caller}`。第二参为单一共享密钥（legacy 回退），
- * 内部自动按 caller 从注册表升级为专属密钥。
+ * Outbound request headers: `{x-internal-key, x-internal-caller}`. The second parameter is the single shared key
+ * (legacy fallback); internally the key is automatically upgraded to the caller-specific registry entry when available.
  */
 export function internalHeaders(caller: InternalCaller, legacyKey: string): Record<string, string> {
   return {
@@ -88,12 +90,12 @@ export function internalHeaders(caller: InternalCaller, legacyKey: string): Reco
 
 export interface InternalAuthResult {
   ok: boolean;
-  /** 命中的调用方：严格模式 = 密钥所属方；回退模式 = x-internal-caller 提示（不可信，仅审计）。 */
+  /** Matched caller: in strict mode = the key's owner; in fallback mode = x-internal-caller hint (untrusted, audit only). */
   caller: string | null;
 }
 
 export interface InternalAuthVerifier {
-  /** 是否启用 per-caller 严格模式（注册表非空）。 */
+  /** Whether per-caller strict mode is enabled (registry is non-empty). */
   readonly strict: boolean;
   verify(headers: Record<string, string | string[] | undefined>): InternalAuthResult;
 }
@@ -107,11 +109,12 @@ function headerVal(
 }
 
 /**
- * 内部 HTTP 鉴权校验器。
- * - 注册表非空 → **严格 per-caller**：presented key 须 timing-safe 等于某登记 caller 的密钥，命中即识别该 caller；
- *   遍历全表（不短路）保持常量工作量。回退密钥在严格模式下**不**接受（迁移须同时给所有进程配 NW_INTERNAL_KEYS）。
- * - 注册表为空 → **单一共享密钥回退**（兼容旧部署，零行为变化）：presented key 等于 legacyKey 即放行，
- *   caller 取 x-internal-caller 头（仅审计提示）。
+ * Internal HTTP authentication verifier.
+ * - Registry non-empty → **strict per-caller**: the presented key must timing-safe equal a registered caller's key;
+ *   the matching caller is identified. The full table is always traversed (no short-circuit) to maintain constant work.
+ *   The legacy fallback key is **not** accepted in strict mode (migration requires all processes to be given NW_INTERNAL_KEYS simultaneously).
+ * - Registry empty → **single shared key fallback** (compatible with legacy deployments, zero behavior change):
+ *   the presented key is accepted if it equals legacyKey; caller is taken from the x-internal-caller header (audit hint only).
  */
 export function createInternalAuth(opts: {
   keys?: Record<string, string>;
@@ -139,7 +142,7 @@ export function createInternalAuth(opts: {
   };
 }
 
-/** 从 env 构建校验器：keys=NW_INTERNAL_KEYS，legacyKey=传入（通常 ServerEnv.internalKey）。 */
+/** Build a verifier from env: keys=NW_INTERNAL_KEYS, legacyKey=provided (typically ServerEnv.internalKey). */
 export function loadInternalAuth(legacyKey: string): InternalAuthVerifier {
   return createInternalAuth({ keys: internalKeysFromEnv(), legacyKey });
 }

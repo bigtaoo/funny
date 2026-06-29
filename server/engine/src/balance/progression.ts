@@ -1,23 +1,23 @@
-// 单位养成 — 单一等级模型（DECISIONS §单位养成 / ECONOMY_NUMBERS §4）。
+// Unit progression — single level model (DECISIONS §unit progression / ECONOMY_NUMBERS §4).
 //
-// 设计拍板（DECISIONS:55-56）：每兵种一个等级 1–9（5 张 N 级卡合成 1 张 N+1，集卡 sink），
-// 各级连续缩放属性（HP/攻击/…），并在 T3/T6/T9 解锁离散「单位养成特性」(trait)。
+// Design decision (DECISIONS:55-56): each unit type has one level 1–9 (5 level-N cards merge into 1 level-N+1, card collection sink),
+// each level continuously scales stats (HP/attack/…), with discrete "unit progression traits" unlocked at T3/T6/T9.
 //
-// 本模块是「单位等级 → 蓝图」的唯一注入点，与 equipment.ts 同层、同风格（原地改蓝图）。
-// 物理隔离 PvP 公平红线（L1）：applyUnitLevels 只被 buildCampaign/buildSiegeBlueprints 调用，
-// buildPvpBlueprints() 签名里永远没有等级参 → 编译期不可能串味（hardwall 单测守护）。
+// This module is the sole injection point for "unit level → blueprint", co-located with equipment.ts, same style (in-place blueprint mutation).
+// Physical isolation of the PvP fairness hard line (L1): applyUnitLevels is only called by buildCampaign/buildSiegeBlueprints;
+// buildPvpBlueprints() signature never takes a level parameter → compile-time guarantee of no cross-contamination (hardwall unit test guards this).
 //
-// 数值口径：下面系数全是 DRAFT [可调]，数值权威终点是 ECONOMY_NUMBERS §4；本文件先给可跑
-// 占位值，调参时只动常量、不动机制（README §0 三铁律：数值活在代码）。
+// Value calibration: all coefficients below are DRAFT [adjustable]; authoritative endpoint is ECONOMY_NUMBERS §4.
+// This file provides runnable placeholder values; when tuning, only change constants, not mechanisms (README §0 three iron rules: values live in code).
 
 import { UnitType, type UnitBlueprint } from '../types';
 
-/** 单位养成最高等级（DECISIONS §单位养成：9 级，指数集卡 sink）。 */
+/** Maximum unit progression level (DECISIONS §unit progression: level 9, exponential card-collection sink). */
 export const UNIT_MAX_LEVEL = 9;
 
 /**
- * 可养成兵种 = 玩家阵容的发牌兵种（与 equipment.PLAYER_EQUIPPABLE_UNITS 同源）。
- * PvE 专属怪种（Ironclad/Runner/Harpy/Medic…）无卡牌、不在阵容 → 不养成。
+ * Progressable unit types = the units dealt in the player's roster (same source as equipment.PLAYER_EQUIPPABLE_UNITS).
+ * PvE-exclusive monster types (Ironclad/Runner/Harpy/Medic…) have no cards and are not in the roster → not progressable.
  */
 export const PROGRESSABLE_UNITS: readonly UnitType[] = [
   UnitType.Infantry,
@@ -26,33 +26,33 @@ export const PROGRESSABLE_UNITS: readonly UnitType[] = [
 ];
 
 /**
- * 每级连续属性成长（ECONOMY_NUMBERS §4.2，逐级 additive 叠加，相对基础蓝图）。
- *   倍率 = 1 + perLevel × (level − 1)   —— L1 = 基础（无加成），L9 = 1 + perLevel×8。
- *   armor 为 flat：armor += armorPerLevel × (level − 1)。
- * 数值与 §4.2 表逐项对齐（[可调]，调参只动这里）：
- *   HP +12%/级(→T9 +96%)、攻击 +10%(→+80%)、攻速 +4%(攻击间隔↓，→+32%)、
- *   移速 +3%(→+24%)、护甲 +2 flat/级(→+16)。
+ * Per-level continuous stat growth (ECONOMY_NUMBERS §4.2, additive stacking per level, relative to base blueprint).
+ *   multiplier = 1 + perLevel × (level − 1)   —— L1 = base (no bonus), L9 = 1 + perLevel×8.
+ *   armor is flat: armor += armorPerLevel × (level − 1).
+ * Values aligned per §4.2 table ([adjustable], tuning changes only here):
+ *   HP +12%/level (→T9 +96%), attack +10% (→+80%), attack speed +4% (attack interval↓, →+32%),
+ *   move speed +3% (→+24%), armor +2 flat/level (→+16).
  */
 export const STAT_GROWTH_PER_LEVEL = {
   hp: 0.12,
   attack: 0.1,
-  /** 攻速%：每级把攻击间隔除以 (1 + atkspd×steps)，下限封顶防破帧（见 applyUnitLevels）。 */
+  /** Attack speed %: each level divides attack interval by (1 + atkspd×steps), clamped to a minimum to prevent frame-breaking (see applyUnitLevels). */
   atkspd: 0.04,
-  /** 移速%：speed × (1 + spd×steps)。 */
+  /** Move speed %: speed × (1 + spd×steps). */
   spd: 0.03,
-  /** 护甲 flat/级（加算）。S12-E 下调：armor:2 时 L9+16 让箭兵 22 攻仅造 6 实伤（73% 减免），过强。 */
+  /** Armor flat per level (additive). S12-E reduced: at armor:2, L9+16 made archer's 22 attack deal only 6 effective damage (73% reduction), too strong. */
   armor: 1,
 } as const;
 
-/** 攻速封顶：攻击间隔不得低于基础的此比例（防破帧；§4.2「有下限封顶」）。 */
+/** Attack speed cap: attack interval must not fall below this ratio of the base (prevents frame-breaking; §4.2 "has minimum cap"). */
 export const MIN_ATTACK_INTERVAL_RATIO = 0.5;
 
 /**
- * 通用 trait 断点（ECONOMY_NUMBERS §4.4 解锁表，俗套三档 T3/T6/T9，所有可养成兵种通用）：
- *   · T3 暴击：critPct 概率打出 ×critMult 伤害（减护甲前 ×倍率，引擎机制见 CombatSystem）。
- *   · T6 吸血：命中按实际伤害 % 回血（加算进 lifestealPct，由 clampEffectCaps 跨源封顶 ≤30）。
- *   · T9 +1 出兵：spawnCount += count（GameEngine 出牌时读解析后蓝图）。
- * 数值与 §4.4 解锁表对齐（[可调]），后期再按兵种差异化（DECISIONS:61）。
+ * Universal trait breakpoints (ECONOMY_NUMBERS §4.4 unlock table, classic three tiers T3/T6/T9, shared by all progressable unit types):
+ *   · T3 critical hit: critPct chance to deal ×critMult damage (multiplied before armor reduction, engine mechanic see CombatSystem).
+ *   · T6 lifesteal: on hit, recover HP equal to % of actual damage dealt (additive into lifestealPct, capped across sources by clampEffectCaps ≤30).
+ *   · T9 +1 spawn: spawnCount += count (GameEngine reads parsed blueprint at card play).
+ * Values aligned with §4.4 unlock table ([adjustable]), per-unit differentiation to be added later (DECISIONS:61).
  */
 export const TRAIT_BREAKPOINTS = {
   crit: { level: 3, pct: 10, mult: 1.5 },
@@ -60,18 +60,18 @@ export const TRAIT_BREAKPOINTS = {
   bonusSpawn: { level: 9, count: 1 },
 } as const;
 
-/** 把单位等级钳到 [1, UNIT_MAX_LEVEL]（未知/0/负 → 1，超上限 → 封顶）。 */
+/** Clamp unit level to [1, UNIT_MAX_LEVEL] (unknown/0/negative → 1, above max → capped). */
 export function clampUnitLevel(level: number | undefined): number {
   if (!Number.isFinite(level as number)) return 1;
   return Math.max(1, Math.min(Math.floor(level as number), UNIT_MAX_LEVEL));
 }
 
 /**
- * 把单位养成等级以乘算/断点修饰原地叠到蓝图。唯一的「等级 → blueprint」注入点。
- * 未知兵种 id / 缺省 / L1 都安全 no-op（前向兼容 + 等级不可低于 1）。
+ * Applies unit progression levels to blueprints in-place via multiplicative scaling and breakpoint traits. The sole "level → blueprint" injection point.
+ * Unknown unit id / absent / L1 are all safely no-op (forward compatible + level cannot be below 1).
  *
- * @param bp     蓝图表（clone 之后、applyEquipment 之前的中间态）。
- * @param levels 单位等级映射（UnitType → 1..9）；缺省/空 = 全 L1 = 无加成。
+ * @param bp     Blueprint table (intermediate state: after clone, before applyEquipment).
+ * @param levels Unit level mapping (UnitType → 1..9); absent/empty = all L1 = no bonus.
  */
 export function applyUnitLevels(
   bp: Record<UnitType, UnitBlueprint>,
@@ -80,33 +80,33 @@ export function applyUnitLevels(
   if (!levels) return;
   for (const unitType of PROGRESSABLE_UNITS) {
     const level = clampUnitLevel(levels[unitType]);
-    if (level <= 1) continue; // L1 = 基础，无加成
+    if (level <= 1) continue; // L1 = base, no bonus
 
     const u = bp[unitType];
 
-    // ── 连续属性成长（§4.2，逐级 additive）────────────────────────────────────
+    // ── Continuous stat growth (§4.2, additive per level) ────────────────────────────────────
     const steps = level - 1;
     u.hp = Math.round(u.hp * (1 + STAT_GROWTH_PER_LEVEL.hp * steps));
     u.attack = Math.round(u.attack * (1 + STAT_GROWTH_PER_LEVEL.attack * steps));
-    // 攻速：除以 (1 + atkspd×steps)，钳到基础间隔的下限比例（防破帧）。
+    // Attack speed: divide by (1 + atkspd×steps), clamped to minimum ratio of base interval (prevent frame-breaking).
     const atkspdFactor = 1 + STAT_GROWTH_PER_LEVEL.atkspd * steps;
     u.attackInterval = Math.max(
       u.attackInterval * MIN_ATTACK_INTERVAL_RATIO,
       u.attackInterval / atkspdFactor,
     );
-    // 移速：乘算。
+    // Move speed: multiplicative.
     u.speed = u.speed * (1 + STAT_GROWTH_PER_LEVEL.spd * steps);
-    // 护甲：flat 加算（clampEffectCaps 末尾跨源封顶）。
+    // Armor: flat additive (capped across sources by clampEffectCaps at the end).
     u.armor = (u.armor ?? 0) + STAT_GROWTH_PER_LEVEL.armor * steps;
 
-    // ── trait 断点（离散质变）────────────────────────────────────────────────
+    // ── Trait breakpoints (discrete qualitative changes) ────────────────────────────────────────────────
     if (level >= TRAIT_BREAKPOINTS.crit.level) {
-      // 取较高值，与未来装备 crit 来源共存（同字段不叠加，防暴击率爆炸）。
+      // Take the higher value, coexists with future equipment crit sources (same field does not stack, prevents crit rate explosion).
       u.critPct = Math.max(u.critPct ?? 0, TRAIT_BREAKPOINTS.crit.pct);
       u.critMult = Math.max(u.critMult ?? 1, TRAIT_BREAKPOINTS.crit.mult);
     }
     if (level >= TRAIT_BREAKPOINTS.lifesteal.level) {
-      // 加算进 lifestealPct，跨源求和后由 clampEffectCaps 统一封顶（≤30）。
+      // Additive into lifestealPct, summed across sources then uniformly capped by clampEffectCaps (≤30).
       u.lifestealPct = (u.lifestealPct ?? 0) + TRAIT_BREAKPOINTS.lifesteal.pct;
     }
     if (level >= TRAIT_BREAKPOINTS.bonusSpawn.level) {

@@ -1,9 +1,9 @@
-// 控制面 transport.proto 编解码（gateway 侧，M20）。契约单一来源 =
-// ../../contracts/transport.proto（与 gameserver / 客户端同一份），运行期 protobufjs 解析。
+// Control-plane transport.proto encode/decode (gateway side, M20). Single source of truth =
+// ../../contracts/transport.proto (shared with gameserver / client), parsed at runtime by protobufjs.
 //
-// gateway 只认控制面子集：解码 room_create/join/ready/start/leave + ping；
-// 编码 room_state / room_error / match_found / pong。锁步消息（cmd_submit /
-// frame_batch / conn_* / match_*）属数据面，由 gameserver 处理，这里解码成 'unknown' 忽略。
+// The gateway only recognizes the control-plane subset: decodes room_create/join/ready/start/leave + ping;
+// encodes room_state / room_error / match_found / pong. Lockstep messages (cmd_submit /
+// frame_batch / conn_* / match_*) belong to the data plane, handled by gameserver; decoded as 'unknown' and ignored here.
 import * as protobuf from 'protobufjs';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -38,7 +38,7 @@ export type ClientMsg =
       winnerSide: number;
       ok: boolean;
       stars: number;
-      /** PvE 喂入（S9-3b）：复算出的玩家本局成就计数 JSON；PvP/siege 恒空 */
+      /** PvE feed-in (S9-3b): JSON of per-match achievement counters recomputed by the judge; always empty for PvP/siege */
       statsJson: string;
     }
   | { case: 'unknown' };
@@ -50,7 +50,7 @@ export interface PlayerSlotOut {
   connected: boolean;
   publicId: string;
 }
-/** 单 sim 帧的非空指令（裁判录像帧；与 conn_resync.log 同构）。 */
+/** Non-empty commands for a single sim frame (judge replay frame; same structure as conn_resync.log). */
 export interface FrameCmdsOut {
   frame: number;
   cmds: { side: number; commands: Uint8Array }[];
@@ -67,20 +67,20 @@ export type ServerMsg =
       mode: number;
       endFrame: number;
       frames: FrameCmdsOut[];
-      /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：非空 → 裁判按战役模式复算该关。 */
+      /** PvE integrity spot-check recomputation (PVE_INTEGRITY §8.6 L1): non-empty → judge recomputes this level in campaign mode. */
       levelId: string;
-      /** @deprecated S3-2 蓝图快照，S12 起由 unitLevels 替代。 */
+      /** @deprecated S3-2 blueprint snapshot; replaced by unitLevels from S12 onwards. */
       pveUpgrades: Record<string, number>;
-      /** S12 单位养成等级快照（unitId→1..9），保证复算确定性（优先于 pveUpgrades）。 */
+      /** S12 unit progression level snapshot (unitId→1..9), ensures deterministic recomputation (takes precedence over pveUpgrades). */
       unitLevels: Record<string, number>;
     }
-  // —— 社交推送（S6，SOCIAL_DESIGN §4.2）——
+  // —— Social push notifications (S6, SOCIAL_DESIGN §4.2) ——
   | { case: 'friend_presence'; publicId: string; online: boolean }
   | { case: 'friend_request'; requestId: string; fromPublicId: string; fromName: string; message: string }
   | { case: 'friend_update'; publicId: string; added: boolean }
   | { case: 'chat_message'; convId: string; fromPublicId: string; fromName: string; body: string; ts: number }
   | { case: 'mail_new'; mailId: string; hasAttachment: boolean }
-  // —— SLG 大世界推送（S8-2）——
+  // —— SLG overworld push notifications (S8-2) ——
   | {
       case: 'march_update';
       marchId: string;
@@ -250,7 +250,7 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
       };
       break;
     case 'friend_update':
-      // FriendUpdateKind: ADDED=0, REMOVED=1。
+      // FriendUpdateKind: ADDED=0, REMOVED=1.
       server = { friend_update: { public_id: msg.publicId, kind: msg.added ? 0 : 1 } };
       break;
     case 'chat_message':

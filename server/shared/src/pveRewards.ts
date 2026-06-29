@@ -1,37 +1,39 @@
-// PvE 经济权威单一来源（PVE_INTEGRITY_PLAN §8.1）。纯数据 + 纯函数，无 game logic
-// （M12：metaserver 可 import；严禁反向 import client/src/game）。客户端保留展示镜像
-// （campaign/levels JSON 的 starThresholds 用于本地算星、balance/pveUpgrades 的效果乘子用于
-// 跑蓝图），但**材料发放 / 升级扣费以本文件为准**（服务器 /pve/* 端点重算）。
+// Authoritative single source of truth for PvE economy (PVE_INTEGRITY_PLAN §8.1). Pure data + pure functions, no game logic
+// (M12: metaserver may import this; reverse imports from client/src/game are strictly forbidden).
+// The client retains a display mirror (campaign/levels JSON starThresholds for local star calculation;
+// balance/pveUpgrades effect multipliers for blueprint simulation), but **material grants / upgrade costs
+// are authoritative here** (server /pve/* endpoints recompute them).
 
 export type PveMaterial = 'scrap' | 'lead' | 'binding';
 
-/** 装备掉落配置（EQUIPMENT_DESIGN §4 关卡掉落 faucet，DRAFT [可调]）。 */
+/** Equipment drop configuration (EQUIPMENT_DESIGN §4 level drop faucet, DRAFT [tunable]). */
 export interface EquipmentDropConfig {
-  /** 掉落稀有度（对应 EquipRarity；槽位在落地时随机选三槽之一）。 */
+  /** Drop rarity (maps to EquipRarity; slot is randomly chosen from three slots at drop time). */
   rarity: 'common' | 'fine' | 'rare' | 'epic';
-  /** 掉落概率 0..1（每次通关独立 roll，不受每日材料 cap 约束，DRAFT [可调]）。 */
+  /** Drop probability 0..1 (independently rolled on each clear; not subject to the daily material cap, DRAFT [tunable]). */
   rate: number;
 }
 
 export interface PveLevelConfig {
   id: string;
-  /** 解锁前置：须先通关的关卡 id（null = 首关无前置）。顺序解锁。 */
+  /** Unlock prerequisite: the level id that must be cleared first (null = first level, no prerequisite). Sequential unlock. */
   requires: string | null;
-  /** 每次通关发放的材料（§8 决策 3：可重复刷，受每日上限）。空 = 不发材料（如压力关）。 */
+  /** Materials granted per clear (§8 decision 3: repeatable, subject to daily cap). Empty = no material reward (e.g. stress test levels). */
   reward: Partial<Record<PveMaterial, number>>;
   /**
-   * 关卡装备掉落（Boss/精英关专属额外奖励，EQUIPMENT_DESIGN §4）。
-   * 概率独立 roll（不受每日材料 cap 影响）；满仓时静默跳过。
-   * 仅 lv5（章节中期精英）和 lv10（章节 Boss）有配置；其余普通关无掉落。
+   * Level equipment drop (exclusive bonus for Boss/Elite levels, EQUIPMENT_DESIGN §4).
+   * Probability is rolled independently (not affected by the daily material cap); silently skipped when inventory is full.
+   * Only lv5 (chapter mid-elite) and lv10 (chapter Boss) have drops configured; other normal levels have none.
    */
   equipmentDrop?: EquipmentDropConfig;
-  /** 体力消耗（A4）。缺省 = 1。Boss 关（lv10）= 3，精英关（lv5）= 2，普通关 = 1。 */
+  /** Stamina cost (A4). Default = 1. Boss level (lv10) = 3, Elite level (lv5) = 2, normal level = 1. */
   staminaCost?: number;
 }
 
 /**
- * 有序战役关卡（顺序解锁）。与客户端 `campaign/levels/*.json` 的 `rewards.materials` 同值，
- * 但**这里是发放权威**（客户端 JSON 降级为参考）。首通额外解锁下一关 + 记星，材料同表（每次发）。
+ * Ordered campaign levels (sequential unlock). Values match the `rewards.materials` in the client
+ * `campaign/levels/*.json`, but **this is the authoritative source for grants** (client JSON is demoted to reference only).
+ * First clear additionally unlocks the next level + records stars; materials follow this table (granted on every clear).
  */
 export const PVE_LEVELS: PveLevelConfig[] = [
   // ── Chapter 1 ────────────────────────────────────────────────────────────
@@ -108,12 +110,12 @@ export function findPveLevel(id: string): PveLevelConfig | undefined {
   return PVE_LEVELS.find((l) => l.id === id);
 }
 
-// ── 成就：章节通关计数（ACHIEVEMENT_DESIGN §3.1 `campaign.chaptersCleared`）──────────
-// PvE 唯一能服务器权威产出的成就 stat（其余 kill.*/cast.* 待引擎分类型埋点，§6.2）。
+// ── Achievement: chapter clear count (ACHIEVEMENT_DESIGN §3.1 `campaign.chaptersCleared`) ──────
+// The only achievement stat that PvE can produce with server authority (other kill.*/cast.* stats await typed engine instrumentation, §6.2).
 
 /**
- * 各章节的「终关」levelId（该章 lv 序号最大者），由 {@link PVE_LEVELS} 派生（单一来源）。
- * 无 `_lvN` 后缀的特殊关（如 `ch_stress`）不属任何章节，被忽略。
+ * The "finale" levelId for each chapter (the highest lv index in that chapter), derived from {@link PVE_LEVELS} (single source of truth).
+ * Special levels without the `_lvN` suffix (e.g. `ch_stress`) do not belong to any chapter and are ignored.
  */
 function chapterFinales(): Map<string, string> {
   const maxLv = new Map<string, number>();
@@ -132,9 +134,10 @@ function chapterFinales(): Map<string, string> {
 }
 
 /**
- * 已通关章节数 = 终关已通关的章节个数（章节 = 终关 `ch{N}_lv{max}` 在 cleared 中）。
- * 纯函数，由 {@link PVE_LEVELS} 派生，不读时钟/不连库。cleared 单调增 → 结果单调增（首通才涨、
- * 重打不涨），故服务器侧 `$max` 写入。特殊关（`ch_stress`，无终关编号）不计章节。
+ * Number of cleared chapters = count of chapters whose finale level appears in cleared (`ch{N}_lv{max}` in cleared set).
+ * Pure function, derived from {@link PVE_LEVELS}; reads no clock and makes no DB calls. cleared is monotonically increasing →
+ * result is monotonically increasing (increments only on first clear, not on replays), so the server uses `$max` writes.
+ * Special levels (e.g. `ch_stress`, no finale index) are not counted as chapters.
  */
 export function chaptersClearedCount(cleared: readonly string[]): number {
   const clearedSet = new Set(cleared);
@@ -145,18 +148,19 @@ export function chaptersClearedCount(cleared: readonly string[]): number {
   return count;
 }
 
-/** 每日「发材料的通关」次数上限（超出仍记 progress/stars，材料不发，§8 决策 3）。DRAFT 待实测。 */
+/** Daily cap on "material-rewarding clears" (excess clears still record progress/stars but grant no materials, §8 decision 3). DRAFT pending playtesting. */
 export const PVE_DAILY_CLEAR_REWARD_CAP = 20;
 
 /**
- * 升级材料花费（权威）。**效果**（HP/伤害乘子）留在客户端 `game/balance/pveUpgrades`（game logic，
- * 跑蓝图用）；**花费**在此，服务器 /pve/upgrade 重算扣费。id / maxLevel / baseCost 须与客户端镜像一致。
+ * Upgrade material costs (authoritative). **Effects** (HP/damage multipliers) remain in the client `game/balance/pveUpgrades`
+ * (game logic, used for blueprint simulation); **costs** are defined here and recomputed by the server /pve/upgrade endpoint.
+ * id / maxLevel / baseCost must stay in sync with the client mirror.
  */
 export interface PveUpgradeCost {
   id: string;
   material: PveMaterial;
   maxLevel: number;
-  /** level n→n+1 花费 = baseCost × (n+1)（线性递增）。 */
+  /** Cost to go from level n to n+1 = baseCost × (n+1) (linear scaling). */
   baseCost: number;
 }
 
@@ -173,31 +177,33 @@ export function findPveUpgrade(id: string): PveUpgradeCost | undefined {
   return PVE_UPGRADE_COSTS.find((u) => u.id === id);
 }
 
-// ── L1 录像抽检复算触发（PVE_INTEGRITY_PLAN §8.6 第 3 步）────────────────────
-// 把通关结果发给第三方在线客户端无头复算（复用 S1-J），复算星数 ≥ 声称才发材料。默认不传录像，
-// 仅被抽中时回执 needsReplay 让客户端补传。触发：①按比例随机抽检 ②首通高价值关 ③L0 异常（开局
-// 蓝图战力与服务器权威 pveUpgrades 不符——「开局战力不符 → 必作弊」，§0）。
+// ── L1 replay spot-check re-verification trigger (PVE_INTEGRITY_PLAN §8.6 step 3) ──────
+// Sends the clear result to a headless client for re-computation (reuses S1-J); materials are only issued
+// if the recomputed star count >= the claimed count. Replays are not sent by default; only when selected
+// does the server respond with needsReplay to prompt the client to upload. Triggers: ① proportional random
+// sampling ② first clear of a high-value level ③ L0 anomaly (opening blueprint power does not match
+// server-authoritative pveUpgrades — "blueprint mismatch at start → must be cheating", §0).
 
-/** 重复刷已通关关的随机抽检比例（首通/异常恒触发，不走此率）。DRAFT 待实测调。 */
+/** Random sampling rate for re-clears of already-cleared levels (first clears and anomalies always trigger, bypassing this rate). DRAFT pending tuning. */
 export const PVE_VERIFY_SAMPLE_RATE = 0.1;
 
-/** PvE 复算拒绝次数达此阈值 → 封号（pveBanned=true）。 */
+/** When PvE re-verification rejections reach this threshold, the account is banned (pveBanned=true). */
 export const PVE_REJECT_BAN_THRESHOLD = 3;
 
 export interface SpotCheckInput {
-  /** 是否首次通关该关（含解锁，高价值）。 */
+  /** Whether this is the first clear of the level (includes unlock; high-value). */
   isFirstClear: boolean;
-  /** L0 异常：客户端上报的开局蓝图快照与服务器权威 pveUpgrades 不符。 */
+  /** L0 anomaly: the opening blueprint snapshot reported by the client does not match the server-authoritative pveUpgrades. */
   blueprintMismatch: boolean;
-  /** 0..1 随机数（调用方注入，便于测试确定性）。 */
+  /** 0..1 random number (injected by caller for deterministic testing). */
   rand: number;
-  /** 抽检比例（缺省 {@link PVE_VERIFY_SAMPLE_RATE}）。 */
+  /** Sampling rate (defaults to {@link PVE_VERIFY_SAMPLE_RATE}). */
   sampleRate?: number;
 }
 
 /**
- * 是否对该次通关做 L1 录像抽检复算。首通 / 异常恒触发；其余按比例随机抽检。
- * 纯函数（随机数外部注入），不读时钟 / 不连库。
+ * Whether to perform L1 replay spot-check re-verification for this clear. Always triggers on first clear or anomaly; otherwise sampled at the configured rate.
+ * Pure function (random number injected externally); reads no clock and makes no DB calls.
  */
 export function shouldSpotCheck(input: SpotCheckInput): boolean {
   if (input.blueprintMismatch || input.isFirstClear) return true;
@@ -205,7 +211,7 @@ export function shouldSpotCheck(input: SpotCheckInput): boolean {
   return input.rand < rate;
 }
 
-/** currentLevel → currentLevel+1 的花费；已满级返回 null。 */
+/** Cost to go from currentLevel to currentLevel+1; returns null if already at max level. */
 export function pveUpgradeCost(
   cost: PveUpgradeCost,
   currentLevel: number,

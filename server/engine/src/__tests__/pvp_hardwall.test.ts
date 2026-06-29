@@ -1,9 +1,9 @@
 /**
- * S12 PvP 硬墙测试（A2 验收）。
+ * S12 PvP hard-wall tests (A2 acceptance).
  *
- * 核心不变量：buildPvpBlueprints() 必须返回与 UNIT_BLUEPRINTS 逐字相等的克隆，
- * 即：任何 campaign/siege 路径的 trait / armor / 装备词条都不会泄漏进 PvP 蓝图。
- * 这是「PvP 公平红线 §5.2」的运行期守护：单测失败 = 有什么东西串味进 PvP。
+ * Core invariant: buildPvpBlueprints() must return a clone that is word-for-word equal to UNIT_BLUEPRINTS,
+ * meaning no trait / armor / equipment stat from any campaign/siege path can leak into PvP blueprints.
+ * This is the runtime guard for "PvP fairness hard line §5.2": a failing test means something has leaked into PvP.
  */
 
 import { strict as assert } from 'node:assert';
@@ -16,7 +16,7 @@ import { UnitType } from '../types';
 
 const PVP_UNITS = [UnitType.Infantry, UnitType.ShieldBearer, UnitType.Archer] as const;
 
-// ── buildPvpBlueprints 逐字等于 UNIT_BLUEPRINTS 常量 ─────────────────────────
+// ── buildPvpBlueprints is word-for-word equal to the UNIT_BLUEPRINTS constants ─────────────────────────
 
 test('buildPvpBlueprints: all PvP unit blueprints exactly equal UNIT_BLUEPRINTS constants', () => {
   const pvp = buildPvpBlueprints();
@@ -37,7 +37,7 @@ test('buildPvpBlueprints: all PvP unit blueprints exactly equal UNIT_BLUEPRINTS 
   }
 });
 
-// ── PvP 蓝图是独立克隆（mutating it does not affect the global constant） ───────
+// ── PvP blueprints are independent clones (mutating them does not affect the global constant) ───────
 
 test('buildPvpBlueprints: returned object is a clone, not the global constant', () => {
   const pvp = buildPvpBlueprints();
@@ -46,7 +46,7 @@ test('buildPvpBlueprints: returned object is a clone, not the global constant', 
   assert.equal(UNIT_BLUEPRINTS[UnitType.Infantry].hp, 60, 'UNIT_BLUEPRINTS constant must not be mutated');
 });
 
-// ── 满级 campaign 蓝图不污染后续 buildPvpBlueprints 调用 ─────────────────────
+// ── Max-level campaign blueprints do not pollute subsequent buildPvpBlueprints calls ─────────────────────
 
 test('buildCampaignBlueprints at max level does not pollute subsequent buildPvpBlueprints', () => {
   // Build a campaign blueprint with all units at max level.
@@ -63,7 +63,7 @@ test('buildCampaignBlueprints at max level does not pollute subsequent buildPvpB
   }
 });
 
-// ── PvP 路径不注入单位等级（spawnCount 不变） ───────────────────────────────────
+// ── PvP path does not inject unit levels (spawnCount unchanged) ───────────────────────────────────
 
 test('buildPvpBlueprints: spawnCount equals UNIT_BLUEPRINTS (no T9 +1 spawn leak)', () => {
   const pvp = buildPvpBlueprints();
@@ -76,7 +76,7 @@ test('buildPvpBlueprints: spawnCount equals UNIT_BLUEPRINTS (no T9 +1 spawn leak
   }
 });
 
-// ── 满级 campaign 蓝图确认 trait 断点生效（contrast test：PvE 养成真的起作用） ──
+// ── Max-level campaign blueprints confirm trait thresholds are active (contrast test: PvE progression actually works) ──
 
 test('buildCampaignBlueprints at level 9: traits are applied (contrast: PvE path works)', () => {
   const maxLevels: Record<string, number> = {};

@@ -1,16 +1,16 @@
-// SLG 大世界常量 / 枚举 / ID / 程序化地图生成单一来源（SLG_DESIGN.md §14，S8-0）。
-// 纯数据 + 纯函数，无 DB / 无 PIXI。worldsvc 用它做地图/领地/行军/家族的服务端权威；
-// 集合文档形状（TileDoc/PlayerWorldDoc/MarchDoc…）在 mongo.ts（或 worldsvc 自带 db.ts）。
+// SLG open-world constants / enums / IDs / procedural map generation — single source of truth (SLG_DESIGN.md §14, S8-0).
+// Pure data + pure functions; no DB / no PIXI. worldsvc uses this as the authoritative server-side source for maps/territory/marches/families.
+// Collection document shapes (TileDoc/PlayerWorldDoc/MarchDoc…) live in mongo.ts (or worldsvc's own db.ts).
 //
-// ★ 程序化生成（§14.2「稀疏存储 + 程序化默认」）：DB 只存被占领/被改动的格子，
-//   未触碰的中立格由 worldId 派生的纯函数 proceduralTile() 即时算出，不落库——scale 的关键。
-//   同一 worldId + 同一 (x,y) 永远算出同一格（双端任一可算）。
+// ★ Procedural generation (§14.2 "sparse storage + procedural defaults"): the DB only stores tiles that have been claimed or modified.
+//   Untouched neutral tiles are computed on-the-fly by the pure function proceduralTile() derived from worldId — never persisted; this is the key to scalability.
+//   The same worldId + the same (x,y) always yields the same tile (computable on either end).
 
 import { ErrorCode, type ErrorCode as ErrorCodeT } from './api';
 
 /**
- * worldsvc 端点错误：携带 SLG ErrorCode（httpApi 据 ERROR_HTTP_STATUS 映射 HTTP）。
- * code 限定为 api.ts ErrorCode 的合法值（含 SLG 段 + 通用 BAD_REQUEST/NOT_FOUND/…）。
+ * worldsvc endpoint error: carries an SLG ErrorCode (httpApi maps it to HTTP via ERROR_HTTP_STATUS).
+ * code is restricted to valid values from api.ts ErrorCode (including the SLG range + generic BAD_REQUEST/NOT_FOUND/…).
  */
 export class SlgError extends Error {
   readonly code: ErrorCodeT;
@@ -21,17 +21,17 @@ export class SlgError extends Error {
   }
 }
 
-// ── 枚举（§14.7）─────────────────────────────────────
+// ── Enums (§14.7) ─────────────────────────────────────
 export type TileType =
-  | 'neutral' // 中立空地（低级、可占领、产出微薄）
-  | 'resource' // 资源格（产 food/iron/wood）
-  | 'territory' // 已被玩家占领的领地（运行时写库后才有，生成不产出此类型）
-  | 'familyKeep' // 战略要点 / 家族关隘（稀疏、高级、高价值）
-  | 'center' // 世界中心（宗门归属争夺点，唯一）
-  | 'base' // 玩家主城落点（运行时写库）
-  | 'obstacle' // 阻挡地形（山脉/河流，完全不可通行，S8-6.6）
-  | 'gate' // 关隘/桥（嵌于阻挡带；占领方及盟友可通行；未占领视为阻挡，S8-6.6）
-  | 'stronghold'; // 险地（G8 §3.1）：系统超强 NPC 驻守的高战略价值格；不可直占，须围攻 attack 攻克
+  | 'neutral' // neutral open land (low-level, claimable, minimal yield)
+  | 'resource' // resource tile (produces food/iron/wood)
+  | 'territory' // player-claimed territory (only exists after runtime DB write; not generated as this type)
+  | 'familyKeep' // strategic point / family stronghold (sparse, high-level, high-value)
+  | 'center' // world center (sect ownership contest point; unique)
+  | 'base' // player home-city placement (written to DB at runtime)
+  | 'obstacle' // blocking terrain (mountains/rivers; fully impassable, S8-6.6)
+  | 'gate' // pass/bridge (embedded in blocking zone; passable by occupying faction and allies; treated as obstacle if unoccupied, S8-6.6)
+  | 'stronghold'; // stronghold (G8 §3.1): high-strategic-value tile guarded by an overwhelmingly powerful system NPC; cannot be directly occupied — must be conquered via a siege attack
 
 export type ResourceType = 'food' | 'iron' | 'wood';
 export type MarchKind = 'attack' | 'reinforce' | 'occupy' | 'sweep' | 'scout' | 'return';
@@ -42,188 +42,189 @@ export type AuctionStatus = 'open' | 'sold' | 'expired' | 'cancelled';
 
 export const RESOURCE_TYPES: readonly ResourceType[] = ['food', 'iron', 'wood'];
 
-// ── 确定性 ID 推导（§14.7；无需查表，任一端可算）──────────
-/** 世界 ID：`s{season}-{shard}`，一个赛季宗门世界 = 一张地图实例。 */
+// ── Deterministic ID derivation (§14.7; no lookup table required; computable on either end) ──────────
+/** World ID: `s{season}-{shard}`; one season-sect world = one map instance. */
 export function worldId(season: number, shard: number): string {
   return `s${season}-${shard}`;
 }
-/** 格子 ID：`{worldId}:{x}:{y}`。 */
+/** Tile ID: `{worldId}:{x}:{y}`. */
 export function tileId(world: string, x: number, y: number): string {
   return `${world}:${x}:${y}`;
 }
-/** 玩家在某世界的状态文档 ID。 */
+/** ID of the player's state document in a given world. */
 export function playerWorldId(world: string, accountId: string): string {
   return `${world}:${accountId}`;
 }
-/** 家族成员文档 ID。 */
+/** Family member document ID. */
 export function familyMemberId(world: string, accountId: string): string {
   return `${world}:${accountId}`;
 }
-/** 家族 ID（S8-4）：`f:{worldId}:{TAG}`；TAG 大写唯一缩写（3–4 字符）。 */
+/** Family ID (S8-4): `f:{worldId}:{TAG}`; TAG is an uppercase unique abbreviation (3–4 characters). */
 export function familyId(worldId: string, tag: string): string {
   return `f:${worldId}:${tag.toUpperCase()}`;
 }
-/** 宗门 ID（S8-4b）：`s:{worldId}:{TAG}`；TAG 大写唯一缩写（2–5 字符），worldId 内唯一。 */
+/** Sect ID (S8-4b): `s:{worldId}:{TAG}`; TAG is an uppercase unique abbreviation (2–5 characters), unique within a worldId. */
 export function sectId(worldId: string, tag: string): string {
   return `s:${worldId}:${tag.toUpperCase()}`;
 }
-/** 拍卖 ID（S8-5）：`a:{worldId}:{sellerId}:{ts}:{seq}`，防同毫秒多挂撞键。 */
+/** Auction ID (S8-5): `a:{worldId}:{sellerId}:{ts}:{seq}`; prevents key collisions when multiple listings are created within the same millisecond. */
 export function auctionId(worldId: string, sellerId: string, ts: number, seq: number): string {
   return `a:${worldId}:${sellerId}:${ts}:${seq}`;
 }
 /**
- * 行军 ID（S8-2）：`m:{worldId}:{ownerId}:{departAt}:{seq}`。
- * 行军是临时文档（不像 tile/playerWorld 全局确定性），用 departAt(ms) + 进程内单调 seq
- * 保证同毫秒多次出征不撞键。worldsvc 非确定性引擎，可安全用真实时间戳。
+ * March ID (S8-2): `m:{worldId}:{ownerId}:{departAt}:{seq}`.
+ * Marches are transient documents (unlike tile/playerWorld which are globally deterministic); departAt(ms) + a process-local monotonic seq
+ * ensures no key collisions when multiple marches depart within the same millisecond. worldsvc is a non-deterministic engine and can safely use real timestamps.
  */
 export function marchId(world: string, ownerId: string, departAt: number, seq: number): string {
   return `m:${world}:${ownerId}:${departAt}:${seq}`;
 }
-/** 围攻 ID（S8-3）：`g:{worldId}:{attackerId}:{ts}:{seq}`，瞬态战报记录，同 marchId 防撞键。 */
+/** Siege ID (S8-3): `g:{worldId}:{attackerId}:{ts}:{seq}`; transient battle-report record; uses the same key-collision prevention as marchId. */
 export function siegeId(world: string, attackerId: string, ts: number, seq: number): string {
   return `g:${world}:${attackerId}:${ts}:${seq}`;
 }
 
-// ── 容量 / 地图尺寸（U4/U2 已拍，2026-06-16；SLG_DESIGN §14.10）──
-/** 单服（一个赛季宗门世界）目标容量：中型 300–500 人。 */
+// ── Capacity / map dimensions (U4/U2 finalized, 2026-06-16; SLG_DESIGN §14.10) ──
+/** Target capacity for a single server (one season-sect world): medium-sized, 300–500 players. */
 export const SLG_WORLD_CAPACITY_MIN = 300;
 export const SLG_WORLD_CAPACITY_TARGET = 400;
 export const SLG_WORLD_CAPACITY_MAX = 500;
 
 /**
- * 地图尺寸：随容量配，按人均 ~150–300 格可开发反算 → ~400 人锁 300×300（90k 格）。
- * 稀疏存储：尺寸只影响开荒节奏/行军距离感，不影响存储（只落被占格）。
+ * Map dimensions: scaled to capacity; back-calculated from ~150–300 developable tiles per player → ~400 players locks in 300×300 (90k tiles).
+ * Sparse storage: dimensions only affect the pace of expansion and the feel of march distances; they do not affect storage (only occupied tiles are persisted).
  */
 export const SLG_MAP_W = 300;
 export const SLG_MAP_H = 300;
 export const SLG_MAP_MAX_LEVEL = 5;
 
-// ── 程序化分布旋钮（U6 首版 DRAFT，集中此处便于调参）────────
+// ── Procedural distribution knobs (U6 initial DRAFT; centralized here for easy tuning) ────────
 export const SLG_GEN = {
-  /** 资源格密度：非中立空地里被判为资源格的比例。 */
+  /** Resource tile density: fraction of non-neutral tiles classified as resource tiles. */
   resourceDensity: 0.34,
-  /** 战略要点（familyKeep）噪声阈值，越高越稀疏。 */
+  /** familyKeep noise threshold; higher = sparser. */
   keepThreshold: 0.86,
-  /** 战略要点最低离中心距离比（避免贴中心刷关隘）。 */
+  /** Minimum distance ratio from center for strategic points (prevents keeps from spawning too close to the center). */
   keepMinDistRatio: 0.12,
-  /** 等级噪声频率（值越大区块越碎）。 */
+  /** Level noise frequency (higher = more fragmented patches). */
   levelFreq: 1 / 14,
-  /** 资源种类（biome）噪声频率（值越小区块越大→大片同种资源便于专精与交易）。 */
+  /** Biome (resource type) noise frequency (lower = larger patches → large same-resource zones encourage specialization and trade). */
   biomeFreq: 1 / 40,
-  /** 战略要点噪声频率。 */
+  /** Strategic point noise frequency. */
   keepFreq: 1 / 22,
-  /** biome 三分阈值（food < t0 < wood < t1 < iron）。 */
+  /** Biome tri-partition thresholds (food < t0 < wood < t1 < iron). */
   biomeFoodMax: 0.38,
   biomeWoodMax: 0.68,
-  /** 中立空地的等级封顶（保持空地低价值）。 */
+  /** Level cap for neutral open land (keeps neutral tiles low-value). */
   neutralLevelCap: 2,
-  // ── S8-6.6 阻挡地形 + 关隘 ──────────────────────────
-  /** 阻挡地形噪声频率（中尺度连续山脉/河流地带）。 */
+  // ── S8-6.6 blocking terrain + gates ──────────────────────────
+  /** Obstacle terrain noise frequency (medium-scale continuous mountain/river zones). */
   obstacleFreq: 1 / 40,
-  /** 阻挡地形噪声阈值（超过此值 → 障碍，~12% 格子）。 */
+  /** Obstacle terrain noise threshold (above this → obstacle; ~12% of tiles). */
   obstacleThreshold: 0.88,
   /**
-   * 障碍地形仅生成于 dr ≤ 此比例的区域（外围平原不生成障碍，保证玩家起始角落区可通行）。
-   * 角落附近（dr > obstacleMaxDr）为无障碍安全区域。
+   * Obstacles only generate in regions where dr ≤ this ratio (outer plains remain obstacle-free, ensuring passability in player starting corners).
+   * Areas near corners (dr > obstacleMaxDr) are obstacle-free safe zones.
    */
   obstacleMaxDr: 0.87,
-  /** 关隘噪声频率（大尺度，稀疏战略通道）。 */
+  /** Gate noise frequency (large-scale; sparse strategic corridors). */
   gateFreq: 1 / 60,
-  /** 关隘噪声阈值：障碍带内此值以上生成关隘（战略通道），极稀疏。 */
+  /** Gate noise threshold: gates (strategic corridors) generate inside obstacle zones above this value; extremely sparse. */
   gateThreshold: 0.99,
-  // ── G8 险地（stronghold，§3.1）──────────────────────────
-  /** 险地噪声频率（大尺度，比战略要点更稀疏的高价值点）。 */
+  // ── G8 strongholds (§3.1) ──────────────────────────
+  /** Stronghold noise frequency (large-scale; higher-value points even sparser than strategic keeps). */
   strongholdFreq: 1 / 70,
-  /** 险地噪声阈值：超过此值才生成险地，极稀疏（约全图 0.3%，比 familyKeep 稀疏 ~16×）。 */
+  /** Stronghold noise threshold: only above this value is a stronghold generated; extremely sparse (~0.3% of map, ~16× sparser than familyKeep). */
   strongholdThreshold: 0.92,
-  /** 险地最低离中心距离比（避免贴中心刷险地，留出新手安全圈）。 */
+  /** Minimum distance ratio from center for strongholds (prevents strongholds from spawning too close to center; preserves a safe zone for new players). */
   strongholdMinDistRatio: 0.25,
 } as const;
 
-// ── 数值常量（U6 DRAFT，上线后调参）────────────────────
+// ── Numeric constants (U6 DRAFT; tune after launch) ────────────────────
 export const TROOP_CAP_BASE = 2000;
-export const MARCH_SPEED_SEC_PER_TILE = 6; // 行军每格耗时（秒）
-export const MARCH_MIN_TROOPS = 1; // 出征最少带兵
+export const MARCH_SPEED_SEC_PER_TILE = 6; // seconds of march time per tile
+export const MARCH_MIN_TROOPS = 1; // minimum troops required to send a march
 export const RESOURCE_CAP = 200_000;
-export const RESOURCE_YIELD_BASE = 100; // 每格每小时基础产出（× level 倍率）
-export const PROTECTION_SEC = 8 * 3600; // 新手/被破城保护时长
-export const FAMILY_CAP = 30; // S8-4 拍板：中小家族上限 30 人
-/** 家族频道消息保留时长（秒），TTL 锚字段须 BSON Date（见 db.ts FamilyMessageDoc.ts 注）。 */
-export const FAMILY_MSG_RETENTION_SEC = 7 * 24 * 3600; // 7 天
-/** 家族频道单条消息正文最大长度。 */
+export const RESOURCE_YIELD_BASE = 100; // base yield per tile per hour (× level multiplier)
+export const PROTECTION_SEC = 8 * 3600; // protection duration for new players / after home-city is destroyed
+export const FAMILY_CAP = 30; // S8-4 decision: max family size 30 members
+/** Family channel message retention duration (seconds); TTL anchor field must be a BSON Date (see FamilyMessageDoc note in db.ts). */
+export const FAMILY_MSG_RETENTION_SEC = 7 * 24 * 3600; // 7 days
+/** Maximum body length for a single family channel message. */
 export const FAMILY_MSG_BODY_MAX = 500;
-// ── 宗门（S8-4b，§2.1 / §8.2）──────────────────────────────
-/** 宗门内家族数量上限（≤30 家族 → ≤900 人）。 */
+// ── Sect (S8-4b, §2.1 / §8.2) ──────────────────────────────
+/** Maximum number of families in a sect (≤30 families → ≤900 players). */
 export const SECT_FAMILY_CAP = 30;
-/** 建立宗门花费金币（U5：5000 coin + 繁荣度门槛）。 */
+/** Coin cost to found a sect (U5: 5000 coins + prosperity threshold). */
 export const SECT_CREATE_COST = 5000;
-/** 宗门可结盟的其他宗门数量上限（合纵连横 ≤3 宗门联盟 = 自身 + 2 盟友）。 */
+/** Maximum number of other sects a sect can ally with (alliance cap: ≤3 sects = self + 2 allies). */
 export const SECT_ALLY_CAP = 2;
-/** 门主主城被攻破时，全宗门成员当前资源损失比例（§8.2 重大惩罚）。 */
+/** Fraction of current resources lost by all sect members when the sect leader's home city is destroyed (§8.2 major penalty). */
 export const SECT_LEADER_PENALTY_RATE = 0.5;
-/** 换届罢免投票通过门槛（族长票数 / 家族数 ≥ 此比例，§8.2 超 2/3）。 */
+/** Vote threshold to remove the sect leader (family-leader votes / number of families ≥ this ratio; §8.2 requires >2/3). */
 export const SECT_REMOVAL_VOTE_RATIO = 2 / 3;
-export const AUCTION_TAX_RATE = 0.1; // U1 推迟到 S8-5，先占位
+export const AUCTION_TAX_RATE = 0.1; // U1 deferred to S8-5; placeholder for now
 export const AUCTION_MAX_LISTINGS = 20;
 export const AUCTION_DURATIONS_SEC: readonly number[] = [6 * 3600, 12 * 3600, 24 * 3600];
 
-// ── 拍卖行反 RMT 闸门（AUCTION_DESIGN §4，DRAFT 数值上线后调参）──────────────
-/** C 每日限额：单账号每日新挂单次数上限（按服务器 UTC 日界计）。 */
+// ── Auction house anti-RMT gates (AUCTION_DESIGN §4; DRAFT values — tune after launch) ──────────────
+/** C daily cap: maximum new listing count per account per day (reset at server UTC day boundary). */
 export const AUCTION_DAILY_LIST_CAP = 30;
-/** C 每日限额：单账号每日购买/出价次数上限。 */
+/** C daily cap: maximum buy/bid count per account per day. */
 export const AUCTION_DAILY_BUY_CAP = 30;
-/** C 每日限额计数文档 TTL（秒）：超 2 日自然过期清理（按 dayKey 隔离，留足跨日界缓冲）。 */
+/** C daily cap counter document TTL (seconds): expires after 2 days for natural cleanup (isolated by dayKey; buffer for cross-day boundary). */
 export const AUCTION_DAILY_TTL_SEC = 2 * 24 * 3600;
 /**
- * E 绑定材料禁挂：列入此集合的材料禁止上拍（账号绑定/赛季活动专属）。
- * 初期为空——机制位先就绪，禁挂清单随经济运营填（AUCTION_DESIGN §4.E）。
+ * E banned bound materials: materials in this set cannot be listed on the auction house (account-bound / season-event exclusive).
+ * Empty initially — the mechanism is in place; the ban list will be populated by economic operations over time (AUCTION_DESIGN §4.E).
  */
 export const AUCTION_BANNED_MATERIALS: ReadonlySet<string> = new Set<string>();
 /**
- * G 价格护栏（动态滑窗，AUCTION_DESIGN §4.G）：每品类维护近 N 笔成交单价滑窗算 refPrice，
- * 挂单/出价单价须落在 [refPrice×FLOOR, refPrice×CEIL]；样本不足回退静态估值；无静态值则放行（冷启动不裸奔但不误杀）。
+ * G price guardrail (dynamic sliding window, AUCTION_DESIGN §4.G): maintains a window of the N most recent sale unit prices per category to compute refPrice;
+ * listing/bid unit price must fall within [refPrice×FLOOR, refPrice×CEIL]; falls back to static reference price if samples are insufficient; passes through if no static value (cold-start: no false positives, no nakedly unguarded).
  */
-export const AUCTION_PRICE_WINDOW_N = 20; // 滑窗保留近 N 笔成交单价
-export const AUCTION_PRICE_WINDOW_MIN_SAMPLES = 5; // 少于此样本数走静态回退
-export const AUCTION_PRICE_FLOOR_RATIO = 0.5; // 单价下限 = refPrice × 0.5（封地板倾销）
-export const AUCTION_PRICE_CEIL_RATIO = 2.0; // 单价上限 = refPrice × 2.0（封天价洗钱）
-/** G 冷启动静态参考单价（每件，DRAFT）：滑窗样本不足时用，演算去 ECONOMY_NUMBERS。未列品类则放行。 */
+export const AUCTION_PRICE_WINDOW_N = 20; // retain N most recent sale unit prices in the window
+export const AUCTION_PRICE_WINDOW_MIN_SAMPLES = 5; // fall back to static reference if fewer than this many samples
+export const AUCTION_PRICE_FLOOR_RATIO = 0.5; // unit price floor = refPrice × 0.5 (prevents dumping below floor)
+export const AUCTION_PRICE_CEIL_RATIO = 2.0; // unit price ceiling = refPrice × 2.0 (prevents price-ceiling money laundering)
+/** G cold-start static reference unit price (per item, DRAFT): used when the sliding window has insufficient samples; calibration figures go in ECONOMY_NUMBERS. Categories not listed are passed through. */
 export const AUCTION_STATIC_REF_PRICE: Readonly<Record<string, number>> = {
   scrap: 10,
   lead: 30,
   binding: 80,
 };
-// ── B 竞拍（AUCTION_DESIGN §4.B，DRAFT）──────────────────────────────────────
-/** 竞拍最小加价幅度 = 当前最高价 × 此比例（不足则按起拍价绝对值兜底）。 */
+// ── B Bidding (AUCTION_DESIGN §4.B, DRAFT) ──────────────────────────────────────
+/** Minimum bid increment = current highest bid × this ratio (falls back to the absolute starting price if the increment is too small). */
 export const AUCTION_MIN_INCREMENT_RATIO = 0.05;
-/** 防狙击窗口（秒）：到期前此窗口内有新出价 → expireAt 顺延同等窗口，封末段秒杀。 */
+/** Anti-snipe window (seconds): if a new bid arrives within this window before expiry → expireAt is extended by the same window duration, preventing last-second sniping. */
 export const AUCTION_ANTI_SNIPE_WINDOW_SEC = 5 * 60;
 
-// ── 异常交易审计（D / G7，反 RMT，SLG_DESIGN §17.7 / AUCTION_DESIGN §4.D，DRAFT）──
-// C/E/F/G 闸门是「下单时的硬护栏」（限流/禁挂/冻结/价格带），但绕不过「两个合谋账号在带内
-// 反复定向倒货」这种事后才显形的洗钱/搬砖模式。此处是离线检测层：扫描已成交记录，把可疑的
-// 「卖家→买家」配对聚合成异常，进 admin 审计队列由运维裁定。纯函数 + 数值阈值，可单测、可调参。
-/** 审计扫描默认回溯窗口（秒）：只看近期成交，避免跨季陈旧数据噪声。 */
+// ── Anomalous trade auditing (D / G7, anti-RMT, SLG_DESIGN §17.7 / AUCTION_DESIGN §4.D, DRAFT) ──
+// Gates C/E/F/G are hard guardrails at order time (rate-limiting / listing bans / freezes / price bands), but they cannot catch
+// the money-laundering / item-funneling pattern of "two colluding accounts repeatedly trading directionally within the price band" — that only surfaces after the fact.
+// This is the offline detection layer: it scans completed trade records, aggregates suspicious seller→buyer pairs into anomalies,
+// and pushes them to the admin audit queue for operators to adjudicate. Pure functions + numeric thresholds; unit-testable and tunable.
+/** Default look-back window for audit scans (seconds): only recent trades are considered, avoiding noise from stale cross-season data. */
 export const AUDIT_WINDOW_SEC = 7 * 24 * 3600;
-/** 同一「卖家→买家」配对在窗口内成交笔数达此值 → 触发「反复对敲」信号。 */
+/** Number of completed trades between the same seller→buyer pair within the window that triggers a "repeated wash-trading" signal. */
 export const AUDIT_PAIR_MIN_TRADES = 5;
-/** 同一配对中「定向受拍」（卖家指定该买家）成交达此值 → 触发「定向倒货」信号（RMT 强特征）。 */
+/** Number of "designated bid" trades (seller designated this specific buyer) within a pair that triggers a "directed funneling" signal (strong RMT indicator). */
 export const AUDIT_PAIR_MIN_DESIGNATED = 3;
-/** 同一配对窗口内累计成交金币达此值 → 触发「大额转移」信号。 */
+/** Cumulative coins traded between the same pair within the window that triggers a "large transfer" signal. */
 export const AUDIT_PAIR_MIN_COINS = 50000;
 
-/** 一笔已成交记录（喂给 detectAuctionAnomalies 的最小输入；由 worldsvc 从 sold 拍卖文档投影）。 */
+/** A single completed trade record (minimal input for detectAuctionAnomalies; projected from sold auction documents by worldsvc). */
 export interface AuctionTradeRecord {
   sellerId: string;
   buyerId: string;
-  /** 该笔是否走「定向受拍」（卖家挂单时指定了此买家）。定向倒货是 RMT 的强特征。 */
+  /** Whether this trade used "designated bid" (the seller specified this buyer when listing). Directed funneling is a strong RMT indicator. */
   designated: boolean;
-  /** 成交毛额（金币，= 成交单价 × qty，未扣税）。 */
+  /** Gross trade amount (coins = sale unit price × qty, before tax). */
   coins: number;
   ts: number;
 }
 
-/** 检出的异常配对（一个「卖家→买家」方向的聚合）。 */
+/** A detected anomalous pair (aggregated in the seller→buyer direction). */
 export interface AuctionAnomaly {
   sellerId: string;
   buyerId: string;
@@ -233,11 +234,11 @@ export interface AuctionAnomaly {
   firstTs: number;
   lastTs: number;
   severity: 'medium' | 'high';
-  /** 命中的信号：repeated（反复对敲）/ designated（定向倒货）/ high_value（大额转移）。 */
+  /** Triggered signals: repeated (wash-trading) / designated (directed funneling) / high_value (large transfer). */
   reasons: Array<'repeated' | 'designated' | 'high_value'>;
 }
 
-/** detectAuctionAnomalies 可调阈值（缺省取上面常量；admin/worldsvc 可透传覆盖做调参）。 */
+/** Tunable thresholds for detectAuctionAnomalies (defaults to the constants above; admin/worldsvc can pass overrides for tuning). */
 export interface AuctionAuditThresholds {
   minTrades?: number;
   minDesignated?: number;
@@ -245,12 +246,12 @@ export interface AuctionAuditThresholds {
 }
 
 /**
- * 异常交易检测（纯函数，D/G7）：把成交记录按「卖家→买家」有向配对聚合，命中任一信号即报异常。
- * - repeated：配对成交笔数 ≥ minTrades（反复对敲 / 自卖自买环）。
- * - designated：定向受拍成交 ≥ minDesignated（卖家持续点名同一买家拍下 = 定向倒货）。
- * - high_value：累计成交金币 ≥ minCoins（大额单向转移）。
- * severity=high 当「定向倒货」且「大额转移」同时命中（最像真钱 RMT），否则 medium。
- * 结果按累计金币降序，便于运维优先看大额。
+ * Anomalous trade detection (pure function, D/G7): aggregates completed trade records by directed seller→buyer pair; reports an anomaly if any signal is triggered.
+ * - repeated: pair trade count ≥ minTrades (repeated wash-trading / self-buy loop).
+ * - designated: designated-bid trades ≥ minDesignated (seller repeatedly naming the same buyer = directed funneling).
+ * - high_value: cumulative coins ≥ minCoins (large unidirectional transfer).
+ * severity=high when both "directed funneling" and "large transfer" are triggered simultaneously (strongest RMT indicator); otherwise medium.
+ * Results are sorted by cumulative coins descending so operators can prioritize large-value cases first.
  */
 export function detectAuctionAnomalies(
   trades: readonly AuctionTradeRecord[],
@@ -271,7 +272,7 @@ export function detectAuctionAnomalies(
   }
   const byPair = new Map<string, Agg>();
   for (const r of trades) {
-    if (!r.sellerId || !r.buyerId || r.sellerId === r.buyerId) continue; // 自成交不可能，防御
+    if (!r.sellerId || !r.buyerId || r.sellerId === r.buyerId) continue; // self-trade is impossible; defensive guard
     const key = `${r.sellerId} ${r.buyerId}`;
     let a = byPair.get(key);
     if (!a) {
@@ -300,63 +301,63 @@ export function detectAuctionAnomalies(
   return out;
 }
 export const GARRISON_PER_TILE = 500;
-/** 占领格至少需带的驻军（到点占领后即成该格 garrison；不足拒绝出征）。 */
+/** Minimum garrison required to occupy a tile (becomes that tile's garrison upon arrival; march is rejected if insufficient). */
 export const OCCUPY_MIN_TROOPS = GARRISON_PER_TILE;
-export const SEASON_LENGTH_DAYS = 60; // U3：2 个月
-/** 主动迁城花费金币（§3.4 / §8.2 主城迁移：选好新址 + 付费迁移，所有玩家通用，非门主特有）。 */
+export const SEASON_LENGTH_DAYS = 60; // U3: 2 months
+/** Coin cost to voluntarily relocate the home city (§3.4 / §8.2 home-city relocation: choose a new site + pay to move; applies to all players, not exclusive to the sect leader). */
 export const RELOCATE_COST = 500;
 
 /**
- * 瞭望塔建造资源花费（§18 G5 V2 余项「固定半径持久视野源」，DRAFT）。在己方领地（非主城）上建造，
- * 该格升级为 VISION_WATCHTOWER_RADIUS 大半径视野源，落库随格子持久（丢地即失塔）。花资源（非金币）。
+ * Resource cost to build a watchtower (§18 G5 V2 remaining item "fixed-radius persistent vision source", DRAFT).
+ * Built on a player's own territory (not the home city); the tile is upgraded to a large-radius vision source (VISION_WATCHTOWER_RADIUS), persisted in the DB with the tile (lost if the tile is lost). Costs resources, not coins.
  */
 export const WATCHTOWER_COST: Readonly<Record<ResourceType, number>> = { food: 0, iron: 2000, wood: 3000 };
 
 /**
- * gateway 横扩推送通道（SOC9 / §8.4）：worldsvc 把「一条消息 + 收件人列表」发到此 Redis
- * pub/sub channel，每个 gateway 实例订阅后向本机在线的收件人 socket 扇出。避免 worldsvc 对
- * ≤900 人宗门做 O(n) HTTP 直推（信息量过大），亦天然支持多 gateway 实例路由。
+ * Gateway horizontal-scale push channel (SOC9 / §8.4): worldsvc publishes "one message + recipient list" to this Redis
+ * pub/sub channel; each gateway instance subscribes and fans out to recipient sockets that are online on that instance.
+ * This avoids O(n) direct HTTP pushes from worldsvc to sects of ≤900 players (too much traffic), and naturally supports routing across multiple gateway instances.
  */
 export const GW_PUSH_REDIS_CHANNEL = 'nw:gw:push';
 
-// ── 训练队列（S8-2，§4 兵力循环）──────────────────────────────
-/** 每兵训练消耗粮食（DRAFT，上线后调参）。 */
+// ── Training queue (S8-2, §4 troop cycle) ──────────────────────────────
+/** Food cost per troop trained (DRAFT; tune after launch). */
 export const TROOP_TRAIN_FOOD_COST = 10;
-/** 每兵训练耗时（秒，DRAFT）。*/
+/** Training time per troop (seconds, DRAFT). */
 export const TROOP_TRAIN_TIME_SEC = 5;
-/** 单批最大训练量（上限单批队列大小）。 */
+/** Maximum troops per training batch (single-batch queue size cap). */
 export const TROOP_TRAIN_BATCH_MAX = 500;
-/** 同时可排的训练批次上限（训练队列槽位）。 */
+/** Maximum concurrent training batches (training queue slots). */
 export const TROOP_TRAIN_QUEUE_MAX = 2;
-/** 加速：1 金币 = 多少秒训练时间（DRAFT，60 秒/币）。 */
+/** Speed-up rate: seconds of training time per coin spent (DRAFT, 60 s/coin). */
 export const TROOP_SPEEDUP_SECS_PER_COIN = 60;
 
-// ── 国家系统（S8-6.5，§2.4）──────────────────────────────────
-/** 国家数量（10 首府 = 10 国）。*/
+// ── Nation system (S8-6.5, §2.4) ──────────────────────────────────
+/** Number of nations (10 capitals = 10 nations). */
 export const NATION_COUNT = 10;
-/** 国民加成：本国 Voronoi 区内资源产出加成（分数，0.10 = +10%，§16.5 A7 拍板）。 */
+/** Nation bonus: resource production bonus within the player's own Voronoi nation zone (fraction, 0.10 = +10%, §16.5 A7 decision). */
 export const NATION_BONUS_PRODUCTION = 0.10;
-/** 国民加成：本国 Voronoi 区内防御战斗加成（分数，0.15 = +15%，§16.5 A7 拍板）。 */
+/** Nation bonus: defense combat bonus within the player's own Voronoi nation zone (fraction, 0.15 = +15%, §16.5 A7 decision). */
 export const NATION_BONUS_DEFENSE = 0.15;
 /**
- * 10 首府相对坐标（分数 0~1，乘以 mapW-1/mapH-1 得实际格子）。
- * 布局：8 外围（四角 + 四边中点）+ 1 中部偏内 + 1 中原（地图中心）。
- * 设计文档 §2.4：固定坐标，hardcoded in shared/slg.ts，Voronoi 分区由此派生。
+ * Relative coordinates of the 10 capitals (fractions 0–1; multiply by mapW-1/mapH-1 to get actual tile coordinates).
+ * Layout: 8 on the periphery (4 corners + 4 edge midpoints) + 1 interior offset + 1 central plains (map center).
+ * Design doc §2.4: fixed coordinates, hardcoded in shared/slg.ts; Voronoi partitioning is derived from these.
  */
 export const CAPITAL_FRACTIONS: readonly [number, number][] = [
-  [0.14, 0.14], // 0: 西北角
-  [0.50, 0.10], // 1: 正北
-  [0.86, 0.14], // 2: 东北角
-  [0.10, 0.50], // 3: 正西
-  [0.90, 0.50], // 4: 正东
-  [0.14, 0.86], // 5: 西南角
-  [0.50, 0.90], // 6: 正南
-  [0.86, 0.86], // 7: 东南角
-  [0.32, 0.32], // 8: 内圈西北（普通首府）
-  [0.50, 0.50], // 9: 中原首府（地图中心，赛季额外奖励目标）
+  [0.14, 0.14], // 0: northwest corner
+  [0.50, 0.10], // 1: due north
+  [0.86, 0.14], // 2: northeast corner
+  [0.10, 0.50], // 3: due west
+  [0.90, 0.50], // 4: due east
+  [0.14, 0.86], // 5: southwest corner
+  [0.50, 0.90], // 6: due south
+  [0.86, 0.86], // 7: southeast corner
+  [0.32, 0.32], // 8: inner-ring northwest (ordinary capital)
+  [0.50, 0.50], // 9: central plains capital (map center; season bonus objective)
 ] as const;
 
-/** 把相对坐标转换为地图实际整数坐标。 */
+/** Convert relative fractional coordinates to actual integer map coordinates. */
 export function capitalPositions(mapW: number, mapH: number): [number, number][] {
   return CAPITAL_FRACTIONS.map(([fx, fy]) => [
     Math.round(fx * (mapW - 1)),
@@ -364,7 +365,7 @@ export function capitalPositions(mapW: number, mapH: number): [number, number][]
   ]);
 }
 
-/** 返回 (x,y) 所属的最近首府索引（Voronoi 分区，欧氏距离）。 */
+/** Returns the index of the nearest capital to (x,y) (Voronoi partition, Euclidean distance). */
 export function nearestCapitalIdx(
   x: number,
   y: number,
@@ -380,7 +381,7 @@ export function nearestCapitalIdx(
   return best;
 }
 
-/** 判断 (x,y) 是否是某个首府位置，返回首府索引（-1 = 不是首府）。 */
+/** Returns the capital index if (x,y) is a capital location, or -1 if it is not a capital. */
 export function capitalIdxAt(
   x: number,
   y: number,
@@ -393,44 +394,44 @@ export function capitalIdxAt(
   return -1;
 }
 
-// ── SLG 商店商品（S8-8，§8）──────────────────────────────────
+// ── SLG shop items (S8-8, §8) ──────────────────────────────────
 export interface SlgShopItem {
   id: string;
-  /** 金币价格。 */
+  /** Coin price. */
   cost: number;
   kind: 'troop_speedup' | 'resource_pack' | 'protection' | 'battle_pass';
-  /** 具体效果参数（duration_sec / resource_each / pass_season）。 */
+  /** Effect parameters (duration_sec / resource_each / pass_season). */
   effect: Record<string, number | string>;
   description: string;
 }
 
 export const SLG_SHOP_ITEMS: readonly SlgShopItem[] = [
-  // 训练加速
+  // training speed-ups
   { id: 'slg_speedup_1h',    cost: 200,   kind: 'troop_speedup', effect: { duration_sec: 3600 },  description: '加速训练 1 小时' },
   { id: 'slg_speedup_8h',    cost: 1400,  kind: 'troop_speedup', effect: { duration_sec: 28800 }, description: '加速训练 8 小时' },
   { id: 'slg_speedup_24h',   cost: 3600,  kind: 'troop_speedup', effect: { duration_sec: 86400 }, description: '加速训练 24 小时' },
-  // 资源包（food/iron/wood 各加等量）
+  // resource packs (equal amounts of food/iron/wood)
   { id: 'slg_res_s',  cost: 300,   kind: 'resource_pack', effect: { each: 20000 },  description: '小资源包（各 2 万）' },
   { id: 'slg_res_m',  cost: 1000,  kind: 'resource_pack', effect: { each: 80000 },  description: '中资源包（各 8 万）' },
   { id: 'slg_res_l',  cost: 3000,  kind: 'resource_pack', effect: { each: 200000 }, description: '大资源包（各 20 万）' },
-  // 保护罩
+  // protection shields
   { id: 'slg_shield_8h',  cost: 500,  kind: 'protection', effect: { duration_sec: 28800 }, description: '主城保护罩 8 小时' },
   { id: 'slg_shield_24h', cost: 1200, kind: 'protection', effect: { duration_sec: 86400 }, description: '主城保护罩 24 小时' },
-  // 赛季战令
+  // season battle pass
   { id: 'slg_battle_pass', cost: 9800, kind: 'battle_pass', effect: { pass_season: 1 }, description: '赛季战令（当季有效）' },
 ] as const;
 
-// ── 繁荣度（G2 / §8.1 / SLG_DESIGN §17.1）────────────────────
-/** 繁荣度评分权重（DRAFT，→ ECONOMY_NUMBERS §13-SLG 登记）。 */
-export const PROSPERITY_W_TERRITORY = 10;   // 每块领地
-export const PROSPERITY_W_MEMBER    = 50;   // 每个成员
-export const PROSPERITY_W_ACTIVITY  = 5;    // 每点赛季活跃（新占领数 + 战斗场次，§17.4 来源）
-/** 长期无活跃衰减：每自然日衰减比例（读时惰性结算，类比资源 yield）。 */
-export const PROSPERITY_DECAY_PER_DAY = 0.05; // 5%/日
-/** 建宗门繁荣度中等门槛（§8.2，§16.5 A7 拍板）：30 人+30 地=1800 基础，需一定活跃度。 */
+// ── Prosperity (G2 / §8.1 / SLG_DESIGN §17.1) ────────────────────
+/** Prosperity score weights (DRAFT; register in ECONOMY_NUMBERS §13-SLG). */
+export const PROSPERITY_W_TERRITORY = 10;   // per territory tile
+export const PROSPERITY_W_MEMBER    = 50;   // per member
+export const PROSPERITY_W_ACTIVITY  = 5;    // per point of season activity (new occupations + battles, source §17.4)
+/** Inactivity decay: fraction decayed per calendar day (settled lazily at read time, analogous to resource yield). */
+export const PROSPERITY_DECAY_PER_DAY = 0.05; // 5%/day
+/** Minimum prosperity to found a sect (§8.2, §16.5 A7 decision): 30 members + 30 tiles = 1800 base, plus some activity required. */
 export const SECT_FOUND_PROSPERITY_MIN = 2000;
 
-/** 家族繁荣度纯函数：可单测、双端可算、整数化。activity = 赛季累计活跃点（§17.4）。 */
+/** Family prosperity pure function: unit-testable, computable on either end, integer result. activity = cumulative season activity points (§17.4). */
 export function familyProsperity(territoryCount: number, memberCount: number, activity: number): number {
   return Math.floor(
     territoryCount * PROSPERITY_W_TERRITORY +
@@ -438,13 +439,13 @@ export function familyProsperity(territoryCount: number, memberCount: number, ac
     activity * PROSPERITY_W_ACTIVITY,
   );
 }
-/** 衰减：base 经过 dtDays 天后的衰减值（无活跃则缩水），floor 整数。 */
+/** Decay: value of base after dtDays days of inactivity (shrinks without activity), floored to integer. */
 export function decayProsperity(base: number, dtDays: number): number {
   return Math.floor(base * Math.pow(1 - PROSPERITY_DECAY_PER_DAY, Math.max(0, dtDays)));
 }
 
-// ── 赛季结算奖励（§8.3，DRAFT → ECONOMY_NUMBERS §13-SLG）─────
-/** 大比档位（按宗门占国数排名名次切档）。 */
+// ── Season settlement rewards (§8.3, DRAFT → ECONOMY_NUMBERS §13-SLG) ─────
+/** Settlement tier (bucketed by each sect's rank in number of nations controlled). */
 export type SettleTier = 'champion' | 'top3' | 'top10' | 'participant';
 export function settleTier(rank: number): SettleTier {
   if (rank === 1) return 'champion';
@@ -452,12 +453,12 @@ export function settleTier(rank: number): SettleTier {
   if (rank <= 10) return 'top10';
   return 'participant';
 }
-/** 各档奖励（材料 item / 皮肤 skin / 称号 titleId）。占位数值待经济模拟。 */
+/** Per-tier rewards (material items / skins / titleId). Placeholder values pending economic simulation. */
 export interface SettleReward {
-  items: Record<string, number>;     // 材料：{ scrap: N, lead: M, binding: K }
-  skins: string[];                   // 皮肤 id（限定）
-  titleId?: string;                  // 称号（grantTitle TODO S10，本轮仅邮件正文）
-  coins?: number;                    // 可选 coin（须并入经济总预算，OVERVIEW §3.3）
+  items: Record<string, number>;     // materials: { scrap: N, lead: M, binding: K }
+  skins: string[];                   // skin ids (limited edition)
+  titleId?: string;                  // title (grantTitle TODO S10; this round: email body only)
+  coins?: number;                    // optional coins (must be included in the overall economic budget, OVERVIEW §3.3)
 }
 export const SETTLE_REWARDS: Record<SettleTier, SettleReward> = {
   champion:    { items: { scrap: 500, lead: 200, binding: 50 }, skins: ['slg_champion_frame'], titleId: 'slg.champion', coins: 0 },
@@ -465,38 +466,38 @@ export const SETTLE_REWARDS: Record<SettleTier, SettleReward> = {
   top10:       { items: { scrap: 150, lead: 60,  binding: 10 }, skins: [] },
   participant: { items: { scrap: 50,  lead: 20,  binding: 0  }, skins: [] },
 };
-/** 中原首府（capitalIdx 9，§2.4）占领加权：该档奖励材料 ×CENTER_CAPITAL_MULT。 */
+/** Central plains capital (capitalIdx 9, §2.4) occupation bonus: reward materials for the tier are multiplied by CENTER_CAPITAL_MULT. */
 export const CENTER_CAPITAL_IDX = 9;
 export const CENTER_CAPITAL_MULT = 2;
 
-// ── G6 多大区分配（数据地基 + 纯算法，运行时延后，§17.8）─────
-/** 单大区容量（openSeason capacity 默认值，替代硬编码）。 */
+// ── G6 multi-shard allocation (data foundation + pure algorithm; runtime deferred, §17.8) ─────
+/** Capacity per shard (default value for openSeason capacity; replaces hard-coded value). */
 export const WORLD_CAPACITY = 10000;
-/** resetSeason 大集合分批删每批条数（§17.6）。 */
+/** Batch size for bulk deletes during resetSeason (§17.6). */
 export const RESET_DELETE_BATCH = 2000;
 
-/** 一个宗门的「综合实力」输入（来自上季 seasonResults + 当前规模/繁荣度）。 */
+/** "Overall strength" input for a sect (sourced from last season's seasonResults + current size/prosperity). */
 export interface SectStrength {
   sectId: string;
-  lastSeasonRank?: number;   // 上季大比名次（无 = 新宗门）
+  lastSeasonRank?: number;   // last season's rank (absent = new sect)
   memberFamilyCount: number;
-  prosperity: number;        // 当前繁荣度聚合
+  prosperity: number;        // current aggregated prosperity
 }
-/** 实力评分（越高越强）：历史排名为主（名次越小越强），规模/繁荣度为辅。DRAFT 权重。 */
+/** Strength score (higher = stronger): primarily based on historical rank (lower rank number = stronger), with size/prosperity as secondary factors. DRAFT weights. */
 export function sectStrengthScore(s: SectStrength): number {
-  const rankScore = s.lastSeasonRank ? Math.max(0, 100 - s.lastSeasonRank) * 100 : 500; // 新宗门给中位
+  const rankScore = s.lastSeasonRank ? Math.max(0, 100 - s.lastSeasonRank) * 100 : 500; // new sect gets median score
   return rankScore + s.memberFamilyCount * 50 + Math.floor(s.prosperity / 100);
 }
 /**
- * 蛇形（snake）均衡分配：按 score 降序，蛇形发牌到 shardCount 个大区，
- * 使各区强弱总和尽量持平（强宗门与弱宗门搭配，SLG3）。返回 sectId→shardIndex。
- * shardCount 由「∑成员人数 / 单区容量 向上取整」预先算出（§17.8），调用方保证 ≥ 1。
+ * Snake-draft balanced allocation: sorts sects by score descending, then deals them snake-style to shardCount shards
+ * so that the sum of strengths across shards is as balanced as possible (pairing strong sects with weak ones, SLG3). Returns sectId→shardIndex.
+ * shardCount is pre-computed as ceil(∑member_count / shard_capacity) (§17.8); caller guarantees ≥ 1.
  */
 export function allocateSectsToShards(sects: SectStrength[], shardCount: number): Map<string, number> {
   const out = new Map<string, number>();
   const n = Math.max(1, Math.floor(shardCount));
   const sorted = [...sects].sort((a, b) => sectStrengthScore(b) - sectStrengthScore(a));
-  // 蛇形游标：0,1,..,n-1,n-1,..,1,0,0,..（每 n 个翻转方向）。
+  // Snake cursor: 0,1,..,n-1,n-1,..,1,0,0,.. (direction reverses every n items).
   for (let i = 0; i < sorted.length; i++) {
     const cycle = Math.floor(i / n);
     const pos = i % n;
@@ -506,18 +507,18 @@ export function allocateSectsToShards(sects: SectStrength[], shardCount: number)
   return out;
 }
 
-// ── G6 运行时调度（§20）：id 格式 + shard 数推导 ─────────────
-/** 世界 id 权威格式（= WorldDoc._id），替客户端硬编码。 */
+// ── G6 runtime scheduling (§20): id format + shard count derivation ─────────────
+/** Authoritative world id format (= WorldDoc._id); replaces client-side hard-coding. */
 export function worldShardId(season: number, shard: number): string {
   return `s${season}-${shard}`;
 }
-/** 人口 → 所需 shard 数（§17.8 第 2 步，向上取整，至少 1）。可单测。 */
+/** Population → required shard count (§17.8 step 2; ceil, minimum 1). Unit-testable. */
 export function shardCountForPopulation(totalPlayers: number, capacity: number): number {
   return Math.max(1, Math.ceil(Math.max(0, totalPlayers) / Math.max(1, capacity)));
 }
 
-// ── 确定性噪声（纯函数，无随机源；同输入同输出）─────────────
-/** 32-bit 整数哈希（两坐标 + seed → uint32）。 */
+// ── Deterministic noise (pure functions, no random source; same input → same output) ─────────────
+/** 32-bit integer hash (two coordinates + seed → uint32). */
 function hash2(x: number, y: number, seed: number): number {
   let h = seed >>> 0;
   h = Math.imul(h ^ (x | 0), 0x9e3779b1) >>> 0;
@@ -527,11 +528,11 @@ function hash2(x: number, y: number, seed: number): number {
   h ^= h >>> 16;
   return h >>> 0;
 }
-/** 坐标 → [0,1) 伪随机值。 */
+/** Coordinates → pseudo-random value in [0,1). */
 function rand2(x: number, y: number, seed: number): number {
   return hash2(x, y, seed) / 4294967296;
 }
-/** 字符串 → 32-bit seed（worldId → 世界种子）。 */
+/** String → 32-bit seed (worldId → world seed). */
 export function worldSeed(world: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < world.length; i++) {
@@ -540,7 +541,7 @@ export function worldSeed(world: string): number {
   }
   return h >>> 0;
 }
-/** 值噪声（双线性插值 + smoothstep），输出 [0,1]，连续平滑——用于 biome/等级大区块。 */
+/** Value noise (bilinear interpolation + smoothstep), output [0,1], continuous and smooth — used for biome/level large-zone generation. */
 function valueNoise(x: number, y: number, freq: number, seed: number): number {
   const fx = x * freq;
   const fy = y * freq;
@@ -560,17 +561,17 @@ function valueNoise(x: number, y: number, freq: number, seed: number): number {
   return a + (b - a) * sy;
 }
 
-// ── 程序化地图生成（核心，§14.2 / U2 / U6 首版）──────────────
-/** 程序化格子的默认属性（未被占领的中立世界）。运行时被占领后以 DB 文档为准。 */
+// ── Procedural map generation (core, §14.2 / U2 / U6 initial version) ──────────────
+/** Default attributes for a procedural tile (in an unclaimed neutral world). Once claimed at runtime, the DB document takes precedence. */
 export interface ProceduralTile {
   type: TileType;
-  /** 资源/格子等级 1..SLG_MAP_MAX_LEVEL（越高产出越多、默认 NPC 驻军越强）。 */
+  /** Resource/tile level 1..SLG_MAP_MAX_LEVEL (higher = more yield and stronger default NPC garrison). */
   level: number;
-  /** 资源种类（仅 resource / familyKeep 有）。 */
+  /** Resource type (only present for resource / familyKeep tiles). */
   resType?: ResourceType;
 }
 
-/** biome：低频噪声分三大区，便于资源专精与跨区交易（U1 拍卖经济的地理基础）。 */
+/** Biome: low-frequency noise divides the map into three large zones, encouraging resource specialization and cross-zone trade (geographic foundation for the U1 auction economy). */
 function biomeAt(x: number, y: number, seed: number): ResourceType {
   const n = valueNoise(x, y, SLG_GEN.biomeFreq, seed ^ 0x0444);
   if (n < SLG_GEN.biomeFoodMax) return 'food';
@@ -579,16 +580,16 @@ function biomeAt(x: number, y: number, seed: number): ResourceType {
 }
 
 /**
- * 算出 (worldId, x, y) 的程序化默认格子。纯函数、确定性、不落库。
- * 分布规则（U6 + S8-6.6）：中心唯一 center 格；阻挡地形（山脉/河流）+ 关隘嵌于阻挡带；
- * 等级中心高→边缘低；稀疏 familyKeep 战略要点；其余按密度判 resource / neutral。
+ * Computes the procedural default tile for (worldId, x, y). Pure function, deterministic, never persisted.
+ * Distribution rules (U6 + S8-6.6): unique center tile at the map center; blocking terrain (mountains/rivers) + gates embedded in blocking zones;
+ * level decreases from center to edge; sparse familyKeep strategic points; remaining tiles are classified as resource or neutral by density.
  */
 export function proceduralTile(world: string, x: number, y: number): ProceduralTile {
   const seed = worldSeed(world);
   const cx = SLG_MAP_W / 2;
   const cy = SLG_MAP_H / 2;
 
-  // 世界中心（唯一）
+  // world center (unique)
   if (x === Math.floor(cx) && y === Math.floor(cy)) {
     return { type: 'center', level: SLG_MAP_MAX_LEVEL };
   }
@@ -597,14 +598,14 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
   const dy = y - cy;
   const dist = Math.sqrt(dx * dx + dy * dy);
   const maxDist = Math.sqrt(cx * cx + cy * cy);
-  const dr = dist / maxDist; // 0 中心 .. 1 角落
+  const dr = dist / maxDist; // 0 = center .. 1 = corner
 
-  // ── 阻挡地形 + 关隘（S8-6.6）────────────────────────────────
-  // 仅在 dr ≤ obstacleMaxDr 的中部区域生成；外围平原（角落）保持无障碍，保证玩家起始区通行。
+  // ── Blocking terrain + gates (S8-6.6) ────────────────────────────────
+  // Only generated in the central region where dr ≤ obstacleMaxDr; outer plains (corners) remain obstacle-free to ensure player starting zones are passable.
   if (dr <= SLG_GEN.obstacleMaxDr) {
     const obstNoise = valueNoise(x, y, SLG_GEN.obstacleFreq, seed ^ 0x0888);
     if (obstNoise > SLG_GEN.obstacleThreshold) {
-      // 关隘：阻挡带内高峰位置（战略通道）——比阻挡更稀疏。
+      // Gate: high-peak location within the blocking zone (strategic corridor) — even sparser than obstacles.
       const gateNoise = valueNoise(x, y, SLG_GEN.gateFreq, seed ^ 0x0999);
       if (gateNoise > SLG_GEN.gateThreshold) {
         return { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) };
@@ -613,19 +614,19 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
     }
   }
 
-  // 等级：中心高→边缘低（(1-dr) 主导）+ 中频噪声扰动
+  // Level: high at center → low at edge (dominated by (1-dr)) + medium-frequency noise perturbation
   const lvlNoise = valueNoise(x, y, SLG_GEN.levelFreq, seed ^ 0x0111);
   let level = Math.round((1 - dr) * (SLG_MAP_MAX_LEVEL - 1) + 1 + (lvlNoise - 0.5) * 1.5);
   level = Math.max(1, Math.min(SLG_MAP_MAX_LEVEL, level));
 
-  // 险地（G8 §3.1）：极稀疏的高战略价值 PvE 格，系统超强 NPC 驻守，离中心一定距离外。
-  // 比 familyKeep 更稀疏、固定满级、带资源种类（攻克后产出丰厚）。先于 familyKeep 判定（优先级更高）。
+  // Stronghold (G8 §3.1): extremely sparse high-strategic-value PvE tiles, guarded by overwhelmingly powerful system NPCs, only beyond a minimum distance from the center.
+  // Sparser than familyKeep, always max level, has a resource type (rich yield after conquest). Evaluated before familyKeep (higher priority).
   const strongholdNoise = valueNoise(x, y, SLG_GEN.strongholdFreq, seed ^ 0x0555);
   if (strongholdNoise > SLG_GEN.strongholdThreshold && dr > SLG_GEN.strongholdMinDistRatio) {
     return { type: 'stronghold', level: SLG_MAP_MAX_LEVEL, resType: biomeAt(x, y, seed) };
   }
 
-  // 战略要点 / 家族关隘：稀疏高峰，离中心一定距离外
+  // Strategic point / family stronghold: sparse high-peak, only beyond a minimum distance from center
   const keepNoise = valueNoise(x, y, SLG_GEN.keepFreq, seed ^ 0x0222);
   if (keepNoise > SLG_GEN.keepThreshold && dr > SLG_GEN.keepMinDistRatio) {
     return {
@@ -635,7 +636,7 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
     };
   }
 
-  // 资源格 vs 中立空地
+  // Resource tile vs neutral open land
   const occ = rand2(x, y, seed ^ 0x0333);
   if (occ < SLG_GEN.resourceDensity) {
     return { type: 'resource', level, resType: biomeAt(x, y, seed) };
@@ -643,12 +644,12 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
   return { type: 'neutral', level: Math.min(level, SLG_GEN.neutralLevelCap) };
 }
 
-// ── 领地产出（S8-1，资源惰性结算的单格贡献，§14.3）────────────
+// ── Territory yield (S8-1; per-tile contribution to lazy resource settlement, §14.3) ────────────
 /**
- * 单格每小时产出（占领后计入 `playerWorld.yieldRate`）。纯函数。
- * - `base`（主城）：给起步粮食 trickle（`RESOURCE_YIELD_BASE`），保证新玩家有产出可结算。
- * - 有 `resType` 的格（resource / familyKeep / 占领后的 territory）：产对应资源 `RESOURCE_YIELD_BASE × level`。
- * - 其余（无 resType 的 neutral/territory）：不产出。
+ * Per-tile hourly yield (added to `playerWorld.yieldRate` after claiming). Pure function.
+ * - `base` (home city): provides a starting food trickle (`RESOURCE_YIELD_BASE`), ensuring new players always have yield to settle.
+ * - Tiles with a `resType` (resource / familyKeep / territory after claiming): yield the corresponding resource at `RESOURCE_YIELD_BASE × level`.
+ * - All others (neutral/territory without resType): no yield.
  */
 export function tileYield(
   type: TileType,
@@ -660,10 +661,10 @@ export function tileYield(
   return {};
 }
 
-// ── 行军（S8-2，§14.4/§4）────────────────────────────────
+// ── March (S8-2, §14.4/§4) ────────────────────────────────
 /**
- * 行军耗时（秒）：欧氏距离（向上取整）× MARCH_SPEED_SEC_PER_TILE，最少 1 格。
- * 纯函数、双端可算（客户端预估 ETA / 服务端权威定 arriveAt）。同格（距离 0）= 1 格成本。
+ * March duration (seconds): Euclidean distance (ceiling) × MARCH_SPEED_SEC_PER_TILE; minimum 1 tile.
+ * Pure function, computable on either end (client estimates ETA / server authoritatively sets arriveAt). Same-tile (distance 0) costs 1 tile.
  */
 export function marchDurationSec(fx: number, fy: number, tx: number, ty: number): number {
   const dx = tx - fx;
@@ -672,23 +673,23 @@ export function marchDurationSec(fx: number, fy: number, tx: number, ty: number)
   return tiles * MARCH_SPEED_SEC_PER_TILE;
 }
 
-// ── A* 行军寻路（S8-6.6，§4「行军寻路」）──────────────────────────
-// 4方向 A*（上/下/左/右，无斜向），曼哈顿距离启发。
-// 阻挡格不可通行；未占领关隘视为阻挡（"未占领视为阻挡"）；
-// 已占领关隘仅占领方 / 盟友可途经（passableGateKeys 由调用方预取 DB 组装）。
+// ── A* march pathfinding (S8-6.6, §4 "march pathfinding") ──────────────────────────
+// 4-directional A* (up/down/left/right, no diagonals), Manhattan distance heuristic.
+// Obstacle tiles are impassable; unoccupied gates are treated as obstacles ("unoccupied = obstacle");
+// occupied gates are passable only by the occupying faction / allies (passableGateKeys is pre-fetched from the DB by the caller).
 
-/** 行军路径节点。 */
+/** March path node. */
 export interface PathCell {
   x: number;
   y: number;
 }
 
 /**
- * A* 寻路：从 (fx,fy) 到 (tx,ty)。
- * - 返回完整路径（含起点和终点）；同格返回单节点 [{fx,fy}]。
- * - 目标不可达（障碍 / 无路 / 越界）返回 null。
- * - passableGateKeys：可途经的关隘格 key 集合（格式 "x:y"）；目标关隘本身始终可达（不论有无通行权）。
- * - MAX_NODES 安全上限（防超大地图极端情况）。
+ * A* pathfinding from (fx,fy) to (tx,ty).
+ * - Returns the full path (including start and end); returns a single node [{fx,fy}] for same-tile.
+ * - Returns null if the destination is unreachable (obstacle / no path / out of bounds).
+ * - passableGateKeys: set of gate tile keys that can be traversed (format "x:y"); the destination gate itself is always reachable regardless of passage rights.
+ * - MAX_NODES safety cap (prevents worst-case on very large maps).
  */
 export function findMarchPath(
   world: string,
@@ -706,18 +707,18 @@ export function findMarchPath(
   const walkable = (x: number, y: number, isDest: boolean): boolean => {
     if (!_slgInBounds(x, y, mapW, mapH)) return false;
     const p = proceduralTile(world, x, y);
-    if (p.type === 'obstacle') return false; // 障碍永远阻挡，含目标格
+    if (p.type === 'obstacle') return false; // obstacles always block, including the destination tile
     if (p.type === 'gate') return isDest || passableGateKeys.has(`${x}:${y}`);
     return true;
   };
 
-  if (!walkable(tx, ty, true)) return null; // 目标格是障碍
+  if (!walkable(tx, ty, true)) return null; // destination tile is an obstacle
 
   const MAX_NODES = 500_000;
-  // g: 从起点到该节点的最短步数；par: 父节点 flat index（重建路径）
+  // g: shortest step count from start to this node; par: parent node flat index (for path reconstruction)
   const g = new Map<number, number>();
   const par = new Map<number, number>();
-  // open set：最小堆，元素 = [f, flatIdx]
+  // open set: min-heap, elements = [f, flatIdx]
   const heap: [number, number][] = [];
 
   const h = (x: number, y: number) => Math.abs(x - tx) + Math.abs(y - ty);
@@ -757,7 +758,7 @@ export function findMarchPath(
   return null;
 }
 
-/** 行军路径 → 耗时（秒）：path.length-1 步 × MARCH_SPEED_SEC_PER_TILE。 */
+/** March path → duration (seconds): (path.length-1) steps × MARCH_SPEED_SEC_PER_TILE. */
 export function marchDurationFromPath(path: PathCell[]): number {
   return Math.max(0, path.length - 1) * MARCH_SPEED_SEC_PER_TILE;
 }
@@ -810,64 +811,64 @@ function _slgHeapPop(heap: [number, number][]): [number, number] | undefined {
   return top;
 }
 
-// ── 围攻结算（S8-3，§5.3）────────────────────────────────
-// worldsvc 不引确定性引擎（M12），到点用此**廉价线性数值结算**即时落地围攻 outcome
-// （territory 易主 / 主城掠夺 / NPC 扫荡）；这是设计许可的「非关键 / 廉价数值结算」路径（§5.3）。
-// 「关键战斗」（真人手操破城）的引擎复算（buildSiegeBlueprints + judgeRunner siege 分支）已在
-// 客户端落地并单测，S8-3b 经 worldsvc→gateway /gw/judge 接入此处替代廉价结算。
+// ── Siege settlement (S8-3, §5.3) ────────────────────────────────
+// worldsvc does not import the deterministic engine (M12); this **cheap linear numeric settlement** is used at arrival time to immediately resolve siege outcomes
+// (territory transfer / home-city looting / NPC sweep); this is the design-sanctioned "non-critical / cheap numeric settlement" path (§5.3).
+// The engine-replay path for "critical battles" (real player vs. player city assault) (buildSiegeBlueprints + judgeRunner siege branch) is already
+// implemented and unit-tested on the client; S8-3b wires this in via worldsvc→gateway /gw/judge to replace the cheap settlement.
 
-/** 中立 / 资源格的 NPC 守军强度（扫荡 sweep 的防守，按格等级线性）。 */
+/** NPC garrison strength for neutral / resource tiles (defensive strength for the sweep march kind; linear by tile level). */
 export const NPC_GARRISON_PER_LEVEL = 120;
-/** 围攻得手后掠夺目标资源的比例（territory 易主 / 主城掠夺时从败方资源抽走给攻方）。 */
+/** Fraction of the target's resources looted on a successful siege (transferred from the defeated side to the attacker on territory transfer / home-city looting). */
 export const SIEGE_LOOT_RATE = 0.25;
-/** 扫荡 NPC 得手的一次性资源缴获（按格等级，单资源）。 */
+/** One-time resource captured from an NPC tile on a successful sweep (per tile level, per resource type). */
 export const SWEEP_LOOT_PER_LEVEL = 200;
 
-/** 单格 NPC 守军（扫荡防守强度）。 */
+/** NPC garrison for a single tile (sweep defensive strength). */
 export function npcGarrison(level: number): number {
   return NPC_GARRISON_PER_LEVEL * Math.max(1, level);
 }
 
-// ── G8 险地（stronghold，§3.1）数值（DRAFT，上线后调参）────────────
+// ── G8 stronghold (§3.1) values (DRAFT; tune after launch) ────────────
 /**
- * 险地系统 NPC 守军每等级强度（满级 5 → 1800 兵力当量）。远强于普通格驻守（GARRISON_PER_TILE=500）
- * 与扫荡 NPC（NPC_GARRISON_PER_LEVEL=120），「非常难攻占」（§3.1）：合成步兵下，零充值玩家即便满兵
- * （TROOP_CAP_BASE=2000）也因防守占优（基地 + 超时判守方胜）几乎打不过，须靠科技/装备养成强化布阵
- * 才攻得下（兑现 SLG7 卖战力 / U7 碾压级）。满级 1800 ÷ 单位满血 ≈ 60 单位（纵深 ~6），叠加攻方
- * ≤2000 兵 ≈ 67 单位（纵深 ~7）合计 < 棋盘 16 行纵深 → 正常规模权威引擎可跑，不退化为廉价兜底；
- * 仅鲸鱼级超大军（>5000 兵）才溢出棋盘走兜底。
+ * Stronghold system NPC garrison strength per level (max level 5 → 1800 troop equivalent). Far stronger than ordinary tile garrison (GARRISON_PER_TILE=500)
+ * and sweep NPCs (NPC_GARRISON_PER_LEVEL=120); "extremely hard to conquer" (§3.1): with basic infantry, even a fully-loaded free-to-play player
+ * (TROOP_CAP_BASE=2000) will nearly always lose due to the defender advantage (base + timeout = defender wins); conquering requires tech/equipment progression to strengthen the army lineup
+ * (delivering on SLG7 selling combat power / U7 overwhelming tier). Max-level 1800 ÷ unit full HP ≈ 60 units (depth ~6 rows), plus attacker
+ * ≤2000 troops ≈ 67 units (depth ~7 rows), total < 16-row board depth → normal-scale authoritative engine can run without falling back to the cheap fallback;
+ * only whale-tier armies (>5000 troops) overflow the board and trigger the fallback.
  */
 export const STRONGHOLD_GARRISON_PER_LEVEL = 360;
-/** 险地系统守军（按格等级线性，§3.1 系统超强默认防守 config）。 */
+/** Stronghold system garrison (linear by tile level; §3.1 overwhelmingly strong default defensive config). */
 export function strongholdGarrison(level: number): number {
   return STRONGHOLD_GARRISON_PER_LEVEL * Math.max(1, level);
 }
-/** 险地攻克后一次性资源奖励（按格等级，单资源；§3.1「大幅资源」）。 */
+/** One-time resource reward on stronghold conquest (per tile level, per resource type; §3.1 "large resource yield"). */
 export const STRONGHOLD_LOOT_PER_LEVEL = 5000;
 
 /**
- * 险地攻克后额外掉落的养成材料（§19.5「随 G4 养成材料流转统一」）：单一稀有材料 `binding`
- * （gates rare/epic 装备，地图常规途径稀缺），按格等级线性，发到 SaveData.materials 养成统一池
- * （非赛季资源，跨季留存，SLG4）。**DRAFT [可调]**：量待经济模拟（§16.5 同批）。
+ * Additional progression material drop on stronghold conquest (§19.5 "unified with G4 progression material flow"): single rare material `binding`
+ * (gates rare/epic equipment; scarce through normal map routes), linear by tile level, delivered to SaveData.materials unified progression pool
+ * (not a season resource; persists across seasons, SLG4). **DRAFT [tunable]**: quantity pending economic simulation (§16.5 same batch).
  */
 export const STRONGHOLD_LOOT_MATERIAL = 'binding';
 export const STRONGHOLD_LOOT_MATERIAL_PER_LEVEL = 4;
-/** 险地材料掉落（纯函数，双端可算）：{material, qty}，qty 按格等级线性。 */
+/** Stronghold material drop (pure function, computable on either end): {material, qty}; qty is linear by tile level. */
 export function strongholdMaterialLoot(level: number): { material: string; qty: number } {
   return { material: STRONGHOLD_LOOT_MATERIAL, qty: STRONGHOLD_LOOT_MATERIAL_PER_LEVEL * Math.max(1, level) };
 }
 
 export interface SiegeResolution {
   outcome: SiegeOutcome;
-  /** 攻方生还兵力（attacker_win 时可成新驻军 / 回师；defender_win = 0 全灭）。 */
+  /** Attacker surviving troops (on attacker_win, can become new garrison or return; on defender_win = 0, wiped out). */
   attackerSurvivors: number;
-  /** 守方生还兵力（defender_win 时为残余守军；attacker_win = 0）。 */
+  /** Defender surviving troops (on defender_win, remaining garrison; on attacker_win = 0). */
   defenderSurvivors: number;
 }
 
 /**
- * 线性（Lanchester-lite）围攻结算：攻方兵力 > 守方防守强度 → 攻方胜，生还 = 兵力差；
- * 否则守方胜（平局并入守方，符合「防守占优」）。纯函数、确定性、双端可算。
+ * Linear (Lanchester-lite) siege settlement: if attacker troops > defender strength → attacker wins, survivors = difference;
+ * otherwise defender wins (ties go to defender, consistent with "defender advantage"). Pure function, deterministic, computable on either end.
  */
 export function resolveSiege(attackerTroops: number, defenseStrength: number): SiegeResolution {
   const atk = Math.max(0, Math.floor(attackerTroops));
@@ -879,40 +880,41 @@ export function resolveSiege(attackerTroops: number, defenseStrength: number): S
 }
 
 /**
- * 国民防御加成（S8-6.5 / §2.4）：守军处于「己方占领首府的 Voronoi 区」内时，有效防守强度
- * ×(1+NATION_BONUS_DEFENSE)，否则取原值。纯函数、确定性、整数化、双端可算。
+ * Nation defense bonus (S8-6.5 / §2.4): when the defending garrison is within the Voronoi zone of a capital controlled by the defender's nation,
+ * effective defense strength is ×(1+NATION_BONUS_DEFENSE); otherwise unchanged. Pure function, deterministic, integer result, computable on either end.
  */
 export function nationDefenseStrength(garrison: number, inOwnNation: boolean): number {
   const g = Math.max(0, Math.floor(garrison));
   return inOwnNation ? Math.floor(g * (1 + NATION_BONUS_DEFENSE)) : g;
 }
 
-// ── 视野 / 迷雾（G5，§8.2 / §2.1 / §15.2）─────────────────────────────────────
-// 拍板（2026-06-21）：迷雾模型 2a —— 地形层（程序化、确定性）全图始终可见；动态层（归属/
-// 驻军/防守/保护罩/行军）仅在「当前视野」内显示，视野外一律退回 proceduralTile 的底层地形
-// （连「该格已被占领」这一信号都不泄露）。视野不落库：读时按视野源实时计算 + 短 TTL 缓存。
-// 视野源 = 己方领地（半径 VISION_TERRITORY）+ 主城（半径 VISION_BASE）+ 在途己方/家族行军
-// （半径 VISION_MARCH，按 departAt/arriveAt 线性插值当前位置）+ 同家族成员领地（共享，≤30 人，
-// §8.2 拍板降级为家族级而非宗门级，避免 900 人并集让迷雾名存实亡）。视野形状用 Chebyshev
-// （方形）距离——格子网格上最简、双端可算。
+// ── Vision / fog of war (G5, §8.2 / §2.1 / §15.2) ─────────────────────────────────────
+// Decision (2026-06-21): fog model 2a — terrain layer (procedural, deterministic) is always fully visible;
+// dynamic layer (ownership / garrison / defense / protection shield / marches) is only shown within "current vision";
+// tiles outside vision revert to the base terrain from proceduralTile (not even "this tile is occupied" is leaked).
+// Vision is not persisted: computed live from vision sources at read time + short TTL cache.
+// Vision sources = own territory (radius VISION_TERRITORY) + home city (radius VISION_BASE) + own/family marches in transit
+// (radius VISION_MARCH, position linearly interpolated from departAt/arriveAt) + same-family member territories (shared, ≤30 members;
+// §8.2 decision: downgraded to family-level rather than sect-level, to avoid 900-person union making fog of war meaningless). Vision shape uses Chebyshev
+// (square) distance — simplest on a tile grid, computable on either end.
 
-/** 己方领地视野半径（Chebyshev，DRAFT）。 */
+/** Own territory vision radius (Chebyshev, DRAFT). */
 export const VISION_TERRITORY_RADIUS = 2;
-/** 主城视野半径（比领地大，DRAFT）。 */
+/** Home city vision radius (larger than territory, DRAFT). */
 export const VISION_BASE_RADIUS = 5;
-/** 在途行军视野半径（侦察行军价值的来源，DRAFT）。 */
+/** In-transit march vision radius (source of scouting march value, DRAFT). */
 export const VISION_MARCH_RADIUS = 2;
 /**
- * 侦察行军（scout kind）视野半径（G5 V2 余项，DRAFT）。比普通行军大——侦察的价值就在于
- * 「探得更深」：不打不占，派少量兵到任意非障碍格，沿途 + 抵达点照亮一片更大的视野后自动回师。
+ * Scout march (scout kind) vision radius (G5 V2 remaining item, DRAFT). Larger than ordinary marches — the value of scouting is
+ * "seeing deeper": no combat, no occupation; send a small force to any non-obstacle tile, lighting up a larger vision area along the route and at the destination, then auto-return.
  */
 export const VISION_SCOUT_RADIUS = 4;
 /**
- * 瞭望塔视野半径（§18 G5 V2 余项，DRAFT）。最大的固定持久视野源——比主城（5）更远，
- * 在己方领地建塔后该格成大半径瞭望点，照亮一片纵深，是「主动布点扩视野」的手段。
+ * Watchtower vision radius (§18 G5 V2 remaining item, DRAFT). The largest fixed persistent vision source — farther than the home city (5);
+ * building a tower on own territory upgrades that tile to a large-radius observation point, illuminating a deep area — the primary mechanism for proactively expanding vision.
  */
 export const VISION_WATCHTOWER_RADIUS = 8;
-/** 全部视野源半径的最大值（外扩查询 pad 用，须覆盖最大半径源以免漏照视区边缘）。 */
+/** Maximum radius across all vision sources (used as query pad for outward expansion; must cover the largest-radius source to avoid missing vision zone edges). */
 export const VISION_MAX_RADIUS = Math.max(
   VISION_TERRITORY_RADIUS,
   VISION_BASE_RADIUS,
@@ -921,7 +923,7 @@ export const VISION_MAX_RADIUS = Math.max(
   VISION_WATCHTOWER_RADIUS,
 );
 
-/** 视野源：一个中心点 + 半径（Chebyshev）。 */
+/** Vision source: a center point + radius (Chebyshev). */
 export interface VisionSource {
   x: number;
   y: number;
@@ -929,8 +931,8 @@ export interface VisionSource {
 }
 
 /**
- * 某格 (x,y) 是否落在任一视野源的 Chebyshev 半径内。纯函数、双端可算。
- * 源数量在视区内有界（己方/家族领地 + 主城 + 在途行军），逐格调用代价可接受。
+ * Whether tile (x,y) falls within the Chebyshev radius of any vision source. Pure function, computable on either end.
+ * The number of sources is bounded within the view area (own/family territory + home city + marches in transit); per-tile call cost is acceptable.
  */
 export function isInVision(sources: readonly VisionSource[], x: number, y: number): boolean {
   for (const s of sources) {
@@ -940,8 +942,8 @@ export function isInVision(sources: readonly VisionSource[], x: number, y: numbe
 }
 
 /**
- * 行军当前位置（fromTile→toTile 线性插值；G5 视野用，路径可能绕障故为近似，足够圈视野）。
- * frac 由 (now-departAt)/(arriveAt-departAt) 钳在 [0,1]；退化（arriveAt≤departAt）取终点。
+ * Current march position (linear interpolation from fromTile to toTile; used for G5 vision — approximate since the actual path may detour around obstacles, but sufficient for vision circles).
+ * frac is clamped to [0,1] from (now-departAt)/(arriveAt-departAt); degenerate case (arriveAt≤departAt) returns the destination.
  */
 export function marchInterpPos(
   fromX: number,
@@ -960,13 +962,13 @@ export function marchInterpPos(
   };
 }
 
-// ── 围攻可玩防守关卡（S8-3b / C2）─────────────────────────────────────────────
-// 把存储的防守 config（DefenseConfig 子集：garrison/defenderBuildings/defenderBaseLevel）规整成一份
-// 「攻方可打」的完整 LevelDefinition 形态对象（objective=destroy_base，无脚本波次）。客户端用它在
-// GameScene siege 模式实打 / 复盘；worldsvc 复算（resolveSiegeWithJudge）用同一份作为 judge 的
-// defenseJson —— 两端必须逐字一致才能确定性复算，故集中于此单一来源。
+// ── Playable siege defense level (S8-3b / C2) ─────────────────────────────────────────────
+// Normalizes the stored defense config (DefenseConfig subset: garrison/defenderBuildings/defenderBaseLevel) into a
+// complete LevelDefinition-shaped object "ready for the attacker to play" (objective=destroy_base, no scripted waves).
+// The client uses it for live play / replay in GameScene siege mode; worldsvc re-computation (resolveSiegeWithJudge) uses the same object as
+// the judge's defenseJson — both ends must be byte-for-byte identical for deterministic re-computation, hence centralized here as single source of truth.
 
-/** 由 siegeId 派生确定性 seed（FNV-1a 32-bit），供围攻关卡 + 复算同 seed。 */
+/** Derives a deterministic seed from siegeId (FNV-1a 32-bit); shared by the siege level and re-computation. */
 export function siegeSeedFromId(sid: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < sid.length; i++) {
@@ -981,38 +983,38 @@ function clampBaseLevel(n: number): number {
 }
 
 /**
- * 围攻战斗硬时限（ticks，§16.5 A7 拍板）：10 分钟游戏时间 × 60 × 30 Hz = 18000 ticks。
- * 超时双基地皆存 → 防守方胜（防守占优）+ headless 复算算力封顶。
+ * Siege battle hard time limit (ticks, §16.5 A7 decision): 10 minutes of game time × 60 × 30 Hz = 18000 ticks.
+ * If both bases survive the timeout → defender wins (defender advantage) + headless re-computation compute budget cap.
  */
 export const SIEGE_BATTLE_TIMEOUT_TICKS = 10 * 60 * 30;
 
 /**
- * 碾压级廉价结算比值（§14.10 U7，§16.5 A7 拍板）：攻方兵力 / 守方有效驻军 ≥ 此值时，
- * 跳过确定性引擎直接走廉价线性 resolveSiege（outcome 必然 attacker_win，省算力）。
- * 10 对应「攻方 10× 守军」——Lanchester 线性下差距悬殊，结果确定性极高。
- * U7 「100:1 满装备碾压」是极端上限；10:1 已足够安全省引擎。
+ * Overwhelming-tier cheap settlement ratio (§14.10 U7, §16.5 A7 decision): when attacker troops / effective defender garrison ≥ this value,
+ * skip the deterministic engine and go directly to the cheap linear resolveSiege (outcome is guaranteed attacker_win; saves compute).
+ * 10 corresponds to "attacker has 10× garrison" — under Lanchester linear, the gap is so large the outcome is nearly certain.
+ * U7 "100:1 fully-equipped overwhelming" is the extreme upper bound; 10:1 is already safe enough to skip the engine.
  */
 export const SIEGE_CHEAP_RATIO = 10;
 
-/** 进攻布阵模板（队伍）上限（§16.2，前期 5 支 = 可保存模板数 + 并发上限）。 */
+/** Maximum number of attack lineup templates (teams) (§16.2; initial phase: 5 = number of saveable templates + concurrency cap). */
 export const SIEGE_TEAM_CAP = 5;
 
-// ── 每单位兵力滑杆（§16.5 A7 调参）────────────────────────────────────────────
+// ── Per-unit troop slider (§16.5 A7 tuning) ────────────────────────────────────────────
 /**
- * 布阵编辑器每单位 HP 下限比例（§16.5）：最少分配蓝图满血的 25%，保证每个单位能发挥
- * 基本的伤害输出，避免出现「1HP 占格刷人数」的漏洞。编辑器将此值取整向上（≥1）。
+ * Minimum HP fraction per unit in the lineup editor (§16.5): at least 25% of the blueprint's full HP must be assigned,
+ * ensuring every unit contributes meaningful damage output and preventing the "1HP tile-filler abuse" exploit. The editor rounds this value up (≥1).
  */
 export const SIEGE_UNIT_HP_MIN_FRACTION = 0.25;
 /**
- * 布阵编辑器每单位 HP 步数（§16.5）：4 档（25% / 50% / 75% / 100%）。
- * 玩家每次点击格子即在档位间循环，committed 兵力 = 各单位 HP 之和。
+ * Number of HP steps per unit in the lineup editor (§16.5): 4 tiers (25% / 50% / 75% / 100%).
+ * Each click on a tile cycles through the tiers; committed troops = sum of all unit HP values.
  */
 export const SIEGE_UNIT_HP_STEPS = 4;
 
 /**
- * 规整防守 config → 完整围攻关卡对象。`config` 为防守方自定义（可空）；`tileLevel` 用于无自定义时
- * 派生一个象征性的基地等级防守。返回形态对齐客户端 LevelDefinition（loose object，避免在 shared
- * 复制引擎 schema）。纯函数、确定性、双端可算。
+ * Normalizes a defense config into a complete siege level object. `config` is the defender's customization (nullable); `tileLevel` is used to
+ * derive a symbolic base-level defense when no customization is provided. Returns an object shaped like the client's LevelDefinition (loose object; avoids duplicating the engine schema in shared).
+ * Pure function, deterministic, computable on either end.
  */
 export function buildSiegeLevel(
   config: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null | undefined,
@@ -1035,26 +1037,26 @@ export function buildSiegeLevel(
       level.defenderBaseLevel = clampBaseLevel(config.defenderBaseLevel);
     }
   } else {
-    // 无自定义防守 → 用格等级派生一个象征性基地防守（确定性，攻方破基即胜）。
+    // No custom defense → derive a symbolic base defense from tile level (deterministic; attacker wins by destroying the base).
     level.defenderBaseLevel = clampBaseLevel(Math.floor(tileLevel) - 1);
   }
   return level;
 }
 
 /**
- * 围攻自动战斗关卡（G3-2a，§16.3）：在 {@link buildSiegeLevel}（守方布阵 + 双基地 +
- * objective:destroy_base）基础上扩出**攻方预布军**（`attackerArmy`，下半场 owner0）+
- * **战斗硬时限**（`battleTimeoutTicks`，超时判防守方胜）。无 live 指令 → 战斗由
- * `seed + 双方布阵` 唯一确定（worldsvc headless 跑权威；客户端 seed 重播观战）。
+ * Siege auto-battle level (G3-2a, §16.3): extends {@link buildSiegeLevel} (defender lineup + dual bases +
+ * objective:destroy_base) with the **attacker's pre-deployed army** (`attackerArmy`, owner0 in the bottom half) +
+ * **hard battle time limit** (`battleTimeoutTicks`; timeout = defender wins). No live commands → battle outcome is
+ * uniquely determined by `seed + both lineups` (worldsvc runs authoritatively headless; client replays with the same seed for spectating).
  *
- * 纯函数、确定性、双端可算。返回 loose object，形态对齐客户端 LevelDefinition
- * （含 attackerArmy / battleTimeoutTicks，由 levelSchema 校验）。
+ * Pure function, deterministic, computable on either end. Returns a loose object shaped like the client's LevelDefinition
+ * (including attackerArmy / battleTimeoutTicks, validated by levelSchema).
  *
- * @param attacker 攻方布阵（`army` = GarrisonEntry[]，含每单位 initialHp = 分配兵力）。
- * @param defender 守方 config（garrison / defenderBuildings / defenderBaseLevel），同 buildSiegeLevel。
- * @param tileLevel 无守方自定义时派生象征性基地等级。
- * @param seed 关卡 seed（围攻同 seed，复算/重播一致）。
- * @param battleTimeoutTicks 战斗硬时限，默认 {@link SIEGE_BATTLE_TIMEOUT_TICKS}。
+ * @param attacker Attacker lineup (`army` = GarrisonEntry[]; each unit has initialHp = allocated troops).
+ * @param defender Defender config (garrison / defenderBuildings / defenderBaseLevel); same as buildSiegeLevel.
+ * @param tileLevel Used to derive a symbolic base level when no defender customization is present.
+ * @param seed Level seed (same seed for siege + re-computation/replay; ensures consistency).
+ * @param battleTimeoutTicks Hard battle time limit; defaults to {@link SIEGE_BATTLE_TIMEOUT_TICKS}.
  */
 export function buildSiegeBattle(
   attacker: { army?: unknown } | null | undefined,
@@ -1063,7 +1065,7 @@ export function buildSiegeBattle(
   seed: number,
   battleTimeoutTicks: number = SIEGE_BATTLE_TIMEOUT_TICKS,
 ): Record<string, unknown> {
-  // 复用守方规整（双基地 + destroy_base 已含）；再叠加攻方军 + 时限。
+  // Reuse the defender normalization (dual bases + destroy_base already included); then layer on the attacker army + time limit.
   const level = buildSiegeLevel(defender, tileLevel, seed);
   level.battleTimeoutTicks = Math.max(1, Math.floor(battleTimeoutTicks));
   if (attacker && Array.isArray(attacker.army) && attacker.army.length > 0) {
@@ -1072,4 +1074,4 @@ export function buildSiegeBattle(
   return level;
 }
 
-// ── 错误码：见 api.ts ErrorCode 的 SLG 段（WORLD_FULL/TILE_OCCUPIED/…）──
+// ── Error codes: see the SLG range in api.ts ErrorCode (WORLD_FULL/TILE_OCCUPIED/…) ──

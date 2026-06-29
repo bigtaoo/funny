@@ -1,12 +1,13 @@
-// meta → gateway 内部调用（Phase C 对等裁判）。ranked 局 hash 不一致时，meta 把整局
-// 录像发给 gateway，由 gateway 挑一名高配空闲在线玩家无头复算，回报终局 hash + winner。
-// 内部鉴权：X-Internal-Key（共用 NW_INTERNAL_KEY）。gateway 未配置 → 裁判不可用（作废）。
+// meta → gateway internal call (Phase C peer judge). When a ranked match has a hash mismatch, meta sends
+// the full replay to gateway, which selects a high-resource idle online player to headlessly re-compute
+// the match and reports back the final hash + winner.
+// Internal auth: X-Internal-Key (shared NW_INTERNAL_KEY). gateway not configured → judge unavailable (verdict voided).
 //
-// 与 commercialClient 同形：HTTP 实现 + 接口（便于测试注入假裁判）。
+// Same shape as commercialClient: HTTP implementation + interface (makes it easy to inject a fake judge in tests).
 
 import { internalHeaders } from '@nw/shared';
 
-/** 录像帧（command bytes 用 base64 传输，JSON 安全；gateway 解回 bytes 推给裁判客户端）。 */
+/** Replay frame (command bytes are base64-encoded for JSON safety; gateway decodes back to bytes and pushes to the judge client). */
 export interface JudgeFrame {
   frame: number;
   cmds: { side: number; commands: string }[];
@@ -14,15 +15,15 @@ export interface JudgeFrame {
 
 export interface JudgeReq {
   seed: number;
-  /** MatchMode 数值（ranked = 1）。 */
+  /** MatchMode numeric value (ranked = 1). */
   mode: number;
   endFrame: number;
   frames: JudgeFrame[];
-  /** 参赛双方 accountId——不可自己裁自己（PvE 仅排除本人）。 */
+  /** accountIds of both competitors — a player cannot judge their own match (PvE excludes only the player themselves). */
   exclude: string[];
-  /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：非空 → 裁判按战役模式复算该关。 */
+  /** PvE spot-check re-computation (PVE_INTEGRITY §8.6 L1): non-empty → judge re-computes this level in campaign mode. */
   levelId?: string;
-  /** 服务器权威蓝图快照（升级等级），保证 PvE 复算确定性。 */
+  /** Server-authoritative blueprint snapshot (upgrade levels), ensures PvE re-computation is deterministic. */
   pveUpgrades?: Record<string, number>;
 }
 
@@ -30,16 +31,16 @@ export interface JudgeRes {
   ok: boolean;
   stateHash?: string;
   winnerSide?: number;
-  /** PvE 复算得到的星数（PVE_INTEGRITY §8.6 L1）。 */
+  /** Stars obtained by the PvE re-computation (PVE_INTEGRITY §8.6 L1). */
   stars?: number;
-  /** PvE 喂入（S9-3b，ACHIEVEMENT_DESIGN §6.2）：复算出的玩家本局成就计数 JSON；PvP/siege 恒空。 */
+  /** PvE feed-in (S9-3b, ACHIEVEMENT_DESIGN §6.2): JSON of the player's per-match achievement counters derived from re-computation; always empty for PvP/siege. */
   statsJson?: string;
   judgeAccountId?: string;
 }
 
 /**
- * 社交实时推送（S6，SOCIAL_DESIGN §4.2）：meta → gateway /gw/push 据 accountId 定向下发。
- * 与 gateway 侧 PushMsg 社交分支同形（JSON 线契约，camelCase discriminator=kind）。
+ * Social real-time push (S6, SOCIAL_DESIGN §4.2): meta → gateway /gw/push, targeted delivery by accountId.
+ * Same shape as the gateway-side PushMsg social branch (JSON wire contract, camelCase discriminator=kind).
  */
 export type SocialPushMsg =
   | { kind: 'friend_request'; requestId: string; fromPublicId: string; fromName: string; message: string }
@@ -50,17 +51,17 @@ export type SocialPushMsg =
 export interface GatewayClient {
   readonly available: boolean;
   judge(req: JudgeReq): Promise<JudgeRes>;
-  /** 据 accountId 定向推一条社交消息（离线 gateway 丢弃）。best-effort，不抛。 */
+  /** Push a targeted social message by accountId (dropped if gateway is offline). Best-effort, does not throw. */
   push(accountId: string, msg: SocialPushMsg): Promise<void>;
-  /** 批量查在线态（好友列表标 online flag）；gateway 不可用 / 出错 → 全 false。 */
+  /** Batch presence query (marks the online flag in friend lists); returns all-false if gateway is unavailable or errors. */
   presence(accountIds: string[]): Promise<Record<string, boolean>>;
-  /** 好友关系变更后让 gateway 的好友缓存失效（presence 广播范围重拉）。best-effort。 */
+  /** Invalidate gateway's friend cache after a friendship change (forces presence broadcast scope to be re-fetched). Best-effort. */
   invalidateFriends(accountId: string): Promise<void>;
 }
 
 export class HttpGatewayClient implements GatewayClient {
   constructor(
-    private readonly baseUrl: string | null, // 形如 http://gateway:8090（内部 HTTP 端口）
+    private readonly baseUrl: string | null, // e.g. http://gateway:8090 (internal HTTP port)
     private readonly internalKey: string,
   ) {}
 
@@ -68,7 +69,7 @@ export class HttpGatewayClient implements GatewayClient {
     return this.baseUrl !== null;
   }
 
-  /** 出错 / 未配置 / 无候选 → {ok:false}（meta 退回作废，不定罪）。 */
+  /** Error / not configured / no candidate → {ok:false} (meta falls back to voiding the verdict, not convicting). */
   async judge(req: JudgeReq): Promise<JudgeRes> {
     if (!this.baseUrl) return { ok: false };
     try {
@@ -93,7 +94,7 @@ export class HttpGatewayClient implements GatewayClient {
         body: JSON.stringify({ accountId, msg }),
       });
     } catch {
-      // best-effort：推送失败不影响已落库的数据；客户端下次登录拉取。
+      // best-effort: push failure does not affect already-persisted data; client pulls on next login.
     }
   }
 
@@ -120,7 +121,7 @@ export class HttpGatewayClient implements GatewayClient {
         body: JSON.stringify({ accountId }),
       });
     } catch {
-      // best-effort：缓存最终一致；失败仅导致 presence 范围短暂滞后。
+      // best-effort: cache is eventually consistent; failure only causes a brief delay in presence scope refresh.
     }
   }
 }

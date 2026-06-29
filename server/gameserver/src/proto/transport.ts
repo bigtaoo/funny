@@ -1,8 +1,8 @@
-// transport.proto 编解码层（M12）。契约单一来源 = ../../contracts/transport.proto，
-// 运行期用 protobufjs 解析（不维护第二份 schema）。服务器只认这一层；
-// `commands` 是 bytes，对服务器 opaque（透传不解码）。
+// transport.proto encode/decode layer (M12). Single source of truth = ../../contracts/transport.proto,
+// parsed at runtime with protobufjs (no second schema maintained). The server only recognises this layer;
+// `commands` is bytes, opaque to the server (passed through without decoding).
 //
-// 对外暴露：解码 ClientMsg（判别联合）+ 构造编码 ServerMsg。
+// Public API: decode ClientMsg (discriminated union) + construct and encode ServerMsg.
 import * as protobuf from 'protobufjs';
 import * as fs from 'fs';
 import * as path from 'path';

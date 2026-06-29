@@ -1,7 +1,9 @@
-// 离线红点聚合端到端（S6 收尾，SOC8）：真实 Mongo + 假 gateway/commercial。
-//   GET /social/badges 一次性聚合「待处理收到的好友申请 / 有未读的会话 / 未读邮件」+ total。
-//   断言初始全 0、各来源各自加分、读/响应后回落、total 为三者之和。
-// 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// End-to-end test for offline notification-badge aggregation (S6 final, SOC8): real Mongo + fake gateway/commercial.
+//   GET /social/badges aggregates in one shot: pending incoming friend requests / conversations with unread messages /
+//   unread mail, plus a total.
+//   Asserts: all zero initially; each source increments its badge independently; badge drops after reading/responding;
+//   total equals the sum of the three individual counts.
+// Requires `cd server && docker compose up -d` and `tsc -b` first (imports dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -92,23 +94,23 @@ describe.skipIf(!mongo)('social badges e2e', () => {
     const c = await newAccount('badge-ccc');
     await get(a.token, '/save');
 
-    // 1) c 向 a 发好友申请 → a 的 friendRequests=1（仅收到的计入，发出的不计）。
+    // 1) c sends a friend request to a → a's friendRequests=1 (only received requests count; outgoing do not).
     await post(c.token, '/friends/request', { publicId: a.publicId });
     expect(await badges(a.token)).toMatchObject({ friendRequests: 1, chat: 0, mail: 0, total: 1 });
-    // 发起方 c 的红点不受影响（outgoing 不计）。
+    // The sender c's badge is unaffected (outgoing requests do not count).
     expect(await badges(c.token)).toMatchObject({ friendRequests: 0, total: 0 });
 
-    // 接受后申请红点清零，双方成为好友。
+    // After accepting, the friend-request badge resets to zero and both become friends.
     const reqs = b(await get(a.token, '/friends/requests')).data;
     await post(a.token, '/friends/respond', { requestId: reqs.incoming[0].requestId, accept: true });
     expect((await badges(a.token)).friendRequests).toBe(0);
 
-    // 2) c 给 a 发两条私聊 → a 的 chat=1（按「有未读的会话数」计，非消息条数）。
+    // 2) c sends two direct messages to a → a's chat=1 (counted by number of conversations with unread messages, not message count).
     await post(c.token, '/chat/send', { toPublicId: a.publicId, body: 'hi' });
     await post(c.token, '/chat/send', { toPublicId: a.publicId, body: 'there' });
     expect(await badges(a.token)).toMatchObject({ chat: 1 });
 
-    // 3) 系统邮件 → a 的 mail=1。
+    // 3) System mail delivered → a's mail=1.
     await internal('/internal/mail/system/send', {
       dispatchKey: 'badge-mail-1',
       scope: 'single',
@@ -140,12 +142,12 @@ describe.skipIf(!mongo)('social badges e2e', () => {
     });
     expect(await badges(a.token)).toMatchObject({ chat: 1, mail: 1, total: 2 });
 
-    // 标记会话已读 → chat 清零。
+    // Mark conversation as read → chat drops to zero.
     const convId = b(await get(a.token, '/chat/conversations')).data.conversations[0].convId;
     await post(a.token, '/chat/read', { convId });
     expect(await badges(a.token)).toMatchObject({ chat: 0, mail: 1, total: 1 });
 
-    // 标记邮件已读 → mail 清零。
+    // Mark mail as read → mail drops to zero.
     const mailId = b(await get(a.token, '/mail')).data.mail[0].mailId;
     await post(a.token, `/mail/${mailId}/read`, {});
     expect(await badges(a.token)).toEqual({ friendRequests: 0, chat: 0, mail: 0, total: 0 });

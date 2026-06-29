@@ -1,22 +1,24 @@
-// 私聊敏感词过滤（S6-2，SOC2 + SOC10）。分国家/地区配置：全局基础词表 + 地区叠加词表。
-// 纯数据 + 纯函数，无 DB / 无 PIXI；meta 发送私聊时调 `censorChat` 替换命中词为星号。
+// Direct-message profanity filter (S6-2, SOC2 + SOC10). Configured per country/region: a global base word list plus region-specific overlay lists.
+// Pure data + pure functions, no DB / no PIXI; meta calls `censorChat` when sending a DM to replace matched words with asterisks.
 //
-// 设计取舍（SOC2「不上重型治理」）：一期只做发送端替换式过滤（命中即打码、不拒发），
-// 完整治理（举报 / 人工 / 分级 / 外部词库热更新）后置。词表按 `region` 选取——
-// 不同地区合规要求不同（SOC10），调用方传 region（缺省 'global'），命中 global + 该地区词表。
+// Design trade-off (SOC2 "no heavy-weight moderation in phase 1"): phase 1 only does sender-side replacement filtering
+// (mask on hit, never reject delivery); full moderation (reports / manual review / tiered escalation / external word list hot-reload) is deferred.
+// The word list is selected by `region` — different regions have different compliance requirements (SOC10);
+// callers pass region (default 'global') and hits are checked against global + that region's list.
 //
-// 词表刻意保持小而克制（占位起步），真实词库应由运营从外部配置注入（替换 `REGION_WORDLISTS`
-// 或在加载期 merge），此处只锚定数据结构与匹配语义。
+// The word list is intentionally small and conservative (placeholder to establish the data structure);
+// a real word list should be injected by ops from external config (replacing `REGION_WORDLISTS` or merging at load time).
+// This file only anchors the data structure and matching semantics.
 
-/** 受支持的过滤地区码（与 i18n locale 解耦——这是合规地区，非语言）。 */
+/** Supported filter region codes (decoupled from i18n locale — these are compliance regions, not languages). */
 export type ChatRegion = 'global' | 'cn' | 'de' | 'en';
 
 /**
- * 地区敏感词表。`global` 恒生效；其余地区在 global 之上叠加。
- * 词条小写存储，匹配时大小写不敏感。占位起步，运营接外部词库时整表替换。
+ * Region-specific word lists. `global` is always active; other regions are overlaid on top of global.
+ * Entries are stored lowercase; matching is case-insensitive. Placeholder to start; replace the whole table when ops connects an external word list.
  */
 export const REGION_WORDLISTS: Record<ChatRegion, string[]> = {
-  // 通用辱骂 / 钓鱼诈骗高频词（极简占位）。
+  // Common slurs / high-frequency phishing and scam terms (minimal placeholder).
   global: ['fuck', 'shit', 'http://', 'https://', 'www.'],
   cn: ['傻逼', '代练', '外挂', '加微信', '私服'],
   de: ['scheisse', 'arschloch'],
@@ -24,9 +26,10 @@ export const REGION_WORDLISTS: Record<ChatRegion, string[]> = {
 };
 
 /**
- * 语言标签 → 合规地区码（best-effort）。取主子标签（`de-DE`→`de`），大小写不敏感。
- * 不识别的语言落 `global`（仅基础词表）。映射刻意保守——合规地区 ≠ 语言，
- * 但在没有更强信号（IP 地理 / 账号实名地区）前，客户端语言是最现实的代理。
+ * Language tag → compliance region code (best-effort). Takes the primary subtag (`de-DE`→`de`), case-insensitive.
+ * Unrecognized languages fall back to `global` (base list only). The mapping is intentionally conservative —
+ * compliance region ≠ language, but until a stronger signal is available (IP geolocation / account real-name region),
+ * the client language is the most practical proxy.
  */
 export function regionFromLocale(locale: string | undefined | null): ChatRegion {
   if (!locale) return 'global';
@@ -44,9 +47,9 @@ export function regionFromLocale(locale: string | undefined | null): ChatRegion 
 }
 
 /**
- * 解析 HTTP `Accept-Language` 头，取 q 值最高的语言 → 地区码。
- * 例：`de-DE,de;q=0.9,en;q=0.8` → `de`。空 / 无法解析落 `global`。
- * 服务端在 auth 时据此惰性给账号打 region 标（无需客户端/契约改动）。
+ * Parse the HTTP `Accept-Language` header, take the highest q-value language → region code.
+ * Example: `de-DE,de;q=0.9,en;q=0.8` → `de`. Empty / unparseable falls back to `global`.
+ * The server lazily tags accounts with a region at auth time based on this (no client/contract changes required).
  */
 export function regionFromAcceptLanguage(header: string | undefined | null): ChatRegion {
   if (!header) return 'global';
@@ -69,15 +72,15 @@ export function regionFromAcceptLanguage(header: string | undefined | null): Cha
   return regionFromLocale(bestTag);
 }
 
-/** 把命中词的可显字符替换为同长度的 `*`（保留 URL 协议串这类含符号词的非字母原样打码亦可）。 */
+/** Replace each visible character in a matched word with `*` of the same length (works for symbol-containing words like URL schemes too). */
 function maskWord(word: string): string {
   return '*'.repeat([...word].length);
 }
 
 /**
- * 按地区过滤一段私聊文本：命中 global + region 词表的子串（大小写不敏感）替换为 `*`。
- * 返回 `{ text, hit }`——`hit` 表示是否命中（供调用方记审计 / 限流加权，一期未用）。
- * 不拒发（SOC2），仅打码。空串 / 无命中原样返回。
+ * Filter a DM text by region: substrings matching the global + region word list (case-insensitive) are replaced with `*`.
+ * Returns `{ text, hit }` — `hit` indicates whether any word was matched (for callers to use in audit logging / rate-limit weighting; unused in phase 1).
+ * Never rejects delivery (SOC2); only masks. Empty string / no hits returns the original text unchanged.
  */
 export function censorChat(
   text: string,
@@ -90,7 +93,7 @@ export function censorChat(
   let out = text;
   let hit = false;
   const lower = out.toLowerCase();
-  // 逐词扫：对每个词在小写串里找全部出现位置，按原串同位置替换为等长星号。
+  // Scan word by word: find all occurrences of each word in the lowercased string, then replace at the same positions in the original string with equal-length asterisks.
   for (const raw of words) {
     const w = raw.toLowerCase();
     if (!w) continue;
@@ -109,7 +112,7 @@ export function censorChat(
     }
     rebuilt += out.slice(cursor);
     out = rebuilt;
-    // mask 与原词等长 → lower 长度不变，无需重算 lower 索引基准。
+    // mask has the same length as the original word → lower string length is unchanged; no need to recompute lower index positions.
   }
   return { text: out, hit };
 }

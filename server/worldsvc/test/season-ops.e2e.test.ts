@@ -1,7 +1,7 @@
-// SLG 大区赛季运维 e2e（§17.5/§17.6/§17.7/§17.11）：真实 Mongo 专属库。Mongo 不可达整套 skip。
-//   • settleSeason：落 seasonResults（幂等 _id）+ 发奖邮件（材料/皮肤，中原首府 ×2，dispatchKey 幂等）；
-//   • resetSeason：守卫（须先 settle）+ 分批清档 + 家族赛季态归零 + status→open + engineVersion 重 pin + 幂等续跑；
-//   • admin /admin/world/* X-Internal-Key 门控（无 key / JWT 玩家被拒，有 key 通）。
+﻿// SLG world season ops e2e (§17.5/§17.6/§17.7/§17.11): real Mongo dedicated database. Entire suite skipped if Mongo is unreachable.
+//   • settleSeason: writes seasonResults (idempotent _id) + sends reward mail (materials/skins, center capital ×2, idempotent dispatchKey);
+//   • resetSeason: guards (must settle first) + batched archive wipe + family season state zeroed + status→open + engineVersion re-pinned + idempotent resume;
+//   • admin /admin/world/* gated by X-Internal-Key (no key / player JWT → rejected; valid key → allowed).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
@@ -46,7 +46,7 @@ describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
     cols: m.collections, redis: null, mapW: SLG_MAP_W, mapH: SLG_MAP_H, mail: fakeMail, now: () => 1_700_000_000_000,
   });
 
-  /** 重置数据 + 造一个 active 世界 + 两个家族占国（alice 家族占中原 9 + 角 0；bob 家族占 1）。 */
+  /** Reset data and create one active world with two families holding nations (alice: center capital 9 + corner 0; bob: 1). */
   async function seed(status: WorldDoc['status'] = 'active'): Promise<void> {
     const c = m.collections;
     await Promise.all([
@@ -73,9 +73,9 @@ describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
       ownerId: owner, familyId: familyId(W, tag), rev: 1,
     });
     await c.nations.insertMany([
-      nation(CENTER_CAPITAL_IDX, 'alice', 'AA'), // 中原首府
-      nation(0, 'alice', 'AA'),                  // 角（AA 共 2 国 → 冠军）
-      nation(1, 'bob', 'BB'),                    // BB 1 国 → top3
+      nation(CENTER_CAPITAL_IDX, 'alice', 'AA'), // center capital
+      nation(0, 'alice', 'AA'),                  // corner capital (AA holds 2 nations total → champion)
+      nation(1, 'bob', 'BB'),                    // BB holds 1 nation → top3
     ]);
   }
 
@@ -88,20 +88,20 @@ describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
     const ranking = await svc.settleSeason(W);
     expect(ranking[0]).toMatchObject({ scope: 'family', familyId: familyId(W, 'AA'), nationCount: 2 });
 
-    // seasonResults 落库（_id 幂等键 + tier）。
+    // seasonResults written to database (idempotent _id + tier).
     const doc = await m.collections.seasonResults.findOne({ _id: `${W}:s${SEASON}` });
     expect(doc).toBeTruthy();
     expect(doc!.ranking[0]).toMatchObject({ rank: 1, tier: 'champion', id: familyId(W, 'AA') });
 
-    // 冠军 alice 收奖邮件：中原首府 → scrap ×2。材料走 kind:'material'（→ SaveData.materials
-    // 养成统一池，SLG8），非泛用 'item'（后者落 inventory.items 孤儿桶）。
+    // Champion alice receives reward mail: center capital → scrap ×2. Materials use kind:'material' (→ SaveData.materials
+    // unified progression pool, SLG8), not the generic 'item' kind (which goes to the inventory.items orphan bucket).
     const aliceMail = mailCalls.find((x) => x.accountId === 'alice');
     expect(aliceMail).toBeTruthy();
     expect(aliceMail!.dispatchKey).toBe(`slg-settle:${W}:s${SEASON}`);
     const scrap = aliceMail!.content.attachments!.find((a) => a.kind === 'material' && a.id === 'scrap');
     expect(scrap!.count).toBe(SETTLE_REWARDS.champion.items.scrap * CENTER_CAPITAL_MULT);
 
-    // 重入：world 已 settling，再 settle 不重复落库（$setOnInsert）。
+    // Re-entry: world is already settling; a second settle call must not create a duplicate record ($setOnInsert).
     const before = doc!.settledAt;
     await svc.settleSeason(W);
     const again = await m.collections.seasonResults.findOne({ _id: `${W}:s${SEASON}` });
@@ -110,7 +110,7 @@ describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
   });
 
   it('reset：未 settle 直接 reset 被拒（防丢历史）', async () => {
-    await seed('active'); // status=active，未 settle
+    await seed('active'); // status=active, not yet settled
     await expect(svc.resetSeason(W)).rejects.toMatchObject({ code: 'WORLD_CLOSED' });
   });
 
@@ -131,7 +131,7 @@ describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
   });
 
   it('reset：resetting 中间态可续跑（幂等）', async () => {
-    await seed('resetting'); // 模拟上次 reset 崩在 resetting
+    await seed('resetting'); // simulate a previous reset that crashed mid-way at resetting
     await expect(svc.resetSeason(W)).resolves.toBeTruthy();
     expect((await m.collections.worlds.findOne({ _id: W }))!.status).toBe('open');
   });

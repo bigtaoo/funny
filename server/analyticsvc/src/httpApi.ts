@@ -1,9 +1,9 @@
-// analyticsvc HTTP API（A9-1 / A9-2 / A9-3）。
-// node:http + 四个端点：
-//   GET  /health              无鉴权（Docker healthcheck）
-//   GET  /analytics/config    无鉴权（匿名用户 session 开始时拉）
-//   POST /analytics/events    JWT 可选（有 token 附 user_id，否则匿名）
-//   GET  /internal/query      X-Internal-Key（ops 后台聚合查询）
+// analyticsvc HTTP API (A9-1 / A9-2 / A9-3).
+// node:http + four endpoints:
+//   GET  /health              no auth (Docker healthcheck)
+//   GET  /analytics/config    no auth (pulled by anonymous users at session start)
+//   POST /analytics/events    optional JWT (attaches user_id if token present, otherwise anonymous)
+//   GET  /internal/query      X-Internal-Key (aggregation queries from ops back-end)
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import {
   extractBearer,
@@ -64,12 +64,12 @@ export function startHttpApi(
         return send(res, 204, {});
       }
 
-      // ─── GET /analytics/config（无鉴权，匿名可拉）─────────────────────────
+      // ─── GET /analytics/config (no auth, accessible anonymously) ─────────────────────────
       if (method === 'GET' && url === '/analytics/config') {
         return send(res, 200, ok(svc.getConfig()));
       }
 
-      // ─── POST /analytics/events（JWT 可选）────────────────────────────────
+      // ─── POST /analytics/events (optional JWT) ────────────────────────────────
       if (method === 'POST' && url === '/analytics/events') {
         let userId: string | undefined;
         const token = extractBearer(req.headers['authorization']);
@@ -77,7 +77,7 @@ export function startHttpApi(
           try {
             userId = verifyToken(token, { secret: opts.jwtSecret });
           } catch {
-            // JWT 无效：继续作匿名处理，不拒绝请求（分析数据宽容）
+            // Invalid JWT: continue as anonymous — do not reject the request (analytics data is lenient)
           }
         }
 
@@ -96,16 +96,16 @@ export function startHttpApi(
           return sendErr(res, ErrorCode.BAD_REQUEST, 'events 最多 100 条/请求');
         }
 
-        // C5-c GDPR：已识别用户（userId 存在）必须携带 consent=true 才落库；匿名用户直接通过。
+        // C5-c GDPR: identified users (userId present) must include consent=true to be persisted; anonymous users pass through directly.
         if (userId && !batch.consent) {
-          return send(res, 200, ok(null)); // 无同意静默丢弃，不返回错误（不影响体验）
+          return send(res, 200, ok(null)); // no consent: silently discard, do not return error (preserves user experience)
         }
-        // fire-and-forget：上报失败静默返回 200（不影响游戏体验）
-        svc.ingestEvents(batch, userId).catch(() => {/* 静默 */});
+        // fire-and-forget: silently return 200 on ingestion failure (does not affect game experience)
+        svc.ingestEvents(batch, userId).catch(() => {/* silent */});
         return send(res, 200, ok(null));
       }
 
-      // ─── GET /internal/query（X-Internal-Key，ops 后台用，A9-6）─────────
+      // ─── GET /internal/query (X-Internal-Key, used by ops back-end, A9-6) ─────────
       if (method === 'GET' && url.startsWith('/internal/query')) {
         if (!opts.internalAuth.verify(req.headers).ok) {
           return sendErr(res, ErrorCode.UNAUTHENTICATED, 'invalid internal key');

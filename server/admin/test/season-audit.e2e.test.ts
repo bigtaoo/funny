@@ -1,6 +1,7 @@
-// admin SLG 异常交易审计工单端到端（G7 反 RMT，SLG_DESIGN §17.7）：真实 Mongo 专属库。
-//   扫描代理 worldsvc / 立工单 + pairKey 去重 / open→dismissed|actioned 裁定 / 无效裁定与重复裁定拒绝 / 审计留痕。
-// 需 `cd server && docker compose up -d`。
+// End-to-end test for admin SLG suspicious-trade audit tickets (G7 anti-RMT, SLG_DESIGN §17.7): real Mongo in a dedicated DB.
+//   Covers: scan via worldsvc proxy / file ticket + pairKey deduplication / open→dismissed|actioned resolution /
+//   rejection of invalid and duplicate resolutions / audit trail.
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createAdminMongo, type AdminMongo } from '../src/db';
 import { AdminService, type Actor } from '../src/service';
@@ -39,7 +40,7 @@ class FakeMail implements MailDispatcher {
   async preview(_req: MailPreviewReq): Promise<MailPreviewRes> { return { ok: true, recipientCount: 1 }; }
 }
 
-// 假 worldsvc：扫描返回预置异常。
+// Fake worldsvc: scanning returns pre-configured anomalies.
 const sampleAnomalies: AuctionAnomaly[] = [
   { sellerId: 'rich', buyerId: 'mule', trades: 4, designatedTrades: 4, totalCoins: 80000, firstTs: 1, lastTs: 9, severity: 'high', reasons: ['designated', 'high_value'] },
 ];
@@ -94,7 +95,7 @@ describe.skipIf(!mongo)('admin SLG audit e2e', () => {
     expect(a.status).toBe('open');
     expect(a.snapshot.totalCoins).toBe(80000);
     const b = await svc.slgFileAuditTicket(root, SNAP);
-    expect(b.id).toBe(a.id); // 幂等返回同一张
+    expect(b.id).toBe(a.id); // idempotent: returns the same ticket
     const all = await svc.slgListAuditTickets({});
     expect(all).toHaveLength(1);
   });

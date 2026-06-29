@@ -1,20 +1,20 @@
-// gameserver 环境变量（复用 @nw/shared ServerEnv）。瘦身后（M16）不再连 Mongo：
-// 身份由 ticket（internalKey 验签）确定，局末结果 POST 给 meta（metaBaseUrl）。
+// gameserver environment variables (reuses @nw/shared ServerEnv). After slimming (M16) it no longer connects to Mongo:
+// identity is established by the ticket (verified with internalKey); end-of-match results are POSTed to meta (metaBaseUrl).
 import { loadServerEnv, type ServerEnv } from '@nw/shared';
 import { randomUUID } from 'crypto';
 
 export interface GameEnv extends ServerEnv {
   port: number;
   host: string;
-  /** meta REST 内部基址（局末上报 POST {metaBaseUrl}/internal/match/report）。null = 不上报。 */
+  /** meta REST internal base URL (end-of-match report POSTed to {metaBaseUrl}/internal/match/report). null = no reporting. */
   metaBaseUrl: string | null;
-  /** 本实例对客户端公开的 WS 地址（写进 ticket.game_url；向 matchsvc 注册用）。 */
+  /** Public WS address of this instance exposed to clients (written into ticket.game_url; used when registering with matchsvc). */
   publicWsUrl: string | null;
-  /** matchsvc 内部 HTTP 基址（启动注册 + 心跳）。null = 不注册（matchsvc 用静态兜底地址）。 */
+  /** matchsvc internal HTTP base URL (startup registration + heartbeat). null = no registration (matchsvc falls back to a static address). */
   matchsvcInternalUrl: string | null;
-  /** 本实例 id（注册标识）。 */
+  /** This instance's id (registration identifier). */
   gameId: string;
-  /** 并发对局容量（分配权重）。 */
+  /** Concurrent match capacity (allocation weight). */
   capacity: number;
 }
 

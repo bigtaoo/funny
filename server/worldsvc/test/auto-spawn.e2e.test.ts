@@ -1,8 +1,8 @@
-// worldsvc 自动落城（§3.4，2026-06-24）端到端：真实 Mongo 专属库。Mongo 不可达整套 skip。
-//   首次进入不传坐标 → 系统自动落城：① 无家族 → 落外环新手区（dr > 0.6）② 有家族 → 落同家族
-//   成员主城附近（切比雪夫 ≤ SPAWN_NEAR_FAMILY_RADIUS）③ 落点恒为合法 base 格、避开已占格。
-//   手动坐标路径（内部/测试）仍可用（既有 service.e2e 覆盖）。
-// 需 `cd server && docker compose up -d`。
+// worldsvc auto-spawn (§3.4, 2026-06-24) end-to-end: uses a dedicated real Mongo database. Entire suite skips if Mongo is unreachable.
+//   First join without coordinates → system auto-spawns: ① no family → spawns in outer-ring novice zone (dr > 0.6) ② has family → spawns
+//   near a family member's main base (Chebyshev ≤ SPAWN_NEAR_FAMILY_RADIUS) ③ spawn point is always a valid base tile, avoiding occupied tiles.
+//   Manual-coordinate path (internal/test) still works (covered by existing service.e2e tests).
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { proceduralTile, tileId, SLG_MAP_W, SLG_MAP_H } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -12,7 +12,7 @@ const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=r
 const DB = 'nw_world_autospawn_test';
 const W = 's1-autospawn';
 
-// 与 service.ts 私有常量保持一致（改那边记得改这里）。
+// Keep in sync with private constants in service.ts (update here when changing them there).
 const SPAWN_NEAR_FAMILY_RADIUS = 6;
 const SPAWN_OUTER_MIN_DR = 0.6;
 
@@ -33,7 +33,7 @@ const CENTER_X = Math.floor(SLG_MAP_W / 2);
 const CENTER_Y = Math.floor(SLG_MAP_H / 2);
 const MAX_DIST = Math.sqrt((SLG_MAP_W / 2) ** 2 + (SLG_MAP_H / 2) ** 2);
 
-/** 到中心的归一化距离（0 中心 .. 1 角落），与 proceduralTile 内 dr 同口径。 */
+/** Normalized distance from the center (0 = center .. 1 = corner), matching the dr convention used inside proceduralTile. */
 function dr(x: number, y: number): number {
   const dx = x - SLG_MAP_W / 2;
   const dy = y - SLG_MAP_H / 2;
@@ -45,7 +45,7 @@ function parseTile(mainBaseTile: string): { x: number; y: number } {
   return { x: Number(parts[parts.length - 2]), y: Number(parts[parts.length - 1]) };
 }
 
-/** 在 (sx,sy) 周边螺旋找一个可落城的合法格（neutral/resource），用于放置家族成员主城。 */
+/** Spirals outward from (sx, sy) to find a placeable valid tile (neutral/resource) for seeding a family member's main base. */
 function findPlaceable(sx: number, sy: number): { x: number; y: number } {
   for (let r = 0; r < 60; r++) {
     for (let dx = -r; dx <= r; dx++) {
@@ -85,49 +85,49 @@ describe.skipIf(!mongo)('worldsvc 自动落城 e2e', () => {
     await m.close();
   });
 
-  it('无家族首次进入：不传坐标 → 自动落城外环新手区（合法 base 格，dr > 阈值）', async () => {
-    const me = await svc.joinWorld(W, 'solo'); // 不传坐标
+  it('no family, first join: no coordinates → auto-spawns in outer-ring novice zone (valid base tile, dr > threshold)', async () => {
+    const me = await svc.joinWorld(W, 'solo'); // no coordinates passed
     expect(me.joined).toBe(true);
     expect(me.mainBaseTile).toBeTruthy();
 
     const { x, y } = parseTile(me.mainBaseTile!);
-    // 落点合法：非中心、非障碍/关隘/险地。
+    // Spawn point is valid: not the center, not an obstacle/gate/stronghold tile.
     expect(x === CENTER_X && y === CENTER_Y).toBe(false);
     expect(['center', 'obstacle', 'gate', 'stronghold']).not.toContain(proceduralTile(W, x, y).type);
-    // 落在外环新手区（远离中心争夺区）。
+    // Spawned in outer-ring novice zone (far from the contested center).
     expect(dr(x, y)).toBeGreaterThan(SPAWN_OUTER_MIN_DR);
 
-    // 落地确实写成 base 且归己。
+    // The tile is actually written as a base and belongs to the player.
     const tile = await svc.getTile(W, 'solo', x, y);
     expect(tile).toMatchObject({ type: 'base', mine: true });
   });
 
-  it('有家族首次进入：自动落城在同家族成员主城附近（切比雪夫 ≤ 半径），且不与其重叠', async () => {
-    // 先安排一名同家族成员主城（用显式坐标手动落点，模拟既有成员）。
+  it('has family, first join: auto-spawns near a family member\'s main base (Chebyshev ≤ radius), no overlap', async () => {
+    // Place an existing family member's main base at an explicit coordinate to simulate a pre-existing member.
     const mateSpot = findPlaceable(1100, 1100);
     await svc.joinWorld(W, 'mate', mateSpot.x, mateSpot.y);
 
-    // 两人同家族（直接写 familyMembers，绕过 family 业务流，只测落点逻辑）。
+    // Put both players in the same family (written directly to familyMembers, bypassing family business logic — testing spawn placement only).
     const familyId = `f:${W}:FAM`;
     await m.collections.familyMembers.insertMany([
       { _id: `${W}:mate`, worldId: W, accountId: 'mate', familyId, role: 'leader', joinedAt: nowMs },
       { _id: `${W}:newbie`, worldId: W, accountId: 'newbie', familyId, role: 'member', joinedAt: nowMs },
     ]);
 
-    const me = await svc.joinWorld(W, 'newbie'); // 不传坐标
+    const me = await svc.joinWorld(W, 'newbie'); // no coordinates passed
     expect(me.joined).toBe(true);
     const { x, y } = parseTile(me.mainBaseTile!);
 
-    // 落在成员主城周围 SPAWN_NEAR_FAMILY_RADIUS 切比雪夫环内。
+    // Spawned within SPAWN_NEAR_FAMILY_RADIUS Chebyshev ring around the member's main base.
     const cheb = Math.max(Math.abs(x - mateSpot.x), Math.abs(y - mateSpot.y));
-    expect(cheb).toBeGreaterThanOrEqual(1); // 不与成员主城重叠
+    expect(cheb).toBeGreaterThanOrEqual(1); // does not overlap the member's main base
     expect(cheb).toBeLessThanOrEqual(SPAWN_NEAR_FAMILY_RADIUS);
 
-    // 两人主城是不同格。
+    // The two main bases occupy different tiles.
     expect(tileId(W, x, y)).not.toBe(tileId(W, mateSpot.x, mateSpot.y));
   });
 
-  it('自动落城避开已占格：成员主城那一格不会被新人覆盖', async () => {
+  it('auto-spawn avoids occupied tiles: a member\'s main base tile is never overwritten by a newcomer', async () => {
     const mateSpot = findPlaceable(1200, 1200);
     await svc.joinWorld(W, 'mate', mateSpot.x, mateSpot.y);
     const familyId = `f:${W}:FAM2`;
@@ -138,14 +138,14 @@ describe.skipIf(!mongo)('worldsvc 自动落城 e2e', () => {
 
     const me = await svc.joinWorld(W, 'newbie');
     const { x, y } = parseTile(me.mainBaseTile!);
-    // 新人主城与成员主城分属不同 owner、不同格。
+    // Newcomer's main base and member's main base have different owners and occupy different tiles.
     const mateTile = await m.collections.tiles.findOne({ _id: tileId(W, mateSpot.x, mateSpot.y) });
     expect(mateTile?.ownerId).toBe('mate');
     const newbieTile = await m.collections.tiles.findOne({ _id: tileId(W, x, y) });
     expect(newbieTile?.ownerId).toBe('newbie');
   });
 
-  it('幂等：已落城再次不传坐标 join 不二次落城', async () => {
+  it('idempotent: joining again without coordinates after already spawned does not re-spawn', async () => {
     const first = await svc.joinWorld(W, 'solo');
     const base1 = first.mainBaseTile;
     const second = await svc.joinWorld(W, 'solo');

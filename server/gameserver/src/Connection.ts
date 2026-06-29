@@ -1,19 +1,19 @@
-// 单条数据面 WS 连接封装（S1-M2）：绑 ticket 身份（roomId / side / accountId）、
-// 编码发送、心跳存活检测。gameserver 瘦成纯帧中继——身份完全来自 matchsvc 签的
-// ticket，gameserver 不查任何库（M16）。
+// Single data-plane WS connection wrapper (S1-M2): binds ticket identity (roomId / side / accountId),
+// encodes outgoing messages, and detects heartbeat liveness. The gameserver is a pure frame relay —
+// identity comes entirely from the ticket signed by matchsvc; gameserver never queries any database (M16).
 import type { WebSocket } from 'ws';
 import { encodeServer, type ServerMsg } from './proto/transport';
 
 export class Connection {
-  /** 心跳：上一次 pong/ping 后置 true，巡检置 false，再次巡检仍 false 则判死。 */
+  /** Heartbeat: set to true after each pong/ping; cleared to false by the watchdog; if still false on the next watchdog pass the connection is declared dead. */
   alive = true;
 
   constructor(
-    /** ticket.roomId —— 本连接所属对局。 */
+    /** ticket.roomId — the match this connection belongs to. */
     readonly roomId: string,
-    /** ticket.side —— 本方阵营（0/1）。 */
+    /** ticket.side — this player's side (0/1). */
     readonly side: 0 | 1,
-    /** ticket.accountId —— 仅作局末上报 meta 的标识透传，gameserver 不读库。 */
+    /** ticket.accountId — passed through only for end-of-match reporting to meta; the gameserver does not read any database. */
     readonly accountId: string,
     readonly ws: WebSocket,
   ) {}
@@ -23,7 +23,7 @@ export class Connection {
     try {
       this.ws.send(encodeServer(msg));
     } catch {
-      // 写失败由 close 事件统一收口
+      // Write failures are handled uniformly by the close event
     }
   }
 

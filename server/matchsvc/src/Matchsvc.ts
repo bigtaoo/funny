@@ -1,14 +1,18 @@
-// matchsvc —— 玩家不可达的私有匹配大脑（M17），自 2026-06-14 起为**独立进程**（S1-M5）。
-// 玩家操作由 gateway 解码后经内部 HTTP 调用本进程（internalHttp.ts → 本类方法）；
-// 异步事件经注入的 push 回调推回 gateway（GatewayClient HTTP），gateway 再推给玩家 socket。
+// matchsvc — the private matchmaking brain unreachable by players (M17); a standalone process since
+// 2026-06-14 (S1-M5). Player actions are decoded by the gateway and forwarded to this process via
+// internal HTTP (internalHttp.ts → methods of this class); async events are pushed back to the
+// gateway via the injected push callback (GatewayClient HTTP), and the gateway forwards them to
+// the player socket.
 //
-// 职责（SERVER_API.md §8.1 / MATCHSVC_DESIGN.md §2）：
-//   • friendly 内存房间（建房 / 输码加入 / ready / 房主开局）；
-//   • ranked 匹配队列（ELO 邻近配对，搬自 gameserver Matchmaking）；
-//   • game 注册表（哪台 gameserver 空闲）+ 配对/开局后签 match ticket；
-//   • 异步事件（房间态变更 / match_found）经注入的 push 回调推回 gateway → 玩家。
+// Responsibilities (SERVER_API.md §8.1 / MATCHSVC_DESIGN.md §2):
+//   • friendly in-memory rooms (create / join by code / ready / host starts);
+//   • ranked match queue (ELO proximity pairing, ported from gameserver Matchmaking);
+//   • game registry (which gameserver has capacity) + signs match tickets after pairing / start;
+//   • async events (room state changes / match_found) pushed back to gateway → player via the
+//     injected push callback.
 //
-// **不连任何库**：匹配要的 elo 由 gateway 入队前向 meta 取后带入（enqueue 的 elo 参数）。
+// **No database connections**: the ELO value needed for matchmaking is fetched by the gateway from
+// meta before enqueuing and passed in as the `elo` parameter to enqueue.
 import { randomUUID, randomInt } from 'crypto';
 import { signTicket, createLogger, type FeatureFlagCache, type TicketClaims } from '@nw/shared';
 import { Matchmaking, type QueueEntry } from './Matchmaking';
@@ -16,7 +20,8 @@ import { GameRegistry } from './GameRegistry';
 
 const log = createLogger('matchsvc');
 
-// RoomPhase 枚举值镜像 contracts/transport.proto（编码归 gateway，matchsvc 只透传整数 phase）。
+// RoomPhase enum values mirror contracts/transport.proto (encoding is the gateway's responsibility;
+// matchsvc only passes through the integer phase).
 const RoomPhase = {
   WAITING: 0,
   READY: 1,
@@ -25,28 +30,29 @@ const RoomPhase = {
   OVER: 4,
 } as const;
 
-// ── gateway 推送接口（matchsvc 不直接持连接，proto 无关）────────────────
+// ── Gateway push interface (matchsvc holds no connections directly; proto-agnostic) ────────────────
 export interface PlayerView {
   side: number;
   name: string;
   ready: boolean;
   connected: boolean;
-  /** 9 位数字公开 id（玩家交流/投诉用；缺省空串）。 */
+  /** 9-digit numeric public id (used for player communication / reports; defaults to empty string). */
   publicId: string;
 }
 export type PushMsg =
   | { kind: 'room_state'; code: string; players: PlayerView[]; phase: number }
   | { kind: 'match_found'; gameUrl: string; ticket: string }
-  // 匹配超时降级打 AI（feature flag match_bot_fallback）。客户端据此开本地 AI 局，无 ticket/gameUrl。
+  // Match timeout fallback to AI (feature flag match_bot_fallback). Client opens a local AI match; no ticket/gameUrl.
   | { kind: 'match_bot'; seed: number; opponentName: string; elo: number; difficulty: string }
   | { kind: 'room_error'; code: string; message: string };
 
-/** bot-fallback 时随机挑选的 AI 对手展示名（纯展示，叙事统一为「红笔批改/假想敌」语气）。 */
+/** Display names randomly picked for the AI opponent during bot-fallback (display only; narrative voice unified as the "red-pen corrector / imaginary rival" theme). */
 const BOT_NAMES = ['红笔小将', '草稿纸新兵', '橡皮擦练习生', '便利贴学徒', '修正液守卫'];
 /**
- * 推送回调。`roomId` 是跨进程关联 id（correlation id）——同一局在 matchsvc / gateway / game /
- * meta 的日志里都带它，Grafana 用 `| json | roomId="X"` 可把整局拉成一条时间线。仅用于日志，
- * 不进客户端可见的 PushMsg。无房上下文（如 ALREADY_IN_ROOM 错误）时省略。
+ * Push callback. `roomId` is a cross-process correlation id — it is included in logs across
+ * matchsvc / gateway / game / meta for the same match, so Grafana can reconstruct the full
+ * match timeline with `| json | roomId="X"`. Used for logging only; not included in the
+ * client-visible PushMsg. Omitted when there is no room context (e.g. ALREADY_IN_ROOM errors).
  */
 export type Push = (accountId: string, msg: PushMsg, roomId?: string) => void;
 
@@ -54,7 +60,7 @@ interface Slot {
   accountId: string;
   name: string;
   publicId: string;
-  /** 佩戴称号 id（来自 meta /internal/profile；空串=无称号）。 */
+  /** Equipped title id (from meta /internal/profile; empty string = no title). */
   equippedTitle: string;
   side: 0 | 1;
   ready: boolean;
@@ -65,7 +71,7 @@ interface Room {
   code: string;
   slots: Slot[];
   phase: number;
-  /** 全员掉线后的清房计时器。 */
+  /** Timer that cleans up the room after all players disconnect. */
   reapTimer: NodeJS.Timeout | null;
 }
 
@@ -73,22 +79,22 @@ interface Room {
 // chars). 10 digits + 11 letters; letters skip I/O/L so they don't read as 0/1.
 export const CODE_ALPHABET = '0123456789ABCDEFGHJKM';
 const CODE_LEN = 6;
-const REAP_MS = 60_000; // 全员掉线后保留房间的宽限
+const REAP_MS = 60_000; // grace period to keep the room after all players disconnect
 
 export interface MatchsvcOpts {
   ticketTtlSec?: number;
-  /** 注入时钟（测试）。 */
+  /** Injected clock (for testing). */
   now?: () => number;
-  /** Matchmaking 自动巡检开关（测试关掉手动 tick）。 */
+  /** Matchmaking auto-tick switch (disable in tests to tick manually). */
   autoTick?: boolean;
-  /** 功能开关缓存（轮询 admin 原始规则 + 本地求值）。缺省 = 不可用，match_bot_fallback 视为关。 */
+  /** Feature flag cache (polls admin for raw rules + evaluates locally). Absent = unavailable; match_bot_fallback treated as off. */
   flags?: FeatureFlagCache;
-  /** 入队等待超过此毫秒数 → 评估 match_bot_fallback 决定是否降级打 AI。默认 30000。 */
+  /** If a player has been queued for longer than this many milliseconds, evaluate match_bot_fallback to decide whether to fall back to an AI match. Defaults to 30000. */
   botFallbackMs?: number;
 }
 
 export class Matchsvc {
-  private readonly rooms = new Map<string, Room>(); // roomId → 房间
+  private readonly rooms = new Map<string, Room>(); // roomId → room
   private readonly byCode = new Map<string, string>(); // code → roomId
   private readonly accountRoom = new Map<string, string>(); // accountId → roomId
   private readonly matchmaking: Matchmaking;
@@ -116,8 +122,8 @@ export class Matchsvc {
   }
 
   /**
-   * 实时态聚合（admin GET /internal/stats，OPS_DESIGN §4.1）：ranked 队列长度 / 活跃 friendly
-   * 房间数 / 健康 game 实例数 / game 负载合计。
+   * Real-time aggregate (admin GET /internal/stats, OPS_DESIGN §4.1): ranked queue length /
+   * active friendly room count / healthy game instance count / total game load.
    */
   stats(): { queue: number; rooms: number; gameInstances: number; gameLoad: number } {
     const g = this.games.stats();
@@ -129,12 +135,13 @@ export class Matchsvc {
     };
   }
 
-  // ───────────────────────── ranked 匹配 ─────────────────────────
+  // ───────────────────────── ranked matchmaking ─────────────────────────
 
   /**
-   * 开始 ranked 匹配（elo 由 gateway 向 meta 取后带入）。已在房 / 已在队则忽略。
-   * publicId 随队列条目带入：ranked 不展示房间 slot，但开局后要把对手 publicId 写进
-   * ticket → match_start，供对局内资料弹层展示。
+   * Start ranked matchmaking (elo is fetched by the gateway from meta and passed in). Ignored if
+   * the player is already in a room or queue. publicId is carried with the queue entry: ranked
+   * matches don't show room slots, but after the match starts the opponent's publicId must be
+   * written into the ticket → match_start for the in-game profile popup.
    */
   enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', platform = ''): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
@@ -150,9 +157,11 @@ export class Matchsvc {
   }
 
   /**
-   * 入队等待超阈值（默认 30s）的决策点：若 feature flag `match_bot_fallback` 对该玩家开启，
-   * 出队并推送 match_bot（客户端开本地 AI 局）；否则保持在队继续等真人（行为不变）。
-   * flags 缺省/admin 不可达 → 视为关（default false），优雅降级为「一直等」。
+   * Decision point when a player has waited beyond the threshold (default 30s): if feature flag
+   * `match_bot_fallback` is enabled for this player, dequeue and push match_bot (client opens a
+   * local AI match); otherwise keep in queue waiting for a human opponent (no behaviour change).
+   * If flags is absent or admin is unreachable, treated as off (default false), gracefully
+   * degrading to "keep waiting indefinitely".
    */
   private onQueueTimeout(entry: QueueEntry): void {
     const on =
@@ -171,7 +180,7 @@ export class Matchsvc {
     this.push(entry.accountId, { kind: 'match_bot', seed, opponentName, elo: entry.elo, difficulty: 'normal' });
   }
 
-  /** Matchmaking 配对成功 → 直接开局（无 ready / 房主环节）。 */
+  /** Matchmaking pair found → start the match immediately (no ready / host step). */
   private onPair(a: QueueEntry, b: QueueEntry): void {
     log.info('ranked pair matched', { a: a.accountId, b: b.accountId, eloA: a.elo, eloB: b.elo });
     this.startMatch(
@@ -181,7 +190,7 @@ export class Matchsvc {
     );
   }
 
-  // ───────────────────────── friendly 房间 ─────────────────────────
+  // ───────────────────────── friendly rooms ─────────────────────────
 
   roomCreate(accountId: string, name: string, publicId: string, equippedTitle = ''): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
@@ -242,7 +251,7 @@ export class Matchsvc {
     // as the game failing to start. Auto-start (like ranked) removes that gap.
     if (allReady) {
       const [s0, s1] = room.slots;
-      this.destroyRoom(room); // 大厅房使命完成；对局态归 gameserver
+      this.destroyRoom(room); // lobby room's job done; match state is now owned by gameserver
       this.startMatch(
         'friendly',
         { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle },
@@ -252,8 +261,10 @@ export class Matchsvc {
   }
 
   /**
-   * 房主（side 0）在双方 ready 后开局。双方 ready 现在已由 {@link roomReady} 自动开局，
-   * 此入口保留以兼容旧客户端的显式 start 按钮（房间届时已销毁 → roomOf 返回 undefined → no-op）。
+   * Host (side 0) starts the match after both players are ready. Both-ready now auto-starts via
+   * {@link roomReady}; this entry point is kept for backwards compatibility with older clients that
+   * send an explicit start button press (the room will already be destroyed at that point →
+   * roomOf returns undefined → no-op).
    */
   roomStart(accountId: string): void {
     const room = this.roomOf(accountId);
@@ -263,7 +274,7 @@ export class Matchsvc {
     if (room.slots.length !== 2 || !room.slots.every((s) => s.ready)) return;
 
     const [s0, s1] = room.slots;
-    this.destroyRoom(room); // 大厅房使命完成；对局态归 gameserver
+    this.destroyRoom(room); // lobby room's job done; match state is now owned by gameserver
     this.startMatch(
       'friendly',
       { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle },
@@ -271,7 +282,7 @@ export class Matchsvc {
     );
   }
 
-  /** 离开房间 / 退队。 */
+  /** Leave the room / cancel queuing. */
   roomLeave(accountId: string): void {
     this.matchmaking.remove(accountId);
     const room = this.roomOf(accountId);
@@ -279,9 +290,9 @@ export class Matchsvc {
     this.removeFromRoom(room, accountId);
   }
 
-  // ───────────────────────── 连接生命周期（gateway 通知）─────────────────────────
+  // ───────────────────────── Connection lifecycle (gateway notifications) ─────────────────────────
 
-  /** 账号（重）连上 gateway：若在房，把当前 room_state 重发给它（控制面重连续会话）。 */
+  /** Account (re-)connected to gateway: if in a room, re-send the current room_state to it (control-plane reconnect resumption). */
   onConnected(accountId: string): void {
     const room = this.roomOf(accountId);
     if (!room) return;
@@ -294,11 +305,11 @@ export class Matchsvc {
       }
       this.broadcast(room);
     } else {
-      this.pushRoomState(accountId, room); // 仅补发给本人
+      this.pushRoomState(accountId, room); // resend only to this player
     }
   }
 
-  /** 账号掉 gateway 连接：退队；若在大厅房标记掉线（保留宽限，支持控制面重连）。 */
+  /** Account disconnected from gateway: remove from queue; if in a lobby room mark as disconnected (retain within grace period to support control-plane reconnect). */
   onDisconnected(accountId: string): void {
     this.matchmaking.remove(accountId);
     const room = this.roomOf(accountId);
@@ -313,7 +324,7 @@ export class Matchsvc {
     }
   }
 
-  // ───────────────────────── game 注册表 ─────────────────────────
+  // ───────────────────────── game registry ─────────────────────────
 
   registerGame(gameId: string, wsUrl: string, capacity: number): void {
     log.info('game server registered', { gameId, wsUrl, capacity });
@@ -323,7 +334,7 @@ export class Matchsvc {
     this.games.heartbeat(gameId, load, rooms);
   }
 
-  // ───────────────────────── 开局 + 签 ticket ─────────────────────────
+  // ───────────────────────── Start match + sign ticket ─────────────────────────
 
   private startMatch(
     mode: 'friendly' | 'ranked',
@@ -343,7 +354,7 @@ export class Matchsvc {
       return;
     }
     const roomId = randomUUID();
-    const seed = randomInt(1, 2 ** 48); // < 2^48，落在安全整数内
+    const seed = randomInt(1, 2 ** 48); // < 2^48, within safe integer range
     log.info('match starting', { mode, roomId, gameUrl, a: a.accountId, b: b.accountId, seed });
 
     const sign = (
@@ -369,7 +380,7 @@ export class Matchsvc {
     this.push(b.accountId, { kind: 'match_found', gameUrl, ticket: sign(b, a, 1) }, roomId);
   }
 
-  // ───────────────────────── 内部 ─────────────────────────
+  // ───────────────────────── Internal ─────────────────────────
 
   private roomOf(accountId: string): Room | undefined {
     const id = this.accountRoom.get(accountId);
@@ -383,7 +394,7 @@ export class Matchsvc {
       this.destroyRoom(room);
       return;
     }
-    // 留下者补位为 side 0（房主），重置 ready。
+    // Remaining player takes side 0 (host) and their ready flag is reset.
     room.slots[0]!.side = 0;
     room.slots[0]!.ready = false;
     room.phase = RoomPhase.WAITING;

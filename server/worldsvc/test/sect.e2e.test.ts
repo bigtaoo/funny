@@ -1,7 +1,7 @@
-// worldsvc SectService 端到端（S8-4b）：真实 Mongo 专属库。Mongo 不可达整套 skip。
-// 宗门 CRUD / 加入 / 退出 / 解散 / 联盟 / 罢免换届 / 频道；权限守卫（须族长）；建门扣金币。
-// 另含 WorldService.settleSeason 按宗门聚合占国数。
-// 需 `cd server && docker compose up -d`。
+// worldsvc SectService end-to-end (S8-4b): dedicated real Mongo database. Entire suite skipped if Mongo is unreachable.
+// Sect CRUD / join / leave / dissolve / ally / impeach-and-elect / channel; permission guards (leader required); deduct coins on founding.
+// Also includes WorldService.settleSeason aggregating nation count by sect.
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   sectId,
@@ -46,11 +46,11 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     async grant(accountId, amount) { grants.push({ accountId, amount }); },
   };
 
-  // 捕获宗门频道扇出（broadcast 的收件人 + 消息），断言实时推送目标正确。
+  // Capture sect channel fan-out (broadcast recipients + message) to assert real-time push targets are correct.
   const broadcasts: Array<{ recipients: string[]; kind: string; body?: string }> = [];
   const fakeGateway: WorldGatewayClient = {
     available: true,
-    async push() { /* sect 不走定向 push */ },
+    async push() { /* sect does not use targeted push */ },
     async broadcast(recipients, msg) {
       broadcasts.push({ recipients, kind: msg.kind, body: (msg as { body?: string }).body });
     },
@@ -77,10 +77,11 @@ describe.skipIf(!mongo)('SectService e2e', () => {
   });
 
   /**
-   * 直接写库建家族（家族逻辑已迁至 socialsvc；worldsvc 仅余 SectService 读 families/familyMembers
-   * 这两个集合，故测试 fixture 直接 insert，不再依赖已删除的 FamilyService）。name 兜底补足 ≥2 字符。
-   * activity 控制繁荣度门槛（§17.4）：createSect 会 refreshFamilyProsperity 重算 familyProsperity(territory,
-   * memberCount, activity)，需 ≥ SECT_FOUND_PROSPERITY_MIN(2000) 才能建门。
+   * Insert a family directly into the database (family logic has been migrated to socialsvc; worldsvc only retains
+   * SectService reading the families/familyMembers collections, so test fixtures insert directly without relying on
+   * the removed FamilyService). name is padded to ≥2 characters as a fallback.
+   * activity controls the prosperity threshold (§17.4): createSect calls refreshFamilyProsperity to recompute
+   * familyProsperity(territory, memberCount, activity), requiring ≥ SECT_FOUND_PROSPERITY_MIN(2000) to found a sect.
    */
   async function insertFamily(leader: string, name: string, tag: string, activity: number): Promise<string> {
     const cols = mongo!.collections;
@@ -107,12 +108,12 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     return leader;
   }
 
-  /** 建一个满足建门门槛的家族（activity=500 → 繁荣度足量）；不关心门槛的用例由此默认满足。 */
+  /** Creates a family that meets the sect-founding prosperity threshold (activity=500 → sufficient prosperity); test cases that do not care about the threshold use this by default. */
   async function makeFamily(leader: string, name: string, tag: string): Promise<string> {
     return insertFamily(leader, name, tag, 500);
   }
 
-  /** 直接写库把 account 加入家族（成员身份 + memberCount++）。 */
+  /** Insert an account into a family directly in the database (member role + memberCount++). */
   async function joinFamily(account: string, fid: string): Promise<void> {
     const cols = mongo!.collections;
     await cols.familyMembers.insertOne({
@@ -126,7 +127,7 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     await cols.families.updateOne({ _id: fid }, { $inc: { memberCount: 1 } });
   }
 
-  it('建宗门：扣 5000 coin + 家族成为门主家族', async () => {
+  it('found sect: deduct 5000 coins + family becomes the leading family', async () => {
     await makeFamily('alice', 'Alpha', 'AW');
     const detail = await sect.createSect(W, 'alice', 'Sky Sect', 'SKY');
     expect(detail.sectId).toBe(sectId(W, 'SKY'));
@@ -136,37 +137,37 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(spends).toEqual([{ accountId: 'alice', amount: SECT_CREATE_COST }]);
   });
 
-  it('建宗门繁荣度门槛：低繁荣度家族 → PROSPERITY_TOO_LOW（G2/§17.4）', async () => {
-    // 直接建族不补 activity → 繁荣度仅 = memberCount*50 = 50 < 2000，应被拦。
+  it('founding prosperity threshold: low-prosperity family → PROSPERITY_TOO_LOW (G2/§17.4)', async () => {
+    // Inserting a family with no activity → prosperity = memberCount*50 = 50 < 2000, should be blocked.
     await insertFamily('poor', 'Poor', 'PR', 0);
     await expect(sect.createSect(W, 'poor', 'Broke', 'BRK')).rejects.toMatchObject({ code: 'PROSPERITY_TOO_LOW' });
   });
 
-  it('非族长不能建宗门 → NO_PERMISSION', async () => {
+  it('non-leader cannot found a sect → NO_PERMISSION', async () => {
     await makeFamily('alice', 'Alpha', 'AW');
     await joinFamily('bob', familyId(W, 'AW')); // bob = member
     await expect(sect.createSect(W, 'bob', 'X', 'XX')).rejects.toMatchObject({ code: 'NO_PERMISSION' });
   });
 
-  it('不在家族不能建宗门 → NOT_IN_FAMILY', async () => {
+  it('player not in any family cannot found a sect → NOT_IN_FAMILY', async () => {
     await expect(sect.createSect(W, 'nobody', 'X', 'XX')).rejects.toMatchObject({ code: 'NOT_IN_FAMILY' });
   });
 
-  it('家族已在门 → ALREADY_IN_SECT', async () => {
+  it('family already in a sect → ALREADY_IN_SECT', async () => {
     await makeFamily('alice', 'Alpha', 'AW');
     await sect.createSect(W, 'alice', 'Sky', 'SKY');
     await expect(sect.createSect(W, 'alice', 'Other', 'OTH')).rejects.toMatchObject({ code: 'ALREADY_IN_SECT' });
   });
 
-  it('TAG 撞键 → ALREADY_IN_SECT + 退款', async () => {
+  it('TAG collision → ALREADY_IN_SECT + refund', async () => {
     await makeFamily('alice', 'Alpha', 'AW');
     await makeFamily('carol', 'Gamma', 'GA');
     await sect.createSect(W, 'alice', 'Sky', 'SKY');
     await expect(sect.createSect(W, 'carol', 'Sky2', 'SKY')).rejects.toMatchObject({ code: 'ALREADY_IN_SECT' });
-    expect(grants.length).toBe(1); // 退款
+    expect(grants.length).toBe(1); // refund
   });
 
-  it('加入 + 列出 + 详情', async () => {
+  it('join + list + detail', async () => {
     await makeFamily('alice', 'Alpha', 'AW');
     await makeFamily('bob', 'Beta', 'BT');
     const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
@@ -177,7 +178,7 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(detail!.memberFamilies.map((f) => f.tag).sort()).toEqual(['AW', 'BT']);
   });
 
-  it('退门：成员家族可退；门主家族不可直接退', async () => {
+  it('leave sect: member family may leave; leader family cannot leave directly', async () => {
     await makeFamily('alice', 'Alpha', 'AW');
     await makeFamily('bob', 'Beta', 'BT');
     const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
@@ -187,7 +188,7 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     await expect(sect.leaveSect(W, 'alice')).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('联盟：双向 + 上限 SECT_ALLY_CAP', async () => {
+  it('alliance: bidirectional + cap SECT_ALLY_CAP', async () => {
     await makeFamily('alice', 'A', 'AA');
     await makeFamily('bob', 'B', 'BB');
     await makeFamily('carol', 'C', 'CC');
@@ -198,16 +199,16 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     const d = await sect.createSect(W, 'dave', 'SD', 'SD');
     await sect.allySect(W, 'alice', b.sectId);
     await sect.allySect(W, 'alice', c.sectId);
-    // 双向写入
+    // Bidirectional write
     expect((await sect.getSect(a.sectId))!.allySectIds.sort()).toEqual([b.sectId, c.sectId].sort());
     expect((await sect.getSect(b.sectId))!.allySectIds).toContain(a.sectId);
-    // 超上限 → ALLY_CAP_REACHED
+    // Exceeding cap → ALLY_CAP_REACHED
     expect(SECT_ALLY_CAP).toBe(2);
     await expect(sect.allySect(W, 'alice', d.sectId)).rejects.toMatchObject({ code: 'ALLY_CAP_REACHED' });
   });
 
-  it('罢免换届：2/3 族长投票 → 门主转移', async () => {
-    // 3 家族入门 → needed = ceil(3 * 2/3) = 2
+  it('impeach and elect: 2/3 leader vote → leadership transfers', async () => {
+    // 3 families in sect → needed = ceil(3 * 2/3) = 2
     await makeFamily('alice', 'A', 'AA');
     await makeFamily('bob', 'B', 'BB');
     await makeFamily('carol', 'C', 'CC');
@@ -225,9 +226,9 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(after!.leaderFamilyId).toBe(nominee);
   });
 
-  it('频道：成员发/读；非成员 → NOT_IN_SECT', async () => {
+  it('channel: member send/read; non-member → NOT_IN_SECT', async () => {
     await makeFamily('alice', 'A', 'AA');
-    await makeFamily('bob', 'B', 'BB'); // 不入门
+    await makeFamily('bob', 'B', 'BB'); // does not join the sect
     const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
     await sect.sendMessage(W, 'alice', 'Alice', 'hello sect');
     const msgs = await sect.getChannel(W, 'alice');
@@ -237,8 +238,8 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     void s;
   });
 
-  it('频道实时扇出：broadcast 推给宗门内其他成员，发送者自己不在收件人列表', async () => {
-    // alice（门主家族）+ bob + carol 三家族同宗；bob、carol 各带一名 member。
+  it('channel real-time fan-out: broadcast pushed to other sect members, sender not in recipient list', async () => {
+    // alice (leader family) + bob + carol, three families in the same sect; bob and carol each have one member.
     await makeFamily('alice', 'A', 'AA');
     await makeFamily('bob', 'B', 'BB');
     await makeFamily('carol', 'C', 'CC');
@@ -251,12 +252,12 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(broadcasts).toHaveLength(1);
     expect(broadcasts[0].kind).toBe('sect_msg');
     expect(broadcasts[0].body).toBe('hello everyone');
-    // 收件人 = 宗门内全部成员去掉发送者 alice：bob、bob2、carol（无序）。
+    // Recipients = all sect members minus the sender alice: bob, bob2, carol (unordered).
     expect([...broadcasts[0].recipients].sort()).toEqual(['bob', 'bob2', 'carol']);
     expect(broadcasts[0].recipients).not.toContain('alice');
   });
 
-  it('解散：清成员 sectId + 删频道 + 双向解盟', async () => {
+  it('dissolve: clear member sectId + delete channel + bidirectional alliance removal', async () => {
     await makeFamily('alice', 'A', 'AA');
     await makeFamily('bob', 'B', 'BB');
     const a = await sect.createSect(W, 'alice', 'SA', 'SA');
@@ -265,16 +266,16 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     await sect.sendMessage(W, 'alice', 'Alice', 'hi');
     await sect.dissolveSect(W, 'alice');
     expect(await sect.getSect(a.sectId)).toBeNull();
-    // 盟友 b 的 allySectIds 已移除 a
+    // Ally b's allySectIds has had a removed
     expect((await sect.getSect(b.sectId))!.allySectIds).not.toContain(a.sectId);
-    // alice 家族 sectId 已清
+    // alice family's sectId has been cleared
     const fAlice = await mongo!.collections.families.findOne({ _id: familyId(W, 'AA') });
     expect(fAlice!.sectId).toBeUndefined();
   });
 
-  it('settleSeason：按宗门聚合占国数（sect > family > solo）', async () => {
+  it('settleSeason: aggregate nation count by sect (sect > family > solo)', async () => {
     const cols = mongo!.collections;
-    // alice+bob 同宗 SKY；carol 散家族；dave 无家族个人。
+    // alice+bob in the same sect SKY; carol is an independent family; dave is a solo player.
     await makeFamily('alice', 'A', 'AA');
     await makeFamily('bob', 'B', 'BB');
     await makeFamily('carol', 'C', 'CC');
@@ -289,13 +290,13 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     await cols.nations.insertMany([
       nation(0, 'alice', familyId(W, 'AA')), // SKY
       nation(1, 'bob', familyId(W, 'BB')),   // SKY
-      nation(2, 'carol', familyId(W, 'CC')), // 散家族 CC
+      nation(2, 'carol', familyId(W, 'CC')), // independent family CC
       nation(3, 'dave'),                     // solo
     ]);
 
     const svc = new WorldService({ cols, redis: null, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now: () => Date.now() });
     const ranking = await svc.settleSeason(W);
-    // SKY 占 2 国排第一
+    // SKY holds 2 nations, ranks first
     expect(ranking[0]).toMatchObject({ scope: 'sect', familyId: s.sectId, nationCount: 2 });
     const carol = ranking.find((r) => r.scope === 'family');
     expect(carol).toMatchObject({ familyId: familyId(W, 'CC'), nationCount: 1 });

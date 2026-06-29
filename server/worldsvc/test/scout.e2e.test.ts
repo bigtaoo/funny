@@ -1,7 +1,8 @@
-// worldsvc 侦察行军 端到端（G5 V2 余项，§18.1 V2 / §18.2）：真实 Mongo。Mongo 不可达整套 skip。
-//   scout = 不打不占的侦察行军：派少量兵到任意非障碍格（含敌方/中立），沿途 + 抵达点照亮
-//   更大视野（VISION_SCOUT_RADIUS=4 > 普通行军 2），到点自动翻转为返程腿退兵回池。
-// 需 `cd server && docker compose up -d`。
+// worldsvc scout march end-to-end (G5 V2 remaining items, §18.1 V2 / §18.2): real Mongo. Entire suite skipped if Mongo is unreachable.
+//   scout = a non-combat, non-occupying march: dispatch a small number of troops to any non-obstacle tile (including enemy/neutral),
+//   illuminating a larger vision radius along the path and at the destination (VISION_SCOUT_RADIUS=4 > normal march 2);
+//   automatically flips to a return leg on arrival and refunds troops to pool.
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   proceduralTile,
@@ -27,7 +28,7 @@ async function tryConnect(): Promise<WorldMongo | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[worldsvc.scout.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[worldsvc.scout.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);

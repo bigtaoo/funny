@@ -1,5 +1,5 @@
-// 成就纯逻辑单测（S9-1，无 Mongo 总会跑）：tierState / validateClaim / hasClaimable。
-// 数值见 ECONOMY_BALANCE.md §2.4；机制见 ACHIEVEMENT_DESIGN.md §4。
+﻿// Pure logic unit tests for achievements (S9-1, always runs — no Mongo required): tierState / validateClaim / hasClaimable.
+// Numbers: see ECONOMY_BALANCE.md §2.4; mechanics: see ACHIEVEMENT_DESIGN.md §4.
 import { describe, it, expect } from 'vitest';
 import {
   ACHIEVEMENTS,
@@ -25,7 +25,7 @@ describe('成就定义表', () => {
 });
 
 describe('tierState 当前阶推导', () => {
-  const def = findAchievement('ach.kill.archer')!; // 阈值 100/500/2000，金币 50/100/200
+  const def = findAchievement('ach.kill.archer')!; // thresholds 100/500/2000, coins 50/100/200
 
   it('未达任何阶：全 reached=false', () => {
     const st = tierState(def, { 'kill.archer': 50 }, []);
@@ -38,7 +38,7 @@ describe('tierState 当前阶推导', () => {
     expect(st[0].claimable).toBe(true);
     expect(st[1].claimable).toBe(true);
     expect(st[2].reached).toBe(false);
-    expect(st[0].progress).toBe(100); // 封顶到阈值
+    expect(st[0].progress).toBe(100); // capped at threshold
   });
 
   it('已领阶 I：reached 但不 claimable', () => {
@@ -155,7 +155,7 @@ describe('accrueStats（S9-6 服务器累加）', () => {
   it('懒创建：无增量 → 原样返回 prev（含 undefined）', () => {
     expect(accrueStats(undefined, {})).toBeUndefined();
     const prev = { 'kill.archer': 3 };
-    expect(accrueStats(prev, {})).toBe(prev); // 同引用，不实例化新对象
+    expect(accrueStats(prev, {})).toBe(prev); // same reference, no new object instantiated
   });
 
   it('缺省 prev + 增量 → 新 stats', () => {

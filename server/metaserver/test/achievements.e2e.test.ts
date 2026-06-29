@@ -1,6 +1,6 @@
-// 成就端点端到端（S9-4）：真实 Mongo + 注入假 commercial。stats 由测试直接种入 saves
-// （PvE/PvP 累加在 S9-3/S9-6），验证 GET /achievements + claim 二次校验 + 幂等发币 + 并发只发一次。
-// 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+﻿// Achievement endpoint end-to-end (S9-4): real Mongo + injected fake commercial. Stats are seeded directly into saves
+// (PvE/PvP accumulation in S9-3/S9-6), verifying GET /achievements + claim double-validation + idempotent coin grant + concurrent dedup.
+// Requires `cd server && docker compose up -d` and a prior `tsc -b` (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -22,7 +22,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
 const mongo = await tryConnect();
 if (!mongo) console.warn(`[achievements.e2e] Mongo 不可达（${URI}）— 跳过。`);
 
-/** 最小假 commercial：钱包加币（grant 幂等 orderId）+ getWallet；其余端点 claim 不走，给桩。 */
+/** Minimal fake commercial: wallet credit (grant idempotent by orderId) + getWallet; remaining endpoints are unreachable from claim paths — stubbed for TS. */
 class FakeCommercial implements CommercialClient {
   readonly available = true;
   coins = new Map<string, number>();
@@ -44,7 +44,7 @@ class FakeCommercial implements CommercialClient {
   async undeliveredOrders(): Promise<UndeliveredOrder[]> {
     return [];
   }
-  // —— 以下 claim 路径不触达，给 TS 桩 ——
+  // —— the following claim paths are never reached; stubs for TS type satisfaction ——
   async shopCharge() {
     return { ok: false as const, error: 'NOT_IMPL' };
   }
@@ -79,7 +79,7 @@ describe.skipIf(!mongo)('meta achievements e2e', () => {
   const auth = () => ({ authorization: `Bearer ${token}` });
   const claim = (achId: string, tier: number) =>
     app.inject({ method: 'POST', url: '/achievements/claim', headers: auth(), payload: { achId, tier } });
-  /** 直接种入终身 stats（绕过 PvE/PvP 累加，S9-3/6 未做）。 */
+  /** Seed lifetime stats directly (bypassing PvE/PvP accumulation — S9-3/6 not yet implemented). */
   const seedStats = (stats: Record<string, number>) =>
     m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.stats': stats } });
 
@@ -92,7 +92,7 @@ describe.skipIf(!mongo)('meta achievements e2e', () => {
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'dev-ach-1' } }));
     token = r.data.token;
     accountId = r.data.accountId;
-    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // 建档
+    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // initialize save record
   });
 
   afterAll(async () => {
@@ -131,7 +131,7 @@ describe.skipIf(!mongo)('meta achievements e2e', () => {
     const dup = await claim('ach.kill.archer', 1);
     expect(dup.statusCode).toBe(409);
     expect(body(dup).error.code).toBe('ALREADY_CLAIMED');
-    expect(comm.bal(accountId)).toBe(50); // 仍只 50
+    expect(comm.bal(accountId)).toBe(50); // still only 50
   });
 
   it('并发双击同阶 → 恰一个发币，一个被拒', async () => {
@@ -149,7 +149,7 @@ describe.skipIf(!mongo)('meta achievements e2e', () => {
   });
 
   it('多阶逐阶领：阶 I 后领阶 II 累加金币', async () => {
-    await seedStats({ 'kill.archer': 600 }); // 达 I(100)+II(500)
+    await seedStats({ 'kill.archer': 600 }); // reaches tier I(100) + II(500)
     await claim('ach.kill.archer', 1);
     const r2 = body(await claim('ach.kill.archer', 2));
     expect(r2.data.granted).toBe(100);
@@ -162,15 +162,15 @@ describe.skipIf(!mongo)('meta achievements e2e', () => {
     const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() })).data.save;
     const r = body(await claim('ach.kill.archer', 1));
     const after = r.data.save;
-    // 唯一变化 = 钱包金币（+50）。
+    // Only change is wallet coins (+50).
     expect(after.wallet.coins).toBe(before.wallet.coins + 50);
-    // 战力/竞技相关字段逐一不变（成就不发战力，META_DESIGN §11 红线）。
+    // Combat/competitive fields must remain unchanged (achievements grant no power, META_DESIGN §11 red line).
     expect(after.pvp).toEqual(before.pvp); // elo/rank/wins/losses/streak…
     expect(after.equipped).toEqual(before.equipped);
     expect(after.materials ?? {}).toEqual(before.materials ?? {});
     expect(after.pveUpgrades ?? {}).toEqual(before.pveUpgrades ?? {});
     expect(after.progress).toEqual(before.progress);
-    // 终身 stats 不因领取而改（领取只动 claimedTiers，stats 由结算累加）。
+    // Lifetime stats must not change on claim (claim only updates claimedTiers; stats are accumulated by settlement).
     expect(after.stats).toEqual(before.stats);
   });
 });

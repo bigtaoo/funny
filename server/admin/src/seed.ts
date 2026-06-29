@@ -1,5 +1,6 @@
-// 部署期种子超管（OPS_DESIGN §2.1）。首启用 NW_ADMIN_SEED_USER / NW_ADMIN_SEED_PASS 注入
-// 第一个超管账号；之后超管在后台增删账号。已存在同名则跳过（幂等，重启不重建/不改密）。
+// Deploy-time seed super admin (OPS_DESIGN §2.1). On first startup, NW_ADMIN_SEED_USER / NW_ADMIN_SEED_PASS
+// injects the first super admin account; afterwards, super admins manage accounts in the back-end.
+// Skipped if the username already exists (idempotent — restart does not recreate or change the password).
 import { hashPassword, createLogger } from '@nw/shared';
 import { randomUUID } from 'node:crypto';
 import type { AdminCollections, AdminAccountDoc } from './db';
@@ -21,8 +22,8 @@ export async function seedSuperAdmin(
   }
   const existing = await cols.adminAccounts.findOne({ username: user });
   if (existing) {
-    // 幂等：已存在则不重建/不改密。但补打 seed 标记（老库无此字段），
-    // 否则种子账号会被四眼原则当成「其他合格审批人」，挡住单超管自批。
+    // Idempotent: do not recreate or change the password if already exists. Back-fill the seed flag (absent in old DBs),
+    // otherwise the seed account would be treated as "another eligible approver" by the four-eyes principle, blocking self-approval by a sole super admin.
     if (existing.seed !== true) {
       await cols.adminAccounts.updateOne({ _id: existing._id }, { $set: { seed: true } });
       log.info('backfilled seed flag on existing seed super admin', { username: user });
@@ -45,7 +46,7 @@ export async function seedSuperAdmin(
     await cols.adminAccounts.insertOne(doc);
     log.info('seeded super admin', { username: user });
   } catch (e) {
-    // 并发首启唯一索引冲突 → 已建，忽略。
+    // Concurrent startup unique index conflict → already created, ignore.
     if ((e as { code?: number }).code !== 11000) throw e;
   }
 }

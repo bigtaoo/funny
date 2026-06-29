@@ -1,75 +1,75 @@
-// PvE 养成 — 升级树 + 公平性硬墙（META_DESIGN.md §5）。
+// PvE progression — upgrade tree + fairness hard wall (META_DESIGN.md §5).
 //
-// 两条蓝图构造路径，物理隔离 PvE 战力与 PvP 公平：
-//   · buildPvpBlueprints()        —— 只读常量，签名里根本不出现 SaveData / 升级数据。
-//   · buildCampaignBlueprints(lv) —— 常量克隆 + applyPveUpgrades（唯一注入点）。
-// 硬墙单测（test/hardwall.test.ts）：满级升级下 buildPvpBlueprints() 仍与 UNIT_BLUEPRINTS 逐字相等。
+// Two blueprint construction paths, physically isolating PvE combat power from PvP fairness:
+//   · buildPvpBlueprints()        — read-only constants; SaveData / upgrade data never appear in its signature.
+//   · buildCampaignBlueprints(lv) — constant clone + applyPveUpgrades (the single injection point).
+// Hard-wall unit test (test/hardwall.test.ts): with max-level upgrades, buildPvpBlueprints() still equals UNIT_BLUEPRINTS byte-for-byte.
 //
-// 升级只改单位数值（hp/damage/speed），不碰建筑、不碰皮肤（皮肤纯渲染层）。
-// 材料 = 关卡掉落（非货币，M6），花在升级上；竞技不可达 → 不上重型反作弊（§2）。
+// Upgrades only modify unit stats (hp/damage/speed); buildings and skins are untouched (skins are pure render layer).
+// Materials = level drops (not currency, M6), spent on upgrades; unreachable from ranked → no heavyweight anti-cheat needed (§2).
 
 import { UNIT_BLUEPRINTS } from '../config';
 import { UnitType, type UnitBlueprint } from '../types';
 import { applyEquipment, clampEffectCaps, type EngineEquipmentInput } from './equipment';
 import { applyUnitLevels } from './progression';
 
-// ── 材料（关卡掉落，PvE 升级货币）────────────────────────────────────────────
+// ── Materials (level drops, PvE upgrade currency) ─────────────────────────────────────────────
 //
-// 笔记本主题三档材料。数值为 DRAFT（ECONOMY_BALANCE.md §5 待实测调参）。
+// Three material tiers themed around notebooks. Values are DRAFT (ECONOMY_BALANCE.md §5, pending playtesting).
 
 export const MATERIALS = {
-  /** 碎屑 — 常见掉落，低级升级主料。 */
+  /** Scrap — common drop, primary material for low-tier upgrades. */
   scrap: 'scrap',
-  /** 铅芯 — 中级掉落。 */
+  /** Lead — mid-tier drop. */
   lead: 'lead',
-  /** 装订线 — 稀有掉落，高级升级。 */
+  /** Binding — rare drop, used for high-tier upgrades. */
   binding: 'binding',
 } as const;
 
 export type MaterialId = (typeof MATERIALS)[keyof typeof MATERIALS];
 
-/** 展示用材料元数据（名称走 i18n key，图标色由渲染层取）。 */
+/** Display-order material metadata (names via i18n key, icon colors provided by the render layer). */
 export const MATERIAL_ORDER: MaterialId[] = [MATERIALS.scrap, MATERIALS.lead, MATERIALS.binding];
 
-// ── 升级定义 ────────────────────────────────────────────────────────────────
+// ── Upgrade definitions ────────────────────────────────────────────────────────────────
 
 export interface PveUpgradeDef {
-  /** 稳定 id，作 SaveData.pveUpgrades 的键。 */
+  /** Stable id, used as the key in SaveData.pveUpgrades. */
   id: string;
   unitType: UnitType;
   stat: 'hp' | 'damage' | 'speed';
   maxLevel: number;
-  /** 每级 +x（小数，乘算叠加在基础值上：mult = 1 + effectPerLevel × level）。 */
+  /** +x per level (fractional; multiplicatively stacked on the base value: mult = 1 + effectPerLevel × level). */
   effectPerLevel: number;
-  /** 升级消耗的材料。 */
+  /** Material consumed by this upgrade. */
   material: MaterialId;
-  /** level n→n+1 的材料数 = baseCost × (n+1)（线性递增深坑）。 */
+  /** Material cost for level n→n+1 = baseCost × (n+1) (linearly increasing sink). */
   baseCost: number;
 }
 
 /**
- * 升级树。三名玩家单位（Infantry / ShieldBearer / Archer）各一条 HP + 一条 Damage 线。
- * PvE 专属怪种（Ironclad / Runner）无升级（它们不在玩家阵容里）。数值为 DRAFT。
+ * Upgrade tree. Three player unit types (Infantry / ShieldBearer / Archer), each with one HP line and one Damage line.
+ * PvE-exclusive enemy types (Ironclad / Runner) have no upgrades (they are not in the player roster). Values are DRAFT.
  */
 export const PVE_UPGRADE_DEFS: PveUpgradeDef[] = [
-  // 普通兵
+  // Infantry
   { id: 'inf_hp',   unitType: UnitType.Infantry,     stat: 'hp',     maxLevel: 5, effectPerLevel: 0.10, material: MATERIALS.scrap, baseCost: 3 },
   { id: 'inf_dmg',  unitType: UnitType.Infantry,     stat: 'damage', maxLevel: 5, effectPerLevel: 0.10, material: MATERIALS.scrap, baseCost: 3 },
-  // 盾兵
+  // ShieldBearer
   { id: 'shd_hp',   unitType: UnitType.ShieldBearer, stat: 'hp',     maxLevel: 5, effectPerLevel: 0.12, material: MATERIALS.lead,  baseCost: 2 },
   { id: 'shd_dmg',  unitType: UnitType.ShieldBearer, stat: 'damage', maxLevel: 5, effectPerLevel: 0.10, material: MATERIALS.lead,  baseCost: 2 },
-  // 弓箭兵
+  // Archer
   { id: 'arc_dmg',  unitType: UnitType.Archer,       stat: 'damage', maxLevel: 5, effectPerLevel: 0.12, material: MATERIALS.binding, baseCost: 1 },
   { id: 'arc_hp',   unitType: UnitType.Archer,       stat: 'hp',     maxLevel: 5, effectPerLevel: 0.10, material: MATERIALS.binding, baseCost: 1 },
 ];
 
-/** 按 id 查升级定义。 */
+/** Looks up an upgrade definition by id. */
 export function getUpgradeDef(id: string): PveUpgradeDef | undefined {
   return PVE_UPGRADE_DEFS.find((d) => d.id === id);
 }
 
 /**
- * 从 currentLevel 升到 currentLevel+1 的材料消耗；已满级返回 null。
+ * Material cost to upgrade from currentLevel to currentLevel+1; returns null if already at max level.
  */
 export function upgradeCost(
   def: PveUpgradeDef,
@@ -79,9 +79,9 @@ export function upgradeCost(
   return { material: def.material, amount: def.baseCost * (currentLevel + 1) };
 }
 
-// ── 蓝图构造（硬墙）─────────────────────────────────────────────────────────
+// ── Blueprint construction (hard wall) ─────────────────────────────────────────────────────────
 
-/** 深克隆 UNIT_BLUEPRINTS（每个蓝图全是基本类型字段，浅拷贝即足够独立）。 */
+/** Deep-clones UNIT_BLUEPRINTS (each blueprint contains only primitive fields, so a shallow copy provides sufficient independence). */
 function cloneBlueprints(): Record<UnitType, UnitBlueprint> {
   const out = {} as Record<UnitType, UnitBlueprint>;
   for (const key of Object.keys(UNIT_BLUEPRINTS) as UnitType[]) {
@@ -91,18 +91,18 @@ function cloneBlueprints(): Record<UnitType, UnitBlueprint> {
 }
 
 /**
- * PvP / netplay 路径：只读常量克隆，签名里没有任何升级来源 → 编译期不可能串味。
- * 配 test/hardwall.test.ts：满级 SaveData 下其结果仍与 UNIT_BLUEPRINTS 逐字相等。
+ * PvP / netplay path: clones read-only constants, with no upgrade source anywhere in the signature → contamination is impossible at compile time.
+ * Paired with test/hardwall.test.ts: with max-level SaveData the result still equals UNIT_BLUEPRINTS byte-for-byte.
  */
 export function buildPvpBlueprints(): Record<UnitType, UnitBlueprint> {
   return cloneBlueprints();
 }
 
 /**
- * campaign 路径：常量克隆 + 三步注入链（EQUIPMENT_DESIGN §9）：
- *   applyPveUpgrades（单位养成/trait）→ applyEquipment（装备词条）→ clampEffectCaps（跨源封顶）。
- * @param levels SaveData.pveUpgrades（升级 id → 等级）。
- * @param equip  穿戴装备 + 实例库存（SaveData.gear + equipmentInv）；缺省 = 无装备，链退化为仅 upgrades。
+ * Campaign path: constant clone + three-step injection chain (EQUIPMENT_DESIGN §9):
+ *   applyPveUpgrades (unit progression/traits) → applyEquipment (equipment affixes) → clampEffectCaps (cross-source cap).
+ * @param levels SaveData.pveUpgrades (upgrade id → level).
+ * @param equip  Equipped gear + instance inventory (SaveData.gear + equipmentInv); defaults to no equipment, reducing the chain to upgrades only.
  */
 export function buildCampaignBlueprints(
   levels: Record<string, number>,
@@ -118,14 +118,15 @@ export function buildCampaignBlueprints(
 }
 
 /**
- * SLG 围攻路径（S8-3，SLG_DESIGN §5.2 / §6.2）：与 campaign 共用同一棵养成树和注入点
- * （PvE 攒的装备直接是 SLG 战力）。当前与 buildCampaignBlueprints 逐字等价，独立命名是为了
- *   ①把「天梯红线」表达在类型层面（siege 走这个、netplay/pvp 永远走 buildPvpBlueprints，
- *     后者签名无升级参 → 编译期不可能串味，§6.1 硬墙单测原样守护）；
- *   ②给未来 SLG 专属 buff（科技/家族增益，不影响 PvE）留唯一落点。
- * @param levels 服务器权威 pveUpgrades（升级 id → 等级）。
- * @param equip  攻方权威养成快照里的装备（SaveData.gear + equipmentInv）；服务器复算围攻时随快照传入
- *               （EQUIPMENT_DESIGN §10：客户端篡改本地穿戴改不了「这套装备能否破城」）。缺省 = 无装备。
+ * SLG siege path (S8-3, SLG_DESIGN §5.2 / §6.2): shares the same progression tree and injection point as campaign
+ * (equipment earned in PvE directly contributes to SLG combat power). Currently equivalent to buildCampaignBlueprints word-for-word;
+ * the separate name serves two purposes:
+ *   ① Express the "ranked red line" at the type level (siege uses this; netplay/pvp always uses buildPvpBlueprints,
+ *     whose signature has no upgrade parameter → contamination impossible at compile time, §6.1 hard-wall test still guards it);
+ *   ② Reserve a single injection point for future SLG-exclusive buffs (tech/guild bonuses that do not affect PvE).
+ * @param levels Server-authoritative pveUpgrades (upgrade id → level).
+ * @param equip  Equipment from the attacker's authoritative progression snapshot (SaveData.gear + equipmentInv); passed in with the snapshot during server siege re-computation
+ *               (EQUIPMENT_DESIGN §10: client-side tampering with local loadout cannot change "whether this loadout can breach the city"). Defaults to no equipment.
  */
 export function buildSiegeBlueprints(
   levels: Record<string, number>,
@@ -141,8 +142,8 @@ export function buildSiegeBlueprints(
 }
 
 /**
- * 把升级等级以乘算修饰叠加到蓝图（原地改）。未知 id / 0 级 / 超 maxLevel 都安全钳制。
- * 唯一的 SaveData→blueprint 注入点（§5.2）。
+ * Applies upgrade levels as multiplicative modifiers to blueprints (in-place mutation). Unknown id / level 0 / above maxLevel are all safely clamped.
+ * The single SaveData→blueprint injection point (§5.2).
  */
 export function applyPveUpgrades(
   bp: Record<UnitType, UnitBlueprint>,

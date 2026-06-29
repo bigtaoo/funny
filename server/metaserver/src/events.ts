@@ -1,14 +1,14 @@
-// 限时活动容器服务（B6，ADR-014）。
-// getEventsForAccount: 拉取有效活动 + 参与数据。
-// accrueEventTask: 任务触发点（pve.clear / pvp.win / ad.watch）调用；best-effort，失败不阻主流程。
-// claimEventReward: 积分兑换奖励，发奖走邮件 / commercial 金币。
+// Time-limited event container service (B6, ADR-014).
+// getEventsForAccount: fetch active events + participation data.
+// accrueEventTask: called at task trigger points (pve.clear / pvp.win / ad.watch); best-effort, failures do not block the main flow.
+// claimEventReward: redeem points for a reward; dispatches via mail or commercial coin grant.
 import { randomUUID } from 'node:crypto';
 import type { Collections, EventDoc, EventParticipantDoc } from '@nw/shared';
 import { isEventActive, validateEventInput, type EventInput, type EventTaskKind } from '@nw/shared';
 import type { CommercialClient } from './commercialClient.js';
 import { insertSystemMail } from './mail.js';
 
-// ── 活动视图（下发给客户端）────────────────────────────────────────────────
+// ── Event view (sent to client) ────────────────────────────────────────────────
 
 export interface EventTaskView {
   taskId: string;
@@ -26,7 +26,7 @@ export interface EventRewardView {
   id?: string;
   count?: number;
   maxClaims?: number;
-  claimedCount: number; // 本账号已领次数
+  claimedCount: number; // number of times claimed by this account
 }
 
 export interface EventView {
@@ -40,7 +40,7 @@ export interface EventView {
   rewards: EventRewardView[];
 }
 
-// ── 内部辅助 ────────────────────────────────────────────────────────────────
+// ── Internal helpers ────────────────────────────────────────────────────────────────
 
 function participantId(eventId: string, accountId: string): string {
   return `${eventId}:${accountId}`;
@@ -78,9 +78,9 @@ function buildView(event: EventDoc, participant: EventParticipantDoc | null): Ev
   };
 }
 
-// ── 公开 API ─────────────────────────────────────────────────────────────────
+// ── Public API ─────────────────────────────────────────────────────────────────
 
-/** 拉取当前有效活动列表 + 本账号参与数据。 */
+/** Fetch the currently active event list + this account's participation data. */
 export async function getEventsForAccount(
   cols: Collections,
   accountId: string,
@@ -101,8 +101,9 @@ export async function getEventsForAccount(
 }
 
 /**
- * 活动任务触发点（best-effort：失败不抛、不阻主流程）。
- * 对 kind 匹配的所有有效活动，各原子更新任务进度，满足条件时发积分。
+ * Event task trigger point (best-effort: does not throw on failure, does not block the main flow).
+ * For all active events containing tasks matching the given kind, atomically updates task progress
+ * and grants points when the target is reached.
  */
 export async function accrueEventTask(
   cols: Collections,
@@ -110,7 +111,7 @@ export async function accrueEventTask(
   kind: EventTaskKind,
   now: number,
 ): Promise<void> {
-  // 找到有效活动中包含该 kind 任务的所有定义
+  // Find all active events that contain tasks of the given kind
   const activeEvents = await cols.events
     .find({ windowStart: { $lte: now }, windowEnd: { $gt: now } })
     .toArray();
@@ -121,7 +122,7 @@ export async function accrueEventTask(
 
     const pid = participantId(event._id, accountId);
 
-    // 确保文档存在（upsert）
+    // Ensure the participant document exists (upsert)
     await cols.eventParticipants.updateOne(
       { _id: pid },
       {
@@ -138,15 +139,15 @@ export async function accrueEventTask(
       { upsert: true },
     );
 
-    // 对每个匹配任务原子推进进度
+    // Atomically advance progress for each matching task
     for (const task of matchingTasks) {
-      // 读取当前进度（已初始化）
+      // Read current progress (document already initialized)
       const doc = await cols.eventParticipants.findOne({ _id: pid });
       if (!doc) continue;
 
       const existing = doc.taskProgress.find((p) => p.taskId === task.taskId);
       const currentProgress = existing?.progress ?? 0;
-      if (currentProgress >= task.target) continue; // 任务已满，不再累计
+      if (currentProgress >= task.target) continue; // task already complete, no further accumulation
 
       const newProgress = currentProgress + 1;
       const reachTarget = newProgress >= task.target;
@@ -154,7 +155,7 @@ export async function accrueEventTask(
       const grantPoints = reachTarget && !alreadyGranted;
 
       if (existing) {
-        // 更新已有任务记录
+        // Update the existing task record
         await cols.eventParticipants.updateOne(
           { _id: pid, 'taskProgress.taskId': task.taskId },
           {
@@ -167,7 +168,7 @@ export async function accrueEventTask(
           },
         );
       } else {
-        // 新增任务进度条目
+        // Add a new task progress entry
         await cols.eventParticipants.updateOne(
           { _id: pid },
           {
@@ -187,17 +188,17 @@ export async function accrueEventTask(
   }
 }
 
-// ── admin 活动管理 CRUD（B6，运维后台 events.manage）────────────────────────
-// 玩家侧 getEventsForAccount 只拉「窗口内」活动；以下供运维列出/创建/编辑/删除全部活动。
+// ── Admin event management CRUD (B6, ops admin console events.manage) ────────────────────────
+// Player-side getEventsForAccount only fetches "within-window" events; the following are for ops to list/create/edit/delete all events.
 
-/** 列出全部活动定义（含未开始/已结束），按开始时间倒序。 */
+/** List all event definitions (including not-yet-started and ended events), sorted by windowStart descending. */
 export async function adminListEvents(cols: Collections): Promise<EventDoc[]> {
   return cols.events.find({}).sort({ windowStart: -1 }).toArray();
 }
 
 export type AdminEventError = 'VALIDATION' | 'NOT_FOUND' | 'DUPLICATE_ID';
 
-/** 创建活动；校验入参 + _id 去重。 */
+/** Create an event; validate input + deduplicate _id. */
 export async function adminCreateEvent(
   cols: Collections,
   input: EventInput,
@@ -221,7 +222,7 @@ export async function adminCreateEvent(
   return { ok: true, event: doc };
 }
 
-/** 全量替换活动定义（_id/createdAt 保持）。已产生的参与进度不动（task/reward 改动可能让旧进度对不上，运营自负）。 */
+/** Full replacement of an event definition (_id/createdAt preserved). Existing participation progress is untouched (task/reward changes may cause old progress to mismatch — ops responsibility). */
 export async function adminUpdateEvent(
   cols: Collections,
   eventId: string,
@@ -245,7 +246,7 @@ export async function adminUpdateEvent(
   return { ok: true, event: next };
 }
 
-/** 删除活动定义（不级联删 eventParticipants：保留历史，且过期活动不再被读取）。 */
+/** Delete an event definition (does not cascade-delete eventParticipants: history is preserved, and expired events are no longer read). */
 export async function adminDeleteEvent(
   cols: Collections,
   eventId: string,
@@ -255,13 +256,13 @@ export async function adminDeleteEvent(
   return { ok: true };
 }
 
-// ── 奖励兑换 ─────────────────────────────────────────────────────────────────
+// ── Reward redemption ─────────────────────────────────────────────────────────────────
 
 export type ClaimEventError =
-  | 'NOT_FOUND'          // 活动或奖励不存在
-  | 'EVENT_CLOSED'       // 活动窗口外
-  | 'INSUFFICIENT_POINTS' // 积分不足
-  | 'CLAIM_LIMIT_REACHED'; // 超出 maxClaims
+  | 'NOT_FOUND'          // event or reward does not exist
+  | 'EVENT_CLOSED'       // outside the event window
+  | 'INSUFFICIENT_POINTS' // not enough points
+  | 'CLAIM_LIMIT_REACHED'; // exceeds maxClaims
 
 export interface ClaimEventOk {
   ok: true;
@@ -270,10 +271,10 @@ export interface ClaimEventOk {
 }
 
 /**
- * 积分兑换活动奖励。
- * - 活动期外拒绝；积分不足拒绝；maxClaims 超限拒绝。
- * - 原子扣分（findOneAndUpdate $gte guard）；发奖：coins → commercial.grant，其余 → 邮件附件。
- * - orderId 幂等（`${pid}:${rewardId}:${claimIndex}`），防网络重试双发。
+ * Redeem event reward with points.
+ * - Rejects if outside the event window; rejects if insufficient points; rejects if maxClaims exceeded.
+ * - Atomically deducts points (findOneAndUpdate $gte guard); dispatches reward: coins → commercial.grant, others → mail attachment.
+ * - orderId is idempotent (`${pid}:${rewardId}:${claimIndex}`) to prevent double-dispatch on network retries.
  */
 export async function claimEventReward(
   cols: Collections,

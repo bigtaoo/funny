@@ -1,12 +1,12 @@
-// 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）：Loki payload 组装 + 公开 bootstrap「只回 diff」
-// + /client/log 定向守卫。纯逻辑，不连库（cols 用 stub）。
+﻿// Client log targeted collection (FEATURE_FLAGS_DESIGN §9): Loki payload assembly + public bootstrap "diff-only response"
+// + /client/log targeting guard. Pure logic, no database connection (cols uses a stub).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { FeatureFlagCache } from '@nw/shared';
 import { buildLokiPayload, buildAnomalyLokiPayload } from '../src/clientLog';
 import { MetaService } from '../src/service';
 
-// ── buildLokiPayload（§9.4 入 Loki 约定）─────────────────────────────────────
+// ── buildLokiPayload (§9.4 Loki ingestion convention) ─────────────────────────────────────
 describe('buildLokiPayload', () => {
   it('按 level 分流；label 仅 source/level；publicId 入行内（logfmt）', () => {
     const p = buildLokiPayload(
@@ -26,7 +26,7 @@ describe('buildLokiPayload', () => {
     expect(err.values[0][1]).toContain('publicId=123456789');
     expect(err.values[0][1]).toContain('tag=gateway');
     expect(err.values[0][1]).toContain('msg=boom');
-    // 含空格的 msg 走 logfmt 引号转义
+    // msg containing spaces is quoted-escaped in logfmt
     const info = p.streams.find((s) => s.stream.level === 'info')!;
     expect(info.values[0][1]).toContain('msg="hi there"');
   });
@@ -38,7 +38,7 @@ describe('buildLokiPayload', () => {
   });
 });
 
-// ── buildAnomalyLokiPayload（全量异常上报：单 stream、低基数 label，type/detail 入行内）──────────
+// ── buildAnomalyLokiPayload (full anomaly reporting: single stream, low-cardinality labels, type/detail inlined) ──────────
 describe('buildAnomalyLokiPayload', () => {
   it('单 stream label={source,kind=anomaly}；type/publicId/detail/msg 入行内（logfmt）', () => {
     const p = buildAnomalyLokiPayload(
@@ -65,7 +65,7 @@ describe('buildAnomalyLokiPayload', () => {
   });
 });
 
-// ── MetaService.bootstrap / clientLog（直接构造，cols 等 stub）────────────────
+// ── MetaService.bootstrap / clientLog (constructed directly; cols and similar are stubs) ────────────────
 function makeService(flags: FeatureFlagCache | null, lokiPushUrl: string | null = null): MetaService {
   return new MetaService({
     cols: {} as never,
@@ -93,7 +93,7 @@ function req(partial: { query?: unknown; body?: unknown; headers?: Record<string
 
 describe('MetaService.bootstrap（§9.3 只回与 default 不同的 flag）', () => {
   it('publicId 命中 client_log_debug → flags 含该键 true；非命中 → 空 map', async () => {
-    // 单玩家定向的标准配法：pct:0 关给所有人，allowPublicIds 命中即开（仅放行目标，§9.1 备注）。
+    // Standard per-player targeting configuration: pct:0 disables for everyone, allowPublicIds enables for matched ids only (§9.1 note).
     const flags = await cacheWith([
       { _id: 'client_log_debug', enabled: true, rollout: { pct: 0, allowPublicIds: ['123456789'] } },
     ]);
@@ -178,7 +178,7 @@ describe('MetaService.clientAnomaly（全量上报：不受定向白名单约束
   }
 
   it('无 flag 源 / 未定向也转发 Loki（全量），accepted=条数', async () => {
-    const svc = makeService(null, 'http://loki/push'); // 无 flag 源 = 任何 publicId 都不被定向
+    const svc = makeService(null, 'http://loki/push'); // no flag source = no publicId is targeted
     const out = (await svc.clientAnomaly(
       req({ body: { publicId: '999', platform: 'web', events: [{ type: 'mem', msg: 'over', ts: 1 }] } }),
       reply(),
@@ -206,12 +206,12 @@ describe('MetaService.clientAnomaly（全量上报：不受定向白名单约束
   });
 
   it('同 IP 超过 30 次/60s → 静默丢弃（accepted 0、不再转发）', async () => {
-    const svc = makeService(null, 'http://loki/push'); // now 恒 1000 → 同窗口内累计
+    const svc = makeService(null, 'http://loki/push'); // now always returns 1000 → all calls fall within the same rate-limit window
     const body = { body: { publicId: '1', events: [{ type: 'anr', msg: 'stall', ts: 1 }] } };
     for (let i = 0; i < 30; i++) await svc.clientAnomaly(req(body), reply());
     expect(fetchMock).toHaveBeenCalledTimes(30);
     const over = (await svc.clientAnomaly(req(body), reply())) as { data: { accepted: number } };
     expect(over.data.accepted).toBe(0);
-    expect(fetchMock).toHaveBeenCalledTimes(30); // 第 31 次未转发
+    expect(fetchMock).toHaveBeenCalledTimes(30); // 31st call was not forwarded
   });
 });

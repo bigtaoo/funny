@@ -1,5 +1,5 @@
-// B-PROMO 优惠码兑换端到端测试（真实 Mongo，需 docker compose up -d）。
-// 覆盖：创建/列出/大小写规范化/重复码/coins<=0/首次兑换/防重/过期/超限/不同玩家/流水。
+// B-PROMO promo code redemption end-to-end tests (real Mongo, requires docker compose up -d).
+// Coverage: create / list / case normalization / duplicate code / coins<=0 / first redemption / deduplication / expiry / total limit / different players / ledger.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createCommercialMongo, type CommercialMongo } from '../src/db';
 import { CommercialService } from '../src/service';
@@ -17,7 +17,7 @@ async function tryConnect(): Promise<CommercialMongo | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[promo.test] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[promo.test] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 let t = 1_000_000;

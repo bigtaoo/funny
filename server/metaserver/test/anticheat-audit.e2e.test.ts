@@ -1,7 +1,7 @@
-// 成就反作弊离线抽查端到端（S9-7，ACHIEVEMENT_DESIGN §4.4）：真实 Mongo + 注入假 peer 裁判。
-//   超报→回滚+升档+审查记录+overclaim 标记 / 重跑幂等 / clean 无记录 / 无裁判全 0 留局 /
-//   裁判失败 skipped / 少报 clean / suspicion 加权抽样 / 回滚 0 下限 / 内部审查端点鉴权。
-// 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// Achievement anti-cheat offline spot-check end-to-end (S9-7, ACHIEVEMENT_DESIGN §4.4): real Mongo + injected fake peer judge.
+//   overclaim → rollback + suspicion increment + review record + overclaim marker / idempotent rerun / clean leaves no record / no judge → all-zero, match stays unaudited /
+//   judge failure → skipped / underreport → clean / suspicion-weighted sampling / rollback floor at 0 / internal review endpoint auth.
+// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createMongo,
@@ -29,7 +29,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
   }
 }
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[anticheat-audit.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[anticheat-audit.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 /** 可配假裁判：available + 固定 verdict（statsJson 为 PvP per-side map）。 */
 class FakeGateway implements GatewayClient {
@@ -53,7 +53,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
   let gateway: FakeGateway;
   const now = () => 1000;
 
-  // 种一名账号存档 + 初始 stats / suspicion。
+  // Seed one account save with optional initial stats / suspicion.
   async function seedSave(
     accountId: string,
     stats?: SaveData['stats'],
@@ -65,7 +65,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     await m.collections.saves.insertOne({ _id: accountId, save, rev: save.rev });
   }
 
-  // 种一局已归档 ranked（含 reportedStats + 最小内嵌 replay）。
+  // Seed one archived ranked match (with reportedStats + minimal embedded replay).
   async function seedMatch(
     roomId: string,
     reportedStats: MatchDoc['reportedStats'],
@@ -100,7 +100,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
   const getSave = (id: string) => m.collections.saves.findOne({ _id: id });
   const getReviews = (accountId: string) =>
     m.collections.antiCheatReviews.find({ accountId }).toArray();
-  // rand=0 → 永远抽中（< p0）；加权测试单独传别的。
+  // rand=0 → always sampled (< p0); weighted tests pass a different value.
   const deps = (over?: Partial<Parameters<typeof auditOnce>[0]>) => ({
     cols: m.collections,
     gateway,

@@ -1,12 +1,12 @@
-// C2：广告奖励服务端校验单测。
-// 覆盖：token 唯一性（重放拒绝）、30min 间隔门、平台令牌验签（admob_client/wechat_client）、
-//       微信广告 SSV 回调签名、AdMob SSV 验签降级（网络失败时保守拒绝）。
+// C2: Ad reward server-side validation unit tests.
+// Covers: token uniqueness (replay rejection), 30-min interval gate, platform token signature verification (admob_client/wechat_client),
+//         WeChat ad SSV callback signature, AdMob SSV verification fallback (conservatively reject on network failure).
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { hashAdToken, recordAdToken, checkAdInterval } from '../src/economy.js';
 import { verifyAdPlatformToken } from '../src/ads.js';
 
-// ── token 唯一性 ──────────────────────────────────────────────────────────────
+// ── token uniqueness ──────────────────────────────────────────────────────────────
 
 describe('hashAdToken', () => {
   it('same input → same hash', () => {
@@ -50,7 +50,7 @@ describe('recordAdToken', () => {
   });
 });
 
-// ── 30min 间隔门 ─────────────────────────────────────────────────────────────
+// ── 30-min interval gate ─────────────────────────────────────────────────────────────
 
 describe('checkAdInterval', () => {
   const INTERVAL = 30 * 60 * 1000; // 30min
@@ -63,14 +63,14 @@ describe('checkAdInterval', () => {
         const filter = _filter as { _id: string; $or?: { lastAdAt?: unknown }[] };
         const needsInterval = filter.$or !== undefined;
         if (!needsInterval) return { _id: 'x' }; // cap filter (non-interval call)
-        // 模拟 interval 门：lastAdAt 未设置或超过 interval 才更新
+        // Simulate the interval gate: only update when lastAdAt is unset or the interval has elapsed
         const update = _update as { $set: { lastAdAt: number } };
         const newTs = update.$set.lastAdAt;
         if (lastAdAt === undefined || newTs - lastAdAt >= INTERVAL) {
           lastAdAt = newTs;
           return { _id: 'x', lastAdAt };
         }
-        return null; // 间隔未到
+        return null; // interval not yet elapsed
       }),
     };
   }
@@ -98,7 +98,7 @@ describe('checkAdInterval', () => {
   });
 });
 
-// ── 平台令牌验签 ─────────────────────────────────────────────────────────────
+// ── platform token signature verification ─────────────────────────────────────────────────────────────
 
 describe('verifyAdPlatformToken', () => {
   afterEach(() => {
@@ -106,7 +106,7 @@ describe('verifyAdPlatformToken', () => {
     delete process.env.NW_WECHAT_ADS_CLIENT_KEY;
   });
 
-  it('admob_client: no key → true (降级放行)', () => {
+  it('admob_client: no key → true (fallback pass-through)', () => {
     expect(verifyAdPlatformToken('admob_client', 'anything')).toBe(true);
   });
 

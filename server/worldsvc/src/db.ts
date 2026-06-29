@@ -1,7 +1,7 @@
-// worldsvc 专属库工厂（S8-0，SLG_DESIGN §14.3）。库名 notebook_wars_world，与 meta/commercial/admin
-// 物理隔离。8 集合：worlds / tiles / playerWorld / marches / families / familyMembers / auctions / sieges。
-// 写型沿用单文档原子 + rev 乐观锁（META_DESIGN §6.3）。稀疏存储：只落被占领/被改动的格子，
-// 中立格由 shared proceduralTile() 即时算出，不落库（§14.2 scale 关键）。
+// worldsvc dedicated database factory (S8-0, SLG_DESIGN §14.3). Database name notebook_wars_world, physically isolated from meta/commercial/admin.
+// 8 collections: worlds / tiles / playerWorld / marches / families / familyMembers / auctions / sieges.
+// Write pattern reuses single-document atomics + rev optimistic locking (META_DESIGN §6.3). Sparse storage: only occupied/modified tiles are persisted;
+// neutral tiles are computed on-the-fly by shared proceduralTile() and not stored (key to §14.2 scale).
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
 import type {
   TileType,
@@ -15,12 +15,12 @@ import type {
 } from '@nw/shared';
 import { FAMILY_MSG_RETENTION_SEC } from '@nw/shared';
 
-/** 防守配置：引擎 LevelDefinition 的受限子集（P2/P5，内嵌不建独立集合）。S8-3 接引擎前为 opaque 占位。 */
+/** Defense configuration: a restricted subset of the engine LevelDefinition (P2/P5, embedded rather than a separate collection). Opaque placeholder until S8-3 wires up the engine. */
 export type DefenseConfig = Record<string, unknown>;
 
 /**
- * 布阵单位（GarrisonEntry 的可序列化镜像，G3-2c）。unitType/col/row 合法性由引擎侧 levelSchema
- * 在 buildSiegeBattle→parseLevelDefinition 时校验；initialHp = 分配给该单位的兵力（= 血量，§16.1）。
+ * Army placement unit (serializable mirror of GarrisonEntry, G3-2c). unitType/col/row validity is validated by the engine-side levelSchema
+ * during buildSiegeBattle→parseLevelDefinition; initialHp = troop strength allocated to this unit (= HP, §16.1).
  */
 export interface ArmyEntry {
   unitType: string;
@@ -29,9 +29,9 @@ export interface ArmyEntry {
   initialHp?: number;
 }
 
-/** 进攻布阵模板（队伍，§16.2）。≤ SIEGE_TEAM_CAP 支，出征挂一支队 → army 快照进 MarchDoc。 */
+/** Attack formation template (team, §16.2). Up to SIEGE_TEAM_CAP teams; one team is attached on march → army snapshot goes into MarchDoc. */
 export interface TeamTemplate {
-  id: string;   // 槽位 id（'t1'..'t5'）
+  id: string;   // slot id ('t1'..'t5')
   name: string;
   army: ArmyEntry[];
 }
@@ -47,12 +47,12 @@ export interface WorldDoc {
   resetAt?: number;
   capacity: number;
   population: number;
-  /** 开服时 pin 的引擎版本（C7/§17.9，= @nw/engine ENGINE_VERSION）；缺省视为未 pin（旧世界）。 */
+  /** Engine version pinned at world open (C7/§17.9, = @nw/engine ENGINE_VERSION); absent means not pinned (legacy world). */
   engineVersion?: number;
   rev: number;
 }
 
-/** 被占领/被改动的格子（中立默认格不落库，由 proceduralTile 算）。 */
+/** Occupied or modified tiles (neutral default tiles are not persisted; computed by proceduralTile). */
 export interface TileDoc {
   _id: string; // tileId = `{worldId}:{x}:{y}`
   worldId: string;
@@ -61,24 +61,24 @@ export interface TileDoc {
   type: TileType;
   level: number;
   resType?: ResourceType;
-  ownerId?: string; // 占领者 accountId
+  ownerId?: string; // occupying accountId
   familyId?: string;
-  defense?: DefenseConfig; // 领地防守（P5 内嵌）
+  defense?: DefenseConfig; // territory defense (P5, embedded)
   garrison?: number;
   protectedUntil?: number; // ms
-  watchtower?: boolean; // 瞭望塔（§18 G5 V2）：建塔后该格成大半径持久视野源；丢地随 TileDoc 一并消失
+  watchtower?: boolean; // watchtower (§18 G5 V2): once built, this tile becomes a large-radius persistent vision source; lost together with TileDoc when tile is lost
   rev: number;
 }
 
-/** 训练队列条目（S8-2）。每批独立排队，completeAt 到期由 scheduler 转化为兵力。 */
+/** Training queue entry (S8-2). Each batch queues independently; scheduler converts to troop strength when completeAt is reached. */
 export interface TrainingEntry {
-  qty: number;       // 本批训练数量
-  foodCost: number;  // 已扣粮食（出队时无需退还）
+  qty: number;       // quantity trained in this batch
+  foodCost: number;  // food already deducted (no refund needed on dequeue)
   startAt: number;   // ms epoch
-  completeAt: number; // ms epoch（到点 scheduler 加兵到 troops 并移出队列）
+  completeAt: number; // ms epoch (scheduler adds troops to troops and removes entry when reached)
 }
 
-/** 玩家在某世界的状态（资源惰性结算：存聚合 yieldRate + lastTickAt，读时补算，不逐格 tick）。 */
+/** Player state in a given world (lazy resource settlement: stores aggregate yieldRate + lastTickAt, computes delta on read, no per-tile tick). */
 export interface PlayerWorldDoc {
   _id: string; // `{worldId}:{accountId}`
   worldId: string;
@@ -86,14 +86,14 @@ export interface PlayerWorldDoc {
   troops: number;
   troopCap: number;
   resources: Record<ResourceType, number>;
-  yieldRate: Record<ResourceType, number>; // 每小时产率（占领/丢地时更新）
-  lastTickAt: number; // ms，惰性结算锚点
+  yieldRate: Record<ResourceType, number>; // hourly yield rate (updated on tile capture/loss)
+  lastTickAt: number; // ms, lazy settlement anchor
   mainBaseTile?: string;
-  defense?: DefenseConfig; // 主城防守（P5 内嵌）
-  teams?: TeamTemplate[];  // 进攻布阵模板（G3-2c，≤ SIEGE_TEAM_CAP 支）
+  defense?: DefenseConfig; // main base defense (P5, embedded)
+  teams?: TeamTemplate[];  // attack formation templates (G3-2c, ≤ SIEGE_TEAM_CAP teams)
   familyId?: string;
-  trainingQueue?: TrainingEntry[]; // 训练队列（S8-2，≤ TROOP_TRAIN_QUEUE_MAX 条）
-  hasBattlePass?: boolean;         // 当赛季战令（S8-8，赛季重置时清除）
+  trainingQueue?: TrainingEntry[]; // training queue (S8-2, ≤ TROOP_TRAIN_QUEUE_MAX entries)
+  hasBattlePass?: boolean;         // current season battle pass (S8-8, cleared on season reset)
   rev: number;
 }
 
@@ -105,7 +105,7 @@ export interface MarchDoc {
   toTile: string;
   kind: MarchKind;
   troops: number;
-  /** 攻方布阵快照（G3-2c，attack 挂队时从 TeamTemplate.army 拷入；出征后队伍可改不影响在途军）。 */
+  /** Attacker formation snapshot (G3-2c, copied from TeamTemplate.army when attaching a team; the team can be edited after marching without affecting troops already en route). */
   army?: ArmyEntry[];
   departAt: number;
   arriveAt: number;
@@ -121,28 +121,28 @@ export interface FamilyDoc {
   leaderId: string;
   memberCount: number;
   territoryCount: number;
-  sectId?: string; // 所属宗门（S8-4b，无 = 散家族）
-  /** 家族繁荣度（G2/§17.4，familyProsperity 算，读时惰性衰减）。缺省视 0（旧家族懒创建）。 */
+  sectId?: string; // owning sect (S8-4b; absent = independent family)
+  /** Family prosperity (G2/§17.4, computed by familyProsperity, lazily decays on read). Defaults to 0 (lazy creation for legacy families). */
   prosperity?: number;
-  /** 繁荣度衰减锚点 ms（读时按 now-该值 惰性衰减）。 */
+  /** Prosperity decay anchor ms (lazy decay applied on read as now minus this value). */
   prosperityUpdatedAt?: number;
-  /** 赛季累计活跃点（新占领数 + 战斗场次，服务器权威 $inc，无客户端写口）。缺省视 0。 */
+  /** Cumulative season activity points (new tile captures + battle count; server-authoritative $inc, no client write path). Defaults to 0. */
   activity?: number;
   rev: number;
 }
 
-/** 宗门（S8-4b，§2.1/§8.2）：大区内由家族组成的势力组织。成员 = sectId 指向本门的家族。 */
+/** Sect (S8-4b, §2.1/§8.2): a faction organisation composed of families within a region. Members = families whose sectId points to this sect. */
 export interface SectDoc {
   _id: string; // sectId = `s:{worldId}:{TAG}`
   worldId: string;
   name: string;
   tag: string;
-  leaderFamilyId: string; // 门主家族
-  leaderId: string;       // 门主账号（= 门主家族的 leader），用于权限校验
+  leaderFamilyId: string; // sect-leader family
+  leaderId: string;       // sect-leader account (= leader of the sect-leader family), used for permission checks
   memberFamilyCount: number;
-  allySectIds: string[];  // 联盟宗门（≤ SECT_ALLY_CAP）
-  prosperity: number;     // 繁荣度 = 成员家族繁荣度之和（G2/§17.4，settle/建门/G6 分配时聚合刷新）
-  /** 罢免门主投票（§8.2，超 2/3 族长同意 + 提名）。换届/解决后清空。 */
+  allySectIds: string[];  // allied sects (≤ SECT_ALLY_CAP)
+  prosperity: number;     // prosperity = sum of member family prosperity (G2/§17.4, aggregated and refreshed on settle/sect-creation/G6 allocation)
+  /** Vote to remove the sect leader (§8.2, requires >2/3 family-leader agreement + nomination). Cleared after a leadership change or resolution. */
   removalVote?: { nomineeFamilyId: string; voterFamilyIds: string[] };
   rev: number;
 }
@@ -163,59 +163,59 @@ export interface AuctionDoc {
   itemType: string;
   item: Record<string, unknown>;
   qty: number;
-  price: number; // 一口价：成交单价；竞拍：起拍后无意义（用 startPrice/topBid），保留兼容旧浏览排序
+  price: number; // fixed-price: unit transaction price; auction: meaningless after bidding starts (use startPrice/topBid), retained for backward-compatible browse sorting
   currency: string;
   designatedBuyerId?: string;
-  expireAt: number; // ms（过期由扫描器结算：退还卖方挂存 / 竞拍结拍，非 TTL 自删，见 ensureIndexes 注）
+  expireAt: number; // ms (expiry settled by scanner: refund seller escrow / finalize auction bid; not TTL auto-delete, see ensureIndexes note)
   status: AuctionStatus;
   buyerId?: string;
-  /** 成交时刻 ms（status→sold 时写）。异常审计（D/G7）按此窗口化；旧文档缺省回退解析 _id 内挂单 ts。 */
+  /** Transaction timestamp ms (written when status→sold). Anomaly auditing (D/G7) windows by this; legacy documents fall back to parsing listing ts from _id. */
   soldAt?: number;
-  // ── B 竞拍（AUCTION_DESIGN §4.B）。saleMode 缺省视为 'fixed'（兼容既有一口价单）──
+  // ── B Auction bidding (AUCTION_DESIGN §4.B). saleMode defaults to 'fixed' (backward-compatible with existing fixed-price listings) ──
   saleMode?: 'fixed' | 'auction';
-  startPrice?: number;   // 竞拍起拍总价（整批，非单价）
-  buyoutPrice?: number;  // 竞拍一口价保底总价（可选）
-  topBid?: { bidderId: string; amount: number; ts: number }; // 当前最高出价（总价，金币已托管）
+  startPrice?: number;   // auction starting total price (whole batch, not per-unit)
+  buyoutPrice?: number;  // auction buyout total price (optional)
+  topBid?: { bidderId: string; amount: number; ts: number }; // current highest bid (total price, coins already escrowed)
   rev: number;
 }
 
-/** C 每日限额计数（AUCTION_DESIGN §4.C）。_id = `${worldId}:${accountId}:${dayKey}`，TTL 自清。 */
+/** C Daily quota counter (AUCTION_DESIGN §4.C). _id = `${worldId}:${accountId}:${dayKey}`, TTL auto-cleared. */
 export interface AuctionDailyDoc {
   _id: string;
   worldId: string;
   accountId: string;
-  dayKey: string; // 服务器 UTC 日界 YYYY-MM-DD
-  lists: number;  // 当日新挂单次数
-  buys: number;   // 当日购买/出价次数
-  expiresAt: Date; // BSON Date，TTL 锚字段
+  dayKey: string; // server UTC day boundary YYYY-MM-DD
+  lists: number;  // new listings created today
+  buys: number;   // purchases / bids placed today
+  expiresAt: Date; // BSON Date, TTL anchor field
 }
 
-/** G 价格护栏滑窗（AUCTION_DESIGN §4.G）。_id = `${worldId}:${category}`，存近 N 笔成交单价。 */
+/** G Price guardrail sliding window (AUCTION_DESIGN §4.G). _id = `${worldId}:${category}`, stores the last N transaction unit prices. */
 export interface AuctionPriceDoc {
   _id: string;
   worldId: string;
-  category: string; // 材料种类（material:scrap…）；装备品类待 A
-  prices: number[]; // 近 N 笔成交单价（队尾最新，长度 ≤ AUCTION_PRICE_WINDOW_N）
+  category: string; // material category (material:scrap…); equipment category pending A
+  prices: number[]; // last N transaction unit prices (newest at tail, length ≤ AUCTION_PRICE_WINDOW_N)
 }
 
 /**
- * 家族频道消息（S8-4）。
- * ★ ts 须存 BSON Date（非 epoch number）——MongoDB TTL 只对 Date 字段生效。
- * 读出时转 epoch number 给客户端。
+ * Family channel message (S8-4).
+ * ★ ts must be stored as BSON Date (not epoch number) — MongoDB TTL only works on Date fields.
+ * Convert to epoch number when reading out to the client.
  */
 export interface FamilyMessageDoc {
   _id: string; // `fm:{familyId}:{ts_epoch}:{seq}`
   worldId: string;
   familyId: string;
   senderId: string;
-  /** 发送时快照昵称（防改名后历史失真）。 */
+  /** Sender nickname snapshot at send time (prevents history distortion after a name change). */
   senderName: string;
   body: string;
-  /** BSON Date，TTL 锚字段（须 Date 非 epoch，见 CLAUDE.md 注）。 */
+  /** BSON Date, TTL anchor field (must be Date not epoch, see CLAUDE.md note). */
   ts: Date;
 }
 
-/** 宗门频道消息（S8-4b）。同 FamilyMessageDoc：ts 须 BSON Date（TTL 锚字段）。 */
+/** Sect channel message (S8-4b). Same as FamilyMessageDoc: ts must be BSON Date (TTL anchor field). */
 export interface SectMessageDoc {
   _id: string; // `sm:{sectId}:{ts_epoch}:{seq}`
   worldId: string;
@@ -226,7 +226,7 @@ export interface SectMessageDoc {
   ts: Date;
 }
 
-/** 国家/世界公频消息（B7，§6.4）。ts 须 BSON Date（TTL 锚字段，7 天自清）。 */
+/** Nation/world public channel message (B7, §6.4). ts must be BSON Date (TTL anchor field, auto-cleared after 7 days). */
 export interface NationMessageDoc {
   _id: string; // `nm:{worldId}:{ts_epoch}:{seq}`
   worldId: string;
@@ -247,9 +247,10 @@ export interface SiegeDoc {
   recomputed: boolean;
   ts: number;
   /**
-   * G3-2c 重播观战：持久化权威战斗的输入（seed + 双方布阵 + 格等级）。客户端凭此重建
-   * buildSiegeBattle 并以同 seed headless 重跑 → 逐字复现 worldsvc 跑过的那一场（纯演出，非权威）。
-   * 旧战报 / 兜底廉价结算路径可缺省（重播降级为不可用）。
+   * G3-2c replay spectator: persists the inputs of the authoritative battle (seed + both sides' formations + tile level).
+   * The client uses this to reconstruct buildSiegeBattle and headless-replay with the same seed → exactly reproduces
+   * the battle worldsvc ran (pure presentation, not authoritative).
+   * May be absent for legacy battle reports / cheap-settle fallback paths (replay degrades to unavailable).
    */
   seed?: number;
   attackerArmy?: ArmyEntry[];
@@ -257,23 +258,23 @@ export interface SiegeDoc {
   tileLevel?: number;
 }
 
-/** 国家文档（S8-6.5）。每个首府对应一条记录，无主时无 ownerId/nationName。 */
+/** Nation document (S8-6.5). One record per capital; ownerId/nationName absent when unclaimed. */
 export interface NationDoc {
   _id: string;            // `nation:{worldId}:{capitalIdx}`
   worldId: string;
-  capitalIdx: number;     // 0~9，对应 CAPITAL_FRACTIONS 索引
-  x: number;              // 首府格子 x（由 capitalPositions 计算，赛季开服时写入）
+  capitalIdx: number;     // 0~9, index into CAPITAL_FRACTIONS
+  x: number;              // capital tile x (computed by capitalPositions, written at season open)
   y: number;
-  ownerId?: string;       // 占领者 accountId
-  familyId?: string;      // 占领者家族
-  nationName?: string;    // 立国时玩家命名
+  ownerId?: string;       // occupying accountId
+  familyId?: string;      // occupying family
+  nationName?: string;    // player-given name when founding the nation
   foundedAt?: number;     // ms
   rev: number;
 }
 
 /**
- * 赛季结算历史（C2/§17.2）。settleSeason 落库本季排名 + 繁荣度快照，作为下季 G6 分配输入。
- * `_id = `${worldId}:s${season}`` = 幂等键（同季重入 $setOnInsert 不覆盖）。
+ * Season settlement history (C2/§17.2). settleSeason persists this season's ranking + prosperity snapshot, used as G6 allocation input for the next season.
+ * `_id = `${worldId}:s${season}`` = idempotency key (re-entering the same season with $setOnInsert does not overwrite).
  */
 export interface SeasonResultDoc {
   _id: string;
@@ -287,23 +288,23 @@ export interface SeasonResultDoc {
     name?: string;
     nationCount: number;
     capitalIdxs: number[];
-    prosperity?: number;       // 结算时繁荣度快照（sect scope 才有意义）
-    memberFamilyIds?: string[]; // 成员家族名单（sect scope 才记，G6 下季 familyShard 展开输入，§20 R2）
+    prosperity?: number;       // prosperity snapshot at settlement (meaningful only for sect scope)
+    memberFamilyIds?: string[]; // member family list (recorded only for sect scope; G6 next-season familyShard expansion input, §20 R2)
     tier: SettleTier;
   }>;
 }
 
 /**
- * G6 多 shard 赛季分配（§20.2）。settle 时按上季宗门强弱蛇形均衡分配，落库本季 familyId→shardIndex；
- * 下季玩家 join 时按账号上季家族查表路由（宗门>家族>单随）。
- * `_id = `s${season}``（本赛季）。shardCount 可因人口溢出 $inc 递增。
+ * G6 multi-shard season allocation (§20.2). On settle, distributes in a snake-draft order by last season's sect strength, persisting familyId→shardIndex for this season;
+ * when players join next season, they are routed by looking up their account's last-season family (sect > family > random).
+ * `_id = `s${season}`` (current season). shardCount can be incremented via $inc when population overflows.
  */
 export interface ShardAllocationDoc {
   _id: string;        // `s${season}`
   season: number;
   shardCount: number;
   capacity: number;
-  familyShard: Record<string, number>; // 上季 familyId → 本季 shardIndex
+  familyShard: Record<string, number>; // last-season familyId → this-season shardIndex
   createdAt: number;
 }
 
@@ -374,49 +375,49 @@ export async function createWorldMongo(
 
   async function ensureIndexes(): Promise<void> {
     await collections.worlds.createIndex({ status: 1 });
-    // 视区范围查（P6：空间查询 v1 走 Mongo {worldId,x,y} 范围查；Redis 分桶缓存后置）。
+    // Viewport range query (P6: spatial query v1 uses Mongo {worldId,x,y} range query; Redis bucket cache is a later addition).
     await collections.tiles.createIndex({ worldId: 1, x: 1, y: 1 });
     await collections.tiles.createIndex({ ownerId: 1 });
     await collections.tiles.createIndex({ familyId: 1 });
     await collections.playerWorld.createIndex({ worldId: 1, accountId: 1 });
     await collections.playerWorld.createIndex({ familyId: 1 });
     await collections.marches.createIndex({ worldId: 1, ownerId: 1 });
-    // 到点扫描兜底（主调度走 Redis ZSET，S8-2；无 Redis 时降级 Mongo 轮询）。
+    // On-time scan fallback (primary scheduling uses Redis ZSET, S8-2; degrades to Mongo polling without Redis).
     await collections.marches.createIndex({ arriveAt: 1 });
     await collections.families.createIndex({ worldId: 1, tag: 1 }, { unique: true });
     await collections.families.createIndex({ worldId: 1 });
     await collections.familyMembers.createIndex({ familyId: 1 });
     await collections.familyMessages.createIndex({ familyId: 1, ts: -1 });
-    // TTL：7 天后自动删除（ts 为 BSON Date 字段，Mongo TTL 只对 Date 生效）。
+    // TTL: auto-delete after 7 days (ts is a BSON Date field; Mongo TTL only works on Date).
     await collections.familyMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
-    // 宗门（S8-4b）：TAG worldId 内唯一；按 worldId 列；成员家族经 families.sectId 查。
+    // Sect (S8-4b): TAG unique within worldId; listed by worldId; member families queried via families.sectId.
     await collections.sects.createIndex({ worldId: 1, tag: 1 }, { unique: true });
     await collections.sects.createIndex({ worldId: 1 });
     await collections.families.createIndex({ sectId: 1 });
     await collections.sectMessages.createIndex({ sectId: 1, ts: -1 });
     await collections.sectMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
-    // 国家/世界公频（B7）：按 worldId + 时间倒序分页；TTL 同家族/宗门频道 7 天。
+    // Nation/world public channel (B7): paginated by worldId + time descending; same 7-day TTL as family/sect channels.
     await collections.nationMessages.createIndex({ worldId: 1, ts: -1 });
     await collections.nationMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
     await collections.auctions.createIndex({ worldId: 1, itemType: 1, status: 1 });
     await collections.auctions.createIndex({ sellerId: 1 });
     await collections.auctions.createIndex({ designatedBuyerId: 1 });
-    // 注：auctions.expireAt 故意 NOT TTL —— 过期需结算（退还卖方挂存），由扫描器按此索引处理；
-    // TTL 自删会在结算前丢掉托管物（U13）。§14.3 表里的「TTL {expireAt}」按此实现期决定改为普通索引。
+    // Note: auctions.expireAt is intentionally NOT a TTL index — expiry requires settlement (refund seller escrow); handled by the scanner using this index;
+    // TTL auto-delete would discard escrowed goods before settlement (U13). The "TTL {expireAt}" entry in §14.3 is changed to a regular index per this implementation decision.
     await collections.auctions.createIndex({ expireAt: 1 });
-    // C 每日限额：TTL 自清（expiresAt 为 BSON Date，Mongo TTL 只对 Date 生效）。
+    // C Daily quota: TTL auto-cleared (expiresAt is BSON Date; Mongo TTL only works on Date).
     await collections.auctionDaily.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-    // G 价格滑窗：_id = `${worldId}:${category}` 直查，无需额外索引（主键足够）。
+    // G Price sliding window: _id = `${worldId}:${category}` direct lookup, no additional index needed (primary key sufficient).
     await collections.sieges.createIndex({ worldId: 1, ts: -1 });
     await collections.sieges.createIndex({ attackerId: 1 });
-    // 国家：worldId 内按首府索引唯一
+    // Nation: unique by capital index within worldId
     await collections.nations.createIndex({ worldId: 1, capitalIdx: 1 }, { unique: true });
     await collections.nations.createIndex({ ownerId: 1 });
-    // 赛季结算历史（C2/§17.2）：按 worldId 取最近季；G6 分配读上季排名。
+    // Season settlement history (C2/§17.2): query most recent season by worldId; G6 allocation reads last-season ranking.
     await collections.seasonResults.createIndex({ worldId: 1, season: -1 });
-    // G6 多 shard 分配（§20）：按 season 取本季分配表（join 路由查 familyShard）。
+    // G6 multi-shard allocation (§20): retrieve this-season allocation table by season (join routing looks up familyShard).
     await collections.shardAllocations.createIndex({ season: 1 });
-    // 建宗门门槛 / G6 分配按繁荣度查（§17.2）。
+    // Sect founding threshold / G6 allocation query by prosperity (§17.2).
     await collections.families.createIndex({ worldId: 1, prosperity: -1 });
   }
 

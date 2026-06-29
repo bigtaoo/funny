@@ -1,5 +1,5 @@
-// admin 专属库工厂（OPS_DESIGN §4.3）。库名 notebook_wars_admin，与业务库物理隔离。
-// 集合：adminAccounts / compTickets / auditLog / metricSnapshots。
+// Admin-exclusive database factory (OPS_DESIGN §4.3). Database name: notebook_wars_admin, physically isolated from the game database.
+// Collections: adminAccounts / compTickets / auditLog / metricSnapshots.
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
 import type {
   AdminRole,
@@ -15,26 +15,28 @@ import type {
   TradeAuditTicketStatus,
 } from '@nw/shared';
 
-/** 运维账号（独立账号库，绝不复用玩家账号；§2.1）。 */
+/** Operations account (standalone account store, never reuses player accounts; §2.1). */
 export interface AdminAccountDoc {
   _id: string; // uuid
-  username: string; // 登录名（唯一索引）
+  username: string; // login name (unique index)
   passwordHash: string; // shared/password scrypt
   role: AdminRole;
   displayName: string;
   disabled: boolean;
   createdAt: number;
-  createdBy?: string; // 创建者 adminId
+  createdBy?: string; // creator adminId
   lastLoginAt?: number;
   /**
-   * 部署期种子超管标记（§2.1）。种子账号是「备份/应急 + 建号」用途，平时不登录，
-   * 不应被视作活跃运维。四眼原则判定「是否存在其他合格审批人」时排除它，
-   * 否则单超管（如 tao）发起的全服/超额工单会被这个休眠账号挡住、无法自批。
+   * Seed super-admin flag set at deployment time (§2.1). The seed account is intended for backup/emergency use
+   * and bootstrapping new accounts; it should not be considered an active operator during normal operations.
+   * It is excluded when the four-eyes rule checks "does another qualified approver exist", because
+   * otherwise a single super-admin (e.g. tao) would be blocked from self-approving server-wide or
+   * over-threshold tickets by this dormant account.
    */
   seed?: boolean;
 }
 
-/** 补偿工单（§3.1）。 */
+/** Compensation ticket (§3.1). */
 export interface CompTicketDoc {
   _id: string; // uuid
   scope: CompScope;
@@ -45,19 +47,19 @@ export interface CompTicketDoc {
   amountTier: AmountTier;
   initiatedBy: string; // adminId
   initiatedAt: number;
-  approvedBy?: string; // adminId（必须 ≠ initiatedBy）
+  approvedBy?: string; // adminId (must ≠ initiatedBy)
   approvedAt?: number;
   executedAt?: number;
-  /** 执行幂等键（防重复执行），唯一索引。 */
+  /** Execution idempotency key (prevents duplicate execution); unique index. */
   dispatchKey: string;
   recipientCount?: number;
   error?: string;
 }
 
-/** SLG 异常交易审计工单（G7 反 RMT）。立单时冻结异常快照；单人裁定 + 审计留痕。 */
+/** SLG abnormal-trade audit ticket (G7 anti-RMT). The anomalous snapshot is frozen when the ticket is filed; single-reviewer adjudication with full audit trail. */
 export interface TradeAuditTicketDoc {
   _id: string; // uuid
-  /** 去重键 `${worldId}:${sellerId}:${buyerId}`：同配对存在 open 工单时不重复立。 */
+  /** Dedup key `${worldId}:${sellerId}:${buyerId}`: no new ticket is filed while an open ticket for the same pair exists. */
   pairKey: string;
   snapshot: TradeAuditSnapshot;
   status: TradeAuditTicketStatus;
@@ -68,10 +70,10 @@ export interface TradeAuditTicketDoc {
   resolvedAt?: number;
 }
 
-/** 操作审计（§4.3）。 */
+/** Operation audit record (§4.3). */
 export interface AuditDoc {
   _id: string; // uuid
-  actor: string; // adminId
+  actor: string; // adminId (who performed the action)
   action: AuditAction;
   target?: string;
   summary?: string;
@@ -79,14 +81,14 @@ export interface AuditDoc {
   ts: number;
 }
 
-/** 自采时序快照（§5）。 */
+/** Self-collected time-series metric snapshot (§5). */
 export interface MetricSnapshotDoc {
   metric: MetricKey;
   ts: number;
   value: number;
   dims?: Record<string, string>;
-  // BSON Date（非 epoch number）：Mongo TTL 只过期 Date 字段。写入存 new Date(ts)，
-  // 查询/排序用 ts（number）。两字段同刻，仅 TTL 回收读 at。
+  // BSON Date (not epoch number): Mongo TTL only expires Date fields. Stored as new Date(ts) on write;
+  // queries/sorts use ts (number). Both fields represent the same moment; only the TTL expiry reads at.
   at: Date;
 }
 
@@ -96,7 +98,7 @@ export interface AdminCollections {
   tradeAuditTickets: Collection<TradeAuditTicketDoc>;
   auditLog: Collection<AuditDoc>;
   metricSnapshots: Collection<MetricSnapshotDoc>;
-  // 功能开关规则（FEATURE_FLAGS_DESIGN §2.2）：_id = flag key，只存被运营覆盖过的 flag。
+  // Feature flag rules (FEATURE_FLAGS_DESIGN §2.2): _id = flag key; only flags overridden by ops are stored.
   featureFlags: Collection<FeatureFlagDoc>;
 }
 
@@ -143,18 +145,18 @@ export async function createAdminMongo(
     await collections.compTickets.createIndex({ status: 1, initiatedAt: -1 });
     await collections.compTickets.createIndex({ initiatedBy: 1 });
     await collections.compTickets.createIndex({ dispatchKey: 1 }, { unique: true });
-    // 审计工单：按状态/时间列；pairKey 查同配对是否已有 open 工单（去重）。
+    // Trade audit tickets: indexed by status/time; pairKey checks for an existing open ticket for the same pair (dedup).
     await collections.tradeAuditTickets.createIndex({ status: 1, filedAt: -1 });
     await collections.tradeAuditTickets.createIndex({ pairKey: 1 });
     await collections.auditLog.createIndex({ actor: 1, ts: -1 });
     await collections.auditLog.createIndex({ ts: -1 });
-    // 趋势按 (metric, ts) 查；TTL 按保留窗口回收旧快照（Date 字段 at）。
+    // Trend queries use (metric, ts); TTL recycles old snapshots within the retention window (Date field at).
     await collections.metricSnapshots.createIndex({ metric: 1, ts: -1 });
     await collections.metricSnapshots.createIndex(
       { at: 1 },
       { expireAfterSeconds: snapshotTtlSec },
     );
-    // 功能开关：按最近修改时间列（_id 即 flag key，天然唯一，无需额外唯一索引）。
+    // Feature flags: indexed by most-recent update time (_id is the flag key, naturally unique — no extra unique index needed).
     await collections.featureFlags.createIndex({ updatedAt: -1 });
   }
 

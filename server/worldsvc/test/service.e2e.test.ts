@@ -1,7 +1,7 @@
-// worldsvc WorldService 端到端（S8-1）：真实 Mongo 专属库。Mongo 不可达整套 skip。
-//   地图程序化合并 / 进入世界(主城+保护罩+幂等) / 占领(写 TileDoc+扣兵+产率) / 放弃(退兵+重算) /
-//   资源惰性结算 / 占领校验(界外/中心/他人领地/保护期/兵力不足) / 容量满员。
-// 需 `cd server && docker compose up -d`。
+// worldsvc WorldService end-to-end (S8-1): real Mongo dedicated database. Entire suite skips if Mongo is unreachable.
+//   Procedural map merge / join world (main base + shield + idempotency) / occupy (write TileDoc + deduct troops + yield rate) / abandon (return troops + recalculate) /
+//   lazy resource settlement / occupy validation (out-of-bounds / center tile / others' territory / protection period / insufficient troops) / world full.
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   proceduralTile,
@@ -32,13 +32,13 @@ async function tryConnect(): Promise<WorldMongo | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[worldsvc.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[worldsvc.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
 const CENTER_Y = Math.floor(SLG_MAP_H / 2);
 
-/** 在 (sx,sy) 周边螺旋找一个满足 predicate 的格（确定性，用于定位资源格）。 */
+/** Spiral search around (sx, sy) for a tile satisfying predicate (deterministic; used to locate resource tiles). */
 function findCoord(
   predicate: (t: ReturnType<typeof proceduralTile>) => boolean,
   sx = 5,
@@ -82,7 +82,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     await m.close();
   });
 
-  it('getMap：程序化默认 + 世界中心唯一', async () => {
+  it('getMap: procedural default + unique world center', async () => {
     const view = await svc.getMap(W, 'a', CENTER_X, CENTER_Y, 2);
     expect(view.tiles).toHaveLength(25); // 5×5
     const centers = view.tiles.filter((t) => t.type === 'center');
@@ -90,12 +90,12 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     expect(centers[0]).toMatchObject({ x: CENTER_X, y: CENTER_Y });
   });
 
-  it('未进入：getMe joined=false', async () => {
-    // worldId 始终回传（G6/§20 R3：join-season 解析结果，未进入时也带所查 shard）。
+  it('not joined: getMe joined=false', async () => {
+    // worldId is always returned (G6/§20 R3: join-season resolution result; includes the queried shard even when not joined).
     expect(await svc.getMe(W, 'a')).toEqual({ joined: false, worldId: W });
   });
 
-  it('进入世界：建主城 + 保护罩 + 满兵力 + 起步产率；幂等', async () => {
+  it('join world: create main base + shield + full troops + initial yield rate; idempotent', async () => {
     const neutral = findCoord((t) => t.type === 'neutral');
     const me = await svc.joinWorld(W, 'a', neutral.x, neutral.y);
     expect(me).toMatchObject({
@@ -105,21 +105,21 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
       mainBaseTile: tileId(W, neutral.x, neutral.y),
       territoryCount: 1,
     });
-    expect(me.yieldRate?.food).toBe(RESOURCE_YIELD_BASE); // base 起步粮食 trickle
+    expect(me.yieldRate?.food).toBe(RESOURCE_YIELD_BASE); // base starting food trickle
 
     const tile = await svc.getTile(W, 'a', neutral.x, neutral.y);
     expect(tile).toMatchObject({ type: 'base', mine: true, occupied: true });
     expect(tile.protectedUntil).toBe(nowMs + 8 * 3600 * 1000);
 
-    // 幂等：再次 join（换坐标）不二次落城。
+    // Idempotent: joining again with different coordinates does not create a second base.
     const me2 = await svc.joinWorld(W, 'a', neutral.x + 3, neutral.y + 3);
     expect(me2.mainBaseTile).toBe(tileId(W, neutral.x, neutral.y));
     expect(me2.territoryCount).toBe(1);
   });
 
-  it('占领资源格：写 territory + 扣兵 + 产率增；放弃退兵 + 重算', async () => {
+  it('occupy resource tile: write territory + deduct troops + increase yield rate; abandon returns troops + recalculates', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const res = findCoord((t) => t.type === 'resource', 50, 50); // 远离主城 (5,5)，保证不同格
+    const res = findCoord((t) => t.type === 'resource', 50, 50); // far from main base at (5,5), guaranteed to be a different tile
     const procRes = proceduralTile(W, res.x, res.y);
     const rt = procRes.resType as ResourceType;
 
@@ -131,18 +131,18 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     expect(me.territoryCount).toBe(2);
     expect(me.yieldRate?.[rt]).toBe(RESOURCE_YIELD_BASE * procRes.level + (rt === 'food' ? RESOURCE_YIELD_BASE : 0));
 
-    // 占领幂等：重复占领同格不再扣兵。
+    // Occupy is idempotent: re-occupying the same tile does not deduct additional troops.
     await svc.occupyTile(W, 'a', res.x, res.y);
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE);
 
-    // 放弃：退兵 + 领地数回落 + 格回归程序化（DB 不留空壳）。
+    // Abandon: return troops + territory count decreases + tile reverts to procedural (no ghost doc left in DB).
     const after = await svc.abandonTile(W, 'a', res.x, res.y);
     expect(after.troops).toBe(TROOP_CAP_BASE);
     expect(after.territoryCount).toBe(1);
     expect(await m.collections.tiles.findOne({ _id: tileId(W, res.x, res.y) })).toBeNull();
   });
 
-  it('主动迁城：扣 RELOCATE_COST 金币 + 旧址回归中立 + 新址成主城 + 保留领地', async () => {
+  it('voluntary relocation: deduct RELOCATE_COST coins + old site reverts to neutral + new site becomes main base + territory retained', async () => {
     const spends: Array<{ accountId: string; amount: number }> = [];
     const commercial = {
       available: true,
@@ -156,28 +156,28 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
 
     await svc2.joinWorld(W, 'a', 5, 5);
     const res = findCoord((t) => t.type === 'resource', 50, 50);
-    await svc2.occupyTile(W, 'a', res.x, res.y); // 一块领地，迁城后应保留
+    await svc2.occupyTile(W, 'a', res.x, res.y); // one territory tile, should be retained after relocation
 
     const dst = findCoord((t) => t.type === 'neutral', 80, 80);
     const me = await svc2.relocateBase(W, 'a', dst.x, dst.y);
 
     expect(spends).toEqual([{ accountId: 'a', amount: RELOCATE_COST }]);
     expect(me.mainBaseTile).toBe(tileId(W, dst.x, dst.y));
-    expect(me.territoryCount).toBe(2); // 新主城 + 保留的领地
-    // 旧主城格回归中立（删除）。
+    expect(me.territoryCount).toBe(2); // new main base + retained territory
+    // Old main base tile reverts to neutral (deleted).
     expect(await m.collections.tiles.findOne({ _id: tileId(W, 5, 5) })).toBeNull();
-    // 新址成主城。
+    // New site becomes main base.
     const newBase = await m.collections.tiles.findOne({ _id: tileId(W, dst.x, dst.y) });
     expect(newBase).toMatchObject({ type: 'base', ownerId: 'a' });
-    // 领地仍在。
+    // Territory tile is still present.
     expect(await m.collections.tiles.findOne({ _id: tileId(W, res.x, res.y), ownerId: 'a' })).not.toBeNull();
 
-    // 原地迁城 = no-op（不重复扣费）。
+    // Relocating to the same spot = no-op (no duplicate charge).
     await svc2.relocateBase(W, 'a', dst.x, dst.y);
     expect(spends).toHaveLength(1);
   });
 
-  it('迁城校验：未进入 / 越界 / 目标被占', async () => {
+  it('relocation validation: not joined / out of bounds / target occupied', async () => {
     const commercial = { available: true, async spend() {}, async grant() {} };
     const svc2 = new WorldService({
       cols: m.collections, redis: null, commercial,
@@ -186,27 +186,27 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     await expect(svc2.relocateBase(W, 'ghost', 5, 5)).rejects.toMatchObject({ code: 'TILE_NOT_OWNED' });
     await svc2.joinWorld(W, 'a', 5, 5);
     await expect(svc2.relocateBase(W, 'a', -1, 0)).rejects.toMatchObject({ code: 'OUT_OF_RANGE' });
-    // 目标被他人占（b 的主城）→ TILE_OCCUPIED。
+    // Target occupied by another player (b's main base) → TILE_OCCUPIED.
     await svc2.joinWorld(W, 'b', 200, 200);
     await expect(svc2.relocateBase(W, 'a', 200, 200)).rejects.toMatchObject({ code: 'TILE_OCCUPIED' });
   });
 
-  it('资源惰性结算：按 yieldRate × dt 补算', async () => {
-    await svc.joinWorld(W, 'a', 5, 5); // 仅主城 → food 产率 100/h
+  it('lazy resource settlement: catch-up calculation using yieldRate × dt', async () => {
+    await svc.joinWorld(W, 'a', 5, 5); // main base only → food yield 100/h
     nowMs += 3_600_000; // +1h
     const me = await svc.getMe(W, 'a');
     expect(me.resources?.food).toBe(RESOURCE_YIELD_BASE);
-    nowMs += 1_800_000; // 再 +0.5h
+    nowMs += 1_800_000; // another +0.5h
     expect((await svc.getMe(W, 'a')).resources?.food).toBe(Math.floor(RESOURCE_YIELD_BASE * 1.5));
   });
 
-  it('占领校验：界外 / 中心 / 兵力不足', async () => {
+  it('occupy validation: out of bounds / center tile / insufficient troops', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await expect(svc.occupyTile(W, 'a', -1, 0)).rejects.toMatchObject({ code: 'OUT_OF_RANGE' });
     await expect(svc.occupyTile(W, 'a', CENTER_X, CENTER_Y)).rejects.toMatchObject({
       code: 'TILE_OCCUPIED',
     });
-    // 占满 3 格（base 不耗兵，2000/500=4 队，但留 1 队测 NO_TROOPS：占 4 块后第 5 块拒）。
+    // Fill 3 tiles (base costs no troops; 2000/500=4 squads, leave 1 to test NO_TROOPS: 5th tile is rejected after occupying 4).
     const frees: { x: number; y: number }[] = [];
     let scanX = 5;
     while (frees.length < 4) {
@@ -216,11 +216,11 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     }
     for (const f of frees) await svc.occupyTile(W, 'a', f.x, f.y);
     expect((await svc.getMe(W, 'a')).troops).toBe(0);
-    // 第 5 块：兵力耗尽。
+    // 5th tile: troops exhausted.
     await expect(svc.occupyTile(W, 'a', scanX + 1, 5)).rejects.toMatchObject({ code: 'NO_TROOPS' });
   });
 
-  it('他人领地：占其主城 → PROTECTED；占其普通领地 → TILE_OCCUPIED', async () => {
+  it("other player's territory: occupy their main base → PROTECTED; occupy their regular territory → TILE_OCCUPIED", async () => {
     await svc.joinWorld(W, 'b', 200, 200);
     const bTerr = findCoord((t) => t.type === 'resource', 201, 200);
     await svc.occupyTile(W, 'b', bTerr.x, bTerr.y);
@@ -232,7 +232,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     });
   });
 
-  it('容量守卫：world 文档满员 → WORLD_FULL', async () => {
+  it('capacity guard: world document at capacity → WORLD_FULL', async () => {
     await m.collections.worlds.insertOne({
       _id: W,
       season: 1,
@@ -248,7 +248,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     await svc.joinWorld(W, 'a', 5, 5);
     expect((await m.collections.worlds.findOne({ _id: W }))?.population).toBe(1);
     await expect(svc.joinWorld(W, 'b', 200, 200)).rejects.toMatchObject({ code: 'WORLD_FULL' });
-    // 占用者不存在的 playerWorld 不被创建。
+    // playerWorld document for the rejected player must not be created.
     expect(await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'b') })).toBeNull();
   });
 });

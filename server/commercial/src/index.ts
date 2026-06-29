@@ -1,5 +1,5 @@
-// commercial 进程引导（S5-1）：连专属库 → CommercialService → 内部 HTTP listen。
-// 玩家不可达；反代不暴露 commercial，只有 meta 经内部网络可达（X-Internal-Key）。
+// commercial process bootstrap (S5-1): connect to dedicated DB → CommercialService → internal HTTP listen.
+// Not reachable by players; the reverse proxy does not expose commercial — only meta can reach it via the internal network (X-Internal-Key).
 import { createCommercialMongo } from './db';
 import { CommercialService } from './service';
 import { startInternalHttp } from './internalHttp';
@@ -8,8 +8,9 @@ import { loadInternalAuth, IAP_TIERS, createLogger, startHeartbeat } from '@nw/s
 import { createReceiptVerifier } from './iap';
 
 async function main(): Promise<void> {
-  // 加固（L2-3）：生产环境严禁开启 IAP dev 桩——误开会让 `tier:`/`dev` 收据无验签直接发币。
-  // 引导期拒启（fail fast），比静默放行安全。dev 桩本身在 createReceiptVerifier 内也对 prod 二次封死。
+  // Hardening (L2-3): IAP dev stub must never be enabled in production — enabling it accidentally
+  // allows `tier:`/`dev` receipts to bypass signature verification and grant coins directly.
+  // Fail fast at startup rather than silently allowing it. The dev stub itself is also blocked for prod inside createReceiptVerifier.
   if (process.env.NODE_ENV === 'production' && process.env.NW_IAP_DEV === 'true') {
     console.error(
       'FATAL: NW_IAP_DEV=true 在生产环境（NODE_ENV=production）下被拒绝启动——' +
@@ -23,7 +24,7 @@ async function main(): Promise<void> {
   const mongo = await createCommercialMongo(env.commMongoUri, env.commMongoDb);
   await mongo.ensureIndexes();
 
-  // verifyReceipt：微信/Stripe 真实验单 + dev 桩回退（S4-1）。
+  // verifyReceipt: real WeChat/Stripe receipt verification + dev stub fallback (S4-1).
   const verifyReceipt = (platform: string, receipt: string) =>
     createReceiptVerifier(IAP_TIERS)(platform, receipt);
 
@@ -44,7 +45,7 @@ async function main(): Promise<void> {
   console.log(
     `commercial internal HTTP on :${env.port} (meta-only); db=${env.commMongoDb}`,
   );
-  startHeartbeat(createLogger('commercial')); // 存活心跳：空闲时每 5 分钟一条 info 日志
+  startHeartbeat(createLogger('commercial')); // Liveness heartbeat: one info log every 5 minutes when idle
 }
 
 main().catch((e) => {

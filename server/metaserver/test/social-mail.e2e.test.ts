@@ -1,7 +1,7 @@
-// 社交邮件端到端（S6-3）：真实 Mongo + 注入假 gateway（mail_new push）+ 假 commercial（grant 发币）。
-//   系统邮件写入（内部端点 + dispatchKey 幂等）→ 收件箱 → 领取金币/皮肤附件（commercial grant +
-//   inventory + claimOrderId 幂等）→ 重复领取 ALREADY_CLAIMED → 已读 → 玩家间邮件（好友门控）。
-// 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// Social mail end-to-end (S6-3): real Mongo + injected fake gateway (mail_new push) + fake commercial (grant coins).
+//   System mail write (internal endpoint + dispatchKey idempotency) → inbox → claim coins/skin attachments
+//   (commercial grant + inventory + claimOrderId idempotency) → duplicate claim → ALREADY_CLAIMED → mark read → player-to-player mail (friendship gate).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -21,7 +21,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
   }
 }
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[social-mail.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[social-mail.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 class FakeGateway implements GatewayClient {
   available = true;
@@ -38,7 +38,7 @@ class FakeGateway implements GatewayClient {
   async invalidateFriends(): Promise<void> {}
 }
 
-/** 只实现 mail 领取需要的 grant + getWallet；其余接口方法占位（mail 不触达）。 */
+/** Implements only grant + getWallet needed for mail claim; remaining interface methods are stubs (mail does not reach them). */
 class FakeCommercial implements CommercialClient {
   readonly available = true;
   coins = new Map<string, number>();
@@ -147,9 +147,9 @@ describe.skipIf(!mongo)('social mail e2e', () => {
   it('system mail: 内部 accountId 直投（worldsvc 结算路径，§17.5）→ 收件箱 + 材料领进养成统一池', async () => {
     const a = await newAccount('mail-acct');
     await get(a.token, '/save');
-    // 无 publicId / 无 target，仅 accountId —— worldsvc 等内部调用方走此分支。
-    // 赛季奖励材料走 kind:'material'（SLG8）：领取后落 SaveData.materials 养成统一池
-    // （PvE/装备/拍卖共用），而非泛用 inventory.items。
+    // No publicId / no target, only accountId — internal callers such as worldsvc use this path.
+    // Season reward materials use kind:'material' (SLG8): on claim they land in SaveData.materials (the unified progression pool
+    // shared by PvE / equipment / auction), not the generic inventory.items bucket.
     const s = b(await internal('/internal/mail/system/send', {
       dispatchKey: 'slg-settle:s5-ops:s5',
       accountId: a.accountId,
@@ -164,7 +164,7 @@ describe.skipIf(!mongo)('social mail e2e', () => {
     expect(inbox.data.mail).toHaveLength(1);
     expect(inbox.data.mail[0].attachments[0]).toMatchObject({ kind: 'material', id: 'scrap', count: 1000 });
 
-    // 领取 → 材料进 save.materials 统一池（不进 inventory.items 孤儿桶）。
+    // Claim → material goes into the save.materials unified pool (not the orphan inventory.items bucket).
     const claim = b(await post(a.token, `/mail/${inbox.data.mail[0].mailId}/claim`, {}));
     expect(claim.data.save.materials.scrap).toBe(1000);
     expect(claim.data.save.inventory.items.scrap ?? 0).toBe(0);
@@ -256,7 +256,7 @@ describe.skipIf(!mongo)('social mail e2e', () => {
       expireDays: 5,
     };
 
-    // 首发：5 人全收到 + 各推一条 mail_new。
+    // Initial send: all 5 receive the mail + each gets one mail_new push.
     const first = b(await internal('/internal/mail/system/send', sendReq));
     expect(first.recipientCount).toBe(5);
     expect(gateway.pushes.filter((p) => p.msg.kind === 'mail_new')).toHaveLength(5);
@@ -264,7 +264,7 @@ describe.skipIf(!mongo)('social mail e2e', () => {
       expect(b(await get(ac.token, '/mail')).data.mail).toHaveLength(1);
     }
 
-    // 同 dispatchKey 重发 + 新增 1 个账号：bulkWrite upsert 幂等，仅新账号被插入 → 仅它收到推送。
+    // Resend with the same dispatchKey + 1 new account: bulkWrite upsert is idempotent, only the new account is inserted → only it receives a push.
     gateway.pushes = [];
     const late = await newAccount('fan-late-acct');
     const second = b(await internal('/internal/mail/system/send', sendReq));
@@ -273,7 +273,7 @@ describe.skipIf(!mongo)('social mail e2e', () => {
     expect(newPushes).toHaveLength(1);
     expect(newPushes[0].accountId).toBe(late.accountId);
 
-    // 原 5 人仍只有 1 封（无重复），新账号也收到 1 封。
+    // Original 5 still have only 1 mail each (no duplicates); the new account also receives exactly 1 mail.
     expect(b(await get(accts[0].token, '/mail')).data.mail).toHaveLength(1);
     expect(b(await get(late.token, '/mail')).data.mail).toHaveLength(1);
   });

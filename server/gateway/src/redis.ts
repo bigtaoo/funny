@@ -1,18 +1,18 @@
-// gateway Redis 订阅端（S8-4b + B7，§8.4 横扩推送）。gateway 订阅 GW_PUSH_REDIS_CHANNEL，
-// worldsvc 把「收件人列表 + 一条 push 消息」发到该 channel，本进程收到后只向本机在线的
-// 收件人 socket 扇出（routeBroadcast）。多 gateway 实例各自订阅，天然实现跨实例路由（SOC9）。
+﻿// gateway Redis subscriber (S8-4b + B7, §8.4 horizontal fan-out push). gateway subscribes to GW_PUSH_REDIS_CHANNEL;
+// worldsvc publishes a {recipient list + one push message} to that channel; this process fans it out only to
+// recipients that are online on this instance (routeBroadcast). Multiple gateway instances each subscribe independently, providing natural cross-instance routing (SOC9).
 //
-// 掉线重连：ioredis 设 autoResubscribe=true（也是默认值），重连后自动补订阅同一 channel，
-// 期间漏掉的 push 消息客户端下次 REST 拉历史补回（REST 是权威，push 是加速）。
+// Reconnect: ioredis sets autoResubscribe=true (also the default), so after reconnection it re-subscribes to the same channel automatically;
+// any push messages missed during the gap are recovered by the client via REST history fetch on next request (REST is authoritative; push is an accelerator).
 //
-// 缺省无 Redis URL → 返回 null，频道实时推送关闭（worldsvc 侧降级为 O(n) HTTP 直推兜底，
-// 客户端仍可 REST 轮询拉历史）。动态 import ioredis：dev 未安装也能编译（与 worldsvc/redis.ts 同形）。
+// No Redis URL configured → returns null, real-time channel push is disabled (worldsvc falls back to O(n) direct HTTP push;
+// clients can still poll history via REST). Dynamic ioredis import: compiles even when ioredis is not installed in dev (mirrors worldsvc/redis.ts).
 import { createLogger, GW_PUSH_REDIS_CHANNEL } from '@nw/shared';
 import type { PushMsg } from './matchsvcClient';
 
 const log = createLogger('gateway:redis');
 
-/** Redis 上传来的扇出包：一条 push + 它的收件人 accountId 列表。 */
+/** Fan-out envelope received from Redis: one push message plus its list of recipient accountIds. */
 interface BroadcastEnvelope {
   recipients: string[];
   msg: PushMsg;
@@ -23,9 +23,9 @@ export interface GatewaySubscriber {
 }
 
 /**
- * 连接并订阅 GW_PUSH_REDIS_CHANNEL。每条消息解析为 {recipients, msg}，回调 onBroadcast
- * 由 Gateway.routeBroadcast 消费（只推本机在线者）。连接失败 → 返回 null（实时推送降级）。
- * autoResubscribe=true 保证 Redis 重连后自动补订阅（B7 验收项）。
+ * Connect and subscribe to GW_PUSH_REDIS_CHANNEL. Each message is parsed as {recipients, msg}; the onBroadcast callback
+ * is consumed by Gateway.routeBroadcast (pushes only to locally-online recipients). On connection failure → returns null (real-time push degraded).
+ * autoResubscribe=true ensures Redis re-subscription after reconnection (B7 acceptance criterion).
  */
 export async function connectGatewaySubscriber(
   url: string | undefined,
@@ -39,7 +39,7 @@ export async function connectGatewaySubscriber(
     const client = new Redis(url, {
       lazyConnect: false,
       maxRetriesPerRequest: 3,
-      autoResubscribe: true, // 重连后自动补订阅（ioredis 默认已是 true，显式声明便于审计）
+      autoResubscribe: true, // re-subscribe automatically after reconnection (ioredis default is already true; explicit for auditability)
     });
     client.on('error', (e: Error) => log.error('redis error', { err: e.message }));
     client.on('ready', () => log.info('redis ready / resubscribed', { channel: GW_PUSH_REDIS_CHANNEL }));

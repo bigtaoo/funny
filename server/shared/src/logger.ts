@@ -1,13 +1,14 @@
-// 轻量结构化日志（S1 联调）。所有服务端进程（meta/gateway/matchsvc/game/commercial）共用。
+// Lightweight structured logger (S1 integration). Shared by all server processes (meta/gateway/matchsvc/game/commercial).
 //
-// 双 sink：
-//   • 控制台：可读单行 `12:03:45.678 INFO  [gateway] msg key=val`（开发时直接看窗口）；
-//   • 文件（可选）：每条一行 JSON `{"t":ISO,"level","svc","msg",...data}`，便于后期接 Loki/Grafana。
-//     仅当环境变量 NW_LOG_DIR 设置时启用，按「根服务名」分文件：${NW_LOG_DIR}/<svc>.log
-//     （根服务名 = tag 第一个冒号之前，故 gateway / gateway:internal / gateway:matchsvc 写同一文件）。
+// Dual sink:
+//   • Console: human-readable single line `12:03:45.678 INFO  [gateway] msg key=val` (easy to read in dev windows);
+//   • File (optional): one JSON line per entry `{"t":ISO,"level","svc","msg",...data}`, ready for Loki/Grafana ingestion.
+//     Enabled only when env var NW_LOG_DIR is set; one file per root service name: ${NW_LOG_DIR}/<svc>.log
+//     (root service name = everything before the first colon in the tag, so gateway / gateway:internal / gateway:matchsvc all write to the same file).
 //
-// 设计取舍：不引 pino/winston——零依赖、CJS/ESM 通吃（shared 被 ESM 的 meta 和 CJS 的其余进程同时引）。
-// 级别由 NW_LOG_LEVEL 控制（debug|info|warn|error，缺省 debug），低于阈值的丢弃。
+// Design trade-off: no pino/winston — zero dependencies, works with both CJS and ESM
+// (shared is imported by the ESM meta process and all other CJS processes simultaneously).
+// Log level controlled by NW_LOG_LEVEL (debug|info|warn|error, default: debug); entries below the threshold are discarded.
 
 import { createWriteStream, mkdirSync, type WriteStream } from 'node:fs';
 import { join } from 'node:path';
@@ -25,9 +26,9 @@ function envLevel(): LogLevel {
 
 const threshold = LEVEL_ORDER[envLevel()];
 
-// ── 文件 sink（NW_LOG_DIR 设置时启用，按根服务名分文件，进程内复用 stream）─────────
+// ── File sink (enabled when NW_LOG_DIR is set; one file per root service name; stream is reused within the process) ─────────
 const LOG_DIR = (typeof process !== 'undefined' ? process.env.NW_LOG_DIR : '') || '';
-const streams = new Map<string, WriteStream | null>(); // svc → stream（null = 该服务建流失败，停写）
+const streams = new Map<string, WriteStream | null>(); // svc → stream (null = stream creation failed for this service; writes suppressed)
 let dirReady = false;
 
 function ensureDir(): boolean {
@@ -41,7 +42,7 @@ function ensureDir(): boolean {
   }
 }
 
-/** 取（或惰性建）某根服务的 append 写流；NW_LOG_DIR 未配 / 建流失败 → null（仅控制台）。 */
+/** Get (or lazily create) the append write stream for a root service; returns null if NW_LOG_DIR is unset or stream creation fails (console-only mode). */
 function fileStream(svc: string): WriteStream | null {
   if (!LOG_DIR) return null;
   if (streams.has(svc)) return streams.get(svc)!;
@@ -50,10 +51,10 @@ function fileStream(svc: string): WriteStream | null {
     return null;
   }
   try {
-    // append：保留跨重启历史（node --watch 重启会重新打开同名文件续写）。
+    // append: preserves history across restarts (node --watch reopens the same file and continues writing).
     const s = createWriteStream(join(LOG_DIR, `${svc}.log`), { flags: 'a' });
     s.on('error', () => {
-      /* 写盘失败不影响进程；后续仍走控制台 */
+      /* Write failure does not affect the process; subsequent entries still go to the console */
     });
     streams.set(svc, s);
     return s;
@@ -68,13 +69,13 @@ function isoTs(): string {
 }
 
 function ts(): string {
-  // HH:MM:SS.mmm（本地时间，控制台可读够用）。
+  // HH:MM:SS.mmm (local time; sufficient readability for the console).
   const d = new Date();
   const p = (n: number, w = 2): string => String(n).padStart(w, '0');
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
 }
 
-/** 把 data 里的 Error 摊平成字符串（JSON 序列化时 Error 默认变成 {}）。 */
+/** Flatten Error objects in data to strings (JSON.stringify produces {} for Error by default). */
 function normData(data?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!data) return undefined;
   const out: Record<string, unknown> = {};
@@ -99,7 +100,7 @@ function fmtData(data?: Record<string, unknown>): string {
         s = String(v);
       }
     } else s = String(v);
-    // 单行化，避免换行打乱日志。
+    // Collapse to a single line to prevent newlines from breaking the log layout.
     parts.push(`${k}=${s.replace(/\s+/g, ' ')}`);
   }
   return parts.length ? ' ' + parts.join(' ') : '';
@@ -110,29 +111,29 @@ export interface Logger {
   info(msg: string, data?: Record<string, unknown>): void;
   warn(msg: string, data?: Record<string, unknown>): void;
   error(msg: string, data?: Record<string, unknown>): void;
-  /** 派生带子标签的 logger，如 `[gateway:judge]`。 */
+  /** Create a child logger with a sub-tag, e.g. `[gateway:judge]`. */
   child(sub: string): Logger;
 }
 
 function makeLogger(tag: string): Logger {
-  const root = tag.split(':')[0] || tag; // 文件按根服务名分组
+  const root = tag.split(':')[0] || tag; // group log files by root service name
   const emit = (level: LogLevel, msg: string, data?: Record<string, unknown>): void => {
     if (LEVEL_ORDER[level] < threshold) return;
 
-    // 控制台（可读）。
+    // Console (human-readable).
     const line = `${ts()} ${level.toUpperCase().padEnd(5)} [${tag}] ${msg}${fmtData(data)}`;
     if (level === 'error') console.error(line);
     else if (level === 'warn') console.warn(line);
     else console.log(line);
 
-    // 文件（JSON 行，Loki-ready）。
+    // File (JSON lines, Loki-ready).
     const stream = fileStream(root);
     if (stream) {
       const rec = { t: isoTs(), level, svc: tag, msg, ...normData(data) };
       try {
         stream.write(JSON.stringify(rec) + '\n');
       } catch {
-        /* 控制台已记录，写盘失败忽略 */
+        /* Already logged to console; disk write failure is silently ignored */
       }
     }
   };

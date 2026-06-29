@@ -1,10 +1,10 @@
-// Ranked 匹配队列单测（S1-R，搬到 gateway/matchsvc 后）：窗口内立即配、超窗口等待加宽、
-// 出队、重复入队覆盖。注入 now() + autoTick:false 手动 tick，不依赖真实定时器。
+// Ranked matchmaking queue unit tests (S1-R, after move to gateway/matchsvc): immediate match within window,
+// widening wait beyond window, dequeue, duplicate enqueue override. Injects now() + autoTick:false for manual tick, no real timers.
 import { describe, it, expect } from 'vitest';
 import { Matchmaking } from '../src/Matchmaking';
 
 describe('Matchmaking', () => {
-  it('分差在窗口内立即配对', () => {
+  it('rating diff within window → immediate match', () => {
     const pairs: [string, string][] = [];
     const mm = new Matchmaking((a, b) => pairs.push([a.accountId, b.accountId]), {
       autoTick: false,
@@ -16,7 +16,7 @@ describe('Matchmaking', () => {
     expect(mm.size).toBe(0);
   });
 
-  it('分差超窗口先不配，等待加宽后配对', () => {
+  it('rating diff exceeds window → no match yet, matches after window widens', () => {
     const pairs: [string, string][] = [];
     let t = 0;
     const mm = new Matchmaking((a, b) => pairs.push([a.accountId, b.accountId]), {
@@ -28,12 +28,12 @@ describe('Matchmaking', () => {
     mm.enqueue('a', 'a', '', 1000);
     mm.enqueue('b', 'b', '', 1300); // diff 300 > 100
     expect(pairs).toHaveLength(0);
-    t = 5000; // 窗口 100 + 5×50 = 350 ≥ 300
+    t = 5000; // window 100 + 5×50 = 350 ≥ 300
     mm.tick();
     expect(pairs).toEqual([['a', 'b']]);
   });
 
-  it('remove 出队', () => {
+  it('remove dequeues', () => {
     const mm = new Matchmaking(() => {}, { autoTick: false, now: () => 0 });
     mm.enqueue('a', 'a', '', 1000);
     expect(mm.has('a')).toBe(true);
@@ -41,7 +41,7 @@ describe('Matchmaking', () => {
     expect(mm.has('a')).toBe(false);
   });
 
-  it('同账号重复入队覆盖，不和自己配对', () => {
+  it('duplicate enqueue for same account overwrites, does not self-match', () => {
     const pairs: unknown[] = [];
     const mm = new Matchmaking((a, b) => pairs.push([a, b]), { autoTick: false, now: () => 0 });
     mm.enqueue('a', 'a', '', 1000);
@@ -50,7 +50,7 @@ describe('Matchmaking', () => {
     expect(pairs).toHaveLength(0);
   });
 
-  it('三人 → 最近分差两人先配，落单者留队', () => {
+  it('three players → closest rating pair matches first, remaining player stays in queue', () => {
     const pairs: [string, string][] = [];
     const mm = new Matchmaking((a, b) => pairs.push([a.accountId, b.accountId]), {
       autoTick: false,
@@ -63,11 +63,11 @@ describe('Matchmaking', () => {
     expect(mm.has('b')).toBe(true);
   });
 
-  describe('bot-fallback 超时', () => {
-    it('单人独自等待超阈值 → 触发 onTimeout；仍在队则每 botFallbackMs 重评一次（非 fire-once）', () => {
+  describe('bot-fallback timeout', () => {
+    it('solo player waits past threshold → triggers onTimeout; if still in queue, re-evaluated every botFallbackMs (not fire-once)', () => {
       const timeouts: string[] = [];
       let t = 0;
-      // onTimeout 不出队（模拟 flag 关「继续等」）→ 条目留在队，应被周期性重评。
+      // onTimeout does not dequeue (simulates flag-off "keep waiting") → entry stays in queue and should be re-evaluated periodically.
       const mm = new Matchmaking(() => {}, {
         autoTick: false,
         now: () => t,
@@ -76,21 +76,21 @@ describe('Matchmaking', () => {
       });
       mm.enqueue('a', 'a', '', 1000, '', 'web');
       mm.tick();
-      expect(timeouts).toEqual([]); // 未到阈值
+      expect(timeouts).toEqual([]); // threshold not yet reached
       t = 30_000;
       mm.tick();
-      expect(timeouts).toEqual(['a']); // 首次超时
-      // 节流：未满下一个 botFallbackMs 窗口不重复触发
+      expect(timeouts).toEqual(['a']); // first timeout
+      // throttle: next botFallbackMs window not yet elapsed, no repeat trigger
       t = 45_000;
       mm.tick();
       expect(timeouts).toEqual(['a']);
-      // 满一个窗口 → 重评再触发（保证 flag 后开能覆盖已在队条目）
+      // full window elapsed → re-evaluate and trigger again (ensures late flag enable covers entries already in queue)
       t = 60_000;
       mm.tick();
       expect(timeouts).toEqual(['a', 'a']);
     });
 
-    it('botFallbackMs=0 关闭 → 永不触发', () => {
+    it('botFallbackMs=0 disabled → never triggers', () => {
       const timeouts: string[] = [];
       let t = 0;
       const mm = new Matchmaking(() => {}, {
@@ -104,7 +104,7 @@ describe('Matchmaking', () => {
       expect(timeouts).toEqual([]);
     });
 
-    it('platform 随条目带入 onTimeout', () => {
+    it('platform is carried into onTimeout with the entry', () => {
       const seen: string[] = [];
       let t = 0;
       const mm = new Matchmaking(() => {}, {

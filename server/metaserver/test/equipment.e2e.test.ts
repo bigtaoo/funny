@@ -1,10 +1,10 @@
-// 装备库存后端端到端（E2/E3/E4，EQUIPMENT_DESIGN §4/§6/§18）：
-//   玩家 POST /equipment/craft（扣材料→roll→入库，幂等、材料不足、满仓）
-//   玩家 POST /equipment/enhance（服务器掷骰→扣材料+金币→成功 level+1，幂等、满级、不足）
-//   玩家 POST /equipment/salvage（+0~4 返 70% 材料、移出；+5/穿戴/锁定拒，批量、幂等）
-//   玩家 POST /equipment/equip（穿戴/卸下，槽位校验，global/byUnit）
-//   内部 /internal/equipment/{escrow,grant}（worldsvc 拍卖托管/转移；穿戴中/锁定拒绝、幂等）
-// 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// Equipment inventory backend end-to-end (E2/E3/E4, EQUIPMENT_DESIGN §4/§6/§18):
+//   Player POST /equipment/craft (deduct materials → roll → insert into inventory; idempotent, insufficient materials, full inventory)
+//   Player POST /equipment/enhance (server-side dice roll → deduct materials + coins → on success level+1; idempotent, max level, insufficient)
+//   Player POST /equipment/salvage (+0~4 returns 70% materials and removes; +5/equipped/locked rejected; batch, idempotent)
+//   Player POST /equipment/equip (equip/unequip, slot validation, global/byUnit)
+//   Internal /internal/equipment/{escrow,grant} (worldsvc auction escrow/transfer; equipped/locked rejected, idempotent)
+// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createMongo,
@@ -20,7 +20,7 @@ import type { FastifyInstance } from 'fastify';
 import type { CommercialClient } from '../dist/commercialClient.js';
 import { buildApp } from '../dist/app.js';
 
-/** 最小假 commercial：仅 getWallet/spend 真实记账（enhance 走金币），其余 stub。 */
+/** Minimal fake commercial client: only getWallet/spend are real (enhance uses coins); everything else is stubbed. */
 function makeFakeCommercial(): CommercialClient & {
   setCoins(id: string, n: number): void;
   bal(id: string): number;
@@ -84,7 +84,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
 
   const seedMaterials = (mats: Record<string, number>) =>
     m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.materials': mats } });
-  /** 直接灌一件实例进库存（指定 level/locked），返回其 id。 */
+  /** Directly seed one equipment instance into inventory (with specified level/locked), returning its id. */
   const seedInstance = async (id: string, defId: string, level = 0, extra: Partial<EquipmentInstance> = {}) => {
     const inst: EquipmentInstance = { id, defId, rarity: 'common', level, affixes: [], ...extra };
     await m.collections.saves.updateOne({ _id: accountId }, { $set: { [`save.equipmentInv.${id}`]: inst } });
@@ -101,53 +101,53 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'eq-dev-1' } }));
     token = r.data.token;
     accountId = r.data.accountId;
-    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // 建档
-    comm.setCoins(accountId, 100000); // 充足金币，enhance 不被金币卡（专项测试单独压低）
+    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // create save file
+    comm.setCoins(accountId, 100000); // plenty of coins so enhance is not blocked by coins (individual tests that need low coins set their own amount)
   });
   afterAll(async () => { if (app) await app.close(); });
 
-  // ── E2 合成 ─────────────────────────────────────────────────────────────────
-  it('craft 成功：扣材料 + 入库 + 主词条', async () => {
+  // ── E2 Crafting ─────────────────────────────────────────────────────────────────
+  it('craft success: deduct materials + insert into inventory + primary affix', async () => {
     await seedMaterials({ scrap: 20 });
-    const r = body(await craft('wp_pencil', 'ik1')); // common，配方 scrap:5，0 副词条
+    const r = body(await craft('wp_pencil', 'ik1')); // common, recipe scrap:5, 0 secondary affixes
     expect(r.data.instance.defId).toBe('wp_pencil');
     expect(r.data.instance.level).toBe(0);
     expect(r.data.instance.rarity).toBe('common');
-    expect(r.data.instance.affixes).toHaveLength(1); // 仅主词条
+    expect(r.data.instance.affixes).toHaveLength(1); // primary affix only
     expect(r.data.instance.affixes[0].id).toBe('m_atk');
-    expect(r.data.save.materials.scrap).toBe(15); // 20-5
+    expect(r.data.save.materials.scrap).toBe(15); // 20-5 = 15
     expect(r.data.save.equipmentInv[r.data.instance.id]).toBeTruthy();
   });
 
-  it('craft 稀有度副词条：wp_pen（fine）roll 1 副词条', async () => {
+  it('craft rarity secondary affixes: wp_pen (fine) rolls 1 secondary affix', async () => {
     await seedMaterials({ scrap: 20, lead: 10 });
-    const r = body(await craft('wp_pen', 'ik2')); // fine，配方 scrap:8 lead:2，1 副词条
-    expect(r.data.instance.affixes.length).toBe(2); // 主 + 1 副
+    const r = body(await craft('wp_pen', 'ik2')); // fine, recipe scrap:8 lead:2, 1 secondary affix
+    expect(r.data.instance.affixes.length).toBe(2); // primary + 1 secondary
     expect(r.data.instance.affixes.some((a: { id: string }) => a.id.startsWith('s_'))).toBe(true);
     expect(r.data.save.materials.scrap).toBe(12);
     expect(r.data.save.materials.lead).toBe(8);
   });
 
-  it('craft 材料不足 → 402', async () => {
+  it('craft insufficient materials → 402', async () => {
     await seedMaterials({ scrap: 2 });
     const res = await craft('wp_pencil', 'ik3');
     expect(res.statusCode).toBe(402);
     expect(body(res).error.code).toBe('INSUFFICIENT_MATERIALS');
   });
 
-  it('craft 幂等：同 idempotencyKey 重放不二次扣料 + 同一实例', async () => {
+  it('craft idempotency: replaying with the same idempotencyKey does not deduct materials again and returns the same instance', async () => {
     await seedMaterials({ scrap: 20 });
     const r1 = body(await craft('wp_pencil', 'dup-key'));
     const r2 = body(await craft('wp_pencil', 'dup-key'));
-    expect(r2.data.instance.id).toBe(r1.data.instance.id); // 同实例
+    expect(r2.data.instance.id).toBe(r1.data.instance.id); // same instance
     const save = await readSave();
-    expect(save.materials.scrap).toBe(15); // 只扣一次
-    expect(Object.keys(save.equipmentInv)).toHaveLength(1); // 只产一件
+    expect(save.materials.scrap).toBe(15); // deducted only once
+    expect(Object.keys(save.equipmentInv)).toHaveLength(1); // only one item produced
   });
 
-  it('craft 满仓 → 409 INVENTORY_FULL', async () => {
+  it('craft full inventory → 409 INVENTORY_FULL', async () => {
     await seedMaterials({ scrap: 20 });
-    // 直接灌满 300 件占位实例
+    // Directly seed 300 placeholder instances to fill the inventory
     const full: Record<string, EquipmentInstance> = {};
     for (let i = 0; i < EQUIPMENT_INV_CAP; i++) {
       full[`fill_${i}`] = { id: `fill_${i}`, defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
@@ -158,21 +158,21 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(body(res).error.code).toBe('INVENTORY_FULL');
   });
 
-  it('craft 未知 defId → 400', async () => {
+  it('craft unknown defId → 400', async () => {
     const res = await craft('nope', 'ik-bad');
     expect(res.statusCode).toBe(400);
   });
 
-  // ── 内部托管 / 转移（worldsvc 拍卖）────────────────────────────────────────────
-  it('escrow：移出卖方库存 + 返回快照；grant：写入目标库存', async () => {
+  // ── Internal escrow / transfer (worldsvc auction) ────────────────────────────────────────────
+  it('escrow: remove from seller inventory + return snapshot; grant: write to target inventory', async () => {
     await seedMaterials({ scrap: 20 });
     const inst = body(await craft('wp_pencil', 'ik-e1')).data.instance as EquipmentInstance;
-    // 托管：移出
+    // escrow: remove from inventory
     const er = body(await escrow(inst.id, 'order1'));
     expect(er.ok).toBe(true);
     expect(er.instance.id).toBe(inst.id);
-    expect((await readSave()).equipmentInv[inst.id]).toBeUndefined(); // 已移出
-    // 转移给买方（另起账号）
+    expect((await readSave()).equipmentInv[inst.id]).toBeUndefined(); // already removed
+    // transfer to buyer (a separate account)
     const buyer = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'eq-buyer' } }));
     await app.inject({ method: 'GET', url: '/save', headers: { authorization: `Bearer ${buyer.data.token}` } });
     const gr = body(await grant(er.instance, 'order1:item', buyer.data.accountId));
@@ -181,22 +181,22 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(buyerSave.equipmentInv[inst.id]).toMatchObject({ id: inst.id, defId: 'wp_pencil' });
   });
 
-  it('escrow 幂等：同 orderId 重放返回同快照（不二次移出）', async () => {
+  it('escrow idempotency: replaying with the same orderId returns the same snapshot (no double-removal)', async () => {
     await seedMaterials({ scrap: 20 });
     const inst = body(await craft('wp_pencil', 'ik-e2')).data.instance as EquipmentInstance;
     const e1 = body(await escrow(inst.id, 'orderX'));
-    const e2 = body(await escrow(inst.id, 'orderX')); // 实例已移出，但 orderId 重放
+    const e2 = body(await escrow(inst.id, 'orderX')); // instance already removed, but orderId replay
     expect(e2.ok).toBe(true);
     expect(e2.instance.id).toBe(e1.instance.id);
   });
 
-  it('escrow 不存在实例 → 404 EQUIP_NOT_FOUND', async () => {
+  it('escrow non-existent instance → 404 EQUIP_NOT_FOUND', async () => {
     const res = await escrow('ghost', 'order-ghost');
     expect(res.statusCode).toBe(404);
     expect(body(res).code).toBe('EQUIP_NOT_FOUND');
   });
 
-  it('escrow 锁定实例 → 409 EQUIP_LOCKED', async () => {
+  it('escrow locked instance → 409 EQUIP_LOCKED', async () => {
     await m.collections.saves.updateOne(
       { _id: accountId },
       { $set: { 'save.equipmentInv.locked1': { id: 'locked1', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [], locked: true } } },
@@ -206,7 +206,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(body(res).code).toBe('EQUIP_LOCKED');
   });
 
-  it('escrow 穿戴中实例 → 409 EQUIP_IN_USE', async () => {
+  it('escrow equipped instance → 409 EQUIP_IN_USE', async () => {
     await m.collections.saves.updateOne(
       { _id: accountId },
       {
@@ -221,7 +221,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(body(res).code).toBe('EQUIP_IN_USE');
   });
 
-  it('grant 幂等：同实例重发只一件（按 id 覆盖）', async () => {
+  it('grant idempotency: re-sending the same instance results in only one item (overwritten by id)', async () => {
     const inst: EquipmentInstance = { id: 'g1', defId: 'wp_marker', rarity: 'rare', level: 2, affixes: [{ id: 'm_atk', value: 8 }] };
     await grant(inst, 'gorder');
     await grant(inst, 'gorder');
@@ -230,15 +230,15 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(Object.keys(save.equipmentInv).filter((k) => k === 'g1')).toHaveLength(1);
   });
 
-  // ── E3 强化 ───────────────────────────────────────────────────────────────────
-  it('enhance 成功：level+1，扣材料 + 金币', async () => {
-    // 找一个在 level 0 必定成功的 idemKey（确定性掷骰）。
+  // ── E3 Enhancement ───────────────────────────────────────────────────────────────────
+  it('enhance success: level+1, deduct materials + coins', async () => {
+    // Find an idemKey that guarantees success at level 0 (deterministic dice roll).
     let key = '';
     for (let i = 0; ; i++) if (rollEnhanceSuccess(`s${i}`, 0)) { key = `s${i}`; break; }
     await seedInstance('e1', 'wp_pencil', 0);
     await seedMaterials({ scrap: 100, lead: 100, binding: 100 });
     comm.setCoins(accountId, 1000);
-    const cost = enhanceCost(0); // { scrap:4, coins:40 }
+    const cost = enhanceCost(0); // { scrap: 4, coins: 40 }
     const r = body(await enhance('e1', key));
     expect(r.data.success).toBe(true);
     expect(r.data.instance.level).toBe(1);
@@ -247,7 +247,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(comm.bal(accountId)).toBe(1000 - cost.coins);
   });
 
-  it('enhance 失败：level 不变，仍扣材料 + 金币（温和档不掉级不碎）', async () => {
+  it('enhance failure: level unchanged, materials + coins still deducted (gentle tier: no level loss, no break)', async () => {
     let key = '';
     for (let i = 0; ; i++) if (!rollEnhanceSuccess(`f${i}`, 0)) { key = `f${i}`; break; }
     await seedInstance('e2', 'wp_pencil', 0);
@@ -256,12 +256,12 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const cost = enhanceCost(0);
     const r = body(await enhance('e2', key));
     expect(r.data.success).toBe(false);
-    expect(r.data.instance.level).toBe(0); // 不掉级
-    expect(r.data.save.materials.scrap).toBe(100 - cost.materials.scrap); // 仍损耗
+    expect(r.data.instance.level).toBe(0); // no level loss
+    expect(r.data.save.materials.scrap).toBe(100 - cost.materials.scrap); // still consumed
     expect(r.data.save.wallet.coins).toBe(1000 - cost.coins);
   });
 
-  it('enhance 幂等：同 key 重放不二次扣料/掷骰，结果一致', async () => {
+  it('enhance idempotency: replaying with the same key does not deduct again or re-roll; result is consistent', async () => {
     await seedInstance('e3', 'wp_pencil', 0);
     await seedMaterials({ scrap: 100 });
     comm.setCoins(accountId, 1000);
@@ -270,11 +270,11 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(r2.data.success).toBe(r1.data.success);
     expect(r2.data.instance.level).toBe(r1.data.instance.level);
     const save = await readSave();
-    expect(save.materials.scrap).toBe(100 - enhanceCost(0).materials.scrap); // 只扣一次
-    expect(comm.bal(accountId)).toBe(1000 - enhanceCost(0).coins); // 金币只扣一次
+    expect(save.materials.scrap).toBe(100 - enhanceCost(0).materials.scrap); // deducted only once
+    expect(comm.bal(accountId)).toBe(1000 - enhanceCost(0).coins); // coins deducted only once
   });
 
-  it('enhance 满级 → 409 ENHANCE_MAX_LEVEL', async () => {
+  it('enhance at max level → 409 ENHANCE_MAX_LEVEL', async () => {
     await seedInstance('e9', 'wp_pencil', 9);
     await seedMaterials({ scrap: 100 });
     const res = await enhance('e9', 'ek-max');
@@ -282,7 +282,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(body(res).error.code).toBe('ENHANCE_MAX_LEVEL');
   });
 
-  it('enhance 材料不足 → 402，且不动状态/金币', async () => {
+  it('enhance insufficient materials → 402, state and coins unchanged', async () => {
     await seedInstance('e4', 'wp_pencil', 0);
     await seedMaterials({ scrap: 1 });
     comm.setCoins(accountId, 1000);
@@ -290,28 +290,28 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(res.statusCode).toBe(402);
     expect(body(res).error.code).toBe('INSUFFICIENT_MATERIALS');
     expect((await readSave()).equipmentInv['e4'].level).toBe(0);
-    expect(comm.bal(accountId)).toBe(1000); // 金币未动
+    expect(comm.bal(accountId)).toBe(1000); // coins untouched
   });
 
-  it('enhance 金币不足 → 402 INSUFFICIENT_FUNDS，且不扣材料', async () => {
+  it('enhance insufficient coins → 402 INSUFFICIENT_FUNDS, materials not deducted', async () => {
     await seedInstance('e5', 'wp_pencil', 0);
     await seedMaterials({ scrap: 100 });
-    comm.setCoins(accountId, 10); // < 40
+    comm.setCoins(accountId, 10); // less than the required 40
     const res = await enhance('e5', 'ek-nocoin');
     expect(res.statusCode).toBe(402);
     expect(body(res).error.code).toBe('INSUFFICIENT_FUNDS');
-    expect((await readSave()).materials.scrap).toBe(100); // 材料未动
+    expect((await readSave()).materials.scrap).toBe(100); // materials untouched
   });
 
-  it('enhance 实例不存在 → 404', async () => {
+  it('enhance non-existent instance → 404', async () => {
     const res = await enhance('ghost', 'ek-ghost');
     expect(res.statusCode).toBe(404);
     expect(body(res).error.code).toBe('EQUIP_NOT_FOUND');
   });
 
-  // ── E3 分解 ───────────────────────────────────────────────────────────────────
-  it('salvage：返 70% 打造材料 + 移出库存', async () => {
-    await seedInstance('s1', 'wp_pencil', 0); // craftCost scrap:5 → 返 floor(3.5)=3
+  // ── E3 Salvage ───────────────────────────────────────────────────────────────────
+  it('salvage: return 70% craft materials + remove from inventory', async () => {
+    await seedInstance('s1', 'wp_pencil', 0); // craftCost scrap:5 → refund floor(3.5)=3
     await seedMaterials({ scrap: 10 });
     const refund = salvageRefund('wp_pencil'); // { scrap:3 }
     const r = body(await salvage(['s1'], 'sk1'));
@@ -320,7 +320,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(r.data.save.equipmentInv['s1']).toBeUndefined();
   });
 
-  it('salvage 批量：返还合计', async () => {
+  it('salvage batch: total refund across all items', async () => {
     await seedInstance('s2', 'wp_pencil', 1);
     await seedInstance('s3', 'wp_pencil', 4);
     await seedMaterials({ scrap: 0 });
@@ -331,16 +331,16 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(save.equipmentInv['s3']).toBeUndefined();
   });
 
-  it('salvage +5 及以上 → 409 NOT_SALVAGEABLE（整批拒，不部分执行）', async () => {
+  it('salvage +5 and above → 409 NOT_SALVAGEABLE (whole batch rejected, no partial execution)', async () => {
     await seedInstance('s4', 'wp_pencil', 0);
     await seedInstance('s5', 'wp_pencil', 5);
     const res = await salvage(['s4', 's5'], 'sk-hi');
     expect(res.statusCode).toBe(409);
     expect(body(res).error.code).toBe('NOT_SALVAGEABLE');
-    expect((await readSave()).equipmentInv['s4']).toBeTruthy(); // 整批未执行
+    expect((await readSave()).equipmentInv['s4']).toBeTruthy(); // whole batch not executed
   });
 
-  it('salvage 锁定 → 409 EQUIP_LOCKED；穿戴中 → 409 EQUIP_IN_USE', async () => {
+  it('salvage locked → 409 EQUIP_LOCKED; equipped → 409 EQUIP_IN_USE', async () => {
     await seedInstance('sl', 'wp_pencil', 0, { locked: true });
     expect((await salvage(['sl'], 'sk-lock')).statusCode).toBe(409);
     expect(body(await salvage(['sl'], 'sk-lock2')).error.code).toBe('EQUIP_LOCKED');
@@ -350,50 +350,50 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(body(await salvage(['sw'], 'sk-worn')).error.code).toBe('EQUIP_IN_USE');
   });
 
-  it('salvage 幂等：同 key 重放不二次返还', async () => {
+  it('salvage idempotency: replaying with the same key does not refund twice', async () => {
     await seedInstance('s6', 'wp_pencil', 0);
     await seedMaterials({ scrap: 0 });
     await salvage(['s6'], 'sk-dup');
     const r2 = body(await salvage(['s6'], 'sk-dup'));
     expect(r2.data.refunded.scrap).toBe(salvageRefund('wp_pencil').scrap);
-    expect((await readSave()).materials.scrap).toBe(salvageRefund('wp_pencil').scrap); // 只返一次
+    expect((await readSave()).materials.scrap).toBe(salvageRefund('wp_pencil').scrap); // refunded only once
   });
 
-  // ── E4 穿戴 ───────────────────────────────────────────────────────────────────
-  it('equip：穿上 → gear.global[slot]；卸下 → 移除', async () => {
-    await seedInstance('w1', 'wp_pencil', 0); // weapon 槽
+  // ── E4 Equip ───────────────────────────────────────────────────────────────────
+  it('equip: equip → gear.global[slot]; unequip → removed', async () => {
+    await seedInstance('w1', 'wp_pencil', 0); // weapon slot
     const r = body(await equip('weapon', 'w1'));
     expect(r.data.save.gear.global.weapon).toBe('w1');
     const r2 = body(await equip('weapon', null));
     expect(r2.data.save.gear.global.weapon).toBeUndefined();
   });
 
-  it('equip 槽位不匹配 → 400 INVALID_SLOT', async () => {
-    await seedInstance('w2', 'wp_pencil', 0); // weapon 装备
-    const res = await equip('armor', 'w2'); // 塞进护甲槽
+  it('equip slot mismatch → 400 INVALID_SLOT', async () => {
+    await seedInstance('w2', 'wp_pencil', 0); // weapon equipment
+    const res = await equip('armor', 'w2'); // inserted into armor slot
     expect(res.statusCode).toBe(400);
     expect(body(res).error.code).toBe('INVALID_SLOT');
   });
 
-  it('equip 非法槽位名 → 400（openapi enum 契约层先拦）', async () => {
+  it('equip invalid slot name → 400 (openapi enum validation intercepts at contract layer first)', async () => {
     const res = await equip('helmet', null);
-    expect(res.statusCode).toBe(400); // slot enum=[weapon,armor,trinket] 校验失败 → BAD_REQUEST
+    expect(res.statusCode).toBe(400); // slot enum=[weapon,armor,trinket] validation fails → BAD_REQUEST
   });
 
-  it('equip 实例不存在 → 404', async () => {
+  it('equip non-existent instance → 404', async () => {
     const res = await equip('weapon', 'nope');
     expect(res.statusCode).toBe(404);
     expect(body(res).error.code).toBe('EQUIP_NOT_FOUND');
   });
 
-  it('equip byUnit：unitType 写进 gear.byUnit', async () => {
-    await seedInstance('w3', 'ar_draft', 0); // armor 装备
+  it('equip byUnit: unitType written into gear.byUnit', async () => {
+    await seedInstance('w3', 'ar_draft', 0); // armor equipment
     const r = body(await equip('armor', 'w3', 'Infantry'));
     expect(r.data.save.gear.byUnit.Infantry.armor).toBe('w3');
-    expect(r.data.save.gear.global?.armor).toBeUndefined(); // 不污染 global
+    expect(r.data.save.gear.global?.armor).toBeUndefined(); // does not pollute global
   });
 
-  it('equip 穿戴后该实例不可分解（EQUIP_IN_USE）', async () => {
+  it('equip equipped instance cannot be salvaged (EQUIP_IN_USE)', async () => {
     await seedInstance('w4', 'wp_pencil', 0);
     await equip('weapon', 'w4');
     expect(body(await salvage(['w4'], 'sk-equipped')).error.code).toBe('EQUIP_IN_USE');

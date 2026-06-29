@@ -1,15 +1,16 @@
-// 成就 PvP 统计反作弊 L2/L3 的「纯逻辑」实现（机制权威 ACHIEVEMENT_DESIGN.md §4.4）。
-// 纯数据 + 纯函数（随机/时钟外部注入），无 DB；meta 离线抽查批（anticheatAudit.ts）调用。
+// Pure-logic implementation of PvP stat anti-cheat L2/L3 (authoritative design in ACHIEVEMENT_DESIGN.md §4.4).
+// Pure data + pure functions (randomness/clock injected externally), no DB; called by the meta offline audit batch (anticheatAudit.ts).
 //
-// L2 随机抽查：以基础概率 p0 抽取已归档 ranked 局，经在线 peer 裁判无头复算真实 kill/cast，
-// 与上报值比对。L3 作弊者升档：曾被实锤过造假（statSuspicion>0）的账号抽查概率抬到 p_flagged。
+// L2 random sampling: samples archived ranked games at base probability p0, re-runs them headlessly via an online peer judge
+// to obtain authoritative kill/cast counts, then compares against reported values.
+// L3 suspect escalation: accounts previously confirmed as cheaters (statSuspicion>0) have their sample probability raised to p_flagged.
 import type { StatKey } from './achievements';
 import { PVP_REPORTED_STAT_KEYS, accrueStats } from './achievements';
 import type { SaveData } from './types';
 
-/** L2 基础抽查概率（clean 账号，§4.4）。粗放低成本兜底，不为小金币池上重型复算。 */
+/** L2 base sampling probability (clean accounts, §4.4). Lightweight low-cost backstop — not worth expensive re-computation for a small coin pool. */
 export const AUDIT_SAMPLE_P0 = 0.02;
-/** L3 升档抽查概率（statSuspicion>0 的账号，§4.4）。命中过造假 → 长期高抽查档位。 */
+/** L3 escalated sampling probability (accounts with statSuspicion>0, §4.4). Previously confirmed cheaters → long-term elevated sampling tier. */
 export const AUDIT_SAMPLE_P_FLAGGED = 0.35;
 
 export interface AuditSampleOpts {
@@ -18,8 +19,9 @@ export interface AuditSampleOpts {
 }
 
 /**
- * 该账号当前的抽查概率（§4.4 L3 升档）：曾被实锤造假（statSuspicion>0）→ p_flagged，否则 p0。
- * 一局取参战双方 statSuspicion 的较大值喂入（任一方 flagged 即抬高整局被抽概率）。
+ * Returns the current sampling probability for this account (§4.4 L3 escalation):
+ * previously confirmed cheater (statSuspicion>0) → p_flagged, otherwise p0.
+ * Per game, feed the larger statSuspicion of both participants (either side being flagged raises the whole game's sample probability).
  */
 export function auditSampleProbability(statSuspicion: number, opts?: AuditSampleOpts): number {
   const p0 = opts?.p0 ?? AUDIT_SAMPLE_P0;
@@ -27,7 +29,7 @@ export function auditSampleProbability(statSuspicion: number, opts?: AuditSample
   return statSuspicion > 0 ? pFlagged : p0;
 }
 
-/** 是否抽查该局（随机数外部注入，便于测试确定性）。rand < 概率 → 抽中。 */
+/** Whether to audit this game (random number injected externally for deterministic testing). rand < probability → selected. */
 export function shouldAuditSample(
   statSuspicion: number,
   rand: number,
@@ -37,17 +39,17 @@ export function shouldAuditSample(
 }
 
 export interface AuditComparison {
-  /** 超报量（`max(0, reported-authoritative)` 逐 statKey，省略 0；少报/相等不计）。 */
+  /** Overclaim amount (`max(0, reported-authoritative)` per statKey, omitting zeros; under-reporting/equal is not counted). */
   overclaim: Partial<Record<StatKey, number>>;
-  /** 是否存在任一超报（→ 实锤造假，触发回滚 + 升档）。 */
+  /** Whether any overclaim exists (→ confirmed cheating, triggers rollback + escalation). */
   suspicious: boolean;
 }
 
 /**
- * 比对某方上报值与裁判复算的权威值（§4.4 L2）。
- * **只看超报**：reported > authoritative 才计（玩家少报只亏自己、不追溯；金币已发不追回，
- * 故 under-claim/相等 = clean）。只遍历 {@link PVP_REPORTED_STAT_KEYS}（pvp.wins 服务器自算、
- * campaign.* 是 PvE，均不审计）。
+ * Compares one side's reported values against the judge-recomputed authoritative values (§4.4 L2).
+ * **Only overclaims are flagged**: reported > authoritative counts (under-reporting hurts only the player and is not retroactively corrected;
+ * coins already issued are not clawed back, so under-claim/equal = clean). Only iterates {@link PVP_REPORTED_STAT_KEYS}
+ * (pvp.wins is computed server-side; campaign.* is PvE — neither is audited).
  */
 export function compareAudit(
   reported: Partial<Record<StatKey, number>> | undefined,
@@ -68,9 +70,10 @@ export function compareAudit(
 }
 
 /**
- * 把超报量从玩家终身 stats 扣回（§4.4 回滚）：逐 statKey 扣减按当前值 0 下限钳制
- * （扣减量 = `min(overclaim[k], 当前值)`）。返回新 stats + 实际扣减量（理论 overclaim 可大于实际，
- * 供审查记录区分）。纯函数：无增量则原样返回 prev、不实例化（懒创建）。
+ * Rolls back the overclaim amount from the player's lifetime stats (§4.4 rollback): deducts each statKey,
+ * clamped at zero (deduction = `min(overclaim[k], current value)`). Returns the new stats + the actual amount
+ * deducted (the theoretical overclaim may exceed the actual deduction; the audit record distinguishes them).
+ * Pure function: if there is nothing to deduct, returns prev as-is without instantiating a new object (lazy creation).
  */
 export function applyRollback(
   prev: SaveData['stats'],
@@ -82,7 +85,7 @@ export function applyRollback(
     const want = overclaim[k] ?? 0;
     if (want <= 0) continue;
     const cur = prev?.[k] ?? 0;
-    const cut = Math.min(want, cur); // 0 下限钳制
+    const cut = Math.min(want, cur); // clamp at zero
     if (cut > 0) {
       rolledBack[k] = cut;
       neg[k] = -cut;

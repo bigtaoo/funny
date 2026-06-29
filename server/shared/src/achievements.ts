@@ -1,46 +1,50 @@
-// 成就系统机制单一来源的「定义 + 纯逻辑」实现（机制权威 ACHIEVEMENT_DESIGN.md）。
-// 纯数据 + 纯函数，无 DB / 无 PIXI；服务端与客户端同源（客户端经镜像/codegen 复用同套定义算阶）。
-// 数字（阈值/金币）镜像 ECONOMY_BALANCE.md §2.4（DRAFT），改条目 = 发版（§6.1 决策：硬编码不可运营配）。
+// Single source of truth for achievement system mechanics: definitions + pure logic (canonical reference: ACHIEVEMENT_DESIGN.md).
+// Pure data + pure functions; no DB / no PIXI. Server and client share the same source
+// (client reuses the same definitions via mirror/codegen to compute tier state).
+// Numbers (thresholds/coins) mirror ECONOMY_BALANCE.md §2.4 (DRAFT); changing an entry requires a release
+// (§6.1 decision: hard-coded values are not operator-configurable).
 import type { SaveData } from './types';
 
 /**
- * StatKey：终身累计、单调递增的统计量标识。命名「域.主体.动作」。
- * **一旦上线只增不改不删**（改名 = 丢历史累计；§3.1）。一个 stat 可被多条成就复用。
+ * StatKey: identifier for a lifetime-cumulative, monotonically increasing statistic. Named as "domain.subject.action".
+ * **Once live, entries may only be added — never renamed or deleted**
+ * (renaming = losing historical accumulation; §3.1). A single stat may be referenced by multiple achievements.
  */
 export type StatKey =
-  | 'kill.archer' // 累计击杀弓箭手
-  | 'kill.guard' // 累计击杀守卫
-  | 'cast.meteor' // 释放陨石次数
-  | 'campaign.chaptersCleared' // 通关章节数（取最大达成，首通才涨）
-  | 'pvp.wins'; // 累计 PvP 胜场（仅 ranked）
+  | 'kill.archer' // total archer kills
+  | 'kill.guard' // total guard kills
+  | 'cast.meteor' // total meteor casts
+  | 'campaign.chaptersCleared' // chapters cleared (tracks maximum reached; increments only on first clear)
+  | 'pvp.wins'; // total PvP wins (ranked only)
 
-/** 成就分类（成就墙按此分 tab，§7）。 */
+/** Achievement category (the achievement wall is tabbed by this, §7). */
 export type AchCategory = 'pve' | 'pvp' | 'collection' | 'progression';
 
-/** 成就 id（稳定标识，同 StatKey 上线后不改）。 */
+/** Achievement id (stable identifier; like StatKey, must not change after going live). */
 export type AchId = string;
 
 export interface AchTier {
-  threshold: number; // 该阶解锁所需 stat 值（阶严格递增：高阶阈值 ≥ 低阶）
-  coins: number; // 该阶一次性金币（A1：纯一次性、不可刷）
+  threshold: number; // stat value required to unlock this tier (strictly increasing: higher tier threshold ≥ lower)
+  coins: number; // one-time coin reward for this tier (A1: strictly one-time, not farmable)
 }
 
 export interface Achievement {
   id: AchId;
   statKey: StatKey;
   category: AchCategory;
-  tiers: AchTier[]; // 通常 3 阶（I/II/III），逐阶领
-  /** 顶阶达成额外授予的永久称号（§0 2026-06-21 补；可选，多数成就无）。 */
+  tiers: AchTier[]; // typically 3 tiers (I/II/III), claimed one at a time
+  /** Permanent title awarded when the top tier is reached (§0 added 2026-06-21; optional, most achievements have none). */
   titleId?: string;
-  /** 隐藏/彩蛋成就（达成前不在墙上展示，§10 决策 9；模型预留，初期全 false）。 */
+  /** Hidden/easter-egg achievement (not shown on the wall until unlocked, §10 decision 9; reserved in the model, initially all false). */
   hidden?: boolean;
-  /** 该 statKey 是否计 PvE 重打（§10 决策 3；多数 kill.* 接受重打）。仅文档/审计语义，不影响累加。 */
+  /** Whether this statKey counts PvE replays (§10 decision 3; most kill.* stats accept replays). Documentation/audit semantics only — does not affect accumulation. */
   countsReplay?: boolean;
 }
 
 /**
- * 硬编码成就定义表（§3.1 五条模板初值，阈值/金币 = ECONOMY_BALANCE §2.4 DRAFT）。
- * 单条满阶 ~350 金币；后期扩到 ~25 条 → 全游戏一次性 ~8–9k 金币池（全部一次性，非持续泵）。
+ * Hard-coded achievement definition table (§3.1 five template initial values; thresholds/coins = ECONOMY_BALANCE §2.4 DRAFT).
+ * A single fully-claimed achievement yields ~350 coins; expanding to ~25 entries later
+ * gives a total one-time game-wide pool of ~8–9k coins (all one-time, not a sustained pump).
  */
 export const ACHIEVEMENTS: Achievement[] = [
   {
@@ -80,13 +84,13 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'ach.campaign.chapters',
     statKey: 'campaign.chaptersCleared',
     category: 'pve',
-    countsReplay: false, // 首通才计，重打不涨（§3.1 $max 语义）
+    countsReplay: false, // counts only on first clear; replays do not increment (§3.1 $max semantics)
     tiers: [
       { threshold: 1, coins: 100 },
       { threshold: 3, coins: 200 },
-      { threshold: 9, coins: 400 }, // 「全部」占位：暂按 9 章，章节扩充时同步
+      { threshold: 9, coins: 400 }, // "all chapters" placeholder: currently 9 chapters; update in sync when chapters are added
     ],
-    titleId: 'ach.all_chapters', // 顶阶（全通关）额外授予永久称号（§7）
+    titleId: 'ach.all_chapters', // top tier (all chapters cleared) awards a permanent title (§7)
   },
   {
     id: 'ach.pvp.wins',
@@ -98,7 +102,7 @@ export const ACHIEVEMENTS: Achievement[] = [
       { threshold: 50, coins: 150 },
       { threshold: 200, coins: 300 },
     ],
-    titleId: 'ach.pvp.veteran', // 顶阶（200 胜）额外授予永久称号（§7）
+    titleId: 'ach.pvp.veteran', // top tier (200 wins) awards a permanent title (§7)
   },
 ];
 
@@ -110,15 +114,16 @@ export interface TierState {
   tier: number; // 1-based
   threshold: number;
   coins: number;
-  reached: boolean; // stat ≥ 阈值
-  claimable: boolean; // 达阈值且未领（红点源）
-  claimed: boolean; // 已领
-  progress: number; // min(stat, 阈值)，用于进度条
+  reached: boolean; // stat ≥ threshold
+  claimable: boolean; // threshold reached and not yet claimed (badge dot source)
+  claimed: boolean; // already claimed
+  progress: number; // min(stat, threshold), used for the progress bar
 }
 
 /**
- * 当前各阶状态推导（无状态，客户端/服务器同算，§4.1）。
- * 解锁阶永远由 stats 当场推导，不落库 → 改定义/调阈值不需迁移玩家数据。
+ * Derives the current state of each tier (stateless; computed identically on client and server, §4.1).
+ * Unlocked tiers are always derived on the fly from stats and never persisted,
+ * so changing definitions or adjusting thresholds requires no player-data migration.
  */
 export function tierState(
   def: Achievement,
@@ -142,7 +147,7 @@ export function tierState(
   });
 }
 
-/** 任一成就存在可领阶 → 入口红点（§4.1 红点聚合）。 */
+/** Returns true if any achievement has a claimable tier → show entry-point badge dot (§4.1 badge aggregation). */
 export function hasClaimable(
   stats: SaveData['stats'],
   achievements: SaveData['achievements'],
@@ -158,13 +163,15 @@ export type ClaimError = 'BAD_REQUEST' | 'NOT_REACHED' | 'ALREADY_CLAIMED';
 
 export interface ClaimOk {
   ok: true;
-  coins: number; // 本次发放金币
+  coins: number; // coins granted in this claim
   tier: number;
 }
 
 /**
- * 领取校验纯函数（§4.3 步骤 1–2）：不信客户端，二次校验 stat ≥ 阈值 + 未领。
- * 通过返回该阶金币；失败返回错误码。落库（$addToSet + 发币）由调用方在事务内完成。
+ * Pure validation function for claim requests (§4.3 steps 1–2): does not trust the client;
+ * re-validates that stat ≥ threshold and that the tier has not already been claimed.
+ * Returns the tier's coin amount on success, or an error code on failure.
+ * Persistence ($addToSet + coin grant) is the caller's responsibility within a transaction.
  */
 export function validateClaim(
   achId: AchId,
@@ -185,19 +192,23 @@ export function validateClaim(
   return { ok: true, coins: t.coins, tier };
 }
 
-// ─── PvP 战报计数（S9-6，§4.2 直接上报 + §4.4 L1 异常复查）─────────────────────
+// ─── PvP match-report stat counting (S9-6, §4.2 direct reporting + §4.4 L1 anomaly review) ─────────────────────
 
 /**
- * 可由 PvP 战报上报喂入的 statKey（**仅 ranked**，§3.1）。
- * `pvp.wins` **不在此列**——它由 meta 据已校验的 winner_side 服务器自算（§4.2），不信客户端上报。
- * `campaign.chaptersCleared` 是 PvE 专属，也不在此列。
+ * StatKeys that can be fed in from a PvP match report (**ranked only**, §3.1).
+ * `pvp.wins` is **not** in this list — it is computed server-side by meta from the verified winner_side (§4.2)
+ * and is never trusted from client reports.
+ * `campaign.chaptersCleared` is PvE-exclusive and is also excluded.
  */
 export const PVP_REPORTED_STAT_KEYS: readonly StatKey[] = ['kill.archer', 'kill.guard', 'cast.meteor'];
 
 /**
- * L1 单局硬边界（§4.4）：单局某 statKey 上报值超此上限即「离谱超界」→ 整份拒收 + 标记嫌疑。
- * 当前为**粗上界**（按引擎极端规模估计：单局单位/法术出牌数量级），精确推导见 §6.2 待办。
- * 远大于正常单局值（正常单局击杀几十、陨石个位数），只用于挡住明显伪造，不影响真实计数。
+ * L1 per-match hard cap (§4.4): if a reported statKey value exceeds this limit it is "grossly out of bounds"
+ * → the entire report is rejected and the account is flagged as suspicious.
+ * These are **coarse upper bounds** (estimated from the engine's extreme-scale unit/spell play count per match);
+ * precise derivation is a TODO in §6.2.
+ * Values are far above normal per-match figures (normal: tens of kills, single-digit meteors)
+ * and are only meant to catch obvious forgeries without affecting legitimate counts.
  */
 export const PVP_STAT_MATCH_CAP: Readonly<Record<string, number>> = {
   'kill.archer': 200,
@@ -206,11 +217,12 @@ export const PVP_STAT_MATCH_CAP: Readonly<Record<string, number>> = {
 };
 
 /**
- * 清洗客户端上报的本局 PvP 统计（L1，§4.4）：
- * - **未知/不可上报 key**：丢弃（向前兼容版本错位，不因此拒收整份）。
- * - **非负整数校验 + L1 硬边界**：任一**已知可上报 key** 非法或越界 → 返回 `null`（拒收整份该方统计，
- *   调用方应跳过 kill/cast 累加，但 `pvp.wins`/ELO 仍照常；嫌疑升档属 S9-7，此处仅清洗）。
- * - 0 值省略（懒创建，不写 0）。
+ * Sanitizes client-reported per-match PvP stats (L1, §4.4):
+ * - **Unknown/non-reportable keys**: silently dropped (forward-compatibility version skew; does not reject the whole report).
+ * - **Non-negative integer check + L1 hard cap**: if any **known reportable key** is invalid or out of range
+ *   → returns `null` (reject all stats for this side; caller should skip kill/cast accumulation,
+ *   but `pvp.wins`/ELO still proceed normally; escalation to suspicion is S9-7, this function only sanitizes).
+ * - Zero values are omitted (lazy creation; zeros are not written).
  */
 export function sanitizePvpReportedStats(
   reported: Record<string, number> | undefined,
@@ -218,17 +230,18 @@ export function sanitizePvpReportedStats(
   if (!reported) return {};
   const out: Partial<Record<StatKey, number>> = {};
   for (const [k, v] of Object.entries(reported)) {
-    if (!PVP_REPORTED_STAT_KEYS.includes(k as StatKey)) continue; // 未知 key → 丢弃（不拒整份）
-    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) return null; // 非法 → L1 拒收
-    if (v > (PVP_STAT_MATCH_CAP[k] ?? 0)) return null; // L1 越界 → 拒收
+    if (!PVP_REPORTED_STAT_KEYS.includes(k as StatKey)) continue; // unknown key → drop (do not reject the whole report)
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) return null; // invalid → L1 reject
+    if (v > (PVP_STAT_MATCH_CAP[k] ?? 0)) return null; // L1 cap exceeded → reject
     if (v > 0) out[k as StatKey] = v;
   }
   return out;
 }
 
 /**
- * 把一份 statKey 增量累加进玩家终身 `stats`（懒创建：无增量则原样返回 prev、不实例化）。
- * 服务器权威结算点（PvP applyPvp / PvE 结算）调用；纯函数便于单测。
+ * Accumulates a statKey delta into the player's lifetime `stats` (lazy creation: if the delta is empty,
+ * returns prev unchanged without allocating a new object).
+ * Called at authoritative server settlement points (PvP applyPvp / PvE settlement); pure function for easy unit testing.
  */
 export function accrueStats(
   prev: SaveData['stats'],

@@ -1,6 +1,7 @@
-// SLG 大区赛季纯函数单测（§17.11，无 Mongo，always-run）。
-// 覆盖：繁荣度评分/衰减边界、settleTier 名次切档边界、sectStrengthScore 新宗门中位 vs 有历史、
-// allocateSectsToShards 蛇形均衡（各 shard 强弱总和差有界 + 同宗门不拆分）。
+// Pure-function unit tests for SLG region season logic (§17.11, no Mongo, always-run).
+// Coverage: prosperity score/decay boundary, settleTier rank-tier boundary, sectStrengthScore
+// for new sects (median baseline) vs sects with history, allocateSectsToShards snake-balance
+// (bounded total-strength spread across shards + no sect split across shards).
 import { describe, expect, it } from 'vitest';
 import {
   familyProsperity,
@@ -85,7 +86,7 @@ describe('allocateSectsToShards', () => {
   });
 
   it('蛇形均衡：各 shard 强弱总和差 ≤ 最强单体', () => {
-    // 构造强弱悬殊的一组，验证蛇形分配后各区总分接近。
+    // Build a group with a wide strength spread and verify that snake allocation keeps shard totals close.
     const sects: SectStrength[] = Array.from({ length: 12 }, (_, i) => ({
       sectId: `s${i}`, lastSeasonRank: i + 1, memberFamilyCount: 0, prosperity: 0,
     }));

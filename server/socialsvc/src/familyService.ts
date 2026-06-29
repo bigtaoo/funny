@@ -1,7 +1,7 @@
-// 家族业务层（SOCIAL_SVC_DESIGN §3/§4，SS2/SS3）。
-// 家族是全局持久实体（无 worldId），TAG 全库唯一。
-// 玩家同时只能属于一个家族（FamilyMemberDoc._id = accountId）。
-// 成员上限 FAMILY_CAP=30；三层权限：leader > elder > member。
+// Family business layer (SOCIAL_SVC_DESIGN §3/§4, SS2/SS3).
+// A family is a globally persistent entity (no worldId); TAG is unique across the entire database.
+// A player can belong to at most one family at a time (FamilyMemberDoc._id = accountId).
+// Member cap FAMILY_CAP=30; three permission tiers: leader > elder > member.
 import {
   FAMILY_CAP,
   FAMILY_MSG_BODY_MAX,
@@ -46,7 +46,7 @@ export interface FamilyServiceDeps {
   gateway?: SocialGatewayClient;
 }
 
-/** 进程内单调序号，防同毫秒多条消息 id 撞键。 */
+/** In-process monotonic sequence number to prevent message ID collisions within the same millisecond. */
 let msgSeq = 0;
 
 function makeFamilyId(tag: string): string {
@@ -72,14 +72,14 @@ export class FamilyService {
     this.gateway = deps.gateway ?? nullSocialGatewayClient;
   }
 
-  /** 查玩家所在家族（含成员列表）。未加入则返回 null。 */
+  /** Get the family the player belongs to (including member list). Returns null if not a member. */
   async getMyFamily(accountId: string): Promise<FamilyDetailView | null> {
     const mem = await this.deps.cols.familyMembers.findOne({ _id: accountId });
     if (!mem) return null;
     return this.getFamily(mem.familyId);
   }
 
-  /** 按 familyId 查详情（含成员列表）。 */
+  /** Get family details by familyId (including member list). */
   async getFamily(familyId: string): Promise<FamilyDetailView | null> {
     const doc = await this.deps.cols.families.findOne({ _id: familyId });
     if (!doc) return null;
@@ -92,13 +92,13 @@ export class FamilyService {
     return { ...docToView(doc), members };
   }
 
-  /** 按 TAG 搜索家族（精确，大小写不敏感）。 */
+  /** Search for a family by TAG (exact match, case-insensitive). */
   async searchByTag(tag: string): Promise<FamilyView | null> {
     const doc = await this.deps.cols.families.findOne({ tag: tag.toUpperCase() });
     return doc ? docToView(doc) : null;
   }
 
-  /** 创建家族。TAG 全库唯一；创建者成为 leader；不能已在其他家族。 */
+  /** Create a family. TAG must be unique across the database; the creator becomes the leader; the creator must not already be in another family. */
   async createFamily(
     leaderId: string,
     name: string,
@@ -150,7 +150,7 @@ export class FamilyService {
     };
   }
 
-  /** 加入家族（直接加入，上限 30 人；不能已在家族）。 */
+  /** Join a family (direct join; cap of 30 members; must not already be in a family). */
   async joinFamily(accountId: string, familyId: string): Promise<void> {
     const cols = this.deps.cols;
     const now = this.deps.now();
@@ -179,7 +179,7 @@ export class FamilyService {
     await cols.familyMembers.insertOne(memberDoc);
   }
 
-  /** 离开家族（leader 须先转让或 dissolve）。 */
+  /** Leave the family (the leader must first transfer leadership or dissolve the family). */
   async leaveFamily(accountId: string): Promise<void> {
     const cols = this.deps.cols;
     const memDoc = await cols.familyMembers.findOne({ _id: accountId });
@@ -190,7 +190,7 @@ export class FamilyService {
     await cols.families.updateOne({ _id: memDoc.familyId }, { $inc: { memberCount: -1 } });
   }
 
-  /** 踢出成员（leader 可踢全部，elder 只能踢 member）。 */
+  /** Kick a member (leader can kick anyone; elder can only kick members). */
   async kickMember(requesterId: string, targetId: string): Promise<void> {
     if (requesterId === targetId) throw new SlgError('BAD_REQUEST');
     const cols = this.deps.cols;
@@ -208,7 +208,7 @@ export class FamilyService {
     await cols.families.updateOne({ _id: requesterMem.familyId }, { $inc: { memberCount: -1 } });
   }
 
-  /** 设置成员角色（仅 leader 可操作）。 */
+  /** Set a member's role (leader only). */
   async setRole(requesterId: string, targetId: string, role: FamilyRole): Promise<void> {
     if (requesterId === targetId) throw new SlgError('BAD_REQUEST');
     if (role === 'leader') throw new SlgError('BAD_REQUEST');
@@ -223,7 +223,7 @@ export class FamilyService {
     await cols.familyMembers.updateOne({ _id: targetId }, { $set: { role } });
   }
 
-  /** 解散家族（仅 leader）。清除所有成员记录、消息、家族文档。 */
+  /** Dissolve the family (leader only). Removes all member records, messages, and the family document. */
   async dissolveFamily(requesterId: string): Promise<void> {
     const cols = this.deps.cols;
 
@@ -236,7 +236,7 @@ export class FamilyService {
     await cols.families.deleteOne({ _id: fid });
   }
 
-  /** 更新公告（leader / elder）。 */
+  /** Update the family announcement (leader / elder). */
   async setAnnouncement(requesterId: string, announcement: string): Promise<void> {
     if (announcement.length > 200) throw new SlgError('BAD_REQUEST');
     const mem = await this.deps.cols.familyMembers.findOne({ _id: requesterId });
@@ -245,7 +245,7 @@ export class FamilyService {
     await this.deps.cols.families.updateOne({ _id: mem.familyId }, { $set: { announcement } });
   }
 
-  /** 发送家族频道消息。实时推送给所有其他在线成员。 */
+  /** Send a message to the family channel. Pushes in real time to all other online members. */
   async sendMessage(
     accountId: string,
     senderName: string,
@@ -271,7 +271,7 @@ export class FamilyService {
     };
     await cols.familyMessages.insertOne(msgDoc);
 
-    // 推送给所有其他成员（O(n)，≤30 人）
+    // Push to all other members (O(n), ≤30 members)
     const otherMembers = await cols.familyMembers
       .find({ familyId: mem.familyId, _id: { $ne: accountId } })
       .toArray();
@@ -283,7 +283,7 @@ export class FamilyService {
     return { id: msgId, senderId: accountId, senderName, body, ts };
   }
 
-  /** 获取频道历史（按时间倒序分页，`before` 为 ms epoch 游标，limit ≤50）。 */
+  /** Get channel history (reverse-chronological pagination; `before` is a ms-epoch cursor; limit ≤50). */
   async getChannel(
     accountId: string,
     before?: number,
@@ -313,13 +313,13 @@ export class FamilyService {
     }));
   }
 
-  /** 内部接口：查玩家当前所在的 familyId（worldsvc 调用）。 */
+  /** Internal API: look up the familyId the player currently belongs to (called by worldsvc). */
   async getFamilyIdByAccount(accountId: string): Promise<string | null> {
     const mem = await this.deps.cols.familyMembers.findOne({ _id: accountId });
     return mem ? mem.familyId : null;
   }
 
-  /** 内部接口：worldsvc 调增活跃度（占领/战斗 +1）。 */
+  /** Internal API: called by worldsvc to increment activity (occupation / battle +1). */
   async bumpActivity(familyId: string, delta = 1): Promise<void> {
     await this.deps.cols.families.updateOne(
       { _id: familyId },

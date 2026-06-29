@@ -1,6 +1,6 @@
-// 邮件服务（SOCIAL_SVC_DESIGN §3.3 P2）。
-// 纯数据操作（getMail / readMail / deleteMail / atomicClaim）；附件发货逻辑留在 metaserver（commercial + inventory）。
-// 系统邮件写入（insertSystemMail / bulkInsertSystemMail）由 metaserver 内部端点写入此库（P2 阶段内部 API 调用）。
+// Mail service (SOCIAL_SVC_DESIGN §3.3 P2).
+// Pure data operations (getMail / readMail / deleteMail / atomicClaim); attachment delivery logic stays in metaserver (commercial + inventory).
+// System mail writes (insertSystemMail / bulkInsertSystemMail) are written to this DB by metaserver's internal endpoints (P2-phase internal API calls).
 import { randomUUID } from 'node:crypto';
 import type { SocialCollections } from './db';
 import type { SocialGatewayClient } from './gatewayClient';

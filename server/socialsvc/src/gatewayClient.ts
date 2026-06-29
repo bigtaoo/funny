@@ -1,6 +1,6 @@
-// socialsvc → gateway 内部推送（SOCIAL_SVC_DESIGN §5）。
-// socialsvc 是所有频道推送的调度层，经 /gw/push 下发给 gateway（accountId → socket）。
-// gateway 未配置 → push 为 no-op（降级：客户端靠轮询）。
+// socialsvc → gateway internal push (SOCIAL_SVC_DESIGN §5).
+// socialsvc is the dispatch layer for all channel pushes, delivered to gateway via /gw/push (accountId → socket).
+// If gateway is not configured → push is a no-op (fallback: client relies on polling).
 import { internalHeaders } from '@nw/shared';
 
 export type SocialPushMsg =
@@ -14,7 +14,7 @@ export type SocialPushMsg =
     }
   | { kind: 'friend_presence'; publicId: string; online: boolean }
   | {
-      // 委托推送：来自 worldsvc/metaserver 的 /internal/push 转发
+      // Delegated push: forwarded from worldsvc/metaserver via /internal/push
       kind: 'sect_msg';
       sectId: string;
       fromAccountId: string;
@@ -31,7 +31,7 @@ export type SocialPushMsg =
       ts: number;
     }
   | { kind: 'system_notify'; message: string }
-  // P2: 好友 / 私聊 / 邮件实时推送
+  // P2: friend / private chat / mail real-time push
   | { kind: 'friend_request'; requestId: string; fromPublicId: string; fromName: string; message: string }
   | { kind: 'friend_update'; publicId: string; added: boolean }
   | { kind: 'chat_message'; convId: string; fromPublicId: string; fromName: string; body: string; ts: number }
@@ -41,9 +41,9 @@ export interface SocialGatewayClient {
   readonly available: boolean;
   push(accountId: string, msg: SocialPushMsg): Promise<void>;
   pushMany(accountIds: string[], msg: SocialPushMsg): Promise<void>;
-  /** 批量查在线态（好友列表用）。返回 accountId→bool map。 */
+  /** Batch presence query (used for friend lists). Returns an accountId→bool map. */
   presence(accountIds: string[]): Promise<Record<string, boolean>>;
-  /** 好友关系变更后让 gateway 的好友缓存失效（presence 广播范围重拉）。best-effort。 */
+  /** Invalidate the gateway's friend cache after a friend-relationship change (re-fetch presence broadcast scope). Best-effort. */
   invalidateFriends(accountId: string): Promise<void>;
 }
 

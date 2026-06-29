@@ -1,8 +1,8 @@
-// gateway 内部 HTTP（S1-M5，不暴露公网）：matchsvc 把异步事件经 /gw/push 推回 gateway，
-// gateway 据 accountId 找到玩家 socket 下发。鉴权：X-Internal-Key。
+﻿// gateway internal HTTP (S1-M5, not exposed to the public internet): matchsvc pushes async events to gateway via /gw/push;
+// gateway looks up the player socket by accountId and delivers the message. Auth: X-Internal-Key.
 //
-// （拆 matchsvc 为独立进程前，这里曾接 gameserver 的 game 注册/心跳——那两个端点已随
-//  GameRegistry 迁到 matchsvc 自己的内部 HTTP，gameserver 现直接注册到 matchsvc。）
+// (Before matchsvc was split into its own process, this server also handled game registration/heartbeat from gameserver — those two endpoints have since
+//  been moved to matchsvc's own internal HTTP along with GameRegistry; gameserver now registers directly with matchsvc.)
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import { createLogger, type InternalAuthVerifier } from '@nw/shared';
 import type { Gateway, JudgeArgs } from './Gateway';
@@ -11,24 +11,24 @@ const log = createLogger('gateway:internal');
 import type { FrameCmdsOut } from './proto';
 import type { PushMsg } from './matchsvcClient';
 
-/** /gw/judge 请求体（meta 或 worldsvc 发来）。frames 的 command bytes 用 base64 传输（JSON 安全）。 */
+/** /gw/judge request body (sent by meta or worldsvc). Command bytes in frames are base64-encoded for safe JSON transport. */
 interface JudgeReqBody {
   seed?: number;
   mode?: number;
   endFrame?: number;
   frames?: { frame: number; cmds: { side: number; commands: string }[] }[];
   exclude?: string[];
-  /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）。 */
+  /** PvE spot-check re-computation (PVE_INTEGRITY §8.6 L1). */
   levelId?: string;
-  /** @deprecated S3-2 蓝图快照，S12 起由 unitLevels 替代。 */
+  /** @deprecated S3-2 blueprint snapshot, replaced by unitLevels as of S12. */
   pveUpgrades?: Record<string, number>;
-  /** S12 单位养成等级快照（unitId→1..9）。 */
+  /** S12 unit progression level snapshot (unitId→1..9). */
   unitLevels?: Record<string, number>;
-  /** SLG 围攻防守 config JSON 字符串（S8-3b，worldsvc 发来）。 */
+  /** SLG siege defense config JSON string (S8-3b, sent by worldsvc). */
   defenseJson?: string;
 }
 
-/** base64 帧 → gateway 内部 FrameCmdsOut（commands 解回 Uint8Array）。 */
+/** Decode base64 frames → gateway-internal FrameCmdsOut (commands decoded back to Uint8Array). */
 function decodeFrames(frames: JudgeReqBody['frames']): FrameCmdsOut[] {
   return (frames ?? []).map((f) => ({
     frame: f.frame,
@@ -65,7 +65,7 @@ export function startInternalHttp(
 ): Server {
   const server = createServer((req, res) => {
     void (async () => {
-      // 存活探针（无需鉴权）：docker healthcheck / CI 等待用。
+      // Liveness probe (no auth required): used by docker healthcheck / CI wait loops.
       if (req.method === 'GET' && req.url === '/health') {
         send(res, 200, { ok: true, service: 'gateway' });
         return;
@@ -90,26 +90,26 @@ export function startInternalHttp(
           send(res, 200, { ok: true });
           return;
         }
-        // 实时态聚合（admin 监控/采样，OPS_DESIGN §4.1）：当前在线连接数。
+        // Real-time stats aggregation (admin monitoring/sampling, OPS_DESIGN §4.1): current online connection count.
         if (req.method === 'GET' && req.url === '/internal/stats') {
           send(res, 200, gateway.stats());
           return;
         }
-        // 在线态查询（meta 标好友列表 online flag，SOC9）：?accounts=a,b,c → {[id]: bool}。
+        // Online presence query (meta marks friend list online flags, SOC9): ?accounts=a,b,c → {[id]: bool}.
         if (req.method === 'GET' && req.url?.startsWith('/gw/presence')) {
           const u = new URL(req.url, 'http://localhost');
           const accounts = (u.searchParams.get('accounts') ?? '').split(',').filter(Boolean);
           send(res, 200, gateway.presenceOf(accounts));
           return;
         }
-        // 好友关系变更（meta 通知）→ 清 gateway 好友缓存，下次广播/查询重拉。
+        // Friend relationship changed (notified by meta) → clear gateway friend cache; it will be re-fetched on the next broadcast/query.
         if (req.method === 'POST' && req.url === '/gw/social/invalidate') {
           const b = (await readJson(req)) as { accountId?: string };
           if (b.accountId) gateway.invalidateFriends(b.accountId);
           send(res, 200, { ok: true });
           return;
         }
-        // 对等裁判（Phase C）：meta 发来一局录像，gateway 挑裁判复算并阻塞返回裁决。
+        // Peer judge (Phase C): meta sends a match replay; gateway picks a judge to re-compute and blocks until returning the verdict.
         if (req.method === 'POST' && req.url === '/gw/judge') {
           const b = (await readJson(req)) as JudgeReqBody;
           const args: JudgeArgs = {
@@ -123,7 +123,7 @@ export function startInternalHttp(
             ...(b.unitLevels ? { unitLevels: b.unitLevels } : {}),
             ...(b.defenseJson ? { defenseJson: b.defenseJson } : {}),
           };
-          // 直接回 JudgeResult（ok = 裁决是否成功；meta 据此定罪或作废）。
+          // Returns JudgeResult directly (ok = whether the verdict succeeded; meta uses it to convict or void the match).
           const result = await gateway.judge(args);
           send(res, 200, result);
           return;

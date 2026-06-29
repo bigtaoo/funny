@@ -1,6 +1,6 @@
-// PvE 服务器权威端到端（PVE_INTEGRITY_PLAN §8）：/pve/clear 通关结算 + /pve/upgrade 升级。
-//   解锁前置校验、可重复刷发材料、每日上限 capped、升级扣费/不足 402/满级 400。
-// 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// PvE server-authoritative end-to-end (PVE_INTEGRITY_PLAN §8): /pve/clear completion settlement + /pve/upgrade upgrade.
+//   Validates unlock prerequisites, repeatable farming with material grants, daily cap capped, upgrade deducts cost / insufficient → 402 / max level → 400.
+// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle, PVE_DAILY_CLEAR_REWARD_CAP } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -32,7 +32,7 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     app.inject({ method: 'POST', url: '/pve/clear', headers: auth(), payload: { levelId, stars } });
   const upgrade = (upgradeId: string) =>
     app.inject({ method: 'POST', url: '/pve/upgrade', headers: auth(), payload: { upgradeId } });
-  /** 直接种入已通关关卡（绕过逐关解锁前置），用于测终关章节计数。 */
+  /** Directly seed cleared levels (bypasses sequential unlock prerequisites), used to test final-level chapter counting. */
   const seedCleared = (cleared: string[]) =>
     m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.progress.cleared': cleared } });
 
@@ -44,11 +44,11 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'pve-dev-1' } }));
     token = r.data.token;
     accountId = r.data.accountId;
-    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // 建档
+    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // initialize save
   });
   afterAll(async () => { if (app) await app.close(); });
 
-  it('首关通关：发材料 + 记星 + 写 cleared（服务器权威）', async () => {
+  it('first level clear: grant materials + record stars + write cleared (server-authoritative)', async () => {
     const r = body(await clear('ch1_lv1', 3));
     expect(r.data.capped).toBe(false);
     expect(r.data.granted).toEqual({ scrap: 6, lead: 2 });
@@ -57,13 +57,13 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(r.data.save.materials.scrap).toBe(6);
   });
 
-  it('关卡掉单位卡（S12-C）：首章关掉 T1 卡入 cardInventory + grantedCards', async () => {
-    const r = body(await clear('ch1_lv1', 3)); // ch1 → infantry T1 ×1
+  it('level drops unit card (S12-C): first chapter level drops T1 card into cardInventory + grantedCards', async () => {
+    const r = body(await clear('ch1_lv1', 3)); // ch1 → infantry T1 x1
     expect(r.data.grantedCards).toEqual({ 'infantry:1': 1 });
     expect(r.data.save.cardInventory['infantry:1']).toBe(1);
-    // 单张 T1 不抬等级（deriveUnitLevels 仅产 level>1）。
+    // A single T1 card does not raise level (deriveUnitLevels only produces level>1).
     expect(r.data.save.unitLevels.infantry ?? 1).toBe(1);
-    // 终关（lv10）双倍。
+    // Final level (lv10) grants double cards.
     await seedCleared([
       'ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch1_lv4', 'ch1_lv5',
       'ch1_lv6', 'ch1_lv7', 'ch1_lv8', 'ch1_lv9',
@@ -72,40 +72,40 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(r10.data.grantedCards).toEqual({ 'infantry:1': 2 });
   });
 
-  it('后期章关掉高级卡（S12-C）：ch3 掉 T2 → unitLevels 派生跟随', async () => {
-    // 解锁 ch3_lv1（前置 ch2_lv10）。
+  it('later chapter drops higher card (S12-C): ch3 drops T2 → unitLevels derived accordingly', async () => {
+    // Unlock ch3_lv1 (prerequisite: ch2_lv10).
     const upto = ['ch1_lv1'];
     for (let c = 1; c <= 2; c++) for (let l = 1; l <= 10; l++) upto.push(`ch${c}_lv${l}`);
     await seedCleared(upto);
-    const r = body(await clear('ch3_lv1', 3)); // ch3 → shieldbearer T2 ×1
+    const r = body(await clear('ch3_lv1', 3)); // ch3 → shieldbearer T2 x1
     expect(r.data.grantedCards).toEqual({ 'shieldbearer:2': 1 });
     expect(r.data.save.cardInventory['shieldbearer:2']).toBe(1);
-    expect(r.data.save.unitLevels.shieldbearer).toBe(2); // 单张 T2 即抬到 2
+    expect(r.data.save.unitLevels.shieldbearer).toBe(2); // a single T2 raises level to 2
   });
 
-  it('每日上限：capped 时材料与单位卡都不发（S12-C）', async () => {
+  it('daily cap: when capped both materials and unit cards are not granted (S12-C)', async () => {
     for (let i = 0; i < PVE_DAILY_CLEAR_REWARD_CAP; i++) await clear('ch1_lv1', 2);
     const over = body(await clear('ch1_lv1', 2));
     expect(over.data.capped).toBe(true);
     expect(over.data.granted).toEqual({});
     expect(over.data.grantedCards).toEqual({});
-    expect(over.data.save.cardInventory['infantry:1']).toBe(PVE_DAILY_CLEAR_REWARD_CAP); // 未再加
+    expect(over.data.save.cardInventory['infantry:1']).toBe(PVE_DAILY_CLEAR_REWARD_CAP); // not incremented further
   });
 
-  it('锁住的关（前置未通关）→ 400', async () => {
-    const res = await clear('ch1_lv2', 3); // 需先过 ch1_lv1
+  it('locked level (prerequisite not cleared) → 400', async () => {
+    const res = await clear('ch1_lv2', 3); // ch1_lv1 must be cleared first
     expect(res.statusCode).toBe(400);
   });
 
-  it('可重复刷：每次通关都发材料（星取 max 不回退）', async () => {
+  it('repeatable farming: materials granted on every clear (stars take max, never regress)', async () => {
     await clear('ch1_lv1', 3);
-    const r2 = body(await clear('ch1_lv1', 1)); // 重刷低星
-    expect(r2.data.granted).toEqual({ scrap: 6, lead: 2 }); // 仍发材料
+    const r2 = body(await clear('ch1_lv1', 1)); // replay with fewer stars
+    expect(r2.data.granted).toEqual({ scrap: 6, lead: 2 }); // materials still granted
     expect(r2.data.save.materials.scrap).toBe(12);
-    expect(r2.data.save.progress.stars['ch1_lv1']).toBe(3); // 星不回退
+    expect(r2.data.save.progress.stars['ch1_lv1']).toBe(3); // stars do not regress
   });
 
-  it('每日上限：超出 cap 的通关 capped 不发材料（仍记 progress）', async () => {
+  it('daily cap: clears beyond cap are capped and grant no materials (progress still recorded)', async () => {
     for (let i = 0; i < PVE_DAILY_CLEAR_REWARD_CAP; i++) {
       const r = body(await clear('ch1_lv1', 2));
       expect(r.data.capped).toBe(false);
@@ -113,15 +113,15 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     const over = body(await clear('ch1_lv1', 2));
     expect(over.data.capped).toBe(true);
     expect(over.data.granted).toEqual({});
-    expect(over.data.save.materials.scrap).toBe(6 * PVE_DAILY_CLEAR_REWARD_CAP); // 未再加
+    expect(over.data.save.materials.scrap).toBe(6 * PVE_DAILY_CLEAR_REWARD_CAP); // not incremented further
   });
 
-  it('成就 stat（S9-3）：通关章节终关累加 campaign.chaptersCleared（首通才涨、重打不涨）', async () => {
-    // 非终关通关：不涨章节 stat（缺省懒创建，stats 不实例化）。
+  it('achievement stat (S9-3): clearing a chapter final level increments campaign.chaptersCleared (only on first clear, replays do not increment)', async () => {
+    // Clear non-final level: chapter stat does not increment (lazy creation by default, stats not instantiated).
     const r1 = body(await clear('ch1_lv1', 3));
     expect(r1.data.save.stats?.['campaign.chaptersCleared'] ?? 0).toBe(0);
 
-    // 种入 ch1 前 9 关解锁终关 → 通关 ch1_lv10 → 章节 +1。
+    // Seed first 9 levels of ch1 to unlock the final level → clear ch1_lv10 → chapter count +1.
     await seedCleared([
       'ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch1_lv4', 'ch1_lv5',
       'ch1_lv6', 'ch1_lv7', 'ch1_lv8', 'ch1_lv9',
@@ -129,11 +129,11 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     const r2 = body(await clear('ch1_lv10', 3));
     expect(r2.data.save.stats['campaign.chaptersCleared']).toBe(1);
 
-    // 重打已通关终关：stat 不回退也不重复涨（$max + 首通语义）。
+    // Replay already-cleared final level: stat neither regresses nor increments again ($max + first-clear semantics).
     const r3 = body(await clear('ch1_lv10', 1));
     expect(r3.data.save.stats['campaign.chaptersCleared']).toBe(1);
 
-    // 通关第二章终关 → +1 = 2。
+    // Clear second chapter final level → +1 = 2.
     await seedCleared([
       ...r3.data.save.progress.cleared,
       'ch2_lv1', 'ch2_lv2', 'ch2_lv3', 'ch2_lv4', 'ch2_lv5',
@@ -143,21 +143,21 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(r4.data.save.stats['campaign.chaptersCleared']).toBe(2);
   });
 
-  it('升级：材料足够扣费 + pveUpgrades+1；不足 → 402；满级 → 400', async () => {
-    // 攒材料：刷 ch1_lv1 几次拿 scrap（inf_hp 0→1 费 scrap×3）。
+  it('upgrade: sufficient materials deducted + pveUpgrades+1; insufficient → 402; max level → 400', async () => {
+    // Accumulate materials: farm ch1_lv1 a few times for scrap (inf_hp 0→1 costs scrap×3).
     await clear('ch1_lv1', 3); // scrap 6
     const u1 = body(await upgrade('inf_hp'));
     expect(u1.data.save.pveUpgrades['inf_hp']).toBe(1);
     expect(u1.data.save.materials.scrap).toBe(3); // 6 - 3
-    // 0→1 已花 3，1→2 费 scrap×6 > 剩 3 → 402。
+    // 0→1 already cost 3, 1→2 costs scrap×6 > remaining 3 → 402.
     const u2 = await upgrade('inf_hp');
     expect(u2.statusCode).toBe(402);
-    // 未知升级 → 400。
+    // Unknown upgrade → 400.
     expect((await upgrade('nope')).statusCode).toBe(400);
   });
 });
 
-// S12 单位养成合成 /pve/merge：服务器权威校验库存 → 5 张 N → 1 张 N+1 → 重算 unitLevels → 回推。
+// S12 unit card merge /pve/merge: server-authoritative inventory check → 5 cards of level N → 1 card of level N+1 → recalculate unitLevels → push back.
 describe.skipIf(!mongo)('pve unit-card merge (S12) e2e', () => {
   const m = mongo!;
   let app: FastifyInstance;
@@ -178,19 +178,19 @@ describe.skipIf(!mongo)('pve unit-card merge (S12) e2e', () => {
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'pve-merge-1' } }));
     token = r.data.token;
     accountId = r.data.accountId;
-    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // 建档
+    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // initialize save
   });
   afterAll(async () => { if (app) await app.close(); });
 
-  it('5 张 L1 → 1 张 L2：扣库存 + unitLevels 派生到 2（服务器权威）', async () => {
+  it('5 L1 cards → 1 L2 card: deduct inventory + unitLevels derived to 2 (server-authoritative)', async () => {
     await seedCards({ 'infantry:1': 7 });
     const r = body(await merge('infantry', 1));
-    expect(r.data.save.cardInventory['infantry:1']).toBe(2); // 7 - 5
+    expect(r.data.save.cardInventory['infantry:1']).toBe(2); // 7 - 5 consumed
     expect(r.data.save.cardInventory['infantry:2']).toBe(1);
     expect(r.data.save.unitLevels['infantry']).toBe(2);
   });
 
-  it('卡片不足（4 < 5）→ 402，库存不变', async () => {
+  it('insufficient cards (4 < 5) → 402, inventory unchanged', async () => {
     await seedCards({ 'archer:1': 4 });
     const res = await merge('archer', 1);
     expect(res.statusCode).toBe(402);
@@ -198,36 +198,36 @@ describe.skipIf(!mongo)('pve unit-card merge (S12) e2e', () => {
     expect(s.data.save.cardInventory['archer:1']).toBe(4);
   });
 
-  it('链式合成到 L3：unitLevels 跟随最高拥有卡级', async () => {
+  it('chain merge to L3: unitLevels follows highest owned card level', async () => {
     await seedCards({ 'shieldbearer:1': 25 });
     await merge('shieldbearer', 1); // 25→20 L1, +1 L2
     await merge('shieldbearer', 1);
     await merge('shieldbearer', 1);
     await merge('shieldbearer', 1);
-    const r5 = body(await merge('shieldbearer', 1)); // 5 次 → 5 张 L2, 0 L1
+    const r5 = body(await merge('shieldbearer', 1)); // 5 merges → 5 L2 cards, 0 L1
     expect(r5.data.save.cardInventory['shieldbearer:2']).toBe(5);
     expect(r5.data.save.unitLevels['shieldbearer']).toBe(2);
-    const r6 = body(await merge('shieldbearer', 2)); // 5 张 L2 → 1 张 L3
+    const r6 = body(await merge('shieldbearer', 2)); // 5 L2 cards → 1 L3 card
     expect(r6.data.save.cardInventory['shieldbearer:3']).toBe(1);
     expect(r6.data.save.unitLevels['shieldbearer']).toBe(3);
   });
 
-  it('非法兵种 / 越界等级 → 400', async () => {
-    expect((await merge('dragon', 1)).statusCode).toBe(400);   // 未知兵种
-    expect((await merge('infantry', 9)).statusCode).toBe(400); // L9 不可再合成
+  it('invalid unit type / out-of-range level → 400', async () => {
+    expect((await merge('dragon', 1)).statusCode).toBe(400);   // unknown unit type
+    expect((await merge('infantry', 9)).statusCode).toBe(400); // L9 cannot be merged further
     expect((await merge('infantry', 0)).statusCode).toBe(400);
   });
 });
 
-// S9-3b PvE 喂入：裁判复算回传 kill/cast（verdict.statsJson）→ /pve/verify verified 时累加进 stats。
-// 需注入「可用 + 可配裁决」的假裁判触发抽检 + 复算（首通恒触发抽检 → needsReplay → verify）。
+// S9-3b PvE achievement feed: judge re-computation returns kill/cast (verdict.statsJson) → /pve/verify accumulates into stats when verified.
+// Requires injecting a fake judge that is "available + configurable verdict" to trigger sampling + re-computation (first clear always triggers sampling → needsReplay → verify).
 describe.skipIf(!mongo)('pve achievement feed (S9-3b) e2e', () => {
   const m = mongo!;
   let app: FastifyInstance;
   let token: string;
   const body = (r: { payload: string }) => JSON.parse(r.payload);
   const auth = () => ({ authorization: `Bearer ${token}` });
-  /** 可变裁决：每个用例改 `verdict` 配置假裁判回传值（含 statsJson）。 */
+  /** Mutable verdict: each test case sets `verdict` to configure the fake judge's return value (including statsJson). */
   let verdict: JudgeRes = { ok: true, stars: 3, statsJson: '{}' };
   const fakeGateway: GatewayClient = {
     available: true,
@@ -252,43 +252,43 @@ describe.skipIf(!mongo)('pve achievement feed (S9-3b) e2e', () => {
   });
   afterAll(async () => { if (app) await app.close(); });
 
-  it('裁判 verified：kill/cast 累加进终身 stats + 材料照发', async () => {
+  it('judge verified: kill/cast accumulated into lifetime stats + materials granted normally', async () => {
     verdict = { ok: true, stars: 3, statsJson: '{"kill.archer":4,"cast.meteor":2}' };
-    // 首通 → 恒抽检 → 暂不发材料，回 needsReplay + verifyId。
+    // First clear → always sampled → materials not yet granted, returns needsReplay + verifyId.
     const c = body(await clear('ch1_lv1', 3));
     expect(c.data.needsReplay).toBe(true);
     expect(c.data.granted).toEqual({});
-    expect(c.data.save.stats?.['kill.archer'] ?? 0).toBe(0); // 复算前不入账
+    expect(c.data.save.stats?.['kill.archer'] ?? 0).toBe(0); // not credited before re-computation
 
     const v = body(await verify(c.data.verifyId));
     expect(v.data.verified).toBe(true);
-    expect(v.data.granted).toEqual({ scrap: 6, lead: 2 }); // 复算通过 → 发材料
+    expect(v.data.granted).toEqual({ scrap: 6, lead: 2 }); // re-computation passed → grant materials
     expect(v.data.save.stats['kill.archer']).toBe(4);
     expect(v.data.save.stats['cast.meteor']).toBe(2);
-    expect(v.data.save.stats['kill.guard'] ?? 0).toBe(0); // 缺省项不写
+    expect(v.data.save.stats['kill.guard'] ?? 0).toBe(0); // absent entries not written
   });
 
-  it('L1 越界（串通裁判刷量）：整份拒收不入账，但材料仍发 + verified', async () => {
+  it('L1 out-of-bounds (colluding judge to inflate stats): entire batch rejected, but materials still granted + verified', async () => {
     verdict = { ok: true, stars: 3, statsJson: '{"kill.archer":9999,"cast.meteor":1}' }; // 9999 > cap 200
     const c = body(await clear('ch1_lv1', 3));
     const v = body(await verify(c.data.verifyId));
     expect(v.data.verified).toBe(true);
-    expect(v.data.granted).toEqual({ scrap: 6, lead: 2 }); // 喂入失败不阻塞发材料
-    expect(v.data.save.stats?.['kill.archer'] ?? 0).toBe(0); // 越界 → 整份丢弃
+    expect(v.data.granted).toEqual({ scrap: 6, lead: 2 }); // feed failure does not block material grant
+    expect(v.data.save.stats?.['kill.archer'] ?? 0).toBe(0); // out-of-bounds → entire batch discarded
     expect(v.data.save.stats?.['cast.meteor'] ?? 0).toBe(0);
   });
 
-  it('benefit-of-doubt（裁判不可裁 ok:false）：发材料但不喂 stats（非权威复算）', async () => {
-    verdict = { ok: false }; // 无候选 / 复算失败 → unverified，照发材料（不罚诚实玩家）但不喂入
+  it('benefit-of-doubt (judge cannot adjudicate ok:false): grant materials but do not feed stats (non-authoritative re-computation)', async () => {
+    verdict = { ok: false }; // no candidate / re-computation failed → unverified, materials still granted (do not penalize honest players) but not fed
     const c = body(await clear('ch1_lv1', 3));
     const v = body(await verify(c.data.verifyId));
-    expect(v.data.verified).toBe(true); // 既有契约：verified=未被判可疑（含 benefit-of-doubt），仍发材料
+    expect(v.data.verified).toBe(true); // existing contract: verified = not flagged as suspicious (including benefit-of-doubt), materials still granted
     expect(v.data.granted).toEqual({ scrap: 6, lead: 2 });
-    expect(v.data.save.stats?.['kill.archer'] ?? 0).toBe(0); // 关键：非权威复算 → 绝不入账（status!=='verified'）
+    expect(v.data.save.stats?.['kill.archer'] ?? 0).toBe(0); // critical: non-authoritative re-computation → never credited (status!=='verified')
   });
 
-  it('rejected（复算星 < 声称）：判可疑，不发材料也不喂 stats', async () => {
-    verdict = { ok: true, stars: 1, statsJson: '{"kill.archer":4}' }; // 复算 1 星 < 声称 3 星
+  it('rejected (re-computed stars < claimed): flagged as suspicious, no materials and no stats feed', async () => {
+    verdict = { ok: true, stars: 1, statsJson: '{"kill.archer":4}' }; // re-computed 1 star < claimed 3 stars
     const c = body(await clear('ch1_lv1', 3));
     const v = body(await verify(c.data.verifyId));
     expect(v.data.verified).toBe(false);

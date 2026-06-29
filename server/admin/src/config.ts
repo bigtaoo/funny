@@ -1,37 +1,37 @@
-// admin 环境变量（OPS_DESIGN §8 基线）。两层鉴权：admin JWT（运维用户）用独立 secret，
-// 与玩家 NW_JWT_SECRET 隔离；NW_INTERNAL_KEY（shared）用于调业务服务的内部端点。
-// 独立库 notebook_wars_admin（缺省复用 meta 同实例）。玩家不可达，反代不路由到它。
+﻿// Admin environment variables (OPS_DESIGN §8 baseline). Two-layer auth: admin JWT (ops users) uses a dedicated secret,
+// isolated from the player NW_JWT_SECRET; NW_INTERNAL_KEY (shared) is used to call internal endpoints on business services.
+// Separate database notebook_wars_admin (defaults to the same instance as meta). Unreachable by players; the reverse proxy does not route to it.
 import { loadServerEnv, type ServerEnv } from '@nw/shared';
 
 export interface AdminEnv extends ServerEnv {
-  /** 给运维前端的 API 端口（带 admin 会话鉴权；不暴露公网/仅内网/VPN）。默认 18083。 */
+  /** API port for the ops frontend (protected by admin session auth; not exposed to the public internet — internal/VPN only). Default 18083. */
   port: number;
   host: string;
-  /** admin 专用 JWT secret（与玩家 jwtSecret 隔离）。 */
+  /** Admin-dedicated JWT secret (isolated from the player jwtSecret). */
   adminJwtSecret: string;
-  /** admin 会话有效期（zeit 字符串）。默认 8h。 */
+  /** Admin session TTL (zeit duration string). Default 8h. */
   adminJwtTtl: string;
-  /** admin 专属库 Mongo URI（缺省复用 meta 同实例）。 */
+  /** Admin-dedicated Mongo URI (defaults to the same instance as meta). */
   adminMongoUri: string;
-  /** admin 专属库名（与业务库物理隔离）。 */
+  /** Admin-dedicated database name (physically isolated from the business database). */
   adminMongoDb: string;
-  /** 部署期种子超管账号（首启注入；为空跳过）。 */
+  /** Seed super-admin account injected at deployment time on first start; skipped if empty. */
   seedUser: string | null;
   seedPass: string | null;
-  // —— 业务服务内部基址（X-Internal-Key 调用）——
-  /** meta REST 基址（player.lookup / 系统邮件端点）。null = 相关能力降级。 */
+  // —— internal base URLs for business services (called with X-Internal-Key) ——
+  /** meta REST base URL (player.lookup / system mail endpoints). null = related capabilities degraded. */
   metaBaseUrl: string | null;
-  /** gateway 内部 HTTP 基址（GET /internal/stats 在线数）。 */
+  /** gateway internal HTTP base URL (GET /internal/stats for online count). */
   gatewayInternalUrl: string | null;
-  /** matchsvc 内部 HTTP 基址（GET /internal/stats 匹配池）。 */
+  /** matchsvc internal HTTP base URL (GET /internal/stats for matchmaking pool). */
   matchsvcInternalUrl: string | null;
-  /** analyticsvc 内部 HTTP 基址（GET /internal/query 埋点查询）。 */
+  /** analyticsvc internal HTTP base URL (GET /internal/query for analytics queries). */
   analyticsBaseUrl: string | null;
-  /** worldsvc 内部 HTTP 基址（SLG 赛季运维 /admin/world/*，G7/§17.7）。null = SLG 运维降级。 */
+  /** worldsvc internal HTTP base URL (SLG season ops /admin/world/*, G7/§17.7). null = SLG ops degraded. */
   worldInternalUrl: string | null;
-  /** 自采采样间隔 ms（写 metricSnapshots）。默认 30000；<=0 关闭采样。 */
+  /** Self-scrape sampling interval in ms (writes metricSnapshots). Default 30000; <=0 disables sampling. */
   sampleIntervalMs: number;
-  /** metricSnapshots TTL（秒，保留窗口）。默认 14 天。 */
+  /** metricSnapshots TTL in seconds (retention window). Default 14 days. */
   snapshotTtlSec: number;
 }
 

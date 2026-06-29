@@ -1,5 +1,5 @@
-// @nw/shared/internalAuth 单测（S12-1）：内部服务间 HTTP 鉴权。
-// 放在 metaserver workspace 跑（shared 无独立 vitest；test 跑前 tsc -b 已构建 shared dist）。
+﻿// @nw/shared/internalAuth unit tests (S12-1): HTTP authentication between internal services.
+// Runs in the metaserver workspace (shared has no standalone vitest; tsc -b is run before tests to build the shared dist).
 import { describe, it, expect } from 'vitest';
 import {
   parseInternalKeys,
@@ -50,7 +50,7 @@ describe('outboundInternalKey', () => {
 
 describe('internalHeaders', () => {
   it('带上 caller 身份头 + 密钥头', () => {
-    // 注：第二参为 legacy 回退；无 NW_INTERNAL_KEYS env 时直接用它。
+    // Note: the second argument is the legacy fallback key, used directly when NW_INTERNAL_KEYS env is absent.
     const h = internalHeaders('admin', 'legacy');
     expect(h[INTERNAL_CALLER_HEADER]).toBe('admin');
     expect(h[INTERNAL_KEY_HEADER]).toBe('legacy');
@@ -94,7 +94,7 @@ describe('createInternalAuth — per-caller 严格模式（注册表非空）', 
 
   it('密钥命中 → ok 且识别出所属 caller（与 x-internal-caller 头无关）', () => {
     const r = auth.verify({ [INTERNAL_KEY_HEADER]: 'gk', [INTERNAL_CALLER_HEADER]: 'meta' });
-    // 身份由密钥本身证明：gk 属 gateway，伪造的 caller=meta 头不影响判定。
+    // Identity is proven by the key itself: gk belongs to gateway, so the spoofed caller=meta header has no effect on the outcome.
     expect(r).toEqual({ ok: true, caller: 'gateway' });
   });
 

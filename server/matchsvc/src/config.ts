@@ -1,22 +1,23 @@
-// matchsvc 环境变量（S1-M5，独立进程）。只用 @nw/shared 的 internalKey（签 ticket + 内部鉴权）；
-// 不连任何库、不验客户端 token（玩家不可达，只接 gateway / gameserver 的内部 HTTP）。
+// matchsvc environment variables (S1-M5, standalone process). Only uses @nw/shared internalKey
+// (for signing tickets + internal auth); connects to no database and does not validate client tokens
+// (not reachable by players — only accepts internal HTTP from gateway / gameserver).
 import { loadServerEnv, type ServerEnv } from '@nw/shared';
 
 export interface MatchsvcEnv extends ServerEnv {
-  /** 内部 HTTP 端口（gateway 控制命令 + gameserver 注册/心跳 → 此端口；不暴露公网）。 */
+  /** Internal HTTP port (gateway control commands + gameserver registration/heartbeat → this port; not exposed publicly). */
   internalPort: number;
   host: string;
-  /** gateway 内部 HTTP 基址（matchsvc 把房间态/match_found 推回 gateway → 玩家）。null = 无法 push。 */
+  /** gateway internal HTTP base URL (matchsvc pushes room state / match_found back to gateway → players). null = push unavailable. */
   gatewayInternalUrl: string | null;
-  /** 静态 game 兜底地址（单实例部署，game 未注册时直接分配它）。 */
+  /** Static game fallback address (single-instance deployment: used directly when no game instance has registered). */
   gamePublicWsUrl: string | null;
-  /** ticket 有效期秒数（match_found 到连 game 的容忍窗口）。默认 30。 */
+  /** Ticket validity in seconds (tolerance window from match_found to connecting to gameserver). Default 30. */
   ticketTtlSec: number;
-  /** admin 内部基址（轮询 GET /admin/internal/flags 拿 feature flag 原始规则）。null = 不读 flag（全 default）。 */
+  /** admin internal base URL (polls GET /admin/internal/flags to fetch raw feature flag rules). null = flags not read (all default). */
   adminInternalUrl: string | null;
-  /** 部署区域（注入 feature flag 求值 ctx）。空 = 不按区定向。 */
+  /** Deployment region (injected into feature flag evaluation context). Empty = no region-based targeting. */
   region: string | null;
-  /** ranked 匹配等待超此毫秒数 → 评估 match_bot_fallback 决定是否降级打 AI。默认 30000。 */
+  /** If ranked matchmaking wait exceeds this many milliseconds, evaluate match_bot_fallback to decide whether to fall back to an AI opponent. Default 30000. */
   botFallbackMs: number;
 }
 

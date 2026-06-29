@@ -1,16 +1,16 @@
-// 真实 IAP 验单（S4-1 / C1）。
-// 支持平台：apple（App Store StoreKit 1 receipt）、google（Google Play）、
-//           wechat（微信支付 V3）、stripe（Web）。
-// dev 桩保留：NW_IAP_DEV=true 或缺少真实凭据时，tier: 前缀 receipt 命中桩逻辑。
+// Real IAP receipt verification (S4-1 / C1).
+// Supported platforms: apple (App Store StoreKit 1 receipt), google (Google Play),
+//                      wechat (WeChat Pay V3), stripe (Web).
+// Dev stub retained: when NW_IAP_DEV=true or real credentials are absent, receipts with a tier: prefix hit the stub logic.
 //
-// receipt 格式约定：
+// Receipt format convention:
 //   apple   → base64 encoded App Store receipt data
 //   google  → "${productId}:${purchaseToken}"
 //   wechat  → transaction_id
 //   stripe  → payment_intent_id
 //
-// receiptId 幂等键由调用方拼装 `${platform}:${receipt}`，
-// commercial.rechargeVerify 守卫幂等，此文件不重复校验。
+// The receiptId idempotency key is assembled by the caller as `${platform}:${receipt}`;
+// commercial.rechargeVerify guards idempotency — this file does not repeat that check.
 
 import { createHmac, createSign, randomBytes } from 'node:crypto';
 import type { IAP_TIERS } from '@nw/shared';
@@ -22,12 +22,12 @@ export interface IapVerifyResult {
   coins: number;
 }
 
-// ── 产品 ID → 档位映射 ──────────────────────────────────────────────────────
+// ── Product ID → tier mapping ──────────────────────────────────────────────────────
 
 /**
- * 将 App Store / Google Play product_id 映射到金币档位名称。
- * 优先读 NW_IAP_PRODUCT_MAP（格式：`productId:tier,...`），
- * 否则用内置默认表（bundle 前缀可通过 NW_IAP_BUNDLE 覆盖，默认 com.nw）。
+ * Maps an App Store / Google Play product_id to a coin-tier name.
+ * Reads NW_IAP_PRODUCT_MAP first (format: `productId:tier,...`);
+ * falls back to the built-in default table (bundle prefix can be overridden via NW_IAP_BUNDLE, default com.nw).
  */
 function resolveCoinsFromProductId(productId: string, tierMap: IapTierMap): number {
   const raw = process.env.NW_IAP_PRODUCT_MAP;
@@ -51,7 +51,7 @@ function resolveCoinsFromProductId(productId: string, tierMap: IapTierMap): numb
   return tier && tierMap[tier] ? tierMap[tier]! : 0;
 }
 
-// ── Apple App Store（StoreKit 1 receipt 验签）─────────────────────────────────
+// ── Apple App Store (StoreKit 1 receipt verification) ─────────────────────────────────
 
 const APPLE_PROD_URL = 'https://buy.itunes.apple.com/verifyReceipt';
 const APPLE_SANDBOX_URL = 'https://sandbox.itunes.apple.com/verifyReceipt';
@@ -79,9 +79,9 @@ async function applePost(url: string, body: object): Promise<AppleVerifyResponse
 }
 
 /**
- * Apple StoreKit 1 receipt 验签。
- * prod 返回 21007（sandbox receipt）时自动重试 sandbox 端点。
- * 从 in_app[] 取最新一条（按 purchase_date_ms 降序）的 product_id 映射金币。
+ * Apple StoreKit 1 receipt verification.
+ * When prod returns 21007 (sandbox receipt), automatically retries the sandbox endpoint.
+ * Takes the latest entry from in_app[] (sorted by purchase_date_ms descending) and maps its product_id to coins.
  */
 async function appleVerify(
   receiptData: string,
@@ -106,11 +106,11 @@ async function appleVerify(
 
   if (data.status !== 0) return { ok: false, coins: 0 };
 
-  // latest_receipt_info 是扁平数组（包含所有续订/消耗品）；回退到 receipt.in_app。
+  // latest_receipt_info is a flat array (containing all renewals/consumables); fall back to receipt.in_app.
   const inApps: AppleInApp[] = data.latest_receipt_info ?? data.receipt?.in_app ?? [];
   if (inApps.length === 0) return { ok: false, coins: 0 };
 
-  // 取最新一条交易。
+  // Take the most recent transaction.
   const latest = inApps.reduce((a, b) =>
     Number(a.purchase_date_ms) >= Number(b.purchase_date_ms) ? a : b,
   );
@@ -126,7 +126,7 @@ interface GoogleServiceAccount {
   client_email: string;
 }
 
-/** 用服务账户私钥构造 RS256 JWT，换取 OAuth2 access token。 */
+/** Build an RS256 JWT from a service-account private key and exchange it for an OAuth2 access token. */
 async function getGoogleAccessToken(sa: GoogleServiceAccount): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
@@ -166,9 +166,9 @@ interface GooglePurchase {
 }
 
 /**
- * Google Play Purchases.products.get 验签。
- * receipt 格式：`${productId}:${purchaseToken}`（冒号分隔）
- * purchaseState === 0 表示已成功购买。
+ * Google Play Purchases.products.get verification.
+ * receipt format: `${productId}:${purchaseToken}` (colon-separated)
+ * purchaseState === 0 means successfully purchased.
  */
 async function googleVerify(
   receipt: string,
@@ -214,18 +214,19 @@ async function googleVerify(
   return { ok: true, coins };
 }
 
-// ── 微信支付 V3 ─────────────────────────────────────────────────────────────
+// ── WeChat Pay V3 ─────────────────────────────────────────────────────────────
 
 /**
- * 微信支付 V3 API-Key HMAC-SHA256 认证（简化方案）。
- * 完整方案需商户 RSA 私钥签名（WECHATPAY2-SHA256-RSA2048）；此处用 V3 APIKey + HMAC 方案
- * 调用 `v3/pay/transactions/id/{transactionId}` 查单，适合中小项目且无需证书管理。
+ * WeChat Pay V3 API-Key HMAC-SHA256 authentication (simplified approach).
+ * The full approach requires a merchant RSA private-key signature (WECHATPAY2-SHA256-RSA2048);
+ * here we use the V3 APIKey + HMAC scheme to query `v3/pay/transactions/id/{transactionId}`,
+ * suitable for small-to-medium projects that do not need certificate management.
  *
- * 环境变量：
- *   NW_WX_PAY_MCH_ID        商户号
- *   NW_WX_PAY_API_KEY_V3    V3 APIKey（32 字节，商户平台生成）
+ * Environment variables:
+ *   NW_WX_PAY_MCH_ID        Merchant ID
+ *   NW_WX_PAY_API_KEY_V3    V3 APIKey (32 bytes, generated on the merchant platform)
  *
- * receipt = transaction_id（微信支付系统的唯一支付 ID，由 wx.requestPayment 回调提供）
+ * receipt = transaction_id (the unique payment ID in the WeChat Pay system, provided by the wx.requestPayment callback)
  */
 async function wxPayVerify(
   transactionId: string,
@@ -268,7 +269,7 @@ async function wxPayVerify(
 
   if (data.trade_state !== 'SUCCESS') return { ok: false, coins: 0 };
 
-  // amount.total 单位分（fen）；匹配到档位给对应金币。
+  // amount.total is in fen (smallest unit); match to a tier to award the corresponding coins.
   const amountFen = data.amount?.total ?? 0;
   const coins = resolveCoinsFromAmount(amountFen, tierMap);
   if (coins === 0) return { ok: false, coins: 0 };
@@ -278,11 +279,11 @@ async function wxPayVerify(
 // ── Stripe ──────────────────────────────────────────────────────────────────
 
 /**
- * Stripe payment intent 验单。
- * 环境变量：NW_STRIPE_SECRET_KEY（sk_live_… 或 sk_test_…）
+ * Stripe payment intent verification.
+ * Environment variable: NW_STRIPE_SECRET_KEY (sk_live_… or sk_test_…)
  *
- * receipt = payment_intent_id（形如 pi_xxx）
- * amount 单位 cents（USD）；匹配到档位给金币。
+ * receipt = payment_intent_id (e.g. pi_xxx)
+ * amount unit is cents (USD); match to a tier to award coins.
  */
 async function stripeVerify(
   paymentIntentId: string,
@@ -318,7 +319,7 @@ async function stripeVerify(
   return { ok: true, coins };
 }
 
-// ── dev 桩 ───────────────────────────────────────────────────────────────────
+// ── dev stub ───────────────────────────────────────────────────────────────────
 
 function devVerify(receipt: string, tierMap: IapTierMap): IapVerifyResult {
   if (!receipt) return { ok: false, coins: 0 };
@@ -327,11 +328,11 @@ function devVerify(receipt: string, tierMap: IapTierMap): IapVerifyResult {
   return coins ? { ok: true, coins } : { ok: true, coins: tierMap['small']! };
 }
 
-// ── 档位解析（金额）──────────────────────────────────────────────────────────
+// ── Tier resolution (by amount) ──────────────────────────────────────────────────────────
 
 /**
- * 按支付金额（最小货币单位）反查档位金币（微信/Stripe 共用）。
- * 内置默认（微信 fen / Stripe cents）：
+ * Reverse-lookup the coin tier from a payment amount (smallest currency unit), shared by WeChat/Stripe.
+ * Built-in defaults (WeChat fen / Stripe cents):
  *   600 fen / 99 cents → small (600 coins)
  *   3000 fen / 499 cents → mid (3300 coins)
  *   10000 fen / 1499 cents → large (11800 coins)
@@ -356,20 +357,21 @@ function resolveCoinsFromAmount(amount: number, tierMap: IapTierMap): number {
   return 0;
 }
 
-// ── 工厂 ─────────────────────────────────────────────────────────────────────
+// ── Factory ─────────────────────────────────────────────────────────────────────
 
 export type VerifyReceipt = (platform: string, receipt: string) => Promise<IapVerifyResult>;
 
 /**
- * 构建验单函数。支持四个平台：
- * - apple：NW_APPLE_PASSWORD（App Store shared secret）
- * - google：NW_GOOGLE_SERVICE_ACCOUNT_JSON（服务账户 JSON 字符串）+ NW_GOOGLE_PACKAGE_NAME
- * - wechat：NW_WX_PAY_MCH_ID + NW_WX_PAY_API_KEY_V3
- * - stripe：NW_STRIPE_SECRET_KEY
- * - dev 桩：NW_IAP_DEV=true 或所有真实凭据均缺失时，tier:xxx receipt 命中桩逻辑。
- *   **加固（L2-3）**：生产环境（NODE_ENV=production）下 dev 桩一律强制关闭——既不因
- *   NW_IAP_DEV=true 误开，也不因「缺凭据」自动回退。生产缺凭据 → 验签返失败（fail closed），
- *   绝不发币。误设 NW_IAP_DEV=true 的进程由 commercial 引导期拒启（index.ts），此处为第二道防线。
+ * Build the receipt-verification function. Supports four platforms:
+ * - apple: NW_APPLE_PASSWORD (App Store shared secret)
+ * - google: NW_GOOGLE_SERVICE_ACCOUNT_JSON (service-account JSON string) + NW_GOOGLE_PACKAGE_NAME
+ * - wechat: NW_WX_PAY_MCH_ID + NW_WX_PAY_API_KEY_V3
+ * - stripe: NW_STRIPE_SECRET_KEY
+ * - dev stub: when NW_IAP_DEV=true or all real credentials are absent, tier:xxx receipts hit stub logic.
+ *   **Hardening (L2-3)**: In production (NODE_ENV=production) the dev stub is forcibly disabled — it will
+ *   neither be accidentally enabled by NW_IAP_DEV=true nor fall back due to missing credentials.
+ *   Missing credentials in production → verification returns failure (fail closed), never awards coins.
+ *   A process with NW_IAP_DEV=true incorrectly set is rejected at commercial startup (index.ts); this is the second line of defence.
  */
 export function createReceiptVerifier(tierMap: IapTierMap): VerifyReceipt {
   const applePassword = process.env.NW_APPLE_PASSWORD ?? '';

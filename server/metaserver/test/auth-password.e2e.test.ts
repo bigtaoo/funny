@@ -1,6 +1,6 @@
-// 密码账号端到端（SA-1 验收）：register → login → 改密 → loginId 占用 / 凭证错误。
-// 需真实 Mongo 单节点副本集：`cd server && docker compose up -d`。Mongo 不可达整套 skip。
-// 导入构建产物 dist；跑前需 `tsc -b`。
+// Password account end-to-end tests (SA-1 acceptance): register → login → change password → loginId taken / invalid credentials.
+// Requires a real single-node Mongo replica set: `cd server && docker compose up -d`. Entire suite is skipped if Mongo is unreachable.
+// Imports from build output dist; requires `tsc -b` before running.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -20,7 +20,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[auth-password.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[auth-password.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 describe.skipIf(!mongo)('metaserver auth password e2e', () => {

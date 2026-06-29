@@ -1,5 +1,5 @@
-// 天梯赛季服务（S11，SEASON_DESIGN.md §3-4）。
-// 赛季时钟懒创建、惰性迁移（migrateIfStale）、赛季结算（settleSeasonForPlayer）。
+// Ladder season service (S11, SEASON_DESIGN.md §3-4).
+// Lazy season clock creation, lazy migration (migrateIfStale), and season settlement (settleSeasonForPlayer).
 import type { Collections, SaveData, SaveDoc } from '@nw/shared';
 import {
   SEASON_DURATION_MS,
@@ -21,14 +21,14 @@ import { grantTitleToPlayer } from './titles.js';
 
 const log = createLogger('meta:ladderSeason');
 
-/** 邮件保留天数（赛季结算奖励邮件）。 */
+/** Retention days for season settlement reward mail. */
 const SETTLE_MAIL_EXPIRE_DAYS = 30;
 
-// ── 赛季时钟 ─────────────────────────────────────────────────────────────────
+// ── Season clock ─────────────────────────────────────────────────────────────
 
 /**
- * 读取当前赛季文档，不存在则懒创建赛季 #1。
- * 所有赛季入口都经此函数，保证全局单文档存在。
+ * Read the current season document, lazily creating season #1 if it does not exist.
+ * All season entry points go through this function to ensure the global singleton document exists.
  */
 export async function getCurrentSeason(
   cols: Collections,
@@ -36,7 +36,7 @@ export async function getCurrentSeason(
 ): Promise<LadderSeasonDoc> {
   const doc = await cols.ladderSeasons.findOne({ _id: 'current' });
   if (doc) return doc;
-  // 首次启动：懒创建赛季 #1
+  // First boot: lazily create season #1
   const fresh: LadderSeasonDoc = {
     _id: 'current',
     seasonNo: 1,
@@ -53,33 +53,35 @@ export async function getCurrentSeason(
 }
 
 /**
- * 收束当前赛季并开启下一赛季（admin 手动触发，`POST /admin/ladder/season/roll`）。
- * 闭环（L2-1）：CAS 进入 settling 后，先主动结算上一季全部参与者（发段位奖励邮件 + 授予赛季称号 +
- * 写结算快照），再把赛季时钟推进到下一季。这样不再有玩家「不回归就拿不到赛季奖」的断裂链路。
+ * Close the current season and open the next one (triggered manually by admin, `POST /admin/ladder/season/roll`).
+ * Closed-loop (L2-1): after CAS transitions to settling, proactively settle all participants of the previous season
+ * (send rank reward mail + grant season titles + write settlement snapshots), then advance the season clock.
+ * This eliminates the broken flow where players who never return miss their season rewards.
  *
- * CAS 幂等：只有 state='active' 时才推进（防运维连点两次的并发窗口）。结算本身经
- * settleSeasonParticipants 三重幂等，与惰性迁移并行执行也不会双发。
- * @returns 新的赛季文档，若已在 settling/不存在则返回当前文档。
+ * CAS idempotency: only advances when state='active' (guards against concurrent double-clicks by ops).
+ * Settlement itself is triple-idempotent via settleSeasonParticipants and is safe to run alongside lazy migration without double-issuing.
+ * @returns The new season document; returns the current document if already settling or not found.
  */
 export async function rollSeason(
   cols: Collections,
   commercial: CommercialClient,
   now: number,
 ): Promise<LadderSeasonDoc> {
-  // CAS：仅 state=active 时推进
+  // CAS: only advance when state=active
   const res = await cols.ladderSeasons.findOneAndUpdate(
     { _id: 'current', state: 'active' },
     { $set: { state: 'settling' } },
     { returnDocument: 'before' },
   );
   if (!res) {
-    // 已在 settling 或不存在 → 直接返回当前状态
+    // Already settling or not found → return current state directly
     return getCurrentSeason(cols, now);
   }
   const prev = res;
 
-  // 闭环结算：在推进时钟之前结清上一季所有参与者（幂等，失败不阻断推进——单玩家失败已内部吞掉日志，
-  // 漏结的玩家回归时仍由 migrateIfStale 惰性补结，同样幂等）。
+  // Closed-loop settlement: settle all participants of the previous season before advancing the clock
+  // (idempotent; a single-player failure is logged internally and does not block the roll —
+  // any missed players are lazily re-settled by migrateIfStale when they return, also idempotent).
   await settleSeasonParticipants(cols, commercial, prev.seasonNo, now).catch((e) =>
     log.error('rollSeason: settle participants failed', { seasonNo: prev.seasonNo, err: (e as Error).message }),
   );
@@ -96,13 +98,13 @@ export async function rollSeason(
   return newDoc;
 }
 
-// ── 赛季结算（惰性，每次迁移只发一次）────────────────────────────────────────
+// ── Season settlement (lazy; issued at most once per migration) ───────────────
 
 /**
- * 对单个玩家发放「上赛季峰值奖励」，走系统邮件（异步/有仪式感/可审计）。
- * 幂等：dispatchKey = `ladder.season.${prevSeasonNo}.${accountId}` 去重。
- * 段位称号（S10）：通过 grantTitleToPlayer 幂等授予（见下方调用，best-effort）。
- * 同时补发未领战令奖励（§9，S6 温和）。
+ * Issue the "previous season peak reward" to a single player via system mail (async, ceremonial, auditable).
+ * Idempotent: dispatchKey = `ladder.season.${prevSeasonNo}.${accountId}` deduplicates.
+ * Rank title (S10): idempotently granted via grantTitleToPlayer (see call below, best-effort).
+ * Also backfills unclaimed battle pass rewards (§9, S6 lenient).
  */
 export async function settleSeasonForPlayer(
   cols: Collections,
@@ -117,14 +119,14 @@ export async function settleSeasonForPlayer(
   const coins = seasonPeakCoins(peakRank);
   const titleId = ladderTitleId(prevSeasonNo, peakRank);
 
-  // 战令补发（温和，S6：已挣未领不没收）
+  // Battle pass backfill (lenient, S6: earned but unclaimed rewards are not forfeited)
   const bpPending = save.battlePass ? pendingBpRewards(save.battlePass) : [];
   const bpCoins = bpPending
     .filter((r) => r.reward.kind === 'coins')
     .reduce((s, r) => s + r.reward.count, 0);
   const totalCoins = coins + bpCoins;
 
-  // 授予赛季段位称号（S10，幂等，best-effort）
+  // Grant the season rank title (S10, idempotent, best-effort)
   await grantTitleToPlayer(cols, accountId, titleId, now).catch((e) =>
     log.error('settleSeasonForPlayer: grantTitle failed', { accountId, prevSeasonNo, peakRank, err: (e as Error).message }),
   );
@@ -134,7 +136,7 @@ export async function settleSeasonForPlayer(
     return { peakRank, peakElo, coins: 0, titleId };
   }
 
-  // 走邮件：异步发放，玩家登录后收到通知 + 仪式感
+  // Via mail: async delivery; player receives a notification with ceremony on next login
   const dispatchKey = `ladder.season.${prevSeasonNo}.${accountId}`;
   await insertSystemMail(
     cols,
@@ -159,23 +161,25 @@ export async function settleSeasonForPlayer(
   return { peakRank, peakElo, coins: totalCoins, titleId };
 }
 
-/** 单玩家赛季结算摘要（写快照 + 统计用）。 */
+/** Per-player season settlement summary (used for snapshot writes + statistics). */
 export interface SeasonSettleSummary {
   peakRank: RankId;
   peakElo: number;
-  /** 实际发放金币（峰值 + 战令补发；0 = 仅授予称号无金币）。 */
+  /** Actual coins granted (peak reward + battle pass backfill; 0 = title granted only, no coins). */
   coins: number;
   titleId: string;
 }
 
 /**
- * 赛季收束闭环（L2-1）：对刚收束赛季 `seasonNo` 的所有参与者主动结算。
- * 与惰性迁移（migrateIfStale）共用 settleSeasonForPlayer，保证「主动批量」与「玩家回归再结算」
- * 两条路径完全幂等（结算邮件 dispatchKey + 称号 $addToSet + 快照 _id 三重去重，重复 close 同季不双发）。
- * 解决断裂链路：不再依赖玩家登录才发奖，季末一次性结清全部参与者。
+ * Season close closed-loop (L2-1): proactively settle all participants of the just-closed season `seasonNo`.
+ * Shares settleSeasonForPlayer with lazy migration (migrateIfStale), ensuring the "proactive batch" and
+ * "settle on player return" paths are fully idempotent (triple dedup: settlement mail dispatchKey +
+ * title $addToSet + snapshot _id; closing the same season twice never double-issues rewards).
+ * Fixes the broken flow: rewards are no longer contingent on players logging in; all participants are settled at season end.
  *
- * **不做软重置**：软重置/战令重置仍由玩家下次 pvp 读写时的 migrateIfStale 惰性执行（季末批量改全表写
- * 风险高且无必要——结算只读 + 写邮件/称号/快照，玩家档案的 elo 留待回归时迁移，幂等不会双发）。
+ * **No soft reset here**: soft ELO reset and battle pass reset are still lazily executed by migrateIfStale
+ * on the player's next pvp read/write (batch-rewriting the entire saves collection at season end is high-risk
+ * and unnecessary — settlement is read-only + writes mail/title/snapshot; player ELO is migrated on return, idempotent).
  */
 export async function settleSeasonParticipants(
   cols: Collections,
@@ -191,7 +195,7 @@ export async function settleSeasonParticipants(
       const summary = await settleSeasonForPlayer(cols, commercial, doc._id, doc.save, seasonNo, now);
       settled++;
       if (summary.coins > 0) rewarded++;
-      // 快照兼幂等账本：_id 复合键，$setOnInsert 保证重复 close 同季不覆写已结算记录。
+      // Snapshot doubles as idempotency ledger: composite _id key; $setOnInsert ensures closing the same season twice never overwrites an existing settlement record.
       await cols.ladderSeasonSnapshots.updateOne(
         { _id: `${seasonNo}:${doc._id}` },
         {
@@ -220,17 +224,17 @@ export async function settleSeasonParticipants(
   return { settled, rewarded };
 }
 
-// ── 惰性迁移（核心，每次 pvp 读写前调用）────────────────────────────────────
+// ── Lazy migration (core; called before every pvp read/write) ─────────────────
 
 /**
- * 检查 save.pvp.seasonNo 是否落后于 currentSeason，若是则：
- * 1. 结算上赛季奖励（settleSeasonForPlayer）
- * 2. 软重置 ELO
- * 3. 推进 pvp.seasonNo
- * 4. 重置战令
+ * Check whether save.pvp.seasonNo is behind currentSeason; if so:
+ * 1. Settle previous season rewards (settleSeasonForPlayer)
+ * 2. Soft-reset ELO
+ * 3. Advance pvp.seasonNo
+ * 4. Reset battle pass
  *
- * 返回「是否发生了迁移」和「更新后的 save」。
- * **调用方**负责把 next save 原子写库（乐观锁 rev 守卫）。
+ * Returns whether a migration occurred and the updated save.
+ * The **caller** is responsible for atomically persisting the next save (optimistic lock rev guard).
  */
 export async function migrateIfStale(
   cols: Collections,
@@ -244,7 +248,7 @@ export async function migrateIfStale(
     return { migrated: false, save };
   }
 
-  // 发放上赛季奖励（best-effort，失败不阻断迁移，下次重入幂等邮件键守卫）
+  // Issue previous season rewards (best-effort; failure does not block migration; idempotent mail key guards on re-entry)
   try {
     await settleSeasonForPlayer(cols, commercial, save.accountId, save, pvpSeasonNo, now);
   } catch (e) {
@@ -258,7 +262,7 @@ export async function migrateIfStale(
   const newRank = eloToRank(newElo) as RankId;
   const defaults = makePvpSeasonDefaults(currentSeason.seasonNo, newElo);
 
-  // 重置战令（补发已在 settleSeasonForPlayer 处理）
+  // Reset battle pass (backfill was already handled in settleSeasonForPlayer)
   const newBp = makeFreshBattlePass(currentSeason.seasonNo);
 
   const next: SaveData = {
@@ -267,7 +271,7 @@ export async function migrateIfStale(
       ...save.pvp,
       elo: newElo,
       rank: newRank,
-      streak: 0,          // 连胜串跨季清零
+      streak: 0,          // Win streak resets across seasons
       ...defaults,
     },
     battlePass: newBp,
