@@ -6,7 +6,6 @@ import type { StatKey } from './achievements';
 import type { LadderSeasonDoc, LadderSeasonSnapshotDoc } from './season';
 import type { EventTaskDef, EventRewardDef, EventTaskProgress } from './events';
 import type { ChatRegion } from './chatFilter';
-import { CHAT_RETENTION_SEC } from './social';
 
 // —— 集合文档形状 ——
 export interface SaveDoc {
@@ -255,55 +254,8 @@ export interface AntiCheatReviewDoc {
   ts: number;
 }
 
-// —— 社交系统集合（S6，SOCIAL_DESIGN §3）——
-
-/** 有向好友边：双向好友 = 两条边。查「我的好友」按 owner 点查（SOC6）。 */
-export interface FriendEdgeDoc {
-  _id: string; // `${owner}:${friend}`（friendEdgeId）
-  owner: string;
-  friend: string;
-  since: number;
-  alias?: string; // owner 私有备注名
-}
-
-export interface FriendRequestDoc {
-  _id: string; // uuid
-  from: string; // accountId
-  to: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
-  message?: string;
-  createdAt: number;
-  resolvedAt?: number;
-}
-
-/** 有向拉黑边（屏蔽对方的好友申请 + 私聊）。 */
-export interface BlockDoc {
-  _id: string; // `${owner}:${target}`（blockId）
-  owner: string;
-  target: string;
-  ts: number;
-}
-
-/** 私聊会话（SOC4）。convId = conversationId(a,b)。 */
-export interface ConversationDoc {
-  _id: string; // convId
-  members: [string, string]; // accountId 对
-  lastBody?: string;
-  lastFrom?: string;
-  lastTs: number;
-  unread: Record<string, number>; // accountId → 未读数
-}
-
-export interface ChatMessageDoc {
-  _id: string; // uuid
-  convId: string;
-  from: string; // accountId
-  body: string;
-  kind: 'text' | 'system';
-  // BSON Date（非 epoch number）：Mongo TTL 只过期 Date 字段。写入端存 new Date(ts)，
-  // 读出时转回 number 建 ChatMessageView。排序/分页（before=<epoch>）按 Date 比较亦正确。
-  ts: Date;
-}
+// 好友/私聊/拉黑集合（FriendEdgeDoc / FriendRequestDoc / BlockDoc / ConversationDoc / ChatMessageDoc）
+// 已迁至 socialsvc 的 nw_social 库（P2，SOCIAL_SVC_DESIGN §6 P2），metaserver 不再持有这些集合。
 
 export interface MailAttachmentDoc {
   // 'material' → SaveData.materials 养成统一池（SLG8）；'item' → inventory.items 泛用桶。
@@ -402,12 +354,7 @@ export interface Collections {
   replayShares: Collection<ReplayShareDoc>;
   // 状态流录像游戏外分享（REPLAY_SHARE_DESIGN）
   stateReplayShares: Collection<StateReplayShareDoc>;
-  // 社交（S6）
-  friendEdges: Collection<FriendEdgeDoc>;
-  friendRequests: Collection<FriendRequestDoc>;
-  blocks: Collection<BlockDoc>;
-  conversations: Collection<ConversationDoc>;
-  chatMessages: Collection<ChatMessageDoc>;
+  // 邮件（S6-3，系统邮件仍由 metaserver 写入；玩家邮件 CRUD 已迁至 socialsvc）
   mail: Collection<MailDoc>;
   // 装备（E2）
   equipmentIdem: Collection<EquipmentIdemDoc>;
@@ -468,11 +415,6 @@ export async function createMongo(
     pveRejections: db.collection<PveRejectDoc>('pveRejections'),
     replayShares: db.collection<ReplayShareDoc>('replayShares'),
     stateReplayShares: db.collection<StateReplayShareDoc>('stateReplayShares'),
-    friendEdges: db.collection<FriendEdgeDoc>('friendEdges'),
-    friendRequests: db.collection<FriendRequestDoc>('friendRequests'),
-    blocks: db.collection<BlockDoc>('blocks'),
-    conversations: db.collection<ConversationDoc>('conversations'),
-    chatMessages: db.collection<ChatMessageDoc>('chatMessages'),
     mail: db.collection<MailDoc>('mail'),
     equipmentIdem: db.collection<EquipmentIdemDoc>('equipmentIdem'),
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
@@ -518,21 +460,7 @@ export async function createMongo(
     // 状态流分享：expireAt 到点 TTL 自清；按创建者建索引便于限流/审计查询。
     await collections.stateReplayShares.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     await collections.stateReplayShares.createIndex({ createdBy: 1, createdAt: -1 });
-    // —— 社交（S6，SOCIAL_DESIGN §3）——
-    await collections.friendEdges.createIndex({ owner: 1 });
-    // 收件箱（待处理申请）+ 防重复申请（同方向去重）。
-    await collections.friendRequests.createIndex({ to: 1, status: 1 });
-    await collections.friendRequests.createIndex({ from: 1, to: 1 });
-    await collections.blocks.createIndex({ owner: 1 });
-    // 按参与者拉会话列表（任一成员 + 末条时间倒序）。
-    await collections.conversations.createIndex({ members: 1, lastTs: -1 });
-    // 按会话分页拉历史。
-    await collections.chatMessages.createIndex({ convId: 1, ts: -1 });
-    // 私聊消息保留期满自动回收（TTL，SOC4）。
-    await collections.chatMessages.createIndex(
-      { ts: 1 },
-      { expireAfterSeconds: CHAT_RETENTION_SEC },
-    );
+    // 邮件（友/私聊集合已迁 socialsvc；metaserver 仅保留 mail 用于系统邮件）
     // 收件箱（按时间倒序）。
     await collections.mail.createIndex({ to: 1, createdAt: -1 });
     // 邮件到期自动回收（expireAt 是到期绝对时间戳 → expireAfterSeconds:0，SOC5）。

@@ -241,7 +241,7 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 1. ✅ socialsvc 建 friendEdges / friendRequests / blockList / conversations / chatMessages / mails 集合
 2. ✅ metaserver 好友/私聊/邮件路由改为反向代理到 socialsvc（客户端 URL 不变，内部透传）
 3. ✅ 存量数据迁移脚本：`notebook_wars` → `nw_social`（好友边/会话/消息/邮件，in-place 不删原集合，双写过渡）
-4. 验证无数据丢失后，metaserver 删除社交路由和集合索引
+4. ✅ metaserver 删除社交 fallback 实现 + 集合索引：`proxySocial()` 改为 socialsvc 不可用时直接 503；`social.ts` / `mail.ts` 精简仅保留内部 helper；`shared/src/mongo.ts` 删除 friendEdges / friendRequests / blocks / conversations / chatMessages 集合句柄及索引（doc 类型迁入 socialsvc/src/db.ts 本地定义）
 
 ### P3（gateway presence 事件对接）— 随 P1/P2 完成后
 

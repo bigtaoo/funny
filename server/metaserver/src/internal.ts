@@ -37,7 +37,7 @@ import { adsDayKey } from './economy.js';
 import { getProfile, resolveByPublicId, searchAccounts } from './accounts.js';
 import { grantTitleToPlayer } from './titles.js';
 import { accrueEventTask, adminListEvents, adminCreateEvent, adminUpdateEvent, adminDeleteEvent } from './events.js';
-import { friendAccountIds, profileOf } from './social.js';
+import { profileOf } from './social.js';
 import { insertSystemMail, bulkInsertSystemMail } from './mail.js';
 import { escrowEquipment, grantEquipment } from './equipment.js';
 import type { CompTarget, EquipmentInstance, MailAttachmentDoc } from '@nw/shared';
@@ -202,8 +202,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     }
     const accountId = (req.query as { accountId?: string }).accountId;
     if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
-    const friends = await friendAccountIds(cols, accountId);
-    return reply.send({ friends });
+    // P2 后好友数据已迁至 socialsvc，此回退端点仅在 socialsvc 未配置时使用，返回空列表。
+    return reply.send({ friends: [] as string[] });
   });
 
   // ── P2：socialsvc 账号反查 ──────────────────────────────────────────────

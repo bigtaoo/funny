@@ -2,8 +2,53 @@
 // P1 集合：families / familyMembers / familyMessages（无 worldId）。
 // P2 集合：friendEdges / friendRequests / blockList / conversations / chatMessages / mails。
 import { MongoClient, Db, Collection } from 'mongodb';
-import type { FamilyRole, FriendEdgeDoc, FriendRequestDoc, BlockDoc, ConversationDoc, ChatMessageDoc, MailDoc } from '@nw/shared';
+import type { FamilyRole, MailDoc } from '@nw/shared';
 import { FAMILY_MSG_RETENTION_SEC, CHAT_RETENTION_SEC } from '@nw/shared';
+
+// ── P2 文档类型（原 @nw/shared，迁入本地以解耦）─────────────────────────────
+
+export interface FriendEdgeDoc {
+  _id: string;   // friendEdgeId(owner, friend)
+  owner: string;
+  friend: string;
+  since: number;
+  alias?: string;
+}
+
+export interface FriendRequestDoc {
+  _id: string;   // uuid
+  from: string;
+  to: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  message?: string;
+  createdAt: number;
+  resolvedAt?: number;
+}
+
+export interface BlockDoc {
+  _id: string;   // blockId(owner, target)
+  owner: string;
+  target: string;
+  ts: number;
+}
+
+export interface ConversationDoc {
+  _id: string;   // conversationId(a, b)
+  members: [string, string];
+  lastBody?: string;
+  lastFrom?: string;
+  lastTs: number;
+  unread: Record<string, number>;
+}
+
+export interface ChatMessageDoc {
+  _id: string;   // uuid
+  convId: string;
+  from: string;
+  body: string;
+  kind: 'text' | 'system';
+  ts: Date;      // BSON Date（TTL 索引需 Date 字段）
+}
 
 // ── 家族（SS2/SS3：全局持久实体，无 worldId）─────────────────────────────
 
