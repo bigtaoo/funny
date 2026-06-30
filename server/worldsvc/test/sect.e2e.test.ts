@@ -17,6 +17,7 @@ import { SectService } from '../src/sectService';
 import { WorldService } from '../src/service';
 import type { WorldCommercialClient } from '../src/commercialClient';
 import type { WorldGatewayClient } from '../src/gatewayClient';
+import type { WorldMetaClient } from '../src/metaClient';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_sect_test';
@@ -302,5 +303,33 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(carol).toMatchObject({ familyId: familyId(W, 'CC'), nationCount: 1 });
     const dave = ranking.find((r) => r.scope === 'solo');
     expect(dave).toMatchObject({ familyId: 'dave', nationCount: 1 });
+  });
+
+  it('channel: fromPublicId resolved from meta; falls back to empty string when meta unavailable', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await sect.createSect(W, 'alice', 'Sky', 'SKY');
+
+    // Case 1: meta available, returns a publicId — push payload must use it.
+    const fakeMeta: WorldMetaClient = {
+      available: true,
+      async getProfile(id) { return id === 'alice' ? { publicId: 'alice#1234', displayName: 'Alice' } : null; },
+      async deductMaterial() { throw new Error('unused'); },
+      async grantMaterial() { /* no-op */ },
+      async getSaveFields() { return null; },
+      async escrowEquipment() { throw new Error('unused'); },
+      async grantEquipment() { /* no-op */ },
+      async grantTitle() { /* no-op */ },
+    };
+    const sectWithMeta = new SectService({ cols: mongo!.collections, commercial, gateway: fakeGateway, meta: fakeMeta, now: () => Date.now() });
+    broadcasts.length = 0;
+    await sectWithMeta.sendMessage(W, 'alice', 'Alice', 'hi from alice');
+    expect(broadcasts[0]).toMatchObject({ kind: 'sect_msg' });
+    expect((broadcasts[0] as Record<string, unknown>)['fromPublicId']).toBe('alice#1234');
+
+    // Case 2: meta not configured (nullWorldMetaClient) — fromPublicId must be empty string, not the raw accountId.
+    broadcasts.length = 0;
+    const sectNoMeta = new SectService({ cols: mongo!.collections, commercial, gateway: fakeGateway, now: () => Date.now() });
+    await sectNoMeta.sendMessage(W, 'alice', 'Alice', 'hi again');
+    expect((broadcasts[0] as Record<string, unknown>)['fromPublicId']).toBe('');
   });
 });

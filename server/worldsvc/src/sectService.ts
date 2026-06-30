@@ -30,6 +30,8 @@ import { nullWorldCommercialClient } from './commercialClient';
 import type { WorldGatewayClient } from './gatewayClient';
 import { nullWorldGatewayClient } from './gatewayClient';
 import { nullWorldSocialsvcClient, type WorldSocialsvcClient } from './socialsvcClient';
+import type { WorldMetaClient } from './metaClient';
+import { nullWorldMetaClient } from './metaClient';
 
 export interface SectView {
   sectId: string;
@@ -73,6 +75,8 @@ export interface SectServiceDeps {
   gateway?: WorldGatewayClient;
   /** socialsvc client (sect channel push delegation, SOCIAL_SVC_DESIGN §5); default = falls back to direct gateway push. */
   socialsvc?: WorldSocialsvcClient;
+  /** meta client for publicId resolution in chat messages; default = fromPublicId left empty. */
+  meta?: WorldMetaClient;
 }
 
 /** In-process monotonic sequence number to prevent message id collisions within the same millisecond. */
@@ -96,11 +100,13 @@ export class SectService {
   private readonly commercial: WorldCommercialClient;
   private readonly gateway: WorldGatewayClient;
   private readonly socialsvc: WorldSocialsvcClient;
+  private readonly meta: WorldMetaClient;
 
   constructor(private readonly deps: SectServiceDeps) {
     this.commercial = deps.commercial ?? nullWorldCommercialClient;
     this.gateway = deps.gateway ?? nullWorldGatewayClient;
     this.socialsvc = deps.socialsvc ?? nullWorldSocialsvcClient;
+    this.meta = deps.meta ?? nullWorldMetaClient;
   }
 
   /** Fetches the requester's family (requires them to be the family leader); throws a permission/not-in-family error otherwise. */
@@ -369,8 +375,10 @@ export class SectService {
     };
     await cols.sectMessages.insertOne(msgDoc);
 
+    // Resolve publicId from meta (best-effort; falls back to empty string if meta unavailable or profile not found).
+    const profile = this.meta.available ? await this.meta.getProfile(accountId).catch(() => null) : null;
     // Push: prefer delegating to socialsvc (the push hub, §5); fall back to direct gateway push when socialsvc is unavailable.
-    const payload = { sectId, fromPublicId: accountId, fromName: senderName, body, ts };
+    const payload = { sectId, fromPublicId: profile?.publicId ?? '', fromName: senderName, body, ts };
     if (this.socialsvc.available) {
       const recipients = await this.sectMemberAccountIds(sectId, accountId);
       void this.socialsvc.push({ kind: 'sect', sectId }, 'sect_msg', payload, recipients);

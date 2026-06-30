@@ -63,6 +63,7 @@ async function main(): Promise<void> {
     commercial,
     gateway,
     socialsvc,
+    meta,
     now: () => Date.now(),
   });
 
@@ -71,6 +72,7 @@ async function main(): Promise<void> {
     gateway,
     commercial,
     socialsvc,
+    meta,
     now: () => Date.now(),
   });
 
