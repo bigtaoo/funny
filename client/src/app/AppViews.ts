@@ -54,6 +54,7 @@ import type { DailyCallbacks } from '../scenes/DailyScene';
 import type { EventCallbacks } from '../scenes/EventScene';
 import type { ConsentCallbacks } from '../render/ConsentDialog';
 import type { DeckBuilderCallbacks } from '../scenes/DeckBuilderScene';
+import type { CitySceneCallbacks } from '../scenes/CityScene';
 
 /** Live handle for the lobby scene — the core pushes the aggregate social badge into it. */
 export interface LobbyView {
@@ -196,6 +197,8 @@ export interface AppViews {
   showTeams(cb: TeamsCallbacks): void;
   /** PvP deck builder (P3, PVP_LOADOUT §8). */
   showDeckBuilder(cb: DeckBuilderCallbacks): void;
+  /** SLG home-city management (SLG_CITY_DESIGN P1). */
+  showCity(cb: CitySceneCallbacks): void;
   /**
    * Netplay match. The core passes the pre-built engine in `opts.engine` plus the
    * local side; the view turns `localSide` into the side-flipped layout.

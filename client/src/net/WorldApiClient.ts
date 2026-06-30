@@ -53,6 +53,7 @@ export type SectDetailView = components['schemas']['SectDetailView'];
 export type SectMemberFamilyView = components['schemas']['SectMemberFamilyView'];
 export type SectMessageView = components['schemas']['SectMessageView'];
 export type SectVoteResult = components['schemas']['SectVoteResult'];
+export type BuildingKey = components['schemas']['BuildingKey'];
 
 export interface WorldChatMessage {
   id: string;
@@ -494,5 +495,15 @@ export class WorldApiClient {
     senderName: string,
   ): Promise<WorldChatMessage> {
     return this.req('POST', '/nation/message', { worldId, body, senderName });
+  }
+
+  // ── City buildings (SLG_CITY_DESIGN P1) ──────────────────────────────────
+
+  async upgradeBuilding(worldId: string, key: BuildingKey): Promise<PlayerWorldView> {
+    return this.req('POST', '/world/build/upgrade', { worldId, key });
+  }
+
+  async speedupBuild(worldId: string, key: BuildingKey, coins: number): Promise<PlayerWorldView> {
+    return this.req('POST', '/world/build/speedup', { worldId, key, coins });
   }
 }

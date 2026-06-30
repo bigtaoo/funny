@@ -41,6 +41,7 @@ import type { EloResult } from '../scenes/ResultScene';
 import * as analytics from '../analytics';
 import { WorldApiClient } from '../net/WorldApiClient';
 import { getWorldBaseUrl } from '../net/config';
+import type { CitySceneCallbacks } from '../scenes/CityScene';
 
 const log = netLog('app');
 
@@ -780,6 +781,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onReplaySiege(siegeId) { void goSiegeReplay(worldApi, worldId, siegeId); },
       onOpenDefense(tileKey) { goDefenseEditor(worldApi, worldId, tileKey); },
       onOpenTeams() { goTeams(worldApi, worldId); },
+      onOpenCity() { goCity(worldApi, worldId); },
       worldApi,
       worldId,
       playerName: playerName(),
@@ -860,6 +862,16 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       worldApi,
       worldId,
       target: { mode: 'attack', teamId, teamName },
+    });
+  }
+
+  function goCity(worldApi: WorldApiClient, worldId: string): void {
+    inLobby = false;
+    views.showCity({
+      onBack() { goWorldMap(worldApi, worldId); },
+      worldApi,
+      worldId,
+      getCoins: () => saveManager.get().wallet.coins,
     });
   }
 

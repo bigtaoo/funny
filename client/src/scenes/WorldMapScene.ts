@@ -32,6 +32,8 @@ export interface WorldMapCallbacks {
    * (worldsvc already ran the authoritative engine battle). Either combatant can watch.
    */
   onReplaySiege(siegeId: string): void;
+  /** Open the home-city internal management scene (SLG_CITY_DESIGN P1). */
+  onOpenCity(): void;
   /**
    * Open the simplified defense editor (C3) for a tile. `tileKey` is 'base' for the
    * main city or the full tileId `{worldId}:{x}:{y}` for an owned territory.
@@ -1030,10 +1032,11 @@ export class WorldMapScene implements Scene {
       const [bx, by] = me.mainBaseTile ? this.parseTileId(me.mainBaseTile) : [-1, -1];
       const isBase = bx === tx && by === ty;
       if (isBase) {
-        // Main city — edit base defense config (C3).
+        // Main city — enter desk / defense / teams.
         this.showModal(
           [t('world.myBase'), `(${tx}, ${ty})`],
           [
+            { label: t('world.actEnterCity'), action: () => { this.closeModal(); this.cb.onOpenCity(); } },
             { label: t('world.actDefense'), action: () => { this.closeModal(); this.cb.onOpenDefense('base'); } },
             { label: t('world.team.manage'), action: () => { this.closeModal(); this.cb.onOpenTeams(); } },
             { label: '✕', action: () => this.closeModal() },
