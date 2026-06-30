@@ -144,11 +144,13 @@ describe('ranked matchmaking load (live stack)', () => {
       .sort((a, b) => a - b);
     const regErrors = clients.filter((c) => c.error);
 
-    // Diagnostic breakdown: shows which pipeline stage all 20 clients reached.
-    const diagInRoom    = online.filter(c => c.views.screen === 'room' || c.views.screen === 'gameNet').length;
-    const diagGwOpen    = online.filter(c => c.views.lastRoomNetState === 'open').length;
-    const diagRoomState = online.filter(c => c.views.lastRoomState !== undefined).length;
-    const diagGameNet   = online.filter(c => c.matchedAt !== undefined).length;
+    // Diagnostic breakdown: shows which pipeline stage all clients reached.
+    const diagInRoom      = online.filter(c => c.views.screen === 'room' || c.views.screen === 'gameNet').length;
+    const diagGwOpen      = online.filter(c => c.views.lastRoomNetState === 'open').length;
+    const diagRoomError   = online.filter(c => c.views.lastRoomError !== undefined).length;
+    const diagMatchFound  = online.filter(c => c.platform.openedSockets.length >= 2).length;
+    const diagGameNet     = online.filter(c => c.matchedAt !== undefined).length;
+    const sampleError     = online.find(c => c.views.lastRoomError !== undefined)?.views.lastRoomError;
 
     // eslint-disable-next-line no-console
     console.log(
@@ -157,10 +159,12 @@ describe('ranked matchmaking load (live stack)', () => {
         `[load] pair latency ms: p50=${pct(latencies, 50)} p95=${pct(latencies, 95)} ` +
         `max=${latencies[latencies.length - 1] ?? 0}\n` +
         `[load:diag] pipeline buckets (cumulative):\n` +
-        `  reached 'room' screen  : ${diagInRoom}/${online.length}\n` +
-        `  gateway became 'open'  : ${diagGwOpen}/${online.length}\n` +
-        `  got room_state from srv: ${diagRoomState}/${online.length}\n` +
-        `  reached 'gameNet'      : ${diagGameNet}/${online.length}`,
+        `  reached 'room' screen        : ${diagInRoom}/${online.length}\n` +
+        `  gateway became 'open'        : ${diagGwOpen}/${online.length}\n` +
+        `  got room_error from srv      : ${diagRoomError}/${online.length}` +
+        (sampleError ? ` [sample: ${sampleError.code} "${sampleError.message}"]` : '') + '\n' +
+        `  match_found (game ws opened) : ${diagMatchFound}/${online.length}\n` +
+        `  reached 'gameNet'            : ${diagGameNet}/${online.length}`,
     );
     if (regErrors.length) {
       // eslint-disable-next-line no-console

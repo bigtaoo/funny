@@ -13,7 +13,7 @@ import type {
   NetGameView,
   ResultViewProps,
 } from '../../src/app/AppViews';
-import type { RoomState } from '../../src/net/proto/transport';
+import type { RoomState, RoomError } from '../../src/net/proto/transport';
 import type { NetState } from '../../src/net/NetClient';
 import { createLocalMatch } from '../../src/app/matchEngine';
 import { createGameEngine, getLevel, ReplayInputSource } from '../../src/game';
@@ -96,12 +96,13 @@ export class HeadlessAppViews implements AppViews {
   room?: RoomSceneCallbacks;
   friends?: FriendsSceneCallbacks;
   chat?: ChatSceneCallbacks;
-  /** Last room_state the core forwarded to the room view (carries the room code). */
   /** Last aggregate social badge total the core pushed into the lobby handle. */
   lastSocialBadge?: number;
   lastRoomState?: RoomState;
   /** Last gateway net-state forwarded to the room view (wait for 'open' before acting). */
   lastRoomNetState?: NetState;
+  /** Last room_error the server pushed (ranked: RANKED_UNAVAILABLE / GAME_UNAVAILABLE). */
+  lastRoomError?: RoomError;
   gameNet?: { localSide: OwnerId; cb: GameSceneCallbacks; opts: GameSceneOptions };
 
   private match: ActiveMatch | null = null;
@@ -170,9 +171,10 @@ export class HeadlessAppViews implements AppViews {
     this.room = cb;
     this.lastRoomState = undefined;
     this.lastRoomNetState = undefined;
+    this.lastRoomError = undefined;
     return {
       applyRoomState: (s) => { this.lastRoomState = s; },
-      applyRoomError: () => {},
+      applyRoomError: (e) => { this.lastRoomError = e; },
       applyPeerDc: () => {},
       applyNetState: (s) => { this.lastRoomNetState = s; },
     };
