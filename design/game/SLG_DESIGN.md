@@ -1163,7 +1163,7 @@ if (path.startsWith('/admin/world/')) {
 
 ### 17.12 DRAFT 数值 / 后续任务（待拍板/调参/单列）
 
-- **数值（→ ECONOMY_NUMBERS §13-SLG 登记 + 经济模拟）**：`PROSPERITY_W_*`/`PROSPERITY_DECAY_PER_DAY`/`SECT_FOUND_PROSPERITY_MIN`；`SETTLE_REWARDS` 各档材料/皮肤量 + `CENTER_CAPITAL_MULT`；`sectStrengthScore` 权重；`WORLD_CAPACITY`/`RESET_DELETE_BATCH`。settle coin 若 >0 须经经济总预算批准（OVERVIEW §3.3）。
+- **数值（→ ECONOMY_NUMBERS §13-SLG 登记 + 经济模拟）**：`PROSPERITY_W_*`/`PROSPERITY_DECAY_PER_DAY`/`SECT_FOUND_PROSPERITY_MIN`；`SETTLE_REWARDS` 各档材料/皮肤量 + `CENTER_CAPITAL_MULT`；`sectStrengthScore` 权重；`WORLD_CAPACITY`/`RESET_DELETE_BATCH`。settle coin 若 >0 须经经济总预算批准（OVERVIEW §3.3）。**核验方法（怎么算「过没过」、判据、签字、登记）见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md)**——这批数分 6 条轨道分流核（只有 `SETTLE_REWARDS` 动持久经济），不是笼统「跑一遍经济模拟」。
 - **G6 运行时 ✅（2026-06-21，§20）**：多 shard 实际开区编排（`allocateNextSeason`）、人口溢出开新区（`resolveShardForJoin`）、玩家 join 自动路由（宗门>家族>单随）、跨区隔离巡检（`patrolShardIsolation`）已落地。剩赛季中主动转区/合区（运营专项）+ 赛季元数据下发（待 S11）。
 - **SLG 战令增益（C6/G4，S8-8）✅（2026-06-22）**：`hasBattlePass` 已接线——`trainTroops` 训练时长 ×0.8（+20%）、`speedupTraining` 每币加速时长 ÷0.85（消耗 -15%）；与天梯战令独立（OVERVIEW §2/§4）。产率/额外奖励档暂未扩，如需继续在 S8-8 专项内追加。
 - **称号（C1）✅（2026-06-22）**：`SETTLE_REWARDS.titleId` 的 `grantTitle` 已接入（S10-3）——`settleSeason` 发奖循环 best-effort 调 `meta.grantTitle(acct, base.titleId)`，经 `WorldMetaClient` → `POST /internal/title/grant`（metaserver）。
@@ -1429,6 +1429,8 @@ if (path.startsWith('/admin/world/')) {
 | **R-9** | `resolveShardForJoin` / march 调度单点 | §20.8：高并发开服经 worldsvc 单进程，规模化需选主/分片（U12 压测后）。 |
 
 ### 21.4 第四档——DRAFT 数值（待经济模拟统一过一遍）
+
+> **核验方法权威 = [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md)**：定义这批数怎么核（6 条轨道：持久经济聚合 / 赛季资源 / 围攻 difficultySim / 分区方差 / 节奏可达性 / 运维容量）、判据、签字人、登记到 §13-SLG 的流程。下面只是清单。
 
 - 繁荣度权重 `PROSPERITY_W_*`/`PROSPERITY_DECAY_PER_DAY`、建宗门门槛 `SECT_FOUND_PROSPERITY_MIN`；`SETTLE_REWARDS` 各档材料/皮肤量 + `CENTER_CAPITAL_MULT`；`sectStrengthScore` 权重；`WORLD_CAPACITY`/`RESET_DELETE_BATCH`；险地 `STRONGHOLD_*` 密度/守军/奖励；碾压级廉价结算阈值（U7）；围攻满血容量表/兵种当量/时限（§16.5）。
 - settle 若发 coin（>0）须经经济总预算批准（SEASON_OVERVIEW §3.3）。
