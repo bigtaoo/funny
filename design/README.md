@@ -41,6 +41,7 @@
 | [SEASON_OVERVIEW.md](game/SEASON_OVERVIEW.md) | **两套赛季（天梯6周/SLG大区2月）的独立性契约·边界·对照（不重述机制，只锁边界）** | 设计中 |
 | [SEASON_DESIGN.md](game/SEASON_DESIGN.md) | **天梯赛季/战令/排行榜机制基准（6周赛季·软重置·峰值奖励·Top100·Battle Pass；数字→ECONOMY_NUMBERS §13）** | 设计中 |
 | [CHARACTER_DESIGN.md](game/CHARACTER_DESIGN.md) | **角色卡机制/流派基准（6张＝陶3现有兵转具名·锚点 + Anna3新画变体；数值锚点占位→config.ts/BALANCE）** | 设计中 |
+| [PVP_LOADOUT_DESIGN.md](game/PVP_LOADOUT_DESIGN.md) | **PvP 构筑卡组 + 按段位解锁单位机制基准（复用 6 PvE 单位入 PvP·全池随机→构筑·diamond/king 解锁；数值→config.ts/BALANCE，段位→ladder.ts）** | 设计中 |
 | [ANNA_CHARACTERS.md](game/ANNA_CHARACTERS.md) | Anna 方三角色（Max/Lena/…）立绘与设定细化（引擎定义见 CHARACTER_DESIGN，叙事见 product/characters） | 设计中 |
 | [CAMPAIGN_DESIGN.md](game/CAMPAIGN_DESIGN.md) | 战役 PvE 设计基准（数据权威见 PVE_INTEGRITY_PLAN） | 实现中 |
 | [CAMPAIGN_P0_PLAN.md](game/archive/CAMPAIGN_P0_PLAN.md) | 战役 P0 试玩切片计划（试玩切片已完成） | 已归档 |
