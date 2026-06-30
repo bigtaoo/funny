@@ -1,0 +1,197 @@
+# Notebook Wars — SLG 主城内政 / 建筑系统设计（书桌内政）
+
+> 状态：设计中 · 权威：本文（建筑系统机制基准）· 创建：2026-06-30
+> 上级：[`SLG_DESIGN.md`](SLG_DESIGN.md)（大世界总纲，§4 兵力/§7 经济/§9 架构）。本文把「点进主城的内政界面 + 建筑升级 + 加成 + 练兵」从 SLG §4/§7 承诺细化到字段/常量/注入点级别。
+> 配套：[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（faucet/sink 政策）、[`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)（数字登记，本系统数值落 §13-SLG-CITY）、[`SERVER_API.md`](SERVER_API.md)（端点契约）、`server/shared/src/slg.ts`（常量真源）。
+> 参考原型：三国志·战略版（灵犀互娱）主城内政——君王殿等级门控 + 资源建筑提产量 + 民居产币 + 校场练兵 + 城防提耐久 + 科技建筑加成 + 官职委任。本文取其**结构**，换我们的文具皮 + 5 资源 + 统一养成边界。
+
+---
+
+## 0. TL;DR
+
+- **要解决的两个真问题**（SLG §15 盘点遗留）：
+  1. **`graphite`（石墨）/ `sticker`（贴纸）两种赛季资源空转**——地图 biome 只产 `ink/paper/metal` 三种，这俩既无 faucet 也无 sink，只是注册进了类型/掠夺/拍卖管道。
+  2. **`troopCap`（兵力上限）是死值**——恒为 `TROOP_CAP_BASE`，没有成长曲线；练兵（`trainTroops`）已落地但训练速度/队列/上限都没有可升级的来源。
+- **方案**：仿三战，**主城点进去 = 独立内政界面（`CityScene`）**，里面摆「书桌（Desk，总等级门控）+ 一排文具建筑」。建筑升级吃**赛季资源 + 时间**（时间 = coin 加速变现点），分别驱动：**资源产率 / graphite+sticker 自产 faucet / 仓储上限 / 兵力上限 + 练兵 / 主城城防**。
+- **这一刀让经济循环的两根空管子转起来**：graphite/sticker 由主城建筑**自产**（faucet）+ 高级建筑升级**消耗**它们（sink），ink/paper/metal 由主城建筑给**全局产率乘数**（地图仍是主产）。
+- **赛季边界（关键拍板，§2 D-CITY-1）**：建筑是 **SLG 赛季内战略态**——**赛季重置清空**（对齐 SLG4「兵力/地图态/赛季资源」同档），不进跨季养成。跨季养成仍只有装备/科技/材料（统一树），**天梯红线不动**（建筑永不喂 `buildPvpBlueprints`）。
+- **复用现有地基，零新战斗模型**：`recomputeYield`（产率出口）/ `trainTroops`+`trainingQueue`（练兵）/ `buildSiegeBattle`+`landSiege`（主城围攻）/ `speedupTraining`（加速变现）全是现成的，建筑只是给它们喂参数 + 加一条 `buildQueue` 调度（复刻 `trainingQueue` 模式）。
+
+---
+
+## 1. 借鉴三战的什么（结构），换掉什么（皮与边界）
+
+| 三战做法 | 我们采用 | 我们改动 |
+|---|---|---|
+| 点进主城 = 独立内政九宫格界面（与大地图分离） | ✅ 主城点进 = `CityScene` 内政界面 | 九宫格摆位换**手绘书桌俯视**（文具摆在桌上，SketchPen 风） |
+| 君王殿单一总等级，门控所有建筑可升上限 + 解锁顺序 | ✅ **书桌（Desk）** = 单一总门控 | 命名换文具皮；门控逻辑照搬 |
+| 4 资源建筑（农田/伐木/冶铁/采石）提对应资源产量上限 | ✅ 5 资源建筑一一对应 5 资源 | 我们资源主产在**地图格**（惰性结算）→ 资源建筑改为**全局产率乘数**；graphite/sticker 无地图 biome → 建筑**自产 faucet** |
+| 民居产铜币 + 提人口 | 部分采用 | 我们**唯一货币是 coin、不靠建筑产**（铁律）；「铜币位」由 `sticker` 贴纸承担 → 贴纸铺自产 sticker，**不产 coin** |
+| 校场/演武场练兵、提武将属性 | ✅ **练兵场（Drill Yard）** | 只提 `troopCap`/训练速度/队列；**不提单位战力**（战力归统一养成树的装备/科技，避免双注入 + 守红线） |
+| 城墙/城防军提城池耐久 + 守军 | ✅ **城墙（Wall）** 注入主城围攻 | 仅增益**主城那一格**（你的命门）；普通领地防守仍靠 garrison + 玩家布阵 |
+| 科技建筑（军机营/工程营）给科技树加成 | △ Phase 2 **书院（Academy）** | 只做 **SLG 赛季内**蓝图 buff 叠加层，跨季科技仍归统一养成树 |
+| 官职委任（派武将当木材官/练兵使，按政治属性加成） | △ Phase 3 **委任内政官** | 把已养成的**角色卡**（陶3/Anna3/6 单位）派进建筑加成——给角色一条 SLG 内政出路，不碰天梯 |
+| 建筑升级吃资源 + 时间，时间可花钱加速 | ✅ 照搬 | 资源 = 5 赛季资源；加速花 **coin**（变现，复用 `speedupTraining` 模式） |
+
+**一句话边界**：三战的「建筑提武将属性=养成」被我们拆走——**战力养成 = 跨季统一树（装备/科技）**，**主城建筑 = 赛季内政（经济/兵力/城防）**。两者都喂 SLG 围攻，但只有装备/科技跨季留存，建筑季末清。天梯永不接二者。
+
+---
+
+## 2. 锁定 / 待拍板的设计决策
+
+| # | 决策 | 结论 / 倾向 | 状态 |
+|---|---|---|---|
+| **D-CITY-1** | 建筑赛季是否清空 | **倾向清空**（赛季内战略态，= 变现发动机「重肝」；对齐 SLG4 清「兵力/地图态/赛季资源」）。跨季只留装备/科技/材料。 | ⚠️ 待拍板 |
+| **D-CITY-2** | 资源建筑模型 | ink/paper/metal = **全局产率乘数**（地图主产 + 主城加成）；graphite/sticker = **主城自产 faucet**（地图无 biome）。 | 锁定 |
+| **D-CITY-3** | 建筑是否影响单位战力 | **否**。战力归统一养成树（装备/科技）。建筑只动经济/兵力上限/主城城防。避免双注入复杂度 + 守红线清晰。书院（Phase 2）是唯一例外（赛季内蓝图 buff，独立注入口）。 | 锁定 |
+| **D-CITY-4** | 主城本体命名 | **书桌（Desk）** 作内政中枢隐喻（文具摆桌上）。显示名 DRAFT，最终皮由 [`art-direction`](../product/art-direction.md) 定。 | DRAFT |
+| **D-CITY-5** | 建筑升级是否吃 coin | **否**（coin 是唯一货币、跨季、严控通胀；不靠建筑印也不靠建筑烧）。升级吃 5 赛季资源 + 时间；**coin 只用于加速**（变现）。 | 锁定 |
+| **D-CITY-6** | 红线 | 建筑**永不**进 `buildPvpBlueprints()`（天梯）。建筑注入只走 SLG 路径（`recomputeYield`/`trainTroops`/主城 `buildSiegeBattle`）。 | 锁定（不可破） |
+
+---
+
+## 3. 建筑清单（v1）
+
+> 显示名为 DRAFT 文具皮，code key 为权威（英文）。资源 code = `ink/paper/graphite/metal/sticker`（见 SLG §3.4）。
+
+| code key | 显示名（DRAFT） | 类别 | 作用 | 注入点 | 阶段 |
+|---|---|---|---|---|---|
+| `desk` | 书桌 | 枢纽 | **总等级门控**：决定其余建筑可升上限（`buildLevel ≤ desk`）+ 解锁顺序；自身升级提主城基础耐久 + 开建造队列槽位 | 门控校验 + `wall` 基线 | P1 |
+| `inkPot` | 墨水瓶 | 资源 | **ink 全局产率乘数** ×(1+lvl·step) | `recomputeYield` | P1 |
+| `paperTray` | 纸盘 | 资源 | **paper 全局产率乘数** | `recomputeYield` | P1 |
+| `graphiteMill` | 石墨坊 | 资源 | **graphite 主城自产**（基底/h × lvl，地图无 biome）→ **激活 graphite faucet** | `recomputeYield` 自产项 | P1 |
+| `metalForge` | 金属铸坊 | 资源 | **metal 全局产率乘数** | `recomputeYield` | P1 |
+| `stickerShop` | 贴纸铺 | 资源 | **sticker 主城自产**（通用资源 faucet）→ **激活 sticker faucet** | `recomputeYield` 自产项 | P1 |
+| `cabinet` | 文件柜 | 仓储 | 提 `RESOURCE_CAP`（仓储上限）+ 被掠夺时保护一部分（三战仓库护粮） | `settleResources` cap + `applySiege` loot | P1 |
+| `drillYard` | 练兵场 | 军事 | 提 `troopCap` + 训练速度（`trainTroops` 时长）+ 训练队列上限（`TROOP_TRAIN_QUEUE_MAX`）+ 解锁更高兵种训练 | `trainTroops` / `troopCap` | P1 |
+| `wall` | 城墙 | 城防 | **仅主城那格**：被围攻时提基地耐久 / 守军 HP | 主城 `buildSiegeBattle` + `landSiege` | P2 |
+| `academy` | 书院 | 科技 | **SLG 赛季内**蓝图 buff（HP/伤害/速度），季末清 | `buildSiegeBlueprints` 赛季叠加层 | P2 |
+| （委任） | 内政官 | 加成 | 派角色卡进建筑，按角色属性给该建筑额外加成 | 各建筑乘数 | P3 |
+
+**faucet/sink 闭环（激活 graphite/sticker）**：
+
+```
+faucet ── 地图资源点：ink / paper / metal（biome 三分，已有）
+       ├─ 主城 graphiteMill：graphite（新，主城自产）
+       └─ 主城 stickerShop：sticker（新，主城自产）
+sink ──── 建筑升级消耗 5 资源；高级建筑（cabinet/drillYard/wall/academy 高 lvl）
+          吃 graphite（高阶建材，SLG §3.4 定义）+ sticker（通用流通）
+          → graphite/sticker 既被产出又被消耗，两根空管子转起来
+```
+
+---
+
+## 4. 数据模型（`PlayerWorldDoc` 扩展，赛季清）
+
+> 现状（`worldsvc/src/service.ts`/`db.ts`）：`PlayerWorldDoc` 已有 `resources`（5 类）/`troops`/`troopCap`/`trainingQueue`/`yieldRate`/`hasBattlePass`/`lastTickAt`/`familyId`/`mainBaseTile`。建筑系统加两个子文档：
+
+```ts
+// PlayerWorldDoc 扩展
+buildings?: Partial<Record<BuildingKey, number>>;  // key → level（缺省=1 for desk / 0 未建 for 其余）
+buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: number }[];
+// BuildingKey = 'desk'|'inkPot'|'paperTray'|'graphiteMill'|'metalForge'|'stickerShop'|'cabinet'|'drillYard'|'wall'|'academy'
+```
+
+- **赛季清空（D-CITY-1）**：`resetSeason` 的 `clearWorldOnReset` 增清 `buildings`/`buildQueue`（新赛季从 `desk:1` 起步）。落城（`joinWorld`）初始化 `buildings={desk:1}`。
+- **`buildQueue` 调度**：复刻 `trainingQueue` 模式——`scheduler.ts` 的 `setInterval` 扫 `buildQueue.0.completeAt ≤ now` → `processDueBuilds` 原子认领 → `$inc buildings.{key}` + shift 队列 + 触发 `recomputeYield`（资源建筑完工即生效）。**v1 建造队列并发=1**（付费/战令开第 2 槽，§6 变现）。
+- **`PlayerWorldView`** 透出 `buildings` + `buildQueue`（客户端 `CityScene` 渲染）。
+
+---
+
+## 5. 注入点（复用现有函数，逐一对接）
+
+> 全部 SLG 侧注入，**不碰** `buildPvpBlueprints`（D-CITY-6 红线）。新增纯函数落 `@nw/shared/slg.ts`（双端可算 + 可单测）。
+
+| 注入点 | 现状 | 改动 |
+|---|---|---|
+| **`recomputeYield`**（产率唯一出口，所有改产率路径已收口于此） | 聚合领地格 `tileYield` + 国民加成 | 末尾乘 `buildingYieldMult(buildings, rt)`（inkPot/paperTray/metalForge）；加 `buildingSelfYield(buildings, rt)` 自产项（graphiteMill/stickerShop）。`Math.floor` 保整。 |
+| **`settleResources`**（惰性结算，cap=`RESOURCE_CAP`） | `min(settled, RESOURCE_CAP)` | cap 改 `resourceCap(buildings)` = `RESOURCE_CAP × (1+cabinet·step)`（文件柜提仓储上限）。 |
+| **`trainTroops` / `troopCap`** | `troopCap` 恒 `TROOP_CAP_BASE`；训练时长 `TROOP_TRAIN_TIME_SEC × battlePass` | `troopCap = troopCapFor(buildings)` = `TROOP_CAP_BASE + drillYard·step`；训练时长再乘 `drillTrainMult(drillYard)`；队列上限 `TROOP_TRAIN_QUEUE_MAX + drillYard 档`。 |
+| **主城 `buildSiegeBattle`/`landSiege`**（仅 `type:'base'` 分支） | 按 tileLevel 派生基地 | 主城被围攻 → 基地等级/守军 HP 乘 `wallDefenseMult(wall)`（P2）。普通领地不受影响。 |
+| **`buildSiegeBlueprints`**（SLG 围攻蓝图，统一养成口） | 吃 `pveUpgrades`（装备/科技） | P2 叠加 `academyBuff(academy)` 作**赛季内**临时层（独立形参，季末清）。天梯口 `buildPvpBlueprints` 不动。 |
+| **掠夺 `applySiege` loot** | 按 `SIEGE_LOOT_RATE` 比例掠 | 主城被破时 `cabinet` 保护一部分（`lootRate × (1 − cabinetProtect)`）。 |
+
+新增服务方法（worldsvc `service.ts`）：
+- `upgradeBuilding(worldId, accountId, key)`：校验 `desk` 门控（`buildings[key]+queue 目标 < desk` 或 key=desk）+ 结算后资源足（`buildCost(key, toLevel)`）+ 队列未满 → 扣资源 + push `buildQueue` → 推 `build_update`/或 me 轮询。
+- `speedupBuild(worldId, accountId, key, coins)`：复刻 `speedupTraining`（coin → 时间，`hasBattlePass` 折扣）。
+
+---
+
+## 6. 变现点（SLG = 赚钱区，全走 commercial）
+
+- **建造队列加速**：coin 缩短 `completeAt`（复用 `speedupTraining`，`hasBattlePass` 享 15% 折扣，对齐已有练兵加成）。
+- **第 2 建造队列槽位**：默认 1 槽；付费道具 / 战令解锁第 2 槽（并发建造）。
+- **资源包**（commercial，已有）：直接补 5 赛季资源缺口。
+- **`hasBattlePass`**：建造速度 +X%（对齐已有「练兵 +20%」，数值 §7）。
+- 铁律延续：**不卖战力上限的硬突破**——建筑上限由 `desk` 等级门控，desk 升级靠资源+时间，coin 只买**速度**不买**上限**（防 P2W 直接破生态）。
+
+---
+
+## 7. DRAFT 数值（→ ECONOMY_NUMBERS §13-SLG-CITY 登记，待经济模拟）
+
+> 全部占位，上线前过经济模拟（faucet/sink 平衡 + 重肝节奏 + 鲸鱼天花板）。常量真源 = `server/shared/src/slg.ts`，本表是设计侧占位快照。
+
+| 常量（占位名） | 占位值 | 说明 |
+|---|---|---|
+| `DESK_MAX_LEVEL` | 20 | 书桌（总门控）上限，对齐三战 20 级 |
+| `BUILDING_MAX_LEVEL` | =desk 当前等级 | 各建筑 ≤ 书桌等级 |
+| `BUILD_YIELD_STEP` | 0.05（+5%/级） | inkPot/paperTray/metalForge 每级产率乘数 |
+| `GRAPHITE_SELF_BASE` / `STICKER_SELF_BASE` | DRAFT | graphiteMill/stickerShop 自产基底/h（× lvl） |
+| `CABINET_CAP_STEP` | 0.1（+10%/级） | 文件柜每级仓储上限；满级保护掠夺 X% |
+| `DRILL_TROOPCAP_STEP` | DRAFT | 练兵场每级 troopCap 增量 |
+| `DRILL_TRAIN_SPEED_STEP` | DRAFT | 练兵场每级训练提速 |
+| `WALL_DEFENSE_STEP` | DRAFT | 城墙每级主城基地/守军加成（P2） |
+| `BUILD_COST_{key}(level)` | DRAFT | 升级消耗 5 资源曲线；高级吃 graphite+sticker（sink） |
+| `BUILD_TIME_{key}(level)` | DRAFT | 建造时长曲线（= coin 加速变现点） |
+| `BUILD_QUEUE_SLOTS` | 1（付费 2） | 默认建造并发 |
+
+---
+
+## 8. 客户端 UI（用户要的「点进主城界面」）
+
+- **入口**：`WorldMapScene` 点**自己主城**（`type:'base'` 且 `mine`）→ 菜单「进入主城 / Enter Desk」→ 新场景 **`CityScene`**。
+- **`CityScene`**（手绘书桌俯视，SketchPen 风）：
+  - 书桌上摆一排文具建筑图标，标等级徽章；底部 5 资源条（当前量/产率/仓储上限）。
+  - 点建筑 → 详情卡：当前等级 / 各级加成曲线 / 下一级消耗（5 资源 + 时长）/「升级」按钮（资源不足置灰）。
+  - 建造队列条（进行中建筑 + 倒计时 + 「加速」coin 按钮）。
+  - **练兵入口并入此处**（三战练兵在校场）：点 `drillYard` → 练兵面板（数量滑杆 + 队列 + 加速），复用现有 `trainTroops`/`speedupTraining` API。
+- 返回大地图。i18n 三语（zh/en/de），key 前缀 `city.*`。
+
+---
+
+## 9. 契约 / 端点（→ SERVER_API + openapi-world）
+
+| 端点 | 鉴权 | 说明 |
+|---|---|---|
+| `POST /world/build/upgrade` `{key}` | 玩家 JWT | `upgradeBuilding`，扣资源入队 |
+| `POST /world/build/speedup` `{key, coins}` | 玩家 JWT | `speedupBuild`，coin 加速 |
+| `GET /world/me`（扩展） | 玩家 JWT | 返回 `buildings` + `buildQueue` |
+
+- `openapi-world.yml`：`PlayerWorldView.buildings`/`.buildQueue` + 两端点 + `BuildingKey` enum；`rest:gen` 重生 `openapi-world.ts`。
+- proto：完工推送可走既有 me 轮询；若要实时，加 `build_update`（同 `march_update` 模式，可后置）。
+
+---
+
+## 10. 分期（可独立验收）
+
+- **P1 — 核心经济闭环（最该先做，解空转 + troopCap 成长）**：
+  - `desk` 门控 + 5 资源建筑（**激活 graphite/sticker faucet + sink**）+ `cabinet`（仓储）+ `drillYard`（接 `troopCap`/训练）。
+  - `buildQueue` 调度（复刻 `trainingQueue`）+ `upgradeBuilding`/`speedupBuild` + `recomputeYield`/`trainTroops`/`settleResources` 注入。
+  - `CityScene` UI（含练兵并入）+ 契约 + i18n。
+  - 赛季清空接 `resetSeason`。
+  - **验收**：graphite/sticker 有产有耗、troopCap 随 drillYard 成长、建造队列加速可跑；worldsvc e2e（建造扣资源/完工生效/门控拒绝/加速/赛季清空）+ client tsc + build。
+- **P2 — 城防 + 科技**：`wall` 注入主城围攻 + `cabinet` 护掠夺 + `academy` 赛季蓝图 buff（独立注入口，守红线）。
+- **P3 — 委任内政官**：角色卡派进建筑加成（角色养成接入 SLG 内政），数值按角色属性。
+
+---
+
+## 11. 与现有系统咬合 / 红线复核
+
+- **不碰天梯**（SLG7 / D-CITY-6）：建筑注入只走 `recomputeYield`/`trainTroops`/主城 `buildSiegeBattle`/`buildSiegeBlueprints`（SLG 口）。`buildPvpBlueprints` 硬墙单测不受影响，新增「满级建筑喂天梯引擎 → 蓝图逐字等于常量」断言加固。
+- **统一养成树不变**：跨季养成仍只有装备/科技/材料（PvE+SLG 共用）。建筑是 SLG 赛季内政叠加层，季末清，不进养成树（避免与 SLG8「材料统一」混淆）。
+- **惰性结算不变**：建筑只改 `recomputeYield` 的乘数/自产项 + `settleResources` 的 cap，不引入每格 tick。
+- **变现合规**：coin 买速度不买上限（D-CITY-5/§6），对齐 ECONOMY_BALANCE 反 P2W 政策。
+
+---
+
+*本文档为 SLG 主城建筑系统设计基准，状态：设计中。D-CITY-1（赛季清空）待用户拍板后落 ADR；DRAFT 数值随经济模拟细化。*
