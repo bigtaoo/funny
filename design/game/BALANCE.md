@@ -1,6 +1,6 @@
 # 战斗数值快照（BALANCE）
 
-> 状态：实现中 · **权威：`server/engine/src/config.ts`（`@nw/engine`；本文是它的快照，非权威）** · 更新：2026-06-22（A7/S12-E 数值拍板）
+> 状态：实现中 · **权威：`server/engine/src/config.ts`（`@nw/engine`；本文是它的快照，非权威）** · 更新：2026-06-30（PVP-P4 平衡：6 单位入 PvP 池 + splitter 4→5 + Medic PvP override 定稿）
 >
 > ⚠️ 改数值改 `config.ts`，然后同步本文 + 注明日期。**不要**只改本文。
 > 本文取代 `product/v1-balance.md`（未落地）与 `core-gameplay-loop.md` 内联数值（设计意图）作为文档侧数值参考。
@@ -62,20 +62,26 @@
 | Lena（Anna 哨卫） | 150 | 10 | 1.0s | 0.75 | 1（近战） | 1 | 510 | **8** |
 | Mara（Anna 游击） | 40 | 12 | 1.3s | 1.4 | 2（远程，投射物 14 格/s） | 1 | 320 | 0 |
 
-> **核心三兵种**（Infantry/ShieldBearer/Archer）基础护甲为 0。**Anna 侧三单位**（Max/Lena/Mara，A6）经 PvE ch2/ch4/ch6 解锁后即进 PvP 牌池，其**自带护甲是单位身份的一部分**（Max 2 / Lena 8），与硬墙不冲突——硬墙挡的是「单位养成（S12）+装备（A5）追加的护甲」，PvP 路径不注入这部分（`buildPvpBlueprints`）。
+> **核心三兵种**（Infantry/ShieldBearer/Archer）基础护甲为 0。**Anna 侧三单位**（Max/Lena/Mara，A6）**恒入 PvP 基础库**（PVP_LOADOUT_DESIGN §7，不再 PvE 门槛过滤），其**自带护甲是单位身份的一部分**（Max 2 / Lena 8），与硬墙不冲突——硬墙挡的是「单位养成（S12）+装备（A5）追加的护甲」，PvP 路径不注入这部分（`buildPvpBlueprints`）。
 > Anna 单位特性：Max `burstOnSingle`（场上仅剩最后一名敌人时伤害 ×2）；Lena `disciplineArmor`（armor 8，密集轻击近乎免疫、重单击仍生效）；Mara `markEnemies`（箭矢标记目标，3 s 内受全来源 +25% 伤害）。
 
-### 5.2 PvE 专属单位（无卡牌 → 永不进 PvP 池）
-| 单位 | HP | 攻 | 攻击间隔 | 移速 | 射程 | 半径 | 特性 | 基础护甲 |
-|---|---|---|---|---|---|---|---|---|
-| 重甲 Ironclad | 290 | 10 | 1.5s | 0.5 | 1 | 520 | 抗箭肉盾 | **3**（A3，2026-06-22） |
-| 疾行 Runner | 30 | 9 | 0.7s | 1.9 | 1 | 250 | 快脆，密集冲锋 | 0 |
-| 哈耳庇厄 Harpy | 26 | 8 | 0.9s | 2.2 | 1 | 210 | flying（仅弓兵/箭塔可打），无视阻挡 | 0 |
-| 医护 Medic | 90 | 0 | — | 0.55 | 0 | 440 | aura_heal 半径 2、8 HP/s，无攻击 | 0 |
-| 狂战 Berserker | 110 | 18 | 1.1s | 1.1 | 1 | 420 | HP<40% 攻速 ×1.5 | 0 |
-| 分裂 Splitter | 65 | 7 | 1.0s | 0.8 | 1 | 470 | 死亡生成 Runner ×2 | 0 |
+### 5.2 PvP 解锁单位（按段位解锁进 PvP 池，PVP_LOADOUT_DESIGN §3；同时仍是 PvE 敌兵）
+> **口径变更（PVP-P1 起）**：这 6 个原「PvE 专属·无卡牌·永不进 PvP」的单位已获得 `CARD_DEFINITIONS` 条目（P1，2026-06-30），按段位（diamond/grandmaster/king）解锁后可入构筑卡组。它们在 PvE 里仍作为敌兵出现。蓝图数值（下表）PvP/PvE 共用，**唯一例外是 Medic 的 PvP 专属 override**（见表注）。
+
+| 单位 | HP | 攻 | 攻击间隔 | 移速 | 射程 | 半径 | 特性 | 基础护甲 | PvP 费用 |
+|---|---|---|---|---|---|---|---|---|---|
+| 疾行 Runner | 30 | 9 | 0.7s | 1.9 | 1 | 250 | 快脆，密集冲锋 | 0 | **3** |
+| 重甲 Ironclad | 290 | 10 | 1.5s | 0.5 | 1 | 520 | 抗箭肉盾 | **3**（A3） | **8** |
+| 狂战 Berserker | 110 | 18 | 1.1s | 1.1 | 1 | 420 | HP<40% 攻速 ×1.5 | 0 | **6** |
+| 分裂 Splitter | 65 | 7 | 1.0s | 0.8 | 1 | 470 | 死亡生成 Runner ×2 | 0 | **5**（P4 由 4 上调） |
+| 哈耳庇厄 Harpy | 26 | 8 | 0.9s | 2.2 | 1 | 210 | flying（仅弓兵/箭塔可打），无视阻挡 | 0 | **7** |
+| 医护 Medic | 90 | 0 / **PvP 4** | — / **PvP 1.2s** | 0.55 | 0 / **PvP 1** | 440 | aura_heal 半径 2、8 HP/s | 0 | **6** |
 
 > Ironclad armor=3（A3 2026-06-22）：确立抗箭肉盾定位。箭塔 TTK 从 ~29 s → ~36 s，迫使玩家用法术/近战清除。
+> **Medic PvP override（P4 定稿，`buildPvpBlueprints`）**：PvP 里给 attack=4 / interval=1.2 / range=1（DPS≈3.3）的象征性近战，使其不再是 0 攻呆牌；光环（8 HP/s 半径 2）不变。PvE 里仍是 0 攻纯奶。硬墙只挡养成/装备泄漏，不挡这种静态 PvP override（见 `pveUpgrades.ts` + `test/pvpBlueprintExpected.ts`）。
+
+> **PVP-P4 平衡（2026-06-30）：6 单位费用经 PvP 对战模拟器定标**（`client/test/pvpSim.ts`，复用 siege 确定性双军引擎跑等墨对撞，量度战斗残血而非基地竞速）。等墨胜率：splitter 100%（任何 4–6 费都碾压）→ 上调 4→5（真正克制是 AOE 陨石，模拟器不建模）；runner 3 费 59%（降到 2 费会到 82% 过强，**保持 3**，不加 swarm）；berserker 6 费 50%、ironclad 8 费 45%（均衡，保持）；harpy 7 费 / medic 6 费在纯 blob 对撞偏弱（27%），但模拟器无法公平评估「绕过近战的飞行」与「辅助奶」的真实价值，结合「不具压制性」判定**均保持原费用**。**Harpy 飞行护栏（§5 推迟项）：模拟器证明 cost 7 下 harpy 从不压制（绕过近战也赢不了对撞、6 只在基地竞速里输），故 P4 决定不加额外飞行机制**；类别下限强制 ≥1 建筑（箭塔是仅有 2 建筑之一）已让飞行在实战可解。
+> 旁注（非 P4 范围）：模拟器里既有锚点 max_1（91%）/infantry_1（82%）等墨胜率偏高——这是 A6 已上线单位的既有 PvP 平衡问题，构筑卡组格式让它们恒入基础库故更显眼，留作单独的锚点平衡 pass，不在本次调整。
 
 ## 6. 建筑
 
@@ -96,13 +102,19 @@
 | 弓箭兵 ×2 | 5 | 兵 | |
 | Max ×2 | 5 | 兵 | Anna 侧，PvE ch2 解锁后进池 |
 | Lena ×2 | 7 | 兵 | Anna 侧，PvE ch4 解锁后进池 |
-| Mara ×2 | 5 | 兵 | Anna 侧，PvE ch6 解锁后进池 |
+| Mara ×2 | 5 | 兵 | Anna 侧，永久入 PvP 基础库 |
 | 兵营 ×2 | 14 | 建筑 | |
 | 箭塔 ×2 | 12 | 建筑 | |
 | 急速冲锋 | 8 | 法术 | 移速 ×2，持续 5 s |
 | 陨石打击 | 12 | 法术 | 2×2 区域，伤害 9999（秒杀）；**只伤敌方**单位/建筑，不误伤己方 |
+| Runner ×1 | 3 | 兵 | 段位解锁 diamond，单条目（无 _1/_2） |
+| Ironclad ×1 | 8 | 兵 | 段位解锁 diamond |
+| Berserker ×1 | 6 | 兵 | 段位解锁 grandmaster |
+| Splitter ×1 | 5 | 兵 | 段位解锁 grandmaster（P4 由 4 上调） |
+| Harpy ×1 | 7 | 兵 | 段位解锁 king（飞行，高费即护栏） |
+| Medic ×1 | 6 | 兵 | 段位解锁 king（PvP override 加小攻击，见 §5.2 注） |
 
-> PvP 牌池 = 上表 18 张（`CARD_DEFINITIONS`）：核心 12 张 + Anna 三单位各 2 张（解锁后可入卡组）。
+> **PvP = 构筑卡组（PVP_LOADOUT_DESIGN）**，非全池随机。`CARD_DEFINITIONS` 共 24 条：核心 12（infantry/shieldbearer/archer/max/lena/mara 各 ×2）+ 兵营/箭塔 ×2 + haste/meteor + 6 个段位解锁单位各 1 条。基础库 10 种恒可用（6 英雄 + 兵营 + 箭塔 + haste + meteor）；6 个解锁单位按赛季峰值 ELO 开放。卡组 = 10 张、每种 ≤1、≥1 建筑 + ≥1 法术。
 
 ## 8. 单位养成（S12-E 校准，2026-06-22）
 

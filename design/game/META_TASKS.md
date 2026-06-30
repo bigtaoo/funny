@@ -343,7 +343,7 @@
 - [x] **PVP-P1 引擎层** ✅（2026-06-30）：`config.ts` 6 条新卡（runner/ironclad/berserker/splitter/harpy/medic）+ Medic PvP override；`GameEngine` PvP 路径支持 top/bottom 双 drawPolicy + 双独立 PRNG 流；`GameConfig.decks?`；`pvpDeck.ts`（@nw/shared）`PVP_BASE_CARDS`/`PVP_UNLOCK_TIERS`/`validatePvpDeck`/`defaultPvpDeck`。
 - [x] **PVP-P2 传输层** ✅（2026-06-30）：`TicketClaims.decks?`；`RoomCreate.deck`/`MatchStart.top_deck|bottom_deck` proto；gateway 取 `seasonPeakElo` 校验 deck（非法回退 `defaultPvpDeck()`）；matchsvc `QueueEntry.deck`/`Slot.deck` 全链路透传；gameserver `Room.launch()` 下发双方卡组；`proto/transport.ts` encode 完整。
 - [x] **PVP-P3 客户端构筑 UI** ✅（2026-06-30）：`DeckBuilderScene`（2列卡格 + ELO 锁标 + 10张校验）；`pvpLoadout.ts`（客户端镜像常量）；`SaveData.pvpDeck?`（本地字段）；`SaveManager.patchLocal()` + `reconcile`/`adoptCloud` 保留 pvpDeck；`transport.ts MatchStart` decode/fromPartial 补 topDeck/bottomDeck；`AppViews.showDeckBuilder`；`createAppCore.goDeckBuilder()` + `onStartRanked` 路由构筑 UI；goGameNet 传 `decks` 给引擎。
-- [ ] **PVP-P4 平衡**：difficultySim 重跑（全量 → 构筑 10 张），定 6 单位费用（runner/ironclad/berserker/splitter/harpy/medic），Medic/Harpy 专属 override 数值确认；更新 BALANCE.md。
+- [x] **PVP-P4 平衡** ✅（2026-06-30）：新建 PvP 对战模拟器 `client/test/pvpSim.ts`（复用 siege 双军引擎跑等墨对撞，非 PvE difficultySim）定标 6 单位费用——**splitter 4→5**（唯一改动；任何 4–6 费等墨 100% 胜，真克星是 AOE 陨石），runner3/berserker6/ironclad8/harpy7/medic6 保持；**Medic PvP override 定稿** attack4/interval1.2/range1（`pveUpgrades.ts`）；**Harpy 不加飞行护栏**（sim 证非压制，回答 §5 推迟项）；卡组大小维持 10。更新 BALANCE.md §5.2/§7、PVP_LOADOUT_DESIGN §5/§8/§9。顺带修 P1 遗留：Medic override 致 5 个硬墙测试断言失败，新增 `pvpBlueprintExpected.ts` 共享期望并修正。
 - [ ] **PVP-P5 美术（非阻塞）**：6 单位 `.tao` 骨骼（harpy/medic/runner/ironclad/berserker/splitter），补全后 `SKIN_ASSETS` 表接线。
 
 ---

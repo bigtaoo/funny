@@ -16,6 +16,7 @@ import type { GameConfig, IGameEngine, OwnerId } from '../src/game/types';
 import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
 import { UNIT_BLUEPRINTS } from '../src/game/config';
 import { buildPvpBlueprints } from '../src/game/balance/pveUpgrades';
+import { pvpExpectedBlueprints } from './pvpBlueprintExpected';
 
 const TICK_DT = 1 / 30;
 const GameOver = GamePhase.GameOver;
@@ -158,7 +159,7 @@ describe('Siege auto-battle — win/loss paths (§16.1)', () => {
 });
 
 describe('Siege auto-battle — ladder guardrail must not break (§16.6)', () => {
-  it('after creating the siege engine (with initialHp attacker army), PvP blueprints still equal constants byte-for-byte', () => {
+  it('after creating the siege engine (with initialHp attacker army), PvP blueprints still equal constants (+ static §5 override)', () => {
     const level = battleLevel({
       seed: 7,
       attackerArmy: [{ unitType: UnitType.Infantry, col: 2, row: 8, initialHp: 50 }],
@@ -166,6 +167,7 @@ describe('Siege auto-battle — ladder guardrail must not break (§16.6)', () =>
     });
     createGameEngine(siegeConfig(level));
     // initialHp only takes effect on the Unit instance; it must never be written back into blueprint constants.
-    expect(buildPvpBlueprints()).toEqual(UNIT_BLUEPRINTS);
+    // PvP blueprints == constants apart from the documented static Medic override (PVP_LOADOUT_DESIGN §5).
+    expect(buildPvpBlueprints()).toEqual(pvpExpectedBlueprints());
   });
 });
