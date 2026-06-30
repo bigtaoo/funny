@@ -1,22 +1,22 @@
 name: obs-deploy
 
-# 观测栈（Loki + Alloy + Grafana + 可选 cloudflared）自动重部署到 Hetzner VPS（/root/funny）。
-# 与主栈解耦：单独 compose、单独触发（改动落在 observability/ 才跑），不碰游戏后端容器。
-# 触发：push 到 main 且改动落在 observability 相关文件，或在 Actions 页手动 Run。
-# 流程：SSH 进 VPS → git reset --hard origin/main → docker compose -f observability/... up -d --force-recreate。
-#   · 用预构建镜像，无需 --build（与主栈的本机构建不同）。
-#   · --force-recreate：挂载的 alloy/loki/grafana 配置文件改了，容器定义没变，up 不会自动重启 →
-#     强制重建才能让新配置生效（obs 容器无游戏流量，重建零影响）。
-# 部署细节见 server/observability/README.md「Phase 2 部署」。
+# Auto-redeploy the observability stack (Loki + Alloy + Grafana + optional cloudflared) to the Hetzner VPS (/root/funny).
+# Decoupled from the main stack: separate compose, separate trigger (only runs when observability/ changes), never touches game backend containers.
+# Trigger: push to main touching observability-related files, or manual Run from the Actions page.
+# Flow: SSH into VPS → git reset --hard origin/main → docker compose -f observability/... up -d --force-recreate.
+#   · Uses pre-built images, no --build needed (unlike the main stack's on-VPS build).
+#   · --force-recreate: if mounted alloy/loki/grafana config files changed but container definitions didn't,
+#     `up` won't auto-restart → force-recreate is needed to apply the new config (obs containers have no game traffic, so recreating has zero impact).
+# Deployment details: server/observability/README.md "Phase 2 deployment".
 #
-# 复用 server-deploy 那套 SSH secret/variable（同一 VPS、同一 CI deploy key）：
+# Reuses server-deploy SSH secret/variables (same VPS, same CI deploy key):
 #   secret  VPS_SSH_KEY
-#   vars    VPS_HOST / VPS_USER(缺省 root) / VPS_DEPLOY_PATH(缺省 /root/funny)
-# 本工作流专属 repo variables：
-#   OBS_DEPLOY_ENABLED = true   —— 启用开关（未设则 job 跳过；首次需先在 VPS 手动建好
-#                                  observability/.env，见 README 后再开）。
-#   OBS_TUNNEL_ENABLED = true   —— 可选；设了才带 `--profile tunnel` 起 cloudflared
-#                                  （需 .env 里有有效 CF_TUNNEL_TOKEN）。未设则只起 loki/alloy/grafana。
+#   vars    VPS_HOST / VPS_USER (defaults to root) / VPS_DEPLOY_PATH (defaults to /root/funny)
+# Repo variables specific to this workflow:
+#   OBS_DEPLOY_ENABLED = true   — Enable switch (job skipped if not set; on first use, manually create
+#                                 observability/.env on the VPS per the README before enabling).
+#   OBS_TUNNEL_ENABLED = true   — Optional; when set, starts cloudflared with `--profile tunnel`
+#                                 (requires a valid CF_TUNNEL_TOKEN in .env). If not set, only loki/alloy/grafana start.
 
 on:
   push:
@@ -26,7 +26,7 @@ on:
       - '.github/workflows/obs-deploy.yml'
   workflow_dispatch: {}
 
-# 同时只跑一个 obs 部署，新的取消旧的。
+# Only one obs deployment runs at a time; new run cancels the old one.
 concurrency:
   group: obs-deploy
   cancel-in-progress: true

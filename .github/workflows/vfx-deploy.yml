@@ -1,15 +1,15 @@
 name: vfx-deploy
 
-# 战斗特效编辑器 vfx-editor（Worker nivara-vfx，纯静态资源）自动发布到 Cloudflare。
-# 触发：push 到 main 且改动落在 vfx 相关文件，或在 Actions 页手动 Run。
-# 流程：npm ci → npm run build（webpack production，产出 tools/vfx-editor/dist）→ wrangler deploy。
-# 部署细节：design/tools/vfx-editor/DESIGN.md。
+# Auto-publish the combat VFX editor vfx-editor (Worker nivara-vfx, pure static assets) to Cloudflare.
+# Trigger: push to main touching vfx-related files, or manual Run from the Actions page.
+# Flow: npm ci → npm run build (webpack production, outputs tools/vfx-editor/dist) → wrangler deploy.
+# Deployment details: design/tools/vfx-editor/DESIGN.md.
 #
-# 复用 ops/client/animator 那套 repo secrets（同一 CF 账号，"Edit Cloudflare Workers" token 覆盖全账号 Worker）：
-#   CLOUDFLARE_API_TOKEN   —— 权限至少 Workers Scripts:Edit（账号级，vfx 同样适用，无需新建）
-#   CLOUDFLARE_ACCOUNT_ID  —— 账号 ID（与 ops/client/animator 同值）
-# vfx 编辑器是纯前端静态站，无 Supabase/后端依赖，构建期无需注入任何变量。
-# 启用开关：repo variable VFX_DEPLOY_ENABLED = true（未设则 job 跳过，避免配好前每次 push 报红）。
+# Reuses the ops/client/animator repo secrets (same CF account; "Edit Cloudflare Workers" token covers all account Workers):
+#   CLOUDFLARE_API_TOKEN   — Requires at least Workers Scripts:Edit (account-level; also works for vfx, no new token needed)
+#   CLOUDFLARE_ACCOUNT_ID  — Account ID (same value as ops/client/animator)
+# The vfx editor is a pure frontend static site with no Supabase/backend dependencies; no variables need to be injected at build time.
+# Enable switch: repo variable VFX_DEPLOY_ENABLED = true (job skipped if not set, to avoid red builds before setup is complete).
 
 on:
   push:
@@ -20,7 +20,7 @@ on:
       - '.github/workflows/vfx-deploy.yml'
   workflow_dispatch: {}
 
-# 同时只跑一个 vfx 部署，新的取消旧的，避免并发 deploy 打架。
+# Only one vfx deployment runs at a time; new run cancels the old one to prevent concurrent deploy conflicts.
 concurrency:
   group: vfx-deploy
   cancel-in-progress: true
@@ -28,7 +28,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # 未设 repo variable VFX_DEPLOY_ENABLED=true 时整个 job 跳过（避免配好前每次 push 报红）。
+    # Skip the entire job if repo variable VFX_DEPLOY_ENABLED is not set to true (avoids red builds before setup is complete).
     if: ${{ vars.VFX_DEPLOY_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
@@ -43,13 +43,13 @@ jobs:
         working-directory: tools/vfx-editor
         run: npm ci
 
-      # 产出 tools/vfx-editor/dist（webpack production）。
+      # Outputs tools/vfx-editor/dist (webpack production).
       - name: vfx build
         working-directory: tools/vfx-editor
         run: npm run build
 
-      # 从仓库根用 -c 指定 vfx 配置（assets 指向 ./tools/vfx-editor/dist）。
-      # 直接用 npx wrangler 跑（不用 wrangler-action），报错原样可见。
+      # Run from repo root using -c to specify the vfx config (assets point to ./tools/vfx-editor/dist).
+      # Uses npx wrangler directly (not wrangler-action) so errors are visible as-is.
       - name: deploy to Cloudflare
         working-directory: .
         env:
