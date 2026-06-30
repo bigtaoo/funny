@@ -1,8 +1,8 @@
 # PvP 构筑卡组 + 按段位解锁单位
 
-版本：v0.1（设计稿，待实现）
+版本：v0.2（P1 引擎层已实现）
 日期：2026-06-30
-状态：设计中
+状态：P1 完成，待 P2 传输层
 
 > **一句话**：把现有 6 个 PvE-only 单位（ironclad/runner/harpy/medic/berserker/splitter）复用为 PvP 可出单位，按天梯段位解锁；同时把 PvP 从「全池随机发牌」升级为「固定卡组构筑」（Clash Royale 式）。动机：美术资源紧张，单为 PvE 投入单位回报减半，复用后将来补 `.tao` 一次投入两个模式都吃到。
 
@@ -113,8 +113,13 @@
 
 ## 8. 分期实现建议
 
-1. **P0 文档**（本文）→ 拍板。
-2. **P1 引擎层**：CARD_DEFINITIONS 增 6 条 + 费用 + i18n；`buildPvpBlueprints` 加 Harpy/Medic override；引擎 PvP 路径支持 top/bottom 双 drawPolicy + 双 PRNG 流。**先用「服务端固定下发双方全解锁卡组」跑通锁步**，再接解锁/构筑。
+1. **P0 文档**（本文）→ 拍板。✅
+2. **P1 引擎层**：CARD_DEFINITIONS 增 6 条 + 费用 + i18n；`buildPvpBlueprints` 加 Harpy/Medic override；引擎 PvP 路径支持 top/bottom 双 drawPolicy + 双 PRNG 流。**先用「服务端固定下发双方全解锁卡组」跑通锁步**，再接解锁/构筑。✅ **（2026-06-30 完成）**
+   - `config.ts`：6 条新卡（runner/ironclad/berserker/splitter/harpy/medic），各 1 张，cost 提案值已填（P4 sim 验证）；max/lena/mara 注释更正为「永久入 PvP 基础库」。
+   - `pveUpgrades.ts`：`buildPvpBlueprints()` 加 Medic PvP override（attack=4/interval1.2/range1，TODO P4 定稿）；Harpy 高费护栏靠 CARD_DEFINITIONS cost=7 实现，无蓝图改动。
+   - `types.ts`：`GameConfig` 新增 `decks?: { top: string[]; bottom: string[] }`。
+   - `GameEngine.ts`：PvP/netplay `else` 分支加双 drawPolicy 逻辑，各自独立 PRNG 流（seed 派生，两端一致）。
+   - i18n：zh/en/de 三语各补 12 个 `card.<unit>.name/desc` key。
 3. **P2 传输层**：ticket/match_start 带 `decks`；gateway/matchsvc 取 ELO 算解锁集 + 校验 deck。
 4. **P3 客户端构筑 UI**：可选库展示（带「段位解锁」锁标）、卡组编辑、存档存卡组、默认卡组。
 5. **P4 平衡**：difficultySim 重跑，定卡组大小（8/10/12）与 6 单位费用；更新 BALANCE.md。
