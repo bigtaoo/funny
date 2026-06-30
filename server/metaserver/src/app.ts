@@ -3,7 +3,6 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
-import openapiGlue from 'fastify-openapi-glue';
 import type { Collections, JwtConfig, FeatureFlagCache } from '@nw/shared';
 import { createLogger, internalKeysFromEnv } from '@nw/shared';
 import { MetaService } from './service.js';
@@ -15,9 +14,11 @@ import { registerInternalRoutes } from './internal.js';
 import { HttpCommercialClient, type CommercialClient } from './commercialClient.js';
 import { HttpGatewayClient, type GatewayClient } from './gatewayClient.js';
 import { HttpMetaSocialsvcClient, nullMetaSocialsvcClient } from './socialsvcClient.js';
+import { registerRoutes } from './generated/routes.gen.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-// Both dist/app.js and src/app.ts are two levels below metaserver → contracts.
+// SPEC_PATH is exported for the openapi-response-schema.test.ts static schema guard.
+// Routes are no longer loaded from this path at runtime (ADR-023: build-time codegen).
 export const SPEC_PATH = resolve(here, '../../contracts/openapi.yml');
 
 export interface BuildAppOpts {
@@ -65,7 +66,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   });
 
   // Unified error envelope: validation failures and security-handler throws are all converted to ApiResp.
-  // Must be set before glue route registration — Fastify binds the error handler into the route context at
+  // Must be set before route registration — Fastify binds the error handler into the route context at
   // registration time; calling setErrorHandler afterwards has no effect on already-registered routes.
   app.setErrorHandler((error: Error & { statusCode?: number }, req, reply) => {
     const status = error.statusCode ?? 500;
@@ -77,7 +78,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     reply.code(status).send({ ok: false, error: { code, message: error.message } });
   });
 
-  // Liveness probe (not in openapi.yml; glue does not take it over): reverse-proxy strips /api prefix and routes to /health.
+  // Liveness probe (not in openapi.yml): reverse-proxy strips /api prefix and routes to /health.
   // Used for compose / load-balancer / C-3 deployment smoke tests.
   app.get('/health', async () => ({ ok: true }));
 
@@ -102,10 +103,10 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     socialsvc,
   });
 
-  // Ad platform SSV callbacks (platform-initiated; bypass openapi glue; no player authentication).
+  // Ad platform SSV callbacks (platform-initiated; no player authentication).
   registerAdCallbackRoutes(app, { cols: opts.cols, commercial, now });
 
-  // Internal routes (not visible to players; X-Internal-Key auth; bypass openapi glue): fetch ELO + end-of-match reporting + peer judge.
+  // Internal routes (not visible to players; X-Internal-Key auth): fetch ELO + end-of-match reporting + peer judge.
   registerInternalRoutes(app, {
     cols: opts.cols,
     internalKey: opts.internalKey,
@@ -115,11 +116,9 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     commercial,
   });
 
-  await app.register(openapiGlue, {
-    specification: SPEC_PATH,
-    serviceHandlers: service,
-    securityHandlers: makeSecurityHandlers(opts.jwt),
-  });
+  // Public REST routes — generated from openapi.yml at build time (ADR-023).
+  // MetaService is structurally checked against MetaHandlers at compile time (missing method = tsc error).
+  await registerRoutes(app, service, makeSecurityHandlers(opts.jwt));
 
   return app;
 }

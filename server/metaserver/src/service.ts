@@ -2188,4 +2188,14 @@ export class MetaService {
     }
     return ok({ save: out.save });
   }
+
+  // Analytics endpoints in openapi.yml are stubs here — analyticsvc is a separate process.
+  // Defined so MetaService satisfies MetaHandlers (ADR-023 compile-time check); always returns 501.
+  async getAnalyticsConfig(_req: FastifyRequest, reply: FastifyReply) {
+    return reply.code(501).send({ ok: false, error: { code: 'NOT_IMPLEMENTED', message: 'analytics config not served by metaserver' } });
+  }
+
+  async postAnalyticsEvents(_req: FastifyRequest, reply: FastifyReply) {
+    return reply.code(501).send({ ok: false, error: { code: 'NOT_IMPLEMENTED', message: 'analytics events not served by metaserver' } });
+  }
 }

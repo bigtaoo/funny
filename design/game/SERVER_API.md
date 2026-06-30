@@ -38,7 +38,7 @@
 - `accountId` 由服务端从 token 解出，**客户端请求体里不带 accountId**（防越权）。
 
 ### 1.2 编码（契约单一来源 + 双端 codegen）
-- **REST = JSON / `openapi.yml`（design-first，M15）**：`contracts/openapi.yml` 是机器契约单一来源；客户端 typed fetch（`openapi-typescript` + `openapi-fetch`，`client/scripts/gen-openapi.mjs` 生成入库）。服务端 metaserver 路由+校验**现行**经 `fastify-openapi-glue` **运行时**解析装配——⚠ **ADR-023 已拍板将其改为构建期代码生成 + 生成产物入库**（运行时解析使坏 spec 只在启动期才暴露，且契约变更无服务端 diff 供 CD 卡版本；2026-06-30 一次 i18n 逗号 bug 即因此崩 metaserver）。实现前读 [`DECISIONS.md` ADR-023](../DECISIONS.md)。统一响应包络：
+- **REST = JSON / `openapi.yml`（design-first，M15）**：`contracts/openapi.yml` 是机器契约单一来源；客户端 typed fetch（`openapi-typescript` + `openapi-fetch`，`client/scripts/gen-openapi.mjs` 生成入库）。服务端 metaserver 路由+校验经**构建期代码生成**装配（ADR-023，已落地 2026-06-30）：`server/contracts/scripts/gen-openapi-server.mjs` 解析 openapi.yml，生成 `server/metaserver/src/generated/routes.gen.ts` 并入库——坏 spec 在 codegen/tsc 阶段即失败，契约变更有服务端 diff 可供 CD 卡版本；运行时不再依赖 `fastify-openapi-glue`。CI 检查：`npm run gen:api:server:check`（在 metaserver 目录）。统一响应包络：
   ```ts
   type ApiResp<T> =
     | { ok: true;  data: T }

@@ -1,12 +1,13 @@
-// Contract guard (no Mongo required): metaserver is the only process using fastify-openapi-glue;
-// responses are serialized by fast-json-stringify according to the response schemas in openapi.yml.
+// Contract guard (no Mongo required): metaserver registers response schemas from the generated
+// routes.gen.ts (ADR-023), which feeds fast-json-stringify via Fastify's schema.response.
 // If an object node has neither properties nor additionalProperties, fast-json-stringify serializes
 // it as `{}`, silently stripping all fields (root cause of the 2026-06-24 check-in calendar
 // `+undefined` issue, RETENTION_DESIGN §10.1).
 //
-// This test walks all response schemas (including $ref dereferencing) and permanently guards against
-// this entire class of bug: any new endpoint that omits properties will fail here.
-// Only scans openapi.yml — worldsvc uses raw node:http + JSON.stringify (no field stripping),
+// This test walks all response schemas in openapi.yml (including $ref dereferencing) and permanently
+// guards against this class of bug: any new endpoint that omits properties will fail here before
+// codegen/commit, keeping routes.gen.ts safe.
+// Only scans openapi.yml — worldsvc uses raw JSON.stringify (no field stripping),
 // openapi-world.yml is documentation only; other processes do not depend on fastify.
 import { readFileSync } from 'fs';
 import yaml from 'js-yaml';

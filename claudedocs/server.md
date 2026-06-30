@@ -30,6 +30,10 @@
 
 **Windows TCP 排除端口注意**：`netsh interface ipv4 show excludedportrange` 查被 WinNAT/Hyper-V 保留的端口段，撞上换端口（8082/8083 曾被保留，现用 8086）。
 
+## 构建链
+
+- **metaserver REST 路由（ADR-023，2026-06-30）**：`contracts/openapi.yml` → `server/contracts/scripts/gen-openapi-server.mjs` → `metaserver/src/generated/routes.gen.ts`（已入库）。改动 openapi.yml 后在 `server/metaserver/` 跑 `npm run gen:api:server` 重生成，再提交。CI 验证用 `npm run gen:api:server:check`（文件过期则失败）。坏 spec（如未加引号的逗号）在 codegen 阶段直接报错，不进运行时。
+
 ## 启动（dev）
 
 ```powershell
