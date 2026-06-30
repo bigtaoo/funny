@@ -2,7 +2,7 @@
   "name": "@nw/analyticsvc",
   "version": "0.1.0",
   "private": true,
-  "description": "Analytics 事件采集服务（第九进程，A9-0~3）",
+  "description": "Analytics event collection service (ninth process, A9-0~3)",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc -b",

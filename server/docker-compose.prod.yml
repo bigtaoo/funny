@@ -1,19 +1,19 @@
-# 生产/联调全栈（C-3 / S1-M / S5）：mongo(单节点副本集) + metaserver + gateway + matchsvc + gameserver + commercial + caddy 反代。
-# 一条命令起全栈（见 deploy/up.sh）：
+# Production/integration full stack (C-3 / S1-M / S5): mongo(single-node replica set) + metaserver + gateway + matchsvc + gameserver + commercial + caddy reverse proxy.
+# Start the full stack with one command (see deploy/up.sh):
 #   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 #
-# 出口：https://{NW_DOMAIN}/api/...（REST）、wss://{NW_DOMAIN}/gw（控制面：房间/匹配）、wss://{NW_DOMAIN}/ws（数据面：锁步）、
-#       https://{NW_DOMAIN}/world|/family|/auction（SLG 大世界 REST，S8）。
-# 内部链路（S1-M5，matchsvc 独立进程；matchsvc 不暴露公网）：
-#           gateway 经 NW_META_BASE_URL=http://metaserver:8080 取 ELO；
-#           gateway → matchsvc 命令：NW_MATCHSVC_INTERNAL_URL=http://matchsvc:8091；
-#           matchsvc → gateway 推送：NW_GATEWAY_INTERNAL_URL=http://gateway:8090；
-#           gameserver 经 NW_MATCHSVC_INTERNAL_URL=http://matchsvc:8091 注册/心跳，局末经 meta 上报；共用 NW_INTERNAL_KEY。
-#           NW_GAME_PUBLIC_WS_URL = 客户端可达的数据面地址（如 wss://域名/ws），写进 ticket + 分配兜底。
-# 缺省 NW_DOMAIN=:80 → 走 HTTP/WS（本机联调）；设真域名则 Caddy 自动 HTTPS/WSS。
+# Endpoints: https://{NW_DOMAIN}/api/...(REST), wss://{NW_DOMAIN}/gw (control-plane: room/matchmaking), wss://{NW_DOMAIN}/ws (data-plane: lockstep),
+#            https://{NW_DOMAIN}/world|/family|/auction (SLG overworld REST, S8).
+# Internal routing (S1-M5, matchsvc as standalone process; matchsvc not exposed to public):
+#           gateway fetches ELO via NW_META_BASE_URL=http://metaserver:8080;
+#           gateway → matchsvc commands: NW_MATCHSVC_INTERNAL_URL=http://matchsvc:8091;
+#           matchsvc → gateway push: NW_GATEWAY_INTERNAL_URL=http://gateway:8090;
+#           gameserver registers/heartbeats via NW_MATCHSVC_INTERNAL_URL=http://matchsvc:8091, reports to meta at game end; shares NW_INTERNAL_KEY.
+#           NW_GAME_PUBLIC_WS_URL = client-reachable data-plane address (e.g. wss://domain/ws), written into ticket + allocation fallback.
+# Default NW_DOMAIN=:80 → HTTP/WS (local testing); set a real domain and Caddy auto-provisions HTTPS/WSS.
 #
-# 与开发版 docker-compose.yml 的差异：本文件起全部进程（不只 mongo）、mongo 挂命名卷持久化、
-# 副本集成员 host 用容器名 mongo（供服务间 DNS 解析），故服务连 mongodb://mongo:27017/?replicaSet=rs0。
+# Differences from dev docker-compose.yml: this file starts all processes (not just mongo), mongo uses named volume for persistence,
+# replica set member host uses container name mongo (for inter-service DNS resolution), so services connect via mongodb://mongo:27017/?replicaSet=rs0.
 
 services:
   redis:
@@ -36,7 +36,7 @@ services:
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      # 首启自动 rs.initiate（成员 host=mongo:27017，容器网络内可解析）；已初始化则跳过，幂等。
+      # Auto rs.initiate on first start (member host=mongo:27017, resolvable within container network); skips if already initialized, idempotent.
       test: >
         mongosh --quiet --eval "try { rs.status().ok } catch (e) {
         rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }"
@@ -61,18 +61,18 @@ services:
       NW_META_HOST: 0.0.0.0
       NW_WX_APPID: ${NW_WX_APPID:-}
       NW_WX_SECRET: ${NW_WX_SECRET:-}
-      # 经济编排调 commercial（内部网络，不暴露公网，S5）。
+      # Economy orchestration calls commercial (internal network, not exposed to public, S5).
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
-      # 对等裁判（Phase C）：ranked hash 不一致时经 gateway 挑第三方复算。不加 depends_on
-      # 避免与 gateway→metaserver 成环；裁判仅在局末调用、gateway 不可达时优雅作废。
+      # Peer judge (Phase C): calls gateway for third-party re-evaluation when ranked hash mismatch. No depends_on
+      # to avoid a cycle with gateway→metaserver; judge is only called at game end, gracefully dropped if gateway is unreachable.
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
-      # 功能开关下发 + 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）。
-      # ⚠ 必坑（同 matchsvc）：缺 NW_ADMIN_INTERNAL_URL → flag 轮询禁用 → /bootstrap 恒空 map → 定向采集永不生效。
+      # Feature flag delivery + client log targeted collection (FEATURE_FLAGS_DESIGN §9).
+      # ⚠ Critical gotcha (same as matchsvc): missing NW_ADMIN_INTERNAL_URL → flag polling disabled → /bootstrap always returns empty map → targeted collection never works.
       NW_ADMIN_INTERNAL_URL: http://admin:8083
       NW_REGION: ${NW_REGION:-}
-      # Loki push 地址（客户端异常全量上报 + 定向日志采集都靠它）。obs 栈的 loki 经
-      # observability/docker-compose.obs.yml 接入本主栈网络（server_default，别名 nw-loki），故这里
-      # 用容器名直达。obs 停了也无妨：pushToLoki 解析不到 → 静默丢弃，绝不影响玩家。可用 .env 覆盖。
+      # Loki push URL (client crash full reporting + targeted log collection both depend on it). obs stack's loki is
+      # connected to the main stack network (server_default, alias nw-loki) via observability/docker-compose.obs.yml, so
+      # use container name directly. Safe if obs is down: pushToLoki fails to resolve → silently drops, never affects players. Can override via .env.
       NW_LOKI_PUSH_URL: ${NW_LOKI_PUSH_URL:-http://nw-loki:3100/loki/api/v1/push}
     depends_on:
       mongo:
@@ -81,7 +81,7 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  # 商业服务（钱包/充值/消费/盲盒 RNG/流水，S5）。玩家不可达，仅 meta 经内部网络可达；连专属库。
+  # Commercial service (wallet/recharge/spend/gacha RNG/ledger, S5). Not player-reachable; only meta can reach it via internal network; uses dedicated DB.
   commercial:
     build:
       context: .
@@ -92,7 +92,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
       NW_COMM_PORT: "8092"
       NW_COMM_HOST: 0.0.0.0
-      # 专属库（默认复用同 Mongo 实例、不同库名；涨了整库迁独立实例只改这两个）。
+      # Dedicated DB (defaults to same Mongo instance with a different DB name; scaling to a separate instance only requires changing these two).
       NW_COMM_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       NW_COMM_MONGO_DB: ${NW_COMM_MONGO_DB:-notebook_wars_commercial}
     depends_on:
@@ -100,7 +100,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # 控制面 WS（房间/匹配，S1-M1）。薄连接层，不连 Mongo；向 meta 取 ELO，命令转发 matchsvc。
+  # Control-plane WS (room/matchmaking, S1-M1). Thin connection layer, no Mongo; fetches ELO from meta, forwards commands to matchsvc.
   gateway:
     build:
       context: .
@@ -115,7 +115,7 @@ services:
       NW_GW_INTERNAL_PORT: "8090"
       NW_META_BASE_URL: http://metaserver:8080
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
-      # 宗门频道实时扇出（S8-4b）：订阅与 worldsvc 同一 Redis；覆盖 NW_GW_REDIS_URL='' 可降级。
+      # Clan channel real-time fan-out (S8-4b): subscribes to the same Redis as worldsvc; override NW_GW_REDIS_URL='' to degrade.
       NW_GW_REDIS_URL: ${NW_GW_REDIS_URL:-redis://redis:6379}
       NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
     depends_on:
@@ -125,7 +125,7 @@ services:
       - socialsvc
     restart: unless-stopped
 
-  # 私有匹配大脑（S1-M5，独立进程，不暴露公网）。匹配/房间/game 注册表/签 ticket；不连库。
+  # Private matchmaking brain (S1-M5, standalone process, not exposed to public). Matchmaking/room/game registry/ticket signing; no DB.
   matchsvc:
     build:
       context: .
@@ -138,15 +138,15 @@ services:
       NW_MM_INTERNAL_PORT: "8091"
       NW_MM_HOST: 0.0.0.0
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
-      # 数据面兜底地址（gameserver 注册前用）：客户端可达的 game WS。设真域名时改 wss://域名/ws。
+      # Data-plane fallback address (used before gameserver registers): client-reachable game WS. Change to wss://domain/ws when using a real domain.
       NW_GAME_PUBLIC_WS_URL: ${NW_GAME_PUBLIC_WS_URL:-ws://localhost/ws}
-      # feature flag 轮询源（不配=禁用→match_bot_fallback 等开关恒为默认 false，永不生效）。
+      # Feature flag polling source (if not configured = disabled → match_bot_fallback and other flags always default to false, never take effect).
       NW_ADMIN_INTERNAL_URL: http://admin:8083
       NW_REGION: ${NW_REGION:-}
       NW_MM_BOT_FALLBACK_MS: ${NW_MM_BOT_FALLBACK_MS:-30000}
     restart: unless-stopped
 
-  # 数据面 WS（瘦锁步中继，S1-M2）。?ticket= 验签，永不连库；局末上报 meta。
+  # Data-plane WS (thin lockstep relay, S1-M2). Validates ?ticket=, never connects to DB; reports to meta at game end.
   gameserver:
     build:
       context: .
@@ -165,8 +165,8 @@ services:
       - matchsvc
     restart: unless-stopped
 
-  # SLG 大世界（S8，第七进程，公网 REST 第四面）。反代 /world,/family,/auction → 此进程；
-  # 复用 meta JWT 仅验签（不连 accounts 库）；连专属库 notebook_wars_world。Redis 可选（S8-2/S8-4 才需）。
+  # SLG overworld (S8, seventh process, public REST fourth face). Reverse-proxied /world,/family,/auction → this process;
+  # reuses meta JWT for signature verification only (no accounts DB connection); uses dedicated DB notebook_wars_world. Redis optional (needed for S8-2/S8-4).
   worldsvc:
     build:
       context: .
@@ -180,9 +180,9 @@ services:
       NW_WORLD_HOST: 0.0.0.0
       NW_WORLD_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       NW_WORLD_MONGO_DB: ${NW_WORLD_MONGO_DB:-notebook_wars_world}
-      # Redis：默认指向同栈 redis 服务；覆盖 NW_WORLD_REDIS_URL='' 可降级（行军走 Mongo 兜底）。
+      # Redis: defaults to the redis service in the same stack; override NW_WORLD_REDIS_URL='' to degrade (march falls back to Mongo).
       NW_WORLD_REDIS_URL: ${NW_WORLD_REDIS_URL:-redis://redis:6379}
-      # 实时事件回推客户端（S8-1+ 经 gateway /gw/push）。
+      # Real-time event push back to clients (S8-1+ via gateway /gw/push).
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
     depends_on:
@@ -194,8 +194,8 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  # 运维后台后端（S7，OPS_DESIGN）。玩家不可达，caddy 不路由到它（仅内网/VPN/IP allowlist）；
-  # 连独立库 notebook_wars_admin；调 meta(player/mail) + gateway/matchsvc(/internal/stats)。
+  # Ops admin backend (S7, OPS_DESIGN). Not player-reachable; caddy does not route to it (internal network/VPN/IP allowlist only);
+  # uses dedicated DB notebook_wars_admin; calls meta(player/mail) + gateway/matchsvc(/internal/stats).
   admin:
     build:
       context: .
@@ -209,7 +209,7 @@ services:
       NW_ADMIN_HOST: 0.0.0.0
       NW_ADMIN_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       NW_ADMIN_MONGO_DB: ${NW_ADMIN_MONGO_DB:-notebook_wars_admin}
-      # 首启种子超管（首次部署后建议清空 env，由后台管理增删账号）。
+      # Bootstrap seed super-admin (recommend clearing env after first deployment, manage accounts via admin panel).
       NW_ADMIN_SEED_USER: ${NW_ADMIN_SEED_USER:-}
       NW_ADMIN_SEED_PASS: ${NW_ADMIN_SEED_PASS:-}
       NW_META_BASE_URL: http://metaserver:8080
@@ -220,7 +220,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # 事件采集服务（A9，第九进程，玩家不可达，反代不路由）。连专属库 notebook_wars_analytics。
+  # Event collection service (A9, ninth process, not player-reachable, not routed by reverse proxy). Uses dedicated DB notebook_wars_analytics.
   analyticsvc:
     build:
       context: .
@@ -239,7 +239,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # 社交服务（S6，第五公网面 /social/*）。好友/私聊/邮件/家族；连专属库 nw_social。
+  # Social service (S6, fifth public face /social/*). Friends/DMs/mail/clan; uses dedicated DB nw_social.
   socialsvc:
     build:
       context: .

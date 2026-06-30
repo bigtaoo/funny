@@ -1,19 +1,19 @@
-# 云部署版（外接托管 Mongo，如 MongoDB Atlas M0）：VPS 上只跑 9 个 Node 进程 + redis + caddy，
-# Mongo 托管到云上，本机不再起 mongo 容器。
+# Cloud deployment variant (externally-managed Mongo, e.g. MongoDB Atlas M0): VPS runs only 9 Node processes + redis + caddy,
+# Mongo is hosted in the cloud; no local mongo container.
 #
-# 与 docker-compose.prod.yml 的唯一区别：
-#   · 删除 mongo 服务 + 所有 depends_on mongo（库在云上，本机无 mongo 容器）。
-#   · 所有 NW_*_MONGO_URI 改为从 .env 注入（NW_MONGO_URI，指向 Atlas 的 mongodb+srv:// 串）。
-#     6 个连库进程（meta/commercial/world/social/admin/analytics）共用同一 Atlas 集群、不同库名。
+# Only differences from docker-compose.prod.yml:
+#   · Removes the mongo service + all depends_on mongo (DB is in the cloud, no local mongo container).
+#   · All NW_*_MONGO_URI are injected from .env (NW_MONGO_URI, pointing to the Atlas mongodb+srv:// string).
+#     6 DB-connecting processes (meta/commercial/world/social/admin/analytics) share the same Atlas cluster with different DB names.
 #
-# 一条命令起全栈：
+# Start the full stack with one command:
 #   docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 #
-# ⚠ Atlas M0 连接数上限 500：Mongo 驱动每进程默认 maxPoolSize=100，6 个连库进程会顶满。
-#   在 NW_MONGO_URI 末尾加 &maxPoolSize=10（见 .env.example 说明），6×10=60 远低于上限。
+# ⚠ Atlas M0 connection limit is 500: Mongo driver defaults to maxPoolSize=100 per process; 6 processes would hit the limit.
+#   Append &maxPoolSize=10 to NW_MONGO_URI (see .env.example notes), 6×10=60 well below the limit.
 #
-# 出口同 prod：https://{NW_DOMAIN}/api（REST）、wss://.../gw（控制面）、wss://.../ws（数据面）、
-#             https://.../world|/auction（SLG REST）、https://.../social（社交第五公网面，含家族）。
+# Endpoints same as prod: https://{NW_DOMAIN}/api (REST), wss://.../gw (control-plane), wss://.../ws (data-plane),
+#             https://.../world|/auction (SLG REST), https://.../social (social fifth public face, including clan).
 
 services:
   redis:
@@ -47,14 +47,14 @@ services:
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
-      # 功能开关下发 + 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）。
-      # ⚠ 必坑（同 matchsvc）：缺 NW_ADMIN_INTERNAL_URL → flag 轮询禁用 → /bootstrap 恒空 map → 定向采集永不生效。
+      # Feature flag delivery + client log targeted collection (FEATURE_FLAGS_DESIGN §9).
+      # ⚠ Critical gotcha (same as matchsvc): missing NW_ADMIN_INTERNAL_URL → flag polling disabled → /bootstrap always returns empty map → targeted collection never works.
       NW_ADMIN_INTERNAL_URL: http://admin:8083
       NW_REGION: ${NW_REGION:-}
-      # Loki push 地址：obs 栈是独立 compose/独立网络，metaserver 默认解析不到 loki（见 observability/README.md 网络坑）。
-      # 留空 = 静默丢弃（不影响玩家）；要启用定向采集需填宿主可达地址或让 metaserver 接入 obs 网络。
-      # loki 经 observability/docker-compose.obs.yml 接入本主栈网络（别名 nw-loki），容器名直达。
-      # obs 停了也无妨：解析不到 → 静默丢弃。可用 .env 覆盖。
+      # Loki push URL: obs stack is a separate compose/separate network; metaserver cannot resolve loki by default (see observability/README.md network gotcha).
+      # Leave empty = silently drop (no player impact); to enable targeted collection, fill with a host-reachable address or connect metaserver to the obs network.
+      # loki is connected to the main stack network (server_default) via observability/docker-compose.obs.yml (alias nw-loki), reachable by container name.
+      # Safe if obs is down: fails to resolve → silently drops. Can override via .env.
       NW_LOKI_PUSH_URL: ${NW_LOKI_PUSH_URL:-http://nw-loki:3100/loki/api/v1/push}
     depends_on:
       commercial:
@@ -71,7 +71,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
       NW_COMM_PORT: "8092"
       NW_COMM_HOST: 0.0.0.0
-      # 复用同一 Atlas 集群，不同库名（涨了整库迁独立实例，把下面这行单独指向新串即可）。
+      # Reuses the same Atlas cluster with a different DB name (to migrate to a separate instance, just point this line to the new string).
       NW_COMM_MONGO_URI: ${NW_MONGO_URI:?set NW_MONGO_URI in .env}
       NW_COMM_MONGO_DB: ${NW_COMM_MONGO_DB:-notebook_wars_commercial}
     restart: unless-stopped
@@ -111,7 +111,7 @@ services:
       NW_MM_HOST: 0.0.0.0
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_GAME_PUBLIC_WS_URL: ${NW_GAME_PUBLIC_WS_URL:-ws://localhost/ws}
-      # feature flag 轮询源（不配=禁用→match_bot_fallback 等开关恒为默认 false，永不生效）。
+      # Feature flag polling source (if not configured = disabled → match_bot_fallback and other flags always default to false, never take effect).
       NW_ADMIN_INTERNAL_URL: http://admin:8083
       NW_REGION: ${NW_REGION:-}
       NW_MM_BOT_FALLBACK_MS: ${NW_MM_BOT_FALLBACK_MS:-30000}
@@ -155,7 +155,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # socialsvc：社交第五公网面（/social/*，含家族）。Caddy /social → 此进程；缺它则 social 全链路 502。
+  # socialsvc: social fifth public face (/social/*, including clan). Caddy /social → this process; missing it causes all social routes to 502.
   socialsvc:
     build:
       context: .
@@ -219,7 +219,7 @@ services:
       - "443:443/udp" # HTTP/3
     environment:
       NW_DOMAIN: ${NW_DOMAIN:-:80}
-      # ops Worker 反代 admin 用的共享密钥头（/ops/* 路由校验；空=该路由全 403）。
+      # Shared secret header for ops Worker reverse proxy to admin (/ops/* route verification; empty = that route returns 403 for all).
       NW_OPS_PROXY_SECRET: ${NW_OPS_PROXY_SECRET:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

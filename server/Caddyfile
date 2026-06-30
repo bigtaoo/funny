@@ -1,26 +1,26 @@
-# 反代（C-3 / S1-M / S8）：/api/* → metaserver、/gw → gateway(控制面 WS)、/ws → gameserver(数据面 WS)、
-# /world,/auction → worldsvc(SLG 大世界 REST)、/social/* → socialsvc(社交第五公网面)。
-# 站点地址由 {$NW_DOMAIN} 注入：
-#   · 真域名（如 nw.example.com）→ Caddy 自动签 Let's Encrypt 证书，全程 HTTPS/WSS。
-#   · 缺省 :80 → 仅 HTTP（本机 / 无域名联调用；此时不签证书）。
+# Reverse proxy (C-3 / S1-M / S8): /api/* → metaserver, /gw → gateway (control-plane WS), /ws → gameserver (data-plane WS),
+# /world,/auction → worldsvc (SLG overworld REST), /social/* → socialsvc (social fifth public face).
+# Site address injected via {$NW_DOMAIN}:
+#   · Real domain (e.g. nw.example.com) → Caddy auto-provisions Let's Encrypt certificate, full HTTPS/WSS.
+#   · Default :80 → HTTP only (for local / no-domain integration testing; no certificate issued).
 #
-# 路由要点：
-#   · metaserver 的 fastify 路由是 /auth/wx、/save …（不含 /api 前缀），故用 handle_path 剥掉 /api 再转发。
-#   · gateway 控制面 WS 绑 path=/gw、gameserver 数据面 WS 绑 path=/ws，必须保留路径 → 用 handle（不剥前缀）。
-#   · matchsvc / gateway 内部 HTTP / meta 内部路由（/internal/*）不暴露公网（无路由，仅集群内调用）。
+# Routing notes:
+#   · metaserver's fastify routes are /auth/wx, /save ... (no /api prefix), so use handle_path to strip /api before forwarding.
+#   · gateway control-plane WS binds path=/gw, gameserver data-plane WS binds path=/ws; paths must be preserved → use handle (no prefix stripping).
+#   · matchsvc / gateway internal HTTP / meta internal routes (/internal/*) are not exposed to public (no route, internal cluster calls only).
 
 {$NW_DOMAIN::80} {
-	# 控制面 WS：房间 / 匹配（保留 /gw 路径）
+	# Control-plane WS: room / matchmaking (preserve /gw path)
 	handle /gw* {
 		reverse_proxy gateway:8082
 	}
 
-	# 数据面 WS：锁步对战（保留 /ws 路径）
+	# Data-plane WS: lockstep battle (preserve /ws path)
 	handle /ws* {
 		reverse_proxy gameserver:8081
 	}
 
-	# SLG 大世界 REST（S8，第四公网面：地图/领地/拍卖，保留路径）
+	# SLG overworld REST (S8, fourth public face: map/territory/auction, preserve path)
 	handle /world* {
 		reverse_proxy worldsvc:18084
 	}
@@ -28,24 +28,24 @@
 		reverse_proxy worldsvc:18084
 	}
 
-	# 社交服务（第五公网面：好友/私聊/邮件/家族，保留路径）
+	# Social service (fifth public face: friends/DMs/mail/clan, preserve path)
 	handle /social* {
 		reverse_proxy socialsvc:8085
 	}
 
-	# Analytics 事件采集（A9，公开端点 /analytics/config + /analytics/events；保留路径）
+	# Analytics event collection (A9, public endpoints /analytics/config + /analytics/events; preserve path)
 	handle /analytics* {
 		reverse_proxy analyticsvc:18085
 	}
 
-	# REST：剥掉 /api 前缀后转给 metaserver
+	# REST: strip /api prefix then forward to metaserver
 	handle_path /api/* {
 		reverse_proxy metaserver:8080
 	}
 
-	# 运维后台 admin API（玩家不可达）：仅经 ops Worker 反代进来，必须带共享密钥头
-	# X-Ops-Proxy-Secret == {$NW_OPS_PROXY_SECRET}，否则 403。剥掉 /ops 前缀后转 admin:8083。
-	# 玩家直连 https://<域>/ops/* 无密钥 → 403。见 design/product/deploy-cloudflare.md §6。
+	# Ops admin API (not player-reachable): only accessible via ops Worker reverse proxy; must include shared secret header
+	# X-Ops-Proxy-Secret == {$NW_OPS_PROXY_SECRET}, otherwise 403. Strips /ops prefix then forwards to admin:8083.
+	# Player direct access to https://<domain>/ops/* without secret → 403. See design/product/deploy-cloudflare.md §6.
 	handle /ops/* {
 		@noSecret not header X-Ops-Proxy-Secret {$NW_OPS_PROXY_SECRET}
 		respond @noSecret 403
@@ -53,7 +53,7 @@
 		reverse_proxy admin:8083
 	}
 
-	# 兜底
+	# Fallback
 	handle {
 		respond "Notebook Wars server" 200
 	}

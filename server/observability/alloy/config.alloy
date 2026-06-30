@@ -1,18 +1,18 @@
-// Alloy 采集：docker socket 发现所有容器 → 抓 stdout/stderr → 解析为 Loki 标签 → 推 Loki。
+// Alloy collection: docker socket discovers all containers → captures stdout/stderr → parses into Loki labels → pushes to Loki.
 //
-// 业务进程的可读单行格式（@nw/shared/logger 控制台 sink）：
+// Readable single-line format from business processes (@nw/shared/logger console sink):
 //   15:57:10.555 INFO  [gateway] WS connected accountId=abc online=1
-//   └─ time      └level └svc    └─ msg + key=val ...
-// 这里用正则取 level / svc（svc 取根服务名，冒号前；gateway:internal → gateway）作标签；
-// 行内的 key=val（含 roomId）不进标签（高基数会撑爆 Loki），查询时用 `| logfmt | roomId="x"` 现解。
-// 时间戳用 docker 提供的整精度时间（行内只有 HH:MM:SS，缺日期，不可靠）。
+//   └─ time      └level └─ svc  └─ msg + key=val ...
+// Regex extracts level / svc (root service name, before colon; gateway:internal → gateway) as labels;
+// key=val pairs within the line (including roomId) are NOT put in labels (high cardinality would bloat Loki), parse with `| logfmt | roomId="x"` at query time.
+// Timestamp uses docker's full-precision time (inline only has HH:MM:SS, missing date, unreliable).
 
-// ── 发现宿主机上所有 docker 容器 ──────────────────────────────────────────────
+// ── Discover all docker containers on the host ──────────────────────────────────────────────
 discovery.docker "all" {
   host = "unix:///var/run/docker.sock"
 }
 
-// 容器名（去掉前导斜杠）→ container 标签；compose 服务名 → service 标签。
+// Container name (strip leading slash) → container label; compose service name → service label.
 discovery.relabel "containers" {
   targets = discovery.docker.all.targets
 
@@ -27,7 +27,7 @@ discovery.relabel "containers" {
   }
 }
 
-// ── 抓取容器日志 ─────────────────────────────────────────────────────────────
+// ── Collect container logs ─────────────────────────────────────────────────────────────────
 loki.source.docker "default" {
   host          = "unix:///var/run/docker.sock"
   targets       = discovery.relabel.containers.output
@@ -35,13 +35,13 @@ loki.source.docker "default" {
   forward_to    = [loki.process.parse.receiver]
 }
 
-// ── 解析可读单行，提取 svc / level 作标签 ─────────────────────────────────────
+// ── Parse readable single-line, extract svc / level as labels ─────────────────────────────
 loki.process "parse" {
-  // 取根服务名（冒号前）+ 级别；匹配不上的行（非业务日志，如 caddy/redis/mongo）原样透传。
+  // Extract root service name (before colon) + level; lines that don't match (non-business logs like caddy/redis/mongo) pass through unchanged.
   stage.regex {
     expression = "^\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\s+(?P<level>\\w+)\\s+\\[(?P<svc>[^:\\]]+)"
   }
-  // 级别统一小写，方便 `| level="error"`。
+  // Normalize level to lowercase for `| level="error"` queries.
   stage.template {
     source   = "level"
     template = "{{ ToLower .Value }}"

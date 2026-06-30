@@ -1,18 +1,18 @@
-# 观测栈（Phase 2）：Loki(存储) + Alloy(采集) + Grafana(查询) + cloudflared(对外隧道)。
-# 与主栈（docker-compose.cloud.yml）解耦，独立起停，互不影响。
+# Observability stack (Phase 2): Loki (storage) + Alloy (collection) + Grafana (querying) + cloudflared (outbound tunnel).
+# Decoupled from the main stack (docker-compose.cloud.yml), starts and stops independently, no mutual impact.
 #
-# 采集方式：Alloy 经 docker socket 直接抓**所有容器 stdout**（loki.source.docker），
-#   用正则把可读单行 `15:57 INFO [gateway] msg ...` 解出 svc/level 标签 → 无需给业务进程
-#   设 NW_LOG_DIR、无需挂日志卷、无需改主栈。docker logs 仍是人类可读格式（SSH 上排查照旧）。
+# Collection method: Alloy captures **all container stdout** via docker socket (loki.source.docker),
+#   regex-parses the readable single-line `15:57 INFO [gateway] msg ...` to extract svc/level labels → no need to set
+#   NW_LOG_DIR on business processes, no log volume mounts, no changes to the main stack. `docker logs` remains human-readable (SSH debugging still works).
 #
-# 起停（在 server/ 目录下执行）：
+# Start/stop (run from server/ directory):
 #   docker compose -f observability/docker-compose.obs.yml --env-file observability/.env up -d
 #   docker compose -f observability/docker-compose.obs.yml down
 #
-# 前置：见 observability/README.md 「Phase 2 部署」——daemon.json 限日志体积 + CF 隧道/Access 配置。
+# Prerequisites: see observability/README.md "Phase 2 deployment" — daemon.json log size limits + CF tunnel/Access configuration.
 
-# 观测栈自身的日志也限体积（50m 一个、留最近 5 个、超了删最老 ≈ 250m/容器），
-# 即便 host daemon.json 还没配，obs 容器也不会撑爆盘。业务容器的同款限制走 daemon.json（全局）。
+# Limit log volume for the observability stack itself (50m per file, keep last 5, delete oldest ≈ 250m/container),
+# so obs containers don't fill the disk even if host daemon.json hasn't been configured yet. Business container limits go via daemon.json (global).
 x-logging: &obs-logging
   driver: json-file
   options:
@@ -27,8 +27,9 @@ services:
     volumes:
       - ./loki/config.yml:/etc/loki/config.yml:ro
       - loki-data:/loki
-    # 同时挂在 obs 自身网络 + 主栈网络（server_default），让主栈 metaserver 用 nw-loki:3100 直推日志。
-    # 耦合方向：obs 依赖主栈（主栈先起、创建 server_default），绝不反过来——故主栈停不掉 obs 是可接受的。
+    # Attached to both obs's own network + main stack network (server_default), so main stack metaserver can push logs directly using nw-loki:3100.
+    # Coupling direction: obs depends on the main stack (main stack must start first to create server_default), never the other way —
+    # it's acceptable for obs to fail to start if the main stack is stopped; it's NOT acceptable to affect the main stack.
     networks:
       default: {}
       mainstack:
@@ -61,14 +62,14 @@ services:
       GF_SECURITY_ADMIN_USER: ${GF_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:?set GF_ADMIN_PASSWORD in observability/.env}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      # 整站经 cloudflared 隧道对外，Grafana 知道自己跑在该域名下（生成正确的链接/重定向）。
+      # Whole site served via cloudflared tunnel; Grafana needs to know its domain to generate correct links/redirects.
       GF_SERVER_ROOT_URL: ${GF_ROOT_URL:-https://grafana.gamestao.com}
-      # 数据源/仪表盘由 provisioning 目录声明，开箱即用（无需手点）。
+      # Data sources and dashboards declared via provisioning directory, works out of the box (no manual clicks needed).
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
-    # SSH 兜底：仅绑本机回环，方便 `ssh -L 3000:localhost:3000` 直连；公网由 cloudflared 走。
+    # SSH fallback: bind to loopback only, easy to access via `ssh -L 3000:localhost:3000`; public access goes through cloudflared.
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
@@ -77,19 +78,19 @@ services:
     mem_limit: 256m
     restart: unless-stopped
 
-  # 出站隧道（同 ops 的「走 Cloudflare」选择，但用 Tunnel 而非 Worker 反代——更适合整站 Web 应用）。
-  # 令牌式（remote-managed）隧道：hostname→service 映射在 CF Zero Trust 控制台配（grafana.gamestao.com
-  # → http://grafana:3000）；本容器只需令牌。CF Access 罩该域名当登录墙（第一层），Grafana 账号是第二层。
+  # Outbound tunnel (same "go through Cloudflare" choice as ops, but using Tunnel instead of Worker reverse proxy — better suited for full-site web apps).
+  # Token-based (remote-managed) tunnel: hostname→service mapping is configured in CF Zero Trust console (grafana.gamestao.com
+  # → http://grafana:3000); this container only needs the token. CF Access guards the domain as the login gate (first layer), Grafana account is second layer.
   #
-  # 放在 profile "tunnel" 下：默认 `up -d` 只起 loki/alloy/grafana（无需 token，可先 SSH 隧道看日志）；
-  # 拿到 CF token 回填 .env 后再 `--profile tunnel up -d` 把隧道带起来。
+  # Under profile "tunnel": default `up -d` only starts loki/alloy/grafana (no token needed, can SSH-tunnel to view logs first);
+  # fill CF token in .env then `--profile tunnel up -d` to bring the tunnel up.
   cloudflared:
     image: cloudflare/cloudflared:2025.2.1
     container_name: nw-cloudflared
     profiles: ["tunnel"]
     command: ["tunnel", "--no-autoupdate", "run"]
     environment:
-      # 空令牌时 cloudflared 会自行报错退出（仅当 --profile tunnel 启用本服务时才会触发）。
+      # Empty token causes cloudflared to error and exit on its own (only triggered when --profile tunnel enables this service).
       TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN:-}
     depends_on:
       - grafana
@@ -98,10 +99,10 @@ services:
     restart: unless-stopped
 
 networks:
-  # obs 自身默认网（observability_default）：loki/alloy/grafana/cloudflared 互通。
+  # obs own default network (observability_default): loki/alloy/grafana/cloudflared communicate here.
   default: {}
-  # 主栈网络（docker-compose.prod/cloud 的 server_default），external——须主栈先起好。
-  # loki 接入它，metaserver 才能用 nw-loki:3100 推日志（见 README 网络坑）。
+  # Main stack network (server_default from docker-compose.prod/cloud), external — main stack must be running first.
+  # loki attaches to it so metaserver can push logs via nw-loki:3100 (see README network gotcha).
   mainstack:
     external: true
     name: server_default
