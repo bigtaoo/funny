@@ -175,6 +175,33 @@ components:
               completeAt:
                 type: integer
                 format: int64
+        buildings:
+          type: object
+          description: "Home-city building levels (SLG_CITY_DESIGN P1; desk≥1, others≥0 when present). Keys are BuildingKey values."
+          additionalProperties:
+            type: integer
+        buildQueue:
+          type: array
+          description: Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending). The client CityScene renders countdowns from this.
+          items:
+            type: object
+            required: [key, toLevel, startAt, completeAt]
+            properties:
+              key:
+                $ref: '#/components/schemas/BuildingKey'
+              toLevel:
+                type: integer
+              startAt:
+                type: integer
+                format: int64
+              completeAt:
+                type: integer
+                format: int64
+
+    BuildingKey:
+      type: string
+      description: "Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2."
+      enum: [desk, inkPot, paperTray, graphiteMill, metalForge, stickerShop, cabinet, drillYard, wall, academy]
 
     MarchView:
       type: object
@@ -838,6 +865,60 @@ paths:
       responses:
         '200':
           description: Training sped up
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
+
+  /world/build/upgrade:
+    post:
+      operationId: upgradeBuilding
+      security: [{ bearerAuth: [] }]
+      description: "Enqueue a home-city building upgrade (SLG_CITY_DESIGN P1). Deducts season resources up-front; the level is applied when the build completes."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, key]
+              properties:
+                worldId: { type: string }
+                key: { $ref: '#/components/schemas/BuildingKey' }
+      responses:
+        '200':
+          description: Build queued
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
+
+  /world/build/speedup:
+    post:
+      operationId: speedupBuild
+      security: [{ bearerAuth: [] }]
+      description: "Spend coins to speed up the home-city build queue (SLG_CITY_DESIGN §6)."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, coins]
+              properties:
+                worldId: { type: string }
+                coins: { type: integer }
+      responses:
+        '200':
+          description: Build sped up
           content:
             application/json:
               schema:

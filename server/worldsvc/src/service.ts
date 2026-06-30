@@ -35,6 +35,19 @@ import {
   TROOP_TRAIN_BATCH_MAX,
   TROOP_TRAIN_QUEUE_MAX,
   TROOP_SPEEDUP_SECS_PER_COIN,
+  buildingYieldMult,
+  buildingSelfYield,
+  resourceCapFor,
+  troopCapFor,
+  drillTrainMult,
+  trainQueueMaxFor,
+  buildCost,
+  buildTimeSec,
+  buildGateReason,
+  buildingLevel,
+  BUILD_QUEUE_SLOTS,
+  BUILD_SPEEDUP_SECS_PER_COIN,
+  type BuildingKey,
   NATION_BONUS_PRODUCTION,
   NATION_BONUS_DEFENSE,
   nationDefenseStrength,
@@ -77,7 +90,7 @@ import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseCo
 import type { GarrisonEntry, EngineEquipmentInput } from '@nw/engine';
 import { ENGINE_VERSION } from '@nw/engine';
 import { refreshFamilyProsperity, effectiveProsperity } from './prosperity';
-import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry, DefenseConfig, ArmyEntry, TeamTemplate } from './db';
+import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry, BuildQueueEntry, DefenseConfig, ArmyEntry, TeamTemplate } from './db';
 import type { WorldRedis } from './redis';
 import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient';
 import { nullWorldMetaClient, type WorldMetaClient, type PlayerProfile } from './metaClient';
@@ -188,6 +201,10 @@ export interface PlayerWorldView {
   familyId?: string;
   /** Training queue (S8-2, sorted by completeAt ascending); client C4 renders countdowns based on this. */
   trainingQueue?: { qty: number; startAt: number; completeAt: number }[];
+  /** Home-city building levels (SLG_CITY_DESIGN; desk≥1, others≥0). */
+  buildings?: Partial<Record<BuildingKey, number>>;
+  /** Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending); client CityScene renders countdowns. */
+  buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: number }[];
 }
 
 /** March view (REST response / push payload source). */
@@ -628,6 +645,10 @@ export class WorldService {
       ...(doc.trainingQueue && doc.trainingQueue.length > 0
         ? { trainingQueue: doc.trainingQueue.map((e) => ({ qty: e.qty, startAt: e.startAt, completeAt: e.completeAt })) }
         : {}),
+      ...(doc.buildings ? { buildings: doc.buildings } : {}),
+      ...(doc.buildQueue && doc.buildQueue.length > 0
+        ? { buildQueue: doc.buildQueue.map((e) => ({ key: e.key, toLevel: e.toLevel, startAt: e.startAt, completeAt: e.completeAt })) }
+        : {}),
     };
   }
 
@@ -703,16 +724,19 @@ export class WorldService {
     // SS7: sync the familyId read-only mirror once when assigning to a shard (subsequent family changes are not written back; clients read from /social/family/mine).
     const familyId = await this.socialsvc.getFamilyId(accountId).catch(() => null) ?? undefined;
 
+    // Home-city building system (SLG_CITY_DESIGN): a fresh capital starts with desk:1; troopCap derives from buildings (drillYard 0 → TROOP_CAP_BASE).
+    const buildings: Partial<Record<BuildingKey, number>> = { desk: 1 };
     const pw: PlayerWorldDoc = {
       _id: playerWorldId(worldId, accountId),
       worldId,
       accountId,
-      troops: TROOP_CAP_BASE,
-      troopCap: TROOP_CAP_BASE,
+      troops: troopCapFor(buildings),
+      troopCap: troopCapFor(buildings),
       resources: emptyResources(),
       yieldRate,
       lastTickAt: t,
       mainBaseTile: tid,
+      buildings,
       ...(familyId ? { familyId } : {}),
       rev: 0,
     };
@@ -1866,13 +1890,14 @@ export class WorldService {
 
   // ── Internal helpers ─────────────────────────────────────────────
 
-  /** Lazy resource settlement: resources += yieldRate × dt (hours), capped at RESOURCE_CAP. */
+  /** Lazy resource settlement: resources += yieldRate × dt (hours), capped at the cabinet-adjusted storage cap (SLG_CITY_DESIGN). */
   private settle(doc: PlayerWorldDoc, now: number): Record<ResourceType, number> {
     const dtHours = Math.max(0, (now - doc.lastTickAt) / 3_600_000);
+    const cap = resourceCapFor(doc.buildings);
     const out = emptyResources();
     for (const rt of RESOURCE_TYPES) {
       const settled = (doc.resources[rt] ?? 0) + (doc.yieldRate[rt] ?? 0) * dtHours;
-      out[rt] = Math.min(RESOURCE_CAP, Math.floor(settled));
+      out[rt] = Math.min(cap, Math.floor(settled));
     }
     return out;
   }
@@ -1889,24 +1914,34 @@ export class WorldService {
     return acc;
   }
 
-  /** Recompute the aggregated yield from all currently owned tiles in the DB (called after occupy / abandon). */
+  /**
+   * Recompute the aggregated yield from all currently owned tiles in the DB (called after occupy / abandon / build completion).
+   * Single exit for yield (SLG_CITY_DESIGN §5): tile yields → nation production bonus → home-city building multipliers + sticker self-production.
+   */
   private async recomputeYield(
     worldId: string,
     accountId: string,
+    buildingsOverride?: Partial<Record<BuildingKey, number>>,
   ): Promise<Record<ResourceType, number>> {
     const owned = await this.deps.cols.tiles.find({ worldId, ownerId: accountId }).toArray();
     // Nation production bonus (§2.4 / G1): capitals occupied by this player → own tiles within those capitals' Voronoi regions receive +NATION_BONUS_PRODUCTION.
     const ownedNations = await this.deps.cols.nations.find({ worldId, ownerId: accountId }).toArray();
     const ownedCapIdx = new Set(ownedNations.map((n) => n.capitalIdx));
-    if (ownedCapIdx.size === 0) return this.yieldRecord(owned);
+    // Building levels (SLG_CITY_DESIGN): land resources get a global yield multiplier; sticker is self-produced by the stickerShop (民居模型).
+    // buildingsOverride lets a build-completion path compute the post-upgrade rate before the new levels are persisted (avoids a write-then-read ordering hazard).
+    const buildings = buildingsOverride
+      ?? (await this.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) }))?.buildings;
+
     const acc = emptyResources();
     for (const tl of owned) {
-      const inOwnNation = ownedCapIdx.has(nearestCapitalIdx(tl.x, tl.y, this.capitals));
-      const mult = inOwnNation ? 1 + NATION_BONUS_PRODUCTION : 1;
+      const nationMult = ownedCapIdx.size > 0 && ownedCapIdx.has(nearestCapitalIdx(tl.x, tl.y, this.capitals))
+        ? 1 + NATION_BONUS_PRODUCTION : 1;
       const y = tileYield(tl.type, tl.level, tl.resType);
-      for (const rt of RESOURCE_TYPES) acc[rt] += (y[rt] ?? 0) * mult;
+      for (const rt of RESOURCE_TYPES) acc[rt] += (y[rt] ?? 0) * nationMult;
     }
-    for (const rt of RESOURCE_TYPES) acc[rt] = Math.floor(acc[rt]);
+    for (const rt of RESOURCE_TYPES) {
+      acc[rt] = Math.floor(acc[rt] * buildingYieldMult(buildings, rt) + buildingSelfYield(buildings, rt));
+    }
     return acc;
   }
 
@@ -2029,7 +2064,8 @@ export class WorldService {
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
 
     const queue = pw.trainingQueue ?? [];
-    if (queue.length >= TROOP_TRAIN_QUEUE_MAX) throw new SlgError('BAD_REQUEST', 'Training queue is full');
+    // drillYard raises the training queue slot count (SLG_CITY_DESIGN); falls back to TROOP_TRAIN_QUEUE_MAX with no buildings.
+    if (queue.length >= trainQueueMaxFor(pw.buildings)) throw new SlgError('BAD_REQUEST', 'Training queue is full');
 
     const inTraining = queue.reduce((s, e) => s + e.qty, 0);
     if (pw.troops + inTraining + qty > pw.troopCap) throw new SlgError('TROOP_CAP_REACHED', 'Troops after training would exceed the cap');
@@ -2042,8 +2078,8 @@ export class WorldService {
 
     // Training starts immediately after the previous batch finishes (chained queue); if no batch is in progress, start immediately.
     const lastComplete = queue.length > 0 ? queue[queue.length - 1]!.completeAt : t;
-    // Battle pass bonus (S8-8): hasBattlePass → training speed +20% (duration ×0.8).
-    const trainSpeedMult = pw.hasBattlePass ? 0.8 : 1;
+    // Battle pass bonus (S8-8): hasBattlePass → training speed +20% (duration ×0.8). drillYard further speeds training (SLG_CITY_DESIGN, ×drillTrainMult).
+    const trainSpeedMult = (pw.hasBattlePass ? 0.8 : 1) * drillTrainMult(pw.buildings);
     const duration = Math.round(qty * TROOP_TRAIN_TIME_SEC * 1000 * trainSpeedMult);
     const entry: TrainingEntry = {
       qty,
@@ -2158,6 +2194,144 @@ export class WorldService {
       n += done.length;
     }
     return n;
+  }
+
+  // ── SLG home-city buildings (SLG_CITY_DESIGN P1) ─────────────────────────────────
+
+  /**
+   * Enqueue a building upgrade. Consumes season resources up-front; scheduled at buildTimeSec(key, toLevel).
+   * Validation: joined world + key buildable + desk gate (toLevel ≤ desk level, desk ≤ DESK_MAX_LEVEL) + build queue not full + enough resources.
+   * The target level chains on top of any pending upgrade of the same key already queued (forward-compatible with >1 build slot).
+   */
+  async upgradeBuilding(worldId: string, accountId: string, key: BuildingKey): Promise<PlayerWorldView> {
+    const { cols, now } = this.deps;
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
+
+    const buildings = pw.buildings ?? { desk: 1 };
+    const queue = pw.buildQueue ?? [];
+    if (queue.length >= BUILD_QUEUE_SLOTS) throw new SlgError('BAD_REQUEST', 'Build queue is full');
+
+    const pending = queue.filter((e) => e.key === key).length;
+    const toLevel = buildingLevel(buildings, key) + pending + 1;
+    const gate = buildGateReason(buildings, key, toLevel);
+    if (gate) throw new SlgError('BAD_REQUEST', gate);
+
+    const t = now();
+    const resources = this.settle(pw, t);
+    const cost = buildCost(key, toLevel);
+    for (const rt of RESOURCE_TYPES) {
+      if ((resources[rt] ?? 0) < (cost[rt] ?? 0)) throw new SlgError('INSUFFICIENT_RESOURCES', `Insufficient ${rt}`);
+    }
+    for (const rt of RESOURCE_TYPES) resources[rt] = (resources[rt] ?? 0) - (cost[rt] ?? 0);
+
+    // Chain after the last queued build (or start now if idle), mirroring the training queue.
+    const lastComplete = queue.length > 0 ? queue[queue.length - 1]!.completeAt : t;
+    const duration = buildTimeSec(key, toLevel) * 1000;
+    const entry: BuildQueueEntry = { key, toLevel, startAt: lastComplete, completeAt: lastComplete + duration };
+    await cols.playerWorld.updateOne(
+      { _id: pw._id },
+      { $set: { resources, lastTickAt: t }, $push: { buildQueue: entry } as never, $inc: { rev: 1 } },
+    );
+    return this.getMe(worldId, accountId);
+  }
+
+  /**
+   * Spend coins to speed up the build queue (mirrors speedupTraining): coins → reduced duration (BUILD_SPEEDUP_SECS_PER_COIN s/coin,
+   * hasBattlePass discount), time subtracted from the front with overflow cascading. Builds whose completeAt reaches now are applied immediately.
+   */
+  async speedupBuild(worldId: string, accountId: string, coins: number): Promise<PlayerWorldView> {
+    const { cols, now } = this.deps;
+    coins = Math.max(1, Math.floor(coins));
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
+    if (!pw.buildQueue || pw.buildQueue.length === 0) throw new SlgError('BAD_REQUEST', 'No build queue in progress');
+
+    const speedupDiscountMult = pw.hasBattlePass ? 1 / 0.85 : 1;
+    const speedSec = coins * BUILD_SPEEDUP_SECS_PER_COIN * speedupDiscountMult;
+    const orderId = `slg_build_speedup:${worldId}:${accountId}:${now()}`;
+    await this.commercial.spend(accountId, coins, orderId);
+
+    const fresh = await cols.playerWorld.findOne({ _id: pw._id });
+    if (!fresh) return this.getMe(worldId, accountId);
+
+    const t = now();
+    const resources = this.settle(fresh, t);
+    const newQueue = (fresh.buildQueue ?? []).slice();
+    let remaining = speedSec * 1000;
+    for (let i = 0; i < newQueue.length && remaining > 0; ) {
+      const e = newQueue[i]!;
+      const left = e.completeAt - t;
+      if (remaining >= left) {
+        remaining -= left;
+        newQueue[i] = { ...e, completeAt: t }; // mark as due-now; applyDueBuilds will finalize it
+        i++;
+      } else {
+        newQueue[i] = { ...e, completeAt: e.completeAt - remaining };
+        remaining = 0;
+        i++;
+      }
+    }
+    // Cascade startAt/completeAt for remaining batches after compression.
+    for (let i = 1; i < newQueue.length; i++) {
+      const prev = newQueue[i - 1]!;
+      const cur = newQueue[i]!;
+      const dur = cur.completeAt - cur.startAt;
+      newQueue[i] = { ...cur, startAt: prev.completeAt, completeAt: prev.completeAt + dur };
+    }
+    await cols.playerWorld.updateOne(
+      { _id: fresh._id },
+      { $set: { resources, buildQueue: newQueue, lastTickAt: t }, $inc: { rev: 1 } },
+    );
+    await this.applyDueBuilds(fresh._id, worldId, accountId);
+    return this.getMe(worldId, accountId);
+  }
+
+  /**
+   * Process completed builds (scheduler, every tick). Mirrors processCompletedTraining: finds players whose first queued build is due,
+   * applies the new levels + refreshes derived state (yield / troopCap). Returns the number of builds applied.
+   */
+  async processCompletedBuilds(nowMs?: number): Promise<number> {
+    const { cols } = this.deps;
+    const t = nowMs ?? this.deps.now();
+    const docs = await cols.playerWorld
+      .find({ 'buildQueue.0.completeAt': { $lte: t } })
+      .project<{ _id: string; worldId: string; accountId: string }>({ _id: 1, worldId: 1, accountId: 1 })
+      .toArray();
+    let n = 0;
+    for (const doc of docs) {
+      n += await this.applyDueBuilds(doc._id, doc.worldId, doc.accountId, t);
+    }
+    return n;
+  }
+
+  /**
+   * Apply all builds whose completeAt ≤ t for one player: $set the new building levels, drop completed entries,
+   * settle resources at the pre-upgrade rate, then refresh yieldRate (resource buildings + stickerShop) and troopCap (drillYard).
+   * Returns the number of builds applied. Idempotent: re-entry after the entries are removed is a no-op.
+   */
+  private async applyDueBuilds(docId: string, worldId: string, accountId: string, nowMs?: number): Promise<number> {
+    const { cols } = this.deps;
+    const t = nowMs ?? this.deps.now();
+    const fresh = await cols.playerWorld.findOne({ _id: docId });
+    if (!fresh) return 0;
+    const done = (fresh.buildQueue ?? []).filter((e) => e.completeAt <= t);
+    if (done.length === 0) return 0;
+
+    const next: Partial<Record<BuildingKey, number>> = { ...(fresh.buildings ?? { desk: 1 }) };
+    for (const e of done) next[e.key] = Math.max(next[e.key] ?? buildingLevel(fresh.buildings, e.key), e.toLevel);
+    const newQueue = (fresh.buildQueue ?? []).filter((e) => e.completeAt > t);
+    const resources = this.settle(fresh, t); // settle at the old rate/cap up to now, before the rate changes
+    // Compute the post-upgrade yield from the new levels directly (buildings not yet persisted).
+    const yieldRate = await this.recomputeYield(worldId, accountId, next);
+    await cols.playerWorld.updateOne(
+      { _id: docId },
+      {
+        $set: { buildings: next, buildQueue: newQueue, resources, yieldRate, troopCap: troopCapFor(next), lastTickAt: t },
+        $inc: { rev: 1 },
+      },
+    );
+    return done.length;
   }
 
   // ── S8-4 residual: defense config ────────────────────────────────

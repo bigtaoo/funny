@@ -12,7 +12,9 @@ import {
   verifyToken,
   loadInternalAuth,
   SlgError,
+  BUILDING_KEYS_P1,
   type MarchKind,
+  type BuildingKey,
 } from '@nw/shared';
 import type { WorldService } from './service';
 import type { TeamTemplate } from './db';
@@ -366,6 +368,24 @@ export function startHttpApi(
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           if (!Number.isFinite(coins) || coins < 1) return sendErr(res, ErrorCode.BAD_REQUEST, 'coins required');
           return send(res, 200, ok(await svc.speedupTraining(worldId, accountId, coins)));
+        }
+
+        // ── Home-city buildings (SLG_CITY_DESIGN P1, implemented) ──
+        if (method === 'POST' && path === '/world/build/upgrade') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const key = typeof body.key === 'string' ? body.key : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (!key || !BUILDING_KEYS_P1.includes(key as BuildingKey)) return sendErr(res, ErrorCode.BAD_REQUEST, 'valid building key required');
+          return send(res, 200, ok(await svc.upgradeBuilding(worldId, accountId, key as BuildingKey)));
+        }
+        if (method === 'POST' && path === '/world/build/speedup') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const coins = Number(body.coins);
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (!Number.isFinite(coins) || coins < 1) return sendErr(res, ErrorCode.BAD_REQUEST, 'coins required');
+          return send(res, 200, ok(await svc.speedupBuild(worldId, accountId, coins)));
         }
 
         // ── Siege replay spectator view (G3-2c, seed + both-side formations, readable by both attacker and defender) ──

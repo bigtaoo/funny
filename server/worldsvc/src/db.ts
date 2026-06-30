@@ -12,6 +12,7 @@ import type {
   AuctionStatus,
   SiegeOutcome,
   SettleTier,
+  BuildingKey,
 } from '@nw/shared';
 import { FAMILY_MSG_RETENTION_SEC } from '@nw/shared';
 
@@ -78,6 +79,14 @@ export interface TrainingEntry {
   completeAt: number; // ms epoch (scheduler adds troops to troops and removes entry when reached)
 }
 
+/** Build queue entry (SLG_CITY_DESIGN §4). Mirrors TrainingEntry: chained scheduling, scheduler applies the level when completeAt is reached. */
+export interface BuildQueueEntry {
+  key: BuildingKey;   // which building is being upgraded
+  toLevel: number;    // target level after this upgrade completes
+  startAt: number;    // ms epoch
+  completeAt: number; // ms epoch (scheduler $inc buildings[key] and removes entry when reached)
+}
+
 /** Player state in a given world (lazy resource settlement: stores aggregate yieldRate + lastTickAt, computes delta on read, no per-tile tick). */
 export interface PlayerWorldDoc {
   _id: string; // `{worldId}:{accountId}`
@@ -94,6 +103,10 @@ export interface PlayerWorldDoc {
   familyId?: string;
   trainingQueue?: TrainingEntry[]; // training queue (S8-2, ≤ TROOP_TRAIN_QUEUE_MAX entries)
   hasBattlePass?: boolean;         // current season battle pass (S8-8, cleared on season reset)
+  /** Home-city building levels (SLG_CITY_DESIGN; desk defaults to 1, others to 0 when absent). Season-scoped — cleared with the doc on resetSeason. */
+  buildings?: Partial<Record<BuildingKey, number>>;
+  /** Build queue (SLG_CITY_DESIGN §4, ≤ BUILD_QUEUE_SLOTS entries; chained by completeAt). */
+  buildQueue?: BuildQueueEntry[];
   rev: number;
 }
 
