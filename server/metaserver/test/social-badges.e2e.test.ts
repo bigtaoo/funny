@@ -23,7 +23,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
   }
 }
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[social-badges.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[social-badges.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 class FakeGateway implements GatewayClient {
   available = true;
@@ -115,13 +115,13 @@ describe.skipIf(!mongo)('social badges e2e', () => {
       dispatchKey: 'badge-mail-1',
       scope: 'single',
       target: { publicId: a.publicId },
-      subject: '补偿',
+      subject: 'Compensation',
       body: 'x',
       attachments: [{ kind: 'coins', count: 10 }],
       expireDays: 7,
     });
 
-    // total = friendRequests(0) + chat(1) + mail(1) = 2。
+    // total = friendRequests(0) + chat(1) + mail(1) = 2.
     expect(await badges(a.token)).toEqual({ friendRequests: 0, chat: 1, mail: 1, total: 2 });
   });
 

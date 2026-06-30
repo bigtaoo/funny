@@ -60,7 +60,7 @@ function connect(port: number, accountId: string): Promise<WebSocket> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe('Gateway peer judge', () => {
-  it('挑出 canJudge 的第三方、推 request、解出 verdict', async () => {
+  it('selects a canJudge third party, pushes judge_request, resolves verdict', async () => {
     const port = 19510;
     const gw = startGateway(port);
     const [a, b, c] = await Promise.all([
@@ -84,13 +84,13 @@ describe('Gateway peer judge', () => {
       );
     });
 
-    await sleep(50); // 让 client_caps 先到达 gateway
+    await sleep(50); // allow client_caps to reach gateway before judge call
     const verdict = await gw.judge({ seed: 7, mode: 1, endFrame: 0, frames: [], exclude: ['a', 'b'] });
     expect(verdict).toEqual({ ok: true, stateHash: 'HONEST', winnerSide: 0, stars: 0, statsJson: '', judgeAccountId: 'c' });
     void a; void b;
   });
 
-  it('PvE 抽检：transport level_id/pve_upgrades 透传给裁判，verdict.stars 解出', async () => {
+  it('PvE spot-check: transport level_id/pve_upgrades forwarded to judge, verdict.stars resolved', async () => {
     const port = 19513;
     const gw = startGateway(port);
     const [p, j] = await Promise.all([connect(port, 'p'), connect(port, 'j')]);
@@ -127,7 +127,7 @@ describe('Gateway peer judge', () => {
     void p;
   });
 
-  it('无合格候选（无人上报 canJudge）→ {ok:false}', async () => {
+  it('no eligible candidate (nobody reported canJudge) → {ok:false}', async () => {
     const port = 19511;
     const gw = startGateway(port);
     await connect(port, 'a');
@@ -137,7 +137,7 @@ describe('Gateway peer judge', () => {
     expect(verdict).toEqual({ ok: false });
   });
 
-  it('唯一 canJudge 者在 exclude 内（自己裁自己）→ {ok:false}', async () => {
+  it('sole canJudge candidate is in exclude list (judging oneself) → {ok:false}', async () => {
     const port = 19512;
     const gw = startGateway(port);
     const a = await connect(port, 'a');

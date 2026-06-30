@@ -22,7 +22,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[state-replay-share.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[state-replay-share.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 // blob is an opaque gzip+base64 string produced by the client (the server does not decompress or
 // interpret it — only stores/retrieves it with a size gate and rate limiting).
@@ -48,7 +48,7 @@ describe.skipIf(!mongo)('state replay share e2e', () => {
 
   afterAll(async () => { if (app) await app.close(); });
 
-  it('铸码 → 匿名取回 blob 一致 + viewCount++', async () => {
+  it('mint share code → anonymous retrieval blob matches + viewCount++', async () => {
     const post = await app.inject({
       method: 'POST', url: '/replay/share',
       headers: { authorization: `Bearer ${token}` },
@@ -70,17 +70,17 @@ describe.skipIf(!mongo)('state replay share e2e', () => {
     expect(doc!.viewCount).toBeGreaterThanOrEqual(1);
   });
 
-  it('未登录铸码 401', async () => {
+  it('unauthenticated share upload → 401', async () => {
     const res = await app.inject({ method: 'POST', url: '/replay/share', payload: { blob: sampleBlob } });
     expect(res.statusCode).toBe(401);
   });
 
-  it('不存在的 shareCode → 404', async () => {
+  it('non-existent shareCode → 404', async () => {
     const res = await app.inject({ method: 'GET', url: '/r/nope-nope-nope' });
     expect(res.statusCode).toBe(404);
   });
 
-  it('体量超限 → 优雅 400（而非 Fastify 413）', async () => {
+  it('oversized blob → graceful 400 (not Fastify 413)', async () => {
     // > 2MB compressed string (still < 4MB Fastify bodyLimit): should hit the application-layer
     // graceful 400 "replay too large" rather than being preempted by Fastify's 413.
     const big = 'A'.repeat(2 * 1024 * 1024 + 16);
@@ -92,7 +92,7 @@ describe.skipIf(!mongo)('state replay share e2e', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('缺 blob → 400', async () => {
+  it('missing blob → 400', async () => {
     const res = await app.inject({
       method: 'POST', url: '/replay/share',
       headers: { authorization: `Bearer ${token}` },

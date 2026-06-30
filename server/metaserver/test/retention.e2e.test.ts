@@ -81,7 +81,7 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', commercial: new FakeCommercial() });
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'dev-ret-1' } }));
     token = r.data.token;
-    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // 建档
+    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // create save record
   });
 
   afterAll(async () => {
@@ -90,7 +90,7 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     await m.close();
   });
 
-  it('GET /retention：defs.rewards / defs.tasks 字段经序列化保留（不被剥成 {}）', async () => {
+  it('GET /retention: defs.rewards / defs.tasks fields preserved after serialization (not stripped to {})', async () => {
     const r = body(await app.inject({ method: 'GET', url: '/retention', headers: auth() }));
     expect(r.ok).toBe(true);
 

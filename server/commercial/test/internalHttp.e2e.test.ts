@@ -1,8 +1,8 @@
-// commercial internalHttp 线层端到端（S5-1 验收）：真实 node:http 起服务 + 全局 fetch 打。
-//   • 无/错 X-Internal-Key → 401（S5-1「无内部密钥的请求被拒」）；
-//   • 路由：GET /internal/wallet、POST /internal/recharge/verify、GET /internal/orders/undelivered；
-//   • 未知路由 → 404。
-// service 需真实 Mongo（专属库）；Mongo 不可达整套 skip。
+// commercial internalHttp end-to-end (S5-1 acceptance): real node:http server + global fetch calls.
+//   • missing/wrong X-Internal-Key → 401 (S5-1 "requests without an internal key are rejected");
+//   • routes: GET /internal/wallet, POST /internal/recharge/verify, GET /internal/orders/undelivered;
+//   • unknown route → 404.
+// service requires a real Mongo (dedicated database); entire suite skipped when Mongo is unreachable.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
@@ -24,7 +24,7 @@ async function tryConnect(): Promise<CommercialMongo | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[internalHttp.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[internalHttp.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 let t = 1000;
 
@@ -56,23 +56,23 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
     ...(key ? { 'X-Internal-Key': key } : {}),
   });
 
-  it('无 X-Internal-Key → 401', async () => {
+  it('no X-Internal-Key → 401', async () => {
     const r = await fetch(`${base}/internal/wallet?accountId=a`, { headers: hdr() });
     expect(r.status).toBe(401);
   });
 
-  it('错误 X-Internal-Key → 401', async () => {
+  it('wrong X-Internal-Key → 401', async () => {
     const r = await fetch(`${base}/internal/wallet?accountId=a`, { headers: hdr('wrong') });
     expect(r.status).toBe(401);
   });
 
-  it('GET /internal/wallet（带密钥）→ 默认 0', async () => {
+  it('GET /internal/wallet (with key) → default 0', async () => {
     const r = await fetch(`${base}/internal/wallet?accountId=newbie`, { headers: hdr(KEY) });
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual({ ok: true, coins: 0, pity: {} });
   });
 
-  it('POST /internal/recharge/verify → 加币', async () => {
+  it('POST /internal/recharge/verify → adds coins', async () => {
     const r = await fetch(`${base}/internal/recharge/verify`, {
       method: 'POST',
       headers: hdr(KEY),
@@ -81,8 +81,8 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
     expect(await r.json()).toMatchObject({ ok: true, coinsGranted: 600, coinsAfter: 600 });
   });
 
-  it('GET /internal/orders/undelivered → 列表', async () => {
-    // 充值后再扣币建一笔未发货订单。
+  it('GET /internal/orders/undelivered → list', async () => {
+    // Recharge first, then spend coins to create an undelivered order.
     await fetch(`${base}/internal/recharge/verify`, {
       method: 'POST',
       headers: hdr(KEY),
@@ -100,7 +100,7 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
     expect(b.orders[0]._id).toBe('oU');
   });
 
-  it('未知路由 → 404', async () => {
+  it('unknown route → 404', async () => {
     const r = await fetch(`${base}/internal/nope`, { method: 'POST', headers: hdr(KEY), body: '{}' });
     expect(r.status).toBe(404);
   });

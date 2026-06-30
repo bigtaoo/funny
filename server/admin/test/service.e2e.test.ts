@@ -30,7 +30,7 @@ async function tryConnect(): Promise<AdminMongo | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[admin.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[admin.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 let t = 1000;
@@ -119,8 +119,8 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     const t1 = await svc.initiateTicket(cs, {
       scope: 'single',
       target: { publicId: '123456789' },
-      mail: { subject: '抱歉', body: '补偿', attachments: [{ kind: 'coins', count: 100 }], expireDays: 30 },
-      reason: '卡单',
+      mail: { subject: 'Apology', body: 'Compensation', attachments: [{ kind: 'coins', count: 100 }], expireDays: 30 },
+      reason: 'stuck order',
     });
     expect(t1.status).toBe('pending');
     expect(t1.amountTier).toBe('normal');

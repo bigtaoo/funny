@@ -130,7 +130,7 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'device-econ-1' } }));
     token = r.data.token;
     accountId = r.data.accountId;
-    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // 建档
+    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // initialize save document
   });
 
   afterAll(async () => {
@@ -156,12 +156,12 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
 
   it('rename: deduct 500 coins → write display name → mirror balance; GET /save returns new name', async () => {
     comm.coins.set(accountId, 700);
-    const r = body(await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: '  新名字  ' } }));
+    const r = body(await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: '  NewName  ' } }));
     expect(r.ok).toBe(true);
-    expect(r.data.displayName).toBe('新名字'); // trimmed
+    expect(r.data.displayName).toBe('NewName'); // trimmed
     expect(r.data.save.wallet.coins).toBe(200); // 700 - 500
     const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
-    expect(save.data.displayName).toBe('新名字');
+    expect(save.data.displayName).toBe('NewName');
   });
 
   it('rename: insufficient balance → 402, name unchanged', async () => {

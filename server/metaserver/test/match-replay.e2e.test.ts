@@ -20,7 +20,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[match-replay.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[match-replay.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 function reportPayload(roomId: string, a: string, b: string, frames: unknown[]) {
   return {

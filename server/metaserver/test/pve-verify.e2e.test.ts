@@ -21,7 +21,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
   }
 }
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[pve-verify.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[pve-verify.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 /** Configurable fake judge: records the last judge call's arguments and returns a preset verdict. */
 class FakeGateway implements GatewayClient {

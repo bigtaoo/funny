@@ -58,7 +58,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
   }
 }
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[equipment.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[equipment.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 describe.skipIf(!mongo)('equipment backend e2e', () => {
   const m = mongo!;
