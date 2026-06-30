@@ -24,7 +24,7 @@ export const MatchMode = {
 export type MatchModeVal = (typeof MatchMode)[keyof typeof MatchMode];
 
 export type ClientMsg =
-  | { case: 'room_create'; mode: number }
+  | { case: 'room_create'; mode: number; deck: string[] }
   | { case: 'room_join'; code: string }
   | { case: 'room_ready'; ready: boolean }
   | { case: 'room_leave' }
@@ -154,8 +154,11 @@ export function decodeClient(buf: Uint8Array): ClientMsg {
   const get = (k: string): Record<string, unknown> =>
     ((client as Record<string, unknown>)[k] as Record<string, unknown>) ?? {};
   switch (c) {
-    case 'room_create':
-      return { case: 'room_create', mode: Number(get('room_create')['mode'] ?? 0) };
+    case 'room_create': {
+      const rc = get('room_create');
+      const deck = Array.isArray(rc['deck']) ? (rc['deck'] as unknown[]).map(String) : [];
+      return { case: 'room_create', mode: Number(rc['mode'] ?? 0), deck };
+    }
     case 'room_join':
       return { case: 'room_join', code: String(get('room_join')['code'] ?? '') };
     case 'room_ready':

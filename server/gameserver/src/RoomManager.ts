@@ -23,13 +23,21 @@ export class RoomManager {
    * ticket; otherwise the join is rejected (prevents forgery / mismatched pairing).
    * Returns false to indicate rejection (caller should close the connection).
    */
-  join(conn: Connection, name: string, publicId: string, seed: number, mode: MatchModeVal, opponentTitle = ''): boolean {
+  join(
+    conn: Connection,
+    name: string,
+    publicId: string,
+    seed: number,
+    mode: MatchModeVal,
+    opponentTitle = '',
+    decks?: { top: string[]; bottom: string[] },
+  ): boolean {
     let room = this.rooms.get(conn.roomId);
     if (room) {
       // Room already exists: verify seed/mode match (prevents forgery / mismatched pairing).
       if (room.seedValue !== seed || room.mode !== mode) return false;
       // Side already in room = reconnect: do not call addPlayer again; slot.conn is rebound by a subsequent conn_resume.
-      if (!room.hasSide(conn.side)) room.addPlayer(conn, name, publicId, opponentTitle);
+      if (!room.hasSide(conn.side)) room.addPlayer(conn, name, publicId, opponentTitle, decks);
       return true;
     }
     room = new Room(conn.roomId, seed, mode, {
@@ -37,7 +45,7 @@ export class RoomManager {
       report: this.deps.report,
     });
     this.rooms.set(conn.roomId, room);
-    room.addPlayer(conn, name, publicId, opponentTitle);
+    room.addPlayer(conn, name, publicId, opponentTitle, decks);
     return true;
   }
 

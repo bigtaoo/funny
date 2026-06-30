@@ -120,7 +120,13 @@
    - `types.ts`：`GameConfig` 新增 `decks?: { top: string[]; bottom: string[] }`。
    - `GameEngine.ts`：PvP/netplay `else` 分支加双 drawPolicy 逻辑，各自独立 PRNG 流（seed 派生，两端一致）。
    - i18n：zh/en/de 三语各补 12 个 `card.<unit>.name/desc` key。
-3. **P2 传输层**：ticket/match_start 带 `decks`；gateway/matchsvc 取 ELO 算解锁集 + 校验 deck。
+3. **P2 传输层**：ticket/match_start 带 `decks`；gateway/matchsvc 取 ELO 算解锁集 + 校验 deck。✅ **（2026-06-30 完成）**
+   - `server/shared/src/pvpDeck.ts`（新）：`PVP_BASE_CARDS`/`PVP_UNLOCK_TIERS`/`getPvpUnlockedCards`/`validatePvpDeck`/`defaultPvpDeck`，从 `@nw/shared` re-export。
+   - `ticket.ts`：`TicketClaims` 增 `decks?`；`transport.proto`：`RoomCreate` 增 `deck`，`MatchStart` 增 `top_deck/bottom_deck`。
+   - `metaserver/internal.ts`：`/internal/elo` 响应增 `seasonPeakElo`；`metaClient.ts`：`getElo()` 返回 `{ elo, seasonPeakElo }`。
+   - `gateway`：读 `msg.deck`，用 `seasonPeakElo` 校验，回退 `defaultPvpDeck()`；matchsvcClient `enqueue/create/join` 增 `deck` 参数；`proto.ts` decode 增 `deck`。
+   - `matchsvc`：`QueueEntry.deck`/`Slot.deck`；`enqueue/roomCreate/roomJoin/onPair/roomReady/startMatch` 全链路透传 deck；`startMatch` 构造 `decks` 注入 `TicketClaims`；`internalHttp.ts` 路由 decode `strArr(b.deck)`。
+   - `gameserver`：`index.ts` 传 `claims.decks`；`RoomManager.join` 增参；`Room.Slot.decks?`/`addPlayer` 增参；`launch()` 从 slots 取 decks 下发 `topDeck/bottomDeck`；`proto/transport.ts` `match_start` 增 `topDeck?/bottomDeck?` + encode。
 4. **P3 客户端构筑 UI**：可选库展示（带「段位解锁」锁标）、卡组编辑、存档存卡组、默认卡组。
 5. **P4 平衡**：difficultySim 重跑，定卡组大小（8/10/12）与 6 单位费用；更新 BALANCE.md。
 6. **P5 美术（后补，非阻塞）**：6 单位 `.tao` 骨骼。

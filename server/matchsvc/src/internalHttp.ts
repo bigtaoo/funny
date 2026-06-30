@@ -35,6 +35,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown, d: number): number => (typeof v === 'number' ? v : d);
+const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 
 export function startInternalHttp(
   opts: { host: string; port: number; internalAuth: InternalAuthVerifier },
@@ -72,10 +73,10 @@ export function startInternalHttp(
         switch (req.url) {
           // —— gateway control commands ——
           case '/mm/room/create':
-            svc.roomCreate(str(b.accountId), str(b.name), str(b.publicId));
+            svc.roomCreate(str(b.accountId), str(b.name), str(b.publicId), str(b.equippedTitle), strArr(b.deck));
             break;
           case '/mm/room/join':
-            svc.roomJoin(str(b.accountId), str(b.name), str(b.publicId), str(b.code));
+            svc.roomJoin(str(b.accountId), str(b.name), str(b.publicId), str(b.code), str(b.equippedTitle), strArr(b.deck));
             break;
           case '/mm/room/ready':
             svc.roomReady(str(b.accountId), Boolean(b.ready));
@@ -87,7 +88,7 @@ export function startInternalHttp(
             svc.roomLeave(str(b.accountId));
             break;
           case '/mm/queue/enqueue':
-            svc.enqueue(str(b.accountId), str(b.name), str(b.publicId), num(b.elo, 1000), str(b.equippedTitle), str(b.platform));
+            svc.enqueue(str(b.accountId), str(b.name), str(b.publicId), num(b.elo, 1000), str(b.equippedTitle), str(b.platform), strArr(b.deck));
             break;
           case '/mm/conn/connected':
             svc.onConnected(str(b.accountId));

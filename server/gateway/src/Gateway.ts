@@ -7,7 +7,7 @@
 // This service does not handle matchmaking, does not store rooms, and does not issue tickets — all of that lives in matchsvc (§8.1).
 // Ranked enqueue fetches ELO from meta before joining the queue.
 import { WebSocketServer, type WebSocket } from 'ws';
-import { verifyToken, createLogger, type JwtConfig } from '@nw/shared';
+import { verifyToken, createLogger, validatePvpDeck, defaultPvpDeck, type JwtConfig } from '@nw/shared';
 
 const log = createLogger('gateway');
 import {
@@ -284,17 +284,19 @@ export class Gateway {
     // ping is too frequent for info logging; use debug only; all other control messages are logged at info (main integration path).
     if (msg.case !== 'ping') log.info(`recv ${msg.case}`, { accountId });
     switch (msg.case) {
-      case 'room_create':
+      case 'room_create': {
+        const submittedDeck = msg.deck ?? [];
         if (msg.mode === MatchMode.RANKED) {
           log.info('-> ranked enqueue', { accountId });
-          void this.enqueueRanked(accountId);
+          void this.enqueueRanked(accountId, submittedDeck);
         } else {
           log.info('-> matchsvc roomCreate', { accountId });
           void this.resolveProfile(accountId).then(({ name, publicId, equippedTitle }) =>
-            this.matchsvc.roomCreate(accountId, name, publicId, equippedTitle),
+            this.matchsvc.roomCreate(accountId, name, publicId, equippedTitle, submittedDeck),
           );
         }
         break;
+      }
       case 'room_join': {
         const code = msg.code;
         log.info('-> matchsvc roomJoin', { accountId, code });
@@ -397,8 +399,8 @@ export class Gateway {
     return null;
   }
 
-  /** Ranked enqueue: fetches ELO from meta first (keeping matchsvc DB-free), then enqueues. */
-  private async enqueueRanked(accountId: string): Promise<void> {
+  /** Ranked enqueue: fetches ELO from meta first (keeping matchsvc DB-free), validates deck, then enqueues. */
+  private async enqueueRanked(accountId: string, submittedDeck: string[]): Promise<void> {
     if (!this.meta.available) {
       log.warn('ranked rejected: meta unavailable (no ELO source)', { accountId });
       this.push(accountId, {
@@ -408,16 +410,31 @@ export class Gateway {
       });
       return;
     }
-    const elo = await this.meta.getElo(accountId);
+    const { elo, seasonPeakElo } = await this.meta.getElo(accountId);
     // The player may have disconnected during the await → only enqueue if still online.
     if (!this.conns.has(accountId)) {
       log.warn('ranked enqueue aborted: account dropped during ELO fetch', { accountId });
       return;
     }
+    const deck = this.resolvedDeck(accountId, submittedDeck, seasonPeakElo);
     const { name, publicId, equippedTitle } = await this.resolveProfile(accountId);
     if (!this.conns.has(accountId)) return;
-    log.info('-> matchsvc enqueue', { accountId, elo });
-    this.matchsvc.enqueue(accountId, name, publicId, elo, equippedTitle);
+    log.info('-> matchsvc enqueue', { accountId, elo, deckSize: deck.length });
+    this.matchsvc.enqueue(accountId, name, publicId, elo, equippedTitle, '', deck);
+  }
+
+  /**
+   * Validate the submitted deck against the player's unlocked card set; fall back to defaultPvpDeck on rejection.
+   * Server-side guard: client-side validation is UX, this is the authority (PVP_LOADOUT §6.3).
+   */
+  private resolvedDeck(accountId: string, submitted: string[], seasonPeakElo: number): string[] {
+    if (submitted.length === 0) return defaultPvpDeck();
+    const result = validatePvpDeck(submitted, seasonPeakElo);
+    if (!result.valid) {
+      log.warn('invalid pvp deck submitted, falling back to default', { accountId, error: result.error });
+      return defaultPvpDeck();
+    }
+    return submitted;
   }
 
   /**
