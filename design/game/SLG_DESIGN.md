@@ -137,6 +137,7 @@
   - **贴纸（铜币位）护栏**：赛季制（季末清）/ 世界内赚取为主 / 禁挂拍卖行 / 不做独立直充（只能进资源包）。它是 SLG 本地赛季资源，不是 `coins`。
 - **高阶稀有养成材料**：复用既有 PvE 材料 **scrap / lead / binding**（SLG8）——SLG 不另造养成货币，PvE 与 SLG 材料统一流转、可上拍卖行。
 - 物产差异（不同格子产不同资源、丰度不同）= 交易意愿的来源。
+- **资源格美术（5 母题 × 程序合成 10 级）**：5 种文具母题 AI 涂鸦已出图打包 → `client/src/assets/slg/res_atlas.{png,json}`（帧名 `res_ink/res_paper/res_graphite/res_metal/res_sticker`）；等级（丰度 + 守备强度双轴）、阵营/中立色、等级数字均**运行时程序合成**，不烘进图。出图 prompt / 验收 / 打包管线见 [`design/product/slg-resource-art.md`](../product/slg-resource-art.md)；源图 + 脚本在 `art/ui/slg-map/`。**待办**：地图格渲染接入（母题加载 + 双轴 + 10 级合成）。
 
 > **✅ code rename 已落地（2026-06-30）**：`ResourceType` = `ink/paper/graphite/metal/sticker`（`shared/slg.ts`），`RESOURCE_TYPES`/`emptyResources`/`WATCHTOWER_COST`/`tileYield`/`biomeAt`/`TROOP_TRAIN_INK_COST` 同步；worldsvc（`service.ts`/`db.ts`/`auctionService.ts`）+ 契约 `openapi-world.yml` resType enum + 客户端（`WorldMapScene` 颜色/展示/训练、`openapi-world.ts`、i18n zh/de/en）全部更新；server typecheck + client tsc + web 构建全绿。
 >
