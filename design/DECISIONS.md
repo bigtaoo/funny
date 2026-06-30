@@ -179,3 +179,23 @@
   - **红线/边界**：建筑只动经济/兵力上限/主城城防，**不提单位战力**（战力归跨季统一养成树的装备/科技）；建筑**永不喂 `buildPvpBlueprints`**（天梯红线，SLG7）；升级吃赛季资源+时间，**coin 只买加速不买上限**（反 P2W，ADR-009 经济基调）。
 - **为什么**：graphite/sticker 两种赛季资源此前无 faucet/sink 空转；`troopCap` 是死值无成长；「点进主城内政」是 SLG 核心体验缺口。仿三战结构最省且玩家认知成熟。赛季清空保战略起跑公平 + 变现重肝，与跨季养成（meta 材料/装备）分层互不污染。
 - **影响**：新增 [`game/SLG_CITY_DESIGN.md`](game/SLG_CITY_DESIGN.md) 为建筑系统机制权威；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.4 遗留指针改指本方案、§21 R-1 更新、新增 §21 剩余工作总览；数字落 [`game/ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §13-SLG-CITY，核验经 [`game/SLG_ECONOMY_CHECK.md`](game/SLG_ECONOMY_CHECK.md)。实现 P1 含 `biomeAt` 四分改造（client 经 alias 共用，须确认确定性地图不破老种子——或仅新赛季生效）。README §1.2 已登记。
+
+## ADR-023 服务端契约从「运行时解析」改为「构建期代码生成」 — Accepted — 2026-06-30
+
+- **背景（触发事件）**：2026-06-30 一次 i18n 英文化重构（commit `51445c5c`）把 `openapi.yml` 三处行内 flow 映射的 description 译成带逗号的英文且未加引号（`replayRef`/`defId`/`materialId`），YAML flow 上下文里逗号是映射分隔符 → 尾部括注（如 `deprecated)`）被解析成多余裸 key。文件仍是合法 YAML，但 metaserver 启动时 `fastify-openapi-glue` 的 OpenAPI 结构校验拒绝多余属性 → glue 注册抛错 → 进程崩溃反复重启 → CI `docker compose up --wait` 报 `server-metaserver-1` unhealthy 退出 1。已先行修复（commit `130a329b` 加引号）。根因不在那三行，而在**契约正确性只在启动期/运行期才被校验**。
+- **现状盘点**（修复时确认，服务端侧零代码生成）：
+  - `metaserver` = `openapi.yml` 经 `fastify-openapi-glue` **运行时**解析装配路由 + 校验（唯一用 glue 的进程）。
+  - `gateway` / `gameserver` = `transport.proto` / `game.proto` 经 `protobufjs` **运行时** `loadSync`，字段名 snake_case 映射**手写**（靠 `transport.test.ts` 兜，写错静默丢字段）。
+  - `worldsvc` = `openapi-world.yml` **根本未被代码加载**，路由全手写，yml 仅被一个 metaserver 测试引用 → spec 与实现完全无绑定，漂移风险最高。
+  - `commercial` / `admin` / `matchsvc` / `socialsvc` / `analyticsvc` = 无机器契约，手写路由。
+  - **客户端**早已双端 codegen：`client/scripts/gen-openapi.mjs`（`rest:gen`）→ 入库 `client/src/net/openapi.ts` + `openapi-world.ts`；`gen-proto.mjs`（`proto:gen`）→ proto TS。
+- **决策**（用户拍板）：服务端也改走**构建期代码生成 + 生成产物入库**，推翻「运行时解析单一真源」的旧取向。`contracts/*` 仍是唯一真源，但服务端不再在运行时读取，而是由 codegen 在构建期把它编译成入库的 TS（路由表 + ajv 校验 schema + operationId→handler 的类型约束）。
+- **为什么**（两点收益，恰是本次事故暴露的缺口）：
+  1. **契约错误在构建期就炸**：坏 spec 进不了 CI 的 docker 阶段，`tsc` / codegen 直接失败（本次逗号 bug 会被前置拦截）。
+  2. **契约变更物化为入库 diff，CD 可卡版本**：一次协议改动同时产出**服务端 stub diff + 客户端类型 diff**，CD 能强制「服务端契约变 → 客户端类型必须同改 → 两端同批次发版」。运行时 glue 下契约变更只体现为 yml 单文件改动，客户端是否同步全靠人自觉——**动态加载才是真正的漂移温床**。
+  - 澄清：「强制客户端跟版本」主要靠客户端 codegen + CD 卡，本就与服务端用不用 glue 无关；服务端转 codegen 真正多买到的是上面两点，非「逼客户端更新」本身。
+- **范围 / 分期**（实现拆 P1→P3，详见实现提示）：
+  - **P1（REST，承重）**：`metaserver` 去 glue，新增 `server/contracts/scripts/gen-openapi-server.mjs` 生成入库的路由/schema 产物，`app.ts` 注册生成产物;handler 仍手写、由生成的 operationId 类型约束（缺/错名变 TS 编译错，强于 glue 运行时 501）。CI 加 `gen --check`（生成物与入库不一致即失败）。
+  - **P2（worldsvc 收口）**：把 `openapi-world.yml` 真正接上（生成校验 + 路由），消除「spec 即装饰」最高漂移点;或明确降级 yml 为纯文档并删除其"契约"地位（二选一，实现时拍板）。
+  - **P3（proto，可选/后置）**：`gateway`/`gameserver` 的 protobufjs 运行时解析 + 手写字段映射存在同类问题;评估是否一并 codegen（ts-proto 等）。**默认后置**，先做 REST。
+- **影响**：[`game/SERVER_API.md`](game/SERVER_API.md) §1.2「契约单一来源 + 双端 codegen」一节须更新（现描述把 glue 等同于 codegen，实现后改为「服务端构建期生成入库」）；新增 `server/contracts/scripts/gen-openapi-server.mjs` + CI 校验步骤；[`claudedocs/server.md`](../claudedocs/server.md) 服务端构建链补一笔。实现前先读本 ADR。
