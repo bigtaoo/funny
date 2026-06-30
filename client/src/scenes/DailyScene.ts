@@ -4,6 +4,7 @@ import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
 import type { RetentionView } from '../net/ApiClient';
@@ -14,7 +15,7 @@ import {
   makeMonthKey,
 } from '../game/meta/retention';
 
-// ── DailyScene — daily check-in + daily tasks (B5, RETENTION_DESIGN) ────────────
+// â”€â”€ DailyScene â€” daily check-in + daily tasks (B5, RETENTION_DESIGN) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Entry: LobbyScene "daily" button (onOpenDaily).
 // Portrait: upper half = 30-cell monthly check-in calendar, lower half = 3 daily task cards + claim button.
@@ -98,6 +99,8 @@ export class DailyScene implements Scene {
     const { w, h } = this;
 
     this.container.addChild(buildPaperBackground('dailybg', w, h));
+    const decoC = buildDecorCLayer(w, h);
+    if (decoC) this.container.addChild(decoC);
 
     const title = txt(t('daily.title'), Math.round(h * 0.045), C.dark, true);
     title.anchor.set(0.5, 0);
@@ -184,9 +187,9 @@ export class DailyScene implements Scene {
       const cw = cellW * 0.92;
       const ch = cellH * 0.92;
 
-      // Sequential accumulation model: claimed cells (≤ claimed count) get a checkmark;
+      // Sequential accumulation model: claimed cells (â‰¤ claimed count) get a checkmark;
       // the next unclaimed cell = claimable (highlighted); the rest = locked (dimmed).
-      // claimable is provided by nextCheckinDay, may be null (already claimed today / month full) → no highlighted cell.
+      // claimable is provided by nextCheckinDay, may be null (already claimed today / month full) â†’ no highlighted cell.
       const isClaimed = claimedDays.includes(day);
       const isClaimable = claimable !== null && day === claimable;
       const isLocked = !isClaimed && !isClaimable;
@@ -215,7 +218,7 @@ export class DailyScene implements Scene {
 
       // Claimed cell: stamp a green checkmark (user feedback: tick the claimed date after collecting).
       if (isClaimed) {
-        const tick = txt('✓', Math.round(ch * 0.5), 0x2e7d32, true);
+        const tick = txt('âœ“', Math.round(ch * 0.5), 0x2e7d32, true);
         tick.anchor.set(0.5, 0.5);
         tick.x = cx; tick.y = cy;
         tick.alpha = 0.85;

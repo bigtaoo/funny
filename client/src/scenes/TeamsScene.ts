@@ -1,4 +1,4 @@
-// TeamsScene — SLG attack team management (G3-2c §16.2)
+// TeamsScene â€” SLG attack team management (G3-2c Â§16.2)
 //
 // Lists 5 attack formation template slots (committed troops / empty). Tapping a slot
 // opens DefenseEditorScene (attack mode) to edit that team.
@@ -13,6 +13,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, TeamTemplate } from '../net/WorldApiClient';
 
@@ -62,6 +63,8 @@ export class TeamsScene implements Scene {
     this.container = new PIXI.Container();
 
     this.container.addChild(buildPaperBackground('teams', this.w, this.h));
+    const decoC = buildDecorCLayer(this.w, this.h);
+    if (decoC) this.container.addChild(decoC);
     this.bodyLayer = new PIXI.Container();
     this.container.addChild(this.bodyLayer);
 
@@ -74,7 +77,7 @@ export class TeamsScene implements Scene {
     try {
       const teams = await this.cb.worldApi.getTeams(this.cb.worldId);
       if (!this.destroyed) this.teams = teams;
-    } catch { /* offline — show empty slots */ }
+    } catch { /* offline â€” show empty slots */ }
     this.loading = false;
     if (!this.destroyed) this.render();
   }

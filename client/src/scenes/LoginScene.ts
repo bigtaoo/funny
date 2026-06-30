@@ -4,15 +4,16 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 
-// ── LoginScene (SA-3) — account login / register + single-player entry ─────────
+// â”€â”€ LoginScene (SA-3) â€” account login / register + single-player entry â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Canvas-drawn (mirrors RoomScene/LobbyScene). Free-text entry is captured by a
 // single hidden <input> overlaid on the page (works with desktop keyboards and
 // mobile soft keyboards); the value is mirrored onto canvas-drawn field boxes
 // (password masked as dots). Tapping a field focuses the hidden input.
 //
-// Views: landing → (password | register) → submitting. OAuth is deferred (SA-2),
+// Views: landing â†’ (password | register) â†’ submitting. OAuth is deferred (SA-2),
 // so there's no oauthWait view yet. Copy lives in the i18n `auth.*` namespace.
 //
 // The actual REST call + token persistence + navigation live in app.ts; the
@@ -67,8 +68,8 @@ export class LoginScene implements Scene {
 
   /** Active button press: grows the button, then fires its action when the pop ends. */
   private press: { key: string; t: number; fn: () => void } | null = null;
-  private static readonly PRESS_DUR = 0.12; // seconds — quick tap-grow before the action fires
-  private static readonly PRESS_AMP = 0.12; // peak scale-up (1.0 → 1.12 → 1.0)
+  private static readonly PRESS_DUR = 0.12; // seconds â€” quick tap-grow before the action fires
+  private static readonly PRESS_AMP = 0.12; // peak scale-up (1.0 â†’ 1.12 â†’ 1.0)
 
   /** Hidden DOM input that captures keystrokes (incl. mobile soft keyboard). */
   private hiddenInput: HTMLInputElement | null = null;
@@ -83,7 +84,7 @@ export class LoginScene implements Scene {
     this.render();
   }
 
-  // ── Scene interface ──────────────────────────────────────────────────────────
+  // â”€â”€ Scene interface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   update(dt: number): void {
     // A button is mid-press: grow it for PRESS_DUR, then fire its action. Deferring
@@ -127,7 +128,7 @@ export class LoginScene implements Scene {
     }
   }
 
-  // ── Hidden input (text capture) ───────────────────────────────────────────────
+  // â”€â”€ Hidden input (text capture) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private setupHiddenInput(): void {
     if (typeof document === 'undefined') return; // non-DOM platform (wx skips this scene)
@@ -145,7 +146,7 @@ export class LoginScene implements Scene {
       if (this.focused) {
         this.fields[this.focused] = el.value;
         // Editing any field clears a stale validation/auth error so the form stays
-        // live: the red line disappears as the user fixes the input (the green ✓
+        // live: the red line disappears as the user fixes the input (the green âœ“
         // hints already update per keystroke), and the submit button never looks
         // "stuck" behind an error that no longer reflects the current values.
         if (this.errorKey) { this.errorKey = null; this.errorDetail = null; }
@@ -180,7 +181,7 @@ export class LoginScene implements Scene {
     this.hiddenInput?.blur();
   }
 
-  // ── Input ──────────────────────────────────────────────────────────────────
+  // â”€â”€ Input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private handleDown(x: number, y: number): void {
     if (this.press) return; // swallow taps while a button is mid-press
@@ -191,11 +192,11 @@ export class LoginScene implements Scene {
         return;
       }
     }
-    // Tap outside any field/button → blur.
+    // Tap outside any field/button â†’ blur.
     if (this.focused) { this.blur(); this.render(); }
   }
 
-  // ── Actions ──────────────────────────────────────────────────────────────────
+  // â”€â”€ Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private goView(v: View): void {
     this.view = v;
@@ -234,8 +235,8 @@ export class LoginScene implements Scene {
     this.errorDetail = null;
     this.render();
 
-    // Always return to the form on any failure — including an unexpected rejection
-    // — so the submit button is never stranded behind the (button-less) spinner.
+    // Always return to the form on any failure â€” including an unexpected rejection
+    // â€” so the submit button is never stranded behind the (button-less) spinner.
     const fail = (errorKey: TranslationKey, detail?: string): void => {
       this.view = formView;
       this.errorKey = errorKey;
@@ -257,7 +258,7 @@ export class LoginScene implements Scene {
       });
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private render(): void {
     tearDownChildren(this.container); // free per-keystroke/caret Text textures; see sketchUi
@@ -278,6 +279,8 @@ export class LoginScene implements Scene {
 
   private drawBackground(): void {
     this.container.addChild(buildPaperBackground('loginbg', this.w, this.h));
+    const decoC = buildDecorCLayer(this.w, this.h);
+    if (decoC) this.container.addChild(decoC);
   }
 
   private drawHeader(): void {
@@ -315,7 +318,7 @@ export class LoginScene implements Scene {
     this.addButton(t('auth.login'), btnX, y0, btnW, btnH, C.dark, C.accent, () => this.goView('password'));
     this.addButton(t('auth.register'), btnX, y0 + btnH + gap, btnW, btnH, C.dark, C.gold, () => this.goView('register'));
 
-    // Single-player entry — visually secondary (paper fill).
+    // Single-player entry â€” visually secondary (paper fill).
     const offY = y0 + 2 * (btnH + gap) + Math.round(h * 0.02);
     this.addButton(t('auth.playOffline'), btnX, offY, btnW, btnH, C.paper, C.green,
       () => this.cb.onPlayOffline(), C.dark);
@@ -332,7 +335,7 @@ export class LoginScene implements Scene {
     const fieldX = (w - fieldW) / 2;
     const gap = Math.round(h * 0.028);
     const hintH = Math.round(h * 0.026);
-    // Register stacks more fields + live hints → start higher to keep it on-screen.
+    // Register stacks more fields + live hints â†’ start higher to keep it on-screen.
     let y = Math.round(h * (isRegister ? 0.16 : 0.22));
 
     const pw = this.fields.password;
@@ -378,7 +381,7 @@ export class LoginScene implements Scene {
     }
     y += Math.round(h * 0.04);
 
-    // Submit — enabled only when the form would actually pass validation, so its
+    // Submit â€” enabled only when the form would actually pass validation, so its
     // appearance (vivid vs. faded-grey) tells the user at a glance if it's ready.
     this.addButton(
       isRegister ? t('auth.submitRegister') : t('auth.submitLogin'),
@@ -431,7 +434,7 @@ export class LoginScene implements Scene {
     box.x = x; box.y = y;
     this.container.addChild(box);
 
-    const shown = masked ? '•'.repeat(value.length) : value;
+    const shown = masked ? 'â€¢'.repeat(value.length) : value;
     const display = shown + (isFocused && this.caretOn ? '|' : '');
     const placeholder = value.length === 0 && !isFocused;
     const valTxt = txt(placeholder ? t('auth.tapToType') : display, Math.round(h * 0.40),
@@ -442,10 +445,10 @@ export class LoginScene implements Scene {
     this.hits.push({ rect: { x, y, w, h }, fn: () => this.focus(field) });
   }
 
-  /** Live requirement line under a field: ✓ green when satisfied, • grey otherwise. */
+  /** Live requirement line under a field: âœ“ green when satisfied, â€¢ grey otherwise. */
   private drawHint(text: string, ok: boolean, x: number, y: number, w: number): void {
     const { h } = this;
-    const hint = txt((ok ? '✓ ' : '• ') + text, Math.round(h * 0.019), ok ? C.green : C.mid);
+    const hint = txt((ok ? 'âœ“ ' : 'â€¢ ') + text, Math.round(h * 0.019), ok ? C.green : C.mid);
     hint.anchor.set(0, 0); hint.x = x + Math.round(w * 0.02); hint.y = y + Math.round(h * 0.004);
     this.container.addChild(hint);
   }
@@ -462,7 +465,7 @@ export class LoginScene implements Scene {
    * Draw a rounded button and register its hit rect.
    *
    * `enabled=false` renders a clearly inert button (pale grey fill, muted text,
-   * faded) and ignores taps — so the user can tell at a glance whether it's
+   * faded) and ignores taps â€” so the user can tell at a glance whether it's
    * actionable instead of guessing. Enabled taps grow the button (press pop) and
    * defer the action until the pop ends (see `update`).
    */

@@ -12,14 +12,15 @@ import {
 } from '../game/balance/unitCards';
 import type { ObjectiveSpec } from '../game/campaign/LevelDefinition';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 
-// ── LevelPrepScene (S12) — unit card level view + merge + Start ─────────────
+// â”€â”€ LevelPrepScene (S12) â€” unit card level view + merge + Start â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Shows each progressable unit's current level (derived from cardInventory),
 // any unlocked traits (T3/T6/T9 breakpoints), and a per-level merge button
-// (5 cards of level N → 1 card of level N+1). Replaces the S3-2 material +
-// upgrade-tree system. The hard wall (§5.2) means levels only ever buff the
+// (5 cards of level N â†’ 1 card of level N+1). Replaces the S3-2 material +
+// upgrade-tree system. The hard wall (Â§5.2) means levels only ever buff the
 // campaign engine; buildPvpBlueprints never receives unitLevels.
 
 const UNIT_NAME_KEY: Partial<Record<UnitType, TranslationKey>> = {
@@ -31,13 +32,13 @@ const UNIT_NAME_KEY: Partial<Record<UnitType, TranslationKey>> = {
 export interface LevelPrepCallbacks {
   onBack(): void;
   onStart(): void;
-  /** unitId → current level (1–9); missing key = Lv 1. */
+  /** unitId â†’ current level (1â€“9); missing key = Lv 1. */
   getUnitLevels(): Record<string, number>;
-  /** cardKey (unitId:level) → owned count. */
+  /** cardKey (unitId:level) â†’ owned count. */
   getCardInventory(): Record<string, number>;
   /** Online = can reach /pve/merge. Offline disables merging. */
   isOnline(): boolean;
-  /** Server-authoritative merge (5 × unitId:level → 1 × unitId:(level+1)); true on success. */
+  /** Server-authoritative merge (5 Ã— unitId:level â†’ 1 Ã— unitId:(level+1)); true on success. */
   tryMerge(unitId: string, level: number): Promise<boolean>;
   /** 1-based level number for the header label. */
   levelNumber: number;
@@ -68,7 +69,7 @@ export class LevelPrepScene implements Scene {
   private toast: { text: string; color: number } | null = null;
   private merging = false;
 
-  // ── Intro story animation state ───────────────────────────────────────────
+  // â”€â”€ Intro story animation state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   private showingIntro = false;
   private introLines: string[] = [];
   private introShownCount = 0;
@@ -156,6 +157,8 @@ export class LevelPrepScene implements Scene {
     }
 
     this.container.addChild(buildPaperBackground('prepbg', w, h));
+    const decoC = buildDecorCLayer(w, h);
+    if (decoC) this.container.addChild(decoC);
 
     // Header
     const hdr = drawSceneHeader(this.container, w, h, t('campaign.levelLabel', { n: this.cb.levelNumber }), { titleSize: Math.round(h * 0.032) });
@@ -180,7 +183,7 @@ export class LevelPrepScene implements Scene {
     this.container.addChild(secLbl);
     y += Math.round(h * 0.038);
 
-    // Unit card rows — 2-column layout to halve vertical footprint.
+    // Unit card rows â€” 2-column layout to halve vertical footprint.
     const listX = Math.round(w * 0.06);
     const listW = w - listX * 2;
     const unitCount = PROGRESSABLE_UNIT_IDS.length;
@@ -208,7 +211,7 @@ export class LevelPrepScene implements Scene {
     }
     y += rowCount * (rowH + gap);
 
-    // —— Stamina bar (A4): cost + current balance, turns red when insufficient + refill button ——
+    // â€”â€” Stamina bar (A4): cost + current balance, turns red when insufficient + refill button â€”â€”
     const stamina = this.cb.getStamina();
     const stCost = this.cb.staminaCost;
     const stInsufficient = stamina.current < stCost;
@@ -254,7 +257,7 @@ export class LevelPrepScene implements Scene {
     this.hits.push({
       rect: { x: sbX, y: sbY, w: sbW, h: sbH },
       fn: () => {
-        if (stInsufficient) return; // Insufficient stamina — block tap
+        if (stInsufficient) return; // Insufficient stamina â€” block tap
         if (this.cb.intro) {
           this.introLines = this.cb.intro.split('\n').filter((l) => l.trim().length > 0);
           this.introShownCount = 0;
@@ -319,7 +322,7 @@ export class LevelPrepScene implements Scene {
       traitX += badge.width + Math.round(w * 0.015);
     }
 
-    // Merge button: find lowest level with ≥ MERGE_COPIES cards that can still be merged
+    // Merge button: find lowest level with â‰¥ MERGE_COPIES cards that can still be merged
     const mergeLevel = this.findMergeLevel(unitId, inv);
     const bw = Math.round(w * 0.18);
     const bh = Math.round(h * 0.55);
@@ -362,7 +365,7 @@ export class LevelPrepScene implements Scene {
     }
   }
 
-  /** Returns lowest card level with ≥ MERGE_COPIES cards that is < UNIT_MAX_LEVEL, or null. */
+  /** Returns lowest card level with â‰¥ MERGE_COPIES cards that is < UNIT_MAX_LEVEL, or null. */
   private findMergeLevel(unitId: string, inv: Record<string, number>): number | null {
     for (let lv = 1; lv < UNIT_MAX_LEVEL; lv++) {
       const count = inv[cardKey(unitId, lv)] ?? 0;

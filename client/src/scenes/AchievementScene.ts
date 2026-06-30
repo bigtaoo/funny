@@ -4,16 +4,17 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { AchievementsView, Achievement } from '../net/ApiClient';
 import { tierState, achievementClaimable, type TierState } from '../game/meta/achievements';
 
-// ── AchievementScene — achievement wall (personal view, ACHIEVEMENT_DESIGN §7) ──────────────────────
+// â”€â”€ AchievementScene â€” achievement wall (personal view, ACHIEVEMENT_DESIGN Â§7) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Entry: the "achievements" button at the top of StatsScene. Category tabs (pve/pvp/collection/progression)
 // + achievement cards (each card: three-tier progress + per-tier state: not-yet/claimable[claim]/claimed)
-// + red dots (tab/card). Personal view only — not shown to others (public bragging goes through the title system).
-// defs/stats/progress are served by GET /achievements; the client computes the tier state locally (§4.1).
+// + red dots (tab/card). Personal view only â€” not shown to others (public bragging goes through the title system).
+// defs/stats/progress are served by GET /achievements; the client computes the tier state locally (Â§4.1).
 // Landscape: cards laid out in two columns to make full use of the wide screen.
 
 /** Category tab order (categories with no achievements are auto-hidden). */
@@ -24,7 +25,7 @@ const TIER_LABELS = ['I', 'II', 'III'];
 export interface AchievementCallbacks {
   onBack(): void;
   /**
-   * Fetch achievements (definitions + stats + progress). Omit when offline/not logged in → shows "log in to view".
+   * Fetch achievements (definitions + stats + progress). Omit when offline/not logged in â†’ shows "log in to view".
    */
   loadAchievements?(): Promise<AchievementsView>;
   /**
@@ -131,7 +132,7 @@ export class AchievementScene implements Scene {
     }
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────────
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private render(): void {
     tearDownChildren(this.container);
@@ -139,8 +140,10 @@ export class AchievementScene implements Scene {
     const { w, h } = this;
 
     this.container.addChild(buildPaperBackground('achbg', w, h));
+    const decoC = buildDecorCLayer(w, h);
+    if (decoC) this.container.addChild(decoC);
 
-    // Title bar (unified SceneHeader: back top-left + cached chrome, UI_DESIGN §3.1/§2.1).
+    // Title bar (unified SceneHeader: back top-left + cached chrome, UI_DESIGN Â§3.1/Â§2.1).
     const hdr = drawSceneHeader(this.container, w, h, t('achievement.title'));
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });

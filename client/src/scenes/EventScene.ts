@@ -4,12 +4,13 @@ import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
-// ── EventScene — limited-time events (B6, ADR-014) ────────────────────────────
+// â”€â”€ EventScene â€” limited-time events (B6, ADR-014) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Entry: LobbyScene "events" button (onOpenEvents).
-// Layout: event tab list (if multiple) → task progress cards + points shop for the selected event.
+// Layout: event tab list (if multiple) â†’ task progress cards + points shop for the selected event.
 // Portrait: task area in the upper half, redemption area in the lower half;
 // Landscape: tasks in the left column, redemption in the right column.
 // Redemption goes via POST /api/events/claim; rewards are delivered by mail or via commercial coins.
@@ -121,6 +122,8 @@ export class EventScene implements Scene {
     const { w, h } = this;
 
     this.container.addChild(buildPaperBackground('eventbg', w, h));
+    const decoC = buildDecorCLayer(w, h);
+    if (decoC) this.container.addChild(decoC);
 
     const title = txt(t('event.title'), Math.round(h * 0.045), C.dark, true);
     title.anchor.set(0.5, 0);
