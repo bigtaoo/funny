@@ -1,13 +1,13 @@
-// metaserver → socialsvc 内部客户端（P2）。
-// 用于：好友/私聊/邮件路由代理（透传 JWT） + 邮件领取（内部 atomic claim）。
+// metaserver → socialsvc internal client (P2).
+// Used for: friend / private-chat / mail route proxying (pass-through JWT) + mail claim (internal atomic claim).
 import { internalHeaders } from '@nw/shared';
 import type { MailDoc } from '@nw/shared';
 
 export interface MetaSocialsvcClient {
   readonly available: boolean;
-  /** 透传玩家 JWT，代理到 socialsvc /social/* 端点。返回 status + JSON body。 */
+  /** Pass through the player JWT and proxy to the socialsvc /social/* endpoint. Returns status + JSON body. */
   proxy(method: string, path: string, body: unknown, authorization: string): Promise<{ status: number; data: unknown }>;
-  /** 邮件原子标记领取（socialsvc /internal/mail/:id/claim）。返回 mail doc 或错误。 */
+  /** Atomic mail claim (socialsvc /internal/mail/:id/claim). Returns the mail doc or an error. */
   claimMail(mailId: string, accountId: string, orderId: string): Promise<{ doc: MailDoc } | { error: 'NOT_FOUND' | 'NO_ATTACHMENT' | 'ALREADY_CLAIMED' }>;
 }
 

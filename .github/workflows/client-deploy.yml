@@ -1,14 +1,14 @@
 name: client-deploy
 
-# 主游戏 client（web 包，Worker nivara-client）自动发布到 Cloudflare，对外 a.gamestao.com。
-# 触发：push 到 main 且改动落在 client 相关文件，或在 Actions 页手动 Run。
-# 流程：npm ci → npm run build:web（把生产 API/WS 地址烘焙进 bundle）→ wrangler deploy。
-# 部署细节 / 地址烘焙变量：design/product/deploy-cloudflare.md §6。
+# Auto-publish the main game client (web bundle, Worker nivara-client) to Cloudflare, served at a.gamestao.com.
+# Trigger: push to main touching client-related files, or manual Run from the Actions page.
+# Flow: npm ci → npm run build:web (bakes production API/WS addresses into the bundle) → wrangler deploy.
+# Deployment details / address baking variables: design/product/deploy-cloudflare.md §6.
 #
-# 复用 ops 那套 repo secrets（同一 CF 账号 e64b61f1...，"Edit Cloudflare Workers" token 覆盖全账号 Worker）：
-#   CLOUDFLARE_API_TOKEN   —— 权限至少 Workers Scripts:Edit（账号级，nivara-client 同样适用，无需新建）
-#   CLOUDFLARE_ACCOUNT_ID  —— 账号 ID（与 ops 同值）
-# 启用开关：repo variable CLIENT_DEPLOY_ENABLED = true（未设则 job 跳过，避免配好前每次 push 报红）。
+# Reuses the ops repo secrets (same CF account e64b61f1...; "Edit Cloudflare Workers" token covers all account Workers):
+#   CLOUDFLARE_API_TOKEN   — Requires at least Workers Scripts:Edit (account-level; also works for nivara-client, no new token needed)
+#   CLOUDFLARE_ACCOUNT_ID  — Account ID (same value as ops)
+# Enable switch: repo variable CLIENT_DEPLOY_ENABLED = true (job skipped if not set, to avoid red builds before setup is complete).
 
 on:
   push:
@@ -19,7 +19,7 @@ on:
       - '.github/workflows/client-deploy.yml'
   workflow_dispatch: {}
 
-# 同时只跑一个 client 部署，新的取消旧的，避免并发 deploy 打架。
+# Only one client deployment runs at a time; new run cancels the old one to prevent concurrent deploy conflicts.
 concurrency:
   group: client-deploy
   cancel-in-progress: true
@@ -27,7 +27,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # 未设 repo variable CLIENT_DEPLOY_ENABLED=true 时整个 job 跳过（避免配好前每次 push 报红）。
+    # Skip the entire job if repo variable CLIENT_DEPLOY_ENABLED is not set to true (avoids red builds before setup is complete).
     if: ${{ vars.CLIENT_DEPLOY_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +42,7 @@ jobs:
         working-directory: client
         run: npm ci
 
-      # 产出 client/dist；生产地址烘焙到 api.gamestao.com（与手动部署命令一致）。
+      # Outputs client/dist; production addresses are baked to api.gamestao.com (consistent with manual deploy commands).
       - name: client build (web)
         working-directory: client
         env:
@@ -51,8 +51,8 @@ jobs:
           NW_WORLD_BASE: https://api.gamestao.com
         run: npm run build:web
 
-      # 从仓库根用 -c 指定 client 配置（assets 指向 ./client/dist，无 Worker 脚本）。
-      # 直接用 npx wrangler 跑（不用 wrangler-action），报错原样可见。
+      # Run from repo root using -c to specify the client config (assets point to ./client/dist, no Worker script).
+      # Uses npx wrangler directly (not wrangler-action) so errors are visible as-is.
       - name: deploy to Cloudflare
         working-directory: .
         env:

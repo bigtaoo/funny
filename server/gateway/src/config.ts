@@ -1,19 +1,19 @@
-// gateway 环境变量（复用 @nw/shared ServerEnv：jwtSecret 验客户端 token，internalKey 内部鉴权）。
+// gateway environment variables (reuses @nw/shared ServerEnv: jwtSecret verifies client tokens, internalKey for inter-service auth).
 import { loadServerEnv, type ServerEnv } from '@nw/shared';
 
 export interface GatewayEnv extends ServerEnv {
-  /** 公开控制面 WS 端口（反代 /gw → 此端口）。 */
+  /** Public control-plane WS port (reverse proxy /gw → this port). */
   port: number;
   host: string;
-  /** 内部 HTTP 端口（matchsvc 经 /gw/push 推事件回来 → 此端口；不暴露公网）。 */
+  /** Internal HTTP port (matchsvc pushes events back via /gw/push → this port; not exposed to the public internet). */
   internalPort: number;
-  /** meta REST 基址（取 ELO：GET {metaBaseUrl}/internal/elo）。无则 ranked 不可用。 */
+  /** meta REST base URL (fetch ELO: GET {metaBaseUrl}/internal/elo). Absent means ranked is unavailable. */
   metaBaseUrl: string | null;
-  /** matchsvc 内部 HTTP 基址（转发玩家控制命令）。null = 联机不可用。 */
+  /** matchsvc internal HTTP base URL (forwards player control commands). null = multiplayer unavailable. */
   matchsvcInternalUrl: string | null;
-  /** Redis 连接串（S8-4b，订阅 GW_PUSH_REDIS_CHANNEL 做宗门频道扇出）；缺省 = 实时推送降级。 */
+  /** Redis connection string (S8-4b, subscribes to GW_PUSH_REDIS_CHANNEL for sect channel fan-out); absent = real-time push degraded. */
   redisUrl: string | undefined;
-  /** socialsvc 内部基址（P3：presence 事件 POST /internal/presence/online|offline）；缺省 = gateway 直接做在线好友广播。 */
+  /** socialsvc internal base URL (P3: presence events POST /internal/presence/online|offline); absent = gateway handles online-friend broadcast directly. */
   socialsvcInternalUrl: string | null;
 }
 

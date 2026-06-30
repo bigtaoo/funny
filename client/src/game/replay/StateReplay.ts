@@ -1,37 +1,42 @@
 /**
- * 状态流录像格式（游戏外分享，REPLAY_SHARE_DESIGN）。
+ * State-stream replay format (for out-of-game sharing, REPLAY_SHARE_DESIGN).
  *
- * 与输入流录像（{@link Replay}）正交：输入流只存玩家指令、播放时**重跑引擎**算状态，
- * 依赖 engineVersion + 数值 config、可信、用于反作弊/天梯结算/游戏内回放；状态流存渲染层
- * 每帧的实体可视状态，播放器**只哑回放、不跑引擎**，只依赖渲染 schema（`schemaVersion`），
- * **不可信**（客户端自产、可伪造）—— 仅供游戏外公开分享观赏，**绝不进**反作弊/结算路径。
+ * Orthogonal to the input-stream replay ({@link Replay}): the input stream stores only player
+ * commands and **re-runs the engine** to derive state at playback time — it depends on
+ * engineVersion + numeric config, is authoritative, and is used for anti-cheat / ladder
+ * settlement / in-game replay. The state stream stores the visual entity state of every frame
+ * from the render layer; the player **dumb-plays only, never runs the engine**, and depends
+ * solely on the render schema (`schemaVersion`). It is **untrusted** (client-generated,
+ * forgeable) — intended only for public out-of-game viewing and must **never** enter the
+ * anti-cheat / settlement path.
  *
- * 本模块是纯数据 + 编解码，无 PIXI / 无引擎依赖，便于哑播放器与 round-trip 单测复用。
+ * This module is pure data + codec with no PIXI / engine dependency, making it easy to reuse
+ * in the dumb player and in round-trip unit tests.
  */
 
-/** 渲染 schema 版本（非 engineVersion）。新增字段增量加、不破老录像；不符时降级播放而非硬拒。 */
+/** Render schema version (not engineVersion). New fields are added incrementally without breaking old replays; on mismatch, degrade gracefully rather than hard-reject. */
 export const STATE_SCHEMA_VERSION = 1;
 
-/** 坐标量化精度：保留两位小数（展示足够，省体量）。 */
+/** Coordinate quantization precision: two decimal places (sufficient for display, saves size). */
 export const STATE_POS_QUANT = 100;
 
-// ── 满帧（内存态 / 哑播放器消费）────────────────────────────────────────────────
+// ── Full frame (in-memory form / consumed by the dumb player) ────────────────────────────────────────────────
 
-/** 单位可视状态（镜像 UnitView.sync 实际读取的字段）。`side`/`state`/`type` 用引擎字符串枚举原值。 */
+/** Unit visual state (mirrors the fields actually read by UnitView.sync). `side`/`state`/`type` use the raw engine string enum values. */
 export interface StateUnit {
   id: number;
   type: string;
   side: 0 | 1;
-  /** 量化后的分数列（colExact）。 */
+  /** Quantized fractional column (colExact). */
   col: number;
-  /** 量化后的分数行（rowExact）。 */
+  /** Quantized fractional row (rowExact). */
   row: number;
   hp: number;
   maxHp: number;
   state: string;
 }
 
-/** 建筑可视状态（镜像 BuildingView.sync）。 */
+/** Building visual state (mirrors BuildingView.sync). */
 export interface StateBuilding {
   id: number;
   type: string;
@@ -42,14 +47,14 @@ export interface StateBuilding {
   maxHp: number;
 }
 
-/** 主基地血量（驱动 BoardView 的裂痕/受击脉冲）。 */
+/** Main base HP (drives BoardView crack / hit-pulse effects). */
 export interface StateBase {
   owner: 0 | 1;
   hp: number;
   maxHp: number;
 }
 
-/** 单 tick 的完整实体快照。 */
+/** Complete entity snapshot for a single tick. */
 export interface StateFrame {
   tick: number;
   units: StateUnit[];
@@ -57,70 +62,73 @@ export interface StateFrame {
   bases: StateBase[];
 }
 
-/** 录像头：画背景/HUD/进度条所需的元信息。 */
+/** Replay header: metadata needed to render the background, HUD, and progress bar. */
 export interface StateReplayHeader {
-  /** 渲染 schema 版本（非 engineVersion）。 */
+  /** Render schema version (not engineVersion). */
   schemaVersion: number;
   mode: string;
-  /** 帧采样率（Hz）：哑播放器据此把 tick 推进映射到墙钟。 */
+  /** Frame sample rate (Hz): the dumb player uses this to map tick advancement to wall-clock time. */
   tickRate: number;
-  /** 末帧 tick（进度条满刻度）。 */
+  /** Tick of the last frame (full-scale value for the progress bar). */
   endTick: number;
-  /** 胜方 owner（0/1），-1 = 平局/未知。 */
+  /** Winning side owner (0/1); -1 = draw / unknown. */
   winner: number;
-  /** 棋盘几何，画背景网格用。 */
+  /** Board geometry, used to render the background grid. */
   board: { cols: number; rows: number; lanes: number[] };
-  /** 双方展示名 + side，画 HUD 标签用。 */
+  /** Display name + side for each player, used to render HUD labels. */
   players: { name: string; side: 0 | 1 }[];
 }
 
-/** 满帧录像（解码后 / 哑播放器逐帧消费）。 */
+/** Full-frame replay (after decoding / consumed frame-by-frame by the dumb player). */
 export interface StateReplay {
   header: StateReplayHeader;
   frames: StateFrame[];
 }
 
-// ── delta 编码（落库 / 传输态）──────────────────────────────────────────────────
+// ── Delta encoding (persisted to DB / wire format) ──────────────────────────────────────────────────
 
 /**
- * delta 帧：只记相对上一帧**新增或变化**的实体（未变实体不重复）+ 移除 id 列表。
- * 字段全可选 —— 该类实体当帧无变化则整段省略。
+ * Delta frame: records only entities that are **new or changed** relative to the previous frame
+ * (unchanged entities are omitted) plus a list of removed ids.
+ * All fields are optional — if a given entity type has no changes this frame, the entire section is omitted.
  */
 export interface StateDeltaFrame {
   tick: number;
-  /** 新增或字段变化的单位（整条记录，省去逐字段 diff 的复杂度）。 */
+  /** Units that are new or have changed fields (full record per unit, avoiding per-field diff complexity). */
   u?: StateUnit[];
-  /** 本帧消失（死亡/离场）的单位 id。 */
+  /** Ids of units that vanished this frame (died / left the field). */
   ru?: number[];
   b?: StateBuilding[];
   rb?: number[];
-  /** 任一基地血量变化时，记全量基地数组（基地恒 1~2 个，量极小）。 */
+  /** When any base HP changes, record the full base array (always 1–2 bases, so very small). */
   bs?: StateBase[];
 }
 
-/** delta 编码后的录像（上传/落库用的线格式）。 */
+/** Delta-encoded replay (wire format used for upload / DB persistence). */
 export interface EncodedStateReplay {
   header: StateReplayHeader;
   frames: StateDeltaFrame[];
 }
 
-// ── 量化 ────────────────────────────────────────────────────────────────────────
+// ── Quantization ────────────────────────────────────────────────────────────────────────
 
-/** 坐标量化到展示精度。 */
+/** Quantize a coordinate to display precision. */
 export function quantizePos(v: number): number {
   return Math.round(v * STATE_POS_QUANT) / STATE_POS_QUANT;
 }
 
-/** 血量量化到整数（展示足够，且让 delta 比对稳定）。 */
+/** Quantize HP to an integer (sufficient for display, and keeps delta comparisons stable). */
 export function quantizeHp(v: number): number {
   return Math.round(v);
 }
 
-// ── 编解码 ──────────────────────────────────────────────────────────────────────
+// ── Encode / Decode ──────────────────────────────────────────────────────────────────────
 
 /**
- * 单位**静态**签名（不含位置）：状态/血量/类型/阵营任一变化必须落关键帧 —— 这些是离散事件
- * （行走↔攻击、掉血、死亡），不能靠插值还原。位置变化**不**计入，交给关键帧抽稀（见下）。
+ * **Static** signature of a unit (position excluded): any change in state / HP / type / side
+ * must produce a keyframe — these are discrete events (walking↔attacking, taking damage, dying)
+ * that cannot be recovered by interpolation. Position changes are **not** included here; they are
+ * handled by keyframe thinning (see below).
  */
 function staticSig(u: StateUnit): string {
   return `${u.type}|${u.side}|${u.hp}|${u.maxHp}|${u.state}`;
@@ -133,17 +141,21 @@ function basesSig(bs: StateBase[]): string {
 }
 
 /**
- * 关键帧抽稀参数（体量大头是逐 tick 位置同步，绝大多数是匀速直线行走 —— 只记拐点 + 端点，
- * 中间位置由哑播放器按 tick 线性插值还原，§7）。
+ * Keyframe thinning parameters. The dominant contributor to replay size is per-tick position
+ * sync; most movement is constant-velocity straight-line walking — so we only record inflection
+ * points and endpoints, and let the dumb player recover intermediate positions via per-tick
+ * linear interpolation (§7).
  */
-/** 共线判定容差（格）：某 tick 的真实位置与「按 tick 在前后关键帧间线性插值」的预测位置之差
- *  小于此值，则该 tick 可省略。量化精度 0.01 之上留余量；视觉无感。 */
+/** Collinearity tolerance (cells): if the true position at a given tick differs from the position
+ *  predicted by linear interpolation between the surrounding keyframes by less than this value,
+ *  that tick may be omitted. Leaves headroom above the 0.01 quantization precision; invisible to the viewer. */
 const POS_KEYFRAME_EPS = 0.06;
-/** 位置关键帧最大间隔（tick）：超过则强制落帧，限插值误差累积 + 给编码成本一个上界。 */
+/** Maximum gap between position keyframes (ticks): beyond this a keyframe is forced, bounding interpolation error accumulation and encoding cost. */
 const MAX_KEYFRAME_GAP = 90;
 
-/** 哑播放器的位置插值模型：在前后关键帧 a→b 间按 tick 线性插值。本函数算某中间样本 k 的还原误差
- *  （取 col/row 绝对误差的较大者），用于判定 k 是否可省略。要求 b.tick > a.tick。 */
+/** Position interpolation model used by the dumb player: linear interpolation between adjacent
+ *  keyframes a→b by tick. This function computes the restoration error for an intermediate sample k
+ *  (the larger of the col/row absolute errors), used to decide whether k can be omitted. Requires b.tick > a.tick. */
 function interpError(
   a: { tick: number; col: number; row: number },
   b: { tick: number; col: number; row: number },
@@ -156,22 +168,24 @@ function interpError(
 }
 
 /**
- * 一个单位整段生命周期的逐 tick 样本 → 需保留为关键帧的 tick 集合。
- * 保留条件：① 首帧（新增）② 末帧（消失前最后位置，保住临死前的位移）③ 静态字段切换帧（其前一拐点 +
- * 切换帧本身，令状态精确翻转）④ 位置拐点（线性插值还原误差超 EPS）⑤ 间隔超 MAX_KEYFRAME_GAP 的强制帧。
+ * Per-tick samples for the full lifetime of one unit → the set of ticks that must be kept as keyframes.
+ * Retention criteria: ① first frame (unit appears) ② last frame (final position before disappearance,
+ * preserving movement right before death) ③ static-field transition frame (the inflection point just
+ * before it, plus the transition frame itself, so the state flips at exactly the right tick) ④ position
+ * inflection (linear-interpolation restoration error exceeds EPS) ⑤ forced frame when gap exceeds MAX_KEYFRAME_GAP.
  */
 function keptTicksForUnit(samples: { tick: number; u: StateUnit }[]): Set<number> {
   const keep = new Set<number>();
   const n = samples.length;
   if (n === 0) return keep;
   keep.add(samples[0]!.tick);
-  let anchor = 0; // 当前段起点（最近一个关键帧）
+  let anchor = 0; // start of the current segment (most recent keyframe)
   for (let i = 1; i < n; i++) {
     const staticChanged = staticSig(samples[i]!.u) !== staticSig(samples[anchor]!.u);
     const gapTooBig = samples[i]!.tick - samples[anchor]!.tick >= MAX_KEYFRAME_GAP;
     let breakHere = staticChanged || gapTooBig;
     if (!breakHere) {
-      // 检查 anchor→i 这一段内所有中间样本能否由插值还原。
+      // Check whether all intermediate samples in the anchor→i segment can be recovered by interpolation.
       const a = samples[anchor]!.u, b = samples[i]!.u;
       for (let k = anchor + 1; k < i; k++) {
         const s = samples[k]!;
@@ -188,11 +202,11 @@ function keptTicksForUnit(samples: { tick: number; u: StateUnit }[]): Set<number
       }
     }
     if (breakHere) {
-      // 上一段封口于 i-1（仍能被 anchor→(i-1) 还原的最后一点 / 拐点）。
+      // Close the previous segment at i-1 (the last point still recoverable from anchor→(i-1) / the inflection point).
       keep.add(samples[i - 1]!.tick);
       anchor = i - 1;
       if (staticChanged) {
-        // 静态切换：切换帧本身也留，令状态/血量在正确 tick 精确翻转。
+        // Static transition: also keep the transition frame itself so that state/HP flips at exactly the right tick.
         keep.add(samples[i]!.tick);
         anchor = i;
       }
@@ -203,17 +217,21 @@ function keptTicksForUnit(samples: { tick: number; u: StateUnit }[]): Set<number
 }
 
 /**
- * 满帧序列 → delta 编码（关键帧抽稀版）。
+ * Full-frame sequence → delta encoding (keyframe-thinned version).
  *
- * 与旧版「逐字段变化即整条重发」不同：位置逐 tick 变化的单位**不再每帧重发**，只在拐点/端点/状态
- * 切换处落关键帧，中间留空帧由哑播放器按 tick 线性插值还原（{@link StatePlayerScene} 本就如此插值，
- * 解码侧无需改动）。空 delta 帧整帧丢弃（仅首末帧保底）。体量大头（位置同步）由此塌缩。
+ * Unlike the old approach of "resend the full record whenever any field changes": units whose
+ * position changes every tick are **no longer resent each frame** — keyframes are only emitted at
+ * inflection points / endpoints / state transitions, and the dumb player recovers intermediate
+ * positions by per-tick linear interpolation ({@link StatePlayerScene} already interpolates this
+ * way, so no decoder changes are needed). Empty delta frames are discarded entirely (except the
+ * first and last frames, which are always emitted). The dominant size contributor (position sync)
+ * is thereby collapsed.
  */
 export function encodeStateReplay(full: StateReplay): EncodedStateReplay {
   const src = full.frames;
   if (src.length === 0) return { header: full.header, frames: [] };
 
-  // ── 1. 建逐实体时间线 + 生命周期（首/末出现帧下标）。
+  // ── 1. Build per-entity timelines + lifespans (index of first/last appearance frame).
   const unitSamples = new Map<number, { tick: number; u: StateUnit }[]>();
   const unitLastIdx = new Map<number, number>();
   const buildingSamples = new Map<number, { tick: number; b: StateBuilding }[]>();
@@ -233,14 +251,14 @@ export function encodeStateReplay(full: StateReplay): EncodedStateReplay {
     }
   });
 
-  // ── 2. 每实体算关键帧 tick 集 + 移除 tick（末帧之后那一帧的 tick；无则不移除）。
+  // ── 2. Per entity: compute the keyframe tick set + removal tick (tick of the frame after the last frame; omit if none).
   const tickAfter = (idx: number): number | null => (idx + 1 < src.length ? src[idx + 1]!.tick : null);
   type UnitPlan = { keep: Set<number>; removeAt: number | null };
   const unitPlans = new Map<number, UnitPlan>();
   for (const [id, samples] of unitSamples) {
     unitPlans.set(id, { keep: keptTicksForUnit(samples), removeAt: tickAfter(unitLastIdx.get(id)!) });
   }
-  // 建筑不移动：变化帧 + 首末帧落关键帧即可（哑播放器对建筑不插值）。
+  // Buildings do not move: keyframes on change frames plus first/last frames are sufficient (the dumb player does not interpolate buildings).
   type BuildingPlan = { keep: Set<number>; removeAt: number | null };
   const buildingPlans = new Map<number, BuildingPlan>();
   for (const [id, samples] of buildingSamples) {
@@ -252,7 +270,7 @@ export function encodeStateReplay(full: StateReplay): EncodedStateReplay {
     keep.add(samples[samples.length - 1]!.tick);
     buildingPlans.set(id, { keep, removeAt: tickAfter(buildingLastIdx.get(id)!) });
   }
-  // 基地：任一血量变化记全量（量极小）。
+  // Bases: record the full array whenever any HP changes (very small data volume).
   const basesChangeTicks = new Set<number>();
   let prevBases = '';
   for (const f of src) {
@@ -263,7 +281,7 @@ export function encodeStateReplay(full: StateReplay): EncodedStateReplay {
     }
   }
 
-  // ── 3. 汇总需落帧的 tick 集（关键帧 ∪ 移除 ∪ 基地变化 ∪ 首末）。
+  // ── 3. Collect the set of ticks that need frames emitted (keyframes ∪ removals ∪ base changes ∪ first/last).
   const emit = new Set<number>([src[0]!.tick, src[src.length - 1]!.tick]);
   for (const p of unitPlans.values()) {
     for (const t of p.keep) emit.add(t);
@@ -276,7 +294,7 @@ export function encodeStateReplay(full: StateReplay): EncodedStateReplay {
   for (const t of basesChangeTicks) emit.add(t);
   const emitTicks = [...emit].sort((a, b) => a - b);
 
-  // ── 4. 按 tick 取值组装 delta 帧（空帧丢弃，首末帧保底）。
+  // ── 4. Assemble delta frames by tick (discard empty frames; always emit first and last).
   const frameByTick = new Map<number, StateFrame>();
   for (const f of src) frameByTick.set(f.tick, f);
   const bookends = new Set<number>([src[0]!.tick, src[src.length - 1]!.tick]);
@@ -315,21 +333,28 @@ export function encodeStateReplay(full: StateReplay): EncodedStateReplay {
 }
 
 /**
- * delta 编码 → 满帧序列（哑播放器消费）。
+ * Delta encoding → full-frame sequence (consumed by the dumb player).
  *
- * ⚠️ 关键：关键帧抽稀后，单个单位只在自己的拐点/状态切换处落帧，而全局 delta 帧因多单位叠加是**密集**的
- * —— 某单位在它两个关键帧之间的那些（属于别的单位的）帧上**没有数据**。若像旧版那样「承前」（保留上个
- * 关键帧值不动），该单位会原地静止、到下一关键帧帧突跳，多单位下表现为满场瞬移（实测位置误差达数格）。
- * 故解码必须按**每个单位自身的相邻关键帧**对位置线性插值（与 {@link StatePlayerScene} 的 tick 插值模型
- * 一致），跨越中间那些无关帧。静态字段（type/side/hp/maxHp/state）在关键帧处离散切换、其间承前。
+ * ⚠️ Key point: after keyframe thinning, each unit only has frames at its own inflection points /
+ * state transitions, while the global delta-frame sequence is **dense** due to the interleaving of
+ * many units — a given unit has **no data** in the frames (belonging to other units) between its
+ * two keyframes. If those gaps were filled by "carry-forward" (keeping the last keyframe value
+ * unchanged, as the old version did), the unit would stand still and then snap to the next keyframe
+ * position, producing field-wide teleporting across multiple units (measured position error of
+ * several cells in practice).
+ * Therefore, decoding must linearly interpolate each unit's position **between its own adjacent
+ * keyframes** (consistent with the tick-interpolation model in {@link StatePlayerScene}), skipping
+ * the intervening frames that belong to other units. Static fields (type/side/hp/maxHp/state)
+ * switch discretely at keyframes and carry forward in between.
  *
- * 产出仍是每个 delta 帧 tick 一帧满状态；播放器再在相邻帧间按墙钟细插值（分段线性，精确）。
+ * The output is still one full-state snapshot per delta-frame tick; the player then sub-interpolates
+ * between adjacent snapshots by wall-clock time (piecewise-linear, accurate).
  */
 export function decodeStateReplay(enc: EncodedStateReplay): StateReplay {
   const dframes = enc.frames;
   if (dframes.length === 0) return { header: enc.header, frames: [] };
 
-  // ── pass 1：聚出每个实体的关键帧轨道（tick 升序）+ 移除 tick；基地时间线。
+  // ── pass 1: collect each entity's keyframe track (ascending tick) + removal tick; base timeline.
   const unitKf = new Map<number, { tick: number; u: StateUnit }[]>();
   const unitRemoveAt = new Map<number, number>();
   const buildingKf = new Map<number, { tick: number; b: StateBuilding }[]>();
@@ -351,7 +376,7 @@ export function decodeStateReplay(enc: EncodedStateReplay): StateReplay {
     if (df.bs) baseTimeline.push({ tick: df.tick, bases: df.bs });
   }
 
-  // ── pass 2：逐 delta 帧 tick 重建满状态。tick 单调递增，用每实体游标顺序推进。
+  // ── pass 2: reconstruct full state for each delta-frame tick. Ticks are monotonically increasing; advance each entity cursor in order.
   const unitPtr = new Map<number, number>();
   const buildingPtr = new Map<number, number>();
   let basePtr = -1;
@@ -360,7 +385,7 @@ export function decodeStateReplay(enc: EncodedStateReplay): StateReplay {
   const frames: StateFrame[] = dframes.map((df) => {
     const T = df.tick;
 
-    // 基地：阶梯承前（取最后一个 tick ≤ T 的全量）。
+    // Bases: step-hold carry-forward (take the last full array whose tick ≤ T).
     while (basePtr + 1 < baseTimeline.length && baseTimeline[basePtr + 1]!.tick <= T) {
       basePtr++;
       bases = baseTimeline[basePtr]!.bases;
@@ -368,9 +393,9 @@ export function decodeStateReplay(enc: EncodedStateReplay): StateReplay {
 
     const units: StateUnit[] = [];
     for (const [id, kf] of unitKf) {
-      if (kf[0]!.tick > T) continue; // 尚未出生
+      if (kf[0]!.tick > T) continue; // not yet spawned
       const removeAt = unitRemoveAt.get(id);
-      if (removeAt !== undefined && T >= removeAt) continue; // 已移除
+      if (removeAt !== undefined && T >= removeAt) continue; // already removed
       let p = unitPtr.get(id) ?? 0;
       while (p + 1 < kf.length && kf[p + 1]!.tick <= T) p++;
       unitPtr.set(id, p);
@@ -379,7 +404,7 @@ export function decodeStateReplay(enc: EncodedStateReplay): StateReplay {
       if (!b) {
         units.push({ ...a.u });
       } else {
-        // 位置按 tick 在自身相邻关键帧 a→b 间线性插值；静态字段取 a（关键帧处才切换）。
+        // Position: linearly interpolated by tick between the unit's own adjacent keyframes a→b; static fields taken from a (they switch only at keyframes).
         const frac = (T - a.tick) / (b.tick - a.tick);
         units.push({ ...a.u, col: a.u.col + (b.u.col - a.u.col) * frac, row: a.u.row + (b.u.row - a.u.row) * frac });
       }
@@ -394,7 +419,7 @@ export function decodeStateReplay(enc: EncodedStateReplay): StateReplay {
       let p = buildingPtr.get(id) ?? 0;
       while (p + 1 < kf.length && kf[p + 1]!.tick <= T) p++;
       buildingPtr.set(id, p);
-      buildings.push({ ...kf[p]!.b }); // 建筑不移动：承前即可
+      buildings.push({ ...kf[p]!.b }); // buildings do not move: carry-forward is sufficient
     }
     buildings.sort((x, y) => x.id - y.id);
 

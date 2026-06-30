@@ -1,12 +1,15 @@
-// worldsvc Redis 接入（S8-0，首次引入 Redis；META_DESIGN §6.7 / SOCIAL_DESIGN SOC7）。
-// S8-0 仅建立可选连接骨架——真正用途（行军调度 ZSET `world:{w}:march`、家族/宗门频道 pub/sub、
-// gateway 横扩路由、热格缓存）在 S8-1/S8-2/S8-4 接入。缺省无 Redis URL → 返回 null，
-// worldsvc 降级运行（行军到点扫描走 Mongo arriveAt 索引，频道功能关闭）。
+// worldsvc Redis connection (S8-0, first introduction of Redis; META_DESIGN §6.7 / SOCIAL_DESIGN SOC7).
+// S8-0 only establishes the optional connection skeleton — the actual uses (march scheduling
+// ZSET `world:{w}:march`, family/sect channel pub/sub, gateway horizontal-scaling routing,
+// hot-cell cache) are wired in S8-1/S8-2/S8-4. No Redis URL by default → returns null;
+// worldsvc degrades gracefully (march arrival scanning falls back to Mongo arriveAt index,
+// channel features disabled).
 //
-// 实现说明：用变量 specifier 动态 import，使 tsc 在 ioredis 未安装时也能编译
-// （Redis 是生产依赖，dev 骨架阶段可不装；package.json 已声明，生产 npm i 即装上）。
+// Implementation note: dynamic import with a variable specifier so tsc can compile even when
+// ioredis is not installed (Redis is a production dependency; it need not be installed during
+// the dev skeleton phase — package.json declares it and production npm i installs it).
 
-/** worldsvc 用到的最小 Redis 接口（按需扩展；类型独立于 ioredis 具体实现）。 */
+/** Minimal Redis interface used by worldsvc (extend as needed; types are independent of the concrete ioredis implementation). */
 export interface WorldRedis {
   zadd(key: string, score: number, member: string): Promise<unknown>;
   zrangebyscore(key: string, min: number | string, max: number | string): Promise<string[]>;
@@ -20,7 +23,7 @@ export interface WorldRedis {
 export async function connectRedis(url: string | undefined): Promise<WorldRedis | null> {
   if (!url) return null;
   try {
-    // 变量 specifier：绕过 tsc 静态模块解析（ioredis 可在 dev 未安装）。
+    // Variable specifier: bypasses tsc static module resolution (ioredis may not be installed in dev).
     const spec = 'ioredis';
     const mod: any = await import(spec);
     const Redis = mod.default ?? mod;
@@ -29,8 +32,8 @@ export async function connectRedis(url: string | undefined): Promise<WorldRedis 
     return client as WorldRedis;
   } catch (e) {
     console.error(
-      `[world-redis] 连接 Redis 失败 (url=${url}): ${(e as Error).message}. ` +
-        `worldsvc 降级运行（行军调度走 Mongo 兜底，频道关闭）。`,
+      `[world-redis] Failed to connect to Redis (url=${url}): ${(e as Error).message}. ` +
+        `worldsvc degraded (march scheduling falls back to Mongo, channels disabled).`,
     );
     return null;
   }

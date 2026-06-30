@@ -26,13 +26,13 @@ export interface LocalMatchOpts {
    * `level` is given (campaign seed comes from the level). Omit → random seed.
    */
   seed?: number;
-  /** @deprecated S12: per-stat 升级；单位养成改 unitLevels。仍透传以兼容过渡。 */
+  /** @deprecated S12: per-stat upgrades; unit progression moved to unitLevels. Still forwarded for backwards compatibility during the transition. */
   pveUpgrades?: Record<string, number>;
-  /** 单位养成等级（SaveData.unitLevels）threaded into the engine (hard wall, §5.2); campaign + siege. */
+  /** Unit progression levels (SaveData.unitLevels) threaded into the engine (hard wall, §5.2); campaign + siege. */
   unitLevels?: Record<string, number>;
   /**
    * Engine mode override. Defaults to 'campaign' when a level is given, else 'pvp'.
-   * Pass 'siege' (SLG 围攻, S8-3) to drive the same PvE-shaped engine with the
+   * Pass 'siege' (SLG siege mode, S8-3) to drive the same PvE-shaped engine with the
    * siege blueprint source — the `level` then carries the defender's config
    * (garrison / defenderBuildings / defenderBaseLevel).
    */

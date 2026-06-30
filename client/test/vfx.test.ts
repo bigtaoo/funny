@@ -4,7 +4,7 @@
  * Scope follows vitest.config.ts: only PIXI-free units are tested here —
  * sampleParam (track evaluation) and parseEffectDef (validation gate). The
  * render-layer files (interpret/primitives) depend on PIXI and are verified by
- * in-game visual regression (design §校验/容错, §测试策略).
+ * in-game visual regression (design §validation/fault-tolerance, §testing-strategy).
  */
 import { describe, it, expect, vi } from 'vitest';
 import { sampleParam, applyEase } from '../src/render/vfx/sampleParam';

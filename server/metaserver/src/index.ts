@@ -1,5 +1,5 @@
-// metaserver 进程引导：连 Mongo → buildApp → listen。
-// 反代将 /api/* 转到本进程（SERVER_API.md §0）。
+// metaserver process bootstrap: connect Mongo → buildApp → listen.
+// Reverse proxy forwards /api/* to this process (SERVER_API.md §0).
 import { createMongo, createLogger, startHeartbeat, FeatureFlagCache, internalHeaders, type JwtConfig } from '@nw/shared';
 import { loadMetaEnv } from './config.js';
 import { buildApp, SPEC_PATH } from './app.js';
@@ -9,9 +9,10 @@ import { auditOnce } from './anticheatAudit.js';
 const log = createLogger('meta');
 
 /**
- * 进程级错误告警（S4-3）。
- * NW_ALERT_WEBHOOK_URL：填 Slack/Discord/企微 webhook 地址时，uncaughtException/
- * unhandledRejection 额外 POST 一条告警消息（fire-and-forget，不影响主流程）。
+ * Process-level error alerting (S4-3).
+ * NW_ALERT_WEBHOOK_URL: when set to a Slack/Discord/WeCom webhook URL,
+ * uncaughtException/unhandledRejection will additionally POST an alert message
+ * (fire-and-forget, does not affect the main flow).
  */
 function setupAlerts(): void {
   const webhook = process.env.NW_ALERT_WEBHOOK_URL;
@@ -45,9 +46,11 @@ async function main() {
   const mongo = await createMongo(env.mongoUri, env.mongoDb);
   await mongo.ensureIndexes();
 
-  // 功能开关缓存（公开 /bootstrap 求值用，FEATURE_FLAGS_DESIGN §9.3）：轮询 admin 原始规则 + 本地求值。
-  // ⚠ 必须注入 NW_ADMIN_INTERNAL_URL（指向 http://admin:8083），否则不启动轮询 → 所有 flag 恒 default
-  //   → bootstrap 恒回空 map → 客户端日志定向采集永不生效（同 matchsvc 的部署必坑）。
+  // Feature flag cache (used by the public /bootstrap evaluation, FEATURE_FLAGS_DESIGN §9.3):
+  // polls admin for raw rules and evaluates locally.
+  // ⚠ NW_ADMIN_INTERNAL_URL (pointing to http://admin:8083) must be set; otherwise polling
+  //   does not start → all flags remain at their defaults → bootstrap always returns an empty map
+  //   → client-side targeted log collection never activates (a known deployment gotcha, same as matchsvc).
   const adminUrl = env.adminInternalUrl;
   const flags = new FeatureFlagCache({
     fetchAll: async () => {
@@ -76,12 +79,14 @@ async function main() {
     region: env.region,
     lokiPushUrl: env.lokiPushUrl,
     socialsvcUrl: env.socialsvcInternalUrl,
-    // 请求日志走 buildApp 里可读的 onResponse 钩子（@nw/shared logger），不用 pino JSON。
+    // Request logging goes through the readable onResponse hook inside buildApp (@nw/shared logger); not using pino JSON.
     logger: false,
   });
 
-  // 成就反作弊离线抽查批（S9-7，ACHIEVEMENT_DESIGN §4.4）：周期抽 ranked 局经 peer 裁判复算比对。
-  // 留 index（同 buildApp 之外），不进请求路径；e2e 直接调 auditOnce。gateway 未配置 → available=false 整批跳过。
+  // Achievement anti-cheat offline sampling batch (S9-7, ACHIEVEMENT_DESIGN §4.4): periodically
+  // samples ranked matches, re-calculates them via peer judge, and compares results.
+  // Kept outside the request path (alongside buildApp); e2e tests call auditOnce directly.
+  // If gateway is not configured → available=false and the entire batch is skipped.
   const auditGateway = new HttpGatewayClient(env.gatewayInternalUrl, env.internalKey);
   const auditTimer =
     env.auditIntervalMs > 0
@@ -116,7 +121,7 @@ async function main() {
     gateway: env.gatewayInternalUrl ?? 'disabled',
     gatewayPublic: env.gatewayPublicUrl ?? 'none',
   });
-  startHeartbeat(log); // 存活心跳：空闲时每 5 分钟一条 info 日志
+  startHeartbeat(log); // Liveness heartbeat: one info log every 5 minutes when idle
 }
 
 main().catch((e) => {

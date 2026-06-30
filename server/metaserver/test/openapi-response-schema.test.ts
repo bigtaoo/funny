@@ -1,11 +1,13 @@
-// 契约守卫（无需 Mongo）：metaserver 是唯一用 fastify-openapi-glue 的进程，回包按
-// openapi.yml 的响应 schema 经 fast-json-stringify 序列化。若某 object 节点既无
-// properties 也无 additionalProperties，fast-json-stringify 会把它序列化成 `{}`，
-// 静默剥掉所有字段（2026-06-24 签到月历 `+undefined` 即此因，RETENTION_DESIGN §10.1）。
+// Contract guard (no Mongo required): metaserver is the only process using fastify-openapi-glue;
+// responses are serialized by fast-json-stringify according to the response schemas in openapi.yml.
+// If an object node has neither properties nor additionalProperties, fast-json-stringify serializes
+// it as `{}`, silently stripping all fields (root cause of the 2026-06-24 check-in calendar
+// `+undefined` issue, RETENTION_DESIGN §10.1).
 //
-// 本测试遍历所有响应 schema（含 $ref 解引用），钉死这一整类 bug：任何新端点漏写
-// properties 都会在此红掉。仅扫 openapi.yml —— worldsvc 走裸 node:http + JSON.stringify
-// 不剥字段，openapi-world.yml 是文档；其余进程不依赖 fastify。
+// This test walks all response schemas (including $ref dereferencing) and permanently guards against
+// this entire class of bug: any new endpoint that omits properties will fail here.
+// Only scans openapi.yml — worldsvc uses raw node:http + JSON.stringify (no field stripping),
+// openapi-world.yml is documentation only; other processes do not depend on fastify.
 import { readFileSync } from 'fs';
 import yaml from 'js-yaml';
 import { describe, expect, it } from 'vitest';
@@ -16,12 +18,12 @@ type Node = any;
 
 const spec = yaml.load(readFileSync(SPEC_PATH, 'utf8')) as Node;
 
-/** 解引用 #/components/schemas/X（仅支持本地引用，足够本仓）。 */
+/** Dereference #/components/schemas/X (local references only; sufficient for this repository). */
 function deref(node: Node): Node {
   let cur = node;
   const guard = new Set<string>();
   while (cur && typeof cur === 'object' && typeof cur.$ref === 'string') {
-    if (guard.has(cur.$ref)) return cur; // 环：停在引用上，交由 visited 去重
+    if (guard.has(cur.$ref)) return cur; // cycle: stop at the reference, let visited dedup handle it
     guard.add(cur.$ref);
     const parts = cur.$ref.replace(/^#\//, '').split('/');
     let t: Node = spec;
@@ -36,7 +38,7 @@ function isObjectType(node: Node): boolean {
   return t === 'object' || (Array.isArray(t) && t.includes('object'));
 }
 
-/** 该 object 节点会被 fast-json-stringify 剥成 `{}` 吗？ */
+/** Will this object node be stripped to `{}` by fast-json-stringify? */
 function stripsToEmpty(node: Node): boolean {
   const hasProps = node.properties && Object.keys(node.properties).length > 0;
   const ap = node.additionalProperties;
@@ -45,7 +47,7 @@ function stripsToEmpty(node: Node): boolean {
   return !hasProps && !hasAP && !hasComposition;
 }
 
-/** 从一个响应 schema 出发深走，收集所有会被剥空的 object 节点路径。 */
+/** Walk a response schema deeply and collect paths of all object nodes that would be stripped empty. */
 function collectBadNodes(schema: Node): string[] {
   const bad: string[] = [];
   const visited = new Set<Node>();
@@ -65,8 +67,8 @@ function collectBadNodes(schema: Node): string[] {
   return bad;
 }
 
-describe('openapi.yml 响应 schema 无字段剥离风险', () => {
-  it('所有响应里的 object 节点都声明了 properties / additionalProperties / 组合', () => {
+describe('openapi.yml response schemas have no field-stripping risk', () => {
+  it('all object nodes in responses declare properties / additionalProperties / composition', () => {
     const offenders: string[] = [];
     const paths = (spec.paths ?? {}) as Record<string, Node>;
     for (const [route, methods] of Object.entries(paths)) {
@@ -86,6 +88,6 @@ describe('openapi.yml 响应 schema 无字段剥离风险', () => {
         }
       }
     }
-    expect(offenders, `以下响应 object 会被 fast-json-stringify 剥成 {} —— 补 properties 或 additionalProperties：\n${offenders.join('\n')}`).toEqual([]);
+    expect(offenders, `The following response objects will be stripped to {} by fast-json-stringify — add properties or additionalProperties:\n${offenders.join('\n')}`).toEqual([]);
   });
 });

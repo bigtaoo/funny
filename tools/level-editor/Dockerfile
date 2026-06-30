@@ -1,17 +1,18 @@
-# 关卡编辑器生产镜像：webpack 生产构建 → nginx 托管静态。
-# 注意：构建上下文必须是「仓库根目录」(compose 里 context: .)，因为编辑器通过 webpack
-# `@game` alias 直接引用游戏侧纯数据源（../../client/src/game，见 tools/level-editor/DESIGN.md §6.5）。
-# 故除自身源码外，还需把 client/src 一并拷进镜像，alias 才能解析。
+# Level editor production image: webpack production build → nginx static hosting.
+# NOTE: The build context must be the repo root (compose: context: .) because the editor references
+# game-side data sources directly via the webpack `@game` alias
+# (../../client/src/game — see tools/level-editor/DESIGN.md §6.5).
+# So client/src must be copied into the image alongside the editor source for the alias to resolve.
 FROM node:20-alpine AS build
 WORKDIR /app/tools/level-editor
-# 弱网/慢镜像源下 npm ci 易 EIDLETIMEOUT；放宽超时 + 多次重试。
+# On slow/flaky registries npm ci can hit EIDLETIMEOUT; raise timeout and retry count.
 ENV npm_config_fetch_retries=5 \
     npm_config_fetch_retry_maxtimeout=120000 \
     npm_config_fetch_timeout=600000
 COPY tools/level-editor/package.json tools/level-editor/package-lock.json ./
 RUN npm ci
-# 数据单一来源：游戏侧 LevelDefinition / parseLevelDefinition / 棋盘常量（@game → ../../client/src/game）。
-# @game 里的 re-export shim 依赖 @nw/engine，需一并拷入。
+# Single source of truth: game-side LevelDefinition / parseLevelDefinition / board constants (@game → ../../client/src/game).
+# The re-export shim inside @game depends on @nw/engine, so that must be copied in too.
 COPY server/engine /app/server/engine
 COPY client/src /app/client/src
 COPY tools/level-editor /app/tools/level-editor

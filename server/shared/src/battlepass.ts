@@ -1,39 +1,40 @@
-// 战令（Battle Pass）系统（S11，SEASON_DESIGN.md §C）。纯数据 + 纯函数，无 DB / 无 PIXI。
-// 奖励曲线数字初定；可调参见 ECONOMY_NUMBERS §13。
+// Battle Pass system (S11, SEASON_DESIGN.md §C). Pure data + pure functions, no DB / no PIXI.
+// Reward curve numbers are provisional; tunable parameters see ECONOMY_NUMBERS §13.
 
-/** 战令最大等级（一个赛季内）。 */
+/** Maximum Battle Pass level within a single season. */
 export const BATTLEPASS_MAX_LEVEL = 30;
 
-/** 买 Pass 费用（金币）。对标 ¥6 档（ECONOMY_BALANCE §2.2）。 */
+/** Cost to buy a Pass (coins). Benchmarked against the ¥6 tier (ECONOMY_BALANCE §2.2). */
 export const BATTLEPASS_BUY_COST = 600;
 
-/** ranked 局给予的赛季经验（胜利更多）。 */
+/** Season XP awarded per ranked game (more for a win). */
 export const BP_XP_PER_RANKED_WIN = 120;
 export const BP_XP_PER_RANKED_LOSS = 40;
 
-/** 单个等级所需累计经验（每级固定）。 */
+/** Cumulative XP required for a single level (fixed per level). */
 export const BP_XP_PER_LEVEL = 600;
 
 export type BpRewardKind = 'coins' | 'material' | 'skin';
 
 export interface BpReward {
   kind: BpRewardKind;
-  /** kind=coins → amount；kind=material/skin → id。 */
+  /** kind=coins → amount; kind=material/skin → id. */
   id?: string;
   count: number;
 }
 
 export interface BpLevelDef {
   level: number; // 1..MAX_LEVEL
-  /** 到达此等级所需的【累计经验】。 */
+  /** Cumulative XP required to reach this level. */
   xpRequired: number;
-  free?: BpReward; // 免费轨奖励
-  paid?: BpReward; // 付费轨奖励（需 hasPass）
+  free?: BpReward; // free track reward
+  paid?: BpReward; // paid track reward (requires hasPass)
 }
 
 /**
- * 战令等级定义表。免费轨每 5 级一枚小金币包；付费轨逐级有奖励，
- * 特殊档（10/20/30）发大额金币/材料。数值初定，待 ECONOMY_NUMBERS §13 校准。
+ * Battle Pass level definition table. Free track gives a small coin pack every 5 levels; paid track
+ * gives rewards every level, with special milestones (10/20/30) awarding large coin/material bonuses.
+ * Numbers are provisional, pending calibration in ECONOMY_NUMBERS §13.
  */
 export const BATTLEPASS_DEFS: BpLevelDef[] = Array.from({ length: BATTLEPASS_MAX_LEVEL }, (_, i) => {
   const level = i + 1;
@@ -42,7 +43,7 @@ export const BATTLEPASS_DEFS: BpLevelDef[] = Array.from({ length: BATTLEPASS_MAX
   let free: BpReward | undefined;
   let paid: BpReward | undefined;
 
-  // 免费轨：整 5 级发金币；其余级发材料（前段 scrap / 中段 lead / 后段 binding）。
+  // Free track: award coins at every 5th level; other levels award material (early scrap / mid lead / late binding).
   if (level % 5 === 0) {
     free = { kind: 'coins', count: 50 };
   } else if (level <= 10) {
@@ -52,12 +53,12 @@ export const BATTLEPASS_DEFS: BpLevelDef[] = Array.from({ length: BATTLEPASS_MAX
   } else {
     free = { kind: 'material', id: 'binding', count: 1 };
   }
-  // 特殊里程碑覆盖
+  // Special milestone overrides
   if (level === 10) free = { kind: 'coins', count: 150 };
   if (level === 20) free = { kind: 'coins', count: 200 };
   if (level === 30) free = { kind: 'coins', count: 300 };
 
-  // 付费轨：每级 20 金币 + 特殊里程碑
+  // Paid track: 20 coins per level + special milestones
   paid = { kind: 'coins', count: 20 };
   if (level === 10) paid = { kind: 'coins', count: 200 };
   if (level === 20) paid = { kind: 'coins', count: 300 };
@@ -66,29 +67,29 @@ export const BATTLEPASS_DEFS: BpLevelDef[] = Array.from({ length: BATTLEPASS_MAX
   return { level, xpRequired, free, paid };
 });
 
-/** 给定累计经验，返回当前战令等级（1-based，最高 MAX_LEVEL）。 */
+/** Given cumulative XP, return the current Battle Pass level (1-based, capped at MAX_LEVEL). */
 export function xpToLevel(xp: number): number {
   return Math.min(BATTLEPASS_MAX_LEVEL, Math.max(1, Math.floor(xp / BP_XP_PER_LEVEL) + 1));
 }
 
-/** 当前等级下达到下一级还需多少经验（展示用）。 */
+/** XP still needed to reach the next level from the current one (for display purposes). */
 export function xpToNextLevel(xp: number): number {
   if (xp >= BATTLEPASS_MAX_LEVEL * BP_XP_PER_LEVEL) return 0;
   const curLevel = xpToLevel(xp);
   return curLevel * BP_XP_PER_LEVEL - xp;
 }
 
-/** 战令数据块（SaveData.battlePass）。缺省视为「本季未参与」，懒创建。 */
+/** Battle Pass data block (SaveData.battlePass). Absence is treated as "not participating this season"; lazily created. */
 export interface BattlePassData {
-  seasonNo: number;     // 所属赛季，落后于时钟则跨季迁移重置
-  xp: number;           // 本季累计赛季经验
-  level: number;        // 由 xp 推导（缓存，方便展示）
-  hasPass: boolean;     // 是否购买付费 Pass
-  claimedFree: number[]; // 已领免费轨等级集合
-  claimedPaid: number[]; // 已领付费轨等级集合（仅 hasPass 可领）
+  seasonNo: number;     // owning season; if behind the clock the data is reset via cross-season migration
+  xp: number;           // cumulative season XP this season
+  level: number;        // derived from xp (cached for display)
+  hasPass: boolean;     // whether the paid Pass has been purchased
+  claimedFree: number[]; // set of free-track levels already claimed
+  claimedPaid: number[]; // set of paid-track levels already claimed (only claimable with hasPass)
 }
 
-/** 新的/重置后的战令数据（跨季迁移后初始状态）。 */
+/** Fresh/reset Battle Pass data (initial state after cross-season migration). */
 export function makeFreshBattlePass(seasonNo: number): BattlePassData {
   return {
     seasonNo,
@@ -100,16 +101,16 @@ export function makeFreshBattlePass(seasonNo: number): BattlePassData {
   };
 }
 
-/** 战令领取错误码。 */
+/** Battle Pass claim error codes. */
 export type BpClaimError =
-  | 'NOT_REACHED'     // 等级未解锁
-  | 'ALREADY_CLAIMED' // 已领取
-  | 'PASS_REQUIRED'   // 付费轨需 Pass
-  | 'BAD_REQUEST';    // 参数非法
+  | 'NOT_REACHED'     // level not yet unlocked
+  | 'ALREADY_CLAIMED' // reward already claimed
+  | 'PASS_REQUIRED'   // paid track requires Pass
+  | 'BAD_REQUEST';    // invalid parameters
 
 /**
- * 纯函数：校验并执行领取，返回 {新 battlePass, reward} 或错误码。
- * 不涉及 DB 操作，由 meta handler 包进乐观锁事务。
+ * Pure function: validates and executes a claim, returning {new battlePass, reward} or an error code.
+ * No DB operations; wrapped in an optimistic-lock transaction by the meta handler.
  */
 export function claimBpReward(
   bp: BattlePassData,
@@ -141,8 +142,8 @@ export function claimBpReward(
 }
 
 /**
- * 计算「战令跨季补发」：返回此玩家应补发的所有未领奖励列表（走邮件附件）。
- * 免费轨：所有已达等级的未领档位；付费轨：hasPass 时同上。
+ * Compute "cross-season Battle Pass catch-up": returns all unclaimed rewards the player should receive (sent as mail attachments).
+ * Free track: all unclaimed slots at or below the reached level; paid track: same, when hasPass is true.
  */
 export function pendingBpRewards(
   bp: BattlePassData,

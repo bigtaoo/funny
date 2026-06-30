@@ -1,6 +1,6 @@
-// 社交私聊端到端（S6-2）：真实 Mongo + 注入假 gateway（记录 chat_message push）。
-//   非好友拒发 → 加好友 → 发消息（push + 会话 + 未读 +1 + 敏感词打码）→ 拉历史 → 已读清未读
-//   → 拉黑后拒发 → 限流。需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// Social private-chat end-to-end (S6-2): real Mongo + injected fake gateway (records chat_message pushes).
+//   reject send to non-friend → befriend → send message (push + conversation + unread +1 + profanity masking) → fetch history → mark read clears unread
+//   → reject send after block → rate-limit. Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle, CHAT_SEND_RATE_PER_MIN } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -19,7 +19,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
   }
 }
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[social-chat.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[social-chat.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 class FakeGateway implements GatewayClient {
   available = true;
@@ -133,9 +133,9 @@ describe.skipIf(!mongo)('social chat e2e', () => {
     const a = await newAccount('chat-aaaa', 'zh-CN');
     const c = await newAccount('chat-bbbb');
     await befriend(a, c);
-    await post(a.token, '/chat/send', { toPublicId: c.publicId, body: '卖外挂吗' });
+    await post(a.token, '/chat/send', { toPublicId: c.publicId, body: '卖外挂吗' }); // i18n test string — intentional Chinese (cn profanity wordlist fixture)
     const conv = b(await get(c.token, '/chat/conversations')).data.conversations[0];
-    expect(conv.lastBody).toBe('卖**吗'); // "外挂" (2) → 2 stars
+    expect(conv.lastBody).toBe('卖**吗'); // "外挂" (2 chars) → 2 stars
   });
 
   it('region-scopes wordlists: an en-region account does not mask a de-only word', async () => {

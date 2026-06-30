@@ -1,13 +1,13 @@
 /**
- * 盲盒美术资源规范化脚本
+ * Gacha art asset normalization script
  *
- * 用法：node client/scripts/prepare-gacha-assets.mjs
+ * Usage: node client/scripts/prepare-gacha-assets.mjs
  *
- * 功能：
- *   - 将 art/ui/gacha/ 下的原始图（PNG/WebP）按目标规格 resize + 转 PNG
- *   - 输出到 client/src/assets/gacha/
+ * What it does:
+ *   - Resizes and converts raw images (PNG/WebP) under art/ui/gacha/ to the target specs, outputting PNG
+ *   - Writes output to client/src/assets/gacha/
  *
- * 依赖：client/node_modules 下的 sharp（已有）
+ * Dependency: sharp (already present) under client/node_modules
  */
 
 import sharp from '../node_modules/sharp/lib/index.js';
@@ -23,94 +23,94 @@ const DEST = resolve(ROOT, 'client/src/assets/gacha');
 mkdirSync(DEST, { recursive: true });
 
 /**
- * 映射表：source filename → { out, w, h, fit }
+ * Task map: source filename → { out, w, h, fit }
  *
  * fit:
- *   'cover'   — 等比缩放填满目标框，超出部分居中裁剪（卡片背景用）
- *   'contain' — 等比缩放放入目标框，多余区域白色填充（边框用，保证不裁角装饰）
- *   'fill'    — 强制拉伸（不用）
+ *   'cover'   — proportional scale to fill the target box; excess is center-cropped (used for card backgrounds)
+ *   'contain' — proportional scale to fit inside the target box; surplus area filled white (used for frames, ensures corner decorations are not clipped)
+ *   'fill'    — forced stretch (not used)
  */
 const TASKS = [
-  // ── 结果卡背景（5:7 竖版，400×560）─────────────────────────────────
+  // ── Result card backgrounds (5:7 portrait, 400×560) ──────────────────────────────
   {
     src: 'gacha_card_common.png',
     out: 'gacha_card_common.png',
     w: 400, h: 560, fit: 'cover',
-    note: '普通 · 铅笔横线纸',
+    note: 'Common · pencil ruled paper',
   },
   {
     src: 'gacha_card_rare.png',
     out: 'gacha_card_rare.png',
     w: 400, h: 560, fit: 'cover',
-    note: '稀有 · 蓝墨水泼洒',
+    note: 'Rare · blue ink splash',
   },
   {
     src: 'gacha_card_epic.png',
     out: 'gacha_card_epic.png',
     w: 400, h: 560, fit: 'cover',
-    note: '史诗 · 紫马克笔全幅',
+    note: 'Epic · purple marker full bleed',
   },
   {
     src: 'gacha_card_legendary.png',
     out: 'gacha_card_legendary.png',
     w: 400, h: 560, fit: 'cover',
-    note: '传说 · 烫金压花纸',
+    note: 'Legendary · gold foil embossed paper',
   },
 
-  // ── 稀有度边框（正方形，480×480，contain 保留角装饰）───────────────
+  // ── Rarity frames (square, 480×480, contain preserves corner decorations) ──────
   {
     src: 'frame_common.png',
     out: 'frame_common.png',
     w: 480, h: 480, fit: 'contain', bg: { r:255,g:255,b:255,alpha:0 },
-    note: '普通边框 · 铅笔歪框',
+    note: 'Common frame · crooked pencil border',
   },
   {
     src: 'frame_rare.webp',
     out: 'frame_rare.png',
     w: 480, h: 480, fit: 'contain', bg: { r:255,g:255,b:255,alpha:0 },
-    note: '稀有边框 · 蓝钢笔卷草（风格偏正式，待重生成）',
+    note: 'Rare frame · blue pen scrollwork (slightly formal, needs regen)',
   },
   {
     src: 'frame_epic.webp',
     out: 'frame_epic.png',
     w: 480, h: 480, fit: 'contain', bg: { r:255,g:255,b:255,alpha:0 },
-    note: '史诗边框 · 紫马克笔粗框',
+    note: 'Epic frame · purple marker thick border',
   },
   {
     src: 'frame_legendary.webp',
     out: 'frame_legendary.png',
     w: 480, h: 480, fit: 'contain', bg: { r:255,g:255,b:255,alpha:0 },
-    note: '传说边框 · 金色书法卷草',
+    note: 'Legendary frame · gold calligraphy scrollwork',
   },
 
-  // ── Banner（900×340 横版）──────────────────────────────────────────
+  // ── Banners (900×340 landscape) ───────────────────────────────────────────────
   {
     src: 'banner_limited_01.webp',
     out: 'banner_limited_01.png',
     w: 900, h: 340, fit: 'cover',
-    note: '限定池 Banner · 少年指挥官 + LIMITED 印章',
+    note: 'Limited pool banner · young commander + LIMITED stamp',
   },
 
-  // ── 常驻池 Banner（900×340 横版）──────────────────────────────────
+  // ── Standard pool banner (900×340 landscape) ──────────────────────────────────
   {
     src: 'banner_standard.webp',
     out: 'banner_standard.png',
     w: 900, h: 340, fit: 'cover',
-    note: '常驻池 Banner · 摊开笔记本 + 文具 flat lay',
+    note: 'Standard pool banner · open notebook + stationery flat lay',
   },
 
-  // ── 月卡（560×240 横版）───────────────────────────────────────────
+  // ── Monthly card (560×240 landscape) ─────────────────────────────────────────
   {
     src: 'monthly_card.webp',
     out: 'monthly_card.png',
     w: 560, h: 240, fit: 'cover',
-    note: '月卡 · 便利贴造型（印章是游戏手柄，待重生成替换）',
+    note: 'Monthly card · sticky note design (stamp is a gamepad, needs regen)',
   },
 ];
 
-// ── 跳过（重复/备用）──────────────────────────────────────────────────
+// ── Skip (duplicates / alternates) ───────────────────────────────────────────
 const SKIP = [
-  'gacha_card_rare_alt.png', // rare 备用，与 gacha_card_rare.png 重复
+  'gacha_card_rare_alt.png', // rare alternate, duplicate of gacha_card_rare.png
 ];
 
 async function processOne(task) {
@@ -118,7 +118,7 @@ async function processOne(task) {
   const destPath = resolve(DEST, task.out);
 
   if (!existsSync(srcPath)) {
-    console.error(`  ✗ 源文件不存在: ${task.src}`);
+    console.error(`  ✗ Source file missing: ${task.src}`);
     return;
   }
 
@@ -128,7 +128,7 @@ async function processOne(task) {
     background: task.bg ?? { r: 255, g: 255, b: 255, alpha: 1 },
   });
 
-  // 边框用 contain，背景透明
+  // frames use contain with transparent background
   if (task.fit === 'contain' && task.bg?.alpha === 0) {
     pipeline = pipeline.png({ compressionLevel: 9 });
   } else {
@@ -141,18 +141,18 @@ async function processOne(task) {
   console.log(`  ✓ ${task.out.padEnd(30)} ${meta.width}×${meta.height}  [${task.note}]`);
 }
 
-console.log(`\n盲盒资源规范化\n  源目录：${SRC}\n  输出：  ${DEST}\n`);
+console.log(`\nGacha asset normalization\n  Source: ${SRC}\n  Output: ${DEST}\n`);
 
 for (const t of TASKS) {
   await processOne(t);
 }
 
 if (SKIP.length) {
-  console.log(`\n跳过（备用/重复）：`);
+  console.log(`\nSkipped (alternates/duplicates):`);
   for (const s of SKIP) console.log(`  - ${s}`);
 }
 
-console.log(`\n⚠️  建议重生成：`);
-console.log(`  - frame_rare.png       蓝钢笔边框风格偏维多利亚，与游戏手绘学生本风格略偏`);
-console.log(`  - monthly_card.png     右侧印章是游戏手柄图案，宜改为月亮/日历印章`);
-console.log('\n完成。\n');
+console.log(`\n⚠️  Suggested for regeneration:`);
+console.log(`  - frame_rare.png       Blue pen border is slightly Victorian in style, slightly off from the hand-drawn student notebook aesthetic`);
+console.log(`  - monthly_card.png     Right stamp is a gamepad icon, should be changed to a moon/calendar stamp`);
+console.log('\nDone.\n');

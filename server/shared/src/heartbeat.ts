@@ -1,24 +1,28 @@
-// 存活心跳：周期性打一条 info 日志，作为「服务还活着」的信号——空闲时 Grafana/Loki 里
-// 也能看到每个 svc 在按节奏跳，从而判断进程没挂、采集链路也通。
+// Liveness heartbeat: emits one info log on a regular interval as a "service is alive" signal —
+// even when idle, Grafana/Loki will show each svc beating on schedule, confirming the process
+// has not crashed and the collection pipeline is healthy.
 //
-// 设计：
-//   • info 级别——即便生产 NW_LOG_LEVEL=info 也不会被过滤（debug 心跳会在 info 下消失）。
-//   • 启动即打一条（确认上线），之后每 intervalMs（缺省 5 分钟）一条。
-//   • timer.unref()——不阻止进程正常退出（优雅关闭时无需手动 clear）。
+// Design:
+//   • info level — not filtered even when production NW_LOG_LEVEL=info (a debug heartbeat would
+//     disappear under info).
+//   • Fires once immediately on startup (confirms the service is up), then once every intervalMs
+//     (default 5 minutes).
+//   • timer.unref() — does not prevent the process from exiting normally (no manual clear needed
+//     during graceful shutdown).
 
 import { type Logger } from './logger';
 
 export interface HeartbeatHandle {
-  /** 停止心跳（一般无需调用，timer 已 unref）。 */
+  /** Stop the heartbeat (normally unnecessary — the timer is already unref'd). */
   stop(): void;
 }
 
 export interface HeartbeatOptions {
-  /** 间隔毫秒，缺省 5 分钟。 */
+  /** Interval in milliseconds; default 5 minutes. */
   intervalMs?: number;
-  /** 日志 msg，缺省 'heartbeat'。 */
+  /** Log message string; default 'heartbeat'. */
   msg?: string;
-  /** 附加到每条心跳的额外字段（如在线连接数），惰性求值。 */
+  /** Extra fields appended to each heartbeat log entry (e.g. active connection count); evaluated lazily. */
   extra?: () => Record<string, unknown>;
 }
 
@@ -32,12 +36,12 @@ export function startHeartbeat(log: Logger, opts: HeartbeatOptions = {}): Heartb
       try {
         Object.assign(data, opts.extra());
       } catch {
-        /* extra 求值失败不影响心跳本身 */
+        /* extra evaluation failure must not affect the heartbeat itself */
       }
     }
     log.info(msg, data);
   };
-  emit(); // 启动即打一条
+  emit(); // Fire once immediately on startup
   const timer = setInterval(emit, intervalMs);
   if (typeof timer.unref === 'function') timer.unref();
   return { stop: () => clearInterval(timer) };

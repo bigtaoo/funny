@@ -1,6 +1,6 @@
-// 对局录像取回端到端（S1-RP）：/internal/match/report 归档录像 → GET /match/{roomId}/replay。
-//   参与者可取回（内嵌 / replayRef 外置两路径）、非参与者 404、缺失 404。
-// 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// Match replay fetch end-to-end (S1-RP): /internal/match/report archives the replay → GET /match/{roomId}/replay.
+//   Participants can retrieve it (two paths: inline or external replayRef), non-participants get 404, missing match gets 404.
+// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -20,7 +20,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[match-replay.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[match-replay.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 function reportPayload(roomId: string, a: string, b: string, frames: unknown[]) {
   return {
@@ -60,7 +60,7 @@ describe.skipIf(!mongo)('match replay fetch e2e', () => {
 
   const oneFrame = [{ frame: 3, cmds: [{ side: 0, commands: 'AAA=' }] }];
 
-  it('参与者取回内嵌录像', async () => {
+  it('participant retrieves inline replay', async () => {
     await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: reportPayload('RR1', idA, idB, oneFrame) });
     const res = await app.inject({ method: 'GET', url: '/match/RR1/replay', headers: { authorization: `Bearer ${tokenA}` } });
     expect(res.statusCode).toBe(200);
@@ -69,24 +69,24 @@ describe.skipIf(!mongo)('match replay fetch e2e', () => {
     expect(r.data.replay.frames[0].cmds[0].commands).toBe('AAA=');
   });
 
-  it('非参与者 404', async () => {
+  it('non-participant gets 404', async () => {
     await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: reportPayload('RR2', idA, idB, oneFrame) });
     const rc = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'rep-cccc-1' } }));
     const res = await app.inject({ method: 'GET', url: '/match/RR2/replay', headers: { authorization: `Bearer ${rc.data.token}` } });
     expect(res.statusCode).toBe(404);
   });
 
-  it('不存在的对局 404', async () => {
+  it('non-existent match gets 404', async () => {
     const res = await app.inject({ method: 'GET', url: '/match/NOPE/replay', headers: { authorization: `Bearer ${tokenA}` } });
     expect(res.statusCode).toBe(404);
   });
 
-  it('大局走 replayBlobs（replayRef）也能取回', async () => {
-    // 造一个超过内嵌阈值（256KB）的帧日志 → 归档落 replayBlobs + replayRef。
+  it('large match stored in replayBlobs (replayRef) is still retrievable', async () => {
+    // Build a frame log exceeding the inline threshold (256KB) → archived to replayBlobs + replayRef.
     const big = 'A'.repeat(400 * 1024);
     const bigFrames = [{ frame: 3, cmds: [{ side: 0, commands: big }] }];
     await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: reportPayload('RR3', idA, idB, bigFrames) });
-    // matches 文档应只有 replayRef，无内嵌 replay；blob 集合有该局。
+    // The matches document should have only replayRef, no inline replay; the blob collection holds the match.
     const doc = await m.collections.matches.findOne({ roomId: 'RR3' });
     expect(doc!.replayRef).toBe('RR3');
     expect(doc!.replay).toBeUndefined();

@@ -1,6 +1,6 @@
-// 称号系统客户端模块（S10，TITLE_DESIGN §2）。
-// @nw/shared 的客户端本地镜像——无 node 依赖，纯 TS。
-// 与 server/shared/src/titles.ts 的数据/算法同源，改动需两边同步。
+// Title system client module (S10, TITLE_DESIGN §2).
+// Client-local mirror of @nw/shared — no Node dependency, pure TS.
+// Shares data/algorithms with server/shared/src/titles.ts; changes must be kept in sync on both sides.
 
 export type TitleSource = 'ladder' | 'slg' | 'achievement' | 'event';
 
@@ -11,7 +11,7 @@ export interface TitleDef {
   shortKey: string;
 }
 
-// ── 天梯各段位权重 ─────────────────────────────────────────────────────────
+// ── Ladder rank weights ────────────────────────────────────────────────────
 const LADDER_RANK_WEIGHTS: Readonly<Record<string, number>> = {
   bronze:       1000,
   silver:       1001,
@@ -24,7 +24,7 @@ const LADDER_RANK_WEIGHTS: Readonly<Record<string, number>> = {
   king:         5000,
 };
 
-// ── 永久 / 活动称号定义表 ───────────────────────────────────────────────────
+// ── Permanent / event title definition table ───────────────────────────────
 export const TITLE_DEFS: Readonly<Record<string, TitleDef>> = {
   'event.newbie': {
     weight: 1300, source: 'event',
@@ -44,7 +44,7 @@ export const TITLE_DEFS: Readonly<Record<string, TitleDef>> = {
   },
 };
 
-// ── 权重查询 ───────────────────────────────────────────────────────────────
+// ── Weight lookup ──────────────────────────────────────────────────────────
 
 export function titleWeight(titleId: string): number {
   if (titleId in TITLE_DEFS) return TITLE_DEFS[titleId]!.weight;
@@ -55,8 +55,8 @@ export function titleWeight(titleId: string): number {
 }
 
 /**
- * 取佩戴称号的 i18n key（全称 / 短标签）。
- * 动态赛季称号（ladder.s{N}.{rank}）不在 TITLE_DEFS，需用 formatLadderTitle 格式化。
+ * Get the i18n keys for the equipped title (full name / short label).
+ * Dynamic season titles (ladder.s{N}.{rank}) are not in TITLE_DEFS; use formatLadderTitle to format them.
  */
 export function getTitleKeys(titleId: string): { fullKey: string; shortKey: string } | null {
   if (titleId in TITLE_DEFS) {
@@ -70,8 +70,8 @@ export function getTitleKeys(titleId: string): { fullKey: string; shortKey: stri
 }
 
 /**
- * 格式化天梯赛季称号的展示文字（用于 i18n 无法覆盖的动态部分）。
- * 返回 "S{N} {rank}" 格式的简短字符串，供 UI 在 i18n key 旁直接拼接。
+ * Format the display text for a ladder season title (for dynamic parts that i18n cannot cover).
+ * Returns a short "S{N} {rank}" string for the UI to concatenate alongside the i18n key.
  */
 export function formatLadderTitle(titleId: string): string {
   const m = titleId.match(/^ladder\.s(\d+)\.(\w+)$/);
@@ -80,9 +80,9 @@ export function formatLadderTitle(titleId: string): string {
 }
 
 /**
- * 从 titles 数组中找到当前最佳（weight 最高，同阶取末位）的 titleId。
- * 用于 TitlesScene 初始化展示——equipped['title'] 是权威佩戴位，但此函数用于
- * 读取 titles 墙时决定高亮哪个。
+ * Find the best titleId in the titles array (highest weight; for equal weight, take the last one).
+ * Used for TitlesScene initial display — equipped['title'] is the authoritative equipped slot,
+ * but this function decides which title to highlight when rendering the titles wall.
  */
 export function highestTitle(titles: string[]): string | undefined {
   if (titles.length === 0) return undefined;
@@ -90,12 +90,12 @@ export function highestTitle(titles: string[]): string | undefined {
     const bw = titleWeight(best);
     const cw = titleWeight(cur);
     if (cw > bw) return cur;
-    if (cw === bw) return cur; // 末位（更新的）
+    if (cw === bw) return cur; // take the last (more recent) on tie
     return best;
   });
 }
 
-/** 按权重降序排列 titles 列表（权重相同保持原顺序）。 */
+/** Sort the titles list in descending weight order (stable: equal weights preserve original order). */
 export function sortTitlesByWeight(titles: string[]): string[] {
   return [...titles].sort((a, b) => titleWeight(b) - titleWeight(a));
 }

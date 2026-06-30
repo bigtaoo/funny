@@ -100,17 +100,17 @@ $('btn-reseed').addEventListener('click', () => { previewSeed = Math.floor(Math.
 const jsonEl = $<HTMLTextAreaElement>('json');
 $('btn-apply').addEventListener('click', () => {
   let raw: unknown;
-  try { raw = JSON.parse(jsonEl.value); } catch (e) { setStatus(`JSON 解析失败：${(e as Error).message}`, 'err'); return; }
+  try { raw = JSON.parse(jsonEl.value); } catch (e) { setStatus(`JSON parse error: ${(e as Error).message}`, 'err'); return; }
   const def = validate(raw, 'json', (m) => setStatus(`✗ ${m}`, 'err'));
   if (!def) return;
   model.replace(def);
-  setStatus(`✓ 已应用 — "${def.id}"`, 'ok');
+  setStatus(`✓ Applied — "${def.id}"`, 'ok');
 });
 
 // ── Toolbar ─────────────────────────────────────────────────────────────────────
-$('btn-new').addEventListener('click', () => void lib.createNew(blankEffect()).then(() => setStatus('✓ 新建特效', 'ok')));
+$('btn-new').addEventListener('click', () => void lib.createNew(blankEffect()).then(() => setStatus('✓ New effect created', 'ok')));
 $('btn-import').addEventListener('click', () => void importEffect(
-  (def) => void lib.createNew(def).then(() => setStatus(`✓ 已导入 "${def.id}"`, 'ok')),
+  (def) => void lib.createNew(def).then(() => setStatus(`✓ Imported "${def.id}"`, 'ok')),
   (m) => setStatus(`✗ ${m}`, 'err'),
 ));
 $('btn-export').addEventListener('click', () => void exportEffect(model.effect, (m) => setStatus(m, 'ok'), (m) => setStatus(`✗ ${m}`, 'err')));
@@ -151,10 +151,10 @@ function renderMetrics(): void {
   const host = $('metrics');
   host.innerHTML = '';
   const rows: Array<[string, number, number]> = [
-    ['图层数', m.layers, 8],
-    ['单层 count 峰值', m.maxCount, 32],
-    ['估算顶点', m.vertices, 400],
-    ['时长 (s)', m.duration, 2],
+    ['Layers', m.layers, 8],
+    ['Peak layer count', m.maxCount, 32],
+    ['Est. vertices', m.vertices, 400],
+    ['Duration (s)', m.duration, 2],
   ];
   for (const [label, v, budget] of rows) {
     const row = document.createElement('div');
@@ -170,7 +170,7 @@ function renderMetrics(): void {
   if (m.warnings.length) {
     const box = document.createElement('div');
     box.className = 'warn-box';
-    box.innerHTML = '⚠ 超出软预算：<br>' + m.warnings.map((w) => `· ${w}`).join('<br>');
+    box.innerHTML = '⚠ Over soft budget:<br>' + m.warnings.map((w) => `· ${w}`).join('<br>');
     warnHost.appendChild(box);
   }
 }
@@ -178,7 +178,7 @@ function renderMetrics(): void {
 function updateTimelineReadout(): void {
   scrub.value = String(Math.round(playback.t * 1000));
   tval.textContent = `t=${playback.t.toFixed(2)}`;
-  playBtn.textContent = playback.playing ? '⏸ 暂停' : '▶ 播放';
+  playBtn.textContent = playback.playing ? '⏸ Pause' : '▶ Play';
 }
 
 // ── rAF preview loop ─────────────────────────────────────────────────────────────
@@ -232,7 +232,7 @@ function blankEffect(): EffectDef {
   };
 }
 function autosaveLabel(s: AutosaveState): string {
-  return s === 'saved' ? '已自动保存' : s === 'saving' ? '保存中…' : '未保存…';
+  return s === 'saved' ? 'Auto-saved' : s === 'saving' ? 'Saving…' : 'Unsaved…';
 }
 function round(n: number): number { return Math.round(n * 100) / 100; }
 
@@ -240,5 +240,5 @@ function round(n: number): number { return Math.round(n * 100) / 100; }
 void lib.bootstrap().then(() => {
   fullRender();
   updateTimelineReadout();
-  setStatus('就绪 — 特效库已载入', 'ok');
+  setStatus('Ready — effect library loaded', 'ok');
 });

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// 存量家族数据迁移：worldsvc families 集合 → nw_social families（SOCIAL_SVC_DESIGN §6 P1 step8）。
-// 用法：npx tsx server/socialsvc/scripts/migrateFamily.ts
+// Migrate existing family data: worldsvc families collection → nw_social families (SOCIAL_SVC_DESIGN §6 P1 step8).
+// Usage: npx tsx server/socialsvc/scripts/migrateFamily.ts
 //
-// 行为：
-//   - 按 worldId 分组；同一 TAG 在 nw_social 中已存在时加 _2、_3 … 后缀（打印冲突日志）。
-//   - 去掉 worldId 字段；FamilyMemberDoc._id 从 `{worldId}:{accountId}` 改为 accountId。
-//   - 干跑模式：传 --dry-run 只打印不写入。
-//   - 幂等：已存在同 _id 的 family 跳过（不覆盖）。
+// Behaviour:
+//   - Groups by worldId; if the same TAG already exists in nw_social, appends _2, _3 … suffix (logs the conflict).
+//   - Drops the worldId field; FamilyMemberDoc._id changes from `{worldId}:{accountId}` to accountId.
+//   - Dry-run mode: pass --dry-run to print only, without writing.
+//   - Idempotent: skips any family whose _id already exists (no overwrite).
 import { MongoClient } from 'mongodb';
 
 const WORLD_MONGO_URI = process.env.NW_WORLD_MONGO_URI ?? process.env.NW_MONGO_URI ?? 'mongodb://localhost:27017';
@@ -15,7 +15,7 @@ const SOCIAL_MONGO_URI = process.env.NW_SOCIAL_MONGO_URI ?? process.env.NW_MONGO
 const SOCIAL_MONGO_DB  = process.env.NW_SOCIAL_MONGO_DB  ?? 'nw_social';
 const DRY_RUN = process.argv.includes('--dry-run');
 
-// worldsvc FamilyDoc 结构（含 worldId）
+// worldsvc FamilyDoc structure (includes worldId)
 interface WFamilyDoc {
   _id: string;
   worldId: string;
@@ -29,7 +29,7 @@ interface WFamilyDoc {
   rev: number;
 }
 
-// worldsvc FamilyMemberDoc 结构
+// worldsvc FamilyMemberDoc structure
 interface WFamilyMemberDoc {
   _id: string; // `{worldId}:{accountId}`
   worldId: string;
@@ -39,7 +39,7 @@ interface WFamilyMemberDoc {
   joinedAt: number;
 }
 
-// worldsvc FamilyMessageDoc 结构
+// worldsvc FamilyMessageDoc structure
 interface WFamilyMessageDoc {
   _id: string;
   worldId: string;
@@ -50,7 +50,7 @@ interface WFamilyMessageDoc {
   ts: Date;
 }
 
-// nw_social FamilyDoc 结构（无 worldId）
+// nw_social FamilyDoc structure (no worldId)
 interface SFamilyDoc {
   _id: string;
   name: string;
@@ -65,7 +65,7 @@ interface SFamilyDoc {
 }
 
 async function main(): Promise<void> {
-  console.log(`[migrateFamily] ${DRY_RUN ? '【dry-run】' : ''}开始迁移`);
+  console.log(`[migrateFamily] ${DRY_RUN ? '[dry-run] ' : ''}starting migration`);
   console.log(`  worldsvc: ${WORLD_MONGO_URI} / ${WORLD_MONGO_DB}`);
   console.log(`  social:   ${SOCIAL_MONGO_URI} / ${SOCIAL_MONGO_DB}`);
 
@@ -85,14 +85,14 @@ async function main(): Promise<void> {
   const sMembers        = socialDb.collection<{ _id: string; familyId: string; accountId: string; role: string; joinedAt: number }>('familyMembers');
   const sMessages       = socialDb.collection<{ _id: string; familyId: string; senderId: string; senderName: string; body: string; ts: Date }>('familyMessages');
 
-  // 收集 nw_social 中已存在的 TAG（避免冲突）
+  // Collect TAGs already present in nw_social (to avoid conflicts)
   const existingTags = new Set<string>();
   for await (const doc of sFamilies.find({}, { projection: { tag: 1 } })) {
     existingTags.add(doc.tag.toUpperCase());
   }
 
   const allWorldFamilies = await wFamilies.find({}).toArray();
-  console.log(`[migrateFamily] 发现 ${allWorldFamilies.length} 个 worldsvc 家族`);
+  console.log(`[migrateFamily] found ${allWorldFamilies.length} worldsvc families`);
 
   let migratedFamilies = 0;
   let skippedFamilies  = 0;
@@ -103,14 +103,14 @@ async function main(): Promise<void> {
   const now = Date.now();
 
   for (const wf of allWorldFamilies) {
-    // 解析原 worldsvc familyId（格式：f:{worldId}:{TAG}）→ 目标 nw_social _id = fam:{TAG}
+    // Parse the original worldsvc familyId (format: f:{worldId}:{TAG}) → target nw_social _id = fam:{TAG}
     let tag = wf.tag.toUpperCase();
     if (existingTags.has(tag)) {
-      // TAG 冲突：加后缀 _2、_3 …
+      // TAG conflict: append suffix _2, _3 …
       let suffix = 2;
       while (existingTags.has(`${tag}_${suffix}`)) suffix++;
       const newTag = `${tag}_${suffix}`;
-      console.warn(`[migrateFamily] TAG 冲突：${tag} → ${newTag}（worldId=${wf.worldId}, familyId=${wf._id}）`);
+      console.warn(`[migrateFamily] TAG conflict: ${tag} → ${newTag} (worldId=${wf.worldId}, familyId=${wf._id})`);
       tag = newTag;
       conflictTags++;
     }
@@ -119,10 +119,10 @@ async function main(): Promise<void> {
     const newFamilyId = `fam:${tag}`;
     oldToNewFamilyId.set(wf._id, newFamilyId);
 
-    // 幂等：已存在则跳过
+    // Idempotent: skip if already exists
     const existing = await sFamilies.findOne({ _id: newFamilyId });
     if (existing) {
-      console.log(`[migrateFamily] 跳过（已存在）：${newFamilyId}`);
+      console.log(`[migrateFamily] skip (already exists): ${newFamilyId}`);
       skippedFamilies++;
       continue;
     }
@@ -148,15 +148,15 @@ async function main(): Promise<void> {
     migratedFamilies++;
   }
 
-  // 迁移 familyMembers
+  // Migrate familyMembers
   let migratedMembers = 0;
   for await (const wm of wMembers.find({})) {
     const newFamilyId = oldToNewFamilyId.get(wm.familyId);
-    if (!newFamilyId) continue; // 对应家族未迁移（已存在/冲突导致映射缺失）
+    if (!newFamilyId) continue; // Corresponding family was not migrated (already existed / conflict caused missing mapping)
 
     const newMemberId = wm.accountId; // nw_social _id = accountId
     const existing = await sMembers.findOne({ _id: newMemberId });
-    if (existing) continue; // 同一 accountId 已在某家族，跳过
+    if (existing) continue; // Same accountId already belongs to a family, skip
 
     const smDoc = {
       _id: newMemberId,
@@ -174,7 +174,7 @@ async function main(): Promise<void> {
     migratedMembers++;
   }
 
-  // 迁移 familyMessages
+  // Migrate familyMessages
   let migratedMsgs = 0;
   for await (const wm of wMessages.find({})) {
     const newFamilyId = oldToNewFamilyId.get(wm.familyId);
@@ -200,13 +200,13 @@ async function main(): Promise<void> {
   await worldClient.close();
   await socialClient.close();
 
-  console.log(`\n[migrateFamily] 完成${DRY_RUN ? '（dry-run）' : ''}：`);
-  console.log(`  家族：迁移 ${migratedFamilies}，跳过 ${skippedFamilies}，TAG 冲突 ${conflictTags}`);
-  console.log(`  成员：迁移 ${migratedMembers}`);
-  console.log(`  消息：迁移 ${migratedMsgs}`);
+  console.log(`\n[migrateFamily] done${DRY_RUN ? ' (dry-run)' : ''}:`);
+  console.log(`  families: migrated ${migratedFamilies}, skipped ${skippedFamilies}, TAG conflicts ${conflictTags}`);
+  console.log(`  members: migrated ${migratedMembers}`);
+  console.log(`  messages: migrated ${migratedMsgs}`);
 }
 
 main().catch((e) => {
-  console.error('[migrateFamily] 失败：', e);
+  console.error('[migrateFamily] failed:', e);
   process.exit(1);
 });

@@ -31,7 +31,7 @@ export interface LevelDefinition {
   /**
    * Per-level enemy (Top side) stat scaling (§4.10). When present, wave-spawned
    * enemies use an INDEPENDENT base blueprint (cloned from the PvP constants, free
-   * of the player's own progression — closes the "敌人白嫖玩家养成" leak) multiplied
+   * of the player's own progression — closes the "enemy free-riding on player progression" leak) multiplied
    * by these factors. Omitted → enemies share the player's campaign blueprints
    * (legacy behavior; ch3~ch6 untouched). hp/damage default to 1 when partial.
    */
@@ -73,7 +73,7 @@ export interface LevelDefinition {
   /**
    * SLG siege battle (G3, §16): hard time limit in ticks. When the battle reaches
    * this many elapsed ticks with both bases still standing, the defender (Top /
-   * owner 1) wins — "防守占优". Safety net against zero-damage stalemates and a
+   * owner 1) wins — "defender's advantage". Safety net against zero-damage stalemates and a
    * compute cap for headless authoritative runs. Valid for 'siege' mode.
    */
   battleTimeoutTicks?: number;
@@ -198,7 +198,7 @@ export interface GarrisonEntry {
   /** Row 1–16 inclusive — anywhere in the combat zone or a spawn row. */
   row: number;
   /**
-   * SLG siege battle (G3, §16.1): "兵力 = 血量". The troops allotted to this unit
+   * SLG siege battle (G3, §16.1): "troops = HP". The troops allotted to this unit
    * become its starting HP (≤ the blueprint's full capacity). Omitted → the unit
    * spawns at full blueprint HP. Deterministic; consumed by the Unit constructor.
    */

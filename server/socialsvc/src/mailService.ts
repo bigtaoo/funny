@@ -1,6 +1,6 @@
-// 邮件服务（SOCIAL_SVC_DESIGN §3.3 P2）。
-// 纯数据操作（getMail / readMail / deleteMail / atomicClaim）；附件发货逻辑留在 metaserver（commercial + inventory）。
-// 系统邮件写入（insertSystemMail / bulkInsertSystemMail）由 metaserver 内部端点写入此库（P2 阶段内部 API 调用）。
+// Mail service (SOCIAL_SVC_DESIGN §3.3 P2).
+// Pure data operations (getMail / readMail / deleteMail / atomicClaim); attachment delivery logic stays in metaserver (commercial + inventory).
+// System mail writes (insertSystemMail / bulkInsertSystemMail) are written to this DB by metaserver's internal endpoints (P2-phase internal API calls).
 import { randomUUID } from 'node:crypto';
 import type { SocialCollections } from './db';
 import type { SocialGatewayClient } from './gatewayClient';
@@ -75,8 +75,8 @@ export class MailService {
   }
 
   /**
-   * 原子领取：标记 claimedAt + claimOrderId，返回文档供 metaserver 发货。
-   * metaserver 通过 POST /internal/mail/:id/claim 调用此方法。
+   * Atomic claim: mark claimedAt + claimOrderId and return the document for metaserver to deliver.
+   * metaserver calls this method via POST /internal/mail/:id/claim.
    */
   async claimMailAtomic(
     accountId: string,
@@ -97,7 +97,7 @@ export class MailService {
     return { doc: claimed };
   }
 
-  /** 玩家间发邮件（必须互为好友，无附件）。 */
+  /** Send mail between players (must be mutual friends; no attachments). */
   async sendPlayerMail(
     accountId: string,
     toPublicId: string,
@@ -135,7 +135,7 @@ export class MailService {
     return { kind: 'ok', mailId };
   }
 
-  /** 系统邮件写入（幂等 upsert，dispatchKey:to 为 _id）。返回是否新插入（供 push 判定）。 */
+  /** Write a system mail (idempotent upsert; dispatchKey:to is the _id). Returns whether it was newly inserted (used to decide whether to push a notification). */
   async insertSystemMail(
     dispatchKey: string,
     to: string,
@@ -160,7 +160,7 @@ export class MailService {
     return { mailId, inserted: res.upsertedCount > 0, hasAttachment };
   }
 
-  /** 批量系统邮件写入（bulkWrite upsert，幂等）。返回本次新插入的 accountId 列表。 */
+  /** Bulk system mail write (bulkWrite upsert, idempotent). Returns the list of accountIds newly inserted this call. */
   async bulkInsertSystemMail(
     dispatchKey: string,
     accountIds: string[],

@@ -1,17 +1,17 @@
 name: animator-deploy
 
-# 骨骼动画编辑器 animator（Worker animator，静态资源）自动发布到 Cloudflare。
-# 触发：push 到 main 且改动落在 animator 相关文件，或在 Actions 页手动 Run。
-# 流程：npm ci → npm run build（webpack production，把 Supabase URL/anon key 烘进 bundle）→ wrangler deploy。
-# 部署细节 / 工作区同步：design/tools/animator/WORKSPACE_SYNC.md §7、§8.1（实际是 Workers 静态资源构建，wrangler.jsonc assets-only）。
+# Auto-publish the skeletal animation editor animator (Worker animator, static assets) to Cloudflare.
+# Trigger: push to main touching animator-related files, or manual Run from the Actions page.
+# Flow: npm ci → npm run build (webpack production, baking Supabase URL/anon key into the bundle) → wrangler deploy.
+# Deployment details / workspace sync: design/tools/animator/WORKSPACE_SYNC.md §7, §8.1 (Workers static assets build, wrangler.jsonc assets-only).
 #
-# 复用 ops/client 那套 repo secrets（同一 CF 账号，"Edit Cloudflare Workers" token 覆盖全账号 Worker）：
-#   CLOUDFLARE_API_TOKEN   —— 权限至少 Workers Scripts:Edit（账号级，animator 同样适用，无需新建）
-#   CLOUDFLARE_ACCOUNT_ID  —— 账号 ID（与 ops/client 同值）
-# 构建注入（与 Cloudflare Build variables 同名，未设则空串、工作区 UI 静默禁用、离线编辑不受影响）：
-#   NW_SUPABASE_URL        —— Supabase 项目 URL
-#   NW_SUPABASE_ANON_KEY   —— Supabase anon key
-# 启用开关：repo variable ANIMATOR_DEPLOY_ENABLED = true（未设则 job 跳过，避免配好前每次 push 报红）。
+# Reuses the ops/client repo secrets (same CF account; "Edit Cloudflare Workers" token covers all account Workers):
+#   CLOUDFLARE_API_TOKEN   — Requires at least Workers Scripts:Edit (account-level; also works for animator, no new token needed)
+#   CLOUDFLARE_ACCOUNT_ID  — Account ID (same value as ops/client)
+# Build-time injections (same names as Cloudflare Build variables; if unset, empty string — workspace UI silently disabled, offline editing unaffected):
+#   NW_SUPABASE_URL        — Supabase project URL
+#   NW_SUPABASE_ANON_KEY   — Supabase anon key
+# Enable switch: repo variable ANIMATOR_DEPLOY_ENABLED = true (job skipped if not set, to avoid red builds before setup is complete).
 
 on:
   push:
@@ -22,7 +22,7 @@ on:
       - '.github/workflows/animator-deploy.yml'
   workflow_dispatch: {}
 
-# 同时只跑一个 animator 部署，新的取消旧的，避免并发 deploy 打架。
+# Only one animator deployment runs at a time; new run cancels the old one to prevent concurrent deploy conflicts.
 concurrency:
   group: animator-deploy
   cancel-in-progress: true
@@ -30,7 +30,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # 未设 repo variable ANIMATOR_DEPLOY_ENABLED=true 时整个 job 跳过（避免配好前每次 push 报红）。
+    # Skip the entire job if repo variable ANIMATOR_DEPLOY_ENABLED is not set to true (avoids red builds before setup is complete).
     if: ${{ vars.ANIMATOR_DEPLOY_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
         working-directory: tools/animator
         run: npm ci
 
-      # 产出 tools/animator/dist；构建期 DefinePlugin 把 Supabase 连接烘入 bundle（与本地/CF 构建一致）。
+      # Outputs tools/animator/dist; DefinePlugin bakes the Supabase connection into the bundle at build time (consistent with local/CF builds).
       - name: animator build
         working-directory: tools/animator
         env:
@@ -53,8 +53,8 @@ jobs:
           NW_SUPABASE_ANON_KEY: ${{ secrets.NW_SUPABASE_ANON_KEY }}
         run: npm run build
 
-      # 从仓库根用默认 wrangler.jsonc（assets 指向 ./tools/animator/dist，SPA 回退，无 Worker 脚本）。
-      # 直接用 npx wrangler 跑（不用 wrangler-action），报错原样可见。
+      # Run from repo root using the default wrangler.jsonc (assets point to ./tools/animator/dist, SPA fallback, no Worker script).
+      # Uses npx wrangler directly (not wrangler-action) so errors are visible as-is.
       - name: deploy to Cloudflare
         working-directory: .
         env:

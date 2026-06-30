@@ -2,7 +2,7 @@
  * wearOverlay.ts — the "notebook flipped through for a year" static overlay.
  *
  * Art direction §3.1 / §6.1: a single shared, full-screen wear layer — grain
- * speckles, a fold crease or two, faint corner darkening (暗角) and a marker
+ * speckles, a fold crease or two, faint corner darkening (vignette) and a marker
  * bleed-through blot. It is deterministic (seeded `Prng`) and baked once per
  * (w,h) so it costs nothing per frame; one instance is laid faintly over both
  * the lobby and the battle so the whole game shares the same worn page.
@@ -51,7 +51,7 @@ export function buildWearOverlay(w: number, h: number): PIXI.DisplayObject {
     gfx.lineStyle(0);
   }
 
-  // ── Corner darkening (暗角): nested low-alpha corner triangles, no gradient. ─
+  // ── Corner darkening (vignette): nested low-alpha corner triangles, no gradient. ─
   const cs = Math.min(w, h) * 0.34;
   const corners: Array<[number, number, number, number]> = [
     [0, 0, 1, 1], [w, 0, -1, 1], [0, h, 1, -1], [w, h, -1, -1],
@@ -68,7 +68,7 @@ export function buildWearOverlay(w: number, h: number): PIXI.DisplayObject {
     }
   }
 
-  // ── Marker bleed-through (透印): a couple of faint warm blots. ──────────────
+  // ── Marker bleed-through (ghost print): a couple of faint warm blots. ──────────────
   const blots = 2 + p.nextInt(2);
   for (let i = 0; i < blots; i++) {
     const x = frand(p) * w, y = frand(p) * h;

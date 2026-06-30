@@ -1,11 +1,12 @@
-// G6 多 shard 运行时调度 e2e（§20）：真实 Mongo 专属库 + 纯函数单测。
-//   • 纯函数（always-run）：worldShardId / shardCountForPopulation。
-//   • allocateNextSeason：首季无上季 → 1 区；次季按上季宗门强弱蛇形均衡开 N 区 + 落 familyShard
-//     （同宗门成员家族同 shard，散家族最少家族数补位）。
-//   • resolveShardForJoin（经 resolveSeasonShard）：粘性 > 家族查表 > 最空开区 > 溢出开新区（$inc shardCount）。
-//   • patrolShardIsolation：跨区行军 / 玩家双开 / 孤儿格命中；干净库全 0。
-//   • admin /admin/world/{allocate,patrol} X-Internal-Key 门控。
-// 需 `cd server && docker compose up -d`。
+// G6 multi-shard runtime scheduling e2e (§20): real dedicated Mongo DB + pure-function unit tests.
+//   • Pure functions (always-run): worldShardId / shardCountForPopulation.
+//   • allocateNextSeason: first season with no previous season → 1 shard; subsequent seasons open N shards
+//     using snake-draft balancing based on previous-season sect strength + populate familyShard
+//     (families in the same sect land in the same shard; stray families fill the shard with the fewest families).
+//   • resolveShardForJoin (via resolveSeasonShard): sticky > family lookup > least-populated open shard > overflow opens new shard ($inc shardCount).
+//   • patrolShardIsolation: cross-shard marches / dual-login players / orphan tiles are flagged; clean DB returns all zeros.
+//   • admin /admin/world/{allocate,patrol} gated by X-Internal-Key.
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
@@ -35,26 +36,26 @@ async function tryConnect(): Promise<WorldMongo | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[worldsvc.shard.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[worldsvc.shard.e2e] Mongo unreachable (${URI}) — skipping.`);
 
-// ── 纯函数单测（不依赖 Mongo）────────────────────────────────
-describe('G6 shard 纯函数（§20.3）', () => {
-  it('worldShardId 格式 = s{season}-{shard}', () => {
+// ── Pure-function unit tests (no Mongo dependency) ────────────────────────────────
+describe('G6 shard pure functions (§20.3)', () => {
+  it('worldShardId format = s{season}-{shard}', () => {
     expect(worldShardId(2, 0)).toBe('s2-0');
     expect(worldShardId(11, 3)).toBe('s11-3');
   });
-  it('shardCountForPopulation 向上取整、至少 1', () => {
-    expect(shardCountForPopulation(0, 10000)).toBe(1);   // 首季无人 → 1 区
+  it('shardCountForPopulation rounds up, minimum 1', () => {
+    expect(shardCountForPopulation(0, 10000)).toBe(1);   // first season with no players → 1 shard
     expect(shardCountForPopulation(1, 10000)).toBe(1);
     expect(shardCountForPopulation(10000, 10000)).toBe(1);
     expect(shardCountForPopulation(10001, 10000)).toBe(2);
     expect(shardCountForPopulation(25000, 10000)).toBe(3);
     expect(shardCountForPopulation(4, 2)).toBe(2);
-    expect(shardCountForPopulation(-5, 10000)).toBe(1);  // 负数兜底
+    expect(shardCountForPopulation(-5, 10000)).toBe(1);  // negative input falls back to 1
   });
 });
 
-describe.skipIf(!mongo)('worldsvc G6 多 shard 运行时 e2e', () => {
+describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
   const m = mongo!;
   const svc = new WorldService({
     cols: m.collections, redis: null, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now: () => 1_700_000_000_000,
@@ -72,7 +73,7 @@ describe.skipIf(!mongo)('worldsvc G6 多 shard 运行时 e2e', () => {
   beforeEach(wipe);
   afterAll(async () => { await m.db.dropDatabase(); });
 
-  it('allocate 首季（无上季 results）→ shardCount=1 + 开 s{season}-0', async () => {
+  it('allocate first season (no previous results) → shardCount=1 + opens s{season}-0', async () => {
     const res = await svc.allocateNextSeason(1, WORLD_CAPACITY);
     expect(res.shardCount).toBe(1);
     expect(res.worldIds).toEqual(['s1-0']);
@@ -80,17 +81,17 @@ describe.skipIf(!mongo)('worldsvc G6 多 shard 运行时 e2e', () => {
     expect(w).toMatchObject({ season: 1, shard: 0, status: 'open', capacity: WORLD_CAPACITY, engineVersion: ENGINE_VERSION });
     const alloc = await m.collections.shardAllocations.findOne({ _id: 's1' });
     expect(alloc).toMatchObject({ season: 1, shardCount: 1 });
-    expect(Object.keys(alloc!.familyShard).length).toBe(0); // 无上季 → 无家族预分配
+    expect(Object.keys(alloc!.familyShard).length).toBe(0); // no previous season → no family pre-allocation
   });
 
-  it('allocate 次季：蛇形均衡开 N 区 + 同宗门家族同 shard + 散家族补位', async () => {
-    // 上季 s1-0：两宗门 SA(rank1, 家族 fa1/fa2 强) / SB(rank2, 家族 fb1) + 一个散家族 fl1。
+  it('allocate subsequent season: snake-draft opens N shards + same-sect families in same shard + stray families fill gaps', async () => {
+    // Previous season s1-0: two sects SA (rank1, families fa1/fa2 strong) / SB (rank2, family fb1) + one stray family fl1.
     const fam = (id: string, sectId?: string): FamilyDoc => ({
       _id: id, worldId: 's1-0', name: id, tag: id.toUpperCase(), leaderId: `${id}-lead`,
       memberCount: 1, territoryCount: 1, prosperity: 100, ...(sectId ? { sectId } : {}), rev: 1,
     });
     await m.collections.families.insertMany([fam('fa1', 'SA'), fam('fa2', 'SA'), fam('fb1', 'SB'), fam('fl1')]);
-    // 4 名成员（capacity=2 → shardCount=ceil(4/2)=2）。
+    // 4 members (capacity=2 → shardCount=ceil(4/2)=2).
     const mem = (acct: string, famId: string): FamilyMemberDoc => ({
       _id: `s1-0:${acct}`, worldId: 's1-0', accountId: acct, familyId: famId, role: 'leader', joinedAt: 1,
     });
@@ -111,18 +112,18 @@ describe.skipIf(!mongo)('worldsvc G6 多 shard 运行时 e2e', () => {
 
     const alloc = await m.collections.shardAllocations.findOne({ _id: 's2' });
     const fs = alloc!.familyShard;
-    // 同宗门家族同 shard（蛇形：SA→0, SB→1）。
-    expect(fs['fa1']).toBe(fs['fa2']);          // SA 两族同区
-    expect(fs['fa1']).not.toBe(fs['fb1']);      // SA 与 SB 不同区（强弱搭配）
-    // 散家族 fl1 补位到家族数最少的 shard（SA 占 2 在 shard0 → fl1 入 shard1）。
+    // Same-sect families land in the same shard (snake-draft: SA→0, SB→1).
+    expect(fs['fa1']).toBe(fs['fa2']);          // SA's two families in the same shard
+    expect(fs['fa1']).not.toBe(fs['fb1']);      // SA and SB in different shards (strong/weak balance)
+    // Stray family fl1 fills the shard with the fewest families (SA occupies 2 in shard0 → fl1 goes to shard1).
     expect(fs['fl1']).toBe(fs['fb1']);
-    // 两个世界都开了。
+    // Both worlds were opened.
     for (const wid of ['s2-0', 's2-1']) {
       expect(await m.collections.worlds.findOne({ _id: wid })).toMatchObject({ status: 'open', season: 2 });
     }
   });
 
-  it('resolve 粘性：已在本季有 playerWorld → 返回同 shard', async () => {
+  it('resolve sticky: player already has a playerWorld this season → returns same shard', async () => {
     await svc.openSeason('s3-0', 3, 0, 10000);
     await svc.openSeason('s3-1', 3, 1, 10000);
     const pw: PlayerWorldDoc = {
@@ -134,58 +135,58 @@ describe.skipIf(!mongo)('worldsvc G6 多 shard 运行时 e2e', () => {
     expect((await svc.resolveSeasonShard(3, 'sticky')).worldId).toBe('s3-1');
   });
 
-  it('resolve 家族查表：上季同族两账号 → 路由到 familyShard 指定 shard', async () => {
+  it('resolve family lookup: two accounts in the same previous-season family → routed to the shard specified by familyShard', async () => {
     await svc.openSeason('s4-0', 4, 0, 10000);
     await svc.openSeason('s4-1', 4, 1, 10000);
     await m.collections.shardAllocations.insertOne({
       _id: 's4', season: 4, shardCount: 2, capacity: 10000, familyShard: { 'famX': 1 }, createdAt: 1,
     });
-    // 上季 s3-* 的家族成员（两账号同 famX）。
+    // Family members from previous season s3-* (both accounts in famX).
     await m.collections.familyMembers.insertMany([
       { _id: 's3-0:p1', worldId: 's3-0', accountId: 'p1', familyId: 'famX', role: 'leader', joinedAt: 1 },
       { _id: 's3-0:p2', worldId: 's3-0', accountId: 'p2', familyId: 'famX', role: 'member', joinedAt: 1 },
     ]);
     expect((await svc.resolveSeasonShard(4, 'p1')).worldId).toBe('s4-1');
-    expect((await svc.resolveSeasonShard(4, 'p2')).worldId).toBe('s4-1'); // 同族同 shard
+    expect((await svc.resolveSeasonShard(4, 'p2')).worldId).toBe('s4-1'); // same family → same shard
   });
 
-  it('resolve 最空开区：无家族映射 → 落人口最少的开放区', async () => {
+  it('resolve least-populated shard: no family mapping → assigned to the open shard with fewest players', async () => {
     await svc.openSeason('s5-0', 5, 0, 10000);
     await svc.openSeason('s5-1', 5, 1, 10000);
     await m.collections.worlds.updateOne({ _id: 's5-0' }, { $set: { population: 50 } });
     await m.collections.worlds.updateOne({ _id: 's5-1' }, { $set: { population: 3 } });
-    expect((await svc.resolveSeasonShard(5, 'newbie')).worldId).toBe('s5-1'); // 最空
+    expect((await svc.resolveSeasonShard(5, 'newbie')).worldId).toBe('s5-1'); // least populated
   });
 
-  it('resolve 溢出：所有区满 → 开新 shard + shardCount $inc', async () => {
+  it('resolve overflow: all shards full → open new shard + $inc shardCount', async () => {
     await svc.openSeason('s6-0', 6, 0, 5);
-    await m.collections.worlds.updateOne({ _id: 's6-0' }, { $set: { population: 5 } }); // 满
+    await m.collections.worlds.updateOne({ _id: 's6-0' }, { $set: { population: 5 } }); // full
     await m.collections.shardAllocations.insertOne({
       _id: 's6', season: 6, shardCount: 1, capacity: 5, familyShard: {}, createdAt: 1,
     });
     const r = await svc.resolveSeasonShard(6, 'overflow');
-    expect(r.worldId).toBe('s6-1'); // 开新区
+    expect(r.worldId).toBe('s6-1'); // new shard opened
     expect(await m.collections.worlds.findOne({ _id: 's6-1' })).toMatchObject({ status: 'open', season: 6 });
     expect((await m.collections.shardAllocations.findOne({ _id: 's6' }))!.shardCount).toBe(2); // $inc
   });
 
-  it('patrol：跨区行军 / 玩家双开 / 孤儿格命中；干净处 0', async () => {
+  it('patrol: cross-shard marches / dual-login players / orphan tiles flagged; clean DB returns 0', async () => {
     await svc.openSeason('s7-0', 7, 0, 10000);
     await svc.openSeason('s7-1', 7, 1, 10000);
-    // 跨区行军：worldId=s7-0 但 toTile 指向 s7-1 的格。
+    // Cross-shard march: worldId=s7-0 but toTile points to a tile in s7-1.
     const badMarch: MarchDoc = {
       _id: 'm-bad', worldId: 's7-0', ownerId: 'x', fromTile: 's7-0:1:1', toTile: 's7-1:2:2',
       kind: 'occupy', troops: 10, departAt: 1, arriveAt: 2, status: 'marching', rev: 0,
     };
     await m.collections.marches.insertOne(badMarch);
-    // 玩家双开：同 season 7 两个 shard 都有 playerWorld。
+    // Dual-login player: playerWorld exists in both shards of season 7.
     const pw = (wid: string): PlayerWorldDoc => ({
       _id: playerWorldId(wid, 'dual'), worldId: wid, accountId: 'dual',
       troops: 1, troopCap: 1, resources: { food: 0, iron: 0, wood: 0 }, yieldRate: { food: 0, iron: 0, wood: 0 },
       lastTickAt: 1, rev: 0,
     });
     await m.collections.playerWorld.insertMany([pw('s7-0'), pw('s7-1')]);
-    // 孤儿格：_id 前缀 ≠ worldId 字段。
+    // Orphan tile: _id prefix does not match worldId field.
     const orphan: TileDoc = { _id: 's7-9:3:3', worldId: 's7-0', x: 3, y: 3, type: 'neutral', level: 1, rev: 0 };
     await m.collections.tiles.insertOne(orphan);
 
@@ -198,7 +199,7 @@ describe.skipIf(!mongo)('worldsvc G6 多 shard 运行时 e2e', () => {
     expect(rep.orphanTiles.samples).toContain('s7-9:3:3');
   });
 
-  it('patrol：干净库全 0', async () => {
+  it('patrol: clean DB returns all zeros', async () => {
     await svc.openSeason('s8-0', 8, 0, 10000);
     const rep = await svc.patrolShardIsolation();
     expect(rep.crossWorldMarches.count).toBe(0);
@@ -206,7 +207,7 @@ describe.skipIf(!mongo)('worldsvc G6 多 shard 运行时 e2e', () => {
     expect(rep.orphanTiles.count).toBe(0);
   });
 
-  describe('admin /admin/world/{allocate,patrol} X-Internal-Key 门控', () => {
+  describe('admin /admin/world/{allocate,patrol} gated by X-Internal-Key', () => {
     let server: Server;
     let base: string;
     beforeEach(async () => {
@@ -216,7 +217,7 @@ describe.skipIf(!mongo)('worldsvc G6 多 shard 运行时 e2e', () => {
     });
     afterAll(() => server?.close());
 
-    it('无 key → allocate/patrol 401', async () => {
+    it('no key → allocate/patrol 401', async () => {
       const a = await fetch(`${base}/admin/world/allocate`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ season: 9 }),
       });
@@ -226,7 +227,7 @@ describe.skipIf(!mongo)('worldsvc G6 多 shard 运行时 e2e', () => {
       server.close();
     });
 
-    it('JWT 玩家调 allocate → 401（非 internal）', async () => {
+    it('player JWT calling allocate → 401 (not internal)', async () => {
       const token = signToken('player', { secret: SECRET });
       const r = await fetch(`${base}/admin/world/allocate`, {
         method: 'POST',
@@ -237,7 +238,7 @@ describe.skipIf(!mongo)('worldsvc G6 多 shard 运行时 e2e', () => {
       server.close();
     });
 
-    it('X-Internal-Key → allocate + patrol 200', async () => {
+    it('valid X-Internal-Key → allocate + patrol 200', async () => {
       const a = await fetch(`${base}/admin/world/allocate`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-internal-key': KEY }, body: JSON.stringify({ season: 9 }),
       });

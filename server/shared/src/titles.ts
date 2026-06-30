@@ -1,22 +1,22 @@
-// 称号系统（S10，TITLE_DESIGN.md）。
-// 纯数据 + 纯函数，服务端与客户端同源。
-// TitleId 命名约定：ladder.s{N}.{rank} | slg.s{N}.{key} | ach.{key} | event.{key}
+// Title system (S10, TITLE_DESIGN.md).
+// Pure data + pure functions, shared between server and client.
+// TitleId naming convention: ladder.s{N}.{rank} | slg.s{N}.{key} | ach.{key} | event.{key}
 import type { RankId } from './ladder';
 
 export type TitleSource = 'ladder' | 'slg' | 'achievement' | 'event';
 
 export interface TitleDef {
-  /** 跨来源序（越高越贵重，自动佩戴取 max）。公式 = 档位基数 T*1000 + 来源偏移 + 档内序。 */
+  /** Cross-source ordering (higher = more prestigious; auto-equip picks max). Formula = tier base T*1000 + source offset + in-tier index. */
   weight: number;
   source: TitleSource;
-  /** i18n 全称 key，e.g. title.event.founder.full */
+  /** i18n full-name key, e.g. title.event.founder.full */
   fullKey: string;
-  /** i18n 短标签 key（≤4 字），e.g. title.event.founder.short */
+  /** i18n short-label key (≤4 chars), e.g. title.event.founder.short */
   shortKey: string;
 }
 
-// ── 天梯各段位权重（按 TITLE_DESIGN §6.1 T 档分带）─────────────────────────────
-// 来源偏移：天梯 +0（档内序占 0..9）
+// ── Ladder rank weights (by TITLE_DESIGN §6.1 T-tier bands) ─────────────────────────────
+// Source offset: ladder +0 (in-tier indices occupy 0..9)
 export const LADDER_RANK_WEIGHTS: Readonly<Record<RankId, number>> = {
   bronze:       1000, // T1
   silver:       1001,
@@ -29,10 +29,10 @@ export const LADDER_RANK_WEIGHTS: Readonly<Record<RankId, number>> = {
   king:         5000, // T5
 };
 
-// ── 永久 / 活动称号定义表（非赛季类）────────────────────────────────────────────
-// 赛季称号（ladder.s{N}.{rank} / slg.s{N}.*）动态构造，权重从 LADDER_RANK_WEIGHTS 推导。
+// ── Permanent / event title definition table (non-seasonal) ────────────────────────────────────────────
+// Seasonal titles (ladder.s{N}.{rank} / slg.s{N}.*) are constructed dynamically; weights derived from LADDER_RANK_WEIGHTS.
 export const TITLE_DEFS: Readonly<Record<string, TitleDef>> = {
-  // — 活动 —
+  // — Event —
   'event.newbie': {
     weight: 1300,
     source: 'event',
@@ -45,44 +45,44 @@ export const TITLE_DEFS: Readonly<Record<string, TitleDef>> = {
     fullKey:  'title.event.founder.full',
     shortKey: 'title.event.founder.short',
   },
-  // — 成就称号 —
+  // — Achievement titles —
   'ach.all_chapters': {
-    weight: 5200, // T5 顶阶成就
+    weight: 5200, // T5 top-tier achievement
     source: 'achievement',
     fullKey:  'title.ach.all_chapters.full',
     shortKey: 'title.ach.all_chapters.short',
   },
   'ach.pvp.veteran': {
-    weight: 4200, // T4 高阶 PvP
+    weight: 4200, // T4 high-tier PvP
     source: 'achievement',
     fullKey:  'title.ach.pvp.veteran.full',
     shortKey: 'title.ach.pvp.veteran.short',
   },
 };
 
-// ── 权重查询（支持动态赛季 titleId）────────────────────────────────────────────
+// ── Weight lookup (supports dynamic seasonal titleId) ────────────────────────────────────────────
 
-/** 取任意 titleId 的权重。动态赛季 titleId 从 LADDER_RANK_WEIGHTS 推导，未知返回 0。 */
+/** Returns the weight for any titleId. Dynamic seasonal titleIds are derived from LADDER_RANK_WEIGHTS; unknown titles return 0. */
 export function titleWeight(titleId: string): number {
   if (titleId in TITLE_DEFS) return TITLE_DEFS[titleId]!.weight;
   // ladder.s{N}.{rank}
   const lm = titleId.match(/^ladder\.s\d+\.(\w+)$/);
   if (lm) return LADDER_RANK_WEIGHTS[lm[1] as RankId] ?? 0;
-  // slg.s{N}.{key} — SLG 赛季称号（§3，暂用 T3 基数占位，上线时按实际权重配）
+  // slg.s{N}.{key} — SLG seasonal title (§3; placeholder using T3 base; configure actual weight at launch)
   if (/^slg\.s\d+\./.test(titleId)) return 3500;
   return 0;
 }
 
-/** 取 titleId 的短标签 i18n key（用于排行榜/名牌等紧凑展示）。 */
+/** Returns the short-label i18n key for a titleId (used in compact displays such as leaderboards and nameplates). */
 export function titleShortKey(titleId: string): string {
   if (titleId in TITLE_DEFS) return TITLE_DEFS[titleId]!.shortKey;
-  // ladder.s{N}.{rank} → 动态拼，由客户端加 S{N} 前缀
+  // ladder.s{N}.{rank} → dynamically assembled; client prepends the S{N} prefix
   const lm = titleId.match(/^ladder\.s(\d+)\.(\w+)$/);
-  if (lm) return `title.ladder.short`; // 客户端用 formatLadderTitle 拼
+  if (lm) return `title.ladder.short`; // client assembles with formatLadderTitle
   return '';
 }
 
-// ── 授予逻辑（纯函数，服务端写库前先调本函数计算新状态）─────────────────────────
+// ── Grant logic (pure function; call before writing to the database to compute new state) ─────────────────────────
 
 export interface TitleGrantResult {
   titles: string[];
@@ -90,14 +90,14 @@ export interface TitleGrantResult {
 }
 
 /**
- * 把 newTitleId 授予玩家，并按「自动佩戴最高/最新」规则更新佩戴位（TITLE_DESIGN §6）。
- * 纯函数；调用方负责把结果原子写库。
+ * Grants newTitleId to the player and updates the equipped slot following the "auto-equip highest/newest" rule (TITLE_DESIGN §6).
+ * Pure function; the caller is responsible for atomically persisting the result.
  *
- * 算法：
- *   1. $addToSet（幂等），新 titleId 追加末尾
- *   2. 若新 weight > 当前佩戴 weight → 自动换上
- *   3. 若 weight 相等 → 取 titles 末位（最新获得）
- *   4. 无佩戴 → 自动佩戴新称号
+ * Algorithm:
+ *   1. $addToSet (idempotent); new titleId appended at the end
+ *   2. If new weight > current equipped weight → auto-equip the new title
+ *   3. If weights are equal → take the last entry in titles (most recently acquired)
+ *   4. No title equipped → auto-equip the new title
  */
 export function grantTitle(
   prevTitles: string[],
@@ -112,28 +112,28 @@ export function grantTitle(
 
   let equippedTitle = prevEquipped;
   if (!equippedTitle) {
-    // 无佩戴 → 自动佩戴
+    // No title equipped → auto-equip
     equippedTitle = newTitleId;
   } else if (newW > curW) {
-    // 新称号更高阶 → 自动换上
+    // New title has higher tier → auto-equip it
     equippedTitle = newTitleId;
   } else if (newW === curW && !alreadyHas) {
-    // 同阶新获得 → 取更新（末位索引更大 = 刚追加的 newTitleId）
+    // Same tier, newly acquired → take the newer one (higher tail index = just-appended newTitleId)
     equippedTitle = newTitleId;
   }
 
   return { titles, equippedTitle };
 }
 
-/** 构建天梯赛季称号 id。 */
+/** Builds a ladder seasonal title id. */
 export function ladderTitleId(seasonNo: number, rank: RankId): string {
   return `ladder.s${seasonNo}.${rank}`;
 }
 
 /**
- * 从 titleId 派生来源 + 赛季号（纯函数，服务端 GET /titles 与客户端展示同源）。
- * 命名约定：ladder.s{N}.{rank} | slg.s{N}.{key} | ach.{key} | event.{key}。
- * 注：授予时间（grantedAt）不入库（titles 仅存 id 顺序），故不在此派生。
+ * Derives the source and season number from a titleId (pure function; shared between server GET /titles and client display).
+ * Naming convention: ladder.s{N}.{rank} | slg.s{N}.{key} | ach.{key} | event.{key}.
+ * Note: grant time (grantedAt) is not persisted (titles stores only the id sequence), so it is not derived here.
  */
 export function parseTitleId(titleId: string): { source: TitleSource; seasonNo?: number } {
   const lm = titleId.match(/^ladder\.s(\d+)\./);
@@ -141,7 +141,7 @@ export function parseTitleId(titleId: string): { source: TitleSource; seasonNo?:
   const sm = titleId.match(/^slg\.s(\d+)\./);
   if (sm) return { source: 'slg', seasonNo: Number(sm[1]) };
   if (titleId.startsWith('event.')) return { source: 'event' };
-  // 其余（ach.* 及表内定义）按成就来源；表内有显式 source 时优先取之。
+  // Remaining (ach.* and table-defined entries) default to achievement source; explicit source in the table takes precedence.
   if (titleId in TITLE_DEFS) return { source: TITLE_DEFS[titleId]!.source };
   return { source: 'achievement' };
 }

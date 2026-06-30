@@ -100,9 +100,10 @@ export class GameRenderer {
   onGameEnd:     ((winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) => void) | null = null;
   onExitToLobby: (() => void) | null = null;
 
-  // 一次性闸门：GameOver 后引擎 step() 提前返回不清事件队列（GameEngine §step），
-  // 故 game_over/game_draw 事件每帧被 update() 重复消费 → 不加锁会重复调 onGameEnd
-  // （→ 重复 recordClear / 重复 level_complete 埋点，见双发 bug）。结算只触发一次。
+  // One-shot gate: after GameOver the engine's step() returns early without draining the event
+  // queue (GameEngine §step), so game_over/game_draw events are re-consumed by update() every
+  // frame → without this lock, onGameEnd would fire repeatedly (→ duplicate recordClear /
+  // duplicate level_complete analytics, see the double-fire bug). Settlement fires exactly once.
   private gameEnded = false;
 
   private readonly engine: IGameEngine;
@@ -131,7 +132,7 @@ export class GameRenderer {
   private readonly equippedSkin: string | null = null;
   /** Equipment loadout (PvE/siege only) for the battle-render gear overlay (§20.4); null = none. */
   private readonly equipment: EngineEquipmentInput | null = null;
-  /** Corner hand-lettering to scrawl in the margins (art-direction §6.2 B 组). */
+  /** Corner hand-lettering to scrawl in the margins (art-direction §6.2 group B). */
   private readonly battleLabelCtx: BattleLabelContext = {};
   private buildingView!: BuildingView;
   private escortLayer!:  PIXI.Container;
@@ -172,10 +173,10 @@ export class GameRenderer {
   // Unsubscribe functions from InputManager
   private readonly unsubs: Array<() => void> = [];
 
-  /** 内存看护注销函数（projectile 复用池），destroy() 时调用。 */
+  /** Memory-guard deregistration function (projectile reuse pool); called in destroy(). */
   private readonly unregisterProjectileStat: () => void;
 
-  /** 教学导演（仅专属教学关 ch0_tutorial 激活），表现层编排卡点/导览/永不失败。 */
+  /** Tutorial director (activated only for the dedicated tutorial level ch0_tutorial); orchestrates presentation-layer checkpoints / tours / never-lose guarantee. */
   private tutorial: TutorialDirector | null = null;
   private tutorialEnabled = false;
 
@@ -270,8 +271,9 @@ export class GameRenderer {
   }
 
   /**
-   * 教学毕业：脚本胜利。复用 game_over 的本地胜利结算链（showGameOver → onGameEnd），
-   * 但由导演触发而非引擎判定（教学关永不真正分出胜负，§3.5）。
+   * Tutorial graduation: scripted victory. Reuses the game_over local-win resolution chain
+   * (showGameOver → onGameEnd), but triggered by the director rather than the engine
+   * (tutorial level never actually decides a winner, §3.5).
    */
   private forceTutorialVictory(): void {
     if (this.gameEnded) return;
@@ -286,13 +288,13 @@ export class GameRenderer {
 
   update(dt: number): void {
     const prevTicks = this.engine.state.elapsedTicks;
-    // 教学卡点 / 导览期间冻结引擎推进（敌人/波次/手牌计时全停）；玩家拖卡输入照常采集，
-    // 命中引导卡后导演放行（ONBOARDING_DESIGN §3.4）。
+    // Freeze engine advancement during tutorial checkpoints / tours (enemies/waves/hand timers all paused);
+    // player drag input is still captured normally; director unblocks once the target card is played (ONBOARDING_DESIGN §3.4).
     const tutorialFrozen = this.tutorial?.engineFrozen ?? false;
     if (!this.hudView.isPaused && !tutorialFrozen) this.engine.tick(dt);
     const state = this.engine.state;
-    // 状态流录制（REPLAY_SHARE_DESIGN §2.1）：真打 + 看回放两路都在此抓帧；同一 tick / 未配置
-    // 时内部自动跳过，对引擎零侵入。
+    // State recorder (REPLAY_SHARE_DESIGN §2.1): both live matches and replay playback capture frames here;
+    // internally skips on duplicate tick / unconfigured — zero engine intrusion.
     stateRecorder.capture(state);
     for (const event of state.events) this.handleEvent(event, state);
     this.boardView.update(dt);
@@ -370,7 +372,7 @@ export class GameRenderer {
   // ── Scene graph ────────────────────────────────────────────────────────────
 
   private buildSceneGraph(): void {
-    // 新一局 / 新一段回放开始：清空状态流单槽（REPLAY_SHARE_DESIGN §2.1）。
+    // New match / new replay segment start: clear the single state recorder slot (REPLAY_SHARE_DESIGN §2.1).
     stateRecorder.reset();
     this.boardView    = new BoardView(this.layout);
     this.boardView.showBattleLabels(this.battleLabelCtx);
@@ -438,8 +440,9 @@ export class GameRenderer {
     this.downX = x;
     this.downY = y;
 
-    // 教学导演先吃 tap：命中其按钮（下一步/完成/跳过）或处于导览/毕业期 → 吞掉，
-    // 不落到棋盘/手牌（§3.4）。阶段 B 卡点期它放过非按钮 tap，让玩家正常拖卡。
+    // Tutorial director intercepts taps first: if it hits its own buttons (next/finish/skip)
+    // or is in tour/graduation phase → swallow the tap, don't pass to board/hand (§3.4).
+    // During phase B checkpoint it passes non-button taps through so the player can drag cards normally.
     if (this.tutorial?.handleDown(x, y)) return;
 
     // Profile popup open → its own dim backdrop (PIXI interactive) handles the
@@ -695,7 +698,7 @@ export class GameRenderer {
         this.pendingStats = event.stats;
         break;
       case 'game_over': {
-        // 永不失败兜底（§3.5）：教学未毕业前，任何引擎判负/判胜都不结算——导演独占终局。
+        // Never-lose guard (§3.5): before tutorial graduation, no engine win/loss is settled — director owns the endgame.
         if (this.tutorial && !this.tutorial.isFinished) break;
         if (this.gameEnded) break;
         this.gameEnded = true;
@@ -892,7 +895,7 @@ export class GameRenderer {
     handIndex: number, cardType: CardType, spellType: SpellType | undefined,
     col: number, row: number,
   ): void {
-    // 教学卡点：本拍只放行对应类别的卡，误打被否决（避免浪费 / 走偏，§3.4）。
+    // Tutorial checkpoint: only the target card type is allowed this beat; wrong plays are rejected (avoids waste / going off-script, §3.4).
     if (this.tutorial && !this.tutorial.allowCardPlay(cardType, spellType)) return;
     switch (cardType) {
       case CardType.Unit: {

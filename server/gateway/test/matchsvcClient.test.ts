@@ -1,5 +1,5 @@
-// MatchsvcClient 单测（S1-M5）：gateway → matchsvc 内部 HTTP 客户端把各控制命令 POST 到
-// 正确端点、带正确 body 与 X-Internal-Key；无 baseUrl 时不发请求（available=false）。
+// MatchsvcClient unit tests (S1-M5): gateway → matchsvc internal HTTP client POSTs each control command to
+// the correct endpoint with the correct body and X-Internal-Key; when baseUrl is absent no request is sent (available=false).
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { MatchsvcClient } from '../src/matchsvcClient';
 
@@ -35,7 +35,7 @@ describe('MatchsvcClient', () => {
     vi.restoreAllMocks();
   });
 
-  it('各命令打到对应端点，带 body 与内部密钥', () => {
+  it('each command hits the correct endpoint with the expected body and internal key', () => {
     const c = new MatchsvcClient(BASE, KEY);
     c.roomCreate('a', 'Alice', '100000001');
     c.roomJoin('b', 'Bob', '100000002', 'ABC123');
@@ -61,7 +61,7 @@ describe('MatchsvcClient', () => {
     expect(calls[5]!.body).toEqual({ accountId: 'a', name: 'Alice', publicId: '100000001', elo: 1234, equippedTitle: '' });
   });
 
-  it('无 baseUrl → available=false 且不发请求', () => {
+  it('no baseUrl → available=false and no requests sent', () => {
     const c = new MatchsvcClient(null, KEY);
     expect(c.available).toBe(false);
     c.roomCreate('a', 'A', '100000001');

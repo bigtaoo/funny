@@ -29,7 +29,7 @@ export class InspectorPanel {
     const root = this.root;
     root.innerHTML = '';
 
-    const addBtn = el('button', { class: 'primary', text: '+ 新增波次' });
+    const addBtn = el('button', { class: 'primary', text: '+ Add wave' });
     addBtn.addEventListener('click', () => {
       const entry: WaveEntry = { atTick: 0, unitType: UnitType.Infantry, col: ATTACK_LANES[0]!, count: 1 };
       this.state.addWave(entry);
@@ -38,12 +38,12 @@ export class InspectorPanel {
 
     const index = this.state.selectedWave;
     if (index === null || !this.state.waves[index]) {
-      root.appendChild(el('p', { class: 'hint', text: '点击时间线上的波次块进行编辑，或新增一条波次。' }));
+      root.appendChild(el('p', { class: 'hint', text: 'Click a wave block on the timeline to edit, or add a new wave.' }));
       return;
     }
     const entry = this.state.waves[index]!;
 
-    root.appendChild(el('div', { class: 'insp-title', text: `波次 #${index}` }));
+    root.appendChild(el('div', { class: 'insp-title', text: `Wave #${index}` }));
 
     // Unit type
     const unitSel = el('select') as HTMLSelectElement;
@@ -56,36 +56,36 @@ export class InspectorPanel {
     unitSel.addEventListener('change', () =>
       this.state.updateWave(index, { unitType: unitSel.value as UnitType }),
     );
-    root.appendChild(field('单位', unitSel));
+    root.appendChild(field('Unit', unitSel));
 
     // Lane / col
     const colSel = el('select') as HTMLSelectElement;
     for (const c of ATTACK_LANES) {
-      const opt = el('option', { text: `列 ${c}` }) as HTMLOptionElement;
+      const opt = el('option', { text: `col ${c}` }) as HTMLOptionElement;
       opt.value = String(c);
       if (c === entry.col) opt.selected = true;
       colSel.appendChild(opt);
     }
     colSel.addEventListener('change', () => this.state.updateWave(index, { col: Number(colSel.value) }));
-    root.appendChild(field('车道 (col)', colSel));
+    root.appendChild(field('Lane (col)', colSel));
 
     // atTick (seconds)
     root.appendChild(
-      numField('起始时间 (秒)', this.toSec(entry.atTick), 0, 0.1, (v) =>
+      numField('Start time (s)', this.toSec(entry.atTick), 0, 0.1, (v) =>
         this.state.updateWave(index, { atTick: Math.max(0, this.toTicks(v)) }),
       ),
     );
 
     // count
     root.appendChild(
-      numField('数量', String(entry.count), 1, 1, (v) =>
+      numField('Count', String(entry.count), 1, 1, (v) =>
         this.state.updateWave(index, { count: Math.max(1, Math.round(v)) }),
       ),
     );
 
     // spacing (seconds)
     root.appendChild(
-      numField('间隔 (秒)', this.toSec(entry.spacingTicks ?? 0), 0, 0.1, (v) =>
+      numField('Interval (s)', this.toSec(entry.spacingTicks ?? 0), 0, 0.1, (v) =>
         this.state.updateWave(index, { spacingTicks: Math.max(0, this.toTicks(v)) }),
       ),
     );
@@ -98,7 +98,7 @@ export class InspectorPanel {
     root.appendChild(field('Boss', boss));
 
     // crossWaypoints
-    const wpHeader = el('div', { class: 'insp-title', text: '变道点 (crossWaypoints)' });
+    const wpHeader = el('div', { class: 'insp-title', text: 'Lane-change waypoints (crossWaypoints)' });
     wpHeader.style.fontSize = '11px';
     root.appendChild(wpHeader);
     const wps = entry.crossWaypoints ?? [];
@@ -109,7 +109,7 @@ export class InspectorPanel {
       // atRow
       const rowInp = el('input') as HTMLInputElement;
       rowInp.type = 'number'; rowInp.min = '0'; rowInp.max = '17'; rowInp.step = '1';
-      rowInp.value = String(wp.atRow); rowInp.title = '触发行'; rowInp.style.width = '46px';
+      rowInp.value = String(wp.atRow); rowInp.title = 'Trigger row'; rowInp.style.width = '46px';
       rowInp.addEventListener('change', () => {
         const v = parseInt(rowInp.value);
         if (!isNaN(v)) {
@@ -124,7 +124,7 @@ export class InspectorPanel {
       // toCol
       const toColSel = el('select') as HTMLSelectElement;
       for (const c of ATTACK_LANES) {
-        const o = el('option', { text: `列 ${c}` }) as HTMLOptionElement;
+        const o = el('option', { text: `col ${c}` }) as HTMLOptionElement;
         o.value = String(c);
         if (c === wp.toCol) o.selected = true;
         toColSel.appendChild(o);
@@ -144,7 +144,7 @@ export class InspectorPanel {
       wpRow.appendChild(wpDel);
       root.appendChild(wpRow);
     }
-    const addWpBtn = el('button', { text: '+ 变道点' });
+    const addWpBtn = el('button', { text: '+ Lane-change waypoint' });
     addWpBtn.addEventListener('click', () => {
       const updated = [...(entry.crossWaypoints ?? []), { atRow: 9, toCol: ATTACK_LANES[0]! }];
       this.state.updateWave(index, { crossWaypoints: updated });
@@ -153,9 +153,9 @@ export class InspectorPanel {
 
     // duration readout
     const endSec = this.toSec(entry.atTick + Math.max(0, entry.count - 1) * (entry.spacingTicks ?? 0));
-    root.appendChild(el('p', { class: 'hint', text: `本组结束于 ${endSec}s` }));
+    root.appendChild(el('p', { class: 'hint', text: `Group ends at ${endSec}s` }));
 
-    const del = el('button', { class: 'danger', text: '删除此波次' });
+    const del = el('button', { class: 'danger', text: 'Delete wave' });
     del.addEventListener('click', () => this.state.removeWave(index));
     root.appendChild(del);
   }

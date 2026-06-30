@@ -1,5 +1,5 @@
-// 前端本地视图类型（与 server/shared/admin.ts 同义；前端不 import @nw/shared 避免拖入 mongo）。
-// 真正的权限校验在后端每个端点；前端按 capabilities 渲染可见导航/按钮（仅体验，非安全边界）。
+// Frontend-local view types (mirror of server/shared/admin.ts; the frontend does not import @nw/shared to avoid pulling in mongo).
+// Real authorization is enforced at each backend endpoint; the frontend uses capabilities only to render the visible navigation/buttons (UX convenience, not a security boundary).
 export type AdminRole = 'super' | 'ops' | 'support' | 'viewer';
 
 export type AdminCapability =
@@ -102,7 +102,7 @@ export interface TrendPoint {
   ts: number;
   value: number;
 }
-/** 成就反作弊审查记录（S9-7；= meta AntiCheatReviewDoc 只读视图）。 */
+/** Achievement anti-cheat review record (S9-7; read-only view of the meta AntiCheatReviewDoc). */
 export interface AntiCheatReviewView {
   _id: string;
   roomId: string;
@@ -142,7 +142,7 @@ export interface Session {
   capabilities: AdminCapability[];
 }
 
-// ── 功能开关（feature flags，与 @nw/shared featureFlags.ts 同义）──
+// ── Feature flags (mirror of @nw/shared featureFlags.ts) ──
 export type FlagPlatform = 'web' | 'wechat' | 'crazygames';
 export interface FlagRollout {
   pct?: number;
@@ -150,7 +150,7 @@ export interface FlagRollout {
   platforms?: FlagPlatform[];
   allowAccounts?: string[];
   denyAccounts?: string[];
-  /** publicId 白名单（9 位玩家可见 id；命中即开，与 allowAccounts 同优先级）。客户端日志定向采集用。 */
+  /** publicId allowlist (9-digit player-visible id; a hit enables the flag, same priority as allowAccounts). Used for targeted client log collection. */
   allowPublicIds?: string[];
 }
 export interface FeatureFlagDoc {
@@ -161,7 +161,7 @@ export interface FeatureFlagDoc {
   updatedAt: number;
   updatedBy: string;
 }
-/** GET /admin/config/flags 行：白名单 flag + 默认值 + 当前覆盖规则（doc=null 表示用默认）。 */
+/** GET /admin/config/flags row: registered flag + its default + current override rule (doc=null means using the default). */
 export interface FeatureFlagRow {
   key: string;
   default: boolean;
@@ -170,7 +170,7 @@ export interface FeatureFlagRow {
   doc: FeatureFlagDoc | null;
 }
 
-// ── 限时活动（B6，与 @nw/shared events.ts 同义）──
+// ── Timed events (B6, mirror of @nw/shared events.ts) ──
 export type EventTaskKind = 'pve.clear' | 'pvp.win' | 'ad.watch';
 export interface EventTaskDef {
   taskId: string;
@@ -196,7 +196,7 @@ export interface EventDoc {
   rewards: EventRewardDef[];
   createdAt: number;
 }
-/** 创建/编辑入参（_id 可选指定；服务端补 createdAt）。 */
+/** Create/edit input (_id may be specified optionally; the server fills in createdAt). */
 export interface EventInput {
   id?: string;
   title: string;

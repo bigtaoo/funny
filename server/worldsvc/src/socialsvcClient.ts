@@ -1,8 +1,8 @@
-// worldsvc → socialsvc 客户端（SOCIAL_SVC_DESIGN §4.2 / P1）。
-// 内部 API（/internal/*）：X-Internal-Key，用于查 familyId 和委托频道推送。
+// worldsvc → socialsvc client (SOCIAL_SVC_DESIGN §4.2 / P1).
+// Internal API (/internal/*): X-Internal-Key, used to look up familyId and delegate channel pushes.
 import { internalHeaders } from '@nw/shared';
 
-/** 推送频道描述（/internal/push 请求体 channel 字段）。 */
+/** Push channel descriptor (the channel field in the /internal/push request body). */
 export type SocialsvcChannel =
   | { kind: 'account'; accountId: string }
   | { kind: 'family';  familyId: string }
@@ -11,12 +11,12 @@ export type SocialsvcChannel =
 
 export interface WorldSocialsvcClient {
   readonly available: boolean;
-  /** 内部：查玩家当前所在 familyId（无则 null）。 */
+  /** Internal: look up the player's current familyId (null if not in a family). */
   getFamilyId(accountId: string): Promise<string | null>;
   /**
-   * 内部：委托频道推送。
-   * targets 为明确收件人列表（worldsvc 已知成员时传入，跳过 socialsvc 侧 Redis 查询）；
-   * 省略时 socialsvc 按 channel 自行路由（P3 Redis pub/sub 完整实现后可去掉 targets）。
+   * Internal: delegate a channel push.
+   * targets is an explicit recipient list (passed when worldsvc already knows the members, skipping a Redis lookup on the socialsvc side);
+   * if omitted, socialsvc routes by channel itself (targets can be removed once P3 Redis pub/sub is fully implemented).
    */
   push(channel: SocialsvcChannel, event: string, payload: unknown, targets?: string[]): Promise<void>;
 }
@@ -55,7 +55,7 @@ export class HttpWorldSocialsvcClient implements WorldSocialsvcClient {
         body: JSON.stringify({ channel, event, payload, ...(targets ? { targets } : {}) }),
       });
     } catch {
-      // best-effort：push 失败不影响已落库的消息，客户端靠 REST 拉取。
+      // best-effort: push failure does not affect messages already persisted to the DB; clients can fetch via REST.
     }
   }
 }

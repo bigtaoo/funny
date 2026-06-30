@@ -1,44 +1,46 @@
-// Ranked 匹配队列（S1-R，搬自 gameserver 并解耦连接依赖）。按 ELO 邻近配对；等待越久，
-// 可接受的分差窗口越宽，保证冷门时段也能在有限等待内成局。单实例内存队列
-// （多实例横扩需共享队列 / Redis，留后续）。条目只持 accountId + name + elo，
-// 不再持网络连接——matchsvc 是玩家不可达的私有大脑，玩家通过 gateway 间接操作。
+// Ranked matchmaking queue (S1-R, migrated from gameserver with connection dependencies decoupled). Pairs players by ELO proximity;
+// the longer a player waits, the wider the acceptable ELO window, ensuring matches can form within a bounded wait even during off-peak hours.
+// Single-instance in-memory queue (multi-instance horizontal scaling requires a shared queue / Redis, deferred for later).
+// Entries only hold accountId + name + elo and no longer hold network connections — matchsvc is a private brain unreachable by players;
+// players interact indirectly through the gateway.
 
 export interface QueueEntry {
   accountId: string;
   name: string;
-  /** 9 位数字公开 id（UI 用，纯展示；缺省空串）。 */
+  /** 9-digit numeric public ID (UI display only; defaults to empty string). */
   publicId: string;
-  /** 佩戴称号 id（来自 meta /internal/profile；空串=无称号）。 */
+  /** Equipped title ID (from meta /internal/profile; empty string = no title). */
   equippedTitle: string;
   elo: number;
   enqueuedAt: number;
-  /** 平台（feature flag 定向求值用；缺省空串）。 */
+  /** Platform (used for feature flag targeted evaluation; defaults to empty string). */
   platform: string;
   /**
-   * 上次触发 bot-fallback 超时回调的时刻（ms）。缺省 = 从未触发（首判用 enqueuedAt）。
-   * 非 fire-once：开关关时保持在队，每隔 botFallbackMs 重评一次（节流防每 tick 触发），
-   * 这样运营把开关「后开」也能覆盖到已在排队的老条目。
+   * Timestamp (ms) of the last bot-fallback timeout callback firing. Default = never fired (first check uses enqueuedAt).
+   * Not fire-once: when the flag is off the entry stays in queue and is re-evaluated every botFallbackMs (throttled to avoid firing every tick),
+   * so operators enabling the flag later can still cover entries that were already queued.
    */
   lastTimeoutAt?: number;
 }
 
 export interface MatchmakingOpts {
-  /** 初始可接受分差窗口（半宽）。默认 100。 */
+  /** Initial acceptable ELO difference window (half-width). Default 100. */
   baseWindow?: number;
-  /** 每等待 1s 窗口加宽量。默认 50。 */
+  /** Amount to widen the window per second of waiting. Default 50. */
   widenPerSec?: number;
-  /** 配对巡检间隔 ms。默认 1000。 */
+  /** Matchmaking scan interval in ms. Default 1000. */
   tickMs?: number;
-  /** 注入时钟（测试用）。默认 Date.now。 */
+  /** Injected clock (for testing). Default Date.now. */
   now?: () => number;
-  /** 是否自动起定时器巡检。默认 true；测试可关掉手动 tick()。 */
+  /** Whether to automatically start the timer for periodic scanning. Default true; tests may disable and call tick() manually. */
   autoTick?: boolean;
   /**
-   * 入队等待超过此毫秒数仍未配对 → 触发 onTimeout（bot-fallback 决策点）。0/缺省 = 关闭超时检测。
-   * 注意：超时检测对「单人独自在队」也生效（正是降级打 AI 的典型场景）。
+   * If a player has been queued longer than this many milliseconds without being matched, onTimeout is fired (bot-fallback decision point).
+   * 0 / unset = timeout detection disabled.
+   * Note: timeout detection also applies to a single player waiting alone in the queue (the typical scenario for AI fallback).
    */
   botFallbackMs?: number;
-  /** 等待超时回调（每条目仅触发一次）。是否真降级由上层据 feature flag 决定。 */
+  /** Timeout callback (fired once per entry). Whether to actually fall back is decided by the caller based on feature flags. */
   onTimeout?: (entry: QueueEntry) => void;
 }
 
@@ -55,7 +57,7 @@ export class Matchmaking {
   private readonly onTimeout?: (entry: QueueEntry) => void;
 
   constructor(
-    /** 配对成功回调：移出队列由本类负责，建房由上层处理。 */
+    /** Callback on successful pair: this class handles removal from the queue; room creation is handled by the caller. */
     private readonly onPair: (a: QueueEntry, b: QueueEntry) => void,
     opts: MatchmakingOpts = {},
   ) {
@@ -76,7 +78,7 @@ export class Matchmaking {
     return this.queue.length;
   }
 
-  /** 入队（同账号再次入队覆盖旧条目，重置等待）。入队后尝试一次配对。 */
+  /** Enqueue (re-enqueuing the same account replaces the old entry and resets the wait timer). Attempts one pairing pass after enqueuing. */
   enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', platform = ''): void {
     this.remove(accountId);
     this.queue.push({ accountId, name, publicId, equippedTitle, elo, enqueuedAt: this.now(), platform });
@@ -84,20 +86,21 @@ export class Matchmaking {
     this.tick();
   }
 
-  /** 出队（取消匹配 / 掉线 / 已配对）。队空则停巡检。 */
+  /** Dequeue (cancel matchmaking / disconnect / already paired). Stops the scan timer when the queue becomes empty. */
   remove(accountId: string): void {
     this.queue = this.queue.filter((e) => e.accountId !== accountId);
     if (this.queue.length === 0) this.stopTimer();
   }
 
   /**
-   * 一轮配对：按 ELO 升序，相邻两人若分差 ≤ 窗口（取两人中等待更久者的窗口）即配对。
-   * 贪心相邻配对对「按分排序后的队列」足够好且确定（避免饥饿）。
+   * One pairing pass: sorted by ELO ascending, adjacent pairs are matched if the difference is ≤ the window
+   * (the window of whichever of the two has waited longer is used).
+   * Greedy adjacent pairing on a score-sorted queue is good enough and starvation-free.
    */
   tick(): void {
     const t = this.now();
 
-    // ── 1) ELO 邻近配对（队列 ≥2 才有意义）──
+    // ── 1) ELO proximity pairing (only meaningful with queue size ≥2) ──
     if (this.queue.length >= 2) {
       const sorted = [...this.queue].sort((a, b) => a.elo - b.elo);
       const paired = new Set<string>();
@@ -123,10 +126,11 @@ export class Matchmaking {
       }
     }
 
-    // ── 2) bot-fallback 超时扫描（对仍在队的条目，含单人独自等待）──
-    // 非 fire-once：开关关时回调返回后条目仍在队，每隔 botFallbackMs 重评一次（节流），
-    // 故运营把 match_bot_fallback「后开」也能覆盖已在排队的老条目（旧的 fire-once 会漏判）。
-    // 先收集再回调（回调可能 remove 条目 → 避免遍历中改集合）。
+    // ── 2) bot-fallback timeout scan (for entries still in queue, including solo waiters) ──
+    // Not fire-once: when the flag is off the entry stays in queue after the callback returns,
+    // and is re-evaluated every botFallbackMs (throttled), so operators enabling match_bot_fallback later
+    // can still cover entries already in the queue (the old fire-once design would miss them).
+    // Collect first, then fire callbacks (callbacks may remove entries → avoid mutating the collection while iterating).
     if (this.onTimeout && this.botFallbackMs > 0 && this.queue.length > 0) {
       const due = this.queue.filter((e) => t - (e.lastTimeoutAt ?? e.enqueuedAt) >= this.botFallbackMs);
       for (const e of due) e.lastTimeoutAt = t;

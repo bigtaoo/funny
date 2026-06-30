@@ -1,6 +1,6 @@
-// 称号授予 DB 写辅助（S10，TITLE_DESIGN §2）。
-// grantTitle 纯函数在 @nw/shared；本模块负责把计算结果原子写 MongoDB。
-// 幂等：$addToSet 保证同 titleId 重复调用安全。
+// DB write helper for title grants (S10, TITLE_DESIGN §2).
+// The grantTitle pure function lives in @nw/shared; this module is responsible for atomically writing the computed result to MongoDB.
+// Idempotent: $addToSet makes repeated calls with the same titleId safe.
 import type { Collections } from '@nw/shared';
 import { grantTitle } from '@nw/shared';
 import { createLogger } from '@nw/shared';
@@ -8,12 +8,12 @@ import { createLogger } from '@nw/shared';
 const log = createLogger('meta:titles');
 
 /**
- * 把 titleId 授予指定玩家：
- *   1. 读当前 titles[] + equipped.title
- *   2. 用 grantTitle 纯函数计算新状态
- *   3. $addToSet 写 titles；若自动佩戴变更则同步 $set equipped.title
+ * Grant a titleId to the specified player:
+ *   1. Read current titles[] + equipped.title
+ *   2. Compute new state using the grantTitle pure function
+ *   3. Write titles with $addToSet; if the auto-equip result changed, also $set equipped.title
  *
- * 幂等：已拥有则提前返回。玩家 save 不存在时跳过（首次登录惰性创建后再授）。
+ * Idempotent: returns early if already owned. Skipped if the player's save does not exist (lazily created on first login; grant again afterwards).
  */
 export async function grantTitleToPlayer(
   cols: Collections,
@@ -30,7 +30,7 @@ export async function grantTitleToPlayer(
   }
 
   const prevTitles: string[] = (doc.save as { titles?: string[] }).titles ?? [];
-  if (prevTitles.includes(titleId)) return; // 已有，幂等返回
+  if (prevTitles.includes(titleId)) return; // already owned, idempotent return
 
   const prevEquipped: string | undefined = (doc.save.equipped as Record<string, string> | undefined)?.['title'];
   const { equippedTitle } = grantTitle(prevTitles, prevEquipped, titleId);

@@ -124,7 +124,7 @@ class GameEngineImpl implements IGameEngine {
     this.mode = config.mode ?? 'pvp';
 
     // PvE-shaped modes: scripted enemy (WaveDirector) + upgrade-buffed blueprints.
-    // `campaign` (single-player PvE) and `siege` (SLG 围攻, S8-3) share the same
+    // `campaign` (single-player PvE) and `siege` (SLG siege battle, S8-3) share the same
     // mechanics; they differ only in which builder injects the upgrade levels.
     const pve = this.mode === 'campaign' || this.mode === 'siege';
 
@@ -286,7 +286,7 @@ class GameEngineImpl implements IGameEngine {
         // disturb levels that draw from the full CARD_DEFINITIONS pool.
         const drawPrng = new Prng(config.seed ^ 0xC0FFEE00);
         if (config.level.id === TUTORIAL_LEVEL_ID) {
-          // 专属教学关：scripted draw so the cap-point director always finds the
+          // Dedicated tutorial level: scripted draw so the cap-point director always finds the
           // teaching cards in order (ONBOARDING_DESIGN §3.3). The filler pool is
           // the loadout minus the teaching cards so a played teaching card never
           // refills into another teaching card. Stage C swaps this back to a
@@ -417,9 +417,11 @@ class GameEngineImpl implements IGameEngine {
    *  11. Win condition check
    */
   step(tick: number, commands: readonly PlayerCommand[]): readonly GameEvent[] {
-    // 结束后 step 提前返回、不清事件队列：game_over 会滞留在 state.events 被渲染层每帧
-    // 重复消费（重复结算/埋点双发 bug 的根因）。此处不清队列——多 step/帧的 catch-up 下
-    // 同一 tick 内清掉会让渲染层错过 game_over；改由 GameRenderer 的 gameEnded 一次性闸门兜住。
+    // After game over, step returns early without clearing the event queue: if we cleared it,
+    // game_over would remain in state.events and be re-consumed by the render layer every frame
+    // (the root cause of duplicate settlement / double-fire analytics bugs). We do NOT clear here —
+    // in a catch-up scenario with multiple steps/frames, clearing within the same tick would cause
+    // the render layer to miss game_over. The GameRenderer's gameEnded one-shot gate handles it instead.
     if (this.state.phase === GamePhase.GameOver) return [];
 
     if (this.state.phase === GamePhase.Idle) {
@@ -920,7 +922,7 @@ class GameEngineImpl implements IGameEngine {
 
       // SLG siege battle (G3, §16.1): hard time limit. Reaching battleTimeoutTicks
       // with both bases still standing → the defender (Top / owner 1) wins —
-      // "超时 / 同归于尽 → 进攻方负 (防守占优)". Both base-down cases are handled
+      // "timeout / mutual destruction → attacker loses (defense-favored)". Both base-down cases are handled
       // above, so on arrival here both bases are alive by construction.
       if (this.level!.battleTimeoutTicks !== undefined &&
           this.state.elapsedTicks >= this.level!.battleTimeoutTicks) {

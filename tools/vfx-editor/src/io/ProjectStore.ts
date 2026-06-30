@@ -7,7 +7,7 @@
  * deterministic ids ("builtin:<id>") on first run; user effects get a uuid.
  *
  * Mirrors animator's nw-animator store but stores plain JSON (not zip blobs),
- * since effects are tiny (DESIGN §8: 自动保存仅 IndexedDB 工作副本).
+ * since effects are tiny (DESIGN §8: autosave targets the IndexedDB working copy only).
  */
 import { EffectDef } from '@vfx/types';
 

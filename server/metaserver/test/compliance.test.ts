@@ -1,9 +1,9 @@
-// C5 合规接口单测：C5-a 概率公示（权重和=1）+ C5-b 账号删除（auth 410）+
-//                 C5-c GDPR 同意（无同意不记录）。
+// C5 compliance interface unit tests: C5-a probability disclosure (weight sum=1) + C5-b account deletion (auth 410) +
+//                 C5-c GDPR consent (no consent → no ingestion).
 import { describe, it, expect } from 'vitest';
 
-// ── C5-a：概率公示 ─────────────────────────────────────────────────────────
-// poolEntries 各条目权重已知，概率 = weight / totalWeight。
+// ── C5-a: probability disclosure ─────────────────────────────────────────────────────────
+// poolEntries have known per-entry weights; probability = weight / totalWeight.
 
 function computeProbabilities(entries: { weight: number }[]): number[] {
   const total = entries.reduce((s, e) => s + e.weight, 0);
@@ -36,7 +36,7 @@ describe('C5-a gacha probability', () => {
   });
 });
 
-// ── C5-c：GDPR 同意逻辑 ───────────────────────────────────────────────────
+// ── C5-c: GDPR consent logic ───────────────────────────────────────────────────
 
 /**
  * Simulates the consent gate in analyticsvc/httpApi.ts:
@@ -68,7 +68,7 @@ describe('C5-c GDPR consent gate', () => {
   });
 });
 
-// ── C5-b：软删除标记逻辑 ──────────────────────────────────────────────────
+// ── C5-b: soft-delete flag logic ──────────────────────────────────────────────────
 
 /**
  * Simulates the rejectIfBanned check in service.ts:

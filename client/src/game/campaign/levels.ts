@@ -77,8 +77,8 @@ import chStress from './levels/ch_stress.json';
  * {@link CAMPAIGN_LEVEL_ORDER}.
  */
 
-// 专属教学关（ONBOARDING_DESIGN §3）。仅入 CAMPAIGN_LEVELS 供 getLevel 取，
-// 不入 CAMPAIGN_LEVEL_ORDER —— 不计章节进度、不占 ch1 序号、不参与解锁判定。
+// Dedicated tutorial level (ONBOARDING_DESIGN §3). Included in CAMPAIGN_LEVELS so getLevel can look it up,
+// but excluded from CAMPAIGN_LEVEL_ORDER — it does not count toward chapter progress, does not occupy a ch1 slot, and is not subject to unlock logic.
 const CH0_TUTORIAL = parseLevelDefinition(ch0Tutorial, 'ch0_tutorial.json');
 const CH1_LV1  = parseLevelDefinition(ch1Lv1,  'ch1_lv1.json');
 const CH1_LV2  = parseLevelDefinition(ch1Lv2,  'ch1_lv2.json');

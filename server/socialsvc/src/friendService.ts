@@ -1,6 +1,6 @@
-// 好友 + 私聊服务（SOCIAL_SVC_DESIGN §3.2 / §3.3 P2）。
-// 逻辑与 metaserver/src/social.ts 对齐；数据层改为 nw_social 集合；
-// publicId 反查改为调 SocialMetaClient（不直连 accounts 库）。
+// Friend + private-chat service (SOCIAL_SVC_DESIGN §3.2 / §3.3 P2).
+// Logic aligned with metaserver/src/social.ts; data layer switched to the nw_social collections;
+// publicId reverse-lookup changed to call SocialMetaClient (no direct connection to the accounts database).
 import { randomUUID } from 'node:crypto';
 import type { SocialCollections } from './db';
 import type { SocialGatewayClient } from './gatewayClient';
@@ -53,15 +53,15 @@ export class FriendService {
     this.now = deps.now;
   }
 
-  // ── 好友 ──────────────────────────────────────────────────────────────────
+  // ── Friends ──────────────────────────────────────────────────────────────────
 
-  /** 仅拿 accountId 列表（presence 扇出用，不需要资料）。 */
+  /** Fetch only the accountId list (for presence fan-out; no profile data needed). */
   async getFriendAccountIds(accountId: string): Promise<string[]> {
     const edges = await this.cols.friendEdges.find({ owner: accountId }, { projection: { friend: 1 } }).toArray();
     return edges.map((e) => e.friend);
   }
 
-  /** 批量 accountId → publicId（presence 扇出用）。缺失 accountId 直接跳过。 */
+  /** Batch accountId → publicId lookup (for presence fan-out). Missing accountIds are silently skipped. */
   async batchPublicIds(accountIds: string[]): Promise<Map<string, string>> {
     const out = new Map<string, string>();
     if (accountIds.length === 0) return out;
@@ -78,7 +78,7 @@ export class FriendService {
     const friendIds = edges.map((e) => e.friend);
     const profiles = await this.meta.batchProfiles(friendIds);
 
-    // 在线态
+    // online presence
     const presence = this.gateway.available ? await this.gateway.presence(friendIds) : {};
 
     const out: FriendView[] = [];
@@ -220,7 +220,7 @@ export class FriendService {
           { upsert: true },
         ),
       ]);
-      // 好友变更 → gateway presence 缓存失效 + 双向 push
+      // Friend relationship changed → invalidate gateway presence cache + bidirectional push
       void this.gateway.invalidateFriends(accountId);
       void this.gateway.invalidateFriends(other);
       const profiles = await this.meta.batchProfiles([accountId, other]);
@@ -285,9 +285,9 @@ export class FriendService {
     return true;
   }
 
-  // ── 私聊 ──────────────────────────────────────────────────────────────────
+  // ── Private chat ──────────────────────────────────────────────────────────────────
 
-  /** 每分钟发消息速率限流（进程内滑窗）。 */
+  /** Per-minute message send rate limiter (in-process sliding window). */
   private readonly chatRate = new Map<string, number[]>();
 
   allowChat(accountId: string, now: number, ratePerMin = 30): boolean {

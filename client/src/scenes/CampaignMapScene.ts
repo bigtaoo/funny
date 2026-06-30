@@ -11,7 +11,7 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
 
-// ── CampaignMapScene (S3-5 → CAMPAIGN_DESIGN §12) — the「战役笔记本」─────────────
+// ── CampaignMapScene (S3-5 → CAMPAIGN_DESIGN §12) — the "campaign notebook" ──────
 //
 // The PvE entry is a diegetic open notebook, not a flat list. Two page kinds:
 //   • TOC (landing): one card per chapter with venue name + star progress + lock
@@ -41,7 +41,7 @@ export interface CampaignMapCallbacks {
   getCleared(): string[];
   /** Online = can reach /pve/* (clear/unlock are server-authoritative, §8). Offline gates new unlocks. */
   isOnline(): boolean;
-  /** Level ids with an offline clear queued for settlement (shown as「待结算」). */
+  /** Level ids with an offline clear queued for settlement (shown as "pending settlement"). */
   getPendingLevels(): string[];
 }
 
@@ -105,7 +105,7 @@ export class CampaignMapScene implements Scene {
     // during a flip `this.hits = []` and `handleDown` is a no-op, and the flip
     // only settles from `update()`. If the ticker stalled for any reason the
     // scene rendered but was completely dead — no level select, no way back —
-    // which is exactly the recurring「无法选择关卡/回不去大厅」bug. Building the
+    // which is exactly the recurring "can't select a level / can't get back to the lobby" bug. Building the
     // chapter page as the initial page keeps hits live from the first frame,
     // independent of update()/ticker timing. (Tab-to-tab page turns still flip.)
     this.chapter = currentChapter(new Set(this.cb.getCleared()));
@@ -189,8 +189,9 @@ export class CampaignMapScene implements Scene {
   /** Draws the fixed top band into `root`; returns its height. Pushes its hits. */
   private buildHeader(root: PIXI.Container, hits: Hit[], titleStr: string, onBack: () => void, subtitleStr?: string): number {
     const { w, h } = this;
-    // 顶栏 chrome（深色条 + 左上返回）走 SceneHeader；标题由本场景自绘
-    // （有副标题时需抬升，§3.1 允许 title=null 让场景接管标题）。
+    // Top-bar chrome (dark strip + back button top-left) is handled by SceneHeader;
+    // the title is drawn by this scene (when a subtitle is present the title rises slightly;
+    // §3.1 allows title=null to let the scene own the title area).
     const hdr = drawSceneHeader(root, w, h, null);
     const tbH = hdr.headerH;
 
@@ -320,7 +321,7 @@ export class CampaignMapScene implements Scene {
 
     const titleStr = `${t('campaign.chapterLabel', { n: ch })} · ${t(map.venueKey)}`;
     // Narrator attribution: odd chapters are Tao's notebook, even are Anna's
-    // (CAMPAIGN_STORY.md framework table — Ch1/3/5 陶, Ch2/4/6 Anna).
+    // (CAMPAIGN_STORY.md framework table — Ch1/3/5 Tao, Ch2/4/6 Anna).
     const ownerStr = t(ch % 2 === 1 ? 'campaign.notebookOwner.tao' : 'campaign.notebookOwner.anna');
     const tbH = this.buildHeader(root, hits, titleStr, () => this.backToToc(), ownerStr);
 
@@ -534,7 +535,7 @@ export class CampaignMapScene implements Scene {
     card.addChild(tape);
   }
 
-  /** Rotated「第 N 章 · 通关」stamp near the chapter title. */
+  /** Rotated "Chapter N · Cleared" stamp near the chapter title. */
   private drawClearStamp(root: PIXI.Container, ch: number, x: number, y: number): void {
     const wrap = new PIXI.Container();
     const label = `${t('campaign.chapterLabel', { n: ch })} · ${t('campaign.chapterStamp')}`;

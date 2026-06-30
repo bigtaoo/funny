@@ -1,18 +1,21 @@
-// DefenseEditorScene — SLG 通用半场布兵编辑器（S8-9 C3 + G3-2c 推广为攻守两用）
+// DefenseEditorScene — SLG universal half-field deployment editor (S8-9 C3 + G3-2c generalized to offense/defense)
 //
-// 两种形态，由 target.mode 区分：
+// Two modes, distinguished by target.mode:
 //
-// ① 防守（mode='defense'）：为主城（tileKey='base'）或己方/盟军领地（tileKey='{x}:{y}'）
-//    编辑防守 config = 引擎 LevelDefinition 受限子集（U8 / U10）——守方（Top）半场 garrison +
-//    建筑行 defenderBuildings + defenderBaseLevel(0–3)。保存走 setDefense（覆盖写）。
+// ① Defense (mode='defense'): edit the defense config for the home base (tileKey='base') or
+//    allied/own territory (tileKey='{x}:{y}') = engine LevelDefinition restricted subset (U8/U10) —
+//    defender (Top) half garrison + building row defenderBuildings + defenderBaseLevel(0–3).
+//    Save via setDefense (overwrite).
 //
-// ② 进攻（mode='attack'，G3-2c §16.2 / A7 §16.5）：编辑一支进攻布阵模板（队伍）——攻方（Bottom）
-//    半场预布已收集单位；无建筑 / 无基地强化（攻方只摆兵）。点击已放置单位可循环 HP 档位：
-//    100%→75%→50%→25%→100%（§16.5 SIEGE_UNIT_HP_MIN_FRACTION=0.25，4 步），committed 兵力
-//    = 各单位分配 HP 之和。保存走 getTeams→替换该槽→setTeams。
+// ② Attack (mode='attack', G3-2c §16.2 / A7 §16.5): edit a pre-deployment attack team template —
+//    attacker (Bottom) half with collected units pre-placed; no buildings / no base upgrades
+//    (attacker places units only). Tapping an already-placed unit cycles HP steps:
+//    100%→75%→50%→25%→100% (§16.5 SIEGE_UNIT_HP_MIN_FRACTION=0.25, 4 steps), committed troops
+//    = sum of each unit's allocated HP. Save via getTeams→replace slot→setTeams.
 //
-// 「已收集单位」约束（U8）：调色板只列有卡牌（CARD_DEFINITIONS）的单位/建筑，PvE-only 单位天然
-// 不出现。围攻发生时 worldsvc headless 跑引擎用攻方军 + 守方 config 算权威结果（§16.8）。
+// "Collected units" constraint (U8): palette only lists unit/building types from card definitions
+// (CARD_DEFINITIONS); PvE-only units naturally excluded. During a siege, worldsvc runs the engine
+// headless with the attacker army + defender config to compute the authoritative result (§16.8).
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';
@@ -26,7 +29,7 @@ import { WorldApiError } from '../net/WorldApiClient';
 import { ATTACK_LANES, BASE_COLS, CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '../game/config';
 import { CardType, UnitType, BuildingType } from '../game/types';
 
-/** 编辑目标：防守某格 / 编辑某支进攻队伍（G3-2c）。 */
+/** Edit target: defend a tile / edit an attack team (G3-2c). */
 export type DefenseEditorTarget =
   | { mode: 'defense'; tileKey: string }
   | { mode: 'attack'; teamId: string; teamName: string };
@@ -39,7 +42,7 @@ export interface DefenseEditorCallbacks {
 }
 
 // ── Collected pool (U8) ───────────────────────────────────────────────────────
-// 仅来自卡牌定义的单位/建筑类型 = 玩家可摆放的「已收集」集合；保留卡表出现顺序。
+// Only unit/building types from card definitions = the player's "collected" placeable set; preserves card table order.
 
 function distinctCollected<T extends string>(pick: (c: typeof CARD_DEFINITIONS[number]) => T | undefined): T[] {
   const out: T[] = [];
@@ -80,9 +83,9 @@ const ATTACK_ROWS = [8, 7, 6, 5, 4, 3, 2, 1] as const;
 
 const MAX_GARRISON = 30;
 
-// §16.5 每单位兵力滑杆（A7 调参）：4 档位 25%/50%/75%/100%，与 server/shared SIEGE_UNIT_HP_MIN_FRACTION 同值。
-const UNIT_HP_STEPS = 4;      // 档位数
-const UNIT_HP_MIN_FRAC = 0.25; // 最低档 = 蓝图满血的 25%
+// §16.5 Per-unit troop allocation slider (A7 tuning): 4 steps 25%/50%/75%/100%, matches server/shared SIEGE_UNIT_HP_MIN_FRACTION.
+const UNIT_HP_STEPS = 4;      // number of HP steps
+const UNIT_HP_MIN_FRAC = 0.25; // minimum step = 25% of blueprint max HP
 
 type GarrisonEntry = { unitType: UnitType; hp: number };
 
@@ -228,7 +231,7 @@ export class DefenseEditorScene implements Scene {
     this.baseLevel = typeof lv === 'number' ? Math.max(0, Math.min(3, Math.floor(lv))) : 0;
   }
 
-  /** 攻方军：每单位 initialHp = 玩家分配的兵力（§16.5 滑杆 25%–100%）。 */
+  /** Attacker army: each unit's initialHp = player-allocated troops (§16.5 slider 25%–100%). */
   private buildArmy(): ArmyEntry[] {
     return [...this.garrison.entries()].map(([key, entry]) => {
       const [col, row] = key.split(':').map(Number);
@@ -346,7 +349,7 @@ export class DefenseEditorScene implements Scene {
   private renderPalette(top: number): void {
     const { w } = this;
     const tools: { tool: Tool; label: string; tint: number }[] = [
-      // 建筑仅防守模式（攻方只摆兵）。
+      // Buildings are defense-mode only (attacker places units only).
       ...(this.hasBuildingRow ? COLLECTED_BUILDINGS.map((bt) => ({
         tool: { kind: 'building', type: bt } as Tool, label: t(nameKeyFor('building', bt)), tint: C.gold,
       })) : []),
@@ -444,7 +447,7 @@ export class DefenseEditorScene implements Scene {
       }
     }
 
-    // Row label (left): defense → 建筑行; attack → 出兵行 at the home row (bottom).
+    // Row label (left): defense → building row; attack → spawn row at the home row (bottom).
     const lbl = txt(this.hasBuildingRow ? t('world.defense.buildRow') : t('world.team.frontRow'), 9, C.mid);
     lbl.anchor.set(1, 0.5);
     lbl.x = gridX - 3;
@@ -481,7 +484,7 @@ export class DefenseEditorScene implements Scene {
     g.drawCircle(cx, cy, r);
     g.endFill();
 
-    // Attack mode: draw HP fraction bar below circle (§16.5 滑杆).
+    // Attack mode: draw HP fraction bar below circle (§16.5 slider).
     if (hp !== undefined && this.mode === 'attack') {
       const maxHp = UNIT_BLUEPRINTS[type].hp;
       const frac = maxHp > 0 ? Math.min(1, hp / maxHp) : 1;
@@ -500,7 +503,7 @@ export class DefenseEditorScene implements Scene {
     this.bodyLayer.addChild(panel);
 
     const countsStr = this.mode === 'attack'
-      // committed 兵力 = 各单位分配 HP 之和（§16.5 点击格子循环档位；出征扣此数）。
+      // committed troops = sum of each unit's allocated HP (§16.5 tap cell to cycle steps; this total is deducted on march).
       ? `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}`
       : `${t('world.defense.buildings')} ${this.buildings.size}   ${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}`;
     const counts = txt(countsStr, 11, C.dark);
@@ -534,7 +537,7 @@ export class DefenseEditorScene implements Scene {
     } });
   }
 
-  /** 攻方军 committed 兵力 = 各单位分配 HP 之和（§16.5 滑杆调整后与 buildArmy / 服务端一致）。 */
+  /** Attacker army committed troops = sum of each unit's allocated HP (§16.5 slider; consistent with buildArmy / server). */
   private committedTroops(): number {
     let sum = 0;
     for (const entry of this.garrison.values()) sum += entry.hp;

@@ -6,13 +6,13 @@ on:
   pull_request:
   workflow_dispatch:
 
-# 同一分支/PR 的旧跑批自动取消，省 runner。
+# Previous runs for the same branch/PR are automatically cancelled to save runner minutes.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # 快路：类型检查 + 单测 + 构建，无需 Docker，几分钟内出结果。
+  # Fast path: type-check + unit tests + build, no Docker needed, results within a few minutes.
   build-test:
     name: build + unit tests
     runs-on: ubuntu-latest
@@ -27,7 +27,7 @@ jobs:
             client/package-lock.json
             server/package-lock.json
 
-      # —— 服务端：十包 tsc -b（含确定性引擎 @nw/engine）——
+      # —— Server: tsc -b across ten packages (including deterministic engine @nw/engine) ——
       - name: server install
         working-directory: server
         run: npm ci
@@ -35,15 +35,15 @@ jobs:
         working-directory: server
         run: npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc
 
-      # —— 客户端：单测 + web 构建 ——
+      # —— Client: unit tests + web build ——
       - name: client install
         working-directory: client
         run: npm ci
       - name: client unit tests
         working-directory: client
         run: npm test
-      # UI 冒烟：headless PIXI adapter 在纯 Node 里构造真实场景，证明各场景能正常启动。
-      # 无需 Docker / 浏览器 / 活栈，故放在快路。
+      # UI smoke: headless PIXI adapter constructs real scenes in pure Node to prove each scene starts correctly.
+      # No Docker / browser / live stack needed, so this lives in the fast path.
       - name: client UI smoke tests
         working-directory: client
         run: npm run test:ui
@@ -51,14 +51,14 @@ jobs:
         working-directory: client
         run: npm run build:web
 
-  # 慢路：docker compose 起全栈（mongo + meta + commercial + gateway + matchsvc + game），
-  # 在 runner 宿主机上以 Node 进程跑真实客户端编排核心（createAppCore）做全链路 E2E。
+  # Slow path: docker compose brings up the full stack (mongo + meta + commercial + gateway + matchsvc + game),
+  # then runs the real client orchestration core (createAppCore) as a Node process on the runner host for full end-to-end tests.
   e2e:
     name: full-link E2E (live stack)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      # CI 用固定弱密钥（栈是 PR 级临时的、不暴露公网）。生产由 .env 注入强随机串。
+      # CI uses fixed weak keys (the stack is ephemeral and not exposed to the public internet). Production injects strong random strings via .env.
       NW_JWT_SECRET: ci-jwt-secret
       NW_INTERNAL_KEY: ci-internal-key
       NW_ADMIN_JWT_SECRET: ci-admin-jwt-secret
@@ -75,7 +75,7 @@ jobs:
         working-directory: client
         run: npm ci
 
-      # 起全栈并等所有服务 healthy（--wait 配合 compose 里的 healthcheck）。不起 caddy。
+      # Bring up the full stack and wait for all services to be healthy (--wait works with healthchecks in compose). Caddy is not started.
       - name: bring up server stack
         working-directory: server
         run: |
@@ -83,11 +83,11 @@ jobs:
             up -d --build --wait \
             redis mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc
 
-      # SLG worldsvc 部署冒烟（S8-0）：证明第七进程在 prod 镜像里起得来、公网 REST 第四面可达。
+      # SLG worldsvc deployment smoke (S8-0): proves the 7th process starts in the prod image and the public REST 4th face is reachable.
       - name: worldsvc health smoke
         run: curl -fsS http://localhost:18084/health
 
-      # analyticsvc 部署冒烟（A9-1）：证明第九进程在 prod 镜像里起得来。
+      # analyticsvc deployment smoke (A9-1): proves the 9th process starts in the prod image.
       - name: analyticsvc health smoke
         run: curl -fsS http://localhost:18085/health
 
@@ -98,8 +98,8 @@ jobs:
           NW_EXPECT_GATEWAY: ws://localhost:8086/gw
         run: npm run test:e2e
 
-      # 容量冒烟：小规模舰队（20 客户端）跑真实栈，验证匹配在并发下成立。
-      # 真正的容量探测在本地/专用环境调大 NW_LOAD_CLIENTS 进行。
+      # Capacity smoke: small fleet (20 clients) against the live stack, verifying matchmaking holds under concurrency.
+      # Real capacity probing is done locally / in a dedicated environment with a larger NW_LOAD_CLIENTS value.
       - name: run ranked load smoke (small fleet)
         working-directory: client
         env:
@@ -107,7 +107,7 @@ jobs:
           NW_LOAD_CLIENTS: '20'
         run: npm run test:load
 
-      # 失败时倒出全栈日志便于排查（端口/握手/匹配队列）。
+      # Dump full stack logs on failure to aid diagnosis (ports / handshakes / matchmaking queue).
       - name: dump server logs on failure
         if: failure()
         working-directory: server

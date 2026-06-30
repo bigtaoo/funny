@@ -1,9 +1,9 @@
-// worldsvc 公网 REST 端到端（S8-0/S8-1）：真实 node:http 起服务 + 全局 fetch 打（curl 等价）。
-//   • /health 无需鉴权；无 token → 401；
-//   • GET /world/map、/world/me、/world/tile/{id}（程序化 + 玩家状态）；
-//   • POST /world/join、/world/occupy（写库做实）；
-//   • 未实现写端点 → 501；未知路由 → 404。
-// service 需真实 Mongo（专属库）；Mongo 不可达整套 skip。
+﻿// worldsvc public REST end-to-end (S8-0/S8-1): real node:http server + global fetch calls (curl equivalent).
+//   • /health requires no authentication; missing token → 401;
+//   • GET /world/map, /world/me, /world/tile/{id} (procedural + player state);
+//   • POST /world/join, /world/occupy (real database writes);
+//   • unimplemented write endpoints → 501; unknown routes → 404.
+// Service requires real Mongo (dedicated database); entire suite skipped if Mongo is unreachable.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
@@ -26,12 +26,12 @@ async function tryConnect(): Promise<WorldMongo | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[worldsvc.httpApi.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[worldsvc.httpApi.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
 const CENTER_Y = Math.floor(SLG_MAP_H / 2);
 
-/** 找一个资源格（远离主城）。 */
+/** Find a resource tile (far from the capital). */
 function findResource(): { x: number; y: number } {
   for (let r = 0; r < 60; r++) {
     for (let dx = -r; dx <= r; dx++) {
@@ -45,7 +45,7 @@ function findResource(): { x: number; y: number } {
   throw new Error('no resource tile');
 }
 
-/** 找一个可占领空闲格（非中心、非给定主城格 (exX,exY)）。 */
+/** Find a free tile that can be occupied (not the center tile, not the given base tile (exX,exY)). */
 function findFreeNear(sx: number, sy: number, exX: number, exY: number): { x: number; y: number } {
   for (let r = 0; r < 60; r++) {
     for (let dx = -r; dx <= r; dx++) {
@@ -92,17 +92,17 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
   });
 
   const auth = { authorization: `Bearer ${token}` };
-  // 自动落城（§3.4）：落点由服务端选，join 测试捕获后供后续行军用。
+  // Auto-settle base (§3.4): landing position is chosen by the server; captured from the join response for use in subsequent march tests.
   let baseX = 0;
   let baseY = 0;
 
-  it('GET /health 无需鉴权', async () => {
+  it('GET /health requires no authentication', async () => {
     const r = await fetch(`${base}/health`);
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual({ ok: true, service: 'worldsvc' });
   });
 
-  it('无 token → 401', async () => {
+  it('no token → 401', async () => {
     const r = await fetch(`${base}/world/map?worldId=${W}&cx=10&cy=10&r=2`);
     expect(r.status).toBe(401);
     const body = await r.json();
@@ -110,7 +110,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(body.error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('GET /world/map：程序化视区 + 中心唯一', async () => {
+  it('GET /world/map: procedural viewport + unique center tile', async () => {
     const r = await fetch(`${base}/world/map?worldId=${W}&cx=${CENTER_X}&cy=${CENTER_Y}&r=2`, {
       headers: auth,
     });
@@ -121,16 +121,16 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(body.data.tiles.filter((tl: { type: string }) => tl.type === 'center')).toHaveLength(1);
   });
 
-  it('POST /world/join（系统自动落城，§3.4）→ /world/me joined, /world/tile base', async () => {
+  it('POST /world/join (server auto-places base, §3.4) → /world/me joined, /world/tile base', async () => {
     const jr = await fetch(`${base}/world/join`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },
-      body: JSON.stringify({ worldId: W }), // 不传坐标——服务端自动选点
+      body: JSON.stringify({ worldId: W }), // no coordinates provided — server picks the landing spot automatically
     });
     expect(jr.status).toBe(200);
     const data = (await jr.json()).data as { joined: boolean; mainBaseTile: string };
     expect(data.joined).toBe(true);
-    // 落点由服务端决定：捕获后断言确为合法 base 格（非中心/障碍等）。
+    // Landing spot is server-determined: captured and asserted to be a valid base tile (not center, not obstacle, etc.).
     expect(data.mainBaseTile).toMatch(new RegExp(`^${W}:\\d+:\\d+$`));
     const parts = data.mainBaseTile.split(':');
     baseX = Number(parts[parts.length - 2]);
@@ -157,7 +157,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect((await r.json()).data).toMatchObject({ type: 'territory', mine: true });
   });
 
-  it('POST /world/join 缺 worldId → 400', async () => {
+  it('POST /world/join missing worldId → 400', async () => {
     const r = await fetch(`${base}/world/join`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },
@@ -166,8 +166,8 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(r.status).toBe(400);
   });
 
-  it('POST /world/march → occupy 行军（marching）', async () => {
-    // acct-1 已自动落城（baseX,baseY）；向相邻空闲格发占领行军。
+  it('POST /world/march → occupy march (marching)', async () => {
+    // acct-1 has already auto-settled (baseX,baseY); sending an occupy march to a neighbouring free tile.
     const free = findFreeNear(baseX, baseY, baseX, baseY);
     const r = await fetch(`${base}/world/march`, {
       method: 'POST',
@@ -189,7 +189,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(typeof body.data.marchId).toBe('string');
   });
 
-  it('POST /world/march 缺坐标 → 400', async () => {
+  it('POST /world/march missing coordinates → 400', async () => {
     const r = await fetch(`${base}/world/march`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },
@@ -198,7 +198,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(r.status).toBe(400);
   });
 
-  it('防守 config（C3）：PUT 主城防守 → GET 取回；缺 worldId → 400；未知路由 → 404', async () => {
+  it('defense config (C3): PUT home base defense → GET retrieves it; missing worldId → 400; unknown route → 404', async () => {
     const config = {
       garrison: [{ unitType: 'infantry', col: 3, row: 16 }],
       defenderBuildings: [{ buildingType: 'arrow_tower', col: 7 }],
@@ -228,7 +228,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(nf.status).toBe(404);
   });
 
-  it('扫荡端点（S8-3）：缺坐标 → 400', async () => {
+  it('sweep endpoint (S8-3): missing coordinates → 400', async () => {
     const sweep = await fetch(`${base}/world/sweep`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },

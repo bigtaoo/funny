@@ -3,35 +3,35 @@ import { loadServerEnv, type ServerEnv } from '@nw/shared';
 export interface MetaEnv extends ServerEnv {
   port: number;
   host: string;
-  /** commercial 内部 HTTP 基址（钱包/扣币/盲盒/充值/广告）。null = 经济端点不可用（503）。 */
+  /** Internal HTTP base URL for the commercial service (wallet / coin deduction / gacha / recharge / ads). null = economy endpoints unavailable (503). */
   commercialUrl: string | null;
-  /** gateway 内部 HTTP 基址（对等裁判 /gw/judge）。null = 裁判不可用（ranked 不一致直接作废）。 */
+  /** Internal HTTP base URL for the gateway service (peer judge /gw/judge). null = judge unavailable (ranked hash mismatch is voided directly). */
   gatewayInternalUrl: string | null;
   /**
-   * gateway 公开控制面 WS 地址（客户端连这里做房间/匹配），由 auth/save 回包下发给客户端。
-   * 客户端只硬编码 meta 地址，gateway/game 地址都实时获取——gateway 走这里、game 走 match_found。
-   * null = 不下发（客户端退回自身配置/推导）。形如 ws://host:8082/gw 或 wss://host/gw。
+   * Public control-plane WebSocket URL for the gateway (clients connect here for rooms/matchmaking), delivered to clients in auth/save responses.
+   * Clients hard-code only the meta address; gateway and game addresses are fetched at runtime — gateway via this URL, game via match_found.
+   * null = not delivered (client falls back to its own config/derivation). Example: ws://host:8082/gw or wss://host/gw.
    */
   gatewayPublicUrl: string | null;
-  /** 成就反作弊离线抽查批间隔（ms）。0 = 禁用（缺省 60000）。需配 gatewayInternalUrl 才有裁判可复算。 */
+  /** Achievement anti-cheat offline audit batch interval (ms). 0 = disabled (default 60000). Requires gatewayInternalUrl to be configured for judge re-computation. */
   auditIntervalMs: number;
-  /** 每次抽查批检视的候选 ranked 局数（缺省 5）。 */
+  /** Number of candidate ranked matches inspected per audit batch (default 5). */
   auditSampleLimit: number;
   /**
-   * 每 IP 15 分钟内允许的最大 auth 尝试次数（register/login/oauth）。
-   * 0 = 禁用限流（测试/CI 环境用）。默认 20。
+   * Maximum auth attempts (register/login/oauth) per IP per 15 minutes.
+   * 0 = rate limiting disabled (for test/CI environments). Default 20.
    */
   authRateLimit: number;
-  /** admin 内部基址（轮询 GET /admin/internal/flags 拿 feature flag 原始规则；供公开 /bootstrap 求值）。null = 不读 flag（全 default → bootstrap 恒空 map）。 */
+  /** Internal base URL for the admin service (polls GET /admin/internal/flags for raw feature flag rules; used to evaluate the public /bootstrap endpoint). null = flags not read (all defaults → bootstrap always returns an empty map). */
   adminInternalUrl: string | null;
-  /** socialsvc 内部 HTTP 基址（P2：好友/私聊/邮件路由代理 + 邮件领取）。null = 不代理（路由仍由 metaserver 自身处理）。 */
+  /** Internal HTTP base URL for the social service (P2: friend/DM/mail routing proxy + mail claim). null = not proxied (routes remain handled by metaserver itself). */
   socialsvcInternalUrl: string | null;
-  /** 部署区域（注入 feature flag 求值 ctx）。空 = 不按区定向。 */
+  /** Deployment region (injected into the feature flag evaluation context). Empty = no region-based targeting. */
   region: string | null;
   /**
-   * Loki push API 地址（POST /client/log 转发客户端日志至此，FEATURE_FLAGS_DESIGN §9.4）。
-   * null = 不转发（静默丢弃）。形如 http://loki:3100/loki/api/v1/push；需 metaserver 容器能解析到
-   * loki（obs 栈独立网络，见 observability/README.md「网络坑」）。不可达 → 静默丢弃，绝不影响玩家。
+   * Loki push API URL (POST /client/log forwards client logs here, FEATURE_FLAGS_DESIGN §9.4).
+   * null = not forwarded (silently dropped). Example: http://loki:3100/loki/api/v1/push; requires the metaserver container to resolve
+   * loki (the observability stack runs on an isolated network — see observability/README.md "network pitfalls"). Unreachable → silently dropped, never affects players.
    */
   lokiPushUrl: string | null;
 }
@@ -39,7 +39,7 @@ export interface MetaEnv extends ServerEnv {
 export function loadMetaEnv(): MetaEnv {
   return {
     ...loadServerEnv(),
-    // 默认 18080：Windows(Hyper-V/WSL)常把 8080 纳入 netsh 保留端口段，listen 报 EACCES。
+    // Default 18080: Windows (Hyper-V/WSL) often reserves port 8080 in the netsh reserved port range, causing listen to fail with EACCES.
     port: Number(process.env.NW_META_PORT ?? 18080),
     host: process.env.NW_META_HOST ?? '0.0.0.0',
     commercialUrl: process.env.NW_COMMERCIAL_INTERNAL_URL ?? null,

@@ -1,8 +1,11 @@
-// PvE L1 录像抽检复算（PVE_INTEGRITY §8.6 第 3 步）—— judgeRunner 的战役分支。
+// PvE L1 replay spot-check re-verification (PVE_INTEGRITY §8.6 step 3) — campaign branch of judgeRunner.
 //
-// 录一局真实战役（RecordingInputSource + LocalInputSource，玩家脚本指令 + WaveDirector 敌方），
-// 跑到终局拿到「真实星数」，再把录像经 replayToUploadFrames 编码 → 解回 JudgeRequest 喂 runJudge
-// 复算，断言复算星数与原局逐字一致（裁判用 seed+level+权威蓝图+玩家帧确定性重算，作弊者改不了）。
+// Records a real campaign run (RecordingInputSource + LocalInputSource, player script commands
+// + WaveDirector enemy side), runs to completion to obtain the "true star count", then encodes
+// the replay via replayToUploadFrames → decodes back into a JudgeRequest and feeds it to
+// runJudge for re-verification. Asserts the re-verified star count matches the original
+// verbatim (the judge deterministically re-runs from seed+level+authoritative blueprints+
+// player frames, so cheaters cannot alter the outcome).
 import { describe, it, expect } from 'vitest';
 import { createGameEngine } from '../src/game/GameEngine';
 import { RecordingInputSource } from '../src/game/net/ReplayInputSource';
@@ -21,7 +24,7 @@ const GameOver = GamePhase.GameOver;
 
 type PlayScript = { plays: Record<number, [number, number]>; upgrades?: number[] };
 
-/** 驱动引擎直到终局（或步数上限），按脚本在精确帧注入玩家指令。返回实跑帧数。 */
+/** Drive the engine until game over (or the tick limit), injecting player commands at exact frames per script. Returns the actual tick count run. */
 function driveToEnd(engine: IGameEngine, maxTicks: number, script: PlayScript): number {
   const upgrades = new Set(script.upgrades ?? []);
   let i = 0;
@@ -34,7 +37,7 @@ function driveToEnd(engine: IGameEngine, maxTicks: number, script: PlayScript): 
   return i;
 }
 
-/** 原局终局星数（与 runPveJudge 同公式）：玩家(owner 0)胜才算星，否则 0。 */
+/** Star count from the original run (same formula as runPveJudge): stars are awarded only if the player (owner 0) wins, otherwise 0. */
 function trueStars(engine: IGameEngine, thresholds: [number, number, number] | undefined): number {
   const w = engine.state.winner;
   const winner: OwnerId | null = w === Side.Top ? 1 : w === Side.Bottom ? 0 : null;
@@ -42,7 +45,7 @@ function trueStars(engine: IGameEngine, thresholds: [number, number, number] | u
   return computeStars(thresholds, remainingHpPct(engine.state.snapshotStats()[0].damageTakenByBase));
 }
 
-/** 上传帧（base64）→ JudgeRequest 帧（bytes），模拟 gateway 的 decodeFrames。 */
+/** Upload frames (base64) → JudgeRequest frames (bytes), simulating gateway's decodeFrames. */
 function toJudgeFrames(upload: ReturnType<typeof replayToUploadFrames>): FrameCmds[] {
   return upload.map((f) => ({
     frame: f.frame,
@@ -50,33 +53,33 @@ function toJudgeFrames(upload: ReturnType<typeof replayToUploadFrames>): FrameCm
   }));
 }
 
-describe('judgeRunner — PvE 抽检复算', () => {
-  it('复算星数与原局终局逐字一致（编码→解码→战役重算闭环）', () => {
+describe('judgeRunner — PvE spot-check re-verification', () => {
+  it('re-verified star count matches the original verbatim (encode→decode→campaign re-run closed loop)', () => {
     const SEED = 0xbeef;
     const level = CAMPAIGN_LEVELS[CAMPAIGN_LEVEL_ORDER[0]!]!;
     const cfg: GameConfig = { seed: level.seed, players: [{ id: 0 }, { id: 1 }], mode: 'campaign', level };
     const script: PlayScript = { plays: { 30: [0, 1], 120: [0, 8], 260: [1, 4] }, upgrades: [60] };
 
-    // 录一局到终局。
+    // Record a run to completion.
     const rec = new RecordingInputSource(new LocalInputSource());
     const original = createGameEngine(cfg, rec);
     const ran = driveToEnd(original, 6000, script);
-    expect(original.state.phase).toBe(GameOver); // 关卡确定性必然分出胜负
+    expect(original.state.phase).toBe(GameOver); // level is deterministic and always produces a winner
     const expectedStars = trueStars(original, level.rewards?.starThresholds);
     const replay = rec.snapshot({ seed: level.seed, mode: 'campaign', configRef: level.id });
 
-    // 编码上传帧 → 解回 JudgeRequest（owner 0 only）。
+    // Encode upload frames → decode back into a JudgeRequest (owner 0 only).
     const frames = toJudgeFrames(replayToUploadFrames(replay));
     for (const f of frames) for (const c of f.cmds) expect(c.side).toBe(0);
 
     const req: JudgeRequest = {
       requestId: 'pve-test',
-      seed: 0, // PvE 裁判忽略：本地查 level.seed
+      seed: 0, // PvE judge ignores this: level.seed is looked up locally
       mode: 0,
       endFrame: replay.endFrame,
       frames,
       levelId: level.id,
-      pveUpgrades: {}, // 无升级（与录制时一致）
+      pveUpgrades: {}, // no upgrades (consistent with the recording)
     };
 
     const out = runJudge(req);
@@ -85,7 +88,7 @@ describe('judgeRunner — PvE 抽检复算', () => {
     expect(ran).toBeGreaterThan(0);
   });
 
-  it('未知关卡 id → 复算失败（版本/数据不符）', () => {
+  it('unknown level id → re-verification fails (version/data mismatch)', () => {
     const req: JudgeRequest = {
       requestId: 'x',
       seed: 0,
@@ -98,8 +101,8 @@ describe('judgeRunner — PvE 抽检复算', () => {
     expect(runJudge(req)).toEqual({ ok: false, stateHash: '', winnerSide: 0, stars: 0, statsJson: '' });
   });
 
-  it('levelId 为空 → 走 PvP 分支（非 PvE）', () => {
-    // 空 level_id 的 JudgeRequest 不进 PvE 分支；无帧的 PvP 复算因引擎不终局返回 ok:false。
+  it('empty levelId → takes the PvP branch (not PvE)', () => {
+    // A JudgeRequest with an empty level_id skips the PvE branch; PvP re-verification with no frames returns ok:false because the engine never reaches game over.
     const req: JudgeRequest = {
       requestId: 'pvp',
       seed: 1,

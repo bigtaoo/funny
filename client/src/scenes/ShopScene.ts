@@ -15,7 +15,7 @@ import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 // flat hit-list. The economy itself is server-authoritative — every buy returns a
 // fresh SaveData that the app adopts; this scene only reads the current wallet via
 // getCoins() and re-renders. Gacha lives in its own scene, reached via the 🎁 tab.
-// (Top-up: the dev magic-code path was removed; real IAP / 优惠码兑换 lands later.)
+// (Top-up: the dev magic-code path was removed; real IAP / promo-code redemption lands later.)
 
 /** Outcome of a buy — ok, or a message key to surface as a toast. */
 export type ShopActionResult =
@@ -34,8 +34,9 @@ export interface ShopSceneCallbacks {
   recharge?(code: string): Promise<ShopActionResult>;
   openGacha(): void;
   /**
-   * 战令 Battle Pass 入口（LOBBY_IA_REDESIGN §3：付费主轴并入「商城」tab，主页不放 banner）。
-   * 仅登录在线时提供；缺省时不绘制该按钮。点击导航到 BattlePassScene（返回回到商城）。
+   * Battle Pass entry point (LOBBY_IA_REDESIGN §3: paid main axis merged into the "shop" tab,
+   * no banner on the home screen). Only provided when logged in and online; absent = button not drawn.
+   * Tapping navigates to BattlePassScene (back returns to the shop).
    */
   openBattlePass?(): void;
 }
@@ -85,7 +86,7 @@ export class ShopScene implements Scene {
     try {
       this.items = await this.cb.loadItems();
     } catch {
-      // 加载失败别假装空店：明确提示玩家（返回重进即重试）。
+      // On load failure don't pretend the shop is empty: surface a clear error to the player (go back and re-enter to retry).
       this.items = [];
       this.toast = { text: t('common.networkError'), color: C.red };
     }
@@ -157,8 +158,9 @@ export class ShopScene implements Scene {
   }
 
   /**
-   * 商城分组 tab 条（LOBBY_IA_REDESIGN P1.5）：[商城|盲盒|战令]，商城 active。
-   * 战令格仅在 openBattlePass 提供（登录在线）时出现。返回正文起点 y（strip 下沿）。
+   * Shop group tab strip (LOBBY_IA_REDESIGN P1.5): [Shop|Gacha|BattlePass], Shop active.
+   * The BattlePass tab only appears when openBattlePass is provided (logged in and online).
+   * Returns the body start y (bottom edge of the strip).
    */
   private drawGroupTabs(tbH: number): number {
     const { w, h } = this;

@@ -1,10 +1,10 @@
-// P2 后仅保留 splitAttachments / insertSystemMail / bulkInsertSystemMail。
-// 完整邮件 CRUD（getMail/readMail/deleteMail/claimMailAtomic）已迁至 socialsvc。
+// After P2, only splitAttachments / insertSystemMail / bulkInsertSystemMail remain here.
+// Full mail CRUD (getMail/readMail/deleteMail/claimMailAtomic) has been migrated to socialsvc.
 import type { Collections, MailDoc, MailAttachmentDoc } from '@nw/shared';
 import { MAIL_DEFAULT_TTL_SEC } from '@nw/shared';
 
 /**
- * 把附件按类型拆开（金币求和 / 皮肤 id / 物品 id→数量 / 材料 id→数量），供 service 发货。
+ * Split attachments by type (sum coins / skin id / item id→quantity / material id→quantity) for delivery by the service.
  */
 export function splitAttachments(attachments: MailAttachmentDoc[]): {
   coins: number;
@@ -60,8 +60,8 @@ function buildSystemMail(
 }
 
 /**
- * 系统邮件写入（运营补偿 / 活动奖励）。dispatchKey 幂等：_id = `${dispatchKey}:${to}`，
- * upsert $setOnInsert 防重复执行。返回是否新插入（供 push 判定）。
+ * Write a system mail (operator compensation / event reward). dispatchKey is idempotent: _id = `${dispatchKey}:${to}`,
+ * upsert $setOnInsert prevents duplicate execution. Returns whether it was newly inserted (used to decide whether to push a notification).
  */
 export async function insertSystemMail(
   cols: Collections,
@@ -76,8 +76,8 @@ export async function insertSystemMail(
 }
 
 /**
- * 批量系统邮件写入（全服 fan-out 分批）。同 insertSystemMail 的 dispatchKey 幂等。
- * 返回本次新插入的 accountId 列表，供调用方只对新收件人推红点。
+ * Bulk system mail write (server-wide fan-out in batches). Same dispatchKey idempotency as insertSystemMail.
+ * Returns the list of accountIds newly inserted this call, so the caller only pushes red-dot notifications to new recipients.
  */
 export async function bulkInsertSystemMail(
   cols: Collections,

@@ -1,5 +1,5 @@
-// bearerAuth 安全处理器（fastify-openapi-glue securityHandlers）。
-// 校验 JWT → 写 req.accountId；失败抛带 statusCode 的错误（glue 默认 401）。
+// bearerAuth security handler (fastify-openapi-glue securityHandlers).
+// Verifies the JWT → writes req.accountId; throws an error with statusCode on failure (glue defaults to 401).
 import type { FastifyRequest } from 'fastify';
 import type { JwtConfig } from '@nw/shared';
 import { ErrorCode, extractBearer, verifyToken } from '@nw/shared';

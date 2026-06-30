@@ -1,7 +1,7 @@
-// worldsvc getMapSparse 端到端（稀疏占领层 LOD）：真实 Mongo。Mongo 不可达整套 skip。
-//   验证：空图 / 己方占领 mine=true / 家族盟友 ally=true（lod=mid）/ thin 跳过 ally /
-//         lod=thin 不做 family 查询（仅 mine）/ 半径裁剪 / 只返回占领格（非全格）
-// 需 `cd server && docker compose up -d`。
+// worldsvc getMapSparse end-to-end (sparse occupation layer LOD): requires real Mongo. Entire suite skipped if Mongo is unreachable.
+//   Verifies: empty map / own tile mine=true / family ally=true (lod=mid) / thin skips ally /
+//             lod=thin does not query family (mine only) / radius clipping / only occupied tiles returned (not all tiles)
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   proceduralTile,
@@ -25,7 +25,7 @@ async function tryConnect(): Promise<WorldMongo | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[worldsvc.sparse.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[worldsvc.sparse.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
@@ -70,13 +70,13 @@ describe.skipIf(!mongo)('worldsvc getMapSparse e2e', () => {
     await m.close();
   });
 
-  it('空图：tiles 为空数组', async () => {
+  it('empty map: tiles is an empty array', async () => {
     const view = await svc.getMapSparse(W, 'a', 10, 10, 5, 'thin');
     expect(view.tiles).toHaveLength(0);
     expect(view.lod).toBe('thin');
   });
 
-  it('己方占领格：mine=true，坐标正确', async () => {
+  it('own occupied tile: mine=true, coordinates correct', async () => {
     const pos = findNeutral(10, 10);
     await svc.joinWorld(W, 'player-a', pos.x, pos.y);
 
@@ -87,13 +87,13 @@ describe.skipIf(!mongo)('worldsvc getMapSparse e2e', () => {
     expect(mine!.type).toBe('base');
   });
 
-  it('他人占领格：occupied だが mine 未设', async () => {
+  it("another player's occupied tile: occupied but mine not set", async () => {
     const posA = findNeutral(10, 10);
     const posB = findNeutral(50, 50);
     await svc.joinWorld(W, 'player-a', posA.x, posA.y);
     await svc.joinWorld(W, 'player-b', posB.x, posB.y);
 
-    // player-a 看 player-b 的主城
+    // player-a views player-b's base tile
     const view = await svc.getMapSparse(W, 'player-a', posB.x, posB.y, 3, 'thin');
     const enemy = view.tiles.find((t) => t.x === posB.x && t.y === posB.y);
     expect(enemy).toBeDefined();
@@ -101,23 +101,23 @@ describe.skipIf(!mongo)('worldsvc getMapSparse e2e', () => {
     expect(enemy!.ally).toBeUndefined();
   });
 
-  it('lod=thin：不填 ally，即使是家族成员', async () => {
+  it('lod=thin: ally not populated, even for family members', async () => {
     const posA = findNeutral(10, 10);
     const posB = findNeutral(20, 10);
     await svc.joinWorld(W, 'player-a', posA.x, posA.y);
     await svc.joinWorld(W, 'player-b', posB.x, posB.y);
-    // 组成家族
+    // form a family
     await svc.createFamily(W, 'player-a', 'FamA', 'FA');
     await svc.joinFamily(W, 'player-b', (await svc.listFamilies(W))[0]!._id ?? '');
 
-    // thin LOD：不查 family，ally 不填
+    // thin LOD: no family query, ally not populated
     const view = await svc.getMapSparse(W, 'player-a', posB.x, posB.y, 3, 'thin');
     const tile = view.tiles.find((t) => t.x === posB.x && t.y === posB.y);
     expect(tile).toBeDefined();
     expect(tile!.ally).toBeUndefined();
   });
 
-  it('lod=mid：同家族成员 ally=true', async () => {
+  it('lod=mid: same-family member ally=true', async () => {
     const posA = findNeutral(10, 10);
     const posB = findNeutral(20, 10);
     await svc.joinWorld(W, 'player-a', posA.x, posA.y);
@@ -133,28 +133,28 @@ describe.skipIf(!mongo)('worldsvc getMapSparse e2e', () => {
     expect(tile!.mine).toBeUndefined();
   });
 
-  it('半径裁剪：MAX_RADIUS 40 上限；请求 r=999 被截断', async () => {
+  it('radius clipping: MAX_RADIUS 40 upper bound; request r=999 is truncated', async () => {
     const view = await svc.getMapSparse(W, 'a', 10, 10, 999, 'thin');
     expect(view.r).toBe(40);
   });
 
-  it('只返回占领格，未占领格不出现在 tiles 中', async () => {
+  it('only occupied tiles returned; unoccupied tiles do not appear in tiles', async () => {
     const pos = findNeutral(30, 30);
     await svc.joinWorld(W, 'player-a', pos.x, pos.y);
 
     const view = await svc.getMapSparse(W, 'player-a', pos.x, pos.y, 5, 'thin');
-    // 5x5 范围内大多数格子是未占领的；tiles 只含 player-a 的主城（1 格）
-    expect(view.tiles.length).toBeLessThan(11 * 11); // 远少于全格数
+    // most tiles in the 5x5 area are unoccupied; tiles contains only player-a's base (1 tile)
+    expect(view.tiles.length).toBeLessThan(11 * 11); // far fewer than the full grid count
     for (const t of view.tiles) {
-      // 所有返回格必须是占领格（mine 或无标记但有主人）
+      // every returned tile must be an occupied tile (mine or no flags but has an owner)
       const isOwned = t.mine === true || (!t.mine && !t.ally && !t.allySect);
       expect(isOwned).toBe(true);
     }
-    // 主城格本身必须在结果中
+    // the base tile itself must appear in the result
     expect(view.tiles.some((t) => t.x === pos.x && t.y === pos.y)).toBe(true);
   });
 
-  it('lod 字段回传正确', async () => {
+  it('lod field echoed back correctly', async () => {
     const thin = await svc.getMapSparse(W, 'a', 0, 0, 1, 'thin');
     const mid  = await svc.getMapSparse(W, 'a', 0, 0, 1, 'mid');
     expect(thin.lod).toBe('thin');

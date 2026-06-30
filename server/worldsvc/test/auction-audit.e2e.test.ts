@@ -1,7 +1,7 @@
-// worldsvc AuctionService.scanAnomalies 端到端（D/G7 反 RMT，SLG_DESIGN §17.7）：真实 Mongo 专属库。
-// 直接 seed sold 拍卖文档（绕开每日上限与扣款流），断言「卖家→买家」配对异常检出：
-//   反复对敲（trades≥阈值）/ 定向倒货（designated≥阈值）/ 大额转移（coins≥阈值）/ 窗口外不计 / soldAt 缺省回退解析 _id。
-// 需 `cd server && docker compose up -d`。
+﻿// worldsvc AuctionService.scanAnomalies end-to-end (D/G7 anti-RMT, SLG_DESIGN §17.7): real Mongo dedicated database.
+// Seeds sold auction documents directly (bypassing daily limits and payment flows) and asserts seller→buyer pair anomaly detection:
+//   repeated wash trades (trades≥threshold) / targeted dumping (designated≥threshold) / large transfer (coins≥threshold) / out-of-window trades excluded / soldAt missing falls back to parsing _id.
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   AUDIT_PAIR_MIN_TRADES,
@@ -29,7 +29,7 @@ async function tryConnect(): Promise<WorldMongo | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[worldsvc.audit.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[worldsvc.audit.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 describe.skipIf(!mongo)('AuctionService.scanAnomalies e2e', () => {
@@ -62,7 +62,7 @@ describe.skipIf(!mongo)('AuctionService.scanAnomalies e2e', () => {
     await mongo?.close();
   });
 
-  /** 直接 seed 一条 sold 拍卖文档（绕开扣款/限额流）。 */
+  /** Directly seed a sold auction document (bypassing payment/limit flows). */
   async function seedSold(opts: {
     seller: string; buyer: string; unitPrice: number; qty?: number;
     designated?: boolean; soldAt?: number; setSoldAt?: boolean;
@@ -89,7 +89,7 @@ describe.skipIf(!mongo)('AuctionService.scanAnomalies e2e', () => {
     await mongo!.collections.auctions.insertOne(doc);
   }
 
-  it('反复对敲：同配对成交达 minTrades → 检出 repeated', async () => {
+  it('repeated wash trades: same pair reaches minTrades → detects repeated', async () => {
     for (let i = 0; i < AUDIT_PAIR_MIN_TRADES; i++) {
       await seedSold({ seller: 'A', buyer: 'B', unitPrice: 10 });
     }
@@ -100,11 +100,11 @@ describe.skipIf(!mongo)('AuctionService.scanAnomalies e2e', () => {
     expect(a.buyerId).toBe('B');
     expect(a.trades).toBe(AUDIT_PAIR_MIN_TRADES);
     expect(a.reasons).toContain('repeated');
-    expect(a.severity).toBe('medium'); // 仅 repeated → medium
+    expect(a.severity).toBe('medium'); // only repeated → medium
   });
 
-  it('定向倒货 + 大额 → 检出 designated + high_value，severity=high', async () => {
-    // 定向受拍 minDesignated 笔，单价拉高凑足 minCoins（但留在合理量级，护栏在下单时管，这里只读 sold）。
+  it('targeted dumping + large amount → detects designated + high_value, severity=high', async () => {
+    // Place minDesignated designated bids with a unit price high enough to meet minCoins (kept within a reasonable range — price guardrails apply at order time, not here where we only read sold records).
     const unit = Math.ceil(AUDIT_PAIR_MIN_COINS / AUDIT_PAIR_MIN_DESIGNATED) + 1;
     for (let i = 0; i < AUDIT_PAIR_MIN_DESIGNATED; i++) {
       await seedSold({ seller: 'rich', buyer: 'mule', unitPrice: unit, designated: true });
@@ -118,15 +118,15 @@ describe.skipIf(!mongo)('AuctionService.scanAnomalies e2e', () => {
     expect(a.totalCoins).toBeGreaterThanOrEqual(AUDIT_PAIR_MIN_COINS);
   });
 
-  it('正常零散交易（低于所有阈值）→ 无异常', async () => {
+  it('normal sparse trades (below all thresholds) → no anomalies', async () => {
     await seedSold({ seller: 'A', buyer: 'B', unitPrice: 10 });
     await seedSold({ seller: 'C', buyer: 'D', unitPrice: 20 });
     const anomalies = await svc.scanAnomalies(W);
     expect(anomalies).toHaveLength(0);
   });
 
-  it('窗口外的旧成交不计入', async () => {
-    const old = nowMs - (AUDIT_WINDOW_SEC * 1000 + 60_000); // 窗口外 1 分钟
+  it('trades outside the audit window are excluded', async () => {
+    const old = nowMs - (AUDIT_WINDOW_SEC * 1000 + 60_000); // 1 minute outside the audit window
     for (let i = 0; i < AUDIT_PAIR_MIN_TRADES; i++) {
       await seedSold({ seller: 'A', buyer: 'B', unitPrice: 10, soldAt: old });
     }
@@ -134,7 +134,7 @@ describe.skipIf(!mongo)('AuctionService.scanAnomalies e2e', () => {
     expect(anomalies).toHaveLength(0);
   });
 
-  it('soldAt 缺省 → 回退解析 _id 内挂单 ts（窗口内仍检出）', async () => {
+  it('soldAt missing → falls back to parsing listing ts from _id (still detected within window)', async () => {
     for (let i = 0; i < AUDIT_PAIR_MIN_TRADES; i++) {
       await seedSold({ seller: 'A', buyer: 'B', unitPrice: 10, setSoldAt: false });
     }
@@ -143,9 +143,9 @@ describe.skipIf(!mongo)('AuctionService.scanAnomalies e2e', () => {
     expect(anomalies[0]!.trades).toBe(AUDIT_PAIR_MIN_TRADES);
   });
 
-  it('方向区分：A→B 与 B→A 是不同配对，各自独立计数', async () => {
+  it('direction matters: A→B and B→A are different pairs, counted independently', async () => {
     for (let i = 0; i < AUDIT_PAIR_MIN_TRADES; i++) await seedSold({ seller: 'A', buyer: 'B', unitPrice: 10 });
-    await seedSold({ seller: 'B', buyer: 'A', unitPrice: 10 }); // 反向仅 1 笔，不触发
+    await seedSold({ seller: 'B', buyer: 'A', unitPrice: 10 }); // reverse direction: only 1 trade, does not trigger
     const anomalies = await svc.scanAnomalies(W);
     expect(anomalies).toHaveLength(1);
     expect(anomalies[0]!.sellerId).toBe('A');

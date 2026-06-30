@@ -1,8 +1,9 @@
-// gateway 控制面路由端到端单测：真 Gateway WS + ws 客户端。
-// 覆盖此前只在 client 侧 MatchsvcClient 单测、未在 gateway 侧验证的两条主线：
-//   1. account→socket 映射：连接登记、命令按 accountId 转发给 matchsvc、push 只到目标 socket、
-//      同账号新连顶替旧连（4409）；
-//   2. ranked 入队时 meta 不可用 → 回推 room_error{RANKED_UNAVAILABLE}（此前无直接测）。
+// Gateway control-plane routing end-to-end tests: real Gateway WS + ws client.
+// Covers two main paths that were previously only tested in the MatchsvcClient unit tests on the client side
+// and had never been verified on the gateway side:
+//   1. account→socket mapping: connection registration, forwarding commands to matchsvc by accountId,
+//      push delivered only to the target socket, new connection for the same account displaces the old one (4409);
+//   2. ranked enqueue when meta is unavailable → push back room_error{RANKED_UNAVAILABLE} (no direct test existed before).
 import { describe, it, expect, afterEach } from 'vitest';
 import * as path from 'path';
 import * as protobuf from 'protobufjs';
@@ -29,7 +30,7 @@ function decodeServer(buf: Uint8Array): Record<string, unknown> {
   return (env['server'] as Record<string, unknown>) ?? {};
 }
 
-/** matchsvc 录制桩：记录 gateway 转发的每个调用（不发真 HTTP）。 */
+/** matchsvc recording stub: records every call forwarded by the gateway (no real HTTP sent). */
 class RecordingMatchsvc extends MatchsvcClient {
   readonly calls: { m: string; args: unknown[] }[] = [];
   constructor() {
@@ -60,7 +61,7 @@ function startGateway(port: number, matchsvc: MatchsvcClient, meta?: MetaClient)
     { host: '127.0.0.1', port },
     jwt,
     matchsvc,
-    meta ?? new MetaClient(null, KEY), // 默认 meta 不可用
+    meta ?? new MetaClient(null, KEY), // default: meta unavailable
   );
   return gateway;
 }
@@ -77,7 +78,7 @@ function connect(port: number, accountId: string): Promise<WebSocket> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** 等待某个 server 消息（按 oneof key），超时 reject。 */
+/** Wait for a specific server message (by oneof key); reject on timeout. */
 function waitForServer(ws: WebSocket, key: string, timeoutMs = 1000): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`timeout waiting for ${key}`)), timeoutMs);
@@ -92,29 +93,29 @@ function waitForServer(ws: WebSocket, key: string, timeoutMs = 1000): Promise<Re
 }
 
 describe('Gateway control-plane routing', () => {
-  it('登记连接并按 accountId 把控制命令转发给 matchsvc', async () => {
+  it('registers connection and forwards control commands to matchsvc by accountId', async () => {
     const port = 19520;
     const mm = new RecordingMatchsvc();
     startGateway(port, mm);
     const a = await connect(port, 'acc-a');
 
-    // 连接即登记到 matchsvc。
+    // Connection is registered with matchsvc immediately.
     expect(mm.calls.some((c) => c.m === 'connected' && c.args[0] === 'acc-a')).toBe(true);
 
     a.send(encodeClient({ room_create: { mode: 0 } })); // friendly
     a.send(encodeClient({ room_ready: { ready: true } }));
     a.send(encodeClient({ room_start: {} }));
     a.send(encodeClient({ room_leave: {} }));
-    await sleep(60); // room_create 经 resolveProfile 异步转发
+    await sleep(60); // room_create is forwarded asynchronously via resolveProfile
 
     expect(mm.calls.find((c) => c.m === 'roomReady')?.args).toEqual(['acc-a', true]);
     expect(mm.calls.find((c) => c.m === 'roomStart')?.args).toEqual(['acc-a']);
     expect(mm.calls.find((c) => c.m === 'roomLeave')?.args).toEqual(['acc-a']);
-    // friendly create：meta 不可用 → 名字退回 accountId 前缀、publicId 空。
+    // friendly create: meta unavailable → name falls back to accountId prefix, publicId empty.
     expect(mm.calls.find((c) => c.m === 'roomCreate')?.args).toEqual(['acc-a', 'acc-a', '']);
   });
 
-  it('push 只发到拥有该 accountId 的 socket', async () => {
+  it('push is delivered only to the socket that owns the given accountId', async () => {
     const port = 19521;
     startGateway(port, new RecordingMatchsvc());
     const a = await connect(port, 'acc-a');
@@ -131,20 +132,20 @@ describe('Gateway control-plane routing', () => {
     const err = await aGot;
     expect(err['message']).toBe('hello-a');
     await sleep(40);
-    expect(bGotIt).toBe(false); // b 不应收到发给 a 的消息
+    expect(bGotIt).toBe(false); // b must not receive a message addressed to a
   });
 
-  it('同账号新连顶替旧连（旧 socket 收到 4409）', async () => {
+  it('new connection for the same account displaces the old connection (old socket receives 4409)', async () => {
     const port = 19522;
     startGateway(port, new RecordingMatchsvc());
     const ws1 = await connect(port, 'dup');
     const closed = new Promise<number>((res) => ws1.on('close', (code: number) => res(code)));
 
-    await connect(port, 'dup'); // 第二条同账号连接
+    await connect(port, 'dup'); // second connection for the same account
     expect(await closed).toBe(4409);
   });
 
-  it('ranked 入队时 meta 不可用 → 回推 RANKED_UNAVAILABLE，且不入队', async () => {
+  it('ranked enqueue when meta unavailable → push back RANKED_UNAVAILABLE, and do not enqueue', async () => {
     const port = 19523;
     const mm = new RecordingMatchsvc();
     startGateway(port, mm, new MetaClient(null, KEY)); // meta.available=false

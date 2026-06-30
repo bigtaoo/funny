@@ -1,5 +1,6 @@
-// gameserver 进程引导（S1-M2/M3）：数据面纯帧中继 + ticket 握手 + 心跳。瘦身后永不连库（M16）。
-// 反代将 /ws 转到本进程（SERVER_API.md §0）。
+// gameserver process bootstrap (S1-M2/M3): data-plane pure frame relay + ticket handshake + heartbeat.
+// After slimming down, never connects to any database (M16).
+// Reverse proxy forwards /ws to this process (SERVER_API.md §0).
 import { createServer } from 'http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { verifyTicket, createLogger, internalHeaders, startHeartbeat } from '@nw/shared';
@@ -11,8 +12,8 @@ import { RoomManager } from './RoomManager';
 import { MetaReporter } from './metaReport';
 import { decodeClient, MatchMode } from './proto/transport';
 
-const HEARTBEAT_MS = 30_000; // 心跳巡检：两轮无响应判死
-const REGISTER_HEARTBEAT_MS = 10_000; // 向 matchsvc 上报负载
+const HEARTBEAT_MS = 30_000; // Heartbeat probe: two consecutive missed pongs = dead connection
+const REGISTER_HEARTBEAT_MS = 10_000; // Interval for reporting load to matchsvc
 
 const CONN = Symbol('nwConn');
 type WsWithConn = WebSocket & { [CONN]?: Connection };
@@ -38,8 +39,9 @@ function main(): void {
   const reporter = new MetaReporter(env.metaBaseUrl, env.internalKey);
   const manager = new RoomManager({ report: (r) => reporter.report(r) });
 
-  // 显式 HTTP server 承载 WS 升级 + 存活探针：GET /health（无鉴权，docker healthcheck / CI 等待用），
-  // 其余非升级请求一律 426。WS 升级仍只在 /ws 路径（path 选项交给 ws 处理）。
+  // Explicit HTTP server to handle WS upgrades + liveness probe: GET /health (no auth,
+  // used by docker healthcheck / CI wait loops). All other non-upgrade requests return 426.
+  // WS upgrades are still restricted to the /ws path (the path option is handled by ws).
   const http = createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -52,12 +54,13 @@ function main(): void {
   const wss = new WebSocketServer({ server: http, path: '/ws' });
 
   wss.on('connection', (ws: WebSocket, req) => {
-    // 握手鉴权：?ticket=<matchsvc 签名票据>（M18）。
+    // Handshake auth: ?ticket=<matchsvc-signed ticket> (M18).
     const url = new URL(req.url ?? '', `ws://${req.headers.host}`);
     const ticketStr = url.searchParams.get('ticket');
     let claims;
     try {
-      // 验签即可；exp 仅约束首连，重连复用同票据放过过期（已活房间不再查 exp）。
+      // Signature verification only; exp constrains the initial connection — reconnects reuse
+      // the same ticket and ignore expiry (an active room no longer checks exp).
       claims = verifyTicket(ticketStr ?? '', { key: env.internalKey }, { ignoreExpiration: true });
     } catch (e) {
       log.warn('WS handshake rejected: invalid ticket', {
@@ -103,7 +106,7 @@ function main(): void {
     });
     ws.on('close', () => manager.onClose(conn));
     ws.on('error', () => {
-      /* close 随后触发 */
+      /* close event will fire next */
     });
   });
 
@@ -124,7 +127,8 @@ function main(): void {
     }
   }, HEARTBEAT_MS);
 
-  // 向 matchsvc 注册 + 周期心跳上报负载（单实例可不配，matchsvc 用静态兜底地址）。
+  // Register with matchsvc + periodically report load via heartbeat (optional in single-instance
+  // deployments — matchsvc falls back to the static address).
   void registerWithMatchsvc(env);
   const registerTimer = setInterval(() => {
     if (!env.matchsvcInternalUrl) return;
@@ -133,7 +137,7 @@ function main(): void {
       headers: { 'content-type': 'application/json', ...internalHeaders('gameserver', env.internalKey) },
       body: JSON.stringify({ gameId: env.gameId, load: wss.clients.size, rooms: 0 }),
     }).catch(() => {
-      /* 下个周期再试 */
+      /* retry on next cycle */
     });
   }, REGISTER_HEARTBEAT_MS);
   registerTimer.unref?.();
@@ -157,7 +161,7 @@ function main(): void {
   http.listen(env.port, env.host);
   console.log(`gameserver (data-plane relay) listening on ws://${env.host}:${env.port}/ws`);
   console.log(`meta report: ${env.metaBaseUrl ?? 'disabled'}; matchsvc: ${env.matchsvcInternalUrl ?? 'static-fallback'}`);
-  startHeartbeat(log); // 存活心跳：空闲时每 5 分钟一条 info 日志
+  startHeartbeat(log); // Liveness heartbeat: one info log every 5 minutes when idle
 }
 
 main();

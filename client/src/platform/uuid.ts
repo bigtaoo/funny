@@ -1,11 +1,11 @@
-// 设备 UUID 生成 + 持久化（S0-4，Web / CrazyGames 匿名身份）。
-// 同设备稳定返回同 id：首次生成落 storage，之后读回。
+// Device UUID generation + persistence (S0-4, Web / CrazyGames anonymous identity).
+// Same device always returns the same id: generated on first use and persisted to storage, then read back.
 
 import type { IStorage } from './IPlatform';
 
 const DEVICE_ID_KEY = 'nw_device_id';
 
-/** RFC4122 v4，优先用 crypto.randomUUID，缺省回退手搓。 */
+/** RFC4122 v4 — prefers crypto.randomUUID, falls back to manual construction. */
 export function genUuid(): string {
   const c = (globalThis as { crypto?: Crypto }).crypto;
   if (c && typeof c.randomUUID === 'function') {
@@ -20,11 +20,11 @@ export function genUuid(): string {
       .slice(6, 8)
       .join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
   }
-  // 极端回退（无 crypto）：时间 + Math.random（仅作设备 id，非安全用途）。
+  // Extreme fallback (no crypto): time + Math.random (device id only, not for security purposes).
   return `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** 取稳定设备 id（首次生成并持久化）。 */
+/** Get stable device id (generated and persisted on first call). */
 export function getOrCreateDeviceId(storage: IStorage): string {
   let id = storage.getItem(DEVICE_ID_KEY);
   if (!id) {

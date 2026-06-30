@@ -1,7 +1,7 @@
-// worldsvc 行军端到端（S8-2）：真实 Mongo 专属库 + 假时钟 + 捕获 push。
-//   出征扣兵 / 旅行耗时 / 到点占领(写 territory + 产率) / 到点增援(加 garrison) /
-//   撤军返程退兵 / 占领校验(非己方格出征/中心/已占) / 到达时目标被占→退兵 / march_update+tile_update 推送。
-// 需 `cd server && docker compose up -d`。
+// worldsvc march end-to-end (S8-2): real dedicated Mongo DB + fake clock + captured push messages.
+//   Troop deduction on departure / travel time / arrival occupation (writes territory + yield rate) / arrival reinforcement (adds garrison) /
+//   recall return leg + troop refund / occupation validation (non-owned tile / center / already occupied) / target occupied on arrival → refund troops / march_update+tile_update push.
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   proceduralTile,
@@ -31,12 +31,12 @@ async function tryConnect(): Promise<WorldMongo | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[worldsvc.march.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+if (!mongo) console.warn(`[worldsvc.march.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
 const CENTER_Y = Math.floor(SLG_MAP_H / 2);
 
-/** 螺旋找满足 predicate 的格（确定性）。 */
+/** Spiral search for the first tile satisfying predicate (deterministic). */
 function findCoord(
   predicate: (t: ReturnType<typeof proceduralTile>) => boolean,
   sx: number,
@@ -90,7 +90,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     await m.close();
   });
 
-  it('占领行军：出征扣兵 + 旅行耗时 + 到点写 territory + 产率增 + 推送', async () => {
+  it('occupy march: deduct troops on departure + travel time + write territory on arrival + yield rate increases + push', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const target = findCoord((t) => t.type === 'resource', 30, 30);
     const procT = proceduralTile(W, target.x, target.y);
@@ -102,17 +102,17 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     expect(mv.fromTile).toBe(tileId(W, 5, 5));
     expect(mv.toTile).toBe(tileId(W, target.x, target.y));
 
-    // 出征即扣兵（在途）。
+    // Troops deducted on departure (in transit).
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - OCCUPY_MIN_TROOPS);
-    // 出征即推 march_update。
+    // march_update pushed immediately on departure.
     expect(pushes.some((p) => p.msg.kind === 'march_update' && p.msg.status === 'marching')).toBe(true);
 
-    // 未到点：处理无果，目标仍中立。
+    // Not arrived yet: no processing result, target tile still neutral.
     nowMs = mv.arriveAt - 1000;
     expect(await svc.processDueArrivals()).toBe(0);
     expect((await svc.getTile(W, 'a', target.x, target.y)).mine).toBeUndefined();
 
-    // 到点：占领落地。
+    // Arrived: occupation lands.
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
     const tile = await svc.getTile(W, 'a', target.x, target.y);
@@ -120,87 +120,87 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
 
     const me = await svc.getMe(W, 'a');
     expect(me.territoryCount).toBe(2);
-    // 兵已转为 garrison，池不变（仍扣着）。
+    // Troops converted to garrison; pool unchanged (still deducted).
     expect(me.troops).toBe(TROOP_CAP_BASE - OCCUPY_MIN_TROOPS);
     const rt = procT.resType!;
     expect(me.yieldRate?.[rt]).toBeGreaterThan(0);
 
-    // 到点推 march_update(arrived) + tile_update。
+    // Arrival pushes march_update(arrived) + tile_update.
     expect(pushes.some((p) => p.msg.kind === 'march_update' && p.msg.status === 'arrived')).toBe(true);
     expect(pushes.some((p) => p.msg.kind === 'tile_update')).toBe(true);
-    // 行军瞬态文档已删。
+    // Transient march document has been deleted.
     expect(await m.collections.marches.findOne({ _id: mv.marchId })).toBeNull();
   });
 
-  it('增援行军：到点给己方格加 garrison（不还池）', async () => {
+  it('reinforce march: adds garrison to own tile on arrival (troops not returned to pool)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const terr = findCoord((t) => t.type === 'resource', 30, 30);
-    await svc.occupyTile(W, 'a', terr.x, terr.y); // 直占建一块己方领地（garrison=500）
+    await svc.occupyTile(W, 'a', terr.x, terr.y); // direct occupy to create one owned territory (garrison=500)
     const before = (await svc.getMe(W, 'a')).troops;
 
     const mv = await svc.startMarch(W, 'a', 5, 5, terr.x, terr.y, 'reinforce', 300);
-    expect((await svc.getMe(W, 'a')).troops).toBe(before - 300); // 出征扣兵
+    expect((await svc.getMe(W, 'a')).troops).toBe(before - 300); // troops deducted on departure
 
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
     const tile = await svc.getTile(W, 'a', terr.x, terr.y);
-    expect(tile.garrison).toBe(GARRISON_PER_TILE + 300); // 加到 garrison
-    expect((await svc.getMe(W, 'a')).troops).toBe(before - 300); // 兵不回池
+    expect(tile.garrison).toBe(GARRISON_PER_TILE + 300); // added to garrison
+    expect((await svc.getMe(W, 'a')).troops).toBe(before - 300); // troops not returned to pool
     void mv;
   });
 
-  it('撤军：返程腿 + 到点退兵回池', async () => {
+  it('recall: return leg + troops refunded to pool on arrival', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const target = findCoord((t) => t.type === 'neutral', 40, 40);
     const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS);
 
-    nowMs += Math.floor((mv.arriveAt - nowMs) / 2); // 走到一半撤军
+    nowMs += Math.floor((mv.arriveAt - nowMs) / 2); // recall halfway through the march
     const back = await svc.recallMarch(W, 'a', mv.marchId);
     expect(back.kind).toBe('return');
     expect(back.fromTile).toBe(mv.toTile);
     expect(back.toTile).toBe(mv.fromTile);
 
-    // 返程未到：兵仍在途。
+    // Return leg in transit: troops still en route.
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - OCCUPY_MIN_TROOPS);
     nowMs = back.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
-    // 退兵回池，目标未被占。
+    // Troops returned to pool; target tile not occupied.
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE);
     expect((await svc.getTile(W, 'a', target.x, target.y)).mine).toBeUndefined();
   });
 
-  it('校验：非己方格出征 / 中心 / 已是己方领地 / 兵力不足 / 围攻类型未实现', async () => {
+  it('validation: departing from non-owned tile / center / already own / insufficient troops / siege type', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    // 从非己方格出征。
+    // Departing from a non-owned tile.
     await expect(svc.startMarch(W, 'a', 50, 50, 51, 51, 'occupy', OCCUPY_MIN_TROOPS)).rejects.toMatchObject({
       code: 'TILE_NOT_OWNED',
     });
-    // 占世界中心。
+    // Targeting the world center.
     await expect(svc.startMarch(W, 'a', 5, 5, CENTER_X, CENTER_Y, 'occupy', OCCUPY_MIN_TROOPS)).rejects.toMatchObject({
       code: 'TILE_OCCUPIED',
     });
-    // 占领带兵不足 OCCUPY_MIN_TROOPS。
+    // Occupy with fewer troops than OCCUPY_MIN_TROOPS.
     const free = findCoord((t) => t.type === 'neutral', 30, 30);
     await expect(svc.startMarch(W, 'a', 5, 5, free.x, free.y, 'occupy', 10)).rejects.toMatchObject({
       code: 'NO_TROOPS',
     });
-    // 围攻无主格 → TILE_NOT_OWNED（围攻 S8-3 已实现，目标须是他人领地；无主用占领/扫荡）。
+    // Siege against an unowned tile → TILE_NOT_OWNED (siege S8-3 is implemented; target must be another player's territory; use occupy/sweep for neutral tiles).
     await expect(svc.startMarch(W, 'a', 5, 5, free.x, free.y, 'attack', OCCUPY_MIN_TROOPS)).rejects.toMatchObject({
       code: 'TILE_NOT_OWNED',
     });
-    // 增援非己方格。
+    // Reinforce a non-owned tile.
     await expect(svc.startMarch(W, 'a', 5, 5, free.x, free.y, 'reinforce', 100)).rejects.toMatchObject({
       code: 'TILE_NOT_OWNED',
     });
   });
 
-  it('到达时目标已被他人占领 → 退兵回池（不夺地，S8-3）', async () => {
+  it('target already occupied by another player on arrival → refund troops (no capture, S8-3)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const target = findCoord((t) => t.type === 'neutral', 40, 40);
     const mv2 = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS);
 
-    // 行军在途时，b 直占了该格（保护期已过的模拟：直接写他人 territory）。
+    // While march is in transit, b directly occupies the tile (simulating protection period expired: write another player's territory directly).
     await m.collections.tiles.insertOne({
       _id: tileId(W, target.x, target.y),
       worldId: W,
@@ -215,7 +215,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
 
     nowMs = mv2.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
-    // a 没夺到，兵退回池；该格仍归 b。
+    // a failed to capture; troops returned to pool; tile still belongs to b.
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE);
     expect((await svc.getTile(W, 'a', target.x, target.y)).mine).toBeUndefined();
   });

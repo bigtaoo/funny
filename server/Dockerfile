@@ -1,14 +1,14 @@
-# Notebook Wars 服务端镜像（C-3 / S1-M）。
-# 单一镜像同时承载 metaserver / gateway / matchsvc / gameserver / commercial / worldsvc / admin——共享 @nw/shared，build 一次即可；
-# compose 用 `command` 选择跑哪个进程（node metaserver|gateway|matchsvc|gameserver|commercial|worldsvc|admin /dist/index.js）。
+# Notebook Wars server image (C-3 / S1-M).
+# Single image hosts metaserver / gateway / matchsvc / gameserver / commercial / worldsvc / admin — all share @nw/shared, build once;
+# compose uses `command` to select which process to run (node metaserver|gateway|matchsvc|gameserver|commercial|worldsvc|admin /dist/index.js).
 #
-# 多阶段：
-#   build   —— npm ci 整个 workspace + tsc -b 十包（含确定性引擎 @nw/engine，worldsvc 运行期 require）
-#   runtime —— 只保留 node_modules + 各包 dist + contracts（meta 读 openapi.yml；gateway/game 运行期读 transport.proto）
+# Multi-stage:
+#   build   —— npm ci for entire workspace + tsc -b ten packages (including deterministic engine @nw/engine, required by worldsvc at runtime)
+#   runtime —— only retains node_modules + per-package dist + contracts (meta reads openapi.yml; gateway/game reads transport.proto at runtime)
 
 FROM node:20-alpine AS build
 WORKDIR /app
-# 先拷 manifest 命中 npm ci 缓存层（源码变动不必重装依赖）
+# Copy manifests first to hit npm ci cache layer (source changes don't require reinstalling dependencies)
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY shared/package.json ./shared/
 COPY engine/package.json ./engine/
@@ -27,12 +27,12 @@ RUN npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial w
 FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-# node_modules 内 @nw/shared 是指向 ../shared 的 workspace 符号链接 → 需同时拷 shared/dist。
+# node_modules/@nw/shared is a workspace symlink to ../shared → need to copy shared/dist as well.
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/shared/dist ./shared/dist
-# worldsvc 运行期 require('@nw/engine')（确定性围攻引擎）→ node_modules/@nw/engine 是指向 ../engine 的 workspace 符号链接 → 需拷 engine/dist。
+# worldsvc requires('@nw/engine') at runtime (deterministic siege engine) → node_modules/@nw/engine is a workspace symlink to ../engine → need to copy engine/dist.
 COPY --from=build /app/engine/package.json ./engine/package.json
 COPY --from=build /app/engine/dist ./engine/dist
 COPY --from=build /app/metaserver/package.json ./metaserver/package.json
@@ -51,7 +51,7 @@ COPY --from=build /app/admin/package.json ./admin/package.json
 COPY --from=build /app/admin/dist ./admin/dist
 COPY --from=build /app/analyticsvc/package.json ./analyticsvc/package.json
 COPY --from=build /app/analyticsvc/dist ./analyticsvc/dist
-# meta 读 contracts/openapi.yml；gateway/gameserver 运行期读 contracts/transport.proto（dist/*.js → /app/contracts）。
+# meta reads contracts/openapi.yml; gateway/gameserver reads contracts/transport.proto at runtime (dist/*.js → /app/contracts).
 COPY --from=build /app/contracts ./contracts
-# 默认 metaserver；gameserver 服务在 compose 里覆盖 command。
+# Default: metaserver; gameserver overrides command in compose.
 CMD ["node", "metaserver/dist/index.js"]

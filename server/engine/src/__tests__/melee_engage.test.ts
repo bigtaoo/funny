@@ -1,14 +1,17 @@
 /**
- * 近战兵不应「穿过」前方可攻击的敌人（修复回归测试）。
+ * Melee units must not "pass through" an attackable enemy directly ahead (regression fix test).
  *
- * 背景 bug：MovementSystem 推进用连续 fp 坐标，CombatSystem 交战判定用整数格
- * 切比雪夫距离。两名同列对冲的近战兵会各自向相反方向取整 —— 例如 Bottom 在
- * y=5.49（第 5 行）、Top 在 y=6.51（第 7 行），连续间距只有 ~1.0 格，格距却读成
- * 2，range-1 近战不交战；下一 tick 两者都进到 y≈6.0 → 同一格（格距 0），而
- * findTarget 从 dist=1 起扫永远扫不到距离 0，于是穿过彼此继续前进。
+ * Background bug: MovementSystem advances using continuous fp coordinates while CombatSystem
+ * determines engagement using integer-cell Chebyshev distance. Two melee units charging each
+ * other in the same column would each round in opposite directions — for example Bottom at
+ * y=5.49 (row 5) and Top at y=6.51 (row 7) have a continuous gap of only ~1.0 cells, but the
+ * integer cell distance reads as 2, so range-1 melee does not engage; on the next tick both
+ * advance to y≈6.0 → same cell (distance 0), but findTarget scans from dist=1 and never
+ * finds distance 0, so they walk straight through each other.
  *
- * 修复：moveForward 在推进前钳制 —— 与前方可攻击敌军的中心间距不得小于 1 格，
- * 保证两者始终保持格距 ≥ 1，下一 tick CombatSystem 必然交战。
+ * Fix: moveForward clamps before advancing — the centre-to-centre distance to an attackable
+ * enemy ahead must not drop below 1 cell, guaranteeing a cell distance ≥ 1 so that
+ * CombatSystem will always engage on the next tick.
  */
 
 import { strict as assert } from 'node:assert';

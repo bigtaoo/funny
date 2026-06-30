@@ -14,12 +14,12 @@ export interface Swatch {
 }
 
 export const PALETTE: Swatch[] = [
-  { key: 'default', label: '默认色',  color: -1 },
-  { key: 'ally',    label: '我方蓝',  color: 0x4a90d9 },
-  { key: 'enemy',   label: '敌方红',  color: 0xd94a4a },
-  { key: 'ink',     label: '墨黑',    color: 0x222222 },
-  { key: 'heal',    label: '治疗绿',  color: 0x5fb85f },
-  { key: 'warn',    label: '警示橙',  color: 0xe08a2e },
+  { key: 'default', label: 'Default',    color: -1 },
+  { key: 'ally',    label: 'Ally blue',  color: 0x4a90d9 },
+  { key: 'enemy',   label: 'Enemy red',  color: 0xd94a4a },
+  { key: 'ink',     label: 'Ink black',  color: 0x222222 },
+  { key: 'heal',    label: 'Heal green', color: 0x5fb85f },
+  { key: 'warn',    label: 'Warn orange',color: 0xe08a2e },
 ];
 
 /** Parse "0xRRGGBB" / "#RRGGBB" / number into a hex number, with fallback. */

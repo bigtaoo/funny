@@ -1,7 +1,7 @@
-// 留存端点端到端（B5）：真实 Mongo + 注入假 commercial。验证 GET /retention 回包里
-// defs.rewards / defs.tasks 的字段（kind/count、id/points）经 fastify-openapi-glue
-// 序列化后**不被剥掉**——回归 2026-06-24 签到月历 `+undefined`（RETENTION_DESIGN §10.1）。
-// 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// Retention endpoint end-to-end tests (B5): real Mongo + injected fake commercial. Verifies that fields in
+// defs.rewards / defs.tasks (kind/count, id/points) in the GET /retention response are **not stripped**
+// after fastify-openapi-glue serialization — regression test for the 2026-06-24 check-in calendar `+undefined` bug (RETENTION_DESIGN §10.1).
+// Requires `cd server && docker compose up -d` + prior `tsc -b` (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -21,9 +21,9 @@ async function tryConnect(): Promise<MongoHandle | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[retention.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[retention.e2e] Mongo unreachable (${URI}) — skipping.`);
 
-/** 最小假 commercial：getWallet + grant 幂等；其余 claim 路径不触达，给桩。 */
+/** Minimal fake commercial: getWallet + idempotent grant; other claim paths are not reached, stubbed out. */
 class FakeCommercial implements CommercialClient {
   readonly available = true;
   coins = new Map<string, number>();
@@ -81,7 +81,7 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', commercial: new FakeCommercial() });
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'dev-ret-1' } }));
     token = r.data.token;
-    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // 建档
+    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // create save record
   });
 
   afterAll(async () => {
@@ -90,17 +90,17 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     await m.close();
   });
 
-  it('GET /retention：defs.rewards / defs.tasks 字段经序列化保留（不被剥成 {}）', async () => {
+  it('GET /retention: defs.rewards / defs.tasks fields preserved after serialization (not stripped to {})', async () => {
     const r = body(await app.inject({ method: 'GET', url: '/retention', headers: auth() }));
     expect(r.ok).toBe(true);
 
-    // —— 核心回归断言：字段必须存在且为正确类型 ——
+    // —— Core regression assertions: fields must exist and be the correct type ——
     expect(Array.isArray(r.data.defs.rewards)).toBe(true);
     expect(r.data.defs.rewards.length).toBe(30);
-    // 第 1 格 = 体力 30；第 7 格（index 6）= 里程碑金币。
+    // Slot 1 = stamina 30; slot 7 (index 6) = milestone coins.
     expect(r.data.defs.rewards[0]).toMatchObject({ kind: 'stamina', count: 30 });
     expect(r.data.defs.rewards[6]).toMatchObject({ kind: 'coins', count: 5 });
-    // 每格都带 kind + 数值（剥空时 count 会变 undefined → 客户端显示 +undefined）。
+    // Each slot has kind + count (when stripped, count becomes undefined → client displays +undefined).
     for (const rw of r.data.defs.rewards) {
       expect(typeof rw.kind).toBe('string');
       expect(typeof rw.count).toBe('number');

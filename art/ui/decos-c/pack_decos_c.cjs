@@ -1,33 +1,33 @@
 /**
- * pack_decos_c.cjs — C 组「大厅/功能区手绘图标」源图处理 + 打包成 PixiJS 图集。
+ * pack_decos_c.cjs — Group C "lobby/feature-area hand-drawn icons" source image processing + packing into a PixiJS atlas.
  *
- * 与 A 组 pack_decos.cjs 同一口径（抠白底 / 裁剪 / 等比缩放 / shelf packing /
- * 导出 TexturePacker JSON-Hash），仅两点不同：
- *   - 长边 LONG_EDGE = 128（C 组是功能图标，比 A 组边角小涂鸦更精细，需更高分辨率）；
- *   - 图集宽 ATLAS_W = 512（容下 12 帧 128px）。
- * 同样【保留原墨色不染色】——这些是黑墨线稿，按 §6.2 注直接用，不得 tint 成阵营色。
+ * Uses the same pipeline as Group A pack_decos.cjs (remove white background / crop / proportional scale / shelf packing /
+ * export TexturePacker JSON-Hash), with two differences:
+ *   - Long-edge LONG_EDGE = 128 (Group C contains functional icons that are more detailed than Group A corner doodles, requiring higher resolution);
+ *   - Atlas width ATLAS_W = 512 (fits ~4 frames of 128px per row).
+ * Also [preserves original ink color without tinting] — these are black ink line drawings; per §6.2 they are used as-is and must not be tinted to faction colors.
  *
- * 处理流程（全部在内存里完成，不落中间文件）：
- *   1. 读图 → 白底转透明：alpha = 255 - 亮度（白底→全透明，墨线→不透明，灰边→半透明），保留原线条颜色。
- *   2. 按内容包围盒裁掉四周留白。
- *   3. 等比缩放，使长边 = LONG_EDGE。
- *   4. shelf packing 拼进一张 atlas PNG（带 PAD 间距防出血）。
- *   5. 导出到 client/src/assets/decor/decor_c_atlas.png + decor_c_atlas.json。
+ * Processing pipeline (all in memory, no intermediate files written):
+ *   1. Load image → remove white background: alpha = 255 - luminance (white background → fully transparent, ink lines → opaque, grey anti-aliasing edges → semi-transparent), original line color preserved.
+ *   2. Crop surrounding whitespace using content bounding box.
+ *   3. Scale proportionally so that the long edge = LONG_EDGE.
+ *   4. Shelf-pack into a single atlas PNG (with PAD spacing to prevent bleeding).
+ *   5. Export to client/src/assets/decor/decor_c_atlas.png + decor_c_atlas.json.
  *
- * 帧名不带扩展名（如 `decoc_crown`），便于 textures['decoc_crown']。
- * 源图按 decoc_*.{webp,png} 匹配 —— 未选中的源（如实拍的 pennant）不命中此前缀，自动跳过。
+ * Frame names have no extension (e.g. `decoc_crown`), for use as textures['decoc_crown'].
+ * Source images are matched by decoc_*.{webp,png} — unmatched sources (e.g. a photographed pennant) do not hit this prefix and are automatically skipped.
  *
- * 运行：  node pack_decos_c.cjs
- * 依赖：  复用 client/node_modules/sharp（无需另装）。
+ * Usage:    node pack_decos_c.cjs
+ * Requires: reuses client/node_modules/sharp (no separate install needed).
  */
 const fs = require('fs');
 const path = require('path');
 const sharp = require(path.resolve(__dirname, '../../../client/node_modules/sharp'));
 
-const LONG_EDGE = 128;  // C 组目标长边
-const PAD = 2;          // atlas 内每帧间距
-const ATLAS_W = 512;    // 图集宽（固定，长边 128 时一行放 ~4 个）
-const ALPHA_TRIM = 16;  // 裁剪时认定“有内容”的 alpha 阈值
+const LONG_EDGE = 128;  // Group C target long edge
+const PAD = 2;          // per-frame spacing inside the atlas
+const ATLAS_W = 512;    // atlas width (fixed; ~4 frames of 128px per row)
+const ALPHA_TRIM = 16;  // alpha threshold for considering a pixel “has content” during crop
 
 const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/decor');
 
@@ -38,7 +38,7 @@ async function loadSprite(file) {
   const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width: W, height: H, channels: ch } = info;
 
-  // 白底转透明 + 求内容包围盒
+  // Remove white background + compute content bounding box
   let minX = W, minY = H, maxX = -1, maxY = -1;
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
@@ -47,7 +47,7 @@ async function loadSprite(file) {
       const lum = 0.299 * r + 0.587 * g + 0.114 * b;
       let a = Math.round(255 - lum);
       if (a < 0) a = 0; else if (a > 255) a = 255;
-      // 若源本身已有 alpha，取较小值（保留原透明）
+      // If the source already has an alpha channel, take the smaller value (preserve original transparency)
       if (ch === 4) a = Math.min(a, data[i + 3]);
       data[i + 3] = a;
       if (a > ALPHA_TRIM) {
@@ -56,7 +56,7 @@ async function loadSprite(file) {
       }
     }
   }
-  if (maxX < 0) throw new Error(`${name}: 空图（无内容）`);
+  if (maxX < 0) throw new Error(`${name}: empty image (no content)`);
 
   const cropW = maxX - minX + 1, cropH = maxY - minY + 1;
   const cropBuf = Buffer.alloc(cropW * cropH * 4);
@@ -69,7 +69,7 @@ async function loadSprite(file) {
     }
   }
 
-  // 等比缩放：长边 = LONG_EDGE
+  // Proportional scale: long edge = LONG_EDGE
   const scale = LONG_EDGE / Math.max(cropW, cropH);
   const newW = Math.max(1, Math.round(cropW * scale));
   const newH = Math.max(1, Math.round(cropH * scale));
@@ -83,12 +83,12 @@ async function main() {
   const files = fs.readdirSync(__dirname)
     .filter((f) => /^decoc_.*\.(webp|png)$/i.test(f))
     .sort();
-  if (!files.length) { console.error('没有找到 decoc_*.{webp,png}'); process.exit(1); }
+  if (!files.length) { console.error('No decoc_*.{webp,png} files found'); process.exit(1); }
 
   const sprites = [];
   for (const f of files) sprites.push(await loadSprite(path.join(__dirname, f)));
 
-  // shelf packing：按高度降序，逐行铺
+  // Shelf packing: sort by height descending, fill row by row
   sprites.sort((a, b) => b.h - a.h);
   let cx = PAD, cy = PAD, rowH = 0, usedH = 0;
   for (const s of sprites) {
@@ -100,13 +100,13 @@ async function main() {
   }
   const ATLAS_H = nextPow2(usedH);
 
-  // 合成 atlas
+  // Composite atlas
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const canvas = sharp({ create: { width: ATLAS_W, height: ATLAS_H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } });
   const composites = sprites.map((s) => ({ input: s.buf, left: s.x, top: s.y }));
   await canvas.composite(composites).png().toFile(path.join(OUT_DIR, 'decor_c_atlas.png'));
 
-  // 导出 JSON（TexturePacker JSON-Hash）—— 帧名不带扩展名，便于 textures['decoc_crown']
+  // Export JSON (TexturePacker JSON-Hash) — frame names have no extension, for use as textures['decoc_crown']
   const frames = {};
   for (const s of [...sprites].sort((a, b) => a.name.localeCompare(b.name))) {
     frames[s.name] = {
@@ -122,7 +122,7 @@ async function main() {
   };
   fs.writeFileSync(path.join(OUT_DIR, 'decor_c_atlas.json'), JSON.stringify(json, null, 2));
 
-  console.log(`✅ C 组打包完成：${sprites.length} 帧 → ${OUT_DIR}\\decor_c_atlas.png (${ATLAS_W}×${ATLAS_H}) + decor_c_atlas.json`);
+  console.log(`✅ Group C packed: ${sprites.length} frames → ${OUT_DIR}\\decor_c_atlas.png (${ATLAS_W}×${ATLAS_H}) + decor_c_atlas.json`);
   console.table(sprites.map((s) => ({ name: s.name, w: s.w, h: s.h, x: s.x, y: s.y })));
 }
 

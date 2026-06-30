@@ -87,8 +87,8 @@ export type { GameState } from './GameState';
 
 // ── Equipment input type (E8: worldsvc passes attacker gear to buildSiegeBlueprints) ────────────
 export type { EngineEquipmentInput } from './balance/equipment';
-// 可被 loadout 加成的玩家兵种（§8）；客户端战斗内立绘叠加（EQUIPMENT_DESIGN §20.4）据此门控，
-// 与 applyEquipment 同源，避免「哪些兵种吃装备」的口径漂移。
+// Player unit types that can be buffed by loadout equipment (§8); the in-battle portrait overlay (EQUIPMENT_DESIGN §20.4) is gated on this set,
+// co-sourced with applyEquipment to prevent "which units benefit from equipment" from drifting out of sync.
 export { PLAYER_EQUIPPABLE_UNITS } from './balance/equipment';
 
 // ── Campaign / level data model + validator ───────────────────────────────────

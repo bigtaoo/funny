@@ -1,8 +1,9 @@
-// 客户端联机日志（S1 联调）。把网络层的连接 / 收发 / 异常打到 console，
-// 玩家可在浏览器 DevTools 看到完整链路（之前 NetClient 静默吞掉所有错误，匹配卡住时无从排查）。
+// Client online logging (S1 integration debugging). Logs network-layer connections / sends-receives / errors to the console
+// so players can see the full request chain in the browser DevTools (previously NetClient silently swallowed all errors,
+// making it impossible to diagnose stuck matchmaking).
 //
-// 形如：`[net:gateway] state connecting`。tag 区分子系统（gateway / game / api / app）。
-// 默认全开；若太吵，可 localStorage.setItem('nw_net_log', 'off') 关闭。
+// Format: `[net:gateway] state connecting`. The tag identifies the subsystem (gateway / game / api / app).
+// Enabled by default; to silence it, call localStorage.setItem('nw_net_log', 'off').
 
 import { uncaughtErrorMessage } from './apiErrorMessage';
 
@@ -13,30 +14,31 @@ export interface NetLogger {
   error(msg: string, data?: unknown): void;
 }
 
-// ── 客户端日志环形缓冲（客户端日志定向采集，FEATURE_FLAGS_DESIGN §9.4）─────────────────────
-// 始终在内存里保留最近 N 条日志（不上报时几乎零成本）。被运营定向后，FeatureFlags 模块从这里捞
-// ≥阈值的条目批量 POST /client/log。环形缓冲让「命中前的上下文」也能一并上报，便于复现卡死现场。
+// ── Client log ring buffer (targeted client log collection, FEATURE_FLAGS_DESIGN §9.4) ─────────────────────
+// Always keeps the most recent N log entries in memory (near-zero cost when not reporting).
+// Once targeted by an operator, the FeatureFlags module pulls entries at or above the threshold and batch-POSTs them to /client/log.
+// The ring buffer allows pre-targeting context to be included in the report, making it easier to reproduce freeze scenes.
 
 export type ClientLogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-/** 一条缓冲日志（与服务端 metaserver/clientLog.ts 的 ClientLogEntry 同形）。 */
+/** A single buffered log entry (same shape as ClientLogEntry in metaserver/clientLog.ts on the server). */
 export interface ClientLogEntry {
   level: ClientLogLevel;
   msg: string;
   ts: number; // epoch ms
   tag?: string;
-  /** 单调序号（缓冲内唯一递增），上报方据此只取「上次之后的新条目」，避免重复上报。 */
+  /** Monotonically increasing sequence number (unique within the buffer); the reporter uses this to fetch only entries newer than the last reported seq, avoiding duplicate uploads. */
   seq: number;
 }
 
-/** verbose 程度排名：debug 最高（含最多），error 最低。阈值比较用。 */
+/** Verbosity rank: debug is highest (most verbose), error is lowest. Used for threshold comparisons. */
 export const LOG_LEVEL_RANK: Record<ClientLogLevel, number> = { error: 0, warn: 1, info: 2, debug: 3 };
 
 const RING_CAPACITY = 200;
 const ring: ClientLogEntry[] = [];
 let seqCounter = 0;
 
-/** 把 data 浓缩进一行 msg（上报无 console 的结构化能力，全部塞 msg 字符串，截断防爆）。 */
+/** Condense data into a single-line msg (reports lack console's structured output capability; everything is packed into the msg string and truncated to prevent overflow). */
 function appendData(msg: string, data?: unknown): string {
   if (data === undefined) return msg;
   let s: string;
@@ -45,7 +47,7 @@ function appendData(msg: string, data?: unknown): string {
   return `${msg} ${s}`;
 }
 
-/** 记一条到环形缓冲（netLog / 全局异常钩子内部调用；外部一般不直接用）。 */
+/** Write one entry to the ring buffer (called internally by netLog / global error hooks; external callers generally do not use this directly). */
 export function recordClientLog(level: ClientLogLevel, tag: string, msg: string, data?: unknown): void {
   const entry: ClientLogEntry = { level, msg: appendData(msg, data), ts: Date.now(), seq: ++seqCounter };
   if (tag) entry.tag = tag;
@@ -54,8 +56,8 @@ export function recordClientLog(level: ClientLogLevel, tag: string, msg: string,
 }
 
 /**
- * 取缓冲里「level ≤ 阈值 verbose 度」且 seq > afterSeq 的条目（上报用）。
- * 返回新条目 + 缓冲当前最大 seq（调用方存为下次 afterSeq）。无新条目时 lastSeq = afterSeq。
+ * Retrieve entries from the buffer where level verbosity rank <= thresholdRank and seq > afterSeq (for reporting).
+ * Returns new entries + the buffer's current maximum seq (caller stores this as the next afterSeq). When there are no new entries, lastSeq = afterSeq.
  */
 export function snapshotClientLogs(thresholdRank: number, afterSeq: number): { entries: ClientLogEntry[]; lastSeq: number } {
   const entries = ring.filter((e) => e.seq > afterSeq && LOG_LEVEL_RANK[e.level] <= thresholdRank);
@@ -63,7 +65,7 @@ export function snapshotClientLogs(thresholdRank: number, afterSeq: number): { e
   return { entries, lastSeq };
 }
 
-/** 取缓冲尾部最近 n 条（崩溃 / 离场 beacon 捎带「现场面包屑」、崩溃哨兵记最后一条错误用，不分级别）。 */
+/** Retrieve the last n entries from the buffer tail (used to attach scene breadcrumbs to crash / exit beacons, and for the crash sentinel to record the last error; not filtered by level). */
 export function recentClientLogs(n: number): ClientLogEntry[] {
   return n <= 0 ? [] : ring.slice(-n);
 }
@@ -84,7 +86,7 @@ export function netLog(tag: string): NetLogger {
     msg: string,
     data?: unknown,
   ): void => {
-    // 环形缓冲始终记录（与 console 开关无关——定向采集要的就是「console 关着也能捞」的离线日志）。
+    // Always record to the ring buffer (independent of the console toggle — targeted collection specifically needs offline logs that can be retrieved even when the console is off).
     recordClientLog(level, tag, msg, data);
     if (!enabled()) return;
     if (data === undefined) fn(prefix, msg);
@@ -99,40 +101,42 @@ export function netLog(tag: string): NetLogger {
 }
 
 /**
- * 玩家可见提示的渲染出口（app.ts 注入 GlobalToast.show）。这里只持有「怎么把一句话显示出来」，
- * 不关心文案从哪来——分类（reason→文案）在本模块，定点提示（已本地化的整句）由调用方给。
- * 抽到此处是因为 log.ts 不依赖 PIXI，能被 SaveManager / createAppCore 等无渲染模块安全 import。
+ * Render outlet for player-visible toast messages (injected by app.ts via GlobalToast.show). This module only holds
+ * "how to display a message" — it does not care where the text comes from. Classification (reason → text) lives here;
+ * targeted toasts (fully localized strings) are provided by the caller.
+ * Extracted here because log.ts has no PIXI dependency and can be safely imported by non-rendering modules such as SaveManager / createAppCore.
  */
 let toastSink: ((text: string) => void) | null = null;
 
-/** 注册玩家提示渲染出口（应用启动时调一次）。 */
+/** Register the player toast render outlet (call once on application startup). */
 export function setToastSink(fn: (text: string) => void): void {
   toastSink = fn;
 }
 
-/** 弹一句已本地化的玩家提示（供 SaveManager 云同步失败等定点兜底用）。未注册 sink 时静默。 */
+/** Show a localized player toast (used as a targeted fallback for events such as SaveManager cloud sync failure). Silently no-ops if no sink is registered. */
 export function showToastMessage(text: string): void {
   if (!toastSink) return;
-  // sink 本身不能再抛——否则可能触发又一次 unhandledrejection 形成回环。
+  // The sink must not throw — otherwise it could trigger another unhandledrejection and form a cycle.
   try { toastSink(text); } catch { /* swallow */ }
 }
 
 /**
- * 未捕获异常的旁路出口（net/anomaly 注入）：把 window 级未捕获错误 / Promise 拒绝同时喂给「全量异常上报」。
- * 用 setter 注入而非直接 import，是为了不让 log.ts 反向依赖 anomaly（anomaly 依赖 log，避免环）。
+ * Bypass outlet for uncaught exceptions (injected by net/anomaly): feeds window-level uncaught errors / Promise rejections into the full-coverage anomaly reporter.
+ * Injected via setter rather than direct import to prevent log.ts from reverse-depending on anomaly (anomaly depends on log; avoids a cycle).
  */
 let errorSink: ((kind: 'uncaught' | 'unhandled', msg: string) => void) | null = null;
 
-/** 注册未捕获异常旁路出口（应用启动时调一次）。 */
+/** Register the uncaught exception bypass outlet (call once on application startup). */
 export function setErrorSink(fn: (kind: 'uncaught' | 'unhandled', msg: string) => void): void {
   errorSink = fn;
 }
 
 /**
- * 安装全局未捕获异常 / Promise 拒绝处理器（应用启动时调一次）。
- * 之前未捕获错误只在 console 默认输出、且 unhandledrejection 常被忽略——这里统一加显眼前缀，
- * 确保「客户端输出所有的异常和错误」，并把漏网的 API / 网络错误归类后弹全局兜底 toast 提示玩家
- * （仅当错误一路冒泡到 window，即场景没有自己 catch + 提示时才会走到，故是「漏网才兜底」）。
+ * Install global uncaught exception / Promise rejection handlers (call once on application startup).
+ * Previously, uncaught errors only appeared in the console's default output and unhandledrejection was often ignored —
+ * this adds a prominent prefix to all of them, ensuring "all client exceptions and errors are visible",
+ * and classifies any API / network errors that slip through to show a global fallback toast to the player
+ * (only reached when an error bubbles all the way to window, i.e., the scene did not catch + display it itself — hence "last-resort fallback").
  */
 export function installGlobalErrorHandlers(): void {
   const g = globalThis as typeof globalThis & { __nwErrHooked?: boolean };
@@ -142,7 +146,7 @@ export function installGlobalErrorHandlers(): void {
   g.addEventListener('error', (ev: ErrorEvent) => {
     const detail = { source: ev.filename, line: ev.lineno, col: ev.colno, error: ev.error };
     console.error('[uncaught error]', ev.message, detail);
-    // 入环形缓冲（定向采集）：未捕获错误是排障最关键的线索，务必能被远程捞到。
+    // Record to ring buffer (targeted collection): uncaught errors are the most critical diagnostic signal and must be remotely retrievable.
     recordClientLog('error', 'uncaught', `[uncaught error] ${ev.message}`, { source: ev.filename, line: ev.lineno, col: ev.colno });
     errorSink?.('uncaught', `${ev.message} @ ${ev.filename}:${ev.lineno}`);
     const msg = uncaughtErrorMessage(ev.error ?? ev.message);

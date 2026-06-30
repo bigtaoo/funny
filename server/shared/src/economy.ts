@@ -1,12 +1,12 @@
-// 经济数值单一来源（ECONOMY_BALANCE.md §2~4）。纯数据，无 DB / 无 PIXI。
-// meta 用它列商品/盲盒池 + 算 dupe 退币；commercial 用它跑盲盒 RNG。两端同源避免漂移。
+// Single source of truth for economy values (ECONOMY_BALANCE.md §2~4). Pure data, no DB / no PIXI.
+// meta uses it to list shop items/gacha pools + compute dupe refunds; commercial uses it to run gacha RNG. Same source on both ends avoids drift.
 import type { Rarity } from './types';
 import type { RankId } from './ladder';
 import { UNIT_CARD_POOL_ID, unitCardPoolItems } from './unitCards';
 
 export const RARITY_ORDER: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
 
-/** 标准池稀有度权重（§4.1）。 */
+/** Standard pool rarity weights (§4.1). */
 export const RARITY_WEIGHTS: Record<Rarity, number> = {
   common: 700,
   rare: 230,
@@ -16,18 +16,18 @@ export const RARITY_WEIGHTS: Record<Rarity, number> = {
 
 export interface GachaPoolDef {
   id: string;
-  costSingle: number; // §3.2 单抽
-  costTen: number; // §3.2 十连
-  pityThreshold: number; // 大保底：累计 N 抽必出 legendary（§4.2）
-  tenFloor: Rarity; // 十连保底最低稀有度（§4.2，每 10 抽至少 1 个 epic+）
-  dupePolicy: 'shards' | 'coins'; // openapi 顶层兼容字段；细分按稀有度见 DUPE_*
+  costSingle: number; // §3.2 single pull cost
+  costTen: number; // §3.2 ten-pull cost
+  pityThreshold: number; // hard pity: guaranteed legendary after N cumulative pulls (§4.2)
+  tenFloor: Rarity; // ten-pull guaranteed minimum rarity (§4.2, at least 1 epic+ per 10 pulls)
+  dupePolicy: 'shards' | 'coins'; // openapi top-level compatibility field; per-rarity breakdown see DUPE_*
   itemsByRarity: Record<Rarity, string[]>;
 }
 
 /**
- * 盲盒材料奖励（E7 §4）：`mat_*` 前缀 itemId → 入库数量。
- * 发货端（metaserver/economy.ts deliverOrder）据此分流到 save.materials，不走皮肤 dupe 退币。
- * 数量 DRAFT [可调]：tier 越高稀有材料越多，但绝对量刻意压低（材料主 faucet 仍是关卡掉落）。
+ * Gacha material grants (E7 §4): `mat_*` prefix itemId → quantity to credit.
+ * Delivery side (metaserver/economy.ts deliverOrder) routes these to save.materials, bypassing skin dupe refunds.
+ * Quantities are DRAFT [adjustable]: higher tiers yield rarer materials, but absolute amounts are intentionally low (primary material faucet remains level drops).
  */
 export const GACHA_MATERIAL_GRANTS: Record<string, Record<string, number>> = {
   mat_scrap: { scrap: 10 },
@@ -35,10 +35,10 @@ export const GACHA_MATERIAL_GRANTS: Record<string, Record<string, number>> = {
   mat_binding: { binding: 1 },
 };
 
-// 占位皮肤池（真实皮肤内容待美术）；RNG 先按稀有度 tier 滚，再 tier 内均匀挑。
-// E7：标准池加入材料格（mat_*，发货走材料分流）+ 装备格（defId，发货走装备分流）。
-// "材料为主 + 装备成品低概率彩头"（ADR-017）：common 材料占 3/7，rare 材料 2/8，
-// epic/legendary 装备格 ≤ 皮肤格数，保持装备为彩头（DRAFT [可调]）。
+// Placeholder skin pool (real skin content pending art); RNG first rolls by rarity tier, then picks uniformly within tier.
+// E7: standard pool adds material slots (mat_*, delivery routes to materials) + equipment slots (defId, delivery routes to equipment).
+// "Materials primary + equipment as low-chance jackpot" (ADR-017): common materials 3/7, rare materials 2/8,
+// epic/legendary equipment slots ≤ skin slot count, keeping equipment as jackpot (DRAFT [adjustable]).
 export const GACHA_POOLS: GachaPoolDef[] = [
   {
     id: 'standard',
@@ -48,20 +48,20 @@ export const GACHA_POOLS: GachaPoolDef[] = [
     tenFloor: 'epic',
     dupePolicy: 'coins',
     itemsByRarity: {
-      // common: 4 皮肤 + 3 材料格 → 材料出率 43%
+      // common: 4 skins + 3 material slots → material drop rate 43%
       common: ['skin_c1', 'skin_c2', 'skin_c3', 'skin_c4', 'mat_scrap', 'mat_scrap', 'mat_scrap'],
-      // rare: 3 皮肤 + 2 材料格 + 3 精良装备 → 材料出率 25%，fine 装备 38%
+      // rare: 3 skins + 2 material slots + 3 fine equipment → material drop rate 25%, fine equipment 38%
       rare: ['skin_r1', 'skin_r2', 'skin_r3', 'mat_lead', 'mat_lead', 'wp_pen', 'ar_cardstock', 'tk_bookmark'],
-      // epic: 2 皮肤 + 1 材料格 + 3 稀有装备 → 装备彩头 50%
+      // epic: 2 skins + 1 material slot + 3 rare equipment → equipment jackpot 50%
       epic: ['skin_e1', 'skin_e2', 'mat_binding', 'wp_marker', 'ar_leather', 'tk_sticker'],
-      // legendary: 1 皮肤 + 3 史诗装备 → 装备彩头 75%（极稀有 tier，每拉 ~2%）
+      // legendary: 1 skin + 3 epic equipment → equipment jackpot 75% (extremely rare tier, ~2% per pull)
       legendary: ['skin_l1', 'wp_highlighter', 'ar_foil', 'tk_seal'],
     },
   },
-  // 单位卡池（S12-C，养成 ≠ 外观，独立池）：item = cardKey（infantry:1 …），稀有度映射卡级见
-  // unitCards.GACHA_RARITY_TO_CARD_LEVEL（common→T1 … legendary→T4）。发货端按 poolId 走单位卡
-  // 入库（cardInventory + 重算 unitLevels），**不走皮肤 dupe 退币**（集卡天然重复，全部入库）。
-  // 定价/保底沿用皮肤池占位 `[可调]`（§3.2）；dupePolicy 仅 openapi 顶层兼容字段，单位卡发货不读。
+  // Unit card pool (S12-C, progression ≠ cosmetics, separate pool): item = cardKey (infantry:1 …), rarity-to-card-level mapping see
+  // unitCards.GACHA_RARITY_TO_CARD_LEVEL (common→T1 … legendary→T4). Delivery side by poolId credits unit cards
+  // (cardInventory + recalculate unitLevels), **bypasses skin dupe refund** (cards naturally duplicate, all credited).
+  // Pricing/pity reuses skin pool placeholder `[adjustable]` (§3.2); dupePolicy is only an openapi top-level compatibility field, not read by unit card delivery.
   {
     id: UNIT_CARD_POOL_ID,
     costSingle: 150,
@@ -77,13 +77,13 @@ export interface ShopItemDef {
   id: string;
   cost: number;
   kind: string; // skin | item …
-  grants: string; // 发货时写进 inventory 的 itemId
+  grants: string; // itemId written into inventory at delivery
   rarity: Rarity;
 }
 
-// 商店直购定价（§3.1，legendary 仅盲盒产出不直售）。
-// protect_enhance：强化保护道具（E7 §6.2），失败时保留材料不损耗，大 R 向消耗品。
-// kind='item' → 发货写 save.inventory.items[grants]，而非 skins（见 metaserver/economy.ts deliverOrder）。
+// Direct shop purchase pricing (§3.1, legendary items only available through gacha, not direct sale).
+// protect_enhance: enhancement protection item (E7 §6.2), preserves materials on failure without consuming them, consumable for big spenders.
+// kind='item' → delivery writes save.inventory.items[grants], not skins (see metaserver/economy.ts deliverOrder).
 export const SHOP_ITEMS: ShopItemDef[] = [
   { id: 'skin_shop_c1', cost: 300, kind: 'skin', grants: 'skin_shop_c1', rarity: 'common' },
   { id: 'skin_shop_r1', cost: 800, kind: 'skin', grants: 'skin_shop_r1', rarity: 'rare' },
@@ -91,9 +91,11 @@ export const SHOP_ITEMS: ShopItemDef[] = [
   { id: 'protect_enhance', cost: 500, kind: 'item', grants: 'protect_enhance', rarity: 'rare' },
 ];
 
-// 重复转化（§4.3）。设计原意 common/rare → 碎片，epic/legendary → 退币；但碎片落在客户端同步段
-// materials，会被客户端 PUT 覆盖（权威冲突），且碎片兑换表本就「待定」。S5 先统一退币（权威钱包、
-// 幂等、无同步冲突）：common/rare 用小额占位，epic/legendary 按 §4.3。碎片路径待 materials 权威定后再接。
+// Duplicate conversion (§4.3). Original design: common/rare → shards, epic/legendary → coin refund;
+// but shards land in client-synced materials, which client PUT overwrites (authority conflict), and
+// the shard redemption table is "TBD". S5 unifies to coin refund for now (authoritative wallet,
+// idempotent, no sync conflict): common/rare use small placeholder amounts, epic/legendary per §4.3.
+// Shard path to be wired up once materials authority is finalized.
 export const DUPE_REFUND_COINS: Record<Rarity, number> = {
   common: 10,
   rare: 50,
@@ -101,15 +103,15 @@ export const DUPE_REFUND_COINS: Record<Rarity, number> = {
   legendary: 1500,
 };
 
-/** 激励广告（§2.1）。10 coins/条（2026-06-27 拍板，原 50 偏高；上线后视效果再议）。 */
+/** Rewarded ads (§2.1). 10 coins per ad (decided 2026-06-27, original 50 was too high; revisit after launch based on performance). */
 export const ADS_REWARD_COINS = 10;
 export const ADS_DAILY_CAP = 5;
-export const ADS_MIN_INTERVAL_MS = 30 * 60 * 1000; // 30min 两条广告最短间隔（C2）
+export const ADS_MIN_INTERVAL_MS = 30 * 60 * 1000; // 30min minimum interval between two ads (C2)
 
-/** 改名消耗（金币）。改一次展示名扣此数（commercial 钱包扣币 → meta 改名）。 */
+/** Rename cost (coins). Deducted once per display-name change (commercial wallet deducts → meta renames). */
 export const RENAME_COST = 500;
 
-/** IAP 档位 → 到账金币（§2.2，首充双倍等钩子后期再叠）。 */
+/** IAP tiers → coins credited (§2.2, hooks like first-purchase double-coins to be layered on later). */
 export const IAP_TIERS: Record<string, number> = {
   small: 600,
   mid: 3300,
@@ -117,8 +119,8 @@ export const IAP_TIERS: Record<string, number> = {
 };
 
 /**
- * 分段单局胜利金币（§2.3b，持续 faucet）。高段更高，配合每日上限防通胀。
- * 仅 ranked 胜局发放（含掉线/认输判胜、对等裁判判定的诚实胜方）。
+ * Tiered per-match victory coins (§2.3b, ongoing faucet). Higher ranks earn more; paired with daily cap to prevent inflation.
+ * Awarded only for ranked wins (includes disconnect/surrender judged wins and honest winners determined by peer-judge).
  */
 export const VICTORY_COINS_BY_RANK: Record<RankId, number> = {
   bronze: 5,
@@ -132,10 +134,10 @@ export const VICTORY_COINS_BY_RANK: Record<RankId, number> = {
   king: 18,
 };
 
-/** 每日可领胜利金币的对局上限（超出仍计积分/战绩，不发币，§2.3b）。 */
+/** Daily win cap for victory coins (wins beyond this still count for ranking/record, no coins awarded, §2.3b). */
 export const VICTORY_DAILY_WIN_CAP = 10;
 
-/** 段位 → 单局胜利金币（未知段位回退最低档）。 */
+/** Rank → per-match victory coins (unknown rank falls back to minimum tier). */
 export function victoryCoinsForRank(rank: string): number {
   return VICTORY_COINS_BY_RANK[rank as RankId] ?? VICTORY_COINS_BY_RANK.bronze;
 }
@@ -152,7 +154,7 @@ export function gachaCost(pool: GachaPoolDef, count: number): number {
   return count === 10 ? pool.costTen : pool.costSingle * count;
 }
 
-/** 展开成 openapi GachaPool.entries（客户端展示用，tier 内权重均分）。 */
+/** Expand into openapi GachaPool.entries (for client display, weight evenly distributed within each tier). */
 export function poolEntries(
   pool: GachaPoolDef,
 ): { itemId: string; weight: number; rarity: Rarity }[] {

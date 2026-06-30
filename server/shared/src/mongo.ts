@@ -1,5 +1,5 @@
-// Mongo client 工厂 + 集合句柄（SERVER_API.md §5、META_DESIGN.md §6.3）。
-// 部署配单节点副本集解锁跨集合事务；钱包/发货走单文档原子更新。
+// Mongo client factory + collection handles (SERVER_API.md §5, META_DESIGN.md §6.3).
+// Deploy with a single-node replica set to unlock cross-collection transactions; wallet/delivery use single-document atomic updates.
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
 import type { SaveData } from './types';
 import type { StatKey } from './achievements';
@@ -7,7 +7,7 @@ import type { LadderSeasonDoc, LadderSeasonSnapshotDoc } from './season';
 import type { EventTaskDef, EventRewardDef, EventTaskProgress } from './events';
 import type { ChatRegion } from './chatFilter';
 
-// —— 集合文档形状 ——
+// —— Collection document shapes ——
 export interface SaveDoc {
   _id: string; // accountId
   save: SaveData;
@@ -17,45 +17,45 @@ export interface SaveDoc {
 export interface AccountDoc {
   _id: string; // accountId
   createdAt: number;
-  // —— 凭证（每种可选，至少一条）——
-  deviceId?: string; // 匿名设备（稀疏唯一）
-  openid?: string; // 微信（稀疏唯一）
+  // —— Credentials (each optional, at least one required) ——
+  deviceId?: string; // anonymous device (sparse unique)
+  openid?: string; // WeChat (sparse unique)
   password?: {
-    // 邮箱/用户名密码（ACCOUNT_DESIGN §2.2）
-    loginId: string; // 规范化的 email/username（稀疏唯一）
-    hash: string; // scrypt（shared/password.ts）
+    // email/username password (ACCOUNT_DESIGN §2.2)
+    loginId: string; // normalized email/username (sparse unique)
+    hash: string; // scrypt (shared/password.ts)
   };
-  oauth?: { provider: string; sub: string }[]; // 第三方（provider+sub 唯一，SA-2）
-  // —— 资料 ——
+  oauth?: { provider: string; sub: string }[]; // third-party (provider+sub unique, SA-2)
+  // —— Profile ——
   displayName?: string;
-  /** 9 位数字公开 id（全局唯一，玩家交流/投诉用）。首次鉴权时惰性生成。 */
+  /** 9-digit numeric public id (globally unique, used for player communication/reports). Lazily generated on first auth. */
   publicId?: string;
   /**
-   * 合规地区码（SOC10）。auth 时由 `Accept-Language` 头惰性推断并刷新（best-effort）。
-   * 私聊敏感词按发送方此字段选词表；缺省 / 旧账号无此字段 → `'global'`（仅基础词表）。
+   * Compliance region code (SOC10). Lazily inferred and refreshed from the `Accept-Language` header on auth (best-effort).
+   * Private-chat sensitive-word filtering uses the sender's region to select the word list; absent / legacy accounts → `'global'` (basic word list only).
    */
   region?: ChatRegion;
-  /** C4 PvE 反作弊：可疑次数 + 封号标记（账号层面，auth 拦截用）。 */
+  /** C4 PvE anti-cheat: suspicious attempt count + ban flag (account level, used to block auth). */
   flags?: {
-    pveWarnings?: number; // 累计 PvE 可疑次数
-    banned?: boolean;     // 达到阈值后封号；auth 时返 ACCOUNT_BANNED
-    gdprConsent?: boolean; // C5-c GDPR 同意（必须为 true 才记录分析埋点）
+    pveWarnings?: number; // cumulative PvE suspicious attempt count
+    banned?: boolean;     // banned after threshold is reached; auth returns ACCOUNT_BANNED
+    gdprConsent?: boolean; // C5-c GDPR consent (must be true to record analytics events)
   };
-  /** C5-b 软删除时间戳；写入后 auth 返 ACCOUNT_DELETED，7 天后异步清理数据。 */
+  /** C5-b soft-delete timestamp; once set, auth returns ACCOUNT_DELETED and data is asynchronously purged after 7 days. */
   deletedAt?: number;
 }
 
 /**
- * 是否匿名：仅挂 device、无任何可恢复凭证（password/oauth/wx）。
- * 联机/商店/充值要求 isAnonymous=false（ACCOUNT_DESIGN §2.2）。计算得出不落库，避免漂移。
+ * Whether the account is anonymous: only a device credential attached, no recoverable credentials (password/oauth/wx).
+ * Multiplayer/store/recharge require isAnonymous=false (ACCOUNT_DESIGN §2.2). Computed on-the-fly, not persisted, to avoid drift.
  */
 export function isAnonymousAccount(doc: AccountDoc): boolean {
   return !doc.openid && !doc.password && !(doc.oauth && doc.oauth.length > 0);
 }
 
-// gachaHistory / walletLog / iapReceipts 已迁出 meta 库（S5，COMMERCIAL_DESIGN §8.1）：
-// 钱包/流水/抽卡历史/充值票据现在是 commercial 服务的专属库 `notebook_wars_commercial`
-// 的 wallets/ledger/orders/recharges/gachaHistory。meta 不再持有这几张表。
+// gachaHistory / walletLog / iapReceipts have been moved out of the meta database (S5, COMMERCIAL_DESIGN §8.1):
+// wallet/ledger/gacha history/recharge receipts now live in the commercial service's dedicated database `notebook_wars_commercial`
+// as wallets/ledger/orders/recharges/gachaHistory. meta no longer owns these collections.
 
 /**
  * Inline replay (S1-RP): seed + config + non-empty frame log, no state.
@@ -76,9 +76,9 @@ export interface MatchDoc {
   mode: string;
   seed: string;
   /**
-   * 归档时快照每方身份 + ELO 结算结果（战绩历史 `GET /match/history` 用）。
-   * `displayName`/`publicId` 是归档当刻的快照（事后改名不回填）；`eloDelta`/`eloAfter`
-   * 仅 ranked 且成功结算时存在（friendly / 作废局缺省）。
+   * Snapshot of each side's identity + ELO settlement result at archive time (used by match history `GET /match/history`).
+   * `displayName`/`publicId` are snapshots at the moment of archival (renames are not back-filled); `eloDelta`/`eloAfter`
+   * only exist for ranked matches that settled successfully (absent for friendly / voided matches).
    */
   players: {
     side: number;
@@ -91,27 +91,27 @@ export interface MatchDoc {
   winner: number;
   reason: string;
   hashOk: boolean;
-  /** C3：hash 不一致且对等裁判未能介入时置 true（admin /admin/mismatches 可见）。 */
+  /** C3: set to true when hash is inconsistent and the peer judge could not intervene (visible in admin /admin/mismatches). */
   hashMismatch?: boolean;
   /** Pointer to externally-stored replay (large matches); reserved, not yet used. */
   replayRef?: string;
   /** Embedded replay (small matches) — the retained frame log, zero extra cost. */
   replay?: MatchReplayDoc;
   /**
-   * 对等裁判定罪标记（Phase C）：ranked hash 不一致经第三方无头复算后，与裁判结果
-   * 不符的一方判负 + 记此标记。`judgeAccountId` 为复算裁判（审计用）。
+   * Peer-judge conviction flag (Phase C): when a ranked hash mismatch is resolved by a third-party headless re-simulation,
+   * the side whose result disagrees with the judge is declared the loser and this flag is set. `judgeAccountId` is the re-simulation judge (for auditing).
    */
   cheat?: { side: number; accountId: string; judgeAccountId?: string };
   /**
-   * 成就 PvP 统计上报值（S9-7 L2 离线抽查的比对基准，仅 ranked）。per-side：side 号转字符串 key →
-   * 该方 L1 清洗后**已入账**的 kill/cast 增量（即 `statDeltaForSide` 算出并 accrue 的值）。
-   * `pvp.wins` 不含（服务器自算、不审计）。服务器侧只读、不进 wire schema、不下发。
+   * Achievement PvP stat reported values (comparison baseline for S9-7 L2 offline audit, ranked only). Per-side: side number as string key →
+   * the kill/cast deltas for that side that were **credited** after L1 sanitisation (i.e. the value computed by `statDeltaForSide` and accrued).
+   * `pvp.wins` excluded (server-computed, not audited). Server-side read-only, not included in wire schema, not sent to clients.
    */
   reportedStats?: Record<string, Partial<Record<StatKey, number>>>;
   /**
-   * 成就 PvP 统计离线抽查结果（S9-7 L2，§4.4）。**存在即幂等闸**——抽查批只查 `audited` 缺省的局。
-   * `verdict`：`clean`=上报与复算一致 / `overclaim`=有方超报（已回滚 + 升档 + 入审查队列）/
-   * `skipped`=无裁判可裁/复算失败/旧引擎（benefit-of-doubt，不定罪）。`overclaim` 记 per-side 实际回滚量。
+   * Achievement PvP stat offline audit result (S9-7 L2, §4.4). **Presence acts as an idempotency gate** — audit batches only query matches where `audited` is absent.
+   * `verdict`: `clean` = reported matches re-simulation / `overclaim` = a side over-reported (rolled back + suspicion escalated + added to review queue) /
+   * `skipped` = no judge available / re-simulation failed / old engine (benefit-of-doubt, no conviction). `overclaim` records the actual per-side rollback amount.
    */
   audited?: {
     ts: number;
@@ -122,29 +122,29 @@ export interface MatchDoc {
   ts: number;
 }
 
-/** 广告每日 cap 计数（S5-5，meta 权威，不放客户端同步段防刷）。_id = `${accountId}:${dayKey}`。 */
+/** Daily ad cap counter (S5-5, authoritative in meta, not surfaced to client sync segment to prevent abuse). _id = `${accountId}:${dayKey}`. */
 export interface AdsDailyDoc {
   _id: string;
   accountId: string;
   dayKey: string;
   count: number;
   ts: number;
-  lastAdAt?: number; // 上次广告时间戳（30min 间隔门）
+  lastAdAt?: number; // timestamp of the last ad (30-min cooldown gate)
 }
 
-/** 广告凭证唯一性（C2）：adToken SHA-256 hash，TTL 48h 自清。_id = tokenHash。 */
+/** Ad token uniqueness (C2): SHA-256 hash of adToken, TTL 48h auto-expiry. _id = tokenHash. */
 export interface AdsTokenDoc {
   _id: string;   // SHA-256(adToken) hex
   accountId: string;
   ts: number;
-  expireAt: Date; // TTL 锚（48h）
+  expireAt: Date; // TTL anchor (48h)
 }
 
 /**
- * 大局录像外置存储（S1-RP）：当内嵌帧日志过大（超阈值）时，replay 落此独立集合、
- * `MatchDoc.replayRef = roomId` 指向这里，使 `matches` 文档保持精简、列表/战绩查询快。
- * `GET /match/{roomId}/replay` 取录像时先看 `MatchDoc.replay`（内嵌），缺则回退此集合。
- * （仍是 Mongo BSON binary，非外部对象存储 / S3——那是后续 infra 决策，见 META_TASKS S1-RP。）
+ * External replay storage for large matches (S1-RP): when the embedded frame log exceeds the size threshold, the replay is stored in this
+ * separate collection and `MatchDoc.replayRef = roomId` points here, keeping `matches` documents compact and list/history queries fast.
+ * `GET /match/{roomId}/replay` checks `MatchDoc.replay` (embedded) first and falls back to this collection if absent.
+ * (Still Mongo BSON binary, not an external object store / S3 — that is a future infra decision, see META_TASKS S1-RP.)
  */
 export interface ReplayBlobDoc {
   _id: string; // roomId
@@ -152,7 +152,7 @@ export interface ReplayBlobDoc {
   ts: number;
 }
 
-/** PvE 每日发材料通关次数计数（服务器权威，防刷）。_id = `${accountId}:${dayKey}`。 */
+/** PvE daily material-rewarding clear count (server-authoritative, anti-abuse). _id = `${accountId}:${dayKey}`. */
 export interface PveDailyDoc {
   _id: string;
   accountId: string;
@@ -162,35 +162,36 @@ export interface PveDailyDoc {
 }
 
 /**
- * PvE 通关录像抽检复算记录（PVE_INTEGRITY §8.6 L1）。被抽中的通关先记此（材料未发、progress/stars
- * 已写），客户端补传录像 → 经 gateway 第三方无头复算 → 复算星数 ≥ 声称才发材料。status：
- * `pending`=等录像、`verified`=复算通过已发、`unverified`=无裁判可裁(benefit-of-doubt 已发)、
- * `rejected`=复算不符未发(可疑)。`pveUpgrades` 是结算当刻服务器权威蓝图快照（复算用，防漂移）。
+ * PvE clear replay spot-check re-simulation record (PVE_INTEGRITY §8.6 L1). Sampled clears are recorded here first (materials not yet granted,
+ * progress/stars already written); the client then uploads the replay → third-party headless re-simulation via gateway → materials are granted
+ * only if the re-simulated star count is >= the claimed count. status:
+ * `pending` = awaiting replay, `verified` = re-simulation passed and materials granted, `unverified` = no judge available (benefit-of-doubt, materials granted),
+ * `rejected` = re-simulation mismatch, materials not granted (suspicious). `pveUpgrades` is the server-authoritative blueprint snapshot at settlement time (used for re-simulation, prevents drift).
  */
 export interface PveVerificationDoc {
   _id: string; // verifyId（uuid）
   accountId: string;
   levelId: string;
-  /** 客户端声称的星数（待复算校验）。 */
+  /** Star count claimed by the client (pending re-simulation verification). */
   claimedStars: number;
-  /** @deprecated S3-2 快照，S12 起由 unitLevels 替代（旧记录保留兼容）。 */
+  /** @deprecated S3-2 snapshot, replaced by unitLevels from S12 onwards (kept for backward compatibility with old records). */
   pveUpgrades: Record<string, number>;
-  /** S12 结算当刻服务器权威 unitLevels 快照（复算蓝图）。 */
+  /** S12 server-authoritative unitLevels snapshot at settlement time (re-simulation blueprint). */
   unitLevels?: Record<string, number>;
-  /** 触发原因（审计）：first | anomaly | sample。 */
+  /** Trigger reason (audit): first | anomaly | sample. */
   reason: string;
   status: 'pending' | 'verified' | 'unverified' | 'rejected';
-  /** 客户端上报的本局成就计数（S9-3b）：kill/cast 各类型计数，审计用比对基准。 */
+  /** Achievement stats reported by the client for this match (S9-3b): kill/cast counts by type, baseline for audit comparison. */
   reportedStats?: Record<string, number>;
-  /** 复算得到的星数（verified/rejected 时存）。 */
+  /** Star count from re-simulation (present when verified or rejected). */
   judgedStars?: number;
   judgeAccountId?: string;
   ts: number;
 }
 
 /**
- * PvE 录像复算拒绝审计记录（S4-4）：每次 pveVerify 判 rejected 写一条。供运维后台查看可疑账号
- * 历史 + pveRejectCount 三次封号审计。_id = verifyId（与 pveVerifications 一一对应）。
+ * PvE replay re-simulation rejection audit record (S4-4): one entry written for every pveVerify judged as rejected.
+ * Used by the ops admin to review suspicious account history + pveRejectCount three-strike ban audit. _id = verifyId (1-to-1 with pveVerifications).
  */
 export interface PveRejectDoc {
   _id: string; // verifyId
@@ -198,143 +199,143 @@ export interface PveRejectDoc {
   levelId: string;
   claimedStars: number;
   judgedStars: number;
-  rejectCountAfter: number; // bump 后的 pveRejectCount
-  banned: boolean; // 是否因此次达到封号阈值
+  rejectCountAfter: number; // pveRejectCount after this increment
+  banned: boolean; // whether this rejection pushed the account over the ban threshold
   ts: number;
 }
 
 /**
- * 录像分享链接（S1-RP）：任意玩家可凭 shareId 取对局录像（无需登录）。
- * `expiresAt` 超期后 TTL 自清；GET /share/replay/:shareId 超期返回 404。
+ * Replay share link (S1-RP): any player can fetch a match replay using a shareId (no login required).
+ * `expiresAt` triggers TTL auto-expiry; GET /share/replay/:shareId returns 404 after expiry.
  */
 export interface ReplayShareDoc {
   _id: string; // shareId（uuid）
   roomId: string;
-  accountId: string; // 创建者（发起分享的一方）
-  expiresAt: Date; // BSON Date，TTL 锚（7 天）
+  accountId: string; // creator (the side that initiated the share)
+  expiresAt: Date; // BSON Date, TTL anchor (7 days)
   ts: number;
 }
 
 /**
- * 状态流录像分享（游戏外公开分享，REPLAY_SHARE_DESIGN §3）。与 {@link ReplayShareDoc}（输入流、
- * 引用 roomId→replayBlobs、仅本人参与可分享）**正交**：状态流 blob 由客户端自产、直接随分享请求
- * 上传，匿名可凭 shareCode 取回；**不可信**、仅供观赏，绝不进反作弊/结算。
- * `expiresAt` TTL 自清；`GET /r/{shareCode}` 超期/不存在返回 404。
+ * State-stream replay share (public share outside the game, REPLAY_SHARE_DESIGN §3). **Orthogonal** to {@link ReplayShareDoc} (input-stream,
+ * references roomId→replayBlobs, shareable only by a participant): the state-stream blob is produced by the client and uploaded directly
+ * with the share request; anyone can retrieve it anonymously via shareCode. **Untrusted** — for viewing only, never fed into anti-cheat/settlement.
+ * `expiresAt` triggers TTL auto-expiry; `GET /r/{shareCode}` returns 404 if expired or not found.
  */
 export interface StateReplayShareDoc {
-  _id: string; // shareCode（不可猜随机串，≥128bit）
-  /** delta 编码的状态流录像（EncodedStateReplay）；opaque blob，meta 不解释其内部结构。 */
+  _id: string; // shareCode (unguessable random string, ≥128bit)
+  /** Delta-encoded state-stream replay (EncodedStateReplay); opaque blob — meta does not interpret its internal structure. */
   blob: unknown;
-  createdBy: string; // 创建者 accountId
+  createdBy: string; // creator accountId
   createdAt: number;
-  expireAt: Date; // BSON Date，TTL 锚
+  expireAt: Date; // BSON Date, TTL anchor
   viewCount: number;
   sizeBytes: number;
 }
 
 /**
- * 成就 PvP 统计反作弊审查队列（S9-7 L2/L3，ACHIEVEMENT_DESIGN §4.4）。离线抽查复算实锤某方
- * 超报 kill/cast → 回滚超报 + 升 statSuspicion + 记此条供运维后台（OPS）人工复核/封禁。
- * 业务库（meta），由 admin 经 `GET /internal/anticheat/reviews` 代理读取（admin 库物理隔离）。
- * `_id = `${roomId}:${accountId}``：每局每作弊方一条，天然幂等（防重复回滚）。
+ * Achievement PvP stat anti-cheat review queue (S9-7 L2/L3, ACHIEVEMENT_DESIGN §4.4). When an offline audit re-simulation conclusively confirms
+ * a side over-reported kill/cast → roll back the over-reported stats + escalate statSuspicion + write this entry for ops admin (OPS) manual review/ban.
+ * Lives in the business database (meta), proxied by admin via `GET /internal/anticheat/reviews` (admin database is physically isolated).
+ * `_id = `${roomId}:${accountId}``: one entry per cheating side per match, naturally idempotent (prevents double rollback).
  */
 export interface AntiCheatReviewDoc {
   _id: string; // `${roomId}:${accountId}`
   roomId: string;
   accountId: string;
-  publicId?: string; // 归档当刻快照（OPS 展示）
+  publicId?: string; // snapshot at archive time (for OPS display)
   side: number;
-  reported: Partial<Record<StatKey, number>>; // 该方上报值
-  authoritative: Partial<Record<StatKey, number>>; // 裁判复算权威值
-  overclaim: Partial<Record<StatKey, number>>; // 理论超报量（reported - authoritative）
-  rolledBack: Partial<Record<StatKey, number>>; // 实际回滚量（0 下限钳制后）
-  suspicionAfter: number; // 升档后该账号 statSuspicion
-  judgeAccountId?: string; // 复算裁判（审计）
+  reported: Partial<Record<StatKey, number>>; // values reported by this side
+  authoritative: Partial<Record<StatKey, number>>; // authoritative values from judge re-simulation
+  overclaim: Partial<Record<StatKey, number>>; // theoretical over-report (reported - authoritative)
+  rolledBack: Partial<Record<StatKey, number>>; // actual rollback amount (clamped to 0 floor)
+  suspicionAfter: number; // statSuspicion for this account after escalation
+  judgeAccountId?: string; // re-simulation judge (for auditing)
   status: 'open' | 'reviewed';
   ts: number;
 }
 
-// 好友/私聊/拉黑集合（FriendEdgeDoc / FriendRequestDoc / BlockDoc / ConversationDoc / ChatMessageDoc）
-// 已迁至 socialsvc 的 nw_social 库（P2，SOCIAL_SVC_DESIGN §6 P2），metaserver 不再持有这些集合。
+// Friend/private-chat/block collections (FriendEdgeDoc / FriendRequestDoc / BlockDoc / ConversationDoc / ChatMessageDoc)
+// have been migrated to socialsvc's nw_social database (P2, SOCIAL_SVC_DESIGN §6 P2); metaserver no longer owns these collections.
 
 export interface MailAttachmentDoc {
-  // 'material' → SaveData.materials 养成统一池（SLG8）；'item' → inventory.items 泛用桶。
+  // 'material' → SaveData.materials unified progression pool (SLG8); 'item' → inventory.items general-purpose bucket.
   kind: 'coins' | 'item' | 'skin' | 'material';
   id?: string;
   count?: number;
 }
 
-/** 邮件（SOC5）：每收件人一份；附件领取经 commercial 幂等（claimOrderId）。 */
+/** Mail (SOC5): one document per recipient; attachment claiming goes through commercial idempotency (claimOrderId). */
 export interface MailDoc {
   _id: string; // uuid
-  to: string; // accountId（收件人）
-  from: 'system' | string; // 'system' 或发件人 accountId
+  to: string; // accountId (recipient)
+  from: 'system' | string; // 'system' or sender accountId
   fromName?: string;
   subject: string;
   body: string;
   attachments?: MailAttachmentDoc[];
   createdAt: number;
-  // BSON Date（非 epoch number）：Mongo TTL 只过期 Date 字段，到期绝对时间（expireAfterSeconds:0）。
-  // 写入端存 new Date(createdAt + MAIL_DEFAULT_TTL_SEC*1000)，读出转 number 建 MailView。
+  // BSON Date (not an epoch number): Mongo TTL only expires Date fields, absolute expiry time (expireAfterSeconds:0).
+  // Writers store new Date(createdAt + MAIL_DEFAULT_TTL_SEC*1000); readers convert to number when building MailView.
   expireAt: Date;
   readAt?: number;
   claimedAt?: number;
-  claimOrderId?: string; // 领取幂等（commercial orderId）
+  claimOrderId?: string; // claim idempotency key (commercial orderId)
 }
 
 /**
- * 装备操作幂等账本（E2，EQUIPMENT_DESIGN §18.2）：合成/托管等"扣料 + 产/移实例"类操作，
- * 重复请求重放首次结果（不二次扣料、不二次 roll）。_id = idempotencyKey（合成）/ orderId（托管）。
- * TTL 自清（保留近 N 天足够覆盖客户端重试 + worldsvc 退还窗口）。
+ * Equipment operation idempotency ledger (E2, EQUIPMENT_DESIGN §18.2): for "consume materials + produce/move instance" operations such as
+ * crafting/escrow, repeated requests replay the first result (no double deduction, no double roll). _id = idempotencyKey (craft) / orderId (escrow).
+ * TTL auto-expiry (retained for N days, long enough to cover client retries + worldsvc return window).
  */
 export interface EquipmentIdemDoc {
   _id: string; // idempotencyKey / orderId
   accountId: string;
   op: 'craft' | 'escrow' | 'enhance' | 'salvage' | 'reforge';
   /**
-   * 首次执行结果快照，重放原样回：
-   *   craft   → 产出实例（EquipmentInstance）
-   *   escrow  → 托管走的实例快照
-   *   enhance → { success, instance }（掷骰结果 + 强化后实例，E3）
-   *   salvage → { refunded }（返还材料合计，E3）
+   * Snapshot of the first execution result, replayed verbatim on retry:
+   *   craft   → produced instance (EquipmentInstance)
+   *   escrow  → snapshot of the escrowed instance
+   *   enhance → { success, instance } (dice roll result + enhanced instance, E3)
+   *   salvage → { refunded } (total materials returned, E3)
    */
   result: unknown;
-  expireAt: Date; // BSON Date，TTL 锚
+  expireAt: Date; // BSON Date, TTL anchor
 }
 
-/** 体力实时状态（A4）。_id = accountId。整行原子 findOneAndUpdate 扣除，无 rev lock。 */
+/** Stamina real-time state (A4). _id = accountId. Whole-row atomic findOneAndUpdate deduction, no rev lock. */
 export interface StaminaDoc {
   _id: string; // accountId
-  current: number; // 当前体力 (0..120)
-  regenAt: number; // 下次回复 1 点的时间戳(ms)；已满时为 0
+  current: number; // current stamina (0..120)
+  regenAt: number; // timestamp (ms) of the next +1 regen tick; 0 when already full
 }
 
 /**
- * 限时活动定义（B6，ADR-014）。_id = eventId（admin 写入）。
- * admin 通过 POST /admin/events 写入；无 admin UI 写 openapi（纯运营后台，非本次范围）。
+ * Time-limited event definition (B6, ADR-014). _id = eventId (written by admin).
+ * Written by admin via POST /admin/events; no admin UI openapi (pure ops backend, out of scope here).
  */
 export interface EventDoc {
-  _id: string; // eventId（UUID 或运营自定义字符串）
-  title: string; // 活动名称（显示用）
-  description?: string; // 简介（可选）
-  windowStart: number; // 活动开始时间戳 ms（含）
-  windowEnd: number;   // 活动结束时间戳 ms（不含）
+  _id: string; // eventId (UUID or ops-defined string)
+  title: string; // event name (display)
+  description?: string; // short description (optional)
+  windowStart: number; // event start timestamp ms (inclusive)
+  windowEnd: number;   // event end timestamp ms (exclusive)
   tasks: EventTaskDef[];
   rewards: EventRewardDef[];
   createdAt: number;
 }
 
 /**
- * 活动参与记录（B6）。_id = `${eventId}:${accountId}`，天然幂等。
- * points 可增不可减；claimedRewards 是 rewardId 列表（允许同 id 重复表示多次领取）。
+ * Event participation record (B6). _id = `${eventId}:${accountId}`, naturally idempotent.
+ * points can only increase; claimedRewards is a list of rewardIds (same id may appear multiple times for multi-claim rewards).
  */
 export interface EventParticipantDoc {
   _id: string; // `${eventId}:${accountId}`
   eventId: string;
   accountId: string;
-  points: number; // 已积累的活动积分（原子 $inc）
-  taskProgress: EventTaskProgress[]; // 各任务完成进度
-  /** 已兑换奖励 rewardId 列表（重复领则 push 多条，计数方式）。 */
+  points: number; // accumulated event points (atomic $inc)
+  taskProgress: EventTaskProgress[]; // completion progress for each task
+  /** List of claimed rewardIds (push duplicate entries for multi-claim, count by length). */
   claimedRewards: string[];
   updatedAt: number;
 }
@@ -348,25 +349,25 @@ export interface Collections {
   pveDaily: Collection<PveDailyDoc>;
   pveVerifications: Collection<PveVerificationDoc>;
   antiCheatReviews: Collection<AntiCheatReviewDoc>;
-  // PvE 反作弊（S4-4）
+  // PvE anti-cheat (S4-4)
   pveRejections: Collection<PveRejectDoc>;
-  // 录像分享（S1-RP）
+  // replay shares (S1-RP)
   replayShares: Collection<ReplayShareDoc>;
-  // 状态流录像游戏外分享（REPLAY_SHARE_DESIGN）
+  // state-stream replay public shares outside the game (REPLAY_SHARE_DESIGN)
   stateReplayShares: Collection<StateReplayShareDoc>;
-  // 邮件（S6-3，系统邮件仍由 metaserver 写入；玩家邮件 CRUD 已迁至 socialsvc）
+  // mail (S6-3, system mail still written by metaserver; player mail CRUD migrated to socialsvc)
   mail: Collection<MailDoc>;
-  // 装备（E2）
+  // equipment (E2)
   equipmentIdem: Collection<EquipmentIdemDoc>;
-  // 天梯赛季（S11）：全局单文档（_id='current'）
+  // ladder seasons (S11): single global document (_id='current')
   ladderSeasons: Collection<LadderSeasonDoc>;
-  // 天梯赛季结算快照（L2-1）：每账号每季一条，季末闭环写入，兼作幂等账本
+  // ladder season settlement snapshots (L2-1): one entry per account per season, written at season close, also serves as idempotency ledger
   ladderSeasonSnapshots: Collection<LadderSeasonSnapshotDoc>;
-  // 广告凭证唯一性（C2）
+  // ad token uniqueness (C2)
   adsTokens: Collection<AdsTokenDoc>;
-  // 体力（A4）：实时扣；_id = accountId
+  // stamina (A4): real-time deduction; _id = accountId
   pveStamina: Collection<StaminaDoc>;
-  // 限时活动（B6）
+  // time-limited events (B6)
   events: Collection<EventDoc>;
   eventParticipants: Collection<EventParticipantDoc>;
 }
@@ -375,7 +376,7 @@ export interface MongoHandle {
   client: MongoClient;
   db: Db;
   collections: Collections;
-  /** 创建索引（启动时调一次，幂等）。 */
+  /** Create indexes (called once at startup, idempotent). */
   ensureIndexes(): Promise<void>;
   close(): Promise<void>;
 }
@@ -397,8 +398,8 @@ export async function createMongo(
     // Surface a clear, credential-free message before rethrowing, so a failed
     // DB connection at startup is never a silent/opaque crash regardless of caller.
     console.error(
-      `[mongo] 连接 MongoDB 失败 (uri=${sanitizeMongoUri(uri)}, db=${dbName}): ` +
-        `${(err as Error).message}. 请确认数据库已启动且连接配置 (NW_MONGO_URI) 正确。`,
+      `[mongo] Failed to connect to MongoDB (uri=${sanitizeMongoUri(uri)}, db=${dbName}): ` +
+        `${(err as Error).message}. Please verify the database is running and the connection config (NW_MONGO_URI) is correct.`,
     );
     throw err;
   }
@@ -428,7 +429,7 @@ export async function createMongo(
   async function ensureIndexes(): Promise<void> {
     await collections.accounts.createIndex({ openid: 1 }, { sparse: true, unique: true });
     await collections.accounts.createIndex({ deviceId: 1 }, { sparse: true, unique: true });
-    // 密码登录 loginId 唯一（SA-1）；oauth provider+sub 唯一（SA-2，预建）。
+    // password login loginId uniqueness (SA-1); oauth provider+sub uniqueness (SA-2, pre-built).
     await collections.accounts.createIndex(
       { 'password.loginId': 1 },
       { sparse: true, unique: true },
@@ -437,51 +438,51 @@ export async function createMongo(
       { 'oauth.provider': 1, 'oauth.sub': 1 },
       { sparse: true, unique: true },
     );
-    // 9 位数字公开 id 全局唯一（稀疏，旧账号惰性补）。
+    // 9-digit numeric public id globally unique (sparse, lazily back-filled for legacy accounts).
     await collections.accounts.createIndex({ publicId: 1 }, { sparse: true, unique: true });
     await collections.matches.createIndex({ ts: -1 });
-    // room_id 幂等：gameserver 局末上报重试不重复结算/归档（meta /internal/match/report）。
+    // roomId idempotency: gameserver end-of-match report retries must not trigger duplicate settlement/archival (meta /internal/match/report).
     await collections.matches.createIndex({ roomId: 1 }, { unique: true });
-    // 按玩家查对局/回放历史（S1-RP 分享、ranked 战绩）。
+    // lookup match/replay history by player (S1-RP sharing, ranked match record).
     await collections.matches.createIndex({ 'players.accountId': 1, ts: -1 });
-    // 成就反作弊离线抽查（S9-7）：取未审计的 ranked 局、最旧优先 drain backlog。
+    // achievement anti-cheat offline audit (S9-7): fetch unaudited ranked matches, oldest first to drain the backlog.
     await collections.matches.createIndex({ mode: 1, audited: 1, ts: 1 });
-    // PvE 抽检记录：按账号 + 时间查（审计 / 清理待结算）。
+    // PvE spot-check records: query by account + time (audit / clean up pending settlements).
     await collections.pveVerifications.createIndex({ accountId: 1, ts: -1 });
-    // 成就反作弊审查队列（S9-7）：按账号查历史 + open 队列。
+    // achievement anti-cheat review queue (S9-7): query history by account + open queue.
     await collections.antiCheatReviews.createIndex({ accountId: 1, ts: -1 });
     await collections.antiCheatReviews.createIndex({ status: 1, ts: -1 });
-    // —— PvE 反作弊（S4-4）——
+    // —— PvE anti-cheat (S4-4) ——
     await collections.pveRejections.createIndex({ accountId: 1, ts: -1 });
-    // —— 录像分享（S1-RP）——
-    // TTL 自清（expiresAt 到期秒数 0 → Mongo 到点删）。
+    // —— replay shares (S1-RP) ——
+    // TTL auto-expiry (expiresAt with expireAfterSeconds:0 → Mongo deletes on schedule).
     await collections.replayShares.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
     await collections.replayShares.createIndex({ roomId: 1 });
-    // 状态流分享：expireAt 到点 TTL 自清；按创建者建索引便于限流/审计查询。
+    // state-stream shares: expireAt triggers TTL auto-expiry; index by creator for rate-limiting/audit queries.
     await collections.stateReplayShares.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     await collections.stateReplayShares.createIndex({ createdBy: 1, createdAt: -1 });
-    // 邮件（友/私聊集合已迁 socialsvc；metaserver 仅保留 mail 用于系统邮件）
-    // 收件箱（按时间倒序）。
+    // mail (friend/private-chat collections migrated to socialsvc; metaserver only retains mail for system messages)
+    // inbox (reverse chronological order).
     await collections.mail.createIndex({ to: 1, createdAt: -1 });
-    // 邮件到期自动回收（expireAt 是到期绝对时间戳 → expireAfterSeconds:0，SOC5）。
+    // mail TTL auto-expiry (expireAt is an absolute expiry timestamp → expireAfterSeconds:0, SOC5).
     await collections.mail.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
-    // 装备幂等账本到期自清（E2，expireAt 到期绝对时间 → expireAfterSeconds:0）。
+    // equipment idempotency ledger TTL auto-expiry (E2, expireAt is an absolute expiry time → expireAfterSeconds:0).
     await collections.equipmentIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
-    // 广告凭证唯一性 TTL 自清（C2，48h）。
+    // ad token uniqueness TTL auto-expiry (C2, 48h).
     await collections.adsTokens.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
-    // 天梯排行榜：全服 Top100 + 我的名次计数（S11-SE-5）。
-    // pvp.seasonNo 先过滤本季，再 elo 倒序取前 100。
+    // ladder leaderboard: server-wide Top100 + my rank count (S11-SE-5).
+    // filter by pvp.seasonNo for the current season, then take the top 100 sorted by elo descending.
     await collections.saves.createIndex(
       { 'save.pvp.seasonNo': 1, 'save.pvp.elo': -1 },
       { name: 'pvp_season_elo' },
     );
-    // 天梯赛季结算快照（L2-1）：按季拉取本季结算名单（_id 已是 ${seasonNo}:${accountId} 幂等键）。
+    // ladder season settlement snapshots (L2-1): fetch the season's settlement roster by season (_id is already the ${seasonNo}:${accountId} idempotency key).
     await collections.ladderSeasonSnapshots.createIndex({ seasonNo: 1 });
     await collections.ladderSeasonSnapshots.createIndex({ accountId: 1, seasonNo: -1 });
-    // 体力（A4）：_id = accountId，单文档集合，无额外索引。
-    // 限时活动（B6）：按活动窗口查找有效活动。
+    // stamina (A4): _id = accountId, single-document collection, no additional indexes.
+    // time-limited events (B6): find active events by event window.
     await collections.events.createIndex({ windowStart: 1, windowEnd: 1 });
-    // 参与记录：按活动 + 账号点查（_id 已是复合）；额外按 accountId 查全账号参与的活动。
+    // participation records: point-query by event + account (_id is already composite); additional index by accountId to fetch all events a player participates in.
     await collections.eventParticipants.createIndex({ accountId: 1, eventId: 1 });
   }
 

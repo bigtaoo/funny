@@ -1,14 +1,15 @@
 /**
- * decorCLayer.ts — C 组 UI 大背景装饰层（art-direction §6.2 C 组）。
+ * decorCLayer.ts — C-group UI large background decoration layer (art-direction §6.2 C-group).
  *
- * 将 C 组手绘素材（城堡/投石车/纸飞机/墨渍…）以极低 alpha 随机散布在 UI 场景的
- * 纸面背景上（大厅/菜单等），营造"笔记本边角涂鸦"氛围。
+ * Scatters C-group hand-drawn assets (castle / catapult / paper-plane / ink blot …) at very
+ * low alpha randomly across the paper background of UI scenes (lobby / menus etc.), creating a
+ * "notebook-margin doodle" atmosphere.
  *
- * 设计约束（同 A 组 decorLayer.ts）：
- * - 原墨色，不 tint；faint alpha（0.06–0.15）绝不抢前景
- * - 确定性 PRNG（固定种子），每次 build 出相同布局
- * - 静态烘焙（`bake()`），运行期零开销；headless 无渲染器时回退 live Graphics
- * - interactiveChildren = false，不吃指针
+ * Design constraints (same as A-group decorLayer.ts):
+ * - Original ink colour, no tint; faint alpha (0.06–0.15) never competes with foreground
+ * - Deterministic PRNG (fixed seed) — identical layout on every build
+ * - Statically baked (`bake()`), zero runtime cost; falls back to live Graphics in headless mode
+ * - interactiveChildren = false — does not consume pointer events
  */
 import * as PIXI from 'pixi.js-legacy';
 import { Prng } from '../game/math/prng';
@@ -16,15 +17,17 @@ import { bake } from './bake';
 import { decorCFrameNames, getDecorCTexture, isDecorCReady } from './decorCAtlas';
 
 // ── Tuning ────────────────────────────────────────────────────────────────────
-const SIZE_PX       = 96;    // target rendered size (px); C 组源帧 128px，稍缩
+const SIZE_PX       = 96;    // target rendered size (px); C-group source frames are 128px, scaled slightly down
 const SIZE_JITTER   = 0.25;  // ± fraction of SIZE_PX
 const GRID_COLS     = 6;     // divide width into N columns for placement grid
 const GRID_ROWS     = 9;     // divide height into N rows
-// 边角密、中心疏：UI 主内容（hero/pillar）占中央纵带，铺在那里会被面板盖住浪费，
-// 反而让人觉得"装饰太少"。把涂鸦挤到四周边框区（笔记本涂鸦本就该在边角）。
+// Dense at edges, sparse at centre: the main UI content (hero / pillar) occupies the central
+// vertical band, so placing doodles there wastes them behind panels and paradoxically makes the
+// scene feel "under-decorated". Push doodles to the surrounding border region (notebook margin
+// doodles belong at the edges anyway).
 const EDGE_SKIP     = 0.20;  // edge columns / top+bottom rows — denser frame
 const CENTER_SKIP   = 0.80;  // interior cells behind content — kept sparse
-const ROT_MAX       = 0.45;  // ± radians; more relaxed than A 组 edge doodles
+const ROT_MAX       = 0.45;  // ± radians; more relaxed than A-group edge doodles
 const ALPHA_MIN     = 0.25;  // random alpha 0.25–0.38
 const ALPHA_RANGE   = 0.13;
 const SEED          = 0xC09C_0FFE;  // "c coffee" — stable across UI redraws

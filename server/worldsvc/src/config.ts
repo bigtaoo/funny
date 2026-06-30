@@ -1,26 +1,27 @@
-// worldsvc 环境变量（S8-0，第七 workspace + 专属库）。
-// SLG_DESIGN §14.1：worldsvc 自暴露公网 REST（第四公网面 /world/* /auction/*），
-// 复用 meta JWT 仅 verifyToken 验签（不连 accounts 库）。内部事件经 gateway /gw/push 推回客户端。
-// 注：/family/* 路由已迁至 socialsvc（第五公网面 /social/*），worldsvc 不再代理家族请求。
+// worldsvc environment variables (S8-0, seventh workspace + dedicated database).
+// SLG_DESIGN §14.1: worldsvc exposes a public REST API (fourth public face /world/* /auction/*),
+// reuses meta JWT for verifyToken signature verification only (does not connect to the accounts database).
+// Internal events are pushed back to clients via gateway /gw/push.
+// Note: /family/* routes have been migrated to socialsvc (fifth public face /social/*); worldsvc no longer proxies family requests.
 import { loadServerEnv, type ServerEnv } from '@nw/shared';
 
 export interface WorldsvcEnv extends ServerEnv {
-  /** 公网 REST 端口（反代 /world,/auction → 此端口）。默认 18084（避开 Windows 保留段）。 */
+  /** Public REST port (reverse-proxied /world,/auction → this port). Default 18084 (avoids Windows reserved port range). */
   port: number;
   host: string;
-  /** worldsvc 专属库 Mongo URI（默认复用 meta 同实例）。 */
+  /** worldsvc dedicated MongoDB URI (defaults to the same instance as meta). */
   worldMongoUri: string;
-  /** worldsvc 专属库名（与 meta/commercial/admin 物理隔离）。 */
+  /** worldsvc dedicated database name (physically isolated from meta/commercial/admin). */
   worldMongoDb: string;
-  /** Redis 连接串（首次引入，S8-0）；缺省 = 无 Redis，行军调度/频道降级（S8-1/S8-4 才真正需要）。 */
+  /** Redis connection URL (introduced in S8-0); if absent, no Redis — march scheduling/channel falls back to degraded mode (truly required by S8-1/S8-4). */
   redisUrl: string | undefined;
-  /** gateway 内部 HTTP 基址（worldsvc → /gw/push 推送实时事件）；缺省 = 不推送（仅 REST 轮询）。 */
+  /** gateway internal HTTP base URL (worldsvc → /gw/push for real-time event delivery); if absent, no push (REST polling only). */
   gatewayInternalUrl: string | undefined;
-  /** commercial 内部 HTTP 基址（拍卖场 S8-5：买方扣币 / 卖方付款）；缺省 = 不支持金币交易。 */
+  /** commercial internal HTTP base URL (auction house S8-5: deduct buyer coins / pay seller); if absent, coin trading not supported. */
   commercialInternalUrl: string | undefined;
-  /** meta 内部 HTTP 基址（拍卖场 S8-5：材料扣除 / 发放）；缺省 = 不支持材料交易。 */
+  /** meta internal HTTP base URL (auction house S8-5: material deduction / grant); if absent, material trading not supported. */
   metaInternalUrl: string | undefined;
-  /** socialsvc 内部 HTTP 基址（频道推送委托）；缺省 = 不委托。 */
+  /** socialsvc internal HTTP base URL (channel push delegation); if absent, no delegation. */
   socialsvcInternalUrl: string | undefined;
 }
 

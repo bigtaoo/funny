@@ -1,11 +1,13 @@
-// 房间纯帧中继 + 服务器权威节拍器（M14）+ 非空帧日志 + 重连 + 局末上报 meta（S1-M2/M3）。
+// Pure frame relay room + server-authoritative metronome (M14) + non-empty frame log + reconnection + end-of-match report to meta (S1-M2/M3).
 //
-// 瘦身后（M16）：gameserver 不建房 / 不匹配 / 不连库。房间由 ticket 握手按需创建：
-// 同 roomId 的两张 ticket（side 0/1，seed 一致）凑齐即开局。无 ready / 房主环节
-// （那些在 matchsvc 控制面已完成）。局末把结果 + 录像 POST 给 meta 结算/归档。
+// After slimming (M16): gameserver does not create rooms / does not matchmake / does not connect to DB.
+// Rooms are created on demand via ticket handshake: two tickets for the same roomId (side 0/1, matching seed)
+// trigger match start. No ready / room-owner phase (those are handled on the matchsvc control plane).
+// At match end, results + replay are POSTed to meta for settlement/archival.
 //
-// 节拍：模拟 30Hz；网络 10Hz，每 100ms 下发一个 frame_batch（覆盖 3 个 sim 帧）。
-// cmd_submit 落到「当前窗口对应帧」= 本批次的 to_frame；同帧多指令按 side 升序确定性排序。
+// Tick rate: simulation 30Hz; network 10Hz, one frame_batch dispatched every 100ms (covering 3 sim frames).
+// cmd_submit lands on "the frame for the current window" = to_frame of the current batch;
+// multiple commands in the same frame are sorted deterministically by side in ascending order.
 import { Connection } from './Connection';
 import {
   MatchMode,
@@ -18,18 +20,19 @@ import {
 
 const FRAMES_PER_BATCH = 3; // sim 30Hz ÷ net 10Hz
 const BATCH_MS = 100;
-const GRACE_MS = 60_000; // 掉线宽限（M10）
+const GRACE_MS = 60_000; // disconnect grace period (M10)
 const START_FRAME = 0;
-// 第一名玩家到位后，等第二名连上的上限（覆盖 ticket TTL + 余量）。
-// 超时未开局 → 销毁空等房间，防止「拿到 ticket 却没连上」泄漏房间。
+// Maximum wait time after the first player joins for the second to connect (covers ticket TTL + buffer).
+// If no match starts within the timeout, destroy the waiting room to prevent "got a ticket but never connected" room leaks.
 const LAUNCH_TIMEOUT_MS = 35_000;
 
 /**
- * 内嵌录像（S1-RP）——重连保留的非空帧日志即录像，局末随上报零成本持久化（meta 写 matches）。
- * `commands` 仍是 game.proto opaque bytes（服务器不解码，M12）。
+ * Embedded replay (S1-RP) — the non-empty frame log retained for reconnection serves as the replay;
+ * it is persisted at zero cost alongside the end-of-match report (meta writes to matches).
+ * `commands` remain game.proto opaque bytes (server does not decode them, M12).
  */
 export interface MatchReplay {
-  engineVersion: number; // 服务器逻辑无关 → 0；客户端回放自校验
+  engineVersion: number; // irrelevant to server logic → 0; client validates on playback
   mode: string;
   seed: number;
   endFrame: number;
@@ -37,22 +40,22 @@ export interface MatchReplay {
   meta: { recordedAt: number; winner: number };
 }
 
-/** 单方 ELO 结算结果（meta 回给 game → 转 match_over.elo）。 */
+/** Per-side ELO settlement result (returned by meta to game, forwarded as match_over.elo). */
 export interface EloResult {
   delta: number;
   after: number;
   rankAfter: string;
 }
-/** side → ELO 变化（ranked 结算时 meta 回传）。 */
+/** side → ELO delta (returned by meta after ranked settlement). */
 export type EloBySide = Record<number, EloResult>;
 
-/** 局末上报 meta 的载荷（M19，§8.3）。 */
+/** Payload reported to meta at end of match (M19, §8.3). */
 export interface MatchReport {
   roomId: string;
   seed: number;
   mode: string; // friendly | ranked
   reason: string; // base | disconnect | mismatch
-  winnerSide: number; // -1 = 未知
+  winnerSide: number; // -1 = unknown
   hashOk: boolean;
   players: { side: number; accountId: string }[];
   results: { side: number; stateHash: string; winnerSide: number; stats?: Record<string, number> }[];
@@ -60,11 +63,12 @@ export interface MatchReport {
 }
 
 export interface RoomDeps {
-  /** 房间销毁时回调（清 manager 映射）。 */
+  /** Callback when the room is destroyed (clears the manager mapping). */
   onDestroy: (roomId: string) => void;
   /**
-   * 局末上报 meta（结算 + 归档）。返回每方 ELO 变化（ranked 结算成功）或 null。
-   * friendly 不阻塞 match_over（fire-and-forget）；ranked await 后带 elo 下发。
+   * Report end-of-match to meta (settlement + archival). Returns per-side ELO deltas
+   * (on successful ranked settlement) or null.
+   * friendly does not block match_over (fire-and-forget); ranked awaits result before dispatching elo.
    */
   report: (r: MatchReport) => Promise<EloBySide | null>;
 }
@@ -72,9 +76,9 @@ export interface RoomDeps {
 interface Slot {
   side: 0 | 1;
   accountId: string;
-  name: string; // 对手展示名（来自对方 ticket.opponent → 实为本方 name；UI 用）
-  publicId: string; // 对手 9 位数字公开 id（UI 用，纯展示）
-  opponentTitle: string; // 对手佩戴称号 id（空串=无称号；S10）
+  name: string; // opponent display name (from the other ticket's ticket.opponent, which is actually this slot's name; for UI)
+  publicId: string; // opponent 9-digit public id (for UI display only)
+  opponentTitle: string; // opponent's equipped title id (empty string = no title; S10)
   conn: Connection | null;
 }
 
@@ -94,19 +98,19 @@ export class Room {
 
   constructor(
     readonly roomId: string,
-    /** ticket 派定的种子（双方一致；gameserver 不再生成）。 */
+    /** Seed assigned by the ticket (same for both sides; gameserver no longer generates it). */
     private readonly seed: number,
     readonly mode: MatchModeVal,
     private readonly deps: RoomDeps,
   ) {}
 
-  // ───────────────────────── 房间管理 ─────────────────────────
+  // ───────────────────────── Room management ─────────────────────────
 
   get isFull(): boolean {
     return this.slots.length >= 2;
   }
 
-  /** 房间种子（RoomManager 交叉核对第二张 ticket 用）。 */
+  /** Room seed (used by RoomManager to cross-check the second ticket). */
   get seedValue(): number {
     return this.seed;
   }
@@ -118,15 +122,15 @@ export class Room {
     return this.slots.some((s) => s.accountId === accountId);
   }
 
-  /** 按 ticket 加入指定 side；两人凑齐即开局。重复 side 忽略。 */
+  /** Join the specified side per ticket; match starts when both sides are present. Duplicate side is ignored. */
   addPlayer(conn: Connection, name: string, publicId: string, opponentTitle = ''): void {
-    if (this.phase >= RoomPhase.IN_MATCH) return; // 已开局，新增走 resume
+    if (this.phase >= RoomPhase.IN_MATCH) return; // match already started; new connections go through resume
     if (this.hasSide(conn.side)) return;
     this.slots.push({ side: conn.side, accountId: conn.accountId, name, publicId, opponentTitle, conn });
     if (this.slots.length === 2) {
       this.launch();
     } else if (!this.launchTimer) {
-      // 第一名就位 → 起空等超时，第二名迟迟不连则销毁空房。
+      // First player arrived — start the empty-wait timeout; destroy the room if the second never connects.
       this.launchTimer = setTimeout(() => {
         this.launchTimer = null;
         if (this.phase < RoomPhase.IN_MATCH) this.destroy();
@@ -152,7 +156,7 @@ export class Room {
     for (const s of this.slots) if (s.conn) send(s.conn);
   }
 
-  // ───────────────────────── 开局 ─────────────────────────
+  // ───────────────────────── Match start ─────────────────────────
 
   private launch(): void {
     if (this.launchTimer) {
@@ -169,7 +173,7 @@ export class Room {
         seed: this.seed,
         startFrame: START_FRAME,
         localSide: s.side,
-        opponentName: s.name, // slot.name 即该 slot 的对手名（来自对方 ticket.opponent）
+        opponentName: s.name, // slot.name is this slot's opponent name (sourced from the other ticket's ticket.opponent)
         opponentPublicId: s.publicId,
         ...(s.opponentTitle ? { opponentTitle: s.opponentTitle } : {}),
       });
@@ -183,7 +187,7 @@ export class Room {
     this.pending.push({ side, commands });
   }
 
-  /** 局末上报 hash + 客户端判定胜方 → 双方齐 → 比对 + 结算（meta 权威算 ELO）。 */
+  /** Report end-of-match state hash + client-determined winner side → once both sides report → compare + settle (meta authoritatively computes ELO). */
   reportResult(side: number, stateHash: string, winnerSide: number, stats?: Record<string, number>): void {
     if (this.phase !== RoomPhase.IN_MATCH || this.settled) return;
     if (!this.hasSide(side)) return;
@@ -201,11 +205,11 @@ export class Room {
       }
       return;
     }
-    // friendly：胜负由客户端模拟权威决定，meta 只审计/归档。
+    // friendly: winner is determined authoritatively by client simulation; meta only audits/archives.
     void this.endMatch({ winnerSide: -1, reason: hashOk ? 'base' : 'mismatch', hashOk });
   }
 
-  /** 显式离开。对局中视为认输（对手胜）。 */
+  /** Explicit leave. During a match, treated as a forfeit (opponent wins). */
   leave(side: number): void {
     const slot = this.slotOfSide(side);
     if (!slot) return;
@@ -217,11 +221,11 @@ export class Room {
     this.removeSlot(side);
   }
 
-  // ───────────────────────── 断线 / 重连（S1-4）─────────────────────────
+  // ───────────────────────── Disconnect / reconnect (S1-4) ─────────────────────────
 
   onDisconnect(side: number, closing: Connection): void {
     const slot = this.slotOfSide(side);
-    if (!slot || slot.conn !== closing) return; // 已被新连接顶替则忽略
+    if (!slot || slot.conn !== closing) return; // already replaced by a new connection; ignore
     slot.conn = null;
 
     if (this.phase !== RoomPhase.IN_MATCH) {
@@ -241,7 +245,7 @@ export class Room {
     }, GRACE_MS);
   }
 
-  /** 重连：重绑连接 + conn_resync 补帧 + 续发节拍。 */
+  /** Reconnect: rebind connection + send conn_resync to catch up frames + resume metronome. */
   resume(conn: Connection, lastFrame: number): void {
     const slot = this.slotOfSide(conn.side);
     if (!slot || this.phase !== RoomPhase.IN_MATCH || this.settled) {
@@ -271,7 +275,7 @@ export class Room {
     if (this.slots.length === 0) this.destroy();
   }
 
-  // ───────────────────────── 节拍器（M14）─────────────────────────
+  // ───────────────────────── Metronome (M14) ─────────────────────────
 
   private startMetronome(): void {
     if (this.batchTimer) return;
@@ -290,7 +294,7 @@ export class Room {
     this.curFrame += FRAMES_PER_BATCH;
     let frames: FrameCmds[] = [];
     if (this.pending.length > 0) {
-      const cmds = [...this.pending].sort((a, b) => a.side - b.side); // 稳定排序保到达序
+      const cmds = [...this.pending].sort((a, b) => a.side - b.side); // stable sort preserves arrival order
       const fc: FrameCmds = { frame: this.curFrame, cmds };
       this.log.push(fc);
       frames = [fc];
@@ -299,7 +303,7 @@ export class Room {
     this.broadcast((c) => c.send({ case: 'frame_batch', toFrame: this.curFrame, frames }));
   }
 
-  // ───────────────────────── 结算（上报 meta）/ 销毁 ─────────────────────────
+  // ───────────────────────── Settlement (report to meta) / destroy ─────────────────────────
 
   private async endMatch(opts: {
     winnerSide: number;
@@ -332,7 +336,7 @@ export class Room {
       replay: this.buildReplay(opts.winnerSide),
     };
 
-    // ranked：等 meta 结算回 ELO 再下发 match_over；friendly：立即下发，上报 fire-and-forget。
+    // ranked: wait for meta to return ELO before dispatching match_over; friendly: dispatch immediately, report fire-and-forget.
     let eloBySide: EloBySide | null = null;
     if (this.mode === MatchMode.RANKED) {
       try {

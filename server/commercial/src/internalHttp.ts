@@ -1,6 +1,6 @@
-// commercial 内部 HTTP（S5-1，不暴露公网）。唯一调用方是 meta，鉴权 X-Internal-Key。
-// 用 node:http（commercial 不引 fastify）。契约见 SERVER_API.md §9 / COMMERCIAL_DESIGN §5。
-// 协议错误（鉴权/方法/解析）→ 4xx；业务结果（含 INSUFFICIENT_FUNDS 等）→ 200 + {ok,...} 由 meta 映射。
+// commercial internal HTTP (S5-1, not publicly exposed). The only caller is meta, authenticated via X-Internal-Key.
+// Uses node:http (commercial does not import fastify). Contract: SERVER_API.md §9 / COMMERCIAL_DESIGN §5.
+// Protocol errors (auth / method / parsing) → 4xx; business results (including INSUFFICIENT_FUNDS etc.) → 200 + {ok,...} mapped by meta.
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import { createLogger, type InternalAuthVerifier } from '@nw/shared';
 import type { CommercialService } from './service';
@@ -39,7 +39,7 @@ export function startInternalHttp(
 ): Server {
   const server = createServer((req, res) => {
     void (async () => {
-      // 存活探针（无需鉴权）：docker healthcheck / CI 等待用。
+      // Health probe (no auth required): used by docker healthcheck / CI readiness waits.
       if (req.method === 'GET' && req.url === '/health') {
         send(res, 200, { ok: true, service: 'commercial' });
         return;

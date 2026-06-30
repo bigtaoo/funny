@@ -1,6 +1,6 @@
 /**
  * decorAtlas.ts — the battlefield "doodle layer" sprite atlas (art-direction §6.2,
- * A 组). A single 256×256 TexturePacker sheet of hand-drawn margin doodles
+ * A-group). A single 256×256 TexturePacker sheet of hand-drawn margin doodles
  * (sun / star / heart / scribble …) that BoardView snaps onto the paper just
  * outside the grid and bakes into a static texture.
  *
@@ -8,12 +8,12 @@
  * shared across every battle. The PNG decodes asynchronously, so BoardView only
  * bakes decorations once `isDecorReady()` is true; a battle entered before the
  * tiny atlas finishes loading simply renders without ambient doodles (purely
- * cosmetic, §6.2: "错位无妨，纯氛围"). In headless tests no renderer/atlas exists
+ * cosmetic, §6.2: "slight misalignment is fine — pure ambience"). In headless tests no renderer/atlas exists
  * and the decoration pass is skipped entirely.
  *
  * Frame names carry NO extension (e.g. `decor_sun`) — matches pack_decos.cjs.
  * Lines are the original ink colour (not white), so they are used as-is and must
- * NOT be tinted to a faction colour (§6.2 注).
+ * NOT be tinted to a faction colour (§6.2 note).
  */
 import * as PIXI from 'pixi.js-legacy';
 import { assetIO } from '../assets/assetIO';

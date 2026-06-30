@@ -1,17 +1,17 @@
-# CI 叠加层（与 docker-compose.prod.yml 合并使用）。专供 GitHub Actions 跑全链路 E2E：
+# CI overlay (merged with docker-compose.prod.yml). For running full end-to-end link in GitHub Actions:
 #   docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml up -d --wait \
 #       mongo metaserver commercial gateway matchsvc gameserver
 #
-# 与 prod 的差异（仅为「E2E 在 runner 宿主机上以 Node 进程直连」服务）：
-#   • 不起 caddy（up 命令显式列服务，省去反代；E2E 直连各服务的宿主映射端口）。
-#   • 把 meta REST / gateway 公开 WS / game 数据面 WS 映射到宿主端口，且端口号与
-#     client/test/e2e/full-link.e2e.ts 的默认期望一致（meta 18080 / gateway 8086 / game 8081）。
-#   • meta 下发的 gateway 地址 + ticket 里的 game 地址都用 localhost:<宿主端口>，
-#     这样 runner 上的 E2E 进程能照服务器下发的地址连上（验证「客户端连对端口」的核心断言）。
-#   • 给五个服务加 node 版 healthcheck（镜像内有 node、无 curl），配合 `--wait` 确定性等待就绪。
+# Differences from prod (solely to serve "E2E running as Node process directly on the runner host"):
+#   • No caddy (explicit service list in up command skips the reverse proxy; E2E connects directly to each service's host-mapped port).
+#   • Exposes meta REST / gateway public WS / game data-plane WS to host ports, matching the defaults expected by
+#     client/test/e2e/full-link.e2e.ts (meta 18080 / gateway 8086 / game 8081).
+#   • The gateway address sent by meta + the game address in tickets both use localhost:<host-port>,
+#     so E2E processes on the runner can connect using the server-provided address (validates the core assertion "client connects to the right port").
+#   • Adds Node-based healthchecks to the five services (image has node, not curl), compatible with `--wait` for deterministic readiness.
 services:
   redis:
-    # CI 用内存态，不挂卷；healthcheck 让 --wait 确定性等待就绪。
+    # CI uses in-memory mode, no volume; healthcheck lets --wait wait deterministically.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -20,9 +20,9 @@ services:
 
   metaserver:
     environment:
-      # 客户端连这个地址做房间/匹配；E2E 断言 gateway socket 用的是这个、不是 meta base。
+      # Client connects to this address for room/matchmaking; E2E asserts gateway socket uses this, not meta base.
       NW_GATEWAY_PUBLIC_WS_URL: ws://localhost:8086/gw
-      # CI 所有请求都来自同一 IP，禁用限流避免 E2E+负载冒烟互相消耗 auth 配额。
+      # CI: all requests come from the same IP; disable rate limiting to prevent E2E + load smoke tests consuming each other's auth quota.
       NW_AUTH_RATE_LIMIT: '0'
     ports:
       - "18080:8080"
@@ -35,10 +35,11 @@ services:
 
   commercial:
     environment:
-      # CI 栈跑的是 prod 镜像（Dockerfile 写死 NODE_ENV=production），但 CI 没有真实支付凭据，
-      # 全链路 E2E 的充值断言依赖 `tier:` dev 桩。L2-3 加固在 NODE_ENV=production 下强制封死
-      # dev 桩（iap.ts）并拒启 NW_IAP_DEV=true（index.ts），故这里只能把 commercial 退出 prod 档：
-      # NODE_ENV != production → 缺凭据自动回退 dev 桩，prod 加固本身一行不改。
+      # CI stack runs the prod image (Dockerfile hard-codes NODE_ENV=production), but CI has no real payment credentials.
+      # Full-link E2E recharge assertions rely on the `tier:` dev stub. The L2-3 hardening under NODE_ENV=production
+      # force-disables the dev stub (iap.ts) and refuses startup with NW_IAP_DEV=true (index.ts), so the only option is
+      # to opt commercial out of production mode: NODE_ENV != production → missing credentials auto-fall back to dev stub,
+      # without changing any line of the prod hardening itself.
       NODE_ENV: development
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8092/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
@@ -59,7 +60,7 @@ services:
 
   matchsvc:
     environment:
-      # 数据面兜底地址改为 runner 宿主机可达（gameserver 注册前用 + 写进 ticket 兜底）。
+      # Data-plane fallback address changed to runner host-reachable (used before gameserver registers + written into ticket fallback).
       NW_GAME_PUBLIC_WS_URL: ws://localhost:8081/ws
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8091/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
@@ -70,7 +71,7 @@ services:
 
   gameserver:
     environment:
-      # ticket 里写给客户端的数据面地址 → runner 宿主机可达。
+      # Data-plane address written into ticket for client → runner host-reachable.
       NW_GAME_PUBLIC_WS_URL: ws://localhost:8081/ws
     ports:
       - "8081:8081"
@@ -82,7 +83,7 @@ services:
       retries: 20
 
   worldsvc:
-    # SLG 公网 REST 第四面：映射到宿主，E2E/curl 直连（meta/gateway 不代理 world）。
+    # SLG public REST fourth face: mapped to host, directly reachable by E2E/curl (meta/gateway don't proxy world).
     ports:
       - "18084:18084"
     healthcheck:

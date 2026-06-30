@@ -1,6 +1,6 @@
-// commercial 业务核心（S5-2~4）：钱包原子扣/加币 + 流水 + 订单 + 盲盒 + 充值 + 广告。
-// meta 是唯一调用方（内部信任边界）：commercial 不解析 JWT，只信 meta 传来的 accountId。
-// 一致性：消费用 orderId 幂等、充值用 receiptId 幂等；扣币单文档 $gte 守卫防超扣。
+// commercial service core (S5-2~4): atomic wallet debit/credit + ledger + orders + gacha + recharge + ads.
+// meta is the sole caller (internal trust boundary): commercial does not parse JWTs; it trusts the accountId passed by meta.
+// Consistency: spend uses orderId idempotency, recharge uses receiptId idempotency; single-document $gte guard prevents overdraft.
 import {
   findGachaPool,
   findShopItem,
@@ -34,17 +34,17 @@ export type Result<T> = ({ ok: true } & T) | { ok: false; error: ServiceErr };
 export interface CommercialDeps {
   cols: CommercialCollections;
   now: () => number;
-  /** 盲盒随机源（默认 crypto 真随机；测试注入复现保底）。 */
+  /** RNG source for gacha draws (default: crypto true-random; tests inject a fixed seed to reproduce pity). */
   rng?: RandInt;
   /**
-   * 充值票据验单函数（S4-1）。
-   * 支持 async（微信/Stripe 需网络请求）；不传则用内置 dev 桩。
-   * dev 桩：receipt 形如 `tier:small|mid|large`，按档发币；其余非空一律给小档。
+   * Receipt verification function for recharge (S4-1).
+   * Supports async (WeChat/Stripe require network requests); falls back to the built-in dev stub when omitted.
+   * Dev stub: receipt is formatted as `tier:small|mid|large` and grants the corresponding coin tier; any other non-empty value grants the small tier.
    */
   verifyReceipt?: (platform: string, receipt: string) => Promise<{ ok: boolean; coins: number }> | { ok: boolean; coins: number };
 }
 
-/** dev 桩（仅单元测试 / 不配置真实渠道时回退）。 */
+/** Dev stub (used only in unit tests / when no real payment channel is configured). */
 function devVerifyReceipt(_platform: string, receipt: string): { ok: boolean; coins: number } {
   if (!receipt) return { ok: false, coins: 0 };
   const tier = receipt.startsWith('tier:') ? receipt.slice(5) : 'small';
@@ -63,11 +63,11 @@ export class CommercialService {
     this.now = deps.now;
     this.rng = deps.rng;
     const raw = deps.verifyReceipt ?? devVerifyReceipt;
-    // 统一包装为 async，兼容同步 dev 桩与 async 真实验单。
+    // Uniformly wrap as async to be compatible with both the synchronous dev stub and async real receipt verifiers.
     this.verifyReceipt = (p, r) => Promise.resolve(raw(p, r));
   }
 
-  /** 取/建钱包（首次操作 upsert coins:0 rev:0）。 */
+  /** Fetch or create the wallet (upserts coins:0 rev:0 on first access). */
   private async ensureWallet(accountId: string): Promise<WalletDoc> {
     const res = await this.cols.wallets.findOneAndUpdate(
       { _id: accountId },
@@ -82,17 +82,17 @@ export class CommercialService {
       },
       { upsert: true, returnDocument: 'after' },
     );
-    // upsert + returnDocument:after 必有文档。
+    // upsert + returnDocument:after always returns a document.
     return res!;
   }
 
-  /** GET /internal/wallet：余额 + 全部 pity。 */
+  /** GET /internal/wallet: returns balance + all pity counters. */
   async getWallet(accountId: string): Promise<{ coins: number; pity: Record<string, number> }> {
     const w = await this.cols.wallets.findOne({ _id: accountId });
     return { coins: w?.coins ?? 0, pity: w?.gacha.pity ?? {} };
   }
 
-  /** 加币 + 写流水（充值/广告/退币共用）。原子 $inc，返回新余额。 */
+  /** Credit coins + write ledger entry (shared by recharge/ads/refund). Atomic $inc; returns the new balance. */
   private async credit(
     accountId: string,
     amount: number,
@@ -118,7 +118,7 @@ export class CommercialService {
     return coinsAfter;
   }
 
-  /** 商店直购：扣币 + 记 order(kind:'shop')。物品由 meta 发。 */
+  /** Direct shop purchase: debit coins + record order(kind:'shop'). Item delivery is handled by meta. */
   async shopCharge(args: {
     accountId: string;
     itemId: string;
@@ -129,7 +129,7 @@ export class CommercialService {
     if (existing) {
       return { ok: true, orderId: existing._id, coinsAfter: existing.coinsAfter, status: existing.status };
     }
-    // cost 由可信的 meta 传入；这里仍交叉核对目录价，防 meta 侧失配（直购 legendary 不售也会无价）。
+    // cost is passed from the trusted meta server; we still cross-check against the catalog price to guard against meta-side mismatches (e.g. legendary items that are not for sale would have no price).
     const def = findShopItem(args.itemId);
     if (!def || def.cost !== args.cost) return { ok: false, error: 'BAD_REQUEST' };
 
@@ -164,8 +164,8 @@ export class CommercialService {
   }
 
   /**
-   * 纯金币消耗（改名等无发货物品的 sink）：原子扣币 + 记 order(kind:'sink', 落库即 delivered)
-   * + 流水。orderId 幂等（重放回原余额）。对账只扫 status:'charged'，故 sink 不会被补发。
+   * Pure coin sink (rename and other no-delivery actions): atomic debit + record order(kind:'sink', persisted immediately as delivered)
+   * + ledger entry. orderId idempotency (replay returns the original balance). Reconciliation only scans status:'charged', so sinks are never re-delivered.
    */
   async spend(args: {
     accountId: string;
@@ -211,9 +211,9 @@ export class CommercialService {
   }
 
   /**
-   * 纯金币发放（邮件附件领取 S6-3 等无扣费的入账）：原子加币 + 记 order(kind:'grant'，落库即
-   * delivered) + 流水。orderId 幂等（重放回原余额，对账不拾取）。amount 可为 0（纯物品/皮肤附件
-   * 也走此处占一个幂等订单，金额 0 不加币）。
+   * Pure coin grant (mail attachment claims S6-3 and other fee-free credits): atomic credit + record order(kind:'grant', persisted
+   * immediately as delivered) + ledger entry. orderId idempotency (replay returns the original balance; reconciliation ignores grants).
+   * amount may be 0 (pure item/skin attachments also flow through here to claim an idempotent order slot; amount 0 skips the coin credit).
    */
   async grant(args: {
     accountId: string;
@@ -225,7 +225,7 @@ export class CommercialService {
     if (existing) return { ok: true, coinsAfter: existing.coinsAfter };
 
     const amount = Math.max(0, Math.floor(args.amount));
-    // 先占幂等订单（unique _id 防并发重复发币），再加币 + 回填 coinsAfter。
+    // First claim the idempotent order slot (unique _id prevents concurrent duplicate grants), then credit coins + backfill coinsAfter.
     try {
       await this.cols.orders.insertOne({
         _id: args.orderId,
@@ -253,7 +253,7 @@ export class CommercialService {
     return { ok: true, coinsAfter };
   }
 
-  /** 盲盒：扣币 + RNG + 更新保底 + 记 order/gachaHistory。物品由 meta 发。 */
+  /** Gacha draw: debit coins + RNG + update pity + record order/gachaHistory. Item delivery is handled by meta. */
   async gachaDraw(args: {
     accountId: string;
     poolId: string;
@@ -289,7 +289,7 @@ export class CommercialService {
     const prevPity = wallet.gacha.pity[args.poolId] ?? 0;
     const { results, pityAfter } = rollGacha(pool, args.count, prevPity, this.rng);
 
-    // 扣币 + 更新该池 pity，单文档原子 + $gte 守卫（防并发超扣）。
+    // Debit coins + update pity for this pool; single-document atomic operation with $gte guard to prevent concurrent overdraft.
     const charged = await this.cols.wallets.findOneAndUpdate(
       { _id: args.accountId, coins: { $gte: cost } },
       {
@@ -333,13 +333,13 @@ export class CommercialService {
   }
 
   /**
-   * 标记订单已发货（meta 发完物品回调，幂等闭环）。
-   * 可选 refundCoins：meta 算出的 dupe 退币（epic/legendary 重复），delivered 时一次入账。
+   * Mark an order as delivered (callback from meta after item delivery; idempotent closed loop).
+   * Optional refundCoins: duplicate-item refund computed by meta (epic/legendary duplicates); credited once on delivery.
    */
   async orderDelivered(args: { orderId: string; refundCoins?: number }): Promise<Result<{}>> {
     const order = await this.cols.orders.findOne({ _id: args.orderId });
     if (!order) return { ok: false, error: 'NOT_FOUND' };
-    if (order.status === 'delivered') return { ok: true }; // 幂等：已发货不重复退币
+    if (order.status === 'delivered') return { ok: true }; // Idempotent: already delivered, do not refund again.
 
     const refund = Math.max(0, Math.floor(args.refundCoins ?? 0));
     await this.cols.orders.updateOne(
@@ -352,12 +352,12 @@ export class CommercialService {
     return { ok: true };
   }
 
-  /** 对账：拉某账号未发货订单（meta GET /save 顺带补发）。 */
+  /** Reconciliation: fetch undelivered orders for an account (meta GET /save triggers re-delivery as a side effect). */
   async undeliveredOrders(accountId: string): Promise<OrderDoc[]> {
     return this.cols.orders.find({ accountId, status: 'charged' }).toArray();
   }
 
-  /** 充值验单 + 加币（commercial 自验平台票据；dev 用桩）。receiptId 幂等。 */
+  /** Verify recharge receipt + credit coins (commercial verifies platform receipts; dev uses the stub). receiptId idempotency. */
   async rechargeVerify(args: {
     accountId: string;
     platform: string;
@@ -366,8 +366,8 @@ export class CommercialService {
   }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
     const existing = await this.cols.recharges.findOne({ _id: args.receiptId });
     if (existing) {
-      // 票据已被消费：仅当属于同一账号时才回放（返回本账号余额），
-      // 否则拒绝——避免把他人账号余额镜像给请求方（跨账号余额泄露）。
+      // Receipt already consumed: replay only if it belongs to the same account (return that account's balance);
+      // otherwise reject — prevents mirroring another account's balance to the requester (cross-account balance leak).
       if (existing.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
       const w = await this.cols.wallets.findOne({ _id: existing.accountId });
       return { ok: true, coinsAfter: w?.coins ?? 0, coinsGranted: existing.coinsGranted };
@@ -375,7 +375,7 @@ export class CommercialService {
     const v = await this.verifyReceipt(args.platform, args.receipt);
     if (!v.ok) return { ok: false, error: 'INVALID_RECEIPT' };
 
-    // 先落票据（receiptId 唯一防并发重复发币），再加币。
+    // First persist the receipt record (unique receiptId prevents concurrent duplicate grants), then credit coins.
     try {
       await this.cols.recharges.insertOne({
         _id: args.receiptId,
@@ -387,10 +387,10 @@ export class CommercialService {
         ts: this.now(),
       });
     } catch (e) {
-      // 并发竞态：唯一冲突说明已有人处理，回读返回原结果。
+      // Concurrent race: a unique conflict means another request already processed it; re-read and return the existing result.
       if ((e as { code?: number }).code === 11000) {
         const r = await this.cols.recharges.findOne({ _id: args.receiptId });
-        // 同跨账号防护：票据已被他账号落单则拒绝。
+        // Same cross-account guard: if the receipt was already claimed by a different account, reject.
         if (r && r.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
         const w = await this.cols.wallets.findOne({ _id: args.accountId });
         return { ok: true, coinsAfter: w?.coins ?? 0, coinsGranted: r?.coinsGranted ?? v.coins };
@@ -403,7 +403,7 @@ export class CommercialService {
     return { ok: true, coinsAfter, coinsGranted: v.coins };
   }
 
-  /** 创建优惠码（admin 调用，via meta 内部转发）。code 规范化为大写。 */
+  /** Create a promo code (called by admin, forwarded internally via meta). code is normalized to uppercase. */
   async createPromoCode(args: {
     code: string;
     coins: number;
@@ -432,16 +432,16 @@ export class CommercialService {
     return { ok: true, code };
   }
 
-  /** 列出所有优惠码（admin 管理用）。 */
+  /** List all promo codes (for admin management). */
   async listPromoCodes(): Promise<PromoCodeDoc[]> {
     return this.cols.promoCodes.find({}).sort({ createdAt: -1 }).toArray();
   }
 
   /**
-   * 玩家兑换优惠码（B-PROMO）。
-   * 校验顺序：码存在 → 未过期 → 未超总量 → 玩家未用过 → 加币。
-   * 并发防重：promoRedemptions._id=`accountId:code` 唯一；冲突回读为 PROMO_ALREADY_USED。
-   * 总量原子 $inc 守卫：先占 redemption 再 $inc redeemed（即使并发最多超限 1 个，business 可接受）。
+   * Player promo code redemption (B-PROMO).
+   * Validation order: code exists → not expired → total limit not reached → player has not used it → credit coins.
+   * Concurrent dedup: promoRedemptions._id=`accountId:code` unique index; conflict replay returns PROMO_ALREADY_USED.
+   * Atomic $inc guard on total: claim the redemption first, then $inc redeemed (at most 1 over-limit in concurrent cases, acceptable).
    */
   async promoRedeem(args: {
     accountId: string;
@@ -471,13 +471,13 @@ export class CommercialService {
       throw e;
     }
 
-    // 原子递增兑换计数（best-effort，不守卫总量——已在上方做软检查，并发最多超 1）。
+    // Atomically increment redemption count (best-effort; does not hard-guard the total — soft check above is sufficient; at most 1 over-limit concurrently).
     await this.cols.promoCodes.updateOne({ _id: code }, { $inc: { redeemed: 1 } });
     const coinsAfter = await this.credit(args.accountId, def.coins, 'promo', {});
     return { ok: true, coinsAfter, coinsGranted: def.coins };
   }
 
-  /** 广告奖励加币（meta 已校验广告凭证 + 当日 cap，commercial 只加币记账）。 */
+  /** Ad reward coin credit (meta has already validated the ad proof + daily cap; commercial only credits coins and records the ledger entry). */
   async adsCredit(args: {
     accountId: string;
     amount: number;
@@ -490,9 +490,10 @@ export class CommercialService {
   }
 
   /**
-   * 分段胜利金币加币（§2.3b）。meta 算好 amount（按段位）+ dayKey；commercial 在此**权威 enforce
-   * 每日胜局上限**：原子守卫当日计数 < VICTORY_DAILY_WIN_CAP 才占一格并发币，超限 capped=true 不发
-   * （胜场已计在 saves.pvp，金币不发）。计数文档 _id=`accountId:dayKey`，与广告 cap 同款两步法。
+   * Tiered victory coin credit (§2.3b). meta computes amount (by rank tier) + dayKey; commercial **authoritatively enforces
+   * the daily win cap** here: atomically guards the daily counter < VICTORY_DAILY_WIN_CAP before claiming a slot and crediting,
+   * returning capped=true without granting when the limit is reached (the win is still recorded in saves.pvp; coins are not issued).
+   * Counter document _id=`accountId:dayKey`, same two-step pattern as the ads cap.
    */
   async victoryCredit(args: {
     accountId: string;
@@ -503,7 +504,7 @@ export class CommercialService {
     if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
 
     const id = `${args.accountId}:${args.dayKey}`;
-    // 先 upsert 保证文档存在，再带守卫 $inc（同 bumpAdsCap）。
+    // First upsert to ensure the document exists, then $inc with the guard (same pattern as bumpAdsCap).
     await this.cols.victoryDaily.updateOne(
       { _id: id },
       { $setOnInsert: { _id: id, accountId: args.accountId, dayKey: args.dayKey, wins: 0, ts: this.now() } },
@@ -515,7 +516,7 @@ export class CommercialService {
       { returnDocument: 'after' },
     );
     if (!slot) {
-      // 当日已达上限：不发币。
+      // Daily cap reached: do not credit coins.
       const w = await this.cols.wallets.findOne({ _id: args.accountId });
       return { ok: true, coinsAfter: w?.coins ?? 0, credited: 0, capped: true };
     }

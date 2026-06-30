@@ -1,27 +1,27 @@
-// 对象池统计注册表（内存看护 / MemoryMonitor 的数据源）。
+// Object pool statistics registry (data source for the memory monitor / MemoryMonitor).
 //
-// 各视图/系统在构造时把自己的池登记进来，销毁时注销。MemoryMonitor 在内存超阈值
-// （或微信 onMemoryWarning）时调 snapshotPools() 把「每个池里囤着多少空闲对象、估算占多少内存」
-// 一次性打到 console.warn。
+// Each view/system registers its pool on construction and unregisters it on destruction. MemoryMonitor calls
+// snapshotPools() when memory exceeds the threshold (or on WeChat onMemoryWarning) to dump
+// "how many idle objects each pool is holding and the estimated memory they occupy" in a single console.warn call.
 //
-// 设计取舍：
-//  - 这里统计的是「池中空闲（已 detach、等待复用）对象数」，不是场景里在用的对象数——
-//    池本身就是为复用而保留的常驻内存，泄漏时最容易在这里看出异常增长（比如某池越囤越多）。
-//  - bytesEach 是**粗估**的 JS 堆占用（PIXI Container + 其子 Graphics/Sprite 的几何缓冲 + JS 对象头），
-//    不含 GPU 显存（spritesheet/BaseTexture 跨局共享，不随池增减）。量级用于横向比较，不求精确。
+// Design trade-offs:
+//  - What is counted here is "idle objects in the pool (already detached, awaiting reuse)", not objects currently active in the scene —
+//    the pool itself is resident memory kept for reuse; leaks are most easily spotted here as abnormal growth (e.g. a pool accumulating more and more objects).
+//  - bytesEach is a **rough estimate** of JS heap usage (PIXI Container + child Graphics/Sprite geometry buffers + JS object header),
+//    excluding GPU VRAM (spritesheets/BaseTextures are shared across matches and do not change with pool size). The figures are for relative comparison, not precision.
 
 export interface PoolSource {
-  /** 展示标签，如 'unit.stickman' / 'building' / 'fx.vfx'。 */
+  /** Display label, e.g. 'unit.stickman' / 'building' / 'fx.vfx'. */
   label: string;
-  /** 当前池中囤着的空闲对象数。 */
+  /** Number of idle objects currently held in this pool. */
   idle(): number;
-  /** 单个空闲对象的粗估 JS 堆字节数（见文件头说明，不含 GPU 显存）。 */
+  /** Rough estimated JS heap bytes per idle object (see file header; excludes GPU VRAM). */
   bytesEach: number;
 }
 
 const sources = new Set<PoolSource>();
 
-/** 登记一个池数据源；返回注销函数（在拥有者 destroy() 时调用）。 */
+/** Register a pool data source; returns an unregister function (call it in the owner's destroy()). */
 export function registerPool(src: PoolSource): () => void {
   sources.add(src);
   return () => { sources.delete(src); };
@@ -30,7 +30,7 @@ export function registerPool(src: PoolSource): () => void {
 export interface PoolRow {
   label: string;
   idle: number;
-  /** idle × bytesEach 的粗估字节数。 */
+  /** Rough estimated bytes: idle × bytesEach. */
   estBytes: number;
 }
 
@@ -40,7 +40,7 @@ export interface PoolSnapshot {
   totalBytes: number;
 }
 
-/** 当前所有已登记池的快照（按估算占用降序）。同 label 合并累加（每局多视图同名池）。 */
+/** Snapshot of all currently registered pools (sorted by estimated usage descending). Entries with the same label are merged and summed (multiple same-named views per match). */
 export function snapshotPools(): PoolSnapshot {
   const merged = new Map<string, PoolRow>();
   let totalIdle = 0;

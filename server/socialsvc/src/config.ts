@@ -1,18 +1,18 @@
-// socialsvc 环境变量（SOCIAL_SVC_DESIGN §7）。
-// 第五公网面（/social/*），端口 8085，鉴权复用 meta JWT（仅 verifyToken）。
+// socialsvc environment variables (SOCIAL_SVC_DESIGN §7).
+// Fifth public face (/social/*), port 8085, auth reuses the meta JWT (verifyToken only).
 import { loadServerEnv, type ServerEnv } from '@nw/shared';
 
 export interface SocialsvcEnv extends ServerEnv {
-  /** 公网 REST 端口（反代 /social/* → 此端口）。默认 8085。 */
+  /** Public REST port (reverse proxy /social/* → this port). Default: 8085. */
   port: number;
   host: string;
-  /** socialsvc 专属库 Mongo URI（默认复用主实例）。 */
+  /** socialsvc dedicated Mongo URI (defaults to the main instance). */
   socialMongoUri: string;
-  /** socialsvc 专属库名（nw_social，与主库物理隔离）。 */
+  /** socialsvc dedicated database name (nw_social, physically separate from the main database). */
   socialMongoDb: string;
-  /** gateway 内部 HTTP 基址（socialsvc → /gw/push 推送实时事件）；缺省 = 不推送。 */
+  /** gateway internal HTTP base URL (socialsvc → /gw/push for real-time events); absent = no push. */
   gatewayInternalUrl: string | undefined;
-  /** metaserver 内部 HTTP 基址（P2：publicId 反查 + 批量资料）；缺省 = 账号查询降级。 */
+  /** metaserver internal HTTP base URL (P2: publicId reverse-lookup + batch profiles); absent = account queries degrade gracefully. */
   metaInternalUrl: string | undefined;
 }
 

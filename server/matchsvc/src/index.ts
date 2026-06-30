@@ -1,9 +1,9 @@
-// matchsvc 进程引导（S1-M5）：独立进程，玩家不可达的私有匹配大脑。
-//   • 内部 HTTP（gateway 控制命令 + gameserver 注册/心跳，不暴露公网）；
-//   • 经 GatewayClient 把异步事件（room_state / match_found）推回 gateway → 玩家；
-//   • 签 match ticket（与 gateway / gameserver 共用 NW_INTERNAL_KEY）。
+// matchsvc process bootstrap (S1-M5): standalone process, private matchmaking brain not reachable by players.
+//   • Internal HTTP (gateway control commands + gameserver register/heartbeat, not exposed to the public internet);
+//   • Pushes async events (room_state / match_found) back to gateway → players via GatewayClient;
+//   • Signs match tickets (shares NW_INTERNAL_KEY with gateway / gameserver).
 //
-// 反代不暴露 matchsvc；只有 gateway / gameserver 经内部网络可达。
+// Reverse proxy does not expose matchsvc; only gateway / gameserver can reach it via the internal network.
 import { loadMatchsvcEnv } from './config';
 import { Matchsvc } from './Matchsvc';
 import { GameRegistry } from './GameRegistry';
@@ -16,7 +16,7 @@ const log = createLogger('matchsvc:flags');
 function main(): void {
   const env = loadMatchsvcEnv();
 
-  // 功能开关缓存：轮询 admin 原始规则 + 本地求值（不连库，30s 刷新，admin 不可达吃旧缓存）。
+  // Feature flag cache: polls admin for raw rules + evaluates locally (no DB connection, refreshed every 30s; stale cache used when admin is unreachable).
   const adminUrl = env.adminInternalUrl;
   const flags = new FeatureFlagCache({
     fetchAll: async () => {
@@ -62,7 +62,7 @@ function main(): void {
     `feature flags: ${adminUrl ? `poll ${adminUrl} (region=${env.region ?? 'none'})` : 'disabled (all default)'}; ` +
       `bot-fallback after ${env.botFallbackMs}ms`,
   );
-  startHeartbeat(createLogger('matchsvc')); // 存活心跳：空闲时每 5 分钟一条 info 日志
+  startHeartbeat(createLogger('matchsvc')); // Liveness heartbeat: one info log every 5 minutes when idle
 }
 
 main();

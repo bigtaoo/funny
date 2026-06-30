@@ -1,7 +1,7 @@
-// 成就反作弊离线抽查端到端（S9-7，ACHIEVEMENT_DESIGN §4.4）：真实 Mongo + 注入假 peer 裁判。
-//   超报→回滚+升档+审查记录+overclaim 标记 / 重跑幂等 / clean 无记录 / 无裁判全 0 留局 /
-//   裁判失败 skipped / 少报 clean / suspicion 加权抽样 / 回滚 0 下限 / 内部审查端点鉴权。
-// 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// Achievement anti-cheat offline spot-check end-to-end (S9-7, ACHIEVEMENT_DESIGN §4.4): real Mongo + injected fake peer judge.
+//   overclaim → rollback + suspicion increment + review record + overclaim marker / idempotent rerun / clean leaves no record / no judge → all-zero, match stays unaudited /
+//   judge failure → skipped / underreport → clean / suspicion-weighted sampling / rollback floor at 0 / internal review endpoint auth.
+// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createMongo,
@@ -29,9 +29,9 @@ async function tryConnect(): Promise<MongoHandle | null> {
   }
 }
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[anticheat-audit.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[anticheat-audit.e2e] Mongo unreachable (${URI}) — skipping.`);
 
-/** 可配假裁判：available + 固定 verdict（statsJson 为 PvP per-side map）。 */
+/** Configurable fake judge: available flag + fixed verdict (statsJson is a PvP per-side map). */
 class FakeGateway implements GatewayClient {
   available = true;
   next: JudgeRes = { ok: true, statsJson: '{}', judgeAccountId: 'judge-1' };
@@ -53,7 +53,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
   let gateway: FakeGateway;
   const now = () => 1000;
 
-  // 种一名账号存档 + 初始 stats / suspicion。
+  // Seed one account save with optional initial stats / suspicion.
   async function seedSave(
     accountId: string,
     stats?: SaveData['stats'],
@@ -65,7 +65,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     await m.collections.saves.insertOne({ _id: accountId, save, rev: save.rev });
   }
 
-  // 种一局已归档 ranked（含 reportedStats + 最小内嵌 replay）。
+  // Seed one archived ranked match (with reportedStats + minimal embedded replay).
   async function seedMatch(
     roomId: string,
     reportedStats: MatchDoc['reportedStats'],
@@ -100,7 +100,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
   const getSave = (id: string) => m.collections.saves.findOne({ _id: id });
   const getReviews = (accountId: string) =>
     m.collections.antiCheatReviews.find({ accountId }).toArray();
-  // rand=0 → 永远抽中（< p0）；加权测试单独传别的。
+  // rand=0 → always sampled (< p0); weighted tests pass a different value.
   const deps = (over?: Partial<Parameters<typeof auditOnce>[0]>) => ({
     cols: m.collections,
     gateway,
@@ -120,7 +120,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     if (app) await app.close();
   });
 
-  it('超报：回滚超报量 + statSuspicion=1 + lastFlaggedTs + 审查记录 + overclaim 标记', async () => {
+  it('overclaim: rollback excess + statSuspicion=1 + lastFlaggedTs + review record + overclaim marker', async () => {
     await seedSave('acctA', { 'kill.archer': 50 });
     await seedSave('acctB');
     await seedMatch('r1', { '0': { 'kill.archer': 50 }, '1': {} });
@@ -130,7 +130,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     expect(res).toMatchObject({ examined: 1, audited: 1, flagged: 1, skipped: 0 });
 
     const a = await getSave('acctA');
-    expect(a?.save.stats?.['kill.archer']).toBe(10); // 50 → 10（回滚 40）
+    expect(a?.save.stats?.['kill.archer']).toBe(10); // 50 → 10 (rolled back by 40)
     expect(a?.save.antiCheat?.statSuspicion).toBe(1);
     expect(a?.save.antiCheat?.lastFlaggedTs).toBe(1000);
 
@@ -146,7 +146,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     expect(match?.audited?.overclaim).toEqual({ '0': { 'kill.archer': 40 } });
   });
 
-  it('重跑幂等：已 audited 的局不再处理，stats/suspicion 不变，单条审查', async () => {
+  it('idempotent rerun: already-audited match is not re-processed; stats/suspicion unchanged, single review record', async () => {
     await seedSave('acctA', { 'kill.archer': 50 });
     await seedSave('acctB');
     await seedMatch('r1', { '0': { 'kill.archer': 50 }, '1': {} });
@@ -157,12 +157,12 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     expect(res2).toMatchObject({ examined: 0, flagged: 0 });
 
     const a = await getSave('acctA');
-    expect(a?.save.stats?.['kill.archer']).toBe(10); // 未二次回滚
+    expect(a?.save.stats?.['kill.archer']).toBe(10); // not rolled back a second time
     expect(a?.save.antiCheat?.statSuspicion).toBe(1);
     expect((await getReviews('acctA')).length).toBe(1);
   });
 
-  it('clean：上报与复算一致 → 无审查、无升档、标 clean', async () => {
+  it('clean: report matches recompute → no review, no suspicion increase, marked clean', async () => {
     await seedSave('acctA', { 'kill.archer': 10 });
     await seedSave('acctB');
     await seedMatch('r1', { '0': { 'kill.archer': 10 }, '1': {} });
@@ -175,7 +175,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     expect((await getMatch('r1'))?.audited?.verdict).toBe('clean');
   });
 
-  it('无裁判可用：全 0 返回，局保持未审计', async () => {
+  it('no judge available: all zeros returned, match stays unaudited', async () => {
     await seedSave('acctA', { 'kill.archer': 50 });
     await seedSave('acctB');
     await seedMatch('r1', { '0': { 'kill.archer': 50 }, '1': {} });
@@ -186,7 +186,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     expect((await getMatch('r1'))?.audited).toBeUndefined();
   });
 
-  it('裁判失败（旧引擎/不可复算）→ 标 skipped，不回滚不升档', async () => {
+  it('judge failure (old engine / cannot recompute) → marked skipped, no rollback or suspicion increase', async () => {
     await seedSave('acctA', { 'kill.archer': 50 });
     await seedSave('acctB');
     await seedMatch('r1', { '0': { 'kill.archer': 50 }, '1': {} });
@@ -194,11 +194,11 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
 
     const res = await auditOnce(deps());
     expect(res).toMatchObject({ audited: 1, flagged: 0, skipped: 1 });
-    expect((await getSave('acctA'))?.save.stats?.['kill.archer']).toBe(50); // 不动
+    expect((await getSave('acctA'))?.save.stats?.['kill.archer']).toBe(50); // unchanged
     expect((await getMatch('r1'))?.audited?.verdict).toBe('skipped');
   });
 
-  it('少报：玩家上报 < 复算 → clean（不追溯，不升档）', async () => {
+  it('underreport: player reported < recomputed → clean (no retroactive credit, no suspicion increase)', async () => {
     await seedSave('acctA', { 'kill.archer': 5 });
     await seedSave('acctB');
     await seedMatch('r1', { '0': { 'kill.archer': 5 }, '1': {} });
@@ -209,26 +209,26 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     expect((await getMatch('r1'))?.audited?.verdict).toBe('clean');
   });
 
-  it('suspicion 加权：rand 介于 p0/p_flagged → clean 账号局不抽、flagged 账号局抽中', async () => {
-    // clean 局（双方 suspicion 0）
+  it('suspicion-weighted sampling: rand between p0/p_flagged → clean account match skipped, flagged account match sampled', async () => {
+    // clean match (both players suspicion 0)
     await seedSave('cleanA');
     await seedSave('cleanB');
     await seedMatch('rc', { '0': {}, '1': {} }, ['cleanA', 'cleanB'], 1);
-    // flagged 局（acctF suspicion 1）
+    // flagged match (acctF suspicion 1)
     await seedSave('acctF', { 'kill.archer': 50 }, 1);
     await seedSave('acctG');
     await seedMatch('rf', { '0': { 'kill.archer': 50 }, '1': {} }, ['acctF', 'acctG'], 2);
     gateway.next = { ok: true, statsJson: '{"0":{"kill.archer":10},"1":{}}' };
 
-    // rand=0.1：p0(0.02) < 0.1 < p_flagged(0.35) → 仅 flagged 局抽中。
+    // rand=0.1: p0(0.02) < 0.1 < p_flagged(0.35) → only the flagged match is sampled.
     const res = await auditOnce(deps({ rand: () => 0.1, sampleLimit: 10 }));
     expect(res.examined).toBe(2);
-    expect(res.audited).toBe(1); // 只有 flagged 局被打标记
-    expect((await getMatch('rc'))?.audited).toBeUndefined(); // clean 账号局未抽中、保留再抽
+    expect(res.audited).toBe(1); // only the flagged match is marked
+    expect((await getMatch('rc'))?.audited).toBeUndefined(); // clean account match not sampled; remains available for a future sample
     expect((await getMatch('rf'))?.audited?.verdict).toBe('overclaim');
   });
 
-  it('回滚 0 下限：超报 40 但当前仅 20 → stat 钳到 0，rolledBack=20 而 overclaim=40', async () => {
+  it('rollback floor at 0: overclaim of 40 but current stat only 20 → stat clamped to 0, rolledBack=20 while overclaim=40', async () => {
     await seedSave('acctA', { 'kill.archer': 20 });
     await seedSave('acctB');
     await seedMatch('r1', { '0': { 'kill.archer': 60 }, '1': {} });
@@ -241,7 +241,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     expect(reviews[0].rolledBack).toEqual({ 'kill.archer': 20 });
   });
 
-  it('GET /internal/anticheat/reviews：鉴权 + 按账号过滤', async () => {
+  it('GET /internal/anticheat/reviews: auth guard + filter by accountId', async () => {
     await seedSave('acctA', { 'kill.archer': 50 });
     await seedSave('acctB');
     await seedMatch('r1', { '0': { 'kill.archer': 50 }, '1': {} });

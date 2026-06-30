@@ -1,15 +1,16 @@
-// 客户端异常上报「全链路」测试（FEATURE_FLAGS_DESIGN §9.7）。
+// Full end-to-end test for client anomaly reporting (FEATURE_FLAGS_DESIGN §9.7).
 //
-// 链路：客户端 net/anomaly.ts(AnomalyReporter / 崩溃哨兵 / 离场 beacon)
-//        --POST /client/anomaly--> 服务端 clientAnomaly handler
-//        --buildAnomalyLokiPayload--> Loki push 行。
+// Pipeline: client net/anomaly.ts (AnomalyReporter / crash sentinel / exit beacon)
+//        --POST /client/anomaly--> server clientAnomaly handler
+//        --buildAnomalyLokiPayload--> Loki push line.
 //
-// 服务端 handler 那半条（校验/IP 限流/anon 兜底/转发）已由
-// server/metaserver/test/clientLog.test.ts 覆盖；本测试补**客户端那半条**（此前零覆盖，
-// 且是 2026-06-27 两处 bug 的修复点），并把客户端真实发出的 body 喂进服务端**真实的**
-// Loki 格式化函数 buildAnomalyLokiPayload，断言最终 Loki 行——即「客户端事件 → Loki 行」全链路。
+// The server-handler half (validation / IP rate-limiting / anon fallback / forwarding) is already
+// covered by server/metaserver/test/clientLog.test.ts; this test adds coverage for **the client half**
+// (previously zero coverage and the fix site for two bugs on 2026-06-27), and feeds the body the client
+// actually emits into the server's **real** Loki formatting function buildAnomalyLokiPayload,
+// asserting the final Loki line — i.e., the full "client event → Loki line" pipeline.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-// 全链路接缝：服务端把收到的 events 转 Loki 行就靠这个纯函数（无依赖，可跨包直接 import）。
+// Full-pipeline seam: the server converts received events to Loki lines using only this pure function (no dependencies; importable directly across packages).
 import { buildAnomalyLokiPayload } from '../../server/metaserver/src/clientLog';
 
 const API_BASE = 'https://api.test/api';
@@ -26,16 +27,17 @@ type Captured = {
 };
 
 /**
- * 每个用例都重置模块再 import：anomaly.ts 的 AnomalyReporter / 崩溃哨兵 / installAnomalyWatchers
- * 都是模块级单例 + 一次性安装闸（__nwAnomalyHooked），不隔离会串味。globals 用 vi.stubGlobal
- * 注入（node 自带的 navigator 是只读的，直接赋值会抛）。
+ * Each test case resets modules before importing: AnomalyReporter / crash sentinel / installAnomalyWatchers
+ * in anomaly.ts are all module-level singletons with a one-shot installation gate (__nwAnomalyHooked);
+ * without isolation they bleed into each other. Globals are injected via vi.stubGlobal
+ * (Node's built-in navigator is read-only and throws on direct assignment).
  */
 async function freshAnomaly(opts: { base?: string; publicId?: string | null } = {}): Promise<{
   mod: typeof import('../src/net/anomaly');
   cap: Captured;
 }> {
   vi.resetModules();
-  delete (globalThis as Record<string, unknown>).__nwAnomalyHooked; // 解除一次性安装闸
+  delete (globalThis as Record<string, unknown>).__nwAnomalyHooked; // release the one-shot installation gate
 
   const store = new Map<string, string>();
   if (opts.publicId) store.set('nw_player_public_id', opts.publicId);
@@ -81,14 +83,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// ── 客户端 → POST /client/anomaly（普通合批 fetch 通道）───────────────────────────
-describe('AnomalyReporter.report → 合批 POST', () => {
+// ── Client → POST /client/anomaly (normal batched fetch channel) ───────────────────────────
+describe('AnomalyReporter.report → batched POST', () => {
   beforeEach(() => vi.useFakeTimers());
 
-  it('1.5s 合批后 POST 到 /client/anomaly，body 形状正确（publicId/platform/events）', async () => {
+  it('POSTs to /client/anomaly after 1.5s batch window; body shape is correct (publicId/platform/events)', async () => {
     const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
     mod.reportAnomaly('webgl_lost', 'context lost', { glError: 1282 });
-    expect(cap.fetch).not.toHaveBeenCalled(); // 合批延迟内不发
+    expect(cap.fetch).not.toHaveBeenCalled(); // not sent within the batch delay
     await vi.advanceTimersByTimeAsync(1500);
 
     expect(cap.fetch).toHaveBeenCalledTimes(1);
@@ -101,20 +103,20 @@ describe('AnomalyReporter.report → 合批 POST', () => {
     expect(body.events).toHaveLength(1);
     expect(body.events[0]).toMatchObject({ type: 'webgl_lost', msg: 'context lost' });
     expect(typeof body.events[0].ts).toBe('number');
-    expect(body.events[0].detail).toContain('1282'); // detail 压成串
+    expect(body.events[0].detail).toContain('1282'); // detail serialized to string
   });
 
-  it('同类型在冷却窗口内的二次上报被丢（mem 60s 合一）', async () => {
+  it('a second report of the same type within the cooldown window is dropped (mem deduped over 60 s)', async () => {
     const { mod, cap } = await freshAnomaly();
     mod.reportAnomaly('mem', 'heap 1');
-    mod.reportAnomaly('mem', 'heap 2'); // 冷却内 → 丢
+    mod.reportAnomaly('mem', 'heap 2'); // within cooldown → dropped
     await vi.advanceTimersByTimeAsync(1500);
     const body = JSON.parse((cap.fetch.mock.calls[0] as [string, RequestInit])[1].body as string);
     expect(body.events).toHaveLength(1);
     expect(body.events[0].msg).toBe('heap 1');
   });
 
-  it('无 baseUrl → 不发包（静默丢弃，绝不影响玩家）', async () => {
+  it('no baseUrl → no request sent (silently dropped, never affects the player)', async () => {
     const { mod, cap } = await freshAnomaly({ base: '' });
     mod.reportAnomaly('jserror', 'boom');
     await vi.advanceTimersByTimeAsync(1500);
@@ -122,16 +124,16 @@ describe('AnomalyReporter.report → 合批 POST', () => {
   });
 });
 
-// ── 全链路接缝：客户端 body → 服务端 Loki 格式化 → Loki 行 ──────────────────────────
-describe('全链路：客户端 POST 的 events 经服务端 buildAnomalyLokiPayload → Loki 行', () => {
+// ── Full-pipeline seam: client body → server Loki formatting → Loki line ──────────────────────────
+describe('Full pipeline: client POST events through server buildAnomalyLokiPayload → Loki line', () => {
   beforeEach(() => vi.useFakeTimers());
 
-  it('客户端发出的 event 在服务端转成 {source,kind=anomaly} 单 stream + logfmt 行', async () => {
+  it('an event emitted by the client is converted server-side into a single {source,kind=anomaly} stream + logfmt line', async () => {
     const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
     mod.reportAnomaly('crash', 'previous session ended without clean exit', { aliveMs: 4200 });
     await vi.advanceTimersByTimeAsync(1500);
 
-    // 取客户端真实发出的 body，喂进服务端真实的 Loki 格式化函数（= handler 内部所做）。
+    // Take the body actually emitted by the client and feed it into the server's real Loki formatting function (what the handler does internally).
     const body = JSON.parse((cap.fetch.mock.calls[0] as [string, RequestInit])[1].body as string);
     const payload = buildAnomalyLokiPayload(body.publicId, body.events, body.platform, () => '0')!;
 
@@ -142,29 +144,29 @@ describe('全链路：客户端 POST 的 events 经服务端 buildAnomalyLokiPay
     expect(line).toContain(`publicId=${PUBLIC_ID}`);
     expect(line).toContain('platform=web');
     expect(line).toContain('detail=');
-    expect(line).toContain('msg="previous session ended without clean exit"'); // 含空格 → logfmt 引号
+    expect(line).toContain('msg="previous session ended without clean exit"'); // contains spaces → logfmt quoting
   });
 });
 
-// ── 离场捕获（回归：2026-06-27 Bug A —— hidden 不标 cleanExit）────────────────────────
-describe('离场 beacon 与 cleanExit 标记（Bug A 回归）', () => {
+// ── Exit capture (regression: 2026-06-27 Bug A — hidden does not set cleanExit) ────────────────────────
+describe('Exit beacon and cleanExit flag (Bug A regression)', () => {
   beforeEach(() => vi.useFakeTimers());
 
-  it('visibilitychange→hidden：beacon 抢发队列，但**不**标 cleanExit', async () => {
+  it('visibilitychange→hidden: beacon flushes the queue, but does **not** set cleanExit', async () => {
     const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
-    mod.initCrashSentinel();          // 开本次会话哨兵（cleanExit 未设）
-    mod.installAnomalyWatchers();     // 装离场监听
-    mod.reportAnomaly('anr', 'stall'); // 队列里塞一条，离场才有东西抢发
+    mod.initCrashSentinel();          // start the sentinel for this session (cleanExit not yet set)
+    mod.installAnomalyWatchers();     // install exit listeners
+    mod.reportAnomaly('anr', 'stall'); // queue one event so there is something to flush on exit
 
     cap.doc.visibilityState = 'hidden';
     cap.fire('visibilitychange');
 
-    expect(cap.sendBeacon).toHaveBeenCalledTimes(1); // 抢发了
+    expect(cap.sendBeacon).toHaveBeenCalledTimes(1); // beacon was sent
     const sentinel = JSON.parse(cap.store.get(SENTINEL)!);
-    expect(sentinel.cleanExit).toBeUndefined(); // 关键：hidden 不算干净退出（iOS 后台可能被杀）
+    expect(sentinel.cleanExit).toBeUndefined(); // key assertion: hidden is not a clean exit (iOS background process may be killed)
   });
 
-  it('pagehide：既抢发又标 cleanExit（真·卸载）', async () => {
+  it('pagehide: both flushes via beacon and sets cleanExit (true unload)', async () => {
     const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
     mod.initCrashSentinel();
     mod.installAnomalyWatchers();
@@ -177,7 +179,7 @@ describe('离场 beacon 与 cleanExit 标记（Bug A 回归）', () => {
     expect(sentinel.cleanExit).toBe(true);
   });
 
-  it('上次哨兵带 cleanExit → 下次启动不补报 crash（无 beacon）', async () => {
+  it('previous sentinel has cleanExit → next startup does not report a crash (no beacon)', async () => {
     const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
     cap.store.set(SENTINEL, JSON.stringify({ startedAt: 1000, lastSeenAt: 5000, cleanExit: true }));
     mod.initCrashSentinel();
@@ -185,13 +187,13 @@ describe('离场 beacon 与 cleanExit 标记（Bug A 回归）', () => {
   });
 });
 
-// ── 崩溃哨兵补报（回归：2026-06-27 Bug B —— 立即 beacon，不等 1.5s 合批）────────────────
-describe('崩溃哨兵补报立即 beacon（Bug B 回归）', () => {
+// ── Crash sentinel catch-up report (regression: 2026-06-27 Bug B — immediate beacon, no 1.5s batch wait) ────────────────
+describe('Crash sentinel immediate beacon on catch-up report (Bug B regression)', () => {
   beforeEach(() => vi.useFakeTimers());
 
-  it('启动检测到上次未干净退出 → 当场 beacon 发出 crash（无需推进 1.5s 合批定时器）', async () => {
+  it('startup detects previous unclean exit → beacon sends crash immediately (no need to advance the 1.5s batch timer)', async () => {
     const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
-    // 预置一条「上次会话异常退出」哨兵（有 startedAt、无 cleanExit）。
+    // Pre-populate a sentinel indicating the previous session exited abnormally (has startedAt, no cleanExit).
     cap.store.set(
       SENTINEL,
       JSON.stringify({ startedAt: 1000, lastSeenAt: 5000, lastError: 'TypeError x' }),
@@ -199,12 +201,12 @@ describe('崩溃哨兵补报立即 beacon（Bug B 回归）', () => {
 
     mod.initCrashSentinel();
 
-    // 关键：还没 advanceTimers，beacon 就该已发（否则成串崩溃时永远发不出）。
+    // Key assertion: beacon must already have been sent without any timer advancement (otherwise cascading crashes would never fire).
     expect(cap.sendBeacon).toHaveBeenCalledTimes(1);
     const [url, blob] = cap.sendBeacon.mock.calls[0] as [string, Blob];
     expect(url).toBe(ANOMALY_URL);
     const sent = JSON.parse(await blob.text());
     expect(sent.events.some((e: { type: string }) => e.type === 'crash')).toBe(true);
-    expect(cap.fetch).not.toHaveBeenCalled(); // 走的是 beacon，不是合批 fetch
+    expect(cap.fetch).not.toHaveBeenCalled(); // went through beacon, not the batched fetch
   });
 });

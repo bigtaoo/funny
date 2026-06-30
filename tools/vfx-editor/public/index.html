@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Notebook Wars — 特效编辑器</title>
+  <title>Notebook Wars — VFX Editor</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -161,25 +161,25 @@
 </head>
 <body>
   <div class="toolbar">
-    <span class="title">特效编辑器 <span style="color:var(--text-dim);font-weight:400">VFX · 墨线矢量</span></span>
-    <button id="btn-new">新建</button>
-    <button id="btn-import">导入 .json…</button>
+    <span class="title">VFX Editor <span style="color:var(--text-dim);font-weight:400">VFX · Ink vector</span></span>
+    <button id="btn-new">New</button>
+    <button id="btn-import">Import .json…</button>
     <span class="spacer"></span>
     <span class="autosave" id="autosave">—</span>
-    <button id="btn-undo" title="撤销 (Ctrl+Z)">↶ 撤销</button>
-    <button id="btn-redo" title="重做 (Ctrl+Shift+Z)">↷ 重做</button>
-    <button id="btn-export" class="primary">导出 .json</button>
+    <button id="btn-undo" title="Undo (Ctrl+Z)">↶ Undo</button>
+    <button id="btn-redo" title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
+    <button id="btn-export" class="primary">Export .json</button>
   </div>
 
   <div class="main">
     <!-- Left: effect library + layers -->
     <div class="pane col-left" id="col-left">
-      <div class="pane-head"><span class="ph-title">特效库</span></div>
+      <div class="pane-head"><span class="ph-title">Effect Library</span></div>
       <div class="effect-list list" id="effect-list"></div>
       <div class="layer-wrap">
-        <div class="pane-head"><span class="ph-title">图层</span><span class="spacer"></span>
+        <div class="pane-head"><span class="ph-title">Layers</span><span class="spacer"></span>
           <select id="layer-add-type" class="sm" style="background:#11111b;color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px"></select>
-          <button id="btn-add-layer" class="sm">+ 加层</button>
+          <button id="btn-add-layer" class="sm">+ Add layer</button>
         </div>
         <div class="list" id="layer-list" style="overflow-y:auto"></div>
       </div>
@@ -189,24 +189,24 @@
 
     <!-- Center: preview + timeline + json -->
     <div class="pane col-center">
-      <div class="pane-head"><span class="ph-title">预览</span><span class="spacer"></span>
-        <label class="inline"><input type="checkbox" id="chk-ref"> 参考单位</label>
-        <button id="btn-reseed" class="sm" title="重掷随机种子（仅预览观感）">🎲 重掷</button>
+      <div class="pane-head"><span class="ph-title">Preview</span><span class="spacer"></span>
+        <label class="inline"><input type="checkbox" id="chk-ref"> Reference unit</label>
+        <button id="btn-reseed" class="sm" title="Re-roll random seed (preview only)">🎲 Re-roll</button>
       </div>
       <div class="preview-mount" id="preview-mount"></div>
       <div class="timeline">
-        <button id="btn-play" class="sm" style="min-width:64px">⏸ 暂停</button>
+        <button id="btn-play" class="sm" style="min-width:64px">⏸ Pause</button>
         <input type="range" id="scrub" min="0" max="1000" value="0">
         <span class="tval" id="tval">t=0.00</span>
-        <label>时长(s)<input type="number" id="duration" step="0.05" min="0.05"></label>
+        <label>Duration(s)<input type="number" id="duration" step="0.05" min="0.05"></label>
         <label class="inline"><input type="checkbox" id="chk-loop"> loop</label>
       </div>
       <div class="hsplit" id="split-json"></div>
       <div class="json-wrap" id="json-wrap">
         <textarea id="json" spellcheck="false"></textarea>
         <div class="json-bar">
-          <button id="btn-apply">应用 JSON →</button>
-          <span class="hint">实时反映编辑；手改后「应用」经游戏侧 parseEffectDef 校验回写（points 等可在此直接编辑）。</span>
+          <button id="btn-apply">Apply JSON →</button>
+          <span class="hint">Reflects edits in real time; after manual changes, "Apply" validates through the game-side parseEffectDef and writes back (points etc. can be edited here directly).</span>
         </div>
       </div>
     </div>
@@ -216,30 +216,30 @@
     <!-- Right: effect props + palette + params + metrics -->
     <div class="pane col-right" id="col-right">
       <div class="section">
-        <div class="section-title">特效属性</div>
+        <div class="section-title">Effect Properties</div>
         <label class="field"><span>id</span><input type="text" id="eff-id"></label>
         <label class="field"><span>defaultColor (0xRRGGBB)</span><input type="text" id="eff-color"></label>
       </div>
       <div class="section">
-        <div class="section-title">预览颜色盘（运行时由调用方传入，此处仅验证各阵营色）</div>
+        <div class="section-title">Preview palette (runtime color is supplied by the caller; this validates each faction color)</div>
         <div class="swatches" id="swatches"></div>
       </div>
       <div class="section" id="param-section">
-        <div class="section-title">参数 — <span id="param-layer-label">未选图层</span></div>
+        <div class="section-title">Params — <span id="param-layer-label">No layer selected</span></div>
         <div id="param-list" style="display:flex;flex-direction:column;gap:8px"></div>
         <div class="row2" id="param-add-wrap" style="display:none">
           <select id="param-add-name" class="num"></select>
-          <button id="btn-add-param" class="sm">+ 参数</button>
+          <button id="btn-add-param" class="sm">+ Param</button>
         </div>
       </div>
       <div class="section">
-        <div class="section-title">性能预算（软约束 · 超限警告不阻断）</div>
+        <div class="section-title">Performance budget (soft constraint · over-limit warns but does not block)</div>
         <div id="metrics"></div>
         <div id="metric-warnings"></div>
       </div>
     </div>
   </div>
 
-  <div class="status" id="status">就绪</div>
+  <div class="status" id="status">Ready</div>
 </body>
 </html>

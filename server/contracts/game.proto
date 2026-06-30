@@ -1,23 +1,23 @@
 syntax = "proto3";
 
-// game.proto —— PlayerCommand 真实结构（M12）。
-// 仅客户端 ↔ 客户端：客户端编码进 transport.proto 的 SideCmd.commands(bytes)，
-// 服务器 opaque 转发不解码、永不依赖本文件。
-// 字段对应 client/src/game 的 PlayerCommand；改命令结构服务器无需重编。
+// game.proto —— Real PlayerCommand structure (M12).
+// Client-to-client only: the client encodes into transport.proto SideCmd.commands (bytes);
+// the server forwards them opaquely without decoding and never depends on this file.
+// Fields correspond to PlayerCommand in client/src/game; changing command structure requires no server rebuild.
 
 package nw.game;
 
-// 出牌：从手牌槽打一张卡到某攻击列
+// Play a card: play a card from a hand slot into an attack column
 message PlayCard {
   uint32 hand_index = 1;
   uint32 col        = 2;
-  uint32 row        = 3; // 仅陨石法术用（目标行）；单位/建筑/加速忽略
+  uint32 row        = 3; // used only for meteor spells (target row); ignored for units/buildings/speedup
 }
 
-// 基地升级
+// Upgrade the base
 message UpgradeBase {}
 
-// 花费 10 墨水立即刷新整副手牌（重抽全部槽位，计时器随机错开，同进场时）
+// Spend 10 ink to immediately refresh the full hand (redraws all slots; timers are randomly staggered, same as on initial deploy)
 message RefreshHand {}
 
 message PlayerCommand {
@@ -28,7 +28,7 @@ message PlayerCommand {
   }
 }
 
-// 一个 tick 内某一方提交的指令集（编码进 SideCmd.commands）
+// The set of commands submitted by one side within a single tick (encoded into SideCmd.commands)
 message PlayerCommands {
   repeated PlayerCommand commands = 1;
 }

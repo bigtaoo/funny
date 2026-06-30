@@ -7,19 +7,19 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChild
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { sortTitlesByWeight, getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 
-// ── TitlesScene — 称号墙（S10，TITLE_DESIGN §7）────────────────────────────────
+// ── TitlesScene — title wall (S10, TITLE_DESIGN §7) ────────────────────────────
 //
-// 入口：SettingsScene → onOpenTitles。
-// 显示：玩家拥有的所有称号，按 weight 降序排列；已佩戴的高亮显示。
-// 交互：点击称号条目 → 更新 equipped['title']（PUT /save，客户端同步段）。
+// Entry: StatsScene → onOpenTitles.
+// Displays: all titles owned by the player, sorted by weight descending; the equipped one is highlighted.
+// Interaction: tap a title row → update equipped['title'] (PUT /save, client-side sync segment).
 
 export interface TitlesSceneCallbacks {
   onBack(): void;
-  /** 玩家拥有的称号 id 列表（来自 save.titles）。 */
+  /** List of title ids owned by the player (from save.titles). */
   titles: string[];
-  /** 当前佩戴的称号 id（save.equipped['title']）。 */
+  /** Currently equipped title id (save.equipped['title']). */
   equippedTitle: string;
-  /** 佩戴新称号 → 写入 equipped['title'] + PUT /save。 */
+  /** Equip a new title → write equipped['title'] + PUT /save. */
   onEquip(titleId: string): void;
 }
 

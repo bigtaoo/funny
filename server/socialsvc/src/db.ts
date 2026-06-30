@@ -1,11 +1,11 @@
-// socialsvc 专属库工厂（nw_social，SOCIAL_SVC_DESIGN §3）。
-// P1 集合：families / familyMembers / familyMessages（无 worldId）。
-// P2 集合：friendEdges / friendRequests / blockList / conversations / chatMessages / mails。
+// socialsvc dedicated database factory (nw_social, SOCIAL_SVC_DESIGN §3).
+// P1 collections: families / familyMembers / familyMessages (no worldId).
+// P2 collections: friendEdges / friendRequests / blockList / conversations / chatMessages / mails.
 import { MongoClient, Db, Collection } from 'mongodb';
 import type { FamilyRole, MailDoc } from '@nw/shared';
 import { FAMILY_MSG_RETENTION_SEC, CHAT_RETENTION_SEC } from '@nw/shared';
 
-// ── P2 文档类型（原 @nw/shared，迁入本地以解耦）─────────────────────────────
+// ── P2 document types (originally in @nw/shared, moved here locally to decouple) ─────────────────────────────
 
 export interface FriendEdgeDoc {
   _id: string;   // friendEdgeId(owner, friend)
@@ -47,29 +47,29 @@ export interface ChatMessageDoc {
   from: string;
   body: string;
   kind: 'text' | 'system';
-  ts: Date;      // BSON Date（TTL 索引需 Date 字段）
+  ts: Date;      // BSON Date (TTL index requires a Date field)
 }
 
-// ── 家族（SS2/SS3：全局持久实体，无 worldId）─────────────────────────────
+// ── Family (SS2/SS3: globally persistent entity, no worldId) ─────────────────────────────
 
 export interface FamilyDoc {
-  /** familyId = `fam:{TAG}`（TAG 全大写 2–5 字符，全库唯一）。 */
+  /** familyId = `fam:{TAG}` (TAG is 2–5 uppercase characters, unique across the entire database). */
   _id: string;
   name: string;
-  /** 全大写 2–5 字符缩写，全库唯一（unique index）。 */
+  /** 2–5 uppercase character abbreviation, unique across the entire database (unique index). */
   tag: string;
   leaderId: string;
   memberCount: number;
-  /** 家族公告（最近一条）。 */
+  /** Family announcement (most recent one). */
   announcement?: string;
   /**
-   * 家族繁荣度（领地数×10 + 成员×50 + 活跃×5）。
-   * socialsvc 记分值，worldsvc 读镜像判断建宗门门槛。
+   * Family prosperity (territory count×10 + member count×50 + activity×5).
+   * Score maintained by socialsvc; worldsvc reads the mirror value to check the sect-founding threshold.
    */
   prosperity: number;
-  /** 繁荣度衰减锚点 ms（惰性衰减，不每日 tick）。 */
+  /** Prosperity decay anchor in ms (lazy decay, not ticked daily). */
   prosperityUpdatedAt: number;
-  /** 赛季累计活跃（worldsvc 通过内部 API $inc，占领/战斗计分）。 */
+  /** Season cumulative activity (incremented via worldsvc internal API $inc; scored for territory occupation and combat). */
   activity: number;
   createdAt: number;
   rev: number;
@@ -78,7 +78,7 @@ export interface FamilyDoc {
 // index: { leaderId: 1 }
 
 export interface FamilyMemberDoc {
-  /** _id = accountId（一个玩家只能在一个家族）。 */
+  /** _id = accountId (a player can belong to only one family). */
   _id: string;
   familyId: string;
   accountId: string;
@@ -88,7 +88,7 @@ export interface FamilyMemberDoc {
 // index: { familyId: 1 }
 
 /**
- * 家族频道消息。ts 须 BSON Date（MongoDB TTL 只对 Date 字段生效）。
+ * Family channel message. ts must be a BSON Date (MongoDB TTL only applies to Date fields).
  */
 export interface FamilyMessageDoc {
   /** `fm:{familyId}:{ts_epoch}:{seq}` */
@@ -102,10 +102,10 @@ export interface FamilyMessageDoc {
 // index: { familyId: 1, ts: -1 }
 // TTL index: { ts: 1 } expireAfterSeconds = FAMILY_MSG_RETENTION_SEC
 
-// ── P2：好友 / 私聊 / 邮件（从 metaserver 迁入）────────────────────────────
-// 文档结构复用 @nw/shared 中的 Doc 类型（与 notebook_wars 库一致，直接迁移）。
-// index hints（见 ensureIndexes）：
-//   friendEdges:    { owner: 1 } + { _id: 1 }（friendEdgeId 精确查）
+// ── P2: friends / private chat / mail (migrated from metaserver) ────────────────────────────
+// Document structures reuse the Doc types from @nw/shared (consistent with notebook_wars database; migrated as-is).
+// index hints (see ensureIndexes):
+//   friendEdges:    { owner: 1 } + { _id: 1 } (exact lookup by friendEdgeId)
 //   friendRequests: { from: 1, status: 1 } + { to: 1, status: 1 }
 //   blockList:      { owner: 1 }
 //   conversations:  { members: 1, lastTs: -1 }
@@ -159,7 +159,7 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
     // familyMembers
     await familyMembers.createIndex({ familyId: 1 });
 
-    // familyMessages: TTL 自清
+    // familyMessages: auto-expired via TTL
     await familyMessages.createIndex({ familyId: 1, ts: -1 });
     await familyMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
 
@@ -176,11 +176,11 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
     // conversations
     await conversations.createIndex({ members: 1, lastTs: -1 });
 
-    // chatMessages: TTL 自清
+    // chatMessages: auto-expired via TTL
     await chatMessages.createIndex({ convId: 1, ts: -1 });
     await chatMessages.createIndex({ ts: 1 }, { expireAfterSeconds: CHAT_RETENTION_SEC });
 
-    // mails: TTL 自清
+    // mails: auto-expired via TTL
     await mails.createIndex({ to: 1, createdAt: -1 });
     await mails.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
   }

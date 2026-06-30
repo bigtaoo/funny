@@ -1,12 +1,12 @@
-// WorldMapScene — SLG 大世界地图场景（S8）
-// 300×300 网格，视口裁剪 + 拖拽平移。
-// 每帧只渲染可见窗口内的方格，瓦片数据按需拉取 + 缓存。
+// WorldMapScene — SLG overworld map scene (S8)
+// 300×300 grid with viewport clipping + drag-to-pan.
+// Only tiles inside the visible window are rendered each frame; tile data is fetched on demand and cached.
 //
-// 交互逻辑：
-//   - 拖拽平移（right-drag，移动 > 8px 后取消点击）
-//   - 点击空格 → 根据玩家状态弹出「建立主城」或「占领」确认
-//   - 点击己方格 → 弹出「放弃 / 出征」菜单
-//   - 底部工具栏：兵力 / 领地 / 资源；「家族」「拍卖」快捷键
+// Interaction logic:
+//   - Drag to pan (drag > 8px cancels the tap)
+//   - Tap empty tile → show "Establish Capital" or "Occupy" confirmation depending on player state
+//   - Tap owned tile → show "Abandon / March" menu
+//   - Bottom toolbar: troops / territory / resources; "Family" and "Auction" shortcuts
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';
@@ -59,20 +59,20 @@ export interface WorldMapView {
 }
 
 // ── Tile styling ─────────────────────────────────────────────────────────────
-// 配色对齐服务端 TileType（neutral/resource/territory/familyKeep/center/base/
-// obstacle/gate）。敌我色遵循「敌蓝我红」（project_art_direction）：
-// 我方领地/主城 = 红墨，敌方 = 蓝墨。首府由 getNations() 叠加星标渲染（非瓦片类型）。
+// Colors align with the server's TileType values (neutral/resource/territory/familyKeep/center/base/
+// obstacle/gate). Enemy/ally colors follow the "enemy blue, player red" convention (project_art_direction):
+// own territory/capital = red ink; enemy = blue ink. Capitals are overlaid as star markers via getNations() (not a tile type).
 
-// 地形底色（未被占领时）。
+// Terrain base colors (unoccupied).
 const TERRAIN_COLORS: Record<string, number> = {
-  neutral:    0xf5f0e8, // 纸底空地
-  resource:   0xd4e8a0, // 资源格（resType 进一步细分）
-  familyKeep: 0xffd060, // 战略要点 / 险地
-  center:     0xffe88a, // 世界中心
-  obstacle:   0x9a9488, // 阻挡地形（山脉/河流，不可通行）
-  gate:       0xc8a878, // 关隘/桥（通道）
-  stronghold: 0x8a4a4a, // 险地（G8）：暗红石垒，系统超强 NPC 据点（攻克前未占领）
-  territory:  0xf5f0e8, // 兜底（territory 一定被 own/enemy 覆盖）
+  neutral:    0xf5f0e8, // paper-white empty land
+  resource:   0xd4e8a0, // resource tile (resType subdivides further)
+  familyKeep: 0xffd060, // strategic stronghold / chokepoint
+  center:     0xffe88a, // world center
+  obstacle:   0x9a9488, // impassable terrain (mountains/rivers)
+  gate:       0xc8a878, // pass / bridge (corridor)
+  stronghold: 0x8a4a4a, // stronghold (G8): dark-red stone fort, ultra-strong NPC garrison (unoccupied until captured)
+  territory:  0xf5f0e8, // fallback (territory tiles are always overlaid by own/enemy color)
   base:       0xf5f0e8,
 };
 
@@ -82,14 +82,14 @@ const RES_COLORS: Record<string, number> = {
   iron:  0xa0b8c8,
 };
 
-const MINE_TINT      = 0xe69090; // 我方领地（红墨淡）
-const MINE_BASE_TINT = 0xcc3333; // 我方主城（红墨浓）
-const ENEMY_TINT     = 0x90a8e6; // 敌方领地（蓝墨淡）
-const ENEMY_BASE_TINT= 0x4477cc; // 敌方主城（蓝墨浓）
-const ALLY_TINT      = 0x9cd6a4; // 家族盟友领地（绿墨淡，G5 友方第三色）
-const ALLY_BASE_TINT = 0x46a85a; // 家族盟友主城（绿墨浓）
-const FOG_COLOR      = 0x6b6458; // 视野外灰雾（铅笔灰，覆盖在地形上）
-const ALLY_SECT_BORDER = 0xe6a817; // 联盟宗门领地黄描边（金琥珀，G5；不共享视野仅标记，§8.2）
+const MINE_TINT      = 0xe69090; // own territory (light red ink)
+const MINE_BASE_TINT = 0xcc3333; // own capital (deep red ink)
+const ENEMY_TINT     = 0x90a8e6; // enemy territory (light blue ink)
+const ENEMY_BASE_TINT= 0x4477cc; // enemy capital (deep blue ink)
+const ALLY_TINT      = 0x9cd6a4; // family-ally territory (light green ink — G5 friendly third color)
+const ALLY_BASE_TINT = 0x46a85a; // family-ally capital (deep green ink)
+const FOG_COLOR      = 0x6b6458; // fog of war (pencil grey, overlaid on terrain)
+const ALLY_SECT_BORDER = 0xe6a817; // allied-sect territory yellow border (amber gold, G5; marks without shared vision, §8.2)
 
 function tileColor(tile: WorldTileView): number {
   if (tile.mine)     return tile.type === 'base' ? MINE_BASE_TINT : MINE_TINT;
@@ -101,7 +101,7 @@ function tileColor(tile: WorldTileView): number {
   return TERRAIN_COLORS[tile.type] ?? TERRAIN_COLORS.neutral!;
 }
 
-/** 未缓存格的程序化地形色（无网络请求，纯本地计算）。 */
+/** Procedural terrain color for uncached tiles (no network request; purely local computation). */
 function proceduralTileColor(worldId: string, x: number, y: number): number {
   const p = proceduralTile(worldId, x, y);
   if (p.type === 'resource' && p.resType) return RES_COLORS[p.resType] ?? TERRAIN_COLORS.resource!;
@@ -110,17 +110,17 @@ function proceduralTileColor(worldId: string, x: number, y: number): number {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_MAP_SIZE = 1500; // 服务端默认 1500×1500；实际从 getSeason 取
+const DEFAULT_MAP_SIZE = 1500; // server default 1500×1500; actual value comes from getSeason
 const HUD_H    = 80;   // bottom HUD bar height
 const MARGIN   = 4;    // margin inside modal
 const CONFIRM_H = 140;
 
 // ── Zoom system ───────────────────────────────────────────────────────────────
-// 三档缩放，通过按钮循环切换：
-//   L1 detail   25×≈14 格, 76px/格（1920px 设计宽度）— 完整标记（等级点/瞭望塔/宗门描边）
-//   L2 medium   50×≈27 格, 38px/格 — 仅展示占领色 + 首府星标 + 行军箭头
-//   L3 overview ~96×≈50 格, 20px/格 — 批量色块渲染，最粗略，看大势
-// TILE_PX 由 designWidth 动态计算，保证各分辨率下可见格数基本一致。
+// Three zoom levels cycled via a button:
+//   L1 detail   25×≈14 tiles, 76px/tile (1920px design width) — full markers (level dots / watchtowers / sect borders)
+//   L2 medium   50×≈27 tiles, 38px/tile — occupation color + capital stars + march arrows only
+//   L3 overview ~96×≈50 tiles, 20px/tile — batched color-block rendering, coarsest, for situational awareness
+// TILE_PX is computed dynamically from designWidth to keep visible tile counts consistent across resolutions.
 
 interface ZoomCfg {
   tile: number;   // px per tile
@@ -154,9 +154,9 @@ const TRAIN_FOOD_PER        = 10;
 const TRAIN_SPEEDUP_PER_COIN = 60; // seconds shortened per coin
 const TRAIN_BATCH_MAX       = 500;
 const TRAIN_PRESETS         = [10, 50];
-/** 主动迁城金币花费（display only；server @nw/shared RELOCATE_COST 权威）。 */
+/** Coin cost for a voluntary capital relocation (display only; server @nw/shared RELOCATE_COST is authoritative). */
 const RELOCATE_COST = 500;
-/** 瞭望塔资源花费（display only；server @nw/shared WATCHTOWER_COST 权威）。 */
+/** Resource cost to build a watchtower (display only; server @nw/shared WATCHTOWER_COST is authoritative). */
 const WATCHTOWER_COST_IRON = 2000;
 const WATCHTOWER_COST_WOOD = 3000;
 
@@ -314,13 +314,13 @@ export class WorldMapScene implements Scene {
     } catch { /* offline — no nation overlay */ }
     try {
       this.me = await this.cb.worldApi.getMe(this.cb.worldId);
-      // 首次进入：系统自动落城（§3.4，优先靠近家族）——玩家不再自选坐标。
-      // 满员/无空格则保持未落城态（用户可再点地图触发重试），不阻断进图。
+      // First entry: the system automatically places the capital (§3.4, preferring proximity to the family) — the player no longer picks a coordinate manually.
+      // If the world is full or no slot is available, stay in the unjoined state (the user can tap the map to retry); do not block map entry.
       if (!this.me.joined) {
         try {
           this.me = await this.cb.worldApi.joinWorld(this.cb.worldId);
           this.showToast(t('world.myBase'));
-        } catch { /* 满员/无空格——保持未落城态 */ }
+        } catch { /* world full / no slot available — remain in unjoined state */ }
       }
       if (this.me.mainBaseTile) {
         const [bx, by] = this.parseTileId(this.me.mainBaseTile);
@@ -342,17 +342,17 @@ export class WorldMapScene implements Scene {
     const { cx, cy, r } = this.viewportCenter();
     try {
       if (this.zoom === 1) {
-        // 全量详情：owner 名称 / 驻军 / 瞭望塔 / 视野门控
+        // Full detail: owner name / garrison / watchtower / visibility gating
         const map = await this.cb.worldApi.getMap(this.cb.worldId, cx, cy, r);
         for (const tile of map.tiles) {
           this.tileCache.set(`${tile.x}:${tile.y}`, tile);
         }
       } else {
-        // 稀疏占领层：只含被占领格；未占领格客户端从 proceduralTile 本地渲染
+        // Sparse occupation layer: only occupied tiles; unoccupied tiles are rendered locally via proceduralTile
         const lod = this.zoom === 3 ? 'thin' : 'mid';
         const sparse = await this.cb.worldApi.getMapSparse(this.cb.worldId, cx, cy, r, lod);
         for (const s of sparse.tiles) {
-          // 合成最小 WorldTileView；zoom 1 加载时会覆盖为完整数据
+          // Synthesize a minimal WorldTileView; will be overwritten with full data when zoom 1 loads
           this.tileCache.set(`${s.x}:${s.y}`, {
             x: s.x,
             y: s.y,
@@ -408,7 +408,7 @@ export class WorldMapScene implements Scene {
     this.buildPool();
     this.invalidatePool();
     this.renderHud();
-    // 换档后按新 LOD 重新拉取视口数据（不同档要求不同端点 / 字段集）
+    // After switching zoom, re-fetch viewport data at the new LOD (different levels require different endpoints / field sets)
     void this.loadMapViewport();
   }
 
@@ -908,8 +908,8 @@ export class WorldMapScene implements Scene {
     const me = this.me;
 
     if (!me?.joined) {
-      // 尚未落城（一般在进图时已自动落城；此处是满员/无空格兜底的手动重试入口）。
-      // 系统自动选点，不再按点击坐标落城。
+      // Not yet placed (normally auto-placed on map entry; this is the manual-retry path for the world-full / no-slot fallback).
+      // The system picks the location automatically; the tap coordinate is no longer used for placement.
       this.showModal(
         [t('world.joinTitle'), t('world.confirmJoin')],
         [
@@ -941,7 +941,7 @@ export class WorldMapScene implements Scene {
         { label: t('world.actReinforce'), action: () => this.showDeployDialog(tx, ty, 'reinforce') },
         { label: t('world.actDefense'), action: () => { this.closeModal(); this.cb.onOpenDefense(tileKey); } },
       ];
-      // 瞭望塔（§18 G5 V2）：己方领地建大半径持久视野源。已有塔则显状态行、不再提供按钮。
+      // Watchtower (§18 G5 V2): build a long-radius persistent vision source on an owned tile. If a tower already exists, show a status line instead of the build button.
       if (!tile.watchtower) {
         myButtons.push({ label: t('world.actWatchtower'), action: () => this.confirmWatchtower(tx, ty) });
       }
@@ -962,7 +962,7 @@ export class WorldMapScene implements Scene {
       if (!protectedNow) {
         buttons.push({ label: t('world.actAttack'), action: () => void this.showAttackTeamPicker(tx, ty) });
       }
-      // 侦察：不打不占，派斥候探敌情/防守后自动回师（保护期内亦可侦察）。
+      // Scout: no attack, no capture — send a scout to reveal enemy info / defenses then auto-return (scouting is also allowed during a protection window).
       buttons.push({ label: t('world.actScout'), action: () => void this.doScout(tx, ty) });
       buttons.push({ label: '✕', action: () => this.closeModal() });
       this.showModal([t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`], buttons);
@@ -974,8 +974,7 @@ export class WorldMapScene implements Scene {
       return;
     }
 
-    // 险地（G8 §3.1）：未占领时系统超强 NPC 据点——不可直占/扫荡，只能围攻（挂队出征）攻克。
-    // 占领后即转 territory，走上面 mine/occupied 分支。
+    // Stronghold (G8 §3.1): while unoccupied it is an ultra-strong NPC garrison — cannot be directly occupied or swept, only besieged (march with a team). Once captured it becomes a territory tile handled by the mine/occupied branches above.
     if (tile?.type === 'stronghold') {
       this.showModal(
         [t('world.stronghold'), t('world.strongholdHint'), `(${tx}, ${ty})`],
@@ -997,9 +996,9 @@ export class WorldMapScene implements Scene {
     if (garrison > 0) {
       buttons.push({ label: t('world.actSweep'), action: () => this.showDeployDialog(tx, ty, 'sweep') });
     }
-    // 侦察：派斥候照亮远处迷雾 / 探未知格后自动回师（不占地）。
+    // Scout: send a scout to lift distant fog / reveal an unknown tile, then auto-return (no capture).
     buttons.push({ label: t('world.actScout'), action: () => void this.doScout(tx, ty) });
-    // 主动迁城（§3.4）：已有主城且目标可落城（非障碍/关隘）→ 花 500 金币把主城迁到此格。
+    // Voluntary relocation (§3.4): if the player already has a capital and the target tile is placeable (not obstacle/gate), spend 500 coins to move the capital here.
     const relocatable = this.me?.mainBaseTile && tile?.type !== 'obstacle' && tile?.type !== 'gate';
     if (relocatable) {
       buttons.push({ label: t('world.actRelocate'), action: () => this.confirmRelocate(tx, ty) });
@@ -1009,7 +1008,7 @@ export class WorldMapScene implements Scene {
     this.showModal([head, `(${tx}, ${ty})`], buttons);
   }
 
-  // ── Deploy (派兵数对话框) ──────────────────────────────────────────────────
+  // ── Deploy (troop-count dialog) ──────────────────────────────────────────────────
   // Pick how many troops to send for a march action. Presets ¼ / ½ / all of the
   // available pool. March source is the player's main base. Server enforces the
   // per-kind minimums (occupy/attack need OCCUPY_MIN_TROOPS) → toast on reject.
@@ -1034,9 +1033,8 @@ export class WorldMapScene implements Scene {
     );
   }
 
-  // ── 围攻选队（G3-2c §16.2）────────────────────────────────────────────────
-  // 围攻必须挂一支进攻布阵模板（队伍）出征——committed 兵力 = 队伍各单位满血之和，由服务端
-  // 推导（覆盖派兵数）。空队伍列表 → 引导去管理队伍。
+  // ── Siege team picker (G3-2c §16.2) ────────────────────────────────────────────────
+  // A siege march must attach an attack formation template (team) — committed troops = sum of full HP of all units in the team, derived by the server (overrides the troop count). Empty team list → guide the player to manage teams.
 
   private async showAttackTeamPicker(tx: number, ty: number): Promise<void> {
     const me = this.me;
@@ -1066,7 +1064,7 @@ export class WorldMapScene implements Scene {
     if (!me?.mainBaseTile) { this.showToast(t('world.needBase'), C.red); return; }
     const [fx, fy] = this.parseTileId(me.mainBaseTile);
     try {
-      // troops=1 占位，服务端按队伍 committed 兵力覆盖（§16.2）。
+      // troops=1 is a placeholder; the server overwrites it with the team's committed troop count (§16.2).
       const march = await this.cb.worldApi.startMarch(this.cb.worldId, fx, fy, tx, ty, 'attack', 1, teamId);
       this.myAttackTiles.add(march.toTile);
       this.marches = await this.cb.worldApi.getMarches(this.cb.worldId);
@@ -1097,8 +1095,10 @@ export class WorldMapScene implements Scene {
   }
 
   /**
-   * 侦察出征：派 1 名斥候（最小兵力，不锁大军）到目标格，沿途 + 抵达点照亮更大视野（VISION_SCOUT_RADIUS）
-   * 后自动回师。不打不占——直接发，不走派兵数对话框（侦察讲究轻量）。
+   * Scout march: send 1 scout (minimum troops, does not lock the main army) to the target tile,
+   * revealing a wider vision radius along the route and at the destination (VISION_SCOUT_RADIUS),
+   * then auto-return. No attack, no capture — dispatched directly without the troop-count dialog
+   * (scouting is meant to be lightweight).
    */
   private async doScout(tx: number, ty: number): Promise<void> {
     this.closeModal();
@@ -1117,7 +1117,7 @@ export class WorldMapScene implements Scene {
     }
   }
 
-  /** 进入大区：系统自动落城（§3.4，优先靠近家族），落点由服务端决定；落城后把镜头移到新主城。 */
+  /** Join the world: the system automatically places the capital (§3.4, preferring proximity to the family); the position is determined by the server. After placement, pan the camera to the new capital. */
   private async doJoin(): Promise<void> {
     this.closeModal();
     try {
@@ -1157,7 +1157,7 @@ export class WorldMapScene implements Scene {
     }
   }
 
-  /** 迁城前的二次确认（展示花费）；确认 → doRelocate。 */
+  /** Second confirmation before relocation (shows cost); confirm → doRelocate. */
   private confirmRelocate(tx: number, ty: number): void {
     this.showModal(
       [t('world.relocateTitle'), t('world.relocateConfirm').replace('{n}', String(RELOCATE_COST))],
@@ -1172,7 +1172,7 @@ export class WorldMapScene implements Scene {
     this.closeModal();
     try {
       this.me = await this.cb.worldApi.relocateBase(this.cb.worldId, tx, ty);
-      this.tileCache.clear(); // 主城位置变了 + 旧址回归中立，整块视区重拉
+      this.tileCache.clear(); // capital position changed + old location reverts to neutral — re-fetch the entire viewport
       if (this.me.mainBaseTile) {
         const [bx, by] = this.parseTileId(this.me.mainBaseTile);
         this.centerAt(bx, by);
@@ -1185,7 +1185,7 @@ export class WorldMapScene implements Scene {
     }
   }
 
-  /** 建瞭望塔前的二次确认（展示资源花费）；确认 → doWatchtower。 */
+  /** Second confirmation before building a watchtower (shows resource cost); confirm → doWatchtower. */
   private confirmWatchtower(tx: number, ty: number): void {
     this.showModal(
       [
@@ -1205,8 +1205,8 @@ export class WorldMapScene implements Scene {
     this.closeModal();
     try {
       await this.cb.worldApi.buildWatchtower(this.cb.worldId, tx, ty);
-      this.me = await this.cb.worldApi.getMe(this.cb.worldId); // 资源已扣，刷新本地态
-      this.tileCache.clear();                                  // 新塔扩张视野 → 整块视区重拉显形
+      this.me = await this.cb.worldApi.getMe(this.cb.worldId); // resources deducted — refresh local state
+      this.tileCache.clear();                                  // new tower expands vision → re-fetch entire viewport to reveal tiles
       await this.loadMapViewport();
       this.showToast(t('world.watchtowerBuilt'));
       this.renderMap(); this.renderHud();

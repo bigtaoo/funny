@@ -1,15 +1,17 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, seedFor } from '../render/sketchUi';
 
-// 全局兜底 toast：浮在所有场景之上的一条临时提示条，专供 createAppCore / 全局错误处理器
-// 在「场景没有自己的提示」时弹用（非 200 回复 / 网络失败的兜底）。各场景仍用各自的 showToast，
-// 不经过这里——这只是漏网错误的安全网。
+// Global fallback toast: a temporary banner that floats above all scenes, used exclusively by
+// createAppCore / the global error handler when a scene has no toast of its own (fallback for
+// non-200 responses / network failures). Each scene still uses its own showToast — this is just
+// a safety net for errors that slip through.
 //
-// 直接挂在 app.stage（屏幕像素坐标，非 gameLayer 设计坐标），故不受 Contain 缩放 / 场景切换影响；
-// 位置每帧按 app.screen 重算，天然跟随窗口 resize。
+// Attached directly to app.stage (screen-pixel coordinates, not the gameLayer design space), so it
+// is unaffected by Contain scaling or scene transitions; position is recalculated each frame from
+// app.screen, which naturally follows window resizes.
 
-const HOLD_S = 3.2;  // 完全不透明的停留秒数
-const FADE_S = 0.3;  // 淡入 / 淡出各自时长
+const HOLD_S = 3.2;  // fully-opaque hold duration (seconds)
+const FADE_S = 0.3;  // fade-in / fade-out duration each (seconds)
 
 export class GlobalToast {
   private readonly layer = new PIXI.Container();
@@ -18,13 +20,13 @@ export class GlobalToast {
   private ttl = 0;
 
   constructor(private readonly app: PIXI.Application) {
-    this.layer.zIndex = 10_000; // 盖住一切场景内容
+    this.layer.zIndex = 10_000; // covers all scene content
     app.stage.sortableChildren = true;
     app.stage.addChild(this.layer);
     app.ticker.add(this.tick, this);
   }
 
-  /** 弹一条提示（默认红色错误条）。重复调用会替换当前条。 */
+  /** Show a toast (default: red error bar). Repeated calls replace the current toast. */
   show(text: string, color: number = C.red): void {
     this.clear();
     const { width: w, height: h } = this.app.screen;
@@ -57,7 +59,7 @@ export class GlobalToast {
     this.age += this.app.ticker.deltaMS / 1000;
     const remain = this.ttl - this.age;
     if (remain <= 0) { this.clear(); return; }
-    // 淡入 min(age/FADE)，淡出 min(remain/FADE)，取小者 → 梯形透明度曲线。
+    // Fade-in: min(age/FADE), fade-out: min(remain/FADE), take the smaller → trapezoid alpha curve.
     this.current.alpha = Math.min(1, this.age / FADE_S, remain / FADE_S);
   };
 

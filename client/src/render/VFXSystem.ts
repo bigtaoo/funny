@@ -85,7 +85,7 @@ export class VFXSystem {
   private readonly pool: PIXI.Graphics[] = [];
   private nextHandle: VFXHandle = 1;
 
-  /** 内存看护注销函数（vfx Graphics 池），destroy() 时调用。 */
+  /** Unregister function for the pool stat (vfx Graphics pool); called in destroy(). */
   private readonly unregisterStat: () => void;
 
   constructor() {

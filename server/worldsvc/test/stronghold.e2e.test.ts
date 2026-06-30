@@ -1,11 +1,15 @@
-// worldsvc 险地（stronghold，G8 §3.1）端到端：真实 Mongo + 假时钟 + 捕获 push。
-//   险地 = 程序化生成的高战略价值 PvE 格，系统超强 NPC 驻守，不可直占/扫荡，只能围攻 attack 攻克。
-//   ① 攻克胜（大军压境）→ 占为 territory 领地（残存折回成驻军）+ 一次性丰厚资源奖励 + sieges
-//      attacker_win + siege_result/tile_update 推送 + territoryCount +1；
-//   ② 攻克败（兵力不足）→ 不占领（仍是无主程序化险地）+ 残兵撤退回师 + sieges defender_win + 无奖励；
-//   ③ 校验：直占险地 / 扫荡险地 → 抛错（须围攻）；落城险地 → 抛错。
-// 注：兵力数 → 引擎布阵走 synthesizeArmy 合成，残存由引擎/兜底决定，断言只校验「方向 + 结构效应」。
-// 需 `cd server && docker compose up -d`。
+// worldsvc stronghold (G8 §3.1) end-to-end: real Mongo + fake clock + captured pushes.
+//   Stronghold = a procedurally generated high-strategic-value PvE tile, defended by an overwhelmingly strong NPC;
+//   cannot be occupied directly or swept — must be taken via siege attack.
+//   ① Attack wins (overwhelming force) → tile becomes a territory (survivors fold back into garrison) +
+//      one-time rich resource reward + sieges attacker_win + siege_result/tile_update push + territoryCount +1;
+//   ② Attack loses (insufficient troops) → tile not captured (remains an ownerless procedural stronghold) +
+//      surviving troops retreat home + sieges defender_win + no reward;
+//   ③ Validation: direct occupy / sweep on a stronghold → throws error (must use attack siege);
+//      placing a base on a stronghold → throws error.
+// Note: troop counts → army formation via synthesizeArmy; survivors determined by engine/fallback;
+//       assertions only verify "direction + structural effect".
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   proceduralTile,
@@ -36,12 +40,12 @@ async function tryConnect(): Promise<WorldMongo | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[worldsvc.stronghold.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+if (!mongo) console.warn(`[worldsvc.stronghold.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
 const CENTER_Y = Math.floor(SLG_MAP_H / 2);
 
-/** 全图扫描出第一块险地（程序化、确定性）。 */
+/** Scan the entire map to find the first stronghold tile (procedural, deterministic). */
 function findStronghold(): { x: number; y: number; level: number } {
   for (let y = 0; y < SLG_MAP_H; y++) {
     for (let x = 0; x < SLG_MAP_W; x++) {
@@ -49,10 +53,10 @@ function findStronghold(): { x: number; y: number; level: number } {
       if (t.type === 'stronghold') return { x, y, level: t.level };
     }
   }
-  throw new Error('no stronghold tile in world (调参检查 SLG_GEN.stronghold*)');
+  throw new Error('no stronghold tile in world (check SLG_GEN.stronghold* parameters)');
 }
 
-/** 险地附近最近的可落城/可达格（非障碍/关隘/中心/险地），作攻方主城落点。 */
+/** Nearest placeable/reachable tile adjacent to the stronghold (not obstacle/gate/center/stronghold), used as the attacker's base placement. */
 function findNearbyBase(sx: number, sy: number): { x: number; y: number } {
   for (let r = 1; r < 60; r++) {
     for (let dx = -r; dx <= r; dx++) {
@@ -88,10 +92,10 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     },
   };
 
-  // 捕获 grantMaterial（验险地材料掉落进养成统一池，§19.5 / G4 §15.6）。
+  // Capture grantMaterial (verifies stronghold material loot enters the unified progression pool, §19.5 / G4 §15.6).
   const fakeMeta: WorldMetaClient = {
     available: true,
-    async deductMaterial() { /* 险地不扣材料 */ },
+    async deductMaterial() { /* stronghold does not deduct materials */ },
     async grantMaterial(accountId, material, qty, orderId) { matGrants.push({ accountId, material, qty, orderId }); },
     async getProfile() { return null; },
   };
@@ -99,7 +103,7 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
   const sh = findStronghold();
   const base = findNearbyBase(sh.x, sh.y);
 
-  /** 直接把攻方兵力池设到指定值（绕过训练，模拟养成强军）。 */
+  /** Directly set the attacker's troop pool to the specified value (bypasses training, simulates a well-developed army). */
   async function setTroops(accountId: string, troops: number): Promise<void> {
     await m.collections.playerWorld.updateOne(
       { _id: playerWorldId(W, accountId) },
@@ -129,15 +133,15 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     await m.close();
   });
 
-  it('险地生成：满级 + 带资源种类 + 守军远超普通格', () => {
+  it('stronghold generation: max level + has resource type + garrison far exceeds normal tiles', () => {
     expect(sh.level).toBeGreaterThanOrEqual(1);
     const proc = proceduralTile(W, sh.x, sh.y);
     expect(proc.type).toBe('stronghold');
     expect(proc.resType).toBeDefined();
-    expect(strongholdGarrison(sh.level)).toBeGreaterThan(500); // 远超 GARRISON_PER_TILE
+    expect(strongholdGarrison(sh.level)).toBeGreaterThan(500); // far exceeds GARRISON_PER_TILE
   });
 
-  it('直占险地 / 扫荡险地 → 抛错（须围攻 attack）', async () => {
+  it('direct occupy / sweep on stronghold → throws error (must use siege attack)', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
     await expect(svc.startMarch(W, 'a', base.x, base.y, sh.x, sh.y, 'occupy', 600)).rejects.toMatchObject({
       code: 'TILE_OCCUPIED',
@@ -147,44 +151,44 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     });
   });
 
-  it('落城险地 → 抛错（险地不可作主城落点）', async () => {
+  it('place base on stronghold → throws error (stronghold cannot be a home base landing point)', async () => {
     await expect(svc.joinWorld(W, 'z', sh.x, sh.y)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('攻克胜（大军）：占为领地 mine + 残存驻军 + 丰厚奖励 + sieges attacker_win + 推送', async () => {
+  it('attack wins (overwhelming force): captured as territory mine + surviving garrison + rich reward + sieges attacker_win + push', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
-    await setTroops('a', 6000); // 养成强军，远超险地守军 → 必胜
+    await setTroops('a', 6000); // well-developed army, far exceeds the stronghold garrison → guaranteed win
     const before = (await svc.getMe(W, 'a')).resources!;
 
     const mv = await svc.startMarch(W, 'a', base.x, base.y, sh.x, sh.y, 'attack', 6000);
     expect(mv).toMatchObject({ kind: 'attack', status: 'marching' });
-    // 险地 PvE：防守方为 NPC，不推 under_attack。
+    // Stronghold PvE: defender is an NPC, no under_attack push.
     expect(pushes.find((p) => p.msg.kind === 'under_attack')).toBeUndefined();
 
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    // 攻克 → 占为 territory 领地。
+    // Captured → tile becomes a territory.
     const tile = await svc.getTile(W, 'a', sh.x, sh.y);
     expect(tile).toMatchObject({ type: 'territory', mine: true });
     expect(tile.garrison).toBeGreaterThan(0);
     const me = await svc.getMe(W, 'a');
-    expect(me.territoryCount).toBe(2); // 主城 + 攻克的险地
+    expect(me.territoryCount).toBe(2); // home base + captured stronghold
 
-    // 一次性丰厚奖励到账（按格等级 × 资源种类）。
+    // One-time rich reward credited (based on tile level × resource kind).
     const proc = proceduralTile(W, sh.x, sh.y);
     const rt = proc.resType ?? 'food';
     expect((me.resources?.[rt] ?? 0) - (before[rt] ?? 0)).toBeGreaterThanOrEqual(
       STRONGHOLD_LOOT_PER_LEVEL * sh.level,
     );
 
-    // 额外掉落养成材料进统一池（§19.5 / G4）：grantMaterial 按等级线性，orderId 幂等。
+    // Additional progression material loot into the unified pool (§19.5 / G4): grantMaterial scales linearly by level, orderId is idempotent.
     const expected = strongholdMaterialLoot(sh.level);
     const grant = matGrants.find((g) => g.accountId === 'a');
     expect(grant).toMatchObject({ material: expected.material, qty: expected.qty });
     expect(grant!.orderId).toBe(`stronghold_loot:${W}:${tileId(W, sh.x, sh.y)}:${mv.arriveAt}`);
 
-    // sieges attacker_win（NPC 防守 → 无 defenderId）+ siege_result 推攻方 + tile_update。
+    // sieges attacker_win (NPC defender → no defenderId) + siege_result pushed to attacker + tile_update.
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege).toMatchObject({ outcome: 'attacker_win', tile: tileId(W, sh.x, sh.y) });
     expect(siege?.defenderId).toBeUndefined();
@@ -192,33 +196,33 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     expect(pushes.some((p) => p.msg.kind === 'tile_update' && p.accountId === 'a')).toBe(true);
   });
 
-  it('攻克败（兵力不足）：不占领 + 残兵撤退回师 + sieges defender_win + 无奖励', async () => {
+  it('attack loses (insufficient troops): not captured + surviving troops retreat home + sieges defender_win + no reward', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
-    await setTroops('a', 600); // 远不及险地守军 → 必败
+    await setTroops('a', 600); // far fewer than the stronghold garrison → guaranteed loss
     const before = (await svc.getMe(W, 'a')).resources!;
 
     const mv = await svc.startMarch(W, 'a', base.x, base.y, sh.x, sh.y, 'attack', 600);
-    expect((await svc.getMe(W, 'a')).troops).toBe(0); // 出征扣兵（600 全出征）
+    expect((await svc.getMe(W, 'a')).troops).toBe(0); // troops deducted on march (all 600 deployed)
 
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    // 不占领：险地仍无主（程序化层不落库）。
+    // Not captured: stronghold remains ownerless (procedural layer writes nothing to DB).
     const proc = proceduralTile(W, sh.x, sh.y);
     expect(proc.type).toBe('stronghold');
     const raw = await m.collections.tiles.findOne({ _id: tileId(W, sh.x, sh.y) });
     expect(raw?.ownerId).toBeUndefined();
 
     const me = await svc.getMe(W, 'a');
-    expect(me.territoryCount).toBe(1); // 仅主城
-    // 无奖励（资源仅自身产出结算，不含掠夺）。
+    expect(me.territoryCount).toBe(1); // home base only
+    // No reward (resources settled from own production only, no plunder).
     const proc2 = proceduralTile(W, sh.x, sh.y);
     const rt = proc2.resType ?? 'food';
     expect((me.resources?.[rt] ?? 0)).toBeLessThan((before[rt] ?? 0) + STRONGHOLD_LOOT_PER_LEVEL);
 
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('defender_win');
-    // 攻克败 → 不掉材料。
+    // Attack lost → no material loot.
     expect(matGrants).toHaveLength(0);
   });
 });

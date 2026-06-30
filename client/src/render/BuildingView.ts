@@ -65,7 +65,7 @@ export class BuildingView {
     createBuildingContainer,
     resetBuildingContainer,
     12,
-    // 建筑容器：sprite + hpBg/hpFill/flag Graphics。
+    // Building container: sprite + hpBg/hpFill/flag Graphics.
     { label: 'building', bytesEach: 6 * 1024 },
   );
 

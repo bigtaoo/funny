@@ -327,21 +327,30 @@ export async function startApp(platform: IPlatform): Promise<void> {
   // Procedural art (sketch.ts) bakes static board layers to textures via this renderer.
   setBakeRenderer(app.renderer);
 
-  // 内存看护：每隔几秒采样 JS 堆，超阈值 console.warn 并 dump 各对象池占用；微信侧接 wx.onMemoryWarning。
-  // 跨场景常驻（战斗退场后池注册表自动清空）。阈值可用 localStorage 'nw_mem_warn_mb' 调。
+  // Memory watchdog: samples the JS heap every few seconds; logs a console.warn and dumps
+  // object-pool usage when the threshold is exceeded; hooks wx.onMemoryWarning on WeChat.
+  // Persists across scenes (pool registry is cleared automatically after a battle exits).
+  // Threshold is tunable via localStorage 'nw_mem_warn_mb'.
   new MemoryMonitor().install(app.ticker, app.stage);
 
-  // CPU / 主线程饱和看护：长任务忙碌比 + 持续低 FPS，任一持续越线即上报 cpu 异常（net/anomaly 全量通道）。
+  // CPU / main-thread saturation watchdog: long-task busy ratio + sustained low FPS;
+  // either condition crossing its threshold continuously triggers a cpu anomaly report (net/anomaly full-coverage channel).
   new PerfMonitor().install(app.ticker);
 
-  // 全量异常上报：内存/CPU/WebGL丢失/卡死/未捕获异常直报 Loki（不受日志定向白名单约束），便于全网定位野外异常。
-  // 崩溃哨兵先于监听器装（读上次会话哨兵，异常退出则补报一条 crash）；监听器接管离场 beacon / webgl / 看门狗。
+  // Full-coverage anomaly reporting: memory / CPU / WebGL-lost / hang / uncaught exceptions
+  // are reported directly to Loki (not subject to the log-targeting allowlist) to help
+  // locate in-the-wild issues across the player base.
+  // The crash sentinel is installed before the anomaly watchers (it reads the previous
+  // session's sentinel and files a crash report if the session exited abnormally);
+  // the watchers then take over the page-exit beacon / webgl / watchdog.
   initCrashSentinel();
   installAnomalyWatchers({ canvas: app.view as unknown as { addEventListener?: (t: string, cb: (e: unknown) => void) => void } });
 
-  // 全局兜底提示：场景没自己接住的非 200 / 网络错误冒泡到 window 时，弹一条玩家可读 toast
-  // （场景自带的 showToast 不经过这里，所以「有提示则跳过、漏了才兜底」）。分类逻辑在 net/log，
-  // 这里只提供渲染出口。同一出口也供 SaveManager 云同步失败等定点提示复用。
+  // Global fallback toast: when a non-200 / network error bubbles up to window without being
+  // caught by a scene, show a player-readable toast (scene-level showToast calls do not go
+  // through here, so the rule is "skip if already toasted, fallback if missed"). Classification
+  // logic lives in net/log; this layer only provides the render outlet. The same outlet is
+  // reused by SaveManager for targeted cloud-sync failure notifications.
   const globalToast = new GlobalToast(app);
   setToastSink((text) => globalToast.show(text));
 

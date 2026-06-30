@@ -198,7 +198,7 @@ export class HUDView {
     overlay.addChild(bg, text);
 
     // Hand-drawn `WIN!` flourish above the box on a local victory (art-direction
-    // §6.2 B 组). Cosmetic — skipped silently if the label PNG hasn't loaded.
+    // §6.2 group B). Cosmetic — skipped silently if the label PNG hasn't loaded.
     if (winner === localOwner) {
       const winTex = getLabelTexture('label_win');
       if (winTex) {

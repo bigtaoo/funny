@@ -1,16 +1,20 @@
-// worldsvc 权威围攻战斗（G3-2b，SLG_DESIGN §16）。
+// Authoritative siege battle for worldsvc (G3-2b, SLG_DESIGN §16).
 //
-// 这是「承重墙合龙」的那一刀：worldsvc 直接 import 确定性引擎（`@nw/engine`，纯 TS 无 PIXI），
-// headless 跑「双方预布兵自动战斗」拿权威胜负 + 真实残存血量，替代旧的廉价线性公式
-// `resolveSiege`。M12（§14.1）把这定性为「裁判例外的延伸」——引擎在服务端进程内权威跑。
+// This is the keystone moment of "closing the load-bearing arch": worldsvc directly imports the
+// deterministic engine (`@nw/engine`, pure TS, no PIXI) and runs "both-sides pre-deployment auto-battle"
+// headless to obtain the authoritative win/loss result and real surviving HP, replacing the old
+// cheap linear formula `resolveSiege`. M12 (§14.1) classifies this as "an extension of the judge exception" —
+// the engine runs authoritatively inside the server process.
 //
-// 战斗模型（§16.1）：兵力 = 单位血量（HP）。攻方下半场（owner0/Bottom）预布军 + 守方上半场
-// （owner1/Top）garrison 预布军 + 双基地 + objective:destroy_base + 战斗硬时限。无 live 指令 →
-// 战斗由 `seed + 双方布阵` 唯一确定。破敌基地者胜；超时双基皆存 → 防守方胜（防守占优）。
-// 战后各侧残存单位 HP 之和 = 该侧生还兵力，折回兵力池（§16.5）。
+// Battle model (§16.1): troop count = unit HP. Attacker deploys in the bottom half (owner0/Bottom);
+// defender garrison deploys in the top half (owner1/Top); both bases present; objective:destroy_base;
+// hard battle tick limit. No live commands → the battle is uniquely determined by `seed + both armies`.
+// Destroying the enemy base wins; timeout with both bases intact → defender wins (defender bias).
+// After battle, the sum of surviving unit HP on each side = that side's surviving troops, returned to the troop pool (§16.5).
 //
-// engineVersion pin（U9）：引擎导出 `ENGINE_VERSION`，赛季中途升级引擎须 pin；worldsvc 随
-// 引擎版本重构建（D0+P2 的代价）。本模块跑的 seed/布阵完全可序列化，客户端凭同 seed 本地重播观战。
+// engineVersion pin (U9): the engine exports `ENGINE_VERSION`; upgrading the engine mid-season requires pinning;
+// worldsvc must be rebuilt with each engine version change (cost: D0+P2). The seed/army layout
+// produced by this module is fully serializable; clients can replay the battle locally using the same seed.
 
 import {
   runHeadless,
@@ -33,23 +37,25 @@ import {
   type SiegeResolution,
 } from '@nw/shared';
 
-/** 默认合成兵种 = 步兵（基础近战，满血 60 = 单位兵力当量）。§16.5 满血容量表待调参。 */
+/** Default synthesized unit type = Infantry (basic melee, full HP 60 = unit troop equivalent). §16.5 full-HP capacity table is pending tuning. */
 const SYNTH_UNIT = UnitType.Infantry;
 const HP_PER_UNIT = UNIT_BLUEPRINTS[SYNTH_UNIT].hp;
 
-/** 坏布阵 / 病态僵局兜底步数（与 §16.6 judgeRunner 同范式：时限 + 余量防死循环）。 */
+/** Extra tick margin for bad army layouts / pathological stalemates (same pattern as §16.6 judgeRunner: time limit + margin to prevent infinite loops). */
 const TICK_MARGIN = 600;
 
 /**
- * 由一份「扁平兵力数」合成确定性默认布阵（G3-2b v1 桥）。当前 SLG 数据模型仍存扁平兵力
- * （`march.troops` / `tile.garrison`），布阵编辑器（G3-2c）落地前用此把兵力数铺成一支
- * GarrisonEntry[] 军队：每单位 initialHp ≤ 满血容量（兵力=血量），按攻击车道轮转铺开。
+ * Synthesizes a deterministic default army layout from a flat troop count (G3-2b v1 bridge).
+ * The current SLG data model still stores flat troop counts (`march.troops` / `tile.garrison`).
+ * Until the army editor (G3-2c) lands, this converts a troop count into a GarrisonEntry[] army:
+ * each unit's initialHp ≤ full-HP capacity (troops = HP), spread across attack lanes in round-robin order.
  *
- * - attacker（owner0/Bottom）：从己方出兵行（row 1）向战斗区铺（row 递增）。
- * - defender（owner1/Top）：从守方出兵行（row 16）向战斗区铺（row 递减）。
+ * - attacker (owner0/Bottom): placed starting from the attacker spawn row (row 1), moving toward the battle zone (row increasing).
+ * - defender (owner1/Top): placed starting from the defender spawn row (row 16), moving toward the battle zone (row decreasing).
  *
- * 纯函数、确定性（同输入同输出）。G3-2c 编辑器接入后，真实布阵从 `tile.defense` /
- * `playerWorld.teams[]` 读，此合成仅作「未设布阵」兜底。
+ * Pure function, deterministic (same input → same output). Once the G3-2c editor is integrated,
+ * real army layouts are read from `tile.defense` / `playerWorld.teams[]`; this synthesis is only
+ * the fallback for the "no layout set" case.
  */
 export function synthesizeArmy(troops: number, role: 'attacker' | 'defender'): GarrisonEntry[] {
   let remaining = Math.max(0, Math.floor(troops));
@@ -71,33 +77,37 @@ export function synthesizeArmy(troops: number, role: 'attacker' | 'defender'): G
 }
 
 /**
- * 校验一份进攻布阵（队伍模板保存时，G3-2c）。复用引擎侧 levelSchema：把 army 塞进一场象征性
- * siege 关卡过 `parseLevelDefinition`，非法 unitType/列/行/越界即抛错（调用方映射为 SlgError）。
- * 纯校验、无副作用。空军（[]）合法（= 空队伍槽位）。
+ * Validates an attacker army layout (called when saving a team template, G3-2c). Reuses the engine-side
+ * levelSchema: packs the army into a symbolic siege level and passes it through `parseLevelDefinition`;
+ * invalid unitType/column/row or out-of-bounds values throw an error (caller maps to SlgError).
+ * Pure validation, no side effects. An empty army ([]) is valid (= empty team slot).
  */
 export function validateAttackerArmy(army: unknown): void {
   if (!Array.isArray(army)) throw new Error('army must be an array');
   if (army.length === 0) return;
   const levelObj = buildSiegeBattle({ army }, null, 1, 0);
-  parseLevelDefinition(levelObj); // 抛 = 非法布阵
+  parseLevelDefinition(levelObj); // throws = invalid army layout
 }
 
 /**
- * 校验一份守方防守 config（编辑器保存时，G3-2c）。同 validateAttackerArmy，但走守方半场：
- * 把 config（garrison/defenderBuildings/defenderBaseLevel）塞进象征性 siege 关卡过 levelSchema。
- * 非法即抛。空 config / 无 garrison 合法（= 仅基地防守）。
+ * Validates a defender defense config (called when saving from the editor, G3-2c). Same as validateAttackerArmy
+ * but for the defender half: packs the config (garrison/defenderBuildings/defenderBaseLevel) into a
+ * symbolic siege level and passes it through levelSchema. Throws on invalid data.
+ * Empty config / no garrison is valid (= base-only defense).
  */
 export function validateDefenseConfig(config: unknown): void {
   if (config == null) return;
   if (typeof config !== 'object' || Array.isArray(config)) throw new Error('defense config must be an object');
   const levelObj = buildSiegeBattle(null, config as Record<string, unknown>, 1, 0);
-  parseLevelDefinition(levelObj); // 抛 = 非法布阵
+  parseLevelDefinition(levelObj); // throws = invalid layout
 }
 
 /**
- * 按 factor 放大一份布阵各单位的 initialHp（向下取整，≥1）。用于自定义守方布阵的国民加成
- * （§2.4 / G1 item②）：己方首府 Voronoi 区内守军强度抬高。引擎 Unit 构造会把 hp 封顶在蓝图满血，
- * 故未满血的单位受益、已满血的单位天然封顶（v1 行为，DRAFT 调参）。纯函数。
+ * Scales the initialHp of each unit in an army layout by `factor` (floor, minimum 1).
+ * Used for the national defense bonus on custom defender armies (§2.4 / G1 item②):
+ * garrison strength is boosted inside the owning faction's capital Voronoi region.
+ * The engine's Unit constructor caps HP at the blueprint maximum, so units below full HP benefit
+ * while already-full units are naturally capped (v1 behavior, DRAFT — subject to tuning). Pure function.
  */
 export function scaleArmyHp(
   army: ReadonlyArray<GarrisonEntry>,
@@ -110,38 +120,40 @@ export function scaleArmyHp(
   }));
 }
 
-/** 围攻战斗的双方布阵 + 关卡参数（attacker 必有；defender 可空 = 仅基地）。 */
+/** Both-sides army layout and level parameters for a siege battle (attacker required; defender may be null = base-only). */
 export interface SiegeBattleInput {
-  /** 攻方布阵（GarrisonEntry[]，含每单位 initialHp = 分配兵力）。 */
+  /** Attacker army layout (GarrisonEntry[], each unit's initialHp = allocated troop strength). */
   attackerArmy: GarrisonEntry[];
-  /** 守方防守 config（garrison/defenderBuildings/defenderBaseLevel）；空 = 派生象征性基地。 */
+  /** Defender defense config (garrison/defenderBuildings/defenderBaseLevel); null = derive a symbolic base only. */
   defenderConfig: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null;
-  /** 无守方自定义时派生象征性基地等级。 */
+  /** Tile level used to derive a symbolic base when no custom defender config is provided. */
   tileLevel: number;
-  /** 关卡 seed（围攻同 seed → 复算/重播逐字一致）。 */
+  /** Level seed (same seed for a siege → recalculation and replay are tick-for-tick identical). */
   seed: number;
-  /** 攻方养成快照（E8 SLG 接入）：缺省 = 无养成蓝图保持基础值（不阻断行军）。 */
+  /** Attacker progression snapshot (E8 SLG integration): default = no upgrades, blueprints keep base values (does not block marching). */
   pveUpgrades?: Record<string, number>;
   unitLevels?: Record<string, number>;
   equipment?: EngineEquipmentInput;
 }
 
 /**
- * Headless 跑一场权威围攻自动战斗 → {@link SiegeResolution}（outcome + 双方真实残存兵力）。
+ * Runs one authoritative headless siege auto-battle → {@link SiegeResolution} (outcome + real surviving troops for both sides).
  *
- * 流程：`buildSiegeBattle`（攻军 + 守军 + 双基地 + 时限）→ `parseLevelDefinition` 校验（P2，
- * 引擎侧 levelSchema）→ `runHeadless` siege 模式跑到 GameOver/时限 → 读 `state.winner` 定胜负、
- * 累加 `board.units` 各侧存活 HP 定残存兵力。winner=Bottom(owner0)=攻方破城；否则防守成功。
+ * Flow: `buildSiegeBattle` (attacker army + defender garrison + both bases + tick limit) →
+ * `parseLevelDefinition` validation (P2, engine-side levelSchema) →
+ * `runHeadless` in siege mode until GameOver or tick limit →
+ * read `state.winner` to determine outcome, accumulate `board.units` surviving HP per side to determine survivors.
+ * winner=Bottom(owner0) = attacker destroyed the base; otherwise = defender holds.
  *
- * 确定性：同 seed + 同布阵 → 逐 tick 一致（定点数 + 注入 PRNG）。落地走 service.landSiege 的
- * 唯一落地点（G3-1），与本函数解耦。
+ * Deterministic: same seed + same armies → tick-for-tick identical (fixed-point arithmetic + injected PRNG).
+ * Settlement goes through the single landing point at service.landSiege (G3-1), decoupled from this function.
  */
 export function runSiegeBattle(input: SiegeBattleInput): SiegeResolution {
   const { attackerArmy, defenderConfig, tileLevel, seed, pveUpgrades, unitLevels, equipment } = input;
 
   const levelObj = buildSiegeBattle({ army: attackerArmy }, defenderConfig, tileLevel, seed);
-  // P2：防守 config = 引擎 LevelDefinition 的受限子集，过 levelSchema 校验（坏 config 抛错，
-  // 由 applySiege 兜底；不让脏数据进引擎）。
+  // P2: The defense config is a restricted subset of the engine LevelDefinition; validated via levelSchema
+  // (a bad config throws, caught by applySiege; dirty data must not enter the engine).
   const level = parseLevelDefinition(levelObj);
 
   const timeout = level.battleTimeoutTicks ?? SIEGE_BATTLE_TIMEOUT_TICKS;
@@ -160,7 +172,7 @@ export function runSiegeBattle(input: SiegeBattleInput): SiegeResolution {
     timeout + TICK_MARGIN,
   );
 
-  // 累加双方存活单位 HP = 真实残存兵力（§16.5 生还折回）。
+  // Accumulate surviving unit HP for both sides = real surviving troops (§16.5 survivor return to pool).
   let atkHp = 0;
   let defHp = 0;
   for (const unit of engine.state.board.units.values()) {
@@ -169,12 +181,12 @@ export function runSiegeBattle(input: SiegeBattleInput): SiegeResolution {
     else defHp += unit.hp;
   }
 
-  // winner=Bottom(owner0)=攻方破基地夺地；其余（Top 胜 / 超时 / null 兜底）= 防守成功。
+  // winner=Bottom(owner0) = attacker destroyed the base and captured the tile; all other cases (Top wins / timeout / null fallback) = defense holds.
   const outcome: SiegeOutcome = engine.state.winner === Side.Bottom ? 'attacker_win' : 'defender_win';
   if (outcome === 'attacker_win') {
-    // 夺地：攻方残存折回（成新驻军 / 主城回师）；守军视作溃散，不留残兵。
+    // Tile captured: attacker survivors return (become new garrison / return to home city); defender is considered routed, no survivors left.
     return { outcome, attackerSurvivors: Math.floor(atkHp), defenderSurvivors: 0 };
   }
-  // 守住：守军残存留驻；攻方残存撤退折回兵力池。
+  // Defense holds: defender survivors remain at the tile; attacker survivors retreat and return to the troop pool.
   return { outcome, attackerSurvivors: Math.floor(atkHp), defenderSurvivors: Math.floor(defHp) };
 }

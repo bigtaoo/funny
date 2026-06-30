@@ -9,19 +9,19 @@ import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
 
 export const protobufPackage = "nw.game";
 
-/** 出牌：从手牌槽打一张卡到某攻击列 */
+/** Play a card: play a card from a hand slot into an attack column */
 export interface PlayCard {
   handIndex: number;
   col: number;
-  /** 仅陨石法术用（目标行）；单位/建筑/加速忽略 */
+  /** used only for meteor spells (target row); ignored for units/buildings/speedup */
   row: number;
 }
 
-/** 基地升级 */
+/** Upgrade the base */
 export interface UpgradeBase {
 }
 
-/** 花费 10 墨水立即刷新整副手牌（重抽全部槽位，计时器随机错开，同进场时） */
+/** Spend 10 ink to immediately refresh the full hand (redraws all slots; timers are randomly staggered, same as on initial deploy) */
 export interface RefreshHand {
 }
 
@@ -31,7 +31,7 @@ export interface PlayerCommand {
   refreshHand?: RefreshHand | undefined;
 }
 
-/** 一个 tick 内某一方提交的指令集（编码进 SideCmd.commands） */
+/** The set of commands submitted by one side within a single tick (encoded into SideCmd.commands) */
 export interface PlayerCommands {
   commands: PlayerCommand[];
 }

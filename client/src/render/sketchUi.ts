@@ -71,7 +71,7 @@ export function txt(label: string, size: number, color: number, bold = false): P
  * textures orphaned until PIXI's texture GC runs (~60s), so a high-frequency
  * re-render piles up textures faster than they're reclaimed. On iPad Safari's tiny
  * WebGL budget that exhausts GPU memory → context loss → Safari reloads the page
- * (the "注册输昵称一直崩溃" crash, fixed in 29b0daea).
+ * (the "nickname-entry keeps crashing" crash, fixed in 29b0daea).
  *
  * Contract: `PIXI.Text` frees its own texture (`texture/baseTexture: true`);
  * everything else (Graphics geometry, and crucially Sprites backed by a shared

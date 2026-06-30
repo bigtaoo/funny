@@ -1,14 +1,14 @@
-// commercial 环境变量（S5-1，独立进程 + 独立库）。玩家不可达，只接 meta 的内部 HTTP。
-// 复用 @nw/shared 的 internalKey（与 meta / gateway / matchsvc / game 共用一把）。
+// commercial environment variables (S5-1, isolated process + isolated database). Not reachable by players; accepts only meta's internal HTTP.
+// Reuses @nw/shared internalKey (shared with meta / gateway / matchsvc / game).
 import { loadServerEnv, type ServerEnv } from '@nw/shared';
 
 export interface CommercialEnv extends ServerEnv {
-  /** 内部 HTTP 端口（meta → 此端口；不暴露公网）。默认 18082（避开 Windows 保留段 8082）。 */
+  /** Internal HTTP port (meta → this port; not exposed publicly). Default: 18082 (avoids Windows reserved range 8082). */
   port: number;
   host: string;
-  /** commercial 专属库的 Mongo URI（默认复用 meta 同实例）。 */
+  /** Mongo URI for the commercial dedicated database (defaults to the same instance as meta). */
   commMongoUri: string;
-  /** commercial 专属库名（与 meta 库物理隔离）。 */
+  /** commercial dedicated database name (physically separate from the meta database). */
   commMongoDb: string;
 }
 

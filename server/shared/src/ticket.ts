@@ -1,58 +1,63 @@
-// Match ticket（M18，S1-M）：matchsvc 签、gameserver 验。
+// Match ticket (M18, S1-M): signed by matchsvc, verified by gameserver.
 //
-// 配对 / 房主开局后，matchsvc 给每位玩家签一张 ticket（HMAC-JWT，密钥 = NW_INTERNAL_KEY），
-// 经 gateway 推给客户端（match_found）。客户端拿 ticket 连 game 数据面 WS（?ticket=<jwt>）；
-// gameserver 只验签 + 交叉核对两张 ticket 的 room_id/seed 一致即开局，不查任何库（M16）。
+// After matchmaking or the room host starting a game, matchsvc issues one ticket per player
+// (HMAC-JWT, key = NW_INTERNAL_KEY), delivered to the client via gateway (match_found).
+// The client uses the ticket to connect to the game data-plane WS (?ticket=<jwt>);
+// gameserver only verifies the signature and cross-checks that both tickets share the same room_id/seed
+// before starting the game — it never queries any database (M16).
 //
-// 设计基准：SERVER_API.md §8.2、MATCHSVC_DESIGN.md §2.4。
+// Design reference: SERVER_API.md §8.2, MATCHSVC_DESIGN.md §2.4.
 import jwt from 'jsonwebtoken';
 
 export interface TicketClaims {
-  /** 对局 id（双方 ticket 同 id；game 交叉核对一致才开局）。 */
+  /** Match ID (both tickets share the same ID; game cross-checks for consistency before starting). */
   roomId: string;
-  /** 确定性内核种子（双方 ticket 同 seed）。 */
+  /** Deterministic engine seed (both tickets share the same seed). */
   seed: number;
-  /** 本方阵营（→ match_start.local_side）。 */
+  /** This player's side (→ match_start.local_side). */
   side: 0 | 1;
   mode: 'friendly' | 'ranked';
-  /** 对手展示名（UI 用）。 */
+  /** Opponent display name (for UI). */
   opponent: string;
-  /** 对手 9 位数字公开 id（UI 用，纯展示；缺省空串）。 */
+  /** Opponent 9-digit public ID (UI display only; defaults to empty string). */
   opponentPublicId: string;
-  /** 对手当前佩戴称号 id（UI 用，纯展示；缺省空串）。 */
+  /** Opponent's currently equipped title ID (UI display only; defaults to empty string). */
   opponentTitle?: string;
-  /** 分配到的 gameserver 公开 WS 地址（写进 match_found.game_url）。 */
+  /** Public WebSocket address of the assigned gameserver (written into match_found.game_url). */
   gameUrl: string;
   /**
-   * 本方 accountId。gameserver 局末上报 meta 结算 ELO 需按 side → accountId 写 saves.pvp；
-   * 服务器逻辑无关（M16），accountId 仅作上报标识透传，不读库。
+   * This player's accountId. At match end, gameserver reports to meta to settle ELO,
+   * which requires mapping side → accountId when writing saves.pvp.
+   * Irrelevant to server game logic (M16); accountId is passed through only as a reporting identifier — no database read occurs.
    */
   accountId: string;
 }
 
 interface TicketPayload extends TicketClaims {
-  /** 过期时间戳（秒，jwt 标准 exp）。 */
+  /** Expiry timestamp in seconds (standard JWT exp). */
   exp: number;
 }
 
 export interface TicketConfig {
-  /** 共用内部密钥（ServerEnv.internalKey）。 */
+  /** Shared internal secret key (ServerEnv.internalKey). */
   key: string;
-  /** 有效期秒数（match_found 到连上 game 的容忍窗口）。默认 30s。 */
+  /** Validity duration in seconds (tolerance window from match_found to gameserver connection). Default: 30s. */
   ttlSec?: number;
 }
 
-/** 签一张 ticket（HMAC-SHA256 JWT）。 */
+/** Sign a ticket (HMAC-SHA256 JWT). */
 export function signTicket(claims: TicketClaims, cfg: TicketConfig): string {
   const ttl = cfg.ttlSec ?? 30;
   return jwt.sign(claims, cfg.key, { expiresIn: ttl });
 }
 
 /**
- * 验签并取出 claims。`ignoreExpiration` 为 true 时只校验签名、不看 exp——
- * 重连（conn_resume）时复用同一张 ticket，对局已活，exp 仅约束首次握手，
- * 故重连握手放过过期但签名仍有效的 ticket（首连由 RoomManager 自行查 exp）。
- * 失败抛错（调用方关连接）。
+ * Verify the ticket signature and extract its claims. When `ignoreExpiration` is true,
+ * only the signature is checked and exp is ignored —
+ * on reconnect (conn_resume) the same ticket is reused; the match is already live, so exp
+ * only constrains the initial handshake. Reconnect handshakes therefore accept expired-but-still-validly-signed
+ * tickets (the initial connection has RoomManager check exp itself).
+ * Throws on failure (caller should close the connection).
  */
 export function verifyTicket(
   token: string,

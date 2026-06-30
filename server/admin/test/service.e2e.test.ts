@@ -1,6 +1,6 @@
-// admin service 端到端（OPS_DESIGN §8 验证）：真实 Mongo 专属库。Mongo 不可达整套 skip。
-//   登录/RBAC 拒绝、工单审批路由「发起≠审批」、超额走超管、global 走超管、dry-run、
-//   幂等执行、审计可见性、账号管理。需 `cd server && docker compose up -d`。
+// admin service end-to-end (OPS_DESIGN §8 verification): dedicated real Mongo database. Entire suite skipped if Mongo is unreachable.
+//   Login/RBAC rejection, ticket approval routing "initiator ≠ approver", over-quota routed to super-admin, global routed to super-admin, dry-run,
+//   idempotent execution, audit visibility, account management. Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createAdminMongo, type AdminMongo } from '../src/db';
 import { AdminService, AdminError, type Actor } from '../src/service';
@@ -30,13 +30,13 @@ async function tryConnect(): Promise<AdminMongo | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[admin.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[admin.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 let t = 1000;
 const now = (): number => t++;
 
-// —— 假业务客户端（注入，不连真服务）——
+// —— Fake business clients (injected; do not connect to real services) ——
 const stubStats: StatsClient = {
   available: true,
   fetchLive: async (): Promise<LiveStats> => ({ online: 5, queue: 2, rooms: 1, gameInstances: 1, gameLoad: 3 }),
@@ -78,7 +78,7 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     await m.ensureIndexes(3600);
     mail = new FakeMail();
     svc = new AdminService({ cols: m.collections, stats: stubStats, players: stubPlayer, mail, now });
-    // 种子超管 + 一个运营 + 一个客服。
+    // Seed: one super-admin + one ops + one support agent.
     await seedSuperAdmin(m.collections, 'root', 'rootpass', now);
     const root = await actorOf(svc, 'root');
     await svc.createAccount(root, { username: 'opsy', password: 'opspass', role: 'ops', displayName: 'Ops' });
@@ -90,37 +90,37 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     await m.close();
   });
 
-  it('登录成功签发 + 能力集；错误口令拒绝', async () => {
+  it('successful login issues token + capability set; wrong password rejected', async () => {
     const doc = await svc.authenticate('root', 'rootpass');
     const { capabilities } = svc.meView(doc);
     expect(capabilities).toContain('admin.manage');
     await expect(svc.authenticate('root', 'wrong')).rejects.toBeInstanceOf(AdminError);
   });
 
-  it('登录失败限流：连错 5 次后锁定（429），即便口令正确也拒；成功登录清零', async () => {
-    // 先确保未达阈值时正确口令仍可登录（计数到 4 不锁）。
+  it('login failure rate-limit: locked after 5 consecutive wrong attempts (429), even correct password rejected; successful login resets counter', async () => {
+    // First ensure correct password still works below the threshold (4 failures do not lock).
     for (let i = 0; i < 4; i++) {
       await expect(svc.authenticate('root', 'wrong')).rejects.toMatchObject({ status: 401 });
     }
-    await svc.authenticate('root', 'rootpass'); // 成功 → 计数清零
-    // 再连错 5 次触发锁定。
+    await svc.authenticate('root', 'rootpass'); // success → counter reset
+    // 5 more wrong attempts trigger lockout.
     for (let i = 0; i < 5; i++) {
       await expect(svc.authenticate('root', 'wrong')).rejects.toMatchObject({ status: 401 });
     }
-    // 锁定后即使口令正确也被 429 挡下。
+    // After lockout, even the correct password is blocked with 429.
     await expect(svc.authenticate('root', 'rootpass')).rejects.toMatchObject({ status: 429 });
-    // 大小写/空白归一化为同一限流键。
+    // Case/whitespace normalization maps to the same rate-limit key.
     await expect(svc.authenticate(' ROOT ', 'rootpass')).rejects.toMatchObject({ status: 429 });
   });
 
-  it('客服发起 + 运营审批个人补偿（normal）→ 自动执行投递邮件', async () => {
+  it('support initiates + ops approves personal compensation (normal) → auto-executes and delivers mail', async () => {
     const cs = await actorOf(svc, 'csr');
     const ops = await actorOf(svc, 'opsy');
     const t1 = await svc.initiateTicket(cs, {
       scope: 'single',
       target: { publicId: '123456789' },
-      mail: { subject: '抱歉', body: '补偿', attachments: [{ kind: 'coins', count: 100 }], expireDays: 30 },
-      reason: '卡单',
+      mail: { subject: 'Apology', body: 'Compensation', attachments: [{ kind: 'coins', count: 100 }], expireDays: 30 },
+      reason: 'stuck order',
     });
     expect(t1.status).toBe('pending');
     expect(t1.amountTier).toBe('normal');
@@ -130,7 +130,7 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     expect(mail.sent).toHaveLength(1);
   });
 
-  it('发起人不能审批自己的工单（发起≠审批）', async () => {
+  it('initiator cannot approve their own ticket (initiator ≠ approver)', async () => {
     const ops = await actorOf(svc, 'opsy');
     const t1 = await svc.initiateTicket(ops, {
       scope: 'single',
@@ -141,7 +141,7 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     await expect(svc.approveTicket(ops, t1.id)).rejects.toMatchObject({ status: 403 });
   });
 
-  it('超额个人补偿仅超管可审批（运营被拒）', async () => {
+  it('over-quota personal compensation can only be approved by super-admin (ops rejected)', async () => {
     const cs = await actorOf(svc, 'csr');
     const ops = await actorOf(svc, 'opsy');
     const root = await actorOf(svc, 'root');
@@ -157,7 +157,7 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     expect(ok.status).toBe('executed');
   });
 
-  it('客服不能发起全服补偿；运营可发起但仅超管审批', async () => {
+  it('support cannot initiate global compensation; ops may initiate but only super-admin can approve', async () => {
     const cs = await actorOf(svc, 'csr');
     const ops = await actorOf(svc, 'opsy');
     const root = await actorOf(svc, 'root');
@@ -181,8 +181,8 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     expect(done.recipientCount).toBe(100);
   });
 
-  it('单超管例外：无其他合格审批人时，超管可自批自己发起的全服工单（专门留痕）', async () => {
-    // seed 只有 root 一个 super；全服仅 super 可审批 → 无第二审批人 → 允许自批。
+  it('sole super-admin exception: when no other qualified approver exists, super-admin may self-approve their own global ticket (explicitly logged)', async () => {
+    // seed has only root as super; global tickets require super approval → no second approver → self-approval allowed.
     const root = await actorOf(svc, 'root');
     const g = await svc.initiateTicket(root, {
       scope: 'global',
@@ -192,12 +192,12 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     });
     const done = await svc.approveTicket(root, g.id);
     expect(done.status).toBe('executed');
-    // 审计专门标记自批，便于后期审查/移除该例外。
+    // Audit log explicitly marks self-approval for future review / removal of this exception.
     const audit = await m.collections.auditLog.findOne({ action: 'comp.approve', target: g.id });
     expect(audit?.summary).toContain('SELF-APPROVED');
   });
 
-  it('存在第二个 super 时，发起人不能自批自己的全服工单（恢复四眼）', async () => {
+  it('when a second super-admin exists, initiator cannot self-approve their own global ticket (four-eyes restored)', async () => {
     const root = await actorOf(svc, 'root');
     await svc.createAccount(root, { username: 'root2', password: 'root2pass', role: 'super', displayName: 'Root2' });
     const g = await svc.initiateTicket(root, {
@@ -207,13 +207,13 @@ describe.skipIf(!mongo)('admin service e2e', () => {
       reason: 'r',
     });
     await expect(svc.approveTicket(root, g.id)).rejects.toMatchObject({ status: 403 });
-    // 第二个 super 审批可放行。
+    // The second super-admin can approve and release it.
     const root2 = await actorOf(svc, 'root2');
     const done = await svc.approveTicket(root2, g.id);
     expect(done.status).toBe('executed');
   });
 
-  it('被禁用的第二审批人不算数：仍允许超管自批', async () => {
+  it('a disabled second approver does not count: super-admin self-approval still allowed', async () => {
     const root = await actorOf(svc, 'root');
     const r2 = await svc.createAccount(root, {
       username: 'root2',
@@ -221,7 +221,7 @@ describe.skipIf(!mongo)('admin service e2e', () => {
       role: 'super',
       displayName: 'Root2',
     });
-    await svc.updateAccount(root, r2.id, { disabled: true }); // 停用第二 super
+    await svc.updateAccount(root, r2.id, { disabled: true }); // disable the second super
     const g = await svc.initiateTicket(root, {
       scope: 'global',
       target: { filter: { kind: 'all' } },
@@ -232,7 +232,7 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     expect(done.status).toBe('executed');
   });
 
-  it('dry-run 预览命中人数', async () => {
+  it('dry-run preview returns recipient count', async () => {
     const ops = await actorOf(svc, 'opsy');
     expect(await svc.preview({ scope: 'global', target: { filter: { kind: 'all' } } })).toMatchObject({
       recipientCount: 100,
@@ -243,7 +243,7 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     void ops;
   });
 
-  it('执行失败→failed→retry 成功；dispatchKey 不变（幂等）', async () => {
+  it('execution failure → failed → retry succeeds; dispatchKey unchanged (idempotent)', async () => {
     const cs = await actorOf(svc, 'csr');
     const root = await actorOf(svc, 'root');
     const t1 = await svc.initiateTicket(cs, {
@@ -261,7 +261,7 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     expect(mail.sent[0]!.dispatchKey).toBe(dk);
   });
 
-  it('审计可见性：超管看全部，运营只看自己', async () => {
+  it('audit visibility: super-admin sees all entries, ops sees only their own', async () => {
     const root = await actorOf(svc, 'root');
     const ops = await actorOf(svc, 'opsy');
     await svc.initiateTicket(ops, {
@@ -278,12 +278,12 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     expect(mine.every((e) => e.actor === ops.adminId)).toBe(true);
   });
 
-  it('player.lookup 按 publicId 反查 + 未找到', async () => {
+  it('player.lookup by publicId + not found', async () => {
     expect(await svc.lookupPlayer('123456789')).toMatchObject({ displayName: 'Alice', rank: 'gold' });
     await expect(svc.lookupPlayer('999999999')).rejects.toMatchObject({ status: 404 });
   });
 
-  it('采样写 metricSnapshots → trend 可查', async () => {
+  it('sampling writes metricSnapshots → trend queryable', async () => {
     await svc.sampleOnce();
     await svc.sampleOnce();
     const points = await svc.trend({ metric: 'online' });
@@ -291,7 +291,7 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     expect(points[0]!.value).toBe(5);
   });
 
-  it('账号管理：建账号 + 不能禁用/降级自己', async () => {
+  it('account management: create account + cannot disable/demote self', async () => {
     const root = await actorOf(svc, 'root');
     await expect(svc.updateAccount(root, root.adminId, { disabled: true })).rejects.toMatchObject({ status: 400 });
     await expect(svc.updateAccount(root, root.adminId, { role: 'viewer' })).rejects.toMatchObject({ status: 400 });

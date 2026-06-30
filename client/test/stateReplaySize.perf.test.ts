@@ -1,6 +1,6 @@
-// 体量实测（非断言主目的，主要 console 输出）：合成一场约 10 分钟、场上 ~50 单位的对战，
-// 跑 encode（关键帧抽稀）→ gzip → base64，量分享 blob 实际大小 + 还原保真度。
-// 运行：npx vitest run test/stateReplaySize.perf.test.ts
+// Size benchmark (assertion is secondary; primary output is console logs): synthesize a ~10-minute match with ~50 on-field units,
+// run encode (keyframe decimation) → gzip → base64, and measure the actual share-blob size + restoration fidelity.
+// Run: npx vitest run test/stateReplaySize.perf.test.ts
 import { describe, it, expect } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import {
@@ -15,7 +15,7 @@ import {
   type StateBuilding,
 } from '../src/game/replay/StateReplay';
 
-// 确定性 PRNG（可复现）。
+// Deterministic PRNG (reproducible).
 function lcg(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
@@ -25,8 +25,8 @@ function lcg(seed: number): () => number {
 }
 
 const TICK_RATE = 30;
-const DURATION_S = 600; // 10 分钟
-const RAW_TICKS = DURATION_S * TICK_RATE; // 18000 = 录制器单槽上限 MAX_FRAMES（StateRecorder）
+const DURATION_S = 600; // 10 minutes
+const RAW_TICKS = DURATION_S * TICK_RATE; // 18000 = recorder single-slot cap MAX_FRAMES (StateRecorder)
 const TARGET_ALIVE = 50;
 const LANES = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11];
 
@@ -34,14 +34,14 @@ interface SimUnit {
   id: number;
   type: string;
   side: 0 | 1;
-  row: number; // 所在 lane（基本固定）
+  row: number; // current lane (largely fixed)
   col: number;
-  vCol: number; // 每 tick 列速度
+  vCol: number; // column velocity per tick
   hp: number;
   maxHp: number;
   state: string;
   bornTick: number;
-  phaseUntil: number; // 当前阶段结束 tick
+  phaseUntil: number; // tick at which the current phase ends
 }
 
 function genReplay(totalTicks: number): StateReplay {
@@ -82,7 +82,7 @@ function genReplay(totalTicks: number): StateReplay {
       maxHp,
       state: 'moving',
       bornTick: tick,
-      phaseUntil: tick + 150 + Math.floor(rnd() * 450), // 走 5~20 秒后进入交战
+      phaseUntil: tick + 150 + Math.floor(rnd() * 450), // enters combat after 5~20 seconds of marching
     });
     nextId++;
   }
@@ -90,11 +90,11 @@ function genReplay(totalTicks: number): StateReplay {
   for (let alive = 0; alive < TARGET_ALIVE; alive++) spawn(0);
 
   for (let tick = 0; tick < totalTicks; tick++) {
-    // 推进每个单位。
+    // Advance each unit.
     for (const u of [...units.values()]) {
       if (u.state === 'moving') {
         u.col += u.vCol;
-        // 偶发变道（拐点）。
+        // Occasional lane change (waypoint).
         if (rnd() < 0.004) {
           const idx = LANES.indexOf(u.row);
           const nidx = Math.max(0, Math.min(LANES.length - 1, idx + (rnd() < 0.5 ? -1 : 1)));
@@ -105,7 +105,7 @@ function genReplay(totalTicks: number): StateReplay {
           u.phaseUntil = tick + 60 + Math.floor(rnd() * 240);
         }
       } else {
-        // attacking：位置基本不动，周期性掉血；偶尔基地/建筑受损。
+        // attacking: position largely unchanged; periodic HP loss; occasional base/building damage.
         if (tick % 18 === 0) u.hp = Math.max(0, u.hp - (4 + Math.floor(rnd() * 14)));
         if (rnd() < 0.02) (u.side === 0 ? (base1 = Math.max(0, base1 - 1)) : (base0 = Math.max(0, base0 - 1)));
         if (rnd() < 0.01) {
@@ -113,14 +113,14 @@ function genReplay(totalTicks: number): StateReplay {
           b.hp = Math.max(0, b.hp - (5 + Math.floor(rnd() * 20)));
         }
         if (u.hp <= 0 || tick >= u.phaseUntil) {
-          units.delete(u.id); // 死亡/撤离
+          units.delete(u.id); // dead / retreated
         }
       }
     }
-    // 维持兵力。
+    // Replenish troops.
     while (units.size < TARGET_ALIVE && rnd() < 0.9) spawn(tick);
 
-    // 快照当帧。
+    // Snapshot the current frame.
     const us: StateUnit[] = [];
     for (const u of units.values()) {
       us.push({
@@ -163,8 +163,8 @@ function kb(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-describe('状态流分享体量实测（10 分钟 / ~50 单位）', () => {
-  it(`量分享 blob 大小 + 抽稀比 + gzip 比 + 保真度 @10min(${RAW_TICKS}帧)`, () => {
+describe('State replay share size benchmark (10 min / ~50 units)', () => {
+  it(`Measure share blob size + decimation ratio + gzip ratio + fidelity @10min(${RAW_TICKS} frames)`, () => {
     const cappedTicks = RAW_TICKS;
     const replay = genReplay(cappedTicks);
 
@@ -177,30 +177,30 @@ describe('状态流分享体量实测（10 分钟 / ~50 单位）', () => {
       for (const u of f.units) totalUnits.add(u.id);
     }
 
-    // 旧方案近似：满帧 JSON（逐帧全量）。
+    // Old approach approximation: full-frame JSON (complete state per frame).
     const fullJsonBytes = Buffer.byteLength(JSON.stringify(replay));
 
-    // 新方案：关键帧抽稀 delta JSON。
+    // New approach: keyframe-decimated delta JSON.
     const enc = encodeStateReplay(replay);
     const encJson = JSON.stringify(enc);
     const encBytes = Buffer.byteLength(encJson);
 
-    // gzip（客户端用 CompressionStream('gzip')，比率与 zlib.gzip 等价）。
+    // gzip (client uses CompressionStream('gzip'), ratio equivalent to zlib.gzip).
     const gz = gzipSync(Buffer.from(encJson), { level: 9 });
     const gzBytes = gz.length;
-    // 实际上传是 base64(gzip)。
+    // Actual upload payload is base64(gzip).
     const b64Bytes = Math.ceil(gzBytes / 3) * 4;
 
     const CAP = 2 * 1024 * 1024;
 
-    // 还原保真度抽检：在若干 tick 上按播放器插值模型重建，校验位置 ≤ EPS、静态精确。
+    // Restoration fidelity spot-check: reconstruct at several ticks using the player interpolation model, verify position error ≤ EPS and discrete fields are exact.
     const dec = decodeStateReplay(enc);
     const EPS = 0.06;
     const checkTicks = [0, 100, 1500, 6000, cappedTicks - 1];
     let maxPosErr = 0, staticMismatch = 0, checkedUnits = 0;
     for (const tk of checkTicks) {
       const orig = replay.frames[tk]!;
-      // 重建（镜像 StatePlayerScene）。
+      // Reconstruct (mirrors StatePlayerScene).
       const fr = dec.frames;
       let cur = 0;
       while (cur < fr.length - 1 && fr[cur + 1]!.tick <= tk) cur++;
@@ -223,20 +223,20 @@ describe('状态流分享体量实测（10 分钟 / ~50 单位）', () => {
     }
 
     /* eslint-disable no-console */
-    console.log('\n========= 状态流分享体量实测 =========');
-    console.log(`录制帧数:        ${replay.frames.length}（${(replay.frames.length / TICK_RATE / 60).toFixed(1)} 分钟 @${TICK_RATE}Hz = 录制器 MAX_FRAMES 满载）`);
-    console.log(`场上峰值单位:    ${peakAlive}    全程不同单位总数: ${totalUnits.size}`);
-    console.log(`单位·帧 采样数:  ${unitFrameCells.toLocaleString()}`);
+    console.log('\n========= State replay share size benchmark =========');
+    console.log(`Recorded frames:  ${replay.frames.length} (${(replay.frames.length / TICK_RATE / 60).toFixed(1)} min @${TICK_RATE}Hz = recorder MAX_FRAMES full)`);
+    console.log(`Peak alive units: ${peakAlive}    Total unique units: ${totalUnits.size}`);
+    console.log(`Unit·frame cells: ${unitFrameCells.toLocaleString()}`);
     console.log('--------------------------------------');
-    console.log(`① 满帧 JSON（旧方案近似）: ${kb(fullJsonBytes)}`);
-    console.log(`② 关键帧抽稀 delta JSON:   ${kb(encBytes)}   (抽稀后省 ${(100 * (1 - encBytes / fullJsonBytes)).toFixed(1)}%)`);
-    console.log(`③ gzip 后:                 ${kb(gzBytes)}   (gzip 再省 ${(100 * (1 - gzBytes / encBytes)).toFixed(1)}%)`);
-    console.log(`④ base64(gzip) 实际上传:   ${kb(b64Bytes)}`);
-    console.log(`   delta 帧数: ${enc.frames.length} / ${replay.frames.length}`);
+    console.log(`① Full-frame JSON (old approach approx): ${kb(fullJsonBytes)}`);
+    console.log(`② Keyframe-decimated delta JSON:         ${kb(encBytes)}   (saved ${(100 * (1 - encBytes / fullJsonBytes)).toFixed(1)}% vs full)`);
+    console.log(`③ After gzip:                            ${kb(gzBytes)}   (gzip saves another ${(100 * (1 - gzBytes / encBytes)).toFixed(1)}%)`);
+    console.log(`④ base64(gzip) actual upload:            ${kb(b64Bytes)}`);
+    console.log(`   delta frames: ${enc.frames.length} / ${replay.frames.length}`);
     console.log('--------------------------------------');
-    console.log(`上传体量 / 上限(2MB): ${kb(b64Bytes)} / ${kb(CAP)}  →  ${b64Bytes <= CAP ? '✅ 通过' : '❌ 超限'}`);
-    console.log(`旧 512KB 上限下: ${b64Bytes <= 512 * 1024 ? '也能过' : '会被拒（故旧上限需上调）'}`);
-    console.log(`保真度: 最大位置误差 ${maxPosErr.toFixed(4)} 格 (EPS=${EPS}), 静态不符 ${staticMismatch}/${checkedUnits} 抽检单位`);
+    console.log(`Upload size / cap (2MB): ${kb(b64Bytes)} / ${kb(CAP)}  →  ${b64Bytes <= CAP ? '✅ pass' : '❌ over limit'}`);
+    console.log(`Under old 512KB cap: ${b64Bytes <= 512 * 1024 ? 'also passes' : 'would be rejected (old cap too low)'}`);
+    console.log(`Fidelity: max pos error ${maxPosErr.toFixed(4)} cells (EPS=${EPS}), static mismatch ${staticMismatch}/${checkedUnits} sampled units`);
     console.log('======================================\n');
     /* eslint-enable no-console */
 

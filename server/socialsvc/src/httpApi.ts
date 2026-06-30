@@ -1,7 +1,7 @@
-// socialsvc 公网 REST（SOCIAL_SVC_DESIGN §4）。第五公网面：/social/*。
-// 鉴权：复用 meta JWT，仅 verifyToken 验签取 accountId（不连 accounts 库）。
-// 内部端点：/internal/*，X-Internal-Key 鉴权（其他服务调用）。
-// 用 node:http（与 worldsvc 同风格）。响应走 @nw/shared ApiResp 包络。
+// socialsvc public REST (SOCIAL_SVC_DESIGN §4). Fifth public face: /social/*.
+// Auth: reuses meta JWT — verifyToken only, extracts accountId (no connection to the accounts DB).
+// Internal endpoints: /internal/*, authenticated via X-Internal-Key (called by other services).
+// Uses node:http (same style as worldsvc). Responses wrapped in @nw/shared ApiResp envelope.
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import {
   ErrorCode,
@@ -20,10 +20,10 @@ import type { SocialGatewayClient, SocialPushMsg } from './gatewayClient';
 import { CHAT_SEND_RATE_PER_MIN, type ChatRegion } from '@nw/shared';
 
 /**
- * 好友在线/下线通知扇出（P3，SOCIAL_SVC_DESIGN §5 Presence 推送链）。
- * 上线：向在线好友推我上线 + 把在线好友状态回推给我。
- * 下线：仅向在线好友推我下线（我已断连，无需回推）。
- * 全部 best-effort：失败不影响主流程。
+ * Fan-out of friend online/offline notifications (P3, SOCIAL_SVC_DESIGN §5 Presence push chain).
+ * Online: push "I came online" to online friends + push each online friend's status back to me.
+ * Offline: only push "I went offline" to online friends (I am already disconnected, no need to push back to me).
+ * All best-effort: failures do not affect the main flow.
  */
 async function presenceFanOut(
   accountId: string,
@@ -38,18 +38,18 @@ async function presenceFanOut(
 
   const myProfiles = await friendSvc.batchPublicIds([accountId]);
   const myPublicId = myProfiles.get(accountId);
-  if (!myPublicId) return; // 账号无 publicId，不广播
+  if (!myPublicId) return; // account has no publicId, skip broadcast
 
   const presenceMap = await gateway.presence(friendIds);
   const onlineFriendIds = friendIds.filter((id) => presenceMap[id]);
   if (onlineFriendIds.length === 0 && !online) return;
 
-  // 推给在线好友：我上线/下线了
+  // Push to online friends: I came online / went offline
   if (onlineFriendIds.length > 0) {
     await gateway.pushMany(onlineFriendIds, { kind: 'friend_presence', publicId: myPublicId, online });
   }
 
-  // 上线时：把在线好友的状态回推给我（让我知道谁在线）
+  // On coming online: push each online friend's status back to me (so I know who is online)
   if (online && onlineFriendIds.length > 0) {
     const friendPids = await friendSvc.batchPublicIds(onlineFriendIds);
     await Promise.allSettled(
@@ -135,13 +135,13 @@ export function startHttpApi(
       const path = url.pathname;
       const q = url.searchParams;
 
-      // ── 内部端点（/internal/*）────────────────────────────────────────
+      // ── Internal endpoints (/internal/*) ─────────────────────────────
       if (path.startsWith('/internal/')) {
         if (!internalAuth.verify(req.headers).ok) {
-          return sendErr(res, ErrorCode.UNAUTHENTICATED, '内部端点需 X-Internal-Key');
+          return sendErr(res, ErrorCode.UNAUTHENTICATED, 'internal endpoint requires X-Internal-Key');
         }
 
-        // 查玩家所在 familyId（worldsvc 调用，SS7）
+        // Look up the familyId the player belongs to (called by worldsvc, SS7)
         {
           const m = /^\/internal\/family\/by-account\/([^/]+)$/.exec(path);
           if (method === 'GET' && m) {
@@ -151,13 +151,13 @@ export function startHttpApi(
           }
         }
 
-        // 委托推送（worldsvc / metaserver 调用，§4.2 /internal/push）
+        // Delegated push (called by worldsvc / metaserver, §4.2 /internal/push)
         if (method === 'POST' && path === '/internal/push') {
           const body = await readJson(req);
           const channel = body.channel as { kind: string; familyId?: string; sectId?: string; worldId?: string; accountId?: string } | undefined;
           const event = typeof body.event === 'string' ? body.event : '';
           const payload = body.payload;
-          // targets：调用方已计算好的收件人列表（P1 过渡，sect/world 频道 Redis pub/sub P3 实现前的兜底）。
+          // targets: recipient list pre-computed by the caller (P1 interim fallback before sect/world channel Redis pub/sub is implemented in P3).
           const targets = Array.isArray(body.targets) ? (body.targets as string[]) : null;
           if (!channel || !event) return sendErr(res, ErrorCode.BAD_REQUEST, 'channel + event required');
 
@@ -167,22 +167,22 @@ export function startHttpApi(
           } as SocialPushMsg;
 
           if (targets && targets.length > 0) {
-            // 调用方提供了明确收件人列表（sect/world 频道 P1 兜底）。
+            // Caller provided an explicit recipient list (sect/world channel P1 fallback).
             await gateway.pushMany(targets, msg);
           } else if (channel.kind === 'account' && channel.accountId) {
             await gateway.push(channel.accountId, msg);
           } else if (channel.kind === 'family' && channel.familyId) {
-            // 推给所有家族在线成员（O(n)，≤30 人）
+            // Push to all online family members (O(n), ≤30 members)
             const detail = await familySvc.getFamily(channel.familyId);
             if (detail) {
               await gateway.pushMany(detail.members.map((m) => m.accountId), msg);
             }
           }
-          // sect/world channel 无 targets 时：P3 将改用 Redis pub/sub 路由（当前仅落库，无实时推送）。
+          // sect/world channel with no targets: P3 will switch to Redis pub/sub routing (currently only persisted to DB, no real-time push).
           return send(res, 200, ok({}));
         }
 
-        // P2：邮件原子领取（metaserver 调用：标 claimed 取附件列表，metaserver 再发货）
+        // P2: atomic mail claim (called by metaserver: marks as claimed and returns the attachment list; metaserver then delivers goods)
         {
           const m = /^\/internal\/mail\/([^/]+)\/claim$/.exec(path);
           if (method === 'POST' && m) {
@@ -202,7 +202,7 @@ export function startHttpApi(
           }
         }
 
-        // P2：系统邮件单发（metaserver admin/赛季结算调用）
+        // P2: send a single system mail (called by metaserver admin / season settlement)
         if (method === 'POST' && path === '/internal/mail/system') {
           const body = await readJson(req);
           const { dispatchKey, to, content } = body as {
@@ -215,7 +215,7 @@ export function startHttpApi(
           return send(res, 200, ok(r));
         }
 
-        // P2：系统邮件批量 fan-out（metaserver admin/赛季结算调用）
+        // P2: bulk system mail fan-out (called by metaserver admin / season settlement)
         if (method === 'POST' && path === '/internal/mail/system/bulk') {
           const body = await readJson(req);
           const { dispatchKey, accountIds, content } = body as {
@@ -227,17 +227,17 @@ export function startHttpApi(
             return sendErr(res, ErrorCode.BAD_REQUEST, 'dispatchKey + accountIds + content required');
           }
           const r = await mailSvc.bulkInsertSystemMail(dispatchKey, accountIds, content);
-          // 对新插入的收件人 push 红点
+          // Push a notification badge to newly inserted recipients
           if (r.insertedAccountIds.length > 0) {
             for (const aid of r.insertedAccountIds) {
-              // best-effort，不影响本次响应
+              // best-effort, does not affect the current response
               void gateway.push(aid, { kind: 'mail_new', mailId: `${dispatchKey}:${aid}`, hasAttachment: r.hasAttachment });
             }
           }
           return send(res, 200, ok(r));
         }
 
-        // 活跃度累加（worldsvc 占领/战斗时调用，SS7）
+        // Accumulate activity score (called by worldsvc on capture/battle, SS7)
         if (method === 'POST' && path === '/internal/family/activity') {
           const body = await readJson(req);
           const familyId = typeof body.familyId === 'string' ? body.familyId : null;
@@ -247,7 +247,7 @@ export function startHttpApi(
           return send(res, 200, ok({}));
         }
 
-        // Presence 事件（gateway 调用，P3）：好友在线/下线通知扇出
+        // Presence event (called by gateway, P3): fan-out of friend online/offline notifications
         if (method === 'POST' && (path === '/internal/presence/online' || path === '/internal/presence/offline')) {
           const body = await readJson(req);
           const presenceAccountId = typeof body.accountId === 'string' ? body.accountId : null;
@@ -257,22 +257,22 @@ export function startHttpApi(
           return send(res, 200, ok({}));
         }
 
-        return sendErr(res, ErrorCode.NOT_FOUND, '内部端点不存在');
+        return sendErr(res, ErrorCode.NOT_FOUND, 'internal endpoint not found');
       }
 
-      // ── 公网端点（/social/*）─────────────────────────────────────────
-      // JWT 鉴权
+      // ── Public endpoints (/social/*) ─────────────────────────────────
+      // JWT authentication
       const token = extractBearer(req.headers['authorization']);
-      if (!token) return sendErr(res, ErrorCode.UNAUTHENTICATED, '缺少 Authorization');
+      if (!token) return sendErr(res, ErrorCode.UNAUTHENTICATED, 'missing Authorization header');
       let accountId: string;
       try {
         accountId = verifyToken(token, { secret: opts.jwtSecret });
       } catch {
-        return sendErr(res, ErrorCode.UNAUTHENTICATED, '无效 token');
+        return sendErr(res, ErrorCode.UNAUTHENTICATED, 'invalid token');
       }
 
       try {
-        // ── 家族 ──────────────────────────────────────────────────────
+        // ── Family ────────────────────────────────────────────────────
         if (method === 'GET' && path === '/social/family/mine') {
           return send(res, 200, ok(await familySvc.getMyFamily(accountId)));
         }
@@ -346,7 +346,7 @@ export function startHttpApi(
           if (m) {
             const familyId = decodeURIComponent(m[1]!);
             if (method === 'GET') {
-              // 查频道历史：需验证调用者在该家族（familyService.getChannel 内部校验）
+              // Fetch channel history: caller must be a member of the family (validated internally by familyService.getChannel)
               const before = q.get('before') ? Number(q.get('before')) : undefined;
               const limit = numQ(q.get('limit'), 30);
               return send(res, 200, ok(await familySvc.getChannel(accountId, before, limit)));
@@ -362,7 +362,7 @@ export function startHttpApi(
           }
         }
 
-        // ── 好友（P2）────────────────────────────────────────────────────
+        // ── Friends (P2) ──────────────────────────────────────────────────
         if (method === 'GET' && path === '/social/friends') {
           return send(res, 200, ok({ friends: await friendSvc.getFriends(accountId) }));
         }
@@ -421,7 +421,7 @@ export function startHttpApi(
           }
         }
 
-        // ── 私聊（P2）────────────────────────────────────────────────────
+        // ── Direct messages (P2) ──────────────────────────────────────────
         if (method === 'GET' && path === '/social/chat/conversations') {
           return send(res, 200, ok({ conversations: await friendSvc.getConversations(accountId) }));
         }
@@ -457,7 +457,7 @@ export function startHttpApi(
           return send(res, 200, ok({ ok: true }));
         }
 
-        // ── 邮件（P2）────────────────────────────────────────────────────
+        // ── Mail (P2) ────────────────────────────────────────────────────
         if (method === 'GET' && path === '/social/mail') {
           return send(res, 200, ok(await mailSvc.getMail(accountId)));
         }
@@ -492,13 +492,13 @@ export function startHttpApi(
           return send(res, 200, ok({ mailId: r.mailId }));
         }
 
-        return sendErr(res, ErrorCode.NOT_FOUND, '接口不存在');
+        return sendErr(res, ErrorCode.NOT_FOUND, 'endpoint not found');
       } catch (e) {
         if (e instanceof SlgError) {
           return sendErr(res, e.code as ErrorCode, e.message);
         }
         console.error('[socialsvc] unhandled error:', e);
-        return sendErr(res, ErrorCode.INTERNAL, '服务器内部错误');
+        return sendErr(res, ErrorCode.INTERNAL, 'internal server error');
       }
     })();
   });

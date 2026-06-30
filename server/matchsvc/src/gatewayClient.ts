@@ -1,10 +1,12 @@
-// matchsvc → gateway 反向推送（S1-M5）。matchsvc 是私有大脑、不持玩家连接，
-// 异步事件（room_state / match_found / room_error）经此 HTTP POST 回 gateway 的 /gw/push，
-// 由 gateway 据 accountId 找到玩家 socket 下发。单 gateway 实例：一个固定地址即可；
-// 多 gateway 横扩时此处需按 account→gateway 实例路由（Redis，留后续，见 META_DESIGN §6.7）。
+// matchsvc → gateway reverse push (S1-M5). matchsvc is the private matching brain and holds no
+// player connections; async events (room_state / match_found / room_error) are forwarded via this
+// HTTP POST to gateway's /gw/push, which locates the player socket by accountId and delivers the
+// message. Single gateway instance: one fixed address suffices; when gateway is scaled horizontally,
+// routing here must be account→gateway-instance (via Redis — deferred, see META_DESIGN §6.7).
 //
-// 内部鉴权：X-Internal-Key（共用 NW_INTERNAL_KEY）。fire-and-forget——玩家离线 / gateway 抖动
-// 时丢弃即可（房间态是最新快照，下次变更会重发；match_found 丢失则玩家停在房间，可重试开局）。
+// Internal auth: X-Internal-Key (shared NW_INTERNAL_KEY). Fire-and-forget — drop silently when the
+// player is offline or gateway blips (room state is the latest snapshot and will be resent on the
+// next change; a lost match_found leaves the player in the room and they can retry starting a match).
 import { createLogger, internalHeaders } from '@nw/shared';
 import type { PushMsg } from './Matchsvc';
 
@@ -12,7 +14,7 @@ const log = createLogger('matchsvc:gw');
 
 export class GatewayClient {
   constructor(
-    private readonly baseUrl: string | null, // 形如 http://gateway:8090（内部直连，无公网）
+    private readonly baseUrl: string | null, // e.g. http://gateway:8090 (internal direct connection, not publicly exposed)
     private readonly internalKey: string,
   ) {}
 
@@ -34,7 +36,8 @@ export class GatewayClient {
         if (!res.ok) log.warn('gateway push non-OK', { accountId, kind: msg.kind, roomId, status: res.status });
       })
       .catch((e) => {
-        // 下次状态变更会重发；离线玩家本就该丢弃。联调期 match_found 丢失会卡「搜索中」，必须看见。
+        // Will be resent on the next state change; offline players should be silently dropped.
+        // During integration testing a lost match_found will stall the "searching" state — make sure this is visible.
         log.error('gateway push failed', {
           accountId,
           kind: msg.kind,

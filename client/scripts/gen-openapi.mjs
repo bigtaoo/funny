@@ -1,11 +1,11 @@
-// openapi.yml → TypeScript codegen（openapi-typescript，C-2 客户端 REST 侧）。
-// 单一来源 = ../server/contracts/openapi.yml（与 metaserver 同一份 design-first 契约）。
-// 产物 src/net/openapi.ts 提交进仓库；ApiClient 从中取 components['schemas'] 类型，
-// 契约漂移（服务端改 schema 未重生）会在 tsc 时暴露。
+// openapi.yml → TypeScript codegen (openapi-typescript, C-2 client REST side).
+// Single source of truth = ../server/contracts/openapi.yml (same design-first contract as metaserver).
+// Generated src/net/openapi.ts is committed; ApiClient pulls types from components['schemas'];
+// contract drift (server schema changed without regen) is caught at tsc time.
 //
-// 同时处理 openapi-world.yml → src/net/openapi-world.ts（SLG worldsvc 三场景 DTO）。
+// Also processes openapi-world.yml → src/net/openapi-world.ts (SLG worldsvc three-scene DTOs).
 //
-// 跑：npm run rest:gen（改任一 openapi*.yml 后重跑）。
+// Run: npm run rest:gen (re-run after changing any openapi*.yml).
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';

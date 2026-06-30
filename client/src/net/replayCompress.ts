@@ -1,16 +1,19 @@
-// 状态流分享 blob 压缩（REPLAY_SHARE_DESIGN §7）。
+// State-stream share blob compression (REPLAY_SHARE_DESIGN §7).
 //
-// 分享 blob 是高度重复的 delta JSON（同结构逐帧），gzip 压缩比极高（~10-20×）。分享只发生在 Web
-// （需 fetch + 在线），故直接用浏览器原生 CompressionStream/'gzip'；线上以 base64 字符串塞进既有
-// JSON 包络（服务端 opaque 存储、不解释）。运行环境缺 CompressionStream（老浏览器 / 微信小游戏，
-// 后者本就不可达分享路径）则抛错，由分享 UI 兜底提示。
+// The share blob is highly repetitive delta JSON (same structure frame by frame), so gzip
+// compression ratios are very high (~10-20×). Sharing only happens on Web (requires fetch
+// + online), so we use the browser's native CompressionStream/'gzip' directly; the compressed
+// data is stored as a base64 string inside the existing JSON envelope (the server stores it
+// opaquely without interpreting it). If CompressionStream is unavailable (old browsers /
+// WeChat mini-game — the latter cannot reach the share path anyway), an error is thrown and
+// the share UI provides a fallback message.
 
-/** gzip 魔数：解包时据此判断 blob 是否压缩（兼容历史/未压缩明文）。 */
+/** gzip magic bytes: used during unpacking to detect whether the blob is compressed (for backward compatibility with uncompressed plain-text blobs). */
 const GZIP_MAGIC0 = 0x1f;
 const GZIP_MAGIC1 = 0x8b;
 
 function bytesToBase64(bytes: Uint8Array): string {
-  // 分块拼 binary string 避免大数组撑爆 String.fromCharCode 调用栈。
+  // Build the binary string in chunks to avoid blowing the call stack with large arrays passed to String.fromCharCode.
   let bin = '';
   const CHUNK = 0x8000;
   for (let i = 0; i < bytes.length; i += CHUNK) {
@@ -26,7 +29,7 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-/** EncodedStateReplay → gzip → base64 字符串。环境不支持压缩则抛错（分享 UI 兜底）。 */
+/** EncodedStateReplay → gzip → base64 string. Throws if the environment does not support compression (share UI provides the fallback). */
 export async function packReplayBlob(enc: unknown): Promise<string> {
   const json = JSON.stringify(enc);
   if (typeof CompressionStream === 'undefined') {
@@ -38,12 +41,12 @@ export async function packReplayBlob(enc: unknown): Promise<string> {
   return bytesToBase64(buf);
 }
 
-/** base64(gzip) → EncodedStateReplay。明文 JSON（未压缩历史/降级流）亦兼容解析。 */
+/** base64(gzip) → EncodedStateReplay. Also handles plain-text JSON (uncompressed legacy / degraded blobs). */
 export async function unpackReplayBlob(packed: unknown): Promise<unknown> {
-  // 兼容：历史/降级路径可能直接存了对象而非压缩串。
+  // Compatibility: legacy / degraded paths may have stored a plain object instead of a compressed string.
   if (typeof packed !== 'string') return packed;
   const bytes = base64ToBytes(packed);
-  // 拷进一块确定的 ArrayBuffer，规避 Uint8Array<ArrayBufferLike> 不满足 BlobPart 的类型问题。
+  // Copy into a concrete ArrayBuffer to work around the type issue where Uint8Array<ArrayBufferLike> does not satisfy BlobPart.
   const ab = new ArrayBuffer(bytes.length);
   new Uint8Array(ab).set(bytes);
   if (bytes.length >= 2 && bytes[0] === GZIP_MAGIC0 && bytes[1] === GZIP_MAGIC1) {
@@ -52,6 +55,6 @@ export async function unpackReplayBlob(packed: unknown): Promise<unknown> {
     const json = await new Response(stream).text();
     return JSON.parse(json) as unknown;
   }
-  // 非 gzip：当作明文 JSON（理论上不该发生，留兜底）。
+  // Not gzip: treat as plain-text JSON (should not happen in practice; kept as a fallback).
   return JSON.parse(new TextDecoder().decode(ab)) as unknown;
 }

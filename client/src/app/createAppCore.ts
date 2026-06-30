@@ -43,7 +43,7 @@ import { getWorldBaseUrl } from '../net/config';
 
 const log = netLog('app');
 
-/** 平台名（构建期注入的 TARGET 全局），随 bootstrap 求值带入。镜像 analytics.getPlatformName。 */
+/** Platform name (the TARGET global injected at build time), evaluated at bootstrap. Mirrors analytics.getPlatformName. */
 function clientPlatformName(): 'web' | 'wechat' | 'crazygames' {
   const t = (globalThis as { TARGET?: string }).TARGET ?? '';
   if (t === 'wechat') return 'wechat';
@@ -53,7 +53,7 @@ function clientPlatformName(): 'web' | 'wechat' | 'crazygames' {
 
 /** flags key — set after the first-launch intro has been seen. */
 const SEEN_INTRO_FLAG = 'seen_intro';
-/** 教学关完成/跳过后置位，之后不再自动进；设置「重看教学」可清后重进（ONBOARDING_DESIGN §3.4）。 */
+/** Set after the tutorial is completed or skipped; prevents auto-entry afterwards. Clearing it via "replay tutorial" in settings allows re-entry (ONBOARDING_DESIGN §3.4). */
 const TUTORIAL_DONE_FLAG = 'tutorial_done';
 /** flags key — set after the player accepts the GDPR / privacy consent (C5-c, L1-1). Mirrors server `flags.gdprConsent`. */
 const GDPR_CONSENT_FLAG = 'gdprConsent';
@@ -70,8 +70,10 @@ const PLAYER_AVATAR_KEY = 'nw_player_avatar';
 /** Coin cost to change the display name. Mirrors server RENAME_COST; server authoritative. */
 const RENAME_COST = 500;
 /**
- * 当前 SLG 赛季号（G6/§20）：worldsvc 按 `s{season}-{shard}` 多 shard 路由，客户端进图前
- * 用它 resolveSeason 拿真实 worldId。暂为常量，待 S11 天梯赛季元数据下发后由 metaserver 提供（§20.8）。
+ * Current SLG season number (G6/§20): worldsvc routes by `s{season}-{shard}` multi-shard scheme;
+ * the client calls resolveSeason with this value before entering the map to obtain the real worldId.
+ * Temporarily a client-side constant; will be provided by metaserver once S11 ladder-season metadata
+ * is delivered (§20.8).
  */
 const CURRENT_SEASON = 1;
 
@@ -94,15 +96,17 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     store: new LocalSaveStore(platform.storage),
     api,
     getCredential: () => platform.getAuthCredential(),
-    // L1 抽检（§8.6）：离线 flush 被抽中时据 replayId 取回本地录像补传复算。
+    // L1 spot-check (§8.6): when a queued offline flush is selected for verification, fetch the
+    // local replay by replayId and submit it for re-evaluation.
     loadReplay: (id) => replayStore.load(id),
-    // 云存档后台同步持续失败 → 弹一次全局兜底提示（进度可能未上云）。
+    // Cloud save background sync persistently failing → show a one-time global fallback toast
+    // (progress may not have reached the cloud).
     onSyncError: () => showToastMessage(t('common.syncFailed')),
     onProfile: ({ displayName, publicId, gatewayUrl: gw }) => {
       applyGatewayUrl(gw);
       if (publicId) {
         platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, publicId);
-        void featureFlags?.refresh(); // publicId 经存档回包到手 → 重拉 bootstrap 让定向采集即时生效
+        void featureFlags?.refresh(); // publicId received from save response → re-fetch bootstrap so targeted log capture takes effect immediately
       }
       if (!displayName) return;
       if (platform.storage.getItem(PLAYER_NAME_KEY) === displayName) return;
@@ -118,8 +122,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   analytics.setConsent(saveManager.getFlag(GDPR_CONSENT_FLAG) === true);
   void analytics.init(platform, api, baseUrl);
 
-  // ── FeatureFlags: 公开 bootstrap 轮询 + 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）─────
-  // 启动即轮询；命中 client_log_* 定向时把环形缓冲日志批量上报 Loki。需有 API 基址才有意义。
+  // ── FeatureFlags: public bootstrap polling + targeted client-log capture (FEATURE_FLAGS_DESIGN §9) ─────
+  // Polling starts immediately on launch; when a client_log_* targeting rule matches, the ring-buffer
+  // log is batch-uploaded to Loki. Requires an API base URL to be meaningful.
   const featureFlags = api
     ? new FeatureFlags({
         api,
@@ -151,7 +156,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   // ── Navigation state ────────────────────────────────────────────────────────
   let inLobby = false;
   let offlineMode = false;
-  /** 一次性：本会话是否已处理过「首次进大厅 → 教学关」分流（ONBOARDING §2 步骤 ⑤）。 */
+  /** One-shot: whether this session has already handled the "first lobby entry → tutorial" branch (ONBOARDING §2 step ⑤). */
   let firstLobbyHandled = false;
   /**
    * Cached aggregate social unread (GET /social/badges). Kept across lobby
@@ -229,7 +234,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  /** Re-fetch retention claimable state and push the 每日 red dot into the lobby (B5, best-effort). */
+  /** Re-fetch retention claimable state and push the daily red dot into the lobby (B5, best-effort). */
   async function refreshRetentionBadge(view: LobbyView): Promise<void> {
     if (!api || offlineMode || !platform.storage.getItem(TOKEN_KEY)) { view.applyRetentionBadge(false); return; }
     try {
@@ -238,7 +243,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     } catch { /* leave the dot off on failure */ }
   }
 
-  /** Probe for an active event window so the 活动 entry only appears when there's something to show (B6, best-effort). */
+  /** Probe for an active event window so the events entry only appears when there's something to show (B6, best-effort). */
   async function refreshEventsAvailable(view: LobbyView): Promise<void> {
     if (!api || offlineMode || !platform.storage.getItem(TOKEN_KEY)) { view.applyEventsAvailable(false); return; }
     try {
@@ -270,8 +275,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   function goLobby(opts?: { offline?: boolean; fromResize?: boolean }): void {
-    // FTUE 步骤 ⑤：本会话首次将要进大厅时，未完成教学则改走专属教学关（ONBOARDING_DESIGN §2）。
-    // 一次性闸门——后续从子场景返回大厅不再触发；resize 重绘也跳过。
+    // FTUE step ⑤: on the first lobby entry of this session, redirect to the dedicated tutorial
+    // level if it has not been completed (ONBOARDING_DESIGN §2).
+    // One-shot gate — subsequent returns to the lobby from child scenes do not re-trigger; resize redraws skip it too.
     if (!firstLobbyHandled && !opts?.fromResize) {
       firstLobbyHandled = true;
       if (!saveManager.getFlag(TUTORIAL_DONE_FLAG)) {
@@ -287,9 +293,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const pvp = saveManager.get().pvp;
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const online = loggedIn && !!api && !!gatewayUrl;
-    // 首次功能引导（ONBOARDING_DESIGN §4.1）：某功能未看过引导 → 在大厅弹可关引导卡，
-    // 关闭后续接导航；看过则直接进。覆盖大厅可达的主要功能（拍卖在大世界内、各页「?」重看
-    // 复用同一 guide.* i18n + showFeatureGuide）。
+    // First-time feature guide (ONBOARDING_DESIGN §4.1): if a feature's guide has not been seen,
+    // show a dismissible guide card in the lobby before navigating; if already seen, navigate directly.
+    // Covers all major lobby-reachable features (auction is inside the world map; each page's "?" button
+    // re-shows the same guide using guide.* i18n + showFeatureGuide).
     function withGuide(featureId: string, titleKey: TranslationKey, bodyKey: TranslationKey, nav: () => void): void {
       if (saveManager.featSeen(featureId)) { nav(); return; }
       saveManager.markFeatSeen(featureId);
@@ -309,7 +316,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       ...(online ? { onOpenAchievements: () => goAchievements() } : {}),
       ...(online ? { onOpenDaily: () => withGuide('daily', 'guide.daily.title', 'guide.daily.body', () => goDaily()), onOpenEvents: () => goEvents() } : {}),
       onOpenWorld() { withGuide('world', 'guide.world.title', 'guide.world.body', () => goWorldEntry()); },
-      // SLG 软门槛（ONBOARDING_DESIGN §4）：通关第一章前灰显 + 气泡，唯一一道功能门槛。
+      // SLG soft gate (ONBOARDING_DESIGN §4): grayed out with a tooltip bubble until the first chapter is cleared — the only feature gate.
       worldLocked: !isFirstChapterCleared(new Set(saveManager.get().progress.cleared)),
       onOpenProfile() { goSettings(); },
       playerName: playerName(),
@@ -338,7 +345,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     // rebuild without flicker; then refresh from the server (skip on resize).
     lobby.applySocialBadge(socialBadgeTotal);
     lobby.applyAchievementBadge(achievementClaimable);
-    // Ping worldsvc so the 大世界 nav button shows a "×" badge immediately when
+    // Ping worldsvc so the world-map nav button shows a "×" badge immediately when
     // the service isn't running — visible feedback before the user clicks the button.
     if (getWorldBaseUrl()) {
       const worldHealthApi = new WorldApiClient(platform.storage);
@@ -395,16 +402,18 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             onRename: doRename,
           }
         : {}),
-      // 账号删除（C5-b）：仅登录在线提供（离线无账号可删）。
+      // Account deletion (C5-b): only available when logged in online (no account to delete when offline).
       ...(loggedIn && !!api ? { onDeleteAccount: doDeleteAccount } : {}),
-      // 重看新手教学（ONBOARDING_DESIGN §3.4）：直接重跑专属教学关（永不失败，可再跳过）。
+      // Replay tutorial (ONBOARDING_DESIGN §3.4): directly re-runs the dedicated tutorial level (never fails, can be skipped again).
       onReplayTutorial: () => goTutorial(),
     });
   }
 
   /**
-   * 删除账号（C5-b，Apple 5.1.1(v)）：调软删端点 → 清本地 token/展示名/公开 id → 回登录页
-   * （7 天宽限期内重新登录可恢复，提示文案在确认弹层内）。失败返回 ok:false 让设置页 toast。
+   * Delete account (C5-b, Apple 5.1.1(v)): call the soft-delete endpoint → clear the local
+   * token / display name / public id → return to the login screen. (Accounts can be recovered
+   * within a 7-day grace period by logging in again; the confirmation dialog explains this.)
+   * On failure, return ok:false so the settings screen can show a toast.
    */
   async function doDeleteAccount(): Promise<{ ok: boolean }> {
     if (!api) return { ok: false };
@@ -423,7 +432,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     }
   }
 
-  /** 称号墙（S10）。从「生涯」顶栏进入（back=goStats），不再从设置进入。 */
+  /** Title wall (S10). Entered from the "Career" top bar (back=goStats); no longer accessible from settings. */
   function goTitles(back: () => void = goStats): void {
     const save = saveManager.get();
     views.showTitles({
@@ -476,7 +485,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       const resolvedName = res.displayName || name;
       if (resolvedName) platform.storage.setItem(PLAYER_NAME_KEY, resolvedName);
       if (res.publicId) platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, res.publicId);
-      // 拿到 publicId 后立刻重拉 bootstrap，定向采集无需等下个 120s 轮询周期（best-effort）。
+      // Immediately re-fetch the bootstrap after receiving publicId so targeted log capture
+      // takes effect without waiting for the next 120-second polling cycle (best-effort).
       void featureFlags?.refresh();
       await saveManager.adoptSession(res.accountId);
       goLobby({ offline: false });
@@ -554,8 +564,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (session) {
       session.handlers = {
         onMatchStart: (info) => goGameNet(info),
-        // 匹配超时降级打 AI（feature flag match_bot_fallback）：服务端推 match_bot →
-        // 退出排队 UI，开一场本地 AI 局（用 server seed）。
+        // Matchmaking timeout fallback to AI (feature flag match_bot_fallback): server pushes match_bot →
+        // exit the queue UI and start a local AI match (using the server-provided seed).
         onMatchBot: (seed) => {
           rankedQueued = false;
           log.info('match_bot fallback → local AI match', { seed });
@@ -619,7 +629,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       },
       removeFriend: (publicId) => client.removeFriend(publicId),
       blockUser: (publicId) => client.blockUser(publicId),
-      // 私聊（入口在好友资料弹层）
+      // Direct messages (entry point is the friend profile popup)
       loadConversations: () => client.getConversations(),
       openChat: (peerPublicId, peerName) => goChat(peerPublicId, peerName),
       // mail (S6-3)
@@ -631,7 +641,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         return true;
       },
       deleteMail: (mailId) => client.deleteMail(mailId),
-      // SLG 社交 Tab (S6-4)
+      // SLG social tab (S6-4)
       ...(worldApi ? {
         async loadSLGStatus() {
           const wid = await ensureWorldId();
@@ -685,7 +695,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     }
   }
 
-  /** 右侧竖栏邮件快捷入口 → FriendsScene 直接落邮件 Tab。 */
+  /** Right-column mail shortcut → opens FriendsScene directly on the mail tab. */
   function goMail(): void { goFriends({ defaultTab: 'mail' }); }
 
   function goChat(peerPublicId: string, peerName: string): void {
@@ -727,9 +737,12 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (!token) { analytics.track('login_gate_hit', { scene: 'WorldMapScene' }); goLogin(); return; }
     const worldApi = new WorldApiClient(platform.storage);
     inLobby = false;
-    // G6/§20：按当前赛季解析本账号应进的 shard（粘性>家族>单随，溢出开新区），不再硬编码 worldId。
-    // CURRENT_SEASON 暂为客户端常量，待 S11 天梯赛季元数据下发后由 metaserver 提供（§20.8）。
-    // 3 秒超时保证 worldsvc 未运行时按钮不挂死（Windows 防火墙可能拦截 TCP RST 导致长等）。
+    // G6/§20: resolve the shard for this account based on the current season (sticky > family > random,
+    // overflow opens a new shard); worldId is no longer hard-coded.
+    // CURRENT_SEASON is temporarily a client-side constant; metaserver will supply it once S11 ladder-season
+    // metadata is delivered (§20.8).
+    // 3-second timeout prevents the button from hanging when worldsvc is not running
+    // (Windows Firewall may drop TCP RST, causing long waits).
     const fallbackId = `s${CURRENT_SEASON}-0`;
     let navigated = false;
     const nav = (worldId: string): void => { if (!navigated) { navigated = true; goWorldMap(worldApi, worldId); } };
@@ -770,10 +783,12 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   /**
-   * 观战一场已结算的关键围攻（G3-2c §16.3）。worldsvc 已 headless 跑过权威战斗并落地——这里
-   * **纯演出重播**（非权威，无录像上传、无 judge）：拉 `/replay`（seed + 双方布阵重建的
-   * LevelDefinition）→ 以同 seed + 空 ReplayInputSource 在 siege 模式 spectator 重跑，逐字复现
-   * worldsvc 跑过的那一场。攻守双方均可观战。
+   * Watch a settled siege replay (G3-2c §16.3). worldsvc has already run the authoritative battle
+   * headlessly and persisted the result — this is **pure presentation replay** (non-authoritative,
+   * no recording upload, no judge): fetch `/replay` (seed + LevelDefinition reconstructed from both
+   * sides' formations) → re-run in siege spectator mode with the same seed + an empty
+   * ReplayInputSource, reproducing exactly what worldsvc executed. Both attackers and defenders
+   * can watch.
    */
   async function goSiegeReplay(worldApi: WorldApiClient, worldId: string, siegeId: string): Promise<void> {
     let level: LevelDefinition;
@@ -788,8 +803,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     }
     inLobby = false;
     analytics.track('siege_replay', { siege_id: siegeId });
-    // 纯预布无 live 指令 → 空帧；endFrame 取战斗时限 + 余量作播放上界（实际由 game-over 先停）。
-    const SIEGE_TIMEOUT_FALLBACK = 10 * 60 * 30; // §16.1 DRAFT，与 server 默认一致
+    // Pure pre-placement with no live commands → empty frames; endFrame is set to the battle
+    // timeout plus a buffer as the playback upper bound (game-over will actually stop it first).
+    const SIEGE_TIMEOUT_FALLBACK = 10 * 60 * 30; // §16.1 DRAFT, matches server default
     const endFrame = (level.battleTimeoutTicks ?? SIEGE_TIMEOUT_FALLBACK) + 600;
     const replay: Replay = { engineVersion: ENGINE_VERSION, mode: 'siege', seed, frames: [], endFrame };
     views.showReplay(replay, { onExit() { goWorldMap(worldApi, worldId); } }, level);
@@ -880,10 +896,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     inLobby = false;
     analytics.track('shop_open', {});
     analytics.track('screen_view', { scene: 'ShopScene' });
-    // 转化标记：本次进店是否产生过购买，离店时随 shop_close 上报（漏斗末端，§9.3）。
+    // Conversion flag: whether a purchase was made during this shop visit; reported with shop_close on exit (funnel bottom, §9.3).
     let converted = false;
     const shopOpenTs = Date.now();
-    // 战令并入商城（LOBBY_IA_REDESIGN §3）：仅登录在线时给出战令入口，返回回到商城。
+    // Battle pass merged into the shop (LOBBY_IA_REDESIGN §3): the battle-pass entry is only shown when logged in online; back returns to the shop.
     const shopLoggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     views.showShop({
       onBack() {
@@ -917,16 +933,16 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           return { ok: false, key: 'shop.error' };
         }
       },
-      // 商城组同级 tab（LOBBY_IA_REDESIGN P1.5）：盲盒/战令上浮为顶部 tab，threading
-      // shopBack 让三页互相直达且返回到同一来源（lobby / level-prep）。
+      // Shop group peer tabs (LOBBY_IA_REDESIGN P1.5): gacha / battle pass promoted to top tabs;
+      // threading shopBack lets all three pages navigate to each other and return to the same origin (lobby / level-prep).
       openGacha() { goGacha({ shopBack: onBack }); },
       ...(shopLoggedIn ? { openBattlePass: () => goBattlePass({ shopBack: onBack }) } : {}),
     });
   }
 
   /**
-   * 盲盒（S2-6）。`group` 存在 = 「商城」分组语境（顶部出现 [商城|盲盒|战令] tab 条，
-   * 同级直达）；缺省 = 独立入口（仅 back 回商城）。
+   * Gacha / loot box (S2-6). When `group` is provided = shop-group context (top [Shop|Gacha|BattlePass]
+   * tab bar with peer navigation); omitted = standalone entry (back returns to the shop only).
    */
   function goGacha(group?: { shopBack?: () => void }): void {
     if (!api) { goLobby(); return; }
@@ -960,13 +976,14 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  /** 每日签到 + 每日任务（B5）。服务器权威，需登录在线；从大厅进入，返回大厅。 */
+  /** Daily check-in + daily quests (B5). Server-authoritative; requires an online login; entered from the lobby, returns to the lobby. */
   function goDaily(): void {
     if (!api) { goLobby(); return; }
     const client = api;
     inLobby = false;
     analytics.track('screen_view', { scene: 'DailyScene' });
-    // 进入每日页时拉一次权威存档，确保 PvP/PvE 完成后的 retention 立即显示。
+    // Fetch the authoritative save once on entering the daily page so that retention progress
+    // from a completed PvP/PvE session is shown immediately.
     void saveManager.refresh();
     views.showDaily({
       onBack() { goLobby(); },
@@ -987,7 +1004,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  /** 限时活动（B6）。服务器权威，需登录在线；从大厅进入，返回大厅。 */
+  /** Limited-time events (B6). Server-authoritative; requires an online login; entered from the lobby, returns to the lobby. */
   function goEvents(): void {
     if (!api) { goLobby(); return; }
     const client = api;
@@ -999,7 +1016,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       async onClaimReward(eventId: string, rewardId: string) {
         const { pointsLeft } = await client.claimEventReward(eventId, rewardId);
         analytics.track('event_claim', { event_id: eventId, reward_id: rewardId });
-        // 奖励落邮件 / commercial 金币 → 拉一次权威存档刷新钱包（best-effort）。
+        // Reward delivered via mail / commercial coins → fetch the authoritative save once to refresh the wallet (best-effort).
         void saveManager.refresh();
         return { pointsLeft };
       },
@@ -1016,8 +1033,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   /**
-   * 本地 PvP-vs-AI 对局。`opts.fromBotFallback` = 由匹配超时降级触发（feature flag
-   * match_bot_fallback）：带 server 给的 seed 保持确定性，analytics 标记区分主动练习 vs 降级。
+   * Local PvP-vs-AI match. `opts.fromBotFallback` = triggered by a matchmaking-timeout fallback
+   * (feature flag match_bot_fallback): uses the server-supplied seed for determinism; analytics
+   * tags distinguish intentional practice from bot-fallback sessions.
    */
   function goGame(opts?: { seed?: number; fromBotFallback?: boolean }): void {
     inLobby = false;
@@ -1051,11 +1069,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onBack() { goLobby(); },
       onSelectLevel(levelId) { goLevelPrep(levelId); },
       onOpenCollection() { goCollection(goCampaignMap, 'skins'); },
-      // 装备系统服务器权威（强化掷骰/扣费/库存）→ 仅登录在线时提供入口（E5）。
+      // Equipment system is server-authoritative (enhancement rolls / coin deduction / inventory) → entry only available when logged in online (E5).
       ...(api ? { onOpenEquipment: () => goEquipment() } : {}),
       getStars: () => saveManager.get().progress.stars,
       getCleared: () => saveManager.get().progress.cleared,
-      // PvE 服务器权威：通关/解锁须联网（§8 决策 4）。离线只能重刷已解锁关，新解锁锁住。
+      // PvE is server-authoritative: clearing / unlocking new levels requires an online connection (§8 decision 4). Offline, only previously unlocked levels can be replayed; new unlocks are gated.
       isOnline: () => saveManager.online(),
       getPendingLevels: () => saveManager.getPendingClears().map((p) => p.levelId),
     });
@@ -1075,7 +1093,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onBack() { analytics.track('level_abandon', { level_id: levelId, phase: 'prep' }); goCampaignMap(); },
       onStart() { analytics.track('screen_view', { scene: 'GameScene' }); goCampaign(levelId); },
       levelNumber,
-      // S12: 单位等级 + 卡片库存（合成系统），取代旧 S3-2 材料/升级树。
+      // S12: unit levels + card inventory (merge system), replacing the old S3-2 material / upgrade-tree approach.
       getUnitLevels: () => saveManager.get().unitLevels,
       getCardInventory: () => saveManager.get().cardInventory,
       isOnline: () => saveManager.online(),
@@ -1086,17 +1104,17 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       },
       ...(level.briefKey ? { brief: t(level.briefKey as TranslationKey) } : {}),
       ...(level.story?.introKey ? { intro: t(level.story.introKey as TranslationKey) } : {}),
-      // A4 体力系统
+      // A4 stamina system
       staminaCost: level.staminaCost ?? 1,
       getStamina: () => saveManager.get().stamina ?? { current: 120, regenAt: 0 },
       onBuyStamina() {
         if (!api) return;
         void api.purchaseStamina().then((res) => {
-          // 更新本地 stamina 镜像，重入 LevelPrep 刷新 UI。
+          // Update the local stamina mirror, then re-enter LevelPrep to refresh the UI.
           saveManager.update((s) => { s.stamina = res.stamina; });
           goLevelPrep(levelId);
         }).catch(() => {
-          // 金币不足时静默失败 → 商店路由兜底
+          // Insufficient coins: fail silently → fall back to the shop route
           goShop(() => goLevelPrep(levelId));
         });
       },
@@ -1106,8 +1124,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   function goCollection(back: () => void, initialTab: 'cards' | 'skins' | 'units' = 'cards'): void {
     inLobby = false;
     analytics.track('screen_view', { scene: 'CollectionScene' });
-    // 装备并入「养成」（LOBBY_IA_REDESIGN §3）：仅登录在线时点亮第 4 个「装备」tab；
-    // 进装备后返回回到本收藏页（保持来时的子 tab）。
+    // Equipment merged into the "Growth" section (LOBBY_IA_REDESIGN §3): the 4th "Equipment" tab
+    // is only active when logged in online; back from equipment returns to this collection page
+    // (preserving the active sub-tab).
     const equipLoggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     views.showCollection({
       onBack: back,
@@ -1133,7 +1152,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  /** 装备端点错误码 → i18n key（E5）。 */
+  /** Map equipment endpoint error codes → i18n key (E5). */
   function equipErrKey(e: unknown): TranslationKey {
     if (e instanceof ApiError) {
       switch (e.code) {
@@ -1153,8 +1172,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   /**
-   * 装备系统（E5）。服务器权威，需登录在线。可从战役地图（默认 back）或「养成」tab
-   * （LOBBY_IA_REDESIGN §3，back=回收藏页）进入，`back` 决定返回去向。
+   * Equipment system (E5). Server-authoritative; requires an online login. Can be entered from
+   * the campaign map (default back) or the "Growth" tab (LOBBY_IA_REDESIGN §3, back=collection page);
+   * `back` determines where the user returns to.
    */
   function goEquipment(back: () => void = goCampaignMap, inCollectionGroup = false): void {
     if (!api) { back(); return; }
@@ -1163,8 +1183,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     analytics.track('screen_view', { scene: 'EquipmentScene' });
     views.showEquipment({
       onBack() { back(); },
-      // 养成组同级 tab（LOBBY_IA_REDESIGN P1.5）：从收藏进入时顶部出现 [收藏|装备] tab 条，
-      // 点收藏回养成（= back）。战役入口（back=goCampaignMap）不注入 → 纯 back。
+      // Growth group peer tabs (LOBBY_IA_REDESIGN P1.5): when entered from the collection page, a
+      // top [Collection|Equipment] tab bar is shown; tapping Collection navigates back to growth (= back).
+      // Campaign-map entry (back=goCampaignMap) does not inject this → plain back only.
       ...(inCollectionGroup ? { openCollection: () => back() } : {}),
       getSave: () => saveManager.get(),
       async craft(defId: string) {
@@ -1218,7 +1239,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const pvp = saveManager.get().pvp;
     views.showStats({
       onBack: () => goLobby(),
-      // 仅登录在线时拉服务端对战历史 + 看回放；离线 / 未登录则不提供（页面显示离线提示）。
+      // Fetch server-side match history and enable replay viewing only when logged in online;
+      // offline / not logged in: omit these (the page shows an offline notice).
       ...(client && loggedIn
         ? {
             loadHistory: () => client.getMatchHistory(),
@@ -1227,16 +1249,16 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
                 .getMatchReplay(roomId)
                 .then((sr) => goReplay(serverReplayToReplay(sr), goStats))
                 .catch(() => {
-                  /* 录像缺失/解码失败：best-effort，留在 stats */
+                  /* Replay missing or decode failed: best-effort, stay on stats */
                 });
             },
           }
         : {}),
       ...(client && loggedIn ? { onOpenAchievements: () => goAchievements(), hasClaimableAchievement: achievementClaimable } : {}),
       ...(client && loggedIn ? { onOpenLeaderboard: () => goLeaderboard() } : {}),
-      // 称号并入「生涯」顶栏（LOBBY_IA_REDESIGN §3）；战令已移至「商城」tab，此处不再链接。
+      // Titles merged into the "Career" top bar (LOBBY_IA_REDESIGN §3); battle pass has moved to the "Shop" tab and is no longer linked here.
       ...(loggedIn ? { onOpenTitles: () => goTitles(goStats) } : {}),
-      // 赛季横幅：从存档 pvp.seasonNo 读取，endAt 从 leaderboard 缓存或留 undefined（显「已结束」）。
+      // Season banner: read from save pvp.seasonNo; endAt comes from the leaderboard cache or stays undefined (displays "ended").
       ...(pvp.seasonNo ? { season: { seasonNo: pvp.seasonNo, endAt: 0 } } : {}),
       getStats: () => {
         const save = saveManager.get();
@@ -1272,10 +1294,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  /** 战令面板（SE-9）。IA 重规划后从「商城」tab 进入（LOBBY_IA_REDESIGN §3），`back` 决定返回去向。 */
   /**
-   * 战令（SE-9）。`group` 存在 = 「商城」分组语境（顶部 [商城|盲盒|战令] tab 条，back 回商城）；
-   * 缺省 = 独立入口（back 回大厅）。
+   * Battle pass (SE-9). When `group` is provided = shop-group context (top [Shop|Gacha|BattlePass]
+   * tab bar, back returns to the shop); omitted = standalone entry (back returns to the lobby).
+   * After the IA redesign, this is entered from the "Shop" tab (LOBBY_IA_REDESIGN §3);
+   * `back` determines where the user returns to.
    */
   function goBattlePass(group?: { shopBack?: () => void }): void {
     inLobby = false;
@@ -1313,14 +1336,15 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   function goAchievements(): void {
     inLobby = false;
     analytics.track('screen_view', { scene: 'AchievementScene' });
-    // 成就漏斗中段（S9-8，ANALYTICS_DESIGN §5.7）：解锁 toast → 看墙 → 领取。online 才算有效漏斗步。
+    // Mid-funnel achievement step (S9-8, ANALYTICS_DESIGN §5.7): unlock toast → view wall → claim. Only counts as a valid funnel step when online.
     const onlineWall = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     analytics.track('achievement_view_wall', { online: onlineWall });
     const loggedIn = !offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const client = api;
     views.showAchievements({
       onBack: () => goStats(),
-      // 仅登录在线时拉成就 + 领取；离线 / 未登录则页面显示「登录后查看」。
+      // Fetch achievements and enable claiming only when logged in online;
+      // offline / not logged in: the page shows a "log in to view" message.
       ...(client && loggedIn
         ? {
             loadAchievements: () => client.getAchievements(),
@@ -1344,7 +1368,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const campaignStartTs = Date.now();
     views.showGame({
       onGameEnd(winner, stats, replay) {
-        // 先落盘录像（一次），既供结算页回放、也供 L1 抽检（§8.6）补传复算。
+        // Persist the replay to disk first (once), serving both the result-screen playback and
+        // potential L1 spot-check re-evaluation (§8.6).
         const kept = keepReplay(replay);
         const durationSec = Math.round((Date.now() - campaignStartTs) / 1000);
         if (winner === 0) {
@@ -1355,8 +1380,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             stars,
             duration_sec: durationSec,
           });
-          // 服务器权威结算（§8）：在线 → POST /pve/clear（被抽中则用 kept 录像走 /pve/verify 复算）；
-          // 离线 → 入队待结算（fire-and-forget，回到 CampaignMap 时重读 save / pending 反映状态）。
+          // Server-authoritative settlement (§8): online → POST /pve/clear (if selected for spot-check,
+          // the kept replay is submitted via /pve/verify for re-evaluation);
+          // offline → enqueue for deferred settlement (fire-and-forget; save / pending are re-read on
+          // returning to CampaignMap to reflect the state).
           if (stars > 0) void saveManager.recordClear(levelId, stars, kept, achievementStatDelta(stats[0]));
         } else {
           analytics.track('game_end', {
@@ -1382,12 +1409,14 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   /**
-   * 专属教学关 ch0_tutorial（FTUE 步骤 ⑤，ONBOARDING_DESIGN §3）。永不失败：导演独占终局，
-   * winner 恒为本地玩家。毕业 / 跳过都写 tutorial_done 后落大厅；不计战役进度（不调 recordClear）。
+   * Dedicated tutorial level ch0_tutorial (FTUE step ⑤, ONBOARDING_DESIGN §3). Never fails: the
+   * director owns the endgame, so winner is always the local player. Both completion and skip write
+   * tutorial_done then return to the lobby; does not count toward campaign progress (recordClear is
+   * not called).
    */
   function goTutorial(): void {
     const level = getLevel(TUTORIAL_LEVEL_ID);
-    if (!level) { goLobby(); return; }  // 教学关缺失时静默跳过，不卡住新手。
+    if (!level) { goLobby(); return; }  // If the tutorial level is missing, skip silently rather than blocking new players.
     inLobby = false;
     platform.onGameplayStart();
     analytics.track('tutorial_start', { level_id: TUTORIAL_LEVEL_ID });
@@ -1395,10 +1424,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onGameEnd(_winner, _stats, _replay) {
         saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
         analytics.track('tutorial_complete', { level_id: TUTORIAL_LEVEL_ID });
-        // §5 首胜钩子：毕业 = 首胜，引出每日签到由大厅红点承载，这里不新增金币龙头。
+        // §5 first-win hook: graduation = first win; the daily check-in is surfaced via the lobby red dot, so no additional coin source is added here.
         goLobby();
       },
-      onExitToLobby() {  // 跳过教学
+      onExitToLobby() {  // Skip tutorial
         saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
         analytics.track('tutorial_skip', { step: 'tutorial' });
         goLobby();
@@ -1416,8 +1445,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   /**
-   * 分享当前内存里的状态流录像（REPLAY_SHARE_DESIGN §4.3）。读 {@link stateRecorder} 单槽 → 上传
-   * 铸码 → 平台分享（Web 复制链接 / 微信卡片）。无引擎重跑、无服务端复算。需 api（在线）。
+   * Share the in-memory state-stream replay (REPLAY_SHARE_DESIGN §4.3). Reads the {@link stateRecorder}
+   * single slot → uploads to mint a share code → platform share (Web copy-link / WeChat card).
+   * No engine re-run, no server re-evaluation. Requires api (online).
    */
   async function doShareReplay(overrides: { mode?: string; winner?: number } = {}): Promise<void> {
     if (!api) return;
@@ -1431,8 +1461,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       const { shareCode } = await api.createStateReplayShare(enc);
       await platform.shareReplay(shareCode, t('share.title'));
     } catch (e) {
-      // 分享失败按因分类，便于联调定位 + 后续接 UI 提示。最常见两类：体量超限（这局太长，
-      // 已压缩仍 > 上限）/ 铸码限流（短时分享过多）。其余按网络/未知。
+      // Classify share failures by cause for debugging and future UI feedback. The two most common
+      // reasons: payload too large (this match was too long, still exceeds the limit after compression)
+      // / minting rate-limited (too many shares in a short window). All others are treated as network / unknown.
       const code = e instanceof ApiError ? e.code : null;
       const reason =
         code === 'BAD_REQUEST' ? 'too_large' : code === 'RATE_LIMITED' ? 'rate_limited' : 'error';
@@ -1441,8 +1472,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   /**
-   * 无登录直达哑状态播放器（REPLAY_SHARE_DESIGN §4.1）：凭分享码匿名拉 blob → 解码 → 进
-   * StatePlayerScene。失败（不存在/超期/网络）则退回登录（带试玩入口）。
+   * Deep-link to the mute state player without login (REPLAY_SHARE_DESIGN §4.1): anonymously fetch
+   * the blob by share code → decode → enter StatePlayerScene. On failure (not found / expired /
+   * network error) fall back to the login screen (which includes a play-demo entry).
    */
   async function goStatePlayer(shareCode: string): Promise<void> {
     inLobby = false;
@@ -1537,7 +1569,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
     const view: NetGameView = views.showGameNet(localOwner, {
       onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) {
-        // S9-6: 附本方本局成就计数（kill.*/cast.*）。meta 仅 ranked 累加 + L1 校验；friendly 忽略。
+        // S9-6: attach local-side per-match achievement counters (kill.*/cast.*). Meta accumulates only in ranked + L1 verification; friendly matches are ignored.
         session.reportResult(matchStateHash(winner, stats), winner ?? 0, achievementStatDelta(stats[localOwner]));
         const replay = buildNetReplay(winner);
         const result = winner === null ? 'draw' : winner === localOwner ? 'win' : 'loss';
@@ -1608,7 +1640,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   function start(): void {
-    // 录像分享落地（REPLAY_SHARE_DESIGN §4.1）：启动参数带分享码 → 跳过 intro/登录，直达哑播放器。
+    // Replay share deep-link landing (REPLAY_SHARE_DESIGN §4.1): if the launch parameters contain a share code → skip intro/login and go directly to the mute player.
     const shareCode = platform.getLaunchShareCode();
     if (shareCode && api) {
       void goStatePlayer(shareCode);

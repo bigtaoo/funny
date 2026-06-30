@@ -26,15 +26,15 @@ interface MediaStyle {
 }
 
 /**
- * Rarity → media style. Mirrors §2: 普通=铅笔(灰) / 精良=钢笔(蓝) / 稀有=马克笔(橙) /
- * 史诗=荧光笔·烫金(紫+金)。Body colors line up with EquipmentScene.RARITY_COLOR so the
- * glyph and its border read as one item.
+ * Rarity → media style. Mirrors §2: common=pencil(grey) / fine=fountain pen(blue) /
+ * rare=marker(orange) / epic=highlighter+gold foil(purple+gold). Body colors line up
+ * with EquipmentScene.RARITY_COLOR so the glyph and its border read as one item.
  */
 const MEDIA: Record<EquipRarity, MediaStyle> = {
   common: { ink: palette.pencil,  fill: 0x9aa0a6, accent: palette.pencilLight },
   fine:   { ink: palette.inkBlue, fill: 0x4477cc, accent: 0x6f9fe0 },
   rare:   { ink: 0xb5651d,        fill: 0xe08a2c, accent: 0xf6b65a },
-  epic:   { ink: 0x6f3f93,        fill: 0xaa55cc, accent: 0xd9b44a }, // 紫体 + 烫金点缀
+  epic:   { ink: 0x6f3f93,        fill: 0xaa55cc, accent: 0xd9b44a }, // purple body + gold foil accent
 };
 
 /**

@@ -1,6 +1,6 @@
 /**
  * labelDecor.ts — the battlefield "corner hand-lettering" textures (art-direction
- * §6.2, B 组). Four individual hand-drawn labels — `[START]` / `BOSS` / `WIN!` /
+ * §6.2, B-group). Four individual hand-drawn labels — `[START]` / `BOSS` / `WIN!` /
  * a curved `→ here` arrow — that get snapped into the paper margins around the
  * grid (see battleLabels.ts) to give a match that scribbled-notebook,
  * campaign-page feel.
@@ -14,8 +14,8 @@
  * skipped entirely.
  *
  * Lines are already the spec ink colour (red marker / blue pen — baked in by
- * art/ui/decos-b/pack_labels.cjs per 我蓝敌红), so they are used as-is and must
- * NOT be tinted (same rule as §6.2 注 for the A group).
+ * art/ui/decos-b/pack_labels.cjs per "player=blue, enemy=red"), so they are used as-is and must
+ * NOT be tinted (same rule as §6.2 note for the A group).
  */
 import * as PIXI from 'pixi.js-legacy';
 import { assetIO } from '../assets/assetIO';

@@ -1,10 +1,12 @@
-// gateway → matchsvc 内部 HTTP 客户端（S1-M5，matchsvc 拆为独立进程后）。
-// 玩家控制命令解码后经此转发给 matchsvc；matchsvc 反向经 /gw/push 推事件回来（internalHttp.ts）。
-// 全部 fire-and-forget——matchsvc 处理结果以异步 push 回到玩家，不在 HTTP 响应里返回房间态。
-// 内部鉴权：X-Internal-Key（共用 NW_INTERNAL_KEY）。
+// gateway → matchsvc internal HTTP client (S1-M5, after matchsvc was split into a separate process).
+// Decoded player control commands are forwarded to matchsvc via this client;
+// matchsvc pushes events back to gateway via /gw/push (internalHttp.ts).
+// All calls are fire-and-forget — matchsvc results are delivered asynchronously via push; room state is not returned in the HTTP response.
+// Internal auth: X-Internal-Key (shared NW_INTERNAL_KEY).
 //
-// 这里的 PushMsg / PlayerView 是 matchsvc 同名类型的 JSON 镜像（跨进程的线契约是 JSON，
-// 两侧各持结构相同的本地类型，与 REST/JSON 内部通信约定一致，见 META_DESIGN §6.7）。
+// PushMsg / PlayerView here are JSON mirrors of the identically-named types in matchsvc
+// (the wire contract across processes is JSON; each side holds a locally-typed copy of the same structure,
+// consistent with the REST/JSON internal communication convention — see META_DESIGN §6.7).
 
 import { createLogger, internalHeaders } from '@nw/shared';
 
@@ -15,22 +17,22 @@ export interface PlayerView {
   name: string;
   ready: boolean;
   connected: boolean;
-  /** 9 位数字公开 id（玩家交流/投诉用；缺省空串）。 */
+  /** 9-digit public ID (used for player communication / reporting; defaults to empty string). */
   publicId: string;
 }
 export type PushMsg =
   | { kind: 'room_state'; code: string; players: PlayerView[]; phase: number }
   | { kind: 'match_found'; gameUrl: string; ticket: string }
-  // 匹配超时降级打 AI（feature flag match_bot_fallback）：客户端开本地 AI 局，无 ticket/gameUrl。
+  // Matchmaking timeout fallback to AI (feature flag match_bot_fallback): client starts a local AI game; no ticket/gameUrl.
   | { kind: 'match_bot'; seed: number; opponentName: string; elo: number; difficulty: string }
   | { kind: 'room_error'; code: string; message: string }
-  // —— 社交实时推送（S6，meta 经 /gw/push 调用，与 matchsvc 共用此通道）——
+  // —— Social real-time pushes (S6, meta calls via /gw/push, sharing this channel with matchsvc) ——
   | { kind: 'friend_presence'; publicId: string; online: boolean }
   | { kind: 'friend_request'; requestId: string; fromPublicId: string; fromName: string; message: string }
   | { kind: 'friend_update'; publicId: string; added: boolean }
   | { kind: 'chat_message'; convId: string; fromPublicId: string; fromName: string; body: string; ts: number }
   | { kind: 'mail_new'; mailId: string; hasAttachment: boolean }
-  // —— SLG 大世界实时推送（S8-2，worldsvc 经 /gw/push 调用，与 matchsvc/meta 共用此通道）——
+  // —— SLG world real-time pushes (S8-2, worldsvc calls via /gw/push, sharing this channel with matchsvc/meta) ——
   | {
       kind: 'march_update';
       marchId: string;
@@ -66,16 +68,16 @@ export type PushMsg =
       lootSummary: string;
       replayRef: string;
     }
-  // 家族频道消息（S8-4，worldsvc 经 /gw/push 定向直推；≤30 人 O(n) 可接受）。
+  // Family channel message (S8-4, worldsvc delivers via /gw/push targeted push; ≤30 members, O(n) is acceptable).
   | { kind: 'family_msg'; familyId: string; fromPublicId: string; fromName: string; body: string; ts: number }
-  // 宗门频道消息（S8-4b，worldsvc 经 Redis pub/sub 扇出 → gateway 据在线成员下发；≤900 人）。
+  // Sect channel message (S8-4b, worldsvc fans out via Redis pub/sub → gateway delivers to online members; ≤900 members).
   | { kind: 'sect_msg'; sectId: string; fromPublicId: string; fromName: string; body: string; ts: number }
-  // 国家/世界公频（B7，worldsvc 经 Redis pub/sub 扇出 → gateway 据同 world 在线玩家下发）。
+  // Nation / world public channel (B7, worldsvc fans out via Redis pub/sub → gateway delivers to online players in the same world).
   | { kind: 'nation_msg'; worldId: string; fromPublicId: string; fromName: string; body: string; ts: number };
 
 export class MatchsvcClient {
   constructor(
-    private readonly baseUrl: string | null, // 形如 http://matchsvc:8091（内部直连）
+    private readonly baseUrl: string | null, // e.g. http://matchsvc:8091 (internal direct connection)
     private readonly internalKey: string,
   ) {}
 
@@ -97,7 +99,7 @@ export class MatchsvcClient {
         if (!res.ok) log.warn('matchsvc returned non-OK', { path, status: res.status });
       })
       .catch((e) => {
-        // 命令丢失：玩家可重试（建房/加入/开局均幂等于「再点一次」），但联调期必须看见。
+        // Command lost: the player can retry (create room / join / start are all idempotent to a second click), but this must be visible during integration testing.
         log.error('matchsvc POST failed', { path, url: this.baseUrl, err: (e as Error).message });
       });
   }

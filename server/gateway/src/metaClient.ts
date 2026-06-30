@@ -1,11 +1,11 @@
-// gateway → meta 内部调用（M17）。目前只用一处：ranked 入队前取玩家当前 ELO，
-// 带进 matchsvc enqueue，让 matchsvc 保持 DB-free（SERVER_API.md §8.5）。
-// 内部鉴权：X-Internal-Key（共用 NW_INTERNAL_KEY）。meta 不可用 → 退回初始分。
+// gateway → meta internal calls (M17). Currently used in one place: fetch the player's current ELO
+// before enqueueing for ranked, and pass it into matchsvc enqueue so matchsvc stays DB-free (SERVER_API.md §8.5).
+// Internal auth: X-Internal-Key (shared NW_INTERNAL_KEY). meta unavailable → fall back to initial rating.
 import { INITIAL_ELO, internalHeaders } from '@nw/shared';
 
 export class MetaClient {
   constructor(
-    private readonly baseUrl: string | null, // 形如 http://meta:8080（无 /api 前缀，内部直连）
+    private readonly baseUrl: string | null, // e.g. http://meta:8080 (no /api prefix, direct internal connection)
     private readonly internalKey: string,
   ) {}
 
@@ -13,7 +13,7 @@ export class MetaClient {
     return this.baseUrl !== null;
   }
 
-  /** 取 ELO；meta 未配置 / 出错 → 返回 INITIAL_ELO（ranked 仍可匹配，分数从初始算）。 */
+  /** Fetch ELO; meta not configured / error → return INITIAL_ELO (ranked can still match, starting from the initial score). */
   async getElo(accountId: string): Promise<number> {
     if (!this.baseUrl) return INITIAL_ELO;
     try {
@@ -28,8 +28,8 @@ export class MetaClient {
   }
 
   /**
-   * 取玩家公开资料（展示名 + 9 位数字公开 id），用于房间显示。meta 未配置 / 出错 →
-   * 返回空（gateway 退回 accountId 前缀做名字、publicId 为空）。
+   * Fetch a player's public profile (display name + 9-digit public id) for room display.
+   * meta not configured / error → return empty (gateway falls back to accountId prefix as name, publicId empty).
    */
   async getProfile(accountId: string): Promise<{ displayName?: string; publicId?: string; equippedTitle?: string }> {
     if (!this.baseUrl) return {};
@@ -44,7 +44,7 @@ export class MetaClient {
   }
 
   /**
-   * 取某账号的好友 accountId 列表（presence 广播范围，SOC9）。meta 未配置 / 出错 → 空。
+   * Fetch the list of friend accountIds for an account (presence broadcast scope, SOC9). meta not configured / error → empty.
    */
   async getFriends(accountId: string): Promise<string[]> {
     if (!this.baseUrl) return [];

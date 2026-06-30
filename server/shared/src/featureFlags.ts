@@ -1,137 +1,142 @@
-// 功能开关（Feature Flags）核心：类型安全白名单 + default 兜底 + 统一求值纯函数 + 进程级缓存。
-// 设计基准：design/game/FEATURE_FLAGS_DESIGN.md。
+// Feature Flags core: type-safe allowlist + default fallback + unified pure evaluation function + process-level cache.
+// Design reference: design/game/FEATURE_FLAGS_DESIGN.md.
 //
-// 单一真源原则：求值逻辑（evaluateFlag）前后端共用同一实现——
-//   • metaserver 在 /bootstrap 对客户端「求值成布尔 map」（规则/白名单绝不下发）；
-//   • 不连库的后端（gateway/matchsvc/worldsvc…）轮询 admin 拿原始规则，自己 evaluateFlag 现场求值。
-// flag 与 SaveData.flags（玩家态）/ AccountDoc.flags（账号态）彻底解耦——这是运营控制的全局开关。
+// Single source of truth: the evaluation logic (evaluateFlag) is shared between frontend and backend —
+//   • metaserver resolves flags to a boolean map for the client at /bootstrap (raw rules/allowlists are never sent down);
+//   • backends without DB access (gateway/matchsvc/worldsvc…) poll admin for raw rules and call evaluateFlag locally.
+// Flags are fully decoupled from SaveData.flags (player state) / AccountDoc.flags (account state) — these are operator-controlled global switches.
 
-// ── 白名单（代码侧登记，新增 flag 在此追加）─────────────────────────────
+// ── Allowlist (registered in code; append new flags here) ───────────────────
 /**
- * 全部 feature flag 的注册表。key 即 flag 标识，前后端用 {@link FlagKey} 类型引用——拼错编译期报错。
- * - `default`：库里查不到 / admin 不可达时的兜底值，**必须存在**。
- * - `side`：`client | server | both`，仅文档/校验提示，标明这个 flag 在哪侧被读。
+ * Registry of all feature flags. The key is the flag identifier; both frontend and backend reference it via {@link FlagKey} — a typo will cause a compile-time error.
+ * - `default`: Fallback value when the flag is not found in the database or admin is unreachable. **Required.**
+ * - `side`: `client | server | both` — documentation/validation hint indicating which side reads this flag.
  */
 export const FEATURE_FLAGS = {
   /**
-   * 大区匹配机器人兜底：打开后，玩家 ranked 匹配等待超过阈值（默认 30s）仍无真人对手，
-   * 即降级为「打 AI」（客户端本地 AI 对局）。关闭则一直等真人。
+   * Bot fallback for ranked matchmaking: when enabled, if a player waits longer than the threshold (default 30s)
+   * without finding a real opponent, the match is downgraded to a local AI match on the client. When disabled,
+   * the player always waits for a real opponent.
    */
-  match_bot_fallback: { default: false, desc: '匹配超时降级打AI', side: 'server' },
+  match_bot_fallback: { default: false, desc: 'Matchmaking timeout fallback to AI', side: 'server' },
 
-  // ── 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9）────────────────────────────
-  // 级别用「多 flag」编码（flag 只有 true/false）：运营把目标玩家 publicId 填进**想要级别**那个 flag 的
-  // allowPublicIds。客户端取**最 verbose 的已开 flag**作上传阈值（debug>info>warn>error），上传该级别及以上；
-  // 无任何命中 = 不上报。default 全 false → 绝大多数玩家 bootstrap 拿到空 map、永不上报。
-  client_log_error: { default: false, desc: '客户端日志上报-error', side: 'client' },
-  client_log_warn: { default: false, desc: '客户端日志上报-warn', side: 'client' },
-  client_log_info: { default: false, desc: '客户端日志上报-info', side: 'client' },
-  client_log_debug: { default: false, desc: '客户端日志上报-debug', side: 'client' },
+  // ── Client log targeting (FEATURE_FLAGS_DESIGN §9) ──────────────────────────
+  // Log levels are encoded via multiple flags (each flag is only true/false): operators put target player
+  // publicIds into the allowPublicIds of whichever flag corresponds to the desired level.
+  // The client picks the most verbose enabled flag as the upload threshold (debug>info>warn>error)
+  // and uploads logs at that level and above. No match = no reporting.
+  // All defaults are false → the vast majority of players receive an empty map at bootstrap and never report.
+  client_log_error: { default: false, desc: 'Client log upload - error', side: 'client' },
+  client_log_warn: { default: false, desc: 'Client log upload - warn', side: 'client' },
+  client_log_info: { default: false, desc: 'Client log upload - info', side: 'client' },
+  client_log_debug: { default: false, desc: 'Client log upload - debug', side: 'client' },
 } as const;
 
 export type FlagKey = keyof typeof FEATURE_FLAGS;
 
-/** 全部白名单 key（运行期枚举：admin 列表 / metaserver 求值全量用）。 */
+/** All allowlisted keys (runtime enumeration: used by admin listings and full metaserver evaluation). */
 export const FLAG_KEYS = Object.keys(FEATURE_FLAGS) as FlagKey[];
 
 export function isFlagKey(v: unknown): v is FlagKey {
   return typeof v === 'string' && Object.prototype.hasOwnProperty.call(FEATURE_FLAGS, v);
 }
 
-/** flag 默认值（doc 不存在时的兜底）。 */
+/** Default value for a flag (fallback when the doc does not exist). */
 export function flagDefault(key: FlagKey): boolean {
   return FEATURE_FLAGS[key].default;
 }
 
-// ── 平台 / 规则文档 ──────────────────────────────────────────────────────
+// ── Platform / rule documents ────────────────────────────────────────────────
 export type FlagPlatform = 'web' | 'wechat' | 'crazygames';
 export const FLAG_PLATFORMS: readonly FlagPlatform[] = ['web', 'wechat', 'crazygames'];
 
-/** 定向规则（admin 库 featureFlags 集合的可选 rollout 子文档）。 */
+/** Targeting rules (optional rollout sub-document in the admin featureFlags collection). */
 export interface FlagRollout {
-  /** 0-100，按 hash(flagKey+accountId) 稳定分桶。 */
+  /** 0-100, stable bucket assignment via hash(flagKey+accountId). */
   pct?: number;
-  /** 命中的部署区域（见 DEPLOY_TOPOLOGY）。 */
+  /** Matched deployment regions (see DEPLOY_TOPOLOGY). */
   regions?: string[];
-  /** 命中的平台。 */
+  /** Matched platforms. */
   platforms?: FlagPlatform[];
-  /** 白名单：命中即开（盖过 pct/region/platform）。 */
+  /** Allowlist: a match enables the flag (overrides pct/region/platform). */
   allowAccounts?: string[];
-  /** 黑名单：命中即关（盖过 allow 之外的一切）。 */
+  /** Denylist: a match disables the flag (overrides everything except the allowlist). */
   denyAccounts?: string[];
   /**
-   * publicId 白名单（FEATURE_FLAGS_DESIGN §9.1）：命中即开，与 allowAccounts 同优先级。
-   * 定向键 = AccountDoc.publicId（9 位、玩家可见），**非**内部 accountId——运营在 ops 直接填最直观，
-   * 客户端轮询 bootstrap 时带上自己的 publicId，求值时注入 ctx.publicId，无需查库映射。
-   * 客户端日志定向采集（client_log_*）即用此维度精确点名单个玩家。
+   * publicId allowlist (FEATURE_FLAGS_DESIGN §9.1): a match enables the flag, same priority as allowAccounts.
+   * The targeting key is AccountDoc.publicId (9-digit, player-visible), **not** the internal accountId —
+   * operators enter it directly in ops (most human-readable form). The client sends its own publicId when
+   * polling /bootstrap; it is injected as ctx.publicId at evaluation time, no DB lookup needed.
+   * Client log targeting (client_log_*) uses this dimension to target individual players precisely.
    */
   allowPublicIds?: string[];
 }
 
-/** flag 规则文档（admin 库 featureFlags 集合；_id = flag key）。 */
+/** Flag rule document (admin featureFlags collection; _id = flag key). */
 export interface FeatureFlagDoc {
   _id: FlagKey;
-  /** 总闸：false → 任何人都关（无视定向）。 */
+  /** Master switch: false → disabled for everyone (ignores all targeting). */
   enabled: boolean;
   rollout?: FlagRollout;
   desc?: string;
   updatedAt: number;
-  /** admin 账号 ID。 */
+  /** Admin account ID. */
   updatedBy: string;
 }
 
-/** 求值上下文（按当前 user / 部署环境）。 */
+/** Evaluation context (for the current user / deployment environment). */
 export interface FlagContext {
-  /** 未登录时 undefined。 */
+  /** Undefined when not logged in. */
   accountId?: string;
-  /** 玩家可见的 9 位 publicId（§9.1 定向采集用；客户端 bootstrap 轮询时带入）。未知时 undefined。 */
+  /** Player-visible 9-digit publicId (used for §9.1 targeted log collection; sent by the client when polling /bootstrap). Undefined when unknown. */
   publicId?: string;
-  /** 部署区域（由进程注入，知道自己在哪区）。 */
+  /** Deployment region (injected by the process, which knows its own region). */
   region?: string;
   platform?: FlagPlatform;
 }
 
-// ── 稳定 hash（FNV-1a 32-bit）──────────────────────────────────────────────
-// 灰度分桶必须稳定：同一玩家在同一 flag 上结果不抖动（否则名单飘移）。FNV-1a 简单、无依赖、分布够均匀。
+// ── Stable hash (FNV-1a 32-bit) ────────────────────────────────────────────
+// Rollout bucketing must be stable: the same player must always land in the same bucket for a given flag
+// (otherwise the population drifts). FNV-1a is simple, dependency-free, and sufficiently uniform.
 const FNV_OFFSET = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 
-/** FNV-1a 32-bit，返回无符号 32 位整数。 */
+/** FNV-1a 32-bit hash; returns an unsigned 32-bit integer. */
 export function fnv1a(input: string): number {
   let h = FNV_OFFSET;
   for (let i = 0; i < input.length; i++) {
     h ^= input.charCodeAt(i) & 0xff;
-    // Math.imul 做 32 位无溢出乘法。
+    // Math.imul performs 32-bit multiplication without overflow.
     h = Math.imul(h, FNV_PRIME);
   }
   return h >>> 0;
 }
 
-/** 稳定分桶：返回 [0,100) 区间的桶号（hash(flagKey+accountId) % 100）。 */
+/** Stable bucket assignment: returns a bucket number in [0,100) via hash(flagKey+accountId) % 100. */
 export function rolloutBucket(key: string, accountId: string): number {
   return fnv1a(`${key}:${accountId}`) % 100;
 }
 
-// ── 求值（前后端唯一真源）──────────────────────────────────────────────────
+// ── Evaluation (single source of truth for frontend and backend) ────────────
 /**
- * 求值一个 flag。短路顺序（FEATURE_FLAGS_DESIGN §3）：
- *  1. doc 不存在 → default；
- *  2. enabled===false → false（总闸优先于一切）；
- *  3. denyAccounts 命中 → false；
- *  4. allowAccounts / allowPublicIds 命中 → true（盖过 region/platform/pct）；
- *  5. regions 有限定且当前 region 不在内 → false；platforms 同理；
- *  6. pct 有限定：bucket < pct → 否则 false；未登录无 accountId 时按 pct>=100 才算命中（保守）；
- *  7. 全部通过 → true。
+ * Evaluates a flag. Short-circuit order (FEATURE_FLAGS_DESIGN §3):
+ *  1. doc does not exist → default;
+ *  2. enabled===false → false (master switch takes priority over everything);
+ *  3. denyAccounts match → false;
+ *  4. allowAccounts / allowPublicIds match → true (overrides region/platform/pct);
+ *  5. regions constrained and current region not in list → false; same for platforms;
+ *  6. pct constrained: bucket < pct → true, otherwise false; when not logged in (no accountId), only pct>=100 matches (conservative);
+ *  7. all checks pass → true.
  */
 export function evaluateFlag(key: FlagKey, doc: FeatureFlagDoc | null | undefined, ctx: FlagContext): boolean {
   if (!doc) return flagDefault(key);
   if (doc.enabled === false) return false;
   const r = doc.rollout;
-  if (!r) return true; // 总闸开、无定向 → 全开。
+  if (!r) return true; // Master switch on, no targeting rules → enabled for everyone.
 
   if (ctx.accountId && r.denyAccounts?.includes(ctx.accountId)) return false;
   if (ctx.accountId && r.allowAccounts?.includes(ctx.accountId)) return true;
-  // publicId 白名单与 allowAccounts 同优先级（§9.1）：命中即开，盖过 region/platform/pct。
+  // publicId allowlist has the same priority as allowAccounts (§9.1): a match enables the flag, overriding region/platform/pct.
   if (ctx.publicId && r.allowPublicIds?.includes(ctx.publicId)) return true;
 
   if (r.regions && r.regions.length > 0) {
@@ -144,17 +149,19 @@ export function evaluateFlag(key: FlagKey, doc: FeatureFlagDoc | null | undefine
     const pct = Math.max(0, Math.min(100, r.pct));
     if (pct >= 100) return true;
     if (pct <= 0) return false;
-    // 未登录无 accountId：无法稳定分桶 → 仅 pct>=100 命中（上面已 return），故此处 false。
+    // Not logged in, no accountId: cannot assign a stable bucket → only pct>=100 matches (already returned above), so return false here.
     if (!ctx.accountId) return false;
     return rolloutBucket(key, ctx.accountId) < pct;
   }
   return true;
 }
 
-// ── 进程级缓存（不连库后端：轮询 admin 原始规则 + 短 TTL + 本地求值）─────────────────
+// ── Process-level cache (backends without DB access: poll admin for raw rules + short TTL + local evaluation) ──────
 /**
- * 校验并规整一份原始规则文档（来自 admin 内部端点 / 库）。丢弃非白名单 key、非法字段。
- * 容错优先：任何字段缺失/越界都降级为「忽略该字段」，不抛——分发链路绝不能因脏数据崩。
+ * Validates and normalises a raw rule document (from the admin internal endpoint / database).
+ * Drops keys not in the allowlist and any invalid fields.
+ * Fault-tolerance first: any missing or out-of-range field is silently ignored (no throw) —
+ * the distribution path must never crash due to dirty data.
  */
 export function sanitizeFlagDoc(raw: unknown): FeatureFlagDoc | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -185,7 +192,7 @@ export function sanitizeFlagDoc(raw: unknown): FeatureFlagDoc | null {
   }
   return {
     _id: o._id,
-    enabled: o.enabled !== false, // 缺省视为开（仅显式 false 关总闸）
+    enabled: o.enabled !== false, // defaults to enabled (only an explicit false closes the master switch)
     ...(rollout ? { rollout } : {}),
     ...(typeof o.desc === 'string' ? { desc: o.desc } : {}),
     updatedAt: typeof o.updatedAt === 'number' ? o.updatedAt : 0,
@@ -194,21 +201,21 @@ export function sanitizeFlagDoc(raw: unknown): FeatureFlagDoc | null {
 }
 
 export interface FeatureFlagCacheOpts {
-  /** 拉全量原始规则的取数函数（通常 = 轮询 admin GET /admin/internal/flags）。 */
+  /** Function to fetch all raw rules (typically polling admin GET /admin/internal/flags). */
   fetchAll: () => Promise<unknown[]>;
-  /** 刷新间隔 ms。默认 30000。 */
+  /** Refresh interval in ms. Default 30000. */
   ttlMs?: number;
-  /** 注入时钟（测试）。默认 Date.now。 */
+  /** Inject clock (for testing). Default Date.now. */
   now?: () => number;
-  /** 区域（进程知道自己在哪区，注入到求值 ctx 缺省值）。 */
+  /** Region (the process knows its own region; injected as the default evaluation ctx value). */
   region?: string;
-  /** 刷新失败回调（默认静默——优雅降级吃旧缓存）。 */
+  /** Callback on refresh failure (defaults to silent — gracefully falls back to stale cache). */
   onError?: (err: unknown) => void;
 }
 
 /**
- * 不连库后端的 flag 缓存：启动 refresh 一次 → 每 ttl 刷新 → 暴露 isOn(key, ctx)（内部即 evaluateFlag）。
- * 降级策略：admin 不可达时吃上次缓存；冷启动从未拉到 → default 兜底。绝不阻塞主流程。
+ * Flag cache for backends without DB access: triggers one refresh on start → refreshes every ttl → exposes isOn(key, ctx) (which internally calls evaluateFlag).
+ * Degradation strategy: when admin is unreachable, uses the last cached value; if never fetched on cold start → falls back to default. Never blocks the main flow.
  */
 export class FeatureFlagCache {
   private docs = new Map<FlagKey, FeatureFlagDoc>();
@@ -226,7 +233,7 @@ export class FeatureFlagCache {
     if (opts.onError) this.onError = opts.onError;
   }
 
-  /** 拉一次全量并替换缓存。失败保留旧缓存（不抛）。 */
+  /** Fetches the full rule set and replaces the cache. On failure, retains the old cache (no throw). */
   async refresh(): Promise<void> {
     try {
       const raw = await this.fetchAll();
@@ -239,11 +246,11 @@ export class FeatureFlagCache {
       this.loadedOnce = true;
     } catch (e) {
       this.onError?.(e);
-      // 保留旧缓存，优雅降级。
+      // Retain old cache, graceful degradation.
     }
   }
 
-  /** 启动周期刷新（先同步拉一次，再定时）。timer unref——不挡进程退出。 */
+  /** Starts periodic refresh (fetches once immediately, then on a timer). The timer is unref'd — it does not prevent process exit. */
   async start(): Promise<void> {
     await this.refresh();
     if (!this.timer) {
@@ -259,19 +266,19 @@ export class FeatureFlagCache {
     }
   }
 
-  /** 求值一个 flag（缺省把 cache.region 注入 ctx，调用方可覆盖）。 */
+  /** Evaluates a flag (injects cache.region into ctx by default; callers may override). */
   isOn(key: FlagKey, ctx: FlagContext = {}): boolean {
     const merged: FlagContext = { ...ctx };
     if (merged.region === undefined && this.region !== undefined) merged.region = this.region;
     return evaluateFlag(key, this.docs.get(key) ?? null, merged);
   }
 
-  /** 当前缓存里某 flag 的原始规则（admin 工具/调试用；无覆盖返回 null）。 */
+  /** Raw rule document for a flag in the current cache (for admin tooling/debugging; returns null if not present). */
   rawDoc(key: FlagKey): FeatureFlagDoc | null {
     return this.docs.get(key) ?? null;
   }
 
-  /** 是否至少成功拉到过一次（false = 仍在 default 兜底）。 */
+  /** Whether at least one successful fetch has completed (false = still falling back to defaults). */
   get hasLoaded(): boolean {
     return this.loadedOnce;
   }

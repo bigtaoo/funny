@@ -13,27 +13,28 @@ import {
   xpToLevel, xpToNextLevel,
 } from '../game/balance/battlepassDefs';
 
-// ── BattlePassScene — 战令面板（SE-9）──────────────────────────────────────────
+// ── BattlePassScene — Battle Pass panel (SE-9) ────────────────────────────────
 //
-// 入口：StatsScene「战令」按钮（onOpenBattlePass）。
-// 显示：当前等级进度条 + 双轨（免费/付费）30 级奖励格，四态：
-//   · 可领（绿色）→ 点击 claim；· 已领（灰色）；· 未解锁（虚线）；· 付费锁（金色锁）。
-// 购买 Pass 按钮：未购买时常驻底部（走 commercial）。
+// Entry point: StatsScene "Battle Pass" button (onOpenBattlePass).
+// Displays: current level progress bar + dual track (free/paid) 30-level reward cells, four states:
+//   · Claimable (green) → tap to claim; · Claimed (grey); · Locked (dashed); · Pass-locked (gold lock).
+// Buy Pass button: always visible at bottom when not purchased (goes through commercial).
 
 export interface BattlePassCallbacks {
   onBack(): void;
   /**
-   * 获取当前存档的战令数据。无时返回 undefined（未参与本季）。
-   * 离线/未登录时省略 → 显「登录后查看」。
+   * Get the current save's battle pass data. Returns undefined when not yet joined this season.
+   * Omitted when offline/not logged in → shows "login to view".
    */
   getBattlePass?(): SaveData['battlePass'];
-  /** 购买当前赛季 Pass（600 金币）。 */
+  /** Purchase the current season Pass (600 coins). */
   onBuy?(): Promise<void>;
-  /** 领取奖励。返回实际发放金币（0 = 非金币奖励）。 */
+  /** Claim a reward. Returns actual coins awarded (0 = non-coin reward). */
   onClaim?(track: 'free' | 'paid', level: number): Promise<number>;
   /**
-   * 商城分组同级直达（LOBBY_IA_REDESIGN P1.5）。仅在「商城」分组语境下注入；
-   * 注入后顶部出现 [商城|盲盒|战令] tab 条，否则退化为纯 back（成就等单独入口）。
+   * Direct navigation to sibling shop group tabs (LOBBY_IA_REDESIGN P1.5). Only injected in the
+   * "Shop" group context; when injected, a [Shop|Gacha|BattlePass] tab bar appears at the top,
+   * otherwise degrades to plain back button (standalone entry points like achievements).
    */
   openShop?(): void;
   openGacha?(): void;
@@ -41,7 +42,7 @@ export interface BattlePassCallbacks {
 
 interface Hit { rect: Rect; fn: () => void; }
 
-/** 单格四态 */
+/** Four cell states for a single reward cell */
 type CellState = 'claimable' | 'claimed' | 'locked' | 'pass_required';
 
 export class BattlePassScene implements Scene {
@@ -90,7 +91,7 @@ export class BattlePassScene implements Scene {
     this.render();
   }
 
-  /** 商城分组 tab 条（战令 active）。仅分组语境（openShop 注入）绘制；返回正文起点 y。 */
+  /** Shop group tab bar (battle pass active). Only drawn in group context (openShop injected); returns body start y. */
   private drawGroupTabs(tbH: number): number {
     if (!this.cb.openShop) return tbH;
     const { w, h } = this;
@@ -120,7 +121,7 @@ export class BattlePassScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // 商城分组 tab 条（LOBBY_IA_REDESIGN P1.5）：[商城|盲盒|战令]，战令 active。仅分组语境绘制。
+    // Shop group tab bar (LOBBY_IA_REDESIGN P1.5): [Shop|Gacha|BattlePass], battle pass active. Only drawn in group context.
     const top = this.drawGroupTabs(tbH);
 
     // ── Auth / offline guard ──────────────────────────────────────────────────

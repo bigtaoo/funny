@@ -1,9 +1,9 @@
-// worldsvc 国民加成端到端（S8-6.5 / G1，§2.4）：真实 Mongo + 假时钟。
-//   归属判定 v1：瓦片落在「由瓦片主人自己占领的首府」的 Voronoi 区内 → 享加成。
-//   ① 生产加成：己方首府区内格产率 ×(1+NATION_BONUS_PRODUCTION)；无国家归属则原值（对照）。
-//   ② 防御加成：守军处己方首府区 → 有效守军 ×(1+NATION_BONUS_DEFENSE)，破城门槛抬高（同等攻击守方反胜）；
-//      无国家归属 → 同等攻击破城（对照，确认加成确实来自国籍）。
-// 需 `cd server && docker compose up -d`。
+// worldsvc nation-bonus end-to-end (S8-6.5 / G1, §2.4): real Mongo + fake clock.
+//   Ownership determination v1: a tile falls within the Voronoi region of a capital occupied by the tile's owner → bonus applies.
+//   ① Production bonus: tiles in own capital region yield ×(1+NATION_BONUS_PRODUCTION); no national affiliation → raw yield (control case).
+//   ② Defense bonus: garrison in own capital region → effective garrison ×(1+NATION_BONUS_DEFENSE), raising the conquest threshold (defender wins with equal attack);
+//      no national affiliation → same attack breaks through (control case, confirming the bonus comes from nationality).
+// Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   proceduralTile,
@@ -37,7 +37,7 @@ async function tryConnect(): Promise<WorldMongo | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[worldsvc.nation.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+if (!mongo) console.warn(`[worldsvc.nation.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
 const CENTER_Y = Math.floor(SLG_MAP_H / 2);
@@ -82,7 +82,7 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     },
   };
 
-  /** 让某账号占领某首府（直接落 NationDoc，绕过围攻立国流程）。 */
+  /** Makes an account own a capital (writes NationDoc directly, bypassing the siege nation-founding flow). */
   async function ownNation(capitalIdx: number, accountId: string): Promise<void> {
     const [cx, cy] = CAPS[capitalIdx]!;
     const doc: NationDoc = {
@@ -97,7 +97,7 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     await m.collections.nations.updateOne({ _id: doc._id }, { $set: doc }, { upsert: true });
   }
 
-  /** 直接落一个防守方（playerWorld + 一块领地），全控 garrison（对齐 siege.e2e）。 */
+  /** Sets up a defender directly (playerWorld + one territory tile) with full garrison control (aligned with siege.e2e). */
   async function setupDefender(accountId: string, x: number, y: number, garrison: number): Promise<void> {
     const proc = proceduralTile(W, x, y);
     const tile: TileDoc = {
@@ -148,14 +148,14 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     await m.close();
   });
 
-  // ── 生产加成 ──
+  // ── Production bonus ──
 
-  it('生产加成：占领自己首府 Voronoi 区内格 → 产率 ×(1+NATION_BONUS_PRODUCTION)', async () => {
+  it('production bonus: occupy tile in own capital Voronoi region → yield ×(1+NATION_BONUS_PRODUCTION)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const r = findCoord((t) => t.type === 'resource', 6, 6);
     const proc = proceduralTile(W, r.x, r.y);
     const rt = proc.resType as ResourceType;
-    // a 占领 (5,5) 主城与 (r) 所在首府区。
+    // a occupies the (5,5) main base and the capital region containing (r).
     const baseCap = nearestCapitalIdx(5, 5, CAPS);
     const rCap = nearestCapitalIdx(r.x, r.y, CAPS);
     await ownNation(baseCap, 'a');
@@ -163,59 +163,60 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     await svc.occupyTile(W, 'a', r.x, r.y);
 
     const rate = (await svc.getMe(W, 'a')).yieldRate!;
-    // 资源格产率享加成：floor(base*level * 1.1)。
+    // Resource tile yield gets the bonus: floor(base*level * 1.1).
     const rawResource = RESOURCE_YIELD_BASE * Math.max(1, proc.level);
     const expectedResource = Math.floor(rawResource * (1 + NATION_BONUS_PRODUCTION));
-    // 该资源型产率仅来自这块格（主城产 food，不污染非 food 资源）。当 rt==='food' 时叠加主城。
+    // This resource type's yield comes only from this tile (main base produces food and does not pollute non-food resources). When rt==='food' the main base contribution stacks.
     if (rt !== 'food') {
       expect(rate[rt]).toBe(expectedResource);
-      expect(rate[rt]).toBeGreaterThan(rawResource); // 确有加成
+      expect(rate[rt]).toBeGreaterThan(rawResource); // bonus is definitely applied
     } else {
-      expect(rate.food).toBeGreaterThan(rawResource); // 至少被放大
+      expect(rate.food).toBeGreaterThan(rawResource); // at least amplified
     }
   });
 
-  it('对照——无国家归属：占同格产率为原值（无加成）', async () => {
+  it('control — no national affiliation: occupying the same tile yields the raw value (no bonus)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const r = findCoord((t) => t.type === 'resource' && t.resType !== 'food', 6, 6);
     const proc = proceduralTile(W, r.x, r.y);
     const rt = proc.resType as ResourceType;
-    await svc.occupyTile(W, 'a', r.x, r.y); // 不占任何首府
+    await svc.occupyTile(W, 'a', r.x, r.y); // no capital occupied
 
     const rate = (await svc.getMe(W, 'a')).yieldRate!;
-    expect(rate[rt]).toBe(tileYield('resource', proc.level, rt)[rt]); // 原值，无放大
+    expect(rate[rt]).toBe(tileYield('resource', proc.level, rt)[rt]); // raw value, no amplification
   });
 
-  // ── 防御加成 ──
+  // ── Defense bonus ──
 
-  it('防御加成：守军处己方首府区 → 破城门槛抬高，同等攻击守方反胜', async () => {
+  it('defense bonus: garrison in own capital region → conquest threshold raised, defender wins with equal attack', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(NON_BLOCKING, 10, 5);
     await setupDefender('b', tgt.x, tgt.y, 500);
     await ownNation(nearestCapitalIdx(tgt.x, tgt.y, CAPS), 'b');
 
-    // 引擎权威（G3-2b，§16）：820 兵力可破 500 守军（见下方对照用例），但破不了国民加成后的
-    // floor(500*1.15)=575 守军 → 守方反胜（同 march seed，唯一变量 = 国籍带来的 +75 有效守军）。
+    // Authoritative engine (G3-2b, §16): 820 troops can defeat 500 defenders (see control case below),
+    // but cannot defeat the nation-bonus-boosted floor(500*1.15)=575 effective defenders → defender wins
+    // (same march seed; the only variable is the +75 effective garrison from nationality).
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 820);
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    expect((await svc.getTile(W, 'b', tgt.x, tgt.y)).mine).toBe(true); // 未易主
+    expect((await svc.getTile(W, 'b', tgt.x, tgt.y)).mine).toBe(true); // tile did not change hands
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('defender_win');
   });
 
-  it('对照——守军无国家归属：同等攻击破城（确认加成来自国籍）', async () => {
+  it('control — defender has no national affiliation: same attack conquers the tile (confirms bonus comes from nationality)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(NON_BLOCKING, 10, 5);
-    await setupDefender('b', tgt.x, tgt.y, 500); // 不给 b 任何首府
+    await setupDefender('b', tgt.x, tgt.y, 500); // b is given no capital
 
-    // 同 820 兵力、同 march seed，但守军无国籍加成（500）→ 破城易主，反证上例的反胜确来自国籍。
+    // Same 820 troops, same march seed, but defender has no nationality bonus (500) → tile conquered, disproving hypothesis that the prior defender win was unrelated to nationality.
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 820);
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    expect((await svc.getTile(W, 'a', tgt.x, tgt.y)).mine).toBe(true); // 易主
+    expect((await svc.getTile(W, 'a', tgt.x, tgt.y)).mine).toBe(true); // tile changed hands to attacker
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('attacker_win');
   });

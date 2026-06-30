@@ -1,10 +1,10 @@
-// 简体中文 — 键的唯一来源（source of truth）。
-// 新增文案时先在此处加键，en.ts 会因缺键而编译报错。
+// Simplified Chinese — single source of truth for all keys.
+// When adding new copy, add the key here first; en.ts will fail to compile if the key is missing.
 export const zh = {
-  // ── 通用 ──────────────────────────────────────────────────────────────────
+  // ── General ───────────────────────────────────────────────────────────────
   'common.networkTimeout': '网络超时，请重试',
   'common.processing': '处理中',
-  // 全局兜底提示（未被场景自行 catch 的非 200 / 网络错误，GlobalToast 弹出）
+  // Global fallback toast for non-200 / network errors not caught by individual scenes (shown via GlobalToast)
   'common.networkError': '网络连接失败，请检查网络后重试',
   'common.actionFailed': '操作失败，请稍后重试',
   'common.err.insufficientFunds': '余额不足',
@@ -12,10 +12,10 @@ export const zh = {
   'common.err.unauthorized': '登录已失效，请重新登录',
   'common.err.notFound': '内容不存在或已失效',
   'common.syncFailed': '云存档同步失败，进度可能未保存',
-  // 统一返回按钮文案（SceneHeader 自动前置「← 」，见 UI_DESIGN §3.1）。
+  // Unified back-button label (SceneHeader prepends "← " automatically; see UI_DESIGN §3.1).
   'common.back': '返回',
 
-  // ── 卡牌 ──────────────────────────────────────────────────────────────────
+  // ── Cards ─────────────────────────────────────────────────────────────────
   'card.infantry.name': '普通兵',
   'card.infantry.desc': '从笔记本边角走出的涂鸦士兵，便宜耐用，永远冲在最前面。',
   'card.shieldbearer.name': '盾兵',
@@ -41,7 +41,7 @@ export const zh = {
   'card.bridge_collapse.name': '桥梁坍塌',
   'card.bridge_collapse.desc': '选定一列，桥面断裂，该列单位被迫绕道8秒。',
 
-  // ── 大厅 ──────────────────────────────────────────────────────────────────
+  // ── Lobby ─────────────────────────────────────────────────────────────────
   'lobby.title': 'NOTEBOOK WARS',
   'lobby.subtitle': '实时塔防对战',
   'lobby.feature.1': '打出卡牌 → 部署单位与建筑',
@@ -70,7 +70,7 @@ export const zh = {
   'lobby.strip.achieve': '成就',
   'lobby.strip.mail': '邮件',
 
-  // ── 个人设置 ──────────────────────────────────────────────────────────────
+  // ── Personal settings ─────────────────────────────────────────────────────
   'settings.title': '个人设置',
   'settings.guest': '访客',
   'settings.language': '语言',
@@ -89,7 +89,7 @@ export const zh = {
   'settings.renameFail': '改名失败，请重试',
   'settings.renameInsufficient': '金币不足',
 
-  // ── 对局 HUD ──────────────────────────────────────────────────────────────
+  // ── In-game HUD ───────────────────────────────────────────────────────────
   'hud.paused': '已暂停',
   'hud.resume': '继续游戏',
   'hud.exitToLobby': '退出对局',
@@ -101,7 +101,7 @@ export const zh = {
   'hud.lose': '你输了',
   'hud.draw': '平局',
 
-  // ── 结算 ──────────────────────────────────────────────────────────────────
+  // ── End-of-match results ──────────────────────────────────────────────────
   'result.victory': '胜利！',
   'result.defeat': '战败',
   'result.draw': '平局',
@@ -135,7 +135,7 @@ export const zh = {
   'badge.efficient.title': '【以少胜多】',
   'badge.efficient.detail': '消灭 {n} 个敌方单位',
 
-  // ── 首次进入引导（背景故事）──────────────────────────────────────────────
+  // ── First-launch intro (background story) ────────────────────────────────
   'story.line.1': '深夜的课桌上，一本摊开的笔记本。',
   'story.line.2': '无人翻动的纸页间，涂鸦士兵悄悄苏醒，分成了两个阵营。',
   'story.line.3': '铅笔是长矛，橡皮是壁垒，格线就是它们的战场。',
@@ -143,7 +143,7 @@ export const zh = {
   'story.tapToContinue': '点击继续',
   'story.skip': '跳过 »',
 
-  // ── 专属教学关 ch0_tutorial（ONBOARDING_DESIGN §3）────────────────────────────
+  // ── Dedicated tutorial level ch0_tutorial (ONBOARDING_DESIGN §3) ─────────────
   'campaign.tutorial.name': '新手教学',
   'campaign.tutorial.brief': '跟着指引，学会派兵、建防线、放大招。',
   'tutorial.skip': '跳过教学 »',
@@ -182,7 +182,7 @@ export const zh = {
   'tutorial.free.title': '随便试试',
   'tutorial.free.body': '剩下的兵种、建筑、法术都解锁了——随便出几张感受一下，准备好就毕业。',
 
-  // ── 首次功能引导（per-feature first-use guide，ONBOARDING_DESIGN §4.1）─────────
+  // ── Per-feature first-use guide (ONBOARDING_DESIGN §4.1) ─────────────────
   'guide.gotIt': '知道了',
   'guide.match.title': '对战匹配',
   'guide.match.body': '和真人或 AI 实时对战。出牌、布防、攻破对方笔记本——和教学里一样的操作。',
@@ -199,7 +199,7 @@ export const zh = {
   'guide.world.title': '大世界',
   'guide.world.body': '率土式共享大地图：占地、建宗门、围攻、拍卖。最重的玩法，慢慢来。',
 
-  // ── 好友房（联机，S1）────────────────────────────────────────────────────
+  // ── Friend room (online co-op, S1) ───────────────────────────────────────
   'room.title': '好友对战',
   'room.back': '← 返回',
   'room.create': '创建房间',
@@ -241,7 +241,7 @@ export const zh = {
   'room.error.noServer': '联机服务不可用',
   'room.error.generic': '出错了，请重试',
 
-  // ── 玩家资料弹层（点头像查看，Profile Popup）─────────────────────────────────
+  // ── Player profile popup (tap avatar to view, Profile Popup) ─────────────
   'profile.title': '玩家资料',
   'profile.close': '关闭',
   'profile.id': '公开 ID',
@@ -254,7 +254,7 @@ export const zh = {
   'net.reconnecting': '重新连接中',
   'net.peerDc': '对手掉线，等待重连',
 
-  // ── 回放（S1-RP） ────────────────────────────────────────────────────────────
+  // ── Replay (S1-RP) ───────────────────────────────────────────────────────────
   'replay.title': '回放',
   'replay.play': '播放',
   'replay.pause': '暂停',
@@ -263,7 +263,7 @@ export const zh = {
   'replay.ended': '回放结束',
   'replay.versionError': '录像版本不兼容，无法回放',
 
-  // ── 录像游戏外分享（REPLAY_SHARE_DESIGN） ────────────────────────────────────
+  // ── Out-of-game replay share (REPLAY_SHARE_DESIGN) ───────────────────────────
   'share.button': '分享',
   'share.title': '来看我这一局！',
   'stateplayer.tag': '录像分享',
@@ -276,7 +276,7 @@ export const zh = {
   'stateplayer.playDemo': '我也来玩',
   'stateplayer.backToLogin': '返回登录',
 
-  // ── 账号 / 登录（SA-3） ──────────────────────────────────────────────────────
+  // ── Account / login (SA-3) ───────────────────────────────────────────────────
   'auth.title': '登录 Notebook Wars',
   'auth.login': '登录',
   'auth.register': '注册',
@@ -307,7 +307,7 @@ export const zh = {
   'auth.err.passwordMismatch': '两次输入的密码不一致',
   'auth.err.network': '网络错误，请重试',
 
-  // ── 商店 / 充值（S2-6） ──────────────────────────────────────────────────────
+  // ── Shop / top-up (S2-6) ─────────────────────────────────────────────────────
   'shop.title': '商店',
   'shop.coins': '金币：{coins}',
   'shop.buy': '购买',
@@ -322,7 +322,7 @@ export const zh = {
   'shop.processing': '处理中',
   'shop.empty': '暂无商品',
 
-  // ── 盲盒（S2-6） ──────────────────────────────────────────────────────────────
+  // ── Gacha / loot box (S2-6) ───────────────────────────────────────────────────
   'gacha.title': '盲盒',
   'gacha.coins': '金币：{coins}',
   'gacha.drawOne': '单抽 {cost}',
@@ -338,13 +338,13 @@ export const zh = {
   'gacha.drawing': '抽取中',
   'gacha.loading': '加载中…',
 
-  // ── 稀有度 ────────────────────────────────────────────────────────────────────
+  // ── Rarity tiers ──────────────────────────────────────────────────────────────
   'rarity.common': '普通',
   'rarity.rare': '稀有',
   'rarity.epic': '史诗',
   'rarity.legendary': '传说',
 
-  // ── 战役选关 / 养成 / 收集（S3）────────────────────────────────────────────────
+  // ── Campaign level select / progression / collection (S3) ────────────────────
   'campaign.title': '战役',
   'campaign.back': '← 返回',
   'campaign.levelLabel': '第 {n} 关',
@@ -382,11 +382,11 @@ export const zh = {
   'prep.stat.damage': '攻击',
   'prep.stat.speed': '速度',
 
-  // ── 体力系统（A4）────────────────────────────────────────────────────────────
+  // ── Stamina system (A4) ───────────────────────────────────────────────────────
   'stamina.cost': '体力 {current} / 120 · 本关消耗 {cost}',
   'stamina.buy': '补充体力（30 金币 → +60）',
 
-  // ── 单位养成（S12，卡牌合成系统）────────────────────────────────────────────
+  // ── Unit progression (S12, card merge system) ────────────────────────────────
   'progression.unitsTitle': '单位卡牌',
   'progression.lv': 'Lv {lv}',
   'progression.cards': '{n} 张',
@@ -401,7 +401,7 @@ export const zh = {
   'material.lead': '铅芯',
   'material.binding': '装订线',
 
-  // ── 装备系统（E5，EQUIPMENT_DESIGN §11）──────────────────────────────────────
+  // ── Equipment system (E5, EQUIPMENT_DESIGN §11) ───────────────────────────────
   'equip.title': '装备',
   'equip.back': '← 返回',
   'equip.tabInv': '背包',
@@ -456,7 +456,7 @@ export const zh = {
   'equip.reforgeSelectTitle': '选择素材（{rarity}）',
   'equip.reforgeNoMat': '无可用素材',
   'equip.confirmReforge': '消耗【{material}】洗练【{target}】的副词条？（主词条不变）',
-  // 词条（{v} = 数值；主词条已按强化等级放大显示）
+  // Affixes ({v} = numeric value; primary affix is scaled up according to enhancement level for display)
   'affix.m_atk': '攻击 +{v}%',
   'affix.m_hp': '生命 +{v}%',
   'affix.m_spd': '移速 +{v}%',
@@ -465,7 +465,7 @@ export const zh = {
   'affix.s_armor': '护甲 +{v}',
   'affix.s_spd': '移速 +{v}%',
   'affix.s_atkspd': '攻速 +{v}%',
-  // 装备名（媒材皮，§17.2）
+  // Equipment names (stationery-material skins, §17.2)
   'equip.wp_pencil.name': '铅笔',
   'equip.wp_pen.name': '钢笔',
   'equip.wp_marker.name': '马克笔',
@@ -484,7 +484,7 @@ export const zh = {
   'collection.equip': '装备',
   'collection.equipped': '已装备',
   'collection.default': '默认外观',
-  // 收藏中心 Tab + 卡牌图鉴
+  // Collection hub tabs + card compendium
   'collection.tab.cards': '卡牌',
   'collection.tab.skins': '皮肤',
   'collection.tab.units': '单位',
@@ -499,7 +499,7 @@ export const zh = {
   'collection.stat.spawn': '数量',
   'collection.stat.interval': '攻速',
 
-  // 战绩 / 统计页（IA 重规划后作为「生涯」中心）
+  // Match history / stats page (serves as the "Career" hub after IA redesign)
   'stats.title': '生涯',
   'stats.back': '← 返回',
   'stats.pvp': '排位对战',
@@ -527,7 +527,7 @@ export const zh = {
   'stats.achievements': '🏆 成就',
   'stats.titles': '称号',
 
-  // ── 成就墙（S9-5） ────────────────────────────────────────────────────────────
+  // ── Achievement wall (S9-5) ───────────────────────────────────────────────────
   'achievement.title': '成就',
   'achievement.back': '← 返回',
   'achievement.loginRequired': '登录后查看',
@@ -544,7 +544,7 @@ export const zh = {
   'achievement.claimFailed': '领取失败，请重试',
   'achievement.unlockToast': '成就达成：{name}',
   'achievement.unlockToastMulti': '解锁了 {n} 项成就，去领取吧',
-  // 各成就名/描述（achId 派生 key；阈值/金币见 ECONOMY_BALANCE §2.4）。
+  // Individual achievement names/descriptions (key derived from achId; thresholds/coins see ECONOMY_BALANCE §2.4).
   'achievement.ach.kill.archer.name': '神射克星',
   'achievement.ach.kill.archer.desc': '累计击杀敌方弓箭兵',
   'achievement.ach.kill.guard.name': '破盾者',
@@ -556,7 +556,7 @@ export const zh = {
   'achievement.ach.pvp.wins.name': '排位常胜',
   'achievement.ach.pvp.wins.desc': '累计排位对战胜场',
 
-  // ── 社交 / 好友（S6-1） ───────────────────────────────────────────────────────
+  // ── Social / friends (S6-1) ───────────────────────────────────────────────────
   'friends.title': '好友',
   'friends.back': '← 返回',
   'friends.loading': '加载中…',
@@ -583,7 +583,7 @@ export const zh = {
   'friends.alreadyFriend': '你们已是好友',
   'friends.capReached': '好友数量已达上限',
   'friends.blocked': '无法添加（已被屏蔽）',
-  // 多 Tab（好友 / 家族 / 宗门 / 世界 / 邮件）
+  // Multiple tabs (friends / family / sect / world / mail)
   'friends.tab.friends': '好友',
   'friends.tab.family': '家族',
   'friends.tab.sect': '宗门',
@@ -592,7 +592,7 @@ export const zh = {
   'friends.message': '发消息',
   'friends.block': '拉黑',
   'friends.blockedDone': '已拉黑',
-  // 家族 Tab（社交 Hub 内嵌，S6-4）
+  // Family tab (embedded inside social hub, S6-4)
   'social.noSlg': '进入大世界后才能使用此功能',
   'social.family.none': '未加入任何家族',
   'social.family.create': '创建家族',
@@ -607,7 +607,7 @@ export const zh = {
   'social.family.joinFail': '加入失败，请检查 ID',
   'social.family.confirm': '确认',
   'social.family.cancel': '取消',
-  // 宗门 Tab（社交 Hub 内嵌，S6-4）
+  // Sect tab (embedded inside social hub, S6-4)
   'social.sect.none': '未加入任何宗门',
   'social.sect.noFamily': '请先加入家族才能加入宗门',
   'social.sect.create': '创建宗门',
@@ -623,14 +623,14 @@ export const zh = {
   'social.sect.joinFail': '加入失败，请检查 ID',
   'social.sect.confirm': '确认',
   'social.sect.cancel': '取消',
-  // 世界频道 Tab（社交 Hub 内嵌，S6-4）
+  // World channel tab (embedded inside social hub, S6-4)
   'social.world.placeholder': '说点什么…',
   'social.world.sendBtn': '发言 · 50 金币',
   'social.world.empty': '还没有消息，来发第一条吧',
   'social.world.sent': '已发送',
   'social.world.sendFail': '发送失败，请重试',
   'social.world.sending': '发送中…',
-  // 私聊（S6-2）
+  // Direct messages (S6-2)
   'chat.back': '← 返回',
   'chat.loading': '加载中…',
   'chat.empty': '还没有消息，打个招呼吧',
@@ -642,7 +642,7 @@ export const zh = {
   'chat.notFriend': '仅好友之间可私聊',
   'chat.blocked': '对方已被屏蔽',
   'chat.rateLimited': '发送太频繁，请稍后',
-  // 邮件（S6-3）
+  // Mail (S6-3)
   'mail.empty': '没有邮件',
   'mail.system': '系统',
   'mail.attachments': '附件',
@@ -656,7 +656,7 @@ export const zh = {
   'mail.claimFail': '领取失败',
   'mail.alreadyClaimed': '已经领取过了',
   'mail.delete': '删除邮件',
-  // ── SLG 大世界（S8）────────────────────────────────────────────────────────
+  // ── SLG overworld (S8) ────────────────────────────────────────────────────
   'world.title': '大世界',
   'world.back': '← 返回',
   'world.troops': '兵力',
@@ -707,7 +707,7 @@ export const zh = {
   'world.err.notOwner': '非己方领地',
   'world.err.notImpl': '功能暂未开放',
   'world.err.pathBlocked': '无可通行路线（地形阻挡）',
-  // ── 军事动作 / 围攻（C2）────────────────────────────────────────────────────
+  // ── Military actions / siege (C2) ────────────────────────────────────────
   'world.actAttack': '围攻',
   'world.actReinforce': '增援',
   'world.actSweep': '扫荡',
@@ -744,7 +744,7 @@ export const zh = {
   'world.siegePlaying': '复盘围攻中…',
   'world.siegeVerified': '录像已复算',
   'world.siegeUploadFail': '复算提交失败',
-  // ── 防守编辑器（C3）─────────────────────────────────────────────────────────
+  // ── Defense editor (C3) ──────────────────────────────────────────────────
   'world.actDefense': '设防',
   'world.defense.titleBase': '主城防守',
   'world.defense.titleTile': '领地防守 {tile}',
@@ -763,7 +763,7 @@ export const zh = {
   'world.defense.baseColBlocked': '基地列不可摆放',
   'world.defense.unitsNotHere': '单位只能放在驻军行',
   'world.defense.buildingsNotHere': '建筑只能放在建筑行',
-  // ── 进攻队伍 / 布阵编辑器（G3-2c）────────────────────────────────────────────
+  // ── Attack teams / formation editor (G3-2c) ───────────────────────────────
   'world.teams': '队伍',
   'world.team.title': '进攻队伍',
   'world.team.slot': '队伍 {n}',
@@ -777,7 +777,7 @@ export const zh = {
   'world.team.noTeams': '尚无队伍，先去编辑布阵',
   'world.team.manage': '管理队伍',
   'world.team.emptyArmy': '该队伍未布阵',
-  // ── 训练队列 / 资源面板（C4）─────────────────────────────────────────────────
+  // ── Training queue / resource panel (C4) ─────────────────────────────────
   'world.train': '练兵',
   'world.trainTitle': '练兵 · 资源',
   'world.trainNew': '招募新兵',
@@ -796,7 +796,7 @@ export const zh = {
   'world.err.troopCap': '兵力已满',
   'world.err.noFood': '粮食不足',
   'world.err.queueFull': '训练队列已满',
-  // ── 国家 / 赛季 / 商城面板（C5）──────────────────────────────────────────────
+  // ── Nations / season / shop panel (C5) ───────────────────────────────────
   'world.info': '世界',
   'world.infoTitle': '世界信息',
   'world.tabNations': '国家',
@@ -824,7 +824,7 @@ export const zh = {
   'world.shop.resPack': '资源包（各 {n}）',
   'world.shop.shield': '保护罩 {h} 时',
   'world.shop.battlePass': '赛季战令',
-  // ── 家族（S8-4）────────────────────────────────────────────────────────────
+  // ── Family / clan (S8-4) ─────────────────────────────────────────────────
   'family.title': '家族',
   'family.back': '← 返回',
   'family.myFamily': '我的家族',
@@ -861,7 +861,7 @@ export const zh = {
   'family.err.notIn': '未加入家族',
   'family.err.badTag': '名称或标签格式错误',
   'family.sect': '宗门',
-  // ── 宗门（S8-4b）────────────────────────────────────────────────────────────
+  // ── Sect / guild (S8-4b) ─────────────────────────────────────────────────
   'sect.title': '宗门',
   'sect.back': '← 返回',
   'sect.noSect': '你的家族尚未加入宗门',
@@ -907,7 +907,7 @@ export const zh = {
   'sect.err.allyCap': '结盟数已达上限',
   'sect.err.funds': '金币不足',
   'sect.err.badReq': '操作无效',
-  // ── 拍卖场（S8-5）──────────────────────────────────────────────────────────
+  // ── Auction house (S8-5) ──────────────────────────────────────────────────
   'auction.title': '拍卖场',
   'auction.back': '← 返回',
   'auction.tabAll': '市场',
@@ -969,7 +969,7 @@ export const zh = {
   'auction.err.equipInUse': '装备穿戴中，无法挂拍',
 
   // ── Campaign level names & briefings ─────────────────────────────────────
-  // Ch1 · 方家 · 家族内部试炼（陶的笔记本）
+  // Ch1 · Fang family · internal clan trial (Tao's notebook)
   'campaign.ch1.lv1.name': '三人',
   'campaign.ch1.lv1.brief': '方家北边的演武场，初冬，硬土地踩起来结了一层薄霜。李川第一个到，找了个位置站着看别人热身。陈守来得第二，站在他旁边，没打招呼。苏远最后一个，在他们背后停了一下，才走过来。教官念名单，把三个人分进同一支队。李川转头看了陈守一眼，陈守没动。苏远把两个人都打量了一遍，没说话。没有人觉得这支队能走多远。',
   'campaign.ch1.lv2.name': '第一场',
@@ -989,7 +989,7 @@ export const zh = {
   'campaign.ch1.lv10.name': '包子铺还没开',
   'campaign.ch1.lv10.brief': '教官在名单上画了三个圈，没有说话。从演武场出来，李川说去吃那家包子。陈守说时候不对，包子铺还没开。李川说那就等，不急。苏远走在两个人后面，没插嘴。她在想第二轮里那支箭——那次她没有晚，因为她已经知道李川会冲了。不是他告诉她的，是她知道了。三个人走到巷子口，包子铺的炉子刚开始生火，还要等一会儿。李川往门口一站，好像已经胜了很多次一样。苏远走快了几步，站到了他们旁边。',
 
-  // Ch2 · Hartmann · 家族内部试炼（Anna 的笔记本）
+  // Ch2 · Hartmann · internal clan trial (Anna's notebook)
   'campaign.ch2.lv1.name': '三强',
   'campaign.ch2.lv1.brief': 'Hartmann 家族的训练场，石板地，光线很好，一切都是打理过的样子。Max 第一个来，在场边做热身，不看别人。Lena 第二个来，检查了一遍自己的护具，没有问题，她知道没有问题，只是习惯检查。Mara 最后来，走进来的时候扫了整个训练场一眼，停在了 Max 和 Lena 旁边。教官宣布三人分为一队。Max 没说话。Lena 点了个头。Mara 看了他们两个，心想：这两个人都是最强的，问题是，他们知不知道最强是为了什么。',
   'campaign.ch2.lv2.name': '各自为战',
@@ -1009,7 +1009,7 @@ export const zh = {
   'campaign.ch2.lv10.name': '相互成就',
   'campaign.ch2.lv10.brief': '最后一场，三个人打出了一种 Hartmann 家族的教官见过的最好的配合——不是谁主导谁，是三个人都在自己最强的位置上，刚好拼成了一个整体。Max 的每一次出击，Lena 都挡住了退路。Mara 的每一个判断，两个人都接到了。赛后教官在记录本上写了一行字，没有念出来。Mara 往前走了一步，看见那行字：「他们找到了。」她没有问找到的是什么，因为她知道。',
 
-  // Ch3 · 方家视角 · 家族间比试
+  // Ch3 · Fang family perspective · inter-clan tournament
   'campaign.ch3.lv1.name': '出了方家的地界',
   'campaign.ch3.lv1.brief': '家族间比试的场地在中立地界，各家族的队伍从四方来。方家三人第一次走进这样的场合——比训练场大，比训练场吵，旗帜颜色各不相同。李川说：「看起来也没什么。」苏远没说话。她注意到了一支从另一侧走进来的队伍——三个人，步伐各自不同，但没有一个人看起来像是要依靠旁边的人。她认出了那是 Hartmann 的颜色，但没有说出来。',
   'campaign.ch3.lv2.name': '第一个对手',
@@ -1029,7 +1029,7 @@ export const zh = {
   'campaign.ch3.lv10.name': '棋逢对手',
   'campaign.ch3.lv10.brief': '那是方家第一次遇见一支真正接得住他们每一步的队伍。李川冲出去，Max 已经在等他了——不是拦他，是接他。陈守挡住正面，Lena 用完全不同的方式做着同一件事，两个人隔着战场像是认出了彼此。最后那一刻，苏远的箭飞出去，Mara 侧过身——不是没看见，是让开了。那支箭本来不是射她的，是射更后面的位置，Mara 知道，所以让开了，然后苏远知道 Mara 知道了。方家赢了，赢得费力，费得值。李川说想再打一场。陈守说：下次。苏远看了 Mara 一眼，Mara 也看了她，两个人都没有说话。',
 
-  // Ch4 · Hartmann 视角 · 家族间比试
+  // Ch4 · Hartmann perspective · inter-clan tournament
   'campaign.ch4.lv1.name': '没有对手',
   'campaign.ch4.lv1.brief': '比赛第一天，Max 说这里没有真正的对手。Lena 没有反驳，在她看来那只是陈述事实。Mara 没有说话，她在人群里找到了一支队——三个人，站在一起，不说话，但有一种她说不清楚的东西把他们圈在一起。她认出了方家的颜色，把那支队记在了心里。',
   'campaign.ch4.lv2.name': '合理的赢',
@@ -1049,7 +1049,7 @@ export const zh = {
   'campaign.ch4.lv10.name': '那个东西叫什么名字',
   'campaign.ch4.lv10.brief': 'Hartmann 输了。输在最后那一刻，输得 Mara 到现在还在想——不是输在哪里，是不知道对方的那个东西叫什么名字。Max 说：「下次赢回来。」Lena 说：「嗯。」Mara 说：「也许不是输赢的问题。」Max 看了她一眼，没有继续说。比赛结束，两支队伍从各自的通道走出去。Mara 在出口的地方回头看了一眼，苏远也刚好在回头。两个人对视了一秒，然后都走了。Mara 一路走一路在想那个问题：他们之间不说话，没有信号，但每个人都知道彼此的下一步。那个东西，叫什么名字？',
 
-  // Ch5 · 方家视角 · 宗门大比
+  // Ch5 · Fang family perspective · grand sect championship
   'campaign.ch5.lv1.name': '宗门的规模',
   'campaign.ch5.lv1.brief': '宗门大比的场地是方家三人见过的最大的地方。看台上坐满了人，旗帜从不同宗门来，颜色比家族间比试多了不止一倍。李川站在入场通道里，第一次沉默了很长时间。然后他说：「我们还是我们。」陈守没有说话，但他往李川旁边站近了一步。苏远看着这一切，觉得那句话是对的。他们是他们，在这里也是。',
   'campaign.ch5.lv2.name': '第一圈',
@@ -1069,7 +1069,7 @@ export const zh = {
   'campaign.ch5.lv10.name': '明天',
   'campaign.ch5.lv10.brief': '天亮了，决赛。方家三人走进场地的时候，对面的通道里走出来的是 Hartmann。Max 还是那个样子，Lena 检查着站位，Mara 看见了苏远，两个人都没有笑，但都停了一下。李川说：「来了。」陈守说：「嗯。」苏远没有说话，但她知道今天会是他们打过的最好的一场——不是因为赢，是因为对面那支队伍会让他们把每一件会的事情都用上。',
 
-  // Ch6 · Hartmann 视角 · 宗门大比
+  // Ch6 · Hartmann perspective · grand sect championship
   'campaign.ch6.lv1.name': '那个问题',
   'campaign.ch6.lv1.brief': '从家族间比试输给方家那天起，Mara 一直带着一个问题：他们之间不说话，没有信号，但每个人都知道彼此下一步——那个东西，叫什么名字？宗门大比开始了，Mara 还没有答案。Max 说：「想那么多没用，赢了再说。」Mara 说：「赢了就有答案了。」Max 看了她一眼，没有问为什么。',
   'campaign.ch6.lv2.name': '一路走来',
@@ -1089,7 +1089,7 @@ export const zh = {
   'campaign.ch6.lv10.name': '信任',
   'campaign.ch6.lv10.brief': '那是方家和 Hartmann 第二次相遇，也是两支队伍打过的最好的一场。两边都没有留手，每一步都被接住，每一个空隙都被看穿。Hartmann 输了，输得心服。赛后，Mara 走向苏远，两个人站了一会儿，没有说话。最后 Mara 说：「我知道那个东西叫什么名字了。」苏远看着她，等着。Mara 说：「是信任。你们不说话，是因为你们相信对方一定在那里。」苏远想了一下，点了头。Mara 说：「我们也有，只是不一样的方式。」苏远说：「我知道。」两支队伍，将代表各自的宗门，走向更大的舞台。那个舞台在哪里，陶还没有画到那一页，Anna 也没有。',
 
-  // ── 章节故事 intro / outro（逐行淡入，每行以 \n 分隔） ────────────────────────
+  // ── Chapter story intro / outro (fade in line by line, lines separated by \n) ─
   'campaign.ch1.intro': '冬日的演武场，三个陌生人站在一起。\n没有人说我们会成为一支队。\n但教官的名单上，三个名字写在了同一行。\n接下来的路，只能一起走。',
   'campaign.ch1.outro': '教官在名单上画了圈，没有说话。\n三个人走出演武场，包子铺的炉子刚开始生火。\n苏远走快了几步，站到了他们旁边。\n她知道了，他们是一支队。',
   'campaign.ch2.intro': 'Hartmann 的训练场，一切都是打理过的样子。\n三个最强的人站在一起，却不像一支队。\nMara 在想：最强是为了什么？\n这个问题，他们还没有答案。',
@@ -1103,7 +1103,7 @@ export const zh = {
   'campaign.ch6.intro': '从输给方家那天起，Mara 一直带着一个问题。\n他们之间不说话，没有信号，但每个人都知道彼此下一步。\n那个东西，叫什么名字？\n宗门大比开始了，Mara 还没有答案。',
   'campaign.ch6.outro': '那场对决之后，Mara 终于找到了答案。\n不是赢了才找到的，是在打的过程里找到的。\n三个人，各自清晰，合在一起更强。\n那个东西，叫做：彼此知道对方是谁。',
 
-  // ── 天梯赛季横幅 / 结算弹层（SE-6）────────────────────────────────────────────
+  // ── Ranked season banner / settlement popup (SE-6) ────────────────────────────
   'season.banner': '赛季 {no} · 剩余 {days} 天',
   'season.bannerEnded': '赛季 {no} · 已结束',
   'season.settlement.title': '赛季 {no} 结算',
@@ -1112,7 +1112,7 @@ export const zh = {
   'season.settlement.newSeason': '新赛季 {no} 已开始',
   'season.settlement.close': '知道了',
 
-  // ── 排行榜（SE-6）────────────────────────────────────────────────────────────
+  // ── Leaderboard (SE-6) ────────────────────────────────────────────────────────
   'leaderboard.title': '全服排行榜',
   'leaderboard.back': '← 返回',
   'leaderboard.loading': '加载中…',
@@ -1125,7 +1125,7 @@ export const zh = {
   'leaderboard.rank': '排名',
   'leaderboard.elo': 'ELO',
 
-  // ── 战令（SE-9）──────────────────────────────────────────────────────────────
+  // ── Battle pass (SE-9) ────────────────────────────────────────────────────────
   'battlepass.title': '战令',
   'battlepass.back': '← 返回',
   'battlepass.free': '免费轨',
@@ -1149,7 +1149,7 @@ export const zh = {
   'battlepass.maxLevel': '满级！',
   'battlepass.openBattlePass': '战令',
 
-  // ── 留存系统（B5，RETENTION_DESIGN）──────────────────────────────────────────
+  // ── Retention system (B5, RETENTION_DESIGN) ───────────────────────────────────
   'daily.title': '每日',
   'daily.back': '← 返回',
   'daily.loginRequired': '登录后可签到',
@@ -1169,7 +1169,7 @@ export const zh = {
   'daily.tasks.claimFailed': '领取失败，请重试',
   'daily.tasks.claimToast': '已领取 +{n} 金币',
 
-  // ── 称号系统（S10，TITLE_DESIGN）────────────────────────────────────────────
+  // ── Title system (S10, TITLE_DESIGN) ─────────────────────────────────────────
   'settings.titles': '称号',
   'settings.openTitles': '我的称号',
   'settings.help': '帮助',
@@ -1178,7 +1178,7 @@ export const zh = {
   'titles.back': '← 返回',
   'titles.empty': '暂无称号',
   'titles.equipped': '已佩戴',
-  // 称号名称（TITLE_DESIGN §6）。
+  // Title names (TITLE_DESIGN §6).
   'title.event.newbie.full': '新手上路',
   'title.event.newbie.short': '新手',
   'title.event.founder.full': '先行者',
@@ -1187,11 +1187,11 @@ export const zh = {
   'title.ach.all_chapters.short': '征服者',
   'title.ach.pvp.veteran.full': '排位老兵',
   'title.ach.pvp.veteran.short': '老兵',
-  // 天梯赛季称号（ladder.s{N}.{rank}）由 formatLadderTitle 拼动态部分。
+  // Ranked-season titles (ladder.s{N}.{rank}); the dynamic part is assembled by formatLadderTitle.
   'title.ladder.full': '天梯达人',
   'title.ladder.short': '天梯',
 
-  // ── 限时活动（B6）────────────────────────────────────────────────────────────
+  // ── Limited-time events (B6) ──────────────────────────────────────────────────
   'event.title': '限时活动',
   'event.back': '← 返回',
   'event.noEvents': '当前没有进行中的活动',
@@ -1208,21 +1208,21 @@ export const zh = {
   'event.rewards.claimToast': '兑换成功，剩余积分：{n}',
   'event.rewards.claimFailed': '兑换失败，请重试',
 
-  // ── GDPR 首次同意（C5-c，L1-1）────────────────────────────────────────────
+  // ── GDPR first-time consent (C5-c, L1-1) ─────────────────────────────────
   'consent.title': '隐私与数据使用',
   'consent.body': '我们重视你的隐私。继续游戏前，请阅读并同意我们的隐私政策与用户协议。仅在你同意后，我们才会收集匿名游玩数据用于改进游戏；你可随时在设置中删除账号。',
   'consent.privacyPolicy': '隐私政策',
   'consent.terms': '用户协议',
   'consent.accept': '同意并继续',
 
-  // ── 抽卡概率公示（Apple 3.1.1，L1-3）──────────────────────────────────────
+  // ── Gacha drop-rate disclosure (Apple 3.1.1, L1-3) ───────────────────────
   'gacha.oddsDetail.button': '概率详情',
   'gacha.oddsDetail.title': '掉落概率公示',
   'gacha.oddsDetail.total': '合计：{pct}%',
   'gacha.oddsDetail.pityRule': '保底：每 {n} 抽内必出最高稀有度。',
   'gacha.oddsDetail.tapClose': '点击任意处关闭',
 
-  // ── 账号删除（Apple 5.1.1(v)，C5-b，L1-2）─────────────────────────────────
+  // ── Account deletion (Apple 5.1.1(v), C5-b, L1-2) ────────────────────────
   'settings.deleteAccount': '删除账号',
   'settings.deleteAccount.confirmTitle': '确认删除账号？',
   'settings.deleteAccount.confirmBody': '删除后账号进入 7 天宽限期，期间重新登录即可恢复；超过 7 天数据将被永久清除。确定删除吗？',

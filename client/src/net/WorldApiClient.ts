@@ -17,7 +17,7 @@ import type { components } from './openapi-world';
 export type WorldTileView = components['schemas']['WorldTileView'];
 export type WorldMapView = components['schemas']['WorldMapView'];
 
-/** 稀疏占领格（zoom 2/3 鸟瞰层，只含被占领格）。 */
+/** Sparse occupied tile (zoom 2/3 bird's-eye layer; contains only occupied tiles). */
 export interface WorldTileSparseView {
   x: number;
   y: number;
@@ -96,7 +96,7 @@ export class WorldApiClient {
    * INCONCLUSIVE → returns true (no offline badge). Rationale: in dev the /health
    * route often lacks the CORS headers the real /world|/auction routes
    * carry, so the probe gets rejected even though the actual feature is fully
-   * reachable — that false negative wrongly greyed the 大世界 entry. Better to let
+   * reachable — that false negative wrongly greyed the SLG World entry. Better to let
    * the user click through and hit real error handling than to mislabel a working
    * service as offline.
    */
@@ -170,7 +170,7 @@ export class WorldApiClient {
     return this.req('GET', `/world/map?worldId=${encodeURIComponent(worldId)}&cx=${cx}&cy=${cy}&r=${r}`);
   }
 
-  /** 稀疏占领层（zoom 2/3）：只返回被占领格，无 profile RPC，无视野计算。 */
+  /** Sparse occupied layer (zoom 2/3): returns only occupied tiles; no profile RPC, no visibility computation. */
   async getMapSparse(worldId: string, cx: number, cy: number, r: number, lod: 'thin' | 'mid'): Promise<WorldMapSparseView> {
     return this.req('GET', `/world/map/sparse?worldId=${encodeURIComponent(worldId)}&cx=${cx}&cy=${cy}&r=${r}&lod=${lod}`);
   }
@@ -183,21 +183,21 @@ export class WorldApiClient {
     return this.req('GET', `/world/march?worldId=${encodeURIComponent(worldId)}`);
   }
 
-  /** 进入世界：系统自动落城（§3.4，优先靠近家族→外环新手区），落点由服务端决定，玩家不传坐标。 */
+  /** Enter the world: the system automatically places the player's city (§3.4; prefers near family → outer-ring newcomer zone); spawn point is server-determined, player does not pass coordinates. */
   async joinWorld(worldId: string): Promise<PlayerWorldView> {
     return this.req('POST', '/world/join', { worldId });
   }
 
   /**
-   * 按赛季解析本账号应进的 shard（G6/§20）：只解析不落城，进图前拿真实 worldId（粘性>家族>单随，溢出开新区）。
+   * Resolve which shard this account should enter for the given season (G6/§20): resolve only, no city placement; returns the real worldId before entering the map (stickiness > family > solo random; overflow opens a new shard).
    */
   async resolveSeason(season: number): Promise<{ worldId: string }> {
     return this.req('POST', '/world/season/resolve', { season });
   }
 
   /**
-   * 按赛季 join（G6/§20）：服务端解析本账号应进的 shard（宗门>家族>单随，溢出开新区）后**系统自动落城**（§3.4）。
-   * 返回的 PlayerWorldView 含解析出的 `worldId`，客户端据此进图。玩家不传坐标。
+   * Season join (G6/§20): server resolves the shard for this account (sect > family > solo random; overflow opens a new shard) then **automatically places the city** (§3.4).
+   * The returned PlayerWorldView contains the resolved `worldId`; client uses it to enter the map. Player does not pass coordinates.
    */
   async joinSeason(season: number): Promise<PlayerWorldView> {
     return this.req('POST', '/world/season/join', { season });
@@ -211,12 +211,12 @@ export class WorldApiClient {
     return this.req('POST', '/world/abandon', { worldId, x, y });
   }
 
-  /** 主动迁城（花 RELOCATE_COST 金币迁主城到 (x,y)）。返回迁城后的玩家世界态。 */
+  /** Actively relocate the player's base (costs RELOCATE_COST coins to move to (x,y)). Returns the updated player world state after relocation. */
   async relocateBase(worldId: string, x: number, y: number): Promise<PlayerWorldView> {
     return this.req('POST', '/world/relocate', { worldId, x, y });
   }
 
-  /** 建瞭望塔（在己方领地 (x,y) 花 WATCHTOWER_COST 资源建大半径持久视野源；§18 G5 V2）。返回建塔后该格视图。 */
+  /** Build a watchtower (spend WATCHTOWER_COST resources on owned territory at (x,y) to create a large-radius persistent vision source; §18 G5 V2). Returns the tile view after construction. */
   async buildWatchtower(worldId: string, x: number, y: number): Promise<WorldTileView> {
     return this.req('POST', '/world/watchtower', { worldId, x, y });
   }
@@ -239,53 +239,53 @@ export class WorldApiClient {
     return this.req('POST', `/world/march/${encodeURIComponent(marchId)}/recall`, { worldId });
   }
 
-  // ── Troops（训练队列 S8-2）──────────────────────────────────────────────────
+  // ── Troops (training queue S8-2) ──────────────────────────────────────────────────
 
-  /** 入队训练（消耗粮食 + 时间）。返回更新后的玩家状态。 */
+  /** Queue troop training (consumes food + time). Returns the updated player state. */
   async trainTroops(worldId: string, qty: number): Promise<PlayerWorldView> {
     return this.req('POST', '/world/troops/train', { worldId, qty });
   }
 
-  /** 金币加速训练（走 commercial 扣币）。 */
+  /** Speed up training with coins (deducted via the commercial service). */
   async speedupTraining(worldId: string, coins: number): Promise<PlayerWorldView> {
     return this.req('POST', '/world/troops/speedup', { worldId, coins });
   }
 
-  // ── Defense（防守 config 内嵌，S8-4）────────────────────────────────────────
+  // ── Defense (config embedded, S8-4) ────────────────────────────────────────
 
-  /** 读当前防守 config（C3 编辑器预填）。tileKey='base' 主城 或 '{x}:{y}' 领地；未设置返回 null。 */
+  /** Read the current defense config (pre-filled by the C3 editor). tileKey='base' for the main city or '{x}:{y}' for a territory tile; returns null if not set. */
   async getDefense(worldId: string, tileKey: string): Promise<DefenseConfig | null> {
     return this.req('GET', `/world/defense?worldId=${encodeURIComponent(worldId)}&tileKey=${encodeURIComponent(tileKey)}`);
   }
 
-  /** 设/改防守 config。tileKey='base' 主城 或 '{x}:{y}' 领地。 */
+  /** Set or update the defense config. tileKey='base' for the main city or '{x}:{y}' for a territory tile. */
   async setDefense(worldId: string, tileKey: string, defenseConfig: DefenseConfig): Promise<{ ok: true }> {
     return this.req('PUT', '/world/defense', { worldId, tileKey, defenseConfig });
   }
 
-  // ── Teams（进攻布阵模板，G3-2c）─────────────────────────────────────────────
+  // ── Teams (attack formation templates, G3-2c) ─────────────────────────────────────────────
 
-  /** 读进攻布阵模板列表（队伍编辑器 / 出征选队预填）。 */
+  /** Read the attack formation template list (pre-fills the team editor / march team selector). */
   async getTeams(worldId: string): Promise<TeamTemplate[]> {
     return this.req('GET', `/world/teams?worldId=${encodeURIComponent(worldId)}`);
   }
 
-  /** 覆盖写进攻布阵模板（整组传全量，≤5 支）。 */
+  /** Overwrite attack formation templates (pass the full set at once, max 5 teams). */
   async setTeams(worldId: string, teams: TeamTemplate[]): Promise<{ ok: true }> {
     return this.req('PUT', '/world/teams', { worldId, teams });
   }
 
-  // ── Siege replay（重播观战，G3-2c）──────────────────────────────────────────
+  // ── Siege replay (spectator replay, G3-2c) ──────────────────────────────────────────
 
   /**
-   * 取一场关键围攻的重播关卡（seed + 双方布阵重建的 LevelDefinition）。攻守双方可读。
-   * 客户端凭返回的 seed 以空 ReplayInputSource 在 siege 模式 headless 重跑 → 逐字复现。
+   * Fetch the replay level for a key siege (seed + LevelDefinition reconstructed from both armies). Readable by both attacker and defender.
+   * Client uses the returned seed to headlessly re-run in siege mode with an empty ReplayInputSource → exact byte-for-byte reproduction.
    */
   async getSiegeReplay(worldId: string, siegeId: string): Promise<SiegeReplayView> {
     return this.req('GET', `/world/siege/${encodeURIComponent(siegeId)}/replay?worldId=${encodeURIComponent(worldId)}`);
   }
 
-  // ── Nations（国家系统 S8-6.5）───────────────────────────────────────────────
+  // ── Nations (nation system S8-6.5) ───────────────────────────────────────────────
 
   async getNations(worldId: string): Promise<NationView[]> {
     return this.req('GET', `/world/nations?worldId=${encodeURIComponent(worldId)}`);
@@ -295,13 +295,13 @@ export class WorldApiClient {
     return this.req('POST', `/world/nations/${capitalIdx}/name`, { worldId, name });
   }
 
-  // ── Season（赛季 S8-7）──────────────────────────────────────────────────────
+  // ── Season (S8-7) ──────────────────────────────────────────────────────
 
   async getSeason(worldId: string): Promise<SeasonView> {
     return this.req('GET', `/world/season?worldId=${encodeURIComponent(worldId)}`);
   }
 
-  // ── SLG Shop（变现 S8-8）────────────────────────────────────────────────────
+  // ── SLG Shop (monetization S8-8) ────────────────────────────────────────────────────
 
   async getShopItems(): Promise<SlgShopItemView[]> {
     return this.req('GET', '/world/shop/items');
@@ -384,8 +384,8 @@ export class WorldApiClient {
   }
 
   /**
-   * 挂拍。fixed 模式传 price（一口价单价）；auction 模式传 saleMode='auction' + startPrice（起拍单价）
-   * + 可选 buyoutPrice（一口价保底单价）。
+   * Create a listing. fixed mode: pass price (buy-now unit price); auction mode: pass saleMode='auction' + startPrice (opening unit price)
+   * + optional buyoutPrice (buy-now floor unit price).
    */
   async createAuction(
     worldId: string,
@@ -415,7 +415,7 @@ export class WorldApiClient {
     return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/buy`, { worldId });
   }
 
-  /** 竞拍出价（saleMode='auction'）。amount = 出价单价；达/超 buyoutPrice 立即结拍。 */
+  /** Place a bid (saleMode='auction'). amount = bid unit price; reaching or exceeding buyoutPrice closes the auction immediately. */
   async placeBid(auctionId: string, worldId: string, amount: number): Promise<AuctionView> {
     return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/bid`, { worldId, amount });
   }
@@ -424,7 +424,7 @@ export class WorldApiClient {
     return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/cancel`, { worldId });
   }
 
-  // ── Sect（宗门 S8-4b）────────────────────────────────────────────────────────
+  // ── Sect (S8-4b) ────────────────────────────────────────────────────────
 
   async listSects(worldId: string): Promise<SectView[]> {
     return this.req('GET', `/sect/list?worldId=${encodeURIComponent(worldId)}`);
@@ -476,7 +476,7 @@ export class WorldApiClient {
     return this.req('GET', `/sect/channel?${params}`);
   }
 
-  // ── 世界频道（国家/公频，S6-4，一次 50 金币）──────────────────────────────
+  // ── World channel (nation/public chat, S6-4, 50 coins per message) ──────────────────────────────
 
   async getWorldChannel(
     worldId: string,

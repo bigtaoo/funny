@@ -1,7 +1,8 @@
-// PvE L1 录像抽检复算端到端（PVE_INTEGRITY_PLAN §8.6 第 3 步）：真实 Mongo + 注入假 gateway 裁判。
-//   首通触发抽检 → 材料暂扣 + needsReplay/verifyId；/pve/verify 复算通过发材料 / 星数不符判可疑不发 /
-//   无裁判可裁 benefit-of-doubt 发；重复上传幂等；无 gateway 时不抽检（直接发，回归既有行为）。
-// 需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// PvE L1 replay spot-check re-computation end-to-end (PVE_INTEGRITY_PLAN §8.6 step 3): real Mongo + injected fake gateway judge.
+//   First clear triggers spot-check → materials withheld + needsReplay/verifyId; /pve/verify: re-compute passes → grant materials /
+//   star mismatch → mark suspicious, do not grant / no available judge → benefit-of-doubt grant; duplicate upload is idempotent;
+//   no gateway configured → no spot-check (grant immediately, reverts to prior behaviour).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -20,9 +21,9 @@ async function tryConnect(): Promise<MongoHandle | null> {
   }
 }
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[pve-verify.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[pve-verify.e2e] Mongo unreachable (${URI}) — skipping.`);
 
-/** 可配置假裁判：记录最后一次 judge 入参，按设定回 verdict。 */
+/** Configurable fake judge: records the last judge call's arguments and returns a preset verdict. */
 class FakeGateway implements GatewayClient {
   available = true;
   next: JudgeRes = { ok: true, stars: 3, judgeAccountId: 'judge-1' };
@@ -61,79 +62,79 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
   });
   afterAll(async () => { if (app) await app.close(); });
 
-  it('首通被抽中：材料暂扣 + needsReplay/verifyId；progress/stars 已写', async () => {
+  it('first clear is selected for spot-check: materials withheld + needsReplay/verifyId; progress/stars already written', async () => {
     const r = b(await clear('ch1_lv1', 3));
     expect(r.data.needsReplay).toBe(true);
     expect(typeof r.data.verifyId).toBe('string');
-    expect(r.data.granted).toEqual({}); // 暂不发材料
+    expect(r.data.granted).toEqual({}); // materials not granted yet
     expect(r.data.save.materials.scrap ?? 0).toBe(0);
-    expect(r.data.save.progress.cleared).toContain('ch1_lv1'); // 解锁照常
+    expect(r.data.save.progress.cleared).toContain('ch1_lv1'); // unlock proceeds as normal
     expect(r.data.save.progress.stars['ch1_lv1']).toBe(3);
   });
 
-  it('复算通过（星数≥声称）→ 发材料 + verified', async () => {
+  it('re-computation passes (stars >= claimed) → grant materials + verified', async () => {
     const c = b(await clear('ch1_lv1', 3));
     gateway.next = { ok: true, stars: 3 };
     const v = b(await verify(c.data.verifyId));
     expect(v.data.verified).toBe(true);
     expect(v.data.granted).toEqual({ scrap: 6, lead: 2 });
     expect(v.data.save.materials.scrap).toBe(6);
-    // 裁判收到 PvE 复算入参（levelId + 服务器权威蓝图）。
+    // Judge received PvE re-computation arguments (levelId + server-authoritative blueprint).
     expect(gateway.last?.levelId).toBe('ch1_lv1');
     expect(gateway.last?.pveUpgrades).toEqual({});
   });
 
-  it('复算星数 < 声称 → 判可疑，不发材料', async () => {
+  it('re-computation stars < claimed → mark suspicious, do not grant materials', async () => {
     const c = b(await clear('ch1_lv1', 3));
-    gateway.next = { ok: true, stars: 1 }; // 复算只 1 星，声称 3
+    gateway.next = { ok: true, stars: 1 }; // re-computation yields only 1 star, claimed 3
     const v = b(await verify(c.data.verifyId));
     expect(v.data.verified).toBe(false);
     expect(v.data.granted).toEqual({});
     expect(v.data.save.materials.scrap ?? 0).toBe(0);
   });
 
-  it('无裁判可裁（ok:false）→ benefit-of-doubt 发材料', async () => {
+  it('no judge available (ok:false) → benefit-of-doubt, grant materials', async () => {
     const c = b(await clear('ch1_lv1', 3));
-    gateway.next = { ok: false }; // 无候选 / 超时 / 复算失败
+    gateway.next = { ok: false }; // no candidate / timeout / re-computation failure
     const v = b(await verify(c.data.verifyId));
     expect(v.data.verified).toBe(true);
     expect(v.data.granted).toEqual({ scrap: 6, lead: 2 });
   });
 
-  it('重复上传同 verifyId → 幂等，不重复发', async () => {
+  it('duplicate upload of the same verifyId → idempotent, not granted twice', async () => {
     const c = b(await clear('ch1_lv1', 3));
     gateway.next = { ok: true, stars: 3 };
     await verify(c.data.verifyId);
     const again = b(await verify(c.data.verifyId));
-    expect(again.data.granted).toEqual({}); // 已结算，不再发
-    expect(again.data.save.materials.scrap).toBe(6); // 只发过一次
+    expect(again.data.granted).toEqual({}); // already settled, no further grant
+    expect(again.data.save.materials.scrap).toBe(6); // granted exactly once
   });
 
-  it('未知 / 越权 verifyId → 404', async () => {
+  it('unknown / unauthorized verifyId → 404', async () => {
     expect((await verify('no-such-id')).statusCode).toBe(404);
   });
 
-  it('三振封禁：3 次复算拒绝后 pveClear 返回 403', async () => {
-    // PVE_REJECT_BAN_THRESHOLD = 3：触发 3 次 rejected → pveBanned = true → 后续 clear 403。
-    gateway.next = { ok: true, stars: 1 }; // 复算只 1 星，声称 3 星 → rejected
+  it('three-strikes ban: pveClear returns 403 after 3 re-computation rejections', async () => {
+    // PVE_REJECT_BAN_THRESHOLD = 3: 3 rejected verdicts → pveBanned = true → subsequent clears return 403.
+    gateway.next = { ok: true, stars: 1 }; // re-computation yields 1 star, claimed 3 → rejected
 
     for (let i = 0; i < 3; i++) {
       const c = b(await clear('ch1_lv1', 3));
-      // 若触发抽检则 verify，否则（非首通无法触发）模拟材料扣的路径
+      // if spot-check is triggered, call verify; otherwise (non-first-clear cannot trigger) simulate the material-deduction path
       if (c.data.needsReplay) {
         await verify(c.data.verifyId);
       }
     }
 
-    // 第 4 次 pveClear 应被封禁拦截（首通+3次拒绝后）
+    // 4th pveClear should be blocked by the ban (after first clear + 3 rejections)
     const blocked = await clear('ch1_lv1', 3);
     expect(blocked.statusCode).toBe(403);
   });
 
-  it('三振封禁：被封账号 pveVerify 返回 403', async () => {
-    gateway.next = { ok: true, stars: 3 }; // 正常首通
+  it('three-strikes ban: pveVerify returns 403 for a banned account', async () => {
+    gateway.next = { ok: true, stars: 3 }; // normal first clear
     const c = b(await clear('ch1_lv1', 3));
-    // 手动在 save 里写 pveBanned（模拟已封）
+    // manually set pveBanned in save (simulates an already-banned account)
     await m.collections.saves.updateOne(
       { _id: c.data.save._id ?? (await m.collections.saves.findOne({}))!._id },
       { $set: { 'save.antiCheat.pveBanned': true } },
@@ -144,8 +145,8 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
     }
   });
 
-  it('无 gateway 配置 → 不抽检，首通直接发材料（回归既有行为）', async () => {
-    const app2 = await buildApp({ cols: m.collections, jwt, internalKey: 'k' }); // 无 gateway
+  it('no gateway configured → no spot-check, first clear grants materials immediately (reverts to prior behaviour)', async () => {
+    const app2 = await buildApp({ cols: m.collections, jwt, internalKey: 'k' }); // no gateway
     const r2 = b(await app2.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'pve-verify-dev-2' } }));
     const res = b(await app2.inject({
       method: 'POST', url: '/pve/clear',

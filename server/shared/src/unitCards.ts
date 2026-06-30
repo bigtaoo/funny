@@ -1,23 +1,23 @@
-// 单位养成卡片 —— 集卡合成模型（ECONOMY_NUMBERS §4 / ADR-009）。
+// Unit progression cards — collect-and-merge model (ECONOMY_NUMBERS §4 / ADR-009).
 //
-// 纯数据 + 纯函数，无 game logic（M12：metaserver 可 import；严禁反向 import client/engine）。
-// 卡片库存（cardInventory）是收集的原始来源；单位强度等级（unitLevels）= 各兵种当前最高
-// 拥有卡级，由 deriveUnitLevels 从库存派生（服务器权威，引擎只读 unitLevels 跑蓝图）。
+// Pure data + pure functions, no game logic (M12: metaserver may import; reverse imports from client/engine are strictly forbidden).
+// Card inventory (cardInventory) is the raw collection source; unit strength level (unitLevels) = the highest card tier
+// owned per unit type, derived from inventory by deriveUnitLevels (server-authoritative; the engine only reads unitLevels to run blueprints).
 //
-// 合成（§4.1）：5 张 N 级卡 → 1 张 (N+1) 级，100% 成功（指数 sink）。本文件是「合成 + 派生」
-// 的权威落点，meta /pve/merge 端点重算。卡片来源（盲盒 / 关卡掉落）见 S12-C。
+// Merging (§4.1): 5 cards of level N → 1 card of level (N+1), 100% success rate (exponential sink). This file is the authoritative
+// location for "merge + derive" logic, re-computed by the meta /pve/merge endpoint. Card sources (gacha / level drops) see S12-C.
 
-/** 合成所需同级卡数（5 张 N → 1 张 N+1）。 */
+/** Number of same-level cards required for a merge (5 of level N → 1 of level N+1). */
 export const MERGE_COPIES = 5;
 
-/** 卡片 / 单位等级上限（与 @nw/engine UNIT_MAX_LEVEL 同值，解耦不 import）。 */
+/** Card / unit level cap (same value as @nw/engine UNIT_MAX_LEVEL, decoupled to avoid import). */
 export const UNIT_CARD_MAX_LEVEL = 9;
 
 /**
- * 可养成兵种 id —— 须与 @nw/engine `UnitType` 的字符串值逐字一致，SaveData.unitLevels 的键直接喂引擎。
- * 顺序决定 levelCardReward 的章节轮换（ch1→index0，ch2→index1，…）：
- *   奇章（Tao）: infantry / shieldbearer / archer
- *   偶章（Anna）: max / lena / mara
+ * Progressable unit ids — must match the string values of @nw/engine `UnitType` exactly; the keys in SaveData.unitLevels are fed directly to the engine.
+ * Order determines the chapter rotation for levelCardReward (ch1→index0, ch2→index1, …):
+ *   odd chapters (Tao): infantry / shieldbearer / archer
+ *   even chapters (Anna): max / lena / mara
  */
 export const PROGRESSABLE_UNIT_IDS = ['infantry', 'max', 'shieldbearer', 'lena', 'archer', 'mara'] as const;
 export type ProgressableUnitId = (typeof PROGRESSABLE_UNIT_IDS)[number];
@@ -26,12 +26,12 @@ export function isProgressableUnit(id: string): id is ProgressableUnitId {
   return (PROGRESSABLE_UNIT_IDS as readonly string[]).includes(id);
 }
 
-/** cardInventory 的键：`${unitId}:${level}`。 */
+/** Key format for cardInventory: `${unitId}:${level}`. */
 export function cardKey(unitId: string, level: number): string {
   return `${unitId}:${level}`;
 }
 
-/** 解析卡片键；非法格式 / 越界等级 / 未知兵种 → null。 */
+/** Parses a card key; invalid format / out-of-range level / unknown unit type → null. */
 export function parseCardKey(key: string): { unitId: ProgressableUnitId; level: number } | null {
   const idx = key.lastIndexOf(':');
   if (idx <= 0) return null;
@@ -43,8 +43,8 @@ export function parseCardKey(key: string): { unitId: ProgressableUnitId; level: 
 }
 
 /**
- * 从卡片库存派生各兵种强度等级 = 该兵种当前**最高拥有卡级**（count>0）；无卡 = 等级 1（基础）。
- * 只产出 level>1 的条目（基础 L1 由引擎对缺省键默认，省存储 + 保 save 精简）。
+ * Derives the strength level per unit type from the card inventory = the **highest owned card tier** (count>0) for that unit; no cards = level 1 (base).
+ * Only emits entries with level>1 (base L1 is the engine default for missing keys, saving storage and keeping save data lean).
  */
 export function deriveUnitLevels(inv: Record<string, number>): Record<string, number> {
   const max: Record<string, number> = {};
@@ -62,12 +62,12 @@ export function deriveUnitLevels(inv: Record<string, number>): Record<string, nu
   return out;
 }
 
-/** 合成失败原因。 */
+/** Merge failure reason. */
 export type MergeError = 'INVALID_UNIT' | 'INVALID_LEVEL' | 'INSUFFICIENT';
 
 /**
- * 合成一次：消耗 {@link MERGE_COPIES} 张 (unitId, level) 卡 → +1 张 (level+1)。
- * 纯函数，返回**新库存**（不改入参）或错误码。L9 不可再合成。
+ * Performs one merge: consumes {@link MERGE_COPIES} cards of (unitId, level) → adds 1 card of (level+1).
+ * Pure function, returns a **new inventory** (does not mutate the input) or an error code. L9 cannot be merged further.
  */
 export function applyCardMerge(
   inv: Record<string, number>,
@@ -85,7 +85,7 @@ export function applyCardMerge(
   return next;
 }
 
-/** 把若干张卡加进库存（关卡掉落 / 盲盒发货用，纯函数返回新库存）。无效键跳过。 */
+/** Adds a batch of cards to the inventory (for level drops / gacha delivery; pure function returning a new inventory). Invalid keys are skipped. */
 export function grantCards(
   inv: Record<string, number>,
   grants: Record<string, number>,
@@ -99,17 +99,17 @@ export function grantCards(
   return next;
 }
 
-// ── 卡片来源（S12-C，ECONOMY_NUMBERS §3 关卡掉落 / §4.1 抽奖出卡）────────────────
-// 卡片两条来源：①盲盒（独立单位卡池，commercial 滚 RNG）②关卡掉落（PvE 通关确定性整数）。
-// 入库统一走 grantCards → cardInventory，unitLevels 由 deriveUnitLevels 重算（服务器权威）。
+// ── Card sources (S12-C, ECONOMY_NUMBERS §3 level drops / §4.1 gacha cards) ────────────────
+// Two card sources: ① gacha (independent unit card pool, RNG rolled by commercial) ② level drops (deterministic integer rewards on PvE clear).
+// All cards enter the system through grantCards → cardInventory; unitLevels is recomputed by deriveUnitLevels (server-authoritative).
 
-/** 单位卡盲盒池 id（与皮肤池 `standard` 分离：养成 ≠ 外观，抽卡动机/调参互不干扰）。 */
+/** Unit card gacha pool id (separate from the skin pool `standard`: progression ≠ cosmetics, motivations and tuning parameters are independent). */
 export const UNIT_CARD_POOL_ID = 'units';
 
 /**
- * gacha 稀有度 → 单位卡级映射（独立单位卡池，§4.1「抽奖出卡」补充源）。
- * 盲盒产 T1–T4：common→T1 / rare→T2 / epic→T3 / legendary→T4（高级卡加速，T5+ 仍靠合成/拍卖）。
- * 与皮肤池同权重（economy.ts `RARITY_WEIGHTS`）；卡片天然集卡 → **不走 dupe 退币**，全部入库。
+ * Gacha rarity → unit card level mapping (independent unit card pool, §4.1 "gacha card" supplemental source).
+ * Gacha produces T1–T4: common→T1 / rare→T2 / epic→T3 / legendary→T4 (accelerates access to higher tiers; T5+ still requires merging/auction).
+ * Same rarity weights as the skin pool (economy.ts `RARITY_WEIGHTS`); cards are collectibles → **no dupe coin refund**, all go into inventory.
  */
 export const GACHA_RARITY_TO_CARD_LEVEL: Record<string, number> = {
   common: 1,
@@ -119,8 +119,8 @@ export const GACHA_RARITY_TO_CARD_LEVEL: Record<string, number> = {
 };
 
 /**
- * 构建单位卡池 itemsByRarity（cardKey 作 itemId，3 兵种 × 1 tier/稀有度）。
- * economy.ts 拼装 GACHA_POOLS 时调用，使「池内 item = 合法 cardKey」，发货端 parseCardKey 即可识别。
+ * Builds the unit card pool's itemsByRarity (cardKey used as itemId, 3 unit types × 1 tier per rarity).
+ * Called when economy.ts assembles GACHA_POOLS, ensuring "pool item = valid cardKey" so the delivery side can identify them with parseCardKey.
  */
 export function unitCardPoolItems(): Record<'common' | 'rare' | 'epic' | 'legendary', string[]> {
   const at = (rarity: string) =>
@@ -129,11 +129,11 @@ export function unitCardPoolItems(): Record<'common' | 'rare' | 'epic' | 'legend
 }
 
 /**
- * 关卡掉单位卡（确定性整数，§3 体力门控 + §4.1「后期关产 T3 卡」）。
- * 从 levelId `ch{N}_lv{M}` 派生：章节越后 tier 越高（ch1–2→T1 / ch3–4→T2 / ch5–6→T3），
- * 单位按章节轮换（inf/shd/arc）；终关（lv10）双倍。非章节关（如 `ch_stress`）不掉卡。
- * `[可调]`：tier/张数是「高级卡获取速率」旋钮（与盲盒/拍卖供给一起调），**不动 5→1 合成系数**。
- * 纯函数、不引入 RNG（保 PvE 抽检幂等 + 服务器权威确定性）。
+ * Level drop for unit cards (deterministic integer, §3 stamina-gated + §4.1 "late chapters produce T3 cards").
+ * Derived from levelId `ch{N}_lv{M}`: later chapters yield higher tiers (ch1–2→T1 / ch3–4→T2 / ch5–6→T3);
+ * unit type rotates by chapter (inf/shd/arc); final level (lv10) drops double. Non-chapter levels (e.g. `ch_stress`) drop no cards.
+ * `[tunable]`: tier/count are the "high-tier card acquisition rate" knobs (tuned together with gacha/auction supply); **do not touch the 5→1 merge coefficient**.
+ * Pure function, no RNG (ensures PvE audit idempotency + server-authoritative determinism).
  */
 export function levelCardReward(levelId: string): Record<string, number> {
   const m = /^ch(\d+)_lv(\d+)$/.exec(levelId);

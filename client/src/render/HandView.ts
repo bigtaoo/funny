@@ -24,7 +24,7 @@ const BAR_TRACK_ALPHA      = 0.15;
 
 const FLASH_DURATION_MS    = 250;
 
-// 卡牌插画（单位/建筑/法术）的 url 映射 + key 解析现集中在 ./cardArt，与养成页共用。
+// Card art URLs (unit / building / spell) and key resolution are centralised in ./cardArt, shared with the collection page.
 
 // ── Card slot structure ────────────────────────────────────────────────────────
 //
@@ -105,7 +105,7 @@ export class HandView {
     createCardSlot,
     resetCardSlot,
     6,
-    // 卡槽容器：bg/art/type/name/costBg/cost/overlay/bar/flash 等多个绘制对象。
+    // Card slot container: multiple draw objects — bg/art/type/name/costBg/cost/overlay/bar/flash.
     { label: 'hand.slot', bytesEach: 6 * 1024 },
   );
 

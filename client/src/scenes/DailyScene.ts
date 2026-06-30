@@ -14,11 +14,11 @@ import {
   makeMonthKey,
 } from '../game/meta/retention';
 
-// ── DailyScene — 每日签到 + 每日任务（B5，RETENTION_DESIGN）─────────────────────
+// ── DailyScene — daily check-in + daily tasks (B5, RETENTION_DESIGN) ────────────
 //
-// 入口：LobbyScene「每日」按钮（onOpenDaily）。
-// 竖屏：上半 = 30 格月历签到，下半 = 3 条每日任务卡片 + 满点领取按钮。
-// 横屏：左列（55%）= 签到历，右列（45%）= 任务卡片。
+// Entry: LobbyScene "daily" button (onOpenDaily).
+// Portrait: upper half = 30-cell monthly check-in calendar, lower half = 3 daily task cards + claim button.
+// Landscape: left column (55%) = check-in calendar, right column (45%) = task cards.
 
 export interface DailyCallbacks {
   onBack(): void;
@@ -126,7 +126,7 @@ export class DailyScene implements Scene {
     const contentTop = h * 0.12;
 
     if (this.landscape) {
-      // 横屏：签到历在左列，任务在右列
+      // Landscape: check-in calendar in the left column, tasks in the right column
       const colGap = Math.round(w * 0.015);
       const leftW = Math.round((w - colGap) * 0.55);
       const rightX = leftW + colGap;
@@ -135,7 +135,7 @@ export class DailyScene implements Scene {
       this.renderCheckin(0, contentTop, leftW, availH, save, nowMs);
       this.renderDailyTasks(rightX, contentTop, rightW, availH, save, nowMs);
     } else {
-      // 竖屏：签到历上半，任务下半
+      // Portrait: check-in calendar in the upper half, tasks in the lower half
       const halfH = (h - contentTop) / 2;
       this.renderCheckin(0, contentTop, w, halfH, save, nowMs);
       this.renderDailyTasks(0, contentTop + halfH, w, halfH - h * 0.03, save, nowMs);
@@ -184,8 +184,9 @@ export class DailyScene implements Scene {
       const cw = cellW * 0.92;
       const ch = cellH * 0.92;
 
-      // 顺序累计模型：已领格（≤ 已领数）打勾；下一未领格 = 可领（高亮）；其余 = 未解锁（暗）。
-      // claimable 由 nextCheckinDay 给出，可能为 null（今日已领/月满）→ 无高亮格。
+      // Sequential accumulation model: claimed cells (≤ claimed count) get a checkmark;
+      // the next unclaimed cell = claimable (highlighted); the rest = locked (dimmed).
+      // claimable is provided by nextCheckinDay, may be null (already claimed today / month full) → no highlighted cell.
       const isClaimed = claimedDays.includes(day);
       const isClaimable = claimable !== null && day === claimable;
       const isLocked = !isClaimed && !isClaimable;
@@ -212,7 +213,7 @@ export class DailyScene implements Scene {
         this.container.addChild(rt);
       }
 
-      // 已领格：盖一个绿色对勾（用户反馈：领取后在已领日期打勾）。
+      // Claimed cell: stamp a green checkmark (user feedback: tick the claimed date after collecting).
       if (isClaimed) {
         const tick = txt('✓', Math.round(ch * 0.5), 0x2e7d32, true);
         tick.anchor.set(0.5, 0.5);
@@ -308,7 +309,7 @@ export class DailyScene implements Scene {
       const r = await withTimeout(this.cb.onCheckin());
       const rewardDesc = r.reward.kind === 'coins'
         ? t('daily.tasks.rewardCoins', { n: r.reward.count })
-        : `+${r.reward.count} 体力`;
+        : `+${r.reward.count} stamina`;
       this.showToast(`${t('daily.checkin.day', { n: r.day })} ${rewardDesc}`);
     } catch (e) {
       this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'));

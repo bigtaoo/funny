@@ -1,7 +1,8 @@
-// 状态流录像游戏外分享端到端（REPLAY_SHARE_DESIGN §3）：
-//   POST /replay/share（鉴权上传 blob → shareCode）→ 公开 GET /r/{shareCode}（匿名取回 + viewCount++）。
-//   覆盖：round-trip、匿名取、不存在 404、体量超限 400。
-//   需 `cd server && docker compose up -d` + 先 `tsc -b`（导入 dist）。
+// End-to-end test for out-of-game sharing of state-stream replays (REPLAY_SHARE_DESIGN §3):
+//   POST /replay/share (authenticated blob upload → shareCode) → public GET /r/{shareCode}
+//   (anonymous retrieval + viewCount++).
+//   Coverage: round-trip, anonymous retrieval, missing-code 404, oversized blob 400.
+//   Requires `cd server && docker compose up -d` and `tsc -b` first (imports dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -21,10 +22,11 @@ async function tryConnect(): Promise<MongoHandle | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[state-replay-share.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[state-replay-share.e2e] Mongo unreachable (${URI}) — skipping.`);
 
-// blob 是客户端 gzip+base64 后的 opaque 压缩串（服务端不解压/不解释，只存取 + 体量闸 + 限流）。
-// 测试只需任意非空串 round-trip 一致即可。
+// blob is an opaque gzip+base64 string produced by the client (the server does not decompress or
+// interpret it — only stores/retrieves it with a size gate and rate limiting).
+// Tests only require any non-empty string to round-trip unchanged.
 const sampleBlob = 'H4sIAAAAAAAA_compressed-state-replay-blob-base64==';
 
 describe.skipIf(!mongo)('state replay share e2e', () => {
@@ -38,7 +40,7 @@ describe.skipIf(!mongo)('state replay share e2e', () => {
     await m.db.dropDatabase();
     await m.ensureIndexes();
     if (app) await app.close();
-    // authRateLimit=0 关闭 auth 限流（测试默认）。
+    // authRateLimit=0 disables auth rate limiting (test default).
     app = await buildApp({ cols: m.collections, jwt, internalKey: KEY });
     const ra = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'sr-aaaa-1' } }));
     token = ra.data.token;
@@ -46,7 +48,7 @@ describe.skipIf(!mongo)('state replay share e2e', () => {
 
   afterAll(async () => { if (app) await app.close(); });
 
-  it('铸码 → 匿名取回 blob 一致 + viewCount++', async () => {
+  it('mint share code → anonymous retrieval blob matches + viewCount++', async () => {
     const post = await app.inject({
       method: 'POST', url: '/replay/share',
       headers: { authorization: `Bearer ${token}` },
@@ -56,31 +58,31 @@ describe.skipIf(!mongo)('state replay share e2e', () => {
     const shareCode = body(post).data.shareCode as string;
     expect(shareCode).toBeTruthy();
 
-    // 公开取（无 token）。
+    // Public retrieval (no token).
     const get1 = await app.inject({ method: 'GET', url: `/r/${shareCode}` });
     expect(get1.statusCode).toBe(200);
     expect(body(get1).data.blob).toEqual(sampleBlob);
 
-    // 再取一次 → viewCount 累加（异步 $inc，给个 round-trip 让它落库）。
+    // Fetch once more → viewCount increments (async $inc; allow a round-trip for it to persist).
     await app.inject({ method: 'GET', url: `/r/${shareCode}` });
     const doc = await m.collections.stateReplayShares.findOne({ _id: shareCode });
     expect(doc!.createdBy).toBeTruthy();
     expect(doc!.viewCount).toBeGreaterThanOrEqual(1);
   });
 
-  it('未登录铸码 401', async () => {
+  it('unauthenticated share upload → 401', async () => {
     const res = await app.inject({ method: 'POST', url: '/replay/share', payload: { blob: sampleBlob } });
     expect(res.statusCode).toBe(401);
   });
 
-  it('不存在的 shareCode → 404', async () => {
+  it('non-existent shareCode → 404', async () => {
     const res = await app.inject({ method: 'GET', url: '/r/nope-nope-nope' });
     expect(res.statusCode).toBe(404);
   });
 
-  it('体量超限 → 优雅 400（而非 Fastify 413）', async () => {
-    // > 2MB 压缩串（仍 < 4MB Fastify bodyLimit），应命中应用层优雅 400「replay too large」，
-    // 不被 Fastify 抢先 413。
+  it('oversized blob → graceful 400 (not Fastify 413)', async () => {
+    // > 2MB compressed string (still < 4MB Fastify bodyLimit): should hit the application-layer
+    // graceful 400 "replay too large" rather than being preempted by Fastify's 413.
     const big = 'A'.repeat(2 * 1024 * 1024 + 16);
     const res = await app.inject({
       method: 'POST', url: '/replay/share',
@@ -90,7 +92,7 @@ describe.skipIf(!mongo)('state replay share e2e', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('缺 blob → 400', async () => {
+  it('missing blob → 400', async () => {
     const res = await app.inject({
       method: 'POST', url: '/replay/share',
       headers: { authorization: `Bearer ${token}` },

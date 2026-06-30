@@ -8,43 +8,45 @@ import {
 import { CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
 
 /**
- * 关卡难度模拟（PvE balance tool）——见 difficultySim.ts 顶部说明。
+ * Level difficulty simulation (PvE balance tool) — see the top of difficultySim.ts for details.
  *
- * 跑法：
- *   - 全量难度报表：  npx vitest run difficulty -t 报表
- *   - 只看第一章：    （默认 describe 即 ch1）
+ * How to run:
+ *   - Full difficulty report:  npx vitest run difficulty -t report
+ *   - Chapter 1 only:          (default describe is ch1)
  *
- * 这些用例兼当回归网：保证模拟器确定性，并守住「ch1 难度曲线」——若某天
- * 改坏了数值让第一关连满养成都过不了，这里会变红。
+ * These cases also serve as a regression net: they guarantee simulator determinism and
+ * guard the "ch1 difficulty curve" — if a future change breaks the numbers so badly that
+ * level 1 cannot be cleared even with full progression, tests here will go red.
  */
 
 const CH1 = CAMPAIGN_LEVEL_ORDER.filter((id) => id.startsWith('ch1_'));
 
-describe('难度模拟器', () => {
-  it('确定性：同关同预设跑两次结果完全一致', () => {
+describe('Difficulty simulator', () => {
+  it('determinism: running the same level with the same preset twice gives identical results', () => {
     const a = simulateLevel('ch1_lv1', { preset: 'fresh' });
     const b = simulateLevel('ch1_lv1', { preset: 'fresh' });
     expect(a).toEqual(b);
   });
 
-  it('单调性：养成越高，第一关最低基地血不降（更稳）', () => {
+  it('monotonicity: higher progression means level 1 minimum base HP does not decrease (more stable)', () => {
     const fresh = simulateLevel('ch1_lv1', { preset: 'fresh' });
     const t5 = simulateLevel('ch1_lv1', { preset: 'T5' });
-    // 满养成至少不比零养成更差（minBaseHp 不降；win 不退化）。
+    // Full progression must be at least as good as zero progression (minBaseHp does not decrease; win does not regress).
     expect(t5.minBaseHp).toBeGreaterThanOrEqual(fresh.minBaseHp);
     if (fresh.win) expect(t5.win).toBe(true);
   });
 
-  it('报表：ch1 各关 × 养成预设 难度矩阵', () => {
+  it('report: ch1 difficulty matrix — each level × progression preset', () => {
     const results: ThresholdResult[] = CH1.map((id) => findClearThreshold(id));
-    // 打印到 stdout（vitest 默认显示 console）。
+    // Print to stdout (vitest shows console output by default).
     console.log('\n' + formatThresholdTable(results) + '\n');
-    console.log('图例：每格=5 种子评估。N★P%=中位N星/通关率P%；✗P%=多数失败(通关率P%)。');
-    console.log('     min通关=通关率≥50% 的最低养成。注意：基线 AI 偏保守，绝对值仅供相对参考。\n');
+    console.log('Legend: each cell = 5-seed evaluation. N★P% = median N stars / clear rate P%; ✗P% = majority fail (clear rate P%).');
+    console.log('     minClear = lowest preset with clear rate ≥50%. Note: baseline AI is conservative; absolute values are for relative comparison only.\n');
 
-    // 合理回归守卫：基线 AI 至少能在某关某预设下通关（证明 AI 与模拟链路是通的）。
-    // 不在此断言具体关卡（难度本身正是待评估对象）。
+    // Sanity regression guard: baseline AI must clear at least one level at some preset
+    // (proves the AI and simulation pipeline are connected).
+    // We do not assert specific levels here — difficulty itself is the evaluation target.
     const anyClear = results.some((r) => r.minClearPreset !== null);
-    expect(anyClear, '基线 AI 一关都过不了 —— 模拟器/AI 链路异常').toBe(true);
+    expect(anyClear, 'baseline AI cannot clear any level — simulator/AI pipeline broken').toBe(true);
   });
 });

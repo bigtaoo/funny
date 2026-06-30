@@ -213,15 +213,15 @@ export class EffectModel {
       maxCount = Math.max(maxCount, count);
       vertices += estimateVertices(l, count);
       if (l.boil) {
-        if ((l.boil.variants ?? 3) > BUDGET.boilVariants) warnings.push(`图层 boil.variants > ${BUDGET.boilVariants}`);
-        if ((l.boil.fps ?? 8) > BUDGET.boilFps) warnings.push(`图层 boil.fps > ${BUDGET.boilFps}`);
+        if ((l.boil.variants ?? 3) > BUDGET.boilVariants) warnings.push(`Layer boil.variants > ${BUDGET.boilVariants}`);
+        if ((l.boil.fps ?? 8) > BUDGET.boilFps) warnings.push(`Layer boil.fps > ${BUDGET.boilFps}`);
       }
     }
 
-    if (layers > BUDGET.layers) warnings.push(`图层数 ${layers} > ${BUDGET.layers}`);
-    if (maxCount > BUDGET.count) warnings.push(`单层 count ${maxCount} > ${BUDGET.count}`);
-    if (vertices > BUDGET.vertices) warnings.push(`估算顶点 ${vertices} > ${BUDGET.vertices}`);
-    if (!this.def.loop && this.def.duration > BUDGET.duration) warnings.push(`时长 ${this.def.duration}s > ${BUDGET.duration}s`);
+    if (layers > BUDGET.layers) warnings.push(`Layer count ${layers} > ${BUDGET.layers}`);
+    if (maxCount > BUDGET.count) warnings.push(`Per-layer count ${maxCount} > ${BUDGET.count}`);
+    if (vertices > BUDGET.vertices) warnings.push(`Estimated vertices ${vertices} > ${BUDGET.vertices}`);
+    if (!this.def.loop && this.def.duration > BUDGET.duration) warnings.push(`Duration ${this.def.duration}s > ${BUDGET.duration}s`);
 
     return { layers, maxCount, vertices, duration: this.def.duration, warnings };
   }

@@ -19,7 +19,7 @@ import {
   cardKey,
 } from '../game/balance/unitCards';
 
-// ── CollectionScene — 收藏中心 (S3-5 + cards codex + S12 unit cards) ────────────
+// ── CollectionScene — Collection Hub (S3-5 + cards codex + S12 unit cards) ────
 //
 // Three tabs:
 //  • Cards  — read-only codex of every card in the pool (CARD_DEFINITIONS).
@@ -47,9 +47,10 @@ export interface CollectionCallbacks {
   /** Server-authoritative merge (5 × unitId:level → 1 × unitId:(level+1)). */
   tryMerge?(unitId: string, level: number): Promise<boolean>;
   /**
-   * 装备系统（E5）入口（LOBBY_IA_REDESIGN §3：装备并入「养成」一级可达）。装备服务器权威
-   * （强化掷骰/扣费/库存）→ 仅登录在线时提供；缺省 / 离线时第 4 个「装备」tab 灰显不可点。
-   * 点击导航到 EquipmentScene（独立场景，返回回到本页）。
+   * Equipment system (E5) entry point (LOBBY_IA_REDESIGN §3: equipment merged into "progression" top-level reach).
+   * Equipment is server-authoritative (upgrade dice roll / charge / inventory) → only available when logged in online;
+   * absent / offline: the 4th "Equipment" tab is greyed out and non-tappable.
+   * Tap navigates to EquipmentScene (independent scene, back returns here).
    */
   onOpenEquipment?(): void;
 }
@@ -192,8 +193,8 @@ export class CollectionScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // 养成分组 tab 条 [收藏|装备]（LOBBY_IA_REDESIGN P1.5）：装备从 launcher 上浮为同级
-    // tab。仅装备可达（登录在线）时出现；离线/未登录退化为原 3 内容 tab 布局。
+    // Progression group tab bar [Collection|Equipment] (LOBBY_IA_REDESIGN P1.5): Equipment promoted from launcher to peer tab.
+    // Only shown when equipment is reachable (logged in online); offline/not logged in degrades to original 3 content tab layout.
     let topY = tbH + Math.round(h * 0.02);
     if (this.cb.onOpenEquipment) {
       const stripH = hubTabsHeight(h);
@@ -201,7 +202,7 @@ export class CollectionScene implements Scene {
       topY += stripH + Math.round(h * 0.015);
     }
 
-    // Content sub-tab bar (卡牌/皮肤/单位)
+    // Content sub-tab bar (Cards/Skins/Units)
     const tabsY = topY;
     const tabsH = Math.round(h * 0.05);
     const contentY = tabsY + tabsH + Math.round(h * 0.025);
@@ -230,8 +231,8 @@ export class CollectionScene implements Scene {
   }
 
   /**
-   * 养成分组 tab 条 [收藏|装备]（LOBBY_IA_REDESIGN P1.5）：收藏 active，装备点击
-   * 导航到 EquipmentScene（与 Equipment 端共用同一条 strip，互相直达）。
+   * Progression group tab bar [Collection|Equipment] (LOBBY_IA_REDESIGN P1.5): Collection active; Equipment tap
+   * navigates to EquipmentScene (both ends share the same strip for direct cross-navigation).
    */
   private drawGroupTabs(y: number, stripH: number): void {
     const tabs: HubTab[] = [
@@ -244,7 +245,7 @@ export class CollectionScene implements Scene {
     this.hits.push(...hits);
   }
 
-  /** Content sub-tab bar: 卡牌 / 皮肤 / 单位 (switches the scrollable content). */
+  /** Content sub-tab bar: Cards / Skins / Units (switches the scrollable content). */
   private drawTabs(y: number, hgt: number): void {
     const { w } = this;
     const tabs: Array<{ id: CollectionTab; label: string }> = [

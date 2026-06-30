@@ -1,5 +1,5 @@
-// 浏览器二进制 WS（Web / CrazyGames 共用，S1-6）。微信另有 WechatGameSocket。
-// 仅做「一次连接」的薄封装；重连/协议在 NetClient。
+// Binary WebSocket for browsers (shared by Web / CrazyGames, S1-6). WeChat uses WechatGameSocket instead.
+// Thin wrapper for a single connection; reconnection and protocol handling live in NetClient.
 import type { IGameSocket, SocketHandlers } from '../platform/IPlatform';
 
 export class BrowserGameSocket implements IGameSocket {
@@ -12,7 +12,7 @@ export class BrowserGameSocket implements IGameSocket {
     ws.onopen = () => handlers.onOpen();
     ws.onmessage = (ev: MessageEvent) => {
       if (ev.data instanceof ArrayBuffer) handlers.onMessage(new Uint8Array(ev.data));
-      // 文本帧（非协议）忽略
+      // Text frames (non-protocol) are ignored
     };
     ws.onclose = (ev: CloseEvent) => handlers.onClose(ev.code, ev.reason);
     ws.onerror = (ev: Event) => handlers.onError(ev);
@@ -23,7 +23,7 @@ export class BrowserGameSocket implements IGameSocket {
   }
 
   close(): void {
-    // 主动关闭：摘掉回调，避免触发 NetClient 的重连
+    // Intentional close: detach callbacks to avoid triggering NetClient's reconnection logic
     this.ws.onopen = this.ws.onmessage = this.ws.onclose = this.ws.onerror = null;
     try {
       this.ws.close();

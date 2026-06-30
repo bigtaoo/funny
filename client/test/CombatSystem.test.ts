@@ -96,23 +96,24 @@ describe('CombatSystem — units', () => {
   });
 });
 
-describe('成就分类型埋点（S9-3b / S9-6）', () => {
-  it('castMeteor 累加 castsByType[Meteor]（按释放次数，非命中数）', () => {
+describe('achievement per-type tracking (S9-3b / S9-6)', () => {
+  it('castMeteor increments castsByType[Meteor] by cast count, not hit count', () => {
     const state = new GameState(1);
     const spells = new SpellSystem();
-    // 空场释放两次陨石：0 命中，但 cast 计数 = 2。
+    // Cast meteor twice on an empty field: 0 hits, but cast count = 2.
     spells.castMeteor(Side.Bottom, 2, 2, state);
     spells.castMeteor(Side.Bottom, 2, 2, state);
     expect(state.stats[0].castsByType[SpellType.Meteor]).toBe(2);
-    expect(state.stats[0].spellHits).toBe(0); // 命中数与释放次数解耦
+    expect(state.stats[0].spellHits).toBe(0); // hit count is decoupled from cast count
   });
 
-  it('achievementStatDelta 映射：Archer→kill.archer、ShieldBearer→kill.guard、Meteor→cast.meteor', () => {
+  it('achievementStatDelta maps: Archer→kill.archer, ShieldBearer→kill.guard, Meteor→cast.meteor', () => {
     const state = new GameState(1);
     const combat = new CombatSystem();
     const spells = new SpellSystem();
-    // 杀一个弓箭手 + 一个盾兵（守卫）。各自一列、相距远于射程，避免两名弓箭手
-    // 在箭落地前都锁定同一目标（投射物语义下的 overkill）——各打各的。
+    // Kill one archer + one shield bearer (guard). Each in a separate column, far enough
+    // apart that the two archers don't both lock onto the same target before the arrows
+    // land (projectile-semantic overkill) — each attacks its own target.
     const archer = new Unit(UnitType.Archer, Side.Bottom, 0, 5);
     const e1 = new Unit(UnitType.Archer, Side.Top, 0, 6); e1.hp = 1;
     const e2 = new Unit(UnitType.ShieldBearer, Side.Top, 5, 6); e2.hp = 1;
@@ -127,11 +128,11 @@ describe('成就分类型埋点（S9-3b / S9-6）', () => {
     expect(delta['kill.archer']).toBe(1);
     expect(delta['kill.guard']).toBe(1);
     expect(delta['cast.meteor']).toBe(1);
-    // 零项不出现（懒创建语义）。
+    // Zero-count entries do not appear (lazy-creation semantics).
     expect(Object.keys(delta).sort()).toEqual(['cast.meteor', 'kill.archer', 'kill.guard']);
   });
 
-  it('achievementStatDelta 空局 → 空增量', () => {
+  it('achievementStatDelta empty game → empty delta', () => {
     expect(achievementStatDelta({ owner: 0, ...new GameState(1).stats[0] })).toEqual({});
   });
 });

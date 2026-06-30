@@ -1,14 +1,19 @@
-// 经济编排辅助（S5-5）。meta 据 commercial 回执发物品（inventory，meta 权威）+ 写钱包镜像 + 对账。
-// 关键不变量：
-//  • 发货幂等——save.deliveredOrders 记 orderId，$addToSet 天然去重；皮肤是 set，重发不重复给。
-//  • 钱包镜像——wallet.coins / gacha.pity 权威在 commercial，meta 只在回执后写镜像段供离线展示。
-//  • 重复转化（退币/碎片）S5 暂缓（§4.3 退币额待定 + 补发重算非幂等），只发新皮肤；通道在 commercial 已备。
+// Economy orchestration helpers (S5-5). meta delivers items based on commercial receipts
+// (inventory is meta-authoritative) + writes the wallet mirror + reconciles undelivered orders.
+// Key invariants:
+//  • Delivery is idempotent — save.deliveredOrders records orderId; $addToSet deduplicates naturally;
+//    skins are a set, so re-delivery never grants duplicates.
+//  • Wallet mirror — wallet.coins / gacha.pity are authoritative in commercial; meta only writes
+//    the mirror section after a receipt, for offline display.
+//  • Duplicate conversion (refund coins / shards) is deferred to S5 (§4.3 refund amount TBD +
+//    re-grant recalculation is not idempotent); only new skins are granted for now; the channel
+//    in commercial is already prepared.
 import { createHash } from 'node:crypto';
 import type { Collections, SaveData, Rarity, EquipmentInstance } from '@nw/shared';
 import { grantCards, deriveUnitLevels, UNIT_CARD_POOL_ID, EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount } from '@nw/shared';
 import type { CommercialClient, GachaResultEntry } from './commercialClient.js';
 
-/** 逐结果标记是否重复（对照当前库存 + 同批已发，供客户端展示开箱）。 */
+/** Mark each result as duplicate or not (compared against current inventory + already granted in this batch; used by the client for loot-box display). */
 export function markDuplicates(
   ownedSkins: string[],
   results: GachaResultEntry[],
@@ -27,9 +32,11 @@ export function markDuplicates(
 }
 
 /**
- * 发货 + 钱包镜像，单文档原子且幂等（deliveredOrders $addToSet 去重）。
- * 返回更新后的存档；orderId 已发过则返回当前存档（不重复发）。
- * E7 扩展：可选 materialInc（材料增量）+ equipInstances（装备实例 map），同笔原子写入。
+ * Deliver items + mirror the wallet in a single atomic, idempotent document update
+ * (deliveredOrders $addToSet deduplicates). Returns the updated save; if orderId was already
+ * delivered, returns the current save without re-granting. E7 extension: optional materialInc
+ * (material increments) + equipInstances (equipment instance map) are written atomically in
+ * the same operation.
  */
 export async function deliverGrant(
   cols: Collections,
@@ -49,7 +56,7 @@ export async function deliverGrant(
   if (pityPatch) {
     for (const [pool, v] of Object.entries(pityPatch)) set[`save.gacha.pity.${pool}`] = v;
   }
-  // 装备实例逐条 $set（不受 300 cap，盲盒有意获得；满仓溢出后续 §13 邮件暂存）。
+  // Equipment instances are $set one by one (not subject to the 300-cap; intentionally obtained via loot box; overflow handling via mail pending §13).
   for (const [id, inst] of Object.entries(equipInstances ?? {})) set[`save.equipmentInv.${id}`] = inst;
   const inc: Record<string, number> = { 'save.rev': 1, rev: 1 };
   for (const [mat, qty] of Object.entries(materialInc ?? {})) if (qty > 0) inc[`save.materials.${mat}`] = qty;
@@ -72,11 +79,14 @@ export async function deliverGrant(
 }
 
 /**
- * 单位卡盲盒发货（S12-C，独立单位卡池）：把 cardGrants（cardKey→张数）入 cardInventory +
- * 重算 unitLevels（服务器权威，引擎读此跑蓝图）。**乐观锁 read-modify-write**（rev CAS + 重试，
- * 同 service.mutateSave）——因 unitLevels = deriveUnitLevels(cardInventory) 是派生值，无法用单次
- * $inc 表达，须在内存重算。幂等：deliveredOrders 已含 orderId 则直接返回当前 save（防 $inc 重复加，
- * 比皮肤 set 更需此守卫）。同笔顺带写钱包镜像 + pity（与皮肤池 deliverGrant 对称）。
+ * Deliver a unit-card loot-box grant (S12-C, dedicated unit card pool): adds cardGrants
+ * (cardKey→count) into cardInventory + recalculates unitLevels (server-authoritative; the engine
+ * reads this to run blueprints). Uses an **optimistic lock read-modify-write** (rev CAS + retry,
+ * same as service.mutateSave) because unitLevels = deriveUnitLevels(cardInventory) is a derived
+ * value that cannot be expressed as a single $inc. Idempotent: if deliveredOrders already contains
+ * orderId the current save is returned immediately (guards against duplicate $inc, which matters
+ * more here than for skin sets). Also mirrors the wallet + pity in the same operation (symmetric
+ * with skin-pool deliverGrant).
  */
 export async function deliverCardGrant(
   cols: Collections,
@@ -90,7 +100,7 @@ export async function deliverCardGrant(
   for (let attempt = 0; attempt < 4; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) throw new Error('save missing before card grant');
-    if (doc.save.deliveredOrders?.includes(orderId)) return doc.save; // 幂等：已发过不重复 $inc
+    if (doc.save.deliveredOrders?.includes(orderId)) return doc.save; // idempotent: already delivered, skip $inc
     const cardInventory = grantCards(doc.save.cardInventory ?? {}, cardGrants);
     const unitLevels = deriveUnitLevels(cardInventory);
     const set: Record<string, unknown> = {
@@ -112,16 +122,18 @@ export async function deliverCardGrant(
       { returnDocument: 'after' },
     );
     if (res) return res.save;
-    // rev 冲突（并发 PUT equipped/flags 或并发 pve 写）→ 重读重试。
+    // rev conflict (concurrent PUT equipped/flags or concurrent PvE write) → re-read and retry.
   }
   throw new Error('rev conflict delivering card grant');
 }
 
 /**
- * 邮件附件发货（S6-3）：单文档原子 + 幂等（deliveredOrders $addToSet 去重）。
- * 皮肤进 inventory.skins（set 去重）、物品 $inc inventory.items.{id}、材料 $inc materials.{id}
- * （养成统一池，SLG8 赛季奖励等）、金币写镜像（coinsAfter 非 null 时）。
- * `orderId` = mail.claimOrderId；重发同 orderId 不重复加物品（$addToSet 去重 + 金币以 commercial 权威镜像）。
+ * Deliver mail attachments (S6-3): single-document atomic + idempotent (deliveredOrders $addToSet
+ * deduplicates). Skins go into inventory.skins (set deduplication); items are $inc'd into
+ * inventory.items.{id}; materials are $inc'd into materials.{id} (unified progression pool,
+ * SLG8 season rewards, etc.); coins are mirrored when coinsAfter is non-null.
+ * `orderId` = mail.claimOrderId; re-delivery of the same orderId does not re-grant items
+ * ($addToSet deduplication + coins use the commercial-authoritative mirror).
  */
 export async function deliverMailGrant(
   cols: Collections,
@@ -156,7 +168,7 @@ export async function deliverMailGrant(
   return cur.save;
 }
 
-/** 仅刷新钱包镜像（充值/广告：无物品发货，只回写余额）。 */
+/** Refresh the wallet mirror only (top-up / ad reward: no item delivery, just write back the balance). */
 export async function mirrorCoins(
   cols: Collections,
   accountId: string,
@@ -174,7 +186,7 @@ export async function mirrorCoins(
   return cur.save;
 }
 
-/** 从 commercial 拉权威余额 + pity 写镜像（GET /save 顺带刷新）。 */
+/** Pull the authoritative balance + pity from commercial and write the mirror (refreshed alongside GET /save). */
 export async function mirrorWalletFrom(
   cols: Collections,
   accountId: string,
@@ -196,7 +208,7 @@ export async function mirrorWalletFrom(
   return cur.save;
 }
 
-/** 一笔未发货订单的发货闭环（皮肤幂等 + 标 delivered）。供对账复用。 */
+/** Complete the delivery loop for one undelivered order (skins idempotent + mark delivered). Shared by reconciliation. */
 async function deliverOrder(
   cols: Collections,
   commercial: CommercialClient,
@@ -210,7 +222,7 @@ async function deliverOrder(
   pityPatch: Record<string, number> | null,
   now: number,
 ): Promise<SaveData> {
-  // 单位卡池订单（S12-C）：results.itemId 是 cardKey，入 cardInventory（不当皮肤）。
+  // Unit card pool order (S12-C): results.itemId is a cardKey; goes into cardInventory (not treated as a skin).
   if (order.kind === 'gacha' && order.result.poolId === UNIT_CARD_POOL_ID) {
     const cardGrants: Record<string, number> = {};
     for (const r of order.result.results ?? []) cardGrants[r.itemId] = (cardGrants[r.itemId] ?? 0) + 1;
@@ -223,15 +235,15 @@ async function deliverOrder(
   const owned = cur?.save.inventory.skins ?? [];
   const invCount = equipmentInvCount(cur?.save.equipmentInv);
 
-  // 商店直购：kind='item' → inventory.items；kind='skin' → skins（沿用现有路径）。
+  // Direct shop purchase: kind='item' → inventory.items; kind='skin' → skins (existing path).
   if (order.kind === 'shop' && order.result.itemId) {
     const itemId = order.result.itemId;
     if (itemId.startsWith('mat_') && GACHA_MATERIAL_GRANTS[itemId]) {
-      // 商店材料（未来扩展），当前无此品类，走 fallback 皮肤路径
+      // Shop material (future extension); no such category yet, fall through to skin path
     } else if (EQUIPMENT_DEFS[itemId]) {
-      // 商店装备（未来扩展）
+      // Shop equipment (future extension)
     } else if (!owned.includes(itemId)) {
-      // 普通皮肤直购
+      // Direct purchase of a regular skin
       const save = await deliverGrant(cols, accountId, order._id, [itemId], coinsAfter, pityPatch, now);
       await commercial.orderDelivered({ orderId: order._id });
       return save;
@@ -240,14 +252,14 @@ async function deliverOrder(
       await commercial.orderDelivered({ orderId: order._id });
       return save;
     }
-    // kind='item'：写 inventory.items（保护道具等消耗品，E7）。
+    // kind='item': write to inventory.items (consumables such as guard items, E7).
     const itemInc: Record<string, number> = { [itemId]: 1 };
     const save = await deliverMailGrant(cols, accountId, order._id, [], itemInc, coinsAfter, now);
     await commercial.orderDelivered({ orderId: order._id });
     return save;
   }
 
-  // 盲盒：按结果 itemId 分流 — mat_* → 材料，装备 defId → 装备实例，其他 → 皮肤。
+  // Loot box: route each result itemId — mat_* → materials, equipment defId → equipment instance, everything else → skin.
   const results = order.result.results ?? [];
   const skinResults: GachaResultEntry[] = [];
   const materialInc: Record<string, number> = {};
@@ -257,10 +269,10 @@ async function deliverOrder(
     const r = results[i]!;
     const matGrant = GACHA_MATERIAL_GRANTS[r.itemId];
     if (matGrant) {
-      // 材料格
+      // Material slot
       for (const [mat, qty] of Object.entries(matGrant)) materialInc[mat] = (materialInc[mat] ?? 0) + qty;
     } else if (EQUIPMENT_DEFS[r.itemId]) {
-      // 装备格：跳过满仓（300 上限，静默跳过；满仓补偿 §13 后续再做）
+      // Equipment slot: skip if inventory full (300 cap, silently skipped; full-inventory compensation via §13 to be done later)
       if (invCount + Object.keys(equipInstances).length < EQUIPMENT_INV_CAP) {
         const instanceId = `eq_gacha_${order._id}_${i}`;
         equipInstances[instanceId] = makeGachaEquipInstance(r.itemId, instanceId) as EquipmentInstance;
@@ -282,8 +294,9 @@ async function deliverOrder(
 }
 
 /**
- * 对账：拉该账号未发货订单（commercial），逐笔补发 + 标 delivered。
- * GET /save 顺带调用；崩溃在「扣币后、发货前」的订单据此收敛（皮肤幂等，不丢不重）。
+ * Reconcile: fetch undelivered orders for this account from commercial, deliver each one +
+ * mark as delivered. Called alongside GET /save; orders that crashed between "coins deducted"
+ * and "delivery" are recovered here (skins are idempotent — no loss, no duplication).
  */
 export async function reconcileUndelivered(
   cols: Collections,
@@ -293,7 +306,7 @@ export async function reconcileUndelivered(
 ): Promise<void> {
   const orders = await commercial.undeliveredOrders(accountId);
   for (const o of orders) {
-    // 补发用 commercial 拉回的权威余额做镜像（不再二次扣币）。
+    // Use the authoritative balance fetched from commercial for the mirror (no second deduction).
     const w = await commercial.getWallet(accountId);
     const pityPatch =
       o.kind === 'gacha' && o.result.poolId && w
@@ -303,14 +316,14 @@ export async function reconcileUndelivered(
   }
 }
 
-/** UTC 自然日 key（广告 cap 重置）。注入 now 便于测试。 */
+/** UTC calendar-day key (for ad cap resets). `now` is injected for testability. */
 export function adsDayKey(now: number): string {
   return new Date(now).toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
 /**
- * 广告 cap：原子自增当日计数，超过 cap 返回 false（不发）。
- * 用 _id=`${accountId}:${dayKey}` 文档的 $inc + 守卫 count<cap。
+ * Ad cap: atomically increment today's count; returns false (deny delivery) if the count exceeds cap.
+ * Uses a document keyed by _id=`${accountId}:${dayKey}` with $inc guarded by count<cap.
  */
 export async function bumpAdsCap(
   cols: Collections,
@@ -320,7 +333,7 @@ export async function bumpAdsCap(
   now: number,
 ): Promise<boolean> {
   const id = `${accountId}:${dayKey}`;
-  // 先 upsert 保证文档存在，再带守卫 $inc。
+  // First upsert to ensure the document exists, then do the guarded $inc.
   await cols.adsDaily.updateOne(
     { _id: id },
     { $setOnInsert: { _id: id, accountId, dayKey, count: 0, ts: now } },
@@ -334,14 +347,14 @@ export async function bumpAdsCap(
   return !!res;
 }
 
-/** SHA-256 hash ad token（hex）。用于 adsTokens 唯一性去重。 */
+/** SHA-256 hash of an ad token (hex). Used for deduplication in adsTokens. */
 export function hashAdToken(adToken: string): string {
   return createHash('sha256').update(adToken).digest('hex');
 }
 
 /**
- * 广告凭证唯一性校验（C2）：hash 落 adsTokens，重放返回 false。
- * MongoDB 唯一 _id 冲突 → 自然去重；TTL 48h 自清。
+ * Ad-token uniqueness check (C2): writes the hash to adsTokens; returns false on replay.
+ * MongoDB unique _id conflict → natural deduplication; TTL 48h for automatic cleanup.
  */
 export async function recordAdToken(
   cols: Collections,
@@ -358,12 +371,12 @@ export async function recordAdToken(
     });
     return true;
   } catch {
-    // 唯一 _id 冲突 = 重放；其他错误向上抛。
+    // Unique _id conflict = replay; other errors propagate up.
     return false;
   }
 }
 
-/** 30min 间隔门（C2）：原子更新 lastAdAt，距离上次不足 minIntervalMs 返回 false。 */
+/** 30-minute interval gate (C2): atomically updates lastAdAt; returns false if less than minIntervalMs has elapsed since the last ad. */
 export async function checkAdInterval(
   cols: Collections,
   accountId: string,

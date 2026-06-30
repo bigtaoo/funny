@@ -1,9 +1,9 @@
-// 云同步编排（S0-5）。离线优先 + 服务器权威：
-//   · 启动 loadLocal（立即可玩，断网无碍）。
-//   · bootstrap()：auth → pull → 按 rev/段权威 reconcile → 必要时 push。
-//   · update()：改客户端同步段 → 立即 saveLocal → 防抖 2s 上行 push。
-//   · push 带 If-Match: rev；409 → pull-merge（服务器权威段以服务器为准，progress 取并集）再重试一次。
-// 网络不可用 / 未配 ApiClient → 静默退化为纯本地（不抛错给调用方）。
+// Cloud sync orchestration (S0-5). Offline-first + server-authoritative:
+//   · On startup call loadLocal (immediately playable, works without network).
+//   · bootstrap(): auth → pull → reconcile by rev/section authority → push if needed.
+//   · update(): mutate the client-sync section → saveLocal immediately → debounce 2s then push.
+//   · push sends If-Match: rev; 409 → pull-merge (server-authoritative sections use server value, progress union-merged) then retry once.
+// Network unavailable / ApiClient not configured → silently degrade to local-only (no error thrown to caller).
 
 import type { AuthCredential } from '../../platform/IPlatform';
 import { ApiError, type ApiClient } from '../../net/ApiClient';
@@ -19,30 +19,30 @@ import type { PendingClear, SaveStore } from './SaveStore';
 
 export interface SaveManagerOpts {
   store: SaveStore;
-  /** 云客户端；缺省 → 纯本地（离线优先）。 */
+  /** Cloud client; omitted → local-only (offline-first). */
   api?: ApiClient;
-  /** 取平台匿名凭据（S0-4）；配了 api 才需要。 */
+  /** Retrieve the platform anonymous credential (S0-4); only needed when api is configured. */
   getCredential?: () => Promise<AuthCredential>;
-  /** 上行防抖窗口（ms），默认 2000（§3.3）。 */
+  /** Upload debounce window (ms), default 2000 (§3.3). */
   debounceMs?: number;
   /**
-   * 云端回带的账号资料；bootstrap/refresh 拉到后回调。用于客户端持久化 / 刷新 UI / 联网。
-   * `gatewayUrl`：服务器下发的控制面 WS 地址（客户端不硬编码，见 ApiClient.AuthResult）。
+   * Account profile returned from the cloud; called back after bootstrap/refresh pulls it. Used for client persistence / UI refresh / online connectivity.
+   * `gatewayUrl`: the control-plane WS address delivered by the server (not hardcoded on the client; see ApiClient.AuthResult).
    */
   onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string }) => void;
-  /** 取回本地录像（ReplayStore）；L1 抽检时离线 flush 据 replayId 取回上传复算（§8.6）。 */
+  /** Retrieve a local replay (ReplayStore); during L1 spot-check, offline flush uses replayId to fetch and upload for server re-validation (§8.6). */
   loadReplay?: (id: string) => Replay | null;
-  /** 注入定时器（测试用）；默认走 globalThis。 */
+  /** Inject timer functions (for testing); defaults to globalThis. */
   setTimer?: (cb: () => void, ms: number) => unknown;
   clearTimer?: (h: unknown) => void;
   /**
-   * 云存档上行连续失败达阈值时回调一次（提示玩家进度可能未同步）。一次成功上行后复位，
-   * 故不会每 2s 刷屏。离线优先下后台同步本是静默的，这里只在「持续失败」时打破沉默。
+   * Called once when cloud save uploads fail consecutively beyond the threshold (notifies the player that progress may not be synced). Resets after one successful upload,
+   * so it will not spam every 2s. Background sync is silent under offline-first; this only breaks silence on sustained failure.
    */
   onSyncError?: () => void;
 }
 
-/** 连续上行失败多少次后才提示玩家（避开一次性网络抖动）。 */
+/** Number of consecutive upload failures before notifying the player (avoids reacting to one-off network blips). */
 const SYNC_FAIL_THRESHOLD = 3;
 
 export class SaveManager {
@@ -53,16 +53,16 @@ export class SaveManager {
   private readonly onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string }) => void;
   private readonly loadReplay?: (id: string) => Replay | null;
   private readonly onSyncError?: () => void;
-  private syncFailStreak = 0;     // 连续上行失败计数
-  private syncErrorNotified = false; // 本轮持续失败是否已提示过（避免刷屏）
+  private syncFailStreak = 0;     // consecutive upload failure count
+  private syncErrorNotified = false; // whether the player has already been notified in the current failure streak (to avoid spamming)
   private readonly debounceMs: number;
   private readonly setTimer: (cb: () => void, ms: number) => unknown;
   private readonly clearTimer: (h: unknown) => void;
 
   private pushTimer: unknown = null;
   private pushing = false;
-  private dirty = false; // 防抖窗口内有未上行的本地改动
-  private pending: PendingClear[]; // 离线待结算通关队列（PVE_INTEGRITY_PLAN §8.4）
+  private dirty = false; // local changes within the debounce window not yet uploaded
+  private pending: PendingClear[]; // offline queue of clears awaiting settlement (PVE_INTEGRITY_PLAN §8.4)
 
   constructor(opts: SaveManagerOpts) {
     this.store = opts.store;
@@ -79,14 +79,15 @@ export class SaveManager {
     this.pending = this.store.loadPending();
   }
 
-  /** 当前内存存档（同步可读，UI 余额等只读自此，由服务器回推刷新）。 */
+  /** Current in-memory save (synchronously readable; UI balances etc. read from here and are refreshed by server push-back). */
   get(): SaveData {
     return this.save;
   }
 
   /**
-   * 改客户端同步段：mutator 直接改 draft（progress/materials/pveUpgrades/equipped/flags），
-   * 立即落本地 + 安排防抖上行。权威段（wallet/inventory/gacha/pvp）不应在此改——以服务器回推为准。
+   * Mutate the client-sync section: the mutator modifies the draft directly (progress/materials/pveUpgrades/equipped/flags),
+   * saves locally immediately, and schedules a debounced upload. Authoritative sections (wallet/inventory/gacha/pvp)
+   * must not be mutated here — they are governed by server push-back.
    */
   update(mutator: (draft: SaveData) => void): void {
     mutator(this.save);
@@ -95,7 +96,7 @@ export class SaveManager {
     this.schedulePush();
   }
 
-  /** 设置单个 flag（收编 nw_seen_intro 等）。 */
+  /** Set a single flag (e.g. nw_seen_intro). */
   setFlag(key: string, value: boolean): void {
     this.update((d) => {
       d.flags[key] = value;
@@ -107,21 +108,21 @@ export class SaveManager {
   }
 
   /**
-   * 首次功能引导（ONBOARDING_DESIGN §4.1）：某功能页是否已看过首启引导。
-   * 扁平键 `featSeen.<id>` 落在同步段 flags（Record<string,boolean>），无需改 SaveData schema。
+   * First-time feature onboarding (ONBOARDING_DESIGN §4.1): whether the player has already seen the onboarding tour for a given feature page.
+   * The flat key `featSeen.<id>` is stored in the sync-section flags (Record<string,boolean>); no SaveData schema change required.
    */
   featSeen(featureId: string): boolean {
     return this.save.flags[`featSeen.${featureId}`] === true;
   }
 
-  /** 标记某功能引导已看过（看过/关掉后不再自动弹；页面「?」按钮可强制重看，不清此位）。 */
+  /** Mark a feature's onboarding tour as seen (will no longer auto-popup after being seen/dismissed; the page "?" button can force a replay without clearing this flag). */
   markFeatSeen(featureId: string): void {
     this.setFlag(`featSeen.${featureId}`, true);
   }
 
   /**
-   * 启动云同步：换 token → pull → reconcile → 必要时 push。
-   * 任何网络/鉴权失败都被吞掉（保持本地可玩），仅返回是否成功联通。
+   * Bootstrap cloud sync: exchange token → pull → reconcile → push if needed.
+   * Any network/auth failure is swallowed (local playability is preserved); returns whether the cloud connection succeeded.
    */
   async bootstrap(): Promise<boolean> {
     if (!this.api || !this.getCredential) return false;
@@ -138,19 +139,20 @@ export class SaveManager {
         publicId: auth.publicId ?? cloud.publicId,
         gatewayUrl: auth.gatewayUrl ?? cloud.gatewayUrl,
       });
-      await this.flushPending(); // 离线攒的通关上线结算
+      await this.flushPending(); // settle clears that were queued offline
       return true;
     } catch {
-      // 离线 / 服务器不可达：留在本地，不报错。
+      // Offline / server unreachable: stay on local data, no error thrown.
       return false;
     }
   }
 
   /**
-   * 主动拉取云端存档 + reconcile（不重新 auth，复用现有 token）。
-   * 用于服务器权威段在客户端外被改写后刷新本地——如 ranked 局末 gameserver
-   * 写了 `pvp`（elo/rank/streak），客户端据此即时刷新大厅段位，无需等下次 bootstrap。
-   * 未联通则 no-op，不抛错。
+   * Actively pull the cloud save and reconcile (no re-auth; reuses the existing token).
+   * Used to refresh local state after a server-authoritative section has been modified outside the client —
+   * e.g. after a ranked match the gameserver writes `pvp` (elo/rank/streak) and the client refreshes the
+   * lobby rank immediately, without waiting for the next bootstrap.
+   * No-op if not connected; no error thrown.
    */
   async refresh(): Promise<boolean> {
     if (!this.api?.hasToken()) return false;
@@ -162,7 +164,7 @@ export class SaveManager {
         publicId: cloud.publicId,
         gatewayUrl: cloud.gatewayUrl,
       });
-      await this.flushPending(); // 重连后结算离线攒的通关
+      await this.flushPending(); // settle clears queued offline after reconnection
       return true;
     } catch {
       return false;
@@ -170,9 +172,10 @@ export class SaveManager {
   }
 
   /**
-   * 正式登录/注册后采纳会话（SA-3/SA-4）：token 已由 ApiClient 持有，此处把 accountId
-   * 落本地并 pull + reconcile（单机攒的 PvE 进度并入云端，权威段以云端为准，§4.4）。
-   * 与 bootstrap 的区别是不重新 auth（不用匿名 device 凭据换号）。未联通则 no-op。
+   * Adopt session after a formal login/registration (SA-3/SA-4): the token is already held by ApiClient;
+   * here we persist accountId locally and pull + reconcile (offline PvE progress is merged into the cloud save,
+   * authoritative sections use the cloud value, §4.4).
+   * Unlike bootstrap, this does not re-auth (no anonymous device credential exchange). No-op if not connected.
    */
   async adoptSession(accountId: string): Promise<boolean> {
     this.save.accountId = accountId;
@@ -181,41 +184,44 @@ export class SaveManager {
   }
 
   /**
-   * 采纳服务器经济操作（商店/盲盒/充值/广告）回推的权威存档（S2）。钱包/库存/盲盒/pvp
-   * 等权威段以服务器为准，客户端同步段合并本地。与 refresh 不同的是直接吃回执，不再发请求。
+   * Adopt an authoritative save pushed back by a server-side economy operation (shop/gacha/recharge/ad) (S2).
+   * Authoritative sections (wallet/inventory/gacha/pvp etc.) use the server value; client-sync sections are merged from local.
+   * Unlike refresh, this directly consumes the receipt without issuing an additional request.
    */
   adoptServer(save: SaveData): void {
     this.reconcile(save);
   }
 
-  // ── PvE 服务器权威（PVE_INTEGRITY_PLAN §8）────────────────────────────
-  // progress/materials/pveUpgrades 是服务器权威；通关/升级走 /pve/* 端点，回推后 adopt。
-  // 离线（无 token）：通关入队待结算（不改本地权威值）；升级禁用。
+  // ── PvE server authority (PVE_INTEGRITY_PLAN §8) ────────────────────────────
+  // progress/materials/pveUpgrades are server-authoritative; clears/upgrades go through /pve/* endpoints, adopted after push-back.
+  // Offline (no token): clears are queued for later settlement (local authoritative values unchanged); upgrades disabled.
 
-  /** 是否联通可写服务器权威段（有 api + token）。场景据此做在线门控。 */
+  /** Whether the server-authoritative section is reachable and writable (api + token present). Scenes use this for online gating. */
   online(): boolean {
     return !!this.api?.hasToken();
   }
 
-  /** 离线待结算通关队列（只读副本，供 UI 显示「待结算」）。 */
+  /** Offline queue of clears pending settlement (read-only copy for UI to display "pending" state). */
   getPendingClears(): PendingClear[] {
     return this.pending.slice();
   }
 
   /**
-   * 记录一次通关（stars≥1）。在线 → POST /pve/clear 立即结算并 adopt 回推；
-   * 离线 / 请求失败 → 入队（不改本地权威值），上线后 flush。
-   * L1 抽检（§8.6 第 3 步）：服务器回 `needsReplay` 时材料暂扣，用本局录像补传 /pve/verify 复算入账。
+   * Record a level clear (stars >= 1). Online → POST /pve/clear to settle immediately and adopt the push-back;
+   * offline / request failed → enqueue (local authoritative values unchanged), flush when back online.
+   * L1 spot-check (§8.6 step 3): when the server returns `needsReplay`, materials are held back and the
+   * replay for this run is uploaded to /pve/verify for re-calculation and crediting.
    */
   /**
-   * @param stats 本局成就计数（achievementStatDelta 产出）；S9-3b，普通通关喂入服务器计数。
+   * @param stats Per-run achievement stat deltas (achievementStatDelta output); S9-3b, regular clears feed these counts into the server.
    */
   async recordClear(levelId: string, stars: number, replay?: Replay, stats?: Record<string, number>): Promise<void> {
     if (stars <= 0) return;
-    // 乐观本地解锁（离线优先）：立刻把通关写进本地 progress，回到 CampaignMap 时下一关即解锁，
-    // 不必干等服务器回执（在线时 recordClear 是 fire-and-forget，回执前场景已重建会读到旧值）。
-    // 服务器仍权威结算：在线 adoptServer / 离线 flush 后 reconcile 用云端 cleared/stars 整体覆盖回填，
-    // 即便服务器判负也会被纠正（自愈），故乐观值不会造成漂移。
+    // Optimistic local unlock (offline-first): write the clear into local progress immediately so the next
+    // level is unlocked when returning to CampaignMap — no waiting for the server receipt (online recordClear
+    // is fire-and-forget; the scene would already have been rebuilt before the receipt arrives and would read the stale value).
+    // The server still settles authoritatively: online adoptServer / offline flush followed by reconcile overwrites
+    // with the cloud cleared/stars in full; even a server-side rejection gets corrected (self-healing), so the optimistic value never drifts.
     this.applyLocalClear(levelId, stars);
     if (this.online()) {
       try {
@@ -226,7 +232,7 @@ export class SaveManager {
         }
         return;
       } catch {
-        // 在线但请求失败（网络抖动）→ 入队兜底，下次 flush
+        // Online but request failed (network blip) → enqueue as fallback, flush next time
       }
     }
     this.enqueueClear({
@@ -239,18 +245,18 @@ export class SaveManager {
     });
   }
 
-  /** 上传录像走 /pve/verify 复算 → adopt 回推（含发材料）。失败静默（服务器侧记录仍 pending）。 */
+  /** Upload the replay to /pve/verify for re-calculation → adopt push-back (materials credited). Failure is silent (the server-side record stays pending). */
   private async verifyReplay(verifyId: string, replay: Replay): Promise<void> {
     try {
       const res = await this.api!.pveVerify(verifyId, replay.endFrame, replayToUploadFrames(replay));
       this.adoptServer(res.save);
     } catch {
-      /* 网络/复算异常 → 本轮不入账，服务器侧记录留 pending（不卡本地流程） */
+      /* Network/re-calculation error → materials not credited this round; server-side record stays pending (does not block local flow) */
     }
   }
 
   /**
-   * @deprecated S3-2 per-stat 升级。S12 起单位养成改集卡合成，改用 {@link merge}。
+   * @deprecated S3-2 per-stat upgrade. From S12 onwards, unit progression switched to card-collection merging; use {@link merge} instead.
    */
   async upgrade(upgradeId: string): Promise<boolean> {
     if (!this.online()) return false;
@@ -264,8 +270,8 @@ export class SaveManager {
   }
 
   /**
-   * 单位卡合成（S12）：5 张 N 级卡 → 1 张 N+1 级。仅在线，服务器权威扣库存。
-   * 卡片不足 / 非法参数 / 离线 → 返回 false，不改本地。
+   * Unit card merge (S12): 5 cards of level N → 1 card of level N+1. Online-only; inventory deducted server-authoritatively.
+   * Insufficient cards / invalid parameters / offline → returns false, local state unchanged.
    */
   async merge(unitId: string, level: number): Promise<boolean> {
     if (!this.online()) return false;
@@ -278,7 +284,7 @@ export class SaveManager {
     }
   }
 
-  /** 乐观写本地通关：cleared 去重追加 + stars 取较大（夹到 1|2|3）。仅落本地（progress 不上行）。 */
+  /** Optimistically write a local clear: append to cleared (deduped) + take the higher stars value (clamped to 1|2|3). Local-only (progress is not uploaded). */
   private applyLocalClear(levelId: string, stars: number): void {
     const p = this.save.progress;
     if (!p.cleared.includes(levelId)) p.cleared.push(levelId);
@@ -292,7 +298,7 @@ export class SaveManager {
     this.store.savePending(this.pending);
   }
 
-  /** 上线后按序 flush 待结算队列：每条成功后 adopt；网络失败保留待下次，业务错误丢弃。 */
+  /** Flush the pending-settlement queue in order once back online: adopt after each success; keep on network failure for next attempt, discard on business error. */
   private async flushPending(): Promise<void> {
     if (!this.online()) return;
     while (this.pending.length > 0) {
@@ -300,7 +306,7 @@ export class SaveManager {
       try {
         const res = await this.api!.pveClear(head.levelId, head.stars, this.save.unitLevels);
         this.adoptServer(res.save);
-        // L1 抽中：取回本地录像补传复算（已被 ReplayStore 淘汰则跳过，材料本轮不入账）。
+        // L1 spot-check triggered: retrieve the local replay and upload for re-calculation (if evicted from ReplayStore, skip — materials not credited this round).
         if (res.needsReplay && res.verifyId && head.replayId && this.loadReplay) {
           const replay = this.loadReplay(head.replayId);
           if (replay) await this.verifyReplay(res.verifyId, replay);
@@ -309,17 +315,17 @@ export class SaveManager {
         this.store.savePending(this.pending);
       } catch (e) {
         if (e instanceof ApiError) {
-          // 业务错误（关卡未解锁 / 参数非法）：该条无法结算，丢弃避免永久卡队列。
+          // Business error (level not unlocked / invalid parameters): this entry cannot be settled; discard it to avoid permanently blocking the queue.
           this.pending.shift();
           this.store.savePending(this.pending);
           continue;
         }
-        break; // 网络错误：保留队列，下次再试
+        break; // network error: keep queue, retry next time
       }
     }
   }
 
-  /** 立即清空防抖、强制上行（场景切换 / 退出前调用）。 */
+  /** Cancel the debounce timer immediately and force an upload (call before scene transitions / exit). */
   async flush(): Promise<void> {
     if (this.pushTimer != null) {
       this.clearTimer(this.pushTimer);
@@ -328,10 +334,10 @@ export class SaveManager {
     await this.push();
   }
 
-  // ── 内部 ────────────────────────────────────────────────
+  // ── Internal ────────────────────────────────────────────────
 
   private schedulePush(): void {
-    if (!this.api?.hasToken()) return; // 未联通 → 只本地
+    if (!this.api?.hasToken()) return; // not connected → local-only
     if (this.pushTimer != null) this.clearTimer(this.pushTimer);
     this.pushTimer = this.setTimer(() => {
       this.pushTimer = null;
@@ -345,21 +351,21 @@ export class SaveManager {
     try {
       this.dirty = false;
       const res = await this.api.putSave(this.save.rev, extractSyncPatch(this.save));
-      // putSave 返回即代表服务器可达（含 409 冲突）→ 复位失败计数。
+      // putSave returning (including 409 conflict) means the server is reachable → reset failure streak.
       this.syncFailStreak = 0;
       this.syncErrorNotified = false;
       if (res.kind === 'ok') {
         this.adoptCloud(res.save);
       } else {
-        // 409：合并云端后重试一次（用合并后的新 rev）。
+        // 409: merge from cloud then retry once (using the new rev after reconciliation).
         this.reconcile(res.save);
         const retry = await this.api.putSave(this.save.rev, extractSyncPatch(this.save));
         if (retry.kind === 'ok') this.adoptCloud(retry.save);
-        else this.reconcile(retry.save); // 仍冲突 → 采纳云端，下次再推
+        else this.reconcile(retry.save); // still conflicting → adopt cloud, push again next time
       }
     } catch {
-      this.dirty = true; // 网络抖动 → 标脏，下次再试
-      // 连续失败到阈值才提示一次（离线优先下偶发失败不打扰，持续失败才打破沉默）。
+      this.dirty = true; // network blip → mark dirty, retry next time
+      // Notify only after consecutive failures reach the threshold (sporadic failures are silent under offline-first; sustained failure breaks the silence).
       this.syncFailStreak++;
       if (this.syncFailStreak >= SYNC_FAIL_THRESHOLD && !this.syncErrorNotified) {
         this.syncErrorNotified = true;
@@ -371,14 +377,15 @@ export class SaveManager {
   }
 
   /**
-   * 用云端值覆盖本地（push 成功回执）。
-   * putSave 只改 equipped/flags，不改 progress；若本地有云端尚未确认的通关（in-flight pveClear
-   * 的 applyLocalClear 或网络抖动入队待结算），保留它们，防止 push 回执把乐观写冲掉。
-   * best 是纯本地展示统计（永不上云）→ 并集取优，与 reconcile 保持一致。
+   * Overwrite local state with cloud values (on a successful push receipt).
+   * putSave only changes equipped/flags, not progress; if local has clears not yet confirmed by the cloud
+   * (applyLocalClear from an in-flight pveClear, or entries queued pending settlement after a network blip),
+   * preserve them to prevent the push receipt from overwriting optimistic writes.
+   * best is a purely local display stat (never uploaded) → take the union of better values, consistent with reconcile.
    */
   private adoptCloud(cloud: SaveData): void {
     const local = this.save;
-    // 本地有而云端无的通关：来自 in-flight pveClear（applyLocalClear 已写但服务器尚未落库）。
+    // Clears present locally but absent from cloud: from an in-flight pveClear (applyLocalClear already written but not yet persisted by the server).
     const localExtra = local.progress.cleared.filter((id) => !cloud.progress.cleared.includes(id));
     this.save = {
       ...cloud,
@@ -395,15 +402,17 @@ export class SaveManager {
   }
 
   /**
-   * reconcile：服务器权威段一律以云端为准。PVE_INTEGRITY_PLAN §8 起 progress（cleared/stars）/
-   * materials / pveUpgrades 也是服务器权威 → 取云端（不再并集/取较大）；仅 equipped/flags 是客户端
-   * 同步段做本地覆盖。progress.best 是本地展示统计（永不上云、无奖励含义）→ 并集取优保留本地。
-   * rev/accountId 取云端。
+   * reconcile: all server-authoritative sections use the cloud value. Since PVE_INTEGRITY_PLAN §8,
+   * progress (cleared/stars) / materials / pveUpgrades are also server-authoritative → take cloud
+   * (no longer union-merged or max-taken); only equipped/flags are client-sync sections and are
+   * overwritten with local values. progress.best is a local display stat (never uploaded, carries no
+   * reward semantics) → union of better values preserves local data.
+   * rev/accountId taken from cloud.
    */
   private reconcile(cloud: SaveData): void {
     const local = this.save;
     this.save = {
-      ...cloud, // 权威段（含 progress.cleared/stars / materials / pveUpgrades）+ rev/accountId 取云端
+      ...cloud, // authoritative sections (including progress.cleared/stars / materials / pveUpgrades) + rev/accountId from cloud
       progress: {
         cleared: cloud.progress.cleared,
         stars: cloud.progress.stars,
@@ -413,12 +422,12 @@ export class SaveManager {
       flags: { ...cloud.flags, ...local.flags },
     };
     this.store.saveLocal(this.save);
-    // equipped/flags 本地可能与云端有别（本地覆盖），标脏待下次上行。
+    // equipped/flags may differ from cloud (local overwrites); mark dirty for the next upload.
     this.dirty = true;
   }
 }
 
-/** best：并集键，时间更短 / 漏怪更少者胜（缺则取存在的一方）。 */
+/** best: union of keys; shorter time / fewer leaked units wins (if one side is absent, take the present one). */
 function mergeBest(
   a: Record<string, LevelRecord>,
   b: Record<string, LevelRecord>,

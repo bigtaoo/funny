@@ -23,7 +23,7 @@ export class LayerPanel {
       const empty = document.createElement('div');
       empty.className = 'empty';
       empty.style.padding = '10px';
-      empty.textContent = '无图层 — 选类型后点「+ 加层」';
+      empty.textContent = 'No layers — select a type then click "+ Add layer"';
       this.mount.appendChild(empty);
       return;
     }
@@ -68,14 +68,14 @@ export class LayerPanel {
       b.addEventListener('click', fn);
       return b;
     };
-    ops.appendChild(mkBtn('↑', '上移', () => this.model.moveLayer(i, -1)));
-    ops.appendChild(mkBtn('↓', '下移', () => this.model.moveLayer(i, 1)));
-    ops.appendChild(mkBtn('复制', '复制图层', () => this.model.duplicateLayer(i)));
-    ops.appendChild(mkBtn('删除', '删除图层', () => this.model.removeLayer(i), true));
+    ops.appendChild(mkBtn('↑', 'Move up', () => this.model.moveLayer(i, -1)));
+    ops.appendChild(mkBtn('↓', 'Move down', () => this.model.moveLayer(i, 1)));
+    ops.appendChild(mkBtn('Duplicate', 'Duplicate layer', () => this.model.duplicateLayer(i)));
+    ops.appendChild(mkBtn('Delete', 'Delete layer', () => this.model.removeLayer(i), true));
     box.appendChild(ops);
 
     // Type
-    box.appendChild(this.field('图元类型', (() => {
+    box.appendChild(this.field('Primitive type', (() => {
       const sel = document.createElement('select');
       sel.className = 'num';
       for (const t of ALL_PRIMITIVES) {
@@ -94,10 +94,10 @@ export class LayerPanel {
     }
 
     // z draw order (optional)
-    box.appendChild(this.field('z 绘制顺序（空=数组序）', this.optNumInput(layer.z, (v) => this.model.setLayerZ(v))));
+    box.appendChild(this.field('z draw order (empty = array order)', this.optNumInput(layer.z, (v) => this.model.setLayerZ(v))));
 
     // seed (optional)
-    box.appendChild(this.field('seed（空=自动派生）', this.optNumInput(layer.seed, (v) => this.model.setLayerSeed(v))));
+    box.appendChild(this.field('seed (empty = auto-derived)', this.optNumInput(layer.seed, (v) => this.model.setLayerSeed(v))));
 
     // boil toggle + fields
     const boilWrap = document.createElement('div');
@@ -109,7 +109,7 @@ export class LayerPanel {
     chk.checked = !!layer.boil;
     chk.addEventListener('change', () => this.model.setLayerBoil(chk.checked ? { variants: 3, fps: 8 } : undefined));
     boilToggle.appendChild(chk);
-    boilToggle.appendChild(document.createTextNode(' boil 手抖（P3 烘焙；此处仅存数据）'));
+    boilToggle.appendChild(document.createTextNode(' boil wobble (P3 bake; data only here)'));
     boilWrap.appendChild(boilToggle);
     if (layer.boil) {
       const r = document.createElement('div');
@@ -126,7 +126,7 @@ export class LayerPanel {
     if (POINTS_PRIMITIVES.has(layer.type)) {
       const hint = document.createElement('div');
       hint.className = 'empty';
-      hint.textContent = `points: ${layer.points?.length ?? 0} 点 — 在下方 JSON 面板编辑坐标`;
+      hint.textContent = `points: ${layer.points?.length ?? 0} pts — edit coordinates in the JSON pane below`;
       box.appendChild(hint);
     }
 

@@ -35,8 +35,8 @@ export const SUPERSAMPLE = 2;
 
 /** Tier labels for the export dropdown (XL is mythic-creature only — §4.5.2). */
 export const SIZE_TIER_LABELS: Record<SizeTierKey, string> = {
-  S:  'S · 小个子 (远程/飞行)',
-  M:  'M · 普通 (基准)',
-  L:  'L · 高个子 (盾位/重击)',
-  XL: 'XL · 巨型 (仅神话生物)',
+  S:  'S · Small (ranged/flying)',
+  M:  'M · Normal (baseline)',
+  L:  'L · Tall (shield/heavy)',
+  XL: 'XL · Giant (mythic creatures only)',
 };

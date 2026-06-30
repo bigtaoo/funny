@@ -1,20 +1,27 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// 关卡难度模拟器（PvE balance tool）
+// Level difficulty simulator (PvE balance tool)
 //
-// 用真实的确定性战斗引擎（@nw/engine，30Hz）跑一场无渲染的战役，由一个
-// 「基线玩家 AI」自动放兵/放塔/放法术防守，输出这一关在给定养成水平下能否
-// 通关 + 关键压力指标（最低基地血、峰值同屏敌人、首次破防时刻）。
+// Runs a headless campaign battle using the real deterministic combat engine
+// (@nw/engine, 30Hz), with a “baseline player AI” that automatically deploys
+// units / towers / spells to defend, then reports whether the level is clearable
+// at a given progression level and outputs key pressure metrics (minimum base HP,
+// peak concurrent enemies, tick of the first base hit).
 //
-// 用途：
-//   1. 量化「某养成水平 → 能否通关某关」，给关卡难度排序、找养成门槛。
-//   2. 改了关卡 JSON / 数值后，跑一遍看难度曲线有没有崩。
+// Use cases:
+//   1. Quantify “progression level X → can the player clear level Y”, enabling
+//      level difficulty ordering and identification of progression gates.
+//   2. After editing level JSON / numeric values, run a pass to check whether
+//      the difficulty curve has broken.
 //
-// 重要前提（解读结果时务必记住）：
-//   AI 是一个**固定的、够用但不极致**的启发式策略（economy → 防御塔骨架 →
-//   见缝插兵 → 集火法术）。它的水平≈一个认真但非高手的玩家。因此：
-//     · AI 能轻松过  → 关卡对玩家偏易。
-//     · AI 勉强过/过不了 → 关卡对玩家偏难（这是“第一关太难”的客观信号）。
-//   它给的是**相对难度**和**养成门槛**，不是“最优解能不能过”。
+// Important caveat (keep in mind when interpreting results):
+//   The AI uses a **fixed, adequate-but-not-optimal** heuristic strategy
+//   (economy → tower skeleton → fill-gap unit deployment → focus-fire spells).
+//   Its skill level ≈ a serious but non-expert player. Therefore:
+//     · AI clears easily  → level is on the easy side for players.
+//     · AI barely clears / fails → level is on the hard side (objective signal
+//       that “the first level is too hard”).
+//   It measures **relative difficulty** and **progression gates**, not
+//   “can the optimal solution clear it”.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createGameEngine } from '../src/game/GameEngine';
@@ -28,9 +35,9 @@ import { computeStars } from '../src/game/meta/campaignRewards';
 const TICK_DT = 1 / 30;
 const TICK_RATE = 30;
 
-// ─── 养成预设 ──────────────────────────────────────────────────────────────
-// 玩家可用单位（来自 ch1 loadout）：infantry / shieldbearer / archer。
-// 每个预设把这三种单位统一升到第 N 级（unitLevels: unitId→1..9）。
+// ─── Progression presets ──────────────────────────────────────────────────────────────
+// Player-available units (from the ch1 loadout): infantry / shieldbearer / archer.
+// Each preset upgrades all three unit types uniformly to level N (unitLevels: unitId→1..9).
 
 const PLAYER_UNITS = [UnitType.Infantry, UnitType.ShieldBearer, UnitType.Archer];
 
@@ -44,20 +51,20 @@ export function progressionUnitLevels(preset: ProgressionPreset): Record<string,
   return out;
 }
 
-// ─── 基线 AI 的可调参数 ─────────────────────────────────────────────────────
+// ─── Tunable parameters for the baseline AI ─────────────────────────────────────────────────────
 
 export interface BaselineAiOptions {
-  /** 维持的箭塔上限（防御骨架）。 */
+  /** Maximum number of arrow towers to maintain (the defensive skeleton). */
   towerCap: number;
-  /** 维持的兵营上限（被动出兵流）。 */
+  /** Maximum number of barracks to maintain (passive unit stream). */
   barracksCap: number;
-  /** 追求的基地升级等级（0..3），升级提升回墨速率。 */
+  /** Target base upgrade level (0..3); upgrading increases ink regeneration rate. */
   upgradeToLevel: number;
-  /** 每秒可执行的操作数（令牌桶，模拟人手 APM）。6=布局紧凑但不超人。 */
+  /** Actions per second available (token bucket, simulating human APM). 6 = tight but not superhuman. */
   actionsPerSecond: number;
-  /** “近身威胁”判定：敌人推进到我方基地行(0)多少行内算紧急。 */
+  /** “Close-range threat” threshold: how many rows from our base (row 0) the enemy must be to count as urgent. */
   threatRows: number;
-  /** 每条来敌车道至少要维持的我方阻挡单位数（野战防线，本游戏防御主力）。 */
+  /** Minimum number of friendly blocking units to maintain per incoming enemy lane (field defence line, the primary defensive tool in this game). */
   blockersPerLane: number;
 }
 
@@ -70,32 +77,32 @@ export const DEFAULT_AI: BaselineAiOptions = {
   blockersPerLane: 2,
 };
 
-// ─── 引擎/状态的轻量类型别名（避免深导入内部类） ──────────────────────────
+// ─── Lightweight type aliases for engine/state (avoid deep imports of internal classes) ──────────────────────────
 
 type Engine = ReturnType<typeof createGameEngine>;
 
 interface LaneThreat {
-  /** 该车道上最逼近我方基地（row 最小）的存活敌人行号，没有则 Infinity。 */
+  /** Row of the closest living enemy to our base (smallest row) in this lane; Infinity if none. */
   closestRow: number;
-  /** 该车道上的存活敌人数。 */
+  /** Number of living enemies in this lane. */
   count: number;
-  /** 该车道存活敌人总血量。 */
+  /** Total HP of living enemies in this lane. */
   totalHp: number;
-  /** 该车道上我方存活单位数（用于判断哪条道防守薄弱）。 */
+  /** Number of our living units in this lane (used to identify which lane is weakly defended). */
   allyCount: number;
-  /** 该车道上我方坦克（盾兵）数——标准 TD：每条来敌道先有坦克扛线。 */
+  /** Number of our tanks (shield-bearers) in this lane — standard TD: each incoming lane should have a tank holding the line first. */
   allyTanks: number;
 }
 
-// ─── 基线玩家 AI ────────────────────────────────────────────────────────────
+// ─── Baseline player AI ────────────────────────────────────────────────────────────
 
 export class BaselinePlayer {
-  /** 令牌桶：每 tick 累加 actionsPerSecond/30，每个操作消耗 1，实现真实 APM。 */
+  /** Token bucket: incremented by actionsPerSecond/30 each tick; each action costs 1, modelling real APM. */
   private tokens = 0;
 
   constructor(private readonly opts: BaselineAiOptions = DEFAULT_AI) {}
 
-  /** 在 engine.tick() 之前调用：读状态、按预算连续下指令直到花光令牌/墨水。 */
+  /** Called before engine.tick(): read state and issue commands continuously until tokens or ink run out. */
   act(engine: Engine, _tick: number): void {
     const aps = this.opts.actionsPerSecond;
     this.tokens = Math.min(aps, this.tokens + aps / 30);
@@ -104,7 +111,7 @@ export class BaselinePlayer {
     const state = engine.state;
     const player = state.bottomPlayer;
 
-    // 本 tick 内：场面快照（敌情/建筑）在指令落地前不变，故只扫一次。
+    // Within this tick: the battlefield snapshot (enemies / buildings) does not change until commands resolve, so scan only once.
     const laneThreat = this.scanLanes(engine);
     const occupiedTowerLanes = new Set<number>();
     let towers = 0, barracks = 0;
@@ -114,14 +121,14 @@ export class BaselinePlayer {
       else if (b.buildingType === 'barracks') barracks++;
     }
 
-    // 最逼近基地的车道（堵口/插兵集中点）。
+    // Lane closest to our base (priority lane for blocking / unit concentration).
     let worstLane = -1, worstRow = Infinity;
     for (const lane of ATTACK_LANES) {
       const t = laneThreat.get(lane)!;
       if (t.closestRow < worstRow) { worstRow = t.closestRow; worstLane = lane; }
     }
     const underThreat = worstLane >= 0 && worstRow <= this.opts.threatRows;
-    // 最大敌群车道（流星首选目标）。
+    // Lane with the largest enemy cluster (preferred Meteor target).
     let clusterLane = -1, clusterCnt = 0, clusterRow = Infinity;
     for (const lane of ATTACK_LANES) {
       const t = laneThreat.get(lane)!;
@@ -134,7 +141,7 @@ export class BaselinePlayer {
     const consumed = new Set<number>();
     let ink = player.ink;
     let meteorFired = false;
-    // 本 tick 内已往各车道排队的我方单位 / 坦克（让分摊在 tick 内也生效）。
+    // Units / tanks already queued to each lane this tick (so intra-tick distribution is also accounted for).
     const queued = new Map<number, number>();
     const queuedTanks = new Map<number, number>();
     const reinforce = (lane: number, tank: boolean) => {
@@ -161,8 +168,9 @@ export class BaselinePlayer {
       this.tokens -= 1;
     };
     /**
-     * 往某车道按「标准 TD 阵型」补一个兵并出手：该道还没坦克 → 先盾兵扛线；
-     * 否则优先弓手（高 DPS，清场主力），再退步兵。返回是否成功出手。
+     * Deploy one unit to the given lane using the "standard TD formation": if the lane has no
+     * tank yet → shield-bearer to hold the line first; otherwise prefer archer (high DPS, main
+     * clearing force), falling back to infantry. Returns whether a card was successfully played.
      */
     const reinforceLane = (lane: number): boolean => {
       const t = laneThreat.get(lane)!;
@@ -176,9 +184,9 @@ export class BaselinePlayer {
       play(idx, lane); reinforce(lane, isTank); return true;
     };
 
-    // 令牌预算内，按优先级反复出手（concentrate：兵都堆 worstLane）。
+    // Within the token budget, repeatedly act in priority order (concentrate: stack all units into worstLane).
     while (this.tokens >= 1 && ink > 0) {
-      // 1) 流星 AOE（每 tick 最多一发，砸最大敌群）
+      // 1) Meteor AOE (at most one per tick, aimed at the largest enemy cluster)
       if (!meteorFired && clusterLane >= 0 && clusterCnt >= 2) {
         const idx = findCard((k, sub) => k === CardType.Spell && sub === SpellTypeMeteor);
         if (idx >= 0) {
@@ -186,13 +194,14 @@ export class BaselinePlayer {
           play(idx, clusterLane, row); meteorFired = true; continue;
         }
       }
-      // 2) 防线覆盖（最高战术优先）：来敌车道若阻挡 < blockersPerLane，先在最逼近的
-      //    那条欠守道补兵——按阵型先盾兵扛、再弓手输出。保证每条道都有人守，不漏。
+      // 2) Defence coverage (highest tactical priority): if any incoming enemy lane has fewer
+      //    blockers than blockersPerLane, reinforce the most threatened under-defended lane first
+      //    — shield-bearer to hold, then archer for DPS. Ensures every lane has coverage, no gaps.
       {
         const lane = this.pickUnderBlockedLane(laneThreat, queued, this.opts.blockersPerLane);
         if (lane >= 0 && reinforceLane(lane)) continue;
       }
-      // 3) 防御骨架：所有来敌道都已有兵后，补箭塔做后排火力（威胁道优先）
+      // 3) Defensive skeleton: once all incoming lanes have units, build arrow towers for back-row firepower (prioritise threatened lanes)
       if (towers < this.opts.towerCap) {
         const idx = findCard((k, sub) => k === CardType.Building && sub === 'arrow_tower');
         if (idx >= 0) {
@@ -200,7 +209,7 @@ export class BaselinePlayer {
           if (lane >= 0) { play(idx, lane); towers++; occupiedTowerLanes.add(lane); continue; }
         }
       }
-      // 4) 兵营：维持一条被动出兵流
+      // 4) Barracks: maintain one passive unit stream
       if (barracks < this.opts.barracksCap) {
         const idx = findCard((k, sub) => k === CardType.Building && sub === 'barracks');
         if (idx >= 0) {
@@ -208,21 +217,21 @@ export class BaselinePlayer {
           if (lane >= 0) { play(idx, lane); barracks++; occupiedTowerLanes.add(lane); continue; }
         }
       }
-      // 5) 余力加兵：把多余的墨继续分摊到防守最薄弱的来敌车道（同样走阵型逻辑）
+      // 5) Spare-ink deployment: distribute remaining ink to the most under-defended incoming enemy lane (same formation logic)
       {
         const lane = this.pickDefenseLane(laneThreat, queued);
         if (lane >= 0 && reinforceLane(lane)) continue;
       }
-      // 6) 经济：安全且有余钱 → 升基地（提升回墨）
+      // 6) Economy: safe and ink to spare → upgrade base (increases ink regeneration)
       if (!underThreat && player.upgradeLevel < this.opts.upgradeToLevel && player.canUpgradeBase()) {
         const cost = player.nextUpgradeCost ?? Infinity;
         if (ink - cost >= 6) { engine.upgradeBase(); ink -= cost; this.tokens -= 1; continue; }
       }
-      break; // 没有可做的事
+      break; // nothing left to do
     }
   }
 
-  /** 扫描每条攻击车道上的存活敌人威胁 + 我方单位分布。 */
+  /** Scan the living enemy threat and friendly unit distribution across each attack lane. */
   private scanLanes(engine: Engine): Map<number, LaneThreat> {
     const m = new Map<number, LaneThreat>();
     for (const lane of ATTACK_LANES) m.set(lane, { closestRow: Infinity, count: 0, totalHp: 0, allyCount: 0, allyTanks: 0 });
@@ -233,7 +242,7 @@ export class BaselinePlayer {
       if (u.side === Side.Top) {
         t.count++;
         t.totalHp += u.hp;
-        // 敌人从 row 17 向 row 0 推进；row 越小越逼近我方基地。
+        // Enemies advance from row 17 toward row 0; smaller row = closer to our base.
         if (u.row < t.closestRow) t.closestRow = u.row;
       } else {
         t.allyCount++;
@@ -244,8 +253,10 @@ export class BaselinePlayer {
   }
 
   /**
-   * 选一条最需要补兵的车道：在“有敌人”的车道里，挑我方阻挡（含本 tick 已排队）
-   * 最少、其次敌人最逼近的那条——保证每条来敌的道都有人守，而不是堆在一条。
+   * Pick the lane most in need of reinforcement: among lanes with enemies, choose the one with
+   * the fewest friendly blockers (including units already queued this tick), breaking ties by
+   * choosing the lane with the closest enemy — ensuring every incoming lane has defenders rather
+   * than stacking them all in one lane.
    */
   private pickDefenseLane(threat: Map<number, LaneThreat>, queued: Map<number, number>): number {
     let best = -1, bestAllies = Infinity, bestRow = Infinity;
@@ -260,7 +271,7 @@ export class BaselinePlayer {
     return best;
   }
 
-  /** 来敌车道中阻挡数 < min 的、敌人最逼近的那条（欠守车道）。无则 -1。 */
+  /** Among incoming enemy lanes with fewer than min blockers, return the one with the closest enemy (the under-defended lane). Returns -1 if none. */
   private pickUnderBlockedLane(threat: Map<number, LaneThreat>, queued: Map<number, number>, min: number): number {
     let best = -1, bestRow = Infinity;
     for (const lane of ATTACK_LANES) {
@@ -272,9 +283,9 @@ export class BaselinePlayer {
     return best;
   }
 
-  /** 选一条放塔车道：优先“有威胁且还没塔”的车道，否则中央向外第一条空车道。 */
+  /** Pick a lane to place a tower: prefer lanes with enemy threat that have no tower yet; otherwise the first empty lane in center-outward order. */
   private pickTowerLane(occupied: Set<number>, threat: Map<number, LaneThreat>): number {
-    // 先挑“有敌人经过但没塔”的车道，按威胁紧迫度。
+    // First pick a lane with enemies but no tower, ordered by threat urgency.
     let best = -1, bestRow = Infinity;
     for (const lane of ATTACK_LANES) {
       if (occupied.has(lane)) continue;
@@ -282,48 +293,48 @@ export class BaselinePlayer {
       if (t.count > 0 && t.closestRow < bestRow) { best = lane; bestRow = t.closestRow; }
     }
     if (best >= 0) return best;
-    // 否则按中央向外的顺序铺第一条空车道。
+    // Otherwise lay a tower in the first empty lane in center-outward order.
     for (const lane of TOWER_PRIORITY) if (!occupied.has(lane)) return lane;
     return -1;
   }
 }
 
-// SpellType.Meteor 的字符串值（避免再导一个枚举常量）。
+// String value of SpellType.Meteor (avoids importing another enum constant).
 const SpellTypeMeteor = 'meteor';
-// 中央向外的放塔优先级（基地在 5/6 列，攻击车道两侧）。
+// Tower placement priority from center outward (base at columns 5/6, attack lanes on both sides).
 const TOWER_PRIORITY = [4, 7, 3, 8, 2, 9, 1, 10, 0, 11];
 
-// ─── 单关模拟 ────────────────────────────────────────────────────────────────
+// ─── Single-level simulation ────────────────────────────────────────────────────────────────
 
 export interface SimResult {
   levelId: string;
   preset: ProgressionPreset;
-  /** 是否通关（防住，winner === Bottom）。 */
+  /** Whether the level was cleared (defended successfully; winner === Bottom). */
   win: boolean;
-  /** 评星 0..3（按结束基地血% 对照 level.rewards.starThresholds；未通关=0）。 */
+  /** Star rating 0..3 (based on final base HP% against level.rewards.starThresholds; 0 if not cleared). */
   stars: 0 | 1 | 2 | 3;
-  /** 引擎是否在 maxTicks 内打到 GameOver（false=被 maxTicks 截断，异常）。 */
+  /** Whether the engine reached GameOver within maxTicks (false = cut off by maxTicks, anomalous). */
   reachedGameOver: boolean;
   ticks: number;
   seconds: number;
-  /** 结束时我方基地血（初始 100）。 */
+  /** Our base HP at the end of the run (starts at 100). */
   finalBaseHp: number;
-  /** 全程最低基地血——越接近 0 越险。 */
+  /** Minimum base HP throughout the run — closer to 0 means more precarious. */
   minBaseHp: number;
-  /** 基地首次掉血的 tick（null=全程未被破防）。 */
+  /** Tick at which the base first took damage (null = base was never hit during the run). */
   firstHitTick: number | null;
-  /** 全程峰值同屏敌人数。 */
+  /** Peak number of concurrent enemies on screen at any point during the run. */
   peakEnemies: number;
-  /** 全程峰值同屏敌人总血量。 */
+  /** Peak total HP of concurrent enemies on screen at any point during the run. */
   peakEnemyHp: number;
 }
 
 export interface SimOptions {
   preset?: ProgressionPreset;
   ai?: BaselineAiOptions;
-  /** tick 上限（防卡死）。默认按最后一波 + 缓冲自动推算。 */
+  /** Maximum tick count (prevents hang). Defaults to auto-computed last-wave tick + buffer. */
   maxTicks?: number;
-  /** 覆盖关卡 seed（多种子评估用：换 seed 即换发牌/抽卡顺序，抹平单局噪声）。 */
+  /** Override the level seed (for multi-seed evaluation: different seed = different deal / draw order, smoothing out single-run noise). */
   seed?: number;
 }
 
@@ -356,7 +367,7 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
   while (engine.state.phase !== GamePhase.GameOver && tick < maxTicks) {
     ai.act(engine, tick);
 
-    // 采样压力指标（每 3 tick 采一次，省时）。
+    // Sample pressure metrics (every 3 ticks to save time).
     if (tick % 3 === 0) {
       let cnt = 0, hp = 0;
       for (const u of engine.state.board.units.values()) {
@@ -376,7 +387,7 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
 
   const win = engine.state.winner === Side.Bottom;
   const finalBaseHp = engine.state.bottomPlayer.baseHp;
-  // 评星：剩余基地血% == finalBaseHp（满血100、不回血）。未通关计 0。
+  // Star rating: remaining base HP% == finalBaseHp (full HP is 100, no regen). 0 if not cleared.
   const stars = win ? computeStars(level.rewards?.starThresholds, finalBaseHp) : 0;
 
   return {
@@ -395,21 +406,21 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
   };
 }
 
-/** 按最后一波到达 tick + 缓冲推算上限（survive 关收尾要等最后一兵被清）。 */
+/** Auto-compute the tick ceiling from the last wave arrival tick plus a buffer (survive levels need time to clear the last unit). */
 function autoMaxTicks(level: LevelDefinition): number {
   let last = 0;
   for (const e of level.waves.entries) {
     const span = e.atTick + (e.count - 1) * (e.spacingTicks ?? 0);
     if (span > last) last = span;
   }
-  return Math.max(60 * TICK_RATE, last + 60 * TICK_RATE); // 至少 60s，或末波后再给 60s
+  return Math.max(60 * TICK_RATE, last + 60 * TICK_RATE); // at least 60s, or 60s after the last wave
 }
 
-// ─── 多种子评估（抹平单局噪声，让星级可信）────────────────────────────────
+// ─── Multi-seed evaluation (smooths out single-run noise for reliable star ratings) ────────────────────────────────
 
 const PRESET_ORDER: ProgressionPreset[] = ['fresh', 'T2', 'T3', 'T4', 'T5', 'T6'];
 
-/** 默认评估种子组——换 seed 即换发牌/抽卡顺序，跑多个取中位数才稳。 */
+/** Default evaluation seed set — different seeds produce different deal/draw orders; running multiple and taking the median gives stable results. */
 export const EVAL_SEEDS = [65537, 1234567, 99991, 424242, 7777] as const;
 
 const median = (xs: number[]): number => {
@@ -419,16 +430,16 @@ const median = (xs: number[]): number => {
 
 export interface CellEval {
   preset: ProgressionPreset;
-  /** 通关率（多种子里赢的比例）。 */
+  /** Clear rate (fraction of seeds won). */
   winRate: number;
-  /** 星级中位数（0..3）。 */
+  /** Median star rating (0..3). */
   medianStars: number;
-  /** 结束基地血中位数。 */
+  /** Median final base HP. */
   medianHp: number;
   runs: SimResult[];
 }
 
-/** 对（关卡, 预设）跑多个种子，给出稳健的通关率 / 中位星级。 */
+/** Run multiple seeds for a (level, preset) pair and return a robust clear rate / median star rating. */
 export function evalCell(
   levelId: string, preset: ProgressionPreset,
   ai?: BaselineAiOptions, seeds: readonly number[] = EVAL_SEEDS,
@@ -443,13 +454,13 @@ export function evalCell(
   };
 }
 
-// ─── 阈值扫描：找“多数种子能通关”的最低养成预设 ──────────────────────────────
+// ─── Threshold scan: find the lowest progression preset that clears on a majority of seeds ──────────────────────────────
 
 export interface ThresholdResult {
   levelId: string;
-  /** 能稳定通关(通关率≥50%)的最低预设；null=连 T6 都过不了。 */
+  /** Lowest preset that clears reliably (win rate ≥ 50%); null = cannot clear even at T6. */
   minClearPreset: ProgressionPreset | null;
-  /** 各预设的多种子评估。 */
+  /** Multi-seed evaluation results for each preset. */
   byPreset: CellEval[];
 }
 
@@ -466,24 +477,24 @@ export function findClearThreshold(
   return { levelId, minClearPreset, byPreset };
 }
 
-// ─── 报表格式化 ──────────────────────────────────────────────────────────────
+// ─── Report formatting ──────────────────────────────────────────────────────────────
 
 export function formatThresholdTable(results: ThresholdResult[]): string {
   const lines: string[] = [];
-  const head = ['level', ...PRESET_ORDER, 'min通关'].map((s) => s.padEnd(9)).join('|');
+  const head = ['level', ...PRESET_ORDER, 'min_clear'].map((s) => s.padEnd(9)).join('|');
   lines.push(head);
   lines.push('-'.repeat(head.length));
   for (const tr of results) {
     const cells = [tr.levelId.padEnd(9)];
     for (const preset of PRESET_ORDER) {
       const c = tr.byPreset.find((x) => x.preset === preset)!;
-      // 多数通关→中位星级+通关率(如 3★100%) / 否则→✗通关率
+      // Majority clear → median stars + win rate (e.g. 3★100%) / otherwise → ✗win rate
       const cell = c.winRate >= 0.5
         ? `${c.medianStars}★${Math.round(c.winRate * 100)}%`
         : `✗${Math.round(c.winRate * 100)}%`;
       cells.push(cell.padEnd(9));
     }
-    cells.push((tr.minClearPreset ?? '过不了').padEnd(9));
+    cells.push((tr.minClearPreset ?? 'unbeatable').padEnd(9));
     lines.push(cells.join('|'));
   }
   return lines.join('\n');

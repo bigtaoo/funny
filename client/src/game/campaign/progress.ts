@@ -1,5 +1,6 @@
-// 战役进度纯逻辑（PIXI 无关，便于单测）。CampaignMapScene 的解锁/落点判断从此处取，
-// 保证「显示的关卡节点」与「点它进入的关卡」用同一套 levelId 推导，不会错位。
+// Campaign progress pure logic (no PIXI dependency, easy to unit-test). CampaignMapScene's
+// unlock / landing-page decisions are derived from here, ensuring that the displayed level
+// node and the level entered on tap use the same levelId derivation — no mismatch.
 
 import { CAMPAIGN_LEVEL_ORDER, CHAPTER_ORDER, getChapterMap } from '../index';
 
@@ -18,8 +19,9 @@ export function isLevelUnlocked(levelId: string, cleared: Set<string>): boolean 
 }
 
 /**
- * SLG 大世界软门槛：是否通关第一章（ch1 全部关卡已清）。唯一一道功能解锁门槛
- * （ONBOARDING_DESIGN §4）。教学关 ch0_tutorial 不在 CAMPAIGN_LEVEL_ORDER 里、不计入。
+ * SLG world-map soft gate: whether the first chapter has been cleared (all ch1 levels done).
+ * This is the only feature-unlock gate (ONBOARDING_DESIGN §4).
+ * The tutorial level ch0_tutorial is not in CAMPAIGN_LEVEL_ORDER and is not counted.
  */
 export function isFirstChapterCleared(cleared: Set<string>): boolean {
   const ch1 = CAMPAIGN_LEVEL_ORDER.filter((id) => parseLevelId(id)?.chapter === 1);

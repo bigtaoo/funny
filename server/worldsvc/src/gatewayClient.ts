@@ -1,10 +1,12 @@
-// worldsvc → gateway 内部推送（S8-2）。SLG 实时事件（行军状态 / 格变更）按 owner accountId
-// 定向经 gateway /gw/push 下发（与 social 同 SOC3 原则：动作走 REST、事件走 push）。
-// 内部鉴权 X-Internal-Key（共用 NW_INTERNAL_KEY）。gateway 未配置基址 → push 为 no-op
-// （worldsvc 降级：客户端靠 REST 轮询 /world/me、/world/map 看状态）。与 meta gatewayClient 同形。
+// worldsvc → gateway internal push (S8-2). SLG real-time events (march status / tile changes)
+// are delivered to the owner accountId via gateway /gw/push (same SOC3 principle as social:
+// actions over REST, events over push).
+// Internal auth: X-Internal-Key (shared NW_INTERNAL_KEY). If gateway base URL is not configured,
+// push is a no-op (worldsvc degrades: clients poll /world/me and /world/map for state).
+// Mirrors the meta gatewayClient in shape.
 //
-// 注：worldsvc 侧 SlgPushMsg 的 kind/字段须与 gateway matchsvcClient.PushMsg 的 SLG 分支逐字对齐
-// （JSON 线契约，camelCase discriminator=kind）。
+// Note: SlgPushMsg kind/fields on the worldsvc side must match the SLG branch of
+// gateway matchsvcClient.PushMsg character-for-character (JSON wire contract, camelCase discriminator=kind).
 import { GW_PUSH_REDIS_CHANNEL, internalHeaders } from '@nw/shared';
 
 export type SlgPushMsg =
@@ -22,67 +24,69 @@ export type SlgPushMsg =
       tileId: string;
       type: string; // TileType
       level: number;
-      ownerPublicId: string; // 占领者 9 位公开 id（空=中立）
-      ownerName: string;     // 占领者昵称（meta 不可用时为空）
+      ownerPublicId: string; // occupier's 9-digit public id (empty = neutral)
+      ownerName: string;     // occupier's display name (empty when meta is unavailable)
       familyId: string;
-      protectedUntil: number; // ms（0=无保护）
+      protectedUntil: number; // ms (0 = no protection)
     }
   | {
-      kind: 'under_attack'; // S8-3：出征发起即推给防守方（预警，到达时刻 + 兵力估计）
+      kind: 'under_attack'; // S8-3: pushed to the defender as soon as a march is launched (early warning: arrival time + troop estimate)
       tile: string;
-      attackerName: string; // 攻方标识；S8-3 暂用 accountId，publicId 解析待后补
+      attackerName: string; // attacker identifier; S8-3 temporarily uses accountId; publicId resolution to be added later
       attackerPublicId: string;
       arriveAt: number; // ms
       troopsHint: number;
     }
   | {
-      kind: 'siege_result'; // S8-3：围攻结算后推给攻守双方
+      kind: 'siege_result'; // S8-3: pushed to both attacker and defender after siege settlement
       siegeId: string;
       tile: string;
       outcome: string; // attacker_win | defender_win | draw
-      lootSummary: string; // 人读摘要（如 "food+250"），UI 直接展示
-      replayRef: string; // 录像引用（S8-3b 接 judge 复算后填，当前空）
+      lootSummary: string; // human-readable summary (e.g. "food+250"), displayed directly in UI
+      replayRef: string; // replay reference (filled after S8-3b judge replay; currently empty)
     }
   | {
-      kind: 'family_msg'; // S8-4：家族频道新消息（仅推给在线成员）
+      kind: 'family_msg'; // S8-4: new message in the family channel (pushed only to online members)
       familyId: string;
-      fromPublicId: string; // S8-4 暂用 accountId，publicId 解析待后补
+      fromPublicId: string; // S8-4 temporarily uses accountId; publicId resolution to be added later
       fromName: string;
       body: string;
-      ts: number; // ms（epoch，非 Date）
+      ts: number; // ms (epoch, not Date)
     }
   | {
-      kind: 'sect_msg'; // S8-4b：宗门频道新消息（经 Redis 扇出给在线成员）
+      kind: 'sect_msg'; // S8-4b: new message in the sect channel (fan-out to online members via Redis)
       sectId: string;
-      fromPublicId: string; // 暂用 accountId，publicId 解析待后补
+      fromPublicId: string; // temporarily uses accountId; publicId resolution to be added later
       fromName: string;
       body: string;
-      ts: number; // ms（epoch，非 Date）
+      ts: number; // ms (epoch, not Date)
     }
   | {
-      kind: 'nation_msg'; // B7：国家/世界公频新消息（经 Redis 扇出给同 world 内在线玩家）
+      kind: 'nation_msg'; // B7: new message in the nation/world public channel (fan-out via Redis to online players in the same world)
       worldId: string;
       fromPublicId: string;
       fromName: string;
       body: string;
-      ts: number; // ms（epoch，非 Date）
+      ts: number; // ms (epoch, not Date)
     };
 
 export interface WorldGatewayClient {
   readonly available: boolean;
-  /** 据 accountId 定向推一条 SLG 事件（离线 / 未配置 gateway → 丢弃）。best-effort，不抛。 */
+  /** Pushes one SLG event to a specific accountId (offline / gateway not configured → discarded). Best-effort, does not throw. */
   push(accountId: string, msg: SlgPushMsg): Promise<void>;
   /**
-   * 群发一条 SLG 事件给一批收件人（S8-4b 宗门频道）。Redis 可用 → 发一条到
-   * GW_PUSH_REDIS_CHANNEL，由各 gateway 实例据在线成员扇出（避免 ≤900 人 O(n) HTTP）；
-   * 无 Redis → 降级逐个 HTTP push 兜底。best-effort，不抛。
+   * Broadcasts one SLG event to a batch of recipients (S8-4b sect channel). When Redis is
+   * available, publishes a single message to GW_PUSH_REDIS_CHANNEL; each gateway instance
+   * then fans out to its online members (avoids O(n) HTTP for ≤900 recipients). Without Redis,
+   * falls back to individual HTTP pushes per recipient. Best-effort, does not throw.
    */
   broadcast(recipients: string[], msg: SlgPushMsg): Promise<void>;
 }
-// 注：G3-2b 后关键围攻由 worldsvc 直接 import @nw/engine headless 跑权威结果（§16.8），不再走
-// gateway 录像 judge 复算。原 worldsvc→gateway `judge()` 客户端（S8-3b）已随手操方案作废删除。
+// Note: after G3-2b, critical sieges are resolved by worldsvc directly importing @nw/engine headless
+// for authoritative results (§16.8); the gateway replay judge replay path is no longer used.
+// The original worldsvc→gateway `judge()` client (S8-3b) was deleted along with the manual-control approach.
 
-/** broadcast 用到的最小 Redis 接口（publish）；与 worldsvc/redis.ts 的 WorldRedis 结构相容。 */
+/** Minimal Redis interface required by broadcast (publish only); compatible with the WorldRedis shape in worldsvc/redis.ts. */
 export interface BroadcastRedis {
   publish(channel: string, message: string): Promise<unknown>;
 }
@@ -91,7 +95,7 @@ export class HttpWorldGatewayClient implements WorldGatewayClient {
   constructor(
     private readonly baseUrl: string | null,
     private readonly internalKey: string,
-    /** 可选 Redis：用于宗门频道扇出（缺省 → broadcast 降级为逐个 HTTP push）。 */
+    /** Optional Redis: used for sect-channel fan-out (omitted → broadcast degrades to per-recipient HTTP push). */
     private readonly redis: BroadcastRedis | null = null,
   ) {}
 
@@ -106,7 +110,7 @@ export class HttpWorldGatewayClient implements WorldGatewayClient {
         await this.redis.publish(GW_PUSH_REDIS_CHANNEL, JSON.stringify({ recipients, msg }));
         return;
       } catch {
-        // Redis publish 失败 → 落到 HTTP 兜底（不抛，频道已落库可 REST 拉取）。
+        // Redis publish failed → fall through to HTTP fallback (does not throw; channel is persisted in DB and can be fetched via REST).
       }
     }
     await Promise.allSettled(recipients.map((r) => this.push(r, msg)));
@@ -121,12 +125,12 @@ export class HttpWorldGatewayClient implements WorldGatewayClient {
         body: JSON.stringify({ accountId, msg }),
       });
     } catch {
-      // best-effort：推送失败不影响已落库的权威状态；客户端下次 REST 轮询拉到。
+      // best-effort: push failure does not affect the authoritative state already persisted in the database; the client will pick it up on the next REST poll.
     }
   }
 }
 
-/** 测试/无 gateway 时的空实现。 */
+/** Null implementation for tests or when no gateway is configured. */
 export const nullWorldGatewayClient: WorldGatewayClient = {
   available: false,
   async push() { /* no-op */ },

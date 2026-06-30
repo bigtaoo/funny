@@ -1,41 +1,44 @@
-// 本地存档持久化（S0-3）。走 IPlatform.storage（key=nw_save_v1）。
-// loadLocal 经 migrate 规整 + 兜底；saveLocal 序列化落盘。
+// Local save persistence (S0-3). Uses IPlatform.storage (key=nw_save_v1).
+// loadLocal runs migrate for normalisation + fallback; saveLocal serialises to storage.
 //
-// pull/push（云侧）不在本接口——它们依赖账号 + 网络，放 ApiClient + CloudSync（S0-5），
-// SaveManager 组合两者。这样本地持久化零网络依赖，便于单测（喂内存 IStorage round-trip）。
+// pull/push (cloud side) are not part of this interface — they depend on account + network
+// and live in ApiClient + CloudSync (S0-5); SaveManager composes both. This keeps local
+// persistence network-free and easy to unit-test (in-memory IStorage round-trip).
 //
-// 旧 key 收编：历史上 nw_seen_intro 单独存。本模块在 loadLocal 时把它收编进 flags.seen_intro
-// （保留旧 key 读兼容，不删旧 key）。nw_locale 是字符串、由 i18n 自管（flags 仅布尔），不收编。
+// Legacy key absorption: historically nw_seen_intro was stored as a standalone key.
+// loadLocal absorbs it into flags.seen_intro (the old key is still readable for
+// compatibility but not deleted). nw_locale is a string managed by i18n (flags holds
+// booleans only) and is not absorbed.
 
 import type { IStorage } from '../../platform/IPlatform';
 import { migrate } from './migrate';
 import { SAVE_STORAGE_KEY, type SaveData } from './SaveData';
 
-/** 历史遗留 key —— 首次加载时收编进 SaveData.flags。 */
+/** Legacy key — absorbed into SaveData.flags on first load. */
 const LEGACY_SEEN_INTRO_KEY = 'nw_seen_intro';
 
-/** 离线通关待结算队列的本地 key（PVE_INTEGRITY_PLAN §8.4，非同步段、不上云）。 */
+/** Local key for the offline pending-settlement clear queue (PVE_INTEGRITY_PLAN §8.4, non-sync segment, not uploaded to cloud). */
 const PENDING_CLEARS_KEY = 'nw_pending_clears_v1';
 
-/** 离线通关待结算记录（上线 flush → POST /pve/clear）。 */
+/** Offline pending-settlement clear record (flushed on reconnect → POST /pve/clear). */
 export interface PendingClear {
   levelId: string;
   stars: number;
   ts: number;
-  /** 本地录像 id（ReplayStore），上线 flush 被 L1 抽中时据此取回上传复算（§8.6）。 */
+  /** Local replay id (ReplayStore); retrieved and uploaded for re-verification when the flush is sampled by L1 (§8.6). */
   replayId?: string;
 }
 
 export interface SaveStore {
-  /** 读本地存档（含迁移 + 兜底 + 旧 key 收编）；从无则返回全新存档。 */
+  /** Read local save (including migration + fallback + legacy key absorption); returns a fresh save if none exists. */
   loadLocal(): SaveData;
-  /** 写本地存档。 */
+  /** Write local save. */
   saveLocal(save: SaveData): void;
-  /** 清空本地存档（调试 / 登出用）。 */
+  /** Clear local save (for debug / logout). */
   clearLocal(): void;
-  /** 读离线待结算通关队列（损坏退化为空）。 */
+  /** Read the offline pending-settlement clear queue (returns empty on corruption). */
   loadPending(): PendingClear[];
-  /** 写离线待结算通关队列。 */
+  /** Write the offline pending-settlement clear queue. */
   savePending(list: PendingClear[]): void;
 }
 
@@ -49,7 +52,7 @@ export class LocalSaveStore implements SaveStore {
       try {
         raw = JSON.parse(text);
       } catch {
-        raw = null; // 损坏存档 → 当作无，迁移为全新
+        raw = null; // corrupted save → treat as absent, migrate to a fresh save
       }
     }
     const save = migrate(raw);
@@ -83,7 +86,7 @@ export class LocalSaveStore implements SaveStore {
           ...(typeof e.replayId === 'string' ? { replayId: e.replayId } : {}),
         }));
     } catch {
-      return []; // 损坏 → 当作空队列
+      return []; // corrupted → treat as empty queue
     }
   }
 
@@ -92,7 +95,7 @@ export class LocalSaveStore implements SaveStore {
     else this.storage.setItem(PENDING_CLEARS_KEY, JSON.stringify(list));
   }
 
-  /** 把历史散 key 收编进 flags（仅当 flags 尚无该项时）。 */
+  /** Absorb legacy standalone keys into flags (only when the flag is not already set). */
   private absorbLegacy(save: SaveData): void {
     if (save.flags.seen_intro === undefined) {
       const legacy = this.storage.getItem(LEGACY_SEEN_INTRO_KEY);

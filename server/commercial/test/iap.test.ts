@@ -1,5 +1,5 @@
-// C1：Apple App Store + Google Play IAP 验签单测。
-// 覆盖：正常验签映射金币、伪造收据被拒、sandbox 重试、Google purchaseState 非 0、dev 桩。
+// C1: Apple App Store + Google Play IAP receipt verification unit tests.
+// Coverage: valid receipt mapped to coins, forged receipt rejected, sandbox retry, Google purchaseState non-zero, dev stub.
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
 import { createReceiptVerifier } from '../src/iap';
@@ -7,7 +7,7 @@ import { createReceiptVerifier } from '../src/iap';
 const TIER_MAP = { small: 600, mid: 3300, large: 11800 };
 const BUNDLE = 'com.nw';
 
-// ── fetch mock 工具 ──────────────────────────────────────────────────────────
+// ── fetch mock utilities ──────────────────────────────────────────────────────────
 
 type FetchMock = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -26,7 +26,7 @@ const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  // 清除测试中可能设置的环境变量
+  // clear environment variables that may have been set during a test
   delete process.env.NW_APPLE_PASSWORD;
   delete process.env.NW_GOOGLE_SERVICE_ACCOUNT_JSON;
   delete process.env.NW_GOOGLE_PACKAGE_NAME;
@@ -135,7 +135,7 @@ describe('apple verify', () => {
   });
 
   it('returns ok:false when NW_APPLE_PASSWORD is not set', async () => {
-    // 不设置 password，工厂直接返回 false
+    // password not set; factory returns false immediately
     process.env.NW_IAP_DEV = 'false';
     const verify = createReceiptVerifier(TIER_MAP);
     const result = await verify('apple', 'base64receipt==');
@@ -165,7 +165,7 @@ describe('apple verify', () => {
 
 // ── Google Play ──────────────────────────────────────────────────────────────
 
-// 测试用 RSA 2048 密钥对（generateKeyPairSync 确保格式有效）。
+// RSA 2048 key pair for testing (generateKeyPairSync ensures valid format).
 let FAKE_SA = '';
 beforeAll(() => {
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -186,7 +186,7 @@ describe('google verify', () => {
   it('returns coins for valid purchase (purchaseState=0)', async () => {
     mockFetch((url, init) => {
       if (url.includes('oauth2.googleapis.com')) {
-        // JWT 签名可能失败（dummy key），但 mock 直接返回 token
+        // JWT signing may fail with a dummy key, but the mock returns a token directly
         return Promise.resolve(jsonResp({ access_token: 'fake-token' }));
       }
       expect(url).toContain('com.nw.coins.mid');
@@ -252,11 +252,11 @@ describe('google verify', () => {
   });
 });
 
-// ── dev 桩 ───────────────────────────────────────────────────────────────────
+// ── dev stub ───────────────────────────────────────────────────────────────────
 
 describe('dev stub', () => {
   it('returns coins for tier: prefix receipt when all credentials missing', async () => {
-    process.env.NW_IAP_DEV = 'false'; // 无凭据时自动启用 dev
+    process.env.NW_IAP_DEV = 'false'; // dev stub auto-enabled when no credentials present
     const verify = createReceiptVerifier(TIER_MAP);
     expect(await verify('apple', 'tier:small')).toEqual({ ok: true, coins: 600 });
     expect(await verify('google', 'tier:large')).toEqual({ ok: true, coins: 11800 });
@@ -267,32 +267,32 @@ describe('dev stub', () => {
     process.env.NW_APPLE_PASSWORD = 'real-password';
     mockFetch(() => Promise.resolve(jsonResp({ status: 21002 }))); // invalid receipt
     const verify = createReceiptVerifier(TIER_MAP);
-    // tier: prefix 不再走桩，而是走真实 apple 验签（返回失败）
+    // tier: prefix no longer routes through the stub; it goes through real apple verification (which returns failure)
     const result = await verify('apple', 'tier:small');
     expect(result).toEqual({ ok: false, coins: 0 });
   });
 });
 
-// ── 生产加固（L2-3）：dev 桩在 NODE_ENV=production 下强制关闭，缺凭据 fail closed ──
+// ── Production hardening (L2-3): dev stub is forcibly disabled under NODE_ENV=production; missing credentials fail closed ──
 
 describe('production hardening (L2-3)', () => {
-  it('production + 无凭据 → dev 桩关闭，验签 fail closed（不发币）', async () => {
+  it('production + no credentials → dev stub disabled, verification fail closed (no coins granted)', async () => {
     process.env.NODE_ENV = 'production';
-    // 无任何真实凭据；非生产时这会自动开启 dev 桩，但生产下必须关闭。
+    // No real credentials present; in non-production this would auto-enable the dev stub, but in production it must be disabled.
     const verify = createReceiptVerifier(TIER_MAP);
     expect(await verify('dev', 'tier:large')).toEqual({ ok: false, coins: 0 });
     expect(await verify('apple', 'tier:small')).toEqual({ ok: false, coins: 0 });
     expect(await verify('stripe', 'tier:mid')).toEqual({ ok: false, coins: 0 });
   });
 
-  it('production + NW_IAP_DEV=true → dev 桩仍强制关闭（第二道防线）', async () => {
+  it('production + NW_IAP_DEV=true → dev stub still forcibly disabled (second line of defence)', async () => {
     process.env.NODE_ENV = 'production';
-    process.env.NW_IAP_DEV = 'true'; // 误开
+    process.env.NW_IAP_DEV = 'true'; // accidentally enabled
     const verify = createReceiptVerifier(TIER_MAP);
     expect(await verify('dev', 'tier:large')).toEqual({ ok: false, coins: 0 });
   });
 
-  it('非生产 + 无凭据 → dev 桩照常开启（本地联调不受影响）', async () => {
+  it('non-production + no credentials → dev stub enabled as normal (local integration testing unaffected)', async () => {
     process.env.NODE_ENV = 'development';
     const verify = createReceiptVerifier(TIER_MAP);
     expect(await verify('dev', 'tier:large')).toEqual({ ok: true, coins: 11800 });

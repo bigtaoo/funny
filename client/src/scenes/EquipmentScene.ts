@@ -1,9 +1,10 @@
-// EquipmentScene — 装备系统客户端 UI（E5，EQUIPMENT_DESIGN §11）。
-// 两个 Tab：背包（库存 + 全局 loadout 三槽 + 实例详情：强化/穿戴/分解）/ 锻造（合成基础装备）。
-// 仿 AuctionScene：静态 header + bodyLayer 重绘 + 拖拽滚动 + modal 叠层 + toast + 错误码映射。
+// EquipmentScene — Equipment system client UI (E5, EQUIPMENT_DESIGN §11).
+// Two tabs: Inventory (item list + global loadout three slots + instance detail: enhance / equip / salvage) / Forge (craft base equipment).
+// Modeled after AuctionScene: static header + bodyLayer repaint + drag-to-scroll + modal overlay + toast + error code mapping.
 //
-// 服务器权威（L2）：扣材料/金币、强化掷骰、库存全在服务端；本场景只发意图、读回执，
-// 据 equipmentDefs 镜像**预览**成本/成功率，真实结果以回推的 SaveData 为准。
+// Server-authoritative (L2): material/coin deduction, enhance dice rolls, and inventory state all live on the server.
+// This scene only sends intent and reads receipts; cost/success-rate previews are mirrored from equipmentDefs,
+// and the true result uses the server-pushed SaveData as the source of truth.
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';
@@ -43,18 +44,20 @@ export type EnhanceResult =
 export interface EquipmentCallbacks {
   onBack(): void;
   /**
-   * 养成分组同级直达（LOBBY_IA_REDESIGN P1.5）。仅在「养成」分组语境（从收藏进入）
-   * 注入；注入后 header 下出现 [收藏|装备] tab 条，点收藏回养成。战役入口不注入 → 纯 back。
+   * Peer-level navigation within the progression group (LOBBY_IA_REDESIGN P1.5).
+   * Injected only in the "Progression" group context (entered from the Collection screen);
+   * when injected, a [Collection|Equipment] tab strip appears below the header, and tapping
+   * Collection returns to the progression view. Not injected from the campaign entry point → plain back.
    */
   openCollection?(): void;
-  /** 读当前权威存档（每次动作后服务器回推 → adoptServer，本场景重读重绘）。 */
+  /** Read the current authoritative save (server pushes after each action → adoptServer; this scene re-reads and redraws). */
   getSave(): SaveData;
   craft(defId: string): Promise<EquipResult>;
-  /** useProtect=true 时消耗保护道具，失败不损材料（E7 §6.2）。 */
+  /** When useProtect=true, consume a protect-enhance item; on failure no materials are lost (E7 §6.2). */
   enhance(instanceId: string, useProtect?: boolean): Promise<EnhanceResult>;
   salvage(instanceIds: string[]): Promise<EquipResult>;
   equip(slot: EquipSlot, instanceId: string | null): Promise<EquipResult>;
-  /** 洗练（E6）：消耗 materialId 件，重 roll targetId 的副词条。 */
+  /** Reforge (E6): consume the item identified by materialId to re-roll the secondary affixes of targetId. */
   reforge(targetId: string, materialId: string): Promise<EquipResult>;
 }
 
@@ -62,16 +65,16 @@ type EquipTab = 'inv' | 'craft';
 
 const HUD_H = 50;
 const TAB_H = 36;
-const RES_H = 30;       // 资源条（金币 + 三材料 + 背包计数）
-const LOADOUT_H = 78;   // 背包 tab 顶部三槽 loadout 带
+const RES_H = 30;       // resource bar (coins + three materials + inventory count)
+const LOADOUT_H = 78;   // loadout strip at the top of the inventory tab (three slots)
 const ROW_H = 56;
-const FILTER_H = 28;   // slot filter bar (全部/武器/护具/饰品)
-const SECTION_H = 20;  // section divider (已装备 / 背包)
+const FILTER_H = 28;   // slot filter bar (All / Weapon / Armor / Trinket)
+const SECTION_H = 20;  // section divider (Equipped / Bag)
 
 const SLOTS: readonly EquipSlot[] = ['weapon', 'armor', 'trinket'];
 const TRACKED_MATERIALS = ['scrap', 'lead', 'binding'] as const;
 
-/** 稀有度 → 强调色（与盲盒/收藏共用视觉语言；fine 用墨蓝）。 */
+/** Rarity → accent color (shared visual language with gacha/collection; fine uses ink-blue). */
 const RARITY_COLOR: Record<EquipRarity, number> = {
   common: 0x9aa0a6,
   fine: 0x4477cc,
@@ -79,21 +82,21 @@ const RARITY_COLOR: Record<EquipRarity, number> = {
   epic: 0xaa55cc,
 };
 
-/** 材料图标墨色（三笔语言：碎屑=纸灰 / 铅芯=石墨黑 / 装订线=墨蓝）。 */
+/** Material icon ink colors (three-pen language: scrap = paper grey / lead = graphite black / binding = ink blue). */
 const MAT_COLOR: Record<string, number> = {
   scrap: 0x8a8278,
   lead: 0x3a3632,
   binding: 0x2b4f8c,
 };
 
-/** 材料 id → 图标种类（含金币）；未知材料返回 null（回退文字）。 */
+/** Material id → icon kind (including coins); returns null for unknown materials (falls back to text label). */
 function matIconKind(id: string): IconKind | null {
   if (id === 'scrap' || id === 'lead' || id === 'binding') return id;
   if (id === 'coins' || id === 'coin') return 'coin';
   return null;
 }
 
-/** 词条 id（去 m_/s_/k_ 前缀）→ 统计图标；未知返回 null。 */
+/** Affix id (strip m_/s_/k_ prefix) → stat icon kind; returns null for unknown affixes. */
 function affixIconKind(affixId: string): IconKind | null {
   const stat = affixId.replace(/^[a-z]_/, '');
   if (stat === 'atk' || stat === 'hp' || stat === 'armor' || stat === 'spd' || stat === 'atkspd') return stat;
@@ -109,12 +112,13 @@ export class EquipmentScene implements Scene {
 
   private activeTab: EquipTab = 'inv';
   /**
-   * 分组 strip 高度（养成组 [收藏|装备]）；仅当 openCollection 注入时 >0。body 全部按
-   * HUD_H + groupH 下移一条 strip（LOBBY_IA_REDESIGN P1.5）。
+   * Height of the group strip ([Collection|Equipment] within the progression group);
+   * >0 only when openCollection is injected. All body content is offset down by HUD_H + groupH
+   * (LOBBY_IA_REDESIGN P1.5).
    */
   private readonly groupH: number;
   private readonly bt = new BusyTracker();
-  /** 强化时是否使用保护道具（E7）；状态粘滞，玩家主动切换。 */
+  /** Whether to use the protect-enhance item on the next enhance (E7); state is sticky until the player toggles it. */
   private useProtectEnhance = false;
 
   private backRect = { x: 0, y: 0, w: 0, h: 0 };
@@ -123,9 +127,9 @@ export class EquipmentScene implements Scene {
   private toastLayer!: PIXI.Container;
   private loadingLayer!: PIXI.Container;
 
-  /** 当前打开详情的实例 id（null = 无）。每次重绘从 save 重读实例（被分解则关闭）。 */
+  /** Instance id of the currently open detail panel (null = none). Re-read from save on every repaint (closed if the item was salvaged). */
   private detailId: string | null = null;
-  /** 背包 tab 槽位筛选（'all' = 不筛选）。 */
+  /** Inventory tab slot filter ('all' = no filter). */
   private filterSlot: EquipSlot | 'all' = 'all';
 
   private scrollY = 0;
@@ -198,8 +202,9 @@ export class EquipmentScene implements Scene {
   }
 
   /**
-   * 养成分组 tab 条 [收藏|装备]（LOBBY_IA_REDESIGN P1.5）：装备 active，点收藏回养成。
-   * 仅分组语境（openCollection 注入，groupH>0）绘制；画在 header 下、内容 tab 之上。
+   * Progression group tab strip [Collection|Equipment] (LOBBY_IA_REDESIGN P1.5): Equipment is active;
+   * tapping Collection returns to the progression view.
+   * Drawn only in the group context (openCollection injected, groupH>0); rendered below the header and above the content tabs.
    */
   private renderGroupTabs(): void {
     if (this.groupH <= 0) return;
@@ -244,7 +249,7 @@ export class EquipmentScene implements Scene {
     bg.beginFill(0xf3f1ea).drawRect(0, y, w, RES_H).endFill();
     this.bodyLayer.addChild(bg);
 
-    // 余额（非消耗）：图标 + 数量，无 '×' 前缀。
+    // Balance (non-cost display): icon + amount, no '×' prefix.
     const midY = y + RES_H / 2;
     const bal: Record<string, number> = {};
     for (const m of TRACKED_MATERIALS) bal[m] = save.materials[m] ?? 0;
@@ -317,7 +322,7 @@ export class EquipmentScene implements Scene {
     }
   }
 
-  /** 槽位筛选条（全部 / 武器 / 护具 / 饰品）。 */
+  /** Slot filter bar (All / Weapon / Armor / Trinket). */
   private renderSlotFilter(y: number): void {
     const { w } = this;
     const filters: { key: EquipSlot | 'all'; label: string }[] = [
@@ -351,7 +356,7 @@ export class EquipmentScene implements Scene {
     });
   }
 
-  /** 分组分割线（"已装备" / "背包"）。 */
+  /** Section divider header ("Equipped" / "Bag"). */
   private renderSectionHeader(label: string, cy: number): void {
     const { w } = this;
     const lbl = txt(label, 10, C.mid);
@@ -365,10 +370,10 @@ export class EquipmentScene implements Scene {
   }
 
   /**
-   * 将已排序的实例列表转为带分区标题和堆叠计数的展示条目。
-   * - 同 defId + rarity + level=0 且未穿戴未锁定 → 合并为一行（显示 ×N）。
-   * - 穿戴中 / 已锁定 / level>0 → 始终单独一行。
-   * - 已穿戴区 / 背包区各插一条分节标题。
+   * Convert a sorted instance list into display entries with section headers and stack counts.
+   * - Same defId + rarity + level=0, not equipped and not locked → merged into one row (shows ×N).
+   * - Equipped / locked / level>0 → always a separate row.
+   * - One section header is inserted for the Equipped section and one for the Bag section.
    */
   private buildDisplayEntries(
     sorted: EquipmentInstance[],
@@ -396,7 +401,7 @@ export class EquipmentScene implements Scene {
         continue;
       }
 
-      // 未强化可堆叠：同 defId+rarity 合并。
+      // Unenhanced items are stackable: merge by defId+rarity.
       const key = `${inst.defId}:${inst.rarity}`;
       if (seenStacks.has(key)) continue;
       seenStacks.add(key);
@@ -429,7 +434,7 @@ export class EquipmentScene implements Scene {
       cell.x = x; cell.y = cy;
       this.bodyLayer.addChild(cell);
 
-      // 槽位标签：已装备时显示槽位类型（小字辅助），空槽时加粗显示让玩家容易识别。
+      // Slot label: when equipped, show the slot type in small text as a secondary hint; when empty, show it bold so the player can easily identify open slots.
       const slotLbl = txt(t(`equip.slot.${slot}` as TranslationKey), inst ? 10 : 11, inst ? C.mid : C.dark, !inst);
       slotLbl.anchor.set(0.5, 0); slotLbl.x = x + cellW / 2; slotLbl.y = cy + 4;
       this.bodyLayer.addChild(slotLbl);
@@ -441,7 +446,7 @@ export class EquipmentScene implements Scene {
         this.bodyLayer.addChild(nm);
         this.hitRects.push({ rect: { x, y: cy, w: cellW, h: cellH }, action: () => this.openDetail(inst.id) });
       } else {
-        // 空槽：图形提示加深（0.40），配上"空"文字，让玩家清晰识别可装备位置。
+        // Empty slot: darken the glyph alpha (0.40) and add the "empty" label so the player can clearly identify available equip positions.
         this.addGlyph(slot, 'common', x + cellW / 2, cy + cellH * 0.45, 28, seedFor(i, 13, cellW), 0.40);
         const empty = txt(t('equip.slotEmpty'), 11, C.mid);
         empty.anchor.set(0.5, 0.5); empty.x = x + cellW / 2; empty.y = cy + cellH * 0.88;
@@ -479,8 +484,8 @@ export class EquipmentScene implements Scene {
       l.x = tagX; l.y = cy + 8; this.bodyLayer.addChild(l);
     }
 
-    // 右侧：未穿戴时显示"装备 ›"（强调色提示可操作），穿戴中显示"›"（静默）。
-    // 堆叠数量（×N）紧靠行动提示左侧。
+    // Right side: show "Equip ›" in accent color when unequipped (signals actionability); show "›" quietly when equipped.
+    // Stack count (×N) sits immediately to the left of the action hint.
     const midY = cy + ROW_H / 2 - 2;
     const hintStr = equipped ? '›' : t('equip.hintEquip');
     const hintColor = equipped ? C.mid : C.accent;
@@ -573,7 +578,7 @@ export class EquipmentScene implements Scene {
     const mw = Math.min(330, w - 24);
     const affixCount = inst.affixes.length;
     const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
-    // 未满级时额外 22px 显示保护道具行
+    // Extra 22px for the protect-item row when not max level
     const mh = 64 + affixCount * 20 + (maxed ? 24 : 64 + 22) + 44 + 24;
     const mx = (w - mw) / 2;
     const my = Math.max(HUD_H + 4, (h - mh) / 2);
@@ -595,7 +600,7 @@ export class EquipmentScene implements Scene {
     ml.addChild(rar);
     cy += 26;
 
-    // Affix lines（统计图标 + 文字，主词条墨蓝强调）。
+    // Affix lines (stat icon + text; main affixes highlighted in ink-blue).
     for (const af of inst.affixes) {
       const col = affixKind(af.id) === 'main' ? C.accent : C.dark;
       const kind = affixIconKind(af.id);
@@ -633,7 +638,7 @@ export class EquipmentScene implements Scene {
       ml.addChild(costLbl);
       this.drawCostChips(ml, costLbl.x + costLbl.width + 8, cy + 7, cost.materials, cost.coins, costColor, 13);
       cy += 18;
-      // 保护道具行（E7）：显示持有量 + 开关 toggle。
+      // Protect-item row (E7): show quantity held + toggle switch.
       const canToggle = protectCount > 0;
       const protecting = this.useProtectEnhance && canToggle;
       const checkStr = protecting ? '[✓]' : '[ ]';
@@ -653,7 +658,7 @@ export class EquipmentScene implements Scene {
       cy += 22;
     }
 
-    // 洗练可用性
+    // Reforge availability
     const requiredMatRarity = REFORGE_MATERIAL_RARITY[inst.rarity];
     const hasMaterials = requiredMatRarity
       ? Object.values(save.equipmentInv ?? {}).some(
@@ -785,7 +790,7 @@ export class EquipmentScene implements Scene {
     }
   }
 
-  /** 打开洗练素材选择 modal（目标已在 detailId）。 */
+  /** Open the reforge material selection modal (the target item is already set in detailId). */
   private openReforgeSelect(target: EquipmentInstance): void {
     const save = this.cb.getSave();
     const slot = getEquipDef(target.defId)?.slot;
@@ -974,7 +979,7 @@ export class EquipmentScene implements Scene {
     return s === key ? defId : s;
   }
 
-  /** 词条描述：i18n `affix.<id>` 模板 {v}；主词条按等级放大显示。 */
+  /** Affix description: i18n `affix.<id>` template with {v}; main affixes are scaled up by level. */
   private affixDesc(id: string, value: number, level: number): string {
     const shown = affixKind(id) === 'main'
       ? Math.round(value * (1 + ENHANCE_COEFF_PER_LEVEL * level))
@@ -991,8 +996,9 @@ export class EquipmentScene implements Scene {
   }
 
   /**
-   * 在 (x, midY) 起横排「图标 ×数量」消耗组（材料 + 可选金币），返回末端 x。
-   * 图标缺失时回退文字标签，保证未知材料仍可读。size=图标边长，prefix=每项前缀（默认 '×'）。
+   * Render a horizontal row of "icon ×amount" cost chips starting at (x, midY) for materials plus optional coins; returns the trailing x.
+   * Falls back to a text label when no icon is available, ensuring unknown materials remain readable.
+   * size = icon side length; prefix = per-item prefix string (default '×').
    */
   private drawCostChips(
     parent: PIXI.Container,

@@ -8,14 +8,15 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { AchievementsView, Achievement } from '../net/ApiClient';
 import { tierState, achievementClaimable, type TierState } from '../game/meta/achievements';
 
-// ── AchievementScene — 成就墙（自看，ACHIEVEMENT_DESIGN §7）──────────────────────
+// ── AchievementScene — achievement wall (personal view, ACHIEVEMENT_DESIGN §7) ──────────────────────
 //
-// 入口：StatsScene 顶部「成就」按钮。分类 tab（pve/pvp/collection/progression）+ 成就卡
-// （每卡三阶进度 + 各阶状态：未达/可领[领取]/已领）+ 红点（tab/卡）。仅自看，不对外展示
-// （对外炫耀走称号系统）。defs/stats/进度由 GET /achievements 服务端下发，客户端本地算阶（§4.1）。
-// 横屏：卡片以两列排布，充分利用宽屏空间。
+// Entry: the "achievements" button at the top of StatsScene. Category tabs (pve/pvp/collection/progression)
+// + achievement cards (each card: three-tier progress + per-tier state: not-yet/claimable[claim]/claimed)
+// + red dots (tab/card). Personal view only — not shown to others (public bragging goes through the title system).
+// defs/stats/progress are served by GET /achievements; the client computes the tier state locally (§4.1).
+// Landscape: cards laid out in two columns to make full use of the wide screen.
 
-/** 分类 tab 顺序（无成就的分类自动隐藏）。 */
+/** Category tab order (categories with no achievements are auto-hidden). */
 const CATEGORY_ORDER: Achievement['category'][] = ['pve', 'pvp', 'collection', 'progression'];
 
 const TIER_LABELS = ['I', 'II', 'III'];
@@ -23,12 +24,12 @@ const TIER_LABELS = ['I', 'II', 'III'];
 export interface AchievementCallbacks {
   onBack(): void;
   /**
-   * 拉取成就（定义 + stats + 进度）。离线/未登录时省略 → 显「登录后查看」。
+   * Fetch achievements (definitions + stats + progress). Omit when offline/not logged in → shows "log in to view".
    */
   loadAchievements?(): Promise<AchievementsView>;
   /**
-   * 领取某成就某阶；返回本次发放金币（服务器权威）。调用方负责更新共享存档（wallet）。
-   * 离线时省略（此时不显领取按钮）。
+   * Claim a specific tier of an achievement; returns the coins granted this time (server-authoritative).
+   * The caller is responsible for updating the shared save (wallet). Omit when offline (claim button not shown).
    */
   onClaim?(achId: string, tier: number): Promise<number>;
 }
@@ -45,13 +46,13 @@ export class AchievementScene implements Scene {
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
 
-  /** null = 未拉取（loading）；否则已拉取的数据。仅当 loadAchievements 提供时有意义。 */
+  /** null = not yet fetched (loading); otherwise the fetched data. Only meaningful when loadAchievements is provided. */
   private data: AchievementsView | null = null;
-  /** 当前分类 tab。 */
+  /** Currently active category tab. */
   private activeCat: Achievement['category'] = 'pve';
-  /** 领取中（防重复点）。 */
+  /** True while a claim is in flight (prevents double-tap). */
   private claiming = false;
-  /** 一次性提示（领取成功 / 错误），淡出。 */
+  /** One-shot toast (claim success / error), fades out. */
   private toast: string | null = null;
   private toastTimer = 0;
 
@@ -70,7 +71,7 @@ export class AchievementScene implements Scene {
     try {
       const d = await this.cb.loadAchievements!();
       this.data = d;
-      // 默认选第一个非空分类，避免初始 tab 空着。
+      // Default to the first non-empty category so the initial tab is never blank.
       const first = this.categories(d)[0];
       if (first) this.activeCat = first;
     } catch {
@@ -101,7 +102,7 @@ export class AchievementScene implements Scene {
     this.render();
   }
 
-  /** 出现在 defs 中的分类（按固定顺序，空分类隐藏）。 */
+  /** Categories present in defs (in fixed order; empty categories are hidden). */
   private categories(d: AchievementsView): Achievement['category'][] {
     return CATEGORY_ORDER.filter((c) => d.defs.some((def) => def.category === c && !def.hidden));
   }
@@ -115,7 +116,7 @@ export class AchievementScene implements Scene {
     this.claiming = true;
     try {
       const granted = await this.cb.onClaim(achId, tier);
-      // 本地标记已领（服务器权威已落，避免再拉一次）。
+      // Mark as claimed locally (server authority already settled; avoids a redundant re-fetch).
       if (this.data) {
         const cur = this.data.achievements ?? (this.data.achievements = {});
         const rec = cur[achId] ?? (cur[achId] = { claimedTiers: [] });
@@ -130,7 +131,7 @@ export class AchievementScene implements Scene {
     }
   }
 
-  // ── 渲染 ─────────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────────
 
   private render(): void {
     tearDownChildren(this.container);
@@ -139,12 +140,12 @@ export class AchievementScene implements Scene {
 
     this.container.addChild(buildPaperBackground('achbg', w, h));
 
-    // 标题栏（统一 SceneHeader：返回左上 + 缓存 chrome，UI_DESIGN §3.1/§2.1）。
+    // Title bar (unified SceneHeader: back top-left + cached chrome, UI_DESIGN §3.1/§2.1).
     const hdr = drawSceneHeader(this.container, w, h, t('achievement.title'));
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // 离线 / 加载中。
+    // Offline / loading state.
     if (!this.cb.loadAchievements) { this.drawCentered(tbH, t('achievement.loginRequired')); return; }
     if (this.data === null) { this.drawCentered(tbH, t('achievement.loading')); return; }
 
@@ -152,18 +153,18 @@ export class AchievementScene implements Scene {
     if (cats.length === 0) { this.drawCentered(tbH, t('achievement.empty')); this.drawToast(); return; }
     if (!cats.includes(this.activeCat)) this.activeCat = cats[0]!;
 
-    // 分类 tab 行。
+    // Category tab row.
     let y = tbH + Math.round(h * 0.025);
     y = this.drawTabs(cats, y);
     y += Math.round(h * 0.02);
 
-    // 当前分类下的成就卡。
+    // Achievement cards for the current category.
     const pad = Math.round(w * 0.06);
     const gap = Math.round(h * 0.02);
     const defs = this.data.defs.filter((d) => d.category === this.activeCat && !d.hidden);
 
     if (this.landscape) {
-      // 横屏：两列排布，左右各半宽
+      // Landscape: two-column layout, each half the width
       const colGap = Math.round(w * 0.02);
       const halfW = Math.round((w - pad * 2 - colGap) / 2);
       const col1X = pad;
@@ -185,7 +186,7 @@ export class AchievementScene implements Scene {
         }
       }
     } else {
-      // 竖屏：单列
+      // Portrait: single column
       const cardW = w - pad * 2;
       for (const def of defs) {
         y = this.drawCard(def, pad, y, cardW);
@@ -222,7 +223,7 @@ export class AchievementScene implements Scene {
       lbl.anchor.set(0.5, 0.5); lbl.x = x + tabW / 2; lbl.y = y + tabH / 2;
       this.container.addChild(lbl);
 
-      // tab 红点：该分类任一成就可领。
+      // Tab badge: shown when any achievement in this category is claimable.
       const hasDot = this.data!.defs.some(
         (d) => d.category === cat && !d.hidden && achievementClaimable(d, this.data!.stats, this.data!.achievements),
       );
@@ -253,18 +254,18 @@ export class AchievementScene implements Scene {
 
     const innerX = x + Math.round(w * 0.05);
 
-    // 成就名 + 卡片红点。
+    // Achievement name + card-level red dot.
     const name = txt(t(('achievement.' + def.id + '.name') as TranslationKey), Math.round(titleH * 0.74), C.dark, true);
     name.anchor.set(0, 0); name.x = innerX; name.y = y + padV;
     this.container.addChild(name);
     if (claimable) this.drawDot(innerX + name.width + Math.round(h * 0.012), y + padV + titleH * 0.32, Math.round(h * 0.008));
 
-    // 描述。
+    // Description.
     const desc = txt(t(('achievement.' + def.id + '.desc') as TranslationKey), Math.round(descH * 0.62), C.mid);
     desc.anchor.set(0, 0); desc.x = innerX; desc.y = y + padV + titleH;
     this.container.addChild(desc);
 
-    // 三阶行。
+    // Three-tier rows.
     let ry = y + padV + titleH + descH;
     for (const s of states) {
       this.drawTierRow(def, s, cur, innerX, ry, x + w - Math.round(w * 0.05), tierRowH);
@@ -276,12 +277,12 @@ export class AchievementScene implements Scene {
   private drawTierRow(def: Achievement, s: TierState, cur: number, x: number, y: number, rightX: number, rowH: number): void {
     const cy = y + rowH / 2;
 
-    // 阶位徽记。
+    // Tier badge label.
     const tierLbl = txt(TIER_LABELS[s.tier - 1] ?? String(s.tier), Math.round(rowH * 0.4), s.reached ? C.gold : C.mid, true);
     tierLbl.anchor.set(0, 0.5); tierLbl.x = x; tierLbl.y = cy;
     this.container.addChild(tierLbl);
 
-    // 进度条 + 进度文字。
+    // Progress bar + progress text.
     const barX = x + Math.round(rowH * 0.6);
     const barW = Math.round((rightX - barX) * 0.52);
     const barH = Math.round(rowH * 0.22);
@@ -300,7 +301,7 @@ export class AchievementScene implements Scene {
     prog.anchor.set(0, 0.5); prog.x = barX; prog.y = barY - Math.round(rowH * 0.24);
     this.container.addChild(prog);
 
-    // 右侧状态 / 领取按钮。
+    // Right-side status / claim button.
     if (s.claimable && this.cb.onClaim) {
       const bw = Math.round(rowH * 1.9);
       const bh = Math.round(rowH * 0.66);

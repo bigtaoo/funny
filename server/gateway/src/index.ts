@@ -1,10 +1,10 @@
-// gateway 进程引导（S1-M1；S1-M5 起 matchsvc 拆为独立进程）。
-//   • 对外暴露公开控制面 WS（/gw），玩家经此建房/匹配；
-//   • 把玩家控制命令转发给 matchsvc（独立进程，MatchsvcClient 内部 HTTP）；
-//   • 内部 HTTP（/gw/push）接收 matchsvc 回推的事件 → 据 accountId 推给玩家 socket；
-//   • ranked 入队前向 meta 取 ELO 带入。
+// gateway process bootstrap (S1-M1; matchsvc split into a separate process from S1-M5).
+//   • Exposes the public control-plane WS (/gw); players use it to create rooms and match;
+//   • Forwards player control commands to matchsvc (separate process, MatchsvcClient internal HTTP);
+//   • Internal HTTP (/gw/push) receives events pushed back from matchsvc → delivers them to player sockets by accountId;
+//   • Fetches ELO from meta before enqueueing for ranked and passes it along.
 //
-// 反代：/gw → 本进程公开 WS 端口；内部 HTTP 端口不暴露。
+// Reverse proxy: /gw → this process's public WS port; internal HTTP port is not exposed.
 import { loadInternalAuth, createLogger, startHeartbeat, type JwtConfig } from '@nw/shared';
 import { loadGatewayEnv } from './config';
 import { Gateway } from './Gateway';
@@ -28,7 +28,7 @@ async function main(): Promise<void> {
     gateway,
   );
 
-  // 宗门频道实时推送（S8-4b）：订阅 Redis，把 worldsvc 扇出的 push 投给本机在线收件人。
+  // Sect channel real-time push (S8-4b): subscribe to Redis and deliver worldsvc fan-out pushes to online recipients on this instance.
   const subscriber: GatewaySubscriber | null = await connectGatewaySubscriber(
     env.redisUrl,
     gateway.routeBroadcast,
@@ -51,7 +51,7 @@ async function main(): Promise<void> {
       `socialsvc presence: ${socialsvc.available ? env.socialsvcInternalUrl : 'off (fallback to meta)'}; ` +
       `redis push fan-out: ${subscriber ? 'on' : 'off'}`,
   );
-  startHeartbeat(createLogger('gateway')); // 存活心跳：空闲时每 5 分钟一条 info 日志
+  startHeartbeat(createLogger('gateway')); // Liveness heartbeat: one info log every 5 minutes when idle
 }
 
 main().catch((e) => {

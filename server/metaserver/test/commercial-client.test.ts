@@ -1,8 +1,8 @@
-// HttpCommercialClient 单测（S5-5）：真实 fetch 打一台 canned node:http 服务，验证
-//   • X-Internal-Key 头随请求带上；
-//   • ok/error 包络解析（getWallet 失败 → null；shopCharge 业务错误透传）；
-//   • baseUrl=null → available=false、getWallet/undelivered 不发请求直接回空。
-// 无 Mongo 依赖，始终运行。
+// HttpCommercialClient unit tests (S5-5): real fetch against a canned node:http server, verifying:
+//   • X-Internal-Key header is sent with every request;
+//   • ok/error envelope parsing (getWallet failure → null; shopCharge business error passed through);
+//   • baseUrl=null → available=false, getWallet/undelivered return empty without making a request.
+// No Mongo dependency; always runs.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -55,7 +55,7 @@ beforeAll(async () => {
 afterAll(() => server.close());
 
 describe('HttpCommercialClient', () => {
-  it('available=true 时带 X-Internal-Key + 解析 wallet', async () => {
+  it('available=true: sends X-Internal-Key and parses wallet', async () => {
     const c = new HttpCommercialClient(base, KEY);
     expect(c.available).toBe(true);
     const w = await c.getWallet('a');
@@ -63,12 +63,12 @@ describe('HttpCommercialClient', () => {
     expect(lastReq?.key).toBe(KEY);
   });
 
-  it('getWallet 收到 ok:false → null', async () => {
+  it('getWallet receiving ok:false → null', async () => {
     const c = new HttpCommercialClient(base, KEY);
     expect(await c.getWallet('missing')).toBeNull();
   });
 
-  it('业务错误包络透传（shopCharge → INSUFFICIENT_FUNDS）', async () => {
+  it('business error envelope passed through (shopCharge → INSUFFICIENT_FUNDS)', async () => {
     const c = new HttpCommercialClient(base, KEY);
     const r = await c.shopCharge({ accountId: 'a', itemId: 'i', cost: 1, orderId: 'o' });
     expect(r).toEqual({ ok: false, error: 'INSUFFICIENT_FUNDS' });
@@ -76,14 +76,14 @@ describe('HttpCommercialClient', () => {
     expect(JSON.parse(lastReq!.body)).toMatchObject({ orderId: 'o', cost: 1 });
   });
 
-  it('undeliveredOrders 解析数组', async () => {
+  it('undeliveredOrders parses array', async () => {
     const c = new HttpCommercialClient(base, KEY);
     const orders = await c.undeliveredOrders('a');
     expect(orders).toHaveLength(1);
     expect(orders[0]!._id).toBe('o1');
   });
 
-  it('baseUrl=null → available=false，getWallet/undelivered 不请求', async () => {
+  it('baseUrl=null → available=false, getWallet/undelivered make no requests', async () => {
     const c = new HttpCommercialClient(null, KEY);
     expect(c.available).toBe(false);
     expect(await c.getWallet('a')).toBeNull();

@@ -1,10 +1,11 @@
-// gateway 控制面 WS 服务（M20，玩家公开门面）。薄连接层：
-//   • 握手 ?token=<jwt>（复用 meta 的 JWT，解出 accountId 绑定连接）；
-//   • 维护 account → socket 映射（同账号新连顶替旧连）；
-//   • 把客户端控制面消息（room_create/join/ready/start/leave）转发给 matchsvc（独立进程，内部 HTTP）；
-//   • 把 matchsvc 经 /gw/push 回推的事件（room_state / match_found / room_error）推回对应 socket。
+// Gateway control-plane WS service (M20, public-facing player endpoint). Thin connection layer:
+//   • Handshake via ?token=<jwt> (reuses meta's JWT; extracts accountId and binds it to the connection);
+//   • Maintains account → socket mapping (a new connection for the same account replaces the old one);
+//   • Forwards client control-plane messages (room_create/join/ready/start/leave) to matchsvc (separate process, internal HTTP);
+//   • Delivers events pushed back by matchsvc via /gw/push (room_state / match_found / room_error) to the corresponding socket.
 //
-// 它不做匹配、不存房间、不签 ticket——全在 matchsvc（§8.1）。ranked 入队前向 meta 取 ELO。
+// This service does not handle matchmaking, does not store rooms, and does not issue tickets — all of that lives in matchsvc (§8.1).
+// Ranked enqueue fetches ELO from meta before joining the queue.
 import { WebSocketServer, type WebSocket } from 'ws';
 import { verifyToken, createLogger, type JwtConfig } from '@nw/shared';
 
@@ -22,42 +23,42 @@ import type { MetaClient } from './metaClient';
 import type { SocialsvcClient } from './socialsvcClient';
 
 const HEARTBEAT_MS = 30_000;
-/** 裁判复算 + 回报的等待上限（含网络往返 + 客户端跑完整局）。 */
+/** Maximum wait time for judge re-computation + report (includes network round-trip + client running the full match). */
 const JUDGE_TIMEOUT_MS = 20_000;
 
 interface GwConn {
   accountId: string;
   ws: WebSocket;
   alive: boolean;
-  /** 本机能否承担无头复算裁决（client_caps 上报）。 */
+  /** Whether this client is capable of performing headless re-computation judging (reported via client_caps). */
   canJudge: boolean;
 }
 
-/** meta → gateway 裁判请求（内部 HTTP /gw/judge）。 */
+/** meta → gateway judge request (internal HTTP /gw/judge). */
 export interface JudgeArgs {
   seed: number;
   mode: number;
   endFrame: number;
   frames: FrameCmdsOut[];
-  /** 参赛双方 accountId——不可自己裁自己。 */
+  /** accountIds of both match participants — a player cannot judge their own match. */
   exclude: string[];
-  /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：非空 → 裁判按战役模式复算该关。 */
+  /** PvE spot-check re-computation (PVE_INTEGRITY §8.6 L1): if non-empty, the judge re-runs the specified campaign level. */
   levelId?: string;
-  /** @deprecated S3-2 蓝图快照，S12 起由 unitLevels 替代（保留向后兼容）。 */
+  /** @deprecated S3-2 blueprint snapshot; replaced by unitLevels from S12 onwards (retained for backward compatibility). */
   pveUpgrades?: Record<string, number>;
-  /** S12 单位养成等级快照（unitId→1..9），保证 PvE/siege 复算确定性。优先于 pveUpgrades。 */
+  /** S12 unit progression level snapshot (unitId→1..9), ensures deterministic PvE/siege re-computation. Takes precedence over pveUpgrades. */
   unitLevels?: Record<string, number>;
-  /** SLG 围攻防守 config JSON 字符串（S8-3b）：非空 → 裁判按 siege 模式复算。 */
+  /** SLG siege defense config JSON string (S8-3b): if non-empty, the judge re-runs in siege mode. */
   defenseJson?: string;
 }
-/** 裁判结果（回给 meta）。ok=false：无候选 / 超时 / 复算失败。 */
+/** Judge result (returned to meta). ok=false: no eligible candidate / timeout / re-computation failed. */
 export interface JudgeResult {
   ok: boolean;
   stateHash?: string;
   winnerSide?: number;
-  /** PvE 复算得到的星数（PVE_INTEGRITY §8.6 L1）。 */
+  /** Stars obtained from PvE re-computation (PVE_INTEGRITY §8.6 L1). */
   stars?: number;
-  /** PvE 喂入（S9-3b）：复算出的玩家本局成就计数 JSON；PvP/siege 恒空。 */
+  /** PvE feed-in (S9-3b): JSON of the player's per-match achievement stat counts from re-computation; always empty for PvP/siege. */
   statsJson?: string;
   judgeAccountId?: string;
 }
@@ -68,21 +69,21 @@ interface PendingJudge {
   timer: NodeJS.Timeout;
 }
 
-/** 玩家展示名（gateway 只有 accountId，沿用 gameserver 旧约定取前 12 位）。 */
+/** Player display name (gateway only has accountId; follows the gameserver's legacy convention of using the first 12 characters). */
 function displayName(accountId: string): string {
   return accountId.slice(0, 12);
 }
 
 export class Gateway {
   private readonly wss: WebSocketServer;
-  private readonly conns = new Map<string, GwConn>(); // accountId → 活跃连接
+  private readonly conns = new Map<string, GwConn>(); // accountId → active connection
   private readonly heartbeat: NodeJS.Timeout;
-  /** 在途裁判请求（requestId → pending）。verdict 到达或超时即清。 */
+  /** In-flight judge requests (requestId → pending). Cleared when a verdict arrives or on timeout. */
   private readonly pendingJudges = new Map<string, PendingJudge>();
   private judgeSeq = 0;
-  /** 好友列表缓存（accountId → 好友 accountId[]）；好友变更经 /gw/social/invalidate 清。 */
+  /** Friends-list cache (accountId → friend accountId[]); invalidated by friend changes via /gw/social/invalidate. */
   private readonly friendsCache = new Map<string, string[]>();
-  /** publicId 缓存（accountId → publicId）；presence 广播复用，避免每次问 meta。 */
+  /** publicId cache (accountId → publicId); reused for presence broadcasts to avoid querying meta on every event. */
   private readonly publicIdCache = new Map<string, string>();
 
   constructor(
@@ -98,7 +99,7 @@ export class Gateway {
     this.wss.on('close', () => clearInterval(this.heartbeat));
   }
 
-  /** matchsvc → 玩家：据 accountId 找 socket 推消息。离线则丢弃。 */
+  /** matchsvc → player: looks up the socket by accountId and pushes a message. Drops silently if the player is offline. */
   readonly push = (accountId: string, msg: PushMsg, roomId?: string): void => {
     const conn = this.conns.get(accountId);
     if (!conn || conn.ws.readyState !== conn.ws.OPEN) {
@@ -121,9 +122,10 @@ export class Gateway {
   };
 
   /**
-   * Redis pub/sub 扇出（SOC9 / §8.4）：worldsvc 把「一条消息 + 收件人列表」发到 Redis，
-   * 每个 gateway 实例收到后只向本机在线的收件人推送（离线/不在本机 → 跳过）。
-   * 这样 worldsvc 对 ≤900 人宗门只发一条，扇出成本落在各 gateway 的本地 socket 写。
+   * Redis pub/sub fan-out (SOC9 / §8.4): worldsvc publishes a single message with a recipient list to Redis;
+   * each gateway instance delivers it only to recipients that are online on this node (offline or on a different node → skipped).
+   * This way worldsvc emits a single message for a sect of ≤900 members, and the fan-out cost
+   * falls on each gateway's local socket writes.
    */
   readonly routeBroadcast = (recipients: string[], msg: PushMsg): void => {
     for (const accountId of recipients) {
@@ -132,10 +134,10 @@ export class Gateway {
     }
   };
 
-  /** 实时态聚合（admin GET /internal/stats，OPS_DESIGN §4.1/§8）：当前在线连接数。 */
+  /** Real-time stats aggregation (admin GET /internal/stats, OPS_DESIGN §4.1/§8): current number of online connections. */
   readonly stats = (): { online: number } => ({ online: this.conns.size });
 
-  /** 批量在线态查询（meta 标好友列表 online flag）。accountId → 是否有活跃连接。 */
+  /** Batch online-status query (used by meta to mark the online flag on friend lists). accountId → whether there is an active connection. */
   readonly presenceOf = (accountIds: string[]): Record<string, boolean> => {
     const out: Record<string, boolean> = {};
     for (const id of accountIds) {
@@ -145,7 +147,7 @@ export class Gateway {
     return out;
   };
 
-  /** 好友关系变更（meta 通知）→ 清缓存，下次广播/查询重拉。 */
+  /** Friend relationship changed (notified by meta) → clear cache; re-fetched on next broadcast/query. */
   readonly invalidateFriends = (accountId: string): void => {
     this.friendsCache.delete(accountId);
   };
@@ -155,7 +157,7 @@ export class Gateway {
     this.wss.close();
   }
 
-  // ───────────────────────── 好友在线态广播（SOC9）─────────────────────────
+  // ───────────────────────── Friend online-status broadcast (SOC9) ─────────────────────────
 
   private async friendsOf(accountId: string): Promise<string[]> {
     const cached = this.friendsCache.get(accountId);
@@ -175,13 +177,14 @@ export class Gateway {
   }
 
   /**
-   * 上/下线广播：向当前在线的好友 push 我的 friend_presence；上线时另给我推一份在线好友快照。
-   * P3：若 socialsvc 已配置，委托 socialsvc 做扇出（好友数据权威在 nw_social）。
-   * 降级：socialsvc 未配置时沿用 meta.getFriends 直接广播（好友数据在 metaserver）。
+   * Online/offline broadcast: pushes my friend_presence to friends who are currently online;
+   * on connect, also sends me a snapshot of currently online friends.
+   * P3: if socialsvc is configured, delegates fan-out to socialsvc (friend data is authoritative in nw_social).
+   * Fallback: when socialsvc is not configured, broadcasts directly using meta.getFriends (friend data in metaserver).
    */
   private async broadcastPresence(accountId: string, online: boolean): Promise<void> {
     if (this.socialsvc?.available) {
-      // P3 路径：gateway 仅触发事件，socialsvc 查 nw_social 好友边后扇出推送
+      // P3 path: gateway only fires the event; socialsvc looks up friend edges in nw_social and handles fan-out
       if (online) {
         await this.socialsvc.notifyOnline(accountId);
       } else {
@@ -189,7 +192,7 @@ export class Gateway {
       }
       return;
     }
-    // 降级路径：socialsvc 未配置，gateway 直接用 meta 好友列表广播
+    // Fallback path: socialsvc not configured; gateway broadcasts directly using meta's friend list
     if (!this.meta.available) return;
     const [friends, myPid] = await Promise.all([
       this.friendsOf(accountId),
@@ -200,7 +203,7 @@ export class Gateway {
       const fConn = this.conns.get(fid);
       if (!fConn || fConn.ws.readyState !== fConn.ws.OPEN) continue;
       this.push(fid, { kind: 'friend_presence', publicId: myPid, online });
-      // 上线时回送：该在线好友的在线态给刚上线的我（下线时我已断开，无需回送）。
+      // On connect, reflect back: send that online friend's presence to me who just came online (on disconnect I'm already gone, no need to reflect).
       if (online) {
         const fPid = await this.publicIdOf(fid);
         if (fPid) this.push(accountId, { kind: 'friend_presence', publicId: fPid, online: true });
@@ -208,7 +211,7 @@ export class Gateway {
     }
   }
 
-  // ───────────────────────── 连接 ─────────────────────────
+  // ───────────────────────── Connection ─────────────────────────
 
   private onConnection(ws: WebSocket, url: string | undefined, host: string | undefined): void {
     const u = new URL(url ?? '', `ws://${host ?? 'localhost'}`);
@@ -225,7 +228,7 @@ export class Gateway {
       return;
     }
 
-    // 同账号顶替旧连（双开 / 残连）。
+    // Replace the existing connection for the same account (duplicate login / stale connection).
     const prev = this.conns.get(accountId);
     if (prev && prev.ws !== ws) {
       log.info('replacing existing connection (same account)', { accountId });
@@ -239,7 +242,7 @@ export class Gateway {
     this.conns.set(accountId, conn);
     log.info('WS connected', { accountId, online: this.conns.size });
     this.matchsvc.connected(accountId);
-    // 好友在线态广播（SOC9）：通知在线好友我上线 + 给我推一份在线好友快照。
+    // Friend online-status broadcast (SOC9): notify online friends that I came online + push me a snapshot of online friends.
     void this.broadcastPresence(accountId, true);
 
     ws.on('message', (data: Buffer, isBinary: boolean) => {
@@ -261,10 +264,10 @@ export class Gateway {
         this.conns.delete(accountId);
         log.info('WS closed', { accountId, code, online: this.conns.size });
         this.matchsvc.disconnected(accountId);
-        // 通知在线好友我下线（不给自己推，conn 已删）。
+        // Notify online friends that I went offline (no self-push; conn is already removed).
         void this.broadcastPresence(accountId, false);
       }
-      // 该账号若正担任裁判 → 立即作废其在途请求（不必等超时）。
+      // If this account was acting as a judge, immediately cancel its in-flight requests (no need to wait for timeout).
       for (const [id, p] of this.pendingJudges) {
         if (p.accountId !== accountId) continue;
         clearTimeout(p.timer);
@@ -273,12 +276,12 @@ export class Gateway {
       }
     });
     ws.on('error', () => {
-      /* close 随后触发 */
+      /* close event fires shortly after */
     });
   }
 
   private handle(accountId: string, msg: ReturnType<typeof decodeClient>): void {
-    // ping 太频繁，单独 debug；其余控制命令 info 级（联调主线）。
+    // ping is too frequent for info logging; use debug only; all other control messages are logged at info (main integration path).
     if (msg.case !== 'ping') log.info(`recv ${msg.case}`, { accountId });
     switch (msg.case) {
       case 'room_create':
@@ -316,7 +319,7 @@ export class Gateway {
       }
       case 'judge_verdict': {
         const pending = this.pendingJudges.get(msg.requestId);
-        // 只接受被指派的裁判回报（防别的玩家伪造 verdict 抢答）。
+        // Only accept the verdict from the designated judge (prevents another player from forging a verdict).
         if (pending && pending.accountId === accountId) {
           clearTimeout(pending.timer);
           this.pendingJudges.delete(msg.requestId);
@@ -343,11 +346,11 @@ export class Gateway {
     }
   }
 
-  // ───────────────────────── 对等裁判（Phase C）─────────────────────────
+  // ───────────────────────── Peer judge (Phase C) ─────────────────────────
 
   /**
-   * meta 调用（经 /gw/judge）：挑一名高配空闲在线玩家无头复算该局，回报终局 hash。
-   * 无合格候选 / 超时 / 复算失败 → {ok:false}，meta 退回作废（不定罪）。
+   * Called by meta (via /gw/judge): picks an eligible idle online player to headlessly re-compute the match and report the final-state hash.
+   * No eligible candidate / timeout / re-computation failed → {ok:false}; meta voids the result (no penalty).
    */
   judge(args: JudgeArgs): Promise<JudgeResult> {
     const candidate = this.pickJudge(args.exclude);
@@ -383,7 +386,7 @@ export class Gateway {
     });
   }
 
-  /** 挑一名 canJudge 且不在 exclude 中的在线玩家（任一即可，单裁判）。 */
+  /** Picks one online player who has canJudge set and is not in the exclude list (any one will do; single-judge model). */
   private pickJudge(exclude: string[]): GwConn | null {
     for (const conn of this.conns.values()) {
       if (!conn.canJudge) continue;
@@ -394,7 +397,7 @@ export class Gateway {
     return null;
   }
 
-  /** ranked 入队：先向 meta 取 ELO（matchsvc 保持 DB-free），再入队。 */
+  /** Ranked enqueue: fetches ELO from meta first (keeping matchsvc DB-free), then enqueues. */
   private async enqueueRanked(accountId: string): Promise<void> {
     if (!this.meta.available) {
       log.warn('ranked rejected: meta unavailable (no ELO source)', { accountId });
@@ -406,7 +409,7 @@ export class Gateway {
       return;
     }
     const elo = await this.meta.getElo(accountId);
-    // await 期间可能掉线 → 仅在仍在线时入队。
+    // The player may have disconnected during the await → only enqueue if still online.
     if (!this.conns.has(accountId)) {
       log.warn('ranked enqueue aborted: account dropped during ELO fetch', { accountId });
       return;
@@ -418,8 +421,9 @@ export class Gateway {
   }
 
   /**
-   * 玩家展示资料：向 meta 取真实昵称 + 9 位数字公开 id。meta 不可用 / 无资料 →
-   * 名字退回 accountId 前 12 位、publicId 空串（房间仍可建，只是名字不友好）。
+   * Player display profile: fetches the real nickname and 9-digit numeric publicId from meta.
+   * If meta is unavailable or no profile exists, falls back to the first 12 characters of accountId for the name
+   * and an empty string for publicId (room creation still works, the name just won't be user-friendly).
    */
   private async resolveProfile(accountId: string): Promise<{ name: string; publicId: string; equippedTitle: string }> {
     const p = await this.meta.getProfile(accountId);
@@ -456,7 +460,7 @@ export class Gateway {
   }
 }
 
-// matchsvc PushMsg（proto 无关）→ 控制面 ServerMsg。
+// matchsvc PushMsg (proto-agnostic) → control-plane ServerMsg.
 function toServerMsg(msg: PushMsg): ServerMsg {
   switch (msg.kind) {
     case 'room_state':

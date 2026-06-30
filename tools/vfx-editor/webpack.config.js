@@ -19,7 +19,7 @@ module.exports = (env, argv) => {
       modules: [path.resolve(__dirname, 'node_modules'), 'node_modules'],
       alias: {
         // Single source of truth: the editor imports the game's vfx interpreter /
-        // types / validator directly (DESIGN §8 复用要点). Never a second copy.
+        // types / validator directly (DESIGN §8 reuse rationale). Never a second copy.
         '@vfx': path.resolve(__dirname, '../../client/src/render/vfx'),
         '@game': path.resolve(__dirname, '../../client/src/game'),
         // The game's prng re-export shim points at @nw/engine — wire it up so the

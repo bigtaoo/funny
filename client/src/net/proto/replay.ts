@@ -13,26 +13,27 @@ export const protobufPackage = "nw.replay";
 export interface ReplayMeta {
   /** Unix ms */
   recordedAt: number;
-  /** 战役关卡 id（PvE） */
+  /** campaign level id (PvE) */
   levelId: string;
-  /** 0/1；-1 = 平局/未知 */
+  /** 0/1; -1 = draw / unknown */
   winner: number;
 }
 
 export interface Replay {
-  /** 绑引擎逻辑版本（回放前校验，跨版本可能发散） */
+  /** engine logic version (validated before replay; cross-version replays may diverge) */
   engineVersion: number;
   /**
-   * 注：gameserver 逻辑无关（M12），无法自证版本，
-   *   服务端录制此字段为 0（保留给客户端回放时自校验 / 未来客户端上报）。
+   * Note: gameserver is logic-agnostic (M12) and cannot self-certify its version;
+   *   server-side recordings set this field to 0 (reserved for client self-validation
+   *   at replay time / future client-reported uploads).
    */
   mode: string;
   seed: number;
-  /** PvE=levelId+version；PvP=rosterVer */
+  /** PvE=levelId+version; PvP=rosterVer */
   configRef: string;
-  /** 只存非空帧 */
+  /** non-empty frames only */
   frames: FrameCmds[];
-  /** 总帧数（空帧不存，靠它界定终点） */
+  /** total frame count (empty frames are not stored; this field marks the end boundary) */
   endFrame: number;
   meta?: ReplayMeta | undefined;
 }

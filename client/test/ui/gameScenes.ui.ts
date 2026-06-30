@@ -3,7 +3,7 @@
 // scenes.ui.ts covers the menu/overlay scenes but deliberately left these two out:
 // they drive the FULL GameRenderer (board / units / buildings / HUD / VFX) off a
 // live IGameEngine, which is the path most likely to "logic is fine but the screen
-// explodes on entry". This file closes缺口 A — exercise that path headlessly.
+// explodes on entry". This file closes gap A — exercise that path headlessly.
 //
 // Same harness as scenes.ui.ts: the pixiHeadless adapter (vitest.ui.config.ts
 // setupFiles) builds the real PIXI tree in plain Node. We never call

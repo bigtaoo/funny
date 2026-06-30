@@ -1,13 +1,13 @@
-// analyticsvc 环境变量（A9-1）。
-// 第九进程，玩家不可达（反代不路由，仅内网）。复用 meta JWT 仅 verifyToken 验签。
+// analyticsvc environment variables (A9-1).
+// Ninth process; not reachable by players (reverse proxy does not route to it; internal network only). Reuses the meta JWT for verifyToken signature verification only.
 import { loadServerEnv, type ServerEnv } from '@nw/shared';
 
 export interface AnalyticssvcEnv extends ServerEnv {
   port: number;
   host: string;
-  /** 专属库 Mongo URI（默认复用 NW_MONGO_URI）。 */
+  /** Dedicated database Mongo URI (defaults to NW_MONGO_URI). */
   analyticsMongoUri: string;
-  /** 专属库名（与 meta/commercial/admin/world 物理隔离）。 */
+  /** Dedicated database name (physically separate from meta/commercial/admin/world). */
   analyticsMongoDb: string;
 }
 

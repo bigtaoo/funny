@@ -6,7 +6,7 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 function gitCommit() {
   try {
     const hash = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim();
-    // 仅看 ops 相关文件是否有未提交改动 → 标 -dirty（避免被仓库别处的并行改动误标）。
+    // Check only ops-related files for uncommitted changes → mark -dirty (avoids false-dirty from parallel changes elsewhere in the repo).
     const root = execSync('git rev-parse --show-toplevel', { cwd: __dirname }).toString().trim();
     const dirty = execSync(
       'git status --porcelain -- tools/ops wrangler.ops.jsonc worker.ops.js',

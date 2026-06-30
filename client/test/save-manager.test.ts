@@ -1,7 +1,7 @@
-// SaveManager 单测。
-//  · refresh()（S1-R）：ranked 局末服务器权威段（pvp）被改写后，客户端 pull + reconcile 即时刷新。
-//  · PvE 服务器权威（PVE_INTEGRITY_PLAN §8）：progress/materials/pveUpgrades 取云端（不再并集/取较大）；
-//    通关/升级走 /pve/* 端点；离线通关入队、上线 flush。
+// SaveManager unit tests.
+//  · refresh() (S1-R): after the server authoritatively updates the ranked stats (pvp) at match end, client pull + reconcile reflects them immediately.
+//  · PvE server authority (PVE_INTEGRITY_PLAN §8): progress/materials/pveUpgrades are taken from the cloud (no more union/max merge);
+//    level clear / upgrade go through /pve/* endpoints; offline clears are queued and flushed on reconnect.
 import { describe, it, expect } from 'vitest';
 import { SaveManager } from '../src/game/meta/SaveManager';
 import { LocalSaveStore } from '../src/game/meta/SaveStore';
@@ -24,9 +24,9 @@ function fakeApi(cloud: SaveData, hasToken = true, displayName?: string): ApiCli
 }
 
 describe('SaveManager.refresh (S1-R)', () => {
-  it('拉取云端权威 pvp 覆盖本地（段位即时刷新）', async () => {
+  it('cloud authoritative pvp overwrites local (rank refreshed immediately)', async () => {
     const store = new LocalSaveStore(new MemStorage());
-    store.saveLocal(makeNewSave('a', 1)); // 本地仍是初始 unranked/1000
+    store.saveLocal(makeNewSave('a', 1)); // local is still initial unranked/1000
     const cloud = makeNewSave('a', 1);
     cloud.pvp = { elo: 1240, rank: 'gold', wins: 12, losses: 5, streak: 3 };
 
@@ -37,14 +37,14 @@ describe('SaveManager.refresh (S1-R)', () => {
     expect(ok).toBe(true);
     expect(mgr.get().pvp.rank).toBe('gold');
     expect(mgr.get().pvp.elo).toBe(1240);
-    // 落本地，下次 loadLocal 也是新值
+    // persisted locally — next loadLocal also returns the new value
     expect(store.loadLocal().pvp.rank).toBe('gold');
   });
 
-  it('progress/materials 以云端为准（§8 服务器权威，不再并集/取较大）', async () => {
+  it('progress/materials taken from cloud (§8 server authority, no more union/max merge)', async () => {
     const store = new LocalSaveStore(new MemStorage());
     const local = makeNewSave('a', 1);
-    local.progress.cleared.push('ch1_lv1'); // 本地独有（未经服务器结算）
+    local.progress.cleared.push('ch1_lv1'); // local-only (not yet settled by the server)
     local.materials = { scrap: 99 };
     store.saveLocal(local);
 
@@ -53,12 +53,12 @@ describe('SaveManager.refresh (S1-R)', () => {
     cloud.materials = { scrap: 3 };
     const mgr = new SaveManager({ store, api: fakeApi(cloud) });
     await mgr.refresh();
-    // 云端权威完全覆盖：本地独有 ch1_lv1 / scrap:99 不保留
+    // Cloud authority fully overwrites: local-only ch1_lv1 / scrap:99 are not preserved
     expect(mgr.get().progress.cleared).toEqual(['ch1_lv2']);
     expect(mgr.get().materials).toEqual({ scrap: 3 });
   });
 
-  it('equipped/flags 仍是客户端同步段（本地覆盖云端）', async () => {
+  it('equipped/flags remain client-synced (local overrides cloud)', async () => {
     const store = new LocalSaveStore(new MemStorage());
     const local = makeNewSave('a', 1);
     local.equipped = { skin: 'local_skin' };
@@ -69,23 +69,23 @@ describe('SaveManager.refresh (S1-R)', () => {
     cloud.equipped = { skin: 'cloud_skin' };
     const mgr = new SaveManager({ store, api: fakeApi(cloud) });
     await mgr.refresh();
-    expect(mgr.get().equipped.skin).toBe('local_skin'); // 本地覆盖
+    expect(mgr.get().equipped.skin).toBe('local_skin'); // local overrides cloud
     expect(mgr.get().flags.seen_intro).toBe(true);
   });
 
-  it('未联通（无 token）→ no-op，返回 false', async () => {
+  it('not connected (no token) → no-op, returns false', async () => {
     const store = new LocalSaveStore(new MemStorage());
     const mgr = new SaveManager({ store, api: fakeApi(makeNewSave('a', 1), false) });
     expect(await mgr.refresh()).toBe(false);
   });
 
-  it('无 api → false', async () => {
+  it('no api → false', async () => {
     const store = new LocalSaveStore(new MemStorage());
     const mgr = new SaveManager({ store });
     expect(await mgr.refresh()).toBe(false);
   });
 
-  it('refresh 回带 displayName → onProfile 回调（token 续登恢复展示名）', async () => {
+  it('refresh returns displayName → onProfile callback (restores display name on token re-login)', async () => {
     const store = new LocalSaveStore(new MemStorage());
     store.saveLocal(makeNewSave('a', 1));
     let seen: string | undefined = 'unset';
@@ -99,14 +99,14 @@ describe('SaveManager.refresh (S1-R)', () => {
   });
 });
 
-describe('SaveManager.adoptSession (SA-3/SA-4 转正)', () => {
-  it('登录后采纳 accountId + pull/reconcile：权威段（含 progress）取云端', async () => {
+describe('SaveManager.adoptSession (SA-3/SA-4 session adoption)', () => {
+  it('after login, adopt accountId + pull/reconcile: authoritative data (including progress) taken from cloud', async () => {
     const store = new LocalSaveStore(new MemStorage());
-    const local = makeNewSave('local-anon', 1); // 单机匿名档
+    const local = makeNewSave('local-anon', 1); // offline anonymous save
     local.progress.cleared.push('ch1_lv1');
     store.saveLocal(local);
 
-    const cloud = makeNewSave('real-123', 5); // 云端正式账号，已有权威段
+    const cloud = makeNewSave('real-123', 5); // cloud real account with existing authoritative rank
     cloud.pvp = { elo: 1300, rank: 'gold', wins: 9, losses: 2, streak: 2 };
     cloud.wallet.coins = 500;
     cloud.progress.cleared = ['ch1_lv1', 'ch1_lv2'];
@@ -118,11 +118,11 @@ describe('SaveManager.adoptSession (SA-3/SA-4 转正)', () => {
     expect(mgr.get().accountId).toBe('real-123');
     expect(mgr.get().wallet.coins).toBe(500);
     expect(mgr.get().pvp.rank).toBe('gold');
-    // progress 是服务器权威 → 取云端（本地未结算的进度不并入）
+    // progress is server-authoritative → taken from cloud (locally unsettled progress is not merged in)
     expect(mgr.get().progress.cleared).toEqual(['ch1_lv1', 'ch1_lv2']);
   });
 
-  it('无 token（pull 失败）→ 仍写下 accountId 但返回 false', async () => {
+  it('no token (pull fails) → accountId is still written but returns false', async () => {
     const store = new LocalSaveStore(new MemStorage());
     store.saveLocal(makeNewSave('local-anon', 1));
     const mgr = new SaveManager({ store, api: fakeApi(makeNewSave('x', 1), false) });
@@ -131,9 +131,9 @@ describe('SaveManager.adoptSession (SA-3/SA-4 转正)', () => {
   });
 });
 
-// ── PvE 服务器权威：通关 / 升级 / 离线队列（§8）──────────────────────────
+// ── PvE server authority: clear / upgrade / offline queue (§8) ──────────────────────────
 describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
-  /** 记录 pveClear/pveUpgrade 调用并按需回推权威 save。 */
+  /** Records pveClear/pveUpgrade calls and optionally pushes back an authoritative save. */
   function pveApi(opts: {
     hasToken?: boolean;
     onClear?: (levelId: string, stars: number) => SaveData | Error;
@@ -161,7 +161,7 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     return { api, calls };
   }
 
-  it('在线通关 → POST /pve/clear 并 adopt 回推（进度取服务器）', async () => {
+  it('online clear → POST /pve/clear and adopt pushed-back save (progress taken from server)', async () => {
     const store = new LocalSaveStore(new MemStorage());
     store.saveLocal(makeNewSave('a', 1));
     const cloud = makeNewSave('a', 2);
@@ -176,10 +176,10 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     expect(calls.clears).toEqual([{ levelId: 'ch1_lv1', stars: 2 }]);
     expect(mgr.get().progress.cleared).toEqual(['ch1_lv1']);
     expect(mgr.get().materials).toEqual({ scrap: 6 });
-    expect(mgr.getPendingClears()).toEqual([]); // 在线成功不入队
+    expect(mgr.getPendingClears()).toEqual([]); // successful online clear is not queued
   });
 
-  it('0 星不结算（未通关）', async () => {
+  it('0 stars are not settled (level not cleared)', async () => {
     const store = new LocalSaveStore(new MemStorage());
     const { api, calls } = pveApi({});
     const mgr = new SaveManager({ store, api });
@@ -187,7 +187,7 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     expect(calls.clears).toEqual([]);
   });
 
-  it('离线通关 → 入队待结算 + 乐观本地解锁（不调端点），持久化本地', async () => {
+  it('offline clear → queued for settlement + optimistic local unlock (no endpoint called), persisted locally', async () => {
     const mem = new MemStorage();
     const store = new LocalSaveStore(mem);
     store.saveLocal(makeNewSave('a', 1));
@@ -195,19 +195,19 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     const mgr = new SaveManager({ store, api });
 
     await mgr.recordClear('ch1_lv1', 3);
-    expect(calls.clears).toEqual([]); // 离线不发请求
+    expect(calls.clears).toEqual([]); // offline: no request sent
     expect(mgr.getPendingClears().map((p) => p.levelId)).toEqual(['ch1_lv1']);
-    // 乐观本地解锁（§8.4）：通关立刻写进本地 progress，回到 CampaignMap 下一关即解锁；
-    // materials 仍待服务器结算。reconcile/flush 后用云端 cleared 整体覆盖回填。
+    // Optimistic local unlock (§8.4): clear is written to local progress immediately so the next level is unlocked when returning to CampaignMap;
+    // materials still await server settlement. After reconcile/flush, cloud cleared overwrites the local value entirely.
     expect(mgr.get().progress.cleared).toEqual(['ch1_lv1']);
     expect(mgr.get().progress.stars).toEqual({ ch1_lv1: 3 });
-    // 持久化：新实例从存储恢复队列 + 乐观进度
+    // Persistence: a new instance restores the queue + optimistic progress from storage
     const mgr2 = new SaveManager({ store, api });
     expect(mgr2.getPendingClears().map((p) => p.levelId)).toEqual(['ch1_lv1']);
     expect(mgr2.get().progress.cleared).toEqual(['ch1_lv1']);
   });
 
-  it('在线请求失败（网络）→ 入队兜底', async () => {
+  it('online request fails (network error) → falls back to queue', async () => {
     const store = new LocalSaveStore(new MemStorage());
     store.saveLocal(makeNewSave('a', 1));
     const { api } = pveApi({ onClear: () => new Error('network down') });
@@ -216,7 +216,7 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     expect(mgr.getPendingClears().map((p) => p.levelId)).toEqual(['ch1_lv1']);
   });
 
-  it('upgrade：在线 → POST /pve/upgrade 并 adopt；离线 → false 不调端点', async () => {
+  it('upgrade: online → POST /pve/upgrade and adopt; offline → returns false, no endpoint called', async () => {
     const store = new LocalSaveStore(new MemStorage());
     store.saveLocal(makeNewSave('a', 1));
     const cloud = makeNewSave('a', 2);
@@ -234,7 +234,7 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     expect(offline.calls.upgrades).toEqual([]);
   });
 
-  it('upgrade 失败（材料不足 → ApiError）→ false，不改本地', async () => {
+  it('upgrade fails (insufficient materials → ApiError) → false, local save unchanged', async () => {
     const store = new LocalSaveStore(new MemStorage());
     store.saveLocal(makeNewSave('a', 1));
     const { api } = pveApi({ onUpgrade: () => new ApiError('INSUFFICIENT_FUNDS', 'no mats') });
@@ -243,10 +243,10 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     expect(mgr.get().pveUpgrades).toEqual({});
   });
 
-  it('bootstrap/refresh 后 flush 队列：按序结算每条，成功后清队列', async () => {
+  it('flush queue after bootstrap/refresh: settle each entry in order, clear queue on success', async () => {
     const mem = new MemStorage();
     const store = new LocalSaveStore(mem);
-    // 预置两条离线待结算（模拟此前离线攒下的）
+    // Pre-populate two offline pending entries (simulating clears accumulated while offline)
     store.savePending([
       { levelId: 'ch1_lv1', stars: 2, ts: 1 },
       { levelId: 'ch1_lv1', stars: 3, ts: 2 },
@@ -256,21 +256,21 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
 
     const mgr = new SaveManager({ store, api });
     expect(mgr.getPendingClears()).toHaveLength(2);
-    await mgr.refresh(); // refresh 末尾 flushPending
+    await mgr.refresh(); // flushPending is called at the end of refresh
 
     expect(calls.clears).toEqual([
       { levelId: 'ch1_lv1', stars: 2 },
       { levelId: 'ch1_lv1', stars: 3 },
     ]);
     expect(mgr.getPendingClears()).toEqual([]);
-    expect(store.loadPending()).toEqual([]); // 落盘也清空
+    expect(store.loadPending()).toEqual([]); // also cleared on disk
   });
 
-  it('flush 遇业务错误（ApiError）丢弃该条不卡队列；遇网络错误保留', async () => {
+  it('flush: business error (ApiError) discards the entry without blocking the queue; network error retains it', async () => {
     const store = new LocalSaveStore(new MemStorage());
     store.savePending([
-      { levelId: 'bad', stars: 1, ts: 1 },   // 业务错误 → 丢弃
-      { levelId: 'good', stars: 1, ts: 2 },  // 网络错误 → 保留
+      { levelId: 'bad', stars: 1, ts: 1 },   // business error → discard
+      { levelId: 'good', stars: 1, ts: 2 },  // network error → retain
     ]);
     store.saveLocal(makeNewSave('a', 1));
     const { api } = pveApi({
@@ -281,11 +281,11 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     });
     const mgr = new SaveManager({ store, api });
     await mgr.refresh();
-    // bad 被丢弃，good 因网络失败保留
+    // bad is discarded; good is retained due to network failure
     expect(mgr.getPendingClears().map((p) => p.levelId)).toEqual(['good']);
   });
 
-  it('online() 反映 api/token 状态', () => {
+  it('online() reflects api/token state', () => {
     const store = new LocalSaveStore(new MemStorage());
     expect(new SaveManager({ store }).online()).toBe(false);
     expect(new SaveManager({ store, api: fakeApi(makeNewSave('a', 1), false) }).online()).toBe(false);

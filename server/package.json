@@ -2,7 +2,7 @@
   "name": "@nw/server",
   "version": "0.1.0",
   "private": true,
-  "description": "Notebook Wars 服务端：metaserver(REST) + gateway(控制面 WS) + matchsvc(私有匹配大脑) + gameserver(数据面 WS) + commercial(钱包/交易) + worldsvc(SLG 大世界) + admin(运维后台) + shared + contracts",
+  "description": "Notebook Wars server: metaserver(REST) + gateway(control-plane WS) + matchsvc(private matchmaking brain) + gameserver(data-plane WS) + commercial(wallet/transactions) + worldsvc(SLG overworld) + admin(ops backend) + shared + contracts",
   "workspaces": [
     "shared",
     "engine",

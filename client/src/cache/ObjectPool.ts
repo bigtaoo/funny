@@ -3,17 +3,17 @@ import { registerPool } from './poolRegistry';
 type Factory<T> = () => T;
 type Resetter<T> = (obj: T) => void;
 
-/** 可选：把这个池登记进内存看护注册表（MemoryMonitor）。 */
+/** Optional: register this pool with the memory-monitor registry (MemoryMonitor). */
 export interface PoolStatOpts {
-  /** 展示标签，如 'unit.circle' / 'building'。 */
+  /** Display label, e.g. 'unit.circle' / 'building'. */
   label: string;
-  /** 单个空闲对象的粗估 JS 堆字节数（见 poolRegistry 文件头）。 */
+  /** Rough estimated JS heap bytes per idle object (see poolRegistry file header). */
   bytesEach: number;
 }
 
 export class ObjectPool<T> {
   private pool: T[] = [];
-  /** 内存看护注销函数（drain() 时调用）；未登记则为 null。 */
+  /** Memory monitor unregister function (called on drain()); null when not registered. */
   private unregisterStat: (() => void) | null = null;
 
   constructor(

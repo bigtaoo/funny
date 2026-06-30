@@ -1,22 +1,22 @@
-// 客户端功能开关下发 + 日志定向采集（FEATURE_FLAGS_DESIGN §9，F3 客户端侧）。
+// Client-side feature flag delivery + targeted log collection (FEATURE_FLAGS_DESIGN §9, F3 client side).
 //
-// 职责：
-//   1. 启动拉一次 + 每 120s 轮询公开 GET /bootstrap，拿「与默认值不同的 flag」布尔 map（多数玩家为空）。
-//   2. 解析 client_log_* 四个分级 flag → 推出当前上传阈值（debug>info>warn>error，取最 verbose 的已开）。
-//   3. 命中阈值后，每 30s 把环形缓冲里 ≥阈值的日志批量 POST /client/log（metaserver 转发 Loki）。
+// Responsibilities:
+//   1. Fetch once on startup + poll public GET /bootstrap every 120 s; receives a boolean map of flags that differ from defaults (empty for most players).
+//   2. Parse the four tiered client_log_* flags → derive the current upload threshold (debug>info>warn>error; pick the most verbose one that is enabled).
+//   3. Once a threshold is hit, batch-POST logs from the ring buffer that meet or exceed the threshold to /client/log every 30 s (metaserver forwards to Loki).
 //
-// 单一真源原则：客户端只拿服务端求值后的布尔结果，绝不下发规则/白名单（防泄露未上线功能 + 防作弊）。
-// 非定向玩家 bootstrap 拿空 map → 阈值恒「关」→ 永不调 /client/log，天然零负担、天然限流。
+// Single-source-of-truth principle: the client only receives server-evaluated boolean results; rules/allowlists are never sent down (prevents leaking unreleased features and cheating).
+// Non-targeted players get an empty map from bootstrap → threshold always "off" → /client/log is never called; zero overhead and rate-limiting by design.
 
 import type { ApiClient } from './ApiClient';
 import { netLog, snapshotClientLogs, LOG_LEVEL_RANK, type ClientLogLevel } from './log';
 
 const log = netLog('flags');
 
-const DEFAULT_POLL_MS = 120_000; // bootstrap 轮询间隔（§9.3）
-const DEFAULT_UPLOAD_MS = 30_000; // 命中后日志批量上报间隔（§9.4）
+const DEFAULT_POLL_MS = 120_000; // bootstrap poll interval (§9.3)
+const DEFAULT_UPLOAD_MS = 30_000; // log batch upload interval when threshold is hit (§9.4)
 
-/** 四个分级 flag → 级别，按 verbose 程度从高到低排列（推阈值时第一个命中即最 verbose）。 */
+/** Four tiered flags → levels, ordered from most to least verbose (first match when computing threshold = most verbose enabled). */
 const CLIENT_LOG_FLAGS: { flag: string; level: ClientLogLevel }[] = [
   { flag: 'client_log_debug', level: 'debug' },
   { flag: 'client_log_info', level: 'info' },
@@ -26,9 +26,9 @@ const CLIENT_LOG_FLAGS: { flag: string; level: ClientLogLevel }[] = [
 
 export interface FeatureFlagsOpts {
   api: ApiClient;
-  /** 平台名（web / wechat / crazygames），随 bootstrap query 带入求值。 */
+  /** Platform name (web / wechat / crazygames), passed as a bootstrap query parameter for server-side evaluation. */
   platform: string;
-  /** 取当前玩家的 9 位 publicId（登录后才有；定向采集靠它）。 */
+  /** Returns the current player's 9-digit publicId (available only after login; required for targeted collection). */
   getPublicId: () => string | null;
   pollMs?: number;
   uploadMs?: number;
@@ -38,9 +38,9 @@ export class FeatureFlags {
   private flags: Record<string, boolean> = {};
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private uploadTimer: ReturnType<typeof setInterval> | null = null;
-  /** 当前日志上传阈值 rank（snapshot 取 ≤ 此 verbose 度的条目）；null = 未命中、不上报。 */
+  /** Current log upload threshold rank (snapshot collects entries at or below this verbosity); null = no threshold matched, nothing uploaded. */
   private thresholdRank: number | null = null;
-  /** 上次上报到的缓冲序号（只发其后的新条目，避免重复）。 */
+  /** Sequence number of the last uploaded buffer entry (only newer entries are sent, avoiding duplicates). */
   private lastSeq = 0;
   private readonly api: ApiClient;
   private readonly platform: string;
@@ -56,18 +56,18 @@ export class FeatureFlags {
     this.uploadMs = opts.uploadMs ?? DEFAULT_UPLOAD_MS;
   }
 
-  /** 某 flag 当前是否开（服务端只回 diff，故缺省即默认值——当前全部 flag 默认 false）。 */
+  /** Whether a given flag is currently enabled (server returns only diffs, so absent = default value — all flags default to false). */
   isOn(key: string): boolean {
     return this.flags[key] === true;
   }
 
-  /** 启动：立即拉一次 + 周期轮询。重复调用安全（已起则忽略）。 */
+  /** Start: fetch immediately + start periodic polling. Safe to call multiple times (ignored if already running). */
   start(): void {
     void this.refresh();
     if (!this.pollTimer) this.pollTimer = setInterval(() => void this.refresh(), this.pollMs);
   }
 
-  /** 立即重拉一次（登录拿到 publicId 后调，无需等下一个轮询周期）。 */
+  /** Immediately re-fetch (call after login when publicId becomes available, without waiting for the next poll cycle). */
   async refresh(): Promise<void> {
     try {
       const publicId = this.getPublicId() ?? undefined;
@@ -75,22 +75,22 @@ export class FeatureFlags {
       this.flags = flags ?? {};
       this.recomputeLogThreshold();
     } catch {
-      // bootstrap 失败：保留上次结果，静默（启动早期/离线很常见，绝不影响主流程）。
+      // bootstrap failed: keep the previous result silently (common at early startup or while offline; must never affect the main flow).
     }
   }
 
-  /** 根据 client_log_* flag 推当前上传阈值，并相应启停上传定时器。 */
+  /** Recompute the current upload threshold from client_log_* flags, and start or stop the upload timer accordingly. */
   private recomputeLogThreshold(): void {
     let rank: number | null = null;
     for (const { flag, level } of CLIENT_LOG_FLAGS) {
-      if (this.flags[flag] === true) { rank = LOG_LEVEL_RANK[level]; break; } // 最 verbose 的已开者
+      if (this.flags[flag] === true) { rank = LOG_LEVEL_RANK[level]; break; } // first (most verbose) enabled flag
     }
     const was = this.thresholdRank;
     this.thresholdRank = rank;
     if (rank !== null && this.uploadTimer === null) {
       log.info('client log collection ENABLED', { thresholdRank: rank });
       this.uploadTimer = setInterval(() => void this.uploadTick(), this.uploadMs);
-      void this.uploadTick(); // 立即上报一次当前缓冲里的上下文
+      void this.uploadTick(); // immediately upload whatever is currently in the buffer
     } else if (rank === null && this.uploadTimer !== null) {
       log.info('client log collection disabled');
       clearInterval(this.uploadTimer);
@@ -100,11 +100,11 @@ export class FeatureFlags {
     }
   }
 
-  /** 把缓冲里 ≥阈值的新日志批量上报（命中定向时才被调度）。 */
+  /** Batch-upload new log entries from the buffer that meet or exceed the threshold (only scheduled when targeted collection is active). */
   private async uploadTick(): Promise<void> {
     if (this.thresholdRank === null) return;
     const publicId = this.getPublicId();
-    if (!publicId) return; // 无 publicId 无法归属（定向本就需要它），跳过
+    if (!publicId) return; // no publicId means attribution is impossible (targeted collection requires it) — skip
     const { entries, lastSeq } = snapshotClientLogs(this.thresholdRank, this.lastSeq);
     this.lastSeq = lastSeq;
     if (entries.length === 0) return;
@@ -115,11 +115,11 @@ export class FeatureFlags {
         logs: entries.map((e) => ({ level: e.level, msg: e.msg, ts: e.ts, ...(e.tag ? { tag: e.tag } : {}) })),
       });
     } catch {
-      // 上报失败静默：日志采集是尽力而为，绝不影响玩家。下批新条目继续尝试。
+      // Upload failure is silently swallowed: log collection is best-effort and must never affect the player. The next batch will retry.
     }
   }
 
-  /** 停止所有定时器（一般无需调；应用生命周期内常驻）。 */
+  /** Stop all timers (normally not needed; this instance lives for the full application lifetime). */
   stop(): void {
     if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
     if (this.uploadTimer) { clearInterval(this.uploadTimer); this.uploadTimer = null; }

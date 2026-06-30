@@ -1,4 +1,4 @@
-// analyticsvc 启动入口（A9-1）。
+// analyticsvc startup entry point (A9-1).
 import { loadAnalyticssvcEnv } from './config';
 import { createAnalyticsMongo } from './db';
 import { AnalyticsService } from './service';
@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 
   console.log(`[analyticsvc] started port=${env.port} db=${env.analyticsMongoDb}`);
-  startHeartbeat(createLogger('analyticsvc')); // 存活心跳：空闲时每 5 分钟一条 info 日志
+  startHeartbeat(createLogger('analyticsvc')); // liveness heartbeat: one info log every 5 minutes when idle
 }
 
 main().catch((e) => {

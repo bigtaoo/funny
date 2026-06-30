@@ -1,5 +1,5 @@
-// worldsvc 进程引导（S8-0 + S8-4 + S8-5）：连专属库 → 可选 Redis → 各 Service → 公网 REST listen。
-// SLG_DESIGN §14.1 P1：worldsvc 是第四公网面（反代 /world,/auction → 此进程）。
+// worldsvc process bootstrap (S8-0 + S8-4 + S8-5): connect dedicated DB → optional Redis → services → public REST listen.
+// SLG_DESIGN §14.1 P1: worldsvc is the fourth public face (reverse proxy /world,/auction → this process).
 import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat } from '@nw/shared';
 import { createWorldMongo } from './db';
 import { connectRedis } from './redis';
@@ -24,7 +24,7 @@ async function main(): Promise<void> {
 
   const redis = await connectRedis(env.redisUrl);
 
-  // redis 传入 gateway client：宗门频道扇出走 Redis pub/sub（缺省降级为 O(n) HTTP push）。
+  // Redis passed to gateway client: sect channel fan-out uses Redis pub/sub (falls back to O(n) HTTP push when unavailable).
   const gateway = new HttpWorldGatewayClient(env.gatewayInternalUrl ?? null, env.internalKey, redis);
 
   const commercial = env.commercialInternalUrl
@@ -35,12 +35,12 @@ async function main(): Promise<void> {
     ? new HttpWorldMetaClient(env.metaInternalUrl, env.internalKey)
     : nullWorldMetaClient;
 
-  // 系统邮件复用 meta 内部端点（赛季结算发奖，§17.5）。
+  // System mail reuses the meta internal endpoint (season settlement reward dispatch, §17.5).
   const mail = env.metaInternalUrl
     ? new HttpWorldMailClient(env.metaInternalUrl, env.internalKey)
     : nullWorldMailClient;
 
-  // socialsvc 内部客户端（P1：家族路由代理 + 频道推送委托 + familyId 镜像）。
+  // socialsvc internal client (P1: family route proxy + channel push delegation + familyId mirror).
   const socialsvc = env.socialsvcInternalUrl
     ? new HttpWorldSocialsvcClient(env.socialsvcInternalUrl, env.internalKey)
     : nullWorldSocialsvcClient;
@@ -108,7 +108,7 @@ async function main(): Promise<void> {
       `gateway=${gateway.available ? 'on' : 'off'}; ` +
       `commercial=${commercial.available ? 'on' : 'off'}; meta=${meta.available ? 'on' : 'off'}; socialsvc=${socialsvc.available ? 'on' : 'off'}`,
   );
-  startHeartbeat(createLogger('worldsvc')); // 存活心跳：空闲时每 5 分钟一条 info 日志
+  startHeartbeat(createLogger('worldsvc')); // liveness heartbeat: one info log every 5 minutes when idle
 }
 
 main().catch((e) => {

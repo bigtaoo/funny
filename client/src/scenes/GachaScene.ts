@@ -38,8 +38,9 @@ export interface GachaSceneCallbacks {
   loadPools(): Promise<GachaPool[]>;
   draw(poolId: string, count: 1 | 10): Promise<GachaDrawResult>;
   /**
-   * 商城分组同级直达（LOBBY_IA_REDESIGN P1.5）。仅在「商城」分组语境下注入；
-   * 注入后顶部出现 [商城|盲盒|战令] tab 条，否则退化为纯 back。
+   * Peer navigation within the shop group (LOBBY_IA_REDESIGN P1.5). Injected only
+   * in the "shop" group context; when present the top shows a [Shop|Gacha|BattlePass]
+   * tab strip, otherwise the scene falls back to a plain back button.
    */
   openShop?(): void;
   openBattlePass?(): void;
@@ -168,8 +169,9 @@ export class GachaScene implements Scene {
   }
 
   /**
-   * 商城分组 tab 条（LOBBY_IA_REDESIGN P1.5）：[商城|盲盒|战令]，盲盒 active。
-   * 仅在分组语境（openShop 注入）时绘制；返回正文起点 y。否则原样返回 tbH。
+   * Shop group tab strip (LOBBY_IA_REDESIGN P1.5): [Shop|Gacha|BattlePass], Gacha active.
+   * Only drawn when in the group context (openShop injected); returns the body start y.
+   * Otherwise returns tbH unchanged.
    */
   private drawGroupTabs(tbH: number): number {
     if (!this.cb.openShop) return tbH;
@@ -232,7 +234,7 @@ export class GachaScene implements Scene {
       this.container.addChild(lbl);
     });
 
-    // 概率详情 button (L1-3, Apple 3.1.1) — top-right of the banner.
+    // Odds detail button (L1-3, Apple 3.1.1) — top-right of the banner.
     const oddsLbl = txt('ⓘ ' + t('gacha.oddsDetail.button'), Math.round(h * 0.02), C.accent, true);
     oddsLbl.anchor.set(1, 0); oddsLbl.x = bx + bannerW - Math.round(w * 0.02); oddsLbl.y = by + Math.round(h * 0.015);
     this.container.addChild(oddsLbl);

@@ -67,7 +67,7 @@ export class WebPlatform implements IPlatform {
       await nav.share({ title, url });
       return;
     }
-    // 无原生分享 → 复制链接到剪贴板（桌面浏览器主路径）。
+    // No native share API → copy the link to the clipboard (primary path on desktop browsers).
     await navigator.clipboard.writeText(url);
   }
 

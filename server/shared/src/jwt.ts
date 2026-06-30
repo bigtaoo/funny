@@ -1,4 +1,4 @@
-// 无状态 JWT（SERVER_API.md §1.1）。accountId 由 token 解出，请求体不带。
+// Stateless JWT (SERVER_API.md §1.1). accountId is extracted from the token; the request body does not carry it.
 import jwt from 'jsonwebtoken';
 
 export interface TokenPayload {
@@ -8,7 +8,7 @@ export interface TokenPayload {
 
 export interface JwtConfig {
   secret: string;
-  /** 过期时间（zeit/ms 字符串或秒数），默认 30d。 */
+  /** Expiry duration (zeit/ms string or seconds). Default: 30d. */
   expiresIn?: string | number;
 }
 
@@ -19,7 +19,7 @@ export function signToken(accountId: string, cfg: JwtConfig): string {
   return jwt.sign({ sub: accountId }, cfg.secret, opts);
 }
 
-/** 校验并返回 accountId；失败抛错（调用方转 UNAUTHENTICATED）。 */
+/** Verify the token and return accountId; throws on failure (caller maps to UNAUTHENTICATED). */
 export function verifyToken(token: string, cfg: JwtConfig): string {
   const decoded = jwt.verify(token, cfg.secret);
   if (typeof decoded === 'string' || typeof decoded.sub !== 'string') {
@@ -28,7 +28,7 @@ export function verifyToken(token: string, cfg: JwtConfig): string {
   return decoded.sub;
 }
 
-/** 从 Authorization 头取 Bearer token；无则返回 null。 */
+/** Extract the Bearer token from the Authorization header; returns null if absent. */
 export function extractBearer(header: string | undefined): string | null {
   if (!header) return null;
   const m = /^Bearer\s+(.+)$/i.exec(header.trim());

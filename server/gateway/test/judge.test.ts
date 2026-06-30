@@ -1,6 +1,6 @@
-// 对等裁判端到端单测（Phase C）：真 Gateway WS + 三个 ws 客户端（两参赛 + 一裁判）。
-// 验证 gateway.judge 挑出上报了 canJudge 且不在 exclude 中的玩家、推 judge_request、
-// 收到 judge_verdict 后解出裁决；无候选 → {ok:false}。
+// Peer-judge end-to-end unit tests (Phase C): real Gateway WS + three ws clients (two contestants + one judge).
+// Verifies that gateway.judge selects a player who reported canJudge and is not in the exclude list, pushes judge_request,
+// and resolves the verdict after receiving judge_verdict; no eligible candidate → {ok:false}.
 import { describe, it, expect, afterEach } from 'vitest';
 import * as path from 'path';
 import * as protobuf from 'protobufjs';
@@ -60,7 +60,7 @@ function connect(port: number, accountId: string): Promise<WebSocket> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe('Gateway peer judge', () => {
-  it('挑出 canJudge 的第三方、推 request、解出 verdict', async () => {
+  it('selects a canJudge third party, pushes judge_request, resolves verdict', async () => {
     const port = 19510;
     const gw = startGateway(port);
     const [a, b, c] = await Promise.all([
@@ -69,10 +69,10 @@ describe('Gateway peer judge', () => {
       connect(port, 'c'),
     ]);
 
-    // 裁判 c 上报 canJudge；参赛 a/b 不上报（默认 false，且被 exclude）。
+    // Judge c reports canJudge; contestants a/b do not report it (default false, and are in exclude).
     c.send(encodeClient({ client_caps: { can_judge: true } }));
 
-    // c 收到 judge_request → 回 verdict。
+    // c receives judge_request → responds with verdict.
     c.on('message', (data: ArrayBuffer) => {
       const srv = decodeServer(new Uint8Array(data));
       const req = srv['judge_request'] as Record<string, unknown> | undefined;
@@ -84,13 +84,13 @@ describe('Gateway peer judge', () => {
       );
     });
 
-    await sleep(50); // 让 client_caps 先到达 gateway
+    await sleep(50); // allow client_caps to reach gateway before judge call
     const verdict = await gw.judge({ seed: 7, mode: 1, endFrame: 0, frames: [], exclude: ['a', 'b'] });
     expect(verdict).toEqual({ ok: true, stateHash: 'HONEST', winnerSide: 0, stars: 0, statsJson: '', judgeAccountId: 'c' });
     void a; void b;
   });
 
-  it('PvE 抽检：transport level_id/pve_upgrades 透传给裁判，verdict.stars 解出', async () => {
+  it('PvE spot-check: transport level_id/pve_upgrades forwarded to judge, verdict.stars resolved', async () => {
     const port = 19513;
     const gw = startGateway(port);
     const [p, j] = await Promise.all([connect(port, 'p'), connect(port, 'j')]);
@@ -104,7 +104,7 @@ describe('Gateway peer judge', () => {
       seenReq = req;
       j.send(
         encodeClient({
-          // S9-3b：PvE 抽检复算回报本局成就计数 stats_json，gateway 透传回 meta。
+          // S9-3b: PvE spot-check recomputation reports per-match achievement counters in stats_json; gateway forwards it back to meta.
           judge_verdict: {
             request_id: req['request_id'], state_hash: '', winner_side: 0, ok: true, stars: 2,
             stats_json: '{"kill.archer":3}',
@@ -121,13 +121,13 @@ describe('Gateway peer judge', () => {
     expect(verdict).toEqual({
       ok: true, stateHash: '', winnerSide: 0, stars: 2, statsJson: '{"kill.archer":3}', judgeAccountId: 'j',
     });
-    // 裁判收到 PvE 复算参数（level_id + 权威蓝图快照）。
+    // Judge received PvE recomputation parameters (level_id + authoritative blueprint snapshot).
     expect(seenReq?.['level_id']).toBe('ch1_lv2');
     expect(seenReq?.['pve_upgrades']).toEqual({ inf_hp: 3 });
     void p;
   });
 
-  it('无合格候选（无人上报 canJudge）→ {ok:false}', async () => {
+  it('no eligible candidate (nobody reported canJudge) → {ok:false}', async () => {
     const port = 19511;
     const gw = startGateway(port);
     await connect(port, 'a');
@@ -137,7 +137,7 @@ describe('Gateway peer judge', () => {
     expect(verdict).toEqual({ ok: false });
   });
 
-  it('唯一 canJudge 者在 exclude 内（自己裁自己）→ {ok:false}', async () => {
+  it('sole canJudge candidate is in exclude list (judging oneself) → {ok:false}', async () => {
     const port = 19512;
     const gw = startGateway(port);
     const a = await connect(port, 'a');

@@ -1,12 +1,12 @@
-// worldsvc → meta 系统邮件（§17.5，C1）：赛季结算发奖走 meta `/internal/mail/system/send`。
-// 复用 OPS 补偿用的系统邮件基建（dispatchKey 幂等 + coins/skin/item 三类附件）。
-// 内部直投 accountId（meta 单发分支按 accountId 跳过 publicId 解析，见 internal.ts §17.5）。
-// 未配置 NW_META_INTERNAL_URL → available=false → 结算不发奖（best-effort，不阻断结算）。
+// worldsvc → meta system mail (§17.5, C1): season settlement reward dispatch goes through meta `/internal/mail/system/send`.
+// Reuses the OPS compensation system mail infrastructure (dispatchKey idempotency + three attachment types: coins/skin/item).
+// Direct delivery by accountId (meta single-send branch skips publicId resolution when accountId is provided, see internal.ts §17.5).
+// NW_META_INTERNAL_URL not configured → available=false → settlement does not send rewards (best-effort; does not block settlement).
 
 import { internalHeaders } from '@nw/shared';
 
 export interface WorldMailAttachment {
-  // 'material' → SaveData.materials 养成统一池（SLG8 赛季奖励）；'item' → inventory.items 泛用桶。
+  // 'material' → SaveData.materials unified progression pool (SLG8 season rewards); 'item' → inventory.items general bucket.
   kind: 'coins' | 'skin' | 'item' | 'material';
   id?: string;
   count?: number;
@@ -21,7 +21,7 @@ export interface WorldMailContent {
 
 export interface WorldMailClient {
   readonly available: boolean;
-  /** 系统邮件（dispatchKey 幂等，附件 coins/skin/item）。best-effort，失败 log 不阻断结算。 */
+  /** System mail (dispatchKey idempotency, attachments: coins/skin/item). Best-effort; failures are logged and do not block settlement. */
   sendSystemMail(accountId: string, dispatchKey: string, content: WorldMailContent): Promise<void>;
 }
 

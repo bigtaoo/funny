@@ -1,4 +1,4 @@
-// 运维后台各页面渲染（OPS_DESIGN §7）。纯 DOM；按 capabilities 已在 app.ts 决定可见性。
+// Ops admin page renderers (OPS_DESIGN §7). Pure DOM; visibility is determined by capabilities in app.ts.
 import type { Api } from './api';
 import { ApiError } from './api';
 import { clear, fmtTime, h, pill } from './dom';
@@ -23,13 +23,13 @@ import type {
 
 type Ctx = { api: Api; session: Session; root: HTMLElement; onTeardown: (fn: () => void) => void };
 
-// 自采指标 → 中文标签（与后端 METRIC_KEYS 同序）。
+// Self-collected metrics → display labels (same order as the backend METRIC_KEYS).
 const METRICS: [string, string][] = [
-  ['online', '在线连接'],
-  ['queue', '匹配队列'],
-  ['rooms', '活跃房间'],
-  ['gameInstances', 'game 实例'],
-  ['gameLoad', 'game 负载'],
+  ['online', 'Online connections'],
+  ['queue', 'Matchmaking queue'],
+  ['rooms', 'Active rooms'],
+  ['gameInstances', 'Game instances'],
+  ['gameLoad', 'Game load'],
 ];
 
 function showErr(el: HTMLElement, e: unknown): void {
@@ -42,11 +42,11 @@ function showOk(el: HTMLElement, msg: string): void {
   el.className = 'err ok';
 }
 
-// ───────────────────────── 监控 ─────────────────────────
+// ───────────────────────── Monitor ─────────────────────────
 export async function pageMonitor(ctx: Ctx): Promise<void> {
   const { api, root, onTeardown } = ctx;
   clear(root);
-  root.append(h('h2', {}, '在线监控'));
+  root.append(h('h2', {}, 'Live monitor'));
 
   const metricSel = h('select', {}, ...METRICS.map(([v, label]) => h('option', { value: v }, label)));
   const autoChk = h('input', { type: 'checkbox' }) as HTMLInputElement;
@@ -59,16 +59,16 @@ export async function pageMonitor(ctx: Ctx): Promise<void> {
       const live = await api.monitorLive();
       clear(grid);
       const cells: [string, number][] = [
-        ['在线连接', live.online],
-        ['匹配队列', live.queue],
-        ['活跃房间', live.rooms],
-        ['game 实例', live.gameInstances],
-        ['game 负载', live.gameLoad ?? 0],
+        ['Online connections', live.online],
+        ['Matchmaking queue', live.queue],
+        ['Active rooms', live.rooms],
+        ['Game instances', live.gameInstances],
+        ['Game load', live.gameLoad ?? 0],
       ];
       for (const [k, v] of cells) {
         grid.append(h('div', { class: 'stat' }, h('div', { class: 'v' }, String(v)), h('div', { class: 'k' }, k)));
       }
-      err.textContent = live.available ? '' : '提示：stats 后端未配置，显示 0。';
+      err.textContent = live.available ? '' : 'Note: stats backend not configured, showing 0.';
     } catch (e) {
       showErr(err, e);
     }
@@ -79,10 +79,10 @@ export async function pageMonitor(ctx: Ctx): Promise<void> {
     try {
       const pts = await api.trend(metric, Date.now() - 6 * 3600 * 1000);
       clear(trendBox);
-      trendBox.append(h('div', { class: 'muted' }, `${label}趋势（近 6h，${pts.length} 采样点）`));
+      trendBox.append(h('div', { class: 'muted' }, `${label} trend (last 6h, ${pts.length} samples)`));
       trendBox.append(sparkline(pts.map((p) => p.value)));
     } catch {
-      /* 趋势可空 */
+      /* trend may be empty */
     }
   };
   const refresh = async (): Promise<void> => {
@@ -91,7 +91,7 @@ export async function pageMonitor(ctx: Ctx): Promise<void> {
 
   metricSel.addEventListener('change', () => void refreshTrend());
 
-  // 自动刷新（10s 轮询，开关控制）；离开页面/会话失效时 onTeardown 停掉。
+  // Auto-refresh (10s polling, toggle-controlled); onTeardown stops it when leaving the page or the session expires.
   let timer: ReturnType<typeof setInterval> | null = null;
   const stop = (): void => {
     if (timer !== null) {
@@ -109,10 +109,10 @@ export async function pageMonitor(ctx: Ctx): Promise<void> {
     h(
       'div',
       { class: 'row' },
-      h('button', { class: 'ghost', onclick: refresh }, '刷新'),
-      h('span', { class: 'muted' }, '趋势指标'),
+      h('button', { class: 'ghost', onclick: refresh }, 'Refresh'),
+      h('span', { class: 'muted' }, 'Trend metric'),
       metricSel,
-      h('label', { style: 'display:inline-flex;align-items:center;gap:4px;margin:0' }, autoChk, '自动刷新 10s'),
+      h('label', { style: 'display:inline-flex;align-items:center;gap:4px;margin:0' }, autoChk, 'Auto-refresh 10s'),
     ),
     grid,
     err,
@@ -122,7 +122,7 @@ export async function pageMonitor(ctx: Ctx): Promise<void> {
 }
 
 function sparkline(values: number[]): HTMLElement {
-  if (values.length === 0) return h('div', { class: 'muted' }, '暂无数据');
+  if (values.length === 0) return h('div', { class: 'muted' }, 'No data');
   const w = 600;
   const ht = 80;
   const max = Math.max(1, ...values);
@@ -141,22 +141,22 @@ function sparkline(values: number[]): HTMLElement {
   return svg as unknown as HTMLElement;
 }
 
-// ───────────────────────── 数据分析 ─────────────────────────
+// ───────────────────────── Analytics ─────────────────────────
 export async function pageAnalytics(ctx: Ctx): Promise<void> {
   const { api, root } = ctx;
   clear(root);
-  root.append(h('h2', {}, '数据分析'));
+  root.append(h('h2', {}, 'Analytics'));
   const err = h('div', { class: 'err' });
   const body = h('div', {});
   const daysSel = h('select', { style: 'margin-left:8px' },
-    h('option', { value: '1' }, '今天'),
-    h('option', { value: '7', selected: 'selected' }, '近 7 天'),
-    h('option', { value: '30' }, '近 30 天'),
+    h('option', { value: '1' }, 'Today'),
+    h('option', { value: '7', selected: 'selected' }, 'Last 7 days'),
+    h('option', { value: '30' }, 'Last 30 days'),
   ) as HTMLSelectElement;
-  const refreshBtn = h('button', { class: 'ghost' }, '刷新');
+  const refreshBtn = h('button', { class: 'ghost' }, 'Refresh');
 
   root.append(
-    h('div', { class: 'row' }, h('span', { class: 'muted' }, '时间范围'), daysSel, refreshBtn),
+    h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Time range'), daysSel, refreshBtn),
     body,
     err,
   );
@@ -177,49 +177,49 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       api.analyticsEvents('retention', days),
     ]);
 
-    // 监控概览（自采指标 + 工单）
+    // Monitoring overview (self-collected metrics + tickets)
     if (summary.status === 'fulfilled') {
       const s = summary.value;
-      const t = h('table', {}, h('tr', {}, h('th', {}, '指标'), h('th', {}, '24h 均值'), h('th', {}, '24h 峰值'), h('th', {}, '采样数')));
+      const t = h('table', {}, h('tr', {}, h('th', {}, 'Metric'), h('th', {}, '24h avg'), h('th', {}, '24h peak'), h('th', {}, 'Samples')));
       for (const [k, v] of Object.entries(s.last24h)) {
         t.append(h('tr', {}, h('td', {}, k), h('td', {}, v.avg.toFixed(1)), h('td', {}, String(v.peak)), h('td', {}, String(v.samples))));
       }
-      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, '近 24 小时自采监控'), t));
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, 'Self-collected metrics (last 24h)'), t));
 
-      const tk = h('table', {}, h('tr', {}, h('th', {}, '工单状态'), h('th', {}, '数量')));
+      const tk = h('table', {}, h('tr', {}, h('th', {}, 'Ticket status'), h('th', {}, 'Count')));
       for (const [k, v] of Object.entries(s.tickets)) {
         tk.append(h('tr', {}, h('td', {}, pill(k, k)), h('td', {}, String(v))));
       }
-      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, '补偿工单概览'), tk));
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, 'Compensation tickets overview'), tk));
     }
 
-    // 埋点服务不可用提示（仅显示一次）
+    // Analytics service unavailable notice (shown at most once)
     const analyticsUnavailable =
       evCounts.status === 'fulfilled' && !evCounts.value.available;
     if (analyticsUnavailable) {
-      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, '埋点服务未配置（NW_ANALYTICS_BASE_URL）')));
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, 'Analytics service not configured (NW_ANALYTICS_BASE_URL)')));
       return;
     }
 
-    // DAU 趋势
+    // DAU trend
     if (dau.status === 'fulfilled' && dau.value.available && dau.value.dau?.length) {
       const pts = dau.value.dau;
-      const t = h('table', {}, h('tr', {}, h('th', {}, '日期'), h('th', {}, 'DAU（日活设备）')));
+      const t = h('table', {}, h('tr', {}, h('th', {}, 'Date'), h('th', {}, 'DAU (daily active devices)')));
       for (const p of pts) t.append(h('tr', {}, h('td', {}, p.date), h('td', { style: 'text-align:right' }, String(p.dau))));
-      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `DAU 趋势（近 ${days} 天）`), sparkline(pts.map((p) => p.dau)), t));
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `DAU trend (last ${days} days)`), sparkline(pts.map((p) => p.dau)), t));
     }
 
-    // D1/D7 留存
+    // D1/D7 retention
     if (retention.status === 'fulfilled' && retention.value.available && retention.value.retention?.length) {
       const rows = retention.value.retention.filter((r) => r.cohort_size > 0);
       if (rows.length > 0) {
         const t = h('table', {},
           h('tr', {},
-            h('th', {}, '日期'),
-            h('th', { style: 'text-align:right' }, '队列'),
-            h('th', { style: 'text-align:right' }, 'D1 留存'),
+            h('th', {}, 'Date'),
+            h('th', { style: 'text-align:right' }, 'Cohort'),
+            h('th', { style: 'text-align:right' }, 'D1 ret'),
             h('th', { style: 'text-align:right' }, 'D1%'),
-            h('th', { style: 'text-align:right' }, 'D7 留存'),
+            h('th', { style: 'text-align:right' }, 'D7 ret'),
             h('th', { style: 'text-align:right' }, 'D7%'),
           ),
         );
@@ -233,16 +233,16 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
             h('td', { style: 'text-align:right' }, r.d7_rate !== undefined ? pct(r.d7_rate) : '—'),
           ));
         }
-        body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `D1/D7 滚动留存（近 ${days} 天，—=数据不足）`), t));
+        body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Retention cohorts (last ${days} days, — = insufficient data)`), t));
       }
     }
 
-    // 地区分布
+    // Region distribution
     if (regions.status === 'fulfilled' && regions.value.available && regions.value.region_dist?.length) {
       const rows = regions.value.region_dist;
       const total = rows.reduce((s, r) => s + r.devices, 0);
       const t = h('table', {},
-        h('tr', {}, h('th', {}, '语言/地区'), h('th', { style: 'text-align:right' }, '设备数'), h('th', {}, '占比')),
+        h('tr', {}, h('th', {}, 'Region'), h('th', { style: 'text-align:right' }, 'Devices'), h('th', {}, 'Share')),
       );
       for (const r of rows) {
         t.append(h('tr', {},
@@ -251,15 +251,15 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
           h('td', {}, barCell(r.devices, total)),
         ));
       }
-      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `地区分布（近 ${days} 天）`), t));
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Region distribution (last ${days} days)`), t));
     }
 
-    // 设备/OS 分布
+    // Device/OS distribution
     if (osDist.status === 'fulfilled' && osDist.value.available && osDist.value.os_dist?.length) {
       const rows = osDist.value.os_dist;
       const total = rows.reduce((s, r) => s + r.devices, 0);
       const t = h('table', {},
-        h('tr', {}, h('th', {}, '操作系统'), h('th', { style: 'text-align:right' }, '设备数'), h('th', {}, '占比')),
+        h('tr', {}, h('th', {}, 'OS'), h('th', { style: 'text-align:right' }, 'Devices'), h('th', {}, 'Share')),
       );
       for (const r of rows) {
         t.append(h('tr', {},
@@ -268,15 +268,15 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
           h('td', {}, barCell(r.devices, total)),
         ));
       }
-      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `设备分布（近 ${days} 天，session_start）`), t));
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `OS distribution (last ${days} days, session_start)`), t));
     }
 
-    // 登录时段（UTC）
+    // Login time distribution (UTC)
     if (loginHour.status === 'fulfilled' && loginHour.value.available && loginHour.value.login_hour?.length) {
       const rows = loginHour.value.login_hour;
       const maxCount = Math.max(1, ...rows.map((r) => r.count));
       const t = h('table', {},
-        h('tr', {}, h('th', {}, 'UTC 时'), h('th', { style: 'text-align:right' }, 'session 数'), h('th', {}, '分布')),
+        h('tr', {}, h('th', {}, 'Hour (UTC)'), h('th', { style: 'text-align:right' }, 'Sessions'), h('th', {}, 'Distribution')),
       );
       for (const r of rows) {
         const label = `${String(r.hour).padStart(2, '0')}:00`;
@@ -286,10 +286,10 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
           h('td', {}, barCell(r.count, maxCount)),
         ));
       }
-      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `登录时段（UTC，近 ${days} 天，session_start）`), t));
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Login hour distribution (last ${days} days, session_start)`), t));
     }
 
-    // 漏斗转化
+    // Funnel conversion
     if (funnel.status === 'fulfilled' && funnel.value.available && funnel.value.funnel?.length) {
       const rows = funnel.value.funnel;
       const platforms = [...new Set(rows.map((r) => r.platform))].sort();
@@ -301,7 +301,7 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
         const latest = platRows.filter((r) => r.date === latestDate);
         const byStep = new Map(latest.map((r) => [r.funnel_step, r]));
 
-        const t = h('table', {}, h('tr', {}, h('th', {}, '步骤'), h('th', {}, '人次'), h('th', {}, '转化率')));
+        const t = h('table', {}, h('tr', {}, h('th', {}, 'Funnel step'), h('th', {}, 'Count'), h('th', {}, 'Conversion rate')));
         for (const step of steps) {
           const row = byStep.get(step);
           t.append(h('tr', {},
@@ -310,23 +310,23 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
             h('td', { style: 'text-align:right' }, row?.conversion_rate !== undefined ? pct(row.conversion_rate) : '—'),
           ));
         }
-        body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `漏斗转化（${plat}，${latestDate}）`), t));
+        body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Conversion funnel (${plat}, ${latestDate})`), t));
       }
     }
 
-    // 事件计数明细
+    // Event count detail
     if (evCounts.status === 'fulfilled' && evCounts.value.available && evCounts.value.event_counts?.length) {
       const rows = evCounts.value.event_counts;
       const events = [...new Set(rows.map((r) => r.event))].sort();
       const dates = [...new Set(rows.map((r) => r.date))].sort();
       const lookup = new Map(rows.map((r) => [`${r.date}:${r.event}`, r.count]));
 
-      const header = h('tr', {}, h('th', {}, '日期'), ...events.map((e) => h('th', {}, e)));
+      const header = h('tr', {}, h('th', {}, 'Date'), ...events.map((e) => h('th', {}, e)));
       const t = h('table', {}, header);
       for (const date of dates) {
         t.append(h('tr', {}, h('td', {}, date), ...events.map((e) => h('td', { style: 'text-align:right' }, String(lookup.get(`${date}:${e}`) ?? 0)))));
       }
-      body.append(h('div', { class: 'card', style: 'overflow-x:auto' }, h('div', { class: 'muted' }, `事件计数明细（近 ${days} 天）`), t));
+      body.append(h('div', { class: 'card', style: 'overflow-x:auto' }, h('div', { class: 'muted' }, `Event counts (last ${days} days)`), t));
     }
 
     if (evCounts.status === 'rejected') showErr(err, evCounts.reason);
@@ -349,19 +349,19 @@ function barCell(value: number, max: number): HTMLElement {
   return h('span', {}, bar, ` ${pct(ratio)}`);
 }
 
-// ───────────────────────── 玩家查询 ─────────────────────────
+// ───────────────────────── Player lookup ─────────────────────────
 export function pagePlayer(ctx: Ctx): void {
   const { api, root } = ctx;
   clear(root);
-  root.append(h('h2', {}, '玩家查询'));
-  const input = h('input', { placeholder: '昵称 / 登录账号 / 公开 id / accountId（≥2 字符）' });
+  root.append(h('h2', {}, 'Player lookup'));
+  const input = h('input', { placeholder: 'Display name / login / publicId / accountId (≥2 chars)' });
   const err = h('div', { class: 'err' });
   const listOut = h('div', { class: 'card' });
   listOut.style.display = 'none';
   const detailOut = h('div', { class: 'card' });
   detailOut.style.display = 'none';
 
-  // 选中某行 → 拉详情。优先按 publicId（与旧路径一致），无 publicId 则按 accountId。
+  // Select a row → fetch detail. Prefer publicId (consistent with the old path); fall back to accountId if absent.
   const showDetail = async (row: PlayerSummary): Promise<void> => {
     err.textContent = '';
     detailOut.style.display = 'none';
@@ -371,16 +371,16 @@ export function pagePlayer(ctx: Ctx): void {
         : await api.playerByAccount(row.accountId);
       clear(detailOut);
       const rows: [string, string][] = [
-        ['公开 id', p.publicId ? '#' + p.publicId : '—'],
+        ['Public ID', p.publicId ? '#' + p.publicId : '—'],
         ['accountId', p.accountId ?? row.accountId],
-        ['昵称', p.displayName ?? '—'],
-        ['段位', p.rank ?? '—'],
+        ['Display name', p.displayName ?? '—'],
+        ['Rank', p.rank ?? '—'],
         ['ELO', p.elo !== undefined ? String(p.elo) : '—'],
-        ['胜 / 负', p.wins !== undefined ? `${p.wins} / ${p.losses ?? 0}` : '—'],
+        ['Wins / Losses', p.wins !== undefined ? `${p.wins} / ${p.losses ?? 0}` : '—'],
       ];
       const t = h('table', {});
       for (const [k, v] of rows) t.append(h('tr', {}, h('th', {}, k), h('td', {}, v)));
-      detailOut.append(h('h3', {}, '玩家详情'), t);
+      detailOut.append(h('h3', {}, 'Player details'), t);
       detailOut.style.display = '';
     } catch (e) {
       showErr(err, e);
@@ -395,13 +395,13 @@ export function pagePlayer(ctx: Ctx): void {
       const hits = await api.searchPlayers(input.value.trim());
       clear(listOut);
       if (hits.length === 0) {
-        listOut.append(h('div', { class: 'muted' }, '无匹配玩家。'));
+        listOut.append(h('div', { class: 'muted' }, 'No matching players.'));
         listOut.style.display = '';
         return;
       }
       const t = h('table', {});
       t.append(
-        h('tr', {}, h('th', {}, '公开 id'), h('th', {}, '昵称'), h('th', {}, '登录账号'), h('th', {}, '')),
+        h('tr', {}, h('th', {}, 'Public ID'), h('th', {}, 'Display name'), h('th', {}, 'Login'), h('th', {}, '')),
       );
       for (const row of hits) {
         t.append(
@@ -411,11 +411,11 @@ export function pagePlayer(ctx: Ctx): void {
             h('td', {}, row.publicId ? '#' + row.publicId : '—'),
             h('td', {}, row.displayName ?? '—'),
             h('td', {}, row.loginId ?? '—'),
-            h('td', {}, h('button', { onclick: () => void showDetail(row) }, '详情')),
+            h('td', {}, h('button', { onclick: () => void showDetail(row) }, 'Details')),
           ),
         );
       }
-      listOut.append(h('div', { class: 'muted' }, `命中 ${hits.length} 条`), t);
+      listOut.append(h('div', { class: 'muted' }, `${hits.length} result${hits.length === 1 ? '' : 's'}`), t);
       listOut.style.display = '';
     } catch (e) {
       showErr(err, e);
@@ -426,14 +426,14 @@ export function pagePlayer(ctx: Ctx): void {
     if (e.key === 'Enter') void go();
   });
   root.append(
-    h('div', { class: 'card' }, h('div', { class: 'row' }, input, h('button', { onclick: go }, '搜索')), err),
+    h('div', { class: 'card' }, h('div', { class: 'row' }, input, h('button', { onclick: go }, 'Search')), err),
     listOut,
     detailOut,
   );
 }
 
-// ───────────────────────── 反作弊审查队列（S9-7）─────────────────────────
-/** 把 statKey→数量 map 渲染成紧凑文本（空 → —）。 */
+// ───────────────────────── Anti-cheat review queue (S9-7) ─────────────────────────
+/** Render a statKey→count map as compact text (empty → —). */
 function fmtStats(m: Record<string, number> | undefined): string {
   const ks = Object.keys(m ?? {});
   if (ks.length === 0) return '—';
@@ -443,15 +443,15 @@ function fmtStats(m: Record<string, number> | undefined): string {
 export async function pageSuspicions(ctx: Ctx): Promise<void> {
   const { api, root } = ctx;
   clear(root);
-  root.append(h('h2', {}, '反作弊审查（成就统计超报）'));
+  root.append(h('h2', {}, 'Anti-cheat review (achievement stat overclaim)'));
   const err = h('div', { class: 'err' });
-  const acct = h('input', { placeholder: '按 accountId 过滤（可空）' });
+  const acct = h('input', { placeholder: 'Filter by accountId (optional)' });
   const statusSel = h(
     'select',
     {},
-    h('option', { value: 'open' }, '待复核 (open)'),
-    h('option', { value: 'reviewed' }, '已复核 (reviewed)'),
-    h('option', { value: 'all' }, '全部'),
+    h('option', { value: 'open' }, 'Pending (open)'),
+    h('option', { value: 'reviewed' }, 'Reviewed'),
+    h('option', { value: 'all' }, 'All'),
   ) as HTMLSelectElement;
   const out = h('div', { class: 'card' });
 
@@ -465,21 +465,21 @@ export async function pageSuspicions(ctx: Ctx): Promise<void> {
         limit: 100,
       });
       if (rows.length === 0) {
-        out.append(h('div', { class: 'muted' }, '无审查记录。'));
+        out.append(h('div', { class: 'muted' }, 'No review records.'));
         return;
       }
       const t = h('table', {});
       t.append(
         h('tr', {},
-          h('th', {}, '时间'),
-          h('th', {}, '玩家'),
-          h('th', {}, '对局'),
-          h('th', {}, '上报'),
-          h('th', {}, '复算'),
-          h('th', {}, '超报'),
-          h('th', {}, '已回滚'),
+          h('th', {}, 'Time'),
+          h('th', {}, 'Player'),
+          h('th', {}, 'Room'),
+          h('th', {}, 'Reported'),
+          h('th', {}, 'Authoritative'),
+          h('th', {}, 'Overclaim'),
+          h('th', {}, 'Rolled back'),
           h('th', {}, 'suspicion'),
-          h('th', {}, '状态'),
+          h('th', {}, 'Status'),
         ),
       );
       for (const r of rows as AntiCheatReviewView[]) {
@@ -504,28 +504,28 @@ export async function pageSuspicions(ctx: Ctx): Promise<void> {
   };
 
   root.append(
-    h('div', { class: 'card' }, h('div', { class: 'row' }, acct, statusSel, h('button', { onclick: load }, '查询')), err),
+    h('div', { class: 'card' }, h('div', { class: 'row' }, acct, statusSel, h('button', { onclick: load }, 'Query')), err),
     out,
   );
   await load();
 }
 
-// ───────────────────────── 补偿工单 ─────────────────────────
+// ───────────────────────── Compensation tickets ─────────────────────────
 export async function pageTickets(ctx: Ctx): Promise<void> {
   const { api, session, root } = ctx;
   const caps = session.capabilities;
   clear(root);
-  root.append(h('h2', {}, '补偿工单'));
+  root.append(h('h2', {}, 'Compensation tickets'));
 
   const canInitiateSingle = caps.includes('comp.initiate.single');
   const canInitiateGlobal = caps.includes('comp.initiate.global');
 
   if (canInitiateSingle || canInitiateGlobal) root.append(ticketForm(ctx, () => void reload()));
 
-  const filterSel = h('select', {}, ...['', 'pending', 'approved', 'executed', 'rejected', 'cancelled', 'failed'].map((s) => h('option', { value: s }, s || '全部')));
+  const filterSel = h('select', {}, ...['', 'pending', 'approved', 'executed', 'rejected', 'cancelled', 'failed'].map((s) => h('option', { value: s }, s || 'All')));
   const listBox = h('div', { class: 'card' });
   const err = h('div', { class: 'err' });
-  root.append(h('div', { class: 'row' }, h('span', { class: 'muted' }, '状态过滤'), filterSel, h('button', { class: 'ghost', onclick: () => void reload() }, '刷新')), err, listBox);
+  root.append(h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Status filter'), filterSel, h('button', { class: 'ghost', onclick: () => void reload() }, 'Refresh')), err, listBox);
   filterSel.addEventListener('change', () => void reload());
 
   const reload = async (): Promise<void> => {
@@ -534,10 +534,10 @@ export async function pageTickets(ctx: Ctx): Promise<void> {
       const tickets = await api.tickets(filterSel.value || undefined);
       clear(listBox);
       if (tickets.length === 0) {
-        listBox.append(h('div', { class: 'muted' }, '暂无工单'));
+        listBox.append(h('div', { class: 'muted' }, 'No tickets'));
         return;
       }
-      const t = h('table', {}, h('tr', {}, h('th', {}, '状态'), h('th', {}, '范围'), h('th', {}, '目标'), h('th', {}, '附件'), h('th', {}, '事由'), h('th', {}, '发起'), h('th', {}, '审批'), h('th', {}, '操作')));
+      const t = h('table', {}, h('tr', {}, h('th', {}, 'Status'), h('th', {}, 'Scope'), h('th', {}, 'Target'), h('th', {}, 'Attachments'), h('th', {}, 'Reason'), h('th', {}, 'Initiated'), h('th', {}, 'Approved'), h('th', {}, 'Actions')));
       for (const tk of tickets) t.append(ticketRow(ctx, tk, () => void reload()));
       listBox.append(t);
     } catch (e) {
@@ -548,10 +548,10 @@ export async function pageTickets(ctx: Ctx): Promise<void> {
 }
 
 function describeTarget(target: CompTarget): string {
-  return 'publicId' in target ? '#' + target.publicId : `全服(${target.filter.kind})`;
+  return 'publicId' in target ? '#' + target.publicId : `all-server(${target.filter.kind})`;
 }
 function describeAttachments(att: CompAttachment[]): string {
-  return att.map((a) => (a.kind === 'coins' ? `${a.count ?? 0}币` : `${a.kind}:${a.id ?? '?'}×${a.count ?? 1}`)).join(', ') || '无';
+  return att.map((a) => (a.kind === 'coins' ? `${a.count ?? 0} coins` : `${a.kind}:${a.id ?? '?'}×${a.count ?? 1}`)).join(', ') || 'none';
 }
 
 function ticketRow(ctx: Ctx, tk: CompTicketView, onChange: () => void): HTMLElement {
@@ -569,7 +569,7 @@ function ticketRow(ctx: Ctx, tk: CompTicketView, onChange: () => void): HTMLElem
   };
   const buttons: HTMLElement[] = [];
   const isMine = tk.initiatedBy === session.admin.id;
-  // 审批能力（与后端同义）：global→approve.global；overquota→approve.single.overquota；否则 approve.single。
+  // Approval capability (mirrors the backend): global→approve.global; overquota→approve.single.overquota; otherwise approve.single.
   const approveCap =
     tk.scope === 'global'
       ? 'comp.approve.global'
@@ -579,33 +579,34 @@ function ticketRow(ctx: Ctx, tk: CompTicketView, onChange: () => void): HTMLElem
   const hasApproveCap = caps.includes(approveCap as never);
   if (tk.status === 'pending') {
     if (hasApproveCap && !isMine) {
-      buttons.push(h('button', { onclick: () => void act('approve') }, '批准'));
-      buttons.push(h('button', { class: 'warn', onclick: () => void act('reject', prompt('拒绝原因？') ?? '') }, '拒绝'));
+      buttons.push(h('button', { onclick: () => void act('approve') }, 'Approve'));
+      buttons.push(h('button', { class: 'warn', onclick: () => void act('reject', prompt('Rejection reason?') ?? '') }, 'Reject'));
     } else if (hasApproveCap && isMine) {
-      // 单超管自批过渡：UI 乐观显示「批准」；后端最终裁决——若存在第二合格审批人会 403（恢复四眼）。
-      // 拒绝无自批例外（用撤销代替），故自批时不显示「拒绝」。
+      // Single-super-admin self-approval transitional mode: the UI optimistically shows "Approve"; the backend
+      // makes the final call — a 403 is returned if a second qualified approver exists (restoring four-eyes).
+      // Rejection has no self-approval exemption (use cancel instead), so "Reject" is not shown during self-approval.
       buttons.push(
         h(
           'button',
-          { title: '无其他合格审批人时可自批（后端裁决，会留痕）', onclick: () => void act('approve') },
-          '批准（自批）',
+          { title: 'Self-approval allowed when no other qualified approver exists (backend decides, audit trail kept)', onclick: () => void act('approve') },
+          'Approve (self)',
         ),
       );
     }
-    if (isMine || session.admin.role === 'super') buttons.push(h('button', { class: 'ghost', onclick: () => void act('cancel') }, '撤销'));
+    if (isMine || session.admin.role === 'super') buttons.push(h('button', { class: 'ghost', onclick: () => void act('cancel') }, 'Cancel'));
   }
-  if (tk.status === 'failed' && hasApproveCap) buttons.push(h('button', { class: 'warn', onclick: () => void act('retry') }, '重试'));
+  if (tk.status === 'failed' && hasApproveCap) buttons.push(h('button', { class: 'warn', onclick: () => void act('retry') }, 'Retry'));
 
   return h(
     'tr',
     {},
-    h('td', {}, pill(tk.status, tk.status), tk.amountTier === 'overquota' ? h('div', { class: 'muted' }, '超额') : null),
+    h('td', {}, pill(tk.status, tk.status), tk.amountTier === 'overquota' ? h('div', { class: 'muted' }, 'overquota') : null),
     h('td', {}, tk.scope),
     h('td', {}, describeTarget(tk.target)),
     h('td', {}, describeAttachments(tk.mail.attachments)),
     h('td', {}, tk.reason),
     h('td', {}, tk.initiatedByName ?? tk.initiatedBy.slice(0, 8), h('div', { class: 'muted' }, fmtTime(tk.initiatedAt))),
-    h('td', {}, tk.approvedByName ?? (tk.approvedBy ? tk.approvedBy.slice(0, 8) : '—'), tk.recipientCount !== undefined ? h('div', { class: 'muted' }, `命中 ${tk.recipientCount}`) : null, tk.error ? h('div', { class: 'err' }, tk.error) : null),
+    h('td', {}, tk.approvedByName ?? (tk.approvedBy ? tk.approvedBy.slice(0, 8) : '—'), tk.recipientCount !== undefined ? h('div', { class: 'muted' }, `${tk.recipientCount} recipients`) : null, tk.error ? h('div', { class: 'err' }, tk.error) : null),
     h('td', {}, ...buttons, err),
   );
 }
@@ -615,16 +616,16 @@ function ticketForm(ctx: Ctx, onCreated: () => void): HTMLElement {
   const caps = session.capabilities;
   const err = h('div', { class: 'err' });
 
-  const scopeSel = h('select', {}, h('option', { value: 'single' }, '个人补偿'), ...(caps.includes('comp.initiate.global') ? [h('option', { value: 'global' }, '全服补偿')] : []));
-  const publicIdInput = h('input', { placeholder: '收件人 9 位公开 id', maxlength: '9' });
-  const subjectInput = h('input', { placeholder: '邮件标题' });
-  const bodyInput = h('textarea', { placeholder: '邮件正文' });
+  const scopeSel = h('select', {}, h('option', { value: 'single' }, 'Individual compensation'), ...(caps.includes('comp.initiate.global') ? [h('option', { value: 'global' }, 'Global compensation')] : []));
+  const publicIdInput = h('input', { placeholder: 'Recipient 9-digit public ID', maxlength: '9' });
+  const subjectInput = h('input', { placeholder: 'Mail subject' });
+  const bodyInput = h('textarea', { placeholder: 'Mail body' });
   const coinsInput = h('input', { type: 'number', value: '0', min: '0' });
-  const reasonInput = h('input', { placeholder: '补偿事由（必填，审计用）' });
+  const reasonInput = h('input', { placeholder: 'Reason (required, for audit)' });
   const expireInput = h('input', { type: 'number', value: '30', min: '1' });
   const previewOut = h('span', { class: 'muted' });
 
-  const targetRow = h('div', {}, h('label', {}, '收件人公开 id'), publicIdInput);
+  const targetRow = h('div', {}, h('label', {}, 'Recipient public ID'), publicIdInput);
   scopeSel.addEventListener('change', () => {
     targetRow.style.display = scopeSel.value === 'single' ? '' : 'none';
   });
@@ -643,7 +644,7 @@ function ticketForm(ctx: Ctx, onCreated: () => void): HTMLElement {
         mail: { subject: subjectInput.value.trim(), body: bodyInput.value.trim(), attachments, expireDays: Number(expireInput.value) || 30 },
         reason: reasonInput.value.trim(),
       });
-      showOk(err, '工单已创建，等待审批');
+      showOk(err, 'Ticket created, awaiting approval');
       subjectInput.value = '';
       bodyInput.value = '';
       coinsInput.value = '0';
@@ -657,7 +658,7 @@ function ticketForm(ctx: Ctx, onCreated: () => void): HTMLElement {
     err.textContent = '';
     try {
       const r = await api.preview(scopeSel.value as CompScope, buildTarget());
-      previewOut.textContent = `预计命中 ${r.recipientCount} 人${r.available ? '' : '（邮件后端未就绪，估算不可用）'}`;
+      previewOut.textContent = `Estimated ${r.recipientCount} recipient${r.recipientCount === 1 ? '' : 's'}${r.available ? '' : ' (mail backend not ready, estimate unavailable)'}`;
     } catch (e) {
       showErr(err, e);
     }
@@ -666,29 +667,29 @@ function ticketForm(ctx: Ctx, onCreated: () => void): HTMLElement {
   return h(
     'div',
     { class: 'card' },
-    h('div', { class: 'muted' }, '发起补偿工单（发起人 ≠ 审批人；超额/全服需超管审批）'),
-    h('label', {}, '范围'),
+    h('div', { class: 'muted' }, 'Create compensation ticket (initiator ≠ approver; overquota/global requires super-admin approval)'),
+    h('label', {}, 'Scope'),
     scopeSel,
     targetRow,
-    h('label', {}, '邮件标题'),
+    h('label', {}, 'Mail subject'),
     subjectInput,
-    h('label', {}, '邮件正文'),
+    h('label', {}, 'Mail body'),
     bodyInput,
-    h('div', { class: 'row' }, h('div', {}, h('label', {}, '金币附件'), coinsInput), h('div', {}, h('label', {}, '有效天数'), expireInput)),
-    h('label', {}, '补偿事由'),
+    h('div', { class: 'row' }, h('div', {}, h('label', {}, 'Coins attachment'), coinsInput), h('div', {}, h('label', {}, 'Expire days'), expireInput)),
+    h('label', {}, 'Reason'),
     reasonInput,
-    h('div', { class: 'row' }, h('button', { onclick: submit }, '提交工单'), h('button', { class: 'ghost', onclick: doPreview }, 'dry-run 预览'), previewOut),
+    h('div', { class: 'row' }, h('button', { onclick: submit }, 'Submit ticket'), h('button', { class: 'ghost', onclick: doPreview }, 'dry-run preview'), previewOut),
     err,
   );
 }
 
-// ───────────────────────── 审计 ─────────────────────────
+// ───────────────────────── Audit ─────────────────────────
 export async function pageAudit(ctx: Ctx): Promise<void> {
   const { api, session, root } = ctx;
   clear(root);
-  root.append(h('h2', {}, '操作审计'));
+  root.append(h('h2', {}, 'Audit log'));
   const canAll = session.capabilities.includes('audit.view.all');
-  const actorInput = h('input', { placeholder: 'actor adminId（仅超管可跨人查）' });
+  const actorInput = h('input', { placeholder: 'actor adminId (super-admin only: query other operators)' });
   const fromInput = h('input', { type: 'date' }) as HTMLInputElement;
   const toInput = h('input', { type: 'date' }) as HTMLInputElement;
   const err = h('div', { class: 'err' });
@@ -697,12 +698,12 @@ export async function pageAudit(ctx: Ctx): Promise<void> {
     h(
       'div',
       { class: 'row' },
-      canAll ? actorInput : h('span', { class: 'muted' }, '仅可查看自己的操作'),
-      h('span', { class: 'muted' }, '从'),
+      canAll ? actorInput : h('span', { class: 'muted' }, 'You can only view your own actions'),
+      h('span', { class: 'muted' }, 'From'),
       fromInput,
-      h('span', { class: 'muted' }, '至'),
+      h('span', { class: 'muted' }, 'To'),
       toInput,
-      h('button', { class: 'ghost', onclick: () => void reload() }, '刷新'),
+      h('button', { class: 'ghost', onclick: () => void reload() }, 'Refresh'),
     ),
     err,
     box,
@@ -711,18 +712,18 @@ export async function pageAudit(ctx: Ctx): Promise<void> {
     err.textContent = '';
     try {
       const fromMs = fromInput.value ? Date.parse(fromInput.value) : NaN;
-      const toMs = toInput.value ? Date.parse(toInput.value) + 24 * 3600 * 1000 : NaN; // 含当日全天
+      const toMs = toInput.value ? Date.parse(toInput.value) + 24 * 3600 * 1000 : NaN; // include the full selected day
       const entries = await api.audit({
         ...(canAll && actorInput.value.trim() ? { actor: actorInput.value.trim() } : {}),
         ...(Number.isFinite(fromMs) ? { from: fromMs } : {}),
         ...(Number.isFinite(toMs) ? { to: toMs } : {}),
       });
       clear(box);
-      const t = h('table', {}, h('tr', {}, h('th', {}, '时间'), h('th', {}, '操作人'), h('th', {}, '动作'), h('th', {}, '目标'), h('th', {}, '摘要'), h('th', {}, 'IP')));
+      const t = h('table', {}, h('tr', {}, h('th', {}, 'Time'), h('th', {}, 'Operator'), h('th', {}, 'Action'), h('th', {}, 'Target'), h('th', {}, 'Summary'), h('th', {}, 'IP')));
       for (const e of entries) {
         t.append(h('tr', {}, h('td', {}, fmtTime(e.ts)), h('td', {}, e.actorName ?? e.actor.slice(0, 8)), h('td', {}, e.action), h('td', {}, e.target ?? '—'), h('td', {}, e.summary ?? '—'), h('td', {}, e.ip ?? '—')));
       }
-      box.append(entries.length ? t : h('div', { class: 'muted' }, '暂无记录'));
+      box.append(entries.length ? t : h('div', { class: 'muted' }, 'No records'));
     } catch (e) {
       showErr(err, e);
     }
@@ -730,17 +731,17 @@ export async function pageAudit(ctx: Ctx): Promise<void> {
   await reload();
 }
 
-// ───────────────────────── 账号管理 ─────────────────────────
+// ───────────────────────── Account management ─────────────────────────
 export async function pageAccounts(ctx: Ctx): Promise<void> {
   const { api, session, root } = ctx;
   clear(root);
-  root.append(h('h2', {}, '账号管理'));
+  root.append(h('h2', {}, 'Account management'));
   const err = h('div', { class: 'err' });
 
-  // 创建账号
-  const uName = h('input', { placeholder: '登录名（≥3）' });
-  const uPass = h('input', { type: 'password', placeholder: '初始密码（≥6）' });
-  const uDisp = h('input', { placeholder: '显示名' });
+  // Create account
+  const uName = h('input', { placeholder: 'Username (≥3)' });
+  const uPass = h('input', { type: 'password', placeholder: 'Initial password (≥6)' });
+  const uDisp = h('input', { placeholder: 'Display name' });
   const uRole = h('select', {}, ...['viewer', 'support', 'ops', 'super'].map((r) => h('option', { value: r }, r)));
   const create = async (): Promise<void> => {
     err.textContent = '';
@@ -750,13 +751,13 @@ export async function pageAccounts(ctx: Ctx): Promise<void> {
       uPass.value = '';
       uDisp.value = '';
       await reload();
-      showOk(err, '账号已创建');
+      showOk(err, 'Account created');
     } catch (e) {
       showErr(err, e);
     }
   };
   root.append(
-    h('div', { class: 'card' }, h('div', { class: 'muted' }, '新建运维账号'), h('div', { class: 'row' }, uName, uPass, uDisp, uRole, h('button', { onclick: create }, '创建')), err),
+    h('div', { class: 'card' }, h('div', { class: 'muted' }, 'Create ops account'), h('div', { class: 'row' }, uName, uPass, uDisp, uRole, h('button', { onclick: create }, 'Create')), err),
   );
 
   const box = h('div', { class: 'card' });
@@ -765,7 +766,7 @@ export async function pageAccounts(ctx: Ctx): Promise<void> {
     try {
       const accts = await api.accounts();
       clear(box);
-      const t = h('table', {}, h('tr', {}, h('th', {}, '登录名'), h('th', {}, '显示名'), h('th', {}, '角色'), h('th', {}, '状态'), h('th', {}, '最后登录'), h('th', {}, '操作')));
+      const t = h('table', {}, h('tr', {}, h('th', {}, 'Username'), h('th', {}, 'Display name'), h('th', {}, 'Role'), h('th', {}, 'Status'), h('th', {}, 'Last login'), h('th', {}, 'Actions')));
       for (const a of accts) t.append(accountRow(ctx, a, () => void reload()));
       box.append(t);
     } catch (e) {
@@ -799,12 +800,12 @@ function accountRow(ctx: Ctx, a: AdminAccountView, onChange: () => void): HTMLEl
     }
   };
   const reset = async (): Promise<void> => {
-    const pw = prompt(`为 ${a.username} 设置新密码（≥6）`);
+    const pw = prompt(`Set new password for ${a.username} (≥6)`);
     if (!pw) return;
     err.textContent = '';
     try {
       await api.resetPassword(a.id, pw);
-      showOk(err, '密码已重置');
+      showOk(err, 'Password reset');
     } catch (e) {
       showErr(err, e);
     }
@@ -812,24 +813,24 @@ function accountRow(ctx: Ctx, a: AdminAccountView, onChange: () => void): HTMLEl
   return h(
     'tr',
     {},
-    h('td', {}, a.username, self ? h('span', { class: 'muted' }, '（你）') : null),
+    h('td', {}, a.username, self ? h('span', { class: 'muted' }, '(you)') : null),
     h('td', {}, a.displayName),
-    h('td', {}, roleSel, h('button', { class: 'ghost', onclick: saveRole }, '改')),
+    h('td', {}, roleSel, h('button', { class: 'ghost', onclick: saveRole }, 'Save')),
     h('td', {}, a.disabled ? pill('disabled', 'failed') : pill('active', 'executed')),
     h('td', {}, fmtTime(a.lastLoginAt ?? 0)),
-    h('td', {}, h('button', { class: a.disabled ? 'ghost' : 'danger', disabled: self, onclick: toggleDisable }, a.disabled ? '启用' : '禁用'), h('button', { class: 'ghost', onclick: reset }, '重置密码'), err),
+    h('td', {}, h('button', { class: a.disabled ? 'ghost' : 'danger', disabled: self, onclick: toggleDisable }, a.disabled ? 'Enable' : 'Disable'), h('button', { class: 'ghost', onclick: reset }, 'Reset password'), err),
   );
 }
 
-// ───────────────────────── 天梯赛季（SE-3）─────────────────────────
+// ───────────────────────── Ladder season (SE-3) ─────────────────────────
 export async function pageLadderSeason(ctx: Ctx): Promise<void> {
   const { api, root } = ctx;
   clear(root);
-  root.append(h('h2', {}, '天梯赛季管理'));
+  root.append(h('h2', {}, 'Ladder season'));
 
-  const info = h('div', { class: 'card' }, '加载中…');
+  const info = h('div', { class: 'card' }, 'Loading...');
   const rollErr = h('div', { class: 'err' });
-  const rollBtn = h('button', {}, '开启新赛季') as HTMLButtonElement;
+  const rollBtn = h('button', {}, 'Roll season') as HTMLButtonElement;
 
   const MS_PER_DAY = 86400_000;
   const WARNING_DAYS = 3;
@@ -838,7 +839,7 @@ export async function pageLadderSeason(ctx: Ctx): Promise<void> {
     try {
       const s = await api.ladderGetCurrentSeason();
       if (!s) {
-        info.textContent = 'meta 不可达，无法读取赛季信息。';
+        info.textContent = 'Meta unreachable, cannot read season info.';
         return;
       }
       const now = Date.now();
@@ -847,12 +848,12 @@ export async function pageLadderSeason(ctx: Ctx): Promise<void> {
       clear(info);
       info.append(
         h('table', {},
-          h('tr', {}, h('th', {}, '赛季'), h('td', {}, `第 ${s.seasonNo} 赛季`)),
-          h('tr', {}, h('th', {}, '开始'), h('td', {}, fmtTime(s.startAt))),
-          h('tr', {}, h('th', {}, '结束'), h('td', {}, fmtTime(s.endAt))),
-          h('tr', {}, h('th', {}, '状态'), h('td', {}, s.state)),
-          h('tr', {}, h('th', {}, '剩余'), h('td', { style: near ? 'color:var(--warn)' : '' },
-            daysLeft > 0 ? `${daysLeft} 天${near ? ' ⚠ 即将结束' : ''}` : '已到期')),
+          h('tr', {}, h('th', {}, 'Season'), h('td', {}, `Season ${s.seasonNo}`)),
+          h('tr', {}, h('th', {}, 'Start'), h('td', {}, fmtTime(s.startAt))),
+          h('tr', {}, h('th', {}, 'End'), h('td', {}, fmtTime(s.endAt))),
+          h('tr', {}, h('th', {}, 'State'), h('td', {}, s.state)),
+          h('tr', {}, h('th', {}, 'Remaining'), h('td', { style: near ? 'color:var(--warn)' : '' },
+            daysLeft > 0 ? `${daysLeft} day${daysLeft === 1 ? '' : 's'}${near ? ' ⚠ ending soon' : ''}` : 'Expired')),
         ),
       );
     } catch (e) {
@@ -865,7 +866,7 @@ export async function pageLadderSeason(ctx: Ctx): Promise<void> {
     rollBtn.disabled = true;
     try {
       const s = await api.ladderRollSeason();
-      showOk(rollErr, `已推进至第 ${s.seasonNo} 赛季`);
+      showOk(rollErr, `Advanced to Season ${s.seasonNo}`);
       await refresh();
     } catch (e) {
       showErr(rollErr, e);
@@ -878,10 +879,10 @@ export async function pageLadderSeason(ctx: Ctx): Promise<void> {
   await refresh();
 }
 
-// ── 功能开关（feature flags，FEATURE_FLAGS_DESIGN §5）──
+// ── Feature flags (FEATURE_FLAGS_DESIGN §5) ──
 const FLAG_PLATFORMS: FlagPlatform[] = ['web', 'wechat', 'crazygames'];
 
-/** 逗号/换行分隔字符串 → 去空裁剪数组。 */
+/** Comma- or newline-separated string → trimmed, non-empty array. */
 function parseList(raw: string): string[] {
   return raw
     .split(/[\n,]/)
@@ -893,11 +894,11 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
   const { api, root } = ctx;
   clear(root);
   root.append(
-    h('h2', {}, '功能开关 Feature Flags'),
+    h('h2', {}, 'Feature flags'),
     h('div', { class: 'muted', style: 'margin-bottom:8px' },
-      '运营全局开关 + 定向（比例/区域/平台/白黑名单）。总闸关 = 任何人都关；服务端 ≤30s 内生效。'),
+      'Global ops toggle + targeting (percentage / region / platform / allow-deny lists). Master off = off for everyone; server propagates within 30s.'),
   );
-  const list = h('div', {}, '加载中…');
+  const list = h('div', {}, 'Loading...');
   root.append(list);
 
   const buildCard = (row: FeatureFlagRow): HTMLElement => {
@@ -908,21 +909,21 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
     const pct = h('input', { type: 'number', min: '0', max: '100', style: 'width:80px',
       value: r.pct !== undefined ? String(r.pct) : '' }) as HTMLInputElement;
     const regions = h('input', { style: 'width:100%', value: (r.regions ?? []).join(', '),
-      placeholder: '如 eu, us, cn（空=不限）' }) as HTMLInputElement;
+      placeholder: 'e.g. eu, us, cn (empty = all)' }) as HTMLInputElement;
     const platBoxes = FLAG_PLATFORMS.map((p) => {
       const cb = h('input', { type: 'checkbox' }) as HTMLInputElement;
       cb.checked = (r.platforms ?? []).includes(p);
       return { p, cb };
     });
     const allow = h('textarea', { rows: '2', style: 'width:100%',
-      placeholder: 'accountId 逗号/换行分隔（命中即开）' }, (r.allowAccounts ?? []).join('\n')) as HTMLTextAreaElement;
+      placeholder: 'accountId comma/newline separated (match = on)' }, (r.allowAccounts ?? []).join('\n')) as HTMLTextAreaElement;
     const deny = h('textarea', { rows: '2', style: 'width:100%',
-      placeholder: 'accountId 逗号/换行分隔（命中即关）' }, (r.denyAccounts ?? []).join('\n')) as HTMLTextAreaElement;
+      placeholder: 'accountId comma/newline separated (match = off)' }, (r.denyAccounts ?? []).join('\n')) as HTMLTextAreaElement;
     const allowPublicIds = h('textarea', { rows: '2', style: 'width:100%',
-      placeholder: '9 位 publicId 逗号/换行分隔（命中即开）' }, (r.allowPublicIds ?? []).join('\n')) as HTMLTextAreaElement;
+      placeholder: '9-digit publicId comma/newline separated (match = on)' }, (r.allowPublicIds ?? []).join('\n')) as HTMLTextAreaElement;
 
     const status = h('span', {});
-    const saveBtn = h('button', {}, '保存') as HTMLButtonElement;
+    const saveBtn = h('button', {}, 'Save') as HTMLButtonElement;
     saveBtn.onclick = async (): Promise<void> => {
       status.textContent = '';
       status.className = '';
@@ -945,7 +946,7 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
           ...(Object.keys(rollout).length ? { rollout } : {}),
           ...(row.desc ? { desc: row.desc } : {}),
         });
-        showOk(status, '已保存（服务端 ≤30s 生效）');
+        showOk(status, 'Saved (server propagates within 30s)');
       } catch (e) {
         showErr(status, e);
       } finally {
@@ -955,8 +956,8 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
 
     const meta = doc
       ? h('div', { class: 'muted', style: 'font-size:12px' },
-          `最近修改：${doc.updatedBy || '—'} · ${fmtTime(doc.updatedAt)}`)
-      : h('div', { class: 'muted', style: 'font-size:12px' }, `未覆盖，使用默认值（${row.default ? 'on' : 'off'}）`);
+          `Last modified: ${doc.updatedBy || '—'} · ${fmtTime(doc.updatedAt)}`)
+      : h('div', { class: 'muted', style: 'font-size:12px' }, `Not overridden, using default (${row.default ? 'on' : 'off'})`);
 
     const fieldRow = (label: string, control: Node): HTMLElement =>
       h('div', { style: 'margin:6px 0' }, h('label', { style: 'display:block;font-size:13px;color:var(--muted)' }, label), control);
@@ -968,18 +969,18 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
         h('span', { class: 'muted' }, row.desc),
       ),
       meta,
-      h('div', { style: 'margin:6px 0' }, h('label', {}, enabled, ' 总闸开启（关 = 任何人都关）')),
-      fieldRow('灰度比例 %（空=不按比例）', pct),
-      fieldRow('区域 regions（逗号分隔，空=不限）', regions),
-      fieldRow('平台 platforms（空=不限）',
+      h('div', { style: 'margin:6px 0' }, h('label', {}, enabled, ' Master on (off = off for everyone)')),
+      fieldRow('Rollout % (empty = no percentage targeting)', pct),
+      fieldRow('Regions (comma-separated, empty = all)', regions),
+      fieldRow('Platforms (empty = all)',
         h('span', {}, ...platBoxes.flatMap((b) => [h('label', { style: 'margin-right:12px' }, b.cb, ' ' + b.p)]))),
-      fieldRow('白名单 allowAccounts（命中即开，盖过定向）', allow),
-      fieldRow('黑名单 denyAccounts（命中即关，盖过一切定向）', deny),
-      fieldRow('publicId 白名单 allowPublicIds（9 位玩家 id，命中即开）', allowPublicIds),
+      fieldRow('Allow accounts (match = on, overrides targeting)', allow),
+      fieldRow('Deny accounts (match = off, overrides everything)', deny),
+      fieldRow('Allow publicIds (9-digit player id, match = on)', allowPublicIds),
       ...(row.key.startsWith('client_log_')
         ? [h('div', { class: 'muted', style: 'font-size:12px;color:var(--muted)' },
-            '定向单个玩家：灰度比例填 0（对其他人关），仅把目标 9 位 publicId 填进上面的 allowPublicIds。' +
-            '客户端取最 verbose 的已开级别（debug>info>warn>error）上报。查询：Grafana {source="client"} | logfmt | publicId="..."')]
+            'Target a single player: set rollout % to 0 (off for everyone else), add only their 9-digit publicId to allowPublicIds above. ' +
+            'Client uploads the most verbose enabled level (debug>info>warn>error). Query: Grafana {source="client"} | logfmt | publicId="..."')]
         : []),
       h('div', { style: 'margin-top:8px' }, saveBtn, ' ', status),
     );
@@ -989,7 +990,7 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
     const rows = await api.flags();
     clear(list);
     if (!rows.length) {
-      list.append(h('div', { class: 'muted' }, '无登记的 flag。'));
+      list.append(h('div', { class: 'muted' }, 'No registered flags.'));
       return;
     }
     for (const row of rows) list.append(buildCard(row));
@@ -998,8 +999,8 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
   }
 }
 
-// ── 限时活动管理（B6，events.manage；ADR-014）──
-/** ms ↔ datetime-local（"YYYY-MM-DDTHH:mm"，本地时区）。 */
+// ── Timed event management (B6, events.manage; ADR-014) ──
+/** ms ↔ datetime-local ("YYYY-MM-DDTHH:mm", local timezone). */
 function msToLocalInput(ms: number): string {
   const d = new Date(ms);
   const pad = (n: number): string => String(n).padStart(2, '0');
@@ -1011,26 +1012,26 @@ function localInputToMs(v: string): number {
 }
 function eventStatus(ev: { windowStart: number; windowEnd: number }): { label: string; cls: string } {
   const now = Date.now();
-  if (now < ev.windowStart) return { label: '未开始', cls: 'info' };
-  if (now >= ev.windowEnd) return { label: '已结束', cls: '' };
-  return { label: '进行中', cls: 'ok' };
+  if (now < ev.windowStart) return { label: 'Not started', cls: 'info' };
+  if (now >= ev.windowEnd) return { label: 'Ended', cls: '' };
+  return { label: 'Active', cls: 'ok' };
 }
 
 export async function pageEvents(ctx: Ctx): Promise<void> {
   const { api, root } = ctx;
   clear(root);
   root.append(
-    h('h2', {}, '限时活动管理'),
+    h('h2', {}, 'Event management'),
     h('div', { class: 'muted', style: 'margin-bottom:8px' },
-      '创建/编辑限时活动（B6）。玩家端仅在「进行中」窗口可见。任务 kind 仅 pve.clear / pvp.win / ad.watch；' +
-      '奖励 kind 仅 coins（需正整数 count）/ material / skin（需 id）。'),
+      'Create/edit timed events (B6). Players see the event only during the active window. Task kinds: pve.clear / pvp.win / ad.watch; ' +
+      'reward kinds: coins (requires positive integer count) / material / skin (requires id).'),
   );
 
   const formBox = h('div', { class: 'card', style: 'margin-bottom:12px' });
-  const list = h('div', {}, '加载中…');
+  const list = h('div', {}, 'Loading...');
   root.append(formBox, list);
 
-  // 默认任务/奖励示例（运营照此改）。
+  // Default task/reward examples (operators should use these as a template).
   const SAMPLE_TASKS: EventTaskDef[] = [
     { taskId: 'pve3', kind: 'pve.clear', target: 3, points: 1 },
     { taskId: 'pvp1', kind: 'pvp.win', target: 1, points: 2 },
@@ -1040,13 +1041,13 @@ export async function pageEvents(ctx: Ctx): Promise<void> {
     { rewardId: 'r2', cost: 6, kind: 'material', id: 'ink_blue', count: 5, maxClaims: 3 },
   ];
 
-  // 编辑态：null = 新建；否则编辑该活动。
+  // Editing state: null = create new; otherwise edit the given event.
   let editing: EventDoc | null = null;
 
   const renderForm = (): void => {
     clear(formBox);
     const isEdit = editing !== null;
-    const idInput = h('input', { style: 'width:100%', placeholder: '留空=自动生成 UUID',
+    const idInput = h('input', { style: 'width:100%', placeholder: 'Leave blank to auto-generate UUID',
       value: editing?._id ?? '' }) as HTMLInputElement;
     if (isEdit) idInput.disabled = true;
     const titleInput = h('input', { style: 'width:100%', value: editing?.title ?? '' }) as HTMLInputElement;
@@ -1061,7 +1062,7 @@ export async function pageEvents(ctx: Ctx): Promise<void> {
     const rewardsTa = h('textarea', { rows: '6', style: 'width:100%;font-family:monospace' },
       JSON.stringify(editing?.rewards ?? SAMPLE_REWARDS, null, 2)) as HTMLTextAreaElement;
     const status = h('span', {});
-    const saveBtn = h('button', {}, isEdit ? '保存修改' : '创建活动') as HTMLButtonElement;
+    const saveBtn = h('button', {}, isEdit ? 'Save changes' : 'Create event') as HTMLButtonElement;
 
     const fieldRow = (label: string, control: Node): HTMLElement =>
       h('div', { style: 'margin:6px 0' },
@@ -1076,13 +1077,13 @@ export async function pageEvents(ctx: Ctx): Promise<void> {
         tasks = JSON.parse(tasksTa.value) as EventTaskDef[];
         rewards = JSON.parse(rewardsTa.value) as EventRewardDef[];
       } catch (e) {
-        showErr(status, new Error(`任务/奖励 JSON 解析失败：${(e as Error).message}`));
+        showErr(status, new Error(`Tasks/rewards JSON parse error: ${(e as Error).message}`));
         return;
       }
       const windowStart = localInputToMs(startInput.value);
       const windowEnd = localInputToMs(endInput.value);
       if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd)) {
-        showErr(status, new Error('开始/结束时间无效'));
+        showErr(status, new Error('Invalid start/end time'));
         return;
       }
       const input: EventInput = {
@@ -1110,18 +1111,18 @@ export async function pageEvents(ctx: Ctx): Promise<void> {
 
     formBox.append(
       h('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:6px' },
-        h('strong', {}, isEdit ? `编辑活动 ${editing!._id}` : '新建活动'),
-        isEdit && h('button', { class: 'ghost', onclick: () => { editing = null; renderForm(); } }, '取消编辑'),
+        h('strong', {}, isEdit ? `Edit event ${editing!._id}` : 'New event'),
+        isEdit && h('button', { class: 'ghost', onclick: () => { editing = null; renderForm(); } }, 'Cancel edit'),
       ),
       fieldRow('eventId', idInput),
-      fieldRow('活动名称 title（≤80）', titleInput),
-      fieldRow('简介 description（可选）', descInput),
+      fieldRow('Event title (≤80)', titleInput),
+      fieldRow('Description (optional)', descInput),
       h('div', { style: 'display:flex;gap:16px' },
-        fieldRow('开始时间', startInput),
-        fieldRow('结束时间', endInput),
+        fieldRow('Start time', startInput),
+        fieldRow('End time', endInput),
       ),
-      fieldRow('任务 tasks（JSON 数组：{taskId,kind,target,points}）', tasksTa),
-      fieldRow('奖励 rewards（JSON 数组：{rewardId,cost,kind,id?,count?,maxClaims?}）', rewardsTa),
+      fieldRow('Tasks (JSON array: {taskId,kind,target,points})', tasksTa),
+      fieldRow('Rewards (JSON array: {rewardId,cost,kind,id?,count?,maxClaims?})', rewardsTa),
       h('div', { style: 'margin-top:8px' }, saveBtn, ' ', status),
     );
   };
@@ -1131,16 +1132,16 @@ export async function pageEvents(ctx: Ctx): Promise<void> {
       const events = await api.events();
       clear(list);
       if (!events.length) {
-        list.append(h('div', { class: 'muted' }, '暂无活动。用上方表单创建。'));
+        list.append(h('div', { class: 'muted' }, 'No events. Use the form above to create one.'));
         return;
       }
       for (const ev of events) {
         const st = eventStatus(ev);
         const delErr = h('span', {});
-        const editBtn = h('button', { class: 'ghost', onclick: () => { editing = ev; renderForm(); window.scrollTo(0, 0); } }, '编辑');
-        const delBtn = h('button', { class: 'ghost danger' }, '删除') as HTMLButtonElement;
+        const editBtn = h('button', { class: 'ghost', onclick: () => { editing = ev; renderForm(); window.scrollTo(0, 0); } }, 'Edit');
+        const delBtn = h('button', { class: 'ghost danger' }, 'Delete') as HTMLButtonElement;
         delBtn.onclick = async (): Promise<void> => {
-          if (!confirm(`确认删除活动「${ev.title}」？参与历史保留，但活动立即对玩家不可见。`)) return;
+          if (!confirm(`Delete event "${ev.title}"? Participation history is kept but the event becomes immediately invisible to players.`)) return;
           delBtn.disabled = true;
           try {
             await api.deleteEvent(ev._id);
@@ -1161,7 +1162,7 @@ export async function pageEvents(ctx: Ctx): Promise<void> {
             h('div', { class: 'muted', style: 'font-size:12px' },
               `${fmtTime(ev.windowStart)} → ${fmtTime(ev.windowEnd)}`),
             h('div', { style: 'font-size:13px;margin-top:4px' },
-              `任务 ${ev.tasks.length} · 奖励 ${ev.rewards.length}`),
+              `Tasks: ${ev.tasks.length} · Rewards: ${ev.rewards.length}`),
             h('div', { style: 'margin-top:6px' }, editBtn, ' ', delBtn, ' ', delErr),
           ),
         );

@@ -1,7 +1,7 @@
-// worldsvc 公网 REST（S8-0，SLG_DESIGN §14.1 P1 / §14.6）。第四公网面：/world/* /auction/*（/family/* 已迁至 socialsvc）。
-// 鉴权：复用 meta JWT，仅 verifyToken 验签取 accountId（不连 accounts 库，P1）。
-// 用 node:http（worldsvc 不引 fastify）。响应走 @nw/shared ApiResp 包络，错误码 → HTTP 经 ERROR_HTTP_STATUS。
-// S8-0：地图/玩家状态做实；行军/防守/兵力/家族/拍卖/赛季返回 NOT_IMPLEMENTED（S8-1~5）。
+// worldsvc public REST (S8-0, SLG_DESIGN §14.1 P1 / §14.6). Fourth public-facing surface: /world/* /auction/* (/family/* already migrated to socialsvc).
+// Auth: reuses the meta JWT; only verifyToken is called to extract accountId (no accounts DB connection, P1).
+// Uses node:http (worldsvc does not depend on fastify). Responses wrapped in @nw/shared ApiResp envelope; error codes → HTTP status via ERROR_HTTP_STATUS.
+// S8-0: map/player-state implemented; march/defense/troops/family/auction/season return NOT_IMPLEMENTED (S8-1~5).
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import {
   ErrorCode,
@@ -42,7 +42,7 @@ function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
     'content-type': 'application/json',
-    // 公网面：CORS 与 meta 对齐（dev 全开，生产由反代收紧）。
+    // Public-facing surface: CORS aligned with meta (fully open in dev, tightened by reverse proxy in production).
     'access-control-allow-origin': '*',
     'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller',
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
@@ -55,7 +55,7 @@ function sendErr(res: ServerResponse, code: ErrorCode, message: string): void {
 }
 
 const NOT_IMPL = (res: ServerResponse, what: string): void =>
-  sendErr(res, ErrorCode.NOT_IMPLEMENTED, `${what} 未实现（S8-1~5）`);
+  sendErr(res, ErrorCode.NOT_IMPLEMENTED, `${what} not implemented (S8-1~5)`);
 
 const numQ = (v: string | null, d: number): number => {
   const n = v == null ? NaN : Number(v);
@@ -70,12 +70,12 @@ export function startHttpApi(
   auctionSvc: AuctionService,
   socialsvc: WorldSocialsvcClient,
 ): Server {
-  // 内部运维鉴权（C4/§17.7）：/admin/world/* 走 X-Internal-Key，不走玩家 JWT。
+  // Internal ops authentication (C4/§17.7): /admin/world/* uses X-Internal-Key, not player JWT.
   const internalAuth = loadInternalAuth(opts.internalKey);
   const server = createServer((req, res) => {
     void (async () => {
       const method = req.method ?? 'GET';
-      // 存活探针（无需鉴权）：docker healthcheck / CI 等待用。
+      // Health probe (no auth required): used by docker healthcheck / CI readiness waits.
       if (method === 'GET' && req.url === '/health') {
         return send(res, 200, { ok: true, service: 'worldsvc' });
       }
@@ -83,23 +83,23 @@ export function startHttpApi(
         return send(res, 204, {});
       }
 
-      // —— 内部运维分支（C4/§17.7）：/admin/world/* 走 X-Internal-Key，先于 JWT。——
-      // 任意登录玩家曾可调 /admin/world/reset 清整个大区（C4 安全洞）；现迁出 JWT 分支。
+      // —— Internal ops branch (C4/§17.7): /admin/world/* uses X-Internal-Key, checked before JWT. ——
+      // Any logged-in player could previously call /admin/world/reset to wipe an entire region (C4 security hole); now moved out of the JWT branch.
       {
         const aurl = new URL(req.url ?? '', `http://${req.headers.host ?? 'world'}`);
         if (aurl.pathname.startsWith('/admin/world/')) {
           if (!internalAuth.verify(req.headers).ok) {
-            return sendErr(res, ErrorCode.UNAUTHENTICATED, '内部端点需 X-Internal-Key');
+            return sendErr(res, ErrorCode.UNAUTHENTICATED, 'internal endpoint requires X-Internal-Key');
           }
-          // 列出各大区概要（G7/§17.7 admin 后台）。
+          // List summary of all regions (G7/§17.7 admin console).
           if (method === 'GET' && aurl.pathname === '/admin/world/list') {
             return send(res, 200, ok(await svc.listWorlds()));
           }
-          // 跨区隔离巡检（G6/§20）：跨区行军 / 玩家双开 / 孤儿格扫描。
+          // Cross-region isolation patrol (G6/§20): cross-region march / dual-account detection / orphan tile scan.
           if (method === 'GET' && aurl.pathname === '/admin/world/patrol') {
             return send(res, 200, ok(await svc.patrolShardIsolation()));
           }
-          // 拍卖异常交易审计扫描（D/G7/§17.7）：近期 sold 配对聚合，供 admin 审计队列拉取。
+          // Auction anomalous-transaction audit scan (D/G7/§17.7): aggregate recent sold pairs for the admin audit queue to pull.
           if (method === 'GET' && aurl.pathname === '/admin/world/audit/anomalies') {
             const wid = aurl.searchParams.get('worldId');
             if (!wid) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
@@ -109,7 +109,7 @@ export function startHttpApi(
           }
           if (method !== 'POST') return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
           const body = await readJson(req);
-          // 新赛季开区编排（G6/§20）：按上季宗门强弱蛇形均衡开 N 区，无 worldId（先于 worldId 门）。
+          // New-season region allocation (G6/§20): open N regions using snake-draft balancing based on last season's sect strength, no worldId required (checked before the worldId gate).
           if (aurl.pathname === '/admin/world/allocate') {
             try {
               const seasonNum = Number(body.season);
@@ -132,7 +132,7 @@ export function startHttpApi(
               return send(res, 200, ok(await svc.settleSeason(worldId)));
             }
             if (aurl.pathname === '/admin/world/reset') {
-              // F 季末清算：先清算拍卖行（退还卖方挂存 + 退还竞拍托管 + 清价格滑窗），再清地图态。
+              // F end-of-season settlement: first settle the auction house (refund seller escrow + refund bid escrow + clear price sliding window), then reset the map state.
               const auctionCleared = await auctionSvc.clearWorldOnReset(worldId);
               const reset = await svc.resetSeason(worldId);
               return send(res, 200, ok({ ...reset, auctionCleared }));
@@ -149,14 +149,14 @@ export function startHttpApi(
         }
       }
 
-      // —— JWT 验签（P1：仅取 accountId，不连库）——
+      // —— JWT verification (P1: extract accountId only, no DB connection) ——
       const token = extractBearer(req.headers['authorization']);
       let accountId: string;
       try {
         if (!token) throw new Error('no bearer');
         accountId = verifyToken(token, { secret: opts.jwtSecret });
       } catch {
-        return sendErr(res, ErrorCode.UNAUTHENTICATED, '需要登录');
+        return sendErr(res, ErrorCode.UNAUTHENTICATED, 'authentication required');
       }
 
       const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'world'}`);
@@ -164,7 +164,7 @@ export function startHttpApi(
       const q = url.searchParams;
 
       try {
-        // ── 地图与领地（GET，做实）──
+        // ── Map and territory (GET, implemented) ──
         if (method === 'GET' && path === '/world/me') {
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
@@ -209,14 +209,14 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.getTile(worldId, accountId, x, y)));
         }
 
-        // ── 行军列表（S8-2，做实）──
+        // ── March list (S8-2, implemented) ──
         if (method === 'GET' && path === '/world/march') {
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           return send(res, 200, ok(await svc.getMarches(worldId, accountId)));
         }
 
-        // ── 按赛季解析 shard（G6/§20）：只解析不落城，客户端进图前拿 worldId ──
+        // ── Resolve shard by season (G6/§20): resolve only, no base placement; client fetches worldId before entering the map ──
         if (method === 'POST' && path === '/world/season/resolve') {
           const body = await readJson(req);
           const season = Number(body.season);
@@ -224,16 +224,16 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.resolveSeasonShard(season, accountId)));
         }
 
-        // ── 按赛季 join（G6/§20）：服务端解析 shard 自动路由（宗门>家族>单随，溢出开新区）──
+        // ── Season join (G6/§20): server resolves shard and routes automatically (sect > family > solo random, overflow opens a new region) ──
         if (method === 'POST' && path === '/world/season/join') {
           const body = await readJson(req);
           const season = Number(body.season);
           if (!Number.isFinite(season)) return sendErr(res, ErrorCode.BAD_REQUEST, 'season required');
-          // 系统自动落城（§3.4）：不收坐标，服务端选点。
+          // System auto-places base (§3.4): no coordinates taken from client, server picks the location.
           return send(res, 200, ok(await svc.joinSeason(season, accountId)));
         }
 
-        // ── 进入世界（S8-1）：系统自动落城（§3.4），仅需 worldId，不收坐标 ──
+        // ── Join world (S8-1): system auto-places base (§3.4), only worldId required, no coordinates ──
         if (method === 'POST' && path === '/world/join') {
           const body = await readJson(req);
           const worldId = typeof body.worldId === 'string' ? body.worldId : null;
@@ -241,7 +241,7 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.joinWorld(worldId, accountId)));
         }
 
-        // ── 占领 / 放弃 / 迁城 / 瞭望塔（S8-1，做实，需坐标）──
+        // ── Occupy / abandon / relocate / watchtower (S8-1, implemented, requires coordinates) ──
         if (
           method === 'POST' &&
           (path === '/world/occupy' || path === '/world/abandon' ||
@@ -267,7 +267,7 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.abandonTile(worldId, accountId, x, y)));
         }
 
-        // ── 行军（S8-2，做实）──
+        // ── March (S8-2, implemented) ──
         if (method === 'POST' && path === '/world/march') {
           const body = await readJson(req);
           const worldId = typeof body.worldId === 'string' ? body.worldId : null;
@@ -298,7 +298,7 @@ export function startHttpApi(
           }
         }
 
-        // ── 扫荡（S8-3，§14.6 便捷别名 = march kind:'sweep'）──
+        // ── Sweep (S8-3, §14.6 convenience alias = march kind:'sweep') ──
         if (method === 'POST' && path === '/world/sweep') {
           const body = await readJson(req);
           const worldId = typeof body.worldId === 'string' ? body.worldId : null;
@@ -314,7 +314,7 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.startMarch(worldId, accountId, fromX, fromY, toX, toY, 'sweep', troops)));
         }
 
-        // ── 防守 config（S8-4 残留，做实）──
+        // ── Defense config (S8-4 remnant, implemented) ──
         if (method === 'GET' && path === '/world/defense') {
           const worldId = q.get('worldId');
           const tileKey = q.get('tileKey') ?? 'base';
@@ -334,7 +334,7 @@ export function startHttpApi(
           return send(res, 200, ok({}));
         }
 
-        // ── 进攻布阵模板（队伍，G3-2c）──
+        // ── Offensive formation templates (teams, G3-2c) ──
         if (method === 'GET' && path === '/world/teams') {
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
@@ -350,7 +350,7 @@ export function startHttpApi(
           return send(res, 200, ok({}));
         }
 
-        // ── 训练队列（S8-2，做实）──
+        // ── Training queue (S8-2, implemented) ──
         if (method === 'POST' && path === '/world/troops/train') {
           const body = await readJson(req);
           const worldId = typeof body.worldId === 'string' ? body.worldId : null;
@@ -368,7 +368,7 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.speedupTraining(worldId, accountId, coins)));
         }
 
-        // ── 围攻重播观战关卡（G3-2c，seed + 双方布阵，攻守双方可读）──
+        // ── Siege replay spectator view (G3-2c, seed + both-side formations, readable by both attacker and defender) ──
         {
           const m = /^\/world\/siege\/([^/]+)\/replay$/.exec(path);
           if (method === 'GET' && m) {
@@ -379,7 +379,7 @@ export function startHttpApi(
         }
 
 
-        // ── 宗门（S8-4b，做实）────────────────────────────────────────
+        // ── Sect (S8-4b, implemented) ────────────────────────────────────────
         if (method === 'GET' && path === '/sect/list') {
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
@@ -460,7 +460,7 @@ export function startHttpApi(
           return send(res, 200, ok(await sectSvc.getChannel(worldId, accountId, before, limit)));
         }
 
-        // ── 国家/世界公频（B7，§6.4）────────────────────────────────────
+        // ── Nation/world public channel (B7, §6.4) ────────────────────────────────────
         if (method === 'POST' && path === '/nation/message') {
           const body = await readJson(req);
           const worldId = typeof body.worldId === 'string' ? body.worldId : null;
@@ -477,7 +477,7 @@ export function startHttpApi(
           return send(res, 200, ok(await nationChannelSvc.getChannel(worldId, accountId, before, limit)));
         }
 
-        // ── 拍卖（S8-5，做实）──────────────────────────────────────────
+        // ── Auction (S8-5, implemented) ──────────────────────────────────────────
         if (method === 'GET' && path === '/auction/list') {
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
@@ -502,7 +502,7 @@ export function startHttpApi(
           if (!worldId || !itemType || !item || !Number.isFinite(qty) || !Number.isFinite(durationSec)) {
             return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + itemType + item + qty + durationSec required');
           }
-          // fixed → price 必填；auction → startPrice 必填，buyoutPrice 可选
+          // fixed → price required; auction → startPrice required, buyoutPrice optional
           const price = body.price != null ? Number(body.price) : undefined;
           const startPrice = body.startPrice != null ? Number(body.startPrice) : undefined;
           const buyoutPrice = body.buyoutPrice != null ? Number(body.buyoutPrice) : undefined;
@@ -551,7 +551,7 @@ export function startHttpApi(
           }
         }
 
-        // ── 国家（S8-6.5，做实）──
+        // ── Nation (S8-6.5, implemented) ──
         if (method === 'GET' && path === '/world/nations') {
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
@@ -569,16 +569,16 @@ export function startHttpApi(
           }
         }
 
-        // ── 赛季（S8-7，做实）──
+        // ── Season (S8-7, implemented) ──
         if (method === 'GET' && path === '/world/season') {
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           const season = await svc.getSeason(worldId);
-          if (!season) return sendErr(res, ErrorCode.NOT_FOUND, '世界不存在');
+          if (!season) return sendErr(res, ErrorCode.NOT_FOUND, 'world not found');
           return send(res, 200, ok(season));
         }
 
-        // ── SLG 商店（S8-8，做实）──
+        // ── SLG shop (S8-8, implemented) ──
         if (method === 'GET' && path === '/world/shop/items') {
           return send(res, 200, ok(svc.getSlgShopItems()));
         }
@@ -590,8 +590,8 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.buySlgShopItem(worldId, accountId, itemId)));
         }
 
-        // 赛季管理 /admin/world/* 已迁出 JWT 分支，改 X-Internal-Key（C4/§17.7，见上方内部分支）。
-        // F 季末清算（拍卖行 clearWorldOnReset）已并入上方内部 /admin/world/reset 处理。
+        // Season management /admin/world/* has been moved out of the JWT branch to use X-Internal-Key (C4/§17.7, see internal branch above).
+        // F end-of-season settlement (auction clearWorldOnReset) has been merged into the /admin/world/reset handler above.
 
         return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
       } catch (e) {

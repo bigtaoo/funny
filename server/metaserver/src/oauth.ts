@@ -1,7 +1,7 @@
-// OAuth 授权码流服务端实现（SA-2）。
-// 首期支持 Google（ACCOUNT_DESIGN §3）。state 防 CSRF 由客户端 localStorage 比对，
-// 服务端接 code 时 state 已消费；服务端无需持久化 state。
-// 扩展更多 provider：在 exchangeCode 加 case 分支，配对应 env 变量即可。
+// Server-side OAuth authorization code flow implementation (SA-2).
+// Initially supports Google (ACCOUNT_DESIGN §3). CSRF protection via state is handled by the client (localStorage comparison);
+// by the time the server receives the code, state has already been consumed — the server does not need to persist state.
+// To add more providers: add a case branch in exchangeCode and configure the corresponding env variables.
 
 export type OAuthProvider = 'google';
 
@@ -18,10 +18,10 @@ export interface OAuthSubResult {
 }
 
 /**
- * 用授权码换 sub（Google OAuth2 标准授权码流）。
- * - POST /token 换 access_token
- * - GET userinfo 取 sub + email
- * 直接用 fetch，零外部依赖。
+ * Exchange an authorization code for a sub (standard Google OAuth2 authorization code flow).
+ * - POST /token to get access_token
+ * - GET userinfo to retrieve sub + email
+ * Uses fetch directly; no external dependencies.
  */
 async function exchangeGoogle(
   code: string,
@@ -69,7 +69,7 @@ export class OAuthError extends Error {
 export class OAuthService {
   constructor(private readonly config: OAuthConfig) {}
 
-  /** 用授权码换已认证的 sub（provider-specific 实现）。 */
+  /** Exchange an authorization code for an authenticated sub (provider-specific implementation). */
   async exchangeCode(
     provider: OAuthProvider,
     code: string,
@@ -86,13 +86,13 @@ export class OAuthService {
     }
   }
 
-  /** 是否支持某 provider（已配置凭据）。 */
+  /** Whether a given provider is supported (credentials configured). */
   supports(provider: string): provider is OAuthProvider {
     return provider === 'google' && !!this.config.google;
   }
 }
 
-/** 从进程环境变量构建 OAuthService（首次调用时）。 */
+/** Build an OAuthService from process environment variables (called once at startup). */
 export function createOAuthService(): OAuthService {
   const config: OAuthConfig = {};
   if (process.env.NW_OAUTH_GOOGLE_CLIENT_ID && process.env.NW_OAUTH_GOOGLE_CLIENT_SECRET) {

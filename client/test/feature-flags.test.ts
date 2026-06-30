@@ -1,29 +1,29 @@
-// 客户端日志定向采集（FEATURE_FLAGS_DESIGN §9，客户端侧）：环形缓冲 snapshot + FeatureFlags 阈值/批量上报。
+// Client log targeted collection (FEATURE_FLAGS_DESIGN §9, client side): ring-buffer snapshot + FeatureFlags threshold / batch upload.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { netLog, snapshotClientLogs, recordClientLog, LOG_LEVEL_RANK } from '../src/net/log';
 import { FeatureFlags } from '../src/net/featureFlags';
 import type { ApiClient } from '../src/net/ApiClient';
 
-describe('环形缓冲 snapshotClientLogs', () => {
-  it('按阈值 verbose 度过滤 + 只取 afterSeq 之后的新条目', () => {
+describe('ring-buffer snapshotClientLogs', () => {
+  it('filters by verbosity threshold and returns only entries after afterSeq', () => {
     const lg = netLog('test');
     lg.error('e1');
     lg.warn('w1');
     lg.info('i1');
     lg.debug('d1');
-    // error 阈值（rank 0）：仅 error 级
+    // error threshold (rank 0): only error level
     const onlyErr = snapshotClientLogs(LOG_LEVEL_RANK.error, 0);
     expect(onlyErr.entries.every((e) => e.level === 'error')).toBe(true);
     expect(onlyErr.entries.some((e) => e.msg === 'e1')).toBe(true);
-    // debug 阈值（rank 3）：全部级别
+    // debug threshold (rank 3): all levels
     const all = snapshotClientLogs(LOG_LEVEL_RANK.debug, 0);
     const levels = new Set(all.entries.map((e) => e.level));
     expect(levels.has('error') && levels.has('debug')).toBe(true);
-    // afterSeq = 当前 lastSeq → 无新条目
+    // afterSeq = current lastSeq → no new entries
     expect(snapshotClientLogs(LOG_LEVEL_RANK.debug, all.lastSeq).entries).toHaveLength(0);
   });
 
-  it('recordClientLog 把 data 浓缩进 msg', () => {
+  it('recordClientLog condenses data into msg', () => {
     recordClientLog('info', 'tag', 'hello', { a: 1 });
     const snap = snapshotClientLogs(LOG_LEVEL_RANK.info, 0);
     const last = snap.entries[snap.entries.length - 1];
@@ -32,7 +32,7 @@ describe('环形缓冲 snapshotClientLogs', () => {
   });
 });
 
-describe('FeatureFlags 轮询 + 定向上报', () => {
+describe('FeatureFlags polling + targeted upload', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
@@ -45,35 +45,35 @@ describe('FeatureFlags 轮询 + 定向上报', () => {
     return { api, posted };
   }
 
-  it('未命中 client_log_* → 不调 postClientLog', async () => {
+  it('no client_log_* flag hit → postClientLog not called', async () => {
     const { api } = fakeApi({});
     const ff = new FeatureFlags({ api, platform: 'web', getPublicId: () => '123456789', uploadMs: 1000, pollMs: 5000 });
     ff.start();
-    await vi.advanceTimersByTimeAsync(0); // 让首拉 refresh 落地
+    await vi.advanceTimersByTimeAsync(0); // let the initial refresh settle
     recordClientLog('error', 'x', 'boom');
     await vi.advanceTimersByTimeAsync(2000);
     expect(api.postClientLog).not.toHaveBeenCalled();
     ff.stop();
   });
 
-  it('命中 client_log_error → 周期上报 error 级日志，带 publicId', async () => {
+  it('client_log_error flag hit → periodically uploads error-level logs with publicId', async () => {
     const { api, posted } = fakeApi({ client_log_error: true });
     const ff = new FeatureFlags({ api, platform: 'web', getPublicId: () => '123456789', uploadMs: 1000, pollMs: 5000 });
-    recordClientLog('error', 'pre', 'context-before'); // 命中前的上下文也应被捞到
+    recordClientLog('error', 'pre', 'context-before'); // context logged before the flag hit should also be captured
     ff.start();
-    await vi.advanceTimersByTimeAsync(0); // refresh → 命中 → 立即上报一次
+    await vi.advanceTimersByTimeAsync(0); // refresh → flag hit → upload immediately
     expect(api.postClientLog).toHaveBeenCalled();
     expect(posted[0].publicId).toBe('123456789');
     expect(posted[0].logs.length).toBeGreaterThan(0);
     ff.stop();
   });
 
-  it('无 publicId → 命中也不上报（无法归属）', async () => {
+  it('no publicId → flag hit does not trigger upload (cannot attribute)', async () => {
     const { api } = fakeApi({ client_log_debug: true });
     const ff = new FeatureFlags({ api, platform: 'web', getPublicId: () => null, uploadMs: 1000, pollMs: 5000 });
     recordClientLog('debug', 'x', 'd');
     ff.start();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0); // let the initial refresh settle
     expect(api.postClientLog).not.toHaveBeenCalled();
     ff.stop();
   });

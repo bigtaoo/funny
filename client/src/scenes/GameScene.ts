@@ -38,7 +38,7 @@ export interface GameSceneOptions {
   level?: LevelDefinition;
   /**
    * Engine mode override for locally-simulated matches. Defaults to 'campaign'
-   * when `level` is set. Pass 'siege' to replay an SLG 围攻 against a defender's
+   * when `level` is set. Pass 'siege' to replay an SLG siege against a defender's
    * config (S8-3 / C2). Ignored when an `engine` is injected (netplay).
    */
   mode?: GameMode;
@@ -81,8 +81,9 @@ export interface GameSceneOptions {
    */
   equipment?: EngineEquipmentInput;
   /**
-   * 专属教学关 `ch0_tutorial`（ONBOARDING_DESIGN §3）。启用表现层教学导演：
-   * 认知导览 + 卡点三拍 + 自由发挥 + 永不失败。仅与 `level=ch0_tutorial` 搭配使用。
+   * Dedicated tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3). Enables the
+   * presentation-layer tutorial director: guided overview + three-beat gating +
+   * free play + never-fail mode. Only used together with `level=ch0_tutorial`.
    */
   tutorial?: boolean;
 }
@@ -116,8 +117,8 @@ export class GameScene implements Scene {
       buildReplay = match.buildReplay;
     }
 
-    // Corner hand-lettering (art-direction §6.2 B 组): every battle gets `[START]`
-    // by the local base ("PvP 可只用 START"); boss campaign levels add `BOSS` by
+    // Corner hand-lettering (art-direction §6.2 group B): every battle gets `[START]`
+    // by the local base (PvP uses only START); boss campaign levels add `BOSS` by
     // the enemy base. The tutorial runs its own guided staging, so keep it clean.
     const battleLabels: BattleLabelContext = opts.tutorial
       ? {}

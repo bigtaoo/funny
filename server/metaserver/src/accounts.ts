@@ -1,5 +1,5 @@
-// 账号解析（S0-4 / S0-7）+ 密码账号（SA-1）+ OAuth（SA-2）。
-// 匿名 device/wx → 稳定 accountId；密码注册/登录/改密；OAuth 登录/绑定。
+// Account resolution (S0-4 / S0-7) + password accounts (SA-1) + OAuth (SA-2).
+// Anonymous device/wx → stable accountId; password register / login / change-password; OAuth login / bind.
 import { randomUUID, randomInt } from 'node:crypto';
 import type { Collections, ChatRegion } from '@nw/shared';
 import {
@@ -10,8 +10,10 @@ import {
 } from '@nw/shared';
 
 /**
- * auth 时把惰性推断出的合规地区写回账号（best-effort，私聊敏感词分地区选词表用）。
- * 仅当 region 非 `global` 时写入——无 Accept-Language 信号的请求不把已探明的真实地区降级。
+ * Best-effort: writes the lazily inferred compliance region back to the account on auth
+ * (used for per-region profanity-filter word lists in private chat). Written only when region
+ * is not `global` — requests with no Accept-Language signal must not downgrade an already
+ * resolved real region.
  */
 async function touchRegion(cols: Collections, accountId: string, region: ChatRegion): Promise<void> {
   if (region === 'global') return;
@@ -22,13 +24,13 @@ export interface ResolvedAccount {
   accountId: string;
   isNew: boolean;
   isAnonymous: boolean;
-  /** 展示名（注册时填）；用于客户端个人资料显示，缺省 undefined。 */
+  /** Display name (set at registration); used in client profile display; defaults to undefined. */
   displayName?: string;
-  /** 9 位数字公开 id（由 {@link ensurePublicId} 惰性生成后回填）。 */
+  /** 9-digit numeric public id (lazily generated and back-filled by {@link ensurePublicId}). */
   publicId?: string;
 }
 
-/** 按 deviceId 取/建账号（Web / CrazyGames）。同设备稳定返回同 id。 */
+/** Retrieve or create an account by deviceId (Web / CrazyGames). Always returns the same id for the same device. */
 export async function resolveByDevice(
   cols: Collections,
   deviceId: string,
@@ -42,7 +44,7 @@ export async function resolveByDevice(
   }
 
   const accountId = randomUUID();
-  // deviceId 唯一索引：并发首建只有一个插入成功，另一个回读。
+  // deviceId unique index: on concurrent first-creation only one insert wins; the other re-reads.
   await cols.accounts.updateOne(
     { deviceId },
     {
@@ -53,7 +55,7 @@ export async function resolveByDevice(
   );
   const doc = await cols.accounts.findOne({ deviceId });
   const isNew = doc?._id === accountId;
-  // device-only 账号 = 匿名；若该 device 已绑过凭证则取实际值。
+  // device-only account = anonymous; if this device already has bound credentials, use the actual value.
   return {
     accountId: doc ? doc._id : accountId,
     isNew,
@@ -61,7 +63,7 @@ export async function resolveByDevice(
   };
 }
 
-/** 按 openid 取/建账号（微信）。微信 = 可恢复凭证，非匿名。 */
+/** Retrieve or create an account by openid (WeChat). WeChat = recoverable credential; not anonymous. */
 export async function resolveByOpenid(
   cols: Collections,
   openid: string,
@@ -96,8 +98,9 @@ export type RegisterResult =
   | { kind: 'taken' };
 
 /**
- * 密码注册（SA-1）。建一个**新** account（不绑当前匿名账号——转正合并由客户端
- * 登录后走 SaveManager.reconcile，ACCOUNT_DESIGN §4.4）。loginId 规范化后唯一。
+ * Password registration (SA-1). Creates a **new** account (does not bind to the current anonymous
+ * account — promotion/merge is done by the client after login via SaveManager.reconcile,
+ * ACCOUNT_DESIGN §4.4). loginId is unique after normalization.
  */
 export async function registerWithPassword(
   cols: Collections,
@@ -110,7 +113,7 @@ export async function registerWithPassword(
   const norm = normalizeLoginId(loginId);
   const hash = await hashPassword(password);
   const accountId = randomUUID();
-  // 唯一索引 'password.loginId' 守卫：upsert 命中已存在则未插入 → taken。
+  // Unique index 'password.loginId' guard: if the upsert hits an existing doc, nothing is inserted → taken.
   const res = await cols.accounts.updateOne(
     { 'password.loginId': norm },
     {
@@ -128,7 +131,7 @@ export async function registerWithPassword(
   return { kind: 'ok', account: { accountId, isNew: true, isAnonymous: false, displayName } };
 }
 
-/** 密码登录（SA-1）。loginId 规范化匹配 + 哈希比对。 */
+/** Password login (SA-1). Matches loginId after normalization + compares hashes. */
 export async function loginWithPassword(
   cols: Collections,
   loginId: string,
@@ -144,13 +147,13 @@ export async function loginWithPassword(
   return { accountId: doc._id, isNew: false, isAnonymous: isAnonymousAccount(doc), displayName: doc.displayName };
 }
 
-/** 读账号合规地区（私聊敏感词选词表用）。缺省 / 旧账号无字段 → `'global'`。 */
+/** Read the account's compliance region (used for private-chat profanity-filter word list selection). Missing field on old accounts defaults to `'global'`. */
 export async function getRegion(cols: Collections, accountId: string): Promise<ChatRegion> {
   const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { region: 1 } });
   return doc?.region ?? 'global';
 }
 
-/** 读账号展示名（GET /save 顺带回带，token 续登恢复个人资料）。 */
+/** Read the account's display name (returned alongside GET /save; restores profile on token re-login). */
 export async function getDisplayName(
   cols: Collections,
   accountId: string,
@@ -160,8 +163,8 @@ export async function getDisplayName(
 }
 
 /**
- * 公开资料（展示名 + 9 位数字公开 id）。gateway 据此把房间里的玩家显示为昵称（#id），
- * 而非 accountId。publicId 缺失时惰性生成。
+ * Public profile (display name + 9-digit numeric public id). The gateway uses this to show players
+ * in a room as nickname (#id) rather than accountId. publicId is lazily generated if missing.
  */
 export async function getProfile(
   cols: Collections,
@@ -181,33 +184,35 @@ export async function getProfile(
 }
 
 /**
- * 确保账号有 9 位数字公开 id：已有直接返回，否则生成一个全局唯一的并写入。
- * publicId 唯一索引在并发/碰撞时会让 updateOne 抛错 → 重试换号；900M 空间下碰撞极罕见。
+ * Ensure the account has a 9-digit numeric public id: returns immediately if one already exists,
+ * otherwise generates a globally unique one and writes it. The publicId unique index causes
+ * updateOne to throw on concurrent writes or collisions → retry with a new candidate;
+ * collisions are extremely rare given a space of 900 million.
  */
 export async function ensurePublicId(cols: Collections, accountId: string): Promise<string> {
   const existing = await cols.accounts.findOne({ _id: accountId }, { projection: { publicId: 1 } });
   if (existing?.publicId) return existing.publicId;
   for (let attempt = 0; attempt < 8; attempt++) {
-    // 100000000–999999999：定长 9 位，首位非 0。
+    // 100000000–999999999: exactly 9 digits, first digit non-zero.
     const candidate = String(randomInt(100_000_000, 1_000_000_000));
     try {
-      // 仅当本账号尚无 publicId 时写入；唯一索引守卫跨账号不撞号。
+      // Write only if this account does not yet have a publicId; the unique index prevents collisions across accounts.
       const res = await cols.accounts.updateOne(
         { _id: accountId, publicId: { $exists: false } },
         { $set: { publicId: candidate } },
       );
       if (res.modifiedCount === 1) return candidate;
-      // 没改到：可能并发已写入 → 回读取真实值。
+      // Nothing modified: a concurrent write may have already set it → re-read to get the actual value.
       const now = await cols.accounts.findOne({ _id: accountId }, { projection: { publicId: 1 } });
       if (now?.publicId) return now.publicId;
     } catch {
-      // 唯一索引碰撞（candidate 已被别的账号占用）→ 换号重试。
+      // Unique index collision (candidate already taken by another account) → retry with a new candidate.
     }
   }
   throw new Error('failed to allocate publicId after retries');
 }
 
-/** 按 9 位公开 id 反查 accountId（admin player.lookup，OPS_DESIGN §4.1）。未找到 null。 */
+/** Reverse-lookup accountId by 9-digit public id (admin player.lookup, OPS_DESIGN §4.1). Returns null if not found. */
 export async function resolveByPublicId(
   cols: Collections,
   publicId: string,
@@ -216,12 +221,12 @@ export async function resolveByPublicId(
   return doc?._id ?? null;
 }
 
-/** 正则元字符转义——把运营输入当字面量喂给 $regex，杜绝注入 / ReDoS。 */
+/** Escape regex metacharacters — treat ops-entered input as a literal string fed to $regex, preventing injection / ReDoS. */
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** admin 玩家模糊搜命中行（OPS_DESIGN §4.1）：摘要字段，详情另查。 */
+/** Hit row for admin fuzzy player search (OPS_DESIGN §4.1): summary fields only; detail is fetched separately. */
 export interface AccountSearchRow {
   accountId: string;
   publicId?: string;
@@ -230,9 +235,10 @@ export interface AccountSearchRow {
 }
 
 /**
- * admin 玩家模糊搜（OPS_DESIGN §4.1）：单关键词命中 publicId/accountId（精确）
- * + loginId（前缀，吃唯一索引）+ displayName（子串，不区分大小写）。
- * 关键词 < 2 字符直接返回空，避免全表扫；结果按 limit 截断。
+ * Admin fuzzy player search (OPS_DESIGN §4.1): single keyword matches publicId/accountId (exact)
+ * + loginId (prefix, hits unique index) + displayName (substring, case-insensitive).
+ * Keywords shorter than 2 characters return empty immediately to avoid full-table scans;
+ * results are capped at limit.
  */
 export async function searchAccounts(
   cols: Collections,
@@ -261,7 +267,7 @@ export async function searchAccounts(
   }));
 }
 
-/** 改展示名（改名功能，已扣币后写入）。 */
+/** Update the display name (rename feature; called after coins have already been deducted). */
 export async function setDisplayName(
   cols: Collections,
   accountId: string,
@@ -270,11 +276,12 @@ export async function setDisplayName(
   await cols.accounts.updateOne({ _id: accountId }, { $set: { displayName } });
 }
 
-// ── OAuth（SA-2）────────────────────────────────────────────────────────────
+// ── OAuth (SA-2) ────────────────────────────────────────────────────────────
 
 /**
- * OAuth 登录（SA-2）：给定已验证的 provider + sub，取/建账号。
- * provider+sub 联合唯一索引守卫；首次登录建新账号，`isAnonymous=false`（OAuth = 可恢复凭证）。
+ * OAuth login (SA-2): retrieve or create an account for a verified provider + sub pair.
+ * Guarded by a compound unique index on provider+sub; first login creates a new account
+ * with `isAnonymous=false` (OAuth = recoverable credential).
  */
 export async function resolveByOAuth(
   cols: Collections,
@@ -315,9 +322,9 @@ export type BindResult =
   | { kind: 'login_id_taken' };
 
 /**
- * 绑定 OAuth 凭证到已有账号（SA-2）。
- * - provider+sub 未被其他账号占用 → 追加到当前账号 oauth[]，`isAnonymous=false`。
- * - 已被其他账号占用 → `already_bound`（前端提示改用登录该账号）。
+ * Bind an OAuth credential to an existing account (SA-2).
+ * - provider+sub not taken by another account → append to the current account's oauth[]; `isAnonymous=false`.
+ * - Already taken by another account → `already_bound` (frontend should prompt the user to log in with that account instead).
  */
 export async function bindOAuth(
   cols: Collections,
@@ -327,7 +334,7 @@ export async function bindOAuth(
 ): Promise<BindResult> {
   const existing = await cols.accounts.findOne({ 'oauth.provider': provider, 'oauth.sub': sub });
   if (existing && existing._id !== accountId) return { kind: 'already_bound' };
-  if (existing) return { kind: 'ok' }; // 已是本账号，幂等
+  if (existing) return { kind: 'ok' }; // already on this account; idempotent
   await cols.accounts.updateOne(
     { _id: accountId },
     { $addToSet: { oauth: { provider, sub } } },
@@ -336,10 +343,10 @@ export async function bindOAuth(
 }
 
 /**
- * 绑定密码凭证到已有账号（SA-2）。
- * - loginId 未被占用 → 设置 password 字段，`isAnonymous=false`。
- * - 已被占用 → `login_id_taken`。
- * - 本账号已有密码 → 幂等返回 ok（不覆盖已有密码；改密走 /auth/password/change）。
+ * Bind a password credential to an existing account (SA-2).
+ * - loginId not yet taken → set the password field; `isAnonymous=false`.
+ * - Already taken → `login_id_taken`.
+ * - Account already has a password → idempotently return ok (do not overwrite; use /auth/password/change to change it).
  */
 export async function bindPassword(
   cols: Collections,
@@ -349,7 +356,7 @@ export async function bindPassword(
 ): Promise<BindResult> {
   const norm = normalizeLoginId(loginId);
   const selfDoc = await cols.accounts.findOne({ _id: accountId });
-  if (selfDoc?.password) return { kind: 'ok' }; // 已有密码，幂等
+  if (selfDoc?.password) return { kind: 'ok' }; // already has a password; idempotent
   const taken = await cols.accounts.findOne({ 'password.loginId': norm });
   if (taken && taken._id !== accountId) return { kind: 'login_id_taken' };
   const hash = await hashPassword(password);
@@ -362,7 +369,7 @@ export async function bindPassword(
 
 export type ChangePasswordResult = 'ok' | 'no-password' | 'invalid';
 
-/** 改密（SA-1，需 JWT）。校验旧密码后替换哈希。 */
+/** Change password (SA-1, requires JWT). Verifies the old password then replaces the hash. */
 export async function changePassword(
   cols: Collections,
   accountId: string,
@@ -382,8 +389,9 @@ export async function changePassword(
 }
 
 /**
- * 微信 code → openid。配置了 NW_WX_APPID/SECRET 走官方 jscode2session；
- * 否则 dev 回退：把 code 直接当 openid（仅本地联调）。
+ * WeChat code → openid. If NW_WX_APPID/SECRET are configured, calls the official jscode2session
+ * endpoint; otherwise falls back to dev mode: uses the code directly as the openid (local
+ * integration testing only).
  */
 export async function exchangeWxCode(code: string): Promise<string> {
   const appid = process.env.NW_WX_APPID;

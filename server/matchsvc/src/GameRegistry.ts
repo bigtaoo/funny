@@ -1,8 +1,10 @@
-// game 实例注册表（M17，matchsvc 内）。gameserver 启动时 POST /mm/game/register 上报
-// 公开 WS 地址 + 容量，周期 heartbeat 上报负载；matchsvc 据此把对局分配到最空闲的健康实例。
+// Game instance registry (M17, inside matchsvc). On startup, gameserver POSTs /mm/game/register
+// to report its public WS address + capacity; periodic heartbeats report load; matchsvc uses this
+// to assign matches to the least-loaded healthy instance.
 //
-// 单实例部署可不注册——用 env 兜底地址（GatewayEnv.gamePublicWsUrl）建一条静态条目。
-// 多实例横扩时此表是「谁有空闲 game」的唯一知情者（玩家 / meta 都无需知道 game 拓扑）。
+// Single-instance deployments need not register — the env fallback address (GatewayEnv.gamePublicWsUrl)
+// creates a static entry. For multi-instance horizontal scaling this registry is the sole authority
+// on "who has a free game slot" (clients and meta need not know the game topology).
 
 export interface GameInstance {
   gameId: string;
@@ -12,16 +14,16 @@ export interface GameInstance {
   lastSeen: number;
 }
 
-/** 心跳过期阈值：超过此时长未上报视为不健康，不再分配。 */
+/** Heartbeat expiry threshold: instances that have not reported within this duration are considered unhealthy and no longer assigned. */
 const STALE_MS = 30_000;
 
 export class GameRegistry {
   private readonly instances = new Map<string, GameInstance>();
 
   constructor(
-    /** 注入时钟（测试用）。 */
+    /** Injected clock (for testing). */
     private readonly now: () => number = Date.now,
-    /** 单实例兜底地址；注册表为空时分配它。 */
+    /** Single-instance fallback address; assigned when the registry is empty. */
     private readonly fallbackWsUrl: string | null = null,
   ) {}
 
@@ -42,14 +44,14 @@ export class GameRegistry {
     inst.lastSeen = this.now();
   }
 
-  /** 实时态聚合（admin 监控，OPS_DESIGN §4.1）：健康实例数 + 负载/容量合计。 */
+  /** Real-time aggregate (admin monitoring, OPS_DESIGN §4.1): healthy instance count + total load/capacity. */
   stats(): { instances: number; load: number; capacity: number } {
     const t = this.now();
     let instances = 0;
     let load = 0;
     let capacity = 0;
     for (const inst of this.instances.values()) {
-      if (t - inst.lastSeen > STALE_MS) continue; // 不健康，不计入
+      if (t - inst.lastSeen > STALE_MS) continue; // unhealthy, exclude from aggregate
       instances++;
       load += inst.load;
       capacity += inst.capacity;
@@ -57,18 +59,18 @@ export class GameRegistry {
     return { instances, load, capacity };
   }
 
-  /** 挑负载最低且健康的实例 wsUrl；无注册实例时退回兜底地址（null = 无 game 可用）。 */
+  /** Picks the wsUrl of the least-loaded healthy instance; falls back to the fallback address when no registered instances exist (null = no game available). */
   pick(): string | null {
     const t = this.now();
     let best: GameInstance | null = null;
     for (const inst of this.instances.values()) {
-      if (t - inst.lastSeen > STALE_MS) continue; // 不健康
-      if (inst.load >= inst.capacity) continue; // 满载
+      if (t - inst.lastSeen > STALE_MS) continue; // unhealthy
+      if (inst.load >= inst.capacity) continue; // at full capacity
       const ratio = inst.load / inst.capacity;
       if (!best || ratio < best.load / best.capacity) best = inst;
     }
     if (best) {
-      best.load++; // 乐观占位（下次 heartbeat 校准）
+      best.load++; // optimistic reservation (corrected on next heartbeat)
       return best.wsUrl;
     }
     return this.fallbackWsUrl;

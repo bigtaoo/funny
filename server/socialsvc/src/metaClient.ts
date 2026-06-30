@@ -1,14 +1,14 @@
-// socialsvc → metaserver 内部客户端（P2）。
-// 用于 publicId→accountId 反查 + 批量资料获取（好友列表/申请显示名）。
-// 两个内部端点由 metaserver/src/internal.ts 实现（NW_META_INTERNAL_URL）。
+// socialsvc → metaserver internal client (P2).
+// Used for publicId→accountId reverse-lookup + batch profile retrieval (friend list / request display names).
+// Both internal endpoints are implemented in metaserver/src/internal.ts (NW_META_INTERNAL_URL).
 import { internalHeaders } from '@nw/shared';
 import type { ProfileView } from '@nw/shared';
 
 export interface SocialMetaClient {
   readonly available: boolean;
-  /** publicId → accountId + 基础资料。不存在 → null。 */
+  /** publicId → accountId + basic profile. Not found → null. */
   resolveByPublicId(publicId: string): Promise<{ accountId: string; profile: ProfileView } | null>;
-  /** 批量 accountId → 资料映射（缺失 accountId 直接跳过）。 */
+  /** Batch accountId → profile map (missing accountIds are silently skipped). */
   batchProfiles(accountIds: string[]): Promise<Map<string, ProfileView>>;
 }
 

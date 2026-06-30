@@ -1,13 +1,13 @@
-// transport.proto 编解码层（M12）。契约单一来源 = ../../contracts/transport.proto，
-// 运行期用 protobufjs 解析（不维护第二份 schema）。服务器只认这一层；
-// `commands` 是 bytes，对服务器 opaque（透传不解码）。
+// transport.proto encode/decode layer (M12). Single source of truth = ../../contracts/transport.proto,
+// parsed at runtime with protobufjs (no second schema maintained). The server only recognises this layer;
+// `commands` is bytes, opaque to the server (passed through without decoding).
 //
-// 对外暴露：解码 ClientMsg（判别联合）+ 构造编码 ServerMsg。
+// Public API: decode ClientMsg (discriminated union) + construct and encode ServerMsg.
 import * as protobuf from 'protobufjs';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// ── 枚举常量（与 transport.proto 对齐；编码统一传数值）──────
+// ── Enum constants (aligned with transport.proto; values are always transmitted as numbers) ──────
 export const RoomPhase = {
   WAITING: 0,
   READY: 1,
@@ -23,17 +23,17 @@ export const MatchMode = {
 } as const;
 export type MatchModeVal = (typeof MatchMode)[keyof typeof MatchMode];
 
-// ── 透传载荷形状（服务器侧）────────────────────────────
+// ── Pass-through payload shapes (server side) ────────────────────────────
 export interface SideCmd {
   side: number;
-  commands: Uint8Array; // game.proto PlayerCommand[]，opaque
+  commands: Uint8Array; // game.proto PlayerCommand[], opaque
 }
 export interface FrameCmds {
   frame: number;
   cmds: SideCmd[];
 }
 
-// ── ClientMsg 判别联合（按 oneof case）───────────────────
+// ── ClientMsg discriminated union (by oneof case) ───────────────────
 export type ClientMsg =
   | { case: 'room_create'; mode: number }
   | { case: 'room_join'; code: string }
@@ -46,7 +46,7 @@ export type ClientMsg =
   | { case: 'ping' }
   | { case: 'unknown' };
 
-// ── ServerMsg 构造入参（按 oneof case）───────────────────
+// ── ServerMsg construction parameters (by oneof case) ───────────────────
 export interface PlayerSlotOut {
   side: number;
   name: string;
@@ -64,7 +64,7 @@ export type ServerMsg =
       localSide: number;
       opponentName: string;
       opponentPublicId: string;
-      /** 对手佩戴称号 id（空串=无称号；S10）。 */
+      /** Opponent's equipped title id (empty string = no title; S10). */
       opponentTitle?: string;
     }
   | { case: 'frame_batch'; toFrame: number; frames: FrameCmds[] }
@@ -86,12 +86,12 @@ export type ServerMsg =
   | { case: 'room_error'; code: string; message: string }
   | { case: 'pong' };
 
-// ── 加载 transport.proto（候选路径，兼容 dev/dist/docker）──
+// ── Load transport.proto (candidate paths, compatible with dev/dist/docker) ──
 function resolveProtoPath(): string {
   const envDir = process.env.NW_CONTRACTS_DIR;
   const candidates = [
     envDir ? path.join(envDir, 'transport.proto') : null,
-    // dev (tsx, src/proto) 与 dist (dist/proto) 均回到 server/contracts
+    // both dev (tsx, src/proto) and dist (dist/proto) resolve back to server/contracts
     path.resolve(__dirname, '../../contracts/transport.proto'),
     path.resolve(__dirname, '../../../contracts/transport.proto'),
     path.resolve(process.cwd(), 'contracts/transport.proto'),
@@ -106,14 +106,14 @@ function resolveProtoPath(): string {
 }
 
 const root = protobuf.parse(fs.readFileSync(resolveProtoPath(), 'utf8'), {
-  keepCase: true, // 保留 proto 原始 snake_case 字段名，避免歧义
+  keepCase: true, // preserve proto's original snake_case field names to avoid ambiguity
 }).root;
 
 const Envelope = root.lookupType('nw.transport.Envelope');
 
 /**
- * S9-6: 防御性解析 match_result.stats_json（客户端上报的本局成就计数）。
- * 仅接受 `{ [k:string]: number }` 形态；任何异常 → undefined（gameserver 透传，meta 再做 L1 校验）。
+ * S9-6: Defensively parse match_result.stats_json (per-game achievement counters reported by the client).
+ * Only accepts the shape `{ [k:string]: number }`; any error → undefined (gameserver passes it through opaquely; meta performs L1 validation).
  */
 function parseStatsJson(raw: unknown): Record<string, number> | undefined {
   if (typeof raw !== 'string' || raw.length === 0) return undefined;
@@ -130,10 +130,10 @@ function parseStatsJson(raw: unknown): Record<string, number> | undefined {
   }
 }
 
-// ── 解码：bytes → ClientMsg ──────────────────────────────
+// ── Decode: bytes → ClientMsg ──────────────────────────────
 export function decodeClient(buf: Uint8Array): ClientMsg {
   const env = Envelope.decode(buf) as protobuf.Message & Record<string, unknown>;
-  // Envelope.oneof = 'msg'；只处理 client 方向
+  // Envelope.oneof = 'msg'; only handle the client direction
   if ((env as Record<string, unknown>)['msg'] !== 'client') return { case: 'unknown' };
   const client = (env as Record<string, unknown>)['client'] as
     | (protobuf.Message & Record<string, unknown>)
@@ -163,7 +163,7 @@ export function decodeClient(buf: Uint8Array): ClientMsg {
         case: 'match_result',
         stateHash: String(get('match_result')['state_hash'] ?? ''),
         winnerSide: Number(get('match_result')['winner_side'] ?? 0),
-        // S9-6: 本方本局成就计数（JSON 字符串）。防御性解析；非法/缺失 → undefined（meta 视无统计）。
+        // S9-6: This side's per-game achievement counters (JSON string). Parsed defensively; invalid/missing → undefined (meta treats as no stats).
         stats: parseStatsJson(get('match_result')['stats_json']),
       };
     case 'conn_resume':
@@ -179,7 +179,7 @@ export function decodeClient(buf: Uint8Array): ClientMsg {
   }
 }
 
-// ── 编码：ServerMsg → bytes ──────────────────────────────
+// ── Encode: ServerMsg → bytes ──────────────────────────────
 function framesToWire(frames: FrameCmds[]): unknown[] {
   return frames.map((f) => ({
     frame: f.frame,

@@ -1,6 +1,6 @@
-// L2-2：称号端点（GET /titles、PUT /title/equip）单测，无 Mongo。
-// 经 buildApp 全量装配 openapi glue（同时校验新 operationId 已绑 handler，缺则注册期抛错），
-// 用内存 fake cols + fastify inject 驱动。
+// L2-2: Title endpoints (GET /titles, PUT /title/equip) unit tests, no Mongo.
+// Uses buildApp with full openapi glue (also verifies that new operationIds are bound to handlers; throws at registration if missing),
+// driven by in-memory fake cols + fastify inject.
 import { describe, it, expect } from 'vitest';
 import { makeNewSave, signToken, ladderTitleId, type Collections, type SaveData } from '@nw/shared';
 import { buildApp } from '../src/app.js';
@@ -73,7 +73,7 @@ const ACC = 'acc-1';
 const auth = { authorization: `Bearer ${signToken(ACC, jwt)}` };
 
 describe('GET /titles (L2-2)', () => {
-  it('返回已授予称号（含派生 source/seasonNo）+ 当前佩戴', async () => {
+  it('returns granted titles (including derived source/seasonNo) + currently equipped', async () => {
     const cols = fakeCols({
       accountId: ACC,
       mutate: (s) => {
@@ -94,7 +94,7 @@ describe('GET /titles (L2-2)', () => {
     await app.close();
   });
 
-  it('新账号无称号 → 空数组 + equipped:null', async () => {
+  it('new account with no titles → empty array + equipped:null', async () => {
     const app = await makeApp(fakeCols());
     const res = await app.inject({ method: 'GET', url: '/titles', headers: auth });
     expect(res.statusCode).toBe(200);
@@ -104,7 +104,7 @@ describe('GET /titles (L2-2)', () => {
 });
 
 describe('PUT /title/equip (L2-2)', () => {
-  it('佩戴已授予称号 → 写 equipped.title 并回推', async () => {
+  it('equip a granted title → writes equipped.title and returns it', async () => {
     const cols = fakeCols({ accountId: ACC, mutate: (s) => { s.titles = [ladderTitleId(3, 'gold')]; } });
     const app = await makeApp(cols);
     const res = await app.inject({
@@ -118,7 +118,7 @@ describe('PUT /title/equip (L2-2)', () => {
     await app.close();
   });
 
-  it('佩戴未授予称号 → 403', async () => {
+  it('equip a title not yet granted → 403', async () => {
     const cols = fakeCols({ accountId: ACC, mutate: (s) => { s.titles = []; } });
     const app = await makeApp(cols);
     const res = await app.inject({
@@ -132,7 +132,7 @@ describe('PUT /title/equip (L2-2)', () => {
     await app.close();
   });
 
-  it('空串 titleId → 卸下显示称号', async () => {
+  it('empty titleId → unequip the displayed title', async () => {
     const cols = fakeCols({
       accountId: ACC,
       mutate: (s) => { s.titles = ['event.founder']; s.equipped = { title: 'event.founder' }; },

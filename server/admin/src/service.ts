@@ -1,6 +1,6 @@
-// admin 业务核心（OPS_DESIGN §2/§3/§5）。RBAC + 账号管理 + 补偿审批工单流 + 审计 + 监控/趋势 + 采样。
-// httpApi 负责鉴权（admin JWT）+ 静态能力门；本类负责业务不变量（发起≠审批、额度→审批能力、
-// 工单状态机）+ 审计落库。所有写操作经此 → 单一真相。
+// Admin service core (OPS_DESIGN §2/§3/§5). RBAC + account management + compensation approval ticket flow + audit + monitoring/trends + sampling.
+// httpApi handles authentication (admin JWT) + static capability gates; this class enforces business invariants (initiator ≠ approver, quota → approval capability,
+// ticket state machine) + audit persistence. All write operations flow through here → single source of truth.
 import { randomUUID } from 'node:crypto';
 import {
   ADMIN_ROLES,
@@ -48,7 +48,7 @@ import type { AuctionAnomaly, EventDoc, EventInput } from '@nw/shared';
 
 const log = createLogger('admin:service');
 
-/** 端点错误（httpApi 据 status 映射 HTTP 码）。 */
+/** Endpoint error (httpApi maps HTTP status codes based on the status field). */
 export class AdminError extends Error {
   constructor(
     readonly status: number,
@@ -60,7 +60,7 @@ export class AdminError extends Error {
   }
 }
 
-/** 已认证的运维主体（httpApi 从 admin JWT 解出账号后注入）。 */
+/** Authenticated admin principal (injected by httpApi after decoding the admin JWT). */
 export interface Actor {
   adminId: string;
   username: string;
@@ -93,12 +93,13 @@ const ALL_TICKET_STATUS: readonly CompTicketStatus[] = [
   'failed',
 ];
 
-// 登录失败限流（OPS_DESIGN §6「登录失败限流」）。admin 同时持内部密钥 + 对运维开端口，
-// 是攻击高地；按登录名滑动窗口计数，达阈值即锁定一段时间。内存态（admin 单实例够用，
-// 多实例横扩时迁 Redis）。
-const LOGIN_MAX_FAILURES = 5; // 窗口内最大失败次数
-const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 失败计数滑动窗口
-const LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // 触发后锁定时长
+// Login failure rate limiting (OPS_DESIGN §6 "login failure rate limiting"). The admin service holds internal secrets
+// and exposes a port to operators, making it a high-value attack target. Uses a per-username sliding-window counter;
+// reaching the threshold locks the account for a period. In-memory state (sufficient for a single admin instance;
+// migrate to Redis if horizontally scaled).
+const LOGIN_MAX_FAILURES = 5; // max failures within the window
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // sliding window for failure counting
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // lockout duration after threshold is reached
 
 interface LoginAttempt {
   fails: number;
@@ -120,7 +121,7 @@ export class AdminService {
   private readonly events: EventsClient;
   private readonly promo: PromoClient;
   private readonly now: () => number;
-  /** 登录失败限流表（按登录名，内存态）。 */
+  /** Login failure rate-limit table (keyed by username, in-memory). */
   private readonly loginAttempts = new Map<string, LoginAttempt>();
 
   constructor(deps: AdminServiceDeps) {
@@ -139,41 +140,41 @@ export class AdminService {
     this.now = deps.now;
   }
 
-  // ───────────────────── 限时活动管理（B6，events.manage）──────────────────
-  /** 列出全部活动定义（含未开始/已结束）。meta 不可达返回空。 */
+  // ───────────────────── Time-limited event management (B6, events.manage) ──────────────────
+  /** List all event definitions (including not-yet-started and ended). Returns empty if meta is unreachable. */
   async listEvents(): Promise<EventDoc[]> {
     if (!this.events.available) return [];
     return this.events.list();
   }
 
-  /** 创建活动；meta 端校验失败 → EventsClientError（httpApi 映射 4xx）。审计。 */
+  /** Create an event; validation failure on the meta side throws EventsClientError (httpApi maps to 4xx). Audited. */
   async createEvent(actor: Actor, input: EventInput): Promise<EventDoc> {
     const ev = await this.events.create(input);
     await this.audit(actor.adminId, 'event.create', { target: ev._id, summary: ev.title });
     return ev;
   }
 
-  /** 全量替换活动定义。审计。 */
+  /** Full replacement of an event definition. Audited. */
   async updateEvent(actor: Actor, eventId: string, input: EventInput): Promise<EventDoc> {
     const ev = await this.events.update(eventId, input);
     await this.audit(actor.adminId, 'event.update', { target: ev._id, summary: ev.title });
     return ev;
   }
 
-  /** 删除活动定义。审计。 */
+  /** Delete an event definition. Audited. */
   async deleteEvent(actor: Actor, eventId: string): Promise<void> {
     await this.events.remove(eventId);
     await this.audit(actor.adminId, 'event.delete', { target: eventId });
   }
 
-  // ───────────────────── 优惠码管理（B-PROMO，promo.manage）──────────────────────────
-  /** 列出全部优惠码；commercial 不可达返回空列表。 */
+  // ───────────────────── Promo code management (B-PROMO, promo.manage) ──────────────────────────
+  /** List all promo codes; returns an empty list if commercial is unreachable. */
   async listPromoCodes(): Promise<PromoCodeView[]> {
     if (!this.promo.available) return [];
     return this.promo.list();
   }
 
-  /** 创建优惠码。审计。commercial 不可达 / 重复码抛 AdminError。 */
+  /** Create a promo code. Audited. Throws AdminError if commercial is unreachable or the code already exists. */
   async createPromoCode(
     actor: Actor,
     args: { code: string; coins: number; expiresAt?: number; totalLimit?: number; note?: string },
@@ -184,60 +185,60 @@ export class AdminService {
     return r;
   }
 
-  // ───────────────────── 天梯赛季运维（SE-3）──────────────────────────
-  /** 读当前天梯赛季概要；meta 不可达返回 null（ops 前端用于临近 endAt 高亮）。 */
+  // ───────────────────── Ladder season ops (SE-3) ──────────────────────────
+  /** Get current ladder season summary; returns null if meta is unreachable (ops frontend uses this to highlight approaching endAt). */
   async getLadderCurrentSeason(): Promise<LadderSeasonInfo | null> {
     if (!this.ladder.available) return null;
     return this.ladder.getCurrentSeason();
   }
 
-  /** CAS 幂等推进天梯赛季（开新赛季）。审计。 */
+  /** CAS-idempotent advance of the ladder season (open a new season). Audited. */
   async rollLadderSeason(actor: string): Promise<LadderSeasonInfo> {
     const season = await this.ladder.rollSeason();
     await this.audit(actor, 'ladder.season.roll', { summary: `→ s${season.seasonNo}` });
     return season;
   }
 
-  /** 24h 内 hash mismatch 对局列表（C3，anticheat.view 权限）。 */
+  /** List of matches with hash mismatches within the last 24 h (C3, anticheat.view capability). */
   async listMismatches(): Promise<MismatchRow[]> {
     if (!this.mismatches.available) return [];
     return this.mismatches.listMismatches();
   }
 
-  /** C4：pveWarnings > 0 的可疑账号列表（anticheat.view 权限）。 */
+  /** C4: list of suspicious accounts with pveWarnings > 0 (anticheat.view capability). */
   async listSuspiciousPve(): Promise<SuspiciousPveRow[]> {
     if (!this.suspiciousPve.available) return [];
     return this.suspiciousPve.listSuspiciousPve();
   }
 
-  /** S4-4：手动封号（anticheat.action 权限）。 */
+  /** S4-4: manual account ban (anticheat.action capability). */
   async banAccount(accountId: string): Promise<{ ok: boolean }> {
     if (!this.suspiciousPve.available) return { ok: false };
     return this.suspiciousPve.banAccount(accountId);
   }
 
-  /** S4-4：手动解封（anticheat.action 权限）。 */
+  /** S4-4: manual account unban (anticheat.action capability). */
   async unbanAccount(accountId: string): Promise<{ ok: boolean }> {
     if (!this.suspiciousPve.available) return { ok: false };
     return this.suspiciousPve.unbanAccount(accountId);
   }
 
-  // ───────────────────── SLG 赛季运维（G7/§17.7）─────────────────────
-  // worldsvc /admin/world/* 代理 + 审计 + 运维序列约束（reset 前必须 settle，防丢历史）。
+  // ───────────────────── SLG season ops (G7/§17.7) ─────────────────────
+  // Proxies worldsvc /admin/world/* + audit + operational sequence constraint (must settle before reset, to prevent loss of history).
 
-  /** 列出各大区运维概要（capability slg.season.view）。worldsvc 不可达 → 空表。 */
+  /** List operational summaries for all worlds (capability slg.season.view). Returns empty if worldsvc is unreachable. */
   async slgListWorlds(): Promise<SlgWorldSummary[]> {
     if (!this.world.available) return [];
     return this.world.listWorlds();
   }
 
-  /** 开新大区（高危，仅 super）。审计。 */
+  /** Open a new world (high-risk, super only). Audited. */
   async slgOpenSeason(actor: string, worldId: string, season: number, shard: number, capacity: number): Promise<void> {
     await this.world.openWorld(worldId, season, shard, capacity);
     await this.audit(actor, 'slg.season.open', { target: worldId, summary: `s${season}-${shard} cap=${capacity}` });
   }
 
-  /** 结算大区（落 seasonResults + 发奖）。审计。 */
+  /** Settle a world (persist seasonResults + distribute rewards). Audited. */
   async slgSettleSeason(actor: string, worldId: string): Promise<unknown> {
     const r = await this.world.settleWorld(worldId);
     await this.audit(actor, 'slg.season.settle', { target: worldId });
@@ -245,39 +246,40 @@ export class AdminService {
   }
 
   /**
-   * 重置大区（清档重开，高危）。运维序列约束：reset 前必须已 settle（status=settling/resetting），
-   * 否则拒绝（防跳过结算丢 seasonResults 历史，§17.7）。worldsvc 端亦有同守卫（双保险）。
+   * Reset a world (wipe data and reopen, high-risk). Operational sequence constraint: the world must have already
+   * been settled (status=settling/resetting) before reset is allowed; otherwise the request is rejected
+   * (prevents skipping settlement and losing seasonResults history, §17.7). worldsvc enforces the same guard (double safety net).
    */
   async slgResetSeason(actor: string, worldId: string): Promise<unknown> {
     const worlds = await this.world.listWorlds();
     const w = worlds.find((x) => x.worldId === worldId);
     if (w && w.status !== 'settling' && w.status !== 'resetting') {
-      throw new AdminError(409, 'conflict', `重置前须先结算（当前 status=${w.status}，应为 settling）`);
+      throw new AdminError(409, 'conflict', `must settle before reset (current status=${w.status}, expected settling)`);
     }
     const r = await this.world.resetWorld(worldId);
     await this.audit(actor, 'slg.season.reset', { target: worldId });
     return r;
   }
 
-  /** 关闭大区（归档）。审计。 */
+  /** Close a world (archive it). Audited. */
   async slgCloseSeason(actor: string, worldId: string): Promise<void> {
     await this.world.closeWorld(worldId);
     await this.audit(actor, 'slg.season.close', { target: worldId });
   }
 
-  // ───────────────── SLG 异常交易审计（G7 反 RMT，§17.7）─────────────────
-  // worldsvc 离线扫出可疑「卖家→买家」配对，运维立审计工单 → 单人裁定（误报 dismiss / 确认 action）。
-  // 与补偿工单平行：不发奖、不双人审批，核查由单人裁定 + 审计留痕；处置（封禁/扣回）走外联流程。
+  // ───────────────── SLG anomalous trade audit (G7 anti-RMT, §17.7) ─────────────────
+  // worldsvc offline scan detects suspicious seller→buyer pairs; ops files an audit ticket → single-person adjudication (dismiss for false positive / action for confirmed violation).
+  // Parallel to compensation tickets: no rewards issued, no two-person approval; review is single-person adjudication + audit trail; enforcement (ban/clawback) follows the external liaison process.
 
-  /** 拉一个大区的拍卖异常扫描（capability slg.audit.view）。worldsvc 不可达 → 空表。 */
+  /** Fetch auction anomaly scan for a world (capability slg.audit.view). Returns empty if worldsvc is unreachable. */
   async slgScanAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]> {
     if (!this.world.available) return [];
     return this.world.listAuctionAnomalies(worldId, windowSec);
   }
 
   /**
-   * 立异常交易审计工单（capability slg.audit.manage）。冻结快照 + pairKey 去重：
-   * 同配对已有 open 工单则直接返回那一张（幂等，不重复立）。审计 slg.audit.file。
+   * File an anomalous trade audit ticket (capability slg.audit.manage). Freezes the snapshot + deduplicates by pairKey:
+   * if an open ticket already exists for the same pair, returns it directly (idempotent, no duplicate filing). Audited as slg.audit.file.
    */
   async slgFileAuditTicket(actor: Actor, snapshot: TradeAuditSnapshot): Promise<TradeAuditTicketView> {
     const snap = validateAuditSnapshot(snapshot);
@@ -300,7 +302,7 @@ export class AdminService {
     return this.toAuditTicketView(doc);
   }
 
-  /** 列审计工单（capability slg.audit.view），可按状态过滤，按立单时间倒序。 */
+  /** List audit tickets (capability slg.audit.view), optionally filtered by status, ordered by filing time descending. */
   async slgListAuditTickets(filter: { status?: string }): Promise<TradeAuditTicketView[]> {
     const q: Partial<Record<'status', TradeAuditTicketStatus>> = {};
     if (filter.status) {
@@ -314,8 +316,8 @@ export class AdminService {
   }
 
   /**
-   * 裁定审计工单（capability slg.audit.manage）：open → dismissed（误报）/ actioned（确认违规）。
-   * 仅 open 可裁定（原子守卫防并发双裁）。审计 slg.audit.resolve。
+   * Adjudicate an audit ticket (capability slg.audit.manage): open → dismissed (false positive) / actioned (confirmed violation).
+   * Only open tickets can be adjudicated (atomic guard prevents concurrent double-adjudication). Audited as slg.audit.resolve.
    */
   async slgResolveAuditTicket(
     actor: Actor,
@@ -366,12 +368,12 @@ export class AdminService {
     };
   }
 
-  // ───────────────────────── 认证 ─────────────────────────
+  // ───────────────────────── Authentication ─────────────────────────
 
-  /** 校验账号口令。成功返回账号（供 httpApi 签 token）；失败抛 AdminError。审计登录成败。 */
+  /** Verify account credentials. Returns the account on success (for httpApi to sign a token); throws AdminError on failure. Audits both success and failure. */
   async authenticate(username: string, password: string, ip?: string): Promise<AdminAccountDoc> {
     const key = (username ?? '').trim().toLowerCase();
-    // 限流闸门：达阈值即拒，连口令对错都不校验（防爆破 + 防计时旁路）。
+    // Rate-limit gate: reject immediately at threshold without even checking the password (prevents brute force + timing side-channel).
     const lockedFor = this.loginLockedMs(key);
     if (lockedFor > 0) {
       await this.audit(`unknown:${username}`, 'login.failed', {
@@ -385,7 +387,7 @@ export class AdminService {
     const doc = await this.cols.adminAccounts.findOne({ username });
     if (!doc || doc.disabled || !(await verifyPassword(password, doc.passwordHash))) {
       this.recordLoginFailure(key);
-      // 不区分「无此人/密码错/已禁用」对外，避免账号枚举；审计记原因。
+      // Do not distinguish between "no such user / wrong password / disabled" externally, to prevent account enumeration; the audit log records the real reason.
       await this.audit(doc?._id ?? `unknown:${username}`, 'login.failed', {
         target: username,
         ...(ip ? { ip } : {}),
@@ -393,13 +395,13 @@ export class AdminService {
       });
       throw new AdminError(401, 'invalid_credentials', 'invalid username or password');
     }
-    this.loginAttempts.delete(key); // 成功即清零
+    this.loginAttempts.delete(key); // reset counter on success
     await this.cols.adminAccounts.updateOne({ _id: doc._id }, { $set: { lastLoginAt: this.now() } });
     await this.audit(doc._id, 'login', { ...(ip ? { ip } : {}) });
     return doc;
   }
 
-  /** 当前是否处于锁定中；返回剩余锁定毫秒（0 = 未锁）。 */
+  /** Whether the account is currently locked; returns remaining lockout milliseconds (0 = not locked). */
   private loginLockedMs(key: string): number {
     const a = this.loginAttempts.get(key);
     if (!a) return 0;
@@ -407,7 +409,7 @@ export class AdminService {
     return a.lockedUntil > now ? a.lockedUntil - now : 0;
   }
 
-  /** 记一次登录失败；窗口外重置计数，达阈值则锁定。 */
+  /** Record one login failure; resets the counter if outside the window, locks the account when threshold is reached. */
   private recordLoginFailure(key: string): void {
     const now = this.now();
     const a = this.loginAttempts.get(key);
@@ -418,7 +420,7 @@ export class AdminService {
     a.fails += 1;
     if (a.fails >= LOGIN_MAX_FAILURES) {
       a.lockedUntil = now + LOGIN_LOCKOUT_MS;
-      a.fails = 0; // 锁定后计数清零，解锁后重新计
+      a.fails = 0; // reset counter after locking; restarts fresh after the lockout expires
       a.windowStart = now;
     }
   }
@@ -431,7 +433,7 @@ export class AdminService {
     return { admin: toAccountView(doc), capabilities: capabilitiesForRole(doc.role) };
   }
 
-  // ───────────────────────── 账号管理（admin.manage）─────────────────────────
+  // ───────────────────────── Account management (admin.manage) ─────────────────────────
 
   async listAccounts(): Promise<AdminAccountView[]> {
     const docs = await this.cols.adminAccounts.find({}).sort({ createdAt: 1 }).toArray();
@@ -463,7 +465,7 @@ export class AdminService {
     try {
       await this.cols.adminAccounts.insertOne(doc);
     } catch (e) {
-      // 唯一索引并发冲突。
+      // Concurrent unique index violation.
       if ((e as { code?: number }).code === 11000) throw new AdminError(409, 'conflict', 'username taken');
       throw e;
     }
@@ -484,7 +486,7 @@ export class AdminService {
     const set: Partial<AdminAccountDoc> = {};
     if (patch.role !== undefined) {
       if (!isAdminRole(patch.role)) throw new AdminError(400, 'bad_request', 'invalid role');
-      // 防止超管把自己降级后无人能管理（至少留一个启用的超管）。
+      // Prevent a super admin from demoting themselves, leaving no one who can manage accounts (must always keep at least one active super admin).
       if (doc._id === actor.adminId && patch.role !== 'super') {
         throw new AdminError(400, 'bad_request', 'cannot demote yourself');
       }
@@ -521,7 +523,7 @@ export class AdminService {
     await this.audit(actor.adminId, 'account.reset_password', { target: id });
   }
 
-  // ───────────────────────── 补偿工单 ─────────────────────────
+  // ───────────────────────── Compensation tickets ─────────────────────────
 
   async initiateTicket(
     actor: Actor,
@@ -531,7 +533,7 @@ export class AdminService {
     if (scope !== 'single' && scope !== 'global') {
       throw new AdminError(400, 'bad_request', 'scope must be single|global');
     }
-    // 发起能力校验（个人 vs 全服）。
+    // Validate initiation capability (single player vs. all players).
     this.requireCap(actor, requiredInitiateCapability(scope));
 
     const reason = (input.reason ?? '').trim();
@@ -539,7 +541,7 @@ export class AdminService {
     const mail = validateMail(input.mail);
     const target = validateTarget(scope, input.target);
 
-    // 个人补偿据附件总当量分级；全服恒走超管审批（amountTier 仅审计语义，能力由 scope 决定）。
+    // Single-player compensation is tiered by total attachment value; global compensation always requires super-admin approval (amountTier is audit semantics only; the capability is determined by scope).
     const amountTier = scope === 'global' ? 'overquota' : tierForAttachments(mail.attachments);
 
     const doc: CompTicketDoc = {
@@ -575,18 +577,18 @@ export class AdminService {
   }
 
   /**
-   * 审批 → 自动执行（OPS_DESIGN §3.3）。校验：①工单 pending；②审批人 ≠ 发起人；
-   * ③审批人具备该 scope/tier 所需能力。通过即置 approved 并立刻执行（投递系统邮件）。
+   * Approve → auto-execute (OPS_DESIGN §3.3). Validates: ① ticket is pending; ② approver ≠ initiator;
+   * ③ approver has the capability required for this scope/tier. On passing, sets status to approved and immediately executes (dispatches the system mail).
    */
   async approveTicket(actor: Actor, id: string): Promise<CompTicketView> {
     const doc = await this.cols.compTickets.findOne({ _id: id });
     if (!doc) throw new AdminError(404, 'not_found', 'no such ticket');
     if (doc.status !== 'pending') throw new AdminError(409, 'conflict', `ticket is ${doc.status}`);
     const cap = requiredApproveCapability(doc.scope, doc.amountTier);
-    // 四眼原则：发起人原则上不能审批自己的工单。但当全场没有「其他可审批此单」的有效账号时
-    // （典型：当前仅一个超管，全服/超额工单只有超管能批），硬性四眼会导致工单永久死锁。
-    // 故仅在「存在其他合格审批人」时强制他人审批；否则允许发起人自批，并专门留痕（selfApproved）。
-    // TODO(single-super-exception): 招到第二名运维（具备对应审批能力）后删除此例外，恢复硬性发起≠审批。
+    // Four-eyes principle: the initiator must not approve their own ticket. However, if there are no other eligible approvers for this ticket
+    // (typical case: only one super admin exists, and global/over-quota tickets can only be approved by super), strict four-eyes would cause permanent deadlock.
+    // Therefore, self-approval is only blocked when another eligible approver exists; otherwise self-approval is permitted and explicitly flagged (selfApproved).
+    // TODO(single-super-exception): remove this exception once a second operator with the corresponding approval capability is on-boarded, restoring hard initiator ≠ approver enforcement.
     let selfApproved = false;
     if (doc.initiatedBy === actor.adminId) {
       if (await this.hasOtherEligibleApprover(doc.initiatedBy, cap)) {
@@ -611,15 +613,15 @@ export class AdminService {
   }
 
   /**
-   * 是否存在「除发起人外、当前可用（未禁用）、且具备该审批能力」的其他管理员。
-   * 决定四眼原则能否真正落地：存在 → 必须他人审批；不存在 → 允许发起人自批（单超管例外，见 approveTicket）。
+   * Whether there is another admin — other than the initiator, currently active (not disabled), and possessing the given approval capability.
+   * Determines whether four-eyes can be enforced: present → another person must approve; absent → self-approval allowed (single-super exception, see approveTicket).
    */
   private async hasOtherEligibleApprover(initiatorId: string, cap: AdminCapability): Promise<boolean> {
     const eligibleRoles = ADMIN_ROLES.filter((r) => roleHasCapability(r, cap));
     const count = await this.cols.adminAccounts.countDocuments({
       _id: { $ne: initiatorId },
       disabled: { $ne: true },
-      // 种子超管是休眠备份/建号账号，不算活跃运维，排除之（否则单超管永远被它挡住自批）。
+      // Seed super-admins are dormant backup/bootstrap accounts, not active operators; exclude them (otherwise the seed would always block a single super from self-approving).
       seed: { $ne: true },
       role: { $in: eligibleRoles },
     });
@@ -644,7 +646,7 @@ export class AdminService {
     return this.toTicketView(res);
   }
 
-  /** 撤销（仅 pending；发起人或超管）。 */
+  /** Cancel a ticket (pending only; initiator or super admin). */
   async cancelTicket(actor: Actor, id: string): Promise<CompTicketView> {
     const doc = await this.cols.compTickets.findOne({ _id: id });
     if (!doc) throw new AdminError(404, 'not_found', 'no such ticket');
@@ -662,7 +664,7 @@ export class AdminService {
     return this.toTicketView(res);
   }
 
-  /** 全服补偿 dry-run 命中人数预览（OPS_DESIGN §3.3 安全阀）。 */
+  /** Dry-run preview of how many players a global compensation would reach (OPS_DESIGN §3.3 safety valve). */
   async preview(input: { scope: string; target: CompTarget }): Promise<{ recipientCount: number; available: boolean }> {
     if (input.scope !== 'single' && input.scope !== 'global') {
       throw new AdminError(400, 'bad_request', 'scope must be single|global');
@@ -673,7 +675,7 @@ export class AdminService {
     return { recipientCount: r.recipientCount, available: r.ok };
   }
 
-  /** 重试执行失败的工单（failed → 重新投递；幂等键不变，邮件后端据此防重复）。 */
+  /** Retry a failed ticket execution (failed → re-dispatch; dispatchKey is unchanged, so the mail backend prevents duplicates). */
   async retryTicket(actor: Actor, id: string): Promise<CompTicketView> {
     const doc = await this.cols.compTickets.findOne({ _id: id });
     if (!doc) throw new AdminError(404, 'not_found', 'no such ticket');
@@ -683,8 +685,8 @@ export class AdminService {
   }
 
   /**
-   * 执行器：调 meta 系统邮件端点（带 dispatchKey 幂等）。成功 executed（回填 recipientCount），
-   * 失败 failed（可重试）。执行 ≠ 入账——只是把邮件投到玩家邮箱，领取时才经 commercial/inventory。
+   * Executor: calls the meta system-mail endpoint (idempotent via dispatchKey). On success sets status to executed (backfills recipientCount);
+   * on failure sets status to failed (retryable). Execution ≠ credit — it only delivers the mail to the player's inbox; the reward is credited via commercial/inventory when the player claims it.
    */
   private async execute(doc: CompTicketDoc): Promise<CompTicketView> {
     const res = await this.mail.send({
@@ -726,11 +728,11 @@ export class AdminService {
     return this.toTicketView(updated ?? { ...doc, status: 'failed', error: err });
   }
 
-  // ───────────────────────── 审计 ─────────────────────────
+  // ───────────────────────── Audit ─────────────────────────
 
   /**
-   * 审计查询。audit.view.all → 全部（可按 actor 过滤）；否则仅本人（actor.view.self）。
-   * httpApi 已校验「至少 audit.view.self」；此处据能力收窄可见范围。
+   * Audit query. audit.view.all → all entries (optionally filtered by actor); otherwise only the caller's own entries (audit.view.self).
+   * httpApi has already verified "at least audit.view.self"; this method further narrows the visible range based on capability.
    */
   async listAudit(
     actor: Actor,
@@ -741,7 +743,7 @@ export class AdminService {
     if (canAll) {
       if (filter.actor) q.actor = filter.actor;
     } else {
-      q.actor = actor.adminId; // 强制只看自己
+      q.actor = actor.adminId; // force visibility to own entries only
     }
     if (filter.from !== undefined || filter.to !== undefined) {
       const ts: Record<string, number> = {};
@@ -763,7 +765,7 @@ export class AdminService {
     }));
   }
 
-  // ───────────────────────── 监控 / 趋势 / 分析 ─────────────────────────
+  // ───────────────────────── Monitoring / trends / analytics ─────────────────────────
 
   async liveStats(): Promise<LiveStats & { available: boolean }> {
     const live = await this.stats.fetchLive();
@@ -789,7 +791,7 @@ export class AdminService {
     return docs.map((d) => ({ ts: d.ts, value: d.value }));
   }
 
-  /** 数据分析概览（自采指标聚合 + 工单态统计）。 */
+  /** Analytics overview (aggregated self-collected metrics + ticket status counts). */
   async analyticsSummary(): Promise<{
     live: LiveStats & { available: boolean };
     last24h: Record<MetricKey, { avg: number; peak: number; samples: number }>;
@@ -814,14 +816,14 @@ export class AdminService {
     return { live, last24h, tickets };
   }
 
-  /** 埋点聚合查询（代理到 analyticsvc /internal/query，A9-6）。 */
+  /** Aggregated analytics query (proxied to analyticsvc /internal/query, A9-6). */
   async analyticsQuery(type: string, days: number, platform?: string): Promise<AnalyticsQueryResult & { available: boolean }> {
     if (!this.analytics.available) return { available: false };
     const result = await this.analytics.query(type, days, platform);
     return { ...result, available: true };
   }
 
-  /** 玩家查询（player.lookup）。 */
+  /** Player lookup (player.lookup). */
   async lookupPlayer(publicId: string): Promise<PlayerProfile> {
     const pid = (publicId ?? '').trim();
     if (!/^\d{9}$/.test(pid)) throw new AdminError(400, 'bad_request', 'publicId must be 9 digits');
@@ -833,7 +835,7 @@ export class AdminService {
     return p;
   }
 
-  /** 按 accountId 查玩家详情（player.lookup，模糊搜结果点击后取详情）。 */
+  /** Look up player details by accountId (player.lookup; called after clicking a fuzzy-search result for details). */
   async lookupPlayerByAccountId(accountId: string): Promise<PlayerProfile> {
     const id = (accountId ?? '').trim();
     if (!id) throw new AdminError(400, 'bad_request', 'accountId required');
@@ -845,7 +847,7 @@ export class AdminService {
     return p;
   }
 
-  /** 玩家模糊搜（player.lookup）：昵称/登录账号/公开 id/accountId，返回命中摘要列表。审计。 */
+  /** Fuzzy player search (player.lookup): by display name / login name / public id / accountId; returns a list of matching summaries. Audited. */
   async searchPlayers(actor: string, q: string): Promise<PlayerSummary[]> {
     const term = (q ?? '').trim();
     if (term.length < 2) throw new AdminError(400, 'bad_request', 'query too short (min 2)');
@@ -857,7 +859,7 @@ export class AdminService {
     return rows;
   }
 
-  /** 成就反作弊审查队列（anticheat.view，S9-7）。默认 open；可按 accountId 过滤。审计。 */
+  /** Achievement anti-cheat review queue (anticheat.view, S9-7). Defaults to open status; can be filtered by accountId. Audited. */
   async listAntiCheatReviews(
     actor: string,
     opts: { accountId?: string; status?: string; limit?: number } = {},
@@ -873,9 +875,9 @@ export class AdminService {
     return rows;
   }
 
-  // ───────────────────────── 采样（OPS_DESIGN §5）─────────────────────────
+  // ───────────────────────── Sampling (OPS_DESIGN §5) ─────────────────────────
 
-  /** 拉一次实时态写时序快照（采样定时器调）。出错记 0（采样不中断）。 */
+  /** Take one live-state time-series snapshot (called by the sampling timer). Records 0 on error (sampling must not be interrupted). */
   async sampleOnce(): Promise<void> {
     const live = await this.stats.fetchLive();
     const ts = this.now();
@@ -892,13 +894,13 @@ export class AdminService {
     );
   }
 
-  // ───────────────────── 功能开关（feature flags，§5）─────────────────────
-  // admin 是「处理中心」：唯一碰 flag 库、唯一写、对内出原始规则。运营在 ops 翻开关 →
-  // upsertFlag 写库 + 审计；不连库的后端轮询 getInternalFlags() 拿原始规则自己求值。
+  // ───────────────────── Feature flags (§5) ─────────────────────
+  // admin is the "processing hub": the only service that touches the flags collection, the only writer, and the sole internal source of raw rules.
+  // Operators flip switches in ops → upsertFlag writes to the DB + audits; backends that do not connect to the DB poll getInternalFlags() to retrieve raw rules and evaluate them locally.
 
   /**
-   * 列出全部白名单 flag + 当前覆盖规则 + 默认值（capability config.manage，ops 列表用）。
-   * 没被覆盖过的 flag doc=null，前端显示「默认（default）」。
+   * List all allowlisted flags with their current override rules and defaults (capability config.manage, used by the ops list view).
+   * Flags that have never been overridden have doc=null; the frontend displays them as "default".
    */
   async getConfigFlags(): Promise<
     Array<{ key: FlagKey; default: boolean; desc: string; side: string; doc: FeatureFlagDoc | null }>
@@ -914,14 +916,14 @@ export class AdminService {
     }));
   }
 
-  /** 全量原始规则（admin 内部端点 GET /admin/internal/flags 用；不求值，给消费者本地求值）。 */
+  /** All raw flag rules (for the admin internal endpoint GET /admin/internal/flags; not evaluated — returned as-is for consumers to evaluate locally). */
   async getInternalFlags(): Promise<FeatureFlagDoc[]> {
     return this.cols.featureFlags.find({}).toArray();
   }
 
   /**
-   * 写入/更新一条 flag 规则（capability config.manage）。校验 key 在白名单内、pct/平台合法值；
-   * 每次写 auditLog（actor / 前后值 / 时间），与补偿审批一致。
+   * Write/update a flag rule (capability config.manage). Validates that key is in the allowlist and that pct/platform values are legal;
+   * writes to auditLog on every change (actor / before+after values / timestamp), consistent with compensation approval auditing.
    */
   async upsertFlag(
     actor: Actor,
@@ -933,7 +935,7 @@ export class AdminService {
     const rollout = validateRollout(input.rollout);
     const doc: FeatureFlagDoc = {
       _id: key,
-      enabled: input.enabled !== false, // 缺省视为开总闸（仅显式 false 关）
+      enabled: input.enabled !== false, // defaults to enabled; only an explicit false turns it off
       ...(rollout ? { rollout } : {}),
       ...(typeof input.desc === 'string' && input.desc.trim() ? { desc: input.desc.trim() } : {}),
       updatedAt: this.now(),
@@ -947,7 +949,7 @@ export class AdminService {
     return doc;
   }
 
-  // ───────────────────────── 内部 ─────────────────────────
+  // ───────────────────────── Internal helpers ─────────────────────────
 
   private requireCap(actor: Actor, cap: AdminCapability): void {
     if (!roleHasCapability(actor.role, cap)) {
@@ -955,7 +957,7 @@ export class AdminService {
     }
   }
 
-  /** 写一条审计（best-effort，不抛 —— 审计失败不应阻断主操作，但要打日志）。 */
+  /** Write one audit entry (best-effort, does not throw — an audit failure must not block the primary operation, but must be logged). */
   async audit(
     actor: string,
     action: AuditAction,
@@ -1013,7 +1015,7 @@ export class AdminService {
   }
 }
 
-// ── 纯函数辅助 ──────────────────────────────────────────
+// ── Pure function helpers ──────────────────────────────────────────
 function toAccountView(doc: AdminAccountDoc): AdminAccountView {
   return {
     id: doc._id,
@@ -1084,7 +1086,7 @@ function validateTarget(scope: CompScope, target: CompTarget | undefined): CompT
     }
     return { publicId: pid.trim() };
   }
-  // global：一期仅 all。
+  // global: phase 1 supports only "all".
   return { filter: { kind: 'all' } };
 }
 
@@ -1092,7 +1094,7 @@ function describeTarget(target: CompTarget): string {
   return 'publicId' in target ? `#${target.publicId}` : `filter:${target.filter.kind}`;
 }
 
-/** 校验/规整 flag 定向规则（越界/非法直接抛 400，与玩家可见配置不同——这里要严，防误配）。 */
+/** Validate and normalise a flag targeting rule (out-of-range / invalid values throw 400 directly — stricter than player-facing config, to prevent misconfiguration). */
 function validateRollout(raw: unknown): FlagRollout | undefined {
   if (raw === undefined || raw === null) return undefined;
   if (typeof raw !== 'object') throw new AdminError(400, 'bad_request', 'rollout must be an object');
@@ -1131,7 +1133,7 @@ function validateRollout(raw: unknown): FlagRollout | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
-/** 审计摘要：紧凑描述一条 flag 的态（before/after 对比用）。 */
+/** Audit summary: compact description of a flag's state (used for before/after comparison). */
 function describeFlag(doc: FeatureFlagDoc | null): string {
   if (!doc) return 'default';
   const r = doc.rollout;

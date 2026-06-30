@@ -1,6 +1,6 @@
-// socialsvc 进程引导（SOCIAL_SVC_DESIGN §7）。
-// 第五公网面：/social/*，端口 8085。nw_social 独立库，鉴权复用 meta JWT。
-// P1：家族  P2：好友/私聊/邮件  P3：presence 事件
+// socialsvc process bootstrap (SOCIAL_SVC_DESIGN §7).
+// Fifth public face: /social/*, port 8085. nw_social dedicated database; auth reuses the meta JWT.
+// P1: family  P2: friends / private-chat / mail  P3: presence events
 import { createLogger, startHeartbeat } from '@nw/shared';
 import { loadSocialsvcEnv } from './config';
 import { createSocialMongo } from './db';

@@ -5,8 +5,8 @@
  *   • constant  — a single number
  *   • two-point — {from, to, ease}
  *   • keyframes — Keyframe[] (per-segment ease)
- * A "形态" dropdown converts between them; the keyframe form lets you add/remove
- * stops. "+ 参数" offers the primitive's known knobs (paramHints) or free text.
+ * A "form" dropdown converts between them; the keyframe form lets you add/remove
+ * stops. The "+ param" button offers the primitive's known knobs (paramHints) or free text.
  */
 import { Ease, Keyframe, ParamTrack, PrimitiveType } from '@vfx/types';
 import { EffectModel } from '../model/EffectModel';
@@ -49,22 +49,22 @@ export class ParamPanel {
     this.listEl.innerHTML = '';
     const layer = this.model.selected;
     if (!layer) {
-      this.labelEl.textContent = '未选图层';
+      this.labelEl.textContent = 'No layer selected';
       this.addWrap.style.display = 'none';
       const e = document.createElement('div');
       e.className = 'empty';
-      e.textContent = '左侧选中一个图层以编辑参数';
+      e.textContent = 'Select a layer on the left to edit params';
       this.listEl.appendChild(e);
       return;
     }
 
-    this.labelEl.textContent = `图层 ${this.model.selectedLayer + 1} · ${layer.type}`;
+    this.labelEl.textContent = `Layer ${this.model.selectedLayer + 1} · ${layer.type}`;
     const params = layer.params ?? {};
     const keys = Object.keys(params);
     if (keys.length === 0) {
       const e = document.createElement('div');
       e.className = 'empty';
-      e.textContent = '无参数 — 用下方「+ 参数」添加';
+      e.textContent = 'No params — use "+ param" below to add one';
       this.listEl.appendChild(e);
     }
     for (const key of keys) this.listEl.appendChild(this.paramCard(key, params[key]));
@@ -85,14 +85,14 @@ export class ParamPanel {
     }
     const custom = document.createElement('option');
     custom.value = '__custom__';
-    custom.textContent = '自定义…';
+    custom.textContent = 'Custom…';
     this.addSelect.appendChild(custom);
   }
 
   private addParam(): void {
     let name = this.addSelect.value;
     if (name === '__custom__' || name === '') {
-      const typed = prompt('参数名：');
+      const typed = prompt('Param name:');
       if (!typed) return;
       name = typed.trim();
       if (!name) return;
@@ -114,7 +114,7 @@ export class ParamPanel {
     head.appendChild(name);
 
     const formSel = document.createElement('select');
-    for (const [val, lab] of [['const', '常量'], ['ramp', '二点'], ['keys', '关键帧']] as const) {
+    for (const [val, lab] of [['const', 'Constant'], ['ramp', 'Two-point'], ['keys', 'Keyframes']] as const) {
       const o = document.createElement('option');
       o.value = val; o.textContent = lab;
       if (val === formOf(track)) o.selected = true;
@@ -126,7 +126,7 @@ export class ParamPanel {
     const del = document.createElement('button');
     del.className = 'sm danger';
     del.textContent = '×';
-    del.title = '删除参数';
+    del.title = 'Delete param';
     del.addEventListener('click', () => this.model.removeParam(key));
     head.appendChild(del);
 
@@ -181,7 +181,7 @@ export class ParamPanel {
     });
     const add = document.createElement('button');
     add.className = 'sm';
-    add.textContent = '+ 关键帧';
+    add.textContent = '+ Keyframe';
     add.addEventListener('click', () => {
       const last = kfs[kfs.length - 1];
       const n = clone(kfs);

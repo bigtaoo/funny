@@ -1,6 +1,7 @@
-// 国家/世界公频服务（B7，§6.4 社交频道）。
-// 同 world 内所有玩家均可发言，消息经 Redis pub/sub 扇给各 gateway 在线成员；
-// 无 Redis 则降级为 O(n) HTTP push。离线成员靠 REST 拉历史（TTL 7 天）。
+// Nation/world public-channel service (B7, §6.4 social channels).
+// All players within the same world can post; messages are fanned out to online gateway members via
+// Redis pub/sub. Without Redis the service degrades to O(n) HTTP push. Offline members fetch
+// history via REST (TTL 7 days).
 import { FAMILY_MSG_BODY_MAX, SlgError } from '@nw/shared';
 import type { WorldCollections, NationMessageDoc } from './db';
 import type { HttpWorldGatewayClient } from './gatewayClient';
@@ -22,7 +23,7 @@ interface Deps {
   gateway: HttpWorldGatewayClient;
   commercial: WorldCommercialClient;
   now: () => number;
-  /** socialsvc 客户端（push 委托，SOCIAL_SVC_DESIGN §5）；缺省 = 降级直推 gateway。 */
+  /** socialsvc client (push delegation, SOCIAL_SVC_DESIGN §5); omit to degrade to direct gateway push. */
   socialsvc?: WorldSocialsvcClient;
 }
 
@@ -35,8 +36,9 @@ export class NationChannelService {
   }
 
   /**
-   * 发国家/世界公频消息。玩家须已入驻该世界（playerWorld 记录存在），消息持久化后
-   * 广播给世界内所有其他在线玩家。
+   * Send a nation/world public-channel message. The player must already be settled in the world
+   * (playerWorld record must exist); the message is persisted then broadcast to all other online
+   * players in the world.
    */
   async sendMessage(
     worldId: string,
@@ -69,7 +71,7 @@ export class NationChannelService {
     };
     await cols.nationMessages.insertOne(msgDoc);
 
-    // 推送：优先委托 socialsvc（push 中枢，§5）；无 socialsvc 时降级直推 gateway（O(n)）。
+    // Push: prefer delegating to socialsvc (push hub, §5); fall back to direct gateway push O(n) when socialsvc is unavailable.
     const payload = { worldId, fromPublicId: accountId, fromName: senderName, body, ts };
     if (this.socialsvc.available) {
       const recipients = await this.worldMemberAccountIds(worldId, accountId);
@@ -83,8 +85,8 @@ export class NationChannelService {
   }
 
   /**
-   * 获取国家/世界公频历史（倒序分页，before 为 ms epoch 游标，limit ≤50）。
-   * 玩家须已入驻该世界。
+   * Fetch nation/world public-channel history (reverse-chronological pagination; before is an ms
+   * epoch cursor; limit ≤ 50). The player must already be settled in the world.
    */
   async getChannel(
     worldId: string,
