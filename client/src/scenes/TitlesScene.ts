@@ -4,14 +4,15 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { sortTitlesByWeight, getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 
-// ── TitlesScene — title wall (S10, TITLE_DESIGN §7) ────────────────────────────
+// â”€â”€ TitlesScene â€” title wall (S10, TITLE_DESIGN Â§7) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
-// Entry: StatsScene → onOpenTitles.
+// Entry: StatsScene â†’ onOpenTitles.
 // Displays: all titles owned by the player, sorted by weight descending; the equipped one is highlighted.
-// Interaction: tap a title row → update equipped['title'] (PUT /save, client-side sync segment).
+// Interaction: tap a title row â†’ update equipped['title'] (PUT /save, client-side sync segment).
 
 export interface TitlesSceneCallbacks {
   onBack(): void;
@@ -19,7 +20,7 @@ export interface TitlesSceneCallbacks {
   titles: string[];
   /** Currently equipped title id (save.equipped['title']). */
   equippedTitle: string;
-  /** Equip a new title → write equipped['title'] + PUT /save. */
+  /** Equip a new title â†’ write equipped['title'] + PUT /save. */
   onEquip(titleId: string): void;
 }
 
@@ -72,6 +73,8 @@ export class TitlesScene implements Scene {
     const { w, h } = this;
     const bg = buildPaperBackground('titlesbg', w, h);
     this.container.addChild(bg);
+    const decoC = buildDecorCLayer(w, h);
+    if (decoC) this.container.addChild(decoC);
   }
 
   private drawHeader(): void {
@@ -118,7 +121,7 @@ export class TitlesScene implements Scene {
         ? (t(keys.fullKey as import('../i18n').TranslationKey) || shortLabel)
         : shortLabel;
 
-      const nameLbl = txt(`「${shortLabel}」  ${fullLabel}`, Math.round(rowH * 0.38), equipped ? C.gold : C.dark, equipped);
+      const nameLbl = txt(`ã€Œ${shortLabel}ã€  ${fullLabel}`, Math.round(rowH * 0.38), equipped ? C.gold : C.dark, equipped);
       nameLbl.anchor.set(0, 0.5); nameLbl.x = padX + Math.round(rowW * 0.04); nameLbl.y = rowY + rowH / 2;
       this.container.addChild(nameLbl);
 

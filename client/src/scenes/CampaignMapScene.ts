@@ -7,22 +7,23 @@ import { CHAPTER_ORDER, getChapterMap } from '../game';
 import type { ChapterMap, ChapterNode } from '../game';
 import { parseLevelId, isLevelUnlocked, currentChapter, currentLevelIdInChapter } from '../game/campaign/progress';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
 
-// ── CampaignMapScene (S3-5 → CAMPAIGN_DESIGN §12) — the "campaign notebook" ──────
+// â”€â”€ CampaignMapScene (S3-5 â†’ CAMPAIGN_DESIGN Â§12) â€” the "campaign notebook" â”€â”€â”€â”€â”€â”€
 //
 // The PvE entry is a diegetic open notebook, not a flat list. Two page kinds:
-//   • TOC (landing): one card per chapter with venue name + star progress + lock
+//   â€¢ TOC (landing): one card per chapter with venue name + star progress + lock
 //     state; tapping an unlocked chapter flips to its page.
-//   • Chapter page: that chapter's 10 levels drawn as hand-placed nodes threaded
+//   â€¢ Chapter page: that chapter's 10 levels drawn as hand-placed nodes threaded
 //     by a pencil trail (positions from `maps/chN.json`, normalized 0..1). Cleared
 //     nodes get a star stamp, the current playable node pulses, locked nodes are a
-//     faint pencil outline. Procedural doodle decor (start/boss/rack…) sets venue.
+//     faint pencil outline. Procedural doodle decor (start/boss/rackâ€¦) sets venue.
 //
-// On entry the book "opens" — it starts on the TOC then auto-flips to the chapter
-// holding the current playable level (progress landing, §12.2). Page changes are a
+// On entry the book "opens" â€” it starts on the TOC then auto-flips to the chapter
+// holding the current playable level (progress landing, Â§12.2). Page changes are a
 // horizontal slide+fade ("page turn") driven from update(); the current node's
 // pulse is animated there too. All art is procedural (SketchPen + sketchUi), no
 // assets. Callbacks/interface are unchanged so app wiring + ui tests keep working.
@@ -37,9 +38,9 @@ export interface CampaignMapCallbacks {
   onOpenEquipment?(): void;
   /** Stars earned per level id (0..3); absent = 0. */
   getStars(): Record<string, 1 | 2 | 3>;
-  /** Cleared level ids — drives the sequential unlock gate. */
+  /** Cleared level ids â€” drives the sequential unlock gate. */
   getCleared(): string[];
-  /** Online = can reach /pve/* (clear/unlock are server-authoritative, §8). Offline gates new unlocks. */
+  /** Online = can reach /pve/* (clear/unlock are server-authoritative, Â§8). Offline gates new unlocks. */
   isOnline(): boolean;
   /** Level ids with an offline clear queued for settlement (shown as "pending settlement"). */
   getPendingLevels(): string[];
@@ -86,7 +87,7 @@ export class CampaignMapScene implements Scene {
   private hits: Hit[] = [];
   private pulseT = 0;
 
-  // No scroll — every page fits one screen by construction.
+  // No scroll â€” every page fits one screen by construction.
 
   constructor(layout: ILayout, input: InputManager, cb: CampaignMapCallbacks) {
     this.container = new PIXI.Container();
@@ -95,16 +96,18 @@ export class CampaignMapScene implements Scene {
     this.cb = cb;
 
     this.container.addChild(buildPaperBackground('campbg', this.w, this.h));
+    const decoC = buildDecorCLayer(this.w, this.h);
+    if (decoC) this.container.addChild(decoC);
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
 
-    // Land DIRECTLY on the current chapter (progress landing, §12.2).
+    // Land DIRECTLY on the current chapter (progress landing, Â§12.2).
     //
-    // This used to open on the TOC and auto-flip to the chapter — a cosmetic
+    // This used to open on the TOC and auto-flip to the chapter â€” a cosmetic
     // "book opening". But that gated EVERY tap target behind the opening flip:
     // during a flip `this.hits = []` and `handleDown` is a no-op, and the flip
     // only settles from `update()`. If the ticker stalled for any reason the
-    // scene rendered but was completely dead — no level select, no way back —
+    // scene rendered but was completely dead â€” no level select, no way back â€”
     // which is exactly the recurring "can't select a level / can't get back to the lobby" bug. Building the
     // chapter page as the initial page keeps hits live from the first frame,
     // independent of update()/ticker timing. (Tab-to-tab page turns still flip.)
@@ -126,7 +129,7 @@ export class CampaignMapScene implements Scene {
 
   destroy(): void { this.unsubs.forEach((u) => u()); }
 
-  // ── Page lifecycle ────────────────────────────────────────────────────────────
+  // â”€â”€ Page lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private showPage(p: Page): void {
     if (this.page) { this.container.removeChild(this.page.root); this.page.root.destroy({ children: true }); }
@@ -140,7 +143,7 @@ export class CampaignMapScene implements Scene {
     if (this.flip || !this.page) return;
     const neu = build();
     const out = this.page.root;
-    // The incoming page becomes the live one immediately — its hits take over NOW,
+    // The incoming page becomes the live one immediately â€” its hits take over NOW,
     // not after the flip settles. Keeping hits live mid-flip means a tap still works
     // even if the ticker stalls before `update()` finishes the animation. Re-entrant
     // flips are already prevented by the `this.flip` guards in flipTo/openChapter/
@@ -184,14 +187,14 @@ export class CampaignMapScene implements Scene {
     }
   }
 
-  // ── Shared header ───────────────────────────────────────────────────────────
+  // â”€â”€ Shared header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /** Draws the fixed top band into `root`; returns its height. Pushes its hits. */
   private buildHeader(root: PIXI.Container, hits: Hit[], titleStr: string, onBack: () => void, subtitleStr?: string): number {
     const { w, h } = this;
     // Top-bar chrome (dark strip + back button top-left) is handled by SceneHeader;
     // the title is drawn by this scene (when a subtitle is present the title rises slightly;
-    // §3.1 allows title=null to let the scene own the title area).
+    // Â§3.1 allows title=null to let the scene own the title area).
     const hdr = drawSceneHeader(root, w, h, null);
     const tbH = hdr.headerH;
 
@@ -219,7 +222,7 @@ export class CampaignMapScene implements Scene {
       fn: () => this.cb.onOpenCollection(),
     });
 
-    // Equipment entry (E5) — to the left of collection; only when online (server-authoritative).
+    // Equipment entry (E5) â€” to the left of collection; only when online (server-authoritative).
     if (this.cb.onOpenEquipment) {
       const equip = txt(t('campaign.equipment'), Math.round(h * 0.024), C.accent, true);
       equip.anchor.set(1, 0.5);
@@ -235,7 +238,7 @@ export class CampaignMapScene implements Scene {
     return tbH;
   }
 
-  // ── Table of contents page ────────────────────────────────────────────────────
+  // â”€â”€ Table of contents page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private buildToc(): Page {
     const { w, h } = this;
@@ -270,7 +273,7 @@ export class CampaignMapScene implements Scene {
       card.x = listX; card.y = y;
       root.addChild(card);
 
-      const titleStr = `${t('campaign.chapterLabel', { n: ch })} · ${t(map.venueKey)}`;
+      const titleStr = `${t('campaign.chapterLabel', { n: ch })} Â· ${t(map.venueKey)}`;
       const name = txt(titleStr, Math.round(cardH * 0.30), unlocked ? C.dark : C.mid, true);
       name.anchor.set(0, 0.5); name.x = listX + Math.round(w * 0.04); name.y = y + cardH * 0.36;
       root.addChild(name);
@@ -284,13 +287,13 @@ export class CampaignMapScene implements Scene {
       root.addChild(prog);
 
       if (unlocked) {
-        const starStr = `★ ${earned}/${map.nodes.length * 3}`;
+        const starStr = `â˜… ${earned}/${map.nodes.length * 3}`;
         const st = txt(starStr, Math.round(cardH * 0.26), C.gold, true);
         st.anchor.set(1, 0.5); st.x = listX + listW - Math.round(w * 0.04); st.y = y + cardH / 2;
         root.addChild(st);
         hits.push({ rect: { x: listX, y, w: listW, h: cardH }, fn: () => this.openChapter(ch) });
       } else {
-        // Locked chapter — taped shut.
+        // Locked chapter â€” taped shut.
         this.drawTape(card, listW, cardH, seedFor(listX, cardH, ch));
         const lock = txt(t(online ? 'campaign.locked' : 'campaign.lockedOffline'), Math.round(cardH * 0.22), C.mid);
         lock.anchor.set(1, 0.5); lock.x = listX + listW - Math.round(w * 0.04); lock.y = y + cardH / 2;
@@ -308,7 +311,7 @@ export class CampaignMapScene implements Scene {
     this.flipTo(() => this.buildChapter(ch), dir, () => { this.mode = 'chapter'; });
   }
 
-  // ── Chapter page ────────────────────────────────────────────────────────────
+  // â”€â”€ Chapter page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private buildChapter(ch: number): Page {
     const { w, h } = this;
@@ -319,9 +322,9 @@ export class CampaignMapScene implements Scene {
     const map = getChapterMap(ch);
     if (!map) return { root, hits, pulse };
 
-    const titleStr = `${t('campaign.chapterLabel', { n: ch })} · ${t(map.venueKey)}`;
+    const titleStr = `${t('campaign.chapterLabel', { n: ch })} Â· ${t(map.venueKey)}`;
     // Narrator attribution: odd chapters are Tao's notebook, even are Anna's
-    // (CAMPAIGN_STORY.md framework table — Ch1/3/5 Tao, Ch2/4/6 Anna).
+    // (CAMPAIGN_STORY.md framework table â€” Ch1/3/5 Tao, Ch2/4/6 Anna).
     const ownerStr = t(ch % 2 === 1 ? 'campaign.notebookOwner.tao' : 'campaign.notebookOwner.anna');
     const tbH = this.buildHeader(root, hits, titleStr, () => this.backToToc(), ownerStr);
 
@@ -365,7 +368,7 @@ export class CampaignMapScene implements Scene {
       }
     });
 
-    // Chapter-cleared stamp by the title once every node is cleared (§12.2 ceremony).
+    // Chapter-cleared stamp by the title once every node is cleared (Â§12.2 ceremony).
     if (map.nodes.every((nd) => cleared.has(nd.levelId))) {
       this.drawClearStamp(root, ch, w - Math.round(w * 0.30), tbH + Math.round(h * 0.06));
     }
@@ -374,7 +377,7 @@ export class CampaignMapScene implements Scene {
     const idx = CHAPTER_ORDER.indexOf(ch);
     if (idx > 0) {
       const prevCh = CHAPTER_ORDER[idx - 1]!;
-      const a = txt('‹', Math.round(h * 0.06), C.mid, true);
+      const a = txt('â€¹', Math.round(h * 0.06), C.mid, true);
       a.anchor.set(0.5); a.x = Math.round(w * 0.05); a.y = (tbH + h) / 2;
       root.addChild(a);
       hits.push({ rect: { x: 0, y: tbH, w: Math.round(w * 0.12), h: h - tbH }, fn: () => this.openChapter(prevCh) });
@@ -383,7 +386,7 @@ export class CampaignMapScene implements Scene {
       const nextCh = CHAPTER_ORDER[idx + 1]!;
       const nextMap = getChapterMap(nextCh);
       const nextUnlocked = nextMap ? isLevelUnlocked(nextMap.nodes[0]!.levelId, cleared) : false;
-      const a = txt('›', Math.round(h * 0.06), nextUnlocked ? C.accent : C.btnOff, true);
+      const a = txt('â€º', Math.round(h * 0.06), nextUnlocked ? C.accent : C.btnOff, true);
       a.anchor.set(0.5); a.x = w - Math.round(w * 0.05); a.y = (tbH + h) / 2;
       root.addChild(a);
       if (nextUnlocked) {
@@ -417,7 +420,7 @@ export class CampaignMapScene implements Scene {
       g.drawCircle(cx, cy, r); g.endFill();
       pen.circle(cx, cy, r, { color: isCleared ? C.gold : C.accent, width: 2.4, jitter: 1.0 });
     } else {
-      // Locked — faint pencil outline only.
+      // Locked â€” faint pencil outline only.
       pen.circle(cx, cy, r, { color: palette.pencilLight, width: 1.6, jitter: 1.2, double: false });
     }
     root.addChild(g);
@@ -427,7 +430,7 @@ export class CampaignMapScene implements Scene {
     root.addChild(num);
 
     if (unlocked && isCleared) {
-      const starStr = '★'.repeat(starCount) + '☆'.repeat(3 - starCount);
+      const starStr = 'â˜…'.repeat(starCount) + 'â˜†'.repeat(3 - starCount);
       const st = txt(starStr, Math.round(r * 0.62), C.gold);
       st.anchor.set(0.5, 0); st.x = cx; st.y = cy + r + Math.round(h * 0.004);
       root.addChild(st);
@@ -470,7 +473,7 @@ export class CampaignMapScene implements Scene {
     root.addChildAt(g, 0); // behind nodes, but the bg paper is on the container, not the page root
   }
 
-  // ── Procedural doodle decor ───────────────────────────────────────────────────
+  // â”€â”€ Procedural doodle decor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private drawDecor(root: PIXI.Container, kind: string, x: number, y: number, s: number): void {
     const g = new PIXI.Graphics();
@@ -494,7 +497,7 @@ export class CampaignMapScene implements Scene {
         lbl.anchor.set(0.5, 0); lbl.x = x; lbl.y = y + s * 0.2; root.addChild(lbl);
         break;
       }
-      case 'rack': // spear rack — an X of two strokes on a baseline
+      case 'rack': // spear rack â€” an X of two strokes on a baseline
         pen.line(x - s, y + s, x + s, y - s, { color: palette.pencilLight, width: 2.0, double: false });
         pen.line(x - s, y - s, x + s, y + s, { color: palette.pencilLight, width: 2.0, double: false });
         pen.line(x - s * 1.2, y + s, x + s * 1.2, y + s, { color: palette.pencilLight, width: 1.6, double: false });
@@ -520,7 +523,7 @@ export class CampaignMapScene implements Scene {
         pen.circle(x, y, s * 0.7, { color: palette.pencilLight, width: 1.8, double: false });
         break;
       default:
-        return; // unknown kind — forward-compatible skip
+        return; // unknown kind â€” forward-compatible skip
     }
     root.addChild(g);
   }
@@ -535,10 +538,10 @@ export class CampaignMapScene implements Scene {
     card.addChild(tape);
   }
 
-  /** Rotated "Chapter N · Cleared" stamp near the chapter title. */
+  /** Rotated "Chapter N Â· Cleared" stamp near the chapter title. */
   private drawClearStamp(root: PIXI.Container, ch: number, x: number, y: number): void {
     const wrap = new PIXI.Container();
-    const label = `${t('campaign.chapterLabel', { n: ch })} · ${t('campaign.chapterStamp')}`;
+    const label = `${t('campaign.chapterLabel', { n: ch })} Â· ${t('campaign.chapterStamp')}`;
     const tx = txt(label, Math.round(this.h * 0.024), C.red, true);
     tx.anchor.set(0.5);
     const pad = Math.round(this.h * 0.012);

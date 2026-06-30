@@ -1,4 +1,4 @@
-// EquipmentScene — Equipment system client UI (E5, EQUIPMENT_DESIGN §11).
+// EquipmentScene â€” Equipment system client UI (E5, EQUIPMENT_DESIGN Â§11).
 // Two tabs: Inventory (item list + global loadout three slots + instance detail: enhance / equip / salvage) / Forge (craft base equipment).
 // Modeled after AuctionScene: static header + bodyLayer repaint + drag-to-scroll + modal overlay + toast + error code mapping.
 //
@@ -12,6 +12,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -47,13 +48,13 @@ export interface EquipmentCallbacks {
    * Peer-level navigation within the progression group (LOBBY_IA_REDESIGN P1.5).
    * Injected only in the "Progression" group context (entered from the Collection screen);
    * when injected, a [Collection|Equipment] tab strip appears below the header, and tapping
-   * Collection returns to the progression view. Not injected from the campaign entry point → plain back.
+   * Collection returns to the progression view. Not injected from the campaign entry point â†’ plain back.
    */
   openCollection?(): void;
-  /** Read the current authoritative save (server pushes after each action → adoptServer; this scene re-reads and redraws). */
+  /** Read the current authoritative save (server pushes after each action â†’ adoptServer; this scene re-reads and redraws). */
   getSave(): SaveData;
   craft(defId: string): Promise<EquipResult>;
-  /** When useProtect=true, consume a protect-enhance item; on failure no materials are lost (E7 §6.2). */
+  /** When useProtect=true, consume a protect-enhance item; on failure no materials are lost (E7 Â§6.2). */
   enhance(instanceId: string, useProtect?: boolean): Promise<EnhanceResult>;
   salvage(instanceIds: string[]): Promise<EquipResult>;
   equip(slot: EquipSlot, instanceId: string | null): Promise<EquipResult>;
@@ -74,7 +75,7 @@ const SECTION_H = 20;  // section divider (Equipped / Bag)
 const SLOTS: readonly EquipSlot[] = ['weapon', 'armor', 'trinket'];
 const TRACKED_MATERIALS = ['scrap', 'lead', 'binding'] as const;
 
-/** Rarity → accent color (shared visual language with gacha/collection; fine uses ink-blue). */
+/** Rarity â†’ accent color (shared visual language with gacha/collection; fine uses ink-blue). */
 const RARITY_COLOR: Record<EquipRarity, number> = {
   common: 0x9aa0a6,
   fine: 0x4477cc,
@@ -89,14 +90,14 @@ const MAT_COLOR: Record<string, number> = {
   binding: 0x2b4f8c,
 };
 
-/** Material id → icon kind (including coins); returns null for unknown materials (falls back to text label). */
+/** Material id â†’ icon kind (including coins); returns null for unknown materials (falls back to text label). */
 function matIconKind(id: string): IconKind | null {
   if (id === 'scrap' || id === 'lead' || id === 'binding') return id;
   if (id === 'coins' || id === 'coin') return 'coin';
   return null;
 }
 
-/** Affix id (strip m_/s_/k_ prefix) → stat icon kind; returns null for unknown affixes. */
+/** Affix id (strip m_/s_/k_ prefix) â†’ stat icon kind; returns null for unknown affixes. */
 function affixIconKind(affixId: string): IconKind | null {
   const stat = affixId.replace(/^[a-z]_/, '');
   if (stat === 'atk' || stat === 'hp' || stat === 'armor' || stat === 'spd' || stat === 'atkspd') return stat;
@@ -160,6 +161,8 @@ export class EquipmentScene implements Scene {
   private build(): void {
     const { w, h } = this;
     this.container.addChild(buildPaperBackground('equipbg', w, h));
+    const decoC = buildDecorCLayer(w, h);
+    if (decoC) this.container.addChild(decoC);
 
     this.bodyLayer = new PIXI.Container();
     this.container.addChild(this.bodyLayer);
@@ -177,7 +180,7 @@ export class EquipmentScene implements Scene {
     this.backRect = hdr.backRect;
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private render(): void {
     if (this.destroyed) return;
@@ -249,7 +252,7 @@ export class EquipmentScene implements Scene {
     bg.beginFill(0xf3f1ea).drawRect(0, y, w, RES_H).endFill();
     this.bodyLayer.addChild(bg);
 
-    // Balance (non-cost display): icon + amount, no '×' prefix.
+    // Balance (non-cost display): icon + amount, no 'Ã—' prefix.
     const midY = y + RES_H / 2;
     const bal: Record<string, number> = {};
     for (const m of TRACKED_MATERIALS) bal[m] = save.materials[m] ?? 0;
@@ -267,7 +270,7 @@ export class EquipmentScene implements Scene {
     this.bodyLayer.addChild(cnt);
   }
 
-  // ── Inventory tab ───────────────────────────────────────────────────────────
+  // â”€â”€ Inventory tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private renderInventory(): void {
     const { w, h } = this;
@@ -292,7 +295,7 @@ export class EquipmentScene implements Scene {
       return;
     }
 
-    // Sort: equipped first, then rarity desc, then level desc — stable, deterministic.
+    // Sort: equipped first, then rarity desc, then level desc â€” stable, deterministic.
     const rarOrder: EquipRarity[] = ['epic', 'rare', 'fine', 'common'];
     const equippedIds = this.equippedIds(save);
     instances.sort((a, b) => {
@@ -371,8 +374,8 @@ export class EquipmentScene implements Scene {
 
   /**
    * Convert a sorted instance list into display entries with section headers and stack counts.
-   * - Same defId + rarity + level=0, not equipped and not locked → merged into one row (shows ×N).
-   * - Equipped / locked / level>0 → always a separate row.
+   * - Same defId + rarity + level=0, not equipped and not locked â†’ merged into one row (shows Ã—N).
+   * - Equipped / locked / level>0 â†’ always a separate row.
    * - One section header is inserted for the Equipped section and one for the Bag section.
    */
   private buildDisplayEntries(
@@ -480,21 +483,21 @@ export class EquipmentScene implements Scene {
       e.x = tagX; e.y = cy + 9; this.bodyLayer.addChild(e); tagX += e.width + 6;
     }
     if (inst.locked) {
-      const l = txt('🔒', 11, C.mid);
+      const l = txt('ðŸ”’', 11, C.mid);
       l.x = tagX; l.y = cy + 8; this.bodyLayer.addChild(l);
     }
 
-    // Right side: show "Equip ›" in accent color when unequipped (signals actionability); show "›" quietly when equipped.
-    // Stack count (×N) sits immediately to the left of the action hint.
+    // Right side: show "Equip â€º" in accent color when unequipped (signals actionability); show "â€º" quietly when equipped.
+    // Stack count (Ã—N) sits immediately to the left of the action hint.
     const midY = cy + ROW_H / 2 - 2;
-    const hintStr = equipped ? '›' : t('equip.hintEquip');
+    const hintStr = equipped ? 'â€º' : t('equip.hintEquip');
     const hintColor = equipped ? C.mid : C.accent;
     const hint = txt(hintStr, equipped ? 18 : 11, hintColor, !equipped);
     hint.anchor.set(1, 0.5); hint.x = w - 14; hint.y = midY;
     this.bodyLayer.addChild(hint);
 
     if (count > 1) {
-      const badge = txt(`×${count}`, 11, C.mid);
+      const badge = txt(`Ã—${count}`, 11, C.mid);
       badge.anchor.set(1, 0.5); badge.x = hint.x - hint.width - 5; badge.y = midY;
       this.bodyLayer.addChild(badge);
     }
@@ -502,7 +505,7 @@ export class EquipmentScene implements Scene {
     this.hitRects.push({ rect: { x: 6, y: cy, w: w - 12, h: ROW_H - 4 }, action: () => this.openDetail(inst.id) });
   }
 
-  // ── Craft tab ───────────────────────────────────────────────────────────────
+  // â”€â”€ Craft tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private renderCraft(): void {
     const { w, h } = this;
@@ -555,7 +558,7 @@ export class EquipmentScene implements Scene {
     if (enabled) this.hitRects.push({ rect: { x: w - 70, y: cy + 12, w: 60, h: 28 }, action: () => void this.doCraft(defId) });
   }
 
-  // ── Detail modal (instance: enhance / equip / salvage) ───────────────────────
+  // â”€â”€ Detail modal (instance: enhance / equip / salvage) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private openDetail(instanceId: string): void {
     const save = this.cb.getSave();
@@ -641,10 +644,10 @@ export class EquipmentScene implements Scene {
       // Protect-item row (E7): show quantity held + toggle switch.
       const canToggle = protectCount > 0;
       const protecting = this.useProtectEnhance && canToggle;
-      const checkStr = protecting ? '[✓]' : '[ ]';
+      const checkStr = protecting ? '[âœ“]' : '[ ]';
       const protectColor = canToggle ? (protecting ? C.accent : C.dark) : C.mid;
       const protectLbl = txt(
-        `${checkStr} ${t('equip.protect')} ×${protectCount}`,
+        `${checkStr} ${t('equip.protect')} Ã—${protectCount}`,
         10, protectColor,
       );
       protectLbl.x = mx + 12; protectLbl.y = cy;
@@ -712,7 +715,7 @@ export class EquipmentScene implements Scene {
     this.closeModal();
   }
 
-  // ── Actions ───────────────────────────────────────────────────────────────
+  // â”€â”€ Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async doCraft(defId: string): Promise<void> {
     if (this.bt.busy) return;
@@ -884,7 +887,7 @@ export class EquipmentScene implements Scene {
     }
   }
 
-  // ── Confirm modal ───────────────────────────────────────────────────────────
+  // â”€â”€ Confirm modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private showConfirm(msg: string, onOk: () => void): void {
     const { w, h } = this;
@@ -935,7 +938,7 @@ export class EquipmentScene implements Scene {
     this.modalOpen = false;
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private equippedIds(save: SaveData): Set<string> {
     const ids = new Set<string>();
@@ -953,7 +956,7 @@ export class EquipmentScene implements Scene {
   /**
    * Draw an equipment icon centered at (cx, cy) onto bodyLayer.
    * When defId is provided and the atlas is ready, renders the AI bitmap sprite
-   * (EQUIPMENT_DESIGN §20.2); otherwise falls back to the procedural glyph (§20.3).
+   * (EQUIPMENT_DESIGN Â§20.2); otherwise falls back to the procedural glyph (Â§20.3).
    * The rarity border is always drawn by the surrounding sketchPanel, not here.
    */
   private addGlyph(slot: EquipSlot, rarity: EquipRarity, cx: number, cy: number, size: number, seed: number, alpha = 1, defId?: string): void {
@@ -991,14 +994,14 @@ export class EquipmentScene implements Scene {
 
   private materialsStr(mats: Record<string, number>): string {
     return Object.entries(mats)
-      .map(([m, n]) => `${t(`material.${m}` as TranslationKey)}×${n}`)
+      .map(([m, n]) => `${t(`material.${m}` as TranslationKey)}Ã—${n}`)
       .join(' ');
   }
 
   /**
-   * Render a horizontal row of "icon ×amount" cost chips starting at (x, midY) for materials plus optional coins; returns the trailing x.
+   * Render a horizontal row of "icon Ã—amount" cost chips starting at (x, midY) for materials plus optional coins; returns the trailing x.
    * Falls back to a text label when no icon is available, ensuring unknown materials remain readable.
-   * size = icon side length; prefix = per-item prefix string (default '×').
+   * size = icon side length; prefix = per-item prefix string (default 'Ã—').
    */
   private drawCostChips(
     parent: PIXI.Container,
@@ -1007,7 +1010,7 @@ export class EquipmentScene implements Scene {
     coins: number | null,
     color: number,
     size = 13,
-    prefix = '×',
+    prefix = 'Ã—',
   ): number {
     let cx = x;
     const item = (kind: IconKind | null, fallback: string, iconColor: number, n: number): void => {
@@ -1042,7 +1045,7 @@ export class EquipmentScene implements Scene {
     return this.canAffordMaterials(save, cost.materials) && save.wallet.coins >= cost.coins;
   }
 
-  // ── Toast ───────────────────────────────────────────────────────────────────
+  // â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
@@ -1061,7 +1064,7 @@ export class EquipmentScene implements Scene {
     this.toastTimer = 2200;
   }
 
-  // ── Scene interface / input ───────────────────────────────────────────────
+  // â”€â”€ Scene interface / input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private handleDown(x: number, y: number): void {
     if (this.bt.busy) return;

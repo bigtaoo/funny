@@ -5,19 +5,20 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { ShopItem } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
-// ── ShopScene (S2-6) — direct-purchase shop ────────────────────────────────────
+// â”€â”€ ShopScene (S2-6) â€” direct-purchase shop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Canvas-drawn (mirrors LoginScene/RoomScene): a render()-on-change tree with a
-// flat hit-list. The economy itself is server-authoritative — every buy returns a
+// flat hit-list. The economy itself is server-authoritative â€” every buy returns a
 // fresh SaveData that the app adopts; this scene only reads the current wallet via
-// getCoins() and re-renders. Gacha lives in its own scene, reached via the 🎁 tab.
+// getCoins() and re-renders. Gacha lives in its own scene, reached via the ðŸŽ tab.
 // (Top-up: the dev magic-code path was removed; real IAP / promo-code redemption lands later.)
 
-/** Outcome of a buy — ok, or a message key to surface as a toast. */
+/** Outcome of a buy â€” ok, or a message key to surface as a toast. */
 export type ShopActionResult =
   | { ok: true; coins?: number }
   | { ok: false; key: TranslationKey };
@@ -34,7 +35,7 @@ export interface ShopSceneCallbacks {
   recharge?(code: string): Promise<ShopActionResult>;
   openGacha(): void;
   /**
-   * Battle Pass entry point (LOBBY_IA_REDESIGN §3: paid main axis merged into the "shop" tab,
+   * Battle Pass entry point (LOBBY_IA_REDESIGN Â§3: paid main axis merged into the "shop" tab,
    * no banner on the home screen). Only provided when logged in and online; absent = button not drawn.
    * Tapping navigates to BattlePassScene (back returns to the shop).
    */
@@ -70,7 +71,7 @@ export class ShopScene implements Scene {
     void this.loadItems();
   }
 
-  // ── Scene interface ──────────────────────────────────────────────────────────
+  // â”€â”€ Scene interface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   update(dt: number): void {
     if (this.bt.tick(dt)) this.render();
@@ -80,7 +81,7 @@ export class ShopScene implements Scene {
     this.unsubs.forEach((u) => u());
   }
 
-  // ── Loading ──────────────────────────────────────────────────────────────────
+  // â”€â”€ Loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async loadItems(): Promise<void> {
     try {
@@ -94,7 +95,7 @@ export class ShopScene implements Scene {
     this.render();
   }
 
-  // ── Buy ──────────────────────────────────────────────────────────────────────
+  // â”€â”€ Buy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async onBuy(itemId: string): Promise<void> {
     if (this.bt.busy) return;
@@ -114,7 +115,7 @@ export class ShopScene implements Scene {
     }
   }
 
-  // ── Input ──────────────────────────────────────────────────────────────────────
+  // â”€â”€ Input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
@@ -124,7 +125,7 @@ export class ShopScene implements Scene {
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private render(): void {
     tearDownChildren(this.container); // free Text textures on each rebuild
@@ -140,6 +141,8 @@ export class ShopScene implements Scene {
 
   private drawBackground(): void {
     this.container.addChild(buildPaperBackground('shopbg', this.w, this.h));
+    const decoC = buildDecorCLayer(this.w, this.h);
+    if (decoC) this.container.addChild(decoC);
   }
 
   /** Header bar with title, back, and coin balance. Returns its height. */
@@ -215,11 +218,11 @@ export class ShopScene implements Scene {
     this.container.addChild(box);
 
     // Name (placeholder: kind label + id, real skin art/names pending).
-    const name = txt(`${t('shop.skinLabel')} · ${item.id}`, Math.round(h * 0.22), C.dark, true);
+    const name = txt(`${t('shop.skinLabel')} Â· ${item.id}`, Math.round(h * 0.22), C.dark, true);
     name.anchor.set(0, 0.5); name.x = x + Math.round(w * 0.04); name.y = y + h * 0.36;
     this.container.addChild(name);
 
-    const cost = txt(`◎ ${item.cost}`, Math.round(h * 0.22), C.gold, true);
+    const cost = txt(`â—Ž ${item.cost}`, Math.round(h * 0.22), C.gold, true);
     cost.anchor.set(0, 0.5); cost.x = x + Math.round(w * 0.04); cost.y = y + h * 0.70;
     this.container.addChild(cost);
 

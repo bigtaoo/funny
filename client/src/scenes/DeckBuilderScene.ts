@@ -1,4 +1,4 @@
-// DeckBuilderScene — PvP deck builder (P3, PVP_LOADOUT_DESIGN §8).
+// DeckBuilderScene â€” PvP deck builder (P3, PVP_LOADOUT_DESIGN Â§8).
 //
 // Shows all cards a player may include in their PvP deck, grouped by unlock tier.
 // Locked cards (ELO gate not reached) are displayed greyed out with a lock badge.
@@ -13,6 +13,7 @@ import { t, TranslationKey } from '../i18n';
 import {
   ui as C, txt, buildPaperBackground, sketchPanel, tearDownChildren,
 } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { CARD_DEFINITIONS } from '../game/config';
 import {
@@ -138,6 +139,8 @@ export class DeckBuilderScene implements Scene {
     const pad = Math.round(w * 0.05);
 
     this.container.addChild(buildPaperBackground('deckbg', w, h));
+    const decoC = buildDecorCLayer(w, h);
+    if (decoC) this.container.addChild(decoC);
 
     const hdr = drawSceneHeader(this.container, w, h, t('pvp.deckBuilder' as TranslationKey));
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
@@ -146,7 +149,7 @@ export class DeckBuilderScene implements Scene {
     const peakElo = this.cb.getSeasonPeakElo();
     const unlocked = new Set(getPvpUnlockedCards(peakElo));
 
-    // ── Footer: counter + confirm ────────────────────────────────────────────
+    // â”€â”€ Footer: counter + confirm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const footerH = Math.round(h * 0.12);
     const footerY = h - footerH;
 
@@ -176,7 +179,7 @@ export class DeckBuilderScene implements Scene {
       this.container.addChild(errTxt);
     }
 
-    // ── Scrollable card grid ─────────────────────────────────────────────────
+    // â”€â”€ Scrollable card grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const listY = tbH + Math.round(h * 0.02);
     this.listStartY = listY;
     this.listH = footerY - listY;
@@ -219,14 +222,14 @@ export class DeckBuilderScene implements Scene {
 
       // Lock badge for tier-unlock cards that are not yet unlocked
       if (!isUnlocked) {
-        const lockTxt = txt('🔒', Math.round(h * 0.028), C.mid);
+        const lockTxt = txt('ðŸ”’', Math.round(h * 0.028), C.mid);
         lockTxt.anchor.set(1, 0); lockTxt.x = cx + cardW - Math.round(w * 0.02); lockTxt.y = cy + Math.round(h * 0.01);
         listContainer.addChild(lockTxt);
       }
 
       // Selected check badge
       if (isSelected && isUnlocked) {
-        const check = txt('✓', Math.round(h * 0.03), C.accent);
+        const check = txt('âœ“', Math.round(h * 0.03), C.accent);
         check.anchor.set(1, 0); check.x = cx + cardW - Math.round(w * 0.02); check.y = cy + Math.round(h * 0.01);
         listContainer.addChild(check);
       }

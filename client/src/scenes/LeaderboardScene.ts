@@ -4,10 +4,11 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { formatLadderTitle, getTitleKeys } from '../game/meta/titles';
 
-// ── LeaderboardScene — global ladder leaderboard (SE-6) ─────────────────────────
+// â”€â”€ LeaderboardScene â€” global ladder leaderboard (SE-6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Entry: StatsScene ladder section "Leaderboard" button (onOpenLeaderboard).
 // Displays: current season Top-100 (ELO descending) + a pinned "my rank" row at
@@ -89,8 +90,10 @@ export class LeaderboardScene implements Scene {
     const { w, h } = this;
 
     this.container.addChild(buildPaperBackground('lbbg', w, h));
+    const decoC = buildDecorCLayer(w, h);
+    if (decoC) this.container.addChild(decoC);
 
-    // ── Title bar ────────────────────────────────────────────────────────────
+    // â”€â”€ Title bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const hdr = drawSceneHeader(this.container, w, h, t('leaderboard.title'));
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
@@ -102,7 +105,7 @@ export class LeaderboardScene implements Scene {
       this.container.addChild(sub);
     }
 
-    // ── Body ─────────────────────────────────────────────────────────────────
+    // â”€â”€ Body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const pad = Math.round(w * 0.05);
     const bodyY = tbH + Math.round(h * 0.025);
     const bodyH = h - bodyY;
@@ -185,7 +188,7 @@ export class LeaderboardScene implements Scene {
     if (isTop3) sketchAccentBar(box, rowH, C.gold, seedFor(index, rowH, 4));
     parent.addChild(box);
 
-    const rankEmoji = e.rank === 1 ? '🥇' : e.rank === 2 ? '🥈' : e.rank === 3 ? '🥉' : `#${e.rank}`;
+    const rankEmoji = e.rank === 1 ? 'ðŸ¥‡' : e.rank === 2 ? 'ðŸ¥ˆ' : e.rank === 3 ? 'ðŸ¥‰' : `#${e.rank}`;
     const rankLbl = txt(rankEmoji, Math.round(rowH * 0.5), isTop3 ? C.gold : C.mid, isTop3);
     rankLbl.anchor.set(0, 0.5); rankLbl.x = x + Math.round(w * 0.03); rankLbl.y = y + rowH / 2;
     parent.addChild(rankLbl);
@@ -199,7 +202,7 @@ export class LeaderboardScene implements Scene {
       const tLabel = keys
         ? (t(keys.shortKey as import('../i18n').TranslationKey) || formatLadderTitle(e.equippedTitle))
         : formatLadderTitle(e.equippedTitle);
-      const titleLbl = txt(`「${tLabel}」`, Math.round(rowH * 0.3), C.mid);
+      const titleLbl = txt(`ã€Œ${tLabel}ã€`, Math.round(rowH * 0.3), C.mid);
       titleLbl.anchor.set(0, 0.5); titleLbl.x = nameLbl.x + nameLbl.width + 4; titleLbl.y = y + rowH / 2;
       parent.addChild(titleLbl);
     }

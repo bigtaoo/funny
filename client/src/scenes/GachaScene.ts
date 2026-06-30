@@ -6,19 +6,20 @@ import { t, TranslationKey } from '../i18n';
 import type { Rarity } from '../game/meta/SaveData';
 import type { GachaPool, GachaResultEntry } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { buildDecorCLayer } from '../render/decorCLayer';
 import { gachaCardTexture, gachaFrameTexture, gachaBannerTexture, preloadGachaTextures } from '../render/gachaArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
-// ── GachaScene (S2-6) — single / ten-pull lootbox with pity + reveal ───────────
+// â”€â”€ GachaScene (S2-6) â€” single / ten-pull lootbox with pity + reveal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Canvas-drawn (mirrors ShopScene): render()-on-change + flat hit-list. The draw
 // is server-authoritative (crypto RNG + pity live in commercial); this scene
 // shows the pool's cost/pity, fires single/ten draws, and reveals the returned
 // results (rarity-coloured cards, NEW / duplicate badges) over a dim overlay.
 
-/** Rarity → card accent colour (shared visual language with shop/collection later). */
+/** Rarity â†’ card accent colour (shared visual language with shop/collection later). */
 const RARITY_COLOR: Record<Rarity, number> = {
   common:    0x9aa0a6,
   rare:      0x4477cc,
@@ -98,7 +99,7 @@ export class GachaScene implements Scene {
     this.render();
   }
 
-  // ── Draw ───────────────────────────────────────────────────────────────────
+  // â”€â”€ Draw â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async onDraw(count: 1 | 10): Promise<void> {
     if (this.bt.busy || !this.pool) return;
@@ -122,7 +123,7 @@ export class GachaScene implements Scene {
     this.render();
   }
 
-  // ── Input ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
@@ -136,7 +137,7 @@ export class GachaScene implements Scene {
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private render(): void {
     tearDownChildren(this.container);
@@ -153,6 +154,8 @@ export class GachaScene implements Scene {
 
   private drawBackground(): void {
     this.container.addChild(buildPaperBackground('gachabg', this.w, this.h));
+    const decoC = buildDecorCLayer(this.w, this.h);
+    if (decoC) this.container.addChild(decoC);
   }
 
   private drawHeader(): number {
@@ -234,8 +237,8 @@ export class GachaScene implements Scene {
       this.container.addChild(lbl);
     });
 
-    // Odds detail button (L1-3, Apple 3.1.1) — top-right of the banner.
-    const oddsLbl = txt('ⓘ ' + t('gacha.oddsDetail.button'), Math.round(h * 0.02), C.accent, true);
+    // Odds detail button (L1-3, Apple 3.1.1) â€” top-right of the banner.
+    const oddsLbl = txt('â“˜ ' + t('gacha.oddsDetail.button'), Math.round(h * 0.02), C.accent, true);
     oddsLbl.anchor.set(1, 0); oddsLbl.x = bx + bannerW - Math.round(w * 0.02); oddsLbl.y = by + Math.round(h * 0.015);
     this.container.addChild(oddsLbl);
     const oPad = Math.round(h * 0.012);
@@ -315,7 +318,7 @@ export class GachaScene implements Scene {
     header.anchor.set(0.5, 0.5); header.x = w / 2; header.y = Math.round(h * 0.12);
     this.container.addChild(header);
 
-    // Grid: up to 5 columns (a ten-pull → 2 rows of 5; single → 1 card centred).
+    // Grid: up to 5 columns (a ten-pull â†’ 2 rows of 5; single â†’ 1 card centred).
     const n = results.length;
     const cols = Math.min(5, n);
     const rows = Math.ceil(n / cols);
@@ -359,7 +362,7 @@ export class GachaScene implements Scene {
     badge.anchor.set(0.5, 0.5); badge.x = x + w / 2; badge.y = y + h * 0.85;
     this.container.addChild(badge);
 
-    // Frame overlay — drawn last so it sits on top of the card art.
+    // Frame overlay â€” drawn last so it sits on top of the card art.
     const frameSpr = new PIXI.Sprite(gachaFrameTexture(r.rarity));
     frameSpr.x = x; frameSpr.y = y;
     frameSpr.width = w; frameSpr.height = h;
@@ -369,7 +372,7 @@ export class GachaScene implements Scene {
   /**
    * Odds-detail overlay (L1-3, Apple 3.1.1): a per-item probability table plus the
    * pity rule. Probabilities come straight from the server (`entry.probability`,
-   * 0–1) — the client only renders, never computes. Any tap closes it.
+   * 0â€“1) â€” the client only renders, never computes. Any tap closes it.
    */
   private drawOdds(pool: GachaPool): void {
     const { w, h } = this;
