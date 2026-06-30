@@ -210,7 +210,7 @@ export const de: Record<TranslationKey, string> = {
   'guide.daily.title': 'Täglich einloggen',
   'guide.daily.body': 'Täglich einloggen für Belohnungen; Serien zahlen mehr. Tagesaufgaben bringen extra.',
   'guide.world.title': 'Die Große Welt',
-  'guide.world.body': 'Eine geteilte SLG-Karte: Land beanspruchen, Klan bauen, belagern, handeln. Der schwerste Modus — lass dir Zeit.',
+  'guide.world.body': 'Eine offene Welt: Land beanspruchen, Klan bauen, belagern. Der schwerste Modus — lass dir Zeit.',
 
   // ── Freundesraum (Online, S1) ─────────────────────────────────────────────
   'room.title': 'Freundesduell',

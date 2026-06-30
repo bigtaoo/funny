@@ -210,7 +210,7 @@ export const zh = {
   'guide.daily.title': '每日签到',
   'guide.daily.body': '每天登录领奖励，连续签到更划算。完成每日任务再拿一份。',
   'guide.world.title': '大世界',
-  'guide.world.body': '率土式共享大地图：占地、建宗门、围攻、拍卖。最重的玩法，慢慢来。',
+  'guide.world.body': '开放大世界：占地、建宗门、围攻。最重的玩法，慢慢来。',
 
   // ── Friend room (online co-op, S1) ───────────────────────────────────────
   'room.title': '好友对战',

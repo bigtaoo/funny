@@ -210,7 +210,7 @@ export const en: Record<TranslationKey, string> = {
   'guide.daily.title': 'Daily check-in',
   'guide.daily.body': 'Log in daily for rewards; streaks pay more. Finish daily tasks for an extra batch.',
   'guide.world.title': 'The Great World',
-  'guide.world.body': 'A shared SLG map: claim land, build a clan, lay sieges, trade. The heaviest mode — take your time.',
+  'guide.world.body': 'An open world: claim land, build a clan, lay sieges. The heaviest mode — take your time.',
 
   // ── Friend room (online, S1) ──────────────────────────────────────────────
   'room.title': 'Friend Match',
