@@ -78,18 +78,13 @@ cd tools/vfx-editor && npm install && npm run start   # 端口 9094
 
 **计划文档**：[`design/game/PARALLEL_DEV_PLAN.md`](design/game/PARALLEL_DEV_PLAN.md)
 
-三条并行轨道，每条在独立 worktree 内进行：
+三条并行轨道，**A/B/C 全部已完成（2026-06-30）**，详情见 `PARALLEL_DEV_PLAN.md`（所有任务标 ✅）。
 
-| 轨道 | 主题 | worktree 路径 |
+| 轨道 | 主题 | 状态 |
 |---|---|---|
-| **Track A** | 引擎重做 + 深度养成（S12/装备/体力/Anna） | `../funny-track-a` / branch `track-a` |
-| **Track B** | 元系统留存（成就/赛季/称号/战令/日常/活动） | `../funny-track-b` / branch `track-b` |
-| **Track C** | 商业合规 + 验收加固（IAP/合规/反作弊/联调） | `../funny-track-c` / branch `track-c` |
-
-**触发约定**：
-- 收到「继续 Track A / B / C」或「并行开发 Track X」时，**先读 `PARALLEL_DEV_PLAN.md`**，找到对应轨道内第一个未完成的任务（按文档顺序，A1→A2→… 依此类推），直接开始实现，无需再问。
-- 每个任务完成后，在 `PARALLEL_DEV_PLAN.md` 对应任务标题前加 `✅ ` 标记，然后自动推进到下一个任务（会话 token 允许时）。
-- 任务结束工作流同常规：记录文档 → 提交 → 合并 main → 删 worktree。
+| **Track A** | 引擎重做 + 深度养成（S12/装备/体力/Anna） | ✅ 全完成 |
+| **Track B** | 元系统留存（成就/赛季/称号/战令/日常/活动） | ✅ 全完成 |
+| **Track C** | 商业合规 + 验收加固（IAP/合规/反作弊/联调） | ✅ 全完成 |
 
 ## 会话说明
 
