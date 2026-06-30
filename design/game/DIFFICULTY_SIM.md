@@ -3,6 +3,10 @@
 > 用真实确定性战斗引擎 + 一个基线玩家 AI，量化战役关卡难度。
 > 代码：`client/test/difficultySim.ts`（核心）/ `difficulty.test.ts`（难度矩阵+回归守卫）/
 > `experiment.test.ts`（关卡调参 A/B）/ `diag.test.ts`（单关逐秒时间线检视）。
+>
+> **PvP 平衡用另一支模拟器**（本工具不适用 PvP——单防守 AI 无进攻 macro，镜像必平局）：
+> `client/test/pvpSim.ts`（+ `pvpSim.test.ts`）复用 siege 确定性双军引擎作等墨对撞台，
+> 量度残存军队血量定标单位费用。背景与 P4 结论见 `PVP_LOADOUT_DESIGN.md §5` + `BALANCE.md §5.2`。
 
 ## 这是什么
 
