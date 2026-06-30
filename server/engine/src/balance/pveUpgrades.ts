@@ -96,20 +96,24 @@ function cloneBlueprints(): Record<UnitType, UnitBlueprint> {
  *
  * PvP-exclusive overrides (PVP_LOADOUT_DESIGN §5) are applied here and ONLY here —
  * they are separate from PvE numbers which live in UNIT_BLUEPRINTS.
- * TODO P4: validate all override values via difficultySim before shipping.
+ * P4 (client/test/pvpSim.ts) validated the values below; the override stays minimal.
  */
 export function buildPvpBlueprints(): Record<UnitType, UnitBlueprint> {
   const bp = cloneBlueprints();
 
-  // Medic PvP override: add a token melee attack so it is not a passive punching bag.
-  // Direction: attack≈4 / interval1.2 / range1. Exact values pending P4 sim.
+  // Medic PvP override (P4-finalized): a token melee poke so it is not a passive
+  // punching bag — attack 4 / interval 1.2 / range 1 (DPS ≈ 3.3). The PvP duel sim
+  // showed the Medic is non-oppressive at cost 6 (≈27% equal-ink, and adding one to
+  // an army does not tip a stomp), so the aura (8 HP/s, radius 2) is left untouched.
   bp[UnitType.Medic].attack         = 4;
   bp[UnitType.Medic].attackInterval = 1.2;
   bp[UnitType.Medic].range          = 1;
 
-  // Harpy PvP override: cost=7 is the balance lever (PVP_LOADOUT_DESIGN §5).
-  // No blueprint stat change needed — the high cost is enforced via CARD_DEFINITIONS.
-  // Flying-unit counter-play deferred to P4.
+  // Harpy PvP: cost=7 (CARD_DEFINITIONS) is the sole balance lever — no blueprint
+  // change. P4 resolved the §5 deferred question: the sim shows Harpy is never
+  // oppressive (a bypassing flyer can't win the blob trade and 6-at-cost-7 lose the
+  // base race), so NO extra flying counter-play mechanic is added. The ≥1-building
+  // class floor (tower is 1 of only 2 buildings) keeps it answerable in practice.
 
   return bp;
 }

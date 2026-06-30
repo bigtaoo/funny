@@ -4,6 +4,7 @@ import { UnitType } from '../src/game/types';
 import { Unit } from '../src/game/Unit';
 import { Side } from '../src/game/types';
 import { buildPvpBlueprints, buildCampaignBlueprints } from '../src/game/balance/pveUpgrades';
+import { pvpExpectedBlueprints } from './pvpBlueprintExpected';
 import {
   UNIT_MAX_LEVEL,
   PROGRESSABLE_UNITS,
@@ -23,7 +24,7 @@ function maxedLevels(): Partial<Record<UnitType, number>> {
 describe('unit progression — hard wall preserved', () => {
   it('buildPvpBlueprints() ignores unit levels entirely (signature has no level param)', () => {
     void maxedLevels();
-    expect(buildPvpBlueprints()).toEqual(UNIT_BLUEPRINTS);
+    expect(buildPvpBlueprints()).toEqual(pvpExpectedBlueprints());
   });
 
   it('buildCampaignBlueprints with no unit levels equals UNIT_BLUEPRINTS', () => {
@@ -37,7 +38,7 @@ describe('unit progression — hard wall preserved', () => {
     expect(camp[UnitType.Infantry].hp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].hp);
     expect(camp[UnitType.Archer].attack).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack);
     expect(UNIT_BLUEPRINTS).toEqual(before);
-    expect(buildPvpBlueprints()).toEqual(before);
+    expect(buildPvpBlueprints()).toEqual(pvpExpectedBlueprints());
   });
 });
 
@@ -47,7 +48,7 @@ describe('applyUnitLevels — stat scaling', () => {
     applyUnitLevels(bp, { [UnitType.Infantry]: 1 });
     applyUnitLevels(bp, {}); // empty
     applyUnitLevels(bp, undefined);
-    expect(bp).toEqual(UNIT_BLUEPRINTS);
+    expect(bp).toEqual(pvpExpectedBlueprints());
   });
 
   it('applies the linear formula mult = 1 + perLevel × (level − 1)', () => {

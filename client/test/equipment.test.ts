@@ -10,6 +10,7 @@ import {
   buildCampaignBlueprints,
   buildSiegeBlueprints,
 } from '../src/game/balance/pveUpgrades';
+import { pvpExpectedBlueprints } from './pvpBlueprintExpected';
 import {
   applyEquipment,
   clampEffectCaps,
@@ -31,14 +32,14 @@ describe('Equipment hard wall — PvP blueprints never see equipment', () => {
   it('with full equipment in memory, buildPvpBlueprints() still equals UNIT_BLUEPRINTS verbatim', () => {
     // Construct an extreme equipment set, but the PvP builder signature has no equipment parameter → cannot read it at compile time.
     void equipOne([{ id: 'm_atk', value: 999 }], 9);
-    expect(buildPvpBlueprints()).toEqual(UNIT_BLUEPRINTS);
+    expect(buildPvpBlueprints()).toEqual(pvpExpectedBlueprints());
   });
 
-  it('after injecting equipment into campaign, the rebuilt PvP blueprints still equal the constant verbatim (no cross-contamination, no constant mutation)', () => {
+  it('after injecting equipment into campaign, the rebuilt PvP blueprints still equal the constant (+ static §5 override; no cross-contamination, no constant mutation)', () => {
     const before = JSON.parse(JSON.stringify(UNIT_BLUEPRINTS));
     buildCampaignBlueprints({}, equipOne([{ id: 'm_atk', value: 50 }], 9));
     expect(UNIT_BLUEPRINTS).toEqual(before);
-    expect(buildPvpBlueprints()).toEqual(before);
+    expect(buildPvpBlueprints()).toEqual(pvpExpectedBlueprints());
   });
 
   it('without equipment, campaign/siege blueprints equal upgrades-only blueprints (injection chain is a no-op for empty equipment)', () => {

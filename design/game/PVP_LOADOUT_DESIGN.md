@@ -1,8 +1,8 @@
 # PvP 构筑卡组 + 按段位解锁单位
 
-版本：v0.3（P1/P2/P3 全部完成）
+版本：v0.4（P1/P2/P3/P4 全部完成）
 日期：2026-06-30
-状态：P1/P2/P3 完成，待 P4 平衡
+状态：P1/P2/P3/P4 完成，待 P5 美术（非阻塞）
 
 > **一句话**：把现有 6 个 PvE-only 单位（ironclad/runner/harpy/medic/berserker/splitter）复用为 PvP 可出单位，按天梯段位解锁；同时把 PvP 从「全池随机发牌」升级为「固定卡组构筑」（Clash Royale 式）。动机：美术资源紧张，单为 PvE 投入单位回报减半，复用后将来补 `.tao` 一次投入两个模式都吃到。
 
@@ -64,20 +64,22 @@
 
 ---
 
-## 5. 数值：6 单位 PvP 化（提案，待 difficultySim 验证）
+## 5. 数值：6 单位 PvP 化（P4 定稿，2026-06-30）
 
 费用与现有锚点对齐（infantry4/archer5/shieldbearer6/max5/mara5/lena7/haste8/meteor12）。
 
-| 单位 | 蓝图要点 | 提案费用 | PvP override |
-|---|---|---|---|
-| Runner | hp30 快脆冲锋 | 3 | 单张偏弱，考虑 `spawnCount` 提到 2~3 形成 swarm，否则降到 2 费 |
-| Berserker | hp110 atk18 残血狂暴 | 6 | 无需改 |
-| Ironclad | hp290 armor3 抗箭重甲 | 8 | 无需改 |
-| Splitter | hp65 死亡裂 2 Runner | 4 | 无需改（对 AOE 是正反馈，PvP 有趣） |
-| **Harpy** | hp26 飞行 `canTargetFlying:false` | **7（高费）** | 保留飞行；高费即护栏。「飞行无解」护栏（如：攻击建筑时下降、地面近战可打）**推迟 P4 平衡期**按 sim 结果决定是否需要。注：类别下限强制 ≥1 建筑，而当前仅 2 个建筑→多数卡组会带箭塔，基础层已自然缓解 |
-| **Medic** | hp90 atk0 光环奶 hps8 | **6** | `buildPvpBlueprints` 给 PvP-Medic 加小攻击（方向：attack≈4 / interval1.2 / range1），光环按需降 hps/缩 radius/设治疗上限。**具体数值推迟 P4**用 sim 定 |
+| 单位 | 蓝图要点 | **费用（定稿）** | 提案 | PvP override / P4 结论 |
+|---|---|---|---|---|
+| Runner | hp30 快脆冲锋 | **3** | 3 | sim 59% 等墨胜率；降到 2 费会到 82%（过强）→ **保持 3**，不加 swarm |
+| Berserker | hp110 atk18 残血狂暴 | **6** | 6 | sim 50%，均衡 → 无需改 |
+| Ironclad | hp290 armor3 抗箭重甲 | **8** | 8 | sim 45%，定位防守肉盾合理 → 无需改 |
+| Splitter | hp65 死亡裂 2 Runner | **5（↑由 4）** | 4 | sim 任何 4–6 费都 100% 等墨胜率（死亡分裂=3 体/125 等效血）→ 上调 5，对齐 5 费档；真正克制是 AOE 陨石（模拟器不建模）|
+| **Harpy** | hp26 飞行 `canTargetFlying:false` | **7（高费）** | 7 | 保留飞行；高费即唯一护栏。**P4 解决 §5 推迟项：sim 证明 cost 7 下 harpy 从不压制（绕过近战赢不了对撞，6 只在基地竞速里输）→ 不加额外飞行机制**。类别下限强制 ≥1 建筑（箭塔是仅 2 建筑之一）实战已自然解 |
+| **Medic** | hp90 atk0 光环奶 hps8 | **6** | 6 | **PvP override 定稿：attack=4 / interval=1.2 / range=1**（DPS≈3.3 象征性近战，不再是 0 攻呆牌）；光环 8 HP/s 半径 2 不变。sim 显示 6 费非压制（27%，且加入一个反而拖累速胜阵），无需削光环 |
 
-> override 落点：`buildPvpBlueprints()`（`GameEngine.ts:136`）已是 PvP 专属蓝图构造器，Harpy/Medic 的 PvP 差异化数值放这里，**不污染** PvE 蓝图。
+> override 落点：`buildPvpBlueprints()`（`server/engine/src/balance/pveUpgrades.ts`）是 PvP 专属蓝图构造器，Medic 的 PvP 差异化数值放这里，**不污染** PvE 蓝图。硬墙只挡养成/装备泄漏，不挡静态 PvP override；守护测试见 `client/test/pvpBlueprintExpected.ts`（被 hardwall/siege/progression/equipment 复用）。
+
+> **P4 平衡工具 = PvP 对战模拟器** `client/test/pvpSim.ts`（+ `pvpSim.test.ts`）。PvE difficultySim 不适用（单防守 AI vs 脚本波，无进攻 macro → 镜像必平局）；改用 **siege 确定性双军引擎**作对战台：等墨双方在中央 4 道对撞，以**残存军队血量/存活**判胜（双向各跑一次抵消 siege 守方超时优势），辅以解析「每墨战斗力」表交叉验证。局限：不建模法术（陨石 AOE=splitter 真克星）、箭塔防守、6 张手牌循环、墨经济、飞行的真实骚扰价值、奶的消耗战价值——故对 splitter/runner/berserker/ironclad 近战定标可靠，对 harpy/medic 取「不具压制性 + 设计推理」结论。
 
 ---
 
@@ -141,7 +143,8 @@
    - `client/src/app/createAppCore.ts`（`goGameNet`）：引擎构造传 `decks: info.decks`。
    - i18n：`pvp.deckBuilder`/`pvp.confirmDeck` 三语补全。
    - Bug fix：`server/shared/src/pvpDeck.ts` `PVP_BASE_CARDS` 补 `_1` 后缀（engine `c.id` 格式要求）。
-5. **P4 平衡**：difficultySim 重跑，定卡组大小（8/10/12）与 6 单位费用；更新 BALANCE.md。
+5. **P4 平衡** ✅ **（2026-06-30 完成）**：新建 PvP 对战模拟器 `client/test/pvpSim.ts`（+ `pvpSim.test.ts`，复用 siege 双军引擎跑等墨对撞）。结论：splitter 4→5（唯一改动），runner3/berserker6/ironclad8/harpy7/medic6 保持；Medic PvP override 定稿 attack4/interval1.2/range1；Harpy 不加飞行护栏（sim 证明非压制）。卡组大小维持 10。BALANCE.md §5.2/§7 已同步。
+   - 顺带修复 P1 遗留回归：Medic PvP override 令 5 个硬墙测试（hardwall/siege/siege-battle/progression/equipment）断言 `buildPvpBlueprints()===UNIT_BLUEPRINTS` 失败——硬墙真不变量是「养成/装备不泄漏」而非「与常量逐字节相等」，新增 `client/test/pvpBlueprintExpected.ts` 共享期望（常量 + 静态 §5 override），5 处改为对比它。
 6. **P5 美术（后补，非阻塞）**：6 单位 `.tao` 骨骼。
 
 ---
@@ -154,7 +157,8 @@
 - [x] **解锁档位 = 三档每档 2 个**：diamond1500(Runner/Ironclad) / grandmaster2100(Berserker/Splitter) / king2400(Harpy/Medic)（§3）
 - [x] **解锁判定 = `seasonPeakElo`**（赛季峰值，不降级）（§3）
 - [x] **max/lena/mara = 恒入基础库**（不再 PvE 门槛过滤）（§4、§7）
-- [x] **Harpy 飞行护栏 → 推迟 P4**（类别下限带建筑已基础缓解）（§5）
-- [x] **Medic PvP 数值 → 推迟 P4**（方向：加小攻击 + 光环可调弱）（§5）
+- [x] **Harpy 飞行护栏 → P4 决议：不加额外机制**（sim 证明 cost 7 非压制；类别下限带箭塔实战已解）（§5）
+- [x] **Medic PvP 数值 → P4 定稿：attack4/interval1.2/range1，光环不变**（sim 证明 cost 6 非压制）（§5）
+- [x] **6 单位费用 → P4 定标**（pvpSim）：splitter 4→5，余 5 个保持；卡组大小维持 10（§5、§8.5）
 
-> 数值待 P4 用 difficultySim 验证：6 单位费用、卡组大小 10 是否合适、Medic/Harpy 平衡。
+> P4 已用 PvP 对战模拟器（`client/test/pvpSim.ts`，非 PvE difficultySim）完成 6 单位费用 / Medic / Harpy 定标，详见 §5 + BALANCE.md §5.2。锚点 max/infantry 等墨偏强是 A6 既有 PvP 问题，留单独平衡 pass（非本任务范围）。

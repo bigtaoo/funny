@@ -11,6 +11,7 @@ import {
 } from '../src/game/balance/pveUpgrades';
 import { createGameEngine } from '../src/game/GameEngine';
 import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
+import { pvpExpectedBlueprints as pvpExpected } from './pvpBlueprintExpected';
 
 /** A SaveData.pveUpgrades map with every upgrade maxed. */
 function maxedUpgrades(): Record<string, number> {
@@ -20,10 +21,11 @@ function maxedUpgrades(): Record<string, number> {
 }
 
 describe('hard wall — PvP blueprints never see PvE upgrades', () => {
-  it('buildPvpBlueprints() equals UNIT_BLUEPRINTS verbatim, even with a maxed save', () => {
-    // The maxed save exists in memory; the PvP builder must ignore it entirely.
+  it('buildPvpBlueprints() equals UNIT_BLUEPRINTS + static PvP overrides, never PvE upgrades', () => {
+    // The maxed save exists in memory; the PvP builder must ignore it entirely
+    // (only the fixed §5 Medic override differs from the raw constants).
     void maxedUpgrades();
-    expect(buildPvpBlueprints()).toEqual(UNIT_BLUEPRINTS);
+    expect(buildPvpBlueprints()).toEqual(pvpExpected());
   });
 
   it('buildCampaignBlueprints({}) with no upgrades equals UNIT_BLUEPRINTS', () => {
@@ -41,8 +43,8 @@ describe('hard wall — PvP blueprints never see PvE upgrades', () => {
     const camp = buildCampaignBlueprints(maxedUpgrades());
     camp[UnitType.Infantry].hp = 99999; // tamper with the clone
     expect(UNIT_BLUEPRINTS).toEqual(before); // constant untouched
-    // A PvP build after a campaign build is still pristine.
-    expect(buildPvpBlueprints()).toEqual(before);
+    // A PvP build after a campaign build is still pristine (constants + static §5 overrides).
+    expect(buildPvpBlueprints()).toEqual(pvpExpected());
   });
 
   it('a PvP engine built after a maxed campaign engine still uses constant stats', () => {
@@ -54,7 +56,7 @@ describe('hard wall — PvP blueprints never see PvE upgrades', () => {
     const pvp = createGameEngine({ ...cfg2, mode: 'pvp' }) as unknown as {
       state: { unitBlueprints: typeof UNIT_BLUEPRINTS };
     };
-    expect(pvp.state.unitBlueprints).toEqual(UNIT_BLUEPRINTS);
+    expect(pvp.state.unitBlueprints).toEqual(pvpExpected());
   });
 });
 
@@ -62,7 +64,7 @@ describe('applyPveUpgrades — clamping & math', () => {
   it('ignores unknown ids and 0 / negative levels', () => {
     const bp = buildPvpBlueprints();
     applyPveUpgrades(bp, { not_a_real_id: 9, inf_hp: 0, inf_dmg: -3 });
-    expect(bp).toEqual(UNIT_BLUEPRINTS);
+    expect(bp).toEqual(pvpExpected());
   });
 
   it('clamps levels above maxLevel to maxLevel', () => {

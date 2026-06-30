@@ -17,6 +17,7 @@ import { Side, GamePhase, UnitType } from '../src/game/types';
 import type { GameConfig, IGameEngine, OwnerId } from '../src/game/types';
 import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
 import { UNIT_BLUEPRINTS } from '../src/game/config';
+import { pvpExpectedBlueprints } from './pvpBlueprintExpected';
 import {
   PVE_UPGRADE_DEFS,
   buildPvpBlueprints,
@@ -92,9 +93,9 @@ describe('siege progression blueprints — monotonicity + ladder red-line (SLG7 
     expect(sg[UnitType.Archer].attack).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack);
   });
 
-  it('after maxed siege blueprints, PvP blueprints still equal the constant baseline verbatim (red-line intact)', () => {
+  it('after maxed siege blueprints, PvP blueprints still equal the constant baseline (+ static §5 override; red-line intact)', () => {
     void buildSiegeBlueprints(maxedUpgrades());
-    expect(buildPvpBlueprints()).toEqual(UNIT_BLUEPRINTS);
+    expect(buildPvpBlueprints()).toEqual(pvpExpectedBlueprints());
   });
 
   it('siege engine uses buildSiegeBlueprints; progression takes effect under the same mode', () => {

@@ -346,11 +346,18 @@ export const CARD_DEFINITIONS: CardDefinition[] = [
   { id: 'lena_2', nameKey: 'card.lena.name', descKey: 'card.lena.desc', cardType: CardType.Unit, cost: 7, unitType: UnitType.Lena },
   { id: 'mara_1', nameKey: 'card.mara.name', descKey: 'card.mara.desc', cardType: CardType.Unit, cost: 5, unitType: UnitType.Mara },
   { id: 'mara_2', nameKey: 'card.mara.name', descKey: 'card.mara.desc', cardType: CardType.Unit, cost: 5, unitType: UnitType.Mara },
-  // PvP unlock units (PVP_LOADOUT_DESIGN §3 — one entry each, no _1/_2 duplicates; cost pending P4 sim)
+  // PvP unlock units (PVP_LOADOUT_DESIGN §3 — one entry each, no _1/_2 duplicates).
+  // Costs validated by the P4 PvP duel sim (client/test/pvpSim.ts): runner 3 (59% equal-ink;
+  // dropping to 2 is oppressive at 82%), ironclad 8 / berserker 6 are balanced (~45–50%),
+  // harpy 7 is the deliberate high-cost guardrail for unanswerable flying (sim shows it is
+  // never oppressive → no extra flying mechanic added), medic 6 is non-oppressive support.
+  // Splitter raised 4→5: its on-death 2-Runner split wins ~100% of equal-ink melee trades at
+  // any cost in 4–6; the real counter is AOE (meteor), which the arena cannot model, so cost 5
+  // aligns it with the 5-bracket while meteor remains its hard answer (BALANCE.md §5.3).
   { id: 'runner',    nameKey: 'card.runner.name',    descKey: 'card.runner.desc',    cardType: CardType.Unit, cost: 3, unitType: UnitType.Runner    },
   { id: 'ironclad',  nameKey: 'card.ironclad.name',  descKey: 'card.ironclad.desc',  cardType: CardType.Unit, cost: 8, unitType: UnitType.Ironclad  },
   { id: 'berserker', nameKey: 'card.berserker.name', descKey: 'card.berserker.desc', cardType: CardType.Unit, cost: 6, unitType: UnitType.Berserker },
-  { id: 'splitter',  nameKey: 'card.splitter.name',  descKey: 'card.splitter.desc',  cardType: CardType.Unit, cost: 4, unitType: UnitType.Splitter  },
+  { id: 'splitter',  nameKey: 'card.splitter.name',  descKey: 'card.splitter.desc',  cardType: CardType.Unit, cost: 5, unitType: UnitType.Splitter  },
   { id: 'harpy',     nameKey: 'card.harpy.name',     descKey: 'card.harpy.desc',     cardType: CardType.Unit, cost: 7, unitType: UnitType.Harpy     },
   { id: 'medic',     nameKey: 'card.medic.name',     descKey: 'card.medic.desc',     cardType: CardType.Unit, cost: 6, unitType: UnitType.Medic     },
   { id: 'barracks_1',  nameKey: 'card.barracks.name',  descKey: 'card.barracks.desc',  cardType: CardType.Building, cost: 14, buildingType: BuildingType.Barracks   },
