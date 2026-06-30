@@ -469,11 +469,35 @@ export function buildGateReason(
   key: BuildingKey,
   toLevel: number,
 ): string | null {
-  if (!BUILDING_KEYS_P1.includes(key)) return 'building not buildable yet';
+  if (!BUILDING_KEYS.includes(key)) return 'unknown building';
   if (!Number.isFinite(toLevel) || toLevel < 1) return 'invalid target level';
   if (key === 'desk') return toLevel > DESK_MAX_LEVEL ? 'desk at max level' : null;
   if (toLevel > deskLevel(buildings)) return 'desk level too low';
   return null;
+}
+
+// ── P2 building functions (wall / academy / cabinet loot-protect) ───────────────────────────────
+/** DRAFT: wall building → +5% garrison HP per level on the defender's main base. */
+export const WALL_DEFENSE_STEP = 0.05;
+/** DRAFT: academy building → attacker siege-blueprint HP buff per level. */
+export const ACADEMY_HP_STEP = 0.02;
+/** DRAFT: academy building → attacker siege-blueprint damage buff per level. */
+export const ACADEMY_DAMAGE_STEP = 0.015;
+/** DRAFT: cabinet building → loot protection rate per level (stacks up to 40% at max). */
+export const CABINET_PROTECT_STEP = 0.02;
+
+/** Multiplier applied to defender garrison HP when the defender's main base (type:'base') is besieged (P2, SLG_CITY_DESIGN §5). */
+export function wallDefenseMult(buildings: Partial<Record<BuildingKey, number>> | undefined): number {
+  return 1 + buildingLevel(buildings, 'wall') * WALL_DEFENSE_STEP;
+}
+/** Fraction of looted resources the cabinet protects (cabinetLootProtect × loot = protected, not transferred). */
+export function cabinetLootProtect(buildings: Partial<Record<BuildingKey, number>> | undefined): number {
+  return Math.min(0.8, buildingLevel(buildings, 'cabinet') * CABINET_PROTECT_STEP);
+}
+/** Academy seasonal blueprint buffs (HP + damage multiplier bonuses) for the attacker's siege army (P2, SLG_CITY_DESIGN §5). */
+export function academyBuff(buildings: Partial<Record<BuildingKey, number>> | undefined): { hp: number; damage: number } {
+  const lvl = buildingLevel(buildings, 'academy');
+  return { hp: lvl * ACADEMY_HP_STEP, damage: lvl * ACADEMY_DAMAGE_STEP };
 }
 
 // ── Nation system (S8-6.5, §2.4) ──────────────────────────────────

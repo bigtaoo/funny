@@ -137,7 +137,7 @@ class GameEngineImpl implements IGameEngine {
       this.mode === 'campaign'
         ? buildCampaignBlueprints(config.pveUpgrades ?? {}, config.equipment, config.unitLevels)
         : this.mode === 'siege'
-        ? buildSiegeBlueprints(config.pveUpgrades ?? {}, config.equipment, config.unitLevels)
+        ? buildSiegeBlueprints(config.pveUpgrades ?? {}, config.equipment, config.unitLevels, config.siegeAcademy)
         : buildPvpBlueprints();
 
     // Enemy (Top side) wave blueprints (§4.10). By default enemies share the

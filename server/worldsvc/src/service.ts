@@ -51,6 +51,9 @@ import {
   NATION_BONUS_PRODUCTION,
   NATION_BONUS_DEFENSE,
   nationDefenseStrength,
+  wallDefenseMult,
+  cabinetLootProtect,
+  academyBuff,
   VISION_TERRITORY_RADIUS,
   VISION_BASE_RADIUS,
   VISION_MARCH_RADIUS,
@@ -1327,6 +1330,27 @@ export class WorldService {
       });
     }
 
+    // Fetch defender world state before the battle: needed for wall HP buff (P2) and cabinet loot protection.
+    const defender = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defenderId) });
+
+    // P2 wall: when the attacker targets the defender's main base, scale garrison HP by wallDefenseMult.
+    // Mirrors how nation bonus uses scaleArmyHp — same path, stacks multiplicatively with the nation bonus.
+    let effectiveDefenderConfig = defenderConfig;
+    if (target.type === 'base' && defenderConfig) {
+      const wallMult = wallDefenseMult(defender?.buildings);
+      if (wallMult > 1) {
+        const g = (defenderConfig as { garrison?: unknown }).garrison;
+        const scaledGarrison = Array.isArray(g) && g.length > 0
+          ? scaleArmyHp(g as GarrisonEntry[], wallMult)
+          : g;
+        effectiveDefenderConfig = { ...defenderConfig, garrison: scaledGarrison };
+      }
+    }
+
+    // P2 academy: attacker's academy building gives a seasonal blueprint HP/damage buff.
+    const atkAcademy = academyBuff(pw.buildings);
+    const siegeAcademy = (atkAcademy.hp > 0 || atkAcademy.damage > 0) ? atkAcademy : undefined;
+
     // Decisive siege (G3-2b, §16): worldsvc directly imports `@nw/engine` headless to run "both-sides pre-formation
     // deterministic auto-battle" for authoritative win/loss + true surviving HP, replacing the cheap linear formula.
     // Bad formation / engine error → fall back to cheap resolveSiege; a single siege must never stall a march.
@@ -1335,13 +1359,14 @@ export class WorldService {
     const siegeEquip: EngineEquipmentInput | undefined =
       attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
     let res: SiegeResolution;
-    let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
+    let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig: effectiveDefenderConfig, tileLevel };
     try {
       res = runSiegeBattle({
-        attackerArmy, defenderConfig, tileLevel, seed,
+        attackerArmy, defenderConfig: effectiveDefenderConfig, tileLevel, seed,
         pveUpgrades: attackerSave?.pveUpgrades,
         unitLevels: attackerSave?.unitLevels,
         equipment: siegeEquip,
+        siegeAcademy,
       });
     } catch (err) {
       console.error('[worldsvc] siege engine failed — fallback to cheap resolve', {
@@ -1351,8 +1376,6 @@ export class WorldService {
       res = resolveSiege(m.troops, effGarrison);
       replay = null; // cheap fallback result is inconsistent with engine replay → do not store replay inputs (replay button degrades to hidden).
     }
-
-    const defender = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defenderId) });
     // Replay inputs: persisted to SiegeDoc; the client uses seed + both sides' formations to replay the battle locally for spectating (§16.3).
     await this.landSiege(m, pw, target, defenderId, defender, res, t, replay);
   }
@@ -1658,7 +1681,10 @@ export class WorldService {
   ): Promise<Record<ResourceType, number>> {
     const defRes = this.settle(defender, t);
     const loot = emptyResources();
-    for (const rt of RESOURCE_TYPES) loot[rt] = Math.floor((defRes[rt] ?? 0) * SIEGE_LOOT_RATE);
+    // P2 cabinet: protects a fraction of the defender's resources from being looted.
+    const protection = cabinetLootProtect(defender.buildings);
+    const effectiveLootRate = SIEGE_LOOT_RATE * (1 - protection);
+    for (const rt of RESOURCE_TYPES) loot[rt] = Math.floor((defRes[rt] ?? 0) * effectiveLootRate);
     const defAfter = emptyResources();
     for (const rt of RESOURCE_TYPES) defAfter[rt] = Math.max(0, (defRes[rt] ?? 0) - loot[rt]);
     await this.deps.cols.playerWorld.updateOne(
