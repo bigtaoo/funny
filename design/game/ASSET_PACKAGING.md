@@ -93,11 +93,11 @@ interface AssetIO {
 - ✅ 微信构建迁到 webpack，可编译、产物为纯代码主包 + `cdn/` 资源；`build:wechat` = `webpack --env TARGET=wechat`。
 - ✅ `AssetIO` 抽象 + `WebAssetIO`（默认零回归）+ `WechatAssetIO`（downloadFile+缓存）。
 - ✅ 全部 `.tao` + 装饰 atlas 经 `AssetIO`（含 L1 英雄 `.tao`，因 UnitView→StickmanRuntime 统一入口）。
+- ✅ **L1 PNG 经 AssetIO 落缓存**（2026-06-30）：新建 `client/src/assets/preloadTextures.ts`，`preloadTexture(url)` 通过 `assetIO().textureSource(url)` 取本地路径，并在 PIXI 缓存里**同时注册原始 URL 别名**（`PIXI.BaseTexture.addToCache`）——否则微信下 `PIXI.Texture.from(url)` 查不到缓存、继续拉 CDN。同步修复 `bootManifest.ts` L0 图片（原 `preheatTexture` 有同样 alias 缺失问题）。场景触发：`GachaScene`/`CollectionScene`/`GameScene` 构造时 fire-and-forget 预加载。
 - ⏳ **遗留**：
-  1. **L1 场景 PNG**（gacha/英雄立绘/法术卡图）走 `PIXI.Texture.from(<烘焙CDN URL>)` 同步调用点，**未经 `AssetIO`**。微信可凭白名单直接加载远程图片（**但每次会话重拉、不入本地缓存**）。为可靠 + 缓存，后续把这些调用点改成"先 `await textureSource` 再 `from`"。
-  2. **微信后台白名单**：把 CDN 域名加进 `downloadFile` 合法域名（以及远程图片域名白名单）。
-  3. **部署**：`build:wechat` 后把 `wechatgame/cdn/*` 上传到 `<CDN>/cdn/`；微信开发者工具上传主包（`pixigame.js`+`game.js`+`game.json`，`cdn/` 已被 packOptions 忽略）。
-  4. **运行时验证**：webpack 产物能否在微信运行时跑，需微信 IDE 实测（本地无法验证）。
+  1. **微信后台白名单**：把 CDN 域名加进 `downloadFile` 合法域名（以及远程图片域名白名单）。
+  2. **部署**：`build:wechat` 后把 `wechatgame/cdn/*` 上传到 `<CDN>/cdn/`；微信开发者工具上传主包（`pixigame.js`+`game.js`+`game.json`，`cdn/` 已被 packOptions 忽略）。
+  3. **运行时验证**：webpack 产物能否在微信运行时跑，需微信 IDE 实测（本地无法验证）。
 
 > CDN 域名：复用现有 gamestao.com 基础设施即可（web 资源已在 a.gamestao.com 的 Cloudflare 边缘）。`cdn/` 上传到某子域（如 `assets.gamestao.com` 或直接挂 a. 的某路径），构建时 `NW_ASSET_CDN=https://<子域>`。
 
@@ -130,6 +130,6 @@ interface AssetIO {
 ## 7. 后续（按优先级）
 
 1. **微信上线闭环**：上传 `cdn/*` 到 CDN 子域 + 微信后台域名白名单 + 微信 IDE 实测 webpack 产物运行（§4.2 遗留 2/3/4）。
-2. **L1 PNG 经 AssetIO**：gacha/英雄/法术卡图调用点改 `await textureSource` 再 `from`，落本地缓存（§4.2 遗留 1）。
-3. **Web JS code-split**：`splitChunks` vendor + 重场景 `import()`，首屏代码包 ~1.5 MB → ~0.8 MB（§3 注）。
+2. ~~**L1 PNG 经 AssetIO**~~：**已完成（2026-06-30）**——见 §4.2 preloadTextures + URL alias 方案。
+3. ~~**Web JS code-split**~~：**已决定不做（2026-06-30）**。微信不支持运行时 `import()`、套壳全量本地化，受益平台仅 Web；风险大于收益，正式放弃。
 4. **L0 瘦身复核**：定期核对 `bootManifest`，把"非首局必现"的项降级回 L1。
