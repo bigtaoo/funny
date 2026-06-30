@@ -197,7 +197,14 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 > - **契约**：`openapi-world.yml` 加 `PlayerWorldView.buildings/buildQueue`、`BuildingKey` enum、两端点。
 > - **赛季清空**：`resetSeason` 已整删 `playerWorld` 文档（含 buildings/buildQueue），跨季只留 family/材料，无需额外清理，符合 D-CITY-1。
 > - 验证：`@nw/shared` + `@nw/worldsvc` `tsc -b` 全绿；shared 纯函数单测 8/8 绿；worldsvc e2e（`city-buildings.e2e.test.ts`，7 例）已写，本机 Mongo 不可达（docker 处 Windows 容器模式）→ 与全仓 e2e 一致 skip，待有 Mongo 环境跑实测。
-> 待续（P1 收尾，下一刀）：**client `CityScene` UI + 练兵并入 + i18n（`city.*` 三语）**；client 侧 `openapi-world.ts` 重生（gen-openapi）；建筑数值经 `SLG_ECONOMY_CHECK` 核验后落 `ECONOMY_NUMBERS §13-SLG-CITY`。
+> **P1 全部完成（2026-06-30，branch `slg-city-ui`，client UI 刀）**：
+> - **`CityScene`**（`client/src/scenes/CityScene.ts`）：手绘书桌俯视风格；顶部 5 资源条（当前值/产率/仓储上限）；建筑网格（8 个 P1 key + 2 个 P2 占位）；点选建筑 → 详情卡（当前等级/加成说明/下级消耗/升级按钮，资源不足置灰）；建造队列条（倒计时 + coin 加速按钮）；drillYard 详情卡展示兵力上限；`goCity` 导航函数（`createAppCore.ts`），从 `onOpenCity` 回调触发，`onBack` 返回大地图。
+> - **WorldMapScene**：自己主城弹层新增「进入主城（Enter Desk）」按钮，走 `onOpenCity` 回调。
+> - **WorldApiClient**：导出 `BuildingKey` 类型；新增 `upgradeBuilding()` / `speedupBuild()` 方法（`POST /world/build/upgrade|speedup`）。
+> - **openapi-world.ts**：手工补丁（非全量重生，保留 family 历史类型）：`PlayerWorldView` 加 `buildings/buildQueue`；加 `BuildingKey` enum 及两端点 operation stub。
+> - **i18n**：`city.*` 前缀三语（zh/en/de）——建筑名称、资源标签、加成说明、错误提示、队列显示；`world.actEnterCity` 三语。
+> - **验证**：全量 `client tsc --noEmit` 零错误（main + node_modules 环境校验通过）。
+> - 遗留：建筑数值仍为 DRAFT（经 `SLG_ECONOMY_CHECK` 核验后落 `ECONOMY_NUMBERS §13-SLG-CITY`）；P2 `wall`/`cabinet` 护掠/`academy` 蓝图 buff 见下方 P2 条目。
 
 - **P2 — 城防 + 科技**：`wall` 注入主城围攻 + `cabinet` 护掠夺 + `academy` 赛季蓝图 buff（独立注入口，守红线）。
 - **P3 — 委任内政官**：角色卡派进建筑加成（角色养成接入 SLG 内政），数值按角色属性。

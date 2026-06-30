@@ -40,6 +40,7 @@ import { AuctionScene, type AuctionSceneCallbacks } from './scenes/AuctionScene'
 import { DefenseEditorScene, type DefenseEditorCallbacks } from './scenes/DefenseEditorScene';
 import { TeamsScene, type TeamsCallbacks } from './scenes/TeamsScene';
 import { DeckBuilderScene, type DeckBuilderCallbacks } from './scenes/DeckBuilderScene';
+import { CityScene, type CitySceneCallbacks } from './scenes/CityScene';
 import { DailyScene, type DailyCallbacks } from './scenes/DailyScene';
 import { EventScene, type EventCallbacks } from './scenes/EventScene';
 import { ConsentDialog, type ConsentCallbacks } from './render/ConsentDialog';
@@ -290,6 +291,11 @@ class PixiAppViews implements AppViews {
   showTeams(cb: TeamsCallbacks): void {
     this.leaveLobby();
     this.manager.goto(new TeamsScene(this.layout, this.input, cb));
+  }
+
+  showCity(cb: CitySceneCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new CityScene(this.layout, this.input, cb));
   }
 
   showDeckBuilder(cb: DeckBuilderCallbacks): void {

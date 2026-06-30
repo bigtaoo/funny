@@ -231,6 +231,18 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/build/upgrade": {
+        parameters: { query?: never; header?: never; path?: never; cookie?: never; };
+        get?: never; put?: never;
+        post: operations["upgradeBuilding"];
+        delete?: never; options?: never; head?: never; patch?: never; trace?: never;
+    };
+    "/world/build/speedup": {
+        parameters: { query?: never; header?: never; path?: never; cookie?: never; };
+        get?: never; put?: never;
+        post: operations["speedupBuild"];
+        delete?: never; options?: never; head?: never; patch?: never; trace?: never;
+    };
     "/world/defense": {
         parameters: {
             query?: never;
@@ -874,7 +886,22 @@ export interface components {
                 /** Format: int64 */
                 completeAt: number;
             }[];
+            /** @description Home-city building levels (SLG_CITY_DESIGN P1; desk>=1, others>=0 when present). */
+            buildings?: {
+                [key: string]: number;
+            };
+            /** @description Home-city build queue (SLG_CITY_DESIGN P1; sorted by completeAt). */
+            buildQueue?: {
+                key: components["schemas"]["BuildingKey"];
+                toLevel: number;
+                /** Format: int64 */
+                startAt: number;
+                /** Format: int64 */
+                completeAt: number;
+            }[];
         };
+        /** @enum {string} */
+        BuildingKey: "desk" | "inkPot" | "paperTray" | "graphiteMill" | "metalForge" | "stickerShop" | "cabinet" | "drillYard" | "wall" | "academy";
         MarchView: {
             marchId: string;
             /** @enum {string} */
@@ -1487,6 +1514,34 @@ export interface operations {
                         data?: components["schemas"]["PlayerWorldView"];
                     };
                 };
+            };
+        };
+    };
+    upgradeBuilding: {
+        parameters: { query?: never; header?: never; path?: never; cookie?: never; };
+        requestBody: {
+            content: {
+                "application/json": { worldId: string; key: components["schemas"]["BuildingKey"]; };
+            };
+        };
+        responses: {
+            200: {
+                headers: { [name: string]: unknown; };
+                content: { "application/json": components["schemas"]["OkResponse"] & { data?: components["schemas"]["PlayerWorldView"]; }; };
+            };
+        };
+    };
+    speedupBuild: {
+        parameters: { query?: never; header?: never; path?: never; cookie?: never; };
+        requestBody: {
+            content: {
+                "application/json": { worldId: string; key: components["schemas"]["BuildingKey"]; coins: number; };
+            };
+        };
+        responses: {
+            200: {
+                headers: { [name: string]: unknown; };
+                content: { "application/json": components["schemas"]["OkResponse"] & { data?: components["schemas"]["PlayerWorldView"]; }; };
             };
         };
     };
