@@ -399,6 +399,15 @@ export const de: Record<TranslationKey, string> = {
   'stamina.cost': 'Ausdauer {current}/120 · Kosten {cost}',
   'stamina.buy': 'Ausdauer auffüllen (30 Münzen → +60)',
 
+  // ── Level-Ziele ───────────────────────────────────────────────────────────
+  'level.objective.label': 'Ziel',
+  'level.objective.survive': 'Alle Feinde besiegen',
+  'level.objective.timedDefense': 'Bis zum Zeitablauf durchhalten',
+  'level.objective.destroyBase': 'Feindliche Basis zerstören',
+  'level.objective.leakLimit': 'Höchstens {n} Feinde durchlassen',
+  'level.objective.boss': 'Boss besiegen',
+  'level.objective.escort': 'Verbündete eskortieren',
+
   // ── Einheitenentwicklung (S12) ────────────────────────────────────────────
   'progression.unitsTitle': 'Einheiten-Karten',
   'progression.lv': 'Lv {lv}',
