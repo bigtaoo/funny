@@ -1,7 +1,7 @@
 // socialsvc → gateway internal push (SOCIAL_SVC_DESIGN §5).
 // socialsvc is the dispatch layer for all channel pushes, delivered to gateway via /gw/push (accountId → socket).
 // If gateway is not configured → push is a no-op (fallback: client relies on polling).
-import { internalHeaders } from '@nw/shared';
+import { internalHeaders, postInternal } from '@nw/shared';
 
 export type SocialPushMsg =
   | {
@@ -59,15 +59,13 @@ export class HttpSocialGatewayClient implements SocialGatewayClient {
 
   async push(accountId: string, msg: SocialPushMsg): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/gw/push`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('socialsvc', this.internalKey) },
-        body: JSON.stringify({ accountId, msg }),
-      });
-    } catch {
-      // best-effort
-    }
+    // best-effort, self-healing (clients also poll) → retries=0; the win here is the
+    // body-drain + timeout postInternal applies (a large channel fanout is a burst).
+    await postInternal(`${this.baseUrl}/gw/push`, { accountId, msg }, {
+      caller: 'socialsvc',
+      key: this.internalKey,
+      label: `/gw/push ${msg.kind}`,
+    });
   }
 
   async pushMany(accountIds: string[], msg: SocialPushMsg): Promise<void> {
@@ -91,15 +89,11 @@ export class HttpSocialGatewayClient implements SocialGatewayClient {
 
   async invalidateFriends(accountId: string): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/gw/social/invalidate`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('socialsvc', this.internalKey) },
-        body: JSON.stringify({ accountId }),
-      });
-    } catch {
-      // best-effort
-    }
+    await postInternal(`${this.baseUrl}/gw/social/invalidate`, { accountId }, {
+      caller: 'socialsvc',
+      key: this.internalKey,
+      label: '/gw/social/invalidate',
+    });
   }
 }
 

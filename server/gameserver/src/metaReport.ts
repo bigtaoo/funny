@@ -73,12 +73,24 @@ export class MetaReporter {
 
   private async post(body: unknown): Promise<{ ok: boolean; elo?: EloBySide } | null> {
     if (!this.baseUrl) return null;
+    // Explicit timeout (undici has none) — reports carry replay frames so allow 10s;
+    // the existing room_id-idempotent retry queue covers a timed-out report.
     const res = await fetch(`${this.baseUrl}/internal/match/report`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...internalHeaders('gameserver', this.internalKey) },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Drain the body so the socket returns to undici's pool (unconsumed bodies wedge
+      // it under burst — e.g. many ranked matches ending together).
+      try {
+        await res.body?.cancel();
+      } catch {
+        /* already closed */
+      }
+      return null;
+    }
     return (await res.json()) as { ok: boolean; elo?: EloBySide };
   }
 

@@ -7,7 +7,7 @@
 // Internal auth: X-Internal-Key (shared NW_INTERNAL_KEY). Fire-and-forget — drop silently when the
 // player is offline or gateway blips (room state is the latest snapshot and will be resent on the
 // next change; a lost match_found leaves the player in the room and they can retry starting a match).
-import { createLogger, internalHeaders } from '@nw/shared';
+import { createLogger, postInternal } from '@nw/shared';
 import type { PushMsg } from './Matchsvc';
 
 const log = createLogger('matchsvc:gw');
@@ -27,24 +27,16 @@ export class GatewayClient {
       log.warn('gateway push not configured: event dropped', { accountId, kind: msg.kind, roomId });
       return;
     }
-    void fetch(`${this.baseUrl}/gw/push`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...internalHeaders('matchsvc', this.internalKey) },
-      body: JSON.stringify({ accountId, msg, roomId }),
-    })
-      .then((res) => {
-        if (!res.ok) log.warn('gateway push non-OK', { accountId, kind: msg.kind, roomId, status: res.status });
-      })
-      .catch((e) => {
-        // Will be resent on the next state change; offline players should be silently dropped.
-        // During integration testing a lost match_found will stall the "searching" state — make sure this is visible.
-        log.error('gateway push failed', {
-          accountId,
-          kind: msg.kind,
-          roomId,
-          url: this.baseUrl,
-          err: (e as Error).message,
-        });
-      });
+    // match_found is non-self-healing: losing it strands the player in "searching" while matchsvc
+    // already dequeued + signed the ticket → retry. Client dedups a re-sent match_found by ticket
+    // (NetSession.connectGame), so retry is safe. Other kinds are self-healing → retries=0.
+    const retries = msg.kind === 'match_found' ? 2 : 0;
+    void postInternal(`${this.baseUrl}/gw/push`, { accountId, msg, roomId }, {
+      caller: 'matchsvc',
+      key: this.internalKey,
+      retries,
+      log,
+      label: `/gw/push ${msg.kind}`,
+    });
   };
 }

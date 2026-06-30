@@ -5,7 +5,7 @@
 //
 // Same shape as commercialClient: HTTP implementation + interface (makes it easy to inject a fake judge in tests).
 
-import { internalHeaders } from '@nw/shared';
+import { internalHeaders, postInternal } from '@nw/shared';
 
 /** Replay frame (command bytes are base64-encoded for JSON safety; gateway decodes back to bytes and pushes to the judge client). */
 export interface JudgeFrame {
@@ -87,15 +87,12 @@ export class HttpGatewayClient implements GatewayClient {
 
   async push(accountId: string, msg: SocialPushMsg): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/gw/push`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('meta', this.internalKey) },
-        body: JSON.stringify({ accountId, msg }),
-      });
-    } catch {
-      // best-effort: push failure does not affect already-persisted data; client pulls on next login.
-    }
+    // best-effort, self-healing (data is in DB; client pulls on next login) → retries=0.
+    await postInternal(`${this.baseUrl}/gw/push`, { accountId, msg }, {
+      caller: 'meta',
+      key: this.internalKey,
+      label: `/gw/push ${msg.kind}`,
+    });
   }
 
   async presence(accountIds: string[]): Promise<Record<string, boolean>> {
@@ -114,14 +111,10 @@ export class HttpGatewayClient implements GatewayClient {
 
   async invalidateFriends(accountId: string): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/gw/social/invalidate`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('meta', this.internalKey) },
-        body: JSON.stringify({ accountId }),
-      });
-    } catch {
-      // best-effort: cache is eventually consistent; failure only causes a brief delay in presence scope refresh.
-    }
+    await postInternal(`${this.baseUrl}/gw/social/invalidate`, { accountId }, {
+      caller: 'meta',
+      key: this.internalKey,
+      label: '/gw/social/invalidate',
+    });
   }
 }

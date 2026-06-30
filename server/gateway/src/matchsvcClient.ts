@@ -8,7 +8,7 @@
 // (the wire contract across processes is JSON; each side holds a locally-typed copy of the same structure,
 // consistent with the REST/JSON internal communication convention — see META_DESIGN §6.7).
 
-import { createLogger, internalHeaders } from '@nw/shared';
+import { createLogger, postInternal } from '@nw/shared';
 
 const log = createLogger('gateway:matchsvc');
 
@@ -85,25 +85,26 @@ export class MatchsvcClient {
     return this.baseUrl !== null;
   }
 
-  private post(path: string, body: Record<string, unknown>): void {
+  // fire-and-forget: the real result comes back asynchronously over /gw/push, not in
+  // the HTTP response. `retries` is reserved for the non-self-healing, idempotent-on-
+  // receiver commands (enqueue / leave) — see postInternal's header for why.
+  private post(path: string, body: Record<string, unknown>, retries = 0): void {
     if (!this.baseUrl) {
       log.warn('matchsvc not configured: command dropped', { path });
       return;
     }
-    void fetch(`${this.baseUrl}${path}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...internalHeaders('gateway', this.internalKey) },
-      body: JSON.stringify(body),
-    })
-      .then((res) => {
-        if (!res.ok) log.warn('matchsvc returned non-OK', { path, status: res.status });
-      })
-      .catch((e) => {
-        // Command lost: the player can retry (create room / join / start are all idempotent to a second click), but this must be visible during integration testing.
-        log.error('matchsvc POST failed', { path, url: this.baseUrl, err: (e as Error).message });
-      });
+    void postInternal(`${this.baseUrl}${path}`, body, {
+      caller: 'gateway',
+      key: this.internalKey,
+      retries,
+      log,
+      label: path,
+    });
   }
 
+  // roomCreate / roomJoin are NOT idempotent on the matchsvc side (a re-landed dup
+  // would create a second room / push ALREADY_IN_ROOM), so they stay retries=0 — the
+  // player can simply click again. They still get the body-drain + timeout fix.
   roomCreate(accountId: string, name: string, publicId: string, equippedTitle = ''): void {
     this.post('/mm/room/create', { accountId, name, publicId, equippedTitle });
   }
@@ -116,11 +117,15 @@ export class MatchsvcClient {
   roomStart(accountId: string): void {
     this.post('/mm/room/start', { accountId });
   }
+  // leave is idempotent (no-op if not in room/queue) and non-self-healing (a lost
+  // leave strands a zombie queue entry / room) → retry.
   roomLeave(accountId: string): void {
-    this.post('/mm/room/leave', { accountId });
+    this.post('/mm/room/leave', { accountId }, 2);
   }
+  // enqueue is idempotent (matchsvc dedups by accountId) and non-self-healing (a lost
+  // enqueue strands the player on "searching") → retry. This is the 0/20 fix.
   enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = ''): void {
-    this.post('/mm/queue/enqueue', { accountId, name, publicId, elo, equippedTitle });
+    this.post('/mm/queue/enqueue', { accountId, name, publicId, elo, equippedTitle }, 2);
   }
   connected(accountId: string): void {
     this.post('/mm/conn/connected', { accountId });

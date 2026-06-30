@@ -7,7 +7,7 @@
 //
 // Note: SlgPushMsg kind/fields on the worldsvc side must match the SLG branch of
 // gateway matchsvcClient.PushMsg character-for-character (JSON wire contract, camelCase discriminator=kind).
-import { GW_PUSH_REDIS_CHANNEL, internalHeaders } from '@nw/shared';
+import { GW_PUSH_REDIS_CHANNEL, postInternal } from '@nw/shared';
 
 export type SlgPushMsg =
   | {
@@ -118,15 +118,13 @@ export class HttpWorldGatewayClient implements WorldGatewayClient {
 
   async push(accountId: string, msg: SlgPushMsg): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/gw/push`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
-        body: JSON.stringify({ accountId, msg }),
-      });
-    } catch {
-      // best-effort: push failure does not affect the authoritative state already persisted in the database; the client will pick it up on the next REST poll.
-    }
+    // best-effort, self-healing (authoritative state is in DB; client re-polls) →
+    // retries=0. The win is body-drain + timeout (a siege fanout is a burst).
+    await postInternal(`${this.baseUrl}/gw/push`, { accountId, msg }, {
+      caller: 'worldsvc',
+      key: this.internalKey,
+      label: `/gw/push ${msg.kind}`,
+    });
   }
 }
 
