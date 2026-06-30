@@ -76,15 +76,14 @@ function printResult(r: SimResult): void {
   let allCorePass = true;
   for (const j of judgments) {
     const mark = j.pass ? 'PASS' : 'FAIL';
-    // The coin-faucet cross-ref is informational, not a gate.
-    const informational = j.key.includes('跨类参考');
+    const informational = j.informational === true;
     if (!j.pass && !informational) allCorePass = false;
     console.log(`    [${mark}]${informational ? '*' : ' '} ${j.key}`);
     console.log(`           ${j.detail}`);
     console.log(`           value ${typeof j.value === 'number' ? j.value.toFixed(3) : j.value}  threshold ${j.threshold}`);
   }
   console.log('');
-  console.log(`  => CORE verdict (excl. *跨类参考 informational): ${allCorePass ? 'PASS' : 'FAIL'}`);
+  console.log(`  => CORE verdict (excl. * informational rows): ${allCorePass ? 'PASS' : 'FAIL'}`);
   console.log('');
 }
 
@@ -101,14 +100,14 @@ function main(): void {
     const r = runScenario(scenario);
     printResult(r);
     const judgments: Judgment[] = judge(r);
-    const core = judgments.every((j) => j.pass || j.key.includes('跨类参考'));
+    const core = judgments.every((j) => j.pass || j.informational === true);
     results.push({ name: scenario.name, core });
   }
 
   console.log('═'.repeat(78));
   console.log('SUMMARY (core verdict per scenario):');
   for (const x of results) console.log(`  ${x.name.padEnd(14)} ${x.core ? 'PASS' : 'FAIL'}`);
-  console.log('  * = informational cross-reference, not a gate (see §13-SLG note)');
+  console.log('  * = informational row, not a gate (coin-faucet cross-ref + head-tilt gradient; see §13-SLG)');
   console.log('═'.repeat(78));
 }
 

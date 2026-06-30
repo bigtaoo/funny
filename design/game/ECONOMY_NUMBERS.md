@@ -463,23 +463,22 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 
 判据对照（三场景一致）：
 
-| 判据 | 视角 | 结果 | 数 |
-|---|---|---|---|
-| **人均稀释**（participant） | 人均 | ✅ PASS | 0.11%（≪15%）|
-| **人均稀释**（champion 最坏头） | 人均 | ✅ PASS | 13.36%（<15%，贴边）|
-| **全服通胀（vs 材料龙头·正确口径）** | 全服 | ✅ PASS | 0.45% / 0.96% / 4.01%（≪10%）|
-| **coin 子项** | — | ✅ PASS | Σcoins=0 |
-| **头部倾斜**（champion/participant 人均） | 人均 | ❌ **FAIL** | ~124×（提案阈 10×）|
-| 全服通胀（vs 金币龙头·跨类参考） | 全服 | ⚠ 非门控 | 67%–595%（见下注）|
+| 判据 | 视角 | 门控 | 结果 | 数 |
+|---|---|---|---|---|
+| **人均稀释**（participant） | 人均 | 是 | ✅ PASS | 0.11%（≪15%）|
+| **人均稀释**（champion 最坏头） | 人均 | 是 | ✅ PASS | 13.36%（<15%，贴边）= 头部倾斜的真护栏 |
+| **全服通胀（vs 材料龙头·正确口径）** | 全服 | 是 | ✅ PASS | 0.45% / 0.96% / 4.01%（≪10%）|
+| **coin 子项** | — | 是 | ✅ PASS | Σcoins=0 |
+| 头部倾斜（champion/participant 人均） | 人均 | **否·informational** | ~118–124× | 已降级非门控（见 §13-SLG.4-2）|
+| 全服通胀（vs 金币龙头·跨类参考） | 全服 | 否·informational | 67%–595% | 量纲错配·名义换算（见下注）|
+
+> **CORE 判决（仅看门控行）= 三场景全 PASS ✅**（conservative / baseline / aggressive）。
 
 ### 13-SLG.4 结论与待拍板
 
-1. **安全主结论 ✅**：settle **不撑爆持久经济**。人均稀释（养成体验）与全服通胀（材料龙头同单位口径）在保守估值（binding=400）+ 激进场景（10万人/满编宗门）下仍 ≪ 阈值——A 轨「不破红线」成立。**coin 子项 = 0**，红线 1 自然满足。
-2. **头部倾斜 FAIL（唯一需拍板项）**：champion 成员人均 ≈ participant 的 **124×**，远超提案 10×。根因纯结构性——participant `binding=0` 而 champion `binding=50(×2)`，binding 估值又高（400）。三选一由经济负责人拍：
-   - (a) **上调头部倾斜阈值 / 降级该判据**：per-head 口径下「冠军该多拿」，且参与者**绝对稀释只有 0.11%**（拿得少不等于被剥夺），10× 对竞技 SLG 可能本就过严；**推荐**——这是提案阈值，不是红线。
-   - (b) 给 participant 一个 binding 地板（如 binding 2–5），把比值压到有限可控；
-   - (c) 下调 champion/top 档 binding 量。
-3. **「vs 金币龙头」口径是跨类参考、非门控** ⚠：settle 实发 `coins=0`，把材料 coin-equiv 去比**金币**龙头（§6.1）是名义换算、量纲错配（材料经济与金币经济不同数量级、不可兑），故 econ-sim 标为 informational、不计入 core 判决。**经济约束的正确分母 = 材料龙头**（同单位、可比），即上表「正确口径」行。建议 SLG_ECONOMY_CHECK §2.2/§2.3 据此补注分母口径。
+1. **安全主结论 ✅**：settle **不撑爆持久经济**。人均稀释（养成体验）与全服通胀（材料龙头同单位口径）在保守估值（binding=400）+ 激进场景（10万人/满编宗门）下仍 ≪ 阈值——A 轨「不破红线」成立。**coin 子项 = 0**，红线 1 自然满足。**三场景 CORE 全 PASS**。
+2. **头部倾斜：已降级为 informational（2026-06-30 经济负责人拍板，采纳方案 a）**：champion 人均 ≈ participant 的 ~118–124×，纯结构性（participant `binding=0`，champion `binding=50(×2)`，binding 估值 400）。**决定：不设头部倾斜硬墙**——per-head 口径下「冠军该多拿」，10× 对竞技 SLG 过严；真正护栏是 **champion 绝对人均稀释 ≤ 15%**（判据 1b，实测 13.36% PASS，贴边但守住）——即「拿得多但不至于架空体力闸门」。该判据在 econ-sim 仍计算上报但不计入 CORE 判决。**后续若 champion 绝对稀释逼近 15%（如调高 champion binding 或首府 mult），优先压它，而非看比值。**
+3. **「vs 金币龙头」口径是跨类参考、非门控** ⚠：settle 实发 `coins=0`，把材料 coin-equiv 去比**金币**龙头（§6.1）是名义换算、量纲错配（材料经济与金币经济不同数量级、不可兑），故 econ-sim 标为 informational、不计入 core 判决。**经济约束的正确分母 = 材料龙头**（同单位、可比），即上表「正确口径」行。已回注 SLG_ECONOMY_CHECK §2.3 分母口径。
 
 ### 13-SLG.5 经济约束（红线复述）
 
@@ -489,7 +488,7 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 - 皮肤限定件纯 cosmetic（ADR-003）；legendary 仍只走盲盒。
 - 数值是 DRAFT：终态判据 = 上线后 analyticsvc 实测（settle 实发总量 / participant 人头 / 首府持有率）对账，偏差回 SLG_ECONOMY_CHECK §10 重跑（惰性下季生效）。
 
-> 上表阈值 15%/10%/10× 仍是**提案**；头部倾斜拍板后回填本表 + 把 SLG_DESIGN §17.1/§21.4 的 `DRAFT` 降级为「已过核验（日期）」。
+> 门控阈值 15%/10% 维持提案值（实测留足余量）；头部倾斜 10× 已弃用（降级 informational，见上）。**A 轨已过核验（2026-06-30）**——`SETTLE_REWARDS` / `CENTER_CAPITAL_MULT` 的 SLG_DESIGN §17/§21 `DRAFT` 可降级为「已过 A 轨核验（2026-06-30）」；其余参数（繁荣度/国民加成/分区/容量）待 B–F 轨各自核验（SLG_ECONOMY_CHECK §4–§8）。
 
 ---
 

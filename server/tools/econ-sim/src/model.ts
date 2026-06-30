@@ -172,12 +172,14 @@ export interface Judgment {
   value: number; // primary ratio (fraction or multiple)
   threshold: number;
   pass: boolean;
+  /** Informational only — reported but does NOT gate the core verdict (see §13-SLG notes). */
+  informational?: boolean;
 }
 
 export const THRESHOLDS = {
-  perHeadDilution: 0.15, // participant settle monthly <= 15% of regular monthly material
-  serverInflation: 0.1, //  settle server monthly coin-eq <= 10% of faucet
-  headTilt: 10, //          champion per-head <= 10x participant per-head
+  perHeadDilution: 0.15, // participant settle monthly <= 15% of regular monthly material (GATING)
+  serverInflation: 0.1, //  settle server monthly coin-eq <= 10% of MATERIAL faucet (GATING)
+  headTilt: 10, //          champion per-head <= 10x participant — INFORMATIONAL only (downgraded 2026-06-30)
 };
 
 function pct(n: number): string {
@@ -232,6 +234,7 @@ export function judge(r: SimResult): Judgment[] {
     value: inflCoin,
     threshold: THRESHOLDS.serverInflation,
     pass: inflCoin <= THRESHOLDS.serverInflation,
+    informational: true,
   });
 
   // 3. coin 子项 — every tier must keep coins = 0 (红线 1)
@@ -245,15 +248,19 @@ export function judge(r: SimResult): Judgment[] {
     pass: totalSettleCoins === 0,
   });
 
-  // 4. 头部倾斜 (per-head): champion / participant
+  // 4. 头部倾斜 (per-head): champion / participant — INFORMATIONAL (decided 2026-06-30).
+  // Downgraded to non-gating: per-head, the structural guardrail is champion ABSOLUTE
+  // dilution (judgment 1b, <=15% PASS), not the gradient. The ratio is structurally large
+  // because participant binding=0 while champion binding>0 — intended "winners get more".
   const tilt = part.perHeadSeasonCoins > 0 ? champ.perHeadSeasonCoins / part.perHeadSeasonCoins : Infinity;
   out.push({
-    key: '头部倾斜 (champion/participant 人均)',
+    key: '头部倾斜 (champion/participant 人均, 非门控)',
     view: 'per-head',
-    detail: `champion ${champ.perHeadSeasonCoins.toFixed(0)} / participant ${part.perHeadSeasonCoins.toFixed(0)} coin-eq = ${tilt.toFixed(1)}×`,
+    detail: `champion ${champ.perHeadSeasonCoins.toFixed(0)} / participant ${part.perHeadSeasonCoins.toFixed(0)} coin-eq = ${tilt.toFixed(1)}× — 护栏改由 champion 绝对稀释 (判据 1b) 承担, 梯度本身不设硬墙`,
     value: tilt,
     threshold: THRESHOLDS.headTilt,
     pass: tilt <= THRESHOLDS.headTilt,
+    informational: true,
   });
 
   return out;
