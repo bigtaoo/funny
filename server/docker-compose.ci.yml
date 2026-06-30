@@ -8,7 +8,7 @@
 #     client/test/e2e/full-link.e2e.ts (meta 18080 / gateway 8086 / game 8081).
 #   • The gateway address sent by meta + the game address in tickets both use localhost:<host-port>,
 #     so E2E processes on the runner can connect using the server-provided address (validates the core assertion "client connects to the right port").
-#   • Adds Node-based healthchecks to the five services (image has node, not curl), compatible with `--wait` for deterministic readiness.
+#   • Adds Node-based healthchecks to all services (image has node, not curl), compatible with `--wait` for deterministic readiness.
 services:
   redis:
     # CI uses in-memory mode, no volume; healthcheck lets --wait wait deterministically.
@@ -98,6 +98,14 @@ services:
       - "18085:18085"
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:18085/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 20
+
+  socialsvc:
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8085/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 5s
       timeout: 5s
       start_period: 5s

@@ -1,9 +1,9 @@
 # Notebook Wars server image (C-3 / S1-M).
-# Single image hosts metaserver / gateway / matchsvc / gameserver / commercial / worldsvc / admin — all share @nw/shared, build once;
-# compose uses `command` to select which process to run (node metaserver|gateway|matchsvc|gameserver|commercial|worldsvc|admin /dist/index.js).
+# Single image hosts metaserver / gateway / matchsvc / gameserver / commercial / worldsvc / admin / socialsvc / analyticsvc — all share @nw/shared, build once;
+# compose uses `command` to select which process to run (node <service>/dist/index.js).
 #
 # Multi-stage:
-#   build   —— npm ci for entire workspace + tsc -b ten packages (including deterministic engine @nw/engine, required by worldsvc at runtime)
+#   build   —— npm ci for entire workspace + tsc -b eleven packages (including deterministic engine @nw/engine, required by worldsvc at runtime)
 #   runtime —— only retains node_modules + per-package dist + contracts (meta reads openapi.yml; gateway/game reads transport.proto at runtime)
 
 FROM node:20-alpine AS build
@@ -20,9 +20,10 @@ COPY commercial/package.json ./commercial/
 COPY worldsvc/package.json ./worldsvc/
 COPY admin/package.json ./admin/
 COPY analyticsvc/package.json ./analyticsvc/
+COPY socialsvc/package.json ./socialsvc/
 RUN npm ci
 COPY . .
-RUN npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc
+RUN npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc socialsvc
 
 FROM node:20-alpine AS runtime
 WORKDIR /app
@@ -51,6 +52,8 @@ COPY --from=build /app/admin/package.json ./admin/package.json
 COPY --from=build /app/admin/dist ./admin/dist
 COPY --from=build /app/analyticsvc/package.json ./analyticsvc/package.json
 COPY --from=build /app/analyticsvc/dist ./analyticsvc/dist
+COPY --from=build /app/socialsvc/package.json ./socialsvc/package.json
+COPY --from=build /app/socialsvc/dist ./socialsvc/dist
 # meta reads contracts/openapi.yml; gateway/gameserver reads contracts/transport.proto at runtime (dist/*.js → /app/contracts).
 COPY --from=build /app/contracts ./contracts
 # Default: metaserver; gameserver overrides command in compose.
