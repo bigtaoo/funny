@@ -161,6 +161,14 @@ export interface GameConfig {
    * engine takes its own dependency-free shape; callers pass the save fields directly.
    */
   equipment?: EngineEquipmentInput;
+  /**
+   * PvP/netplay deck loadouts (PVP_LOADOUT_DESIGN §6.2).
+   * When provided, each player draws only from their specified card subset
+   * (filtered against CARD_DEFINITIONS by card id).
+   * Server-authoritative: both clients receive identical decks via match_start,
+   * guaranteeing lockstep draw consistency. Omit to use the full pool (P1 default).
+   */
+  decks?: { top: string[]; bottom: string[] };
 }
 
 export interface PlayerConfig {

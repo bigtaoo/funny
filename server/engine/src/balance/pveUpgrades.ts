@@ -93,9 +93,25 @@ function cloneBlueprints(): Record<UnitType, UnitBlueprint> {
 /**
  * PvP / netplay path: clones read-only constants, with no upgrade source anywhere in the signature → contamination is impossible at compile time.
  * Paired with test/hardwall.test.ts: with max-level SaveData the result still equals UNIT_BLUEPRINTS byte-for-byte.
+ *
+ * PvP-exclusive overrides (PVP_LOADOUT_DESIGN §5) are applied here and ONLY here —
+ * they are separate from PvE numbers which live in UNIT_BLUEPRINTS.
+ * TODO P4: validate all override values via difficultySim before shipping.
  */
 export function buildPvpBlueprints(): Record<UnitType, UnitBlueprint> {
-  return cloneBlueprints();
+  const bp = cloneBlueprints();
+
+  // Medic PvP override: add a token melee attack so it is not a passive punching bag.
+  // Direction: attack≈4 / interval1.2 / range1. Exact values pending P4 sim.
+  bp[UnitType.Medic].attack         = 4;
+  bp[UnitType.Medic].attackInterval = 1.2;
+  bp[UnitType.Medic].range          = 1;
+
+  // Harpy PvP override: cost=7 is the balance lever (PVP_LOADOUT_DESIGN §5).
+  // No blueprint stat change needed — the high cost is enforced via CARD_DEFINITIONS.
+  // Flying-unit counter-play deferred to P4.
+
+  return bp;
 }
 
 /**

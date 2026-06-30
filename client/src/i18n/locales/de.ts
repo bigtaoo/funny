@@ -40,6 +40,19 @@ export const de: Record<TranslationKey, string> = {
   'card.rockslide.desc': 'Wähle eine Spalte – herabstürzende Trümmer schaden allen Feinden in dieser Gasse.',
   'card.bridge_collapse.name': 'Brückeneinsturz',
   'card.bridge_collapse.desc': 'Wähle eine Spalte – der Weg bricht ein und zwingt Einheiten für 8 Sekunden zum Umweg.',
+  // PvP unlock units (PVP_LOADOUT_DESIGN §3)
+  'card.runner.name': 'Läufer',
+  'card.runner.desc': 'Ein blitzschneller Sprinter – günstig aufgestellt, als Erster an der Feindlinie.',
+  'card.ironclad.name': 'Eisenwächter',
+  'card.ironclad.desc': 'Vollplattner aus dem Fußnotenregal. Pfeile prallen ab; nur Nahkampf oder Zauber helfen.',
+  'card.berserker.name': 'Berserker',
+  'card.berserker.desc': 'Je weniger Lebenspunkte, desto schneller die Hiebe. Bloß nicht liegen lassen.',
+  'card.splitter.name': 'Spalter',
+  'card.splitter.desc': 'Teilt sich beim Tod in zwei Läufer. Ihn zu besiegen verdoppelt nur die Gegner.',
+  'card.harpy.name': 'Harpyie',
+  'card.harpy.desc': 'Fliegt über Bodentruppen hinweg und ignoriert sie vollständig. Teuer erkaufte Lufthoheit.',
+  'card.medic.name': 'Sanitäter',
+  'card.medic.desc': 'Heilt verbündete Einheiten mit einer Lichtstift-Aura. Im PvP schlägt er auch zurück — kaum.',
 
   // ── Lobby ─────────────────────────────────────────────────────────────────
   'lobby.title': 'NOTEBOOK WARS',

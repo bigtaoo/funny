@@ -339,13 +339,20 @@ export const CARD_DEFINITIONS: CardDefinition[] = [
   { id: 'shieldbearer_2',  nameKey: 'card.shieldbearer.name',  descKey: 'card.shieldbearer.desc',  cardType: CardType.Unit,     cost: 6,  unitType: UnitType.ShieldBearer        },
   { id: 'archer_1',    nameKey: 'card.archer.name',    descKey: 'card.archer.desc',    cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
   { id: 'archer_2',    nameKey: 'card.archer.name',    descKey: 'card.archer.desc',    cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
-  // Anna-side units (A6 — unlocked via PvE ch2/ch4/ch6; available in PvP deck once unlocked)
+  // Anna-side units (A6) — permanently in PvP base pool; no PvE gate (PVP_LOADOUT_DESIGN §7)
   { id: 'max_1',  nameKey: 'card.max.name',  descKey: 'card.max.desc',  cardType: CardType.Unit, cost: 5, unitType: UnitType.Max  },
   { id: 'max_2',  nameKey: 'card.max.name',  descKey: 'card.max.desc',  cardType: CardType.Unit, cost: 5, unitType: UnitType.Max  },
   { id: 'lena_1', nameKey: 'card.lena.name', descKey: 'card.lena.desc', cardType: CardType.Unit, cost: 7, unitType: UnitType.Lena },
   { id: 'lena_2', nameKey: 'card.lena.name', descKey: 'card.lena.desc', cardType: CardType.Unit, cost: 7, unitType: UnitType.Lena },
   { id: 'mara_1', nameKey: 'card.mara.name', descKey: 'card.mara.desc', cardType: CardType.Unit, cost: 5, unitType: UnitType.Mara },
   { id: 'mara_2', nameKey: 'card.mara.name', descKey: 'card.mara.desc', cardType: CardType.Unit, cost: 5, unitType: UnitType.Mara },
+  // PvP unlock units (PVP_LOADOUT_DESIGN §3 — one entry each, no _1/_2 duplicates; cost pending P4 sim)
+  { id: 'runner',    nameKey: 'card.runner.name',    descKey: 'card.runner.desc',    cardType: CardType.Unit, cost: 3, unitType: UnitType.Runner    },
+  { id: 'ironclad',  nameKey: 'card.ironclad.name',  descKey: 'card.ironclad.desc',  cardType: CardType.Unit, cost: 8, unitType: UnitType.Ironclad  },
+  { id: 'berserker', nameKey: 'card.berserker.name', descKey: 'card.berserker.desc', cardType: CardType.Unit, cost: 6, unitType: UnitType.Berserker },
+  { id: 'splitter',  nameKey: 'card.splitter.name',  descKey: 'card.splitter.desc',  cardType: CardType.Unit, cost: 4, unitType: UnitType.Splitter  },
+  { id: 'harpy',     nameKey: 'card.harpy.name',     descKey: 'card.harpy.desc',     cardType: CardType.Unit, cost: 7, unitType: UnitType.Harpy     },
+  { id: 'medic',     nameKey: 'card.medic.name',     descKey: 'card.medic.desc',     cardType: CardType.Unit, cost: 6, unitType: UnitType.Medic     },
   { id: 'barracks_1',  nameKey: 'card.barracks.name',  descKey: 'card.barracks.desc',  cardType: CardType.Building, cost: 14, buildingType: BuildingType.Barracks   },
   { id: 'barracks_2',  nameKey: 'card.barracks.name',  descKey: 'card.barracks.desc',  cardType: CardType.Building, cost: 14, buildingType: BuildingType.Barracks   },
   { id: 'tower_1',     nameKey: 'card.tower.name',     descKey: 'card.tower.desc',     cardType: CardType.Building, cost: 12, buildingType: BuildingType.ArrowTower },

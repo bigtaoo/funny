@@ -40,6 +40,19 @@ export const zh = {
   'card.rockslide.desc': '选定一列，碎石倾落，对该列所有敌军造成伤害。',
   'card.bridge_collapse.name': '桥梁坍塌',
   'card.bridge_collapse.desc': '选定一列，桥面断裂，该列单位被迫绕道8秒。',
+  // PvP unlock units (PVP_LOADOUT_DESIGN §3)
+  'card.runner.name': '跑兵',
+  'card.runner.desc': '铅笔划出的闪电短跑手，三两下冲到对方面前。',
+  'card.ironclad.name': '铁甲兵',
+  'card.ironclad.desc': '重甲老兵，弓箭射不穿它的装甲，要靠近战或法术才能撼动。',
+  'card.berserker.name': '狂战士',
+  'card.berserker.desc': '残血之际愤怒爆发，攻速飙升——越接近倒下越可怕。',
+  'card.splitter.name': '裂变兵',
+  'card.splitter.desc': '倒下时一分为二，两只跑兵从尸身中涌出，消灭它只会让麻烦翻倍。',
+  'card.harpy.name': '鬼鸟',
+  'card.harpy.desc': '飞掠战场，无视地面单位的拦截，高费换来的制空优势。',
+  'card.medic.name': '医疗兵',
+  'card.medic.desc': '光环持续治愈周围友军；PvP中附带微弱攻击，不再是完全无害的旁观者。',
 
   // ── Lobby ─────────────────────────────────────────────────────────────────
   'lobby.title': 'NOTEBOOK WARS',

@@ -306,6 +306,22 @@ class GameEngineImpl implements IGameEngine {
     } else {
       this.level        = null;
       this.waveDirector = null;
+
+      // PvP/netplay dual draw policy (PVP_LOADOUT_DESIGN §6.1–6.2).
+      // When the server supplies deck lists, replace each player's default
+      // full-pool policy with a filtered one. Fresh PRNG instances use the
+      // same seed derivation as GameState so both clients produce byte-identical
+      // draw sequences for each side regardless of network arrival order.
+      if (config.decks) {
+        const buildDeckPolicy = (deckIds: string[], seed: number) => {
+          const deckSet = new Set(deckIds);
+          const pool = (CARD_DEFINITIONS as readonly CardDefinition[]).filter((c) => deckSet.has(c.id));
+          const prng = new Prng(seed);
+          return new UniformCardDrawPolicy(prng, pool.length > 0 ? pool : undefined);
+        };
+        this.state.bottomPlayer.drawPolicy = buildDeckPolicy(config.decks.bottom, config.seed);
+        this.state.topPlayer.drawPolicy    = buildDeckPolicy(config.decks.top,    config.seed ^ 0xdeadbeef);
+      }
     }
   }
 

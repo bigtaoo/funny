@@ -40,6 +40,19 @@ export const en: Record<TranslationKey, string> = {
   'card.rockslide.desc': 'Choose a column — falling debris damages all enemies in that lane.',
   'card.bridge_collapse.name': 'Bridge Collapse',
   'card.bridge_collapse.desc': 'Choose a column — the path crumbles, forcing units to detour for 8 seconds.',
+  // PvP unlock units (PVP_LOADOUT_DESIGN §3)
+  'card.runner.name': 'Runner',
+  'card.runner.desc': 'A pencil-fast sprinter — cheap to field, first to threaten the enemy door.',
+  'card.ironclad.name': 'Ironclad',
+  'card.ironclad.desc': 'A footnote soldier in full plate. Arrows bounce right off; bring melee or spells.',
+  'card.berserker.name': 'Berserker',
+  'card.berserker.desc': "Bloodied but unbroken — the lower its HP, the faster it swings. Don't let it linger.",
+  'card.splitter.name': 'Splitter',
+  'card.splitter.desc': 'Splits into two Runners on death. Erasing it just doubles your problem.',
+  'card.harpy.name': 'Harpy',
+  'card.harpy.desc': 'Soars over the battlefield, ignoring ground units entirely. High cost for unchallenged air lanes.',
+  'card.medic.name': 'Medic',
+  'card.medic.desc': 'Heals nearby allies with a pen-light aura. In PvP it fights back — just barely.',
 
   // ── Lobby ─────────────────────────────────────────────────────────────────
   'lobby.title': 'NOTEBOOK WARS',
