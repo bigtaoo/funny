@@ -9,7 +9,6 @@
  * lobby + first battle is L1 (lazy, fetched on scene entry) and must NOT be added
  * here — every entry slows the first-load gate.
  */
-import * as PIXI from 'pixi.js-legacy';
 import { UnitType } from '../game/types';
 import { StickmanRuntime } from '../render/stickman/StickmanRuntime';
 import { targetScreenHeight } from '../render/unitSize';
@@ -17,7 +16,7 @@ import { loadDecorAtlas } from '../render/decorAtlas';
 import { loadLabelDecor } from '../render/labelDecor';
 import { loadDecorCAtlas } from '../render/decorCAtlas';
 import { loadEquipmentAtlas } from '../render/equipmentAtlas';
-import { assetIO } from './assetIO';
+import { preloadTexture } from './preloadTextures';
 
 // Starter-trio skeletal bundles + card illustrations — the only units the first
 // battle (tutorial / first PvE) can field. Anna's trio (max/lena/mara) is L1.
@@ -30,16 +29,6 @@ import shieldBearerArtUrl from './shieldbearer.png';
 import baseArtUrl from './game_base.png';
 import barracksArtUrl from './game_infantry_barracks.png';
 import towerArtUrl from './game_archer_barracks.png';
-
-/** Preheat a PIXI texture: resolve its platform source, decode, resolve when valid. */
-function preheatTexture(url: string): Promise<void> {
-  return assetIO().textureSource(url).then((src) => new Promise<void>((resolve) => {
-    const tex = PIXI.BaseTexture.from(src);
-    if (tex.valid) { resolve(); return; }
-    tex.once('loaded', () => resolve());
-    tex.once('error', () => resolve()); // never block the gate on a single texture
-  }));
-}
 
 interface BootStep {
   /** Stable id (for logging). */
@@ -55,12 +44,12 @@ const STEPS: BootStep[] = [
   { id: 'tao:infantry',     run: () => StickmanRuntime.loadAsset(infantryTaoUrl     as string, targetScreenHeight(UnitType.Infantry)) },
   { id: 'tao:archer',       run: () => StickmanRuntime.loadAsset(archerTaoUrl       as string, targetScreenHeight(UnitType.Archer)) },
   { id: 'tao:shieldbearer', run: () => StickmanRuntime.loadAsset(shieldBearerTaoUrl as string, targetScreenHeight(UnitType.ShieldBearer)) },
-  { id: 'art:infantry',     run: () => preheatTexture(infantryArtUrl     as string) },
-  { id: 'art:archer',       run: () => preheatTexture(archerArtUrl       as string) },
-  { id: 'art:shieldbearer', run: () => preheatTexture(shieldBearerArtUrl as string) },
-  { id: 'art:base',         run: () => preheatTexture(baseArtUrl     as string) },
-  { id: 'art:barracks',     run: () => preheatTexture(barracksArtUrl as string) },
-  { id: 'art:tower',        run: () => preheatTexture(towerArtUrl    as string) },
+  { id: 'art:infantry',     run: () => preloadTexture(infantryArtUrl     as string) },
+  { id: 'art:archer',       run: () => preloadTexture(archerArtUrl       as string) },
+  { id: 'art:shieldbearer', run: () => preloadTexture(shieldBearerArtUrl as string) },
+  { id: 'art:base',         run: () => preloadTexture(baseArtUrl     as string) },
+  { id: 'art:barracks',     run: () => preloadTexture(barracksArtUrl as string) },
+  { id: 'art:tower',        run: () => preloadTexture(towerArtUrl    as string) },
   { id: 'decor:atlas',      run: () => loadDecorAtlas() },
   { id: 'decor:labels',     run: () => loadLabelDecor() },
   { id: 'decor:c',          run: () => loadDecorCAtlas() },

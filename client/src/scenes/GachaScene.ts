@@ -6,7 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import type { Rarity } from '../game/meta/SaveData';
 import type { GachaPool, GachaResultEntry } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
-import { gachaCardTexture, gachaFrameTexture, gachaBannerTexture } from '../render/gachaArt';
+import { gachaCardTexture, gachaFrameTexture, gachaBannerTexture, preloadGachaTextures } from '../render/gachaArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -75,6 +75,7 @@ export class GachaScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
     void this.loadPools();
+    void preloadGachaTextures();
   }
 
   update(dt: number): void {

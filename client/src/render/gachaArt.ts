@@ -6,6 +6,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import type { Rarity } from '../game/meta/SaveData';
+import { preloadTextureList } from '../assets/preloadTextures';
 
 import cardCommonUrl    from '../assets/gacha/gacha_card_common.png';
 import cardRareUrl      from '../assets/gacha/gacha_card_rare.png';
@@ -45,4 +46,16 @@ export function gachaFrameTexture(rarity: Rarity): PIXI.Texture {
 export function gachaBannerTexture(poolId: string): PIXI.Texture {
   const url = poolId.includes('limited') ? bannerLimitedUrl as string : bannerStandardUrl as string;
   return PIXI.Texture.from(url);
+}
+
+const ALL_GACHA_URLS = [
+  ...Object.values(CARD_URLS),
+  ...Object.values(FRAME_URLS),
+  bannerLimitedUrl  as string,
+  bannerStandardUrl as string,
+];
+
+/** Warm the gacha PNG set into the AssetIO disk cache + PIXI texture cache. */
+export function preloadGachaTextures(): Promise<void> {
+  return preloadTextureList(ALL_GACHA_URLS);
 }
