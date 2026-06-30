@@ -1,8 +1,8 @@
 # PvP 构筑卡组 + 按段位解锁单位
 
-版本：v0.2（P1 引擎层已实现）
+版本：v0.3（P1/P2/P3 全部完成）
 日期：2026-06-30
-状态：P1 完成，待 P2 传输层
+状态：P1/P2/P3 完成，待 P4 平衡
 
 > **一句话**：把现有 6 个 PvE-only 单位（ironclad/runner/harpy/medic/berserker/splitter）复用为 PvP 可出单位，按天梯段位解锁；同时把 PvP 从「全池随机发牌」升级为「固定卡组构筑」（Clash Royale 式）。动机：美术资源紧张，单为 PvE 投入单位回报减半，复用后将来补 `.tao` 一次投入两个模式都吃到。
 
@@ -127,7 +127,20 @@
    - `gateway`：读 `msg.deck`，用 `seasonPeakElo` 校验，回退 `defaultPvpDeck()`；matchsvcClient `enqueue/create/join` 增 `deck` 参数；`proto.ts` decode 增 `deck`。
    - `matchsvc`：`QueueEntry.deck`/`Slot.deck`；`enqueue/roomCreate/roomJoin/onPair/roomReady/startMatch` 全链路透传 deck；`startMatch` 构造 `decks` 注入 `TicketClaims`；`internalHttp.ts` 路由 decode `strArr(b.deck)`。
    - `gameserver`：`index.ts` 传 `claims.decks`；`RoomManager.join` 增参；`Room.Slot.decks?`/`addPlayer` 增参；`launch()` 从 slots 取 decks 下发 `topDeck/bottomDeck`；`proto/transport.ts` `match_start` 增 `topDeck?/bottomDeck?` + encode。
-4. **P3 客户端构筑 UI**：可选库展示（带「段位解锁」锁标）、卡组编辑、存档存卡组、默认卡组。
+4. **P3 客户端构筑 UI**：可选库展示（带「段位解锁」锁标）、卡组编辑、存档存卡组、默认卡组。✅ **（2026-06-30 完成）**
+   - `client/src/game/meta/pvpLoadout.ts`（新）：客户端镜像常量 + `getPvpUnlockedCards`/`defaultPvpDeck`/`validatePvpDeckClient`。
+   - `client/src/scenes/DeckBuilderScene.ts`（新）：2列卡格、段位锁标、切换选中/取消、10张验证、确认回调。
+   - `client/src/app/AppViews.ts`：增 `showDeckBuilder(cb)`。
+   - `client/src/app/createAppCore.ts`：`goDeckBuilder()` 函数；`onStartRanked` 路由进构筑 UI；`queueRanked`/`createRanked` 透传 `getSavedDeck()`。
+   - `client/src/app.ts`（PixiAppViews）：`showDeckBuilder` 实现。
+   - `client/src/game/meta/SaveData.ts`：`pvpDeck?: string[]`（本地字段，不入 SyncPatch）。
+   - `client/src/game/meta/SaveManager.ts`：`patchLocal()`；`reconcile`/`adoptCloud` 保留 `pvpDeck`。
+   - `client/src/net/NetClient.ts`/`NetSession.ts`：`createRoom`/`createRanked` 支持 `deck` 参数。
+   - `client/src/net/proto/transport.ts`：`MatchStart.encode/decode/fromPartial` 补 `topDeck`/`bottomDeck`（field 9/10）。
+   - `client/src/game/net/NetInputSource.ts`：`MatchStartInfo.decks?` + `onMatchStart` 捕获。
+   - `client/src/app/createAppCore.ts`（`goGameNet`）：引擎构造传 `decks: info.decks`。
+   - i18n：`pvp.deckBuilder`/`pvp.confirmDeck` 三语补全。
+   - Bug fix：`server/shared/src/pvpDeck.ts` `PVP_BASE_CARDS` 补 `_1` 后缀（engine `c.id` 格式要求）。
 5. **P4 平衡**：difficultySim 重跑，定卡组大小（8/10/12）与 6 单位费用；更新 BALANCE.md。
 6. **P5 美术（后补，非阻塞）**：6 单位 `.tao` 骨骼。
 

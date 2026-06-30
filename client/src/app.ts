@@ -39,6 +39,7 @@ import { SectScene, type SectSceneCallbacks, type SectSceneView } from './scenes
 import { AuctionScene, type AuctionSceneCallbacks } from './scenes/AuctionScene';
 import { DefenseEditorScene, type DefenseEditorCallbacks } from './scenes/DefenseEditorScene';
 import { TeamsScene, type TeamsCallbacks } from './scenes/TeamsScene';
+import { DeckBuilderScene, type DeckBuilderCallbacks } from './scenes/DeckBuilderScene';
 import { DailyScene, type DailyCallbacks } from './scenes/DailyScene';
 import { EventScene, type EventCallbacks } from './scenes/EventScene';
 import { ConsentDialog, type ConsentCallbacks } from './render/ConsentDialog';
@@ -289,6 +290,11 @@ class PixiAppViews implements AppViews {
   showTeams(cb: TeamsCallbacks): void {
     this.leaveLobby();
     this.manager.goto(new TeamsScene(this.layout, this.input, cb));
+  }
+
+  showDeckBuilder(cb: DeckBuilderCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new DeckBuilderScene(this.layout, this.input, cb));
   }
 
   showGameNet(localSide: OwnerId, cb: GameSceneCallbacks, opts: GameSceneOptions): NetGameView {

@@ -5,18 +5,22 @@
 /** Deck size fixed at 10 for the initial release (PVP_LOADOUT §4). */
 export const PVP_DECK_SIZE = 10;
 
-/** Cards available to every player regardless of rank. Exactly 10 — new players are forced to use the full base set. */
+/**
+ * Cards available to every player regardless of rank. Exactly 10 — new players are forced to use the full base set.
+ * IDs use the `_1` suffix matching CARD_DEFINITIONS entries (base cards have two copies `_1`/`_2`; deck uses one copy each).
+ * The 6 tier-unlock cards (runner/ironclad/…) have no suffix — they have a single copy in CARD_DEFINITIONS.
+ */
 export const PVP_BASE_CARDS: readonly string[] = [
-  'infantry', 'shieldbearer', 'archer', 'max', 'lena', 'mara',
-  'barracks', 'tower',
-  'haste', 'meteor',
+  'infantry_1', 'shieldbearer_1', 'archer_1', 'max_1', 'lena_1', 'mara_1',
+  'barracks_1', 'tower_1',
+  'haste_1', 'meteor_1',
 ];
 
 /** Building-type cards (deck must include ≥1). */
-export const PVP_BUILDING_CARDS: readonly string[] = ['barracks', 'tower'];
+export const PVP_BUILDING_CARDS: readonly string[] = ['barracks_1', 'tower_1'];
 
 /** Spell-type cards (deck must include ≥1). */
-export const PVP_SPELL_CARDS: readonly string[] = ['haste', 'meteor'];
+export const PVP_SPELL_CARDS: readonly string[] = ['haste_1', 'meteor_1'];
 
 /**
  * ELO-gated unlock tiers (§3). Unlock check uses seasonPeakElo (never drops, even after soft reset).

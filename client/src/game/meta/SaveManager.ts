@@ -96,6 +96,12 @@ export class SaveManager {
     this.schedulePush();
   }
 
+  /** Mutate local-only fields (not in SyncPatch) and save locally without triggering a server push. */
+  patchLocal(patch: Pick<Partial<import('./SaveData').SaveData>, 'pvpDeck'>): void {
+    Object.assign(this.save, patch);
+    this.store.saveLocal(this.save);
+  }
+
   /** Set a single flag (e.g. nw_seen_intro). */
   setFlag(key: string, value: boolean): void {
     this.update((d) => {
@@ -397,6 +403,8 @@ export class SaveManager {
         }, { ...cloud.progress.stars } as Record<string, 1 | 2 | 3>),
         best: mergeBest(local.progress.best, cloud.progress.best),
       },
+      // pvpDeck is local-only (never synced to server); preserve from local.
+      ...(local.pvpDeck ? { pvpDeck: local.pvpDeck } : {}),
     };
     this.store.saveLocal(this.save);
   }
@@ -420,6 +428,8 @@ export class SaveManager {
       },
       equipped: { ...cloud.equipped, ...local.equipped },
       flags: { ...cloud.flags, ...local.flags },
+      // pvpDeck is local-only (never synced to server); preserve from local on every reconcile.
+      ...(local.pvpDeck ? { pvpDeck: local.pvpDeck } : {}),
     };
     this.store.saveLocal(this.save);
     // equipped/flags may differ from cloud (local overwrites); mark dirty for the next upload.

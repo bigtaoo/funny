@@ -1140,6 +1140,10 @@ export const zh = {
   'leaderboard.rank': '排名',
   'leaderboard.elo': 'ELO',
 
+  // ── PvP Deck Builder (P3, PVP_LOADOUT §8) ────────────────────────────────────
+  'pvp.deckBuilder': '构筑卡组',
+  'pvp.confirmDeck': '确认卡组',
+
   // ── Battle pass (SE-9) ────────────────────────────────────────────────────────
   'battlepass.title': '战令',
   'battlepass.back': '← 返回',

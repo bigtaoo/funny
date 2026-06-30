@@ -33,6 +33,7 @@ import { MatchMode } from '../net/proto/transport';
 import { EQUIP_SLOT } from './equipSlot';
 import { genUuid } from '../platform/uuid';
 import type { EquipSlot } from '../game/meta/SaveData';
+import { defaultPvpDeck, validatePvpDeckClient } from '../game/meta/pvpLoadout';
 import type { ProfileData } from '../render/ProfilePopup';
 import type { AuthOutcome } from '../scenes/LoginScene';
 import type { RenameOutcome } from '../scenes/SettingsScene';
@@ -304,7 +305,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     }
     const lobby = views.showLobby({
       onStartGame(_opponentName: string) { withGuide('match', 'guide.match.title', 'guide.match.body', () => goGame()); },
-      onStartRanked() { goRoom({ autoRanked: true }); },
+      onStartRanked() { goDeckBuilder(() => goRoom({ autoRanked: true })); },
       online,
       onOpenCampaign() { goCampaignMap(); },
       onOpenRoom() { goRoom(); },
@@ -526,6 +527,19 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     goLogin();
   }
 
+  function goDeckBuilder(onSave: (deck: string[]) => void): void {
+    const save = saveManager.get();
+    views.showDeckBuilder({
+      onSave(deck) {
+        saveManager.patchLocal({ pvpDeck: deck });
+        onSave(deck);
+      },
+      onBack() { goLobby(); },
+      getCurrentDeck() { return save.pvpDeck; },
+      getSeasonPeakElo() { return save.pvp.seasonPeakElo ?? save.pvp.elo; },
+    });
+  }
+
   function goRoom(opts?: { autoRanked?: boolean }): void {
     inLobby = false;
     analytics.track('screen_view', { scene: 'RoomScene', ranked: !!opts?.autoRanked });
@@ -537,13 +551,18 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         gatewayUrl,
       });
     }
+    const getSavedDeck = (): string[] => {
+      const d = saveManager.get().pvpDeck;
+      if (d && validatePvpDeckClient(d, saveManager.get().pvp.seasonPeakElo ?? saveManager.get().pvp.elo) === null) return d;
+      return defaultPvpDeck();
+    };
     let rankedQueued = false;
     const queueRanked = (): void => {
       if (rankedQueued) return;
       rankedQueued = true;
       log.info('entering ranked queue (createRanked)');
       analytics.track('pvp_room_create', { mode: 'ranked' });
-      session?.createRanked();
+      session?.createRanked(getSavedDeck());
     };
     const view: RoomView = views.showRoom({
       available: session !== null,
@@ -557,7 +576,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       joinRoom(code: string) { session?.joinRoom(code); },
       setReady(ready: boolean) { session?.setReady(ready); },
       startMatch() { session?.startMatch(); },
-      createRanked() { analytics.track('pvp_room_create', { mode: 'ranked' }); session?.createRanked(); },
+      createRanked() { analytics.track('pvp_room_create', { mode: 'ranked' }); session?.createRanked(getSavedDeck()); },
       cancelQueue() { rankedQueued = false; session?.cancelQueue(); },
     });
 
@@ -1527,7 +1546,12 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
     const recorder = new RecordingInputSource(session.input);
     const engine = createGameEngine(
-      { seed: info.seed, players: [{ id: 0 }, { id: 1 }], mode: 'netplay' },
+      {
+        seed: info.seed,
+        players: [{ id: 0 }, { id: 1 }],
+        mode: 'netplay',
+        ...(info.decks ? { decks: { top: info.decks.top, bottom: info.decks.bottom } } : {}),
+      },
       recorder,
     );
     const buildNetReplay = (winner: OwnerId | null): Replay =>
