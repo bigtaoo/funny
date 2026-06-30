@@ -31,6 +31,21 @@ jobs:
       - name: server install
         working-directory: server
         run: npm ci
+      # ADR-023 P1: metaserver REST codegen staleness check
+      - name: server codegen check (metaserver openapi)
+        working-directory: server/metaserver
+        run: npm run gen:api:server:check
+      # ADR-023 P2: worldsvc REST codegen staleness check
+      - name: server codegen check (worldsvc openapi)
+        working-directory: server/worldsvc
+        run: npm run gen:api:world:check
+      # ADR-023 P3: gateway + gameserver proto codegen staleness check
+      - name: server codegen check (proto gateway+gameserver)
+        working-directory: server
+        run: |
+          npm run proto:gen --workspace=@nw/gateway
+          npm run proto:gen --workspace=@nw/gameserver
+          git diff --exit-code gateway/src/generated gameserver/src/generated
       - name: server typecheck (tsc -b)
         working-directory: server
         run: npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc

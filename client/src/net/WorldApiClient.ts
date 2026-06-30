@@ -189,6 +189,11 @@ export class WorldApiClient {
     return this.req('POST', '/world/join', { worldId });
   }
 
+  /** Return the current active SLG season number from worldsvc (§20.8). No auth required. */
+  async getActiveSeason(): Promise<{ season: number }> {
+    return this.req('GET', '/world/active-season');
+  }
+
   /**
    * Resolve which shard this account should enter for the given season (G6/§20): resolve only, no city placement; returns the real worldId before entering the map (stickiness > family > solo random; overflow opens a new shard).
    */

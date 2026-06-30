@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "dev": "node --watch --import tsx src/index.ts",
     "start": "node dist/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gen:api:world": "node ../contracts/scripts/gen-openapi-world.mjs",
+    "gen:api:world:check": "node ../contracts/scripts/gen-openapi-world.mjs --check"
   },
   "dependencies": {
     "@nw/shared": "*",
@@ -18,6 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "js-yaml": "^4.1.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
