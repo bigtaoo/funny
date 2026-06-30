@@ -109,6 +109,8 @@ export interface SaveData {
   /** Cosmetic equipment (slot→skinId). Visual only; sent up with the sync section. */
   equipped: Record<string, string>;
   flags: Record<string, boolean>;
+  /** PvP deck builder selection (P3, PVP_LOADOUT §8). Local-only; NOT in SyncPatch. */
+  pvpDeck?: string[];
 
   // —— Equipment system (server-authoritative, client read-only, EQUIPMENT_DESIGN §3.1) ——
   // Separate from cosmetic `equipped` (skins); written by /equipment/* server endpoints, not included in the sync section.

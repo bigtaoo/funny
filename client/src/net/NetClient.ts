@@ -91,8 +91,8 @@ export class NetClient {
   }
 
   // ── Send (only in open state; dropped when not connected — upper layer should not issue commands while disconnected) ──────────
-  createRoom(mode: MatchMode): void {
-    this.sendClient({ roomCreate: { mode } });
+  createRoom(mode: MatchMode, deck: string[] = []): void {
+    this.sendClient({ roomCreate: { mode, deck } });
   }
   joinRoom(code: string): void {
     this.sendClient({ roomJoin: { code } });

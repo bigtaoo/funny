@@ -153,8 +153,8 @@ export class NetSession {
 
   // ── Room actions (control plane) ──────────────────────────────────────────────
 
-  createRoom(): void {
-    this.gateway.createRoom(MatchMode.FRIENDLY);
+  createRoom(deck: string[] = []): void {
+    this.gateway.createRoom(MatchMode.FRIENDLY, deck);
   }
   joinRoom(code: string): void {
     this.gateway.joinRoom(code);
@@ -166,8 +166,8 @@ export class NetSession {
     this.gateway.startMatch();
   }
   /** Enter the ranked queue (server pairs by ELO + auto-starts → match_found). */
-  createRanked(): void {
-    this.gateway.createRoom(MatchMode.RANKED);
+  createRanked(deck: string[] = []): void {
+    this.gateway.createRoom(MatchMode.RANKED, deck);
   }
   cancelQueue(): void {
     this.gateway.leaveRoom();

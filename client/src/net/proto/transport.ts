@@ -64,6 +64,8 @@ export interface FrameBatch {
 /** ── Client → Server ────────────────────────────────── */
 export interface RoomCreate {
   mode: MatchMode;
+  /** PvP loadout deck card ids; empty = server assigns defaultPvpDeck (P3). */
+  deck: string[];
 }
 
 export interface RoomJoin {
@@ -154,6 +156,10 @@ export interface MatchStart {
   opponentPublicId: string;
   /** opponent's equipped title id (UI use, display only; empty string = no title) */
   opponentTitle: string;
+  /** side-0 player's deck (PvP loadout P2); empty = defaultPvpDeck used by server. */
+  topDeck: string[];
+  /** side-1 player's deck (PvP loadout P2). */
+  bottomDeck: string[];
 }
 
 export interface ConnResync {
@@ -686,13 +692,16 @@ export const FrameBatch: MessageFns<FrameBatch> = {
 };
 
 function createBaseRoomCreate(): RoomCreate {
-  return { mode: 0 };
+  return { mode: 0, deck: [] };
 }
 
 export const RoomCreate: MessageFns<RoomCreate> = {
   encode(message: RoomCreate, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.mode !== 0) {
       writer.uint32(8).int32(message.mode);
+    }
+    for (const v of message.deck) {
+      writer.uint32(18).string(v);
     }
     return writer;
   },
@@ -712,6 +721,14 @@ export const RoomCreate: MessageFns<RoomCreate> = {
           message.mode = reader.int32() as any;
           continue;
         }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.deck.push(reader.string());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -727,6 +744,7 @@ export const RoomCreate: MessageFns<RoomCreate> = {
   fromPartial<I extends Exact<DeepPartial<RoomCreate>, I>>(object: I): RoomCreate {
     const message = createBaseRoomCreate();
     message.mode = object.mode ?? 0;
+    message.deck = object.deck?.map((e) => e) || [];
     return message;
   },
 };
@@ -1529,6 +1547,8 @@ function createBaseMatchStart(): MatchStart {
     opponentName: "",
     opponentPublicId: "",
     opponentTitle: "",
+    topDeck: [],
+    bottomDeck: [],
   };
 }
 
@@ -1557,6 +1577,12 @@ export const MatchStart: MessageFns<MatchStart> = {
     }
     if (message.opponentTitle !== "") {
       writer.uint32(66).string(message.opponentTitle);
+    }
+    for (const v of message.topDeck) {
+      writer.uint32(74).string(v);
+    }
+    for (const v of message.bottomDeck) {
+      writer.uint32(82).string(v);
     }
     return writer;
   },
@@ -1632,6 +1658,22 @@ export const MatchStart: MessageFns<MatchStart> = {
           message.opponentTitle = reader.string();
           continue;
         }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.topDeck.push(reader.string());
+          continue;
+        }
+        case 10: {
+          if (tag !== 82) {
+            break;
+          }
+
+          message.bottomDeck.push(reader.string());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1654,6 +1696,8 @@ export const MatchStart: MessageFns<MatchStart> = {
     message.opponentName = object.opponentName ?? "";
     message.opponentPublicId = object.opponentPublicId ?? "";
     message.opponentTitle = object.opponentTitle ?? "";
+    message.topDeck = object.topDeck?.map((e) => e) || [];
+    message.bottomDeck = object.bottomDeck?.map((e) => e) || [];
     return message;
   },
 };

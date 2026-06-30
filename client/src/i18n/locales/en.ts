@@ -1132,6 +1132,10 @@ export const en: Record<TranslationKey, string> = {
   'leaderboard.rank': 'Rank',
   'leaderboard.elo': 'ELO',
 
+  // ── PvP Deck Builder (P3, PVP_LOADOUT §8) ────────────────────────────────────
+  'pvp.deckBuilder': 'Build Deck',
+  'pvp.confirmDeck': 'Confirm Deck',
+
   // ── Battle Pass (SE-9) ───────────────────────────────────────────────────────
   'battlepass.title': 'Battle Pass',
   'battlepass.back': '← Back',
