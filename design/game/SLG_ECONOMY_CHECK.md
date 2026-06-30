@@ -205,6 +205,7 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 - [x] **B 轨（全 ✅ CLOSED 2026-06-30）**：
   - **建造/练兵节奏 ✅**（econ-sim `city.ts`/`cityRun.ts`，结论 [§13-SLG-CITY](ECONOMY_NUMBERS.md)：资源门控数周肝、落 60 天窗口、乘子合理；informational：drillYard L13 提速触底 / sticker 自我门控）。
   - **裸经济不破 ✅**（econ-sim `nationBonus.ts`/`nationBonusRun.ts`，结论 [§13-SLG-NATION](ECONOMY_NUMBERS.md)：`NATION_BONUS_PRODUCTION=0.10` 本国 vs 跨国最大差距 **+10.0%**（≪ 阈值 20%）；结构性保证：差距上限恒等于加成值本身，11 个场景全 PASS；高等级他国格（+20% level）可使跨国扩张反超 −8.3%——大世界争夺动机完整）。
+- [x] **SLG_CITY P2 ✅ CLOSED（2026-06-30）**：`wall`（守方主城 garrison HP × wallDefenseMult）/ `cabinet`（transferLoot 折减 effectiveLootRate）/ `academy`（`buildSiegeBlueprints` 第 4 参数 siegeAcademy 叠乘攻方 HP/伤害）全部落地；`buildGateReason` 改用 `BUILDING_KEYS` 全集，wall/academy 正式可建；CityScene 建筑网格更新；i18n zh/en/de；单测 11/11 绿；DRAFT 数值（WALL_DEFENSE_STEP=0.05 / CABINET_PROTECT_STEP=0.02 / ACADEMY_HP_STEP=0.02 / ACADEMY_DAMAGE_STEP=0.015）。
 - [ ] **C 轨**：difficultySim 跑出防御加成胜率 + 廉价结算阈值分类准确率，落判据区间（与 §16.5 数值批次一并）。
 - [ ] **D 轨**：分配方差蒙特卡洛 PASS（极差 ≤ 最强单体）。
 - [ ] **E 轨**：建宗门可达天数 + 衰减半衰期手算落窗口。
