@@ -274,6 +274,13 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - **背景情绪涂鸦**（`addMoodDeco`，低 z 序藏在文字/按钮后）：胜利→暖金四角星点；失败→断铅笔 + 红笔划叉（呼应"红笔批改"美术母题）；平局→角落中性等号。
 - 新增图标：`icons.ts` 的 `swords/replay/share/home`（SketchPen 线稿，烘焙缓存）；i18n 新增 `result.toLobby` / `result.playAgainWin`（三语）。
 
+#### 4.9.2 结算页 deco 丰富（2026-06-30）
+结算页引入与大厅/对战一致的手绘涂鸦层，解决页面太空旷的问题：
+- **C-group 背景散点**（`buildDecorCLayer`）：与大厅 LobbyScene 完全相同的城堡/弹射器/纸飞机/墨迹图集，铺满全屏（alpha 0.25–0.38，bake 静态纹理）。
+- **A-group 边距涂鸦**（`buildMarginDeco`，新增私有方法）：左右各 11% 纸边放置对战同款小涂鸦（太阳/星/心等，alpha 0.30–0.50），seed `0xDEADBEEF`，bake key `result-margin:WxH`。
+- **战败 mood deco 增强**：原 2 个红叉扩充为 5 个，分布到左上/左下/右下三角，强化「红笔批改」美术母题。
+- 两层 deco 均 `interactiveChildren = false`，不干扰按钮点击。
+
 ---
 
 ## 5. 战斗内 UI 的联机增量（GameScene/HUD）

@@ -7,6 +7,10 @@ import { ui, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from
 import { buildIcon, IconKind } from '../render/icons';
 import { SketchPen } from '../render/sketch';
 import { getTitleKeys, formatLadderTitle } from '../game/meta/titles';
+import { buildDecorCLayer } from '../render/decorCLayer';
+import { getDecorTexture, isDecorReady, decorFrameNames } from '../render/decorAtlas';
+import { bake } from '../render/bake';
+import { Prng } from '../game/math/prng';
 
 /** Optional player identities for the result screen's tap-to-view profile popup. */
 export interface ResultProfiles {
@@ -200,6 +204,14 @@ export class ResultScene implements Scene {
     // Background — shared hand-drawn notebook page (baked per size).
     this.container.addChild(buildPaperBackground('resultbg', w, h));
 
+    // C-group scattered doodles across the full page (same atlas as lobby background).
+    const cLayer = buildDecorCLayer(w, h);
+    if (cLayer) this.container.addChild(cLayer);
+
+    // A-group doodles in the left/right paper margins (same atlas as battle scene).
+    const aLayer = this.buildMarginDeco();
+    if (aLayer) this.container.addChild(aLayer);
+
     // Win / lose / draw headline
     const isDraw  = winner === null;
     const isWin   = winner === this.localOwner;
@@ -372,8 +384,11 @@ export class ResultScene implements Scene {
         pen.line(cx - s, cy - s * 0.6, cx + s, cy + s * 0.6, { color: red, width: Math.max(1.6, s * 0.18), jitter: 0.6, taper: 0.85, double: false, alpha });
         pen.line(cx - s, cy + s * 0.6, cx + s, cy - s * 0.6, { color: red, width: Math.max(1.6, s * 0.18), jitter: 0.6, taper: 0.85, double: false, alpha });
       };
-      xout(w * 0.82, h * 0.22, h * 0.05, 0.6);
-      xout(w * 0.88, h * 0.34, h * 0.035, 0.5);
+      xout(w * 0.82, h * 0.22, h * 0.05,  0.60);
+      xout(w * 0.88, h * 0.34, h * 0.035, 0.50);
+      xout(w * 0.12, h * 0.18, h * 0.042, 0.50);
+      xout(w * 0.14, h * 0.72, h * 0.036, 0.42);
+      xout(w * 0.86, h * 0.60, h * 0.030, 0.38);
     } else {
       // Draw — a neutral hand-drawn equals/tilde mark in the corner.
       const ink = ui.line;
@@ -474,6 +489,53 @@ export class ResultScene implements Scene {
     label.y = y + h / 2;
 
     this.container.addChild(glyph, label);
+  }
+
+  /** A-group doodles scattered in the left/right paper margins, mirroring the battle-scene look. */
+  private buildMarginDeco(): PIXI.Container | null {
+    if (!isDecorReady()) return null;
+    const frames = decorFrameNames();
+    if (frames.length === 0) return null;
+
+    const { w, h } = this;
+    const bandW = Math.round(w * 0.11);
+    const bandY = Math.round(h * 0.12);
+    const bandH = Math.round(h * 0.72);
+    const size  = Math.max(16, Math.min(64, Math.round(bandW * 0.72)));
+    const pitch = size * 1.9;
+    const slots = Math.floor(bandH / pitch);
+    const frand = (p: Prng) => p.nextInt(1_000_000) / 1_000_000;
+    const prng  = new Prng(0xDEAD_BEEF);
+
+    const content = new PIXI.Container();
+    for (const side of ['left', 'right'] as const) {
+      const bandX = side === 'left' ? 0 : w - bandW;
+      for (let i = 0; i < slots; i++) {
+        if (frand(prng) < 0.15) continue;
+        const name = frames[prng.nextInt(frames.length)]!;
+        const tex  = getDecorTexture(name);
+        if (!tex) continue;
+
+        const spr = new PIXI.Sprite(tex);
+        spr.anchor.set(0.5);
+        const longest = Math.max(tex.width, tex.height) || size;
+        spr.scale.set((size * (1 + (frand(prng) * 2 - 1) * 0.3)) / longest);
+        spr.rotation = (frand(prng) * 2 - 1) * 0.22;
+        spr.alpha    = 0.30 + frand(prng) * 0.20;
+        spr.x = bandX + bandW / 2 + (frand(prng) * 2 - 1) * bandW * 0.25;
+        spr.y = bandY + pitch * i  + frand(prng) * pitch * 0.5;
+        content.addChild(spr);
+      }
+    }
+
+    if (content.children.length === 0) { content.destroy(); return null; }
+
+    const root = new PIXI.Container();
+    root.interactiveChildren = false;
+    const tex = bake(`result-margin:${Math.round(w)}x${Math.round(h)}`, content, w, h);
+    content.destroy({ children: true });
+    if (tex) root.addChild(new PIXI.Sprite(tex));
+    return root;
   }
 
   private buildBadgeCard(badge: Badge, stats: PlayerStats, width: number): PIXI.Container {
