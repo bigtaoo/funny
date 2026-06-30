@@ -138,7 +138,9 @@
 - **高阶稀有养成材料**：复用既有 PvE 材料 **scrap / lead / binding**（SLG8）——SLG 不另造养成货币，PvE 与 SLG 材料统一流转、可上拍卖行。
 - 物产差异（不同格子产不同资源、丰度不同）= 交易意愿的来源。
 
-> **⚠️ 实现待办（code rename，需 worktree + tsc/webpack 验证）**：`ResourceType(food/iron/wood)` → `(ink/paper/graphite/metal/sticker)`；`playerWorld.resources{}` / `yieldRate{}` / `RESOURCE_CAP` 分布 / `WATCHTOWER_COST`（`shared/slg.ts`）/ 契约 enum（openapi-world + game.proto）/ worldsvc 结算 / 客户端展示与 i18n。中文/德文展示名只进 i18n，代码标识全英文。
+> **✅ code rename 已落地（2026-06-30）**：`ResourceType` = `ink/paper/graphite/metal/sticker`（`shared/slg.ts`），`RESOURCE_TYPES`/`emptyResources`/`WATCHTOWER_COST`/`tileYield`/`biomeAt`/`TROOP_TRAIN_INK_COST` 同步；worldsvc（`service.ts`/`db.ts`/`auctionService.ts`）+ 契约 `openapi-world.yml` resType enum + 客户端（`WorldMapScene` 颜色/展示/训练、`openapi-world.ts`、i18n zh/de/en）全部更新；server typecheck + client tsc + web 构建全绿。
+>
+> **遗留（balance pass，未做）**：graphite/sticker 目前**无地图产出 faucet 也无消耗 sink**——biome 仍三分仅产 ink/paper/metal（graphite 无消耗它的建筑系统，sticker 是通用资源），二者已注册进类型/存储/资源包/掠夺/拍卖禁挂/瞭望塔成本等全部泛化管道，待建筑系统 + 数值演算时再配产出与消耗（§16.5 / ECONOMY_NUMBERS）。
 
 ---
 

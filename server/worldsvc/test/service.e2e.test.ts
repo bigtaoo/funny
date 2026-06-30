@@ -105,7 +105,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
       mainBaseTile: tileId(W, neutral.x, neutral.y),
       territoryCount: 1,
     });
-    expect(me.yieldRate?.food).toBe(RESOURCE_YIELD_BASE); // base starting food trickle
+    expect(me.yieldRate?.ink).toBe(RESOURCE_YIELD_BASE); // base starting ink trickle
 
     const tile = await svc.getTile(W, 'a', neutral.x, neutral.y);
     expect(tile).toMatchObject({ type: 'base', mine: true, occupied: true });
@@ -129,7 +129,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     const me = await svc.getMe(W, 'a');
     expect(me.troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE);
     expect(me.territoryCount).toBe(2);
-    expect(me.yieldRate?.[rt]).toBe(RESOURCE_YIELD_BASE * procRes.level + (rt === 'food' ? RESOURCE_YIELD_BASE : 0));
+    expect(me.yieldRate?.[rt]).toBe(RESOURCE_YIELD_BASE * procRes.level + (rt === 'ink' ? RESOURCE_YIELD_BASE : 0));
 
     // Occupy is idempotent: re-occupying the same tile does not deduct additional troops.
     await svc.occupyTile(W, 'a', res.x, res.y);
@@ -192,12 +192,12 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
   });
 
   it('lazy resource settlement: catch-up calculation using yieldRate × dt', async () => {
-    await svc.joinWorld(W, 'a', 5, 5); // main base only → food yield 100/h
+    await svc.joinWorld(W, 'a', 5, 5); // main base only → ink yield 100/h
     nowMs += 3_600_000; // +1h
     const me = await svc.getMe(W, 'a');
-    expect(me.resources?.food).toBe(RESOURCE_YIELD_BASE);
+    expect(me.resources?.ink).toBe(RESOURCE_YIELD_BASE);
     nowMs += 1_800_000; // another +0.5h
-    expect((await svc.getMe(W, 'a')).resources?.food).toBe(Math.floor(RESOURCE_YIELD_BASE * 1.5));
+    expect((await svc.getMe(W, 'a')).resources?.ink).toBe(Math.floor(RESOURCE_YIELD_BASE * 1.5));
   });
 
   it('occupy validation: out of bounds / center tile / insufficient troops', async () => {

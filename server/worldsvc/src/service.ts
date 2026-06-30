@@ -30,7 +30,7 @@ import {
   OCCUPY_MIN_TROOPS,
   MARCH_MIN_TROOPS,
   PROTECTION_SEC,
-  TROOP_TRAIN_FOOD_COST,
+  TROOP_TRAIN_INK_COST,
   TROOP_TRAIN_TIME_SEC,
   TROOP_TRAIN_BATCH_MAX,
   TROOP_TRAIN_QUEUE_MAX,
@@ -225,7 +225,7 @@ export interface WorldServiceDeps {
   socialsvc?: WorldSocialsvcClient;
 }
 
-const emptyResources = (): Record<ResourceType, number> => ({ food: 0, iron: 0, wood: 0 });
+const emptyResources = (): Record<ResourceType, number> => ({ ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 });
 
 /**
  * Batch deletion (§17.6): a single deleteMany on a collection with tens of thousands of records would hold
@@ -1403,7 +1403,7 @@ export class WorldService {
       };
       await cols.tiles.updateOne({ _id: m.toTile }, { $set: tileDoc }, { upsert: true });
       // One-time capture reward (§3.1 "substantial resources"): add to the attacker's resource pool by tile level + resource type (capped).
-      const rt: ResourceType = proc.resType ?? 'food';
+      const rt: ResourceType = proc.resType ?? 'ink';
       const reward = emptyResources();
       reward[rt] = STRONGHOLD_LOOT_PER_LEVEL * Math.max(1, proc.level);
       const resources = this.settle(pw, t);
@@ -1582,7 +1582,7 @@ export class WorldService {
     const res = resolveSiege(m.troops, npcGarrison(proc.level));
     let loot = emptyResources();
     if (res.outcome === 'attacker_win') {
-      const rt: ResourceType = proc.resType ?? 'food';
+      const rt: ResourceType = proc.resType ?? 'ink';
       loot = emptyResources();
       loot[rt] = SWEEP_LOOT_PER_LEVEL * Math.max(1, proc.level);
     }
@@ -2019,8 +2019,8 @@ export class WorldService {
   // ── S8-2: training queue ────────────────────────────────────────
 
   /**
-   * Enqueue a training batch. Consumes food; scheduled at TROOP_TRAIN_TIME_SEC × qty.
-   * Validation: joined world + qty is valid + queue slots not full + troops after training would not exceed troopCap + enough food.
+   * Enqueue a training batch. Consumes ink; scheduled at TROOP_TRAIN_TIME_SEC × qty.
+   * Validation: joined world + qty is valid + queue slots not full + troops after training would not exceed troopCap + enough ink.
    */
   async trainTroops(worldId: string, accountId: string, qty: number): Promise<PlayerWorldView> {
     const { cols, now } = this.deps;
@@ -2036,9 +2036,9 @@ export class WorldService {
 
     const t = now();
     const resources = this.settle(pw, t);
-    const foodCost = qty * TROOP_TRAIN_FOOD_COST;
-    if ((resources.food ?? 0) < foodCost) throw new SlgError('INSUFFICIENT_RESOURCES', 'Insufficient food');
-    resources.food = (resources.food ?? 0) - foodCost;
+    const inkCost = qty * TROOP_TRAIN_INK_COST;
+    if ((resources.ink ?? 0) < inkCost) throw new SlgError('INSUFFICIENT_RESOURCES', 'Insufficient ink');
+    resources.ink = (resources.ink ?? 0) - inkCost;
 
     // Training starts immediately after the previous batch finishes (chained queue); if no batch is in progress, start immediately.
     const lastComplete = queue.length > 0 ? queue[queue.length - 1]!.completeAt : t;
@@ -2047,7 +2047,7 @@ export class WorldService {
     const duration = Math.round(qty * TROOP_TRAIN_TIME_SEC * 1000 * trainSpeedMult);
     const entry: TrainingEntry = {
       qty,
-      foodCost,
+      inkCost,
       startAt: lastComplete,
       completeAt: lastComplete + duration,
     };
@@ -2958,7 +2958,7 @@ export class WorldService {
   }
 }
 
-/** Human-readable loot summary (non-zero items only, e.g. "food+250,iron+40"; empty string if nothing looted). Used directly in siege_result push payloads. */
+/** Human-readable loot summary (non-zero items only, e.g. "ink+250,metal+40"; empty string if nothing looted). Used directly in siege_result push payloads. */
 function lootSummary(loot: Record<ResourceType, number>): string {
   return RESOURCE_TYPES.filter((rt) => (loot[rt] ?? 0) > 0)
     .map((rt) => `${rt}+${loot[rt]}`)

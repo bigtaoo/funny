@@ -42,7 +42,7 @@ export type SlgPushMsg =
       siegeId: string;
       tile: string;
       outcome: string; // attacker_win | defender_win | draw
-      lootSummary: string; // human-readable summary (e.g. "food+250"), displayed directly in UI
+      lootSummary: string; // human-readable summary (e.g. "ink+250"), displayed directly in UI
       replayRef: string; // replay reference (filled after S8-3b judge replay; currently empty)
     }
   | {

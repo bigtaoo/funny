@@ -82,7 +82,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     },
   };
 
-  async function setupDefender(accountId: string, x: number, y: number, garrison: number, food = 0): Promise<void> {
+  async function setupDefender(accountId: string, x: number, y: number, garrison: number, ink = 0): Promise<void> {
     const proc = proceduralTile(W, x, y);
     const tile: TileDoc = {
       _id: tileId(W, x, y),
@@ -103,8 +103,8 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
       accountId,
       troops: TROOP_CAP_BASE,
       troopCap: TROOP_CAP_BASE,
-      resources: { food, iron: 0, wood: 0 },
-      yieldRate: { food: 0, iron: 0, wood: 0 },
+      resources: { ink, paper: 0, graphite: 0, metal: 0, sticker: 0 },
+      yieldRate: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
       lastTickAt: nowMs,
       mainBaseTile: tileId(W, x, y),
       rev: 0,

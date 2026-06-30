@@ -97,7 +97,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     accountId: string,
     x: number,
     y: number,
-    opts: { type: TileDoc['type']; garrison: number; food?: number; protectedUntil?: number },
+    opts: { type: TileDoc['type']; garrison: number; ink?: number; protectedUntil?: number },
   ): Promise<void> {
     const proc = proceduralTile(W, x, y);
     const tile: TileDoc = {
@@ -120,8 +120,8 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
       accountId,
       troops: TROOP_CAP_BASE,
       troopCap: TROOP_CAP_BASE,
-      resources: { food: opts.food ?? 0, iron: 0, wood: 0 },
-      yieldRate: { food: 0, iron: 0, wood: 0 },
+      resources: { ink: opts.ink ?? 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
+      yieldRate: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
       lastTickAt: nowMs,
       mainBaseTile: tileId(W, x, y),
       rev: 0,
@@ -152,7 +152,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
   it('attack territory win: ownership transfer + loot + both-sides yield recalc + under_attack/siege_result push', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(NON_BLOCKING, 10, 5);
-    await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 500, food: 1000 });
+    await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 500, ink: 1000 });
 
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 800);
     expect(mv).toMatchObject({ kind: 'attack', status: 'marching', troops: 800 });
@@ -171,10 +171,10 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(tile.garrison).toBeGreaterThan(0);
     const me = await svc.getMe(W, 'a');
     expect(me.territoryCount).toBe(2);
-    // Loot 25%: a +250 food, b -250 → 750.
-    expect(me.resources?.food).toBe(Math.floor(1000 * SIEGE_LOOT_RATE));
+    // Loot 25%: a +250 ink, b -250 → 750.
+    expect(me.resources?.ink).toBe(Math.floor(1000 * SIEGE_LOOT_RATE));
     const bRes = (await svc.getMe(W, 'b')).resources;
-    expect(bRes?.food).toBe(1000 - Math.floor(1000 * SIEGE_LOOT_RATE));
+    expect(bRes?.ink).toBe(1000 - Math.floor(1000 * SIEGE_LOOT_RATE));
 
     // sieges record + siege_result pushed to both parties.
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
@@ -209,7 +209,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(NON_BLOCKING, 10, 5);
     // b's main base + one territory: forced relocation should cause b to lose this territory.
-    await setupDefender('b', tgt.x, tgt.y, { type: 'base', garrison: 500, food: 1000 });
+    await setupDefender('b', tgt.x, tgt.y, { type: 'base', garrison: 500, ink: 1000 });
     const terr = findCoord(NON_BLOCKING, 12, 5);
     await m.collections.tiles.updateOne(
       { _id: tileId(W, terr.x, terr.y) },
@@ -240,15 +240,15 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     // Attacker survivors returned to troop pool: 2000 - 800(marched) + engine survivors(>0) > 1200.
     expect((await svc.getMe(W, 'a')).troops).toBeGreaterThan(TROOP_CAP_BASE - 800);
     // Loot 250.
-    expect((await svc.getMe(W, 'a')).resources?.food).toBe(Math.floor(1000 * SIEGE_LOOT_RATE));
+    expect((await svc.getMe(W, 'a')).resources?.ink).toBe(Math.floor(1000 * SIEGE_LOOT_RATE));
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('attacker_win');
   });
 
   it('sweep NPC win: capture resources + survivors return and troops refunded (no tile occupation)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    // Find a low-level resource tile with resType≠food to isolate loot assertions (avoid contamination from a's main base food yield).
-    const tgt = findCoord((t) => t.type === 'resource' && t.level <= 3 && t.resType !== 'food', 30, 30);
+    // Find a low-level resource tile with resType≠ink to isolate loot assertions (avoid contamination from a's main base ink yield).
+    const tgt = findCoord((t) => t.type === 'resource' && t.level <= 3 && t.resType !== 'ink', 30, 30);
     const proc = proceduralTile(W, tgt.x, tgt.y);
     const npc = npcGarrison(proc.level);
     const troops = npc + 600;
@@ -261,7 +261,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     const me = await svc.getMe(W, 'a');
     // 600 survivors return: 2000 - troops + 600 = 2000 - npc.
     expect(me.troops).toBe(TROOP_CAP_BASE - npc);
-    // Loot = SWEEP_LOOT_PER_LEVEL × level (resType≠food, no yield contamination).
+    // Loot = SWEEP_LOOT_PER_LEVEL × level (resType≠ink, no yield contamination).
     const rt = proc.resType as ResourceType;
     expect(me.resources?.[rt]).toBe(SWEEP_LOOT_PER_LEVEL * Math.max(1, proc.level));
     // No tile occupation: tile remains neutral.
@@ -273,7 +273,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
 
   it('sweep NPC loss: troop attrition, no loot, no tile occupation', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const tgt = findCoord((t) => t.type === 'resource' && t.resType !== 'food', 30, 30);
+    const tgt = findCoord((t) => t.type === 'resource' && t.resType !== 'ink', 30, 30);
     const proc = proceduralTile(W, tgt.x, tgt.y);
     const troops = 10; // < npcGarrison, attacker loses
 

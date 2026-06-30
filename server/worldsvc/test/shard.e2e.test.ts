@@ -128,7 +128,7 @@ describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
     await svc.openSeason('s3-1', 3, 1, 10000);
     const pw: PlayerWorldDoc = {
       _id: playerWorldId('s3-1', 'sticky'), worldId: 's3-1', accountId: 'sticky',
-      troops: 100, troopCap: 100, resources: { food: 0, iron: 0, wood: 0 }, yieldRate: { food: 0, iron: 0, wood: 0 },
+      troops: 100, troopCap: 100, resources: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 }, yieldRate: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
       lastTickAt: 1, rev: 0,
     };
     await m.collections.playerWorld.insertOne(pw);
@@ -182,7 +182,7 @@ describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
     // Dual-login player: playerWorld exists in both shards of season 7.
     const pw = (wid: string): PlayerWorldDoc => ({
       _id: playerWorldId(wid, 'dual'), worldId: wid, accountId: 'dual',
-      troops: 1, troopCap: 1, resources: { food: 0, iron: 0, wood: 0 }, yieldRate: { food: 0, iron: 0, wood: 0 },
+      troops: 1, troopCap: 1, resources: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 }, yieldRate: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
       lastTickAt: 1, rev: 0,
     });
     await m.collections.playerWorld.insertMany([pw('s7-0'), pw('s7-1')]);

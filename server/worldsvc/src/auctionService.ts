@@ -1,6 +1,6 @@
 // Auction service business layer (S8-5).
 // Tradeable items: materials (scrap/lead/binding, stock in meta SaveData.materials) and equipment.
-// SLG seasonal resources (food/iron/wood) are NOT tradeable — prevents strategic arbitrage, preserves biome scarcity.
+// SLG season resources (ink/paper/graphite/metal/sticker) are NOT tradeable — prevents strategic arbitrage, preserves biome scarcity.
 // Currency: coins (premium, charged/paid via commercial); tax rate 10% (AUCTION_TAX_RATE).
 // Expiry: expireAt plain index + scanner (not TTL auto-delete — requires settlement/refund to seller or auction close on expire).
 //

@@ -177,7 +177,7 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
 
     // One-time rich reward credited (based on tile level × resource kind).
     const proc = proceduralTile(W, sh.x, sh.y);
-    const rt = proc.resType ?? 'food';
+    const rt = proc.resType ?? 'ink';
     expect((me.resources?.[rt] ?? 0) - (before[rt] ?? 0)).toBeGreaterThanOrEqual(
       STRONGHOLD_LOOT_PER_LEVEL * sh.level,
     );
@@ -217,7 +217,7 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     expect(me.territoryCount).toBe(1); // home base only
     // No reward (resources settled from own production only, no plunder).
     const proc2 = proceduralTile(W, sh.x, sh.y);
-    const rt = proc2.resType ?? 'food';
+    const rt = proc2.resType ?? 'ink';
     expect((me.resources?.[rt] ?? 0)).toBeLessThan((before[rt] ?? 0) + STRONGHOLD_LOOT_PER_LEVEL);
 
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });

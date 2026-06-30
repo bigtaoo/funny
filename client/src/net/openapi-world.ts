@@ -803,7 +803,7 @@ export interface components {
             type: "neutral" | "resource" | "territory" | "familyKeep" | "center" | "base" | "obstacle" | "gate" | "stronghold";
             level: number;
             /** @enum {string} */
-            resType?: "food" | "iron" | "wood";
+            resType?: "ink" | "paper" | "graphite" | "metal" | "sticker";
             occupied?: boolean;
             mine?: boolean;
             /** @description 占领者 9 位公开 id（meta 服务可用时填充） */

@@ -24,7 +24,7 @@ export class SlgError extends Error {
 // ── Enums (§14.7) ─────────────────────────────────────
 export type TileType =
   | 'neutral' // neutral open land (low-level, claimable, minimal yield)
-  | 'resource' // resource tile (produces food/iron/wood)
+  | 'resource' // resource tile (produces ink/paper/metal)
   | 'territory' // player-claimed territory (only exists after runtime DB write; not generated as this type)
   | 'familyKeep' // strategic point / family stronghold (sparse, high-level, high-value)
   | 'center' // world center (sect ownership contest point; unique)
@@ -33,14 +33,23 @@ export type TileType =
   | 'gate' // pass/bridge (embedded in blocking zone; passable by occupying faction and allies; treated as obstacle if unoccupied, S8-6.6)
   | 'stronghold'; // stronghold (G8 §3.1): high-strategic-value tile guarded by an overwhelmingly powerful system NPC; cannot be directly occupied — must be conquered via a siege attack
 
-export type ResourceType = 'food' | 'iron' | 'wood';
+/**
+ * SLG season resources (SLG_DESIGN §3.4, naming locked 2026-06-30; stationery theme, aligned with Three-Kingdoms grain/wood/stone/iron/copper).
+ * - ink:      sustain — troop training / troop cap / march upkeep (was `food`). Shares the "ink is life" world-symbol with battle `ink` but is a fully separate pool.
+ * - paper:    basic building material (was `wood`).
+ * - graphite: advanced building material (new; map faucet + sinks deferred to the balance pass — no building system consumes it yet).
+ * - metal:    military / equipment forging (was `iron`).
+ * - sticker:  universal flexible resource (copper-coin slot: recruit / tech / small instant actions). NOT a global currency — season-scoped, cleared at season end, non-auctionable, not directly purchasable (faucet deferred to the balance pass).
+ * All five are season resources (cleared at season end, banned from the auction house); the only global currency is `coins` (ECONOMY_BALANCE).
+ */
+export type ResourceType = 'ink' | 'paper' | 'graphite' | 'metal' | 'sticker';
 export type MarchKind = 'attack' | 'reinforce' | 'occupy' | 'sweep' | 'scout' | 'return';
 export type SiegeOutcome = 'attacker_win' | 'defender_win' | 'draw';
 export type FamilyRole = 'leader' | 'elder' | 'member';
 export type WorldStatus = 'open' | 'active' | 'settling' | 'resetting' | 'closed';
 export type AuctionStatus = 'open' | 'sold' | 'expired' | 'cancelled';
 
-export const RESOURCE_TYPES: readonly ResourceType[] = ['food', 'iron', 'wood'];
+export const RESOURCE_TYPES: readonly ResourceType[] = ['ink', 'paper', 'graphite', 'metal', 'sticker'];
 
 // ── Deterministic ID derivation (§14.7; no lookup table required; computable on either end) ──────────
 /** World ID: `s{season}-{shard}`; one season-sect world = one map instance. */
@@ -112,9 +121,12 @@ export const SLG_GEN = {
   biomeFreq: 1 / 40,
   /** Strategic point noise frequency. */
   keepFreq: 1 / 22,
-  /** Biome tri-partition thresholds (food < t0 < wood < t1 < iron). */
-  biomeFoodMax: 0.38,
-  biomeWoodMax: 0.68,
+  /**
+   * Biome tri-partition thresholds (ink < t0 < paper < t1 < metal). Only the three "land-mined" resources are biome-generated;
+   * graphite/sticker faucets are deferred to the balance pass (graphite has no consuming building system yet; sticker is a universal/flexible resource).
+   */
+  biomeInkMax: 0.38,
+  biomePaperMax: 0.68,
   /** Level cap for neutral open land (keeps neutral tiles low-value). */
   neutralLevelCap: 2,
   // ── S8-6.6 blocking terrain + gates ──────────────────────────
@@ -311,7 +323,7 @@ export const RELOCATE_COST = 500;
  * Resource cost to build a watchtower (§18 G5 V2 remaining item "fixed-radius persistent vision source", DRAFT).
  * Built on a player's own territory (not the home city); the tile is upgraded to a large-radius vision source (VISION_WATCHTOWER_RADIUS), persisted in the DB with the tile (lost if the tile is lost). Costs resources, not coins.
  */
-export const WATCHTOWER_COST: Readonly<Record<ResourceType, number>> = { food: 0, iron: 2000, wood: 3000 };
+export const WATCHTOWER_COST: Readonly<Record<ResourceType, number>> = { ink: 0, paper: 3000, graphite: 0, metal: 2000, sticker: 0 };
 
 /**
  * Gateway horizontal-scale push channel (SOC9 / §8.4): worldsvc publishes "one message + recipient list" to this Redis
@@ -321,8 +333,8 @@ export const WATCHTOWER_COST: Readonly<Record<ResourceType, number>> = { food: 0
 export const GW_PUSH_REDIS_CHANNEL = 'nw:gw:push';
 
 // ── Training queue (S8-2, §4 troop cycle) ──────────────────────────────
-/** Food cost per troop trained (DRAFT; tune after launch). */
-export const TROOP_TRAIN_FOOD_COST = 10;
+/** Ink cost per troop trained (sustain resource; DRAFT, tune after launch). */
+export const TROOP_TRAIN_INK_COST = 10;
 /** Training time per troop (seconds, DRAFT). */
 export const TROOP_TRAIN_TIME_SEC = 5;
 /** Maximum troops per training batch (single-batch queue size cap). */
@@ -410,7 +422,7 @@ export const SLG_SHOP_ITEMS: readonly SlgShopItem[] = [
   { id: 'slg_speedup_1h',    cost: 200,   kind: 'troop_speedup', effect: { duration_sec: 3600 },  description: 'Speed up training by 1 hour' },
   { id: 'slg_speedup_8h',    cost: 1400,  kind: 'troop_speedup', effect: { duration_sec: 28800 }, description: 'Speed up training by 8 hours' },
   { id: 'slg_speedup_24h',   cost: 3600,  kind: 'troop_speedup', effect: { duration_sec: 86400 }, description: 'Speed up training by 24 hours' },
-  // resource packs (equal amounts of food/iron/wood)
+  // resource packs (equal amounts of every season resource)
   { id: 'slg_res_s',  cost: 300,   kind: 'resource_pack', effect: { each: 20000 },  description: 'Small resource pack (20k each)' },
   { id: 'slg_res_m',  cost: 1000,  kind: 'resource_pack', effect: { each: 80000 },  description: 'Medium resource pack (80k each)' },
   { id: 'slg_res_l',  cost: 3000,  kind: 'resource_pack', effect: { each: 200000 }, description: 'Large resource pack (200k each)' },
@@ -574,9 +586,9 @@ export interface ProceduralTile {
 /** Biome: low-frequency noise divides the map into three large zones, encouraging resource specialization and cross-zone trade (geographic foundation for the U1 auction economy). */
 function biomeAt(x: number, y: number, seed: number): ResourceType {
   const n = valueNoise(x, y, SLG_GEN.biomeFreq, seed ^ 0x0444);
-  if (n < SLG_GEN.biomeFoodMax) return 'food';
-  if (n < SLG_GEN.biomeWoodMax) return 'wood';
-  return 'iron';
+  if (n < SLG_GEN.biomeInkMax) return 'ink';
+  if (n < SLG_GEN.biomePaperMax) return 'paper';
+  return 'metal';
 }
 
 /**
@@ -647,7 +659,7 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
 // ── Territory yield (S8-1; per-tile contribution to lazy resource settlement, §14.3) ────────────
 /**
  * Per-tile hourly yield (added to `playerWorld.yieldRate` after claiming). Pure function.
- * - `base` (home city): provides a starting food trickle (`RESOURCE_YIELD_BASE`), ensuring new players always have yield to settle.
+ * - `base` (home city): provides a starting ink trickle (`RESOURCE_YIELD_BASE`), ensuring new players always have yield to settle.
  * - Tiles with a `resType` (resource / familyKeep / territory after claiming): yield the corresponding resource at `RESOURCE_YIELD_BASE × level`.
  * - All others (neutral/territory without resType): no yield.
  */
@@ -656,7 +668,7 @@ export function tileYield(
   level: number,
   resType?: ResourceType,
 ): Partial<Record<ResourceType, number>> {
-  if (type === 'base') return { food: RESOURCE_YIELD_BASE };
+  if (type === 'base') return { ink: RESOURCE_YIELD_BASE };
   if (resType) return { [resType]: RESOURCE_YIELD_BASE * Math.max(1, level) };
   return {};
 }

@@ -83,7 +83,7 @@ describe.skipIf(!mongo)('worldsvc watchtower e2e (§18 G5 V2)', () => {
     // Starting resources are 0 (join gives emptyResources) → directly seed enough resources to build a watchtower (no yield accumulation needed).
     await m.collections.playerWorld.updateOne(
       { _id: playerWorldId(W, acct) },
-      { $set: { resources: { food: 1000, iron: 5000, wood: 5000 }, lastTickAt: nowMs } },
+      { $set: { resources: { ink: 1000, paper: 5000, graphite: 5000, metal: 5000, sticker: 5000 }, lastTickAt: nowMs } },
     );
     return terr;
   }
@@ -97,10 +97,10 @@ describe.skipIf(!mongo)('worldsvc watchtower e2e (§18 G5 V2)', () => {
     const doc = await m.collections.tiles.findOne({ _id: tileId(W, terr.x, terr.y) });
     expect(doc?.watchtower).toBe(true);
 
-    // Resources deducted by WATCHTOWER_COST (iron 5000-2000, wood 5000-3000).
+    // Resources deducted by WATCHTOWER_COST (metal 5000-2000, paper 5000-3000).
     const pw = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
-    expect(pw?.resources.iron).toBe(5000 - WATCHTOWER_COST.iron);
-    expect(pw?.resources.wood).toBe(5000 - WATCHTOWER_COST.wood);
+    expect(pw?.resources.metal).toBe(5000 - WATCHTOWER_COST.metal);
+    expect(pw?.resources.paper).toBe(5000 - WATCHTOWER_COST.paper);
   });
 
   it('extends vision: previously fogged distant tile becomes visible after watchtower, beyond radius stays fogged', async () => {
@@ -156,7 +156,7 @@ describe.skipIf(!mongo)('worldsvc watchtower e2e (§18 G5 V2)', () => {
     const view2 = await svc.buildWatchtower(W, 'a', terr.x, terr.y); // idempotent
     expect(view2.watchtower).toBe(true);
     const pw2 = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
-    expect(pw2?.resources.iron).toBe(pw1?.resources.iron); // not charged a second time
-    expect(pw2?.resources.wood).toBe(pw1?.resources.wood);
+    expect(pw2?.resources.metal).toBe(pw1?.resources.metal); // not charged a second time
+    expect(pw2?.resources.paper).toBe(pw1?.resources.paper);
   });
 });

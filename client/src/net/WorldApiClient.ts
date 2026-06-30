@@ -241,7 +241,7 @@ export class WorldApiClient {
 
   // ── Troops (training queue S8-2) ──────────────────────────────────────────────────
 
-  /** Queue troop training (consumes food + time). Returns the updated player state. */
+  /** Queue troop training (consumes ink + time). Returns the updated player state. */
   async trainTroops(worldId: string, qty: number): Promise<PlayerWorldView> {
     return this.req('POST', '/world/troops/train', { worldId, qty });
   }

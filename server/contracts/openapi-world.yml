@@ -38,7 +38,7 @@ components:
           type: integer
         resType:
           type: string
-          enum: [food, iron, wood]
+          enum: [ink, paper, graphite, metal, sticker]
         occupied:
           type: boolean
         mine:

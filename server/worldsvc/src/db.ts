@@ -73,7 +73,7 @@ export interface TileDoc {
 /** Training queue entry (S8-2). Each batch queues independently; scheduler converts to troop strength when completeAt is reached. */
 export interface TrainingEntry {
   qty: number;       // quantity trained in this batch
-  foodCost: number;  // food already deducted (no refund needed on dequeue)
+  inkCost: number;   // ink already deducted (no refund needed on dequeue)
   startAt: number;   // ms epoch
   completeAt: number; // ms epoch (scheduler adds troops to troops and removes entry when reached)
 }

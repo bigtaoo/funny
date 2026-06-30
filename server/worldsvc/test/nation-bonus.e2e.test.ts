@@ -119,8 +119,8 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
       accountId,
       troops: TROOP_CAP_BASE,
       troopCap: TROOP_CAP_BASE,
-      resources: { food: 0, iron: 0, wood: 0 },
-      yieldRate: { food: 0, iron: 0, wood: 0 },
+      resources: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
+      yieldRate: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
       lastTickAt: nowMs,
       mainBaseTile: tileId(W, x, y),
       rev: 0,
@@ -166,18 +166,18 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     // Resource tile yield gets the bonus: floor(base*level * 1.1).
     const rawResource = RESOURCE_YIELD_BASE * Math.max(1, proc.level);
     const expectedResource = Math.floor(rawResource * (1 + NATION_BONUS_PRODUCTION));
-    // This resource type's yield comes only from this tile (main base produces food and does not pollute non-food resources). When rt==='food' the main base contribution stacks.
-    if (rt !== 'food') {
+    // This resource type's yield comes only from this tile (main base produces ink and does not pollute non-ink resources). When rt==='ink' the main base contribution stacks.
+    if (rt !== 'ink') {
       expect(rate[rt]).toBe(expectedResource);
       expect(rate[rt]).toBeGreaterThan(rawResource); // bonus is definitely applied
     } else {
-      expect(rate.food).toBeGreaterThan(rawResource); // at least amplified
+      expect(rate.ink).toBeGreaterThan(rawResource); // at least amplified
     }
   });
 
   it('control — no national affiliation: occupying the same tile yields the raw value (no bonus)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const r = findCoord((t) => t.type === 'resource' && t.resType !== 'food', 6, 6);
+    const r = findCoord((t) => t.type === 'resource' && t.resType !== 'ink', 6, 6);
     const proc = proceduralTile(W, r.x, r.y);
     const rt = proc.resType as ResourceType;
     await svc.occupyTile(W, 'a', r.x, r.y); // no capital occupied

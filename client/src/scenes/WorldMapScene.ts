@@ -77,9 +77,11 @@ const TERRAIN_COLORS: Record<string, number> = {
 };
 
 const RES_COLORS: Record<string, number> = {
-  food:  0xa8d870,
-  wood:  0x90b860,
-  iron:  0xa0b8c8,
+  ink:      0xa8d870, // ink (sustain)
+  paper:    0x90b860, // paper (basic build)
+  graphite: 0xb0b0a8, // graphite (advanced build) — pencil-lead grey
+  metal:    0xa0b8c8, // metal (military)
+  sticker:  0xe6b8d0, // sticker (universal) — pink sticker
 };
 
 const MINE_TINT      = 0xe69090; // own territory (light red ink)
@@ -149,16 +151,16 @@ interface PoolSlot {
 
 // Train economy mirrors (DRAFT; server @nw/shared is authoritative — these only
 // size the client's preview/cost estimates for the C4 panel). Keep in sync with
-// shared/slg.ts TROOP_TRAIN_FOOD_COST / TROOP_SPEEDUP_SECS_PER_COIN / *_BATCH_MAX.
-const TRAIN_FOOD_PER        = 10;
+// shared/slg.ts TROOP_TRAIN_INK_COST / TROOP_SPEEDUP_SECS_PER_COIN / *_BATCH_MAX.
+const TRAIN_INK_PER         = 10;
 const TRAIN_SPEEDUP_PER_COIN = 60; // seconds shortened per coin
 const TRAIN_BATCH_MAX       = 500;
 const TRAIN_PRESETS         = [10, 50];
 /** Coin cost for a voluntary capital relocation (display only; server @nw/shared RELOCATE_COST is authoritative). */
 const RELOCATE_COST = 500;
 /** Resource cost to build a watchtower (display only; server @nw/shared WATCHTOWER_COST is authoritative). */
-const WATCHTOWER_COST_IRON = 2000;
-const WATCHTOWER_COST_WOOD = 3000;
+const WATCHTOWER_COST_METAL = 2000;
+const WATCHTOWER_COST_PAPER = 3000;
 
 // ── Scene ─────────────────────────────────────────────────────────────────────
 
@@ -688,9 +690,11 @@ export class WorldMapScene implements Scene {
         `${t('world.territory')} ${territory}`,
       ];
       const res = this.me.resources ?? {};
-      if (res['food'] !== undefined) infos.push(`🌾${res['food']}`);
-      if (res['wood'] !== undefined) infos.push(`🪵${res['wood']}`);
-      if (res['iron'] !== undefined) infos.push(`⛏️${res['iron']}`);
+      if (res['ink'] !== undefined) infos.push(`🖋️${res['ink']}`);
+      if (res['paper'] !== undefined) infos.push(`📄${res['paper']}`);
+      if (res['graphite'] !== undefined) infos.push(`✏️${res['graphite']}`);
+      if (res['metal'] !== undefined) infos.push(`🔩${res['metal']}`);
+      if (res['sticker'] !== undefined) infos.push(`⭐${res['sticker']}`);
 
       let ix = 90;
       for (const info of infos) {
@@ -1191,8 +1195,8 @@ export class WorldMapScene implements Scene {
       [
         t('world.watchtowerTitle'),
         t('world.watchtowerConfirm')
-          .replace('{wood}', String(WATCHTOWER_COST_WOOD))
-          .replace('{iron}', String(WATCHTOWER_COST_IRON)),
+          .replace('{paper}', String(WATCHTOWER_COST_PAPER))
+          .replace('{metal}', String(WATCHTOWER_COST_METAL)),
       ],
       [
         { label: t('world.watchtowerBtn'), action: () => void this.doWatchtower(tx, ty) },
@@ -1304,7 +1308,9 @@ export class WorldMapScene implements Scene {
       const yr = yield_[key];
       return yr ? `${icon}${amt} (+${Math.round(yr)}/${t('world.resYield')})` : `${icon}${amt}`;
     };
-    addText(`${fmt('🌾', 'food')}   ${fmt('🪵', 'wood')}   ${fmt('⛏️', 'iron')}`, ly, 11);
+    addText(`${fmt('🖋️', 'ink')}   ${fmt('📄', 'paper')}   ${fmt('✏️', 'graphite')}`, ly, 11);
+    ly += 18;
+    addText(`${fmt('🔩', 'metal')}   ${fmt('⭐', 'sticker')}`, ly, 11);
     ly += 20;
 
     // Troops
@@ -1319,28 +1325,28 @@ export class WorldMapScene implements Scene {
     // Recruit row
     addText(t('world.trainNew'), ly, 12);
     ly += 20;
-    const food = Math.floor(res['food'] ?? 0);
+    const ink = Math.floor(res['ink'] ?? 0);
     const capLeft = Math.max(0, cap - troops - inQ);
     const queueFull = (me.trainingQueue ?? []).length >= 2;
     const bw = (pw - 28 - MARGIN * 2) / 3;
     let bx = px + 14;
     for (const n of TRAIN_PRESETS) {
-      const cost = n * TRAIN_FOOD_PER;
-      const ok = !queueFull && capLeft >= n && food >= cost;
+      const cost = n * TRAIN_INK_PER;
+      const ok = !queueFull && capLeft >= n && ink >= cost;
       this.panelButton(
         `+${n}`, bx, ly, bw, 30,
         ok ? C.dark : C.mid,
-        () => { if (ok) void this.doTrain(n); else this.showToast(queueFull ? t('world.err.queueFull') : (capLeft < n ? t('world.err.troopCap') : t('world.err.noFood')), C.red); },
+        () => { if (ok) void this.doTrain(n); else this.showToast(queueFull ? t('world.err.queueFull') : (capLeft < n ? t('world.err.troopCap') : t('world.err.noInk')), C.red); },
       );
       bx += bw + MARGIN;
     }
-    // Max preset = min(batch cap, capacity left, food-affordable)
-    const maxQty = Math.min(TRAIN_BATCH_MAX, capLeft, Math.floor(food / TRAIN_FOOD_PER));
+    // Max preset = min(batch cap, capacity left, ink-affordable)
+    const maxQty = Math.min(TRAIN_BATCH_MAX, capLeft, Math.floor(ink / TRAIN_INK_PER));
     const maxOk = !queueFull && maxQty >= 1;
     this.panelButton(
       maxOk ? `${t('world.trainMax')} +${maxQty}` : t('world.trainMax'), bx, ly, bw, 30,
       maxOk ? C.red : C.mid,
-      () => { if (maxOk) void this.doTrain(maxQty); else this.showToast(queueFull ? t('world.err.queueFull') : (capLeft < 1 ? t('world.err.troopCap') : t('world.err.noFood')), C.red); },
+      () => { if (maxOk) void this.doTrain(maxQty); else this.showToast(queueFull ? t('world.err.queueFull') : (capLeft < 1 ? t('world.err.troopCap') : t('world.err.noInk')), C.red); },
     );
     ly += 38;
 
@@ -1650,7 +1656,7 @@ export class WorldMapScene implements Scene {
         NOT_OWNER:     t('world.err.notOwner'),
         NOT_IMPLEMENTED: t('world.err.notImpl'),
         TROOP_CAP_REACHED:      t('world.err.troopCap'),
-        INSUFFICIENT_RESOURCES: t('world.err.noFood'),
+        INSUFFICIENT_RESOURCES: t('world.err.noInk'),
         PATH_BLOCKED:  t('world.err.pathBlocked'),
       };
       return map[e.code] ?? e.message;
