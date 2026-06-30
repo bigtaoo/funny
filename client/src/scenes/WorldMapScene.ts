@@ -116,7 +116,7 @@ function proceduralTileColor(worldId: string, x: number, y: number): number {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_MAP_SIZE = 1500; // server default 1500×1500; actual value comes from getSeason
-const HUD_H    = 80;   // bottom HUD bar height
+const HUD_H    = 100;  // bottom HUD bar height
 const MARGIN   = 4;    // margin inside modal
 const CONFIRM_H = 140;
 
@@ -142,7 +142,7 @@ function makeZoomCfgs(w: number, h: number): [ZoomCfg, ZoomCfg, ZoomCfg] {
     const visH = Math.ceil(mh / tile);
     return { tile, visW, visH, poolW: visW + 2, poolH: visH + 2 };
   };
-  return [mk(Math.floor(w / 25)), mk(Math.floor(w / 50)), mk(20)];
+  return [mk(Math.floor(w / 19)), mk(Math.floor(w / 37)), mk(27)];
 }
 
 /** A single pooled tile object — one PIXI.Graphics reused for many map positions. */
@@ -522,6 +522,11 @@ export class WorldMapScene implements Scene {
       this.drawResMotif(g, tile.resType, tile.level ?? 1, tp);
     }
 
+    // City icon on capital tiles (placeholder until AI city images are available).
+    if (tile?.type === 'base') {
+      this.drawCityIcon(g, tile.mine ?? false, tile.ally ?? false, tile.level ?? 1, tp);
+    }
+
     if (tile && tile.level > 1) {
       const dotColor = tile.mine ? 0xcc2222 : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0x2266cc : 0x888888));
       g.lineStyle(0);
@@ -552,6 +557,115 @@ export class WorldMapScene implements Scene {
         tcx + towerW / 2 + 1, baseY - towerH,
         tcx, baseY - towerH - towerW,
       ]);
+      g.endFill();
+    }
+  }
+
+  /**
+   * Programmatic city icon drawn on capital (base) tiles.
+   * Tier 1 (lv 1-2): camp silhouette; Tier 2 (lv 3-5): walled town; Tier 3 (lv 6-8): castle;
+   * Tier 4 (lv 9-10): grand citadel. Will be replaced by AI-generated sprites once assets land.
+   */
+  private drawCityIcon(g: PIXI.Graphics, mine: boolean, ally: boolean, lv: number, tp: number): void {
+    const tier = lv <= 2 ? 1 : lv <= 5 ? 2 : lv <= 8 ? 3 : 4;
+    const ink = mine ? 0xcc2222 : (ally ? 0x2e8b40 : 0x224488);
+    const fill = mine ? 0xf5d5d5 : (ally ? 0xd5f0e0 : 0xd5e0f5);
+    const margin = Math.max(4, tp * 0.08);
+    const inner = tp - 1 - margin * 2;
+
+    g.lineStyle(1.2, ink, 0.9);
+
+    if (tier === 1) {
+      // Two tents
+      g.beginFill(fill, 0.85);
+      const tentW = inner * 0.42;
+      const tentH = inner * 0.55;
+      const y0 = margin + inner * 0.35;
+      [0.15, 0.52].forEach((fx) => {
+        const tx = margin + inner * fx;
+        g.moveTo(tx, y0); g.lineTo(tx + tentW / 2, y0 - tentH); g.lineTo(tx + tentW, y0);
+        g.closePath();
+      });
+      g.endFill();
+      // ground line
+      g.lineStyle(0.8, ink, 0.6);
+      g.moveTo(margin, margin + inner * 0.35); g.lineTo(margin + inner, margin + inner * 0.35);
+    } else if (tier === 2) {
+      // Walled town: rectangle perimeter + small house inside
+      const wy = margin + inner * 0.15;
+      const wh = inner * 0.72;
+      g.beginFill(fill, 0.75);
+      g.drawRect(margin, wy, inner, wh);
+      g.endFill();
+      g.lineStyle(1.5, ink, 0.9);
+      g.drawRect(margin, wy, inner, wh);
+      // Gate in center-bottom
+      const gw = inner * 0.28;
+      g.lineStyle(0);
+      g.beginFill(ink, 0.4);
+      g.drawRect(margin + inner / 2 - gw / 2, wy + wh - wh * 0.36, gw, wh * 0.36);
+      g.endFill();
+      // Central tower
+      g.lineStyle(1.2, ink, 0.9);
+      g.beginFill(fill, 0.9);
+      const tw = inner * 0.22, th = inner * 0.46;
+      g.drawRect(margin + inner / 2 - tw / 2, wy - th * 0.3, tw, th);
+      g.endFill();
+    } else if (tier === 3) {
+      // Castle: outer wall with crenels + keep
+      const wy = margin + inner * 0.22;
+      const wh = inner * 0.65;
+      g.beginFill(fill, 0.80);
+      g.drawRect(margin, wy, inner, wh);
+      g.endFill();
+      g.lineStyle(1.5, ink, 0.9);
+      g.drawRect(margin, wy, inner, wh);
+      // Crenellations top
+      const cs = Math.max(2, inner * 0.07);
+      g.lineStyle(0);
+      g.beginFill(ink, 0.7);
+      for (let i = 0; i < 4; i++) {
+        g.drawRect(margin + i * (inner / 4), wy - cs, inner / 8, cs);
+      }
+      g.endFill();
+      // Keep tower
+      const tw = inner * 0.3, th = inner * 0.7;
+      g.lineStyle(1.5, ink, 0.9);
+      g.beginFill(fill, 0.95);
+      g.drawRect(margin + inner / 2 - tw / 2, margin - th * 0.1, tw, th);
+      g.endFill();
+    } else {
+      // Grand citadel: thick walls + 2 side towers + tall keep
+      const wy = margin + inner * 0.28;
+      const wh = inner * 0.60;
+      g.beginFill(fill, 0.80);
+      g.drawRect(margin, wy, inner, wh);
+      g.endFill();
+      g.lineStyle(2, ink, 0.95);
+      g.drawRect(margin, wy, inner, wh);
+      // Side towers
+      const stW = inner * 0.22, stH = inner * 0.55;
+      g.beginFill(fill, 0.92);
+      g.drawRect(margin - stW * 0.3, wy - stH * 0.15, stW, stH);
+      g.drawRect(margin + inner - stW * 0.7, wy - stH * 0.15, stW, stH);
+      g.endFill();
+      // Central keep (tallest)
+      const kw = inner * 0.32, kh = inner * 0.85;
+      g.beginFill(fill, 0.98);
+      g.drawRect(margin + inner / 2 - kw / 2, margin - kh * 0.1, kw, kh);
+      g.endFill();
+      g.lineStyle(2, ink, 0.95);
+      g.drawRect(margin + inner / 2 - kw / 2, margin - kh * 0.1, kw, kh);
+      // Flag on top
+      g.lineStyle(1, ink, 0.9);
+      const flagX = margin + inner / 2;
+      const flagY = margin - kh * 0.1;
+      g.moveTo(flagX, flagY); g.lineTo(flagX, flagY - kh * 0.2);
+      g.beginFill(ink, 0.85);
+      g.moveTo(flagX, flagY - kh * 0.2);
+      g.lineTo(flagX + inner * 0.12, flagY - kh * 0.14);
+      g.lineTo(flagX, flagY - kh * 0.08);
+      g.closePath();
       g.endFill();
     }
   }
@@ -604,8 +718,11 @@ export class WorldMapScene implements Scene {
       g.moveTo(cs, tp - 1); g.lineTo(0, tp - 1); g.lineTo(0, tp - 1 - cs);
     }
 
-    // ── Motif sprites (skip if atlas not decoded yet — color-only fallback) ───
-    if (!isResAtlasReady()) return;
+    // ── Motif sprites (programmatic fallback when atlas not ready) ────────────
+    if (!isResAtlasReady()) {
+      this.drawResMotifFallback(g, resType, lv, tp);
+      return;
+    }
     const tex = getResTexture(resType);
     if (!tex) return;
 
@@ -640,6 +757,90 @@ export class WorldMapScene implements Scene {
       sp.x = fx * tp;
       sp.y = fy * tp;
       g.addChild(sp);
+    }
+  }
+
+  /** Programmatic fallback icon when res_atlas is not yet loaded. Draws a small stationery-themed shape. */
+  private drawResMotifFallback(g: PIXI.Graphics, resType: string, lv: number, tp: number): void {
+    const count = lv <= 3 ? 1 : lv <= 6 ? 2 : lv <= 9 ? 3 : 4;
+    const alpha = lv <= 3 ? 0.55 : lv <= 6 ? 0.68 : lv <= 9 ? 0.80 : 0.90;
+    const POSITIONS: [number, number][] = [
+      [0.50, 0.52],
+      [0.32, 0.38], [0.65, 0.60],
+      [0.32, 0.35], [0.65, 0.35], [0.48, 0.65],
+      [0.28, 0.33], [0.62, 0.33], [0.28, 0.65], [0.65, 0.65],
+    ];
+    const offsets = POSITIONS.slice(
+      count === 1 ? 0 : count === 2 ? 1 : count === 3 ? 3 : 6,
+      count === 1 ? 1 : count === 2 ? 3 : count === 3 ? 6 : 10,
+    );
+    const r = tp * (count <= 1 ? 0.12 : 0.10);
+    for (const [fx, fy] of offsets) {
+      const cx = fx * tp, cy = fy * tp;
+      g.lineStyle(0);
+      if (resType === 'ink') {
+        // Ink drop: teardrop shape
+        g.beginFill(0x3355aa, alpha);
+        g.drawEllipse(cx, cy + r * 0.2, r * 0.65, r * 0.85);
+        g.endFill();
+        g.beginFill(0x3355aa, alpha);
+        g.moveTo(cx, cy - r * 0.9);
+        g.lineTo(cx - r * 0.45, cy - r * 0.05);
+        g.lineTo(cx + r * 0.45, cy - r * 0.05);
+        g.closePath();
+        g.endFill();
+      } else if (resType === 'paper') {
+        // Paper: small rectangle with folded corner
+        g.lineStyle(0.8, 0x4477bb, alpha);
+        g.beginFill(0xf0ecdd, alpha * 0.9);
+        g.drawRect(cx - r * 0.7, cy - r * 0.85, r * 1.4, r * 1.7);
+        g.endFill();
+        g.lineStyle(0.6, 0x4477bb, alpha * 0.7);
+        g.moveTo(cx - r * 0.3, cy - r * 0.85);
+        g.lineTo(cx - r * 0.3, cy - r * 0.35);
+        g.moveTo(cx - r * 0.3, cy - r * 0.15);
+        g.lineTo(cx - r * 0.3, cy + r * 0.55);
+        g.lineStyle(0);
+      } else if (resType === 'graphite') {
+        // Graphite/pencil: elongated hexagon
+        g.beginFill(0x778899, alpha);
+        g.moveTo(cx, cy - r);
+        g.lineTo(cx + r * 0.5, cy - r * 0.5);
+        g.lineTo(cx + r * 0.5, cy + r * 0.6);
+        g.lineTo(cx, cy + r);
+        g.lineTo(cx - r * 0.5, cy + r * 0.6);
+        g.lineTo(cx - r * 0.5, cy - r * 0.5);
+        g.closePath();
+        g.endFill();
+        g.beginFill(0xccaa44, alpha);
+        g.moveTo(cx - r * 0.5, cy + r * 0.6);
+        g.lineTo(cx + r * 0.5, cy + r * 0.6);
+        g.lineTo(cx, cy + r);
+        g.closePath();
+        g.endFill();
+      } else if (resType === 'metal') {
+        // Metal: bolt head (circle) + shaft
+        g.beginFill(0x889966, alpha);
+        g.drawCircle(cx, cy - r * 0.3, r * 0.6);
+        g.endFill();
+        g.beginFill(0x778855, alpha);
+        g.drawRect(cx - r * 0.22, cy + r * 0.2, r * 0.44, r * 0.8);
+        g.endFill();
+      } else {
+        // sticker / default: 5-point star
+        g.beginFill(0xcc9922, alpha);
+        const pts = 5;
+        const outer = r * 0.9, inner = r * 0.4;
+        const startAngle = -Math.PI / 2;
+        for (let i = 0; i < pts * 2; i++) {
+          const angle = startAngle + (i * Math.PI) / pts;
+          const rad = i % 2 === 0 ? outer : inner;
+          if (i === 0) g.moveTo(cx + Math.cos(angle) * rad, cy + Math.sin(angle) * rad);
+          else g.lineTo(cx + Math.cos(angle) * rad, cy + Math.sin(angle) * rad);
+        }
+        g.closePath();
+        g.endFill();
+      }
     }
   }
 
@@ -778,10 +979,15 @@ export class WorldMapScene implements Scene {
     hud.addChild(panel);
 
     // Back button
-    const backLbl = txt(t('world.back'), 12, C.accent);
-    backLbl.x = 10; backLbl.y = h - HUD_H + 10;
+    const backW = 88, backH = 34;
+    const backBtn = sketchPanel(backW, backH, { fill: C.dark, border: C.accent, seed: seedFor(5, 3, backW) });
+    backBtn.x = 8; backBtn.y = h - HUD_H + 8;
+    hud.addChild(backBtn);
+    const backLbl = txt(t('world.back'), 13, C.light);
+    backLbl.anchor.set(0.5, 0.5);
+    backLbl.x = backBtn.x + backW / 2; backLbl.y = backBtn.y + backH / 2;
     hud.addChild(backLbl);
-    this.backRect = { x: 0, y: h - HUD_H, w: 80, h: 30 };
+    this.backRect = { x: backBtn.x, y: backBtn.y, w: backW, h: backH };
 
     // Resources row
     if (this.me?.joined) {
@@ -799,40 +1005,50 @@ export class WorldMapScene implements Scene {
       if (res['metal'] !== undefined) infos.push(`🔩${res['metal']}`);
       if (res['sticker'] !== undefined) infos.push(`⭐${res['sticker']}`);
 
-      let ix = 90;
+      let ix = 106;
       for (const info of infos) {
         const lbl = txt(info, 11, C.dark);
-        lbl.x = ix; lbl.y = h - HUD_H + 10;
+        lbl.x = ix; lbl.y = h - HUD_H + 18;
         hud.addChild(lbl);
         ix += lbl.width + 14;
       }
     }
 
-    // Active marches list (one row per march, recall button) — own marches only
+    // Active marches panel — own marches only
     // (G5: this.marches may also hold in-vision enemy marches, which can't be recalled).
     this.marchRowRects = [];
     const myMarches = this.marches.filter((m) => m.mine !== false);
+    const MARCH_PANEL_X = 8;
+    const MARCH_ROW_H = 22;
+    const RECALL_W = 50;
+    // Section header always visible when player has joined
+    if (this.me?.joined) {
+      const headerTxt = myMarches.length > 0
+        ? `${t('world.marchList')} (${myMarches.length})`
+        : t('world.marchList');
+      const marchHeader = txt(headerTxt, 10, C.mid);
+      marchHeader.x = MARCH_PANEL_X; marchHeader.y = h - HUD_H + 52;
+      hud.addChild(marchHeader);
+    }
     if (myMarches.length > 0) {
       const now = Date.now();
-      const MARCH_ROW_H = 22;
-      const ROW_Y0 = h - HUD_H + 40;
-      const RECALL_W = 46;
+      const ROW_Y0 = h - HUD_H + 68;
       for (let i = 0; i < myMarches.length; i++) {
         const m = myMarches[i];
         const [tx, ty] = this.parseTileId(m.toTile);
         const remaining = Math.max(0, Math.ceil((m.arriveAt - now) / 1000));
         const kindIcon = m.kind === 'attack' ? '⚔' : m.kind === 'reinforce' ? '🛡' : m.kind === 'scout' ? '🔭' : m.kind === 'return' ? '↩' : '→';
         const rowY = ROW_Y0 + i * MARCH_ROW_H;
-        const rowLbl = txt(`${kindIcon}(${tx},${ty}) ${remaining}s`, 10, C.dark);
-        rowLbl.x = 10; rowLbl.y = rowY + 3;
+        const rowLbl = txt(`${kindIcon} (${tx},${ty})  ${remaining}s`, 11, C.dark);
+        rowLbl.x = MARCH_PANEL_X; rowLbl.y = rowY + 2;
         hud.addChild(rowLbl);
 
         // Recall button (only for non-return marches)
         if (m.kind !== 'return') {
           const recallBtn = sketchPanel(RECALL_W, 18, { fill: C.accent, border: C.red, seed: seedFor(i, 99, RECALL_W) });
-          recallBtn.x = 10 + 120; recallBtn.y = rowY + 1;
+          recallBtn.x = MARCH_PANEL_X + 140; recallBtn.y = rowY + 1;
           hud.addChild(recallBtn);
-          const recallLbl = txt(t('world.recall'), 9, C.light);
+          const recallLbl = txt(t('world.recall'), 10, C.light);
           recallLbl.anchor.set(0.5, 0.5);
           recallLbl.x = recallBtn.x + RECALL_W / 2; recallLbl.y = recallBtn.y + 9;
           hud.addChild(recallLbl);
@@ -840,7 +1056,7 @@ export class WorldMapScene implements Scene {
             marchId: m.marchId,
             worldId: m.toTile.split(':')[2] ?? '',
             destX: tx, destY: ty,
-            rowRect: { x: 10, y: rowY, w: 120, h: MARCH_ROW_H },
+            rowRect: { x: MARCH_PANEL_X, y: rowY, w: 140, h: MARCH_ROW_H },
             recallRect: { x: recallBtn.x, y: recallBtn.y, w: RECALL_W, h: 18 },
           });
         } else {
@@ -848,7 +1064,7 @@ export class WorldMapScene implements Scene {
             marchId: m.marchId,
             worldId: m.toTile.split(':')[2] ?? '',
             destX: tx, destY: ty,
-            rowRect: { x: 10, y: rowY, w: 120, h: MARCH_ROW_H },
+            rowRect: { x: MARCH_PANEL_X, y: rowY, w: 140, h: MARCH_ROW_H },
             recallRect: null,
           });
         }
@@ -858,57 +1074,61 @@ export class WorldMapScene implements Scene {
     // Train / Family / Auction buttons (right side)
     const btnW = 70;
 
+    // Action buttons (right side, vertically centred in HUD)
+    const btnH = 36;
+    const btnY = h - HUD_H + (HUD_H - btnH) / 2;
+
     // Train button — only meaningful once the player has a base.
     if (this.me?.joined) {
-      const trainBtn = sketchPanel(btnW, 28, { fill: C.red, border: C.accent, seed: seedFor(2, 0, btnW) });
-      trainBtn.x = w - btnW * 3 - 22; trainBtn.y = h - HUD_H + 26;
+      const trainBtn = sketchPanel(btnW, btnH, { fill: C.red, border: C.accent, seed: seedFor(2, 0, btnW) });
+      trainBtn.x = w - btnW * 3 - 22; trainBtn.y = btnY;
       hud.addChild(trainBtn);
       const inQ = (this.me.trainingQueue ?? []).reduce((s, e) => s + e.qty, 0);
-      const trainLbl = txt(inQ > 0 ? `${t('world.train')} (${inQ})` : t('world.train'), 12, C.light);
+      const trainLbl = txt(inQ > 0 ? `${t('world.train')} (${inQ})` : t('world.train'), 13, C.light);
       trainLbl.anchor.set(0.5, 0.5);
-      trainLbl.x = trainBtn.x + btnW / 2; trainLbl.y = trainBtn.y + 14;
+      trainLbl.x = trainBtn.x + btnW / 2; trainLbl.y = trainBtn.y + btnH / 2;
       hud.addChild(trainLbl);
-      this.trainBtnRect = { x: trainBtn.x, y: trainBtn.y, w: btnW, h: 28 };
+      this.trainBtnRect = { x: trainBtn.x, y: trainBtn.y, w: btnW, h: btnH };
     } else {
       this.trainBtnRect = { x: 0, y: 0, w: 0, h: 0 };
     }
 
-    const famBtn = sketchPanel(btnW, 28, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, btnW) });
-    famBtn.x = w - btnW * 2 - 14; famBtn.y = h - HUD_H + 26;
+    const famBtn = sketchPanel(btnW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, btnW) });
+    famBtn.x = w - btnW * 2 - 14; famBtn.y = btnY;
     hud.addChild(famBtn);
-    const famLbl = txt(t('world.family'), 12, C.light);
+    const famLbl = txt(t('world.family'), 13, C.light);
     famLbl.anchor.set(0.5, 0.5);
-    famLbl.x = famBtn.x + btnW / 2; famLbl.y = famBtn.y + 14;
+    famLbl.x = famBtn.x + btnW / 2; famLbl.y = famBtn.y + btnH / 2;
     hud.addChild(famLbl);
-    this.famBtnRect = { x: famBtn.x, y: famBtn.y, w: btnW, h: 28 };
+    this.famBtnRect = { x: famBtn.x, y: famBtn.y, w: btnW, h: btnH };
 
-    const aucBtn = sketchPanel(btnW, 28, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, btnW) });
-    aucBtn.x = w - btnW - 6; aucBtn.y = h - HUD_H + 26;
+    const aucBtn = sketchPanel(btnW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, btnW) });
+    aucBtn.x = w - btnW - 6; aucBtn.y = btnY;
     hud.addChild(aucBtn);
-    const aucLbl = txt(t('world.auction'), 12, C.light);
+    const aucLbl = txt(t('world.auction'), 13, C.light);
     aucLbl.anchor.set(0.5, 0.5);
-    aucLbl.x = aucBtn.x + btnW / 2; aucLbl.y = aucBtn.y + 14;
+    aucLbl.x = aucBtn.x + btnW / 2; aucLbl.y = aucBtn.y + btnH / 2;
     hud.addChild(aucLbl);
-    this.aucBtnRect = { x: aucBtn.x, y: aucBtn.y, w: btnW, h: 28 };
+    this.aucBtnRect = { x: aucBtn.x, y: aucBtn.y, w: btnW, h: btnH };
 
     // World info button — floats top-right over the map (nations / season / shop).
-    const infoW = 56, infoH = 26;
+    const infoW = 76, infoH = 34;
     const infoBtn = sketchPanel(infoW, infoH, { fill: C.dark, border: C.accent, seed: seedFor(3, 1, infoW) });
     infoBtn.x = w - infoW - 8; infoBtn.y = 8;
     hud.addChild(infoBtn);
-    const infoLbl = txt(t('world.info'), 12, C.light);
+    const infoLbl = txt(t('world.info'), 13, C.light);
     infoLbl.anchor.set(0.5, 0.5);
     infoLbl.x = infoBtn.x + infoW / 2; infoLbl.y = infoBtn.y + infoH / 2;
     hud.addChild(infoLbl);
     this.infoBtnRect = { x: infoBtn.x, y: infoBtn.y, w: infoW, h: infoH };
 
     // Zoom cycle button — top-left over the map, cycles L1→L2→L3→L1.
-    const zoomLabels: Record<number, string> = { 1: '🔍×1', 2: '🔍×2', 3: '🔍×3' };
-    const zoomW = 56, zoomH = 26;
+    const zoomLabels: Record<number, string> = { 1: '×1', 2: '×2', 3: '×3' };
+    const zoomW = 76, zoomH = 34;
     const zoomBtn = sketchPanel(zoomW, zoomH, { fill: C.dark, border: C.accent, seed: seedFor(4, 2, zoomW) });
     zoomBtn.x = 8; zoomBtn.y = 8;
     hud.addChild(zoomBtn);
-    const zoomLbl = txt(zoomLabels[this.zoom] ?? '🔍', 11, C.light);
+    const zoomLbl = txt(`🔍 ${zoomLabels[this.zoom] ?? ''}`, 13, C.light);
     zoomLbl.anchor.set(0.5, 0.5);
     zoomLbl.x = zoomBtn.x + zoomW / 2; zoomLbl.y = zoomBtn.y + zoomH / 2;
     hud.addChild(zoomLbl);
