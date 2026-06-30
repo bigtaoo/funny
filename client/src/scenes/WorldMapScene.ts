@@ -18,6 +18,7 @@ import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationV
 import { WorldApiError } from '../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/proto/transport';
 import { proceduralTile } from '@nw/shared';
+import { loadResAtlas, getResTexture, isResAtlasReady } from '../render/resAtlasLoader';
 
 // ── Public callbacks ────────────────────────────────────────────────────────
 
@@ -254,6 +255,9 @@ export class WorldMapScene implements Scene {
     this.centerAt(Math.floor(this.mapW / 2), Math.floor(this.mapH / 2));
 
     this.marchPoll = setInterval(() => { if (!this.destroyed) this.refreshMarches(); }, 5000);
+
+    // Lazy-load resource motif atlas (fire-and-forget; tiles fall back to color if not ready).
+    loadResAtlas().catch((err) => console.warn('[WorldMapScene] res atlas load failed:', err));
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -472,6 +476,11 @@ export class WorldMapScene implements Scene {
   private drawTileSlot(slot: PoolSlot, tx: number, ty: number): void {
     const g = slot.g;
     g.clear();
+    // Remove any sprite children added by the previous draw (resource motifs).
+    for (let i = g.children.length - 1; i >= 0; i--) {
+      const c = g.children[i];
+      if (c instanceof PIXI.Sprite) { g.removeChild(c); c.destroy({ children: false }); }
+    }
     const tp = this.tp;
     const inBounds = tx >= 0 && ty >= 0 && tx < this.mapW && ty < this.mapH;
     if (!inBounds) { g.visible = false; return; }
@@ -506,6 +515,11 @@ export class WorldMapScene implements Scene {
       return;
     }
 
+    // Resource motif sprites + defense frames (abundance/defense dual axis).
+    if (tile?.type === 'resource' && tile.resType) {
+      this.drawResMotif(g, tile.resType, tile.level ?? 1, tp);
+    }
+
     if (tile && tile.level > 1) {
       const dotColor = tile.mine ? 0xcc2222 : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0x2266cc : 0x888888));
       g.lineStyle(0);
@@ -537,6 +551,93 @@ export class WorldMapScene implements Scene {
         tcx, baseY - towerH - towerW,
       ]);
       g.endFill();
+    }
+  }
+
+  /**
+   * Render resource motif sprites + hand-drawn defense frames onto a tile Graphics.
+   *
+   * Abundance axis: replicate the same motif sprite — 1 unit at lv1 growing to
+   * 4 units at lv10, laid out in pre-defined scatter positions so clusters feel
+   * organic rather than grid-aligned.
+   *
+   * Defense axis (lv4+): pencil-stroke fence outline; lv7+ adds a heavier palisade
+   * with arrow-tip markers; lv8–10 gets red danger corner accents.
+   *
+   * Falls back gracefully to color-only if the atlas hasn't decoded yet.
+   */
+  private drawResMotif(g: PIXI.Graphics, resType: string, level: number, tp: number): void {
+    const lv = Math.max(1, Math.min(10, level));
+
+    // ── Defense frames (drawn first so motif sprites sit on top) ──────────────
+    if (lv >= 4) {
+      const pad = 3;
+      const heavy = lv >= 7;
+      const lw = heavy ? 1.5 : 0.9;
+      const alpha = heavy ? 0.7 : 0.45;
+      g.lineStyle(lw, 0x3a2a18, alpha);
+      g.beginFill(0, 0);
+      g.drawRect(pad, pad, tp - 1 - pad * 2, tp - 1 - pad * 2);
+      g.endFill();
+
+      if (heavy) {
+        // Tick marks at midpoints of each side (stylised palisade stakes).
+        const mid = (tp - 1) / 2;
+        const tk = 4;
+        g.lineStyle(1.2, 0x3a2a18, 0.65);
+        g.moveTo(mid, pad);     g.lineTo(mid, pad - tk);
+        g.moveTo(mid, tp - 1 - pad); g.lineTo(mid, tp - 1 - pad + tk);
+        g.moveTo(pad, mid);     g.lineTo(pad - tk, mid);
+        g.moveTo(tp - 1 - pad, mid); g.lineTo(tp - 1 - pad + tk, mid);
+      }
+    }
+
+    // Red danger corner accents for high-level defended tiles (lv8–10).
+    if (lv >= 8) {
+      const cs = 5;
+      g.lineStyle(1.5, 0xcc3333, 0.75);
+      g.moveTo(0, cs); g.lineTo(0, 0); g.lineTo(cs, 0);
+      g.moveTo(tp - 1 - cs, 0); g.lineTo(tp - 1, 0); g.lineTo(tp - 1, cs);
+      g.moveTo(tp - 1, tp - 1 - cs); g.lineTo(tp - 1, tp - 1); g.lineTo(tp - 1 - cs, tp - 1);
+      g.moveTo(cs, tp - 1); g.lineTo(0, tp - 1); g.lineTo(0, tp - 1 - cs);
+    }
+
+    // ── Motif sprites (skip if atlas not decoded yet — color-only fallback) ───
+    if (!isResAtlasReady()) return;
+    const tex = getResTexture(resType);
+    if (!tex) return;
+
+    // Abundance: number of sprite instances keyed by level band.
+    const count = lv <= 3 ? 1 : lv <= 6 ? 2 : lv <= 9 ? 3 : 4;
+
+    // Pre-defined scatter positions (fraction of tp) for up to 4 sprites.
+    // Chosen to look organic and avoid overlapping the level-dot corner (top-right).
+    const POSITIONS: [number, number][] = [
+      [0.5,  0.52],   // 1 sprite: centred, slightly low
+      [0.32, 0.38], [0.65, 0.6],   // 2 sprites: upper-left + lower-right
+      [0.32, 0.35], [0.65, 0.35], [0.48, 0.65],  // 3 sprites: triangle
+      [0.28, 0.33], [0.62, 0.33], [0.28, 0.65], [0.65, 0.65], // 4 sprites: 2×2
+    ];
+    const offsets = POSITIONS.slice(
+      count === 1 ? 0 : count === 2 ? 1 : count === 3 ? 3 : 6,
+      count === 1 ? 1 : count === 2 ? 3 : count === 3 ? 6 : 10,
+    );
+
+    // Scale each sprite so the long edge is ~30% of the tile, shrinking slightly
+    // for higher counts to prevent overcrowding.
+    const targetPx = tp * (count <= 1 ? 0.34 : count === 2 ? 0.29 : 0.26);
+    const scale = targetPx / Math.max(tex.width, tex.height);
+
+    const alpha = lv <= 3 ? 0.6 : lv <= 6 ? 0.72 : lv <= 9 ? 0.82 : 0.92;
+
+    for (const [fx, fy] of offsets) {
+      const sp = new PIXI.Sprite(tex);
+      sp.anchor.set(0.5, 0.5);
+      sp.scale.set(scale);
+      sp.alpha = alpha;
+      sp.x = fx * tp;
+      sp.y = fy * tp;
+      g.addChild(sp);
     }
   }
 
