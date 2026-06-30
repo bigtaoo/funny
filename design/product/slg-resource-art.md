@@ -94,4 +94,4 @@ background, notebook grid lines, ruled lines, drop shadow, ground line, baseline
 
 > **出图验收（2026-06-30）**：墨水/纸/金属/贴纸 4 张合格（干净墨线、剪影独特、风格一致）。**石墨 `res_graphite` 不合格**——AI 出成灰色实心填充块 + 底部投影，违背 §1.2「单色墨线、不上色不阴影」与 §1.5；现作占位在 atlas 里。**待用户重出纯墨线版**（prompt 追加 `line art only, hollow outline, no grey fill, no shading, no 3d, no ground shadow`），命名 `res_graphite.png` 回填重跑脚本即可。
 >
-> 母题就位后下一步：我接地图格渲染（母题加载 + 丰度/守备双轴 + 等级合成）。
+> **✅ 地图格渲染接入已落地（2026-06-30，commit `b8b726c0`）**：`client/src/render/resAtlasLoader.ts`（懒加载，色块兜底）+ `WorldMapScene.drawResMotif`（仅 L1）实现母题加载 + 丰度轴（lv1→4 个精灵成簇）+ 守备轴（lv4+ 栅栏 / lv7+ 桩刻度 / lv8–10 红角）+ 10 级合成；母题墨线不 tint。**唯一遗留**：石墨 `res_graphite` 仍是占位图（上文验收不合格项），待用户重出纯墨线版回填重跑脚本即可，渲染管线无需再改。
