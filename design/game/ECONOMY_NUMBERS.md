@@ -640,6 +640,153 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 
 ---
 
+## 13-SLG-C. 围攻均衡性 & SIEGE_CHEAP_RATIO 核验（C 轨）`[已过核验 2026-06-30]`
+
+> 脚本：`server/tools/econ-sim/src/siegeRun.ts`；模型：Lanchester 线性（`resolveSiege + nationDefenseStrength`，与 worldsvc `applySiege` 生产路径一致）。
+
+### 13-SLG-C.1 NATION_BONUS_DEFENSE 攻方胜率
+
+| 参数 | 值 | 来源 |
+|---|---|---|
+| `NATION_BONUS_DEFENSE` | 0.15 | `@nw/shared/slg.ts` |
+| 攻方胜率（模拟，U[100,2000]）| **43.0%** | 5 seeds × 20k 样本 |
+| 攻方胜率（模拟，U[100,500]）| **40.4%** | 5 seeds × 20k 样本 |
+| 理论上限（连续 U[0,∞]）| 1/(2×1.15) ≈ **43.5%** | 解析 |
+| 验收区间 | 40–55% | SLG_ECONOMY_CHECK §5 |
+
+**结论**：本国防御 +15% 有效驻军带来适度主场优势，攻方以「等兵」仍有约 43% 胜率——不使本国土地坚不可摧。U[500,2000]（窄范围，信息性）因分布宽幅比约束跌至 39.4%（有界分布效应），不计入门控判据。
+
+### 13-SLG-C.2 SIEGE_CHEAP_RATIO 阈值分类
+
+| 参数 | 值 | 说明 |
+|---|---|---|
+| `SIEGE_CHEAP_RATIO` | 10 | `@nw/shared/slg.ts`（当前未在生产路径触发） |
+| 误判率（4 基准值 × 391 样本）| **0%** | 结构性保证 |
+| 验收标准 | ≤ 1% | SLG_ECONOMY_CHECK §5 |
+
+**结构性证明**：`atk/defEff ≥ 10 ⇒ atk > defEff ⇒ resolveSiege = 'attacker_win'`（Lanchester 线性确定性，无随机）。正常激战（ratio < 10）样本结果混合（非总为攻方胜）→ 引擎路径正确执行。
+
+---
+
+## 13-SLG-D. 宗门实力分配公平性核验（D 轨）`[已过核验 2026-06-30]`
+
+> 脚本：`server/tools/econ-sim/src/sectorRun.ts`；验证 `allocateSectsToShards`（蛇形选秀）+ `sectStrengthScore`（`@nw/shared`）。
+
+### 13-SLG-D.1 蒙特卡洛结果
+
+| 配置 | seeds | 判据 | 结果 |
+|---|---|---|---|
+| sects=10, shards=2 | 10 | 极差 ≤ 最强单体 | **10/10 ✅** |
+| sects=50, shards=3 | 10 | 同上 | **10/10 ✅** |
+| sects=100, shards=4 | 10 | 同上 | **10/10 ✅** |
+| sects=200, shards=5 | 10 | 同上 | **10/10 ✅** |
+| sects=500, shards=8 | 10 | 同上 | **10/10 ✅** |
+| sects=1000, shards=10 | 10 | 同上 | **10/10 ✅** |
+
+典型极差约为最强宗门得分的 **10–15%**（远 < 单体上限）。
+
+### 13-SLG-D.2 权重灵敏度
+
+`sectStrengthScore = rankScore(0–9900) + memberFamilyCount×50 + floor(prosperity/100)`
+
+- **基准（全权重）**：极差 1,401，最大单体 11,160 → **✅ PASS（门控）**
+- `rank-only`（单排名维度）：极差 7,953 < 9,800 → ✅（排名单独仍可维持保证）
+- `members-only` / `prosperity-only`：极差 >> 最大单体 → 信息性 ❌（预期：去掉排名主稳定器后退化；**证明了多维权重设计的必要性**）
+
+**结论**：蛇形选秀在全权重下保证任意 shard 对总实力极差 ≤ 最强宗门分值；排名维度是公平分配的主稳定器。
+
+---
+
+## 13-SLG-E. 繁荣度可达性与衰减核验（E 轨）`[已过核验 2026-06-30]`
+
+> 脚本：`server/tools/econ-sim/src/prosperityRun.ts`；纯函数 `familyProsperity + decayProsperity`（`@nw/shared`）。
+> 设计注记（`slg.ts`）：30 成员 + 30 地块 ≈ 1800 基础分，需 ~40 活跃值。
+
+### 13-SLG-E.1 活跃中位家族建宗门天数
+
+| 档位 | 起始成员 | 占地速率 | 活跃速率 | 建宗门天 | 结果 |
+|---|---|---|---|---|---|
+| active-median（门控）| 20 → 35（14d） | 3.5 地/天 | 4 点/天 | **第 9 天** | ✅ 7–14 窗口 |
+| casual | 8 → 18（14d） | 1.5 地/天 | 1.5 点/天 | **第 49 天** | 📌 休闲节奏（设计内） |
+| hardcore | 30 → 45（14d） | 6 地/天 | 8 点/天 | **第 4 天** | 📌 偏快（可接受） |
+
+活跃中位家族（20 人起/每天招募/中等占地）**第 9 天**可触发建宗门，在 7–14 天设计窗口内。
+
+### 13-SLG-E.2 繁荣度权重比
+
+| 维度 | 权重 | 第 9 天占比 |
+|---|---|---|
+| `PROSPERITY_W_MEMBER=50` | member×50 | **75%** |
+| `PROSPERITY_W_TERRITORY=10` | territory×10 | **16%** |
+| `PROSPERITY_W_ACTIVITY=5` | activity×5 | **9%** |
+
+member ≫ territory > activity — "人比地重要"设计意图 ✅。
+
+### 13-SLG-E.3 零活跃衰减
+
+| 起始分 | 跌破门槛天数 | 说明 |
+|---|---|---|
+| 2000（刚达线） | **1 天** | 预期行为：刚够线必须持续活跃才能建 |
+| 2500 | 5 天 | 📌 信息性（4 天周末缓冲）|
+| 3000（门控） | **8 天** ✅ | ≥ 7 天判据通过 |
+| 4000 | 14 天 ✅ | |
+| 5000+ | 18+ 天 ✅ | |
+
+**门控判据**：从 ≥3000 分（活跃家族运营分）开始，≥7 天零活跃才跌破门槛 → ✅。
+`decayProsperity` 惰性结算：家族有任意新动作（占地/入队/战斗）时**重新满分计算**，衰减仅在完全无操作期间积累。周常活跃玩家不观测到衰减。
+
+---
+
+## 13-SLG-F. WORLD_CAPACITY / RESET_DELETE_BATCH 工程估算（F 轨）`[已过核验 2026-06-30]`
+
+> 脚本：`server/tools/econ-sim/src/capacityRun.ts`；工程估算（非经济门控），待预发压测确认。
+
+### 13-SLG-F.1 单 shard 文档量（WORLD_CAPACITY=10000）
+
+| 文档类型 | 中位数量 | 峰值数量 |
+|---|---|---|
+| PlayerWorldDoc | 10,000 | 10,000 |
+| TileDoc（已占地块） | 200,000 | 500,000 |
+| FamilyDoc | 500 | 500 |
+| FamilyMemberDoc | 10,000 | 10,000 |
+| MarchDoc（在途） | 20,000 | 40,000 |
+| SiegeDoc（录像） | 5,000 | 20,000 |
+| NationDoc | 10 | 10 |
+| SectDoc | 50 | 50 |
+| AuctionDoc | 500 | 1,000 |
+| **合计** | **246,060** | **581,560** |
+
+TileDoc 占大头（20–50×/玩家），`proceduralTile()` 按需计算未占地块，只持久化已主张/修改地块。
+
+### 13-SLG-F.2 关键查询
+
+| 查询 | 扫描文档 | 索引 | 估算延迟 |
+|---|---|---|---|
+| 家族繁荣度排名（季末一次） | ~500 | worldId + prosperity | < 5ms |
+| 视口地块范围查 | ~2,000 | worldId + (x,y) | < 5ms |
+| 行军到达轮询 | ~20,000 | worldId + arriveAt | < 10ms |
+| 玩家状态点查 | 1 | _id | < 2ms |
+| 全 shard 产出重算（国改时，罕见） | ~200,000 | worldId | < 50ms |
+
+所需索引：`(worldId+x+y)` / `(worldId+arriveAt)` / `(worldId+prosperity)`。
+
+### 13-SLG-F.3 RESET_DELETE_BATCH 清档估算
+
+| 场景 | 文档数 | 批次 | 清档时间 |
+|---|---|---|---|
+| 中位活跃度 | 246,060 | 124 | **1.9s** |
+| 峰值活跃度 | 581,560 | 291 | **4.4s** |
+
+`BATCH=2000`：减少往返次数（124 次中位），单次写操作短（< 20ms），避免长时间锁竞争。最坏情况 < 5s，远在赛季重置离线窗口内。
+
+### 13-SLG-F.4 内存占用
+
+活跃层缓存（20% 在线率，2000 活跃玩家）：**≈ 36 MB / shard**。单 VPS 实例（2–4 GB RAM）可承载 28–56 个 shard → ✅ 充裕。
+
+**注**：F 轨为工程估算，正式压测在预发布阶段：对 staging 注入 10k 合成玩家，`explain()` 对账上述查询延迟。
+
+---
+
 ## 14. 活动 / Live-ops 数值（双倍封顶 · 积分 · 里程碑）`[可调]`
 
 > 机制权威：[`EVENTS_DESIGN.md`](EVENTS_DESIGN.md)；本节为**数字单一源**。红线（ADR-014）：①不新增金币龙头（活动金币计入 §6.1 月度预算，主发软通货/限定皮肤碎片/积分）；②加成期硬封顶且只作用于受体力闸门约束的 PvE 产出；③积分活动期清零、不入持久经济；④PvP 硬墙恒不读活动加成。

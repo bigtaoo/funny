@@ -206,12 +206,12 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
   - **建造/练兵节奏 ✅**（econ-sim `city.ts`/`cityRun.ts`，结论 [§13-SLG-CITY](ECONOMY_NUMBERS.md)：资源门控数周肝、落 60 天窗口、乘子合理；informational：drillYard L13 提速触底 / sticker 自我门控）。
   - **裸经济不破 ✅**（econ-sim `nationBonus.ts`/`nationBonusRun.ts`，结论 [§13-SLG-NATION](ECONOMY_NUMBERS.md)：`NATION_BONUS_PRODUCTION=0.10` 本国 vs 跨国最大差距 **+10.0%**（≪ 阈值 20%）；结构性保证：差距上限恒等于加成值本身，11 个场景全 PASS；高等级他国格（+20% level）可使跨国扩张反超 −8.3%——大世界争夺动机完整）。
 - [x] **SLG_CITY P2 ✅ CLOSED（2026-06-30）**：`wall`（守方主城 garrison HP × wallDefenseMult）/ `cabinet`（transferLoot 折减 effectiveLootRate）/ `academy`（`buildSiegeBlueprints` 第 4 参数 siegeAcademy 叠乘攻方 HP/伤害）全部落地；`buildGateReason` 改用 `BUILDING_KEYS` 全集，wall/academy 正式可建；CityScene 建筑网格更新；i18n zh/en/de；单测 11/11 绿；DRAFT 数值（WALL_DEFENSE_STEP=0.05 / CABINET_PROTECT_STEP=0.02 / ACADEMY_HP_STEP=0.02 / ACADEMY_DAMAGE_STEP=0.015）。
-- [ ] **C 轨**：difficultySim 跑出防御加成胜率 + 廉价结算阈值分类准确率，落判据区间（与 §16.5 数值批次一并）。
-- [ ] **D 轨**：分配方差蒙特卡洛 PASS（极差 ≤ 最强单体）。
-- [ ] **E 轨**：建宗门可达天数 + 衰减半衰期手算落窗口。
-- [ ] **F 轨**：容量/清档批已估算或压测，登记结论。
-- [ ] **登记**：批准后的最终数字写入 [ECONOMY_NUMBERS.md](ECONOMY_NUMBERS.md) **§13-SLG**（新建小节，结构对齐 §13 天梯：可调参数表 + 演算示例 + 经济约束），并把 SLG_DESIGN §17.1 / §21.4 的 `DRAFT` 标记降级为「已过核验（日期）」。
-- [ ] **代码**：数字若变，改 `server/shared/src/slg.ts` 常量，本文与 §13-SLG 同步。
+- [x] **C 轨 ✅ CLOSED（2026-06-30）**：Lanchester 线性模型（`resolveSiege + nationDefenseStrength`，与 worldsvc `applySiege` 一致）；攻方胜率 U[100,2000] = **43.0%**、U[100,500] = **40.4%**，均在 40–55% 窗口；`SIEGE_CHEAP_RATIO=10` 误判率 **0%**（结构性保证：atk/defEff≥10⇒attacker_win）。结论 [§13-SLG-C](ECONOMY_NUMBERS.md)。
+- [x] **D 轨 ✅ CLOSED（2026-06-30）**：蒙特卡洛 10 seeds × 6 配置（sects 10–1000，shards 2–10）**全 PASS**（极差 ≤ 最强单体，典型极差 ≈ 10–15% 上界）；排名权重是主稳定器（去掉排名退化符合预期，确认多维设计必要性）。结论 [§13-SLG-D](ECONOMY_NUMBERS.md)。
+- [x] **E 轨 ✅ CLOSED（2026-06-30）**：活跃中位家族（20 人起、3.5 地/天、4 活跃/天）**第 9 天**建宗门（7–14 天窗口 ✅）；从 ≥3000 分起零活跃 **8 天**跌门槛（≥7 天判据 ✅）；`decayProsperity` 惰性结算，有动作即满分重算，周常活跃玩家不观测衰减 ✅。结论 [§13-SLG-E](ECONOMY_NUMBERS.md)。
+- [x] **F 轨 ✅ CLOSED（2026-06-30，工程估算）**：WORLD_CAPACITY=10000 / shard：~246k（中位）–582k（峰值）文档；热路径查询全为点查或窄范围扫描（< 10ms）；RESET_DELETE_BATCH=2000 清档 **1.9–4.4s**（< 5s）；活跃层缓存 **36 MB / shard**（VPS 可承 28–56 shard）。结论 [§13-SLG-F](ECONOMY_NUMBERS.md)；待预发压测确认。
+- [x] **登记 ✅（2026-06-30）**：C/D/E/F 轨结论已写入 [ECONOMY_NUMBERS.md](ECONOMY_NUMBERS.md) §13-SLG-C / §13-SLG-D / §13-SLG-E / §13-SLG-F；数值未变（常量未动），SLG_DESIGN §17.1 / §21.4 `DRAFT` 标记按上线后压测策略保留（见 §10）。
+- [x] **代码**：C/D/E/F 轨核验数字与 `server/shared/src/slg.ts` 当前常量一致，无需改动。
 
 **签字人**：A/A-coin 轨 = 经济负责人（动持久经济）；B/C 轨 = 战斗/SLG 玩法负责人；D/E/F 轨 = 实现者自核 + 复核即可。
 
