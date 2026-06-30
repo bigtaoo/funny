@@ -1,4 +1,4 @@
-// gateway → meta internal calls (M17). Currently used in one place: fetch the player's current ELO
+// gateway → meta internal calls (M17). Used to fetch the player's ELO (+ seasonPeakElo for deck validation)
 // before enqueueing for ranked, and pass it into matchsvc enqueue so matchsvc stays DB-free (SERVER_API.md §8.5).
 // Internal auth: X-Internal-Key (shared NW_INTERNAL_KEY). meta unavailable → fall back to initial rating.
 import { INITIAL_ELO, internalHeaders } from '@nw/shared';
@@ -13,17 +13,19 @@ export class MetaClient {
     return this.baseUrl !== null;
   }
 
-  /** Fetch ELO; meta not configured / error → return INITIAL_ELO (ranked can still match, starting from the initial score). */
-  async getElo(accountId: string): Promise<number> {
-    if (!this.baseUrl) return INITIAL_ELO;
+  /** Fetch ELO and season peak ELO; meta not configured / error → return INITIAL_ELO for both. */
+  async getElo(accountId: string): Promise<{ elo: number; seasonPeakElo: number }> {
+    if (!this.baseUrl) return { elo: INITIAL_ELO, seasonPeakElo: INITIAL_ELO };
     try {
       const url = `${this.baseUrl}/internal/elo?accountId=${encodeURIComponent(accountId)}`;
       const res = await fetch(url, { headers: internalHeaders('gateway', this.internalKey) });
-      if (!res.ok) return INITIAL_ELO;
-      const body = (await res.json()) as { elo?: number };
-      return typeof body.elo === 'number' ? body.elo : INITIAL_ELO;
+      if (!res.ok) return { elo: INITIAL_ELO, seasonPeakElo: INITIAL_ELO };
+      const body = (await res.json()) as { elo?: number; seasonPeakElo?: number };
+      const elo = typeof body.elo === 'number' ? body.elo : INITIAL_ELO;
+      const seasonPeakElo = typeof body.seasonPeakElo === 'number' ? body.seasonPeakElo : elo;
+      return { elo, seasonPeakElo };
     } catch {
-      return INITIAL_ELO;
+      return { elo: INITIAL_ELO, seasonPeakElo: INITIAL_ELO };
     }
   }
 

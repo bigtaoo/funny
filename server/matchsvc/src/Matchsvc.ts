@@ -62,6 +62,8 @@ interface Slot {
   publicId: string;
   /** Equipped title id (from meta /internal/profile; empty string = no title). */
   equippedTitle: string;
+  /** PvP deck (card ids; validated and resolved by gateway; empty = engine uses defaultPvpDeck). */
+  deck: string[];
   side: 0 | 1;
   ready: boolean;
   connected: boolean;
@@ -143,12 +145,12 @@ export class Matchsvc {
    * matches don't show room slots, but after the match starts the opponent's publicId must be
    * written into the ticket → match_start for the in-game profile popup.
    */
-  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', platform = ''): void {
+  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', platform = '', deck: string[] = []): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       log.warn('enqueue ignored: already in room/queue', { accountId });
       return;
     }
-    this.matchmaking.enqueue(accountId, name, publicId, elo, equippedTitle, platform);
+    this.matchmaking.enqueue(accountId, name, publicId, elo, equippedTitle, platform, deck);
     log.info('enqueued for ranked', { accountId, elo, queueSize: this.matchmaking.size });
   }
 
@@ -185,14 +187,14 @@ export class Matchsvc {
     log.info('ranked pair matched', { a: a.accountId, b: b.accountId, eloA: a.elo, eloB: b.elo });
     this.startMatch(
       'ranked',
-      { accountId: a.accountId, name: a.name, publicId: a.publicId, equippedTitle: a.equippedTitle },
-      { accountId: b.accountId, name: b.name, publicId: b.publicId, equippedTitle: b.equippedTitle },
+      { accountId: a.accountId, name: a.name, publicId: a.publicId, equippedTitle: a.equippedTitle, deck: a.deck },
+      { accountId: b.accountId, name: b.name, publicId: b.publicId, equippedTitle: b.equippedTitle, deck: b.deck },
     );
   }
 
   // ───────────────────────── friendly rooms ─────────────────────────
 
-  roomCreate(accountId: string, name: string, publicId: string, equippedTitle = ''): void {
+  roomCreate(accountId: string, name: string, publicId: string, equippedTitle = '', deck: string[] = []): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       this.push(accountId, { kind: 'room_error', code: 'ALREADY_IN_ROOM', message: 'leave first' });
       return;
@@ -202,7 +204,7 @@ export class Matchsvc {
     const room: Room = {
       roomId,
       code,
-      slots: [{ accountId, name, publicId, equippedTitle, side: 0, ready: false, connected: true }],
+      slots: [{ accountId, name, publicId, equippedTitle, deck, side: 0, ready: false, connected: true }],
       phase: RoomPhase.WAITING,
       reapTimer: null,
     };
@@ -213,7 +215,7 @@ export class Matchsvc {
     this.broadcast(room);
   }
 
-  roomJoin(accountId: string, name: string, publicId: string, code: string, equippedTitle = ''): void {
+  roomJoin(accountId: string, name: string, publicId: string, code: string, equippedTitle = '', deck: string[] = []): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       this.push(accountId, { kind: 'room_error', code: 'ALREADY_IN_ROOM', message: 'leave first' });
       return;
@@ -230,7 +232,7 @@ export class Matchsvc {
       this.push(accountId, { kind: 'room_error', code: 'ROOM_FULL', message: 'room is full' });
       return;
     }
-    room.slots.push({ accountId, name, publicId, equippedTitle, side: 1, ready: false, connected: true });
+    room.slots.push({ accountId, name, publicId, equippedTitle, deck, side: 1, ready: false, connected: true });
     this.accountRoom.set(accountId, room.roomId);
     log.info('room joined', { accountId, code, roomId: room.roomId });
     this.broadcast(room);
@@ -254,8 +256,8 @@ export class Matchsvc {
       this.destroyRoom(room); // lobby room's job done; match state is now owned by gameserver
       this.startMatch(
         'friendly',
-        { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle },
-        { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId, equippedTitle: s1!.equippedTitle },
+        { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle, deck: s0!.deck },
+        { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId, equippedTitle: s1!.equippedTitle, deck: s1!.deck },
       );
     }
   }
@@ -277,8 +279,8 @@ export class Matchsvc {
     this.destroyRoom(room); // lobby room's job done; match state is now owned by gameserver
     this.startMatch(
       'friendly',
-      { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle },
-      { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId, equippedTitle: s1!.equippedTitle },
+      { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle, deck: s0!.deck },
+      { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId, equippedTitle: s1!.equippedTitle, deck: s1!.deck },
     );
   }
 
@@ -338,8 +340,8 @@ export class Matchsvc {
 
   private startMatch(
     mode: 'friendly' | 'ranked',
-    a: { accountId: string; name: string; publicId: string; equippedTitle: string },
-    b: { accountId: string; name: string; publicId: string; equippedTitle: string },
+    a: { accountId: string; name: string; publicId: string; equippedTitle: string; deck: string[] },
+    b: { accountId: string; name: string; publicId: string; equippedTitle: string; deck: string[] },
   ): void {
     const gameUrl = this.games.pick();
     if (!gameUrl) {
@@ -355,7 +357,11 @@ export class Matchsvc {
     }
     const roomId = randomUUID();
     const seed = randomInt(1, 2 ** 48); // < 2^48, within safe integer range
-    log.info('match starting', { mode, roomId, gameUrl, a: a.accountId, b: b.accountId, seed });
+    // a = side 0 (top), b = side 1 (bottom) — both tickets carry both decks for deterministic engine construction.
+    const decks = a.deck.length > 0 || b.deck.length > 0
+      ? { top: a.deck, bottom: b.deck }
+      : undefined;
+    log.info('match starting', { mode, roomId, gameUrl, a: a.accountId, b: b.accountId, seed, hasDecks: !!decks });
 
     const sign = (
       self: { accountId: string; name: string; publicId: string; equippedTitle: string },
@@ -372,6 +378,7 @@ export class Matchsvc {
         opponentTitle: opp.equippedTitle || undefined,
         gameUrl,
         accountId: self.accountId,
+        ...(decks ? { decks } : {}),
       };
       return signTicket(claims, { key: this.internalKey, ttlSec: this.ticketTtlSec });
     };

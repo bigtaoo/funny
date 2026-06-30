@@ -15,6 +15,8 @@ export interface QueueEntry {
   enqueuedAt: number;
   /** Platform (used for feature flag targeted evaluation; defaults to empty string). */
   platform: string;
+  /** PvP deck (card ids; validated and resolved by gateway; defaults to empty = engine uses defaultPvpDeck). */
+  deck: string[];
   /**
    * Timestamp (ms) of the last bot-fallback timeout callback firing. Default = never fired (first check uses enqueuedAt).
    * Not fire-once: when the flag is off the entry stays in queue and is re-evaluated every botFallbackMs (throttled to avoid firing every tick),
@@ -79,9 +81,9 @@ export class Matchmaking {
   }
 
   /** Enqueue (re-enqueuing the same account replaces the old entry and resets the wait timer). Attempts one pairing pass after enqueuing. */
-  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', platform = ''): void {
+  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', platform = '', deck: string[] = []): void {
     this.remove(accountId);
-    this.queue.push({ accountId, name, publicId, equippedTitle, elo, enqueuedAt: this.now(), platform });
+    this.queue.push({ accountId, name, publicId, equippedTitle, elo, enqueuedAt: this.now(), platform, deck });
     this.ensureTimer();
     this.tick();
   }

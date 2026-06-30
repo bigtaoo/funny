@@ -31,6 +31,12 @@ export interface TicketClaims {
    * Irrelevant to server game logic (M16); accountId is passed through only as a reporting identifier — no database read occurs.
    */
   accountId: string;
+  /**
+   * Both players' decks (PVP_LOADOUT §6.2). Each client receives both so it can construct the
+   * GameEngine with matching UniformCardDrawPolicy for top + bottom player.
+   * Absent for pre-P3 clients or when no deck was submitted (gameserver/client fall back to defaultPvpDeck).
+   */
+  decks?: { top: string[]; bottom: string[] };
 }
 
 interface TicketPayload extends TicketClaims {

@@ -66,6 +66,10 @@ export type ServerMsg =
       opponentPublicId: string;
       /** Opponent's equipped title id (empty string = no title; S10). */
       opponentTitle?: string;
+      /** Side-0 player's deck (PVP_LOADOUT §6.2); both sides receive both decks for deterministic engine construction. */
+      topDeck?: string[];
+      /** Side-1 player's deck. */
+      bottomDeck?: string[];
     }
   | { case: 'frame_batch'; toFrame: number; frames: FrameCmds[] }
   | {
@@ -215,6 +219,8 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
           opponent_name: msg.opponentName,
           opponent_public_id: msg.opponentPublicId,
           ...(msg.opponentTitle ? { opponent_title: msg.opponentTitle } : {}),
+          ...(msg.topDeck?.length ? { top_deck: msg.topDeck } : {}),
+          ...(msg.bottomDeck?.length ? { bottom_deck: msg.bottomDeck } : {}),
         },
       };
       break;

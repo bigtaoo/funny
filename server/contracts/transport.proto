@@ -46,7 +46,10 @@ message FrameBatch {
 }
 
 // ── Client → Server ──────────────────────────────────
-message RoomCreate { MatchMode mode = 1; }
+message RoomCreate {
+  MatchMode       mode = 1;
+  repeated string deck = 2;   // PvP loadout: card ids in the player's chosen deck (PVP_LOADOUT §4); empty = server assigns defaultPvpDeck
+}
 message RoomJoin   { string code = 1; }
 message RoomReady  { bool ready = 1; }
 message RoomLeave  {}
@@ -94,14 +97,16 @@ message RoomState {
 }
 
 message MatchStart {
-  string    room_id            = 1;
-  MatchMode mode               = 2;
-  uint64    seed               = 3;
-  uint32    start_frame        = 4;
-  uint32    local_side         = 5;
-  string    opponent_name      = 6;   // opponent display name (UI use, display only)
-  string    opponent_public_id = 7;   // opponent 9-digit numeric public id (UI use, display only)
-  string    opponent_title     = 8;   // opponent's equipped title id (UI use, display only; empty string = no title)
+  string          room_id            = 1;
+  MatchMode       mode               = 2;
+  uint64          seed               = 3;
+  uint32          start_frame        = 4;
+  uint32          local_side         = 5;
+  string          opponent_name      = 6;   // opponent display name (UI use, display only)
+  string          opponent_public_id = 7;   // opponent 9-digit numeric public id (UI use, display only)
+  string          opponent_title     = 8;   // opponent's equipped title id (UI use, display only; empty string = no title)
+  repeated string top_deck           = 9;   // side-0 player's deck (PVP_LOADOUT §6.2); both sides receive both decks for deterministic engine construction
+  repeated string bottom_deck        = 10;  // side-1 player's deck
 }
 
 message ConnResync {

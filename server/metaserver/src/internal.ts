@@ -106,8 +106,9 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
     const doc = await cols.saves.findOne({ _id: accountId });
     const elo = doc?.save.pvp.elo ?? INITIAL_ELO;
-    log.info('GET /internal/elo', { accountId, elo, hasSave: !!doc });
-    return reply.send({ elo });
+    const seasonPeakElo = doc?.save.pvp.seasonPeakElo ?? elo;
+    log.info('GET /internal/elo', { accountId, elo, seasonPeakElo, hasSave: !!doc });
+    return reply.send({ elo, seasonPeakElo });
   });
 
   // ── GET /internal/profile?accountId= ──────────────────────────────────
