@@ -186,6 +186,19 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
   - `CityScene` UI（含练兵并入）+ 契约 + i18n。
   - 赛季清空接 `resetSeason`。
   - **验收**：graphite/sticker 有产有耗、troopCap 随 drillYard 成长、建造队列加速可跑；worldsvc e2e（建造扣资源/完工生效/门控拒绝/加速/赛季清空）+ client tsc + build。
+
+> **P1 实现进度（2026-06-30，branch `slg-city-p1`，服务端先行刀）**
+> 已落（纯服务端，未碰 client UI）：
+> - **biomeAt 四分**（`shared/slg.ts`）：`ink<0.30<paper<0.55<graphite<0.78<metal`，graphite 获地图 faucet；`sticker` 永不进 biome（主城自产）。⚠ ADR-022 确定性注记：改的是程序地图，已占地块持久化 resType 不变；上线后再改须按赛季版本闸门，勿改活动赛季地图。
+> - **建筑数据模型 + 纯函数**（`shared/slg.ts`）：`BuildingKey`/`BUILDING_KEYS(_P1)`/常量（DESK_MAX_LEVEL=20、BUILD_YIELD_STEP=0.05、STICKER_SELF_BASE=200、CABINET_CAP_STEP=0.1、DRILL_TROOPCAP_STEP=500、DRILL_TRAIN_SPEED_STEP=0.04、BUILD_QUEUE_SLOTS=1 等，全 DRAFT）+ `buildingYieldMult`/`buildingSelfYield`/`resourceCapFor`/`troopCapFor`/`drillTrainMult`/`trainQueueMaxFor`/`buildCost`/`buildTimeSec`/`buildGateReason`（单测 8 例全绿）。
+> - **数据库**（`worldsvc/db.ts`）：`PlayerWorldDoc.buildings`/`buildQueue` + `BuildQueueEntry`。
+> - **注入**（`worldsvc/service.ts`）：`recomputeYield`（末乘建筑乘数 + sticker 自产，支持 buildingsOverride 解决完工前算率的写读时序）/`settle`（cap 走 `resourceCapFor`）/`trainTroops`（队列上限 `trainQueueMaxFor` + 时长 ×`drillTrainMult`）/`joinWorld`（初始 `{desk:1}`、troopCap 走 `troopCapFor`）。
+> - **服务方法 + 调度**：`upgradeBuilding`/`speedupBuild`/`processCompletedBuilds`/`applyDueBuilds`（复刻 trainingQueue 链式队列）+ scheduler 接入 + httpApi `POST /world/build/upgrade|speedup`。
+> - **契约**：`openapi-world.yml` 加 `PlayerWorldView.buildings/buildQueue`、`BuildingKey` enum、两端点。
+> - **赛季清空**：`resetSeason` 已整删 `playerWorld` 文档（含 buildings/buildQueue），跨季只留 family/材料，无需额外清理，符合 D-CITY-1。
+> - 验证：`@nw/shared` + `@nw/worldsvc` `tsc -b` 全绿；shared 纯函数单测 8/8 绿；worldsvc e2e（`city-buildings.e2e.test.ts`，7 例）已写，本机 Mongo 不可达（docker 处 Windows 容器模式）→ 与全仓 e2e 一致 skip，待有 Mongo 环境跑实测。
+> 待续（P1 收尾，下一刀）：**client `CityScene` UI + 练兵并入 + i18n（`city.*` 三语）**；client 侧 `openapi-world.ts` 重生（gen-openapi）；建筑数值经 `SLG_ECONOMY_CHECK` 核验后落 `ECONOMY_NUMBERS §13-SLG-CITY`。
+
 - **P2 — 城防 + 科技**：`wall` 注入主城围攻 + `cabinet` 护掠夺 + `academy` 赛季蓝图 buff（独立注入口，守红线）。
 - **P3 — 委任内政官**：角色卡派进建筑加成（角色养成接入 SLG 内政），数值按角色属性。
 

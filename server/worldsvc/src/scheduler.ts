@@ -1,6 +1,7 @@
 // worldsvc scheduler loop (S8-2 march + training + S8-5 auction expiry).
 // March: periodically calls WorldService.processDueArrivals to settle all arrivals (capture / reinforce / retreat).
 // Training: periodically calls WorldService.processCompletedTraining to convert completed batches into troop strength (S8-2).
+// Builds: periodically calls WorldService.processCompletedBuilds to apply completed home-city building upgrades (SLG_CITY_DESIGN P1).
 // Auction: periodically calls AuctionService.processExpiredAuctions to handle expired listings (returns the seller's lot).
 // All three share a single setInterval (tickMs = 2s); Mongo index scan is authoritative (correct even without Redis).
 // timer uses unref() to avoid blocking process exit; running guard prevents re-entrant ticks.
@@ -24,6 +25,9 @@ export function startScheduler(svc: WorldService, auctionSvc?: AuctionService, t
       svc
         .processCompletedTraining()
         .catch((e) => console.error('[world-scheduler] processCompletedTraining failed:', (e as Error).message)),
+      svc
+        .processCompletedBuilds()
+        .catch((e) => console.error('[world-scheduler] processCompletedBuilds failed:', (e as Error).message)),
     ];
     if (auctionSvc) {
       tasks.push(
