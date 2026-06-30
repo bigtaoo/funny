@@ -30,9 +30,9 @@ jobs:
     # Skip the entire job if repo variable CLIENT_DEPLOY_ENABLED is not set to true (avoids red builds before setup is complete).
     if: ${{ vars.CLIENT_DEPLOY_ENABLED == 'true' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
