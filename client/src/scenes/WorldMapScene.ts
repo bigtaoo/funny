@@ -19,6 +19,7 @@ import { WorldApiError } from '../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/proto/transport';
 import { proceduralTile } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../render/resAtlasLoader';
+import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../render/cityAtlasLoader';
 
 // ── Public callbacks ────────────────────────────────────────────────────────
 
@@ -212,6 +213,11 @@ export class WorldMapScene implements Scene {
   private mapGfxL3!: PIXI.Graphics;
   private l3Dirty = false;
 
+  // City sprite layer: 3×3-tile building sprites for base tiles, sits above the tile pool.
+  private cityLayer!: PIXI.Container;
+  // Keyed by "tx:ty". Each value is a Container holding a Sprite (image) + Graphics (level dots).
+  private citySprites: Map<string, PIXI.Container> = new Map();
+
   // Overlay: march arrows, selected tile highlight, capital stars (fast, always redrawn).
   private overlayGfx!: PIXI.Graphics;
 
@@ -260,6 +266,10 @@ export class WorldMapScene implements Scene {
 
     // Lazy-load resource motif atlas (fire-and-forget; tiles fall back to color if not ready).
     loadResAtlas().catch((err) => console.warn('[WorldMapScene] res atlas load failed:', err));
+    // Lazy-load city sprite atlas; once ready, redraw tiles to drop programmatic icons.
+    loadCityAtlas().then(() => {
+      if (!this.destroyed) this.renderMap();
+    }).catch((err) => console.warn('[WorldMapScene] city atlas load failed:', err));
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -286,6 +296,10 @@ export class WorldMapScene implements Scene {
     // Tile pool container (L1/L2)
     this.poolContainer = new PIXI.Container();
     mapClip.addChild(this.poolContainer);
+
+    // City building sprites (above tiles, below overlay)
+    this.cityLayer = new PIXI.Container();
+    mapClip.addChild(this.cityLayer);
 
     // Overlay: capitals, march arrows, selected tile highlight
     this.overlayGfx = new PIXI.Graphics();
@@ -455,6 +469,7 @@ export class WorldMapScene implements Scene {
   /** Modulo-wrap pool update: reposition all slots, redraw only those whose
    *  tile content changed (i.e. that scrolled to a new map position). */
   private refreshPool(): void {
+    this.refreshCityLayer();
     if (this.zoom === 3) return;
     const { tile: tp, poolW, poolH } = this.zc;
     const x0 = Math.floor(-this.panX / tp);
@@ -470,6 +485,110 @@ export class WorldMapScene implements Scene {
         if (slot.tx === tx && slot.ty === ty) continue;
         slot.tx = tx; slot.ty = ty;
         this.drawTileSlot(slot, tx, ty);
+      }
+    }
+  }
+
+  /**
+   * Position and populate city building sprites for all base tiles currently
+   * in the viewport. Each city occupies a 3×3-tile sprite centered on the base
+   * tile — the image hovers above the tile pool layer so it never gets covered
+   * by adjacent tiles.
+   *
+   * Programmatic level-within-tier distinction: filled / hollow dots below the
+   * city image indicate how far into the current tier the city has upgraded.
+   *   Tier 1 (lv 1-2):  ● ○  /  ● ●
+   *   Tier 2 (lv 3-5):  ● ○ ○  /  ● ● ○  /  ● ● ●
+   *   (etc.)
+   */
+  private refreshCityLayer(): void {
+    if (!isCityAtlasReady()) {
+      this.cityLayer.visible = false;
+      return;
+    }
+    this.cityLayer.visible = true;
+
+    const tp = this.tp;
+    const x0 = Math.floor(-this.panX / tp) - 1;
+    const y0 = Math.floor(-this.panY / tp) - 1;
+    const visW = Math.ceil(this.w / tp) + 4;
+    const visH = Math.ceil((this.h - HUD_H) / tp) + 4;
+
+    const seen = new Set<string>();
+
+    for (let dy = 0; dy < visH; dy++) {
+      for (let dx = 0; dx < visW; dx++) {
+        const tx = x0 + dx;
+        const ty = y0 + dy;
+        if (tx < 0 || ty < 0 || tx >= this.mapW || ty >= this.mapH) continue;
+
+        const cacheKey = `${tx}:${ty}`;
+        const tile = this.tileCache.get(cacheKey);
+        if (tile?.type !== 'base') continue;
+
+        seen.add(cacheKey);
+
+        const lv = tile.level ?? 1;
+        const tier = lv <= 2 ? 1 : lv <= 5 ? 2 : lv <= 8 ? 3 : 4;
+        const tex = getCityTexture(tier as 1 | 2 | 3 | 4);
+        if (!tex) continue;
+
+        // Reuse or create city container
+        let cityC = this.citySprites.get(cacheKey);
+        if (!cityC) {
+          const sprite = new PIXI.Sprite(tex);
+          sprite.name = 'img';
+          sprite.anchor.set(0.5);
+          const dotGfx = new PIXI.Graphics();
+          dotGfx.name = 'dots';
+          cityC = new PIXI.Container();
+          cityC.addChild(sprite);
+          cityC.addChild(dotGfx);
+          this.cityLayer.addChild(cityC);
+          this.citySprites.set(cacheKey, cityC);
+        }
+
+        // Position at tile center
+        cityC.x = this.panX + (tx + 0.5) * tp;
+        cityC.y = this.panY + (ty + 0.5) * tp;
+
+        // Resize sprite to 3×3 tiles
+        const sprite = cityC.getChildByName('img') as PIXI.Sprite;
+        if (sprite.texture !== tex) sprite.texture = tex;
+        sprite.width  = 3 * tp;
+        sprite.height = 3 * tp;
+
+        // Redraw level-within-tier dots
+        const dots = cityC.getChildByName('dots') as PIXI.Graphics;
+        dots.clear();
+        const inkColor = tile.mine ? 0xcc2222 : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0x2266cc : 0x888888));
+        const tierStarts = [0, 0, 2, 5, 8] as const;
+        const tierSizes  = [0, 2, 3, 3, 2] as const;
+        const maxInTier = tierSizes[tier];
+        const lvInTier  = lv - tierStarts[tier]; // 1-indexed
+        if (maxInTier > 1) {
+          const dotR  = Math.max(2.5, tp * 0.09);
+          const gap   = dotR * 2.7;
+          const totalW = maxInTier * gap - gap + 2 * dotR;
+          const bx    = -totalW / 2 + dotR;
+          const by    = tp * 1.52 + dotR;   // just below sprite bottom edge
+          dots.lineStyle(1, inkColor, 0.85);
+          for (let d = 0; d < maxInTier; d++) {
+            const cx = bx + d * gap;
+            dots.beginFill(d < lvInTier ? inkColor : 0xfff8f0, d < lvInTier ? 0.9 : 0.85);
+            dots.drawCircle(cx, by, dotR);
+            dots.endFill();
+          }
+        }
+      }
+    }
+
+    // Destroy sprites that have scrolled off-screen
+    for (const [key, cityC] of this.citySprites) {
+      if (!seen.has(key)) {
+        this.cityLayer.removeChild(cityC);
+        cityC.destroy({ children: true });
+        this.citySprites.delete(key);
       }
     }
   }
@@ -522,8 +641,8 @@ export class WorldMapScene implements Scene {
       this.drawResMotif(g, tile.resType, tile.level ?? 1, tp);
     }
 
-    // City icon on capital tiles (placeholder until AI city images are available).
-    if (tile?.type === 'base') {
+    // City icon on capital tiles: sprite layer handles this once the atlas is ready.
+    if (tile?.type === 'base' && !isCityAtlasReady()) {
       this.drawCityIcon(g, tile.mine ?? false, tile.ally ?? false, tile.level ?? 1, tp);
     }
 
@@ -2158,6 +2277,8 @@ export class WorldMapScene implements Scene {
     this.unsubs.length = 0;
     for (const s of this.pool) s.g.destroy();
     this.pool = [];
+    for (const c of this.citySprites.values()) c.destroy({ children: true });
+    this.citySprites.clear();
     this.container.destroy({ children: true });
   }
 }
