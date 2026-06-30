@@ -94,6 +94,14 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 - **国民加成（S8-6.5 / G1）**：`NATION_BONUS_PRODUCTION=0.10` 在 `recomputeYield`（己方占领首府的 Voronoi 区内格产率 ×1.1）、`NATION_BONUS_DEFENSE=0.15` 在 `applySiege`（守军处己方首府区经 `shared.nationDefenseStrength` ×1.15 再喂 `resolveSiege`）。归属判定 v1 = 首府占领者即国民代表（无逐玩家国籍字段）；NPC 扫荡不享
 - **S8-3b（待办）**：围攻经 `/gw/judge` 引擎复算替代廉价线性结算（判负翻转 = G3，仍 log mismatch 未启用）
 
+## 经济核验工具（econ-sim，A 轨）
+
+- `server/tools/econ-sim/`（纯 TS，`import @nw/shared`，**不连库**，经济侧的 difficultySim 对应物）。跑法 `cd server/tools/econ-sim && npx tsx src/index.ts`（或带场景文件参数）；`npx tsc --noEmit` 自检。
+- 实现 SLG_ECONOMY_CHECK **A 轨**（persistent-economy 聚合）：按 per-head 口径聚合一个 SLG 赛季全服 settle 发放量，跑 §2.3 判据 PASS/FAIL。conservative/baseline/aggressive 三场景（`scenarios/*.json`）。
+- **材料→金币估值**（`src/valuation.ts`）：从 `DUPE_REFUND_COINS÷GACHA_MATERIAL_GRANTS` 自洽反推保守上界（scrap 1 / lead 16.67 / binding 400），永不与代码脱节。**binding=400 与 participant 人头数是结论最大杠杆**。
+- 门控判据 = 人均稀释 / 全服通胀（**比材料龙头不比金币龙头**）/ coins=0；头部倾斜与「vs 金币龙头」是 `Judgment.informational` 非门控行。首跑三场景 CORE 全 PASS（2026-06-30）。结论登记 `ECONOMY_NUMBERS §13-SLG`。
+- B 轨（赛季资源季内产消）尚未实现，待 SLG_CITY 数值核验时补。
+
 ## social/admin/analytics 要点
 
 - **好友/私聊/邮件（S6）**：meta 存数据，gateway 投递实时 push；发送走 REST，接收走 push
