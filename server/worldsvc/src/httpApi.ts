@@ -85,6 +85,11 @@ export function startHttpApi(
         return send(res, 204, {});
       }
 
+      // Public: active season number (§20.8). No auth required; lets the client resolve CURRENT_SEASON dynamically.
+      if (method === 'GET' && req.url?.split('?')[0] === '/world/active-season') {
+        return send(res, 200, ok({ season: await svc.getActiveSeasonNo() }));
+      }
+
       // —— Internal ops branch (C4/§17.7): /admin/world/* uses X-Internal-Key, checked before JWT. ——
       // Any logged-in player could previously call /admin/world/reset to wipe an entire region (C4 security hole); now moved out of the JWT branch.
       {

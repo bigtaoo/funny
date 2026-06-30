@@ -71,13 +71,8 @@ const PLAYER_PUBLIC_ID_KEY = 'nw_player_public_id';
 const PLAYER_AVATAR_KEY = 'nw_player_avatar';
 /** Coin cost to change the display name. Mirrors server RENAME_COST; server authoritative. */
 const RENAME_COST = 500;
-/**
- * Current SLG season number (G6/§20): worldsvc routes by `s{season}-{shard}` multi-shard scheme;
- * the client calls resolveSeason with this value before entering the map to obtain the real worldId.
- * Temporarily a client-side constant; will be provided by metaserver once S11 ladder-season metadata
- * is delivered (§20.8).
- */
-const CURRENT_SEASON = 1;
+/** Fallback season number used when worldsvc is unreachable (dev/offline). */
+const FALLBACK_SEASON = 1;
 
 export interface AppCore {
   /** First launch → intro; otherwise entry gating (login vs lobby). Call once. */
@@ -629,7 +624,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const ensureWorldId = async (): Promise<string> => {
       if (slgWorldId) return slgWorldId;
       if (!worldApi) throw new Error('no world api');
-      const w = await worldApi.resolveSeason(CURRENT_SEASON);
+      const season = await worldApi.getActiveSeason().then((r) => r.season).catch(() => FALLBACK_SEASON);
+      const w = await worldApi.resolveSeason(season);
       slgWorldId = w.worldId;
       return slgWorldId;
     };
@@ -759,17 +755,17 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     inLobby = false;
     // G6/§20: resolve the shard for this account based on the current season (sticky > family > random,
     // overflow opens a new shard); worldId is no longer hard-coded.
-    // CURRENT_SEASON is temporarily a client-side constant; metaserver will supply it once S11 ladder-season
-    // metadata is delivered (§20.8).
     // 3-second timeout prevents the button from hanging when worldsvc is not running
     // (Windows Firewall may drop TCP RST, causing long waits).
-    const fallbackId = `s${CURRENT_SEASON}-0`;
     let navigated = false;
     const nav = (worldId: string): void => { if (!navigated) { navigated = true; goWorldMap(worldApi, worldId); } };
-    const timer = setTimeout(() => nav(fallbackId), 3000);
-    void worldApi.resolveSeason(CURRENT_SEASON)
+    const timer = setTimeout(() => nav(`s${FALLBACK_SEASON}-0`), 3000);
+    void worldApi.getActiveSeason()
+      .then((r) => r.season)
+      .catch(() => FALLBACK_SEASON)
+      .then((season) => worldApi.resolveSeason(season))
       .then((r) => { clearTimeout(timer); nav(r.worldId); })
-      .catch(() => { clearTimeout(timer); nav(fallbackId); });
+      .catch(() => { clearTimeout(timer); nav(`s${FALLBACK_SEASON}-0`); });
   }
 
   function goWorldMap(worldApi: WorldApiClient, worldId: string): void {

@@ -2573,6 +2573,19 @@ export class WorldService {
   }
 
   /**
+   * Return the highest season number among currently open/active worlds (§20.8).
+   * Used by GET /world/active-season so the client does not need to hard-code CURRENT_SEASON.
+   * Falls back to 1 when no worlds exist yet (dev/test environments).
+   */
+  async getActiveSeasonNo(): Promise<number> {
+    const w = await this.deps.cols.worlds.findOne(
+      { status: { $in: ['open', 'active'] } },
+      { sort: { season: -1 }, projection: { season: 1 } },
+    );
+    return w?.season ?? 1;
+  }
+
+  /**
    * Open a season: create the world document (idempotent — if it already exists, update status → open).
    * worldId must have the form `s{season}-{shard}`.
    */

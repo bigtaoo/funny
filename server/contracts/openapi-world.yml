@@ -509,6 +509,28 @@ paths:
 
   # ── World ──────────────────────────────────────────────────────────────────
 
+  /world/active-season:
+    get:
+      operationId: getActiveSeason
+      summary: "Return the current active SLG season number (§20.8). Public endpoint — no auth required."
+      responses:
+        '200':
+          description: Active season
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [season]
+                        properties:
+                          season:
+                            type: integer
+                            description: Current active SLG world season number
+
   /world/map:
     get:
       operationId: getWorldMap
