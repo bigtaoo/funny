@@ -205,9 +205,17 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 > - **i18n**：`city.*` 前缀三语（zh/en/de）——建筑名称、资源标签、加成说明、错误提示、队列显示；`world.actEnterCity` 三语。
 > - **验证**：全量 `client tsc --noEmit` 零错误（main + node_modules 环境校验通过）。
 > - **建筑数值已过 B 轨节奏核验**（2026-06-30，econ-sim `city.ts`，结论登记 [`ECONOMY_NUMBERS §13-SLG-CITY`](ECONOMY_NUMBERS.md)）：资源门控的数周肝、落 60 天赛季窗口、满级乘子合理 ✅；两条 informational 注记（drillYard 提速 L13 触底 / sticker 自我门控）。数值仍标 DRAFT（终态判据=上线后实测对账）。
-> - 遗留：P2 `wall`/`cabinet` 护掠/`academy` 蓝图 buff 见下方 P2 条目。
+> **P2 全部完成（2026-06-30，branch `slg-city-p2`）**：
+> - **`wall`（城墙）**：`wallDefenseMult(buildings)` = 1 + lvl×WALL_DEFENSE_STEP(0.05)；worldsvc `applySiege` 在 `target.type==='base'` 时对 defenderConfig.garrison 调 `scaleArmyHp(garrison, wallMult)`，与国民加成叠乘。defender 提前 fetch（移到 runSiegeBattle 之前）。
+> - **`cabinet`（文件柜护掠）**：`cabinetLootProtect(buildings)` = min(0.8, lvl×CABINET_PROTECT_STEP(0.02))；`transferLoot` 中 `effectiveLootRate = SIEGE_LOOT_RATE×(1−protection)` 替代原来的固定率。
+> - **`academy`（书院蓝图 buff）**：engine `GameConfig` 加 `siegeAcademy?{hp,damage}` 字段；`buildSiegeBlueprints` 4th param 在 `clampEffectCaps` 后叠乘（独立注入口，守红线）；worldsvc 从 `pw.buildings` 算 buff 注入 `runSiegeBattle`。
+> - **`buildGateReason`**：改用 `BUILDING_KEYS`（全 10 种），wall/academy 按正常 desk 等级门控，不再 'building not buildable yet'。
+> - **`CityScene`**：建筑网格从 `BUILDING_KEYS_P1`→`BUILDING_KEYS`（wall/academy 真实可建）；详情卡显示实际数值（DRAFT）。
+> - **i18n**：`city.bonusWallHp`/`city.bonusAcademyHp`/`city.bonusAcademyDmg`（zh/en/de）。
+> - **单测**：city-buildings.test.ts P2 新增 3 例（wallDefenseMult/cabinetLootProtect/academyBuff），11 例全绿。
+> - 验证：shared/engine `tsc -b` 全绿；worldsvc `tsc -b` 全绿；client `tsc --noEmit` 零错误。数值仍 DRAFT（终态判据=上线后实测）。
 
-- **P2 — 城防 + 科技**：`wall` 注入主城围攻 + `cabinet` 护掠夺 + `academy` 赛季蓝图 buff（独立注入口，守红线）。
+- **P2 ✅ CLOSED（2026-06-30）** — `wall` 注入主城围攻 + `cabinet` 护掠夺 + `academy` 赛季蓝图 buff（独立注入口，守红线）。
 - **P3 — 委任内政官**：角色卡派进建筑加成（角色养成接入 SLG 内政），数值按角色属性。
 
 ---

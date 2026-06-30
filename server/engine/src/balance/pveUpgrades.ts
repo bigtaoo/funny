@@ -144,20 +144,29 @@ export function buildCampaignBlueprints(
  *   ① Express the "ranked red line" at the type level (siege uses this; netplay/pvp always uses buildPvpBlueprints,
  *     whose signature has no upgrade parameter → contamination impossible at compile time, §6.1 hard-wall test still guards it);
  *   ② Reserve a single injection point for future SLG-exclusive buffs (tech/guild bonuses that do not affect PvE).
- * @param levels Server-authoritative pveUpgrades (upgrade id → level).
- * @param equip  Equipment from the attacker's authoritative progression snapshot (SaveData.gear + equipmentInv); passed in with the snapshot during server siege re-computation
- *               (EQUIPMENT_DESIGN §10: client-side tampering with local loadout cannot change "whether this loadout can breach the city"). Defaults to no equipment.
+ * @param levels         Server-authoritative pveUpgrades (upgrade id → level).
+ * @param equip          Equipment from the attacker's authoritative progression snapshot.
+ * @param unitLevels     Unit card levels (1–9) from SaveData.unitLevels.
+ * @param siegeAcademy   Academy building seasonal buff (SLG_CITY_DESIGN P2): {hp, damage} fractional bonuses
+ *                       applied as an additive multiplier layer after clampEffectCaps. Ignored on other paths.
  */
 export function buildSiegeBlueprints(
   levels: Record<string, number>,
   equip?: EngineEquipmentInput,
   unitLevels?: Record<string, number>,
+  siegeAcademy?: { hp: number; damage: number },
 ): Record<UnitType, UnitBlueprint> {
   const bp = cloneBlueprints();
   applyPveUpgrades(bp, levels);
   applyUnitLevels(bp, unitLevels);
   applyEquipment(bp, equip);
   clampEffectCaps(bp);
+  if (siegeAcademy && (siegeAcademy.hp > 0 || siegeAcademy.damage > 0)) {
+    for (const unit of Object.values(bp) as UnitBlueprint[]) {
+      if (siegeAcademy.hp > 0) unit.hp = Math.round(unit.hp * (1 + siegeAcademy.hp));
+      if (siegeAcademy.damage > 0) unit.attack = Math.round(unit.attack * (1 + siegeAcademy.damage));
+    }
+  }
   return bp;
 }
 

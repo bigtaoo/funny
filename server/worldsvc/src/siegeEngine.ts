@@ -134,6 +134,8 @@ export interface SiegeBattleInput {
   pveUpgrades?: Record<string, number>;
   unitLevels?: Record<string, number>;
   equipment?: EngineEquipmentInput;
+  /** Academy building seasonal blueprint buff (SLG_CITY_DESIGN P2): applied to attacker blueprints only; omit when academy=0. */
+  siegeAcademy?: { hp: number; damage: number };
 }
 
 /**
@@ -149,7 +151,7 @@ export interface SiegeBattleInput {
  * Settlement goes through the single landing point at service.landSiege (G3-1), decoupled from this function.
  */
 export function runSiegeBattle(input: SiegeBattleInput): SiegeResolution {
-  const { attackerArmy, defenderConfig, tileLevel, seed, pveUpgrades, unitLevels, equipment } = input;
+  const { attackerArmy, defenderConfig, tileLevel, seed, pveUpgrades, unitLevels, equipment, siegeAcademy } = input;
 
   const levelObj = buildSiegeBattle({ army: attackerArmy }, defenderConfig, tileLevel, seed);
   // P2: The defense config is a restricted subset of the engine LevelDefinition; validated via levelSchema
@@ -167,7 +169,7 @@ export function runSiegeBattle(input: SiegeBattleInput): SiegeResolution {
 
   const { engine } = runHeadless(
     { seed, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level,
-      pveUpgrades, unitLevels, equipment },
+      pveUpgrades, unitLevels, equipment, siegeAcademy },
     input$,
     timeout + TICK_MARGIN,
   );

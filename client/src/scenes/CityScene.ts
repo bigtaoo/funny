@@ -16,7 +16,7 @@ import {
 } from '../render/sketchUi';
 import type { WorldApiClient, PlayerWorldView, BuildingKey } from '../net/WorldApiClient';
 import {
-  BUILDING_KEYS_P1,
+  BUILDING_KEYS,
   RESOURCE_TYPES,
   DESK_MAX_LEVEL,
   BUILD_SPEEDUP_SECS_PER_COIN,
@@ -368,7 +368,7 @@ export class CityScene implements Scene {
   private renderBuildingGrid(startY: number): number {
     const { w, landscape } = this;
     const bld = this.me?.buildings;
-    const keys = BUILDING_KEYS_P1;
+    const keys = BUILDING_KEYS;
 
     const cols = landscape ? 4 : 4;
     const cellW = landscape ? Math.floor(w * 0.52 / cols) : Math.floor((w - 16) / cols);
@@ -586,10 +586,18 @@ export class CityScene implements Scene {
         lines.push(t('city.bonusTrainSpeed').replace('{pct}', String(Math.round(lvl * 4))));
         lines.push(t('city.bonusQueueSlots').replace('{n}', String(trainQueueMaxFor(bld))));
         break;
-      case 'wall':
-      case 'academy':
-        lines.push('(Phase 2)');
+      case 'wall': {
+        const wallPct = Math.round(lvl * 5);
+        lines.push(t('city.bonusWallHp').replace('{pct}', String(wallPct)));
         break;
+      }
+      case 'academy': {
+        const hpPct = Math.round(lvl * 2);
+        const dmgPct = Math.round(lvl * 1.5);
+        if (hpPct > 0) lines.push(t('city.bonusAcademyHp').replace('{pct}', String(hpPct)));
+        if (dmgPct > 0) lines.push(t('city.bonusAcademyDmg').replace('{pct}', String(dmgPct)));
+        break;
+      }
     }
     return lines;
   }
