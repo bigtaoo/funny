@@ -40,6 +40,8 @@ import type { FamilySceneCallbacks } from '../../src/scenes/FamilyScene';
 import type { SectSceneCallbacks, SectSceneView } from '../../src/scenes/SectScene';
 import type { AuctionSceneCallbacks } from '../../src/scenes/AuctionScene';
 import type { DefenseEditorCallbacks } from '../../src/scenes/DefenseEditorScene';
+import type { DeckBuilderCallbacks } from '../../src/scenes/DeckBuilderScene';
+import { defaultPvpDeck } from '../../src/game/meta/pvpLoadout';
 import type { AchievementCallbacks } from '../../src/scenes/AchievementScene';
 import type { LeaderboardCallbacks } from '../../src/scenes/LeaderboardScene';
 import type { BattlePassCallbacks } from '../../src/scenes/BattlePassScene';
@@ -53,7 +55,7 @@ export type ScreenName =
   | 'none' | 'intro' | 'lobby' | 'settings' | 'login' | 'shop' | 'gacha'
   | 'campaignMap' | 'levelPrep' | 'collection' | 'equipment' | 'stats' | 'achievements'
   | 'leaderboard' | 'battlePass' | 'replay' | 'result' | 'room' | 'friends'
-  | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams'
+  | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams' | 'deckBuilder'
   | 'consent' | 'daily' | 'events' | 'statePlayer';
 
 interface ActiveMatch {
@@ -207,6 +209,14 @@ export class HeadlessAppViews implements AppViews {
   showAuction(_cb: AuctionSceneCallbacks): void { this.screen = 'auction'; }
   showDefenseEditor(_cb: DefenseEditorCallbacks): void { this.screen = 'defenseEditor'; }
   showTeams(_cb: TeamsCallbacks): void { this.screen = 'teams'; }
+
+  // Headless: the PvP deck builder gates ranked entry. Mirror a player who
+  // confirms immediately — keep the current saved deck (or default) and save,
+  // letting the ranked flow continue straight into the room.
+  showDeckBuilder(cb: DeckBuilderCallbacks): void {
+    this.screen = 'deckBuilder';
+    cb.onSave(cb.getCurrentDeck() ?? defaultPvpDeck());
+  }
 
   showGameNet(localSide: OwnerId, cb: GameSceneCallbacks, opts: GameSceneOptions): NetGameView {
     this.screen = 'gameNet';
