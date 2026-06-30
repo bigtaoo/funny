@@ -329,7 +329,7 @@
 
 - [x] **S4-4 PvE 三振出局封禁** ✅（2026-06-29）：pveClear 增加 `accounts.flags.banned` 检查（管理员手动封号即时生效）；pveVerify 开头增加 `pveBanned` 检查（被封账号无法补传录像）；新增 `POST /internal/accounts/:id/ban` + `unban` 内部端点；admin 层 `POST /admin/accounts/:id/ban` + `unban` 代理（需 `anticheat.action` 权限，super/ops 拥有）；AuditAction 补 `account.ban`/`account.unban`；`shared/admin` 新增 `anticheat.action` 权限；单测 +6（ban/unban 端点）+ e2e 补三振封禁用例。171 单测绿。
 - [ ] **皮肤 .tao 资产**：`client/src/render/UnitView.ts` `SKIN_ASSETS = {}` 为空——换肤管线（S3-4）已就绪但无资产，商店在售皮肤当前**视觉无变化**。美术阻塞。
-- [ ] **worldsvc publicId 解析**：`server/worldsvc/src/service.ts` 领主身份待经 meta `/internal/profile` 反查，否则 SLG 部分路径显示原始 id 而非昵称。
+- [x] **worldsvc publicId 解析** ✅（2026-06-30）：`getMap`/`getTile`/`pushTile`/`under_attack` 已有 meta.getProfile 反查；本次修复 `sect_msg`/`nation_msg` push payload 的 `fromPublicId` 仍用 accountId 的缺口——`SectService` 和 `NationChannelService` 各加 `meta?: WorldMetaClient` dep，`sendMessage` best-effort 解析 publicId，无 meta 时 fallback 空字符串；index.ts 接线；新增测试 `nation-channel.e2e.test.ts` + sect 追加用例。
 - [ ] **实时赛季号下行**：`createAppCore` `CURRENT_SEASON = 1` 硬编码，待 S11 天梯赛季元数据由 metaserver 下发后接线（SLG 大区赛季）。
 - [ ] **VFX `emitter` 图元**：`client/src/render/vfx/{types,primitives}.ts` 设计内保留、未实现（当前 warn + skip）。低优先。
 - [ ] **真实 IAP 客户端 SDK**：服务端 `commercial/iap.ts` 验单（Apple/Google/微信/Stripe）已就绪且生产 fail-closed；客户端尚无真实下单 SDK 接入（魔术码删除后暂无任何充值入口，等本项或 B-PROMO）。
