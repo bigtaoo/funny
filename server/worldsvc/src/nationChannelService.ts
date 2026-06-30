@@ -7,6 +7,8 @@ import type { WorldCollections, NationMessageDoc } from './db';
 import type { HttpWorldGatewayClient } from './gatewayClient';
 import type { WorldCommercialClient } from './commercialClient';
 import { nullWorldSocialsvcClient, type WorldSocialsvcClient } from './socialsvcClient';
+import type { WorldMetaClient } from './metaClient';
+import { nullWorldMetaClient } from './metaClient';
 
 const WORLD_CHAT_COST = 50;
 
@@ -25,14 +27,18 @@ interface Deps {
   now: () => number;
   /** socialsvc client (push delegation, SOCIAL_SVC_DESIGN §5); omit to degrade to direct gateway push. */
   socialsvc?: WorldSocialsvcClient;
+  /** meta client for publicId resolution in chat messages; omit to leave fromPublicId empty. */
+  meta?: WorldMetaClient;
 }
 
 let msgSeq = 0;
 
 export class NationChannelService {
   private readonly socialsvc: WorldSocialsvcClient;
+  private readonly meta: WorldMetaClient;
   constructor(private readonly deps: Deps) {
     this.socialsvc = deps.socialsvc ?? nullWorldSocialsvcClient;
+    this.meta = deps.meta ?? nullWorldMetaClient;
   }
 
   /**
@@ -71,8 +77,10 @@ export class NationChannelService {
     };
     await cols.nationMessages.insertOne(msgDoc);
 
+    // Resolve publicId from meta (best-effort; falls back to empty string if meta unavailable or profile not found).
+    const profile = this.meta.available ? await this.meta.getProfile(accountId).catch(() => null) : null;
     // Push: prefer delegating to socialsvc (push hub, §5); fall back to direct gateway push O(n) when socialsvc is unavailable.
-    const payload = { worldId, fromPublicId: accountId, fromName: senderName, body, ts };
+    const payload = { worldId, fromPublicId: profile?.publicId ?? '', fromName: senderName, body, ts };
     if (this.socialsvc.available) {
       const recipients = await this.worldMemberAccountIds(worldId, accountId);
       void this.socialsvc.push({ kind: 'world', worldId }, 'nation_msg', payload, recipients);
