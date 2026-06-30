@@ -109,7 +109,7 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 
 ## 3. econ-sim 核验脚本（A 轨已建 ✅ 2026-06-30，B 轨季内模式待补）
 
-战斗侧有 `difficultySim`（headless 引擎 + 基线 AI，见 [[project-difficulty-sim]]）；经济侧 **A 轨工具已落地**：`server/tools/econ-sim/`（纯 TS，import `@nw/shared` 的 `SETTLE_REWARDS`/`CENTER_CAPITAL_MULT`/`WORLD_CAPACITY`/`DUPE_REFUND_COINS`/`GACHA_MATERIAL_GRANTS`，**不连库**，与 difficultySim 同构）。跑法 `cd server/tools/econ-sim && npx tsx src/index.ts`；估值/基准在 `src/valuation.ts`，聚合/判据在 `src/model.ts`，场景在 `scenarios/*.json`。首跑结论登记 [`ECONOMY_NUMBERS.md` §13-SLG](ECONOMY_NUMBERS.md)。**B 轨（赛季资源季内模式）尚未实现**，待 SLG_CITY 数值核验时补。
+战斗侧有 `difficultySim`（headless 引擎 + 基线 AI，见 [[project-difficulty-sim]]）；经济侧 **A 轨工具已落地**：`server/tools/econ-sim/`（纯 TS，import `@nw/shared` 的 `SETTLE_REWARDS`/`CENTER_CAPITAL_MULT`/`WORLD_CAPACITY`/`DUPE_REFUND_COINS`/`GACHA_MATERIAL_GRANTS`，**不连库**，与 difficultySim 同构）。跑法 `cd server/tools/econ-sim && npx tsx src/index.ts`；估值/基准在 `src/valuation.ts`，聚合/判据在 `src/model.ts`，场景在 `scenarios/*.json`。首跑结论登记 [`ECONOMY_NUMBERS.md` §13-SLG](ECONOMY_NUMBERS.md)。**B 轨建筑/练兵节奏已建**（`src/city.ts` + `cityRun.ts`，import `@nw/shared` 建筑常量/纯函数，跑法 `npx tsx src/cityRun.ts`，结论 [§13-SLG-CITY](ECONOMY_NUMBERS.md)）；B 轨「裸经济不破」的赛季资源季内产消曲线（国民加成 0.10 本国 vs 跨国）仍未实现，待核时补。
 
 **位置**：`server/tools/econ-sim/`（已建）。
 
@@ -202,7 +202,7 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 
 - [x] **A 轨已过核验（2026-06-30，CLOSED）**：econ-sim 三场景 **CORE 全 PASS**（§13-SLG.3）；材料→金币估值基准已确立并记录（§13-SLG.1，binding=400 保守上界）；细水已计入。**人均稀释 ✅**（participant 0.11% / champion 13.36%）+ **全服通胀 ✅**（vs 材料龙头 0.45–4.01%）+ **coins=0 ✅**。头部倾斜经经济负责人拍板**降级为 informational**（采纳方案 a，护栏改由 champion 绝对稀释承担，§13-SLG.4-2）。
 - [x] **A-coin**：`SETTLE_REWARDS.coins` = 0（econ-sim 校验 ✅）；若改 >0，须并入 §6.1 预算且经济负责人签字。
-- [ ] **B 轨**：国民产出加成季内产消曲线已核，不破裸经济、SLG_CITY 节奏在窗口内。
+- [~] **B 轨**：**SLG_CITY 建造/练兵节奏 ✅ 已核**（2026-06-30，econ-sim `city.ts`，结论 [§13-SLG-CITY](ECONOMY_NUMBERS.md)：资源门控的数周肝、落 60 天窗口、乘子合理；两条 informational 注记 drillYard L13 提速触底 / sticker 自我门控）。**剩**：另一半「裸经济不破」（国民产出加成 0.10 本国全占 vs 跨国扩张产出差 ≤ 提案 20%，§4 第 1 条）待核。
 - [ ] **C 轨**：difficultySim 跑出防御加成胜率 + 廉价结算阈值分类准确率，落判据区间（与 §16.5 数值批次一并）。
 - [ ] **D 轨**：分配方差蒙特卡洛 PASS（极差 ≤ 最强单体）。
 - [ ] **E 轨**：建宗门可达天数 + 衰减半衰期手算落窗口。

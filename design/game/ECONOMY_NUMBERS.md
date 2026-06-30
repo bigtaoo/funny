@@ -492,6 +492,75 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 
 ---
 
+## 13-SLG-CITY. SLG 主城建筑 / 练兵节奏数值（B 轨·纯季内·不进 §6.1）`[已过 B 轨建筑节奏核验 2026-06-30]`
+
+> 机制权威：[`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)；核验方法 = [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §4（B 轨第 2 条「建造/练兵节奏」）；本节为 **SLG_CITY DRAFT 数字单一源** + econ-sim 结论。常量真源 = `server/shared/src/slg.ts`。
+> **铁律**：主城建筑/兵力/赛季资源**季末全清**（D-CITY-1 / SLG4），**零持久 faucet/sink**——本节是**纯季内节奏**，**永不进 §6.1 月度金币预算**，建筑**绝不喂 `buildPvpBlueprints`**（天梯红线 D-CITY-6）。coin 只买**速度**（加速变现）不买**上限**（防 P2W）。
+
+### 13-SLG-CITY.1 可调参数表（`@nw/shared/slg.ts`，全 DRAFT）
+
+| 常量 | 默认 | 作用 |
+|---|---|---|
+| `DESK_MAX_LEVEL` | 20 | 书桌总等级门控（其余建筑 ≤ desk）|
+| `BUILD_YIELD_STEP` | 0.05 | inkPot/paperTray/graphiteMill/metalForge 每级 +5% 该地块产率 |
+| `STICKER_SELF_BASE` | 200 | stickerShop 每级自产 sticker/h（民居模型，sticker 无地块）|
+| `CABINET_CAP_STEP` | 0.10 | cabinet 每级 +10% 仓储上限 |
+| `DRILL_TROOPCAP_STEP` | 500 | drillYard 每级 +500 troopCap |
+| `DRILL_TRAIN_SPEED_STEP` / `_FLOOR` | 0.04 / 0.5 | drillYard 每级 −4% 训练时长，乘子下限 0.5 |
+| `DRILL_QUEUE_PER_LEVELS` | 5 | drillYard 每 5 级 +1 训练队列槽 |
+| `BUILD_QUEUE_SLOTS` | 1（付费 2）| 建造并发槽 |
+| `BUILD_TIME_BASE_SEC` / `DESK_BUILD_TIME_MULT` | 120 / ×5 | 建造时长 = base × toLevel（desk ×5）|
+| `BUILD_SPEEDUP_SECS_PER_COIN` | 60 | coin 加速率（对齐 `TROOP_SPEEDUP_SECS_PER_COIN`）|
+| `BUILD_COST_BASE[key]` | 见 slg.ts | 每建筑 5 资源基底，`buildCost(toLevel)=base×toLevel` 线性曲线 |
+| `RESOURCE_CAP` / `RESOURCE_YIELD_BASE` | 200,000 / 100 | 单资源仓储上限 / 每格每级每小时基底产 |
+| `TROOP_TRAIN_INK_COST` / `_TIME_SEC` | 10 / 5 | 每兵 ink 成本 / 训练秒 |
+
+### 13-SLG-CITY.2 演算（econ-sim B 轨，2026-06-30）
+
+工具：`server/tools/econ-sim/src/city.ts` + `cityRun.ts`（纯 TS，import `@nw/shared` 建筑常量/纯函数，**与代码永不脱节**）。跑法 `npx tsx src/cityRun.ts`。**硬结论靠代码导出的总量/比值/成长量；income 档是显式假设**（领地格数设计未 pin，同 A 轨人口口径）。
+
+**① 满建全 8 个 P1 建筑到 L20 的总成本（代码导出，零假设）**：
+
+| 资源 | 总需 | ÷RESOURCE_CAP | 含义 |
+|---|---|---|---|
+| paper | 1,546,600 | **7.7×** | **承重肝点**：远超仓储上限 → 必须长线攒、攒不住 |
+| graphite | 334,400 | 1.7× | 次肝点（高级建筑 sink）|
+| sticker | 188,100 | 0.9× | 仅自产（无地块）+ 同时是 sink → 自我门控 |
+| metal | 146,300 | 0.7× | drillYard/metalForge |
+| ink | 62,700 | 0.3× | 仅 inkPot 吃，几乎不构成 gate |
+
+**② 建造时长（串行 queue=1）**：满建全城 **83.6 h ≈ 3.5 天**；全程 coin 跳过 = **5,016 coins**。→ 时间是**次要门控**（真门控是资源），coin 加速建造是**温和杠杆**，更深变现走资源包（commercial，§7.2）。
+
+**③ 满级成长量（乘子合理性）**：产率 1→2.0×；仓储 200k→600k；troopCap 2,000→12,000（6×）；训练时长 1→0.5×（下限，**drillYard L13 起触底**）；训练队列 →6；sticker 自产 →4,000/h。
+
+**④ days-to-max（按 income 档，假设驱动·示意）**：
+
+| 档 | paper | graphite | sticker | metal | ink |
+|---|---|---|---|---|---|
+| casual | 30.5 | 13.2 | 19.6 | 5.8 | 2.5 |
+| active | 7.5 | 3.8 | 9.8 | 1.6 | 0.7 |
+| hardcore | 2.4 | 1.3 | 6.5 | 0.6 | 0.3 |
+
+> 三档满城关键资源均落在 **60 天赛季窗口内**：casual 半季、active ~1–1.5 周、hardcore 数日。casual 的**慢点是 paper(~30d) 与 sticker(~20d)**——sticker 因无地块、靠 stickerShop 自产又被 sink 吃，是低活跃玩家的节奏瓶颈（设计意图内的 faucet/sink 张力）。
+
+**⑤ 练兵节奏**：drillYard L20 满 troopCap 12,000 → 填满需 **120,000 ink、连续 8.3 h，或 500 coins 跳过**。落在赛季窗口内、与 ink 几乎不 gate 的产出匹配。
+
+### 13-SLG-CITY.3 结论与注记
+
+1. **B 轨建筑节奏 ✅ PASS**：建筑成本是**资源门控**（paper 7.7× cap，必须长线攒）而非时间门控——满城 = 数周持续季内肝，落在 60 天「重肝」窗口内（casual 半季 / active 周级 / hardcore 数日），成长乘子全部有界合理。coin 加速建造是温和时间杠杆（全跳 5,016c），更深变现归资源包。**符合「重肝变现发动机」设计，无数量级错误。**
+2. **注记 a（informational）·drillYard 提速 L13 触底**：`DRILL_TRAIN_SPEED_STEP=0.04` × L13 = −52% 已撞 `_FLOOR=0.5`，**L13–20 七级不再提速**（只加 troopCap/队列）。非 bug，但高级 drillYard 的「提速」价值悬崖——后续若想让满级提速更顺，降 floor 或减小 step；当前可接受（高级靠 cap/队列出价值）。
+3. **注记 b（informational）·sticker 自我门控**：sticker 唯一 faucet = stickerShop 自产、且被 desk/cabinet/drillYard 当 sink 吃，低活跃档是第二慢资源（~20d）。设计意图内的 faucet/sink 张力，盯上线实测。
+4. **本节只过了 B 轨「建筑/练兵节奏」半边**；B 轨另一半「裸经济不破」（`NATION_BONUS_PRODUCTION=0.10` 本国全占 vs 跨国扩张产出差 ≤ 提案 20%）属国民加成、非城建数值，仍待核（SLG_ECONOMY_CHECK §4 第 1 条）。
+
+### 13-SLG-CITY.4 经济约束（红线复述）
+
+- 建筑/兵力/赛季资源**季末全清**，零持久沉淀 → **不进本节金币账本、不进 §6.1**。
+- coin 只买**建造/练兵速度**（`*_SPEEDUP_SECS_PER_COIN`），**不买上限**（上限由 desk 等级门控、desk 靠资源+时间，P2W 硬墙 D-CITY-6）。
+- 建筑产出**绝不喂 `buildPvpBlueprints`**（天梯零养成参，§9 硬墙）。
+- 数值 DRAFT：终态判据 = 上线后 analyticsvc 实测（满城天数 / 各资源攒速 / drillYard 分布）对账，偏差回 SLG_ECONOMY_CHECK §10 重跑（惰性下季生效）。
+
+---
+
 ## 14. 活动 / Live-ops 数值（双倍封顶 · 积分 · 里程碑）`[可调]`
 
 > 机制权威：[`EVENTS_DESIGN.md`](EVENTS_DESIGN.md)；本节为**数字单一源**。红线（ADR-014）：①不新增金币龙头（活动金币计入 §6.1 月度预算，主发软通货/限定皮肤碎片/积分）；②加成期硬封顶且只作用于受体力闸门约束的 PvE 产出；③积分活动期清零、不入持久经济；④PvP 硬墙恒不读活动加成。

@@ -131,9 +131,9 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 
 ---
 
-## 7. DRAFT 数值（→ ECONOMY_NUMBERS §13-SLG-CITY 登记，待经济模拟）
+## 7. DRAFT 数值（已过 B 轨节奏核验 2026-06-30；登记 → ECONOMY_NUMBERS §13-SLG-CITY）
 
-> 全部占位，上线前过经济核验（faucet/sink 平衡 + 重肝节奏 + 鲸鱼天花板）——核验方法/判据见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md)，数字登记去 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §13-SLG。常量真源 = `server/shared/src/slg.ts`，本表是设计侧占位快照。
+> **已过 B 轨建筑/练兵节奏核验**（2026-06-30，econ-sim `city.ts`）：faucet/sink 与重肝节奏成立（paper 7.7× cap 的资源门控肝、落 60 天窗口、满级乘子合理）——方法/判据见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §4，**完整结论 + 参数表登记在** [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) **§13-SLG-CITY**。常量真源 = `server/shared/src/slg.ts`，下表是设计侧占位快照（数值仍 DRAFT，终态判据=上线后实测）。
 
 | 常量（占位名） | 占位值 | 说明 |
 |---|---|---|
@@ -204,7 +204,8 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 > - **openapi-world.ts**：手工补丁（非全量重生，保留 family 历史类型）：`PlayerWorldView` 加 `buildings/buildQueue`；加 `BuildingKey` enum 及两端点 operation stub。
 > - **i18n**：`city.*` 前缀三语（zh/en/de）——建筑名称、资源标签、加成说明、错误提示、队列显示；`world.actEnterCity` 三语。
 > - **验证**：全量 `client tsc --noEmit` 零错误（main + node_modules 环境校验通过）。
-> - 遗留：建筑数值仍为 DRAFT（经 `SLG_ECONOMY_CHECK` 核验后落 `ECONOMY_NUMBERS §13-SLG-CITY`）；P2 `wall`/`cabinet` 护掠/`academy` 蓝图 buff 见下方 P2 条目。
+> - **建筑数值已过 B 轨节奏核验**（2026-06-30，econ-sim `city.ts`，结论登记 [`ECONOMY_NUMBERS §13-SLG-CITY`](ECONOMY_NUMBERS.md)）：资源门控的数周肝、落 60 天赛季窗口、满级乘子合理 ✅；两条 informational 注记（drillYard 提速 L13 触底 / sticker 自我门控）。数值仍标 DRAFT（终态判据=上线后实测对账）。
+> - 遗留：P2 `wall`/`cabinet` 护掠/`academy` 蓝图 buff 见下方 P2 条目。
 
 - **P2 — 城防 + 科技**：`wall` 注入主城围攻 + `cabinet` 护掠夺 + `academy` 赛季蓝图 buff（独立注入口，守红线）。
 - **P3 — 委任内政官**：角色卡派进建筑加成（角色养成接入 SLG 内政），数值按角色属性。
