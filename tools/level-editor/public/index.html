@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Notebook Wars — 关卡编辑器</title>
+  <title>Notebook Wars — Level Editor</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -123,36 +123,36 @@
 </head>
 <body>
   <div class="toolbar">
-    <span class="title">关卡编辑器 <span style="color:var(--text-dim);font-weight:400">P-D 波次时间线</span></span>
-    <button id="btn-sample">载入示例 (ch1_lv1)</button>
-    <button id="btn-import">导入 .json…</button>
+    <span class="title">Level Editor <span style="color:var(--text-dim);font-weight:400">P-D Wave Timeline</span></span>
+    <button id="btn-sample">Load Sample (ch1_lv1)</button>
+    <button id="btn-import">Import .json…</button>
     <span class="spacer"></span>
-    <button id="btn-export" class="primary">导出 .json</button>
+    <button id="btn-export" class="primary">Export .json</button>
   </div>
 
   <div class="main">
     <!-- Left: board -->
     <div class="pane col-board" id="col-board">
-      <div class="pane-head">棋盘 — 顶=敌方 / 底=己方；点列号开关车道；变道/护送工具下点空格加点·拖节点·右键删</div>
+      <div class="pane-head">Board — top=enemy / bottom=player; click col number to toggle lane; waypoint/escort tool: Space to add point, drag to move, right-click to delete</div>
       <div class="board-tools">
-        <span style="color:var(--text-dim);align-self:center">画笔:</span>
-        <button class="tool" data-tool="noBuild">不可建造</button>
-        <button class="tool" data-tool="blocked">障碍</button>
-        <button class="tool" data-tool="erase">擦除</button>
-        <button class="tool" data-tool="wp" title="选中波次后：点空格加变道点，拖动节点改位置，右键删除">变道</button>
-        <button class="tool" data-tool="escort" title="点护送起点选中后：点空格加路径点（须向敌方推进），拖动改位置，右键删除">护送</button>
+        <span style="color:var(--text-dim);align-self:center">Brush:</span>
+        <button class="tool" data-tool="noBuild">No-Build</button>
+        <button class="tool" data-tool="blocked">Blocked</button>
+        <button class="tool" data-tool="erase">Erase</button>
+        <button class="tool" data-tool="wp" title="With a wave selected: Space to add waypoint, drag to reposition, right-click to delete">Waypoint</button>
+        <button class="tool" data-tool="escort" title="With escort start selected: Space to add path point (must advance toward enemy), drag to reposition, right-click to delete">Escort</button>
       </div>
       <div class="board-mount" id="board-mount"></div>
       <div class="legend">
-        <span><i style="background:#3a3420"></i>基地列</span>
-        <span><i style="background:#1e2c3a"></i>己方建造</span>
-        <span><i style="background:#243a4e"></i>己方出兵</span>
-        <span><i style="background:#4e2430"></i>敌方出兵</span>
-        <span><i style="background:#3a1e26"></i>敌方建造</span>
-        <span><i style="background:#f9e2af"></i>不可建造</span>
-        <span><i style="background:#6c7086"></i>障碍</span>
-        <span><i style="background:#f38ba8"></i>变道路径</span>
-        <span><i style="background:#a6e3a1"></i>护送路径</span>
+        <span><i style="background:#3a3420"></i>Base col</span>
+        <span><i style="background:#1e2c3a"></i>Player build</span>
+        <span><i style="background:#243a4e"></i>Player deploy</span>
+        <span><i style="background:#4e2430"></i>Enemy deploy</span>
+        <span><i style="background:#3a1e26"></i>Enemy build</span>
+        <span><i style="background:#f9e2af"></i>No-build</span>
+        <span><i style="background:#6c7086"></i>Blocked</span>
+        <span><i style="background:#f38ba8"></i>Waypoint path</span>
+        <span><i style="background:#a6e3a1"></i>Escort path</span>
       </div>
     </div>
 
@@ -160,14 +160,14 @@
 
     <!-- Center: timeline + json -->
     <div class="pane col-center">
-      <div class="pane-head">波次时间线 — 拖动块改时间/车道；右键删除；滚轮平移，Ctrl+滚轮缩放</div>
+      <div class="pane-head">Wave Timeline — drag blocks to change time/lane; right-click to delete; scroll to pan, Ctrl+scroll to zoom</div>
       <div class="timeline-mount" id="timeline-mount"></div>
       <div class="hsplit" id="split-json"></div>
       <div class="json-wrap" id="json-wrap">
         <textarea id="json" spellcheck="false"></textarea>
         <div class="json-bar">
-          <button id="btn-apply">应用 JSON →</button>
-          <span class="hint">实时反映编辑；手改后「应用」经游戏侧校验回写。</span>
+          <button id="btn-apply">Apply JSON →</button>
+          <span class="hint">Reflects edits live; after manual changes click Apply to validate and write back through the game-side schema.</span>
         </div>
       </div>
     </div>
@@ -177,14 +177,14 @@
     <!-- Right: tabbed inspector (level form / wave inspector) -->
     <div class="pane col-insp" id="col-insp">
       <div class="insp-tabs">
-        <button class="insp-tab active" data-tab="level">关卡</button>
-        <button class="insp-tab" data-tab="wave">波次</button>
+        <button class="insp-tab active" data-tab="level">Level</button>
+        <button class="insp-tab" data-tab="wave">Wave</button>
       </div>
       <div class="insp-body" id="level-form"></div>
       <div class="insp-body" id="inspector" style="display:none"></div>
     </div>
   </div>
 
-  <div class="status" id="status">就绪</div>
+  <div class="status" id="status">Ready</div>
 </body>
 </html>

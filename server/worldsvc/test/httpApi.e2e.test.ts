@@ -26,7 +26,7 @@ async function tryConnect(): Promise<WorldMongo | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[worldsvc.httpApi.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[worldsvc.httpApi.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
 const CENTER_Y = Math.floor(SLG_MAP_H / 2);
@@ -96,13 +96,13 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
   let baseX = 0;
   let baseY = 0;
 
-  it('GET /health 无需鉴权', async () => {
+  it('GET /health requires no authentication', async () => {
     const r = await fetch(`${base}/health`);
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual({ ok: true, service: 'worldsvc' });
   });
 
-  it('无 token → 401', async () => {
+  it('no token → 401', async () => {
     const r = await fetch(`${base}/world/map?worldId=${W}&cx=10&cy=10&r=2`);
     expect(r.status).toBe(401);
     const body = await r.json();
@@ -110,7 +110,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(body.error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('GET /world/map：程序化视区 + 中心唯一', async () => {
+  it('GET /world/map: procedural viewport + unique center tile', async () => {
     const r = await fetch(`${base}/world/map?worldId=${W}&cx=${CENTER_X}&cy=${CENTER_Y}&r=2`, {
       headers: auth,
     });
@@ -121,7 +121,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(body.data.tiles.filter((tl: { type: string }) => tl.type === 'center')).toHaveLength(1);
   });
 
-  it('POST /world/join（系统自动落城，§3.4）→ /world/me joined, /world/tile base', async () => {
+  it('POST /world/join (server auto-places base, §3.4) → /world/me joined, /world/tile base', async () => {
     const jr = await fetch(`${base}/world/join`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },
@@ -157,7 +157,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect((await r.json()).data).toMatchObject({ type: 'territory', mine: true });
   });
 
-  it('POST /world/join 缺 worldId → 400', async () => {
+  it('POST /world/join missing worldId → 400', async () => {
     const r = await fetch(`${base}/world/join`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },
@@ -166,7 +166,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(r.status).toBe(400);
   });
 
-  it('POST /world/march → occupy 行军（marching）', async () => {
+  it('POST /world/march → occupy march (marching)', async () => {
     // acct-1 has already auto-settled (baseX,baseY); sending an occupy march to a neighbouring free tile.
     const free = findFreeNear(baseX, baseY, baseX, baseY);
     const r = await fetch(`${base}/world/march`, {
@@ -189,7 +189,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(typeof body.data.marchId).toBe('string');
   });
 
-  it('POST /world/march 缺坐标 → 400', async () => {
+  it('POST /world/march missing coordinates → 400', async () => {
     const r = await fetch(`${base}/world/march`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },
@@ -198,7 +198,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(r.status).toBe(400);
   });
 
-  it('防守 config（C3）：PUT 主城防守 → GET 取回；缺 worldId → 400；未知路由 → 404', async () => {
+  it('defense config (C3): PUT home base defense → GET retrieves it; missing worldId → 400; unknown route → 404', async () => {
     const config = {
       garrison: [{ unitType: 'infantry', col: 3, row: 16 }],
       defenderBuildings: [{ buildingType: 'arrow_tower', col: 7 }],
@@ -228,7 +228,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(nf.status).toBe(404);
   });
 
-  it('扫荡端点（S8-3）：缺坐标 → 400', async () => {
+  it('sweep endpoint (S8-3): missing coordinates → 400', async () => {
     const sweep = await fetch(`${base}/world/sweep`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },

@@ -1,8 +1,8 @@
 /**
- * gachaArt.ts — gacha 界面图片资产（卡背、边框、banner）。
+ * gachaArt.ts — gacha screen image assets (card backs, frames, banners).
  *
- * 卡背（400×560）和边框（480×480）按稀有度各一张；
- * banner 按池类型：含 "limited" 的 id 用限定图，其余用常驻图。
+ * One card back (400×560) and one frame (480×480) per rarity tier;
+ * banner by pool type: ids containing "limited" use the limited banner, others use the standard banner.
  */
 import * as PIXI from 'pixi.js-legacy';
 import type { Rarity } from '../game/meta/SaveData';

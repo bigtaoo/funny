@@ -3,7 +3,7 @@
  *
  * Switching a swatch changes only the preview colour passed to interpret(); the
  * effect data itself stays colour-agnostic (runtime colour comes from the
- * caller's play(...)). "默认色" resolves to the effect's own defaultColor.
+ * caller's play(...)). The "default colour" swatch resolves to the effect's own defaultColor.
  */
 import { PALETTE, Swatch, toHex } from '../model/color';
 import { EffectModel } from '../model/EffectModel';

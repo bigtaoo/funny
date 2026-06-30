@@ -1,5 +1,5 @@
-// C4 PvE 反作弊处置单测：accounts.flags.banned 封号标记 + pveWarnings 累计 + 警告邮件 + 阈值封号。
-// 用 Fastify inject + 内存 fake cols（无 Mongo），仅测可达行为。
+// C4 PvE anti-cheat enforcement unit tests: accounts.flags.banned ban flag + pveWarnings accumulation + warning mail + threshold ban.
+// Uses Fastify inject + in-memory fake cols (no Mongo); tests observable behaviour only.
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import { registerInternalRoutes } from '../src/internal.js';
@@ -40,7 +40,7 @@ function makeSave(accountId: string, extra?: Partial<SaveData>): SaveDoc {
   return { _id: accountId, save: { ...base, ...extra }, rev: 1 };
 }
 
-// 内存 fake collections（仅 suspicious-pve 端点需要的字段）。
+// In-memory fake collections (only the fields required by the suspicious-pve endpoint).
 function fakeColsWithAccounts(
   accounts: { _id: string; flags?: { pveWarnings?: number; banned?: boolean }; displayName?: string; publicId?: string; createdAt: number }[],
 ): { cols: Collections; getAccount: (id: string) => (typeof accounts)[0] | undefined } {

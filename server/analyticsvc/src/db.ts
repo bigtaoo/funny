@@ -1,8 +1,8 @@
-// analyticsvc MongoDB（A9-1）。
-// 独立库 notebook_wars_analytics，三个集合：events(TTL 90d) / sessions / funnels_daily。
+// analyticsvc MongoDB (A9-1).
+// Dedicated database notebook_wars_analytics, three collections: events (TTL 90d) / sessions / funnels_daily.
 import { MongoClient, type Db, type Collection } from 'mongodb';
 
-/** 原始事件文档（TTL 90 天）。 */
+/** Raw event document (TTL 90 days). */
 export interface EventDoc {
   _id?: string;
   session_id: string;
@@ -14,11 +14,11 @@ export interface EventDoc {
   locale: string;
   event: string;
   props: Record<string, unknown>;
-  /** BSON Date，TTL index 依赖此字段（expireAfterSeconds=7776000，即 90 天）。 */
+  /** BSON Date; the TTL index depends on this field (expireAfterSeconds=7776000, i.e. 90 days). */
   ts: Date;
 }
 
-/** 会话摘要文档（永久）。 */
+/** Session summary document (permanent). */
 export interface SessionDoc {
   _id: string; // session_id
   user_id?: string;
@@ -32,7 +32,7 @@ export interface SessionDoc {
   events_count: number;
 }
 
-/** 每日漏斗预聚合（永久，ETL job 每小时跑）。 */
+/** Daily funnel pre-aggregation (permanent; ETL job runs every hour). */
 export interface FunnelDailyDoc {
   _id?: string;
   date: string;
@@ -63,7 +63,7 @@ export async function createAnalyticsMongo(uri: string, dbName: string): Promise
     await client.connect();
   } catch (e) {
     const redacted = uri.replace(/:\/\/[^@]*@/, '://***@');
-    console.error(`[analyticsvc] MongoDB 连接失败 uri=${redacted} db=${dbName}`, e);
+    console.error(`[analyticsvc] MongoDB connection failed uri=${redacted} db=${dbName}`, e);
     throw e;
   }
 
@@ -73,7 +73,7 @@ export async function createAnalyticsMongo(uri: string, dbName: string): Promise
   const funnels_daily = db.collection<FunnelDailyDoc>('funnels_daily');
 
   async function ensureIndexes(): Promise<void> {
-    // events：TTL 90 天（7776000s）；查询索引
+    // events: TTL 90 days (7776000s); query indexes
     await events.createIndex({ ts: -1 });
     await events.createIndex({ ts: 1 }, { expireAfterSeconds: 7776000 });
     await events.createIndex({ event: 1, ts: -1 });

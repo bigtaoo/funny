@@ -20,7 +20,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[achievements.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[achievements.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 /** Minimal fake commercial: wallet credit (grant idempotent by orderId) + getWallet; remaining endpoints are unreachable from claim paths — stubbed for TS. */
 class FakeCommercial implements CommercialClient {
@@ -101,7 +101,7 @@ describe.skipIf(!mongo)('meta achievements e2e', () => {
     await m.close();
   });
 
-  it('GET /achievements：回定义表 + 我的 stats + 已领进度', async () => {
+  it('GET /achievements: returns definition table + my stats + claimed progress', async () => {
     await seedStats({ 'kill.archer': 120 });
     const r = body(await app.inject({ method: 'GET', url: '/achievements', headers: auth() }));
     expect(r.ok).toBe(true);
@@ -110,14 +110,14 @@ describe.skipIf(!mongo)('meta achievements e2e', () => {
     expect(r.data.achievements).toEqual({});
   });
 
-  it('未达阈值领取 → 400 + 不发币', async () => {
+  it('claim below threshold → 400 + no coins granted', async () => {
     await seedStats({ 'kill.archer': 50 });
     const r = await claim('ach.kill.archer', 1);
     expect(r.statusCode).toBe(400);
     expect(comm.bal(accountId)).toBe(0);
   });
 
-  it('达阈值领取 → 发该阶金币 + 记 claimedTiers', async () => {
+  it('claim at threshold → grants tier coins + records claimedTiers', async () => {
     await seedStats({ 'kill.archer': 120 });
     const r = body(await claim('ach.kill.archer', 1));
     expect(r.data.granted).toBe(50);
@@ -125,7 +125,7 @@ describe.skipIf(!mongo)('meta achievements e2e', () => {
     expect(r.data.save.achievements['ach.kill.archer'].claimedTiers).toEqual([1]);
   });
 
-  it('重复领同阶 → 409 ALREADY_CLAIMED，金币只发一次', async () => {
+  it('duplicate claim same tier → 409 ALREADY_CLAIMED, coins granted only once', async () => {
     await seedStats({ 'kill.archer': 120 });
     await claim('ach.kill.archer', 1);
     const dup = await claim('ach.kill.archer', 1);
@@ -134,7 +134,7 @@ describe.skipIf(!mongo)('meta achievements e2e', () => {
     expect(comm.bal(accountId)).toBe(50); // still only 50
   });
 
-  it('并发双击同阶 → 恰一个发币，一个被拒', async () => {
+  it('concurrent double-claim same tier → exactly one granted, one rejected', async () => {
     await seedStats({ 'kill.archer': 120 });
     const [a, b] = await Promise.all([claim('ach.kill.archer', 1), claim('ach.kill.archer', 1)]);
     const codes = [a.statusCode, b.statusCode].sort();
@@ -142,13 +142,13 @@ describe.skipIf(!mongo)('meta achievements e2e', () => {
     expect(comm.bal(accountId)).toBe(50);
   });
 
-  it('未知成就 / 越界阶 → 400', async () => {
+  it('unknown achievement / out-of-range tier → 400', async () => {
     expect((await claim('ach.nope', 1)).statusCode).toBe(400);
     await seedStats({ 'kill.archer': 9999 });
     expect((await claim('ach.kill.archer', 9)).statusCode).toBe(400);
   });
 
-  it('多阶逐阶领：阶 I 后领阶 II 累加金币', async () => {
+  it('multi-tier sequential claim: coins from tier I accumulate when claiming tier II', async () => {
     await seedStats({ 'kill.archer': 600 }); // reaches tier I(100) + II(500)
     await claim('ach.kill.archer', 1);
     const r2 = body(await claim('ach.kill.archer', 2));
@@ -157,7 +157,7 @@ describe.skipIf(!mongo)('meta achievements e2e', () => {
     expect(r2.data.save.achievements['ach.kill.archer'].claimedTiers.sort()).toEqual([1, 2]);
   });
 
-  it('红线（A9 / A3）：领取只改金币，绝不动 ELO/段位/装备/材料/PvE 进度', async () => {
+  it('red line (A9 / A3): claim only changes coins, never touches ELO/rank/equipment/materials/PvE progress', async () => {
     await seedStats({ 'kill.archer': 120 });
     const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() })).data.save;
     const r = body(await claim('ach.kill.archer', 1));

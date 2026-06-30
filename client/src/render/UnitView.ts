@@ -28,8 +28,8 @@ import { targetScreenHeight } from './unitSize';
 const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
   [UnitType.Infantry]: infantryTaoUrl     as unknown as string,
   [UnitType.Archer]:    archerTaoUrl       as unknown as string,
-  [UnitType.ShieldBearer]:  shieldBearerTaoUrl as unknown as string, // 盾兵
-  // Anna 阵营三人 —— 各自独立的 .tao 动画（A6，已在 animator 分别重导）
+  [UnitType.ShieldBearer]:  shieldBearerTaoUrl as unknown as string, // shield bearer
+  // Anna faction trio — each with a separate .tao animation (A6, individually re-exported in the animator)
   [UnitType.Max]:   maxTaoUrl  as unknown as string,
   [UnitType.Lena]:  lenaTaoUrl as unknown as string,
   [UnitType.Mara]:  maraTaoUrl as unknown as string,
@@ -225,7 +225,7 @@ export class UnitView {
     createUnitContainer,
     resetUnitContainer,
     20,
-    // 圆形占位容器：body/ring/hpBg/hpFill 共 4 个 Graphics + 容器。
+    // Circle placeholder container: body/ring/hpBg/hpFill — 4 Graphics + the container.
     { label: 'unit.circle', bytesEach: 8 * 1024 },
   );
 
@@ -238,7 +238,7 @@ export class UnitView {
    */
   private readonly effectTicks = new Set<() => void>();
 
-  /** 内存看护注销函数（stickman 池数据源），destroy() 时调用。 */
+  /** Pool monitor deregister function (stickman pool data source); called in destroy(). */
   private readonly unregisterStickmanStat: () => void;
 
   constructor(
@@ -252,7 +252,7 @@ export class UnitView {
     this.equipment = equipment;
     this.container = new PIXI.Container();
 
-    // stickman 池（按类型分桶）登记进内存看护：每个空闲单位是 wrapper + ~11 个 sprite + outline。
+    // Stickman pool (bucketed by type) registered with the pool monitor: each idle entry is a wrapper + ~11 sprites + outline.
     this.unregisterStickmanStat = registerPool({
       label: 'unit.stickman',
       idle: () => {

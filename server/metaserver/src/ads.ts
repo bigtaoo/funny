@@ -190,7 +190,7 @@ export function registerAdCallbackRoutes(app: FastifyInstance, deps: CallbackDep
     },
   );
 
-  // ── 微信广告 SSV ─────────────────────────────────────────────────────────
+  // ── WeChat Ads SSV ──────────────────────────────────────────────────────
   app.post<{ Body: WechatAdsCallbackBody }>(
     '/ads/callback/wechat',
     async (req: FastifyRequest, reply: FastifyReply) => {

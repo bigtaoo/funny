@@ -190,7 +190,7 @@ export class BoardView {
     if (ratio > 0.85) return;
 
     const gfx = base.crackGfx;
-    const hw = base.rect.w * 0.25;  // ±1/4 宽，即中心到边缘一半
+    const hw = base.rect.w * 0.25;  // ±1/4 width, i.e. half the distance from center to edge
     const hh = base.rect.h * 0.25;
     const numCracks = ratio < 0.4 ? 2 : 1;
 
@@ -390,7 +390,7 @@ export class BoardView {
 
   private drawBases(layout: ILayout): void {
     // Base art is a bitmap asset (art belongs to AI-drawn assets, not procedural
-    // — see art-direction.md「〇、资产分工」). Enemy base mirrors by orientation.
+    // — see art-direction.md "Asset responsibility breakdown"). Enemy base mirrors by orientation.
     const baseTex = PIXI.Texture.from(baseTexUrl as string);
     this.playerBase = this.buildBaseRef(layout.playerBaseRect(), false, baseTex, layout);
     this.enemyBase  = this.buildBaseRef(layout.enemyBaseRect(),  true,  baseTex, layout);

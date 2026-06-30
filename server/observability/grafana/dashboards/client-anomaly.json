@@ -2,7 +2,7 @@
   "annotations": { "list": [] },
   "editable": true,
   "graphTooltip": 0,
-  "title": "Notebook Wars — 客户端异常（全量上报）",
+  "title": "Notebook Wars — Client Anomalies (Full Reporting)",
   "uid": "nw-client-anomaly",
   "tags": ["notebook-wars", "anomaly", "client"],
   "timezone": "",
@@ -10,12 +10,12 @@
   "version": 1,
   "time": { "from": "now-24h", "to": "now" },
   "refresh": "1m",
-  "description": "全网客户端主动上报的异常事件（FEATURE_FLAGS_DESIGN §9.7）。与定向采集不同：不受 allowPublicIds 约束，任何客户端遇 内存超标(mem)/CPU 持续饱和(cpu)/WebGL 上下文丢失(webgl_lost)/主循环卡死(anr)/未捕获异常(jserror)/上次会话崩溃(crash) 都直报。label 仅 {source=client, kind=anomaly}，type/publicId/platform/detail/msg 入行内（logfmt）。",
+  "description": "Anomaly events proactively reported by clients across all players (FEATURE_FLAGS_DESIGN §9.7). Unlike targeted collection: not constrained by allowPublicIds — any client that encounters memory over threshold (mem) / sustained CPU saturation (cpu) / WebGL context lost (webgl_lost) / main loop freeze (anr) / uncaught exception (jserror) / last session crash (crash) reports directly. Labels are only {source=client, kind=anomaly}; type/publicId/platform/detail/msg are inlined (logfmt).",
   "templating": {
     "list": [
       {
         "name": "type",
-        "label": "异常类型",
+        "label": "Anomaly Type",
         "type": "custom",
         "query": "mem,cpu,webgl_lost,anr,jserror,crash,other",
         "includeAll": true,
@@ -25,7 +25,7 @@
       },
       {
         "name": "platform",
-        "label": "平台",
+        "label": "Platform",
         "type": "custom",
         "query": "web,wechat,crazygames",
         "includeAll": true,
@@ -35,13 +35,13 @@
       },
       {
         "name": "publicId",
-        "label": "玩家 publicId(9 位，留空=全部)",
+        "label": "Player publicId (9 digits, leave blank = all)",
         "type": "textbox",
         "current": { "text": "", "value": "" }
       },
       {
         "name": "search",
-        "label": "关键字",
+        "label": "Keyword",
         "type": "textbox",
         "current": { "text": "", "value": "" }
       }
@@ -50,10 +50,10 @@
   "panels": [
     {
       "id": 1,
-      "title": "异常事件速率（按 type）",
+      "title": "Anomaly Event Rate (by type)",
       "type": "timeseries",
       "datasource": { "type": "loki", "uid": "loki" },
-      "description": "时间窗内 kind=anomaly 事件速率，按 type 堆叠。无数据 = 全网当前无客户端上报异常（或 metaserver 未配 NW_LOKI_PUSH_URL）。",
+      "description": "Rate of kind=anomaly events within the time window, stacked by type. No data = no client anomalies reported network-wide (or metaserver NW_LOKI_PUSH_URL not configured).",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } }, "overrides": [] },
       "targets": [
@@ -68,10 +68,10 @@
     },
     {
       "id": 2,
-      "title": "崩溃数（crash，窗口内）",
+      "title": "Crash Count (crash, within window)",
       "type": "stat",
       "datasource": { "type": "loki", "uid": "loki" },
-      "description": "上次会话异常退出（OOM / 进程被杀 / 标签页被杀）下次启动补报的 crash 事件数。",
+      "description": "Number of crash events reported on next startup after the previous session exited abnormally (OOM / process killed / tab killed).",
       "gridPos": { "h": 8, "w": 4, "x": 12, "y": 0 },
       "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background", "graphMode": "area" },
@@ -87,7 +87,7 @@
     },
     {
       "id": 3,
-      "title": "异常事件总数（窗口内）",
+      "title": "Total Anomaly Events (within window)",
       "type": "stat",
       "datasource": { "type": "loki", "uid": "loki" },
       "gridPos": { "h": 8, "w": 4, "x": 16, "y": 0 },
@@ -105,10 +105,10 @@
     },
     {
       "id": 4,
-      "title": "受影响玩家数（不同 publicId）",
+      "title": "Affected Players (distinct publicId)",
       "type": "stat",
       "datasource": { "type": "loki", "uid": "loki" },
-      "description": "时间窗内有异常上报的不同 publicId 数（anon = 登录前异常，归并为一个）。",
+      "description": "Number of distinct publicIds with anomaly reports in the time window (anon = pre-login anomalies, merged into one).",
       "gridPos": { "h": 8, "w": 4, "x": 20, "y": 0 },
       "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "purple", "value": null } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
@@ -125,10 +125,10 @@
     },
     {
       "id": 5,
-      "title": "异常事件明细（按 type / platform / publicId / 关键字 过滤）",
+      "title": "Anomaly Event Details (filter by type / platform / publicId / keyword)",
       "type": "logs",
       "datasource": { "type": "loki", "uid": "loki" },
-      "description": "每行末尾 type=…publicId=…platform=…detail=…msg=… 即客户端上报的结构化字段。detail 是已在客户端压成单串的补充（堆/池占用、FPS、stallMs、crash 的 aliveMs+lastError 等）。",
+      "description": "Each line ends with type=…publicId=…platform=…detail=…msg=… — the structured fields reported by the client. detail is supplemental info already packed into a single string on the client (heap/pool usage, FPS, stallMs, crash aliveMs+lastError, etc.).",
       "gridPos": { "h": 14, "w": 24, "x": 0, "y": 8 },
       "options": {
         "showTime": true,

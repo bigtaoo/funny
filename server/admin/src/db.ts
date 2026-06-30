@@ -125,8 +125,8 @@ export async function createAdminMongo(
   } catch (err) {
     const safeUri = sanitizeMongoUri(uri);
     console.error(
-      `[admin-mongo] 连接 MongoDB 失败 (uri=${safeUri}, db=${dbName}): ` +
-        `${(err as Error).message}. 请确认数据库已启动且连接配置 (NW_ADMIN_MONGO_URI/NW_MONGO_URI) 正确。`,
+      `[admin-mongo] MongoDB connection failed (uri=${safeUri}, db=${dbName}): ` +
+        `${(err as Error).message}. Ensure the database is running and the connection config (NW_ADMIN_MONGO_URI/NW_MONGO_URI) is correct.`,
     );
     throw err;
   }

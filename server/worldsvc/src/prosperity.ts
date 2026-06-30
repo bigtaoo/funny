@@ -1,11 +1,12 @@
-// 家族繁荣度（G2 / SLG_DESIGN §17.4）：评分 = familyProsperity(territory, member, activity)，
-// 读时惰性衰减（类比资源 yield，不每日 tick）。territory = 家族成员当前占领的格子数（与 getMe
-// 的 per-player countDocuments 同源，按成员展开聚合）。显式刷新点（占领/围攻/建门/settle）回写
-// prosperity + prosperityUpdatedAt 锚点。
+// Family prosperity (G2 / SLG_DESIGN §17.4): score = familyProsperity(territory, member, activity),
+// lazily decayed on read (analogous to resource yield; not ticked daily). territory = number of tiles
+// currently occupied by family members (same source as the per-player countDocuments in getMe,
+// expanded by aggregating across members). Explicit refresh points (occupation / siege / sect-founding / settle)
+// write back prosperity + prosperityUpdatedAt anchor.
 import { familyProsperity, decayProsperity } from '@nw/shared';
 import type { WorldCollections, FamilyDoc } from './db';
 
-/** 读时惰性衰减后的有效繁荣度（不回写）。base 缺省视 0，锚点缺省视 now（无衰减）。 */
+/** Effective prosperity after lazy decay on read (not written back). base defaults to 0; anchor defaults to now (no decay). */
 export function effectiveProsperity(fam: Pick<FamilyDoc, 'prosperity' | 'prosperityUpdatedAt'>, now: number): number {
   const base = fam.prosperity ?? 0;
   const anchor = fam.prosperityUpdatedAt ?? now;
@@ -14,10 +15,11 @@ export function effectiveProsperity(fam: Pick<FamilyDoc, 'prosperity' | 'prosper
 }
 
 /**
- * 重算并回写家族繁荣度（§17.4 显式刷新点）。territory = 家族成员占领的格子数，
- * member = FamilyDoc.memberCount，activity = FamilyDoc.activity（赛季累计活跃）。
- * 回写 prosperity + prosperityUpdatedAt=now。返回新值（已是「刚刷新」故无需再衰减）。
- * best-effort 语义由调用方决定；家族不存在 → 返回 0 不写。
+ * Recompute and write back family prosperity (§17.4 explicit refresh point).
+ * territory = number of tiles occupied by family members,
+ * member = FamilyDoc.memberCount, activity = FamilyDoc.activity (season cumulative activity).
+ * Writes back prosperity + prosperityUpdatedAt=now. Returns the new value (freshly refreshed, no further decay needed).
+ * Best-effort semantics are the caller's responsibility; family not found → returns 0 without writing.
  */
 export async function refreshFamilyProsperity(
   cols: WorldCollections,
@@ -40,7 +42,7 @@ export async function refreshFamilyProsperity(
   return prosperity;
 }
 
-/** 宗门繁荣度聚合 = ∑ 成员家族的有效繁荣度（§17.4，settle/建门/G6 采集时刷新）。 */
+/** Sect prosperity aggregate = ∑ effective prosperity of member families (§17.4, refreshed on settle / sect-founding / G6 harvest). */
 export async function aggregateSectProsperity(cols: WorldCollections, sectId: string, now: number): Promise<number> {
   const fams = await cols.families.find({ sectId }).toArray();
   return fams.reduce((sum, f) => sum + effectiveProsperity(f, now), 0);

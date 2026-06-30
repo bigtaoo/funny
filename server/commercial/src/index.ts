@@ -13,8 +13,8 @@ async function main(): Promise<void> {
   // Fail fast at startup rather than silently allowing it. The dev stub itself is also blocked for prod inside createReceiptVerifier.
   if (process.env.NODE_ENV === 'production' && process.env.NW_IAP_DEV === 'true') {
     console.error(
-      'FATAL: NW_IAP_DEV=true 在生产环境（NODE_ENV=production）下被拒绝启动——' +
-        'IAP dev 桩会让伪造收据无验签发币。请移除 NW_IAP_DEV 或设为 false 后重启。',
+      'FATAL: NW_IAP_DEV=true is rejected in production (NODE_ENV=production) — ' +
+        'the IAP dev stub allows forged receipts to bypass signature verification and grant coins. Remove NW_IAP_DEV or set it to false before restarting.',
     );
     process.exit(1);
   }

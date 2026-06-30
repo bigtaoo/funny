@@ -1,4 +1,4 @@
-// 运维后台前端入口（OPS_DESIGN §7）。持久化 token 续登：有 token 先 me() 验活，过期回登录页。
+// Ops admin frontend entry point (OPS_DESIGN §7). Persistent-token re-login: if a token exists, validate it via me() first; redirect to login on expiry.
 import { Api } from './api';
 import { App } from './app';
 

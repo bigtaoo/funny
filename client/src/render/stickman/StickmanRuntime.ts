@@ -116,7 +116,7 @@ const OUTLINE_WIDTH_PX = 2.4;   // thickness of the contour line itself
 // ── Equipment overlay (EQUIPMENT_DESIGN §20.4) ─────────────────────────────────
 //
 // Procedural stationery decals drawn over the figure along the skeleton — the
-// battle-render half of "把装备画到角色身上" (§2/§11). Each equipped slot draws the
+// battle-render half of "drawing equipment onto the character" (§2/§11). Each equipped slot draws the
 // same SketchPen glyph used by the UI icons (`equipmentGlyph.ts`), positioned at a
 // bone anchor so it rides the animation. Reuses the per-frame FK already computed
 // in {@link StickmanRuntime._applyPose} (no extra sampleClip/computeFK on the swarm

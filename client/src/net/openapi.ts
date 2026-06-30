@@ -13,7 +13,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 微信匿名登录（code 换 openid） */
+        /** WeChat anonymous login (exchange code for openid) */
         post: operations["authWx"];
         delete?: never;
         options?: never;
@@ -30,7 +30,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 设备 UUID 匿名登录（Web / CrazyGames） */
+        /** Device UUID anonymous login (Web / CrazyGames) */
         post: operations["authDevice"];
         delete?: never;
         options?: never;
@@ -47,7 +47,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 密码注册（邮箱/用户名 + 密码，新建账号） */
+        /** Password registration (email/username + password, creates a new account) */
         post: operations["authRegister"];
         delete?: never;
         options?: never;
@@ -64,7 +64,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 密码登录 */
+        /** Password login */
         post: operations["authLogin"];
         delete?: never;
         options?: never;
@@ -81,7 +81,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** OAuth 第三方登录（授权码流，首期支持 google） */
+        /** OAuth third-party login (authorization code flow, initially supports google) */
         post: operations["authOAuth"];
         delete?: never;
         options?: never;
@@ -98,7 +98,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 绑定凭证到当前账号（匿名升级转正 / 多凭证绑定） */
+        /** Bind credentials to the current account (upgrade anonymous to registered / bind multiple credentials) */
         post: operations["authBind"];
         delete?: never;
         options?: never;
@@ -115,7 +115,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 改密（需登录；校验旧密码） */
+        /** Change password (requires login; validates old password) */
         post: operations["authPasswordChange"];
         delete?: never;
         options?: never;
@@ -133,7 +133,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** 软删除账号（C5-b Apple 5.1.1(v)）——7 天宽限后异步清数据 */
+        /** Soft-delete account (C5-b Apple 5.1.1(v)) — data purged asynchronously after 7-day grace period */
         delete: operations["deleteAccount"];
         options?: never;
         head?: never;
@@ -149,7 +149,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 记录 GDPR 同意（C5-c）——设 flags.gdprConsent=true */
+        /** Record GDPR consent (C5-c) — sets flags.gdprConsent=true */
         post: operations["recordGdprConsent"];
         delete?: never;
         options?: never;
@@ -166,7 +166,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 改展示名（消耗金币；扣币成功后写名并回推存档） */
+        /** Change display name (consumes coins; writes name and pushes save after successful deduction) */
         post: operations["profileRename"];
         delete?: never;
         options?: never;
@@ -181,9 +181,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 拉取当前账号存档 */
+        /** Fetch the current account's save */
         get: operations["getSave"];
-        /** 推送客户端同步段（乐观锁 If-Match rev） */
+        /** Push client sync patch (optimistic lock via If-Match rev) */
         put: operations["putSave"];
         post?: never;
         delete?: never;
@@ -199,7 +199,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 当前账号最近对战历史（ranked / friendly，按时间倒序） */
+        /** Recent match history for the current account (ranked / friendly, in reverse chronological order) */
         get: operations["getMatchHistory"];
         put?: never;
         post?: never;
@@ -216,7 +216,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 取某局录像（仅本人参与的对局）；服务端 opaque 帧，客户端解码回放 */
+        /** Fetch a match replay (only matches the account participated in); server opaque frames, client decodes for playback */
         get: operations["getMatchReplay"];
         put?: never;
         post?: never;
@@ -235,7 +235,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 创建录像分享链接（S1-RP）；仅本人参与的对局可分享；7 天 TTL */
+        /** Create a replay share link (S1-RP); only matches the account participated in can be shared; 7-day TTL */
         post: operations["createReplayShare"];
         delete?: never;
         options?: never;
@@ -250,7 +250,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 通过分享链接取录像（S1-RP）；无需登录；超期返回 404 */
+        /** Fetch a replay via share link (S1-RP); no login required; returns 404 when expired */
         get: operations["getReplayByShare"];
         put?: never;
         post?: never;
@@ -269,7 +269,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 状态流录像游戏外分享 — 铸码（REPLAY_SHARE_DESIGN §3.1）。客户端自产的状态流 blob 随请求上传； 服务端只存 blob + 发不可猜 shareCode，不碰引擎/数值表。状态流不可信、仅供观赏，绝不进反作弊/结算。 体量超上限 / 铸码限流 → 400 / 429。 */
+        /** State-stream replay out-of-game share — mint code (REPLAY_SHARE_DESIGN §3.1). The client-generated state-stream blob is uploaded with the request; the server only stores the blob and issues an unguessable shareCode, never touching the engine or value tables. The state stream is untrusted, for viewing only, and never fed into anti-cheat or settlement. Exceeding size limit / mint rate limit → 400 / 429. */
         post: operations["createStateReplayShare"];
         delete?: never;
         options?: never;
@@ -284,7 +284,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 状态流录像公开取（REPLAY_SHARE_DESIGN §3.2）；无需登录；不存在/超期返回 404 */
+        /** Fetch public state-stream replay (REPLAY_SHARE_DESIGN §3.2); no login required; returns 404 when not found or expired */
         get: operations["getStateReplayShare"];
         put?: never;
         post?: never;
@@ -301,7 +301,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 公开启动配置（FEATURE_FLAGS_DESIGN §9.3）。匿名可调（带 token 则注入 accountId 求值更精确）； platform / publicId 经 query 带入。服务端对全量白名单逐个求值，**只回与默认值不同的 flag**（多数玩家拿空 map）。 绝不下发规则 / 白名单，只给布尔结果。客户端日志定向采集（client_log_*）即用此通道下发命中级别。 */
+        /** Public bootstrap config (FEATURE_FLAGS_DESIGN §9.3). Anonymous-callable (providing a token injects accountId for more precise evaluation); platform / publicId are passed via query. The server evaluates every allowlist entry and **returns only flags that differ from their default** (most players receive an empty map). Rules / allowlists are never sent — only boolean results. Targeted client log collection (client_log_*) uses this channel to deliver the matched log level. */
         get: operations["bootstrap"];
         put?: never;
         post?: never;
@@ -320,8 +320,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 客户端日志定向上报 → Loki（FEATURE_FLAGS_DESIGN §9.4）。仅被 client_log_* 定向的 publicId 才会调用 （非定向客户端 bootstrap 拿空 map、永不上报）；服务端二次校验定向命中，未命中静默丢弃。**永远回 200**—— Loki 不可达 / 未定向亦不影响玩家。label 仅 {source=client, level}，publicId/tag/msg 入行内（logfmt）。 */
+        /** Targeted client log forwarding → Loki (FEATURE_FLAGS_DESIGN §9.4). Only called by publicIds targeted by client_log_* (non-targeted clients receive an empty map on bootstrap and never report). The server re-validates targeting; unmatched logs are silently discarded. **Always returns 200** — Loki unreachable or not targeted still has no player impact. Labels: {source=client, level} only; publicId/tag/msg go inline (logfmt). */
         post: operations["clientLog"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client/anomaly": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk client anomaly event reporting → Loki (complements the targeted collection of /client/log, **not subject to allowPublicIds constraints**). Any client's memory overrun / sustained CPU saturation (cpu) / WebGL context loss (webgl_lost) / main-loop hang (anr) / uncaught exception (jserror) / previous-session crash (crash) is reported directly, enabling in-the-wild anomaly diagnosis across all clients. Abuse protection: rate-limited per IP at 30 requests/60s (excess silently dropped), max first 200 entries taken, fields truncated. **Always returns 200** — Loki unreachable or rate-limited still has no player impact. Labels: {source=client, kind=anomaly} only; type/publicId/platform/detail/msg go inline (logfmt). */
+        post: operations["clientAnomaly"];
         delete?: never;
         options?: never;
         head?: never;
@@ -337,7 +354,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** PvE 通关结算（服务器权威：校验解锁→发材料[每日上限]→写 progress/stars→回推） */
+        /** PvE level-clear settlement (server-authoritative: validates unlock → grants materials [daily cap] → writes progress/stars → pushes save) */
         post: operations["pveClear"];
         delete?: never;
         options?: never;
@@ -354,7 +371,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** PvE L1 录像抽检复算（补传被抽中通关的录像→第三方无头复算→复算星数≥声称才发材料） */
+        /** PvE L1 replay spot-check re-simulation (submit the selected replay → third-party headless re-simulation → materials granted only when re-simulated stars ≥ claimed) */
         post: operations["pveVerify"];
         delete?: never;
         options?: never;
@@ -371,7 +388,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 补体力（A4，扣 30 金币换 60 点体力；商店路由） */
+        /** Replenish stamina (A4, spend 30 coins for 60 stamina; shop route) */
         post: operations["purchaseStamina"];
         delete?: never;
         options?: never;
@@ -388,7 +405,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** PvE 升级（服务器权威：校验材料→扣材料→pveUpgrades+1→回推）；仅在线 */
+        /** PvE upgrade (server-authoritative: validates materials → deducts materials → pveUpgrades+1 → pushes save); online only */
         post: operations["pveUpgrade"];
         delete?: never;
         options?: never;
@@ -405,7 +422,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 单位养成合成（S12，服务器权威：校验库存→消耗 5 张 N 级卡→+1 张 N+1→重算 unitLevels→回推）；仅在线 */
+        /** Unit progression merging (S12, server-authoritative: validates inventory → consumes 5 level-N cards → grants 1 level-N+1 card → recomputes unitLevels → pushes save); online only */
         post: operations["pveMerge"];
         delete?: never;
         options?: never;
@@ -422,7 +439,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 装备合成（E2，服务器权威：扣文具材料→roll 一件 +0 基础装备→入库[300 上限]）。idempotencyKey 幂等 */
+        /** Equipment crafting (E2, server-authoritative: deducts stationery materials → rolls one +0 base equipment → adds to inventory [300 cap]). idempotencyKey for idempotency */
         post: operations["craftEquipment"];
         delete?: never;
         options?: never;
@@ -439,7 +456,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 装备强化（E3，服务器掷骰：成功率表→扣材料+金币→成功 level+1，失败不掉级）。idempotencyKey 幂等 */
+        /** Equipment enhancement (E3, server rolls dice: success rate table → deducts materials + coins → success: level+1, failure: level unchanged). idempotencyKey for idempotency */
         post: operations["enhanceEquipment"];
         delete?: never;
         options?: never;
@@ -456,7 +473,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 装备分解（E3，+0~4 返 70% 打造材料、移出库存；+5/穿戴中/锁定拒）。批量、idempotencyKey 幂等 */
+        /** Equipment salvage (E3, +0~4 returns 70% crafting materials and removes from inventory; +5/equipped/locked are rejected). Batch, idempotencyKey for idempotency */
         post: operations["salvageEquipment"];
         delete?: never;
         options?: never;
@@ -473,7 +490,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 装备穿戴/卸下（E4，校验槽位匹配→写 gear.global[slot] 或 byUnit）。instanceId=null 卸下。纯状态 */
+        /** Equip/unequip (E4, validates slot match → writes gear.global[slot] or byUnit). instanceId=null to unequip. Pure state mutation */
         post: operations["equipEquipment"];
         delete?: never;
         options?: never;
@@ -490,7 +507,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 装备洗练（E6，保留主词条，重 roll 副词条；消耗同槽低档素材件）。idempotencyKey 幂等 */
+        /** Equipment reforging (E6, keeps the primary affix, re-rolls secondary affixes; consumes a same-slot lower-tier material piece). idempotencyKey for idempotency */
         post: operations["reforgeEquipment"];
         delete?: never;
         options?: never;
@@ -505,7 +522,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 成就定义表 + 我的 stats + 已领进度（客户端本地算阶，ACHIEVEMENT_DESIGN §6） */
+        /** Achievement definition table + my stats + claimed progress (client computes tier locally, ACHIEVEMENT_DESIGN §6) */
         get: operations["getAchievements"];
         put?: never;
         post?: never;
@@ -524,7 +541,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 领取某成就某阶金币（服务器二次校验 stat≥阈值 + $addToSet 幂等发币，§4.3） */
+        /** Claim coins for a specific achievement tier (server re-validates stat≥threshold + $addToSet for idempotent coin grant, §4.3) */
         post: operations["claimAchievement"];
         delete?: never;
         options?: never;
@@ -539,7 +556,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 读留存状态（签到月历 + 每日任务进度 + 定义表，B5 RETENTION_DESIGN） */
+        /** Fetch retention state (check-in monthly calendar + daily task progress + definition table, B5 RETENTION_DESIGN) */
         get: operations["getRetention"];
         put?: never;
         post?: never;
@@ -558,7 +575,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 签到领当月下一格奖励（幂等，今日已领则 409） */
+        /** Check in to claim the next slot reward for the current month (idempotent; 409 if already claimed today) */
         post: operations["claimCheckin"];
         delete?: never;
         options?: never;
@@ -575,7 +592,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 领当日每日任务满点金币（幂等，未达阈值 → 400，已领 → 409） */
+        /** Claim the daily task full-points coin reward (idempotent; 400 if threshold not reached, 409 if already claimed) */
         post: operations["claimDailyReward"];
         delete?: never;
         options?: never;
@@ -590,7 +607,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 商品列表 */
+        /** Shop item list */
         get: operations["getShopItems"];
         put?: never;
         post?: never;
@@ -609,7 +626,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 直购（扣币→发货→回推） */
+        /** Direct purchase (deduct coins → deliver item → push save) */
         post: operations["shopBuy"];
         delete?: never;
         options?: never;
@@ -624,7 +641,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 盲盒池列表 */
+        /** Gacha pool list */
         get: operations["getGachaPools"];
         put?: never;
         post?: never;
@@ -643,7 +660,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 抽卡（单抽/十连，原子，逐抽落库） */
+        /** Gacha draw (single/ten-pull, atomic, each draw persisted individually) */
         post: operations["gachaDraw"];
         delete?: never;
         options?: never;
@@ -660,7 +677,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 广告奖励校验（每日 cap） */
+        /** Ad reward verification (daily cap) */
         post: operations["adsReward"];
         delete?: never;
         options?: never;
@@ -677,7 +694,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 充值验单（票据幂等） */
+        /** IAP receipt verification (idempotent ticket) */
         post: operations["iapVerify"];
         delete?: never;
         options?: never;
@@ -692,7 +709,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 好友列表（含在线态，meta 向 gateway 查 presence） */
+        /** Friend list (including online status; meta queries presence from gateway) */
         get: operations["getFriends"];
         put?: never;
         post?: never;
@@ -709,7 +726,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 待处理好友申请（收到的 + 发出的） */
+        /** Pending friend requests (received + sent) */
         get: operations["getFriendRequests"];
         put?: never;
         post?: never;
@@ -726,7 +743,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 离线红点聚合（待处理申请 / 未读会话 / 未读邮件 + 总数） */
+        /** Offline badge aggregation (pending requests / unread conversations / unread mail + total) */
         get: operations["getSocialBadges"];
         put?: never;
         post?: never;
@@ -745,7 +762,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 按 9 位公开 id 搜索玩家 */
+        /** Search for a player by 9-digit public id */
         post: operations["searchFriend"];
         delete?: never;
         options?: never;
@@ -762,7 +779,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 发好友申请（凭 publicId） */
+        /** Send a friend request (by publicId) */
         post: operations["requestFriend"];
         delete?: never;
         options?: never;
@@ -779,7 +796,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 同意 / 拒绝好友申请（accept → 建双向边 + 推双方） */
+        /** Accept / decline a friend request (accept → creates bidirectional edge + notifies both parties) */
         post: operations["respondFriend"];
         delete?: never;
         options?: never;
@@ -797,7 +814,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** 删好友（双向） */
+        /** Remove friend (bidirectional) */
         delete: operations["removeFriend"];
         options?: never;
         head?: never;
@@ -813,7 +830,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 拉黑（删好友 + 屏蔽申请/私聊） */
+        /** Block user (removes friend + blocks requests/chat) */
         post: operations["blockUser"];
         delete?: never;
         options?: never;
@@ -831,7 +848,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** 取消拉黑 */
+        /** Unblock user */
         delete: operations["unblockUser"];
         options?: never;
         head?: never;
@@ -845,7 +862,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 会话列表（各自未读数 + 末条摘要） */
+        /** Conversation list (per-conversation unread count + last message preview) */
         get: operations["getConversations"];
         put?: never;
         post?: never;
@@ -862,7 +879,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 拉会话历史（按时间倒序分页） */
+        /** Fetch conversation history (paginated in reverse chronological order) */
         get: operations["getMessages"];
         put?: never;
         post?: never;
@@ -881,7 +898,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 发私聊（须互为好友且未拉黑；限流 + 敏感词过滤） */
+        /** Send a private message (must be mutual friends and not blocked; rate-limited + sensitive-word filtering) */
         post: operations["sendChat"];
         delete?: never;
         options?: never;
@@ -898,7 +915,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 标记会话已读（清未读计数） */
+        /** Mark conversation as read (clears unread count) */
         post: operations["readChat"];
         delete?: never;
         options?: never;
@@ -913,7 +930,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 收件箱（未读数 + 邮件列表） */
+        /** Inbox (unread count + mail list) */
         get: operations["getMail"];
         put?: never;
         post?: never;
@@ -932,7 +949,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 标记邮件已读 */
+        /** Mark mail as read */
         post: operations["readMail"];
         delete?: never;
         options?: never;
@@ -949,7 +966,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 领取邮件附件（经 commercial 发金币/物品，幂等）→ 回推权威存档 */
+        /** Claim mail attachment (coins/items dispatched via commercial, idempotent) → returns authoritative save */
         post: operations["claimMail"];
         delete?: never;
         options?: never;
@@ -967,7 +984,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** 删除邮件 */
+        /** Delete mail */
         delete: operations["deleteMail"];
         options?: never;
         head?: never;
@@ -983,7 +1000,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 玩家间发邮件（门控为好友） */
+        /** Send mail between players (friend-gated) */
         post: operations["sendMail"];
         delete?: never;
         options?: never;
@@ -998,7 +1015,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 下发采集配置（无需鉴权，匿名 session 启动时拉一次） */
+        /** Deliver collection config (no auth required; fetched once on anonymous session start) */
         get: operations["getAnalyticsConfig"];
         put?: never;
         post?: never;
@@ -1017,7 +1034,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 批量上报事件（JWT 可选；有 token 附 user_id，否则匿名） */
+        /** Batch event reporting (JWT optional; attaches user_id when token present, otherwise anonymous) */
         post: operations["postAnalyticsEvents"];
         delete?: never;
         options?: never;
@@ -1032,7 +1049,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Top-100 排行榜（当前赛季 ELO 降序） */
+        /** Top-100 leaderboard (current season ELO descending) */
         get: operations["getLeaderboard"];
         put?: never;
         post?: never;
@@ -1051,7 +1068,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 购买当前赛季战令（600 金币） */
+        /** Purchase the current season battle pass (600 coins) */
         post: operations["buyBattlePass"];
         delete?: never;
         options?: never;
@@ -1068,7 +1085,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 领取战令奖励（免费轨 or 付费轨某等级） */
+        /** Claim a battle pass reward (free or paid track, at a given level) */
         post: operations["claimBattlePass"];
         delete?: never;
         options?: never;
@@ -1083,7 +1100,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 获取当前有效活动列表（含本账号参与进度） */
+        /** Fetch currently active event list (including this account's participation progress) */
         get: operations["getEvents"];
         put?: never;
         post?: never;
@@ -1102,7 +1119,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 消耗活动积分兑换奖励 */
+        /** Spend event points to redeem a reward */
         post: operations["claimEventReward"];
         delete?: never;
         options?: never;
@@ -1117,7 +1134,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 当前账号全量已授予称号（含派生 source/seasonNo）+ 当前佩戴称号 */
+        /** All titles granted to the current account (including derived source/seasonNo) + currently equipped title */
         get: operations["getTitles"];
         put?: never;
         post?: never;
@@ -1135,9 +1152,26 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** 选用当前显示称号（仅限已授予；空串=卸下），写 equipped.title 并回推存档 */
+        /** Select the currently displayed title (only titles already granted; empty string = unequip), writes equipped.title and pushes save */
         put: operations["equipTitle"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/promo/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Player redeems a promo code (once per player per code) */
+        post: operations["redeemPromoCode"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1186,22 +1220,22 @@ export interface components {
                 wins: number;
                 losses: number;
                 streak: number;
-                /** @description 当前赛季编号 */
+                /** @description Current season number */
                 seasonNo?: number;
-                /** @description 本赛季最高 ELO */
+                /** @description Peak ELO for current season */
                 seasonPeakElo?: number;
-                /** @description 本赛季最高段位 */
+                /** @description Peak rank for current season */
                 seasonPeakRank?: string;
-                /** @description 历史首达段位列表（终身账本） */
+                /** @description All-time first-reached rank list (lifetime ledger) */
                 reachedRanks?: string[];
             };
             stamina?: {
-                /** @description 当前体力 */
+                /** @description Current stamina */
                 current: number;
-                /** @description 下次回 1 点的时间戳(ms)；满格时为 0 */
+                /** @description Timestamp (ms) when the next 1 stamina regenerates; 0 when full */
                 regenAt: number;
             };
-            /** @description 拥有的称号 id 集合（赛季结算/成就/admin 授予，顺序即获得顺序） */
+            /** @description Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order) */
             titles?: string[];
             battlePass?: components["schemas"]["BattlePassData"];
             progress: {
@@ -1219,11 +1253,11 @@ export interface components {
             pveUpgrades: {
                 [key: string]: number;
             };
-            /** @description 单位强度等级 unitId→1..9，由 cardInventory 派生，引擎读此跑蓝图 */
+            /** @description Unit strength level unitId→1..9, derived from cardInventory; the engine reads this to run blueprints */
             unitLevels?: {
                 [key: string]: number;
             };
-            /** @description 单位卡库存 `${unitId}:${level}`→张数，集卡合成原始来源 */
+            /** @description Unit card inventory `${unitId}:${level}`→count, the raw source for card-merging synthesis */
             cardInventory?: {
                 [key: string]: number;
             };
@@ -1233,11 +1267,11 @@ export interface components {
             flags: {
                 [key: string]: boolean;
             };
-            /** @description 终身累计统计（StatKey→值），单调递增，服务器权威 */
+            /** @description Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative */
             stats?: {
                 [key: string]: number;
             };
-            /** @description achId→已领阶号子集，幂等防重领 */
+            /** @description achId→set of already-claimed tier numbers, idempotent to prevent double-claiming */
             achievements?: {
                 [key: string]: {
                     claimedTiers: number[];
@@ -1246,7 +1280,7 @@ export interface components {
             equipmentInv?: {
                 [key: string]: components["schemas"]["EquipmentInstance"];
             };
-            /** @description 穿戴 loadout（global 全军 / byUnit 按兵种预留），槽位→实例 id。 */
+            /** @description Equipment loadout (global for all units / byUnit per unit type reserved), slot→instance id. */
             gear?: {
                 global?: {
                     [key: string]: string;
@@ -1255,6 +1289,20 @@ export interface components {
                     [key: string]: {
                         [key: string]: string;
                     };
+                };
+            };
+            retention?: {
+                checkin?: {
+                    monthKey: string;
+                    claimedDays: number[];
+                };
+                daily?: {
+                    dayKey: string;
+                    completedTasks: {
+                        [key: string]: number;
+                    };
+                    taskPoints: number;
+                    rewardClaimed: boolean;
                 };
             };
         };
@@ -1301,21 +1349,21 @@ export interface components {
             mode: string;
             /** @enum {string} */
             result: "win" | "loss" | "unknown";
-            /** @description 归档当刻对手展示名快照 */
+            /** @description Snapshot of the opponent's display name at archival time */
             opponentName?: string;
-            /** @description 对手 9 位公开 id */
+            /** @description Opponent's 9-digit public id */
             opponentPublicId?: string;
-            /** @description ranked 本局 ELO 变化（带符号）；friendly 缺省 */
+            /** @description ELO change for this ranked match (signed); absent for friendly */
             eloDelta?: number;
-            /** @description 归档时间（epoch ms） */
+            /** @description Archival timestamp (epoch ms) */
             ts: number;
         };
-        /** @description 服务端持久化的对局录像（非空帧日志）。命令为 game.proto opaque bytes（base64），客户端解码回放。 */
+        /** @description Server-persisted match replay (non-empty frame log). Commands are game.proto opaque bytes (base64); the client decodes and plays back. */
         MatchReplay: {
-            /** @description 服务端逻辑无关恒 0；客户端按自身 ENGINE_VERSION 回放校验 */
+            /** @description Always 0 on the server side (logic-agnostic); clients validate against their own ENGINE_VERSION at replay time */
             engineVersion: number;
             mode: string;
-            /** @description uint64 十进制字符串 */
+            /** @description uint64 decimal string */
             seed: string;
             endFrame: number;
             frames: {
@@ -1348,7 +1396,7 @@ export interface components {
                 itemId: string;
                 weight: number;
                 rarity: components["schemas"]["Rarity"];
-                /** @description 抽中概率 0-1（Apple 3.1.1 概率公示） */
+                /** @description Draw probability 0-1 (Apple 3.1.1 probability disclosure) */
                 probability: number;
             }[];
         };
@@ -1366,7 +1414,7 @@ export interface components {
             publicId: string;
             displayName: string;
             rank?: string;
-            /** @description 当前佩戴称号 id（空=无称号） */
+            /** @description Currently equipped title id (empty string = no title) */
             equippedTitle?: string;
         };
         FriendView: {
@@ -1374,7 +1422,7 @@ export interface components {
             displayName: string;
             online: boolean;
             rank?: string;
-            /** @description owner 私有备注名 */
+            /** @description owner's private alias */
             alias?: string;
         };
         FriendRequestView: {
@@ -1416,7 +1464,7 @@ export interface components {
         };
         MailView: {
             mailId: string;
-            /** @description 'system' 或发件人 publicId */
+            /** @description 'system' or sender publicId */
             from: string;
             fromName?: string;
             subject: string;
@@ -1448,7 +1496,7 @@ export interface components {
         };
         AnalyticsEvent: {
             event: string;
-            /** @description 客户端 unix ms */
+            /** @description Client unix ms */
             ts: number;
             props?: {
                 [key: string]: unknown;
@@ -1466,7 +1514,7 @@ export interface components {
         };
     };
     responses: {
-        /** @description 失败包络 */
+        /** @description Error envelope */
         ErrorResp: {
             headers: {
                 [name: string]: unknown;
@@ -1502,7 +1550,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1532,7 +1580,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1564,7 +1612,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1597,7 +1645,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1631,7 +1679,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1669,7 +1717,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1706,7 +1754,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1735,7 +1783,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1768,7 +1816,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1802,7 +1850,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功，回推权威存档 + 新展示名 */
+            /** @description Success — returns authoritative save + new display name */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1833,7 +1881,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1858,7 +1906,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description 客户端持有的 rev */
+                /** @description The rev held by the client */
                 "If-Match": string;
             };
             path?: never;
@@ -1872,7 +1920,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功，回推规范化存档 */
+            /** @description Success — returns normalized save */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1888,7 +1936,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["ErrorResp"];
-            /** @description REV_CONFLICT，带当前云端值 */
+            /** @description REV_CONFLICT, includes current server-side value */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1907,7 +1955,7 @@ export interface operations {
     getMatchHistory: {
         parameters: {
             query?: {
-                /** @description 返回条数上限（默认 20，最多 50） */
+                /** @description Maximum number of entries to return (default 20, max 50) */
                 limit?: number;
             };
             header?: never;
@@ -1916,7 +1964,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1945,7 +1993,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1975,7 +2023,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1985,7 +2033,7 @@ export interface operations {
                         /** @enum {boolean} */
                         ok: true;
                         data: {
-                            /** @description 分享 id（UUID）；客户端拼 /share/replay/{shareId} 分发 */
+                            /** @description Share id (UUID); client constructs /share/replay/{shareId} to distribute */
                             shareId: string;
                         };
                     };
@@ -2006,7 +2054,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2034,13 +2082,13 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description gzip+base64 压缩的 delta 状态流录像（EncodedStateReplay）；opaque 压缩串，服务端不解压/不解释 */
+                    /** @description gzip+base64-compressed delta state-stream replay (EncodedStateReplay); opaque compressed string, server does not decompress or interpret */
                     blob: string;
                 };
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2050,7 +2098,7 @@ export interface operations {
                         /** @enum {boolean} */
                         ok: true;
                         data: {
-                            /** @description 不可猜随机分享码；客户端拼 /r/{shareCode} 分发 */
+                            /** @description Unguessable random share code; client constructs /r/{shareCode} to distribute */
                             shareCode: string;
                         };
                     };
@@ -2072,7 +2120,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2082,7 +2130,7 @@ export interface operations {
                         /** @enum {boolean} */
                         ok: true;
                         data: {
-                            /** @description gzip+base64 压缩的 delta 状态流录像（EncodedStateReplay）；客户端解压后哑播放 */
+                            /** @description gzip+base64-compressed delta state-stream replay (EncodedStateReplay); client decompresses and plays back silently */
                             blob: string;
                         };
                     };
@@ -2095,7 +2143,7 @@ export interface operations {
         parameters: {
             query?: {
                 platform?: "web" | "wechat" | "crazygames";
-                /** @description 玩家可见的 9 位 publicId（定向求值用）；缺省 = 匿名求值 */
+                /** @description Player-visible 9-digit publicId (for targeted evaluation); omitted = anonymous evaluation */
                 publicId?: string;
             };
             header?: never;
@@ -2104,7 +2152,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2114,7 +2162,7 @@ export interface operations {
                         /** @enum {boolean} */
                         ok: true;
                         data: {
-                            /** @description 仅含「求值结果 ≠ 默认值」的 flag（key→bool）；多数玩家为空对象 */
+                            /** @description Contains only flags whose evaluated result differs from the default (key→bool); empty object for most players */
                             flags: {
                                 [key: string]: boolean;
                             };
@@ -2134,16 +2182,16 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description 上报者的 9 位 publicId（入 Loki 行内，供 Grafana `| logfmt | publicId="..."` 检索） */
+                    /** @description Reporter's 9-digit publicId (inline in Loki, for Grafana `| logfmt | publicId="..."` queries) */
                     publicId: string;
                     /** @enum {string} */
                     platform?: "web" | "wechat" | "crazygames";
-                    /** @description 一批日志（环形缓冲里 ≥ 命中阈值的条目）；服务端最多取前 1000 条 */
+                    /** @description A batch of log entries (from the ring buffer at or above the match threshold); server takes at most the first 1000 */
                     logs: {
                         /** @enum {string} */
                         level: "error" | "warn" | "info" | "debug";
                         msg: string;
-                        /** @description epoch ms（客户端时钟） */
+                        /** @description epoch ms (client clock) */
                         ts: number;
                         tag?: string;
                     }[];
@@ -2151,7 +2199,53 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 已接受（accepted=实际转发条数；未定向 / 无效则为 0） */
+            /** @description Accepted (accepted = actual forwarded count; 0 if not targeted or invalid) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            accepted: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+        };
+    };
+    clientAnomaly: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Reporter's 9-digit publicId (optional; anomalies before login are recorded as anon) */
+                    publicId?: string;
+                    /** @enum {string} */
+                    platform?: "web" | "wechat" | "crazygames";
+                    /** @description A batch of anomaly events; server takes at most the first 200 */
+                    events: {
+                        /** @description Anomaly type (mem/cpu/webgl_lost/anr/jserror/crash; unknown falls back to other) */
+                        type: string;
+                        msg: string;
+                        /** @description epoch ms (client clock) */
+                        ts: number;
+                        /** @description Structured supplement (already compressed into a single string and truncated on the client) */
+                        detail?: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted (accepted = actual forwarded count; 0 if rate-limited or invalid) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2181,13 +2275,13 @@ export interface operations {
                 "application/json": {
                     levelId: string;
                     stars: number;
-                    /** @description 可选录像引用（L1 抽检复算用，已弃用） */
+                    /** @description Optional replay reference (for L1 spot-check re-simulation */
                     replayRef?: string;
-                    /** @description 客户端开局蓝图快照（L0 异常判定；与服务器权威不符触发抽检） */
+                    /** @description Client blueprint snapshot at match start (L0 anomaly check; mismatch with server-authoritative triggers spot-check) */
                     pveUpgrades?: {
                         [key: string]: number;
                     };
-                    /** @description 本局成就计数（kill.archer/kill.guard/cast.meteor；S9-3b，普通通关喂入，过 L1 caps） */
+                    /** @description Per-match achievement counters (kill.archer/kill.guard/cast.meteor; S9-3b, fed on normal clear, capped by L1) */
                     stats?: {
                         [key: string]: number;
                     };
@@ -2195,7 +2289,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2206,21 +2300,21 @@ export interface operations {
                         ok: true;
                         data: {
                             save: components["schemas"]["SaveData"];
-                            /** @description 本次实发材料（capped / 抽检暂扣时为空） */
+                            /** @description Materials actually granted this time (empty when capped or held pending spot-check) */
                             granted: {
                                 [key: string]: number;
                             };
-                            /** @description 本次实发单位卡（cardKey→张数，S12-C；capped / 抽检暂扣时为空） */
+                            /** @description Unit cards actually granted this time (cardKey→count, S12-C; empty when capped or held pending spot-check) */
                             grantedCards?: {
                                 [key: string]: number;
                             };
-                            /** @description 本次关卡掉落的装备实例（E2 §4；未掉落 / 满仓时缺省） */
+                            /** @description Equipment instance dropped by this level (E2 §4; absent if nothing dropped or inventory full) */
                             grantedEquipment?: components["schemas"]["EquipmentInstance"];
-                            /** @description 当日发材料通关已达上限 */
+                            /** @description Daily material-granting clear cap reached */
                             capped: boolean;
-                            /** @description 被 L1 抽中——材料暂扣，客户端须补传录像走 /pve/verify 复算入账 */
+                            /** @description Selected by L1 spot-check — materials withheld; client must submit the replay to /pve/verify for re-simulation and crediting */
                             needsReplay?: boolean;
-                            /** @description 抽检记录 id（needsReplay 时），补传录像时回带 */
+                            /** @description Spot-check record id (present when needsReplay is true); must be echoed back when submitting the replay */
                             verifyId?: string;
                         };
                     };
@@ -2240,11 +2334,11 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description /pve/clear 回执的抽检记录 id */
+                    /** @description Spot-check record id from the /pve/clear response */
                     verifyId: string;
-                    /** @description 录像总帧数（复算步数上限） */
+                    /** @description Total frame count of the replay (upper bound for re-simulation steps) */
                     endFrame: number;
-                    /** @description 非空帧（command bytes base64，与裁判管线同构） */
+                    /** @description Non-empty frames (command bytes base64, structurally identical to the judge pipeline) */
                     frames: {
                         frame: number;
                         cmds: {
@@ -2257,7 +2351,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2268,18 +2362,18 @@ export interface operations {
                         ok: true;
                         data: {
                             save: components["schemas"]["SaveData"];
-                            /** @description 复算通过后实发材料（rejected / capped 时为空） */
+                            /** @description Materials actually granted after re-simulation passes (empty when rejected or capped) */
                             granted: {
                                 [key: string]: number;
                             };
-                            /** @description 复算通过后实发单位卡（cardKey→张数，S12-C；rejected / capped 时为空） */
+                            /** @description Unit cards actually granted after re-simulation passes (cardKey→count, S12-C; empty when rejected or capped) */
                             grantedCards?: {
                                 [key: string]: number;
                             };
-                            /** @description 复算通过后关卡掉落的装备实例（E2 §4；未掉落 / 满仓时缺省） */
+                            /** @description Equipment instance dropped by this level after re-simulation passes (E2 §4; absent if nothing dropped or inventory full) */
                             grantedEquipment?: components["schemas"]["EquipmentInstance"];
                             capped: boolean;
-                            /** @description 复算是否通过（false=星数不符判可疑，未发材料） */
+                            /** @description Whether re-simulation passed (false = star count mismatch, deemed suspicious; materials not granted) */
                             verified: boolean;
                         };
                     };
@@ -2301,7 +2395,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /**
-                     * @description 每次补 60 点（唯一档位）
+                     * @description Replenish 60 per purchase (single tier only)
                      * @enum {integer}
                      */
                     amount: 60;
@@ -2309,7 +2403,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2347,7 +2441,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2377,15 +2471,15 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description 兵种 id（infantry/shieldbearer/archer） */
+                    /** @description Unit type id (infantry/shieldbearer/archer) */
                     unitId: string;
-                    /** @description 被合成的源卡等级 N（产出 N+1） */
+                    /** @description Source card level N to merge (produces N+1) */
                     level: number;
                 };
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2415,15 +2509,15 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description 装备定义 id（EQUIPMENT_DEFS，决定槽位/稀有度/配方） */
+                    /** @description Equipment definition id (EQUIPMENT_DEFS */
                     defId: string;
-                    /** @description 客户端生成幂等键；重放返回首次结果（不二次扣料/roll） */
+                    /** @description Client-generated idempotency key; replay returns the first result (no second deduction or roll) */
                     idempotencyKey: string;
                 };
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2455,17 +2549,17 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description 待强化的装备实例 id（equipmentInv 内） */
+                    /** @description Id of the equipment instance to enhance (within equipmentInv) */
                     instanceId: string;
-                    /** @description 客户端生成幂等键；掷骰/扣料绑定此键，重放返回首次结果 */
+                    /** @description Client-generated idempotency key; die roll and deduction are bound to this key; replay returns the first result */
                     idempotencyKey: string;
-                    /** @description 是否使用保护道具（E7）；true 且库存有 protect_enhance 时失败不损材料，消耗 1 个道具 */
+                    /** @description Whether to use a protection item (E7); when true and protect_enhance is in inventory, failure does not consume materials, uses 1 protection item */
                     useProtect?: boolean;
                 };
             };
         };
         responses: {
-            /** @description 成功（success=false 表示掷骰失败，已损耗材料/金币、等级不变） */
+            /** @description Success (success=false means the die roll failed; materials/coins consumed, level unchanged) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2475,7 +2569,7 @@ export interface operations {
                         /** @enum {boolean} */
                         ok: true;
                         data: {
-                            /** @description 本次强化是否成功（成功则 instance.level+1） */
+                            /** @description Whether this enhancement succeeded (success → instance.level+1) */
                             success: boolean;
                             instance: components["schemas"]["EquipmentInstance"];
                             save: components["schemas"]["SaveData"];
@@ -2500,14 +2594,14 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description 待分解的装备实例 id 列表（含 +0 冗余件，可批量） */
+                    /** @description List of equipment instance ids to salvage (including +0 duplicates, supports batch) */
                     instanceIds: string[];
                     idempotencyKey: string;
                 };
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2517,7 +2611,7 @@ export interface operations {
                         /** @enum {boolean} */
                         ok: true;
                         data: {
-                            /** @description 返还的材料合计（材料 id→数量） */
+                            /** @description Total materials refunded (material id→quantity) */
                             refunded: {
                                 [key: string]: number;
                             };
@@ -2543,19 +2637,19 @@ export interface operations {
             content: {
                 "application/json": {
                     /**
-                     * @description 目标槽位
+                     * @description Target slot
                      * @enum {string}
                      */
                     slot: "weapon" | "armor" | "trinket";
-                    /** @description 要穿上的实例 id；null 卸下该槽 */
+                    /** @description Instance id to equip; null to unequip the slot */
                     instanceId: string | null;
-                    /** @description 缺省=gear.global 全军共享；给定=gear.byUnit 对应兵种（阶段二） */
+                    /** @description Default = gear.global shared across all units; specified = gear.byUnit for the given unit type (phase 2) */
                     unitType?: string;
                 };
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2586,17 +2680,17 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description 待洗练的装备实例 id */
+                    /** @description Id of the equipment instance to reforge */
                     targetId: string;
-                    /** @description 消耗的素材装备实例 id（同槽低一档，如 rare→需fine） */
+                    /** @description Id of the material equipment instance to consume (same slot */
                     materialId: string;
-                    /** @description 客户端生成幂等键；重 roll 绑定此键，重放返回首次结果 */
+                    /** @description Client-generated idempotency key; re-roll is bound to this key; replay returns the first result */
                     idempotencyKey: string;
                 };
             };
         };
         responses: {
-            /** @description 成功（instance 已含新副词条） */
+            /** @description Success (instance now contains the new secondary affixes) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2627,7 +2721,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2665,7 +2759,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2676,7 +2770,7 @@ export interface operations {
                         ok: true;
                         data: {
                             save: components["schemas"]["SaveData"];
-                            /** @description 本次发放金币 */
+                            /** @description Coins granted this time */
                             granted: number;
                         };
                     };
@@ -2697,7 +2791,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2720,8 +2814,14 @@ export interface operations {
                                 };
                             } | null;
                             defs: {
-                                rewards: Record<string, never>[];
-                                tasks: Record<string, never>[];
+                                rewards: {
+                                    kind: string;
+                                    count: number;
+                                }[];
+                                tasks: {
+                                    id: string;
+                                    points: number;
+                                }[];
                                 pointsThreshold: number;
                                 dailyCoinsReward: number;
                             };
@@ -2745,7 +2845,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2756,7 +2856,7 @@ export interface operations {
                         ok: true;
                         data: {
                             save: components["schemas"]["SaveData"];
-                            /** @description 本次领取的格号（1-based） */
+                            /** @description Slot number claimed this time (1-based) */
                             day: number;
                             reward: {
                                 /** @enum {string} */
@@ -2780,7 +2880,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2791,7 +2891,7 @@ export interface operations {
                         ok: true;
                         data: {
                             save: components["schemas"]["SaveData"];
-                            /** @description 本次发放金币 */
+                            /** @description Coins granted this time */
                             coins: number;
                         };
                     };
@@ -2812,7 +2912,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2844,7 +2944,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2872,7 +2972,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2906,7 +3006,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2937,7 +3037,7 @@ export interface operations {
                 "application/json": {
                     adToken: string;
                     /**
-                     * @description 广告平台（C2）
+                     * @description Ad platform (C2)
                      * @enum {string}
                      */
                     platform?: "dev" | "admob_client" | "wechat_client";
@@ -2945,7 +3045,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2980,7 +3080,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3008,7 +3108,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3035,7 +3135,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3063,7 +3163,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3094,7 +3194,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3129,7 +3229,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3166,7 +3266,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3197,7 +3297,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3230,7 +3330,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3260,7 +3360,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3287,7 +3387,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3308,7 +3408,7 @@ export interface operations {
     getMessages: {
         parameters: {
             query?: {
-                /** @description 取此时间戳（epoch ms）之前的消息（分页游标） */
+                /** @description Fetch messages before this timestamp (epoch ms) (pagination cursor) */
                 before?: number;
                 limit?: number;
             };
@@ -3320,7 +3420,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3354,7 +3454,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3390,7 +3490,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3417,7 +3517,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3447,7 +3547,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3477,7 +3577,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3509,7 +3609,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3544,7 +3644,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3572,7 +3672,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 采集配置 */
+            /** @description Collection config */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3600,7 +3700,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 接收成功（fire-and-forget，不代表落盘） */
+            /** @description Accepted (fire-and-forget, does not guarantee persistence) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3624,7 +3724,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 排行榜列表 */
+            /** @description Leaderboard list */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3636,7 +3736,7 @@ export interface operations {
                         data: {
                             seasonNo: number;
                             entries: {
-                                /** @description 名次 1-based */
+                                /** @description Rank, 1-based */
                                 rank: number;
                                 displayName: string;
                                 publicId: string;
@@ -3659,7 +3759,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 购买成功 */
+            /** @description Purchase successful */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3695,7 +3795,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 领取成功 */
+            /** @description Claim successful */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3727,7 +3827,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 活动列表 */
+            /** @description Event list */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3785,7 +3885,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 兑换成功 */
+            /** @description Redemption successful */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3822,7 +3922,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3833,14 +3933,14 @@ export interface operations {
                         ok: true;
                         data: {
                             titles: {
-                                /** @description 称号 id（ladder.s{N}.{rank} / slg.s{N}.{key} / ach.{key} / event.{key}） */
+                                /** @description Title id (ladder.s{N}.{rank} / slg.s{N}.{key} / ach.{key} / event.{key}) */
                                 id: string;
                                 /** @enum {string} */
                                 source: "ladder" | "slg" | "achievement" | "event";
-                                /** @description 赛季号（ladder/slg 类称号才有） */
+                                /** @description Season number (only for ladder/slg type titles) */
                                 seasonNo?: number;
                             }[];
-                            /** @description 当前佩戴称号 id；未佩戴为 null */
+                            /** @description Currently equipped title id; null if none equipped */
                             equipped: string | null;
                         };
                     };
@@ -3859,13 +3959,13 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description 要佩戴的称号 id；空串表示卸下显示称号 */
+                    /** @description Title id to equip; empty string means unequip the displayed title */
                     titleId: string;
                 };
             };
         };
         responses: {
-            /** @description 成功 */
+            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3882,6 +3982,43 @@ export interface operations {
             };
             401: components["responses"]["ErrorResp"];
             403: components["responses"]["ErrorResp"];
+        };
+    };
+    redeemPromoCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Promo code (case-insensitive) */
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Redemption successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            coinsAfter: number;
+                            coinsGranted: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
             409: components["responses"]["ErrorResp"];
         };
     };

@@ -294,7 +294,7 @@ export class TimelinePanel {
     for (let i = 0; i < this.laneCount; i++) {
       const lane = (ATTACK_LANES as readonly number[])[i]!;
       ctx.fillStyle = C.text;
-      ctx.fillText(`列 ${lane}`, GUTTER_W / 2, RULER_H + i * LANE_H + LANE_H / 2);
+      ctx.fillText(`Col ${lane}`, GUTTER_W / 2, RULER_H + i * LANE_H + LANE_H / 2);
     }
     ctx.textAlign = 'left';
   }

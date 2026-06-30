@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    // 纯逻辑单测（Room / RoomManager），无需 Mongo / 真 WS：注入假 Connection。
+    // Pure logic unit tests (Room / RoomManager); no Mongo or real WS needed: inject a fake Connection.
     include: ['test/**/*.test.ts'],
   },
 });

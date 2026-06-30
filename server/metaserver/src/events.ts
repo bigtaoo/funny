@@ -296,7 +296,7 @@ export async function claimEventReward(
 
   const pid = participantId(eventId, accountId);
 
-  // 确保文档存在
+  // Ensure the participant document exists
   await cols.eventParticipants.updateOne(
     { _id: pid },
     {
@@ -316,16 +316,16 @@ export async function claimEventReward(
   const doc = await cols.eventParticipants.findOne({ _id: pid });
   if (!doc) return { ok: false, error: 'NOT_FOUND' };
 
-  // 检查 maxClaims
+  // Check maxClaims limit
   if (reward.maxClaims !== undefined) {
     const alreadyClaimed = rewardClaimedCount(doc.claimedRewards, rewardId);
     if (alreadyClaimed >= reward.maxClaims) return { ok: false, error: 'CLAIM_LIMIT_REACHED' };
   }
 
-  // 检查积分充足
+  // Check that the account has enough points
   if (doc.points < reward.cost) return { ok: false, error: 'INSUFFICIENT_POINTS' };
 
-  // 原子扣分（$gte 守卫防并发超扣）
+  // Atomically deduct points ($gte guard prevents concurrent over-deduction)
   const claimIndex = doc.claimedRewards.length;
   const updated = await cols.eventParticipants.findOneAndUpdate(
     { _id: pid, points: { $gte: reward.cost } },
@@ -336,25 +336,25 @@ export async function claimEventReward(
     },
     { returnDocument: 'after' },
   );
-  if (!updated) return { ok: false, error: 'INSUFFICIENT_POINTS' }; // 并发竞争落败
+  if (!updated) return { ok: false, error: 'INSUFFICIENT_POINTS' }; // lost concurrent race
 
   const pointsLeft = updated.points;
   const dispatchKey = `event.claim:${pid}:${rewardId}:${claimIndex}`;
 
-  // 发奖
+  // Dispatch reward
   if (reward.kind === 'coins' && (reward.count ?? 0) > 0 && commercial.available) {
     await commercial
       .grant({ accountId, amount: reward.count!, reason: 'event_reward', orderId: randomUUID() })
-      .catch(() => {/* best-effort；已扣分，暂不回滚（运营补偿兜底） */});
+      .catch(() => {/* best-effort; points already deducted, no rollback for now (ops compensation fallback) */});
   } else if (reward.kind !== 'coins') {
-    // material / skin → 邮件附件
+    // material / skin → mail attachment
     await insertSystemMail(
       cols,
       dispatchKey,
       accountId,
       {
-        subject: `活动奖励：${event.title}`,
-        body: `恭喜获得 ${reward.id ?? reward.kind} × ${reward.count ?? 1}`,
+        subject: `Event Reward: ${event.title}`,
+        body: `Congratulations! You received ${reward.id ?? reward.kind} × ${reward.count ?? 1}`,
         attachments: [
           {
             kind: reward.kind as 'material' | 'skin',
@@ -365,7 +365,7 @@ export async function claimEventReward(
         expireDays: 30,
       },
       now,
-    ).catch(() => {/* 邮件写入失败：已扣分，运营补偿兜底 */});
+    ).catch(() => {/* mail write failed: points already deducted, ops compensation fallback */});
   }
 
   return {

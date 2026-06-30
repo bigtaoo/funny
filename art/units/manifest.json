@@ -1,5 +1,5 @@
 {
-  "_comment": "动画工作区 → 仓库 同步映射（唯一映射真源）。workspace 对象路径 = units/<unitKey>/<name>.tao(.editor)；同步桥 tools/animator/scripts/anim-sync.mjs 据此写回仓库。新增兵种：加一条目即可。设计：design/tools/animator/WORKSPACE_SYNC.md §4。",
+  "_comment": "Animator workspace → repo sync mapping (single source of truth). Workspace object path = units/<unitKey>/<name>.tao(.editor); the sync bridge tools/animator/scripts/anim-sync.mjs writes back to the repo based on this file. To add a new unit: add one entry here. Design: design/tools/animator/WORKSPACE_SYNC.md §4.",
   "units": {
     "archer": {
       "name": "archer",

@@ -1,5 +1,6 @@
-// NetClient 连接/重连状态机回归（S1-6）。用假 socket，无网络。
-// 真·端到端（连真 gameserver、双 NetClient、真断线重连）走临时集成脚本验证。
+// NetClient connect/reconnect state-machine regression tests (S1-6). Uses a fake socket; no real network.
+// True end-to-end tests (connecting to a real gameserver, two NetClients, real disconnect/reconnect)
+// are covered by a separate integration script.
 import { describe, it, expect, vi } from 'vitest';
 import { NetClient, type NetState } from '../src/net/NetClient';
 import type { IGameSocket, IPlatform, SocketHandlers } from '../src/platform/IPlatform';
@@ -15,7 +16,7 @@ class FakeSocket implements IGameSocket {
   close(): void {
     this.closed = true;
   }
-  // 测试触发
+  // test-driven triggers
   open(): void {
     this.h.onOpen();
   }
@@ -53,7 +54,7 @@ describe('NetClient connect / reconnect', () => {
       handlers: { onServerMsg: () => {}, onStateChange: (s) => states.push(s) },
     });
     client.connect();
-    await tick(); // flush tokenProvider 微任务 → 创建 socket
+    await tick(); // flush tokenProvider microtask → create socket
     expect(sockets).toHaveLength(1);
     expect(client.getState()).toBe('connecting');
     sockets[0]!.open();
@@ -99,14 +100,14 @@ describe('NetClient connect / reconnect', () => {
     sockets[0]!.open();
     expect(client.getState()).toBe('open');
 
-    sockets[0]!.closeRemote(); // 异常掉线
+    sockets[0]!.closeRemote(); // abnormal disconnect
     expect(client.getState()).toBe('reconnecting');
 
-    await sleep(20); // 退避 5ms + token 微任务
-    expect(sockets).toHaveLength(2); // 新 socket 已建
+    await sleep(20); // backoff 5ms + token microtask
+    expect(sockets).toHaveLength(2); // new socket established
     sockets[1]!.open();
     expect(client.getState()).toBe('open');
-    expect(onReconnect).toHaveBeenCalledTimes(1); // 仅重连 open 触发，首次不触发
+    expect(onReconnect).toHaveBeenCalledTimes(1); // fires only on reconnect open, not on first connect
   });
 
   it('does not reconnect after intentional disconnect (ignores stale callbacks)', async () => {
@@ -126,7 +127,7 @@ describe('NetClient connect / reconnect', () => {
     expect(client.getState()).toBe('closed');
     expect(sockets[0]!.closed).toBe(true);
 
-    // 旧 socket 的滞后 onClose 不应触发重连（代次已作废）
+    // A stale onClose from the old socket must not trigger reconnect (generation is superseded)
     sockets[0]!.closeRemote();
     await sleep(20);
     expect(sockets).toHaveLength(1);
@@ -163,10 +164,10 @@ describe('NetClient connect / reconnect', () => {
     });
     client.connect();
     await tick();
-    client.joinRoom('ABC234'); // 未 open
+    client.joinRoom('ABC234'); // not yet open
     expect(sockets[0]!.sent).toHaveLength(0);
     sockets[0]!.open();
-    client.joinRoom('ABC234'); // open 后可发
+    client.joinRoom('ABC234'); // can send after open
     expect(sockets[0]!.sent).toHaveLength(1);
   });
 });

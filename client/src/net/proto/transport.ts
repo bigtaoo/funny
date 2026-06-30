@@ -9,7 +9,7 @@ import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
 
 export const protobufPackage = "nw.transport";
 
-/** ── 房间 ────────────────────────────────────────────── */
+/** ── Room ────────────────────────────────────────────── */
 export enum RoomPhase {
   WAITING = 0,
   READY = 1,
@@ -33,35 +33,35 @@ export enum FriendUpdateKind {
 
 export interface PlayerSlot {
   side: number;
-  /** 展示昵称（displayName），非 accountId */
+  /** display name (displayName), not accountId */
   name: string;
   ready: boolean;
   connected: boolean;
-  /** 9 位数字公开 id（玩家交流 / 投诉用；accountId 仅服务器内部） */
+  /** 9-digit numeric public id (for player communication / reports; accountId is server-internal only) */
   publicId: string;
 }
 
-/** ── 锁步帧（M14：模拟 30Hz，网络 10Hz 批次 = 3 帧）────── */
+/** ── Lockstep frames (M14: simulation 30Hz, network 10Hz batch = 3 frames) ────── */
 export interface SideCmd {
   side: number;
-  /** game.proto PlayerCommand[]，对服务器 opaque */
+  /** game.proto PlayerCommand[], opaque to the server */
   commands: Uint8Array;
 }
 
 export interface FrameCmds {
   frame: number;
-  /** 单个 sim 帧的指令 */
+  /** commands for a single sim frame */
   cmds: SideCmd[];
 }
 
 export interface FrameBatch {
-  /** 水位：客户端可推进到的帧 */
+  /** watermark: the frame up to which the client may advance */
   toFrame: number;
-  /** 仅列非空帧；空窗只有 to_frame */
+  /** only non-empty frames are listed; an empty window carries only to_frame */
   frames: FrameCmds[];
 }
 
-/** ── 客户端 → 服务器 ────────────────────────────────── */
+/** ── Client → Server ────────────────────────────────── */
 export interface RoomCreate {
   mode: MatchMode;
 }
@@ -99,25 +99,25 @@ export interface Ping {
 }
 
 /**
- * ── 对等裁判反作弊（Phase C，单裁判）─────────────────────
- * hash 不一致的 ranked 局，meta 挑一名高配空闲在线玩家做无头复算裁决。
- * client_caps：玩家连上 gateway 后上报本机能否承担复算（控制面）。
+ * ── Peer-judge anti-cheat (Phase C, single judge) ─────────────────────
+ * For ranked matches with a hash mismatch, meta selects a high-spec idle online player to perform a headless re-simulation verdict.
+ * client_caps: reported by the client after connecting to the gateway, indicating whether the local device can serve as a judge (control plane).
  */
 export interface ClientCaps {
   canJudge: boolean;
 }
 
-/** judge_verdict：裁判客户端复算完终局后回报（控制面）。 */
+/** judge_verdict: sent back by the judge client after completing the headless re-simulation of the final state (control plane). */
 export interface JudgeVerdict {
   requestId: string;
-  /** 复算得到的终局 hash（PvP：与 match_result.state_hash 同构） */
+  /** final-state hash from re-simulation (PvP: structurally equivalent to match_result.state_hash) */
   stateHash: string;
   winnerSide: number;
-  /** 复算成功（版本匹配 + 跑到终局） */
+  /** re-simulation succeeded (version matched and ran to final state) */
   ok: boolean;
-  /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：复算得到的星数（0=未通关） */
+  /** PvE spot-check re-simulation (PVE_INTEGRITY §8.6 L1): star count from re-simulation (0 = not cleared) */
   stars: number;
-  /** PvE 喂入（S9-3b）：复算出的玩家(owner 0)本局成就计数 JSON（{"kill.archer":n,…}）；裁判权威，meta verified 时 L1 校验后累加。PvP/siege 恒空 */
+  /** PvE feed (S9-3b): per-match achievement counter JSON for the player (owner 0) from re-simulation ({"kill.archer":n,…}); judge is authoritative; accumulated by meta after L1 validation when verified. Always empty for PvP/siege */
   statsJson: string;
 }
 
@@ -135,7 +135,7 @@ export interface ClientMsg {
   judgeVerdict?: JudgeVerdict | undefined;
 }
 
-/** ── 服务器 → 客户端 ────────────────────────────────── */
+/** ── Server → Client ────────────────────────────────── */
 export interface RoomState {
   code: string;
   players: PlayerSlot[];
@@ -148,45 +148,45 @@ export interface MatchStart {
   seed: number;
   startFrame: number;
   localSide: number;
-  /** 对手展示名（UI 用，纯展示） */
+  /** opponent display name (UI use, display only) */
   opponentName: string;
-  /** 对手 9 位数字公开 id（UI 用，纯展示） */
+  /** opponent 9-digit numeric public id (UI use, display only) */
   opponentPublicId: string;
-  /** 对手佩戴称号 id（UI 用，纯展示；空串=无称号） */
+  /** opponent's equipped title id (UI use, display only; empty string = no title) */
   opponentTitle: string;
 }
 
 export interface ConnResync {
   seed: number;
   startFrame: number;
-  /** 非空帧日志 */
+  /** non-empty frame log */
   log: FrameCmds[];
   curFrame: number;
 }
 
 /**
- * 配对 / 房主开局成功（gateway 控制面推，M18/M20）。客户端据此连 game 数据面 WS：
- * wss://<game_url>?ticket=<ticket>。ticket 对客户端 opaque（HMAC-JWT，仅 game 验签）。
+ * Match found / host started the game (pushed by gateway control plane, M18/M20). The client uses this to connect to the game data-plane WS:
+ * wss://<game_url>?ticket=<ticket>. ticket is opaque to the client (HMAC-JWT, verified only by game).
  */
 export interface MatchFound {
-  /** 分配到的 gameserver 公开 WS 地址 */
+  /** the assigned gameserver public WS address */
   gameUrl: string;
-  /** matchsvc 签名票据（含 room_id/seed/side/mode/opponent） */
+  /** matchsvc-signed ticket (contains room_id/seed/side/mode/opponent) */
   ticket: string;
 }
 
 /**
- * 匹配超时降级打 AI（feature flag match_bot_fallback 开启时，ranked 等待超阈值无真人 → 本地 AI 局）。
- * 客户端据此直接开一场「本地 AI 对局」（不连 gameserver，引擎在客户端跑 AISystem），无 ticket。
+ * Matchmaking timeout fallback to AI (when feature flag match_bot_fallback is enabled and ranked queue wait exceeds the threshold with no real opponent found → local AI match).
+ * The client uses this to start a local AI match directly (no gameserver connection; engine runs AISystem on the client), no ticket.
  */
 export interface MatchBot {
-  /** 局内 RNG 种子（客户端本地引擎用） */
+  /** in-match RNG seed (used by the client-side local engine) */
   seed: number;
-  /** AI 对手展示名 */
+  /** AI opponent display name */
   opponentName: string;
-  /** 玩家 ELO（AI 难度/展示参考） */
+  /** player ELO (AI difficulty / display reference) */
   elo: number;
-  /** AI 难度档（normal | …，DRAFT） */
+  /** AI difficulty tier (normal | …, DRAFT) */
   difficulty: string;
 }
 
@@ -206,7 +206,7 @@ export interface MatchOver {
   /** base | disconnect | mismatch */
   reason: string;
   mismatch: boolean;
-  /** 仅 ranked */
+  /** ranked only */
   elo?: EloDelta | undefined;
 }
 
@@ -219,9 +219,9 @@ export interface Pong {
 }
 
 /**
- * 裁判请求（gateway 控制面推给被选中的裁判客户端，Phase C）。客户端用 frames + seed
- * 无头复算整局，得到终局 hash + winner_side，经 judge_verdict 回报。frames 与
- * conn_resync.log 同构（仅非空帧；command bytes 仍 game.proto opaque）。
+ * Judge request (pushed by gateway control plane to the selected judge client, Phase C). The client uses frames + seed
+ * to headlessly re-simulate the entire match, obtains the final state hash + winner_side, and reports back via judge_verdict. frames are
+ * structurally identical to conn_resync.log (non-empty frames only; command bytes remain game.proto opaque).
  */
 export interface JudgeRequest {
   requestId: string;
@@ -230,22 +230,22 @@ export interface JudgeRequest {
   endFrame: number;
   frames: FrameCmds[];
   /**
-   * PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：level_id 非空 → 裁判按战役模式无头复算该关，
-   * 用 seed（由 level 派生，裁判本地查 levels JSON）+ pve_upgrades（服务器权威蓝图快照，
-   * 保证复算确定性）+ frames（玩家指令）跑到终局算星数，经 judge_verdict.stars 回报。
+   * PvE spot-check re-simulation (PVE_INTEGRITY §8.6 L1): non-empty level_id → judge re-simulates the level headlessly in campaign mode,
+   * using seed (derived from the level, judge looks up the levels JSON locally) + pve_upgrades (server-authoritative blueprint snapshot,
+   * ensures deterministic re-simulation) + frames (player commands) to run to the final state and compute stars, reported back via judge_verdict.stars.
    */
   levelId: string;
   pveUpgrades: { [key: string]: number };
   /**
-   * SLG 围攻复算（S8-3，SLG_DESIGN §5.3）：defense_json 非空 → 裁判按 siege 模式无头复算。
-   * 防守 config 是一份 LevelDefinition 的 JSON（worldsvc 为被攻击格即时构造，对 worldsvc opaque，
-   * 仅客户端引擎解释）；裁判用 seed + 该 config + pve_upgrades（攻方服务器权威养成快照）+ frames
-   * （攻方指令）跑到终局，winner_side=0 → 攻方破城（attacker_win），经 judge_verdict 回报。
+   * SLG siege re-simulation (S8-3, SLG_DESIGN §5.3): non-empty defense_json → judge re-simulates headlessly in siege mode.
+   * The defense config is a LevelDefinition JSON (constructed on-the-fly by worldsvc for the attacked tile, opaque to worldsvc,
+   * interpreted only by the client engine); judge uses seed + this config + pve_upgrades (server-authoritative attacker progression snapshot) + frames
+   * (attacker commands) to run to the final state; winner_side=0 → attacker breached (attacker_win), reported back via judge_verdict.
    */
   defenseJson: string;
   /**
-   * S12 单位养成复算：unit_levels 非空 → 裁判用此等级映射重建蓝图（替代 pve_upgrades，保证
-   * 高养成玩家抽检时复算使用与对局完全一致的蓝图，防止弱蓝图误判）。
+   * S12 unit progression re-simulation: non-empty unit_levels → judge uses this level map to rebuild the blueprint (replaces pve_upgrades, ensures
+   * that spot-check re-simulations for highly-progressed players use the exact same blueprint as the original match, preventing false verdicts from a weaker blueprint).
    */
   unitLevels: { [key: string]: number };
 }
@@ -261,10 +261,10 @@ export interface JudgeRequest_UnitLevelsEntry {
 }
 
 /**
- * ── 社交实时推送（S6，SOCIAL_DESIGN §4.2）─────────────────
- * 发送动作走 REST 到 meta（单一写者，SOC3）；这些仅 server→client 推送（来消息 / 好友
- * 上下线 / 申请 / 新邮件红点）。meta 经 gateway /gw/push 据 account→socket 定向下发，
- * 离线则丢弃（数据已落库，下次登录拉取）。多 gateway 实例时 push 经 Redis 路由（SOC9）。
+ * ── Social real-time push (S6, SOCIAL_DESIGN §4.2) ─────────────────
+ * Write actions go via REST to meta (single writer, SOC3); these are server→client push only (incoming message / friend online/offline / request / new-mail badge).
+ * meta delivers them via gateway /gw/push targeting account→socket; dropped if offline (data is persisted and fetched on next login).
+ * With multiple gateway instances, pushes are routed via Redis (SOC9).
  */
 export interface FriendPresence {
   publicId: string;
@@ -297,10 +297,10 @@ export interface MailNew {
 }
 
 /**
- * ── SLG 大世界（S8）：仅 server→client 推送 ──────────────────
- * 与 social 同原则（SOC3 / §14.5）：SLG 玩家动作走 REST 到 worldsvc（单一写者），
- * 实时事件走 WS push（worldsvc → gateway /gw/push → 据 account→socket 定向下发）。
- * tile 字段一律用 tileId 字符串（`{worldId}:{x}:{y}`），客户端自解析坐标。
+ * ── SLG world map (S8): server→client push only ──────────────────
+ * Same principle as social (SOC3 / §14.5): SLG player actions go via REST to worldsvc (single writer),
+ * real-time events go via WS push (worldsvc → gateway /gw/push → targeted delivery per account→socket).
+ * All tile fields use the tileId string (`{worldId}:{x}:{y}`); the client parses the coordinates itself.
  */
 export interface MarchUpdate {
   marchId: string;
@@ -318,13 +318,13 @@ export interface TileUpdate {
   /** TileType */
   type: string;
   level: number;
-  /** 占领者 9 位公开 id（空=中立） */
+  /** occupier's 9-digit public id (empty = neutral) */
   ownerPublicId: string;
-  /** 占领者昵称（meta 不可用时为空） */
-  ownerName: string;
   familyId: string;
-  /** ms（0=无保护） */
+  /** ms (0 = no protection) */
   protectedUntil: number;
+  /** occupier's display name (empty when meta is unavailable) */
+  ownerName: string;
 }
 
 export interface UnderAttack {
@@ -354,8 +354,8 @@ export interface FamilyMsg {
 }
 
 /**
- * 宗门频道消息（S8-4b，§8.2 宗门频道）。worldsvc 经 Redis pub/sub（GW_PUSH_REDIS_CHANNEL）
- * 把消息扇给各 gateway，gateway 据宗门在线成员定向下发。结构对齐 FamilyMsg。
+ * Sect channel message (S8-4b, §8.2 sect channel). worldsvc fans messages out to all gateways via Redis pub/sub (GW_PUSH_REDIS_CHANNEL);
+ * each gateway delivers to online sect members individually. Structure mirrors FamilyMsg.
  */
 export interface SectMsg {
   sectId: string;
@@ -366,8 +366,8 @@ export interface SectMsg {
 }
 
 /**
- * 国家/世界公频消息（B7，§6.4 社交频道）。worldsvc 经 Redis pub/sub 扇给同 worldId 内
- * 所有在线玩家；无 Redis 降级为 O(n) HTTP push。离线成员靠 REST 拉历史（TTL 7 天）。
+ * Nation / world public channel message (B7, §6.4 social channels). worldsvc fans messages via Redis pub/sub to all online players within the same worldId;
+ * falls back to O(n) HTTP push when Redis is unavailable. Offline members fetch history via REST (TTL 7 days).
  */
 export interface NationMsg {
   worldId: string;
@@ -380,7 +380,7 @@ export interface NationMsg {
 export interface WorldEvent {
   /** season_open | season_settle | grand_tourney | … */
   kind: string;
-  /** JSON（DRAFT，结构随事件类型） */
+  /** JSON (DRAFT; structure varies by event kind) */
   payload: string;
 }
 
@@ -411,7 +411,7 @@ export interface ServerMsg {
   matchBot?: MatchBot | undefined;
 }
 
-/** 线上每帧一个 Envelope */
+/** One Envelope per frame on the wire */
 export interface Envelope {
   client?: ClientMsg | undefined;
   server?: ServerMsg | undefined;
@@ -2931,7 +2931,7 @@ export const MarchUpdate: MessageFns<MarchUpdate> = {
 };
 
 function createBaseTileUpdate(): TileUpdate {
-  return { tileId: "", type: "", level: 0, ownerPublicId: "", ownerName: "", familyId: "", protectedUntil: 0 };
+  return { tileId: "", type: "", level: 0, ownerPublicId: "", familyId: "", protectedUntil: 0, ownerName: "" };
 }
 
 export const TileUpdate: MessageFns<TileUpdate> = {
@@ -3041,9 +3041,9 @@ export const TileUpdate: MessageFns<TileUpdate> = {
     message.type = object.type ?? "";
     message.level = object.level ?? 0;
     message.ownerPublicId = object.ownerPublicId ?? "";
-    message.ownerName = object.ownerName ?? "";
     message.familyId = object.familyId ?? "";
     message.protectedUntil = object.protectedUntil ?? 0;
+    message.ownerName = object.ownerName ?? "";
     return message;
   },
 };

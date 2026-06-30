@@ -8,19 +8,25 @@ module.exports = (env, argv) => {
   const targetPlatform = env.TARGET || 'web';
   const isWechat = targetPlatform === 'wechat';
 
-  // metaserver REST 基址 / gateway 控制面 WS：构建期注入全局，运行时 net/config.ts 读取。
-  // 优先取环境变量（CI/生产用 NW_API_BASE=https://host/api）；dev 缺省指向本地 metaserver
-  // （NW_META_PORT 默认 18080）+ gateway（NW_GW_PORT 默认 8086），开箱即可注册 / 联机。
-  // 注意：8082/8083 在本机 Windows TCP excludedportrange 内（WinNAT/Hyper-V 动态保留），
-  // 绑定会 EACCES，故 gateway 改用 8086（须与 dev-up.ps1 的 NW_GW_PORT / NW_GATEWAY_PUBLIC_WS_URL 一致）。
-  // 生产未配则留空 → net/config 返回 null → 退化为纯本地离线。
+  // metaserver REST base URL / gateway control-plane WS: injected as globals at build time,
+  // read at runtime by net/config.ts.
+  // Environment variables take priority (CI/production: NW_API_BASE=https://host/api);
+  // dev defaults point to local metaserver (NW_META_PORT default 18080) + gateway
+  // (NW_GW_PORT default 8086) — works out of the box for local registration and multiplayer.
+  // Note: ports 8082/8083 fall inside the Windows TCP excludedportrange (WinNAT/Hyper-V dynamic
+  // reservation) and will EACCES on bind, so gateway uses 8086 instead
+  // (must match NW_GW_PORT / NW_GATEWAY_PUBLIC_WS_URL in dev-up.ps1).
+  // If not configured in production, values are empty → net/config returns null → degrades to
+  // local offline-only mode.
   const apiBase = process.env.NW_API_BASE || (isProd ? '' : 'http://localhost:18080');
   const gatewayWs = process.env.NW_GATEWAY_WS || (isProd ? '' : 'ws://localhost:8086/gw');
   const worldBase = process.env.NW_WORLD_BASE || (isProd ? '' : 'http://localhost:18084');
-  // 微信小游戏方案 A 资源 CDN 基址（ASSET_PACKAGING §4）。微信构建专用：asset/resource 的
-  // publicPath 设成它，import 直接烘焙成 `<CDN>/cdn/<hash>.png` 绝对 URL，资源文件发到 wechatgame/cdn/
-  // （由 project.config packOptions.ignore 排除出主包，单独上传 CDN）。留空则退化为包内相对路径（整包跑，
-  // 仅本地 IDE 自测用）。Web/CrazyGames 忽略此项（同源相对 URL）。
+  // WeChat mini-game Plan A asset CDN base URL (ASSET_PACKAGING §4). WeChat builds only:
+  // asset/resource publicPath is set to this value so imports are baked into absolute URLs
+  // `<CDN>/cdn/<hash>.png`; asset files are output to wechatgame/cdn/ (excluded from the
+  // main package by project.config packOptions.ignore and uploaded to the CDN separately).
+  // If empty, falls back to relative paths inside the package (whole-package mode, for local
+  // IDE testing only). Web/CrazyGames ignore this (same-origin relative URLs).
   const assetCdn = (process.env.NW_ASSET_CDN || '').replace(/\/+$/, '');
 
   return {
@@ -34,8 +40,9 @@ module.exports = (env, argv) => {
         {
           test: /\.(png|jpg|gif|webp|mp3|wav|ogg|tao)$/i,
           type: 'asset/resource',
-          // 微信（方案 A）：资源发到 cdn/ 子目录并把 URL 烘焙成 CDN 绝对地址；运行时 WechatAssetIO
-          // downloadFile + 本地缓存（微信无 fetch）。Web/CrazyGames：默认行为（dist 根 + 同源相对 URL）。
+          // WeChat (Plan A): assets go into the cdn/ subdirectory and URLs are baked as
+          // absolute CDN addresses; at runtime WechatAssetIO uses downloadFile + local cache
+          // (WeChat has no fetch). Web/CrazyGames: default behavior (dist root + same-origin relative URL).
           ...(isWechat ? {
             generator: {
               filename: 'cdn/[contenthash][ext]',
@@ -60,8 +67,9 @@ module.exports = (env, argv) => {
       },
     },
     output: isWechat ? {
-      // 微信壳层 game.js 里 `require('./pixigame.js')`：单 IIFE 包，自执行。clean:false 保住
-      // 同目录的 game.js/game.json/assets/。globalObject=globalThis 适配微信运行时（无 window/self）。
+      // WeChat shell game.js uses `require('./pixigame.js')`: single IIFE bundle, self-executing.
+      // clean:false preserves game.js/game.json/assets/ in the same directory.
+      // globalObject=globalThis adapts to the WeChat runtime (no window/self).
       filename: 'pixigame.js',
       path: path.resolve(__dirname, 'wechatgame'),
       clean: false,
@@ -73,9 +81,9 @@ module.exports = (env, argv) => {
       clean: true,
     },
     plugins: [
-      // 微信无 HTML 宿主（game.js require pixigame.js）；HtmlWebpackPlugin / version.json / _headers 仅 Web。
+      // WeChat has no HTML host (game.js requires pixigame.js); HtmlWebpackPlugin / version.json / _headers are Web-only.
       ...(isWechat ? [] : [new HtmlWebpackPlugin({ template: `./public/${targetPlatform}/index.html` })]),
-      // 构建时写出 version.json（客户端轮询版本用）和 _headers（CF Workers / nginx 缓存策略）。
+      // Emit version.json at build time (for client version polling) and _headers (CF Workers / nginx cache policy).
       ...(isProd && !isWechat ? [{
         apply(compiler) {
           const version = process.env.NW_BUILD_VERSION || '0.0.0';
@@ -84,8 +92,8 @@ module.exports = (env, argv) => {
               { name: 'StaticMetaPlugin', stage: webpack.Compilation.PROCESS_ASSETS_STAGE_ADDITIONAL },
               () => {
                 compilation.emitAsset('version.json', new webpack.sources.RawSource(JSON.stringify({ v: version })));
-                // _headers：Cloudflare Workers static assets 支持此文件控制响应头。
-                // index.html / version.json 不缓存，JS 文件带 contenthash 可永久缓存。
+                // _headers: Cloudflare Workers static assets support this file for response-header control.
+                // index.html / version.json: no-cache; JS files with contenthash: cache forever.
                 const headers = [
                   '/index.html',
                   '  Cache-Control: no-cache, must-revalidate',

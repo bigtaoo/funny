@@ -3,7 +3,7 @@
  *
  * Export re-validates through the game-side parseEffectDef so a downloaded file
  * is guaranteed to load at runtime; the user then drops it into
- * client/src/effects/ (DESIGN §8 回写流程, manual). Import reads a .json from
+ * client/src/effects/ (DESIGN §8 write-back flow, manual). Import reads a .json from
  * disk and validates it the same way.
  */
 import { parseEffectDef } from '@vfx/parseEffectDef';
@@ -26,7 +26,7 @@ export async function exportEffect(
   onError: (m: string) => void,
 ): Promise<void> {
   const checked = validate(def, `${def.id}.json`, onError);
-  if (!checked) { onError('导出已阻止 — 当前特效未通过校验'); return; }
+  if (!checked) { onError('Export blocked — current effect failed validation'); return; }
   const text = JSON.stringify(checked, null, 2) + '\n';
   const fileName = `${checked.id}.json`;
 
@@ -43,7 +43,7 @@ export async function exportEffect(
       }).createWritable();
       await writable.write(text);
       await writable.close();
-      onOk(`✓ 已保存 ${fileName} — 手动放入 client/src/effects/ 并构建`);
+      onOk(`✓ Saved ${fileName} — manually place in client/src/effects/ and build`);
       return;
     } catch {
       return; // cancelled
@@ -57,7 +57,7 @@ export async function exportEffect(
   a.download = fileName;
   a.click();
   URL.revokeObjectURL(url);
-  onOk(`✓ 已下载 ${fileName} — 手动放入 client/src/effects/ 并构建`);
+  onOk(`✓ Downloaded ${fileName} — manually place in client/src/effects/ and build`);
 }
 
 /** Open a .json from disk and return the validated EffectDef. */
@@ -67,7 +67,7 @@ export async function importEffect(
 ): Promise<void> {
   const apply = (text: string): void => {
     let raw: unknown;
-    try { raw = JSON.parse(text); } catch (e) { onError(`JSON 解析失败：${(e as Error).message}`); return; }
+    try { raw = JSON.parse(text); } catch (e) { onError(`JSON parse failed: ${(e as Error).message}`); return; }
     const def = validate(raw, 'import', onError);
     if (def) onOk(def);
   };

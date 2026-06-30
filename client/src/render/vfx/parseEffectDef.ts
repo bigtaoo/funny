@@ -1,13 +1,13 @@
 /**
  * vfx/parseEffectDef.ts — validate + normalize raw JSON into an EffectDef.
  *
- * Mirrors level-editor's parseLevelDefinition范式 (design V4 / decision): the
+ * Mirrors level-editor's parseLevelDefinition pattern (design V4 / decision): the
  * runtime interpreter lost compile-time protection when effects became data, so
  * this is the single trusted gate. Hard-malformed input throws (caught at build
  * time via the registry); recoverable issues (unknown primitive, bad ease) warn
  * and are dropped/defaulted so one bad layer can't blank an effect.
  *
- * Design doc: design/tools/vfx-editor/DESIGN.md §校验/容错
+ * Design doc: design/tools/vfx-editor/DESIGN.md §validation/fault-tolerance
  */
 import {
   EffectDef, LayerDef, ParamTrack, Keyframe, Ease, PrimitiveType,

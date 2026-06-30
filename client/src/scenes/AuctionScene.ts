@@ -1,5 +1,5 @@
-// AuctionScene — SLG 拍卖场景（S8-5）
-// 两个 Tab：所有拍卖 / 我的挂单；底部操作：挂拍 / 购买 / 取消
+// AuctionScene — SLG auction scene (S8-5)
+// Two tabs: all auctions / my listings; bottom actions: create listing / buy / cancel
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';
@@ -26,7 +26,7 @@ const FILTER_H = 34;
 
 // Material types available for auction
 const MATERIALS = ['scrap', 'lead', 'binding'] as const;
-// 须与服务端 AUCTION_DURATIONS_SEC（shared/slg.ts）一致，否则 createAuction 抛 BAD_REQUEST。
+// Must match server-side AUCTION_DURATIONS_SEC (shared/slg.ts), otherwise createAuction throws BAD_REQUEST.
 const DURATIONS = [21600, 43200, 86400] as const; // 6h, 12h, 24h
 // Category filter for the market tab — matches AuctionView.itemType ('' = no filter).
 const FILTERS = ['', 'material', 'equipment'] as const;
@@ -222,7 +222,7 @@ export class AuctionScene implements Scene {
 
       const isAuction = auc.saleMode === 'auction';
 
-      // 材料名在 item.material（itemType 恒为 'material'/'equipment'）；装备暂无 material 字段时回退 itemType。
+      // Material name is in item.material (itemType is always 'material'/'equipment'); fall back to itemType when equipment has no material field yet.
       const matKey = (auc.item?.['material'] as string | undefined) ?? auc.itemType;
       const itemLbl = txt(`${t(`auction.${matKey as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`, 13, C.dark);
       itemLbl.x = 14; itemLbl.y = cy + 6;
@@ -234,7 +234,7 @@ export class AuctionScene implements Scene {
         this.bodyLayer.addChild(tag);
       }
 
-      // 一口价：显示成交单价；竞拍：显示当前出价（无人出价则起拍价）。
+      // Fixed-price: show the unit sale price; auction: show the current bid (or the starting price when no bids).
       const priceText = isAuction
         ? `${t(auc.topBid ? 'auction.currentBid' : 'auction.startPrice')}: ${auc.price}`
         : `${t('auction.price')}: ${auc.price}`;
@@ -516,7 +516,7 @@ export class AuctionScene implements Scene {
 
   // ── Bid (auction listings) ──────────────────────────────────────────────────
 
-  /** auc.price = 当前最高出价（有出价时）或起拍价。有出价则要求至少 +5% 加价（服务端权威）。 */
+  /** auc.price = the current highest bid (when a bid exists) or the starting price. With a bid, the new bid must be at least +5% higher (server-authoritative). */
   private minBidFor(auc: AuctionView): number {
     return auc.topBid ? Math.max(auc.price + 1, Math.ceil(auc.price * 1.05)) : auc.price;
   }

@@ -1,71 +1,71 @@
-// B6 限时活动容器纯逻辑单测（无 Mongo）：isEventActive / taskProgress / rewardClaimedCount。
+// B6 timed-event container pure-logic unit tests (no Mongo required): isEventActive / taskProgress / rewardClaimedCount.
 import { describe, it, expect } from 'vitest';
 import { isEventActive, taskProgress, rewardClaimedCount, type EventTaskProgress } from '@nw/shared';
 
-describe('isEventActive 活动窗口判断', () => {
+describe('isEventActive event window check', () => {
   const START = 1_000_000;
   const END   = 2_000_000;
 
-  it('活动期内返回 true', () => {
+  it('returns true during the event window', () => {
     expect(isEventActive(START, END, 1_500_000)).toBe(true);
-    expect(isEventActive(START, END, START)).toBe(true); // 含边界 start
+    expect(isEventActive(START, END, START)).toBe(true); // inclusive of start boundary
   });
 
-  it('活动结束后返回 false（windowEnd 不含）', () => {
+  it('returns false after the event ends (windowEnd is exclusive)', () => {
     expect(isEventActive(START, END, END)).toBe(false);
     expect(isEventActive(START, END, END + 1)).toBe(false);
   });
 
-  it('活动开始前返回 false', () => {
+  it('returns false before the event starts', () => {
     expect(isEventActive(START, END, START - 1)).toBe(false);
   });
 
-  it('活动期外 claim 需拦截（窗口刚关）', () => {
-    // 验收：活动期外 claim 被拒
+  it('claim outside the event window must be blocked (window just closed)', () => {
+    // acceptance: claim outside the event window is rejected
     const justClosed = END;
     expect(isEventActive(START, END, justClosed)).toBe(false);
   });
 });
 
-describe('taskProgress 进度读取', () => {
+describe('taskProgress progress retrieval', () => {
   const prog: EventTaskProgress[] = [
     { taskId: 'task1', progress: 3, pointsGranted: false },
     { taskId: 'task2', progress: 5, pointsGranted: true },
   ];
 
-  it('已有记录返回正确进度', () => {
+  it('existing record returns correct progress', () => {
     expect(taskProgress(prog, 'task1')).toBe(3);
     expect(taskProgress(prog, 'task2')).toBe(5);
   });
 
-  it('无记录默认返回 0', () => {
+  it('no record defaults to 0', () => {
     expect(taskProgress(prog, 'task3')).toBe(0);
     expect(taskProgress([], 'task1')).toBe(0);
   });
 });
 
-describe('rewardClaimedCount 兑换次数统计', () => {
-  it('未兑换返回 0', () => {
+describe('rewardClaimedCount claim count tracking', () => {
+  it('not yet claimed returns 0', () => {
     expect(rewardClaimedCount([], 'rwd1')).toBe(0);
     expect(rewardClaimedCount(['rwd2', 'rwd3'], 'rwd1')).toBe(0);
   });
 
-  it('正确计数同 rewardId 出现次数（支持多次兑换）', () => {
+  it('correctly counts occurrences of the same rewardId (supports multiple claims)', () => {
     expect(rewardClaimedCount(['rwd1'], 'rwd1')).toBe(1);
     expect(rewardClaimedCount(['rwd1', 'rwd2', 'rwd1'], 'rwd1')).toBe(2);
   });
 
-  it('maxClaims 语义：≥ maxClaims 视为超限', () => {
-    // 验收：积分不跨活动结转（maxClaims 上限守卫）
+  it('maxClaims semantics: count >= maxClaims is treated as over-limit', () => {
+    // acceptance: points do not carry over across events (maxClaims upper-bound guard)
     const MAX = 1;
     const claimed = ['rwd1'];
     expect(rewardClaimedCount(claimed, 'rwd1') >= MAX).toBe(true);
   });
 });
 
-describe('积分不跨活动结转（语义验收）', () => {
-  it('不同 eventId 的参与文档 _id 不同', () => {
-    // _id = `${eventId}:${accountId}`，不同活动天然隔离
+describe('points do not carry over across events (semantic acceptance)', () => {
+  it('participation documents with different eventIds have different _id values', () => {
+    // _id = `${eventId}:${accountId}`, naturally isolated per event
     const accountId = 'acc1';
     const event1Id = 'event-A';
     const event2Id = 'event-B';
@@ -74,7 +74,7 @@ describe('积分不跨活动结转（语义验收）', () => {
     expect(pid1).not.toBe(pid2);
   });
 
-  it('积分归属活动，活动结束后无法再 claim（isEventActive 拦截）', () => {
+  it('points belong to the event; claiming after it ends is blocked (guarded by isEventActive)', () => {
     const NOW = 3_000_000;
     const closedEvent = { windowStart: 1_000_000, windowEnd: 2_000_000 };
     expect(isEventActive(closedEvent.windowStart, closedEvent.windowEnd, NOW)).toBe(false);

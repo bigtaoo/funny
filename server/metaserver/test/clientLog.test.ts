@@ -1,4 +1,4 @@
-﻿// Client log targeted collection (FEATURE_FLAGS_DESIGN §9): Loki payload assembly + public bootstrap "diff-only response"
+// Client log targeted collection (FEATURE_FLAGS_DESIGN §9): Loki payload assembly + public bootstrap "diff-only response"
 // + /client/log targeting guard. Pure logic, no database connection (cols uses a stub).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -8,7 +8,7 @@ import { MetaService } from '../src/service';
 
 // ── buildLokiPayload (§9.4 Loki ingestion convention) ─────────────────────────────────────
 describe('buildLokiPayload', () => {
-  it('按 level 分流；label 仅 source/level；publicId 入行内（logfmt）', () => {
+  it('routes by level; labels are source/level only; publicId included inline (logfmt)', () => {
     const p = buildLokiPayload(
       '123456789',
       [
@@ -21,7 +21,7 @@ describe('buildLokiPayload', () => {
     expect(p.streams).toHaveLength(2);
     const err = p.streams.find((s) => s.stream.level === 'error')!;
     expect(err.stream).toEqual({ source: 'client', level: 'error' });
-    // ts(ms)→ns：1000ms = 1_000_000_000ns
+    // ts(ms)→ns: 1000ms = 1_000_000_000ns
     expect(err.values[0][0]).toBe('1000000000');
     expect(err.values[0][1]).toContain('publicId=123456789');
     expect(err.values[0][1]).toContain('tag=gateway');
@@ -31,7 +31,7 @@ describe('buildLokiPayload', () => {
     expect(info.values[0][1]).toContain('msg="hi there"');
   });
 
-  it('非法 level 归入 info；空入 → null', () => {
+  it('invalid level falls back to info; empty input → null', () => {
     const p = buildLokiPayload('1', [{ level: 'bogus', msg: 'x', ts: 5 }], undefined, () => '0')!;
     expect(p.streams[0].stream.level).toBe('info');
     expect(buildLokiPayload('1', [], undefined, () => '0')).toBeNull();
@@ -40,7 +40,7 @@ describe('buildLokiPayload', () => {
 
 // ── buildAnomalyLokiPayload (full anomaly reporting: single stream, low-cardinality labels, type/detail inlined) ──────────
 describe('buildAnomalyLokiPayload', () => {
-  it('单 stream label={source,kind=anomaly}；type/publicId/detail/msg 入行内（logfmt）', () => {
+  it('single stream label={source,kind=anomaly}; type/publicId/detail/msg included inline (logfmt)', () => {
     const p = buildAnomalyLokiPayload(
       '123456789',
       [{ type: 'webgl_lost', msg: 'context lost', ts: 1000, detail: '{"a":1}' }],
@@ -58,7 +58,7 @@ describe('buildAnomalyLokiPayload', () => {
     expect(line).toContain('msg="context lost"');
   });
 
-  it('未知 type 归入 other；空入 → null', () => {
+  it('unknown type falls back to other; empty input → null', () => {
     const p = buildAnomalyLokiPayload('1', [{ type: 'bogus', msg: 'x', ts: 5 }], undefined, () => '0')!;
     expect(p.streams[0].values[0][1]).toContain('type=other');
     expect(buildAnomalyLokiPayload('1', [], undefined, () => '0')).toBeNull();
@@ -91,8 +91,8 @@ function req(partial: { query?: unknown; body?: unknown; headers?: Record<string
   return { query: partial.query ?? {}, body: partial.body ?? {}, headers: partial.headers ?? {} } as unknown as FastifyRequest;
 }
 
-describe('MetaService.bootstrap（§9.3 只回与 default 不同的 flag）', () => {
-  it('publicId 命中 client_log_debug → flags 含该键 true；非命中 → 空 map', async () => {
+describe('MetaService.bootstrap (§9.3 only returns flags that differ from default)', () => {
+  it('publicId matches client_log_debug → flags contains that key true; no match → empty map', async () => {
     // Standard per-player targeting configuration: pct:0 disables for everyone, allowPublicIds enables for matched ids only (§9.1 note).
     const flags = await cacheWith([
       { _id: 'client_log_debug', enabled: true, rollout: { pct: 0, allowPublicIds: ['123456789'] } },
@@ -110,7 +110,7 @@ describe('MetaService.bootstrap（§9.3 只回与 default 不同的 flag）', ()
     expect(miss.data.flags).toEqual({});
   });
 
-  it('无 flag 源 → 恒空 map', async () => {
+  it('no flag source → always empty map', async () => {
     const svc = makeService(null);
     const r = (await svc.bootstrap(req({ query: { publicId: '123456789' } }))) as {
       data: { flags: Record<string, boolean> };
@@ -119,7 +119,7 @@ describe('MetaService.bootstrap（§9.3 只回与 default 不同的 flag）', ()
   });
 });
 
-describe('MetaService.clientLog（§9.4 定向守卫 + 转发）', () => {
+describe('MetaService.clientLog (§9.4 targeting guard + forwarding)', () => {
   const fetchMock = vi.fn(async () => ({ ok: true }) as Response);
   beforeEach(() => {
     fetchMock.mockClear();
@@ -134,7 +134,7 @@ describe('MetaService.clientLog（§9.4 定向守卫 + 转发）', () => {
     return r;
   }
 
-  it('未定向的 publicId → accepted 0，且不转发 Loki', async () => {
+  it('publicId not targeted → accepted 0, Loki not forwarded', async () => {
     const flags = await cacheWith([{ _id: 'client_log_debug', enabled: true, rollout: { allowPublicIds: ['111'] } }]);
     const svc = makeService(flags, 'http://loki/push');
     const out = (await svc.clientLog(
@@ -145,7 +145,7 @@ describe('MetaService.clientLog（§9.4 定向守卫 + 转发）', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('被定向 → 转发 Loki，accepted=条数', async () => {
+  it('targeted publicId → forwarded to Loki, accepted=count', async () => {
     const flags = await cacheWith([{ _id: 'client_log_error', enabled: true, rollout: { allowPublicIds: ['123456789'] } }]);
     const svc = makeService(flags, 'http://loki/push');
     const out = (await svc.clientLog(
@@ -157,7 +157,7 @@ describe('MetaService.clientLog（§9.4 定向守卫 + 转发）', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('http://loki/push');
   });
 
-  it('缺 publicId / logs → 400', async () => {
+  it('missing publicId / logs → 400', async () => {
     const svc = makeService(await cacheWith([]), 'http://loki/push');
     const rep = reply();
     await svc.clientLog(req({ body: { logs: [] } }), rep);
@@ -165,7 +165,7 @@ describe('MetaService.clientLog（§9.4 定向守卫 + 转发）', () => {
   });
 });
 
-describe('MetaService.clientAnomaly（全量上报：不受定向白名单约束 + IP 限流）', () => {
+describe('MetaService.clientAnomaly (full reporting: not restricted by targeting allowlist + IP rate limit)', () => {
   const fetchMock = vi.fn(async () => ({ ok: true }) as Response);
   beforeEach(() => { fetchMock.mockClear(); vi.stubGlobal('fetch', fetchMock); });
   afterEach(() => vi.unstubAllGlobals());
@@ -177,7 +177,7 @@ describe('MetaService.clientAnomaly（全量上报：不受定向白名单约束
     return r;
   }
 
-  it('无 flag 源 / 未定向也转发 Loki（全量），accepted=条数', async () => {
+  it('no flag source / not targeted still forwards to Loki (full reporting), accepted=count', async () => {
     const svc = makeService(null, 'http://loki/push'); // no flag source = no publicId is targeted
     const out = (await svc.clientAnomaly(
       req({ body: { publicId: '999', platform: 'web', events: [{ type: 'mem', msg: 'over', ts: 1 }] } }),
@@ -188,7 +188,7 @@ describe('MetaService.clientAnomaly（全量上报：不受定向白名单约束
     expect(fetchMock.mock.calls[0][0]).toBe('http://loki/push');
   });
 
-  it('缺 publicId → 仍接受（记为 anon）', async () => {
+  it('missing publicId → still accepted (recorded as anon)', async () => {
     const svc = makeService(null, 'http://loki/push');
     const out = (await svc.clientAnomaly(
       req({ body: { events: [{ type: 'crash', msg: 'prev crash', ts: 1 }] } }),
@@ -198,14 +198,14 @@ describe('MetaService.clientAnomaly（全量上报：不受定向白名单约束
     expect(fetchMock.mock.calls[0][1]).toBeDefined();
   });
 
-  it('缺 events → 400', async () => {
+  it('missing events → 400', async () => {
     const svc = makeService(null, 'http://loki/push');
     const rep = reply();
     await svc.clientAnomaly(req({ body: {} }), rep);
     expect(rep._code).toBe(400);
   });
 
-  it('同 IP 超过 30 次/60s → 静默丢弃（accepted 0、不再转发）', async () => {
+  it('same IP exceeds 30 requests/60s → silently dropped (accepted 0, no further forwarding)', async () => {
     const svc = makeService(null, 'http://loki/push'); // now always returns 1000 → all calls fall within the same rate-limit window
     const body = { body: { publicId: '1', events: [{ type: 'anr', msg: 'stall', ts: 1 }] } };
     for (let i = 0; i < 30; i++) await svc.clientAnomaly(req(body), reply());

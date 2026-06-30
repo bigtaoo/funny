@@ -18,13 +18,13 @@ import { getCachedDisplay } from '../ui/widgets/uiCache';
 
 export type IconKind =
   | 'book' | 'globe' | 'coin' | 'trophy' | 'castle' | 'pencils'
-  // 装备页材料 (EQUIPMENT_DESIGN)：碎屑 / 铅芯 / 装订线。
+  // Equipment page materials (EQUIPMENT_DESIGN): scrap / lead / binding.
   | 'scrap' | 'lead' | 'binding'
-  // 装备页词条统计：攻击 / 生命 / 护甲 / 移速 / 攻速。
+  // Equipment page stat icons: attack / HP / armor / move-speed / attack-speed.
   | 'atk' | 'hp' | 'armor' | 'spd' | 'atkspd'
-  // 养成页皮肤标签：外观笔刷（卡牌/单位用真实 png 立绘，见 cardArt.ts）。
+  // Collection page skin tag: cosmetic brush (cards/units use real PNG art, see cardArt.ts).
   | 'brush'
-  // 结算页动作：再战（交叉刀）/ 回放（循环箭头）/ 分享（出框箭头）/ 返回大厅（小屋）。
+  // Results page actions: rematch (crossed swords) / replay (loop arrow) / share (out-of-box arrow) / back to lobby (house).
   | 'swords' | 'replay' | 'share' | 'home';
 
 /** Open book — splayed pages over a centre spine, with a couple of text lines. */
@@ -165,7 +165,7 @@ function battlement(
 }
 
 /**
- * Castle motif (大世界 pillar): two crenellated towers flanking a central
+ * Castle motif (world-map pillar): two crenellated towers flanking a central
  * battlemented wall with an arched gate and a small pennant. Drawn large + faint
  * as the card's hero doodle (art-direction §6: hand-drawn motifs over photos).
  */
@@ -203,7 +203,7 @@ function drawCastle(g: PIXI.Graphics, s: number, color: number): void {
 }
 
 /**
- * Crossed-pencils motif (开始匹配 hero): two stationery pencils in an X — tips
+ * Crossed-pencils motif (matchmaking hero): two stationery pencils in an X — tips
  * down, ferrules + erasers up. Echoes the "three stationery pens" art language;
  * drawn large + faint behind the hero label.
  */

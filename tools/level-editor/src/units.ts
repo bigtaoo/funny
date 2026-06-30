@@ -15,11 +15,11 @@ export interface UnitMeta {
 }
 
 const META: Partial<Record<UnitType, { label: string; color: string }>> = {
-  [UnitType.Infantry]: { label: '普通兵', color: '#89b4fa' },
-  [UnitType.Archer]: { label: '弓箭兵', color: '#a6e3a1' },
-  [UnitType.ShieldBearer]: { label: '盾兵', color: '#f9e2af' },
-  [UnitType.Ironclad]: { label: '重甲', color: '#6b7a8f' },
-  [UnitType.Runner]: { label: '疾行', color: '#f0b840' },
+  [UnitType.Infantry]: { label: 'Infantry', color: '#89b4fa' },
+  [UnitType.Archer]: { label: 'Archer', color: '#a6e3a1' },
+  [UnitType.ShieldBearer]: { label: 'Shield', color: '#f9e2af' },
+  [UnitType.Ironclad]: { label: 'Ironclad', color: '#6b7a8f' },
+  [UnitType.Runner]: { label: 'Runner', color: '#f0b840' },
 };
 
 const FALLBACK = { label: '', color: '#bac2de' };

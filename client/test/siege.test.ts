@@ -1,10 +1,14 @@
-// SLG 围攻战引擎 + judgeRunner 复算（S8-3，SLG_DESIGN §5）。
+// SLG siege engine + judgeRunner re-verification (S8-3, SLG_DESIGN §5).
 //
-// siege 模式 = campaign 机制（防守方 WaveDirector 脚本）+ buildSiegeBlueprints 养成蓝图，
-// 攻方=本地玩家(owner 0)，破防守基地=attacker_win 夺地。本测覆盖三块：
-//   ①养成单调性 + 天梯红线（§6）：siege 蓝图随升级增强、{} 等于常量、PvP 蓝图永不受影响；
-//   ②引擎确定性：同 seed + 同防守 config + 同攻方指令流 → 逐字同终局；
-//   ③judge 复算闭环：录一局围攻 → 上传帧编码 → JudgeRequest(defenseJson) → runJudge 重算 winner 一致。
+// Siege mode = campaign mechanics (defender WaveDirector script) + buildSiegeBlueprints
+// progression blueprints; attacker = local player (owner 0), destroying the defender base
+// = attacker_win captures the tile. This test covers three areas:
+//   ① Progression monotonicity + ladder red-line (§6): siege blueprints strengthen with
+//      upgrades, {} equals the constant baseline, PvP blueprints are never affected.
+//   ② Engine determinism: same seed + same defense config + same attacker command stream
+//      → identical game-over outcome verbatim.
+//   ③ Judge re-verification closed loop: record a siege run → encode upload frames →
+//      JudgeRequest(defenseJson) → runJudge re-computes the same winner.
 import { describe, it, expect } from 'vitest';
 import { createGameEngine } from '../src/game/GameEngine';
 import { RecordingInputSource } from '../src/game/net/ReplayInputSource';
@@ -25,7 +29,7 @@ import type { JudgeRequest, FrameCmds } from '../src/net/proto/transport';
 const TICK_DT = 1 / 30;
 const GameOver = GamePhase.GameOver;
 
-/** 一份可被围攻的防守 config（worldsvc S8-3 为被攻击格即时构造的同形态）。 */
+/** A defense config suitable for a siege (worldsvc S8-3 constructs the same shape on-the-fly for an attacked tile). */
 function defenseConfig(seed: number): LevelDefinition {
   return {
     id: 'siege_test',
@@ -60,7 +64,7 @@ function winnerOf(engine: IGameEngine): OwnerId | null {
   return w === Side.Top ? 1 : w === Side.Bottom ? 0 : null;
 }
 
-/** 上传帧（base64）→ JudgeRequest 帧（bytes），模拟 gateway 的 decodeFrames。 */
+/** Upload frames (base64) → JudgeRequest frames (bytes), simulating gateway's decodeFrames. */
 function toJudgeFrames(upload: ReturnType<typeof replayToUploadFrames>): FrameCmds[] {
   return upload.map((f) => ({
     frame: f.frame,
@@ -77,23 +81,23 @@ function maxedUpgrades(): Record<string, number> {
   return out;
 }
 
-describe('siege 养成蓝图 — 单调性 + 天梯红线 (SLG7 §6)', () => {
-  it('buildSiegeBlueprints({}) 等于常量', () => {
+describe('siege progression blueprints — monotonicity + ladder red-line (SLG7 §6)', () => {
+  it('buildSiegeBlueprints({}) equals the constant baseline', () => {
     expect(buildSiegeBlueprints({})).toEqual(UNIT_BLUEPRINTS);
   });
 
-  it('养成↑ → siege 蓝图战力↑（HP / 攻击）', () => {
+  it('higher progression → stronger siege blueprints (HP / attack)', () => {
     const sg = buildSiegeBlueprints(maxedUpgrades());
     expect(sg[UnitType.Infantry].hp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].hp);
     expect(sg[UnitType.Archer].attack).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack);
   });
 
-  it('满级 siege 蓝图后，PvP 蓝图仍逐字等于常量（红线不破）', () => {
+  it('after maxed siege blueprints, PvP blueprints still equal the constant baseline verbatim (red-line intact)', () => {
     void buildSiegeBlueprints(maxedUpgrades());
     expect(buildPvpBlueprints()).toEqual(UNIT_BLUEPRINTS);
   });
 
-  it('siege 引擎走 buildSiegeBlueprints；同 mode 下养成生效', () => {
+  it('siege engine uses buildSiegeBlueprints; progression takes effect under the same mode', () => {
     const lvl = defenseConfig(1);
     const eng = createGameEngine(
       { seed: 1, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level: lvl, pveUpgrades: maxedUpgrades() },
@@ -104,8 +108,8 @@ describe('siege 养成蓝图 — 单调性 + 天梯红线 (SLG7 §6)', () => {
   });
 });
 
-describe('siege 引擎确定性', () => {
-  it('同 seed + 同防守 config + 同攻方指令 → 同终局 winner', () => {
+describe('siege engine determinism', () => {
+  it('same seed + same defense config + same attacker commands → same game-over winner', () => {
     const SEED = 0x51e6e;
     const lvl = defenseConfig(SEED);
     const cfg: GameConfig = { seed: SEED, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level: lvl };
@@ -123,8 +127,8 @@ describe('siege 引擎确定性', () => {
   });
 });
 
-describe('judgeRunner — 围攻复算闭环', () => {
-  it('复算 winner 与原局终局一致（录制→编码→解码→siege 重算）', () => {
+describe('judgeRunner — siege re-verification closed loop', () => {
+  it('re-verified winner matches the original game-over outcome (record→encode→decode→siege re-run)', () => {
     const SEED = 0xc0ffee;
     const lvl = defenseConfig(SEED);
     const cfg: GameConfig = { seed: SEED, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level: lvl };
@@ -138,7 +142,7 @@ describe('judgeRunner — 围攻复算闭环', () => {
     const replay = rec.snapshot({ seed: SEED, mode: 'siege', configRef: lvl.id });
 
     const frames = toJudgeFrames(replayToUploadFrames(replay));
-    // PvE/SLG 录像只含攻方(owner 0)指令（防守 WaveDirector 由 seed+config 重算）。
+    // PvE/SLG replays contain only attacker (owner 0) commands (the defender WaveDirector is re-derived from seed+config).
     for (const f of frames) for (const c of f.cmds) expect(c.side).toBe(0);
 
     const req: JudgeRequest = {
@@ -158,7 +162,7 @@ describe('judgeRunner — 围攻复算闭环', () => {
     expect(ran).toBeGreaterThan(0);
   });
 
-  it('defenseJson 非法 JSON → 复算失败', () => {
+  it('invalid defenseJson → re-verification fails', () => {
     const req: JudgeRequest = {
       requestId: 'bad',
       seed: 1,

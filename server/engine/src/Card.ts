@@ -27,14 +27,14 @@ export class UniformCardDrawPolicy implements ICardDrawPolicy {
 }
 
 /**
- * Scripted draw policy for the专属教学关 `ch0_tutorial` (ONBOARDING_DESIGN §3.3).
+ * Scripted draw policy for the dedicated tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3.3).
  *
  * The first draws deterministically return the teaching cards in beat order
  * (infantry → tower → meteor) so the orientation/cap-point director always finds
  * them in a known hand slot; every later draw pulls deterministically from a
  * filler pool that *excludes* the teaching cards, so refilling a played teaching
  * card never wastes another and never duplicates one. This is a pure-engine,
- * seed-deterministic件 — it never calls Math.random and so preserves replay/裁判.
+ * seed-deterministic component — it never calls Math.random and so preserves replay / arbitration.
  *
  * Why not search a "magic seed" of {@link UniformCardDrawPolicy}? The draw
  * *request order* is coupled to the player's click timing, HAND_SIZE, and cooldown
@@ -56,8 +56,8 @@ export class TutorialDrawPolicy implements ICardDrawPolicy {
   }
 
   /**
-   * 进阶段 C「自由发挥」：从「按拍发牌」切回整副 loadout 的随机循环（含三张引导卡）。
-   * 仍是种子化确定性，不调 Math.random —— 由表现层导演在毕业窗触发（ONBOARDING_DESIGN §3.2.1）。
+   * Enter stage C "free play": switch from scripted dealing back to a random cycle over the full loadout (including the three teaching cards).
+   * Still seed-deterministic; does not call Math.random — triggered by the render-layer director at the graduation window (ONBOARDING_DESIGN §3.2.1).
    */
   enterFreePlay(): void {
     this.freePlay = true;

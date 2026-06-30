@@ -21,10 +21,10 @@ async function tryConnect(): Promise<WorldMongo | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[worldsvc.alliance-mark.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[worldsvc.alliance-mark.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
-describe.skipIf(!mongo)('worldsvc 联盟领地标记 e2e (G5 / §8.2 V5)', () => {
+describe.skipIf(!mongo)('worldsvc alliance territory marking e2e (G5 / §8.2 V5)', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
   const now = () => nowMs;
@@ -69,7 +69,7 @@ describe.skipIf(!mongo)('worldsvc 联盟领地标记 e2e (G5 / §8.2 V5)', () =>
     await m.close();
   });
 
-  it('视野内的联盟宗门领地标 allySect（非 ally / 非 mine），敌方/家族不标', async () => {
+  it('allied sect territory within vision is marked allySect (not ally / not mine), enemy/family tiles are not marked', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.joinWorld(W, 'ally1', 9, 9);  // allied-sect member, within a's base vision radius (Chebyshev 4)
     await svc.joinWorld(W, 'enemy', 8, 8);  // non-allied, also within vision
@@ -87,7 +87,7 @@ describe.skipIf(!mongo)('worldsvc 联盟领地标记 e2e (G5 / §8.2 V5)', () =>
     expect(enemyTile.ally).toBeUndefined();
   });
 
-  it('联盟不共享视野：远处联盟领地仍是迷雾（visible:false，不标 allySect）', async () => {
+  it('alliance does not share vision: distant allied territory remains fogged (visible:false, no allySect mark)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.joinWorld(W, 'ally2', 250, 250); // allied member but far beyond a's vision
     await setupAlliance();
@@ -99,7 +99,7 @@ describe.skipIf(!mongo)('worldsvc 联盟领地标记 e2e (G5 / §8.2 V5)', () =>
     expect(far.occupied).toBeUndefined();
   });
 
-  it('无宗门 / 宗门无联盟：视野内他人领地不标 allySect', async () => {
+  it('no sect / sect with no alliance: visible tiles of others are not marked allySect', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.joinWorld(W, 'ally1', 9, 9);
     await setupAlliance();

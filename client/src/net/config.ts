@@ -1,8 +1,10 @@
-// metaserver REST 基址解析（S0-5）。
-// 优先级：构建期注入的全局 __NW_API_BASE__ > localStorage 覆盖（nw_api_base，便于联调切环境）> null。
-// 返回 null → SaveManager 退化为纯本地（离线优先），不发任何请求。
+// metaserver REST base URL resolution (S0-5).
+// Priority: build-time injected global __NW_API_BASE__ > localStorage override (nw_api_base,
+// for switching environments during integration testing) > null.
+// Returns null → SaveManager degrades to local-only (offline-first), no requests sent.
 //
-// 形如 https://host/api（无尾斜杠）。Caddy 把 /api/* 剥前缀转 metaserver（见 server/Caddyfile）。
+// Format: https://host/api (no trailing slash). Caddy strips /api/* prefix and forwards to
+// metaserver (see server/Caddyfile).
 
 import type { IStorage } from '../platform/IPlatform';
 
@@ -13,12 +15,12 @@ export function getApiBaseUrl(storage?: IStorage): string | null {
   const override = storage?.getItem(OVERRIDE_KEY) ?? null;
   const raw = override || injected || '';
   if (!raw) return null;
-  return raw.replace(/\/+$/, ''); // 去尾斜杠
+  return raw.replace(/\/+$/, ''); // strip trailing slash
 }
 
-// gameserver WS 端点解析（S1-6）。优先级与 API 同：__NW_GAME_WS__ > localStorage(nw_game_ws) > 由 API 基址推导。
-// 形如 wss://host/ws（无尾斜杠、无 query）。Caddy 把 /ws 转 gameserver（见 server/Caddyfile）。
-// 返回 null → 无 PvP 联机（NetClient 不连）。
+// gameserver WS endpoint resolution (S1-6). Same priority as the API: __NW_GAME_WS__ > localStorage(nw_game_ws) > derived from the API base URL.
+// Format: wss://host/ws (no trailing slash, no query string). Caddy forwards /ws to gameserver (see server/Caddyfile).
+// Returns null → no PvP multiplayer (NetClient does not connect).
 const WS_OVERRIDE_KEY = 'nw_game_ws';
 
 export function getGameWsUrl(storage?: IStorage): string | null {
@@ -27,18 +29,19 @@ export function getGameWsUrl(storage?: IStorage): string | null {
   const explicit = (override || injected || '').replace(/\/+$/, '');
   if (explicit) return explicit;
 
-  // 由 API 基址推导：https://host/api → wss://host/ws（同源部署，Caddy 统一反代）。
+  // Derived from the API base URL: https://host/api → wss://host/ws (same-origin deployment, unified Caddy reverse proxy).
   const api = getApiBaseUrl(storage);
   if (!api) return null;
   return api
-    .replace(/^http/, 'ws') // http→ws, https→wss
+    .replace(/^http/, 'ws') // http → ws, https → wss
     .replace(/\/api$/, '/ws');
 }
 
-// gateway 控制面 WS 端点解析（S1-M4）。房间/匹配走这条；锁步数据面 game WS 的地址
-// 由开局时的 match_found.game_url 下发（不再静态配置）。
-// 优先级与 game 同：__NW_GATEWAY_WS__ > localStorage(nw_gateway_ws) > 由 API 基址推导 /gw。
-// 返回 null → 无联机（房间 UI 仍可开，create/join 显示「不可用」）。
+// gateway control-plane WS endpoint resolution (S1-M4). Room / matchmaking traffic goes here;
+// the lockstep data-plane game WS address is delivered at match start via match_found.game_url
+// (no longer statically configured).
+// Same priority as game: __NW_GATEWAY_WS__ > localStorage(nw_gateway_ws) > derived from API base URL at /gw.
+// Returns null → no multiplayer (room UI can still open, but create/join shows "unavailable").
 const GATEWAY_WS_OVERRIDE_KEY = 'nw_gateway_ws';
 
 export function getGatewayWsUrl(storage?: IStorage): string | null {
@@ -52,22 +55,22 @@ export function getGatewayWsUrl(storage?: IStorage): string | null {
   return api.replace(/^http/, 'ws').replace(/\/api$/, '/gw');
 }
 
-// worldsvc REST 基址解析（S8）。
-// 优先级：构建期注入 __NW_WORLD_BASE__ > '' (同源，Caddy /world/* 转 worldsvc)。
-// 生产未配则空字符串（同源路径），dev 缺省 http://localhost:18084。
+// worldsvc REST base URL resolution (S8).
+// Priority: build-time injected __NW_WORLD_BASE__ > '' (same-origin, Caddy forwards /world/* to worldsvc).
+// Empty string in production when unconfigured (same-origin path); dev default: http://localhost:18084.
 export function getWorldBaseUrl(): string {
   const injected = (globalThis as { __NW_WORLD_BASE__?: string }).__NW_WORLD_BASE__ ?? '';
   return injected.replace(/\/+$/, '');
 }
 
-// socialsvc REST 基址解析（S6）。
-// 优先级：构建期注入 __NW_SOCIAL_BASE__ > '' (同源，Caddy /social/* 转 socialsvc)。
-// 生产未配则空字符串（同源路径），dev 通过 worldBase 同主机推导端口 8085。
+// socialsvc REST base URL resolution (S6).
+// Priority: build-time injected __NW_SOCIAL_BASE__ > '' (same-origin, Caddy forwards /social/* to socialsvc).
+// Empty string in production when unconfigured (same-origin path); dev derives port 8085 from the same host as worldBase.
 export function getSocialBaseUrl(): string {
   const injected = (globalThis as { __NW_SOCIAL_BASE__?: string }).__NW_SOCIAL_BASE__ ?? '';
   if (injected) return injected.replace(/\/+$/, '');
   const world = getWorldBaseUrl();
-  if (!world) return ''; // 生产同源
+  if (!world) return ''; // production same-origin
   try {
     const u = new URL(world);
     u.port = '8085';

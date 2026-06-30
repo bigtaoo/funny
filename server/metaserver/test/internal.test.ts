@@ -93,7 +93,7 @@ function emptyReplay() {
 }
 
 describe('internal routes', () => {
-  it('GET /internal/elo 无密钥 → 401', async () => {
+  it('GET /internal/elo no key → 401', async () => {
     const app = build(fakeCols({}).cols);
     const res = await app.inject({ method: 'GET', url: '/internal/elo?accountId=a' });
     expect(res.statusCode).toBe(401);
@@ -102,7 +102,7 @@ describe('internal routes', () => {
 
   // Internal auth model (S12-1): internal routes never validate player JWTs — only X-Internal-Key is accepted.
   // Player JWTs and internal keys are in different namespaces; placing one in the Authorization header will not match → 401.
-  it('GET /internal/elo 带玩家 JWT 但无 X-Internal-Key → 401（拒绝玩家越权）', async () => {
+  it('GET /internal/elo with player JWT but no X-Internal-Key → 401 (rejects player privilege escalation)', async () => {
     const app = build(fakeCols({}).cols);
     const res = await app.inject({
       method: 'GET',
@@ -115,7 +115,7 @@ describe('internal routes', () => {
   });
 
   // Per-caller strict mode (NW_INTERNAL_KEYS): each caller has its own dedicated key; the old single shared key is no longer accepted.
-  it('严格模式：登记的 per-caller 密钥放行，单一共享密钥被拒', async () => {
+  it('strict mode: registered per-caller key is accepted, single shared key is rejected', async () => {
     const a = makeNewSave('a');
     a.pvp.elo = 777;
     const app = build(fakeCols({ a }).cols, fakeGateway(), fakeCommercial(false), {
@@ -140,7 +140,7 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  it('GET /internal/elo 取存档 ELO（缺省初始 1000）', async () => {
+  it('GET /internal/elo fetches save ELO (default initial 1000)', async () => {
     const a = makeNewSave('a');
     a.pvp.elo = 1234;
     const app = build(fakeCols({ a }).cols);
@@ -151,7 +151,7 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  it('ranked base 双方一致 → 结算 ELO ±16，写 saves，归档，返回 elo', async () => {
+  it('ranked base — both sides agree → settle ELO ±16, write saves, archive, return elo', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
     const { cols, matches } = fakeCols({ a, b });
@@ -184,7 +184,7 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  it('S9-6 ranked 累加成就计数：双方 kill/cast 入账 + 仅胜方 stats.pvp.wins +1', async () => {
+  it('S9-6 ranked accumulates achievement stats: kill/cast credited for both sides + only winner stats.pvp.wins +1', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
     const { cols, matches } = fakeCols({ a, b });
@@ -217,7 +217,7 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  it('S9-6 L1 越界：拒收该方 kill/cast，但 ELO/pvp.wins 仍照常结算', async () => {
+  it('S9-6 L1 out-of-bounds: rejects that side\'s kill/cast, but ELO/pvp.wins still settled normally', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
     const { cols } = fakeCols({ a, b });
@@ -246,7 +246,7 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  it('S9-6 friendly 上报带 stats → 不累加（仅 ranked 喂）', async () => {
+  it('S9-6 friendly with stats → not accumulated (only ranked is credited)', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
     const { cols, matches } = fakeCols({ a, b });
@@ -272,7 +272,7 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  it('ranked 胜者发分段胜利金币（按结算后段位，仅胜方）', async () => {
+  it('ranked winner receives rank-victory coins (by post-settlement rank, winner only)', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
     const { cols } = fakeCols({ a, b });
@@ -301,7 +301,7 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  it('幂等：同 room_id 重复上报不二次结算', async () => {
+  it('idempotent: duplicate report with same room_id does not settle twice', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
     const { cols } = fakeCols({ a, b });
@@ -320,7 +320,7 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  it('friendly 上报 → 不动 ELO，归档 winner -1', async () => {
+  it('friendly report → ELO unchanged, archived winner -1', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
     const { cols, matches } = fakeCols({ a, b });
@@ -352,7 +352,7 @@ describe('internal routes', () => {
     replay: emptyReplay(),
   };
 
-  it('ranked 不一致 + 裁判命中 a 的 hash → b 判负 + 归档 cheat + 结算 ELO', async () => {
+  it('ranked mismatch + judge matches a\'s hash → b judged as loser + archived cheat + ELO settled', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
     const { cols, matches } = fakeCols({ a, b });
@@ -379,7 +379,7 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  it('ranked 不一致 + 裁判不可用 → 作废（不结算、不标记）', async () => {
+  it('ranked mismatch + judge unavailable → voided (not settled, not flagged)', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
     const { cols, matches } = fakeCols({ a, b });
@@ -393,7 +393,7 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  it('ranked 不一致 + 裁判结果对不上任何一方 → 作废', async () => {
+  it('ranked mismatch + judge result matches neither side → voided', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
     const { cols, matches } = fakeCols({ a, b });
@@ -409,7 +409,7 @@ describe('internal routes', () => {
   });
 
   // ── C6-d hash mismatch + no judge → hashMismatch=true written to matches (CI guard) ──
-  it('C6-d hash_ok=false + 裁判不可用 → matches.hashMismatch=true', async () => {
+  it('C6-d hash_ok=false + judge unavailable → matches.hashMismatch=true', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
     const { cols, matches } = fakeCols({ a, b });
@@ -421,7 +421,7 @@ describe('internal routes', () => {
     await app.close();
   });
 
-  it('C6-d hash_ok=true → matches.hashMismatch 不写入', async () => {
+  it('C6-d hash_ok=true → matches.hashMismatch not written', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');
     const { cols, matches } = fakeCols({ a, b });

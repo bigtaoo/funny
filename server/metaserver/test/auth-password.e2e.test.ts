@@ -53,7 +53,7 @@ describe.skipIf(!mongo)('metaserver auth password e2e', () => {
     return app.inject({ method: 'POST', url: '/auth/login', payload: { loginId, password } });
   }
 
-  it('注册成功：返回 token + isNew + isAnonymous=false + displayName', async () => {
+  it('registration succeeds: returns token + isNew + isAnonymous=false + displayName', async () => {
     const r = await register('Alice@Example.com', 'secret123', 'Alice');
     expect(r.statusCode).toBe(200);
     const d = body(r).data;
@@ -63,27 +63,27 @@ describe.skipIf(!mongo)('metaserver auth password e2e', () => {
     expect(d.displayName).toBe('Alice');
   });
 
-  it('登录恢复注册时填的 displayName', async () => {
+  it('login restores displayName set at registration', async () => {
     await register('frank@example.com', 'secret123', 'Frank');
     const r = await login('FRANK@EXAMPLE.COM', 'secret123');
     expect(r.statusCode).toBe(200);
     expect(body(r).data.displayName).toBe('Frank');
   });
 
-  it('loginId 大小写/空格不敏感，重复注册 → 409 LOGIN_ID_TAKEN', async () => {
+  it('loginId is case/whitespace insensitive, duplicate registration → 409 LOGIN_ID_TAKEN', async () => {
     await register('bob', 'secret123');
     const dup = await register('  BOB ', 'other123');
     expect(dup.statusCode).toBe(409);
     expect(body(dup).error.code).toBe('LOGIN_ID_TAKEN');
   });
 
-  it('弱密码 → 400 WEAK_PASSWORD', async () => {
+  it('weak password → 400 WEAK_PASSWORD', async () => {
     const r = await register('carol', '123');
     expect(r.statusCode).toBe(400);
     expect(body(r).error.code).toBe('WEAK_PASSWORD');
   });
 
-  it('登录：正确密码成功（同 accountId），错误密码 → 401 INVALID_CREDENTIALS', async () => {
+  it('login: correct password succeeds (same accountId), wrong password → 401 INVALID_CREDENTIALS', async () => {
     const reg = body(await register('dave', 'secret123')).data;
     const okLogin = await login('DAVE', 'secret123');
     expect(okLogin.statusCode).toBe(200);
@@ -98,7 +98,7 @@ describe.skipIf(!mongo)('metaserver auth password e2e', () => {
     expect(body(missing).error.code).toBe('INVALID_CREDENTIALS');
   });
 
-  it('改密：旧密码校验通过后可用新密码登录', async () => {
+  it('change password: after old password verified, new password can be used to login', async () => {
     const { token } = body(await register('erin', 'oldpass1')).data;
     const auth = { authorization: `Bearer ${token}` };
 
@@ -122,7 +122,7 @@ describe.skipIf(!mongo)('metaserver auth password e2e', () => {
     expect((await login('erin', 'newpass1')).statusCode).toBe(200);
   });
 
-  it('改密需登录：无 token → 401', async () => {
+  it('change password requires login: no token → 401', async () => {
     const r = await app.inject({
       method: 'POST',
       url: '/auth/password/change',
@@ -131,7 +131,7 @@ describe.skipIf(!mongo)('metaserver auth password e2e', () => {
     expect(r.statusCode).toBe(401);
   });
 
-  it('device 账号 isAnonymous=true', async () => {
+  it('device account isAnonymous=true', async () => {
     const r = await app.inject({
       method: 'POST',
       url: '/auth/device',

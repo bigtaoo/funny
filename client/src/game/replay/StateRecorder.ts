@@ -1,16 +1,19 @@
 /**
- * 状态流录制器（REPLAY_SHARE_DESIGN §2.1）。
+ * State-stream recorder (REPLAY_SHARE_DESIGN §2.1).
  *
- * 输出侧录制器，对称于输入侧 {@link RecordingInputSource}：引擎每推进一个 tick（**真打 或
- * 看回放都算**）就抓一份当帧实体可视状态。接入点是渲染层每帧本就读 `engine.state` 的地方
- * （{@link GameRenderer}），对引擎零侵入。
+ * Output-side recorder, symmetric to the input-side {@link RecordingInputSource}: each time the engine
+ * advances a tick (**whether playing live or watching a replay**) it captures the visible entity state for
+ * that frame. The hook point is where the render layer already reads `engine.state` every frame
+ * ({@link GameRenderer}), so the engine itself is untouched.
  *
- * 单槽 ring：模块级单例只保最近一局（仿 {@link ReplayStore} 的「最近 N 局」做法，单槽即 N=1）。
- * 分享只发生在「刚结算 / 刚看完回放」两个时机，此时状态流本就在内存里 —— 分享按钮按下读内存
- * 即得，**无需重跑、无需服务端复算**。
+ * Single-slot ring: the module-level singleton keeps only the most recent match (analogous to
+ * {@link ReplayStore}'s "last N matches" approach, with N=1).
+ * Sharing only happens at two moments — "just settled" / "just finished watching a replay" — at which
+ * point the state stream is already in memory. Pressing the share button reads it from memory directly;
+ * **no re-simulation or server re-computation required**.
  *
- * 若当前看的本来就是别人分享来的状态流（哑播放器场景），则 {@link adopt} 直接持有原始编码流，
- * 连抓都不用、原样转发。
+ * If what is currently being watched is itself a state stream shared by someone else (dumb-player scenario),
+ * {@link adopt} takes ownership of the raw encoded stream directly — no re-capture needed; it is forwarded as-is.
  */
 
 import { BOARD_COLS, BOARD_ROWS, ATTACK_LANES } from '../config';
@@ -31,17 +34,19 @@ import {
 } from './StateReplay';
 
 /**
- * 单局最大采样帧数（体量护栏）。30Hz 下 18000 帧 = 10 分钟；超限停止采样并标记 `capped`，
- * 已采样部分仍可分享。体量不再是瓶颈（关键帧抽稀 + gzip 后整 10 分钟 ~50 单位实测仅约 367KB
- * 上传，远低于服务端 2MB 上限，§7）；此上限主要约束**录制期内存**（每 tick 满帧驻留内存）。
+ * Maximum sampled frames per match (size guardrail). At 30 Hz, 18000 frames = 10 minutes; once exceeded,
+ * sampling stops and `capped` is flagged, but the already-sampled portion is still shareable.
+ * Payload size is no longer the bottleneck (keyframe thinning + gzip means a full 10-minute match with ~50 units
+ * measured at only ~367 KB uploaded, well under the server 2 MB limit, §7); this cap mainly constrains
+ * **in-memory footprint during recording** (each tick's full frame stays in memory).
  */
 const MAX_FRAMES = 18000;
 
 export interface BuildStateReplayOverrides {
   mode?: string;
-  /** 双方展示名（HUD 标签）；缺省按 side 占位。 */
+  /** Display names for both players (HUD labels); defaults to a placeholder based on side. */
   players?: { name: string; side: 0 | 1 }[];
-  /** 胜方 owner（0/1），-1 平局/未知；缺省用录制期 game_over 捕获的值。 */
+  /** Winning owner (0/1), -1 for draw/unknown; defaults to the value captured from game_over during recording. */
   winner?: number;
 }
 
@@ -50,13 +55,13 @@ class StateRecorder {
   private lastTick = -1;
   private capped = false;
   private winner = -1;
-  /** 基地满血基准（首帧锚定），用于裂痕比例。 */
+  /** Full-HP baseline for bases (anchored on the first frame), used for crack-ratio calculations. */
   private baseMaxHp: [number, number] = [0, 0];
 
-  /** 别人分享来的原始编码流（哑播放器 adopt）——存在时分享原样转发，不读 frames。 */
+  /** Raw encoded stream received from someone else's share (dumb-player adopt) — when set, sharing forwards it as-is without reading frames. */
   private adopted: EncodedStateReplay | null = null;
 
-  /** 新一局/新一段回放开始：清空单槽。GameRenderer.buildSceneGraph 调用。 */
+  /** Start of a new match or new replay segment: clear the single slot. Called by GameRenderer.buildSceneGraph. */
   reset(): void {
     this.frames = [];
     this.lastTick = -1;
@@ -66,34 +71,35 @@ class StateRecorder {
     this.adopted = null;
   }
 
-  /** 持有别人分享来的状态流（哑播放器），令再次分享原样转发。 */
+  /** Take ownership of a state stream received from someone else (dumb player), so that re-sharing forwards it as-is. */
   adopt(enc: EncodedStateReplay): void {
     this.adopted = enc;
   }
 
-  /** 录制期捕获胜方（game_over/game_draw 时由渲染层调用）。 */
+  /** Record the winner during recording (called by the render layer on game_over / game_draw). */
   setWinner(winner: number): void {
     this.winner = winner;
   }
 
-  /** 当前是否有可分享内容（采样到帧 或 已 adopt）。 */
+  /** Whether there is currently shareable content (frames have been sampled, or a stream has been adopted). */
   get hasContent(): boolean {
     return this.adopted !== null || this.frames.length > 0;
   }
 
   /**
-   * 抓一帧。引擎 tick 推进后调用；同一 tick 重复调用（无推进的渲染帧）自动跳过，
-   * 检测到 tick 回退（elapsedTicks 归零）视为新一局自动 reset。
+   * Capture one frame. Called after each engine tick advance; repeated calls for the same tick
+   * (render frames without an engine advance) are skipped automatically. A backward tick
+   * (elapsedTicks resetting to zero) is treated as a new match and triggers an automatic reset.
    */
   capture(state: GameState): void {
-    if (this.adopted) return; // 看分享流时不另抓
+    if (this.adopted) return; // do not capture while watching a shared stream
     const tick = state.elapsedTicks;
     if (tick < this.lastTick) this.reset();
     if (tick === this.lastTick && this.frames.length > 0) return;
     if (this.capped) return;
 
     if (this.frames.length === 0) {
-      // 首帧锚定基地满血基准。
+      // Anchor the base full-HP baseline on the first frame.
       this.baseMaxHp = [
         Math.max(1, quantizeHp(state.bottomPlayer.baseHp)),
         Math.max(1, quantizeHp(state.topPlayer.baseHp)),
@@ -106,8 +112,8 @@ class StateRecorder {
   }
 
   /**
-   * 出码：把内存帧序列打包成 delta 编码录像。已 adopt 则原样返回原始流。
-   * `overrides` 补 header 的 mode/players/winner（录制点不知道这些上下文，分享点传入）。
+   * Encode: pack the in-memory frame sequence into a delta-encoded replay. If a stream has been adopted, returns it as-is.
+   * `overrides` fills in the header's mode/players/winner (the recording site doesn't know this context; the share site passes it in).
    */
   build(overrides: BuildStateReplayOverrides = {}): EncodedStateReplay | null {
     if (this.adopted) return this.adopted;
@@ -132,7 +138,7 @@ class StateRecorder {
     return encodeStateReplay({ header, frames: this.frames });
   }
 
-  // ── 私有：抓一帧满状态 ─────────────────────────────────────────────────────
+  // ── Private: capture one full-state frame ─────────────────────────────────────────────────────
 
   private snapshot(state: GameState, tick: number): StateFrame {
     const units: StateUnit[] = [];
@@ -171,5 +177,5 @@ class StateRecorder {
   }
 }
 
-/** 模块级单槽单例（最近一局）。 */
+/** Module-level single-slot singleton (most recent match). */
 export const stateRecorder = new StateRecorder();

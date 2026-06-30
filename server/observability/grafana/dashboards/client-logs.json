@@ -2,7 +2,7 @@
   "annotations": { "list": [] },
   "editable": true,
   "graphTooltip": 0,
-  "title": "Notebook Wars — 客户端日志（定向采集）",
+  "title": "Notebook Wars — Client Logs (Targeted Collection)",
   "uid": "nw-client-logs",
   "tags": ["notebook-wars", "logs", "client"],
   "timezone": "",
@@ -10,18 +10,18 @@
   "version": 1,
   "time": { "from": "now-6h", "to": "now" },
   "refresh": "30s",
-  "description": "运营按 9 位 publicId 远程拉取单个玩家的客户端日志（FEATURE_FLAGS_DESIGN §9）。先在 ops『功能开关』把目标 publicId 填进想要级别的 client_log_* flag（pct 设 0、仅 allowPublicIds 命中），客户端轮询 bootstrap 命中后即批量上报。label 仅 {source=client, level}，publicId/tag/msg 入行内（logfmt）。",
+  "description": "Operations remotely pulls client logs for a specific player by 9-digit publicId (FEATURE_FLAGS_DESIGN §9). First add the target publicId to the desired level's client_log_* flag in ops 'Feature Flags' (set pct to 0, target via allowPublicIds only); the client polls bootstrap and on a match begins bulk reporting. Labels are only {source=client, level}; publicId/tag/msg are inlined (logfmt).",
   "templating": {
     "list": [
       {
         "name": "publicId",
-        "label": "玩家 publicId(9 位)",
+        "label": "Player publicId (9 digits)",
         "type": "textbox",
         "current": { "text": "", "value": "" }
       },
       {
         "name": "level",
-        "label": "级别",
+        "label": "Level",
         "type": "query",
         "datasource": { "type": "loki", "uid": "loki" },
         "query": { "label": "level", "stream": "{source=\"client\"}", "type": 1 },
@@ -33,7 +33,7 @@
       },
       {
         "name": "search",
-        "label": "关键字",
+        "label": "Keyword",
         "type": "textbox",
         "current": { "text": "", "value": "" }
       }
@@ -42,10 +42,10 @@
   "panels": [
     {
       "id": 1,
-      "title": "客户端日志速率（按级别）",
+      "title": "Client Log Rate (by level)",
       "type": "timeseries",
       "datasource": { "type": "loki", "uid": "loki" },
-      "description": "时间窗内 source=client 日志速率，按 level 堆叠。无数据 = 当前无玩家被定向（client_log_* 未填该玩家 publicId）。",
+      "description": "Rate of source=client logs within the time window, stacked by level. No data = no players currently targeted (no player publicId set in client_log_* flags).",
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 0 },
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } }, "overrides": [] },
       "targets": [
@@ -60,7 +60,7 @@
     },
     {
       "id": 2,
-      "title": "客户端错误数（窗口内）",
+      "title": "Client Error Count (within window)",
       "type": "stat",
       "datasource": { "type": "loki", "uid": "loki" },
       "gridPos": { "h": 7, "w": 5, "x": 12, "y": 0 },
@@ -78,10 +78,10 @@
     },
     {
       "id": 3,
-      "title": "上报玩家数（被定向的 publicId 个数）",
+      "title": "Reporting Players (count of targeted publicIds)",
       "type": "stat",
       "datasource": { "type": "loki", "uid": "loki" },
-      "description": "时间窗内有日志上报的不同 publicId 数（即当前实际被采集的玩家数）。",
+      "description": "Number of distinct publicIds with log reports in the time window (i.e. the number of players currently being collected).",
       "gridPos": { "h": 7, "w": 7, "x": 17, "y": 0 },
       "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
@@ -98,10 +98,10 @@
     },
     {
       "id": 4,
-      "title": "客户端日志（按 publicId / 级别 / 关键字 过滤）",
+      "title": "Client Logs (filter by publicId / level / keyword)",
       "type": "logs",
       "datasource": { "type": "loki", "uid": "loki" },
-      "description": "顶部填玩家 publicId(留空=全部被采集玩家)。每行末尾 publicId=…tag=…msg=… 即客户端上报的结构化字段。",
+      "description": "Enter player publicId at the top (leave blank = all currently collected players). Each line ends with publicId=…tag=…msg=… — the structured fields reported by the client.",
       "gridPos": { "h": 14, "w": 24, "x": 0, "y": 7 },
       "options": {
         "showTime": true,

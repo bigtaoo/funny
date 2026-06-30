@@ -11,11 +11,11 @@ import {
 
 // ─── Board layout ─────────────────────────────────────────────────────────────
 //
-//  Row 0   : Bottom player building row  (己方建筑行)
-//  Row 1   : Bottom player spawn row     (己方出兵行)
-//  Row 2-15: Combat zone                 (战斗区 14 行)
-//  Row 16  : Top player spawn row        (敌方出兵行)
-//  Row 17  : Top player building row     (敌方建筑行)
+//  Row 0   : Bottom player building row  (own building row)
+//  Row 1   : Bottom player spawn row     (own spawn row)
+//  Row 2-15: Combat zone                 (combat zone, 14 rows)
+//  Row 16  : Top player spawn row        (enemy spawn row)
+//  Row 17  : Top player building row     (enemy building row)
 //
 //  All rows/cols are 0-indexed.
 
@@ -140,7 +140,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     speed: 1.4,           // grid/s  (converted to fp in Unit constructor)
     range: 1,
     spawnCount: 2,
-    radius_fp: 400,       // diameter 800fp = 0.8 格
+    radius_fp: 400,       // diameter 800fp = 0.8 cells
   },
   // Tank: leads the line and soaks fire so squishier units survive behind it.
   // HP/ink (40) is clearly above Infantry (30) — that's its whole identity — at
@@ -154,7 +154,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     speed: 0.85,
     range: 1,
     spawnCount: 1,
-    radius_fp: 500,       // diameter 1000fp = 1.0 格
+    radius_fp: 500,       // diameter 1000fp = 1.0 cell
   },
   // Glass cannon: range 2 lets it hit before melee reaches and shoot over/around
   // a shield ahead (surrounding-cell targeting). Highest per-hit damage of the
@@ -168,7 +168,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     speed: 1.1,
     range: 2,             // 2-grid range (down from 3)
     spawnCount: 1,
-    radius_fp: 350,       // diameter 700fp = 0.7 格
+    radius_fp: 350,       // diameter 700fp = 0.7 cells
     // Fires an arrow that travels to its target rather than dealing instant damage.
     // 14 grid/s over a ≤2-cell range ≈ 0.15 s flight — visibly a shot, but fast
     // enough that it rarely whiffs except when the target dies/flees mid-air.
@@ -187,7 +187,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     speed: 0.5,
     range: 1,
     spawnCount: 1,
-    radius_fp: 520,       // diameter 1040fp ≈ 1.04 格 — fills its lane, leads stacks
+    radius_fp: 520,       // diameter 1040fp ≈ 1.04 cells — fills its lane, leads stacks
     armor: 3,             // anti-arrow identity: arrow tower needs ~36 s (vs 29 s at armor 0)
   },
   // Runner: fast fragile rusher. One arrow-tower hit one-shots it, but it arrives
@@ -201,7 +201,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     speed: 1.9,
     range: 1,
     spawnCount: 1,
-    radius_fp: 250,       // diameter 500fp = 0.5 格 — dense swarm
+    radius_fp: 250,       // diameter 500fp = 0.5 cells — dense swarm
   },
   // Harpy: PvE-only flying unit. flying=true means ground melee can't target it
   // (only archers + arrow towers). Bypasses blocked cells. Fragile — one arrow-

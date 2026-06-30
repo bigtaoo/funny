@@ -4,7 +4,7 @@
 // Hash string is self-describing: scrypt$N$r$p$saltB64$hashB64.
 import { randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto';
 
-// scrypt cost（128 * N * r ≈ 16MB 内存，在默认 maxmem 32MB 内）。
+// scrypt cost parameters (128 * N * r ≈ 16 MB memory, within the default maxmem of 32 MB).
 const N = 16384;
 const R = 8;
 const P = 1;
@@ -26,17 +26,17 @@ export const MIN_PASSWORD_LEN = 6;
 export const MIN_LOGIN_ID_LEN = 3;
 export const MAX_LOGIN_ID_LEN = 64;
 
-/** 注册/登录的 loginId 统一规范化键（大小写不敏感、去首尾空格）。 */
+/** Normalise a loginId for registration/login (case-insensitive, trim leading/trailing whitespace). */
 export function normalizeLoginId(loginId: string): string {
   return loginId.trim().toLowerCase();
 }
 
-/** 是否长得像邮箱（决定能否走找回密码——首期仅记录，不发邮件）。 */
+/** Returns true if the loginId looks like an email address (used to decide eligibility for password recovery — first iteration records only, does not send email). */
 export function isEmailLoginId(loginId: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginId.trim());
 }
 
-/** loginId 是否合法（长度 + 非空）。返回 null 表示合法，否则返回原因。 */
+/** Validate a loginId (length + non-empty). Returns null if valid, otherwise returns the reason. */
 export function validateLoginId(loginId: string): string | null {
   const t = loginId.trim();
   if (t.length < MIN_LOGIN_ID_LEN) return `loginId too short (min ${MIN_LOGIN_ID_LEN})`;
@@ -47,7 +47,7 @@ export function validateLoginId(loginId: string): string | null {
 export const MIN_DISPLAY_NAME_LEN = 1;
 export const MAX_DISPLAY_NAME_LEN = 24;
 
-/** 展示名是否合法（长度，trim 后非空）。返回 null 表示合法，否则返回原因。 */
+/** Validate a display name (length, non-empty after trim). Returns null if valid, otherwise returns the reason. */
 export function validateDisplayName(name: string): string | null {
   const t = (typeof name === 'string' ? name : '').trim();
   if (t.length < MIN_DISPLAY_NAME_LEN) return 'display name is empty';
@@ -55,7 +55,7 @@ export function validateDisplayName(name: string): string | null {
   return null;
 }
 
-/** 密码是否合法。返回 null 表示合法，否则返回原因。 */
+/** Validate a password. Returns null if valid, otherwise returns the reason. */
 export function validatePassword(password: string): string | null {
   if (typeof password !== 'string' || password.length < MIN_PASSWORD_LEN) {
     return `password too short (min ${MIN_PASSWORD_LEN})`;

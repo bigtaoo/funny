@@ -55,7 +55,7 @@ function sendErr(res: ServerResponse, code: ErrorCode, message: string): void {
 }
 
 const NOT_IMPL = (res: ServerResponse, what: string): void =>
-  sendErr(res, ErrorCode.NOT_IMPLEMENTED, `${what} 未实现（S8-1~5）`);
+  sendErr(res, ErrorCode.NOT_IMPLEMENTED, `${what} not implemented (S8-1~5)`);
 
 const numQ = (v: string | null, d: number): number => {
   const n = v == null ? NaN : Number(v);
@@ -89,7 +89,7 @@ export function startHttpApi(
         const aurl = new URL(req.url ?? '', `http://${req.headers.host ?? 'world'}`);
         if (aurl.pathname.startsWith('/admin/world/')) {
           if (!internalAuth.verify(req.headers).ok) {
-            return sendErr(res, ErrorCode.UNAUTHENTICATED, '内部端点需 X-Internal-Key');
+            return sendErr(res, ErrorCode.UNAUTHENTICATED, 'internal endpoint requires X-Internal-Key');
           }
           // List summary of all regions (G7/§17.7 admin console).
           if (method === 'GET' && aurl.pathname === '/admin/world/list') {
@@ -156,7 +156,7 @@ export function startHttpApi(
         if (!token) throw new Error('no bearer');
         accountId = verifyToken(token, { secret: opts.jwtSecret });
       } catch {
-        return sendErr(res, ErrorCode.UNAUTHENTICATED, '需要登录');
+        return sendErr(res, ErrorCode.UNAUTHENTICATED, 'authentication required');
       }
 
       const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'world'}`);
@@ -574,7 +574,7 @@ export function startHttpApi(
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           const season = await svc.getSeason(worldId);
-          if (!season) return sendErr(res, ErrorCode.NOT_FOUND, '世界不存在');
+          if (!season) return sendErr(res, ErrorCode.NOT_FOUND, 'world not found');
           return send(res, 200, ok(season));
         }
 

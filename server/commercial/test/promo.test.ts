@@ -39,14 +39,14 @@ describe.skipIf(!mongo)('promo code system', () => {
   });
 
   // ── createPromoCode ─────────────────────────────────────────
-  it('创建成功，code 规范化大写', async () => {
+  it('create succeeds, code normalized to uppercase', async () => {
     const r = await svc.createPromoCode({ code: 'hello2025', coins: 100, createdBy: 'admin1' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.code).toBe('HELLO2025');
   });
 
-  it('listPromoCodes 返回已创建的码', async () => {
+  it('listPromoCodes returns created codes', async () => {
     await svc.createPromoCode({ code: 'A', coins: 50, createdBy: 'admin1' });
     await svc.createPromoCode({ code: 'B', coins: 200, note: 'summer', createdBy: 'admin1' });
     const codes = await svc.listPromoCodes();
@@ -56,7 +56,7 @@ describe.skipIf(!mongo)('promo code system', () => {
     expect(b?.redeemed).toBe(0);
   });
 
-  it('重复 code 返回 BAD_REQUEST', async () => {
+  it('duplicate code returns BAD_REQUEST', async () => {
     await svc.createPromoCode({ code: 'DUP', coins: 50, createdBy: 'admin1' });
     const r2 = await svc.createPromoCode({ code: 'dup', coins: 100, createdBy: 'admin1' });
     expect(r2.ok).toBe(false);
@@ -64,13 +64,13 @@ describe.skipIf(!mongo)('promo code system', () => {
     expect(r2.error).toBe('BAD_REQUEST');
   });
 
-  it('coins<=0 拒绝', async () => {
+  it('coins<=0 rejected', async () => {
     const r = await svc.createPromoCode({ code: 'NEG', coins: 0, createdBy: 'admin1' });
     expect(r.ok).toBe(false);
   });
 
   // ── promoRedeem ─────────────────────────────────────────────
-  it('首次兑换成功，coins 加入钱包', async () => {
+  it('first redemption succeeds, coins added to wallet', async () => {
     await svc.createPromoCode({ code: 'PROMO2025', coins: 200, createdBy: 'admin1' });
     const r = await svc.promoRedeem({ accountId: 'acc1', code: 'promo2025' });
     expect(r.ok).toBe(true);
@@ -79,14 +79,14 @@ describe.skipIf(!mongo)('promo code system', () => {
     expect(r.coinsAfter).toBe(200);
   });
 
-  it('兑换后 redeemed 递增', async () => {
+  it('redeemed counter increments after redemption', async () => {
     await svc.createPromoCode({ code: 'PROMO2025', coins: 200, createdBy: 'admin1' });
     await svc.promoRedeem({ accountId: 'acc1', code: 'PROMO2025' });
     const code = await m.collections.promoCodes.findOne({ _id: 'PROMO2025' });
     expect(code?.redeemed).toBe(1);
   });
 
-  it('同玩家同码第二次 PROMO_ALREADY_USED', async () => {
+  it('same player redeeming same code a second time → PROMO_ALREADY_USED', async () => {
     await svc.createPromoCode({ code: 'PROMO2025', coins: 200, createdBy: 'admin1' });
     await svc.promoRedeem({ accountId: 'acc1', code: 'PROMO2025' });
     const r2 = await svc.promoRedeem({ accountId: 'acc1', code: 'PROMO2025' });
@@ -95,7 +95,7 @@ describe.skipIf(!mongo)('promo code system', () => {
     expect(r2.error).toBe('PROMO_ALREADY_USED');
   });
 
-  it('不同玩家可各自兑换同码', async () => {
+  it('different players can each redeem the same code', async () => {
     await svc.createPromoCode({ code: 'PROMO2025', coins: 200, createdBy: 'admin1' });
     const r1 = await svc.promoRedeem({ accountId: 'acc1', code: 'PROMO2025' });
     const r2 = await svc.promoRedeem({ accountId: 'acc2', code: 'PROMO2025' });
@@ -103,14 +103,14 @@ describe.skipIf(!mongo)('promo code system', () => {
     expect(r2.ok).toBe(true);
   });
 
-  it('码不存在 PROMO_NOT_FOUND', async () => {
+  it('code does not exist → PROMO_NOT_FOUND', async () => {
     const r = await svc.promoRedeem({ accountId: 'acc1', code: 'NOEXIST' });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error).toBe('PROMO_NOT_FOUND');
   });
 
-  it('过期码 PROMO_EXPIRED', async () => {
+  it('expired code → PROMO_EXPIRED', async () => {
     await svc.createPromoCode({ code: 'EXPIRED', coins: 100, expiresAt: t - 1000, createdBy: 'admin1' });
     const r = await svc.promoRedeem({ accountId: 'acc1', code: 'EXPIRED' });
     expect(r.ok).toBe(false);
@@ -118,13 +118,13 @@ describe.skipIf(!mongo)('promo code system', () => {
     expect(r.error).toBe('PROMO_EXPIRED');
   });
 
-  it('未过期码（expiresAt 未来）兑换成功', async () => {
+  it('non-expired code (expiresAt in the future) redeems successfully', async () => {
     await svc.createPromoCode({ code: 'FUTURE', coins: 50, expiresAt: t + 99999, createdBy: 'admin1' });
     const r = await svc.promoRedeem({ accountId: 'acc1', code: 'FUTURE' });
     expect(r.ok).toBe(true);
   });
 
-  it('totalLimit=1 第二人兑换 PROMO_EXHAUSTED', async () => {
+  it('totalLimit=1 second player redemption → PROMO_EXHAUSTED', async () => {
     await svc.createPromoCode({ code: 'LIMITED', coins: 100, totalLimit: 1, createdBy: 'admin1' });
     await svc.promoRedeem({ accountId: 'acc1', code: 'LIMITED' });
     const r = await svc.promoRedeem({ accountId: 'acc2', code: 'LIMITED' });
@@ -133,7 +133,7 @@ describe.skipIf(!mongo)('promo code system', () => {
     expect(r.error).toBe('PROMO_EXHAUSTED');
   });
 
-  it('兑换写入 ledger reason=promo', async () => {
+  it('redemption writes a ledger entry with reason=promo', async () => {
     await svc.createPromoCode({ code: 'PROMO2025', coins: 200, createdBy: 'admin1' });
     await svc.promoRedeem({ accountId: 'acc1', code: 'PROMO2025' });
     const entry = await m.collections.ledger.findOne({ accountId: 'acc1', reason: 'promo' });

@@ -22,7 +22,7 @@ function setup() {
 }
 
 describe('Matchsvc friendly', () => {
-  it('建房 → room_state（6 位无歧义码，建房者 side 0）', () => {
+  it('create room → room_state (6-char unambiguous code, creator is side 0)', () => {
     const { svc, last } = setup();
     svc.roomCreate('a', 'Alice', '100000001');
     const rs = last('a', 'room_state');
@@ -33,7 +33,7 @@ describe('Matchsvc friendly', () => {
     expect(rs.players[0]!.side).toBe(0);
   });
 
-  it('输码加入（大小写无关）→ 双方进同一房，各 side', () => {
+  it('join by code (case-insensitive) → both players in same room with distinct sides', () => {
     const { svc, last } = setup();
     svc.roomCreate('a', 'Alice', '100000001');
     const rs = last('a', 'room_state');
@@ -48,7 +48,7 @@ describe('Matchsvc friendly', () => {
     expect(rsB.players.find((p) => p.side === 1)).toMatchObject({ name: 'Bob', publicId: '100000002' });
   });
 
-  it('不存在的码 → ROOM_NOT_FOUND；满员 → ROOM_FULL', () => {
+  it('nonexistent code → ROOM_NOT_FOUND; full room → ROOM_FULL', () => {
     const { svc, last } = setup();
     svc.roomJoin('z', 'Z', '100000099', 'ZZZZZZ');
     expect(last('z', 'room_error')).toMatchObject({ code: 'ROOM_NOT_FOUND' });
@@ -61,7 +61,7 @@ describe('Matchsvc friendly', () => {
     expect(last('c', 'room_error')).toMatchObject({ code: 'ROOM_FULL' });
   });
 
-  it('双方 ready → 房主开局 → 双方收 match_found（同 roomId/seed、各 side、签名可验）', () => {
+  it('both ready → host starts → both receive match_found (same roomId/seed, distinct sides, ticket signature valid)', () => {
     const { svc, last } = setup();
     svc.roomCreate('a', 'Alice', '100000001');
     const rs = last('a', 'room_state');
@@ -85,7 +85,7 @@ describe('Matchsvc friendly', () => {
     expect(tb.accountId).toBe('b');
   });
 
-  it('非房主开局无效；未全 ready 不开局', () => {
+  it('non-host start is ignored; start while not all ready is ignored', () => {
     const { svc, last } = setup();
     svc.roomCreate('a', 'A', '100000001');
     const rs = last('a', 'room_state');
@@ -94,11 +94,11 @@ describe('Matchsvc friendly', () => {
     svc.roomReady('a', true); // only one side is ready
     svc.roomStart('a');
     expect(last('a', 'match_found')).toBeUndefined();
-    svc.roomStart('b'); // 非房主
+    svc.roomStart('b'); // not the host
     expect(last('b', 'match_found')).toBeUndefined();
   });
 
-  it('控制面重连：onConnected 重发当前 room_state', () => {
+  it('control-plane reconnect: onConnected resends current room_state', () => {
     const { svc, pushed, last } = setup();
     svc.roomCreate('a', 'A', '100000001');
     const before = pushed.length;
@@ -109,7 +109,7 @@ describe('Matchsvc friendly', () => {
 });
 
 describe('Matchsvc ranked', () => {
-  it('两人入队 → 配对 → 双方收 match_found（mode ranked）', () => {
+  it('two players enqueue → matched → both receive match_found (mode ranked)', () => {
     const { svc, last } = setup();
     svc.enqueue('a', 'Alice', '100000001', 1000);
     svc.enqueue('b', 'Bob', '100000002', 1020); // within the ELO window, matched immediately
@@ -123,7 +123,7 @@ describe('Matchsvc ranked', () => {
     expect(ta.seed).toBe(tb.seed);
   });
 
-  it('无 game 可分配 → GAME_UNAVAILABLE', () => {
+  it('no game available → GAME_UNAVAILABLE', () => {
     const pushed: { acc: string; msg: PushMsg }[] = [];
     const games = new GameRegistry(() => 0, null); // no fallback URL, no registered instances
     const svc = new Matchsvc((acc, msg) => pushed.push({ acc, msg }), games, KEY, { autoTick: false });
@@ -133,14 +133,14 @@ describe('Matchsvc ranked', () => {
   });
 });
 
-describe('Matchsvc bot-fallback（feature flag match_bot_fallback）', () => {
+describe('Matchsvc bot-fallback (feature flag match_bot_fallback)', () => {
   async function makeCache(docs: unknown[]): Promise<FeatureFlagCache> {
     const cache = new FeatureFlagCache({ fetchAll: async () => docs });
     await cache.refresh();
     return cache;
   }
 
-  it('flag 开 + 单人等待超阈值 → 推 match_bot（出队，本地 AI 局）', async () => {
+  it('flag on + single player waiting past threshold → push match_bot (dequeued, local AI game)', async () => {
     vi.useFakeTimers();
     try {
       const cache = await makeCache([{ _id: 'match_bot_fallback', enabled: true, rollout: { pct: 100 } }]);
@@ -165,7 +165,7 @@ describe('Matchsvc bot-fallback（feature flag match_bot_fallback）', () => {
     }
   });
 
-  it('flag 关 → 不降级，继续在队等真人', async () => {
+  it('flag off → no fallback, keeps waiting in queue for a real opponent', async () => {
     vi.useFakeTimers();
     try {
       const cache = await makeCache([]); // no overrides → default false
@@ -184,7 +184,7 @@ describe('Matchsvc bot-fallback（feature flag match_bot_fallback）', () => {
     }
   });
 
-  it('flag 后开（玩家已超时过一次仍在队）→ 下一次重评即降级（非 fire-once）', async () => {
+  it('flag enabled after the fact (player already timed out once and still in queue) → falls back on next re-evaluation (not fire-once)', async () => {
     vi.useFakeTimers();
     try {
       const docs: unknown[] = []; // initially no overrides → default false
@@ -221,14 +221,14 @@ describe('Matchsvc bot-fallback（feature flag match_bot_fallback）', () => {
 // CODE_ALPHABET character-for-character; the client side has a corresponding assertion,
 // so any change on either side will be caught by the other side's tests.
 describe('Matchsvc room-code charset', () => {
-  it('字符集 = 10 数字 + 11 字母（与客户端键盘一致，跳过 I/O/L）', () => {
+  it('character set = 10 digits + 11 letters (matches client keyboard, skips I/O/L)', () => {
     expect(CODE_ALPHABET).toBe('0123456789ABCDEFGHJKM');
     expect(CODE_ALPHABET).toHaveLength(21); // exactly 3 rows × 7 = one screen
     expect(CODE_ALPHABET).not.toMatch(/[IOL]/); // avoid confusion with 0/1
     expect(new Set(CODE_ALPHABET).size).toBe(CODE_ALPHABET.length); // no duplicates
   });
 
-  it('生成的码只含字符集内字符（多次采样）', () => {
+  it('generated codes only contain characters from the character set (sampled many times)', () => {
     const inSet = new RegExp(`^[${CODE_ALPHABET}]{6}$`);
     for (let i = 0; i < 200; i++) {
       const { svc, last } = setup();

@@ -407,18 +407,18 @@ export interface SlgShopItem {
 
 export const SLG_SHOP_ITEMS: readonly SlgShopItem[] = [
   // training speed-ups
-  { id: 'slg_speedup_1h',    cost: 200,   kind: 'troop_speedup', effect: { duration_sec: 3600 },  description: '加速训练 1 小时' },
-  { id: 'slg_speedup_8h',    cost: 1400,  kind: 'troop_speedup', effect: { duration_sec: 28800 }, description: '加速训练 8 小时' },
-  { id: 'slg_speedup_24h',   cost: 3600,  kind: 'troop_speedup', effect: { duration_sec: 86400 }, description: '加速训练 24 小时' },
+  { id: 'slg_speedup_1h',    cost: 200,   kind: 'troop_speedup', effect: { duration_sec: 3600 },  description: 'Speed up training by 1 hour' },
+  { id: 'slg_speedup_8h',    cost: 1400,  kind: 'troop_speedup', effect: { duration_sec: 28800 }, description: 'Speed up training by 8 hours' },
+  { id: 'slg_speedup_24h',   cost: 3600,  kind: 'troop_speedup', effect: { duration_sec: 86400 }, description: 'Speed up training by 24 hours' },
   // resource packs (equal amounts of food/iron/wood)
-  { id: 'slg_res_s',  cost: 300,   kind: 'resource_pack', effect: { each: 20000 },  description: '小资源包（各 2 万）' },
-  { id: 'slg_res_m',  cost: 1000,  kind: 'resource_pack', effect: { each: 80000 },  description: '中资源包（各 8 万）' },
-  { id: 'slg_res_l',  cost: 3000,  kind: 'resource_pack', effect: { each: 200000 }, description: '大资源包（各 20 万）' },
+  { id: 'slg_res_s',  cost: 300,   kind: 'resource_pack', effect: { each: 20000 },  description: 'Small resource pack (20k each)' },
+  { id: 'slg_res_m',  cost: 1000,  kind: 'resource_pack', effect: { each: 80000 },  description: 'Medium resource pack (80k each)' },
+  { id: 'slg_res_l',  cost: 3000,  kind: 'resource_pack', effect: { each: 200000 }, description: 'Large resource pack (200k each)' },
   // protection shields
-  { id: 'slg_shield_8h',  cost: 500,  kind: 'protection', effect: { duration_sec: 28800 }, description: '主城保护罩 8 小时' },
-  { id: 'slg_shield_24h', cost: 1200, kind: 'protection', effect: { duration_sec: 86400 }, description: '主城保护罩 24 小时' },
+  { id: 'slg_shield_8h',  cost: 500,  kind: 'protection', effect: { duration_sec: 28800 }, description: 'Capital protection shield 8 hours' },
+  { id: 'slg_shield_24h', cost: 1200, kind: 'protection', effect: { duration_sec: 86400 }, description: 'Capital protection shield 24 hours' },
   // season battle pass
-  { id: 'slg_battle_pass', cost: 9800, kind: 'battle_pass', effect: { pass_season: 1 }, description: '赛季战令（当季有效）' },
+  { id: 'slg_battle_pass', cost: 9800, kind: 'battle_pass', effect: { pass_season: 1 }, description: 'Season battle pass (valid for current season)' },
 ] as const;
 
 // ── Prosperity (G2 / §8.1 / SLG_DESIGN §17.1) ────────────────────

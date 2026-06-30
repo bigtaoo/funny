@@ -254,7 +254,7 @@ export class AdminService {
     const worlds = await this.world.listWorlds();
     const w = worlds.find((x) => x.worldId === worldId);
     if (w && w.status !== 'settling' && w.status !== 'resetting') {
-      throw new AdminError(409, 'conflict', `重置前须先结算（当前 status=${w.status}，应为 settling）`);
+      throw new AdminError(409, 'conflict', `must settle before reset (current status=${w.status}, expected settling)`);
     }
     const r = await this.world.resetWorld(worldId);
     await this.audit(actor, 'slg.season.reset', { target: worldId });

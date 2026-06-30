@@ -93,7 +93,7 @@ describe('full-link E2E (live stack)', () => {
     const items = await c.views.shop!.loadItems();
     expect(items.length).toBeGreaterThan(0);
 
-    // Virtual top-up (dev stub) → coins credited, server-authoritative回推.
+    // Virtual top-up (dev stub) → coins credited, pushed back server-authoritatively.
     // Receipt must be unique per account: rechargeVerify is globally idempotent on
     // `dev:<receipt>`, so a shared constant would dedup against other tests' accounts.
     const coinsBefore = c.views.shop!.getCoins();
@@ -228,7 +228,7 @@ describe('full-link E2E (live stack)', () => {
     expect((await a.views.login!.onRegister(loginId, pw, 'Original Name')).ok).toBe(true);
     await waitFor(() => a.views.screen === 'lobby' && a.views.lobby!.online === true, 'A online lobby');
 
-    // Recharge (server-authoritative coins回推 into the save).
+    // Recharge (server-authoritative coins pushed back into the save).
     a.views.lobby!.onOpenShop();
     expect(a.views.screen).toBe('gacha');
     a.views.gacha!.openShop!();
@@ -241,7 +241,7 @@ describe('full-link E2E (live stack)', () => {
     a.views.shop!.onBack();
     await waitFor(() => a.views.screen === 'lobby', 'A back to lobby');
 
-    // Rename via settings: costs 500 coins (commercial spend → meta rename → mirror回推).
+    // Rename via settings: costs 500 coins (commercial spend → meta rename → mirrored back to client).
     a.views.lobby!.onOpenProfile();
     expect(a.views.screen).toBe('settings');
     expect(a.views.settings!.renameCost).toBe(500);
@@ -254,7 +254,7 @@ describe('full-link E2E (live stack)', () => {
     // Proves login + that recharge/rename round-tripped through the cloud.
     const b = createClient();
     await loginAndEnterLobby(b, loginId, pw);
-    // displayName recovered from the server (historically showed "访客").
+    // displayName recovered from the server (historically showed "guest" placeholder).
     await waitFor(() => b.views.lobby?.playerName === NEW_NAME, 'B name restored from cloud', 15_000);
     // Server-authoritative coins restored from cloud.
     b.views.lobby!.onOpenShop();

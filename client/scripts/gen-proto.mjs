@@ -1,8 +1,8 @@
-// proto → TypeScript codegen（ts-proto via buf，C-2 客户端侧）。
-// 单一来源 = ../server/contracts/*.proto（与 gameserver 同一份）。
-// buf 自带跨平台静态编译器（无需系统装 protoc）；插件链见 buf.gen.yaml。
+// proto → TypeScript codegen (ts-proto via buf, C-2 client side).
+// Single source of truth = ../server/contracts/*.proto (same files as gameserver).
+// buf ships a cross-platform static compiler (no system protoc needed); plugin chain see buf.gen.yaml.
 //
-// 跑：npm run proto:gen（改 .proto 后重跑，产物提交进仓库）。
+// Run: npm run proto:gen (re-run after any .proto change; commit generated output).
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -17,7 +17,7 @@ const contractsDir = resolve(root, '..', 'server', 'contracts');
 const outDir = join(root, 'src', 'net', 'proto');
 mkdirSync(outDir, { recursive: true });
 
-// buf generate <input>：以 contracts 目录为输入编译其中全部 .proto（openapi.yml 自动忽略）。
+// buf generate <input>: uses contracts dir as input, compiles all .proto files there (openapi.yml is automatically ignored).
 const args = ['generate', contractsDir, '--template', join(root, 'buf.gen.yaml')];
 
 console.log(`[gen-proto] buf=${buf}`);

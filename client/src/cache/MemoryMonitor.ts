@@ -3,25 +3,27 @@ import { netLog } from '../net/log';
 import { reportAnomaly } from '../net/anomaly';
 import { snapshotPools } from './poolRegistry';
 
-// 运行时内存看护：每隔几秒读 JS 堆占用，超阈值就 console.warn 一条，并把各对象池的
-// 空闲对象数 / 粗估占用一起 dump 出来（poolRegistry.snapshotPools）。微信小游戏侧再额外接
-// wx.onMemoryWarning（操作系统级低内存信号，才是真预算闸门）。
+// Runtime memory monitor: reads JS heap usage every few seconds, emits a console.warn when the threshold
+// is exceeded, and dumps idle-object counts / rough size estimates for all object pools (poolRegistry.snapshotPools).
+// On WeChat Mini Game, also hooks wx.onMemoryWarning (OS-level low-memory signal — the real budget gate).
 //
-// 注意：performance.memory.usedJSHeapSize 只反映 **JS 堆**，不含 GPU 显存（spritesheet/纹理）。
-// 但本游戏历史上的大泄漏（每局退场不 destroy → Ticker.shared 闭包钉住整张场景图，连玩涨到 10GB+）
-// 正是 JS 堆类泄漏，所以盯 usedJSHeapSize 恰好能逮住这一类问题。仅 Chromium / 微信支持 performance.memory，
-// 其它环境自动降级为「只接 wx 信号、不做堆采样」。
+// Note: performance.memory.usedJSHeapSize reflects only the **JS heap**, not GPU memory (spritesheets/textures).
+// However, the major historical leaks in this game (not calling destroy on scene exit → Ticker.shared closures
+// pinning the entire scene graph, growing past 10 GB across multiple games) are exactly JS-heap leaks,
+// so watching usedJSHeapSize catches this class of issue precisely. Only Chromium / WeChat support performance.memory;
+// other environments automatically fall back to "listen only to wx signals, skip heap sampling".
 
 const log = netLog('mem');
 const MB = 1024 * 1024;
 
-// JS 堆告警默认阈值（MB）。健康的一局战斗 JS 堆通常远低于 150MB；这里留足余量取 400MB，
-// 既不会被正常波动误触，又能在泄漏类无界增长时（迟早越过）报出来。可用
-// localStorage.setItem('nw_mem_warn_mb', '250') 按平台收紧（如低端安卓 / 微信）。
+// Default JS heap warning threshold (MB). A healthy match JS heap is typically well below 150 MB; 400 MB
+// gives enough headroom to avoid false positives from normal fluctuations while still catching unbounded
+// leak growth (which will eventually cross it). Can be tightened per platform via
+// localStorage.setItem('nw_mem_warn_mb', '250') (e.g. low-end Android / WeChat).
 const DEFAULT_WARN_MB = 400;
 
-const SAMPLE_EVERY_MS = 5_000;   // 采样间隔
-const REWARN_EVERY_MS = 30_000;  // 两次告警之间的最小间隔（避免刷屏）
+const SAMPLE_EVERY_MS = 5_000;   // sampling interval
+const REWARN_EVERY_MS = 30_000;  // minimum interval between two consecutive warnings (to avoid log spam)
 
 interface JSHeap {
   usedJSHeapSize: number;
@@ -43,7 +45,7 @@ function warnThresholdMB(): number {
     const raw = globalThis.localStorage?.getItem('nw_mem_warn_mb');
     const v = raw == null ? NaN : Number(raw);
     if (Number.isFinite(v) && v > 0) return v;
-  } catch { /* localStorage 不可用：用默认 */ }
+  } catch { /* localStorage unavailable: use default */ }
   return DEFAULT_WARN_MB;
 }
 
@@ -53,10 +55,11 @@ const round = (n: number, d = 1): number => {
 };
 
 /**
- * 场景图 PIXI 级计数：纹理缓存条目数 / stage 下显示对象总数 / ticker 监听器数。
- * 这三个数把「堆涨但池空」的纯 JS 保留型泄漏定性到具体一类——纹理缓存无界增长 vs
- * 退场不 destroy 的场景图残留 vs ticker 闭包钉死（见本文件顶注的历史泄漏）。
- * 仅在告警时（60s 冷却）跑一次；遍历设上限，避免泄漏已发生时计数本身再加重卡顿。
+ * PIXI scene-graph counters: texture cache entry count / total display objects under stage / ticker listener count.
+ * These three numbers classify a "heap grows but pools are empty" pure-JS retention leak into a specific category:
+ * unbounded texture cache growth vs. scene-graph remnants left un-destroyed on exit vs. ticker closure pinning
+ * (see the historical leaks described at the top of this file).
+ * Run only on warning (60 s cooldown); traversal is capped to avoid the counting itself worsening stutter when a leak has already occurred.
  */
 const NODE_WALK_CAP = 200_000;
 
@@ -79,8 +82,8 @@ function cacheSize(name: 'TextureCache' | 'BaseTextureCache'): number {
 }
 
 /**
- * 全应用单例的内存看护。app.ts 启动时 install(app.ticker) 一次，跨场景常驻；
- * 无战斗时池注册表为空，则只报堆读数。
+ * Application-wide singleton memory monitor. Installed once via install(app.ticker) at app.ts startup;
+ * persists across scene transitions. When no battle is running the pool registry is empty, so only heap readings are reported.
  */
 export class MemoryMonitor {
   private ticker: PIXI.Ticker | null = null;
@@ -93,7 +96,7 @@ export class MemoryMonitor {
     this.stage = stage ?? null;
     ticker.add(this.onTick);
 
-    // 微信小游戏：操作系统的低内存回调才是真预算闸门（performance.memory 在微信运行时通常不可用）。
+    // WeChat Mini Game: the OS low-memory callback is the real budget gate (performance.memory is typically unavailable in the WeChat runtime).
     const wx = (globalThis as unknown as { wx?: { onMemoryWarning?: (cb: (res: { level?: number }) => void) => void } }).wx;
     wx?.onMemoryWarning?.((res) => {
       this.dump(`wx onMemoryWarning（level ${res?.level ?? '?'}）`);
@@ -111,7 +114,7 @@ export class MemoryMonitor {
     this.accMs = 0;
 
     const heap = readHeap();
-    if (!heap) return; // 不支持堆采样的环境：只靠 wx 信号
+    if (!heap) return; // environment does not support heap sampling: rely on wx signals only
 
     const usedMB = heap.usedJSHeapSize / MB;
     const threshold = warnThresholdMB();
@@ -120,10 +123,10 @@ export class MemoryMonitor {
     const t = nowMs();
     if (t - this.lastWarnMs < REWARN_EVERY_MS) return;
     this.lastWarnMs = t;
-    this.dump(`JS 堆 ${usedMB.toFixed(0)}MB 超过 ${threshold}MB 告警阈值`);
+    this.dump(`JS heap ${usedMB.toFixed(0)}MB exceeds warning threshold of ${threshold}MB`);
   };
 
-  /** 立刻打一条内存 + 池占用的告警（堆超阈值 / 收到 wx 低内存信号时调用）。 */
+  /** Immediately emit a memory + pool-usage warning (called when heap exceeds threshold or a wx low-memory signal is received). */
   private dump(reason: string): void {
     const heap = readHeap();
     const pools = snapshotPools();
@@ -131,7 +134,7 @@ export class MemoryMonitor {
       ? { usedMB: round(heap.usedJSHeapSize / MB), totalMB: round(heap.totalJSHeapSize / MB), limitMB: round(heap.jsHeapSizeLimit / MB) }
       : 'unavailable';
     const poolTotal = { idle: pools.totalIdle, estMB: round(pools.totalBytes / MB, 2) };
-    // PIXI 级计数：池为空（poolTotal.estMB≈0）却堆涨时，这三个数定性是哪一类保留型泄漏。
+    // PIXI-level counters: when pools are empty (poolTotal.estMB≈0) but the heap keeps growing, these three numbers identify which category of retention leak is occurring.
     const nodes = countNodes(this.stage);
     const gpu = {
       tex: cacheSize('TextureCache'),
@@ -145,8 +148,9 @@ export class MemoryMonitor {
       poolTotal,
       gpu,
     });
-    // 同步进「全量异常上报」通道（与定向采集的环形缓冲并行）：全网任何客户端内存超标都直报 Loki。
-    // reportAnomaly 内对 mem 类有 60s 冷却，不会因 5s 采样而刷屏。
+    // Also forward to the "full anomaly reporting" channel (parallel to the directed-sampling ring buffer):
+    // any client on the network that exceeds the memory threshold reports directly to Loki.
+    // reportAnomaly has a 60 s cooldown for the mem type internally, so the 5 s sampling cadence will not flood the logs.
     reportAnomaly('mem', reason, { heap: heapInfo, poolTotal, gpu });
   }
 }

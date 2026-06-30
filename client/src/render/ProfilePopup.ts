@@ -37,7 +37,7 @@ export interface ProfileData {
   /** Equipped title id (S10); omit or empty to hide the title line. */
   equippedTitle?: string;
   /**
-   * Optional action buttons rendered above Close (e.g. 发消息 / 拉黑 from the friends
+   * Optional action buttons rendered above Close (e.g. Send Message / Block from the friends
    * list). Each runs its `fn` then auto-closes the popup. Omit for display-only cards.
    */
   actions?: ProfileAction[];
@@ -180,7 +180,7 @@ export class ProfilePopup {
     const bX = (cardW - bW) / 2;
     const bY = cardH - bH - cardH * 0.07;
 
-    // Optional action row (发消息 / 拉黑), laid out above Close.
+    // Optional action row (Send Message / Block), laid out above Close.
     const actions = data.actions ?? [];
     if (actions.length > 0) {
       const gap = Math.round(cardW * 0.04);

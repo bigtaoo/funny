@@ -1,30 +1,30 @@
 /**
- * pack_labels.cjs — B 组「战场角落手写标注」源图处理 + 改色 + 导出透明 PNG。
+ * pack_labels.cjs — Group B "battlefield corner handwritten annotations" source image processing + recolor + export as transparent PNG.
  *
- * 与 A 组 pack_decos.cjs 同一抠白底口径，额外做「改色」：
- *   1. 读图 → 白底转透明：alpha = 255 - 亮度（保留抗锯齿灰边为半透明）。
- *   2. 覆盖线条 RGB 为目标墨色（保留上一步算出的 alpha，故边缘平滑）。
- *      —— 原图多为黑/深色线稿，spec 指定了笔色（红马克笔 / 蓝钢笔 / 红圆珠笔），
- *         按「我蓝敌红」铁律：BOSS/here=红（权威/假想敌），START/WIN=蓝（己方）。
- *   3. 按内容包围盒裁掉四周留白。
- *   4. 等比缩放，长边 = LONG_EDGE（高分辨率源，运行期按角落需要缩小用）。
- *   5. 导出 client/src/assets/decor/battle/label_*.png（透明底单色）。
+ * Uses the same white-background removal pipeline as Group A pack_decos.cjs, with an additional "recolor" step:
+ *   1. Load image → remove white background: alpha = 255 - luminance (anti-aliasing grey edges retained as semi-transparent).
+ *   2. Override line RGB with the target ink color (keeping the alpha computed in step 1, so edges remain smooth).
+ *      — Source images are mostly black/dark line drawings; the spec designates pen colors (red marker / blue pen / red ballpoint),
+ *        following the "blue for us, red for enemy" rule: BOSS/here=red (authority/imaginary enemy), START/WIN=blue (player side).
+ *   3. Crop surrounding whitespace using content bounding box.
+ *   4. Scale proportionally so that the long edge = LONG_EDGE (high-resolution source, scaled down at runtime as needed for corner placement).
+ *   5. Export to client/src/assets/decor/battle/label_*.png (transparent background, single color).
  *
- * 运行：  node pack_labels.cjs
- * 依赖：  复用 client/node_modules/sharp。
+ * Usage:    node pack_labels.cjs
+ * Requires: reuses client/node_modules/sharp.
  */
 const fs = require('fs');
 const path = require('path');
 const sharp = require(path.resolve(__dirname, '../../../client/node_modules/sharp'));
 
-const LONG_EDGE = 256;   // 高分源，角落标注按需缩小
+const LONG_EDGE = 256;   // High-resolution source; corner labels are scaled down as needed
 const ALPHA_TRIM = 16;
 
-// 目标墨色（spec §6.2 B 组 + 我蓝敌红）
-const INK_BLUE = { r: 38, g: 58, b: 122 };   // 蓝钢笔（己方）
-const INK_RED  = { r: 208, g: 38, b: 44 };   // 红马克笔 / 红圆珠笔（权威/假想敌）
+// Target ink colors (spec §6.2 Group B + blue for us, red for enemy)
+const INK_BLUE = { r: 38, g: 58, b: 122 };   // Blue pen (player side)
+const INK_RED  = { r: 208, g: 38, b: 44 };   // Red marker / red ballpoint (authority/imaginary enemy)
 
-// 源文件 → 资产名 + 目标墨色（源为白底深色线稿，打包时覆盖为 spec 笔色）
+// Source file → asset name + target ink color (source is white-background dark line drawing; overridden to spec pen color during packing)
 const JOBS = [
   { src: 'label_boss.webp',       name: 'label_boss',       ink: INK_RED  },
   { src: 'label_start.webp',      name: 'label_start',      ink: INK_BLUE },
@@ -57,7 +57,7 @@ async function process(job) {
       }
     }
   }
-  if (maxX < 0) throw new Error(`${job.name}: 空图（无内容）`);
+  if (maxX < 0) throw new Error(`${job.name}: empty image (no content)`);
 
   const cropW = maxX - minX + 1, cropH = maxY - minY + 1;
   const cropBuf = Buffer.alloc(cropW * cropH * 4);
@@ -85,7 +85,7 @@ async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const rows = [];
   for (const job of JOBS) rows.push(await process(job));
-  console.log(`✅ B 组打包完成 → ${OUT_DIR}`);
+  console.log(`✅ Group B packed → ${OUT_DIR}`);
   console.table(rows);
 }
 

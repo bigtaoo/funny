@@ -8,7 +8,7 @@
  *
  *   | impl              | used for          | DELAY            | command source                |
  *   |-------------------|-------------------|------------------|-------------------------------|
- *   | LocalInputSource  | single PvE / 练习 | 0 (immediate)    | client self-forward (this file) |
+ *   | LocalInputSource  | single PvE / practice | 0 (immediate)    | client self-forward (this file) |
  *   | NetInputSource    | online match      | ~1 batch (3 frames) | gameserver frame_batch (S1-7) |
  *   | ReplayInputSource | replay            | —                | recorded FrameCmds[] (S1-RP)  |
  *

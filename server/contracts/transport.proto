@@ -63,7 +63,7 @@ message ClientCaps  { bool can_judge = 1; }
 // judge_verdict: sent back by the judge client after completing the headless re-simulation of the final state (control plane).
 message JudgeVerdict {
   string request_id  = 1;
-  string state_hash  = 2;   // 复算得到的终局 hash（PvP：与 match_result.state_hash 同构）
+  string state_hash  = 2;   // final-state hash from re-simulation (PvP: structurally equivalent to match_result.state_hash)
   uint32 winner_side = 3;
   bool   ok          = 4;   // re-simulation succeeded (version matched and ran to final state)
   uint32 stars       = 5;   // PvE spot-check re-simulation (PVE_INTEGRITY §8.6 L1): star count from re-simulation (0 = not cleared)
@@ -249,7 +249,7 @@ message NationMsg {
 }
 message WorldEvent {
   string kind    = 1;   // season_open | season_settle | grand_tourney | …
-  string payload = 2;   // JSON（DRAFT，结构随事件类型）
+  string payload = 2;   // JSON (DRAFT; structure varies by event kind)
 }
 
 message ServerMsg {

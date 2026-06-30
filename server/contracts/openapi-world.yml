@@ -141,7 +141,7 @@ components:
           type: boolean
         worldId:
           type: string
-          description: The shard worldId the player belongs to (G6/§20: returned from join-season resolution; the client uses this to enter the world)
+          description: "The shard worldId the player belongs to (G6/§20: returned from join-season resolution; the client uses this to enter the world)"
         troops:
           type: integer
         troopCap:
@@ -262,7 +262,7 @@ components:
             amount: { type: number }
             ts: { type: number }
 
-    # ── Sect（宗门，S8-4b）───────────────────────────────────────────────────────
+    # ── Sect (S8-4b) ────────────────────────────────────────────────────────────
 
     SectView:
       type: object
@@ -361,7 +361,7 @@ components:
       properties:
         capitalIdx:
           type: integer
-          description: 0~9，对应 CAPITAL_FRACTIONS 索引
+          description: 0~9, index into CAPITAL_FRACTIONS
         x:
           type: integer
         y:
@@ -409,7 +409,7 @@ components:
           type: string
         cost:
           type: integer
-          description: 金币价格
+          description: Price in coins
         kind:
           type: string
           enum: [troop_speedup, resource_pack, protection, battle_pass]
@@ -730,7 +730,7 @@ paths:
                 troops: { type: integer }
                 teamId:
                   type: string
-                  description: "围攻挂队（G3-2c）：attack 时用此进攻布阵模板；committed 兵力 = 队伍各单位分配之和（覆盖 troops）"
+                  description: "Siege attack team (G3-2c): attack formation template to use when kind=attack; committed troops = sum of troops allocated across all team units (overrides the troops field)"
       responses:
         '200':
           description: March started
@@ -1106,7 +1106,7 @@ paths:
           application/json:
             schema:
               type: object
-              # fixed → price 必填；auction → startPrice 必填（见 saleMode）
+              # fixed → price required; auction → startPrice required (see saleMode)
               required: [worldId, itemType, item, qty, durationSec]
               properties:
                 worldId: { type: string }
@@ -1120,16 +1120,16 @@ paths:
                 saleMode:
                   type: string
                   enum: [fixed, auction]
-                  description: 缺省 fixed（一口价）
+                  description: Defaults to fixed (buy-now)
                 price:
                   type: number
-                  description: fixed 模式一口价单价（fixed 必填）
+                  description: Fixed-price buy-now unit price (required for fixed mode)
                 startPrice:
                   type: number
-                  description: auction 模式起拍单价（auction 必填）
+                  description: Auction starting unit price (required for auction mode)
                 buyoutPrice:
                   type: number
-                  description: auction 模式一口价保底单价（可选）
+                  description: Auction buyout floor unit price (optional)
       responses:
         '200':
           description: Auction created
@@ -1167,7 +1167,7 @@ paths:
   /auction/{auctionId}/bid:
     post:
       operationId: placeBid
-      summary: 竞拍出价（saleMode='auction'，B）。amount = 出价单价，托管 = amount × qty。
+      summary: Place a bid (saleMode='auction', B). amount = bid unit price; escrowed coins = amount × qty.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: auctionId, in: path, required: true, schema: { type: string } }
@@ -1180,10 +1180,10 @@ paths:
               required: [worldId, amount]
               properties:
                 worldId: { type: string }
-                amount: { type: number, description: 出价单价（金币/件） }
+                amount: { type: number, description: Bid unit price (coins per item) }
       responses:
         '200':
-          description: Bid placed（达/超 buyoutPrice 则返回已结拍的 AuctionView）
+          description: Bid placed (returns the closed AuctionView when the bid meets or exceeds buyoutPrice)
           content:
             application/json:
               schema:
@@ -1215,7 +1215,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
 
-  # ── Sect（宗门，S8-4b）─────────────────────────────────────────────────────────
+  # ── Sect (S8-4b) ──────────────────────────────────────────────────────────────
 
   /sect/list:
     get:

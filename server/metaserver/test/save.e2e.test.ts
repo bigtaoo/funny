@@ -49,7 +49,7 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     return body(r).data as { token: string; accountId: string; isNew: boolean };
   }
 
-  it('auth/device：首次 isNew，同 deviceId 稳定返回同 accountId', async () => {
+  it('auth/device: first time isNew, same deviceId consistently returns same accountId', async () => {
     const a1 = await authDevice('device-1');
     expect(a1.token).toBeTruthy();
     expect(a1.isNew).toBe(true);
@@ -58,13 +58,13 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(a2.isNew).toBe(false);
   });
 
-  it('GET /save 无 token → 401 UNAUTHENTICATED', async () => {
+  it('GET /save without token → 401 UNAUTHENTICATED', async () => {
     const r = await app.inject({ method: 'GET', url: '/save' });
     expect(r.statusCode).toBe(401);
     expect(body(r).error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('GET /save 带 token → 自动建新档 rev 0，coins 0', async () => {
+  it('GET /save with token → auto-creates new save rev 0, coins 0', async () => {
     const { token, accountId } = await authDevice('device-2');
     const r = await app.inject({
       method: 'GET',
@@ -78,7 +78,7 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(save.wallet.coins).toBe(0);
   });
 
-  it('PUT /save 乐观锁：If-Match 命中写入 rev+1，过期 rev → 409 + 当前云端值', async () => {
+  it('PUT /save optimistic lock: If-Match hit writes rev+1, stale rev → 409 + current server value', async () => {
     const { token } = await authDevice('device-3');
     const auth = { authorization: `Bearer ${token}` };
 
@@ -93,7 +93,7 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     const saved = body(ok).data.save;
     expect(saved.rev).toBe(1);
     expect(saved.flags.seenIntro).toBe(true);
-    expect(saved.materials.wood).toBeUndefined(); // 服务器权威，未被 PUT 覆盖
+    expect(saved.materials.wood).toBeUndefined(); // server-authoritative; not overwritten by PUT
 
     const stale = await app.inject({
       method: 'PUT',
@@ -107,7 +107,7 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(c.save.rev).toBe(1);
   });
 
-  it('并发两个同 rev PUT → 恰一个 200、一个 409', async () => {
+  it('concurrent PUTs with same rev → exactly one 200, one 409', async () => {
     const { token } = await authDevice('device-4');
     const auth = { authorization: `Bearer ${token}` };
     await app.inject({
@@ -134,14 +134,14 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(codes).toEqual([200, 409]);
   });
 
-  it('硬墙：PUT 携带权威段（wallet/materials/progress）被忽略', async () => {
+  it('hard wall: PUT carrying authoritative fields (wallet/materials/progress) are ignored', async () => {
     const { token } = await authDevice('device-5');
     const auth = { authorization: `Bearer ${token}` };
     await app.inject({
       method: 'PUT',
       url: '/save',
       headers: { ...auth, 'if-match': '0' },
-      // SyncPatch 仅含 equipped/flags → 其余字段即便客户端塞入也不落库（§8）
+      // SyncPatch only accepts equipped/flags → all other fields are discarded even if the client injects them (§8)
       payload: {
         save: {
           flags: { c: true },
@@ -160,16 +160,16 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(save.wallet.coins).toBe(0);
     expect(save.materials).toEqual({});
     expect(save.progress.cleared).toEqual([]);
-    expect(save.flags.c).toBe(true); // 合法同步段写入
+    expect(save.flags.c).toBe(true); // legitimate sync field written as expected
   });
 
-  // ── 对战历史（归档 enrich + GET /match/history）─────────────────────────────
-  it('GET /match/history 无 token → 401', async () => {
+  // ── Match history (archive enrich + GET /match/history) ─────────────────────────────
+  it('GET /match/history without token → 401', async () => {
     const r = await app.inject({ method: 'GET', url: '/match/history' });
     expect(r.statusCode).toBe(401);
   });
 
-  it('GET /match/history 无对局 → 空数组', async () => {
+  it('GET /match/history with no matches → empty array', async () => {
     const { token } = await authDevice('hist-empty');
     const r = await app.inject({
       method: 'GET',
@@ -180,13 +180,13 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(body(r).data.matches).toEqual([]);
   });
 
-  it('ranked 上报后双方各取战绩：result + 对手 publicId 快照 + eloDelta', async () => {
+  it('after ranked report both players get their match record: result + opponent publicId snapshot + eloDelta', async () => {
     const a = await authDevice('hist-aaaa');
     const b = await authDevice('hist-bbbb');
-    // ranked 结算需双方已有存档（getOrCreateSave）；先各拉一次建档。
+    // Ranked settlement requires both players to have an existing save (getOrCreateSave); fetch once each to create them.
     await app.inject({ method: 'GET', url: '/save', headers: { authorization: `Bearer ${a.token}` } });
     await app.inject({ method: 'GET', url: '/save', headers: { authorization: `Bearer ${b.token}` } });
-    // 内部上报：结算 ELO + enrich players（昵称/publicId 快照 + eloDelta）+ 归档。
+    // Internal report: settle ELO + enrich players (display name / publicId snapshot + eloDelta) + archive.
     const report = await app.inject({
       method: 'POST',
       url: '/internal/match/report',
@@ -206,7 +206,7 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     });
     expect(report.statusCode).toBe(200);
 
-    // 胜方 a 视角：win + eloDelta +16 + 对手 publicId 快照。
+    // Winner a's perspective: win + eloDelta +16 + opponent publicId snapshot.
     const ra = await app.inject({
       method: 'GET', url: '/match/history', headers: { authorization: `Bearer ${a.token}` },
     });
@@ -219,7 +219,7 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(aList[0].eloDelta).toBe(16);
     expect(typeof aList[0].opponentPublicId).toBe('string');
 
-    // 败方 b 视角：loss + eloDelta -16。
+    // Loser b's perspective: loss + eloDelta -16.
     const rb = await app.inject({
       method: 'GET', url: '/match/history', headers: { authorization: `Bearer ${b.token}` },
     });

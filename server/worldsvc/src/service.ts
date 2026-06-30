@@ -342,7 +342,7 @@ export class WorldService {
       toY,
       passableGateKeys,
     );
-    if (!path) throw new SlgError('PATH_BLOCKED', '找不到可行路径');
+    if (!path) throw new SlgError('PATH_BLOCKED', 'No viable path found');
     return path;
   }
 
@@ -650,18 +650,18 @@ export class WorldService {
     let spawn: { x: number; y: number; level: number; resType?: ResourceType };
     if (x !== undefined && y !== undefined) {
       // Manual placement (internal/test): retain the original validation rules.
-      if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', '主城坐标越界');
+      if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', 'Capital coordinates out of bounds');
       const proc = proceduralTile(worldId, x, y);
-      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可落城');
-      if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', '障碍/关隘不可落城');
-      if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', '险地不可落城');
+      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot place capital at the world center');
+      if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', 'Cannot place capital on obstacle/gate terrain');
+      if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', 'Cannot place capital on stronghold terrain');
       const occ = await cols.tiles.findOne({ _id: tileId(worldId, x, y) });
-      if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', '该格已被占领');
+      if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied');
       spawn = { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
     } else {
       // Auto-placement: prefer near family members → outer newbie ring → whole-map fallback.
       const spot = await this.pickSpawnTile(worldId, accountId);
-      if (!spot) throw new SlgError('WORLD_FULL', '无可落城空格');
+      if (!spot) throw new SlgError('WORLD_FULL', 'No available spawn tile');
       spawn = spot;
     }
     const tid = tileId(worldId, spawn.x, spawn.y);
@@ -670,13 +670,13 @@ export class WorldService {
     const world = await cols.worlds.findOne({ _id: worldId });
     if (world) {
       if (world.status !== 'open' && world.status !== 'active') {
-        throw new SlgError('WORLD_CLOSED', '世界未开放');
+        throw new SlgError('WORLD_CLOSED', 'World is not open');
       }
       const inc = await cols.worlds.findOneAndUpdate(
         { _id: worldId, status: { $in: ['open', 'active'] }, $expr: { $lt: ['$population', '$capacity'] } },
         { $inc: { population: 1 } },
       );
-      if (!inc) throw new SlgError('WORLD_FULL', '世界已满员');
+      if (!inc) throw new SlgError('WORLD_FULL', 'World is at capacity');
       // The first player to join advances the world from open to active (§17.3 state machine; fixes the `active` stuck value). CAS idempotent.
       if (inc.status === 'open') {
         await cols.worlds.updateOne({ _id: worldId, status: 'open' }, { $set: { status: 'active' as const } });
@@ -728,12 +728,12 @@ export class WorldService {
   async occupyTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     const { cols, now } = this.deps;
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
-    if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', '坐标越界');
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
+    if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', 'Coordinates out of bounds');
 
     const proc = proceduralTile(worldId, x, y);
-    if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心由宗门争夺，不可直占');
-    if (proc.type === 'obstacle') throw new SlgError('BAD_REQUEST', '阻挡地形不可占领');
+    if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'World center is contested by sects and cannot be directly occupied');
+    if (proc.type === 'obstacle') throw new SlgError('BAD_REQUEST', 'Obstacle terrain cannot be occupied');
 
     const tid = tileId(worldId, x, y);
     const occ = await cols.tiles.findOne({ _id: tid });
@@ -741,12 +741,12 @@ export class WorldService {
     if (occ?.ownerId) {
       // Another player's territory: S8-1 has no siege; if protected or otherwise occupied, always reject (take via S8-3 siege).
       if (occ.protectedUntil && occ.protectedUntil > now()) {
-        throw new SlgError('PROTECTED', '目标处于保护期');
+        throw new SlgError('PROTECTED', 'Target tile is under protection');
       }
-      throw new SlgError('TILE_OCCUPIED', '该格已被占领（夺地需围攻，S8-3）');
+      throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied (use siege to take it, S8-3)');
     }
 
-    if (pw.troops < GARRISON_PER_TILE) throw new SlgError('NO_TROOPS', '兵力不足以驻守');
+    if (pw.troops < GARRISON_PER_TILE) throw new SlgError('NO_TROOPS', 'Insufficient troops to garrison the tile');
 
     const t = now();
     const resources = this.settle(pw, t);
@@ -788,12 +788,12 @@ export class WorldService {
   async abandonTile(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
     const { cols, now } = this.deps;
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
 
     const tid = tileId(worldId, x, y);
     const tile = await cols.tiles.findOne({ _id: tid });
-    if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', '非己方领地');
-    if (tile.type === 'base') throw new SlgError('TILE_NOT_OWNED', '主城不可放弃');
+    if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Not your territory');
+    if (tile.type === 'base') throw new SlgError('TILE_NOT_OWNED', 'Cannot abandon the capital');
 
     const t = now();
     const resources = this.settle(pw, t);
@@ -818,18 +818,18 @@ export class WorldService {
   async relocateBase(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
     const { cols, now } = this.deps;
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw || !pw.mainBaseTile) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
-    if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', '迁城坐标越界');
+    if (!pw || !pw.mainBaseTile) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
+    if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', 'Relocation coordinates out of bounds');
 
     const newTid = tileId(worldId, x, y);
     if (newTid === pw.mainBaseTile) return this.getMe(worldId, accountId); // relocating to the same tile = no-op, no charge
 
     const proc = proceduralTile(worldId, x, y);
-    if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可落城');
-    if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', '障碍/关隘不可落城');
-    if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', '险地不可落城');
+    if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot place capital at the world center');
+    if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', 'Cannot place capital on obstacle/gate terrain');
+    if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', 'Cannot place capital on stronghold terrain');
     const occ = await cols.tiles.findOne({ _id: newTid });
-    if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', '该格已被占领');
+    if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied');
 
     // Deduct coins first (failure throws INSUFFICIENT_FUNDS; map state is not modified).
     const orderId = `slg_relocate:${worldId}:${accountId}:${now()}`;
@@ -881,20 +881,20 @@ export class WorldService {
   async buildWatchtower(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     const { cols, now } = this.deps;
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
 
     const tid = tileId(worldId, x, y);
     const tile = await cols.tiles.findOne({ _id: tid });
-    if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', '非己方领地');
-    if (tile.type === 'base') throw new SlgError('BAD_REQUEST', '主城自带视野，不可建瞭望塔');
-    if (tile.watchtower) return this.tileDocView(tile, accountId); // 幂等
+    if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Not your territory');
+    if (tile.type === 'base') throw new SlgError('BAD_REQUEST', 'The capital has built-in vision; a watchtower cannot be built here');
+    if (tile.watchtower) return this.tileDocView(tile, accountId); // idempotent
 
     // Settle resources first, then validate sufficiency, then deduct (insufficient resources throw INSUFFICIENT_RESOURCES; map state is not modified).
     const t = now();
     const resources = this.settle(pw, t);
     for (const rt of RESOURCE_TYPES) {
       if ((resources[rt] ?? 0) < (WATCHTOWER_COST[rt] ?? 0)) {
-        throw new SlgError('INSUFFICIENT_RESOURCES', '资源不足以建造瞭望塔');
+        throw new SlgError('INSUFFICIENT_RESOURCES', 'Insufficient resources to build a watchtower');
       }
     }
     for (const rt of RESOURCE_TYPES) resources[rt] -= WATCHTOWER_COST[rt] ?? 0;
@@ -934,86 +934,86 @@ export class WorldService {
   ): Promise<MarchView> {
     const { cols, now } = this.deps;
     if (!MARCHABLE_KINDS.has(kind)) {
-      throw new SlgError('NOT_IMPLEMENTED', `行军类型 ${kind} 未实现（围攻 S8-3）`);
+      throw new SlgError('NOT_IMPLEMENTED', `March kind ${kind} is not implemented (siege S8-3)`);
     }
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
     if (!this.inBounds(fromX, fromY) || !this.inBounds(toX, toY)) {
-      throw new SlgError('OUT_OF_RANGE', '坐标越界');
+      throw new SlgError('OUT_OF_RANGE', 'Coordinates out of bounds');
     }
     // Siege with a team (G3-2c): draw the army from the saved attack formation template; committed troops = sum of troops assigned to each unit.
     // The team can be edited after departure without affecting the in-transit march (the army snapshot is persisted with MarchDoc). Not attack or no team → use flat troops.
     let army: ArmyEntry[] | undefined;
     if (kind === 'attack' && teamId) {
       const team = (pw.teams ?? []).find((t) => t.id === teamId);
-      if (!team || team.army.length === 0) throw new SlgError('BAD_REQUEST', '队伍不存在或为空');
+      if (!team || team.army.length === 0) throw new SlgError('BAD_REQUEST', 'Team does not exist or is empty');
       army = team.army;
       troops = team.army.reduce((s, e) => s + Math.max(1, Math.floor(e.initialHp ?? 0)), 0);
     }
     if (!Number.isFinite(troops) || troops < MARCH_MIN_TROOPS) {
-      throw new SlgError('NO_TROOPS', '出征兵力无效');
+      throw new SlgError('NO_TROOPS', 'Invalid march troop count');
     }
     troops = Math.floor(troops);
     if (kind === 'occupy' && troops < OCCUPY_MIN_TROOPS) {
-      throw new SlgError('NO_TROOPS', `占领至少需带 ${OCCUPY_MIN_TROOPS} 兵`);
+      throw new SlgError('NO_TROOPS', `Occupation requires at least ${OCCUPY_MIN_TROOPS} troops`);
     }
 
     const fromTid = tileId(worldId, fromX, fromY);
     const fromTile = await cols.tiles.findOne({ _id: fromTid });
     if (!fromTile || fromTile.ownerId !== accountId) {
-      throw new SlgError('TILE_NOT_OWNED', '只能从己方格出征');
+      throw new SlgError('TILE_NOT_OWNED', 'Can only march from your own tile');
     }
 
     // Validate the target tile at departure (will be re-validated on arrival since state may have changed).
     const toTid = tileId(worldId, toX, toY);
     const proc = proceduralTile(worldId, toX, toY);
-    if (proc.type === 'obstacle') throw new SlgError('BAD_REQUEST', '阻挡地形不可进军');
+    if (proc.type === 'obstacle') throw new SlgError('BAD_REQUEST', 'Cannot march into obstacle terrain');
     const toTile = await cols.tiles.findOne({ _id: toTid });
     let defenderId: string | undefined; // attack: the attacked player's accountId (under_attack warning is pushed immediately on departure)
     if (kind === 'occupy') {
-      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可直占');
+      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot directly occupy the world center');
       // Stronghold (G8 §3.1): guarded by an extremely powerful system NPC; cannot be directly occupied — must be captured via attack siege.
       if (proc.type === 'stronghold' && !toTile?.ownerId) {
-        throw new SlgError('TILE_OCCUPIED', '险地不可直占，须围攻 attack 攻克');
+        throw new SlgError('TILE_OCCUPIED', 'Strongholds cannot be directly occupied; use attack siege to capture');
       }
-      if (toTile?.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', '该格已是己方领地（用增援）');
+      if (toTile?.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', 'This tile is already your territory (use reinforce)');
       if (toTile?.ownerId) {
         if (toTile.protectedUntil && toTile.protectedUntil > now()) {
-          throw new SlgError('PROTECTED', '目标处于保护期');
+          throw new SlgError('PROTECTED', 'Target tile is under protection');
         }
-        throw new SlgError('TILE_OCCUPIED', '该格已被占领（夺地需围攻 attack）');
+        throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied (use attack siege to take it)');
       }
     } else if (kind === 'reinforce') {
-      if (!toTile || toTile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', '只能增援己方格');
+      if (!toTile || toTile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Can only reinforce your own tile');
     } else if (kind === 'attack') {
       // Siege: target must be another player's territory/capital, or an ownerless stronghold (G8 PvE to defeat the system garrison). Use occupy/sweep for neutral ownerless tiles.
-      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心由宗门争夺，不可围攻');
+      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'World center is contested by sects and cannot be sieged');
       if (!toTile?.ownerId) {
         // No owner: only strongholds can be sieged (defeating the ultra-strong system NPC); all other ownerless tiles use occupy/sweep.
-        if (proc.type !== 'stronghold') throw new SlgError('TILE_NOT_OWNED', '围攻目标无主（用占领/扫荡）');
+        if (proc.type !== 'stronghold') throw new SlgError('TILE_NOT_OWNED', 'Siege target has no owner (use occupy/sweep)');
         // Stronghold PvE: leave defenderId unset (NPC does not receive an under_attack warning).
       } else {
-        if (toTile.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', '不能围攻己方领地');
+        if (toTile.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', 'Cannot siege your own territory');
         if (toTile.protectedUntil && toTile.protectedUntil > now()) {
-          throw new SlgError('PROTECTED', '目标处于保护期');
+          throw new SlgError('PROTECTED', 'Target tile is under protection');
         }
         defenderId = toTile.ownerId;
       }
-      if (troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `围攻至少需带 ${OCCUPY_MIN_TROOPS} 兵`);
+      if (troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `Siege requires at least ${OCCUPY_MIN_TROOPS} troops`);
     } else if (kind === 'scout') {
       // Scout: no fighting or occupation; send a small force to any non-obstacle tile (including enemy/protected/neutral/center) to reveal vision, then auto-return.
       // No ownership/center/protection-period restriction — blocking obstacle terrain above is sufficient. No defenderId (no under_attack warning).
     } else {
       // sweep: clear NPC garrison from neutral / resource tiles (no occupation; loot is carried back on return).
-      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', '世界中心不可扫荡');
+      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot sweep the world center');
       // Stronghold (G8): ultra-strong system garrison; cannot be swept for loot — must be captured via attack siege.
-      if (proc.type === 'stronghold') throw new SlgError('TILE_OCCUPIED', '险地须围攻 attack 攻克，不可扫荡');
-      if (toTile?.ownerId) throw new SlgError('TILE_OCCUPIED', '目标已被占领（夺地用围攻 attack）');
+      if (proc.type === 'stronghold') throw new SlgError('TILE_OCCUPIED', 'Strongholds must be captured via attack siege; sweeping is not allowed');
+      if (toTile?.ownerId) throw new SlgError('TILE_OCCUPIED', 'Target is already occupied (use attack siege to take it)');
     }
 
     const t = now();
     const resources = this.settle(pw, t);
-    if (pw.troops < troops) throw new SlgError('NO_TROOPS', '兵力不足');
+    if (pw.troops < troops) throw new SlgError('NO_TROOPS', 'Insufficient troops');
 
     const path = await this.computeMarchPath(worldId, fromX, fromY, toX, toY, accountId);
     const departAt = t;
@@ -1072,7 +1072,7 @@ export class WorldService {
     const { cols, now } = this.deps;
     const m = await cols.marches.findOne({ _id: mid, worldId, ownerId: accountId });
     if (!m || m.status !== 'marching' || m.kind === 'return') {
-      throw new SlgError('MARCH_NOT_FOUND', '行军不存在或不可撤');
+      throw new SlgError('MARCH_NOT_FOUND', 'March not found or cannot be recalled');
     }
     const t = now();
     const total = m.arriveAt - m.departAt;
@@ -1093,8 +1093,8 @@ export class WorldService {
       },
       { returnDocument: 'after' },
     );
-    if (!claimed) throw new SlgError('MARCH_NOT_FOUND', '行军已到达或已撤');
-    await this.scheduleMarch(worldId, mid, backArrive); // 同 member 改 score
+    if (!claimed) throw new SlgError('MARCH_NOT_FOUND', 'March has already arrived or been recalled');
+    await this.scheduleMarch(worldId, mid, backArrive); // update score on the same member (ZSET)
     const view = this.marchView(claimed);
     void this.pushMarch(accountId, view);
     return view;
@@ -1195,7 +1195,7 @@ export class WorldService {
       const blocked =
         proc.type === 'center' ||
         (occ?.ownerId && occ.ownerId !== m.ownerId) ||
-        (occ?.ownerId === m.ownerId && occ.type !== 'base'); // 已是己方领地（base 例外不会走到这）
+        (occ?.ownerId === m.ownerId && occ.type !== 'base'); // already own territory (base is the exception, but the march would never reach here for base)
       if (blocked) {
         // Target is occupied or non-occupiable on arrival → troops refunded to the pool immediately (S8-3 could instead use a return march).
         await this.refundTroops(pw, m.troops, t);
@@ -2026,18 +2026,18 @@ export class WorldService {
     const { cols, now } = this.deps;
     qty = Math.max(1, Math.min(TROOP_TRAIN_BATCH_MAX, Math.floor(qty)));
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
 
     const queue = pw.trainingQueue ?? [];
-    if (queue.length >= TROOP_TRAIN_QUEUE_MAX) throw new SlgError('BAD_REQUEST', '训练队列已满');
+    if (queue.length >= TROOP_TRAIN_QUEUE_MAX) throw new SlgError('BAD_REQUEST', 'Training queue is full');
 
     const inTraining = queue.reduce((s, e) => s + e.qty, 0);
-    if (pw.troops + inTraining + qty > pw.troopCap) throw new SlgError('TROOP_CAP_REACHED', '训练后兵力超上限');
+    if (pw.troops + inTraining + qty > pw.troopCap) throw new SlgError('TROOP_CAP_REACHED', 'Troops after training would exceed the cap');
 
     const t = now();
     const resources = this.settle(pw, t);
     const foodCost = qty * TROOP_TRAIN_FOOD_COST;
-    if ((resources.food ?? 0) < foodCost) throw new SlgError('INSUFFICIENT_RESOURCES', '粮食不足');
+    if ((resources.food ?? 0) < foodCost) throw new SlgError('INSUFFICIENT_RESOURCES', 'Insufficient food');
     resources.food = (resources.food ?? 0) - foodCost;
 
     // Training starts immediately after the previous batch finishes (chained queue); if no batch is in progress, start immediately.
@@ -2071,9 +2071,9 @@ export class WorldService {
     const { cols, now } = this.deps;
     coins = Math.max(1, Math.floor(coins));
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
     const queue = pw.trainingQueue ?? [];
-    if (queue.length === 0) throw new SlgError('BAD_REQUEST', '当前没有训练中的队列');
+    if (queue.length === 0) throw new SlgError('BAD_REQUEST', 'No training queue in progress');
 
     // Battle pass bonus (S8-8): hasBattlePass → speedup costs 15% fewer coins (time per coin ÷0.85).
     const speedupDiscountMult = pw.hasBattlePass ? 1 / 0.85 : 1;
@@ -2178,22 +2178,22 @@ export class WorldService {
     try {
       validateDefenseConfig(defenseConfig);
     } catch (err) {
-      throw new SlgError('BAD_REQUEST', `防守布阵非法：${(err as Error).message}`);
+      throw new SlgError('BAD_REQUEST', `Invalid defense formation: ${(err as Error).message}`);
     }
     if (tileKey === 'base') {
       const pwId = playerWorldId(worldId, accountId);
       const pw = await cols.playerWorld.findOne({ _id: pwId });
-      if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+      if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
       await cols.playerWorld.updateOne(
         { _id: pwId },
         { $set: { defense: defenseConfig }, $inc: { rev: 1 } },
       );
     } else {
       const tile = await cols.tiles.findOne({ _id: tileKey });
-      if (!tile?.ownerId) throw new SlgError('TILE_NOT_OWNED', '非领地');
+      if (!tile?.ownerId) throw new SlgError('TILE_NOT_OWNED', 'Not your territory');
       // Own territory, or same-family ally territory (§4 proxy defense; allied sect passage pending alliance system) can both be set for defense.
       if (tile.ownerId !== accountId && !(await this.sameFamily(worldId, accountId, tile.ownerId))) {
-        throw new SlgError('TILE_NOT_OWNED', '非己方/盟军领地');
+        throw new SlgError('TILE_NOT_OWNED', 'Not your own or allied territory');
       }
       await cols.tiles.updateOne(
         { _id: tileKey },
@@ -2218,7 +2218,7 @@ export class WorldService {
   /** Read the player's list of attack formation templates in a given world (editor / pre-fill on departure). Throws TILE_NOT_OWNED if the player has not joined the world. */
   async getTeams(worldId: string, accountId: string): Promise<TeamTemplate[]> {
     const pw = await this.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
     return pw.teams ?? [];
   }
 
@@ -2226,22 +2226,22 @@ export class WorldService {
    * Overwrite the player's attack formation templates (editor save, §16.2). Validation: ≤ SIEGE_TEAM_CAP teams, unique ids, each team's army validated by the engine levelSchema (validateAttackerArmy). Full-set overwrite (frontend sends the complete list).
    */
   async setTeams(worldId: string, accountId: string, teams: TeamTemplate[]): Promise<void> {
-    if (!Array.isArray(teams)) throw new SlgError('BAD_REQUEST', 'teams 须为数组');
-    if (teams.length > SIEGE_TEAM_CAP) throw new SlgError('BAD_REQUEST', `队伍数超上限 ${SIEGE_TEAM_CAP}`);
+    if (!Array.isArray(teams)) throw new SlgError('BAD_REQUEST', 'teams must be an array');
+    if (teams.length > SIEGE_TEAM_CAP) throw new SlgError('BAD_REQUEST', `Team count exceeds the cap of ${SIEGE_TEAM_CAP}`);
     const ids = new Set<string>();
     for (const team of teams) {
-      if (!team || typeof team.id !== 'string' || !team.id) throw new SlgError('BAD_REQUEST', '队伍 id 非法');
-      if (ids.has(team.id)) throw new SlgError('BAD_REQUEST', `队伍 id 重复：${team.id}`);
+      if (!team || typeof team.id !== 'string' || !team.id) throw new SlgError('BAD_REQUEST', 'Team id is invalid');
+      if (ids.has(team.id)) throw new SlgError('BAD_REQUEST', `Duplicate team id: ${team.id}`);
       ids.add(team.id);
       try {
         validateAttackerArmy(team.army);
       } catch (err) {
-        throw new SlgError('BAD_REQUEST', `队伍 ${team.id} 布阵非法：${(err as Error).message}`);
+        throw new SlgError('BAD_REQUEST', `Team ${team.id} formation is invalid: ${(err as Error).message}`);
       }
     }
     const pwId = playerWorldId(worldId, accountId);
     const pw = await this.deps.cols.playerWorld.findOne({ _id: pwId });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
     await this.deps.cols.playerWorld.updateOne({ _id: pwId }, { $set: { teams }, $inc: { rev: 1 } });
   }
 
@@ -2258,11 +2258,11 @@ export class WorldService {
     const { cols } = this.deps;
     if (tileKey === 'base') {
       const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-      if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+      if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
       return (pw.defense as Record<string, unknown> | undefined) ?? null;
     }
     const tile = await cols.tiles.findOne({ _id: tileKey });
-    if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', '非己方领地');
+    if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Not your territory');
     return (tile.defense as Record<string, unknown> | undefined) ?? null;
   }
 
@@ -2280,12 +2280,12 @@ export class WorldService {
     sid: string,
   ): Promise<{ siegeId: string; seed: number; outcome: SiegeOutcome; level: Record<string, unknown> }> {
     const siege = await this.deps.cols.sieges.findOne({ _id: sid, worldId });
-    if (!siege) throw new SlgError('NOT_FOUND', '战报不存在');
+    if (!siege) throw new SlgError('NOT_FOUND', 'Battle report not found');
     if (siege.attackerId !== accountId && siege.defenderId !== accountId) {
-      throw new SlgError('NO_PERMISSION', '只有交战双方可观战');
+      throw new SlgError('NO_PERMISSION', 'Only the attacker or defender can spectate this battle');
     }
     if (typeof siege.seed !== 'number' || !Array.isArray(siege.attackerArmy)) {
-      throw new SlgError('NOT_FOUND', '该战报无可重播记录');
+      throw new SlgError('NOT_FOUND', 'This battle report has no replayable record');
     }
     const level = buildSiegeBattle(
       { army: siege.attackerArmy },
@@ -2339,7 +2339,7 @@ export class WorldService {
           ownerId: winnerAccountId,
           ...(winnerFamilyId ? { familyId: winnerFamilyId } : {}),
           foundedAt: this.deps.now(),
-          rev: 1, // 覆盖，不自增（简化，后续可改 $inc）
+          rev: 1, // overwrite, not incremented (simplified; can be changed to $inc later)
         },
         $unset: { nationName: '' }, // clear the old nation name before the new occupier renames it
       },
@@ -2349,11 +2349,11 @@ export class WorldService {
 
   /** Set the nation name (only the capital occupier may name it). */
   async setNationName(worldId: string, accountId: string, capitalIdx: number, name: string): Promise<void> {
-    if (!name || name.length < 1 || name.length > 10) throw new SlgError('BAD_REQUEST', '国名 1~10 字');
+    if (!name || name.length < 1 || name.length > 10) throw new SlgError('BAD_REQUEST', 'Nation name must be 1–10 characters');
     const nationId = `nation:${worldId}:${capitalIdx}`;
     const nation = await this.deps.cols.nations.findOne({ _id: nationId });
-    if (!nation?.ownerId) throw new SlgError('TILE_NOT_OWNED', '该首府尚无国家');
-    if (nation.ownerId !== accountId) throw new SlgError('NO_PERMISSION', '只有占领者可命名');
+    if (!nation?.ownerId) throw new SlgError('TILE_NOT_OWNED', 'This capital has no nation yet');
+    if (nation.ownerId !== accountId) throw new SlgError('NO_PERMISSION', 'Only the capital occupier can name the nation');
     await this.deps.cols.nations.updateOne({ _id: nationId }, { $set: { nationName: name } });
   }
 
@@ -2369,7 +2369,7 @@ export class WorldService {
 
   // ── S8-7: season management ────────────────────────────────────────
 
-  /** 获取世界/赛季信息（GET /world/season）。 */
+  /** Get world/season info (GET /world/season). */
   async getSeason(worldId: string): Promise<{
     worldId: string;
     season: number;
@@ -2399,8 +2399,8 @@ export class WorldService {
   }
 
   /**
-   * 开服：创建世界文档（幂等，已存在则更新 status → open）。
-   * worldId 必须形如 `s{season}-{shard}`。
+   * Open a season: create the world document (idempotent — if it already exists, update status → open).
+   * worldId must have the form `s{season}-{shard}`.
    */
   async openSeason(
     worldId: string,
@@ -2423,19 +2423,19 @@ export class WorldService {
           population: 0,
           rev: 0,
         },
-        // status 仅在 $set（首次插入 + 重开都置 open）；不可与 $setOnInsert 同写同字段（Mongo upsert 冲突）。
-        // 开服 pin 引擎版本（C7/§17.9）：围攻权威/重播一致性锚点。重开同步 pin 当前进程版本。
+        // status is set only in $set (both first insert and reopen set it to open); the same field cannot appear in both $set and $setOnInsert (Mongo upsert conflict).
+        // Pin the engine version on open (C7/§17.9): consistency anchor for authoritative siege / replay. Reopen pins the current process version.
         $set: { status: 'open' as const, engineVersion: ENGINE_VERSION },
       },
       { upsert: true },
     );
-    // 初始化 10 个首府文档
+    // Initialize the 10 capital documents
     await this.initNations(worldId);
   }
 
   /**
-   * 把排名主体展开到「该主体下所有玩家账号」（§17.5 发奖收件人）。
-   * sect → 成员家族的全部成员；family → 家族全部成员；solo → 占领者本人。去重。
+   * Expand a ranking entity to the set of all player accounts it covers (§17.5 reward recipients).
+   * sect → all members of its member families; family → all family members; solo → the occupier themselves. Deduped.
    */
   private async expandToAccounts(worldId: string, scope: 'sect' | 'family' | 'solo', id: string): Promise<string[]> {
     const { cols } = this.deps;
@@ -2449,15 +2449,15 @@ export class WorldService {
   }
 
   /**
-   * 赛季结算（settling）：按宗门占领首府数量排名（§2.1 大比 = 大区内宗门占国数排名）。
-   * 聚合优先级：宗门(sect) → 散家族(family) → 个人(owner)，逐级兜底无宗门/无族的占领者。
-   * 结算只计算，不清档（清档走 resetSeason）。返回排名列表（按占国数降序）。
-   * `scope` 标识聚合维度：'sect' | 'family' | 'solo'。
+   * Season settlement (settling): rank entities by the number of capitals they occupy (§2.1 grand contest = shard-level ranking of sects by capital count).
+   * Aggregation priority: sect → unaffiliated family → individual (owner), cascading fallback for occupiers with no sect/family.
+   * Settlement only computes rankings; it does not wipe data (data wipe goes through resetSeason). Returns the ranking list (descending by capital count).
+   * `scope` identifies the aggregation dimension: 'sect' | 'family' | 'solo'.
    */
   async settleSeason(worldId: string): Promise<Array<{
     rank: number;
     scope: 'sect' | 'family' | 'solo';
-    /** 聚合主体 ID（sectId / familyId / ownerId）。字段名沿用 familyId 兼容既有调用方。 */
+    /** Aggregation entity ID (sectId / familyId / ownerId). Field name kept as familyId for backward compatibility with existing callers. */
     familyId: string;
     name?: string;
     nationCount: number;
@@ -2465,20 +2465,20 @@ export class WorldService {
   }>> {
     const { cols, now } = this.deps;
 
-    // 标记赛季进入结算状态（§17.3 守卫：仅 active/settling 可结算，重入安全）。
-    // dev/test 无 world 文档时不强制（同 joinWorld 容量守卫口径），直接算排名。
+    // Mark the season as entering settlement state (§17.3 guard: only active/settling may settle; reentrant safe).
+    // dev/test environments without a world document skip the guard (consistent with joinWorld capacity guard policy) and compute rankings directly.
     const w = await cols.worlds.findOne({ _id: worldId });
     if (w) {
       const moved = await cols.worlds.findOneAndUpdate(
         { _id: worldId, status: { $in: ['active', 'settling'] } },
         { $set: { status: 'settling' as const } },
       );
-      if (!moved) throw new SlgError('WORLD_CLOSED', '世界不可结算（须 active/settling）');
+      if (!moved) throw new SlgError('WORLD_CLOSED', 'World cannot be settled (must be active/settling)');
     }
 
     const nations = await cols.nations.find({ worldId, ownerId: { $exists: true } }).toArray();
 
-    // family → sectId 映射（占国者的家族归属哪个宗门）。
+    // family → sectId mapping (which sect each occupier's family belongs to).
     const fams = await cols.families.find({ worldId }).toArray();
     const familySect = new Map<string, string | undefined>();
     const familyName = new Map<string, string>();
@@ -2489,7 +2489,7 @@ export class WorldService {
     const sectName = new Map<string, string>();
     for (const s of await cols.sects.find({ worldId }).toArray()) sectName.set(s._id, s.name);
 
-    // 按「宗门 → 家族 → 个人」逐级聚合占国数。
+    // Aggregate capital counts by "sect → family → individual" in order of priority.
     const agg = new Map<string, { scope: 'sect' | 'family' | 'solo'; name?: string; capitalIdxs: number[] }>();
     for (const n of nations) {
       let scope: 'sect' | 'family' | 'solo';
@@ -2519,9 +2519,9 @@ export class WorldService {
         capitalIdxs: v.capitalIdxs,
       }));
 
-    // 落库历史 + 发奖（C1/C2）仅在有 world 文档时（需 season 锚 dispatchKey/幂等键）。
+    // Persist historical records + dispatch rewards (C1/C2) only when a world document exists (requires the season anchor for dispatchKey / idempotency key).
     if (w) {
-      // 宗门繁荣度快照（settle 时聚合刷新，§17.4）+ 成员家族名单快照（G6 下季 familyShard 展开，§20 R2）。
+      // Sect prosperity snapshot (aggregated and refreshed on settle, §17.4) + member family list snapshot (G6 next-season familyShard expansion, §20 R2).
       const sectProsperity = new Map<string, number>();
       const sectMemberFamilyIds = new Map<string, string[]>();
       for (const r of ranking) {
@@ -2534,7 +2534,7 @@ export class WorldService {
         }
       }
 
-      // ① 落库历史（C2，幂等：_id = `${worldId}:s${season}`，$setOnInsert）。
+      // ① Persist historical record (C2, idempotent: _id = `${worldId}:s${season}`, $setOnInsert).
       await cols.seasonResults.updateOne(
         { _id: `${worldId}:s${w.season}` },
         {
@@ -2560,18 +2560,18 @@ export class WorldService {
         { upsert: true },
       );
 
-      // ② 发奖（C1）——逐排名主体展开到「该主体下所有玩家账号」发系统邮件附件（dispatchKey 幂等）。
+      // ② Dispatch rewards (C1): for each ranking entity, expand to all player accounts under it and send a system mail with attachments (dispatchKey idempotent).
       for (const r of ranking) {
         const tier = settleTier(r.rank);
         const base = SETTLE_REWARDS[tier];
-        const mult = r.capitalIdxs.includes(CENTER_CAPITAL_IDX) ? CENTER_CAPITAL_MULT : 1; // 中原首府加权（§2.4）
+        const mult = r.capitalIdxs.includes(CENTER_CAPITAL_IDX) ? CENTER_CAPITAL_MULT : 1; // central capital multiplier (§2.4)
         const items: Record<string, number> = {};
         for (const [id, n] of Object.entries(base.items)) items[id] = n * mult;
         const accounts = await this.expandToAccounts(worldId, r.scope, r.familyId);
         const dispatchKey = `slg-settle:${worldId}:s${w.season}`;
         const attachments = [
-          // 材料（scrap/lead/binding）发到 SaveData.materials 养成统一池（SLG8），故 kind:'material'
-          // 而非泛用 'item'（后者落 inventory.items，养成/装备/拍卖读不到 → 孤儿）。
+          // Materials (scrap/lead/binding) are sent to SaveData.materials — the unified progression pool (SLG8) — so kind:'material'
+          // is used rather than the generic 'item' (which lands in inventory.items and is invisible to progression/equipment/auction → orphaned).
           ...Object.entries(items).filter(([, n]) => n > 0).map(([id, count]) => ({ kind: 'material' as const, id, count })),
           ...base.skins.map((id) => ({ kind: 'skin' as const, id })),
           ...(base.coins ? [{ kind: 'coins' as const, count: base.coins }] : []),
@@ -2596,43 +2596,43 @@ export class WorldService {
   }
 
   /**
-   * 赛季重置（清地图态、保养成 + 外观 + 段位，§2.3 SLG4 / §17.6）。
-   * 守卫（C5）：仅 settling/resetting 可重置（先 settle 落 seasonResults 再 reset，防跳过结算丢历史）。
-   * 状态机：settling → resetting（中间态）→ 清档 → open；resetting 中途崩溃重调从 resetting 续跑（幂等）。
-   * 清档分批（万人级让出事件循环）；家族编制保留但赛季态归零；engineVersion 重 pin 当前进程版本（C7）。
+   * Season reset (wipe map state; preserve progression + cosmetics + rank, §2.3 SLG4 / §17.6).
+   * Guard (C5): only settling/resetting may reset (settle must persist seasonResults first; prevents skipping settlement and losing history).
+   * State machine: settling → resetting (intermediate) → wipe → open; a crash mid-resetting resumes from resetting on retry (idempotent).
+   * Data wipe is batched (tens of thousands of records, yields the event loop); family membership is preserved but season state is zeroed; engineVersion re-pinned to current process version (C7).
    */
   async resetSeason(worldId: string): Promise<{ deleted: Record<string, number> }> {
     const { cols, now } = this.deps;
-    // ① 状态守卫 + 中间态（幂等：已 resetting 直接续跑）。
+    // ① Status guard + intermediate state (idempotent: already resetting → continue directly).
     const w = await cols.worlds.findOneAndUpdate(
       { _id: worldId, status: { $in: ['settling', 'resetting'] } },
       { $set: { status: 'resetting' as const } },
     );
-    if (!w) throw new SlgError('WORLD_CLOSED', '须先 settle 再 reset');
+    if (!w) throw new SlgError('WORLD_CLOSED', 'Must settle before resetting');
 
-    // ② 分批删大集合（tiles/marches/playerWorld/sieges 可能万级）。
+    // ② Batch-delete large collections (tiles/marches/playerWorld/sieges may have tens of thousands of records).
     const deleted: Record<string, number> = {};
     for (const c of ['tiles', 'marches', 'playerWorld', 'nations', 'sieges', 'sects', 'sectMessages'] as const) {
       deleted[c] = await deleteInBatches(cols[c] as never, { worldId }, RESET_DELETE_BATCH);
     }
 
-    // ③ 家族编制保留（成员关系跨季留存）但清赛季态：territory/繁荣度/活跃归零 + 清宗门归属。
+    // ③ Preserve family membership (member relationships persist across seasons) but zero season state: territory/prosperity/activity reset to 0 + clear sect affiliation.
     await cols.families.updateMany(
       { worldId },
       { $set: { territoryCount: 0, prosperity: 0, activity: 0, prosperityUpdatedAt: now() }, $unset: { sectId: '' } },
     );
 
-    // ④ 重开（engineVersion 重 pin 当前进程版本，C7）。
+    // ④ Reopen (re-pin engineVersion to the current process version, C7).
     await cols.worlds.updateOne(
       { _id: worldId },
       { $set: { status: 'open' as const, population: 0, resetAt: now(), engineVersion: ENGINE_VERSION }, $inc: { rev: 1 } },
     );
-    // 重新初始化首府文档
+    // Re-initialize capital documents
     await this.initNations(worldId);
     return { deleted };
   }
 
-  /** 列出所有大区运维概要（G7/§17.7 admin 后台用，内部端点）。 */
+  /** List all shard world operational summaries (G7/§17.7 admin backend, internal endpoint). */
   async listWorlds(): Promise<Array<{
     worldId: string; season: number; shard: number; status: string;
     population: number; capacity: number; openAt: number; resetAt?: number; engineVersion?: number;
@@ -2651,7 +2651,7 @@ export class WorldService {
     }));
   }
 
-  /** 关闭世界（赛季结束归档）。 */
+  /** Close a world (archive at end of season). */
   async closeSeason(worldId: string): Promise<void> {
     await this.deps.cols.worlds.updateOne(
       { _id: worldId },
@@ -2659,12 +2659,12 @@ export class WorldService {
     );
   }
 
-  // ── G6 多 shard 运行时调度（§20）────────────────────────────
+  // ── G6 multi-shard runtime scheduling (§20) ────────────────────────────
 
   /**
-   * 新赛季开区编排（admin，§20.4）：读上季 seasonResults 按宗门强弱蛇形均衡分配，
-   * 落 shardAllocations.familyShard（同宗门成员家族同 shard；散家族最少家族数补位），
-   * 并对每个 shardIndex 调 openSeason。幂等（openSeason $setOnInsert + alloc upsert，重调不重复建）。
+   * New season shard orchestration (admin, §20.4): read last season's seasonResults, snake-draft sects by strength for balanced shard assignment,
+   * persist to shardAllocations.familyShard (member families of the same sect land in the same shard; unaffiliated families fill the least-loaded shard),
+   * then call openSeason for each shardIndex. Idempotent (openSeason $setOnInsert + alloc upsert; retry does not create duplicates).
    */
   async allocateNextSeason(season: number, capacity: number = WORLD_CAPACITY): Promise<{
     shardCount: number; worldIds: string[]; allocatedFamilies: number;
@@ -2672,11 +2672,11 @@ export class WorldService {
     const { cols, now } = this.deps;
     const prevSeason = season - 1;
 
-    // ① 读上季全 shard 结算历史 → SectStrength[] + 每宗门成员家族名单。
+    // ① Read last season's full shard settlement history → SectStrength[] + each sect's member family list.
     const prevResults = await cols.seasonResults.find({ season: prevSeason }).toArray();
     const sectStrengths: SectStrength[] = [];
-    const sectFamilies = new Map<string, string[]>(); // sectId(上季) → 成员 familyIds
-    const sectFamilyAll = new Set<string>();          // 已归宗门的家族（用于散家族补位区分）
+    const sectFamilies = new Map<string, string[]>(); // sectId (last season) → member familyIds
+    const sectFamilyAll = new Set<string>();          // families already assigned to a sect (used to distinguish unaffiliated families for fill-in)
     for (const res of prevResults) {
       for (const r of res.ranking) {
         if (r.scope !== 'sect') continue;
@@ -2692,20 +2692,20 @@ export class WorldService {
       }
     }
 
-    // ② shardCount = ceil(上季全 shard 人口 / capacity)（首季无上季 → 0 → 1 区）。
+    // ② shardCount = ceil(last season's total population across all shards / capacity) (first season has no prior season → 0 → 1 shard).
     const prevWorldIds = (await cols.worlds.find({ season: prevSeason }).project({ _id: 1 }).toArray()).map((w) => w._id);
     const totalPlayers = prevWorldIds.length > 0
       ? await cols.familyMembers.countDocuments({ worldId: { $in: prevWorldIds } })
       : 0;
     const shardCount = shardCountForPopulation(totalPlayers, capacity);
 
-    // ③ 蛇形均衡分配 sect → shardIdx，展开到成员家族粒度。
+    // ③ Snake-draft balanced assignment: sect → shardIdx, then expand to member family granularity.
     const assignment = allocateSectsToShards(sectStrengths, shardCount);
     const familyShard: Record<string, number> = {};
     for (const [sectId, idx] of assignment) {
       for (const fid of sectFamilies.get(sectId) ?? []) familyShard[fid] = idx;
     }
-    // ④ 散家族（上季有族无门）按最少家族数 shard 确定性补位（均摊）。
+    // ④ Unaffiliated families (last season had a family but no sect): deterministic fill-in to the least-loaded shard (even distribution).
     const shardLoad = new Array(shardCount).fill(0);
     for (const idx of Object.values(familyShard)) if (idx < shardCount) shardLoad[idx]++;
     if (prevWorldIds.length > 0) {
@@ -2720,14 +2720,14 @@ export class WorldService {
       }
     }
 
-    // ⑤ 落 shardAllocations（幂等 upsert：重调覆盖最新分配；shardCount 后续溢出 $inc）。
+    // ⑤ Persist shardAllocations (idempotent upsert: retry overwrites the latest allocation; shardCount is incremented later on overflow).
     await cols.shardAllocations.updateOne(
       { _id: `s${season}` },
       { $set: { season, shardCount, capacity, familyShard }, $setOnInsert: { createdAt: now() } },
       { upsert: true },
     );
 
-    // ⑥ 开 N 个 shard 世界。
+    // ⑥ Open N shard worlds.
     const worldIds: string[] = [];
     for (let i = 0; i < shardCount; i++) {
       const wid = worldShardId(season, i);
@@ -2738,12 +2738,12 @@ export class WorldService {
   }
 
   /**
-   * 解析账号本赛季应进的 shard worldId（§20.4）：粘性 > 家族查表 > 最空开区 > 溢出开新区。
+   * Resolve the shard worldId this account should join for the current season (§20.4): sticky > family lookup table > least-loaded open shard > overflow (open new shard).
    */
   private async resolveShardForJoin(season: number, accountId: string): Promise<string> {
     const { cols } = this.deps;
 
-    // ① 粘性：已在本季某 shard 有 playerWorld → 返回该 worldId（防跨 shard 双开）。
+    // ① Sticky: already has a playerWorld in some shard this season → return that worldId (prevents double-joining across shards).
     const existing = await cols.playerWorld.findOne(
       { accountId, worldId: { $regex: `^s${season}-` } },
       { projection: { worldId: 1 } },
@@ -2752,7 +2752,7 @@ export class WorldService {
 
     const alloc = await cols.shardAllocations.findOne({ _id: `s${season}` });
 
-    // ② 家族查表：账号上季家族 → familyShard 命中 shard（须 open/active 且未满）。
+    // ② Family lookup: last season's family → familyShard table hit (shard must be open/active and not full).
     if (alloc) {
       const prevMember = await cols.familyMembers.findOne(
         { accountId, worldId: { $regex: `^s${season - 1}-` } },
@@ -2763,17 +2763,17 @@ export class WorldService {
         const wid = worldShardId(season, idx);
         const w = await cols.worlds.findOne({ _id: wid });
         if (w && (w.status === 'open' || w.status === 'active') && w.population < w.capacity) return wid;
-        // 命中区已满/未开 → 落溢出补位（不破坏均衡：仍优先最空开区）。
+        // Matched shard is full or not open → fall through to overflow fill-in (preserves balance: still prefer the least-loaded open shard).
       }
     }
 
-    // ③ 最空开区：本季 open/active 且未满，按 population 升序取最空。
+    // ③ Least-loaded open shard: open/active this season and not full, take the least-loaded by population ascending.
     const open = await cols.worlds
       .find({ season, status: { $in: ['open', 'active'] }, $expr: { $lt: ['$population', '$capacity'] } })
       .sort({ population: 1 }).limit(1).toArray();
     if (open.length > 0) return open[0]!._id;
 
-    // ④ 溢出：无可用 → 开新 shard（idx = alloc.shardCount 或现有 world 数），$inc shardCount。
+    // ④ Overflow: no available shard → open a new shard (idx = alloc.shardCount or current world count), $inc shardCount.
     const capacity = alloc?.capacity ?? WORLD_CAPACITY;
     const nextIdx = alloc?.shardCount ?? await cols.worlds.countDocuments({ season });
     const wid = worldShardId(season, nextIdx);
@@ -2783,16 +2783,16 @@ export class WorldService {
   }
 
   /**
-   * 仅解析本账号本赛季应进的 shard（玩家端浏览入口，§20.5）：不落城，供客户端进图前拿 worldId。
-   * 与 joinSeason 共用 resolveShardForJoin（粘性>家族查表>最空开区>溢出开新区）。
+   * Resolve only the shard for this account's current season (player-facing browse entry, §20.5): does not place the capital; lets the client fetch the worldId before entering the map.
+   * Shares resolveShardForJoin with joinSeason (sticky > family lookup > least-loaded open shard > overflow new shard).
    */
   async resolveSeasonShard(season: number, accountId: string): Promise<{ worldId: string }> {
     return { worldId: await this.resolveShardForJoin(season, accountId) };
   }
 
   /**
-   * 按赛季 join（玩家端，§20.4）：服务端解析 shard → joinWorld（系统自动落城，§3.4，玩家不传坐标）。
-   * WORLD_FULL（并发满员）兜底重解析一跳（多半落溢出新区）。返回含 worldId 的玩家视图。
+   * Join by season (player-facing, §20.4): server resolves the shard → joinWorld (system auto-places the capital, §3.4; player does not pass coordinates).
+   * WORLD_FULL (concurrent full) falls back to re-resolving once more (most likely lands in an overflow new shard). Returns the player view with worldId.
    */
   async joinSeason(season: number, accountId: string): Promise<PlayerWorldView> {
     let worldId = await this.resolveShardForJoin(season, accountId);
@@ -2808,7 +2808,7 @@ export class WorldService {
   }
 
   /**
-   * 跨区隔离巡检（admin 只读，§20.4）：扫描跨 shard 泄漏 —— 跨区行军 / 玩家双开 / 孤儿格。
+   * Cross-shard isolation patrol (admin read-only, §20.4): scan for cross-shard leaks — cross-shard marches / players double-joined across shards / orphaned tiles.
    */
   async patrolShardIsolation(): Promise<{
     scannedWorlds: number;
@@ -2820,7 +2820,7 @@ export class WorldService {
     const SAMPLE = 20;
     const scannedWorlds = await cols.worlds.countDocuments({});
 
-    // ① 跨区行军：fromTile/toTile 前缀 ≠ worldId（行军引用他区格）。
+    // ① Cross-shard marches: fromTile/toTile prefix ≠ worldId (march references a tile in another shard).
     const crossMarches: string[] = [];
     let crossCount = 0;
     for await (const m of cols.marches.find({}, { projection: { worldId: 1, fromTile: 1, toTile: 1 } })) {
@@ -2831,7 +2831,7 @@ export class WorldService {
       }
     }
 
-    // ② 玩家双开：同 season 跨多个 worldId 有 playerWorld 的账号。
+    // ② Players double-joined: accounts with playerWorld records across multiple worldIds in the same season.
     const worldSeason = new Map<string, number>(
       (await cols.worlds.find({}, { projection: { season: 1 } }).toArray()).map((w) => [w._id, w.season]),
     );
@@ -2855,7 +2855,7 @@ export class WorldService {
       }
     }
 
-    // ③ 孤儿格：tiles._id 前缀 ≠ worldId 字段。
+    // ③ Orphaned tiles: tiles._id prefix ≠ worldId field.
     const orphanSamples: string[] = [];
     let orphanCount = 0;
     for await (const t of cols.tiles.find({}, { projection: { worldId: 1 } })) {
@@ -2873,19 +2873,19 @@ export class WorldService {
     };
   }
 
-  // ── S8-8：SLG 商店 ────────────────────────────────────────
+  // ── S8-8: SLG shop ────────────────────────────────────────
 
   /**
-   * SLG 商店购买（商品定义见 SLG_SHOP_ITEMS）。
-   * 扣金币 → 立即生效（加速/资源包/保护罩/战令写 playerWorld）。
+   * SLG shop purchase (item definitions in SLG_SHOP_ITEMS).
+   * Deducts coins → takes effect immediately (speedup/resource pack/protection shield/battle pass written to playerWorld).
    */
   async buySlgShopItem(worldId: string, accountId: string, itemId: string): Promise<PlayerWorldView> {
     const item = SLG_SHOP_ITEMS.find((i) => i.id === itemId);
-    if (!item) throw new SlgError('NOT_FOUND', '商品不存在');
+    if (!item) throw new SlgError('NOT_FOUND', 'Item not found');
 
     const { cols, now } = this.deps;
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', '未进入世界');
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
 
     const orderId = `slg_shop:${worldId}:${accountId}:${itemId}:${now()}`;
     await this.commercial.spend(accountId, item.cost, orderId);
@@ -2895,7 +2895,7 @@ export class WorldService {
 
     if (item.kind === 'troop_speedup') {
       const secToSpeed = Number(item.effect['duration_sec'] ?? 0);
-      // 重用 speedupTraining 逻辑的简化版（已扣款，直接操作 queue）
+      // Simplified version of speedupTraining logic (coins already deducted; operate on queue directly)
       const queue = (pw.trainingQueue ?? []).slice();
       let remaining = secToSpeed * 1000;
       let troopsReady = 0;
@@ -2952,13 +2952,13 @@ export class WorldService {
     return this.getMe(worldId, accountId);
   }
 
-  /** SLG 商店商品列表（客户端展示用）。 */
+  /** SLG shop item list (for client display). */
   getSlgShopItems(): typeof SLG_SHOP_ITEMS {
     return SLG_SHOP_ITEMS;
   }
 }
 
-/** 掠夺资源人读摘要（仅非零项，如 "food+250,iron+40"；空 = ""）。供 siege_result push 直接展示。 */
+/** Human-readable loot summary (non-zero items only, e.g. "food+250,iron+40"; empty string if nothing looted). Used directly in siege_result push payloads. */
 function lootSummary(loot: Record<ResourceType, number>): string {
   return RESOURCE_TYPES.filter((rt) => (loot[rt] ?? 0) > 0)
     .map((rt) => `${rt}+${loot[rt]}`)

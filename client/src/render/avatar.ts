@@ -22,14 +22,14 @@ function initial(name: string): string {
 
 /** 8 hand-crafted avatar tokens (icon + background colour), indices 0-7. */
 const AVATAR_DEFS: Array<{ icon: IconKind; bg: number }> = [
-  { icon: 'book',    bg: 0x4477cc },  // 0 学者 inkBlue (default-compatible)
-  { icon: 'trophy',  bg: 0xcc9900 },  // 1 冠军 gold
-  { icon: 'swords',  bg: 0xcc3333 },  // 2 战士 red
-  { icon: 'castle',  bg: 0x4a9e4a },  // 3 王者 green
-  { icon: 'pencils', bg: 0x9955cc },  // 4 创作者 purple
-  { icon: 'globe',   bg: 0x44aacc },  // 5 探险家 cyan
-  { icon: 'coin',    bg: 0xcc6633 },  // 6 商人 orange
-  { icon: 'home',    bg: 0x667788 },  // 7 守护者 grey-blue
+  { icon: 'book',    bg: 0x4477cc },  // 0 scholar inkBlue (default-compatible)
+  { icon: 'trophy',  bg: 0xcc9900 },  // 1 champion gold
+  { icon: 'swords',  bg: 0xcc3333 },  // 2 warrior red
+  { icon: 'castle',  bg: 0x4a9e4a },  // 3 sovereign green
+  { icon: 'pencils', bg: 0x9955cc },  // 4 creator purple
+  { icon: 'globe',   bg: 0x44aacc },  // 5 explorer cyan
+  { icon: 'coin',    bg: 0xcc6633 },  // 6 merchant orange
+  { icon: 'home',    bg: 0x667788 },  // 7 guardian grey-blue
 ];
 
 /** Total number of avatar tokens available (for UI pickers). */

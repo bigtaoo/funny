@@ -16,10 +16,10 @@ import {
 } from '@nw/shared';
 
 describe('familyProsperity', () => {
-  it('全 0 → 0', () => {
+  it('all 0 → 0', () => {
     expect(familyProsperity(0, 0, 0)).toBe(0);
   });
-  it('线性加权 + 整数化', () => {
+  it('linear weighted sum + integer floor', () => {
     expect(familyProsperity(3, 2, 4)).toBe(
       3 * PROSPERITY_W_TERRITORY + 2 * PROSPERITY_W_MEMBER + 4 * PROSPERITY_W_ACTIVITY,
     );
@@ -27,13 +27,13 @@ describe('familyProsperity', () => {
 });
 
 describe('decayProsperity', () => {
-  it('0 天不衰减', () => {
+  it('0 days no decay', () => {
     expect(decayProsperity(1000, 0)).toBe(1000);
   });
-  it('负天数视作 0（不放大）', () => {
+  it('negative days treated as 0 (no amplification)', () => {
     expect(decayProsperity(1000, -5)).toBe(1000);
   });
-  it('衰减单调递减且 floor 整数', () => {
+  it('decay is monotonically decreasing and floor integer', () => {
     const d1 = decayProsperity(1000, 1);
     const d10 = decayProsperity(1000, 10);
     expect(d1).toBeLessThan(1000);
@@ -43,7 +43,7 @@ describe('decayProsperity', () => {
 });
 
 describe('settleTier', () => {
-  it('名次切档边界 1/3/10/11', () => {
+  it('rank tier boundary 1/3/10/11', () => {
     expect(settleTier(1)).toBe('champion');
     expect(settleTier(2)).toBe('top3');
     expect(settleTier(3)).toBe('top3');
@@ -55,11 +55,11 @@ describe('settleTier', () => {
 });
 
 describe('sectStrengthScore', () => {
-  it('新宗门（无历史）给中位 + 规模/繁荣度加分', () => {
+  it('new sect (no history) gets median baseline + size/prosperity bonus', () => {
     const s: SectStrength = { sectId: 'a', memberFamilyCount: 2, prosperity: 500 };
     expect(sectStrengthScore(s)).toBe(500 + 2 * 50 + 5); // 605
   });
-  it('有历史：名次越小分越高', () => {
+  it('with history: lower rank gives higher score', () => {
     const top: SectStrength = { sectId: 'a', lastSeasonRank: 1, memberFamilyCount: 0, prosperity: 0 };
     const mid: SectStrength = { sectId: 'b', lastSeasonRank: 50, memberFamilyCount: 0, prosperity: 0 };
     expect(sectStrengthScore(top)).toBeGreaterThan(sectStrengthScore(mid));
@@ -67,7 +67,7 @@ describe('sectStrengthScore', () => {
 });
 
 describe('allocateSectsToShards', () => {
-  it('单 shard：所有宗门进 0', () => {
+  it('single shard: all sects go to shard 0', () => {
     const sects: SectStrength[] = [
       { sectId: 'a', memberFamilyCount: 1, prosperity: 0 },
       { sectId: 'b', memberFamilyCount: 1, prosperity: 0 },
@@ -76,7 +76,7 @@ describe('allocateSectsToShards', () => {
     expect([...m.values()].every((v) => v === 0)).toBe(true);
   });
 
-  it('蛇形：同宗门不拆分（每个 sectId 恰一个 shard）', () => {
+  it('snake order: no sect split across shards (each sectId maps to exactly one shard)', () => {
     const sects: SectStrength[] = Array.from({ length: 7 }, (_, i) => ({
       sectId: `s${i}`, memberFamilyCount: i, prosperity: i * 100,
     }));
@@ -85,7 +85,7 @@ describe('allocateSectsToShards', () => {
     for (const s of sects) expect(m.has(s.sectId)).toBe(true);
   });
 
-  it('蛇形均衡：各 shard 强弱总和差 ≤ 最强单体', () => {
+  it('snake balance: total strength spread across shards ≤ strongest single sect', () => {
     // Build a group with a wide strength spread and verify that snake allocation keeps shard totals close.
     const sects: SectStrength[] = Array.from({ length: 12 }, (_, i) => ({
       sectId: `s${i}`, lastSeasonRank: i + 1, memberFamilyCount: 0, prosperity: 0,

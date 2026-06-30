@@ -57,7 +57,7 @@ export function cardArtUrl(card: CardDefinition): string | null {
 }
 
 /**
- * Portrait for a progressable unit id (cultivation 单位 tab). Anna's heroes
+ * Portrait for a progressable unit id (cultivation unit tab). Anna's heroes
  * (max/lena/mara) have their own art; the PvP trio shares the hand-card art.
  */
 export const UNIT_ART_URLS: Record<string, string> = {

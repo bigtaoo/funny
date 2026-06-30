@@ -64,7 +64,7 @@ describe('RoomManager (ticket relay)', () => {
     expect(mgr.join(asConn(c1), 'b', '', SEED + 1, MatchMode.FRIENDLY)).toBe(false);
   });
 
-  it('mode 不一致 → 拒绝', () => {
+  it('mode mismatch → rejected', () => {
     const mgr = newManager();
     const c0 = makeConn('R', 0, 'a');
     const c1 = makeConn('R', 1, 'b');

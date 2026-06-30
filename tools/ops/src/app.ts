@@ -1,4 +1,4 @@
-// 运维后台前端壳（OPS_DESIGN §7）：登录页 → 主框架按 capabilities 渲染导航。
+// Ops admin frontend shell (OPS_DESIGN §7): login page → main shell renders navigation based on capabilities.
 import { Api, ApiError } from './api';
 import { clear, h } from './dom';
 import { pageAccounts, pageAnalytics, pageAudit, pageEvents, pageFlags, pageLadderSeason, pageMonitor, pagePlayer, pageSuspicions, pageTickets } from './pages';
@@ -17,30 +17,30 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { id: 'monitor', label: '监控', cap: 'monitor.view', render: pageMonitor },
-  { id: 'analytics', label: '数据分析', cap: 'analytics.view', render: pageAnalytics },
-  { id: 'player', label: '玩家查询', cap: 'player.lookup', render: pagePlayer },
-  { id: 'suspicions', label: '反作弊审查', cap: 'anticheat.view', render: pageSuspicions },
-  { id: 'tickets', label: '补偿工单', cap: 'comp.view', render: pageTickets },
-  { id: 'audit', label: '审计', cap: 'audit.view.self', render: pageAudit },
-  { id: 'ladder', label: '天梯赛季', cap: 'ladder.season.manage', render: pageLadderSeason },
-  { id: 'events', label: '限时活动', cap: 'events.manage', render: pageEvents },
-  { id: 'flags', label: '功能开关', cap: 'config.manage', render: pageFlags },
-  { id: 'accounts', label: '账号管理', cap: 'admin.manage', render: pageAccounts },
+  { id: 'monitor', label: 'Monitor', cap: 'monitor.view', render: pageMonitor },
+  { id: 'analytics', label: 'Analytics', cap: 'analytics.view', render: pageAnalytics },
+  { id: 'player', label: 'Player Lookup', cap: 'player.lookup', render: pagePlayer },
+  { id: 'suspicions', label: 'Anti-Cheat Review', cap: 'anticheat.view', render: pageSuspicions },
+  { id: 'tickets', label: 'Comp Tickets', cap: 'comp.view', render: pageTickets },
+  { id: 'audit', label: 'Audit', cap: 'audit.view.self', render: pageAudit },
+  { id: 'ladder', label: 'Ladder Season', cap: 'ladder.season.manage', render: pageLadderSeason },
+  { id: 'events', label: 'Timed Events', cap: 'events.manage', render: pageEvents },
+  { id: 'flags', label: 'Feature Flags', cap: 'config.manage', render: pageFlags },
+  { id: 'accounts', label: 'Account Mgmt', cap: 'admin.manage', render: pageAccounts },
 ];
 
 export class App {
-  /** 当前页面注册的清理回调（导航/登出/会话失效时执行，停掉定时器等）。 */
+  /** Teardown callbacks registered for the current page (run on navigation, logout, or session expiry to stop timers etc.). */
   private teardowns: (() => void)[] = [];
 
   constructor(
     private readonly api: Api,
     private readonly mount: HTMLElement,
   ) {
-    // 会话中途 401 → 清理当前页 + 弹回登录页。
+    // Mid-session 401 → tear down the current page and redirect to the login page.
     this.api.onUnauthorized = () => {
       this.runTeardowns();
-      this.renderLogin('会话已过期，请重新登录。');
+      this.renderLogin('Session expired. Please log in again.');
     };
   }
 
@@ -49,18 +49,18 @@ export class App {
       try {
         fn();
       } catch {
-        /* 清理失败不应阻断导航 */
+        /* teardown failure must not block navigation */
       }
     }
   }
 
   renderLogin(message?: string): void {
     clear(this.mount);
-    const apiInput = h('input', { value: this.api.baseUrl, placeholder: 'admin API 基址' });
-    const userInput = h('input', { placeholder: '用户名' });
-    const passInput = h('input', { type: 'password', placeholder: '密码' });
+    const apiInput = h('input', { value: this.api.baseUrl, placeholder: 'Admin API base URL' });
+    const userInput = h('input', { placeholder: 'Username' });
+    const passInput = h('input', { type: 'password', placeholder: 'Password' });
     const err = h('div', { class: 'err' }, message ?? '');
-    const btn = h('button', {}, '登录');
+    const btn = h('button', {}, 'Log in');
     const submit = async (): Promise<void> => {
       err.textContent = '';
       this.api.setBaseUrl(apiInput.value.trim());
@@ -82,10 +82,10 @@ export class App {
         'div',
         { class: 'login-wrap' },
         h('div', { class: 'card' },
-          h('h2', {}, 'Notebook Wars 运维后台'),
-          h('label', {}, 'API 基址'), apiInput,
-          h('label', {}, '用户名'), userInput,
-          h('label', {}, '密码'), passInput,
+          h('h2', {}, 'Notebook Wars Admin'),
+          h('label', {}, 'API Base URL'), apiInput,
+          h('label', {}, 'Username'), userInput,
+          h('label', {}, 'Password'), passInput,
           h('div', { style: 'margin-top:12px' }, btn),
           err,
         ),
@@ -100,7 +100,7 @@ export class App {
     const navEl = h('nav', {});
 
     const select = (item: NavItem): void => {
-      this.runTeardowns(); // 停掉上一页的定时器等
+      this.runTeardowns(); // stop timers and other cleanup from the previous page
       for (const a of Array.from(navEl.children)) a.classList.toggle('active', a.getAttribute('data-id') === item.id);
       clear(main);
       const onTeardown = (fn: () => void): void => {
@@ -115,23 +115,23 @@ export class App {
       navEl.append(a);
     }
 
-    const logout = h('button', { class: 'ghost', onclick: () => void this.doLogout() }, '退出');
+    const logout = h('button', { class: 'ghost', onclick: () => void this.doLogout() }, 'Log out');
     const header = h(
       'header',
       {},
-      h('span', { class: 'brand' }, '🛠 运维后台'),
+      h('span', { class: 'brand' }, '🛠 Admin Panel'),
       h('span', { class: 'who' }, `${session.admin.displayName} · ${session.admin.role}`),
-      h('span', { class: 'build', title: `构建时间 ${__BUILD_TIME__} (UTC)` }, `v ${__BUILD_VERSION__}`),
+      h('span', { class: 'build', title: `Built at ${__BUILD_TIME__} (UTC)` }, `v ${__BUILD_VERSION__}`),
       logout,
     );
     this.mount.append(header, navEl, main);
     if (items[0]) select(items[0]);
-    else main.append(h('div', { class: 'err' }, '当前账号无任何可见能力，请联系超管。'));
+    else main.append(h('div', { class: 'err' }, 'This account has no visible capabilities. Contact a super-admin.'));
   }
 
   private async doLogout(): Promise<void> {
     this.runTeardowns();
     await this.api.logout();
-    this.renderLogin('已退出。');
+    this.renderLogin('Logged out.');
   }
 }

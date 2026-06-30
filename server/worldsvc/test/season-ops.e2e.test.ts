@@ -31,11 +31,11 @@ async function tryConnect(): Promise<WorldMongo | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[worldsvc.season-ops.e2e] Mongo 不可达（${URI}）— 跳过。`);
+if (!mongo) console.warn(`[worldsvc.season-ops.e2e] Mongo unreachable (${URI}) — skipping.`);
 
 interface MailCall { accountId: string; dispatchKey: string; content: WorldMailContent }
 
-describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
+describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
   const m = mongo!;
   const mailCalls: MailCall[] = [];
   const fakeMail: WorldMailClient = {
@@ -83,7 +83,7 @@ describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
     await m.db.dropDatabase();
   });
 
-  it('settle：落 seasonResults（幂等）+ 发奖邮件（中原首府材料 ×2）', async () => {
+  it('settle: writes seasonResults (idempotent) + sends reward mail (center capital materials ×2)', async () => {
     await seed('active');
     const ranking = await svc.settleSeason(W);
     expect(ranking[0]).toMatchObject({ scope: 'family', familyId: familyId(W, 'AA'), nationCount: 2 });
@@ -109,12 +109,12 @@ describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
     expect(await m.collections.seasonResults.countDocuments({ worldId: W })).toBe(1);
   });
 
-  it('reset：未 settle 直接 reset 被拒（防丢历史）', async () => {
+  it('reset: reset without settling first is rejected (prevents history loss)', async () => {
     await seed('active'); // status=active, not yet settled
     await expect(svc.resetSeason(W)).rejects.toMatchObject({ code: 'WORLD_CLOSED' });
   });
 
-  it('reset：settle 后清档 + 家族赛季态归零 + status open + engineVersion 重 pin', async () => {
+  it('reset: after settle clears archive + family season state zeroed + status open + engineVersion re-pinned', async () => {
     await seed('active');
     await svc.settleSeason(W);              // → settling
     await svc.resetSeason(W);               // settling → resetting → open
@@ -130,13 +130,13 @@ describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
     expect(aa!.sectId).toBeUndefined();
   });
 
-  it('reset：resetting 中间态可续跑（幂等）', async () => {
+  it('reset: resetting intermediate state can resume (idempotent)', async () => {
     await seed('resetting'); // simulate a previous reset that crashed mid-way at resetting
     await expect(svc.resetSeason(W)).resolves.toBeTruthy();
     expect((await m.collections.worlds.findOne({ _id: W }))!.status).toBe('open');
   });
 
-  describe('admin /admin/world/* X-Internal-Key 门控（C4）', () => {
+  describe('admin /admin/world/* X-Internal-Key gate (C4)', () => {
     let server: Server;
     let base: string;
 
@@ -148,7 +148,7 @@ describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
     });
     afterAll(() => server?.close());
 
-    it('无 key → 401', async () => {
+    it('no key → 401', async () => {
       const r = await fetch(`${base}/admin/world/settle`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ worldId: W }),
       });
@@ -156,7 +156,7 @@ describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
       server.close();
     });
 
-    it('JWT 玩家（无 internal key）调 reset → 401', async () => {
+    it('player JWT (no internal key) calling reset → 401', async () => {
       const token = signToken('acct-player', { secret: SECRET });
       const r = await fetch(`${base}/admin/world/reset`, {
         method: 'POST',
@@ -167,7 +167,7 @@ describe.skipIf(!mongo)('worldsvc 赛季运维 e2e', () => {
       server.close();
     });
 
-    it('有 X-Internal-Key → 200（list + settle 通）', async () => {
+    it('with X-Internal-Key → 200 (list + settle work)', async () => {
       const list = await fetch(`${base}/admin/world/list`, { headers: { 'x-internal-key': KEY } });
       expect(list.status).toBe(200);
       const body = (await list.json()) as { ok: boolean; data: Array<{ worldId: string }> };

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// 存量好友/私聊/邮件数据迁移：notebook_wars → nw_social（SOCIAL_SVC_DESIGN §6 P2 step3）。
-// 用法：npx tsx server/socialsvc/scripts/migrateSocial.ts [--dry-run]
+// Migrate existing friend / private-chat / mail data: notebook_wars → nw_social (SOCIAL_SVC_DESIGN §6 P2 step3).
+// Usage: npx tsx server/socialsvc/scripts/migrateSocial.ts [--dry-run]
 //
-// 行为：
-//   - 迁移 friendEdges / friendRequests / blockList / conversations / chatMessages / mails。
-//   - 幂等：已存在同 _id 的文档跳过（$setOnInsert）。
-//   - 干跑模式：传 --dry-run 只打印不写入。
+// Behaviour:
+//   - Migrates friendEdges / friendRequests / blockList / conversations / chatMessages / mails.
+//   - Idempotent: documents with the same _id already in the destination are skipped ($setOnInsert).
+//   - Dry-run mode: pass --dry-run to print without writing.
 import { MongoClient } from 'mongodb';
 
 const META_MONGO_URI = process.env.NW_MONGO_URI ?? 'mongodb://localhost:27017';
@@ -55,7 +55,7 @@ async function migrateCollection(
 }
 
 async function main(): Promise<void> {
-  console.log(`[migrateSocial] ${DRY_RUN ? '【dry-run】' : ''}开始迁移`);
+  console.log(`[migrateSocial] ${DRY_RUN ? '[dry-run] ' : ''}starting migration`);
   console.log(`  meta:   ${META_MONGO_URI} / ${META_MONGO_DB}`);
   console.log(`  social: ${SOCIAL_MONGO_URI} / ${SOCIAL_MONGO_DB}`);
 
@@ -70,10 +70,10 @@ async function main(): Promise<void> {
   const collections = [
     ['friendEdges',    'friendEdges'],
     ['friendRequests', 'friendRequests'],
-    ['blocks',         'blockList'],      // metaserver 用 blocks，socialsvc 用 blockList
+    ['blocks',         'blockList'],      // metaserver uses 'blocks', socialsvc uses 'blockList'
     ['conversations',  'conversations'],
     ['chatMessages',   'chatMessages'],
-    ['mail',           'mails'],          // metaserver 用 mail，socialsvc 用 mails
+    ['mail',           'mails'],          // metaserver uses 'mail', socialsvc uses 'mails'
   ] as const;
 
   for (const [srcName, dstName] of collections) {
@@ -86,10 +86,10 @@ async function main(): Promise<void> {
 
   await metaClient.close();
   await socialClient.close();
-  console.log('[migrateSocial] 完成');
+  console.log('[migrateSocial] done');
 }
 
 main().catch((e) => {
-  console.error('[migrateSocial] 失败：', e);
+  console.error('[migrateSocial] failed:', e);
   process.exit(1);
 });

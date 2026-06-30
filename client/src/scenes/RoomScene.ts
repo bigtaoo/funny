@@ -494,7 +494,7 @@ export class RoomScene implements Scene {
     }
 
     // Always show the nickname (displayName); accountId is never player-facing.
-    // The 9-digit public id sits beneath it for player-to-player reference / 投诉.
+    // The 9-digit public id sits beneath it for player-to-player reference / reporting.
     const roleKey: TranslationKey = side === 0 ? 'room.host' : 'room.guest';
     const name = slot ? (slot.name || t(roleKey)) : t('room.empty');
     const hasId = !!slot?.publicId;

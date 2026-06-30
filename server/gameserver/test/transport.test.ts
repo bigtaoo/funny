@@ -32,35 +32,35 @@ function decodeServerWire(bytes: Uint8Array): Record<string, any> {
   return obj.server ?? {};
 }
 
-describe('transport decodeClient（client 线字节 → ClientMsg）', () => {
-  it('room_create: 保留 mode 枚举', () => {
+describe('transport decodeClient (client wire bytes → ClientMsg)', () => {
+  it('room_create: preserves mode enum', () => {
     expect(decodeClient(encodeClient({ room_create: { mode: 1 } }))).toEqual({
       case: 'room_create',
       mode: 1,
     });
   });
 
-  it('room_join: 保留 code', () => {
+  it('room_join: preserves code', () => {
     expect(decodeClient(encodeClient({ room_join: { code: 'ABC234' } }))).toEqual({
       case: 'room_join',
       code: 'ABC234',
     });
   });
 
-  it('room_ready: 保留 ready 布尔', () => {
+  it('room_ready: preserves ready boolean', () => {
     expect(decodeClient(encodeClient({ room_ready: { ready: true } }))).toEqual({
       case: 'room_ready',
       ready: true,
     });
   });
 
-  it('cmd_submit: opaque commands bytes 原样保留', () => {
+  it('cmd_submit: opaque commands bytes preserved as-is', () => {
     const r = decodeClient(encodeClient({ cmd_submit: { commands: new Uint8Array([5, 200, 0, 17]) } }));
     expect(r.case).toBe('cmd_submit');
     expect(Array.from((r as { commands: Uint8Array }).commands)).toEqual([5, 200, 0, 17]);
   });
 
-  it('match_result: snake_case state_hash / winner_side → stateHash / winnerSide', () => {
+  it('match_result: snake_case state_hash / winner_side mapped to stateHash / winnerSide', () => {
     expect(
       decodeClient(encodeClient({ match_result: { state_hash: 'deadbeef', winner_side: 1 } })),
     ).toEqual({
@@ -70,25 +70,25 @@ describe('transport decodeClient（client 线字节 → ClientMsg）', () => {
     });
   });
 
-  it('conn_resume: room_id / last_frame → roomId / lastFrame', () => {
+  it('conn_resume: room_id / last_frame mapped to roomId / lastFrame', () => {
     expect(
       decodeClient(encodeClient({ conn_resume: { room_id: 'rid-9', last_frame: 42 } })),
     ).toEqual({ case: 'conn_resume', roomId: 'rid-9', lastFrame: 42 });
   });
 
-  it('空消息 room_leave / room_start / ping 各自识别', () => {
+  it('empty messages room_leave / room_start / ping each recognized correctly', () => {
     expect(decodeClient(encodeClient({ room_leave: {} })).case).toBe('room_leave');
     expect(decodeClient(encodeClient({ room_start: {} })).case).toBe('room_start');
     expect(decodeClient(encodeClient({ ping: {} })).case).toBe('ping');
   });
 
-  it('坏帧 / 非 client 方向 → unknown（不抛）', () => {
+  it('bad frame / non-client direction → unknown (no throw)', () => {
     expect(decodeClient(encodeServer({ case: 'pong' })).case).toBe('unknown'); // server direction
   });
 });
 
-describe('transport encodeServer（ServerMsg → 线字节）', () => {
-  it('room_state: 嵌套 players + phase + code', () => {
+describe('transport encodeServer (ServerMsg → wire bytes)', () => {
+  it('room_state: nested players + phase + code', () => {
     const wire = decodeServerWire(
       encodeServer({
         case: 'room_state',
@@ -106,7 +106,7 @@ describe('transport encodeServer（ServerMsg → 线字节）', () => {
     expect(wire.room_state.players[1]).toMatchObject({ side: 1, name: 'b' });
   });
 
-  it('match_start: seed(uint64) + room_id + local_side 全保留', () => {
+  it('match_start: seed(uint64) + room_id + local_side all preserved', () => {
     const seed = 2 ** 40 + 123; // larger than 32 bits — verifies uint64 is not truncated
     const wire = decodeServerWire(
       encodeServer({
@@ -123,7 +123,7 @@ describe('transport encodeServer（ServerMsg → 线字节）', () => {
     expect(wire.match_start.local_side).toBe(1);
   });
 
-  it('frame_batch: to_frame + 嵌套 frames[].cmds[].commands bytes', () => {
+  it('frame_batch: to_frame + nested frames[].cmds[].commands bytes', () => {
     const wire = decodeServerWire(
       encodeServer({
         case: 'frame_batch',
@@ -145,13 +145,13 @@ describe('transport encodeServer（ServerMsg → 线字节）', () => {
     expect(wire.frame_batch.frames[0].cmds[1].commands).toEqual([9]);
   });
 
-  it('frame_batch 空窗: frames 省略，仅 to_frame', () => {
+  it('frame_batch empty window: frames omitted, only to_frame', () => {
     const wire = decodeServerWire(encodeServer({ case: 'frame_batch', toFrame: 6, frames: [] }));
     expect(wire.frame_batch.to_frame).toBe(6);
     expect(wire.frame_batch.frames ?? []).toEqual([]);
   });
 
-  it('conn_resync: seed + cur_frame + 嵌套 log', () => {
+  it('conn_resync: seed + cur_frame + nested log', () => {
     const wire = decodeServerWire(
       encodeServer({
         case: 'conn_resync',
@@ -166,7 +166,7 @@ describe('transport encodeServer（ServerMsg → 线字节）', () => {
     expect(wire.conn_resync.log[0].cmds[0].commands).toEqual([3]);
   });
 
-  it('match_over: winner_side / reason / mismatch；无 elo 时不带 elo', () => {
+  it('match_over: winner_side / reason / mismatch; no elo field when unranked', () => {
     const wire = decodeServerWire(
       encodeServer({ case: 'match_over', winnerSide: 0, reason: 'base', mismatch: false }),
     );
@@ -174,7 +174,7 @@ describe('transport encodeServer（ServerMsg → 线字节）', () => {
     expect(wire.match_over.elo).toBeUndefined();
   });
 
-  it('match_over: 带 elo（ranked）时 rank_after 映射正确', () => {
+  it('match_over: with elo (ranked) rank_after is mapped correctly', () => {
     const wire = decodeServerWire(
       encodeServer({
         case: 'match_over',
@@ -187,7 +187,7 @@ describe('transport encodeServer（ServerMsg → 线字节）', () => {
     expect(wire.match_over.elo).toMatchObject({ delta: 12, after: 1212, rank_after: 'gold' });
   });
 
-  it('peer_dc / room_error / pong 字段保留', () => {
+  it('peer_dc / room_error / pong fields preserved', () => {
     expect(decodeServerWire(encodeServer({ case: 'peer_dc', side: 1, graceMs: 60000 })).peer_dc).toMatchObject(
       { side: 1, grace_ms: 60000 },
     );
@@ -200,7 +200,7 @@ describe('transport encodeServer（ServerMsg → 线字节）', () => {
 });
 
 // Coverage guard for all ServerMsg cases: adding a new case but forgetting the encodeServer branch will be caught here.
-describe('encodeServer 覆盖所有 ServerMsg case', () => {
+describe('encodeServer covers all ServerMsg cases', () => {
   const samples: ServerMsg[] = [
     { case: 'room_state', code: 'C', players: [], phase: 0 },
     { case: 'match_start', roomId: 'r', mode: 0, seed: 1, startFrame: 0, localSide: 0 },
@@ -211,7 +211,7 @@ describe('encodeServer 覆盖所有 ServerMsg case', () => {
     { case: 'room_error', code: 'X', message: 'y' },
     { case: 'pong' },
   ];
-  it.each(samples.map((s) => [s.case, s] as const))('%s 可编码且非空', (_c, msg) => {
+  it.each(samples.map((s) => [s.case, s] as const))('%s can be encoded and produces non-empty bytes', (_c, msg) => {
     const bytes = encodeServer(msg);
     expect(bytes.length).toBeGreaterThan(0);
   });

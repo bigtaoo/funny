@@ -30,7 +30,7 @@ async function tryConnect(): Promise<WorldMongo | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[worldsvc.auction.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[worldsvc.auction.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 describe.skipIf(!mongo)('AuctionService e2e', () => {

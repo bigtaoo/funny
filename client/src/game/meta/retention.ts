@@ -1,12 +1,12 @@
-// 留存系统纯函数镜像（§4.1 客户端同算）。
-// 与 server/shared/src/retention.ts 语义一致；不依赖 Node / DB。
+// Retention system pure-function mirror (§4.1 client-side co-computation).
+// Semantically consistent with server/shared/src/retention.ts; no Node / DB dependencies.
 import type { SaveData } from './SaveData';
 
 export type DailyTaskId = 'pve.clear' | 'pvp.match' | 'gacha.draw';
 export type CheckinRewardKind = 'coins' | 'stamina';
 export interface CheckinReward { kind: CheckinRewardKind; count: number }
 
-// ── 时间 key（服务器 UTC，客户端只用于显示/对比，实际领取以服务器校验为准）────────────
+// ── Time keys (server UTC; client uses these for display/comparison only; actual claims are server-validated) ─────
 export function makeDayKey(tsMs: number): string {
   return new Date(tsMs).toISOString().slice(0, 10);
 }
@@ -14,7 +14,7 @@ export function makeMonthKey(tsMs: number): string {
   return new Date(tsMs).toISOString().slice(0, 7);
 }
 
-// ── 状态推导（同 server，无状态）──────────────────────────────────────────────────────
+// ── State derivation (same as server, stateless) ─────────────────────────────────────
 
 export function checkinClaimedCount(save: SaveData, tsMs: number): number {
   const monthKey = makeMonthKey(tsMs);
@@ -56,7 +56,7 @@ export function dailyRewardClaimable(save: SaveData, tsMs: number): boolean {
   return r.daily.taskPoints >= 3 && !r.daily.rewardClaimed;
 }
 
-/** 任一留存可领 → 大厅红点。 */
+/** Any retention reward claimable → lobby red dot. */
 export function hasRetentionClaimable(save: SaveData, tsMs: number): boolean {
   if (nextCheckinDay(save, tsMs) !== null) return true;
   if (dailyRewardClaimable(save, tsMs)) return true;

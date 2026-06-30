@@ -1,5 +1,5 @@
 // Regression guard for the GPU texture leak fixed in 29b0daea (iPad Safari
-// "注册输昵称一直崩溃"). High-frequency render() scenes (LoginScene caret + every
+// "registration / nickname-input keeps crashing"). High-frequency render() scenes (LoginScene caret + every
 // keystroke, chat compose, shop recharge, settings rename, world-map countdowns)
 // rebuild their PIXI tree on each render. A bare `container.removeChildren()` only
 // DETACHES children — each PIXI.Text owns a GPU texture that then leaks for PIXI's

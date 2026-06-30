@@ -75,8 +75,9 @@ export interface LobbySceneCallbacks {
   /** Open the SLG world map. Wired to the bottom-nav "home/world" slot (S8). */
   onOpenWorld?(): void;
   /**
-   * SLG 软门槛（ONBOARDING_DESIGN §4）：未通关第一章时为 true → 大世界入口灰显，
-   * 点击弹「通关第一章解锁」气泡而非进入。通关后变 false 点亮。
+   * SLG soft gate (ONBOARDING_DESIGN §4): true when chapter one is not yet cleared →
+   * the world map entry is greyed out; tapping shows a "clear chapter one to unlock"
+   * bubble instead of navigating. Becomes false once the chapter is cleared.
    */
   worldLocked?: boolean;
   /** Open the shop (economy). Wired to the bottom-nav "shop" slot (S2-6). */
@@ -141,7 +142,7 @@ export class LobbyScene implements Scene {
   private btnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the single campaign (PvE) entry button, in design space. */
   private campaignBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
-  /** Hit rect for the 大世界 (SLG) pillar card — promoted out of the bottom nav into the main layout. */
+  /** Hit rect for the world map (SLG) pillar card — promoted out of the bottom nav into the main layout. */
   private worldPillarRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the bottom-nav "social" slot (opens RoomScene). */
   private socialNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
@@ -169,7 +170,7 @@ export class LobbyScene implements Scene {
   private retentionBadge = false;
   /** Hit rect for the daily strip item. */
   private dailyBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
-  /** B6: whether a live event window exists → show the 活动 strip item. */
+  /** B6: whether a live event window exists → show the events strip item. */
   private eventsAvailable = false;
   /** Hit rect for the events strip item. */
   private eventsBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
@@ -190,7 +191,7 @@ export class LobbyScene implements Scene {
   /** Season-settlement modal overlay (SE-6). Blocks lobby taps until dismissed. */
   private settlementLayer: PIXI.Container | null = null;
   private settlementDismissRect: Rect | null = null;
-  /** 首次功能引导覆盖层（ONBOARDING §4.1）。关闭后回调继续导航到该功能。 */
+  /** First-time feature guide overlay (ONBOARDING §4.1). After dismissal the callback continues navigation to the feature. */
   private guideLayer: PIXI.Container | null = null;
   private guideDismissRect: Rect | null = null;
   private guideOnDismiss: (() => void) | null = null;
@@ -278,7 +279,7 @@ export class LobbyScene implements Scene {
     this.drawSideStripBadges();
   }
 
-  /** B6: mark whether a live event window exists → show / hide the 活动 entry button. */
+  /** B6: mark whether a live event window exists → show / hide the events entry button. */
   applyEventsAvailable(available: boolean): void {
     if (this.destroyed) return;
     if (this.eventsAvailable === available) return;
@@ -316,8 +317,9 @@ export class LobbyScene implements Scene {
   }
 
   /**
-   * 通用信息气泡（无 tap 路由）。用于 SLG 软门槛「通关第一章解锁」等提示（ONBOARDING §4）。
-   * 复用成就 toast 的横幅 + 自动淡出，但 toastRect 置空 → 点击不跳转。
+   * Generic info bubble (no tap routing). Used for SLG soft-gate prompts such as
+   * "clear chapter one to unlock" (ONBOARDING §4). Reuses the achievement toast
+   * banner + auto-fade, but leaves toastRect null → tapping does not navigate anywhere.
    */
   showInfoToast(text: string, icon: IconKind = 'globe'): void {
     if (this.destroyed || !text) return;
@@ -386,8 +388,9 @@ export class LobbyScene implements Scene {
   }
 
   /**
-   * 首次功能引导卡（ONBOARDING_DESIGN §4.1）：可关的覆盖层 + 「知道了」按钮。
-   * 关闭后 onDismiss 续接导航。与教学一致的轻提示风格，不阻断玩家用功能。
+   * First-time feature guide card (ONBOARDING_DESIGN §4.1): dismissable overlay +
+   * "Got it" button. onDismiss continues navigation after dismissal. Light-hint style
+   * consistent with the tutorial — does not block the player from using the feature.
    */
   showFeatureGuide(titleKey: TranslationKey, bodyKey: TranslationKey, onDismiss: () => void): void {
     if (this.destroyed || this.guideLayer) { onDismiss(); return; }
@@ -484,7 +487,7 @@ export class LobbyScene implements Scene {
 
   private handleDown(x: number, y: number): void {
     if (this.state !== 'idle') return;
-    // 首次功能引导（§4.1）：任意点击关闭并续接导航。优先于其它命中。
+    // First-time feature guide (§4.1): any tap dismisses it and continues navigation. Checked before other hits.
     if (this.guideLayer) {
       this.clearGuide();
       return;
@@ -517,10 +520,10 @@ export class LobbyScene implements Scene {
       this.cb.onOpenCampaign();
       return;
     }
-    // 大世界 (SLG) pillar — promoted out of the bottom nav into the main layout.
+    // World map (SLG) pillar — promoted out of the bottom nav into the main layout.
     const wp = this.worldPillarRect;
     if (wp.w > 0 && x >= wp.x && x <= wp.x + wp.w && y >= wp.y && y <= wp.y + wp.h) {
-      // 软门槛（§4）：未通关第一章 → 灰显，点击弹气泡而非进入。
+      // Soft gate (§4): chapter one not cleared → greyed out, tap shows bubble instead of entering.
       if (this.cb.worldLocked) { this.showInfoToast(t('lobby.world.locked')); return; }
       if (this.cb.onOpenWorld) this.cb.onOpenWorld();
       return;
@@ -568,8 +571,8 @@ export class LobbyScene implements Scene {
       this.cb.onOpenShop();
       return;
     }
-    // 养成 (collection) reads local save data → works offline; rect always assigned.
-    // 生涯 (stats) is online-only now (§6 决策 6) → its rect is unassigned (w=0) offline.
+    // Collection reads local save data → works offline; rect always assigned.
+    // Stats is online-only now (§6 decision 6) → its rect is unassigned (w=0) offline.
     const cd = this.cardsNavRect;
     if (cd.w > 0 && x >= cd.x && x <= cd.x + cd.w && y >= cd.y && y <= cd.y + cd.h) {
       this.cb.onOpenCards();
@@ -709,9 +712,9 @@ export class LobbyScene implements Scene {
 
     // ── Main content stack ─────────────────────────────────────────────────
     // A vertically-centred column between the header and the bottom nav:
-    //   1. Hero "开始匹配" button (primary action)
-    //   2. Two equal pillars: 战役 (PvE) | 大世界 (SLG)
-    //   3. Right-side vertical strip: 每日 / 邮件 / 活动 / 成就 (P2, online only)
+    //   1. Hero "start match" button (primary action)
+    //   2. Two equal pillars: Campaign (PvE) | World map (SLG)
+    //   3. Right-side vertical strip: Daily / Mail / Events / Achievements (P2, online only)
     const navH = Math.round(h * 0.105);
 
     // Right-side strip: present only when online (daily wired implies online).
@@ -732,13 +735,13 @@ export class LobbyScene implements Scene {
     const stackH  = heroH + gapA + pillarH;
     const usableTop = tbH;
     const usableH   = (h - navH) - tbH;
-    // 上偏居中（0.40 而非 0.5）：让 hero 往上顶，收掉 header 下那块大留白。
+    // Bias upward (0.40 instead of 0.5): push the hero up to close the large gap below the header.
     const startY = usableTop + Math.max(Math.round(h * 0.035), Math.round((usableH - stackH) * 0.40));
 
     const heroY    = startY;
     const pillarsY = heroY + heroH + gapA;
 
-    // 1. Hero — start match. Offline → local 人机对战; online → PvP ranked.
+    // 1. Hero — start match. Offline → local AI match; online → PvP ranked.
     this.btnRect = { x: contentX, y: heroY, w: contentW, h: heroH };
     this.btnBg = new PIXI.Graphics();
     this.drawBtn(this.btnBg, contentW, heroH, true);
@@ -769,8 +772,8 @@ export class LobbyScene implements Scene {
     heroSub.y = heroY + heroH * 0.70;
     this.container.addChild(heroSub);
 
-    // 2. Pillars: 战役 (gold, PvE) | 大世界 (accent, SLG). 大世界 needs an account,
-    // so it's hidden in offline mode — 战役 then takes the full content width.
+    // 2. Pillars: Campaign (gold, PvE) | World map (accent, SLG). The world map needs an account,
+    // so it's hidden in offline mode — Campaign then takes the full content width.
     const showWorld = !this.cb.offline && !!this.cb.onOpenWorld;
     const pillarGap = Math.round(w * 0.025);
     const pw = showWorld ? Math.round((contentW - pillarGap) / 2) : contentW;
@@ -782,7 +785,7 @@ export class LobbyScene implements Scene {
     if (showWorld) {
       const worldX = contentX + pw + pillarGap;
       this.worldPillarRect = { x: worldX, y: pillarsY, w: pw, h: pillarH };
-      // 软门槛（§4）：未通关第一章 → 灰显 accent + 子标题改「通关第一章解锁」。
+      // Soft gate (§4): chapter one not cleared → greyed accent + subtitle changed to "clear chapter one to unlock".
       const locked = !!this.cb.worldLocked;
       this.drawPillar(worldX, pillarsY, pw, pillarH, locked ? C.light : C.accent, 'castle',
         t('lobby.world'), locked ? t('lobby.world.locked') : t('lobby.world.sub'), 53);
@@ -790,7 +793,7 @@ export class LobbyScene implements Scene {
       this.worldPillarRect = { x: 0, y: 0, w: 0, h: 0 };
     }
 
-    // 3. Right-side vertical strip — 每日 / 邮件 / 活动 / 成就 (P2).
+    // 3. Right-side vertical strip — Daily / Mail / Events / Achievements (P2).
     // Replaces the old horizontal engagement chip row. Items are compact sketch
     // panels stacked vertically alongside the hero + pillars area, each with a
     // short 2-char label and a red dot when actionable.
@@ -845,10 +848,10 @@ export class LobbyScene implements Scene {
       this.drawSideStripBadges();
     }
 
-    // Bottom nav (IA 重规划 §3). Five fixed slots; the center 主页 slot is the
-    // lobby itself (大世界 promoted to a pillar above), rendered active + no-op.
-    // 商城/生涯/社交 need an account → greyed (not removed) in offline mode so the
-    // tab layout stays stable; 养成 + 主页 stay live.
+    // Bottom nav (IA redesign §3). Five fixed slots; the center home slot is the
+    // lobby itself (world map promoted to a pillar above), rendered active + no-op.
+    // Shop/stats/social need an account → greyed (not removed) in offline mode so the
+    // tab layout stays stable; collection + home stay live.
     const navBg = new PIXI.Graphics();
     navBg.beginFill(C.dark, 0.9);
     navBg.drawRect(0, h - navH, w, navH);
@@ -861,10 +864,10 @@ export class LobbyScene implements Scene {
     this.shopNavRect   = { x: 0, y: 0, w: 0, h: 0 };
     this.socialNavRect = { x: 0, y: 0, w: 0, h: 0 };
 
-    // IA 重规划（LOBBY_IA_REDESIGN §3）：固定 5 tab，按动机分组 —
-    //   养成(cards) · 商城(shop) · 主页(home,中心) · 生涯(stats) · 社交(social)。
-    // 离线时商城/生涯/社交整 tab 灰显（§6 决策 6：不进入、不再引导）；养成(收藏读本地档)
-    // 与主页照常可用。
+    // IA redesign (LOBBY_IA_REDESIGN §3): fixed 5 tabs, grouped by intent —
+    //   collection(cards) · shop · home(center) · stats · social.
+    // Offline: shop/stats/social entire tabs greyed (§6 decision 6: no entry, no re-tutorial);
+    // collection (reads local save) and home remain usable.
     interface NavSlot { name: string; icon: IconKind; color: number; active?: boolean; disabled?: boolean; assign?: (r: Rect) => void; }
     const off = !!this.cb.offline;
     const slots: NavSlot[] = [
@@ -926,7 +929,7 @@ export class LobbyScene implements Scene {
     navBg.addChild(this.achievementBadgeLayer);
     this.drawAchievementBadge();
 
-    // World-offline indicator over the 大世界 pillar (redrawn when applyWorldAvailable() is called).
+    // World-offline indicator over the world-map pillar (redrawn when applyWorldAvailable() is called).
     this.worldOfflineBadgeLayer = new PIXI.Container();
     this.container.addChild(this.worldOfflineBadgeLayer);
     this.drawWorldOfflineBadge();
@@ -989,7 +992,7 @@ export class LobbyScene implements Scene {
 
   /**
    * Called after a worldsvc reachability check (ping /health) resolves.
-   * Shows a small "离线" badge on the 大世界 pillar when the service is down,
+   * Shows a small "offline" badge on the world-map pillar when the service is down,
    * so developers see immediately that worldsvc isn't running — without having to
    * click the button and wait for the 3-second timeout.
    */
@@ -1007,9 +1010,9 @@ export class LobbyScene implements Scene {
     const p = this.worldPillarRect;
     if (p.w <= 0) return;                          // world pillar not present (offline mode)
 
-    // Small "离线" tag pinned to the top-right corner of the 大世界 pillar.
+    // Small "offline" tag pinned to the top-right corner of the world-map pillar.
     const tagH = Math.round(p.h * 0.22);
-    const lbl = txt('离线', Math.round(tagH * 0.7), 0xffffff, true);
+    const lbl = txt('offline', Math.round(tagH * 0.7), 0xffffff, true);
     const tagW = Math.round(lbl.width + tagH * 0.6);
     const tagX = p.x + p.w - tagW - Math.round(p.h * 0.08);
     const tagY = p.y + Math.round(p.h * 0.08);
@@ -1046,7 +1049,7 @@ export class LobbyScene implements Scene {
   }
 
   /**
-   * A pillar card for the main lobby grid (战役 / 大世界): hand-drawn panel +
+   * A pillar card for the main lobby grid (Campaign / World map): hand-drawn panel +
    * coloured left-edge ink stroke + a SketchPen line-art icon, title and
    * subtitle. Shares the notebook-doodle language with the feature panels and
    * VS cards (icons replace the old emoji placeholders).
@@ -1061,8 +1064,8 @@ export class LobbyScene implements Scene {
     // Coloured ink accent stroke down the left edge.
     new SketchPen(bg, seed ^ 0x55).line(4, 6, 4, h - 6, { color: accent, width: 5, jitter: 0.8, taper: 0.85 });
 
-    // Large hand-drawn motif filling the card's upper half (替代旧小图标)：accent
-    // 墨色、低 alpha 作"卡面涂鸦"，标题文字随后绘制盖在其上仍清晰。
+    // Large hand-drawn motif filling the card's upper half (replaces the old small icon):
+    // accent-ink colour at low alpha as a "card doodle"; the title text drawn over it remains legible.
     const iconSize = Math.round(h * 0.6);
     const glyph = buildIcon(icon, iconSize, accent);
     glyph.alpha = 0.6;

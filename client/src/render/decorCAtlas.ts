@@ -1,12 +1,14 @@
 /**
- * decorCAtlas.ts — C 组手绘装饰图集加载器（art-direction §6.2 C 组）。
+ * decorCAtlas.ts — Group-C hand-drawn decoration atlas loader (art-direction §6.2 C group).
  *
- * C 组是一套较大的主题素材（城堡/投石车/纸飞机/墨渍…，~128px，长边比 A 组大一倍），
- * 用于大厅/菜单等 UI 场景的纸面背景氛围，与战场 A 组并列存在、互不干扰。
+ * Group C is a set of larger themed assets (castle / catapult / paper plane / ink blot…,
+ * ~128px, longest side twice that of Group A), used for paper-background ambience in lobby /
+ * menu UI scenes; it coexists with the battlefield Group A atlas without interference.
  *
- * 图集位于 `client/src/assets/decor/decor_c_atlas.{png,json}`（非 battle/ 子目录，
- * 通用），帧名不带扩展名（如 `decoc_crown`）。加载方式与 decorAtlas.ts 完全对称：
- * App 启动时 fire-and-forget，纯装饰，失败不阻塞启动；线条为原黑墨，不 tint。
+ * The atlas lives at `client/src/assets/decor/decor_c_atlas.{png,json}` (not under the
+ * battle/ subdirectory — it is general-purpose). Frame names have no extension (e.g. `decoc_crown`).
+ * Loading is fully symmetric with decorAtlas.ts: fire-and-forget at app start, purely decorative,
+ * a failure does not block startup; lines are the original black ink and must NOT be tinted.
  */
 import * as PIXI from 'pixi.js-legacy';
 import { assetIO } from '../assets/assetIO';

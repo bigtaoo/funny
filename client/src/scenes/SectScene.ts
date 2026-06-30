@@ -1,11 +1,11 @@
-// SectScene — SLG 宗门管理场景（S8-4b，C6）。
-// 宗门 = 大区内由「家族」组成的势力组织；成员单位是家族，由 family.sectId 指向本门。
-// 绝大多数写操作要求请求者是「家族族长」（代表整个家族）；解散/结盟/解盟仅门主。
-// 频道任意宗门成员可读写。实时推送规模化走 Redis（本切片 REST 轮询，见 SLG_DESIGN §9.3）。
+// SectScene — SLG sect management scene (S8-4b, C6).
+// A sect = a faction organization composed of families within a region; member unit is a family, linked by family.sectId.
+// Most write operations require the requester to be the family leader (representing the whole family); disband/ally/unally are sect-master only.
+// Channel is readable/writable by any sect member. Real-time push at scale goes through Redis (this slice uses REST polling, see SLG_DESIGN §9.3).
 //
-// 入口：FamilyScene 的「宗门」按钮（宗门是家族的家族，天然归属家族界面）。
-// 范式对齐 FamilyScene：modalLayer + hitRects/modalHits（dim 点击关闭）、手绘 sketchPanel/txt、
-// 构造期订阅 input.onDown/Move/Up + destroy 退订（SLG 场景输入订阅曾是 latent bug，C3 修过）。
+// Entry point: FamilyScene's "Sect" button (sects are the family of families, naturally belongs in the family UI).
+// Aligned with FamilyScene pattern: modalLayer + hitRects/modalHits (dim click to close), hand-drawn sketchPanel/txt,
+// subscribe input.onDown/Move/Up in constructor + unsubscribe in destroy (SLG scene input subscription was a latent bug, fixed in C3).
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';
@@ -166,13 +166,13 @@ export class SectScene implements Scene {
   }
 
   /**
-   * 实时收到一条本宗门频道消息（gateway push，S8-4b）→ 去重后插入并按需重绘。
-   * messages 为 newest-first（与 getSectChannel 一致），故新消息 unshift 到队首。
+   * Received a real-time sect channel message (gateway push, S8-4b) → deduplicate, insert, and re-render if needed.
+   * messages are newest-first (consistent with getSectChannel), so new messages are unshifted to the front.
    */
   applySectMsg(msg: SectMessageView): void {
     if (this.destroyed) return;
     if (this.messages.some((m) => m.ts === msg.ts && m.senderId === msg.senderId && m.body === msg.body)) {
-      return; // 与轮询/重发去重
+      return; // deduplicate with polling / resend
     }
     this.messages.unshift(msg);
     if (this.mode === 'mySect' && this.activeTab === 'channel') this.render();

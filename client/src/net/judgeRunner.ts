@@ -1,10 +1,13 @@
-// 对等裁判无头复算（Phase C）。被 gateway 选中的客户端收到 judge_request 后，用其中的
-// seed + 非空帧录像在本机跑一遍确定性引擎到终局，算出与 match_result 同构的终局 hash +
-// winner，回报 judge_verdict。meta 据此判定 ranked hash 不一致时哪方诚实、哪方作弊。
+// Peer-judge headless re-computation (Phase C). When a client selected by the gateway receives a judge_request,
+// it uses the seed + non-empty frame replay to run the deterministic engine to end-of-game on the local machine,
+// computes a final state hash + winner with the same structure as match_result, and reports back a judge_verdict.
+// meta uses this to determine which side is honest and which is cheating when ranked hashes disagree.
 //
-// 关键：判定引擎与对局完全确定（定点数 + 注入 PRNG），同 seed + 同确认指令流逐 tick 复现。
-// 故第三方喂回同一帧流即可重算出双方本应得到的同一 hash——作弊方篡改的是其本地状态，
-// 改不了服务器排序后的指令流，复算结果必与诚实方一致。无渲染、无交互，纯逻辑。
+// Key: the adjudication engine and the match are fully deterministic (fixed-point arithmetic + injected PRNG),
+// so the same seed + same confirmed command stream reproduce results tick by tick.
+// Therefore a third party feeding back the same frame stream can recompute the single hash both sides should have gotten —
+// the cheating side tampers with their local state but cannot alter the server-ordered command stream,
+// so the recomputed result will always match the honest side. No rendering, no interaction — pure logic.
 
 import {
   achievementStatDelta,
@@ -29,13 +32,13 @@ export interface JudgeOutcome {
   ok: boolean;
   stateHash: string;
   winnerSide: number;
-  /** PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：复算得到的星数（0 = 未通关）。PvP 恒 0。 */
+  /** PvE spot-check recomputation (PVE_INTEGRITY §8.6 L1): star count from recomputation (0 = did not clear). Always 0 for PvP. */
   stars: number;
   /**
-   * 复算出的本局成就计数 JSON（`achievementStatDelta`），两种形态按 mode 区分：
-   * - **PvE 喂入**（S9-3b，§6.2）：玩家(owner 0)单对象 `{"kill.archer":n,…}` → meta verified 时 L1 后累加。
-   * - **PvP 离线抽查**（S9-7 L2，§4.4）：双方 per-side map `{"0":{…},"1":{…}}` → meta 与归档 reportedStats 比对查超报。
-   * siege 复算与未通关恒空串。
+   * JSON of the recomputed achievement stat delta for this match (`achievementStatDelta`), in two shapes depending on mode:
+   * - **PvE feed** (S9-3b, §6.2): single object for the player (owner 0) `{"kill.archer":n,…}` → accumulated after L1 when meta verifies.
+   * - **PvP offline spot-check** (S9-7 L2, §4.4): per-side map for both sides `{"0":{…},"1":{…}}` → meta compares with archived reportedStats to detect over-reporting.
+   * Always empty string for siege recomputation and for failed clears.
    */
   statsJson: string;
 }
@@ -43,16 +46,16 @@ export interface JudgeOutcome {
 const FAIL: JudgeOutcome = { ok: false, stateHash: '', winnerSide: 0, stars: 0, statsJson: '' };
 
 /**
- * 复算一局并返回终局结果。无法跑到终局（帧流不完整 / 异常）→ {ok:false}。
- * `level_id` 非空 → PvE 抽检复算（战役模式，回报星数）；否则 PvP（回报终局 hash + winner）。
- * 上限步数 = endFrame + 余量，防坏录像导致死循环。
+ * Recompute one match and return the final result. If end-of-game cannot be reached (incomplete frame stream / error) → {ok:false}.
+ * Non-empty `level_id` → PvE spot-check recomputation (campaign mode, returns star count); otherwise PvP (returns final state hash + winner).
+ * Step limit = endFrame + buffer, to prevent corrupted replays from causing an infinite loop.
  */
 export function runJudge(req: JudgeRequest): JudgeOutcome {
   if (req.defenseJson) return runSiegeJudge(req);
   if (req.levelId) return runPveJudge(req);
   try {
     const replay = buildReplay(req, 'netplay', req.seed);
-    // endFrame + 余量：终局后留缓冲，防坏录像死循环；正常会更早 GameOver。
+    // endFrame + buffer: leaves slack after end-of-game to prevent corrupted replays from looping; a normal game will GameOver earlier.
     const { ok, engine } = runHeadless(
       { seed: req.seed, players: [{ id: 0 }, { id: 1 }], mode: 'netplay' },
       new ReplayInputSource(replay),
@@ -62,8 +65,8 @@ export function runJudge(req: JudgeRequest): JudgeOutcome {
 
     const winner = stateWinner(engine.state.winner);
     const stats = engine.state.snapshotStats();
-    // S9-7 L2 离线抽查：PvP 复算回报**双方** per-side 成就计数（side 号→该方 achievementStatDelta），
-    // meta 与归档的 reportedStats 逐方比对查超报。owner↔side 恒等（0=Bottom/1=Top）。
+    // S9-7 L2 offline spot-check: PvP recomputation reports **both sides'** per-side achievement stats (side index → achievementStatDelta for that side);
+    // meta compares each side against the archived reportedStats to detect over-reporting. owner↔side are always equal (0=Bottom/1=Top).
     return {
       ok: true,
       stateHash: matchStateHash(winner, stats),
@@ -80,15 +83,16 @@ export function runJudge(req: JudgeRequest): JudgeOutcome {
 }
 
 /**
- * PvE 抽检复算（PVE_INTEGRITY §8.6 L1）：用 seed（由 level 派生，本地查 levels JSON 取权威值）
- * + 服务器权威 pve_upgrades 蓝图快照 + 玩家指令帧，按战役模式跑到终局算星数。复算的星数交
- * meta 与客户端声称的对比——作弊者篡改的是本地状态，改不了「这套指令是否真能在这套蓝图下通关」，
- * 故复算结果与诚实通关一致。通关 = 玩家(owner 0)胜；非玩家胜 → 0 星。
+ * PvE spot-check recomputation (PVE_INTEGRITY §8.6 L1): uses seed (derived from the level, authoritative value fetched from the local levels JSON)
+ * + server-authoritative pve_upgrades blueprint snapshot + player command frames, runs to end-of-game in campaign mode to compute star count.
+ * The recomputed stars are handed to meta for comparison with what the client claimed —
+ * a cheater can tamper with local state but cannot change "whether these commands can actually clear the game under this blueprint",
+ * so the recomputed result matches an honest clear. Clear = player (owner 0) wins; otherwise → 0 stars.
  */
 function runPveJudge(req: JudgeRequest): JudgeOutcome {
   try {
     const level = getLevel(req.levelId);
-    if (!level) return FAIL; // 裁判本地无此关定义 → 无法复算（版本不符）
+    if (!level) return FAIL; // judge does not have a local definition for this level → cannot recompute (version mismatch)
     const replay = buildReplay(req, 'campaign', level.seed, req.levelId);
     const { ok, engine } = runHeadless(
       {
@@ -96,7 +100,7 @@ function runPveJudge(req: JudgeRequest): JudgeOutcome {
         players: [{ id: 0 }, { id: 1 }],
         mode: 'campaign',
         level,
-        // S12: 优先用 unitLevels（新养成模型），无则降级用 pveUpgrades（旧模型向后兼容）
+        // S12: prefer unitLevels (new progression model); fall back to pveUpgrades (old model, backward compatibility) when absent
         ...(Object.keys(req.unitLevels ?? {}).length > 0
           ? { unitLevels: req.unitLevels }
           : { pveUpgrades: req.pveUpgrades }),
@@ -112,7 +116,7 @@ function runPveJudge(req: JudgeRequest): JudgeOutcome {
     }
     const stats = engine.state.snapshotStats();
     const stars = computeStars(level.rewards?.starThresholds, remainingHpPct(stats[0].damageTakenByBase));
-    // PvE 喂入（S9-3b）：通关（玩家 owner 0 胜）→ 回报玩家本局成就计数。裁判权威，meta L1 校验后累加。
+    // PvE feed (S9-3b): cleared (player owner 0 wins) → report the player's achievement stats for this match. Judge is authoritative; meta accumulates after L1 verification.
     const statsJson = JSON.stringify(achievementStatDelta(stats[0]));
     return { ok: true, stateHash: '', winnerSide: 0, stars, statsJson };
   } catch {
@@ -121,11 +125,13 @@ function runPveJudge(req: JudgeRequest): JudgeOutcome {
 }
 
 /**
- * SLG 围攻复算（S8-3，SLG_DESIGN §5.3）：worldsvc 为被攻击格构造一份防守 config（LevelDefinition
- * 的 JSON），裁判用 seed + 该 config + 攻方服务器权威养成快照（pve_upgrades）+ 攻方指令帧按 siege
- * 模式跑到终局。siege 引擎机制同 campaign（防守方=WaveDirector 脚本），故 winner_side=0(Bottom)
- * = 攻方破城（attacker_win 夺地），否则防守成功（defender_win）。攻方篡改本地状态改不了「这套兵能否
- * 在这套防守 config 下破城」，复算结果即权威 outcome。stateHash/stars 对 siege 无意义恒空/0。
+ * SLG siege recomputation (S8-3, SLG_DESIGN §5.3): worldsvc constructs a defense config (JSON of LevelDefinition)
+ * for the attacked tile; the judge uses seed + that config + the attacker's server-authoritative progression snapshot (pve_upgrades)
+ * + attacker command frames to run to end-of-game in siege mode.
+ * The siege engine mechanics are the same as campaign (defender = WaveDirector script), so winner_side=0 (Bottom)
+ * = attacker broke through (attacker_win, captures the tile); otherwise the defense succeeds (defender_win).
+ * The attacker cannot change "whether these troops can break through under this defense config" by tampering with local state,
+ * so the recomputed result is the authoritative outcome. stateHash/stars are meaningless for siege and are always empty/0.
  */
 function runSiegeJudge(req: JudgeRequest): JudgeOutcome {
   try {
@@ -133,7 +139,7 @@ function runSiegeJudge(req: JudgeRequest): JudgeOutcome {
     try {
       level = JSON.parse(req.defenseJson) as LevelDefinition;
     } catch {
-      return FAIL; // 防守 config 不是合法 JSON → 无法复算
+      return FAIL; // defense config is not valid JSON → cannot recompute
     }
     const replay = buildReplay(req, 'siege', req.seed);
     const { ok, engine } = runHeadless(
@@ -160,7 +166,7 @@ function runSiegeJudge(req: JudgeRequest): JudgeOutcome {
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-/** judge_request 的非空帧（game.proto opaque bytes）→ 可回放的 Replay。 */
+/** Convert non-empty frames from a judge_request (game.proto opaque bytes) → a replayable Replay. */
 function buildReplay(req: JudgeRequest, mode: GameMode, seed: number, levelId?: string): Replay {
   const frames: ReplayFrame[] = req.frames.map((fc) => {
     const commands: PlayerCommand[] = [];
@@ -180,7 +186,7 @@ function buildReplay(req: JudgeRequest, mode: GameMode, seed: number, levelId?: 
   };
 }
 
-/** game.proto PlayerCommand → 引擎 PlayerCommand（与 NetInputSource.fromProto 同逻辑）。 */
+/** game.proto PlayerCommand → engine PlayerCommand (same logic as NetInputSource.fromProto). */
 function fromProto(pc: ProtoPlayerCommand, owner: OwnerId, frame: number): PlayerCommand {
   if (pc.upgradeBase) return { type: 'upgrade_base', owner, tick: frame };
   if (pc.refreshHand) return { type: 'refresh_hand', owner, tick: frame };
@@ -195,15 +201,16 @@ function fromProto(pc: ProtoPlayerCommand, owner: OwnerId, frame: number): Playe
   };
 }
 
-/** state.winner (Side|null) → OwnerId|null（与 game_over 事件 winner 同映射：Top=1, Bottom=0）。 */
+/** state.winner (Side|null) → OwnerId|null (same mapping as the game_over event winner: Top=1, Bottom=0). */
 function stateWinner(winner: Side | null): OwnerId | null {
   if (winner === null) return null;
   return winner === Side.Top ? 1 : 0;
 }
 
 /**
- * 终局 hash（FNV-1a 32 位）的唯一定义。对局双方（app.ts 上报）与第三方裁判（本文件复算）
- * 必须算出逐字相同的字符串，否则比对失效——故两处共用此一处实现。
+ * Authoritative definition of the final state hash (FNV-1a 32-bit). Both sides of the match (reported via app.ts)
+ * and the third-party judge (recomputed in this file) must produce the exact same string,
+ * or comparison breaks — hence both paths share this single implementation.
  */
 export function matchStateHash(winner: OwnerId | null, stats: [PlayerStats, PlayerStats]): string {
   const payload = JSON.stringify({ winner, stats });

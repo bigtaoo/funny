@@ -1,6 +1,6 @@
-// gateway → socialsvc 内部客户端（P3，SOCIAL_SVC_DESIGN §6 P3）。
-// gateway 连接/断连时通知 socialsvc 做好友在线/下线扇出（presence 推送链）。
-// socialsvc 未配置 → no-op，gateway 退回直接用 meta 广播（兼容降级）。
+// gateway → socialsvc internal client (P3, SOCIAL_SVC_DESIGN §6 P3).
+// Notifies socialsvc on gateway connect/disconnect for friend online/offline fan-out (presence push chain).
+// socialsvc not configured → no-op; gateway falls back to broadcasting via meta (compatible degradation).
 import { internalHeaders } from '@nw/shared';
 
 export class SocialsvcClient {

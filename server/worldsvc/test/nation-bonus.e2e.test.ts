@@ -216,7 +216,7 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    expect((await svc.getTile(W, 'a', tgt.x, tgt.y)).mine).toBe(true); // 易主
+    expect((await svc.getTile(W, 'a', tgt.x, tgt.y)).mine).toBe(true); // tile changed hands to attacker
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('attacker_win');
   });

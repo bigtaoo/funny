@@ -8,7 +8,7 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { MATERIAL_ORDER } from '../game/balance/pveUpgrades';
 import type { MatchHistoryEntry } from '../net/ApiClient';
 
-// ── StatsScene — 战绩 / 统计页 (lobby "stats" nav) ──────────────────────────────
+// ── StatsScene — match record / stats page (lobby "stats" nav) ───────────────────
 //
 // Local data from SaveData (ranked standing, campaign progress, collection count,
 // materials) plus the "match history" section, which is wired to the server via
@@ -107,8 +107,8 @@ export class StatsScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // 顶栏右侧：成就（最右）+ 称号（其左），两者均在线才提供。
-    // 布局从右到左累积 nextRight，处理其中一个缺失的情况。
+    // Top-bar right side: achievements (far right) + titles (to its left); both provided only when online.
+    // Layout accumulates nextRight right-to-left to handle the case where one is absent.
     const rightPad = Math.round(w * 0.04);
     const btnGap = Math.round(w * 0.03);
     let nextRight = w - rightPad;
@@ -183,7 +183,7 @@ export class StatsScene implements Scene {
     ];
 
     if (this.landscape) {
-      // ── 横屏：左右两列 ───────────────────────────────────────────────────
+      // ── Landscape: two columns ───────────────────────────────────────────────────
       const colGap = Math.round(w * 0.025);
       const totalW = w - pad * 2;
       const leftW = Math.round(totalW * 0.54);
@@ -201,7 +201,7 @@ export class StatsScene implements Scene {
       ry += gap;
       this.drawSection(rightX, ry, rightW, t('stats.history'), C.mid, this.historyRows());
     } else {
-      // ── 竖屏：单列，收窄外边距 ──────────────────────────────────────────
+      // ── Portrait: single column with narrower margins ───────────────────────────
       const secW = w - pad * 2;
       let y = topY;
       y = this.drawSection(pad, y, secW, t('stats.pvp'), C.accent, pvpRows); y += gap;
@@ -268,7 +268,7 @@ export class StatsScene implements Scene {
       const val = txt(row.value, Math.round(rowH * 0.66), row.valueColor ?? C.dark, true);
       val.anchor.set(1, 0.5); val.x = x + w - Math.round(w * 0.05); val.y = ry + rowH / 2;
       this.container.addChild(val);
-      // 可看回放的行：左侧画 ▶ 提示 + 整行命中区。
+      // Rows with a watchable replay: draw a ▶ hint on the left + a full-row hit area.
       if (row.rowHit) {
         const play = txt('▶', Math.round(rowH * 0.6), accent, true);
         play.anchor.set(0, 0.5); play.x = x + Math.round(w * 0.035); play.y = ry + rowH / 2;

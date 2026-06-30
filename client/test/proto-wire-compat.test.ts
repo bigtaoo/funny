@@ -1,8 +1,10 @@
-// proto 线兼容回归（C-2）：客户端 ts-proto 编解码与服务端 protobufjs 必须逐字节一致。
-// _proto_vectors.json 是服务端（gameserver/proto，protobufjs 反射）按同一份 transport.proto
-// 产出的权威字节向量；任何一端改 .proto 后重跑 `npm run proto:gen` + 重生成向量即可。
+// Proto wire compatibility regression (C-2): client ts-proto encode/decode must be byte-for-byte
+// consistent with server-side protobufjs. _proto_vectors.json contains the authoritative byte
+// vectors produced by the server (gameserver/proto, protobufjs reflection) from the same
+// transport.proto; after changing .proto on either side, re-run `npm run proto:gen` and
+// regenerate the vectors.
 //
-// 改 transport.proto 后向量需重生（见 design/game/SERVER_API.md §3）。
+// Vectors must be regenerated after any change to transport.proto (see design/game/SERVER_API.md §3).
 import { describe, it, expect } from 'vitest';
 import { Envelope } from '../src/net/proto/transport';
 import vectors from './_proto_vectors.json';
@@ -13,7 +15,7 @@ const toHex = (b: Uint8Array): string =>
   [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
 
 describe('proto wire compat: server protobufjs ↔ client ts-proto', () => {
-  // 客户端编码的 ClientMsg 必须与服务端权威字节逐字相同
+  // Client-encoded ClientMsg must match the server authoritative bytes exactly
   const clientCases: Record<string, () => Envelope> = {
     room_create: () => Envelope.fromPartial({ client: { roomCreate: { mode: 0 } } }),
     room_join: () => Envelope.fromPartial({ client: { roomJoin: { code: 'ABC234' } } }),
@@ -33,15 +35,17 @@ describe('proto wire compat: server protobufjs ↔ client ts-proto', () => {
     it(`client encode ${name} is wire-interop with server`, () => {
       const clientBytes = Envelope.encode(build()).finish();
       const serverHex = vectors.client[name as keyof typeof vectors.client];
-      // 多数情况逐字节相同；含默认值标量（proto3 规范省略 vs protobufjs 显式写 0）时
-      // 字节可不同但语义一致 —— 用「双方字节都解回同一逻辑消息」断言真正的互操作性。
+      // In most cases the bytes are identical; when a default-value scalar is involved
+      // (proto3 spec omits it, protobufjs writes explicit 0) the bytes may differ but
+      // the semantics are equivalent — assert true interop by decoding both sides and
+      // comparing the resulting logical messages.
       const fromClient = Envelope.decode(clientBytes);
       const fromServer = Envelope.decode(toBytes(serverHex));
       expect(fromClient).toEqual(fromServer);
     });
   }
 
-  // 客户端解码服务端权威 ServerMsg 字节 → 字段还原正确
+  // Client decodes server authoritative ServerMsg bytes → fields round-trip correctly
   it('decodes room_state', () => {
     const m = Envelope.decode(toBytes(vectors.server.room_state)).server!.roomState!;
     expect(m.code).toBe('ABC234');

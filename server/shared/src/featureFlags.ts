@@ -18,7 +18,7 @@ export const FEATURE_FLAGS = {
    * without finding a real opponent, the match is downgraded to a local AI match on the client. When disabled,
    * the player always waits for a real opponent.
    */
-  match_bot_fallback: { default: false, desc: '匹配超时降级打AI', side: 'server' },
+  match_bot_fallback: { default: false, desc: 'Matchmaking timeout fallback to AI', side: 'server' },
 
   // ── Client log targeting (FEATURE_FLAGS_DESIGN §9) ──────────────────────────
   // Log levels are encoded via multiple flags (each flag is only true/false): operators put target player
@@ -26,10 +26,10 @@ export const FEATURE_FLAGS = {
   // The client picks the most verbose enabled flag as the upload threshold (debug>info>warn>error)
   // and uploads logs at that level and above. No match = no reporting.
   // All defaults are false → the vast majority of players receive an empty map at bootstrap and never report.
-  client_log_error: { default: false, desc: '客户端日志上报-error', side: 'client' },
-  client_log_warn: { default: false, desc: '客户端日志上报-warn', side: 'client' },
-  client_log_info: { default: false, desc: '客户端日志上报-info', side: 'client' },
-  client_log_debug: { default: false, desc: '客户端日志上报-debug', side: 'client' },
+  client_log_error: { default: false, desc: 'Client log upload - error', side: 'client' },
+  client_log_warn: { default: false, desc: 'Client log upload - warn', side: 'client' },
+  client_log_info: { default: false, desc: 'Client log upload - info', side: 'client' },
+  client_log_debug: { default: false, desc: 'Client log upload - debug', side: 'client' },
 } as const;
 
 export type FlagKey = keyof typeof FEATURE_FLAGS;

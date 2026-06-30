@@ -1,41 +1,42 @@
-// 存档迁移链（S0-2）。喂任意残缺 / 旧版对象 → 补全到当前 SAVE_VERSION。
-// META_DESIGN.md §3.2：开局即埋 version + 迁移链，否则改字段废老存档。
+// Save migration chain (S0-2). Accepts any incomplete / outdated object and fills it up to the current SAVE_VERSION.
+// META_DESIGN.md §3.2: embed version + migration chain from day one; otherwise field changes will invalidate old saves.
 //
-// 约定：MIGRATIONS[i] 把 version i 的对象升到 version i+1（就地修改并返回）。
-// 末尾 fillDefaults 兜底补齐任何缺字段（防御性，容忍跨版本残缺），最后钉死 version。
+// Convention: MIGRATIONS[i] upgrades a version-i object to version i+1 (mutates in place and returns it).
+// A trailing fillDefaults pass defensively backfills any missing fields (tolerates cross-version gaps), then pins the version.
+
 
 import { makeNewSave, SAVE_VERSION, type SaveData } from './SaveData';
 
 type AnyObj = Record<string, unknown>;
 
 /**
- * 版本迁移步骤。当前只有 v0→v1（v0 = 无 version 字段的史前 / 残缺对象）。
- * 新增字段时：写一个 vN→vN+1 步骤补该字段的默认值，并把 SAVE_VERSION +1。
+ * Version migration steps. Currently only v0→v1 (v0 = pre-history objects with no version field, or incomplete objects).
+ * When adding a new field: write a vN→vN+1 step that supplies the field's default value, and increment SAVE_VERSION by 1.
  */
 const MIGRATIONS: Array<(d: AnyObj) => AnyObj> = [
-  // v0 → v1：把任何史前对象规整成 v1 形状（缺字段由 fillDefaults 兜底补齐）。
+  // v0 → v1: normalize any pre-history object into v1 shape (missing fields backfilled by fillDefaults).
   (d) => {
     d.version = 1;
     return d;
   },
-  // v1 → v2：装备系统 E0。equipmentInv / gear 为纯增字段，由 fillDefaults 从
-  // makeNewSave 默认值补齐（{}），无需在此显式写——只钉版本号。
+  // v1 → v2: equipment system E0. equipmentInv / gear are additive-only fields; fillDefaults backfills them
+  // from makeNewSave defaults ({}), so no explicit write is needed here — just pin the version number.
   (d) => {
     d.version = 2;
     return d;
   },
-  // v2 → v3：单位养成重做（S12）。unitLevels / cardInventory 为纯增字段，fillDefaults 补 {}；
-  // 游戏未上线、无真实档，老 pveUpgrades 不换算成 unitLevels（养成从 L1 重起）。只钉版本号。
+  // v2 → v3: unit progression rework (S12). unitLevels / cardInventory are additive-only fields; fillDefaults backfills them with {};
+  // the game is not yet live and there are no real saves, so old pveUpgrades are not converted to unitLevels (progression restarts from L1). Just pin the version number.
   (d) => {
     d.version = 3;
     return d;
   },
 ];
 
-/** 深合并默认值：obj 缺的键用 def 补；已有键保留（对象递归，数组/标量直接保留）。 */
+/** Deep-merge defaults: keys missing from obj are filled from def; existing keys are kept (objects recurse, arrays/scalars are kept as-is). */
 function fillDefaults<T>(obj: unknown, def: T): T {
   if (def === null || typeof def !== 'object' || Array.isArray(def)) {
-    // 标量 / 数组：缺失（undefined）才用默认值
+    // scalar / array: use the default only if the value is missing (undefined)
     return (obj === undefined ? def : (obj as T));
   }
   const src = (obj && typeof obj === 'object' ? obj : {}) as AnyObj;
@@ -43,7 +44,7 @@ function fillDefaults<T>(obj: unknown, def: T): T {
   for (const k of Object.keys(def as AnyObj)) {
     out[k] = fillDefaults(src[k], (def as AnyObj)[k]);
   }
-  // 保留 def 之外的额外键（如 best 里的动态 levelId、flags 自定义项）
+  // Preserve extra keys beyond those in def (e.g. dynamic levelId entries in best, custom flags)
   for (const k of Object.keys(src)) {
     if (!(k in out)) out[k] = src[k];
   }
@@ -51,10 +52,10 @@ function fillDefaults<T>(obj: unknown, def: T): T {
 }
 
 /**
- * 把原始对象（localStorage / 云端 / null）迁移到当前版本的完整 SaveData。
- * - null / 非对象 → 全新存档
- * - 旧 version → 按 MIGRATIONS 顺序升级
- * - 任意缺字段 → fillDefaults 补齐
+ * Migrates a raw object (from localStorage / cloud / null) to a complete SaveData at the current version.
+ * - null / non-object → brand-new save
+ * - old version → upgrade sequentially through MIGRATIONS
+ * - any missing fields → backfilled by fillDefaults
  */
 export function migrate(raw: unknown): SaveData {
   if (!raw || typeof raw !== 'object') {
@@ -65,12 +66,12 @@ export function migrate(raw: unknown): SaveData {
 
   while (v < SAVE_VERSION) {
     const step = MIGRATIONS[v];
-    if (!step) break; // 没有对应步骤（不应发生）——交给 fillDefaults 兜底
+    if (!step) break; // no corresponding step (should not happen) — let fillDefaults handle it
     d = step(d);
     v = typeof d.version === 'number' ? d.version : v + 1;
   }
 
-  // 兜底补齐 + 钉死当前版本（容忍未来回退 / 残缺）。
+  // Defensive backfill + pin current version (tolerates future rollbacks / incomplete saves).
   const filled = fillDefaults<SaveData>(d, makeNewSave());
   filled.version = SAVE_VERSION;
   return filled;

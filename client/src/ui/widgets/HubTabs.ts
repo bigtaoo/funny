@@ -2,9 +2,9 @@
  * HubTabs.ts — a shared horizontal "section tab" strip for a hub group of
  * scenes (LOBBY_IA_REDESIGN P1.5).
  *
- * P1 merged features into hub tabs but wired them as launchers: tapping 装备
+ * P1 merged features into hub tabs but wired them as launchers: tapping Equipment
  * left CollectionScene for EquipmentScene with only a lone "← back", and the
- * shop's 盲盒/战令 footer buttons launched isolated full-screen pages. The
+ * shop's Gacha/BattlePass footer buttons launched isolated full-screen pages. The
  * sub-pages of one group never showed each other, so they read as "jump out &
  * come back", not as peer tabs of one hub.
  *
@@ -14,8 +14,8 @@
  * one-scene-one-feature architecture; nothing is embedded), but visually the
  * group reads as a single tabbed hub:
  *
- *   商城 group : [商城 | 盲盒 | 战令]   (Shop / Gacha / BattlePass)
- *   养成 group : [收藏 | 装备]          (Collection / Equipment)
+ *   Shop group       : [Shop | Gacha | BattlePass]
+ *   Collection group : [Collection | Equipment]
  *
  * Visual language matches CollectionScene's own tab bar: a sketch panel per
  * cell, active = dark fill + accent border + white bold, inactive = paper fill

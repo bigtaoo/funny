@@ -1,4 +1,4 @@
-// 极简 DOM 辅助（无框架，纯 TS + DOM，OPS_DESIGN §7）。
+// Minimal DOM helpers (no framework, plain TS + DOM, OPS_DESIGN §7).
 export type Child = Node | string | null | undefined | false;
 
 export function h<K extends keyof HTMLElementTagNameMap>(

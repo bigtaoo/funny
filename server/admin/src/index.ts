@@ -1,9 +1,9 @@
-// admin 进程引导（OPS_DESIGN §0/§1）：运维后台后端，独立进程 + 独立库，玩家不可达。
-//   • 连专属库 notebook_wars_admin → 索引 + 种子超管；
-//   • AdminService（RBAC + 工单审批 + 审计 + 监控/趋势）；
-//   • 对运维前端的 HTTP API（admin JWT 鉴权）；
-//   • 自采采样定时器（拉 gateway/matchsvc /internal/stats 写 metricSnapshots）。
-// 反代不路由到 admin；API 端口只在内网/VPN/IP allowlist 可达（§6）。
+// admin process bootstrap (OPS_DESIGN §0/§1): ops back-end, standalone process + dedicated DB, not reachable by players.
+//   • Connects to dedicated DB notebook_wars_admin → indexes + seed super admin;
+//   • AdminService (RBAC + ticket approval + audit + monitoring/trends);
+//   • HTTP API for the ops front-end (admin JWT authentication);
+//   • Self-sampling timer (pulls gateway/matchsvc /internal/stats and writes metricSnapshots).
+// Reverse proxy does not route to admin; API port is only reachable from the internal network/VPN/IP allowlist (§6).
 import { createLogger, loadInternalAuth, startHeartbeat, type JwtConfig } from '@nw/shared';
 import { loadAdminEnv } from './config';
 import { createAdminMongo } from './db';
@@ -41,7 +41,7 @@ async function main(): Promise<void> {
     svc,
   );
 
-  // 自采采样定时器（§5）。stats 不可用时仍跑（写 0 值，趋势保持连续）。
+  // Self-sampling timer (§5). Continues running even when stats are unavailable (writes zero values so the trend stays continuous).
   let sampler: NodeJS.Timeout | null = null;
   if (env.sampleIntervalMs > 0) {
     sampler = setInterval(() => {
@@ -65,7 +65,7 @@ async function main(): Promise<void> {
     `stats: gateway=${env.gatewayInternalUrl ?? 'none'} matchsvc=${env.matchsvcInternalUrl ?? 'none'}; ` +
       `meta(player/mail)=${env.metaBaseUrl ?? 'none'}; sample=${env.sampleIntervalMs}ms`,
   );
-  startHeartbeat(log); // 存活心跳：空闲时每 5 分钟一条 info 日志
+  startHeartbeat(log); // Liveness heartbeat: one info log every 5 minutes when idle
 }
 
 main().catch((e) => {

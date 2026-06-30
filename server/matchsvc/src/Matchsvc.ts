@@ -47,7 +47,7 @@ export type PushMsg =
   | { kind: 'room_error'; code: string; message: string };
 
 /** Display names randomly picked for the AI opponent during bot-fallback (display only; narrative voice unified as the "red-pen corrector / imaginary rival" theme). */
-const BOT_NAMES = ['红笔小将', '草稿纸新兵', '橡皮擦练习生', '便利贴学徒', '修正液守卫'];
+const BOT_NAMES = ['Red Pen Cadet', 'Draft Paper Recruit', 'Eraser Apprentice', 'Sticky Note Trainee', 'Correction Fluid Guard'];
 /**
  * Push callback. `roomId` is a cross-process correlation id — it is included in logs across
  * matchsvc / gateway / game / meta for the same match, so Grafana can reconstruct the full

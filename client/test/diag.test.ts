@@ -7,13 +7,14 @@ import { BaselinePlayer, DEFAULT_AI, progressionUnitLevels } from './difficultyS
 
 const TICK_DT = 1 / 30;
 
-// 单关逐秒时间线检视器——调难度时盯着看：墨够不够花、敌人滚不滚雪球、
-// 基地什么时候开始掉血、AI 各种操作的次数分布。改 LEVEL_ID/PRESET 即可换关。
+// Per-level second-by-second timeline inspector — study this when tuning difficulty:
+// whether ink supply is sufficient, whether the enemy snowballs, when the base starts
+// taking damage, and the distribution of AI action counts. Change LEVEL_ID/PRESET to switch levels.
 const LEVEL_ID = 'ch1_lv1';
 const PRESET = 'fresh' as const;
 
-describe(`时间线检视 ${LEVEL_ID} (${PRESET})`, () => {
-  it('逐秒时间线 + 动作统计', () => {
+describe(`timeline inspection ${LEVEL_ID} (${PRESET})`, () => {
+  it('second-by-second timeline + action tallies', () => {
     const level = CAMPAIGN_LEVELS[LEVEL_ID]!;
     const config: GameConfig = {
       seed: level.seed, players: [{ id: 0 }, { id: 1 }], mode: 'campaign', level,
@@ -35,7 +36,7 @@ describe(`时间线检视 ${LEVEL_ID} (${PRESET})`, () => {
     };
 
     const ai = new BaselinePlayer(DEFAULT_AI);
-    console.log('\n t(s) | ink | base | 我兵 | 我塔 | 敌兵');
+    console.log('\n t(s) | ink | base | myU | myT | enU');
     for (let tick = 0; tick < 3600 && engine.state.phase !== GamePhase.GameOver; tick++) {
       ai.act(engine, tick);
       engine.tick(TICK_DT);
@@ -51,7 +52,7 @@ describe(`时间线检视 ${LEVEL_ID} (${PRESET})`, () => {
         console.log(` ${String(tick / 30).padStart(4)} | ${String(p.ink).padStart(3)} | ${String(p.baseHp).padStart(4)} | ${String(myU).padStart(4)} | ${String(myT).padStart(4)} | ${String(enU).padStart(4)}`);
       }
     }
-    console.log('\n动作统计:', JSON.stringify(tally));
-    console.log(`结束 winner=${engine.state.winner} baseHp=${engine.state.bottomPlayer.baseHp}\n`);
+    console.log('\nAction tally:', JSON.stringify(tally));
+    console.log(`End winner=${engine.state.winner} baseHp=${engine.state.bottomPlayer.baseHp}\n`);
   });
 });

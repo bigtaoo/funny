@@ -12,8 +12,8 @@ import { applySyncPatch } from '../dist/save.js';
 
 const NOW = 1_700_000_000_000;
 
-describe('applySyncPatch 信任边界', () => {
-  it('只覆盖同步段，权威段（wallet/inventory/gacha/pvp）原样保留', () => {
+describe('applySyncPatch trust boundary', () => {
+  it('only overwrites sync fields; authoritative fields (wallet/inventory/gacha/pvp) are preserved', () => {
     const prev = makeNewSave('acc', 0);
     prev.wallet.coins = 500;
     prev.inventory.skins = ['skin_a'];
@@ -29,7 +29,7 @@ describe('applySyncPatch 信任边界', () => {
     expect(next.flags).toEqual({ seen_intro: true });
   });
 
-  it('硬墙：patch 塞入权威段被结构性丢弃（HTTP body 无类型，客户端篡改无效）', () => {
+  it('hard wall: authoritative fields injected into patch are structurally discarded (HTTP body is untyped, client tampering has no effect)', () => {
     const prev = makeNewSave('acc', 0);
     // Simulate a malicious / out-of-bounds body: SyncPatch type does not include these fields and they must be dropped at runtime.
     // As of PVE_INTEGRITY_PLAN §8, progress/materials/pveUpgrades are also server-authoritative → equally discarded.
@@ -56,7 +56,7 @@ describe('applySyncPatch 信任边界', () => {
     expect(next.flags).toEqual({ x: true }); // legitimate sync field written as expected
   });
 
-  it('rev / updatedAt 按入参设定，其余不变', () => {
+  it('rev / updatedAt are set from parameters, everything else unchanged', () => {
     const prev = makeNewSave('acc', 0);
     const next = applySyncPatch(prev, {}, NOW, 5);
     expect(next.rev).toBe(5);
@@ -65,7 +65,7 @@ describe('applySyncPatch 信任边界', () => {
     expect(next.version).toBe(prev.version);
   });
 
-  it('空 patch：所有段保持 prev（仅 rev/updatedAt 推进）', () => {
+  it('empty patch: all fields retain prev values (only rev/updatedAt advance)', () => {
     const prev = makeNewSave('acc', 0);
     prev.progress.cleared = ['ch1_lv1'];
     prev.materials = { wood: 3 };
@@ -76,7 +76,7 @@ describe('applySyncPatch 信任边界', () => {
     expect(next.equipped).toEqual({ skin: 's1' });
   });
 
-  it('部分 patch：提供的同步段（equipped/flags）覆盖，未提供的保留 prev', () => {
+  it('partial patch: provided sync fields (equipped/flags) are overwritten, unprovided fields retain prev', () => {
     const prev = makeNewSave('acc', 0);
     prev.equipped = { skin: 's1' };
     prev.flags = { seen_intro: true };
@@ -87,7 +87,7 @@ describe('applySyncPatch 信任边界', () => {
     expect(next.flags).toEqual({ seen_intro: true }); // not provided → retained
   });
 
-  it('不改动入参 prev（无副作用）', () => {
+  it('does not mutate the prev argument (no side effects)', () => {
     const prev = makeNewSave('acc', 0);
     applySyncPatch(prev, { flags: { a: true } }, NOW, 1);
     expect(prev.flags).toEqual({}); // prev is not mutated

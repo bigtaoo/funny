@@ -1,16 +1,19 @@
-// 未捕获 API / 网络错误 → 玩家可读文案（全局兜底，GlobalToast 用）。
+// Uncaught API / network errors → player-readable message (global fallback, used by GlobalToast).
 //
-// 背景：ApiClient / WorldApiClient 对非 200 回复会抛 ApiError / WorldApiError，正常路径下
-// 各场景自行 catch 并 toast。本模块只处理「场景漏接、一路冒泡到 window 的未捕获拒绝」——
-// installGlobalErrorHandlers 把 reason 交到这里归类，能识别为 API / 网络错误的才弹兜底提示，
-// 其余（普通 JS 异常）返回 null，调用方跳过弹窗（仍照常打 console）。
+// Background: ApiClient / WorldApiClient throw ApiError / WorldApiError on non-200 responses;
+// in the normal flow each scene catches and toasts them itself. This module only handles
+// uncaught rejections that bubble all the way to window —
+// installGlobalErrorHandlers passes the reason here for classification; only errors
+// recognised as API / network errors trigger a fallback toast, all others (plain JS
+// exceptions) return null so the caller skips the popup (but still logs to console).
 //
-// 刻意用 duck-typing（按 err.name + err.code）而非 import 具体错误类：log.ts 是最底层模块，
-// 直接依赖 ApiClient / WorldApiClient 会形成循环依赖。
+// Intentionally uses duck-typing (err.name + err.code) rather than importing concrete
+// error classes: log.ts is the lowest-level module, and directly depending on ApiClient /
+// WorldApiClient would create a circular dependency.
 
 import { t, type TranslationKey } from '../i18n';
 
-/** 已知错误码 → 友好文案 key。未列出的码统一落 common.actionFailed。 */
+/** Known error codes → friendly i18n key. Unlisted codes fall back to common.actionFailed. */
 const CODE_KEY: Partial<Record<string, TranslationKey>> = {
   INSUFFICIENT_FUNDS:     'common.err.insufficientFunds',
   INSUFFICIENT_MATERIALS: 'common.err.insufficientFunds',
@@ -24,14 +27,14 @@ const CODE_KEY: Partial<Record<string, TranslationKey>> = {
 };
 
 /**
- * 把一个未捕获的 rejection / error 归类为玩家可读文案。
- * - ApiError / WorldApiError（带字符串 code）→ 按码映射，未知码 → 通用「操作失败」。
- * - 网络层失败（fetch reject 通常是 TypeError）→「网络连接失败」。
- * - withTimeout 的 TimeoutError → 「网络超时」（正常都在场景内被接住，这里兜底）。
- * - 其余普通异常 → null（不弹兜底，避免把 JS bug 当成业务提示吓到玩家）。
+ * Classify an uncaught rejection / error as a player-readable message.
+ * - ApiError / WorldApiError (with a string code) → mapped by code; unknown code → generic "action failed".
+ * - Network-layer failure (fetch rejection, usually TypeError) → "network connection failed".
+ * - withTimeout's TimeoutError → "network timeout" (normally caught inside scenes; this is the fallback).
+ * - All other plain exceptions → null (no fallback popup, to avoid scaring players with JS bugs).
  */
 export function uncaughtErrorMessage(reason: unknown): string | null {
-  // fetch 网络失败：浏览器 reject 成 TypeError（断网 / CORS / DNS）。
+  // fetch network failure: browser rejects as TypeError (offline / CORS / DNS).
   if (reason instanceof TypeError) return t('common.networkError');
 
   if (reason instanceof Error) {

@@ -37,8 +37,8 @@ export class EffectListPanel {
 
       const meta = document.createElement('span');
       meta.className = 'meta';
-      const builtin = rec.id.startsWith('builtin:') ? '内置·' : '';
-      meta.textContent = `${builtin}${rec.def.layers.length}层`;
+      const builtin = rec.id.startsWith('builtin:') ? 'built-in · ' : '';
+      meta.textContent = `${builtin}${rec.def.layers.length} layers`;
       row.appendChild(meta);
 
       row.addEventListener('click', () => void this.library.switchTo(rec.id));
@@ -50,17 +50,17 @@ export class EffectListPanel {
 
     const dup = document.createElement('button');
     dup.className = 'sm';
-    dup.textContent = '复制';
-    dup.addEventListener('click', () => void this.library.duplicateActive().then(() => this.setStatus('✓ 已复制当前特效', 'ok')));
+    dup.textContent = 'Duplicate';
+    dup.addEventListener('click', () => void this.library.duplicateActive().then(() => this.setStatus('✓ Effect duplicated', 'ok')));
     actions.appendChild(dup);
 
     const del = document.createElement('button');
     del.className = 'sm danger';
-    del.textContent = '删除';
+    del.textContent = 'Delete';
     del.addEventListener('click', () => {
-      if (this.records.length <= 1) { this.setStatus('至少保留一个特效', 'err'); return; }
-      if (confirm('从本地库删除当前特效？（仓库 JSON 不受影响）')) {
-        void this.library.removeActive().then(() => this.setStatus('已删除', 'ok'));
+      if (this.records.length <= 1) { this.setStatus('Must keep at least one effect', 'err'); return; }
+      if (confirm('Delete the current effect from the local library? (Repo JSON is not affected)')) {
+        void this.library.removeActive().then(() => this.setStatus('Deleted', 'ok'));
       }
     });
     actions.appendChild(del);

@@ -1,7 +1,7 @@
-// WorldApiClient.checkHealth() 单测
-// 覆盖：base URL 为空、HTTP 200/503、网络错误、3 秒超时 abort。
-// 用假全局 fetch，不触网；通过设置 globalThis.__NW_WORLD_BASE__ 控制 base URL
-// （getWorldBaseUrl() 在调用时读取该值，无需 vi.mock）。
+// Unit tests for WorldApiClient.checkHealth().
+// Coverage: empty base URL, HTTP 200/503, network errors, 3-second timeout abort.
+// Uses a fake global fetch — no real network; base URL is controlled via globalThis.__NW_WORLD_BASE__
+// (getWorldBaseUrl() reads that value at call time, so vi.mock is not needed).
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { WorldApiClient } from '../src/net/WorldApiClient';
 
@@ -40,19 +40,19 @@ afterEach(() => {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('WorldApiClient.available', () => {
-  it('同源代理（空 base）下为 true', () => {
+  it('returns true under same-origin proxy (empty base)', () => {
     setWorldBase('');
     expect(new WorldApiClient(noopStorage).available).toBe(true);
   });
 
-  it('显式 dev URL 下为 true', () => {
+  it('returns true with an explicit dev URL', () => {
     setWorldBase('http://localhost:18084');
     expect(new WorldApiClient(noopStorage).available).toBe(true);
   });
 });
 
 describe('WorldApiClient.checkHealth()', () => {
-  it('worldBase 为空（同源代理）时直接返回 true，不发请求', async () => {
+  it('returns true immediately without a request when worldBase is empty (same-origin proxy)', async () => {
     setWorldBase('');
     const fetchSpy = vi.fn();
     (globalThis as Record<string, unknown>).fetch = fetchSpy;
@@ -63,8 +63,8 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('__NW_WORLD_BASE__ 未设置时同样视为同源代理返回 true', async () => {
-    clearWorldBase(); // globalThis 里没有该 key → getWorldBaseUrl() 返回 ''
+  it('also returns true as same-origin proxy when __NW_WORLD_BASE__ is not set', async () => {
+    clearWorldBase(); // key absent from globalThis → getWorldBaseUrl() returns ''
     const fetchSpy = vi.fn();
     (globalThis as Record<string, unknown>).fetch = fetchSpy;
     const client = new WorldApiClient(noopStorage);
@@ -73,7 +73,7 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('/health 返回 200 → true', async () => {
+  it('/health returns 200 → true', async () => {
     setWorldBase('http://localhost:18084');
     stubFetchStatus(200);
     const client = new WorldApiClient(noopStorage);
@@ -81,7 +81,7 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(await client.checkHealth()).toBe(true);
   });
 
-  it('/health 返回 200 时请求路径正确（base + /health）', async () => {
+  it('/health returns 200 and request path is correct (base + /health)', async () => {
     setWorldBase('http://localhost:18084');
     let capturedUrl = '';
     stubFetch(async (url) => { capturedUrl = url; return { ok: true, status: 200 } as Response; });
@@ -91,7 +91,7 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(capturedUrl).toBe('http://localhost:18084/health');
   });
 
-  it('/health 返回 503 → false', async () => {
+  it('/health returns 503 → false', async () => {
     setWorldBase('http://localhost:18084');
     stubFetchStatus(503);
     const client = new WorldApiClient(noopStorage);
@@ -99,7 +99,7 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(await client.checkHealth()).toBe(false);
   });
 
-  it('/health 返回 404 → false', async () => {
+  it('/health returns 404 → false', async () => {
     setWorldBase('http://localhost:18084');
     stubFetchStatus(404);
     const client = new WorldApiClient(noopStorage);
@@ -107,7 +107,7 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(await client.checkHealth()).toBe(false);
   });
 
-  it('fetch 抛错（连接被拒/网络中断）→ true（inconclusive，不误报离线）', async () => {
+  it('fetch throws (connection refused / network error) → true (inconclusive, no false offline report)', async () => {
     setWorldBase('http://localhost:18084');
     stubFetch(async () => { throw new TypeError('Failed to fetch'); });
     const client = new WorldApiClient(noopStorage);
@@ -117,8 +117,8 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(await client.checkHealth()).toBe(true);
   });
 
-  it('base URL 末尾斜杠被剥除，/health 路径不重复', async () => {
-    setWorldBase('http://localhost:18084/'); // 带结尾斜杠
+  it('trailing slash on base URL is stripped so /health is not duplicated', async () => {
+    setWorldBase('http://localhost:18084/'); // URL with trailing slash
     let capturedUrl = '';
     stubFetch(async (url) => { capturedUrl = url; return { ok: true, status: 200 } as Response; });
     const client = new WorldApiClient(noopStorage);
@@ -127,10 +127,10 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(capturedUrl).toBe('http://localhost:18084/health');
   });
 
-  it('3 秒后 AbortController 取消 fetch → true（inconclusive，不误报离线）', async () => {
+  it('AbortController cancels fetch after 3 seconds → true (inconclusive, no false offline report)', async () => {
     setWorldBase('http://localhost:18084');
 
-    // fetch 仅在 signal.abort 后才 reject，模拟 worldsvc 不响应
+    // fetch only rejects after signal.abort, simulating worldsvc not responding
     stubFetch(async (_url, init) =>
       new Promise<Response>((_res, rej) => {
         init.signal!.addEventListener('abort', () => rej(new Error('AbortError')));
@@ -141,14 +141,14 @@ describe('WorldApiClient.checkHealth()', () => {
     const client = new WorldApiClient(noopStorage);
     const promise = client.checkHealth();
 
-    // 推进到 3 秒超时点，同时 flush 微任务
+    // Advance to the 3-second timeout, flushing microtasks at the same time
     await vi.advanceTimersByTimeAsync(3001);
 
     // Timeout is also treated as inconclusive (same CORS-false-negative rationale).
     expect(await promise).toBe(true);
   });
 
-  it('3 秒内正常响应时不触发 abort，返回 true', async () => {
+  it('normal response within 3 seconds does not trigger abort, returns true', async () => {
     setWorldBase('http://localhost:18084');
     let aborted = false;
 
@@ -161,7 +161,7 @@ describe('WorldApiClient.checkHealth()', () => {
     const client = new WorldApiClient(noopStorage);
     const promise = client.checkHealth();
 
-    // 不推进时间 → 正常响应已 resolve，定时器未触发
+    // Do not advance time → normal response already resolved, timer never fired
     await vi.advanceTimersByTimeAsync(0);
     const result = await promise;
 

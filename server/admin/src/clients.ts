@@ -205,7 +205,7 @@ export class HttpAntiCheatClient implements AntiCheatClient {
   }
 }
 
-// ── hash mismatch 查询（C3）──────────────────────────────────
+// ── hash mismatch query (C3) ──────────────────────────────────
 export interface MismatchRow {
   roomId: string;
   mode: string;

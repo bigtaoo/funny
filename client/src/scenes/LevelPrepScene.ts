@@ -193,7 +193,7 @@ export class LevelPrepScene implements Scene {
       y += rowH + gap;
     }
 
-    // —— 体力栏（A4）: 消耗 + 当前余量，不足时变红 + 补给按钮 ——
+    // —— Stamina bar (A4): cost + current balance, turns red when insufficient + refill button ——
     const stamina = this.cb.getStamina();
     const stCost = this.cb.staminaCost;
     const stInsufficient = stamina.current < stCost;
@@ -227,7 +227,7 @@ export class LevelPrepScene implements Scene {
     const sbH = Math.round(h * 0.08);
     const sbX = (w - sbW) / 2;
     const sbY = h - sbH - Math.round(h * 0.03);
-    // 体力不足时 Start 按钮置灰，阻止进关。
+    // When stamina is insufficient, grey out the Start button to block entry.
     const sbFill = stInsufficient ? C.btnOff : C.dark;
     const sbBorder = stInsufficient ? C.mid : C.green;
     const sb = sketchPanel(sbW, sbH, { fill: sbFill, border: sbBorder, width: 2.6, seed: seedFor(sbX, sbY, sbW) });
@@ -239,7 +239,7 @@ export class LevelPrepScene implements Scene {
     this.hits.push({
       rect: { x: sbX, y: sbY, w: sbW, h: sbH },
       fn: () => {
-        if (stInsufficient) return; // 体力不足，拦截点击
+        if (stInsufficient) return; // Insufficient stamina — block tap
         if (this.cb.intro) {
           this.introLines = this.cb.intro.split('\n').filter((l) => l.trim().length > 0);
           this.introShownCount = 0;

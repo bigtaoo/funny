@@ -1,5 +1,5 @@
-// admin 后端 REST 客户端（OPS_DESIGN §4.2）。Bearer admin token；不持任何内部密钥、不连库、
-// 不直连业务服务——一切经 admin 后端（§7）。
+// Admin backend REST client (OPS_DESIGN §4.2). Bearer admin token; holds no internal secrets, connects to
+// no database, and never reaches business services directly — everything goes through the admin backend (§7).
 import type {
   AdminAccountView,
   AntiCheatReviewView,
@@ -35,14 +35,15 @@ export class ApiError extends Error {
 
 export class Api {
   private token: string | null = localStorage.getItem(TOKEN_KEY);
-  /** 会话中途收到 401（token 过期/被禁用）时回调——上层据此弹回登录页。 */
+  /** Called when a 401 is received mid-session (token expired or disabled) — the caller redirects to the login page. */
   onUnauthorized: (() => void) | null = null;
 
   get baseUrl(): string {
     const saved = localStorage.getItem(API_KEY);
     if (saved !== null) return saved;
-    // 默认：本地开发连本地 admin（18083）；线上同源（空串 → 相对路径 /admin/*，
-    // 由 ops Worker 反代到受 CF Access + 共享密钥保护的 admin 后端，见 deploy-cloudflare.md §6）。
+    // Default: local dev connects to the local admin (18083); production is same-origin (empty string → relative
+    // path /admin/*, reverse-proxied by the ops Worker to the admin backend protected by CF Access + shared secret,
+    // see deploy-cloudflare.md §6).
     const h = location.hostname;
     return h === 'localhost' || h === '127.0.0.1' ? 'http://localhost:18083' : '';
   }
@@ -70,13 +71,13 @@ export class Api {
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch (e) {
-      throw new ApiError(0, 'network', (e as Error).message || '网络错误');
+      throw new ApiError(0, 'network', (e as Error).message || 'Network error');
     }
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok || data.ok === false) {
       const code = typeof data.code === 'string' ? data.code : String(res.status);
       const msg = typeof data.error === 'string' ? data.error : `HTTP ${res.status}`;
-      // 会话中途失效：清 token 并通知上层弹回登录页（登录请求本身的 401 = 凭证错，不弹）。
+      // Mid-session expiry: clear the token and notify the caller to show the login page (a 401 on the login request itself means bad credentials — do not redirect).
       if (res.status === 401 && path !== '/admin/login') {
         this.setToken(null);
         this.onUnauthorized?.();
@@ -86,7 +87,7 @@ export class Api {
     return data as T;
   }
 
-  // —— 认证 ——
+  // —— Authentication ——
   async login(username: string, password: string): Promise<Session> {
     const r = await this.req<Session & { ok: true }>('POST', '/admin/login', { username, password });
     this.setToken(r.token);
@@ -104,7 +105,7 @@ export class Api {
     this.setToken(null);
   }
 
-  // —— 监控 / 分析 ——
+  // —— Monitoring / Analytics ——
   monitorLive(): Promise<LiveStats> {
     return this.req('GET', '/admin/monitor/live');
   }
@@ -136,7 +137,7 @@ export class Api {
     return this.req('GET', `/admin/analytics/events?${qs}`);
   }
 
-  // —— 玩家 ——
+  // —— Players ——
   async player(publicId: string): Promise<PlayerProfile> {
     const r = await this.req<{ player: PlayerProfile }>('GET', `/admin/player/${encodeURIComponent(publicId)}`);
     return r.player;
@@ -152,7 +153,7 @@ export class Api {
     return r.players;
   }
 
-  // —— 成就反作弊审查队列（S9-7）——
+  // —— Achievement anti-cheat review queue (S9-7) ——
   async antiCheatReviews(opts?: { accountId?: string; status?: string; limit?: number }): Promise<AntiCheatReviewView[]> {
     const qs = new URLSearchParams();
     if (opts?.accountId) qs.set('accountId', opts.accountId);
@@ -162,7 +163,7 @@ export class Api {
     return r.reviews;
   }
 
-  // —— 补偿工单 ——
+  // —— Compensation tickets ——
   async initiate(input: {
     scope: CompScope;
     target: CompTarget;
@@ -189,7 +190,7 @@ export class Api {
     return this.req('POST', '/admin/comp/preview', { scope, target });
   }
 
-  // —— 审计 ——
+  // —— Audit ——
   async audit(filter: { actor?: string; from?: number; to?: number }): Promise<AuditEntryView[]> {
     const qs = new URLSearchParams();
     if (filter.actor) qs.set('actor', filter.actor);
@@ -199,7 +200,7 @@ export class Api {
     return r.entries;
   }
 
-  // —— 天梯赛季运维 ——
+  // —— Ladder season operations ——
   async ladderGetCurrentSeason(): Promise<{ seasonNo: number; startAt: number; endAt: number; state: string } | null> {
     const r = await this.req<{ season: { seasonNo: number; startAt: number; endAt: number; state: string } | null }>('GET', '/admin/ladder/season/current');
     return r.season;
@@ -209,7 +210,7 @@ export class Api {
     return r.season;
   }
 
-  // —— 账号管理 ——
+  // —— Account management ——
   async accounts(): Promise<AdminAccountView[]> {
     const r = await this.req<{ accounts: AdminAccountView[] }>('GET', '/admin/accounts');
     return r.accounts;
@@ -226,7 +227,7 @@ export class Api {
     await this.req('POST', `/admin/accounts/${encodeURIComponent(id)}/reset-password`, { password });
   }
 
-  // ── 功能开关（config.manage）──
+  // ── Feature flags (config.manage) ──
   async flags(): Promise<FeatureFlagRow[]> {
     const r = await this.req<{ flags: FeatureFlagRow[] }>('GET', '/admin/config/flags');
     return r.flags;
@@ -236,7 +237,7 @@ export class Api {
     return r.flag;
   }
 
-  // ── 限时活动管理（events.manage）──
+  // ── Timed event management (events.manage) ──
   async events(): Promise<EventDoc[]> {
     const r = await this.req<{ events: EventDoc[] }>('GET', '/admin/events');
     return r.events;

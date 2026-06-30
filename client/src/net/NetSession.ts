@@ -1,15 +1,18 @@
-// NetSession (S1-8, S1-M4) — 联机会话编排。三通道架构（M20）下，房间/匹配走 **gateway
-// 控制面 WS**，锁步对战走 **game 数据面 WS**，二者是两条独立连接：
+// NetSession (S1-8, S1-M4) — online session orchestration. Under the three-channel
+// architecture (M20), room/matchmaking uses the **gateway control-plane WS**, and lockstep
+// play uses the **game data-plane WS**; these are two independent connections:
 //
 //   NetSession
-//     ├── gatewayConn (控制面 /gw?token=)  ── 房间/匹配 room_*/createRanked，收 match_found
-//     └── gameConn    (数据面 ?ticket=)     ── 锁步 cmd_submit/frame_batch（收 match_found 后才连）
+//     ├── gatewayConn (control plane /gw?token=)  ── rooms/matchmaking room_*/createRanked, receives match_found
+//     └── gameConn    (data plane ?ticket=)        ── lockstep cmd_submit/frame_batch (connects only after match_found)
 //
-// Lifetime: 玩家首次开好友房时建一次，跨 RoomScene → GameScene 存活（gameConn 的
-// NetInputSource 须在引擎播放期间持续吃 frame_batch）。一次一局，每事件单订阅足够。
+// Lifetime: created once when the player first opens a friend room; survives across
+// RoomScene → GameScene (gameConn's NetInputSource must continuously consume frame_batch
+// while the engine is running). One match at a time; single-subscription per event is sufficient.
 //
-// 收 match_found{game_url, ticket} → 用 ticket 连 gameConn → 收 match_start（来自 game，
-// 取自 ticket）→ NetInputSource.onMatchStart → app 建引擎。auth/save 仍走 meta REST，不变。
+// On match_found{game_url, ticket} → connect gameConn with ticket → receive match_start
+// (from game, derived from ticket) → NetInputSource.onMatchStart → app builds the engine.
+// auth/save still go through meta REST, unchanged.
 
 import type { AuthCredential, IPlatform } from '../platform/IPlatform';
 import { NetClient, type NetState } from './NetClient';
@@ -47,18 +50,19 @@ export interface NetSessionHandlers {
   /** Fired once the data-plane confirms match_start — app builds the engine here. */
   onMatchStart?(info: MatchStartInfo): void;
   /**
-   * Ranked 匹配超时降级打 AI（feature flag match_bot_fallback）。无 gameConn / ticket，
-   * app 直接开一场本地 AI 局（PvP-vs-AI），用 server 给的 seed 保持确定性。
+   * Ranked match timed out and fell back to an AI opponent (feature flag match_bot_fallback).
+   * No gameConn / ticket; the app opens a local AI match (PvP-vs-AI) directly,
+   * using the seed supplied by the server to keep it deterministic.
    */
   onMatchBot?(seed: number, opponentName: string, elo: number, difficulty: string): void;
   onNetState?(s: NetState): void;
-  // —— 社交实时推送（S6，gateway 控制面 push）。UI 据此刷红点 / 在线态 / 收消息。——
+  // —— Social real-time push (S6, gateway control-plane push). UI refreshes notification badges / online status / messages from these. ——
   onFriendPresence?(p: FriendPresence): void;
   onFriendRequest?(r: FriendRequestPush): void;
   onFriendUpdate?(u: FriendUpdate): void;
   onChatMessage?(m: ChatMessagePush): void;
   onMailNew?(m: MailNew): void;
-  // —— SLG 大世界实时推送（S8，worldsvc → gateway 控制面 push）。WorldMapScene 据此增量刷新。——
+  // —— SLG world map real-time push (S8, worldsvc → gateway control-plane push). WorldMapScene uses these for incremental updates. ——
   onMarchUpdate?(m: MarchUpdate): void;
   onTileUpdate?(t: TileUpdate): void;
   onUnderAttack?(u: UnderAttack): void;
@@ -212,7 +216,7 @@ export class NetSession {
       log.info('match_found', { gameUrl: msg.matchFound.gameUrl });
       this.connectGame(msg.matchFound.gameUrl, msg.matchFound.ticket);
     } else if (msg.matchBot) {
-      // 匹配超时降级打 AI：不连数据面，直接本地 AI 局。
+      // Match timeout fallback to AI: skip the data plane, start a local AI match directly.
       log.info('match_bot', { seed: msg.matchBot.seed, opponent: msg.matchBot.opponentName });
       this.handlers.onMatchBot?.(
         msg.matchBot.seed,

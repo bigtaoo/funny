@@ -1,6 +1,6 @@
-// 战令定义表客户端镜像（@nw/shared/battlepass.ts 的只读副本，供 BattlePassScene 读取）。
-// 不 import @nw/shared（客户端只依赖 game/ 内的纯数据）。
-// 数值权威 = ECONOMY_NUMBERS §13；变更时同步更新服务端 battlepass.ts。
+// Client-side mirror of the battle pass definition table (read-only copy of @nw/shared/battlepass.ts, consumed by BattlePassScene).
+// Does not import @nw/shared (the client only depends on pure data inside game/).
+// Authoritative numbers = ECONOMY_NUMBERS §13; update the server-side battlepass.ts in sync with any changes here.
 
 export const BATTLEPASS_MAX_LEVEL = 30;
 export const BATTLEPASS_BUY_COST = 600;

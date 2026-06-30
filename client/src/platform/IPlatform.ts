@@ -96,27 +96,30 @@ export interface IPlatform {
    */
   connectSocket(url: string, handlers: SocketHandlers): IGameSocket;
 
-  // ── 录像游戏外分享（REPLAY_SHARE_DESIGN §4）─────────────────────────────────
+  // ── Out-of-game replay sharing (REPLAY_SHARE_DESIGN §4) ─────────────────────
 
   /**
-   * 分享一段状态流录像（REPLAY_SHARE_DESIGN §4.1/§4.3）。平台分叉：
-   * - Web / CrazyGames：拼分享链接 `…?r=<shareCode>`，走 `navigator.share`，无则复制到剪贴板。
-   * - WeChat：`wx.shareAppMessage({ query: 'r=<shareCode>' })` 发成游戏卡片进聊天（不外链）。
+   * Share a state-stream replay (REPLAY_SHARE_DESIGN §4.1/§4.3). Platform branches:
+   * - Web / CrazyGames: builds a share link `…?r=<shareCode>`, uses `navigator.share`,
+   *   falls back to clipboard copy if unavailable.
+   * - WeChat: `wx.shareAppMessage({ query: 'r=<shareCode>' })` sends it as a game card
+   *   in chat (no external link).
    *
-   * 解析为分享动作已发起（或已复制）；失败时 reject。
+   * Resolves when the share action has been initiated (or copied); rejects on failure.
    */
   shareReplay(shareCode: string, title: string): Promise<void>;
 
   /**
-   * 读取启动参数里的录像分享码（REPLAY_SHARE_DESIGN §4.1）。命中则启动时跳过登录直达哑播放器。
-   * - Web / CrazyGames：URL `?r=<shareCode>`。
-   * - WeChat：`wx.getLaunchOptionsSync().query.r`。
-   * 无则返回 null。
+   * Read the replay share code from launch parameters (REPLAY_SHARE_DESIGN §4.1).
+   * If present, the app skips login at startup and navigates directly to the dumb player.
+   * - Web / CrazyGames: URL `?r=<shareCode>`.
+   * - WeChat: `wx.getLaunchOptionsSync().query.r`.
+   * Returns null if absent.
    */
   getLaunchShareCode(): string | null;
 }
 
-/** gameserver WS 事件回调（NetClient 提供，平台 socket 触发）。 */
+/** gameserver WS event callbacks (provided by NetClient, triggered by the platform socket). */
 export interface SocketHandlers {
   onOpen(): void;
   onMessage(data: Uint8Array): void;
@@ -124,7 +127,7 @@ export interface SocketHandlers {
   onError(err: unknown): void;
 }
 
-/** 平台无关的二进制 socket 句柄。 */
+/** Platform-agnostic binary socket handle. */
 export interface IGameSocket {
   send(data: Uint8Array): void;
   close(): void;

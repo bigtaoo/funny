@@ -23,12 +23,12 @@ import type {
 } from '../net/proto/transport';
 import type { WorldChatMessage } from '../net/WorldApiClient';
 
-// ── FriendsScene (S6-1/S6-2/S6-3/S6-4) — 社交 Hub ────────────────────────────
+// ── FriendsScene (S6-1/S6-2/S6-3/S6-4) — Social Hub ─────────────────────────
 //
-// 五 Tab：好友 / 家族 / 宗门 / 世界 / 邮件
-// 家族 / 宗门 / 世界 Tab 需要 SLG 世界上下文（loadSLGStatus 可选回调）。
-// 世界频道每条发言扣 50 金币（server-side 扣）。
-// 私聊（1:1）入口保留在好友资料弹层 → 发消息，Tab bar 不再单独列出。
+// Five tabs: Friends / Family / Sect / World / Mail
+// Family / Sect / World tabs require SLG world context (loadSLGStatus optional callback).
+// World channel posts cost 50 coins each (deducted server-side).
+// Direct chat (1:1) entry point stays in the friend profile popup → send message; Tab bar no longer lists it separately.
 
 export interface SLGSocialStatus {
   worldId: string;
@@ -37,7 +37,7 @@ export interface SLGSocialStatus {
   familyTag?: string;
   sectId?: string;
   sectName?: string;
-  /** 当前玩家是否为家族族长（仅族长可创建宗门）。 */
+  /** Whether the current player is the family leader (only leaders can create sects). */
   isLeader: boolean;
 }
 
@@ -51,15 +51,15 @@ export interface FriendsSceneCallbacks {
   respond(requestId: string, accept: boolean): Promise<void>;
   removeFriend(publicId: string): Promise<void>;
   blockUser(publicId: string): Promise<void>;
-  // 私聊入口（从好友资料弹层触发，Tab bar 不再单列）
+  // Direct chat entry point (triggered from friend profile popup, Tab bar no longer lists it separately)
   loadConversations?(): Promise<ConversationView[]>;
   openChat(peerPublicId: string, peerName: string): void;
-  // 邮件
+  // Mail
   loadMail(): Promise<{ mail: MailView[]; unread: number }>;
   markMailRead(mailId: string): Promise<void>;
   claimMail(mailId: string): Promise<boolean>;
   deleteMail(mailId: string): Promise<void>;
-  // SLG 社交 Tab（可选）
+  // SLG social tabs (optional)
   loadSLGStatus?(): Promise<SLGSocialStatus | null>;
   createFamily?(name: string, tag: string): Promise<void>;
   joinFamily?(familyId: string): Promise<void>;
@@ -104,33 +104,33 @@ export class FriendsScene implements Scene {
   private searchResult: ProfileView | null = null;
   private searchMsgKey: TranslationKey | null = null;
 
-  // ── SLG 状态 ─────────────────────────────────────────────────────────────────
+  // ── SLG status ───────────────────────────────────────────────────────────────
   private slgStatus: SLGSocialStatus | null = null;
   private slgLoading = false;
   private slgLoaded = false;
 
-  // 家族 Tab 子视图
+  // Family tab subview
   private familySubview: 'info' | 'create' | 'joinById' = 'info';
   private familyCreateName = '';
   private familyCreateTag = '';
   private familyJoinId = '';
   private familyActiveInput: 'name' | 'tag' | 'id' | null = null;
 
-  // 宗门 Tab 子视图
+  // Sect tab subview
   private sectSubview: 'info' | 'create' | 'joinById' = 'info';
   private sectCreateName = '';
   private sectCreateTag = '';
   private sectJoinId = '';
   private sectActiveInput: 'name' | 'tag' | 'id' | null = null;
 
-  // 世界频道 Tab
+  // World channel tab
   private worldMessages: WorldChatMessage[] = [];
   private worldLoaded = false;
   private worldChatInput = '';
   private worldChatActive = false;
   private worldSending = false;
 
-  // 共享 HTML input（家族/宗门表单 + 世界频道输入框）
+  // Shared HTML input (family/sect forms + world channel input box)
   private hiddenInput: HTMLInputElement | null = null;
 
   private toastKey: TranslationKey | null = null;
@@ -490,7 +490,7 @@ export class FriendsScene implements Scene {
     this.hits.push({ rect: hdr.backRect, fn: () => this.onBack() });
   }
 
-  // ── 好友 Tab ──────────────────────────────────────────────────────────────────
+  // ── Friends tab ───────────────────────────────────────────────────────────────
 
   private drawList(): void {
     const { w, h } = this;
@@ -647,7 +647,7 @@ export class FriendsScene implements Scene {
     });
   }
 
-  // ── 家族 Tab ──────────────────────────────────────────────────────────────────
+  // ── Family tab ────────────────────────────────────────────────────────────────
 
   private drawFamilyTab(): void {
     const { w, h } = this;
@@ -845,7 +845,7 @@ export class FriendsScene implements Scene {
     this.render();
   }
 
-  // ── 宗门 Tab ──────────────────────────────────────────────────────────────────
+  // ── Sect tab ──────────────────────────────────────────────────────────────────
 
   private drawSectTab(): void {
     const { w, h } = this;
@@ -1053,7 +1053,7 @@ export class FriendsScene implements Scene {
     this.render();
   }
 
-  // ── 世界频道 Tab ────────────────────────────────────────────────────────────────
+  // ── World channel tab ─────────────────────────────────────────────────────────
 
   private drawWorldTab(): void {
     const { w, h } = this;
@@ -1185,7 +1185,7 @@ export class FriendsScene implements Scene {
     this.render();
   }
 
-  // ── 邮件 Tab ──────────────────────────────────────────────────────────────────
+  // ── Mail tab ──────────────────────────────────────────────────────────────────
 
   private drawMailList(): void {
     const { w, h } = this;
@@ -1316,7 +1316,7 @@ export class FriendsScene implements Scene {
     void this.refresh();
   }
 
-  // ── 搜索子视图 ──────────────────────────────────────────────────────────────────
+  // ── Search subview ────────────────────────────────────────────────────────────
 
   private drawSearch(): void {
     const { w, h } = this;
@@ -1414,7 +1414,7 @@ export class FriendsScene implements Scene {
     this.container.addChild(label);
   }
 
-  /** 中心标签（固定位置，不在滚动层）。 */
+  /** Center label (fixed position, not in the scroll layer). */
   private centerLabelFixed(text: string): void {
     const regionH = this.regionBottom - this.regionTop;
     const lbl = txt(text, Math.round(this.h * 0.026), C.mid);

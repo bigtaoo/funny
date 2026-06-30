@@ -1,6 +1,6 @@
 import type { Fp } from './math/fixed';
 import type { LevelDefinition } from './campaign/LevelDefinition';
-// 仅类型引用（编译期擦除）→ 与 balance/equipment.ts 对 UnitType 的运行期引用不构成运行期环。
+// Type-only reference (erased at compile time) → does not create a runtime cycle with balance/equipment.ts's runtime reference to UnitType.
 import type { EngineEquipmentInput } from './balance/equipment';
 
 // i18n display keys are plain strings inside the engine — the simulation never
@@ -114,7 +114,7 @@ export function ownerToSide(owner: OwnerId): Side {
  * Game mode.
  *   `pvp`      — duel driven by AISystem (the Top side is the local bot).
  *   `campaign` — PvE scripted waves (WaveDirector).
- *   `siege`    — SLG 围攻 (S8-3): mechanically identical to `campaign` (the
+ *   `siege`    — SLG siege battle (S8-3): mechanically identical to `campaign` (the
  *                defender is a scripted `WaveDirector` from a defense-config
  *                `LevelDefinition`, the local player is the attacker), differing
  *                ONLY in the blueprint source — `buildSiegeBlueprints(pveUpgrades)`
@@ -365,15 +365,15 @@ export interface ActiveSpell {
 
 export interface PlayerStats {
   owner: OwnerId;
-  /** Total damage dealt to the enemy base → 最佳输出 */
+  /** Total damage dealt to the enemy base → best output */
   damageDealtToBase: number;
-  /** Total damage taken by own base → 铁壁防线 */
+  /** Total damage taken by own base → iron wall defense */
   damageTakenByBase: number;
-  /** Total units sent (card plays + barracks spawns) → 兵海战术 */
+  /** Total units sent (card plays + barracks spawns) → swarm tactics */
   unitsSent: number;
-  /** Enemy units killed → 以少胜多 reference */
+  /** Enemy units killed → underdog reference */
   unitsKilled: number;
-  /** Enemy units hit by spells → 精准打击 */
+  /** Enemy units hit by spells → precision strike */
   spellHits: number;
   /**
    * Per-victim-type kill counts (S9-3b). Feeds achievement statKeys `kill.archer`/`kill.guard`.
@@ -385,9 +385,9 @@ export interface PlayerStats {
    * Deterministic; absent types = 0.
    */
   castsByType: Partial<Record<SpellType, number>>;
-  /** Sum of survival ticks across all own buildings → 建筑大师 */
+  /** Sum of survival ticks across all own buildings → master builder */
   buildingSurvivalTicks: number;
-  /** Total gold spent (cards + upgrades) → 以少胜多 reference */
+  /** Total gold spent (cards + upgrades) → underdog reference */
   goldSpent: number;
 }
 

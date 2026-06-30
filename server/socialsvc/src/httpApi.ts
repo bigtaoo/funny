@@ -138,7 +138,7 @@ export function startHttpApi(
       // ── Internal endpoints (/internal/*) ─────────────────────────────
       if (path.startsWith('/internal/')) {
         if (!internalAuth.verify(req.headers).ok) {
-          return sendErr(res, ErrorCode.UNAUTHENTICATED, '内部端点需 X-Internal-Key');
+          return sendErr(res, ErrorCode.UNAUTHENTICATED, 'internal endpoint requires X-Internal-Key');
         }
 
         // Look up the familyId the player belongs to (called by worldsvc, SS7)
@@ -257,18 +257,18 @@ export function startHttpApi(
           return send(res, 200, ok({}));
         }
 
-        return sendErr(res, ErrorCode.NOT_FOUND, '内部端点不存在');
+        return sendErr(res, ErrorCode.NOT_FOUND, 'internal endpoint not found');
       }
 
       // ── Public endpoints (/social/*) ─────────────────────────────────
       // JWT authentication
       const token = extractBearer(req.headers['authorization']);
-      if (!token) return sendErr(res, ErrorCode.UNAUTHENTICATED, '缺少 Authorization');
+      if (!token) return sendErr(res, ErrorCode.UNAUTHENTICATED, 'missing Authorization header');
       let accountId: string;
       try {
         accountId = verifyToken(token, { secret: opts.jwtSecret });
       } catch {
-        return sendErr(res, ErrorCode.UNAUTHENTICATED, '无效 token');
+        return sendErr(res, ErrorCode.UNAUTHENTICATED, 'invalid token');
       }
 
       try {
@@ -492,13 +492,13 @@ export function startHttpApi(
           return send(res, 200, ok({ mailId: r.mailId }));
         }
 
-        return sendErr(res, ErrorCode.NOT_FOUND, '接口不存在');
+        return sendErr(res, ErrorCode.NOT_FOUND, 'endpoint not found');
       } catch (e) {
         if (e instanceof SlgError) {
           return sendErr(res, e.code as ErrorCode, e.message);
         }
         console.error('[socialsvc] unhandled error:', e);
-        return sendErr(res, ErrorCode.INTERNAL, '服务器内部错误');
+        return sendErr(res, ErrorCode.INTERNAL, 'internal server error');
       }
     })();
   });

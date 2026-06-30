@@ -124,7 +124,7 @@ class GameEngineImpl implements IGameEngine {
     this.mode = config.mode ?? 'pvp';
 
     // PvE-shaped modes: scripted enemy (WaveDirector) + upgrade-buffed blueprints.
-    // `campaign` (single-player PvE) and `siege` (SLG 围攻, S8-3) share the same
+    // `campaign` (single-player PvE) and `siege` (SLG siege battle, S8-3) share the same
     // mechanics; they differ only in which builder injects the upgrade levels.
     const pve = this.mode === 'campaign' || this.mode === 'siege';
 

@@ -26,7 +26,7 @@ async function tryConnect(): Promise<WorldMongo | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[worldsvc.autospawn.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[worldsvc.autospawn.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
@@ -62,7 +62,7 @@ function findPlaceable(sx: number, sy: number): { x: number; y: number } {
   throw new Error('no placeable tile');
 }
 
-describe.skipIf(!mongo)('worldsvc 自动落城 e2e', () => {
+describe.skipIf(!mongo)('worldsvc auto-spawn e2e', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
   let svc: WorldService;

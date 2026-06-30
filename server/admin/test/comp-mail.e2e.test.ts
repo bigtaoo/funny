@@ -46,7 +46,7 @@ async function tryAdmin(): Promise<AdminMongo | null> {
 const metaMongo = await tryMeta();
 const adminMongo = await tryAdmin();
 if (!metaMongo || !adminMongo) {
-  console.warn(`[comp-mail.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[comp-mail.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 // —— Fake gateway (to verify mail_new push) + fake commercial (to credit coins on claim) ——
@@ -159,7 +159,7 @@ describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail
     await svc.createAccount(root, { username: 'csr', password: 'csrpass', role: 'support', displayName: 'CS' });
   });
 
-  it('full chain: csr 发起 → ops 审批 → 真实 HTTP 投递 → 玩家收件箱有信 → 领取入账', async () => {
+  it('full chain: csr initiates → ops approves → real HTTP dispatch → player has mail in inbox → claim credits wallet', async () => {
     const player = await newPlayer('comp-player-1');
     const cs = await actorOf('csr');
     const ops = await actorOf('opsy');
@@ -167,8 +167,8 @@ describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail
     const ticket = await svc.initiateTicket(cs, {
       scope: 'single',
       target: { publicId: player.publicId },
-      mail: { subject: '补偿', body: '抱歉给您带来不便', attachments: [{ kind: 'coins', count: 500 }], expireDays: 7 },
-      reason: '卡单补偿',
+      mail: { subject: 'Compensation', body: 'Sorry for the inconvenience', attachments: [{ kind: 'coins', count: 500 }], expireDays: 7 },
+      reason: 'Order stuck compensation',
     });
     expect(ticket.status).toBe('pending');
 
@@ -181,9 +181,9 @@ describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail
     expect(inbox.data.mail).toHaveLength(1);
     const mail = inbox.data.mail[0];
     expect(mail.from).toBe('system');
-    expect(mail.subject).toBe('补偿');
+    expect(mail.subject).toBe('Compensation');
     expect(mail.attachments[0]).toMatchObject({ kind: 'coins', count: 500 });
-    // mail_new push 已下发给收件人。
+    // mail_new push was delivered to the recipient.
     expect(gateway.pushes.some((p) => p.accountId === player.accountId && p.msg.kind === 'mail_new')).toBe(true);
 
     // Claim attachment → wallet credited (admin never writes to the wallet directly; coins are credited via commercial only at claim time).
@@ -193,14 +193,14 @@ describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail
     expect(comm.bal(player.accountId)).toBe(500);
   });
 
-  it('dispatchKey 幂等：同 key 重发不重复投递（真实 HTTP $setOnInsert）', async () => {
+  it('dispatchKey idempotency: same key re-dispatched does not duplicate delivery (real HTTP $setOnInsert)', async () => {
     const player = await newPlayer('comp-player-2');
     const mail = new HttpMailDispatcher(baseUrl, KEY);
     const req = {
       dispatchKey: 'comp-dup-001',
       scope: 'single' as const,
       target: { publicId: player.publicId },
-      subject: '补偿',
+      subject: 'Compensation',
       body: 'x',
       attachments: [{ kind: 'coins' as const, count: 100 }],
       expireDays: 7,
@@ -214,7 +214,7 @@ describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail
     expect(inbox.data.mail).toHaveLength(1);
   });
 
-  it('全服 fan-out：preview + global 审批 → 每个账号各一封', async () => {
+  it('global fan-out: preview + global approval → each account receives one mail', async () => {
     const p1 = await newPlayer('comp-g-1');
     const p2 = await newPlayer('comp-g-2');
     const ops = await actorOf('opsy');
@@ -228,8 +228,8 @@ describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail
     const g = await svc.initiateTicket(ops, {
       scope: 'global',
       target: { filter: { kind: 'all' } },
-      mail: { subject: '全服福利', body: '登录领取', attachments: [{ kind: 'coins', count: 50 }], expireDays: 3 },
-      reason: '版本福利',
+      mail: { subject: 'Server-wide gift', body: 'Log in to claim', attachments: [{ kind: 'coins', count: 50 }], expireDays: 3 },
+      reason: 'Version update gift',
     });
     const done = await svc.approveTicket(root, g.id); // global scope always requires a super-admin approver
     expect(done.status).toBe('executed');
@@ -239,7 +239,7 @@ describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail
     expect((await getMail(p2.token)).data.mail).toHaveLength(1);
   });
 
-  it('player.lookup 经真实 meta /internal/player 反查档案', async () => {
+  it('player.lookup via real meta /internal/player reverse lookup', async () => {
     const player = await newPlayer('comp-lookup-1');
     const profile = await svc.lookupPlayer(player.publicId);
     expect(profile.publicId).toBe(player.publicId);
@@ -247,7 +247,7 @@ describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail
     expect(typeof profile.elo).toBe('number'); // save exists → pvp fields are present
   });
 
-  it('鉴权边界：错误内部密钥 → meta 401 → 工单 failed（可重试）', async () => {
+  it('auth boundary: wrong internal key → meta 401 → ticket failed (retryable)', async () => {
     const player = await newPlayer('comp-badkey-1');
     const cs = await actorOf('csr');
     const ops = await actorOf('opsy');
@@ -272,7 +272,7 @@ describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail
     expect((await getMail(player.token)).data.mail).toHaveLength(0);
   });
 
-  it('收件人不存在：single target publicId 查无此人 → 工单 failed', async () => {
+  it('recipient does not exist: single target publicId not found → ticket failed', async () => {
     const cs = await actorOf('csr');
     const ops = await actorOf('opsy');
     const ticket = await svc.initiateTicket(cs, {

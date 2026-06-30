@@ -29,7 +29,7 @@ declare const wx: {
   getLaunchOptionsSync(): { query?: Record<string, string> };
 };
 
-/** wx.connectSocket 返回的 SocketTask（仅用到的子集）。 */
+/** SocketTask returned by wx.connectSocket (subset of fields actually used). */
 interface WxSocketTask {
   send(opts: { data: ArrayBuffer }): void;
   close(opts?: { code?: number; reason?: string }): void;
@@ -111,7 +111,7 @@ export class WechatPlatform implements IPlatform {
   onGameplayStop(): void  { /* no-op */ }
   async showMidgameAd(): Promise<void> { /* no-op */ }
 
-  /** wx.login → 临时 code，交服务器 /auth/wx 换 openid → accountId（S0-4）。 */
+  /** wx.login → temporary code; exchange with server /auth/wx for openid → accountId (S0-4). */
   getAuthCredential(): Promise<AuthCredential> {
     return new Promise((resolve, reject) => {
       try {
@@ -140,7 +140,7 @@ export class WechatPlatform implements IPlatform {
     try { wx.setPreferredFramesPerSecond(60); } catch { /* ignore */ }
   }
 
-  /** 不能分享任意外链：发成游戏卡片进聊天，收件人点开小游戏读 query.r 直达播放（§4.1）。 */
+  /** Cannot share arbitrary external links: sends a game card into chat; recipients open the mini-game and read query.r to reach the player directly (§4.1). */
   async shareReplay(shareCode: string, title: string): Promise<void> {
     try {
       wx.shareAppMessage({ title, query: `r=${shareCode}` });
@@ -156,14 +156,14 @@ export class WechatPlatform implements IPlatform {
   }
 }
 
-/** 微信小游戏二进制 WS 句柄（S1-6）。主动 close 后回调由 NetClient 侧 guard 忽略。 */
+/** WeChat mini-game binary WS handle (S1-6). After an intentional close, callbacks are ignored by the NetClient guard. */
 class WechatGameSocket implements IGameSocket {
   private closed = false;
   constructor(private readonly task: WxSocketTask) {}
 
   send(data: Uint8Array): void {
     if (this.closed) return;
-    // SocketTask.send 要求 ArrayBuffer；切出精确视图避免带上底层多余字节
+    // SocketTask.send requires ArrayBuffer; slice out an exact view to avoid carrying over extra bytes from the underlying buffer
     const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
     try {
       this.task.send({ data: buf });

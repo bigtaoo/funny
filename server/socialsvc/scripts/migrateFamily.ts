@@ -65,7 +65,7 @@ interface SFamilyDoc {
 }
 
 async function main(): Promise<void> {
-  console.log(`[migrateFamily] ${DRY_RUN ? '【dry-run】' : ''}开始迁移`);
+  console.log(`[migrateFamily] ${DRY_RUN ? '[dry-run] ' : ''}starting migration`);
   console.log(`  worldsvc: ${WORLD_MONGO_URI} / ${WORLD_MONGO_DB}`);
   console.log(`  social:   ${SOCIAL_MONGO_URI} / ${SOCIAL_MONGO_DB}`);
 
@@ -92,7 +92,7 @@ async function main(): Promise<void> {
   }
 
   const allWorldFamilies = await wFamilies.find({}).toArray();
-  console.log(`[migrateFamily] 发现 ${allWorldFamilies.length} 个 worldsvc 家族`);
+  console.log(`[migrateFamily] found ${allWorldFamilies.length} worldsvc families`);
 
   let migratedFamilies = 0;
   let skippedFamilies  = 0;
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
       let suffix = 2;
       while (existingTags.has(`${tag}_${suffix}`)) suffix++;
       const newTag = `${tag}_${suffix}`;
-      console.warn(`[migrateFamily] TAG 冲突：${tag} → ${newTag}（worldId=${wf.worldId}, familyId=${wf._id}）`);
+      console.warn(`[migrateFamily] TAG conflict: ${tag} → ${newTag} (worldId=${wf.worldId}, familyId=${wf._id})`);
       tag = newTag;
       conflictTags++;
     }
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
     // Idempotent: skip if already exists
     const existing = await sFamilies.findOne({ _id: newFamilyId });
     if (existing) {
-      console.log(`[migrateFamily] 跳过（已存在）：${newFamilyId}`);
+      console.log(`[migrateFamily] skip (already exists): ${newFamilyId}`);
       skippedFamilies++;
       continue;
     }
@@ -200,13 +200,13 @@ async function main(): Promise<void> {
   await worldClient.close();
   await socialClient.close();
 
-  console.log(`\n[migrateFamily] 完成${DRY_RUN ? '（dry-run）' : ''}：`);
-  console.log(`  家族：迁移 ${migratedFamilies}，跳过 ${skippedFamilies}，TAG 冲突 ${conflictTags}`);
-  console.log(`  成员：迁移 ${migratedMembers}`);
-  console.log(`  消息：迁移 ${migratedMsgs}`);
+  console.log(`\n[migrateFamily] done${DRY_RUN ? ' (dry-run)' : ''}:`);
+  console.log(`  families: migrated ${migratedFamilies}, skipped ${skippedFamilies}, TAG conflicts ${conflictTags}`);
+  console.log(`  members: migrated ${migratedMembers}`);
+  console.log(`  messages: migrated ${migratedMsgs}`);
 }
 
 main().catch((e) => {
-  console.error('[migrateFamily] 失败：', e);
+  console.error('[migrateFamily] failed:', e);
   process.exit(1);
 });

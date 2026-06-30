@@ -62,9 +62,9 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     await mongo!.close();
   });
 
-  // ─── 健康探针 ────────────────────────────────────────────────────────────
+  // ─── Health probe ────────────────────────────────────────────────────────────
 
-  it('GET /health 无鉴权 200', async () => {
+  it('GET /health no auth required → 200', async () => {
     const res = await fetch(`${base}/health`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; service: string };
@@ -72,9 +72,9 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(body.service).toBe('analyticsvc');
   });
 
-  // ─── 配置端点 ────────────────────────────────────────────────────────────
+  // ─── Config endpoint ────────────────────────────────────────────────────────────
 
-  it('GET /analytics/config 返回采样配置', async () => {
+  it('GET /analytics/config returns sampling configuration', async () => {
     const res = await fetch(`${base}/analytics/config`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; data: { enabled: boolean; defaultSample: number } };
@@ -83,9 +83,9 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(typeof body.data.defaultSample).toBe('number');
   });
 
-  // ─── 事件摄入 ────────────────────────────────────────────────────────────
+  // ─── Event ingestion ────────────────────────────────────────────────────────────
 
-  it('POST /analytics/events 摄入事件批次 → 200', async () => {
+  it('POST /analytics/events ingests event batch → 200', async () => {
     const now = Date.now();
     const batch = {
       session_id: 'sess-001',
@@ -111,7 +111,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     await new Promise((r) => setTimeout(r, 200));
   });
 
-  it('POST /analytics/events 第二个设备 + screen_view（部分漏斗）', async () => {
+  it('POST /analytics/events second device + screen_view (partial funnel)', async () => {
     const now = Date.now();
     const batch = {
       session_id: 'sess-002',
@@ -135,7 +135,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     await new Promise((r) => setTimeout(r, 200));
   });
 
-  it('POST /analytics/events 空 events 数组 → 400', async () => {
+  it('POST /analytics/events empty events array → 400', async () => {
     const res = await fetch(`${base}/analytics/events`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -144,14 +144,14 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(res.status).toBe(400);
   });
 
-  // ─── /internal/query 鉴权 ────────────────────────────────────────────────
+  // ─── /internal/query auth ────────────────────────────────────────────────
 
-  it('GET /internal/query 缺密钥 → 401', async () => {
+  it('GET /internal/query missing key → 401', async () => {
     const res = await fetch(`${base}/internal/query?type=event_counts&days=7`);
     expect(res.status).toBe(401);
   });
 
-  it('GET /internal/query 未知 type → 400', async () => {
+  it('GET /internal/query unknown type → 400', async () => {
     const res = await fetch(`${base}/internal/query?type=unknown`, {
       headers: { 'x-internal-key': INTERNAL_KEY },
     });
@@ -160,7 +160,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
 
   // ─── event_counts ────────────────────────────────────────────────────────
 
-  it('GET /internal/query?type=event_counts 返回按日按事件计数', async () => {
+  it('GET /internal/query?type=event_counts returns counts by date and event', async () => {
     const res = await fetch(`${base}/internal/query?type=event_counts&days=7`, {
       headers: { 'x-internal-key': INTERNAL_KEY },
     });
@@ -178,7 +178,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
 
   // ─── dau ─────────────────────────────────────────────────────────────────
 
-  it('GET /internal/query?type=dau 返回每日独立设备数', async () => {
+  it('GET /internal/query?type=dau returns daily unique device count', async () => {
     const res = await fetch(`${base}/internal/query?type=dau&days=7`, {
       headers: { 'x-internal-key': INTERNAL_KEY },
     });
@@ -193,7 +193,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
 
   // ─── ETL + funnel ────────────────────────────────────────────────────────
 
-  it('runFunnelEtl 计算今日漏斗并写入 funnels_daily', async () => {
+  it('runFunnelEtl computes today\'s funnel and writes to funnels_daily', async () => {
     await svc.runFunnelEtl(TODAY);
     const rows = await svc.queryFunnel(1);
     // web platform should have four steps: session_start / game_start / level_attempt / level_complete
@@ -212,7 +212,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(lcRow?.conversion_rate).toBeCloseTo(1 / 1); // level_attempt→level_complete: 1/1
   });
 
-  it('GET /internal/query?type=funnel 读取漏斗预聚合数据', async () => {
+  it('GET /internal/query?type=funnel reads pre-aggregated funnel data', async () => {
     const res = await fetch(`${base}/internal/query?type=funnel&days=7`, {
       headers: { 'x-internal-key': INTERNAL_KEY },
     });
@@ -226,7 +226,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(body.data.funnel.length).toBeGreaterThan(0);
   });
 
-  it('GET /internal/query?type=funnel&platform=web 按平台过滤', async () => {
+  it('GET /internal/query?type=funnel&platform=web filters by platform', async () => {
     const res = await fetch(`${base}/internal/query?type=funnel&days=7&platform=web`, {
       headers: { 'x-internal-key': INTERNAL_KEY },
     });
@@ -238,7 +238,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(body.data.funnel.every((r) => r.platform === 'web')).toBe(true);
   });
 
-  it('runFunnelEtl 幂等：重跑同日不改结果', async () => {
+  it('runFunnelEtl idempotent: rerun same day does not change results', async () => {
     await svc.runFunnelEtl(TODAY);
     const rows = await svc.queryFunnel(1);
     const ssRow = rows.find((r) => r.funnel_step === 'session_start' && r.platform === 'web');
@@ -248,7 +248,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
 
   // ─── region_dist ─────────────────────────────────────────────────────────
 
-  it('GET /internal/query?type=region_dist 返回地区分布', async () => {
+  it('GET /internal/query?type=region_dist returns region distribution', async () => {
     const res = await fetch(`${base}/internal/query?type=region_dist&days=7`, {
       headers: { 'x-internal-key': INTERNAL_KEY },
     });
@@ -266,7 +266,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
 
   // ─── os_dist ─────────────────────────────────────────────────────────────
 
-  it('GET /internal/query?type=os_dist 返回 OS 分布', async () => {
+  it('GET /internal/query?type=os_dist returns OS distribution', async () => {
     const res = await fetch(`${base}/internal/query?type=os_dist&days=7`, {
       headers: { 'x-internal-key': INTERNAL_KEY },
     });
@@ -282,7 +282,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
 
   // ─── login_hour ──────────────────────────────────────────────────────────
 
-  it('GET /internal/query?type=login_hour 返回 24 个小时槽', async () => {
+  it('GET /internal/query?type=login_hour returns 24 hour buckets', async () => {
     const res = await fetch(`${base}/internal/query?type=login_hour&days=7`, {
       headers: { 'x-internal-key': INTERNAL_KEY },
     });
@@ -302,7 +302,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
 
   // ─── retention ───────────────────────────────────────────────────────────
 
-  it('GET /internal/query?type=retention 返回留存数组', async () => {
+  it('GET /internal/query?type=retention returns retention array', async () => {
     const res = await fetch(`${base}/internal/query?type=retention&days=7`, {
       headers: { 'x-internal-key': INTERNAL_KEY },
     });

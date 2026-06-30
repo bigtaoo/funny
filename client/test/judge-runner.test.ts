@@ -1,6 +1,9 @@
-// 对等裁判无头复算（Phase C）。证明：给定 seed + 服务器排序后的非空帧录像，第三方
-// runJudge 复算出的终局 hash 与一台独立 netplay 引擎跑同一指令流得到的权威 hash 逐字相同
-// ——这正是裁判能判定「哪方诚实」的根据。另测：帧流不完整 → ok:false（有界、不崩）。
+// Peer judge headless recompute (Phase C). Proof: given a seed + a non-empty
+// frame log sorted by the server, the final-state hash produced by a third-party
+// runJudge recompute matches — byte-for-byte — the authoritative hash from an
+// independent netplay engine running the same command stream. This is the basis
+// on which the judge can determine which side is honest. Also tested: incomplete
+// frame stream → ok:false (bounded, no crash).
 import { describe, it, expect } from 'vitest';
 import { createGameEngine } from '../src/game/GameEngine';
 import { GamePhase, Side, type InputSource, type OwnerId, type PlayerCommand } from '../src/game';
@@ -10,10 +13,10 @@ import type { JudgeRequest } from '../src/net/proto/transport';
 
 const TICK_DT = 1 / 30;
 const SEED = 0xbeef;
-// 无人攻破基地 → netplay 在 FORCE_DRAW_THRESHOLD_TICKS 强制平局结束（确定的终局）。
+// No base is destroyed → netplay ends in a forced draw at FORCE_DRAW_THRESHOLD_TICKS (deterministic terminal state).
 const END_FRAME = 30700;
 
-/** 喂预先编排好的「确认指令流」的输入源（模拟服务器逐帧下发，不停步）。 */
+/** Input source that feeds a pre-scripted confirmed command stream (simulates per-frame server delivery, never pausing). */
 class ScriptedSource implements InputSource {
   constructor(private readonly byFrame: Map<number, PlayerCommand[]>) {}
   submit(): void {
@@ -24,7 +27,7 @@ class ScriptedSource implements InputSource {
   }
 }
 
-/** 编排：双方各出几张牌（owner/frame/handIndex/col）。 */
+/** Script: each side plays a few cards (owner/frame/handIndex/col). */
 const SCRIPT: { frame: number; owner: OwnerId; handIndex: number; col: number }[] = [
   { frame: 30, owner: 0, handIndex: 0, col: 1 },
   { frame: 60, owner: 1, handIndex: 0, col: 8 },
@@ -55,7 +58,7 @@ function toProto(cmd: PlayerCommand) {
   };
 }
 
-/** 编排 → JudgeRequest（每帧按 owner 分组成 SideCmd，commands 用 game.proto 编码）。 */
+/** Script → JudgeRequest (each frame grouped by owner into SideCmd; commands encoded with game.proto). */
 function buildJudgeRequest(byFrame: Map<number, PlayerCommand[]>): JudgeRequest {
   const frames = [...byFrame.entries()]
     .sort((a, b) => a[0] - b[0])
@@ -75,7 +78,7 @@ function buildJudgeRequest(byFrame: Map<number, PlayerCommand[]>): JudgeRequest 
   return { requestId: 'r1', seed: SEED, mode: 1, endFrame: END_FRAME, frames } as JudgeRequest;
 }
 
-/** 独立权威引擎：跑同一指令流到终局，算权威 hash。 */
+/** Independent authoritative engine: runs the same command stream to the terminal state and computes the authoritative hash. */
 function authoritativeHash(byFrame: Map<number, PlayerCommand[]>): string {
   const engine = createGameEngine(
     { seed: SEED, players: [{ id: 0 }, { id: 1 }], mode: 'netplay' },
@@ -93,7 +96,7 @@ function authoritativeHash(byFrame: Map<number, PlayerCommand[]>): string {
 }
 
 describe('peer judge runner', () => {
-  it('复算出的终局 hash 与独立权威引擎逐字相同', () => {
+  it('recomputed terminal hash matches the independent authoritative engine byte-for-byte', () => {
     const byFrame = authoredByFrame();
     const expected = authoritativeHash(byFrame);
 
@@ -102,7 +105,7 @@ describe('peer judge runner', () => {
     expect(out.stateHash).toBe(expected);
   }, 30_000);
 
-  it('确定：同一 JudgeRequest 复算两次结果全等', () => {
+  it('deterministic: recomputing the same JudgeRequest twice yields identical results', () => {
     const req = buildJudgeRequest(authoredByFrame());
     const a = runJudge(req);
     const b = runJudge(req);
@@ -110,7 +113,7 @@ describe('peer judge runner', () => {
     expect(a.ok).toBe(true);
   }, 30_000);
 
-  it('帧流不完整（endFrame 远早于终局）→ ok:false，不崩', () => {
+  it('incomplete frame stream (endFrame well before terminal state) → ok:false, no crash', () => {
     const req = buildJudgeRequest(authoredByFrame());
     const out = runJudge({ ...req, endFrame: 50 } as JudgeRequest);
     expect(out.ok).toBe(false);

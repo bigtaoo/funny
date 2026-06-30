@@ -40,7 +40,7 @@ async function tryConnect(): Promise<WorldMongo | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[worldsvc.stronghold.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+if (!mongo) console.warn(`[worldsvc.stronghold.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
 const CENTER_Y = Math.floor(SLG_MAP_H / 2);
@@ -53,7 +53,7 @@ function findStronghold(): { x: number; y: number; level: number } {
       if (t.type === 'stronghold') return { x, y, level: t.level };
     }
   }
-  throw new Error('no stronghold tile in world (调参检查 SLG_GEN.stronghold*)');
+  throw new Error('no stronghold tile in world (check SLG_GEN.stronghold* parameters)');
 }
 
 /** Nearest placeable/reachable tile adjacent to the stronghold (not obstacle/gate/center/stronghold), used as the attacker's base placement. */
@@ -133,7 +133,7 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     await m.close();
   });
 
-  it('险地生成：满级 + 带资源种类 + 守军远超普通格', () => {
+  it('stronghold generation: max level + has resource type + garrison far exceeds normal tiles', () => {
     expect(sh.level).toBeGreaterThanOrEqual(1);
     const proc = proceduralTile(W, sh.x, sh.y);
     expect(proc.type).toBe('stronghold');
@@ -141,7 +141,7 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     expect(strongholdGarrison(sh.level)).toBeGreaterThan(500); // far exceeds GARRISON_PER_TILE
   });
 
-  it('直占险地 / 扫荡险地 → 抛错（须围攻 attack）', async () => {
+  it('direct occupy / sweep on stronghold → throws error (must use siege attack)', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
     await expect(svc.startMarch(W, 'a', base.x, base.y, sh.x, sh.y, 'occupy', 600)).rejects.toMatchObject({
       code: 'TILE_OCCUPIED',
@@ -151,11 +151,11 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     });
   });
 
-  it('落城险地 → 抛错（险地不可作主城落点）', async () => {
+  it('place base on stronghold → throws error (stronghold cannot be a home base landing point)', async () => {
     await expect(svc.joinWorld(W, 'z', sh.x, sh.y)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('攻克胜（大军）：占为领地 mine + 残存驻军 + 丰厚奖励 + sieges attacker_win + 推送', async () => {
+  it('attack wins (overwhelming force): captured as territory mine + surviving garrison + rich reward + sieges attacker_win + push', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
     await setTroops('a', 6000); // well-developed army, far exceeds the stronghold garrison → guaranteed win
     const before = (await svc.getMe(W, 'a')).resources!;
@@ -196,7 +196,7 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     expect(pushes.some((p) => p.msg.kind === 'tile_update' && p.accountId === 'a')).toBe(true);
   });
 
-  it('攻克败（兵力不足）：不占领 + 残兵撤退回师 + sieges defender_win + 无奖励', async () => {
+  it('attack loses (insufficient troops): not captured + surviving troops retreat home + sieges defender_win + no reward', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
     await setTroops('a', 600); // far fewer than the stronghold garrison → guaranteed loss
     const before = (await svc.getMe(W, 'a')).resources!;

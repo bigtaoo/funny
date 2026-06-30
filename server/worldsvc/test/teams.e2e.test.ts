@@ -33,7 +33,7 @@ async function tryConnect(): Promise<WorldMongo | null> {
 }
 
 const mongo = await tryConnect();
-if (!mongo) console.warn(`[worldsvc.teams.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+if (!mongo) console.warn(`[worldsvc.teams.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
 const CENTER_Y = Math.floor(SLG_MAP_H / 2);
@@ -135,8 +135,8 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
   it('setTeams/getTeams round-trip; validates cap / unique ids / valid formation', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const teams: TeamTemplate[] = [
-      { id: 't1', name: '先锋', army: army(3, 60) },
-      { id: 't2', name: '主力', army: army(5, 50) },
+      { id: 't1', name: 'Vanguard', army: army(3, 60) },
+      { id: 't2', name: 'Main Force', army: army(5, 50) },
     ];
     await svc.setTeams(W, 'a', teams);
     expect(await svc.getTeams(W, 'a')).toEqual(teams);
@@ -169,44 +169,44 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     await setupDefender('b', tgt.x, tgt.y, 500, 800);
 
     // 14 infantry × full hp 60 = 840 committed troops (overrides body troops; numerical advantage ensures capture, same scale as siege.e2e).
-    await svc.setTeams(W, 'a', [{ id: 't1', name: '突击', army: army(14, 60) }]);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Assault', army: army(14, 60) }]);
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1');
     expect(mv.troops).toBe(840); // derived from team; body's troops=1 is overridden
 
-    // march 落库带 army 快照。
+    // march is persisted to the database with the army snapshot.
     const marchDoc = await m.collections.marches.findOne({ _id: mv.marchId });
     expect(marchDoc?.army).toHaveLength(14);
 
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    // 领地易主（840 真实布阵 > 500 守军）。
+    // tile ownership changes hands (840 real formation > 500 garrison).
     const tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
     expect(tile?.mine).toBe(true);
 
-    // 战报持久化重播输入。
+    // battle report persists replay inputs.
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege).toBeTruthy();
     expect(typeof siege!.seed).toBe('number');
     expect(siege!.attackerArmy).toHaveLength(14);
 
-    // 攻方可读重播关卡；含攻方军。
+    // attacker can read the replay level; it includes the attacker army.
     const replay = await svc.getSiegeReplay(W, 'a', siege!._id);
     expect(replay.seed).toBe(siege!.seed);
     expect(replay.outcome).toBe('attacker_win');
     expect(Array.isArray((replay.level as { attackerArmy?: unknown }).attackerArmy)).toBe(true);
-    // 守方也可读；旁观者拒。
+    // defender can also read; spectators are rejected.
     await expect(svc.getSiegeReplay(W, 'b', siege!._id)).resolves.toBeTruthy();
     await expect(svc.getSiegeReplay(W, 'c', siege!._id)).rejects.toThrow();
   });
 
-  it('挂队兵力不足 → 拒发（NO_TROOPS）', async () => {
+  it('team troop pool insufficient → rejected (NO_TROOPS)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(10, 5);
     await setupDefender('b', tgt.x, tgt.y, 100);
-    // 把攻方兵力池压到很低。
+    // reduce the attacker's troop pool to a very low value.
     await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 50 } });
-    await svc.setTeams(W, 'a', [{ id: 't1', name: '大军', army: army(10, 60) }]); // committed 600 > 50
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Grand Army', army: army(10, 60) }]); // committed 600 > 50
     await expect(svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1')).rejects.toThrow();
   });
 });

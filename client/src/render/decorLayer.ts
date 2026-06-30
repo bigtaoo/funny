@@ -6,7 +6,7 @@
  * top and bottom HUD. Doodles never enter the battle area, never cover a base,
  * and (by deriving their bands from `boardRect`, which sits below the top HUD
  * and above the bottom HUD/hand) never overlap HUD. They are pure ambience
- * ("错位无妨，纯氛围").
+ * ("slight misalignment is fine — pure ambience").
  *
  * Each band's doodles are baked into one static texture (via `bake`, reusing the
  * shared cache) so the layer costs nothing per frame — like the ruled board
@@ -15,7 +15,7 @@
  * across battles rather than re-rolled each game (a per-battle reroll would mean
  * an unbounded set of cached margin textures — not worth it for edge ambience).
  *
- * Lines are the original ink colour and are NOT tinted (§6.2 注).
+ * Lines are the original ink colour and are NOT tinted (§6.2 note).
  */
 import * as PIXI from 'pixi.js-legacy';
 import { ILayout, Rect } from '../layout/ILayout';

@@ -49,7 +49,7 @@ export interface SettingsSceneCallbacks {
   /** Display name shown next to the avatar. */
   playerName: string;
   /**
-   * 9-digit public id — DISPLAY ONLY (player-facing identifier for chat / 投诉).
+   * 9-digit public id — DISPLAY ONLY (player-facing identifier for chat / reports).
    * Never used as an identifier anywhere else; all interactions key off the uuid
    * (accountId). Absent → no id line. Shown here, on the profile screen, only.
    */
@@ -61,11 +61,12 @@ export interface SettingsSceneCallbacks {
   onLogin?(): void;
   onLogout?(): void;
   /**
-   * 删除账号（C5-b，Apple 5.1.1(v)）。仅登录在线提供；二次确认后调用。成功后核心清本地
-   * 并跳登录页，故无需返回值上的导航——失败返回 ok:false 触发 toast。
+   * Delete account (C5-b, Apple 5.1.1(v)). Only available when logged in online; called after a second confirmation.
+   * On success, core clears local state and jumps to the login page, so no navigation return value is needed —
+   * on failure returns ok:false to trigger a toast.
    */
   onDeleteAccount?(): Promise<{ ok: boolean }>;
-  /** 重看新手教学（ONBOARDING_DESIGN §3.4）；未提供则不显示。 */
+  /** Replay the onboarding tutorial (ONBOARDING_DESIGN §3.4); absent = not shown. */
   onReplayTutorial?(): void;
   /** Currently selected avatar token ('0'-'7'); absent = letter-initial fallback. */
   avatarId?: string;

@@ -1,18 +1,23 @@
 syntax = "proto3";
 
-// replay.proto —— 录像格式（M13 / META_DESIGN §6.6 / SERVER_API §6）。
+// replay.proto —— Replay format (M13 / META_DESIGN §6.6 / SERVER_API §6).
 //
-// 录像 = seed + 配置 + 输入流，从不存状态：同 seed 起新引擎按 tick 喂 frames
-// 即可逐 tick 完全还原。复用 transport.proto 的 FrameCmds（commands 仍是
-// game.proto PlayerCommand[] 的 opaque bytes，对服务器不解码，M12）。
+// A replay = seed + config + input stream; state is never stored. Feeding frames
+// tick-by-tick into a fresh engine started with the same seed reproduces the match
+// exactly. Reuses transport.proto FrameCmds (commands remain opaque
+// game.proto PlayerCommand[] bytes; the server never decodes them, M12).
 //
-// 落地（S1-RP）：
-//  • PvP — gameserver 为重连保留的非空帧日志即录像，局末持久化进 matches.replay
-//    （小局直接内嵌；当前 gameserver 以等价 BSON 子文档内嵌——见 Room.ts/RoomManager.ts）。
-//  • PvE — 客户端本地录制（只记玩家指令，敌方 WaveDirector 回放时由 seed+level 重算），
-//    客户端 Replay TS 类型（client/src/game/types.ts）字段与本 proto 对齐。
+// Landing (S1-RP):
+//  • PvP — the non-empty frame log the gameserver keeps for reconnection IS the replay;
+//    it is persisted into matches.replay at match end
+//    (short matches embed directly; the current gameserver embeds as an equivalent BSON
+//    sub-document — see Room.ts / RoomManager.ts).
+//  • PvE — recorded locally on the client (only player commands are stored; enemy
+//    WaveDirector is re-derived from seed+level at replay time);
+//    the client Replay TS type (client/src/game/types.ts) is aligned with this proto.
 //
-// 契约单一来源；改动需同步 SERVER_API.md §6 + 客户端 Replay 类型。
+// Single source of truth for the contract; changes must be synced to SERVER_API.md §6
+// and the client Replay type.
 
 package nw.replay;
 
@@ -20,18 +25,19 @@ import "transport.proto";
 
 message ReplayMeta {
   int64  recorded_at = 1;   // Unix ms
-  string level_id    = 2;   // 战役关卡 id（PvE）
-  int32  winner      = 3;   // 0/1；-1 = 平局/未知
+  string level_id    = 2;   // campaign level id (PvE)
+  int32  winner      = 3;   // 0/1; -1 = draw / unknown
 }
 
 message Replay {
-  uint32 engine_version = 1;  // 绑引擎逻辑版本（回放前校验，跨版本可能发散）
-                              //   注：gameserver 逻辑无关（M12），无法自证版本，
-                              //   服务端录制此字段为 0（保留给客户端回放时自校验 / 未来客户端上报）。
+  uint32 engine_version = 1;  // engine logic version (validated before replay; cross-version replays may diverge)
+                              //   Note: gameserver is logic-agnostic (M12) and cannot self-certify its version;
+                              //   server-side recordings set this field to 0 (reserved for client self-validation
+                              //   at replay time / future client-reported uploads).
   string mode           = 2;  // campaign | pvp | netplay
   uint64 seed           = 3;
-  string config_ref     = 4;  // PvE=levelId+version；PvP=rosterVer
-  repeated nw.transport.FrameCmds frames = 5;  // 只存非空帧
-  uint32 end_frame      = 6;  // 总帧数（空帧不存，靠它界定终点）
+  string config_ref     = 4;  // PvE=levelId+version; PvP=rosterVer
+  repeated nw.transport.FrameCmds frames = 5;  // non-empty frames only
+  uint32 end_frame      = 6;  // total frame count (empty frames are not stored; this field marks the end boundary)
   ReplayMeta meta       = 7;
 }

@@ -1,6 +1,7 @@
-// StateRecorder 录制路径单测（REPLAY_SHARE_DESIGN §2.1）。
-// 用结构化 fake GameState 驱动单例录制器，校验：抓帧/跳过同 tick/回退自动重置/
-// build header（几何/players/winner/endTick）/decode 还原/adopt 原样转发。
+// StateRecorder recording-path unit tests (REPLAY_SHARE_DESIGN §2.1).
+// Drives the singleton recorder with a structured fake GameState; verifies:
+// frame capture / same-tick skip / tick-rewind auto-reset /
+// build header (geometry / players / winner / endTick) / decode round-trip / adopt passthrough.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { stateRecorder } from '../src/game/replay/StateRecorder';
 import { decodeStateReplay, type EncodedStateReplay } from '../src/game/replay/StateReplay';
@@ -44,7 +45,7 @@ describe('StateRecorder', () => {
 
   it('captures one frame per advanced tick and skips repeat ticks', () => {
     stateRecorder.capture(mkState(0));
-    stateRecorder.capture(mkState(0)); // 同 tick 重复渲染帧 → 跳过
+    stateRecorder.capture(mkState(0)); // duplicate render frame at same tick → skip
     stateRecorder.capture(mkState(1, [unit({ rowExact: 2.5 })]));
 
     const enc = stateRecorder.build({ mode: 'pvp', winner: 0 });
@@ -73,7 +74,7 @@ describe('StateRecorder', () => {
     const f = decodeStateReplay(stateRecorder.build()!).frames[0]!;
     expect(f.buildings[0]).toMatchObject({ id: 1, type: 'barracks', side: 0 });
     expect(f.bases).toEqual([
-      { owner: 0, hp: 95, maxHp: 95 }, // 首帧锚定满血基准 = 当帧值
+      { owner: 0, hp: 95, maxHp: 95 }, // first frame anchors full-HP baseline = current frame value
       { owner: 1, hp: 100, maxHp: 100 },
     ]);
   });
@@ -81,7 +82,7 @@ describe('StateRecorder', () => {
   it('auto-resets when tick rewinds (new match / new replay)', () => {
     stateRecorder.capture(mkState(0));
     stateRecorder.capture(mkState(5));
-    stateRecorder.capture(mkState(0)); // 回退 → 视为新一局，重置
+    stateRecorder.capture(mkState(0)); // tick rewinds → treated as a new match, auto-reset
     const enc = stateRecorder.build()!;
     expect(decodeStateReplay(enc).frames.length).toBe(1);
   });
@@ -95,11 +96,11 @@ describe('StateRecorder', () => {
       players: [{ name: 'Tao', side: 0 }, { name: 'AI', side: 1 }],
     })!;
     expect(enc.header.mode).toBe('campaign');
-    expect(enc.header.winner).toBe(1); // 取录制期 setWinner（override 未给 winner）
+    expect(enc.header.winner).toBe(1); // from setWinner during recording (override did not supply winner)
     expect(enc.header.endTick).toBe(3);
     expect(enc.header.board.cols).toBe(12);
     expect(enc.header.players[0]).toEqual({ name: 'Tao', side: 0 });
-    // override.winner 优先于 setWinner
+    // override.winner takes precedence over setWinner
     expect(stateRecorder.build({ winner: 0 })!.header.winner).toBe(0);
   });
 
@@ -110,7 +111,7 @@ describe('StateRecorder', () => {
   it('adopt forwards the original encoded stream verbatim (re-share)', () => {
     const original = { header: { schemaVersion: 1, endTick: 9 }, frames: [{ tick: 0 }] } as unknown as EncodedStateReplay;
     stateRecorder.adopt(original);
-    // 即便又抓了帧，adopt 优先、原样返回。
+    // Even if more frames are captured after adopt, adopt wins and the original is returned as-is.
     stateRecorder.capture(mkState(0));
     expect(stateRecorder.build()).toBe(original);
   });

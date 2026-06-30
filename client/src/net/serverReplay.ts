@@ -1,8 +1,10 @@
-// 服务端 opaque 录像 → 客户端 Replay 解码适配（S1-RP）。
-// 服务端把对局非空帧日志按 game.proto opaque bytes 持久化（base64 over REST），逻辑无关、
-// engineVersion=0。客户端取回后在此解码成可回放的 Replay：base64 → PlayerCommands.decode →
-// 引擎 PlayerCommand，engineVersion 用本机 ENGINE_VERSION（回放正确性由客户端引擎自负，
-// 与 NetInputSource.ingestFrame / judgeRunner.buildReplay 同套解码）。
+// Server opaque replay → client Replay decode adapter (S1-RP).
+// The server persists non-empty frame logs from a match as game.proto opaque bytes
+// (base64 over REST), logic-agnostic, engineVersion=0. After the client fetches them,
+// this module decodes them into a playable Replay: base64 → PlayerCommands.decode →
+// engine PlayerCommand. engineVersion is set to the local ENGINE_VERSION (replay
+// correctness is the client engine's responsibility; uses the same decode path as
+// NetInputSource.ingestFrame / judgeRunner.buildReplay).
 import {
   ENGINE_VERSION,
   type GameMode,
@@ -14,7 +16,7 @@ import {
 import { PlayerCommands, type PlayerCommand as ProtoPlayerCommand } from './proto/game';
 import type { ServerReplay } from './ApiClient';
 
-/** base64 → Uint8Array（浏览器 atob / Node 18+ 全局 atob 均可用）。 */
+/** base64 → Uint8Array (browser atob / Node 18+ global atob both work). */
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
@@ -22,7 +24,7 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-/** game.proto PlayerCommand → 引擎 PlayerCommand（与 NetInputSource.fromProto 同逻辑）。 */
+/** game.proto PlayerCommand → engine PlayerCommand (same logic as NetInputSource.fromProto). */
 function fromProto(pc: ProtoPlayerCommand, owner: OwnerId, frame: number): PlayerCommand {
   if (pc.upgradeBase) return { type: 'upgrade_base', owner, tick: frame };
   if (pc.refreshHand) return { type: 'refresh_hand', owner, tick: frame };
@@ -38,8 +40,9 @@ function fromProto(pc: ProtoPlayerCommand, owner: OwnerId, frame: number): Playe
 }
 
 /**
- * 服务端录像 → 客户端可回放 Replay。命令 base64 解码 + proto 解析，帧顺序 / side 顺序原样保留
- * （服务器是唯一排序者）。engineVersion 取本机 ENGINE_VERSION（服务端恒 0 无意义）。
+ * Server replay → client playable Replay. Commands are base64-decoded then proto-parsed;
+ * frame order / side order are preserved exactly as received (the server is the sole sorter).
+ * engineVersion is set to the local ENGINE_VERSION (the server always stores 0, which is meaningless).
  */
 export function serverReplayToReplay(sr: ServerReplay): Replay {
   const frames: ReplayFrame[] = sr.frames.map((fc) => {

@@ -53,21 +53,21 @@ export class LevelFormPanel {
     const lv = this.lv;
 
     // ── Identity ──
-    root.appendChild(section('标识'));
+    root.appendChild(section('Identity'));
     root.appendChild(textField('id', lv.id, (v) => { lv.id = v; this.commit(); }));
-    root.appendChild(numField('chapter (章节)', String(lv.chapter), 0, 1, (v) => { lv.chapter = Math.round(v); this.commit(); }));
-    root.appendChild(numField('seed (随机种子)', String(lv.seed), undefined, 1, (v) => { lv.seed = Math.round(v); this.commit(); }));
+    root.appendChild(numField('chapter', String(lv.chapter), 0, 1, (v) => { lv.chapter = Math.round(v); this.commit(); }));
+    root.appendChild(numField('seed', String(lv.seed), undefined, 1, (v) => { lv.seed = Math.round(v); this.commit(); }));
 
     // ── Objective ──
-    root.appendChild(section('目标'));
+    root.appendChild(section('Objectives'));
     const objSel = document.createElement('select');
     for (const [val, label] of [
-      ['survive',      '撑过全部波次 (survive)'],
-      ['timed_defense','限时防守 (timed_defense)'],
-      ['destroy_base', '摧毁敌方基地 (destroy_base)'],
-      ['leak_limit',   '漏怪上限 (leak_limit)'],
-      ['boss',         '击杀 Boss (boss)'],
-      ['escort',       '护送到达 (escort)'],
+      ['survive',      'survive all waves (survive)'],
+      ['timed_defense','timed defense (timed_defense)'],
+      ['destroy_base', 'destroy enemy base (destroy_base)'],
+      ['leak_limit',   'leak limit (leak_limit)'],
+      ['boss',         'kill Boss (boss)'],
+      ['escort',       'escort arrives (escort)'],
     ] as [string, string][]) {
       const o = document.createElement('option');
       o.value = val; o.textContent = label;
@@ -85,15 +85,15 @@ export class LevelFormPanel {
       }
       this.commit();
     });
-    root.appendChild(field('类型', objSel));
+    root.appendChild(field('Type', objSel));
     if (lv.objective.kind === 'timed_defense') {
-      root.appendChild(numField('防守时长 (秒)', this.toSec(lv.objective.durationTicks), 1, 1, (v) => {
+      root.appendChild(numField('Defense duration (s)', this.toSec(lv.objective.durationTicks), 1, 1, (v) => {
         if (lv.objective.kind === 'timed_defense') lv.objective.durationTicks = Math.max(1, this.toTicks(v));
         this.commit();
       }));
     }
     if (lv.objective.kind === 'leak_limit') {
-      root.appendChild(numField('最大漏过数量 (maxLeaks)', String(lv.objective.maxLeaks), 0, 1, (v) => {
+      root.appendChild(numField('Max leaks (maxLeaks)', String(lv.objective.maxLeaks), 0, 1, (v) => {
         if (lv.objective.kind === 'leak_limit') lv.objective.maxLeaks = Math.max(0, Math.round(v));
         this.commit();
       }));
@@ -102,7 +102,7 @@ export class LevelFormPanel {
       const obj = lv.objective;
       // required: 'all' | 'any' | number — show as select + optional count
       const reqSel = document.createElement('select');
-      for (const [v, l] of [['all', '全部到达 (all)'], ['any', '任一到达 (any)'], ['count', '至少 N 个']] as [string, string][]) {
+      for (const [v, l] of [['all', 'all arrive (all)'], ['any', 'any arrive (any)'], ['count', 'at least N']] as [string, string][]) {
         const o = document.createElement('option'); o.value = v; o.textContent = l;
         if ((typeof obj.required === 'number' && v === 'count') || obj.required === v) o.selected = true;
         reqSel.appendChild(o);
@@ -114,9 +114,9 @@ export class LevelFormPanel {
         else lv.objective.required = 1;
         this.commit();
       });
-      root.appendChild(field('到达要求 (required)', reqSel));
+      root.appendChild(field('Arrival requirement (required)', reqSel));
       if (typeof obj.required === 'number') {
-        root.appendChild(numField('最少到达数 (N)', String(obj.required), 1, 1, (v) => {
+        root.appendChild(numField('Min arrivals (N)', String(obj.required), 1, 1, (v) => {
           if (lv.objective.kind === 'escort') lv.objective.required = Math.max(1, Math.round(v));
           this.commit();
         }));
@@ -124,17 +124,17 @@ export class LevelFormPanel {
     }
 
     // ── Economy ──
-    root.appendChild(section('经济'));
-    root.appendChild(optNumField('起始墨滴 (startInk)', lv.startInk, 0, 1, (v) => { if (v === undefined) delete lv.startInk; else lv.startInk = Math.max(0, Math.round(v)); this.commit(); }));
-    root.appendChild(optNumField('墨滴速率倍率 (inkRegenMult)', lv.inkRegenMult, 0, 0.1, (v) => { if (v === undefined) delete lv.inkRegenMult; else lv.inkRegenMult = Math.max(0, v); this.commit(); }));
+    root.appendChild(section('Economy'));
+    root.appendChild(optNumField('Starting ink (startInk)', lv.startInk, 0, 1, (v) => { if (v === undefined) delete lv.startInk; else lv.startInk = Math.max(0, Math.round(v)); this.commit(); }));
+    root.appendChild(optNumField('Ink regen multiplier (inkRegenMult)', lv.inkRegenMult, 0, 0.1, (v) => { if (v === undefined) delete lv.inkRegenMult; else lv.inkRegenMult = Math.max(0, v); this.commit(); }));
 
     // ── Loadout / banned ──
-    root.appendChild(section('编成约束'));
-    root.appendChild(cardMultiSelect('限定卡池 (loadout)', lv.loadout, (sel) => { if (sel.length === 0) delete lv.loadout; else lv.loadout = sel; this.commit(); }));
-    root.appendChild(cardMultiSelect('禁用卡牌 (bannedCards)', lv.bannedCards, (sel) => { if (sel.length === 0) delete lv.bannedCards; else lv.bannedCards = sel; this.commit(); }));
+    root.appendChild(section('Formation constraints'));
+    root.appendChild(cardMultiSelect('Restricted card pool (loadout)', lv.loadout, (sel) => { if (sel.length === 0) delete lv.loadout; else lv.loadout = sel; this.commit(); }));
+    root.appendChild(cardMultiSelect('Banned cards (bannedCards)', lv.bannedCards, (sel) => { if (sel.length === 0) delete lv.bannedCards; else lv.bannedCards = sel; this.commit(); }));
 
     // ── Level spells ──
-    root.appendChild(section('关卡法术 (levelSpells)'));
+    root.appendChild(section('Level spells (levelSpells)'));
     for (let si = 0; si < (lv.levelSpells ?? []).length; si++) {
       const sp = lv.levelSpells![si]!;
       const spRow = document.createElement('div');
@@ -151,7 +151,7 @@ export class LevelFormPanel {
       spRow.appendChild(cardSel);
       const countInp = document.createElement('input');
       countInp.type = 'number'; countInp.min = '1'; countInp.step = '1';
-      countInp.value = String(sp.initialCount); countInp.style.width = '50px'; countInp.title = '初始手牌数';
+      countInp.value = String(sp.initialCount); countInp.style.width = '50px'; countInp.title = 'Initial hand count';
       countInp.addEventListener('change', () => {
         const v = parseInt(countInp.value);
         if (!isNaN(v) && lv.levelSpells?.[si]) { lv.levelSpells[si]!.initialCount = Math.max(1, v); this.commit(); }
@@ -167,7 +167,7 @@ export class LevelFormPanel {
       root.appendChild(spRow);
     }
     const addSpellBtn = document.createElement('button');
-    addSpellBtn.textContent = '+ 添加法术';
+    addSpellBtn.textContent = '+ Add spell';
     addSpellBtn.addEventListener('click', () => {
       if (!lv.levelSpells) lv.levelSpells = [];
       lv.levelSpells.push({ cardId: [...SPELL_CARD_DEFS.keys()][0]!, initialCount: 1 });
@@ -176,7 +176,7 @@ export class LevelFormPanel {
     root.appendChild(addSpellBtn);
 
     // ── Escorts ──
-    root.appendChild(section('护送单位 (escorts)'));
+    root.appendChild(section('Escort units (escorts)'));
     for (let ei = 0; ei < (lv.escorts ?? []).length; ei++) {
       const esc = lv.escorts![ei]!;
       const onBoard = this.state.selectedEscort === ei;
@@ -185,30 +185,30 @@ export class LevelFormPanel {
       const update = (patch: Partial<EscortSpec>): void => {
         if (lv.escorts?.[ei]) { Object.assign(lv.escorts[ei]!, patch); this.commit(); }
       };
-      // Latch this escort for board path editing (the「护送」board tool edits it).
+      // Latch this escort for board path editing (the "escort" board tool edits it).
       const pickBtn = document.createElement('button');
-      pickBtn.textContent = onBoard ? '◉ 棋盘编辑中' : '◯ 在棋盘编辑路径';
+      pickBtn.textContent = onBoard ? '◉ Editing on board' : '◯ Edit path on board';
       pickBtn.style.cssText = 'font-size:11px;width:100%;margin-bottom:4px';
       if (onBoard) pickBtn.className = 'primary';
       pickBtn.addEventListener('click', () => this.state.selectEscort(onBoard ? null : ei));
       escBlock.appendChild(pickBtn);
       escBlock.appendChild(textField('id', esc.id, (v) => update({ id: v })));
       escBlock.appendChild(numField('HP', String(esc.hp), 1, 1, (v) => update({ hp: Math.max(1, Math.round(v)) })));
-      escBlock.appendChild(numField('速度 (格/秒)', String(esc.speed), 0.01, 0.1, (v) => update({ speed: Math.max(0.01, v) })));
+      escBlock.appendChild(numField('Speed (cells/s)', String(esc.speed), 0.01, 0.1, (v) => update({ speed: Math.max(0.01, v) })));
       // startCol select
       const colSel = document.createElement('select');
       for (const c of ATTACK_LANES) {
-        const o = document.createElement('option'); o.value = String(c); o.textContent = `列 ${c}`;
+        const o = document.createElement('option'); o.value = String(c); o.textContent = `col ${c}`;
         if (c === esc.startCol) o.selected = true;
         colSel.appendChild(o);
       }
       colSel.addEventListener('change', () => update({ startCol: Number(colSel.value) }));
-      escBlock.appendChild(field('起始列', colSel));
-      escBlock.appendChild(numField('起始行', String(esc.startRow), 0, 1, (v) => update({ startRow: Math.max(0, Math.round(v)) })));
+      escBlock.appendChild(field('Start col', colSel));
+      escBlock.appendChild(numField('Start row', String(esc.startRow), 0, 1, (v) => update({ startRow: Math.max(0, Math.round(v)) })));
       // Path waypoints
       const pathHeader = document.createElement('div');
       pathHeader.style.cssText = 'font-size:11px;color:#666;margin:4px 0 2px';
-      pathHeader.textContent = '路径点 (path)';
+      pathHeader.textContent = 'Path waypoints (path)';
       escBlock.appendChild(pathHeader);
       for (let wi = 0; wi < (esc.path ?? []).length; wi++) {
         const wp = esc.path![wi]!;
@@ -216,7 +216,7 @@ export class LevelFormPanel {
         wpRow.style.cssText = 'display:flex;gap:4px;align-items:center;margin:2px 0';
         const wColSel = document.createElement('select');
         for (const c of ATTACK_LANES) {
-          const o = document.createElement('option'); o.value = String(c); o.textContent = `列 ${c}`;
+          const o = document.createElement('option'); o.value = String(c); o.textContent = `col ${c}`;
           if (c === wp.col) o.selected = true;
           wColSel.appendChild(o);
         }
@@ -226,7 +226,7 @@ export class LevelFormPanel {
         wpRow.appendChild(wColSel);
         const wRowInp = document.createElement('input');
         wRowInp.type = 'number'; wRowInp.min = '0'; wRowInp.max = String(BOARD_ROWS - 1); wRowInp.step = '1';
-        wRowInp.value = String(wp.row); wRowInp.style.width = '50px'; wRowInp.title = '行';
+        wRowInp.value = String(wp.row); wRowInp.style.width = '50px'; wRowInp.title = 'row';
         wRowInp.addEventListener('change', () => {
           const v = parseInt(wRowInp.value);
           const p = (lv.escorts?.[ei]?.path ?? []); if (!isNaN(v) && p[wi]) { p[wi]!.row = Math.max(0, Math.min(BOARD_ROWS - 1, v)); this.commit(); }
@@ -239,7 +239,7 @@ export class LevelFormPanel {
         wpRow.appendChild(wpDel);
         escBlock.appendChild(wpRow);
       }
-      const addWpBtn = document.createElement('button'); addWpBtn.textContent = '+ 路径点'; addWpBtn.style.fontSize = '11px';
+      const addWpBtn = document.createElement('button'); addWpBtn.textContent = '+ Waypoint'; addWpBtn.style.fontSize = '11px';
       addWpBtn.addEventListener('click', () => {
         if (!lv.escorts?.[ei]) return;
         if (!lv.escorts[ei]!.path) lv.escorts[ei]!.path = [];
@@ -249,7 +249,7 @@ export class LevelFormPanel {
         this.commit();
       });
       escBlock.appendChild(addWpBtn);
-      const escDel = document.createElement('button'); escDel.className = 'danger'; escDel.textContent = '删除护送';
+      const escDel = document.createElement('button'); escDel.className = 'danger'; escDel.textContent = 'Delete escort';
       escDel.style.marginTop = '4px';
       escDel.addEventListener('click', () => {
         lv.escorts!.splice(ei, 1);
@@ -264,7 +264,7 @@ export class LevelFormPanel {
       root.appendChild(escBlock);
     }
     const addEscortBtn = document.createElement('button');
-    addEscortBtn.textContent = '+ 添加护送';
+    addEscortBtn.textContent = '+ Add escort';
     addEscortBtn.addEventListener('click', () => {
       if (!lv.escorts) lv.escorts = [];
       lv.escorts.push({ id: `escort_${lv.escorts.length + 1}`, hp: 100, speed: 1, startCol: ATTACK_LANES[0]!, startRow: 1 });
@@ -273,17 +273,17 @@ export class LevelFormPanel {
     root.appendChild(addEscortBtn);
 
     // ── Rewards ──
-    root.appendChild(section('奖励'));
-    root.appendChild(optNumField('通关金币 (coins)', lv.rewards?.coins, 0, 1, (v) => { if (v === undefined) delete this.rewards().coins; else this.rewards().coins = Math.max(0, Math.round(v)); this.commit(); }));
+    root.appendChild(section('Rewards'));
+    root.appendChild(optNumField('Clear coins (coins)', lv.rewards?.coins, 0, 1, (v) => { if (v === undefined) delete this.rewards().coins; else this.rewards().coins = Math.max(0, Math.round(v)); this.commit(); }));
     root.appendChild(starThresholdsField(lv.rewards?.starThresholds, (t) => {
       if (t === undefined) delete this.rewards().starThresholds; else this.rewards().starThresholds = t;
       this.commit();
     }));
-    root.appendChild(optTextField('解锁皮肤 (unlockSkinId)', lv.rewards?.unlockSkinId, (v) => { if (v === undefined) delete this.rewards().unlockSkinId; else this.rewards().unlockSkinId = v; this.commit(); }));
-    root.appendChild(optTextField('解锁故事键 (unlockStoryKey)', lv.rewards?.unlockStoryKey, (v) => { if (v === undefined) delete this.rewards().unlockStoryKey; else (this.rewards() as { unlockStoryKey?: string }).unlockStoryKey = v; this.commit(); }));
+    root.appendChild(optTextField('Unlock skin (unlockSkinId)', lv.rewards?.unlockSkinId, (v) => { if (v === undefined) delete this.rewards().unlockSkinId; else this.rewards().unlockSkinId = v; this.commit(); }));
+    root.appendChild(optTextField('Unlock story key (unlockStoryKey)', lv.rewards?.unlockStoryKey, (v) => { if (v === undefined) delete this.rewards().unlockStoryKey; else (this.rewards() as { unlockStoryKey?: string }).unlockStoryKey = v; this.commit(); }));
 
     // ── Hazards ──
-    root.appendChild(section('危险区 (hazards)'));
+    root.appendChild(section('Danger zones (hazards)'));
     for (let hi = 0; hi < (lv.hazards ?? []).length; hi++) {
       const h = lv.hazards![hi]!;
       const hRow = document.createElement('div');
@@ -291,7 +291,7 @@ export class LevelFormPanel {
       // col
       const hCol = document.createElement('select');
       for (const c of ATTACK_LANES) {
-        const o = document.createElement('option'); o.value = String(c); o.textContent = `列 ${c}`;
+        const o = document.createElement('option'); o.value = String(c); o.textContent = `col ${c}`;
         if (c === h.col) o.selected = true; hCol.appendChild(o);
       }
       hCol.addEventListener('change', () => this.state.updateHazard(hi, { col: Number(hCol.value) }));
@@ -299,7 +299,7 @@ export class LevelFormPanel {
       // rowRange[0]
       const hR0 = document.createElement('input');
       hR0.type = 'number'; hR0.min = '0'; hR0.max = String(BOARD_ROWS - 1); hR0.step = '1';
-      hR0.value = String(h.rowRange[0]); hR0.title = '起始行'; hR0.style.width = '44px';
+      hR0.value = String(h.rowRange[0]); hR0.title = 'Start row'; hR0.style.width = '44px';
       hR0.addEventListener('change', () => {
         const v = parseInt(hR0.value);
         if (!isNaN(v)) this.state.updateHazard(hi, { rowRange: [Math.max(0, v), h.rowRange[1]] });
@@ -310,7 +310,7 @@ export class LevelFormPanel {
       // rowRange[1]
       const hR1 = document.createElement('input');
       hR1.type = 'number'; hR1.min = '0'; hR1.max = String(BOARD_ROWS - 1); hR1.step = '1';
-      hR1.value = String(h.rowRange[1]); hR1.title = '结束行'; hR1.style.width = '44px';
+      hR1.value = String(h.rowRange[1]); hR1.title = 'End row'; hR1.style.width = '44px';
       hR1.addEventListener('change', () => {
         const v = parseInt(hR1.value);
         if (!isNaN(v)) this.state.updateHazard(hi, { rowRange: [h.rowRange[0], Math.max(0, v)] });
@@ -318,7 +318,7 @@ export class LevelFormPanel {
       hRow.appendChild(hR1);
       // effect
       const hEff = document.createElement('select');
-      for (const [ev, elabel] of [['speed', '减速'], ['fog', '迷雾'], ['lava', '岩浆']] as [string, string][]) {
+      for (const [ev, elabel] of [['speed', 'slow'], ['fog', 'fog'], ['lava', 'lava']] as [string, string][]) {
         const o = document.createElement('option'); o.value = ev; o.textContent = elabel;
         if (ev === h.effect) o.selected = true; hEff.appendChild(o);
       }
@@ -351,16 +351,16 @@ export class LevelFormPanel {
       root.appendChild(hRow);
     }
     const addHazardBtn = document.createElement('button');
-    addHazardBtn.textContent = '+ 添加危险区';
+    addHazardBtn.textContent = '+ Add danger zone';
     addHazardBtn.addEventListener('click', () => {
       this.state.addHazard({ col: ATTACK_LANES[0]!, rowRange: [0, BOARD_ROWS - 1], effect: 'speed', speedMult: 0.5 });
     });
     root.appendChild(addHazardBtn);
 
     // ── Story ──
-    root.appendChild(section('故事 (i18n 键，不校验存在性)'));
-    root.appendChild(optTextField('开场键 (introKey)', lv.story?.introKey, (v) => { this.setStory('introKey', v); }));
-    root.appendChild(optTextField('结束键 (outroKey)', lv.story?.outroKey, (v) => { this.setStory('outroKey', v); }));
+    root.appendChild(section('Story (i18n keys, not validated)'));
+    root.appendChild(optTextField('Intro key (introKey)', lv.story?.introKey, (v) => { this.setStory('introKey', v); }));
+    root.appendChild(optTextField('Outro key (outroKey)', lv.story?.outroKey, (v) => { this.setStory('outroKey', v); }));
   }
 
   private setStory(key: 'introKey' | 'outroKey', v: string | undefined): void {
@@ -401,7 +401,7 @@ function optTextField(label: string, value: string | undefined, onChange: (v: st
   const inp = document.createElement('input');
   inp.type = 'text';
   inp.value = value ?? '';
-  inp.placeholder = '(留空 = 不设置)';
+  inp.placeholder = '(leave blank = unset)';
   inp.addEventListener('change', () => { const v = inp.value.trim(); onChange(v === '' ? undefined : v); });
   return field(label, inp);
 }
@@ -422,7 +422,7 @@ function optNumField(label: string, value: number | undefined, min: number, step
   inp.value = value === undefined ? '' : String(value);
   inp.min = String(min);
   inp.step = String(step);
-  inp.placeholder = '(留空 = 不设置)';
+  inp.placeholder = '(leave blank = unset)';
   inp.addEventListener('change', () => { const v = inp.value.trim(); onChange(v === '' ? undefined : parseFloat(v)); });
   return field(label, inp);
 }
@@ -431,7 +431,7 @@ function starThresholdsField(value: [number, number, number] | undefined, onChan
   const wrap = document.createElement('label');
   wrap.className = 'insp-field';
   const span = document.createElement('span');
-  span.textContent = '星级阈值 (HP% 1★/2★/3★)';
+  span.textContent = 'Star thresholds (HP% 1★/2★/3★)';
   wrap.appendChild(span);
   const row = document.createElement('div');
   row.style.display = 'flex';

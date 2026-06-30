@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { computeStars, remainingHpPct } from '../src/game/meta/campaignRewards';
 
-// PVE_INTEGRITY_PLAN §8 起，通关结算（progress/stars/materials）是服务器权威，
-// 旧本地 applyCampaignClear 已删除（走 SaveManager.recordClear → POST /pve/clear）。
-// 本文件只保留客户端评星纯函数（结果报给服务器校验）。
+// From PVE_INTEGRITY_PLAN §8, clear settlement (progress/stars/materials) is server-authoritative;
+// the old local applyCampaignClear was removed (flows through SaveManager.recordClear → POST /pve/clear).
+// This file only retains the client-side star-rating pure function (result is reported to server for verification).
 
 describe('computeStars', () => {
   it('counts non-decreasing thresholds met, upgrading to 2★/3★', () => {
@@ -12,7 +12,7 @@ describe('computeStars', () => {
     expect(computeStars([50, 80, 100], 50)).toBe(1);
   });
   it('floors any clear (base alive) to 1★ even below the first threshold', () => {
-    // 胜利保底 1★：基地没被打爆就算通关、解锁下一关；门槛只升级到 2★/3★。
+    // Victory floor 1★: base surviving = clear + unlock next level; thresholds only upgrade to 2★/3★.
     expect(computeStars([50, 80, 100], 49)).toBe(1);
     expect(computeStars([50, 80, 100], 1)).toBe(1);
   });

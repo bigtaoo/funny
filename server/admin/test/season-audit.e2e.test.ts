@@ -22,7 +22,7 @@ async function tryConnect(): Promise<AdminMongo | null> {
 
 const mongo = await tryConnect();
 if (!mongo) {
-  console.warn(`[admin.audit.e2e] Mongo 不可达（${URI}）— 跳过。先跑 docker compose up -d。`);
+  console.warn(`[admin.audit.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
 let t = 1000;
@@ -83,13 +83,13 @@ describe.skipIf(!mongo)('admin SLG audit e2e', () => {
     await m.close();
   });
 
-  it('扫描代理 worldsvc 返回异常', async () => {
+  it('scan proxies worldsvc and returns anomalies', async () => {
     const anomalies = await svc.slgScanAnomalies('s1-0');
     expect(anomalies).toHaveLength(1);
     expect(anomalies[0]!.severity).toBe('high');
   });
 
-  it('立工单 + pairKey 去重（同配对 open 不重复立）', async () => {
+  it('file ticket + pairKey deduplication (same pair open does not create duplicate)', async () => {
     const root = await actorOf('root');
     const a = await svc.slgFileAuditTicket(root, SNAP);
     expect(a.status).toBe('open');
@@ -100,27 +100,27 @@ describe.skipIf(!mongo)('admin SLG audit e2e', () => {
     expect(all).toHaveLength(1);
   });
 
-  it('裁定 open→actioned，再裁定被拒（已非 open）', async () => {
+  it('resolve open→actioned, second resolution rejected (no longer open)', async () => {
     const root = await actorOf('root');
     const a = await svc.slgFileAuditTicket(root, SNAP);
-    const resolved = await svc.slgResolveAuditTicket(root, a.id, 'actioned', '确认搬砖，已封号');
+    const resolved = await svc.slgResolveAuditTicket(root, a.id, 'actioned', 'confirmed RMT, account banned');
     expect(resolved.status).toBe('actioned');
-    expect(resolved.note).toBe('确认搬砖，已封号');
+    expect(resolved.note).toBe('confirmed RMT, account banned');
     expect(resolved.resolvedBy).toBe(root.adminId);
     await expect(svc.slgResolveAuditTicket(root, a.id, 'dismissed', '')).rejects.toMatchObject({ status: 409 });
   });
 
-  it('裁定后同配对可重新立单（open 去重不阻断已结案的）', async () => {
+  it('after resolution same pair can file new ticket (open dedup does not block closed tickets)', async () => {
     const root = await actorOf('root');
     const a = await svc.slgFileAuditTicket(root, SNAP);
-    await svc.slgResolveAuditTicket(root, a.id, 'dismissed', '误报');
+    await svc.slgResolveAuditTicket(root, a.id, 'dismissed', 'false positive');
     const c = await svc.slgFileAuditTicket(root, SNAP);
     expect(c.id).not.toBe(a.id);
     expect((await svc.slgListAuditTickets({})).length).toBe(2);
     expect((await svc.slgListAuditTickets({ status: 'open' })).length).toBe(1);
   });
 
-  it('无效裁定动作 / 无效快照 → bad_request', async () => {
+  it('invalid resolution action / invalid snapshot → bad_request', async () => {
     const root = await actorOf('root');
     const a = await svc.slgFileAuditTicket(root, SNAP);
     await expect(svc.slgResolveAuditTicket(root, a.id, 'bogus', '')).rejects.toMatchObject({ status: 400 });
@@ -128,7 +128,7 @@ describe.skipIf(!mongo)('admin SLG audit e2e', () => {
     await expect(svc.slgFileAuditTicket(root, { ...SNAP, buyerId: 'rich' })).rejects.toMatchObject({ status: 400 }); // seller===buyer
   });
 
-  it('立单 + 裁定均落审计', async () => {
+  it('filing and resolving tickets both appear in audit log', async () => {
     const root = await actorOf('root');
     const a = await svc.slgFileAuditTicket(root, SNAP);
     await svc.slgResolveAuditTicket(root, a.id, 'actioned', 'x');

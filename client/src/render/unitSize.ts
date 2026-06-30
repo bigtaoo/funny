@@ -18,13 +18,13 @@ import { UnitType } from '../game/types';
  *       arbitrary canvas size.
  */
 export enum SizeTier {
-  /** 小个子 — lean/agile: ranged, flying, fast-fragile. */
+  /** Small build — lean/agile: ranged, flying, fast-fragile. */
   Small = 'S',
-  /** 普通 — standard teen build (baseline). */
+  /** Standard build — standard teen build (baseline). */
   Medium = 'M',
-  /** 高个子 — sturdy/anchored: shield, heavy hitter. */
+  /** Tall build — sturdy/anchored: shield, heavy hitter. */
   Large = 'L',
-  /** 巨型 — mythic creatures only; towers a full tier over humans. */
+  /** Giant build — mythic creatures only; towers a full tier over humans. */
   Giant = 'XL',
 }
 
@@ -67,21 +67,21 @@ export const SUPERSAMPLE = 2;
  * the teen band and span the full range (Ironclad = Giant).
  */
 export const UNIT_SIZE_TIER: Record<UnitType, SizeTier> = {
-  // 盾位 / stand-and-soak → L
-  [UnitType.ShieldBearer]: SizeTier.Large,   // 陈守
+  // tank / stand-and-soak → L
+  [UnitType.ShieldBearer]: SizeTier.Large,   // Chen Shou
   [UnitType.Lena]:         SizeTier.Large,
-  // 锚点冲锋 / single-point strike → M
-  [UnitType.Infantry]:     SizeTier.Medium,  // 李川
+  // anchor charge / single-point strike → M
+  [UnitType.Infantry]:     SizeTier.Medium,  // Li Chuan
   [UnitType.Max]:          SizeTier.Medium,
-  // 远程 / fragile → S
-  [UnitType.Archer]:       SizeTier.Small,   // 苏远
+  // ranged / fragile → S
+  [UnitType.Archer]:       SizeTier.Small,   // Su Yuan
   [UnitType.Mara]:         SizeTier.Small,
   // PvE myth creatures
-  [UnitType.Ironclad]:     SizeTier.Giant,   // 穷奇 / Cyclops — towers over humans
+  [UnitType.Ironclad]:     SizeTier.Giant,   // Qiong Qi / Cyclops — towers over humans
   [UnitType.Berserker]:    SizeTier.Large,
   [UnitType.Medic]:        SizeTier.Medium,
   [UnitType.Splitter]:     SizeTier.Small,   // stocky bomb (short, if wide)
-  [UnitType.Runner]:       SizeTier.Small,   // 獬豸 / Cerberus
+  [UnitType.Runner]:       SizeTier.Small,   // Xie Zhi / Cerberus
   [UnitType.Harpy]:        SizeTier.Small,
 };
 

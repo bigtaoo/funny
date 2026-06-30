@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { caretDisplay } from '../src/render/inputDisplay';
 
-const PH = '点击输入';
+const PH = 'tap to type';
 
 describe('caretDisplay — empty field', () => {
   it('shows cursor when caretOn=true and no text', () => {

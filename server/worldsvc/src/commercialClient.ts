@@ -1,14 +1,14 @@
-// worldsvc → commercial 内部调用（S8-5）：拍卖场买方扣金币 / 卖方收金币。
-// commercial 内部 HTTP（/internal/spend · /internal/grant）与 meta 同形，X-Internal-Key 鉴权。
-// 未配置 NW_COMMERCIAL_INTERNAL_URL → available=false → 拍卖金币交易不可用（降级提示玩家）。
+// worldsvc → commercial internal calls (S8-5): auction buyer deducts coins / seller receives coins.
+// commercial internal HTTP (/internal/spend · /internal/grant) mirrors meta shape, X-Internal-Key auth.
+// NW_COMMERCIAL_INTERNAL_URL not configured → available=false → auction coin transactions unavailable (graceful degradation notice to player).
 
 import { internalHeaders } from '@nw/shared';
 
 export interface WorldCommercialClient {
   readonly available: boolean;
-  /** 买方扣金币（购买拍卖品）。insufficient → 抛含 INSUFFICIENT_FUNDS 的 Error。 */
+  /** Deduct coins from buyer (purchasing an auction item). Insufficient funds → throws an Error containing INSUFFICIENT_FUNDS. */
   spend(accountId: string, amount: number, orderId: string): Promise<void>;
-  /** 卖方收金币（售出拍卖品，已扣税）。best-effort，失败 log 但不回滚买方已成交。 */
+  /** Credit coins to seller (auction item sold, post-tax). Best-effort; logs failure but does not roll back a completed buyer transaction. */
   grant(accountId: string, amount: number, orderId: string): Promise<void>;
 }
 

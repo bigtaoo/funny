@@ -1,15 +1,17 @@
-// 引擎 PlayerStats → 成就 statKey 增量映射（S9-3b / S9-6）。
-// 成就系统的 statKey 是字符串（机制权威 @nw/shared/achievements.ts），引擎只产出原始计数；
-// 这里把「引擎单位/法术类型 → statKey」的对应**集中一处**，让 PvP 战报上报（客户端）与
-// PvE 结算喂入（服务端，S9-3b PvE 半）复用同一份映射，杜绝两处手抄漂移。
+// Engine PlayerStats → achievement statKey delta mapping (S9-3b / S9-6).
+// Achievement statKeys are strings (authoritative definitions in @nw/shared/achievements.ts);
+// the engine only produces raw counters. This file centralises the "engine unit/spell type →
+// statKey" mapping in one place so that PvP match reporting (client) and PvE settlement
+// ingestion (server, S9-3b PvE half) share the same mapping and cannot drift apart.
 import { PlayerStats, SpellType, UnitType } from './types';
 
 /**
- * 把本局某方的 PlayerStats 折算为成就 statKey 增量（仅含非零项）。
- * - `kill.archer`  ← 击杀弓箭手（Archer）
- * - `kill.guard`   ← 击杀盾兵/守卫（ShieldBearer，i18n「破盾者」）
- * - `cast.meteor`  ← 释放陨石次数（Meteor cast，非命中数）
- * 返回 `Record<string, number>`（statKey→delta）；调用方（客户端上报 / meta 累加）按需取用。
+ * Convert one side's PlayerStats for a match into achievement statKey deltas (non-zero entries only).
+ * - `kill.archer`  ← kills of Archer units
+ * - `kill.guard`   ← kills of ShieldBearer units (i18n "shield-breaker")
+ * - `cast.meteor`  ← number of Meteor casts (not hit count)
+ * Returns `Record<string, number>` (statKey→delta); callers (client reporting / meta accumulation)
+ * consume as needed.
  */
 export function achievementStatDelta(stats: PlayerStats): Record<string, number> {
   const kills = stats.killsByType ?? {};

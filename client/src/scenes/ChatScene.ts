@@ -19,7 +19,7 @@ import type { ChatMessagePush } from '../net/proto/transport';
 // The conversation id is derived server-side from both accountIds; the client
 // only knows the peer's publicId, so on open we resolve the convId (null until
 // the first message exists) and load the latest history page. Older pages load
-// on demand via a "load earlier" tap at the top (历史分页).
+// on demand via a "load earlier" tap at the top (paginated history).
 
 export interface ChatSceneCallbacks {
   onBack(): void;

@@ -1,4 +1,4 @@
-// C7 RedisRoomRegistry 单测（内存 Redis mock，无真实连接）。
+// C7 RedisRoomRegistry unit tests (in-memory Redis mock; no real connection).
 import { describe, it, expect, vi } from 'vitest';
 import { InMemoryRoomRegistry, RedisRoomRegistry, type RoomInfo } from '../src/roomRegistry';
 
@@ -10,7 +10,7 @@ const sample: RoomInfo = {
   createdAt: 1000,
 };
 
-// ── InMemoryRoomRegistry（确保未破坏）──────────────────────────────────────
+// ── InMemoryRoomRegistry (verify it remains unbroken) ──────────────────────────────────────
 
 describe('InMemoryRoomRegistry', () => {
   it('create + getById + getByCode', async () => {

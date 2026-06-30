@@ -4,38 +4,43 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { t, type TranslationKey } from '../i18n';
 
 /**
- * 教学导演（TutorialDirector）—— 专属教学关 `ch0_tutorial` 的表现层编排（ONBOARDING_DESIGN §3.4）。
+ * TutorialDirector — presentation-layer orchestrator for the tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3.4).
  *
- * 只在教学关激活。**纯表现层**：只读同步态做差分、控引擎时钟（冻结/放行）、控引导 UI，
- * 绝不改写战斗状态（永不失败的基地兜底是唯一例外，§3.5）。引擎确定性/回放/裁判不受影响。
+ * Active only during the tutorial level. **Pure presentation layer**: reads sync state for diffing,
+ * controls the engine clock (freeze/unfreeze), and controls the guidance UI.
+ * Never mutates battle state (the only exception is the never-fail base floor clamp, §3.5).
+ * Engine determinism, replay, and referee are unaffected.
  *
- * 三段流程：
- *  - 阶段 A 认知导览（O1–O7）：引擎全程冻结，点「下一步」推进纯讲解。
- *  - 阶段 B 动手三拍：放兵 → 放建筑 → 放法术。每拍高亮目标卡 + 目标道，冻结直到玩家打出
- *    对应类别的卡；放行后引擎推进、脚本反应波（关卡 JSON 的 atTick）随即播出，到达本拍
- *    gate tick 再冻结进入下一拍。
- *  - 阶段 C 自由发挥 + 毕业：解除冻结、抽牌切回随机、常驻「完成教学」按钮 → 脚本胜利。
+ * Three-phase flow:
+ *  - Phase A — Orientation (O1–O7): engine fully frozen; tap "Next" to advance through explanations.
+ *  - Phase B — Three beats: deploy unit → deploy building → cast spell. Each beat highlights the
+ *    target card and target lane, freezes until the player plays the matching card type;
+ *    after release the engine advances, the scripted reaction wave (level JSON's atTick) fires,
+ *    and on reaching the beat's gate tick the engine freezes again for the next beat.
+ *  - Phase C — Free play + graduation: unfreeze, switch draw back to random, persistent
+ *    "Complete Tutorial" button → scripted victory.
  *
- * 永不失败：每段反应波都撞在玩家刚布防的同一条道；冻结期零威胁；外加基地血量夹住（host 兜底）。
+ * Never-fail guarantee: each reaction wave hits the same lane the player just defended;
+ * zero threats while frozen; base HP is also clamped from below (host fallback).
  */
 
-// ── Host hooks: GameRenderer 提供，导演借此读视图几何 / 委托高亮 / 控引擎，零内部耦合。 ───
+// ── Host hooks: provided by GameRenderer; the director uses these to read view geometry, delegate highlights, and control the engine — zero internal coupling. ───
 export interface TutorialHost {
   readonly container: PIXI.Container;
   readonly layout: ILayout;
-  /** 高亮一条单位车道（蓝，放兵拍）。 */
+  /** Highlight one unit lane (blue, unit-deploy beat). */
   highlightUnitLane(col: number): void;
-  /** 高亮一格建筑位（蓝，放建筑拍）。 */
+  /** Highlight one building slot (blue, building-deploy beat). */
   highlightBuildingLane(col: number): void;
-  /** 清掉棋盘高亮。 */
+  /** Clear all board lane highlights. */
   clearLaneHighlights(): void;
-  /** 本地玩家手牌某槽的设计空间中心（用于围住引导卡）。 */
+  /** Design-space center of a hand slot for the local player (used to frame the guided card). */
   handSlotCenter(index: number): { x: number; y: number };
-  /** 进阶段 C：把抽牌策略切回随机（替换 TutorialDrawPolicy）。 */
+  /** Enter phase C: switch draw policy back to random (replaces TutorialDrawPolicy). */
   switchToFreePlayDraw(): void;
-  /** 毕业：触发本地玩家脚本胜利。 */
+  /** Graduation: trigger scripted victory for the local player. */
   forceVictory(): void;
-  /** 跳过教学：落大厅（host 负责写 tutorial_done）。 */
+  /** Skip tutorial: return to lobby (host is responsible for writing tutorial_done). */
   onSkip(): void;
 }
 
@@ -45,20 +50,23 @@ interface BeatSpec {
   cardId: string;
   cardType: CardType;
   col: number;
-  /** 放行后引擎跑到该 tick（反应波已结束）即冻结进入下一拍 / 自由发挥。 */
+  /** After release, freeze once the engine reaches this tick (reaction wave has finished) to enter the next beat / free play. */
   gateTick: number;
   kind: 'unit' | 'building' | 'spell';
   /**
-   * clear 模式（法术拍）：进入本拍先解冻跑到该 tick 让铺垫敌团刷出来，再冻结弹提示
-   * （敌人先在、玩家后清，§3.2 Beat 3）。place 模式（兵/建筑拍）省略：先放后反应。
+   * clear mode (spell beat): on entering this beat, unfreeze and run to this tick so the
+   * setup enemy group spawns, then freeze and show the prompt
+   * (enemies appear first, player clears afterward, §3.2 Beat 3). Omitted in place mode
+   * (unit/building beats): place first, then reaction.
    */
   setupTick?: number;
 }
 
-// 三拍配置：列号与关卡 JSON 反应波列号一致（4/7/2），gate/ setup tick 与 atTick(20/140/300) 对齐（§3.3）。
-//   Beat1 兵：freeze@0 → 放兵 → 放行 → 反应波@20 → gate120
-//   Beat2 塔：freeze@120 → 放塔 → 放行 → 反应波@140 → gate280
-//   Beat3 法：进拍跑到 setup320（铺垫团@300~316 刷完）→ freeze → 放法术 → 放行清场 → gate360
+// Three-beat config: lane columns match the level JSON reaction wave columns (4/7/2);
+// gate/setup ticks align with atTick values (20/140/300) per §3.3.
+//   Beat1 unit:     freeze@0   → deploy unit   → release → reaction@20  → gate120
+//   Beat2 building: freeze@120 → deploy tower  → release → reaction@140 → gate280
+//   Beat3 spell:    enter beat, run to setup320 (setup group@300~316 spawned) → freeze → cast spell → release+clear → gate360
 const BEATS: BeatSpec[] = [
   { cardId: 'infantry_1', cardType: CardType.Unit,     col: 4, gateTick: 120, kind: 'unit' },
   { cardId: 'tower_1',    cardType: CardType.Building,  col: 7, gateTick: 280, kind: 'building' },
@@ -67,10 +75,10 @@ const BEATS: BeatSpec[] = [
 
 const ORIENTATION_STEPS = 7; // O1–O7
 
-// 基地永不破：低于此值即夹住（§3.5 兜底）。
+// Base never falls: clamp HP to this floor when it drops below (§3.5 fallback).
 const NEVER_FAIL_BASE_FLOOR = 1;
 
-// 手绘笔记本调色（局部，避免跨模块耦合）。我蓝 = 玩家高亮。
+// Handwritten notebook palette (local copy to avoid cross-module coupling). Blue = player highlight.
 const C_PAPER  = 0xf6efdd;
 const C_DARK   = 0x2b2b2b;
 const C_BLUE   = 0x4a7fc1;
@@ -85,29 +93,31 @@ export class TutorialDirector {
   private orientStep = 0;
   private beatIndex = 0;
   /**
-   * 引擎是否冻结。初始 false：先让引擎跑第一 tick 发开局手牌（emitInitialEvents 在
-   * firstStep 内，GameEngine §step）——否则导览期一直冻结、手牌为空、Beat 1 无牌可放。
-   * 发牌后（elapsedTicks≥1）立即冻结进入导览。波次最早在 atTick 20，发牌窗安全。
+   * Whether the engine is frozen. Initially false: let the engine run the first tick
+   * to deal the opening hand (emitInitialEvents inside firstStep, GameEngine §step) —
+   * otherwise the orientation phase freezes immediately, the hand is empty, and Beat 1
+   * has no card to play. Once elapsedTicks >= 1, freeze immediately to enter orientation.
+   * The earliest wave is at atTick 20, so the deal window is safe.
    */
   engineFrozen = false;
-  /** 是否已喂过开局第一 tick（发牌）。 */
+  /** Whether the opening first tick (deal) has already been fed. */
   private primed = false;
-  /** 已放行、正在等本拍反应波跑到 gate tick。 */
+  /** Released; waiting for the current beat's reaction wave to reach gate tick. */
   private beatReleased = false;
-  /** allowCardPlay 命中本拍引导卡后置位，下一 onTick 解冻。 */
+  /** Set after allowCardPlay matches the guided card; engine unfreezes on the next onTick. */
   private pendingRelease = false;
-  /** clear 模式：正在解冻刷铺垫敌团，到 setupTick 再冻结弹提示。 */
+  /** clear mode: currently unfrozen while waiting for the setup enemy group to spawn, then freeze and show prompt at setupTick. */
   private awaitingSetup = false;
 
   private pulse = 0;
 
-  // UI 层
-  private dim!: PIXI.Graphics;          // 阶段 A/C 的半透明遮罩
-  private cardPanel!: PIXI.Container;    // 指令卡（标题 + 正文 + 按钮）
-  private slotRing!: PIXI.Graphics;      // 围住引导卡的脉冲环
-  private clusterRing!: PIXI.Graphics;   // 法术拍：敌团位置脉冲环
+  // UI layers
+  private dim!: PIXI.Graphics;          // semi-transparent overlay for phases A/C
+  private cardPanel!: PIXI.Container;    // instruction card (title + body + button)
+  private slotRing!: PIXI.Graphics;      // pulsing ring framing the guided hand card
+  private clusterRing!: PIXI.Graphics;   // spell beat: pulsing ring at enemy cluster position
   private nextBtnRect: Rect | null = null;
-  private actionBtnRect: Rect | null = null; // 「完成教学」
+  private actionBtnRect: Rect | null = null; // "Complete Tutorial"
   private skipBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
   constructor(host: TutorialHost) {
@@ -121,45 +131,45 @@ export class TutorialDirector {
 
   get isFinished(): boolean { return this.phase === 'done'; }
 
-  // ── 输入门控（GameRenderer.handleDown 先问导演，避免引入 PIXI interactive）─────────────
-  /** 返回 true = 本次 tap 被导演消费，GameRenderer 不再处理。 */
+  // ── Input gating (GameRenderer.handleDown asks the director first, avoiding PIXI interactive) ─────────────
+  /** Returns true when this tap is consumed by the director; GameRenderer will not process it further. */
   handleDown(x: number, y: number): boolean {
     if (this.hit(this.skipBtnRect, x, y)) { this.host.onSkip(); return true; }
     if (this.phase === 'orientation') {
       if (this.nextBtnRect && this.hit(this.nextBtnRect, x, y)) { this.advanceOrientation(); }
-      return true; // 导览期吞掉一切（无需操作棋盘）
+      return true; // orientation phase swallows all input (no board interaction needed)
     }
     if (this.phase === 'freeplay') {
       if (this.actionBtnRect && this.hit(this.actionBtnRect, x, y)) { this.graduate(); return true; }
-      return false; // 自由发挥：放过棋盘/手牌交互
+      return false; // free play: pass through board/hand interactions
     }
     if (this.phase === 'done') return true;
-    // 阶段 B：只吞按钮，其余放过让玩家拖卡
+    // Phase B: only consume button taps; pass everything else so the player can drag cards
     return false;
   }
 
   /**
-   * GameRenderer.commitCardPlay 调用：本拍只放行对应类别的卡。
-   * 返回 false → renderer 跳过 engine.playCard（避免误打浪费）。
+   * Called by GameRenderer.commitCardPlay: only permit playing a card of the current beat's type.
+   * Returns false → renderer skips engine.playCard (prevents accidental off-beat plays).
    */
   allowCardPlay(cardType: CardType, _spellType: SpellType | undefined): boolean {
     if (this.phase === 'freeplay') return true;
     if (this.phase !== 'beat') return false;
-    if (this.awaitingSetup || this.beatReleased) return false; // 铺垫中 / 已放行 → 不再受理
+    if (this.awaitingSetup || this.beatReleased) return false; // setup in progress / already released → reject
     const beat = BEATS[this.beatIndex]!;
     if (cardType === beat.cardType) { this.pendingRelease = true; return true; }
     return false;
   }
 
-  // ── 每帧（GameRenderer.update 末尾）：读态、控时钟、永不失败兜底、推进状态机。 ──────────
+  // ── Per-frame (called at the end of GameRenderer.update): read state, control clock, never-fail clamp, advance state machine. ──────────
   onTick(state: GameState, dt: number): void {
-    // 开局喂一 tick 发牌后立即冻结进入导览（见 engineFrozen 注释）。
+    // Feed one tick to deal the opening hand, then immediately freeze and enter orientation (see engineFrozen comment).
     if (!this.primed) {
       if (state.elapsedTicks >= 1) { this.primed = true; this.engineFrozen = true; }
       return;
     }
 
-    // 永不失败：基地血量夹住（§3.5 表现层兜底）。
+    // Never-fail: clamp base HP from below (§3.5 presentation-layer fallback).
     if (state.bottomPlayer.baseHp < NEVER_FAIL_BASE_FLOOR) {
       state.bottomPlayer.baseHp = NEVER_FAIL_BASE_FLOOR;
     }
@@ -171,13 +181,13 @@ export class TutorialDirector {
     if (this.phase === 'beat') {
       const beat = BEATS[this.beatIndex]!;
       if (this.awaitingSetup) {
-        // clear 模式铺垫中：敌团刷完（到 setupTick）→ 冻结，玩家此刻才动手清场。
+        // clear mode — setup in progress: enemy group has spawned (reached setupTick) → freeze so the player can now clear.
         if (state.elapsedTicks >= beat.setupTick!) {
           this.awaitingSetup = false;
           this.engineFrozen = true;
         }
       } else if (this.pendingRelease) {
-        // 引导卡已打出 → 解冻，反应波 / 清场随即播出。
+        // Guided card was played → unfreeze; reaction wave / clear sequence fires immediately.
         this.pendingRelease = false;
         this.beatReleased = true;
         this.engineFrozen = false;
@@ -186,7 +196,7 @@ export class TutorialDirector {
         this.clusterRing.visible = false;
         this.showBeatCollapse();
       } else if (this.beatReleased && state.elapsedTicks >= beat.gateTick) {
-        // 本拍结束 → 进入下一拍 / 自由发挥。
+        // Current beat finished → enter next beat / free play.
         this.beatReleased = false;
         if (this.beatIndex + 1 < BEATS.length) {
           this.enterBeat(this.beatIndex + 1);
@@ -201,7 +211,7 @@ export class TutorialDirector {
     this.root.destroy({ children: true });
   }
 
-  // ── 阶段迁移 ────────────────────────────────────────────────────────────────
+  // ── Phase transitions ────────────────────────────────────────────────────────────────
   private advanceOrientation(): void {
     this.orientStep++;
     if (this.orientStep < ORIENTATION_STEPS) {
@@ -213,7 +223,7 @@ export class TutorialDirector {
     }
   }
 
-  /** 进入第 i 拍：clear 模式先放行刷铺垫敌团，place 模式直接冻结弹提示。 */
+  /** Enter beat i: in clear mode, unfreeze first to let the setup enemy group spawn; in place mode, freeze immediately and show the prompt. */
   private enterBeat(i: number): void {
     this.beatIndex = i;
     this.beatReleased = false;
@@ -221,7 +231,7 @@ export class TutorialDirector {
     const beat = BEATS[i]!;
     if (beat.setupTick !== undefined) {
       this.awaitingSetup = true;
-      this.engineFrozen = false;  // 解冻让铺垫敌团刷出来
+      this.engineFrozen = false;  // unfreeze so the setup enemy group can spawn
     } else {
       this.awaitingSetup = false;
       this.engineFrozen = true;
@@ -249,12 +259,12 @@ export class TutorialDirector {
     this.host.forceVictory();
   }
 
-  // ── 渲染 ────────────────────────────────────────────────────────────────────
+  // ── Rendering ────────────────────────────────────────────────────────────────────
   private renderOrientation(): void {
     const n = this.orientStep + 1; // O1..O7
     this.dim.visible = true;
     const ls = this.layout.orientation === 'landscape';
-    // O1/O2/O4/O5 有方向性文案，横屏时换 landscape 变体（title 仅 O5 有变体）。
+    // O1/O2/O4/O5 have orientation-specific copy; use the landscape variant in landscape mode (title has a variant only for O5).
     const LANDSCAPE_STEPS = new Set([1, 2, 4, 5]);
     const titleKey = (ls && n === 5) ? `tutorial.o${n}.title.landscape` : `tutorial.o${n}.title`;
     const bodyKey  = (ls && LANDSCAPE_STEPS.has(n)) ? `tutorial.o${n}.body.landscape` : `tutorial.o${n}.body`;
@@ -274,16 +284,16 @@ export class TutorialDirector {
     const bodyKey = (ls && i === 1) ? `tutorial.beat${i}.body.landscape` : `tutorial.beat${i}.body`;
     this.drawPanel(tk(`tutorial.beat${i}.title`), tk(bodyKey), null, 'beat');
 
-    // 高亮目标道。
+    // Highlight the target lane.
     if (beat.kind === 'unit') this.host.highlightUnitLane(beat.col);
     else if (beat.kind === 'building') this.host.highlightBuildingLane(beat.col);
     else this.host.clearLaneHighlights();
 
-    // 围住手牌里的引导卡（按 id 找当前槽；找不到则不画，靠文案兜底）。
+    // Frame the guided card in the hand (find its current slot by id; skip the ring if not found — text fallback covers it).
     this.slotRing.visible = false;
     this.clusterRing.visible = false;
     if (beat.kind === 'spell') {
-      // 法术拍：在铺垫敌团落点（目标道偏敌方上侧，高 row=上）画脉冲环引导落点。
+      // Spell beat: draw a pulse ring at the setup enemy cluster landing point (target lane, upper enemy side — high row = top).
       const rows = this.layout.boardRect.h / this.layout.cellSize;
       const p = this.layout.gridToScreen(beat.col, Math.round(rows * 0.72));
       this.clusterRing.position.set(p.x, p.y);
@@ -291,7 +301,7 @@ export class TutorialDirector {
     }
   }
 
-  /** 引导卡命中后的「收束」反馈：换正文、暂留。 */
+  /** "Collapse" feedback after the guided card is played: swap the body text and keep the panel briefly. */
   private showBeatCollapse(): void {
     const i = this.beatIndex + 1;
     const ls = this.layout.orientation === 'landscape';
@@ -309,7 +319,7 @@ export class TutorialDirector {
     );
   }
 
-  // ── UI 构建 ─────────────────────────────────────────────────────────────────
+  // ── UI construction ─────────────────────────────────────────────────────────────────
   private buildLayers(): void {
     const { designWidth: W, designHeight: H } = this.layout;
 
@@ -329,7 +339,7 @@ export class TutorialDirector {
     this.cardPanel = new PIXI.Container();
     this.root.addChild(this.cardPanel);
 
-    // 常驻跳过按钮（右上）。
+    // Persistent skip button (top-right).
     this.drawSkipButton();
   }
 
@@ -351,7 +361,7 @@ export class TutorialDirector {
     this.root.addChild(lbl);
   }
 
-  /** 指令卡：底部居中（阶段 B/C 不挡棋盘上方），含标题 + 正文 + 可选按钮。 */
+  /** Instruction card: centered at the bottom (phases B/C do not obscure the upper board), containing title + body + optional button. */
   private drawPanel(title: string, body: string, btnLabel: string | null, btnKind: 'next' | 'action' | 'beat'): void {
     this.clearPanel();
     const { designWidth: W, designHeight: H } = this.layout;
@@ -359,7 +369,7 @@ export class TutorialDirector {
     const px = (W - pw) / 2;
     const hasBtn = !!btnLabel;
     const ph = Math.round(H * (hasBtn ? 0.22 : 0.15));
-    // 阶段 B 卡点放在棋盘下方上沿（手牌之上）；导览/自由发挥居中靠下。
+    // Phase B: card panel sits just above the hand area (below the board); orientation/free-play: centered toward the bottom.
     const py = this.phase === 'beat'
       ? Math.round(this.layout.handRect.y - ph - H * 0.02)
       : Math.round(H * 0.6);
@@ -412,13 +422,13 @@ export class TutorialDirector {
     this.actionBtnRect = null;
   }
 
-  /** 脉冲动画：引导卡环 + 法术敌团环呼吸。 */
+  /** Pulse animation: breathing rings for the guided card slot and the spell enemy cluster. */
   private animatePulse(): void {
     if (this.phase !== 'beat') return;
     const beat = BEATS[this.beatIndex]!;
     const a = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(this.pulse * 5));
 
-    // 引导卡环（按 id 找当前槽）。
+    // Guided card ring (locate current slot by card id).
     if (beat.kind !== 'spell' && !this.beatReleased) {
       const idx = this.lastSlotIndex;
       if (idx >= 0) {
@@ -442,7 +452,7 @@ export class TutorialDirector {
     }
   }
 
-  /** 由 GameRenderer 在 onTick 前喂入当前引导卡所在槽（按 id 差分）。-1 表示不在手。 */
+  /** Fed by GameRenderer before onTick with the slot index of the current guided card (diffed by id). -1 means not in hand. */
   private lastSlotIndex = -1;
   setBeatSlotIndex(state: GameState): void {
     if (this.phase !== 'beat') { this.lastSlotIndex = -1; return; }
@@ -455,7 +465,7 @@ export class TutorialDirector {
   }
 }
 
-/** 收窄到 TranslationKey 的小工具（教学键由 §3.4 全量补齐，运行时缺失会回退键名）。 */
+/** Small helper to narrow to TranslationKey (tutorial keys are fully populated per §3.4; missing keys fall back to the key name at runtime). */
 function tk(key: string): string {
   return t(key as TranslationKey);
 }

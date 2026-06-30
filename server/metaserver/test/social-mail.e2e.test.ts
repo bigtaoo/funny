@@ -109,8 +109,8 @@ describe.skipIf(!mongo)('social mail e2e', () => {
       dispatchKey: 'comp-001',
       scope: 'single',
       target: { publicId: a.publicId },
-      subject: '补偿',
-      body: '抱歉给您带来不便',
+      subject: 'Compensation',
+      body: 'Sorry for the inconvenience',
       attachments: [{ kind: 'coins', count: 500 }],
       expireDays: 7,
     };
@@ -144,7 +144,7 @@ describe.skipIf(!mongo)('social mail e2e', () => {
     expect(comm.bal(a.accountId)).toBe(500);
   });
 
-  it('system mail: 内部 accountId 直投（worldsvc 结算路径，§17.5）→ 收件箱 + 材料领进养成统一池', async () => {
+  it('system mail: direct accountId delivery (worldsvc settle path, §17.5) → inbox + material claimed into unified progression pool', async () => {
     const a = await newAccount('mail-acct');
     await get(a.token, '/save');
     // No publicId / no target, only accountId — internal callers such as worldsvc use this path.
@@ -177,7 +177,7 @@ describe.skipIf(!mongo)('social mail e2e', () => {
       dispatchKey: 'skin-001',
       scope: 'single',
       target: { publicId: a.publicId },
-      subject: '皮肤奖励',
+      subject: 'Skin reward',
       body: '',
       attachments: [{ kind: 'skin', id: 'skin_gift' }],
       expireDays: 30,
@@ -192,7 +192,7 @@ describe.skipIf(!mongo)('social mail e2e', () => {
     const c = await newAccount('mail-bbbb');
     await get(c.token, '/save');
     await befriend(a, c);
-    const sent = b(await post(a.token, '/mail/send', { toPublicId: c.publicId, subject: '约局', body: '来打一把' }));
+    const sent = b(await post(a.token, '/mail/send', { toPublicId: c.publicId, subject: 'Game invite', body: 'Want to play a match?' }));
     const r = await post(c.token, `/mail/${sent.data.mailId}/claim`, {});
     expect(r.statusCode).toBe(400);
     expect(b(r).error.code).toBe('NO_ATTACHMENT');
@@ -232,8 +232,8 @@ describe.skipIf(!mongo)('social mail e2e', () => {
       dispatchKey: 'global-001',
       scope: 'global',
       target: { filter: { kind: 'all' } },
-      subject: '全服福利',
-      body: '登录领取',
+      subject: 'Server-wide bonus',
+      body: 'Login to claim',
       attachments: [{ kind: 'coins', count: 100 }],
       expireDays: 3,
     }));
@@ -250,8 +250,8 @@ describe.skipIf(!mongo)('social mail e2e', () => {
       dispatchKey: 'fan-001',
       scope: 'global',
       target: { filter: { kind: 'all' } },
-      subject: '全服公告',
-      body: '维护补偿',
+      subject: 'Server announcement',
+      body: 'Maintenance compensation',
       attachments: [{ kind: 'coins', count: 50 }],
       expireDays: 5,
     };
@@ -268,7 +268,7 @@ describe.skipIf(!mongo)('social mail e2e', () => {
     gateway.pushes = [];
     const late = await newAccount('fan-late-acct');
     const second = b(await internal('/internal/mail/system/send', sendReq));
-    expect(second.recipientCount).toBe(6); // 全员仍计入收件人数
+    expect(second.recipientCount).toBe(6); // all recipients are still counted in the total
     const newPushes = gateway.pushes.filter((p) => p.msg.kind === 'mail_new');
     expect(newPushes).toHaveLength(1);
     expect(newPushes[0].accountId).toBe(late.accountId);

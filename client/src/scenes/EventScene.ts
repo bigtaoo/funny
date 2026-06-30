@@ -6,12 +6,13 @@ import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
-// ── EventScene — 限时活动（B6，ADR-014）──────────────────────────────────────
+// ── EventScene — limited-time events (B6, ADR-014) ────────────────────────────
 //
-// 入口：LobbyScene「活动」按钮（onOpenEvents）。
-// 布局：活动标签列表（若多个）→ 选中活动的任务进度卡 + 积分商店。
-// 竖屏：任务区在上半，兑换区在下半；横屏：任务在左列，兑换在右列。
-// 兑换走 POST /api/events/claim，发奖落邮件或 commercial 金币。
+// Entry: LobbyScene "events" button (onOpenEvents).
+// Layout: event tab list (if multiple) → task progress cards + points shop for the selected event.
+// Portrait: task area in the upper half, redemption area in the lower half;
+// Landscape: tasks in the left column, redemption in the right column.
+// Redemption goes via POST /api/events/claim; rewards are delivered by mail or via commercial coins.
 
 export interface EventTaskView {
   taskId: string;
@@ -154,7 +155,7 @@ export class EventScene implements Scene {
 
     const contentTop = h * 0.12;
 
-    // 活动选项卡（多个活动时显示）
+    // Event tabs (shown when there are multiple events)
     if (this.events.length > 1) {
       this.renderTabs(contentTop, h * 0.07);
     }
@@ -197,7 +198,7 @@ export class EventScene implements Scene {
     const timeLeft = Math.max(0, event.windowEnd - now);
     const daysLeft = Math.ceil(timeLeft / 86_400_000);
 
-    // 活动标题 + 倒计时
+    // Event title + countdown
     const evTitle = txt(event.title, Math.round(h * 0.038), C.dark, true);
     evTitle.x = PAD; evTitle.y = top;
     this.container.addChild(evTitle);
@@ -210,7 +211,7 @@ export class EventScene implements Scene {
     countdown.x = w - PAD; countdown.y = top;
     this.container.addChild(countdown);
 
-    // 积分显示
+    // Points display
     const ptsTxt = txt(t('event.points', { n: event.myPoints }), Math.round(h * 0.032), 0x226644);
     ptsTxt.x = PAD; ptsTxt.y = top + h * 0.05;
     this.container.addChild(ptsTxt);
@@ -220,7 +221,7 @@ export class EventScene implements Scene {
     const bodyH = availH - headerH;
 
     if (this.landscape) {
-      // 横屏：任务在左列，兑换区在右列
+      // Landscape: tasks in the left column, redemption in the right column
       const colGap = Math.round(w * 0.015);
       const leftW = Math.round((w - colGap) * 0.5);
       const rightX = leftW + colGap;
@@ -228,7 +229,7 @@ export class EventScene implements Scene {
       this.renderTasks(event, 0, bodyTop, leftW, bodyH - h * 0.04);
       this.renderRewards(event, rightX, bodyTop, rightW, bodyH);
     } else {
-      // 竖屏：任务上半，兑换区下半
+      // Portrait: tasks in the upper half, redemption in the lower half
       const halfH = bodyH * 0.5;
       this.renderTasks(event, 0, bodyTop, w, halfH - h * 0.04);
       this.renderRewards(event, 0, bodyTop + halfH, w, halfH);

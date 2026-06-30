@@ -1,11 +1,12 @@
-// 房间目录抽象（META_DESIGN.md §6.5）。v1 内存实现；扩展时换 Redis 实现，
-// 不动 gameserver 业务。这是现在唯一要留的口子。
+// Room directory abstraction (META_DESIGN.md §6.5). v1 is an in-memory implementation; swap in a
+// Redis implementation when scaling out — no changes to gameserver business logic needed. This is
+// the single extension point to preserve for now.
 
 export interface RoomInfo {
   roomId: string;
-  code: string; // 好友房短码
+  code: string; // short code for friend rooms
   mode: 'friendly' | 'ranked';
-  /** 持有该房的 gameserver 实例 id（单实例时恒定）。 */
+  /** gameserver instance id that owns this room (constant in single-instance deployments). */
   instanceId: string;
   createdAt: number;
 }
@@ -17,10 +18,10 @@ export interface RoomRegistry {
   remove(roomId: string): Promise<void>;
 }
 
-/** 单实例内存实现。多实例需换一致性哈希 by roomId + Redis pub-sub。 */
+/** Single-instance in-memory implementation. Multi-instance deployments need consistent hashing by roomId + Redis pub-sub. */
 export class InMemoryRoomRegistry implements RoomRegistry {
   private byId = new Map<string, RoomInfo>();
-  private byCode = new Map<string, string>(); // code → roomId
+  private byCode = new Map<string, string>(); // short code → roomId
 
   async create(info: RoomInfo): Promise<void> {
     this.byId.set(info.roomId, info);
@@ -44,13 +45,14 @@ export class InMemoryRoomRegistry implements RoomRegistry {
 }
 
 /**
- * C7 Redis 实现：横扩多实例时 roomId → 任意节点均可查。
- * 用 HSET nw:rooms:<roomId> field value 存储（TTL 24h 防泄漏）。
- * 动态 import ioredis（与 worldsvc/gateway/redis.ts 同形，dev 未装也能编译）。
- * 工厂 `createRedisRoomRegistry` 连接失败时返回 null → 调用方回退到 InMemoryRoomRegistry。
+ * C7 Redis implementation: any node can look up a roomId when scaling horizontally.
+ * Stores data with HSET nw:rooms:<roomId> field value (TTL 24h to prevent leaks).
+ * Uses dynamic import of ioredis (same pattern as worldsvc/gateway/redis.ts — compiles even when
+ * ioredis is not installed in dev). Factory `createRedisRoomRegistry` returns null on connection
+ * failure → caller falls back to InMemoryRoomRegistry.
  */
 export class RedisRoomRegistry implements RoomRegistry {
-  private readonly TTL_SEC = 86400; // 24h 防泄漏
+  private readonly TTL_SEC = 86400; // 24h to prevent leaks
   private readonly PREFIX_ROOM = 'nw:rooms:';
   private readonly PREFIX_CODE = 'nw:room-codes:';
 
@@ -92,8 +94,8 @@ export class RedisRoomRegistry implements RoomRegistry {
 }
 
 /**
- * 工厂：连接 Redis 并返回 RedisRoomRegistry；失败时返回 null（调用方降级到内存）。
- * 示例：`const reg = await createRedisRoomRegistry(url) ?? new InMemoryRoomRegistry()`
+ * Factory: connect to Redis and return a RedisRoomRegistry; returns null on failure (caller degrades to in-memory).
+ * Example: `const reg = await createRedisRoomRegistry(url) ?? new InMemoryRoomRegistry()`
  */
 export async function createRedisRoomRegistry(url: string): Promise<RedisRoomRegistry | null> {
   try {

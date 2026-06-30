@@ -1,5 +1,5 @@
-// 客户端单位养成卡片常量 —— 与 @nw/shared/unitCards 同源，但不 import（shared 带 mongo 依赖）。
-// 改数值时两处同步。
+// Client-side unit progression card constants — mirrors @nw/shared/unitCards but does not import it (shared carries a mongo dependency).
+// Keep both copies in sync when changing any values.
 export const MERGE_COPIES = 5;
 export const UNIT_CARD_MAX_LEVEL = 9;
 

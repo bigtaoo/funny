@@ -1,9 +1,9 @@
-// worldsvc 调度循环（S8-2 行军 + 训练 + S8-5 拍卖过期）。
-// 行军：定时调 WorldService.processDueArrivals 落地所有到达（占领/增援/退兵）。
-// 训练：定时调 WorldService.processCompletedTraining 把完成批次转化为兵力（S8-2）。
-// 拍卖：定时调 AuctionService.processExpiredAuctions 处理过期挂拍（退还卖方标的）。
-// 三者共用同一 setInterval（tickMs = 2s），Mongo 索引扫描权威（无 Redis 也正确）。
-// timer 用 unref() 不阻塞进程退出；running 守卫防重入。
+// worldsvc scheduler loop (S8-2 march + training + S8-5 auction expiry).
+// March: periodically calls WorldService.processDueArrivals to settle all arrivals (capture / reinforce / retreat).
+// Training: periodically calls WorldService.processCompletedTraining to convert completed batches into troop strength (S8-2).
+// Auction: periodically calls AuctionService.processExpiredAuctions to handle expired listings (returns the seller's lot).
+// All three share a single setInterval (tickMs = 2s); Mongo index scan is authoritative (correct even without Redis).
+// timer uses unref() to avoid blocking process exit; running guard prevents re-entrant ticks.
 import type { WorldService } from './service';
 import type { AuctionService } from './auctionService';
 
@@ -11,7 +11,7 @@ export interface Scheduler {
   stop(): void;
 }
 
-/** 每 tickMs 处理一次到点行军 + 完成训练 + 过期拍卖（默认 2s）。 */
+/** Process due marches + completed training + expired auctions once per tickMs (default 2s). */
 export function startScheduler(svc: WorldService, auctionSvc?: AuctionService, tickMs = 2000): Scheduler {
   let running = false;
   const timer = setInterval(() => {

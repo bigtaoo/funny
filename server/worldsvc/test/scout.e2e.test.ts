@@ -81,18 +81,18 @@ describe.skipIf(!mongo)('worldsvc scout march e2e (G5 V2)', () => {
     await m.close();
   });
 
-  it('侦察发往敌方格：不打不占、不发 under_attack 预警，目标归属不变', async () => {
+  it('scout to enemy tile: no combat, no occupation, no under_attack warning, tile ownership unchanged', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    await svc.joinWorld(W, 'def', 40, 40); // def 主城（敌方格、有保护期/驻军）
+    await svc.joinWorld(W, 'def', 40, 40); // def's home tile (enemy tile, has protection period / garrison)
     pushes = [];
 
-    // a 侦察 def 主城（被占领格）——startMarch 不抛、kind=scout。
+    // a scouts def's home tile (an occupied tile) — startMarch must not throw; kind=scout.
     const mv = await svc.startMarch(W, 'a', 5, 5, 40, 40, 'scout', 1);
     expect(mv.kind).toBe('scout');
-    // 侦察不是进攻：def 不应收到 under_attack 预警。
+    // Scout is not an attack: def must not receive an under_attack warning.
     expect(pushes.filter((p) => p.accountId === 'def' && p.msg.kind === 'under_attack')).toHaveLength(0);
 
-    // 到点落地：不占领——def 仍是该格主人（owner 经 mine/occupied 信号，无裸 ownerId）。
+    // On arrival: no occupation — def is still the tile owner (ownership signalled via mine/occupied, no raw ownerId).
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
     const tile = await svc.getTile(W, 'def', 40, 40);
@@ -100,48 +100,48 @@ describe.skipIf(!mongo)('worldsvc scout march e2e (G5 V2)', () => {
     expect(tile.occupied).toBe(true);
   });
 
-  it('侦察视野更深：抵达点照亮 chebyshev≤4 的格，>4 仍迷雾（半径 = VISION_SCOUT_RADIUS）', async () => {
-    expect(VISION_SCOUT_RADIUS).toBe(4); // 守住「比普通行军 2 更深」的契约
+  it('scout has deeper vision: destination illuminates tiles at chebyshev≤4, >4 still fogged (radius = VISION_SCOUT_RADIUS)', async () => {
+    expect(VISION_SCOUT_RADIUS).toBe(4); // enforces the contract that scout vision (4) is deeper than normal march vision (2)
     await svc.joinWorld(W, 'a', 5, 5);
-    // 远在基地视野（半径 5）之外的中立目标。
+    // A neutral target well outside the home base vision radius (5).
     const dst = findCoord(NEUTRAL, 5, 30);
     const mv = await svc.startMarch(W, 'a', 5, 5, dst.x, dst.y, 'scout', 1);
 
-    // now=arriveAt：插值位置 = dst（行军文档仍在，getMap 不消费到达）。空格的 visible 标记仅 getMap 给出。
+    // now=arriveAt: interpolated position = dst (march document still present; getMap does not consume the arrival). visible flag for fog tiles is only produced by getMap.
     nowMs = mv.arriveAt;
     const map = await svc.getMap(W, 'a', dst.x, dst.y, 6);
     const at = (x: number, y: number) => map.tiles.find((tt) => tt.x === x && tt.y === y);
-    // chebyshev 4 = 视野边缘 → 可见（普通行军半径 2 探不到这么深）。
+    // chebyshev 4 = vision edge → visible (normal march radius 2 cannot reach this far).
     expect(at(dst.x + 4, dst.y)?.visible).toBe(true);
-    // chebyshev 5 → 越界，且无其他视野源 → 迷雾。
+    // chebyshev 5 → out of range, no other vision source → fog.
     expect(at(dst.x + 5, dst.y)?.visible).toBe(false);
   });
 
-  it('侦察自动回师：到点翻转为 return 腿，原兵力原路返回后退回兵池', async () => {
+  it('scout auto-returns: on arrival flips to return leg, troops return along same path and are refunded to pool', async () => {
     const me0 = await svc.joinWorld(W, 'a', 5, 5);
     const troops0 = me0.troops ?? 0;
     expect(troops0).toBeGreaterThan(0);
 
     const dst = findCoord(NEUTRAL, 5, 30);
     const out = await svc.startMarch(W, 'a', 5, 5, dst.x, dst.y, 'scout', 1);
-    expect((await svc.getMe(W, 'a')).troops).toBe(troops0 - 1); // 出征扣兵（在途）
+    expect((await svc.getMe(W, 'a')).troops).toBe(troops0 - 1); // troops deducted on departure (in transit)
 
-    // 去程到点 → 自动生成返程腿（不退兵）。
+    // Outbound leg arrives → return leg automatically created (troops not yet refunded).
     nowMs = out.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
     const afterArrive = await svc.getMarches(W, 'a');
     const back = afterArrive.find((mm) => mm.kind === 'return' && mm.mine);
     expect(back).toBeTruthy();
-    expect(back!.fromTile).toBe(`${W}:${dst.x}:${dst.y}`); // 从目标返回
-    expect(back!.toTile).toBe(`${W}:5:5`);                 // 回出发格
-    expect((await svc.getMe(W, 'a')).troops).toBe(troops0 - 1); // 返程在途，仍未退
+    expect(back!.fromTile).toBe(`${W}:${dst.x}:${dst.y}`); // returning from destination
+    expect(back!.toTile).toBe(`${W}:5:5`);                 // back to origin tile
+    expect((await svc.getMe(W, 'a')).troops).toBe(troops0 - 1); // return leg in transit, not yet refunded
 
-    // 返程到点 → 兵力归池。
+    // Return leg arrives → troops refunded to pool.
     nowMs = back!.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
     const meEnd = await svc.getMe(W, 'a');
     expect(meEnd.troops).toBe(troops0);
-    // 侦察全程不占地：领地数仍为 1（仅主城），dst 没被写成新领地。
+    // Scout never occupies territory: territory count remains 1 (home only); dst was not written as a new territory.
     expect(meEnd.territoryCount).toBe(1);
     expect(await m.collections.tiles.findOne({ _id: `${W}:${dst.x}:${dst.y}` })).toBeNull();
   });

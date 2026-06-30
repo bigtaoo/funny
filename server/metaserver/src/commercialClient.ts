@@ -1,5 +1,5 @@
-// commercial 内部客户端（S5-5）：meta 经内部 HTTP（X-Internal-Key）调 commercial 完成
-// 扣币/随机/记账。契约见 SERVER_API.md §9 / COMMERCIAL_DESIGN §5。meta 是 commercial 唯一调用方。
+// commercial internal client (S5-5): meta calls commercial via internal HTTP (X-Internal-Key) to
+// handle coin deduction / gacha draws / bookkeeping. Contract: SERVER_API.md §9 / COMMERCIAL_DESIGN §5. meta is the sole caller of commercial.
 import { internalHeaders, type Rarity } from '@nw/shared';
 
 export interface GachaResultEntry {
@@ -16,7 +16,7 @@ export interface UndeliveredOrder {
 
 type Body<T> = ({ ok: true } & T) | { ok: false; error: string };
 
-/** meta 侧 commercial 客户端接口（便于单测注入假实现）。 */
+/** meta-side commercial client interface (allows injecting a fake implementation in unit tests). */
 export interface CommercialClient {
   readonly available: boolean;
   getWallet(accountId: string): Promise<{ coins: number; pity: Record<string, number> } | null>;
@@ -40,7 +40,7 @@ export interface CommercialClient {
     reason: string;
     orderId: string;
   }): Promise<Body<{ coinsAfter: number }>>;
-  /** 纯金币发放（邮件附件领取 S6-3），orderId 幂等。amount=0 仅占幂等订单不加币。 */
+  /** Pure coin grant (mail attachment claim S6-3), orderId is idempotent. amount=0 only reserves the idempotency slot without adding coins. */
   grant(args: {
     accountId: string;
     amount: number;
@@ -91,7 +91,7 @@ export interface PromoCodeView {
   createdAt: number;
 }
 
-/** 真实 HTTP 实现。baseUrl 为 null（未配 commercial）→ available=false，经济端点回 503。 */
+/** Real HTTP implementation. baseUrl is null (commercial not configured) → available=false, economy endpoints return 503. */
 export class HttpCommercialClient implements CommercialClient {
   readonly available: boolean;
   constructor(

@@ -1,8 +1,11 @@
-// TeamsScene — SLG 进攻队伍管理（G3-2c §16.2）
+// TeamsScene — SLG attack team management (G3-2c §16.2)
 //
-// 列出 5 个进攻布阵模板槽位（committed 兵力 / 空）。点槽位进 DefenseEditorScene（attack 模式）编辑该队。
-// 队伍是「可保存的进攻布阵模板 + 并发上限」：出征围攻时挂一支队，committed 兵力从池扣除。
-// 数据权威在 worldsvc（getTeams/setTeams）；本场仅做槽位列表 + 跳转编辑，命名按槽位固定（v1）。
+// Lists 5 attack formation template slots (committed troops / empty). Tapping a slot
+// opens DefenseEditorScene (attack mode) to edit that team.
+// A team is "a saveable attack formation template + concurrency limit": one team is
+// attached to a siege march, and committed troops are deducted from the pool.
+// Data authority is worldsvc (getTeams/setTeams); this scene only handles the slot
+// list + navigation to the editor; slot names are fixed (v1).
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';
@@ -13,18 +16,18 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChild
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, TeamTemplate } from '../net/WorldApiClient';
 
-/** 队伍槽位上限（UI 常量；服务端 SIEGE_TEAM_CAP 为权威）。 */
+/** Team slot cap (UI constant; the server's SIEGE_TEAM_CAP is authoritative). */
 export const TEAM_CAP = 5;
 
 export interface TeamsCallbacks {
   onBack(): void;
-  /** 进入某槽位的进攻布阵编辑器。 */
+  /** Open the attack formation editor for a specific slot. */
   onEditTeam(teamId: string, teamName: string): void;
   worldApi: WorldApiClient;
   worldId: string;
 }
 
-/** 槽位固定 id/名（v1 不做自定义命名）。 */
+/** Fixed slot id/name (v1 does not support custom naming). */
 export function teamSlotId(i: number): string {
   return `t${i + 1}`;
 }

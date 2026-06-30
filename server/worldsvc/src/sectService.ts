@@ -107,9 +107,9 @@ export class SectService {
   private async requireFamilyLeader(worldId: string, accountId: string): Promise<FamilyDoc> {
     const mem = await this.deps.cols.familyMembers.findOne({ _id: familyMemberId(worldId, accountId) });
     if (!mem) throw new SlgError('NOT_IN_FAMILY');
-    if (mem.role !== 'leader') throw new SlgError('NO_PERMISSION', '仅族长可代表家族操作宗门');
+    if (mem.role !== 'leader') throw new SlgError('NO_PERMISSION', 'Only the family leader can act on behalf of the family for sect operations');
     const fam = await this.deps.cols.families.findOne({ _id: mem.familyId });
-    if (!fam) throw new SlgError('NOT_FOUND', '家族不存在');
+    if (!fam) throw new SlgError('NOT_FOUND', 'Family not found');
     return fam;
   }
 
@@ -154,14 +154,14 @@ export class SectService {
     if (fam.sectId) throw new SlgError('ALREADY_IN_SECT');
 
     const tagUpper = tag.toUpperCase();
-    if (!/^[A-Z0-9]{2,5}$/.test(tagUpper)) throw new SlgError('BAD_REQUEST', 'tag 须 2–5 位大写字母数字');
-    if (!name || name.length < 2 || name.length > 20) throw new SlgError('BAD_REQUEST', 'name 长度 2–20');
+    if (!/^[A-Z0-9]{2,5}$/.test(tagUpper)) throw new SlgError('BAD_REQUEST', 'Tag must be 2–5 uppercase alphanumeric characters');
+    if (!name || name.length < 2 || name.length > 20) throw new SlgError('BAD_REQUEST', 'Name must be 2–20 characters');
 
     // Moderate prosperity threshold for founding a sect (G2/§17.4): refresh the founding family's prosperity first
     // (freshly written, so no decay needed); reject if insufficient.
     const prosperity = await refreshFamilyProsperity(cols, worldId, fam._id, this.deps.now());
     if (prosperity < SECT_FOUND_PROSPERITY_MIN) {
-      throw new SlgError('PROSPERITY_TOO_LOW', `家族繁荣度不足（需 ≥ ${SECT_FOUND_PROSPERITY_MIN}，当前 ${prosperity}）`);
+      throw new SlgError('PROSPERITY_TOO_LOW', `Family prosperity is too low (requires ≥ ${SECT_FOUND_PROSPERITY_MIN}, current ${prosperity})`);
     }
 
     const sid = makeSectId(worldId, tagUpper);
@@ -188,7 +188,7 @@ export class SectService {
       if ((e as { code?: number }).code === 11000) {
         // TAG key collision: refund (best-effort) and throw already-taken error.
         await this.commercial.grant(requesterId, SECT_CREATE_COST, `${orderId}:refund`);
-        throw new SlgError('ALREADY_IN_SECT', 'tag 已被占用');
+        throw new SlgError('ALREADY_IN_SECT', 'Tag is already taken');
       }
       throw e;
     }
@@ -214,7 +214,7 @@ export class SectService {
     );
     if (!res) {
       const exists = await cols.sects.findOne({ _id: sectId });
-      if (!exists) throw new SlgError('NOT_FOUND', '宗门不存在');
+      if (!exists) throw new SlgError('NOT_FOUND', 'Sect not found');
       throw new SlgError('SECT_FULL');
     }
     await cols.families.updateOne({ _id: fam._id }, { $set: { sectId } });
@@ -227,7 +227,7 @@ export class SectService {
     if (!fam.sectId) throw new SlgError('NOT_IN_SECT');
     const sect = await cols.sects.findOne({ _id: fam.sectId });
     if (sect && sect.leaderFamilyId === fam._id) {
-      throw new SlgError('BAD_REQUEST', '门主家族须先解散或换届');
+      throw new SlgError('BAD_REQUEST', 'The leader family must dissolve the sect or transfer leadership first');
     }
     await cols.families.updateOne({ _id: fam._id }, { $unset: { sectId: '' } });
     await cols.sects.updateOne({ _id: fam.sectId }, { $inc: { memberFamilyCount: -1 } });
@@ -240,7 +240,7 @@ export class SectService {
     if (!fam.sectId) throw new SlgError('NOT_IN_SECT');
     const sect = await cols.sects.findOne({ _id: fam.sectId });
     if (!sect) throw new SlgError('NOT_FOUND');
-    if (sect.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', '仅门主可解散');
+    if (sect.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', 'Only the sect leader can dissolve the sect');
 
     const sid = sect._id;
     await cols.families.updateMany({ sectId: sid }, { $unset: { sectId: '' } });
@@ -259,11 +259,11 @@ export class SectService {
     if (!fam.sectId) throw new SlgError('NOT_IN_SECT');
     const self = await cols.sects.findOne({ _id: fam.sectId });
     if (!self) throw new SlgError('NOT_FOUND');
-    if (self.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', '仅门主可结盟');
-    if (targetSectId === self._id) throw new SlgError('BAD_REQUEST', '不能与自身结盟');
+    if (self.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', 'Only the sect leader can form alliances');
+    if (targetSectId === self._id) throw new SlgError('BAD_REQUEST', 'Cannot ally with your own sect');
 
     const target = await cols.sects.findOne({ _id: targetSectId, worldId });
-    if (!target) throw new SlgError('NOT_FOUND', '目标宗门不存在');
+    if (!target) throw new SlgError('NOT_FOUND', 'Target sect not found');
     if (self.allySectIds.includes(targetSectId)) return; // idempotent: already allied
     if (self.allySectIds.length >= SECT_ALLY_CAP || target.allySectIds.length >= SECT_ALLY_CAP) {
       throw new SlgError('ALLY_CAP_REACHED');
@@ -279,7 +279,7 @@ export class SectService {
     if (!fam.sectId) throw new SlgError('NOT_IN_SECT');
     const self = await cols.sects.findOne({ _id: fam.sectId });
     if (!self) throw new SlgError('NOT_FOUND');
-    if (self.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', '仅门主可解盟');
+    if (self.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', 'Only the sect leader can dissolve alliances');
     await cols.sects.updateOne({ _id: self._id }, { $pull: { allySectIds: targetSectId } });
     await cols.sects.updateOne({ _id: targetSectId }, { $pull: { allySectIds: self._id } });
   }
@@ -302,7 +302,7 @@ export class SectService {
     if (!sect) throw new SlgError('NOT_FOUND');
 
     const nominee = await cols.families.findOne({ _id: nomineeFamilyId, sectId: sect._id });
-    if (!nominee) throw new SlgError('NOT_FOUND', '提名家族不在本门');
+    if (!nominee) throw new SlgError('NOT_FOUND', 'Nominated family is not in this sect');
 
     // Accumulate or reset votes (keyed by nominee).
     let voters: string[];

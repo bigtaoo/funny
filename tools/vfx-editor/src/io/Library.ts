@@ -4,7 +4,7 @@
  * On boot it seeds the IndexedDB store from the repo's built-in effects (once),
  * restores the last-open effect, and silently persists model edits back to the
  * store. The repo JSON files remain the real source of truth; this is only the
- * in-browser working copy (DESIGN §8 回写流程). Export writes JSON to disk; the
+ * in-browser working copy (DESIGN §8 write-back flow). Export writes JSON to disk; the
  * user drops it into client/src/effects/ manually.
  */
 import { EffectDef } from '@vfx/types';

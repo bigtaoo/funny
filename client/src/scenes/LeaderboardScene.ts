@@ -7,11 +7,12 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { formatLadderTitle, getTitleKeys } from '../game/meta/titles';
 
-// ── LeaderboardScene — 全服天梯排行榜（SE-6）─────────────────────────────────────
+// ── LeaderboardScene — global ladder leaderboard (SE-6) ─────────────────────────
 //
-// 入口：StatsScene 天梯段落「排行榜」按钮（onOpenLeaderboard）。
-// 显示：当前赛季 Top-100（ELO 降序）+ 固定底部"我的排名"行（若有）。
-// 数据：GET /leaderboard（JWT，由 loadLeaderboard 回调驱动）。
+// Entry: StatsScene ladder section "Leaderboard" button (onOpenLeaderboard).
+// Displays: current season Top-100 (ELO descending) + a pinned "my rank" row at
+// the bottom (when available).
+// Data: GET /leaderboard (JWT, driven by the loadLeaderboard callback).
 
 export interface LeaderboardEntry {
   rank: number;
@@ -25,10 +26,10 @@ export interface LeaderboardEntry {
 export interface LeaderboardCallbacks {
   onBack(): void;
   /**
-   * 拉取排行榜。未提供（离线/未登录）时显「登录后查看」。
+   * Fetch the leaderboard. When absent (offline / not logged in), shows a "log in to view" message.
    */
   loadLeaderboard?(): Promise<{ seasonNo: number; entries: LeaderboardEntry[] }>;
-  /** 点击行查看资料（复用 ProfilePopup）。未提供则不可点。 */
+  /** Tap a row to view the profile (reuses ProfilePopup). Absent = rows are not tappable. */
   onOpenProfile?(publicId: string): void;
 }
 

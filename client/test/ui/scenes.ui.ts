@@ -422,7 +422,7 @@ describe('CampaignMapScene — tap detection', () => {
   });
 
   it('is interactive immediately on construction — no opening-flip gate', () => {
-    // Regression for the recurring「无法选择关卡/回不去大厅」bug: the scene used to
+    // Regression for the recurring "can't select level / can't return to lobby" bug: the scene used to
     // open on the TOC and auto-flip to the chapter, gating EVERY hit behind that
     // flip. The flip only settles from update(), so if the ticker stalled the scene
     // loaded but was completely dead. The fix lands directly on the chapter page —
@@ -517,7 +517,7 @@ describe('CampaignMapScene — tap detection', () => {
   });
 });
 
-// ── LobbyScene: applyWorldAvailable badge 行为 ───────────────────────────────
+// ── LobbyScene: applyWorldAvailable badge behaviour ──────────────────────────
 describe('LobbyScene — applyWorldAvailable', () => {
   const [w, h] = PORTRAIT;
 
@@ -539,7 +539,7 @@ describe('LobbyScene — applyWorldAvailable', () => {
     });
   }
 
-  it('初始状态：worldOfflineBadgeLayer 为空（尚未检查）', () => {
+  it('initial state: worldOfflineBadgeLayer is empty (health not yet checked)', () => {
     const scene = buildLobby();
     const layer = (scene as any).worldOfflineBadgeLayer as PIXI.Container;
     expect(layer).toBeInstanceOf(PIXI.Container);
@@ -547,7 +547,7 @@ describe('LobbyScene — applyWorldAvailable', () => {
     scene.destroy();
   });
 
-  it('applyWorldAvailable(false) 绘制离线徽标', () => {
+  it('applyWorldAvailable(false) draws the offline badge', () => {
     const scene = buildLobby();
     scene.applyWorldAvailable(false);
     const layer = (scene as any).worldOfflineBadgeLayer as PIXI.Container;
@@ -555,7 +555,7 @@ describe('LobbyScene — applyWorldAvailable', () => {
     scene.destroy();
   });
 
-  it('applyWorldAvailable(true) 保持徽标层为空', () => {
+  it('applyWorldAvailable(true) keeps the badge layer empty', () => {
     const scene = buildLobby();
     scene.applyWorldAvailable(true);
     const layer = (scene as any).worldOfflineBadgeLayer as PIXI.Container;
@@ -563,7 +563,7 @@ describe('LobbyScene — applyWorldAvailable', () => {
     scene.destroy();
   });
 
-  it('false → true 切换后徽标被清除', () => {
+  it('badge is cleared after switching false → true', () => {
     const scene = buildLobby();
     scene.applyWorldAvailable(false);
     expect((scene as any).worldOfflineBadgeLayer.children.length).toBeGreaterThan(0);
@@ -572,7 +572,7 @@ describe('LobbyScene — applyWorldAvailable', () => {
     scene.destroy();
   });
 
-  it('destroy 后调用 applyWorldAvailable 不抛错', () => {
+  it('calling applyWorldAvailable after destroy does not throw', () => {
     const scene = buildLobby();
     scene.destroy();
     expect(() => scene.applyWorldAvailable(false)).not.toThrow();
@@ -580,12 +580,13 @@ describe('LobbyScene — applyWorldAvailable', () => {
   });
 });
 
-// ── LobbyScene: hit rect 布局不重叠（大世界按钮可达性回归）────────────────────
-// 回归：worldPillarRect 为主布局中的 大世界 柱卡（已从底部 nav slot 提升为柱卡），
-// 若与 btnRect / campaignBtnRect / dailyBtnRect 重叠，点击大世界会被拦截，按下无反应。
-describe('LobbyScene — hit rect 不重叠', () => {
+// ── LobbyScene: hit rect layout does not overlap (world-map button accessibility regression) ──
+// Regression: worldPillarRect is the world-map pillar card in the main layout (promoted from
+// a bottom nav slot to a pillar card). If it overlaps btnRect / campaignBtnRect / dailyBtnRect,
+// tapping the world map is intercepted and produces no response.
+describe('LobbyScene — hit rects do not overlap', () => {
   for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
-    it(`worldPillarRect 与 btnRect、campaignBtnRect、dailyBtnRect 均不重叠 — ${label}`, () => {
+    it(`worldPillarRect does not overlap btnRect, campaignBtnRect, or dailyBtnRect — ${label}`, () => {
       const scene = new LobbyScene(createLayout(w, h), new InputManager(), {
         onStartGame() {},
         onOpenCampaign() {},
@@ -612,7 +613,7 @@ describe('LobbyScene — hit rect 不重叠', () => {
       scene.destroy();
     });
 
-    it(`worldPillarRect 宽高大于零、在设计区内 — ${label}`, () => {
+    it(`worldPillarRect has positive dimensions and lies within the design area — ${label}`, () => {
       const layout = createLayout(w, h);
       const scene = new LobbyScene(layout, new InputManager(), {
         onStartGame() {},
@@ -700,7 +701,7 @@ describe('LevelPrepScene — layout invariants', () => {
 });
 
 // ── RoomScene: code-entry keypad fits one screen ────────────────────────────
-// Regression for "验证码键盘溢出": the keypad had 31 chars × 7/row = 5 rows and
+// Regression for "verification-code keypad overflow": the keypad had 31 chars × 7/row = 5 rows and
 // cells sized purely off width, so in landscape the rows + Clear/⌫/Confirm row
 // fell off the bottom (no scroll, canvas keypad rejects the OS keyboard). Fix:
 // 21-char charset (10 digits + 11 letters) = 3 rows, cells bounded by the

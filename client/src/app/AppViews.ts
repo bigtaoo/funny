@@ -61,7 +61,7 @@ export interface LobbyView {
   /** Toggle the achievement-claimable red dot on the stats nav slot (ACHIEVEMENT_DESIGN §4.1). */
   applyAchievementBadge(claimable: boolean): void;
   /**
-   * Called after a worldsvc /health ping resolves. Shows a "×" badge on the 大世界
+   * Called after a worldsvc /health ping resolves. Shows a "×" badge on the world-map
    * nav slot when ok=false so developers immediately see the service is down.
    */
   applyWorldAvailable(ok: boolean): void;
@@ -71,9 +71,9 @@ export interface LobbyView {
    * tapping the toast jumps to the achievement wall.
    */
   showAchievementToast(text: string): void;
-  /** B5: toggle the daily-reward-claimable red dot on the lobby's 每日 button. */
+  /** B5: toggle the daily-reward-claimable red dot on the lobby's daily button. */
   applyRetentionBadge(claimable: boolean): void;
-  /** B6: show / hide the lobby's 活动 entry depending on whether a live event window exists. */
+  /** B6: show / hide the lobby's event entry depending on whether a live event window exists. */
   applyEventsAvailable(available: boolean): void;
   /**
    * Show the season-settlement overlay once per season transition (SE-6).
@@ -84,8 +84,9 @@ export interface LobbyView {
    */
   showSeasonSettlement(oldNo: number, peakRank: string, newNo: number): void;
   /**
-   * 首次功能引导（ONBOARDING_DESIGN §4.1）：在大厅上弹一段可关的引导卡，关闭后回调
-   * 继续导航到该功能。core 据 SaveManager.featSeen 决定弹 / 直接进。
+   * First-time feature guide (ONBOARDING_DESIGN §4.1): shows a dismissible guide card
+   * over the lobby; after dismissal the callback navigates to the feature.
+   * The core uses SaveManager.featSeen to decide whether to show the guide or navigate directly.
    */
   showFeatureGuide(titleKey: TranslationKey, bodyKey: TranslationKey, onDismiss: () => void): void;
 }
@@ -150,25 +151,25 @@ export interface AppViews {
   showCampaignMap(cb: CampaignMapCallbacks): void;
   showLevelPrep(cb: LevelPrepCallbacks): void;
   showCollection(cb: CollectionCallbacks): void;
-  /** 装备系统（E5）：背包/锻造/强化/分解/穿戴。服务器权威，需登录在线。 */
+  /** Equipment system (E5): inventory / forging / enhancement / dismantling / equipping. Server-authoritative; requires login. */
   showEquipment(cb: EquipmentCallbacks): void;
   showStats(cb: StatsCallbacks): void;
   showAchievements(cb: AchievementCallbacks): void;
-  /** 全服天梯排行榜（SE-6）。 */
+  /** Global ladder leaderboard (SE-6). */
   showLeaderboard(cb: LeaderboardCallbacks): void;
-  /** 战令面板（SE-9）。 */
+  /** Battle pass panel (SE-9). */
   showBattlePass(cb: BattlePassCallbacks): void;
-  /** 称号墙（S10）。 */
+  /** Title wall (S10). */
   showTitles(cb: TitlesSceneCallbacks): void;
-  /** 每日签到 + 每日任务（B5，RETENTION_DESIGN）。 */
+  /** Daily check-in + daily tasks (B5, RETENTION_DESIGN). */
   showDaily(cb: DailyCallbacks): void;
-  /** 限时活动（B6，ADR-014）。 */
+  /** Limited-time events (B6, ADR-014). */
   showEvents(cb: EventCallbacks): void;
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void;
   showResult(props: ResultViewProps): void;
   /**
-   * 哑状态流播放器（REPLAY_SHARE_DESIGN §4.2）：无引擎、无登录直达。`encoded` 为原始编码流
-   * （若有），令「再分享」原样转发。
+   * Dumb state-stream player (REPLAY_SHARE_DESIGN §4.2): no engine, directly accessible without login.
+   * `encoded` is the original encoded stream (if available) so that "re-share" forwards it verbatim.
    */
   showStatePlayer(replay: StateReplay, cb: StatePlayerSceneCallbacks, encoded?: EncodedStateReplay): void;
 

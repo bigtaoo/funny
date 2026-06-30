@@ -15,7 +15,7 @@ import type { TranslationKey } from '../../../i18n';
 export interface ChapterMap {
   /** Chapter index (1-based), matching the `ch{N}_lv{M}` level ids. */
   chapter: number;
-  /** i18n key for the venue name shown in the page header ("第 N 章 · 演武场"). */
+  /** i18n key for the venue name shown in the page header (e.g. "Chapter N · Training Ground"). */
   venueKey: TranslationKey;
   /** Level nodes in play order; `levelId` must resolve in CAMPAIGN_LEVELS. */
   nodes: ChapterNode[];

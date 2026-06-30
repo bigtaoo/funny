@@ -1,5 +1,5 @@
-// FamilyScene — SLG 家族管理场景（S8-4）
-// 状态机：noFamily → search/create 分支；myFamily → channel/members
+// FamilyScene — SLG family management scene (S8-4)
+// State machine: noFamily → search/create branch; myFamily → channel/members
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';

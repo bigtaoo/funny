@@ -89,13 +89,13 @@ $('btn-apply').addEventListener('click', () => {
   try {
     raw = JSON.parse(jsonEl.value);
   } catch (e) {
-    setStatus(`JSON 解析失败：${(e as Error).message}`, 'err');
+    setStatus(`JSON parse error: ${(e as Error).message}`, 'err');
     return;
   }
   const level = parse(raw);
   if (!level) return;
   state.setLevel(level);
-  setStatus(`✓ 已应用 — 关卡 "${level.id}"`, 'ok');
+  setStatus(`✓ Applied — level "${level.id}"`, 'ok');
 });
 
 // ── Load bundled sample ──
@@ -103,7 +103,7 @@ $('btn-sample').addEventListener('click', () => {
   const level = parse(sampleLevel);
   if (level) {
     state.setLevel(level);
-    setStatus('✓ 已载入示例 ch1_lv1', 'ok');
+    setStatus('✓ Loaded sample ch1_lv1', 'ok');
   }
 });
 
@@ -115,13 +115,13 @@ async function importJson(): Promise<void> {
     try {
       raw = JSON.parse(text);
     } catch (e) {
-      setStatus(`JSON 解析失败：${(e as Error).message}`, 'err');
+      setStatus(`JSON parse error: ${(e as Error).message}`, 'err');
       return;
     }
     const level = parse(raw);
     if (level) {
       state.setLevel(level);
-      setStatus(`✓ 已导入 "${level.id}"`, 'ok');
+      setStatus(`✓ Imported "${level.id}"`, 'ok');
     }
   };
 
@@ -153,7 +153,7 @@ $('btn-export').addEventListener('click', () => void exportJson());
 async function exportJson(): Promise<void> {
   const level = parse(state.level);
   if (!level) {
-    setStatus('导出已阻止 — 当前关卡未通过校验', 'err');
+    setStatus('Export blocked — current level failed validation', 'err');
     return;
   }
   const text = JSON.stringify(level, null, 2) + '\n';
@@ -172,7 +172,7 @@ async function exportJson(): Promise<void> {
       }).createWritable();
       await writable.write(text);
       await writable.close();
-      setStatus(`✓ 已保存 ${fileName}`, 'ok');
+      setStatus(`✓ Saved ${fileName}`, 'ok');
       return;
     } catch {
       return;
@@ -185,7 +185,7 @@ async function exportJson(): Promise<void> {
   a.download = fileName;
   a.click();
   URL.revokeObjectURL(url);
-  setStatus(`✓ 已下载 ${fileName}`, 'ok');
+  setStatus(`✓ Downloaded ${fileName}`, 'ok');
 }
 
 // ── Resizable panels ─────────────────────────────────────────────────────────
@@ -238,4 +238,4 @@ dragSplit($('split-insp'), $<HTMLElement>('col-insp'), 'x', -1, 200, 560);
 dragSplit($('split-json'), $<HTMLElement>('json-wrap'), 'y', -1, 90, 520);
 window.addEventListener('resize', () => board.resize());
 
-setStatus('就绪 — 载入示例 ch1_lv1');
+setStatus('Ready — loaded sample ch1_lv1');

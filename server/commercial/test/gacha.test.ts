@@ -9,7 +9,7 @@ import {
 } from '@nw/shared';
 import { rollGacha, type RandInt } from '../src/gacha';
 
-const pool = GACHA_POOLS[0]!; // standard：single 150 / ten 1350 / pity 90 / tenFloor epic
+const pool = GACHA_POOLS[0]!; // standard: single 150 / ten 1350 / pity 90 / tenFloor epic
 
 /** Random source that always returns 0 → rollRarity lands in the first weight interval (common), pickItem selects the first item. */
 const zero: RandInt = () => 0;
@@ -21,7 +21,7 @@ function seq(values: number[]): RandInt {
 }
 
 describe('rollGacha', () => {
-  it('rng=0 → 全 common 首件', () => {
+  it('rng=0 → all common, first item', () => {
     const { results, pityAfter } = rollGacha(pool, 1, 0, zero);
     expect(results).toHaveLength(1);
     expect(results[0]!.rarity).toBe('common');
@@ -29,7 +29,7 @@ describe('rollGacha', () => {
     expect(pityAfter).toBe(1); // common does not reset pity
   });
 
-  it('大保底：prevPity = threshold-1 的下一抽必出 legendary 且清零', () => {
+  it('hard pity: prevPity = threshold-1, next pull guaranteed legendary and counter reset', () => {
     const { results, pityAfter } = rollGacha(pool, 1, pool.pityThreshold - 1, zero);
     expect(results[0]!.rarity).toBe('legendary');
     expect(pityAfter).toBe(0);

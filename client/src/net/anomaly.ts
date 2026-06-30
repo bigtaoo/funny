@@ -1,23 +1,25 @@
-// 客户端异常事件「全量」上报通道（与 FEATURE_FLAGS_DESIGN §9「客户端日志定向采集」并列、互补）。
+// Full-coverage client anomaly reporting channel (complementary to FEATURE_FLAGS_DESIGN §9 "targeted client log collection").
 //
-// 定向采集只在被白名单点名的 publicId 上回捞日志；本通道相反——**任何**客户端遇到下列异常都直报
-// metaserver → Loki，便于在全网定位野外异常（无需事先点名）：
-//   mem        JS 堆超阈值（MemoryMonitor 旁路喂入）
-//   cpu        主线程持续饱和 / 持续低 FPS（PerfMonitor）
-//   webgl_lost WebGL 上下文丢失（黑屏类故障的关键信号）
-//   anr        主循环卡死 / 长时间冻结（看门狗）
-//   jserror    未捕获异常 / Promise 拒绝（log.ts errorSink 旁路）
-//   crash      上次会话异常退出（崩溃哨兵下次启动补报）
+// Targeted collection only retrieves logs for publicIds on the allowlist; this channel is the opposite —
+// **any** client that encounters the following anomalies reports directly to metaserver → Loki,
+// enabling field anomaly detection across all users (no prior allowlisting required):
+//   mem        JS heap exceeded threshold (fed in via MemoryMonitor bypass)
+//   cpu        main thread sustained saturation / persistent low FPS (PerfMonitor)
+//   webgl_lost WebGL context lost (critical signal for black-screen class failures)
+//   anr        main loop frozen / long stall (watchdog)
+//   jserror    uncaught exception / Promise rejection (log.ts errorSink bypass)
+//   crash      previous session ended abnormally (crash sentinel reports on next startup)
 //
-// 防滥用四闸：① 每类事件冷却（高频信号 60s 合一）② 单会话总量上限 ③ 单条 detail 截断
-// ④ 服务端按 IP 限流（service.ts）。无 baseUrl / Loki 不可达 → 静默丢弃，绝不影响玩家。
+// Four anti-abuse gates: ① per-type cooldown (high-frequency signals coalesced every 60s) ② per-session total cap ③ per-entry detail truncation
+// ④ server-side per-IP rate limiting (service.ts). No baseUrl / Loki unreachable → silently dropped, never impacts the player.
 //
-// 崩溃捕获两路：
-//   ① 离场（pagehide / visibilitychange→hidden）用 navigator.sendBeacon（存活于页面卸载）抢发队列 +
-//      最近面包屑，逮住「软崩溃 / 卡死后被关 / 报错后刷新」这类**有清理机会**的崩溃。
-//   ② 真·硬崩溃（OOM / 渲染进程被杀 / 标签页被杀）当场无机会上报——改用 localStorage「会话哨兵」：
-//      启动写标记 + 心跳更新存活时刻，离场标记 cleanExit；下次启动若发现上次哨兵有标记却无 cleanExit，
-//      即判定上次会话崩溃，带「大约崩溃时刻 + 最后一条错误」补报一条 crash 事件。
+// Two crash capture paths:
+//   ① On page exit (pagehide / visibilitychange→hidden), use navigator.sendBeacon (survives page unload) to eagerly flush the queue +
+//      recent breadcrumbs, catching "soft crash / frozen-then-closed / error-then-refresh" type crashes that **have a cleanup opportunity**.
+//   ② True hard crashes (OOM / renderer process killed / tab killed) have no reporting opportunity at the moment —
+//      instead use a localStorage "session sentinel": write a marker on startup + update a heartbeat timestamp,
+//      mark cleanExit on exit; on the next startup, if the previous sentinel has a marker but no cleanExit,
+//      the previous session is judged to have crashed, and a crash event is reported with the approximate crash time + last error.
 
 import { recentClientLogs, netLog, setErrorSink } from './log';
 import { getApiBaseUrl } from './config';
@@ -26,22 +28,22 @@ const log = netLog('anomaly');
 
 export type AnomalyType = 'mem' | 'cpu' | 'webgl_lost' | 'anr' | 'jserror' | 'crash';
 
-/** 一条异常事件（与服务端 metaserver/clientLog.ts 的 ClientAnomalyEvent 同形）。 */
+/** A single anomaly event (same shape as ClientAnomalyEvent in metaserver/clientLog.ts on the server). */
 interface AnomalyEvent {
   type: AnomalyType;
   ts: number; // epoch ms
   msg: string;
-  detail?: string; // 结构化补充压成单串、截断防爆
+  detail?: string; // structured supplement serialized into a single string, truncated to prevent overflow
 }
 
 const ENDPOINT = '/client/anomaly';
-const FLUSH_DEBOUNCE_MS = 1_500; // 入队后合批延迟（突发合流，少发几个包）
-const SESSION_CAP = 50;          // 单会话最多上报事件数（兜底防风暴）
+const FLUSH_DEBOUNCE_MS = 1_500; // debounce delay after enqueue (batches bursts, reduces packet count)
+const SESSION_CAP = 50;          // max events reported per session (safety cap against storm)
 const MSG_MAX = 300;
 const DETAIL_MAX = 800;
-const BREADCRUMB_N = 12;          // 崩溃 / 离场 beacon 捎带的最近日志条数
+const BREADCRUMB_N = 12;          // number of recent log entries attached to crash / exit beacons
 
-// 各类型再次上报的最小间隔（ms）。高频采样类（mem/cpu/anr）合流防刷；webgl/crash 罕见，仅受会话上限约束。
+// Minimum interval (ms) before re-reporting each type. High-frequency sampled types (mem/cpu/anr) are coalesced to prevent flooding; webgl/crash are rare and only subject to the session cap.
 const COOLDOWN_MS: Record<AnomalyType, number> = {
   mem: 60_000, cpu: 60_000, anr: 30_000, jserror: 10_000, webgl_lost: 0, crash: 0,
 };
@@ -69,11 +71,11 @@ class AnomalyReporter {
   private lastByType: Partial<Record<AnomalyType, number>> = {};
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** 上报一条异常事件（带冷却 + 会话上限 + detail 截断）。任何环境安全；无 baseUrl 时入队待离场 beacon。 */
+  /** Report a single anomaly event (with cooldown + session cap + detail truncation). Safe in any environment; enqueues for exit beacon when baseUrl is unavailable. */
   report(type: AnomalyType, msg: string, detail?: Record<string, unknown>): void {
     const now = Date.now();
-    if (now - (this.lastByType[type] ?? -Infinity) < COOLDOWN_MS[type]) return; // 冷却内：丢弃
-    if (this.sent + this.queue.length >= SESSION_CAP) return;                    // 会话上限
+    if (now - (this.lastByType[type] ?? -Infinity) < COOLDOWN_MS[type]) return; // within cooldown: discard
+    if (this.sent + this.queue.length >= SESSION_CAP) return;                    // session cap reached
     this.lastByType[type] = now;
     const ev: AnomalyEvent = { type, ts: now, msg: clip(msg, MSG_MAX) };
     if (detail) ev.detail = stringifyDetail(detail);
@@ -86,7 +88,7 @@ class AnomalyReporter {
     this.flushTimer = setTimeout(() => { this.flushTimer = null; void this.flush(); }, FLUSH_DEBOUNCE_MS);
   }
 
-  /** 普通 fetch 上报（fire-and-forget；keepalive 让晚到的也尽量发完）。失败静默、不回灌队列（防离线无限堆积）。 */
+  /** Regular fetch report (fire-and-forget; keepalive allows late deliveries to complete). Failures are silent and not re-queued (prevents unbounded offline accumulation). */
   private async flush(): Promise<void> {
     const base = getApiBaseUrl();
     if (!base || this.queue.length === 0) return;
@@ -99,12 +101,13 @@ class AnomalyReporter {
         body: JSON.stringify({ publicId: readPublicId() ?? undefined, platform: platformName(), events }),
         keepalive: true,
       });
-    } catch { /* 尽力而为，静默 */ }
+    } catch { /* best-effort, silently swallow */ }
   }
 
   /**
-   * 离场抢发：把待发队列 + 最近面包屑用 sendBeacon（存活于页面卸载）发出去；不可用则退化 keepalive fetch。
-   * 仅在有待发事件时才发——正常离场（队列空）不白发包、不附面包屑。
+   * Eager exit flush: sends the pending queue + recent breadcrumbs via sendBeacon (survives page unload);
+   * falls back to keepalive fetch if sendBeacon is unavailable.
+   * Only sends when there are pending events — a clean exit (empty queue) sends nothing and attaches no breadcrumbs.
    */
   flushBeacon(): void {
     const base = getApiBaseUrl();
@@ -128,12 +131,12 @@ class AnomalyReporter {
 
 export const anomalyReporter = new AnomalyReporter();
 
-/** 上报一条异常事件（MemoryMonitor / PerfMonitor / 看门狗 / 错误钩子统一入口）。 */
+/** Report a single anomaly event (unified entry point for MemoryMonitor / PerfMonitor / watchdog / error hooks). */
 export function reportAnomaly(type: AnomalyType, msg: string, detail?: Record<string, unknown>): void {
   anomalyReporter.report(type, msg, detail);
 }
 
-// ── 崩溃哨兵（localStorage） ───────────────────────────────────────────────────────────────
+// ── Crash sentinel (localStorage) ───────────────────────────────────────────────────────────────
 const SENTINEL_KEY = 'nw_session_sentinel';
 const HEARTBEAT_MS = 15_000;
 
@@ -145,8 +148,8 @@ function lsSet(k: string, v: string): void { try { globalThis.localStorage?.setI
 let sentinel: Sentinel | null = null;
 
 /**
- * 启动调一次：① 检测上次会话是否异常退出（崩溃）并补报；② 开本次会话哨兵 + 心跳。
- * markCleanExit() 在离场时调（见 installAnomalyWatchers）。
+ * Call once on startup: ① detect whether the previous session ended abnormally (crash) and file a late report; ② start the current session sentinel + heartbeat.
+ * markCleanExit() is called on exit (see installAnomalyWatchers).
  */
 export function initCrashSentinel(): void {
   const raw = lsGet(SENTINEL_KEY);
@@ -161,12 +164,13 @@ export function initCrashSentinel(): void {
           aliveMs,
           ...(prev.lastError ? { lastError: prev.lastError } : {}),
         });
-        // 立即用 beacon 抢发，不等 1.5s 合批 fetch：崩溃常成串（重载后又崩），若本次会话也在 1.5s 内
-        // 再崩，debounce 定时器永不触发 → 上次的 crash 补报永远发不出。beacon 当场离队、存活于即时再崩。
+        // Immediately flush via beacon rather than waiting 1.5s for the batched fetch: crashes often cascade
+        // (crash again after reload), and if this session also crashes within 1.5s the debounce timer never fires
+        // → the previous crash late-report is never sent. Beacon dequeues immediately and survives an instant re-crash.
         anomalyReporter.flushBeacon();
         log.warn('detected abnormal previous-session exit', { aliveMs });
       }
-    } catch { /* 损坏的哨兵：忽略 */ }
+    } catch { /* corrupted sentinel: ignore */ }
   }
   sentinel = { startedAt: Date.now(), lastSeenAt: Date.now() };
   lsSet(SENTINEL_KEY, JSON.stringify(sentinel));
@@ -179,7 +183,7 @@ export function initCrashSentinel(): void {
   }, HEARTBEAT_MS);
 }
 
-/** 标记本次会话干净退出（离场时调；下次启动据此不报崩溃）。 */
+/** Mark the current session as a clean exit (called on page exit; prevents a crash report on the next startup). */
 function markCleanExit(): void {
   if (!sentinel) return;
   sentinel.cleanExit = true;
@@ -187,35 +191,36 @@ function markCleanExit(): void {
   lsSet(SENTINEL_KEY, JSON.stringify(sentinel));
 }
 
-// ── 异常监听器装配（错误旁路 / 离场 beacon / WebGL 丢失 / 看门狗 / 微信 onError） ───────────────
+// ── Anomaly watcher installation (error bypass / exit beacon / WebGL lost / watchdog / WeChat onError) ───────────────
 export interface AnomalyWatchersOpts {
-  /** 渲染画布（监听 webglcontextlost）。微信 / 无 addEventListener 环境自动跳过。 */
+  /** Rendering canvas (listens for webglcontextlost). Automatically skipped in WeChat / environments without addEventListener. */
   canvas?: { addEventListener?: (type: string, cb: (e: unknown) => void) => void } | null;
 }
 
-/** 安装全部异常监听器（应用启动时调一次）。需在 setErrorSink 可用后调（log.installGlobalErrorHandlers 已装）。 */
+/** Install all anomaly watchers (call once on application startup). Must be called after setErrorSink is available (log.installGlobalErrorHandlers already installed). */
 export function installAnomalyWatchers(opts: AnomalyWatchersOpts = {}): void {
   const g = globalThis as typeof globalThis & { __nwAnomalyHooked?: boolean };
   if (g.__nwAnomalyHooked) return;
   g.__nwAnomalyHooked = true;
 
-  // 1) 未捕获异常旁路 → jserror（向 log.ts 注册 sink；log.ts 不反向 import 本模块，故无环）。
+  // 1) Uncaught exception bypass → jserror (registers a sink with log.ts; log.ts does not reverse-import this module, so no cycle).
   setErrorSink((kind, msg) => reportAnomaly('jserror', `[${kind}] ${msg}`));
 
-  // 2) 离场：beacon 抢发待发队列；干净退出标记只在**真·卸载**（pagehide）打。
-  //    ⚠ 关键区分：visibilitychange→hidden（切后台/切 App/弹键盘）**不算**退出——iOS 恰在转后台时
-  //    最易因内存压力杀标签页。若 hidden 也标 cleanExit，则「后台被杀」会被下次启动误判成正常退出、
-  //    永不补报 crash。故 hidden 只抢发队列、绝不标 cleanExit；只有 pagehide（页面确凿卸载）才标。
+  // 2) On exit: beacon eagerly flushes the pending queue; the clean-exit mark is only set on a **true unload** (pagehide).
+  //    ⚠ Critical distinction: visibilitychange→hidden (switching to background / switching app / keyboard popup) does **not** count as an exit —
+  //    iOS is most likely to kill the tab due to memory pressure precisely when going to the background.
+  //    If hidden also set cleanExit, a "killed in background" would be misread as a normal exit on the next startup and never reported as a crash.
+  //    So hidden only eagerly flushes the queue and never sets cleanExit; only pagehide (definitive page unload) sets it.
   if (typeof g.addEventListener === 'function') {
     g.addEventListener('pagehide', () => { markCleanExit(); anomalyReporter.flushBeacon(); });
     g.addEventListener('visibilitychange', () => {
       if ((globalThis as { document?: { visibilityState?: string } }).document?.visibilityState === 'hidden') {
-        anomalyReporter.flushBeacon(); // 抢发，但不标干净退出
+        anomalyReporter.flushBeacon(); // eagerly flush, but do not mark clean exit
       }
     });
   }
 
-  // 3) WebGL 上下文丢失（黑屏类故障关键信号）。
+  // 3) WebGL context lost (critical signal for black-screen class failures).
   const canvas = opts.canvas;
   if (canvas && typeof canvas.addEventListener === 'function') {
     canvas.addEventListener('webglcontextlost', () => {
@@ -224,18 +229,19 @@ export function installAnomalyWatchers(opts: AnomalyWatchersOpts = {}): void {
     });
   }
 
-  // 4) 主循环看门狗（ANR / 卡死）：独立于 ticker 的 wall-clock 定时器，主线程冻结时本回调被推迟，
-  //    恢复后据「实际 - 预期」漂移反推冻结时长。后台标签页会被节流→ document.hidden 时不算卡死。
+  // 4) Main loop watchdog (ANR / freeze): a wall-clock timer independent of the ticker. When the main thread freezes,
+  //    this callback is delayed; on recovery the freeze duration is inferred from the "actual - expected" drift.
+  //    Background tabs are throttled → not counted as frozen when document.hidden.
   installAnrWatchdog();
 
-  // 5) 微信小游戏全局错误回调（无 window error 事件，单独接）。
+  // 5) WeChat mini-game global error callback (no window error event; must be wired separately).
   const wx = (globalThis as { wx?: { onError?: (cb: (e: { message?: string } | string) => void) => void } }).wx;
   wx?.onError?.((e) => reportAnomaly('jserror', `[wx onError] ${clip(String((e as { message?: string })?.message ?? e), MSG_MAX)}`));
 }
 
 function installAnrWatchdog(): void {
   const WATCH_MS = 1_000;
-  const STALL_MS = 4_000; // 主线程冻结超过这么久才算一次卡死（避免 GC 抖动 / 后台节流误报）
+  const STALL_MS = 4_000; // minimum freeze duration to count as an ANR (avoids false positives from GC jitter / background throttling)
   let expected = Date.now() + WATCH_MS;
   setInterval(() => {
     const now = Date.now();

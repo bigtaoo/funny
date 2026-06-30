@@ -1,31 +1,32 @@
-# 本地「真实发布」模拟全栈：服务端 9 进程 + 主客户端 + 3 个工具 + mongo + redis，全部 Docker。
+# Local "production-like" full-stack: 9 server processes + main client + 3 tools + mongo + redis, all in Docker.
 #
-#   一键起（重建最新代码）：  docker compose -f docker-compose.local.yml up -d --build
-#   停（保留数据）：          docker compose -f docker-compose.local.yml down
-#   停并清空 DB：             docker compose -f docker-compose.local.yml down -v
-#   看日志：                  docker compose -f docker-compose.local.yml logs -f nginx metaserver worldsvc
+#   Start (rebuild from latest code):  docker compose -f docker-compose.local.yml up -d --build
+#   Stop (keep data):                  docker compose -f docker-compose.local.yml down
+#   Stop and wipe DB:                  docker compose -f docker-compose.local.yml down -v
+#   Follow logs:                       docker compose -f docker-compose.local.yml logs -f nginx metaserver worldsvc
 #
-# 前端地址（宿主机端口）：
-#   http://localhost:8088   主游戏（nginx 同源托管 SPA + /api REST + /gw 控制面 WS + /ws 数据面 WS
-#                                    + /world,/family,/auction SLG REST + /analytics 埋点）
-#   http://localhost:9091   动画编辑器（animator，纯前端工具）
-#   http://localhost:9092   关卡编辑器（level-editor，纯前端工具）
-#   http://localhost:9093   运维后台（ops，跨源调 admin 后端 http://localhost:18083）
-#   http://localhost:18083  admin 运维后端（ops 前端访问；玩家侧不经此）
+# Frontend URLs (host ports):
+#   http://localhost:8088   Main game (nginx same-origin: SPA + /api REST + /gw control-plane WS + /ws data-plane WS
+#                                    + /world,/family,/auction SLG REST + /analytics event ingestion)
+#   http://localhost:9091   Animator editor (pure frontend tool)
+#   http://localhost:9092   Level editor (pure frontend tool)
+#   http://localhost:9093   Ops admin frontend (cross-origin to admin backend at http://localhost:18083)
+#   http://localhost:18083  Admin backend (ops frontend only; not reachable by players)
 #
-# 服务端九进程：metaserver / commercial / gateway / matchsvc / gameserver / worldsvc / admin / analyticsvc
-#   （第九进程 analyticsvc 玩家不可达，仅经 nginx /analytics 收埋点 + admin 内网查询）。
-# worldsvc 需要 redis（行军调度 / 频道）；mongo 为单节点副本集（事务 + change streams）。
+# Nine server processes: metaserver / commercial / gateway / matchsvc / gameserver / worldsvc / admin / analyticsvc
+#   (analyticsvc is not reachable by players; events arrive via nginx /analytics, queries via admin internal endpoint).
+# worldsvc requires Redis (march scheduling / channels); mongo is a single-node replica set (transactions + change streams).
 #
-# 端口为何不是 80：本机 Windows 把 80（及 8080/8082/8083）划进 TCP excludedportrange（http.sys/WinNAT
-# 保留），绑定报 EACCES，故默认用排除段外的 8088。换端口须同时改 NW_HTTP_PORT 与三个 NW_PUBLIC_*
-# （客户端地址在构建期烘焙，改后须 `up --build` 重建 nginx 镜像）；建议直接用 ./local-up.ps1 -Port <n>。
+# Why not port 80: Windows reserves 80 (and 8080/8082/8083) in TCP excludedportrange (http.sys/WinNAT),
+# binding reports EACCES, so the default is 8088. To change the port, update NW_HTTP_PORT and all three NW_PUBLIC_*
+# variables (client addresses are baked in at build time — requires `up --build` to rebuild the nginx image);
+# or just use ./local-up.ps1 -Port <n>.
 #
-# 与代码改动隔离：所有进程都从镜像跑（构建期快照源码），编辑本地代码不影响运行中的容器；
-# `down` 后再 `up --build` 才会基于最新代码重建镜像。
+# Code-change isolation: all processes run from images (source snapshotted at build time); editing local code
+# does not affect running containers. After `down`, `up --build` rebuilds images from the latest code.
 
 services:
-  # MongoDB 单节点副本集（事务 + change streams）。仅集群内可达，不暴露宿主。
+  # MongoDB single-node replica set (transactions + change streams). Cluster-internal only, not exposed to the host.
   mongo:
     image: mongo:7
     container_name: nw-local-mongo
@@ -42,7 +43,7 @@ services:
       retries: 10
     restart: unless-stopped
 
-  # Redis：worldsvc 行军调度 / 频道（SLG_DESIGN）。仅集群内可达，不暴露宿主。
+  # Redis: worldsvc march scheduling / channels (SLG_DESIGN). Cluster-internal only, not exposed to the host.
   redis:
     image: redis:7-alpine
     container_name: nw-local-redis
@@ -63,7 +64,7 @@ services:
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
-      # meta 鉴权回包下发给客户端的 gateway 地址（经 nginx 同源）。
+      # Gateway address sent back to the client in the auth response (via nginx same-origin).
       NW_GATEWAY_PUBLIC_WS_URL: ${NW_PUBLIC_GW:-ws://localhost:8088/gw}
     depends_on:
       mongo: { condition: service_healthy }
@@ -103,7 +104,7 @@ services:
       NW_META_BASE_URL: http://metaserver:8080
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
       NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
-      # S8-4c：订阅宗门频道扇出通道（与 worldsvc 共用同一 Redis）。
+      # S8-4c: sect channel fanout pub/sub (shares the same Redis instance as worldsvc).
       NW_GW_REDIS_URL: redis://redis:6379
     depends_on:
       - metaserver
@@ -121,7 +122,7 @@ services:
       NW_MM_INTERNAL_PORT: "8091"
       NW_MM_HOST: 0.0.0.0
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
-      # 写进 ticket 的数据面地址（gameserver 注册前兜底；经 nginx 同源）。
+      # Data-plane address baked into tickets (fallback before gameserver registers; via nginx same-origin).
       NW_GAME_PUBLIC_WS_URL: ${NW_PUBLIC_GAME:-ws://localhost:8088/ws}
     restart: unless-stopped
 
@@ -141,7 +142,7 @@ services:
       - matchsvc
     restart: unless-stopped
 
-  # worldsvc：SLG 大世界第四公网面（/world /family /auction）。需 redis；经 nginx 同源反代。
+  # worldsvc: SLG world map, fourth public face (/world /family /auction). Requires Redis; proxied via nginx same-origin.
   worldsvc:
     build: { context: ./server, dockerfile: Dockerfile }
     image: nw-server:local
@@ -165,8 +166,8 @@ services:
       commercial: { condition: service_started }
     restart: unless-stopped
 
-  # socialsvc：社交第五公网面（/social/*）。家族/好友/邮件/频道；经 nginx 同源反代。
-  # 推送实时事件回 gateway /gw/push；publicId 反查走 meta /internal。独立库 nw_social。
+  # socialsvc: social fifth public face (/social/*). Family / friends / mail / channels; proxied via nginx same-origin.
+  # Pushes real-time events to gateway /gw/push; publicId reverse-lookup via meta /internal. Separate DB: nw_social.
   socialsvc:
     build: { context: ./server, dockerfile: Dockerfile }
     image: nw-server:local
@@ -186,7 +187,7 @@ services:
       gateway: { condition: service_started }
     restart: unless-stopped
 
-  # analyticsvc：埋点采集 + 内网查询。玩家侧仅经 nginx /analytics 投递事件。
+  # analyticsvc: event ingestion + internal queries. Player-facing only via nginx /analytics for event delivery.
   analyticsvc:
     build: { context: ./server, dockerfile: Dockerfile }
     image: nw-server:local
@@ -203,7 +204,7 @@ services:
       mongo: { condition: service_healthy }
     restart: unless-stopped
 
-  # admin：运维后端。唯一暴露宿主的「后端」（ops 前端跨源访问 :18083）。
+  # admin: ops backend. The only backend service exposed to the host (ops frontend accesses it cross-origin at :18083).
   admin:
     build: { context: ./server, dockerfile: Dockerfile }
     image: nw-server:local
@@ -217,7 +218,7 @@ services:
       NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       NW_ADMIN_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       NW_ADMIN_MONGO_DB: ${NW_ADMIN_MONGO_DB:-notebook_wars_admin}
-      # 首启种子超管账号（仅本地联调用；生产改强密码或走别的注入）。
+      # Seed super-admin account on first start (local dev only; use a strong password or a different injection method in production).
       NW_ADMIN_SEED_USER: ${NW_ADMIN_SEED_USER:-admin}
       NW_ADMIN_SEED_PASS: ${NW_ADMIN_SEED_PASS:-admin123}
       NW_META_BASE_URL: http://metaserver:8080
@@ -231,8 +232,8 @@ services:
       analyticsvc: { condition: service_started }
     restart: unless-stopped
 
-  # nginx = 客户端镜像（静态 SPA + 反向代理）。主游戏唯一暴露到宿主的服务。
-  # 上下文必须是仓库根（context: .），webpack @nw/engine alias 引用 server/engine/src。
+  # nginx = client image (static SPA + reverse proxy). The only game-facing service exposed to the host.
+  # Build context must be the repo root (context: .) so the webpack @nw/engine alias can resolve server/engine/src.
   nginx:
     build:
       context: .
@@ -253,7 +254,7 @@ services:
       - analyticsvc
     restart: unless-stopped
 
-  # ── 工具前端（纯静态，各自 nginx 容器；端口沿用 dev 约定 9091/9092/9093）──
+  # ── Tool frontends (pure static files, each in their own nginx container; ports match the dev convention 9091/9092/9093) ──
   animator:
     build: { context: ./tools/animator, dockerfile: Dockerfile }
     image: nw-animator:local
@@ -262,7 +263,7 @@ services:
       - "${NW_ANIMATOR_PORT:-9091}:80"
     restart: unless-stopped
 
-  # level-editor：构建上下文是「仓库根」（webpack @game alias 引用 client/src/game）。
+  # level-editor: build context is the repo root so the webpack @game alias can resolve client/src/game.
   level-editor:
     build: { context: ., dockerfile: tools/level-editor/Dockerfile }
     image: nw-level-editor:local
@@ -271,7 +272,7 @@ services:
       - "${NW_LEVEL_EDITOR_PORT:-9092}:80"
     restart: unless-stopped
 
-  # ops：运维后台前端；浏览器跨源调 admin（默认 http://localhost:18083）。
+  # ops: ops admin frontend; browser makes cross-origin calls to the admin backend (default http://localhost:18083).
   ops:
     build: { context: ./tools/ops, dockerfile: Dockerfile }
     image: nw-ops:local

@@ -93,7 +93,7 @@ export function startHttpApi(
           return sendErr(res, ErrorCode.BAD_REQUEST, 'events must be a non-empty array');
         }
         if (batch.events.length > 100) {
-          return sendErr(res, ErrorCode.BAD_REQUEST, 'events 最多 100 条/请求');
+          return sendErr(res, ErrorCode.BAD_REQUEST, 'events: max 100 per request');
         }
 
         // C5-c GDPR: identified users (userId present) must include consent=true to be persisted; anonymous users pass through directly.

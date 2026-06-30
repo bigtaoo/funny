@@ -1,6 +1,6 @@
 /**
  * battleLabels.ts — the battlefield corner hand-lettering layer (art-direction
- * §6.2, B 组). Snaps the B-group labels (`labelDecor`) into the paper margins
+ * §6.2, B-group). Snaps the B-group labels (`labelDecor`) into the paper margins
  * flanking the grid: `[START]` scrawled by the local player's base, `BOSS` by the
  * enemy base on boss campaign levels. Pure scene-setting marginalia — like the
  * A-group doodle layer (`decorLayer`) it sits OUTSIDE the board rect, so it never
@@ -9,7 +9,7 @@
  * Unlike the dense A-group scatter this is at most a couple of static sprites, so
  * there is nothing worth baking — they cost nothing per frame and the live-sprite
  * path also works in headless tests (no renderer needed). Labels keep their baked
- * ink colour and are NOT tinted (§6.2 注).
+ * ink colour and are NOT tinted (§6.2 note).
  *
  * `WIN!` (label_win) lives on the victory overlay (HUDView.showGameOver) and the
  * `→ here` arrow (label_arrow_here) is reserved for tutorial pointing, so neither

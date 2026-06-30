@@ -104,8 +104,8 @@ export class WorkspacePanel {
 
     if (!this.store.isConfigured()) {
       body.appendChild(this.notice(
-        '工作区未配置。部署时设置 NW_SUPABASE_URL / NW_SUPABASE_ANON_KEY 后启用。' +
-        '本地编辑（自动保存 + 下载 .tao）不受影响。',
+        'Workspace not configured. Set NW_SUPABASE_URL / NW_SUPABASE_ANON_KEY at deploy time to enable. ' +
+        'Local editing (auto-save + .tao download) is unaffected.',
       ));
       return;
     }
@@ -117,7 +117,7 @@ export class WorkspacePanel {
     const h = document.createElement('div');
     h.style.cssText = 'display:flex;align-items:center;gap:8px';
     const title = document.createElement('span');
-    title.textContent = '☁ 团队工作区';
+    title.textContent = '☁ Team workspace';
     title.style.cssText = 'font-weight:700;color:var(--accent);font-size:13px';
     const close = document.createElement('button');
     close.textContent = '✕';
@@ -136,7 +136,7 @@ export class WorkspacePanel {
   }
 
   private renderSignIn(body: HTMLElement): void {
-    body.appendChild(this.notice('用邮箱登录工作区，我们会发一个登录链接给你。'));
+    body.appendChild(this.notice('Sign in to the workspace with your email — we will send you a magic link.'));
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;gap:6px';
     const input = document.createElement('input');
@@ -144,15 +144,15 @@ export class WorkspacePanel {
     input.placeholder = 'you@example.com';
     input.style.cssText = 'flex:1;width:auto';
     const btn = document.createElement('button');
-    btn.textContent = '发送登录链接';
+    btn.textContent = 'Send sign-in link';
     btn.className = 'primary sm';
     btn.addEventListener('click', () => {
       const email = input.value.trim();
       if (!email) return;
       btn.disabled = true;
       this.store.signIn(email)
-        .then(() => { body.appendChild(this.notice(`已发送登录链接到 ${email}，请查收邮箱。`)); })
-        .catch(err => { this.bus.emit('error', `登录失败：${(err as Error).message}`); })
+        .then(() => { body.appendChild(this.notice(`Sign-in link sent to ${email} — check your inbox.`)); })
+        .catch(err => { this.bus.emit('error', `Sign-in failed: ${(err as Error).message}`); })
         .finally(() => { btn.disabled = false; });
     });
     row.append(input, btn);
@@ -162,9 +162,9 @@ export class WorkspacePanel {
   private async renderSignedIn(body: HTMLElement): Promise<void> {
     const who = document.createElement('div');
     who.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-dim)';
-    who.textContent = `已登录：${this.email}`;
+    who.textContent = `Signed in: ${this.email}`;
     const out = document.createElement('button');
-    out.textContent = '登出';
+    out.textContent = 'Sign out';
     out.className = 'sm';
     out.style.marginLeft = 'auto';
     out.addEventListener('click', () => {
@@ -177,14 +177,14 @@ export class WorkspacePanel {
     body.appendChild(this.autoSyncSection());
 
     const listHdr = document.createElement('div');
-    listHdr.textContent = '工作区动画';
+    listHdr.textContent = 'Workspace animations';
     listHdr.style.cssText =
       'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;' +
       'color:var(--text-dim);border-top:1px solid var(--border);padding-top:10px';
     body.appendChild(listHdr);
 
     const listEl = document.createElement('div');
-    listEl.textContent = '加载中…';
+    listEl.textContent = 'Loading…';
     listEl.style.cssText = 'display:flex;flex-direction:column;gap:4px;font-size:12px';
     body.appendChild(listEl);
 
@@ -192,12 +192,12 @@ export class WorkspacePanel {
       const files = await this.store.list();
       listEl.innerHTML = '';
       if (files.length === 0) {
-        listEl.appendChild(this.notice('工作区还没有动画。在上方保存一个即可。'));
+        listEl.appendChild(this.notice('No animations in the workspace yet. Save one above to get started.'));
         return;
       }
       for (const f of files) listEl.appendChild(this.fileRow(f));
     } catch (err) {
-      listEl.textContent = `加载失败：${(err as Error).message}`;
+      listEl.textContent = `Failed to load: ${(err as Error).message}`;
     }
   }
 
@@ -210,21 +210,21 @@ export class WorkspacePanel {
     row.style.cssText = 'display:flex;gap:6px;align-items:center';
     const unit = document.createElement('input');
     unit.type = 'text';
-    unit.placeholder = 'unitKey (如 archer)';
+    unit.placeholder = 'unitKey (e.g. archer)';
     unit.style.cssText = 'flex:1;width:auto';
     const name = document.createElement('input');
     name.type = 'text';
-    name.placeholder = 'name (如 archer)';
+    name.placeholder = 'name (e.g. archer)';
     name.style.cssText = 'flex:1;width:auto';
     const btn = document.createElement('button');
-    btn.textContent = '💾 保存到工作区';
+    btn.textContent = '💾 Save to workspace';
     btn.className = 'primary sm';
     btn.addEventListener('click', () => {
       const u = unit.value.trim(), n = name.value.trim();
       if (!u || !n) {
         // The button looks dead when fields are blank — say what's missing,
         // in the modal, instead of a status-bar flash the artist won't notice.
-        this.setSaveHint('⚠ 请先填写 unitKey 和 name（如 archer / archer），再点保存到工作区。', 'warn');
+        this.setSaveHint('⚠ Please fill in unitKey and name (e.g. archer / archer) before saving to the workspace.', 'warn');
         (!u ? unit : name).focus();
         return;
       }
@@ -272,18 +272,18 @@ export class WorkspacePanel {
       if (this.overlay) void this.render();   // refresh the hint
     });
     const text = document.createElement('span');
-    text.textContent = '自动同步到工作区';
+    text.textContent = 'Auto-sync to workspace';
     label.append(cb, text);
 
     const hint = document.createElement('span');
     hint.style.cssText = 'margin-left:auto;font-size:10px';
     if (!this.autoSync) {
-      hint.textContent = '关';
+      hint.textContent = 'Off';
     } else if (this.bound) {
       hint.textContent = `→ ${this.bound.unitKey}/${this.bound.name}`;
       hint.style.color = 'var(--accent)';
     } else {
-      hint.textContent = '待绑定（先保存或打开一个）';
+      hint.textContent = 'Unbound (save or open a file first)';
     }
 
     wrap.append(label, hint);
@@ -291,7 +291,7 @@ export class WorkspacePanel {
   }
 
   private async saveCurrent(unitKey: string, name: string): Promise<void> {
-    this.bus.emit('status', '正在上传到工作区…');
+    this.bus.emit('status', 'Uploading to workspace…');
     try {
       const [editorBlob, taoBlob] = await Promise.all([
         this.io.buildEditorBlob(),
@@ -299,14 +299,14 @@ export class WorkspacePanel {
       ]);
       await this.store.save(unitKey, name, editorBlob, taoBlob);
       this.bindTo(unitKey, name);              // future edits auto-sync to this slot
-      this.bus.emit('status', `已保存 ${unitKey}/${name} 到工作区`);
+      this.bus.emit('status', `Saved ${unitKey}/${name} to workspace`);
       if (this.overlay) await this.render();   // refresh list
     } catch (err) {
       const msg = (err as Error).message;
-      this.bus.emit('error', `保存失败：${msg}`);
+      this.bus.emit('error', `Save failed: ${msg}`);
       // Surface failures in the modal too — e.g. signed out, or a workspace
       // permission/RLS error the artist needs to act on.
-      this.setSaveHint(`保存失败：${msg}。若提示未登录，请重新发送登录链接后再试。`, 'error');
+      this.setSaveHint(`Save failed: ${msg}. If the error says you are not signed in, send a new sign-in link and try again.`, 'error');
     }
   }
 
@@ -338,17 +338,17 @@ export class WorkspacePanel {
     const { unitKey, name } = this.bound;
     this.syncing = true;
     this.syncDirty = false;
-    this.bus.emit('status', `正在同步 ${unitKey}/${name} 到工作区…`);
+    this.bus.emit('status', `Syncing ${unitKey}/${name} to workspace…`);
     try {
       const [editorBlob, taoBlob] = await Promise.all([
         this.io.buildEditorBlob(),
         this.io.buildTaoBlob(),
       ]);
       await this.store.save(unitKey, name, editorBlob, taoBlob);
-      this.bus.emit('status', `已自动同步 ${unitKey}/${name} · ${new Date().toLocaleTimeString()}`);
+      this.bus.emit('status', `Auto-synced ${unitKey}/${name} · ${new Date().toLocaleTimeString()}`);
     } catch (err) {
       this.syncDirty = true;   // keep dirty so the next edit/flush retries
-      this.bus.emit('error', `自动同步失败：${(err as Error).message}`);
+      this.bus.emit('error', `Auto-sync failed: ${(err as Error).message}`);
     } finally {
       this.syncing = false;
     }
@@ -373,7 +373,7 @@ export class WorkspacePanel {
     meta.textContent = when;
     meta.style.cssText = 'color:var(--text-dim);font-size:10px';
     const open = document.createElement('button');
-    open.textContent = '打开';
+    open.textContent = 'Open';
     open.className = 'sm';
     open.addEventListener('click', () => void this.openFile(f));
     row.append(label, meta, open);
@@ -381,15 +381,15 @@ export class WorkspacePanel {
   }
 
   private async openFile(f: WorkspaceFile): Promise<void> {
-    this.bus.emit('status', `正在打开 ${f.unitKey}/${f.name}…`);
+    this.bus.emit('status', `Opening ${f.unitKey}/${f.name}…`);
     try {
       const blob = await this.store.download(f.editorPath);
       await this.io.loadEditorBlob(blob, `${f.name}.tao.editor`);
       this.bindTo(f.unitKey, f.name);          // future edits auto-sync back to this slot
-      this.bus.emit('status', `已打开 ${f.unitKey}/${f.name}`);
+      this.bus.emit('status', `Opened ${f.unitKey}/${f.name}`);
       this.close();
     } catch (err) {
-      this.bus.emit('error', `打开失败：${(err as Error).message}`);
+      this.bus.emit('error', `Open failed: ${(err as Error).message}`);
     }
   }
 }

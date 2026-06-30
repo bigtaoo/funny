@@ -1,8 +1,8 @@
-# 骨骼动画编辑器生产镜像：webpack 生产构建 → nginx 托管静态。
-# 纯前端工具，不连后端；本地全栈里仅作为一个固定地址的静态站点（端口在 compose 映射）。
+# Skeleton animation editor production image: webpack production build → nginx static hosting.
+# Pure frontend tool, no backend connection; runs as a fixed-address static site in the local full-stack (port mapped in compose).
 FROM node:20-alpine AS build
 WORKDIR /app
-# 弱网/慢镜像源下 npm ci 易 EIDLETIMEOUT；放宽超时 + 多次重试。
+# On slow/flaky registries npm ci can hit EIDLETIMEOUT; raise timeout and retry count.
 ENV npm_config_fetch_retries=5 \
     npm_config_fetch_retry_maxtimeout=120000 \
     npm_config_fetch_timeout=600000
