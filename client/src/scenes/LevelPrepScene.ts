@@ -10,6 +10,7 @@ import {
   MERGE_COPIES,
   cardKey,
 } from '../game/balance/unitCards';
+import type { ObjectiveSpec } from '../game/campaign/LevelDefinition';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 
@@ -40,6 +41,8 @@ export interface LevelPrepCallbacks {
   tryMerge(unitId: string, level: number): Promise<boolean>;
   /** 1-based level number for the header label. */
   levelNumber: number;
+  /** Win condition for this level, shown as an objective banner. */
+  objective?: ObjectiveSpec;
   /** Pre-translated story brief shown in a panel above the unit list. */
   brief?: string;
   /** Pre-translated story intro shown as a tap-through overlay when the player hits Start. */
@@ -165,33 +168,45 @@ export class LevelPrepScene implements Scene {
       y = this.drawBrief(y);
     }
 
+    if (this.cb.objective) {
+      y = this.drawObjective(this.cb.objective, y);
+    }
+
     // Section title
-    const secLbl = txt(t('progression.unitsTitle'), Math.round(h * 0.026), C.dark, true);
+    const secLbl = txt(t('progression.unitsTitle'), Math.round(h * 0.024), C.dark, true);
     secLbl.anchor.set(0, 0.5);
     secLbl.x = Math.round(w * 0.08);
-    secLbl.y = y + Math.round(h * 0.018);
+    secLbl.y = y + Math.round(h * 0.015);
     this.container.addChild(secLbl);
-    y += Math.round(h * 0.048);
+    y += Math.round(h * 0.038);
 
-    // Unit card rows — height computed dynamically so rows never push past the stamina bar,
-    // regardless of how many units are in PROGRESSABLE_UNIT_IDS or whether a brief is shown.
+    // Unit card rows — 2-column layout to halve vertical footprint.
     const listX = Math.round(w * 0.06);
     const listW = w - listX * 2;
     const unitCount = PROGRESSABLE_UNIT_IDS.length;
+    const colCount = 2;
+    const rowCount = Math.ceil(unitCount / colCount);
     const stBarStart = h - Math.round(h * 0.055) - Math.round(h * 0.14);
     const listEndY = stBarStart - Math.round(h * 0.012);
     const gap = Math.round(h * 0.01);
+    const colGap = Math.round(w * 0.008);
+    const colW = Math.floor((listW - colGap) / colCount);
     const rowH = Math.max(
-      Math.round(h * 0.06),
-      Math.floor((listEndY - y - gap * Math.max(0, unitCount - 1)) / unitCount),
+      Math.round(h * 0.065),
+      Math.floor((listEndY - y - gap * Math.max(0, rowCount - 1)) / rowCount),
     );
     const unitLevels = this.cb.getUnitLevels();
     const inv = this.cb.getCardInventory();
 
-    for (const unitId of PROGRESSABLE_UNIT_IDS) {
-      this.drawUnitRow(unitId, unitLevels[unitId] ?? 1, inv, listX, y, listW, rowH);
-      y += rowH + gap;
+    for (let i = 0; i < PROGRESSABLE_UNIT_IDS.length; i++) {
+      const unitId = PROGRESSABLE_UNIT_IDS[i]!;
+      const col = i % colCount;
+      const row = Math.floor(i / colCount);
+      const cellX = listX + col * (colW + colGap);
+      const cellY = y + row * (rowH + gap);
+      this.drawUnitRow(unitId, unitLevels[unitId] ?? 1, inv, cellX, cellY, colW, rowH);
     }
+    y += rowCount * (rowH + gap);
 
     // —— Stamina bar (A4): cost + current balance, turns red when insufficient + refill button ——
     const stamina = this.cb.getStamina();
@@ -356,14 +371,66 @@ export class LevelPrepScene implements Scene {
     return null;
   }
 
+  private objectiveText(obj: ObjectiveSpec): string {
+    switch (obj.kind) {
+      case 'survive': return t('level.objective.survive');
+      case 'timed_defense': return t('level.objective.timedDefense');
+      case 'destroy_base': return t('level.objective.destroyBase');
+      case 'leak_limit': return t('level.objective.leakLimit', { n: obj.maxLeaks });
+      case 'boss': return t('level.objective.boss');
+      case 'escort': return t('level.objective.escort');
+    }
+  }
+
+  private drawObjective(obj: ObjectiveSpec, y: number): number {
+    const { w, h } = this;
+    const padX = Math.round(w * 0.06);
+    const panW = w - padX * 2;
+    const fs = Math.round(h * 0.022);
+    const padV = Math.round(h * 0.009);
+    const panH = fs + padV * 2;
+
+    const bg = sketchPanel(panW, panH, {
+      fill: C.paper, border: C.line, width: 1.2, seed: seedFor(padX, y + 1, panW),
+    });
+    bg.x = padX; bg.y = y;
+    sketchAccentBar(bg, panH, C.gold, seedFor(padX, panH, 3));
+    this.container.addChild(bg);
+
+    const label = txt(t('level.objective.label'), fs, C.mid);
+    label.anchor.set(0, 0.5);
+    label.x = padX + Math.round(panW * 0.06);
+    label.y = y + panH / 2;
+    this.container.addChild(label);
+
+    const desc = txt(this.objectiveText(obj), fs, C.dark, true);
+    desc.anchor.set(0, 0.5);
+    desc.x = label.x + label.width + Math.round(w * 0.025);
+    desc.y = y + panH / 2;
+    this.container.addChild(desc);
+
+    return y + panH + Math.round(h * 0.01);
+  }
+
   private drawBrief(y: number): number {
     const { w, h } = this;
     const padX = Math.round(w * 0.06);
     const panW = w - padX * 2;
     const fontSize = Math.round(h * 0.022);
-    const lineH = Math.round(fontSize * 1.5);
-    const maxLines = 3;
-    const panH = Math.round(h * 0.005) * 2 + lineH * maxLines;
+    const innerPadX = Math.round(panW * 0.06);
+    const wrapWidth = panW - innerPadX * 2;
+    const padV = Math.round(h * 0.012);
+
+    const scratch = new PIXI.Text(this.cb.brief!, {
+      fontSize,
+      fill: C.mid,
+      wordWrap: true,
+      wordWrapWidth: wrapWidth,
+      breakWords: true,
+      lineHeight: Math.round(fontSize * 1.55),
+    });
+    scratch.anchor.set(0, 0);
+    const panH = Math.ceil(scratch.height) + padV * 2;
 
     const bg = sketchPanel(panW, panH, {
       fill: C.paper, border: C.line, width: 1.2, seed: seedFor(padX, y, panW),
@@ -372,15 +439,11 @@ export class LevelPrepScene implements Scene {
     sketchAccentBar(bg, panH, C.accent, seedFor(padX, panH, 7));
     this.container.addChild(bg);
 
-    const scratch = txt(this.cb.brief!, fontSize, C.mid);
-    scratch.style.wordWrap = true;
-    scratch.style.wordWrapWidth = panW - Math.round(panW * 0.12);
-    scratch.anchor.set(0, 0);
-    scratch.x = padX + Math.round(panW * 0.06);
-    scratch.y = y + Math.round(panH * 0.1);
+    scratch.x = padX + innerPadX;
+    scratch.y = y + padV;
     this.container.addChild(scratch);
 
-    return y + panH + Math.round(h * 0.015);
+    return y + panH + Math.round(h * 0.012);
   }
 
   private buildIntroLines(): void {

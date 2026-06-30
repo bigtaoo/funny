@@ -399,6 +399,15 @@ export const zh = {
   'stamina.cost': '体力 {current} / 120 · 本关消耗 {cost}',
   'stamina.buy': '补充体力（30 金币 → +60）',
 
+  // ── Level objective labels ────────────────────────────────────────────────
+  'level.objective.label': '关卡目标',
+  'level.objective.survive': '消灭所有敌人',
+  'level.objective.timedDefense': '坚守至时间结束',
+  'level.objective.destroyBase': '摧毁敌方大本营',
+  'level.objective.leakLimit': '最多允许 {n} 个敌军突破',
+  'level.objective.boss': '击败首领',
+  'level.objective.escort': '护送友军',
+
   // ── Unit progression (S12, card merge system) ────────────────────────────────
   'progression.unitsTitle': '单位卡牌',
   'progression.lv': 'Lv {lv}',

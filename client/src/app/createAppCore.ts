@@ -1133,6 +1133,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         if (ok) analytics.track('unit_card_merge', { unit_id: unitId, from_level: lvl });
         return ok;
       },
+      objective: level.objective,
       ...(level.briefKey ? { brief: t(level.briefKey as TranslationKey) } : {}),
       ...(level.story?.introKey ? { intro: t(level.story.introKey as TranslationKey) } : {}),
       // A4 stamina system

@@ -399,6 +399,15 @@ export const en: Record<TranslationKey, string> = {
   'stamina.cost': 'Stamina {current}/120 · Cost {cost}',
   'stamina.buy': 'Refill Stamina (30 coins → +60)',
 
+  // ── Level objective labels ────────────────────────────────────────────────
+  'level.objective.label': 'Objective',
+  'level.objective.survive': 'Defeat all enemies',
+  'level.objective.timedDefense': 'Survive until time runs out',
+  'level.objective.destroyBase': 'Destroy the enemy base',
+  'level.objective.leakLimit': 'Allow at most {n} enemies through',
+  'level.objective.boss': 'Defeat the boss',
+  'level.objective.escort': 'Escort allies to safety',
+
   // ── Unit Progression (S12) ────────────────────────────────────────────────
   'progression.unitsTitle': 'Unit Cards',
   'progression.lv': 'Lv {lv}',
