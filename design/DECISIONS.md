@@ -170,3 +170,12 @@
   - **Redis 随 socialsvc P1 引入**（取代原计划"随 worldsvc SLG 一起引入"，提前到位）。
 - **为什么**：家族被迫绑 worldId 导致每赛季重置（违背"公会是社交资产"直觉）；metaserver 持续臃肿；频道 Redis 无单一宿主；独立 socialsvc 关注点清晰且延时可接受（push 是最终一致、非关键路径）。
 - **影响**：新增 [`game/SOCIAL_SVC_DESIGN.md`](game/SOCIAL_SVC_DESIGN.md) 为 socialsvc 架构权威；[`game/SOCIAL_DESIGN.md`](game/SOCIAL_DESIGN.md) 数据模型细节仍有效（P2 迁移参考）；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §8.1 家族章节加"家族已迁 socialsvc"指针；CLAUDE.md 进程数由 8 → 9；[`claudedocs/server.md`](../claudedocs/server.md) 加 socialsvc 条目。README §1.2 登记。
+
+## ADR-022 SLG 主城建筑系统 = 仿三战书桌内政；资源 = 4 地块 + 1 铜币；建筑赛季清空 — Accepted — 2026-06-30
+
+- **决策**（用户拍板）：新增 SLG 主城内政/建筑系统（仿三国志战略版「点进主城 → 君王殿等级门控 + 资源建筑/练兵/城防/科技」），落 [`game/SLG_CITY_DESIGN.md`](game/SLG_CITY_DESIGN.md)。三条关键拍板：
+  - **资源结构对齐三战「4 地块 + 1 铜币」**（消解 graphite/sticker 空转，SLG §3.4 遗留）：`ink/paper/graphite/metal`（粮木石铁）= **地块资源**，地图 `biomeAt` 产——**`graphite`（石料）此前被 `biomeAt` 漏产（三分），须补成四分**（地图 faucet 根因修复）；`sticker`（铜币位/通用）= 主城 `stickerShop`（民居模型）**自产**，非地块。两者 sink = 主城高级建筑升级消耗。资源建筑只给**全局产率乘数**，不取代地图主产。
+  - **D-CITY-1 建筑赛季清空**：建筑/资源/兵力/地图态等 SLG 赛季内战略态**全部赛季重置清空**（对齐 SLG4），是变现发动机「重肝」。**跨季只留 meta 系统资产**——主要是**材料**（材料合成装备；meta 直接发装备的地方很少，呼应 ADR-012/ADR-017「材料为主、成品骨干靠合成」）。
+  - **红线/边界**：建筑只动经济/兵力上限/主城城防，**不提单位战力**（战力归跨季统一养成树的装备/科技）；建筑**永不喂 `buildPvpBlueprints`**（天梯红线，SLG7）；升级吃赛季资源+时间，**coin 只买加速不买上限**（反 P2W，ADR-009 经济基调）。
+- **为什么**：graphite/sticker 两种赛季资源此前无 faucet/sink 空转；`troopCap` 是死值无成长；「点进主城内政」是 SLG 核心体验缺口。仿三战结构最省且玩家认知成熟。赛季清空保战略起跑公平 + 变现重肝，与跨季养成（meta 材料/装备）分层互不污染。
+- **影响**：新增 [`game/SLG_CITY_DESIGN.md`](game/SLG_CITY_DESIGN.md) 为建筑系统机制权威；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.4 遗留指针改指本方案、§21 R-1 更新、新增 §21 剩余工作总览；数字落 [`game/ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §13-SLG-CITY，核验经 [`game/SLG_ECONOMY_CHECK.md`](game/SLG_ECONOMY_CHECK.md)。实现 P1 含 `biomeAt` 四分改造（client 经 alias 共用，须确认确定性地图不破老种子——或仅新赛季生效）。README §1.2 已登记。

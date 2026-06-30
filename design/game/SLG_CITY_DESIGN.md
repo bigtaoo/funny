@@ -9,12 +9,13 @@
 
 ## 0. TL;DR
 
+- **资源结构（对齐三战的「4 地块 + 1 铜币」，SLG §3.4 五种）**：`ink/paper/graphite/metal` = 三战的**粮/木/石/铁，四种地块资源**（`biomeAt` 地图产）；`sticker`（贴纸）= 三战的**铜币位**，通用流通资源，**由主城产**（民居模型），非地块。
 - **要解决的两个真问题**（SLG §15 盘点遗留）：
-  1. **`graphite`（石墨）/ `sticker`（贴纸）两种赛季资源空转**——地图 biome 只产 `ink/paper/metal` 三种，这俩既无 faucet 也无 sink，只是注册进了类型/掠夺/拍卖管道。
+  1. **`graphite`（石墨=石料）空转的真因 = `biomeAt` 漏了它**——现行 biome 只三分（`ink<t0<paper<t1<metal`，`slg.ts:587`，注释明说「only the three land-mined resources」），graphite 本该是**第 4 种地块资源**却没进 biome → **补成四分即给它地图 faucet**（不是「让主城自产」，我早先方案此处搞反）。`sticker`（铜币位）空转的真因 = 没有「民居」式主城产出 → 由主城 `stickerShop` 自产补 faucet。两者的 sink 都来自**高级建筑升级消耗**。
   2. **`troopCap`（兵力上限）是死值**——恒为 `TROOP_CAP_BASE`，没有成长曲线；练兵（`trainTroops`）已落地但训练速度/队列/上限都没有可升级的来源。
-- **方案**：仿三战，**主城点进去 = 独立内政界面（`CityScene`）**，里面摆「书桌（Desk，总等级门控）+ 一排文具建筑」。建筑升级吃**赛季资源 + 时间**（时间 = coin 加速变现点），分别驱动：**资源产率 / graphite+sticker 自产 faucet / 仓储上限 / 兵力上限 + 练兵 / 主城城防**。
-- **这一刀让经济循环的两根空管子转起来**：graphite/sticker 由主城建筑**自产**（faucet）+ 高级建筑升级**消耗**它们（sink），ink/paper/metal 由主城建筑给**全局产率乘数**（地图仍是主产）。
-- **赛季边界（关键拍板，§2 D-CITY-1）**：建筑是 **SLG 赛季内战略态**——**赛季重置清空**（对齐 SLG4「兵力/地图态/赛季资源」同档），不进跨季养成。跨季养成仍只有装备/科技/材料（统一树），**天梯红线不动**（建筑永不喂 `buildPvpBlueprints`）。
+- **方案**：仿三战，**主城点进去 = 独立内政界面（`CityScene`）**，里面摆「书桌（Desk，总等级门控）+ 一排文具建筑」。建筑升级吃**赛季资源 + 时间**（时间 = coin 加速变现点），分别驱动：**4 地块资源产率乘数 / sticker 主城自产 / 仓储上限 / 兵力上限 + 练兵 / 主城城防**。
+- **这一刀让经济循环转起来**：①`biomeAt` 补 graphite 第 4 地块 → graphite 有地图 faucet；②主城 `stickerShop`（民居模型）自产 sticker → sticker 有 faucet；③高级建筑升级**消耗** graphite（高阶建材）+ sticker（通用）→ 两者有 sink；④4 个资源建筑给 `ink/paper/graphite/metal` **全局产率乘数**（地图仍是主产）。
+- **赛季边界（D-CITY-1，✅ 2026-06-30 拍板：清空）**：建筑/资源/兵力/地图态等 **SLG 赛季内战略态全部赛季重置清空**（对齐 SLG4），是变现发动机「重肝」。**跨季只留 meta 系统资产**——主要是**材料**（scrap/lead/binding，赛季产出经邮件入 `SaveData.materials`，G4 已通），材料再合成装备（meta 主产是材料，**直接发装备的地方很少**）。建筑**不进跨季养成**，**天梯红线不动**（建筑永不喂 `buildPvpBlueprints`）。
 - **复用现有地基，零新战斗模型**：`recomputeYield`（产率出口）/ `trainTroops`+`trainingQueue`（练兵）/ `buildSiegeBattle`+`landSiege`（主城围攻）/ `speedupTraining`（加速变现）全是现成的，建筑只是给它们喂参数 + 加一条 `buildQueue` 调度（复刻 `trainingQueue` 模式）。
 
 ---
@@ -25,8 +26,8 @@
 |---|---|---|
 | 点进主城 = 独立内政九宫格界面（与大地图分离） | ✅ 主城点进 = `CityScene` 内政界面 | 九宫格摆位换**手绘书桌俯视**（文具摆在桌上，SketchPen 风） |
 | 君王殿单一总等级，门控所有建筑可升上限 + 解锁顺序 | ✅ **书桌（Desk）** = 单一总门控 | 命名换文具皮；门控逻辑照搬 |
-| 4 资源建筑（农田/伐木/冶铁/采石）提对应资源产量上限 | ✅ 5 资源建筑一一对应 5 资源 | 我们资源主产在**地图格**（惰性结算）→ 资源建筑改为**全局产率乘数**；graphite/sticker 无地图 biome → 建筑**自产 faucet** |
-| 民居产铜币 + 提人口 | 部分采用 | 我们**唯一货币是 coin、不靠建筑产**（铁律）；「铜币位」由 `sticker` 贴纸承担 → 贴纸铺自产 sticker，**不产 coin** |
+| 4 地块资源建筑（农田/伐木/冶铁/采石）提对应**地块资源**产量 | ✅ 4 资源建筑对应 `ink/paper/graphite/metal`（粮木石铁） | 资源主产在**地图格**（惰性结算）→ 资源建筑改为**全局产率乘数**；**graphite 须先补进 `biomeAt`**（现行漏产，P1 前置）才有地块可乘 |
+| 民居产铜币（+ 税收） | ✅ **贴纸铺（Sticker Shop）= 民居模型** | 「铜币位」由 `sticker` 承担 → 贴纸铺**主城自产 sticker**（sticker 非地块、无 biome）；**绝不产 coin**（coin 是唯一货币、严控通胀，铁律 D-CITY-5） |
 | 校场/演武场练兵、提武将属性 | ✅ **练兵场（Drill Yard）** | 只提 `troopCap`/训练速度/队列；**不提单位战力**（战力归统一养成树的装备/科技，避免双注入 + 守红线） |
 | 城墙/城防军提城池耐久 + 守军 | ✅ **城墙（Wall）** 注入主城围攻 | 仅增益**主城那一格**（你的命门）；普通领地防守仍靠 garrison + 玩家布阵 |
 | 科技建筑（军机营/工程营）给科技树加成 | △ Phase 2 **书院（Academy）** | 只做 **SLG 赛季内**蓝图 buff 叠加层，跨季科技仍归统一养成树 |
@@ -41,8 +42,8 @@
 
 | # | 决策 | 结论 / 倾向 | 状态 |
 |---|---|---|---|
-| **D-CITY-1** | 建筑赛季是否清空 | **倾向清空**（赛季内战略态，= 变现发动机「重肝」；对齐 SLG4 清「兵力/地图态/赛季资源」）。跨季只留装备/科技/材料。 | ⚠️ 待拍板 |
-| **D-CITY-2** | 资源建筑模型 | ink/paper/metal = **全局产率乘数**（地图主产 + 主城加成）；graphite/sticker = **主城自产 faucet**（地图无 biome）。 | 锁定 |
+| **D-CITY-1** | 建筑赛季是否清空 | **✅ 清空（2026-06-30 拍板）**：建筑/资源/兵力/地图态等赛季内战略态全清（对齐 SLG4），= 变现发动机「重肝」。**跨季只留 meta 系统资产**，主要是**材料**（材料合成装备；meta 直接发装备的地方很少）。建筑不进养成树。 | 锁定（待落 ADR） |
+| **D-CITY-2** | 资源 faucet 模型（对齐三战 4 地块 + 1 铜币） | `ink/paper/graphite/metal`（粮木石铁，4 地块）= 地图 `biomeAt` 产 + 主城**全局产率乘数**；**`graphite` 须先补进 `biomeAt`**（现行三分漏了它，P1 前置）。`sticker`（铜币位/通用）= 主城 `stickerShop`（民居模型）**自产**，非地块。 | 锁定（修正早先「graphite 主城自产」错案） |
 | **D-CITY-3** | 建筑是否影响单位战力 | **否**。战力归统一养成树（装备/科技）。建筑只动经济/兵力上限/主城城防。避免双注入复杂度 + 守红线清晰。书院（Phase 2）是唯一例外（赛季内蓝图 buff，独立注入口）。 | 锁定 |
 | **D-CITY-4** | 主城本体命名 | **书桌（Desk）** 作内政中枢隐喻（文具摆桌上）。显示名 DRAFT，最终皮由 [`art-direction`](../product/art-direction.md) 定。 | DRAFT |
 | **D-CITY-5** | 建筑升级是否吃 coin | **否**（coin 是唯一货币、跨季、严控通胀；不靠建筑印也不靠建筑烧）。升级吃 5 赛季资源 + 时间；**coin 只用于加速**（变现）。 | 锁定 |
@@ -59,9 +60,9 @@
 | `desk` | 书桌 | 枢纽 | **总等级门控**：决定其余建筑可升上限（`buildLevel ≤ desk`）+ 解锁顺序；自身升级提主城基础耐久 + 开建造队列槽位 | 门控校验 + `wall` 基线 | P1 |
 | `inkPot` | 墨水瓶 | 资源 | **ink 全局产率乘数** ×(1+lvl·step) | `recomputeYield` | P1 |
 | `paperTray` | 纸盘 | 资源 | **paper 全局产率乘数** | `recomputeYield` | P1 |
-| `graphiteMill` | 石墨坊 | 资源 | **graphite 主城自产**（基底/h × lvl，地图无 biome）→ **激活 graphite faucet** | `recomputeYield` 自产项 | P1 |
+| `graphiteMill` | 石墨坊 | 资源 | **graphite 全局产率乘数**（石料=地块资源，须先补 `biomeAt` 第 4 分区） | `recomputeYield` | P1 |
 | `metalForge` | 金属铸坊 | 资源 | **metal 全局产率乘数** | `recomputeYield` | P1 |
-| `stickerShop` | 贴纸铺 | 资源 | **sticker 主城自产**（通用资源 faucet）→ **激活 sticker faucet** | `recomputeYield` 自产项 | P1 |
+| `stickerShop` | 贴纸铺 | 资源（民居模型） | **sticker 主城自产**（铜币位/通用资源 faucet，非地块）→ **激活 sticker faucet**；绝不产 coin | `recomputeYield` 自产项 | P1 |
 | `cabinet` | 文件柜 | 仓储 | 提 `RESOURCE_CAP`（仓储上限）+ 被掠夺时保护一部分（三战仓库护粮） | `settleResources` cap + `applySiege` loot | P1 |
 | `drillYard` | 练兵场 | 军事 | 提 `troopCap` + 训练速度（`trainTroops` 时长）+ 训练队列上限（`TROOP_TRAIN_QUEUE_MAX`）+ 解锁更高兵种训练 | `trainTroops` / `troopCap` | P1 |
 | `wall` | 城墙 | 城防 | **仅主城那格**：被围攻时提基地耐久 / 守军 HP | 主城 `buildSiegeBattle` + `landSiege` | P2 |
@@ -71,13 +72,15 @@
 **faucet/sink 闭环（激活 graphite/sticker）**：
 
 ```
-faucet ── 地图资源点：ink / paper / metal（biome 三分，已有）
-       ├─ 主城 graphiteMill：graphite（新，主城自产）
-       └─ 主城 stickerShop：sticker（新，主城自产）
-sink ──── 建筑升级消耗 5 资源；高级建筑（cabinet/drillYard/wall/academy 高 lvl）
+faucet ── 地图资源点（biome 地块）：ink / paper / metal（已有）
+       │                          └ graphite（新：biomeAt 三分→四分，补第 4 地块）★P1 前置
+       └─ 主城 stickerShop（民居模型）：sticker（铜币位/通用，主城自产，非地块）
+sink ──── 建筑升级消耗赛季资源；高级建筑（cabinet/drillYard/wall/academy 高 lvl）
           吃 graphite（高阶建材，SLG §3.4 定义）+ sticker（通用流通）
-          → graphite/sticker 既被产出又被消耗，两根空管子转起来
+          → graphite 有地块产 + sticker 有主城产，两者再被建筑升级消耗 → 空管子转起来
 ```
+
+> ★ **P1 前置：`biomeAt` 补 graphite 第 4 地块**——现行 `biomeAt`（`slg.ts:587`）三分仅 ink/paper/metal；改为四分（如 `ink < t0 < paper < t1 < graphite < t2 < metal`，阈值待 §7 调参），让 graphite 像其余三种地块资源一样从地图产出。这是「graphite 不再空转」的根，非建筑本身。
 
 ---
 
@@ -104,7 +107,8 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 
 | 注入点 | 现状 | 改动 |
 |---|---|---|
-| **`recomputeYield`**（产率唯一出口，所有改产率路径已收口于此） | 聚合领地格 `tileYield` + 国民加成 | 末尾乘 `buildingYieldMult(buildings, rt)`（inkPot/paperTray/metalForge）；加 `buildingSelfYield(buildings, rt)` 自产项（graphiteMill/stickerShop）。`Math.floor` 保整。 |
+| **`biomeAt`**（地图地块资源分区，`slg.ts:587`）★P1 前置 | 三分仅 `ink/paper/metal` | 改四分加入 `graphite`（粮木石铁四地块），让 graphite 有地图产出。阈值 §7 调参。 |
+| **`recomputeYield`**（产率唯一出口，所有改产率路径已收口于此） | 聚合领地格 `tileYield` + 国民加成 | 末尾乘 `buildingYieldMult(buildings, rt)`（4 地块建筑 inkPot/paperTray/graphiteMill/metalForge）；加 `buildingSelfYield(buildings,'sticker')` 自产项（stickerShop=民居模型，sticker 非地块）。`Math.floor` 保整。 |
 | **`settleResources`**（惰性结算，cap=`RESOURCE_CAP`） | `min(settled, RESOURCE_CAP)` | cap 改 `resourceCap(buildings)` = `RESOURCE_CAP × (1+cabinet·step)`（文件柜提仓储上限）。 |
 | **`trainTroops` / `troopCap`** | `troopCap` 恒 `TROOP_CAP_BASE`；训练时长 `TROOP_TRAIN_TIME_SEC × battlePass` | `troopCap = troopCapFor(buildings)` = `TROOP_CAP_BASE + drillYard·step`；训练时长再乘 `drillTrainMult(drillYard)`；队列上限 `TROOP_TRAIN_QUEUE_MAX + drillYard 档`。 |
 | **主城 `buildSiegeBattle`/`landSiege`**（仅 `type:'base'` 分支） | 按 tileLevel 派生基地 | 主城被围攻 → 基地等级/守军 HP 乘 `wallDefenseMult(wall)`（P2）。普通领地不受影响。 |
@@ -129,14 +133,15 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 
 ## 7. DRAFT 数值（→ ECONOMY_NUMBERS §13-SLG-CITY 登记，待经济模拟）
 
-> 全部占位，上线前过经济模拟（faucet/sink 平衡 + 重肝节奏 + 鲸鱼天花板）。常量真源 = `server/shared/src/slg.ts`，本表是设计侧占位快照。
+> 全部占位，上线前过经济核验（faucet/sink 平衡 + 重肝节奏 + 鲸鱼天花板）——核验方法/判据见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md)，数字登记去 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §13-SLG。常量真源 = `server/shared/src/slg.ts`，本表是设计侧占位快照。
 
 | 常量（占位名） | 占位值 | 说明 |
 |---|---|---|
 | `DESK_MAX_LEVEL` | 20 | 书桌（总门控）上限，对齐三战 20 级 |
 | `BUILDING_MAX_LEVEL` | =desk 当前等级 | 各建筑 ≤ 书桌等级 |
-| `BUILD_YIELD_STEP` | 0.05（+5%/级） | inkPot/paperTray/metalForge 每级产率乘数 |
-| `GRAPHITE_SELF_BASE` / `STICKER_SELF_BASE` | DRAFT | graphiteMill/stickerShop 自产基底/h（× lvl） |
+| `biomeGraphiteMax` 等四分阈值 | DRAFT | `biomeAt` 三分→四分（加 graphite 地块）的分区阈值（★P1 前置） |
+| `BUILD_YIELD_STEP` | 0.05（+5%/级） | inkPot/paperTray/graphiteMill/metalForge 每级产率乘数（4 地块） |
+| `STICKER_SELF_BASE` | DRAFT | stickerShop（民居模型）自产 sticker 基底/h（× lvl）；graphite 走地块产，无自产基底 |
 | `CABINET_CAP_STEP` | 0.1（+10%/级） | 文件柜每级仓储上限；满级保护掠夺 X% |
 | `DRILL_TROOPCAP_STEP` | DRAFT | 练兵场每级 troopCap 增量 |
 | `DRILL_TRAIN_SPEED_STEP` | DRAFT | 练兵场每级训练提速 |
@@ -175,7 +180,8 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 ## 10. 分期（可独立验收）
 
 - **P1 — 核心经济闭环（最该先做，解空转 + troopCap 成长）**：
-  - `desk` 门控 + 5 资源建筑（**激活 graphite/sticker faucet + sink**）+ `cabinet`（仓储）+ `drillYard`（接 `troopCap`/训练）。
+  - **★前置：`biomeAt` 三分→四分加入 graphite**（给 graphite 地图 faucet，根因修复，与建筑解耦但同刀做）。
+  - `desk` 门控 + 4 地块资源建筑（inkPot/paperTray/graphiteMill/metalForge，全局产率乘数）+ `stickerShop`（民居模型，自产 sticker faucet）+ `cabinet`（仓储）+ `drillYard`（接 `troopCap`/训练）；高级建筑升级吃 graphite/sticker（**sink**）。
   - `buildQueue` 调度（复刻 `trainingQueue`）+ `upgradeBuilding`/`speedupBuild` + `recomputeYield`/`trainTroops`/`settleResources` 注入。
   - `CityScene` UI（含练兵并入）+ 契约 + i18n。
   - 赛季清空接 `resetSeason`。

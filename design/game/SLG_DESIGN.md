@@ -141,7 +141,7 @@
 
 > **✅ code rename 已落地（2026-06-30）**：`ResourceType` = `ink/paper/graphite/metal/sticker`（`shared/slg.ts`），`RESOURCE_TYPES`/`emptyResources`/`WATCHTOWER_COST`/`tileYield`/`biomeAt`/`TROOP_TRAIN_INK_COST` 同步；worldsvc（`service.ts`/`db.ts`/`auctionService.ts`）+ 契约 `openapi-world.yml` resType enum + 客户端（`WorldMapScene` 颜色/展示/训练、`openapi-world.ts`、i18n zh/de/en）全部更新；server typecheck + client tsc + web 构建全绿。
 >
-> **遗留（balance pass，未做）**：graphite/sticker 目前**无地图产出 faucet 也无消耗 sink**——biome 仍三分仅产 ink/paper/metal（graphite 无消耗它的建筑系统，sticker 是通用资源），二者已注册进类型/存储/资源包/掠夺/拍卖禁挂/瞭望塔成本等全部泛化管道，待建筑系统 + 数值演算时再配产出与消耗（§16.5 / ECONOMY_NUMBERS）。
+> **遗留（balance pass，方案已出 → [`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)）**：graphite/sticker 目前**无地图产出 faucet 也无消耗 sink**——biome 仍三分仅产 ink/paper/metal，二者已注册进类型/存储/资源包/掠夺/拍卖禁挂/瞭望塔成本等全部泛化管道。**对齐三战「4 地块 + 1 铜币」的修正方案**：`graphite`（石料）本是**第 4 种地块资源**，应把 `biomeAt`（`slg.ts:587`）三分改四分补上（地图 faucet）；`sticker`（铜币位/通用）由主城 `stickerShop`（民居模型）**自产**（非地块 faucet）；两者 sink = 主城高级建筑升级消耗。随主城建筑系统（SLG_CITY_DESIGN P1）落地，数值经 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) 核验（§16.5 / ECONOMY_NUMBERS §13-SLG）。
 
 ---
 
@@ -1408,7 +1408,7 @@ if (path.startsWith('/admin/world/')) {
 
 | # | 缺口 | 现状 | 计划 |
 |---|---|---|---|
-| **R-1** | **建筑 / 主城内政系统整块缺失** | worldsvc 唯一「建筑」是瞭望塔（`buildWatchtower`，纯视野源）；无资源生产/军事/城防建筑；`troopCap` 恒为 `TROOP_CAP_BASE`（死值）。直接后果：5 资源里 **graphite/sticker 空转**（无 faucet 无 sink，biome 只产 ink/paper/metal）。 | → **[`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)** 已出方案（仿三战主城内政，P1 即解 graphite/sticker 空转 + troopCap 成长）。待拍 D-CITY-1（建筑赛季是否清空）后实现。 |
+| **R-1** | **建筑 / 主城内政系统整块缺失** | worldsvc 唯一「建筑」是瞭望塔（`buildWatchtower`，纯视野源）；无资源生产/军事/城防建筑；`troopCap` 恒为 `TROOP_CAP_BASE`（死值）。直接后果：5 资源里 **graphite/sticker 空转**——`graphite`（石料）本应是第 4 种地块资源但 `biomeAt` 漏产（三分），`sticker`（铜币位）无主城产出。 | → **[`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)** 已出方案（仿三战 4 地块+1 铜币 + 主城内政）。**D-CITY-1 ✅ 清空（2026-06-30 拍板）**，跨季只留 meta 材料/装备。P1 = `biomeAt` 补 graphite 第 4 地块 + stickerShop 自产 sticker + 4 资源建筑 + drillYard，即解空转 + troopCap 成长。 |
 | **R-2** | **资源格地图渲染未接入** | 5 母题 × 10 级程序合成资源格美术已出图打包（`res_atlas`），但未接进 `WorldMapScene` 渲染，地图资源点仍是程序色块。 | §3.4 待办：母题加载 + 双轴（丰度/守备）+ 10 级运行时合成接入。 |
 
 ### 21.2 第二档——规则 / 体验补漏
