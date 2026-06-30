@@ -5,7 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildIcon } from '../render/icons';
-import { cardArtUrl, UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
+import { cardArtUrl, UNIT_ART_URLS, getArtTexture, preloadL1CardArtTextures } from '../render/cardArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { EQUIP_SLOT } from '../app/equipSlot';
@@ -107,6 +107,7 @@ export class CollectionScene implements Scene {
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
     this.render();
+    void preloadL1CardArtTextures();
   }
 
   update(): void { /* static */ }

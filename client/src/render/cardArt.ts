@@ -8,6 +8,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { CardDefinition, CardType, UnitType, BuildingType, SpellType } from '../game/types';
+import { preloadTextureList } from '../assets/preloadTextures';
 import infantryArtUrl from '../assets/infantry.png';
 import archerArtUrl from '../assets/archer.png';
 import shieldBearerArtUrl from '../assets/shieldbearer.png';
@@ -72,4 +73,21 @@ export const UNIT_ART_URLS: Record<string, string> = {
 /** Texture cache keyed by url — shared with the `PIXI.Texture.from` global cache. */
 export function getArtTexture(url: string): PIXI.Texture {
   return PIXI.Texture.from(url);
+}
+
+// L1 card art: heroes + spells (L0 trio infantry/archer/shieldbearer is already
+// preloaded by bootManifest and excluded here).
+const L1_CARD_ART_URLS = [
+  maxArtUrl            as string,
+  lenaArtUrl           as string,
+  maraArtUrl           as string,
+  spellHasteArtUrl         as string,
+  spellMeteorArtUrl        as string,
+  spellRockslideArtUrl     as string,
+  spellBridgeCollapseArtUrl as string,
+];
+
+/** Warm L1 hero + spell card art into the AssetIO disk cache + PIXI texture cache. */
+export function preloadL1CardArtTextures(): Promise<void> {
+  return preloadTextureList(L1_CARD_ART_URLS);
 }

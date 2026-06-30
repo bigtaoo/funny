@@ -13,6 +13,7 @@ import {
 } from '../game';
 import type { EngineEquipmentInput } from '@nw/engine';
 import { createLocalMatch } from '../app/matchEngine';
+import { preloadL1CardArtTextures } from '../render/cardArt';
 import type { NetState } from '../net/NetClient';
 import type { MatchOver, PeerDc } from '../net/proto/transport';
 
@@ -122,6 +123,7 @@ export class GameScene implements Scene {
       ? {}
       : { start: true, boss: opts.level?.objective.kind === 'boss' };
 
+    void preloadL1CardArtTextures();
     this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkin ?? null, opts.equipment ?? null, opts.tutorial ?? false, battleLabels);
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
