@@ -412,6 +412,87 @@ F2P 金币龙头：广告（主力）+ 战斗 / 活动 / 称号 / 任务。
 
 ---
 
+## 13-SLG. SLG 大世界持久经济数值（settle 结算奖励 · 材料估值 · A 轨聚合）`[DRAFT]`
+
+> 机制/核验权威：[`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md)（核验方法/判据/签字）+ [`SLG_DESIGN.md`](SLG_DESIGN.md) §17/§21；本节为 **SLG DRAFT 数字单一源** + econ-sim 基准结论。
+> 铁律（SLG_ECONOMY_CHECK §0.1 / §1，2026-06-30 拍板）：SLG 是「时间长得多的一场对战」，局内一切（赛季资源粮铁木/领地/城建/兵力/繁荣度）**季末全清**，唯一带出赛季的持久产出 = **settle 结算奖励（发到排名宗门每个成员，per-head）+ 日常/活动少量材料（细水）**。国民产出加成 `0.10`、防御加成 `0.15` 等是**纯季内节奏，永不进 §6.1 月度金币预算**。`SETTLE_REWARDS.coins` 维持 **0**（任何 >0 走 §2.4 签字并入 §6.1）。
+
+### 13-SLG.1 材料 → 金币估值基准（保守上界，§2.4）
+
+项目无显式材料定价。从**已发布常量自洽反推**（econ-sim `valuation.ts` 据此自动计算，永不与代码脱节）：
+
+```
+value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_MATERIAL_GRANTS[mat_*]
+```
+
+| 材料 | gacha 档 | dupe 退币 | 单格发放量 | **估值（coins/个）** |
+|---|---|---|---|---|
+| `scrap` | common | 10 | 10 | **1.00** |
+| `lead` | rare | 50 | 3 | **16.67** |
+| `binding` | epic | 400 | 1 | **400.00** |
+
+> 取 epic 高退币值给 binding ⇒ **偏保守（高估 settle 产出）**，过则真过。`binding=400` 是**全部聚合结论的最大杠杆**——它独占 champion 人均价值的 ~84%，也是头部倾斜判据爆表的根因。调估值优先动这里。
+> 旁证（非主依据）：单抽 150 coins、装备打造 `wp_marker(rare)=lead6+binding2` 等量级与上表同序，不矛盾。
+
+### 13-SLG.2 settle 可调参数表（`@nw/shared/slg.ts`，DRAFT）
+
+| 参数 | 默认 | 域 | 说明 |
+|---|---|---|---|
+| `SETTLE_REWARDS.champion.items` | scrap500/lead200/binding50 | settle | rank1 宗门**每成员** |
+| `SETTLE_REWARDS.top3.items` | scrap300/lead120/binding25 | settle | rank2–3 每成员 |
+| `SETTLE_REWARDS.top10.items` | scrap150/lead60/binding10 | settle | rank4–10 每成员 |
+| `SETTLE_REWARDS.participant.items` | scrap50/lead20/**binding0** | settle | 其余全部人头（主导项） |
+| `SETTLE_REWARDS.*.coins` | **0** | settle | 红线：保持 0 |
+| `CENTER_CAPITAL_MULT` / `CENTER_CAPITAL_IDX` | ×2 / 9 | settle | 持中原首府的宗门成员材料 ×2 |
+| `WORLD_CAPACITY` | 10000 | 运维 | 单 shard 人口上限 → shard 数 |
+| 细水（日常/活动材料/人/日） | 场景输入 | settle | §0.1 计入 A 轨聚合 |
+
+繁荣度三参 `PROSPERITY_W_*`(10/50/5)、`PROSPERITY_DECAY_PER_DAY`(0.05)、`SECT_FOUND_PROSPERITY_MIN`(2000)、`sectStrengthScore` 权重、国民加成 0.10/0.15、碾压结算阈值**不在本节经济预算内**（分属 SLG_ECONOMY_CHECK B/C/D/E/F 轨，各自核验，登记见该文档）。
+
+### 13-SLG.3 演算示例（econ-sim 三场景，2026-06-30 首跑）
+
+工具：`server/tools/econ-sim/`（纯 TS，import `@nw/shared`，不连库，对标 difficultySim）。跑法 `npx tsx src/index.ts`。口径固定 per-head（§2.2），场景差异 = 人口 × 宗门人数分布 × 首府持有率。
+
+基准（per-player 月度常规材料刷量 = 40 关/日 ×30 ×0.7 复刷 × 中段普通关掉落 = **~178,360 coin-eq/月**）。
+
+| 场景 | 人口 | settle 全服月度 coin-eq | champion 人均/季 | participant 人均/季 |
+|---|---|---|---|---|
+| conservative | 20k | 16.1M | 47,667c | 383c |
+| baseline | 50k | 85.7M | 47,667c | 383c |
+| aggressive | 100k | 714.5M | 47,667c | 403c |
+
+判据对照（三场景一致）：
+
+| 判据 | 视角 | 结果 | 数 |
+|---|---|---|---|
+| **人均稀释**（participant） | 人均 | ✅ PASS | 0.11%（≪15%）|
+| **人均稀释**（champion 最坏头） | 人均 | ✅ PASS | 13.36%（<15%，贴边）|
+| **全服通胀（vs 材料龙头·正确口径）** | 全服 | ✅ PASS | 0.45% / 0.96% / 4.01%（≪10%）|
+| **coin 子项** | — | ✅ PASS | Σcoins=0 |
+| **头部倾斜**（champion/participant 人均） | 人均 | ❌ **FAIL** | ~124×（提案阈 10×）|
+| 全服通胀（vs 金币龙头·跨类参考） | 全服 | ⚠ 非门控 | 67%–595%（见下注）|
+
+### 13-SLG.4 结论与待拍板
+
+1. **安全主结论 ✅**：settle **不撑爆持久经济**。人均稀释（养成体验）与全服通胀（材料龙头同单位口径）在保守估值（binding=400）+ 激进场景（10万人/满编宗门）下仍 ≪ 阈值——A 轨「不破红线」成立。**coin 子项 = 0**，红线 1 自然满足。
+2. **头部倾斜 FAIL（唯一需拍板项）**：champion 成员人均 ≈ participant 的 **124×**，远超提案 10×。根因纯结构性——participant `binding=0` 而 champion `binding=50(×2)`，binding 估值又高（400）。三选一由经济负责人拍：
+   - (a) **上调头部倾斜阈值 / 降级该判据**：per-head 口径下「冠军该多拿」，且参与者**绝对稀释只有 0.11%**（拿得少不等于被剥夺），10× 对竞技 SLG 可能本就过严；**推荐**——这是提案阈值，不是红线。
+   - (b) 给 participant 一个 binding 地板（如 binding 2–5），把比值压到有限可控；
+   - (c) 下调 champion/top 档 binding 量。
+3. **「vs 金币龙头」口径是跨类参考、非门控** ⚠：settle 实发 `coins=0`，把材料 coin-equiv 去比**金币**龙头（§6.1）是名义换算、量纲错配（材料经济与金币经济不同数量级、不可兑），故 econ-sim 标为 informational、不计入 core 判决。**经济约束的正确分母 = 材料龙头**（同单位、可比），即上表「正确口径」行。建议 SLG_ECONOMY_CHECK §2.2/§2.3 据此补注分母口径。
+
+### 13-SLG.5 经济约束（红线复述）
+
+- settle/细水是 SLG **唯一**持久 faucet；赛季资源/城建/国民加成零持久沉淀，**不进本节也不进 §6.1**。
+- `SETTLE_REWARDS.coins` 改非 0 ⇒ 必并入 §6.1 月度预算 + 经济负责人签字（§2.4）。
+- settle 任何材料/装备/皮肤**绝不进 PvP 蓝图**（`buildPvpBlueprints` 零养成参，§9 硬墙）。
+- 皮肤限定件纯 cosmetic（ADR-003）；legendary 仍只走盲盒。
+- 数值是 DRAFT：终态判据 = 上线后 analyticsvc 实测（settle 实发总量 / participant 人头 / 首府持有率）对账，偏差回 SLG_ECONOMY_CHECK §10 重跑（惰性下季生效）。
+
+> 上表阈值 15%/10%/10× 仍是**提案**；头部倾斜拍板后回填本表 + 把 SLG_DESIGN §17.1/§21.4 的 `DRAFT` 降级为「已过核验（日期）」。
+
+---
+
 ## 14. 活动 / Live-ops 数值（双倍封顶 · 积分 · 里程碑）`[可调]`
 
 > 机制权威：[`EVENTS_DESIGN.md`](EVENTS_DESIGN.md)；本节为**数字单一源**。红线（ADR-014）：①不新增金币龙头（活动金币计入 §6.1 月度预算，主发软通货/限定皮肤碎片/积分）；②加成期硬封顶且只作用于受体力闸门约束的 PvE 产出；③积分活动期清零、不入持久经济；④PvP 硬墙恒不读活动加成。

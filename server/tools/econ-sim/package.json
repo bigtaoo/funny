@@ -1,0 +1,18 @@
+{
+  "name": "@nw/econ-sim",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SLG persistent-economy aggregation simulator (A-track of SLG_ECONOMY_CHECK). Headless, imports @nw/shared SETTLE_REWARDS/constants, never touches the DB. Counterpart of client/test/difficultySim.ts on the economy side.",
+  "type": "commonjs",
+  "scripts": {
+    "sim": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nw/shared": "*"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}

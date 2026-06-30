@@ -1,0 +1,9 @@
+{
+  "name": "conservative",
+  "note": "Low SLG activity, small winning sects, little capital holding. Lower-bound volume.",
+  "population": 20000,
+  "topSectMembers": { "champion": 60, "top3": 50, "top10": 35 },
+  "capitalHoldRate": { "champion": 1.0, "top3": 0.2, "top10": 0.0, "participant": 0.0 },
+  "dailyMaterialPerActive": { "scrap": 3, "lead": 0.5, "binding": 0 },
+  "seasonDays": 60
+}

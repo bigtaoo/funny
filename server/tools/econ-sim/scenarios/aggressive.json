@@ -1,0 +1,9 @@
+{
+  "name": "aggressive",
+  "note": "High activity, near-max winning sects (<=900/sect), capital widely held, fatter 细水. Upper-bound stress.",
+  "population": 100000,
+  "topSectMembers": { "champion": 900, "top3": 700, "top10": 400 },
+  "capitalHoldRate": { "champion": 1.0, "top3": 0.7, "top10": 0.3, "participant": 0.05 },
+  "dailyMaterialPerActive": { "scrap": 10, "lead": 2, "binding": 0.1 },
+  "seasonDays": 60
+}

@@ -93,6 +93,7 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 
 > 阈值 15%/10%/10×/5% 是**提案**，跑出真实聚合数后由经济负责人拍板调整并回填本表。
 > ⚠️ per-head 口径下：**人均稀释**控养成体验（每人就那一份），**全服通胀**控大盘（乘了人口）——两个判据缺一不可，且可能给出相反信号（人均小但乘人口大），需同时满足。
+> ⚠️ **全服通胀分母口径（2026-06-30 econ-sim 首跑澄清）**：settle 发的是**材料**、实发 `coins=0`，所以「全服月度金币当量」应比的是**材料龙头**（同单位、可兑、量级可比 = 全服关卡刷量的 coin-equiv），**不是** §6.1 金币龙头。把材料 coin-equiv 去比金币龙头是量纲错配（两套经济不同数量级），econ-sim 把该口径列为 informational 跨类参考、不计入 core 判决。本判据「全服」行据此以**材料龙头**为分母。
 
 ### 2.4 材料→金币估值基准（必须先确立）
 
@@ -106,11 +107,11 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 
 ---
 
-## 3. econ-sim 核验脚本（待建，A+B 轨共用）
+## 3. econ-sim 核验脚本（A 轨已建 ✅ 2026-06-30，B 轨季内模式待补）
 
-战斗侧有 `difficultySim`（headless 引擎 + 基线 AI，见 [[project-difficulty-sim]]）；经济侧**目前没有对应工具**。建议建一个小的 headless 经济聚合脚本，而非一次性手算电子表格——因为这批数会反复调，需要可重跑。
+战斗侧有 `difficultySim`（headless 引擎 + 基线 AI，见 [[project-difficulty-sim]]）；经济侧 **A 轨工具已落地**：`server/tools/econ-sim/`（纯 TS，import `@nw/shared` 的 `SETTLE_REWARDS`/`CENTER_CAPITAL_MULT`/`WORLD_CAPACITY`/`DUPE_REFUND_COINS`/`GACHA_MATERIAL_GRANTS`，**不连库**，与 difficultySim 同构）。跑法 `cd server/tools/econ-sim && npx tsx src/index.ts`；估值/基准在 `src/valuation.ts`，聚合/判据在 `src/model.ts`，场景在 `scenarios/*.json`。首跑结论登记 [`ECONOMY_NUMBERS.md` §13-SLG](ECONOMY_NUMBERS.md)。**B 轨（赛季资源季内模式）尚未实现**，待 SLG_CITY 数值核验时补。
 
-**位置（建议）**：`server/tools/econ-sim/`（纯 TS，import `@nw/shared` 的 `SETTLE_REWARDS`/`familyProsperity`/常量，**不连库**，与 difficultySim 同构）。
+**位置**：`server/tools/econ-sim/`（已建）。
 
 **输入（场景配置 JSON）**：
 ```
@@ -199,8 +200,8 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 
 一批 SLG 数值「过经济核验」的完整定义：
 
-- [ ] **A 轨**：econ-sim（或临时表格）三场景跑完，§2.3 判据基准档全 PASS——**人均稀释**与**全服通胀**两个视角同时满足（per-head 口径，§2.2）；日常/活动细水材料已计入；材料→金币估值基准已确立并记录。
-- [ ] **A-coin**：`SETTLE_REWARDS.coins` 维持 0；若 >0，已并入 §6.1 预算且经济负责人签字。
+- [x] **A 轨工具 + 首跑（2026-06-30）**：econ-sim 三场景跑完（§13-SLG.3）；材料→金币估值基准已确立并记录（§13-SLG.1，binding=400 保守上界）；细水已计入。**人均稀释 ✅**（participant 0.11% / champion 13.36%）+ **全服通胀 ✅**（vs 材料龙头 0.45–4.01%）三场景 PASS。**唯一 FAIL = 头部倾斜 ~124×（提案 10×）**，待经济负责人三选一拍板（§13-SLG.4-2）；拍板后本项 close。
+- [x] **A-coin**：`SETTLE_REWARDS.coins` = 0（econ-sim 校验 ✅）；若改 >0，须并入 §6.1 预算且经济负责人签字。
 - [ ] **B 轨**：国民产出加成季内产消曲线已核，不破裸经济、SLG_CITY 节奏在窗口内。
 - [ ] **C 轨**：difficultySim 跑出防御加成胜率 + 廉价结算阈值分类准确率，落判据区间（与 §16.5 数值批次一并）。
 - [ ] **D 轨**：分配方差蒙特卡洛 PASS（极差 ≤ 最强单体）。
