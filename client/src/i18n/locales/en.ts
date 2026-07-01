@@ -339,6 +339,12 @@ export const en: Record<TranslationKey, string> = {
   'shop.promoSuccess': 'Redeemed!',
   'shop.promoInvalid': 'Invalid or already used',
   'shop.promoError': 'Redemption failed — retry',
+  'shop.coinsTab': 'Top Up',
+  'shop.bestValue': '★ Best Value',
+  'shop.firstDouble': '2× First Purchase',
+  'shop.rechargeSuccess': 'Payment complete! Coins credited.',
+  'shop.rechargeError': 'Payment failed — please retry',
+  'shop.rechargeCancelled': 'Payment cancelled',
 
   // ── Gacha (S2-6) ─────────────────────────────────────────────────────────────
   'gacha.title': 'Gacha',

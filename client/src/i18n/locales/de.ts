@@ -339,6 +339,12 @@ export const de: Record<TranslationKey, string> = {
   'shop.promoSuccess': 'Eingelöst!',
   'shop.promoInvalid': 'Ungültig oder bereits verwendet',
   'shop.promoError': 'Einlösung fehlgeschlagen',
+  'shop.coinsTab': 'Aufladen',
+  'shop.bestValue': '★ Bestes Angebot',
+  'shop.firstDouble': '2× Erstkauf',
+  'shop.rechargeSuccess': 'Zahlung erfolgt! Münzen gutgeschrieben.',
+  'shop.rechargeError': 'Zahlung fehlgeschlagen — bitte erneut versuchen',
+  'shop.rechargeCancelled': 'Zahlung abgebrochen',
 
   // ── Lootbox (S2-6) ───────────────────────────────────────────────────────────
   'gacha.title': 'Lootbox',

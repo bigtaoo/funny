@@ -7,9 +7,11 @@ import type { Collections, JwtConfig, FeatureFlagCache } from '@nw/shared';
 import { createLogger, internalKeysFromEnv } from '@nw/shared';
 import { MetaService } from './service.js';
 import { registerAdCallbackRoutes } from './ads.js';
+import { registerPaddleRoutes } from './paddle.js';
 
 const log = createLogger('meta');
 import { makeSecurityHandlers } from './auth.js';
+import { extractBearer, verifyToken } from '@nw/shared';
 import { registerInternalRoutes } from './internal.js';
 import { HttpCommercialClient, type CommercialClient } from './commercialClient.js';
 import { HttpGatewayClient, type GatewayClient } from './gatewayClient.js';
@@ -105,6 +107,22 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
 
   // Ad platform SSV callbacks (platform-initiated; no player authentication).
   registerAdCallbackRoutes(app, { cols: opts.cols, commercial, now });
+
+  // Paddle Billing routes: player checkout session + Paddle webhook.
+  registerPaddleRoutes(app, {
+    cols: opts.cols,
+    commercial,
+    now,
+    getAccountId(req) {
+      const token = extractBearer(req.headers['authorization']);
+      if (!token) return null;
+      try {
+        return verifyToken(token, opts.jwt);
+      } catch {
+        return null;
+      }
+    },
+  });
 
   // Internal routes (not visible to players; X-Internal-Key auth): fetch ELO + end-of-match reporting + peer judge.
   registerInternalRoutes(app, {

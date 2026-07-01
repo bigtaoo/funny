@@ -73,8 +73,52 @@
 **首充双倍（First Purchase Bonus）**
 - 触发：账号生命周期**第一次**成功 IAP，平台无关
 - 效果：当次到账 coins ×2（即双倍入账，不叠加其他活动）
-- 服务端：`commercial` 服务 `firstPurchaseBonus: boolean` 字段，发货时检查并置位
-- 前端：充值面板所有档位打"首充双倍"角标（非独立入口）
+- 服务端：`commercial` 服务 `wallets.firstPurchasedAt` 字段（CAS 原子设置，`service.ts claimFirstPurchaseBonus()`）✅ 已实现
+- 前端：充值面板所有档位打"首充双倍"角标（非独立入口）✅ 已实现
+
+**Paddle 实现状态（feat/paddle-iap，2026-07-01）**
+
+| 组件 | 状态 | 说明 |
+|---|---|---|
+| `server/metaserver/src/paddle.ts` | ✅ 完成 | webhook 签名验证 + checkout session 创建 |
+| `POST /shop/paddle/checkout` | ✅ 完成 | 玩家发起结账，返回 transactionId |
+| `POST /paddle/webhook` | ✅ 完成 | Paddle 回调，发币 + 幂等 |
+| `commercial.paddleComplete()` | ✅ 完成 | 含首充双倍逻辑 |
+| 客户端 Coins tab | ✅ 完成 | ShopScene 5 档 web tier 列表 |
+| 客户端 Paddle.js 接线 | ⏳ 待做 | App 层 `rechargeCoins` 回调：加载 Paddle.js + `Paddle.Initialize({token})` + `Paddle.Checkout.open({transactionId})` |
+| 环境变量配置 | ⏳ 待做 | `NW_PADDLE_API_KEY` / `NW_PADDLE_WEBHOOK_SECRET` / `NW_PADDLE_PRICE_IDS` / `NW_PADDLE_CLIENT_TOKEN` |
+| Paddle 后台 Products | ⏳ 待做 | 5 个档位各建一个 one-time Product，拿 Price ID 填入 `NW_PADDLE_PRICE_IDS` |
+| CrazyGames 广告 SDK | ⏳ 待做 | 接 CrazyGames SDK（独立任务，非 Paddle） |
+
+**客户端接线待办（App 层）**
+
+```typescript
+// App.ts 接线示例（伪代码）
+const rechargeCoins = async (tierId: string): Promise<ShopActionResult> => {
+  // 1. 获取 transactionId
+  const resp = await apiClient.paddleCheckout({ tierId });
+  if (!resp.ok) return { ok: false, key: 'shop.rechargeError' };
+
+  // 2. 确保 Paddle.js 已加载 + 初始化（懒加载）
+  await loadPaddleJs();          // 动态插入 <script src="https://cdn.paddle.com/paddle/v2/paddle.js">
+  Paddle.Initialize({ token: NW_PADDLE_CLIENT_TOKEN });
+
+  // 3. 打开结账 overlay，等待结果
+  return new Promise((resolve) => {
+    Paddle.Checkout.open({
+      transactionId: resp.transactionId,
+      eventCallback: (event) => {
+        if (event.name === 'checkout.completed') {
+          void refreshWallet();  // 刷新钱包余额
+          resolve({ ok: true });
+        } else if (event.name === 'checkout.closed') {
+          resolve({ ok: false, key: 'shop.rechargeCancelled' });
+        }
+      },
+    });
+  });
+};
+```
 
 ### 2.3 称号系统（天梯 9 段 → 一次性金币 + 分段胜利收益）— DRAFT
 
