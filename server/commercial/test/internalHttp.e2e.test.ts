@@ -76,9 +76,9 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
     const r = await fetch(`${base}/internal/recharge/verify`, {
       method: 'POST',
       headers: hdr(KEY),
-      body: JSON.stringify({ accountId: 'u', platform: 'web', receipt: 'tier:small', receiptId: 'rx1' }),
+      body: JSON.stringify({ accountId: 'u', platform: 'web', receipt: 'tier:t499', receiptId: 'rx1' }),
     });
-    expect(await r.json()).toMatchObject({ ok: true, coinsGranted: 600, coinsAfter: 600 });
+    expect(await r.json()).toMatchObject({ ok: true, coinsGranted: 550, coinsAfter: 550 });
   });
 
   it('GET /internal/orders/undelivered → list', async () => {
@@ -86,7 +86,7 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
     await fetch(`${base}/internal/recharge/verify`, {
       method: 'POST',
       headers: hdr(KEY),
-      body: JSON.stringify({ accountId: 'v', platform: 'web', receipt: 'tier:small', receiptId: 'rx2' }),
+      body: JSON.stringify({ accountId: 'v', platform: 'web', receipt: 'tier:t499', receiptId: 'rx2' }),
     });
     await fetch(`${base}/internal/shop/charge`, {
       method: 'POST',

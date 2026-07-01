@@ -6,6 +6,7 @@ import {
   findShopItem,
   gachaCost,
   IAP_TIERS,
+  IAP_TIERS_LIST,
   FIRST_PURCHASE_BONUS_MULTIPLIER,
   VICTORY_DAILY_WIN_CAP,
   type Rarity,
@@ -40,7 +41,7 @@ export interface CommercialDeps {
   /**
    * Receipt verification function for recharge (S4-1).
    * Supports async (WeChat/Stripe require network requests); falls back to the built-in dev stub when omitted.
-   * Dev stub: receipt is formatted as `tier:small|mid|large` and grants the corresponding coin tier; any other non-empty value grants the small tier.
+   * Dev stub: receipt is formatted as `tier:<tierId>` (e.g. `tier:t499`) and grants the corresponding coin tier; any other non-empty value grants the smallest tier.
    */
   verifyReceipt?: (platform: string, receipt: string) => Promise<{ ok: boolean; coins: number }> | { ok: boolean; coins: number };
 }
@@ -48,9 +49,10 @@ export interface CommercialDeps {
 /** Dev stub (used only in unit tests / when no real payment channel is configured). */
 function devVerifyReceipt(_platform: string, receipt: string): { ok: boolean; coins: number } {
   if (!receipt) return { ok: false, coins: 0 };
-  const tier = receipt.startsWith('tier:') ? receipt.slice(5) : 'small';
+  const fallbackTier = IAP_TIERS_LIST[0]!.id; // smallest tier (t099)
+  const tier = receipt.startsWith('tier:') ? receipt.slice(5) : fallbackTier;
   const coins = IAP_TIERS[tier];
-  return coins ? { ok: true, coins } : { ok: true, coins: IAP_TIERS.small! };
+  return coins ? { ok: true, coins } : { ok: true, coins: IAP_TIERS[fallbackTier]! };
 }
 
 export class CommercialService {

@@ -2,9 +2,11 @@
 // Coverage: valid receipt mapped to coins, forged receipt rejected, sandbox retry, Google purchaseState non-zero, dev stub.
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
+import { IAP_TIERS } from '@nw/shared';
 import { createReceiptVerifier } from '../src/iap';
 
-const TIER_MAP = { small: 600, mid: 3300, large: 11800 };
+// Exercise the real canonical tier map so the built-in `${bundle}.coins.<tierId>` convention is validated end to end.
+const TIER_MAP = IAP_TIERS;
 const BUNDLE = 'com.nw';
 
 // ── fetch mock utilities ──────────────────────────────────────────────────────────
@@ -47,7 +49,7 @@ describe('apple verify', () => {
     return createReceiptVerifier(TIER_MAP);
   }
 
-  it('returns coins for valid prod receipt with small product', async () => {
+  it('returns coins for valid prod receipt with smallest tier product', async () => {
     mockFetch((_url, init) => {
       const body = JSON.parse((init?.body as string) ?? '{}');
       expect(body.password).toBe(password);
@@ -55,7 +57,7 @@ describe('apple verify', () => {
         jsonResp({
           status: 0,
           latest_receipt_info: [
-            { product_id: 'com.nw.coins.small', transaction_id: 'tx1', purchase_date_ms: '1000' },
+            { product_id: 'com.nw.coins.t099', transaction_id: 'tx1', purchase_date_ms: '1000' },
           ],
         }),
       );
@@ -63,7 +65,7 @@ describe('apple verify', () => {
 
     const verify = makeVerifier();
     const result = await verify('apple', 'base64receipt==');
-    expect(result).toEqual({ ok: true, coins: 600 });
+    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t099 });
   });
 
   it('retries sandbox when prod returns status 21007', async () => {
@@ -79,7 +81,7 @@ describe('apple verify', () => {
         jsonResp({
           status: 0,
           latest_receipt_info: [
-            { product_id: 'com.nw.coins.large', transaction_id: 'tx2', purchase_date_ms: '2000' },
+            { product_id: 'com.nw.coins.t9999', transaction_id: 'tx2', purchase_date_ms: '2000' },
           ],
         }),
       );
@@ -88,7 +90,7 @@ describe('apple verify', () => {
     const verify = makeVerifier();
     const result = await verify('apple', 'base64receipt==');
     expect(callCount).toBe(2);
-    expect(result).toEqual({ ok: true, coins: 11800 });
+    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t9999 });
   });
 
   it('rejects forged receipt (status !== 0)', async () => {
@@ -122,8 +124,8 @@ describe('apple verify', () => {
         jsonResp({
           status: 0,
           latest_receipt_info: [
-            { product_id: 'com.nw.coins.small', transaction_id: 'tx_old', purchase_date_ms: '500' },
-            { product_id: 'com.nw.coins.mid', transaction_id: 'tx_new', purchase_date_ms: '9000' },
+            { product_id: 'com.nw.coins.t099', transaction_id: 'tx_old', purchase_date_ms: '500' },
+            { product_id: 'com.nw.coins.t499', transaction_id: 'tx_new', purchase_date_ms: '9000' },
           ],
         }),
       ),
@@ -131,7 +133,7 @@ describe('apple verify', () => {
 
     const verify = makeVerifier();
     const result = await verify('apple', 'base64receipt==');
-    expect(result).toEqual({ ok: true, coins: 3300 });
+    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t499 });
   });
 
   it('returns ok:false when NW_APPLE_PASSWORD is not set', async () => {
@@ -144,7 +146,7 @@ describe('apple verify', () => {
 
   it('supports custom product map via NW_IAP_PRODUCT_MAP', async () => {
     process.env.NW_APPLE_PASSWORD = password;
-    process.env.NW_IAP_PRODUCT_MAP = 'custom.product.gold:large';
+    process.env.NW_IAP_PRODUCT_MAP = 'custom.product.gold:t9999';
 
     mockFetch(() =>
       Promise.resolve(
@@ -159,7 +161,7 @@ describe('apple verify', () => {
 
     const verify = createReceiptVerifier(TIER_MAP);
     const result = await verify('apple', 'base64receipt==');
-    expect(result).toEqual({ ok: true, coins: 11800 });
+    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t9999 });
   });
 });
 
@@ -189,14 +191,14 @@ describe('google verify', () => {
         // JWT signing may fail with a dummy key, but the mock returns a token directly
         return Promise.resolve(jsonResp({ access_token: 'fake-token' }));
       }
-      expect(url).toContain('com.nw.coins.mid');
+      expect(url).toContain('com.nw.coins.t499');
       expect((init?.headers as Record<string, string>)?.['Authorization']).toBe('Bearer fake-token');
       return Promise.resolve(jsonResp({ purchaseState: 0, orderId: 'GPA.123' }));
     });
 
     const verify = makeVerifier();
-    const result = await verify('google', 'com.nw.coins.mid:purchase-token-xyz');
-    expect(result).toEqual({ ok: true, coins: 3300 });
+    const result = await verify('google', 'com.nw.coins.t499:purchase-token-xyz');
+    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t499 });
   });
 
   it('rejects when purchaseState !== 0', async () => {
@@ -208,7 +210,7 @@ describe('google verify', () => {
     });
 
     const verify = makeVerifier();
-    const result = await verify('google', 'com.nw.coins.small:token-cancelled');
+    const result = await verify('google', 'com.nw.coins.t099:token-cancelled');
     expect(result).toEqual({ ok: false, coins: 0 });
   });
 
@@ -221,7 +223,7 @@ describe('google verify', () => {
     });
 
     const verify = makeVerifier();
-    const result = await verify('google', 'com.nw.coins.large:invalid-token');
+    const result = await verify('google', 'com.nw.coins.t9999:invalid-token');
     expect(result).toEqual({ ok: false, coins: 0 });
   });
 
@@ -247,7 +249,7 @@ describe('google verify', () => {
   it('returns ok:false when NW_GOOGLE_SERVICE_ACCOUNT_JSON not set', async () => {
     process.env.NW_IAP_DEV = 'false';
     const verify = createReceiptVerifier(TIER_MAP);
-    const result = await verify('google', 'com.nw.coins.small:token');
+    const result = await verify('google', 'com.nw.coins.t099:token');
     expect(result).toEqual({ ok: false, coins: 0 });
   });
 });
@@ -258,9 +260,9 @@ describe('dev stub', () => {
   it('returns coins for tier: prefix receipt when all credentials missing', async () => {
     process.env.NW_IAP_DEV = 'false'; // dev stub auto-enabled when no credentials present
     const verify = createReceiptVerifier(TIER_MAP);
-    expect(await verify('apple', 'tier:small')).toEqual({ ok: true, coins: 600 });
-    expect(await verify('google', 'tier:large')).toEqual({ ok: true, coins: 11800 });
-    expect(await verify('dev', 'tier:mid')).toEqual({ ok: true, coins: 3300 });
+    expect(await verify('apple', 'tier:t099')).toEqual({ ok: true, coins: IAP_TIERS.t099 });
+    expect(await verify('google', 'tier:t9999')).toEqual({ ok: true, coins: IAP_TIERS.t9999 });
+    expect(await verify('dev', 'tier:t499')).toEqual({ ok: true, coins: IAP_TIERS.t499 });
   });
 
   it('dev stub disabled when real credentials present and NW_IAP_DEV not set', async () => {
@@ -268,7 +270,7 @@ describe('dev stub', () => {
     mockFetch(() => Promise.resolve(jsonResp({ status: 21002 }))); // invalid receipt
     const verify = createReceiptVerifier(TIER_MAP);
     // tier: prefix no longer routes through the stub; it goes through real apple verification (which returns failure)
-    const result = await verify('apple', 'tier:small');
+    const result = await verify('apple', 'tier:t099');
     expect(result).toEqual({ ok: false, coins: 0 });
   });
 });
@@ -280,21 +282,21 @@ describe('production hardening (L2-3)', () => {
     process.env.NODE_ENV = 'production';
     // No real credentials present; in non-production this would auto-enable the dev stub, but in production it must be disabled.
     const verify = createReceiptVerifier(TIER_MAP);
-    expect(await verify('dev', 'tier:large')).toEqual({ ok: false, coins: 0 });
-    expect(await verify('apple', 'tier:small')).toEqual({ ok: false, coins: 0 });
-    expect(await verify('stripe', 'tier:mid')).toEqual({ ok: false, coins: 0 });
+    expect(await verify('dev', 'tier:t9999')).toEqual({ ok: false, coins: 0 });
+    expect(await verify('apple', 'tier:t099')).toEqual({ ok: false, coins: 0 });
+    expect(await verify('stripe', 'tier:t499')).toEqual({ ok: false, coins: 0 });
   });
 
   it('production + NW_IAP_DEV=true → dev stub still forcibly disabled (second line of defence)', async () => {
     process.env.NODE_ENV = 'production';
     process.env.NW_IAP_DEV = 'true'; // accidentally enabled
     const verify = createReceiptVerifier(TIER_MAP);
-    expect(await verify('dev', 'tier:large')).toEqual({ ok: false, coins: 0 });
+    expect(await verify('dev', 'tier:t9999')).toEqual({ ok: false, coins: 0 });
   });
 
   it('non-production + no credentials → dev stub enabled as normal (local integration testing unaffected)', async () => {
     process.env.NODE_ENV = 'development';
     const verify = createReceiptVerifier(TIER_MAP);
-    expect(await verify('dev', 'tier:large')).toEqual({ ok: true, coins: 11800 });
+    expect(await verify('dev', 'tier:t9999')).toEqual({ ok: true, coins: IAP_TIERS.t9999 });
   });
 });
