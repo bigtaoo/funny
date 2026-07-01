@@ -334,6 +334,11 @@ export const en: Record<TranslationKey, string> = {
   'shop.loading': 'Loading…',
   'shop.processing': 'Processing',
   'shop.empty': 'No items',
+  'shop.promoPlaceholder': 'Enter code',
+  'shop.promoRedeem': 'Redeem',
+  'shop.promoSuccess': 'Redeemed!',
+  'shop.promoInvalid': 'Invalid or already used',
+  'shop.promoError': 'Redemption failed — retry',
 
   // ── Gacha (S2-6) ─────────────────────────────────────────────────────────────
   'gacha.title': 'Gacha',

@@ -420,6 +420,14 @@ export class ApiClient {
     return this.post<{ save: SaveData; granted: number }>('/iap/verify', { platform, receipt });
   }
 
+  /**
+   * Promo code redemption (B-PROMO): validates code → credits coins → pushes back authoritative save.
+   * Invalid/expired code → ApiError('PROMO_NOT_FOUND'); already used → ApiError('PROMO_ALREADY_USED').
+   */
+  async redeemPromoCode(code: string): Promise<{ save: SaveData; granted: number }> {
+    return this.post<{ save: SaveData; granted: number }>('/promo/redeem', { code });
+  }
+
   // ── Achievements (S9-5, requires login token) ────────────────────────────
   /** Achievement definition table + my stats + claimed progress; tier computation is done locally on the client (ACHIEVEMENT_DESIGN §6). */
   async getAchievements(): Promise<AchievementsView> {

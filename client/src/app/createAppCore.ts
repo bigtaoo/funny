@@ -960,6 +960,22 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           return { ok: false, key: 'shop.error' };
         }
       },
+      // Promo-code redemption (B-PROMO): only available when online + logged in.
+      ...(shopLoggedIn ? {
+        async redeemPromo(code: string) {
+          try {
+            const { save } = await client.redeemPromoCode(code);
+            saveManager.adoptServer(save);
+            analytics.track('promo_redeem', { code });
+            return { ok: true as const };
+          } catch (e) {
+            const errCode = e instanceof ApiError ? e.code : '';
+            const key = errCode === 'PROMO_NOT_FOUND' || errCode === 'PROMO_ALREADY_USED'
+              ? 'shop.promoInvalid' : 'shop.promoError';
+            return { ok: false as const, key };
+          }
+        },
+      } : {}),
       // Shop group peer tabs (LOBBY_IA_REDESIGN P1.5): gacha / battle pass promoted to top tabs;
       // threading shopBack lets all three pages navigate to each other and return to the same origin (lobby / level-prep).
       openGacha() { goGacha({ shopBack: onBack }); },

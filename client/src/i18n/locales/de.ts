@@ -334,6 +334,11 @@ export const de: Record<TranslationKey, string> = {
   'shop.loading': 'Lädt…',
   'shop.processing': 'Verarbeitung',
   'shop.empty': 'Keine Artikel',
+  'shop.promoPlaceholder': 'Code eingeben',
+  'shop.promoRedeem': 'Einlösen',
+  'shop.promoSuccess': 'Eingelöst!',
+  'shop.promoInvalid': 'Ungültig oder bereits verwendet',
+  'shop.promoError': 'Einlösung fehlgeschlagen',
 
   // ── Lootbox (S2-6) ───────────────────────────────────────────────────────────
   'gacha.title': 'Lootbox',
