@@ -334,6 +334,11 @@ export const zh = {
   'shop.loading': '加载中…',
   'shop.processing': '处理中',
   'shop.empty': '暂无商品',
+  'shop.promoPlaceholder': '输入兑换码',
+  'shop.promoRedeem': '兑换',
+  'shop.promoSuccess': '兑换成功',
+  'shop.promoInvalid': '兑换码无效或已使用',
+  'shop.promoError': '兑换失败，请重试',
 
   // ── Gacha / loot box (S2-6) ───────────────────────────────────────────────────
   'gacha.title': '盲盒',
