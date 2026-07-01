@@ -1,7 +1,7 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
-// const CopyPlugin = require('copy-webpack-plugin');
+const CopyPlugin = require('copy-webpack-plugin');
 
 module.exports = (env, argv) => {
   const isProd = argv.mode === 'production';
@@ -83,6 +83,8 @@ module.exports = (env, argv) => {
     plugins: [
       // WeChat has no HTML host (game.js requires pixigame.js); HtmlWebpackPlugin / version.json / _headers are Web-only.
       ...(isWechat ? [] : [new HtmlWebpackPlugin({ template: `./public/${targetPlatform}/index.html` })]),
+      // Copy legal pages (terms/privacy/refunds) to dist root for Paddle verification.
+      ...(!isWechat ? [new CopyPlugin({ patterns: [{ from: 'public/web/terms.html' }, { from: 'public/web/privacy.html' }, { from: 'public/web/refunds.html' }] })] : []),
       // Emit version.json at build time (for client version polling) and _headers (CF Workers / nginx cache policy).
       ...(isProd && !isWechat ? [{
         apply(compiler) {
