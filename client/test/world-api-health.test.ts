@@ -73,7 +73,7 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('/health returns 200 → true', async () => {
+  it('server answers (opaque no-cors response) → true', async () => {
     setWorldBase('http://localhost:18084');
     stubFetchStatus(200);
     const client = new WorldApiClient(noopStorage);
@@ -81,30 +81,31 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(await client.checkHealth()).toBe(true);
   });
 
-  it('/health returns 200 and request path is correct (base + /health)', async () => {
+  it('uses mode:no-cors and the correct path (base + /health)', async () => {
     setWorldBase('http://localhost:18084');
     let capturedUrl = '';
-    stubFetch(async (url) => { capturedUrl = url; return { ok: true, status: 200 } as Response; });
+    let capturedMode: string | undefined;
+    stubFetch(async (url, init) => {
+      capturedUrl = url;
+      capturedMode = init.mode;
+      return { ok: false, status: 0, type: 'opaque' } as Response;
+    });
     const client = new WorldApiClient(noopStorage);
 
     await client.checkHealth();
     expect(capturedUrl).toBe('http://localhost:18084/health');
+    // no-cors is required to keep the browser from logging a red CORS error; the
+    // resulting opaque response can't be read, so a resolved fetch alone = reachable.
+    expect(capturedMode).toBe('no-cors');
   });
 
-  it('/health returns 503 → false', async () => {
+  it('opaque response (unreadable status under no-cors) still → true', async () => {
     setWorldBase('http://localhost:18084');
-    stubFetchStatus(503);
+    // Under no-cors the browser hands back an opaque Response: ok=false, status=0.
+    stubFetch(async () => ({ ok: false, status: 0, type: 'opaque' }) as Response);
     const client = new WorldApiClient(noopStorage);
 
-    expect(await client.checkHealth()).toBe(false);
-  });
-
-  it('/health returns 404 → false', async () => {
-    setWorldBase('http://localhost:18084');
-    stubFetchStatus(404);
-    const client = new WorldApiClient(noopStorage);
-
-    expect(await client.checkHealth()).toBe(false);
+    expect(await client.checkHealth()).toBe(true);
   });
 
   it('fetch throws (connection refused / network error) → true (inconclusive, no false offline report)', async () => {

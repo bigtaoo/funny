@@ -124,16 +124,22 @@ export class WorldApiClient {
   }
 
   /**
-   * Ping worldsvc /health. Returns false ONLY on a definitive non-200 response
-   * from a reachable server (e.g. 503 = up-but-unhealthy).
+   * Ping worldsvc /health as a best-effort reachability probe.
    *
-   * A thrown fetch (timeout / CORS rejection / connection refused) is treated as
-   * INCONCLUSIVE → returns true (no offline badge). Rationale: in dev the /health
-   * route often lacks the CORS headers the real /world|/auction routes
-   * carry, so the probe gets rejected even though the actual feature is fully
-   * reachable — that false negative wrongly greyed the SLG World entry. Better to let
-   * the user click through and hit real error handling than to mislabel a working
-   * service as offline.
+   * The probe uses `mode: 'no-cors'` on purpose: the /health route carries none of
+   * the CORS headers the real /world|/auction routes have, so a normal cross-origin
+   * fetch is REJECTED by the browser — and the browser logs that rejection as a red
+   * "Cross-Origin Request Blocked" error *before* the promise settles, which no
+   * try/catch of ours can suppress. `no-cors` opts out of CORS so the browser stays
+   * quiet. The cost is an opaque response we can't read (res.ok is always false,
+   * status 0), so we can no longer distinguish 503/404 — the probe degrades to
+   * "did the server answer at all". That detail was already lost in production
+   * anyway (every cross-origin /health read hit the CORS catch), so nothing real
+   * is given up.
+   *
+   * A thrown fetch (timeout / connection refused) is treated as INCONCLUSIVE →
+   * returns true (no offline badge). Rationale: better to let the user click through
+   * and hit real error handling than to mislabel a working service as offline.
    */
   async checkHealth(): Promise<boolean> {
     const base = getWorldBaseUrl();
@@ -145,11 +151,15 @@ export class WorldApiClient {
     try {
       const ctrl = new AbortController();
       const id = setTimeout(() => ctrl.abort(), 3000);
-      const res = await fetch(`${base}/health`, { signal: ctrl.signal });
+      // Opaque response — resolving at all means the server answered. See method doc
+      // for why no-cors is required (silences the browser's red CORS error).
+      await fetch(`${base}/health`, { signal: ctrl.signal, mode: 'no-cors' });
       clearTimeout(id);
-      return res.ok;
+      return true;
     } catch {
-      // Inconclusive — do not claim offline (see method doc).
+      // Inconclusive (timeout / connection refused) — do not claim offline. Warn,
+      // don't error: this is an expected, harmless condition (see method doc).
+      console.warn(`[world] /health probe inconclusive for ${base}; assuming reachable`);
       return true;
     }
   }

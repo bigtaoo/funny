@@ -154,7 +154,7 @@
 ## 8. 实现分期
 
 - **P0**（部分完成 2026-06-27）：
-  - ✅ 大世界误判离线 —— `WorldApiClient.checkHealth()` 探针失败（CORS/超时/拒连）不再判离线，仅在可达但 5xx 时标红。
+  - ✅ 大世界误判离线 —— `WorldApiClient.checkHealth()` 探针失败（CORS/超时/拒连）不再判离线。**2026-07-01 追加**：探针改用 `fetch(..., { mode: 'no-cors' })`——`/health` 无 CORS 头，普通跨域 fetch 会被浏览器**在 promise 结算前**打红「Cross-Origin Request Blocked」错误，try/catch 无法降级；no-cors 让浏览器闭嘴。代价是响应变 opaque（`res.ok` 恒 false、status 0），无法再区分 5xx，探针退化为「服务器是否应答」——但这在生产早已失效（跨域 /health 读取本就命中 CORS catch 恒返回 true），无实际损失。超时/拒连仅 `console.warn` 不再判离线。
   - ✅ 限时活动灰态 —— 无 live 活动时**隐藏**该 chip，「每日」占满整行（不再常态灰一块）。
   - ⏭ 装备大厅入口 —— **不单独做**，归入 P1 的「养成」tab（避免临时入口被推翻）。
 - ✅ **P1**（完成 2026-06-27）：底部 5 tab 重定义（养成/商城/主页/生涯/社交）+ 三个 tab 的功能归并：
