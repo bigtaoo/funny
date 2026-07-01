@@ -1,4 +1,4 @@
-// AuctionScene â€” SLG auction scene (S8-5)
+// AuctionScene — SLG auction scene (S8-5)
 // Two tabs: all auctions / my listings; bottom actions: create listing / buy / cancel
 
 import * as PIXI from 'pixi.js-legacy';
@@ -29,7 +29,7 @@ const FILTER_H = 34;
 const MATERIALS = ['scrap', 'lead', 'binding'] as const;
 // Must match server-side AUCTION_DURATIONS_SEC (shared/slg.ts), otherwise createAuction throws BAD_REQUEST.
 const DURATIONS = [21600, 43200, 86400] as const; // 6h, 12h, 24h
-// Category filter for the market tab â€” matches AuctionView.itemType ('' = no filter).
+// Category filter for the market tab — matches AuctionView.itemType ('' = no filter).
 const FILTERS = ['', 'material', 'equipment'] as const;
 type AucFilter = typeof FILTERS[number];
 
@@ -116,7 +116,7 @@ export class AuctionScene implements Scene {
     this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
   }
 
-  // â”€â”€ Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Data ──────────────────────────────────────────────────────────────────
 
   private async loadData(): Promise<void> {
     if (this.destroyed) return;
@@ -134,7 +134,7 @@ export class AuctionScene implements Scene {
     if (!this.destroyed) this.render();
   }
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ────────────────────────────────────────────────────────────────
 
   private render(): void {
     if (this.destroyed) return;
@@ -227,7 +227,7 @@ export class AuctionScene implements Scene {
 
       // Material name is in item.material (itemType is always 'material'/'equipment'); fall back to itemType when equipment has no material field yet.
       const matKey = (auc.item?.['material'] as string | undefined) ?? auc.itemType;
-      const itemLbl = txt(`${t(`auction.${matKey as 'scrap' | 'lead' | 'binding'}`)} Ã—${auc.qty}`, 13, C.dark);
+      const itemLbl = txt(`${t(`auction.${matKey as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`, 13, C.dark);
       itemLbl.x = 14; itemLbl.y = cy + 6;
       this.bodyLayer.addChild(itemLbl);
 
@@ -295,7 +295,7 @@ export class AuctionScene implements Scene {
     this.hitRects.push({ rect: { x: w / 2 - 80, y: btnY, w: 160, h: 36 }, action: () => this.openCreateForm() });
   }
 
-  // â”€â”€ Create form (modal) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Create form (modal) ────────────────────────────────────────────────────
 
   private openCreateForm(): void {
     const { w, h } = this;
@@ -370,7 +370,7 @@ export class AuctionScene implements Scene {
     this.addNumInput(ml, mx, cy, t('auction.qty') + ':', this.createQty, (v) => { this.createQty = Math.max(1, v); this.openCreateForm(); });
     cy += ROW;
 
-    // Price(s) â€” fixed: single buy-now price; auction: startPrice + optional buyout
+    // Price(s) — fixed: single buy-now price; auction: startPrice + optional buyout
     if (auctionMode) {
       this.addNumInput(ml, mx, cy, t('auction.startPrice') + ':', this.createStartPrice, (v) => { this.createStartPrice = Math.max(1, v); this.openCreateForm(); });
       cy += ROW;
@@ -401,7 +401,7 @@ export class AuctionScene implements Scene {
     }
     cy += ROW;
 
-    // Designated buyer (optional) â€” private sale to a specific account.
+    // Designated buyer (optional) — private sale to a specific account.
     const bl0 = txt(t('auction.buyer') + ':', 11, C.dark);
     bl0.x = mx + 10; bl0.y = cy;
     ml.addChild(bl0);
@@ -414,7 +414,7 @@ export class AuctionScene implements Scene {
     this.modalHits.push({ rect: { x: mx + 10, y: cy + 16, w: mw - 20, h: 26 }, action: () => this.openBuyerInput() });
     cy += 52;
 
-    // Tax info â€” estimate seller proceeds at the floor price (start/buy-now).
+    // Tax info — estimate seller proceeds at the floor price (start/buy-now).
     const refPrice = auctionMode ? this.createStartPrice : this.createPrice;
     const youGet = refPrice - Math.floor(refPrice * 0.1);
     const taxLbl = txt(`${t('auction.youGet')}: ${youGet}`, 11, C.mid);
@@ -434,7 +434,7 @@ export class AuctionScene implements Scene {
     const caBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 1, 80) });
     caBtn.x = mx + mw / 2 + 8; caBtn.y = cy;
     ml.addChild(caBtn);
-    const cl = txt('âœ•', 12, C.dark);
+    const cl = txt('✕', 12, C.dark);
     cl.anchor.set(0.5, 0.5); cl.x = mx + mw / 2 + 48; cl.y = cy + 14;
     ml.addChild(cl);
     this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: 80, h: 28 }, action: () => this.closeModal() });
@@ -454,7 +454,7 @@ export class AuctionScene implements Scene {
     const minusBtn = sketchPanel(24, 24, { fill: 0xeeeeee, border: C.mid, seed: seedFor(y, 0, 24) });
     minusBtn.x = mx + 10 + lbl.width + 8; minusBtn.y = y - 2;
     layer.addChild(minusBtn);
-    const ml = txt('âˆ’', 14, C.dark);
+    const ml = txt('−', 14, C.dark);
     ml.anchor.set(0.5, 0.5); ml.x = minusBtn.x + 12; ml.y = y + 10;
     layer.addChild(ml);
     this.modalHits.push({ rect: { x: minusBtn.x, y: minusBtn.y, w: 24, h: 24 }, action: () => onChange(value - 1) });
@@ -473,7 +473,7 @@ export class AuctionScene implements Scene {
     this.modalHits.push({ rect: { x: plusBtn.x, y: plusBtn.y, w: 24, h: 24 }, action: () => onChange(value + 1) });
   }
 
-  // â”€â”€ Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Actions ───────────────────────────────────────────────────────────────
 
   private openBuyerInput(): void {
     const inp = document.createElement('input');
@@ -517,7 +517,7 @@ export class AuctionScene implements Scene {
     }
   }
 
-  // â”€â”€ Bid (auction listings) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Bid (auction listings) ──────────────────────────────────────────────────
 
   /** auc.price = the current highest bid (when a bid exists) or the starting price. With a bid, the new bid must be at least +5% higher (server-authoritative). */
   private minBidFor(auc: AuctionView): number {
@@ -551,7 +551,7 @@ export class AuctionScene implements Scene {
 
     let cy = my + 14;
     const matKey = (auc.item?.['material'] as string | undefined) ?? auc.itemType;
-    const titleLbl = txt(`${t(`auction.${matKey as 'scrap' | 'lead' | 'binding'}`)} Ã—${auc.qty}`, 13, C.dark);
+    const titleLbl = txt(`${t(`auction.${matKey as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`, 13, C.dark);
     titleLbl.x = mx + 12; titleLbl.y = cy;
     ml.addChild(titleLbl);
     cy += 24;
@@ -581,7 +581,7 @@ export class AuctionScene implements Scene {
     const caBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 4, 80) });
     caBtn.x = mx + mw / 2 + 8; caBtn.y = my + mh - 36;
     ml.addChild(caBtn);
-    const cl = txt('âœ•', 12, C.dark);
+    const cl = txt('✕', 12, C.dark);
     cl.anchor.set(0.5, 0.5); cl.x = mx + mw / 2 + 48; cl.y = my + mh - 22;
     ml.addChild(cl);
     this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: 80, h: 28 }, action: () => this.closeBidModal() });
@@ -675,7 +675,7 @@ export class AuctionScene implements Scene {
     const caBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 2, 80) });
     caBtn.x = mx + mw / 2 + 8; caBtn.y = my + mh - 36;
     ml.addChild(caBtn);
-    const cl = txt('âœ•', 12, C.dark);
+    const cl = txt('✕', 12, C.dark);
     cl.anchor.set(0.5, 0.5); cl.x = mx + mw / 2 + 48; cl.y = my + mh - 22;
     ml.addChild(cl);
     this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: 80, h: 28 }, action: () => this.closeModal() });
@@ -687,7 +687,7 @@ export class AuctionScene implements Scene {
     this.modalOpen = false;
   }
 
-  // â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Toast ──────────────────────────────────────────────────────────────────
 
   private showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
@@ -724,7 +724,7 @@ export class AuctionScene implements Scene {
     return String(e);
   }
 
-  // â”€â”€ Scene interface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Scene interface ───────────────────────────────────────────────────────
 
   handleDown(x: number, y: number): void {
     if (this.modalOpen) {

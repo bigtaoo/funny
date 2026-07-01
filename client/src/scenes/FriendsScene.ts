@@ -24,12 +24,12 @@ import type {
 } from '../net/proto/transport';
 import type { WorldChatMessage } from '../net/WorldApiClient';
 
-// â”€â”€ FriendsScene (S6-1/S6-2/S6-3/S6-4) â€” Social Hub â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── FriendsScene (S6-1/S6-2/S6-3/S6-4) — Social Hub ─────────────────────────
 //
 // Five tabs: Friends / Family / Sect / World / Mail
 // Family / Sect / World tabs require SLG world context (loadSLGStatus optional callback).
 // World channel posts cost 50 coins each (deducted server-side).
-// Direct chat (1:1) entry point stays in the friend profile popup â†’ send message; Tab bar no longer lists it separately.
+// Direct chat (1:1) entry point stays in the friend profile popup → send message; Tab bar no longer lists it separately.
 
 export interface SLGSocialStatus {
   worldId: string;
@@ -71,7 +71,7 @@ export interface FriendsSceneCallbacks {
   loadWorldChat?(before?: number): Promise<WorldChatMessage[]>;
   sendWorldChat?(body: string, senderName: string): Promise<void>;
   playerName?(): string;
-  /** Pre-select a tab on open â€” used by the lobby mail shortcut to jump straight to the mail tab. */
+  /** Pre-select a tab on open — used by the lobby mail shortcut to jump straight to the mail tab. */
   defaultTab?: 'friends' | 'mail';
 }
 
@@ -105,7 +105,7 @@ export class FriendsScene implements Scene {
   private searchResult: ProfileView | null = null;
   private searchMsgKey: TranslationKey | null = null;
 
-  // â”€â”€ SLG status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── SLG status ───────────────────────────────────────────────────────────────
   private slgStatus: SLGSocialStatus | null = null;
   private slgLoading = false;
   private slgLoaded = false;
@@ -168,7 +168,7 @@ export class FriendsScene implements Scene {
     void this.refresh();
   }
 
-  // â”€â”€ Scene interface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Scene interface ──────────────────────────────────────────────────────────
 
   update(dt: number): void {
     if (this.toastKey) {
@@ -184,7 +184,7 @@ export class FriendsScene implements Scene {
     this.popup.destroy();
   }
 
-  // â”€â”€ Inbound pushes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Inbound pushes ────────────────────────────────────────────────────────────
 
   applyFriendPresence(p: FriendPresence): void {
     const f = this.friends.find((x) => x.publicId === p.publicId);
@@ -196,7 +196,7 @@ export class FriendsScene implements Scene {
   applyChatMessage(_m: ChatMessagePush): void { void this.refresh(); }
   applyMailNew(_m: MailNew): void { void this.refresh(); }
 
-  // â”€â”€ Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Data ───────────────────────────────────────────────────────────────────
 
   private async refresh(): Promise<void> {
     try {
@@ -236,7 +236,7 @@ export class FriendsScene implements Scene {
     if (!this.cb.loadWorldChat) return;
     try {
       const msgs = await this.cb.loadWorldChat();
-      this.worldMessages = msgs.slice().reverse(); // server newest-first â†’ oldest-first for display
+      this.worldMessages = msgs.slice().reverse(); // server newest-first → oldest-first for display
       this.worldLoaded = true;
     } catch { /* keep existing */ }
     if (!this.dead) this.render();
@@ -246,7 +246,7 @@ export class FriendsScene implements Scene {
     return yTop + rowH >= this.regionTop && yTop <= this.regionBottom;
   }
 
-  // â”€â”€ Input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Input ──────────────────────────────────────────────────────────────────
 
   private onPointerDown(x: number, y: number): void {
     if (this.popup.isOpen) return;
@@ -282,7 +282,7 @@ export class FriendsScene implements Scene {
     }
   }
 
-  // â”€â”€ Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Actions ──────────────────────────────────────────────────────────────────
 
   private openSearch(): void {
     this.view = 'search';
@@ -371,7 +371,7 @@ export class FriendsScene implements Scene {
     this.toastT = 2.5;
   }
 
-  // â”€â”€ HTML hidden input helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── HTML hidden input helpers ────────────────────────────────────────────────
 
   private clearHiddenInput(): void {
     if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
@@ -413,7 +413,7 @@ export class FriendsScene implements Scene {
     this.hiddenInput = inp;
   }
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   private render(): void {
     if (this.dead) return;
@@ -443,7 +443,7 @@ export class FriendsScene implements Scene {
     this.container.addChild(this.popup.container);
   }
 
-  // â”€â”€ Tab bar (5 tabs) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Tab bar (5 tabs) ──────────────────────────────────────────────────────────
 
   private drawTabBar(): void {
     const { w, h } = this;
@@ -493,7 +493,7 @@ export class FriendsScene implements Scene {
     this.hits.push({ rect: hdr.backRect, fn: () => this.onBack() });
   }
 
-  // â”€â”€ Friends tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Friends tab ───────────────────────────────────────────────────────────────
 
   private drawList(): void {
     const { w, h } = this;
@@ -624,7 +624,7 @@ export class FriendsScene implements Scene {
     layer.addChild(name);
 
     const statusTxt = t(f.online ? 'friends.online' : 'friends.offline');
-    const idRank = `#${f.publicId}${f.rank ? '  Â·  ' + rankLabel(f.rank) : ''}  Â·  ${statusTxt}`;
+    const idRank = `#${f.publicId}${f.rank ? '  ·  ' + rankLabel(f.rank) : ''}  ·  ${statusTxt}`;
     const sub = txt(idRank, Math.round(rh * 0.2), C.mid);
     sub.anchor.set(0, 0.5); sub.x = tx; sub.y = y + rh * 0.68;
     layer.addChild(sub);
@@ -632,7 +632,7 @@ export class FriendsScene implements Scene {
     const xW = Math.round(rh * 0.62);
     const xX = rx + rw - xW - Math.round(rw * 0.03);
     const xY = y + (rh - xW) / 2;
-    this.addButton('âœ•', xX, xY, xW, xW, C.paper, C.red,
+    this.addButton('✕', xX, xY, xW, xW, C.paper, C.red,
       () => void this.doRemove(f.publicId), C.red, Math.round(xW * 0.5), layer);
 
     this.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.openFriendProfile(f) });
@@ -650,7 +650,7 @@ export class FriendsScene implements Scene {
     });
   }
 
-  // â”€â”€ Family tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Family tab ────────────────────────────────────────────────────────────────
 
   private drawFamilyTab(): void {
     const { w, h } = this;
@@ -848,7 +848,7 @@ export class FriendsScene implements Scene {
     this.render();
   }
 
-  // â”€â”€ Sect tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Sect tab ──────────────────────────────────────────────────────────────────
 
   private drawSectTab(): void {
     const { w, h } = this;
@@ -1056,7 +1056,7 @@ export class FriendsScene implements Scene {
     this.render();
   }
 
-  // â”€â”€ World channel tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── World channel tab ─────────────────────────────────────────────────────────
 
   private drawWorldTab(): void {
     const { w, h } = this;
@@ -1188,7 +1188,7 @@ export class FriendsScene implements Scene {
     this.render();
   }
 
-  // â”€â”€ Mail tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Mail tab ──────────────────────────────────────────────────────────────────
 
   private drawMailList(): void {
     const { w, h } = this;
@@ -1232,7 +1232,7 @@ export class FriendsScene implements Scene {
       layer.addChild(dot);
     }
     const tx = rx + Math.round(rw * 0.1);
-    const subj = txt((hasAtt ? 'ðŸŽ ' : '') + m.subject, Math.round(rh * 0.3), C.dark, true);
+    const subj = txt((hasAtt ? '🎁 ' : '') + m.subject, Math.round(rh * 0.3), C.dark, true);
     subj.anchor.set(0, 0.5); subj.x = tx; subj.y = y + rh * 0.34;
     layer.addChild(subj);
     const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), Math.round(rh * 0.22), C.mid);
@@ -1278,7 +1278,7 @@ export class FriendsScene implements Scene {
       cy += Math.round(h * 0.04);
       for (const a of m.attachments!) {
         const desc = attachmentLabel(a);
-        const row = txt('Â· ' + desc, Math.round(h * 0.026), C.dark);
+        const row = txt('· ' + desc, Math.round(h * 0.026), C.dark);
         row.anchor.set(0, 0); row.x = px + Math.round(w * 0.02); row.y = cy;
         this.container.addChild(row);
         cy += Math.round(h * 0.04);
@@ -1319,7 +1319,7 @@ export class FriendsScene implements Scene {
     void this.refresh();
   }
 
-  // â”€â”€ Search subview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Search subview ────────────────────────────────────────────────────────────
 
   private drawSearch(): void {
     const { w, h } = this;
@@ -1343,7 +1343,7 @@ export class FriendsScene implements Scene {
     fTxt.anchor.set(0.5, 0.5); fTxt.x = w / 2; fTxt.y = fY + fH / 2;
     this.container.addChild(fTxt);
 
-    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', t('friends.clear'), '0', 'âŒ«'];
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', t('friends.clear'), '0', '⌫'];
     const perRow = 3;
     const kY = fY + fH + Math.round(h * 0.03);
     const kGap = Math.round(w * 0.03);
@@ -1356,7 +1356,7 @@ export class FriendsScene implements Scene {
       const kx = kX0 + c * (kW + kGap);
       const ky = kY + r * (kH + kGap);
       this.addButton(label, kx, ky, kW, kH, C.paper, C.line, () => {
-        if (label === 'âŒ«') this.searchDigits.pop();
+        if (label === '⌫') this.searchDigits.pop();
         else if (label === t('friends.clear')) this.searchDigits = [];
         else if (this.searchDigits.length < 9) this.searchDigits.push(label);
         this.searchResult = null;
@@ -1384,7 +1384,7 @@ export class FriendsScene implements Scene {
       const nm = txt(res.displayName, Math.round(rh * 0.3), C.dark, true);
       nm.anchor.set(0, 0.5); nm.x = rx + Math.round(fW * 0.06); nm.y = ry + rh * 0.36;
       this.container.addChild(nm);
-      const sub = txt(`#${res.publicId}${res.rank ? '  Â·  ' + rankLabel(res.rank) : ''}`, Math.round(rh * 0.2), C.mid);
+      const sub = txt(`#${res.publicId}${res.rank ? '  ·  ' + rankLabel(res.rank) : ''}`, Math.round(rh * 0.2), C.mid);
       sub.anchor.set(0, 0.5); sub.x = rx + Math.round(fW * 0.06); sub.y = ry + rh * 0.68;
       this.container.addChild(sub);
       const bW = Math.round(fW * 0.26);
@@ -1398,7 +1398,7 @@ export class FriendsScene implements Scene {
     }
   }
 
-  // â”€â”€ Toast & shared helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Toast & shared helpers ─────────────────────────────────────────────────────
 
   private drawToast(): void {
     if (!this.toastKey) return;
@@ -1460,7 +1460,7 @@ export class FriendsScene implements Scene {
   }
 }
 
-// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── helpers ────────────────────────────────────────────────────────────────────
 
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;

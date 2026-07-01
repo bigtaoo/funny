@@ -10,10 +10,10 @@ import { caretDisplay } from '../render/inputDisplay';
 import type { ChatMessageView } from '../net/ApiClient';
 import type { ChatMessagePush } from '../net/proto/transport';
 
-// â”€â”€ ChatScene (S6-2) â€” a 1:1 conversation window â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── ChatScene (S6-2) — a 1:1 conversation window ──────────────────────────────
 //
 // Canvas-drawn message thread (mine right / peer left) + a compose bar backed by
-// a hidden DOM <input> (same trick as LoginScene â€” works with desktop + mobile
+// a hidden DOM <input> (same trick as LoginScene — works with desktop + mobile
 // soft keyboards). Sending goes through REST (cb.send); inbound messages arrive
 // via the gateway control-plane push, forwarded by the app as applyIncoming().
 //
@@ -50,7 +50,7 @@ export class ChatScene implements Scene {
   private readonly cb: ChatSceneCallbacks;
 
   private convId: string | null = null;
-  /** Ascending by ts (oldest first) for natural topâ†’bottom rendering. */
+  /** Ascending by ts (oldest first) for natural top→bottom rendering. */
   private messages: ChatMessageView[] = [];
   private loading = true;
   /** True while there may be older pages to fetch. */
@@ -110,7 +110,7 @@ export class ChatScene implements Scene {
     if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
   }
 
-  // â”€â”€ Inbound (app forwards control-plane chat_message push) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Inbound (app forwards control-plane chat_message push) ────────────────────
   applyIncoming(m: ChatMessagePush): void {
     // Only messages from this peer (or this conv) belong here.
     if (this.convId && m.convId !== this.convId) return;
@@ -129,7 +129,7 @@ export class ChatScene implements Scene {
     this.render();
   }
 
-  // â”€â”€ Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Data ──────────────────────────────────────────────────────────────────
   private async load(): Promise<void> {
     try {
       this.convId = await this.cb.resolveConvId(this.cb.peerPublicId);
@@ -177,14 +177,14 @@ export class ChatScene implements Scene {
     this.render();
     try {
       await this.cb.send(body);
-      // First message creates the conversation server-side â†’ capture its id.
+      // First message creates the conversation server-side → capture its id.
       if (!this.convId) this.convId = await this.cb.resolveConvId(this.cb.peerPublicId);
     } catch (e) {
       this.toast(sendErrKey(e));
     }
   }
 
-  // â”€â”€ Hidden input (compose) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Hidden input (compose) ────────────────────────────────────────────────
   private setupHiddenInput(): void {
     if (typeof document === 'undefined') return;
     const el = document.createElement('input');
@@ -207,7 +207,7 @@ export class ChatScene implements Scene {
     this.hiddenInput?.focus();
   }
 
-  // â”€â”€ Input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Input ──────────────────────────────────────────────────────────────────
   private onPointerDown(x: number, y: number): void {
     this.pointerActive = true;
     this.dragging = false;
@@ -238,10 +238,10 @@ export class ChatScene implements Scene {
 
   private toast(key: TranslationKey): void { this.toastKey = key; this.toastT = 2.5; }
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ───────────────────────────────────────────────────────────────────
   private render(): void {
     if (this.dead) return;
-    tearDownChildren(this.container); // caret blink (~2Ã—/s) + per-keystroke compose â†’ free Text textures
+    tearDownChildren(this.container); // caret blink (~2×/s) + per-keystroke compose → free Text textures
     this.hits = [];
     this.container.addChild(buildPaperBackground('chatbg', this.w, this.h));
     const decoC = buildDecorCLayer(this.w, this.h);

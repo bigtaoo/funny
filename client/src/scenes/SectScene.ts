@@ -1,7 +1,7 @@
-// SectScene â€” SLG sect management scene (S8-4b, C6).
+// SectScene — SLG sect management scene (S8-4b, C6).
 // A sect = a faction organization composed of families within a region; member unit is a family, linked by family.sectId.
 // Most write operations require the requester to be the family leader (representing the whole family); disband/ally/unally are sect-master only.
-// Channel is readable/writable by any sect member. Real-time push at scale goes through Redis (this slice uses REST polling, see SLG_DESIGN Â§9.3).
+// Channel is readable/writable by any sect member. Real-time push at scale goes through Redis (this slice uses REST polling, see SLG_DESIGN §9.3).
 //
 // Entry point: FamilyScene's "Sect" button (sects are the family of families, naturally belongs in the family UI).
 // Aligned with FamilyScene pattern: modalLayer + hitRects/modalHits (dim click to close), hand-drawn sketchPanel/txt,
@@ -58,7 +58,7 @@ export class SectScene implements Scene {
 
   private sect: SectDetailView | null = null;
   private messages: SectMessageView[] = [];
-  /** cache of all sects in the world â€” used for browse/ally name resolution. */
+  /** cache of all sects in the world — used for browse/ally name resolution. */
   private sectsCache: SectView[] = [];
 
   private bodyLayer!: PIXI.Container;
@@ -125,12 +125,12 @@ export class SectScene implements Scene {
     this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
   }
 
-  // â”€â”€ Permission helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Permission helpers ──────────────────────────────────────────────────────
 
   private get isFamilyLeader(): boolean { return this.myFamilyRole === 'leader'; }
   private get isSectLeader(): boolean { return !!this.sect && this.sect.leaderId === this.cb.myAccountId; }
 
-  // â”€â”€ Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Data ────────────────────────────────────────────────────────────────────
 
   private async loadData(): Promise<void> {
     if (this.destroyed) return;
@@ -169,7 +169,7 @@ export class SectScene implements Scene {
   }
 
   /**
-   * Received a real-time sect channel message (gateway push, S8-4b) â†’ deduplicate, insert, and re-render if needed.
+   * Received a real-time sect channel message (gateway push, S8-4b) → deduplicate, insert, and re-render if needed.
    * messages are newest-first (consistent with getSectChannel), so new messages are unshifted to the front.
    */
   applySectMsg(msg: SectMessageView): void {
@@ -181,11 +181,11 @@ export class SectScene implements Scene {
     if (this.mode === 'mySect' && this.activeTab === 'channel') this.render();
   }
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   private render(): void {
     if (this.destroyed) return;
-    tearDownChildren(this.bodyLayer); // create-form input re-renders per keystroke â†’ free Text textures
+    tearDownChildren(this.bodyLayer); // create-form input re-renders per keystroke → free Text textures
     this.hitRects = [];
     this.renderHeader();
 
@@ -269,7 +269,7 @@ export class SectScene implements Scene {
     const cancelBtn = sketchPanel(100, 34, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 0, 100) });
     cancelBtn.x = w / 2 + 10; cancelBtn.y = HUD_H + 120;
     this.bodyLayer.addChild(cancelBtn);
-    const ca = txt('âœ•', 13, C.dark);
+    const ca = txt('✕', 13, C.dark);
     ca.anchor.set(0.5, 0.5); ca.x = w / 2 + 60; ca.y = HUD_H + 137;
     this.bodyLayer.addChild(ca);
     this.hitRects.push({ rect: { x: w / 2 + 10, y: HUD_H + 120, w: 100, h: 34 }, action: () => { this.mode = 'noSect'; this.render(); } });
@@ -309,7 +309,7 @@ export class SectScene implements Scene {
     const { w } = this;
     const sect = this.sect;
 
-    // Sect summary line (name [tag] Â· families Â· prosperity).
+    // Sect summary line (name [tag] · families · prosperity).
     const summary = txt(
       `[${sect.tag}] ${sect.name}   ${t('sect.families', { n: sect.memberFamilyCount })}   ${t('sect.prosperity', { n: sect.prosperity })}`,
       12, C.mid,
@@ -356,7 +356,7 @@ export class SectScene implements Scene {
         const nameLbl = txt(`[${fam.tag}] ${fam.name}`, 13, C.dark);
         nameLbl.x = 16; nameLbl.y = cy + 18;
         this.bodyLayer.addChild(nameLbl);
-        const statLbl = txt(`${t('family.members', { n: fam.memberCount })} Â· ${t('sect.territory', { n: fam.territoryCount })}`, 10, C.mid);
+        const statLbl = txt(`${t('family.members', { n: fam.memberCount })} · ${t('sect.territory', { n: fam.territoryCount })}`, 10, C.mid);
         statLbl.x = 16; statLbl.y = cy + 34;
         this.bodyLayer.addChild(statLbl);
 
@@ -437,7 +437,7 @@ export class SectScene implements Scene {
     this.hitRects.push({ rect: { x: w - 72, y: inputY, w: 66, h: 36 }, action: () => this.openSendInput() });
   }
 
-  // â”€â”€ Small render helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Small render helpers ────────────────────────────────────────────────────
 
   private centerMessage(msg: string): void {
     const lbl = txt(msg, 14, C.dark);
@@ -467,7 +467,7 @@ export class SectScene implements Scene {
     this.hitRects.push({ rect: { x, y, w: bw, h: 32 }, action });
   }
 
-  // â”€â”€ Input overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Input overlay ───────────────────────────────────────────────────────────
 
   private openInputFor(field: 'name' | 'tag'): void {
     this.createField = field;
@@ -516,7 +516,7 @@ export class SectScene implements Scene {
     inp.addEventListener('blur', () => { inp.remove(); });
   }
 
-  // â”€â”€ Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Actions ─────────────────────────────────────────────────────────────────
 
   private async doCreate(): Promise<void> {
     if (!this.createName.trim() || !this.createTag.trim()) {
@@ -640,7 +640,7 @@ export class SectScene implements Scene {
     if (!this.sect) return;
     const sect = this.sect;
     try {
-      // Resolve ally ids â†’ names via the world sect list.
+      // Resolve ally ids → names via the world sect list.
       this.sectsCache = await this.cb.worldApi.listSects(this.cb.worldId);
       const allies = sect.allySectIds
         .map(id => this.sectsCache.find(s => s.sectId === id))
@@ -669,7 +669,7 @@ export class SectScene implements Scene {
     }
   }
 
-  // â”€â”€ Modals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Modals ──────────────────────────────────────────────────────────────────
 
   private showSectPickModal(sects: SectView[], onPick: (sectId: string) => void, emptyKey: 'sect.noSects' | 'sect.noAllies'): void {
     const { w, h } = this;
@@ -751,7 +751,7 @@ export class SectScene implements Scene {
     const cancelBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 2, 80) });
     cancelBtn.x = mx + mw / 2 + 8; cancelBtn.y = my + mh - 36;
     ml.addChild(cancelBtn);
-    const cl = txt('âœ•', 13, C.dark);
+    const cl = txt('✕', 13, C.dark);
     cl.anchor.set(0.5, 0.5); cl.x = mx + mw / 2 + 48; cl.y = my + mh - 22;
     ml.addChild(cl);
     this.modalHits.push({ rect: { x: cancelBtn.x, y: cancelBtn.y, w: 80, h: 28 }, action: () => this.closeModal() });
@@ -763,7 +763,7 @@ export class SectScene implements Scene {
     this.modalOpen = false;
   }
 
-  // â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Toast ───────────────────────────────────────────────────────────────────
 
   private showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
@@ -792,7 +792,7 @@ export class SectScene implements Scene {
     return String(e);
   }
 
-  // â”€â”€ Scene interface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Scene interface ─────────────────────────────────────────────────────────
 
   handleDown(x: number, y: number): void {
     if (this.modalOpen) {

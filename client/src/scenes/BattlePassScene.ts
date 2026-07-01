@@ -14,18 +14,18 @@ import {
   xpToLevel, xpToNextLevel,
 } from '../game/balance/battlepassDefs';
 
-// â”€â”€ BattlePassScene â€” Battle Pass panel (SE-9) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── BattlePassScene — Battle Pass panel (SE-9) ────────────────────────────────
 //
 // Entry point: StatsScene "Battle Pass" button (onOpenBattlePass).
 // Displays: current level progress bar + dual track (free/paid) 30-level reward cells, four states:
-//   Â· Claimable (green) â†’ tap to claim; Â· Claimed (grey); Â· Locked (dashed); Â· Pass-locked (gold lock).
+//   · Claimable (green) → tap to claim; · Claimed (grey); · Locked (dashed); · Pass-locked (gold lock).
 // Buy Pass button: always visible at bottom when not purchased (goes through commercial).
 
 export interface BattlePassCallbacks {
   onBack(): void;
   /**
    * Get the current save's battle pass data. Returns undefined when not yet joined this season.
-   * Omitted when offline/not logged in â†’ shows "login to view".
+   * Omitted when offline/not logged in → shows "login to view".
    */
   getBattlePass?(): SaveData['battlePass'];
   /** Purchase the current season Pass (600 coins). */
@@ -119,7 +119,7 @@ export class BattlePassScene implements Scene {
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
-    // â”€â”€ Title bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Title bar ────────────────────────────────────────────────────────────
     const hdr = drawSceneHeader(this.container, w, h, t('battlepass.title'));
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
@@ -127,7 +127,7 @@ export class BattlePassScene implements Scene {
     // Shop group tab bar (LOBBY_IA_REDESIGN P1.5): [Shop|Gacha|BattlePass], battle pass active. Only drawn in group context.
     const top = this.drawGroupTabs(tbH);
 
-    // â”€â”€ Auth / offline guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Auth / offline guard ──────────────────────────────────────────────────
     if (!this.cb.getBattlePass) {
       const msg = txt(t('battlepass.loginRequired'), Math.round(h * 0.03), C.mid);
       msg.anchor.set(0.5, 0.5); msg.x = w / 2; msg.y = h / 2;
@@ -147,7 +147,7 @@ export class BattlePassScene implements Scene {
     const pad = Math.round(w * 0.05);
     let y = top + Math.round(h * 0.02);
 
-    // â”€â”€ XP progress bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── XP progress bar ───────────────────────────────────────────────────────
     const barH = Math.round(h * 0.07);
     const barW = w - pad * 2;
     const barBg = new PIXI.Graphics();
@@ -181,7 +181,7 @@ export class BattlePassScene implements Scene {
 
     y += barH + Math.round(h * 0.018);
 
-    // â”€â”€ Buy Pass button (if not purchased) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Buy Pass button (if not purchased) ────────────────────────────────────
     const buyAreaH = Math.round(h * 0.072);
     let bodyTopY = y;
     if (!hasPass && this.cb.onBuy) {
@@ -206,7 +206,7 @@ export class BattlePassScene implements Scene {
       bodyTopY = y;
     }
 
-    // â”€â”€ Scrollable track grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Scrollable track grid ─────────────────────────────────────────────────
     const headerH = Math.round(h * 0.05);
     const cellH = Math.round(h * 0.075);
     const cellGap = Math.round(h * 0.008);
@@ -323,7 +323,7 @@ export class BattlePassScene implements Scene {
     let stateLbl: string | null = null;
     if (state === 'claimed') stateLbl = t('battlepass.claimed');
     else if (state === 'locked') stateLbl = t('battlepass.locked');
-    else if (state === 'pass_required') stateLbl = 'ðŸ”’';
+    else if (state === 'pass_required') stateLbl = '🔒';
     else if (state === 'claimable') stateLbl = t('battlepass.claim');
 
     if (stateLbl) {

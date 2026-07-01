@@ -1,5 +1,5 @@
-// CityScene â€” Home-city management (SLG_CITY_DESIGN P1).
-// Entry: WorldMapScene taps own base tile â†’ "Enter Desk".
+// CityScene — Home-city management (SLG_CITY_DESIGN P1).
+// Entry: WorldMapScene taps own base tile → "Enter Desk".
 // Layout: paper background + top resource bar (5 resources) +
 //   building grid (P1 keys) + detail panel (tap a building) +
 //   build queue strip + back button.
@@ -36,7 +36,7 @@ import {
 import { BusyTracker } from '../ui/busyTracker';
 import { buildDecorCLayer } from '../render/decorCLayer';
 
-// â”€â”€ Public interface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Public interface ─────────────────────────────────────────────────────────
 
 export interface CitySceneCallbacks {
   onBack(): void;
@@ -48,7 +48,7 @@ export interface CitySceneCallbacks {
   getCoins?(): number;
 }
 
-// â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Constants ────────────────────────────────────────────────────────────────
 
 const RES_COLORS: Readonly<Record<ResourceType, number>> = {
   ink:      0xa8d870,
@@ -59,23 +59,23 @@ const RES_COLORS: Readonly<Record<ResourceType, number>> = {
 };
 
 const RES_ICON: Readonly<Record<ResourceType, string>> = {
-  ink: 'ðŸ–Š', paper: 'ðŸ“„', graphite: 'âœï¸', metal: 'ðŸ”©', sticker: 'ðŸ·',
+  ink: '🖊', paper: '📄', graphite: '✏️', metal: '🔩', sticker: '🏷',
 };
 
 const BLD_ICON: Readonly<Record<BuildingKey, string>> = {
-  desk:         'ðŸ—‚',
-  inkPot:       'ðŸ–Š',
-  paperTray:    'ðŸ“„',
-  graphiteMill: 'âœï¸',
-  metalForge:   'ðŸ”©',
-  stickerShop:  'ðŸ·',
-  cabinet:      'ðŸ—„',
-  drillYard:    'âš”ï¸',
-  wall:         'ðŸ¯',
-  academy:      'ðŸ“š',
+  desk:         '🗂',
+  inkPot:       '🖊',
+  paperTray:    '📄',
+  graphiteMill: '✏️',
+  metalForge:   '🔩',
+  stickerShop:  '🏷',
+  cabinet:      '🗄',
+  drillYard:    '⚔️',
+  wall:         '🏯',
+  academy:      '📚',
 };
 
-// â”€â”€ CityScene â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── CityScene ────────────────────────────────────────────────────────────────
 
 interface Hit { x: number; y: number; w: number; h: number; fn: () => void }
 
@@ -120,13 +120,13 @@ export class CityScene implements Scene {
     for (const unsub of this.unsubs) unsub();
   }
 
-  // â”€â”€ Data loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Data loading ──────────────────────────────────────────────────────────
 
   private async load(): Promise<void> {
     try {
       this.me = await this.cb.worldApi.getMe(this.cb.worldId);
     } catch {
-      /* use null â€” shows loading skeleton */
+      /* use null — shows loading skeleton */
     }
     this.render();
   }
@@ -176,7 +176,7 @@ export class CityScene implements Scene {
     this.render();
   }
 
-  // â”€â”€ Input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Input ─────────────────────────────────────────────────────────────────
 
   private handleDown(px: number, py: number): void {
     if (this.bt.busy) return;
@@ -188,7 +188,7 @@ export class CityScene implements Scene {
     }
   }
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ────────────────────────────────────────────────────────────────
 
   private render(): void {
     tearDownChildren(this.container);
@@ -245,7 +245,7 @@ export class CityScene implements Scene {
       ov.drawRect(0, 0, w, h);
       ov.endFill();
       this.container.addChild(ov);
-      const lbl = txt('â€¦', 28, 0xffffff, true);
+      const lbl = txt('…', 28, 0xffffff, true);
       lbl.x = w / 2 - 10;
       lbl.y = h / 2 - 14;
       this.container.addChild(lbl);
@@ -265,7 +265,7 @@ export class CityScene implements Scene {
     }
   }
 
-  // â”€â”€ Resource bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Resource bar ──────────────────────────────────────────────────────────
 
   private renderResourceBar(startY: number): number {
     const { w } = this;
@@ -309,7 +309,7 @@ export class CityScene implements Scene {
       this.container.addChild(capLbl);
 
       const yldPct = Math.round(yld * 100);
-      const yldStr = self > 0 ? `+${self}/h` : `Ã—${yldPct}%`;
+      const yldStr = self > 0 ? `+${self}/h` : `×${yldPct}%`;
       const yldLbl = txt(yldStr, 9, C.mid);
       yldLbl.x = cx + 6;
       yldLbl.y = startY + 50;
@@ -319,7 +319,7 @@ export class CityScene implements Scene {
     return startY + panH + 4;
   }
 
-  // â”€â”€ Build queue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Build queue ───────────────────────────────────────────────────────────
 
   private renderBuildQueue(startY: number): number {
     const { w } = this;
@@ -366,7 +366,7 @@ export class CityScene implements Scene {
     return startY + panH + 4;
   }
 
-  // â”€â”€ Building grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Building grid ─────────────────────────────────────────────────────────
 
   private renderBuildingGrid(startY: number): number {
     const { w, landscape } = this;
@@ -418,7 +418,7 @@ export class CityScene implements Scene {
       this.container.addChild(lvlLbl);
 
       if (inQueue) {
-        const qDot = txt('ðŸ”¨', 11, C.gold);
+        const qDot = txt('🔨', 11, C.gold);
         qDot.x = cx + cellW - 22;
         qDot.y = cy + 6;
         this.container.addChild(qDot);
@@ -436,7 +436,7 @@ export class CityScene implements Scene {
     return startY + rows * cellH + 4;
   }
 
-  // â”€â”€ Detail panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Detail panel ──────────────────────────────────────────────────────────
 
   private renderDetailPanel(px: number, py: number, panW: number, panH: number): void {
     const key = this.selectedBuilding;
@@ -489,7 +489,7 @@ export class CityScene implements Scene {
     }
 
     // Next level header
-    const nextHdr = txt(`â†’ Lv.${toLevel}`, 11, C.mid);
+    const nextHdr = txt(`→ Lv.${toLevel}`, 11, C.mid);
     nextHdr.x = px + 10;
     nextHdr.y = iy;
     this.container.addChild(nextHdr);
@@ -501,7 +501,7 @@ export class CityScene implements Scene {
       const need = cost[rt];
       if (!need) continue;
       const have = resources?.[rt] ?? 0;
-      const color = have >= need ? 'âœ“' : 'âœ—';
+      const color = have >= need ? '✓' : '✗';
       costParts.push(`${RES_ICON[rt]}${this.fmtNum(need)}${color}`);
     }
     if (costParts.length > 0) {
@@ -553,7 +553,7 @@ export class CityScene implements Scene {
     }
   }
 
-  // â”€â”€ Building bonus description lines â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Building bonus description lines ─────────────────────────────────────
 
   private buildingBonusLines(key: BuildingKey, bld: Partial<Record<BuildingKey, number>> | undefined): string[] {
     const lvl = buildingLevel(bld, key);
@@ -605,7 +605,7 @@ export class CityScene implements Scene {
     return lines;
   }
 
-  // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   private addBtn(
     x: number, y: number, w: number, h: number,

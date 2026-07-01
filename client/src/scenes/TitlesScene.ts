@@ -8,11 +8,11 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { sortTitlesByWeight, getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 
-// â”€â”€ TitlesScene â€” title wall (S10, TITLE_DESIGN Â§7) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── TitlesScene — title wall (S10, TITLE_DESIGN §7) ────────────────────────────
 //
-// Entry: StatsScene â†’ onOpenTitles.
+// Entry: StatsScene → onOpenTitles.
 // Displays: all titles owned by the player, sorted by weight descending; the equipped one is highlighted.
-// Interaction: tap a title row â†’ update equipped['title'] (PUT /save, client-side sync segment).
+// Interaction: tap a title row → update equipped['title'] (PUT /save, client-side sync segment).
 
 export interface TitlesSceneCallbacks {
   onBack(): void;
@@ -20,7 +20,7 @@ export interface TitlesSceneCallbacks {
   titles: string[];
   /** Currently equipped title id (save.equipped['title']). */
   equippedTitle: string;
-  /** Equip a new title â†’ write equipped['title'] + PUT /save. */
+  /** Equip a new title → write equipped['title'] + PUT /save. */
   onEquip(titleId: string): void;
 }
 
@@ -121,7 +121,7 @@ export class TitlesScene implements Scene {
         ? (t(keys.fullKey as import('../i18n').TranslationKey) || shortLabel)
         : shortLabel;
 
-      const nameLbl = txt(`ã€Œ${shortLabel}ã€  ${fullLabel}`, Math.round(rowH * 0.38), equipped ? C.gold : C.dark, equipped);
+      const nameLbl = txt(`「${shortLabel}」  ${fullLabel}`, Math.round(rowH * 0.38), equipped ? C.gold : C.dark, equipped);
       nameLbl.anchor.set(0, 0.5); nameLbl.x = padX + Math.round(rowW * 0.04); nameLbl.y = rowY + rowH / 2;
       this.container.addChild(nameLbl);
 

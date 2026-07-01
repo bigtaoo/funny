@@ -20,12 +20,12 @@ import {
   cardKey,
 } from '../game/balance/unitCards';
 
-// â”€â”€ CollectionScene â€” Collection Hub (S3-5 + cards codex + S12 unit cards) â”€â”€â”€â”€
+// ── CollectionScene — Collection Hub (S3-5 + cards codex + S12 unit cards) ────
 //
 // Three tabs:
-//  â€¢ Cards  â€” read-only codex of every card in the pool (CARD_DEFINITIONS).
-//  â€¢ Skins  â€” wardrobe: owned skins + equip; stat-safe (Â§5.2).
-//  â€¢ Units  â€” S12 unit card inventory: per-unit level, owned cards by tier, merge.
+//  • Cards  — read-only codex of every card in the pool (CARD_DEFINITIONS).
+//  • Skins  — wardrobe: owned skins + equip; stat-safe (§5.2).
+//  • Units  — S12 unit card inventory: per-unit level, owned cards by tier, merge.
 
 export type CollectionTab = 'cards' | 'skins' | 'units';
 
@@ -37,19 +37,19 @@ export interface CollectionCallbacks {
   getEquipped(): string | null;
   /** Equip a skin id, or null to revert to default (writes the equipped segment). */
   equip(skinId: string | null): void;
-  /** Which tab to open on (lobby "cards" nav â†’ cards; campaign equip â†’ skins). */
+  /** Which tab to open on (lobby "cards" nav → cards; campaign equip → skins). */
   initialTab?: CollectionTab;
-  /** unitId â†’ current level (1â€“9). Required for the 'units' tab. */
+  /** unitId → current level (1–9). Required for the 'units' tab. */
   getUnitLevels?(): Record<string, number>;
-  /** cardKey (unitId:level) â†’ owned count. Required for the 'units' tab. */
+  /** cardKey (unitId:level) → owned count. Required for the 'units' tab. */
   getCardInventory?(): Record<string, number>;
   /** Online = can reach /pve/merge. */
   isOnline?(): boolean;
-  /** Server-authoritative merge (5 Ã— unitId:level â†’ 1 Ã— unitId:(level+1)). */
+  /** Server-authoritative merge (5 × unitId:level → 1 × unitId:(level+1)). */
   tryMerge?(unitId: string, level: number): Promise<boolean>;
   /**
-   * Equipment system (E5) entry point (LOBBY_IA_REDESIGN Â§3: equipment merged into "progression" top-level reach).
-   * Equipment is server-authoritative (upgrade dice roll / charge / inventory) â†’ only available when logged in online;
+   * Equipment system (E5) entry point (LOBBY_IA_REDESIGN §3: equipment merged into "progression" top-level reach).
+   * Equipment is server-authoritative (upgrade dice roll / charge / inventory) → only available when logged in online;
    * absent / offline: the 4th "Equipment" tab is greyed out and non-tappable.
    * Tap navigates to EquipmentScene (independent scene, back returns here).
    */
@@ -58,7 +58,7 @@ export interface CollectionCallbacks {
 
 interface Hit { rect: Rect; fn: () => void; scroll?: boolean; }
 
-/** One distinct codex entry â€” cards sharing a name (infantry_1/_2) collapse to one. */
+/** One distinct codex entry — cards sharing a name (infantry_1/_2) collapse to one. */
 interface CodexEntry {
   card: CardDefinition;
 }
@@ -86,7 +86,7 @@ export class CollectionScene implements Scene {
   /** Art urls whose async-load re-render hook is already attached (fire once each). */
   private readonly artHooked = new Set<string>();
 
-  // â”€â”€ Scroll state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Scroll state ──────────────────────────────────────────────────────────────
   // Content (cards/skins/units) lives in `layer`, masked to the region below the
   // tabs. Dragging shifts `layer.y`; taps act on pointer-up unless a drag happened.
   private layer!: PIXI.Container;
@@ -160,7 +160,7 @@ export class CollectionScene implements Scene {
 
   /**
    * Draw a card/unit illustration fitted (aspect-kept) into the box at (x,y) of
-   * size boxÃ—box, added to the scroll layer. Textures load async â€” if not ready
+   * size box×box, added to the scroll layer. Textures load async — if not ready
    * yet, skip this frame and schedule a single re-render once the bitmap arrives
    * (battles usually warm the shared texture cache first, so this is rare).
    */
@@ -181,7 +181,7 @@ export class CollectionScene implements Scene {
     this.layer.addChild(sp);
   }
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   private render(): void {
     tearDownChildren(this.container);
@@ -279,7 +279,7 @@ export class CollectionScene implements Scene {
     });
   }
 
-  // â”€â”€ Cards codex â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Cards codex ────────────────────────────────────────────────────────────────
 
   private renderCards(top: number): number {
     const { w, h } = this;
@@ -310,7 +310,7 @@ export class CollectionScene implements Scene {
     return y + tileH;
   }
 
-  /** A read-only codex tile: name + typeÂ·cost header, key stats, short blurb. */
+  /** A read-only codex tile: name + type·cost header, key stats, short blurb. */
   private drawCardTile(card: CardDefinition, x: number, y: number, w: number, h: number): void {
     const box = sketchPanel(w, h, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
     box.x = x; box.y = y;
@@ -334,7 +334,7 @@ export class CollectionScene implements Scene {
     const typeLabel = card.cardType === CardType.Unit ? t('collection.cardType.unit')
       : card.cardType === CardType.Building ? t('collection.cardType.building')
       : t('collection.cardType.spell');
-    const sub = txt(`${typeLabel} Â· ${t('collection.stat.cost')} ${card.cost}`, Math.round(h * 0.12), accent, true);
+    const sub = txt(`${typeLabel} · ${t('collection.stat.cost')} ${card.cost}`, Math.round(h * 0.12), accent, true);
     sub.anchor.set(0, 0); sub.x = textX; sub.y = y + Math.round(h * 0.32);
     this.layer.addChild(sub);
 
@@ -359,7 +359,7 @@ export class CollectionScene implements Scene {
   private cardStatsLine(card: CardDefinition): string | null {
     if (card.cardType === CardType.Unit && card.unitType !== undefined) {
       const b = UNIT_BLUEPRINTS[card.unitType];
-      return `${t('collection.stat.hp')} ${b.hp} Â· ${t('collection.stat.atk')} ${b.attack} Â· ${t('collection.stat.range')} ${b.range}`;
+      return `${t('collection.stat.hp')} ${b.hp} · ${t('collection.stat.atk')} ${b.attack} · ${t('collection.stat.range')} ${b.range}`;
     }
     if (card.cardType === CardType.Building && card.buildingType !== undefined) {
       const b = BUILDING_BLUEPRINTS[card.buildingType];
@@ -368,12 +368,12 @@ export class CollectionScene implements Scene {
         parts.push(`${t('collection.stat.atk')} ${b.attack}`);
         if (b.attackRange !== undefined) parts.push(`${t('collection.stat.range')} ${b.attackRange}`);
       }
-      return parts.join(' Â· ');
+      return parts.join(' · ');
     }
     return null;
   }
 
-  // â”€â”€ Skins wardrobe (original) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Skins wardrobe (original) ───────────────────────────────────────────────────
 
   private renderSkins(top: number): number {
     const { w, h } = this;
@@ -444,7 +444,7 @@ export class CollectionScene implements Scene {
     }
   }
 
-  // â”€â”€ Units tab (S12 unit card progression) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Units tab (S12 unit card progression) ───────────────────────────────────────
 
   private renderUnits(top: number): number {
     const { w, h } = this;
@@ -465,7 +465,7 @@ export class CollectionScene implements Scene {
     // Card tier legend at bottom
     y += Math.round(h * 0.01);
     const legend = txt(
-      `${MERGE_COPIES} Ã— Lv N  â†’  Lv N+1`,
+      `${MERGE_COPIES} × Lv N  →  Lv N+1`,
       Math.round(h * 0.022),
       C.mid,
       true,

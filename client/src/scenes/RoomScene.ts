@@ -10,23 +10,23 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 
-// â”€â”€ RoomScene (S1-8) â€” friendly online room â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── RoomScene (S1-8) — friendly online room ──────────────────────────────────
 //
 // A canvas-drawn room flow (create / show code / enter code to join / ready /
 // start) wired to NetSession by app.ts. The scene is a thin view: local taps
 // fire the action callbacks; inbound server messages arrive via the apply*
 // methods (app forwards them from NetSession), which re-render the scene.
 //
-// View states: idle â†’ (create | codeEntry â†’ join) â†’ connecting â†’ inRoom.
+// View states: idle → (create | codeEntry → join) → connecting → inRoom.
 // match_start is handled by app.ts (it swaps to GameScene); the room phase
-// COUNTDOWN/IN_MATCH just shows a "startingâ€¦" hint until that swap lands.
+// COUNTDOWN/IN_MATCH just shows a "starting…" hint until that swap lands.
 //
 // Copy in the i18n `room.*` namespace. Layout follows LobbyScene (notebook bg).
 
 /**
- * Server room-code charset â€” MUST stay identical to matchsvc Matchsvc.ts, or the
+ * Server room-code charset — MUST stay identical to matchsvc Matchsvc.ts, or the
  * server can hand out a code containing a character the keypad can't type.
- * 10 digits + 11 letters = 21 chars â†’ exactly 3 rows of 7 on the keypad (fits one
+ * 10 digits + 11 letters = 21 chars → exactly 3 rows of 7 on the keypad (fits one
  * screen). Letters skip I/O/L so they don't read as 0/1.
  */
 export const CODE_ALPHABET = '0123456789ABCDEFGHJKM';
@@ -42,7 +42,7 @@ export interface RoomSceneCallbacks {
   createRanked(): void;
   /** Cancel ranked search. */
   cancelQueue(): void;
-  /** False when no online server is configured â†’ actions surface "unavailable". */
+  /** False when no online server is configured → actions surface "unavailable". */
   available: boolean;
   /**
    * Open directly in the ranked searching view (the lobby match button jumped
@@ -82,7 +82,7 @@ export class RoomScene implements Scene {
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
 
-  /** Tap-a-slot â†’ view-profile overlay (persists across re-renders, drawn on top). */
+  /** Tap-a-slot → view-profile overlay (persists across re-renders, drawn on top). */
   private readonly popup: ProfilePopup;
 
   constructor(layout: ILayout, input: InputManager, cb: RoomSceneCallbacks) {
@@ -91,8 +91,8 @@ export class RoomScene implements Scene {
     this.h = layout.designHeight;
     this.cb = cb;
     this.popup = new ProfilePopup(this.w, this.h);
-    // Lobby match button â†’ land straight in the ranked searching view (app fires
-    // the queue join once the gateway opens). Unavailable â†’ fall through to idle
+    // Lobby match button → land straight in the ranked searching view (app fires
+    // the queue join once the gateway opens). Unavailable → fall through to idle
     // so guardAvailable can surface the "no server" toast on user action.
     if (cb.autoRanked && cb.available) {
       this.view = 'searching';
@@ -102,7 +102,7 @@ export class RoomScene implements Scene {
     this.render();
   }
 
-  // â”€â”€ Scene interface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Scene interface ──────────────────────────────────────────────────────────
 
   update(dt: number): void {
     // Animate the connecting/searching spinner dots in place (no full re-render).
@@ -126,7 +126,7 @@ export class RoomScene implements Scene {
     this.popup.destroy();
   }
 
-  // â”€â”€ Inbound (app forwards NetSession events here) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Inbound (app forwards NetSession events here) ─────────────────────────────
 
   applyRoomState(s: RoomState): void {
     this.roomState = s;
@@ -159,10 +159,10 @@ export class RoomScene implements Scene {
     }
   }
 
-  // â”€â”€ Input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Input ──────────────────────────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
-    // Profile overlay open â†’ its own dim backdrop (PIXI interactive) handles the
+    // Profile overlay open → its own dim backdrop (PIXI interactive) handles the
     // close tap; ignore the scene hit-list so nothing behind it fires.
     if (this.popup.isOpen) return;
     for (const hit of this.hits) {
@@ -174,7 +174,7 @@ export class RoomScene implements Scene {
     }
   }
 
-  // â”€â”€ Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Actions ──────────────────────────────────────────────────────────────────
 
   private onCreate(): void {
     if (!this.guardAvailable()) return;
@@ -248,10 +248,10 @@ export class RoomScene implements Scene {
       void (navigator as Navigator | undefined)?.clipboard?.writeText(code);
       this.toast('room.copied');
       this.render();
-    } catch { /* clipboard unavailable â€” ignore */ }
+    } catch { /* clipboard unavailable — ignore */ }
   }
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   private render(): void {
     this.container.removeChild(this.popup.container);
@@ -307,7 +307,7 @@ export class RoomScene implements Scene {
     const gap = Math.round(h * 0.035);
     const y0 = Math.round(h * 0.24);
 
-    // Ranked (primary) â†’ matchmaking queue.
+    // Ranked (primary) → matchmaking queue.
     this.addButton(t('room.ranked'), btnX, y0, btnW, btnH, C.dark, C.green, () => this.onRanked());
     const rankedHint = txt(t('room.rankedDesc'), Math.round(h * 0.02), C.mid);
     rankedHint.anchor.set(0.5, 0); rankedHint.x = w / 2; rankedHint.y = y0 + btnH + Math.round(h * 0.008);
@@ -410,7 +410,7 @@ export class RoomScene implements Scene {
     this.addButton(t('room.clear'), aX0, aY, aW, aH, C.paper, C.mid, () => {
       this.codeChars = []; this.render();
     }, C.dark, Math.round(aH * 0.32));
-    this.addButton('âŒ«', aX0 + aW + aGap, aY, aW, aH, C.paper, C.mid, () => {
+    this.addButton('⌫', aX0 + aW + aGap, aY, aW, aH, C.paper, C.mid, () => {
       this.codeChars.pop(); this.render();
     }, C.dark, Math.round(aH * 0.40));
     const ready = this.codeChars.length === CODE_LEN;
@@ -491,7 +491,7 @@ export class RoomScene implements Scene {
     sketchAccentBar(bg, h, accent, seedFor(side, h, accent));
     this.container.addChild(bg);
 
-    // Occupied slot â†’ tappable to open its profile card.
+    // Occupied slot → tappable to open its profile card.
     if (slot) {
       this.hits.push({ rect: { x, y, w, h }, fn: () => this.openProfile(slot) });
     }
@@ -507,12 +507,12 @@ export class RoomScene implements Scene {
     this.container.addChild(nameTxt);
 
     if (slot && hasId) {
-      const idLabel = `#${slot.publicId}${isMe ? ' Â· ' + t('room.you') : ''}`;
+      const idLabel = `#${slot.publicId}${isMe ? ' · ' + t('room.you') : ''}`;
       const idTxt = txt(idLabel, Math.round(h * 0.2), C.mid, false);
       idTxt.anchor.set(0, 0.5); idTxt.x = x + Math.round(w * 0.06); idTxt.y = y + h * 0.68;
       this.container.addChild(idTxt);
     } else if (slot && isMe) {
-      // No id yet (server didn't supply one) â€” still mark which slot is me.
+      // No id yet (server didn't supply one) — still mark which slot is me.
       const meTxt = txt(t('room.you'), Math.round(h * 0.2), C.mid, false);
       meTxt.anchor.set(0, 0.5); meTxt.x = x + Math.round(w * 0.06); meTxt.y = y + h * 0.68;
       this.container.addChild(meTxt);
@@ -562,7 +562,7 @@ export class RoomScene implements Scene {
   }
 }
 
-// â”€â”€ Server RoomError.code â†’ i18n key â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Server RoomError.code → i18n key ───────────────────────────────────────────
 
 function roomErrorKey(code: string): TranslationKey {
   switch (code) {

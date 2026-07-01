@@ -1,21 +1,21 @@
-// DefenseEditorScene â€” SLG universal half-field deployment editor (S8-9 C3 + G3-2c generalized to offense/defense)
+// DefenseEditorScene — SLG universal half-field deployment editor (S8-9 C3 + G3-2c generalized to offense/defense)
 //
 // Two modes, distinguished by target.mode:
 //
-// â‘  Defense (mode='defense'): edit the defense config for the home base (tileKey='base') or
-//    allied/own territory (tileKey='{x}:{y}') = engine LevelDefinition restricted subset (U8/U10) â€”
-//    defender (Top) half garrison + building row defenderBuildings + defenderBaseLevel(0â€“3).
+// ① Defense (mode='defense'): edit the defense config for the home base (tileKey='base') or
+//    allied/own territory (tileKey='{x}:{y}') = engine LevelDefinition restricted subset (U8/U10) —
+//    defender (Top) half garrison + building row defenderBuildings + defenderBaseLevel(0–3).
 //    Save via setDefense (overwrite).
 //
-// â‘¡ Attack (mode='attack', G3-2c Â§16.2 / A7 Â§16.5): edit a pre-deployment attack team template â€”
+// ② Attack (mode='attack', G3-2c §16.2 / A7 §16.5): edit a pre-deployment attack team template —
 //    attacker (Bottom) half with collected units pre-placed; no buildings / no base upgrades
 //    (attacker places units only). Tapping an already-placed unit cycles HP steps:
-//    100%â†’75%â†’50%â†’25%â†’100% (Â§16.5 SIEGE_UNIT_HP_MIN_FRACTION=0.25, 4 steps), committed troops
-//    = sum of each unit's allocated HP. Save via getTeamsâ†’replace slotâ†’setTeams.
+//    100%→75%→50%→25%→100% (§16.5 SIEGE_UNIT_HP_MIN_FRACTION=0.25, 4 steps), committed troops
+//    = sum of each unit's allocated HP. Save via getTeams→replace slot→setTeams.
 //
 // "Collected units" constraint (U8): palette only lists unit/building types from card definitions
 // (CARD_DEFINITIONS); PvE-only units naturally excluded. During a siege, worldsvc runs the engine
-// headless with the attacker army + defender config to compute the authoritative result (Â§16.8).
+// headless with the attacker army + defender config to compute the authoritative result (§16.8).
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';
@@ -42,7 +42,7 @@ export interface DefenseEditorCallbacks {
   target: DefenseEditorTarget;
 }
 
-// â”€â”€ Collected pool (U8) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Collected pool (U8) ───────────────────────────────────────────────────────
 // Only unit/building types from card definitions = the player's "collected" placeable set; preserves card table order.
 
 function distinctCollected<T extends string>(pick: (c: typeof CARD_DEFINITIONS[number]) => T | undefined): T[] {
@@ -68,36 +68,36 @@ function nameKeyFor(kind: 'unit' | 'building', type: string): TranslationKey {
   return 'world.defense.title';
 }
 
-// â”€â”€ Tools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Tools ──────────────────────────────────────────────────────────────────────
 
 type Tool =
   | { kind: 'unit'; type: UnitType }
   | { kind: 'building'; type: BuildingType }
   | { kind: 'erase' };
 
-// Defender deployment zone shown topâ†’bottom: building row first, then garrison rows
+// Defender deployment zone shown top→bottom: building row first, then garrison rows
 // 16..9 (defender's own half). Garrison schema allows rows 1..16; we expose the back
-// half which is where a defender realistically forts up â€” keeps the grid mobile-sized.
+// half which is where a defender realistically forts up — keeps the grid mobile-sized.
 const DEFENSE_ROWS = [16, 15, 14, 13, 12, 11, 10, 9] as const;
-// Attacker (Bottom) half shown topâ†’bottom: rows 8..1 (1 = home spawn row at the bottom).
+// Attacker (Bottom) half shown top→bottom: rows 8..1 (1 = home spawn row at the bottom).
 const ATTACK_ROWS = [8, 7, 6, 5, 4, 3, 2, 1] as const;
 
 const MAX_GARRISON = 30;
 
-// Â§16.5 Per-unit troop allocation slider (A7 tuning): 4 steps 25%/50%/75%/100%, matches server/shared SIEGE_UNIT_HP_MIN_FRACTION.
+// §16.5 Per-unit troop allocation slider (A7 tuning): 4 steps 25%/50%/75%/100%, matches server/shared SIEGE_UNIT_HP_MIN_FRACTION.
 const UNIT_HP_STEPS = 4;      // number of HP steps
 const UNIT_HP_MIN_FRAC = 0.25; // minimum step = 25% of blueprint max HP
 
 type GarrisonEntry = { unitType: UnitType; hp: number };
 
-// â”€â”€ Caps / layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Caps / layout ────────────────────────────────────────────────────────────
 
 const HEADER_H = 46;
 const PALETTE_H = 54;
 const FOOTER_H = 58;
 const PAD = 10;
 
-// â”€â”€ Scene â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Scene ───────────────────────────────────────────────────────────────────────
 
 export class DefenseEditorScene implements Scene {
   readonly container: PIXI.Container;
@@ -108,12 +108,12 @@ export class DefenseEditorScene implements Scene {
 
   // Mode-derived layout (G3-2c)
   private readonly mode: 'defense' | 'attack';
-  private readonly gRows: readonly number[];      // garrison/army rows shown (topâ†’bottom)
+  private readonly gRows: readonly number[];      // garrison/army rows shown (top→bottom)
   private readonly hasBuildingRow: boolean;        // defense only: building row + base level
 
   // Config state
-  private buildings = new Map<number, BuildingType>();        // col â†’ building (building row)
-  private garrison = new Map<string, GarrisonEntry>();        // "col:row" â†’ { unitType, hp }
+  private buildings = new Map<number, BuildingType>();        // col → building (building row)
+  private garrison = new Map<string, GarrisonEntry>();        // "col:row" → { unitType, hp }
   private baseLevel = 0;
   // Attack mode: the full team list (loaded once) so save merges this slot without clobbering others.
   private teams: TeamTemplate[] = [];
@@ -164,7 +164,7 @@ export class DefenseEditorScene implements Scene {
     void this.loadData();
   }
 
-  // â”€â”€ Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Data ──────────────────────────────────────────────────────────────────
 
   private async loadData(): Promise<void> {
     try {
@@ -179,7 +179,7 @@ export class DefenseEditorScene implements Scene {
         const cfg = await this.cb.worldApi.getDefense(this.cb.worldId, this.cb.target.tileKey);
         if (cfg && !this.destroyed) this.applyConfig(cfg as Record<string, unknown>);
       }
-    } catch { /* offline / unset â€” start blank */ }
+    } catch { /* offline / unset — start blank */ }
     this.loading = false;
     if (!this.destroyed) this.render();
   }
@@ -234,7 +234,7 @@ export class DefenseEditorScene implements Scene {
     this.baseLevel = typeof lv === 'number' ? Math.max(0, Math.min(3, Math.floor(lv))) : 0;
   }
 
-  /** Attacker army: each unit's initialHp = player-allocated troops (Â§16.5 slider 25%â€“100%). */
+  /** Attacker army: each unit's initialHp = player-allocated troops (§16.5 slider 25%–100%). */
   private buildArmy(): ArmyEntry[] {
     return [...this.garrison.entries()].map(([key, entry]) => {
       const [col, row] = key.split(':').map(Number);
@@ -280,7 +280,7 @@ export class DefenseEditorScene implements Scene {
     return t('world.defense.saveFail');
   }
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   private render(): void {
     tearDownChildren(this.bodyLayer);
@@ -298,7 +298,7 @@ export class DefenseEditorScene implements Scene {
     });
     this.hits.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
 
-    // Base-level stepper (defense only â€” attacker has no base/buildings)
+    // Base-level stepper (defense only — attacker has no base/buildings)
     if (this.hasBuildingRow) this.renderBaseStepper(w - PAD, 8);
 
     // Palette
@@ -341,7 +341,7 @@ export class DefenseEditorScene implements Scene {
     const minus = sketchPanel(btnW, btnH, { fill: C.dark, border: C.gold, seed: seedFor(rightX, y + 1, btnW) });
     minus.x = lbl.x - lbl.width - 6 - btnW; minus.y = y;
     this.bodyLayer.addChild(minus);
-    const minusLbl = txt('âˆ’', 16, C.light); minusLbl.anchor.set(0.5, 0.5);
+    const minusLbl = txt('−', 16, C.light); minusLbl.anchor.set(0.5, 0.5);
     minusLbl.x = minus.x + btnW / 2; minusLbl.y = minus.y + btnH / 2;
     this.bodyLayer.addChild(minusLbl);
     this.hits.push({ rect: { x: minus.x, y: minus.y, w: btnW, h: btnH }, action: () => {
@@ -450,7 +450,7 @@ export class DefenseEditorScene implements Scene {
       }
     }
 
-    // Row label (left): defense â†’ building row; attack â†’ spawn row at the home row (bottom).
+    // Row label (left): defense → building row; attack → spawn row at the home row (bottom).
     const lbl = txt(this.hasBuildingRow ? t('world.defense.buildRow') : t('world.team.frontRow'), 9, C.mid);
     lbl.anchor.set(1, 0.5);
     lbl.x = gridX - 3;
@@ -487,7 +487,7 @@ export class DefenseEditorScene implements Scene {
     g.drawCircle(cx, cy, r);
     g.endFill();
 
-    // Attack mode: draw HP fraction bar below circle (Â§16.5 slider).
+    // Attack mode: draw HP fraction bar below circle (§16.5 slider).
     if (hp !== undefined && this.mode === 'attack') {
       const maxHp = UNIT_BLUEPRINTS[type].hp;
       const frac = maxHp > 0 ? Math.min(1, hp / maxHp) : 1;
@@ -506,7 +506,7 @@ export class DefenseEditorScene implements Scene {
     this.bodyLayer.addChild(panel);
 
     const countsStr = this.mode === 'attack'
-      // committed troops = sum of each unit's allocated HP (Â§16.5 tap cell to cycle steps; this total is deducted on march).
+      // committed troops = sum of each unit's allocated HP (§16.5 tap cell to cycle steps; this total is deducted on march).
       ? `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}`
       : `${t('world.defense.buildings')} ${this.buildings.size}   ${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}`;
     const counts = txt(countsStr, 11, C.dark);
@@ -540,14 +540,14 @@ export class DefenseEditorScene implements Scene {
     } });
   }
 
-  /** Attacker army committed troops = sum of each unit's allocated HP (Â§16.5 slider; consistent with buildArmy / server). */
+  /** Attacker army committed troops = sum of each unit's allocated HP (§16.5 slider; consistent with buildArmy / server). */
   private committedTroops(): number {
     let sum = 0;
     for (const entry of this.garrison.values()) sum += entry.hp;
     return sum;
   }
 
-  // â”€â”€ Cell placement â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Cell placement ───────────────────────────────────────────────────────────
 
   private onGridTap(sx: number, sy: number): void {
     if (this.cellW <= 0) return;
@@ -580,7 +580,7 @@ export class DefenseEditorScene implements Scene {
       } else if (this.tool.kind === 'unit') {
         const existing = this.garrison.get(key);
         if (existing && existing.unitType === this.tool.type && this.mode === 'attack') {
-          // Same unit already here in attack mode â†’ cycle HP through UNIT_HP_STEPS steps.
+          // Same unit already here in attack mode → cycle HP through UNIT_HP_STEPS steps.
           const maxHp = UNIT_BLUEPRINTS[this.tool.type].hp;
           const minHp = Math.max(1, Math.ceil(maxHp * UNIT_HP_MIN_FRAC));
           const step = Math.round((maxHp - minHp) / (UNIT_HP_STEPS - 1));
@@ -602,7 +602,7 @@ export class DefenseEditorScene implements Scene {
     this.render();
   }
 
-  // â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Toast ──────────────────────────────────────────────────────────────────
 
   private showToast(msg: string, color: number = C.dark): void {
     this.toastLayer.removeChildren();
@@ -613,7 +613,7 @@ export class DefenseEditorScene implements Scene {
     this.toastTimer = 2200;
   }
 
-  // â”€â”€ Scene interface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Scene interface ───────────────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
     for (const { rect, action } of this.hits) {

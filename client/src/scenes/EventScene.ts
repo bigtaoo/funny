@@ -7,10 +7,10 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOv
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
-// â”€â”€ EventScene â€” limited-time events (B6, ADR-014) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── EventScene — limited-time events (B6, ADR-014) ────────────────────────────
 //
 // Entry: LobbyScene "events" button (onOpenEvents).
-// Layout: event tab list (if multiple) â†’ task progress cards + points shop for the selected event.
+// Layout: event tab list (if multiple) → task progress cards + points shop for the selected event.
 // Portrait: task area in the upper half, redemption area in the lower half;
 // Landscape: tasks in the left column, redemption in the right column.
 // Redemption goes via POST /api/events/claim; rewards are delivered by mail or via commercial coins.

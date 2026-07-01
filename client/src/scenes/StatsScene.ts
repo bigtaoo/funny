@@ -9,7 +9,7 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { MATERIAL_ORDER } from '../game/balance/pveUpgrades';
 import type { MatchHistoryEntry } from '../net/ApiClient';
 
-// â”€â”€ StatsScene â€” match record / stats page (lobby "stats" nav) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── StatsScene — match record / stats page (lobby "stats" nav) ───────────────────
 //
 // Local data from SaveData (ranked standing, campaign progress, collection count,
 // materials) plus the "match history" section, which is wired to the server via
@@ -148,9 +148,9 @@ export class StatsScene implements Scene {
     const topY = tbH + Math.round(h * 0.035);
     const gap = Math.round(h * 0.022);
 
-    // Shared row data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Shared row data ─────────────────────────────────────────────────────────
     const total = s.pvp.wins + s.pvp.losses;
-    const winrate = total > 0 ? `${Math.round((s.pvp.wins / total) * 100)}%` : 'â€”';
+    const winrate = total > 0 ? `${Math.round((s.pvp.wins / total) * 100)}%` : '—';
     const streak = s.pvp.streak > 0 ? t('stats.streakWin', { n: s.pvp.streak })
       : s.pvp.streak < 0 ? t('stats.streakLose', { n: -s.pvp.streak })
       : t('stats.streakNone');
@@ -172,7 +172,7 @@ export class StatsScene implements Scene {
       { label: t('stats.record'), value: `${s.pvp.wins} / ${s.pvp.losses}` },
       { label: t('stats.winrate'), value: winrate },
       { label: t('stats.streak'), value: streak, valueColor: s.pvp.streak > 0 ? C.green : s.pvp.streak < 0 ? C.red : C.mid },
-      ...(this.cb.onOpenLeaderboard ? [{ label: '', value: t('leaderboard.openLeaderboard') + ' â†’', valueColor: C.accent, rowHit: () => this.cb.onOpenLeaderboard!() }] : []),
+      ...(this.cb.onOpenLeaderboard ? [{ label: '', value: t('leaderboard.openLeaderboard') + ' →', valueColor: C.accent, rowHit: () => this.cb.onOpenLeaderboard!() }] : []),
     ];
 
     const matRows: Row[] = MATERIAL_ORDER.map((id) => ({
@@ -182,11 +182,11 @@ export class StatsScene implements Scene {
     const collectionRows: Row[] = [{ label: t('stats.skins'), value: String(s.skinsOwned) }, ...matRows];
     const campaignRows: Row[] = [
       { label: t('stats.cleared'), value: `${s.cleared} / ${s.totalLevels}` },
-      { label: t('stats.stars'), value: `â˜… ${s.stars}` },
+      { label: t('stats.stars'), value: `★ ${s.stars}` },
     ];
 
     if (this.landscape) {
-      // â”€â”€ Landscape: two columns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ── Landscape: two columns ───────────────────────────────────────────────────
       const colGap = Math.round(w * 0.025);
       const totalW = w - pad * 2;
       const leftW = Math.round(totalW * 0.54);
@@ -204,7 +204,7 @@ export class StatsScene implements Scene {
       ry += gap;
       this.drawSection(rightX, ry, rightW, t('stats.history'), C.mid, this.historyRows());
     } else {
-      // â”€â”€ Portrait: single column with narrower margins â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ── Portrait: single column with narrower margins ───────────────────────────
       const secW = w - pad * 2;
       let y = topY;
       y = this.drawSection(pad, y, secW, t('stats.pvp'), C.accent, pvpRows); y += gap;
@@ -229,7 +229,7 @@ export class StatsScene implements Scene {
       const opp =
         m.opponentName || (m.opponentPublicId ? `#${m.opponentPublicId}` : t('stats.historyUnknownOpp'));
       const res =
-        m.result === 'win' ? t('stats.win') : m.result === 'loss' ? t('stats.loss') : 'â€”';
+        m.result === 'win' ? t('stats.win') : m.result === 'loss' ? t('stats.loss') : '—';
       const elo =
         m.eloDelta !== undefined ? ` (${m.eloDelta >= 0 ? '+' : ''}${m.eloDelta})` : '';
       return {
@@ -271,9 +271,9 @@ export class StatsScene implements Scene {
       const val = txt(row.value, Math.round(rowH * 0.66), row.valueColor ?? C.dark, true);
       val.anchor.set(1, 0.5); val.x = x + w - Math.round(w * 0.05); val.y = ry + rowH / 2;
       this.container.addChild(val);
-      // Rows with a watchable replay: draw a â–¶ hint on the left + a full-row hit area.
+      // Rows with a watchable replay: draw a ▶ hint on the left + a full-row hit area.
       if (row.rowHit) {
-        const play = txt('â–¶', Math.round(rowH * 0.6), accent, true);
+        const play = txt('▶', Math.round(rowH * 0.6), accent, true);
         play.anchor.set(0, 0.5); play.x = x + Math.round(w * 0.035); play.y = ry + rowH / 2;
         this.container.addChild(play);
         this.hits.push({ rect: { x, y: ry, w, h: rowH }, fn: row.rowHit });

@@ -1,5 +1,5 @@
-// FamilyScene â€” SLG family management scene (S8-4)
-// State machine: noFamily â†’ search/create branch; myFamily â†’ channel/members
+// FamilyScene — SLG family management scene (S8-4)
+// State machine: noFamily → search/create branch; myFamily → channel/members
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';
@@ -14,7 +14,7 @@ import { WorldApiError } from '../net/WorldApiClient';
 
 export interface FamilySceneCallbacks {
   onBack(): void;
-  /** Open the sect hub (S8-4b) â€” sect = a family-of-families, rooted in the family UI. */
+  /** Open the sect hub (S8-4b) — sect = a family-of-families, rooted in the family UI. */
   onOpenSect(): void;
   worldApi: WorldApiClient;
   worldId: string;
@@ -109,7 +109,7 @@ export class FamilyScene implements Scene {
     this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
   }
 
-  // â”€â”€ Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Data ──────────────────────────────────────────────────────────────────
 
   private async loadData(): Promise<void> {
     if (this.destroyed) return;
@@ -143,11 +143,11 @@ export class FamilyScene implements Scene {
     this.messages = ch;
   }
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ────────────────────────────────────────────────────────────────
 
   private render(): void {
     if (this.destroyed) return;
-    tearDownChildren(this.bodyLayer); // create-form input re-renders per keystroke â†’ free Text textures
+    tearDownChildren(this.bodyLayer); // create-form input re-renders per keystroke → free Text textures
     this.hitRects = [];
     this.renderHeader();
 
@@ -232,7 +232,7 @@ export class FamilyScene implements Scene {
     const cancelBtn = sketchPanel(100, 34, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 0, 100) });
     cancelBtn.x = w / 2 + 10; cancelBtn.y = HUD_H + 120;
     this.bodyLayer.addChild(cancelBtn);
-    const ca = txt('âœ•', 13, C.dark);
+    const ca = txt('✕', 13, C.dark);
     ca.anchor.set(0.5, 0.5); ca.x = w / 2 + 60; ca.y = HUD_H + 137;
     this.bodyLayer.addChild(ca);
     this.hitRects.push({ rect: { x: w / 2 + 10, y: HUD_H + 120, w: 100, h: 34 }, action: () => { this.mode = 'noFamily'; this.render(); } });
@@ -296,7 +296,7 @@ export class FamilyScene implements Scene {
       if (isLeader && mem.accountId !== me) {
         const accId = mem.accountId;
 
-        // Role toggle: members â†’ elder, elders â†’ member. (Leader role only changes via transfer/dissolve.)
+        // Role toggle: members → elder, elders → member. (Leader role only changes via transfer/dissolve.)
         if (mem.role !== 'leader') {
           const toElder = mem.role === 'member';
           const roleBtn = sketchPanel(50, 22, { fill: 0xeef0e0, border: 0xd4a030, seed: seedFor(cy, 2, 50) });
@@ -387,7 +387,7 @@ export class FamilyScene implements Scene {
     this.hitRects.push({ rect: { x: w - 72, y: inputY, w: 66, h: 36 }, action: () => void this.doSendMsg() });
   }
 
-  // â”€â”€ Input overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Input overlay ──────────────────────────────────────────────────────────
 
   private openInputFor(field: 'name' | 'tag'): void {
     this.createField = field;
@@ -436,7 +436,7 @@ export class FamilyScene implements Scene {
     inp.addEventListener('blur', () => { inp.remove(); });
   }
 
-  // â”€â”€ Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Actions ───────────────────────────────────────────────────────────────
 
   private async doCreate(): Promise<void> {
     if (!this.createName.trim() || !this.createTag.trim()) {
@@ -581,7 +581,7 @@ export class FamilyScene implements Scene {
     // Handled inline by openSendInput
   }
 
-  // â”€â”€ Confirm modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Confirm modal ─────────────────────────────────────────────────────────
 
   private showConfirm(msg: string, onOk: () => void): void {
     const { w, h } = this;
@@ -618,7 +618,7 @@ export class FamilyScene implements Scene {
     const cancelBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 2, 80) });
     cancelBtn.x = mx + mw / 2 + 8; cancelBtn.y = my + mh - 36;
     ml.addChild(cancelBtn);
-    const cl = txt('âœ•', 13, C.dark);
+    const cl = txt('✕', 13, C.dark);
     cl.anchor.set(0.5, 0.5); cl.x = mx + mw / 2 + 48; cl.y = my + mh - 22;
     ml.addChild(cl);
     this.modalHits.push({ rect: { x: cancelBtn.x, y: cancelBtn.y, w: 80, h: 28 }, action: () => this.closeModal() });
@@ -630,7 +630,7 @@ export class FamilyScene implements Scene {
     this.modalOpen = false;
   }
 
-  // â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Toast ──────────────────────────────────────────────────────────────────
 
   private showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
@@ -657,7 +657,7 @@ export class FamilyScene implements Scene {
     return String(e);
   }
 
-  // â”€â”€ Scene interface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Scene interface ───────────────────────────────────────────────────────
 
   handleDown(x: number, y: number): void {
     if (this.modalOpen) {

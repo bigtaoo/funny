@@ -15,7 +15,7 @@ import {
   makeMonthKey,
 } from '../game/meta/retention';
 
-// â”€â”€ DailyScene â€” daily check-in + daily tasks (B5, RETENTION_DESIGN) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── DailyScene — daily check-in + daily tasks (B5, RETENTION_DESIGN) ────────────
 //
 // Entry: LobbyScene "daily" button (onOpenDaily).
 // Portrait: upper half = 30-cell monthly check-in calendar, lower half = 3 daily task cards + claim button.
@@ -187,9 +187,9 @@ export class DailyScene implements Scene {
       const cw = cellW * 0.92;
       const ch = cellH * 0.92;
 
-      // Sequential accumulation model: claimed cells (â‰¤ claimed count) get a checkmark;
+      // Sequential accumulation model: claimed cells (≤ claimed count) get a checkmark;
       // the next unclaimed cell = claimable (highlighted); the rest = locked (dimmed).
-      // claimable is provided by nextCheckinDay, may be null (already claimed today / month full) â†’ no highlighted cell.
+      // claimable is provided by nextCheckinDay, may be null (already claimed today / month full) → no highlighted cell.
       const isClaimed = claimedDays.includes(day);
       const isClaimable = claimable !== null && day === claimable;
       const isLocked = !isClaimed && !isClaimable;
@@ -218,7 +218,7 @@ export class DailyScene implements Scene {
 
       // Claimed cell: stamp a green checkmark (user feedback: tick the claimed date after collecting).
       if (isClaimed) {
-        const tick = txt('âœ“', Math.round(ch * 0.5), 0x2e7d32, true);
+        const tick = txt('✓', Math.round(ch * 0.5), 0x2e7d32, true);
         tick.anchor.set(0.5, 0.5);
         tick.x = cx; tick.y = cy;
         tick.alpha = 0.85;
