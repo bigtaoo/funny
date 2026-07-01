@@ -267,6 +267,12 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 - ✅ `contracts/openapi-world.yml` 删除 `/family/*` 路径块 + 仅被其引用的孤儿 schema（`FamilyMemberView`/`FamilyView`/`FamilyMessageView`）；`SectMemberFamilyView` 保留（宗门路径仍用）。**注：socialsvc 暂无 OpenAPI 契约**（`contracts/` 只覆盖 metaserver 与 worldsvc），迁出的 `/social/family/*` 公网路由当前无契约声明——为后续待办，本次未补。
 - ✅ 注释去 `/family`：`worldsvc` 的 `config.ts`/`httpApi.ts`/`index.ts`/`socialsvcClient.ts` 头部。
 
+**openapi-world.ts 重新同步 + 连带修复（2026-07-01）**：`client/src/net/openapi-world.ts` 在上述 P4 补漏之后一直未重新执行 `npm run rest:gen`，导致客户端仍手工 alias 着已从 yml 删除的 `FamilyMemberView`/`FamilyView`/`FamilyMessageView`。本次重新生成并顺带修复了因此暴露出的存量 bug：
+- `client/src/net/WorldApiClient.ts` 的这三个类型改为手写（不再从 `components['schemas']`），字段对齐 `server/socialsvc/src/familyService.ts` 的真实返回形状（`FamilyMemberView` 只有 `accountId/role/joinedAt`，无 `publicId`/`displayName`；`FamilyMessageView` 用 `senderId/senderName`，不是 `from/fromName`）。
+- `FamilyScene.ts` 消息列表原来读 `msg.fromName ?? msg.from`（字段名对不上，永远显示 undefined）——已改为 `senderName ?? senderId`；发送消息时也从未传 `senderName`（服务端会 fallback 成裸 accountId）——已仿照 `SectScene.ts` 的 `playerName` 模式补上。
+- `server/socialsvc/src/familyService.ts` 的 `getFamily`/`createFamily` 原本从不解析成员的 `publicId`/`displayName`（`FamilyMemberDoc` 本就没存这些字段），导致成员列表 UI 永远显示空名字。已仿照 `friendService.ts` 的模式接入 `SocialMetaClient.batchProfiles()` 做懒解析，`FamilyMemberView` 新增可选 `publicId?`/`displayName?`。
+- **⚠️ 发现但未在本次修复的更大问题**：`SectScene.ts`/`createAppCore.ts` 一直在读 `fam.sectId`，但 socialsvc 的 `FamilyView` 从未有过这个字段——宗门归属信息实际读不到，`SectScene` 恒落到 `noSect`。往深查，`worldsvc/src/sectService.ts` 仍在读写它自己本地的 `families`/`familyMembers` 两个集合（`db.ts` 定义），但自 P4 起没有任何生产代码路径向这两个集合写入数据（e2e 测试是直接 `insertOne` 假数据绕过的，见上条）——宗门创建/加入/发言等操作在生产环境很可能静默失效。已作为独立任务追踪（未在本次分支解决），需要架构决策：worldsvc 通过 `WorldSocialsvcClient` 向 socialsvc 查家族信息，或者 socialsvc 的 `FamilyDoc` 增加 `sectId` 镜像字段。本次分支只做了让 TS 编译通过的最小改动（去掉死读取，`SectScene` 保留 `noSect`），行为与修复前一致（本来也从未真正工作过）。
+
 ---
 
 ## 7. 部署拓扑（更新后）

@@ -28,6 +28,7 @@ async function main(): Promise<void> {
   const familySvc = new FamilyService({
     cols: mongo.collections,
     gateway,
+    meta,
     now: () => Date.now(),
   });
 
