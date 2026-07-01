@@ -490,7 +490,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Equip/unequip (E4, validates slot match → writes gear.global[slot] or byUnit). instanceId=null to unequip. Pure state mutation */
+        /** Equip/unequip (E4, validates slot match → writes CardInstance.gear[slot]). instanceId=null to unequip. Pure state mutation */
         post: operations["equipEquipment"];
         delete?: never;
         options?: never;
@@ -509,6 +509,23 @@ export interface paths {
         put?: never;
         /** Equipment reforging (E6, keeps the primary affix, re-rolls secondary affixes; consumes a same-slot lower-tier material piece). idempotencyKey for idempotency */
         post: operations["reforgeEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Feed material cards into a target card to gain XP and level up (CHARACTER_CARDS_DESIGN §3.3, CC-2). Same-faction required; locked materials rejected. idempotencyKey prevents double-consumption */
+        post: operations["cardsFeed"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1253,13 +1270,13 @@ export interface components {
             pveUpgrades: {
                 [key: string]: number;
             };
-            /** @description Unit strength level unitId→1..9, derived from cardInventory; the engine reads this to run blueprints */
-            unitLevels?: {
-                [key: string]: number;
-            };
-            /** @description Unit card inventory `${unitId}:${level}`→count, the raw source for card-merging synthesis */
+            /** @description Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup */
             cardInventory?: {
                 [key: string]: number;
+            };
+            /** @description Card instance inventory (instanceId→CardInstance); max 150 entries */
+            cardInv?: {
+                [key: string]: components["schemas"]["CardInstance"];
             };
             equipped: {
                 [key: string]: string;
@@ -1279,17 +1296,6 @@ export interface components {
             };
             equipmentInv?: {
                 [key: string]: components["schemas"]["EquipmentInstance"];
-            };
-            /** @description Equipment loadout (global for all units / byUnit per unit type reserved), slot→instance id. */
-            gear?: {
-                global?: {
-                    [key: string]: string;
-                };
-                byUnit?: {
-                    [key: string]: {
-                        [key: string]: string;
-                    };
-                };
             };
             retention?: {
                 checkin?: {
@@ -1329,6 +1335,21 @@ export interface components {
                 value: number;
             }[];
             locked?: boolean;
+        };
+        CardInstance: {
+            /** @description Unique instance id (e.g. 'card_a1b2c3') */
+            id: string;
+            /** @description Card definition id (references CARD_DEFS) */
+            defId: string;
+            level: number;
+            /** @description Accumulated XP within the current level */
+            xp: number;
+            /** @description Per-slot equipped equipment instance ids (slot→equipmentInstanceId) */
+            gear: {
+                [key: string]: string;
+            };
+            /** @description Locked cards cannot be used as feed material */
+            locked: boolean;
         };
         SyncPatch: {
             equipped?: components["schemas"]["SaveData"]["equipped"];
@@ -2275,7 +2296,7 @@ export interface operations {
                 "application/json": {
                     levelId: string;
                     stars: number;
-                    /** @description Optional replay reference (for L1 spot-check re-simulation */
+                    /** @description Optional replay reference (for L1 spot-check re-simulation, deprecated) */
                     replayRef?: string;
                     /** @description Client blueprint snapshot at match start (L0 anomaly check; mismatch with server-authoritative triggers spot-check) */
                     pveUpgrades?: {
@@ -2509,7 +2530,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Equipment definition id (EQUIPMENT_DEFS */
+                    /** @description Equipment definition id (EQUIPMENT_DEFS, determines slot/rarity/recipe) */
                     defId: string;
                     /** @description Client-generated idempotency key; replay returns the first result (no second deduction or roll) */
                     idempotencyKey: string;
@@ -2641,10 +2662,10 @@ export interface operations {
                      * @enum {string}
                      */
                     slot: "weapon" | "armor" | "trinket";
-                    /** @description Instance id to equip; null to unequip the slot */
+                    /** @description Equipment instance id to equip; null to unequip the slot */
                     instanceId: string | null;
-                    /** @description Default = gear.global shared across all units; specified = gear.byUnit for the given unit type (phase 2) */
-                    unitType?: string;
+                    /** @description CardInstance id that owns the gear slot (Hero Roster, CC-2) */
+                    cardInstanceId: string;
                 };
             };
         };
@@ -2682,7 +2703,7 @@ export interface operations {
                 "application/json": {
                     /** @description Id of the equipment instance to reforge */
                     targetId: string;
-                    /** @description Id of the material equipment instance to consume (same slot */
+                    /** @description Id of the material equipment instance to consume (same slot, one tier lower, e.g. rare → requires fine) */
                     materialId: string;
                     /** @description Client-generated idempotency key; re-roll is bound to this key; replay returns the first result */
                     idempotencyKey: string;
@@ -2701,6 +2722,49 @@ export interface operations {
                         ok: true;
                         data: {
                             instance: components["schemas"]["EquipmentInstance"];
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    cardsFeed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description CardInstance id of the card to level up */
+                    targetId: string;
+                    /** @description CardInstance ids to consume as feed material (same faction; must not be locked) */
+                    materialIds: string[];
+                    /** @description Client-generated idempotency key; prevents double-consumption on retry */
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            card: components["schemas"]["CardInstance"];
+                            levelsGained: number;
                             save: components["schemas"]["SaveData"];
                         };
                     };

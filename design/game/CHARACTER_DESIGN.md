@@ -1,8 +1,10 @@
 # 角色卡设计（CHARACTER_DESIGN）
 
-> 状态：设计中 · 权威：本文（角色卡**机制/流派**基准）· 更新：2026-06-21
+> 状态：设计中 · 权威：本文（角色卡**机制/流派/外观**基准）· 更新：2026-07-01
 >
 > ⚠️ 本文只定**机制与流派**与数值**锚点（占位）**。落地实现时，运行数值进 `server/engine/src/config.ts`（`@nw/engine`），并同步 [BALANCE.md](BALANCE.md) 快照——本文的数字只是设计意图，不是数值权威（见 [README §0 铁律1](../README.md)）。
+>
+> ⚠️ **养成/获取/兵力/受伤系统** 已迁移至 [`CHARACTER_CARDS_DESIGN.md`](CHARACTER_CARDS_DESIGN.md)（2026-07-01）。本文只保留角色外观、机制定位、流派设计。
 > 人物背景 / 性格真源：[product/characters.md](../product/characters.md)；叙事铁律：[product/world.md](../product/world.md) + ADR-008（陶=东方 / Anna=西方 / 两本笔记本相遇）。
 
 ---

@@ -33,6 +33,7 @@
 | [BALANCE.md](game/BALANCE.md) | **战斗数值快照（镜像 config.ts）— 文档侧唯一数值参考** | 实现中 |
 | [ECONOMY_BALANCE.md](game/ECONOMY_BALANCE.md) | 经济**哲学/政策**（faucet/sink、鲸鱼天花板、反通胀） | 实现中 |
 | [ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | **经济/养成数值演算表（数字权威：体力/合成/护甲/金币/皮肤）** | 设计中 |
+| [CHARACTER_CARDS_DESIGN.md](game/CHARACTER_CARDS_DESIGN.md) | **角色卡实例系统（Hero Roster/喂卡升级/兵力/受伤/布阵对接；数字→ECONOMY_NUMBERS §6）** | 设计中 |
 | [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 设计中 |
 | [ACHIEVEMENT_DESIGN.md](game/ACHIEVEMENT_DESIGN.md) | **成就系统机制基准（统计里程碑→一次性金币；服务器权威/领取；数字→ECONOMY_BALANCE §2.4）** | 实现中 |
 | [RETENTION_DESIGN.md](game/RETENTION_DESIGN.md) | **留存系统机制基准（签到/每日任务/周常；服务器权威+dayKey；不新增金币龙头；数字→ECONOMY_NUMBERS §12）** | 设计中 |
