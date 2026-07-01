@@ -152,7 +152,7 @@ describe('Full pipeline: client POST events through server buildAnomalyLokiPaylo
 describe('Exit beacon and cleanExit flag (Bug A regression)', () => {
   beforeEach(() => vi.useFakeTimers());
 
-  it('visibilitychange→hidden: beacon flushes the queue, but does **not** set cleanExit', async () => {
+  it('visibilitychange→hidden: eager flush sends the queue (uncredentialed keepalive fetch), but does **not** set cleanExit', async () => {
     const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
     mod.initCrashSentinel();          // start the sentinel for this session (cleanExit not yet set)
     mod.installAnomalyWatchers();     // install exit listeners
@@ -161,12 +161,17 @@ describe('Exit beacon and cleanExit flag (Bug A regression)', () => {
     cap.doc.visibilityState = 'hidden';
     cap.fire('visibilitychange');
 
-    expect(cap.sendBeacon).toHaveBeenCalledTimes(1); // beacon was sent
+    // Eager exit flush is a keepalive fetch, NOT sendBeacon (sendBeacon would be credentialed → blocked by cross-origin CORS).
+    expect(cap.sendBeacon).not.toHaveBeenCalled();
+    expect(cap.fetch).toHaveBeenCalledTimes(1);
+    const init = (cap.fetch.mock.calls[0] as [string, RequestInit])[1];
+    expect(init.keepalive).toBe(true);
+    expect(init.credentials).toBe('omit');
     const sentinel = JSON.parse(cap.store.get(SENTINEL)!);
     expect(sentinel.cleanExit).toBeUndefined(); // key assertion: hidden is not a clean exit (iOS background process may be killed)
   });
 
-  it('pagehide: both flushes via beacon and sets cleanExit (true unload)', async () => {
+  it('pagehide: eager flush (keepalive fetch) fires and cleanExit is set (true unload)', async () => {
     const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
     mod.initCrashSentinel();
     mod.installAnomalyWatchers();
@@ -174,24 +179,26 @@ describe('Exit beacon and cleanExit flag (Bug A regression)', () => {
 
     cap.fire('pagehide');
 
-    expect(cap.sendBeacon).toHaveBeenCalledTimes(1);
+    expect(cap.sendBeacon).not.toHaveBeenCalled();
+    expect(cap.fetch).toHaveBeenCalledTimes(1);
     const sentinel = JSON.parse(cap.store.get(SENTINEL)!);
     expect(sentinel.cleanExit).toBe(true);
   });
 
-  it('previous sentinel has cleanExit → next startup does not report a crash (no beacon)', async () => {
+  it('previous sentinel has cleanExit → next startup does not report a crash (no request)', async () => {
     const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
     cap.store.set(SENTINEL, JSON.stringify({ startedAt: 1000, lastSeenAt: 5000, cleanExit: true }));
     mod.initCrashSentinel();
+    expect(cap.fetch).not.toHaveBeenCalled();
     expect(cap.sendBeacon).not.toHaveBeenCalled();
   });
 });
 
-// ── Crash sentinel catch-up report (regression: 2026-06-27 Bug B — immediate beacon, no 1.5s batch wait) ────────────────
-describe('Crash sentinel immediate beacon on catch-up report (Bug B regression)', () => {
+// ── Crash sentinel catch-up report (regression: 2026-06-27 Bug B — immediate eager flush, no 1.5s batch wait) ────────────────
+describe('Crash sentinel immediate eager flush on catch-up report (Bug B regression)', () => {
   beforeEach(() => vi.useFakeTimers());
 
-  it('startup detects previous unclean exit → beacon sends crash immediately (no need to advance the 1.5s batch timer)', async () => {
+  it('startup detects previous unclean exit → eager flush sends crash immediately (no need to advance the 1.5s batch timer)', async () => {
     const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
     // Pre-populate a sentinel indicating the previous session exited abnormally (has startedAt, no cleanExit).
     cap.store.set(
@@ -201,12 +208,15 @@ describe('Crash sentinel immediate beacon on catch-up report (Bug B regression)'
 
     mod.initCrashSentinel();
 
-    // Key assertion: beacon must already have been sent without any timer advancement (otherwise cascading crashes would never fire).
-    expect(cap.sendBeacon).toHaveBeenCalledTimes(1);
-    const [url, blob] = cap.sendBeacon.mock.calls[0] as [string, Blob];
+    // Key assertion: the crash report must already have been sent without any timer advancement (otherwise cascading crashes would never fire).
+    // Sent via an uncredentialed keepalive fetch, NOT sendBeacon (sendBeacon is credentialed → blocked by cross-origin CORS).
+    expect(cap.sendBeacon).not.toHaveBeenCalled();
+    expect(cap.fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = cap.fetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(ANOMALY_URL);
-    const sent = JSON.parse(await blob.text());
+    expect(init.keepalive).toBe(true);
+    expect(init.credentials).toBe('omit');
+    const sent = JSON.parse(init.body as string);
     expect(sent.events.some((e: { type: string }) => e.type === 'crash')).toBe(true);
-    expect(cap.fetch).not.toHaveBeenCalled(); // went through beacon, not the batched fetch
   });
 });
