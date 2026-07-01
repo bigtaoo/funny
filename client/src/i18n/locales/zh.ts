@@ -1318,6 +1318,55 @@ export const zh = {
   'city.bld.academy': '书院',
   // world map entry button
   'world.actEnterCity': '进入主城',
+
+  // ── Hero Roster (CHARACTER_CARDS_DESIGN §10) ──────────────────────────────
+  'roster.title': '卡背包',
+  'roster.capacity': '{cur}/{cap}',
+  'roster.empty': '背包为空，通关关卡或抽卡获得角色卡',
+  'roster.power': '战力',
+  'roster.level': 'Lv.{lv}',
+  'roster.troops': '{cur}/{cap} 兵',
+  'roster.troopCap': '带兵上限',
+  'roster.injured': '受伤 {time}',
+  'roster.injuredShort': '受伤',
+  'roster.locked': '已锁定',
+  'roster.inTeam': '出战中',
+  'roster.lock': '锁定',
+  'roster.unlock': '解锁',
+  'roster.listAuction': '挂拍卖',
+  'roster.listAuctionNeedUnequip': '请先卸下所有装备',
+  'roster.feedBtn': '喂卡升级',
+  'roster.feedTitle': '选择素材卡',
+  'roster.feedHint': '同阵营卡可作素材（70%效率）',
+  'roster.feedEmpty': '无可用素材卡',
+  'roster.feedConfirm': '以下 {n} 张卡作为素材，确认喂给 {name}？',
+  'roster.feedOk': '喂卡成功',
+  'roster.feedErr': '喂卡失败',
+  'roster.lockOk': '已锁定',
+  'roster.unlockOk': '已解锁',
+  'roster.recoverBtn': '花费 Coin 立即恢复',
+  'roster.recoverOk': '已恢复',
+  'roster.recoverErr': '恢复失败',
+  'roster.equipSlot': '装备槽',
+  'roster.skill': '技能',
+  'roster.skillNone': '（无技能）',
+  'roster.xpProgress': 'XP进度',
+  'roster.maxLevel': '已满级',
+  'roster.faction.tao': '陶方',
+  'roster.faction.anna': 'Anna方',
+  'roster.err.generic': '操作失败，请重试',
+
+  // Character card names (Hero Roster tao-faction only; anna names are at the top of the file)
+  'card.lichuang.name': '李川',
+  'card.chenshou.name': '陈守',
+  'card.suyuan.name': '苏远',
+
+  // Teams scene (CC-4)
+  'world.team.fillTroops': '一键补满兵力',
+  'world.team.fillTroopsOk': '兵力已补满',
+  'world.team.fillTroopsErr': '补满失败',
+  'world.team.troopsStatus': '{cur}/{cap}',
+  'world.team.injured': '受伤',
 };
 
 export type TranslationKey = keyof typeof zh;

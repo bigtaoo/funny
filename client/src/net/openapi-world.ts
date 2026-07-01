@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/world/active-season": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Return the current active SLG season number (§20.8). Public endpoint — no auth required. */
+        get: operations["getActiveSeason"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/map": {
         parameters: {
             query?: never;
@@ -77,7 +94,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description 进入世界，系统自动落城（§3.4：优先靠近家族→外环新手区→兜底）。玩家不传坐标，落点由服务端决定。 */
+        /** @description Join the world; the system automatically places the player's base (§3.4: priority order: near family → outer-ring starter area → fallback). The player does not submit coordinates; the spawn location is determined by the server. */
         post: operations["joinWorld"];
         delete?: never;
         options?: never;
@@ -126,7 +143,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 主动迁城（花 RELOCATE_COST 金币把主城迁到 (x,y)，保留全部领地） */
+        /** Manual base relocation (spend RELOCATE_COST coins to move the main base to (x,y), all territories are retained) */
         post: operations["relocateBase"];
         delete?: never;
         options?: never;
@@ -143,7 +160,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 建瞭望塔（在己方领地花 WATCHTOWER_COST 资源建大半径持久视野源；§18 G5 V2） */
+        /** Build a watchtower (spend WATCHTOWER_COST resources on own territory to create a large-radius persistent vision source; §18 G5 V2) */
         post: operations["buildWatchtower"];
         delete?: never;
         options?: never;
@@ -199,6 +216,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/troops/distribute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** CC-3 — distribute troops from baseTroopStock to card slots */
+        post: operations["distributeTroops"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/troops/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** CC-3 — recover an injured card by spending coins */
+        post: operations["recoverCard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/troops/train": {
         parameters: {
             query?: never;
@@ -232,16 +283,38 @@ export interface paths {
         trace?: never;
     };
     "/world/build/upgrade": {
-        parameters: { query?: never; header?: never; path?: never; cookie?: never; };
-        get?: never; put?: never;
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Enqueue a home-city building upgrade (SLG_CITY_DESIGN P1). Deducts season resources up-front; the level is applied when the build completes. */
         post: operations["upgradeBuilding"];
-        delete?: never; options?: never; head?: never; patch?: never; trace?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
     "/world/build/speedup": {
-        parameters: { query?: never; header?: never; path?: never; cookie?: never; };
-        get?: never; put?: never;
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Spend coins to speed up the home-city build queue (SLG_CITY_DESIGN §6). */
         post: operations["speedupBuild"];
-        delete?: never; options?: never; head?: never; patch?: never; trace?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
     "/world/defense": {
         parameters: {
@@ -371,166 +444,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/family/list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["listFamilies"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/family/{familyId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getFamily"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/family/create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["createFamily"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/family/join": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["joinFamily"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/family/leave": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["leaveFamily"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/family/kick": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["kickFamilyMember"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/family/role": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["setFamilyRole"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/family/dissolve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["dissolveFamily"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/family/message": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["sendFamilyMessage"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/family/channel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getFamilyChannel"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/auction/list": {
         parameters: {
             query?: never;
@@ -604,7 +517,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 竞拍出价（saleMode='auction'，B）。amount = 出价单价，托管 = amount × qty。 */
+        /** Place a bid (saleMode='auction', B). amount = bid unit price; escrowed coins = amount × qty. */
         post: operations["placeBid"];
         delete?: never;
         options?: never;
@@ -818,20 +731,20 @@ export interface components {
             resType?: "ink" | "paper" | "graphite" | "metal" | "sticker";
             occupied?: boolean;
             mine?: boolean;
-            /** @description 占领者 9 位公开 id（meta 服务可用时填充） */
+            /** @description Occupier's 9-digit public id (populated when meta service is available) */
             ownerPublicId?: string;
-            /** @description 占领者昵称（meta 服务可用时填充） */
+            /** @description Occupier's display name (populated when meta service is available) */
             ownerName?: string;
             familyId?: string;
             garrison?: number;
             protectedUntil?: number;
-            /** @description §18 G5 V2：该格建有瞭望塔（大半径持久视野源）。客户端渲染塔标记。 */
+            /** @description §18 G5 V2：A watchtower has been built on this tile (large-radius persistent vision source). The client renders the tower marker. */
             watchtower?: boolean;
-            /** @description G5 视野：该格是否在请求者当前视野内。true=动态层如实返回；false=视野外，仅程序化 底层地形（动态层全部隐去，含「已被占领」信号）。仅 /world/map 视区读填充。 */
+            /** @description G5 vision: whether this tile is within the requester's current field of view. true = dynamic layer returned as-is; false = outside vision range, only the procedurally-generated base terrain is returned (all dynamic-layer data hidden, including the "occupied" signal). Populated only for /world/map viewport reads. */
             visible?: boolean;
-            /** @description G5：该格归同家族盟友所有（视野内、非己方）。客户端用友方色渲染。 */
+            /** @description G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour. */
             ally?: boolean;
-            /** @description G5：该格归本宗门「联盟宗门」成员所有（视野内、非己方、非家族）。联盟不共享视野， 仅在地图上用黄描边标记区分（§8.2，盟友间禁止进攻/夺地）。 */
+            /** @description G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden). */
             allySect?: boolean;
         };
         WorldMapView: {
@@ -841,16 +754,16 @@ export interface components {
             r: number;
             tiles: components["schemas"]["WorldTileView"][];
         };
-        /** @description 稀疏占领格视图（zoom 2/3 鸟瞰层）。只含被占领格；未占领格客户端从 proceduralTile 本地渲染。 无 profile RPC、无视野计算。 */
+        /** @description Sparse occupied-tile view (zoom 2/3 bird's-eye layer). Contains only occupied tiles; unoccupied tiles are rendered locally by the client from proceduralTile. No profile RPC, no vision calculation. */
         WorldTileSparseView: {
             x: number;
             y: number;
             /** @enum {string} */
             type: "neutral" | "resource" | "territory" | "familyKeep" | "center" | "base" | "obstacle" | "gate" | "stronghold";
             mine?: boolean;
-            /** @description lod=mid：同家族盟友 */
+            /** @description lod=mid: same-family ally */
             ally?: boolean;
-            /** @description lod=mid：联盟宗门成员（非家族） */
+            /** @description lod=mid: allied sect member (not family) */
             allySect?: boolean;
         };
         WorldMapSparseView: {
@@ -860,12 +773,12 @@ export interface components {
             r: number;
             /** @enum {string} */
             lod: "thin" | "mid";
-            /** @description 仅占领格，稀疏数组 */
+            /** @description Occupied tiles only, sparse array */
             tiles: components["schemas"]["WorldTileSparseView"][];
         };
         PlayerWorldView: {
             joined: boolean;
-            /** @description 所在 shard worldId（G6/§20：join-season 解析结果回传，客户端进图依据） */
+            /** @description The shard worldId the player belongs to (G6/§20: returned from join-season resolution; the client uses this to enter the world) */
             worldId?: string;
             troops?: number;
             troopCap?: number;
@@ -878,7 +791,7 @@ export interface components {
             mainBaseTile?: string;
             familyId?: string;
             territoryCount?: number;
-            /** @description 训练队列（S8-2，按 completeAt 升序）。客户端据此渲染队列倒计时（C4）。 */
+            /** @description Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4). */
             trainingQueue?: {
                 qty: number;
                 /** Format: int64 */
@@ -886,11 +799,11 @@ export interface components {
                 /** Format: int64 */
                 completeAt: number;
             }[];
-            /** @description Home-city building levels (SLG_CITY_DESIGN P1; desk>=1, others>=0 when present). */
+            /** @description Home-city building levels (SLG_CITY_DESIGN P1; desk≥1, others≥0 when present). Keys are BuildingKey values. */
             buildings?: {
                 [key: string]: number;
             };
-            /** @description Home-city build queue (SLG_CITY_DESIGN P1; sorted by completeAt). */
+            /** @description Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending). The client CityScene renders countdowns from this. */
             buildQueue?: {
                 key: components["schemas"]["BuildingKey"];
                 toLevel: number;
@@ -899,8 +812,17 @@ export interface components {
                 /** Format: int64 */
                 completeAt: number;
             }[];
+            /** @description Map of cardInstanceId → CardSLGState (troops, injury, teamId) */
+            cardState?: {
+                [key: string]: components["schemas"]["CardSLGState"];
+            };
+            /** @description Troops in the base pool available to distribute to card slots */
+            baseTroopStock?: number;
         };
-        /** @enum {string} */
+        /**
+         * @description Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2.
+         * @enum {string}
+         */
         BuildingKey: "desk" | "inkPot" | "paperTray" | "graphiteMill" | "metalForge" | "stickerShop" | "cabinet" | "drillYard" | "wall" | "academy";
         MarchView: {
             marchId: string;
@@ -913,7 +835,7 @@ export interface components {
             arriveAt: number;
             /** @enum {string} */
             status: "marching" | "returning" | "arrived";
-            /** @description G5：是否为请求者自己的行军（false = 视野内的敌方行军） */
+            /** @description G5: whether this march belongs to the requester (false = enemy march within vision range) */
             mine?: boolean;
         };
         FamilyMemberView: {
@@ -952,9 +874,9 @@ export interface components {
                 [key: string]: unknown;
             };
             qty: number;
-            /** @description 当前有效单价（一口价=成交单价；竞拍=当前最高出价单价，无人出价则起拍价） */
+            /** @description Current effective unit price (fixed-price = sale unit price; auction = current highest bid unit price, or the starting price if no bids placed) */
             price: number;
-            /** @description 当前有效单价 × qty */
+            /** @description Current effective unit price × qty */
             totalPrice?: number;
             /** @enum {string} */
             currency?: "coins";
@@ -966,11 +888,11 @@ export interface components {
             buyerId?: string;
             /** @enum {string} */
             saleMode: "fixed" | "auction";
-            /** @description 竞拍起拍单价 */
+            /** @description Auction starting unit price */
             startPrice?: number;
-            /** @description 竞拍一口价保底单价（可选） */
+            /** @description Auction buyout unit price floor (optional) */
             buyoutPrice?: number;
-            /** @description 当前最高出价（单价，金币已托管） */
+            /** @description Current highest bid (unit price; coins are held in escrow) */
             topBid?: {
                 bidderId: string;
                 amount: number;
@@ -1017,7 +939,7 @@ export interface components {
             needed: number;
         };
         NationView: {
-            /** @description 0~9，对应 CAPITAL_FRACTIONS 索引 */
+            /** @description 0~9, index into CAPITAL_FRACTIONS */
             capitalIdx: number;
             x: number;
             y: number;
@@ -1041,7 +963,7 @@ export interface components {
         };
         SlgShopItemView: {
             id: string;
-            /** @description 金币价格 */
+            /** @description Price in coins */
             cost: number;
             /** @enum {string} */
             kind: "troop_speedup" | "resource_pack" | "protection" | "battle_pass";
@@ -1059,10 +981,22 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        CardSLGState: {
+            /** @description Troops currently allocated to this card */
+            currentTroops: number;
+            /** @description Unix ms timestamp when injury ends; null = not injured */
+            injuredUntil?: number | null;
+            /** @description Team this card is assigned to */
+            teamId?: string | null;
+        };
         ArmyEntry: {
-            unitType: string;
+            /** @description CC-3 primary key (character card instance) */
+            cardInstanceId?: string;
+            /** @description Legacy unit type (synthesis/replay paths only) */
+            unitType?: string;
             col: number;
             row: number;
+            /** @description Legacy initial HP for replay data */
             initialHp?: number;
         };
         TeamTemplate: {
@@ -1089,6 +1023,31 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getActiveSeason: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active season */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: {
+                            /** @description Current active SLG world season number */
+                            season: number;
+                        };
+                    };
+                };
+            };
+        };
+    };
     getWorldMap: {
         parameters: {
             query: {
@@ -1123,7 +1082,7 @@ export interface operations {
                 cx: number;
                 cy: number;
                 r: number;
-                /** @description thin=仅 mine 标记（zoom 3）；mid=含 ally/allySect（zoom 2） */
+                /** @description thin = mine marker only (zoom 3); mid = includes ally/allySect (zoom 2) */
                 lod?: "thin" | "mid";
             };
             header?: never;
@@ -1379,7 +1338,7 @@ export interface operations {
                     /** @enum {string} */
                     kind: "occupy" | "reinforce" | "attack" | "sweep" | "scout";
                     troops: number;
-                    /** @description 围攻挂队（G3-2c）：attack 时用此进攻布阵模板；committed 兵力 = 队伍各单位分配之和（覆盖 troops） */
+                    /** @description Siege attack team (G3-2c): attack formation template to use when kind=attack; committed troops = sum of troops allocated across all team units (overrides the troops field) */
                     teamId?: string;
                 };
             };
@@ -1459,6 +1418,63 @@ export interface operations {
             };
         };
     };
+    distributeTroops: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    /** @description Map of cardInstanceId to troop count to add */
+                    allocations: {
+                        [key: string]: number;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Troops distributed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    recoverCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    cardInstanceId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Card recovered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
     trainTroops: {
         parameters: {
             query?: never;
@@ -1518,30 +1534,60 @@ export interface operations {
         };
     };
     upgradeBuilding: {
-        parameters: { query?: never; header?: never; path?: never; cookie?: never; };
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
         requestBody: {
             content: {
-                "application/json": { worldId: string; key: components["schemas"]["BuildingKey"]; };
+                "application/json": {
+                    worldId: string;
+                    key: components["schemas"]["BuildingKey"];
+                };
             };
         };
         responses: {
+            /** @description Build queued */
             200: {
-                headers: { [name: string]: unknown; };
-                content: { "application/json": components["schemas"]["OkResponse"] & { data?: components["schemas"]["PlayerWorldView"]; }; };
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["PlayerWorldView"];
+                    };
+                };
             };
         };
     };
     speedupBuild: {
-        parameters: { query?: never; header?: never; path?: never; cookie?: never; };
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
         requestBody: {
             content: {
-                "application/json": { worldId: string; key: components["schemas"]["BuildingKey"]; coins: number; };
+                "application/json": {
+                    worldId: string;
+                    coins: number;
+                };
             };
         };
         responses: {
+            /** @description Build sped up */
             200: {
-                headers: { [name: string]: unknown; };
-                content: { "application/json": components["schemas"]["OkResponse"] & { data?: components["schemas"]["PlayerWorldView"]; }; };
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["PlayerWorldView"];
+                    };
+                };
             };
         };
     };
@@ -1549,7 +1595,7 @@ export interface operations {
         parameters: {
             query: {
                 worldId: string;
-                /** @description 'base' 主城（缺省），或 '{x}:{y}' 领地键 */
+                /** @description 'base' for the main base (default), or '{x}:{y}' for a territory tile key */
                 tileKey?: string;
             };
             header?: never;
@@ -1582,7 +1628,7 @@ export interface operations {
             content: {
                 "application/json": {
                     worldId: string;
-                    /** @description 'base' 主城，或 '{x}:{y}' 领地键；缺省 'base' */
+                    /** @description 'base' for the main base, or '{x}:{y}' for a territory tile key; defaults to 'base' */
                     tileKey?: string;
                     defenseConfig: components["schemas"]["DefenseConfig"];
                 };
@@ -1803,278 +1849,6 @@ export interface operations {
             };
         };
     };
-    listFamilies: {
-        parameters: {
-            query: {
-                worldId: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Family list */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["FamilyView"][];
-                    };
-                };
-            };
-        };
-    };
-    getFamily: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                familyId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Family detail */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["FamilyView"];
-                    };
-                };
-            };
-        };
-    };
-    createFamily: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    worldId: string;
-                    name: string;
-                    tag: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Family created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["FamilyView"];
-                    };
-                };
-            };
-        };
-    };
-    joinFamily: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    worldId: string;
-                    familyId: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Joined */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-        };
-    };
-    leaveFamily: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    worldId: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Left */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-        };
-    };
-    kickFamilyMember: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    worldId: string;
-                    targetId: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Kicked */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-        };
-    };
-    setFamilyRole: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    worldId: string;
-                    targetId: string;
-                    /** @enum {string} */
-                    role: "leader" | "elder" | "member";
-                };
-            };
-        };
-        responses: {
-            /** @description Role set */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-        };
-    };
-    dissolveFamily: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    worldId: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Dissolved */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-        };
-    };
-    sendFamilyMessage: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    worldId: string;
-                    body: string;
-                    senderName?: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Message sent */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"] & {
-                        data?: {
-                            id: string;
-                        };
-                    };
-                };
-            };
-        };
-    };
-    getFamilyChannel: {
-        parameters: {
-            query: {
-                worldId: string;
-                familyId: string;
-                before?: number;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Channel messages */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["FamilyMessageView"][];
-                    };
-                };
-            };
-        };
-    };
     listAuctions: {
         parameters: {
             query: {
@@ -2144,15 +1918,15 @@ export interface operations {
                     durationSec: number;
                     designatedBuyerId?: string;
                     /**
-                     * @description 缺省 fixed（一口价）
+                     * @description Defaults to fixed (buy-now)
                      * @enum {string}
                      */
                     saleMode?: "fixed" | "auction";
-                    /** @description fixed 模式一口价单价（fixed 必填） */
+                    /** @description Fixed-price buy-now unit price (required for fixed mode) */
                     price?: number;
-                    /** @description auction 模式起拍单价（auction 必填） */
+                    /** @description Auction starting unit price (required for auction mode) */
                     startPrice?: number;
-                    /** @description auction 模式一口价保底单价（可选） */
+                    /** @description Auction buyout floor unit price (optional) */
                     buyoutPrice?: number;
                 };
             };
@@ -2212,13 +1986,13 @@ export interface operations {
             content: {
                 "application/json": {
                     worldId: string;
-                    /** @description 出价单价（金币/件） */
+                    /** @description Bid unit price (coins per item) */
                     amount: number;
                 };
             };
         };
         responses: {
-            /** @description Bid placed（达/超 buyoutPrice 则返回已结拍的 AuctionView） */
+            /** @description Bid placed (returns the closed AuctionView when the bid meets or exceeds buyoutPrice) */
             200: {
                 headers: {
                     [name: string]: unknown;

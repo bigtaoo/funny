@@ -6,7 +6,7 @@
 // its cloud sync is scheduled together with WeChat online compliance; currently SaveManager degrades to local-only (offline-first) when baseUrl / fetch is absent.
 
 import type { AuthCredential } from '../platform/IPlatform';
-import type { SaveData, SyncPatch, EquipmentInstance, EquipSlot } from '../game/meta/SaveData';
+import type { SaveData, SyncPatch, EquipmentInstance, EquipSlot, CardInstance } from '../game/meta/SaveData';
 import type { components, operations } from './openapi';
 import { netLog } from './log';
 import { packReplayBlob, unpackReplayBlob } from './replayCompress';
@@ -329,19 +329,43 @@ export class ApiClient {
   }
 
   /**
-   * Equip / unequip one equipment piece (E4): instanceId=null unequips the slot. unitType defaults to army-wide shared (gear.global).
+   * Equip / unequip one equipment piece (E4, CC-1): instanceId=null unequips the slot.
+   * cardInstanceId required (CC-1 — equipment now lives on the card, not on a global loadout).
    * Slot incompatible with equipment definition → 400 INVALID_SLOT; instance not found → 404.
    */
   async equipEquipment(
     slot: EquipSlot,
     instanceId: string | null,
-    unitType?: string,
+    cardInstanceId: string,
   ): Promise<{ save: SaveData }> {
     return this.post<{ save: SaveData }>('/equipment/equip', {
       slot,
       instanceId,
-      ...(unitType ? { unitType } : {}),
+      cardInstanceId,
     });
+  }
+
+  /**
+   * Feed cards (CC-1): consumes materialCardIds (same-faction), adds XP to targetCardId.
+   * Returns the updated SaveData; feed target must not be locked.
+   * Material cards that are locked or deployed → 409 CARD_LOCKED.
+   */
+  async feedCards(
+    targetCardId: string,
+    materialCardIds: string[],
+  ): Promise<{ save: SaveData; levelsGained: number }> {
+    return this.post<{ save: SaveData; levelsGained: number }>('/cards/feed', {
+      targetCardId,
+      materialCardIds,
+    });
+  }
+
+  /**
+   * Toggle card lock (CC-4 client helper): calls POST /cards/lock or /cards/unlock.
+   * Locked cards cannot be used as feed material (CC4).
+   */
+  async setCardLock(cardInstanceId: string, locked: boolean): Promise<{ save: SaveData }> {
+    return this.post<{ save: SaveData }>(locked ? '/cards/lock' : '/cards/unlock', { cardInstanceId });
   }
 
   /** Reforge one equipment piece (E6): consumes materialId, re-rolls targetId's secondary affixes; primary affix unchanged. */
