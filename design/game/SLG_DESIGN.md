@@ -1234,6 +1234,7 @@ if (path.startsWith('/admin/world/')) {
 - **client `WorldMapScene.ts`**：
   - **灰雾**：`tile.visible===false` 的格画底层地形后罩一层 `FOG_COLOR=0x6b6458 @0.4` 铅笔灰（地形可见、局势看不清，对齐迷雾模型 2a）；视野外不画等级点/城池图标/瞭望塔/联盟描边等动态标记（不暴露细节）。
   - **资源图案（terrain，非动态层）**：resType 属地形层，视野外**照常绘制**——`drawTileL1` 在灰雾早退前先画 `drawResMotif`；雾中传 `fogged=true` 只显**资源类型**（单个 @0.35 淡化图案，隐去 abundance 数量/防御框/危险角，与「不暴露等级细节」一致）。修复：此前灰雾块 `return` 早于资源图案绘制，导致全图雾区资源图片不显示。
+  - **`parseTileId` tileId 格式**：tileId 全库为 `{worldId}:{x}:{y}`（`mainBaseTile`/`march.fromTile`/`toTile`/`tile_update.tile` 皆带 worldId 前缀，worldId 不含 `:`）→ **取末两段** 为 x/y。修复：此前 `split(':')` 取前两段，把 worldId 当成 x（→0），进图后地图中心落在 x≈0 而非主城 x → 视区整片在视野外（全灰雾、无主城、无资源），是「大地图不显示主城/资源」的根因（另配合上一条雾中资源渲染）。
   - **标记色**（沿用本场景既有「敌蓝我红」约定）：自己=红（`MINE_*`）、**家族盟友=绿（新 `ALLY_TINT/ALLY_BASE_TINT`，友方第三色）**、敌方=蓝（`ENEMY_*`）、中立=纸面。`tileColor` 加 `ally→绿` 分支（在 mine 之后、occupied 之前）。
   - **敌军行军**：march 箭头 `march.mine===false` → 统一敌色（蓝）+ 更粗描边 + 更大终点点，突出威胁；己方按 kind 上色。HUD 行军列表过滤为 `mine!==false`（敌方行军不可撤、不进列表）。
   - 既有 `applyMarchUpdate`→`refreshMarches()` / `applyTileUpdate`→`loadMapViewport()` 的 refetch-on-push 通道不变——G5-2 推送触发 refetch，新 `getMarches`/`getMap` 门控返回视野内敌情，自动显形。

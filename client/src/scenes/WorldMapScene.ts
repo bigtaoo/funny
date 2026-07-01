@@ -355,8 +355,14 @@ export class WorldMapScene implements Scene {
   }
 
   private parseTileId(tileId: string): [number, number] {
-    const [xs, ys] = tileId.split(':');
-    return [Number(xs) || 0, Number(ys) || 0];
+    // tileId = `{worldId}:{x}:{y}` (worldId itself contains no ':'); take the last
+    // two segments. mainBaseTile / march.fromTile / toTile all carry the worldId
+    // prefix — parsing the first two segments read the worldId as x (→ 0), which
+    // mis-centered the map far from the base (all-fog viewport, no city/resources).
+    const parts = tileId.split(':');
+    const x = Number(parts[parts.length - 2]);
+    const y = Number(parts[parts.length - 1]);
+    return [Number.isFinite(x) ? x : 0, Number.isFinite(y) ? y : 0];
   }
 
   private async loadMapViewport(): Promise<void> {
