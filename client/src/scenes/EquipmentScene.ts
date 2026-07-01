@@ -48,18 +48,24 @@ export interface EquipmentCallbacks {
    * Peer-level navigation within the progression group (LOBBY_IA_REDESIGN P1.5).
    * Injected only in the "Progression" group context (entered from the Collection screen);
    * when injected, a [Collection|Equipment] tab strip appears below the header, and tapping
-   * Collection returns to the progression view. Not injected from the campaign entry point â†’ plain back.
+   * Collection returns to the progression view. Not injected from the campaign entry point → plain back.
    */
   openCollection?(): void;
-  /** Read the current authoritative save (server pushes after each action â†’ adoptServer; this scene re-reads and redraws). */
+  /** Read the current authoritative save (server pushes after each action → adoptServer; this scene re-reads and redraws). */
   getSave(): SaveData;
   craft(defId: string): Promise<EquipResult>;
-  /** When useProtect=true, consume a protect-enhance item; on failure no materials are lost (E7 Â§6.2). */
+  /** When useProtect=true, consume a protect-enhance item; on failure no materials are lost (E7 §6.2). */
   enhance(instanceId: string, useProtect?: boolean): Promise<EnhanceResult>;
   salvage(instanceIds: string[]): Promise<EquipResult>;
-  equip(slot: EquipSlot, instanceId: string | null): Promise<EquipResult>;
+  /**
+   * Equip / unequip an equipment piece onto the active card (CC-1).
+   * cardInstanceId is the hero card that owns this loadout slot.
+   */
+  equip(slot: EquipSlot, instanceId: string | null, cardInstanceId: string): Promise<EquipResult>;
   /** Reforge (E6): consume the item identified by materialId to re-roll the secondary affixes of targetId. */
   reforge(targetId: string, materialId: string): Promise<EquipResult>;
+  /** The card instance whose gear this EquipmentScene is editing (CC-1 flow: CardScene → EquipmentScene). */
+  readonly activeCardInstanceId: string;
 }
 
 type EquipTab = 'inv' | 'craft';
@@ -424,7 +430,9 @@ export class EquipmentScene implements Scene {
     label.x = 10; label.y = y + 4;
     this.bodyLayer.addChild(label);
 
-    const gear = save.gear.global ?? {};
+    // CC-1: gear lives on the active card instance, not on a global loadout.
+    const activeCard = save.cardInv?.[this.cb.activeCardInstanceId];
+    const gear = activeCard?.gear ?? {};
     const cellW = (w - 8 * 4) / 3;
     const cellH = LOADOUT_H - 28;
     SLOTS.forEach((slot, i) => {
@@ -782,7 +790,7 @@ export class EquipmentScene implements Scene {
     if (this.bt.busy) return;
     this.bt.start();
     try {
-      const res = await withTimeout(this.cb.equip(slot, instanceId));
+      const res = await withTimeout(this.cb.equip(slot, instanceId, this.cb.activeCardInstanceId));
       if (res.ok) this.showToast(instanceId ? t('equip.equipped') : t('equip.unequipped'), C.green);
       else this.showToast(t(res.key), C.red);
     } catch (e) {
@@ -940,14 +948,13 @@ export class EquipmentScene implements Scene {
 
   // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+  /** Collect all equipment instance ids currently worn across ALL card instances (CC-1). */
   private equippedIds(save: SaveData): Set<string> {
     const ids = new Set<string>();
-    const g = save.gear.global;
-    if (g) for (const slot of SLOTS) { const id = g[slot]; if (id) ids.add(id); }
-    // byUnit loadouts also occupy instances (phase 2); count them so they can't be salvaged.
-    if (save.gear.byUnit) {
-      for (const map of Object.values(save.gear.byUnit)) {
-        for (const slot of SLOTS) { const id = map[slot]; if (id) ids.add(id); }
+    for (const card of Object.values(save.cardInv ?? {})) {
+      for (const slot of SLOTS) {
+        const id = card.gear[slot];
+        if (id) ids.add(id);
       }
     }
     return ids;

@@ -231,7 +231,7 @@ export class SaveManager {
     this.applyLocalClear(levelId, stars);
     if (this.online()) {
       try {
-        const res = await this.api!.pveClear(levelId, stars, this.save.unitLevels, stats);
+        const res = await this.api!.pveClear(levelId, stars, {}, stats);
         this.adoptServer(res.save);
         if (res.needsReplay && res.verifyId && replay) {
           await this.verifyReplay(res.verifyId, replay);
@@ -310,7 +310,7 @@ export class SaveManager {
     while (this.pending.length > 0) {
       const head = this.pending[0];
       try {
-        const res = await this.api!.pveClear(head.levelId, head.stars, this.save.unitLevels);
+        const res = await this.api!.pveClear(head.levelId, head.stars, {});
         this.adoptServer(res.save);
         // L1 spot-check triggered: retrieve the local replay and upload for re-calculation (if evicted from ReplayStore, skip — materials not credited this round).
         if (res.needsReplay && res.verifyId && head.replayId && this.loadReplay) {

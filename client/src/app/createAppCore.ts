@@ -845,6 +845,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     views.showTeams({
       onBack() { goWorldMap(worldApi, worldId); },
       onEditTeam(teamId, teamName) { goTeamEditor(worldApi, worldId, teamId, teamName); },
+      getSave: () => saveManager.get(),
       worldApi,
       worldId,
     });
@@ -1136,9 +1137,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onBack() { analytics.track('level_abandon', { level_id: levelId, phase: 'prep' }); goCampaignMap(); },
       onStart() { analytics.track('screen_view', { scene: 'GameScene' }); goCampaign(levelId); },
       levelNumber,
-      // S12: unit levels + card inventory (merge system), replacing the old S3-2 material / upgrade-tree approach.
-      getUnitLevels: () => saveManager.get().unitLevels,
-      getCardInventory: () => saveManager.get().cardInventory,
+      // SaveData v4: unitLevels/cardInventory removed; Hero Roster (CC-4) replaces the old merge system.
+      getUnitLevels: () => ({}),
+      getCardInventory: () => ({}),
       isOnline: () => saveManager.online(),
       tryMerge: async (unitId, lvl) => {
         const ok = await saveManager.merge(unitId, lvl);
@@ -1184,9 +1185,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           else d.equipped[EQUIP_SLOT] = skinId;
         });
       },
-      // S12 unit card tab
-      getUnitLevels: () => saveManager.get().unitLevels,
-      getCardInventory: () => saveManager.get().cardInventory,
+      // SaveData v4: unitLevels/cardInventory removed; Hero Roster (CC-4) replaces the old merge system.
+      getUnitLevels: () => ({}),
+      getCardInventory: () => ({}),
       isOnline: () => saveManager.online(),
       tryMerge: async (unitId, lvl) => {
         const ok = await saveManager.merge(unitId, lvl);
@@ -1220,7 +1221,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
    * the campaign map (default back) or the "Growth" tab (LOBBY_IA_REDESIGN §3, back=collection page);
    * `back` determines where the user returns to.
    */
-  function goEquipment(back: () => void = goCampaignMap, inCollectionGroup = false): void {
+  function goEquipment(back: () => void = goCampaignMap, inCollectionGroup = false, cardInstanceId = ''): void {
     if (!api) { back(); return; }
     const client = api;
     inLobby = false;
@@ -1231,6 +1232,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       // top [Collection|Equipment] tab bar is shown; tapping Collection navigates back to growth (= back).
       // Campaign-map entry (back=goCampaignMap) does not inject this → plain back only.
       ...(inCollectionGroup ? { openCollection: () => back() } : {}),
+      activeCardInstanceId: cardInstanceId,
       getSave: () => saveManager.get(),
       async craft(defId: string) {
         try {
@@ -1256,11 +1258,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           return { ok: true as const };
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
       },
-      async equip(slot: EquipSlot, instanceId: string | null) {
+      async equip(slot: EquipSlot, instanceId: string | null, cid: string) {
         try {
-          const { save } = await client.equipEquipment(slot, instanceId);
+          const { save } = await client.equipEquipment(slot, instanceId, cid);
           saveManager.adoptServer(save);
-          analytics.track('equip_equip', { slot, instance_id: instanceId ?? '' });
+          analytics.track('equip_equip', { slot, instance_id: instanceId ?? '', card_instance_id: cid });
           return { ok: true as const };
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
       },
@@ -1446,9 +1448,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       },
     }, {
       level,
-      unitLevels: saveManager.get().unitLevels,
+      unitLevels: {},
       equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
-      equipment: { gear: saveManager.get().gear, inv: saveManager.get().equipmentInv },
+      equipment: { gear: {}, inv: saveManager.get().equipmentInv },
     });
   }
 

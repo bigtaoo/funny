@@ -54,6 +54,7 @@ export type SectMemberFamilyView = components['schemas']['SectMemberFamilyView']
 export type SectMessageView = components['schemas']['SectMessageView'];
 export type SectVoteResult = components['schemas']['SectVoteResult'];
 export type BuildingKey = components['schemas']['BuildingKey'];
+export type CardSLGState = components['schemas']['CardSLGState'];
 
 export interface WorldChatMessage {
   id: string;
@@ -510,5 +511,27 @@ export class WorldApiClient {
 
   async speedupBuild(worldId: string, key: BuildingKey, coins: number): Promise<PlayerWorldView> {
     return this.req('POST', '/world/build/speedup', { worldId, key, coins });
+  }
+
+  // ── CC-4: troop distribution and card recovery ────────────────────────────
+
+  /**
+   * Distribute troops from the base troop stock to card slots (CC-4, CHARACTER_CARDS_DESIGN §6.5).
+   * allocations: cardInstanceId → troops to add. Server validates stock + troopCap per card.
+   */
+  async distributeTroops(
+    worldId: string,
+    allocations: Record<string, number>,
+  ): Promise<{ ok: true }> {
+    return this.req('POST', '/world/troops/distribute', { worldId, allocations });
+  }
+
+  /**
+   * Spend coins to immediately recover an injured card (CC-4, CHARACTER_CARDS_DESIGN §7.2).
+   * Clears injuredUntil for the card; unlocks the team if no remaining injuries.
+   * Insufficient coins → WorldApiError('INSUFFICIENT_FUNDS').
+   */
+  async recoverCard(worldId: string, cardInstanceId: string): Promise<{ ok: true }> {
+    return this.req('POST', '/world/troops/recover', { worldId, cardInstanceId });
   }
 }
