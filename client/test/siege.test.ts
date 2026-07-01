@@ -19,10 +19,11 @@ import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
 import { UNIT_BLUEPRINTS } from '../src/game/config';
 import { pvpExpectedBlueprints } from './pvpBlueprintExpected';
 import {
-  PVE_UPGRADE_DEFS,
   buildPvpBlueprints,
   buildSiegeBlueprints,
 } from '../src/game/balance/pveUpgrades';
+import { UNIT_MAX_LEVEL } from '../src/game/balance/progression';
+import { cardsAtLevel } from './cardHelpers';
 import { runJudge } from '../src/net/judgeRunner';
 import { replayToUploadFrames } from '../src/net/replayUpload';
 import type { JudgeRequest, FrameCmds } from '../src/net/proto/transport';
@@ -76,32 +77,26 @@ function toJudgeFrames(upload: ReturnType<typeof replayToUploadFrames>): FrameCm
   }));
 }
 
-function maxedUpgrades(): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const def of PVE_UPGRADE_DEFS) out[def.id] = def.maxLevel;
-  return out;
-}
-
 describe('siege progression blueprints — monotonicity + ladder red-line (SLG7 §6)', () => {
-  it('buildSiegeBlueprints({}) equals the constant baseline', () => {
-    expect(buildSiegeBlueprints({})).toEqual(UNIT_BLUEPRINTS);
+  it('buildSiegeBlueprints([]) equals the constant baseline', () => {
+    expect(buildSiegeBlueprints([])).toEqual(UNIT_BLUEPRINTS);
   });
 
   it('higher progression → stronger siege blueprints (HP / attack)', () => {
-    const sg = buildSiegeBlueprints(maxedUpgrades());
+    const sg = buildSiegeBlueprints(cardsAtLevel(UNIT_MAX_LEVEL));
     expect(sg[UnitType.Infantry].hp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].hp);
     expect(sg[UnitType.Archer].attack).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack);
   });
 
   it('after maxed siege blueprints, PvP blueprints still equal the constant baseline (+ static §5 override; red-line intact)', () => {
-    void buildSiegeBlueprints(maxedUpgrades());
+    void buildSiegeBlueprints(cardsAtLevel(UNIT_MAX_LEVEL));
     expect(buildPvpBlueprints()).toEqual(pvpExpectedBlueprints());
   });
 
   it('siege engine uses buildSiegeBlueprints; progression takes effect under the same mode', () => {
     const lvl = defenseConfig(1);
     const eng = createGameEngine(
-      { seed: 1, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level: lvl, pveUpgrades: maxedUpgrades() },
+      { seed: 1, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level: lvl, cardInstances: cardsAtLevel(UNIT_MAX_LEVEL) },
     ) as unknown as { state: { unitBlueprints: typeof UNIT_BLUEPRINTS } };
     expect(eng.state.unitBlueprints[UnitType.Infantry].hp).toBeGreaterThan(
       UNIT_BLUEPRINTS[UnitType.Infantry].hp,

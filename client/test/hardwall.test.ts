@@ -9,11 +9,13 @@ import {
   upgradeCost,
   getUpgradeDef,
 } from '../src/game/balance/pveUpgrades';
+import { UNIT_MAX_LEVEL } from '../src/game/balance/progression';
 import { createGameEngine } from '../src/game/GameEngine';
 import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
 import { pvpExpectedBlueprints as pvpExpected } from './pvpBlueprintExpected';
+import { cardsAtLevel } from './cardHelpers';
 
-/** A SaveData.pveUpgrades map with every upgrade maxed. */
+/** A SaveData.pveUpgrades map with every upgrade maxed (deprecated tree, still guarded against leaking into PvP). */
 function maxedUpgrades(): Record<string, number> {
   const out: Record<string, number> = {};
   for (const def of PVE_UPGRADE_DEFS) out[def.id] = def.maxLevel;
@@ -28,19 +30,19 @@ describe('hard wall — PvP blueprints never see PvE upgrades', () => {
     expect(buildPvpBlueprints()).toEqual(pvpExpected());
   });
 
-  it('buildCampaignBlueprints({}) with no upgrades equals UNIT_BLUEPRINTS', () => {
-    expect(buildCampaignBlueprints({})).toEqual(UNIT_BLUEPRINTS);
+  it('buildCampaignBlueprints([]) with no cards equals UNIT_BLUEPRINTS', () => {
+    expect(buildCampaignBlueprints([])).toEqual(UNIT_BLUEPRINTS);
   });
 
-  it('buildCampaignBlueprints(maxed) buffs at least one stat above the constant', () => {
-    const camp = buildCampaignBlueprints(maxedUpgrades());
+  it('buildCampaignBlueprints(maxed cards) buffs at least one stat above the constant', () => {
+    const camp = buildCampaignBlueprints(cardsAtLevel(UNIT_MAX_LEVEL));
     expect(camp[UnitType.Infantry].hp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].hp);
     expect(camp[UnitType.Archer].attack).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack);
   });
 
   it('builders return fresh clones — never mutate the global constant', () => {
     const before = JSON.parse(JSON.stringify(UNIT_BLUEPRINTS));
-    const camp = buildCampaignBlueprints(maxedUpgrades());
+    const camp = buildCampaignBlueprints(cardsAtLevel(UNIT_MAX_LEVEL));
     camp[UnitType.Infantry].hp = 99999; // tamper with the clone
     expect(UNIT_BLUEPRINTS).toEqual(before); // constant untouched
     // A PvP build after a campaign build is still pristine (constants + static §5 overrides).
@@ -49,9 +51,9 @@ describe('hard wall — PvP blueprints never see PvE upgrades', () => {
 
   it('a PvP engine built after a maxed campaign engine still uses constant stats', () => {
     const cfg2 = { seed: 7, players: [{ id: 0 as const }, { id: 1 as const }] };
-    // Build a campaign engine with maxed upgrades first.
+    // Build a campaign engine with maxed cards first.
     const lvl = CAMPAIGN_LEVELS[CAMPAIGN_LEVEL_ORDER[0]];
-    createGameEngine({ ...cfg2, mode: 'campaign', level: lvl, pveUpgrades: maxedUpgrades() });
+    createGameEngine({ ...cfg2, mode: 'campaign', level: lvl, cardInstances: cardsAtLevel(UNIT_MAX_LEVEL) });
     // Now a PvP engine — its blueprints must equal the constants.
     const pvp = createGameEngine({ ...cfg2, mode: 'pvp' }) as unknown as {
       state: { unitBlueprints: typeof UNIT_BLUEPRINTS };
@@ -60,7 +62,7 @@ describe('hard wall — PvP blueprints never see PvE upgrades', () => {
   });
 });
 
-describe('applyPveUpgrades — clamping & math', () => {
+describe('applyPveUpgrades — clamping & math (deprecated tree, direct calls)', () => {
   it('ignores unknown ids and 0 / negative levels', () => {
     const bp = buildPvpBlueprints();
     applyPveUpgrades(bp, { not_a_real_id: 9, inf_hp: 0, inf_dmg: -3 });
@@ -68,16 +70,19 @@ describe('applyPveUpgrades — clamping & math', () => {
   });
 
   it('clamps levels above maxLevel to maxLevel', () => {
-    const over = buildCampaignBlueprints({ inf_hp: 999 });
-    const atMax = buildCampaignBlueprints({ inf_hp: getUpgradeDef('inf_hp')!.maxLevel });
+    const over = buildPvpBlueprints();
+    applyPveUpgrades(over, { inf_hp: 999 });
+    const atMax = buildPvpBlueprints();
+    applyPveUpgrades(atMax, { inf_hp: getUpgradeDef('inf_hp')!.maxLevel });
     expect(over).toEqual(atMax);
   });
 
   it('applies the documented multiplicative formula (1 + effectPerLevel × level)', () => {
     const def = getUpgradeDef('inf_hp')!;
-    const camp = buildCampaignBlueprints({ inf_hp: 3 });
+    const bp = buildPvpBlueprints();
+    applyPveUpgrades(bp, { inf_hp: 3 });
     const expected = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].hp * (1 + def.effectPerLevel * 3));
-    expect(camp[UnitType.Infantry].hp).toBe(expected);
+    expect(bp[UnitType.Infantry].hp).toBe(expected);
   });
 });
 
