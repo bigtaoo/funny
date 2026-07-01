@@ -1,16 +1,17 @@
 // PvE progression — upgrade tree + fairness hard wall (META_DESIGN.md §5).
 //
-// Two blueprint construction paths, physically isolating PvE combat power from PvP fairness:
-//   · buildPvpBlueprints()        — read-only constants; SaveData / upgrade data never appear in its signature.
-//   · buildCampaignBlueprints(lv) — constant clone + applyPveUpgrades (the single injection point).
-// Hard-wall unit test (test/hardwall.test.ts): with max-level upgrades, buildPvpBlueprints() still equals UNIT_BLUEPRINTS byte-for-byte.
+// Three blueprint construction paths, physically isolating PvE combat power from PvP fairness:
+//   · buildPvpBlueprints()                    — read-only constants; SaveData / card data never appear in its signature.
+//   · buildCampaignBlueprints(cards, inv)     — CC-1: card instance array → level injection + per-card equipment.
+//   · buildSiegeBlueprints(cards, inv, acad)  — same as campaign + optional academy seasonal buff.
+// Hard-wall unit test (hardwall.test.ts): with max-level cards, buildPvpBlueprints() still equals UNIT_BLUEPRINTS byte-for-byte.
 //
-// Upgrades only modify unit stats (hp/damage/speed); buildings and skins are untouched (skins are pure render layer).
-// Materials = level drops (not currency, M6), spent on upgrades; unreachable from ranked → no heavyweight anti-cheat needed (§2).
+// applyPveUpgrades (old upgrade tree) is retained for the deprecated SaveData.pveUpgrades field
+// but is no longer called by the builder functions — card level (applyUnitLevels) replaces it.
 
 import { UNIT_BLUEPRINTS } from '../config';
 import { UnitType, type UnitBlueprint } from '../types';
-import { applyEquipment, clampEffectCaps, type EngineEquipmentInput } from './equipment';
+import { applyEquipment, clampEffectCaps, type EngineCardInstance, type EngineEquipInv } from './equipment';
 import { applyUnitLevels } from './progression';
 
 // ── Materials (level drops, PvE upgrade currency) ─────────────────────────────────────────────
@@ -119,48 +120,53 @@ export function buildPvpBlueprints(): Record<UnitType, UnitBlueprint> {
 }
 
 /**
- * Campaign path: constant clone + three-step injection chain (EQUIPMENT_DESIGN §9):
- *   applyPveUpgrades (unit progression/traits) → applyEquipment (equipment affixes) → clampEffectCaps (cross-source cap).
- * @param levels SaveData.pveUpgrades (upgrade id → level).
- * @param equip  Equipped gear + instance inventory (SaveData.gear + equipmentInv); defaults to no equipment, reducing the chain to upgrades only.
+ * Campaign path (CC-1): card instances → level injection → per-card equipment → cap (CHARACTER_CARDS_DESIGN §9).
+ * For each progressable unit type, the highest-level card is selected; its level drives applyUnitLevels,
+ * and its equipment drives applyEquipment. Multiple cards of the same type are ignored beyond the best one
+ * (PvE deploys one unit per type; SLG multi-card support comes in a later CC phase).
+ *
+ * @param cardInstances Player's card instances (SaveData.cardInv values, with unitType resolved).
+ * @param equipmentInv  Full equipment inventory (SaveData.equipmentInv) for gear slot lookups. Optional: no equipment if omitted.
  */
 export function buildCampaignBlueprints(
-  levels: Record<string, number>,
-  equip?: EngineEquipmentInput,
-  unitLevels?: Record<string, number>,
+  cardInstances: EngineCardInstance[],
+  equipmentInv?: EngineEquipInv,
 ): Record<UnitType, UnitBlueprint> {
   const bp = cloneBlueprints();
-  applyPveUpgrades(bp, levels);
+  // Derive unit levels and best-card-per-type from the card array.
+  const bestCards = new Map<UnitType, EngineCardInstance>();
+  for (const card of cardInstances) {
+    const cur = bestCards.get(card.unitType);
+    if (!cur || card.level > cur.level) bestCards.set(card.unitType, card);
+  }
+  const unitLevels: Record<string, number> = {};
+  for (const [unitType, card] of bestCards) unitLevels[unitType] = card.level;
   applyUnitLevels(bp, unitLevels);
-  applyEquipment(bp, equip);
+  if (equipmentInv) {
+    for (const card of bestCards.values()) applyEquipment(bp, card, equipmentInv);
+  }
   clampEffectCaps(bp);
   return bp;
 }
 
 /**
- * SLG siege path (S8-3, SLG_DESIGN §5.2 / §6.2): shares the same progression tree and injection point as campaign
- * (equipment earned in PvE directly contributes to SLG combat power). Currently equivalent to buildCampaignBlueprints word-for-word;
- * the separate name serves two purposes:
+ * SLG siege path (S8-3, SLG_DESIGN §5.2 / §6.2, CC-1 adapted): same injection chain as campaign.
+ * Separate name serves two purposes:
  *   ① Express the "ranked red line" at the type level (siege uses this; netplay/pvp always uses buildPvpBlueprints,
- *     whose signature has no upgrade parameter → contamination impossible at compile time, §6.1 hard-wall test still guards it);
- *   ② Reserve a single injection point for future SLG-exclusive buffs (tech/guild bonuses that do not affect PvE).
- * @param levels         Server-authoritative pveUpgrades (upgrade id → level).
- * @param equip          Equipment from the attacker's authoritative progression snapshot.
- * @param unitLevels     Unit card levels (1–9) from SaveData.unitLevels.
- * @param siegeAcademy   Academy building seasonal buff (SLG_CITY_DESIGN P2): {hp, damage} fractional bonuses
- *                       applied as an additive multiplier layer after clampEffectCaps. Ignored on other paths.
+ *     whose signature has no card/upgrade parameter → contamination impossible at compile time);
+ *   ② Reserve a single injection point for future SLG-exclusive buffs (tech/guild bonuses not affecting PvE).
+ *
+ * @param cardInstances  Attacker's card instances (server-authoritative snapshot).
+ * @param equipmentInv   Attacker's equipment inventory for gear lookups. Optional.
+ * @param siegeAcademy   Academy building seasonal buff (SLG_CITY_DESIGN P2): fractional hp/damage bonuses
+ *                       applied after clampEffectCaps as a post-cap layer. Ignored on other paths.
  */
 export function buildSiegeBlueprints(
-  levels: Record<string, number>,
-  equip?: EngineEquipmentInput,
-  unitLevels?: Record<string, number>,
+  cardInstances: EngineCardInstance[],
+  equipmentInv?: EngineEquipInv,
   siegeAcademy?: { hp: number; damage: number },
 ): Record<UnitType, UnitBlueprint> {
-  const bp = cloneBlueprints();
-  applyPveUpgrades(bp, levels);
-  applyUnitLevels(bp, unitLevels);
-  applyEquipment(bp, equip);
-  clampEffectCaps(bp);
+  const bp = buildCampaignBlueprints(cardInstances, equipmentInv);
   if (siegeAcademy && (siegeAcademy.hp > 0 || siegeAcademy.damage > 0)) {
     for (const unit of Object.values(bp) as UnitBlueprint[]) {
       if (siegeAcademy.hp > 0) unit.hp = Math.round(unit.hp * (1 + siegeAcademy.hp));
