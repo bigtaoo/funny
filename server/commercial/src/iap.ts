@@ -13,7 +13,7 @@
 // commercial.rechargeVerify guards idempotency — this file does not repeat that check.
 
 import { createHmac, createSign, randomBytes } from 'node:crypto';
-import type { IAP_TIERS } from '@nw/shared';
+import { DEV_STUB_DEFAULT_TIER, type IAP_TIERS } from '@nw/shared';
 
 export type IapTierMap = typeof IAP_TIERS;
 
@@ -323,9 +323,9 @@ async function stripeVerify(
 
 function devVerify(receipt: string, tierMap: IapTierMap): IapVerifyResult {
   if (!receipt) return { ok: false, coins: 0 };
-  const tier = receipt.startsWith('tier:') ? receipt.slice(5) : 'small';
+  const tier = receipt.startsWith('tier:') ? receipt.slice(5) : DEV_STUB_DEFAULT_TIER;
   const coins = tierMap[tier];
-  return coins ? { ok: true, coins } : { ok: true, coins: tierMap['small']! };
+  return coins ? { ok: true, coins } : { ok: true, coins: tierMap[DEV_STUB_DEFAULT_TIER]! };
 }
 
 // ── Tier resolution (by amount) ──────────────────────────────────────────────────────────

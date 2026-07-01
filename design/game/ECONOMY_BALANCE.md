@@ -90,6 +90,11 @@
 | Paddle 后台 Products | ⏳ 待做 | 5 个档位各建一个 one-time Product，拿 Price ID 填入 `NW_PADDLE_PRICE_IDS` |
 | CrazyGames 广告 SDK | ⏳ 待做 | 接 CrazyGames SDK（独立任务，非 Paddle） |
 
+**Dev 桩兜底档位 & CI 修复（2026-07-01）**
+- 档位键从 `small/mid/large` 改名为 `t099…t9999`（feat/paddle-iap）后，IAP dev 桩的兜底档位仍指向已删除的 `small`，导致 E2E 无 `tier:` 前缀的 `topup_<uid>` 收据解析出 `undefined` coins → 充值报错、full-link E2E 两条 recharge 断言失败。
+- 修复：新增 `economy.ts DEV_STUB_DEFAULT_TIER = 't499'`（550 coins > 500 改名费），`iap.ts devVerify` / `service.ts devVerifyReceipt` 两处兜底改引用之；补 `commercial/test/iap.test.ts` 无前缀路径回归用例（原用例只覆盖 `tier:` 前缀，漏掉此路径）。
+- ⚠️ **遗留**：`iap.ts` 内真实支付 productId/金额兜底表（`resolveCoinsFromProductId` / `resolveCoinsFromAmount` 的 `DEFAULTS`）仍映射到已删除的 `small/mid/large`，未设 `NW_IAP_PRODUCT_MAP`/`NW_IAP_AMOUNT_MAP` 时 Apple/Google/微信/Stripe 会发 0 coins。CI 不覆盖（走 dev 桩），属潜伏 bug，须先定 app store productId 命名约定再修（独立任务）。
+
 **客户端接线待办（App 层）**
 
 ```typescript

@@ -6,6 +6,7 @@ import {
   findShopItem,
   gachaCost,
   IAP_TIERS,
+  DEV_STUB_DEFAULT_TIER,
   FIRST_PURCHASE_BONUS_MULTIPLIER,
   VICTORY_DAILY_WIN_CAP,
   type Rarity,
@@ -48,9 +49,9 @@ export interface CommercialDeps {
 /** Dev stub (used only in unit tests / when no real payment channel is configured). */
 function devVerifyReceipt(_platform: string, receipt: string): { ok: boolean; coins: number } {
   if (!receipt) return { ok: false, coins: 0 };
-  const tier = receipt.startsWith('tier:') ? receipt.slice(5) : 'small';
+  const tier = receipt.startsWith('tier:') ? receipt.slice(5) : DEV_STUB_DEFAULT_TIER;
   const coins = IAP_TIERS[tier];
-  return coins ? { ok: true, coins } : { ok: true, coins: IAP_TIERS.small! };
+  return coins ? { ok: true, coins } : { ok: true, coins: IAP_TIERS[DEV_STUB_DEFAULT_TIER]! };
 }
 
 export class CommercialService {

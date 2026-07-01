@@ -150,6 +150,13 @@ export const IAP_TIERS_LIST: IapTierDef[] = [
 export const FIRST_PURCHASE_BONUS_MULTIPLIER = 2;
 
 /**
+ * Fallback tier for the dev IAP stub when a receipt has no `tier:` prefix
+ * (e.g. E2E `topup_<uid>` receipts). Must be a key of IAP_TIERS; the standard
+ * web entry tier (t499 = 550 coins, > RENAME_COST) so dev top-ups are useful.
+ */
+export const DEV_STUB_DEFAULT_TIER = 't499';
+
+/**
  * Tiered per-match victory coins (§2.3b, ongoing faucet). Higher ranks earn more; paired with daily cap to prevent inflation.
  * Awarded only for ranked wins (includes disconnect/surrender judged wins and honest winners determined by peer-judge).
  */

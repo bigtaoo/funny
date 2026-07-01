@@ -234,7 +234,7 @@ describe('full-link E2E (live stack)', () => {
     a.views.gacha!.openShop!();
     expect(a.views.screen).toBe('shop');
     await a.views.shop!.loadItems();
-    // Unique dev receipt (see note above): the `small` tier grants 600 coins (> 500 rename cost).
+    // Unique dev receipt (see note above): the dev stub's default tier grants 550 coins (> 500 rename cost).
     expect((await a.views.shop!.recharge(`topup_${uid()}`)).ok, 'recharge failed').toBe(true);
     const afterRecharge = a.views.shop!.getCoins();
     expect(afterRecharge, 'recharge should grant enough to rename').toBeGreaterThan(500);

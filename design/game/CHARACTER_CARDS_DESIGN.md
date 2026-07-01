@@ -467,3 +467,5 @@ v3 → v4 **直接丢弃冲突字段**，不做数据转换：
 | **CC-5 拍卖行 & 抽卡扩展** | ✅ 2026-07-01 | `auctionService.ts`（itemType:'card' escrow/grant/cancel/expire/reset）+ `metaClient.ts`（escrowCard/grantCard）+ `internal.ts`（/internal/cards/escrow·grant）+ `economy.ts`（标准池 epic+Tao 卡/legendary+Anna 卡）+ `economy.ts`-metaserver（deliverOrder CARD_DEFS 分支→grantHeroCards+背包满补偿）+ `api.ts`（CARD_NOT_FOUND/CARD_HAS_GEAR 错误码）+ `openapi-world.yml`（AuctionView/createAuction itemType enum） |
 
 > **收尾**（2026-07-01）：任务期间遗留的 `gateway`/`gameserver` 两条 `tsc --noEmit` 报错（`Cannot find module '@bufbuild/protobuf/wire'`）经排查与角色卡任务无关——`server/node_modules` 缺失 `@bufbuild/protobuf`（package-lock.json 已声明但磁盘未装，node_modules 陈旧），`server/` 下 `npm install` 重装后两包 `tsc --noEmit` 转绿，无源码改动。
+
+> **CI 修复**（2026-07-01）：CC-4/CC-5 改了 `openapi-world.yml`（新增 `distributeTroops`/`recoverCard` 路由、`cardState`/`baseTroopStock` 响应字段、`cardInstanceId`/`itemType: card` 枚举）但未重新生成 `worldsvc/src/generated/routes.gen.ts`，导致 `gen:api:world:check` 失败。跑 `npm run gen:api:world`（47 operations）重生成即修复。生成物勿手改，改契约后必跑一次生成。

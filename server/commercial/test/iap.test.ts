@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
 import { createReceiptVerifier } from '../src/iap';
+import { IAP_TIERS, DEV_STUB_DEFAULT_TIER } from '@nw/shared';
 
 const TIER_MAP = { small: 600, mid: 3300, large: 11800 };
 const BUNDLE = 'com.nw';
@@ -261,6 +262,17 @@ describe('dev stub', () => {
     expect(await verify('apple', 'tier:small')).toEqual({ ok: true, coins: 600 });
     expect(await verify('google', 'tier:large')).toEqual({ ok: true, coins: 11800 });
     expect(await verify('dev', 'tier:mid')).toEqual({ ok: true, coins: 3300 });
+  });
+
+  it('grants the default tier for a receipt with no tier: prefix (E2E topup_ path)', async () => {
+    // Regression guard: the dev stub's fallback tier must be a real key of IAP_TIERS.
+    // The feat(iap) retier (small/mid/large → t099…t9999) previously left the fallback
+    // pointing at the removed `small` tier, so `topup_*` receipts resolved to undefined coins.
+    process.env.NW_IAP_DEV = 'false';
+    const verify = createReceiptVerifier(IAP_TIERS);
+    const expected = IAP_TIERS[DEV_STUB_DEFAULT_TIER];
+    expect(expected).toBeGreaterThan(0);
+    expect(await verify('dev', 'topup_abc123')).toEqual({ ok: true, coins: expected });
   });
 
   it('dev stub disabled when real credentials present and NW_IAP_DEV not set', async () => {
