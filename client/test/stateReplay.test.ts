@@ -12,6 +12,7 @@ import {
   quantizePos,
   STATE_SCHEMA_VERSION,
   type StateReplay,
+  type EncodedStateReplay,
   type StateFrame,
   type StateUnit,
 } from '../src/game/replay/StateReplay';
@@ -63,7 +64,7 @@ function reconstructUnitsAt(dec: StateReplay, tick: number): Map<number, StateUn
 }
 
 /** Verify reconstruction fidelity at every original tick (position ≤ EPS, static fields exact). */
-function assertFaithful(original: StateReplay): StateReplay {
+function assertFaithful(original: StateReplay): EncodedStateReplay {
   const enc = encodeStateReplay(original);
   const dec = decodeStateReplay(enc);
   for (const f of original.frames) {

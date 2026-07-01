@@ -50,13 +50,15 @@ import type { WorldMapView } from '../../src/scenes/WorldMapScene';
 import type { DailyCallbacks } from '../../src/scenes/DailyScene';
 import type { EventCallbacks } from '../../src/scenes/EventScene';
 import type { ConsentCallbacks } from '../../src/render/ConsentDialog';
+import type { TitlesSceneCallbacks } from '../../src/scenes/TitlesScene';
+import type { CitySceneCallbacks } from '../../src/scenes/CityScene';
 
 export type ScreenName =
   | 'none' | 'intro' | 'lobby' | 'settings' | 'login' | 'shop' | 'gacha'
   | 'campaignMap' | 'levelPrep' | 'collection' | 'equipment' | 'stats' | 'achievements'
   | 'leaderboard' | 'battlePass' | 'replay' | 'result' | 'room' | 'friends'
   | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams' | 'deckBuilder'
-  | 'consent' | 'daily' | 'events' | 'statePlayer';
+  | 'consent' | 'daily' | 'events' | 'statePlayer' | 'titles' | 'city';
 
 interface ActiveMatch {
   engine: IGameEngine;
@@ -142,6 +144,10 @@ export class HeadlessAppViews implements AppViews {
   showAchievements(_cb: AchievementCallbacks): void { this.screen = 'achievements'; }
   showLeaderboard(_cb: LeaderboardCallbacks): void { this.screen = 'leaderboard'; }
   showBattlePass(_cb: BattlePassCallbacks): void { this.screen = 'battlePass'; }
+  showTitles(_cb: TitlesSceneCallbacks): void { this.screen = 'titles'; }
+  showDaily(cb: DailyCallbacks): void { this.screen = 'daily'; this.daily = cb; }
+  showEvents(cb: EventCallbacks): void { this.screen = 'events'; this.events = cb; }
+  showCity(_cb: CitySceneCallbacks): void { this.screen = 'city'; }
   showReplay(replay: Replay, cb: ReplaySceneCallbacks): void {
     this.screen = 'replay';
     this.replay = cb;

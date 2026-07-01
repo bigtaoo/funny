@@ -3,7 +3,7 @@ import { createGameEngine } from '../src/game/GameEngine';
 import { CAMPAIGN_LEVELS } from '../src/game/campaign/levels';
 import type { GameConfig } from '../src/game/types';
 import { Side, GamePhase } from '../src/game/types';
-import { BaselinePlayer, DEFAULT_AI, progressionUnitLevels } from './difficultySim';
+import { BaselinePlayer, DEFAULT_AI, progressionCards } from './difficultySim';
 
 const TICK_DT = 1 / 30;
 
@@ -18,7 +18,7 @@ describe(`timeline inspection ${LEVEL_ID} (${PRESET})`, () => {
     const level = CAMPAIGN_LEVELS[LEVEL_ID]!;
     const config: GameConfig = {
       seed: level.seed, players: [{ id: 0 }, { id: 1 }], mode: 'campaign', level,
-      unitLevels: progressionUnitLevels(PRESET),
+      cardInstances: progressionCards(PRESET),
     };
     const engine = createGameEngine(config);
 

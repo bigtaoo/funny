@@ -51,11 +51,11 @@ function authoredByFrame(): Map<number, PlayerCommand[]> {
 }
 
 function toProto(cmd: PlayerCommand) {
-  if (cmd.type === 'upgrade_base') return { upgradeBase: {}, playCard: undefined };
-  return {
-    playCard: { handIndex: cmd.handIndex, col: cmd.col ?? 0, row: cmd.row ?? 0 },
-    upgradeBase: undefined,
-  };
+  if (cmd.type === 'play_card') {
+    return { playCard: { handIndex: cmd.handIndex, col: cmd.col ?? 0, row: cmd.row ?? 0 }, upgradeBase: undefined, refreshHand: undefined };
+  }
+  if (cmd.type === 'refresh_hand') return { refreshHand: {}, playCard: undefined, upgradeBase: undefined };
+  return { upgradeBase: {}, playCard: undefined, refreshHand: undefined };
 }
 
 /** Script → JudgeRequest (each frame grouped by owner into SideCmd; commands encoded with game.proto). */

@@ -31,24 +31,26 @@ import { Side, UnitType, CardType, GamePhase } from '../src/game/types';
 import { ATTACK_LANES } from '../src/game/config';
 import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
 import { computeStars } from '../src/game/meta/campaignRewards';
+import { card } from './cardHelpers';
+import type { EngineCardInstance } from '../src/game/balance/equipment';
 
 const TICK_DT = 1 / 30;
 const TICK_RATE = 30;
 
 // ─── Progression presets ──────────────────────────────────────────────────────────────
 // Player-available units (from the ch1 loadout): infantry / shieldbearer / archer.
-// Each preset upgrades all three unit types uniformly to level N (unitLevels: unitId→1..9).
+// Each preset upgrades all three unit types uniformly to level N (one card instance per type at level N).
 
 const PLAYER_UNITS = [UnitType.Infantry, UnitType.ShieldBearer, UnitType.Archer];
 
 export type ProgressionPreset = 'fresh' | 'T2' | 'T3' | 'T4' | 'T5' | 'T6';
 
-export function progressionUnitLevels(preset: ProgressionPreset): Record<string, number> {
-  if (preset === 'fresh') return {};
+// CC-1: blueprint progression now flows through `cardInstances` (best card per unit type drives its
+// level) instead of the dropped `unitLevels` GameConfig field. `fresh` = no cards = all units at base.
+export function progressionCards(preset: ProgressionPreset): EngineCardInstance[] {
+  if (preset === 'fresh') return [];
   const lvl = { T2: 2, T3: 3, T4: 4, T5: 5, T6: 6 }[preset];
-  const out: Record<string, number> = {};
-  for (const u of PLAYER_UNITS) out[u] = lvl;
-  return out;
+  return PLAYER_UNITS.map((u) => card(u, lvl));
 }
 
 // ─── Tunable parameters for the baseline AI ─────────────────────────────────────────────────────
@@ -352,7 +354,7 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
     players: [{ id: 0 }, { id: 1 }],
     mode: 'campaign',
     level,
-    unitLevels: progressionUnitLevels(preset),
+    cardInstances: progressionCards(preset),
   };
   const engine = createGameEngine(config);
 
