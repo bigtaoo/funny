@@ -16,13 +16,18 @@ import { UnitType, type UnitBlueprint } from '../types';
 export const UNIT_MAX_LEVEL = 9;
 
 /**
- * Progressable unit types = the units dealt in the player's roster (same source as equipment.PLAYER_EQUIPPABLE_UNITS).
- * PvE-exclusive monster types (Ironclad/Runner/Harpy/Medic…) have no cards and are not in the roster → not progressable.
+ * Progressable unit types = all card-issuing unit types in the player roster (CC-1, CHARACTER_CARDS_DESIGN §2).
+ * Three Tao (Infantry/ShieldBearer/Archer) + three Anna (Max/Lena/Mara).
+ * PvE-exclusive enemy types (Ironclad/Runner/Harpy/Medic/Berserker/Splitter) have no cards → not progressable.
+ * Must stay in sync with PLAYER_EQUIPPABLE_UNITS in equipment.ts and CARD_DEFS in @nw/shared/cards.
  */
 export const PROGRESSABLE_UNITS: readonly UnitType[] = [
   UnitType.Infantry,
   UnitType.ShieldBearer,
   UnitType.Archer,
+  UnitType.Max,
+  UnitType.Lena,
+  UnitType.Mara,
 ];
 
 /**

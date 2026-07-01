@@ -119,22 +119,25 @@ export const EFFECT_CAPS = {
   armorFlat: 12,
 } as const;
 
-// ── Player unit types eligible for global loadout bonuses (§8 "affects the whole army") ──
+// ── Player unit types eligible for card-based equipment bonuses ───────────────────────────
 //
-// Consistent with pveUpgrades: only the card-issuing unit types in the player lineup
-// (Infantry/ShieldBearer/Archer) receive bonuses; PvE-exclusive enemy types
-// (Ironclad/Runner/Harpy/support) have no cards and are not in the player lineup → no bonus.
-// Note: like applyPveUpgrades, this operates on the **shared blueprint table** (keyed by
-// UnitType); siege attacker/defender sharing the same table is existing behaviour and is
-// preserved as-is (this is the established semantics of §9 "single injection site";
-// attacker/defender separation is not expanded in E1).
+// All six card-issuing unit types (three Tao + three Anna) can receive equipment bonuses via
+// CardInstance.gear. PvE-exclusive enemy types (Ironclad/Runner/Harpy/support) have no cards.
+// Exported so the client portrait overlay (EQUIPMENT_DESIGN §20.4) stays in sync with this set.
 export const PLAYER_EQUIPPABLE_UNITS: readonly UnitType[] = [
   UnitType.Infantry,
   UnitType.ShieldBearer,
   UnitType.Archer,
+  UnitType.Max,
+  UnitType.Lena,
+  UnitType.Mara,
 ];
 
 // ── Engine-local input types (structurally equivalent to @nw/shared; no shared import) ─────
+//
+// Engine cannot import @nw/shared (mongodb would pollute the browser bundle via webpack alias).
+// These types are structurally compatible with their @nw/shared counterparts; callers pass
+// shared instances directly (TS structural subtyping — extra fields are harmless).
 
 /** Affix instance (structurally equivalent to shared Affix). */
 export interface EngineAffix {
@@ -142,23 +145,40 @@ export interface EngineAffix {
   value: number;
 }
 
-/** Equipment instance (structural subset of shared EquipmentInstance; engine only needs these three fields). */
+/** Equipment instance (structural subset of shared EquipmentInstance; engine only needs level + affixes). */
 export interface EngineEquipInstance {
   defId: string;
   level: number;
   affixes: EngineAffix[];
 }
 
-/** Slot → instance id (structurally equivalent to shared GearSlotMap; uses a permissive index signature to accommodate Partial<Record<EquipSlot,…>>). */
+/** Slot → instance id (structurally equivalent to shared GearSlotMap; permissive index signature). */
 export type EngineSlotMap = { readonly [slot: string]: string | undefined };
 
-/** Equipped loadout (structurally equivalent to shared GearLoadout). */
+/**
+ * Card instance as seen by the engine (structural subset of shared CardInstance).
+ * The engine only needs id, unitType, level, and gear for blueprint injection.
+ * Structurally compatible with shared CardInstance (extra fields like xp/locked are harmless).
+ */
+export interface EngineCardInstance {
+  id: string;
+  defId: string;
+  /** Engine unit type (string value of UnitType enum, e.g. 'infantry', 'max'). */
+  unitType: UnitType;
+  level: number;
+  gear: EngineSlotMap;
+}
+
+/** Equipment instance inventory: instanceId → EngineEquipInstance. Structurally compatible with SaveData.equipmentInv. */
+export type EngineEquipInv = { readonly [instanceId: string]: EngineEquipInstance };
+
+// ── Kept for backward-compat (still exported from index.ts; callers that reference EngineEquipmentInput as a type will not break) ──
+/** @deprecated Use EngineCardInstance + EngineEquipInv instead (CC-1). Retained for external type references. */
 export interface EngineGearLoadout {
   global?: EngineSlotMap;
   byUnit?: { readonly [unitType: string]: EngineSlotMap };
 }
-
-/** Input to applyEquipment: equipped loadout + instance inventory (dereferenced by id). */
+/** @deprecated Use EngineCardInstance + EngineEquipInv instead (CC-1). Retained for external type references. */
 export interface EngineEquipmentInput {
   gear: EngineGearLoadout;
   inv: { readonly [instanceId: string]: EngineEquipInstance };
@@ -179,11 +199,6 @@ interface EffectAccum {
 
 function zeroAccum(): EffectAccum {
   return { atkPct: 0, hpPct: 0, atkspdPct: 0, spdPct: 0, armorFlat: 0, lifestealFlat: 0, regenFlat: 0 };
-}
-
-/** Returns the active slot→instance-id map for a unit type: byUnit takes priority (phase 2), falling back to global (phase 1 whole-army). */
-function loadoutFor(gear: EngineGearLoadout, unitType: UnitType): EngineSlotMap | undefined {
-  return gear.byUnit?.[unitType] ?? gear.global;
 }
 
 /** Accumulates all affixes of one equipped item into acc (primary affixes scaled by enhancement level; utility/skill/unknown skipped). */
@@ -228,51 +243,50 @@ function clamp(v: number, max: number): number {
 }
 
 /**
- * Applies equipped-item affix bonuses onto blueprints in-place (EQUIPMENT_DESIGN §9).
- * The **equipment contribution** to multiplicative fields is clamped here against EFFECT_CAPS
- * (once baked into absolute hp/attack values they cannot be reversed); absolute fields
- * (lifestealPct/armor) are accumulated and left for clampEffectCaps to clamp uniformly.
+ * Applies one card instance's equipped-item affix bonuses onto the card's unit-type blueprint in-place
+ * (CHARACTER_CARDS_DESIGN §5.3 / EQUIPMENT_DESIGN §9).
  *
- * @param bp    Blueprint table (intermediate state: after applyPveUpgrades, before clampEffectCaps).
- * @param equip Equipped loadout + instance inventory. No-op when absent/empty (no equipment = blueprint unchanged).
+ * Equipment is now per-card (CardInstance.gear), not a global army loadout.
+ * Each call injects one card's gear into bp[cardInstance.unitType] only.
+ * Call once per card instance; call clampEffectCaps once after all cards are processed.
+ *
+ * @param bp           Blueprint table (intermediate state: after applyUnitLevels, before clampEffectCaps).
+ * @param cardInstance The card whose gear is being injected. unitType determines the target blueprint slot.
+ * @param inv          Full equipment instance inventory (SaveData.equipmentInv); used to resolve gear slot ids.
  */
 export function applyEquipment(
   bp: Record<UnitType, UnitBlueprint>,
-  equip: EngineEquipmentInput | undefined,
+  cardInstance: EngineCardInstance,
+  inv: EngineEquipInv,
 ): void {
-  if (!equip) return;
-  const { gear, inv } = equip;
-  if (!gear || !inv) return;
-
-  for (const unitType of PLAYER_EQUIPPABLE_UNITS) {
-    const slotMap = loadoutFor(gear, unitType);
-    if (!slotMap) continue;
-    const acc = zeroAccum();
-    let worn = 0;
-    for (const slot of Object.keys(slotMap)) {
-      const instId = slotMap[slot];
-      if (!instId) continue;
-      const inst = inv[instId];
-      if (!inst) continue; // Reference to non-existent instance: silently ignored
-      accumInstance(acc, inst);
-      worn++;
-    }
-    if (worn === 0) continue;
-
-    const u = bp[unitType];
-    // Multiplicative fields: equipment contribution clamped here (§7.7 clamping site ①).
-    u.attack = Math.round(u.attack * (1 + clamp(acc.atkPct, EFFECT_CAPS.atkPct)));
-    u.hp = Math.round(u.hp * (1 + clamp(acc.hpPct, EFFECT_CAPS.hpPct)));
-    // Attack speed: percentage reduces attackInterval (§7.4 "multiplicative (reduces interval)"); lower bound prevents 0/negative.
-    const atkspd = clamp(acc.atkspdPct, EFFECT_CAPS.atkspdPct);
-    if (atkspd > 0) u.attackInterval = u.attackInterval / (1 + atkspd);
-    // Move speed: §7.7 table lists no cap → not clamped (speed carries no damage-immunity/overflow risk).
-    if (acc.spdPct !== 0) u.speed = u.speed * (1 + acc.spdPct);
-    // Absolute fields: accumulated, unified clamping deferred to clampEffectCaps (cross-source sum cap, §7.7④).
-    if (acc.armorFlat !== 0) u.armor = (u.armor ?? 0) + acc.armorFlat;
-    if (acc.lifestealFlat !== 0) u.lifestealPct = (u.lifestealPct ?? 0) + acc.lifestealFlat;
-    if (acc.regenFlat !== 0) u.regenPerSec = (u.regenPerSec ?? 0) + acc.regenFlat;
+  const slotMap = cardInstance.gear;
+  const acc = zeroAccum();
+  let worn = 0;
+  for (const slot of Object.keys(slotMap)) {
+    const instId = slotMap[slot];
+    if (!instId) continue;
+    const inst = inv[instId];
+    if (!inst) continue; // Reference to non-existent instance: silently ignored
+    accumInstance(acc, inst);
+    worn++;
   }
+  if (worn === 0) return;
+
+  const u = bp[cardInstance.unitType];
+  if (!u) return; // Unknown unit type (e.g. PvE-only enemy): silently ignored
+
+  // Multiplicative fields: equipment contribution clamped here (§7.7 clamping site ①).
+  u.attack = Math.round(u.attack * (1 + clamp(acc.atkPct, EFFECT_CAPS.atkPct)));
+  u.hp = Math.round(u.hp * (1 + clamp(acc.hpPct, EFFECT_CAPS.hpPct)));
+  // Attack speed: percentage reduces attackInterval (§7.4 "multiplicative (reduces interval)"); lower bound prevents 0/negative.
+  const atkspd = clamp(acc.atkspdPct, EFFECT_CAPS.atkspdPct);
+  if (atkspd > 0) u.attackInterval = u.attackInterval / (1 + atkspd);
+  // Move speed: §7.7 table lists no cap → not clamped.
+  if (acc.spdPct !== 0) u.speed = u.speed * (1 + acc.spdPct);
+  // Absolute fields: accumulated, unified clamping deferred to clampEffectCaps (cross-source sum cap, §7.7④).
+  if (acc.armorFlat !== 0) u.armor = (u.armor ?? 0) + acc.armorFlat;
+  if (acc.lifestealFlat !== 0) u.lifestealPct = (u.lifestealPct ?? 0) + acc.lifestealFlat;
+  if (acc.regenFlat !== 0) u.regenPerSec = (u.regenPerSec ?? 0) + acc.regenFlat;
 }
 
 /**

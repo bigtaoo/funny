@@ -85,10 +85,11 @@ export type { UnitBlueprint } from './types';
 // ── GameState exposed as a type only (state inspection after a headless run) ──
 export type { GameState } from './GameState';
 
-// ── Equipment input type (E8: worldsvc passes attacker gear to buildSiegeBlueprints) ────────────
-export type { EngineEquipmentInput } from './balance/equipment';
-// Player unit types that can be buffed by loadout equipment (§8); the in-battle portrait overlay (EQUIPMENT_DESIGN §20.4) is gated on this set,
-// co-sourced with applyEquipment to prevent "which units benefit from equipment" from drifting out of sync.
+// ── Equipment / card input types (CC-1) ──────────────────────────────────────────────────────────
+// Callers now pass EngineCardInstance[] + EngineEquipInv to buildCampaignBlueprints/buildSiegeBlueprints.
+// EngineEquipmentInput is retained for backward-compat type references; new code should use EngineCardInstance.
+export type { EngineEquipmentInput, EngineCardInstance, EngineEquipInv } from './balance/equipment';
+// Player unit types that can receive card-based equipment bonuses (CC-1: expanded to 6 unit types).
 export { PLAYER_EQUIPPABLE_UNITS } from './balance/equipment';
 
 // ── Campaign / level data model + validator ───────────────────────────────────

@@ -1,7 +1,7 @@
 import type { Fp } from './math/fixed';
 import type { LevelDefinition } from './campaign/LevelDefinition';
 // Type-only reference (erased at compile time) → does not create a runtime cycle with balance/equipment.ts's runtime reference to UnitType.
-import type { EngineEquipmentInput } from './balance/equipment';
+import type { EngineCardInstance, EngineEquipInv } from './balance/equipment';
 
 // i18n display keys are plain strings inside the engine — the simulation never
 // resolves them. The render/UI layer (client) re-narrows them to TranslationKey
@@ -138,29 +138,17 @@ export interface GameConfig {
   /** Campaign level — required when mode === 'campaign'. */
   level?: LevelDefinition;
   /**
-   * PvE upgrade levels (SaveData.pveUpgrades), read ONLY on the campaign path to
-   * build buffed blueprints. The hard wall (§5.2) keeps this off the PvP path:
-   * pvp/netplay ignore it entirely. Pass save.pveUpgrades when launching campaign.
-   * @deprecated S12: unit progression moved to single level + card merge (see `unitLevels`).
-   *   Engine no longer reads this for progression; kept for transition compat.
+   * Hero Roster card instances (CC-1, CHARACTER_CARDS_DESIGN §2), read ONLY on the PvE-shaped paths
+   * (campaign / siege). The hard wall (§5.2): `buildPvpBlueprints()` has no card param,
+   * so card progression can't leak into ladder/duel PvP. Pass SaveData.cardInv values with resolved unitType.
    */
-  pveUpgrades?: Record<string, number>;
+  cardInstances?: EngineCardInstance[];
   /**
-   * Unit progression levels (SaveData.unitLevels, unitId→1..9), read ONLY on the
-   * PvE-shaped paths (campaign / siege) — same hard wall as `equipment` /
-   * `pveUpgrades`: `buildPvpBlueprints()` has no level param, so progression power
-   * can't leak into ladder/duel PvP. Pass save.unitLevels when launching campaign/siege.
+   * Equipment instance inventory (SaveData.equipmentInv), read ONLY on the PvE-shaped paths (campaign / siege).
+   * Used by applyEquipment to resolve gear slot instance IDs within each CardInstance.
+   * Same hard wall: buildPvpBlueprints() has no equipment param → PvP equipment contamination is impossible at compile time.
    */
-  unitLevels?: Record<string, number>;
-  /**
-   * Equipment loadout + instance inventory (SaveData.gear + equipmentInv),
-   * read ONLY on the PvE-shaped paths (campaign / siege) — same hard wall as
-   * `pveUpgrades` (EQUIPMENT_DESIGN §9 / L1): `buildPvpBlueprints()` has no
-   * equipment param, so equipment power can't leak into ladder/duel PvP.
-   * Structurally compatible with `@nw/shared` (SaveData.gear/equipmentInv) — the
-   * engine takes its own dependency-free shape; callers pass the save fields directly.
-   */
-  equipment?: EngineEquipmentInput;
+  equipmentInv?: EngineEquipInv;
   /**
    * PvP/netplay deck loadouts (PVP_LOADOUT_DESIGN §6.2).
    * When provided, each player draws only from their specified card subset

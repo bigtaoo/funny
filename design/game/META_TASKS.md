@@ -348,6 +348,19 @@
 
 ---
 
+## CC — 角色卡实例系统（Hero Roster）（CHARACTER_CARDS_DESIGN.md）
+
+> 拍板 2026-07-01：角色卡为独立实例（Hero Roster），6 张卡（陶 3 + Anna 3），等级 1–9 XP 曲线（cost = 5^n），装备槽移入卡实例，SaveData v4，PvP 硬墙不动。详见 `CHARACTER_CARDS_DESIGN.md`。
+>
+> **阶段依赖**：CC-1（类型层）← CC-2（metaserver CRUD）← CC-3（UI + 引擎接线）← CC-4（SLG 兵力）。
+
+- [x] **CC-1 共享类型层** ✅（2026-07-01）：**`@nw/shared`** 新增 `cards.ts`——`Faction`/`CardDef`/`CARD_DEFS`（6 张卡：lichuang/chenshou/suyuan + max/lena/mara）/`SkillGrowthTable`/`LEVEL_CUMULATIVE_XP`（cost=5^n，9级累计≈488k）/`feedXp(card)`/`cardPower(card,equipmentInv)`/`selectBestCard(unitType,cardInv,equipmentInv?)`；`types.ts` 删 `unitLevels`/`gear: GearLoadout`、加 `CardInstance`（id/defId/level/xp/gear/locked）+ `cardInv: Record<string,CardInstance>`（上限150）、`SAVE_VERSION` 3→4、`makeNewSave` 更新。**`@nw/engine`** `equipment.ts` 扩 `PLAYER_EQUIPPABLE_UNITS` 到 6 种（加 Max/Lena/Mara）+ 新增 `EngineCardInstance`/`EngineEquipInv` 本地类型（零 shared 依赖约束）+ `applyEquipment(bp, cardInstance, inv)` 签名改为按单卡注入；`pveUpgrades.ts` 新签名 `buildCampaignBlueprints(cardInstances[],equipmentInv?)`/`buildSiegeBlueprints(cardInstances[],equipmentInv?,siegeAcademy?)`；`progression.ts` `PROGRESSABLE_UNITS` 扩到 6；`types.ts` `GameConfig` 删 `equipment/unitLevels` 加 `cardInstances?/equipmentInv?`；`GameEngine.ts` 蓝图构建切换新签名；`engine/tsconfig.json` 排除 `__tests__`（库包，测试单独跑）。新增 `shared/test/cards.test.ts`（vitest，CARD_DEFS/XP曲线/feedXp/cardPower/selectBestCard 23 用例）+ `pvp_hardwall.test.ts` 补 CC-1 签名守卫用例。验收：`tsc -b shared engine --noEmit` 零新增错误；`cards.test.ts` vitest 全绿。
+- [ ] **CC-2 metaserver CRUD**：`POST /cards/feed`（喂卡升级，乐观锁，校验来源卡 faction/locked）；`POST /cards/equip`（卡实例装备穿卸，endpoint 参数改 cardInstanceId）；`POST /cards/lock`；`GET /save` 含 cardInv（SaveData v4 迁移：v3→v4 clearCardInv + unitLevels→无，cardInventory 标 deprecated）。openapi.yml 更新。
+- [ ] **CC-3 客户端养成 UI + 引擎接线**：Hero Roster 卡墙；卡详情/装备面板；喂卡动画；LevelPrepScene 按 `selectBestCard` 自动选卡；`createAppCore.goCampaign` 传 `cardInstances+equipmentInv`；pvp hardwall 不动。
+- [ ] **CC-4 SLG 兵力**：worldsvc `PlayerWorldDoc.cardState`（currentTroops/injuredUntil）；队伍编辑器兵力分配；受伤 5min 锁队；`troopCap(card)` 按公式。
+
+---
+
 ## i18n（贯穿，随场景落地）
 
 - [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`auth.*`（登录界面，SA）/ `meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；`auth.*` **已随 SA-3 落地**（zh/en/de 全翻）；其余随后续场景。
