@@ -200,3 +200,12 @@
   - **P3（proto，可选/后置）**：`gateway`/`gameserver` 的 protobufjs 运行时解析 + 手写字段映射存在同类问题;评估是否一并 codegen（ts-proto 等）。**默认后置**，先做 REST。✅ 已完成（2026-06-30）：gateway + gameserver 各新增 `buf.gen.yaml` + `scripts/gen-proto.mjs`，生成产物入库 `src/generated/transport.ts`；`proto.ts` / `proto/transport.ts` 去 protobufjs，改从入库产物 import；`protobufjs` 运行时依赖已移除；CI 加 proto staleness check（`npm run proto:gen` + `git diff --exit-code`）。
 - **实时赛季号下行（§20.8）**：`createAppCore.ts` 的 `CURRENT_SEASON = 1` 硬编码已替换为动态调用 `worldApi.getActiveSeason()`（失败则 fallback 到 `FALLBACK_SEASON = 1`）；新增 worldsvc `GET /world/active-season` 公开端点 + worldsvc `getActiveSeasonNo()`。✅ 已完成（2026-06-30）。
 - **影响**：[`game/SERVER_API.md`](game/SERVER_API.md) §1.2「契约单一来源 + 双端 codegen」一节须更新（现描述把 glue 等同于 codegen，实现后改为「服务端构建期生成入库」）；新增 `server/contracts/scripts/gen-openapi-server.mjs` + `gen-openapi-world.mjs`；gateway/gameserver 新增 `buf.gen.yaml` + `scripts/gen-proto.mjs`；CI 加三组 staleness check；[`claudedocs/server.md`](../claudedocs/server.md) 服务端构建链补一笔。
+
+## ADR-024 SLG 世界地图配色 = 纸底地形 + motif 载类型；归属只用彩色描边/wash — Accepted — 2026-07-01
+
+- **决策**（用户拍板）：世界地图渲染把两个正交信号彻底分层，止住「彩色方块拼贴」的粗糙观感。
+  1. **地形/资源 = 安静的近纸底填充**。资源「类型」由手绘 motif（`drawResMotif`，L1）承载，**不再靠饱和背景色**。`RES_COLORS` 重度去饱和为纸邻近的暖/中性色，只在 L2/L3 概览时轻声提示 biome 分区，且刻意避开红/蓝/绿以免冒充归属色。
+  2. **归属 = 唯一的强色**，以半透明 wash + 彩色描边/角标叠加（`ownerTint` + `drawTileL1/L2`），沿用「我红敌蓝、盟友绿」。L3 概览仍让归属色主导整格（态势可读性）。
+- **为什么**：旧实现里颜色同时表达「地形类型」和「归属」，且 `RES_COLORS` 的绿/蓝直接撞 ally 绿 / enemy 蓝 —— 一块资源地看起来像别人的地盘；每格 0.85 实心填充 + 硬边框 = 全图花花绿绿，与手绘笔记本纸感相反。
+- **不动的铁律**：ADR-003 我蓝敌红 / [`product/art-direction.md`](product/art-direction.md) §3.2 归属色未改；本条只改地形/资源底色与「归属改画描边而非整格填充」的呈现方式。
+- **影响**：仅客户端 `client/src/scenes/WorldMapScene.ts`（`TERRAIN_COLORS`/`RES_COLORS`/新增 `ownerTint`+`terrainFill`/`drawTileL1`/`drawTileL2`）。无服务端/契约改动。
