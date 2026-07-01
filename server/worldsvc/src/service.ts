@@ -65,6 +65,13 @@ import {
   marchInterpPos,
   type VisionSource,
   SIEGE_TEAM_CAP,
+  CARD_TEAM_MAX_SIZE,
+  BASE_TROOP_STOCK_INITIAL,
+  CARD_RECOVER_COIN_COST,
+  CARD_TROOP_PAPER_COST,
+  CARD_TROOP_GRAPHITE_COST,
+  CARD_TROOP_METAL_COST,
+  CARD_TROOP_REFUND_RATE,
   SECT_LEADER_PENALTY_RATE,
   RELOCATE_COST,
   SLG_SHOP_ITEMS,
@@ -91,11 +98,11 @@ import {
   type SiegeResolution,
   type ProceduralTile,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseConfig, scaleArmyHp } from './siegeEngine';
-import type { GarrisonEntry, EngineEquipmentInput } from '@nw/engine';
+import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseConfig, scaleArmyHp, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from './siegeEngine';
+import type { GarrisonEntry, EngineEquipmentInput, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ENGINE_VERSION } from '@nw/engine';
 import { refreshFamilyProsperity, effectiveProsperity } from './prosperity';
-import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry, BuildQueueEntry, DefenseConfig, ArmyEntry, TeamTemplate } from './db';
+import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry, BuildQueueEntry, DefenseConfig, ArmyEntry, TeamTemplate, CardSLGState } from './db';
 import type { WorldRedis } from './redis';
 import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient';
 import { nullWorldMetaClient, type WorldMetaClient, type PlayerProfile } from './metaClient';
@@ -742,6 +749,7 @@ export class WorldService {
       lastTickAt: t,
       mainBaseTile: tid,
       buildings,
+      baseTroopStock: BASE_TROOP_STOCK_INITIAL,
       ...(familyId ? { familyId } : {}),
       rev: 0,
     };
@@ -1317,9 +1325,17 @@ export class WorldService {
     const inOwnNation = !!nation?.ownerId && nation.ownerId === defenderId;
     const effGarrison = nationDefenseStrength(target.garrison ?? 0, inOwnNation);
 
+    // E8/CC-3: fetch attacker's progression snapshot early (needed for card army resolution + blueprint injection).
+    const attackerSave = await this.meta.getSaveFields(m.ownerId).catch(() => null);
+
     // Attacker formation (G3-2c): marched with a team → use the real formation snapshot (m.army); otherwise synthesize from flat troop count as fallback (v1 bridge).
+    // CC-3: when army entries carry cardInstanceId, resolve to engine GarrisonEntry[] via cardState.currentTroops + CARD_DEFS.unitType.
+    const rawArmy = m.army ?? [];
+    const hasCardArmy = rawArmy.some((e) => !!e.cardInstanceId);
     const attackerArmy: GarrisonEntry[] =
-      m.army && m.army.length > 0 ? (m.army as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker');
+      hasCardArmy
+        ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
+        : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
     const defenderConfig = this.buildDefenderConfig(target, effGarrison, inOwnNation);
     const tileLevel = target.level ?? 1;
     const seed = siegeSeedFromId(m._id);
@@ -1356,18 +1372,21 @@ export class WorldService {
     // Decisive siege (G3-2b, §16): worldsvc directly imports `@nw/engine` headless to run "both-sides pre-formation
     // deterministic auto-battle" for authoritative win/loss + true surviving HP, replacing the cheap linear formula.
     // Bad formation / engine error → fall back to cheap resolveSiege; a single siege must never stall a march.
-    // E8: fetch the attacker's progression snapshot and inject into buildSiegeBlueprints (failure degrades to no equipment, does not block the march).
-    const attackerSave = await this.meta.getSaveFields(m.ownerId).catch(() => null);
-    const siegeEquip: EngineEquipmentInput | undefined =
-      attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
     let res: SiegeResolution;
     let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig: effectiveDefenderConfig, tileLevel };
     try {
+      // CC-3: extract EngineCardInstance[] from card army for blueprint injection (level + gear).
+      let cardInstances: EngineCardInstance[] | undefined;
+      let cardEquipInv: EngineEquipInv | undefined;
+      if (hasCardArmy && attackerSave) {
+        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv, attackerSave.equipmentInv);
+        cardInstances = ci;
+        cardEquipInv = engEquipInv;
+      }
       res = runSiegeBattle({
         attackerArmy, defenderConfig: effectiveDefenderConfig, tileLevel, seed,
-        pveUpgrades: attackerSave?.pveUpgrades,
-        unitLevels: attackerSave?.unitLevels,
-        equipment: siegeEquip,
+        cardInstances,
+        equipmentInv: cardEquipInv,
         siegeAcademy,
       });
     } catch (err) {
@@ -1573,6 +1592,22 @@ export class WorldService {
     }
 
     const siege = await this.recordSiege(m, defenderId, res.outcome, t, replay);
+
+    // CC-3: write post-battle cardState (currentTroops + injuredUntil) for attacker card army.
+    const attackArmy = m.army ?? [];
+    if (attackArmy.some((e) => !!e.cardInstanceId)) {
+      const cardUpdates = computeCardStateUpdates(attackArmy, pw.cardState ?? {}, res.attackerSurvivors, t);
+      const cardStateSet: Record<string, unknown> = {};
+      for (const [id, update] of Object.entries(cardUpdates)) {
+        cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
+        if (update.injuredUntil != null) cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil;
+        else cardStateSet[`cardState.${id}.injuredUntil`] = null; // clear stale injury
+      }
+      if (Object.keys(cardStateSet).length > 0) {
+        await cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
+      }
+    }
+
     // §17.4 activity increment: siege (attacker / defender) → both sides' families +1 (landing point for decisive battles).
     const atkMember = await cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
     const defMember = await cols.familyMembers.findOne({ _id: `${m.worldId}:${defenderId}` });
@@ -2435,16 +2470,27 @@ export class WorldService {
   }
 
   /**
-   * Overwrite the player's attack formation templates (editor save, §16.2). Validation: ≤ SIEGE_TEAM_CAP teams, unique ids, each team's army validated by the engine levelSchema (validateAttackerArmy). Full-set overwrite (frontend sends the complete list).
+   * Overwrite the player's attack formation templates (editor save, §16.2).
+   * CC-3: validates cardInstanceId uniqueness across all teams, max CARD_TEAM_MAX_SIZE slots per team, and injured card check.
+   * Card removal: when a card's teamId disappears from the new teams, clear its currentTroops and refund 80% training resources.
+   * Full-set overwrite (frontend sends the complete list).
    */
   async setTeams(worldId: string, accountId: string, teams: TeamTemplate[]): Promise<void> {
     if (!Array.isArray(teams)) throw new SlgError('BAD_REQUEST', 'teams must be an array');
     if (teams.length > SIEGE_TEAM_CAP) throw new SlgError('BAD_REQUEST', `Team count exceeds the cap of ${SIEGE_TEAM_CAP}`);
-    const ids = new Set<string>();
+    const teamIds = new Set<string>();
+    const cardIds = new Set<string>();
     for (const team of teams) {
       if (!team || typeof team.id !== 'string' || !team.id) throw new SlgError('BAD_REQUEST', 'Team id is invalid');
-      if (ids.has(team.id)) throw new SlgError('BAD_REQUEST', `Duplicate team id: ${team.id}`);
-      ids.add(team.id);
+      if (teamIds.has(team.id)) throw new SlgError('BAD_REQUEST', `Duplicate team id: ${team.id}`);
+      teamIds.add(team.id);
+      if (team.army.length > CARD_TEAM_MAX_SIZE) throw new SlgError('BAD_REQUEST', `Team ${team.id} exceeds max size of ${CARD_TEAM_MAX_SIZE}`);
+      for (const entry of team.army) {
+        if (entry.cardInstanceId) {
+          if (cardIds.has(entry.cardInstanceId)) throw new SlgError('BAD_REQUEST', `Card ${entry.cardInstanceId} assigned to multiple teams`);
+          cardIds.add(entry.cardInstanceId);
+        }
+      }
       try {
         validateAttackerArmy(team.army);
       } catch (err) {
@@ -2454,7 +2500,114 @@ export class WorldService {
     const pwId = playerWorldId(worldId, accountId);
     const pw = await this.deps.cols.playerWorld.findOne({ _id: pwId });
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
-    await this.deps.cols.playerWorld.updateOne({ _id: pwId }, { $set: { teams }, $inc: { rev: 1 } });
+
+    const now = this.deps.now();
+    const cardState = pw.cardState ?? {};
+    // Injured card check: a card with injuredUntil > now cannot be assigned to a team.
+    for (const id of cardIds) {
+      const cs = cardState[id];
+      if (cs?.injuredUntil && cs.injuredUntil > now) {
+        throw new SlgError('BAD_REQUEST', `Card ${id} is injured and cannot be assigned until ${cs.injuredUntil}`);
+      }
+    }
+
+    // Detect cards removed from all teams compared to current teams (their teamId no longer appears in the new list).
+    const prevCardTeams: Record<string, string> = {};
+    for (const cs of Object.entries(cardState)) {
+      if (cs[1].teamId) prevCardTeams[cs[0]] = cs[1].teamId;
+    }
+    const removedCards = Object.keys(prevCardTeams).filter((id) => !cardIds.has(id));
+
+    // Build cardState patch: update teamId for all assigned cards; clear currentTroops + teamId for removed cards.
+    const cardStateSet: Record<string, unknown> = {};
+    for (const team of teams) {
+      for (const entry of team.army) {
+        if (entry.cardInstanceId) {
+          cardStateSet[`cardState.${entry.cardInstanceId}.teamId`] = team.id;
+        }
+      }
+    }
+    let paperRefund = 0;
+    let graphiteRefund = 0;
+    let metalRefund = 0;
+    for (const id of removedCards) {
+      const troops = cardState[id]?.currentTroops ?? 0;
+      if (troops > 0) {
+        paperRefund += Math.floor(troops * CARD_TROOP_PAPER_COST * CARD_TROOP_REFUND_RATE);
+        graphiteRefund += Math.floor(troops * CARD_TROOP_GRAPHITE_COST * CARD_TROOP_REFUND_RATE);
+        metalRefund += Math.floor(troops * CARD_TROOP_METAL_COST * CARD_TROOP_REFUND_RATE);
+      }
+      cardStateSet[`cardState.${id}.currentTroops`] = 0;
+      cardStateSet[`cardState.${id}.teamId`] = null;
+    }
+
+    const update: Record<string, unknown> = { $set: { teams, ...cardStateSet }, $inc: { rev: 1 } };
+    if (paperRefund > 0 || graphiteRefund > 0 || metalRefund > 0) {
+      (update as Record<string, Record<string, unknown>>)['$inc']!['resources.paper'] = paperRefund;
+      (update as Record<string, Record<string, unknown>>)['$inc']!['resources.graphite'] = graphiteRefund;
+      (update as Record<string, Record<string, unknown>>)['$inc']!['resources.metal'] = metalRefund;
+    }
+    await this.deps.cols.playerWorld.updateOne({ _id: pwId }, update);
+  }
+
+  /**
+   * Distribute troops from baseTroopStock to card slots (CC-3, CHARACTER_CARDS_DESIGN §6.3).
+   * allocations: { [cardInstanceId]: troopsToAdd }. Each card must have a teamId (be in a team).
+   * Deducts total from baseTroopStock; updates cardState[id].currentTroops.
+   */
+  async distributeTroops(worldId: string, accountId: string, allocations: Record<string, number>): Promise<void> {
+    const { cols, now } = this.deps;
+    const pwId = playerWorldId(worldId, accountId);
+    const pw = await cols.playerWorld.findOne({ _id: pwId });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
+
+    const cardState = pw.cardState ?? {};
+    const stock = pw.baseTroopStock ?? 0;
+    let totalCost = 0;
+    const cardStateSet: Record<string, unknown> = {};
+
+    for (const [id, amount] of Object.entries(allocations)) {
+      if (typeof amount !== 'number' || amount < 0 || !Number.isInteger(amount)) {
+        throw new SlgError('BAD_REQUEST', `Invalid troop count for card ${id}`);
+      }
+      if (amount === 0) continue;
+      const cs = cardState[id];
+      if (!cs?.teamId) throw new SlgError('BAD_REQUEST', `Card ${id} is not assigned to a team`);
+      totalCost += amount;
+      cardStateSet[`cardState.${id}.currentTroops`] = (cs.currentTroops ?? 0) + amount;
+    }
+
+    if (totalCost === 0) return;
+    if (totalCost > stock) throw new SlgError('NO_TROOPS', `Not enough troop stock (have ${stock}, need ${totalCost})`);
+
+    await cols.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: cardStateSet, $inc: { baseTroopStock: -totalCost, rev: 1 } },
+    );
+    void now; // suppress unused warning
+  }
+
+  /**
+   * Recover an injured card by spending CARD_RECOVER_COIN_COST coins (CC-3, CHARACTER_CARDS_DESIGN §7.2).
+   * Clears injuredUntil. Throws CARD_NOT_INJURED if card is not currently injured.
+   */
+  async recoverCard(worldId: string, accountId: string, cardInstanceId: string): Promise<void> {
+    const { cols, now } = this.deps;
+    const pwId = playerWorldId(worldId, accountId);
+    const pw = await cols.playerWorld.findOne({ _id: pwId });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
+
+    const cs = pw.cardState?.[cardInstanceId];
+    const nowMs = now();
+    if (!cs?.injuredUntil || cs.injuredUntil <= nowMs) throw new SlgError('BAD_REQUEST', `Card ${cardInstanceId} is not injured`);
+
+    // Deduct coins via commercial client (spend throws INSUFFICIENT_FUNDS if not enough).
+    await this.commercial.spend(accountId, CARD_RECOVER_COIN_COST, `recover:${cardInstanceId}`);
+
+    await cols.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { [`cardState.${cardInstanceId}.injuredUntil`]: null }, $inc: { rev: 1 } },
+    );
   }
 
   /**
