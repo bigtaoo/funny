@@ -1,5 +1,5 @@
 // worldsvc dedicated database factory (S8-0, SLG_DESIGN §14.3). Database name notebook_wars_world, physically isolated from meta/commercial/admin.
-// 8 collections: worlds / tiles / playerWorld / marches / families / familyMembers / auctions / sieges.
+// 8 collections: worlds / tiles / playerWorld / marches / auctions / sieges / sects / nations. Family identity/roster lives in socialsvc (see db.ts note above SectDoc).
 // Write pattern reuses single-document atomics + rev optimistic locking (META_DESIGN §6.3). Sparse storage: only occupied/modified tiles are persisted;
 // neutral tiles are computed on-the-fly by shared proceduralTile() and not stored (key to §14.2 scale).
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
@@ -7,7 +7,6 @@ import type {
   TileType,
   ResourceType,
   MarchKind,
-  FamilyRole,
   WorldStatus,
   AuctionStatus,
   SiegeOutcome,
@@ -148,25 +147,17 @@ export interface MarchDoc {
   rev: number;
 }
 
-export interface FamilyDoc {
-  _id: string; // familyId
-  worldId: string;
-  name: string;
-  tag: string;
-  leaderId: string;
-  memberCount: number;
-  territoryCount: number;
-  sectId?: string; // owning sect (S8-4b; absent = independent family)
-  /** Family prosperity (G2/§17.4, computed by familyProsperity, lazily decays on read). Defaults to 0 (lazy creation for legacy families). */
-  prosperity?: number;
-  /** Prosperity decay anchor ms (lazy decay applied on read as now minus this value). */
-  prosperityUpdatedAt?: number;
-  /** Cumulative season activity points (new tile captures + battle count; server-authoritative $inc, no client write path). Defaults to 0. */
-  activity?: number;
-  rev: number;
-}
+/**
+ * NOTE (P4 follow-up, SLG_DESIGN §8.2): worldsvc used to keep its own `families`/`familyMembers` mirror
+ * (world-scoped FamilyDoc/FamilyMemberDoc). That mirror's writer (worldsvc's familyService.ts) was deleted
+ * in the P4 family→socialsvc migration and never replaced — the collections were 100% dead (never populated),
+ * silently breaking sect create/join/message and family-vision-sharing for every real player. Removed here;
+ * family identity/roster now comes from socialsvc (WorldSocialsvcClient), per-world membership comes from
+ * PlayerWorldDoc.familyId (already mirrored once at joinWorld, SS7), and sectId is mirrored onto socialsvc's
+ * FamilyDoc (worldsvc remains the authoritative writer via WorldSocialsvcClient.setSect).
+ */
 
-/** Sect (S8-4b, §2.1/§8.2): a faction organisation composed of families within a region. Members = families whose sectId points to this sect. */
+/** Sect (S8-4b, §2.1/§8.2): a faction organisation composed of families within a region. Members = families whose sectId (mirrored on socialsvc's FamilyDoc) points to this sect. */
 export interface SectDoc {
   _id: string; // sectId = `s:{worldId}:{TAG}`
   worldId: string;
@@ -180,15 +171,6 @@ export interface SectDoc {
   /** Vote to remove the sect leader (§8.2, requires >2/3 family-leader agreement + nomination). Cleared after a leadership change or resolution. */
   removalVote?: { nomineeFamilyId: string; voterFamilyIds: string[] };
   rev: number;
-}
-
-export interface FamilyMemberDoc {
-  _id: string; // `{worldId}:{accountId}`
-  worldId: string;
-  accountId: string;
-  familyId: string;
-  role: FamilyRole;
-  joinedAt: number;
 }
 
 export interface AuctionDoc {
@@ -348,8 +330,6 @@ export interface WorldCollections {
   tiles: Collection<TileDoc>;
   playerWorld: Collection<PlayerWorldDoc>;
   marches: Collection<MarchDoc>;
-  families: Collection<FamilyDoc>;
-  familyMembers: Collection<FamilyMemberDoc>;
   familyMessages: Collection<FamilyMessageDoc>;
   sects: Collection<SectDoc>;
   sectMessages: Collection<SectMessageDoc>;
@@ -393,8 +373,6 @@ export async function createWorldMongo(
     tiles: db.collection<TileDoc>('tiles'),
     playerWorld: db.collection<PlayerWorldDoc>('playerWorld'),
     marches: db.collection<MarchDoc>('marches'),
-    families: db.collection<FamilyDoc>('families'),
-    familyMembers: db.collection<FamilyMemberDoc>('familyMembers'),
     familyMessages: db.collection<FamilyMessageDoc>('familyMessages'),
     sects: db.collection<SectDoc>('sects'),
     sectMessages: db.collection<SectMessageDoc>('sectMessages'),
@@ -419,16 +397,12 @@ export async function createWorldMongo(
     await collections.marches.createIndex({ worldId: 1, ownerId: 1 });
     // On-time scan fallback (primary scheduling uses Redis ZSET, S8-2; degrades to Mongo polling without Redis).
     await collections.marches.createIndex({ arriveAt: 1 });
-    await collections.families.createIndex({ worldId: 1, tag: 1 }, { unique: true });
-    await collections.families.createIndex({ worldId: 1 });
-    await collections.familyMembers.createIndex({ familyId: 1 });
     await collections.familyMessages.createIndex({ familyId: 1, ts: -1 });
     // TTL: auto-delete after 7 days (ts is a BSON Date field; Mongo TTL only works on Date).
     await collections.familyMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
-    // Sect (S8-4b): TAG unique within worldId; listed by worldId; member families queried via families.sectId.
+    // Sect (S8-4b): TAG unique within worldId; listed by worldId; member families queried via socialsvc's family.sectId mirror.
     await collections.sects.createIndex({ worldId: 1, tag: 1 }, { unique: true });
     await collections.sects.createIndex({ worldId: 1 });
-    await collections.families.createIndex({ sectId: 1 });
     await collections.sectMessages.createIndex({ sectId: 1, ts: -1 });
     await collections.sectMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
     // Nation/world public channel (B7): paginated by worldId + time descending; same 7-day TTL as family/sect channels.
@@ -452,8 +426,6 @@ export async function createWorldMongo(
     await collections.seasonResults.createIndex({ worldId: 1, season: -1 });
     // G6 multi-shard allocation (§20): retrieve this-season allocation table by season (join routing looks up familyShard).
     await collections.shardAllocations.createIndex({ season: 1 });
-    // Sect founding threshold / G6 allocation query by prosperity (§17.2).
-    await collections.families.createIndex({ worldId: 1, prosperity: -1 });
   }
 
   return {

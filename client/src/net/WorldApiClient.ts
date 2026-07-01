@@ -56,6 +56,10 @@ export interface FamilyView {
   leaderId: string;
   memberCount: number;
   prosperity: number;
+  /** Territory tile count (worldsvc-owned mirror, SLG_DESIGN §8.2/§17.4). */
+  territoryCount?: number;
+  /** Sect the family currently belongs to (worldsvc-owned mirror; absent = independent family). */
+  sectId?: string;
   announcement?: string;
 }
 export interface FamilyDetailView extends FamilyView {

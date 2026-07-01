@@ -1,8 +1,10 @@
 // Sect business layer (S8-4b, SLG_DESIGN §2.1/§8.2).
 // A sect is a faction organization within a world region, composed of families (not individuals);
-// membership is at the family level, indicated by family.sectId pointing to the sect.
+// membership is at the family level, indicated by socialsvc's family.sectId mirror pointing to the sect
+// (worldsvc is the authoritative writer of that mirror — see WorldSocialsvcClient.setSect and the P4-follow-up
+// note above SectDoc in db.ts; family identity/roster/leader come from socialsvc, not a local mirror).
 // The sect leader is the leader account of the leaderFamily.
-// Most operations require the requester to be a family leader (familyMembers.role==='leader'),
+// Most operations require the requester to be a family leader (socialsvc FamilyMembershipView.role==='leader'),
 // acting on behalf of the entire family when joining/leaving a sect.
 //   - Found: costs SECT_CREATE_COST coins (via commercial); the founding family becomes the leader family.
 //   - Join/leave: performed by a family leader; the leader family cannot leave directly (must dissolve or go through a leadership vote).
@@ -14,7 +16,6 @@
 //     (gatewayClient O(n) direct push is not suitable for ≤900 members, see SLG_DESIGN §9.3).
 import {
   sectId as makeSectId,
-  familyMemberId,
   SECT_FAMILY_CAP,
   SECT_CREATE_COST,
   SECT_ALLY_CAP,
@@ -23,13 +24,13 @@ import {
   SECT_FOUND_PROSPERITY_MIN,
   SlgError,
 } from '@nw/shared';
-import type { WorldCollections, SectDoc, FamilyDoc, SectMessageDoc } from './db';
+import type { WorldCollections, SectDoc, SectMessageDoc } from './db';
 import { refreshFamilyProsperity } from './prosperity';
 import type { WorldCommercialClient } from './commercialClient';
 import { nullWorldCommercialClient } from './commercialClient';
 import type { WorldGatewayClient } from './gatewayClient';
 import { nullWorldGatewayClient } from './gatewayClient';
-import { nullWorldSocialsvcClient, type WorldSocialsvcClient } from './socialsvcClient';
+import { nullWorldSocialsvcClient, type WorldSocialsvcClient, type FamilyMembership } from './socialsvcClient';
 import type { WorldMetaClient } from './metaClient';
 import { nullWorldMetaClient } from './metaClient';
 
@@ -73,7 +74,7 @@ export interface SectServiceDeps {
   commercial?: WorldCommercialClient;
   /** Real-time channel fan-out (S8-4b); default = no gateway, REST polling only. */
   gateway?: WorldGatewayClient;
-  /** socialsvc client (sect channel push delegation, SOCIAL_SVC_DESIGN §5); default = falls back to direct gateway push. */
+  /** socialsvc client: family identity/roster + sectId mirror writes (SOCIAL_SVC_DESIGN §5 push delegation, P4-follow-up family lookups); default = no family data available. */
   socialsvc?: WorldSocialsvcClient;
   /** meta client for publicId resolution in chat messages; default = fromPublicId left empty. */
   meta?: WorldMetaClient;
@@ -109,14 +110,12 @@ export class SectService {
     this.meta = deps.meta ?? nullWorldMetaClient;
   }
 
-  /** Fetches the requester's family (requires them to be the family leader); throws a permission/not-in-family error otherwise. */
-  private async requireFamilyLeader(worldId: string, accountId: string): Promise<FamilyDoc> {
-    const mem = await this.deps.cols.familyMembers.findOne({ _id: familyMemberId(worldId, accountId) });
+  /** Fetches the requester's family membership from socialsvc (requires them to be the family leader); throws a permission/not-in-family error otherwise. */
+  private async requireFamilyLeader(accountId: string): Promise<FamilyMembership> {
+    const mem = await this.socialsvc.getMember(accountId);
     if (!mem) throw new SlgError('NOT_IN_FAMILY');
     if (mem.role !== 'leader') throw new SlgError('NO_PERMISSION', 'Only the family leader can act on behalf of the family for sect operations');
-    const fam = await this.deps.cols.families.findOne({ _id: mem.familyId });
-    if (!fam) throw new SlgError('NOT_FOUND', 'Family not found');
-    return fam;
+    return mem;
   }
 
   /** Lists all sects in the world (sorted by member family count descending, capped at 50). */
@@ -129,18 +128,18 @@ export class SectService {
     return docs.map(docToView);
   }
 
-  /** Sect detail (includes member family list). */
+  /** Sect detail (includes member family list, sourced from socialsvc's family.sectId mirror). */
   async getSect(sectId: string): Promise<SectDetailView | null> {
     const doc = await this.deps.cols.sects.findOne({ _id: sectId });
     if (!doc) return null;
-    const fams = await this.deps.cols.families.find({ sectId }).toArray();
+    const fams = await this.socialsvc.getFamiliesBySect(sectId);
     const memberFamilies: SectMemberFamilyView[] = fams.map((f) => ({
-      familyId: f._id,
+      familyId: f.familyId,
       name: f.name,
       tag: f.tag,
       leaderId: f.leaderId,
       memberCount: f.memberCount,
-      territoryCount: f.territoryCount,
+      territoryCount: f.territoryCount ?? 0,
     }));
     const view: SectDetailView = { ...docToView(doc), memberFamilies };
     if (doc.removalVote) {
@@ -156,8 +155,9 @@ export class SectService {
   /** Create a sect: requester must be a family leader and their family must not already belong to a sect; deducts SECT_CREATE_COST coins; TAG must be unique within the world. */
   async createSect(worldId: string, requesterId: string, name: string, tag: string): Promise<SectDetailView> {
     const { cols } = this.deps;
-    const fam = await this.requireFamilyLeader(worldId, requesterId);
-    if (fam.sectId) throw new SlgError('ALREADY_IN_SECT');
+    const fam = await this.requireFamilyLeader(requesterId);
+    const [famSummary] = await this.socialsvc.getFamiliesByIds([fam.familyId]);
+    if (famSummary?.sectId) throw new SlgError('ALREADY_IN_SECT');
 
     const tagUpper = tag.toUpperCase();
     if (!/^[A-Z0-9]{2,5}$/.test(tagUpper)) throw new SlgError('BAD_REQUEST', 'Tag must be 2–5 uppercase alphanumeric characters');
@@ -165,7 +165,7 @@ export class SectService {
 
     // Moderate prosperity threshold for founding a sect (G2/§17.4): refresh the founding family's prosperity first
     // (freshly written, so no decay needed); reject if insufficient.
-    const prosperity = await refreshFamilyProsperity(cols, worldId, fam._id, this.deps.now());
+    const prosperity = await refreshFamilyProsperity(cols, this.socialsvc, worldId, fam.familyId);
     if (prosperity < SECT_FOUND_PROSPERITY_MIN) {
       throw new SlgError('PROSPERITY_TOO_LOW', `Family prosperity is too low (requires ≥ ${SECT_FOUND_PROSPERITY_MIN}, current ${prosperity})`);
     }
@@ -181,7 +181,7 @@ export class SectService {
       worldId,
       name,
       tag: tagUpper,
-      leaderFamilyId: fam._id,
+      leaderFamilyId: fam.familyId,
       leaderId: requesterId,
       memberFamilyCount: 1,
       allySectIds: [],
@@ -198,19 +198,20 @@ export class SectService {
       }
       throw e;
     }
-    await cols.families.updateOne({ _id: fam._id }, { $set: { sectId: sid } });
+    await this.socialsvc.setSect(fam.familyId, sid);
 
     return { ...docToView(doc), memberFamilies: [{
-      familyId: fam._id, name: fam.name, tag: fam.tag, leaderId: fam.leaderId,
-      memberCount: fam.memberCount, territoryCount: fam.territoryCount,
+      familyId: fam.familyId, name: fam.name, tag: fam.tag, leaderId: fam.leaderId,
+      memberCount: fam.memberCount, territoryCount: 0,
     }] };
   }
 
   /** Family joins a sect (family leader operation; capped at SECT_FAMILY_CAP families; family must not already be in a sect). */
   async joinSect(worldId: string, requesterId: string, sectId: string): Promise<void> {
     const { cols } = this.deps;
-    const fam = await this.requireFamilyLeader(worldId, requesterId);
-    if (fam.sectId) throw new SlgError('ALREADY_IN_SECT');
+    const fam = await this.requireFamilyLeader(requesterId);
+    const [famSummary] = await this.socialsvc.getFamiliesByIds([fam.familyId]);
+    if (famSummary?.sectId) throw new SlgError('ALREADY_IN_SECT');
 
     // Atomic $inc with capacity guard.
     const res = await cols.sects.findOneAndUpdate(
@@ -223,33 +224,36 @@ export class SectService {
       if (!exists) throw new SlgError('NOT_FOUND', 'Sect not found');
       throw new SlgError('SECT_FULL');
     }
-    await cols.families.updateOne({ _id: fam._id }, { $set: { sectId } });
+    await this.socialsvc.setSect(fam.familyId, sectId);
   }
 
   /** Family leaves a sect (family leader operation). The leader family cannot leave directly — must dissolve the sect or go through a leadership vote first. */
   async leaveSect(worldId: string, requesterId: string): Promise<void> {
     const { cols } = this.deps;
-    const fam = await this.requireFamilyLeader(worldId, requesterId);
-    if (!fam.sectId) throw new SlgError('NOT_IN_SECT');
-    const sect = await cols.sects.findOne({ _id: fam.sectId });
-    if (sect && sect.leaderFamilyId === fam._id) {
+    const fam = await this.requireFamilyLeader(requesterId);
+    const [famSummary] = await this.socialsvc.getFamiliesByIds([fam.familyId]);
+    if (!famSummary?.sectId) throw new SlgError('NOT_IN_SECT');
+    const sect = await cols.sects.findOne({ _id: famSummary.sectId });
+    if (sect && sect.leaderFamilyId === fam.familyId) {
       throw new SlgError('BAD_REQUEST', 'The leader family must dissolve the sect or transfer leadership first');
     }
-    await cols.families.updateOne({ _id: fam._id }, { $unset: { sectId: '' } });
-    await cols.sects.updateOne({ _id: fam.sectId }, { $inc: { memberFamilyCount: -1 } });
+    await this.socialsvc.setSect(fam.familyId, null);
+    await cols.sects.updateOne({ _id: famSummary.sectId }, { $inc: { memberFamilyCount: -1 } });
   }
 
   /** Dissolve the sect (sect leader only). Clears sectId on all member families, removes all alliances bidirectionally, deletes the sect and its channel. */
   async dissolveSect(worldId: string, requesterId: string): Promise<void> {
     const { cols } = this.deps;
-    const fam = await this.requireFamilyLeader(worldId, requesterId);
-    if (!fam.sectId) throw new SlgError('NOT_IN_SECT');
-    const sect = await cols.sects.findOne({ _id: fam.sectId });
+    const fam = await this.requireFamilyLeader(requesterId);
+    const [famSummary] = await this.socialsvc.getFamiliesByIds([fam.familyId]);
+    if (!famSummary?.sectId) throw new SlgError('NOT_IN_SECT');
+    const sect = await cols.sects.findOne({ _id: famSummary.sectId });
     if (!sect) throw new SlgError('NOT_FOUND');
     if (sect.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', 'Only the sect leader can dissolve the sect');
 
     const sid = sect._id;
-    await cols.families.updateMany({ sectId: sid }, { $unset: { sectId: '' } });
+    const memberFams = await this.socialsvc.getFamiliesBySect(sid);
+    await Promise.all(memberFams.map((f) => this.socialsvc.setSect(f.familyId, null)));
     // Remove this sect from all allies' allySectIds.
     for (const ally of sect.allySectIds) {
       await cols.sects.updateOne({ _id: ally }, { $pull: { allySectIds: sid } });
@@ -261,9 +265,10 @@ export class SectService {
   /** Form an alliance (initiated by the sect leader; bidirectional). Each side capped at ≤ SECT_ALLY_CAP; cannot ally with self or an already-allied sect. */
   async allySect(worldId: string, requesterId: string, targetSectId: string): Promise<void> {
     const { cols } = this.deps;
-    const fam = await this.requireFamilyLeader(worldId, requesterId);
-    if (!fam.sectId) throw new SlgError('NOT_IN_SECT');
-    const self = await cols.sects.findOne({ _id: fam.sectId });
+    const fam = await this.requireFamilyLeader(requesterId);
+    const [famSummary] = await this.socialsvc.getFamiliesByIds([fam.familyId]);
+    if (!famSummary?.sectId) throw new SlgError('NOT_IN_SECT');
+    const self = await cols.sects.findOne({ _id: famSummary.sectId });
     if (!self) throw new SlgError('NOT_FOUND');
     if (self.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', 'Only the sect leader can form alliances');
     if (targetSectId === self._id) throw new SlgError('BAD_REQUEST', 'Cannot ally with your own sect');
@@ -281,9 +286,10 @@ export class SectService {
   /** Dissolve an alliance (initiated by the sect leader; bidirectionally removes the alliance). */
   async unallySect(worldId: string, requesterId: string, targetSectId: string): Promise<void> {
     const { cols } = this.deps;
-    const fam = await this.requireFamilyLeader(worldId, requesterId);
-    if (!fam.sectId) throw new SlgError('NOT_IN_SECT');
-    const self = await cols.sects.findOne({ _id: fam.sectId });
+    const fam = await this.requireFamilyLeader(requesterId);
+    const [famSummary] = await this.socialsvc.getFamiliesByIds([fam.familyId]);
+    if (!famSummary?.sectId) throw new SlgError('NOT_IN_SECT');
+    const self = await cols.sects.findOne({ _id: famSummary.sectId });
     if (!self) throw new SlgError('NOT_FOUND');
     if (self.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', 'Only the sect leader can dissolve alliances');
     await cols.sects.updateOne({ _id: self._id }, { $pull: { allySectIds: targetSectId } });
@@ -302,22 +308,23 @@ export class SectService {
     nomineeFamilyId: string,
   ): Promise<{ passed: boolean; voteCount: number; needed: number }> {
     const { cols } = this.deps;
-    const fam = await this.requireFamilyLeader(worldId, requesterId);
-    if (!fam.sectId) throw new SlgError('NOT_IN_SECT');
-    const sect = await cols.sects.findOne({ _id: fam.sectId });
+    const fam = await this.requireFamilyLeader(requesterId);
+    const [famSummary] = await this.socialsvc.getFamiliesByIds([fam.familyId]);
+    if (!famSummary?.sectId) throw new SlgError('NOT_IN_SECT');
+    const sect = await cols.sects.findOne({ _id: famSummary.sectId });
     if (!sect) throw new SlgError('NOT_FOUND');
 
-    const nominee = await cols.families.findOne({ _id: nomineeFamilyId, sectId: sect._id });
-    if (!nominee) throw new SlgError('NOT_FOUND', 'Nominated family is not in this sect');
+    const [nominee] = await this.socialsvc.getFamiliesByIds([nomineeFamilyId]);
+    if (!nominee || nominee.sectId !== sect._id) throw new SlgError('NOT_FOUND', 'Nominated family is not in this sect');
 
     // Accumulate or reset votes (keyed by nominee).
     let voters: string[];
     if (sect.removalVote && sect.removalVote.nomineeFamilyId === nomineeFamilyId) {
-      voters = sect.removalVote.voterFamilyIds.includes(fam._id)
+      voters = sect.removalVote.voterFamilyIds.includes(fam.familyId)
         ? sect.removalVote.voterFamilyIds
-        : [...sect.removalVote.voterFamilyIds, fam._id];
+        : [...sect.removalVote.voterFamilyIds, fam.familyId];
     } else {
-      voters = [fam._id]; // nominee changed → reset
+      voters = [fam.familyId]; // nominee changed → reset
     }
 
     const needed = Math.ceil(sect.memberFamilyCount * SECT_REMOVAL_VOTE_RATIO);
@@ -326,7 +333,7 @@ export class SectService {
       await cols.sects.updateOne(
         { _id: sect._id },
         {
-          $set: { leaderFamilyId: nominee._id, leaderId: nominee.leaderId },
+          $set: { leaderFamilyId: nominee.familyId, leaderId: nominee.leaderId },
           $unset: { removalVote: '' },
           $inc: { rev: 1 },
         },
@@ -354,13 +361,13 @@ export class SectService {
     body: string,
   ): Promise<SectMessageView> {
     const { cols } = this.deps;
-    const mem = await cols.familyMembers.findOne({ _id: familyMemberId(worldId, accountId) });
+    const mem = await this.socialsvc.getMember(accountId);
     if (!mem) throw new SlgError('NOT_IN_SECT');
-    const fam = await cols.families.findOne({ _id: mem.familyId });
-    if (!fam?.sectId) throw new SlgError('NOT_IN_SECT');
+    const [famSummary] = await this.socialsvc.getFamiliesByIds([mem.familyId]);
+    if (!famSummary?.sectId) throw new SlgError('NOT_IN_SECT');
     if (!body || body.length > FAMILY_MSG_BODY_MAX) throw new SlgError('BAD_REQUEST');
 
-    const sectId = fam.sectId;
+    const sectId = famSummary.sectId;
     const ts = this.deps.now();
     const seq = ++msgSeq;
     const msgId = `sm:${sectId}:${ts}:${seq}`;
@@ -380,26 +387,23 @@ export class SectService {
     // Push: prefer delegating to socialsvc (the push hub, §5); fall back to direct gateway push when socialsvc is unavailable.
     const payload = { sectId, fromPublicId: profile?.publicId ?? '', fromName: senderName, body, ts };
     if (this.socialsvc.available) {
-      const recipients = await this.sectMemberAccountIds(sectId, accountId);
+      const recipients = await this.sectMemberAccountIds(worldId, sectId, accountId);
       void this.socialsvc.push({ kind: 'sect', sectId }, 'sect_msg', payload, recipients);
     } else {
-      const recipients = await this.sectMemberAccountIds(sectId, accountId);
+      const recipients = await this.sectMemberAccountIds(worldId, sectId, accountId);
       void this.gateway.broadcast(recipients, { kind: 'sect_msg', ...payload });
     }
 
     return { id: msgId, senderId: accountId, senderName, body, ts };
   }
 
-  /** Collects all member accountIds within the sect (spread across member families); optionally excludes one account (e.g., the sender). */
-  private async sectMemberAccountIds(sectId: string, exclude?: string): Promise<string[]> {
-    const fams = await this.deps.cols.families
-      .find({ sectId })
-      .project<{ _id: string }>({ _id: 1 })
-      .toArray();
-    const famIds = fams.map((f) => f._id);
+  /** Collects all member accountIds within the sect who are joined to this world (spread across member families, via PlayerWorldDoc.familyId); optionally excludes one account (e.g., the sender). */
+  private async sectMemberAccountIds(worldId: string, sectId: string, exclude?: string): Promise<string[]> {
+    const fams = await this.socialsvc.getFamiliesBySect(sectId);
+    const famIds = fams.map((f) => f.familyId);
     if (famIds.length === 0) return [];
-    const members = await this.deps.cols.familyMembers
-      .find({ familyId: { $in: famIds } })
+    const members = await this.deps.cols.playerWorld
+      .find({ worldId, familyId: { $in: famIds } })
       .project<{ accountId: string }>({ accountId: 1 })
       .toArray();
     const ids = members.map((m) => m.accountId).filter((id) => id !== exclude);
@@ -415,13 +419,13 @@ export class SectService {
     limit = 30,
   ): Promise<SectMessageView[]> {
     const { cols } = this.deps;
-    const mem = await cols.familyMembers.findOne({ _id: familyMemberId(worldId, accountId) });
+    const mem = await this.socialsvc.getMember(accountId);
     if (!mem) throw new SlgError('NOT_IN_SECT');
-    const fam = await cols.families.findOne({ _id: mem.familyId });
-    if (!fam?.sectId) throw new SlgError('NOT_IN_SECT');
+    const [famSummary] = await this.socialsvc.getFamiliesByIds([mem.familyId]);
+    if (!famSummary?.sectId) throw new SlgError('NOT_IN_SECT');
 
     const realLimit = Math.min(Math.max(limit, 1), 50);
-    const query: Record<string, unknown> = { sectId: fam.sectId };
+    const query: Record<string, unknown> = { sectId: famSummary.sectId };
     if (before != null) query['ts'] = { $lt: new Date(before) };
 
     const docs = await cols.sectMessages.find(query).sort({ ts: -1 }).limit(realLimit).toArray();

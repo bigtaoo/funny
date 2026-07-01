@@ -71,6 +71,10 @@ export interface FamilyDoc {
   prosperityUpdatedAt: number;
   /** Season cumulative activity (incremented via worldsvc internal API $inc; scored for territory occupation and combat). */
   activity: number;
+  /** Territory tile count (worldsvc-owned mirror, refreshed alongside prosperity; only worldsvc knows tile ownership). */
+  territoryCount?: number;
+  /** Sect the family currently belongs to (worldsvc-owned mirror; sects are season/world-scoped and live in worldsvc — see SLG_DESIGN §8.2. Written via /internal/family/:familyId/sect). */
+  sectId?: string;
   createdAt: number;
   rev: number;
 }

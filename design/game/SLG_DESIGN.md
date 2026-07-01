@@ -1446,4 +1446,21 @@ if (path.startsWith('/admin/world/')) {
 
 ---
 
+## 22. 宗门功能修复：worldsvc 家族镜像死集合清理（2026-07-01）
+
+**背景**：P4 家族→socialsvc 迁移（2026-06-29）删除了 worldsvc 本地 `familyService.ts`（写入方），但 `sectService.ts`/`service.ts`（约 40 处调用点）仍在读写 worldsvc 自己的 `families`/`familyMembers` 集合（`db.ts` 旧定义）。由于没有任何生产代码路径再向这两个集合写入数据，**宗门创建/加入/退出/发言/联盟/罢免全部在生产环境静默失效**（族长权限检查恒 `NOT_IN_FAMILY`），同族视野共享、出生点找同族、A* 同族通行门、宗门长阵亡惩罚扇出、赛季结算按宗门聚合、G6 跨赛季分片分配也同样静默降级为「视同无家族」。详细排查过程见 `SOCIAL_SVC_DESIGN.md` §6「宗门功能修复」。
+
+**修复方案**：删除 worldsvc 本地 `families`/`familyMembers` 集合（`FamilyDoc`/`FamilyMemberDoc` 类型一并删除），改为：
+
+1. 家族身份/名册/族长权限查询 → worldsvc 通过 `WorldSocialsvcClient` 实时调 socialsvc 新增内部接口（`getMember`/`getFamiliesByIds`/`getFamiliesBySect`）。
+2. 同世界内成员定位（视野共享/出生点/A*同族门/罢免惩罚扇出）→ 改用 `PlayerWorldDoc.familyId`（SS7 镜像）按 `worldId+familyId` 查询，不需要新集合。
+3. `sectId` 归属 → worldsvc 仍是权威写者（宗门保留在 worldsvc，赛季级概念不变），但写回 socialsvc 的 `FamilyDoc.sectId` 镜像字段（新增 `POST /internal/family/:familyId/sect`），供客户端 `fam.sectId` 读到。
+4. 繁荣度/活跃度 → 委托 socialsvc 新增的 `/internal/family/:familyId/prosperity/refresh`（worldsvc 只算 `territoryCount`）与既有的 `/internal/family/activity`（此前从未被调用）；赛季重置新增 `/internal/family/:familyId/slg-reset` 一次性清零。
+
+**影响文件**：`server/socialsvc/src/{db,familyService,httpApi}.ts`、`server/worldsvc/src/{db,socialsvcClient,prosperity,sectService,service}.ts`、`server/worldsvc/test/sect.e2e.test.ts`（fixture 改用内存假 socialsvc client）、`client/src/scenes/SectScene.ts` + `client/src/app/createAppCore.ts`（恢复 `fam.sectId` 读取路径）、`client/src/net/WorldApiClient.ts`（`FamilyView` 补 `sectId?`/`territoryCount?`）。
+
+**未变**：宗门本身（`SectDoc`/`sects`/`sectMessages` 集合）仍留在 worldsvc（SS6 不变）；家族身份/成员关系（谁在哪个家族）跨赛季保留在 socialsvc，不受 SLG 赛季重置影响。
+
+---
+
 *本文档为 SLG 设计基准，DRAFT 标注处随实现/调参细化；锁定决策（SLG1~13）非经重新拍板不改。*

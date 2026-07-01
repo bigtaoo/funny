@@ -674,8 +674,13 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
               status.familyName = fam.name;
               status.familyTag = fam.tag;
               status.isLeader = !!myAccountId && fam.leaderId === myAccountId;
-              // TODO(sectId gap): socialsvc's FamilyDetailView carries no sectId — sect status can't be
-              // resolved from here since the P4 family migration (2026-06-29). See project_social_system memory.
+              if (fam.sectId) {
+                status.sectId = fam.sectId;
+                try {
+                  const sect = await worldApi.getSect(fam.sectId);
+                  status.sectName = sect?.name;
+                } catch { /* sect lookup best-effort; sectId alone is still useful to the caller */ }
+              }
             } catch { /* missing family is non-fatal */ }
           }
           return status;
