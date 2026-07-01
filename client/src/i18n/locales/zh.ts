@@ -339,6 +339,12 @@ export const zh = {
   'shop.promoSuccess': '兑换成功',
   'shop.promoInvalid': '兑换码无效或已使用',
   'shop.promoError': '兑换失败，请重试',
+  'shop.coinsTab': '充值',
+  'shop.bestValue': '★ 超值推荐',
+  'shop.firstDouble': '首充双倍',
+  'shop.rechargeSuccess': '支付成功！金币已到账。',
+  'shop.rechargeError': '支付失败，请重试',
+  'shop.rechargeCancelled': '支付已取消',
 
   // ── Gacha / loot box (S2-6) ───────────────────────────────────────────────────
   'gacha.title': '盲盒',

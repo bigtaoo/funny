@@ -185,6 +185,16 @@ export function startInternalHttp(
               }),
             );
           }
+          case '/internal/paddle/complete':
+            return send(
+              res,
+              200,
+              await svc.paddleComplete({
+                accountId: str(b.accountId),
+                transactionId: str(b.transactionId),
+                coins: num(b.coins, 0),
+              }),
+            );
           default:
             return send(res, 404, { ok: false, error: 'not found' });
         }

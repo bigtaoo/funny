@@ -111,12 +111,43 @@ export const ADS_MIN_INTERVAL_MS = 30 * 60 * 1000; // 30min minimum interval bet
 /** Rename cost (coins). Deducted once per display-name change (commercial wallet deducts → meta renames). */
 export const RENAME_COST = 500;
 
-/** IAP tiers → coins credited (§2.2, hooks like first-purchase double-coins to be layered on later). */
+/**
+ * IAP tiers → coins credited (§2.2 USD, ECONOMY_BALANCE.md §2.2).
+ * Keys are tier IDs used in NW_IAP_PRODUCT_MAP / NW_PADDLE_PRICE_IDS.
+ * iOS/Android: t099 / t199 also available; web (Paddle) starts at t499.
+ */
 export const IAP_TIERS: Record<string, number> = {
-  small: 600,
-  mid: 3300,
-  large: 11800,
+  t099:  100,
+  t199:  210,
+  t499:  550,
+  t999:  1150,
+  t1999: 2400,
+  t4999: 6500,
+  t9999: 13500,
 };
+
+/** Ordered list of tiers for UI display. `webOnly: false` means also on iOS/Android. */
+export interface IapTierDef {
+  id: string;
+  usdCents: number;   // price in cents for display ($4.99 → 499)
+  coins: number;      // total coins including bonus
+  base: number;       // base coins (without bonus)
+  bestValue?: boolean;
+  webOnly?: boolean;  // true = Paddle web only (not on mobile app stores)
+}
+
+export const IAP_TIERS_LIST: IapTierDef[] = [
+  { id: 't099',  usdCents:  99,  base: 100,   coins: 100,   webOnly: true  },
+  { id: 't199',  usdCents: 199,  base: 200,   coins: 210,   webOnly: true  },
+  { id: 't499',  usdCents: 499,  base: 500,   coins: 550   },
+  { id: 't999',  usdCents: 999,  base: 1000,  coins: 1150  },
+  { id: 't1999', usdCents: 1999, base: 2000,  coins: 2400,  bestValue: true },
+  { id: 't4999', usdCents: 4999, base: 5000,  coins: 6500  },
+  { id: 't9999', usdCents: 9999, base: 10000, coins: 13500 },
+];
+
+/** First-purchase coin multiplier (applied once per account lifetime). */
+export const FIRST_PURCHASE_BONUS_MULTIPLIER = 2;
 
 /**
  * Tiered per-match victory coins (§2.3b, ongoing faucet). Higher ranks earn more; paired with daily cap to prevent inflation.

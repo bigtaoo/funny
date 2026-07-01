@@ -6,6 +6,7 @@ import {
   findShopItem,
   gachaCost,
   IAP_TIERS,
+  FIRST_PURCHASE_BONUS_MULTIPLIER,
   VICTORY_DAILY_WIN_CAP,
   type Rarity,
 } from '@nw/shared';
@@ -90,6 +91,19 @@ export class CommercialService {
   async getWallet(accountId: string): Promise<{ coins: number; pity: Record<string, number> }> {
     const w = await this.cols.wallets.findOne({ _id: accountId });
     return { coins: w?.coins ?? 0, pity: w?.gacha.pity ?? {} };
+  }
+
+  /**
+   * Atomically claim the first-purchase bonus slot.
+   * Sets `firstPurchasedAt` only if it doesn't exist yet (CAS-style).
+   * Returns true when THIS call claimed it (i.e. this is the first purchase).
+   */
+  private async claimFirstPurchaseBonus(accountId: string): Promise<boolean> {
+    const result = await this.cols.wallets.findOneAndUpdate(
+      { _id: accountId, firstPurchasedAt: { $exists: false } },
+      { $set: { firstPurchasedAt: this.now() } },
+    );
+    return result !== null;
   }
 
   /** Credit coins + write ledger entry (shared by recharge/ads/refund). Atomic $inc; returns the new balance. */
@@ -397,10 +411,59 @@ export class CommercialService {
       }
       throw e;
     }
-    const coinsAfter = await this.credit(args.accountId, v.coins, 'recharge', {
+    const isFirst = await this.claimFirstPurchaseBonus(args.accountId);
+    const coinsGranted = isFirst ? v.coins * FIRST_PURCHASE_BONUS_MULTIPLIER : v.coins;
+    const coinsAfter = await this.credit(args.accountId, coinsGranted, 'recharge', {
       receiptId: args.receiptId,
     });
-    return { ok: true, coinsAfter, coinsGranted: v.coins };
+    return { ok: true, coinsAfter, coinsGranted };
+  }
+
+  /**
+   * Credit coins from a verified Paddle webhook (no receipt re-verification needed;
+   * metaserver already checked the Paddle signature before calling this).
+   * Uses recharges collection for idempotency keyed on `paddle:${transactionId}`.
+   */
+  async paddleComplete(args: {
+    accountId: string;
+    transactionId: string;
+    coins: number;
+  }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
+    const receiptId = `paddle:${args.transactionId}`;
+    const existing = await this.cols.recharges.findOne({ _id: receiptId });
+    if (existing) {
+      if (existing.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
+      const w = await this.cols.wallets.findOne({ _id: existing.accountId });
+      return { ok: true, coinsAfter: w?.coins ?? 0, coinsGranted: existing.coinsGranted };
+    }
+
+    await this.ensureWallet(args.accountId);
+    const isFirst = await this.claimFirstPurchaseBonus(args.accountId);
+    const coinsGranted = isFirst ? args.coins * FIRST_PURCHASE_BONUS_MULTIPLIER : args.coins;
+
+    try {
+      await this.cols.recharges.insertOne({
+        _id: receiptId,
+        accountId: args.accountId,
+        platform: 'paddle',
+        coinsGranted,
+        status: 'granted',
+        rawReceipt: args.transactionId,
+        ts: this.now(),
+      });
+    } catch (e) {
+      if ((e as { code?: number }).code === 11000) {
+        const r = await this.cols.recharges.findOne({ _id: receiptId });
+        if (r && r.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
+        const w = await this.cols.wallets.findOne({ _id: args.accountId });
+        return { ok: true, coinsAfter: w?.coins ?? 0, coinsGranted: r?.coinsGranted ?? coinsGranted };
+      }
+      throw e;
+    }
+    const coinsAfter = await this.credit(args.accountId, coinsGranted, 'recharge', {
+      receiptId,
+    });
+    return { ok: true, coinsAfter, coinsGranted };
   }
 
   /** Create a promo code (called by admin, forwarded internally via meta). code is normalized to uppercase. */

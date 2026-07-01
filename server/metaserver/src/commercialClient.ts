@@ -78,6 +78,12 @@ export interface CommercialClient {
     createdBy: string;
   }): Promise<Body<{ code: string }>>;
   listPromoCodes(): Promise<PromoCodeView[]>;
+  /** Credit coins from a verified Paddle transaction (signature already checked by metaserver). */
+  paddleComplete(args: {
+    accountId: string;
+    transactionId: string;
+    coins: number;
+  }): Promise<Body<{ coinsAfter: number; coinsGranted: number }>>;
 }
 
 export interface PromoCodeView {
@@ -202,5 +208,12 @@ export class HttpCommercialClient implements CommercialClient {
     const res = await fetch(`${this.baseUrl}/internal/promo/codes`, { headers: this.headers() });
     const b = (await res.json()) as Body<{ codes: PromoCodeView[] }>;
     return b.ok ? b.codes : [];
+  }
+
+  paddleComplete(args: { accountId: string; transactionId: string; coins: number }) {
+    return this.post<{ coinsAfter: number; coinsGranted: number }>(
+      '/internal/paddle/complete',
+      args,
+    );
   }
 }

@@ -9,6 +9,8 @@ export interface WalletDoc {
   coins: number; // >= 0
   rev: number;
   gacha: { pity: Record<string, number> }; // poolId → cumulative draws since last legendary
+  /** Timestamp of first-ever successful IAP (ms). Absent = never purchased; gates the first-purchase 2× bonus. */
+  firstPurchasedAt?: number;
   updatedAt: number;
 }
 
