@@ -5,7 +5,6 @@ import {
   SAVE_VERSION,
   SAVE_STORAGE_KEY,
   extractSyncPatch,
-  type SaveData,
 } from '../src/game/meta';
 import { LocalSaveStore } from '../src/game/meta/SaveStore';
 import type { IStorage } from '../src/platform/IPlatform';
@@ -51,11 +50,11 @@ describe('SaveData migrate (S0-2)', () => {
   });
 
   it('dynamic keys (best / flags custom entries) are preserved', () => {
-    const raw: Partial<SaveData> = {
+    const raw = {
       version: 1,
       progress: { cleared: [], stars: {}, best: { ch1_lv2: { timeMs: 1234 } } },
       flags: { custom_flag: true },
-    } as SaveData;
+    };
     const s = migrate(raw);
     expect(s.progress.best.ch1_lv2).toEqual({ timeMs: 1234 });
     expect(s.flags.custom_flag).toBe(true);

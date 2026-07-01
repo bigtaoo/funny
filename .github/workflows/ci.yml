@@ -50,10 +50,16 @@ jobs:
         working-directory: server
         run: npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc
 
-      # —— Client: unit tests + web build ——
+      # —— Client: type-check + unit tests + web build ——
       - name: client install
         working-directory: client
         run: npm ci
+      # vitest (esbuild) and webpack don't type-check, and tsconfig.json's include is src-only,
+      # so test/** blueprint/DTO drift stays latent. tsconfig.test.json pulls src + test/** into
+      # one program so this step fails on that drift (see CC-1 card-instance migration).
+      - name: client typecheck (src + tests)
+        working-directory: client
+        run: npm run typecheck
       - name: client unit tests
         working-directory: client
         run: npm test

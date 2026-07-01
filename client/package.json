@@ -16,6 +16,7 @@
     "rest:gen": "node scripts/gen-openapi.mjs",
     "format": "prettier --write .",
     "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:render": "vitest run --config vitest.render.config.ts",
     "test:watch": "vitest",

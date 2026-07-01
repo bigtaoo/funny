@@ -1,0 +1,11 @@
+{
+  "//": "Type-check config for CI. Extends the app tsconfig but also pulls test/** into the program.",
+  "//2": "tsconfig.json's `include` is src-only (webpack/vitest never type-check test/), so blueprint/DTO drift in test files stays latent — this config is what catches it. Run via `npm run typecheck`.",
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/**/*",
+    "test/**/*",
+    "../server/engine/src/**/*",
+    "../server/shared/src/slg.ts"
+  ]
+}

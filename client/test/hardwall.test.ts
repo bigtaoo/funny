@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { UNIT_BLUEPRINTS } from '../src/game/config';
 import { UnitType } from '../src/game/types';
+import type { PlayerConfig } from '../src/game/types';
 import {
   PVE_UPGRADE_DEFS,
   buildPvpBlueprints,
@@ -50,7 +51,7 @@ describe('hard wall — PvP blueprints never see PvE upgrades', () => {
   });
 
   it('a PvP engine built after a maxed campaign engine still uses constant stats', () => {
-    const cfg2 = { seed: 7, players: [{ id: 0 as const }, { id: 1 as const }] };
+    const cfg2 = { seed: 7, players: [{ id: 0 }, { id: 1 }] as [PlayerConfig, PlayerConfig] };
     // Build a campaign engine with maxed cards first.
     const lvl = CAMPAIGN_LEVELS[CAMPAIGN_LEVEL_ORDER[0]];
     createGameEngine({ ...cfg2, mode: 'campaign', level: lvl, cardInstances: cardsAtLevel(UNIT_MAX_LEVEL) });
