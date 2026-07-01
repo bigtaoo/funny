@@ -6,8 +6,8 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
 import {
-  signToken, familyId, SLG_MAP_W, SLG_MAP_H,
-  SETTLE_REWARDS, CENTER_CAPITAL_IDX, CENTER_CAPITAL_MULT,
+  signToken, familyId, playerWorldId, SLG_MAP_W, SLG_MAP_H,
+  SETTLE_REWARDS, CENTER_CAPITAL_IDX, CENTER_CAPITAL_MULT, BP_SETTLE_EXTRA,
 } from '@nw/shared';
 import { ENGINE_VERSION } from '@nw/engine';
 import { createWorldMongo, type WorldMongo, type FamilyDoc, type FamilyMemberDoc, type NationDoc, type WorldDoc } from '../src/db';
@@ -107,6 +107,28 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     const again = await m.collections.seasonResults.findOne({ _id: `${W}:s${SEASON}` });
     expect(again!.settledAt).toBe(before);
     expect(await m.collections.seasonResults.countDocuments({ worldId: W })).toBe(1);
+  });
+
+  it('settle: battle pass holders receive extra reward mail (S8-8 额外结算奖励档)', async () => {
+    await seed('active');
+    // Grant alice a battle pass; bob has none.
+    await m.collections.playerWorld.insertOne({
+      _id: playerWorldId(W, 'alice'), worldId: W, accountId: 'alice',
+      troops: 0, troopCap: 0, resources: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
+      yieldRate: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
+      lastTickAt: 0, hasBattlePass: true, rev: 0,
+    });
+    await svc.settleSeason(W);
+
+    const bpMails = mailCalls.filter((x) => x.dispatchKey === `slg-settle-bp:${W}:s${SEASON}`);
+    // Only alice (the battle pass holder) receives the extra mail.
+    expect(bpMails).toHaveLength(1);
+    expect(bpMails[0]!.accountId).toBe('alice');
+    // Mail includes the BP_SETTLE_EXTRA materials.
+    const scrap = bpMails[0]!.content.attachments!.find((a) => a.kind === 'material' && a.id === 'scrap');
+    expect(scrap!.count).toBe(BP_SETTLE_EXTRA.items.scrap);
+    // Non-holder (bob) receives no BP mail.
+    expect(bpMails.find((x) => x.accountId === 'bob')).toBeUndefined();
   });
 
   it('reset: reset without settling first is rejected (prevents history loss)', async () => {

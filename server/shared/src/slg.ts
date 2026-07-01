@@ -1,4 +1,4 @@
-// SLG open-world constants / enums / IDs / procedural map generation — single source of truth (SLG_DESIGN.md §14, S8-0).
+﻿// SLG open-world constants / enums / IDs / procedural map generation — single source of truth (SLG_DESIGN.md §14, S8-0).
 // Pure data + pure functions; no DB / no PIXI. worldsvc uses this as the authoritative server-side source for maps/territory/marches/families.
 // Collection document shapes (TileDoc/PlayerWorldDoc/MarchDoc…) live in mongo.ts (or worldsvc's own db.ts).
 //
@@ -633,6 +633,13 @@ export const SETTLE_REWARDS: Record<SettleTier, SettleReward> = {
   top3:        { items: { scrap: 300, lead: 120, binding: 25 }, skins: [], titleId: 'slg.top3' },
   top10:       { items: { scrap: 150, lead: 60,  binding: 10 }, skins: [] },
   participant: { items: { scrap: 50,  lead: 20,  binding: 0  }, skins: [] },
+};
+/** Battle-pass resource production multiplier (S8-8): hourly yield ×BP_YIELD_MULT for holders. Applied in recomputeYield after all other multipliers. */
+export const BP_YIELD_MULT = 1.1;
+/** Extra settlement reward dispatched to every battle-pass holder at season end, regardless of tier (S8-8). */
+export const BP_SETTLE_EXTRA: Readonly<{ items: Record<string, number>; skins: string[] }> = {
+  items: { scrap: 50, lead: 20, binding: 5 },
+  skins: [],
 };
 /** Central plains capital (capitalIdx 9, §2.4) occupation bonus: reward materials for the tier are multiplied by CENTER_CAPITAL_MULT. */
 export const CENTER_CAPITAL_IDX = 9;

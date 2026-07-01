@@ -13,6 +13,7 @@ import {
   GARRISON_PER_TILE,
   TROOP_CAP_BASE,
   RELOCATE_COST,
+  BP_YIELD_MULT,
   type ResourceType,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -230,6 +231,26 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     await expect(svc.occupyTile(W, 'a', bTerr.x, bTerr.y)).rejects.toMatchObject({
       code: 'TILE_OCCUPIED',
     });
+  });
+
+  it('battle pass yield bonus (S8-8 产率加成档): hasBattlePass → yieldRate ×BP_YIELD_MULT after occupy', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    const res = findCoord((t) => t.type === 'resource', 50, 50);
+    const procRes = proceduralTile(W, res.x, res.y);
+    const rt = procRes.resType as ResourceType;
+    const baseYield = RESOURCE_YIELD_BASE * procRes.level + (rt === 'ink' ? RESOURCE_YIELD_BASE : 0);
+
+    // Without battle pass: yield is baseline.
+    await svc.occupyTile(W, 'a', res.x, res.y);
+    const withoutBP = await svc.getMe(W, 'a');
+    expect(withoutBP.yieldRate?.[rt]).toBe(baseYield);
+
+    // Grant battle pass: trigger a recomputeYield-touching operation (abandon + re-occupy) to see updated yield.
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { hasBattlePass: true } });
+    await svc.abandonTile(W, 'a', res.x, res.y);
+    await svc.occupyTile(W, 'a', res.x, res.y);
+    const withBP = await svc.getMe(W, 'a');
+    expect(withBP.yieldRate?.[rt]).toBe(Math.floor(baseYield * BP_YIELD_MULT));
   });
 
   it('capacity guard: world document at capacity → WORLD_FULL', async () => {

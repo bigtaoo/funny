@@ -70,6 +70,8 @@ import {
   SLG_SHOP_ITEMS,
   CAPITAL_FRACTIONS,
   SETTLE_REWARDS,
+  BP_YIELD_MULT,
+  BP_SETTLE_EXTRA,
   settleTier,
   CENTER_CAPITAL_IDX,
   CENTER_CAPITAL_MULT,
@@ -1948,6 +1950,7 @@ export class WorldService {
     worldId: string,
     accountId: string,
     buildingsOverride?: Partial<Record<BuildingKey, number>>,
+    hasBattlePassOverride?: boolean,
   ): Promise<Record<ResourceType, number>> {
     const owned = await this.deps.cols.tiles.find({ worldId, ownerId: accountId }).toArray();
     // Nation production bonus (§2.4 / G1): capitals occupied by this player → own tiles within those capitals' Voronoi regions receive +NATION_BONUS_PRODUCTION.
@@ -1955,8 +1958,13 @@ export class WorldService {
     const ownedCapIdx = new Set(ownedNations.map((n) => n.capitalIdx));
     // Building levels (SLG_CITY_DESIGN): land resources get a global yield multiplier; sticker is self-produced by the stickerShop (民居模型).
     // buildingsOverride lets a build-completion path compute the post-upgrade rate before the new levels are persisted (avoids a write-then-read ordering hazard).
-    const buildings = buildingsOverride
-      ?? (await this.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) }))?.buildings;
+    let buildings: Partial<Record<BuildingKey, number>> | undefined = buildingsOverride;
+    let hasBattlePass = hasBattlePassOverride ?? false;
+    if (!buildingsOverride) {
+      const doc = await this.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+      buildings = doc?.buildings;
+      hasBattlePass = doc?.hasBattlePass ?? false;
+    }
 
     const acc = emptyResources();
     for (const tl of owned) {
@@ -1967,6 +1975,10 @@ export class WorldService {
     }
     for (const rt of RESOURCE_TYPES) {
       acc[rt] = Math.floor(acc[rt] * buildingYieldMult(buildings, rt) + buildingSelfYield(buildings, rt));
+    }
+    // Battle pass production bonus (S8-8 产率加成档): +10% resource yield for holders.
+    if (hasBattlePass) {
+      for (const rt of RESOURCE_TYPES) acc[rt] = Math.floor(acc[rt] * BP_YIELD_MULT);
     }
     return acc;
   }
@@ -2349,7 +2361,7 @@ export class WorldService {
     const newQueue = (fresh.buildQueue ?? []).filter((e) => e.completeAt > t);
     const resources = this.settle(fresh, t); // settle at the old rate/cap up to now, before the rate changes
     // Compute the post-upgrade yield from the new levels directly (buildings not yet persisted).
-    const yieldRate = await this.recomputeYield(worldId, accountId, next);
+    const yieldRate = await this.recomputeYield(worldId, accountId, next, fresh.hasBattlePass);
     await cols.playerWorld.updateOne(
       { _id: docId },
       {
@@ -2802,6 +2814,23 @@ export class WorldService {
             );
           }
         }
+      }
+
+      // Extra settlement reward for battle-pass holders (S8-8 额外结算奖励档): sent once per holder regardless of tier.
+      const bpPlayers = await cols.playerWorld
+        .find({ worldId, hasBattlePass: true }, { projection: { accountId: 1 } })
+        .toArray();
+      const bpDispatchKey = `slg-settle-bp:${worldId}:s${w.season}`;
+      const bpAttachments = Object.entries(BP_SETTLE_EXTRA.items)
+        .filter(([, n]) => n > 0)
+        .map(([id, count]) => ({ kind: 'material' as const, id, count }));
+      for (const pw of bpPlayers) {
+        void this.mail.sendSystemMail(pw.accountId, bpDispatchKey, {
+          subject: 'slg.settle.bp.subject',
+          body: 'slg.settle.bp.body',
+          attachments: bpAttachments,
+          expireDays: 30,
+        });
       }
     }
 
