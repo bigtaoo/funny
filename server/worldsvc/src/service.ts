@@ -101,7 +101,7 @@ import {
 import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseConfig, scaleArmyHp, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from './siegeEngine';
 import type { GarrisonEntry, EngineEquipmentInput, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ENGINE_VERSION } from '@nw/engine';
-import { refreshFamilyProsperity, effectiveProsperity } from './prosperity';
+import { refreshFamilyProsperity, aggregateSectProsperity } from './prosperity';
 import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry, BuildQueueEntry, DefenseConfig, ArmyEntry, TeamTemplate, CardSLGState } from './db';
 import type { WorldRedis } from './redis';
 import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient';
@@ -341,10 +341,8 @@ export class WorldService {
     requesterId: string,
   ): Promise<PathCell[]> {
     // Retrieve the requester's current family (if any); gates occupied by fellow family members are also passable.
-    const memDoc = await this.deps.cols.familyMembers.findOne({
-      _id: `${worldId}:${requesterId}`,
-    });
-    const allyFamilyId = memDoc?.familyId;
+    const requesterPw = await this.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, requesterId) });
+    const allyFamilyId = requesterPw?.familyId;
 
     // Gates are sparse (~20–40 across the whole map); fetch all at once and filter, to avoid async calls inside A*.
     const gateTiles = await this.deps.cols.tiles
@@ -495,12 +493,12 @@ export class WorldService {
     return { worldId, cx: Math.floor(cx), cy: Math.floor(cy), r: rad, lod, tiles };
   }
 
-  /** Set of accountIds for the player plus all same-family members (family-level vision sharing / ally determination, §8.2; includes self). */
+  /** Set of accountIds for the player plus all same-family members (family-level vision sharing / ally determination, §8.2; includes self). Sourced from PlayerWorldDoc.familyId (SS7 mirror, scoped to this world) rather than a local family mirror (dead since P4, see db.ts note above SectDoc). */
   private async familyMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
     const ids = new Set<string>([accountId]);
-    const myMember = await this.deps.cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
-    if (myMember?.familyId) {
-      const mates = await this.deps.cols.familyMembers.find({ familyId: myMember.familyId }).toArray();
+    const myPw = await this.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (myPw?.familyId) {
+      const mates = await this.deps.cols.playerWorld.find({ worldId, familyId: myPw.familyId }).toArray();
       for (const m of mates) ids.add(m.accountId);
     }
     return ids;
@@ -508,27 +506,24 @@ export class WorldService {
 
   /**
    * G5: set of accountIds of all members of the player's sect's "allied sects" (`sect.allySectIds`, ≤2).
-   * Chain: accountId → familyMembers → family.sectId → sect.allySectIds → member families of each allied sect → members.
+   * Chain: accountId → playerWorld.familyId → socialsvc family.sectId → sect.allySectIds → member families of each allied sect (socialsvc) → members joined to this world.
    * Alliances do **not** share vision (§8.2); used only by getMap to tag allied territory (yellow border). No sect / no alliance → empty set.
    * Does not include self or same-family members (those go through `familyMemberIds`).
    */
   private async allySectMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
     const { cols } = this.deps;
     const result = new Set<string>();
-    const myMember = await cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
-    if (!myMember?.familyId) return result;
-    const myFam = await cols.families.findOne({ _id: myMember.familyId });
+    const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!myPw?.familyId) return result;
+    const [myFam] = await this.socialsvc.getFamiliesByIds([myPw.familyId]);
     if (!myFam?.sectId) return result;
     const mySect = await cols.sects.findOne({ _id: myFam.sectId });
     const allyIds = mySect?.allySectIds ?? [];
     if (allyIds.length === 0) return result;
-    const allyFamilies = await cols.families
-      .find({ worldId, sectId: { $in: allyIds } })
-      .project<{ _id: string }>({ _id: 1 })
-      .toArray();
-    const famIds = allyFamilies.map((f) => f._id);
+    const allyFamilies = (await Promise.all(allyIds.map((sid) => this.socialsvc.getFamiliesBySect(sid)))).flat();
+    const famIds = allyFamilies.map((f) => f.familyId);
     if (famIds.length === 0) return result;
-    const members = await cols.familyMembers.find({ familyId: { $in: famIds } }).toArray();
+    const members = await cols.playerWorld.find({ worldId, familyId: { $in: famIds } }).toArray();
     for (const m of members) result.add(m.accountId);
     return result;
   }
@@ -680,6 +675,10 @@ export class WorldService {
     const existing = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (existing) return this.getMe(worldId, accountId); // idempotent
 
+    // SS7: resolve the familyId read-only mirror once up front (subsequent family changes are not written back;
+    // clients read from /social/family/mine). Used for both auto-spawn placement and the playerWorld mirror below.
+    const familyId = await this.socialsvc.getFamilyId(accountId).catch(() => null) ?? undefined;
+
     let spawn: { x: number; y: number; level: number; resType?: ResourceType };
     if (x !== undefined && y !== undefined) {
       // Manual placement (internal/test): retain the original validation rules.
@@ -693,7 +692,7 @@ export class WorldService {
       spawn = { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
     } else {
       // Auto-placement: prefer near family members → outer newbie ring → whole-map fallback.
-      const spot = await this.pickSpawnTile(worldId, accountId);
+      const spot = await this.pickSpawnTile(worldId, accountId, familyId);
       if (!spot) throw new SlgError('WORLD_FULL', 'No available spawn tile');
       spawn = spot;
     }
@@ -732,9 +731,6 @@ export class WorldService {
       rev: 0,
     };
     await cols.tiles.updateOne({ _id: tid }, { $setOnInsert: tileDoc }, { upsert: true });
-
-    // SS7: sync the familyId read-only mirror once when assigning to a shard (subsequent family changes are not written back; clients read from /social/family/mine).
-    const familyId = await this.socialsvc.getFamilyId(accountId).catch(() => null) ?? undefined;
 
     // Home-city building system (SLG_CITY_DESIGN): a fresh capital starts with desk:1; troopCap derives from buildings (drillYard 0 → TROOP_CAP_BASE).
     const buildings: Partial<Record<BuildingKey, number>> = { desk: 1 };
@@ -814,8 +810,7 @@ export class WorldService {
     const after = await cols.tiles.findOne({ _id: tid });
     if (after) await this.pushTileToObservers(after, new Set([accountId])); // G5-2: new territory is visible to observers within vision
     // §17.4 activity increment: direct occupation (S8-1 path) → occupier's family +1 (including prosperity refresh).
-    const occMember = await cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
-    void this.bumpFamilyActivity(worldId, occMember?.familyId, 1);
+    void this.bumpFamilyActivity(worldId, pw.familyId, 1);
     return this.tileDocView(after!, accountId);
   }
 
@@ -1193,8 +1188,8 @@ export class WorldService {
   private async bumpFamilyActivity(worldId: string, familyId: string | undefined, delta: number): Promise<void> {
     if (!familyId) return;
     try {
-      await this.deps.cols.families.updateOne({ _id: familyId }, { $inc: { activity: delta } });
-      await refreshFamilyProsperity(this.deps.cols, worldId, familyId, this.deps.now());
+      await this.socialsvc.bumpActivity(familyId, delta);
+      await refreshFamilyProsperity(this.deps.cols, this.socialsvc, worldId, familyId);
     } catch (e) {
       console.error('[worldsvc] bumpFamilyActivity failed', { worldId, familyId, err: (e as Error).message });
     }
@@ -1265,10 +1260,9 @@ export class WorldService {
       void this.pushTile(m.ownerId, tileDoc);
       await this.pushTileToObservers(tileDoc, new Set([m.ownerId])); // G5-2: occupation arrival is visible to observers
       // Capital tile occupied → trigger nation founding (S8-6.5)
-      const pwMem = await this.deps.cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
-      void this.applyNationChange(m.worldId, x, y, m.ownerId, pwMem?.familyId);
+      void this.applyNationChange(m.worldId, x, y, m.ownerId, pw.familyId);
       // §17.4 activity increment: occupying new territory → occupier's family +1 (including prosperity refresh).
-      void this.bumpFamilyActivity(m.worldId, pwMem?.familyId, 1);
+      void this.bumpFamilyActivity(m.worldId, pw.familyId, 1);
       return;
     }
 
@@ -1454,8 +1448,6 @@ export class WorldService {
       replay = null;
     }
 
-    const member = await cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
-
     if (res.outcome === 'attacker_win') {
       const tileDoc: TileDoc = {
         _id: m.toTile,
@@ -1485,8 +1477,8 @@ export class WorldService {
       // best-effort, orderId idempotent; march is settled once — (worldId, toTile, arriveAt) is stable as idempotent key).
       const matLoot = strongholdMaterialLoot(proc.level);
       void this.meta.grantMaterial(m.ownerId, matLoot.material, matLoot.qty, `stronghold_loot:${m.worldId}:${m.toTile}:${m.arriveAt}`);
-      void this.applyNationChange(m.worldId, x, y, m.ownerId, member?.familyId);
-      void this.bumpFamilyActivity(m.worldId, member?.familyId, 1);
+      void this.applyNationChange(m.worldId, x, y, m.ownerId, pw.familyId);
+      void this.bumpFamilyActivity(m.worldId, pw.familyId, 1);
       const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
       void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
       void this.pushSiege(m.ownerId, siege, `${lootSummary(reward)},${matLoot.material}+${matLoot.qty}`);
@@ -1495,7 +1487,7 @@ export class WorldService {
     } else {
       // Capture failed: surviving attacker troops retreat and return to the troop pool (troops were deducted on departure; casualties are a permanent loss). NPC garrison is not persisted; no casualty write.
       if (res.attackerSurvivors > 0) await this.refundTroops(pw, res.attackerSurvivors, t);
-      void this.bumpFamilyActivity(m.worldId, member?.familyId, 1);
+      void this.bumpFamilyActivity(m.worldId, pw.familyId, 1);
       const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
       void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
       void this.pushSiege(m.ownerId, siege, '');
@@ -1578,8 +1570,7 @@ export class WorldService {
           { $set: { yieldRate: defYield }, $inc: { rev: 1 } },
         );
         // Capital tile captured → nation changes hands (S8-6.5)
-        const atkMem = await cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
-        void this.applyNationChange(m.worldId, target.x, target.y, m.ownerId, atkMem?.familyId);
+        void this.applyNationChange(m.worldId, target.x, target.y, m.ownerId, pw.familyId);
       }
     } else {
       // Defender wins: garrison reduced to survivors; attacker survivors retreat and return to the troop pool (§16.5 survivor refund; engine provides real survivors);
@@ -1609,10 +1600,8 @@ export class WorldService {
     }
 
     // §17.4 activity increment: siege (attacker / defender) → both sides' families +1 (landing point for decisive battles).
-    const atkMember = await cols.familyMembers.findOne({ _id: `${m.worldId}:${m.ownerId}` });
-    const defMember = await cols.familyMembers.findOne({ _id: `${m.worldId}:${defenderId}` });
-    void this.bumpFamilyActivity(m.worldId, atkMember?.familyId, 1);
-    void this.bumpFamilyActivity(m.worldId, defMember?.familyId, 1);
+    void this.bumpFamilyActivity(m.worldId, pw.familyId, 1);
+    void this.bumpFamilyActivity(m.worldId, defender?.familyId, 1);
     const lootStr = lootSummary(loot);
     void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
     void this.pushSiege(m.ownerId, siege, lootStr);
@@ -1768,25 +1757,23 @@ export class WorldService {
    */
   private async applySectLeaderPenalty(worldId: string, defenderId: string, t: number): Promise<void> {
     const { cols } = this.deps;
-    const mem = await cols.familyMembers.findOne({ _id: playerWorldId(worldId, defenderId) });
-    if (!mem) return;
-    const fam = await cols.families.findOne({ _id: mem.familyId });
+    const defPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, defenderId) });
+    if (!defPw?.familyId) return;
+    const [fam] = await this.socialsvc.getFamiliesByIds([defPw.familyId]);
     if (!fam?.sectId) return;
     const sect = await cols.sects.findOne({ _id: fam.sectId });
     if (!sect || sect.leaderId !== defenderId) return; // only triggers when the sect leader's base is destroyed
 
-    const memberFamilies = await cols.families.find({ sectId: sect._id }).project<{ _id: string }>({ _id: 1 }).toArray();
-    const famIds = memberFamilies.map((f) => f._id);
+    const memberFamilies = await this.socialsvc.getFamiliesBySect(sect._id);
+    const famIds = memberFamilies.map((f) => f.familyId);
     if (famIds.length === 0) return;
-    const members = await cols.familyMembers.find({ familyId: { $in: famIds } }).toArray();
+    const members = await cols.playerWorld.find({ worldId, familyId: { $in: famIds } }).toArray();
     const keep = 1 - SECT_LEADER_PENALTY_RATE;
     for (const mm of members) {
-      const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, mm.accountId) });
-      if (!pw) continue;
-      const resources = this.settle(pw, t);
+      const resources = this.settle(mm, t);
       for (const rt of RESOURCE_TYPES) resources[rt] = Math.floor((resources[rt] ?? 0) * keep);
       await cols.playerWorld.updateOne(
-        { _id: pw._id },
+        { _id: mm._id },
         { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
       );
     }
@@ -1891,11 +1878,11 @@ export class WorldService {
   private async pickSpawnTile(
     worldId: string,
     accountId: string,
+    familyId?: string,
   ): Promise<{ x: number; y: number; level: number; resType?: ResourceType } | null> {
     const { cols } = this.deps;
-    const myMember = await cols.familyMembers.findOne({ _id: `${worldId}:${accountId}` });
-    if (myMember?.familyId) {
-      const mates = await cols.familyMembers.find({ familyId: myMember.familyId }).toArray();
+    if (familyId) {
+      const mates = await cols.playerWorld.find({ worldId, familyId }).project<{ accountId: string }>({ accountId: 1 }).toArray();
       const mateIds = mates.map((m) => m.accountId).filter((id): id is string => !!id && id !== accountId);
       if (mateIds.length > 0) {
         const bases = await cols.tiles.find({ worldId, type: 'base', ownerId: { $in: mateIds } }).toArray();
@@ -2453,11 +2440,11 @@ export class WorldService {
   private async sameFamily(worldId: string, a: string, b: string): Promise<boolean> {
     if (a === b) return true;
     const { cols } = this.deps;
-    const [ma, mb] = await Promise.all([
-      cols.familyMembers.findOne({ _id: `${worldId}:${a}` }),
-      cols.familyMembers.findOne({ _id: `${worldId}:${b}` }),
+    const [pa, pb] = await Promise.all([
+      cols.playerWorld.findOne({ _id: playerWorldId(worldId, a) }),
+      cols.playerWorld.findOne({ _id: playerWorldId(worldId, b) }),
     ]);
-    return !!ma?.familyId && ma.familyId === mb?.familyId;
+    return !!pa?.familyId && pa.familyId === pb?.familyId;
   }
 
   // ── G3-2c: attack formation templates (teams) ─────────────────────────────
@@ -2819,10 +2806,10 @@ export class WorldService {
     const { cols } = this.deps;
     if (scope === 'solo') return [id];
     const familyIds = scope === 'sect'
-      ? (await cols.families.find({ sectId: id }).project({ _id: 1 }).toArray()).map((f) => f._id as string)
+      ? (await this.socialsvc.getFamiliesBySect(id)).map((f) => f.familyId)
       : [id];
     if (familyIds.length === 0) return [];
-    const members = await cols.familyMembers.find({ familyId: { $in: familyIds } }).project({ accountId: 1 }).toArray();
+    const members = await cols.playerWorld.find({ worldId, familyId: { $in: familyIds } }).project({ accountId: 1 }).toArray();
     return [...new Set(members.map((m) => (m as unknown as { accountId: string }).accountId))];
   }
 
@@ -2856,13 +2843,14 @@ export class WorldService {
 
     const nations = await cols.nations.find({ worldId, ownerId: { $exists: true } }).toArray();
 
-    // family → sectId mapping (which sect each occupier's family belongs to).
-    const fams = await cols.families.find({ worldId }).toArray();
+    // family → sectId mapping (which sect each occupier's family belongs to), fetched from socialsvc for just the families that occupy a nation.
+    const occupyingFamilyIds = [...new Set(nations.map((n) => n.familyId).filter((id): id is string => !!id))];
+    const fams = await this.socialsvc.getFamiliesByIds(occupyingFamilyIds);
     const familySect = new Map<string, string | undefined>();
     const familyName = new Map<string, string>();
     for (const f of fams) {
-      familySect.set(f._id, f.sectId);
-      familyName.set(f._id, f.name);
+      familySect.set(f.familyId, f.sectId);
+      familyName.set(f.familyId, f.name);
     }
     const sectName = new Map<string, string>();
     for (const s of await cols.sects.find({ worldId }).toArray()) sectName.set(s._id, s.name);
@@ -2904,10 +2892,10 @@ export class WorldService {
       const sectMemberFamilyIds = new Map<string, string[]>();
       for (const r of ranking) {
         if (r.scope === 'sect') {
-          const memberFams = await cols.families.find({ sectId: r.familyId }).toArray();
-          const sum = memberFams.reduce((acc, f) => acc + effectiveProsperity(f, now()), 0);
+          const memberFams = await this.socialsvc.getFamiliesBySect(r.familyId);
+          const sum = aggregateSectProsperity(memberFams, now());
           sectProsperity.set(r.familyId, sum);
-          sectMemberFamilyIds.set(r.familyId, memberFams.map((f) => f._id));
+          sectMemberFamilyIds.set(r.familyId, memberFams.map((f) => f.familyId));
           await cols.sects.updateOne({ _id: r.familyId }, { $set: { prosperity: sum } });
         }
       }
@@ -3005,19 +2993,23 @@ export class WorldService {
     );
     if (!w) throw new SlgError('WORLD_CLOSED', 'Must settle before resetting');
 
-    // ② Batch-delete large collections (tiles/marches/playerWorld/sieges may have tens of thousands of records).
+    // ② Snapshot which families were active in this world (needed to zero their SLG state on socialsvc below — playerWorld is about to be wiped).
+    const activeFamilyIds = [...new Set(
+      (await cols.playerWorld.find({ worldId, familyId: { $exists: true } }).project<{ familyId: string }>({ familyId: 1 }).toArray())
+        .map((p) => p.familyId),
+    )];
+
+    // ③ Batch-delete large collections (tiles/marches/playerWorld/sieges may have tens of thousands of records).
     const deleted: Record<string, number> = {};
     for (const c of ['tiles', 'marches', 'playerWorld', 'nations', 'sieges', 'sects', 'sectMessages'] as const) {
       deleted[c] = await deleteInBatches(cols[c] as never, { worldId }, RESET_DELETE_BATCH);
     }
 
-    // ③ Preserve family membership (member relationships persist across seasons) but zero season state: territory/prosperity/activity reset to 0 + clear sect affiliation.
-    await cols.families.updateMany(
-      { worldId },
-      { $set: { territoryCount: 0, prosperity: 0, activity: 0, prosperityUpdatedAt: now() }, $unset: { sectId: '' } },
-    );
+    // ④ Zero season state (territory/prosperity/activity reset to 0 + clear sect affiliation) for families that played in this world.
+    // Family identity/membership itself persists across seasons on socialsvc — only the SLG mirror is reset here.
+    await Promise.all(activeFamilyIds.map((fid) => this.socialsvc.resetSlgState(fid)));
 
-    // ④ Reopen (re-pin engineVersion to the current process version, C7).
+    // ⑤ Reopen (re-pin engineVersion to the current process version, C7).
     await cols.worlds.updateOne(
       { _id: worldId },
       { $set: { status: 'open' as const, population: 0, resetAt: now(), engineVersion: ENGINE_VERSION }, $inc: { rev: 1 } },
@@ -3090,7 +3082,7 @@ export class WorldService {
     // ② shardCount = ceil(last season's total population across all shards / capacity) (first season has no prior season → 0 → 1 shard).
     const prevWorldIds = (await cols.worlds.find({ season: prevSeason }).project({ _id: 1 }).toArray()).map((w) => w._id);
     const totalPlayers = prevWorldIds.length > 0
-      ? await cols.familyMembers.countDocuments({ worldId: { $in: prevWorldIds } })
+      ? await cols.playerWorld.countDocuments({ worldId: { $in: prevWorldIds } })
       : 0;
     const shardCount = shardCountForPopulation(totalPlayers, capacity);
 
@@ -3104,13 +3096,16 @@ export class WorldService {
     const shardLoad = new Array(shardCount).fill(0);
     for (const idx of Object.values(familyShard)) if (idx < shardCount) shardLoad[idx]++;
     if (prevWorldIds.length > 0) {
-      const looseFams = await cols.families
-        .find({ worldId: { $in: prevWorldIds }, _id: { $nin: [...sectFamilyAll] } })
-        .project({ _id: 1 }).sort({ _id: 1 }).toArray();
-      for (const f of looseFams) {
+      const looseFamilyIds = [...new Set(
+        (await cols.playerWorld
+          .find({ worldId: { $in: prevWorldIds }, familyId: { $exists: true, $nin: [...sectFamilyAll] } })
+          .project<{ familyId: string }>({ familyId: 1 }).toArray())
+          .map((p) => p.familyId),
+      )].sort();
+      for (const fid of looseFamilyIds) {
         let min = 0;
         for (let i = 1; i < shardCount; i++) if (shardLoad[i] < shardLoad[min]) min = i;
-        familyShard[f._id] = min;
+        familyShard[fid] = min;
         shardLoad[min]++;
       }
     }
@@ -3149,11 +3144,11 @@ export class WorldService {
 
     // ② Family lookup: last season's family → familyShard table hit (shard must be open/active and not full).
     if (alloc) {
-      const prevMember = await cols.familyMembers.findOne(
+      const prevPw = await cols.playerWorld.findOne(
         { accountId, worldId: { $regex: `^s${season - 1}-` } },
         { projection: { familyId: 1 } },
       );
-      const idx = prevMember ? alloc.familyShard[prevMember.familyId] : undefined;
+      const idx = prevPw?.familyId ? alloc.familyShard[prevPw.familyId] : undefined;
       if (idx != null) {
         const wid = worldShardId(season, idx);
         const w = await cols.worlds.findOne({ _id: wid });

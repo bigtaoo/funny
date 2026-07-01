@@ -1,13 +1,14 @@
-// Family prosperity (G2 / SLG_DESIGN §17.4): score = familyProsperity(territory, member, activity),
-// lazily decayed on read (analogous to resource yield; not ticked daily). territory = number of tiles
-// currently occupied by family members (same source as the per-player countDocuments in getMe,
-// expanded by aggregating across members). Explicit refresh points (occupation / siege / sect-founding / settle)
-// write back prosperity + prosperityUpdatedAt anchor.
-import { familyProsperity, decayProsperity } from '@nw/shared';
-import type { WorldCollections, FamilyDoc } from './db';
+// Family prosperity (G2 / SLG_DESIGN §17.4): score = familyProsperity(territory, member, activity).
+// P4 follow-up: prosperity/activity are now owned by socialsvc's FamilyDoc (worldsvc no longer keeps a local
+// family mirror); worldsvc only knows tile ownership, so it computes territoryCount and asks socialsvc to
+// recompute + persist prosperity via the internal API. decayProsperity is applied lazily by callers that read
+// an already-fetched FamilySummary (e.g. sect prosperity aggregation at settlement) rather than by worldsvc itself.
+import { decayProsperity } from '@nw/shared';
+import type { WorldCollections } from './db';
+import type { WorldSocialsvcClient, FamilySummary } from './socialsvcClient';
 
 /** Effective prosperity after lazy decay on read (not written back). base defaults to 0; anchor defaults to now (no decay). */
-export function effectiveProsperity(fam: Pick<FamilyDoc, 'prosperity' | 'prosperityUpdatedAt'>, now: number): number {
+export function effectiveProsperity(fam: Pick<FamilySummary, 'prosperity' | 'prosperityUpdatedAt'>, now: number): number {
   const base = fam.prosperity ?? 0;
   const anchor = fam.prosperityUpdatedAt ?? now;
   const dtDays = Math.max(0, (now - anchor) / 86_400_000);
@@ -15,35 +16,25 @@ export function effectiveProsperity(fam: Pick<FamilyDoc, 'prosperity' | 'prosper
 }
 
 /**
- * Recompute and write back family prosperity (§17.4 explicit refresh point).
- * territory = number of tiles occupied by family members,
- * member = FamilyDoc.memberCount, activity = FamilyDoc.activity (season cumulative activity).
- * Writes back prosperity + prosperityUpdatedAt=now. Returns the new value (freshly refreshed, no further decay needed).
- * Best-effort semantics are the caller's responsibility; family not found → returns 0 without writing.
+ * Recompute family prosperity via socialsvc (§17.4 explicit refresh point).
+ * territory = number of tiles occupied by family members currently joined to this world (via PlayerWorldDoc.familyId,
+ * SS7 mirror). member/activity are supplied by socialsvc from its own FamilyDoc. Best-effort: failure returns 0.
  */
 export async function refreshFamilyProsperity(
   cols: WorldCollections,
+  socialsvc: WorldSocialsvcClient,
   worldId: string,
   familyId: string,
-  now: number,
 ): Promise<number> {
-  const fam = await cols.families.findOne({ _id: familyId });
-  if (!fam) return 0;
-  const members = await cols.familyMembers.find({ familyId }).project({ accountId: 1 }).toArray();
+  const members = await cols.playerWorld.find({ worldId, familyId }).project({ accountId: 1 }).toArray();
   const ids = members.map((m) => (m as unknown as { accountId: string }).accountId);
   const territoryCount = ids.length > 0
     ? await cols.tiles.countDocuments({ worldId, ownerId: { $in: ids } })
     : 0;
-  const prosperity = familyProsperity(territoryCount, fam.memberCount, fam.activity ?? 0);
-  await cols.families.updateOne(
-    { _id: familyId },
-    { $set: { prosperity, prosperityUpdatedAt: now } },
-  );
-  return prosperity;
+  return socialsvc.refreshProsperity(familyId, territoryCount);
 }
 
-/** Sect prosperity aggregate = ∑ effective prosperity of member families (§17.4, refreshed on settle / sect-founding / G6 harvest). */
-export async function aggregateSectProsperity(cols: WorldCollections, sectId: string, now: number): Promise<number> {
-  const fams = await cols.families.find({ sectId }).toArray();
+/** Sect prosperity aggregate = ∑ effective prosperity of already-fetched member families (§17.4, refreshed on settle / sect-founding / G6 harvest). */
+export function aggregateSectProsperity(fams: FamilySummary[], now: number): number {
   return fams.reduce((sum, f) => sum + effectiveProsperity(f, now), 0);
 }

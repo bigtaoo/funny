@@ -271,7 +271,15 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 - `client/src/net/WorldApiClient.ts` 的这三个类型改为手写（不再从 `components['schemas']`），字段对齐 `server/socialsvc/src/familyService.ts` 的真实返回形状（`FamilyMemberView` 只有 `accountId/role/joinedAt`，无 `publicId`/`displayName`；`FamilyMessageView` 用 `senderId/senderName`，不是 `from/fromName`）。
 - `FamilyScene.ts` 消息列表原来读 `msg.fromName ?? msg.from`（字段名对不上，永远显示 undefined）——已改为 `senderName ?? senderId`；发送消息时也从未传 `senderName`（服务端会 fallback 成裸 accountId）——已仿照 `SectScene.ts` 的 `playerName` 模式补上。
 - `server/socialsvc/src/familyService.ts` 的 `getFamily`/`createFamily` 原本从不解析成员的 `publicId`/`displayName`（`FamilyMemberDoc` 本就没存这些字段），导致成员列表 UI 永远显示空名字。已仿照 `friendService.ts` 的模式接入 `SocialMetaClient.batchProfiles()` 做懒解析，`FamilyMemberView` 新增可选 `publicId?`/`displayName?`。
-- **⚠️ 发现但未在本次修复的更大问题**：`SectScene.ts`/`createAppCore.ts` 一直在读 `fam.sectId`，但 socialsvc 的 `FamilyView` 从未有过这个字段——宗门归属信息实际读不到，`SectScene` 恒落到 `noSect`。往深查，`worldsvc/src/sectService.ts` 仍在读写它自己本地的 `families`/`familyMembers` 两个集合（`db.ts` 定义），但自 P4 起没有任何生产代码路径向这两个集合写入数据（e2e 测试是直接 `insertOne` 假数据绕过的，见上条）——宗门创建/加入/发言等操作在生产环境很可能静默失效。已作为独立任务追踪（未在本次分支解决），需要架构决策：worldsvc 通过 `WorldSocialsvcClient` 向 socialsvc 查家族信息，或者 socialsvc 的 `FamilyDoc` 增加 `sectId` 镜像字段。本次分支只做了让 TS 编译通过的最小改动（去掉死读取，`SectScene` 保留 `noSect`），行为与修复前一致（本来也从未真正工作过）。
+- **⚠️ 发现但未在本次修复的更大问题**（已于下条修复）：`SectScene.ts`/`createAppCore.ts` 一直在读 `fam.sectId`，但 socialsvc 的 `FamilyView` 从未有过这个字段——宗门归属信息实际读不到，`SectScene` 恒落到 `noSect`。往深查，`worldsvc/src/sectService.ts` 仍在读写它自己本地的 `families`/`familyMembers` 两个集合（`db.ts` 定义），但自 P4 起没有任何生产代码路径向这两个集合写入数据（e2e 测试是直接 `insertOne` 假数据绕过的，见上条）——宗门创建/加入/发言等操作在生产环境很可能静默失效。
+
+**宗门功能修复（2026-07-01）**：确认上条问题为真实功能故障（非仅类型不匹配）——`worldsvc` 的 `families`/`familyMembers` 集合的唯一写入方是被 P4 删除的 `familyService.ts`（含 dist 编译产物残留 + 测试 fixture 直接 `insertOne` 绕过），生产环境从未写入过；连带发现 `service.ts` 内约 40 处依赖同一套死集合的用法（同族视野共享 `familyMemberIds`/`allySectMemberIds`、出生点找同族、A* 通行同族门、宗门长阵亡惩罚、赛季结算聚合、G6 跨赛季分片分配），全部同样静默失效。采用**方案 A（worldsvc 实时查 socialsvc）**修复，废弃 worldsvc 本地 `families`/`familyMembers` 镜像：
+
+- **家族身份/名册**：worldsvc 不再自存，改为通过 `WorldSocialsvcClient` 实时查 socialsvc 新增的内部接口——`GET /internal/family/member/:accountId`（成员资格+身份一次拿全，供 `requireFamilyLeader` 权限检查）、`POST /internal/family/batch`（按 id 批量查，供宗门花名册/赛季结算）、`GET /internal/family/by-sect/:sectId`（某宗门下所有家族）。
+- **同世界内成员定位**（视野共享/出生点找同族/A* 同族门/宗门长阵亡惩罚扇出）：改用已有的 `PlayerWorldDoc.familyId`（SS7 镜像，`joinWorld` 时同步一次）按 `worldId+familyId` 查 `playerWorld` 集合——不需要新集合，`playerWorld` 本身就是"此玩家此赛季在此世界属于哪个家族"的权威记录。
+- **`sectId`**：worldsvc 仍是权威写者（宗门是赛季级 SLG 概念，SS6 不变），但不再有本地表——直接调 socialsvc 新增的 `POST /internal/family/:familyId/sect`（`{sectId: string|null}`）写回 socialsvc 的 `FamilyDoc.sectId` 镜像字段，供客户端 `/social/family/*` 直接读到（`FamilyView`/`FamilyDetailView` 新增 `sectId?`/`territoryCount?`）。
+- **繁荣度/活跃度**（原本 `FamilyDoc.prosperity`/`activity` 就已在 socialsvc 侧，注释早已写明"由 socialsvc 维护"，只是 worldsvc 代码从未真正调用）：`worldsvc` 只算 `territoryCount`（只有它知道地块归属），调 socialsvc 新增的 `POST /internal/family/:familyId/prosperity/refresh`（`{territoryCount}`）触发重算+持久化；`bumpActivity` 改调已存在但此前从未被调用过的 `/internal/family/activity`。赛季重置新增 `POST /internal/family/:familyId/slg-reset` 一次性清零 territoryCount/prosperity/activity/sectId（家族身份/成员关系本身不受影响，跨赛季保留）。
+- **落地文件**：`server/socialsvc/src/{db,familyService,httpApi}.ts`（新字段+新内部接口）、`server/worldsvc/src/{socialsvcClient,db,prosperity,sectService,service}.ts`（删除死集合，改调 socialsvc）、`server/worldsvc/test/sect.e2e.test.ts`（fixture 改为内存假 `WorldSocialsvcClient`，不再直插已删除的集合）、`client/src/scenes/SectScene.ts` + `client/src/app/createAppCore.ts`（恢复读 `fam.sectId`）、`client/src/net/WorldApiClient.ts`（`FamilyView` 补字段）。
 
 ---
 
@@ -298,6 +306,6 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 | # | 问题 | 当前倾向 |
 |---|---|---|
 | O1 | 家族加入方式：开放加入 vs 需族长审批？ | 两种模式都支持（`FamilyDoc.joinPolicy: 'open' \| 'approval'`），P1 先做开放 |
-| O2 | 存量 worldsvc 家族（有 worldId）的迁移优先级？ | SLG 功能还在开发，现存数据量极少，迁移脚本写好直接跑 |
+| O2 | 存量 worldsvc 家族（有 worldId）的迁移优先级？ | ✅ 已解决（2026-07-01）：worldsvc 本地 `families`/`familyMembers` 集合已整体移除，无需迁移脚本——家族身份统一在 socialsvc，worldsvc 只保留 `sectId`/`territoryCount`/`prosperity`/`activity` 的写回镜像，见 §6 宗门功能修复 |
 | O3 | socialsvc 是否需要独立 JWT secret，还是复用 meta 的？ | 复用 meta JWT secret，verifyToken 同一套；避免双密钥管理 |
 | O4 | 家族繁荣度（进 SLG 建宗门的门槛）由谁维护？ | socialsvc 记 `prosperity`（家族活跃/捐献累积），worldsvc 读镜像判断门槛 |

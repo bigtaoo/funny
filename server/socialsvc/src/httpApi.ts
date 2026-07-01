@@ -247,6 +247,66 @@ export function startHttpApi(
           return send(res, 200, ok({}));
         }
 
+        // Membership + family identity in one round trip (called by worldsvc sect permission checks)
+        {
+          const m = /^\/internal\/family\/member\/([^/]+)$/.exec(path);
+          if (method === 'GET' && m) {
+            const accountId = decodeURIComponent(m[1]!);
+            const member = await familySvc.getMember(accountId);
+            return send(res, 200, ok({ member }));
+          }
+        }
+
+        // Batch fetch families by id (called by worldsvc for sect roster display / season settlement)
+        if (method === 'POST' && path === '/internal/family/batch') {
+          const body = await readJson(req);
+          const familyIds = Array.isArray(body.familyIds) ? (body.familyIds as string[]) : [];
+          return send(res, 200, ok({ families: await familySvc.getFamiliesByIds(familyIds) }));
+        }
+
+        // All families currently in a given sect (called by worldsvc sect roster / vote / penalty fan-out)
+        {
+          const m = /^\/internal\/family\/by-sect\/([^/]+)$/.exec(path);
+          if (method === 'GET' && m) {
+            const sectId = decodeURIComponent(m[1]!);
+            return send(res, 200, ok({ families: await familySvc.getFamiliesBySect(sectId) }));
+          }
+        }
+
+        // Set/clear the sect a family belongs to (worldsvc is authoritative; this is a read cache for clients, SLG_DESIGN §8.2)
+        {
+          const m = /^\/internal\/family\/([^/]+)\/sect$/.exec(path);
+          if (method === 'POST' && m) {
+            const familyId = decodeURIComponent(m[1]!);
+            const body = await readJson(req);
+            const sectId = typeof body.sectId === 'string' ? body.sectId : null;
+            await familySvc.setSect(familyId, sectId);
+            return send(res, 200, ok({}));
+          }
+        }
+
+        // Recompute + persist prosperity from a worldsvc-supplied territoryCount (worldsvc owns tile ownership)
+        {
+          const m = /^\/internal\/family\/([^/]+)\/prosperity\/refresh$/.exec(path);
+          if (method === 'POST' && m) {
+            const familyId = decodeURIComponent(m[1]!);
+            const body = await readJson(req);
+            const territoryCount = typeof body.territoryCount === 'number' ? body.territoryCount : 0;
+            const prosperity = await familySvc.refreshProsperity(familyId, territoryCount);
+            return send(res, 200, ok({ prosperity }));
+          }
+        }
+
+        // Zero SLG season state on world reset (called by worldsvc's resetSeason, SLG_DESIGN §17.3)
+        {
+          const m = /^\/internal\/family\/([^/]+)\/slg-reset$/.exec(path);
+          if (method === 'POST' && m) {
+            const familyId = decodeURIComponent(m[1]!);
+            await familySvc.resetSlgState(familyId);
+            return send(res, 200, ok({}));
+          }
+        }
+
         // Presence event (called by gateway, P3): fan-out of friend online/offline notifications
         if (method === 'POST' && (path === '/internal/presence/online' || path === '/internal/presence/offline')) {
           const body = await readJson(req);

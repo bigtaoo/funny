@@ -6,6 +6,7 @@ import {
   FAMILY_CAP,
   FAMILY_MSG_BODY_MAX,
   SlgError,
+  familyProsperity,
   type FamilyRole,
 } from '@nw/shared';
 import type { SocialCollections, FamilyDoc, FamilyMemberDoc, FamilyMessageDoc } from './db';
@@ -21,7 +22,23 @@ export interface FamilyView {
   leaderId: string;
   memberCount: number;
   prosperity: number;
+  /** Prosperity decay anchor ms (needed by worldsvc to lazily decay sect-aggregate prosperity on read; SLG_DESIGN §17.4). */
+  prosperityUpdatedAt?: number;
+  /** Territory tile count (worldsvc-owned mirror). */
+  territoryCount?: number;
+  /** Sect the family currently belongs to (worldsvc-owned mirror; absent = independent family). */
+  sectId?: string;
   announcement?: string;
+}
+
+/** Membership + family identity in one round trip (internal API, called by worldsvc's requireFamilyLeader). */
+export interface FamilyMembershipView {
+  familyId: string;
+  role: FamilyRole;
+  leaderId: string;
+  name: string;
+  tag: string;
+  memberCount: number;
 }
 
 export interface FamilyDetailView extends FamilyView {
@@ -67,6 +84,9 @@ function docToView(doc: FamilyDoc): FamilyView {
     leaderId: doc.leaderId,
     memberCount: doc.memberCount,
     prosperity: doc.prosperity,
+    prosperityUpdatedAt: doc.prosperityUpdatedAt,
+    ...(doc.territoryCount != null ? { territoryCount: doc.territoryCount } : {}),
+    ...(doc.sectId ? { sectId: doc.sectId } : {}),
     ...(doc.announcement ? { announcement: doc.announcement } : {}),
   };
 }
@@ -341,6 +361,60 @@ export class FamilyService {
     await this.deps.cols.families.updateOne(
       { _id: familyId },
       { $inc: { activity: delta } },
+    );
+  }
+
+  /** Internal API: membership + family identity in one round trip (called by worldsvc's sect permission checks). Returns null if not in a family. */
+  async getMember(accountId: string): Promise<FamilyMembershipView | null> {
+    const mem = await this.deps.cols.familyMembers.findOne({ _id: accountId });
+    if (!mem) return null;
+    const fam = await this.deps.cols.families.findOne({ _id: mem.familyId });
+    if (!fam) return null;
+    return { familyId: mem.familyId, role: mem.role, leaderId: fam.leaderId, name: fam.name, tag: fam.tag, memberCount: fam.memberCount };
+  }
+
+  /** Internal API: batch fetch families by id (called by worldsvc for sect roster display / season settlement). Missing ids are silently skipped. */
+  async getFamiliesByIds(familyIds: string[]): Promise<FamilyView[]> {
+    if (familyIds.length === 0) return [];
+    const docs = await this.deps.cols.families.find({ _id: { $in: familyIds } }).toArray();
+    return docs.map(docToView);
+  }
+
+  /** Internal API: all families currently pointing at the given sectId (called by worldsvc sect roster / leave-vote flows). */
+  async getFamiliesBySect(sectId: string): Promise<FamilyView[]> {
+    const docs = await this.deps.cols.families.find({ sectId }).toArray();
+    return docs.map(docToView);
+  }
+
+  /** Internal API: set/clear the sect a family belongs to (called by worldsvc on sect join/leave/found/dissolve; worldsvc is authoritative, this is a read cache for clients). */
+  async setSect(familyId: string, sectId: string | null): Promise<void> {
+    await this.deps.cols.families.updateOne(
+      { _id: familyId },
+      sectId ? { $set: { sectId } } : { $unset: { sectId: '' } },
+    );
+  }
+
+  /**
+   * Internal API: recompute + persist prosperity from a worldsvc-supplied territoryCount (worldsvc owns tile
+   * ownership; socialsvc owns the family doc). Called at explicit refresh points (occupation / siege / sect-founding / settle),
+   * mirroring the pre-P4 worldsvc-local refreshFamilyProsperity semantics. Family not found → returns 0 without writing.
+   */
+  async refreshProsperity(familyId: string, territoryCount: number): Promise<number> {
+    const fam = await this.deps.cols.families.findOne({ _id: familyId });
+    if (!fam) return 0;
+    const prosperity = familyProsperity(territoryCount, fam.memberCount, fam.activity ?? 0);
+    await this.deps.cols.families.updateOne(
+      { _id: familyId },
+      { $set: { prosperity, prosperityUpdatedAt: this.deps.now(), territoryCount } },
+    );
+    return prosperity;
+  }
+
+  /** Internal API: zero all SLG season state (territory/prosperity/activity/sect) on world reset (SLG_DESIGN §17.3); family identity/membership is untouched. */
+  async resetSlgState(familyId: string): Promise<void> {
+    await this.deps.cols.families.updateOne(
+      { _id: familyId },
+      { $set: { territoryCount: 0, prosperity: 0, activity: 0, prosperityUpdatedAt: this.deps.now() }, $unset: { sectId: '' } },
     );
   }
 }
