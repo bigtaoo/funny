@@ -357,6 +357,26 @@ export function startHttpApi(
           return send(res, 200, ok({}));
         }
 
+        // ── CC-3: card troop distribution + injury recovery ──
+        if (method === 'POST' && path === '/world/troops/distribute') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const allocations = body.allocations && typeof body.allocations === 'object' && !Array.isArray(body.allocations) ? (body.allocations as Record<string, number>) : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (!allocations) return sendErr(res, ErrorCode.BAD_REQUEST, 'allocations required');
+          await svc.distributeTroops(worldId, accountId, allocations);
+          return send(res, 200, ok({}));
+        }
+        if (method === 'POST' && path === '/world/troops/recover') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const cardInstanceId = typeof body.cardInstanceId === 'string' ? body.cardInstanceId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (!cardInstanceId) return sendErr(res, ErrorCode.BAD_REQUEST, 'cardInstanceId required');
+          await svc.recoverCard(worldId, accountId, cardInstanceId);
+          return send(res, 200, ok({}));
+        }
+
         // ── Training queue (S8-2, implemented) ──
         if (method === 'POST' && path === '/world/troops/train') {
           const body = await readJson(req);

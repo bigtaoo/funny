@@ -460,16 +460,26 @@ components:
           type: object
           additionalProperties: true
 
-    # Formation unit (mirrors GarrisonEntry, G3-2c). Validity of unitType/col/row is checked by the engine levelSchema;
-    # initialHp = troops allocated to this unit (= HP, §16.1).
+    # CC-3: per-card SLG run-time state stored in PlayerWorldDoc.cardState (CHARACTER_CARDS_DESIGN §7).
+    CardSLGState:
+      type: object
+      required: [currentTroops]
+      properties:
+        currentTroops: { type: integer, description: Troops currently allocated to this card }
+        injuredUntil: { type: integer, nullable: true, description: Unix ms timestamp when injury ends; null = not injured }
+        teamId: { type: string, nullable: true, description: Team this card is assigned to }
+
+    # Formation unit (mirrors GarrisonEntry + CC-3 cardInstanceId, G3-2c). Validity of unitType/col/row is checked by the engine levelSchema;
+    # initialHp = troops allocated to this unit (= HP, §16.1); cardInstanceId = CC-3 primary key (replaces unitType for new armies).
     ArmyEntry:
       type: object
-      required: [unitType, col, row]
+      required: [col, row]
       properties:
-        unitType: { type: string }
+        cardInstanceId: { type: string, description: CC-3 primary key (character card instance) }
+        unitType: { type: string, description: Legacy unit type (synthesis/replay paths only) }
         col: { type: integer }
         row: { type: integer }
-        initialHp: { type: integer }
+        initialHp: { type: integer, description: Legacy initial HP for replay data }
 
     # Attack formation template (team, G3-2c, ≤ 5 teams). A march attaches one team → the army snapshot is stored with the march.
     TeamTemplate:
@@ -843,6 +853,54 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/MarchView' }
+
+  /world/troops/distribute:
+    post:
+      operationId: distributeTroops
+      summary: CC-3 — distribute troops from baseTroopStock to card slots
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, allocations]
+              properties:
+                worldId: { type: string }
+                allocations:
+                  type: object
+                  additionalProperties:
+                    type: integer
+                  description: Map of cardInstanceId to troop count to add
+      responses:
+        '200':
+          description: Troops distributed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /world/troops/recover:
+    post:
+      operationId: recoverCard
+      summary: CC-3 — recover an injured card by spending coins
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, cardInstanceId]
+              properties:
+                worldId: { type: string }
+                cardInstanceId: { type: string }
+      responses:
+        '200':
+          description: Card recovered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
 
   /world/troops/train:
     post:

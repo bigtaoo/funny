@@ -459,4 +459,4 @@ v3 → v4 **直接丢弃冲突字段**，不做数据转换：
 | **CC-1 共享类型层** | ✅ 2026-07-01 | `cards.ts`（CARD_DEFS/feedXp/cardPower/selectBestCard）+ `types.ts`（CardInstance/SaveData v4）+ engine 签名更新 |
 | **CC-2 metaserver CRUD** | ✅ 2026-07-01 | `cards.ts`（grantCards/feedCards）+ `equipment.ts`（cardInstanceId）+ `service.ts`（cardsFeed/maybeGrantStarterCards/grantClearReward）+ `internal.ts` + `openapi.yml`（CardInstance schema/cards/feed/equip） |
 | **CC-3 客户端 UI + 引擎接线** | ⬜ 待做 | Hero Roster 卡墙 + 养成面板 + goCampaign 传 cardInstances |
-| **CC-4 SLG 兵力** | ⬜ 待做 | worldsvc cardState + 受伤锁队 + 兵力分配 |
+| **CC-4 SLG 兵力** | ✅ 2026-07-01 | worldsvc cardState + 受伤锁队 + 兵力分配；`db.ts`（CardSLGState/ArmyEntry CC-3/baseTroopStock）+ `siegeEngine.ts`（resolveCardArmy/toEngineCardInstances/computeCardStateUpdates）+ `service.ts`（setTeams CC-3 validation/distributeTroops/recoverCard/landSiege cardState write）+ `httpApi.ts`（distribute/recover routes）+ `openapi-world.yml`（CardSLGState schema/distribute/recover endpoints）|

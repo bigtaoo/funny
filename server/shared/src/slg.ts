@@ -1179,6 +1179,32 @@ export const SIEGE_CHEAP_RATIO = 10;
 /** Maximum number of attack lineup templates (teams) (§16.2; initial phase: 5 = number of saveable templates + concurrency cap). */
 export const SIEGE_TEAM_CAP = 5;
 
+// ── CC-3: card-based SLG troop system (CHARACTER_CARDS_DESIGN §6/§7/§8) ────────────────────
+
+/** Maximum number of card instances per attack team (CHARACTER_CARDS_DESIGN §8.2). */
+export const CARD_TEAM_MAX_SIZE = 12;
+
+/** Initial baseTroopStock granted to a player when they first join a world season (CHARACTER_CARDS_DESIGN §6.5). */
+export const BASE_TROOP_STOCK_INITIAL = 10_000;
+
+/** Minimum surviving troop fraction when a card's HP reaches zero in battle (baseSurvival, CHARACTER_CARDS_DESIGN §7.1). [DRAFT → ECONOMY_NUMBERS §6] */
+export const CARD_BASE_SURVIVAL = 0.2;
+
+/** Injury lock duration (ms) applied when a card's HP reaches zero in battle (CHARACTER_CARDS_DESIGN §7.2). */
+export const CARD_INJURY_DURATION_MS = 5 * 60 * 1000;
+
+/** Coins required for immediate card injury recovery (CHARACTER_CARDS_DESIGN §7.2). [DRAFT → ECONOMY_NUMBERS §6] */
+export const CARD_RECOVER_COIN_COST = 50;
+
+/** Fraction of training resources refunded when a card is removed from a team (CHARACTER_CARDS_DESIGN §6.3). */
+export const CARD_TROOP_REFUND_RATE = 0.8;
+/** Paper cost per card troop trained into baseTroopStock (粮, CHARACTER_CARDS_DESIGN §6). [DRAFT → ECONOMY_NUMBERS §6] */
+export const CARD_TROOP_PAPER_COST = 2;
+/** Graphite cost per card troop (木材, CHARACTER_CARDS_DESIGN §6). [DRAFT → ECONOMY_NUMBERS §6] */
+export const CARD_TROOP_GRAPHITE_COST = 2;
+/** Metal cost per card troop (铁, CHARACTER_CARDS_DESIGN §6). [DRAFT → ECONOMY_NUMBERS §6] */
+export const CARD_TROOP_METAL_COST = 1;
+
 // ── Per-unit troop slider (§16.5 A7 tuning) ────────────────────────────────────────────
 /**
  * Minimum HP fraction per unit in the lineup editor (§16.5): at least 25% of the blueprint's full HP must be assigned,

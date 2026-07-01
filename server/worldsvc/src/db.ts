@@ -20,13 +20,31 @@ import { FAMILY_MSG_RETENTION_SEC } from '@nw/shared';
 export type DefenseConfig = Record<string, unknown>;
 
 /**
- * Army placement unit (serializable mirror of GarrisonEntry, G3-2c). unitType/col/row validity is validated by the engine-side levelSchema
- * during buildSiegeBattle→parseLevelDefinition; initialHp = troop strength allocated to this unit (= HP, §16.1).
+ * SLG run-time state for a single card instance in a world season (CHARACTER_CARDS_DESIGN §8.4).
+ * Stored in PlayerWorldDoc.cardState; cleared on season reset with the playerWorld document.
+ */
+export interface CardSLGState {
+  /** Current card troop count (0 ~ troopCap). Derived from baseTroopStock allocation + battle casualties. */
+  currentTroops: number;
+  /** Injury lock expiry (ms). Card cannot be added to a team until this timestamp passes. Absent = healthy. */
+  injuredUntil?: number;
+  /** Team slot this card belongs to (t1..t5). Absent = not in any team. */
+  teamId?: string;
+}
+
+/**
+ * Army placement unit (CC-3: cardInstanceId replaces unitType; unitType is derived by the engine from CARD_DEFS;
+ * initialHp is derived from cardState[cardInstanceId].currentTroops at siege time).
+ * Backward-compat: unitType / initialHp are kept optional for legacy replay data in SiegeDoc.attackerArmy.
  */
 export interface ArmyEntry {
-  unitType: string;
+  /** Card instance id (CC-3). When present, unitType is derived from CARD_DEFS at siege time. */
+  cardInstanceId?: string;
+  /** Legacy unit type string (pre-CC-3); used when cardInstanceId is absent (synthesized army / replay data). */
+  unitType?: string;
   col: number;
   row: number;
+  /** Legacy troop allocation (pre-CC-3 / replay snapshot). In CC-3 paths, derived from cardState at siege time. */
   initialHp?: number;
 }
 
@@ -107,6 +125,10 @@ export interface PlayerWorldDoc {
   buildings?: Partial<Record<BuildingKey, number>>;
   /** Build queue (SLG_CITY_DESIGN §4, ≤ BUILD_QUEUE_SLOTS entries; chained by completeAt). */
   buildQueue?: BuildQueueEntry[];
+  /** CC-3: per-card SLG run-time state (currentTroops / injuredUntil / teamId). Cleared on season reset. */
+  cardState?: Record<string, CardSLGState>;
+  /** CC-3: base troop stock available to distribute to card instances. Initialised to BASE_TROOP_STOCK_INITIAL on joinWorld. */
+  baseTroopStock?: number;
   rev: number;
 }
 

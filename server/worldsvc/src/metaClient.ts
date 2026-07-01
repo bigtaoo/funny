@@ -2,19 +2,21 @@
 // meta internal HTTP (/internal/materials/* · /internal/profile), authenticated with X-Internal-Key.
 // NW_META_INTERNAL_URL not configured → available=false → auction material transactions + owner display names unavailable.
 
-import { internalHeaders, SlgError, type EquipmentInstance, type GearLoadout } from '@nw/shared';
+import { internalHeaders, SlgError, type EquipmentInstance, type GearLoadout, type CardInstance } from '@nw/shared';
 
 export interface PlayerProfile {
   publicId?: string;
   displayName?: string;
 }
 
-/** Attacker progression snapshot required for authoritative siege engine calculation (E8, /internal/save-fields). */
+/** Attacker progression snapshot required for authoritative siege engine calculation (E8 + CC-3, /internal/save-fields). */
 export interface SaveFields {
   pveUpgrades: Record<string, number>;
   unitLevels: Record<string, number>;
   gear: GearLoadout;
   equipmentInv: Record<string, EquipmentInstance>;
+  /** CC-3: card instance inventory for unit-type + equipment resolution at siege time. */
+  cardInv: Record<string, CardInstance>;
 }
 
 export interface WorldMetaClient {

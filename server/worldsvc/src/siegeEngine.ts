@@ -29,13 +29,20 @@ import {
   parseLevelDefinition,
   type GarrisonEntry,
   type EngineEquipmentInput,
+  type EngineCardInstance,
+  type EngineEquipInv,
 } from '@nw/engine';
 import {
   buildSiegeBattle,
   SIEGE_BATTLE_TIMEOUT_TICKS,
+  CARD_BASE_SURVIVAL,
+  CARD_INJURY_DURATION_MS,
+  CARD_DEFS,
   type SiegeOutcome,
   type SiegeResolution,
+  type CardInstance,
 } from '@nw/shared';
+import type { ArmyEntry, CardSLGState } from './db';
 
 /** Default synthesized unit type = Infantry (basic melee, full HP 60 = unit troop equivalent). §16.5 full-HP capacity table is pending tuning. */
 const SYNTH_UNIT = UnitType.Infantry;
@@ -120,6 +127,113 @@ export function scaleArmyHp(
   }));
 }
 
+/**
+ * Resolves a card-based ArmyEntry[] to GarrisonEntry[] for the engine (CC-3, CHARACTER_CARDS_DESIGN §8.3).
+ * For each entry with cardInstanceId: looks up CardInstance → CardDef.unitType; sets initialHp from cardState.currentTroops.
+ * Entries without cardInstanceId (legacy synthesized/replay paths) are passed through as-is.
+ * Entries whose card is missing from cardInv are skipped (defence against stale/migrated data).
+ */
+export function resolveCardArmy(
+  army: ArmyEntry[],
+  cardState: Record<string, CardSLGState>,
+  cardInv: Record<string, CardInstance>,
+): GarrisonEntry[] {
+  const result: GarrisonEntry[] = [];
+  for (const e of army) {
+    if (!e.cardInstanceId) {
+      // Legacy path: unitType must be present (synthesis / replay).
+      if (e.unitType) {
+        result.push({ unitType: e.unitType as UnitType, col: e.col, row: e.row, ...(e.initialHp != null ? { initialHp: e.initialHp } : {}) });
+      }
+      continue;
+    }
+    const instance = cardInv[e.cardInstanceId];
+    if (!instance) continue; // card not found (stale reference); skip
+    const def = CARD_DEFS[instance.defId];
+    if (!def) continue; // unknown card definition; skip
+    const troops = cardState[e.cardInstanceId]?.currentTroops ?? 0;
+    result.push({ unitType: def.unitType as UnitType, col: e.col, row: e.row, initialHp: Math.max(0, troops) });
+  }
+  return result;
+}
+
+/**
+ * Converts card instances from the meta save snapshot into EngineCardInstance[] for blueprint injection (CC-3).
+ * Only includes instances referenced by the attacker's army. Unknown defId / unitType are silently skipped.
+ */
+export function toEngineCardInstances(
+  army: ArmyEntry[],
+  cardInv: Record<string, CardInstance>,
+  equipmentInv: Record<string, unknown>,
+): { cardInstances: EngineCardInstance[]; engEquipInv: EngineEquipInv } {
+  const seen = new Set<string>();
+  const cardInstances: EngineCardInstance[] = [];
+  for (const e of army) {
+    if (!e.cardInstanceId || seen.has(e.cardInstanceId)) continue;
+    seen.add(e.cardInstanceId);
+    const instance = cardInv[e.cardInstanceId];
+    if (!instance) continue;
+    const def = CARD_DEFS[instance.defId];
+    if (!def) continue;
+    cardInstances.push({
+      id: instance.id,
+      defId: instance.defId,
+      unitType: def.unitType as UnitType,
+      level: instance.level,
+      gear: instance.gear as Record<string, string | undefined>,
+    });
+  }
+  return { cardInstances, engEquipInv: equipmentInv as EngineEquipInv };
+}
+
+/** Post-battle card state updates for attacker cards (CC-3, CHARACTER_CARDS_DESIGN §7.1/§7.2). */
+export interface CardStateUpdate {
+  currentTroops: number;
+  injuredUntil?: number;
+}
+
+/**
+ * Computes per-card state updates after a siege battle (CC-3).
+ * Uses a uniform attacker survival rate (total surviving HP / total deployed HP) applied proportionally
+ * to each card's currentTroops. Cards whose HP reaches zero (total survivors == 0) are marked injured.
+ * baseSurvival guarantees a minimum troop fraction even on full defeat (CHARACTER_CARDS_DESIGN §7.1).
+ *
+ * @param army            Attacker army entries with cardInstanceId
+ * @param cardState       Current card state (for deployedTroops lookup)
+ * @param attackerSurvivors Total attacker surviving HP from the engine
+ * @param nowMs           Current time in ms (for injuredUntil calculation)
+ */
+export function computeCardStateUpdates(
+  army: ArmyEntry[],
+  cardState: Record<string, CardSLGState>,
+  attackerSurvivors: number,
+  nowMs: number,
+): Record<string, CardStateUpdate> {
+  const updates: Record<string, CardStateUpdate> = {};
+  const cardIds = army.map((e) => e.cardInstanceId).filter((id): id is string => !!id);
+  if (cardIds.length === 0) return updates;
+
+  const totalDeployed = cardIds.reduce((s, id) => s + (cardState[id]?.currentTroops ?? 0), 0);
+  // If no troops deployed, no state change needed.
+  if (totalDeployed === 0) return updates;
+
+  // Apply baseSurvival floor: even at 0 survivors, each card keeps baseSurvival fraction of its troops.
+  const survivalRate = Math.max(
+    CARD_BASE_SURVIVAL,
+    Math.min(1, attackerSurvivors / totalDeployed),
+  );
+  const totalZero = attackerSurvivors === 0;
+
+  for (const id of cardIds) {
+    const deployed = cardState[id]?.currentTroops ?? 0;
+    const newTroops = Math.round(deployed * survivalRate);
+    const update: CardStateUpdate = { currentTroops: newTroops };
+    if (totalZero) update.injuredUntil = nowMs + CARD_INJURY_DURATION_MS;
+    updates[id] = update;
+  }
+  return updates;
+}
+
 /** Both-sides army layout and level parameters for a siege battle (attacker required; defender may be null = base-only). */
 export interface SiegeBattleInput {
   /** Attacker army layout (GarrisonEntry[], each unit's initialHp = allocated troop strength). */
@@ -130,9 +244,15 @@ export interface SiegeBattleInput {
   tileLevel: number;
   /** Level seed (same seed for a siege → recalculation and replay are tick-for-tick identical). */
   seed: number;
-  /** Attacker progression snapshot (E8 SLG integration): default = no upgrades, blueprints keep base values (does not block marching). */
+  /** CC-3: attacker card instances for blueprint level + equipment injection. Replaces deprecated pveUpgrades/unitLevels/equipment. */
+  cardInstances?: EngineCardInstance[];
+  /** CC-3: equipment instance inventory for gear resolution. */
+  equipmentInv?: EngineEquipInv;
+  /** @deprecated use cardInstances+equipmentInv (CC-3). Retained for test paths that don't have cards yet. */
   pveUpgrades?: Record<string, number>;
+  /** @deprecated use cardInstances+equipmentInv (CC-3). */
   unitLevels?: Record<string, number>;
+  /** @deprecated use cardInstances+equipmentInv (CC-3). */
   equipment?: EngineEquipmentInput;
   /** Academy building seasonal blueprint buff (SLG_CITY_DESIGN P2): applied to attacker blueprints only; omit when academy=0. */
   siegeAcademy?: { hp: number; damage: number };
@@ -151,7 +271,7 @@ export interface SiegeBattleInput {
  * Settlement goes through the single landing point at service.landSiege (G3-1), decoupled from this function.
  */
 export function runSiegeBattle(input: SiegeBattleInput): SiegeResolution {
-  const { attackerArmy, defenderConfig, tileLevel, seed, pveUpgrades, unitLevels, equipment, siegeAcademy } = input;
+  const { attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv, siegeAcademy } = input;
 
   const levelObj = buildSiegeBattle({ army: attackerArmy }, defenderConfig, tileLevel, seed);
   // P2: The defense config is a restricted subset of the engine LevelDefinition; validated via levelSchema
@@ -169,7 +289,9 @@ export function runSiegeBattle(input: SiegeBattleInput): SiegeResolution {
 
   const { engine } = runHeadless(
     { seed, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level,
-      pveUpgrades, unitLevels, equipment, siegeAcademy },
+      cardInstances: cardInstances ?? [],
+      equipmentInv,
+      siegeAcademy },
     input$,
     timeout + TICK_MARGIN,
   );
