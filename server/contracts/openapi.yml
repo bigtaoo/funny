@@ -161,15 +161,16 @@ components:
         pveUpgrades:
           type: object
           additionalProperties: { type: integer }
-        # —— Unit progression (S12, ECONOMY_NUMBERS §4). Server-authoritative; may be absent in legacy saves, not required ——
-        unitLevels:
-          type: object
-          additionalProperties: { type: integer, minimum: 1, maximum: 9 }
-          description: Unit strength level unitId→1..9, derived from cardInventory; the engine reads this to run blueprints
+        # @deprecated S12 collect-and-merge card inventory; superseded by Hero Roster (cardInv) in CC-1.
         cardInventory:
           type: object
           additionalProperties: { type: integer, minimum: 0 }
-          description: Unit card inventory `${unitId}:${level}`→count, the raw source for card-merging synthesis
+          description: Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup
+        # —— Hero Roster (CC-1/CC-2, CHARACTER_CARDS_DESIGN §2). Server-authoritative; not writable via PUT /save. Hard cap 150. ——
+        cardInv:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/CardInstance' }
+          description: Card instance inventory (instanceId→CardInstance); max 150 entries
         equipped:
           type: object
           additionalProperties: { type: string }
@@ -196,18 +197,6 @@ components:
         equipmentInv:
           type: object
           additionalProperties: { $ref: '#/components/schemas/EquipmentInstance' }
-        gear:
-          type: object
-          description: Equipment loadout (global for all units / byUnit per unit type reserved), slot→instance id.
-          properties:
-            global:
-              type: object
-              additionalProperties: { type: string }
-            byUnit:
-              type: object
-              additionalProperties:
-                type: object
-                additionalProperties: { type: string }
         # —— Retention (B5, RETENTION_DESIGN §4). Server-authoritative, not uploaded via PUT /save; may be absent in legacy saves, not required.
         # ⚠ Must be declared: otherwise response serialization strips retention (same +undefined regression as §10.1) → adoptServer
         # overwrites local save.retention with undefined → check-in claimable always resets to slot 1 (stuck on day 1).
@@ -269,6 +258,21 @@ components:
               id: { type: string }
               value: { type: number }
         locked: { type: boolean }
+
+    # —— Hero Roster card instance (CC-1/CC-2, CHARACTER_CARDS_DESIGN §2.2) ——
+    CardInstance:
+      type: object
+      required: [id, defId, level, xp, gear, locked]
+      properties:
+        id: { type: string, description: Unique instance id (e.g. 'card_a1b2c3') }
+        defId: { type: string, description: Card definition id (references CARD_DEFS) }
+        level: { type: integer, minimum: 1, maximum: 9 }
+        xp: { type: integer, minimum: 0, description: Accumulated XP within the current level }
+        gear:
+          type: object
+          additionalProperties: { type: string }
+          description: Per-slot equipped equipment instance ids (slot→equipmentInstanceId)
+        locked: { type: boolean, description: Locked cards cannot be used as feed material }
 
     # —— Client sync patch (PUT /save only accepts these fields, §2.2) ——
     # From PVE_INTEGRITY_PLAN §8 onward, progress/materials/pveUpgrades become server-authoritative
@@ -1613,7 +1617,7 @@ paths:
     post:
       operationId: equipEquipment
       tags: [save]
-      summary: Equip/unequip (E4, validates slot match → writes gear.global[slot] or byUnit). instanceId=null to unequip. Pure state mutation
+      summary: Equip/unequip (E4, validates slot match → writes CardInstance.gear[slot]). instanceId=null to unequip. Pure state mutation
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1621,14 +1625,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [slot, instanceId]
+              required: [slot, instanceId, cardInstanceId]
               properties:
                 slot: { type: string, enum: [weapon, armor, trinket], description: Target slot }
                 instanceId:
                   type: string
                   nullable: true
-                  description: Instance id to equip; null to unequip the slot
-                unitType: { type: string, description: 'Default = gear.global shared across all units; specified = gear.byUnit for the given unit type (phase 2)' }
+                  description: Equipment instance id to equip; null to unequip the slot
+                cardInstanceId: { type: string, description: 'CardInstance id that owns the gear slot (Hero Roster, CC-2)' }
       responses:
         '200':
           description: Success
@@ -1681,6 +1685,50 @@ paths:
                     required: [instance, save]
                     properties:
                       instance: { $ref: '#/components/schemas/EquipmentInstance' }
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+
+  # —— CC-2 Hero Roster ————————————————————————————————————————————————————————
+
+  /cards/feed:
+    post:
+      operationId: cardsFeed
+      tags: [save]
+      summary: Feed material cards into a target card to gain XP and level up (CHARACTER_CARDS_DESIGN §3.3, CC-2). Same-faction required; locked materials rejected. idempotencyKey prevents double-consumption
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetId, materialIds, idempotencyKey]
+              properties:
+                targetId: { type: string, description: CardInstance id of the card to level up }
+                materialIds:
+                  type: array
+                  items: { type: string }
+                  description: CardInstance ids to consume as feed material (same faction; must not be locked)
+                idempotencyKey: { type: string, description: Client-generated idempotency key; prevents double-consumption on retry }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [card, levelsGained, save]
+                    properties:
+                      card: { $ref: '#/components/schemas/CardInstance' }
+                      levelsGained: { type: integer, minimum: 0 }
                       save: { $ref: '#/components/schemas/SaveData' }
         '400': { $ref: '#/components/responses/ErrorResp' }
         '401': { $ref: '#/components/responses/ErrorResp' }

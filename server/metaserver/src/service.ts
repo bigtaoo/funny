@@ -18,9 +18,10 @@ import {
   accrueStats,
   applyCardMerge,
   deriveUnitLevels,
-  grantCards,
+  CARD_DEFS,
   levelCardReward,
   UNIT_CARD_POOL_ID,
+  type CardDef,
   makeDropInstance,
   EQUIPMENT_INV_CAP,
   equipmentInvCount,
@@ -61,6 +62,7 @@ import { parseTitleId } from '@nw/shared';
 import { getOrCreateSave, putSave, writeMigratedSave } from './save.js';
 import { getCurrentSeason, migrateIfStale } from './ladderSeason.js';
 import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment, reforgeEquipment } from './equipment.js';
+import { grantCards, feedCards } from './cards.js';
 import {
   bindOAuth,
   bindPassword,
@@ -249,6 +251,19 @@ export class MetaService {
     return false;
   }
 
+  /** Grant lichuang/chenshou/suyuan to a brand-new account (CHARACTER_CARDS_DESIGN §4). No-op if account already has cards. */
+  private async maybeGrantStarterCards(accountId: string, isNew: boolean): Promise<void> {
+    if (!isNew) return;
+    const { cols, now } = this.deps;
+    const save = await getOrCreateSave(cols, accountId, now());
+    if (Object.keys(save.cardInv ?? {}).length > 0) return;
+    await grantCards(cols, now, accountId, [
+      CARD_DEFS['lichuang']!,
+      CARD_DEFS['chenshou']!,
+      CARD_DEFS['suyuan']!,
+    ]);
+  }
+
   async authWx(req: FastifyRequest, reply: FastifyReply) {
     const { code } = req.body as { code: string };
     const openid = await exchangeWxCode(code);
@@ -262,6 +277,7 @@ export class MetaService {
     if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
+    await this.maybeGrantStarterCards(accountId, isNew);
     return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
@@ -277,6 +293,7 @@ export class MetaService {
     if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
+    await this.maybeGrantStarterCards(accountId, isNew);
     return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
@@ -309,6 +326,7 @@ export class MetaService {
     const { accountId, isNew, isAnonymous } = result.account;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
+    await this.maybeGrantStarterCards(accountId, isNew);
     return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
@@ -326,6 +344,7 @@ export class MetaService {
     if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
+    await this.maybeGrantStarterCards(accountId, isNew);
     return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
   }
 
@@ -409,6 +428,7 @@ export class MetaService {
     if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
     const token = signToken(accountId, this.deps.jwt);
     const publicId = await ensurePublicId(this.deps.cols, accountId);
+    await this.maybeGrantStarterCards(accountId, isNew);
     return ok({
       token,
       accountId,
@@ -784,9 +804,10 @@ export class MetaService {
   }
 
   /**
-   * Deliver level rewards within the daily cap (material reward + unit card levelCardReward, S12-C).
-   * Both are subject to the same daily gate (materials/cards share the same cap), written atomically in a single mutateSave transaction:
-   * materials $+ / cardInventory via grantCards / unitLevels recomputed via deriveUnitLevels (same interface as gacha/merge, server-authoritative).
+   * Deliver level rewards within the daily cap (material reward + card instance grants, CC-2).
+   * Material reward is written atomically in a single mutateSave transaction.
+   * Card rewards are mapped to CardDef instances and granted at level=2 via the async grantCards
+   * (own rev loop, separate call). Equipment drop is rolled independently of the daily cap.
    * Returns actually delivered amounts (all empty if capped) + capped flag + save.
    */
   private async grantClearReward(
@@ -800,11 +821,19 @@ export class MetaService {
     grantedEquipment?: EquipmentInstance;
     capped: boolean;
   } | { error: string }> {
+    const { cols, now } = this.deps;
     const cardReward = levelCardReward(levelId);
     const hasReward = Object.keys(reward).length > 0 || Object.keys(cardReward).length > 0;
-    const capped = hasReward ? !(await this.bumpPveRewardCap(accountId, this.deps.now())) : false;
+    const capped = hasReward ? !(await this.bumpPveRewardCap(accountId, now())) : false;
     const grant: Record<string, number> = capped ? {} : { ...reward };
     const cardGrant: Record<string, number> = capped ? {} : { ...cardReward };
+
+    // Map unitType → CardDef for the new Hero Roster grant (CHARACTER_CARDS_DESIGN §4)
+    const defsToGrant: CardDef[] = [];
+    for (const [unitType, count] of Object.entries(cardGrant)) {
+      const def = Object.values(CARD_DEFS).find((d) => d.unitType === unitType);
+      if (def) for (let i = 0; i < count; i++) defsToGrant.push(def);
+    }
 
     // Equipment drop roll (independent of the daily cap; rolled outside mutateSave to avoid non-determinism from Math.random inside the transaction)
     const dropCfg = findPveLevel(levelId)?.equipmentDrop;
@@ -813,15 +842,11 @@ export class MetaService {
         ? (makeDropInstance(dropCfg.rarity, `drop_${randomUUID()}`) as EquipmentInstance)
         : undefined;
 
+    // Material reward + equipment drop (single atomic write)
     const out = await this.mutateSave(accountId, (s) => {
       const materials = { ...s.materials };
       for (const [m, n] of Object.entries(grant)) materials[m] = (materials[m] ?? 0) + n;
       let next = { ...s, materials };
-      if (Object.keys(cardGrant).length > 0) {
-        const cardInventory = grantCards(s.cardInventory ?? {}, cardGrant);
-        const unitLevels = deriveUnitLevels(cardInventory);
-        next = { ...next, cardInventory, unitLevels };
-      }
       // Store equipment (silently skipped when inventory is full)
       if (pendingDrop && equipmentInvCount(next) < EQUIPMENT_INV_CAP) {
         next = { ...next, equipmentInv: { ...(next.equipmentInv ?? {}), [pendingDrop.id]: pendingDrop } };
@@ -829,10 +854,19 @@ export class MetaService {
       return next;
     });
     if ('error' in out) return out;
+
+    // Card instance grant at level=2 (separate rev loop; compensation coins dropped — [DRAFT: wire commercial])
+    let latestSave = out.save;
+    if (defsToGrant.length > 0) {
+      const cardResult = await grantCards(cols, now, accountId, defsToGrant, 2);
+      if ('error' in cardResult) return cardResult;
+      latestSave = cardResult.save;
+    }
+
     // Confirm the drop was actually written (pendingDrop is not stored when inventory is full)
     const grantedEquipment =
-      pendingDrop && out.save.equipmentInv?.[pendingDrop.id] ? pendingDrop : undefined;
-    return { save: out.save, granted: grant, grantedCards: cardGrant, grantedEquipment, capped };
+      pendingDrop && latestSave.equipmentInv?.[pendingDrop.id] ? pendingDrop : undefined;
+    return { save: latestSave, granted: grant, grantedCards: cardGrant, grantedEquipment, capped };
   }
 
   /**
@@ -887,7 +921,7 @@ export class MetaService {
       const isFirstClear = !cur.progress.cleared.includes(levelId);
       // L0 anomaly (§0 "combat power mismatch at match start → must be cheating"): S12 prefers comparing unitLevels; falls back to pveUpgrades if unavailable.
       const blueprintMismatch = clientUnitLevels !== undefined
-        ? JSON.stringify(normUpgrades(clientUnitLevels)) !== JSON.stringify(normUpgrades(cur.unitLevels ?? {}))
+        ? JSON.stringify(normUpgrades(clientUnitLevels)) !== JSON.stringify(normUpgrades({}))
         : clientUpgradesLegacy !== undefined &&
           JSON.stringify(normUpgrades(clientUpgradesLegacy)) !== JSON.stringify(normUpgrades(cur.pveUpgrades));
       if (shouldSpotCheck({ isFirstClear, blueprintMismatch, rand: Math.random() })) {
@@ -902,7 +936,7 @@ export class MetaService {
           levelId,
           claimedStars: stars,
           pveUpgrades: { ...cur.pveUpgrades }, // legacy snapshot (kept for compatibility)
-          unitLevels: { ...(cur.unitLevels ?? {}) }, // S12 server-authoritative snapshot (used for re-simulation, prevents drift)
+          unitLevels: {}, // unitLevels removed in CC-1 (SaveData v4); re-simulation uses cardInv
           reason,
           status: 'pending',
           // S9-3b: store client-reported counts as an audit comparison baseline (verdict.statsJson is the authoritative source; the reported field is for ops visibility only).
@@ -1956,18 +1990,18 @@ export class MetaService {
   }
 
   /**
-   * Equip / unequip equipment (E4, EQUIPMENT_DESIGN §3.4): validate slot match → write gear.global[slot] (or byUnit).
-   * instanceId=null to unequip. Pure state change, no idempotency key needed (naturally idempotent).
+   * Equip / unequip equipment (E4, EQUIPMENT_DESIGN §3.4): validate slot match → write gear into the target CardInstance.
+   * instanceId=null to unequip. cardInstanceId identifies which card's gear slot is written. Naturally idempotent.
    */
   async equipEquipment(req: FastifyRequest, reply: FastifyReply) {
     const accountId = accountIdOf(req);
-    const { slot, instanceId, unitType } = req.body as {
+    const { slot, instanceId, cardInstanceId } = req.body as {
       slot: string;
       instanceId: string | null;
-      unitType?: string;
+      cardInstanceId: string;
     };
     const { cols, now } = this.deps;
-    const r = await equipEquipment(cols, now, accountId, slot, instanceId ?? null, unitType);
+    const r = await equipEquipment(cols, now, accountId, slot, instanceId ?? null, cardInstanceId);
     if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
     return ok({ save: r.save });
   }
@@ -1987,6 +2021,25 @@ export class MetaService {
     const r = await reforgeEquipment(cols, now, accountId, targetId, materialId, idempotencyKey);
     if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
     return ok({ instance: r.instance, save: r.save });
+  }
+
+  // ── CC-2 Hero Roster ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Feed material cards into a target card to gain XP and level up (CHARACTER_CARDS_DESIGN §3.3, CC-2).
+   * Same-faction required; locked materials rejected; idempotencyKey prevents double-consumption.
+   */
+  async cardsFeed(req: FastifyRequest, reply: FastifyReply) {
+    const accountId = accountIdOf(req);
+    const { targetId, materialIds, idempotencyKey } = req.body as {
+      targetId: string;
+      materialIds: string[];
+      idempotencyKey: string;
+    };
+    const { cols, now } = this.deps;
+    const r = await feedCards(cols, now, accountId, targetId, materialIds, idempotencyKey);
+    if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
+    return ok({ card: r.card, levelsGained: r.levelsGained, save: r.save });
   }
 
   // ── S11 Leaderboard / Battle Pass ──────────────────────────────────────────────────────

@@ -75,8 +75,8 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     app.inject({ method: 'POST', url: '/equipment/enhance', headers: auth(), payload: { instanceId, idempotencyKey } });
   const salvage = (instanceIds: string[], idempotencyKey: string) =>
     app.inject({ method: 'POST', url: '/equipment/salvage', headers: auth(), payload: { instanceIds, idempotencyKey } });
-  const equip = (slot: string, instanceId: string | null, unitType?: string) =>
-    app.inject({ method: 'POST', url: '/equipment/equip', headers: auth(), payload: { slot, instanceId, ...(unitType ? { unitType } : {}) } });
+  const equip = (slot: string, instanceId: string | null, cardInstanceId: string) =>
+    app.inject({ method: 'POST', url: '/equipment/equip', headers: auth(), payload: { slot, instanceId, cardInstanceId } });
   const escrow = (instanceId: string, orderId: string, account = accountId) =>
     app.inject({ method: 'POST', url: '/internal/equipment/escrow', headers: { 'x-internal-key': IK }, payload: { accountId: account, instanceId, orderId } });
   const grant = (instance: EquipmentInstance, orderId: string, account = accountId) =>
@@ -359,43 +359,54 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect((await readSave()).materials.scrap).toBe(salvageRefund('wp_pencil').scrap); // refunded only once
   });
 
-  // ── E4 Equip ───────────────────────────────────────────────────────────────────
-  it('equip: equip → gear.global[slot]; unequip → removed', async () => {
+  // ── E4 Equip (CC-2: gear now lives in CardInstance.gear[slot]) ────────────────────────────
+  /** Return the first card instance id from the starter roster (granted on account creation). */
+  const starterCardId = async () => {
+    const s = await readSave();
+    return Object.keys(s.cardInv ?? {})[0]!;
+  };
+
+  it('equip: equip → CardInstance.gear[slot]; unequip → removed', async () => {
     await seedInstance('w1', 'wp_pencil', 0); // weapon slot
-    const r = body(await equip('weapon', 'w1'));
-    expect(r.data.save.gear.global.weapon).toBe('w1');
-    const r2 = body(await equip('weapon', null));
-    expect(r2.data.save.gear.global.weapon).toBeUndefined();
+    const cardId = await starterCardId();
+    const r = body(await equip('weapon', 'w1', cardId));
+    expect(r.data.save.cardInv[cardId].gear.weapon).toBe('w1');
+    const r2 = body(await equip('weapon', null, cardId));
+    expect(r2.data.save.cardInv[cardId].gear.weapon).toBeUndefined();
   });
 
   it('equip slot mismatch → 400 INVALID_SLOT', async () => {
     await seedInstance('w2', 'wp_pencil', 0); // weapon equipment
-    const res = await equip('armor', 'w2'); // inserted into armor slot
+    const cardId = await starterCardId();
+    const res = await equip('armor', 'w2', cardId); // weapon equipment into armor slot
     expect(res.statusCode).toBe(400);
     expect(body(res).error.code).toBe('INVALID_SLOT');
   });
 
   it('equip invalid slot name → 400 (openapi enum validation intercepts at contract layer first)', async () => {
-    const res = await equip('helmet', null);
+    const cardId = await starterCardId();
+    const res = await equip('helmet', null, cardId);
     expect(res.statusCode).toBe(400); // slot enum=[weapon,armor,trinket] validation fails → BAD_REQUEST
   });
 
   it('equip non-existent instance → 404', async () => {
-    const res = await equip('weapon', 'nope');
+    const cardId = await starterCardId();
+    const res = await equip('weapon', 'nope', cardId);
     expect(res.statusCode).toBe(404);
     expect(body(res).error.code).toBe('EQUIP_NOT_FOUND');
   });
 
-  it('equip byUnit: unitType written into gear.byUnit', async () => {
-    await seedInstance('w3', 'ar_draft', 0); // armor equipment
-    const r = body(await equip('armor', 'w3', 'Infantry'));
-    expect(r.data.save.gear.byUnit.Infantry.armor).toBe('w3');
-    expect(r.data.save.gear.global?.armor).toBeUndefined(); // does not pollute global
+  it('equip card not found → 404', async () => {
+    await seedInstance('w3', 'wp_pencil', 0);
+    const res = await equip('weapon', 'w3', 'card_does_not_exist');
+    expect(res.statusCode).toBe(404);
+    expect(body(res).error.code).toBe('CARD_NOT_FOUND');
   });
 
   it('equip equipped instance cannot be salvaged (EQUIP_IN_USE)', async () => {
     await seedInstance('w4', 'wp_pencil', 0);
-    await equip('weapon', 'w4');
+    const cardId = await starterCardId();
+    await equip('weapon', 'w4', cardId);
     expect(body(await salvage(['w4'], 'sk-equipped')).error.code).toBe('EQUIP_IN_USE');
   });
 });

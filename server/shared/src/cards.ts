@@ -124,6 +124,22 @@ export const CARD_DEFS: Record<string, CardDef> = {
   },
 };
 
+// ── Card inventory constants (CHARACTER_CARDS_DESIGN §2/§4) ────────────────────────────
+
+/** Hard cap on CardInstance count per account (CHARACTER_CARDS_DESIGN §2). */
+export const CARD_INV_CAP = 150;
+
+/** Coin compensation per card when the roster is full (overflow → coin sink; CHARACTER_CARDS_DESIGN §4). [DRAFT → ECONOMY_NUMBERS §6] */
+export const CARD_FULL_COMPENSATION_COINS = 10;
+
+/** TTL in seconds for card operation idempotency ledger entries (7 days; same convention as equipment idem). */
+export const CARD_FEED_IDEM_TTL_SEC = 7 * 24 * 3600;
+
+/** Count of CardInstances in an inventory record. */
+export function cardInvCount(cardInv: Record<string, CardInstance>): number {
+  return Object.keys(cardInv).length;
+}
+
 // ── XP curve (CHARACTER_CARDS_DESIGN §3.1) ──────────────────────────────────────────────
 //
 // Formula: cost(level → level+1) = 5^level   (level 1-indexed, so L1→L2 = 5^1 = 5)

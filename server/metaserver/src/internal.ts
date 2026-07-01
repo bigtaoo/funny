@@ -656,8 +656,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     const s = doc?.save;
     return reply.send({
       pveUpgrades: s?.pveUpgrades ?? {},
-      unitLevels: s?.unitLevels ?? {},
-      gear: s?.gear ?? {},
+      cardInv: s?.cardInv ?? {},
       equipmentInv: s?.equipmentInv ?? {},
     });
   });

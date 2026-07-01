@@ -284,6 +284,18 @@ export interface MailDoc {
 }
 
 /**
+ * Card operation idempotency ledger (CC-2, CHARACTER_CARDS_DESIGN §3.3): prevents double-consumption of material cards
+ * when the client retries a /cards/feed request. _id = idempotencyKey. TTL auto-expiry (7 days).
+ */
+export interface CardIdemDoc {
+  _id: string; // idempotencyKey
+  accountId: string;
+  op: 'feed';
+  result: unknown; // { targetId: string; levelsGained: number }
+  expireAt: Date;
+}
+
+/**
  * Equipment operation idempotency ledger (E2, EQUIPMENT_DESIGN §18.2): for "consume materials + produce/move instance" operations such as
  * crafting/escrow, repeated requests replay the first result (no double deduction, no double roll). _id = idempotencyKey (craft) / orderId (escrow).
  * TTL auto-expiry (retained for N days, long enough to cover client retries + worldsvc return window).
@@ -357,6 +369,8 @@ export interface Collections {
   stateReplayShares: Collection<StateReplayShareDoc>;
   // mail (S6-3, system mail still written by metaserver; player mail CRUD migrated to socialsvc)
   mail: Collection<MailDoc>;
+  // card roster (CC-2)
+  cardIdem: Collection<CardIdemDoc>;
   // equipment (E2)
   equipmentIdem: Collection<EquipmentIdemDoc>;
   // ladder seasons (S11): single global document (_id='current')
@@ -417,6 +431,7 @@ export async function createMongo(
     replayShares: db.collection<ReplayShareDoc>('replayShares'),
     stateReplayShares: db.collection<StateReplayShareDoc>('stateReplayShares'),
     mail: db.collection<MailDoc>('mail'),
+    cardIdem: db.collection<CardIdemDoc>('cardIdem'),
     equipmentIdem: db.collection<EquipmentIdemDoc>('equipmentIdem'),
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
     ladderSeasonSnapshots: db.collection<LadderSeasonSnapshotDoc>('ladderSeasonSnapshots'),
@@ -466,6 +481,8 @@ export async function createMongo(
     await collections.mail.createIndex({ to: 1, createdAt: -1 });
     // mail TTL auto-expiry (expireAt is an absolute expiry timestamp → expireAfterSeconds:0, SOC5).
     await collections.mail.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+    // card operation idempotency ledger TTL auto-expiry (CC-2, expireAt is an absolute expiry time → expireAfterSeconds:0).
+    await collections.cardIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // equipment idempotency ledger TTL auto-expiry (E2, expireAt is an absolute expiry time → expireAfterSeconds:0).
     await collections.equipmentIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // ad token uniqueness TTL auto-expiry (C2, 48h).

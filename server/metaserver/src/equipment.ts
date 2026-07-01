@@ -29,7 +29,6 @@ import {
   salvageRefund,
   type Collections,
   type SaveData,
-  type GearLoadout,
   type EquipSlot,
   type EquipmentInstance,
 } from '@nw/shared';
@@ -66,14 +65,14 @@ function idemExpireAt(now: number): Date {
   return new Date(now + EQUIPMENT_IDEM_TTL_SEC * 1000);
 }
 
-/** Returns whether an instance is currently equipped (referenced by any slot in gear.global or gear.byUnit). An equipped item cannot be listed for auction or removed from inventory. */
+/**
+ * Returns whether an equipment instance is currently equipped by any card in the Hero Roster.
+ * Scans every CardInstance.gear (CC-2); an equipped item cannot be listed for auction or removed.
+ */
 function isEquipped(save: SaveData, instanceId: string): boolean {
-  const gear = save.gear ?? {};
-  const maps = [gear.global, ...Object.values(gear.byUnit ?? {})];
-  for (const m of maps) {
-    if (!m) continue;
-    for (const slot of Object.keys(m)) {
-      if ((m as Record<string, string | undefined>)[slot] === instanceId) return true;
+  for (const card of Object.values(save.cardInv ?? {})) {
+    for (const slotId of Object.values(card.gear ?? {})) {
+      if (slotId === instanceId) return true;
     }
   }
   return false;
@@ -613,13 +612,14 @@ export async function reforgeEquipment(
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }
 
-// ── E4 Equip (EQUIPMENT_DESIGN §3.4 / §18) ──────────────────────────────────────
+// ── E4 Equip (EQUIPMENT_DESIGN §3.4 / CC-2) ──────────────────────────────────────
 
 /**
- * Equips or unequips one item (EQUIPMENT_DESIGN §3.4). Pure state change, no randomness, no resources → naturally idempotent, no idemKey needed.
- * instanceId=null unequips the slot; otherwise validates instance existence + slot match against definition (INVALID_SLOT).
- * unitType omitted → writes gear.global (phase 1 whole-army shared); provided → writes gear.byUnit[unitType] (phase 2 per-unit-type).
- * In-combat freeze is guaranteed by the client / settlement layer (§3.4); the server only manages state.
+ * Equips or unequips one item onto a specific card instance (CC-2, CHARACTER_CARDS_DESIGN §5).
+ * Pure state change, no randomness, no resources → naturally idempotent, no idemKey needed.
+ * instanceId=null unequips the slot; otherwise validates instance existence + slot match (INVALID_SLOT).
+ * cardInstanceId must reference an existing CardInstance in save.cardInv; gear is written to
+ * CardInstance.gear[slot] (CC-2 per-card loadout; CHARACTER_CARDS_DESIGN §5).
  */
 export async function equipEquipment(
   cols: Collections,
@@ -627,14 +627,18 @@ export async function equipEquipment(
   accountId: string,
   slot: string,
   instanceId: string | null,
-  unitType?: string,
+  cardInstanceId: string,
 ): Promise<{ save: SaveData } | EquipError> {
   if (!EQUIP_SLOTS.includes(slot as EquipSlot)) return { error: 'invalid slot', code: 'INVALID_SLOT' };
+  if (!cardInstanceId) return { error: 'cardInstanceId required', code: 'BAD_REQUEST' };
 
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) return { error: 'save not found', code: 'NOT_FOUND' };
     const save = doc.save;
+
+    const card = (save.cardInv ?? {})[cardInstanceId];
+    if (!card) return { error: 'card instance not found', code: 'NOT_FOUND' };
 
     if (instanceId !== null) {
       const inst = save.equipmentInv?.[instanceId];
@@ -643,14 +647,17 @@ export async function equipEquipment(
       if (def && def.slot !== slot) return { error: `slot mismatch: ${inst.defId} is ${def.slot}`, code: 'INVALID_SLOT' };
     }
 
-    const gear: GearLoadout = JSON.parse(JSON.stringify(save.gear ?? {}));
-    const map = unitType
-      ? ((gear.byUnit ??= {})[unitType] ??= {})
-      : (gear.global ??= {});
-    if (instanceId === null) delete (map as Record<string, string | undefined>)[slot];
-    else (map as Record<string, string>)[slot] = instanceId;
+    const updatedGear = { ...(card.gear ?? {}) };
+    if (instanceId === null) delete (updatedGear as Record<string, string | undefined>)[slot];
+    else (updatedGear as Record<string, string>)[slot] = instanceId;
 
-    const next: SaveData = { ...save, rev: save.rev + 1, updatedAt: now(), gear };
+    const updatedCard = { ...card, gear: updatedGear };
+    const next: SaveData = {
+      ...save,
+      rev: save.rev + 1,
+      updatedAt: now(),
+      cardInv: { ...(save.cardInv ?? {}), [cardInstanceId]: updatedCard },
+    };
     const res = await cols.saves.findOneAndUpdate(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
