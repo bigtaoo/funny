@@ -10,7 +10,8 @@
 //    in commercial is already prepared.
 import { createHash } from 'node:crypto';
 import type { Collections, SaveData, Rarity, EquipmentInstance } from '@nw/shared';
-import { grantCards, deriveUnitLevels, UNIT_CARD_POOL_ID, EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount } from '@nw/shared';
+import { grantCards, deriveUnitLevels, UNIT_CARD_POOL_ID, EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount, CARD_DEFS, type CardDef } from '@nw/shared';
+import { grantCards as grantHeroCards } from './cards.js';
 import type { CommercialClient, GachaResultEntry } from './commercialClient.js';
 
 /** Mark each result as duplicate or not (compared against current inventory + already granted in this batch; used by the client for loot-box display). */
@@ -259,11 +260,12 @@ async function deliverOrder(
     return save;
   }
 
-  // Loot box: route each result itemId — mat_* → materials, equipment defId → equipment instance, everything else → skin.
+  // Loot box: route each result itemId — mat_* → materials, equipment defId → equipment instance, character card defId → card grant, everything else → skin.
   const results = order.result.results ?? [];
   const skinResults: GachaResultEntry[] = [];
   const materialInc: Record<string, number> = {};
   const equipInstances: Record<string, EquipmentInstance> = {};
+  const cardDefs: CardDef[] = [];
 
   for (let i = 0; i < results.length; i++) {
     const r = results[i]!;
@@ -277,6 +279,9 @@ async function deliverOrder(
         const instanceId = `eq_gacha_${order._id}_${i}`;
         equipInstances[instanceId] = makeGachaEquipInstance(r.itemId, instanceId) as EquipmentInstance;
       }
+    } else if (CARD_DEFS[r.itemId]) {
+      // Character card slot (CC-5): accumulate defs; granted after skins/materials are marked delivered.
+      cardDefs.push(CARD_DEFS[r.itemId]!);
     } else {
       skinResults.push(r);
     }
@@ -290,6 +295,21 @@ async function deliverOrder(
     hasMixed ? equipInstances : undefined,
   );
   await commercial.orderDelivered({ orderId: order._id });
+
+  // Character card delivery (CC-5): grant hero cards after the order is marked delivered.
+  // If the roster is full, compensatedCoins are credited immediately (best-effort).
+  if (cardDefs.length > 0) {
+    const cardResult = await grantHeroCards(cols, () => now, accountId, cardDefs);
+    if (!('error' in cardResult) && cardResult.compensatedCoins > 0 && commercial.available) {
+      await commercial.grant({
+        accountId,
+        amount: cardResult.compensatedCoins,
+        reason: 'card_inv_full',
+        orderId: `${order._id}:card_comp`,
+      }).catch(() => { /* best-effort */ });
+    }
+  }
+
   return save;
 }
 

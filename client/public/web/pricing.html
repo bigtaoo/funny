@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coin Packs — Nivara</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --paper:   #F9F7F2;
+      --card:    #FFFFFF;
+      --ink:     #1C1C1A;
+      --ink-mid: #5A574F;
+      --ink-faint: #A09B90;
+      --rule:    #DDD8CC;
+      --blue:    #2756D6;
+      --blue-light: #EEF2FD;
+      --gold:    #C8921E;
+      --gold-light: #FDF6E3;
+      --green:   #287A42;
+    }
+
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Georgia, 'Times New Roman', serif;
+      min-height: 100vh;
+      padding: 56px 24px 80px;
+    }
+
+    /* ── Header ── */
+    .header {
+      max-width: 680px;
+      margin: 0 auto 48px;
+    }
+
+    .eyebrow {
+      font-family: 'Arial Narrow', Arial, sans-serif;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-family: 'Arial Narrow', Arial, sans-serif;
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 700;
+      line-height: 1.1;
+      text-wrap: balance;
+      margin-bottom: 14px;
+    }
+
+    .header p {
+      font-size: 1rem;
+      color: var(--ink-mid);
+      line-height: 1.65;
+      max-width: 480px;
+    }
+
+    /* ── First-purchase banner ── */
+    .first-banner {
+      max-width: 680px;
+      margin: 0 auto 40px;
+      background: var(--blue-light);
+      border-left: 3px solid var(--blue);
+      padding: 14px 18px;
+      border-radius: 0 6px 6px 0;
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .first-banner .label {
+      font-family: 'Arial Narrow', Arial, sans-serif;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--blue);
+      white-space: nowrap;
+    }
+
+    .first-banner p {
+      font-size: 0.88rem;
+      color: var(--ink-mid);
+      line-height: 1.5;
+    }
+
+    /* ── Grid ── */
+    .grid {
+      max-width: 900px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      padding: 22px 20px 20px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border-left: 3px solid var(--rule);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .card:hover {
+      border-color: var(--blue);
+      border-left-color: var(--blue);
+      box-shadow: 0 2px 12px rgba(39, 86, 214, 0.08);
+    }
+
+    .card.best {
+      border-left: 4px solid var(--gold);
+      background: var(--gold-light);
+    }
+
+    .card.best:hover {
+      border-color: var(--gold);
+      border-left-color: var(--gold);
+      box-shadow: 0 2px 12px rgba(200, 146, 30, 0.12);
+    }
+
+    /* Badge */
+    .badge {
+      position: absolute;
+      top: -1px; right: 14px;
+      background: var(--gold);
+      color: #fff;
+      font-family: 'Arial Narrow', Arial, sans-serif;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 3px 9px;
+      border-radius: 0 0 4px 4px;
+    }
+
+    .platform-tag {
+      font-family: 'Arial Narrow', Arial, sans-serif;
+      font-size: 0.65rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      margin-bottom: 4px;
+    }
+
+    .price {
+      font-family: 'Arial Narrow', Arial, sans-serif;
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      color: var(--ink);
+    }
+
+    .price sup {
+      font-size: 0.9rem;
+      vertical-align: super;
+      font-weight: 400;
+    }
+
+    .coins-row {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .coins-amount {
+      font-family: 'Arial Narrow', Arial, sans-serif;
+      font-size: 1.25rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--ink);
+    }
+
+    .coins-label {
+      font-size: 0.82rem;
+      color: var(--ink-mid);
+    }
+
+    .bonus-row {
+      font-family: 'Arial Narrow', Arial, sans-serif;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--green);
+      letter-spacing: 0.02em;
+      margin-top: 2px;
+    }
+
+    .bonus-row.none {
+      color: var(--ink-faint);
+      font-weight: 400;
+    }
+
+    /* ── Divider ── */
+    .divider {
+      max-width: 900px;
+      margin: 36px auto;
+      border: none;
+      border-top: 1px solid var(--rule);
+    }
+
+    /* ── Notes ── */
+    .notes {
+      max-width: 680px;
+      margin: 0 auto;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .notes li {
+      font-size: 0.82rem;
+      color: var(--ink-mid);
+      padding-left: 16px;
+      position: relative;
+      line-height: 1.55;
+    }
+
+    .notes li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: var(--rule);
+    }
+
+    .notes a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    .notes a:hover { text-decoration: underline; }
+
+    /* ── Back link ── */
+    .back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 32px;
+      font-family: 'Arial Narrow', Arial, sans-serif;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--blue);
+      text-decoration: none;
+      max-width: 900px;
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+      max-width: 900px;
+    }
+
+    .back:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="eyebrow">Nivara · In-game currency</div>
+    <h1>Coin Packs</h1>
+    <p>Coins unlock cosmetics, loot boxes, and campaign items. The more you top up, the better the rate.</p>
+  </div>
+
+  <div class="first-banner">
+    <span class="label">First purchase</span>
+    <p>Your very first Coin pack is doubled — buy any tier and receive 2× the Coins, applied automatically at checkout.</p>
+  </div>
+
+  <div class="grid">
+
+    <div class="card">
+      <div class="platform-tag">iOS · Android</div>
+      <div class="price"><sup>$</sup>0.99</div>
+      <div class="coins-row">
+        <span class="coins-amount">100</span>
+        <span class="coins-label">Coins</span>
+      </div>
+      <div class="bonus-row none">base rate</div>
+    </div>
+
+    <div class="card">
+      <div class="platform-tag">iOS · Android</div>
+      <div class="price"><sup>$</sup>1.99</div>
+      <div class="coins-row">
+        <span class="coins-amount">210</span>
+        <span class="coins-label">Coins</span>
+      </div>
+      <div class="bonus-row">+5% bonus</div>
+    </div>
+
+    <div class="card">
+      <div class="platform-tag">Web · iOS · Android</div>
+      <div class="price"><sup>$</sup>4.99</div>
+      <div class="coins-row">
+        <span class="coins-amount">550</span>
+        <span class="coins-label">Coins</span>
+      </div>
+      <div class="bonus-row">+10% bonus</div>
+    </div>
+
+    <div class="card">
+      <div class="platform-tag">Web · iOS · Android</div>
+      <div class="price"><sup>$</sup>9.99</div>
+      <div class="coins-row">
+        <span class="coins-amount">1,150</span>
+        <span class="coins-label">Coins</span>
+      </div>
+      <div class="bonus-row">+15% bonus</div>
+    </div>
+
+    <div class="card best">
+      <div class="badge">Best Value</div>
+      <div class="platform-tag">Web · iOS · Android</div>
+      <div class="price"><sup>$</sup>19.99</div>
+      <div class="coins-row">
+        <span class="coins-amount">2,400</span>
+        <span class="coins-label">Coins</span>
+      </div>
+      <div class="bonus-row">+20% bonus</div>
+    </div>
+
+    <div class="card">
+      <div class="platform-tag">Web · iOS · Android</div>
+      <div class="price"><sup>$</sup>49.99</div>
+      <div class="coins-row">
+        <span class="coins-amount">6,500</span>
+        <span class="coins-label">Coins</span>
+      </div>
+      <div class="bonus-row">+30% bonus</div>
+    </div>
+
+    <div class="card">
+      <div class="platform-tag">Web · iOS · Android</div>
+      <div class="price"><sup>$</sup>99.99</div>
+      <div class="coins-row">
+        <span class="coins-amount">13,500</span>
+        <span class="coins-label">Coins</span>
+      </div>
+      <div class="bonus-row">+35% bonus</div>
+    </div>
+
+  </div>
+
+  <hr class="divider" />
+
+  <ul class="notes">
+    <li>Coins are virtual currency with no real-world value and cannot be exchanged for cash.</li>
+    <li>All purchases are final. See our <a href="/refunds.html">Refund Policy</a> for exceptions.</li>
+    <li>Prices in USD. Local currency shown at checkout.</li>
+    <li>Web payments processed by <a href="https://www.paddle.com" target="_blank" rel="noopener">Paddle</a>, our Merchant of Record.</li>
+  </ul>
+
+  <a class="back" href="/">← Play Nivara</a>
+
+</body>
+</html>

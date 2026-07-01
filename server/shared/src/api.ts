@@ -72,6 +72,9 @@ export const ErrorCode = {
   ENHANCE_MAX_LEVEL: 'ENHANCE_MAX_LEVEL',           // already at +9 max level, cannot enhance further
   NOT_SALVAGEABLE: 'NOT_SALVAGEABLE',               // not salvageable (+5 and above, §6.3)
   INVALID_SLOT: 'INVALID_SLOT',                     // equip slot does not match the equipment's defined slot
+  // —— character card system (CC-5, CHARACTER_CARDS_DESIGN §11) ——
+  CARD_NOT_FOUND: 'CARD_NOT_FOUND',                 // card instance not found in cardInv
+  CARD_HAS_GEAR: 'CARD_HAS_GEAR',                   // card has equipped gear; must unequip before listing on auction
   // —— PvE anti-cheat (S4-4) ——
   ACCOUNT_BANNED: 'ACCOUNT_BANNED',                 // replay re-computation rejected three times — account banned
   // —— compliance (C5) ——
@@ -158,4 +161,6 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.ACCOUNT_BANNED]: 403,
   [ErrorCode.INSUFFICIENT_STAMINA]: 402,
   [ErrorCode.NOT_IN_WORLD]: 403,
+  [ErrorCode.CARD_NOT_FOUND]: 404,
+  [ErrorCode.CARD_HAS_GEAR]: 409,
 };

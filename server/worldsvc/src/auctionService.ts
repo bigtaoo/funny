@@ -36,6 +36,7 @@ import {
   type AuctionStatus,
   type AuctionTradeRecord,
   type EquipmentInstance,
+  type CardInstance,
 } from '@nw/shared';
 import type { WorldCollections, AuctionDoc } from './db';
 import type { WorldCommercialClient } from './commercialClient';
@@ -45,7 +46,7 @@ export interface AuctionView {
   auctionId: string;
   worldId: string;
   sellerId: string;
-  itemType: 'material' | 'equipment';
+  itemType: 'material' | 'equipment' | 'card';
   item: Record<string, unknown>;
   qty: number;
   price: number; // Coin unit price (per item): fixed-price = transaction price; auction = current top-bid unit price (start price if no bids yet)
@@ -78,7 +79,14 @@ function equipInstanceOf(item: Record<string, unknown>): EquipmentInstance | nul
   return inst && typeof inst === 'object' ? (inst as EquipmentInstance) : null;
 }
 
-/** Item category key (price sliding window is isolated per category). Material = `material:{mat}`; equipment = `equip:{defId}` (A, isolated by definition/rarity). */
+/** Card listing payload (CC-5): full CardInstance snapshot held in escrow (qty always 1 — non-stackable unique instance). */
+function cardInstanceOf(item: Record<string, unknown>): CardInstance | null {
+  const inst = item['instance'];
+  return inst && typeof inst === 'object' ? (inst as CardInstance) : null;
+}
+
+/** Item category key (price sliding window is isolated per category). Material = `material:{mat}`; equipment = `equip:{defId}`.
+ *  Cards return null — no price sliding window (cold-start pass-through; card prices are determined by market). */
 function categoryOf(doc: Pick<AuctionDoc, 'itemType' | 'item'>): string | null {
   if (doc.itemType === 'material') {
     const mat = doc.item['material'] as string | undefined;
@@ -88,6 +96,7 @@ function categoryOf(doc: Pick<AuctionDoc, 'itemType' | 'item'>): string | null {
     const inst = equipInstanceOf(doc.item);
     return inst?.defId ? `equip:${inst.defId}` : null;
   }
+  // 'card' and unknown types: no price window
   return null;
 }
 
@@ -209,6 +218,9 @@ export class AuctionService {
     } else if (doc.itemType === 'equipment') {
       const inst = equipInstanceOf(doc.item);
       if (inst) await meta.grantEquipment(toAccountId, inst, orderId);
+    } else if (doc.itemType === 'card') {
+      const inst = cardInstanceOf(doc.item);
+      if (inst) await meta.grantCard(toAccountId, inst, orderId);
     }
   }
 
@@ -254,7 +266,7 @@ export class AuctionService {
   async createAuction(params: {
     worldId: string;
     sellerId: string;
-    itemType: 'material' | 'equipment';
+    itemType: 'material' | 'equipment' | 'card';
     item: Record<string, unknown>;
     qty: number;
     price?: number; // fixed mode: buyout unit price
@@ -271,8 +283,8 @@ export class AuctionService {
     const { cols, now, meta } = this.deps;
 
     if (!AUCTION_DURATIONS_SEC.includes(durationSec)) throw new SlgError('BAD_REQUEST');
-    // Equipment qty is always 1 (non-stackable unique instance, §4.A); material qty must be > 0.
-    const effectiveQty = itemType === 'equipment' ? 1 : qty;
+    // Equipment and card qty is always 1 (non-stackable unique instances); material qty must be > 0.
+    const effectiveQty = (itemType === 'equipment' || itemType === 'card') ? 1 : qty;
     if (effectiveQty <= 0) throw new SlgError('BAD_REQUEST');
 
     // Validate sale mode parameters and determine listing unit price (used for browse sorting + guardrail check)
@@ -329,6 +341,22 @@ export class AuctionService {
         await this.bumpDaily(worldId, sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
       } catch (e) {
         await meta.grantEquipment(sellerId, instance, `${orderId}:return`);
+        throw e;
+      }
+    } else if (itemType === 'card') {
+      // CC-5 Card trade: client sends instanceId; server escrows the full instance (validates gear all empty, removes from cardInv) → stores snapshot.
+      const instanceId = item['instanceId'];
+      if (typeof instanceId !== 'string') throw new SlgError('BAD_REQUEST');
+      const openCount = await cols.auctions.countDocuments({ worldId, sellerId, status: 'open' });
+      if (openCount >= AUCTION_MAX_LISTINGS) throw new SlgError('AUCTION_LIMIT_REACHED');
+      // Escrow: gear-not-empty/not-found causes meta to throw SlgError (CARD_HAS_GEAR/CARD_NOT_FOUND).
+      const instance = await meta.escrowCard(sellerId, instanceId, orderId);
+      storedItem = { instance };
+      try {
+        // C Daily cap — return escrowed card on failure.
+        await this.bumpDaily(worldId, sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
+      } catch (e) {
+        await meta.grantCard(sellerId, instance, `${orderId}:return`);
         throw e;
       }
     } else {

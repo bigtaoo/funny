@@ -52,10 +52,10 @@ export const GACHA_POOLS: GachaPoolDef[] = [
       common: ['skin_c1', 'skin_c2', 'skin_c3', 'skin_c4', 'mat_scrap', 'mat_scrap', 'mat_scrap'],
       // rare: 3 skins + 2 material slots + 3 fine equipment → material drop rate 25%, fine equipment 38%
       rare: ['skin_r1', 'skin_r2', 'skin_r3', 'mat_lead', 'mat_lead', 'wp_pen', 'ar_cardstock', 'tk_bookmark'],
-      // epic: 2 skins + 1 material slot + 3 rare equipment → equipment jackpot 50%
-      epic: ['skin_e1', 'skin_e2', 'mat_binding', 'wp_marker', 'ar_leather', 'tk_sticker'],
-      // legendary: 1 skin + 3 epic equipment → equipment jackpot 75% (extremely rare tier, ~2% per pull)
-      legendary: ['skin_l1', 'wp_highlighter', 'ar_foil', 'tk_seal'],
+      // epic: 2 skins + 1 material slot + 3 rare equipment + 3 Tao character cards (DRAFT [adjustable] → ECONOMY_NUMBERS §6)
+      epic: ['skin_e1', 'skin_e2', 'mat_binding', 'wp_marker', 'ar_leather', 'tk_sticker', 'lichuang', 'chenshou', 'suyuan'],
+      // legendary: 1 skin + 3 epic equipment + 3 Anna character cards (DRAFT [adjustable] → ECONOMY_NUMBERS §6)
+      legendary: ['skin_l1', 'wp_highlighter', 'ar_foil', 'tk_seal', 'max', 'lena', 'mara'],
     },
   },
   // Unit card pool (S12-C, progression ≠ cosmetics, separate pool): item = cardKey (infantry:1 …), rarity-to-card-level mapping see

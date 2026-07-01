@@ -2,7 +2,7 @@
 // meta internal HTTP (/internal/materials/* · /internal/profile), authenticated with X-Internal-Key.
 // NW_META_INTERNAL_URL not configured → available=false → auction material transactions + owner display names unavailable.
 
-import { internalHeaders, SlgError, type EquipmentInstance, type GearLoadout, type CardInstance } from '@nw/shared';
+import { internalHeaders, SlgError, type EquipmentInstance, type GearLoadout, type CardInstance, ErrorCode } from '@nw/shared';
 
 export interface PlayerProfile {
   publicId?: string;
@@ -33,6 +33,10 @@ export interface WorldMetaClient {
   escrowEquipment(accountId: string, instanceId: string, orderId: string): Promise<EquipmentInstance>;
   /** Transfer or return equipment: writes the instance snapshot into the target account's inventory (to buyer on sale, or back to seller on cancel / expiry). Best-effort; failures are logged but not rolled back. */
   grantEquipment(accountId: string, instance: EquipmentInstance, orderId: string): Promise<void>;
+  /** Escrow a character card for auction: validates gear all empty, removes from cardInv, returns the instance snapshot. Gear not empty → throws SlgError(CARD_HAS_GEAR); not found → throws SlgError(CARD_NOT_FOUND). */
+  escrowCard(accountId: string, instanceId: string, orderId: string): Promise<CardInstance>;
+  /** Grant a character card: writes the instance snapshot into the target account's cardInv (to buyer on sale, or back to seller on cancel/expiry). Best-effort; failures are logged. */
+  grantCard(accountId: string, instance: CardInstance, orderId: string): Promise<void>;
   /** Grant a title (S10, SLG season settlement → write to meta). Best-effort; failures are logged but do not block settlement. */
   grantTitle(accountId: string, titleId: string): Promise<void>;
 }
@@ -131,6 +135,35 @@ export class HttpWorldMetaClient implements WorldMetaClient {
     }
   }
 
+  async escrowCard(accountId: string, instanceId: string, orderId: string): Promise<CardInstance> {
+    if (!this.baseUrl) throw new Error('meta service not configured');
+    const res = await fetch(`${this.baseUrl}/internal/cards/escrow`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
+      body: JSON.stringify({ accountId, instanceId, orderId }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { instance?: CardInstance; code?: string; error?: string };
+    if (!res.ok || !body.instance) {
+      const code = body.code;
+      if (code === ErrorCode.CARD_NOT_FOUND || code === ErrorCode.CARD_HAS_GEAR) throw new SlgError(code);
+      throw new SlgError('BAD_REQUEST', body.error ?? `escrowCard failed: ${res.status}`);
+    }
+    return body.instance;
+  }
+
+  async grantCard(accountId: string, instance: CardInstance, orderId: string): Promise<void> {
+    if (!this.baseUrl) return;
+    try {
+      await fetch(`${this.baseUrl}/internal/cards/grant`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
+        body: JSON.stringify({ accountId, instance, orderId }),
+      });
+    } catch (e) {
+      console.error('[worldsvc] meta.grantCard failed', { accountId, instanceId: instance.id, orderId, err: (e as Error).message });
+    }
+  }
+
   async grantTitle(accountId: string, titleId: string): Promise<void> {
     if (!this.baseUrl) return;
     try {
@@ -153,5 +186,7 @@ export const nullWorldMetaClient: WorldMetaClient = {
   async getSaveFields() { return null; },
   async escrowEquipment() { throw new Error('meta service not configured'); },
   async grantEquipment() { /* no-op */ },
+  async escrowCard() { throw new Error('meta service not configured'); },
+  async grantCard() { /* no-op */ },
   async grantTitle() { /* no-op */ },
 };

@@ -197,6 +197,16 @@ components:
               completeAt:
                 type: integer
                 format: int64
+        # CC-4: per-card SLG run-time state (CHARACTER_CARDS_DESIGN §8.4). Absent when player has no card state yet.
+        cardState:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CardSLGState'
+          description: Map of cardInstanceId → CardSLGState (troops, injury, teamId)
+        # CC-4: troop pool available for distribution. Absent defaults to 0.
+        baseTroopStock:
+          type: integer
+          description: Troops in the base pool available to distribute to card slots
 
     BuildingKey:
       type: string
@@ -245,6 +255,8 @@ components:
           type: string
         itemType:
           type: string
+          enum: [material, equipment, card]
+          description: "CC-5: card = character card instance (qty always 1, gear must be empty before listing)"
         item:
           type: object
           additionalProperties: true
@@ -1271,7 +1283,10 @@ paths:
               required: [worldId, itemType, item, qty, durationSec]
               properties:
                 worldId: { type: string }
-                itemType: { type: string }
+                itemType:
+                  type: string
+                  enum: [material, equipment, card]
+                  description: "card (CC-5): item.instanceId = CardInstance.id; gear must be empty; qty ignored (always 1)"
                 item:
                   type: object
                   additionalProperties: true

@@ -135,6 +135,7 @@ export const CARD_FULL_COMPENSATION_COINS = 10;
 /** TTL in seconds for card operation idempotency ledger entries (7 days; same convention as equipment idem). */
 export const CARD_FEED_IDEM_TTL_SEC = 7 * 24 * 3600;
 
+
 /** Count of CardInstances in an inventory record. */
 export function cardInvCount(cardInv: Record<string, CardInstance>): number {
   return Object.keys(cardInv).length;

@@ -40,7 +40,7 @@ import { accrueEventTask, adminListEvents, adminCreateEvent, adminUpdateEvent, a
 import { profileOf } from './social.js';
 import { insertSystemMail, bulkInsertSystemMail } from './mail.js';
 import { escrowEquipment, grantEquipment } from './equipment.js';
-import type { CompTarget, EquipmentInstance, MailAttachmentDoc } from '@nw/shared';
+import type { CompTarget, EquipmentInstance, MailAttachmentDoc, CardInstance } from '@nw/shared';
 import { ERROR_HTTP_STATUS } from '@nw/shared';
 
 const log = createLogger('meta:internal');
@@ -624,6 +624,72 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send({ ok: false, error: r.error, code: r.code });
     log.info('equipment escrowed', { accountId, instanceId, orderId });
     return reply.send({ ok: true, instance: r.instance });
+  });
+
+  // ── Card escrow / grant (CC-5, called by worldsvc auction card transactions) ─────────────────────
+  // POST /internal/cards/escrow  { accountId, instanceId, orderId } → { instance }
+  //   Listing escrow: validate gear all empty (§11 rule) → remove from cardInv → return snapshot (worldsvc stores in listing doc).
+  app.post('/internal/cards/escrow', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const { accountId, instanceId, orderId } = req.body as {
+      accountId?: string;
+      instanceId?: string;
+      orderId?: string;
+    };
+    if (!accountId || !instanceId || !orderId) {
+      return reply.code(400).send({ ok: false, error: 'accountId + instanceId + orderId required' });
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const doc = await cols.saves.findOne({ _id: accountId });
+      if (!doc) return reply.code(404).send({ ok: false, error: 'save not found', code: 'NOT_FOUND' });
+      const card = doc.save.cardInv?.[instanceId];
+      if (!card) return reply.code(404).send({ ok: false, error: 'card not found', code: 'CARD_NOT_FOUND' });
+      if (Object.values(card.gear).some((v) => !!v)) {
+        return reply.code(409).send({ ok: false, error: 'card has equipped gear; unequip before listing', code: 'CARD_HAS_GEAR' });
+      }
+      const nextCardInv = { ...(doc.save.cardInv ?? {}) };
+      delete nextCardInv[instanceId];
+      const next = { ...doc.save, rev: doc.save.rev + 1, updatedAt: now(), cardInv: nextCardInv };
+      const res = await cols.saves.findOneAndUpdate(
+        { _id: accountId, rev: doc.rev },
+        { $set: { save: next, rev: next.rev } },
+      );
+      if (res) {
+        log.info('card escrowed', { accountId, instanceId, orderId });
+        return reply.send({ ok: true, instance: card });
+      }
+    }
+    return reply.code(409).send({ ok: false, error: 'rev conflict, retry', code: 'REV_CONFLICT' });
+  });
+
+  // POST /internal/cards/grant  { accountId, instance, orderId } → { ok }
+  //   Sale transfer (to buyer) / cancellation·expiry·season-end return (to seller): writes the instance snapshot into cardInv.
+  //   No cap check — a card returned from escrow or sold to a buyer is always delivered (the buyer paid coins for it).
+  app.post('/internal/cards/grant', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const { accountId, instance, orderId } = req.body as {
+      accountId?: string;
+      instance?: CardInstance;
+      orderId?: string;
+    };
+    if (!accountId || !instance?.id) {
+      return reply.code(400).send({ ok: false, error: 'accountId + instance required' });
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const doc = await cols.saves.findOne({ _id: accountId });
+      if (!doc) return reply.code(404).send({ ok: false, error: 'save not found', code: 'NOT_FOUND' });
+      const nextCardInv = { ...(doc.save.cardInv ?? {}), [instance.id]: instance };
+      const next = { ...doc.save, rev: doc.save.rev + 1, updatedAt: now(), cardInv: nextCardInv };
+      const res = await cols.saves.findOneAndUpdate(
+        { _id: accountId, rev: doc.rev },
+        { $set: { save: next, rev: next.rev } },
+      );
+      if (res) {
+        log.info('card granted', { accountId, instanceId: instance.id, orderId });
+        return reply.send({ ok: true });
+      }
+    }
+    return reply.code(409).send({ ok: false, error: 'rev conflict, retry', code: 'REV_CONFLICT' });
   });
 
   // POST /internal/equipment/grant  { accountId, instance, orderId } → { ok }

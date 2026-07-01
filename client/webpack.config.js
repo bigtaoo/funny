@@ -84,7 +84,7 @@ module.exports = (env, argv) => {
       // WeChat has no HTML host (game.js requires pixigame.js); HtmlWebpackPlugin / version.json / _headers are Web-only.
       ...(isWechat ? [] : [new HtmlWebpackPlugin({ template: `./public/${targetPlatform}/index.html` })]),
       // Copy legal pages (terms/privacy/refunds) to dist root for Paddle verification.
-      ...(!isWechat ? [new CopyPlugin({ patterns: [{ from: 'public/web/terms.html' }, { from: 'public/web/privacy.html' }, { from: 'public/web/refunds.html' }] })] : []),
+      ...(!isWechat ? [new CopyPlugin({ patterns: [{ from: 'public/web/terms.html' }, { from: 'public/web/privacy.html' }, { from: 'public/web/refunds.html' }, { from: 'public/web/pricing.html' }] })] : []),
       // Emit version.json at build time (for client version polling) and _headers (CF Workers / nginx cache policy).
       ...(isProd && !isWechat ? [{
         apply(compiler) {
