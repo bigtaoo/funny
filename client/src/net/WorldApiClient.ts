@@ -37,9 +37,38 @@ export interface WorldMapSparseView {
 }
 export type PlayerWorldView = components['schemas']['PlayerWorldView'];
 export type MarchView = components['schemas']['MarchView'];
-export type FamilyMemberView = components['schemas']['FamilyMemberView'];
-export type FamilyView = components['schemas']['FamilyView'];
-export type FamilyMessageView = components['schemas']['FamilyMessageView'];
+
+// Family DTOs are NOT in openapi-world.yml: family moved to socialsvc (/social/family/*, no
+// openapi contract of its own). Shapes are hand-mirrored from server/socialsvc/src/familyService.ts —
+// keep in sync manually when that file's FamilyView/FamilyMemberView/FamilyMessageView change.
+export interface FamilyMemberView {
+  accountId: string;
+  role: 'leader' | 'elder' | 'member';
+  joinedAt: number;
+  /** Resolved by socialsvc via metaClient; absent if the profile lookup failed. */
+  publicId?: string;
+  displayName?: string;
+}
+export interface FamilyView {
+  familyId: string;
+  name: string;
+  tag: string;
+  leaderId: string;
+  memberCount: number;
+  prosperity: number;
+  announcement?: string;
+}
+export interface FamilyDetailView extends FamilyView {
+  members: FamilyMemberView[];
+}
+export interface FamilyMessageView {
+  id: string;
+  senderId: string;
+  senderName: string;
+  body: string;
+  ts: number;
+}
+
 export type AuctionView = components['schemas']['AuctionView'];
 export type NationView = components['schemas']['NationView'];
 export type SeasonView = components['schemas']['SeasonView'];
@@ -323,7 +352,7 @@ export class WorldApiClient {
   async listFamilies(): Promise<FamilyView[]> {
     const social = getSocialBaseUrl();
     try {
-      const fam = await this.req<FamilyView>('GET', '/social/family/mine', undefined, 10_000, social);
+      const fam = await this.req<FamilyDetailView | null>('GET', '/social/family/mine', undefined, 10_000, social);
       return fam ? [fam] : [];
     } catch (e) {
       if (e instanceof WorldApiError && e.code === 'NOT_FOUND') return [];
@@ -331,11 +360,11 @@ export class WorldApiClient {
     }
   }
 
-  async getFamily(familyId: string): Promise<FamilyView> {
+  async getFamily(familyId: string): Promise<FamilyDetailView> {
     return this.req('GET', `/social/family/${encodeURIComponent(familyId)}`, undefined, 10_000, getSocialBaseUrl());
   }
 
-  async createFamily(name: string, tag: string): Promise<FamilyView> {
+  async createFamily(name: string, tag: string): Promise<FamilyDetailView> {
     return this.req('POST', '/social/family', { name, tag }, 10_000, getSocialBaseUrl());
   }
 

@@ -673,14 +673,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
               const fam = await worldApi.getFamily(me.familyId);
               status.familyName = fam.name;
               status.familyTag = fam.tag;
-              status.sectId = fam.sectId;
               status.isLeader = !!myAccountId && fam.leaderId === myAccountId;
-              if (fam.sectId) {
-                try {
-                  const sect = await worldApi.getSect(fam.sectId);
-                  status.sectName = sect.name;
-                } catch { /* missing sect is non-fatal */ }
-              }
+              // TODO(sectId gap): socialsvc's FamilyDetailView carries no sectId — sect status can't be
+              // resolved from here since the P4 family migration (2026-06-29). See project_social_system memory.
             } catch { /* missing family is non-fatal */ }
           }
           return status;
@@ -880,6 +875,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       worldApi,
       worldId,
       myAccountId,
+      playerName: playerName(),
     });
   }
 

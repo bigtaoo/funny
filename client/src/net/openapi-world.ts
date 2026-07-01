@@ -838,38 +838,16 @@ export interface components {
             /** @description G5: whether this march belongs to the requester (false = enemy march within vision range) */
             mine?: boolean;
         };
-        FamilyMemberView: {
-            accountId: string;
-            publicId?: string;
-            displayName?: string;
-            /** @enum {string} */
-            role: "leader" | "elder" | "member";
-            joinedAt: number;
-        };
-        FamilyView: {
-            familyId: string;
-            name: string;
-            tag: string;
-            worldId: string;
-            memberCount: number;
-            leaderId: string;
-            createdAt: number;
-            sectId?: string;
-            members?: components["schemas"]["FamilyMemberView"][];
-        };
-        FamilyMessageView: {
-            id: string;
-            from: string;
-            fromName?: string;
-            body: string;
-            ts: number;
-        };
         AuctionView: {
             auctionId: string;
             worldId: string;
             sellerId: string;
             sellerName?: string;
-            itemType: string;
+            /**
+             * @description CC-5: card = character card instance (qty always 1, gear must be empty before listing)
+             * @enum {string}
+             */
+            itemType: "material" | "equipment" | "card";
             item: {
                 [key: string]: unknown;
             };
@@ -1910,7 +1888,11 @@ export interface operations {
             content: {
                 "application/json": {
                     worldId: string;
-                    itemType: string;
+                    /**
+                     * @description card (CC-5): item.instanceId = CardInstance.id; gear must be empty; qty ignored (always 1)
+                     * @enum {string}
+                     */
+                    itemType: "material" | "equipment" | "card";
                     item: {
                         [key: string]: unknown;
                     };

@@ -11,6 +11,8 @@ import {
 import type { SocialCollections, FamilyDoc, FamilyMemberDoc, FamilyMessageDoc } from './db';
 import type { SocialGatewayClient } from './gatewayClient';
 import { nullSocialGatewayClient } from './gatewayClient';
+import type { SocialMetaClient } from './metaClient';
+import { nullSocialMetaClient } from './metaClient';
 
 export interface FamilyView {
   familyId: string;
@@ -30,6 +32,9 @@ export interface FamilyMemberView {
   accountId: string;
   role: FamilyRole;
   joinedAt: number;
+  /** Resolved via SocialMetaClient.batchProfiles; omitted if metaserver lookup is unavailable or the profile is gone. */
+  publicId?: string;
+  displayName?: string;
 }
 
 export interface FamilyMessageView {
@@ -44,6 +49,7 @@ export interface FamilyServiceDeps {
   cols: SocialCollections;
   now: () => number;
   gateway?: SocialGatewayClient;
+  meta?: SocialMetaClient;
 }
 
 /** In-process monotonic sequence number to prevent message ID collisions within the same millisecond. */
@@ -67,9 +73,20 @@ function docToView(doc: FamilyDoc): FamilyView {
 
 export class FamilyService {
   private readonly gateway: SocialGatewayClient;
+  private readonly meta: SocialMetaClient;
 
   constructor(private readonly deps: FamilyServiceDeps) {
     this.gateway = deps.gateway ?? nullSocialGatewayClient;
+    this.meta = deps.meta ?? nullSocialMetaClient;
+  }
+
+  /** Attach resolved publicId/displayName to each member (best-effort; missing profiles are left unresolved). */
+  private async withProfiles(members: FamilyMemberView[]): Promise<FamilyMemberView[]> {
+    const profiles = await this.meta.batchProfiles(members.map((m) => m.accountId));
+    return members.map((m) => {
+      const p = profiles.get(m.accountId);
+      return p ? { ...m, publicId: p.publicId, displayName: p.displayName } : m;
+    });
   }
 
   /** Get the family the player belongs to (including member list). Returns null if not a member. */
@@ -84,11 +101,11 @@ export class FamilyService {
     const doc = await this.deps.cols.families.findOne({ _id: familyId });
     if (!doc) return null;
     const memberDocs = await this.deps.cols.familyMembers.find({ familyId }).toArray();
-    const members: FamilyMemberView[] = memberDocs.map((m) => ({
+    const members = await this.withProfiles(memberDocs.map((m) => ({
       accountId: m.accountId,
       role: m.role,
       joinedAt: m.joinedAt,
-    }));
+    })));
     return { ...docToView(doc), members };
   }
 
@@ -146,7 +163,7 @@ export class FamilyService {
 
     return {
       ...docToView(familyDoc),
-      members: [{ accountId: leaderId, role: 'leader', joinedAt: now }],
+      members: await this.withProfiles([{ accountId: leaderId, role: 'leader', joinedAt: now }]),
     };
   }
 

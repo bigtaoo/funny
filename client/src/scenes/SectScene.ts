@@ -144,11 +144,9 @@ export class SectScene implements Scene {
         this.myFamilyId = me.familyId;
         const fam = await this.cb.worldApi.getFamily(me.familyId);
         this.myFamilyRole = fam.members?.find(m => m.accountId === this.cb.myAccountId)?.role ?? 'member';
-        if (fam.sectId) {
-          await this.loadMySect(fam.sectId);
-        } else {
-          this.mode = 'noSect';
-        }
+        // TODO(sectId gap): socialsvc's FamilyDetailView carries no sectId — this branch never resolves a
+        // sect since the P4 family migration (2026-06-29). See project_social_system memory / spawned task.
+        this.mode = 'noSect';
       }
     } catch {
       this.mode = 'noSect';

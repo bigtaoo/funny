@@ -9,7 +9,7 @@ import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import type { WorldApiClient, FamilyView, FamilyMemberView, FamilyMessageView } from '../net/WorldApiClient';
+import type { WorldApiClient, FamilyView, FamilyDetailView, FamilyMemberView, FamilyMessageView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 
 export interface FamilySceneCallbacks {
@@ -20,6 +20,8 @@ export interface FamilySceneCallbacks {
   worldId: string;
   /** current player's accountId */
   myAccountId: string;
+  /** current player's display name, denormalized onto sent family messages */
+  playerName: string;
 }
 
 type FamilyTab = 'members' | 'channel';
@@ -38,7 +40,7 @@ export class FamilyScene implements Scene {
   private mode: ViewMode = 'loading';
   private activeTab: FamilyTab = 'members';
 
-  private family: FamilyView | null = null;
+  private family: FamilyDetailView | null = null;
   private members: FamilyMemberView[] = [];
   private messages: FamilyMessageView[] = [];
 
@@ -357,7 +359,7 @@ export class FamilyScene implements Scene {
     let cy = y0 - this.scrollY;
     for (const msg of this.messages) {
       if (cy + ROW_H < y0 || cy > y0 + listH2) { cy += ROW_H; continue; }
-      const nameLbl = txt(msg.fromName ?? msg.from, 11, C.accent);
+      const nameLbl = txt(msg.senderName ?? msg.senderId, 11, C.accent);
       nameLbl.x = 12; nameLbl.y = cy + 4;
       this.bodyLayer.addChild(nameLbl);
       const bodyLbl = txt(msg.body, 12, C.dark);
@@ -422,7 +424,7 @@ export class FamilyScene implements Scene {
         inp.remove();
         if (body && this.family) {
           try {
-            await this.cb.worldApi.sendFamilyMessage(this.family.familyId, body);
+            await this.cb.worldApi.sendFamilyMessage(this.family.familyId, body, this.cb.playerName);
             await this.loadChannel();
             if (!this.destroyed) this.render();
           } catch (err) {
