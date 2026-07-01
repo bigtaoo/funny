@@ -81,8 +81,8 @@ class FakeCommercial implements CommercialClient {
   }
   async rechargeVerify(a: { accountId: string; platform: string; receipt: string; receiptId: string }) {
     if (!a.receipt) return { ok: false as const, error: 'INVALID_RECEIPT' };
-    this.coins.set(a.accountId, this.bal(a.accountId) + 600);
-    return { ok: true as const, coinsAfter: this.bal(a.accountId), coinsGranted: 600 };
+    this.coins.set(a.accountId, this.bal(a.accountId) + 550);
+    return { ok: true as const, coinsAfter: this.bal(a.accountId), coinsGranted: 550 };
   }
   async adsCredit(a: { accountId: string; amount: number; dayKey: string }) {
     this.coins.set(a.accountId, this.bal(a.accountId) + a.amount);
@@ -149,9 +149,9 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
   });
 
   it('top-up → mirrored balance pushed back', async () => {
-    const r = body(await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:small' } }));
-    expect(r.data.granted).toBe(600);
-    expect(r.data.save.wallet.coins).toBe(600);
+    const r = body(await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:t499' } }));
+    expect(r.data.granted).toBe(550);
+    expect(r.data.save.wallet.coins).toBe(550);
   });
 
   it('rename: deduct 500 coins → write display name → mirror balance; GET /save returns new name', async () => {

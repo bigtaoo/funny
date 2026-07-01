@@ -13,7 +13,8 @@
 // commercial.rechargeVerify guards idempotency — this file does not repeat that check.
 
 import { createHmac, createSign, randomBytes } from 'node:crypto';
-import { DEV_STUB_DEFAULT_TIER, type IAP_TIERS } from '@nw/shared';
+import { DEV_STUB_DEFAULT_TIER, IAP_TIERS_LIST } from '@nw/shared';
+import type { IAP_TIERS } from '@nw/shared';
 
 export type IapTierMap = typeof IAP_TIERS;
 
@@ -27,7 +28,9 @@ export interface IapVerifyResult {
 /**
  * Maps an App Store / Google Play product_id to a coin-tier name.
  * Reads NW_IAP_PRODUCT_MAP first (format: `productId:tier,...`);
- * falls back to the built-in default table (bundle prefix can be overridden via NW_IAP_BUNDLE, default com.nw).
+ * falls back to the built-in default convention `${NW_IAP_BUNDLE}.coins.<tierId>` (e.g. com.nw.coins.t499),
+ * where `<tierId>` is any key in IAP_TIERS. Derived from the tier map so it can never drift from IAP_TIERS again.
+ * The bundle prefix can be overridden via NW_IAP_BUNDLE (default com.nw).
  */
 function resolveCoinsFromProductId(productId: string, tierMap: IapTierMap): number {
   const raw = process.env.NW_IAP_PRODUCT_MAP;
@@ -41,14 +44,12 @@ function resolveCoinsFromProductId(productId: string, tierMap: IapTierMap): numb
     }
     return 0;
   }
-  const bundle = process.env.NW_IAP_BUNDLE ?? 'com.nw';
-  const DEFAULTS: Record<string, string> = {
-    [`${bundle}.coins.small`]: 'small',
-    [`${bundle}.coins.mid`]: 'mid',
-    [`${bundle}.coins.large`]: 'large',
-  };
-  const tier = DEFAULTS[productId];
-  return tier && tierMap[tier] ? tierMap[tier]! : 0;
+  const prefix = `${process.env.NW_IAP_BUNDLE ?? 'com.nw'}.coins.`;
+  if (productId.startsWith(prefix)) {
+    const tier = productId.slice(prefix.length);
+    if (tierMap[tier]) return tierMap[tier]!;
+  }
+  return 0;
 }
 
 // ── Apple App Store (StoreKit 1 receipt verification) ─────────────────────────────────
@@ -332,10 +333,10 @@ function devVerify(receipt: string, tierMap: IapTierMap): IapVerifyResult {
 
 /**
  * Reverse-lookup the coin tier from a payment amount (smallest currency unit), shared by WeChat/Stripe.
- * Built-in defaults (WeChat fen / Stripe cents):
- *   600 fen / 99 cents → small (600 coins)
- *   3000 fen / 499 cents → mid (3300 coins)
- *   10000 fen / 1499 cents → large (11800 coins)
+ * NW_IAP_AMOUNT_MAP (format `amount:tier,...`) takes priority. Built-in default: Stripe USD price in cents
+ * → tier, derived from IAP_TIERS_LIST.usdCents (single source of truth: 99→t099 … 9999→t9999).
+ * WeChat is priced in fen (CNY) and has no canonical price in the economy config, so WeChat deployments
+ * MUST set NW_IAP_AMOUNT_MAP — the built-in default only matches Stripe's USD cents.
  */
 function resolveCoinsFromAmount(amount: number, tierMap: IapTierMap): number {
   const raw = process.env.NW_IAP_AMOUNT_MAP;
@@ -346,13 +347,8 @@ function resolveCoinsFromAmount(amount: number, tierMap: IapTierMap): number {
     }
     return 0;
   }
-  const DEFAULTS: [number, string][] = [
-    [99, 'small'], [600, 'small'],
-    [499, 'mid'], [3000, 'mid'],
-    [1499, 'large'], [10000, 'large'],
-  ];
-  for (const [a, tier] of DEFAULTS) {
-    if (a === amount && tierMap[tier]) return tierMap[tier]!;
+  for (const def of IAP_TIERS_LIST) {
+    if (def.usdCents === amount && tierMap[def.id]) return tierMap[def.id]!;
   }
   return 0;
 }

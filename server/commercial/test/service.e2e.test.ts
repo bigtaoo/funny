@@ -48,26 +48,26 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
   });
 
   it('recharge adds coins + receiptId idempotency', async () => {
-    const r1 = await svc.rechargeVerify({ accountId: 'a', platform: 'web', receipt: 'tier:mid', receiptId: 'rc1' });
-    expect(r1).toMatchObject({ ok: true, coinsGranted: 3300, coinsAfter: 3300 });
+    const r1 = await svc.rechargeVerify({ accountId: 'a', platform: 'web', receipt: 'tier:t999', receiptId: 'rc1' });
+    expect(r1).toMatchObject({ ok: true, coinsGranted: 1150, coinsAfter: 1150 });
     // Replaying the same receiptId: no duplicate credit, returns the original result.
-    const r2 = await svc.rechargeVerify({ accountId: 'a', platform: 'web', receipt: 'tier:mid', receiptId: 'rc1' });
-    expect(r2).toMatchObject({ ok: true, coinsGranted: 3300, coinsAfter: 3300 });
-    expect((await svc.getWallet('a')).coins).toBe(3300);
+    const r2 = await svc.rechargeVerify({ accountId: 'a', platform: 'web', receipt: 'tier:t999', receiptId: 'rc1' });
+    expect(r2).toMatchObject({ ok: true, coinsGranted: 1150, coinsAfter: 1150 });
+    expect((await svc.getWallet('a')).coins).toBe(1150);
   });
 
   it('same receiptId already used by another account → rejected (prevents cross-account balance leak)', async () => {
-    // a tops up first with rcShared (balance 3300).
-    const r1 = await svc.rechargeVerify({ accountId: 'a', platform: 'web', receipt: 'tier:mid', receiptId: 'rcShared' });
-    expect(r1).toMatchObject({ ok: true, coinsGranted: 3300, coinsAfter: 3300 });
+    // a tops up first with rcShared (balance 1150).
+    const r1 = await svc.rechargeVerify({ accountId: 'a', platform: 'web', receipt: 'tier:t999', receiptId: 'rcShared' });
+    expect(r1).toMatchObject({ ok: true, coinsGranted: 1150, coinsAfter: 1150 });
     // b reuses the same receiptId: must be rejected, must never replay a's balance.
-    const r2 = await svc.rechargeVerify({ accountId: 'b', platform: 'web', receipt: 'tier:mid', receiptId: 'rcShared' });
+    const r2 = await svc.rechargeVerify({ accountId: 'b', platform: 'web', receipt: 'tier:t999', receiptId: 'rcShared' });
     expect(r2).toEqual({ ok: false, error: 'INVALID_RECEIPT' });
     // b's wallet is unaffected.
     expect((await svc.getWallet('b')).coins).toBe(0);
     // a replaying the same receiptId still works correctly (returns this account's balance).
-    const r3 = await svc.rechargeVerify({ accountId: 'a', platform: 'web', receipt: 'tier:mid', receiptId: 'rcShared' });
-    expect(r3).toMatchObject({ ok: true, coinsGranted: 3300, coinsAfter: 3300 });
+    const r3 = await svc.rechargeVerify({ accountId: 'a', platform: 'web', receipt: 'tier:t999', receiptId: 'rcShared' });
+    expect(r3).toMatchObject({ ok: true, coinsGranted: 1150, coinsAfter: 1150 });
   });
 
   it('insufficient balance rejects deduction', async () => {
@@ -76,21 +76,21 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
   });
 
   it('shop deduction + orderId idempotent replay', async () => {
-    await svc.rechargeVerify({ accountId: 'c', platform: 'web', receipt: 'tier:small', receiptId: 'rcc' }); // 600
+    await svc.rechargeVerify({ accountId: 'c', platform: 'web', receipt: 'tier:t499', receiptId: 'rcc' }); // 550
     const r1 = await svc.shopCharge({ accountId: 'c', itemId: 'skin_shop_c1', cost: 300, orderId: 'o2' });
-    expect(r1).toMatchObject({ ok: true, coinsAfter: 300, status: 'charged' });
+    expect(r1).toMatchObject({ ok: true, coinsAfter: 250, status: 'charged' });
     // Replaying the same orderId: no duplicate deduction, returns the original result.
     const r2 = await svc.shopCharge({ accountId: 'c', itemId: 'skin_shop_c1', cost: 300, orderId: 'o2' });
-    expect(r2).toMatchObject({ ok: true, coinsAfter: 300 });
-    expect((await svc.getWallet('c')).coins).toBe(300);
+    expect(r2).toMatchObject({ ok: true, coinsAfter: 250 });
+    expect((await svc.getWallet('c')).coins).toBe(250);
   });
 
   it('gacha: single draw costs 150, pity+1, orderId idempotent', async () => {
-    await svc.rechargeVerify({ accountId: 'e', platform: 'web', receipt: 'tier:small', receiptId: 'rce' }); // 600
+    await svc.rechargeVerify({ accountId: 'e', platform: 'web', receipt: 'tier:t499', receiptId: 'rce' }); // 550
     const r1 = await svc.gachaDraw({ accountId: 'e', poolId: 'standard', count: 1, orderId: 'g1' });
     expect(r1.ok).toBe(true);
     if (r1.ok) {
-      expect(r1.coinsAfter).toBe(450);
+      expect(r1.coinsAfter).toBe(400);
       expect(r1.results).toHaveLength(1);
       expect(r1.pityAfter).toBe(1);
     }
@@ -98,32 +98,32 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     expect(hist).toHaveLength(1);
     // Replay idempotency
     const r2 = await svc.gachaDraw({ accountId: 'e', poolId: 'standard', count: 1, orderId: 'g1' });
-    expect(r2.ok && r2.coinsAfter).toBe(450);
-    expect((await svc.getWallet('e')).coins).toBe(450);
+    expect(r2.ok && r2.coinsAfter).toBe(400);
+    expect((await svc.getWallet('e')).coins).toBe(400);
     expect((await svc.getWallet('e')).pity.standard).toBe(1);
   });
 
   it('concurrent deductions do not overspend (10 concurrent single draws, balance only covers 3)', async () => {
-    await svc.rechargeVerify({ accountId: 'f', platform: 'web', receipt: 'tier:small', receiptId: 'rcf2' }); // 600
-    // Balance 600 / single draw 150 → at most 4 draws. Fire 10 concurrent calls with distinct orderIds.
+    await svc.rechargeVerify({ accountId: 'f', platform: 'web', receipt: 'tier:t499', receiptId: 'rcf2' }); // 550
+    // Balance 550 / single draw 150 → at most 3 draws. Fire 10 concurrent calls with distinct orderIds.
     const calls = Array.from({ length: 10 }, (_, i) =>
       svc.gachaDraw({ accountId: 'f', poolId: 'standard', count: 1, orderId: `c${i}` }),
     );
     const res = await Promise.all(calls);
     const okCount = res.filter((r) => r.ok).length;
-    expect(okCount).toBe(4);
-    expect((await svc.getWallet('f')).coins).toBe(0);
+    expect(okCount).toBe(3);
+    expect((await svc.getWallet('f')).coins).toBe(100);
   });
 
   it('order fulfillment closed loop: delivered marker + refundCoins credit idempotent', async () => {
-    await svc.rechargeVerify({ accountId: 'g', platform: 'web', receipt: 'tier:small', receiptId: 'rcg' }); // 600
+    await svc.rechargeVerify({ accountId: 'g', platform: 'web', receipt: 'tier:t499', receiptId: 'rcg' }); // 550
     await svc.shopCharge({ accountId: 'g', itemId: 'skin_shop_c1', cost: 300, orderId: 'od1' }); // remaining 300
     const d1 = await svc.orderDelivered({ orderId: 'od1', refundCoins: 50 });
     expect(d1.ok).toBe(true);
-    expect((await svc.getWallet('g')).coins).toBe(350); // refunded 50
+    expect((await svc.getWallet('g')).coins).toBe(300); // refunded 50
     // Replaying delivered: no duplicate refund.
     await svc.orderDelivered({ orderId: 'od1', refundCoins: 50 });
-    expect((await svc.getWallet('g')).coins).toBe(350);
+    expect((await svc.getWallet('g')).coins).toBe(300);
     // Reconciliation: delivered orders no longer appear in the undelivered list.
     expect(await svc.undeliveredOrders('g')).toHaveLength(0);
   });
@@ -158,13 +158,13 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
   });
 
   it('spend (renamed sink): deducts coins + orderId idempotent + rejects insufficient balance + not picked up by reconciliation', async () => {
-    await svc.rechargeVerify({ accountId: 'j', platform: 'web', receipt: 'tier:small', receiptId: 'rcj' }); // 600
+    await svc.rechargeVerify({ accountId: 'j', platform: 'web', receipt: 'tier:t499', receiptId: 'rcj' }); // 550
     const r1 = await svc.spend({ accountId: 'j', amount: 500, reason: 'rename', orderId: 'sp1' });
-    expect(r1).toMatchObject({ ok: true, coinsAfter: 100 });
+    expect(r1).toMatchObject({ ok: true, coinsAfter: 50 });
     // orderId idempotency: replay does not deduct again.
     const r2 = await svc.spend({ accountId: 'j', amount: 500, reason: 'rename', orderId: 'sp1' });
-    expect(r2).toMatchObject({ ok: true, coinsAfter: 100 });
-    expect((await svc.getWallet('j')).coins).toBe(100);
+    expect(r2).toMatchObject({ ok: true, coinsAfter: 50 });
+    expect((await svc.getWallet('j')).coins).toBe(50);
     // Insufficient balance is rejected.
     const r3 = await svc.spend({ accountId: 'j', amount: 500, reason: 'rename', orderId: 'sp2' });
     expect(r3).toEqual({ ok: false, error: 'INSUFFICIENT_FUNDS' });

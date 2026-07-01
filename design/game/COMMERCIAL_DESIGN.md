@@ -7,7 +7,7 @@
 > **实现偏离/暂缓（与本设计的差异）**：
 > 1. **内部端点用 node:http**（非 fastify，对齐 matchsvc），业务错误以 HTTP 200 + `{ok:false,error}` 返回供 meta 映射。
 > 2. **重复转化（退币/碎片）S5 暂缓**：§4.3 退币额「待定」+ 碎片落在客户端同步段 `materials`（权威冲突）+ 补发重算 dupe 非幂等。S5 只幂等发新皮肤（`SaveData.deliveredOrders` $addToSet 去重）；退币通道在 commercial `orderDelivered(refundCoins)` 已备，待决策可持久化后接。`DUPE_REFUND_COINS`（shared/economy.ts）已统一退币（common/rare 小额占位）。
-> 3. **充值平台验签 = dev 桩**（`receipt` 形如 `tier:small|mid|large` 按档发币）；真实微信支付/渠道验签留 TODO。
+> 3. **充值平台验签 = dev 桩**（`receipt` 形如 `tier:<tierId>`，如 `tier:t499`，按档发币）；真实微信支付/渠道验签留 TODO。
 > 4. **对账**目前仅 `GET /save` 顺带（拉 commercial `orders/undelivered` 补发）；兜底定时扫描待办。
 > 5. **新增 `GET /internal/orders/undelivered`**（对账拉单）+ `order/delivered` 加 `refundCoins`，已登记 `SERVER_API §9`。
 > 6. **catalog 单一来源 `shared/src/economy.ts`**（商品/盲盒池/权重/退币/广告/IAP 档），meta 列表 + commercial RNG 共用，避免漂移。

@@ -25,11 +25,11 @@
 
 ### 产品 ID / 金额 → 档位映射
 
-- `NW_IAP_PRODUCT_MAP`（可选，Apple/Google）：`productId:tier,...`；不填用默认 `${NW_IAP_BUNDLE}.coins.{small,mid,large}`。
+- `NW_IAP_PRODUCT_MAP`（可选，Apple/Google）：`productId:tier,...`；不填用默认约定 `${NW_IAP_BUNDLE}.coins.<tierId>`，其中 `<tierId>` 为 `IAP_TIERS` 的键（`t099/t199/t499/t999/t1999/t4999/t9999`），例如 `com.nw.coins.t499`。
 - `NW_IAP_BUNDLE`（默认 `com.nw`）：默认产品 ID 的前缀。
-- `NW_IAP_AMOUNT_MAP`（可选，微信/Stripe）：`amount:tier,...`；不填用默认（微信 600/3000/10000 fen、Stripe 99/499/1499 cents）。
+- `NW_IAP_AMOUNT_MAP`（可选，微信/Stripe）：`amount:tier,...`；不填时内置默认按 `IAP_TIERS_LIST.usdCents` 匹配 **Stripe 美元价（cents）→ 档位**（99→t099 … 9999→t9999）。**微信按人民币分（fen）计价，经济配置中无对应人民币锚点价，微信渠道必须显式配置 `NW_IAP_AMOUNT_MAP`**，否则金额匹配不到档位（fail closed，发失败）。
 
-档位金币数以 `@nw/shared` 的 `IAP_TIERS` 为准。
+档位金币数与档位 ID 均以 `@nw/shared` 的 `IAP_TIERS` / `IAP_TIERS_LIST` 为准。
 
 ## 2. 广告验签凭据（激励视频，C2）
 
@@ -54,4 +54,4 @@
 
 - 充值返 `INVALID_RECEIPT`：对应平台凭据缺失或验签失败 → 查 commercial 日志的平台分支返回值。
 - 生产 commercial 启动即退出并打印 `FATAL: NW_IAP_DEV=true`：移除该环境变量或设 `false`。
-- 本地联调收 `INVALID_RECEIPT`：确认未误设 `NODE_ENV=production`，且用 `tier:small` 形式的 dev 收据。
+- 本地联调收 `INVALID_RECEIPT`：确认未误设 `NODE_ENV=production`，且用 `tier:<tierId>`（如 `tier:t499`）形式的 dev 收据。

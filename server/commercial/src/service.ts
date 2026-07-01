@@ -41,7 +41,7 @@ export interface CommercialDeps {
   /**
    * Receipt verification function for recharge (S4-1).
    * Supports async (WeChat/Stripe require network requests); falls back to the built-in dev stub when omitted.
-   * Dev stub: receipt is formatted as `tier:small|mid|large` and grants the corresponding coin tier; any other non-empty value grants the small tier.
+   * Dev stub: receipt is formatted as `tier:<tierId>` (e.g. `tier:t499`) and grants the corresponding coin tier; any other non-empty value grants the default dev-stub tier (DEV_STUB_DEFAULT_TIER).
    */
   verifyReceipt?: (platform: string, receipt: string) => Promise<{ ok: boolean; coins: number }> | { ok: boolean; coins: number };
 }
