@@ -179,11 +179,19 @@ export class NetClient {
         }
         if (env.server) this.opt.handlers.onServerMsg(env.server);
       },
-      onClose: () => {
+      onClose: (code) => {
         if (gen !== this.gen || this.intentional) return;
-        this.log.warn('socket closed');
         this.stopPing();
         this.socket = null;
+        // 4409 'replaced': the server evicted us because another live session (another
+        // tab/device) took over this account. Reconnecting would evict that session and
+        // start an infinite ping-pong war — so give up instead of reconnecting.
+        if (code === 4409) {
+          this.log.warn('socket closed: replaced by another session; not reconnecting');
+          this.setState('closed');
+          return;
+        }
+        this.log.warn('socket closed', { code });
         this.scheduleReconnect();
       },
       onError: () => {

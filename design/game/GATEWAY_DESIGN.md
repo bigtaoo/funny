@@ -20,7 +20,7 @@
 ## 1. 职责（薄连接层）
 
 - WS 握手 `?token=<jwt>`（复用 meta 的 JWT，解出 accountId 绑定连接）。
-- 维护 `account → socket` 映射（同账号新连顶替旧连，沿用现有顶替逻辑）。
+- 维护 `account → socket` 映射（同账号新连顶替旧连，沿用现有顶替逻辑）。被顶替的旧连以关闭码 **`4409 'replaced'`** 断开；**客户端收到 4409 不得重连**（`NetClient` 已处理），否则两个会话互相顶替会陷入无限重连 ping-pong 战（常见于同账号开了两个标签页）。
 - 把客户端控制面消息转发 matchsvc；把 matchsvc 回调事件（`/gw/push`）推回对应 socket。
 - 入队前向 meta 取 ELO（`GET /internal/elo`，M17），带进 `/mm/enqueue`——让 matchsvc 保持 DB-free。
 - 在线状态 / （将来）好友 / 通知 / 聊天的承载连接。
