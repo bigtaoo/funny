@@ -170,6 +170,60 @@ export interface FeatureFlagRow {
   doc: FeatureFlagDoc | null;
 }
 
+// ── SLG season ops (G7/§17.7, mirror of server/admin/src/clients.ts + @nw/shared) ──
+export interface SlgWorldSummary {
+  worldId: string;
+  season: number;
+  shard: number;
+  status: string;
+  population: number;
+  capacity: number;
+  openAt: number;
+  resetAt?: number;
+  engineVersion?: number;
+}
+
+export type AuctionAnomalyReason = 'repeated' | 'designated' | 'high_value';
+export interface AuctionAnomaly {
+  sellerId: string;
+  buyerId: string;
+  trades: number;
+  designatedTrades: number;
+  totalCoins: number;
+  firstTs: number;
+  lastTs: number;
+  severity: 'medium' | 'high';
+  reasons: AuctionAnomalyReason[];
+}
+
+export interface TradeAuditSnapshot {
+  worldId: string;
+  sellerId: string;
+  buyerId: string;
+  trades: number;
+  designatedTrades: number;
+  totalCoins: number;
+  firstTs: number;
+  lastTs: number;
+  severity: 'medium' | 'high';
+  reasons: AuctionAnomalyReason[];
+}
+
+export type TradeAuditTicketStatus = 'open' | 'dismissed' | 'actioned';
+
+export interface TradeAuditTicketView {
+  id: string;
+  snapshot: TradeAuditSnapshot;
+  status: TradeAuditTicketStatus;
+  filedBy: string;
+  filedByName?: string;
+  filedAt: number;
+  note?: string;
+  resolvedBy?: string;
+  resolvedByName?: string;
+  resolvedAt?: number;
+}
+
 // ── Timed events (B6, mirror of @nw/shared events.ts) ──
 export type EventTaskKind = 'pve.clear' | 'pvp.win' | 'ad.watch';
 export interface EventTaskDef {

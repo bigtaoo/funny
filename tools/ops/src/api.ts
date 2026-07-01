@@ -4,6 +4,7 @@ import type {
   AdminAccountView,
   AntiCheatReviewView,
   AuditEntryView,
+  AuctionAnomaly,
   CompMailContent,
   CompScope,
   CompTarget,
@@ -17,6 +18,9 @@ import type {
   PlayerProfile,
   PlayerSummary,
   Session,
+  SlgWorldSummary,
+  TradeAuditSnapshot,
+  TradeAuditTicketView,
   TrendPoint,
 } from './types';
 
@@ -252,5 +256,49 @@ export class Api {
   }
   async deleteEvent(id: string): Promise<void> {
     await this.req('DELETE', `/admin/events/${encodeURIComponent(id)}`);
+  }
+
+  // ── SLG season ops (G7/§17.7; slg.season.view / slg.season.manage) ──
+  async slgListWorlds(): Promise<SlgWorldSummary[]> {
+    const r = await this.req<{ worlds: SlgWorldSummary[] }>('GET', '/admin/slg/worlds');
+    return r.worlds;
+  }
+  async slgOpenSeason(worldId: string, season: number, shard: number, capacity: number): Promise<void> {
+    await this.req('POST', '/admin/slg/season/open', { worldId, season, shard, capacity });
+  }
+  async slgSettleSeason(worldId: string): Promise<unknown> {
+    const r = await this.req<{ ranking: unknown }>('POST', '/admin/slg/season/settle', { worldId });
+    return r.ranking;
+  }
+  async slgResetSeason(worldId: string): Promise<void> {
+    await this.req('POST', '/admin/slg/season/reset', { worldId });
+  }
+  async slgCloseSeason(worldId: string): Promise<void> {
+    await this.req('POST', '/admin/slg/season/close', { worldId });
+  }
+
+  // ── SLG anomalous trade audit (G7 anti-RMT; slg.audit.view / slg.audit.manage) ──
+  async slgScanAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]> {
+    const qs = new URLSearchParams({ worldId });
+    if (windowSec !== undefined) qs.set('windowSec', String(windowSec));
+    const r = await this.req<{ anomalies: AuctionAnomaly[] }>('GET', `/admin/slg/audit/anomalies?${qs}`);
+    return r.anomalies;
+  }
+  async slgListAuditTickets(status?: string): Promise<TradeAuditTicketView[]> {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+    const r = await this.req<{ tickets: TradeAuditTicketView[] }>('GET', `/admin/slg/audit/tickets${qs}`);
+    return r.tickets;
+  }
+  async slgFileAuditTicket(snapshot: TradeAuditSnapshot): Promise<TradeAuditTicketView> {
+    const r = await this.req<{ ticket: TradeAuditTicketView }>('POST', '/admin/slg/audit/tickets', { snapshot });
+    return r.ticket;
+  }
+  async slgResolveAuditTicket(id: string, disposition: 'dismissed' | 'actioned', note?: string): Promise<TradeAuditTicketView> {
+    const r = await this.req<{ ticket: TradeAuditTicketView }>(
+      'POST',
+      `/admin/slg/audit/tickets/${encodeURIComponent(id)}/resolve`,
+      { disposition, note: note ?? '' },
+    );
+    return r.ticket;
   }
 }

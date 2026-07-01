@@ -199,6 +199,13 @@ POST /admin/comp/tickets/{id}/reject  { note }       → { ok }
 POST /admin/comp/tickets/{id}/cancel                 → { ok }
 POST /admin/comp/preview       { scope, target }     → { recipientCount }              // dry-run
 
+# SLG 赛季运维（G7/§17.7；slg.season.view / slg.season.manage）
+GET  /admin/slg/worlds                               → { worlds: [...] }               // slg.season.view
+POST /admin/slg/season/open    { worldId, season, shard, capacity }  → { ok }          // slg.season.manage（高危，须确认）
+POST /admin/slg/season/settle  { worldId }           → { ok, ranking }                 // slg.season.manage（发奖 + 结算）
+POST /admin/slg/season/reset   { worldId }           → { ok }                          // slg.season.manage（高危，须先 settle）
+POST /admin/slg/season/close   { worldId }           → { ok }                          // slg.season.manage（归档）
+
 # SLG 拍卖异常交易审计（G7 反 RMT，SLG_DESIGN §17.13）
 GET  /admin/slg/audit/anomalies?worldId=&windowSec=  → { anomalies: [...] }            // slg.audit.view（代理 worldsvc 扫描）
 GET  /admin/slg/audit/tickets?status=                → { tickets: [...] }              // slg.audit.view
@@ -267,18 +274,28 @@ POST   /admin/accounts/{id}/reset-password { password }
 | **S7-1 admin 后端骨架** | `server/admin` workspace：登录/JWT/RBAC 中间件 + 账号管理 + 审计写入 + 种子超管；`/health` | S7-0 | ✅ |
 | **S7-2 监控 + stats 端点** | gateway/matchsvc 加 `GET /internal/stats`；admin 采样定时器 + `metricSnapshots` + monitor/trend 端点 | S7-1 | ✅ |
 | **S7-3 补偿工单流** | 工单 CRUD + 审批路由（发起≠审批、额度分级）+ dry-run；执行器对接 meta 系统邮件端点，**2026-06-16 跨进程联调通过** | S7-1、S6-3 | ✅ |
-| **S7-4 前端页面** | `tools/ops` 全部页面（登录/监控/分析/查询/工单/审计/账号） | S7-1~3 | ✅ |
+| **S7-4 前端页面** | `tools/ops` 全部页面（登录/监控/分析/查询/工单/审计/账号/SLG赛季/SLG拍卖审计） | S7-1~3 | ✅ |
 | **S7-5 数据分析** | 自采指标扩充 + 看板聚合（注册/补偿量/经济概览，按需经只读 API） | S7-2 | ✅（核心；扩充按需） |
 
 ### 实现记录（2026-06-16）
 
 - **后端 `server/admin`（第七 workspace，CJS）**：`config.ts`（env）/ `db.ts`（独立库 `notebook_wars_admin`：adminAccounts/compTickets/auditLog/metricSnapshots，snapshot TTL 锚 BSON `at:Date`）/ `service.ts`（`AdminService` + `AdminError`，业务不变量：发起≠审批、`requiredApproveCapability(scope,tier)`、工单状态机、审计落库）/ `httpApi.ts`（node:http + admin JWT 鉴权 + 每端点 RBAC 静态能力门 + CORS）/ `clients.ts`（`HttpStatsClient` 合并 gateway+matchsvc、`HttpPlayerClient` 调 meta `/internal/player`、`HttpMailDispatcher` 按系统邮件端点契约形状对接）/ `seed.ts`（种子超管幂等）/ `index.ts`（引导 + 采样定时器）。
 - **业务侧新增端点**：gateway `GET /internal/stats`（`Gateway.stats()` 在线数）；matchsvc `GET /internal/stats`（`Matchsvc.stats()` + `GameRegistry.stats()` 队列/房间/game）；meta `GET /internal/player?publicId=`（`resolveByPublicId` 反查档案摘要，player.lookup）。
-- **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：`api.ts`（Bearer + localStorage 续登）/ `app.ts`（登录 + 按 capabilities 渲染导航）/ `pages.ts`（监控 sparkline / 分析 / 玩家 / 工单发起+审批 / 审计 / 账号）。不持密钥、不连库、不直连业务服务。
+- **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：`api.ts`（Bearer + localStorage 续登）/ `app.ts`（登录 + 按 capabilities 渲染导航）/ `pages.ts`（监控 sparkline / 分析 / 玩家 / 工单发起+审批 / 审计 / 账号 / SLG 赛季运维 / SLG 拍卖审计）。不持密钥、不连库、不直连业务服务。
 - **部署接线**：`server/package.json` workspaces + `dev:admin`；`Dockerfile` 七包；`docker-compose.prod.yml` admin 服务（caddy 不路由）；`ecosystem.config.cjs` `nw-admin`；`.env.example` + `dev-up.ps1`（dev 种子 root/rootpass）。
 - **验证**：七包 `tsc -b` 全绿 + admin 15 e2e（登录/RBAC/发起≠审批/超额+全服走超管/**单超管自批例外+留痕**/**有第二 super 时恢复四眼**/**禁用的第二审批人不算数**/dry-run/幂等执行+重试/审计可见性/player.lookup/采样 trend/账号管理）+ gateway 10 / matchsvc 17 / meta 74 不破 + `tools/ops` tsc + webpack 构建。
 - **补偿 ↔ 邮件跨进程联调（2026-06-16）**：S6-3 邮件后端就绪，补全 `server/admin/test/comp-mail.e2e.test.ts`——admin 真实 `HttpMailDispatcher`/`HttpPlayerClient` 经 `fetch` 打真实 `app.listen({port:0})` 的 meta 进程（非 fastify inject），6 用例跑通：①单人补偿全链（发起→审批→真 HTTP 投递→玩家收件箱→领取附件→commercial 入账+钱包镜像）②`dispatchKey` 幂等（同 key 重发仅一封，meta `$setOnInsert`）③全服 fan-out + `preview` 命中人数 ④`player.lookup` 经真 `/internal/player` ⑤鉴权边界（错 `X-Internal-Key`→401→工单 failed、玩家无信）⑥收件人不存在→工单 failed。admin e2e 12→18，七包 `tsc -b` 全绿（meta dist 须先 `tsc -b`）。
 - **待办**：§9 开放问题（金币当量换算表、GlobalFilter 维度、TOTP 二次审批）。
+
+### SLG 赛季运维 + 拍卖审计前端（2026-07-01）
+
+admin 后端（G7）已全部就绪；补完 `tools/ops` 对应的两个前端页面：
+
+- **`pageSLGSeason`（slg.season.view / slg.season.manage）**：世界列表表格（worldId / season-shard / status / population / 开服时间），manage 角色可见 Settle / Reset / Close 操作按钮 + Open new world 表单（worldId + season + shard + capacity）；危险操作均须浏览器 `confirm()`；后端 guard（settle-before-reset）在 409 时以错误行内展示。
+- **`pageAuctionAudit`（slg.audit.view / slg.audit.manage）**：① 扫描区（worldId + 可选 windowSec → 列出 AuctionAnomaly，manage 角色每行可点"File ticket"立单）② 审计工单队列（状态过滤，manage 角色开放 Dismiss / Action 裁定按钮，裁定时 `prompt()` 收注释）；工单行展示冻结快照摘要（世界/买卖双方/总币/严重度/信号）。
+- **对应 `api.ts` 方法**：`slgListWorlds` / `slgOpenSeason` / `slgSettleSeason` / `slgResetSeason` / `slgCloseSeason` / `slgScanAnomalies` / `slgListAuditTickets` / `slgFileAuditTicket` / `slgResolveAuditTicket`。
+- **`types.ts` 新增**：`SlgWorldSummary` / `AuctionAnomaly` / `TradeAuditSnapshot` / `TradeAuditTicketView` / `TradeAuditTicketStatus`（镜像 shared + clients.ts）。
+- **验证**：`tools/ops` tsc --noEmit 零错误。
 
 ### 加固 / 优化（2026-06-16，第二轮）
 
