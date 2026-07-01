@@ -14,8 +14,9 @@
 // ④ server-side per-IP rate limiting (service.ts). No baseUrl / Loki unreachable → silently dropped, never impacts the player.
 //
 // Two crash capture paths:
-//   ① On page exit (pagehide / visibilitychange→hidden), use navigator.sendBeacon (survives page unload) to eagerly flush the queue +
-//      recent breadcrumbs, catching "soft crash / frozen-then-closed / error-then-refresh" type crashes that **have a cleanup opportunity**.
+//   ① On page exit (pagehide / visibilitychange→hidden), use an uncredentialed keepalive fetch (survives page unload) to eagerly
+//      flush the queue + recent breadcrumbs, catching "soft crash / frozen-then-closed / error-then-refresh" type crashes that
+//      **have a cleanup opportunity**. (Deliberately NOT navigator.sendBeacon — see flushBeacon for the CORS rationale.)
 //   ② True hard crashes (OOM / renderer process killed / tab killed) have no reporting opportunity at the moment —
 //      instead use a localStorage "session sentinel": write a marker on startup + update a heartbeat timestamp,
 //      mark cleanExit on exit; on the next startup, if the previous sentinel has a marker but no cleanExit,
@@ -100,14 +101,21 @@ class AnomalyReporter {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ publicId: readPublicId() ?? undefined, platform: platformName(), events }),
         keepalive: true,
+        credentials: 'omit', // telemetry is unauthenticated (publicId in body); no cookies → cross-origin CORS needs no ACAC
       });
     } catch { /* best-effort, silently swallow */ }
   }
 
   /**
-   * Eager exit flush: sends the pending queue + recent breadcrumbs via sendBeacon (survives page unload);
-   * falls back to keepalive fetch if sendBeacon is unavailable.
+   * Eager exit flush: sends the pending queue + recent breadcrumbs via an uncredentialed keepalive fetch (survives page unload).
    * Only sends when there are pending events — a clean exit (empty queue) sends nothing and attaches no breadcrumbs.
+   *
+   * NOTE — why keepalive fetch and NOT navigator.sendBeacon: sendBeacon always sends the request credentialed (cookies),
+   * which makes the browser require `Access-Control-Allow-Credentials: true` on the cross-origin response. This API
+   * authenticates via Bearer token, sets no cookies, and its CORS reflects the origin without that header — so a
+   * credentialed beacon is blocked outright and the crash/exit report never lands (observed as a CORS error against
+   * /client/anomaly). A keepalive fetch is the spec-sanctioned unload-surviving alternative and defaults to no cookies
+   * cross-origin; we pin credentials:'omit' to make that intent explicit. Telemetry is unauthenticated (publicId in body).
    */
   flushBeacon(): void {
     const base = getApiBaseUrl();
@@ -121,11 +129,7 @@ class AnomalyReporter {
     this.sent += events.length;
     const body = JSON.stringify({ publicId: readPublicId() ?? undefined, platform: platformName(), events });
     const url = `${base}${ENDPOINT}`;
-    try {
-      const nav = globalThis.navigator as (Navigator & { sendBeacon?: Navigator['sendBeacon'] }) | undefined;
-      if (nav?.sendBeacon) { nav.sendBeacon(url, new Blob([body], { type: 'application/json' })); return; }
-    } catch { /* fall through */ }
-    try { void fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true }); } catch { /* swallow */ }
+    try { void fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true, credentials: 'omit' }); } catch { /* swallow */ }
   }
 }
 

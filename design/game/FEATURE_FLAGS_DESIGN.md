@@ -250,13 +250,14 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
   - `jserror` — 未捕获异常 / Promise 拒绝（`log.ts` 经 `setErrorSink` 旁路）/ 微信 `wx.onError`。
   - `crash` — **上次会话**异常退出（崩溃哨兵下次启动补报，见下）。
 - **崩溃捕获两路**（直答「客户端崩溃有机会上报吗」）：
-  - ① **离场 beacon**：`pagehide` 用 `navigator.sendBeacon`（存活于页面卸载）抢发待发队列 + 最近 12 条面包屑——逮住「软崩溃 / 卡死后被关 / 报错后刷新」这类**有清理机会**的崩溃。`visibilitychange→hidden`（切后台/弹键盘/切 App）也抢发队列，但**不**标 `cleanExit`（见下②的修正）。
+  - ① **离场急发**：`pagehide` 用**无凭据 keepalive fetch**（`credentials:'omit'`，存活于页面卸载）抢发待发队列 + 最近 12 条面包屑——逮住「软崩溃 / 卡死后被关 / 报错后刷新」这类**有清理机会**的崩溃。`visibilitychange→hidden`（切后台/弹键盘/切 App）也抢发队列，但**不**标 `cleanExit`（见下②的修正）。**不用 `navigator.sendBeacon`**：见下「传输」的 CORS 说明。
   - ② **localStorage 会话哨兵**：真·硬崩溃（OOM / 渲染进程被杀 / 标签页被杀）当场无机会上报；改为启动写 `nw_session_sentinel` + 15s 心跳更新存活时刻、离场标记 `cleanExit`；**下次启动**若发现上次哨兵有标记却无 `cleanExit`，即判定崩溃，带「大约崩溃时刻 aliveMs + 最后一条错误」补报一条 `crash`。补报后**立即 `flushBeacon`**（不等 1.5s 合批 fetch），以防本次会话在 debounce 触发前又崩。
 
 > **2026-06-27 两处健壮性修正**（修「iPad 注册崩溃 Grafana 无记录」时发现）：
 > - **`cleanExit` 误判**：原 `visibilitychange→hidden` 也调 `markCleanExit()`，但 hidden（切后台/弹软键盘/切 App）≠ 退出——iOS 恰在转后台时最易被内存压力杀标签页，于是「后台被杀」会被下次启动误判成正常退出、永不补报。已拆开：只有 `pagehide`（确凿卸载）标 `cleanExit`；`hidden` 只抢发不标。
 > - **补报卡 1.5s 合批**：崩溃常成串（重载后又崩），原补报走普通队列 1.5s 后才 fetch，若本次也在 1.5s 内崩则永远发不出。已改为补报后立即 beacon。
-- **传输**：客户端 `POST /client/anomaly`（body `{ publicId?, platform, events:[{type,msg,ts,detail?}] }`）；正常 fetch（`keepalive`）+ 离场 sendBeacon 兜底。无 baseUrl / Loki 不可达 → 静默丢弃，绝不影响玩家。
+- **传输**：客户端 `POST /client/anomaly`（body `{ publicId?, platform, events:[{type,msg,ts,detail?}] }`）；合批与离场急发一律走**无凭据 `fetch`（`keepalive:true, credentials:'omit'`）**。无 baseUrl / Loki 不可达 → 静默丢弃，绝不影响玩家。
+  - **为何弃用 `navigator.sendBeacon`**（2026-07-01 修）：sendBeacon 强制带凭据（cookie），浏览器遂要求跨域响应含 `Access-Control-Allow-Credentials: true`。本 API 用 Bearer token 认证、不下发任何 cookie，metaserver CORS 是 `origin:true` 反射来源但**不**带 ACAC——于是跨域（`api.gamestao.com` ≠ 游戏来源）的信标被浏览器直接拦截，崩溃/离场补报永远发不出（现象即 `/client/anomaly` 报 CORS 错）。改用无凭据 keepalive fetch：同样存活于页面卸载（fetch 规范），跨域默认不带 cookie，`credentials:'omit'` 明示意图。埋点本就无需认证（`publicId` 在 body 里）。服务端 CORS 一字未改，不引入任何新增攻击面。
 - **入 Loki 约定**：单 stream，**label 仅 `{source="client", kind="anomaly"}`**（低基数），`type/publicId/platform/detail/msg` 一律放**行内**（logfmt）。Grafana：`{source="client",kind="anomaly"} | logfmt | type="webgl_lost"`。
 - **Grafana 面板**：`observability/grafana/dashboards/client-anomaly.json`（uid `nw-client-anomaly`）——按 type 堆叠的事件速率 + crash 计数 + 事件总数 + 受影响玩家数 + 明细日志；模板变量 type/platform（custom 枚举，因 type 在行内非 label）/publicId/关键字。
 - **防滥用四闸**：① 客户端每类冷却（mem/cpu 60s、anr 30s、jserror 10s 合一）② 单会话总量上限 50 ③ 单条 detail 截断 800 字符 ④ 服务端**按 IP 60s/30 次限流**（`SlidingRateLimiter`，超限静默丢弃）+ 最多取前 200 条 + 各字段截断。`POST /client/anomaly` **永远回 200**。
@@ -334,7 +335,7 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 「内存超标自动上报」之上扩出**全网异常监测**：新增 CPU/主线程饱和、WebGL 丢失、卡死、未捕获异常、上次崩溃五类信号，全量直报 Loki（不受定向白名单约束），用于定位野外客户端异常。
 
 **客户端**：
-- `net/anomaly.ts`（新）：`AnomalyReporter` 单例（冷却 + 会话上限 + detail 截断 + 合批 fetch + 离场 sendBeacon）；`reportAnomaly()` 统一入口；崩溃哨兵 `initCrashSentinel()`（启动检测上次异常退出并补报 + 心跳）+ `installAnomalyWatchers()`（错误旁路 / 离场 beacon / `webglcontextlost` / ANR 看门狗 / `wx.onError`）。
+- `net/anomaly.ts`（新）：`AnomalyReporter` 单例（冷却 + 会话上限 + detail 截断 + 合批 fetch + 离场无凭据 keepalive fetch）；`reportAnomaly()` 统一入口；崩溃哨兵 `initCrashSentinel()`（启动检测上次异常退出并补报 + 心跳）+ `installAnomalyWatchers()`（错误旁路 / 离场急发 / `webglcontextlost` / ANR 看门狗 / `wx.onError`）。
 - `cache/PerfMonitor.ts`（新）：挂 `app.ticker`，长任务忙碌比（`PerformanceObserver('longtask')`，Chromium）+ 持续低 FPS（处处可用）两路，越线报 `cpu`。阈值 localStorage 可调（`nw_fps_warn`/`nw_cpu_busy_warn`）。
 - `cache/MemoryMonitor.ts`：`dump()` 在原 `netLog('mem').warn` 之外**并行** `reportAnomaly('mem', ...)`（全网内存超标计数）。
 - `net/log.ts`：加 `recentClientLogs(n)`（崩溃面包屑 / 哨兵记最后错误）+ `setErrorSink`（未捕获异常旁路 → `jserror`，反向注入避免与 anomaly 成环）。
