@@ -63,29 +63,37 @@ export interface WorldMapView {
 }
 
 // ── Tile styling ─────────────────────────────────────────────────────────────
-// Colors align with the server's TileType values (neutral/resource/territory/familyKeep/center/base/
-// obstacle/gate). Enemy/ally colors follow the "enemy blue, player red" convention (project_art_direction):
-// own territory/capital = red ink; enemy = blue ink. Capitals are overlaid as star markers via getNations() (not a tile type).
+// Two orthogonal signals, kept visually separate to preserve the hand-drawn notebook feel
+// (project_art_direction) and stop the map reading as a confetti of colored blocks:
+//   • TERRAIN / RESOURCE → a calm, near-paper base fill. Resource *type* is carried by the
+//     hand-drawn motif sprite (drawResMotif at L1), NOT by a saturated background. RES_COLORS
+//     are heavily desaturated (paper-adjacent, warm/neutral) so they never masquerade as an
+//     ownership hue and only whisper the biome zone at the L2/L3 overview.
+//   • OWNERSHIP → the only strong color, applied as a translucent wash + colored border/accent
+//     (see ownerTint + drawTileL1/L2), following the "enemy blue, player red" convention:
+//     own = red ink, enemy = blue ink, family-ally = green ink.
 
-// Terrain base colors (unoccupied).
+// Terrain base colors (unoccupied) — desaturated, paper-cohesive; specials stay distinct but muted.
 const TERRAIN_COLORS: Record<string, number> = {
   neutral:    0xf5f0e8, // paper-white empty land
-  resource:   0xd4e8a0, // resource tile (resType subdivides further)
-  familyKeep: 0xffd060, // strategic stronghold / chokepoint
-  center:     0xffe88a, // world center
-  obstacle:   0x9a9488, // impassable terrain (mountains/rivers)
-  gate:       0xc8a878, // pass / bridge (corridor)
-  stronghold: 0x8a4a4a, // stronghold (G8): dark-red stone fort, ultra-strong NPC garrison (unoccupied until captured)
-  territory:  0xf5f0e8, // fallback (territory tiles are always overlaid by own/enemy color)
+  resource:   0xf0ece0, // resource fallback → near-paper (type is carried by the motif, not the fill)
+  familyKeep: 0xe8d29a, // strategic point / chokepoint — muted warm amber
+  center:     0xf0dfa0, // world center — soft gold
+  obstacle:   0xc4bdb0, // impassable terrain (mountains/rivers) — muted stone grey
+  gate:       0xd8c2a0, // pass / bridge (corridor) — soft tan
+  stronghold: 0x9a7a6a, // stronghold (G8): muted stone brown (was dark red — avoided clash with own-territory red)
+  territory:  0xf5f0e8, // fallback (ownership is drawn as wash/border, not as the fill)
   base:       0xf5f0e8,
 };
 
+// Resource biome tints — deliberately faint & paper-adjacent. The real type signal is the motif;
+// these only hint the biome zone at overview zooms. Kept warm/neutral so none reads as red/blue/green.
 const RES_COLORS: Record<string, number> = {
-  ink:      0xa8d870, // ink (sustain)
-  paper:    0x90b860, // paper (basic build)
-  graphite: 0xb0b0a8, // graphite (advanced build) — pencil-lead grey
-  metal:    0xa0b8c8, // metal (military)
-  sticker:  0xe6b8d0, // sticker (universal) — pink sticker
+  ink:      0xe4e2ea, // faint cool grey-lavender
+  paper:    0xf0ebdd, // faint warm cream
+  graphite: 0xe2e0da, // faint neutral grey
+  metal:    0xe4e8e6, // faint cool steel
+  sticker:  0xefe4ea, // faint warm rose-grey
 };
 
 const MINE_TINT      = 0xe69090; // own territory (light red ink)
@@ -97,14 +105,28 @@ const ALLY_BASE_TINT = 0x46a85a; // family-ally capital (deep green ink)
 const FOG_COLOR      = 0x6b6458; // fog of war (pencil grey, overlaid on terrain)
 const ALLY_SECT_BORDER = 0xe6a817; // allied-sect territory yellow border (amber gold, G5; marks without shared vision, §8.2)
 
-function tileColor(tile: WorldTileView): number {
+/** Ownership color for the wash/border overlay, or null when the tile is unowned. */
+function ownerTint(tile: WorldTileView): number | null {
   if (tile.mine)     return tile.type === 'base' ? MINE_BASE_TINT : MINE_TINT;
   if (tile.ally)     return tile.type === 'base' ? ALLY_BASE_TINT : ALLY_TINT;
   if (tile.occupied) return tile.type === 'base' ? ENEMY_BASE_TINT : ENEMY_TINT;
+  return null;
+}
+
+/** Terrain/resource base fill (no ownership) — desaturated, paper-cohesive. */
+function terrainFill(tile: WorldTileView): number {
   if (tile.type === 'resource' && tile.resType) {
     return RES_COLORS[tile.resType] ?? TERRAIN_COLORS.resource!;
   }
   return TERRAIN_COLORS[tile.type] ?? TERRAIN_COLORS.neutral!;
+}
+
+/**
+ * L3 overview block color: ownership dominates when owned (the overview exists for
+ * situational awareness — whose land is where), otherwise the calm terrain fill.
+ */
+function tileColor(tile: WorldTileView): number {
+  return ownerTint(tile) ?? terrainFill(tile);
 }
 
 /** Procedural terrain color for uncached tiles (no network request; purely local computation). */
@@ -614,23 +636,26 @@ export class WorldMapScene implements Scene {
     g.visible = true;
 
     const tile = this.tileCache.get(`${tx}:${ty}`);
-    const color = tile ? tileColor(tile) : proceduralTileColor(this.cb.worldId, tx, ty);
+    // Terrain fill and ownership are now two separate signals (see ownerTint/terrainFill).
+    const fill = tile ? terrainFill(tile) : proceduralTileColor(this.cb.worldId, tx, ty);
+    const owner = tile ? ownerTint(tile) : null;
     const fogged = tile?.visible === false;
 
     if (this.zoom === 1) {
-      this.drawTileL1(g, tile ?? null, color, fogged, tp);
+      this.drawTileL1(g, tile ?? null, fill, owner, fogged, tp);
     } else {
-      this.drawTileL2(g, color, fogged, tp);
+      this.drawTileL2(g, fill, owner, fogged, tp);
     }
   }
 
-  /** L1 detail tile: full markers — border, level dot, watchtower, fog, allySect. */
+  /** L1 detail tile: paper terrain + motif, then ownership wash/border, then level/sect/watchtower markers. */
   private drawTileL1(
     g: PIXI.Graphics, tile: WorldTileView | null,
-    color: number, fogged: boolean, tp: number,
+    fill: number, owner: number | null, fogged: boolean, tp: number,
   ): void {
-    g.lineStyle(0.8, 0xccbbaa, 0.5);
-    g.beginFill(color, 0.85);
+    // Soft sketch grid + calm terrain fill (alpha < 1 lets the paper grain show through).
+    g.lineStyle(0.7, 0xccbbaa, 0.32);
+    g.beginFill(fill, 0.7);
     g.drawRect(0, 0, tp - 1, tp - 1);
     g.endFill();
 
@@ -641,6 +666,21 @@ export class WorldMapScene implements Scene {
     // dimmed motif, no abundance/defense detail), matching "地形可见、局势看不清".
     if (tile?.type === 'resource' && tile.resType) {
       this.drawResMotif(g, tile.resType, tile.level ?? 1, tp, fogged);
+    }
+
+    // Ownership overlay (option-3): a light wash + colored border, not a full opaque fill —
+    // territory reads clearly while the terrain/motif underneath stays legible. Motif sprites
+    // are Graphics children and always render above this wash, so they are never covered.
+    if (owner != null && !fogged) {
+      const isBase = tile?.type === 'base';
+      g.lineStyle(0);
+      g.beginFill(owner, isBase ? 0.26 : 0.16);
+      g.drawRect(0, 0, tp - 1, tp - 1);
+      g.endFill();
+      g.lineStyle(isBase ? 2.4 : 1.6, owner, 0.9);
+      g.beginFill(0, 0);
+      g.drawRect(1.2, 1.2, tp - 3.4, tp - 3.4);
+      g.endFill();
     }
 
     if (fogged) {
@@ -990,13 +1030,25 @@ export class WorldMapScene implements Scene {
     }
   }
 
-  /** L2 medium tile: occupation color + fog only, no markers. */
-  private drawTileL2(g: PIXI.Graphics, color: number, fogged: boolean, tp: number): void {
+  /** L2 medium tile: calm terrain fill + ownership wash/border (no motifs at this zoom) + fog. */
+  private drawTileL2(g: PIXI.Graphics, fill: number, owner: number | null, fogged: boolean, tp: number): void {
     g.lineStyle(0);
-    g.beginFill(color, 0.88);
+    g.beginFill(fill, 0.85);
     g.drawRect(0, 0, tp - 1, tp - 1);
     g.endFill();
+    if (owner != null && !fogged) {
+      // No motif carries the signal at medium zoom, so ownership uses a stronger wash + border
+      // to keep the territory map readable while terrain stays visible underneath.
+      g.beginFill(owner, 0.42);
+      g.drawRect(0, 0, tp - 1, tp - 1);
+      g.endFill();
+      g.lineStyle(1.4, owner, 0.85);
+      g.beginFill(0, 0);
+      g.drawRect(1, 1, tp - 3, tp - 3);
+      g.endFill();
+    }
     if (fogged) {
+      g.lineStyle(0);
       g.beginFill(FOG_COLOR, 0.38);
       g.drawRect(0, 0, tp - 1, tp - 1);
       g.endFill();
