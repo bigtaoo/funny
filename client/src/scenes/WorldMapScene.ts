@@ -628,17 +628,21 @@ export class WorldMapScene implements Scene {
     g.drawRect(0, 0, tp - 1, tp - 1);
     g.endFill();
 
+    // Resource motif is TERRAIN, not a dynamic layer — it stays visible even under
+    // fog (§18 V1 model 2a: the procedural terrain layer is always visible map-wide;
+    // only the dynamic layer — ownership / base / garrison / level detail — is
+    // vision-gated). When fogged, drawResMotif reveals the resource TYPE only (single
+    // dimmed motif, no abundance/defense detail), matching "地形可见、局势看不清".
+    if (tile?.type === 'resource' && tile.resType) {
+      this.drawResMotif(g, tile.resType, tile.level ?? 1, tp, fogged);
+    }
+
     if (fogged) {
       g.lineStyle(0);
       g.beginFill(FOG_COLOR, 0.4);
       g.drawRect(0, 0, tp - 1, tp - 1);
       g.endFill();
-      return;
-    }
-
-    // Resource motif sprites + defense frames (abundance/defense dual axis).
-    if (tile?.type === 'resource' && tile.resType) {
-      this.drawResMotif(g, tile.resType, tile.level ?? 1, tp);
+      return;  // dynamic markers (city icon, level dot, sect border, watchtower) stay hidden under fog
     }
 
     // City icon on capital tiles: sprite layer handles this once the atlas is ready.
@@ -801,8 +805,25 @@ export class WorldMapScene implements Scene {
    *
    * Falls back gracefully to color-only if the atlas hasn't decoded yet.
    */
-  private drawResMotif(g: PIXI.Graphics, resType: string, level: number, tp: number): void {
+  private drawResMotif(g: PIXI.Graphics, resType: string, level: number, tp: number, fogged = false): void {
     const lv = Math.max(1, Math.min(10, level));
+
+    // Outside vision: reveal the resource TYPE only — a single dimmed motif, no
+    // abundance count / defense frames / danger accents (those encode level detail,
+    // which §18 keeps hidden under fog, same as the level dot).
+    if (fogged) {
+      if (!isResAtlasReady()) { this.drawResMotifFallback(g, resType, 1, tp); return; }
+      const ftex = getResTexture(resType);
+      if (!ftex) return;
+      const sp = new PIXI.Sprite(ftex);
+      sp.anchor.set(0.5, 0.5);
+      sp.scale.set((tp * 0.34) / Math.max(ftex.width, ftex.height));
+      sp.alpha = 0.35;
+      sp.x = 0.5 * tp;
+      sp.y = 0.52 * tp;
+      g.addChild(sp);
+      return;
+    }
 
     // ── Defense frames (drawn first so motif sprites sit on top) ──────────────
     if (lv >= 4) {
