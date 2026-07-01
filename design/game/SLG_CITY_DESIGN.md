@@ -67,7 +67,7 @@
 | `drillYard` | 练兵场 | 军事 | 提 `troopCap` + 训练速度（`trainTroops` 时长）+ 训练队列上限（`TROOP_TRAIN_QUEUE_MAX`）+ 解锁更高兵种训练 | `trainTroops` / `troopCap` | P1 |
 | `wall` | 城墙 | 城防 | **仅主城那格**：被围攻时提基地耐久 / 守军 HP | 主城 `buildSiegeBattle` + `landSiege` | P2 |
 | `academy` | 书院 | 科技 | **SLG 赛季内**蓝图 buff（HP/伤害/速度），季末清 | `buildSiegeBlueprints` 赛季叠加层 | P2 |
-| （委任） | 内政官 | 加成 | 派角色卡进建筑，按角色属性给该建筑额外加成 | 各建筑乘数 | P3 |
+| ~~（委任）~~ | ~~内政官~~ | ~~加成~~ | ~~派角色卡进建筑，按角色属性给该建筑额外加成~~ | ~~各建筑乘数~~ | **DROPPED** |
 
 **faucet/sink 闭环（激活 graphite/sticker）**：
 
@@ -216,7 +216,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 > - 验证：shared/engine `tsc -b` 全绿；worldsvc `tsc -b` 全绿；client `tsc --noEmit` 零错误。数值仍 DRAFT（终态判据=上线后实测）。
 
 - **P2 ✅ CLOSED（2026-06-30）** — `wall` 注入主城围攻 + `cabinet` 护掠夺 + `academy` 赛季蓝图 buff（独立注入口，守红线）。
-- **P3 — 委任内政官**：角色卡派进建筑加成（角色养成接入 SLG 内政），数值按角色属性。
+- ~~**P3 — 委任内政官**：角色卡派进建筑加成（角色养成接入 SLG 内政），数值按角色属性。~~ **DROPPED**：卡池仅 8 张，无"多余英雄"消耗问题；最优解唯一，决策退化为一次性设置；建筑乘数链在 P2 已自洽，无需此层。
 
 ---
 
