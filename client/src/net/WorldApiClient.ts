@@ -124,22 +124,20 @@ export class WorldApiClient {
   }
 
   /**
-   * Ping worldsvc /health as a best-effort reachability probe.
+   * Ping worldsvc /health. Returns false ONLY on a definitive non-2xx response
+   * from a reachable server (e.g. 503 = up-but-unhealthy).
    *
-   * The probe uses `mode: 'no-cors'` on purpose: the /health route carries none of
-   * the CORS headers the real /world|/auction routes have, so a normal cross-origin
-   * fetch is REJECTED by the browser — and the browser logs that rejection as a red
-   * "Cross-Origin Request Blocked" error *before* the promise settles, which no
-   * try/catch of ours can suppress. `no-cors` opts out of CORS so the browser stays
-   * quiet. The cost is an opaque response we can't read (res.ok is always false,
-   * status 0), so we can no longer distinguish 503/404 — the probe degrades to
-   * "did the server answer at all". That detail was already lost in production
-   * anyway (every cross-origin /health read hit the CORS catch), so nothing real
-   * is given up.
+   * The probe is a plain cross-origin fetch that reads the status. This works because
+   * Caddy routes /health → worldsvc (see server/Caddyfile), and worldsvc's /health
+   * sends `access-control-allow-origin: *` like its other public routes — so the read
+   * is CORS-allowed and no red "Cross-Origin Request Blocked" error is logged. (Before
+   * that route existed, /health fell through to Caddy's CORS-less fallback and the
+   * browser blocked the read.)
    *
    * A thrown fetch (timeout / connection refused) is treated as INCONCLUSIVE →
    * returns true (no offline badge). Rationale: better to let the user click through
-   * and hit real error handling than to mislabel a working service as offline.
+   * and hit real error handling than to mislabel a working service as offline. This
+   * is an expected, harmless condition, so it's logged as a warning, not an error.
    */
   async checkHealth(): Promise<boolean> {
     const base = getWorldBaseUrl();
@@ -151,11 +149,9 @@ export class WorldApiClient {
     try {
       const ctrl = new AbortController();
       const id = setTimeout(() => ctrl.abort(), 3000);
-      // Opaque response — resolving at all means the server answered. See method doc
-      // for why no-cors is required (silences the browser's red CORS error).
-      await fetch(`${base}/health`, { signal: ctrl.signal, mode: 'no-cors' });
+      const res = await fetch(`${base}/health`, { signal: ctrl.signal });
       clearTimeout(id);
-      return true;
+      return res.ok;
     } catch {
       // Inconclusive (timeout / connection refused) — do not claim offline. Warn,
       // don't error: this is an expected, harmless condition (see method doc).

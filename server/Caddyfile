@@ -20,6 +20,13 @@
 		reverse_proxy gameserver:8081
 	}
 
+	# Liveness probe: route /health to worldsvc (its /health sends CORS headers, so the
+	# client's cross-origin reachability probe can read the status instead of being
+	# blocked by CORS and falling through to the CORS-less fallback below).
+	handle /health {
+		reverse_proxy worldsvc:18084
+	}
+
 	# SLG overworld REST (S8, fourth public face: map/territory/auction, preserve path)
 	handle /world* {
 		reverse_proxy worldsvc:18084

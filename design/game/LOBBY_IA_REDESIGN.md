@@ -154,7 +154,7 @@
 ## 8. 实现分期
 
 - **P0**（部分完成 2026-06-27）：
-  - ✅ 大世界误判离线 —— `WorldApiClient.checkHealth()` 探针失败（CORS/超时/拒连）不再判离线。**2026-07-01 追加**：探针改用 `fetch(..., { mode: 'no-cors' })`——`/health` 无 CORS 头，普通跨域 fetch 会被浏览器**在 promise 结算前**打红「Cross-Origin Request Blocked」错误，try/catch 无法降级；no-cors 让浏览器闭嘴。代价是响应变 opaque（`res.ok` 恒 false、status 0），无法再区分 5xx，探针退化为「服务器是否应答」——但这在生产早已失效（跨域 /health 读取本就命中 CORS catch 恒返回 true），无实际损失。超时/拒连仅 `console.warn` 不再判离线。
+  - ✅ 大世界误判离线 —— `WorldApiClient.checkHealth()` 探针失败（CORS/超时/拒连）不再判离线。**2026-07-01 追加（红错根因 + 服务端修法）**：生产 `NW_WORLD_BASE=https://api.gamestao.com`，探针打 `api.gamestao.com/health`，但 `Caddyfile` **从未路由 `/health`**——请求落到兜底 `respond "Notebook Wars server" 200`（无 CORS 头、也不是真 worldsvc），浏览器**在 promise 结算前**打红「Cross-Origin Request Blocked」错误，try/catch 无法降级。**修法**：`Caddyfile` 新增 `handle /health { reverse_proxy worldsvc:18084 }`——worldsvc 的 `/health` 本就发 `access-control-allow-origin: *`（httpApi.ts `send` 助手），跨域读取被放行、红错消失，且探针能真正读到 worldsvc 的 5xx（保留 503→离线徽标）。客户端保持普通 `fetch` 读 `res.ok`，仅超时/拒连时 `console.warn`（不再判离线，也不打错误）。**部署**：需重启/重载 Caddy（server 重新部署）。
   - ✅ 限时活动灰态 —— 无 live 活动时**隐藏**该 chip，「每日」占满整行（不再常态灰一块）。
   - ⏭ 装备大厅入口 —— **不单独做**，归入 P1 的「养成」tab（避免临时入口被推翻）。
 - ✅ **P1**（完成 2026-06-27）：底部 5 tab 重定义（养成/商城/主页/生涯/社交）+ 三个 tab 的功能归并：
