@@ -83,6 +83,33 @@
 
 ---
 
+## 5.1 攻城值：到达基地扣血 = 攻城值（ADR-026 接线，2026-07-02）
+
+**背景**：单位到达敌方基地曾扣 `unit.attack`（战斗攻击力）。这把「打兵」与「拆家」焊死成一个数字——攻城性价比无法独立于战力调整。攻城值（siege value）是一级蓝图属性（与 `attack`/`speed` 同级，见 [`DECISIONS.md` ADR-026](../DECISIONS.md)），把这根杠杆解出来。
+
+- **扣血口径**：`MovementSystem` 到基地 `damage = unit.siegeValue`。`BASE_HP` 保持 100。
+- **PvP 硬墙**：PvP 只读 `UnitBlueprint.siegeValue` **基础常量**（`buildPvpBlueprints()` 不吃任何养成），与 attack 处理同构；PvE/战役经 `applyUnitLevels` 按 +10%/级放大。
+- **数值草案（全部 DRAFT，留实机体验修正）**——按角色定位排，`siege/ink` 刻意不平：
+
+| 兵种 | 费用 | 定位 | **攻城值** | siege/ink |
+|---|---|---|---|---|
+| 步兵 Infantry | 4 | 线兵全能 | 11 | 2.75 |
+| 盾兵 ShieldBearer | 6 | 破墙者 | 14 | 2.33 |
+| 弓手 Archer | 5 | 玻璃大炮 | 8 | 1.60 |
+| 铁甲 Ironclad | 8 | 最重坦/破墙顶 | 15 | 1.88 |
+| 狂战 Berserker | 6 | 拆楼手 | 13 | 2.17 |
+| 分裂 Splitter | 5 | 炸弹（裂变才是威胁） | 8 | 1.60 |
+| 奔袭 Runner | 3 | 快速脆皮群冲 | 6 | 2.00 |
+| 鹰身 Harpy | 7 | 飞兵绕后骚扰 | 7 | 1.00 |
+| 医疗 Medic | 6 | 支援（几乎不拆家） | 4 | 0.67 |
+| Max（Anna） | 5 | 装甲先锋 | 12 | — |
+| Lena（Anna） | 7 | 哨兵坦 | 14 | — |
+| Mara（Anna） | 5 | 标记 dps | 8 | — |
+
+> 六个英雄卡的值与 `@nw/shared` `CardDef.siegeValueBase` 保持一致；六个复用兵种仅存在于引擎蓝图（无 CARD_DEFS 卡）。关键效果：性价比杠杆立起（步兵最划算，弓手/Mara/Splitter 战斗专精付「攻城税」），且与 attack DPS 解耦（弓手 attack 22 却攻城 8，盾兵 attack 8 却攻城 14）。
+
+---
+
 ## 6. 实现架构（承重墙：锁步一致性）
 
 ### 6.1 核心难点

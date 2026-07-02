@@ -41,6 +41,9 @@ export class Unit {
   readonly maxHp: number;
   readonly attack: number;
 
+  /** 攻城值 (ADR-026): base HP knocked off the enemy base on arrival. Decoupled from `attack`. */
+  readonly siegeValue: number;
+
   /**
    * Attack interval in integer ticks.
    * Converted from seconds at construction: Math.round(attackInterval_s * TICK_RATE).
@@ -179,6 +182,7 @@ export class Unit {
     this.hp       = initialHp !== undefined ? Math.min(initialHp, bp.hp) : bp.hp;
     this.maxHp    = bp.hp;
     this.attack   = bp.attack;
+    this.siegeValue = bp.siegeValue;
     this.range    = bp.range;
 
     // Convert seconds → ticks (integer, no float retained)

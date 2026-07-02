@@ -41,6 +41,8 @@ export const PROGRESSABLE_UNITS: readonly UnitType[] = [
 export const STAT_GROWTH_PER_LEVEL = {
   hp: 0.12,
   attack: 0.1,
+  /** 攻城值 +10%/level (ADR-026). Mirrors SIEGE_VALUE_GROWTH_PER_LEVEL in @nw/shared cards so the engine (PvE/siege) and SLG's teamSiegeValue agree. */
+  siege: 0.1,
   /** Attack speed %: each level divides attack interval by (1 + atkspd×steps), clamped to a minimum to prevent frame-breaking (see applyUnitLevels). */
   atkspd: 0.04,
   /** Move speed %: speed × (1 + spd×steps). */
@@ -93,6 +95,8 @@ export function applyUnitLevels(
     const steps = level - 1;
     u.hp = Math.round(u.hp * (1 + STAT_GROWTH_PER_LEVEL.hp * steps));
     u.attack = Math.round(u.attack * (1 + STAT_GROWTH_PER_LEVEL.attack * steps));
+    // 攻城值 scales like attack (ADR-026): PvE/siege only — buildPvpBlueprints never calls this, so PvP keeps the base constant.
+    u.siegeValue = Math.round(u.siegeValue * (1 + STAT_GROWTH_PER_LEVEL.siege * steps));
     // Attack speed: divide by (1 + atkspd×steps), clamped to minimum ratio of base interval (prevent frame-breaking).
     const atkspdFactor = 1 + STAT_GROWTH_PER_LEVEL.atkspd * steps;
     u.attackInterval = Math.max(

@@ -235,6 +235,14 @@
 
 - **PvE**：关卡里与 PvP 里的基地**都吃攻城值**（同一套血量+扣血）。PvE 据点守军仍为系统 NPC 阵（沿用 `applyStrongholdSiege` 的合成守军），不套 5 队玩家波次。
 
+- **实现更新（2026-07-02，PvP/引擎接线）**：攻城值落地为**引擎蓝图级一级属性**，接入 PvP/战役实时基地扣血。
+  - **动机**：此前引擎里单位到达敌方基地扣血用的是 `unit.attack`（战斗攻击力），导致「打兵」与「拆家」被焊死成一个数字——便宜兵/贵兵的攻城性价比无法独立调。攻城值把这根杠杆解出来。
+  - `UnitBlueprint.siegeValue`（`server/engine/src/config.ts`）：**全 12 个兵种**都排了基础值,与 `attack`/`speed` 同级。六个英雄卡的值与 `@nw/shared` `CardDef.siegeValueBase` **保持一致**（步兵 11 / 盾兵 14 / 弓手 8 / Max 12 / Lena 14 / Mara 8）；六个复用入 PvP 的兵种（Ironclad 15 / Berserker 13 / Splitter 8 / Runner 6 / Harpy 7 / Medic 4）只存在于引擎蓝图（无 CARD_DEFS 卡）。按定位排：破墙坦克 > 拆楼手 > dps/玻璃炮/飞兵/支援;siege/ink 刻意不平（步兵 2.75 最划算 → 医疗 0.67 最差）。
+  - **扣血口径**：`MovementSystem` 到达基地时 `damage = unit.siegeValue`（原 `unit.attack`）。所有引擎模式（pvp/campaign/siege）统一。SLG 的 `teamSiegeValue()` 延迟结算在引擎**外**独立进行,不双算。
+  - **养成对称（PvE/SLG 吃全渠道）**：`applyUnitLevels` 新增 `siege: 0.1`（+10%/级,与 `cardSiegeValue` 同式）。**PvP 硬墙**：`buildPvpBlueprints()` 永不调养成,只读蓝图基础常量,和 attack 的处理完全同构。**待接**：装备 gear stat + 学院 `siegeAcademy` buff 的 siege 加成(需新 stat/字段,另开)。
+  - **`BASE_HP` 保持 100**（用户拍板,数值影响留实机体验再调）；全部 siege 值为 DRAFT。
+  - **影响**：`@nw/engine`（`types.ts`/`config.ts`/`Unit.ts`/`MovementSystem.ts`/`balance/progression.ts`）**属公共依赖,最先合 main**。文档：[`game/PVP_LOADOUT_DESIGN.md`](game/PVP_LOADOUT_DESIGN.md) 攻城值章。
+
 - **影响**：
   - `@nw/shared`（`slg.ts`：新增 `SLG_BASE_HP_PER_LEVEL`/`SLG_SIEGE_VALUE_PER_CARD`/`SLG_SIEGE_DAMAGE_DELAY_MS`/`SLG_TEAM_INJURY_MS` + `teamSiegeValue()`/`waveSeed()`/`buildingMaxHp()`）**属公共依赖，最先合 main**。
   - `worldsvc`：`db.ts` 新增 `TileDoc.hp`、`PlayerWorldDoc.teamState`、`MarchDoc.teamId`、`SiegeDamageDoc` 集合；`service.ts` 重写 `applySiege` 为波次战 + 建筑血量 + 延迟结算调度 + 队伍受伤 + 攻占；`joinWorld`/`relocateBase`/`passiveRelocate` 初始化主城血量；scheduler 加 `processDueSiegeDamage`。

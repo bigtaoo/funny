@@ -53,7 +53,8 @@ describe('MovementSystem — forward movement', () => {
     tickN(state, sys, 220);
 
     expect(state.topPlayer.baseHp).toBeLessThan(before);
-    expect(state.topPlayer.baseHp).toBe(before - u.attack);
+    // Base damage on arrival is the unit's 攻城值 (siege value), not combat attack (ADR-026).
+    expect(state.topPlayer.baseHp).toBe(before - u.siegeValue);
     expect(state.board.units.has(u.id)).toBe(false); // despawned
     expect(BASE_COLS).toContain(5);
     expect(BASE_HP).toBe(100);

@@ -141,6 +141,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     range: 1,
     spawnCount: 2,
     radius_fp: 400,       // diameter 800fp = 0.8 cells
+    siegeValue: 11,       // line troop: solid all-round sieger (mirrors CARD_DEFS)
   },
   // Tank: leads the line and soaks fire so squishier units survive behind it.
   // HP/ink (40) is clearly above Infantry (30) — that's its whole identity — at
@@ -155,6 +156,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     range: 1,
     spawnCount: 1,
     radius_fp: 500,       // diameter 1000fp = 1.0 cell
+    siegeValue: 14,       // wall-breaker identity → top-tier siege (mirrors CARD_DEFS)
   },
   // Glass cannon: range 2 lets it hit before melee reaches and shoot over/around
   // a shield ahead (surrounding-cell targeting). Highest per-hit damage of the
@@ -169,12 +171,15 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     range: 2,             // 2-grid range (down from 3)
     spawnCount: 1,
     radius_fp: 350,       // diameter 700fp = 0.7 cells
+    siegeValue: 8,        // glass cannon: weakest at battering structures (mirrors CARD_DEFS)
     // Fires an arrow that travels to its target rather than dealing instant damage.
     // 14 grid/s over a ≤2-cell range ≈ 0.15 s flight — visibly a shot, but fast
     // enough that it rarely whiffs except when the target dies/flees mid-air.
     projectile: { speed: 14, kind: 'arrow' },
   },
-  // ── PvE-only enemy types (no card → never enter the PvP pool) ────────────────
+  // ── Reused units (PvE waves + reused in the PvP pool via PVP_LOADOUT_DESIGN) ──
+  // No progression cards (CARD_DEFS covers only the six heroes), so their siegeValue
+  // lives only here — the engine blueprint is the single source for PvP.
   // Ironclad: anti-arrow damage sponge. armor=3 makes arrow tower (15 dmg) deal
   // max(1, 15-3)=12 per hit (8 dps) → TTK ≈ 36 s, vs 29 s without armor. Forces
   // meteor / melee to clear it before it reaches buildings. Very slow; does not
@@ -189,6 +194,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     spawnCount: 1,
     radius_fp: 520,       // diameter 1040fp ≈ 1.04 cells — fills its lane, leads stacks
     armor: 3,             // anti-arrow identity: arrow tower needs ~36 s (vs 29 s at armor 0)
+    siegeValue: 15,       // heaviest tank (290 HP) → highest siege in the roster
   },
   // Runner: fast fragile rusher. One arrow-tower hit one-shots it, but it arrives
   // fast, wide and dense (small radius packs ~2× tighter than a infantry), so the
@@ -202,6 +208,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     range: 1,
     spawnCount: 1,
     radius_fp: 250,       // diameter 500fp = 0.5 cells — dense swarm
+    siegeValue: 6,        // fast fragile swarm: low per-unit siege, keeps it a harasser not a finisher
   },
   // Harpy: PvE-only flying unit. flying=true means ground melee can't target it
   // (only archers + arrow towers). Bypasses blocked cells. Fragile — one arrow-
@@ -218,6 +225,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     radius_fp: 210,
     flying: true,
     canTargetFlying: false,
+    siegeValue: 7,        // fragile flyer that bypasses defense: kept low so a fly-over rush can't finish
   },
   // Medic: PvE-only support. No attack (range 0, attack 0, extreme interval so the
   // engine never fires). Emits an aura_heal that heals nearby allies for 8 HP/s.
@@ -233,6 +241,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     spawnCount: 1,
     radius_fp: 440,
     traits: [{ type: 'aura_heal', radius: 2, hps: 8 }],
+    siegeValue: 4,        // support unit: symbolic siege only — not meant to batter the base
   },
   // Berserker: PvE-only rage brawler. Below 40% HP its attack interval halves
   // (×1.5 attack speed), making it increasingly dangerous the longer it survives.
@@ -247,6 +256,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     spawnCount: 1,
     radius_fp: 420,
     berserkerThreshold: 0.4,
+    siegeValue: 13,       // building-shredder identity (see comment) → high siege
   },
   // Splitter: PvE-only bomb unit. Dies and immediately spawns 2 Runners at its
   // position. Ignoring it is worse than fighting it — killing it with area damage
@@ -262,6 +272,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     spawnCount: 1,
     radius_fp: 470,
     onDeathSpawn: { type: UnitType.Runner, count: 2 },
+    siegeValue: 8,        // modest body; real pressure is the 2 Runners it splits into
   },
   // Max: Anna-side vanguard. burstOnSingle deals 2× damage when he is the last
   // standing enemy — a clean-up finisher that rewards holding him for the kill.
@@ -277,6 +288,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     radius_fp: 490,
     armor: 2,
     burstOnSingle: true,
+    siegeValue: 12,       // armored vanguard: above-average siege (mirrors CARD_DEFS)
   },
   // Lena: Anna-side sentinel. disciplineArmor = armor 8; every hit reduced by 8
   // (minimum 1), making rapid light strikes nearly harmless while heavy single hits
@@ -291,6 +303,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     spawnCount: 1,
     radius_fp: 510,
     armor: 8,
+    siegeValue: 14,       // sentinel tank: wall-breaker tier (mirrors CARD_DEFS)
   },
   // Mara: Anna-side skirmisher. markEnemies: arrows mark targets for +25 % bonus
   // damage from all sources for 3 s. Fragile and dies fast to melee; best behind
@@ -306,6 +319,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     radius_fp: 320,
     markEnemies: true,
     projectile: { speed: 14, kind: 'arrow' },
+    siegeValue: 8,        // marker/dps: low structural damage like archers (mirrors CARD_DEFS)
   },
 };
 
