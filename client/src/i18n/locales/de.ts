@@ -997,6 +997,18 @@ export const de: Record<TranslationKey, string> = {
   'auction.err.worldClosed': 'Saison-Abrechnung — Angebote pausiert',
   'auction.err.equipLocked': 'Ausrüstung gesperrt, nicht handelbar',
   'auction.err.equipInUse': 'Ausrüstung angelegt, nicht handelbar',
+  'auction.err.cardHasGear': 'Karte trägt noch Ausrüstung — zuerst ablegen',
+  'auction.itemClass': 'Art',
+  'auction.classMaterial': 'Material',
+  'auction.classEquipment': 'Ausrüstung',
+  'auction.classCard': 'Karte',
+  'auction.filterCard': 'Karten',
+  'auction.tapChoose': 'Zum Auswählen tippen',
+  'auction.pickEquip': 'Ausrüstung zum Verkauf wählen',
+  'auction.pickCard': 'Karte zum Verkauf wählen',
+  'auction.pickHint': 'Wählen ›',
+  'auction.noEquip': 'Keine verkäufliche Ausrüstung',
+  'auction.noCards': 'Keine verkäuflichen Karten',
 
   // ── Kampagnenlevel: Namen & Briefings ────────────────────────────────────
   // Kap. 1 · Fang-Klan · Internes Turnier (Taos Notizbuch)

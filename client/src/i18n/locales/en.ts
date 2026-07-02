@@ -997,6 +997,18 @@ export const en: Record<TranslationKey, string> = {
   'auction.err.worldClosed': 'Season settling — listings paused',
   'auction.err.equipLocked': 'Equipment locked, cannot list',
   'auction.err.equipInUse': 'Equipment equipped, cannot list',
+  'auction.err.cardHasGear': 'Card still has gear equipped — unequip first',
+  'auction.itemClass': 'Type',
+  'auction.classMaterial': 'Material',
+  'auction.classEquipment': 'Equipment',
+  'auction.classCard': 'Card',
+  'auction.filterCard': 'Cards',
+  'auction.tapChoose': 'Tap to choose an item',
+  'auction.pickEquip': 'Choose equipment to sell',
+  'auction.pickCard': 'Choose a card to sell',
+  'auction.pickHint': 'Select ›',
+  'auction.noEquip': 'No sellable equipment',
+  'auction.noCards': 'No sellable cards',
 
   // ── Campaign level names & briefings ─────────────────────────────────────
   // Ch1 · Fang Clan · Internal Trial (Tao's notebook)

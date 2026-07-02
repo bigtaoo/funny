@@ -435,7 +435,7 @@ export class WorldApiClient {
    */
   async createAuction(
     worldId: string,
-    itemType: 'material' | 'equipment',
+    itemType: 'material' | 'equipment' | 'card',
     item: Record<string, unknown>,
     qty: number,
     durationSec: number,
