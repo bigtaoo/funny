@@ -225,9 +225,9 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 |---|---|---|---|
 | 武器 weapon | 攻击 +X% / 攻速 +X% | `attack` / `attackInterval` | 乘算 |
 | 护具 armor | 生命 +X% / 护甲 +N（flat） | `hp` / `armor` | 生命乘算、护甲加算 |
-| 饰品 trinket | 移速 +X% / 暴击率 +X%※ | `speed` / （暴击※） | 乘算 / 概率 |
+| 饰品 trinket | 移速 +X% / 暴击率 +X% | `speed` / `critPct` | 乘算 / 概率 |
 
-> ※ **暴击**无独立引擎字段，依赖 ADR-009「单位养成特性 T3 暴击」的引擎机制落地；未落地前饰品主词条退化为移速/攻速。
+> **暴击已落地**（B 方案）：`m_crit` 主词条 = 暴击**率**（`critPct`，0–100 概率点，随强化放大）；暴击**倍率**由副词条 `s_critmult` 提供（见 §7.5）。二者复用 ADR-009「单位养成特性 T3 暴击」的引擎机制（`critPct`/`critMult` + `CombatSystem` 确定性 `combatPrng`）。饰品开出时在「移速 / 暴击率」二候选中定 1 个（`MAIN_AFFIX_BY_SLOT`）。当单位无 T3 时，`m_crit` 会同时把暴击倍率立到 T3 基础值（1.5×），保证饰品单独也能打出有效暴击。
 > 护甲为 flat 加算（引擎 `armor` 已存在，最小伤害 1），不走乘算，避免后期减伤溢出。
 
 ### 7.5 副词条池（rare/epic 才有，洗练重洗）
@@ -243,6 +243,7 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 | 攻速 +X% | `attackInterval` | 乘算（降低间隔） |
 | 吸血 +X% | `lifestealPct` | 小数值，与 trait T6 **求和后钳**（§7.7①） |
 | 生命回复 +N/s | `regenPerSec` | flat |
+| 暴击伤害 +X% | `critMult` | flat 加算（引擎 `value/100` 加到暴击倍率基础上）；仅在有暴击率来源（T3 / `m_crit`）时才有意义，与 §7.7 暴击倍率上限求和后钳 |
 
 **功能类**（养成收益，**不计入战力上限**——战力预算安全阀）：
 
@@ -277,7 +278,8 @@ DRAFT 池，全部映射到已有引擎机制或标注待扩展：
 | 效果 | 可能来源 | 钳制方式 | 全局硬上限（DRAFT [可调]） |
 |---|---|---|---|
 | 吸血% | trait T6 + 副词条「吸血」+ 特技「嗜血」 | Σ 后 clamp | ≤ 30% |
-| 暴击率% | trait T3 + 饰品主词条 + 副词条 | Σ 后 clamp | ≤ 50% |
+| 暴击率% | trait T3 + 饰品主词条 `m_crit` | Σ 后 clamp | ≤ 50%（引擎 `EFFECT_CAPS.critPct`） |
+| 暴击倍率 | trait T3 基础 1.5× + 副词条 `s_critmult` | Σ 后 clamp | ≤ 2.5×（引擎 `EFFECT_CAPS.critMult`，DRAFT） |
 | 攻击% | 主/副词条（多件） | Σ 后 clamp | ≤ +60% |
 | 生命% | 主/副词条（多件） | Σ 后 clamp | ≤ +60% |
 | 攻速% | 主/副词条 | Σ 后 clamp | ≤ +40% |
@@ -351,7 +353,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 1. **engine 零依赖红线**：客户端 webpack 直接 alias 打包 `@nw/engine` **源码**，而 `@nw/shared` 依赖 mongodb/jsonwebtoken。故 `applyEquipment` **绝不 import `@nw/shared`**——用结构化等价的引擎本地输入类型（`EngineEquipmentInput` = `{ gear, inv }`）接收，调用方直接把 `SaveData.gear`/`equipmentInv` 传进来（TS 结构化子类型，多余字段无害）。词条→引擎字段映射（`AFFIX_FIELD_MAP`）+ 强化系数 + 封顶都活在本模块，是「数值活在 engine」的兑现。
 2. **词条 id 命名空间判主/副**：E0 的 `EquipmentInstance.affixes` 是扁平 `Affix[]`，无主/副标记。约定用 id 前缀自描述——`m_*` 主词条（**唯一随强化等级放大**，`base × (1 + 0.1×level)`，DRAFT 系数）/ `s_*` 副词条（固定 roll 值）/ `k_*` 特技（proc 框架未落地 → 识别但 no-op）/ 未知 id 安全忽略。新增词条入 `AFFIX_FIELD_MAP` 即可，无需动实例结构。
 3. **封顶两段落点**：乘算百分比（atk/hp/atkspd）的**装备贡献**在 `applyEquipment` 累加阶段钳（烘焙进绝对值后不可反算）；绝对字段（lifestealPct/armor）由 `clampEffectCaps` 在注入末尾**统一钳一次**，实现 §7.7④「trait + 装备求和后钳」的跨源语义。
-   - ⚠️ **待办（非本切片）**：暴击（`m_crit`）依赖未落地的引擎暴击机制（§7.4 注）→ 当前占位 no-op；trait 的攻速/攻击/生命增益走 TraitSystem **运行期**、不在蓝图烘焙阶段 → 乘算类的「trait+装备求和封顶」尚未完全合一。待暴击/proc 框架与 trait 数值同表时收口（上限归 ECONOMY_NUMBERS §5）。
+   - ✅ **暴击已落地**（B 方案）：`m_crit` → `critPct`（加算、§7.7 ≤50 钳）、`s_critmult` → `critMult`（加算、≤2.5× 钳），复用 T3 引擎机制。⚠️ **仍待办**：trait 的攻速/攻击/生命增益走 TraitSystem **运行期**、不在蓝图烘焙阶段 → 乘算类的「trait+装备求和封顶」尚未完全合一；proc 框架（`k_*` 特技）仍空转（§7.6）。待与 trait 数值同表时收口（上限归 ECONOMY_NUMBERS §5）。
    - **作用范围**：与 `applyPveUpgrades` 一致，只加成玩家发牌兵种（`PLAYER_EQUIPPABLE_UNITS` = Infantry/ShieldBearer/Archer）的**共享蓝图表**；siege 攻防共用同一张表的既有语义原样保留（§9「同一处注入」），攻防分离不在 E1 扩大。`gear.byUnit` 优先于 `gear.global`（阶段二按兵种已可用）。
 
 ---
@@ -427,7 +429,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 落地 = `server/metaserver/src/equipment.ts`（服务层）+ `service.ts` `craftEquipment` handler + `internal.ts` `/internal/equipment/{escrow,grant}` + `contracts/openapi.yml` `POST /equipment/craft` + `@nw/shared`（`rollCraftedAffixes`/`MAIN_AFFIX_BY_SLOT`/`SUB_AFFIX_POOL`/`CRAFT_SUB_AFFIX_COUNT`/`equipmentInvCount`/`EQUIP_AUCTION_REF_PRICE_BY_RARITY` + `equipmentIdem` 集合）+ `equipment.e2e.test.ts`（12 条）。关键决策：
 
-1. **合成 roll 确定性**：实例 id（`eq_${idemKey}`）+ 词条值均由 idempotencyKey 派生（mulberry32 + FNV-1a 种子）。重试/重放产同一件，杜绝"网络重试改命"。主词条按槽位锁定（§7.4：weapon→`m_atk`/armor→`m_hp`/trinket→`m_spd`，暴击未落地退化移速），副词条按稀有度从池抽 N 条不重复（common 0 / fine 1 / rare·epic 2）。数值 DRAFT，权威终点 ECONOMY_NUMBERS §5。
+1. **合成 roll 确定性**：实例 id（`eq_${idemKey}`）+ 词条值均由 idempotencyKey 派生（mulberry32 + FNV-1a 种子）。重试/重放产同一件，杜绝"网络重试改命"。主词条按槽位从候选定 1 个（§7.4：weapon→`m_atk`/armor→`m_hp`/trinket→`m_spd` 或 `m_crit` 二选一；单候选槽位不消耗随机流，保证既有 roll 确定性不变），副词条按稀有度从池抽 N 条不重复（common 0 / fine 1 / rare·epic 2，池含 `s_critmult`）。洗练保留实例现有主词条（不因候选随机而翻转），只重洗副词条。数值 DRAFT，权威终点 ECONOMY_NUMBERS §5。
 2. **幂等闸门**：`equipmentIdem` 集合（TTL 7 天）。合成先抢占 idemKey 唯一 _id（dup → 重放首次结果，不二次扣料）；托管按 orderId 记快照（重放返回同实例，防二次移出）；转移按 `instance.id` 覆盖写天然幂等。扣料/移实例走乐观锁 rev 守卫 + 重试（同 internal.ts 材料范式）。
 3. **库存权威 + 拍卖托管语义**：`equipmentInv` 仅 `/equipment/*` + `/internal/equipment/*` 写（PUT /save 不可写，SyncPatch 已收窄）。挂拍 = `escrowEquipment` 移出卖方库存回快照（拍卖单存整件快照）；成交 = `grantEquipment` 转移给买方；撤单/过期/季末 = 退回卖方。**穿戴中（gear 引用）/ locked 拒挂**（`EQUIP_IN_USE`/`EQUIP_LOCKED`）。
 4. **满仓口径**：300 上限只卡 craft（faucet 侧）；**成交转移不卡**（买方有意获得，阻断会资损；满仓溢出转邮件暂存是 §13 SLG 后续）。
@@ -507,7 +509,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 - [ ] 词条数值区间/权重定档（结构已定 §7，数字归 ECONOMY_NUMBERS §5）。
 - [x] ~~洗练模式：全部重 roll vs 锁定 1 条重洗其余~~ → **技能槽 0–2（多数0/部分1/极少2）；2 条时可花金币锁 1 条重洗另一条，或全随机更便宜**（ADR-017，§7.8）。
-- [ ] 暴击引擎机制（trait T3 / 饰品主词条共用）落地排期；未落地前饰品主词条退化为移速/攻速。
+- [x] 暴击引擎机制（trait T3 / 饰品主词条 `m_crit` / 副词条 `s_critmult` 共用）已落地（B 方案，feat/equip-crit）。
 - [ ] 特技 proc 框架（开刃/嗜血/回响/倒刺需 on-kill / on-spawn / on-hit 钩子）引擎工作量评估。
 - [x] ~~抽卡：装备独立池 vs 与皮肤共池~~ → **与皮肤共池，且主产出是材料**（装备成品仅低概率彩头，ADR-017，§6）；保底（pity）规则待定。
 - [ ] 是否加"掉级/碎裂"硬档（更狠氪向）+ 保护道具——现为温和"只损材料"基线（ECONOMY_NUMBERS §10 待办）。
@@ -561,10 +563,10 @@ buildSiegeBlueprints(levels, equipped, inv)
 | `ar_foil` | armor | 史诗 | 烫金封皮 | 生命% / 护甲 | 抽卡 / 极后期 |
 | `tk_clip` | trinket | 普通 | 回形针 | 移速% | 关卡常掉 / 合成 |
 | `tk_bookmark` | trinket | 精良 | 书签 | 移速% / 攻速% | 中期关 / 合成 |
-| `tk_sticker` | trinket | 稀有 | 贴纸 | 移速% / 暴击%※ | Boss / 后期关 / 抽卡 |
-| `tk_seal` | trinket | 史诗 | 火漆印 | 暴击%※ / 移速% | 抽卡 / 极后期 |
+| `tk_sticker` | trinket | 稀有 | 贴纸 | 移速% / 暴击% | Boss / 后期关 / 抽卡 |
+| `tk_seal` | trinket | 史诗 | 火漆印 | 暴击% / 移速% | 抽卡 / 极后期 |
 
-> ※ 暴击主词条依赖引擎暴击机制（trait T3 同款）落地；未落地前 `tk_sticker`/`tk_seal` 主词条退化为移速/攻速（§7.4 注）。
+> 饰品主词条在「移速 / 暴击率」二候选中开出时定 1 个（§7.4）。暴击机制已落地（trait T3 同款引擎字段 `critPct`/`critMult`）。
 > 媒材皮 ↔ bone slot 绘制映射见 [`art-direction.md`](../product/art-direction.md) §9.2 + animator 骨架；本表只定数据侧 `defId`。
 
 ### 17.3 扩展位（后期，不进 v1）

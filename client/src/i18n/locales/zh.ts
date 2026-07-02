@@ -493,11 +493,13 @@ export const zh = {
   'affix.m_atk': '攻击 +{v}%',
   'affix.m_hp': '生命 +{v}%',
   'affix.m_spd': '移速 +{v}%',
+  'affix.m_crit': '暴击率 +{v}%',
   'affix.s_atk': '攻击 +{v}%',
   'affix.s_hp': '生命 +{v}%',
   'affix.s_armor': '护甲 +{v}',
   'affix.s_spd': '移速 +{v}%',
   'affix.s_atkspd': '攻速 +{v}%',
+  'affix.s_critmult': '暴击伤害 +{v}%',
   // Equipment names (stationery-material skins, §17.2)
   'equip.wp_pencil.name': '铅笔',
   'equip.wp_pen.name': '钢笔',

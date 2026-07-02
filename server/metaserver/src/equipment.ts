@@ -561,7 +561,7 @@ export async function reforgeEquipment(
   }
 
   // Deterministic re-roll (idempotencyKey used as seed)
-  const newAffixes = rollReforgedAffixes(target.defId, idempotencyKey);
+  const newAffixes = rollReforgedAffixes(target.defId, idempotencyKey, target.affixes);
   const reforged: EquipmentInstance = { ...target, affixes: newAffixes };
 
   // Idempotency claim
