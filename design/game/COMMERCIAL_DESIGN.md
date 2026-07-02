@@ -284,6 +284,8 @@ ShopScene → rechargeCoins(tierId) → createAppCore.doRechargeCoins
   3) saveManager.adoptServer(save)   # 同步拿到权威存档，coins 立即刷新 → shop.rechargeSuccess
 ```
 
+**超时策略（关键）**：充值涉及**用户自定节奏**的支付 UI（Paddle overlay / 原生商店弹窗），可能开着好几分钟——因此 `ShopScene.onRecharge` **不套 `withTimeout`**（与 buy/redeem 不同）。超时只加在 `doRechargeCoins` 内部的**网络调用**上：`paddleCheckout` / `iapVerify` / 轮询里的 `saveManager.refresh` 各套 10s `withTimeout`（`ApiClient` 自身无 fetch 超时，否则挂起的请求会让 busy 转圈卡死）；`openPaddleCheckout` / `nativeIapPurchase` 这两个交互等待**不设超时**。网络超时 → `common.networkTimeout` 提示；回调始终 resolve 出 result key，spinner 必定收起。
+
 ### 10.3 `/bootstrap` 下发 Paddle client token
 
 `metaserver` 的 `MetaService.bootstrap` 在 `NW_PADDLE_CLIENT_TOKEN` 配置时，于响应里附带 `paddleClientToken`（未配置则不带）。客户端 `FeatureFlags` 轮询 `/bootstrap` 时缓存它，`getPaddleClientToken()` 供 `doRechargeCoins` 取用。token 缺失（服务端未配置）→ Paddle 充值提示 `shop.rechargeError`，不发起 checkout。

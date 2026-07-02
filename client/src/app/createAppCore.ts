@@ -40,6 +40,7 @@ import type { AuthOutcome } from '../scenes/LoginScene';
 import type { RenameOutcome } from '../scenes/SettingsScene';
 import type { EloResult } from '../scenes/ResultScene';
 import type { ShopActionResult } from '../scenes/ShopScene';
+import { withTimeout, TimeoutError } from '../ui/busyTracker';
 import * as analytics from '../analytics';
 import { WorldApiClient } from '../net/WorldApiClient';
 import { getWorldBaseUrl } from '../net/config';
@@ -957,6 +958,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
    *   receipt at /iap/verify → adopt the returned authoritative save synchronously.
    * - web ('paddle'): create a checkout transaction → open Paddle.js → on completion, poll the
    *   save briefly (coins are credited asynchronously by /paddle/webhook).
+   *
+   * Timeout policy: only the *network* calls are bounded by withTimeout — the payment UI
+   * (openPaddleCheckout / nativeIapPurchase) is user-paced and left unbounded (a Paddle overlay
+   * or a StoreKit sheet may sit open for minutes; the caller must NOT time it out). This is why
+   * ShopScene.onRecharge no longer wraps this in a blanket timeout, unlike buy/redeem.
    * Returns a ShopActionResult toast key; never throws.
    */
   async function doRechargeCoins(
@@ -967,8 +973,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const kind = platform.iapKind();
     try {
       if (kind === 'apple' || kind === 'google') {
-        const { receipt } = await platform.nativeIapPurchase(tierId);
-        const { save } = await client.iapVerify(kind, receipt);
+        const { receipt } = await platform.nativeIapPurchase(tierId); // user-paced native store sheet — unbounded
+        const { save } = await withTimeout(client.iapVerify(kind, receipt));
         saveManager.adoptServer(save);
         onConverted();
         analytics.track('iap_purchase', { tier: tierId, platform: kind });
@@ -977,8 +983,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       if (kind === 'paddle') {
         const token = featureFlags?.getPaddleClientToken() ?? null;
         if (!token) { log.warn('paddle recharge: client token unavailable (server NW_PADDLE_CLIENT_TOKEN unset?)'); return { ok: false, key: 'shop.rechargeError' }; }
-        const { transactionId } = await client.paddleCheckout(tierId);
-        const { completed } = await platform.openPaddleCheckout(transactionId, token);
+        const { transactionId } = await withTimeout(client.paddleCheckout(tierId));
+        const { completed } = await platform.openPaddleCheckout(transactionId, token); // user-paced overlay — unbounded
         if (!completed) return { ok: false, key: 'shop.rechargeCancelled' };
         onConverted();
         analytics.track('iap_purchase', { tier: tierId, platform: 'paddle' });
@@ -990,7 +996,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       return { ok: false, key: 'shop.rechargeError' };
     } catch (e) {
       log.warn('recharge failed', { tier: tierId, kind, err: e instanceof Error ? e.message : String(e) });
-      return { ok: false, key: 'shop.rechargeError' };
+      // A bounded network call timed out (checkout creation / verify) → network-timeout toast; else generic.
+      return { ok: false, key: e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.rechargeError' };
     }
   }
 
@@ -999,7 +1006,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const delays = [1000, 1500, 2000, 2500, 3000];
     for (const ms of delays) {
       await new Promise((r) => setTimeout(r, ms));
-      try { await saveManager.refresh(); } catch { /* keep polling; transient */ }
+      // Bound each refresh so a hung request can't stall the poll (ApiClient has no fetch timeout of its own).
+      try { await withTimeout(saveManager.refresh()); } catch { /* keep polling; transient / timed out */ }
       if (saveManager.get().wallet.coins > before) return true;
     }
     return false;

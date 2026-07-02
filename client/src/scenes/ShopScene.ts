@@ -240,13 +240,16 @@ export class ShopScene implements Scene {
     this.bt.start();
     this.toast = null;
     this.render();
+    // No blanket withTimeout here (unlike buy/redeem): recharge opens a user-paced payment UI
+    // (Paddle overlay / native store sheet) that may stay open for minutes. The callback bounds its
+    // own network calls internally and always resolves with a result key, so the spinner still clears.
     try {
-      const res = await withTimeout(this.cb.rechargeCoins(tierId), 60_000);
+      const res = await this.cb.rechargeCoins(tierId);
       this.toast = res.ok
         ? { text: t('shop.rechargeSuccess'), color: C.green }
         : { text: t(res.key), color: C.red };
-    } catch (e) {
-      this.toast = { text: t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.rechargeError'), color: C.red };
+    } catch {
+      this.toast = { text: t('shop.rechargeError'), color: C.red };
     } finally {
       this.bt.stop();
       this.render();
