@@ -1292,7 +1292,7 @@ if (path.startsWith('/admin/world/')) {
 ### 19.1 `@nw/shared`（`slg.ts`）
 
 - **类型**：`TileType` 新增 `'stronghold'`。
-- **生成**（`proceduralTile`）：在 `familyKeep` 之前判定（优先级更高），噪声 `strongholdNoise = valueNoise(x,y, strongholdFreq=1/70, seed^0x0555) > strongholdThreshold(0.92)` 且 `dr > strongholdMinDistRatio(0.25)` → `{ type:'stronghold', level: SLG_MAP_MAX_LEVEL, resType: biomeAt(...) }`。固定满级 + 带资源种类（攻克后产出丰厚）。全图约 0.3%（≈300 格），比 familyKeep（5.4%）稀疏 ~16×。阈值在 0.92→0.94 间极陡（343→1），经探针标定。
+- **生成**（`proceduralTile`）：在 `familyKeep` 之前判定（优先级更高）。**逐格哈希门** `rand2(x,y, seed^0x0555) > strongholdThreshold(0.997)` 且 `dr > strongholdMinDistRatio(0.25)` → `{ type:'stronghold', level: SLG_MAP_MAX_LEVEL, resType: biomeAt(...) }`。固定满级 + 带资源种类（攻克后产出丰厚）。**逐格 Bernoulli(p=0.003)**：全图 ~236 格中位（0.26%，CV 0.07、0% 零险地），孤立点、比 familyKeep（5.4%）稀疏 ~20×。⚠️ **不用平滑 value-noise**：300×300 图上低频噪声只 ~18 格点，`noise>阈值` 会让险地数种子间 0→6,436 剧烈波动并聚成大块 blob（详见 §19.5 + ECONOMY_NUMBERS §13-SLG-STRONGHOLD）。
 - **数值**：`STRONGHOLD_GARRISON_PER_LEVEL=360`（满级 1800 兵力当量，远超 `GARRISON_PER_TILE=500`/`npcGarrison` 满级 600）；`strongholdGarrison(level)`；`STRONGHOLD_LOOT_PER_LEVEL=5000`（攻克一次性奖励，按格等级 × 资源种类）。**1800 守军经合成步兵 ≈60 单位（纵深 ~6），叠加攻方 ≤2000 兵 ≈67 单位（纵深 ~7）< 棋盘 16 行 → 正常规模权威引擎可跑**；仅鲸鱼级超大军（>5000 兵）溢出走廉价兜底。零充值玩家满兵也因防守占优（基地 + 超时判守方胜）几乎打不过，须养成强军（科技/装备布阵）方可攻克——兑现 SLG7 卖战力 / U7 碾压级 / §3.1「非常难攻占」。
 
 ### 19.2 worldsvc（`service.ts`）
@@ -1313,7 +1313,7 @@ if (path.startsWith('/admin/world/')) {
 
 ### 19.5 DRAFT / 后续
 
-- 数值调参：`STRONGHOLD_GARRISON_PER_LEVEL`/`STRONGHOLD_LOOT_PER_LEVEL`/`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL`/生成密度（`strongholdThreshold`）待经济与战力模拟细化（§16.5 同批）。**⚠️ 已模拟（2026-07-02，econ-sim 险地轨）**：生成密度有缺陷——`strongholdFreq=1/70` value-noise 在 300×300 图上只 ~18 格点，险地数种子间 **0→6,436**（CV 1.02，14% 世界零险地，中位 1.12% ≫ 意图 0.3%），且聚成 blob 非孤立点；占领发的持久 `binding` 在高数量种子破 A 轨 15% 稀释判据。**建议生成层换逐格哈希 `rand2>t`**（p≈0.003 → 270±16、孤立点）。守军/掠夺量本身 sane。详见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §9 险地轨 + [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §13-SLG-STRONGHOLD。**生成修复是独立 merge-first 变更，未落地。**
+- 数值调参：`STRONGHOLD_GARRISON_PER_LEVEL`/`STRONGHOLD_LOOT_PER_LEVEL`/`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL` 待战力模拟细化（§16.5 同批）；生成密度已定案（见下）。**✅ 生成密度已修复 CLOSED（2026-07-02，econ-sim 险地轨）**：原 `strongholdFreq=1/70` value-noise 在 300×300 图上只 ~18 格点，险地数种子间 **0→6,436**（CV 1.02，14% 零险地，聚成 blob 均值 862 格），占领发的持久 `binding` 在高数量种子破 A 轨 15% 稀释判据。**修复**：生成层换逐格哈希 `rand2(x,y,seed^0x0555) > 0.997`（`shared/slg.ts`，merge-first 已合 main），删 `strongholdFreq`。**修复后实测**：236 中位（197→282，CV 0.07、0% 零险地、0.26% 命中意图）、平均 blob 1.0 格（孤立点）、binding 稀释 max 世界×100% 占领仅 2.8% ≪ 15%——①②③全 PASS。守军/掠夺量本身 sane。详见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §9 险地轨 + [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §13-SLG-STRONGHOLD。
 - **攻克奖励材料 ✅（2026-06-21，随 G4 §15.6 落地）**：除单资源即时入袋，额外掉落养成材料 `binding`（`strongholdMaterialLoot(level)` 按等级线性，**DRAFT** `STRONGHOLD_LOOT_MATERIAL_PER_LEVEL=4`）——攻克胜经 `meta.grantMaterial` 发到 `SaveData.materials` 养成统一池（跨进程 best-effort，orderId=`stronghold_loot:{worldId}:{toTile}:{arriveAt}` 幂等），攻克败不掉。复用 G4 打通的材料通道，险地养成价值兑现。装备掉落仍待装备库 E2~E4。worldsvc `stronghold.e2e` 加掉落断言（胜掉/败不掉/orderId 幂等键）。
 - 险地系统守军当前为合成步兵；后续可换更强兵种/自定义系统布阵 config（§16.5 满血容量表/兵种当量调参后）。
 
