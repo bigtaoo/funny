@@ -1415,10 +1415,12 @@ if (path.startsWith('/admin/world/')) {
 
 ### 21.1 第一档——功能洞（影响经济循环完整性）
 
+> **✅ 本档已清零（2026-07-02）**：R-1（主城内政/建筑）+ R-2（资源格渲染）两个功能洞均已实现并合 main。经济循环完整性不再有代码缺口，剩余全是规则补漏（§21.2）/ 运营规模化（§21.3）/ 数值调参（§21.4）。
+
 | # | 缺口 | 现状 | 计划 |
 |---|---|---|---|
 | ~~**R-1**~~ | ~~建筑 / 主城内政系统整块缺失~~ **✅ CLOSED（2026-06-30~07-02）** | ~~worldsvc 唯一「建筑」是瞭望塔；无资源/军事/城防建筑；`troopCap` 死值；graphite/sticker 空转。~~ **已实现并验证**：[`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md) **P1（server 刀 `7da7e891` + client 刀 `9febdba0`）+ P2（`bcb48a9c` wall/cabinet/academy）全合 main**。`biomeAt` 三分→四分给 graphite 地图 faucet；stickerShop 自产 sticker faucet；4 资源建筑产率乘数 + cabinet 仓储 + drillYard troopCap 成长 + desk 门控 + buildQueue 调度 + coin 加速。CityScene 端到端接通（`createAppCore`/`WorldMapScene` Enter Desk）。 | **✅ 完成**。`city-buildings.e2e.test.ts` **8/8 real-Mongo 全绿（2026-07-02）**——faucet+sink 闭环经实测证实。数值仍 DRAFT（终态=上线后实测对账，§21.4）。 |
-| **R-2** | **资源格地图渲染未接入** | 5 母题 × 10 级程序合成资源格美术已出图打包（`res_atlas`），但未接进 `WorldMapScene` 渲染，地图资源点仍是程序色块。 | §3.4 待办：母题加载 + 双轴（丰度/守备）+ 10 级运行时合成接入。 |
+| ~~**R-2**~~ | ~~资源格地图渲染未接入~~ **✅ CLOSED（2026-06-30，commit `b8b726c0`）** | ~~地图资源点仍是程序色块。~~ **已实现**：`resAtlasLoader.ts`（懒加载图集，色块兜底）+ `WorldMapScene.drawResMotif`（L1）= 母题加载 + 丰度轴（lv1→4 精灵成簇）+ 守备轴（lv4+ 栅栏 / lv7+ 桩 / lv8–10 红角）+ 10 级合成；5 母题全就位（2026-07-01）。 | **✅ 完成**（client `tsc --noEmit` 全绿 2026-07-02）。L2/L3 仍走色块占用层（按设计，非缺口）。 |
 
 ### 21.2 第二档——规则 / 体验补漏
 
@@ -1447,11 +1449,10 @@ if (path.startsWith('/admin/world/')) {
 
 ### 21.5 优先级建议
 
-1. ~~**R-1 建筑系统**~~ **✅ CLOSED（2026-07-02，P1+P2 合 main + e2e 8/8 实测）**——两种死资源已激活、troopCap 有成长曲线、「点进主城」体验已补。
-2. **R-2 资源格美术接入**：唯一剩下的「功能洞」——`res_atlas` 已出图，待接进 `WorldMapScene` 渲染（§3.4）。**建议下一步。**
-3. **R-4 数值调参**：随经济模拟批次（city 数值仍 DRAFT，§21.4）。
-4. **R-3 联盟攻击约束**：规则补漏，联盟专项。
-5. **R-5~R-9**：运营/规模化，赛季正交可延后。
+1. ~~**R-1 建筑系统** / **R-2 资源格美术接入**~~ **✅ 两者均 CLOSED（2026-07-02）**——功能洞档已清零（R-1: P1+P2 合 main + e2e 8/8 实测；R-2: `b8b726c0` 母题渲染合 main + client tsc 全绿）。
+2. **R-3 联盟攻击约束**：现在是唯一剩下的**功能性规则缺口**（当前理论上能打盟友地）——`startMarch` attack 分支加联盟关系拦截，属联盟系统专项。**建议下一步。**
+3. **R-4 数值调参**：随经济模拟批次（city / 国民加成数值仍 DRAFT，§21.4）——非代码洞，须经济模拟批处理。
+4. **R-5~R-9**：运营/规模化，赛季正交可延后。
 
 ---
 
