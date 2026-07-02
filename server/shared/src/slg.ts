@@ -107,6 +107,33 @@ export const SLG_MAP_W = 300;
 export const SLG_MAP_H = 300;
 export const SLG_MAP_MAX_LEVEL = 5;
 
+// ── Main-base 3×3 footprint (ADR-025) ─────────────────────────────────────────
+// The player home city is a real multi-tile building occupying a 3×3 block centered on its
+// anchor (PlayerWorldDoc.mainBaseTile). All 9 cells are written as type:'base' with the same
+// ownerId — indivisible (an enemy cannot occupy/abandon a single corner), block enemy marches
+// (§ findMarchPath blockedBaseKeys), and all count toward territory/prosperity.
+/** Base footprint side length (3 → 3×3 = 9 cells). */
+export const BASE_FOOTPRINT = 3;
+/** Half-extent: the anchor spans ±this on each axis (1 for a 3×3 footprint). */
+export const BASE_FOOTPRINT_R = (BASE_FOOTPRINT - 1) / 2;
+
+/** All tile coordinates a base anchored (centered) at (ax,ay) occupies — BASE_FOOTPRINT² cells. */
+export function baseFootprintCells(ax: number, ay: number): { x: number; y: number }[] {
+  const cells: { x: number; y: number }[] = [];
+  for (let dy = -BASE_FOOTPRINT_R; dy <= BASE_FOOTPRINT_R; dy++) {
+    for (let dx = -BASE_FOOTPRINT_R; dx <= BASE_FOOTPRINT_R; dx++) {
+      cells.push({ x: ax + dx, y: ay + dy });
+    }
+  }
+  return cells;
+}
+
+/** True if the whole 3×3 block anchored at (ax,ay) fits inside [0,mapW) × [0,mapH). */
+export function baseFootprintInBounds(ax: number, ay: number, mapW: number, mapH: number): boolean {
+  return ax - BASE_FOOTPRINT_R >= 0 && ay - BASE_FOOTPRINT_R >= 0
+      && ax + BASE_FOOTPRINT_R < mapW && ay + BASE_FOOTPRINT_R < mapH;
+}
+
 // ── Procedural distribution knobs (U6 initial DRAFT; centralized here for easy tuning) ────────
 export const SLG_GEN = {
   /** Resource tile density: fraction of non-neutral tiles classified as resource tiles. */
@@ -869,6 +896,10 @@ export interface PathCell {
  * - Returns the full path (including start and end); returns a single node [{fx,fy}] for same-tile.
  * - Returns null if the destination is unreachable (obstacle / no path / out of bounds).
  * - passableGateKeys: set of gate tile keys that can be traversed (format "x:y"); the destination gate itself is always reachable regardless of passage rights.
+ * - blockedBaseKeys (ADR-025): set of enemy/other main-base tile keys ("x:y") that block pathing —
+ *   a player's 3×3 capital is a solid building others must route around ("封路"). The caller excludes
+ *   the marcher's own base tiles from this set (owners march in/out freely). The destination itself is
+ *   always allowed (isDest), so sieging an enemy base tile stays reachable.
  * - MAX_NODES safety cap (prevents worst-case on very large maps).
  */
 export function findMarchPath(
@@ -880,12 +911,16 @@ export function findMarchPath(
   tx: number,
   ty: number,
   passableGateKeys: ReadonlySet<string>,
+  blockedBaseKeys: ReadonlySet<string> = new Set(),
 ): PathCell[] | null {
   if (fx === tx && fy === ty) return [{ x: fx, y: fy }];
   if (!_slgInBounds(fx, fy, mapW, mapH) || !_slgInBounds(tx, ty, mapW, mapH)) return null;
 
   const walkable = (x: number, y: number, isDest: boolean): boolean => {
     if (!_slgInBounds(x, y, mapW, mapH)) return false;
+    // Enemy main-base footprint blocks pathing (ADR-025); the destination is exempt so an
+    // attacker can still march onto an enemy base tile to besiege it.
+    if (!isDest && blockedBaseKeys.has(`${x}:${y}`)) return false;
     const p = proceduralTile(world, x, y);
     if (p.type === 'obstacle') return false; // obstacles always block, including the destination tile
     if (p.type === 'gate') return isDest || passableGateKeys.has(`${x}:${y}`);

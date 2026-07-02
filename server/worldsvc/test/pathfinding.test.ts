@@ -8,6 +8,8 @@ import {
   MARCH_SPEED_SEC_PER_TILE,
   SLG_MAP_W,
   SLG_MAP_H,
+  baseFootprintCells,
+  baseFootprintInBounds,
 } from '@nw/shared';
 
 // Build a small map wrapper (with inline obstacles) to test pure logic with a custom world seed.
@@ -56,6 +58,47 @@ describe('findMarchPath', () => {
       const dy = Math.abs(path[i].y - path[i - 1].y);
       expect(dx + dy).toBe(1); // exactly 1 tile per step, 4 directions
     }
+  });
+});
+
+describe('base 3×3 footprint (ADR-025)', () => {
+  it('baseFootprintCells returns 9 cells centered on the anchor', () => {
+    const cells = baseFootprintCells(10, 20);
+    expect(cells).toHaveLength(9);
+    // includes the anchor and every 8-neighbor
+    expect(cells).toContainEqual({ x: 10, y: 20 });
+    expect(cells).toContainEqual({ x: 9, y: 19 });
+    expect(cells).toContainEqual({ x: 11, y: 21 });
+    // all within Chebyshev distance 1 of the anchor
+    for (const c of cells) {
+      expect(Math.max(Math.abs(c.x - 10), Math.abs(c.y - 20))).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('baseFootprintInBounds requires the whole 3×3 inside the map', () => {
+    expect(baseFootprintInBounds(1, 1, MAP_W, MAP_H)).toBe(true);
+    expect(baseFootprintInBounds(0, 5, MAP_W, MAP_H)).toBe(false); // left ring cell x=-1
+    expect(baseFootprintInBounds(5, 0, MAP_W, MAP_H)).toBe(false); // top ring cell y=-1
+    expect(baseFootprintInBounds(MAP_W - 1, 5, MAP_W, MAP_H)).toBe(false); // right ring out
+    expect(baseFootprintInBounds(MAP_W - 2, MAP_H - 2, MAP_W, MAP_H)).toBe(true); // fits flush
+  });
+
+  it('an enemy base footprint blocks pathing (封路), forcing a detour', () => {
+    // Wall off a full column x=4 (y=0..3) between start (2,1) and dest (6,1) as "enemy base" cells.
+    const blocked = new Set(['4:0', '4:1', '4:2', '4:3']);
+    const path = findMarchPath(W_OPEN, MAP_W, MAP_H, 2, 1, 6, 1, new Set(), blocked);
+    expect(path).not.toBeNull();
+    // No path node may sit on a blocked cell (the marcher routes around it).
+    for (const n of path!) expect(blocked.has(`${n.x}:${n.y}`)).toBe(false);
+    // Detour is strictly longer than the 5-node straight line.
+    expect(path!.length).toBeGreaterThan(6);
+  });
+
+  it('a blocked base cell is still reachable AS the destination (siege the base)', () => {
+    const blocked = new Set(['4:1']);
+    const path = findMarchPath(W_OPEN, MAP_W, MAP_H, 1, 1, 4, 1, new Set(), blocked);
+    expect(path).not.toBeNull();
+    expect(path![path!.length - 1]).toEqual({ x: 4, y: 1 });
   });
 });
 
