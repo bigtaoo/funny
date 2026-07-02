@@ -108,6 +108,7 @@ import {
   accrueEventTask,
   claimEventReward,
 } from './events.js';
+import { nullMetaSocialsvcClient } from './socialsvcClient.js';
 
 export interface ServiceDeps {
   cols: Collections;
@@ -562,14 +563,15 @@ export class MetaService {
     let save = await getOrCreateSave(cols, accountId, now());
     // Lazy season migration (S11): if pvp.seasonNo is behind, settle previous-season rewards + soft-reset + update battle pass.
     try {
+      const socialsvc = this.deps.socialsvc ?? nullMetaSocialsvcClient;
       const currentSeason = await getCurrentSeason(cols, now());
-      const r = await migrateIfStale(cols, commercial, save, currentSeason, now());
+      const r = await migrateIfStale(cols, commercial, socialsvc, save, currentSeason, now());
       if (r.migrated) {
         save = await writeMigratedSave(
           cols,
           r.save,
           now(),
-          (s) => migrateIfStale(cols, commercial, s, currentSeason, now()),
+          (s) => migrateIfStale(cols, commercial, socialsvc, s, currentSeason, now()),
         );
       }
     } catch (e) {
@@ -1097,11 +1099,12 @@ export class MetaService {
       );
       const newWarnings = updatedAcc?.flags?.pveWarnings ?? 1;
       if (newWarnings === 1) {
-        await insertSystemMail(cols, `pve-warn-${verifyId}`, accountId, {
+        // Best-effort: a failed warning mail must not block the reject-count/ban flow above.
+        await insertSystemMail(this.deps.socialsvc ?? nullMetaSocialsvcClient, `pve-warn-${verifyId}`, accountId, {
           subject: 'Fair Play Warning',
           body: 'Unusual PvE activity was detected. Continued violations may result in account suspension.',
           expireDays: 30,
-        }, now());
+        }).catch((e) => req.log.warn({ err: e }, 'pve-warn mail failed'));
       }
       if (newWarnings >= PVE_REJECT_BAN_THRESHOLD) {
         await cols.accounts.updateOne({ _id: accountId }, { $set: { 'flags.banned': true } });
@@ -2323,7 +2326,8 @@ export class MetaService {
     const { eventId, rewardId } = req.body as { eventId: string; rewardId: string };
     if (!eventId || !rewardId) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing eventId/rewardId'));
     const { cols, now, commercial } = this.deps;
-    const result = await claimEventReward(cols, accountId, eventId, rewardId, now(), commercial);
+    const socialsvc = this.deps.socialsvc ?? nullMetaSocialsvcClient;
+    const result = await claimEventReward(cols, accountId, eventId, rewardId, now(), commercial, socialsvc);
     if (!result.ok) {
       const code =
         result.error === 'NOT_FOUND' ? 404 :

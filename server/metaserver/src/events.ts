@@ -7,6 +7,7 @@ import type { Collections, EventDoc, EventParticipantDoc } from '@nw/shared';
 import { isEventActive, validateEventInput, type EventInput, type EventTaskKind } from '@nw/shared';
 import type { CommercialClient } from './commercialClient.js';
 import { insertSystemMail } from './mail.js';
+import type { MetaSocialsvcClient } from './socialsvcClient.js';
 
 // ── Event view (sent to client) ────────────────────────────────────────────────
 
@@ -283,6 +284,7 @@ export async function claimEventReward(
   rewardId: string,
   now: number,
   commercial: CommercialClient,
+  socialsvc: MetaSocialsvcClient,
 ): Promise<ClaimEventOk | { ok: false; error: ClaimEventError }> {
   const event = await cols.events.findOne({ _id: eventId });
   if (!event) return { ok: false, error: 'NOT_FOUND' };
@@ -349,7 +351,7 @@ export async function claimEventReward(
   } else if (reward.kind !== 'coins') {
     // material / skin → mail attachment
     await insertSystemMail(
-      cols,
+      socialsvc,
       dispatchKey,
       accountId,
       {
@@ -364,7 +366,6 @@ export async function claimEventReward(
         ],
         expireDays: 30,
       },
-      now,
     ).catch(() => {/* mail write failed: points already deducted, ops compensation fallback */});
   }
 

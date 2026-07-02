@@ -18,6 +18,7 @@ import {
 import type { CommercialClient } from './commercialClient.js';
 import { insertSystemMail } from './mail.js';
 import { grantTitleToPlayer } from './titles.js';
+import type { MetaSocialsvcClient } from './socialsvcClient.js';
 
 const log = createLogger('meta:ladderSeason');
 
@@ -65,6 +66,7 @@ export async function getCurrentSeason(
 export async function rollSeason(
   cols: Collections,
   commercial: CommercialClient,
+  socialsvc: MetaSocialsvcClient,
   now: number,
 ): Promise<LadderSeasonDoc> {
   // CAS: only advance when state=active
@@ -82,7 +84,7 @@ export async function rollSeason(
   // Closed-loop settlement: settle all participants of the previous season before advancing the clock
   // (idempotent; a single-player failure is logged internally and does not block the roll —
   // any missed players are lazily re-settled by migrateIfStale when they return, also idempotent).
-  await settleSeasonParticipants(cols, commercial, prev.seasonNo, now).catch((e) =>
+  await settleSeasonParticipants(cols, commercial, socialsvc, prev.seasonNo, now).catch((e) =>
     log.error('rollSeason: settle participants failed', { seasonNo: prev.seasonNo, err: (e as Error).message }),
   );
 
@@ -109,6 +111,7 @@ export async function rollSeason(
 export async function settleSeasonForPlayer(
   cols: Collections,
   commercial: CommercialClient,
+  socialsvc: MetaSocialsvcClient,
   accountId: string,
   save: SaveData,
   prevSeasonNo: number,
@@ -139,7 +142,7 @@ export async function settleSeasonForPlayer(
   // Via mail: async delivery; player receives a notification with ceremony on next login
   const dispatchKey = `ladder.season.${prevSeasonNo}.${accountId}`;
   await insertSystemMail(
-    cols,
+    socialsvc,
     dispatchKey,
     accountId,
     {
@@ -148,7 +151,6 @@ export async function settleSeasonForPlayer(
       attachments: [{ kind: 'coins', count: totalCoins }],
       expireDays: SETTLE_MAIL_EXPIRE_DAYS,
     },
-    now,
   );
   log.info('settleSeasonForPlayer: mail sent', {
     accountId,
@@ -184,6 +186,7 @@ export interface SeasonSettleSummary {
 export async function settleSeasonParticipants(
   cols: Collections,
   commercial: CommercialClient,
+  socialsvc: MetaSocialsvcClient,
   seasonNo: number,
   now: number,
 ): Promise<{ settled: number; rewarded: number }> {
@@ -192,7 +195,7 @@ export async function settleSeasonParticipants(
   const cursor = cols.saves.find({ 'save.pvp.seasonNo': seasonNo });
   for await (const doc of cursor) {
     try {
-      const summary = await settleSeasonForPlayer(cols, commercial, doc._id, doc.save, seasonNo, now);
+      const summary = await settleSeasonForPlayer(cols, commercial, socialsvc, doc._id, doc.save, seasonNo, now);
       settled++;
       if (summary.coins > 0) rewarded++;
       // Snapshot doubles as idempotency ledger: composite _id key; $setOnInsert ensures closing the same season twice never overwrites an existing settlement record.
@@ -239,6 +242,7 @@ export async function settleSeasonParticipants(
 export async function migrateIfStale(
   cols: Collections,
   commercial: CommercialClient,
+  socialsvc: MetaSocialsvcClient,
   save: SaveData,
   currentSeason: LadderSeasonDoc,
   now: number,
@@ -250,7 +254,7 @@ export async function migrateIfStale(
 
   // Issue previous season rewards (best-effort; failure does not block migration; idempotent mail key guards on re-entry)
   try {
-    await settleSeasonForPlayer(cols, commercial, save.accountId, save, pvpSeasonNo, now);
+    await settleSeasonForPlayer(cols, commercial, socialsvc, save.accountId, save, pvpSeasonNo, now);
   } catch (e) {
     log.error('settleSeasonForPlayer failed', {
       accountId: save.accountId,

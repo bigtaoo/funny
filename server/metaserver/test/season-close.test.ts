@@ -16,9 +16,44 @@ import {
 } from '@nw/shared';
 import { settleSeasonParticipants, rollSeason } from '../src/ladderSeason.js';
 import type { CommercialClient } from '../src/commercialClient.js';
+import type { MetaSocialsvcClient } from '../src/socialsvcClient.js';
 
 // commercial is not actually called in the season settlement path (coins are delivered via mail attachment), so a stub suffices.
 const commercial = { available: true } as unknown as CommercialClient;
+
+/** Fake socialsvc client: mail is the sole write authority (P2) — mirrors socialsvc's insertSystemMail/bulkInsertSystemMail idempotent-upsert semantics with a plain Map. */
+class FakeSocialsvc implements MetaSocialsvcClient {
+  available = true;
+  mail = new Map<string, { _id: string; to: string; subject: string; body: string; attachments?: unknown[] }>();
+  async proxy(): Promise<never> { throw new Error('not used in this test'); }
+  async claimMail(): Promise<never> { throw new Error('not used in this test'); }
+  async insertSystemMail(
+    dispatchKey: string,
+    to: string,
+    content: { subject: string; body: string; attachments?: unknown[]; expireDays: number },
+  ) {
+    const mailId = `${dispatchKey}:${to}`;
+    const hasAttachment = !!content.attachments?.length;
+    if (this.mail.has(mailId)) return { mailId, inserted: false, hasAttachment };
+    this.mail.set(mailId, { _id: mailId, to, subject: content.subject, body: content.body, attachments: content.attachments });
+    return { mailId, inserted: true, hasAttachment };
+  }
+  async bulkInsertSystemMail(
+    dispatchKey: string,
+    accountIds: string[],
+    content: { subject: string; body: string; attachments?: unknown[]; expireDays: number },
+  ) {
+    const hasAttachment = !!content.attachments?.length;
+    const insertedAccountIds: string[] = [];
+    for (const to of accountIds) {
+      const mailId = `${dispatchKey}:${to}`;
+      if (this.mail.has(mailId)) continue;
+      this.mail.set(mailId, { _id: mailId, to, subject: content.subject, body: content.body, attachments: content.attachments });
+      insertedAccountIds.push(to);
+    }
+    return { insertedAccountIds, hasAttachment };
+  }
+}
 
 // ── In-memory fake: supports dot-path query/write, $setOnInsert upsert, $addToSet, and CAS findOneAndUpdate ──
 
@@ -105,15 +140,14 @@ class FakeCol {
 interface Fake {
   cols: Collections;
   saves: FakeCol;
-  mail: FakeCol;
   ladderSeasons: FakeCol;
   snaps: FakeCol;
+  socialsvc: FakeSocialsvc;
 }
 
 /** seed: accountId → peak elo (determines rank/reward). All players have pvp.seasonNo=1. */
 function makeFake(seed: Record<string, number>): Fake {
   const saves = new FakeCol();
-  const mail = new FakeCol();
   const ladderSeasons = new FakeCol();
   const snaps = new FakeCol();
   for (const [id, peakElo] of Object.entries(seed)) {
@@ -122,8 +156,8 @@ function makeFake(seed: Record<string, number>): Fake {
     s.pvp.seasonPeakRank = eloToRank(peakElo);
     saves.docs.set(id, { _id: id, save: s, rev: s.rev });
   }
-  const cols = { saves, mail, ladderSeasons, ladderSeasonSnapshots: snaps } as unknown as Collections;
-  return { cols, saves, mail, ladderSeasons, snaps };
+  const cols = { saves, ladderSeasons, ladderSeasonSnapshots: snaps } as unknown as Collections;
+  return { cols, saves, ladderSeasons, snaps, socialsvc: new FakeSocialsvc() };
 }
 
 function titlesOf(f: Fake, id: string): string[] {
@@ -133,7 +167,7 @@ function titlesOf(f: Fake, id: string): string[] {
 describe('settleSeasonParticipants (L2-1 end-of-season close loop)', () => {
   it('settle participants: qualifying rank receives reward mail + season title granted + snapshot written', async () => {
     const f = makeFake({ alice: 1900 /* master */, bob: 1000 /* bronze */ });
-    const res = await settleSeasonParticipants(f.cols, commercial, 1, 100);
+    const res = await settleSeasonParticipants(f.cols, commercial, f.socialsvc, 1, 100);
 
     expect(res).toEqual({ settled: 2, rewarded: 1 }); // only master tier earns coins
 
@@ -142,8 +176,8 @@ describe('settleSeasonParticipants (L2-1 end-of-season close loop)', () => {
     expect(titlesOf(f, 'bob')).toContain(ladderTitleId(1, 'bronze'));
 
     // Mail: only master receives mail (bronze has 0 coins, so no mail is sent)
-    expect(await f.mail.countDocuments()).toBe(1);
-    const mailDoc = (await f.mail.find().toArray())[0] as Record<string, unknown>;
+    expect(f.socialsvc.mail.size).toBe(1);
+    const mailDoc = [...f.socialsvc.mail.values()][0]!;
     expect(mailDoc._id).toBe('ladder.season.1.alice:alice');
 
     // Snapshot: one entry per player; peakElo/peakRank match the season peak
@@ -163,10 +197,10 @@ describe('settleSeasonParticipants (L2-1 end-of-season close loop)', () => {
 
   it('repeated close of same seasonId is idempotent: mail/title/snapshot are never sent twice', async () => {
     const f = makeFake({ alice: 1900 });
-    await settleSeasonParticipants(f.cols, commercial, 1, 100);
-    await settleSeasonParticipants(f.cols, commercial, 1, 200); // run the same season again
+    await settleSeasonParticipants(f.cols, commercial, f.socialsvc, 1, 100);
+    await settleSeasonParticipants(f.cols, commercial, f.socialsvc, 1, 200); // run the same season again
 
-    expect(await f.mail.countDocuments()).toBe(1); // mail deduplicated by dispatchKey
+    expect(f.socialsvc.mail.size).toBe(1); // mail deduplicated by dispatchKey
     expect(titlesOf(f, 'alice')).toEqual([ladderTitleId(1, 'master')]); // no duplicate title
     expect(await f.snaps.countDocuments()).toBe(1); // snapshot deduplicated by composite _id
     expect(f.snaps.docs.get('1:alice')!.ts).toBe(100); // $setOnInsert does not overwrite the first settlement
@@ -184,13 +218,13 @@ describe('rollSeason (L2-1 close and open a new season)', () => {
       state: 'active',
     } satisfies LadderSeasonDoc as unknown as Record<string, unknown>);
 
-    const next = await rollSeason(f.cols, commercial, 5000);
+    const next = await rollSeason(f.cols, commercial, f.socialsvc, 5000);
 
     expect(next.seasonNo).toBe(2);
     expect(next.state).toBe('active');
     // previous season (1) has been settled
     expect(titlesOf(f, 'alice')).toContain(ladderTitleId(1, 'master'));
-    expect(await f.mail.countDocuments()).toBe(1);
+    expect(f.socialsvc.mail.size).toBe(1);
     expect(await f.snaps.countDocuments()).toBe(1);
   });
 
@@ -204,7 +238,7 @@ describe('rollSeason (L2-1 close and open a new season)', () => {
       state: 'settling', // already mid-settlement
     } satisfies LadderSeasonDoc as unknown as Record<string, unknown>);
 
-    const r = await rollSeason(f.cols, commercial, 5000);
+    const r = await rollSeason(f.cols, commercial, f.socialsvc, 5000);
     expect(r.seasonNo).toBe(3); // returned as-is, not advanced
     expect(await f.snaps.countDocuments()).toBe(0); // not settled
   });

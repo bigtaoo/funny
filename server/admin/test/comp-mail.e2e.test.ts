@@ -1,20 +1,31 @@
 // OPS compensation ticket ↔ meta system mail cross-process integration test (OPS_DESIGN §3.3 / §4.1, SOCIAL_DESIGN S6-3).
 // This is the real integration test for the "contract wired but never actually run" backlog item: admin's **real HttpMailDispatcher / HttpPlayerClient**
-// uses `fetch` against a **real listening meta process** (not fastify inject), exercising the full chain:
+// uses `fetch` against a **real listening meta process** (not fastify inject), which itself calls a **real listening socialsvc process** for system
+// mail writes (P2: socialsvc is the sole mail-write authority — GET /mail proxies there too), exercising the full chain:
 //   ticket initiated → approved → auto-executed (HttpMailDispatcher.send → meta /internal/mail/system/send →
-//   insertSystemMail) → player has mail in inbox → claim attachment (commercial grant + inventory) → wallet credited.
+//   socialsvc /internal/mail/system) → player has mail in inbox (meta GET /mail → proxy → socialsvc) →
+//   claim attachment (commercial grant + inventory) → wallet credited.
 // Coverage: single-player full chain / dispatchKey idempotency / global fan-out + preview / player.lookup / auth boundary (wrong key → failed)
 //   / non-existent recipient → failed.
 //
-// Requires `cd server && docker compose up -d` + first run `npx tsc -b shared metaserver admin commercial` (imports meta dist).
+// Requires `cd server && docker compose up -d` + first run `npx tsc -b shared metaserver admin commercial socialsvc` (imports meta + socialsvc dist).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 // meta is an ESM package: import from compiled dist output (same convention as metaserver/test/*.e2e — requires tsc -b first).
 import { buildApp } from '../../metaserver/dist/app.js';
 import type { GatewayClient, JudgeRes, SocialPushMsg } from '../../metaserver/dist/gatewayClient.js';
 import type { CommercialClient } from '../../metaserver/dist/commercialClient.js';
+// socialsvc is the mail-write authority since P2; embed a real instance backed by the same test Mongo.
+import { startHttpApi } from '../../socialsvc/dist/httpApi.js';
+import { createSocialMongo, type SocialMongo } from '../../socialsvc/dist/db.js';
+import { MailService } from '../../socialsvc/dist/mailService.js';
+import { FamilyService } from '../../socialsvc/dist/familyService.js';
+import { FriendService } from '../../socialsvc/dist/friendService.js';
+import { nullSocialMetaClient } from '../../socialsvc/dist/metaClient.js';
+import { nullSocialGatewayClient } from '../../socialsvc/dist/gatewayClient.js';
 // Admin side uses the real HTTP clients + service (running from src, transpiled by vitest).
 import { createAdminMongo, type AdminMongo } from '../src/db';
 import { AdminService, type Actor } from '../src/service';
@@ -25,6 +36,7 @@ import type { LiveStats } from '@nw/shared';
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const META_DB = 'nw_meta_comp_test';
 const ADMIN_DB = 'nw_admin_comp_test';
+const SOCIAL_DB = 'nw_social_comp_test';
 const KEY = 'itest-internal-key';
 const jwt: JwtConfig = { secret: 'comp-test-secret' };
 
@@ -42,10 +54,18 @@ async function tryAdmin(): Promise<AdminMongo | null> {
     return null;
   }
 }
+async function trySocial(): Promise<SocialMongo | null> {
+  try {
+    return await createSocialMongo(URI, SOCIAL_DB);
+  } catch {
+    return null;
+  }
+}
 
 const metaMongo = await tryMeta();
 const adminMongo = await tryAdmin();
-if (!metaMongo || !adminMongo) {
+const socialMongo = await trySocial();
+if (!metaMongo || !adminMongo || !socialMongo) {
   console.warn(`[comp-mail.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 }
 
@@ -98,10 +118,12 @@ const stubStats: StatsClient = {
 let t = 1000;
 const now = (): number => t++;
 
-describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail (cross-process)', () => {
+describe.skipIf(!metaMongo || !adminMongo || !socialMongo)('OPS comp ticket ↔ meta system mail (cross-process)', () => {
   const meta = metaMongo!;
   const admin = adminMongo!;
+  const social = socialMongo!;
   let app: FastifyInstance; // real listening meta process
+  let socialServer: Server; // real listening socialsvc process (mail write authority since P2)
   let baseUrl: string;
   let gateway: FakeGateway;
   let comm: FakeCommercial;
@@ -127,7 +149,15 @@ describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail
   beforeAll(async () => {
     gateway = new FakeGateway();
     comm = new FakeCommercial();
-    app = await buildApp({ cols: meta.collections, jwt, internalKey: KEY, gateway, commercial: comm });
+    // socialsvc: real listening process, backed by its own test Mongo db (mail-write authority, meta proxies GET /mail there too).
+    const mailSvc = new MailService({ cols: social.collections, gateway: nullSocialGatewayClient, meta: nullSocialMetaClient, now });
+    const familySvc = new FamilyService({ cols: social.collections, gateway: nullSocialGatewayClient, meta: nullSocialMetaClient });
+    const friendSvc = new FriendService({ cols: social.collections, gateway: nullSocialGatewayClient, meta: nullSocialMetaClient, now });
+    socialServer = startHttpApi({ host: '127.0.0.1', port: 0, jwtSecret: jwt.secret, internalKey: KEY }, familySvc, friendSvc, mailSvc, nullSocialGatewayClient);
+    const socialAddr = await new Promise<AddressInfo>((resolve) => socialServer.once('listening', () => resolve(socialServer.address() as AddressInfo)));
+    const socialsvcUrl = `http://127.0.0.1:${socialAddr.port}`;
+
+    app = await buildApp({ cols: meta.collections, jwt, internalKey: KEY, gateway, commercial: comm, socialsvcUrl });
     await app.listen({ port: 0, host: '127.0.0.1' });
     const addr = app.server.address() as AddressInfo;
     baseUrl = `http://127.0.0.1:${addr.port}`;
@@ -135,10 +165,12 @@ describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail
 
   afterAll(async () => {
     if (app) await app.close();
+    if (socialServer) await new Promise<void>((resolve) => socialServer.close(() => resolve()));
     await meta.db.dropDatabase().catch(() => {});
     await admin.db.dropDatabase().catch(() => {});
     await meta.close();
     await admin.close();
+    await social.close();
   });
 
   beforeEach(async () => {
@@ -146,6 +178,7 @@ describe.skipIf(!metaMongo || !adminMongo)('OPS comp ticket ↔ meta system mail
     await meta.ensureIndexes();
     await admin.db.dropDatabase();
     await admin.ensureIndexes(3600);
+    await social.ensureIndexes();
     gateway.pushes = [];
     comm.coins.clear();
     comm.granted.clear();

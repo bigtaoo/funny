@@ -175,8 +175,10 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         onBack() {},
         getCoins: () => 1000,
         getPity: () => 0,
+        getFatePoints: () => 0,
         loadPools: async () => [],
         draw: async () => ({ ok: true, results: [] }),
+        redeemFate: async () => ({ ok: true, granted: 'placeholder' }),
       }),
   },
   {

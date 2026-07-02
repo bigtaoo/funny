@@ -132,6 +132,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     now,
     gateway,
     commercial,
+    socialsvc,
   });
 
   // Public REST routes — generated from openapi.yml at build time (ADR-023).

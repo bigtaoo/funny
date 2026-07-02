@@ -131,7 +131,11 @@ describe.skipIf(!mongo)('admin service e2e', () => {
   });
 
   it('initiator cannot approve their own ticket (initiator ≠ approver)', async () => {
+    const root = await actorOf(svc, 'root');
     const ops = await actorOf(svc, 'opsy');
+    // A second eligible approver must exist, otherwise the single-super exception (service.ts
+    // hasOtherEligibleApprover) permits self-approval by design — see approveTicket's comment.
+    await svc.createAccount(root, { username: 'opsy2', password: 'opspass2', role: 'ops', displayName: 'Ops2' });
     const t1 = await svc.initiateTicket(ops, {
       scope: 'single',
       target: { publicId: '123456789' },

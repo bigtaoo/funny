@@ -43,6 +43,7 @@ import { escrowEquipment, grantEquipment } from './equipment.js';
 import { grantCard } from './cards.js';
 import type { CompTarget, EquipmentInstance, MailAttachmentDoc, CardInstance } from '@nw/shared';
 import { ERROR_HTTP_STATUS } from '@nw/shared';
+import { nullMetaSocialsvcClient, type MetaSocialsvcClient } from './socialsvcClient.js';
 
 const log = createLogger('meta:internal');
 
@@ -88,10 +89,13 @@ export interface InternalDeps {
   gateway: GatewayClient;
   /** commercial client: sends ranked-victory coins by tier to the winner (§2.3b). If unconfigured, no coins are sent. */
   commercial: CommercialClient;
+  /** socialsvc client (P2): sole mail write authority — system mail (comp tickets/season/event rewards) is written there, not in meta's own DB. */
+  socialsvc?: MetaSocialsvcClient;
 }
 
 export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps): void {
   const { cols, internalKey, internalKeys, now, gateway, commercial } = deps;
+  const socialsvc = deps.socialsvc ?? nullMetaSocialsvcClient;
 
   // Centralized verifier: timing-safe + strict per-caller (NW_INTERNAL_KEYS) + single shared-key fallback.
   const auth = createInternalAuth({ keys: internalKeys, legacyKey: internalKey });
@@ -289,8 +293,9 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     };
 
     if (b.scope === 'global') {
-      // Server-wide fan-out in batches: each batch of MAIL_FANOUT_BATCH accounts performs one bulkWrite (unordered upsert),
-      // reducing O(N) round-trips to O(N/batch). Only newly inserted recipients in this batch receive a badge push (dispatchKey is idempotent; retries do not duplicate pushes).
+      // Server-wide fan-out in batches: each batch of MAIL_FANOUT_BATCH accounts performs one bulkWrite (unordered upsert)
+      // on socialsvc's side, reducing O(N) round-trips to O(N/batch). socialsvc pushes mail_new itself to newly inserted
+      // recipients in each batch (dispatchKey is idempotent; retries do not duplicate pushes) — meta does not push again.
       let recipientCount = 0;
       let insertedCount = 0;
       let batch: string[] = [];
@@ -298,24 +303,21 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         if (batch.length === 0) return;
         const ids = batch;
         batch = [];
-        const r = await bulkInsertSystemMail(cols, b.dispatchKey, ids, content, now());
+        const r = await bulkInsertSystemMail(socialsvc, b.dispatchKey, ids, content);
         recipientCount += ids.length;
         insertedCount += r.insertedAccountIds.length;
-        for (const accountId of r.insertedAccountIds) {
-          // Offline gateway discards on its own; push is fire-and-forget and does not block the batch.
-          void gateway.push(accountId, {
-            kind: 'mail_new',
-            mailId: `${b.dispatchKey}:${accountId}`,
-            hasAttachment: r.hasAttachment,
-          });
-        }
       };
-      const cursor = cols.accounts.find({}, { projection: { _id: 1 } });
-      for await (const doc of cursor) {
-        batch.push(doc._id);
-        if (batch.length >= MAIL_FANOUT_BATCH) await flush();
+      try {
+        const cursor = cols.accounts.find({}, { projection: { _id: 1 } });
+        for await (const doc of cursor) {
+          batch.push(doc._id);
+          if (batch.length >= MAIL_FANOUT_BATCH) await flush();
+        }
+        await flush();
+      } catch (e) {
+        log.error('POST /internal/mail/system/send (global) failed', { dispatchKey: b.dispatchKey, err: (e as Error).message });
+        return reply.send({ ok: false, recipientCount, error: (e as Error).message });
       }
-      await flush();
       log.info('POST /internal/mail/system/send (global)', {
         dispatchKey: b.dispatchKey,
         recipientCount,
@@ -332,7 +334,13 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     const publicId = b.target && 'publicId' in b.target ? b.target.publicId : '';
     const accountId = directAccountId ?? (await resolveByPublicId(cols, publicId));
     if (!accountId) return reply.send({ ok: false, recipientCount: 0, error: 'recipient not found' });
-    const r = await insertSystemMail(cols, b.dispatchKey, accountId, content, now());
+    let r: { mailId: string; inserted: boolean; hasAttachment: boolean };
+    try {
+      r = await insertSystemMail(socialsvc, b.dispatchKey, accountId, content);
+    } catch (e) {
+      log.error('POST /internal/mail/system/send (single) failed', { dispatchKey: b.dispatchKey, publicId, err: (e as Error).message });
+      return reply.send({ ok: false, recipientCount: 0, error: (e as Error).message });
+    }
     if (r.inserted) {
       void gateway.push(accountId, { kind: 'mail_new', mailId: r.mailId, hasAttachment: r.hasAttachment });
     }
@@ -376,7 +384,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         const lStats = statDeltaForSide(body, loser.side);
         reportedStats = { [String(winner.side)]: wStats, [String(loser.side)]: lStats };
         try {
-          eloBySide = await settleElo(cols, now, commercial, winner, loser, wStats, lStats);
+          eloBySide = await settleElo(cols, now, commercial, socialsvc, winner, loser, wStats, lStats);
         } catch (e) {
           log.error('ranked ELO settle failed', { err: (e as Error).message });
         }
@@ -387,7 +395,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
         const verdict = await judgeMismatch(gateway, body);
         if (verdict) {
           // A hash-mismatched match is already suspicious: do not accumulate either side's self-reported kill/cast (pvp.wins still counts for the honest side's win).
-          eloBySide = await settleElo(cols, now, commercial, verdict.honest, verdict.cheater, {}, {});
+          eloBySide = await settleElo(cols, now, commercial, socialsvc, verdict.honest, verdict.cheater, {}, {});
           cheat = {
             side: verdict.cheater.side,
             accountId: verdict.cheater.accountId,
@@ -726,7 +734,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     try {
-      const season = await rollSeason(cols, commercial, now());
+      const season = await rollSeason(cols, commercial, socialsvc, now());
       log.info('POST /admin/ladder/season/roll', { seasonNo: season.seasonNo });
       return reply.send({ ok: true, season });
     } catch (e) {
@@ -987,6 +995,7 @@ async function settleElo(
   cols: Collections,
   now: () => number,
   commercial: CommercialClient,
+  socialsvc: MetaSocialsvcClient,
   winner: { side: number; accountId: string },
   loser: { side: number; accountId: string },
   // S9-6: L1-sanitized in-match kill/cast deltas (only fed for ranked). pvp.wins is computed internally in applyPvp from the `won` flag.
@@ -1002,8 +1011,8 @@ async function settleElo(
   const { winner: wDelta, loser: lDelta } = computeEloDelta(wElo, lElo);
   const out: Record<number, EloResult> = {};
   const [wRes, lRes] = await Promise.all([
-    applyPvp(cols, now, commercial, winner.accountId, wDoc, wDelta, true, winnerStats),
-    applyPvp(cols, now, commercial, loser.accountId, lDoc, lDelta, false, loserStats),
+    applyPvp(cols, now, commercial, socialsvc, winner.accountId, wDoc, wDelta, true, winnerStats),
+    applyPvp(cols, now, commercial, socialsvc, loser.accountId, lDoc, lDelta, false, loserStats),
   ]);
   if (wRes) out[winner.side] = wRes;
   if (lRes) out[loser.side] = lRes;
@@ -1033,6 +1042,7 @@ async function applyPvp(
   cols: Collections,
   now: () => number,
   commercial: CommercialClient,
+  socialsvc: MetaSocialsvcClient,
   accountId: string,
   doc: SaveDoc | null,
   delta: number,
@@ -1048,14 +1058,14 @@ async function applyPvp(
     if (!cur) return null; // ranked players should already have a save doc
     // Lazy migration: if the save is behind the current season, settle the previous season and soft-reset first (rarely triggered; normally a no-op).
     if (currentSeason) {
-      const mr = await migrateIfStale(cols, commercial, cur.save, currentSeason, now());
+      const mr = await migrateIfStale(cols, commercial, socialsvc, cur.save, currentSeason, now());
       if (mr.migrated) {
         // The migrated save must be persisted before the ELO update; otherwise the migration result is lost.
         const migrated = await writeMigratedSave(
           cols,
           mr.save,
           now(),
-          (s) => migrateIfStale(cols, commercial, s, currentSeason, now()),
+          (s) => migrateIfStale(cols, commercial, socialsvc, s, currentSeason, now()),
         );
         cur = { _id: cur._id, save: migrated, rev: migrated.rev };
       }

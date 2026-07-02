@@ -1,7 +1,12 @@
 // After P2, only splitAttachments / insertSystemMail / bulkInsertSystemMail remain here.
-// Full mail CRUD (getMail/readMail/deleteMail/claimMailAtomic) has been migrated to socialsvc.
-import type { Collections, MailDoc, MailAttachmentDoc, EquipmentInstance, CardInstance } from '@nw/shared';
-import { MAIL_DEFAULT_TTL_SEC } from '@nw/shared';
+// Full mail CRUD (getMail/readMail/deleteMail/claimMailAtomic) has been migrated to socialsvc — including
+// system mail *storage*: insertSystemMail/bulkInsertSystemMail below are thin wrappers that delegate the
+// actual write to socialsvc (GET /mail reads socialsvc's `mails` collection, so writes must land there too;
+// meta no longer touches its own long-dead `mail` collection).
+import type { MailAttachmentDoc, EquipmentInstance, CardInstance } from '@nw/shared';
+import type { MetaSocialsvcClient, SystemMailContent } from './socialsvcClient.js';
+
+export type { SystemMailContent } from './socialsvcClient.js';
 
 /**
  * Split attachments by type for delivery by the service:
@@ -34,78 +39,34 @@ export function splitAttachments(attachments: MailAttachmentDoc[]): {
   return { coins, skins, items, materials, equipment, cards };
 }
 
-export interface SystemMailContent {
-  subject: string;
-  body: string;
-  attachments?: MailAttachmentDoc[];
-  expireDays: number;
-}
-
-function buildSystemMail(
-  dispatchKey: string,
-  to: string,
-  content: SystemMailContent,
-  now: number,
-): { mailId: string; hasAttachment: boolean; setOnInsert: MailDoc } {
-  const mailId = `${dispatchKey}:${to}`;
-  const expireSec = content.expireDays > 0 ? content.expireDays * 86400 : MAIL_DEFAULT_TTL_SEC;
-  const hasAttachment = !!content.attachments && content.attachments.length > 0;
-  return {
-    mailId,
-    hasAttachment,
-    setOnInsert: {
-      _id: mailId,
-      to,
-      from: 'system',
-      fromName: 'System',
-      subject: content.subject,
-      body: content.body,
-      ...(hasAttachment ? { attachments: content.attachments } : {}),
-      createdAt: now,
-      expireAt: new Date(now + expireSec * 1000),
-    },
-  };
-}
-
 /**
- * Write a system mail (operator compensation / event reward). dispatchKey is idempotent: _id = `${dispatchKey}:${to}`,
- * upsert $setOnInsert prevents duplicate execution. Returns whether it was newly inserted (used to decide whether to push a notification).
+ * Write a system mail (operator compensation / event reward) via socialsvc. dispatchKey is idempotent:
+ * socialsvc upserts on `${dispatchKey}:${to}`, so retries never duplicate. Returns whether it was newly
+ * inserted (used to decide whether to push a notification). Throws if socialsvc is unreachable/unconfigured
+ * — callers on a best-effort delivery path (season/event rewards) should catch and log; callers on the
+ * admin comp-ticket path (internal.ts) should surface the failure as `{ok:false}` so the ticket is retryable.
  */
 export async function insertSystemMail(
-  cols: Collections,
+  socialsvc: MetaSocialsvcClient,
   dispatchKey: string,
   to: string,
   content: SystemMailContent,
-  now: number,
 ): Promise<{ mailId: string; inserted: boolean; hasAttachment: boolean }> {
-  const { mailId, hasAttachment, setOnInsert } = buildSystemMail(dispatchKey, to, content, now);
-  const res = await cols.mail.updateOne({ _id: mailId }, { $setOnInsert: setOnInsert }, { upsert: true });
-  return { mailId, inserted: res.upsertedCount > 0, hasAttachment };
+  return socialsvc.insertSystemMail(dispatchKey, to, content);
 }
 
 /**
- * Bulk system mail write (server-wide fan-out in batches). Same dispatchKey idempotency as insertSystemMail.
- * Returns the list of accountIds newly inserted this call, so the caller only pushes red-dot notifications to new recipients.
+ * Bulk system mail fan-out via socialsvc. Same dispatchKey idempotency as insertSystemMail. Returns the
+ * list of accountIds newly inserted this call (socialsvc already pushes mail_new to them itself). Throws
+ * if socialsvc is unreachable/unconfigured — see insertSystemMail for caller-side handling guidance.
  */
 export async function bulkInsertSystemMail(
-  cols: Collections,
+  socialsvc: MetaSocialsvcClient,
   dispatchKey: string,
   accountIds: string[],
   content: SystemMailContent,
-  now: number,
 ): Promise<{ insertedAccountIds: string[]; hasAttachment: boolean }> {
   const hasAttachment = !!content.attachments && content.attachments.length > 0;
   if (accountIds.length === 0) return { insertedAccountIds: [], hasAttachment };
-  const ops = accountIds.map((to) => ({
-    updateOne: {
-      filter: { _id: `${dispatchKey}:${to}` },
-      update: { $setOnInsert: buildSystemMail(dispatchKey, to, content, now).setOnInsert },
-      upsert: true,
-    },
-  }));
-  const res = await cols.mail.bulkWrite(ops, { ordered: false });
-  const insertedAccountIds = Object.keys(res.upsertedIds ?? {})
-    .map((idx) => accountIds[Number(idx)])
-    .filter((id): id is string => id !== undefined);
-  return { insertedAccountIds, hasAttachment };
+  return socialsvc.bulkInsertSystemMail(dispatchKey, accountIds, content);
 }

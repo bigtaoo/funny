@@ -48,6 +48,10 @@ npm run dev:all             # 起全部进程（dev-up.ps1）
 > **socialsvc e2e 无需 Docker（2026-07-02 补齐）**：`npm test -w @nw/socialsvc` 同款骨架，但因 socialsvc 只用单文档原子操作、无事务，起**单机 mongod**（`MongoMemoryServer`，非副本集），mongod 版本同锁 `7.0.14` 共用缓存。覆盖 Family/Friend/Mail 三服务层共 **38 例**（`test/{family,friend,mail}.e2e.test.ts`，内存假 meta/gateway 见 `test/harness.ts`）。详见 `design/game/SOCIAL_SVC_DESIGN.md §6`。
 >
 > **nation-bonus / base-siege e2e 数值漂移修复（2026-07-02）**：ADR-026 攻城值改制 + PvP 锚点重平衡后，`worldsvc/test/{nation-bonus,base-siege}.e2e.test.ts` 里两处硬编码的攻方兵力断言失效（旧「760 破 500」「12 卡碾两波」在新引擎下已不成立）。用探针脚本在真引擎里扫出新阈值后重定：nation-bonus 攻方 760→**815**（破 500、破不了国战加成的 575），base-siege 攻方 12→**20 卡**（清两波单卡波，新临界 16）。纯测试对齐，非引擎改动。
+>
+> **commercial / admin / analyticsvc e2e 无需 Docker（2026-07-02 补齐）**：三包同款 `mongodb-memory-server` 骨架（单机 mongod，非副本集，均无事务）接上后，之前因本地无 Docker Mongo 而**从未真正跑过**的 e2e 首次全部执行，commercial 71 例、analyticsvc 17 例、admin 27 例（含 15 例 `service.e2e.test.ts` + 6 例 `comp-mail.e2e.test.ts` + 6 例 `season-audit.e2e.test.ts`）全绿。跑起来后揪出两处真问题（见下一条 + `service.e2e.test.ts`「initiator cannot approve own ticket」用例补了第二个 ops 账号，避免撞上「无其他合格审批人时允许自批」的单超管例外）。
+>
+> **系统邮件写入权威修复（2026-07-02，见 `SOCIAL_DESIGN.md` S6-3 / `META_TASKS.md` S6-3、S7-3）**：P2 把 `GET /mail` 读路径迁到 socialsvc 代理后，`insertSystemMail`/`bulkInsertSystemMail` 的**写路径**一直漏改，还在写 meta 自己那个没人再读的 `mail` 集合——运营补偿工单/赛季结算奖励/活动奖励/PvE 警告邮件全部"发出去"但玩家永远收不到。commercial/admin 接上内存 Mongo 让 `admin/test/comp-mail.e2e.test.ts` 首次真正跑起来，才暴露这个「契约接好但从没跑过」的缺口（该测试文件头部注释原话）。修复：`metaserver/src/mail.ts` 的两个函数改为委托 `MetaSocialsvcClient.insertSystemMail/bulkInsertSystemMail`（真调 socialsvc 早已实现但从未被接上的 `/internal/mail/system{,/bulk}`），4 个调用点（`internal.ts` 补偿工单单发/全服群发 + ranked ELO 懒迁移、`ladderSeason.ts` 赛季结算、`events.ts` 活动奖励、`service.ts` PvE 警告）全部改线；全服群发场景信任 socialsvc 自己 push，meta 不再重复推。`comp-mail.e2e.test.ts` 同步升级为真起一个 socialsvc 子进程（复用同一内存 Mongo）做完整三进程联调，6 例全绿。
 
 ### 本地全栈模拟（完整：9 进程 + 主客户端 + 3 工具 + mongo + redis）
 
