@@ -544,4 +544,49 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
 
 ---
 
+## 十三、品牌标识（Logo / 图标）（v0.6 新增 · 2026-07-02 拍板，见 DECISIONS ADR-027）
+
+### 13.1 概念
+
+**盾徽 + 文具三笔**：一张奶油横格纸盾牌（软 U 形底、深藏青手绘描边），盾面上钢笔 / 铅笔 / 马克笔交叉成 X 徽记。呼应 §3「主用三支学生常备笔」与叙事「用文具运筹的战争」。
+
+- **配色 = 蓝主导**：中央**钢笔蓝**（我方色，§3.2）最大最显眼，**铅笔琥珀**、**马克笔红**（敌方色）作陪衬——logo 本身即宣示「我蓝」的阵营身份。红只作点缀，不喧宾夺主。
+- **盾底纸面**：泛黄米白 `#F5F0E8` + 浅蓝格线 + 红页边线（§3.1 基底色），把「笔记本」母题带进 mark。
+- **不带字**：mark 内**绝不嵌文字**（AI 出字必糊，且镜像/多语言不稳）。字标 "Nivara"（对外名，见 `world.md` / 记忆 game-name）用真实字体单独排版，**待打包一款手写/圆头字体后落地**（与 §7.4 字体待办同批）。
+
+### 13.2 大 / 小双版本（按尺寸分工）
+
+细节手绘版在小尺寸会糊，故**两套 master、按尺寸切换**：
+
+| 版本 | 文件 | 风格 | 适用尺寸 |
+|---|---|---|---|
+| **主视觉（master）** | `art/logo/logo.png`（2048² 透明） | 全细节手绘（纸纹/笔尖/排线/胶带） | **≥128px**：启动图、宣传、大图标 |
+| **简版（simple）** | `art/logo/logo-simple.png`（1024² 透明） | 扁平实色、粗描边、无纹理无胶带 | **≤64px**：favicon 16/32/48、小图标 |
+
+> 实测：master 降到 32px 三笔糊成一团只剩「盾+团块」；simple 在 32px 仍能读出「盾 + 蓝笔居中 + 红黄交叉」。故 favicon/小图标一律走 simple。
+
+### 13.3 生成 / 加工流程（AI 图管线，同 §〇 分工）
+
+1. **AI 出图**：prompt 见 ADR-027（盾徽 + 三笔交叉、蓝主导、明显纸纹、无字、无胶带——交叉不带遮挡才画得对连续性）。master 版胶带由用户 GIMP 后期补。
+2. **GIMP 抠背景**：沿盾牌轮廓抠成透明底 PNG（master 2048² / simple 1024²）。
+3. **降采样**：`System.Drawing`（HighQualityBicubic + 保留 alpha）批量出各尺寸 → `art/logo/derived/`。派生规则：`logo-{1024..128}`（master）、`logo-simple-{128..16}`（simple）。
+
+### 13.4 资产落地位置
+
+```
+art/logo/
+  logo.png              # master 2048² 透明（细节版，权威源）
+  logo-simple.png       # simple 1024² 透明（扁平版，权威源）
+  derived/              # 降采样派生库（master 各档 + simple 各档）
+client/public/          # 出货图标（webpack CopyPlugin 拷到 dist 根）
+  favicon-16/32/48.png  # ← simple 派生
+  apple-touch-icon.png  # 180，← master
+  icon-192/512.png      # ← master（PWA / 社交卡）
+  site.webmanifest      # name/short_name = "Nivara"，theme #1b3a6b / bg #F5F0E8
+```
+
+- **Web / CrazyGames**：`public/{web,crazygames}/index.html` `<head>` 已加 `<link icon/apple-touch/manifest>` + `theme-color`；`webpack.config.js` CopyPlugin（`!isWechat` 分支）把图标 + manifest 拷到 dist 根。dev-server 同源生效。
+- **微信小游戏**：图标在**微信公众平台后台上传**，代码无接入点 → 手动步骤（待办）。建议用 `art/logo/derived/logo-512.png`（master）。
+- **`<title>` 仍为 "Notebook Wars"**：manifest 已用对外名 Nivara；HTML title / 游戏内标题的正式改名走 i18n `game.title`（记忆 game-name），非本次范围。
+
 *下一步：输出第一版单位概念草图（普通兵，可染色组织）+ 一个 `sketch.ts` 笔触 demo，验证程序画质感是否达标。*
