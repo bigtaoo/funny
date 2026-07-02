@@ -105,7 +105,7 @@ import {
   type SiegeResolution,
   type ProceduralTile,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseConfig, scaleArmyHp, scaleArmyByRatio, sumArmyHp, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from './siegeEngine';
+import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseConfig, scaleArmyHp, scaleArmyByRatio, sumArmyHp, toDefenderFormation, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from './siegeEngine';
 import type { GarrisonEntry, EngineEquipmentInput, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ENGINE_VERSION } from '@nw/engine';
 import { refreshFamilyProsperity, aggregateSectProsperity } from './prosperity';
@@ -1560,11 +1560,15 @@ export class WorldService {
     for (let i = 0; i < defenders.length; i++) {
       const tm = defenders[i]!;
       if (survivorArmy.length === 0 || attackerSurvivors <= 0) { cleared = false; break; }
-      let defArmy = resolveCardArmy(tm.army, defCardState, defCardInv);
+      // Re-place the attack-authored team onto defender spawn positions (top half) so the auto-battle isn't degenerate.
+      let defArmy = toDefenderFormation(resolveCardArmy(tm.army, defCardState, defCardInv));
       if (inOwnNation) defArmy = scaleArmyHp(defArmy, 1 + NATION_BONUS_DEFENSE); // §2.4 nation defence bonus
       if (wallMult > 1) defArmy = scaleArmyHp(defArmy, wallMult);               // P2 wall HP buff
       if (defArmy.length === 0) { defeatedTeamIds.push(tm.id); continue; }      // empty/stale team → already cleared (still injured)
-      const defenderConfig = { garrison: defArmy };
+      // ADR-026: the per-wave engine "base" is only a battle terminator (the real building durability is TileDoc.hp,
+      // reduced separately by the delayed siege-value hit). Pin it to the weakest level so each wave is decided by
+      // team-vs-attacker, not by a symbolic base tanking the assault.
+      const defenderConfig = { garrison: defArmy, defenderBaseLevel: 0 };
       const seed = waveSeed(m._id, i);
       const deployedHp = sumArmyHp(survivorArmy);
       let res: SiegeResolution;

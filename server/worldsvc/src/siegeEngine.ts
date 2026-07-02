@@ -127,6 +127,22 @@ export function scaleArmyHp(
   }));
 }
 
+/**
+ * Re-places an army onto DEFENDER spawn positions (ADR-026). A `teams[]` template is authored as an ATTACK formation
+ * (units in the bottom half, owner0/Bottom rows); reused verbatim as a defender garrison it would spawn on the attacker's
+ * side and the auto-battle degenerates (defenders never guard their base → attacker times out → defender wins by bias).
+ * This mirrors synthesizeArmy(role='defender'): keep unitType + initialHp, reassign col/row across attack lanes starting
+ * from the defender spawn row (row decreasing toward the battle zone). Pure, deterministic.
+ */
+export function toDefenderFormation(army: ReadonlyArray<GarrisonEntry>): GarrisonEntry[] {
+  return army.map((e, i) => ({
+    unitType: e.unitType,
+    col: ATTACK_LANES[i % ATTACK_LANES.length]!,
+    row: Math.max(BOTTOM_SPAWN_ROW, TOP_SPAWN_ROW - Math.floor(i / ATTACK_LANES.length)),
+    ...(e.initialHp != null ? { initialHp: e.initialHp } : {}),
+  }));
+}
+
 /** Total deployed HP of an army layout = sum of each unit's initialHp (falling back to its blueprint full HP). Pure. (ADR-026 wave carry-over.) */
 export function sumArmyHp(army: ReadonlyArray<GarrisonEntry>): number {
   let hp = 0;
