@@ -31,6 +31,20 @@
 
 档位金币数与档位 ID 均以 `@nw/shared` 的 `IAP_TIERS` / `IAP_TIERS_LIST` 为准。
 
+### 1.1 Paddle（Web 充值通道）
+
+Web 端充值走 Paddle（非上面的 `/iap/verify`，而是 `metaserver/src/paddle.ts` 的 `/shop/paddle/checkout` + `/paddle/webhook`）。验签/加币逻辑权威见该文件。
+
+| 环境变量 | 说明 | 缺省行为 |
+|---|---|---|
+| `NW_PADDLE_API_KEY` | Paddle 密钥（`sk_live_*` / `sk_test_*`），服务端创建 transaction 用 | 缺失 → `/shop/paddle/checkout` 返 `PADDLE_ERROR` |
+| `NW_PADDLE_WEBHOOK_SECRET` | Webhook 签名密钥（Paddle 后台） | 缺失 → `/paddle/webhook` 返 503 |
+| `NW_PADDLE_CLIENT_TOKEN` | Paddle.js **客户端** token（`ptok_`/`live_`/`test_`，客户端安全） | 缺失 → **`/bootstrap` 不下发**，web 客户端无法发起 checkout（Coins tab 点击提示 `shop.rechargeError`） |
+| `NW_PADDLE_PRICE_IDS` | 档位→Paddle price ID 映射 `t499:pri_xxx,...` | 缺失 → 对应档位 `INVALID_TIER` |
+| `NW_PADDLE_SANDBOX` | `true` = 用沙盒 API | 默认生产 |
+
+> **客户端 token 下发路径（本轮新增）**：`NW_PADDLE_CLIENT_TOKEN` 配置后，`metaserver.MetaService.bootstrap` 在 `GET /bootstrap` 响应里附带 `paddleClientToken`；web 客户端 `FeatureFlags` 缓存并交给 `ShopScene` 的 Paddle checkout。token 前缀 `test_` 时客户端自动切 Paddle sandbox 环境。详见 `COMMERCIAL_DESIGN.md §10`。
+
 ## 2. 广告验签凭据（激励视频，C2）
 
 | 平台 | 环境变量 | 说明 | 缺省行为 |

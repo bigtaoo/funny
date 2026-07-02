@@ -3,6 +3,7 @@ import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers } from
 import { InputManager } from '../../inputSystem/InputManager';
 import { WechatAdapter } from '../../inputSystem/WechatAdapter';
 import type { Locale } from '../../i18n';
+import type { IapKind } from '../iap';
 
 /**
  * WeChat mini-game platform adapter.
@@ -153,6 +154,17 @@ export class WechatPlatform implements IPlatform {
     } catch {
       return null;
     }
+  }
+
+  // ── In-app coin recharge ────────────────────────────────────────────────────
+  // WeChat Pay (wx.requestPayment) is a separate channel left as a TODO — the shop's
+  // Coins tab stays hidden here, and promo codes remain the only in-client top-up.
+  iapKind(): IapKind | null { return null; }
+  openPaddleCheckout(): Promise<{ completed: boolean }> {
+    return Promise.reject(new Error('paddle checkout not supported on WeChat'));
+  }
+  nativeIapPurchase(): Promise<{ receipt: string }> {
+    return Promise.reject(new Error('native IAP not supported on WeChat'));
   }
 }
 

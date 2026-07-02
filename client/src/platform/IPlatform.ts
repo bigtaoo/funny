@@ -1,6 +1,7 @@
 import type * as PIXI from 'pixi.js-legacy';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Locale } from '../i18n';
+import type { IapKind } from './iap';
 
 /**
  * IPlatform — abstraction layer for platform-specific capabilities.
@@ -95,6 +96,32 @@ export interface IPlatform {
    * WeChat: `wx.connectSocket` SocketTask.
    */
   connectSocket(url: string, handlers: SocketHandlers): IGameSocket;
+
+  // ── In-app coin recharge (COMMERCIAL_DESIGN §IAP client) ────────────────────
+
+  /**
+   * Which store this build routes coin-tier recharges to, or null when in-app recharge
+   * is unavailable here (WeChat / CrazyGames — their own channels are TODO). The app only
+   * shows the shop's "Coins" tab when this is non-null.
+   * - Web: 'paddle', unless a native billing bridge (`window.NWBilling`) is injected by the
+   *   Capacitor shell → 'apple' / 'google'.
+   */
+  iapKind(): IapKind | null;
+
+  /**
+   * Open the Paddle.js checkout overlay for a server-created transaction and resolve when it
+   * closes (payment complete OR user-dismissed — the returned flag distinguishes them). Coins
+   * are credited asynchronously by the Paddle webhook, so the caller refreshes SaveData after a
+   * completed checkout. Only meaningful when iapKind() === 'paddle'; rejects on load/config error.
+   */
+  openPaddleCheckout(transactionId: string, clientToken: string): Promise<{ completed: boolean }>;
+
+  /**
+   * Run the native store purchase for a coin tier via the injected bridge and return the receipt
+   * to verify (POST /iap/verify). Only meaningful when iapKind() is 'apple' / 'google'; rejects on
+   * cancel / failure / missing bridge.
+   */
+  nativeIapPurchase(tierId: string): Promise<{ receipt: string }>;
 
   // ── Out-of-game replay sharing (REPLAY_SHARE_DESIGN §4) ─────────────────────
 

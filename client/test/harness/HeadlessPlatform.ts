@@ -107,6 +107,15 @@ export class HeadlessPlatform implements IPlatform {
   async shareReplay(): Promise<void> { /* no-op in headless */ }
   getLaunchShareCode(): string | null { return null; }
 
+  // In-app recharge is not exercised in headless E2E (no store SDK / no DOM).
+  iapKind(): null { return null; }
+  openPaddleCheckout(): Promise<{ completed: boolean }> {
+    return Promise.reject(new Error('openPaddleCheckout unsupported in headless'));
+  }
+  nativeIapPurchase(): Promise<{ receipt: string }> {
+    return Promise.reject(new Error('nativeIapPurchase unsupported in headless'));
+  }
+
   // ── Render-only methods the core must never call ────────────────────────────
   getCanvas(): HTMLCanvasElement {
     throw new Error('HeadlessPlatform.getCanvas() called — core leaked a render dependency');

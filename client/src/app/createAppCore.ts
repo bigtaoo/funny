@@ -39,6 +39,7 @@ import type { ProfileData } from '../render/ProfilePopup';
 import type { AuthOutcome } from '../scenes/LoginScene';
 import type { RenameOutcome } from '../scenes/SettingsScene';
 import type { EloResult } from '../scenes/ResultScene';
+import type { ShopActionResult } from '../scenes/ShopScene';
 import * as analytics from '../analytics';
 import { WorldApiClient } from '../net/WorldApiClient';
 import { getWorldBaseUrl } from '../net/config';
@@ -950,6 +951,60 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
+  /**
+   * Real coin recharge (COMMERCIAL_DESIGN §IAP client). Branches on the platform store:
+   * - native ('apple'/'google'): run the store purchase via the injected bridge → verify the
+   *   receipt at /iap/verify → adopt the returned authoritative save synchronously.
+   * - web ('paddle'): create a checkout transaction → open Paddle.js → on completion, poll the
+   *   save briefly (coins are credited asynchronously by /paddle/webhook).
+   * Returns a ShopActionResult toast key; never throws.
+   */
+  async function doRechargeCoins(
+    tierId: string,
+    client: ApiClient,
+    onConverted: () => void,
+  ): Promise<ShopActionResult> {
+    const kind = platform.iapKind();
+    try {
+      if (kind === 'apple' || kind === 'google') {
+        const { receipt } = await platform.nativeIapPurchase(tierId);
+        const { save } = await client.iapVerify(kind, receipt);
+        saveManager.adoptServer(save);
+        onConverted();
+        analytics.track('iap_purchase', { tier: tierId, platform: kind });
+        return { ok: true };
+      }
+      if (kind === 'paddle') {
+        const token = featureFlags?.getPaddleClientToken() ?? null;
+        if (!token) { log.warn('paddle recharge: client token unavailable (server NW_PADDLE_CLIENT_TOKEN unset?)'); return { ok: false, key: 'shop.rechargeError' }; }
+        const { transactionId } = await client.paddleCheckout(tierId);
+        const { completed } = await platform.openPaddleCheckout(transactionId, token);
+        if (!completed) return { ok: false, key: 'shop.rechargeCancelled' };
+        onConverted();
+        analytics.track('iap_purchase', { tier: tierId, platform: 'paddle' });
+        // Webhook credits coins asynchronously — poll the authoritative save so the wallet reflects it.
+        const before = saveManager.get().wallet.coins;
+        const credited = await pollForCoinIncrease(before);
+        return credited ? { ok: true } : { ok: false, key: 'shop.rechargePending' };
+      }
+      return { ok: false, key: 'shop.rechargeError' };
+    } catch (e) {
+      log.warn('recharge failed', { tier: tierId, kind, err: e instanceof Error ? e.message : String(e) });
+      return { ok: false, key: 'shop.rechargeError' };
+    }
+  }
+
+  /** Poll the authoritative save until coins rise above `before` (Paddle webhook lag) or attempts run out (~10s). */
+  async function pollForCoinIncrease(before: number): Promise<boolean> {
+    const delays = [1000, 1500, 2000, 2500, 3000];
+    for (const ms of delays) {
+      await new Promise((r) => setTimeout(r, ms));
+      try { await saveManager.refresh(); } catch { /* keep polling; transient */ }
+      if (saveManager.get().wallet.coins > before) return true;
+    }
+    return false;
+  }
+
   function goShop(onBack?: () => void): void {
     if (!api) { goLobby(); return; }
     const client = api;
@@ -993,6 +1048,12 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           return { ok: false, key: 'shop.error' };
         }
       },
+      // Real coin recharge (COMMERCIAL_DESIGN §IAP client): only when logged in online AND the
+      // platform routes to a store (web→Paddle, native→Apple/Google; WeChat/CrazyGames → hidden).
+      // Providing this callback is what makes the shop's "Coins" tab appear.
+      ...(shopLoggedIn && platform.iapKind() !== null ? {
+        rechargeCoins: (tierId: string) => doRechargeCoins(tierId, client, () => { converted = true; }),
+      } : {}),
       // Promo-code redemption (B-PROMO): only available when online + logged in.
       ...(shopLoggedIn ? {
         async redeemPromo(code: string) {

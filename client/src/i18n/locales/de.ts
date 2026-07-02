@@ -349,6 +349,7 @@ export const de: Record<TranslationKey, string> = {
   'shop.rechargeSuccess': 'Zahlung erfolgt! Münzen gutgeschrieben.',
   'shop.rechargeError': 'Zahlung fehlgeschlagen — bitte erneut versuchen',
   'shop.rechargeCancelled': 'Zahlung abgebrochen',
+  'shop.rechargePending': 'Zahlung erhalten – Münzen werden in Kürze gutgeschrieben',
 
   // ── Lootbox (S2-6) ───────────────────────────────────────────────────────────
   'gacha.title': 'Lootbox',

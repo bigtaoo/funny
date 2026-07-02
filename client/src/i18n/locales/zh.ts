@@ -351,6 +351,7 @@ export const zh = {
   'shop.rechargeSuccess': '支付成功！金币已到账。',
   'shop.rechargeError': '支付失败，请重试',
   'shop.rechargeCancelled': '支付已取消',
+  'shop.rechargePending': '支付成功，金币稍后到账',
 
   // ── Gacha / loot box (S2-6) ───────────────────────────────────────────────────
   'gacha.title': '盲盒',

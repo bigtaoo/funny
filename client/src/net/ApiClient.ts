@@ -428,12 +428,26 @@ export class ApiClient {
     return this.post<{ save: SaveData; granted: number }>('/ads/reward', { adToken });
   }
 
-  /** IAP receipt verification (idempotent). Current server dev stub: any non-empty platform/receipt grants coins by tier. */
+  /**
+   * IAP receipt verification (idempotent). Native app-store recharge: `platform` is
+   * 'apple' / 'google' and `receipt` is the StoreKit / Play Billing receipt from the
+   * native bridge; the server verifies it and returns the authoritative save.
+   */
   async iapVerify(
     platform: string,
     receipt: string,
   ): Promise<{ save: SaveData; granted: number }> {
     return this.post<{ save: SaveData; granted: number }>('/iap/verify', { platform, receipt });
+  }
+
+  /**
+   * Web recharge (Paddle): create a checkout transaction for a coin tier (e.g. 't499').
+   * Returns the Paddle transactionId the client hands to Paddle.Checkout.open(); coins are
+   * credited asynchronously by the /paddle/webhook. Unmapped tier → ApiError('INVALID_TIER');
+   * Paddle not configured → ApiError('PADDLE_NOT_CONFIGURED').
+   */
+  async paddleCheckout(tierId: string): Promise<{ transactionId: string }> {
+    return this.post<{ transactionId: string }>('/shop/paddle/checkout', { tierId });
   }
 
   /**
@@ -632,9 +646,12 @@ export class ApiClient {
    * Fetch the public bootstrap (callable anonymously; token is sent along if held, allowing the server to inject accountId for more precise evaluation).
    * Only flags that differ from their default values are returned (empty object for most players). platform / publicId are passed as query params.
    */
-  async getBootstrap(platform: string, publicId?: string): Promise<{ flags: Record<string, boolean> }> {
+  async getBootstrap(
+    platform: string,
+    publicId?: string,
+  ): Promise<{ flags: Record<string, boolean>; paddleClientToken?: string }> {
     const qs = `?platform=${encodeURIComponent(platform)}${publicId ? `&publicId=${encodeURIComponent(publicId)}` : ''}`;
-    return this.request<{ flags: Record<string, boolean> }>('GET', `/bootstrap${qs}`);
+    return this.request<{ flags: Record<string, boolean>; paddleClientToken?: string }>('GET', `/bootstrap${qs}`);
   }
 
   /** Upload a batch of client logs (only called for targeted publicIds; server forwards to Loki). Failures are silently swallowed by the caller. */

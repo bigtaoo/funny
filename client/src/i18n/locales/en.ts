@@ -349,6 +349,7 @@ export const en: Record<TranslationKey, string> = {
   'shop.rechargeSuccess': 'Payment complete! Coins credited.',
   'shop.rechargeError': 'Payment failed — please retry',
   'shop.rechargeCancelled': 'Payment cancelled',
+  'shop.rechargePending': 'Payment received — coins will arrive shortly',
 
   // ── Gacha (S2-6) ─────────────────────────────────────────────────────────────
   'gacha.title': 'Gacha',

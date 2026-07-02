@@ -1221,7 +1221,11 @@ export class MetaService {
         if (resolved !== flagDefault(key)) flags[key] = resolved;
       }
     }
-    return ok({ flags });
+    // Paddle.js client token (COMMERCIAL_DESIGN §IAP client): the web client needs this to open
+    // the checkout overlay. It is a public, client-safe token (ptok_/live_/test_); only sent when
+    // configured, so non-web / unconfigured deployments receive nothing extra.
+    const paddleClientToken = process.env.NW_PADDLE_CLIENT_TOKEN;
+    return ok(paddleClientToken ? { flags, paddleClientToken } : { flags });
   }
 
   /** Whether this publicId is currently named in the allowPublicIds of any client_log_* flag (prevents arbitrary clients from flooding Loki with logs). */

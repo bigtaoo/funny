@@ -36,6 +36,8 @@ export interface FeatureFlagsOpts {
 
 export class FeatureFlags {
   private flags: Record<string, boolean> = {};
+  /** Paddle.js seller client token delivered by /bootstrap (COMMERCIAL_DESIGN §IAP client); null until fetched / when Paddle is unconfigured server-side. */
+  private paddleClientToken: string | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private uploadTimer: ReturnType<typeof setInterval> | null = null;
   /** Current log upload threshold rank (snapshot collects entries at or below this verbosity); null = no threshold matched, nothing uploaded. */
@@ -61,6 +63,11 @@ export class FeatureFlags {
     return this.flags[key] === true;
   }
 
+  /** Paddle.js client token from the latest bootstrap, or null if not yet fetched / Paddle unconfigured. */
+  getPaddleClientToken(): string | null {
+    return this.paddleClientToken;
+  }
+
   /** Start: fetch immediately + start periodic polling. Safe to call multiple times (ignored if already running). */
   start(): void {
     void this.refresh();
@@ -71,8 +78,9 @@ export class FeatureFlags {
   async refresh(): Promise<void> {
     try {
       const publicId = this.getPublicId() ?? undefined;
-      const { flags } = await this.api.getBootstrap(this.platform, publicId);
+      const { flags, paddleClientToken } = await this.api.getBootstrap(this.platform, publicId);
       this.flags = flags ?? {};
+      this.paddleClientToken = paddleClientToken ?? null;
       this.recomputeLogThreshold();
     } catch {
       // bootstrap failed: keep the previous result silently (common at early startup or while offline; must never affect the main flow).

@@ -239,3 +239,67 @@ POST /internal/ads/credit
 - [x] **对账触发**：S5 先做 `GET /save` 顺带（拉 `orders/undelivered` 补发）；**兜底定时扫待办**。
 - [x] **充值平台**：**S4-1 已落地（2026-06-22）**：`commercial/src/iap.ts` 实现微信支付 V3（HMAC-SHA256 简化鉴权，`NW_WX_PAY_MCH_ID/API_KEY_V3`）+ Stripe（`GET /v1/payment_intents/{id}`，`NW_STRIPE_SECRET_KEY`）；金额→档位映射可 `NW_IAP_AMOUNT_MAP` 覆盖；两者均未配置时自动降级 dev 桩（`NW_IAP_DEV=true` 可强制开启）。`CommercialService.verifyReceipt` 已改 async。
 - [ ] **余额镜像新鲜度**：默认「进 ShopScene 前 `GET /save` 刷新」——待 S2 ShopScene 落地时接（场景尚未实现）。
+
+---
+
+## 10. 客户端充值入口与分平台路由（IAP client）
+
+> 状态：✅ **已实现（2026-07-02，feat/iap-client-entry）**。此前服务端验单（§6.2 + `commercial/src/iap.ts`：Apple/Google/微信/Stripe）与 Paddle 通道（`metaserver/src/paddle.ts`）已就绪，但客户端无任何真实充值入口（`ShopScene` 的 Coins tab 是死代码，从未在 `goShop` 接上），仅剩 B-PROMO 兑换码。本节补齐客户端。
+
+### 10.1 分平台路由（一份 web bundle 兼作原生包）
+
+游戏出**同一份 web 构建**：Capacitor 壳（`build:native = build:web && npx cap sync`）把它装进 iOS WKWebView / Android WebView，并注入原生计费桥 `window.NWBilling`。因此**平台层在运行时决定**一次金币充值走哪个商店：
+
+| 运行环境 | `IPlatform.iapKind()` | 充值通道 | 验单 |
+|---|---|---|---|
+| 普通浏览器（web target） | `'paddle'` | Paddle.js Checkout | `/paddle/webhook`（异步） |
+| iOS 原生壳（注入 `NWBilling`） | `'apple'` | StoreKit（原生桥） | `POST /iap/verify {platform:'apple'}` |
+| Android 原生壳（注入 `NWBilling`） | `'google'` | Play Billing（原生桥） | `POST /iap/verify {platform:'google'}` |
+| 微信小游戏 | `null` | —（`wx.requestPayment` 留 TODO） | — |
+| CrazyGames | `null` | —（平台自有变现） | — |
+
+- `ShopScene` 的 Coins tab **仅当 `rechargeCoins` 回调存在时显示**；`createAppCore.goShop` 现在仅在「已登录在线 **且** `platform.iapKind() !== null`」时提供该回调。→ web/原生显示 Coins tab，微信/CrazyGames 不显示（这些平台继续只有 B-PROMO 兑换码）。
+- 档位数值权威仍是 `server/shared/src/economy.ts` 的 `IAP_TIERS`（t099..t9999）；`ShopScene.WEB_COIN_TIERS` 只展示 5 档 USD（t499..t9999），web-only 小额档（t099/t199）暂不在 UI 露出。
+
+### 10.2 两条充值流
+
+**Web（Paddle，异步到账）**：
+```
+ShopScene → rechargeCoins(tierId) → createAppCore.doRechargeCoins
+  1) api.paddleCheckout(tierId)  → POST /shop/paddle/checkout → { transactionId }
+  2) platform.openPaddleCheckout(transactionId, clientToken)   # 动态加载 Paddle.js + Initialize + Checkout.open(overlay)
+     - checkout.completed → completed=true；checkout.closed → resolve({completed})
+     - 用户中途关闭 → completed=false → 提示 shop.rechargeCancelled
+  3) Paddle 服务器异步回调 /paddle/webhook 给账号加币
+  4) 客户端轮询 saveManager.refresh() ~10s（1/1.5/2/2.5/3s）直到 coins 增加
+     - 到账 → shop.rechargeSuccess；超时未到账 → shop.rechargePending（币仍会随后到账）
+```
+Paddle.js 的 **client token**（`ptok_`/`live_`/`test_`，客户端安全）由服务端经 `/bootstrap` 下发（见 §10.3）；token 前缀 `test_` 时客户端 `Paddle.Environment.set('sandbox')`。
+
+**原生（Apple/Google，同步到账）**：
+```
+ShopScene → rechargeCoins(tierId) → createAppCore.doRechargeCoins
+  1) platform.nativeIapPurchase(tierId) → window.NWBilling.purchase(tierId) → { receipt }
+  2) api.iapVerify(kind, receipt) → POST /iap/verify → { save }
+  3) saveManager.adoptServer(save)   # 同步拿到权威存档，coins 立即刷新 → shop.rechargeSuccess
+```
+
+### 10.3 `/bootstrap` 下发 Paddle client token
+
+`metaserver` 的 `MetaService.bootstrap` 在 `NW_PADDLE_CLIENT_TOKEN` 配置时，于响应里附带 `paddleClientToken`（未配置则不带）。客户端 `FeatureFlags` 轮询 `/bootstrap` 时缓存它，`getPaddleClientToken()` 供 `doRechargeCoins` 取用。token 缺失（服务端未配置）→ Paddle 充值提示 `shop.rechargeError`，不发起 checkout。
+
+### 10.4 原生计费桥契约（`window.NWBilling`，本仓库外实现）
+
+TS 契约见 `client/src/platform/iap.ts`：
+```ts
+interface NwBillingBridge {
+  readonly kind: 'apple' | 'google';
+  purchase(tierId: string): Promise<{ receipt: string }>;  // 跑原生购买 UI，返回商店票据；取消/失败则 reject
+}
+```
+Capacitor 原生插件（Swift/Kotlin）需在 WebView 就绪时把符合此形状的对象挂到 `window.NWBilling`：
+- `kind` 标明本机走 Apple 还是 Google；
+- `purchase(tierId)` 调 StoreKit / Play Billing 完成购买，把票据（Apple: base64 收据 / StoreKit2 JWS；Google: purchaseToken）经 `resolve({receipt})` 交回。
+- `receipt` 直接 `POST /iap/verify {platform: kind, receipt}`，由 `commercial/src/iap.ts` 现成的 Apple/Google 验单校验。
+
+> **暂缓（本轮不做）**：原生 Swift/Kotlin 计费插件 + Capacitor 壳工程本体；微信 `wx.requestPayment`。二者以上述桥契约 / §6.2 服务端验单为对接面，后续单开。

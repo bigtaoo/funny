@@ -5,6 +5,7 @@ import { WebAdapter } from '../../inputSystem/WebAdapter';
 import { getOrCreateDeviceId } from '../uuid';
 import { BrowserGameSocket } from '../../net/BrowserGameSocket';
 import type { Locale } from '../../i18n';
+import type { IapKind } from '../iap';
 
 /**
  * CrazyGames platform adapter.
@@ -135,5 +136,16 @@ export class CrazyGamesPlatform implements IPlatform {
 
   getLaunchShareCode(): string | null {
     return new URLSearchParams(window.location.search).get('r');
+  }
+
+  // ── In-app coin recharge ────────────────────────────────────────────────────
+  // CrazyGames uses its own portal monetization (ads / CrazyGames coins), not Paddle
+  // or app-store IAP — the shop's Coins tab stays hidden on this platform.
+  iapKind(): IapKind | null { return null; }
+  openPaddleCheckout(): Promise<{ completed: boolean }> {
+    return Promise.reject(new Error('paddle checkout not supported on CrazyGames'));
+  }
+  nativeIapPurchase(): Promise<{ receipt: string }> {
+    return Promise.reject(new Error('native IAP not supported on CrazyGames'));
   }
 }
