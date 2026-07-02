@@ -79,6 +79,13 @@ export interface SaveData {
     items: Record<string, number>;
   };
   gacha: { pity: Record<string, number> };
+  // —— Monetization mirror (GACHA_DESIGN §5–§7). Read-only mirror of commercial authority (fate points / monthly card /
+  //    starter packs), written by meta after economy operations + refreshed alongside GET /save. Lazily created; not in SyncPatch. ——
+  monetization?: {
+    fatePoints: number; // Fate Points balance (§7)
+    subscriptionExpiry: number; // monthly card end timestamp (ms); 0 = none (§5)
+    starterUsed: string[]; // one-off product ids already bought (§6)
+  };
   // Fulfilled purchase orders (commercial orderId). Idempotent delivery ledger: redelivery uses $addToSet + $ne guard for deduplication (S5-5).
   deliveredOrders: string[];
   pvp: {

@@ -66,6 +66,12 @@ export interface SaveData {
     items: Record<string, number>;
   };
   gacha: { pity: Record<string, number> };
+  // Monetization mirror (GACHA_DESIGN §5–§7): read-only mirror of commercial authority. Absent in legacy saves.
+  monetization?: {
+    fatePoints: number; // Fate Points balance (§7)
+    subscriptionExpiry: number; // monthly card end timestamp (ms); 0 = none (§5)
+    starterUsed: string[]; // one-off product ids already purchased (§6)
+  };
   // Delivered purchase orders (commercial orderId); server-authoritative, client read-only (S5-5).
   deliveredOrders: string[];
   pvp: {

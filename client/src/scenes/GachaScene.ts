@@ -31,13 +31,21 @@ export type GachaDrawResult =
   | { ok: true; results: GachaResultEntry[] }
   | { ok: false; key: TranslationKey };
 
+export type FateRedeemResult =
+  | { ok: true; granted: string }
+  | { ok: false; key: TranslationKey };
+
 export interface GachaSceneCallbacks {
   onBack(): void;
   getCoins(): number;
   /** Current pity counter for a pool (server-authoritative mirror in SaveData). */
   getPity(poolId: string): number;
+  /** Fate Points balance (server-authoritative mirror; GACHA_DESIGN §7). */
+  getFatePoints(): number;
   loadPools(): Promise<GachaPool[]>;
   draw(poolId: string, count: 1 | 10): Promise<GachaDrawResult>;
+  /** Redeem the given featured legendary for FATE_POINT_REDEEM_COST fate points (§7). */
+  redeemFate(itemId: string): Promise<FateRedeemResult>;
   /**
    * Peer navigation within the shop group (LOBBY_IA_REDESIGN P1.5). Injected only
    * in the "shop" group context; when present the top shows a [Shop|Gacha|BattlePass]
@@ -56,9 +64,14 @@ export class GachaScene implements Scene {
   private readonly h: number;
   private readonly cb: GachaSceneCallbacks;
 
-  private pool: GachaPool | null = null;
+  private pools: GachaPool[] = [];
+  private poolIdx = 0;
+  private get pool(): GachaPool | null { return this.pools[this.poolIdx] ?? null; }
   private loading = true;
   private readonly bt = new BusyTracker();
+
+  /** Fate Point redeem cost (mirrors @nw/shared FATE_POINT_REDEEM_COST; GACHA_DESIGN §7). */
+  private static readonly FATE_COST = 30;
 
   private toast: { text: string; color: number } | null = null;
   /** Reveal overlay: non-null while showing the latest draw's results. */
@@ -90,13 +103,33 @@ export class GachaScene implements Scene {
 
   private async loadPools(): Promise<void> {
     try {
-      const pools = await this.cb.loadPools();
-      this.pool = pools[0] ?? null;
+      this.pools = await this.cb.loadPools();
     } catch {
-      this.pool = null;
+      this.pools = [];
     }
+    if (this.poolIdx >= this.pools.length) this.poolIdx = 0;
     this.loading = false;
     this.render();
+  }
+
+  /** Redeem Fate Points for the active limited pool's featured legendary (§7). */
+  private async onRedeemFate(): Promise<void> {
+    const pool = this.pool;
+    if (this.bt.busy || !pool?.featuredLegendary) return;
+    this.bt.start();
+    this.toast = null;
+    this.render();
+    try {
+      const res = await withTimeout(this.cb.redeemFate(pool.featuredLegendary));
+      this.toast = res.ok
+        ? { text: t('gacha.fate.redeemed', { item: res.granted }), color: C.green }
+        : { text: t(res.key), color: C.red };
+    } catch (e) {
+      this.toast = { text: t(e instanceof TimeoutError ? 'common.networkTimeout' : 'gacha.error'), color: C.red };
+    } finally {
+      this.bt.stop();
+      this.render();
+    }
   }
 
   // ── Draw ───────────────────────────────────────────────────────────────────
@@ -210,11 +243,31 @@ export class GachaScene implements Scene {
 
     const pool = this.pool;
 
+    // Pool selector (GACHA_DESIGN §2.2): one tab per pool (standard + active limited). Only shown when >1 pool.
+    let selH = 0;
+    if (this.pools.length > 1) {
+      selH = Math.round(h * 0.055);
+      const gap = Math.round(w * 0.02);
+      const totalW = Math.round(w * 0.9);
+      const tabW = Math.round((totalW - gap * (this.pools.length - 1)) / this.pools.length);
+      const tabH = Math.round(h * 0.042);
+      const sy = tbH + Math.round(h * 0.008);
+      let sx = (w - totalW) / 2;
+      this.pools.forEach((p, i) => {
+        const active = i === this.poolIdx;
+        const label = p.limited ? (p.name ?? t('gacha.pool.limited')) : t('gacha.pool.standard');
+        this.addButton(label, sx, sy, tabW, tabH,
+          active ? C.dark : C.btnOff, active ? C.gold : C.light,
+          () => { this.poolIdx = i; this.render(); }, !active);
+        sx += tabW + gap;
+      });
+    }
+
     // Banner image.
     const bannerW = Math.round(w * 0.78);
     const bannerH = Math.round(h * 0.26);
     const bx = (w - bannerW) / 2;
-    const by = tbH + Math.round(h * 0.05);
+    const by = tbH + selH + Math.round(h * 0.05);
     const bannerTex = gachaBannerTexture(pool.id);
     const bannerSpr = new PIXI.Sprite(bannerTex);
     bannerSpr.x = bx; bannerSpr.y = by;
@@ -289,6 +342,21 @@ export class GachaScene implements Scene {
     this.addButton(t('gacha.drawTen', { cost: ten }), btnX, btnY, btnW, btnH,
       canTen ? C.dark : C.btnOff, canTen ? C.gold : C.light,
       () => void this.onDraw(10), canTen);
+
+    // Fate Points (GACHA_DESIGN §7): shown on limited pools; redeem when at the threshold.
+    if (pool.limited && pool.featuredLegendary) {
+      const fate = this.cb.getFatePoints();
+      const cost = GachaScene.FATE_COST;
+      btnY += btnH + Math.round(h * 0.02);
+      const fateLbl = txt(t('gacha.fate.balance', { cur: fate, cost }), Math.round(h * 0.022), C.dark, true);
+      fateLbl.anchor.set(0, 0.5); fateLbl.x = btnX; fateLbl.y = btnY + btnH * 0.28;
+      this.container.addChild(fateLbl);
+      const canRedeem = !this.bt.busy && fate >= cost;
+      const rW = Math.round(btnW * 0.4);
+      this.addButton(t('gacha.fate.redeem'), btnX + btnW - rW, btnY, rW, Math.round(btnH * 0.6),
+        canRedeem ? C.accent : C.btnOff, canRedeem ? C.gold : C.light,
+        () => void this.onRedeemFate(), canRedeem);
+    }
   }
 
   private drawToast(): void {

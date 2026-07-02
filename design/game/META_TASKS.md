@@ -361,6 +361,22 @@
 
 ---
 
+## S_GACHA — 盲盒进阶变现（GACHA_DESIGN.md §11）
+
+> 拍板 2026-07-02：补齐盲盒变现深度（软保底 / 限定池 / 命运点 / 月卡 / 新手包）。服务端全量 + 客户端最小占位；G7–G10 美术展示层待美术。机制/落地说明权威见 `GACHA_DESIGN.md §11.1`；数值锚点见 `ECONOMY_BALANCE §3–4` / `economy.ts`。
+
+- [x] **G1 软保底** ✅（2026-07-02）：`commercial/gacha.ts` softPity（70 起 +5%/抽，硬崖 90 兜底）；标准/限定/单位卡池启用；纯单测 + 旧扁平表回归绿。
+- [x] **G2 限定池** ✅（2026-07-02）：commercial `gachaPools` 集合 + `resolvePool`（窗口守卫→`POOL_UNAVAILABLE`）；`@nw/shared buildLimitedPool` 纯派生；admin `/admin/gacha/pools`(GET/POST) + `/close`；meta `getGachaPools` 追加活跃限定池 + banner 元数据。
+- [x] **G3 独立 pity** ✅：`wallet.gacha.pity` 早为 `Record<poolId,number>`（S5），限定池天然独立计数。
+- [x] **G4 命运点/歪** ✅（2026-07-02）：`wallet.fatePoints`→镜像 `SaveData.monetization`；限定池 off-banner legendary → +1；`POST /fate/redeem`（扣 30，兑换历史 featured）。50/50 off-banner 模型；「下次必得」翻转留后续。
+- [x] **G5 月卡** ✅（2026-07-02）：`wallet.subscription{expiry,lastClaimDayKey}`；`/monthly-card/buy`（叠购续期 + 即赠 600）；`/monthly-card/claim`（每 UTC 日 +120）。真实 IAP 验单前置留待。
+- [x] **G6 新手包** ✅（2026-07-02）：`wallet.starterUsed[]` 一次性；`/starter/buy`：draw=rare+ 保底十连（不动 pity），growth=3300+7天卡（首 7 天窗口由 meta 按 `accounts.createdAt` 把关）。
+- [x] **客户端最小占位** ✅（2026-07-02）：GachaScene 池切换 tab + 命运点/兑换；ShopScene 月卡（买/领）+ 新手包按钮；`SaveData.monetization` 只读镜像；i18n zh/en/de 全补。
+- [ ] **G7–G10 美术展示层**：概率详情两 tab、限定 banner+倒计时真图、legendary 翻牌粒子、月卡卡面 + 到期本地推送。美术阻塞（程序占位可跑）。
+- [ ] **真实 IAP 接单**：月卡/新手包当前当作已授权购买；接平台 SDK 时在 meta 端前置验单（复用 `commercial/iap.ts` 验签）。
+
+---
+
 ## i18n（贯穿，随场景落地）
 
 - [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`auth.*`（登录界面，SA）/ `meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；`auth.*` **已随 SA-3 落地**（zh/en/de 全翻）；其余随后续场景。

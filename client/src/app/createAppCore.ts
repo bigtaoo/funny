@@ -1078,6 +1078,41 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           }
         },
       } : {}),
+      // Monetization deals (GACHA_DESIGN §5–§6): monthly card + starter packs, only when online + logged in.
+      ...(shopLoggedIn ? {
+        getMonetization: () => {
+          const m = saveManager.get().monetization;
+          return { subscriptionExpiry: m?.subscriptionExpiry ?? 0, starterUsed: m?.starterUsed ?? [] };
+        },
+        async buyMonthlyCard() {
+          try {
+            const { save } = await client.monthlyCardBuy();
+            saveManager.adoptServer(save);
+            converted = true;
+            analytics.track('monthly_card_buy', {});
+            return { ok: true as const };
+          } catch { return { ok: false as const, key: 'shop.error' as const }; }
+        },
+        async claimMonthlyCard() {
+          try {
+            const { save, claimed } = await client.monthlyCardClaim();
+            saveManager.adoptServer(save);
+            return claimed > 0 ? { ok: true as const } : { ok: false as const, key: 'shop.monthlyNothing' as const };
+          } catch { return { ok: false as const, key: 'shop.error' as const }; }
+        },
+        async buyStarter(productId: 'starter_draw' | 'starter_growth') {
+          try {
+            const { save } = await client.starterBuy(productId);
+            saveManager.adoptServer(save);
+            converted = true;
+            analytics.track('starter_buy', { product_id: productId });
+            return { ok: true as const };
+          } catch (e) {
+            const key = e instanceof ApiError && e.code === 'ALREADY_PURCHASED' ? 'shop.alreadyOwned' as const : 'shop.error' as const;
+            return { ok: false as const, key };
+          }
+        },
+      } : {}),
       // Shop group peer tabs (LOBBY_IA_REDESIGN P1.5): gacha / battle pass promoted to top tabs;
       // threading shopBack lets all three pages navigate to each other and return to the same origin (lobby / level-prep).
       openGacha() { goGacha({ shopBack: onBack }); },
@@ -1103,6 +1138,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       ...(inGroup && bpAvail ? { openBattlePass: () => goBattlePass({ shopBack }) } : {}),
       getCoins: () => saveManager.get().wallet.coins,
       getPity: (poolId) => saveManager.get().gacha.pity[poolId] ?? 0,
+      getFatePoints: () => saveManager.get().monetization?.fatePoints ?? 0,
       loadPools: () => client.getGachaPools(),
       async draw(poolId, count) {
         try {
@@ -1115,6 +1151,20 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             ok: false,
             key: e instanceof ApiError && e.code === 'INSUFFICIENT_FUNDS'
               ? 'gacha.insufficient' : 'gacha.error',
+          };
+        }
+      },
+      async redeemFate(itemId) {
+        try {
+          const { save, granted } = await client.redeemFate(itemId);
+          saveManager.adoptServer(save);
+          analytics.track('fate_redeem', { item_id: itemId });
+          return { ok: true, granted };
+        } catch (e) {
+          return {
+            ok: false,
+            key: e instanceof ApiError && e.code === 'FATE_INSUFFICIENT'
+              ? 'gacha.fate.insufficient' : 'gacha.error',
           };
         }
       },

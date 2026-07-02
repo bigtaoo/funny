@@ -285,3 +285,14 @@
 - **运维手动步骤（无代码接入点）**：**微信小游戏图标**须在**微信公众平台后台**手动上传，用 `art/logo/derived/logo-512.png`。列入上线前 checklist。
 - **待办 / 不在本次**：字标字体待打包（同 art-direction §7.4）。
 - **影响**：新增 `art/logo/**`；`client/public/{favicon-*,apple-touch-icon,icon-*}.png` + `site.webmanifest`；改 `client/webpack.config.js`（CopyPlugin）+ `client/public/{web,crazygames}/index.html`。[`product/art-direction.md`](product/art-direction.md) §13 记录全貌。
+
+---
+
+## ADR-028 盲盒进阶变现 = 软保底 + 限定池 50/50 歪+命运点 + 月卡/新手包 — Accepted — 2026-07-02
+
+- **背景**：盲盒基础抽卡+硬保底(S2-3)已上线，但 GACHA_DESIGN §2/§5/§6/§7 的变现深度（限定池/月卡/新手包/命运点）服务端全缺。本 ADR 记录落地时的两处口径拍板；机制/落地全貌见 [`GACHA_DESIGN.md §11.1`](game/GACHA_DESIGN.md)。
+- **决策 1 — 软保底取代硬崖**：`rollGacha` 从「90 抽硬崖」改为「70 抽起每抽 +5% legendary 概率、90 兜底」（`SOFT_PITY_START=70/STEP=0.05`）。起点以下走原扁平权重表（旧行为逐字不变，回归单测锁定），概率提升实现用 1000-slot 重整（`P(leg)=legW/1000`，起点以上其余稀有度按基础比例分摊 `1-P(leg)`）。
+- **决策 2 — 限定池 = 50/50 off-banner + 命运点，调和 §2.2**：GACHA_DESIGN §2.2 原述「池内 legendary 只有 1 个 → 大保底必出本体」（则无从「歪」）；但 §7 命运点机制**要求**能歪。因用户明确要命运点，采用经典 **50/50**：限定 legendary 层 = 主打 banner（约 50%，靠 slot 重复加权）+ 常驻**非角色卡** legendary 垫底（`DEFAULT_LIMITED_FILLER_LEGENDARIES`，避免限定池稀释养成）；抽到非 banner legendary = 歪 → +1 命运点；30 点兑换任一历史 featured。**未做** §2.2「下次必得」的 per-pool 保底翻转（需额外 `guaranteedFeatured` 状态），留后续。
+- **权威归属**：限定池 config 存 commercial `gachaPools`（admin 建/关，永久保留供兑换）；池内容由 `@nw/shared buildLimitedPool()` 从常驻池**纯派生**（无漂移）。`wallet.fatePoints/subscription/starterUsed` 均 commercial 权威 → 镜像 `SaveData.monetization`（客户端只读，不入 SyncPatch）。
+- **范围外**：真实 IAP 验单（月卡/新手包当作已授权购买，接 SDK 时 meta 前置验签）；G7–G10 美术展示层（程序占位可跑）。
+- **影响**：`@nw/shared`（economy/api/types）；`commercial`（db/gacha/service/internalHttp）；`metaserver`（commercialClient/economy/service/internal + routes.gen）；`openapi.yml`（4 端点 + GachaPool 限定字段 + SaveData.monetization）；客户端 GachaScene/ShopScene/ApiClient/SaveData/i18n。

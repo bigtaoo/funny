@@ -49,10 +49,14 @@ import {
   findGachaPool,
   poolEntries,
   gachaCost,
+  buildLimitedPool,
   ADS_REWARD_COINS,
   ADS_DAILY_CAP,
   ADS_MIN_INTERVAL_MS,
   RENAME_COST,
+  PRODUCT_STARTER_GROWTH,
+  GROWTH_PACK_WINDOW_DAYS,
+  type GachaPoolDef,
 } from '@nw/shared';
 import { CHAT_SEND_RATE_PER_MIN, regionFromAcceptLanguage } from '@nw/shared';
 import { ACHIEVEMENTS, findAchievement, validateClaim } from '@nw/shared';
@@ -87,6 +91,7 @@ import {
   deliverGrant,
   deliverCardGrant,
   deliverMailGrant,
+  deliverOrder,
   mirrorCoins,
   mirrorWalletFrom,
   reconcileUndelivered,
@@ -172,6 +177,20 @@ const STATE_REPLAY_MAX_BYTES = 2 * 1024 * 1024;
 const STATE_REPLAY_EXPIRE_DAYS = 14;
 /** Per-account share minting rate limit: maximum shares per hour. */
 const STATE_REPLAY_SHARE_PER_HOUR = 20;
+
+/** Client-facing gacha pool view (GACHA_DESIGN §2 + §8): static + active limited pools with per-entry odds. */
+interface PoolView {
+  id: string;
+  costSingle: number;
+  costTen: number;
+  pityThreshold: number;
+  dupePolicy: string;
+  limited?: boolean;
+  name?: string;
+  featuredLegendary?: string;
+  endAt?: number;
+  entries: { itemId: string; weight: number; rarity: string; probability: number }[];
+}
 
 export class MetaService {
   private readonly oauth = createOAuthService();
@@ -535,7 +554,7 @@ export class MetaService {
       try {
         await reconcileUndelivered(cols, commercial, accountId, now());
         const w = await commercial.getWallet(accountId);
-        if (w) await mirrorWalletFrom(cols, accountId, w.coins, w.pity, now());
+        if (w) await mirrorWalletFrom(cols, accountId, w, now());
       } catch (e) {
         req.log.warn({ err: e }, 'commercial reconcile/mirror failed (serving local save)');
       }
@@ -1730,9 +1749,10 @@ export class MetaService {
     return ok({ items });
   }
 
-  /** Gacha pool list (entries expanded for client display). */
+  /** Gacha pool list (entries expanded for client display). Includes active limited pools (GACHA_DESIGN §2.2) with banner metadata. */
   async getGachaPools() {
-    const pools = GACHA_POOLS.map((p) => {
+    const { commercial, now } = this.deps;
+    const toView = (p: GachaPoolDef, name?: string): PoolView => {
       const entries = poolEntries(p);
       const totalWeight = entries.reduce((s, e) => s + e.weight, 0);
       return {
@@ -1741,13 +1761,27 @@ export class MetaService {
         costTen: p.costTen,
         pityThreshold: p.pityThreshold,
         dupePolicy: p.dupePolicy,
+        // Limited pool banner metadata (absent on static pools).
+        ...(p.limited
+          ? { limited: true, name, featuredLegendary: p.featuredLegendary, endAt: p.endAt }
+          : {}),
         // C5-a: each entry includes a probability field (required by Apple 3.1.1).
         entries: entries.map((e) => ({
           ...e,
           probability: totalWeight > 0 ? e.weight / totalWeight : 0,
         })),
       };
-    });
+    };
+    const pools: PoolView[] = GACHA_POOLS.map((p) => toView(p));
+    // Append active limited pools (best-effort; if commercial is down the client still gets the static pools).
+    if (commercial.available) {
+      try {
+        const active = await commercial.listActiveLimitedPools(now());
+        for (const cfg of active) pools.push(toView(buildLimitedPool(cfg), cfg.name));
+      } catch {
+        /* best-effort: static pools already returned */
+      }
+    }
     return ok({ pools });
   }
 
@@ -1779,11 +1813,11 @@ export class MetaService {
     if (!this.ensureCommercial(reply)) return;
     const accountId = accountIdOf(req);
     const { poolId, count } = req.body as { poolId: string; count: number };
-    const pool = findGachaPool(poolId);
-    if (!pool || (count !== 1 && count !== 10)) {
-      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'invalid pool/count'));
+    // Static pools validate here; limited pools exist only in commercial (validated there → POOL_UNAVAILABLE).
+    if (count !== 1 && count !== 10) {
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'invalid count'));
     }
-    void gachaCost; // cost is authoritative in commercial (computed per pool); here we only validate pool and draw count.
+    void gachaCost; // cost is authoritative in commercial (computed per pool); here we only validate the draw count.
 
     const { cols, commercial, now } = this.deps;
     const orderId = randomUUID();
@@ -1791,6 +1825,9 @@ export class MetaService {
     if (!draw.ok) {
       if (draw.error === 'INSUFFICIENT_FUNDS') {
         return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough coins'));
+      }
+      if (draw.error === 'POOL_UNAVAILABLE') {
+        return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'pool unavailable'));
       }
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, draw.error));
     }
@@ -1838,8 +1875,129 @@ export class MetaService {
     // B5: record daily task "open gacha"; merge retention into the returned save so the client immediately sees task completion.
     await this.bumpRetentionTask(accountId, 'gacha.draw');
     const nextRetention2 = accrueRetentionTask(save.retention, 'gacha.draw', now());
-    const saveWithRet2 = nextRetention2 !== save.retention ? { ...save, retention: nextRetention2 } : save;
+    let saveWithRet2 = nextRetention2 !== save.retention ? { ...save, retention: nextRetention2 } : save;
+    // Fate points (§7): reflect the freshly-credited balance immediately (mirror catches up fully on next GET /save).
+    if (draw.fateGained > 0) {
+      saveWithRet2 = {
+        ...saveWithRet2,
+        monetization: {
+          fatePoints: draw.fatePointsAfter,
+          subscriptionExpiry: saveWithRet2.monetization?.subscriptionExpiry ?? 0,
+          starterUsed: saveWithRet2.monetization?.starterUsed ?? [],
+        },
+      };
+    }
     return ok({ save: saveWithRet2, results: marked });
+  }
+
+  /** Fate Point redemption (GACHA_DESIGN §7): 30 points → one self-chosen past-featured legendary skin. */
+  async redeemFate(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.ensureCommercial(reply)) return;
+    const accountId = accountIdOf(req);
+    const { itemId } = req.body as { itemId: string };
+    if (!itemId) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing itemId'));
+
+    const { cols, commercial, now } = this.deps;
+    const orderId = randomUUID();
+    const r = await commercial.redeemFate({ accountId, itemId, orderId });
+    if (!r.ok) {
+      if (r.error === 'FATE_INSUFFICIENT') {
+        return reply.code(402).send(err(ErrorCode.FATE_INSUFFICIENT, 'not enough fate points'));
+      }
+      if (r.error === 'FATE_INVALID_ITEM') {
+        return reply.code(400).send(err(ErrorCode.FATE_INVALID_ITEM, 'not a featured legendary'));
+      }
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, r.error));
+    }
+    await getOrCreateSave(cols, accountId, now());
+    // Deliver the chosen skin idempotently (shared routing), then reflect the new fate balance immediately.
+    let save = await deliverOrder(
+      cols, commercial, accountId,
+      { _id: orderId, kind: 'fate', result: { itemId } },
+      r.coinsAfter, null, now(),
+    );
+    save = {
+      ...save,
+      monetization: {
+        fatePoints: r.fatePointsAfter,
+        subscriptionExpiry: save.monetization?.subscriptionExpiry ?? 0,
+        starterUsed: save.monetization?.starterUsed ?? [],
+      },
+    };
+    return ok({ save, granted: itemId });
+  }
+
+  /** Buy / renew the monthly card (GACHA_DESIGN §5). Real IAP verification is out of scope here (treated as authorized). */
+  async monthlyCardBuy(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.ensureCommercial(reply)) return;
+    const accountId = accountIdOf(req);
+    const { cols, commercial, now } = this.deps;
+    const orderId = randomUUID();
+    const r = await commercial.monthlyCardBuy({ accountId, orderId });
+    if (!r.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, r.error));
+    const w = await commercial.getWallet(accountId);
+    const save = w
+      ? await mirrorWalletFrom(cols, accountId, w, now())
+      : await getOrCreateSave(cols, accountId, now());
+    return ok({ save });
+  }
+
+  /** Claim the monthly card's daily coins (GACHA_DESIGN §5): once per UTC day while the subscription is active. */
+  async monthlyCardClaim(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.ensureCommercial(reply)) return;
+    const accountId = accountIdOf(req);
+    const { cols, commercial, now } = this.deps;
+    const dayKey = adsDayKey(now());
+    const r = await commercial.monthlyCardClaim({ accountId, dayKey });
+    if (!r.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, r.error));
+    const w = await commercial.getWallet(accountId);
+    const save = w
+      ? await mirrorWalletFrom(cols, accountId, w, now())
+      : await getOrCreateSave(cols, accountId, now());
+    return ok({ save, claimed: r.claimed });
+  }
+
+  /** Buy a starter pack (GACHA_DESIGN §6): starter_draw (rare+ floored 10-pull) or starter_growth (coins + 7-day card). */
+  async starterBuy(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.ensureCommercial(reply)) return;
+    const accountId = accountIdOf(req);
+    const { productId } = req.body as { productId: string };
+    const { cols, commercial, now } = this.deps;
+
+    // Growth pack: enforce the first-N-days account-age window (best-effort; absent account → allow).
+    if (productId === PRODUCT_STARTER_GROWTH) {
+      const acct = await cols.accounts.findOne({ _id: accountId });
+      if (acct && now() - acct.createdAt > GROWTH_PACK_WINDOW_DAYS * 86400000) {
+        return reply.code(403).send(err(ErrorCode.NO_PERMISSION, 'growth pack window closed'));
+      }
+    }
+
+    const orderId = randomUUID();
+    const r = await commercial.starterBuy({ accountId, productId, orderId });
+    if (!r.ok) {
+      if (r.error === 'ALREADY_PURCHASED') {
+        return reply.code(409).send(err(ErrorCode.ALREADY_PURCHASED, 'already purchased'));
+      }
+      return reply.code(400).send(err(ErrorCode.BAD_REQUEST, r.error));
+    }
+
+    const before = await getOrCreateSave(cols, accountId, now());
+    // Mark new/dup for the reveal BEFORE delivery mutates the skin set (mirrors gachaDraw's convention).
+    const marked = markDuplicates(before.inventory.skins, r.results).marked;
+    // starter_draw delivers pack items (loot-box routing); starter_growth grants coins/subscription only (no items).
+    if (r.results.length > 0) {
+      await deliverOrder(
+        cols, commercial, accountId,
+        { _id: orderId, kind: 'starter', result: { results: r.results, poolId: 'standard' } },
+        r.coinsAfter, null, now(),
+      );
+    }
+    // Mirror wallet (coins + monetization: starterUsed / subscription).
+    const w = await commercial.getWallet(accountId);
+    const save = w
+      ? await mirrorWalletFrom(cols, accountId, w, now())
+      : await getOrCreateSave(cols, accountId, now());
+    return ok({ save, results: marked });
   }
 
   async adsReward(req: FastifyRequest, reply: FastifyReply) {

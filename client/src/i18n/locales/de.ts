@@ -350,6 +350,16 @@ export const de: Record<TranslationKey, string> = {
   'shop.rechargeError': 'Zahlung fehlgeschlagen — bitte erneut versuchen',
   'shop.rechargeCancelled': 'Zahlung abgebrochen',
   'shop.rechargePending': 'Zahlung erhalten – Münzen werden in Kürze gutgeschrieben',
+  // ── Monetarisierung (GACHA_DESIGN §5–§6) ──
+  'shop.monthlyCard': 'Monatskarte',
+  'shop.monthlyActive': 'Aktiv',
+  'shop.monthlyInactive': 'Nicht aktiv',
+  'shop.monthlyClaim': 'Abholen',
+  'shop.monthlyClaimed': 'Tagesbelohnung abgeholt',
+  'shop.monthlyNothing': 'Heute schon abgeholt oder nicht aktiv',
+  'shop.starterDraw': 'Starter-Erstzugpaket',
+  'shop.starterGrowth': 'Starter-Wachstumspaket',
+  'shop.alreadyOwned': 'Gekauft',
 
   // ── Lootbox (S2-6) ───────────────────────────────────────────────────────────
   'gacha.title': 'Lootbox',
@@ -366,6 +376,13 @@ export const de: Record<TranslationKey, string> = {
   'gacha.tapContinue': 'Zum Fortfahren tippen',
   'gacha.drawing': 'Ziehe',
   'gacha.loading': 'Lädt…',
+  // ── Limitierter Pool + Schicksalspunkte (GACHA_DESIGN §2.2/§7) ──
+  'gacha.pool.standard': 'Standard',
+  'gacha.pool.limited': 'Limitiert',
+  'gacha.fate.balance': 'Schicksal {cur}/{cost}',
+  'gacha.fate.redeem': 'Einlösen',
+  'gacha.fate.redeemed': '{item} eingelöst',
+  'gacha.fate.insufficient': 'Nicht genug Schicksalspunkte',
 
   // ── Seltenheit ───────────────────────────────────────────────────────────────
   'rarity.common': 'Gewöhnlich',

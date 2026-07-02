@@ -352,6 +352,16 @@ export const zh = {
   'shop.rechargeError': '支付失败，请重试',
   'shop.rechargeCancelled': '支付已取消',
   'shop.rechargePending': '支付成功，金币稍后到账',
+  // ── Monetization deals (GACHA_DESIGN §5–§6) ──
+  'shop.monthlyCard': '月卡',
+  'shop.monthlyActive': '生效中',
+  'shop.monthlyInactive': '未开通',
+  'shop.monthlyClaim': '领取',
+  'shop.monthlyClaimed': '每日奖励已领取',
+  'shop.monthlyNothing': '今日已领取或未开通',
+  'shop.starterDraw': '新手首抽包',
+  'shop.starterGrowth': '新手成长包',
+  'shop.alreadyOwned': '已购买',
 
   // ── Gacha / loot box (S2-6) ───────────────────────────────────────────────────
   'gacha.title': '盲盒',
@@ -368,6 +378,13 @@ export const zh = {
   'gacha.tapContinue': '点击任意处继续',
   'gacha.drawing': '抽取中',
   'gacha.loading': '加载中…',
+  // ── Limited pool + Fate Points (GACHA_DESIGN §2.2/§7) ──
+  'gacha.pool.standard': '常驻池',
+  'gacha.pool.limited': '限定池',
+  'gacha.fate.balance': '命运点 {cur}/{cost}',
+  'gacha.fate.redeem': '兑换限定',
+  'gacha.fate.redeemed': '已兑换 {item}',
+  'gacha.fate.insufficient': '命运点不足',
 
   // ── Rarity tiers ──────────────────────────────────────────────────────────────
   'rarity.common': '普通',

@@ -350,6 +350,16 @@ export const en: Record<TranslationKey, string> = {
   'shop.rechargeError': 'Payment failed — please retry',
   'shop.rechargeCancelled': 'Payment cancelled',
   'shop.rechargePending': 'Payment received — coins will arrive shortly',
+  // ── Monetization deals (GACHA_DESIGN §5–§6) ──
+  'shop.monthlyCard': 'Monthly Card',
+  'shop.monthlyActive': 'Active',
+  'shop.monthlyInactive': 'Not active',
+  'shop.monthlyClaim': 'Claim',
+  'shop.monthlyClaimed': 'Daily reward claimed',
+  'shop.monthlyNothing': 'Already claimed today or not active',
+  'shop.starterDraw': 'Starter First-Draw Pack',
+  'shop.starterGrowth': 'Starter Growth Pack',
+  'shop.alreadyOwned': 'Purchased',
 
   // ── Gacha (S2-6) ─────────────────────────────────────────────────────────────
   'gacha.title': 'Gacha',
@@ -366,6 +376,13 @@ export const en: Record<TranslationKey, string> = {
   'gacha.tapContinue': 'Tap anywhere to continue',
   'gacha.drawing': 'Drawing',
   'gacha.loading': 'Loading…',
+  // ── Limited pool + Fate Points (GACHA_DESIGN §2.2/§7) ──
+  'gacha.pool.standard': 'Standard',
+  'gacha.pool.limited': 'Limited',
+  'gacha.fate.balance': 'Fate {cur}/{cost}',
+  'gacha.fate.redeem': 'Redeem',
+  'gacha.fate.redeemed': 'Redeemed {item}',
+  'gacha.fate.insufficient': 'Not enough Fate Points',
 
   // ── Rarity ───────────────────────────────────────────────────────────────────
   'rarity.common': 'Common',

@@ -668,6 +668,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/fate/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Redeem Fate Points for a chosen past-featured legendary (GACHA_DESIGN §7) */
+        post: operations["redeemFate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/monthly-card/buy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Buy / renew the monthly card (GACHA_DESIGN §5) */
+        post: operations["monthlyCardBuy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/monthly-card/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim the monthly card daily coins (once per UTC day, GACHA_DESIGN §5) */
+        post: operations["monthlyCardClaim"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/starter/buy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Buy a one-off starter pack (GACHA_DESIGN §6) */
+        post: operations["starterBuy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ads/reward": {
         parameters: {
             query?: never;
@@ -1213,6 +1281,14 @@ export interface components {
                     [key: string]: number;
                 };
             };
+            monetization?: {
+                /** @description Fate Points balance (§7) */
+                fatePoints: number;
+                /** @description monthly card end timestamp (ms); 0 = none (§5) */
+                subscriptionExpiry: number;
+                /** @description one-off product ids already purchased (§6) */
+                starterUsed: string[];
+            };
             deliveredOrders?: string[];
             pvp: {
                 elo: number;
@@ -1396,6 +1472,17 @@ export interface components {
             pityThreshold?: number;
             /** @enum {string} */
             dupePolicy?: "shards" | "coins";
+            /** @description true = time-boxed limited pool */
+            limited?: boolean;
+            /** @description limited pool banner title */
+            name?: string;
+            /** @description banner legendary itemId (off-banner legendary → Fate Point) */
+            featuredLegendary?: string;
+            /**
+             * Format: int64
+             * @description limited pool close timestamp (ms)
+             */
+            endAt?: number;
             entries: {
                 itemId: string;
                 weight: number;
@@ -3034,6 +3121,136 @@ export interface operations {
                 };
             };
             402: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+        };
+    };
+    redeemFate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description a (past-)featured limited legendary itemId */
+                    itemId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            granted: string;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+        };
+    };
+    monthlyCardBuy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+        };
+    };
+    monthlyCardClaim: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            /** @description coins claimed this call (0 = no active card or already claimed today) */
+                            claimed: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+        };
+    };
+    starterBuy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    productId: "starter_draw" | "starter_growth";
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            results: components["schemas"]["GachaResult"][];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
         };
     };
     adsReward: {

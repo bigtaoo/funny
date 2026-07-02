@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import type { Collections, SaveData, Rarity, EquipmentInstance } from '@nw/shared';
 import { grantCards, deriveUnitLevels, UNIT_CARD_POOL_ID, EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount, CARD_DEFS, type CardDef } from '@nw/shared';
 import { grantCards as grantHeroCards } from './cards.js';
-import type { CommercialClient, GachaResultEntry } from './commercialClient.js';
+import type { CommercialClient, GachaResultEntry, WalletView } from './commercialClient.js';
 
 /** Mark each result as duplicate or not (compared against current inventory + already granted in this batch; used by the client for loot-box display). */
 export function markDuplicates(
@@ -187,19 +187,27 @@ export async function mirrorCoins(
   return cur.save;
 }
 
-/** Pull the authoritative balance + pity from commercial and write the mirror (refreshed alongside GET /save). */
+/** Pull the authoritative balance + pity + monetization state from commercial and write the mirror (refreshed alongside GET /save). */
 export async function mirrorWalletFrom(
   cols: Collections,
   accountId: string,
-  coins: number,
-  pity: Record<string, number>,
+  wallet: WalletView,
   now: number,
 ): Promise<SaveData> {
   const res = await cols.saves.findOneAndUpdate(
     { _id: accountId },
     {
       $inc: { 'save.rev': 1, rev: 1 },
-      $set: { 'save.wallet.coins': coins, 'save.gacha.pity': pity, 'save.updatedAt': now },
+      $set: {
+        'save.wallet.coins': wallet.coins,
+        'save.gacha.pity': wallet.pity,
+        'save.monetization': {
+          fatePoints: wallet.fatePoints,
+          subscriptionExpiry: wallet.subscriptionExpiry,
+          starterUsed: wallet.starterUsed,
+        },
+        'save.updatedAt': now,
+      },
     },
     { returnDocument: 'after' },
   );
@@ -209,20 +217,30 @@ export async function mirrorWalletFrom(
   return cur.save;
 }
 
-/** Complete the delivery loop for one undelivered order (skins idempotent + mark delivered). Shared by reconciliation. */
-async function deliverOrder(
+/** Complete the delivery loop for one order (skins idempotent + mark delivered). Shared by reconciliation + fate/starter handlers. */
+export async function deliverOrder(
   cols: Collections,
   commercial: CommercialClient,
   accountId: string,
   order: {
     _id: string;
-    kind: 'shop' | 'gacha';
+    kind: 'shop' | 'gacha' | 'fate' | 'starter';
     result: { itemId?: string; results?: GachaResultEntry[]; poolId?: string };
   },
   coinsAfter: number,
   pityPatch: Record<string, number> | null,
   now: number,
 ): Promise<SaveData> {
+  // Fate Point redemption (§7): a single self-chosen legendary skin, delivered idempotently like a shop skin.
+  if (order.kind === 'fate' && order.result.itemId) {
+    const cur = await cols.saves.findOne({ _id: accountId });
+    const owned = cur?.save.inventory.skins ?? [];
+    const newSkins = owned.includes(order.result.itemId) ? [] : [order.result.itemId];
+    const save = await deliverGrant(cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now);
+    await commercial.orderDelivered({ orderId: order._id });
+    return save;
+  }
+
   // Unit card pool order (S12-C): results.itemId is a cardKey; goes into cardInventory (not treated as a skin).
   if (order.kind === 'gacha' && order.result.poolId === UNIT_CARD_POOL_ID) {
     const cardGrants: Record<string, number> = {};

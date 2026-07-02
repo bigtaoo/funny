@@ -105,6 +105,17 @@ components:
             pity:
               type: object
               additionalProperties: { type: integer }
+        # Monetization mirror (GACHA_DESIGN §5–§7): read-only mirror of commercial authority. Absent in legacy saves, so not required.
+        monetization:
+          type: object
+          required: [fatePoints, subscriptionExpiry, starterUsed]
+          properties:
+            fatePoints: { type: integer, minimum: 0, description: 'Fate Points balance (§7)' }
+            subscriptionExpiry: { type: integer, description: 'monthly card end timestamp (ms); 0 = none (§5)' }
+            starterUsed:
+              type: array
+              items: { type: string }
+              description: 'one-off product ids already purchased (§6)'
         # Delivered purchase orders (commercial orderId); idempotent delivery ledger (S5-5). May be absent in legacy saves, so not required.
         deliveredOrders:
           type: array
@@ -360,6 +371,11 @@ components:
         costTen: { type: integer }
         pityThreshold: { type: integer }
         dupePolicy: { type: string, enum: [shards, coins] }
+        # Limited pool banner metadata (GACHA_DESIGN §2.2); absent on static pools.
+        limited: { type: boolean, description: 'true = time-boxed limited pool' }
+        name: { type: string, description: 'limited pool banner title' }
+        featuredLegendary: { type: string, description: 'banner legendary itemId (off-banner legendary → Fate Point)' }
+        endAt: { type: integer, format: int64, description: 'limited pool close timestamp (ms)' }
         entries:
           type: array
           items:
@@ -2014,6 +2030,125 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/GachaResult' }
         '402': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+
+  /fate/redeem:
+    post:
+      operationId: redeemFate
+      tags: [gacha]
+      summary: Redeem Fate Points for a chosen past-featured legendary (GACHA_DESIGN §7)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemId]
+              properties:
+                itemId: { type: string, description: 'a (past-)featured limited legendary itemId' }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, granted]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      granted: { type: string }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+
+  /monthly-card/buy:
+    post:
+      operationId: monthlyCardBuy
+      tags: [gacha]
+      summary: Buy / renew the monthly card (GACHA_DESIGN §5)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+
+  /monthly-card/claim:
+    post:
+      operationId: monthlyCardClaim
+      tags: [gacha]
+      summary: Claim the monthly card daily coins (once per UTC day, GACHA_DESIGN §5)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, claimed]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      claimed: { type: integer, description: 'coins claimed this call (0 = no active card or already claimed today)' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+
+  /starter/buy:
+    post:
+      operationId: starterBuy
+      tags: [gacha]
+      summary: Buy a one-off starter pack (GACHA_DESIGN §6)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId]
+              properties:
+                productId: { type: string, enum: [starter_draw, starter_growth] }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save, results]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+                      results:
+                        type: array
+                        items: { $ref: '#/components/schemas/GachaResult' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
 
   /ads/reward:
     post:

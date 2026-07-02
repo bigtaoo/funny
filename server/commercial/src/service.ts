@@ -5,21 +5,37 @@ import {
   findGachaPool,
   findShopItem,
   gachaCost,
+  buildLimitedPool,
+  isLimitedPoolActive,
   IAP_TIERS,
   DEV_STUB_DEFAULT_TIER,
   FIRST_PURCHASE_BONUS_MULTIPLIER,
   VICTORY_DAILY_WIN_CAP,
+  FATE_POINT_REDEEM_COST,
+  MONTHLY_CARD_DAYS,
+  MONTHLY_CARD_DAILY_COINS,
+  MONTHLY_CARD_IMMEDIATE_COINS,
+  GROWTH_PACK_COINS,
+  GROWTH_PACK_CARD_DAYS,
+  STARTER_DRAW_COUNT,
+  STARTER_DRAW_FLOOR,
+  PRODUCT_MONTHLY_CARD,
+  PRODUCT_STARTER_DRAW,
+  PRODUCT_STARTER_GROWTH,
   type Rarity,
+  type GachaPoolDef,
+  type LimitedPoolConfig,
 } from '@nw/shared';
 import type {
   CommercialCollections,
+  GachaPoolDoc,
   GachaResultEntry,
   OrderDoc,
   PromoCodeDoc,
   PromoRedemptionDoc,
   WalletDoc,
 } from './db';
-import { rollGacha, type RandInt } from './gacha';
+import { rollGacha, rollStarterPack, type RandInt } from './gacha';
 
 export type ServiceErr =
   | 'INSUFFICIENT_FUNDS'
@@ -29,7 +45,20 @@ export type ServiceErr =
   | 'PROMO_NOT_FOUND'
   | 'PROMO_EXPIRED'
   | 'PROMO_EXHAUSTED'
-  | 'PROMO_ALREADY_USED';
+  | 'PROMO_ALREADY_USED'
+  | 'POOL_UNAVAILABLE'
+  | 'FATE_INSUFFICIENT'
+  | 'FATE_INVALID_ITEM'
+  | 'ALREADY_PURCHASED';
+
+/** Wallet view returned to meta (mirrored into SaveData). Includes monetization state (§5–§7). */
+export interface WalletView {
+  coins: number;
+  pity: Record<string, number>;
+  fatePoints: number;
+  subscriptionExpiry: number; // 0 = no active subscription
+  starterUsed: string[];
+}
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: ServiceErr };
 
@@ -52,6 +81,29 @@ function devVerifyReceipt(_platform: string, receipt: string): { ok: boolean; co
   const tier = receipt.startsWith('tier:') ? receipt.slice(5) : DEV_STUB_DEFAULT_TIER;
   const coins = IAP_TIERS[tier];
   return coins ? { ok: true, coins } : { ok: true, coins: IAP_TIERS[DEV_STUB_DEFAULT_TIER]! };
+}
+
+/** Project a wallet document into the meta-facing view (defaults for lazily-absent monetization fields). */
+function walletView(w: WalletDoc | null): WalletView {
+  return {
+    coins: w?.coins ?? 0,
+    pity: w?.gacha.pity ?? {},
+    fatePoints: w?.fatePoints ?? 0,
+    subscriptionExpiry: w?.subscription?.expiry ?? 0,
+    starterUsed: w?.starterUsed ?? [],
+  };
+}
+
+/** Strip the mongo/audit fields off a GachaPoolDoc back to a plain LimitedPoolConfig. */
+function limitedConfigFromDoc(doc: GachaPoolDoc): LimitedPoolConfig {
+  return {
+    id: doc.id,
+    name: doc.name,
+    featuredLegendary: doc.featuredLegendary,
+    startAt: doc.startAt,
+    endAt: doc.endAt,
+    ...(doc.fillerLegendaries ? { fillerLegendaries: doc.fillerLegendaries } : {}),
+  };
 }
 
 export class CommercialService {
@@ -88,10 +140,68 @@ export class CommercialService {
     return res!;
   }
 
-  /** GET /internal/wallet: returns balance + all pity counters. */
-  async getWallet(accountId: string): Promise<{ coins: number; pity: Record<string, number> }> {
+  /** GET /internal/wallet: returns balance + all pity counters + monetization state (§5–§7). */
+  async getWallet(accountId: string): Promise<WalletView> {
     const w = await this.cols.wallets.findOne({ _id: accountId });
-    return { coins: w?.coins ?? 0, pity: w?.gacha.pity ?? {} };
+    return walletView(w);
+  }
+
+  /**
+   * Resolve a pool id to a full definition (GACHA_DESIGN §2). Static pools (standard/unit cards) come from
+   * @nw/shared; limited pools are built from the admin-authored config in `gachaPools` and are only returned
+   * while inside their [startAt, endAt) window. Returns null when unknown or a closed/out-of-window limited pool.
+   */
+  private async resolvePool(poolId: string, now: number): Promise<GachaPoolDef | null> {
+    const stat = findGachaPool(poolId);
+    if (stat) return stat;
+    const doc = await this.cols.gachaPools.findOne({ _id: poolId });
+    if (!doc || !isLimitedPoolActive(doc, now)) return null;
+    return buildLimitedPool(limitedConfigFromDoc(doc));
+  }
+
+  /** Create (or overwrite) a limited pool config (admin, GACHA_DESIGN §2.2). */
+  async createLimitedPool(args: {
+    config: LimitedPoolConfig;
+    createdBy: string;
+  }): Promise<Result<{ id: string }>> {
+    const c = args.config;
+    if (!c.id || !c.name || !c.featuredLegendary) return { ok: false, error: 'BAD_REQUEST' };
+    if (!(c.endAt > c.startAt)) return { ok: false, error: 'BAD_REQUEST' };
+    if (findGachaPool(c.id)) return { ok: false, error: 'BAD_REQUEST' }; // must not shadow a static pool id
+    const doc: GachaPoolDoc = {
+      _id: c.id,
+      id: c.id,
+      name: c.name,
+      featuredLegendary: c.featuredLegendary,
+      startAt: c.startAt,
+      endAt: c.endAt,
+      ...(c.fillerLegendaries ? { fillerLegendaries: c.fillerLegendaries } : {}),
+      createdBy: args.createdBy,
+      createdAt: this.now(),
+    };
+    await this.cols.gachaPools.replaceOne({ _id: c.id }, doc, { upsert: true });
+    return { ok: true, id: c.id };
+  }
+
+  /** Close a limited pool early (clamp endAt to now); the config is retained so its featured legendary stays Fate-redeemable. */
+  async closeLimitedPool(args: { id: string }): Promise<Result<{ id: string }>> {
+    const now = this.now();
+    const res = await this.cols.gachaPools.findOneAndUpdate(
+      { _id: args.id },
+      { $set: { endAt: now, closedAt: now } },
+    );
+    if (!res) return { ok: false, error: 'NOT_FOUND' };
+    return { ok: true, id: args.id };
+  }
+
+  /** List all limited pool configs (admin management). */
+  async listLimitedPools(): Promise<GachaPoolDoc[]> {
+    return this.cols.gachaPools.find({}).sort({ createdAt: -1 }).toArray();
+  }
+
+  /** List currently-open limited pool configs (for the client gacha listing). */
+  async listActiveLimitedPools(now: number): Promise<GachaPoolDoc[]> {
+    return (await this.cols.gachaPools.find({}).toArray()).filter((p) => isLimitedPoolActive(p, now));
   }
 
   /**
@@ -280,21 +390,26 @@ export class CommercialService {
       coinsAfter: number;
       pityAfter: number;
       results: GachaResultEntry[];
+      fateGained: number;
+      fatePointsAfter: number;
     }>
   > {
     const existing = await this.cols.orders.findOne({ _id: args.orderId });
     if (existing && existing.result.results) {
+      const w = await this.cols.wallets.findOne({ _id: existing.accountId });
       return {
         ok: true,
         orderId: existing._id,
         coinsAfter: existing.coinsAfter,
         pityAfter: existing.pityAfter?.[args.poolId] ?? 0,
         results: existing.result.results,
+        fateGained: 0, // replay: fate already credited on the original draw
+        fatePointsAfter: w?.fatePoints ?? 0,
       };
     }
-    const pool = findGachaPool(args.poolId);
+    const pool = await this.resolvePool(args.poolId, this.now());
     if (!pool || (args.count !== 1 && args.count !== 10)) {
-      return { ok: false, error: 'BAD_REQUEST' };
+      return { ok: false, error: pool ? 'BAD_REQUEST' : 'POOL_UNAVAILABLE' };
     }
     const cost = gachaCost(pool, args.count);
 
@@ -304,17 +419,24 @@ export class CommercialService {
     const prevPity = wallet.gacha.pity[args.poolId] ?? 0;
     const { results, pityAfter } = rollGacha(pool, args.count, prevPity, this.rng);
 
-    // Debit coins + update pity for this pool; single-document atomic operation with $gte guard to prevent concurrent overdraft.
+    // Fate points (GACHA_DESIGN §7): in a limited pool, each legendary that is NOT the featured banner is a "歪" → +1.
+    const fateGained =
+      pool.limited && pool.featuredLegendary
+        ? results.filter((r) => r.rarity === 'legendary' && r.itemId !== pool.featuredLegendary).length
+        : 0;
+
+    // Debit coins + update pity for this pool (+ credit fate points); single-document atomic op with $gte guard.
     const charged = await this.cols.wallets.findOneAndUpdate(
       { _id: args.accountId, coins: { $gte: cost } },
       {
-        $inc: { coins: -cost, rev: 1 },
+        $inc: { coins: -cost, rev: 1, ...(fateGained > 0 ? { fatePoints: fateGained } : {}) },
         $set: { [`gacha.pity.${args.poolId}`]: pityAfter, updatedAt: this.now() },
       },
       { returnDocument: 'after' },
     );
     if (!charged) return { ok: false, error: 'INSUFFICIENT_FUNDS' };
     const coinsAfter = charged.coins;
+    const fatePointsAfter = charged.fatePoints ?? 0;
 
     await this.cols.orders.insertOne({
       _id: args.orderId,
@@ -344,7 +466,254 @@ export class CommercialService {
       pityAfter,
       ts: this.now(),
     });
-    return { ok: true, orderId: args.orderId, coinsAfter, pityAfter, results };
+    return { ok: true, orderId: args.orderId, coinsAfter, pityAfter, results, fateGained, fatePointsAfter };
+  }
+
+  /**
+   * Redeem Fate Points for a self-chosen past-featured legendary (GACHA_DESIGN §7.1). Deducts
+   * FATE_POINT_REDEEM_COST atomically (guarded), records a `fate` order (meta delivers the skin like a gacha
+   * order), and returns the chosen itemId + remaining points. Idempotent by orderId (replay returns the record).
+   * The item must be (or have been) the featured legendary of some limited pool.
+   */
+  async redeemFate(args: {
+    accountId: string;
+    itemId: string;
+    orderId: string;
+  }): Promise<Result<{ orderId: string; itemId: string; coinsAfter: number; fatePointsAfter: number }>> {
+    const existing = await this.cols.orders.findOne({ _id: args.orderId });
+    if (existing) {
+      const w = await this.cols.wallets.findOne({ _id: existing.accountId });
+      return {
+        ok: true,
+        orderId: existing._id,
+        itemId: existing.result.itemId ?? args.itemId,
+        coinsAfter: existing.coinsAfter,
+        fatePointsAfter: w?.fatePoints ?? 0,
+      };
+    }
+    // The chosen item must be the featured legendary of some limited pool (past or present).
+    const known = await this.cols.gachaPools.findOne({ featuredLegendary: args.itemId });
+    if (!known) return { ok: false, error: 'FATE_INVALID_ITEM' };
+
+    await this.ensureWallet(args.accountId);
+    const charged = await this.cols.wallets.findOneAndUpdate(
+      { _id: args.accountId, fatePoints: { $gte: FATE_POINT_REDEEM_COST } },
+      { $inc: { fatePoints: -FATE_POINT_REDEEM_COST, rev: 1 }, $set: { updatedAt: this.now() } },
+      { returnDocument: 'after' },
+    );
+    if (!charged) return { ok: false, error: 'FATE_INSUFFICIENT' };
+
+    await this.cols.orders.insertOne({
+      _id: args.orderId,
+      accountId: args.accountId,
+      kind: 'fate',
+      cost: 0,
+      status: 'charged',
+      coinsAfter: charged.coins,
+      result: { itemId: args.itemId },
+      ts: this.now(),
+    });
+    return {
+      ok: true,
+      orderId: args.orderId,
+      itemId: args.itemId,
+      coinsAfter: charged.coins,
+      fatePointsAfter: charged.fatePoints ?? 0,
+    };
+  }
+
+  /**
+   * Extend the subscription by `days` (stacking = extend from max(now, current expiry)) + optionally credit
+   * `immediateCoins`, in one atomic aggregation-pipeline update. Writes a ledger entry for the immediate coins.
+   * Callers gate idempotency upstream (order slot / starterUsed claim) so this never double-applies.
+   */
+  private async applySubscription(
+    accountId: string,
+    days: number,
+    immediateCoins: number,
+    now: number,
+    ref: { orderId?: string; reason?: string },
+  ): Promise<{ coinsAfter: number; expiry: number }> {
+    await this.ensureWallet(accountId);
+    const ms = days * 86400000;
+    const res = await this.cols.wallets.findOneAndUpdate(
+      { _id: accountId },
+      [
+        {
+          $set: {
+            'subscription.expiry': {
+              $add: [{ $max: [{ $ifNull: ['$subscription.expiry', now] }, now] }, ms],
+            },
+            coins: { $add: ['$coins', immediateCoins] },
+            rev: { $add: ['$rev', 1] },
+            updatedAt: now,
+          },
+        },
+      ],
+      { returnDocument: 'after' },
+    );
+    const coinsAfter = res!.coins;
+    if (immediateCoins > 0) {
+      await this.cols.ledger.insertOne({
+        accountId,
+        delta: immediateCoins,
+        balanceAfter: coinsAfter,
+        reason: ref.reason ?? 'monthly_card',
+        ...(ref.orderId ? { orderId: ref.orderId } : {}),
+        ts: now,
+      });
+    }
+    return { coinsAfter, expiry: res!.subscription?.expiry ?? now + ms };
+  }
+
+  /**
+   * Activate / renew the monthly card (GACHA_DESIGN §5). Idempotent by orderId. Extends the subscription by
+   * MONTHLY_CARD_DAYS and grants MONTHLY_CARD_IMMEDIATE_COINS at once. Real IAP receipt verification is the
+   * caller's concern (meta); here it is treated as an already-authorized purchase.
+   */
+  async monthlyCardBuy(args: {
+    accountId: string;
+    orderId: string;
+  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
+    const existing = await this.cols.orders.findOne({ _id: args.orderId });
+    if (existing) {
+      const w = await this.cols.wallets.findOne({ _id: existing.accountId });
+      return { ok: true, coinsAfter: w?.coins ?? 0, subscriptionExpiry: w?.subscription?.expiry ?? 0 };
+    }
+    const now = this.now();
+    try {
+      await this.cols.orders.insertOne({
+        _id: args.orderId,
+        accountId: args.accountId,
+        kind: 'grant',
+        cost: 0,
+        status: 'delivered',
+        coinsAfter: 0,
+        result: {},
+        deliveredAt: now,
+        ts: now,
+      });
+    } catch (e) {
+      if ((e as { code?: number }).code === 11000) {
+        const w = await this.cols.wallets.findOne({ _id: args.accountId });
+        return { ok: true, coinsAfter: w?.coins ?? 0, subscriptionExpiry: w?.subscription?.expiry ?? 0 };
+      }
+      throw e;
+    }
+    const { coinsAfter, expiry } = await this.applySubscription(
+      args.accountId,
+      MONTHLY_CARD_DAYS,
+      MONTHLY_CARD_IMMEDIATE_COINS,
+      now,
+      { orderId: args.orderId },
+    );
+    await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
+    return { ok: true, coinsAfter, subscriptionExpiry: expiry };
+  }
+
+  /**
+   * Claim the monthly card's daily coins (GACHA_DESIGN §5): +MONTHLY_CARD_DAILY_COINS, once per UTC day.
+   * Atomically guarded on an active subscription (expiry > now) AND lastClaimDayKey !== dayKey.
+   * Returns claimed:0 (no error) when there is no active card or it was already claimed today.
+   */
+  async monthlyCardClaim(args: {
+    accountId: string;
+    dayKey: string;
+  }): Promise<Result<{ coinsAfter: number; claimed: number; subscriptionExpiry: number }>> {
+    const now = this.now();
+    await this.ensureWallet(args.accountId);
+    const res = await this.cols.wallets.findOneAndUpdate(
+      { _id: args.accountId, 'subscription.expiry': { $gt: now }, 'subscription.lastClaimDayKey': { $ne: args.dayKey } },
+      {
+        $inc: { coins: MONTHLY_CARD_DAILY_COINS, rev: 1 },
+        $set: { 'subscription.lastClaimDayKey': args.dayKey, updatedAt: now },
+      },
+      { returnDocument: 'after' },
+    );
+    if (!res) {
+      const w = await this.cols.wallets.findOne({ _id: args.accountId });
+      return { ok: true, coinsAfter: w?.coins ?? 0, claimed: 0, subscriptionExpiry: w?.subscription?.expiry ?? 0 };
+    }
+    await this.cols.ledger.insertOne({
+      accountId: args.accountId,
+      delta: MONTHLY_CARD_DAILY_COINS,
+      balanceAfter: res.coins,
+      reason: 'monthly_card_daily',
+      ts: now,
+    });
+    return { ok: true, coinsAfter: res.coins, claimed: MONTHLY_CARD_DAILY_COINS, subscriptionExpiry: res.subscription?.expiry ?? 0 };
+  }
+
+  /**
+   * Buy a starter pack (GACHA_DESIGN §6), once per account (starterUsed guard).
+   *  • starter_draw: a rare+ floored 10-pull on the standard pool (independent of pity); meta delivers the items.
+   *  • starter_growth: GROWTH_PACK_COINS + a GROWTH_PACK_CARD_DAYS-day monthly card.
+   * The first-7-days eligibility window for the growth pack is enforced upstream by meta (account age).
+   */
+  async starterBuy(args: {
+    accountId: string;
+    productId: string;
+    orderId: string;
+  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[] }>> {
+    if (args.productId !== PRODUCT_STARTER_DRAW && args.productId !== PRODUCT_STARTER_GROWTH) {
+      return { ok: false, error: 'BAD_REQUEST' };
+    }
+    const existing = await this.cols.orders.findOne({ _id: args.orderId });
+    if (existing) {
+      const w = await this.cols.wallets.findOne({ _id: existing.accountId });
+      return {
+        ok: true,
+        coinsAfter: w?.coins ?? 0,
+        subscriptionExpiry: w?.subscription?.expiry ?? 0,
+        results: existing.result.results ?? [],
+      };
+    }
+    const now = this.now();
+    await this.ensureWallet(args.accountId);
+    // Once-per-account claim: atomically add the product to starterUsed only if not already present.
+    const claimed = await this.cols.wallets.findOneAndUpdate(
+      { _id: args.accountId, starterUsed: { $ne: args.productId } },
+      { $addToSet: { starterUsed: args.productId }, $set: { updatedAt: now } },
+      { returnDocument: 'after' },
+    );
+    if (!claimed) return { ok: false, error: 'ALREADY_PURCHASED' };
+
+    if (args.productId === PRODUCT_STARTER_DRAW) {
+      const std = findGachaPool('standard')!;
+      const results = rollStarterPack(std, STARTER_DRAW_COUNT, STARTER_DRAW_FLOOR, this.rng);
+      await this.cols.orders.insertOne({
+        _id: args.orderId,
+        accountId: args.accountId,
+        kind: 'starter',
+        cost: 0,
+        status: 'charged', // meta delivers the pack items, then marks delivered
+        coinsAfter: claimed.coins,
+        result: { results, poolId: 'standard' },
+        ts: now,
+      });
+      return { ok: true, coinsAfter: claimed.coins, subscriptionExpiry: claimed.subscription?.expiry ?? 0, results };
+    }
+
+    // starter_growth: coins + 7-day card (no items to deliver → order lands delivered).
+    const { coinsAfter, expiry } = await this.applySubscription(
+      args.accountId,
+      GROWTH_PACK_CARD_DAYS,
+      GROWTH_PACK_COINS,
+      now,
+      { orderId: args.orderId, reason: 'starter_growth' },
+    );
+    await this.cols.orders.insertOne({
+      _id: args.orderId,
+      accountId: args.accountId,
+      kind: 'grant',
+      cost: 0,
+      status: 'delivered',
+      coinsAfter,
+      result: {},
+      deliveredAt: now,
+      ts: now,
+    });
+    return { ok: true, coinsAfter, subscriptionExpiry: expiry, results: [] };
   }
 
   /**
