@@ -227,3 +227,15 @@
 - **为什么**：旧路径成交/退回直接 `grantEquipment/grantCard/grantMaterial` 写回背包，撞满仓时要么资损要么需另建暂存区；且"退回即刻入库"与"寄存出去"的心智不符。改经邮件后，出账与领取解耦，一套机制覆盖买卖两侧。
 - **不动**：金币侧（卖方收款、竞拍退款）仍直接走 commercial（钱包权威，无背包/实例问题）；`createAuction` 内 escrow 后的**同步失败回滚**仍直接 grant（挂单未成立的即时回退，非出账语义）。
 - **影响**：`@nw/shared`（`MailAttachmentDoc`/`social.ts MailAttachmentView` 增 `kind:'equipment'|'card'` + `instance`）**属公共依赖，最先合 main**；`server/contracts/openapi.yml`（`MailAttachmentView` 同步）；`metaserver`（`mail.ts splitAttachments` + `service.ts claimMail` 写回实例，`cards.ts` 抽 `grantCard`）；`worldsvc`（`auctionService.ts deliverItem` 改发系统邮件、注入 `mail`；`mailClient.ts` 附件类型扩展）；`client`（`FriendsScene` 邮件渲染装备/卡附件 + i18n 三语）。文档同步：EQUIPMENT_DESIGN §13、AUCTION_DESIGN §1/§2/§A。
+
+## ADR-027 品牌 Logo = 盾徽 + 文具三笔（蓝主导 / 无字）；大小双版本 — Accepted — 2026-07-02
+
+- **决策**（用户拍板）：确立游戏 logo/图标为**奶油横格纸盾牌 + 钢笔（蓝）/铅笔（琥珀）/马克笔（红）交叉 X 徽记**。**蓝主导**——中央钢笔最大最显眼，宣示「我方蓝」（ADR-003 / art-direction §3.2 阵营色），红仅点缀。mark 内**不嵌文字**；字标 "Nivara"（对外名）用真实字体单独排，待字体打包后落地。
+- **大 / 小双版本**（按尺寸分工，避免小尺寸糊）：
+  - **master**（`art/logo/logo.png` 2048² 透明）：全细节手绘（纸纹/笔尖/排线/胶带），用于 **≥128px**。
+  - **simple**（`art/logo/logo-simple.png` 1024² 透明）：扁平实色粗描边、无纹理无胶带，用于 **≤64px**（favicon/小图标）。实测 master 到 32px 三笔糊成团，simple 仍可读。
+- **生成流程**（AI 图管线，同 art-direction §〇 分工）：AI 出图（盾徽三笔交叉、蓝主导、明显纸纹、**无字、无胶带**——交叉不带遮挡 AI 才画得对笔身连续性；master 胶带用户 GIMP 后期补）→ GIMP 抠透明底 → `System.Drawing` HighQualityBicubic 保 alpha 批量降采样入 `art/logo/derived/`。
+  - 出图 prompt（记录备后续补图）：`rounded shield crest with soft U-shaped bottom, hand-drawn notebook doodle style, bold navy ink outlines, cream ruled notebook paper (blue lines + red margin, prominent paper texture); three pens cross in a clear X: dominant blue fountain pen center + amber pencil + small red marker; each pen ONE continuous piece, blue dominant red accent; no text, no tape.` 简版加 `flat solid colors, no texture, no ruled lines, readable at 32px`。
+- **落地**（web/CrazyGames）：`client/public/` 出货 `favicon-16/32/48.png`（simple 派生）+ `apple-touch-icon.png`(180)/`icon-192/512.png`（master）+ `site.webmanifest`（name/short_name=Nivara，theme `#1b3a6b`/bg `#F5F0E8`）；`webpack.config.js` CopyPlugin（`!isWechat`）拷到 dist 根；`public/{web,crazygames}/index.html` `<head>` 加 `<link icon/apple-touch/manifest>` + `theme-color`。生产 web 构建已验证图标入 dist + head 注入正确。
+- **待办 / 不在本次**：① **微信小游戏图标**在微信公众平台后台手动上传（代码无接入点），建议用 `derived/logo-512.png`。② HTML `<title>` 仍 "Notebook Wars"；对外正式改名 Nivara 走 i18n `game.title`（记忆 game-name），非本次范围。③ 字标字体待打包（同 art-direction §7.4）。
+- **影响**：新增 `art/logo/**`；`client/public/{favicon-*,apple-touch-icon,icon-*}.png` + `site.webmanifest`；改 `client/webpack.config.js`（CopyPlugin）+ `client/public/{web,crazygames}/index.html`。[`product/art-direction.md`](product/art-direction.md) §13 记录全貌。
