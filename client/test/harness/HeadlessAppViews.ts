@@ -28,6 +28,7 @@ import type { GachaSceneCallbacks } from '../../src/scenes/GachaScene';
 import type { CampaignMapCallbacks } from '../../src/scenes/CampaignMapScene';
 import type { LevelPrepCallbacks } from '../../src/scenes/LevelPrepScene';
 import type { CollectionCallbacks } from '../../src/scenes/CollectionScene';
+import type { CardCallbacks } from '../../src/scenes/CardScene';
 import type { EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
 import type { StatsCallbacks } from '../../src/scenes/StatsScene';
 import type { ReplaySceneCallbacks } from '../../src/scenes/ReplayScene';
@@ -55,7 +56,7 @@ import type { CitySceneCallbacks } from '../../src/scenes/CityScene';
 
 export type ScreenName =
   | 'none' | 'intro' | 'lobby' | 'settings' | 'login' | 'shop' | 'gacha'
-  | 'campaignMap' | 'levelPrep' | 'collection' | 'equipment' | 'stats' | 'achievements'
+  | 'campaignMap' | 'levelPrep' | 'collection' | 'cardRoster' | 'equipment' | 'stats' | 'achievements'
   | 'leaderboard' | 'battlePass' | 'replay' | 'result' | 'room' | 'friends'
   | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams' | 'deckBuilder'
   | 'consent' | 'daily' | 'events' | 'statePlayer' | 'titles' | 'city';
@@ -86,6 +87,7 @@ export class HeadlessAppViews implements AppViews {
   campaignMap?: CampaignMapCallbacks;
   levelPrep?: LevelPrepCallbacks;
   collection?: CollectionCallbacks;
+  cardRoster?: CardCallbacks;
   equipment?: EquipmentCallbacks;
   stats?: StatsCallbacks;
   consent?: ConsentCallbacks;
@@ -139,6 +141,7 @@ export class HeadlessAppViews implements AppViews {
   showCampaignMap(cb: CampaignMapCallbacks): void { this.screen = 'campaignMap'; this.campaignMap = cb; }
   showLevelPrep(cb: LevelPrepCallbacks): void { this.screen = 'levelPrep'; this.levelPrep = cb; }
   showCollection(cb: CollectionCallbacks): void { this.screen = 'collection'; this.collection = cb; }
+  showCardRoster(cb: CardCallbacks): void { this.screen = 'cardRoster'; this.cardRoster = cb; }
   showEquipment(cb: EquipmentCallbacks): void { this.screen = 'equipment'; this.equipment = cb; }
   showStats(cb: StatsCallbacks): void { this.screen = 'stats'; this.stats = cb; }
   showAchievements(_cb: AchievementCallbacks): void { this.screen = 'achievements'; }

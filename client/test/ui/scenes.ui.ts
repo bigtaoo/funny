@@ -198,10 +198,6 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
       new LevelPrepScene(createLayout(w, h), new InputManager(), {
         onBack() {},
         onStart() {},
-        getUnitLevels: () => ({}),
-        getCardInventory: () => ({}),
-        isOnline: () => true,
-        tryMerge: async () => false,
         levelNumber: 1,
         staminaCost: 1,
         getStamina: () => ({ current: 120, regenAt: 0 }),
@@ -651,10 +647,6 @@ describe('LevelPrepScene — layout invariants', () => {
     const scene = new LevelPrepScene(layout, input, {
       onBack() {},
       onStart() {},
-      getUnitLevels: () => ({}),
-      getCardInventory: () => ({}),
-      isOnline: () => true,
-      tryMerge: async () => false,
       levelNumber: 1,
       staminaCost: 1,
       getStamina: () => ({ current: staminaCurrent, regenAt: 0 }),

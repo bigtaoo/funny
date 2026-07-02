@@ -30,6 +30,7 @@ import type { GachaSceneCallbacks } from '../scenes/GachaScene';
 import type { CampaignMapCallbacks } from '../scenes/CampaignMapScene';
 import type { LevelPrepCallbacks } from '../scenes/LevelPrepScene';
 import type { CollectionCallbacks } from '../scenes/CollectionScene';
+import type { CardCallbacks } from '../scenes/CardScene';
 import type { EquipmentCallbacks } from '../scenes/EquipmentScene';
 import type { StatsCallbacks } from '../scenes/StatsScene';
 import type { AchievementCallbacks } from '../scenes/AchievementScene';
@@ -153,6 +154,8 @@ export interface AppViews {
   showCampaignMap(cb: CampaignMapCallbacks): void;
   showLevelPrep(cb: LevelPrepCallbacks): void;
   showCollection(cb: CollectionCallbacks): void;
+  /** Hero Roster (CC-6): owned card instances — level / troops / gear / feed / lock. Server-authoritative; requires login. Entry point per CHARACTER_CARDS_DESIGN §10. */
+  showCardRoster(cb: CardCallbacks): void;
   /** Equipment system (E5): inventory / forging / enhancement / dismantling / equipping. Server-authoritative; requires login. */
   showEquipment(cb: EquipmentCallbacks): void;
   showStats(cb: StatsCallbacks): void;

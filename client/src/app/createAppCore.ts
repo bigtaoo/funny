@@ -309,7 +309,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onOpenSocial() { withGuide('social', 'guide.social.title', 'guide.social.body', () => goFriends()); },
       ...(online ? { onOpenMail: () => goMail() } : {}),
       onOpenShop() { withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => goGacha({})); },
-      onOpenCards() { withGuide('cards', 'guide.cards.title', 'guide.cards.body', () => goCollection(goLobby, 'cards')); },
+      // Lobby "cards" slot → Hero Roster (CHARACTER_CARDS_DESIGN §10). Roster mutations (feed/lock)
+      // are server-authoritative, so logged-out / offline falls back to the offline-capable Collection
+      // (card codex + skins wardrobe), which stays reachable from the campaign map too.
+      onOpenCards() { withGuide('cards', 'guide.cards.title', 'guide.cards.body', () => (api ? goCardRoster(goLobby) : goCollection(goLobby, 'cards'))); },
       onOpenStats() { goStats(); },
       ...(online ? { onOpenAchievements: () => goAchievements() } : {}),
       ...(online ? { onOpenDaily: () => withGuide('daily', 'guide.daily.title', 'guide.daily.body', () => goDaily()), onOpenEvents: () => goEvents() } : {}),
@@ -1166,15 +1169,6 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onBack() { analytics.track('level_abandon', { level_id: levelId, phase: 'prep' }); goCampaignMap(); },
       onStart() { analytics.track('screen_view', { scene: 'GameScene' }); goCampaign(levelId); },
       levelNumber,
-      // SaveData v4: unitLevels/cardInventory removed; Hero Roster (CC-4) replaces the old merge system.
-      getUnitLevels: () => ({}),
-      getCardInventory: () => ({}),
-      isOnline: () => saveManager.online(),
-      tryMerge: async (unitId, lvl) => {
-        const ok = await saveManager.merge(unitId, lvl);
-        if (ok) analytics.track('unit_card_merge', { unit_id: unitId, from_level: lvl });
-        return ok;
-      },
       objective: level.objective,
       ...(level.briefKey ? { brief: t(level.briefKey as TranslationKey) } : {}),
       ...(level.story?.introKey ? { intro: t(level.story.introKey as TranslationKey) } : {}),
@@ -1195,7 +1189,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
-  function goCollection(back: () => void, initialTab: 'cards' | 'skins' | 'units' = 'cards'): void {
+  function goCollection(back: () => void, initialTab: 'cards' | 'skins' = 'cards'): void {
     inLobby = false;
     analytics.track('screen_view', { scene: 'CollectionScene' });
     // Equipment merged into the "Growth" section (LOBBY_IA_REDESIGN §3): the 4th "Equipment" tab
@@ -1214,15 +1208,42 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           else d.equipped[EQUIP_SLOT] = skinId;
         });
       },
-      // SaveData v4: unitLevels/cardInventory removed; Hero Roster (CC-4) replaces the old merge system.
-      getUnitLevels: () => ({}),
-      getCardInventory: () => ({}),
-      isOnline: () => saveManager.online(),
-      tryMerge: async (unitId, lvl) => {
-        const ok = await saveManager.merge(unitId, lvl);
-        if (ok) analytics.track('unit_card_merge', { unit_id: unitId, from_level: lvl });
-        return ok;
+    });
+  }
+
+  /**
+   * Hero Roster (CC-6): owned card instances — level / troops / gear / feed / lock.
+   * Server-authoritative (feed/lock mutate server-side; SaveData is a read-only mirror) → requires an
+   * online login; offline / not logged in falls back to `back`. Entered from the lobby "cards" nav slot
+   * (CHARACTER_CARDS_DESIGN §10). Per-card gear is edited by jumping to EquipmentScene with the card's
+   * instance id, returning here on back.
+   */
+  function goCardRoster(back: () => void = goLobby): void {
+    if (!api) { back(); return; }
+    const client = api;
+    inLobby = false;
+    analytics.track('screen_view', { scene: 'CardScene' });
+    views.showCardRoster({
+      onBack() { back(); },
+      getSave: () => saveManager.get(),
+      async feedCards(targetCardId, materialCardIds) {
+        try {
+          const { save, levelsGained } = await client.feedCards(targetCardId, materialCardIds);
+          saveManager.adoptServer(save);
+          analytics.track('card_feed', { target_id: targetCardId, material_count: materialCardIds.length, levels_gained: levelsGained });
+          return { ok: true as const, levelsGained };
+        } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
       },
+      async setCardLock(cardInstanceId, locked) {
+        try {
+          const { save } = await client.setCardLock(cardInstanceId, locked);
+          saveManager.adoptServer(save);
+          analytics.track('card_lock', { card_instance_id: cardInstanceId, locked });
+          return { ok: true as const };
+        } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
+      },
+      // Per-card gear editing (CC-1 flow: CardScene → EquipmentScene → back to roster).
+      openEquipment: (cardInstanceId: string) => goEquipment(() => goCardRoster(back), false, cardInstanceId),
     });
   }
 

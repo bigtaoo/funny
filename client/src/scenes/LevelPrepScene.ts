@@ -2,44 +2,23 @@ import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
-import { t, type TranslationKey } from '../i18n';
-import { UnitType } from '../game';
-import { TRAIT_BREAKPOINTS, UNIT_MAX_LEVEL } from '../game/balance/progression';
-import {
-  PROGRESSABLE_UNIT_IDS,
-  MERGE_COPIES,
-  cardKey,
-} from '../game/balance/unitCards';
+import { t } from '../i18n';
 import type { ObjectiveSpec } from '../game/campaign/LevelDefinition';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 
-// ── LevelPrepScene (S12) — unit card level view + merge + Start ─────────────
+// ── LevelPrepScene — objective / brief / stamina + Start ────────────────────
 //
-// Shows each progressable unit's current level (derived from cardInventory),
-// any unlocked traits (T3/T6/T9 breakpoints), and a per-level merge button
-// (5 cards of level N → 1 card of level N+1). Replaces the S3-2 material +
-// upgrade-tree system. The hard wall (§5.2) means levels only ever buff the
-// campaign engine; buildPvpBlueprints never receives unitLevels.
-
-const UNIT_NAME_KEY: Partial<Record<UnitType, TranslationKey>> = {
-  [UnitType.Infantry]: 'card.infantry.name',
-  [UnitType.ShieldBearer]: 'card.shieldbearer.name',
-  [UnitType.Archer]: 'card.archer.name',
-};
+// Shows the level brief, win-condition objective banner, and a stamina gate
+// before the Start button. Card levels + gear are managed in the Hero Roster
+// (CardScene, CHARACTER_CARDS_DESIGN); the campaign engine auto-selects the
+// best card per required unit type at battle start (CC-6), so this scene no
+// longer surfaces per-unit progression.
 
 export interface LevelPrepCallbacks {
   onBack(): void;
   onStart(): void;
-  /** unitId → current level (1–9); missing key = Lv 1. */
-  getUnitLevels(): Record<string, number>;
-  /** cardKey (unitId:level) → owned count. */
-  getCardInventory(): Record<string, number>;
-  /** Online = can reach /pve/merge. Offline disables merging. */
-  isOnline(): boolean;
-  /** Server-authoritative merge (5 × unitId:level → 1 × unitId:(level+1)); true on success. */
-  tryMerge(unitId: string, level: number): Promise<boolean>;
   /** 1-based level number for the header label. */
   levelNumber: number;
   /** Win condition for this level, shown as an objective banner. */
@@ -66,8 +45,6 @@ export class LevelPrepScene implements Scene {
   private readonly cb: LevelPrepCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
-  private toast: { text: string; color: number } | null = null;
-  private merging = false;
 
   // ── Intro story animation state ───────────────────────────────────────────
   private showingIntro = false;
@@ -129,23 +106,6 @@ export class LevelPrepScene implements Scene {
     this.cb.onStart();
   }
 
-  private onMerge(unitId: string, level: number): void {
-    if (this.merging) return;
-    if (!this.cb.isOnline()) {
-      this.toast = { text: t('progression.offlineMerge'), color: C.red };
-      this.render();
-      return;
-    }
-    this.merging = true;
-    void this.cb.tryMerge(unitId, level).then((ok) => {
-      this.merging = false;
-      this.toast = ok
-        ? { text: t('progression.merged'), color: C.green }
-        : { text: t('progression.mergeFail'), color: C.red };
-      this.render();
-    });
-  }
-
   private render(): void {
     tearDownChildren(this.container);
     this.hits = [];
@@ -174,42 +134,7 @@ export class LevelPrepScene implements Scene {
     if (this.cb.objective) {
       y = this.drawObjective(this.cb.objective, y);
     }
-
-    // Section title
-    const secLbl = txt(t('progression.unitsTitle'), Math.round(h * 0.024), C.dark, true);
-    secLbl.anchor.set(0, 0.5);
-    secLbl.x = Math.round(w * 0.08);
-    secLbl.y = y + Math.round(h * 0.015);
-    this.container.addChild(secLbl);
-    y += Math.round(h * 0.038);
-
-    // Unit card rows — 2-column layout to halve vertical footprint.
-    const listX = Math.round(w * 0.06);
-    const listW = w - listX * 2;
-    const unitCount = PROGRESSABLE_UNIT_IDS.length;
-    const colCount = 2;
-    const rowCount = Math.ceil(unitCount / colCount);
-    const stBarStart = h - Math.round(h * 0.055) - Math.round(h * 0.14);
-    const listEndY = stBarStart - Math.round(h * 0.012);
-    const gap = Math.round(h * 0.01);
-    const colGap = Math.round(w * 0.008);
-    const colW = Math.floor((listW - colGap) / colCount);
-    const rowH = Math.max(
-      Math.round(h * 0.065),
-      Math.floor((listEndY - y - gap * Math.max(0, rowCount - 1)) / rowCount),
-    );
-    const unitLevels = this.cb.getUnitLevels();
-    const inv = this.cb.getCardInventory();
-
-    for (let i = 0; i < PROGRESSABLE_UNIT_IDS.length; i++) {
-      const unitId = PROGRESSABLE_UNIT_IDS[i]!;
-      const col = i % colCount;
-      const row = Math.floor(i / colCount);
-      const cellX = listX + col * (colW + colGap);
-      const cellY = y + row * (rowH + gap);
-      this.drawUnitRow(unitId, unitLevels[unitId] ?? 1, inv, cellX, cellY, colW, rowH);
-    }
-    y += rowCount * (rowH + gap);
+    void y; // brief/objective flow top-down; stamina + Start are bottom-anchored below.
 
     // —— Stamina bar (A4): cost + current balance, turns red when insufficient + refill button ——
     const stamina = this.cb.getStamina();
@@ -270,108 +195,6 @@ export class LevelPrepScene implements Scene {
         }
       },
     });
-
-    if (this.toast) this.drawToast();
-  }
-
-  private drawUnitRow(
-    unitId: string,
-    level: number,
-    inv: Record<string, number>,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-  ): void {
-    const box = sketchPanel(w, h, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
-    box.x = x; box.y = y;
-    sketchAccentBar(box, h, C.accent, seedFor(x, h, 5));
-    this.container.addChild(box);
-
-    const unitType = unitId as UnitType;
-    const unitName = UNIT_NAME_KEY[unitType] ? t(UNIT_NAME_KEY[unitType]!) : unitId;
-    const fs = Math.round(h * 0.22);
-    const nameTxt = txt(unitName, fs, C.dark, true);
-    nameTxt.anchor.set(0, 0.5);
-    nameTxt.x = x + Math.round(w * 0.04);
-    nameTxt.y = y + h * 0.3;
-    this.container.addChild(nameTxt);
-
-    const lvTxt = txt(t('progression.lv', { lv: level }), Math.round(h * 0.2), level >= UNIT_MAX_LEVEL ? C.gold : C.mid);
-    lvTxt.anchor.set(0, 0.5);
-    lvTxt.x = x + Math.round(w * 0.04);
-    lvTxt.y = y + h * 0.72;
-    this.container.addChild(lvTxt);
-
-    // Trait badges (T3/T6/T9)
-    const traits: Array<{ key: TranslationKey; minLevel: number }> = [
-      { key: 'progression.trait.crit', minLevel: TRAIT_BREAKPOINTS.crit.level },
-      { key: 'progression.trait.lifesteal', minLevel: TRAIT_BREAKPOINTS.lifesteal.level },
-      { key: 'progression.trait.spawn', minLevel: TRAIT_BREAKPOINTS.bonusSpawn.level },
-    ];
-    let traitX = x + Math.round(w * 0.3);
-    const traitY = y + h * 0.5;
-    const traitFs = Math.round(h * 0.17);
-    for (const trait of traits) {
-      const unlocked = level >= trait.minLevel;
-      const badge = txt(t(trait.key), traitFs, unlocked ? C.green : C.btnOff, true);
-      badge.anchor.set(0, 0.5);
-      badge.x = traitX;
-      badge.y = traitY;
-      this.container.addChild(badge);
-      traitX += badge.width + Math.round(w * 0.015);
-    }
-
-    // Merge button: find lowest level with ≥ MERGE_COPIES cards that can still be merged
-    const mergeLevel = this.findMergeLevel(unitId, inv);
-    const bw = Math.round(w * 0.18);
-    const bh = Math.round(h * 0.55);
-    const bx = x + w - bw - Math.round(w * 0.03);
-    const by = y + (h - bh) / 2;
-    const online = this.cb.isOnline();
-    const canMerge = mergeLevel !== null;
-    const enabled = canMerge && online;
-
-    const btn = sketchPanel(bw, bh, {
-      fill: enabled ? C.dark : C.btnDis,
-      border: enabled ? C.green : C.btnOff,
-      width: 2, seed: seedFor(bx, by, bw),
-    });
-    btn.x = bx; btn.y = by;
-    this.container.addChild(btn);
-    const blabel = txt(t('progression.merge'), Math.round(bh * 0.34), enabled ? 0xffffff : C.mid, true);
-    blabel.anchor.set(0.5, 0.5); blabel.x = bx + bw / 2; blabel.y = by + bh / 2;
-    this.container.addChild(blabel);
-
-    if (mergeLevel !== null) {
-      const cardCount = inv[cardKey(unitId, mergeLevel)] ?? 0;
-      const countTxt = txt(
-        t('progression.cards', { n: cardCount }),
-        Math.round(bh * 0.26),
-        online ? C.gold : C.mid,
-        true,
-      );
-      countTxt.anchor.set(0.5, 0);
-      countTxt.x = bx + bw / 2;
-      countTxt.y = by + bh;
-      this.container.addChild(countTxt);
-    }
-
-    if (enabled && mergeLevel !== null) {
-      this.hits.push({
-        rect: { x: bx, y: by, w: bw, h: bh },
-        fn: () => this.onMerge(unitId, mergeLevel),
-      });
-    }
-  }
-
-  /** Returns lowest card level with ≥ MERGE_COPIES cards that is < UNIT_MAX_LEVEL, or null. */
-  private findMergeLevel(unitId: string, inv: Record<string, number>): number | null {
-    for (let lv = 1; lv < UNIT_MAX_LEVEL; lv++) {
-      const count = inv[cardKey(unitId, lv)] ?? 0;
-      if (count >= MERGE_COPIES) return lv;
-    }
-    return null;
   }
 
   private objectiveText(obj: ObjectiveSpec): string {
@@ -511,22 +334,5 @@ export class LevelPrepScene implements Scene {
 
     this.introShownCount = 1;
     this.introFadeT = 0;
-  }
-
-  private drawToast(): void {
-    const { w, h } = this;
-    const toast = this.toast!;
-    const lbl = txt(toast.text, Math.round(h * 0.026), 0xffffff, true);
-    const padX = Math.round(w * 0.04);
-    const padY = Math.round(h * 0.012);
-    const bw = lbl.width + padX * 2;
-    const bh = lbl.height + padY * 2;
-    const bx = (w - bw) / 2;
-    const by = Math.round(h * 0.78);
-    const bg = sketchPanel(bw, bh, { fill: toast.color, fillAlpha: 0.95, border: toast.color, width: 2, seed: seedFor(bw, bh, 2) });
-    bg.x = bx; bg.y = by;
-    this.container.addChild(bg);
-    lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-    this.container.addChild(lbl);
   }
 }
