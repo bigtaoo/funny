@@ -67,6 +67,11 @@ import {
   marchInterpPos,
   type VisionSource,
   SIEGE_TEAM_CAP,
+  teamSiegeValue,
+  waveSeed,
+  buildingMaxHp,
+  SLG_SIEGE_DAMAGE_DELAY_MS,
+  SLG_TEAM_INJURY_MS,
   CARD_TEAM_MAX_SIZE,
   BASE_TROOP_STOCK_INITIAL,
   CARD_RECOVER_COIN_COST,
@@ -100,11 +105,11 @@ import {
   type SiegeResolution,
   type ProceduralTile,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseConfig, scaleArmyHp, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from './siegeEngine';
+import { runSiegeBattle, synthesizeArmy, validateAttackerArmy, validateDefenseConfig, scaleArmyHp, scaleArmyByRatio, sumArmyHp, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from './siegeEngine';
 import type { GarrisonEntry, EngineEquipmentInput, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ENGINE_VERSION } from '@nw/engine';
 import { refreshFamilyProsperity, aggregateSectProsperity } from './prosperity';
-import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, NationDoc, TrainingEntry, BuildQueueEntry, DefenseConfig, ArmyEntry, TeamTemplate, CardSLGState } from './db';
+import type { WorldCollections, TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc, SiegeDamageDoc, NationDoc, TrainingEntry, BuildQueueEntry, DefenseConfig, ArmyEntry, TeamTemplate, CardSLGState } from './db';
 import type { WorldRedis } from './redis';
 import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient';
 import { nullWorldMetaClient, type WorldMetaClient, type PlayerProfile } from './metaClient';
@@ -1083,6 +1088,8 @@ export class WorldService {
       kind,
       troops,
       ...(army && army.length > 0 ? { army } : {}),
+      // ADR-026: record the deployed team slot so it is skipped as a defender while out (only meaningful for team-based attacks).
+      ...(kind === 'attack' && teamId ? { teamId } : {}),
       departAt,
       arriveAt,
       status: 'marching',
@@ -1201,6 +1208,93 @@ export class WorldService {
       n++;
     }
     return n;
+  }
+
+  /**
+   * ADR-026: settle due delayed building-HP hits (scheduler, every tick; mirrors processDueArrivals). Each SiegeDamageDoc whose
+   * dueAt has passed deducts its attacking team's siege value from the target building's HP; at HP≤0 the building is captured
+   * (main base → passiveRelocate; other buildings → hand over). Atomic claim-and-delete makes it single-consumer safe.
+   */
+  async processDueSiegeDamage(nowMs?: number): Promise<number> {
+    const { cols } = this.deps;
+    const t = nowMs ?? this.deps.now();
+    const due = await cols.siegeDamage.find({ dueAt: { $lte: t } }).limit(500).toArray();
+    let n = 0;
+    for (const d of due) {
+      const claimed = await cols.siegeDamage.findOneAndDelete({ _id: d._id });
+      if (!claimed) continue; // lost to a concurrent processor
+      await this.unscheduleSiegeDamage(claimed.worldId, claimed._id);
+      try {
+        await this.settleSiegeDamage(claimed, t);
+      } catch (e) {
+        console.error('[worldsvc] settleSiegeDamage failed:', { id: claimed._id, err: (e as Error).message });
+      }
+      n++;
+    }
+    return n;
+  }
+
+  /**
+   * Apply one delayed building-HP hit (ADR-026 §4/§6). Deducts damage from the target building's HP (anchor for a base);
+   * HP survives → persist reduced HP + refund attacker survivors; HP≤0 → capture (loot + main-base passiveRelocate, or
+   * hand over a non-base building). If the target is no longer the same owner / is protected / gone, the hit is voided and
+   * attacker survivors are refunded.
+   */
+  private async settleSiegeDamage(d: SiegeDamageDoc, t: number): Promise<void> {
+    const { cols } = this.deps;
+    const defenderId = d.defenderId;
+    const tile = await cols.tiles.findOne({ _id: d.tile });
+    const attacker = await cols.playerWorld.findOne({ _id: playerWorldId(d.worldId, d.attackerId) });
+
+    // Target must still be the same owner and unprotected; otherwise the siege is stale → void damage, return besiegers.
+    const stale = !tile || !defenderId || tile.ownerId !== defenderId || (tile.protectedUntil != null && tile.protectedUntil > t);
+    if (stale) {
+      if (attacker && d.attackerSurvivors > 0) await this.refundTroops(attacker, d.attackerSurvivors, t);
+      return;
+    }
+
+    const maxHp = buildingMaxHp(tile.level ?? 1);
+    const curHp = tile.hp ?? maxHp;
+    const newHp = curHp - Math.max(0, Math.floor(d.damage));
+
+    if (newHp > 0) {
+      // Building survives: reduce HP; besiegers return to the pool.
+      await cols.tiles.updateOne({ _id: d.tile }, { $set: { hp: newHp }, $inc: { rev: 1 } });
+      if (attacker && d.attackerSurvivors > 0) await this.refundTroops(attacker, d.attackerSurvivors, t);
+      const after = await cols.tiles.findOne({ _id: d.tile });
+      if (after) { void this.pushTile(d.attackerId, after); void this.pushTile(defenderId, after); }
+      return;
+    }
+
+    // HP depleted → capture. Loot first (settles both sides' resources).
+    const defender = await cols.playerWorld.findOne({ _id: playerWorldId(d.worldId, defenderId) });
+    if (attacker && defender) await this.transferLoot(defender, attacker, t);
+
+    if (d.isBase) {
+      // Main base captured: it cannot be permanently held → besiegers return; sect-leader penalty; passive relocation
+      // (all territory lost + shield + a fresh full-HP base at a random tile).
+      if (attacker && d.attackerSurvivors > 0) await this.refundTroops(attacker, d.attackerSurvivors, t);
+      await this.applySectLeaderPenalty(d.worldId, defenderId, t);
+      await this.passiveRelocate(d.worldId, defenderId, t);
+    } else {
+      // Non-base building handed over: survivors become the new garrison; HP resets to full for the new owner.
+      await cols.tiles.updateOne(
+        { _id: d.tile },
+        {
+          $set: { type: 'territory', ownerId: d.attackerId, garrison: d.attackerSurvivors, hp: maxHp },
+          $unset: { protectedUntil: '' },
+          $inc: { rev: 1 },
+        },
+      );
+      const atkYield = await this.recomputeYield(d.worldId, d.attackerId);
+      if (attacker) await cols.playerWorld.updateOne({ _id: attacker._id }, { $set: { yieldRate: atkYield, lastTickAt: t }, $inc: { rev: 1 } });
+      const defYield = await this.recomputeYield(d.worldId, defenderId);
+      await cols.playerWorld.updateOne({ _id: playerWorldId(d.worldId, defenderId) }, { $set: { yieldRate: defYield }, $inc: { rev: 1 } });
+      void this.applyNationChange(d.worldId, tile.x, tile.y, d.attackerId, attacker?.familyId);
+    }
+
+    const after = await cols.tiles.findOne({ _id: d.tile });
+    if (after) { void this.pushTile(d.attackerId, after); void this.pushTile(defenderId, after); }
   }
 
   /** Apply the effects of a single arrived march (already removed from marches collection). */
@@ -1359,9 +1453,20 @@ export class WorldService {
       hasCardArmy
         ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
         : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
-    const defenderConfig = this.buildDefenderConfig(baseTile, effGarrison, inOwnNation);
-    const tileLevel = baseTile.level ?? 1;
-    const seed = siegeSeedFromId(m._id);
+    // CC-3: extract EngineCardInstance[] from the attacker's card army for blueprint injection (level + gear); shared by both paths.
+    let cardInstances: EngineCardInstance[] | undefined;
+    let cardEquipInv: EngineEquipInv | undefined;
+    if (hasCardArmy && attackerSave) {
+      const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv, attackerSave.equipmentInv);
+      cardInstances = ci;
+      cardEquipInv = engEquipInv;
+    }
+    // P2 academy: attacker's academy building gives a seasonal blueprint HP/damage buff (both paths).
+    const atkAcademy = academyBuff(pw.buildings);
+    const siegeAcademy = (atkAcademy.hp > 0 || atkAcademy.damage > 0) ? atkAcademy : undefined;
+
+    // Fetch defender world state before the battle (wave teams, wall/academy buffs, cabinet loot protection).
+    const defender = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defenderId) });
 
     // C7/§17.9: mid-season engine drift detection (non-blocking; warning only — replays may drift frame by frame; ops treatment in §17.9).
     const wv = await cols.worlds.findOne({ _id: m.worldId }, { projection: { engineVersion: 1 } });
@@ -1371,57 +1476,172 @@ export class WorldService {
       });
     }
 
-    // Fetch defender world state before the battle: needed for wall HP buff (P2) and cabinet loot protection.
-    const defender = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defenderId) });
-
-    // P2 wall: when the attacker targets the defender's main base, scale garrison HP by wallDefenseMult.
-    // Mirrors how nation bonus uses scaleArmyHp — same path, stacks multiplicatively with the nation bonus.
-    let effectiveDefenderConfig = defenderConfig;
-    if (target.type === 'base' && defenderConfig) {
-      const wallMult = wallDefenseMult(defender?.buildings);
-      if (wallMult > 1) {
-        const g = (defenderConfig as { garrison?: unknown }).garrison;
-        const scaledGarrison = Array.isArray(g) && g.length > 0
-          ? scaleArmyHp(g as GarrisonEntry[], wallMult)
-          : g;
-        effectiveDefenderConfig = { ...defenderConfig, garrison: scaledGarrison };
-      }
+    // ADR-026: a main base uses the wave-defender + building-HP + delayed-siege-value model. Attacking any of the 9
+    // footprint cells lands here with target.type==='base' (anchor resolution already done above); territory tiles keep
+    // the pre-ADR-026 single-battle instant path below.
+    if (target.type === 'base') {
+      await this.applyBaseSiege(
+        m, pw, baseTile, defenderId, defender, inOwnNation,
+        attackerArmy, cardInstances, cardEquipInv, siegeAcademy, t,
+      );
+      return;
     }
 
-    // P2 academy: attacker's academy building gives a seasonal blueprint HP/damage buff.
-    const atkAcademy = academyBuff(pw.buildings);
-    const siegeAcademy = (atkAcademy.hp > 0 || atkAcademy.damage > 0) ? atkAcademy : undefined;
+    // ── Territory tile (non-base): single deterministic battle + immediate settlement (unchanged, §16) ──
+    const defenderConfig = this.buildDefenderConfig(baseTile, effGarrison, inOwnNation);
+    const tileLevel = baseTile.level ?? 1;
+    const seed = siegeSeedFromId(m._id);
 
-    // Decisive siege (G3-2b, §16): worldsvc directly imports `@nw/engine` headless to run "both-sides pre-formation
-    // deterministic auto-battle" for authoritative win/loss + true surviving HP, replacing the cheap linear formula.
     // Bad formation / engine error → fall back to cheap resolveSiege; a single siege must never stall a march.
     let res: SiegeResolution;
-    let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig: effectiveDefenderConfig, tileLevel };
+    let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
     try {
-      // CC-3: extract EngineCardInstance[] from card army for blueprint injection (level + gear).
-      let cardInstances: EngineCardInstance[] | undefined;
-      let cardEquipInv: EngineEquipInv | undefined;
-      if (hasCardArmy && attackerSave) {
-        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv, attackerSave.equipmentInv);
-        cardInstances = ci;
-        cardEquipInv = engEquipInv;
-      }
-      res = runSiegeBattle({
-        attackerArmy, defenderConfig: effectiveDefenderConfig, tileLevel, seed,
-        cardInstances,
-        equipmentInv: cardEquipInv,
-        siegeAcademy,
-      });
+      res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
     } catch (err) {
-      console.error('[worldsvc] siege engine failed — fallback to cheap resolve', {
-        tile: m.toTile,
-        err: (err as Error).message,
-      });
+      console.error('[worldsvc] siege engine failed — fallback to cheap resolve', { tile: m.toTile, err: (err as Error).message });
       res = resolveSiege(m.troops, effGarrison);
       replay = null; // cheap fallback result is inconsistent with engine replay → do not store replay inputs (replay button degrades to hidden).
     }
     // Replay inputs: persisted to SiegeDoc; the client uses seed + both sides' formations to replay the battle locally for spectating (§16.3).
     await this.landSiege(m, pw, target, defenderId, defender, res, t, replay);
+  }
+
+  /**
+   * ADR-026 main-base siege: in-base, non-injured defender teams (t1..t5) fight the attacker in waves; the attacker's
+   * surviving troops carry over between waves. Clearing all defenders (or none present) is a garrison win → schedule a
+   * delayed building-HP hit (SiegeDamageDoc, +SLG_SIEGE_DAMAGE_DELAY_MS) equal to the attacking team's siege value.
+   * Each defeated defender team is injured for SLG_TEAM_INJURY_MS (never defends until healed). An attacker wiped
+   * mid-waves fails the siege (no HP damage) and retreats immediately. The real building HP (TileDoc.hp on the anchor)
+   * is only reduced later by processDueSiegeDamage → capture (passiveRelocate) at HP≤0.
+   */
+  private async applyBaseSiege(
+    m: MarchDoc,
+    pw: PlayerWorldDoc,
+    baseTile: TileDoc,
+    defenderId: string,
+    defender: PlayerWorldDoc | null,
+    inOwnNation: boolean,
+    attackerArmy: GarrisonEntry[],
+    cardInstances: EngineCardInstance[] | undefined,
+    cardEquipInv: EngineEquipInv | undefined,
+    siegeAcademy: { hp: number; damage: number } | undefined,
+    t: number,
+  ): Promise<void> {
+    const { cols } = this.deps;
+    const tileLevel = baseTile.level ?? 1;
+    const wallMult = wallDefenseMult(defender?.buildings);
+
+    // Teams currently out on active (non-recalled) marches are skipped as defenders (ADR-026 §2).
+    const activeMarches = await cols.marches
+      .find({ worldId: m.worldId, ownerId: defenderId, status: { $ne: 'recalled' }, teamId: { $exists: true } })
+      .toArray();
+    const outTeams = new Set(activeMarches.map((x) => x.teamId).filter((id): id is string => !!id));
+
+    // Defender card inventory (resolve team card armies → unit type + troop count). v1: defender cards use base blueprints on defence (no per-card level/gear buff; follow-up).
+    const defenderSave = await this.meta.getSaveFields(defenderId).catch(() => null);
+    const defCardInv = defenderSave?.cardInv ?? {};
+    const defCardState = defender?.cardState ?? {};
+    const teamState = defender?.teamState ?? {};
+
+    // In-base, non-injured teams in t1..t5 order.
+    const defenders = (defender?.teams ?? [])
+      .filter((tm) => tm.army.length > 0 && !outTeams.has(tm.id))
+      .filter((tm) => !((teamState[tm.id]?.injuredUntil ?? 0) > t))
+      .slice()
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    // Wave battle: attacker survivors carry over between waves (scaled by survival ratio).
+    let survivorArmy: GarrisonEntry[] = attackerArmy.map((e) => ({ ...e }));
+    let attackerSurvivors = sumArmyHp(survivorArmy);
+    const defeatedTeamIds: string[] = [];
+    const replays: SiegeReplayInputs[] = [];
+    let cleared = true;
+
+    for (let i = 0; i < defenders.length; i++) {
+      const tm = defenders[i]!;
+      if (survivorArmy.length === 0 || attackerSurvivors <= 0) { cleared = false; break; }
+      let defArmy = resolveCardArmy(tm.army, defCardState, defCardInv);
+      if (inOwnNation) defArmy = scaleArmyHp(defArmy, 1 + NATION_BONUS_DEFENSE); // §2.4 nation defence bonus
+      if (wallMult > 1) defArmy = scaleArmyHp(defArmy, wallMult);               // P2 wall HP buff
+      if (defArmy.length === 0) { defeatedTeamIds.push(tm.id); continue; }      // empty/stale team → already cleared (still injured)
+      const defenderConfig = { garrison: defArmy };
+      const seed = waveSeed(m._id, i);
+      const deployedHp = sumArmyHp(survivorArmy);
+      let res: SiegeResolution;
+      try {
+        res = runSiegeBattle({ attackerArmy: survivorArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
+      } catch (err) {
+        console.error('[worldsvc] base wave siege engine failed — cheap fallback', { tile: baseTile._id, wave: i, err: (err as Error).message });
+        res = resolveSiege(deployedHp, sumArmyHp(defArmy));
+      }
+      replays.push({ seed, attackerArmy: survivorArmy, defenderConfig, tileLevel });
+      attackerSurvivors = res.attackerSurvivors;
+      if (res.outcome === 'attacker_win') {
+        defeatedTeamIds.push(tm.id);
+        const ratio = deployedHp > 0 ? res.attackerSurvivors / deployedHp : 0;
+        survivorArmy = scaleArmyByRatio(survivorArmy, ratio);
+        if (survivorArmy.length === 0) { cleared = false; break; } // attacker spent — cleared some waves but cannot continue
+      } else {
+        cleared = false; // repelled by this wave
+        break;
+      }
+    }
+
+    // Persist defender team injuries (each defeated team locked for SLG_TEAM_INJURY_MS).
+    if (defeatedTeamIds.length > 0 && defender) {
+      const injSet: Record<string, unknown> = {};
+      for (const id of defeatedTeamIds) injSet[`teamState.${id}.injuredUntil`] = t + SLG_TEAM_INJURY_MS;
+      await cols.playerWorld.updateOne({ _id: playerWorldId(m.worldId, defenderId) }, { $set: injSet, $inc: { rev: 1 } });
+    }
+
+    const outcome: SiegeOutcome = cleared ? 'attacker_win' : 'defender_win';
+    const replay = replays.length > 0 ? (replays[replays.length - 1] ?? null) : null;
+    const siege = await this.recordSiege(m, defenderId, outcome, t, replay);
+
+    // CC-3: attacker card post-battle state (uniform survival over the whole siege).
+    const attackArmy = m.army ?? [];
+    if (attackArmy.some((e) => !!e.cardInstanceId)) {
+      const cardUpdates = computeCardStateUpdates(attackArmy, pw.cardState ?? {}, attackerSurvivors, t);
+      const cardStateSet: Record<string, unknown> = {};
+      for (const [id, update] of Object.entries(cardUpdates)) {
+        cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
+        cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil != null ? update.injuredUntil : null;
+      }
+      if (Object.keys(cardStateSet).length > 0) {
+        await cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
+      }
+    }
+
+    if (cleared) {
+      // Garrison cleared (or no defenders present): schedule the delayed building-HP hit = attacking team's siege value.
+      // Attacker keeps besieging; survivors are refunded at settlement (processDueSiegeDamage). Card-less flat-troop attacks deal 0 (bases require a real card team).
+      const damage = teamSiegeValue(m.army ?? []);
+      const dmg: SiegeDamageDoc = {
+        _id: siege._id,
+        worldId: m.worldId,
+        attackerId: m.ownerId,
+        defenderId,
+        tile: baseTile._id,
+        isBase: true,
+        damage,
+        attackerSurvivors,
+        ...(pw.familyId ? { familyId: pw.familyId } : {}),
+        dueAt: t + SLG_SIEGE_DAMAGE_DELAY_MS,
+      };
+      await cols.siegeDamage.updateOne({ _id: dmg._id }, { $setOnInsert: dmg }, { upsert: true });
+      await this.scheduleSiegeDamage(m.worldId, dmg._id, dmg.dueAt);
+    } else {
+      // Attacker repelled: survivors retreat and return to the troop pool immediately.
+      if (attackerSurvivors > 0) await this.refundTroops(pw, attackerSurvivors, t);
+    }
+
+    // Activity + battle-report push (loot only happens at capture, in settleSiegeDamage → empty here).
+    void this.bumpFamilyActivity(m.worldId, pw.familyId, 1);
+    void this.bumpFamilyActivity(m.worldId, defender?.familyId, 1);
+    const lootStr = lootSummary(emptyResources());
+    void this.pushMarch(m.ownerId, this.marchView({ ...m, status: 'arrived' }));
+    void this.pushSiege(m.ownerId, siege, lootStr);
+    void this.pushSiege(defenderId, siege, lootStr);
   }
 
   /**
@@ -1993,6 +2213,8 @@ export class WorldService {
           ownerId,
           ...(opts.familyId ? { familyId: opts.familyId } : {}),
           garrison: opts.garrison ?? GARRISON_PER_TILE,
+          // ADR-026: the anchor holds the whole capital's building HP (= level × SLG_BASE_HP_PER_LEVEL).
+          hp: buildingMaxHp(opts.level),
           ...(opts.protectedUntil ? { protectedUntil: opts.protectedUntil } : {}),
           rev: 0,
         });
@@ -2181,6 +2403,27 @@ export class WorldService {
     if (!this.deps.redis) return;
     try {
       await this.deps.redis.zrem(this.marchZsetKey(worldId), mid);
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  // ── ADR-026: delayed building-HP settlement scheduling (best-effort ZSET, score=dueAt; Mongo dueAt scan is authoritative) ──
+  private siegeDamageZsetKey(worldId: string): string {
+    return `world:${worldId}:siegeDamage`;
+  }
+  private async scheduleSiegeDamage(worldId: string, id: string, dueAt: number): Promise<void> {
+    if (!this.deps.redis) return;
+    try {
+      await this.deps.redis.zadd(this.siegeDamageZsetKey(worldId), dueAt, id);
+    } catch {
+      /* best-effort: failure only loses the precise wake-up; the Mongo dueAt scan still settles the hit */
+    }
+  }
+  private async unscheduleSiegeDamage(worldId: string, id: string): Promise<void> {
+    if (!this.deps.redis) return;
+    try {
+      await this.deps.redis.zrem(this.siegeDamageZsetKey(worldId), id);
     } catch {
       /* best-effort */
     }

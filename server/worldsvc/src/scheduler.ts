@@ -28,6 +28,10 @@ export function startScheduler(svc: WorldService, auctionSvc?: AuctionService, t
       svc
         .processCompletedBuilds()
         .catch((e) => console.error('[world-scheduler] processCompletedBuilds failed:', (e as Error).message)),
+      // ADR-026: settle due delayed building-HP hits (5-min siege-value settlement → HP deduction / capture).
+      svc
+        .processDueSiegeDamage()
+        .catch((e) => console.error('[world-scheduler] processDueSiegeDamage failed:', (e as Error).message)),
     ];
     if (auctionSvc) {
       tasks.push(
