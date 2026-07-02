@@ -575,6 +575,32 @@ export class WorldService {
   }
 
   /**
+   * R-3 (§8.2 / §18.7): the set of accountIds the player must NOT siege — "friendly fire" prevention.
+   * Covers three friendly tiers: self + own family (≤30) + own sect (all families sharing the sect) +
+   * allied sects (`sect.allySectIds`, ≤2). Blocking only allied *other* sects while leaving same-sect
+   * families attackable would be inconsistent (the sect is itself a cooperative grouping), so all three
+   * are unioned here. Chain: familyId → sectId → {own sect ∪ allied sects} → member families → members
+   * joined to this world. No family → just self. Read-only; runs only on the attack branch of startMarch.
+   */
+  private async friendlyAccountIds(worldId: string, accountId: string): Promise<Set<string>> {
+    const { cols } = this.deps;
+    const result = new Set<string>([accountId]);
+    const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!myPw?.familyId) return result;
+    const famIds = new Set<string>([myPw.familyId]); // own family always friendly
+    const [myFam] = await this.socialsvc.getFamiliesByIds([myPw.familyId]);
+    if (myFam?.sectId) {
+      const mySect = await cols.sects.findOne({ _id: myFam.sectId });
+      const sectIds = [myFam.sectId, ...(mySect?.allySectIds ?? [])]; // own sect + allied sects
+      const fams = (await Promise.all(sectIds.map((sid) => this.socialsvc.getFamiliesBySect(sid)))).flat();
+      for (const f of fams) famIds.add(f.familyId);
+    }
+    const members = await cols.playerWorld.find({ worldId, familyId: { $in: [...famIds] } }).toArray();
+    for (const m of members) result.add(m.accountId);
+    return result;
+  }
+
+  /**
    * G5: compute the set of vision sources for the requester within the given viewport (including the radius-padded border).
    * Sources = own + same-family members' territory (capital type:'base' gets large radius, other territory gets small radius) + own/family marches in transit
    * (current position linearly interpolated from departAt/arriveAt). Family members are looked up via familyMembers (tile.familyId is not written on the occupy path
@@ -1081,6 +1107,10 @@ export class WorldService {
         // Stronghold PvE: leave defenderId unset (NPC does not receive an under_attack warning).
       } else {
         if (toTile.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', 'Cannot siege your own territory');
+        // R-3 (§8.2 / §18.7): friendly-fire block — cannot siege own family / same sect / allied sect territory.
+        if ((await this.friendlyAccountIds(worldId, accountId)).has(toTile.ownerId)) {
+          throw new SlgError('ALLY_TILE', 'Cannot siege friendly territory (family / sect / alliance)');
+        }
         if (toTile.protectedUntil && toTile.protectedUntil > now()) {
           throw new SlgError('PROTECTED', 'Target tile is under protection');
         }

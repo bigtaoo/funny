@@ -740,6 +740,7 @@ export const en: Record<TranslationKey, string> = {
   'world.err.noTroops': 'Not enough troops',
   'world.err.occupied': 'Tile already occupied',
   'world.err.protected': 'Tile is protected',
+  'world.err.allyTile': 'This is friendly territory — you cannot attack it',
   'world.err.outOfRange': 'Out of map bounds',
   'world.err.notOwner': 'Not your territory',
   'world.err.notImpl': 'Feature not available yet',

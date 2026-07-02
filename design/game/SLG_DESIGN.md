@@ -1257,7 +1257,7 @@ if (path.startsWith('/admin/world/')) {
   - `getMap`：算 `allySect` 集一次；逐格 `allied = !ally && 可见他人格 && allySect.has(owner)` → 置 `allySect:true`（家族 `ally` 优先，二者互斥）。`getTile`/`occupy` 等单格响应不带（同 `ally`/`visible`，仅视区读填充）。
   - 每次 getMap 多 3~4 次小查询（familyMember/family/sect/成员家族+成员），V3 短 TTL 缓存仍列后续。
 - **契约 `openapi-world.yml`**：`WorldTileView.allySect`；`rest:gen` 重生 `openapi-world.ts`。proto 无改动（标记走 getMap 读路径，不动推送）。
-- **client `WorldMapScene.ts`**：`ALLY_SECT_BORDER=0xe6a817`（金琥珀）内描边（`px+1.5, TILE_PX-4`，1.5px）——刻意区别于首府星标/选区的亮黄 `0xffcc00`（满边+填充）。填充仍走 `tileColor`（联盟领地是他人占领格，底色保持敌色蓝，黄描边叠加区分「勿攻」）；视野外（fogged）不画描边。**联盟「禁止进攻/夺地」的战斗约束属联盟系统专项，非 G5 视野范围，不在本片实现**。
+- **client `WorldMapScene.ts`**：`ALLY_SECT_BORDER=0xe6a817`（金琥珀）内描边（`px+1.5, TILE_PX-4`，1.5px）——刻意区别于首府星标/选区的亮黄 `0xffcc00`（满边+填充）。填充仍走 `tileColor`（联盟领地是他人占领格，底色保持敌色蓝，黄描边叠加区分「勿攻」）；视野外（fogged）不画描边。~~**联盟「禁止进攻/夺地」的战斗约束属联盟系统专项，非 G5 视野范围，不在本片实现**~~ **✅ 已实现（R-3，2026-07-02）**：`startMarch` attack 分支加友军拦截 `friendlyAccountIds`（自己 + 本家族 + 本宗门全家族 + 联盟宗门 `allySectIds`）→ 命中抛 `ALLY_TILE`（新错误码，403）。检查置于保护罩校验之前，故友军基地即便有保护罩也先报 `ALLY_TILE`。见 §21.2 R-3。
 - **验收**：server `tsc -b shared engine worldsvc gateway` 全绿；client `tsc --noEmit` + `build:web` 全绿；worldsvc **100 e2e**（新增 `alliance-mark.e2e.test.ts` 3 例：视野内联盟领地标 `allySect`、敌方/家族不标 / 联盟不共享视野远处仍迷雾不标 / 解盟后视野内他人领地不再标；既有 97 不破）。
 
 ### 18.8 scout 侦察行军实现记录（2026-06-21，§18.1 V2 余项）
@@ -1426,7 +1426,7 @@ if (path.startsWith('/admin/world/')) {
 
 | # | 缺口 | 现状 | 计划 |
 |---|---|---|---|
-| **R-3** | **联盟「禁止进攻/夺地」战斗约束未实现** | §18.7 只做了联盟领地**黄描边标记**；真正「不能打盟友地」的硬约束属联盟系统专项，未做 → 当前理论上能打联盟的地。 | 联盟系统专项：`startMarch` attack 分支加联盟关系拦截（`allySectMemberIds` 命中 → 拒绝）。 |
+| ~~**R-3**~~ | ~~联盟「禁止进攻/夺地」战斗约束未实现~~ **✅ CLOSED（2026-07-02）** | ~~§18.7 只做了黄描边标记；理论上能打盟友地。~~ **已实现**：`startMarch` attack 分支新增 `friendlyAccountIds`（自己 + 本家族 + 本宗门全家族 + 联盟宗门 `allySectIds`）拦截 → 命中抛新错误码 `ALLY_TILE`（403）。范围比原计划宽：不止联盟宗门，连本家族/本宗门也纳入（只挡联盟而放任同宗门互殴会自相矛盾）。检查置于保护罩校验之前。 | **✅ 完成**。`shared`+`worldsvc` `tsc -b` 全绿；新增 `alliance-attack.e2e.test.ts` **6/6 real-Mongo 全绿**（联盟/家族/同宗门基地 → ALLY_TILE；非联盟敌方过友军闸→PROTECTED；保护罩过期后进攻真启动；解盟后前盟友可打）。既有 e2e 无回归。 |
 | **R-4** | **国民加成数值未调参** | G1 已落地（`NATION_BONUS_PRODUCTION=0.10`/`DEFENSE=0.15` 生效），但数值未过经济/战力模拟实测平衡。 | 随 §16.5 数值批次 + 经济模拟。 |
 
 ### 21.3 第三档——运营 / 规模化专项（赛季正交，可延后）
@@ -1449,10 +1449,9 @@ if (path.startsWith('/admin/world/')) {
 
 ### 21.5 优先级建议
 
-1. ~~**R-1 建筑系统** / **R-2 资源格美术接入**~~ **✅ 两者均 CLOSED（2026-07-02）**——功能洞档已清零（R-1: P1+P2 合 main + e2e 8/8 实测；R-2: `b8b726c0` 母题渲染合 main + client tsc 全绿）。
-2. **R-3 联盟攻击约束**：现在是唯一剩下的**功能性规则缺口**（当前理论上能打盟友地）——`startMarch` attack 分支加联盟关系拦截，属联盟系统专项。**建议下一步。**
-3. **R-4 数值调参**：随经济模拟批次（city / 国民加成数值仍 DRAFT，§21.4）——非代码洞，须经济模拟批处理。
-4. **R-5~R-9**：运营/规模化，赛季正交可延后。
+1. ~~**R-1 建筑系统** / **R-2 资源格美术接入** / **R-3 联盟攻击约束**~~ **✅ 三者均 CLOSED（2026-07-02）**——功能洞档 + 唯一功能性规则缺口均已清（R-1: P1+P2 合 main + e2e 8/8；R-2: `b8b726c0` 母题渲染 + client tsc；R-3: `friendlyAccountIds` 友军拦截 + e2e 6/6）。**已无功能/规则代码缺口。**
+2. **R-4 数值调参**：现在是最高优先剩项——city / 国民加成数值仍 DRAFT（§21.4），须经济模拟批处理，非代码洞。
+3. **R-5~R-9**：运营/规模化，赛季正交可延后。
 
 ---
 
