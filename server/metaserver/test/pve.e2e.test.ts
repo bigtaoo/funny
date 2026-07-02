@@ -157,68 +157,6 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
   });
 });
 
-// S12 unit card merge /pve/merge: server-authoritative inventory check → 5 cards of level N → 1 card of level N+1 → recalculate unitLevels → push back.
-describe.skipIf(!mongo)('pve unit-card merge (S12) e2e', () => {
-  const m = mongo!;
-  let app: FastifyInstance;
-  let token: string;
-  let accountId: string;
-  const body = (r: { payload: string }) => JSON.parse(r.payload);
-  const auth = () => ({ authorization: `Bearer ${token}` });
-  const merge = (unitId: string, level: number) =>
-    app.inject({ method: 'POST', url: '/pve/merge', headers: auth(), payload: { unitId, level } });
-  const seedCards = (inv: Record<string, number>) =>
-    m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.cardInventory': inv } });
-
-  beforeEach(async () => {
-    await m.db.dropDatabase();
-    await m.ensureIndexes();
-    if (app) await app.close();
-    app = await buildApp({ cols: m.collections, jwt, internalKey: 'k' });
-    const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'pve-merge-1' } }));
-    token = r.data.token;
-    accountId = r.data.accountId;
-    await app.inject({ method: 'GET', url: '/save', headers: auth() }); // initialize save
-  });
-  afterAll(async () => { if (app) await app.close(); });
-
-  it('5 L1 cards → 1 L2 card: deduct inventory + unitLevels derived to 2 (server-authoritative)', async () => {
-    await seedCards({ 'infantry:1': 7 });
-    const r = body(await merge('infantry', 1));
-    expect(r.data.save.cardInventory['infantry:1']).toBe(2); // 7 - 5 consumed
-    expect(r.data.save.cardInventory['infantry:2']).toBe(1);
-    expect(r.data.save.unitLevels['infantry']).toBe(2);
-  });
-
-  it('insufficient cards (4 < 5) → 402, inventory unchanged', async () => {
-    await seedCards({ 'archer:1': 4 });
-    const res = await merge('archer', 1);
-    expect(res.statusCode).toBe(402);
-    const s = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
-    expect(s.data.save.cardInventory['archer:1']).toBe(4);
-  });
-
-  it('chain merge to L3: unitLevels follows highest owned card level', async () => {
-    await seedCards({ 'shieldbearer:1': 25 });
-    await merge('shieldbearer', 1); // 25→20 L1, +1 L2
-    await merge('shieldbearer', 1);
-    await merge('shieldbearer', 1);
-    await merge('shieldbearer', 1);
-    const r5 = body(await merge('shieldbearer', 1)); // 5 merges → 5 L2 cards, 0 L1
-    expect(r5.data.save.cardInventory['shieldbearer:2']).toBe(5);
-    expect(r5.data.save.unitLevels['shieldbearer']).toBe(2);
-    const r6 = body(await merge('shieldbearer', 2)); // 5 L2 cards → 1 L3 card
-    expect(r6.data.save.cardInventory['shieldbearer:3']).toBe(1);
-    expect(r6.data.save.unitLevels['shieldbearer']).toBe(3);
-  });
-
-  it('invalid unit type / out-of-range level → 400', async () => {
-    expect((await merge('dragon', 1)).statusCode).toBe(400);   // unknown unit type
-    expect((await merge('infantry', 9)).statusCode).toBe(400); // L9 cannot be merged further
-    expect((await merge('infantry', 0)).statusCode).toBe(400);
-  });
-});
-
 // S9-3b PvE achievement feed: judge re-computation returns kill/cast (verdict.statsJson) → /pve/verify accumulates into stats when verified.
 // Requires injecting a fake judge that is "available + configurable verdict" to trigger sampling + re-computation (first clear always triggers sampling → needsReplay → verify).
 describe.skipIf(!mongo)('pve achievement feed (S9-3b) e2e', () => {

@@ -4,11 +4,9 @@
 // Card inventory (cardInventory) is the raw collection source; unit strength level (unitLevels) = the highest card tier
 // owned per unit type, derived from inventory by deriveUnitLevels (server-authoritative; the engine only reads unitLevels to run blueprints).
 //
-// Merging (§4.1): 5 cards of level N → 1 card of level (N+1), 100% success rate (exponential sink). This file is the authoritative
-// location for "merge + derive" logic, re-computed by the meta /pve/merge endpoint. Card sources (gacha / level drops) see S12-C.
-
-/** Number of same-level cards required for a merge (5 of level N → 1 of level N+1). */
-export const MERGE_COPIES = 5;
+// Card sources (gacha / level drops) see S12-C; unit strength is derived from inventory by deriveUnitLevels (server-authoritative).
+// NOTE: the S12 collect-and-merge sink (5→1) and its /pve/merge endpoint were retired with the Hero Roster migration (CC-1); merge
+// logic has been removed here. Historical merge coefficient/design is preserved in ECONOMY_NUMBERS §4.1.
 
 /** Card / unit level cap (same value as @nw/engine UNIT_MAX_LEVEL, decoupled to avoid import). */
 export const UNIT_CARD_MAX_LEVEL = 9;
@@ -60,29 +58,6 @@ export function deriveUnitLevels(inv: Record<string, number>): Record<string, nu
     if (lvl > 1) out[unitId] = lvl;
   }
   return out;
-}
-
-/** Merge failure reason. */
-export type MergeError = 'INVALID_UNIT' | 'INVALID_LEVEL' | 'INSUFFICIENT';
-
-/**
- * Performs one merge: consumes {@link MERGE_COPIES} cards of (unitId, level) → adds 1 card of (level+1).
- * Pure function, returns a **new inventory** (does not mutate the input) or an error code. L9 cannot be merged further.
- */
-export function applyCardMerge(
-  inv: Record<string, number>,
-  unitId: string,
-  level: number,
-): Record<string, number> | MergeError {
-  if (!isProgressableUnit(unitId)) return 'INVALID_UNIT';
-  if (!Number.isInteger(level) || level < 1 || level >= UNIT_CARD_MAX_LEVEL) return 'INVALID_LEVEL';
-  const fromKey = cardKey(unitId, level);
-  const toKey = cardKey(unitId, level + 1);
-  const have = inv[fromKey] ?? 0;
-  if (have < MERGE_COPIES) return 'INSUFFICIENT';
-  const next = { ...inv, [fromKey]: have - MERGE_COPIES, [toKey]: (inv[toKey] ?? 0) + 1 };
-  if (next[fromKey] === 0) delete next[fromKey];
-  return next;
 }
 
 /** Adds a batch of cards to the inventory (for level drops / gacha delivery; pure function returning a new inventory). Invalid keys are skipped. */

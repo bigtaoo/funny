@@ -1464,41 +1464,6 @@ paths:
         '401': { $ref: '#/components/responses/ErrorResp' }
         '402': { $ref: '#/components/responses/ErrorResp' }
 
-  /pve/merge:
-    post:
-      operationId: pveMerge
-      tags: [save]
-      summary: "Unit progression merging (S12, server-authoritative: validates inventory → consumes 5 level-N cards → grants 1 level-N+1 card → recomputes unitLevels → pushes save); online only"
-      security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [unitId, level]
-              properties:
-                unitId: { type: string, description: Unit type id (infantry/shieldbearer/archer) }
-                level: { type: integer, minimum: 1, maximum: 8, description: Source card level N to merge (produces N+1) }
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [ok, data]
-                properties:
-                  ok: { type: boolean, enum: [true] }
-                  data:
-                    type: object
-                    required: [save]
-                    properties:
-                      save: { $ref: '#/components/schemas/SaveData' }
-        '400': { $ref: '#/components/responses/ErrorResp' }
-        '401': { $ref: '#/components/responses/ErrorResp' }
-        '402': { $ref: '#/components/responses/ErrorResp' }
-
   /equipment/craft:
     post:
       operationId: craftEquipment

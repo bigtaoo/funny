@@ -16,8 +16,6 @@ import {
   chaptersClearedCount,
   sanitizePvpReportedStats,
   accrueStats,
-  applyCardMerge,
-  deriveUnitLevels,
   CARD_DEFS,
   levelCardReward,
   UNIT_CARD_POOL_ID,
@@ -1339,31 +1337,6 @@ export class MetaService {
       }
       if (out.error === 'MAXED') {
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'upgrade maxed'));
-      }
-      return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
-    }
-    return ok({ save: out.save });
-  }
-
-  /**
-   * Unit progression merge (S12, ECONOMY_NUMBERS §4.1): server-authoritative inventory validation → consume 5 level-N cards → grant 1 level-(N+1) card
-   * → recompute unitLevels → push back (online only). Card inventory/levels are a server-authoritative field; putSave does not accept them (§8.3).
-   */
-  async pveMerge(req: FastifyRequest, reply: FastifyReply) {
-    const accountId = accountIdOf(req);
-    const { unitId, level } = req.body as { unitId: string; level: number };
-
-    const out = await this.mutateSave(accountId, (s) => {
-      const merged = applyCardMerge(s.cardInventory ?? {}, unitId, level);
-      if (typeof merged === 'string') return merged; // INVALID_UNIT / INVALID_LEVEL / INSUFFICIENT
-      return { ...s, cardInventory: merged, unitLevels: deriveUnitLevels(merged) };
-    });
-    if ('error' in out) {
-      if (out.error === 'INSUFFICIENT') {
-        return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough cards'));
-      }
-      if (out.error === 'INVALID_UNIT' || out.error === 'INVALID_LEVEL') {
-        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, out.error));
       }
       return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
     }

@@ -263,19 +263,11 @@ export class ApiClient {
   }
 
   /**
-   * @deprecated S3-2 per-stat upgrade. Since S12, unit progression goes through card-merge synthesis ({@link pveMerge}).
+   * @deprecated S3-2 per-stat upgrade. Since CC-1 unit progression is per-card via the Hero Roster (cardInv), not this endpoint.
    * PvE upgrade: server validates materials → deducts materials + increments pveUpgrades by 1 → pushes back. Insufficient materials → ApiError('INSUFFICIENT_FUNDS') (402).
    */
   async pveUpgrade(upgradeId: string): Promise<{ save: SaveData }> {
     return this.post<{ save: SaveData }>('/pve/upgrade', { upgradeId });
-  }
-
-  /**
-   * Unit progression merge (S12): server validates inventory → consumes 5 level-N cards → grants 1 level-(N+1) card → recomputes unitLevels → pushes back.
-   * Insufficient cards → ApiError('INSUFFICIENT_FUNDS') (402); invalid unit/level → ApiError('BAD_REQUEST') (400).
-   */
-  async pveMerge(unitId: string, level: number): Promise<{ save: SaveData }> {
-    return this.post<{ save: SaveData }>('/pve/merge', { unitId, level });
   }
 
   // ── Stamina system (A4) ──────────────────────────────────────────────────────────

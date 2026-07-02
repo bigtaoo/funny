@@ -262,27 +262,12 @@ export class SaveManager {
   }
 
   /**
-   * @deprecated S3-2 per-stat upgrade. From S12 onwards, unit progression switched to card-collection merging; use {@link merge} instead.
+   * @deprecated S3-2 per-stat upgrade. Since CC-1 unit progression is per-card via the Hero Roster (cardInv), not this path.
    */
   async upgrade(upgradeId: string): Promise<boolean> {
     if (!this.online()) return false;
     try {
       const res = await this.api!.pveUpgrade(upgradeId);
-      this.adoptServer(res.save);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Unit card merge (S12): 5 cards of level N → 1 card of level N+1. Online-only; inventory deducted server-authoritatively.
-   * Insufficient cards / invalid parameters / offline → returns false, local state unchanged.
-   */
-  async merge(unitId: string, level: number): Promise<boolean> {
-    if (!this.online()) return false;
-    try {
-      const res = await this.api!.pveMerge(unitId, level);
       this.adoptServer(res.save);
       return true;
     } catch {

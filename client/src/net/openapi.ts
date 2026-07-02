@@ -413,23 +413,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/pve/merge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Unit progression merging (S12, server-authoritative: validates inventory → consumes 5 level-N cards → grants 1 level-N+1 card → recomputes unitLevels → pushes save); online only */
-        post: operations["pveMerge"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/equipment/craft": {
         parameters: {
             query?: never;
@@ -2460,44 +2443,6 @@ export interface operations {
             content: {
                 "application/json": {
                     upgradeId: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            save: components["schemas"]["SaveData"];
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            402: components["responses"]["ErrorResp"];
-        };
-    };
-    pveMerge: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Unit type id (infantry/shieldbearer/archer) */
-                    unitId: string;
-                    /** @description Source card level N to merge (produces N+1) */
-                    level: number;
                 };
             };
         };
