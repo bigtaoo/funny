@@ -587,6 +587,6 @@ client/public/          # 出货图标（webpack CopyPlugin 拷到 dist 根）
 
 - **Web / CrazyGames**：`public/{web,crazygames}/index.html` `<head>` 已加 `<link icon/apple-touch/manifest>` + `theme-color`；`webpack.config.js` CopyPlugin（`!isWechat` 分支）把图标 + manifest 拷到 dist 根。dev-server 同源生效。
 - **微信小游戏**：图标**无代码接入点** → 须在**微信公众平台后台手动上传**，用 `art/logo/derived/logo-512.png`（master）。列入上线前 checklist。
-- **`<title>` = `Nivara — Notebook Wars`**（2026-07-02 落地）：主名 Nivara + 副标题 Notebook Wars，四份入口 `client/public/{index,web/index,crazygames/index,wechat/index}.html` 同步；manifest name/short_name 已是 Nivara。游戏内标题走 i18n `game.title` 抽 key 为后续任务（记忆 game-name）。
+- **`<title>` = `Nivara — Notebook Wars`**（2026-07-02 落地）：主名 Nivara + 副标题 Notebook Wars，四份入口 `client/public/{index,web/index,crazygames/index,wechat/index}.html` 同步；manifest name/short_name 已是 Nivara。局内标题已抽单一 i18n key `game.title`（zh/en/de 同值），`auth.title` 改插值 `{game}`——改名只改 `game.title` 一处（记忆 game-name）。
 
 *下一步：输出第一版单位概念草图（普通兵，可染色组织）+ 一个 `sketch.ts` 笔触 demo，验证程序画质感是否达标。*

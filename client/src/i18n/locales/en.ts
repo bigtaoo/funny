@@ -2,6 +2,9 @@ import type { TranslationKey } from './zh';
 
 // English — must cover every key defined in zh.ts (compile-enforced).
 export const en: Record<TranslationKey, string> = {
+  // ── Brand ─────────────────────────────────────────────────────────────────
+  'game.title': 'Nivara',
+
   // ── Common ────────────────────────────────────────────────────────────────
   'common.networkTimeout': 'Network timeout — please retry',
   'common.processing': 'Processing',
@@ -291,7 +294,7 @@ export const en: Record<TranslationKey, string> = {
   'stateplayer.backToLogin': 'Back to login',
 
   // ── Account / login (SA-3) ──────────────────────────────────────────────────
-  'auth.title': 'Sign in to Notebook Wars',
+  'auth.title': 'Sign in to {game}',
   'auth.login': 'Log in',
   'auth.register': 'Sign up',
   'auth.loginIdLabel': 'Email / username',

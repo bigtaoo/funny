@@ -1,6 +1,11 @@
 // Simplified Chinese — single source of truth for all keys.
 // When adding new copy, add the key here first; en.ts will fail to compile if the key is missing.
 export const zh = {
+  // ── Brand ─────────────────────────────────────────────────────────────────
+  // External game name (proper noun — same across all locales).副标题 "Notebook
+  // Wars" 只用于 HTML <title>；局内一律用主名。改名只改这一处。
+  'game.title': 'Nivara',
+
   // ── General ───────────────────────────────────────────────────────────────
   'common.networkTimeout': '网络超时，请重试',
   'common.processing': '处理中',
@@ -291,7 +296,7 @@ export const zh = {
   'stateplayer.backToLogin': '返回登录',
 
   // ── Account / login (SA-3) ───────────────────────────────────────────────────
-  'auth.title': '登录 Notebook Wars',
+  'auth.title': '登录 {game}',
   'auth.login': '登录',
   'auth.register': '注册',
   'auth.loginIdLabel': '邮箱 / 用户名',

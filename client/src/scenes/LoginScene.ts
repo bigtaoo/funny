@@ -290,7 +290,7 @@ export class LoginScene implements Scene {
     titleBg.beginFill(C.dark); titleBg.drawRect(0, 0, w, tbH); titleBg.endFill();
     this.container.addChild(titleBg);
 
-    const title = txt(t('auth.title'), Math.round(h * 0.034), 0xffffff, true);
+    const title = txt(t('auth.title', { game: t('game.title') }), Math.round(h * 0.034), 0xffffff, true);
     title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
     this.container.addChild(title);
 
