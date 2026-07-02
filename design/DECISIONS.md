@@ -239,7 +239,11 @@
   - **动机**：此前引擎里单位到达敌方基地扣血用的是 `unit.attack`（战斗攻击力），导致「打兵」与「拆家」被焊死成一个数字——便宜兵/贵兵的攻城性价比无法独立调。攻城值把这根杠杆解出来。
   - `UnitBlueprint.siegeValue`（`server/engine/src/config.ts`）：**全 12 个兵种**都排了基础值,与 `attack`/`speed` 同级。六个英雄卡的值与 `@nw/shared` `CardDef.siegeValueBase` **保持一致**（步兵 11 / 盾兵 14 / 弓手 8 / Max 12 / Lena 14 / Mara 8）；六个复用入 PvP 的兵种（Ironclad 15 / Berserker 13 / Splitter 8 / Runner 6 / Harpy 7 / Medic 4）只存在于引擎蓝图（无 CARD_DEFS 卡）。按定位排：破墙坦克 > 拆楼手 > dps/玻璃炮/飞兵/支援;siege/ink 刻意不平（步兵 2.75 最划算 → 医疗 0.67 最差）。
   - **扣血口径**：`MovementSystem` 到达基地时 `damage = unit.siegeValue`（原 `unit.attack`）。所有引擎模式（pvp/campaign/siege）统一。SLG 的 `teamSiegeValue()` 延迟结算在引擎**外**独立进行,不双算。
-  - **养成对称（PvE/SLG 吃全渠道）**：`applyUnitLevels` 新增 `siege: 0.1`（+10%/级,与 `cardSiegeValue` 同式）。**PvP 硬墙**：`buildPvpBlueprints()` 永不调养成,只读蓝图基础常量,和 attack 的处理完全同构。**待接**：装备 gear stat + 学院 `siegeAcademy` buff 的 siege 加成(需新 stat/字段,另开)。
+  - **养成对称（PvE/SLG 吃全渠道）**：`applyUnitLevels` 新增 `siege: 0.1`（+10%/级,与 `cardSiegeValue` 同式）。**PvP 硬墙**：`buildPvpBlueprints()` 永不调养成,只读蓝图基础常量,和 attack 的处理完全同构。
+  - **实现更新（2026-07-02，三渠道补齐）**：攻城值的**装备 + 学院**两条渠道已接,与 attack 完全同构,养成三渠道对齐(等级/装备/学院)。
+    - **装备 gear**：`@nw/engine` `AFFIX_FIELD_MAP` 新增 `mult_siege` 系(主词条 `m_siege` / 副词条 `s_siege`)→ `applyEquipment` 里 `u.siegeValue *= (1+Σsiege%)`,含 `EFFECT_CAPS.siegePct=0.6`(镜像 atkPct)。`@nw/shared` `SUB_AFFIX_POOL` 加 `s_siege 3..6%`(rare/epic 可滚);`m_siege` 仅登记入词表,暂无主槽产出(前向兼容,不扰动 weapon 单候选确定性)。
+    - **学院 academy**：`academyBuff()` 返回值从 `{hp,damage}` 扩为 `{hp,damage,siege}`,新增常量 `ACADEMY_SIEGE_STEP=0.015`(镜像 damage step);`buildSiegeBlueprints` 第 4 参 `siegeAcademy.siege` 在 `clampEffectCaps` 后叠乘 `u.siegeValue`(post-cap 层,仅 siege 路径)。类型链透传:`engine/types.ts` `GameConfig.siegeAcademy` → `worldsvc/siegeEngine.ts` `SiegeBattleInput` → `service.ts` `academyBuff`。
+    - **PvP 仍硬墙**:`buildPvpBlueprints()` 无卡/装备/学院任何形参,编译期漏不进;单测 22 例(client `equipment.test.ts`)含 siege 词条正交 attack、siege 封顶、academy siege 应用 + 叠加。全部数值 DRAFT。
   - **`BASE_HP` 保持 100**（用户拍板,数值影响留实机体验再调）；全部 siege 值为 DRAFT。
   - **影响**：`@nw/engine`（`types.ts`/`config.ts`/`Unit.ts`/`MovementSystem.ts`/`balance/progression.ts`）**属公共依赖,最先合 main**。文档：[`game/PVP_LOADOUT_DESIGN.md`](game/PVP_LOADOUT_DESIGN.md) 攻城值章。
 

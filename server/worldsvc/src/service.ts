@@ -1488,9 +1488,9 @@ export class WorldService {
       cardInstances = ci;
       cardEquipInv = engEquipInv;
     }
-    // P2 academy: attacker's academy building gives a seasonal blueprint HP/damage buff (both paths).
+    // P2 academy: attacker's academy building gives a seasonal blueprint HP/damage/siege buff (both paths).
     const atkAcademy = academyBuff(pw.buildings);
-    const siegeAcademy = (atkAcademy.hp > 0 || atkAcademy.damage > 0) ? atkAcademy : undefined;
+    const siegeAcademy = (atkAcademy.hp > 0 || atkAcademy.damage > 0 || atkAcademy.siege > 0) ? atkAcademy : undefined;
 
     // Fetch defender world state before the battle (wave teams, wall/academy buffs, cabinet loot protection).
     const defender = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defenderId) });
@@ -1551,7 +1551,7 @@ export class WorldService {
     attackerArmy: GarrisonEntry[],
     cardInstances: EngineCardInstance[] | undefined,
     cardEquipInv: EngineEquipInv | undefined,
-    siegeAcademy: { hp: number; damage: number } | undefined,
+    siegeAcademy: { hp: number; damage: number; siege: number } | undefined,
     attackerCardInv: Record<string, CardInstance>,
     t: number,
   ): Promise<void> {

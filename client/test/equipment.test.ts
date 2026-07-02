@@ -109,6 +109,19 @@ describe('Equipment combat-power monotonicity (§8)', () => {
       UNIT_BLUEPRINTS[UnitType.Infantry].attackInterval,
     );
   });
+
+  it('siege affix buffs siegeValue only, not attack (ADR-026 gear channel is orthogonal to attack)', () => {
+    const { cards, inv } = equipAll([{ id: 'm_siege', value: 20 }]);
+    const camp = buildCampaignBlueprints(cards, inv);
+    expect(camp[UnitType.Infantry].siegeValue).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue);
+    expect(camp[UnitType.Infantry].attack).toBe(UNIT_BLUEPRINTS[UnitType.Infantry].attack);
+  });
+
+  it('siege sub affix (s_siege) also scales siegeValue', () => {
+    const { cards, inv } = equipAll([{ id: 's_siege', value: 20 }]);
+    const camp = buildCampaignBlueprints(cards, inv);
+    expect(camp[UnitType.Archer].siegeValue).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].siegeValue);
+  });
 });
 
 describe('Cross-system cap (§7.7)', () => {
@@ -117,6 +130,13 @@ describe('Cross-system cap (§7.7)', () => {
     const camp = buildCampaignBlueprints(cards, inv);
     const capped = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].attack * (1 + EFFECT_CAPS.atkPct));
     expect(camp[UnitType.Infantry].attack).toBe(capped);
+  });
+
+  it('siege% equipment contribution clamped to EFFECT_CAPS.siegePct', () => {
+    const { cards, inv } = equipAll([{ id: 'm_siege', value: 100000 }], 9);
+    const camp = buildCampaignBlueprints(cards, inv);
+    const capped = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue * (1 + EFFECT_CAPS.siegePct));
+    expect(camp[UnitType.Infantry].siegeValue).toBe(capped);
   });
 
   it('lifesteal summed from all sources clamped to EFFECT_CAPS.lifestealPct (clampEffectCaps applies a unified cross-source clamp)', () => {
@@ -181,5 +201,27 @@ describe('Scope and error tolerance', () => {
     const inf = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].attack * 1.1);
     expect(camp[UnitType.Archer].attack).toBe(arc);
     expect(camp[UnitType.Infantry].attack).toBe(inf);
+  });
+});
+
+describe('Academy siege buff (ADR-026 §5 P2 — siege path only)', () => {
+  it('siegeAcademy.siege multiplies siegeValue on the siege path; campaign (no academy param) is unaffected', () => {
+    const cards = bareCards();
+    const withAcademy = buildSiegeBlueprints(cards, undefined, { hp: 0, damage: 0, siege: 0.2 });
+    expect(withAcademy[UnitType.Infantry].siegeValue).toBe(
+      Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue * 1.2),
+    );
+    // Campaign path never receives the academy buff.
+    expect(buildCampaignBlueprints(cards)[UnitType.Infantry].siegeValue).toBe(
+      UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue,
+    );
+  });
+
+  it('academy siege buff stacks on top of gear siege (post-cap layer)', () => {
+    const cards = PROGRESSABLE_UNITS.map((ut) => card(ut, 1, { weapon: 'i1' }));
+    const inv: EngineEquipInv = { i1: { defId: 'wp_pencil', level: 0, affixes: [{ id: 's_siege', value: 20 }] } };
+    const gearOnly = buildSiegeBlueprints(cards, inv);
+    const gearPlusAcademy = buildSiegeBlueprints(cards, inv, { hp: 0, damage: 0, siege: 0.2 });
+    expect(gearPlusAcademy[UnitType.Infantry].siegeValue).toBeGreaterThan(gearOnly[UnitType.Infantry].siegeValue);
   });
 });

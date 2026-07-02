@@ -208,7 +208,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 > **P2 全部完成（2026-06-30，branch `slg-city-p2`）**：
 > - **`wall`（城墙）**：`wallDefenseMult(buildings)` = 1 + lvl×WALL_DEFENSE_STEP(0.05)；worldsvc `applySiege` 在 `target.type==='base'` 时对 defenderConfig.garrison 调 `scaleArmyHp(garrison, wallMult)`，与国民加成叠乘。defender 提前 fetch（移到 runSiegeBattle 之前）。
 > - **`cabinet`（文件柜护掠）**：`cabinetLootProtect(buildings)` = min(0.8, lvl×CABINET_PROTECT_STEP(0.02))；`transferLoot` 中 `effectiveLootRate = SIEGE_LOOT_RATE×(1−protection)` 替代原来的固定率。
-> - **`academy`（书院蓝图 buff）**：engine `GameConfig` 加 `siegeAcademy?{hp,damage}` 字段；`buildSiegeBlueprints` 4th param 在 `clampEffectCaps` 后叠乘（独立注入口，守红线）；worldsvc 从 `pw.buildings` 算 buff 注入 `runSiegeBattle`。
+> - **`academy`（书院蓝图 buff）**：engine `GameConfig` 加 `siegeAcademy?{hp,damage,siege}` 字段（siege 分量为 ADR-026 补接）；`buildSiegeBlueprints` 4th param 在 `clampEffectCaps` 后叠乘 hp/attack/**siegeValue**（独立注入口，守红线）；worldsvc 从 `pw.buildings` 算 buff 注入 `runSiegeBattle`。`academyBuff()` 返回 `{hp,damage,siege}`，siege 步长 `ACADEMY_SIEGE_STEP=0.015`。
 > - **`buildGateReason`**：改用 `BUILDING_KEYS`（全 10 种），wall/academy 按正常 desk 等级门控，不再 'building not buildable yet'。
 > - **`CityScene`**：建筑网格从 `BUILDING_KEYS_P1`→`BUILDING_KEYS`（wall/academy 真实可建）；详情卡显示实际数值（DRAFT）。
 > - **i18n**：`city.bonusWallHp`/`city.bonusAcademyHp`/`city.bonusAcademyDmg`（zh/en/de）。

@@ -512,6 +512,8 @@ export const WALL_DEFENSE_STEP = 0.05;
 export const ACADEMY_HP_STEP = 0.02;
 /** DRAFT: academy building → attacker siege-blueprint damage buff per level. */
 export const ACADEMY_DAMAGE_STEP = 0.015;
+/** DRAFT: academy building → attacker siege-blueprint siege-value buff per level (ADR-026, mirrors damage step). */
+export const ACADEMY_SIEGE_STEP = 0.015;
 /** DRAFT: cabinet building → loot protection rate per level (stacks up to 40% at max). */
 export const CABINET_PROTECT_STEP = 0.02;
 
@@ -523,10 +525,10 @@ export function wallDefenseMult(buildings: Partial<Record<BuildingKey, number>> 
 export function cabinetLootProtect(buildings: Partial<Record<BuildingKey, number>> | undefined): number {
   return Math.min(0.8, buildingLevel(buildings, 'cabinet') * CABINET_PROTECT_STEP);
 }
-/** Academy seasonal blueprint buffs (HP + damage multiplier bonuses) for the attacker's siege army (P2, SLG_CITY_DESIGN §5). */
-export function academyBuff(buildings: Partial<Record<BuildingKey, number>> | undefined): { hp: number; damage: number } {
+/** Academy seasonal blueprint buffs (HP + damage + siege-value multiplier bonuses) for the attacker's siege army (P2, SLG_CITY_DESIGN §5; siege channel ADR-026). */
+export function academyBuff(buildings: Partial<Record<BuildingKey, number>> | undefined): { hp: number; damage: number; siege: number } {
   const lvl = buildingLevel(buildings, 'academy');
-  return { hp: lvl * ACADEMY_HP_STEP, damage: lvl * ACADEMY_DAMAGE_STEP };
+  return { hp: lvl * ACADEMY_HP_STEP, damage: lvl * ACADEMY_DAMAGE_STEP, siege: lvl * ACADEMY_SIEGE_STEP };
 }
 
 // ── Nation system (S8-6.5, §2.4) ──────────────────────────────────

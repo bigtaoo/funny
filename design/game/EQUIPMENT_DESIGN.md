@@ -237,6 +237,7 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 | 副词条 | 引擎字段 | 备注 |
 |---|---|---|
 | 攻击 +X% | `attack` | 乘算 |
+| 攻城值 +X% | `siegeValue` | 乘算（ADR-026，`s_siege`）；只放大拆家伤害，与 attack 正交，与 §7.7 攻城值上限求和后钳 |
 | 生命 +X% | `hp` | 乘算 |
 | 护甲 +N | `armor` | flat |
 | 移速 +X% | `speed` | 乘算 |
@@ -281,6 +282,7 @@ DRAFT 池，全部映射到已有引擎机制或标注待扩展：
 | 暴击率% | trait T3 + 饰品主词条 `m_crit` | Σ 后 clamp | ≤ 50%（引擎 `EFFECT_CAPS.critPct`） |
 | 暴击倍率 | trait T3 基础 1.5× + 副词条 `s_critmult` | Σ 后 clamp | ≤ 2.5×（引擎 `EFFECT_CAPS.critMult`，DRAFT） |
 | 攻击% | 主/副词条（多件） | Σ 后 clamp | ≤ +60% |
+| 攻城值% | 副词条 `s_siege`（多件；主词条 `m_siege` 已登记词表，暂无主槽产出） | Σ 后 clamp | ≤ +60%（引擎 `EFFECT_CAPS.siegePct`，镜像攻击%） |
 | 生命% | 主/副词条（多件） | Σ 后 clamp | ≤ +60% |
 | 攻速% | 主/副词条 | Σ 后 clamp | ≤ +40% |
 | 护甲（flat） | 主/副词条 + 特技「护壁」 | Σ 后 clamp | ≤ 引擎单位基础攻击的某比例（防免伤） |

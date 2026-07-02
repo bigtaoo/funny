@@ -16,6 +16,7 @@ import {
   CABINET_PROTECT_STEP,
   ACADEMY_HP_STEP,
   ACADEMY_DAMAGE_STEP,
+  ACADEMY_SIEGE_STEP,
   DRILL_TROOPCAP_STEP,
   buildingLevel,
   deskLevel,
@@ -128,11 +129,12 @@ describe('P2 building functions: wall / cabinetLootProtect / academyBuff', () =>
     // capped at 0.8 even at max level (L40 would exceed)
     expect(cabinetLootProtect({ cabinet: 100 })).toBe(0.8);
   });
-  it('academyBuff: no academy → hp=0, damage=0; scales per level', () => {
-    expect(academyBuff(undefined)).toEqual({ hp: 0, damage: 0 });
-    expect(academyBuff({ academy: 0 })).toEqual({ hp: 0, damage: 0 });
-    expect(academyBuff({ academy: 1 })).toEqual({ hp: ACADEMY_HP_STEP, damage: ACADEMY_DAMAGE_STEP });
+  it('academyBuff: no academy → hp=0, damage=0, siege=0; scales per level', () => {
+    expect(academyBuff(undefined)).toEqual({ hp: 0, damage: 0, siege: 0 });
+    expect(academyBuff({ academy: 0 })).toEqual({ hp: 0, damage: 0, siege: 0 });
+    expect(academyBuff({ academy: 1 })).toEqual({ hp: ACADEMY_HP_STEP, damage: ACADEMY_DAMAGE_STEP, siege: ACADEMY_SIEGE_STEP });
     expect(academyBuff({ academy: 10 }).hp).toBeCloseTo(10 * ACADEMY_HP_STEP);
     expect(academyBuff({ academy: 10 }).damage).toBeCloseTo(10 * ACADEMY_DAMAGE_STEP);
+    expect(academyBuff({ academy: 10 }).siege).toBeCloseTo(10 * ACADEMY_SIEGE_STEP);
   });
 });

@@ -293,7 +293,7 @@ export interface SiegeBattleInput {
   /** @deprecated use cardInstances+equipmentInv (CC-3). */
   equipment?: EngineEquipmentInput;
   /** Academy building seasonal blueprint buff (SLG_CITY_DESIGN P2): applied to attacker blueprints only; omit when academy=0. */
-  siegeAcademy?: { hp: number; damage: number };
+  siegeAcademy?: { hp: number; damage: number; siege: number };
 }
 
 /**

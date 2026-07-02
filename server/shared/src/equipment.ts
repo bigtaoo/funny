@@ -165,6 +165,7 @@ function pickMainAffix(slot: EquipSlot, rng: () => number): { id: string; base: 
 /** Sub-affix pool (§7.5 combat-power class, only rolled for rare/epic). Each entry: [id, min, max] (DRAFT). */
 export const SUB_AFFIX_POOL: ReadonlyArray<readonly [string, number, number]> = [
   ['s_atk', 3, 6],
+  ['s_siege', 3, 6], // Siege value +3..6% (ADR-026 gear channel; engine mult_siege → siegeValue)
   ['s_hp', 4, 8],
   ['s_armor', 2, 5],
   ['s_spd', 2, 5],

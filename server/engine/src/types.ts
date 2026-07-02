@@ -160,9 +160,9 @@ export interface GameConfig {
   /**
    * Academy building seasonal blueprint buffs (SLG_CITY_DESIGN P2 §5): applied only on the 'siege' path
    * as a fractional bonus on top of pveUpgrades. Ignored by PvP/campaign/netplay.
-   * {hp: 0.06, damage: 0.045} = +6% HP, +4.5% damage to all attacker units.
+   * {hp: 0.06, damage: 0.045, siege: 0.045} = +6% HP, +4.5% attack, +4.5% siege value to all attacker units.
    */
-  siegeAcademy?: { hp: number; damage: number };
+  siegeAcademy?: { hp: number; damage: number; siege: number };
 }
 
 export interface PlayerConfig {

@@ -158,19 +158,21 @@ export function buildCampaignBlueprints(
  *
  * @param cardInstances  Attacker's card instances (server-authoritative snapshot).
  * @param equipmentInv   Attacker's equipment inventory for gear lookups. Optional.
- * @param siegeAcademy   Academy building seasonal buff (SLG_CITY_DESIGN P2): fractional hp/damage bonuses
+ * @param siegeAcademy   Academy building seasonal buff (SLG_CITY_DESIGN P2): fractional hp/damage/siege bonuses
  *                       applied after clampEffectCaps as a post-cap layer. Ignored on other paths.
  */
 export function buildSiegeBlueprints(
   cardInstances: EngineCardInstance[],
   equipmentInv?: EngineEquipInv,
-  siegeAcademy?: { hp: number; damage: number },
+  siegeAcademy?: { hp: number; damage: number; siege: number },
 ): Record<UnitType, UnitBlueprint> {
   const bp = buildCampaignBlueprints(cardInstances, equipmentInv);
-  if (siegeAcademy && (siegeAcademy.hp > 0 || siegeAcademy.damage > 0)) {
+  if (siegeAcademy && (siegeAcademy.hp > 0 || siegeAcademy.damage > 0 || siegeAcademy.siege > 0)) {
     for (const unit of Object.values(bp) as UnitBlueprint[]) {
       if (siegeAcademy.hp > 0) unit.hp = Math.round(unit.hp * (1 + siegeAcademy.hp));
       if (siegeAcademy.damage > 0) unit.attack = Math.round(unit.attack * (1 + siegeAcademy.damage));
+      // Siege value gets its own academy channel (ADR-026 "待接"): mirrors attack, on the siege path only.
+      if (siegeAcademy.siege > 0) unit.siegeValue = Math.round(unit.siegeValue * (1 + siegeAcademy.siege));
     }
   }
   return bp;

@@ -45,6 +45,7 @@ import { TRAIT_BREAKPOINTS } from './progression';
 /** How an affix is applied to the engine blueprint. */
 type AffixKind =
   | 'mult_atk'        // Attack +X% (multiplicative, attack)
+  | 'mult_siege'      // Siege value +X% (multiplicative, siegeValue — ADR-026: gear channel, mirrors mult_atk)
   | 'mult_hp'         // HP +X% (multiplicative, hp)
   | 'mult_atkspd'     // Attack speed +X% (reduces attackInterval)
   | 'mult_spd'        // Move speed +X% (multiplicative, speed)
@@ -69,6 +70,7 @@ interface AffixDef {
 export const AFFIX_FIELD_MAP: Readonly<Record<string, AffixDef>> = {
   // Primary affixes (§7.4, locked to slot, exactly 1 per item on roll; scales with enhancement)
   m_atk: { kind: 'mult_atk', main: true },
+  m_siege: { kind: 'mult_siege', main: true },
   m_atkspd: { kind: 'mult_atkspd', main: true },
   m_hp: { kind: 'mult_hp', main: true },
   m_armor: { kind: 'flat_armor', main: true },
@@ -76,6 +78,7 @@ export const AFFIX_FIELD_MAP: Readonly<Record<string, AffixDef>> = {
   m_crit: { kind: 'crit', main: true },
   // Secondary affixes (§7.5 combat stats, rare/epic, fixed rolled value)
   s_atk: { kind: 'mult_atk' },
+  s_siege: { kind: 'mult_siege' },
   s_hp: { kind: 'mult_hp' },
   s_armor: { kind: 'flat_armor' },
   s_spd: { kind: 'mult_spd' },
@@ -111,6 +114,8 @@ export const ENHANCE_COEFF_PER_LEVEL = 0.1;
 export const EFFECT_CAPS = {
   /** Attack % equipment contribution cap (§7.7 ≤ +60%). */
   atkPct: 0.6,
+  /** Siege value % equipment contribution cap (ADR-026, mirrors atkPct ≤ +60%). */
+  siegePct: 0.6,
   /** HP % equipment contribution cap (§7.7 ≤ +60%). */
   hpPct: 0.6,
   /** Attack speed % equipment contribution cap (§7.7 ≤ +40%). */
@@ -195,6 +200,7 @@ export interface EngineEquipmentInput {
 /** Per-unit-type effect accumulator (percentages as decimals: 0.12 = +12%; flat values are raw). */
 interface EffectAccum {
   atkPct: number;
+  siegePct: number;
   hpPct: number;
   atkspdPct: number;
   spdPct: number;
@@ -208,7 +214,7 @@ interface EffectAccum {
 }
 
 function zeroAccum(): EffectAccum {
-  return { atkPct: 0, hpPct: 0, atkspdPct: 0, spdPct: 0, armorFlat: 0, lifestealFlat: 0, regenFlat: 0, critPctFlat: 0, critMultBonus: 0 };
+  return { atkPct: 0, siegePct: 0, hpPct: 0, atkspdPct: 0, spdPct: 0, armorFlat: 0, lifestealFlat: 0, regenFlat: 0, critPctFlat: 0, critMultBonus: 0 };
 }
 
 /** Accumulates all affixes of one equipped item into acc (primary affixes scaled by enhancement level; utility/skill/unknown skipped). */
@@ -222,6 +228,9 @@ function accumInstance(acc: EffectAccum, inst: EngineEquipInstance): void {
     switch (def.kind) {
       case 'mult_atk':
         acc.atkPct += effective / 100;
+        break;
+      case 'mult_siege':
+        acc.siegePct += effective / 100;
         break;
       case 'mult_hp':
         acc.hpPct += effective / 100;
@@ -292,6 +301,8 @@ export function applyEquipment(
 
   // Multiplicative fields: equipment contribution clamped here (§7.7 clamping site ①).
   u.attack = Math.round(u.attack * (1 + clamp(acc.atkPct, EFFECT_CAPS.atkPct)));
+  // Siege value: own gear channel (ADR-026), same multiplicative arithmetic + cap as attack.
+  u.siegeValue = Math.round(u.siegeValue * (1 + clamp(acc.siegePct, EFFECT_CAPS.siegePct)));
   u.hp = Math.round(u.hp * (1 + clamp(acc.hpPct, EFFECT_CAPS.hpPct)));
   // Attack speed: percentage reduces attackInterval (§7.4 "multiplicative (reduces interval)"); lower bound prevents 0/negative.
   const atkspd = clamp(acc.atkspdPct, EFFECT_CAPS.atkspdPct);
