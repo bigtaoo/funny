@@ -111,7 +111,7 @@ bar('VERDICT — stronghold track (SLG_ECONOMY_CHECK §21.4)');
 console.log(`  ① density/variance:  ${densityOnTarget && varianceOk ? '✅ PASS' : '❌ FAIL'}`);
 console.log(`     median ${medianPct.toFixed(2)}% (intent ~0.3%), CV ${cv.toFixed(2)}, ${stats.zeroSeedPct.toFixed(0)}% zero-stronghold worlds, ${stats.min}→${stats.max} spread.`);
 console.log(`  ② blob clustering:   ${isolated ? '✅ PASS' : '❌ FAIL'}  (mean blob ${avgBlob.toFixed(1)} cells)`);
-console.log(`  ③ persistent faucet: ${anyFail ? '⚠️  CONDITIONAL' : '✅ PASS'}  — safe at median×low-capture; breaches 15% at high-count seeds / full capture.`);
+console.log(`  ③ persistent faucet: ${anyFail ? '⚠️  CONDITIONAL  — safe at median×low-capture; breaches 15% at high-count seeds / full capture.' : '✅ PASS  — dilution ≤ 15% across all seeds even at 100% capture (per-tile hash gate removed the tail seeds).'}`);
 console.log(`  ④ season loot / garrison: ✅ sane (one-off capped injection; garrison gates loot behind progression).\n`);
 
 if (!densityOnTarget || !varianceOk || !isolated) {
