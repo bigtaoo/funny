@@ -1417,7 +1417,7 @@ if (path.startsWith('/admin/world/')) {
 
 | # | 缺口 | 现状 | 计划 |
 |---|---|---|---|
-| **R-1** | **建筑 / 主城内政系统整块缺失** | worldsvc 唯一「建筑」是瞭望塔（`buildWatchtower`，纯视野源）；无资源生产/军事/城防建筑；`troopCap` 恒为 `TROOP_CAP_BASE`（死值）。直接后果：5 资源里 **graphite/sticker 空转**——`graphite`（石料）本应是第 4 种地块资源但 `biomeAt` 漏产（三分），`sticker`（铜币位）无主城产出。 | → **[`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)** 已出方案（仿三战 4 地块+1 铜币 + 主城内政）。**D-CITY-1 ✅ 清空（2026-06-30 拍板）**，跨季只留 meta 材料/装备。P1 = `biomeAt` 补 graphite 第 4 地块 + stickerShop 自产 sticker + 4 资源建筑 + drillYard，即解空转 + troopCap 成长。 |
+| ~~**R-1**~~ | ~~建筑 / 主城内政系统整块缺失~~ **✅ CLOSED（2026-06-30~07-02）** | ~~worldsvc 唯一「建筑」是瞭望塔；无资源/军事/城防建筑；`troopCap` 死值；graphite/sticker 空转。~~ **已实现并验证**：[`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md) **P1（server 刀 `7da7e891` + client 刀 `9febdba0`）+ P2（`bcb48a9c` wall/cabinet/academy）全合 main**。`biomeAt` 三分→四分给 graphite 地图 faucet；stickerShop 自产 sticker faucet；4 资源建筑产率乘数 + cabinet 仓储 + drillYard troopCap 成长 + desk 门控 + buildQueue 调度 + coin 加速。CityScene 端到端接通（`createAppCore`/`WorldMapScene` Enter Desk）。 | **✅ 完成**。`city-buildings.e2e.test.ts` **8/8 real-Mongo 全绿（2026-07-02）**——faucet+sink 闭环经实测证实。数值仍 DRAFT（终态=上线后实测对账，§21.4）。 |
 | **R-2** | **资源格地图渲染未接入** | 5 母题 × 10 级程序合成资源格美术已出图打包（`res_atlas`），但未接进 `WorldMapScene` 渲染，地图资源点仍是程序色块。 | §3.4 待办：母题加载 + 双轴（丰度/守备）+ 10 级运行时合成接入。 |
 
 ### 21.2 第二档——规则 / 体验补漏
@@ -1447,10 +1447,11 @@ if (path.startsWith('/admin/world/')) {
 
 ### 21.5 优先级建议
 
-1. **R-1 建筑系统**：唯一的「功能洞」——激活两种死资源 + 给 troopCap 成长曲线 + 补「点进主城」核心体验。方案已就绪（[`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)）。
-2. **R-2 资源格美术接入 + R-4 数值调参**：体验/平衡，随美术与经济模拟批次。
-3. **R-3 联盟攻击约束**：规则补漏，联盟专项。
-4. **R-5~R-9**：运营/规模化，赛季正交可延后。
+1. ~~**R-1 建筑系统**~~ **✅ CLOSED（2026-07-02，P1+P2 合 main + e2e 8/8 实测）**——两种死资源已激活、troopCap 有成长曲线、「点进主城」体验已补。
+2. **R-2 资源格美术接入**：唯一剩下的「功能洞」——`res_atlas` 已出图，待接进 `WorldMapScene` 渲染（§3.4）。**建议下一步。**
+3. **R-4 数值调参**：随经济模拟批次（city 数值仍 DRAFT，§21.4）。
+4. **R-3 联盟攻击约束**：规则补漏，联盟专项。
+5. **R-5~R-9**：运营/规模化，赛季正交可延后。
 
 ---
 

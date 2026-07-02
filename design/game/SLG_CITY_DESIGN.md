@@ -196,7 +196,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 > - **服务方法 + 调度**：`upgradeBuilding`/`speedupBuild`/`processCompletedBuilds`/`applyDueBuilds`（复刻 trainingQueue 链式队列）+ scheduler 接入 + httpApi `POST /world/build/upgrade|speedup`。
 > - **契约**：`openapi-world.yml` 加 `PlayerWorldView.buildings/buildQueue`、`BuildingKey` enum、两端点。
 > - **赛季清空**：`resetSeason` 已整删 `playerWorld` 文档（含 buildings/buildQueue），跨季只留 family/材料，无需额外清理，符合 D-CITY-1。
-> - 验证：`@nw/shared` + `@nw/worldsvc` `tsc -b` 全绿；shared 纯函数单测 8/8 绿；worldsvc e2e（`city-buildings.e2e.test.ts`，7 例）已写，本机 Mongo 不可达（docker 处 Windows 容器模式）→ 与全仓 e2e 一致 skip，待有 Mongo 环境跑实测。
+> - 验证：`@nw/shared` + `@nw/worldsvc` `tsc -b` 全绿；shared 纯函数单测 8/8 绿；worldsvc e2e（`city-buildings.e2e.test.ts`）**✅ 8/8 全绿（2026-07-02，mongodb-memory-server rs0 实跑）**——覆盖 upgrade 扣资源入队+完工生效 / stickerShop sticker faucet 激活 / drillYard 提 troopCap / desk 门控拒绝越级 / 资源不足拒绝 / coin 加速即刻完工 / cabinet 提仓储上限。经济闭环（faucet+sink）已由 real Mongo e2e 证实，非纸面。
 > **P1 全部完成（2026-06-30，branch `slg-city-ui`，client UI 刀）**：
 > - **`CityScene`**（`client/src/scenes/CityScene.ts`）：手绘书桌俯视风格；顶部 5 资源条（当前值/产率/仓储上限）；建筑网格（8 个 P1 key + 2 个 P2 占位）；点选建筑 → 详情卡（当前等级/加成说明/下级消耗/升级按钮，资源不足置灰）；建造队列条（倒计时 + coin 加速按钮）；drillYard 详情卡展示兵力上限；`goCity` 导航函数（`createAppCore.ts`），从 `onOpenCity` 回调触发，`onBack` 返回大地图。
 > - **WorldMapScene**：自己主城弹层新增「进入主城（Enter Desk）」按钮，走 `onOpenCity` 回调。
