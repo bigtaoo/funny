@@ -20,6 +20,7 @@ import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/p
 import { proceduralTile } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../render/cityAtlasLoader';
+import { ISO_RATIO, tileToScreen, screenToTile, screenToTileF, diamondPath, diamondVertices, visibleTileBounds } from '../render/isoGrid';
 
 // ── Public callbacks ────────────────────────────────────────────────────────
 
@@ -166,8 +167,13 @@ interface ZoomCfg {
 function makeZoomCfgs(w: number, h: number): [ZoomCfg, ZoomCfg, ZoomCfg] {
   const mh = h - HUD_H;
   const mk = (tile: number): ZoomCfg => {
-    const visW = Math.ceil(w / tile);
-    const visH = Math.ceil(mh / tile);
+    // Under isometric projection the screen rect back-projects to a rotated (diamond)
+    // region in tile space, so the axis-aligned tile range covering it is wider/taller
+    // than the orthogonal `w/tile` estimate — use the real bounding-box size (pan-
+    // independent: translation doesn't change its width/height, only its origin).
+    const b = visibleTileBounds(w, mh, 0, 0, tile);
+    const visW = b.maxTx - b.minTx;
+    const visH = b.maxTy - b.minTy;
     return { tile, visW, visH, poolW: visW + 2, poolH: visH + 2 };
   };
   return [mk(Math.floor(w / 19)), mk(Math.floor(w / 37)), mk(27)];
@@ -324,8 +330,10 @@ export class WorldMapScene implements Scene {
     this.poolContainer = new PIXI.Container();
     mapClip.addChild(this.poolContainer);
 
-    // City building sprites (above tiles, below overlay)
+    // City building sprites (above tiles, below overlay). sortableChildren + zIndex
+    // (set per-sprite in refreshCityLayer) gives isometric-correct back-to-front draw order.
     this.cityLayer = new PIXI.Container();
+    this.cityLayer.sortableChildren = true;
     mapClip.addChild(this.cityLayer);
 
     // Overlay: capitals, march arrows, selected tile highlight
@@ -442,9 +450,10 @@ export class WorldMapScene implements Scene {
   /** Returns the tile coordinate of the viewport center + a radius to fetch. */
   private viewportCenter(): { cx: number; cy: number; r: number } {
     const tp = this.tp;
-    const cx = Math.floor(-this.panX / tp + this.w / 2 / tp);
-    const cy = Math.floor(-this.panY / tp + (this.h - HUD_H) / 2 / tp);
-    const r  = Math.ceil(Math.max(this.w, this.h - HUD_H) / tp / 2) + 4;
+    const b = visibleTileBounds(this.w, this.h - HUD_H, this.panX, this.panY, tp);
+    const cx = Math.floor((b.minTx + b.maxTx) / 2);
+    const cy = Math.floor((b.minTy + b.maxTy) / 2);
+    const r  = Math.ceil(Math.max(b.maxTx - b.minTx, b.maxTy - b.minTy) / 2) + 4;
     return { cx: Math.max(0, Math.min(this.mapW - 1, cx)), cy: Math.max(0, Math.min(this.mapH - 1, cy)), r };
   }
 
@@ -452,13 +461,17 @@ export class WorldMapScene implements Scene {
 
   private setZoom(z: 1 | 2 | 3): void {
     if (this.zoom === z) return;
-    // Keep map center stable across zoom levels.
+    // Keep map center stable across zoom levels: read which (fractional) tile is
+    // under the screen center under the old projection, then re-pan so that same
+    // tile lands on screen center under the new tile size.
     const oldTp = this.tp;
-    const centerTileX = (-this.panX + this.w / 2) / oldTp;
-    const centerTileY = (-this.panY + (this.h - HUD_H) / 2) / oldTp;
+    const screenCx = this.w / 2;
+    const screenCy = (this.h - HUD_H) / 2;
+    const frac = screenToTileF(screenCx - this.panX, screenCy - this.panY, oldTp);
     this.zoom = z;
-    this.panX = this.w / 2 - centerTileX * this.tp;
-    this.panY = (this.h - HUD_H) / 2 - centerTileY * this.tp;
+    const newCenterScreen = tileToScreen(frac.x, frac.y, this.tp);
+    this.panX = screenCx - newCenterScreen.x;
+    this.panY = screenCy - newCenterScreen.y;
     this.clampPan();
     this.buildPool();
     this.invalidatePool();
@@ -505,16 +518,22 @@ export class WorldMapScene implements Scene {
     this.refreshCityLayer();
     if (this.zoom === 3) return;
     const { tile: tp, poolW, poolH } = this.zc;
-    const x0 = Math.floor(-this.panX / tp);
-    const y0 = Math.floor(-this.panY / tp);
+    // Isometric visible region is a rotated (diamond) area in tile space — the pool
+    // covers its axis-aligned bounding box, so poolW/poolH (widened in makeZoomCfgs)
+    // must be paired with an origin computed the same way rather than a naive
+    // `-panX / tp`.
+    const b = visibleTileBounds(this.w, this.h - HUD_H, this.panX, this.panY, tp);
+    const x0 = b.minTx - 1;
+    const y0 = b.minTy - 1;
     for (let dy = 0; dy < poolH; dy++) {
       for (let dx = 0; dx < poolW; dx++) {
         const tx = x0 + dx;
         const ty = y0 + dy;
         const si = (((ty % poolH) + poolH) % poolH) * poolW + (((tx % poolW) + poolW) % poolW);
         const slot = this.pool[si]!;
-        slot.g.x = this.panX + tx * tp;
-        slot.g.y = this.panY + ty * tp;
+        const s = tileToScreen(tx, ty, tp);
+        slot.g.x = this.panX + s.x;
+        slot.g.y = this.panY + s.y;
         if (slot.tx === tx && slot.ty === ty) continue;
         slot.tx = tx; slot.ty = ty;
         this.drawTileSlot(slot, tx, ty);
@@ -542,10 +561,11 @@ export class WorldMapScene implements Scene {
     this.cityLayer.visible = true;
 
     const tp = this.tp;
-    const x0 = Math.floor(-this.panX / tp) - 1;
-    const y0 = Math.floor(-this.panY / tp) - 1;
-    const visW = Math.ceil(this.w / tp) + 4;
-    const visH = Math.ceil((this.h - HUD_H) / tp) + 4;
+    const b = visibleTileBounds(this.w, this.h - HUD_H, this.panX, this.panY, tp);
+    const x0 = b.minTx - 2;
+    const y0 = b.minTy - 2;
+    const visW = (b.maxTx - b.minTx) + 4;
+    const visH = (b.maxTy - b.minTy) + 4;
 
     const seen = new Set<string>();
 
@@ -583,11 +603,19 @@ export class WorldMapScene implements Scene {
           this.citySprites.set(cacheKey, cityC);
         }
 
-        // Position at tile center
-        cityC.x = this.panX + (tx + 0.5) * tp;
-        cityC.y = this.panY + (ty + 0.5) * tp;
+        // Position at tile diamond center; depth-sort so bases further back (smaller
+        // tx+ty) never overdraw ones nearer camera when their sprites overlap.
+        const s = tileToScreen(tx, ty, tp);
+        cityC.x = this.panX + s.x;
+        cityC.y = this.panY + s.y;
+        cityC.zIndex = tx + ty;
 
-        // Resize sprite to fill the 3×3 footprint (BASE_SPRITE_TILES compensates the art's margin).
+        // Resize sprite: keep the atlas art's own square aspect (it already draws each
+        // building in isometric perspective on its own implied ground plane, per
+        // cityAtlasLoader.ts) rather than squashing it into the 3×3 diamond footprint's
+        // flatter bounding box — width still matches BASE_SPRITE_TILES*tp so buildings
+        // line up with the footprint; height keeps the art's natural proportion. Whether
+        // this still reads well is a v1 question for the follow-up diamond-art pass.
         const sprite = cityC.getChildByName('img') as PIXI.Sprite;
         if (sprite.texture !== tex) sprite.texture = tex;
         sprite.width  = BASE_SPRITE_TILES * tp;
@@ -677,15 +705,20 @@ export class WorldMapScene implements Scene {
     return t.ownerPublicId ?? (t.mine ? 'me' : t.ally ? 'ally' : t.occupied ? 'enemy' : 'none');
   }
 
-  /** L1 detail tile: paper terrain + motif, then ownership wash/border, then level/sect/watchtower markers. */
+  /**
+   * L1 detail tile: paper terrain + motif, then ownership wash/border, then level/sect/watchtower markers.
+   * `g`'s local origin is the tile's DIAMOND CENTER (set by refreshPool via isoGrid.tileToScreen),
+   * not the old top-left square corner — every marker below is positioned relative to that center.
+   */
   private drawTileL1(
     g: PIXI.Graphics, tile: WorldTileView | null,
     fill: number, owner: number | null, fogged: boolean, tp: number, isAnchor: boolean,
   ): void {
+    const hh = (tp * ISO_RATIO) / 2;
     // Soft sketch grid + calm terrain fill (alpha < 1 lets the paper grain show through).
     g.lineStyle(0.7, 0xccbbaa, 0.32);
     g.beginFill(fill, 0.7);
-    g.drawRect(0, 0, tp - 1, tp - 1);
+    g.drawPolygon(diamondPath(tp - 1));
     g.endFill();
 
     // Resource motif is TERRAIN, not a dynamic layer — it stays visible even under
@@ -704,18 +737,18 @@ export class WorldMapScene implements Scene {
       const isBase = tile?.type === 'base';
       g.lineStyle(0);
       g.beginFill(owner, isBase ? 0.26 : 0.16);
-      g.drawRect(0, 0, tp - 1, tp - 1);
+      g.drawPolygon(diamondPath(tp - 1));
       g.endFill();
       g.lineStyle(isBase ? 2.4 : 1.6, owner, 0.9);
       g.beginFill(0, 0);
-      g.drawRect(1.2, 1.2, tp - 3.4, tp - 3.4);
+      g.drawPolygon(diamondPath(tp - 1, { inset: 2.2 / tp }));
       g.endFill();
     }
 
     if (fogged) {
       g.lineStyle(0);
       g.beginFill(FOG_COLOR, 0.4);
-      g.drawRect(0, 0, tp - 1, tp - 1);
+      g.drawPolygon(diamondPath(tp - 1));
       g.endFill();
       return;  // dynamic markers (city icon, level dot, sect border, watchtower) stay hidden under fog
     }
@@ -727,10 +760,15 @@ export class WorldMapScene implements Scene {
     }
 
     if (tile && tile.level > 1) {
+      // Was the square's top-right corner (tp-6,6); nearest diamond analog is the
+      // midpoint of the top→right edge, nudged slightly inward.
       const dotColor = tile.mine ? 0xcc2222 : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0x2266cc : 0x888888));
+      const v = diamondVertices(tp - 1);
+      const dotX = (v.top[0] + v.right[0]) / 2 * 0.85;
+      const dotY = (v.top[1] + v.right[1]) / 2 * 0.85;
       g.lineStyle(0);
       g.beginFill(dotColor, 0.9);
-      g.drawCircle(tp - 6, 6, 3);
+      g.drawCircle(dotX, dotY, 3);
       g.endFill();
     }
 
@@ -743,13 +781,16 @@ export class WorldMapScene implements Scene {
     if (tile?.allySect) {
       g.lineStyle(2, ALLY_SECT_BORDER, 0.95);
       g.beginFill(0, 0);
-      g.drawRect(2, 2, tp - 5, tp - 5);
+      g.drawPolygon(diamondPath(tp - 1, { inset: Math.min(0.35, 5 / tp) }));
       g.endFill();
     }
 
     if (tile?.watchtower) {
-      const tcx = tp / 2;
-      const baseY = tp - 5;
+      // Was anchored at the square's bottom-center (baseY=tp-5); the diamond analog
+      // is the bottom vertex, nudged up slightly so the tower base still reads as
+      // sitting inside the tile rather than poking past its edge.
+      const tcx = 0;
+      const baseY = hh - 4;
       const towerW = Math.max(4, tp * 0.18);
       const towerH = Math.max(7, tp * 0.36);
       g.lineStyle(1, 0x4a3520, 0.9);
@@ -771,11 +812,14 @@ export class WorldMapScene implements Scene {
    * so an enemy base being ground down under a siege reads at a glance. Width scales with the tile size.
    */
   private drawHpBar(g: PIXI.Graphics, hp: number, maxHp: number, tp: number): void {
+    // `g`'s local origin is the tile's diamond center (see drawTileL1); the bar sits just
+    // above the diamond's bottom vertex instead of the old square's bottom edge.
+    const hh = (tp * ISO_RATIO) / 2;
     const ratio = Math.max(0, Math.min(1, hp / maxHp));
     const barW = tp * 0.7;
     const barH = Math.max(3, tp * 0.06);
-    const x = (tp - barW) / 2;
-    const y = tp - barH - 3;
+    const x = -barW / 2;
+    const y = hh - barH - 3;
     // Track
     g.lineStyle(0.6, 0x3a2a1a, 0.8);
     g.beginFill(0x2a1e12, 0.75);
@@ -800,6 +844,10 @@ export class WorldMapScene implements Scene {
     const fill = mine ? 0xf5d5d5 : (ally ? 0xd5f0e0 : 0xd5e0f5);
     const margin = Math.max(4, tp * 0.08);
     const inner = tp - 1 - margin * 2;
+    // `g`'s local origin is now the tile's diamond CENTER (see drawTileL1), not the old
+    // square's top-left corner — `og` re-anchors this icon's inner square there. The icon
+    // itself stays a plain square drawing (it's a placeholder pending real art anyway).
+    const og = -tp / 2 + margin;
 
     g.lineStyle(1.2, ink, 0.9);
 
@@ -808,86 +856,86 @@ export class WorldMapScene implements Scene {
       g.beginFill(fill, 0.85);
       const tentW = inner * 0.42;
       const tentH = inner * 0.55;
-      const y0 = margin + inner * 0.35;
+      const y0 = og + inner * 0.35;
       [0.15, 0.52].forEach((fx) => {
-        const tx = margin + inner * fx;
+        const tx = og + inner * fx;
         g.moveTo(tx, y0); g.lineTo(tx + tentW / 2, y0 - tentH); g.lineTo(tx + tentW, y0);
         g.closePath();
       });
       g.endFill();
       // ground line
       g.lineStyle(0.8, ink, 0.6);
-      g.moveTo(margin, margin + inner * 0.35); g.lineTo(margin + inner, margin + inner * 0.35);
+      g.moveTo(og, og + inner * 0.35); g.lineTo(og + inner, og + inner * 0.35);
     } else if (tier === 2) {
       // Walled town: rectangle perimeter + small house inside
-      const wy = margin + inner * 0.15;
+      const wy = og + inner * 0.15;
       const wh = inner * 0.72;
       g.beginFill(fill, 0.75);
-      g.drawRect(margin, wy, inner, wh);
+      g.drawRect(og, wy, inner, wh);
       g.endFill();
       g.lineStyle(1.5, ink, 0.9);
-      g.drawRect(margin, wy, inner, wh);
+      g.drawRect(og, wy, inner, wh);
       // Gate in center-bottom
       const gw = inner * 0.28;
       g.lineStyle(0);
       g.beginFill(ink, 0.4);
-      g.drawRect(margin + inner / 2 - gw / 2, wy + wh - wh * 0.36, gw, wh * 0.36);
+      g.drawRect(og + inner / 2 - gw / 2, wy + wh - wh * 0.36, gw, wh * 0.36);
       g.endFill();
       // Central tower
       g.lineStyle(1.2, ink, 0.9);
       g.beginFill(fill, 0.9);
       const tw = inner * 0.22, th = inner * 0.46;
-      g.drawRect(margin + inner / 2 - tw / 2, wy - th * 0.3, tw, th);
+      g.drawRect(og + inner / 2 - tw / 2, wy - th * 0.3, tw, th);
       g.endFill();
     } else if (tier === 3) {
       // Castle: outer wall with crenels + keep
-      const wy = margin + inner * 0.22;
+      const wy = og + inner * 0.22;
       const wh = inner * 0.65;
       g.beginFill(fill, 0.80);
-      g.drawRect(margin, wy, inner, wh);
+      g.drawRect(og, wy, inner, wh);
       g.endFill();
       g.lineStyle(1.5, ink, 0.9);
-      g.drawRect(margin, wy, inner, wh);
+      g.drawRect(og, wy, inner, wh);
       // Crenellations top
       const cs = Math.max(2, inner * 0.07);
       g.lineStyle(0);
       g.beginFill(ink, 0.7);
       for (let i = 0; i < 4; i++) {
-        g.drawRect(margin + i * (inner / 4), wy - cs, inner / 8, cs);
+        g.drawRect(og + i * (inner / 4), wy - cs, inner / 8, cs);
       }
       g.endFill();
       // Keep tower
       const tw = inner * 0.3, th = inner * 0.7;
       g.lineStyle(1.5, ink, 0.9);
       g.beginFill(fill, 0.95);
-      g.drawRect(margin + inner / 2 - tw / 2, margin - th * 0.1, tw, th);
+      g.drawRect(og + inner / 2 - tw / 2, og - th * 0.1, tw, th);
       g.endFill();
     } else {
       // Grand citadel: thick walls + 2 side towers + tall keep
-      const wy = margin + inner * 0.28;
+      const wy = og + inner * 0.28;
       const wh = inner * 0.60;
       g.beginFill(fill, 0.80);
-      g.drawRect(margin, wy, inner, wh);
+      g.drawRect(og, wy, inner, wh);
       g.endFill();
       g.lineStyle(2, ink, 0.95);
-      g.drawRect(margin, wy, inner, wh);
+      g.drawRect(og, wy, inner, wh);
       // Side towers
       const stW = inner * 0.22, stH = inner * 0.55;
       g.beginFill(fill, 0.92);
-      g.drawRect(margin - stW * 0.3, wy - stH * 0.15, stW, stH);
-      g.drawRect(margin + inner - stW * 0.7, wy - stH * 0.15, stW, stH);
+      g.drawRect(og - stW * 0.3, wy - stH * 0.15, stW, stH);
+      g.drawRect(og + inner - stW * 0.7, wy - stH * 0.15, stW, stH);
       g.endFill();
       // Central keep (tallest)
       const kw = inner * 0.32, kh = inner * 0.85;
       g.beginFill(fill, 0.98);
-      g.drawRect(margin + inner / 2 - kw / 2, margin - kh * 0.1, kw, kh);
+      g.drawRect(og + inner / 2 - kw / 2, og - kh * 0.1, kw, kh);
       g.endFill();
       g.lineStyle(2, ink, 0.95);
-      g.drawRect(margin + inner / 2 - kw / 2, margin - kh * 0.1, kw, kh);
+      g.drawRect(og + inner / 2 - kw / 2, og - kh * 0.1, kw, kh);
       // Flag on top
       g.lineStyle(1, ink, 0.9);
-      const flagX = margin + inner / 2;
-      const flagY = margin - kh * 0.1;
+      const flagX = og + inner / 2;
+      const flagY = og - kh * 0.1;
       g.moveTo(flagX, flagY); g.lineTo(flagX, flagY - kh * 0.2);
       g.beginFill(ink, 0.85);
       g.moveTo(flagX, flagY - kh * 0.2);
@@ -912,6 +960,11 @@ export class WorldMapScene implements Scene {
    */
   private drawResMotif(g: PIXI.Graphics, resType: string, level: number, tp: number, fogged = false): void {
     const lv = Math.max(1, Math.min(10, level));
+    // `g`'s local origin is the tile's diamond center (see drawTileL1); scatter
+    // fractions below are converted from the old "0..1 across the square" convention
+    // to center-relative offsets, with the y-offset flattened (×0.6) to keep sprites
+    // from poking past the shallower diamond edges near the tile's left/right tips.
+    const toLocal = (fx: number, fy: number): [number, number] => [(fx - 0.5) * tp, (fy - 0.5) * tp * 0.6];
 
     // Outside vision: reveal the resource TYPE only — a single dimmed motif, no
     // abundance count / defense frames / danger accents (those encode level detail,
@@ -924,43 +977,56 @@ export class WorldMapScene implements Scene {
       sp.anchor.set(0.5, 0.5);
       sp.scale.set((tp * 0.34) / Math.max(ftex.width, ftex.height));
       sp.alpha = 0.35;
-      sp.x = 0.5 * tp;
-      sp.y = 0.52 * tp;
+      [sp.x, sp.y] = toLocal(0.5, 0.52);
       g.addChild(sp);
       return;
     }
 
+    const v = diamondVertices(tp - 1);
+    const edgeMid = (a: [number, number], b: [number, number]): [number, number] => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+
     // ── Defense frames (drawn first so motif sprites sit on top) ──────────────
     if (lv >= 4) {
-      const pad = 3;
       const heavy = lv >= 7;
       const lw = heavy ? 1.5 : 0.9;
       const alpha = heavy ? 0.7 : 0.45;
       g.lineStyle(lw, 0x3a2a18, alpha);
       g.beginFill(0, 0);
-      g.drawRect(pad, pad, tp - 1 - pad * 2, tp - 1 - pad * 2);
+      g.drawPolygon(diamondPath(tp - 1, { inset: Math.min(0.35, 6 / tp) }));
       g.endFill();
 
       if (heavy) {
-        // Tick marks at midpoints of each side (stylised palisade stakes).
-        const mid = (tp - 1) / 2;
+        // Tick marks at each diamond edge's midpoint, poking outward (stylised palisade stakes).
         const tk = 4;
         g.lineStyle(1.2, 0x3a2a18, 0.65);
-        g.moveTo(mid, pad);     g.lineTo(mid, pad - tk);
-        g.moveTo(mid, tp - 1 - pad); g.lineTo(mid, tp - 1 - pad + tk);
-        g.moveTo(pad, mid);     g.lineTo(pad - tk, mid);
-        g.moveTo(tp - 1 - pad, mid); g.lineTo(tp - 1 - pad + tk, mid);
+        const edges: [[number, number], [number, number]][] = [
+          [v.top, v.right], [v.right, v.bottom], [v.bottom, v.left], [v.left, v.top],
+        ];
+        for (const [a, b] of edges) {
+          const mid = edgeMid(a, b);
+          const len = Math.hypot(mid[0], mid[1]) || 1;
+          const outX = mid[0] + (mid[0] / len) * tk;
+          const outY = mid[1] + (mid[1] / len) * tk;
+          g.moveTo(mid[0], mid[1]); g.lineTo(outX, outY);
+        }
       }
     }
 
-    // Red danger corner accents for high-level defended tiles (lv8–10).
+    // Red danger corner accents for high-level defended tiles (lv8–10) — traced
+    // along the two edges meeting at each diamond vertex.
     if (lv >= 8) {
-      const cs = 5;
+      const cs = 6;
       g.lineStyle(1.5, 0xcc3333, 0.75);
-      g.moveTo(0, cs); g.lineTo(0, 0); g.lineTo(cs, 0);
-      g.moveTo(tp - 1 - cs, 0); g.lineTo(tp - 1, 0); g.lineTo(tp - 1, cs);
-      g.moveTo(tp - 1, tp - 1 - cs); g.lineTo(tp - 1, tp - 1); g.lineTo(tp - 1 - cs, tp - 1);
-      g.moveTo(cs, tp - 1); g.lineTo(0, tp - 1); g.lineTo(0, tp - 1 - cs);
+      const corners: [[number, number], [number, number], [number, number]][] = [
+        [v.left, v.top, v.right], [v.top, v.right, v.bottom], [v.right, v.bottom, v.left], [v.bottom, v.left, v.top],
+      ];
+      for (const [prev, vert, next] of corners) {
+        const d1 = Math.hypot(prev[0] - vert[0], prev[1] - vert[1]) || 1;
+        const d2 = Math.hypot(next[0] - vert[0], next[1] - vert[1]) || 1;
+        const p1: [number, number] = [vert[0] + ((prev[0] - vert[0]) / d1) * cs, vert[1] + ((prev[1] - vert[1]) / d1) * cs];
+        const p2: [number, number] = [vert[0] + ((next[0] - vert[0]) / d2) * cs, vert[1] + ((next[1] - vert[1]) / d2) * cs];
+        g.moveTo(p1[0], p1[1]); g.lineTo(vert[0], vert[1]); g.lineTo(p2[0], p2[1]);
+      }
     }
 
     // ── Motif sprites (programmatic fallback when atlas not ready) ────────────
@@ -999,8 +1065,7 @@ export class WorldMapScene implements Scene {
       sp.anchor.set(0.5, 0.5);
       sp.scale.set(scale);
       sp.alpha = alpha;
-      sp.x = fx * tp;
-      sp.y = fy * tp;
+      [sp.x, sp.y] = toLocal(fx, fy);
       g.addChild(sp);
     }
   }
@@ -1020,8 +1085,10 @@ export class WorldMapScene implements Scene {
       count === 1 ? 1 : count === 2 ? 3 : count === 3 ? 6 : 10,
     );
     const r = tp * (count <= 1 ? 0.12 : 0.10);
+    // Center-relative, y flattened to match drawResMotif's diamond-safe scatter (`g`'s
+    // local origin is the tile's diamond center, not the old square's top-left corner).
     for (const [fx, fy] of offsets) {
-      const cx = fx * tp, cy = fy * tp;
+      const cx = (fx - 0.5) * tp, cy = (fy - 0.5) * tp * 0.6;
       g.lineStyle(0);
       if (resType === 'ink') {
         // Ink drop: teardrop shape
@@ -1093,23 +1160,23 @@ export class WorldMapScene implements Scene {
   private drawTileL2(g: PIXI.Graphics, fill: number, owner: number | null, fogged: boolean, tp: number): void {
     g.lineStyle(0);
     g.beginFill(fill, 0.85);
-    g.drawRect(0, 0, tp - 1, tp - 1);
+    g.drawPolygon(diamondPath(tp - 1));
     g.endFill();
     if (owner != null && !fogged) {
       // No motif carries the signal at medium zoom, so ownership uses a stronger wash + border
       // to keep the territory map readable while terrain stays visible underneath.
       g.beginFill(owner, 0.42);
-      g.drawRect(0, 0, tp - 1, tp - 1);
+      g.drawPolygon(diamondPath(tp - 1));
       g.endFill();
       g.lineStyle(1.4, owner, 0.85);
       g.beginFill(0, 0);
-      g.drawRect(1, 1, tp - 3, tp - 3);
+      g.drawPolygon(diamondPath(tp - 1, { inset: 1.6 / tp }));
       g.endFill();
     }
     if (fogged) {
       g.lineStyle(0);
       g.beginFill(FOG_COLOR, 0.38);
-      g.drawRect(0, 0, tp - 1, tp - 1);
+      g.drawPolygon(diamondPath(tp - 1));
       g.endFill();
     }
   }
@@ -1125,27 +1192,29 @@ export class WorldMapScene implements Scene {
     const tp = 20;
     const { w, h, panX, panY } = this;
     const mapH = h - HUD_H;
-    const x0 = Math.floor(-panX / tp);
-    const y0 = Math.floor(-panY / tp);
-    const x1 = Math.ceil((-panX + w) / tp);
-    const y1 = Math.ceil((-panY + mapH) / tp);
+    const b = visibleTileBounds(w, mapH, panX, panY, tp);
 
-    // Group tiles by fill color for batched rendering.
-    const groups = new Map<number, number[]>(); // color → [x0,y0, x1,y1, ...]
-    for (let ty = Math.max(0, y0); ty <= Math.min(this.mapH - 1, y1); ty++) {
-      for (let tx = Math.max(0, x0); tx <= Math.min(this.mapW - 1, x1); tx++) {
+    // Group tiles by fill color for batched rendering (coords = each tile's diamond center).
+    const groups = new Map<number, number[]>(); // color → [cx,cy, cx,cy, ...]
+    for (let ty = Math.max(0, b.minTy); ty <= Math.min(this.mapH - 1, b.maxTy); ty++) {
+      for (let tx = Math.max(0, b.minTx); tx <= Math.min(this.mapW - 1, b.maxTx); tx++) {
         const tile = this.tileCache.get(`${tx}:${ty}`);
         let color = tile ? tileColor(tile) : proceduralTileColor(this.cb.worldId, tx, ty);
         if (tile?.visible === false) color = (color & 0x7f7f7f) | 0x404040; // darken fogged
         if (!groups.has(color)) groups.set(color, []);
-        groups.get(color)!.push(panX + tx * tp, panY + ty * tp);
+        const s = tileToScreen(tx, ty, tp);
+        groups.get(color)!.push(panX + s.x, panY + s.y);
       }
     }
+    const diamond = diamondPath(tp - 1);
     for (const [color, coords] of groups) {
       g.lineStyle(0);
       g.beginFill(color, 0.88);
       for (let i = 0; i < coords.length; i += 2) {
-        g.drawRect(coords[i]!, coords[i + 1]!, tp - 1, tp - 1);
+        const cx = coords[i]!, cy = coords[i + 1]!;
+        const pts: number[] = new Array(diamond.length);
+        for (let k = 0; k < diamond.length; k += 2) { pts[k] = diamond[k]! + cx; pts[k + 1] = diamond[k + 1]! + cy; }
+        g.drawPolygon(pts);
       }
       g.endFill();
     }
@@ -1159,22 +1228,26 @@ export class WorldMapScene implements Scene {
     g.clear();
     const tp = this.tp;
 
-    // Selected tile highlight.
+    // Selected tile highlight — diamond outline centered on the tile (was a square
+    // anchored at its top-left corner; tileToScreen gives the diamond center instead).
     if (this.selectedTile) {
       const { x: tx, y: ty } = this.selectedTile;
-      const px = this.panX + tx * tp;
-      const py = this.panY + ty * tp;
+      const s = tileToScreen(tx, ty, tp);
+      const cx = this.panX + s.x;
+      const cy = this.panY + s.y;
+      const pts = diamondPath(tp).map((v, i) => v + (i % 2 === 0 ? cx : cy));
       g.lineStyle(2, 0xffcc00, 1);
       g.beginFill(0xffff00, 0.15);
-      g.drawRect(px, py, tp, tp);
+      g.drawPolygon(pts);
       g.endFill();
     }
 
     // Capital star markers (10 nations).
     const starR = Math.max(6, tp * 0.45);
     for (const n of this.nations) {
-      const cx = this.panX + n.x * tp + tp / 2;
-      const cy = this.panY + n.y * tp + tp / 2;
+      const s = tileToScreen(n.x, n.y, tp);
+      const cx = this.panX + s.x;
+      const cy = this.panY + s.y;
       if (cx < -tp || cy < -tp || cx > this.w + tp || cy > this.h - HUD_H + tp) continue;
       this.drawStar(g, cx, cy, starR, n.ownerId ? 0xffcc00 : 0xccb890, !!n.ownerId);
     }
@@ -1184,10 +1257,12 @@ export class WorldMapScene implements Scene {
       for (const march of this.marches) {
         const [fx, fy] = this.parseTileId(march.fromTile);
         const [tx2, ty2] = this.parseTileId(march.toTile);
-        const fpx = this.panX + fx * tp + tp / 2;
-        const fpy = this.panY + fy * tp + tp / 2;
-        const px  = this.panX + tx2 * tp + tp / 2;
-        const py  = this.panY + ty2 * tp + tp / 2;
+        const from = tileToScreen(fx, fy, tp);
+        const to = tileToScreen(tx2, ty2, tp);
+        const fpx = this.panX + from.x;
+        const fpy = this.panY + from.y;
+        const px  = this.panX + to.x;
+        const py  = this.panY + to.y;
         const enemy = march.mine === false;
         const col = enemy ? ENEMY_BASE_TINT
           : march.kind === 'return'   ? 0x44cc88
@@ -2252,27 +2327,39 @@ export class WorldMapScene implements Scene {
 
   private centerAt(tx: number, ty: number): void {
     const tp = this.tp;
-    this.panX = this.w / 2 - tx * tp - tp / 2;
-    this.panY = (this.h - HUD_H) / 2 - ty * tp - tp / 2;
+    const s = tileToScreen(tx, ty, tp);
+    this.panX = this.w / 2 - s.x;
+    this.panY = (this.h - HUD_H) / 2 - s.y;
     this.clampPan();
   }
 
+  /**
+   * Isometric pan bounds. The map's four corners (0,0)/(mapW,0)/(0,mapH)/(mapW,mapH)
+   * project to a diamond in screen space whose axis-aligned bounding box is what pan
+   * must stay within (plus a small buffer) — replaces the old orthogonal `mapW*tp`
+   * bound, which under-constrained panning once tiles stopped being axis-aligned squares.
+   */
   private clampPan(): void {
     const tp = this.tp;
-    const maxX = tp * 2;
-    const maxY = tp * 2;
-    const minX = this.w - this.mapW * tp - tp * 2;
-    const minY = (this.h - HUD_H) - this.mapH * tp - tp * 2;
+    const corners = [
+      tileToScreen(0, 0, tp), tileToScreen(this.mapW, 0, tp),
+      tileToScreen(0, this.mapH, tp), tileToScreen(this.mapW, this.mapH, tp),
+    ];
+    const minSx = Math.min(...corners.map((c) => c.x));
+    const maxSx = Math.max(...corners.map((c) => c.x));
+    const minSy = Math.min(...corners.map((c) => c.y));
+    const maxSy = Math.max(...corners.map((c) => c.y));
+    const buf = tp * 2;
+    const maxX = -minSx + buf;
+    const minX = this.w - maxSx - buf;
+    const maxY = -minSy + buf;
+    const minY = (this.h - HUD_H) - maxSy - buf;
     this.panX = Math.min(maxX, Math.max(minX, this.panX));
     this.panY = Math.min(maxY, Math.max(minY, this.panY));
   }
 
   private screenToTile(sx: number, sy: number): { x: number; y: number } {
-    const tp = this.tp;
-    return {
-      x: Math.floor((sx - this.panX) / tp),
-      y: Math.floor((sy - this.panY) / tp),
-    };
+    return screenToTile(sx - this.panX, sy - this.panY, this.tp);
   }
 
   // ── Scene interface ───────────────────────────────────────────────────────
