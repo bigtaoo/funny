@@ -31,6 +31,18 @@ describe('PvP balance sim (P4)', () => {
     console.log('\n=== Equal-ink round-robin (48 ink/side, both directions) ===\n' + formatTourney(rows));
     // Every unit should play the full field both ways: (12-1)*2 = 22 games.
     for (const r of rows) expect(r.games).toBe(22);
+
+    // Anchor-rebalance guard (2026-07-02, BALANCE.md §5.1): Max was a stat overload
+    // — a 190-HP/armor-2 tank that also out-DPSed the field at 22 melee, winning
+    // ~91% of equal-ink duels at ANY cost. attack 22→14 + cost 5→6 centers it.
+    // Lock it so a future stat/cost edit can't silently revive the overload.
+    const max = rows.find((r) => r.cardId === 'max_1')!;
+    expect(max.winRate).toBeLessThanOrEqual(0.65);
+    // NOTE — do NOT "fix" infantry's high rate here. infantry_1 is the cp/ink=1.0
+    // yardstick, and its ~82–91% is the AOE-less-arena swarm artifact (identical in
+    // kind to splitter's accepted 100% — the real counter is Meteor, which the arena
+    // cannot model). Cost 4 is also foundational to the fragile lv1 economy
+    // (DIFFICULTY_SIM). Left unchanged by design (BALANCE.md §5.1 旁注).
   }, 120_000);
 
   it('harpy guardrail probe', () => {
