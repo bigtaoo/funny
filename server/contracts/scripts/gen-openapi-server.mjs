@@ -325,7 +325,9 @@ export async function registerRoutes(
 
 // ── 7. Write or check ─────────────────────────────────────────────────────────
 if (isCheck) {
-  const existing = existsSync(outPath) ? readFileSync(outPath, 'utf8') : '';
+  // Normalize CRLF → LF before comparing: `generated` is always LF (template literal), but on Windows
+  // autocrlf checks the committed file out as CRLF, which would false-fail an otherwise-current file.
+  const existing = (existsSync(outPath) ? readFileSync(outPath, 'utf8') : '').replace(/\r\n/g, '\n');
   if (existing === generated) {
     console.log(`[gen-openapi-server] check passed — ${operations.length} operations, ${Object.keys(spec.components?.schemas ?? {}).length} schemas`);
   } else {
