@@ -20,6 +20,7 @@ import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/p
 import { proceduralTile } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../render/cityAtlasLoader';
+import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady, type TerrainTextureName } from '../render/terrainAtlasLoader';
 import { ISO_RATIO, tileToScreen, screenToTile, screenToTileF, diamondPath, diamondVertices, visibleTileBounds } from '../render/isoGrid';
 
 // ── Public callbacks ────────────────────────────────────────────────────────
@@ -120,6 +121,23 @@ function terrainFill(tile: WorldTileView): number {
     return RES_COLORS[tile.resType] ?? TERRAIN_COLORS.resource!;
   }
   return TERRAIN_COLORS[tile.type] ?? TERRAIN_COLORS.neutral!;
+}
+
+/**
+ * Hand-drawn ground texture for a tile type (design/product/slg-terrain-art.md §0/§3).
+ * `obstacle` covers both mountain and river (SLG_DESIGN §3.1) — a deterministic per-tile
+ * hash picks one of the two doodle variants so a contiguous obstacle band doesn't look
+ * monotone, without introducing a third TileType into the data model.
+ */
+function terrainTextureName(type: string, tx: number, ty: number): TerrainTextureName {
+  switch (type) {
+    case 'obstacle':    return (tx * 31 + ty * 17) % 2 === 0 ? 'terrain_mountain' : 'terrain_river';
+    case 'gate':        return 'terrain_gate';
+    case 'familyKeep':  return 'terrain_keep';
+    case 'center':      return 'terrain_center';
+    case 'stronghold':  return 'terrain_stronghold';
+    default:            return 'terrain_grass'; // neutral / territory / base / resource default ground
+  }
 }
 
 /**
@@ -303,6 +321,10 @@ export class WorldMapScene implements Scene {
     loadCityAtlas().then(() => {
       if (!this.destroyed) this.renderMap();
     }).catch((err) => console.warn('[WorldMapScene] city atlas load failed:', err));
+    // Lazy-load terrain ground-tile atlas; once ready, redraw tiles to swap in the texture fill.
+    loadTerrainAtlas().then(() => {
+      if (!this.destroyed) this.renderMap();
+    }).catch((err) => console.warn('[WorldMapScene] terrain atlas load failed:', err));
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -678,7 +700,8 @@ export class WorldMapScene implements Scene {
 
     if (this.zoom === 1) {
       const isAnchor = tile?.type === 'base' && this.isBaseAnchor(tx, ty);
-      this.drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor);
+      const texName = terrainTextureName(tile?.type ?? 'neutral', tx, ty);
+      this.drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor, texName);
     } else {
       this.drawTileL2(g, fill, owner, fogged, tp);
     }
@@ -713,11 +736,21 @@ export class WorldMapScene implements Scene {
   private drawTileL1(
     g: PIXI.Graphics, tile: WorldTileView | null,
     fill: number, owner: number | null, fogged: boolean, tp: number, isAnchor: boolean,
+    texName: TerrainTextureName,
   ): void {
     const hh = (tp * ISO_RATIO) / 2;
-    // Soft sketch grid + calm terrain fill (alpha < 1 lets the paper grain show through).
+    // Soft sketch grid, then the ground: hand-drawn texture fill once the atlas has
+    // decoded, falling back to the flat desaturated color (see terrainFill) until then.
     g.lineStyle(0.7, 0xccbbaa, 0.32);
-    g.beginFill(fill, 0.7);
+    const tex = isTerrainAtlasReady() ? getTerrainTexture(texName) : null;
+    if (tex) {
+      const w = tp - 1;
+      const h = w * ISO_RATIO;
+      const m = new PIXI.Matrix(w / tex.width, 0, 0, h / tex.height, -w / 2, -h / 2);
+      g.beginTextureFill({ texture: tex, matrix: m, alpha: 0.9 });
+    } else {
+      g.beginFill(fill, 0.7);
+    }
     g.drawPolygon(diamondPath(tp - 1));
     g.endFill();
 
