@@ -328,7 +328,7 @@
 ### 其余确认缺口
 
 - [x] **S4-4 PvE 三振出局封禁** ✅（2026-06-29）：pveClear 增加 `accounts.flags.banned` 检查（管理员手动封号即时生效）；pveVerify 开头增加 `pveBanned` 检查（被封账号无法补传录像）；新增 `POST /internal/accounts/:id/ban` + `unban` 内部端点；admin 层 `POST /admin/accounts/:id/ban` + `unban` 代理（需 `anticheat.action` 权限，super/ops 拥有）；AuditAction 补 `account.ban`/`account.unban`；`shared/admin` 新增 `anticheat.action` 权限；单测 +6（ban/unban 端点）+ e2e 补三振封禁用例。171 单测绿。
-- [ ] **皮肤 .tao 资产**：`client/src/render/UnitView.ts` `SKIN_ASSETS = {}` 为空——换肤管线（S3-4）已就绪但无资产，商店在售皮肤当前**视觉无变化**。美术阻塞。
+- [ ] **皮肤 .tao 资产（上线目录 6 款）**：换肤管线（S3-4）已就绪但 `SKIN_ASSETS = {}` 无资产。**拍板 2026-07-02（宁缺毋滥）**：皮肤一律走完整 `.tao`（程序换色 v0.4 后已失效，见 `art-direction §9.1`），上线只做每角色 1 款共 6 款——陶三商店直卖（`skin_shop_c1/r1/e1` → Infantry/Archer/ShieldBearer）+ Anna 三抽卡（`skin_e1`→Lena / `skin_e2`→Mara epic，`skin_l1`→Max legendary）。占位 SKU（`skin_c1~c4`/`skin_r1~r3`）已从 `economy.ts` 删除。目录见 `GACHA_DESIGN §9.5`，接线注释见 `UnitView.ts SKIN_ASSETS`。**美术阻塞**：需为 6 单位各绑 1 份皮肤 `.tao`，到位后填表即生效。
 - [x] **worldsvc publicId 解析** ✅（2026-06-30）：`getMap`/`getTile`/`pushTile`/`under_attack` 已有 meta.getProfile 反查；本次修复 `sect_msg`/`nation_msg` push payload 的 `fromPublicId` 仍用 accountId 的缺口——`SectService` 和 `NationChannelService` 各加 `meta?: WorldMetaClient` dep，`sendMessage` best-effort 解析 publicId，无 meta 时 fallback 空字符串；index.ts 接线；新增测试 `nation-channel.e2e.test.ts` + sect 追加用例。
 - [x] **实时赛季号下行** ✅（2026-07-01）：`createAppCore.ts` 已动态调用 `worldApi.getActiveSeason()`，`CURRENT_SEASON` 硬编码已去掉，赛季号由 metaserver 下行。
 - [ ] **VFX `emitter` 图元**：`client/src/render/vfx/{types,primitives}.ts` 设计内保留、未实现（当前 warn + skip）。低优先。
