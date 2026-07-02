@@ -12,16 +12,18 @@ export const PVP_BASE_CARDS: readonly string[] = [
 export const PVP_BUILDING_CARDS: readonly string[] = ['barracks_1', 'tower_1'];
 export const PVP_SPELL_CARDS: readonly string[] = ['haste_1', 'meteor_1'];
 
+// Unlock check uses the player's *current* elo (not seasonPeakElo) — a player who peaked high
+// then dropped must not keep high-tier units in a low-elo matchup (PVP_LOADOUT_DESIGN §3).
 export const PVP_UNLOCK_TIERS: ReadonlyArray<{ minElo: number; cards: readonly string[] }> = [
   { minElo: 1500, cards: ['runner', 'ironclad'] },
   { minElo: 2100, cards: ['berserker', 'splitter'] },
   { minElo: 2400, cards: ['harpy', 'medic'] },
 ];
 
-export function getPvpUnlockedCards(seasonPeakElo: number): string[] {
+export function getPvpUnlockedCards(elo: number): string[] {
   const cards: string[] = [...PVP_BASE_CARDS];
   for (const tier of PVP_UNLOCK_TIERS) {
-    if (seasonPeakElo >= tier.minElo) cards.push(...tier.cards);
+    if (elo >= tier.minElo) cards.push(...tier.cards);
   }
   return cards;
 }
@@ -30,9 +32,9 @@ export function defaultPvpDeck(): string[] {
   return [...PVP_BASE_CARDS];
 }
 
-export function validatePvpDeckClient(deck: string[], seasonPeakElo: number): string | null {
+export function validatePvpDeckClient(deck: string[], elo: number): string | null {
   if (deck.length !== PVP_DECK_SIZE) return `Select exactly ${PVP_DECK_SIZE} cards (${deck.length} selected)`;
-  const unlocked = new Set(getPvpUnlockedCards(seasonPeakElo));
+  const unlocked = new Set(getPvpUnlockedCards(elo));
   const seen = new Set<string>();
   for (const card of deck) {
     if (!unlocked.has(card)) return `Card "${card}" is not unlocked`;

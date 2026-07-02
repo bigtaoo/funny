@@ -23,8 +23,9 @@ export const PVP_BUILDING_CARDS: readonly string[] = ['barracks_1', 'tower_1'];
 export const PVP_SPELL_CARDS: readonly string[] = ['haste_1', 'meteor_1'];
 
 /**
- * ELO-gated unlock tiers (§3). Unlock check uses seasonPeakElo (never drops, even after soft reset).
- * Tiers are checked in order; all tiers whose minElo ≤ seasonPeakElo are unlocked.
+ * ELO-gated unlock tiers (§3). Unlock check uses the player's *current* elo (not seasonPeakElo) —
+ * a player who peaked high then dropped must not keep high-tier units in a low-elo matchup.
+ * Tiers are checked in order; all tiers whose minElo ≤ elo are unlocked.
  */
 export const PVP_UNLOCK_TIERS: ReadonlyArray<{ minElo: number; cards: readonly string[] }> = [
   { minElo: 1500, cards: ['runner', 'ironclad'] },       // diamond
@@ -32,11 +33,11 @@ export const PVP_UNLOCK_TIERS: ReadonlyArray<{ minElo: number; cards: readonly s
   { minElo: 2400, cards: ['harpy', 'medic'] },           // king
 ];
 
-/** All card ids a player may include in their deck given their current seasonPeakElo. */
-export function getPvpUnlockedCards(seasonPeakElo: number): string[] {
+/** All card ids a player may include in their deck given their current elo. */
+export function getPvpUnlockedCards(elo: number): string[] {
   const cards: string[] = [...PVP_BASE_CARDS];
   for (const tier of PVP_UNLOCK_TIERS) {
-    if (seasonPeakElo >= tier.minElo) cards.push(...tier.cards);
+    if (elo >= tier.minElo) cards.push(...tier.cards);
   }
   return cards;
 }
@@ -45,11 +46,11 @@ export function getPvpUnlockedCards(seasonPeakElo: number): string[] {
  * Validate a submitted deck.
  * Rules (§4): exactly PVP_DECK_SIZE cards; each card in the unlocked set; no duplicates; ≥1 building; ≥1 spell.
  */
-export function validatePvpDeck(deck: string[], seasonPeakElo: number): { valid: boolean; error?: string } {
+export function validatePvpDeck(deck: string[], elo: number): { valid: boolean; error?: string } {
   if (deck.length !== PVP_DECK_SIZE) {
     return { valid: false, error: `deck must have exactly ${PVP_DECK_SIZE} cards, got ${deck.length}` };
   }
-  const unlocked = new Set(getPvpUnlockedCards(seasonPeakElo));
+  const unlocked = new Set(getPvpUnlockedCards(elo));
   const seen = new Set<string>();
   for (const card of deck) {
     if (!unlocked.has(card)) return { valid: false, error: `card "${card}" not in unlocked set` };

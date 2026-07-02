@@ -30,8 +30,8 @@ export interface DeckBuilderCallbacks {
   onBack(): void;
   /** Current saved deck (undefined = use default). */
   getCurrentDeck(): string[] | undefined;
-  /** Player's season peak ELO to compute unlock gates. */
-  getSeasonPeakElo(): number;
+  /** Player's current ELO to compute unlock gates (dropped elo re-locks high-tier units). */
+  getCurrentElo(): number;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -123,7 +123,7 @@ export class DeckBuilderScene implements Scene {
 
   private confirm(): void {
     const deck = Array.from(this.selected);
-    const err = validatePvpDeckClient(deck, this.cb.getSeasonPeakElo());
+    const err = validatePvpDeckClient(deck, this.cb.getCurrentElo());
     if (err) {
       this.errorMsg = err;
       this.render();
@@ -146,8 +146,8 @@ export class DeckBuilderScene implements Scene {
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
     const tbH = hdr.headerH;
 
-    const peakElo = this.cb.getSeasonPeakElo();
-    const unlocked = new Set(getPvpUnlockedCards(peakElo));
+    const elo = this.cb.getCurrentElo();
+    const unlocked = new Set(getPvpUnlockedCards(elo));
 
     // ── Footer: counter + confirm ────────────────────────────────────────────
     const footerH = Math.round(h * 0.12);
@@ -216,7 +216,7 @@ export class DeckBuilderScene implements Scene {
       listContainer.addChild(panel);
 
       // Card name
-      const name = txt(cardDisplayName(id), Math.round(h * 0.025), isSelected && isUnlocked ? C.accent : C.dark, true);
+      const name = txt(cardDisplayName(id), Math.round(h * 0.025), isSelected && isUnlocked ? C.paper : C.dark, true);
       name.anchor.set(0.5, 0.5); name.x = cx + cardW / 2; name.y = cy + cardH / 2;
       listContainer.addChild(name);
 

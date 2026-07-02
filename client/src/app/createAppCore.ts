@@ -34,7 +34,9 @@ import { EQUIP_SLOT } from './equipSlot';
 import { genUuid } from '../platform/uuid';
 import type { EquipSlot } from '../game/meta/SaveData';
 import { toEngineCardInstances } from '../game/meta/cardDefs';
-import { defaultPvpDeck, validatePvpDeckClient } from '../game/meta/pvpLoadout';
+import {
+  defaultPvpDeck, validatePvpDeckClient, getPvpUnlockedCards, PVP_DECK_SIZE,
+} from '../game/meta/pvpLoadout';
 import type { ProfileData } from '../render/ProfilePopup';
 import type { AuthOutcome } from '../scenes/LoginScene';
 import type { RenameOutcome } from '../scenes/SettingsScene';
@@ -304,7 +306,24 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     }
     const lobby = views.showLobby({
       onStartGame(_opponentName: string) { withGuide('match', 'guide.match.title', 'guide.match.body', () => goGame()); },
-      onStartRanked() { goDeckBuilder(() => goRoom({ autoRanked: true })); },
+      onStartRanked() {
+        // Below the first unlock tier the player's whole pool equals PVP_DECK_SIZE —
+        // there is nothing to choose, so skip straight to matching instead of showing
+        // an empty-looking builder with every card forced-selected.
+        // Unlock is gated on *current* elo, not seasonPeakElo — a player who peaked high then
+        // dropped must not keep high-tier units when matched against low-elo opponents.
+        const save = saveManager.get();
+        const elo = save.pvp.elo;
+        const unlocked = getPvpUnlockedCards(elo);
+        if (unlocked.length <= PVP_DECK_SIZE) {
+          if (!save.pvpDeck || validatePvpDeckClient(save.pvpDeck, elo) !== null) {
+            saveManager.patchLocal({ pvpDeck: unlocked });
+          }
+          goRoom({ autoRanked: true });
+        } else {
+          goDeckBuilder(() => goRoom({ autoRanked: true }));
+        }
+      },
       online,
       onOpenCampaign() { goCampaignMap(); },
       onOpenRoom() { goRoom(); },
@@ -539,7 +558,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       },
       onBack() { goLobby(); },
       getCurrentDeck() { return save.pvpDeck; },
-      getSeasonPeakElo() { return save.pvp.seasonPeakElo ?? save.pvp.elo; },
+      getCurrentElo() { return save.pvp.elo; },
     });
   }
 
@@ -556,7 +575,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     }
     const getSavedDeck = (): string[] => {
       const d = saveManager.get().pvpDeck;
-      if (d && validatePvpDeckClient(d, saveManager.get().pvp.seasonPeakElo ?? saveManager.get().pvp.elo) === null) return d;
+      if (d && validatePvpDeckClient(d, saveManager.get().pvp.elo) === null) return d;
       return defaultPvpDeck();
     };
     let rankedQueued = false;

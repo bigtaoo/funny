@@ -410,13 +410,13 @@ export class Gateway {
       });
       return;
     }
-    const { elo, seasonPeakElo } = await this.meta.getElo(accountId);
+    const { elo } = await this.meta.getElo(accountId);
     // The player may have disconnected during the await → only enqueue if still online.
     if (!this.conns.has(accountId)) {
       log.warn('ranked enqueue aborted: account dropped during ELO fetch', { accountId });
       return;
     }
-    const deck = this.resolvedDeck(accountId, submittedDeck, seasonPeakElo);
+    const deck = this.resolvedDeck(accountId, submittedDeck, elo);
     const { name, publicId, equippedTitle } = await this.resolveProfile(accountId);
     if (!this.conns.has(accountId)) return;
     log.info('-> matchsvc enqueue', { accountId, elo, deckSize: deck.length });
@@ -424,12 +424,13 @@ export class Gateway {
   }
 
   /**
-   * Validate the submitted deck against the player's unlocked card set; fall back to defaultPvpDeck on rejection.
+   * Validate the submitted deck against the player's *current*-elo unlocked card set; fall back to
+   * defaultPvpDeck on rejection. A dropped-elo player must not keep high-tier units in a low matchup.
    * Server-side guard: client-side validation is UX, this is the authority (PVP_LOADOUT §6.3).
    */
-  private resolvedDeck(accountId: string, submitted: string[], seasonPeakElo: number): string[] {
+  private resolvedDeck(accountId: string, submitted: string[], elo: number): string[] {
     if (submitted.length === 0) return defaultPvpDeck();
-    const result = validatePvpDeck(submitted, seasonPeakElo);
+    const result = validatePvpDeck(submitted, elo);
     if (!result.valid) {
       log.warn('invalid pvp deck submitted, falling back to default', { accountId, error: result.error });
       return defaultPvpDeck();
