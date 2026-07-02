@@ -82,6 +82,7 @@ export const zh = {
   'lobby.strip.events': '活动',
   'lobby.strip.achieve': '成就',
   'lobby.strip.mail': '邮件',
+  'lobby.strip.auction': '拍卖',
 
   // ── Personal settings ─────────────────────────────────────────────────────
   'settings.title': '个人设置',

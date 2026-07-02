@@ -1,6 +1,6 @@
 # Notebook Wars — 拍卖行设计（Auction House）
 
-> 状态：主干 ✅ + 反 RMT 闸门 C/E/G/F + 竞拍 B + **装备交易 A** 全 ✅；仅 D 异常审计 待依赖（admin G7） · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-06-21
+> 状态：主干 ✅ + 反 RMT 闸门 C/E/G/F + 竞拍 B + **装备交易 A** + **异常审计 D（admin G7 已接）** 全 ✅；**双入口（大厅 + SLG 世界地图）已接** · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-07-02
 >
 > 配套阅读：[`SLG_DESIGN.md`](SLG_DESIGN.md)（§7 经济与交易、§9 架构、§14 契约层——拍卖行是 SLG 大世界的交易子系统）、[`COMMERCIAL_DESIGN.md`](COMMERCIAL_DESIGN.md)（金币钱包 spend/grant，拍卖结算走它）、[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（货币政策/反通胀哲学）、[`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)（数值演算）、[`SERVER_API.md`](SERVER_API.md)（接口契约）、[`OPS_DESIGN.md`](OPS_DESIGN.md)（反 RMT 审计工单复用）。
 >
@@ -14,8 +14,8 @@
 - **可交易品 = 材料 + 装备（A ✅）**（PvE/SLG 统一养成材料 `scrap/lead/binding` + 锻造装备实例，整件托管转移）；**赛季资源（粮/铁/木）禁挂**（季末清零、防套利、维持 biome 物产差异价值）。
 - **计价货币 = 金币（coins，跨季留存的 premium 货币）**；系统抽 **10% 手续费**；**禁止以赛季资源/局内 ink 计价**（防与天梯/付费体系串味）。
 - **承重墙**：拍卖行不碰战斗/地图，是纯经济子系统——挂存与发放走 **meta 材料库 + 装备库**（幂等 orderId），扣款/收款走 **commercial 金币钱包**，状态机权威在 **worldsvc `auctions` 集合**。
-- **反 RMT 是持续对抗**（R3）：10% 高税 + 并发挂单上限 + 每日限额（C ✅）+ 绑定材料禁挂（E ✅，清单暂空）+ 价格护栏动态滑窗（G ✅）+ 异常模式 admin 审计（D ⛔ 依赖 admin G7）。
-- **当前状态**（2026-06-21 实现）：**一口价主干 + 竞拍（B ✅）+ 每日限额（C ✅）+ 绑定禁挂机制（E ✅）+ 价格护栏滑窗（G ✅）+ 季末冻结/清算（F ✅）+ 装备交易（A ✅）全实跑**（worldsvc `auctionService.ts` + 28 条 e2e；装备库存后端 meta `equipment.ts` + 12 条 e2e）；**仅剩 D 异常审计（依赖 admin G7）** 待依赖就位，见 §4。
+- **反 RMT 是持续对抗**（R3）：10% 高税 + 并发挂单上限 + 每日限额（C ✅）+ 绑定材料禁挂（E ✅，清单暂空）+ 价格护栏动态滑窗（G ✅）+ 异常模式 admin 审计（D ✅ admin G7 已接，pull 式扫描）。
+- **当前状态**（2026-07-02 复核）：**A/B/C/D/E/F/G 七轨道全实跑** + 一口价主干（worldsvc `auctionService.ts` + 28 条 e2e；装备库存后端 meta `equipment.ts` + 12 条 e2e；异常审计 admin `service.ts` + `test/season-audit.e2e.test.ts`）；**客户端双入口已接**（大厅右侧功能条 + SLG 世界地图工具栏，均通向 `AuctionScene`，见 §6）。
 
 ---
 
@@ -138,18 +138,14 @@
   - 计数器存 Redis（`auction:day:{dayKey}:{accountId}` HASH，到日界自然过期）或 Mongo `playerWorld` 镜像；超限抛 `AUCTION_LIMIT_REACHED`（错误码已有）。
 - **优先级**：中高（反 RMT 第一道量化闸门，工作量小）。
 
-### D. 反 RMT 异常审计
+### D. 反 RMT 异常审计 ✅ 已实现（2026-07-02 复核，admin G7 已接）
 
-- **现状**：异常交易进 admin 审计未接（§15.1 G7「admin SLG 接入」整体缺失）。
-- **建议设计**（复用 OPS 工单 + analyticsvc 埋点）：
-  - **成交即埋点**：worldsvc 每笔 `sold` 推一条交易事件到 analyticsvc（seller/buyer/item/price/tax/designated?）。
-  - **异常规则**（admin 侧批量扫描或实时规则）：
-    - 同一对 seller↔buyer 短期高频成交（疑似对敲洗钱）；
-    - 定向挂单 + 远离参考价（疑似 RMT 交付通道）；
-    - 单账号短期大额单向金币流出/流入。
-  - **命中 → 生成 OPS 审计工单**（复用 S7 补偿/工单基建），人工复核可冻结挂单/标记账号。
-  - **失败补发工单**（§2.3）：扣款成功但发放失败的 `sold` 单凭 orderId 自动进工单队列。
-- **优先级**：中（依赖 admin SLG 接入 G7；上线前必须有，自由市场必出搬砖 R3）。
+- **落地形态**：**pull 式离线扫描**（非实时事件推送）——最终采用「worldsvc 聚合 + admin 拉取 + ops 展示」，比原「成交即埋点」方案更省埋点面、无热路径开销。
+  - **worldsvc**：`auctionService.ts` `scanAnomalies(worldId, windowSec)`（只读，不改状态），底层 `detectAuctionAnomalies`（`@nw/shared`）在 `AUDIT_WINDOW_SEC` 窗口内聚合可疑 seller→buyer 对。
+  - **admin**：`clients.ts` `listAuctionAnomalies()` 拉 worldsvc 结果 → `service.ts` `slgScanAnomalies()`（capability `slg.audit.view`）→ `httpApi.ts` 暴露给 ops 后台；worldsvc 不可达时优雅返回空。测试 `server/admin/test/season-audit.e2e.test.ts`。
+  - **ops 后台**：审计页展示异常队列，人工复核（对敲/定向异价/大额单向）。
+- **命中规则**：同一对 seller↔buyer 短期高频成交（对敲洗钱）；定向挂单 + 远离参考价（RMT 交付通道）；单账号短期大额单向流出/流入。
+- **失败补发工单**（§2.3）：扣款成功但发放失败的 `sold` 单凭 orderId 进工单队列（复用 S7 补偿基建）。
 
 ### E. 绑定材料禁挂 ✅ 机制已实现（2026-06-21，清单暂空）
 
@@ -242,7 +238,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **A 装备交易**（2026-06-21）：先建装备库存后端（meta `equipment.ts`：`craftEquipment` 合成 + `escrowEquipment`/`grantEquipment` 托管转移 + `/internal/equipment/{escrow,grant}` + 玩家 `POST /equipment/craft`）→ worldsvc `auctionService` 装备分支（挂/买/竞拍结拍/撤/过期/季末退回全转移实例；按 `equip:{defId}` 稀有度价格护栏；穿戴中/locked 禁挂）。新增 `equipmentIdem` 集合（合成/托管幂等）。
 - 契约同步：`openapi-world.yml` + 客户端 `openapi-world.ts`/`WorldApiClient`（createAuction saleMode/placeBid）；meta `openapi.yml` 新增 `/equipment/craft`。
 
-**⛔ 剩余缺口**：**D 异常审计**（依赖 §15.1 G7 admin SLG 接入）。
+**D 异常审计 ✅（2026-07-02 复核）**：admin G7 已接，pull 式离线扫描（worldsvc `scanAnomalies` → admin `listAuctionAnomalies` → ops 审计页），见 §4.D。
+
+**客户端入口 ✅ 双入口（2026-07-02）**：拍卖行属 meta 系统，要求大厅 + SLG 双入口，现已齐备，均通向 `client/src/scenes/AuctionScene.ts`。
+- **SLG 世界地图**：`WorldMapScene` 工具栏「拍卖」按钮 → `onOpenAuction` → `createAppCore.goAuctionHouse(worldApi, worldId)`（onBack 回世界地图）。
+- **大厅**：`LobbyScene` 右侧功能条新增「拍卖」格（online-only，`onOpenAuction`）→ `createAppCore.goAuctionFromLobby()`。市场为**赛季全局**（无需建基地），故入口先经 `resolveWorldShard` 解析当前赛季 shard（与世界地图入口共用该 helper，3s 超时回退 shard 0），再开 `AuctionScene`（onBack 回大厅）；首次进入复用 `guide.auction.*` 功能引导。
+
 **客户端契约对齐 ✅（2026-06-21）**：`AuctionScene` 既存错配已修——挂单 item 改发 `{material}`（原 `{mat}` 服务端读不到）、展示改读 `item.material`（原把 itemType 当材料名）、时长改 `[6h/12h/24h]` 对齐 `AUCTION_DURATIONS_SEC`（原 `[1h/4h/24h]` 2/3 选项触 BAD_REQUEST），i18n `dur1h/dur4h`→`dur6h/dur12h`。一口价挂单/展示链路打通。
 
 **客户端竞拍 UI ✅（2026-06-21）**：`AuctionScene` 接入竞拍全链路，B 功能端到端打通。
@@ -263,7 +264,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 | 每日限额 | 日挂单/购买（含出价）次数上限 | ✅ C |
 | 绑定禁挂 | 账号绑定材料/装备不可交易（清单暂空）；装备 locked/穿戴中拒挂 | ✅ E（机制）+ A |
 | 价格护栏 | 单价限定动态滑窗参考区间（中位数 + 静态回退），封天价洗钱；装备按 defId/稀有度品类 | ✅ G + A |
-| 异常审计 | 对敲/定向异价/大额单向 → OPS 工单 | ⛔ D（依赖 admin G7） |
+| 异常审计 | 对敲/定向异价/大额单向 → ops 审计队列 | ✅ D（admin G7 已接，pull 式扫描） |
 | 货币隔离 | 仅 coin 计价，禁赛季资源/ink，防体系串味 | ✅ |
 | 服务器权威 | 库存/扣发/状态全服务器，客户端只读 | ✅ |
 
@@ -276,7 +277,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **DRAFT 数值**：每日限额、竞拍最小加价/防狙击窗口、滑窗护栏（窗口大小/浮动带/最小样本）、绑定材料清单、季末冻结提前量——上线后随经济运营调参（数值落 `shared/slg.ts`，演算去 ECONOMY_NUMBERS）。
 - ~~**G 算法**：refPrice 用均值还是中位数、滑窗按笔数还是时间~~——已定：**中位数 + 按笔数（近 20 笔）**。
 - ~~**A 时序**：装备交易依赖 EQUIPMENT_DESIGN 库存系统落地节奏。~~——已实现（2026-06-21）：随本切片把装备库存后端 E2（合成 + 托管转移）一并建好。装备的**深度养成**（E3 强化/分解、E4 穿戴、E5 UI、关卡掉落 faucet）仍待做，但不阻塞拍卖交易闭环。
-- **D 时序**：异常审计依赖 §15.1 G7「admin SLG 接入」。
+- ~~**D 时序**：异常审计依赖 §15.1 G7「admin SLG 接入」。~~——已实现（2026-07-02）：admin G7 已接，pull 式离线扫描，见 §4.D / §6。
 
 ---
 

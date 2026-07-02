@@ -75,6 +75,13 @@ export interface LobbySceneCallbacks {
   /** Open the SLG world map. Wired to the bottom-nav "home/world" slot (S8). */
   onOpenWorld?(): void;
   /**
+   * Open the SLG auction house directly from the lobby (AUCTION_DESIGN dual-entry:
+   * lobby + world map). The market is season-global, so no base is required; the
+   * caller resolves the current season's shard before showing AuctionScene.
+   * Online only — appears in the right-side strip alongside Daily/Mail/Events.
+   */
+  onOpenAuction?(): void;
+  /**
    * SLG soft gate (ONBOARDING_DESIGN §4): true when chapter one is not yet cleared →
    * the world map entry is greyed out; tapping shows a "clear chapter one to unlock"
    * bubble instead of navigating. Becomes false once the chapter is cleared.
@@ -178,6 +185,7 @@ export class LobbyScene implements Scene {
   private mailStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the achievements strip item (P2). */
   private achieveStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private auctionStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Cheap-refresh layer for the red dots on the right-side strip (daily/mail/achievement). */
   private sideStripBadgeLayer: PIXI.Container | null = null;
   /** null = not yet checked; true = reachable; false = unreachable → show badge. */
@@ -551,6 +559,11 @@ export class LobbyScene implements Scene {
       if (this.cb.onOpenAchievements) this.cb.onOpenAchievements();
       return;
     }
+    const auc = this.auctionStripRect;
+    if (auc.w > 0 && x >= auc.x && x <= auc.x + auc.w && y >= auc.y && y <= auc.y + auc.h) {
+      if (this.cb.onOpenAuction) this.cb.onOpenAuction();
+      return;
+    }
     const acc = this.accountChipRect;
     if (acc && this.accountChipFn &&
         x >= acc.x && x <= acc.x + acc.w && y >= acc.y && y <= acc.y + acc.h) {
@@ -801,17 +814,20 @@ export class LobbyScene implements Scene {
     this.eventsBtnRect  = { x: 0, y: 0, w: 0, h: 0 };
     this.mailStripRect  = { x: 0, y: 0, w: 0, h: 0 };
     this.achieveStripRect = { x: 0, y: 0, w: 0, h: 0 };
+    this.auctionStripRect = { x: 0, y: 0, w: 0, h: 0 };
     if (hasSideStrip) {
       const hasEvents  = !!this.cb.onOpenEvents && this.eventsAvailable;
       const hasMail    = !!(this.cb.onOpenMail ?? this.cb.onOpenSocial);
       const hasAchieve = !!this.cb.onOpenAchievements;
+      const hasAuction = !!this.cb.onOpenAuction;
 
-      type StripEntry = { label: string; border: number; seed: number; tag: 'daily' | 'mail' | 'events' | 'achieve' };
+      type StripEntry = { label: string; border: number; seed: number; tag: 'daily' | 'mail' | 'events' | 'achieve' | 'auction' };
       const entries: StripEntry[] = [];
       entries.push({ label: t('daily.title'),        border: C.gold,  seed: 71, tag: 'daily'   });
       if (hasMail)    entries.push({ label: t('lobby.strip.mail'),   border: C.gold,  seed: 72, tag: 'mail'    });
       if (hasEvents)  entries.push({ label: t('lobby.strip.events'), border: C.red,   seed: 73, tag: 'events'  });
       if (hasAchieve) entries.push({ label: t('lobby.strip.achieve'),border: C.accent,seed: 74, tag: 'achieve' });
+      if (hasAuction) entries.push({ label: t('lobby.strip.auction'),border: C.green, seed: 75, tag: 'auction' });
 
       const itemGap  = Math.round(h * 0.014);
       const totalH   = entries.length * sideItemSz + (entries.length - 1) * itemGap;
@@ -839,6 +855,7 @@ export class LobbyScene implements Scene {
           case 'mail':    this.mailStripRect   = rect; break;
           case 'events':  this.eventsBtnRect   = rect; break;
           case 'achieve': this.achieveStripRect = rect; break;
+          case 'auction': this.auctionStripRect = rect; break;
         }
       });
 
