@@ -277,10 +277,16 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
   // Max: Anna-side vanguard. burstOnSingle deals 2× damage when he is the last
   // standing enemy — a clean-up finisher that rewards holding him for the kill.
   // Light armor (2) makes him resilient to towers but not melee-proof.
+  // PvP anchor rebalance (2026-07-02): attack 22→14. At 22 melee DPS Max was a
+  // tank (190 HP + armor 2) that ALSO out-DPSed the field, winning ~91% of equal-
+  // ink duels at any cost (cost-insensitive → a stat overload, not a price issue;
+  // see pvpSim.ts / BALANCE.md §5.1). Cutting attack to 14 (still > Infantry 12,
+  // < Berserker 18) keeps the durable-vanguard identity but removes the DPS
+  // overload; paired with cost 5→6 (CARD_DEFINITIONS) it lands ~54% equal-ink.
   [UnitType.Max]: {
     type: UnitType.Max,
     hp: 190,
-    attack: 22,
+    attack: 14,
     attackInterval: 1.3,
     speed: 1.0,
     range: 1,
@@ -354,8 +360,8 @@ export const CARD_DEFINITIONS: CardDefinition[] = [
   { id: 'archer_1',    nameKey: 'card.archer.name',    descKey: 'card.archer.desc',    cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
   { id: 'archer_2',    nameKey: 'card.archer.name',    descKey: 'card.archer.desc',    cardType: CardType.Unit,     cost: 5,  unitType: UnitType.Archer          },
   // Anna-side units (A6) — permanently in PvP base pool; no PvE gate (PVP_LOADOUT_DESIGN §7)
-  { id: 'max_1',  nameKey: 'card.max.name',  descKey: 'card.max.desc',  cardType: CardType.Unit, cost: 5, unitType: UnitType.Max  },
-  { id: 'max_2',  nameKey: 'card.max.name',  descKey: 'card.max.desc',  cardType: CardType.Unit, cost: 5, unitType: UnitType.Max  },
+  { id: 'max_1',  nameKey: 'card.max.name',  descKey: 'card.max.desc',  cardType: CardType.Unit, cost: 6, unitType: UnitType.Max  },
+  { id: 'max_2',  nameKey: 'card.max.name',  descKey: 'card.max.desc',  cardType: CardType.Unit, cost: 6, unitType: UnitType.Max  },
   { id: 'lena_1', nameKey: 'card.lena.name', descKey: 'card.lena.desc', cardType: CardType.Unit, cost: 7, unitType: UnitType.Lena },
   { id: 'lena_2', nameKey: 'card.lena.name', descKey: 'card.lena.desc', cardType: CardType.Unit, cost: 7, unitType: UnitType.Lena },
   { id: 'mara_1', nameKey: 'card.mara.name', descKey: 'card.mara.desc', cardType: CardType.Unit, cost: 5, unitType: UnitType.Mara },
