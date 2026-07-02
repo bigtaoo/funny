@@ -263,7 +263,12 @@ export class DailyScene implements Scene {
       bg.x = PAD; bg.y = cy;
       this.container.addChild(bg);
 
-      const label = txt(t(labelKey as TranslationKey), Math.round(cardH * 0.34), 0x333333);
+      // Label is wrapped and width-capped to the left ~62% of the card so long Chinese
+      // labels (e.g. "通关任意 PvE 关卡") can never grow into the right-aligned state text.
+      const label = new PIXI.Text(t(labelKey as TranslationKey), {
+        fontSize: Math.round(cardH * 0.3), fill: 0x333333, fontFamily: 'monospace',
+        wordWrap: true, wordWrapWidth: cardW * 0.6, breakWords: true,
+      });
       label.anchor.set(0, 0.5);
       label.x = PAD + cardW * 0.05;
       label.y = cy + cardH * 0.5;

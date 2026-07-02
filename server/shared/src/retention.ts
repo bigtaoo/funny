@@ -89,6 +89,7 @@ export const DAILY_COINS_REWARD: number = 2;
 export interface CheckinData {
   monthKey: string;       // "2026-06"
   claimedDays: number[];  // slots claimed this month (1-based), $addToSet idempotent
+  lastClaimedDayKey?: string; // "2026-06-22", the calendar day of the most recent claim (gates one claim per real day)
 }
 
 export interface DailyData {
@@ -145,16 +146,14 @@ export function checkinClaimedCount(r: RetentionSave | undefined, tsMs: number):
 export function nextCheckinDay(r: RetentionSave | undefined, tsMs: number): number | null {
   const monthKey = makeMonthKey(tsMs);
   const dayKey = makeDayKey(tsMs);
-  const claimed = r?.checkin?.monthKey === monthKey ? r.checkin.claimedDays : [];
+  const checkin = r?.checkin?.monthKey === monthKey ? r.checkin : undefined;
+  const claimed = checkin?.claimedDays ?? [];
   const nextSlot = claimed.length + 1;
   if (nextSlot > CHECKIN_TOTAL_DAYS) return null;
-  // Already claimed today (last claim time = today)
-  const todayNum = Number(dayKey.slice(8)); // 1-31
-  const lastClaimed = claimed.length > 0 ? Math.max(...claimed) : 0;
-  // Simple check: whether the day number is already in the claimed set (an exact "claimed today" check would require storing lastClaimedAt; using slot vs today as an approximation for now).
-  // Uses "next slot" logic from claimedDays: slot number = claimed count + 1, strictly advancing in calendar order.
-  // claimedCount < todayNum → there are still claimable slots (lenient mode, no same-day makeup required).
-  if (claimed.length >= todayNum) return null; // today's slot already claimed (can claim at most up to slot todayNum)
+  // Gated on the calendar day of the last claim (not on slot-vs-day-of-month), so a player who
+  // is behind (e.g. slot 3 on the 20th) can't burn through slots 4..20 in one sitting — at most
+  // one slot per real day, with no makeup requirement for previously missed days.
+  if (checkin?.lastClaimedDayKey === dayKey) return null;
   return nextSlot;
 }
 
@@ -230,16 +229,15 @@ export function claimCheckinDay(
 ): CheckinClaimOk | { ok: false; error: CheckinClaimError } {
   const monthKey = makeMonthKey(tsMs);
   const dayKey = makeDayKey(tsMs);
-  const todayNum = Number(dayKey.slice(8));
   const prev: CheckinData = r?.checkin?.monthKey === monthKey
     ? r.checkin
     : { monthKey, claimedDays: [] };
   const nextSlot = prev.claimedDays.length + 1;
   if (nextSlot > CHECKIN_TOTAL_DAYS) return { ok: false, error: 'MONTH_FULL' };
-  if (prev.claimedDays.length >= todayNum) return { ok: false, error: 'ALREADY_CLAIMED_TODAY' };
+  if (prev.lastClaimedDayKey === dayKey) return { ok: false, error: 'ALREADY_CLAIMED_TODAY' };
   const reward = CHECKIN_REWARDS[nextSlot - 1];
   if (!reward) return { ok: false, error: 'BAD_REQUEST' };
-  const newCheckin: CheckinData = { monthKey, claimedDays: [...prev.claimedDays, nextSlot] };
+  const newCheckin: CheckinData = { monthKey, claimedDays: [...prev.claimedDays, nextSlot], lastClaimedDayKey: dayKey };
   return { ok: true, day: nextSlot, reward, newCheckin };
 }
 

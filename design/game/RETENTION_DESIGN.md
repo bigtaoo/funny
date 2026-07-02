@@ -277,3 +277,13 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 - 客户端（`DailyScene.renderCheckin`）：按用户反馈把格子三态显式化——已领格盖绿色 ✓ 对勾；下一未领格（`claimable`）高亮可点；其余暗格。模型仍是顺序累计（§2.1，不引入日期对齐/打叉，断签不惩罚 R5）。移除随之失效的 `todayNum`/`isFuture` 旧判定。
 
 > 教训：§10.1 的守卫只能抓「object 节点存在但空（无 properties）」，抓不到「字段在 TS/运行时存在、schema 里整段缺失」。凡服务器权威、客户端要读的 SaveData 子块，新增时必须同步进 `openapi.yml` 的 `SaveData` schema，否则回包静默丢字段。
+
+### 10.3 修复：签到可在同一天内连续领多格 + 每日任务卡文字重叠（2026-07-02）
+
+**现象一**：`nextCheckinDay`/`claimCheckinDay`（`server/shared/src/retention.ts`）用「`claimedDays.length` 是否 `>= 当前日历日的日号`」近似判断「今天是否已领」（代码注释自称"lenient mode 近似"）。这只在玩家进度**恰好等于**日历日号时才生效；一旦落后（如 7 月 2 日才补到第 3 格），`claimedDays.length(2) < todayNum(2)`→ 不成立，玩家可在同一次会话里连点到 `claimedDays.length >= todayNum`，把落后的格子一次性刷完——即「今天是 20 号就能连领到第 20 格」。
+
+**修复一**：`CheckinData` 新增 `lastClaimedDayKey`（最近一次领取的日历日 key，如 `"2026-07-02"`），`nextCheckinDay`/`claimCheckinDay` 改为直接比较 `lastClaimedDayKey === 当前 dayKey`，与日历日号完全解耦——不管进度落后多少，每个真实自然日只能领一格；断签不惩罚（R5）不受影响，落后的格子仍按顺序累积模型（§2.1）逐日补领，不能一次刷完。客户端镜像 `client/src/game/meta/retention.ts` 同步改动；`SaveData.retention.checkin` 类型 + `openapi.yml` 两处 `checkin` schema 补 `lastClaimedDayKey`。
+
+**现象二**：`DailyScene.renderDailyTasks` 每日任务卡左侧任务文案（如「通关任意 PvE 关卡」）与右侧状态文案（「进行中」/「完成」）同一行绝对定位、无宽度约束，卡片较窄（横屏右列 45%）时文案变长会与状态文字重叠。
+
+**修复二**：任务文案改用 `wordWrap`（宽度上限卡片宽的 60%），超长自动换行，与右侧状态文案之间留出安全间距，不再重叠。

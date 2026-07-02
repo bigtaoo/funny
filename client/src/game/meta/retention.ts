@@ -26,12 +26,14 @@ export function checkinClaimedCount(save: SaveData, tsMs: number): number {
 export function nextCheckinDay(save: SaveData, tsMs: number): number | null {
   const monthKey = makeMonthKey(tsMs);
   const dayKey = makeDayKey(tsMs);
-  const todayNum = Number(dayKey.slice(8));
   const r = save.retention;
-  const claimed = r?.checkin?.monthKey === monthKey ? r.checkin.claimedDays : [];
+  const checkin = r?.checkin?.monthKey === monthKey ? r.checkin : undefined;
+  const claimed = checkin?.claimedDays ?? [];
   const nextSlot = claimed.length + 1;
   if (nextSlot > 30) return null;
-  if (claimed.length >= todayNum) return null;
+  // Gated on the calendar day of the last claim, not slot-vs-day-of-month — at most one slot
+  // claimable per real day, matching server/shared/src/retention.ts.
+  if (checkin?.lastClaimedDayKey === dayKey) return null;
   return nextSlot;
 }
 

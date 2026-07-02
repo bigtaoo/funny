@@ -98,7 +98,7 @@ export interface SaveData {
 
   // —— Retention (B5, RETENTION_DESIGN). Server-authoritative; not sent up on PUT /save (client read-only). ——
   retention?: {
-    checkin?: { monthKey: string; claimedDays: number[] };
+    checkin?: { monthKey: string; claimedDays: number[]; lastClaimedDayKey?: string };
     daily?: { dayKey: string; completedTasks: Record<string, number>; taskPoints: number; rewardClaimed: boolean };
   };
 

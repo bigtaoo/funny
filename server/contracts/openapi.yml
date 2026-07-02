@@ -222,6 +222,7 @@ components:
                 claimedDays:
                   type: array
                   items: { type: integer }
+                lastClaimedDayKey: { type: string }
             daily:
               type: object
               required: [dayKey, completedTasks, taskPoints, rewardClaimed]
@@ -1816,6 +1817,7 @@ paths:
                         properties:
                           monthKey: { type: string }
                           claimedDays: { type: array, items: { type: integer } }
+                          lastClaimedDayKey: { type: string }
                       daily:
                         type: object
                         nullable: true
