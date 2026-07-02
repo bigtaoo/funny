@@ -1313,7 +1313,7 @@ if (path.startsWith('/admin/world/')) {
 
 ### 19.5 DRAFT / 后续
 
-- 数值调参：`STRONGHOLD_GARRISON_PER_LEVEL`/`STRONGHOLD_LOOT_PER_LEVEL`/`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL`/生成密度（`strongholdThreshold`）待经济与战力模拟细化（§16.5 同批）。
+- 数值调参：`STRONGHOLD_GARRISON_PER_LEVEL`/`STRONGHOLD_LOOT_PER_LEVEL`/`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL`/生成密度（`strongholdThreshold`）待经济与战力模拟细化（§16.5 同批）。**⚠️ 已模拟（2026-07-02，econ-sim 险地轨）**：生成密度有缺陷——`strongholdFreq=1/70` value-noise 在 300×300 图上只 ~18 格点，险地数种子间 **0→6,436**（CV 1.02，14% 世界零险地，中位 1.12% ≫ 意图 0.3%），且聚成 blob 非孤立点；占领发的持久 `binding` 在高数量种子破 A 轨 15% 稀释判据。**建议生成层换逐格哈希 `rand2>t`**（p≈0.003 → 270±16、孤立点）。守军/掠夺量本身 sane。详见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §9 险地轨 + [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §13-SLG-STRONGHOLD。**生成修复是独立 merge-first 变更，未落地。**
 - **攻克奖励材料 ✅（2026-06-21，随 G4 §15.6 落地）**：除单资源即时入袋，额外掉落养成材料 `binding`（`strongholdMaterialLoot(level)` 按等级线性，**DRAFT** `STRONGHOLD_LOOT_MATERIAL_PER_LEVEL=4`）——攻克胜经 `meta.grantMaterial` 发到 `SaveData.materials` 养成统一池（跨进程 best-effort，orderId=`stronghold_loot:{worldId}:{toTile}:{arriveAt}` 幂等），攻克败不掉。复用 G4 打通的材料通道，险地养成价值兑现。装备掉落仍待装备库 E2~E4。worldsvc `stronghold.e2e` 加掉落断言（胜掉/败不掉/orderId 幂等键）。
 - 险地系统守军当前为合成步兵；后续可换更强兵种/自定义系统布阵 config（§16.5 满血容量表/兵种当量调参后）。
 
@@ -1444,6 +1444,7 @@ if (path.startsWith('/admin/world/')) {
 > **核验方法权威 = [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md)**：定义这批数怎么核（6 条轨道：持久经济聚合 / 赛季资源 / 围攻 difficultySim / 分区方差 / 节奏可达性 / 运维容量）、判据、签字人、登记到 §13-SLG 的流程。下面只是清单。
 
 - 繁荣度权重 `PROSPERITY_W_*`/`PROSPERITY_DECAY_PER_DAY`、建宗门门槛 `SECT_FOUND_PROSPERITY_MIN`；`SETTLE_REWARDS` 各档材料/皮肤量 + `CENTER_CAPITAL_MULT`；`sectStrengthScore` 权重；`WORLD_CAPACITY`/`RESET_DELETE_BATCH`；险地 `STRONGHOLD_*` 密度/守军/奖励；碾压级廉价结算阈值（U7）；围攻满血容量表/兵种当量/时限（§16.5）。
+- **进度（2026-07-02）**：A/B/C/D/E/F 六轨均已过 econ-sim 核验（`server/tools/econ-sim/`，SLG_ECONOMY_CHECK §9，常量未动、终态待上线实测）。**险地轨已补建并跑出唯一实质缺陷**：`SLG_GEN.stronghold*` 生成参数使险地数种子间 0→6,436、聚成 blob、持久 `binding` 掠夺破 15% 稀释——建议生成层换逐格哈希（[§13-SLG-STRONGHOLD](ECONOMY_NUMBERS.md)）。**这是 R-4 剩的唯一 actionable 项**：一个独立的 `@nw/shared` 生成修复（merge-first），非纯调参。
 - settle 若发 coin（>0）须经经济总预算批准（SEASON_OVERVIEW §3.3）。
 - 全部 → [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §13-SLG 登记后统一模拟调参。
 

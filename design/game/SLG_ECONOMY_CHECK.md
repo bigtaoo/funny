@@ -109,7 +109,7 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 
 ## 3. econ-sim 核验脚本（A 轨已建 ✅ 2026-06-30，B 轨季内模式待补）
 
-战斗侧有 `difficultySim`（headless 引擎 + 基线 AI，见 [[project-difficulty-sim]]）；经济侧 **A 轨工具已落地**：`server/tools/econ-sim/`（纯 TS，import `@nw/shared` 的 `SETTLE_REWARDS`/`CENTER_CAPITAL_MULT`/`WORLD_CAPACITY`/`DUPE_REFUND_COINS`/`GACHA_MATERIAL_GRANTS`，**不连库**，与 difficultySim 同构）。跑法 `cd server/tools/econ-sim && npx tsx src/index.ts`；估值/基准在 `src/valuation.ts`，聚合/判据在 `src/model.ts`，场景在 `scenarios/*.json`。首跑结论登记 [`ECONOMY_NUMBERS.md` §13-SLG](ECONOMY_NUMBERS.md)。**B 轨全部已建**：`src/city.ts` + `cityRun.ts`（建筑节奏，结论 [§13-SLG-CITY](ECONOMY_NUMBERS.md)）；`src/nationBonus.ts` + `nationBonusRun.ts`（裸经济不破·国民加成，结论 [§13-SLG-NATION](ECONOMY_NUMBERS.md)）；均 import `@nw/shared`，`npx tsx src/cityRun.ts` / `npx tsx src/nationBonusRun.ts`。B 轨 CLOSED（2026-06-30）。
+战斗侧有 `difficultySim`（headless 引擎 + 基线 AI，见 [[project-difficulty-sim]]）；经济侧 **A 轨工具已落地**：`server/tools/econ-sim/`（纯 TS，import `@nw/shared` 的 `SETTLE_REWARDS`/`CENTER_CAPITAL_MULT`/`WORLD_CAPACITY`/`DUPE_REFUND_COINS`/`GACHA_MATERIAL_GRANTS`，**不连库**，与 difficultySim 同构）。跑法 `cd server/tools/econ-sim && npx tsx src/index.ts`；估值/基准在 `src/valuation.ts`，聚合/判据在 `src/model.ts`，场景在 `scenarios/*.json`。首跑结论登记 [`ECONOMY_NUMBERS.md` §13-SLG](ECONOMY_NUMBERS.md)。**B 轨全部已建**：`src/city.ts` + `cityRun.ts`（建筑节奏，结论 [§13-SLG-CITY](ECONOMY_NUMBERS.md)）；`src/nationBonus.ts` + `nationBonusRun.ts`（裸经济不破·国民加成，结论 [§13-SLG-NATION](ECONOMY_NUMBERS.md)）；均 import `@nw/shared`，`npx tsx src/cityRun.ts` / `npx tsx src/nationBonusRun.ts`。B 轨 CLOSED（2026-06-30）。**险地轨已建**（2026-07-02）：`src/stronghold.ts` + `strongholdRun.ts`（`npx tsx src/strongholdRun.ts`）——用真实 `proceduralTile` 跨种子实测险地密度/blob/持久 binding 龙头；发现生成参数缺陷，结论 [§13-SLG-STRONGHOLD](ECONOMY_NUMBERS.md)。
 
 **位置**：`server/tools/econ-sim/`（已建）。
 
@@ -210,10 +210,11 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 - [x] **D 轨 ✅ CLOSED（2026-06-30）**：蒙特卡洛 10 seeds × 6 配置（sects 10–1000，shards 2–10）**全 PASS**（极差 ≤ 最强单体，典型极差 ≈ 10–15% 上界）；排名权重是主稳定器（去掉排名退化符合预期，确认多维设计必要性）。结论 [§13-SLG-D](ECONOMY_NUMBERS.md)。
 - [x] **E 轨 ✅ CLOSED（2026-06-30）**：活跃中位家族（20 人起、3.5 地/天、4 活跃/天）**第 9 天**建宗门（7–14 天窗口 ✅）；从 ≥3000 分起零活跃 **8 天**跌门槛（≥7 天判据 ✅）；`decayProsperity` 惰性结算，有动作即满分重算，周常活跃玩家不观测衰减 ✅。结论 [§13-SLG-E](ECONOMY_NUMBERS.md)。
 - [x] **F 轨 ✅ CLOSED（2026-06-30，工程估算）**：WORLD_CAPACITY=10000 / shard：~246k（中位）–582k（峰值）文档；热路径查询全为点查或窄范围扫描（< 10ms）；RESET_DELETE_BATCH=2000 清档 **1.9–4.4s**（< 5s）；活跃层缓存 **36 MB / shard**（VPS 可承 28–56 shard）。结论 [§13-SLG-F](ECONOMY_NUMBERS.md)；待预发压测确认。
-- [x] **登记 ✅（2026-06-30）**：C/D/E/F 轨结论已写入 [ECONOMY_NUMBERS.md](ECONOMY_NUMBERS.md) §13-SLG-C / §13-SLG-D / §13-SLG-E / §13-SLG-F；数值未变（常量未动），SLG_DESIGN §17.1 / §21.4 `DRAFT` 标记按上线后压测策略保留（见 §10）。
-- [x] **代码**：C/D/E/F 轨核验数字与 `server/shared/src/slg.ts` 当前常量一致，无需改动。
+- [ ] **险地轨 ⚠️ 有缺陷（2026-07-02，待生成修复）**：econ-sim `stronghold.ts`/`strongholdRun.ts` 用真实 `proceduralTile` 跨 100 种子实测——险地占领发**持久** `binding`（A 轨从未计入的龙头）。**发现**：险地数量种子间 **0→6,436**（CV 1.02，14% 世界零险地，中位 1.12% ≫ 意图 0.3%），且平滑噪声超阈聚成 blob（均值 862 格，非孤立点）；持久 binding 稀释在高数量种子/满占领率破 15% 判据。**根因**：freq `1/70` value-noise 在 300×300 图上只 ~18 格点。**建议**：生成层换逐格哈希 `rand2>t`（p≈0.003 → 270±16、CV 0.06、孤立点），修复后回本轨复跑。结论 [§13-SLG-STRONGHOLD](ECONOMY_NUMBERS.md)。**生成修复未落地**（独立 merge-first 变更）。
+- [x] **登记 ✅（2026-06-30）**：C/D/E/F 轨结论已写入 [ECONOMY_NUMBERS.md](ECONOMY_NUMBERS.md) §13-SLG-C / §13-SLG-D / §13-SLG-E / §13-SLG-F；数值未变（常量未动），SLG_DESIGN §17.1 / §21.4 `DRAFT` 标记按上线后压测策略保留（见 §10）。险地轨结论写入 §13-SLG-STRONGHOLD（2026-07-02）。
+- [x] **代码**：C/D/E/F 轨核验数字与 `server/shared/src/slg.ts` 当前常量一致，无需改动；**险地轨**发现 `SLG_GEN.stronghold*` 生成参数缺陷，修复方案已记（§13-SLG-STRONGHOLD.3），未落地。
 
-**签字人**：A/A-coin 轨 = 经济负责人（动持久经济）；B/C 轨 = 战斗/SLG 玩法负责人；D/E/F 轨 = 实现者自核 + 复核即可。
+**签字人**：A/A-coin 轨 = 经济负责人（动持久经济）；B/C 轨 = 战斗/SLG 玩法负责人；D/E/F 轨 = 实现者自核 + 复核即可；**险地轨**：持久 binding 稀释 = 经济负责人，生成算法改动 = SLG 玩法负责人。
 
 ---
 
