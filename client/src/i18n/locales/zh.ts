@@ -749,6 +749,7 @@ export const zh = {
   'world.err.noTroops': '兵力不足',
   'world.err.occupied': '该地已被占领',
   'world.err.protected': '该地受保护，无法攻击',
+  'world.err.allyTile': '这是盟友领地，无法进攻',
   'world.err.outOfRange': '超出地图边界',
   'world.err.notOwner': '非己方领地',
   'world.err.notImpl': '功能暂未开放',

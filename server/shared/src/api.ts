@@ -60,6 +60,7 @@ export const ErrorCode = {
   NOT_IN_SECT: 'NOT_IN_SECT',
   ALREADY_IN_SECT: 'ALREADY_IN_SECT',
   ALLY_CAP_REACHED: 'ALLY_CAP_REACHED',
+  ALLY_TILE: 'ALLY_TILE',                          // R-3 (§18.7): cannot siege a friendly tile (own family / same sect / allied sect)
   // —— G2 prosperity (sect founding threshold, §17.4) ——
   PROSPERITY_TOO_LOW: 'PROSPERITY_TOO_LOW',
   // —— equipment system (E2 crafting + auction equipment trading, EQUIPMENT_DESIGN §4.A/§18) ——
@@ -149,6 +150,7 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.NOT_IN_SECT]: 403,
   [ErrorCode.ALREADY_IN_SECT]: 409,
   [ErrorCode.ALLY_CAP_REACHED]: 409,
+  [ErrorCode.ALLY_TILE]: 403,
   [ErrorCode.PROSPERITY_TOO_LOW]: 400,
   [ErrorCode.INSUFFICIENT_MATERIALS]: 402,
   [ErrorCode.INVENTORY_FULL]: 409,

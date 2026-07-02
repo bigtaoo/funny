@@ -2235,6 +2235,7 @@ export class WorldMapScene implements Scene {
         NO_TROOPS:     t('world.err.noTroops'),
         TILE_OCCUPIED: t('world.err.occupied'),
         PROTECTED:     t('world.err.protected'),
+        ALLY_TILE:     t('world.err.allyTile'),
         OUT_OF_RANGE:  t('world.err.outOfRange'),
         NOT_OWNER:     t('world.err.notOwner'),
         NOT_IMPLEMENTED: t('world.err.notImpl'),

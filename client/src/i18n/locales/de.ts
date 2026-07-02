@@ -739,6 +739,7 @@ export const de: Record<TranslationKey, string> = {
   'world.err.noTroops': 'Nicht genug Truppen',
   'world.err.occupied': 'Feld bereits besetzt',
   'world.err.protected': 'Feld ist geschützt',
+  'world.err.allyTile': 'Verbündetes Gebiet — Angriff nicht möglich',
   'world.err.outOfRange': 'Außerhalb der Karte',
   'world.err.notOwner': 'Nicht dein Gebiet',
   'world.err.notImpl': 'Funktion noch nicht verfügbar',
