@@ -166,21 +166,23 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
   it('siege with team: committed = sum of team allocations; army snapshot persisted with march; authoritative siege runs on arrival + replayable', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(10, 5);
-    await setupDefender('b', tgt.x, tgt.y, 500, 800);
+    await setupDefender('b', tgt.x, tgt.y, 400, 800);
 
-    // 14 infantry × full hp 60 = 840 committed troops (overrides body troops; numerical advantage ensures capture, same scale as siege.e2e).
-    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Assault', army: army(14, 60) }]);
+    // 12 infantry (CARD_TEAM_MAX_SIZE cap) × 70 allotted = 840 committed troops (overrides body troops).
+    // Combat HP per unit is clamped to the infantry blueprint cap (60), so effective assault ≈ 12×60 = 720,
+    // still an overwhelming force over the 400 garrison → capture (same intent as the pre-cap 14-unit version).
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Assault', army: army(12, 70) }]);
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1');
     expect(mv.troops).toBe(840); // derived from team; body's troops=1 is overridden
 
     // march is persisted to the database with the army snapshot.
     const marchDoc = await m.collections.marches.findOne({ _id: mv.marchId });
-    expect(marchDoc?.army).toHaveLength(14);
+    expect(marchDoc?.army).toHaveLength(12);
 
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    // tile ownership changes hands (840 real formation > 500 garrison).
+    // tile ownership changes hands (12-unit assault overwhelms the 400 garrison).
     const tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
     expect(tile?.mine).toBe(true);
 
@@ -188,7 +190,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege).toBeTruthy();
     expect(typeof siege!.seed).toBe('number');
-    expect(siege!.attackerArmy).toHaveLength(14);
+    expect(siege!.attackerArmy).toHaveLength(12);
 
     // attacker can read the replay level; it includes the attacker army.
     const replay = await svc.getSiegeReplay(W, 'a', siege!._id);

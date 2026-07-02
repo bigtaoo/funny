@@ -104,9 +104,9 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
       troops: TROOP_CAP_BASE,
       troopCap: TROOP_CAP_BASE,
       mainBaseTile: tileId(W, neutral.x, neutral.y),
-      territoryCount: 1,
+      territoryCount: 9, // ADR-025: capital is a 3×3 footprint (anchor + 8 ring), all owned by the player
     });
-    expect(me.yieldRate?.ink).toBe(RESOURCE_YIELD_BASE); // base starting ink trickle
+    expect(me.yieldRate?.ink).toBe(RESOURCE_YIELD_BASE); // ADR-025: only the anchor contributes the base ink trickle
 
     const tile = await svc.getTile(W, 'a', neutral.x, neutral.y);
     expect(tile).toMatchObject({ type: 'base', mine: true, occupied: true });
@@ -115,7 +115,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     // Idempotent: joining again with different coordinates does not create a second base.
     const me2 = await svc.joinWorld(W, 'a', neutral.x + 3, neutral.y + 3);
     expect(me2.mainBaseTile).toBe(tileId(W, neutral.x, neutral.y));
-    expect(me2.territoryCount).toBe(1);
+    expect(me2.territoryCount).toBe(9);
   });
 
   it('occupy resource tile: write territory + deduct troops + increase yield rate; abandon returns troops + recalculates', async () => {
@@ -129,7 +129,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
 
     const me = await svc.getMe(W, 'a');
     expect(me.troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE);
-    expect(me.territoryCount).toBe(2);
+    expect(me.territoryCount).toBe(10); // 9 base footprint cells + 1 occupied resource tile
     expect(me.yieldRate?.[rt]).toBe(RESOURCE_YIELD_BASE * procRes.level + (rt === 'ink' ? RESOURCE_YIELD_BASE : 0));
 
     // Occupy is idempotent: re-occupying the same tile does not deduct additional troops.
@@ -139,7 +139,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     // Abandon: return troops + territory count decreases + tile reverts to procedural (no ghost doc left in DB).
     const after = await svc.abandonTile(W, 'a', res.x, res.y);
     expect(after.troops).toBe(TROOP_CAP_BASE);
-    expect(after.territoryCount).toBe(1);
+    expect(after.territoryCount).toBe(9); // back to the base footprint only
     expect(await m.collections.tiles.findOne({ _id: tileId(W, res.x, res.y) })).toBeNull();
   });
 
@@ -164,7 +164,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
 
     expect(spends).toEqual([{ accountId: 'a', amount: RELOCATE_COST }]);
     expect(me.mainBaseTile).toBe(tileId(W, dst.x, dst.y));
-    expect(me.territoryCount).toBe(2); // new main base + retained territory
+    expect(me.territoryCount).toBe(10); // 9 new base footprint cells + retained territory tile
     // Old main base tile reverts to neutral (deleted).
     expect(await m.collections.tiles.findOne({ _id: tileId(W, 5, 5) })).toBeNull();
     // New site becomes main base.
@@ -207,27 +207,36 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     await expect(svc.occupyTile(W, 'a', CENTER_X, CENTER_Y)).rejects.toMatchObject({
       code: 'TILE_OCCUPIED',
     });
-    // Fill 3 tiles (base costs no troops; 2000/500=4 squads, leave 1 to test NO_TROOPS: 5th tile is rejected after occupying 4).
+    // TROOP_CAP_BASE/GARRISON_PER_TILE = 2000/500 = 4 squads → occupy 4 tiles to drain troops, 5th → NO_TROOPS.
+    // Start scanning past the 3×3 base footprint (anchor (5,5) occupies (4,4)..(6,6)) so occupy targets are free non-base tiles.
     const frees: { x: number; y: number }[] = [];
-    let scanX = 5;
+    let scanX = 6;
     while (frees.length < 4) {
       scanX += 1;
       const t = proceduralTile(W, scanX, 5);
-      if (t.type !== 'center' && !(scanX === CENTER_X && 5 === CENTER_Y)) frees.push({ x: scanX, y: 5 });
+      if (t.type !== 'center' && t.type !== 'obstacle' && !(scanX === CENTER_X && 5 === CENTER_Y)) frees.push({ x: scanX, y: 5 });
     }
     for (const f of frees) await svc.occupyTile(W, 'a', f.x, f.y);
     expect((await svc.getMe(W, 'a')).troops).toBe(0);
     // 5th tile: troops exhausted.
-    await expect(svc.occupyTile(W, 'a', scanX + 1, 5)).rejects.toMatchObject({ code: 'NO_TROOPS' });
+    let fifthX = scanX;
+    let fifth: { x: number; y: number } | null = null;
+    while (!fifth) {
+      fifthX += 1;
+      const t = proceduralTile(W, fifthX, 5);
+      if (t.type !== 'center' && t.type !== 'obstacle' && !(fifthX === CENTER_X && 5 === CENTER_Y)) fifth = { x: fifthX, y: 5 };
+    }
+    await expect(svc.occupyTile(W, 'a', fifth.x, fifth.y)).rejects.toMatchObject({ code: 'NO_TROOPS' });
   });
 
-  it("other player's territory: occupy their main base → PROTECTED; occupy their regular territory → TILE_OCCUPIED", async () => {
+  it("other player's territory: occupy their main base → TILE_OCCUPIED (capital, siege instead); occupy their regular territory → TILE_OCCUPIED", async () => {
     await svc.joinWorld(W, 'b', 200, 200);
-    const bTerr = findCoord((t) => t.type === 'resource', 201, 200);
+    const bTerr = findCoord((t) => t.type === 'resource', 210, 210);
     await svc.occupyTile(W, 'b', bTerr.x, bTerr.y);
 
     await svc.joinWorld(W, 'a', 5, 5);
-    await expect(svc.occupyTile(W, 'a', 200, 200)).rejects.toMatchObject({ code: 'PROTECTED' });
+    // ADR-025: a base is a 3×3 indivisible building — no cell can be occupied; take it via siege → TILE_OCCUPIED.
+    await expect(svc.occupyTile(W, 'a', 200, 200)).rejects.toMatchObject({ code: 'TILE_OCCUPIED' });
     await expect(svc.occupyTile(W, 'a', bTerr.x, bTerr.y)).rejects.toMatchObject({
       code: 'TILE_OCCUPIED',
     });

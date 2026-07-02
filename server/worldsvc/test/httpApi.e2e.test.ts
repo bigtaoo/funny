@@ -45,7 +45,8 @@ function findResource(): { x: number; y: number } {
   throw new Error('no resource tile');
 }
 
-/** Find a free tile that can be occupied (not the center tile, not the given base tile (exX,exY)). */
+/** Find a free tile that can be occupied (not the center tile, not inside the 3×3 base footprint anchored at (exX,exY)).
+ *  ADR-025: a capital occupies its anchor + 8 ring cells, so the whole footprint is off-limits as a march target. */
 function findFreeNear(sx: number, sy: number, exX: number, exY: number): { x: number; y: number } {
   for (let r = 0; r < 60; r++) {
     for (let dx = -r; dx <= r; dx++) {
@@ -54,7 +55,7 @@ function findFreeNear(sx: number, sy: number, exX: number, exY: number): { x: nu
         const y = sy + dy;
         if (x < 0 || y < 0 || x >= SLG_MAP_W || y >= SLG_MAP_H) continue;
         if (x === CENTER_X && y === CENTER_Y) continue;
-        if (x === exX && y === exY) continue;
+        if (Math.abs(x - exX) <= 1 && Math.abs(y - exY) <= 1) continue; // inside the 3×3 base footprint
         const t = proceduralTile(W, x, y).type;
         if (t === 'neutral' || t === 'resource') return { x, y };
       }

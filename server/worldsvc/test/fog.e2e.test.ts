@@ -10,9 +10,11 @@ import {
   SLG_MAP_W,
   SLG_MAP_H,
   VISION_BASE_RADIUS,
+  type FamilyRole,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
+import type { WorldSocialsvcClient, SocialsvcChannel, FamilyMembership, FamilySummary } from '../src/socialsvcClient';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_fog_test';
@@ -29,6 +31,71 @@ async function tryConnect(): Promise<WorldMongo | null> {
 const mongo = await tryConnect();
 if (!mongo) {
   console.warn(`[worldsvc.fog.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
+}
+
+/**
+ * In-process fake of socialsvc's family store (P4 follow-up: family identity/roster now live there, not in worldsvc).
+ * Family-shared vision resolves members via PlayerWorldDoc.familyId (mirrored on joinWorld from getFamilyId), so tests
+ * register membership here before calling joinWorld.
+ */
+class FakeSocialsvc implements WorldSocialsvcClient {
+  available = true;
+  private families = new Map<string, FamilySummary & { activity: number }>();
+  private memberRole = new Map<string, { familyId: string; role: FamilyRole }>();
+
+  addFamily(familyId: string, leaderId: string, name: string, tag: string): string {
+    this.families.set(familyId, {
+      familyId, name, tag: tag.toUpperCase(), leaderId, memberCount: 1,
+      prosperity: 0, prosperityUpdatedAt: 0, activity: 0,
+    });
+    this.memberRole.set(leaderId, { familyId, role: 'leader' });
+    return familyId;
+  }
+
+  addMember(accountId: string, familyId: string): void {
+    this.memberRole.set(accountId, { familyId, role: 'member' });
+    const f = this.families.get(familyId);
+    if (f) f.memberCount += 1;
+  }
+
+  async getFamilyId(accountId: string): Promise<string | null> {
+    return this.memberRole.get(accountId)?.familyId ?? null;
+  }
+
+  async getMember(accountId: string): Promise<FamilyMembership | null> {
+    const m = this.memberRole.get(accountId);
+    if (!m) return null;
+    const f = this.families.get(m.familyId);
+    if (!f) return null;
+    return { familyId: m.familyId, role: m.role, leaderId: f.leaderId, name: f.name, tag: f.tag, memberCount: f.memberCount };
+  }
+
+  async getFamiliesByIds(familyIds: string[]): Promise<FamilySummary[]> {
+    return familyIds.map((id) => this.families.get(id)).filter((f): f is FamilySummary & { activity: number } => !!f)
+      .map((f) => ({ ...f }));
+  }
+
+  async getFamiliesBySect(sid: string): Promise<FamilySummary[]> {
+    return [...this.families.values()].filter((f) => f.sectId === sid).map((f) => ({ ...f }));
+  }
+
+  async setSect(familyId: string, sid: string | null): Promise<void> {
+    const f = this.families.get(familyId);
+    if (!f) return;
+    if (sid) f.sectId = sid;
+    else delete f.sectId;
+  }
+
+  async bumpActivity(familyId: string, delta: number): Promise<void> {
+    const f = this.families.get(familyId);
+    if (f) f.activity += delta;
+  }
+
+  async refreshProsperity(): Promise<number> { return 0; }
+  async resetSlgState(): Promise<void> { /* not exercised here */ }
+  async push(_channel: SocialsvcChannel, _event: string, _payload: unknown, _targets?: string[]): Promise<void> {
+    /* not exercised here */
+  }
 }
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
@@ -60,12 +127,14 @@ describe.skipIf(!mongo)('worldsvc fog/vision e2e (G5)', () => {
   let nowMs = 1_000_000;
   const now = () => nowMs;
   let svc: WorldService;
+  let socialsvc: FakeSocialsvc;
 
   beforeEach(async () => {
     await m.db.dropDatabase();
     await m.ensureIndexes();
     nowMs = 1_000_000;
-    svc = new WorldService({ cols: m.collections, redis: null, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+    socialsvc = new FakeSocialsvc();
+    svc = new WorldService({ cols: m.collections, redis: null, socialsvc, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
   });
 
   afterAll(async () => {
@@ -112,14 +181,13 @@ describe.skipIf(!mongo)('worldsvc fog/vision e2e (G5)', () => {
   });
 
   it('family shared vision: distant territory of a same-family member is visible to me (occupied but not mine)', async () => {
+    // a and mate are in the same family: register membership in socialsvc first so joinWorld mirrors familyId onto
+    // each PlayerWorldDoc (computeVisionSources / familyMemberIds resolve members from playerWorld.familyId).
+    const fam = 'fam-1';
+    socialsvc.addFamily(fam, 'a', 'Fam', 'FM');
+    socialsvc.addMember('mate', fam);
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.joinWorld(W, 'mate', 250, 250); // distant, beyond a's base vision range
-    // Write familyMembers directly: a and mate are in the same family (computeVisionSources looks up members from this).
-    const fam = 'fam-1';
-    await m.collections.familyMembers.insertMany([
-      { _id: `${W}:a`, worldId: W, accountId: 'a', familyId: fam, role: 'leader', joinedAt: nowMs },
-      { _id: `${W}:mate`, worldId: W, accountId: 'mate', familyId: fam, role: 'member', joinedAt: nowMs },
-    ]);
 
     const view = await svc.getMap(W, 'a', 250, 250, 2);
     const mateBase = view.tiles.find((t) => t.x === 250 && t.y === 250)!;

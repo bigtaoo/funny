@@ -141,8 +141,8 @@ describe.skipIf(!mongo)('worldsvc scout march e2e (G5 V2)', () => {
     expect(await svc.processDueArrivals()).toBe(1);
     const meEnd = await svc.getMe(W, 'a');
     expect(meEnd.troops).toBe(troops0);
-    // Scout never occupies territory: territory count remains 1 (home only); dst was not written as a new territory.
-    expect(meEnd.territoryCount).toBe(1);
+    // Scout never occupies territory: territory count remains the home footprint only (ADR-025: capital = 3×3 = 9 tiles); dst was not written as a new territory.
+    expect(meEnd.territoryCount).toBe(9);
     expect(await m.collections.tiles.findOne({ _id: `${W}:${dst.x}:${dst.y}` })).toBeNull();
   });
 });

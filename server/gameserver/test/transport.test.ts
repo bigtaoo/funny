@@ -141,7 +141,8 @@ describe('transport encodeServer (ServerMsg → wire bytes)', () => {
     );
     expect(wire.frame_batch.to_frame).toBe(9);
     expect(wire.frame_batch.frames[0].frame).toBe(9);
-    expect(wire.frame_batch.frames[0].cmds[0]).toMatchObject({ side: 0, commands: [1, 2] });
+    // side:0 is the proto3 default → omitted on the wire (decode drops it); assert only the carried bytes.
+    expect(wire.frame_batch.frames[0].cmds[0]).toMatchObject({ commands: [1, 2] });
     expect(wire.frame_batch.frames[0].cmds[1].commands).toEqual([9]);
   });
 

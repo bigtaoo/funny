@@ -129,7 +129,7 @@ describe('internal routes', () => {
       headers: { 'x-internal-key': 'gw-key', 'x-internal-caller': 'gateway' },
     });
     expect(okRes.statusCode).toBe(200);
-    expect(okRes.json()).toEqual({ elo: 777 });
+    expect(okRes.json()).toEqual({ elo: 777, seasonPeakElo: 1000 });
     // The old single shared key (KEY) is rejected in strict mode.
     const rejRes = await app.inject({
       method: 'GET',
@@ -145,9 +145,9 @@ describe('internal routes', () => {
     a.pvp.elo = 1234;
     const app = build(fakeCols({ a }).cols);
     const r1 = await app.inject({ method: 'GET', url: '/internal/elo?accountId=a', headers: { 'x-internal-key': KEY } });
-    expect(r1.json()).toEqual({ elo: 1234 });
+    expect(r1.json()).toEqual({ elo: 1234, seasonPeakElo: 1000 });
     const r2 = await app.inject({ method: 'GET', url: '/internal/elo?accountId=none', headers: { 'x-internal-key': KEY } });
-    expect(r2.json()).toEqual({ elo: 1000 });
+    expect(r2.json()).toEqual({ elo: 1000, seasonPeakElo: 1000 });
     await app.close();
   });
 

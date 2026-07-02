@@ -7,9 +7,11 @@ import {
   proceduralTile,
   SLG_MAP_W,
   SLG_MAP_H,
+  type FamilyRole,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
+import type { WorldSocialsvcClient, SocialsvcChannel, FamilyMembership, FamilySummary } from '../src/socialsvcClient';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB  = 'nw_world_sparse_test';
@@ -26,6 +28,71 @@ async function tryConnect(): Promise<WorldMongo | null> {
 const mongo = await tryConnect();
 if (!mongo) {
   console.warn(`[worldsvc.sparse.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
+}
+
+/**
+ * In-process fake of socialsvc's family store (P4 follow-up: family identity/roster now live there, not in worldsvc).
+ * Same-family ally marking resolves members via PlayerWorldDoc.familyId (mirrored on joinWorld from getFamilyId), so
+ * tests register membership here before calling joinWorld.
+ */
+class FakeSocialsvc implements WorldSocialsvcClient {
+  available = true;
+  private families = new Map<string, FamilySummary & { activity: number }>();
+  private memberRole = new Map<string, { familyId: string; role: FamilyRole }>();
+
+  addFamily(familyId: string, leaderId: string, name: string, tag: string): string {
+    this.families.set(familyId, {
+      familyId, name, tag: tag.toUpperCase(), leaderId, memberCount: 1,
+      prosperity: 0, prosperityUpdatedAt: 0, activity: 0,
+    });
+    this.memberRole.set(leaderId, { familyId, role: 'leader' });
+    return familyId;
+  }
+
+  addMember(accountId: string, familyId: string): void {
+    this.memberRole.set(accountId, { familyId, role: 'member' });
+    const f = this.families.get(familyId);
+    if (f) f.memberCount += 1;
+  }
+
+  async getFamilyId(accountId: string): Promise<string | null> {
+    return this.memberRole.get(accountId)?.familyId ?? null;
+  }
+
+  async getMember(accountId: string): Promise<FamilyMembership | null> {
+    const m = this.memberRole.get(accountId);
+    if (!m) return null;
+    const f = this.families.get(m.familyId);
+    if (!f) return null;
+    return { familyId: m.familyId, role: m.role, leaderId: f.leaderId, name: f.name, tag: f.tag, memberCount: f.memberCount };
+  }
+
+  async getFamiliesByIds(familyIds: string[]): Promise<FamilySummary[]> {
+    return familyIds.map((id) => this.families.get(id)).filter((f): f is FamilySummary & { activity: number } => !!f)
+      .map((f) => ({ ...f }));
+  }
+
+  async getFamiliesBySect(sid: string): Promise<FamilySummary[]> {
+    return [...this.families.values()].filter((f) => f.sectId === sid).map((f) => ({ ...f }));
+  }
+
+  async setSect(familyId: string, sid: string | null): Promise<void> {
+    const f = this.families.get(familyId);
+    if (!f) return;
+    if (sid) f.sectId = sid;
+    else delete f.sectId;
+  }
+
+  async bumpActivity(familyId: string, delta: number): Promise<void> {
+    const f = this.families.get(familyId);
+    if (f) f.activity += delta;
+  }
+
+  async refreshProsperity(): Promise<number> { return 0; }
+  async resetSlgState(): Promise<void> { /* not exercised here */ }
+  async push(_channel: SocialsvcChannel, _event: string, _payload: unknown, _targets?: string[]): Promise<void> {
+    /* not exercised here */
+  }
 }
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
@@ -51,14 +118,17 @@ describe.skipIf(!mongo)('worldsvc getMapSparse e2e', () => {
   let nowMs = 1_000_000;
   const now = () => nowMs;
   let svc: WorldService;
+  let socialsvc: FakeSocialsvc;
 
   beforeEach(async () => {
     await m.db.dropDatabase();
     await m.ensureIndexes();
     nowMs = 1_000_000;
+    socialsvc = new FakeSocialsvc();
     svc = new WorldService({
       cols: m.collections,
       redis: null,
+      socialsvc,
       mapW: SLG_MAP_W,
       mapH: SLG_MAP_H,
       now,
@@ -104,11 +174,11 @@ describe.skipIf(!mongo)('worldsvc getMapSparse e2e', () => {
   it('lod=thin: ally not populated, even for family members', async () => {
     const posA = findNeutral(10, 10);
     const posB = findNeutral(20, 10);
+    // form a family in socialsvc first so joinWorld mirrors familyId onto both PlayerWorldDocs
+    socialsvc.addFamily(`f:${W}:FA`, 'player-a', 'FamA', 'FA');
+    socialsvc.addMember('player-b', `f:${W}:FA`);
     await svc.joinWorld(W, 'player-a', posA.x, posA.y);
     await svc.joinWorld(W, 'player-b', posB.x, posB.y);
-    // form a family
-    await svc.createFamily(W, 'player-a', 'FamA', 'FA');
-    await svc.joinFamily(W, 'player-b', (await svc.listFamilies(W))[0]!._id ?? '');
 
     // thin LOD: no family query, ally not populated
     const view = await svc.getMapSparse(W, 'player-a', posB.x, posB.y, 3, 'thin');
@@ -120,11 +190,10 @@ describe.skipIf(!mongo)('worldsvc getMapSparse e2e', () => {
   it('lod=mid: same-family member ally=true', async () => {
     const posA = findNeutral(10, 10);
     const posB = findNeutral(20, 10);
+    socialsvc.addFamily(`f:${W}:FA`, 'player-a', 'FamA', 'FA');
+    socialsvc.addMember('player-b', `f:${W}:FA`);
     await svc.joinWorld(W, 'player-a', posA.x, posA.y);
     await svc.joinWorld(W, 'player-b', posB.x, posB.y);
-    await svc.createFamily(W, 'player-a', 'FamA', 'FA');
-    const families = await svc.listFamilies(W);
-    await svc.joinFamily(W, 'player-b', families[0]!._id ?? '');
 
     const view = await svc.getMapSparse(W, 'player-a', posB.x, posB.y, 3, 'mid');
     const tile = view.tiles.find((t) => t.x === posB.x && t.y === posB.y);

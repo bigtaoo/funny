@@ -57,8 +57,8 @@ describe('MatchsvcClient', () => {
       `${BASE}/mm/conn/disconnected`,
     ]);
     expect(calls.every((x) => x.key === KEY)).toBe(true);
-    expect(calls[1]!.body).toEqual({ accountId: 'b', name: 'Bob', publicId: '100000002', code: 'ABC123', equippedTitle: '' });
-    expect(calls[5]!.body).toEqual({ accountId: 'a', name: 'Alice', publicId: '100000001', elo: 1234, equippedTitle: '' });
+    expect(calls[1]!.body).toEqual({ accountId: 'b', name: 'Bob', publicId: '100000002', code: 'ABC123', equippedTitle: '', deck: [] });
+    expect(calls[5]!.body).toEqual({ accountId: 'a', name: 'Alice', publicId: '100000001', elo: 1234, equippedTitle: '', platform: '', deck: [] });
   });
 
   it('no baseUrl → available=false and no requests sent', () => {

@@ -170,7 +170,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(tile).toMatchObject({ type: 'territory', mine: true });
     expect(tile.garrison).toBeGreaterThan(0);
     const me = await svc.getMe(W, 'a');
-    expect(me.territoryCount).toBe(2);
+    expect(me.territoryCount).toBe(10); // ADR-025: 9 base footprint cells + 1 captured territory tile
     // Loot 25%: a +250 ink, b -250 → 750.
     expect(me.resources?.ink).toBe(Math.floor(1000 * SIEGE_LOOT_RATE));
     const bRes = (await svc.getMe(W, 'b')).resources;
@@ -188,19 +188,21 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
   it('attack territory loss: attacker committed fully destroyed + garrison reduced (no ownership transfer)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(NON_BLOCKING, 10, 5);
-    await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 800 });
+    // Defender garrison must be large enough that the engine leaves survivors after the attacker is destroyed
+    // (attacker 500 = siege minimum vs garrison 1000 → defender wins with garrison reduced but >0).
+    await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 1000 });
 
-    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 600);
-    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - 600); // troops deducted on march
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 500);
+    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - 500); // troops deducted on march
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    // Defender wins (attacker 600 < garrison 800, troop disadvantage → fully destroyed, no return march): attacker committed not returned to pool, garrison reduced but >0, tile still belongs to b.
-    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - 600);
+    // Defender wins (attacker 500 < garrison 1000, troop disadvantage → fully destroyed, no return march): attacker committed not returned to pool, garrison reduced but >0, tile still belongs to b.
+    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - 500);
     const tile = await svc.getTile(W, 'b', tgt.x, tgt.y);
     expect(tile.mine).toBe(true);
     expect(tile.garrison).toBeGreaterThan(0);
-    expect(tile.garrison).toBeLessThan(800);
+    expect(tile.garrison).toBeLessThan(1000);
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('defender_win');
   });
@@ -261,8 +263,8 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     await expect(svc.startMarch(W, 'a', 5, 5, free.x, free.y, 'attack', OCCUPY_MIN_TROOPS)).rejects.toMatchObject({
       code: 'TILE_NOT_OWNED',
     });
-    // Attack own territory → TILE_OCCUPIED.
-    const mine = findCoord((t) => t.type === 'resource', 6, 6);
+    // Attack own territory → TILE_OCCUPIED. Search clear of a's 3×3 base footprint (anchor (5,5) → (4,4)..(6,6)).
+    const mine = findCoord((t) => t.type === 'resource', 20, 20);
     await svc.occupyTile(W, 'a', mine.x, mine.y);
     await expect(svc.startMarch(W, 'a', 5, 5, mine.x, mine.y, 'attack', OCCUPY_MIN_TROOPS)).rejects.toMatchObject({
       code: 'TILE_OCCUPIED',

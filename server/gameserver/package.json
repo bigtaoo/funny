@@ -20,6 +20,7 @@
     "@bufbuild/buf": "^1.70.0",
     "@types/node": "^22.10.0",
     "@types/ws": "^8.5.13",
+    "protobufjs": "^8.6.5",
     "ts-proto": "^2.11.8",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

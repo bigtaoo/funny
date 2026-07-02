@@ -113,10 +113,13 @@ describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
     // a directly captures (12,11) (falls within obs's vision).
     await svc.occupyTile(W, 'a', 12, 11);
 
-    // obs can see this newly captured tile → receives tile_update.
+    // obs can see this newly captured tile → receives tile_update for that exact tile.
+    // (The tile_update payload identifies the tile by tileId and the occupier by ownerPublicId/ownerName;
+    // there is no raw ownerId field, and without a meta client the identity fields are empty — so we
+    // assert the push targeted a's freshly captured tile (12,11) rather than the occupier's accountId.)
     const obsTu = tileUpdatesTo('obs');
     expect(obsTu.length).toBeGreaterThan(0);
-    expect((obsTu[0]!.msg as { ownerId: string }).ownerId).toBe('a');
+    expect((obsTu[0]!.msg as { tileId: string }).tileId).toBe(`${W}:12:11`);
     // Capturer a does not receive a reverse push (capture is acknowledged via REST response; pushTileToObservers excludes the actor).
     expect(tileUpdatesTo('a')).toHaveLength(0);
     // Remote far cannot see the tile → not pushed.

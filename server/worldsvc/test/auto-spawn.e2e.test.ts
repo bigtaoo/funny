@@ -4,9 +4,10 @@
 //   Manual-coordinate path (internal/test) still works (covered by existing service.e2e tests).
 // Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { proceduralTile, tileId, SLG_MAP_W, SLG_MAP_H } from '@nw/shared';
+import { proceduralTile, tileId, SLG_MAP_W, SLG_MAP_H, type FamilyRole } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
+import type { WorldSocialsvcClient, SocialsvcChannel, FamilyMembership, FamilySummary } from '../src/socialsvcClient';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_autospawn_test';
@@ -27,6 +28,71 @@ async function tryConnect(): Promise<WorldMongo | null> {
 const mongo = await tryConnect();
 if (!mongo) {
   console.warn(`[worldsvc.autospawn.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
+}
+
+/**
+ * In-process fake of socialsvc's family store (P4 follow-up: family identity/roster now live there, not in worldsvc).
+ * Auto-spawn-near-family resolves members via PlayerWorldDoc.familyId (mirrored on joinWorld from getFamilyId), so
+ * tests register membership here before calling joinWorld for each member.
+ */
+class FakeSocialsvc implements WorldSocialsvcClient {
+  available = true;
+  private families = new Map<string, FamilySummary & { activity: number }>();
+  private memberRole = new Map<string, { familyId: string; role: FamilyRole }>();
+
+  addFamily(familyId: string, leaderId: string, name: string, tag: string): string {
+    this.families.set(familyId, {
+      familyId, name, tag: tag.toUpperCase(), leaderId, memberCount: 1,
+      prosperity: 0, prosperityUpdatedAt: 0, activity: 0,
+    });
+    this.memberRole.set(leaderId, { familyId, role: 'leader' });
+    return familyId;
+  }
+
+  addMember(accountId: string, familyId: string): void {
+    this.memberRole.set(accountId, { familyId, role: 'member' });
+    const f = this.families.get(familyId);
+    if (f) f.memberCount += 1;
+  }
+
+  async getFamilyId(accountId: string): Promise<string | null> {
+    return this.memberRole.get(accountId)?.familyId ?? null;
+  }
+
+  async getMember(accountId: string): Promise<FamilyMembership | null> {
+    const m = this.memberRole.get(accountId);
+    if (!m) return null;
+    const f = this.families.get(m.familyId);
+    if (!f) return null;
+    return { familyId: m.familyId, role: m.role, leaderId: f.leaderId, name: f.name, tag: f.tag, memberCount: f.memberCount };
+  }
+
+  async getFamiliesByIds(familyIds: string[]): Promise<FamilySummary[]> {
+    return familyIds.map((id) => this.families.get(id)).filter((f): f is FamilySummary & { activity: number } => !!f)
+      .map((f) => ({ ...f }));
+  }
+
+  async getFamiliesBySect(sid: string): Promise<FamilySummary[]> {
+    return [...this.families.values()].filter((f) => f.sectId === sid).map((f) => ({ ...f }));
+  }
+
+  async setSect(familyId: string, sid: string | null): Promise<void> {
+    const f = this.families.get(familyId);
+    if (!f) return;
+    if (sid) f.sectId = sid;
+    else delete f.sectId;
+  }
+
+  async bumpActivity(familyId: string, delta: number): Promise<void> {
+    const f = this.families.get(familyId);
+    if (f) f.activity += delta;
+  }
+
+  async refreshProsperity(): Promise<number> { return 0; }
+  async resetSlgState(): Promise<void> { /* not exercised here */ }
+  async push(_channel: SocialsvcChannel, _event: string, _payload: unknown, _targets?: string[]): Promise<void> {
+    /* not exercised here */
+  }
 }
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
@@ -66,14 +132,17 @@ describe.skipIf(!mongo)('worldsvc auto-spawn e2e', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
   let svc: WorldService;
+  let socialsvc: FakeSocialsvc;
 
   beforeEach(async () => {
     await m.db.dropDatabase();
     await m.ensureIndexes();
     nowMs = 1_000_000;
+    socialsvc = new FakeSocialsvc();
     svc = new WorldService({
       cols: m.collections,
       redis: null,
+      socialsvc,
       mapW: SLG_MAP_W,
       mapH: SLG_MAP_H,
       now: () => nowMs,
@@ -103,16 +172,15 @@ describe.skipIf(!mongo)('worldsvc auto-spawn e2e', () => {
   });
 
   it('has family, first join: auto-spawns near a family member\'s main base (Chebyshev ≤ radius), no overlap', async () => {
-    // Place an existing family member's main base at an explicit coordinate to simulate a pre-existing member.
-    const mateSpot = findPlaceable(1100, 1100);
-    await svc.joinWorld(W, 'mate', mateSpot.x, mateSpot.y);
-
-    // Put both players in the same family (written directly to familyMembers, bypassing family business logic — testing spawn placement only).
+    // Put both players in the same family (registered in socialsvc, bypassing family business logic — testing spawn
+    // placement only). joinWorld mirrors familyId onto each PlayerWorldDoc, which pickSpawnTile reads to find mates.
     const familyId = `f:${W}:FAM`;
-    await m.collections.familyMembers.insertMany([
-      { _id: `${W}:mate`, worldId: W, accountId: 'mate', familyId, role: 'leader', joinedAt: nowMs },
-      { _id: `${W}:newbie`, worldId: W, accountId: 'newbie', familyId, role: 'member', joinedAt: nowMs },
-    ]);
+    socialsvc.addFamily(familyId, 'mate', 'FAM', 'FM');
+    socialsvc.addMember('newbie', familyId);
+
+    // Place an existing family member's main base at an explicit coordinate to simulate a pre-existing member.
+    const mateSpot = findPlaceable(110, 110); // in-bounds interior spot away from the contested center (150,150)
+    await svc.joinWorld(W, 'mate', mateSpot.x, mateSpot.y);
 
     const me = await svc.joinWorld(W, 'newbie'); // no coordinates passed
     expect(me.joined).toBe(true);
@@ -128,13 +196,12 @@ describe.skipIf(!mongo)('worldsvc auto-spawn e2e', () => {
   });
 
   it('auto-spawn avoids occupied tiles: a member\'s main base tile is never overwritten by a newcomer', async () => {
-    const mateSpot = findPlaceable(1200, 1200);
-    await svc.joinWorld(W, 'mate', mateSpot.x, mateSpot.y);
     const familyId = `f:${W}:FAM2`;
-    await m.collections.familyMembers.insertMany([
-      { _id: `${W}:mate`, worldId: W, accountId: 'mate', familyId, role: 'leader', joinedAt: nowMs },
-      { _id: `${W}:newbie`, worldId: W, accountId: 'newbie', familyId, role: 'member', joinedAt: nowMs },
-    ]);
+    socialsvc.addFamily(familyId, 'mate', 'FAM2', 'F2');
+    socialsvc.addMember('newbie', familyId);
+
+    const mateSpot = findPlaceable(120, 120); // in-bounds interior spot away from the contested center (150,150)
+    await svc.joinWorld(W, 'mate', mateSpot.x, mateSpot.y);
 
     const me = await svc.joinWorld(W, 'newbie');
     const { x, y } = parseTile(me.mainBaseTile!);
@@ -150,6 +217,6 @@ describe.skipIf(!mongo)('worldsvc auto-spawn e2e', () => {
     const base1 = first.mainBaseTile;
     const second = await svc.joinWorld(W, 'solo');
     expect(second.mainBaseTile).toBe(base1);
-    expect(second.territoryCount).toBe(1);
+    expect(second.territoryCount).toBe(9); // ADR-025: a capital is a 3×3 footprint (anchor + 8 ring tiles)
   });
 });

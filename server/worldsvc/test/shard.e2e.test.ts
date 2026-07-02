@@ -6,7 +6,9 @@
 //   • resolveShardForJoin (via resolveSeasonShard): sticky > family lookup > least-populated open shard > overflow opens new shard ($inc shardCount).
 //   • patrolShardIsolation: cross-shard marches / dual-login players / orphan tiles are flagged; clean DB returns all zeros.
 //   • admin /admin/world/{allocate,patrol} gated by X-Internal-Key.
-// Requires `cd server && docker compose up -d`.
+// Family identity/roster now lives in socialsvc (P4 migration): the previous-season sect roster is read from
+// seasonResults.ranking[].memberFamilyIds, prev-season population + loose (sect-less) families are read from
+// PlayerWorldDoc, and the join-time family lookup reads PlayerWorldDoc.familyId — no worldsvc-local families collection.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
@@ -17,7 +19,7 @@ import {
 import { ENGINE_VERSION } from '@nw/engine';
 import {
   createWorldMongo, type WorldMongo,
-  type WorldDoc, type FamilyDoc, type FamilyMemberDoc, type SeasonResultDoc, type PlayerWorldDoc, type MarchDoc, type TileDoc,
+  type SeasonResultDoc, type PlayerWorldDoc, type MarchDoc, type TileDoc,
 } from '../src/db';
 import { WorldService } from '../src/service';
 import { startHttpApi } from '../src/httpApi';
@@ -37,6 +39,17 @@ async function tryConnect(): Promise<WorldMongo | null> {
 
 const mongo = await tryConnect();
 if (!mongo) console.warn(`[worldsvc.shard.e2e] Mongo unreachable (${URI}) — skipping.`);
+
+// A minimal PlayerWorldDoc factory (the join-time family lookup + population count read this collection, not a families mirror).
+function pwDoc(wid: string, acct: string, familyId?: string): PlayerWorldDoc {
+  return {
+    _id: playerWorldId(wid, acct), worldId: wid, accountId: acct,
+    troops: 0, troopCap: 0,
+    resources: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
+    yieldRate: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
+    lastTickAt: 1, ...(familyId ? { familyId } : {}), rev: 0,
+  };
+}
 
 // ── Pure-function unit tests (no Mongo dependency) ────────────────────────────────
 describe('G6 shard pure functions (§20.3)', () => {
@@ -64,8 +77,7 @@ describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
   async function wipe(): Promise<void> {
     const c = m.collections;
     await Promise.all([
-      c.worlds.deleteMany({}), c.families.deleteMany({}), c.familyMembers.deleteMany({}),
-      c.seasonResults.deleteMany({}), c.shardAllocations.deleteMany({}),
+      c.worlds.deleteMany({}), c.seasonResults.deleteMany({}), c.shardAllocations.deleteMany({}),
       c.playerWorld.deleteMany({}), c.marches.deleteMany({}), c.tiles.deleteMany({}), c.nations.deleteMany({}),
     ]);
   }
@@ -86,20 +98,17 @@ describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
 
   it('allocate subsequent season: snake-draft opens N shards + same-sect families in same shard + stray families fill gaps', async () => {
     // Previous season s1-0: two sects SA (rank1, families fa1/fa2 strong) / SB (rank2, family fb1) + one stray family fl1.
-    const fam = (id: string, sectId?: string): FamilyDoc => ({
-      _id: id, worldId: 's1-0', name: id, tag: id.toUpperCase(), leaderId: `${id}-lead`,
-      memberCount: 1, territoryCount: 1, prosperity: 100, ...(sectId ? { sectId } : {}), rev: 1,
-    });
-    await m.collections.families.insertMany([fam('fa1', 'SA'), fam('fa2', 'SA'), fam('fb1', 'SB'), fam('fl1')]);
-    // 4 members (capacity=2 → shardCount=ceil(4/2)=2).
-    const mem = (acct: string, famId: string): FamilyMemberDoc => ({
-      _id: `s1-0:${acct}`, worldId: 's1-0', accountId: acct, familyId: famId, role: 'leader', joinedAt: 1,
-    });
-    await m.collections.familyMembers.insertMany([mem('a1', 'fa1'), mem('a2', 'fa2'), mem('b1', 'fb1'), mem('l1', 'fl1')]);
+    // The sect roster is read from seasonResults.ranking[].memberFamilyIds; population + the stray (sect-less) family
+    // are read from PlayerWorldDoc (worldsvc no longer keeps a families/familyMembers mirror — P4 → socialsvc).
     await m.collections.worlds.insertOne({
       _id: 's1-0', season: 1, shard: 0, status: 'closed', mapW: SLG_MAP_W, mapH: SLG_MAP_H,
       openAt: 1, capacity: 10000, population: 4, engineVersion: ENGINE_VERSION, rev: 1,
     });
+    // 4 players (capacity=2 → shardCount=ceil(4/2)=2); fl1 belongs to a family in no sect → stray fill-in.
+    await m.collections.playerWorld.insertMany([
+      pwDoc('s1-0', 'a1', 'fa1'), pwDoc('s1-0', 'a2', 'fa2'),
+      pwDoc('s1-0', 'b1', 'fb1'), pwDoc('s1-0', 'l1', 'fl1'),
+    ]);
     const ranking: SeasonResultDoc['ranking'] = [
       { rank: 1, scope: 'sect', id: 'SA', nationCount: 5, capitalIdxs: [0, 1, 2, 3, 4], prosperity: 200, memberFamilyIds: ['fa1', 'fa2'], tier: 'champion' },
       { rank: 2, scope: 'sect', id: 'SB', nationCount: 1, capitalIdxs: [5], prosperity: 100, memberFamilyIds: ['fb1'], tier: 'top10' },
@@ -126,12 +135,7 @@ describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
   it('resolve sticky: player already has a playerWorld this season → returns same shard', async () => {
     await svc.openSeason('s3-0', 3, 0, 10000);
     await svc.openSeason('s3-1', 3, 1, 10000);
-    const pw: PlayerWorldDoc = {
-      _id: playerWorldId('s3-1', 'sticky'), worldId: 's3-1', accountId: 'sticky',
-      troops: 100, troopCap: 100, resources: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 }, yieldRate: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
-      lastTickAt: 1, rev: 0,
-    };
-    await m.collections.playerWorld.insertOne(pw);
+    await m.collections.playerWorld.insertOne(pwDoc('s3-1', 'sticky'));
     expect((await svc.resolveSeasonShard(3, 'sticky')).worldId).toBe('s3-1');
   });
 
@@ -141,10 +145,9 @@ describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
     await m.collections.shardAllocations.insertOne({
       _id: 's4', season: 4, shardCount: 2, capacity: 10000, familyShard: { 'famX': 1 }, createdAt: 1,
     });
-    // Family members from previous season s3-* (both accounts in famX).
-    await m.collections.familyMembers.insertMany([
-      { _id: 's3-0:p1', worldId: 's3-0', accountId: 'p1', familyId: 'famX', role: 'leader', joinedAt: 1 },
-      { _id: 's3-0:p2', worldId: 's3-0', accountId: 'p2', familyId: 'famX', role: 'member', joinedAt: 1 },
+    // Previous-season (s3-*) membership is read from PlayerWorldDoc.familyId (both accounts in famX).
+    await m.collections.playerWorld.insertMany([
+      pwDoc('s3-0', 'p1', 'famX'), pwDoc('s3-0', 'p2', 'famX'),
     ]);
     expect((await svc.resolveSeasonShard(4, 'p1')).worldId).toBe('s4-1');
     expect((await svc.resolveSeasonShard(4, 'p2')).worldId).toBe('s4-1'); // same family → same shard
@@ -180,12 +183,7 @@ describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
     };
     await m.collections.marches.insertOne(badMarch);
     // Dual-login player: playerWorld exists in both shards of season 7.
-    const pw = (wid: string): PlayerWorldDoc => ({
-      _id: playerWorldId(wid, 'dual'), worldId: wid, accountId: 'dual',
-      troops: 1, troopCap: 1, resources: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 }, yieldRate: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
-      lastTickAt: 1, rev: 0,
-    });
-    await m.collections.playerWorld.insertMany([pw('s7-0'), pw('s7-1')]);
+    await m.collections.playerWorld.insertMany([pwDoc('s7-0', 'dual'), pwDoc('s7-1', 'dual')]);
     // Orphan tile: _id prefix does not match worldId field.
     const orphan: TileDoc = { _id: 's7-9:3:3', worldId: 's7-0', x: 3, y: 3, type: 'neutral', level: 1, rev: 0 };
     await m.collections.tiles.insertOne(orphan);

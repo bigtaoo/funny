@@ -16,6 +16,8 @@ import {
   RESOURCE_CAP,
   buildCost,
   buildTimeSec,
+  baseFootprintCells,
+  baseFootprintInBounds,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
@@ -36,20 +38,22 @@ async function tryConnect(): Promise<WorldMongo | null> {
 const mongo = await tryConnect();
 if (!mongo) console.warn(`[worldsvc.city.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 
-const CENTER_X = Math.floor(SLG_MAP_W / 2);
-const CENTER_Y = Math.floor(SLG_MAP_H / 2);
-
-/** Find a spawnable tile (avoids center/obstacle/gate). */
+/**
+ * Find a spawnable capital anchor (ADR-025): the whole 3×3 footprint must be in-bounds
+ * and free of center/obstacle/gate/stronghold procedural terrain (mirrors joinWorld's footprintFree).
+ */
 function findCoord(sx: number, sy: number): { x: number; y: number } {
   for (let r = 0; r < 80; r++) {
     for (let dx = -r; dx <= r; dx++) {
       for (let dy = -r; dy <= r; dy++) {
         const x = sx + dx;
         const y = sy + dy;
-        if (x < 0 || y < 0 || x >= SLG_MAP_W || y >= SLG_MAP_H) continue;
-        if (x === CENTER_X && y === CENTER_Y) continue;
-        const t = proceduralTile(W, x, y);
-        if (t.type !== 'obstacle' && t.type !== 'gate' && t.type !== 'center') return { x, y };
+        if (!baseFootprintInBounds(x, y, SLG_MAP_W, SLG_MAP_H)) continue;
+        const blocked = baseFootprintCells(x, y).some((c) => {
+          const t = proceduralTile(W, c.x, c.y);
+          return t.type === 'center' || t.type === 'obstacle' || t.type === 'gate' || t.type === 'stronghold';
+        });
+        if (!blocked) return { x, y };
       }
     }
   }

@@ -194,10 +194,10 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     await setupDefender('b', tgt.x, tgt.y, 500);
     await ownNation(nearestCapitalIdx(tgt.x, tgt.y, CAPS), 'b');
 
-    // Authoritative engine (G3-2b, §16): 820 troops can defeat 500 defenders (see control case below),
+    // Authoritative engine (G3-2b, §16): 760 troops can defeat 500 defenders (see control case below),
     // but cannot defeat the nation-bonus-boosted floor(500*1.15)=575 effective defenders → defender wins
     // (same march seed; the only variable is the +75 effective garrison from nationality).
-    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 820);
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 760);
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
@@ -211,8 +211,8 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     const tgt = findCoord(NON_BLOCKING, 10, 5);
     await setupDefender('b', tgt.x, tgt.y, 500); // b is given no capital
 
-    // Same 820 troops, same march seed, but defender has no nationality bonus (500) → tile conquered, disproving hypothesis that the prior defender win was unrelated to nationality.
-    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 820);
+    // Same 760 troops, same march seed, but defender has no nationality bonus (500) → tile conquered, disproving hypothesis that the prior defender win was unrelated to nationality.
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 760);
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 

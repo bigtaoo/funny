@@ -119,7 +119,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     expect(tile).toMatchObject({ type: 'territory', mine: true, occupied: true, garrison: OCCUPY_MIN_TROOPS });
 
     const me = await svc.getMe(W, 'a');
-    expect(me.territoryCount).toBe(2);
+    expect(me.territoryCount).toBe(10); // ADR-025: 9 base footprint cells + 1 marched-and-occupied tile
     // Troops converted to garrison; pool unchanged (still deducted).
     expect(me.troops).toBe(TROOP_CAP_BASE - OCCUPY_MIN_TROOPS);
     const rt = procT.resType!;

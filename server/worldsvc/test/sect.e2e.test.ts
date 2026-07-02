@@ -112,8 +112,10 @@ class FakeSocialsvc implements WorldSocialsvcClient {
     delete f.sectId;
   }
 
-  async push(_channel: SocialsvcChannel, _event: string, _payload: unknown, _targets?: string[]): Promise<void> {
-    /* sect real-time push targets are asserted via WorldGatewayClient.broadcast, not this path, in these tests */
+  /** Test sink: sect real-time fan-out now flows through socialsvc.push (preferred path when available); tests capture it here. */
+  onPush?: (event: string, payload: unknown, targets?: string[]) => void;
+  async push(_channel: SocialsvcChannel, event: string, payload: unknown, targets?: string[]): Promise<void> {
+    this.onPush?.(event, payload, targets);
   }
 }
 
@@ -129,8 +131,9 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     async grant(accountId, amount) { grants.push({ accountId, amount }); },
   };
 
-  // Capture sect channel fan-out (broadcast recipients + message) to assert real-time push targets are correct.
-  const broadcasts: Array<{ recipients: string[]; kind: string; body?: string }> = [];
+  // Capture sect channel fan-out (recipients + message) to assert real-time push targets are correct.
+  // Fan-out flows through socialsvc.push (preferred) or gateway.broadcast (fallback); both feed this array.
+  const broadcasts: Array<{ recipients: string[]; kind: string; body?: string; fromPublicId?: string }> = [];
   const fakeGateway: WorldGatewayClient = {
     available: true,
     async push() { /* sect does not use targeted push */ },
@@ -151,6 +154,10 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     grants.length = 0;
     broadcasts.length = 0;
     socialsvc = new FakeSocialsvc();
+    socialsvc.onPush = (event, payload, targets) => {
+      const p = payload as { body?: string; fromPublicId?: string };
+      broadcasts.push({ recipients: targets ?? [], kind: event, body: p.body, fromPublicId: p.fromPublicId });
+    };
     sect = new SectService({ cols, commercial, gateway: fakeGateway, socialsvc, now: () => Date.now() });
   });
 

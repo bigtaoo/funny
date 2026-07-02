@@ -21,6 +21,8 @@ import {
   SLG_MAP_W,
   SLG_MAP_H,
   TROOP_CAP_BASE,
+  baseFootprintCells,
+  baseFootprintInBounds,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
@@ -42,9 +44,6 @@ async function tryConnect(): Promise<WorldMongo | null> {
 const mongo = await tryConnect();
 if (!mongo) console.warn(`[worldsvc.stronghold.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 
-const CENTER_X = Math.floor(SLG_MAP_W / 2);
-const CENTER_Y = Math.floor(SLG_MAP_H / 2);
-
 /** Scan the entire map to find the first stronghold tile (procedural, deterministic). */
 function findStronghold(): { x: number; y: number; level: number } {
   for (let y = 0; y < SLG_MAP_H; y++) {
@@ -56,18 +55,23 @@ function findStronghold(): { x: number; y: number; level: number } {
   throw new Error('no stronghold tile in world (check SLG_GEN.stronghold* parameters)');
 }
 
-/** Nearest placeable/reachable tile adjacent to the stronghold (not obstacle/gate/center/stronghold), used as the attacker's base placement. */
+/**
+ * Nearest placeable capital anchor near the stronghold (ADR-025): the whole 3×3 footprint must be in-bounds
+ * and clear of center/obstacle/gate/stronghold (mirrors joinWorld's footprintFree). The footprint constraint
+ * naturally keeps the base's cells from overlapping the stronghold-under-test.
+ */
 function findNearbyBase(sx: number, sy: number): { x: number; y: number } {
   for (let r = 1; r < 60; r++) {
     for (let dx = -r; dx <= r; dx++) {
       for (let dy = -r; dy <= r; dy++) {
         const x = sx + dx;
         const y = sy + dy;
-        if (x < 0 || y < 0 || x >= SLG_MAP_W || y >= SLG_MAP_H) continue;
-        if (x === CENTER_X && y === CENTER_Y) continue;
-        const t = proceduralTile(W, x, y);
-        if (t.type === 'obstacle' || t.type === 'gate' || t.type === 'center' || t.type === 'stronghold') continue;
-        return { x, y };
+        if (!baseFootprintInBounds(x, y, SLG_MAP_W, SLG_MAP_H)) continue;
+        const blocked = baseFootprintCells(x, y).some((c) => {
+          const t = proceduralTile(W, c.x, c.y);
+          return t.type === 'center' || t.type === 'obstacle' || t.type === 'gate' || t.type === 'stronghold';
+        });
+        if (!blocked) return { x, y };
       }
     }
   }
@@ -98,6 +102,7 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     async deductMaterial() { /* stronghold does not deduct materials */ },
     async grantMaterial(accountId, material, qty, orderId) { matGrants.push({ accountId, material, qty, orderId }); },
     async getProfile() { return null; },
+    async getSaveFields() { return null; }, // no equipment snapshot → siege engine degrades to plain troop math (E8)
   };
 
   const sh = findStronghold();
@@ -173,7 +178,7 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     expect(tile).toMatchObject({ type: 'territory', mine: true });
     expect(tile.garrison).toBeGreaterThan(0);
     const me = await svc.getMe(W, 'a');
-    expect(me.territoryCount).toBe(2); // home base + captured stronghold
+    expect(me.territoryCount).toBe(10); // ADR-025: 3×3 capital (9 tiles) + captured stronghold (1)
 
     // One-time rich reward credited (based on tile level × resource kind).
     const proc = proceduralTile(W, sh.x, sh.y);
@@ -214,7 +219,7 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     expect(raw?.ownerId).toBeUndefined();
 
     const me = await svc.getMe(W, 'a');
-    expect(me.territoryCount).toBe(1); // home base only
+    expect(me.territoryCount).toBe(9); // ADR-025: 3×3 capital only (9 tiles), stronghold not captured
     // No reward (resources settled from own production only, no plunder).
     const proc2 = proceduralTile(W, sh.x, sh.y);
     const rt = proc2.resType ?? 'ink';

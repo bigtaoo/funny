@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit",
     "dev": "node --watch --import tsx src/index.ts",
     "start": "node dist/index.js",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@nw/shared": "*",

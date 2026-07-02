@@ -33,9 +33,11 @@ async function tryConnect(): Promise<WorldMongo | null> {
 const mongo = await tryConnect();
 if (!mongo) console.warn(`[worldsvc.card-slg.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 
-// Minimal card-based army (defId must match a real CARD_DEFS key; 'scholar' maps to Infantry in cards.ts).
-function cardArmy(cardInstanceId: string): TeamTemplate['army'] {
-  return [{ cardInstanceId, col: 0, row: 1 }];
+// Minimal card-based army entry. CC-3 keeps cardInstanceId (engine derives the real unit at siege time),
+// but the formation validator (levelSchema, via setTeams → validateAttackerArmy) still requires a valid
+// unitType string + attack-lane col + combat-zone row. 'infantry' is a valid UnitType.
+function cardEntry(cardInstanceId: string, col = 0, row = 1): TeamTemplate['army'][number] {
+  return { cardInstanceId, unitType: 'infantry', col, row };
 }
 
 describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
@@ -91,8 +93,8 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
   it('setTeams with cardInstanceId — validates uniqueness across teams', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const teams: TeamTemplate[] = [
-      { id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'card-1', col: 0, row: 1 }] },
-      { id: 't2', name: 'Beta', army: [{ cardInstanceId: 'card-2', col: 0, row: 1 }] },
+      { id: 't1', name: 'Alpha', army: [cardEntry('card-1')] },
+      { id: 't2', name: 'Beta', army: [cardEntry('card-2')] },
     ];
     await svc.setTeams(W, 'a', teams);
     const pw = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
@@ -100,17 +102,20 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
 
     // Same card in two teams → rejected.
     await expect(svc.setTeams(W, 'a', [
-      { id: 't1', name: 'A', army: [{ cardInstanceId: 'card-1', col: 0, row: 1 }] },
-      { id: 't2', name: 'B', army: [{ cardInstanceId: 'card-1', col: 1, row: 1 }] },
+      { id: 't1', name: 'A', army: [cardEntry('card-1')] },
+      { id: 't2', name: 'B', army: [cardEntry('card-1', 1)] },
     ])).rejects.toThrow('multiple teams');
   });
 
   it('setTeams rejects team exceeding CARD_TEAM_MAX_SIZE', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
+    // 13 > CARD_TEAM_MAX_SIZE (12). Entries use valid unitType/lanes so the size cap is what rejects it.
+    const lanes = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11];
     const bigArmy = Array.from({ length: 13 }, (_, i) => ({
       cardInstanceId: `card-${i}`,
-      col: i % 12,
-      row: 1,
+      unitType: 'infantry',
+      col: lanes[i % lanes.length]!,
+      row: 1 + Math.floor(i / lanes.length),
     }));
     await expect(svc.setTeams(W, 'a', [{ id: 't1', name: 'BigTeam', army: bigArmy }])).rejects.toThrow('max size');
   });
@@ -118,7 +123,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
   it('setTeams updates cardState.teamId for assigned cards', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.setTeams(W, 'a', [
-      { id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'card-x', col: 0, row: 1 }] },
+      { id: 't1', name: 'Alpha', army: [cardEntry('card-x')] },
     ]);
     const pw = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
     expect(pw?.cardState?.['card-x']?.teamId).toBe('t1');
@@ -134,7 +139,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     );
     // Remove card by saving new teams that don't include it.
     await svc.setTeams(W, 'a', [
-      { id: 't2', name: 'New', army: [{ cardInstanceId: 'card-z', col: 0, row: 1 }] },
+      { id: 't2', name: 'New', army: [cardEntry('card-z')] },
     ]);
     const pw = await m.collections.playerWorld.findOne({ _id: pwId });
     expect(pw?.cardState?.['card-y']?.currentTroops).toBe(0);
@@ -182,7 +187,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
       { $set: { 'cardState.card-inj': { currentTroops: 50, injuredUntil } as CardSLGState } },
     );
     await expect(svc.setTeams(W, 'a', [
-      { id: 't1', name: 'Injured', army: [{ cardInstanceId: 'card-inj', col: 0, row: 1 }] },
+      { id: 't1', name: 'Injured', army: [cardEntry('card-inj')] },
     ])).rejects.toThrow('injured');
   });
 
