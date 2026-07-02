@@ -1252,6 +1252,51 @@ export const SIEGE_UNIT_HP_MIN_FRACTION = 0.25;
  */
 export const SIEGE_UNIT_HP_STEPS = 4;
 
+// ── ADR-026: building HP + wave defenders + siege-value delayed settlement ────────────────
+//
+// Universal building-attack model (main base / level / city / stronghold): every attackable building has HP;
+// in-base, non-injured teams defend in waves (t1→t5) with attacker survivor carry-over; clearing all defenders
+// (or none present) schedules a delayed HP hit equal to the attacking team's siege value; HP→0 captures the building.
+// Numbers below are DRAFT placeholders (siege-value detail deferred to a dedicated session; economy pass pending).
+
+/** Building max HP per level: `maxHp = level × SLG_BASE_HP_PER_LEVEL` (main base lv1 = 100 ⇒ ~3–4 sieges at ~30/hit). [DRAFT → economy pass] */
+export const SLG_BASE_HP_PER_LEVEL = 100;
+
+/**
+ * 攻城值 (siege value) is a NEW per-card attribute, same tier as attack / move-speed (owner decision 2026-07-02).
+ * A team's siege value = sum of each of its cards' 攻城值. v1 placeholder: every card contributes this uniform value
+ * (real per-card/per-level values are designed in a dedicated session). A real team always has cards → value is always > 0;
+ * the only "no building damage" case is the attacker being wiped, which is already a defender win (no hit scheduled). [DRAFT]
+ */
+export const SLG_SIEGE_VALUE_PER_CARD = 10;
+
+/** Delay (ms) between an attacker clearing the garrison and the building-HP hit being settled (ADR-026 §4; "5-minute" rule). [DRAFT] */
+export const SLG_SIEGE_DAMAGE_DELAY_MS = 5 * 60 * 1000;
+
+/** Team-level injury lock (ms) applied to a defending team that loses a wave; injured teams never defend until healed (ADR-026 §5). [DRAFT] */
+export const SLG_TEAM_INJURY_MS = 10 * 60 * 1000;
+
+/** Building max HP from its level (ADR-026 §1). Floors at 1 so every building is destructible in finite hits. */
+export function buildingMaxHp(level: number): number {
+  return Math.max(1, Math.floor((Math.max(0, Math.floor(level)) || 0) * SLG_BASE_HP_PER_LEVEL) || SLG_BASE_HP_PER_LEVEL);
+}
+
+/**
+ * A team's siege value = sum of each card's 攻城值 attribute (ADR-026 §4; a per-card stat, same tier as attack/speed).
+ * v1 placeholder: each card contributes SLG_SIEGE_VALUE_PER_CARD. Only entries with a cardInstanceId count.
+ * Real teams always contain cards → value is always > 0 (legacy card-less synthesized entries, used only in tests, contribute 0).
+ */
+export function teamSiegeValue(army: ReadonlyArray<{ cardInstanceId?: string }>): number {
+  let n = 0;
+  for (const e of army) if (e.cardInstanceId) n++;
+  return n * SLG_SIEGE_VALUE_PER_CARD;
+}
+
+/** Deterministic per-wave seed (ADR-026 §3): folds the wave index into the march's siege seed so each wave is uniquely and reproducibly determined. */
+export function waveSeed(marchId: string, waveIndex: number): number {
+  return siegeSeedFromId(`${marchId}#${waveIndex}`);
+}
+
 /**
  * Normalizes a defense config into a complete siege level object. `config` is the defender's customization (nullable); `tileLevel` is used to
  * derive a symbolic base-level defense when no customization is provided. Returns an object shaped like the client's LevelDefinition (loose object; avoids duplicating the engine schema in shared).

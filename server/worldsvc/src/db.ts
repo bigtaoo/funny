@@ -83,6 +83,11 @@ export interface TileDoc {
   familyId?: string;
   defense?: DefenseConfig; // territory defense (P5, embedded)
   garrison?: number;
+  /**
+   * ADR-026: building HP. On a main-base anchor this is the whole capital's HP; on territory/level/stronghold tiles it is that building's HP.
+   * Absent = full (derive from buildingMaxHp(level) on read/first hit). A successful siege deducts the attacker team's siege value; HP≤0 → captured.
+   */
+  hp?: number;
   protectedUntil?: number; // ms
   watchtower?: boolean; // watchtower (§18 G5 V2): once built, this tile becomes a large-radius persistent vision source; lost together with TileDoc when tile is lost
   /** ADR-025: true on the 8 non-anchor cells of a 3×3 main-base footprint (the anchor omits this). Ring cells hold ownerId + protection but no garrison/yield. */
@@ -121,6 +126,11 @@ export interface PlayerWorldDoc {
   mainBaseTile?: string;
   defense?: DefenseConfig; // main base defense (P5, embedded)
   teams?: TeamTemplate[];  // attack formation templates (G3-2c, ≤ SIEGE_TEAM_CAP teams)
+  /**
+   * ADR-026: per-team defence run-time state. A team that loses a defensive wave is marked injured (injuredUntil = now + SLG_TEAM_INJURY_MS)
+   * and never defends until healed. Keyed by team id ('t1'..'t5'). Distinct from CC-3 card-level cardState[].injuredUntil.
+   */
+  teamState?: Record<string, { injuredUntil?: number }>;
   familyId?: string;
   trainingQueue?: TrainingEntry[]; // training queue (S8-2, ≤ TROOP_TRAIN_QUEUE_MAX entries)
   hasBattlePass?: boolean;         // current season battle pass (S8-8, cleared on season reset)
@@ -145,6 +155,8 @@ export interface MarchDoc {
   troops: number;
   /** Attacker formation snapshot (G3-2c, copied from TeamTemplate.army when attaching a team; the team can be edited after marching without affecting troops already en route). */
   army?: ArmyEntry[];
+  /** ADR-026: which team slot ('t1'..'t5') this march deployed. A team referenced by an active (non-recalled) march is "out" and skipped as a defender. */
+  teamId?: string;
   departAt: number;
   arriveAt: number;
   status: 'marching' | 'arrived' | 'recalled';
@@ -279,6 +291,24 @@ export interface SiegeDoc {
   tileLevel?: number;
 }
 
+/**
+ * ADR-026: pending delayed building-HP hit. Written when an attacker clears a building's garrison (wave battle won, or no defenders present);
+ * the scheduler settles it at `dueAt` (= win time + SLG_SIEGE_DAMAGE_DELAY_MS), deducting `damage` from the target building's HP and capturing it at HP≤0.
+ * Idempotent by _id (siegeId of the winning siege). Deleted after settlement.
+ */
+export interface SiegeDamageDoc {
+  _id: string;          // = siegeId of the victorious siege (idempotency key)
+  worldId: string;
+  attackerId: string;
+  defenderId?: string;  // building owner (absent for ownerless PvE buildings)
+  tile: string;         // target building tile (anchor for a main base)
+  isBase: boolean;      // true → main base (HP≤0 triggers passiveRelocate); false → territory/level tile (HP≤0 → hand over)
+  damage: number;       // attacking team's siege value to subtract from building HP
+  attackerSurvivors: number; // attacker surviving troops, refunded / used as new garrison on capture
+  familyId?: string;    // attacker family (activity/nation bookkeeping at settlement)
+  dueAt: number;        // ms; scheduler settles when now ≥ dueAt
+}
+
 /** Nation document (S8-6.5). One record per capital; ownerId/nationName absent when unclaimed. */
 export interface NationDoc {
   _id: string;            // `nation:{worldId}:{capitalIdx}`
@@ -342,6 +372,7 @@ export interface WorldCollections {
   auctionDaily: Collection<AuctionDailyDoc>;
   auctionPrices: Collection<AuctionPriceDoc>;
   sieges: Collection<SiegeDoc>;
+  siegeDamage: Collection<SiegeDamageDoc>;
   nations: Collection<NationDoc>;
   seasonResults: Collection<SeasonResultDoc>;
   shardAllocations: Collection<ShardAllocationDoc>;
@@ -385,6 +416,7 @@ export async function createWorldMongo(
     auctionDaily: db.collection<AuctionDailyDoc>('auctionDaily'),
     auctionPrices: db.collection<AuctionPriceDoc>('auctionPrices'),
     sieges: db.collection<SiegeDoc>('sieges'),
+    siegeDamage: db.collection<SiegeDamageDoc>('siegeDamage'),
     nations: db.collection<NationDoc>('nations'),
     seasonResults: db.collection<SeasonResultDoc>('seasonResults'),
     shardAllocations: db.collection<ShardAllocationDoc>('shardAllocations'),
@@ -423,6 +455,9 @@ export async function createWorldMongo(
     // G Price sliding window: _id = `${worldId}:${category}` direct lookup, no additional index needed (primary key sufficient).
     await collections.sieges.createIndex({ worldId: 1, ts: -1 });
     await collections.sieges.createIndex({ attackerId: 1 });
+    // ADR-026: delayed building-HP settlement scan (mirrors marches.arriveAt: due-time polling; Redis ZSET optional later).
+    await collections.siegeDamage.createIndex({ dueAt: 1 });
+    await collections.siegeDamage.createIndex({ tile: 1 });
     // Nation: unique by capital index within worldId
     await collections.nations.createIndex({ worldId: 1, capitalIdx: 1 }, { unique: true });
     await collections.nations.createIndex({ ownerId: 1 });

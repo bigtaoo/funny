@@ -128,6 +128,44 @@ export function scaleArmyHp(
 }
 
 /**
+ * Re-places an army onto DEFENDER spawn positions (ADR-026). A `teams[]` template is authored as an ATTACK formation
+ * (units in the bottom half, owner0/Bottom rows); reused verbatim as a defender garrison it would spawn on the attacker's
+ * side and the auto-battle degenerates (defenders never guard their base → attacker times out → defender wins by bias).
+ * This mirrors synthesizeArmy(role='defender'): keep unitType + initialHp, reassign col/row across attack lanes starting
+ * from the defender spawn row (row decreasing toward the battle zone). Pure, deterministic.
+ */
+export function toDefenderFormation(army: ReadonlyArray<GarrisonEntry>): GarrisonEntry[] {
+  return army.map((e, i) => ({
+    unitType: e.unitType,
+    col: ATTACK_LANES[i % ATTACK_LANES.length]!,
+    row: Math.max(BOTTOM_SPAWN_ROW, TOP_SPAWN_ROW - Math.floor(i / ATTACK_LANES.length)),
+    ...(e.initialHp != null ? { initialHp: e.initialHp } : {}),
+  }));
+}
+
+/** Total deployed HP of an army layout = sum of each unit's initialHp (falling back to its blueprint full HP). Pure. (ADR-026 wave carry-over.) */
+export function sumArmyHp(army: ReadonlyArray<GarrisonEntry>): number {
+  let hp = 0;
+  for (const e of army) hp += Math.max(0, Math.floor(e.initialHp ?? UNIT_BLUEPRINTS[e.unitType].hp));
+  return hp;
+}
+
+/**
+ * Scales an army layout's per-unit initialHp by `ratio` (0..1) to carry attacker survivors into the next defensive wave (ADR-026 §3).
+ * Units that scale below 1 HP are dropped (they died). ratio is clamped to [0,1]; ratio≥1 returns a full-HP copy. Deterministic, pure.
+ */
+export function scaleArmyByRatio(army: ReadonlyArray<GarrisonEntry>, ratio: number): GarrisonEntry[] {
+  const r = Math.max(0, Math.min(1, ratio));
+  const out: GarrisonEntry[] = [];
+  for (const e of army) {
+    const full = e.initialHp ?? UNIT_BLUEPRINTS[e.unitType].hp;
+    const hp = Math.floor(full * r);
+    if (hp >= 1) out.push({ ...e, initialHp: hp });
+  }
+  return out;
+}
+
+/**
  * Resolves a card-based ArmyEntry[] to GarrisonEntry[] for the engine (CC-3, CHARACTER_CARDS_DESIGN §8.3).
  * For each entry with cardInstanceId: looks up CardInstance → CardDef.unitType; sets initialHp from cardState.currentTroops.
  * Entries without cardInstanceId (legacy synthesized/replay paths) are passed through as-is.

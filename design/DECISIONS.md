@@ -210,6 +210,34 @@
 - **不动的铁律**：ADR-003 我蓝敌红 / [`product/art-direction.md`](product/art-direction.md) §3.2 归属色未改；本条只改地形/资源底色与「归属改画描边而非整格填充」的呈现方式。
 - **影响**：仅客户端 `client/src/scenes/WorldMapScene.ts`（`TERRAIN_COLORS`/`RES_COLORS`/新增 `ownerTint`+`terrainFill`/`drawTileL1`/`drawTileL2`）。无服务端/契约改动。
 
+## ADR-026 SLG 建筑攻防 = 血量 + 逐队守军波次 + 攻城值延迟结算 — Accepted — 2026-07-02
+
+- **决策**（用户拍板）：把主城围攻从「单场合并确定性战斗」重构为**通用建筑攻防系统**，适用于主城 / 关卡 / 城池 / 据点等**所有可攻建筑**。**Supersedes ADR-025 细则 3**「本条不新建多队波次系统」——现在明确要建多队波次。
+
+- **核心规则（用户已定）**：
+  1. **建筑血量**：每个可攻建筑有血量。主城 `maxHp = mainBaseLevel × SLG_BASE_HP_PER_LEVEL`；关卡/城池/据点由 `tile.level` 派生同式。血量存 `TileDoc.hp`（锚点格承载整座主城血量）。
+  2. **逐队守军**：每城最多 5 队（复用 `PlayerWorldDoc.teams[] t1..t5`，攻守两用）。**在城 + 未受伤**的队伍自动为守军；**在外行军**（有活跃 march 占用该队）的跳过。判据：`MarchDoc.teamId`。
+  3. **波次战**：攻方一队到城，守军按 `t1→t5` **逐队上阵**，攻方**存活兵力跨波延续**（上一波存活 HP 作下一波初始）。攻方中途**被全灭 = 攻城失败**（不扣血）。每波 `seed = waveSeed(marchId, waveIndex)`，逐波确定性、可回放。
+  4. **攻城值延迟结算**：攻方**清光全部守军（或本就无守军）→ 胜后挂 5 分钟（`SLG_SIEGE_DAMAGE_DELAY_MS`）→ 按该攻方队伍「攻城值」扣建筑血量**。延迟由新集合 `SiegeDamageDoc`（`dueAt` 到点由 scheduler 结算）承载。**窗口内伤害必落**（守方即便补队/补血也不撤销这次伤害），保持确定性与简单性。
+  5. **守军受伤**：每支**战败**守军 → **进入受伤状态 10 分钟**（`SLG_TEAM_INJURY_MS`），受伤期永不参战。存 `PlayerWorldDoc.teamState[tid].injuredUntil`（队伍粒度，区别于 CC-3 的卡粒度 `cardState[].injuredUntil`）。未交手的守军队不受伤。
+  6. **攻占**：建筑**血量归零 → 被攻占**。玩家主城 → 复用 `passiveRelocate`（掠夺 + 失地 + 随机迁城 + 保护罩 + 宗主惩罚）。关卡/城池/据点 → 易主 / 发奖（沿用现有 territory 结算）。
+
+- **占位数值（DRAFT，攻城值细节另于新会话专议，经济核验前均为占位）**：
+  - `SLG_BASE_HP_PER_LEVEL = 100`（主城每级 100 血 ⇒ 30/次约 3~4 次攻破 lv1）。
+  - 「攻城值」是**每张卡的新属性**（与攻击/移速同级，用户 2026-07-02 拍板）；队伍攻城值 = **队内各卡攻城值之和**。占位 `每卡 SLG_SIEGE_VALUE_PER_CARD=10` 统一值（真实逐卡/逐级数值另开新会话设计）。**队伍必有卡 → 攻城值恒 > 0**；唯一「不扣血」情形 = 攻方被全灭（本就判守方胜、不排结算）。
+  - `SLG_SIEGE_DAMAGE_DELAY_MS = 5 min`、`SLG_TEAM_INJURY_MS = 10 min`。
+
+- **5 分钟语义澄清**：即「攻方胜利 → 结算伤害」之间的延迟，**不是**再攻免疫窗；同一建筑可叠加多次各自的 5min 计时。
+
+- **PvE**：关卡里与 PvP 里的基地**都吃攻城值**（同一套血量+扣血）。PvE 据点守军仍为系统 NPC 阵（沿用 `applyStrongholdSiege` 的合成守军），不套 5 队玩家波次。
+
+- **影响**：
+  - `@nw/shared`（`slg.ts`：新增 `SLG_BASE_HP_PER_LEVEL`/`SLG_SIEGE_VALUE_PER_CARD`/`SLG_SIEGE_DAMAGE_DELAY_MS`/`SLG_TEAM_INJURY_MS` + `teamSiegeValue()`/`waveSeed()`/`buildingMaxHp()`）**属公共依赖，最先合 main**。
+  - `worldsvc`：`db.ts` 新增 `TileDoc.hp`、`PlayerWorldDoc.teamState`、`MarchDoc.teamId`、`SiegeDamageDoc` 集合；`service.ts` 重写 `applySiege` 为波次战 + 建筑血量 + 延迟结算调度 + 队伍受伤 + 攻占；`joinWorld`/`relocateBase`/`passiveRelocate` 初始化主城血量；scheduler 加 `processDueSiegeDamage`。
+  - 契约（`openapi-world.yml`）：`getMe`/tile view 下行建筑血量 + 队伍受伤态。
+  - `client`：血条 + 受伤态 UI（**可后置**）。
+  - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1 主城行 + §5 围攻章须更新为本模型。
+
 ## ADR-025 SLG 主城 = 真占 3×3=9 格实体（封路 + 一体防守 + 计 9 格） — Accepted — 2026-07-02
 
 - **决策**（用户拍板）：玩家主城从「单格 `type:'base'`」改为**真实占据 3×3=9 个地格的实体建筑**。锚点仍是 `PlayerWorldDoc.mainBaseTile`（中心格），围绕它的 8 格同写 `type:'base'` 且同 `ownerId`，**九格一体、不可分割**（敌人不能单独占/弃其中一角）。
