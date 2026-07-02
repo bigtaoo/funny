@@ -71,6 +71,12 @@ export function startInternalHttp(
           const codes = await svc.listPromoCodes();
           return send(res, 200, { ok: true, codes });
         }
+        if (req.method === 'GET' && url.pathname === '/internal/gacha/pools') {
+          const active = url.searchParams.get('active') === '1';
+          const nowMs = Number(url.searchParams.get('now')) || Date.now();
+          const pools = active ? await svc.listActiveLimitedPools(nowMs) : await svc.listLimitedPools();
+          return send(res, 200, { ok: true, pools });
+        }
 
         if (req.method !== 'POST') return send(res, 404, { ok: false, error: 'not found' });
         const b = await readJson(req);
@@ -193,6 +199,60 @@ export function startInternalHttp(
                 accountId: str(b.accountId),
                 transactionId: str(b.transactionId),
                 coins: num(b.coins, 0),
+              }),
+            );
+          case '/internal/gacha/pool': {
+            const cfg = (b.config ?? {}) as Record<string, unknown>;
+            return send(
+              res,
+              200,
+              await svc.createLimitedPool({
+                config: {
+                  id: str(cfg.id),
+                  name: str(cfg.name),
+                  featuredLegendary: str(cfg.featuredLegendary),
+                  startAt: num(cfg.startAt, 0),
+                  endAt: num(cfg.endAt, 0),
+                  ...(Array.isArray(cfg.fillerLegendaries)
+                    ? { fillerLegendaries: (cfg.fillerLegendaries as unknown[]).map((x) => str(x)) }
+                    : {}),
+                },
+                createdBy: str(b.createdBy),
+              }),
+            );
+          }
+          case '/internal/gacha/pool/close':
+            return send(res, 200, await svc.closeLimitedPool({ id: str(b.id) }));
+          case '/internal/fate/redeem':
+            return send(
+              res,
+              200,
+              await svc.redeemFate({
+                accountId: str(b.accountId),
+                itemId: str(b.itemId),
+                orderId: str(b.orderId),
+              }),
+            );
+          case '/internal/monthly-card/buy':
+            return send(
+              res,
+              200,
+              await svc.monthlyCardBuy({ accountId: str(b.accountId), orderId: str(b.orderId) }),
+            );
+          case '/internal/monthly-card/claim':
+            return send(
+              res,
+              200,
+              await svc.monthlyCardClaim({ accountId: str(b.accountId), dayKey: str(b.dayKey) }),
+            );
+          case '/internal/starter/buy':
+            return send(
+              res,
+              200,
+              await svc.starterBuy({
+                accountId: str(b.accountId),
+                productId: str(b.productId),
+                orderId: str(b.orderId),
               }),
             );
           default:

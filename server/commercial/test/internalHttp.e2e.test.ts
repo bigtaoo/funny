@@ -69,7 +69,14 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
   it('GET /internal/wallet (with key) → default 0', async () => {
     const r = await fetch(`${base}/internal/wallet?accountId=newbie`, { headers: hdr(KEY) });
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ ok: true, coins: 0, pity: {} });
+    expect(await r.json()).toEqual({
+      ok: true,
+      coins: 0,
+      pity: {},
+      fatePoints: 0,
+      subscriptionExpiry: 0,
+      starterUsed: [],
+    });
   });
 
   it('POST /internal/recharge/verify → adds coins', async () => {

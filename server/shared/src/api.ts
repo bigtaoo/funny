@@ -83,6 +83,11 @@ export const ErrorCode = {
   INSUFFICIENT_STAMINA: 'INSUFFICIENT_STAMINA',     // insufficient stamina to enter a stage
   // —— social channel (B7) ——
   NOT_IN_WORLD: 'NOT_IN_WORLD',                     // player has not yet joined this world (no playerWorld record)
+  // —— gacha monetization (GACHA_DESIGN §2/§6/§7) ——
+  POOL_UNAVAILABLE: 'POOL_UNAVAILABLE',             // gacha pool unknown or a limited pool outside its open window
+  FATE_INSUFFICIENT: 'FATE_INSUFFICIENT',           // not enough Fate Points to redeem (§7)
+  FATE_INVALID_ITEM: 'FATE_INVALID_ITEM',           // fate redemption target is not a (past-)featured limited legendary
+  ALREADY_PURCHASED: 'ALREADY_PURCHASED',           // one-off starter pack already bought (§6)
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -163,4 +168,8 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.NOT_IN_WORLD]: 403,
   [ErrorCode.CARD_NOT_FOUND]: 404,
   [ErrorCode.CARD_HAS_GEAR]: 409,
+  [ErrorCode.POOL_UNAVAILABLE]: 404,
+  [ErrorCode.FATE_INSUFFICIENT]: 402,
+  [ErrorCode.FATE_INVALID_ITEM]: 400,
+  [ErrorCode.ALREADY_PURCHASED]: 409,
 };

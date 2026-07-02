@@ -22,7 +22,20 @@ export interface GachaPoolDef {
   tenFloor: Rarity; // ten-pull guaranteed minimum rarity (§4.2, at least 1 epic+ per 10 pulls)
   dupePolicy: 'shards' | 'coins'; // openapi top-level compatibility field; per-rarity breakdown see DUPE_*
   itemsByRarity: Record<Rarity, string[]>;
+  // ── Soft pity (GACHA_DESIGN §3): starting at softPityStart cumulative pulls, legendary probability climbs
+  //    each pull by softPityStep until the hard pity guarantees it. Absent = hard-cliff only. ──
+  softPityStart?: number; // pity count at which the ramp begins (e.g. 70)
+  softPityStep?: number; // probability points added per pull past softPityStart (e.g. 0.05 = +5%/pull)
+  // ── Limited pool metadata (GACHA_DESIGN §2.2/§7). Only set on dynamically-built limited pools. ──
+  limited?: boolean; // true = time-boxed limited pool (independent pity, FOMO)
+  featuredLegendary?: string; // banner legendary itemId; legendary rolls that are NOT this award a Fate Point (§7)
+  startAt?: number; // pool open timestamp (ms); enforced by commercial.gachaDraw
+  endAt?: number; // pool close timestamp (ms)
 }
+
+/** Soft-pity defaults for the standard/limited pools (GACHA_DESIGN §3). */
+export const SOFT_PITY_START = 70;
+export const SOFT_PITY_STEP = 0.05;
 
 /**
  * Gacha material grants (E7 §4): `mat_*` prefix itemId → quantity to credit.
@@ -46,6 +59,8 @@ export const GACHA_POOLS: GachaPoolDef[] = [
     costTen: 1350,
     pityThreshold: 90,
     tenFloor: 'epic',
+    softPityStart: SOFT_PITY_START,
+    softPityStep: SOFT_PITY_STEP,
     dupePolicy: 'coins',
     itemsByRarity: {
       // common: 4 skins + 3 material slots → material drop rate 43%
@@ -68,6 +83,8 @@ export const GACHA_POOLS: GachaPoolDef[] = [
     costTen: 1350,
     pityThreshold: 90,
     tenFloor: 'epic',
+    softPityStart: SOFT_PITY_START,
+    softPityStep: SOFT_PITY_STEP,
     dupePolicy: 'coins',
     itemsByRarity: unitCardPoolItems(),
   },
@@ -192,7 +209,9 @@ export function gachaCost(pool: GachaPoolDef, count: number): number {
   return count === 10 ? pool.costTen : pool.costSingle * count;
 }
 
-/** Expand into openapi GachaPool.entries (for client display, weight evenly distributed within each tier). */
+/** Expand into openapi GachaPool.entries (for client display, weight evenly distributed within each tier).
+ *  Duplicate itemIds within a tier (e.g. a weighted featured legendary in a limited pool) are aggregated
+ *  so the odds list shows each item once with its summed weight. */
 export function poolEntries(
   pool: GachaPoolDef,
 ): { itemId: string; weight: number; rarity: Rarity }[] {
@@ -200,8 +219,93 @@ export function poolEntries(
   for (const rarity of RARITY_ORDER) {
     const items = pool.itemsByRarity[rarity];
     if (items.length === 0) continue;
-    const perItem = Math.round(RARITY_WEIGHTS[rarity] / items.length);
-    for (const itemId of items) out.push({ itemId, weight: perItem, rarity });
+    const perSlot = RARITY_WEIGHTS[rarity] / items.length;
+    const byItem = new Map<string, number>();
+    for (const itemId of items) byItem.set(itemId, (byItem.get(itemId) ?? 0) + perSlot);
+    for (const [itemId, w] of byItem) out.push({ itemId, weight: Math.round(w), rarity });
   }
   return out;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Limited pool (GACHA_DESIGN §2.2/§7). Config lives in commercial DB (admin-created);
+// the pool content is *derived* here (pure) from the standard pool so there is no drift.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Admin-authored limited-pool config (stored in commercial `gachaPools`). Content derives from the standard pool. */
+export interface LimitedPoolConfig {
+  id: string; // unique pool id (e.g. 'limited_01'); pity is tracked independently under this id
+  name: string; // display name (banner title)
+  featuredLegendary: string; // banner legendary itemId (delivered as a skin); off-banner legendary → Fate Point (§7)
+  startAt: number; // open timestamp (ms)
+  endAt: number; // close timestamp (ms)
+  /** Off-banner legendary fillers (default = standard pool's cosmetic/equipment legendaries; excludes character cards). */
+  fillerLegendaries?: string[];
+}
+
+/** Standard-pool legendary items used as limited-pool off-banner filler (cosmetics + equipment; character cards excluded so limited pools never dilute progression). */
+export const DEFAULT_LIMITED_FILLER_LEGENDARIES = ['skin_l1', 'wp_highlighter', 'ar_foil', 'tk_seal'];
+
+/**
+ * Build a full GachaPoolDef from a limited-pool config (pure). Common/rare/epic tiers copy the standard pool;
+ * the legendary tier is the featured banner (weighted to ~50% via slot repetition) plus off-banner fillers.
+ * Hitting an off-banner legendary is the "歪" that awards a Fate Point (commercial.gachaDraw §7).
+ */
+export function buildLimitedPool(cfg: LimitedPoolConfig): GachaPoolDef {
+  const std = GACHA_POOLS[0]!; // standard pool = content template
+  const fillers = cfg.fillerLegendaries ?? DEFAULT_LIMITED_FILLER_LEGENDARIES;
+  // Featured occupies as many slots as there are fillers → featured ≈ 50% of legendary rolls.
+  const featuredSlots = Math.max(1, fillers.length);
+  const legendary = [...Array(featuredSlots).fill(cfg.featuredLegendary), ...fillers];
+  return {
+    id: cfg.id,
+    costSingle: std.costSingle,
+    costTen: std.costTen,
+    pityThreshold: std.pityThreshold,
+    tenFloor: std.tenFloor,
+    softPityStart: std.softPityStart,
+    softPityStep: std.softPityStep,
+    dupePolicy: 'coins',
+    limited: true,
+    featuredLegendary: cfg.featuredLegendary,
+    startAt: cfg.startAt,
+    endAt: cfg.endAt,
+    itemsByRarity: {
+      common: std.itemsByRarity.common,
+      rare: std.itemsByRarity.rare,
+      epic: std.itemsByRarity.epic,
+      legendary,
+    },
+  };
+}
+
+/** A limited pool is open when now ∈ [startAt, endAt). */
+export function isLimitedPoolActive(cfg: { startAt: number; endAt: number }, now: number): boolean {
+  return now >= cfg.startAt && now < cfg.endAt;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fate points (GACHA_DESIGN §7) + subscription/starter products (§5/§6).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Fate points redeemed for one self-chosen past-featured limited legendary (§7.1). */
+export const FATE_POINT_REDEEM_COST = 30;
+
+/** Monthly card (§5): 30-day subscription, 120 coins/day, 600 coins granted immediately on purchase. */
+export const MONTHLY_CARD_DAYS = 30;
+export const MONTHLY_CARD_DAILY_COINS = 120;
+export const MONTHLY_CARD_IMMEDIATE_COINS = 600;
+
+/** Starter growth pack (§6.2): 3,300 coins + a 7-day monthly card; buyable once, within the first 7 days of the account. */
+export const GROWTH_PACK_COINS = 3300;
+export const GROWTH_PACK_CARD_DAYS = 7;
+export const GROWTH_PACK_WINDOW_DAYS = 7;
+
+/** Starter first-draw pack (§6.1): a rare+ floored 10-pull, buyable once, independent of normal pity. */
+export const STARTER_DRAW_COUNT = 10;
+export const STARTER_DRAW_FLOOR: Rarity = 'rare';
+
+/** Product ids for the one-off / subscription IAP-style products (marked in wallet.starterUsed / subscription). */
+export const PRODUCT_MONTHLY_CARD = 'monthly_card';
+export const PRODUCT_STARTER_DRAW = 'starter_draw';
+export const PRODUCT_STARTER_GROWTH = 'starter_growth';

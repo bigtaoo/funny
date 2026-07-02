@@ -1,7 +1,7 @@
 // Commercial database factory (S5-1, COMMERCIAL_DESIGN §3/§7). Database name notebook_wars_commercial,
 // physically isolated from the meta database. Collections: wallets / ledger / orders / recharges / gachaHistory.
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
-import type { Rarity } from '@nw/shared';
+import type { Rarity, LimitedPoolConfig } from '@nw/shared';
 
 /** Balance (single-document atomic update + optimistic lock rev). pity embedded in the same document (design default A: coin deduction + pity counter in one atomic operation). */
 export interface WalletDoc {
@@ -11,6 +11,12 @@ export interface WalletDoc {
   gacha: { pity: Record<string, number> }; // poolId → cumulative draws since last legendary
   /** Timestamp of first-ever successful IAP (ms). Absent = never purchased; gates the first-purchase 2× bonus. */
   firstPurchasedAt?: number;
+  /** Fate points (GACHA_DESIGN §7): earned on off-banner limited legendaries, redeemed 30 → 1 self-chosen legendary. */
+  fatePoints?: number;
+  /** Monthly card subscription (GACHA_DESIGN §5). expiry = subscription end (ms); lastClaimDayKey = last daily-coin claim UTC day. */
+  subscription?: { expiry: number; lastClaimDayKey?: string };
+  /** One-off products already purchased (GACHA_DESIGN §6): product ids in economy.PRODUCT_STARTER_* (once-per-account guard). */
+  starterUsed?: string[];
   updatedAt: number;
 }
 
@@ -36,7 +42,9 @@ export interface OrderDoc {
   accountId: string;
   // 'sink' = pure coin consumption (e.g. rename), no item delivery, lands in DB as status:'delivered', not picked up by reconciliation.
   // 'grant' = pure coin grant (mail attachment claim S6-3), same as sink: delivered on insert, not picked up by reconciliation.
-  kind: 'shop' | 'gacha' | 'sink' | 'grant';
+  // 'fate' = Fate Point redemption (GACHA_DESIGN §7): points already deducted, meta delivers the chosen legendary skin (like gacha).
+  // 'starter' = starter pack (GACHA_DESIGN §6): coins/subscription already applied, meta delivers pack items (like gacha).
+  kind: 'shop' | 'gacha' | 'sink' | 'grant' | 'fate' | 'starter';
   cost: number;
   status: 'charged' | 'delivered';
   coinsAfter: number; // balance after coin deduction (for idempotent replay)
@@ -99,6 +107,14 @@ export interface PromoRedemptionDoc {
   ts: number;
 }
 
+/** Limited gacha pool config (GACHA_DESIGN §2.2). _id = pool id; content is derived from the standard pool (economy.buildLimitedPool). Retained after close so past-featured legendaries stay redeemable with Fate Points (§7). */
+export interface GachaPoolDoc extends LimitedPoolConfig {
+  _id: string; // = LimitedPoolConfig.id
+  createdBy: string; // adminId
+  createdAt: number;
+  closedAt?: number; // set when an admin closes the pool early (endAt is also clamped to now)
+}
+
 export interface CommercialCollections {
   wallets: Collection<WalletDoc>;
   ledger: Collection<LedgerDoc>;
@@ -108,6 +124,7 @@ export interface CommercialCollections {
   victoryDaily: Collection<VictoryDailyDoc>;
   promoCodes: Collection<PromoCodeDoc>;
   promoRedemptions: Collection<PromoRedemptionDoc>;
+  gachaPools: Collection<GachaPoolDoc>;
 }
 
 export interface CommercialMongo {
@@ -145,6 +162,7 @@ export async function createCommercialMongo(
     victoryDaily: db.collection<VictoryDailyDoc>('victoryDaily'),
     promoCodes: db.collection<PromoCodeDoc>('promoCodes'),
     promoRedemptions: db.collection<PromoRedemptionDoc>('promoRedemptions'),
+    gachaPools: db.collection<GachaPoolDoc>('gachaPools'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -156,6 +174,8 @@ export async function createCommercialMongo(
     // recharges._id = receiptId is naturally unique; wallets._id = accountId is naturally unique.
     // promoCodes._id = code is naturally unique; promoRedemptions._id = accountId:code is naturally unique.
     await collections.promoRedemptions.createIndex({ accountId: 1, ts: -1 });
+    // gachaPools._id = pool id is naturally unique; index the active window for listing open limited pools.
+    await collections.gachaPools.createIndex({ endAt: 1 });
   }
 
   return {

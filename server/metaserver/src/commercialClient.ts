@@ -1,6 +1,6 @@
 // commercial internal client (S5-5): meta calls commercial via internal HTTP (X-Internal-Key) to
 // handle coin deduction / gacha draws / bookkeeping. Contract: SERVER_API.md §9 / COMMERCIAL_DESIGN §5. meta is the sole caller of commercial.
-import { internalHeaders, type Rarity } from '@nw/shared';
+import { internalHeaders, type Rarity, type LimitedPoolConfig } from '@nw/shared';
 
 export interface GachaResultEntry {
   itemId: string;
@@ -10,8 +10,25 @@ export interface GachaResultEntry {
 export interface UndeliveredOrder {
   _id: string;
   accountId: string;
-  kind: 'shop' | 'gacha';
+  // 'fate'/'starter' deliver items like a gacha order (skins/materials/equipment/cards); see economy.deliverOrder.
+  kind: 'shop' | 'gacha' | 'fate' | 'starter';
   result: { itemId?: string; results?: GachaResultEntry[]; poolId?: string };
+}
+
+/** Wallet view mirrored into SaveData (coins/pity + monetization state §5–§7). */
+export interface WalletView {
+  coins: number;
+  pity: Record<string, number>;
+  fatePoints: number;
+  subscriptionExpiry: number;
+  starterUsed: string[];
+}
+
+/** Limited pool config as stored/listed by commercial (LimitedPoolConfig + audit fields). */
+export interface GachaPoolView extends LimitedPoolConfig {
+  createdBy: string;
+  createdAt: number;
+  closedAt?: number;
 }
 
 type Body<T> = ({ ok: true } & T) | { ok: false; error: string };
@@ -19,7 +36,7 @@ type Body<T> = ({ ok: true } & T) | { ok: false; error: string };
 /** meta-side commercial client interface (allows injecting a fake implementation in unit tests). */
 export interface CommercialClient {
   readonly available: boolean;
-  getWallet(accountId: string): Promise<{ coins: number; pity: Record<string, number> } | null>;
+  getWallet(accountId: string): Promise<WalletView | null>;
   shopCharge(args: {
     accountId: string;
     itemId: string;
@@ -32,8 +49,41 @@ export interface CommercialClient {
     count: number;
     orderId: string;
   }): Promise<
-    Body<{ orderId: string; coinsAfter: number; pityAfter: number; results: GachaResultEntry[] }>
+    Body<{
+      orderId: string;
+      coinsAfter: number;
+      pityAfter: number;
+      results: GachaResultEntry[];
+      fateGained: number;
+      fatePointsAfter: number;
+    }>
   >;
+  // ── Limited pools + monetization (GACHA_DESIGN §2/§5/§6/§7) ──
+  createLimitedPool(args: {
+    config: LimitedPoolConfig;
+    createdBy: string;
+  }): Promise<Body<{ id: string }>>;
+  closeLimitedPool(args: { id: string }): Promise<Body<{ id: string }>>;
+  listLimitedPools(): Promise<GachaPoolView[]>;
+  listActiveLimitedPools(now: number): Promise<GachaPoolView[]>;
+  redeemFate(args: {
+    accountId: string;
+    itemId: string;
+    orderId: string;
+  }): Promise<Body<{ orderId: string; itemId: string; coinsAfter: number; fatePointsAfter: number }>>;
+  monthlyCardBuy(args: {
+    accountId: string;
+    orderId: string;
+  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number }>>;
+  monthlyCardClaim(args: {
+    accountId: string;
+    dayKey: string;
+  }): Promise<Body<{ coinsAfter: number; claimed: number; subscriptionExpiry: number }>>;
+  starterBuy(args: {
+    accountId: string;
+    productId: string;
+    orderId: string;
+  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[] }>>;
   spend(args: {
     accountId: string;
     amount: number;
@@ -120,16 +170,22 @@ export class HttpCommercialClient implements CommercialClient {
     return (await res.json()) as Body<T>;
   }
 
-  async getWallet(
-    accountId: string,
-  ): Promise<{ coins: number; pity: Record<string, number> } | null> {
+  async getWallet(accountId: string): Promise<WalletView | null> {
     if (!this.baseUrl) return null;
     const res = await fetch(
       `${this.baseUrl}/internal/wallet?accountId=${encodeURIComponent(accountId)}`,
       { headers: this.headers() },
     );
-    const b = (await res.json()) as Body<{ coins: number; pity: Record<string, number> }>;
-    return b.ok ? { coins: b.coins, pity: b.pity } : null;
+    const b = (await res.json()) as Body<WalletView>;
+    return b.ok
+      ? {
+          coins: b.coins,
+          pity: b.pity,
+          fatePoints: b.fatePoints ?? 0,
+          subscriptionExpiry: b.subscriptionExpiry ?? 0,
+          starterUsed: b.starterUsed ?? [],
+        }
+      : null;
   }
 
   shopCharge(args: { accountId: string; itemId: string; cost: number; orderId: string }) {
@@ -145,7 +201,61 @@ export class HttpCommercialClient implements CommercialClient {
       coinsAfter: number;
       pityAfter: number;
       results: GachaResultEntry[];
+      fateGained: number;
+      fatePointsAfter: number;
     }>('/internal/gacha/draw', args);
+  }
+
+  createLimitedPool(args: { config: LimitedPoolConfig; createdBy: string }) {
+    return this.post<{ id: string }>('/internal/gacha/pool', args);
+  }
+
+  closeLimitedPool(args: { id: string }) {
+    return this.post<{ id: string }>('/internal/gacha/pool/close', args);
+  }
+
+  private async listPools(active: boolean, now?: number): Promise<GachaPoolView[]> {
+    if (!this.baseUrl) return [];
+    const q = active ? `?active=1&now=${now ?? 0}` : '';
+    const res = await fetch(`${this.baseUrl}/internal/gacha/pools${q}`, { headers: this.headers() });
+    const b = (await res.json()) as Body<{ pools: GachaPoolView[] }>;
+    return b.ok ? b.pools : [];
+  }
+
+  listLimitedPools(): Promise<GachaPoolView[]> {
+    return this.listPools(false);
+  }
+
+  listActiveLimitedPools(now: number): Promise<GachaPoolView[]> {
+    return this.listPools(true, now);
+  }
+
+  redeemFate(args: { accountId: string; itemId: string; orderId: string }) {
+    return this.post<{ orderId: string; itemId: string; coinsAfter: number; fatePointsAfter: number }>(
+      '/internal/fate/redeem',
+      args,
+    );
+  }
+
+  monthlyCardBuy(args: { accountId: string; orderId: string }) {
+    return this.post<{ coinsAfter: number; subscriptionExpiry: number }>(
+      '/internal/monthly-card/buy',
+      args,
+    );
+  }
+
+  monthlyCardClaim(args: { accountId: string; dayKey: string }) {
+    return this.post<{ coinsAfter: number; claimed: number; subscriptionExpiry: number }>(
+      '/internal/monthly-card/claim',
+      args,
+    );
+  }
+
+  starterBuy(args: { accountId: string; productId: string; orderId: string }) {
+    return this.post<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[] }>(
+      '/internal/starter/buy',
+      args,
+    );
   }
 
   spend(args: { accountId: string; amount: number; reason: string; orderId: string }) {

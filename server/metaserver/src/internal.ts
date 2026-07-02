@@ -878,6 +878,57 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     log.info('POST /admin/promo/codes', { code: r.code, coins });
     return reply.send({ ok: true, code: r.code });
   });
+
+  // ── Limited gacha pool management (GACHA_DESIGN §2.2, admin gacha.manage; stored via commercial) ──────────
+  // GET /admin/gacha/pools — list all limited pool configs.
+  app.get('/admin/gacha/pools', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
+    const pools = await commercial.listLimitedPools();
+    return reply.send({ ok: true, pools });
+  });
+  // POST /admin/gacha/pools — create/replace a limited pool. body = { id, name, featuredLegendary, startAt, endAt, fillerLegendaries?, createdBy }
+  app.post('/admin/gacha/pools', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
+    const b = req.body as Record<string, unknown>;
+    const id = typeof b.id === 'string' ? b.id.trim() : '';
+    const name = typeof b.name === 'string' ? b.name.trim() : '';
+    const featuredLegendary = typeof b.featuredLegendary === 'string' ? b.featuredLegendary.trim() : '';
+    const startAt = typeof b.startAt === 'number' ? b.startAt : 0;
+    const endAt = typeof b.endAt === 'number' ? b.endAt : 0;
+    if (!id || !name || !featuredLegendary || !(endAt > startAt)) {
+      return reply.code(400).send({ ok: false, error: 'id + name + featuredLegendary + startAt<endAt required' });
+    }
+    const r = await commercial.createLimitedPool({
+      config: {
+        id,
+        name,
+        featuredLegendary,
+        startAt,
+        endAt,
+        ...(Array.isArray(b.fillerLegendaries)
+          ? { fillerLegendaries: (b.fillerLegendaries as unknown[]).filter((x): x is string => typeof x === 'string') }
+          : {}),
+      },
+      createdBy: typeof b.createdBy === 'string' ? b.createdBy : 'unknown',
+    });
+    if (!r.ok) return reply.code(400).send({ ok: false, error: r.error });
+    log.info('POST /admin/gacha/pools', { id: r.id });
+    return reply.send({ ok: true, id: r.id });
+  });
+  // POST /admin/gacha/pools/close — close a limited pool early. body = { id }
+  app.post('/admin/gacha/pools/close', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
+    const b = req.body as Record<string, unknown>;
+    const id = typeof b.id === 'string' ? b.id.trim() : '';
+    if (!id) return reply.code(400).send({ ok: false, error: 'id required' });
+    const r = await commercial.closeLimitedPool({ id });
+    if (!r.ok) return reply.code(404).send({ ok: false, error: r.error });
+    log.info('POST /admin/gacha/pools/close', { id: r.id });
+    return reply.send({ ok: true, id: r.id });
+  });
 }
 
 /**

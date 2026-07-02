@@ -43,8 +43,14 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     }
   });
 
-  it('wallet defaults to 0 / empty pity', async () => {
-    expect(await svc.getWallet('a')).toEqual({ coins: 0, pity: {} });
+  it('wallet defaults to 0 / empty pity / empty monetization', async () => {
+    expect(await svc.getWallet('a')).toEqual({
+      coins: 0,
+      pity: {},
+      fatePoints: 0,
+      subscriptionExpiry: 0,
+      starterUsed: [],
+    });
   });
 
   it('recharge adds coins + receiptId idempotency', async () => {
@@ -184,5 +190,101 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     expect(r3).toMatchObject({ ok: true, coinsAfter: 500 });
     // grant writes as delivered immediately → not picked up by reconciliation.
     expect(await svc.undeliveredOrders('g')).toHaveLength(0);
+  });
+
+  // ── Limited pools + Fate Points (GACHA_DESIGN §2.2/§7) ──────────────────────
+  it('limited pool: unknown/closed pool → POOL_UNAVAILABLE; active pool draws + off-banner legendary awards Fate Point', async () => {
+    // rng that forces a legendary tier then picks an off-banner filler (index 4 in the 8-slot legendary array).
+    const offBanner: RandInt = (() => { const v = [995, 4]; let i = 0; return () => v[i++] ?? 0; })();
+    const svcLeg = new CommercialService({ cols: m.collections, now, rng: offBanner });
+    await svcLeg.rechargeVerify({ accountId: 'lp', platform: 'web', receipt: 'tier:t999', receiptId: 'rclp' }); // 1150
+
+    // Draw before the pool exists → unavailable.
+    const miss = await svcLeg.gachaDraw({ accountId: 'lp', poolId: 'lim1', count: 1, orderId: 'lpm' });
+    expect(miss).toEqual({ ok: false, error: 'POOL_UNAVAILABLE' });
+
+    await svcLeg.createLimitedPool({
+      config: { id: 'lim1', name: 'Banner', featuredLegendary: 'skin_lim1', startAt: 0, endAt: 9_999_999_999_999 },
+      createdBy: 'admin',
+    });
+    const draw = await svcLeg.gachaDraw({ accountId: 'lp', poolId: 'lim1', count: 1, orderId: 'lp1' });
+    expect(draw.ok).toBe(true);
+    if (draw.ok) {
+      expect(draw.results[0]!.rarity).toBe('legendary');
+      expect(draw.results[0]!.itemId).not.toBe('skin_lim1'); // off-banner filler
+      expect(draw.fateGained).toBe(1);
+      expect(draw.fatePointsAfter).toBe(1);
+    }
+    // Independent pity is tracked under the limited pool id.
+    expect((await svcLeg.getWallet('lp')).fatePoints).toBe(1);
+  });
+
+  it('fate redeem: insufficient points rejected; with 30 points redeems a featured legendary; invalid item rejected', async () => {
+    await svc.createLimitedPool({
+      config: { id: 'lim2', name: 'B2', featuredLegendary: 'skin_lim2', startAt: 0, endAt: 9_999_999_999_999 },
+      createdBy: 'admin',
+    });
+    // No points yet → insufficient.
+    const poor = await svc.redeemFate({ accountId: 'fr', itemId: 'skin_lim2', orderId: 'fr0' });
+    expect(poor).toEqual({ ok: false, error: 'FATE_INSUFFICIENT' });
+    // Grant 30 fate points directly, then redeem.
+    await svc.getWallet('fr'); // ensure wallet exists
+    await m.collections.wallets.updateOne({ _id: 'fr' }, { $set: { fatePoints: 30 } }, { upsert: true });
+    const ok1 = await svc.redeemFate({ accountId: 'fr', itemId: 'skin_lim2', orderId: 'fr1' });
+    expect(ok1).toMatchObject({ ok: true, itemId: 'skin_lim2', fatePointsAfter: 0 });
+    // Replay same orderId → idempotent (no second deduction).
+    const ok2 = await svc.redeemFate({ accountId: 'fr', itemId: 'skin_lim2', orderId: 'fr1' });
+    expect(ok2).toMatchObject({ ok: true, itemId: 'skin_lim2' });
+    // Non-featured item → invalid.
+    const bad = await svc.redeemFate({ accountId: 'fr', itemId: 'not_a_banner', orderId: 'fr2' });
+    expect(bad).toEqual({ ok: false, error: 'FATE_INVALID_ITEM' });
+  });
+
+  // ── Monthly card (GACHA_DESIGN §5) ─────────────────────────────────────────
+  it('monthly card: buy grants immediate 600 + activates subscription; daily claim once per day', async () => {
+    const buy = await svc.monthlyCardBuy({ accountId: 'mc', orderId: 'mcb' });
+    expect(buy.ok).toBe(true);
+    if (buy.ok) {
+      expect(buy.coinsAfter).toBe(600); // immediate grant
+      expect(buy.subscriptionExpiry).toBeGreaterThan(now());
+    }
+    // Buy idempotency: replaying the same orderId does not double-grant.
+    const buy2 = await svc.monthlyCardBuy({ accountId: 'mc', orderId: 'mcb' });
+    expect(buy2.ok && buy2.coinsAfter).toBe(600);
+    // Daily claim: +120 the first time, 0 the second time same day.
+    const c1 = await svc.monthlyCardClaim({ accountId: 'mc', dayKey: '2026-07-02' });
+    expect(c1).toMatchObject({ ok: true, claimed: 120 });
+    const c2 = await svc.monthlyCardClaim({ accountId: 'mc', dayKey: '2026-07-02' });
+    expect(c2).toMatchObject({ ok: true, claimed: 0 });
+    expect((await svc.getWallet('mc')).coins).toBe(720); // 600 + 120
+    // No active subscription → claim yields 0.
+    const none = await svc.monthlyCardClaim({ accountId: 'nosub', dayKey: '2026-07-02' });
+    expect(none).toMatchObject({ ok: true, claimed: 0 });
+  });
+
+  // ── Starter packs (GACHA_DESIGN §6) ────────────────────────────────────────
+  it('starter draw: one rare+ floored 10-pull, once per account', async () => {
+    const r = await svc.starterBuy({ accountId: 'sd', productId: 'starter_draw', orderId: 'sdo' });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.results).toHaveLength(10);
+      expect(r.results.some((x) => x.rarity === 'rare' || x.rarity === 'epic' || x.rarity === 'legendary')).toBe(true);
+    }
+    expect((await svc.getWallet('sd')).starterUsed).toContain('starter_draw');
+    // Second purchase (different orderId) → rejected once-per-account.
+    const again = await svc.starterBuy({ accountId: 'sd', productId: 'starter_draw', orderId: 'sdo2' });
+    expect(again).toEqual({ ok: false, error: 'ALREADY_PURCHASED' });
+  });
+
+  it('starter growth: grants coins + 7-day card, once per account', async () => {
+    const r = await svc.starterBuy({ accountId: 'sg', productId: 'starter_growth', orderId: 'sgo' });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.coinsAfter).toBe(3300);
+      expect(r.subscriptionExpiry).toBeGreaterThan(now());
+      expect(r.results).toHaveLength(0);
+    }
+    const again = await svc.starterBuy({ accountId: 'sg', productId: 'starter_growth', orderId: 'sgo2' });
+    expect(again).toEqual({ ok: false, error: 'ALREADY_PURCHASED' });
   });
 });

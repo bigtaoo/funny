@@ -68,6 +68,12 @@ export interface ShopSceneCallbacks {
    * Absent = Coins tab not shown (offline / not on web platform).
    */
   rechargeCoins?(tierId: string): Promise<ShopActionResult>;
+  // ── Monetization deals (GACHA_DESIGN §5–§6). All optional; absent = section not shown (offline / not logged in). ──
+  /** Monthly card + starter state (subscription end ms, purchased one-off product ids). */
+  getMonetization?(): { subscriptionExpiry: number; starterUsed: string[] };
+  buyMonthlyCard?(): Promise<ShopActionResult>;
+  claimMonthlyCard?(): Promise<ShopActionResult>;
+  buyStarter?(productId: 'starter_draw' | 'starter_growth'): Promise<ShopActionResult>;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -253,6 +259,91 @@ export class ShopScene implements Scene {
     }
   }
 
+  // ── Monetization deals (monthly card / starter packs) ─────────────────────
+
+  private async runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey): Promise<void> {
+    if (this.bt.busy) return;
+    this.blurPromo();
+    this.bt.start();
+    this.toast = null;
+    this.render();
+    try {
+      const res = await withTimeout(action());
+      this.toast = res.ok ? { text: t(okKey), color: C.green } : { text: t(res.key), color: C.red };
+    } catch (e) {
+      this.toast = { text: t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.error'), color: C.red };
+    } finally {
+      this.bt.stop();
+      this.render();
+    }
+  }
+
+  /** Deals block (GACHA_DESIGN §5–§6): monthly card (buy + daily claim) + one-off starter packs. Returns the new y. */
+  private drawDeals(x: number, y: number, w: number, rowH: number): number {
+    const gap = Math.round(this.h * 0.018);
+    const mon = this.cb.getMonetization?.() ?? { subscriptionExpiry: 0, starterUsed: [] };
+    const busy = this.bt.busy;
+
+    // Monthly card row: [label + status] [Buy] [Claim].
+    if (this.cb.buyMonthlyCard) {
+      const box = sketchPanel(w, rowH, { fill: 0xfff8e8, border: C.gold, width: 2, seed: seedFor(x, y, w) });
+      box.x = x; box.y = y;
+      this.container.addChild(box);
+      const active = mon.subscriptionExpiry > Date.now();
+      const name = txt(t('shop.monthlyCard'), Math.round(rowH * 0.24), C.dark, true);
+      name.anchor.set(0, 0.5); name.x = x + Math.round(w * 0.04); name.y = y + rowH * 0.34;
+      this.container.addChild(name);
+      const status = txt(active ? t('shop.monthlyActive') : t('shop.monthlyInactive'), Math.round(rowH * 0.18), active ? C.green : C.mid, true);
+      status.anchor.set(0, 0.5); status.x = x + Math.round(w * 0.04); status.y = y + rowH * 0.68;
+      this.container.addChild(status);
+      // Buy + Claim buttons (right).
+      const bw = Math.round(w * 0.24), bh = Math.round(rowH * 0.5);
+      const bx2 = x + w - bw - Math.round(w * 0.03);
+      const bx1 = bx2 - bw - Math.round(w * 0.02);
+      const by = y + (rowH - bh) / 2;
+      this.dealButton(t('shop.buy'), bx1, by, bw, bh, !busy, () => void this.runDeal(() => this.cb.buyMonthlyCard!(), 'shop.bought'));
+      if (this.cb.claimMonthlyCard) {
+        this.dealButton(t('shop.monthlyClaim'), bx2, by, bw, bh, !busy && active, () => void this.runDeal(() => this.cb.claimMonthlyCard!(), 'shop.monthlyClaimed'));
+      }
+      y += rowH + gap;
+    }
+
+    // Starter packs: one row each, "已购" when already owned.
+    if (this.cb.buyStarter) {
+      const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey }[] = [
+        { id: 'starter_draw', label: 'shop.starterDraw' },
+        { id: 'starter_growth', label: 'shop.starterGrowth' },
+      ];
+      for (const pk of packs) {
+        const used = mon.starterUsed.includes(pk.id);
+        const box = sketchPanel(w, rowH, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
+        box.x = x; box.y = y;
+        sketchAccentBar(box, rowH, C.accent, seedFor(x, rowH, 4));
+        this.container.addChild(box);
+        const name = txt(t(pk.label), Math.round(rowH * 0.22), C.dark, true);
+        name.anchor.set(0, 0.5); name.x = x + Math.round(w * 0.04); name.y = y + rowH * 0.5;
+        this.container.addChild(name);
+        const bw = Math.round(w * 0.26), bh = Math.round(rowH * 0.56);
+        const bx = x + w - bw - Math.round(w * 0.03);
+        const by = y + (rowH - bh) / 2;
+        this.dealButton(used ? t('shop.owned') : t('shop.buy'), bx, by, bw, bh, !used && !busy,
+          () => void this.runDeal(() => this.cb.buyStarter!(pk.id), 'shop.bought'));
+        y += rowH + gap;
+      }
+    }
+    return y;
+  }
+
+  private dealButton(label: string, x: number, y: number, w: number, h: number, enabled: boolean, fn: () => void): void {
+    const btn = sketchPanel(w, h, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.green : C.light, width: 2, seed: seedFor(x, y, w) });
+    btn.x = x; btn.y = y;
+    this.container.addChild(btn);
+    const lbl = txt(label, Math.round(h * 0.4), enabled ? 0xffffff : C.mid, true);
+    lbl.anchor.set(0.5, 0.5); lbl.x = x + w / 2; lbl.y = y + h / 2;
+    this.container.addChild(lbl);
+    if (enabled) this.hits.push({ rect: { x, y, w, h }, fn });
+  }
+
   // ── Input ─────────────────────────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
@@ -352,6 +443,9 @@ export class ShopScene implements Scene {
 
     const rowH = Math.round(h * 0.10);
     const gap = Math.round(h * 0.018);
+
+    // Monetization deals (monthly card + starter packs) at the top of the shop tab.
+    if (this.cb.getMonetization) y = this.drawDeals(listX, y, listW, rowH);
 
     if (this.items && this.items.length > 0) {
       const owned = new Set(this.cb.getOwnedSkins());
