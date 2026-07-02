@@ -80,6 +80,7 @@ async function main(): Promise<void> {
     cols: mongo.collections,
     commercial,
     meta,
+    mail,
     now: () => Date.now(),
   });
 

@@ -1,7 +1,7 @@
 // Mongo client factory + collection handles (SERVER_API.md §5, META_DESIGN.md §6.3).
 // Deploy with a single-node replica set to unlock cross-collection transactions; wallet/delivery use single-document atomic updates.
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
-import type { SaveData } from './types';
+import type { SaveData, EquipmentInstance, CardInstance } from './types';
 import type { StatKey } from './achievements';
 import type { LadderSeasonDoc, LadderSeasonSnapshotDoc } from './season';
 import type { EventTaskDef, EventRewardDef, EventTaskProgress } from './events';
@@ -260,9 +260,13 @@ export interface AntiCheatReviewDoc {
 
 export interface MailAttachmentDoc {
   // 'material' → SaveData.materials unified progression pool (SLG8); 'item' → inventory.items general-purpose bucket.
-  kind: 'coins' | 'item' | 'skin' | 'material';
+  // 'equipment'/'card' → auction escrow-out return/delivery: carries the full instance snapshot (affixes/level/gear are
+  //   an inseparable part of the instance), written back to equipmentInv/cardInv by instance.id on claim (AUCTION_DESIGN escrow-out).
+  kind: 'coins' | 'item' | 'skin' | 'material' | 'equipment' | 'card';
   id?: string;
   count?: number;
+  // Present (required) only for kind 'equipment' | 'card': the traded instance snapshot.
+  instance?: EquipmentInstance | CardInstance;
 }
 
 /** Mail (SOC5): one document per recipient; attachment claiming goes through commercial idempotency (claimOrderId). */

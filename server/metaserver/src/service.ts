@@ -61,8 +61,8 @@ import { ACHIEVEMENTS, findAchievement, validateClaim } from '@nw/shared';
 import { parseTitleId } from '@nw/shared';
 import { getOrCreateSave, putSave, writeMigratedSave } from './save.js';
 import { getCurrentSeason, migrateIfStale } from './ladderSeason.js';
-import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment, reforgeEquipment } from './equipment.js';
-import { grantCards, feedCards } from './cards.js';
+import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment, reforgeEquipment, grantEquipment } from './equipment.js';
+import { grantCards, feedCards, grantCard } from './cards.js';
 import {
   bindOAuth,
   bindPassword,
@@ -1720,6 +1720,10 @@ export class MetaService {
       const g = await commercial.grant({ accountId, amount: split.coins, reason: 'mail', orderId });
       if (g.ok) coinsAfter = g.coinsAfter;
     }
+    // Equipment/card instance snapshots (auction escrow-out): write back to equipmentInv/cardInv by instance.id.
+    // Idempotent both ways — claimMailAtomic already gates single-shot claim, and grant* overwrites by id.
+    for (const inst of split.equipment) await grantEquipment(cols, now, accountId, inst);
+    for (const inst of split.cards) await grantCard(cols, now, accountId, inst);
     const cur = await getOrCreateSave(cols, accountId, now());
     const newSkins = split.skins.filter((s) => !cur.inventory.skins.includes(s));
     const save = await deliverMailGrant(cols, accountId, orderId, newSkins, split.items, coinsAfter, now(), split.materials);

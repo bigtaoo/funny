@@ -65,6 +65,38 @@ function applyFeedXp(card: CardInstance, gainedXp: number): { card: CardInstance
 }
 
 /**
+ * Write a full card instance snapshot into save.cardInv (auction escrow-out: sale delivery to buyer /
+ * cancellation·expiry·season-end return to seller, and mail-attachment claim).
+ * Overwrites by instance.id → naturally idempotent (re-delivering the same instance does not duplicate it);
+ * no roster-cap check (a card returned from escrow or bought is always delivered — the buyer paid for it).
+ * Mirrors equipment.ts grantEquipment.
+ */
+export async function grantCard(
+  cols: Collections,
+  now: () => number,
+  accountId: string,
+  instance: CardInstance,
+): Promise<{ ok: true } | CardError> {
+  if (!instance?.id) return { error: 'instance required', code: 'BAD_REQUEST' };
+  for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
+    const doc = await cols.saves.findOne({ _id: accountId });
+    if (!doc) return { error: 'save not found', code: 'NOT_FOUND' };
+    const next: SaveData = {
+      ...doc.save,
+      rev: doc.save.rev + 1,
+      updatedAt: now(),
+      cardInv: { ...(doc.save.cardInv ?? {}), [instance.id]: instance },
+    };
+    const res = await cols.saves.findOneAndUpdate(
+      { _id: accountId, rev: doc.rev },
+      { $set: { save: next, rev: next.rev } },
+    );
+    if (res) return { ok: true };
+  }
+  return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
+}
+
+/**
  * Create card instances and add them to save.cardInv (CHARACTER_CARDS_DESIGN §4).
  * Each entry in `defs` produces one new CardInstance at `level` (default 1), xp=0.
  * When the roster is full (≥ CARD_INV_CAP), the card is not added and compensatedCoins is

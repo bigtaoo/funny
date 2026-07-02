@@ -15,6 +15,7 @@ import { createWorldMongo, type WorldMongo } from '../src/db';
 import { AuctionService } from '../src/auctionService';
 import type { WorldCommercialClient } from '../src/commercialClient';
 import type { WorldMetaClient } from '../src/metaClient';
+import type { WorldMailClient, WorldMailContent } from '../src/mailClient';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_auction_test';
@@ -57,6 +58,18 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     },
   };
 
+  // Escrow-out model: item delivery/return goes through system mail (not direct meta grants). Spy on sent mail.
+  const mails: Array<{ account: string; dispatchKey: string; content: WorldMailContent }> = [];
+  const mail: WorldMailClient = {
+    available: true,
+    async sendSystemMail(accountId, dispatchKey, content) {
+      mails.push({ account: accountId, dispatchKey, content });
+    },
+  };
+  /** First attachment of the mail whose recipient matches and dispatchKey starts with the given prefix. */
+  const mailAtt = (account: string, dispatchPrefix: string) =>
+    mails.find((m) => m.account === account && m.dispatchKey.startsWith(dispatchPrefix))?.content.attachments?.[0];
+
   const meta: WorldMetaClient = {
     available: true,
     async deductMaterial(accountId, material, qty, orderId) {
@@ -97,12 +110,14 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     equipInv.clear();
     equipEscrows.length = 0;
     equipGrants.length = 0;
+    mails.length = 0;
     nowMs = Date.now();
 
     svc = new AuctionService({
       cols: mongo!.collections,
       commercial,
       meta,
+      mail,
       now: () => nowMs,
     });
   });
@@ -154,7 +169,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     })).rejects.toMatchObject({ code: 'AUCTION_LIMIT_REACHED' });
   });
 
-  it('buy: deduct coins + deliver materials + pay seller (10% tax)', async () => {
+  it('buy: deduct coins + mail materials to buyer + pay seller (10% tax)', async () => {
     // lead static reference price ref=30 → guardrail band [15,60], use unit price 30.
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
@@ -165,8 +180,8 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(bought.buyerId).toBe('bob');
     expect(spends).toHaveLength(1);
     expect(spends[0]).toMatchObject({ account: 'bob', amount: 60 });
-    expect(materialGrants).toHaveLength(1);
-    expect(materialGrants[0]).toMatchObject({ account: 'bob', material: 'lead', qty: 2 });
+    // escrow-out: item delivered to buyer via system mail (claimed to enter inventory)
+    expect(mailAtt('bob', 'auction_buy:')).toMatchObject({ kind: 'material', id: 'lead', count: 2 });
     const tax = Math.floor(60 * AUCTION_TAX_RATE);
     expect(grants).toHaveLength(1);
     expect(grants[0]).toMatchObject({ account: 'alice', amount: 60 - tax });
@@ -200,15 +215,15 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(bought.status).toBe('sold');
   });
 
-  it('seller cancels → refund materials', async () => {
+  it('seller cancels → materials mailed back to seller', async () => {
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 3, price: 5, durationSec: DUR,
     });
     const cancelled = await svc.cancelAuction(W, 'alice', view.auctionId);
     expect(cancelled.status).toBe('cancelled');
-    const refund = materialGrants.find((g) => g.orderId.startsWith('auction_cancel:'));
-    expect(refund).toMatchObject({ account: 'alice', material: 'scrap', qty: 3 });
+    // escrow-out: returned to seller via system mail (claimed to re-enter inventory)
+    expect(mailAtt('alice', 'auction_cancel:')).toMatchObject({ kind: 'material', id: 'scrap', count: 3 });
   });
 
   it('non-seller cancels → NO_PERMISSION', async () => {
@@ -219,7 +234,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await expect(svc.cancelAuction(W, 'bob', view.auctionId)).rejects.toMatchObject({ code: 'NO_PERMISSION' });
   });
 
-  it('expiry scan: process expired listings + refund seller items', async () => {
+  it('expiry scan: process expired listings + mail seller items back', async () => {
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'material',
       item: { material: 'lead' }, qty: 4, price: 20, durationSec: DUR,
@@ -231,8 +246,8 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     );
     const count = await svc.processExpiredAuctions();
     expect(count).toBe(1);
-    const refund = materialGrants.find((g) => g.orderId.startsWith('auction_expire:'));
-    expect(refund).toMatchObject({ account: 'alice', material: 'lead', qty: 4 });
+    // escrow-out: unsold item returned to seller via system mail
+    expect(mailAtt('alice', 'auction_expire:')).toMatchObject({ kind: 'material', id: 'lead', count: 4 });
   });
 
   it('list open auctions + my listings', async () => {
@@ -307,7 +322,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     const sold = await mongo!.collections.auctions.findOne({ _id: v.auctionId });
     expect(sold?.status).toBe('sold');
     expect(sold?.buyerId).toBe('carol');
-    expect(materialGrants.find((g) => g.account === 'carol' && g.material === 'scrap')).toBeTruthy();
+    expect(mailAtt('carol', 'auction_settle:')).toMatchObject({ kind: 'material', id: 'scrap' });
     const tax = Math.floor(15 * AUCTION_TAX_RATE);
     expect(grants.find((g) => g.account === 'alice' && g.amount === 15 - tax)).toBeTruthy();
   });
@@ -320,7 +335,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     const bought = await svc.placeBid(W, 'bob', v.auctionId, 18);
     expect(bought.status).toBe('sold');
     expect(bought.buyerId).toBe('bob');
-    expect(materialGrants.find((g) => g.account === 'bob' && g.material === 'scrap')).toBeTruthy();
+    expect(mailAtt('bob', 'auction_settle:')).toMatchObject({ kind: 'material', id: 'scrap' });
   });
 
   it('B cannot cancel auction after a bid has been placed → BAD_REQUEST', async () => {
@@ -348,7 +363,8 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
 
     const r = await svc.clearWorldOnReset(W);
     expect(r.cancelled).toBe(2);
-    expect(materialGrants.find((g) => g.orderId.startsWith('auction_reset:') && g.account === 'alice' && g.qty === 3)).toBeTruthy();
+    // escrow-out: seller item returned via system mail; bid coin escrow still refunded directly
+    expect(mailAtt('alice', 'auction_reset:')).toMatchObject({ kind: 'material', id: 'scrap', count: 3 });
     expect(grants.find((g) => g.orderId.startsWith('auction_reset_refund:') && g.account === 'bob' && g.amount === 30)).toBeTruthy();
     const remaining = await svc.listAuctions(W);
     expect(remaining.length).toBe(0);
@@ -382,7 +398,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(view.qty).toBe(1);
   });
 
-  it('A equipment buy → instance transferred to buyer (including full affix snapshot)', async () => {
+  it('A equipment buy → instance mailed to buyer (including full affix snapshot)', async () => {
     seedEquip('alice', mkInst('eq1', 'wp_marker', { level: 3, affixes: [{ id: 'm_atk', value: 8 }, { id: 's_hp', value: 5 }] }));
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'equipment',
@@ -391,8 +407,10 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     const bought = await svc.buyAuction(W, 'bob', view.auctionId);
     expect(bought.status).toBe('sold');
     expect(spends[0]).toMatchObject({ account: 'bob', amount: 400 });
-    // buyer receives the instance (id + enhancement level + affix snapshot transferred as-is)
-    const bobInst = equipInv.get('bob')?.get('eq1');
+    // escrow-out: buyer receives the instance via mail attachment (id + level + affix snapshot carried as-is)
+    const att = mailAtt('bob', 'auction_buy:');
+    expect(att?.kind).toBe('equipment');
+    const bobInst = att?.instance as EquipmentInstance | undefined;
     expect(bobInst).toMatchObject({ id: 'eq1', level: 3 });
     expect(bobInst?.affixes).toHaveLength(2);
     // seller receives payment after tax
@@ -400,18 +418,21 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(grants.find((g) => g.account === 'alice' && g.amount === 400 - tax)).toBeTruthy();
   });
 
-  it('A equipment cancel → returned to seller inventory', async () => {
+  it('A equipment cancel → instance mailed back to seller', async () => {
     seedEquip('alice', mkInst('eq1'));
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'equipment',
       item: { instanceId: 'eq1' }, qty: 1, price: 400, durationSec: DUR,
     });
     await svc.cancelAuction(W, 'alice', view.auctionId);
-    expect(equipInv.get('alice')?.has('eq1')).toBe(true);
-    expect(equipGrants.find((g) => g.orderId.startsWith('auction_cancel:') && g.account === 'alice')).toBeTruthy();
+    // escrow-out: not returned directly to inventory; delivered via mail (claimed to re-enter inventory)
+    expect(equipInv.get('alice')?.has('eq1')).toBe(false);
+    const att = mailAtt('alice', 'auction_cancel:');
+    expect(att?.kind).toBe('equipment');
+    expect((att?.instance as EquipmentInstance | undefined)?.id).toBe('eq1');
   });
 
-  it('A equipment expiry scan → returned to seller inventory', async () => {
+  it('A equipment expiry scan → instance mailed back to seller', async () => {
     seedEquip('alice', mkInst('eq1'));
     const view = await svc.createAuction({
       worldId: W, sellerId: 'alice', itemType: 'equipment',
@@ -420,7 +441,9 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await mongo!.collections.auctions.updateOne({ _id: view.auctionId }, { $set: { expireAt: nowMs - 1000 } });
     const count = await svc.processExpiredAuctions();
     expect(count).toBe(1);
-    expect(equipInv.get('alice')?.has('eq1')).toBe(true);
+    expect(equipInv.get('alice')?.has('eq1')).toBe(false);
+    const att = mailAtt('alice', 'auction_expire:');
+    expect((att?.instance as EquipmentInstance | undefined)?.id).toBe('eq1');
   });
 
   it('A equipment overpriced listing → PRICE_OUT_OF_RANGE (and escrow instance is returned)', async () => {

@@ -450,9 +450,16 @@ components:
       type: object
       required: [kind]
       properties:
-        kind: { type: string, enum: [coins, item, skin, material] }
+        # equipment/card carry a full instance snapshot (auction escrow-out delivery/return); the client renders
+        # name/rarity/level from the attached instance and the claim writes it back to equipmentInv/cardInv by id.
+        kind: { type: string, enum: [coins, item, skin, material, equipment, card] }
         id: { type: string }
         count: { type: integer }
+        instance:
+          description: Present only for kind=equipment|card — the traded instance snapshot
+          oneOf:
+            - $ref: '#/components/schemas/EquipmentInstance'
+            - $ref: '#/components/schemas/CardInstance'
 
     MailView:
       type: object

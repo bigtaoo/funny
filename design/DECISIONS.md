@@ -220,3 +220,10 @@
   4. **繁荣/领地计数**：九格**全部计入** `territoryCount` 与家族繁荣（`countDocuments{ownerId}` 无需特判）。
 - **不迁移**：SLG 未上线，无存量数据；现有 dev/test 单格主城在下次 join/relocate 时自然重建为九格。
 - **影响**：`@nw/shared`（`slg.ts`：新增 3×3 footprint 工具函数 + `findMarchPath` 增 `blockedBaseKeys`）**属公共依赖，最先合 main**；`worldsvc`（`service.ts` joinWorld/relocateBase/passiveRelocate 写 9 格、placement 校验 9 格、`computeMarchPath` 构建 `blockedBaseKeys`、`applySiege` 任一 base 格→锚点、abandon/occupy 拒绝 base 格、`pickSpawnTile` 3×3 扫描）；`client`（`WorldMapScene` 城市 sprite 对齐真实九格 + 修贴图留白 + 点击任一格开主城菜单）。[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1 主城行 + §3 footprint 说明须更新。
+
+## ADR-026 拍卖物品交割/退回 = escrow-out + 系统邮件（废弃"溢出暂存区"） — Accepted — 2026-07-02
+
+- **决策**（用户拍板）：拍卖走 **escrow-out** 模型——玩家挂单即把物品**从背包移出寄存**（拍卖期间背包不可见、不可用）；**所有离开拍卖系统的物品一律通过系统邮件附件下发，玩家领取附件后才回背包**。范围含**成交发给买家 + 流拍/取消/季末清算退回卖家**，物料/装备/角色卡三类皆然。**推翻** EQUIPMENT_DESIGN §13 早先的「满仓溢出暂存区领取 UI」提案——邮件本身即持有缓冲，天然规避满仓资损、不突破 300 硬上限（ADR-012），语义也更清晰（寄存物取回）。
+- **为什么**：旧路径成交/退回直接 `grantEquipment/grantCard/grantMaterial` 写回背包，撞满仓时要么资损要么需另建暂存区；且"退回即刻入库"与"寄存出去"的心智不符。改经邮件后，出账与领取解耦，一套机制覆盖买卖两侧。
+- **不动**：金币侧（卖方收款、竞拍退款）仍直接走 commercial（钱包权威，无背包/实例问题）；`createAuction` 内 escrow 后的**同步失败回滚**仍直接 grant（挂单未成立的即时回退，非出账语义）。
+- **影响**：`@nw/shared`（`MailAttachmentDoc`/`social.ts MailAttachmentView` 增 `kind:'equipment'|'card'` + `instance`）**属公共依赖，最先合 main**；`server/contracts/openapi.yml`（`MailAttachmentView` 同步）；`metaserver`（`mail.ts splitAttachments` + `service.ts claimMail` 写回实例，`cards.ts` 抽 `grantCard`）；`worldsvc`（`auctionService.ts deliverItem` 改发系统邮件、注入 `mail`；`mailClient.ts` 附件类型扩展）；`client`（`FriendsScene` 邮件渲染装备/卡附件 + i18n 三语）。文档同步：EQUIPMENT_DESIGN §13、AUCTION_DESIGN §1/§2/§A。
