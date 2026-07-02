@@ -1262,7 +1262,12 @@ export const SIEGE_UNIT_HP_STEPS = 4;
 /** Building max HP per level: `maxHp = level × SLG_BASE_HP_PER_LEVEL` (main base lv1 = 100 ⇒ ~3–4 sieges at ~30/hit). [DRAFT → economy pass] */
 export const SLG_BASE_HP_PER_LEVEL = 100;
 
-/** Placeholder per-card contribution to a team's siege value (team siege value = card count × this). Real derivation TBD in a dedicated session. [DRAFT] */
+/**
+ * 攻城值 (siege value) is a NEW per-card attribute, same tier as attack / move-speed (owner decision 2026-07-02).
+ * A team's siege value = sum of each of its cards' 攻城值. v1 placeholder: every card contributes this uniform value
+ * (real per-card/per-level values are designed in a dedicated session). A real team always has cards → value is always > 0;
+ * the only "no building damage" case is the attacker being wiped, which is already a defender win (no hit scheduled). [DRAFT]
+ */
 export const SLG_SIEGE_VALUE_PER_CARD = 10;
 
 /** Delay (ms) between an attacker clearing the garrison and the building-HP hit being settled (ADR-026 §4; "5-minute" rule). [DRAFT] */
@@ -1277,9 +1282,9 @@ export function buildingMaxHp(level: number): number {
 }
 
 /**
- * A team's siege value = sum over the cards it contains (ADR-026 §4). v1 placeholder: each card contributes
- * SLG_SIEGE_VALUE_PER_CARD. Only entries with a cardInstanceId count (legacy synthesized entries contribute 0).
- * Empty / card-less team → 0 (deals no building damage even on victory).
+ * A team's siege value = sum of each card's 攻城值 attribute (ADR-026 §4; a per-card stat, same tier as attack/speed).
+ * v1 placeholder: each card contributes SLG_SIEGE_VALUE_PER_CARD. Only entries with a cardInstanceId count.
+ * Real teams always contain cards → value is always > 0 (legacy card-less synthesized entries, used only in tests, contribute 0).
  */
 export function teamSiegeValue(army: ReadonlyArray<{ cardInstanceId?: string }>): number {
   let n = 0;

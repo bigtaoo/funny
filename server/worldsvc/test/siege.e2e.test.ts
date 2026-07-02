@@ -205,45 +205,10 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(siege?.outcome).toBe('defender_win');
   });
 
-  it('attack main base win: forced relocation (old site reverts to neutral + random new site with protection shield + territory lost) + loot + attacker survivors return and troops refunded', async () => {
-    await svc.joinWorld(W, 'a', 5, 5);
-    const tgt = findCoord(NON_BLOCKING, 10, 5);
-    // b's main base + one territory: forced relocation should cause b to lose this territory.
-    await setupDefender('b', tgt.x, tgt.y, { type: 'base', garrison: 500, ink: 1000 });
-    const terr = findCoord(NON_BLOCKING, 12, 5);
-    await m.collections.tiles.updateOne(
-      { _id: tileId(W, terr.x, terr.y) },
-      { $set: { _id: tileId(W, terr.x, terr.y), worldId: W, x: terr.x, y: terr.y, type: 'territory', level: 1, ownerId: 'b', garrison: 300, rev: 0 } },
-      { upsert: true },
-    );
-
-    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 800);
-    nowMs = mv.arriveAt;
-    expect(await svc.processDueArrivals()).toBe(1);
-
-    // Old main base tile reverts to neutral (deleted, no ownerId).
-    const oldTile = await m.collections.tiles.findOne({ _id: tileId(W, tgt.x, tgt.y) });
-    expect(oldTile?.ownerId).toBeUndefined();
-    // Old territory tile also cleared (territory lost).
-    const oldTerr = await m.collections.tiles.findOne({ _id: tileId(W, terr.x, terr.y) });
-    expect(oldTerr?.ownerId).toBeUndefined();
-    // b's main base relocated to a random new site (≠ old site), new site type=base + protection shield + garrison 0.
-    const meB = await svc.getMe(W, 'b');
-    expect(meB.mainBaseTile).toBeDefined();
-    expect(meB.mainBaseTile).not.toBe(tileId(W, tgt.x, tgt.y));
-    expect(meB.territoryCount).toBe(1); // only the new main base remains
-    const newBase = await m.collections.tiles.findOne({ _id: meB.mainBaseTile! });
-    expect(newBase?.ownerId).toBe('b');
-    expect(newBase?.type).toBe('base');
-    expect(newBase?.garrison).toBe(0);
-    expect(newBase?.protectedUntil).toBeGreaterThan(nowMs);
-    // Attacker survivors returned to troop pool: 2000 - 800(marched) + engine survivors(>0) > 1200.
-    expect((await svc.getMe(W, 'a')).troops).toBeGreaterThan(TROOP_CAP_BASE - 800);
-    // Loot 250.
-    expect((await svc.getMe(W, 'a')).resources?.ink).toBe(Math.floor(1000 * SIEGE_LOOT_RATE));
-    const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
-    expect(siege?.outcome).toBe('attacker_win');
-  });
+  // NOTE (ADR-026): "attack main base" is no longer an instant single-battle capture. A base now has HP + wave defenders
+  // (t1..t5) + a delayed siege-value settlement (see design/DECISIONS.md ADR-026). The full base-siege lifecycle —
+  // wave order, attacker survivor carry-over, defeated-team injury, out-team skip, delayed HP hit, HP depletion → forced
+  // relocation — is covered end-to-end in `base-siege.e2e.test.ts`. This file now only covers the unchanged territory path.
 
   it('sweep NPC win: capture resources + survivors return and troops refunded (no tile occupation)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);

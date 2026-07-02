@@ -1613,8 +1613,8 @@ export class WorldService {
     }
 
     if (cleared) {
-      // Garrison cleared (or no defenders present): schedule the delayed building-HP hit = attacking team's siege value.
-      // Attacker keeps besieging; survivors are refunded at settlement (processDueSiegeDamage). Card-less flat-troop attacks deal 0 (bases require a real card team).
+      // Garrison cleared (or no defenders present): schedule the delayed building-HP hit = attacking team's siege value
+      // (sum of the team's per-card 攻城值; a real card team is always > 0). Attacker keeps besieging; survivors are refunded at settlement.
       const damage = teamSiegeValue(m.army ?? []);
       const dmg: SiegeDamageDoc = {
         _id: siege._id,
