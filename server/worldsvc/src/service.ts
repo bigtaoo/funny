@@ -17,6 +17,8 @@ import {
   STRONGHOLD_LOOT_PER_LEVEL,
   strongholdMaterialLoot,
   findMarchPath,
+  baseFootprintCells,
+  baseFootprintInBounds,
   marchDurationFromPath,
   capitalPositions,
   capitalIdxAt,
@@ -359,6 +361,20 @@ export class WorldService {
         )
         .map((g) => `${g.x}:${g.y}`),
     );
+    // ADR-025: other players' 3×3 capitals are solid buildings that block pathing (封路); the marcher
+    // routes around them but can still march ONTO an enemy base tile to besiege it (findMarchPath exempts
+    // the destination). The marcher's own base cells are excluded so owners march in/out freely.
+    // When the destination IS an enemy base cell (a siege), also exclude THAT base's whole footprint so
+    // every one of its 9 cells — including the center, which is otherwise walled in by its own ring — is
+    // reachable ("attack any cell = attack the base"). Only that one base opens up; all others still block.
+    const destTile = await this.deps.cols.tiles.findOne({ _id: tileId(worldId, toX, toY) });
+    const siegeBaseOwner = destTile?.type === 'base' ? destTile.ownerId : undefined;
+    const excludeOwners = siegeBaseOwner ? [requesterId, siegeBaseOwner] : [requesterId];
+    const blockedBaseTiles = await this.deps.cols.tiles
+      .find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
+      .project<{ x: number; y: number }>({ x: 1, y: 1 })
+      .toArray();
+    const blockedBaseKeys = new Set<string>(blockedBaseTiles.map((b) => `${b.x}:${b.y}`));
     const path = findMarchPath(
       worldId,
       this.deps.mapW,
@@ -368,6 +384,7 @@ export class WorldService {
       toX,
       toY,
       passableGateKeys,
+      blockedBaseKeys,
     );
     if (!path) throw new SlgError('PATH_BLOCKED', 'No viable path found');
     return path;
@@ -689,6 +706,10 @@ export class WorldService {
       if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', 'Cannot place capital on stronghold terrain');
       const occ = await cols.tiles.findOne({ _id: tileId(worldId, x, y) });
       if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied');
+      // ADR-025: the capital is a 3×3 building — the whole footprint must fit + be free.
+      if (!(await this.footprintFree(worldId, x, y, this.deps.mapW, this.deps.mapH))) {
+        throw new SlgError('TILE_OCCUPIED', 'The 3×3 capital footprint does not fit / is occupied here');
+      }
       spawn = { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
     } else {
       // Auto-placement: prefer near family members → outer newbie ring → whole-map fallback.
@@ -716,21 +737,19 @@ export class WorldService {
     }
 
     const t = now();
+    // ADR-025: only the anchor contributes the base ink trickle (ring cells add no yield).
     const yieldRate = this.yieldRecord([{ type: 'base', level: spawn.level }]);
-    const tileDoc: TileDoc = {
-      _id: tid,
-      worldId,
-      x: spawn.x,
-      y: spawn.y,
-      type: 'base',
+    // Write all 9 footprint tiles (anchor + 8 ring), idempotent via $setOnInsert like the old single-tile write.
+    const baseDocs = this.baseTileDocs(worldId, spawn.x, spawn.y, accountId, {
+      garrison: GARRISON_PER_TILE,
       level: spawn.level,
       ...(spawn.resType ? { resType: spawn.resType } : {}),
-      ownerId: accountId,
-      garrison: GARRISON_PER_TILE,
       protectedUntil: t + PROTECTION_SEC * 1000,
-      rev: 0,
-    };
-    await cols.tiles.updateOne({ _id: tid }, { $setOnInsert: tileDoc }, { upsert: true });
+      ...(familyId ? { familyId } : {}),
+    });
+    await Promise.all(
+      baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $setOnInsert: d }, { upsert: true })),
+    );
 
     // Home-city building system (SLG_CITY_DESIGN): a fresh capital starts with desk:1; troopCap derives from buildings (drillYard 0 → TROOP_CAP_BASE).
     const buildings: Partial<Record<BuildingKey, number>> = { desk: 1 };
@@ -770,6 +789,8 @@ export class WorldService {
 
     const tid = tileId(worldId, x, y);
     const occ = await cols.tiles.findOne({ _id: tid });
+    // ADR-025: a base is a 3×3 indivisible building — no cell (anchor or ring) can be occupied. Take it via siege.
+    if (occ?.type === 'base') throw new SlgError('TILE_OCCUPIED', 'Cannot occupy a capital (siege the base instead)');
     if (occ?.ownerId === accountId) return this.tileDocView(occ, accountId); // idempotent
     if (occ?.ownerId) {
       // Another player's territory: S8-1 has no siege; if protected or otherwise occupied, always reject (take via S8-3 siege).
@@ -825,6 +846,7 @@ export class WorldService {
     const tid = tileId(worldId, x, y);
     const tile = await cols.tiles.findOne({ _id: tid });
     if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Not your territory');
+    // ADR-025: all 9 footprint cells are type:'base', so this single check rejects abandoning anchor OR ring — no change needed.
     if (tile.type === 'base') throw new SlgError('TILE_NOT_OWNED', 'Cannot abandon the capital');
 
     const t = now();
@@ -862,6 +884,10 @@ export class WorldService {
     if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', 'Cannot place capital on stronghold terrain');
     const occ = await cols.tiles.findOne({ _id: newTid });
     if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied');
+    // ADR-025: the whole 3×3 footprint must fit + be free at the new anchor (ignore our own old base cells).
+    if (!(await this.footprintFree(worldId, x, y, this.deps.mapW, this.deps.mapH, { ignoreOwnerId: accountId }))) {
+      throw new SlgError('TILE_OCCUPIED', 'The 3×3 capital footprint does not fit / is occupied at the new location');
+    }
 
     // Deduct coins first (failure throws INSUFFICIENT_FUNDS; map state is not modified).
     const orderId = `slg_relocate:${worldId}:${accountId}:${now()}`;
@@ -871,22 +897,19 @@ export class WorldService {
     const oldBase = await cols.tiles.findOne({ _id: pw.mainBaseTile });
     const carryGarrison = oldBase?.garrison ?? GARRISON_PER_TILE;
     const carryProtect = oldBase?.protectedUntil; // carry over the old capital's remaining protection shield (voluntary relocation grants no extension)
-    await cols.tiles.deleteOne({ _id: pw.mainBaseTile });
+    // ADR-025: a player has exactly one base = its 9 footprint tiles; delete them all.
+    await cols.tiles.deleteMany({ worldId, ownerId: accountId, type: 'base' });
 
-    const tileDoc: TileDoc = {
-      _id: newTid,
-      worldId,
-      x,
-      y,
-      type: 'base',
+    const baseDocs = this.baseTileDocs(worldId, x, y, accountId, {
+      garrison: carryGarrison,
       level: proc.level,
       ...(proc.resType ? { resType: proc.resType } : {}),
-      ownerId: accountId,
-      garrison: carryGarrison,
       ...(carryProtect ? { protectedUntil: carryProtect } : {}),
-      rev: 0,
-    };
-    await cols.tiles.updateOne({ _id: newTid }, { $set: tileDoc }, { upsert: true });
+      ...(pw.familyId ? { familyId: pw.familyId } : {}),
+    });
+    await Promise.all(
+      baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $set: d }, { upsert: true })),
+    );
 
     const resources = this.settle(pw, t);
     const yieldRate = await this.recomputeYield(worldId, accountId);
@@ -1313,11 +1336,17 @@ export class WorldService {
     }
 
     const defenderId = target.ownerId;
+    // ADR-025 unified defense: attacking ANY of the 9 base cells besieges the whole base. If the attacker
+    // landed on a ring cell, resolve garrison + defense config against the ANCHOR (which holds them); the
+    // attacker still marched to m.toTile. Falls back to target if the anchor is somehow missing.
+    const baseTile = target.baseRing
+      ? ((await cols.tiles.findOne({ _id: target.baseAnchor })) ?? target)
+      : target;
     // Nation defense bonus (§2.4 / G1): if the garrison tile is within the Voronoi region of a capital the defender occupies → effective garrison strength is increased.
-    const capIdx = nearestCapitalIdx(target.x, target.y, this.capitals);
+    const capIdx = nearestCapitalIdx(baseTile.x, baseTile.y, this.capitals);
     const nation = await cols.nations.findOne({ _id: `nation:${m.worldId}:${capIdx}` });
     const inOwnNation = !!nation?.ownerId && nation.ownerId === defenderId;
-    const effGarrison = nationDefenseStrength(target.garrison ?? 0, inOwnNation);
+    const effGarrison = nationDefenseStrength(baseTile.garrison ?? 0, inOwnNation);
 
     // E8/CC-3: fetch attacker's progression snapshot early (needed for card army resolution + blueprint injection).
     const attackerSave = await this.meta.getSaveFields(m.ownerId).catch(() => null);
@@ -1330,8 +1359,8 @@ export class WorldService {
       hasCardArmy
         ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
         : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
-    const defenderConfig = this.buildDefenderConfig(target, effGarrison, inOwnNation);
-    const tileLevel = target.level ?? 1;
+    const defenderConfig = this.buildDefenderConfig(baseTile, effGarrison, inOwnNation);
+    const tileLevel = baseTile.level ?? 1;
     const seed = siegeSeedFromId(m._id);
 
     // C7/§17.9: mid-season engine drift detection (non-blocking; warning only — replays may drift frame by frame; ops treatment in §17.9).
@@ -1804,20 +1833,17 @@ export class WorldService {
     }
 
     const newTid = tileId(worldId, spot.x, spot.y);
-    const tileDoc: TileDoc = {
-      _id: newTid,
-      worldId,
-      x: spot.x,
-      y: spot.y,
-      type: 'base',
+    // ADR-025: write the full 3×3 footprint (anchor garrison:0 + protection shield); ring cells carry the same shield.
+    const baseDocs = this.baseTileDocs(worldId, spot.x, spot.y, defenderId, {
+      garrison: 0,
       level: spot.level,
       ...(spot.resType ? { resType: spot.resType } : {}),
-      ownerId: defenderId,
-      garrison: 0,
       protectedUntil: t + PROTECTION_SEC * 1000, // relocated to safety: apply protection shield
-      rev: 0,
-    };
-    await cols.tiles.updateOne({ _id: newTid }, { $set: tileDoc }, { upsert: true });
+      ...(pw.familyId ? { familyId: pw.familyId } : {}),
+    });
+    await Promise.all(
+      baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $set: d }, { upsert: true })),
+    );
 
     const yieldRate = await this.recomputeYield(worldId, defenderId);
     await cols.playerWorld.updateOne(
@@ -1840,7 +1866,7 @@ export class WorldService {
     worldId: string,
     minDr = 0,
   ): Promise<{ x: number; y: number; level: number; resType?: ResourceType } | null> {
-    const { cols, mapW, mapH } = this.deps;
+    const { mapW, mapH } = this.deps;
     const cx = mapW / 2;
     const cy = mapH / 2;
     const maxDist = Math.sqrt(cx * cx + cy * cy);
@@ -1861,8 +1887,8 @@ export class WorldService {
       ) {
         continue;
       }
-      const occ = await cols.tiles.findOne({ _id: tileId(worldId, x, y) });
-      if (occ?.ownerId) continue;
+      // ADR-025: a candidate anchor must host the whole 3×3 footprint (in bounds + all 9 cells free).
+      if (!(await this.footprintFree(worldId, x, y, mapW, mapH))) continue;
       return { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
     }
     return null;
@@ -1905,7 +1931,6 @@ export class WorldService {
     oy: number,
     maxR: number,
   ): Promise<{ x: number; y: number; level: number; resType?: ResourceType } | null> {
-    const { cols } = this.deps;
     for (let r = 1; r <= maxR; r++) {
       const ring: [number, number][] = [];
       for (let dx = -r; dx <= r; dx++) {
@@ -1920,8 +1945,8 @@ export class WorldService {
         if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'gate' || proc.type === 'stronghold') {
           continue;
         }
-        const occ = await cols.tiles.findOne({ _id: tileId(worldId, x, y) });
-        if (occ?.ownerId) continue;
+        // ADR-025: the candidate anchor must host the whole 3×3 footprint.
+        if (!(await this.footprintFree(worldId, x, y, this.deps.mapW, this.deps.mapH))) continue;
         return { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
       }
     }
@@ -1936,6 +1961,91 @@ export class WorldService {
       [out[i], out[j]] = [out[j]!, out[i]!];
     }
     return out;
+  }
+
+  // ── Main-base 3×3 footprint helpers (ADR-025) ────────────────────
+
+  /**
+   * Build the 9 TileDocs for a base anchored (centered) at (ax,ay). The anchor is a full type:'base' tile
+   * (garrison + level + optional resType), the 8 ring cells are type:'base' placeholders (ownerId + protection,
+   * baseRing:true, baseAnchor→anchor tileId, level:1, no garrison/resType/yield). All are indivisible (ADR-025).
+   */
+  private baseTileDocs(
+    worldId: string,
+    ax: number,
+    ay: number,
+    ownerId: string,
+    opts: { garrison?: number; level: number; resType?: ResourceType; protectedUntil?: number; familyId?: string },
+  ): TileDoc[] {
+    const anchorTid = tileId(worldId, ax, ay);
+    const docs: TileDoc[] = [];
+    for (const { x, y } of baseFootprintCells(ax, ay)) {
+      const isAnchor = x === ax && y === ay;
+      if (isAnchor) {
+        docs.push({
+          _id: anchorTid,
+          worldId,
+          x,
+          y,
+          type: 'base',
+          level: opts.level,
+          ...(opts.resType ? { resType: opts.resType } : {}),
+          ownerId,
+          ...(opts.familyId ? { familyId: opts.familyId } : {}),
+          garrison: opts.garrison ?? GARRISON_PER_TILE,
+          ...(opts.protectedUntil ? { protectedUntil: opts.protectedUntil } : {}),
+          rev: 0,
+        });
+      } else {
+        docs.push({
+          _id: tileId(worldId, x, y),
+          worldId,
+          x,
+          y,
+          type: 'base',
+          level: 1,
+          ownerId,
+          ...(opts.familyId ? { familyId: opts.familyId } : {}),
+          ...(opts.protectedUntil ? { protectedUntil: opts.protectedUntil } : {}),
+          baseRing: true,
+          baseAnchor: anchorTid,
+          rev: 0,
+        });
+      }
+    }
+    return docs;
+  }
+
+  /**
+   * True iff the whole 3×3 block anchored at (ax,ay) can host a base: fully in bounds, no cell is a
+   * blocking/reserved procedural type (center/obstacle/gate/stronghold), and no cell is occupied by another
+   * player. `ignoreOwnerId` excludes a player's own existing tiles (belt-and-suspenders for relocate).
+   */
+  private async footprintFree(
+    worldId: string,
+    ax: number,
+    ay: number,
+    mapW: number,
+    mapH: number,
+    opts?: { ignoreOwnerId?: string },
+  ): Promise<boolean> {
+    if (!baseFootprintInBounds(ax, ay, mapW, mapH)) return false;
+    const cells = baseFootprintCells(ax, ay);
+    for (const { x, y } of cells) {
+      const proc = proceduralTile(worldId, x, y);
+      if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'gate' || proc.type === 'stronghold') {
+        return false;
+      }
+    }
+    const ids = cells.map(({ x, y }) => tileId(worldId, x, y));
+    const existing = await this.deps.cols.tiles
+      .find({ _id: { $in: ids } })
+      .project<{ ownerId?: string }>({ ownerId: 1 })
+      .toArray();
+    for (const e of existing) {
+      if (e.ownerId && e.ownerId !== opts?.ignoreOwnerId) return false;
+    }
+    return true;
   }
 
   // ── Internal helpers ─────────────────────────────────────────────
@@ -1990,6 +2100,9 @@ export class WorldService {
 
     const acc = emptyResources();
     for (const tl of owned) {
+      // ADR-025: only the base anchor contributes yield; the 8 ring cells are type:'base' too and would
+      // otherwise each add the base ink trickle (9× inflation), so skip them.
+      if (tl.baseRing) continue;
       const nationMult = ownedCapIdx.size > 0 && ownedCapIdx.has(nearestCapitalIdx(tl.x, tl.y, this.capitals))
         ? 1 + NATION_BONUS_PRODUCTION : 1;
       const y = tileYield(tl.type, tl.level, tl.resType);

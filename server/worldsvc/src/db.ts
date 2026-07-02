@@ -85,6 +85,10 @@ export interface TileDoc {
   garrison?: number;
   protectedUntil?: number; // ms
   watchtower?: boolean; // watchtower (§18 G5 V2): once built, this tile becomes a large-radius persistent vision source; lost together with TileDoc when tile is lost
+  /** ADR-025: true on the 8 non-anchor cells of a 3×3 main-base footprint (the anchor omits this). Ring cells hold ownerId + protection but no garrison/yield. */
+  baseRing?: boolean;
+  /** ADR-025: on ring cells only — the tileId of this base's anchor, so a siege landing on a ring cell resolves against the anchor's garrison/defense. Anchor omits this. */
+  baseAnchor?: string;
   rev: number;
 }
 

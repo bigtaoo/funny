@@ -143,6 +143,11 @@ const HUD_H    = 100;  // bottom HUD bar height
 const MARGIN   = 4;    // margin inside modal
 const CONFIRM_H = 140;
 
+// City sprite side length in tiles (ADR-025). The base now really occupies a 3×3 footprint; the
+// sprite is drawn slightly larger than 3 tiles to compensate the ~15% transparent margin baked into
+// the isometric city art, so the drawn building visually fills its 3×3 block instead of floating small.
+const BASE_SPRITE_TILES = 3.2;
+
 // ── Zoom system ───────────────────────────────────────────────────────────────
 // Three zoom levels cycled via a button:
 //   L1 detail   25×≈14 tiles, 76px/tile (1920px design width) — full markers (level dots / watchtowers / sect borders)
@@ -552,7 +557,9 @@ export class WorldMapScene implements Scene {
 
         const cacheKey = `${tx}:${ty}`;
         const tile = this.tileCache.get(cacheKey);
-        if (tile?.type !== 'base') continue;
+        // A base occupies 9 tiles (ADR-025); draw the single city sprite only on the CENTER anchor,
+        // so the 8 ring cells don't each spawn an overlapping 3×3 sprite.
+        if (tile?.type !== 'base' || !this.isBaseAnchor(tx, ty)) continue;
 
         seen.add(cacheKey);
 
@@ -580,11 +587,11 @@ export class WorldMapScene implements Scene {
         cityC.x = this.panX + (tx + 0.5) * tp;
         cityC.y = this.panY + (ty + 0.5) * tp;
 
-        // Resize sprite to 3×3 tiles
+        // Resize sprite to fill the 3×3 footprint (BASE_SPRITE_TILES compensates the art's margin).
         const sprite = cityC.getChildByName('img') as PIXI.Sprite;
         if (sprite.texture !== tex) sprite.texture = tex;
-        sprite.width  = 3 * tp;
-        sprite.height = 3 * tp;
+        sprite.width  = BASE_SPRITE_TILES * tp;
+        sprite.height = BASE_SPRITE_TILES * tp;
 
         // Redraw level-within-tier dots
         const dots = cityC.getChildByName('dots') as PIXI.Graphics;
@@ -599,7 +606,7 @@ export class WorldMapScene implements Scene {
           const gap   = dotR * 2.7;
           const totalW = maxInTier * gap - gap + 2 * dotR;
           const bx    = -totalW / 2 + dotR;
-          const by    = tp * 1.52 + dotR;   // just below sprite bottom edge
+          const by    = (BASE_SPRITE_TILES / 2) * tp + dotR;   // just below the sprite's bottom edge
           dots.lineStyle(1, inkColor, 0.85);
           for (let d = 0; d < maxInTier; d++) {
             const cx = bx + d * gap;
@@ -642,16 +649,38 @@ export class WorldMapScene implements Scene {
     const fogged = tile?.visible === false;
 
     if (this.zoom === 1) {
-      this.drawTileL1(g, tile ?? null, fill, owner, fogged, tp);
+      const isAnchor = tile?.type === 'base' && this.isBaseAnchor(tx, ty);
+      this.drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor);
     } else {
       this.drawTileL2(g, fill, owner, fogged, tp);
     }
   }
 
+  /**
+   * Is (tx,ty) the CENTER anchor of a 3×3 base (ADR-025)? True iff the tile and all 4 orthogonal
+   * neighbors are base tiles of the same owner — only the center of a 3×3 satisfies this, so ring
+   * cells return false. Used to draw the city sprite/icon exactly once per base.
+   */
+  private isBaseAnchor(tx: number, ty: number): boolean {
+    const c = this.tileCache.get(`${tx}:${ty}`);
+    if (c?.type !== 'base') return false;
+    const ownerKey = this.ownerKeyOf(c);
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+      const n = this.tileCache.get(`${tx + dx}:${ty + dy}`);
+      if (n?.type !== 'base' || this.ownerKeyOf(n) !== ownerKey) return false;
+    }
+    return true;
+  }
+
+  /** Stable-ish owner identity for anchor detection: prefer ownerPublicId, else the mine/ally/enemy class. */
+  private ownerKeyOf(t: WorldTileView): string {
+    return t.ownerPublicId ?? (t.mine ? 'me' : t.ally ? 'ally' : t.occupied ? 'enemy' : 'none');
+  }
+
   /** L1 detail tile: paper terrain + motif, then ownership wash/border, then level/sect/watchtower markers. */
   private drawTileL1(
     g: PIXI.Graphics, tile: WorldTileView | null,
-    fill: number, owner: number | null, fogged: boolean, tp: number,
+    fill: number, owner: number | null, fogged: boolean, tp: number, isAnchor: boolean,
   ): void {
     // Soft sketch grid + calm terrain fill (alpha < 1 lets the paper grain show through).
     g.lineStyle(0.7, 0xccbbaa, 0.32);
@@ -692,8 +721,9 @@ export class WorldMapScene implements Scene {
     }
 
     // City icon on capital tiles: sprite layer handles this once the atlas is ready.
-    if (tile?.type === 'base' && !isCityAtlasReady()) {
-      this.drawCityIcon(g, tile.mine ?? false, tile.ally ?? false, tile.level ?? 1, tp);
+    if (isAnchor && !isCityAtlasReady()) {
+      // Programmatic fallback icon, drawn once on the base's center anchor until the atlas decodes.
+      this.drawCityIcon(g, tile!.mine ?? false, tile!.ally ?? false, tile!.level ?? 1, tp);
     }
 
     if (tile && tile.level > 1) {

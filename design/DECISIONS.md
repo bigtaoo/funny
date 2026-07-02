@@ -209,3 +209,14 @@
 - **为什么**：旧实现里颜色同时表达「地形类型」和「归属」，且 `RES_COLORS` 的绿/蓝直接撞 ally 绿 / enemy 蓝 —— 一块资源地看起来像别人的地盘；每格 0.85 实心填充 + 硬边框 = 全图花花绿绿，与手绘笔记本纸感相反。
 - **不动的铁律**：ADR-003 我蓝敌红 / [`product/art-direction.md`](product/art-direction.md) §3.2 归属色未改；本条只改地形/资源底色与「归属改画描边而非整格填充」的呈现方式。
 - **影响**：仅客户端 `client/src/scenes/WorldMapScene.ts`（`TERRAIN_COLORS`/`RES_COLORS`/新增 `ownerTint`+`terrainFill`/`drawTileL1`/`drawTileL2`）。无服务端/契约改动。
+
+## ADR-025 SLG 主城 = 真占 3×3=9 格实体（封路 + 一体防守 + 计 9 格） — Accepted — 2026-07-02
+
+- **决策**（用户拍板）：玩家主城从「单格 `type:'base'`」改为**真实占据 3×3=9 个地格的实体建筑**。锚点仍是 `PlayerWorldDoc.mainBaseTile`（中心格），围绕它的 8 格同写 `type:'base'` 且同 `ownerId`，**九格一体、不可分割**（敌人不能单独占/弃其中一角）。
+- **四条细则**：
+  1. **落城/迁城占位校验**：join（自动落城 + 手动）/relocateBase 都要求 3×3 九格全空（无 obstacle/gate/center/stronghold/他人领地），且中心格离地图边 ≥1 格。`pickSpawnTile` 自动选址扫描「3×3 可落」的锚点。
+  2. **封路**：主城九格对**非城主行军不可穿过**（等同障碍），敌军寻路必须绕行——玩家可用主城**封路**。城主自己的行军可进出自己的主城（`findMarchPath` 新增 `blockedBaseKeys` 参数，语义同 `passableGateKeys`：命中即阻挡，但 `isDest` 放行以便围攻敌方主城）。
+  3. **一体防守**：主城为一体，**攻击九格中任意一格 = 围攻整座主城**，到达后一律以锚点的驻军/防守 config 结算同一场围攻；「在主城的队伍依次作为守军出战」沿用既有防守 config 机制（§3.3），本条不新建多队波次系统。
+  4. **繁荣/领地计数**：九格**全部计入** `territoryCount` 与家族繁荣（`countDocuments{ownerId}` 无需特判）。
+- **不迁移**：SLG 未上线，无存量数据；现有 dev/test 单格主城在下次 join/relocate 时自然重建为九格。
+- **影响**：`@nw/shared`（`slg.ts`：新增 3×3 footprint 工具函数 + `findMarchPath` 增 `blockedBaseKeys`）**属公共依赖，最先合 main**；`worldsvc`（`service.ts` joinWorld/relocateBase/passiveRelocate 写 9 格、placement 校验 9 格、`computeMarchPath` 构建 `blockedBaseKeys`、`applySiege` 任一 base 格→锚点、abandon/occupy 拒绝 base 格、`pickSpawnTile` 3×3 扫描）；`client`（`WorldMapScene` 城市 sprite 对齐真实九格 + 修贴图留白 + 点击任一格开主城菜单）。[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1 主城行 + §3 footprint 说明须更新。
