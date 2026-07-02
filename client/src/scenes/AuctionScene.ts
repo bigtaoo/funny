@@ -1,24 +1,38 @@
 // AuctionScene — SLG auction scene (S8-5)
 // Two tabs: all auctions / my listings; bottom actions: create listing / buy / cancel
+// E5 / CC-5: listing supports three item classes — material, equipment instance, character card.
+//   Equipment/card listings send { instanceId }; the server escrows the full instance snapshot (qty always 1).
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
-import { t } from '../i18n';
+import { t, type TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, AuctionView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
+import type { SaveData, EquipmentInstance, CardInstance } from '../game/meta/SaveData';
 
 export interface AuctionSceneCallbacks {
   onBack(): void;
   worldApi: WorldApiClient;
   worldId: string;
+  /**
+   * Read the current authoritative save — source for the equipment/card listing picker
+   * (equipmentInv / cardInv). Optional: without it, only material listing is offered.
+   */
+  getSave?(): SaveData;
+  /**
+   * Re-pull the authoritative save after an equipment/card listing (the server escrows the
+   * instance, removing it from inventory). Optional; no-op when absent (e.g. tests).
+   */
+  reloadSave?(): Promise<void>;
 }
 
 type AucTab = 'all' | 'mine';
+type ItemClass = 'material' | 'equipment' | 'card';
 
 const ROW_H = 56;
 const HUD_H = 50;
@@ -27,10 +41,12 @@ const FILTER_H = 34;
 
 // Material types available for auction
 const MATERIALS = ['scrap', 'lead', 'binding'] as const;
+// Item classes offered in the create form (equipment/card require getSave).
+const ITEM_CLASSES = ['material', 'equipment', 'card'] as const;
 // Must match server-side AUCTION_DURATIONS_SEC (shared/slg.ts), otherwise createAuction throws BAD_REQUEST.
 const DURATIONS = [21600, 43200, 86400] as const; // 6h, 12h, 24h
 // Category filter for the market tab — matches AuctionView.itemType ('' = no filter).
-const FILTERS = ['', 'material', 'equipment'] as const;
+const FILTERS = ['', 'material', 'equipment', 'card'] as const;
 type AucFilter = typeof FILTERS[number];
 
 export class AuctionScene implements Scene {
@@ -52,7 +68,10 @@ export class AuctionScene implements Scene {
   private toastLayer!: PIXI.Container;
 
   // Create form state
+  private createClass: ItemClass = 'material';
   private createMaterial: typeof MATERIALS[number] = 'scrap';
+  private createEquipId: string | null = null; // selected equipment instance (class='equipment')
+  private createCardId: string | null = null;   // selected card instance (class='card')
   private createSaleMode: 'fixed' | 'auction' = 'fixed';
   private createQty = 1;
   private createPrice = 10;        // fixed buy-now unit price
@@ -61,6 +80,10 @@ export class AuctionScene implements Scene {
   private createDuration: typeof DURATIONS[number] = 21600;
   private createBuyer = '';
   private createOpen = false;
+
+  // Instance picker (scene-level overlay, reuses the body drag-scroll): non-null → show the picker
+  // list instead of the market/mine list. Selecting an instance returns to the create form.
+  private pickerKind: 'equipment' | 'card' | null = null;
 
   // Bid form state (auction listings)
   private bidAuction: AuctionView | null = null;
@@ -141,6 +164,14 @@ export class AuctionScene implements Scene {
     tearDownChildren(this.bodyLayer);
     // Keep static header; only rebuild body hits (not back button)
     this.hitRects = [];
+
+    // Instance picker overlay (equipment/card): back button cancels the picker and returns to the create form.
+    if (this.pickerKind) {
+      this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: HUD_H }, action: () => this.cancelPicker() });
+      this.renderPicker();
+      return;
+    }
+
     this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: HUD_H }, action: () => this.cb.onBack() });
 
     this.renderTabs();
@@ -154,8 +185,8 @@ export class AuctionScene implements Scene {
     const { w } = this;
     const y = HUD_H + TAB_H;
     const chipW = w / FILTERS.length;
-    const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterMaterial' | 'auction.filterEquipment'> = {
-      '': 'auction.filterAll', material: 'auction.filterMaterial', equipment: 'auction.filterEquipment',
+    const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterMaterial' | 'auction.filterEquipment' | 'auction.filterCard'> = {
+      '': 'auction.filterAll', material: 'auction.filterMaterial', equipment: 'auction.filterEquipment', card: 'auction.filterCard',
     };
     for (let i = 0; i < FILTERS.length; i++) {
       const f = FILTERS[i]!;
@@ -225,9 +256,7 @@ export class AuctionScene implements Scene {
 
       const isAuction = auc.saleMode === 'auction';
 
-      // Material name is in item.material (itemType is always 'material'/'equipment'); fall back to itemType when equipment has no material field yet.
-      const matKey = (auc.item?.['material'] as string | undefined) ?? auc.itemType;
-      const itemLbl = txt(`${t(`auction.${matKey as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`, 13, C.dark);
+      const itemLbl = txt(this.auctionLabel(auc), 13, C.dark);
       itemLbl.x = 14; itemLbl.y = cy + 6;
       this.bodyLayer.addChild(itemLbl);
 
@@ -295,6 +324,147 @@ export class AuctionScene implements Scene {
     this.hitRects.push({ rect: { x: w / 2 - 80, y: btnY, w: 160, h: 36 }, action: () => this.openCreateForm() });
   }
 
+  // ── Item labels & inventory (equipment / card) ─────────────────────────────
+
+  /** Equipment display name from i18n (`equip.<defId>.name`); falls back to the raw defId. */
+  private equipName(defId: string): string {
+    const key = `equip.${defId}.name` as TranslationKey;
+    const s = t(key);
+    return s === key ? defId : s;
+  }
+
+  /** Card display name from i18n (`card.<defId>.name`); falls back to the raw defId. */
+  private cardName(defId: string): string {
+    const key = `card.${defId}.name` as TranslationKey;
+    const s = t(key);
+    return s === key ? defId : s;
+  }
+
+  /** Human label for a listing row/title, per item class. */
+  private auctionLabel(auc: AuctionView): string {
+    if (auc.itemType === 'equipment') {
+      const inst = auc.item?.['instance'] as EquipmentInstance | undefined;
+      return inst ? `${this.equipName(inst.defId)} +${inst.level}` : t('auction.filterEquipment');
+    }
+    if (auc.itemType === 'card') {
+      const inst = auc.item?.['instance'] as CardInstance | undefined;
+      return inst ? `${this.cardName(inst.defId)} Lv.${inst.level}` : t('auction.filterCard');
+    }
+    const mat = (auc.item?.['material'] as string | undefined) ?? 'scrap';
+    return `${t(`auction.${mat as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`;
+  }
+
+  /** Equipment instances eligible for listing: not locked and not equipped by any card (mirrors server escrow guard). */
+  private listableEquipment(): EquipmentInstance[] {
+    const save = this.cb.getSave?.();
+    if (!save) return [];
+    const equippedIds = new Set<string>();
+    for (const card of Object.values(save.cardInv ?? {})) {
+      for (const id of Object.values(card.gear ?? {})) if (id) equippedIds.add(id);
+    }
+    return Object.values(save.equipmentInv ?? {}).filter((e) => !e.locked && !equippedIds.has(e.id));
+  }
+
+  /** Card instances eligible for listing: gear must be empty before listing (mirrors server escrow guard, §11). */
+  private listableCards(): CardInstance[] {
+    const save = this.cb.getSave?.();
+    if (!save) return [];
+    return Object.values(save.cardInv ?? {}).filter((c) => !Object.values(c.gear ?? {}).some((v) => !!v));
+  }
+
+  /** Label of the currently selected equipment/card instance for the create form, or null when none is chosen (or it is no longer listable). */
+  private selectedInstanceLabel(): string | null {
+    if (this.createClass === 'equipment') {
+      const inst = this.listableEquipment().find((e) => e.id === this.createEquipId);
+      return inst ? `${this.equipName(inst.defId)} +${inst.level}` : null;
+    }
+    if (this.createClass === 'card') {
+      const inst = this.listableCards().find((c) => c.id === this.createCardId);
+      return inst ? `${this.cardName(inst.defId)} Lv.${inst.level}` : null;
+    }
+    return null;
+  }
+
+  // ── Instance picker (scene-level overlay) ──────────────────────────────────
+
+  private openPicker(kind: 'equipment' | 'card'): void {
+    this.closeModal();
+    this.pickerKind = kind;
+    this.scrollY = 0;
+    this.render();
+  }
+
+  /** Cancel the picker and return to the create form (keeps any prior selection). */
+  private cancelPicker(): void {
+    this.pickerKind = null;
+    this.scrollY = 0;
+    this.render();
+    this.openCreateForm();
+  }
+
+  private renderPicker(): void {
+    const { w, h } = this;
+    const kind = this.pickerKind!;
+    const titleY = HUD_H + 8;
+    const title = txt(t(kind === 'equipment' ? 'auction.pickEquip' : 'auction.pickCard'), 14, C.dark, true);
+    title.x = 12; title.y = titleY;
+    this.bodyLayer.addChild(title);
+
+    const listY = HUD_H + 40;
+    const listH = h - listY - 10;
+
+    const equip = kind === 'equipment' ? this.listableEquipment() : [];
+    const cards = kind === 'card' ? this.listableCards() : [];
+    const count = kind === 'equipment' ? equip.length : cards.length;
+
+    if (count === 0) {
+      const lbl = txt(t(kind === 'equipment' ? 'auction.noEquip' : 'auction.noCards'), 13, C.dark);
+      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + listH / 2;
+      this.bodyLayer.addChild(lbl);
+      return;
+    }
+
+    const totalH = count * ROW_H;
+    this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
+    let cy = listY - this.scrollY;
+    for (let i = 0; i < count; i++) {
+      if (cy + ROW_H < listY || cy > listY + listH) { cy += ROW_H; continue; }
+      const row = sketchPanel(w - 12, ROW_H - 4, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 4, w) });
+      row.x = 6; row.y = cy;
+      this.bodyLayer.addChild(row);
+
+      let label: string;
+      let locked = false;
+      let onPick: () => void;
+      if (kind === 'equipment') {
+        const e = equip[i]!;
+        label = `${this.equipName(e.defId)} +${e.level}`;
+        const id = e.id;
+        onPick = () => { this.createEquipId = id; this.pickerKind = null; this.scrollY = 0; this.render(); this.openCreateForm(); };
+      } else {
+        const c = cards[i]!;
+        label = `${this.cardName(c.defId)} Lv.${c.level}`;
+        locked = c.locked;
+        const id = c.id;
+        onPick = () => { this.createCardId = id; this.pickerKind = null; this.scrollY = 0; this.render(); this.openCreateForm(); };
+      }
+      const nameLbl = txt(label, 13, C.dark, true);
+      nameLbl.x = 14; nameLbl.y = cy + (ROW_H - 4) / 2 - 8;
+      this.bodyLayer.addChild(nameLbl);
+      if (locked) {
+        const lk = txt('🔒', 11, C.mid);
+        lk.x = nameLbl.x + nameLbl.width + 6; lk.y = cy + (ROW_H - 4) / 2 - 8;
+        this.bodyLayer.addChild(lk);
+      }
+      const hint = txt(t('auction.pickHint'), 11, C.accent, true);
+      hint.anchor.set(1, 0.5); hint.x = w - 16; hint.y = cy + ROW_H / 2 - 2;
+      this.bodyLayer.addChild(hint);
+
+      this.hitRects.push({ rect: { x: 6, y: cy, w: w - 12, h: ROW_H - 4 }, action: onPick });
+      cy += ROW_H;
+    }
+  }
+
   // ── Create form (modal) ────────────────────────────────────────────────────
 
   private openCreateForm(): void {
@@ -305,11 +475,12 @@ export class AuctionScene implements Scene {
     this.modalOpen = true;
 
     const auctionMode = this.createSaleMode === 'auction';
+    const isMaterial = this.createClass === 'material';
     const ROW = 40;
     const mw = Math.min(320, w - 24);
     const priceRowsH = auctionMode ? ROW * 2 : ROW; // auction: startPrice + buyout
-    // item + saleMode + qty + price(s) + duration + buyer(label+field=52) + info(24) + buttons(44) + pads(22)
-    const mh = 14 + ROW * 4 + priceRowsH + 52 + 24 + 44 + 8;
+    // class + item + [qty only for material] + saleMode + price(s) + duration + buyer(label+field=52) + info(24) + buttons(44) + pads(22)
+    const mh = 14 + ROW * (4 + (isMaterial ? 1 : 0)) + priceRowsH + 52 + 24 + 44 + 8;
     const mx = (w - mw) / 2;
     const my = Math.max(HUD_H + 4, (h - mh) / 2);
 
@@ -323,25 +494,73 @@ export class AuctionScene implements Scene {
 
     let cy = my + 14;
 
-    // Item type selector (materials only for now; equipment listing is E5)
-    const tl0 = txt(t('auction.item') + ':', 12, C.dark);
-    tl0.x = mx + 10; tl0.y = cy;
-    ml.addChild(tl0);
-    let bx = mx + 10 + tl0.width + 8;
-    for (const mat of MATERIALS) {
-      const active = mat === this.createMaterial;
-      const matIdx = MATERIALS.indexOf(mat);
-      const btn = sketchPanel(60, 24, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(matIdx, 0, 60) });
-      btn.x = bx; btn.y = cy - 2;
+    // Item class selector: material / equipment / card. Equipment & card need the inventory (getSave);
+    // without it (e.g. tests) only material is offered.
+    const canInstance = !!this.cb.getSave;
+    const cl0 = txt(t('auction.itemClass') + ':', 12, C.dark);
+    cl0.x = mx + 10; cl0.y = cy;
+    ml.addChild(cl0);
+    let cbx = mx + 10 + cl0.width + 8;
+    const classKeys: Record<ItemClass, 'auction.classMaterial' | 'auction.classEquipment' | 'auction.classCard'> = {
+      material: 'auction.classMaterial', equipment: 'auction.classEquipment', card: 'auction.classCard',
+    };
+    for (let i = 0; i < ITEM_CLASSES.length; i++) {
+      const cls = ITEM_CLASSES[i]!;
+      const enabled = cls === 'material' || canInstance;
+      const active = cls === this.createClass;
+      const fill = active ? C.dark : (enabled ? 0xeeeeee : 0xe4e4e0);
+      const btn = sketchPanel(66, 24, { fill, border: active ? C.accent : C.mid, seed: seedFor(i, 7, 66) });
+      btn.x = cbx; btn.y = cy - 2;
       ml.addChild(btn);
-      const bl = txt(t(`auction.${mat}` as 'auction.scrap' | 'auction.lead' | 'auction.binding'), 11, active ? C.light : C.dark);
-      bl.anchor.set(0.5, 0.5); bl.x = bx + 30; bl.y = cy + 10;
+      const bl = txt(t(classKeys[cls]), 11, active ? C.light : (enabled ? C.dark : C.mid));
+      bl.anchor.set(0.5, 0.5); bl.x = cbx + 33; bl.y = cy + 10;
       ml.addChild(bl);
-      const m = mat;
-      this.modalHits.push({ rect: { x: bx, y: cy - 2, w: 60, h: 24 }, action: () => { this.createMaterial = m; this.openCreateForm(); } });
-      bx += 64;
+      if (enabled) {
+        this.modalHits.push({ rect: { x: cbx, y: cy - 2, w: 66, h: 24 }, action: () => { this.createClass = cls; this.openCreateForm(); } });
+      }
+      cbx += 70;
     }
     cy += ROW;
+
+    // Item row — material: material-type buttons; equipment/card: selected-instance field (tap → picker).
+    if (isMaterial) {
+      const tl0 = txt(t('auction.item') + ':', 12, C.dark);
+      tl0.x = mx + 10; tl0.y = cy;
+      ml.addChild(tl0);
+      let bx = mx + 10 + tl0.width + 8;
+      for (const mat of MATERIALS) {
+        const active = mat === this.createMaterial;
+        const matIdx = MATERIALS.indexOf(mat);
+        const btn = sketchPanel(60, 24, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(matIdx, 0, 60) });
+        btn.x = bx; btn.y = cy - 2;
+        ml.addChild(btn);
+        const bl = txt(t(`auction.${mat}` as 'auction.scrap' | 'auction.lead' | 'auction.binding'), 11, active ? C.light : C.dark);
+        bl.anchor.set(0.5, 0.5); bl.x = bx + 30; bl.y = cy + 10;
+        ml.addChild(bl);
+        const m = mat;
+        this.modalHits.push({ rect: { x: bx, y: cy - 2, w: 60, h: 24 }, action: () => { this.createMaterial = m; this.openCreateForm(); } });
+        bx += 64;
+      }
+      cy += ROW;
+
+      // Qty (material only; equipment/card are unique instances, qty forced to 1 server-side).
+      this.addNumInput(ml, mx, cy, t('auction.qty') + ':', this.createQty, (v) => { this.createQty = Math.max(1, v); this.openCreateForm(); });
+      cy += ROW;
+    } else {
+      const il0 = txt(t('auction.item') + ':', 12, C.dark);
+      il0.x = mx + 10; il0.y = cy;
+      ml.addChild(il0);
+      const selLabel = this.selectedInstanceLabel();
+      const field = sketchPanel(mw - 20, 26, { fill: 0xfaf9f5, border: selLabel ? C.accent : C.mid, seed: seedFor(cy, 2, mw - 20) });
+      field.x = mx + 10; field.y = cy + 16;
+      ml.addChild(field);
+      const fl = txt(selLabel ?? t('auction.tapChoose'), 11, selLabel ? C.dark : C.mid);
+      fl.x = mx + 16; fl.y = cy + 23;
+      ml.addChild(fl);
+      const kind = this.createClass as 'equipment' | 'card';
+      this.modalHits.push({ rect: { x: mx + 10, y: cy + 16, w: mw - 20, h: 26 }, action: () => this.openPicker(kind) });
+      cy += ROW;
+    }
 
     // Sale mode toggle (fixed buy-now / auction)
     const sm0 = txt(t('auction.saleMode') + ':', 12, C.dark);
@@ -495,11 +714,26 @@ export class AuctionScene implements Scene {
   private async doCreate(): Promise<void> {
     const buyer = this.createBuyer.trim();
     const auctionMode = this.createSaleMode === 'auction';
+    const cls = this.createClass;
+
+    // Resolve the item payload + qty per class; equipment/card require a picked instance (qty forced to 1 server-side).
+    let itemType: 'material' | 'equipment' | 'card';
+    let item: Record<string, unknown>;
+    let qty: number;
+    if (cls === 'equipment') {
+      if (!this.createEquipId) { this.showToast(t('auction.selectItem'), C.red); return; }
+      itemType = 'equipment'; item = { instanceId: this.createEquipId }; qty = 1;
+    } else if (cls === 'card') {
+      if (!this.createCardId) { this.showToast(t('auction.selectItem'), C.red); return; }
+      itemType = 'card'; item = { instanceId: this.createCardId }; qty = 1;
+    } else {
+      itemType = 'material'; item = { material: this.createMaterial }; qty = this.createQty;
+    }
+
     this.closeModal();
     try {
       await this.cb.worldApi.createAuction(
-        this.cb.worldId, 'material', { material: this.createMaterial },
-        this.createQty, this.createDuration,
+        this.cb.worldId, itemType, item, qty, this.createDuration,
         auctionMode
           ? {
               saleMode: 'auction',
@@ -510,6 +744,9 @@ export class AuctionScene implements Scene {
           : { saleMode: 'fixed', price: this.createPrice, designatedBuyerId: buyer || undefined },
       );
       this.createBuyer = '';
+      // Escrow removed the instance from inventory server-side → re-pull the authoritative save so the
+      // picker no longer offers it. Materials are server-authoritative too but not shown in a local picker.
+      if (cls !== 'material') { this.createEquipId = null; this.createCardId = null; await this.cb.reloadSave?.(); }
       this.showToast(t('auction.created'));
       await this.loadData();
     } catch (e) {
@@ -550,8 +787,7 @@ export class AuctionScene implements Scene {
     ml.addChild(panel);
 
     let cy = my + 14;
-    const matKey = (auc.item?.['material'] as string | undefined) ?? auc.itemType;
-    const titleLbl = txt(`${t(`auction.${matKey as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`, 13, C.dark);
+    const titleLbl = txt(this.auctionLabel(auc), 13, C.dark);
     titleLbl.x = mx + 12; titleLbl.y = cy;
     ml.addChild(titleLbl);
     cy += 24;
@@ -718,6 +954,9 @@ export class AuctionScene implements Scene {
         WORLD_CLOSED:            t('auction.err.worldClosed'),
         EQUIP_LOCKED:            t('auction.err.equipLocked'),
         EQUIP_IN_USE:            t('auction.err.equipInUse'),
+        CARD_HAS_GEAR:           t('auction.err.cardHasGear'),
+        CARD_NOT_FOUND:          t('auction.err.closed'),
+        EQUIP_NOT_FOUND:         t('auction.err.closed'),
       };
       return map[e.code] ?? e.message;
     }

@@ -784,7 +784,13 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     inLobby = false;
     analytics.track('screen_view', { scene: 'AuctionScene' });
     resolveWorldShard(worldApi, (worldId) => {
-      views.showAuction({ onBack() { goLobby(); }, worldApi, worldId });
+      views.showAuction({
+        onBack() { goLobby(); },
+        worldApi,
+        worldId,
+        getSave: () => saveManager.get(),
+        reloadSave: async () => { await saveManager.refresh(); },
+      });
     });
   }
 
@@ -936,6 +942,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       onBack() { goWorldMap(worldApi, worldId); },
       worldApi,
       worldId,
+      getSave: () => saveManager.get(),
+      reloadSave: async () => { await saveManager.refresh(); },
     });
   }
 

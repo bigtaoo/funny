@@ -1005,6 +1005,18 @@ export const zh = {
   'auction.err.worldClosed': '赛季结算中，暂停挂拍',
   'auction.err.equipLocked': '装备已锁定，无法挂拍',
   'auction.err.equipInUse': '装备穿戴中，无法挂拍',
+  'auction.err.cardHasGear': '角色卡仍装备着道具，请先卸下',
+  'auction.itemClass': '类别',
+  'auction.classMaterial': '材料',
+  'auction.classEquipment': '装备',
+  'auction.classCard': '角色卡',
+  'auction.filterCard': '角色卡',
+  'auction.tapChoose': '点击选择物品',
+  'auction.pickEquip': '选择要出售的装备',
+  'auction.pickCard': '选择要出售的角色卡',
+  'auction.pickHint': '选择 ›',
+  'auction.noEquip': '没有可出售的装备',
+  'auction.noCards': '没有可出售的角色卡',
 
   // ── Campaign level names & briefings ─────────────────────────────────────
   // Ch1 · Fang family · internal clan trial (Tao's notebook)
