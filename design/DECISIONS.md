@@ -296,3 +296,13 @@
 - **权威归属**：限定池 config 存 commercial `gachaPools`（admin 建/关，永久保留供兑换）；池内容由 `@nw/shared buildLimitedPool()` 从常驻池**纯派生**（无漂移）。`wallet.fatePoints/subscription/starterUsed` 均 commercial 权威 → 镜像 `SaveData.monetization`（客户端只读，不入 SyncPatch）。
 - **范围外**：真实 IAP 验单（月卡/新手包当作已授权购买，接 SDK 时 meta 前置验签）；G7–G10 美术展示层（程序占位可跑）。
 - **影响**：`@nw/shared`（economy/api/types）；`commercial`（db/gacha/service/internalHttp）；`metaserver`（commercialClient/economy/service/internal + routes.gen）；`openapi.yml`（4 端点 + GachaPool 限定字段 + SaveData.monetization）；客户端 GachaScene/ShopScene/ApiClient/SaveData/i18n。
+
+## ADR-029 SLG 世界地图渲染从正交方格改为等距菱形投影 — Accepted — 2026-07-02
+
+- **背景**：用户反馈世界地图画质偏低（对照三国志战略版等同类 SLG）。排查确认两层问题：① 地形/据点大量用 `PIXI.Graphics` 纯色矩形拼接、缺手绘贴图（单独跟进，见下方 Out of scope）；② 更根本的是地图渲染用**正交俯视方格**，同类 SLG 普遍用**等距菱形**网格，视觉「俯视 3D 感」差距的大头来自网格投影方式本身。用户明确表态：项目尚在早期，只要最终效果最好，不用考虑重构成本。
+- **决策**（用户拍板）：`client/src/scenes/WorldMapScene.ts` 的地图渲染改为经典 2:1 等距菱形投影（`screenX=(tx-ty)*tileW/2, screenY=(tx+ty)*tileH/2`，`tileH=tileW*0.5`）。**纯客户端渲染层改动**——服务端契约（`openapi-world.yml` 的 `WorldTileView.{x,y}`）、寻路（`server/shared/src/slg.ts`）、tile 缓存 key 等逻辑数据模型全部保持正交整数 `(x,y)` 不变；ADR-024/025/026 的地形色块/归属水洗描边/3×3 据点占地/HP 血条等玩法与配色拍板同样不受影响，只是改了画法。
+- **实现**：新增 `client/src/render/isoGrid.ts`（`tileToScreen`/`screenToTile`/`screenToTileF`/`diamondPath`/`diamondVertices`/`visibleTileBounds`），`WorldMapScene.ts` 内所有 `tx*tp`/`ty*tp` 式定位、`drawRect(0,0,tp-1,tp-1)` 式绘制、`screenToTile` 命中测试，以及 `centerAt`/`clampPan`/`viewportCenter`/`makeZoomCfgs`（池大小需按等距可视区域的外接矩形算，比正交估算更大）全部换成基于 `isoGrid` 的等距公式；瓦片池每格的本地绘图原点从"正方形左上角"改为"菱形中心"，`drawCityIcon`/`drawResMotif`/`drawResMotifFallback`/`drawTileL1`/`drawTileL2`/`drawHpBar` 内的图标、边框、defense frame、tick mark、danger corner 相应重新锚定到菱形几何（角标→菱形顶点/边中点、方形描边→`diamondPath` 内缩、HP 血条→贴菱形下顶点）；`refreshCityLayer` 新增按 `(tx+ty)` 的 `zIndex` 深度排序（`cityLayer.sortableChildren=true`），避免等距下据点建筑贴图互相穿插覆盖错误。
+- **已知遗留（不阻塞，v1 可接受）**：`city_atlas.png` 素材是画在方形画布上的建筑图，v1 仍按 `BASE_SPRITE_TILES` 原尺寸贴到菱形 footprint，四角可能有留白/比例不完全贴合菱形俯视角，是否需要重新出图待视觉验收后再定。
+- **为什么**：等距菱形是移动 SLG 的行业惯例观感，且经确认是纯投影变换、不涉及契约/寻路/数据模型改动，改动面收敛在单一文件，值得直接做到位而非留妥协方案。
+- **影响**：新增 [`client/src/render/isoGrid.ts`](../client/src/render/isoGrid.ts)；[`client/src/scenes/WorldMapScene.ts`](../client/src/scenes/WorldMapScene.ts) 渲染层大改（详见文件内注释）；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.2 补一句视觉呈现说明，避免与"正交网格"表述产生歧义；无服务端/契约改动。
+- **Out of scope（本次不做，已记录跟进）**：地形/据点手绘贴图接入（`terrainAtlasLoader.ts` 及配套图集，已有生成 prompt 清单待产出素材）；据点建筑贴图针对菱形 footprint 的重新出图。
