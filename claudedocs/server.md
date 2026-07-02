@@ -43,6 +43,8 @@ npm install
 npm run dev:all             # 起全部进程（dev-up.ps1）
 ```
 
+> **worldsvc e2e 无需 Docker**：`npm test -w @nw/worldsvc` 会经 vitest `globalSetup`（`test/globalSetup.ts`）用 `mongodb-memory-server` 自动起单节点 rs0（首次下载 mongod `7.0.14` 到全局缓存 `~/.cache/mongodb-binaries`，之后离线复用）。设了 `NW_MONGO_URI` 则完全让路给外部 Mongo。适用于 Docker 锁 Windows 模式时跑 SLG e2e。
+
 ### 本地全栈模拟（完整：9 进程 + 主客户端 + 3 工具 + mongo + redis）
 
 `docker-compose.local.yml` 拉起**全部 9 个服务端进程 + redis + 主客户端(nginx) + animator/level-editor/ops 三个工具前端**，每次 up 都 `--build`（从当前代码重建镜像）。
