@@ -23,6 +23,7 @@
 // (README §0 three iron rules: numbers live in code).
 
 import { UnitType, type UnitBlueprint } from '../types';
+import { TRAIT_BREAKPOINTS } from './progression';
 
 // ── Affix id vocabulary (EQUIPMENT_DESIGN §7.4 / §7.5 / §7.6) ──────────────────────
 //
@@ -50,7 +51,8 @@ type AffixKind =
   | 'flat_armor'      // Armor +N (additive, armor)
   | 'flat_lifesteal'  // Lifesteal +X% (additive to lifestealPct, 0–100 scale)
   | 'flat_regen'      // HP regen +N/s (additive, regenPerSec)
-  | 'crit'            // Crit +X%: engine crit mechanic (same as trait T3) not yet implemented → placeholder no-op (§7.4 note)
+  | 'crit'            // Crit chance +X pts: additive into critPct across sources (trait T3 + equipment), Σ-then-clamp ≤50 (§7.7①); crit engine mechanic lives in CombatSystem
+  | 'crit_mult'       // Crit damage +X pts: additive into critMult bonus (value/100), clamped by EFFECT_CAPS.critMult (§7.7①)
   | 'noncombat';      // Utility (material drop / stamina refund): not injected into combat blueprint, read by pveRewards (§7.5)
 
 interface AffixDef {
@@ -80,6 +82,7 @@ export const AFFIX_FIELD_MAP: Readonly<Record<string, AffixDef>> = {
   s_atkspd: { kind: 'mult_atkspd' },
   s_lifesteal: { kind: 'flat_lifesteal' },
   s_regen: { kind: 'flat_regen' },
+  s_critmult: { kind: 'crit_mult' },
   // Secondary affixes (§7.5 utility, excluded from combat power cap and blueprint)
   s_matdrop: { kind: 'noncombat' },
   s_stamina: { kind: 'noncombat' },
@@ -99,12 +102,11 @@ export const ENHANCE_COEFF_PER_LEVEL = 0.1;
 //     clamped once by clampEffectCaps at the end of injection (§7.7④), achieving a true
 //     "trait + equipment sum then clamp" semantic.
 //
-// ⚠️ Current limitations (recorded as TODOs, not in this slice): crit depends on the
-//    unimplemented engine crit mechanic (§7.4 note); trait attack speed/attack/HP gains
-//    run through TraitSystem at runtime rather than the blueprint-baking phase → the
+// ⚠️ Current limitations (recorded as TODOs, not in this slice): trait attack speed/attack/HP
+//    gains run through TraitSystem at runtime rather than the blueprint-baking phase → the
 //    multiplicative "trait + equipment sum cap" is not yet fully unified. E1 guarantees
-//    equipment-only caps + lifestealPct cross-source caps; full cross-source unification
-//    awaits the crit/proc framework and trait numeric table alignment
+//    equipment-only caps + lifestealPct/critPct/critMult cross-source caps; full cross-source
+//    unification of the multiplicative fields awaits trait numeric table alignment
 //    (§7.7 limits belong to ECONOMY_NUMBERS §5).
 export const EFFECT_CAPS = {
   /** Attack % equipment contribution cap (§7.7 ≤ +60%). */
@@ -117,6 +119,10 @@ export const EFFECT_CAPS = {
   lifestealPct: 30,
   /** Armor flat equipment contribution cap (S12-E tightened: progression changed to armor:1/level, L9=+8; equipment cap 12 → combined total ≤20). */
   armorFlat: 12,
+  /** Crit chance all-source (trait T3 + trinket main m_crit + sub-affix) summed cap (§7.7 ≤ 50, 0–100 scale). */
+  critPct: 50,
+  /** Crit damage multiplier all-source cap (T3 base 1.5× + s_critmult bonuses); prevents crit-damage explosion (§7.7 DRAFT). */
+  critMult: 2.5,
 } as const;
 
 // ── Player unit types eligible for card-based equipment bonuses ───────────────────────────
@@ -195,10 +201,14 @@ interface EffectAccum {
   armorFlat: number;
   lifestealFlat: number;
   regenFlat: number;
+  /** Crit chance points (0–100 scale), additive across equipped items (§7.7①). */
+  critPctFlat: number;
+  /** Crit damage multiplier bonus (decimal, e.g. 0.20 = +20% crit damage), additive across items. */
+  critMultBonus: number;
 }
 
 function zeroAccum(): EffectAccum {
-  return { atkPct: 0, hpPct: 0, atkspdPct: 0, spdPct: 0, armorFlat: 0, lifestealFlat: 0, regenFlat: 0 };
+  return { atkPct: 0, hpPct: 0, atkspdPct: 0, spdPct: 0, armorFlat: 0, lifestealFlat: 0, regenFlat: 0, critPctFlat: 0, critMultBonus: 0 };
 }
 
 /** Accumulates all affixes of one equipped item into acc (primary affixes scaled by enhancement level; utility/skill/unknown skipped). */
@@ -231,7 +241,12 @@ function accumInstance(acc: EffectAccum, inst: EngineEquipInstance): void {
       case 'flat_regen':
         acc.regenFlat += effective;
         break;
-      case 'crit': // Crit mechanic not yet implemented (§7.4 note): placeholder no-op
+      case 'crit': // Crit chance (m_crit, trinket main): additive points; scaled by enhancement (main affix).
+        acc.critPctFlat += effective;
+        break;
+      case 'crit_mult': // Crit damage (s_critmult, sub-affix): fixed points → decimal bonus (value/100).
+        acc.critMultBonus += effective / 100;
+        break;
       case 'noncombat': // Utility (material drop / stamina refund): not injected into combat blueprint (§7.5)
         break;
     }
@@ -287,6 +302,17 @@ export function applyEquipment(
   if (acc.armorFlat !== 0) u.armor = (u.armor ?? 0) + acc.armorFlat;
   if (acc.lifestealFlat !== 0) u.lifestealPct = (u.lifestealPct ?? 0) + acc.lifestealFlat;
   if (acc.regenFlat !== 0) u.regenPerSec = (u.regenPerSec ?? 0) + acc.regenFlat;
+
+  // Crit (§7.7①): chance is additive across all sources (trait T3 already baked by applyUnitLevels
+  // + this equipment contribution), the ≤50 sum-cap is applied later in clampEffectCaps. An m_crit
+  // trinket also establishes the T3 base multiplier (1.5×) so it crits meaningfully even on a unit
+  // below the T3 breakpoint; s_critmult then adds on top. combatPrng only advances when critPct>0,
+  // so PvP (no equipment, critPct stays 0) replays remain bit-identical (hardwall test).
+  if (acc.critPctFlat > 0) {
+    u.critPct = (u.critPct ?? 0) + acc.critPctFlat;
+    u.critMult = Math.max(u.critMult ?? 1, TRAIT_BREAKPOINTS.crit.mult);
+  }
+  if (acc.critMultBonus > 0) u.critMult = (u.critMult ?? 1) + acc.critMultBonus;
 }
 
 /**
@@ -306,6 +332,14 @@ export function clampEffectCaps(bp: Record<UnitType, UnitBlueprint>): void {
     if (u.armor !== undefined) {
       // Armor flat all-source cap (base armor + equipment); prevents late-game damage-reduction overflow (§7.7).
       u.armor = Math.min(u.armor, EFFECT_CAPS.armorFlat);
+    }
+    if (u.critPct !== undefined) {
+      // Crit chance all-source sum cap (trait T3 + equipment), §7.7① ≤50 (0–100 scale).
+      u.critPct = Math.min(u.critPct, EFFECT_CAPS.critPct);
+    }
+    if (u.critMult !== undefined) {
+      // Crit damage multiplier all-source cap (§7.7 DRAFT); prevents crit-damage explosion.
+      u.critMult = Math.min(u.critMult, EFFECT_CAPS.critMult);
     }
   }
 }

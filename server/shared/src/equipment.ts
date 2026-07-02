@@ -141,12 +141,26 @@ export function salvageRefund(defId: string): Record<string, number> {
 // this file only determines "which ids are rolled and what values". Concrete value ranges/weights are in ECONOMY_NUMBERS §5 (pending);
 // the constants below are runnable placeholders (README §0: stats live in code, tuning only changes these constants).
 
-/** Main affix locked by slot (§7.4; crit not yet implemented → trinket falls back to m_spd). value = +0 base value (percentage/flat). */
-export const MAIN_AFFIX_BY_SLOT: Record<EquipSlot, { id: string; base: number }> = {
-  weapon: { id: 'm_atk', base: 8 }, // ATK +8% (base, amplified by enhancement)
-  armor: { id: 'm_hp', base: 10 }, // HP +10%
-  trinket: { id: 'm_spd', base: 6 }, // SPD +6%
+/**
+ * Main affix candidates by slot (§7.4: "candidates — exactly 1 chosen on roll"). value = +0 base
+ * value (percentage/flat/crit-points). Slots with a single candidate always roll it and draw no RNG
+ * (preserves the sub-affix RNG stream); the trinket now picks between move speed and crit
+ * (m_crit is live — engine crit mechanic in CombatSystem, injected by @nw/engine balance/equipment.ts).
+ */
+export const MAIN_AFFIX_BY_SLOT: Record<EquipSlot, ReadonlyArray<{ id: string; base: number }>> = {
+  weapon: [{ id: 'm_atk', base: 8 }], // ATK +8% (base, amplified by enhancement)
+  armor: [{ id: 'm_hp', base: 10 }], // HP +10%
+  trinket: [
+    { id: 'm_spd', base: 6 }, // SPD +6%
+    { id: 'm_crit', base: 6 }, // Crit chance +6 pts (0–100 scale)
+  ],
 };
+
+/** Pick the slot's main affix; single-candidate slots draw no RNG so the sub-affix stream is unchanged. */
+function pickMainAffix(slot: EquipSlot, rng: () => number): { id: string; base: number } {
+  const cands = MAIN_AFFIX_BY_SLOT[slot];
+  return cands.length === 1 ? cands[0]! : cands[Math.floor(rng() * cands.length)]!;
+}
 
 /** Sub-affix pool (§7.5 combat-power class, only rolled for rare/epic). Each entry: [id, min, max] (DRAFT). */
 export const SUB_AFFIX_POOL: ReadonlyArray<readonly [string, number, number]> = [
@@ -155,6 +169,7 @@ export const SUB_AFFIX_POOL: ReadonlyArray<readonly [string, number, number]> = 
   ['s_armor', 2, 5],
   ['s_spd', 2, 5],
   ['s_atkspd', 3, 6],
+  ['s_critmult', 15, 30], // Crit damage +15..30 pts (engine: value/100 added to crit multiplier)
 ];
 
 /** Rarity → number of sub-affixes rolled on craft (§7.2; epic skill-slot proc framework not yet implemented, this slice does not roll k_*). */
@@ -202,7 +217,7 @@ export function rollCraftedAffixes(defId: string, seedKey: string): { id: string
   const rng = seededRng(hashSeed(`${defId}:${seedKey}`));
   const out: { id: string; value: number }[] = [];
   // Main affix (slot-locked, base value; amplified by engine on enhancement)
-  const main = MAIN_AFFIX_BY_SLOT[def.slot];
+  const main = pickMainAffix(def.slot, rng);
   out.push({ id: main.id, value: main.base });
   // Sub-affixes: draw N non-duplicate entries from the pool
   const n = CRAFT_SUB_AFFIX_COUNT[def.rarity];
@@ -299,19 +314,25 @@ export const REFORGE_MATERIAL_RARITY: Partial<Record<EquipRarity, EquipRarity>> 
  * Reforge: re-rolls sub-affixes (main affix is kept unchanged).
  * @param defId   defId of the equipment being reforged.
  * @param seedKey Idempotency key (same key always produces the same result on replay).
- * @returns New affixes array (main affix + re-rolled sub-affixes).
+ * @param currentAffixes The instance's current affixes; its existing main affix (m_*) is preserved
+ *        verbatim. Required now that a slot's main affix may be one of several candidates (§7.4):
+ *        reforge must not flip an m_crit trinket back to m_spd. Falls back to the slot's first
+ *        candidate if no m_* affix is present (legacy/malformed instance).
+ * @returns New affixes array (kept main affix + re-rolled sub-affixes).
  */
 export function rollReforgedAffixes(
   defId: string,
   seedKey: string,
+  currentAffixes: ReadonlyArray<{ id: string; value: number }>,
 ): { id: string; value: number }[] {
   const def = EQUIPMENT_DEFS[defId];
   if (!def) throw new Error(`unknown defId: ${defId}`);
   const rng = seededRng(hashSeed(`reforge:${defId}:${seedKey}`));
   const out: { id: string; value: number }[] = [];
-  // Main affix kept (base value unchanged, enhancement amplification managed by engine)
-  const main = MAIN_AFFIX_BY_SLOT[def.slot];
-  out.push({ id: main.id, value: main.base });
+  // Main affix kept verbatim (slot-locked, base value unchanged; enhancement amplification managed by engine).
+  const curMain = currentAffixes.find((a) => a.id.startsWith('m_'));
+  const fallback = MAIN_AFFIX_BY_SLOT[def.slot][0]!;
+  out.push(curMain ? { id: curMain.id, value: curMain.value } : { id: fallback.id, value: fallback.base });
   // Re-roll all sub-affixes
   const n = CRAFT_SUB_AFFIX_COUNT[def.rarity];
   const pool = [...SUB_AFFIX_POOL];

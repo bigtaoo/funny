@@ -106,7 +106,9 @@ export function applyUnitLevels(
 
     // ── Trait breakpoints (discrete qualitative changes) ────────────────────────────────────────────────
     if (level >= TRAIT_BREAKPOINTS.crit.level) {
-      // Take the higher value, coexists with future equipment crit sources (same field does not stack, prevents crit rate explosion).
+      // T3 sets the base crit chance/multiplier. Runs before applyEquipment, which ADDS equipment
+      // crit chance (m_crit) on top and adds s_critmult to the multiplier; the all-source sum caps
+      // (§7.7① ≤50% chance, crit-damage cap) are applied uniformly in clampEffectCaps.
       u.critPct = Math.max(u.critPct ?? 0, TRAIT_BREAKPOINTS.crit.pct);
       u.critMult = Math.max(u.critMult ?? 1, TRAIT_BREAKPOINTS.crit.mult);
     }
