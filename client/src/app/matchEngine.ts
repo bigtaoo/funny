@@ -15,7 +15,7 @@ import {
   type GameMode,
   type Replay,
 } from '../game';
-import type { EngineEquipmentInput } from '@nw/engine';
+import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 
 export interface LocalMatchOpts {
   /** When set, runs the PvE campaign level instead of a PvP-vs-AI match. */
@@ -26,10 +26,6 @@ export interface LocalMatchOpts {
    * `level` is given (campaign seed comes from the level). Omit → random seed.
    */
   seed?: number;
-  /** @deprecated S12: per-stat upgrades; unit progression moved to unitLevels. Still forwarded for backwards compatibility during the transition. */
-  pveUpgrades?: Record<string, number>;
-  /** Unit progression levels (SaveData.unitLevels) threaded into the engine (hard wall, §5.2); campaign + siege. */
-  unitLevels?: Record<string, number>;
   /**
    * Engine mode override. Defaults to 'campaign' when a level is given, else 'pvp'.
    * Pass 'siege' (SLG siege mode, S8-3) to drive the same PvE-shaped engine with the
@@ -38,10 +34,16 @@ export interface LocalMatchOpts {
    */
   mode?: GameMode;
   /**
-   * Equipment loadout + inventory for PvE/siege paths (A5 §5.2 hard wall).
-   * Structurally compatible with EngineEquipmentInput; omit for PvP.
+   * Hero Roster card instances (CC-1, CHARACTER_CARDS_DESIGN §9) for PvE/siege paths (A5 §5.2 hard wall).
+   * The engine builds progression- and equipment-buffed blueprints from the highest-level card per unit
+   * type. Omit for PvP — buildPvpBlueprints() has no card parameter, so no progression/equipment leaks in.
    */
-  equipment?: EngineEquipmentInput;
+  cardInstances?: EngineCardInstance[];
+  /**
+   * Equipment instance inventory (SaveData.equipmentInv) used to resolve each card's gear slot ids.
+   * Structurally compatible with EngineEquipInv; omit for PvP.
+   */
+  equipmentInv?: EngineEquipInv;
 }
 
 export interface LocalMatch {
@@ -70,9 +72,8 @@ export function createLocalMatch(opts: LocalMatchOpts = {}): LocalMatch {
       ...(opts.level
         ? {
             level: opts.level,
-            pveUpgrades: opts.pveUpgrades ?? {},
-            unitLevels: opts.unitLevels ?? {},
-            ...(opts.equipment ? { equipment: opts.equipment } : {}),
+            ...(opts.cardInstances ? { cardInstances: opts.cardInstances } : {}),
+            ...(opts.equipmentInv ? { equipmentInv: opts.equipmentInv } : {}),
           }
         : {}),
     },
