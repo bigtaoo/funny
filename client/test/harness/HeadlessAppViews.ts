@@ -169,7 +169,8 @@ export class HeadlessAppViews implements AppViews {
     this.screen = 'game';
     const { engine, buildReplay } = createLocalMatch({
       ...(opts.level ? { level: opts.level } : {}),
-      ...(opts.pveUpgrades ? { pveUpgrades: opts.pveUpgrades } : {}),
+      ...(opts.cardInstances ? { cardInstances: opts.cardInstances } : {}),
+      ...(opts.equipmentInv ? { equipmentInv: opts.equipmentInv } : {}),
     });
     this.match = { engine, cb, buildReplay };
   }

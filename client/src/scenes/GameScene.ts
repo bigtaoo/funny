@@ -11,7 +11,7 @@ import {
   type GameMode,
   type Replay,
 } from '../game';
-import type { EngineEquipmentInput } from '@nw/engine';
+import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { createLocalMatch } from '../app/matchEngine';
 import { preloadL1CardArtTextures } from '../render/cardArt';
 import type { NetState } from '../net/NetClient';
@@ -43,18 +43,6 @@ export interface GameSceneOptions {
    */
   mode?: GameMode;
   /**
-   * PvE upgrade levels (SaveData.pveUpgrades) for the campaign path. Threaded
-   * into the engine to build buffed blueprints (hard wall, §5.2); ignored unless
-   * `level` is set. Omit for vanilla/no-upgrade runs.
-   */
-  pveUpgrades?: Record<string, number>;
-  /**
-   * Unit progression levels (SaveData.unitLevels) for the campaign path (S12).
-   * Threaded into the engine to build progression-buffed blueprints (hard wall,
-   * §5.2); ignored unless `level` is set.
-   */
-  unitLevels?: Record<string, number>;
-  /**
    * A pre-built engine to drive the scene (online netplay, S1-8): app.ts builds
    * it with mode 'netplay' + a NetInputSource. Takes precedence over `level`.
    */
@@ -75,11 +63,16 @@ export interface GameSceneOptions {
    */
   seed?: number;
   /**
-   * Equipment loadout + inventory for PvE/siege paths (A5 hard wall).
-   * Passed to the engine so affixes are applied to campaign blueprints.
+   * Hero Roster card instances (CC-1) for the PvE campaign path. Passed to the engine
+   * so card level + per-card equipment buff the blueprints (hard wall, §5.2), and to the
+   * renderer so worn gear is drawn on the units (§20.4). Omit for PvP.
+   */
+  cardInstances?: EngineCardInstance[];
+  /**
+   * Equipment instance inventory (SaveData.equipmentInv) for gear slot lookups (stats + overlay).
    * Omit for PvP — no equipment power in competitive matches.
    */
-  equipment?: EngineEquipmentInput;
+  equipmentInv?: EngineEquipInv;
   /**
    * Dedicated tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3). Enables the
    * presentation-layer tutorial director: guided overview + three-beat gating +
@@ -107,10 +100,9 @@ export class GameScene implements Scene {
     } else {
       const match = createLocalMatch({
         ...(opts.level ? { level: opts.level } : {}),
-        ...(opts.pveUpgrades ? { pveUpgrades: opts.pveUpgrades } : {}),
-        ...(opts.unitLevels ? { unitLevels: opts.unitLevels } : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
-        ...(opts.equipment ? { equipment: opts.equipment } : {}),
+        ...(opts.cardInstances ? { cardInstances: opts.cardInstances } : {}),
+        ...(opts.equipmentInv ? { equipmentInv: opts.equipmentInv } : {}),
         ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
       });
       engine = match.engine;
@@ -125,7 +117,7 @@ export class GameScene implements Scene {
       : { start: true, boss: opts.level?.objective.kind === 'boss' };
 
     void preloadL1CardArtTextures();
-    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkin ?? null, opts.equipment ?? null, opts.tutorial ?? false, battleLabels);
+    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkin ?? null, opts.cardInstances ?? null, opts.equipmentInv ?? null, opts.tutorial ?? false, battleLabels);
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats) => this.cb.onGameEnd(winner, stats, buildReplay(winner));

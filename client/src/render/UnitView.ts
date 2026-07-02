@@ -8,7 +8,7 @@ import { registerPool } from '../cache/poolRegistry';
 import { StickmanRuntime } from './stickman/StickmanRuntime';
 import type { TaoAsset, GearGlyphSpec } from './stickman/StickmanRuntime';
 import { PLAYER_EQUIPPABLE_UNITS } from '@nw/engine';
-import type { EngineEquipmentInput } from '@nw/engine';
+import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { getEquipDef } from '../game/meta/equipmentDefs';
 import type { EquipSlot } from '../game/meta/SaveData';
 import infantryTaoUrl from '../assets/infantry.tao';
@@ -212,11 +212,12 @@ export class UnitView {
   private readonly assets: Map<UnitType, TaoAsset> = new Map();
 
   /**
-   * Equipment loadout + inventory for the battle-render gear overlay (§20.4).
-   * PvE/siege only — PvP passes nothing (A5 hard wall), so PvP units never show
-   * gear decals. Null/empty = no overlay.
+   * Hero Roster card instances + equipment inventory for the battle-render gear
+   * overlay (§20.4). PvE/siege only — PvP passes nothing (A5 hard wall), so PvP
+   * units never show gear decals. Null/empty = no overlay.
    */
-  private readonly equipment: EngineEquipmentInput | null;
+  private readonly cardInstances: EngineCardInstance[] | null;
+  private readonly equipmentInv: EngineEquipInv | null;
 
   /** Resolved gear glyph specs per equippable unit type (constant per match), memoized. */
   private readonly gearSpecCache: Map<UnitType, GearGlyphSpec[]> = new Map();
@@ -245,11 +246,13 @@ export class UnitView {
     boardView: BoardView,
     localSide: Side = Side.Bottom,
     equippedSkin: string | null = null,
-    equipment: EngineEquipmentInput | null = null,
+    cardInstances: EngineCardInstance[] | null = null,
+    equipmentInv: EngineEquipInv | null = null,
   ) {
     this.boardView = boardView;
     this.localSide = localSide;
-    this.equipment = equipment;
+    this.cardInstances = cardInstances;
+    this.equipmentInv = equipmentInv;
     this.container = new PIXI.Container();
 
     // Stickman pool (bucketed by type) registered with the pool monitor: each idle entry is a wrapper + ~11 sprites + outline.
@@ -456,25 +459,32 @@ export class UnitView {
   }
 
   /**
-   * Resolve the equipment overlay glyphs for a unit type (§20.4): the worn loadout
-   * (byUnit override ∪ global) → each slot's instance → defId → {slot, rarity}.
-   * Restricted to PLAYER_EQUIPPABLE_UNITS to mirror applyEquipment (§8) so the
-   * decals match exactly which units the affixes actually buff. Memoized — gear is
-   * constant per match. Returns [] when there's no equipment (PvP) or nothing worn.
+   * Resolve the equipment overlay glyphs for a unit type (§20.4): mirror
+   * buildCampaignBlueprints (CC-1) by picking the highest-level card of this unit type,
+   * then reading its per-card gear → each slot's instance → defId → {slot, rarity}.
+   * Using the same best-card selection the engine uses keeps the drawn gear consistent
+   * with the affixes actually applied to stats. Restricted to PLAYER_EQUIPPABLE_UNITS.
+   * Memoized — gear is constant per match. Returns [] when there's no card/equipment
+   * data (PvP) or nothing worn.
    */
   private gearSpecsFor(unitType: UnitType): GearGlyphSpec[] {
     const cached = this.gearSpecCache.get(unitType);
     if (cached) return cached;
 
     const specs: GearGlyphSpec[] = [];
-    const equip = this.equipment;
-    if (equip?.gear && equip.inv && (PLAYER_EQUIPPABLE_UNITS as readonly UnitType[]).includes(unitType)) {
-      const slotMap = equip.gear.byUnit?.[unitType] ?? equip.gear.global;
-      if (slotMap) {
+    const cards = this.cardInstances;
+    const inv = this.equipmentInv;
+    if (cards && inv && (PLAYER_EQUIPPABLE_UNITS as readonly UnitType[]).includes(unitType)) {
+      let best: EngineCardInstance | undefined;
+      for (const c of cards) {
+        if (c.unitType !== unitType) continue;
+        if (!best || c.level > best.level) best = c;
+      }
+      if (best) {
         for (const slot of ['weapon', 'armor', 'trinket'] as EquipSlot[]) {
-          const instId = slotMap[slot];
+          const instId = best.gear[slot];
           if (!instId) continue;
-          const inst = equip.inv[instId];
+          const inst = inv[instId];
           if (!inst) continue;
           const def = getEquipDef(inst.defId);
           if (!def) continue;
