@@ -82,6 +82,7 @@ export const en: Record<TranslationKey, string> = {
   'lobby.strip.events': 'Events',
   'lobby.strip.achieve': 'Ach.',
   'lobby.strip.mail': 'Mail',
+  'lobby.strip.auction': 'Auc.',
 
   // ── Personal settings ───────────────────────────────────────────────────────
   'settings.title': 'Profile',

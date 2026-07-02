@@ -313,6 +313,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       ...(online ? { onOpenAchievements: () => goAchievements() } : {}),
       ...(online ? { onOpenDaily: () => withGuide('daily', 'guide.daily.title', 'guide.daily.body', () => goDaily()), onOpenEvents: () => goEvents() } : {}),
       onOpenWorld() { withGuide('world', 'guide.world.title', 'guide.world.body', () => goWorldEntry()); },
+      ...(online ? { onOpenAuction: () => withGuide('auction', 'guide.auction.title', 'guide.auction.body', () => goAuctionFromLobby()) } : {}),
       // SLG soft gate (ONBOARDING_DESIGN §4): grayed out with a tooltip bubble until the first chapter is cleared — the only feature gate.
       worldLocked: !isFirstChapterCleared(new Set(saveManager.get().progress.cleared)),
       onOpenProfile() { goSettings(); },
@@ -746,19 +747,13 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     }
   }
 
-  function goWorldEntry(): void {
-    // Note: getWorldBaseUrl() returns '' in Docker/production (same-origin nginx proxy,
-    // where /world/* is forwarded to worldsvc). Do NOT guard on empty string — it is valid.
-    const token = platform.storage.getItem(TOKEN_KEY);
-    if (!token) { analytics.track('login_gate_hit', { scene: 'WorldMapScene' }); goLogin(); return; }
-    const worldApi = new WorldApiClient(platform.storage);
-    inLobby = false;
-    // G6/§20: resolve the shard for this account based on the current season (sticky > family > random,
-    // overflow opens a new shard); worldId is no longer hard-coded.
-    // 3-second timeout prevents the button from hanging when worldsvc is not running
-    // (Windows Firewall may drop TCP RST, causing long waits).
+  // G6/§20: resolve the shard for this account based on the current season (sticky > family > random,
+  // overflow opens a new shard); worldId is no longer hard-coded. The 3-second timeout prevents the
+  // caller from hanging when worldsvc is not running (Windows Firewall may drop TCP RST). Shared by the
+  // world-map and lobby-auction entries — both need a resolved worldId before navigating.
+  function resolveWorldShard(worldApi: WorldApiClient, then: (worldId: string) => void): void {
     let navigated = false;
-    const nav = (worldId: string): void => { if (!navigated) { navigated = true; goWorldMap(worldApi, worldId); } };
+    const nav = (worldId: string): void => { if (!navigated) { navigated = true; then(worldId); } };
     const timer = setTimeout(() => nav(`s${FALLBACK_SEASON}-0`), 3000);
     void worldApi.getActiveSeason()
       .then((r) => r.season)
@@ -766,6 +761,30 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       .then((season) => worldApi.resolveSeason(season))
       .then((r) => { clearTimeout(timer); nav(r.worldId); })
       .catch(() => { clearTimeout(timer); nav(`s${FALLBACK_SEASON}-0`); });
+  }
+
+  function goWorldEntry(): void {
+    // Note: getWorldBaseUrl() returns '' in Docker/production (same-origin nginx proxy,
+    // where /world/* is forwarded to worldsvc). Do NOT guard on empty string — it is valid.
+    const token = platform.storage.getItem(TOKEN_KEY);
+    if (!token) { analytics.track('login_gate_hit', { scene: 'WorldMapScene' }); goLogin(); return; }
+    const worldApi = new WorldApiClient(platform.storage);
+    inLobby = false;
+    resolveWorldShard(worldApi, (worldId) => goWorldMap(worldApi, worldId));
+  }
+
+  // AUCTION_DESIGN dual-entry: reach the auction house straight from the lobby (the other entry is
+  // the world-map toolbar button). The market is season-global — no base required — so we just
+  // resolve the season's shard and open AuctionScene with a back-to-lobby handler.
+  function goAuctionFromLobby(): void {
+    const token = platform.storage.getItem(TOKEN_KEY);
+    if (!token) { analytics.track('login_gate_hit', { scene: 'AuctionScene' }); goLogin(); return; }
+    const worldApi = new WorldApiClient(platform.storage);
+    inLobby = false;
+    analytics.track('screen_view', { scene: 'AuctionScene' });
+    resolveWorldShard(worldApi, (worldId) => {
+      views.showAuction({ onBack() { goLobby(); }, worldApi, worldId });
+    });
   }
 
   function goWorldMap(worldApi: WorldApiClient, worldId: string): void {
