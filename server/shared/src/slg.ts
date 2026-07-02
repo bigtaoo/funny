@@ -177,10 +177,17 @@ export const SLG_GEN = {
   /** Gate noise threshold: gates (strategic corridors) generate inside obstacle zones above this value; extremely sparse. */
   gateThreshold: 0.99,
   // ── G8 strongholds (§3.1) ──────────────────────────
-  /** Stronghold noise frequency (large-scale; higher-value points even sparser than strategic keeps). */
-  strongholdFreq: 1 / 70,
-  /** Stronghold noise threshold: only above this value is a stronghold generated; extremely sparse (~0.3% of map, ~16× sparser than familyKeep). */
-  strongholdThreshold: 0.92,
+  /**
+   * Stronghold per-tile hash threshold (ECONOMY_NUMBERS §13-SLG-STRONGHOLD). Strongholds are isolated
+   * strategic points at ~0.3% of the map — NOT contiguous zones — so they use a per-tile uniform hash
+   * gate `rand2(x,y,seed^0x0555) > strongholdThreshold` (a Bernoulli(1-threshold) draw per tile), NOT
+   * smooth value-noise. On a 300×300 map a low-frequency noise field has only ~18 lattice points, so a
+   * `noise > threshold` gate swings the count 0→thousands across seeds (CV≈1.0, 14% of worlds get ZERO)
+   * and clumps cells into large blobs. A per-tile Bernoulli(p=1-0.997=0.003) over 90,000 tiles gives
+   * count ≈ 270 ± √(90000·0.003·0.997) ≈ ±16 (CV ≈ 0.06), isolated points, hitting the "~0.3% extremely
+   * sparse" intent deterministically. Higher = sparser.
+   */
+  strongholdThreshold: 0.997,
   /** Minimum distance ratio from center for strongholds (prevents strongholds from spawning too close to center; preserves a safe zone for new players). */
   strongholdMinDistRatio: 0.25,
 } as const;
@@ -832,8 +839,10 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
 
   // Stronghold (G8 §3.1): extremely sparse high-strategic-value PvE tiles, guarded by overwhelmingly powerful system NPCs, only beyond a minimum distance from the center.
   // Sparser than familyKeep, always max level, has a resource type (rich yield after conquest). Evaluated before familyKeep (higher priority).
-  const strongholdNoise = valueNoise(x, y, SLG_GEN.strongholdFreq, seed ^ 0x0555);
-  if (strongholdNoise > SLG_GEN.strongholdThreshold && dr > SLG_GEN.strongholdMinDistRatio) {
+  // Per-tile uniform hash gate (NOT smooth value-noise): a Bernoulli(1-strongholdThreshold) draw per cell so strongholds are ISOLATED points at a
+  // deterministic ~0.3% density instead of large seed-dependent blobs (see SLG_GEN.strongholdThreshold rationale / ECONOMY_NUMBERS §13-SLG-STRONGHOLD).
+  const strongholdRand = rand2(x, y, seed ^ 0x0555);
+  if (strongholdRand > SLG_GEN.strongholdThreshold && dr > SLG_GEN.strongholdMinDistRatio) {
     return { type: 'stronghold', level: SLG_MAP_MAX_LEVEL, resType: biomeAt(x, y, seed) };
   }
 
