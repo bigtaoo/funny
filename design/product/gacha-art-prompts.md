@@ -269,11 +269,13 @@ Bold ink outlines, minimal detail, stationery/notebook aesthetic.
 --ar 1:1 --style raw --no gradient, glow, 3D, realistic
 ```
 
-> 替换 `[具体物品描述]` 和 `[主色调]`：
-> - `skin_c1`：`a simple stickman soldier drawn in pencil`, `gray pencil`
-> - `skin_r1`：`a neat stickman soldier with fountain pen details`, `royal blue`
-> - `skin_e1`：`an elaborate stickman warrior with marker-drawn armor`, `deep purple`
-> - `skin_l1`：`a majestic stickman commander with gold ink details`, `gold and cream`
+> 替换 `[具体物品描述]` 和 `[主色调]`（上线皮肤目录 6 款，每角色 1 款，见 `GACHA_DESIGN §9.5`）：
+> - `skin_shop_c1`（陶·李川/Infantry，商店 common）：`a simple stickman soldier drawn in pencil`, `gray pencil`
+> - `skin_shop_r1`（陶·苏远/Archer，商店 rare）：`a neat stickman archer with fountain pen details`, `royal blue`
+> - `skin_shop_e1`（陶·陈守/ShieldBearer，商店 epic）：`an elaborate stickman shield bearer with marker-drawn armor`, `deep purple`
+> - `skin_e1`（Anna·Lena，抽卡 epic）：`an elaborate sentinel warrior with marker-drawn detail`, `deep purple`
+> - `skin_e2`（Anna·Mara，抽卡 epic）：`a sleek marksman with marker-drawn detail`, `deep purple`
+> - `skin_l1`（Anna·Max，抽卡 legendary·旗舰）：`a majestic armored commander with gold ink details`, `gold and cream`
 
 ### 文具材料图标（通用模板）
 

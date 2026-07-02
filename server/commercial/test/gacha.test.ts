@@ -26,7 +26,7 @@ describe('rollGacha', () => {
     const { results, pityAfter } = rollGacha(pool, 1, 0, zero);
     expect(results).toHaveLength(1);
     expect(results[0]!.rarity).toBe('common');
-    expect(results[0]!.itemId).toBe('skin_c1');
+    expect(results[0]!.itemId).toBe('mat_scrap'); // common tier is materials-only at launch (no skins; GACHA_DESIGN §9.5)
     expect(pityAfter).toBe(1); // common does not reset pity
   });
 

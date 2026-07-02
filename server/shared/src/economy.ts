@@ -48,10 +48,16 @@ export const GACHA_MATERIAL_GRANTS: Record<string, Record<string, number>> = {
   mat_binding: { binding: 1 },
 };
 
-// Placeholder skin pool (real skin content pending art); RNG first rolls by rarity tier, then picks uniformly within tier.
+// Standard pool; RNG first rolls by rarity tier, then picks uniformly within tier.
 // E7: standard pool adds material slots (mat_*, delivery routes to materials) + equipment slots (defId, delivery routes to equipment).
-// "Materials primary + equipment as low-chance jackpot" (ADR-017): common materials 3/7, rare materials 2/8,
-// epic/legendary equipment slots ≤ skin slot count, keeping equipment as jackpot (DRAFT [adjustable]).
+// "Materials primary + equipment as low-chance jackpot" (ADR-017): common materials, rare materials + fine equipment,
+// epic/legendary equipment + character cards + the premium Anna skins (DRAFT [adjustable]).
+//
+// SKIN CATALOGUE (owner decision 2026-07-02, GACHA_DESIGN §9.5): launch ships ONE skin per character (6 total),
+// all full-.tao (no procedural recolor — art-direction §9.1 note). The 3 Anna skins are gacha-only premium cosmetics:
+//   skin_e1 → Lena skin (epic),  skin_e2 → Mara skin (epic),  skin_l1 → Max skin (legendary, flagship).
+// The 3 Tao skins are direct-shop only (see SHOP_ITEMS). Common/rare tiers carry NO skins at launch — skins are a
+// premium (epic+) or paid (shop) reward. Extra skins deferred post-launch until their .tao assets are authored.
 export const GACHA_POOLS: GachaPoolDef[] = [
   {
     id: 'standard',
@@ -63,13 +69,13 @@ export const GACHA_POOLS: GachaPoolDef[] = [
     softPityStep: SOFT_PITY_STEP,
     dupePolicy: 'coins',
     itemsByRarity: {
-      // common: 4 skins + 3 material slots → material drop rate 43%
-      common: ['skin_c1', 'skin_c2', 'skin_c3', 'skin_c4', 'mat_scrap', 'mat_scrap', 'mat_scrap'],
-      // rare: 3 skins + 2 material slots + 3 fine equipment → material drop rate 25%, fine equipment 38%
-      rare: ['skin_r1', 'skin_r2', 'skin_r3', 'mat_lead', 'mat_lead', 'wp_pen', 'ar_cardstock', 'tk_bookmark'],
-      // epic: 2 skins + 1 material slot + 3 rare equipment + 3 Tao character cards (DRAFT [adjustable] → ECONOMY_NUMBERS §6)
+      // common: materials only (no skins at launch) → all-material tier
+      common: ['mat_scrap', 'mat_scrap', 'mat_scrap'],
+      // rare: 2 material slots + 3 fine equipment (no skins at launch)
+      rare: ['mat_lead', 'mat_lead', 'wp_pen', 'ar_cardstock', 'tk_bookmark'],
+      // epic: 2 Anna skins (Lena/Mara) + 1 material slot + 3 rare equipment + 3 Tao character cards (DRAFT [adjustable] → ECONOMY_NUMBERS §6)
       epic: ['skin_e1', 'skin_e2', 'mat_binding', 'wp_marker', 'ar_leather', 'tk_sticker', 'lichuang', 'chenshou', 'suyuan'],
-      // legendary: 1 skin + 3 epic equipment + 3 Anna character cards (DRAFT [adjustable] → ECONOMY_NUMBERS §6)
+      // legendary: 1 Anna skin (Max, flagship) + 3 epic equipment + 3 Anna character cards (DRAFT [adjustable] → ECONOMY_NUMBERS §6)
       legendary: ['skin_l1', 'wp_highlighter', 'ar_foil', 'tk_seal', 'max', 'lena', 'mara'],
     },
   },
@@ -99,6 +105,9 @@ export interface ShopItemDef {
 }
 
 // Direct shop purchase pricing (§3.1, legendary items only available through gacha, not direct sale).
+// The 3 Tao-faction skins (one per Tao character) are shop-only at launch (owner decision 2026-07-02, GACHA_DESIGN §9.5),
+// full-.tao like the Anna gacha skins. Tiered pricing retained (300/800/1800). Mapping (skin restyles that unit type):
+//   skin_shop_c1 → Infantry / Lichuang (common),  skin_shop_r1 → Archer / Suyuan (rare),  skin_shop_e1 → ShieldBearer / Chenshou (epic).
 // protect_enhance: enhancement protection item (E7 §6.2), preserves materials on failure without consuming them, consumable for big spenders.
 // kind='item' → delivery writes save.inventory.items[grants], not skins (see metaserver/economy.ts deliverOrder).
 export const SHOP_ITEMS: ShopItemDef[] = [

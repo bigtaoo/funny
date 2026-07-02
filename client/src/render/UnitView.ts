@@ -40,8 +40,18 @@ const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
  * SaveData.equipped) swaps ONLY the texture bundle — never stats — so a skin
  * carried into PvP changes nothing but the picture (hard wall, §5.2). Empty until
  * skin .tao bundles are authored; an unknown / unmapped skin falls back to the
- * default look in STICKMAN_ASSETS. To add a skin: import its .tao here and map the
- * unit types it restyles, e.g. `gold: { [UnitType.Infantry]: goldInfantryTaoUrl }`.
+ * default look in STICKMAN_ASSETS.
+ *
+ * LAUNCH SKIN CATALOGUE (owner decision 2026-07-02, GACHA_DESIGN §9.5): one skin per
+ * character, 6 total, each a full .tao (procedural recolor retired post-v0.4, see
+ * art-direction §9.1). Art-blocked — the .tao files don't exist yet. When authored,
+ * import each and add its single-unit override here:
+ *   skin_shop_c1: { [UnitType.Infantry]:     <skin_infantry.tao> },  // Tao/Lichuang  (shop, common)
+ *   skin_shop_r1: { [UnitType.Archer]:       <skin_archer.tao>   },  // Tao/Suyuan    (shop, rare)
+ *   skin_shop_e1: { [UnitType.ShieldBearer]: <skin_shield.tao>   },  // Tao/Chenshou  (shop, epic)
+ *   skin_e1:      { [UnitType.Lena]:         <skin_lena.tao>     },  // Anna/Lena     (gacha, epic)
+ *   skin_e2:      { [UnitType.Mara]:         <skin_mara.tao>     },  // Anna/Mara     (gacha, epic)
+ *   skin_l1:      { [UnitType.Max]:          <skin_max.tao>      },  // Anna/Max      (gacha, legendary)
  */
 const SKIN_ASSETS: Record<string, Partial<Record<UnitType, string>>> = {};
 
