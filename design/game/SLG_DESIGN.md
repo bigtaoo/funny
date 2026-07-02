@@ -163,6 +163,10 @@
 ## 5. 战斗接入（承重墙）
 
 > **⚠️ 攻防模型已升级（[DECISIONS ADR-026](../DECISIONS.md)，2026-07-02）**：主城/关卡/城池/据点统一为**建筑血量 + 逐队守军波次 + 攻城值延迟结算**。要点：①每建筑有血量（主城 `maxHp = level × SLG_BASE_HP_PER_LEVEL`）；②守军 = 在城且未受伤的 `teams[]`（t1→t5 逐队上阵，攻方存活兵力跨波延续），在外行军的队跳过；③攻方清光守军或本无守军 → 胜后挂 5min → 按队伍「攻城值」（队内卡之和）扣建筑血量；④战败守军受伤 10min 不参战；⑤血量归零 → 攻占（主城=passiveRelocate）。下方 §5.1/§16 的「单场确定性围攻」是本模型的**单波实现底座**（每一波仍是一场确定性引擎战），波次编排/血量/延迟结算/受伤为 ADR-026 新增层。
+>
+> **攻城值 = 逐卡属性（任务 #8 已实现）**：每张卡有 `CardDef.siegeValueBase`（DRAFT，按定位差异化：盾兵/坦克 14 > 步兵 11/Max 12 > 弓手/Mara 8，目录均值 ≈ 10 以保血量节奏），`cardSiegeValue(card)` 逐级 `×(1+0.1(lv-1))`；队伍攻城值 = `teamSiegeValue(army, cardInv)` 逐卡求和（缺卡回退统一值）。**数值 DRAFT，待经济核验**。
+>
+> **血量/受伤下行 + UI（任务 #8 已实现）**：`WorldTileView.hp/maxHp`（base/territory/stronghold）与 `PlayerWorldView.teamState`（+ 补齐 `cardState/baseTroopStock`）经 `getMe/getMap` 下行（主动查询，无实时推送）。客户端：`WorldMapScene` 地图建筑血条（**仅受损时显示**，绿→琥珀→红）+ 攻击弹窗 `world.buildingHp` 数值；`TeamsScene` 队伍受伤倒计时徽标（复用 `roster.injured`）。
 
 ### 5.1 围攻 = 确定性引擎打防守 config + 录像（SLG5）
 

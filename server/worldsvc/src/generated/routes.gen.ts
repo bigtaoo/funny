@@ -1152,6 +1152,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "garrison": {
                         "type": "integer"
                       },
+                      "hp": {
+                        "type": "integer",
+                        "description": "ADR-026 §1: current building HP of this attackable tile (main base anchor / territory / stronghold). Absent = full HP (client falls back to maxHp). Populated for occupied/attackable tiles within vision."
+                      },
+                      "maxHp": {
+                        "type": "integer",
+                        "description": "ADR-026 §1: building max HP = level × SLG_BASE_HP_PER_LEVEL. Client renders the HP bar as hp/maxHp."
+                      },
                       "protectedUntil": {
                         "type": "number"
                       },
@@ -1366,6 +1374,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "garrison": {
                   "type": "integer"
                 },
+                "hp": {
+                  "type": "integer",
+                  "description": "ADR-026 §1: current building HP of this attackable tile (main base anchor / territory / stronghold). Absent = full HP (client falls back to maxHp). Populated for occupied/attackable tiles within vision."
+                },
+                "maxHp": {
+                  "type": "integer",
+                  "description": "ADR-026 §1: building max HP = level × SLG_BASE_HP_PER_LEVEL. Client renders the HP bar as hp/maxHp."
+                },
                 "protectedUntil": {
                   "type": "number"
                 },
@@ -1555,6 +1571,20 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "baseTroopStock": {
                   "type": "integer",
                   "description": "Troops in the base pool available to distribute to card slots"
+                },
+                "teamState": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "injuredUntil": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      }
+                    }
+                  },
+                  "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
                 }
               }
             }
@@ -1726,6 +1756,20 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "baseTroopStock": {
                   "type": "integer",
                   "description": "Troops in the base pool available to distribute to card slots"
+                },
+                "teamState": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "injuredUntil": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      }
+                    }
+                  },
+                  "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
                 }
               }
             }
@@ -1929,6 +1973,20 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "baseTroopStock": {
                   "type": "integer",
                   "description": "Troops in the base pool available to distribute to card slots"
+                },
+                "teamState": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "injuredUntil": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      }
+                    }
+                  },
+                  "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
                 }
               }
             }
@@ -2018,6 +2076,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "garrison": {
                   "type": "integer"
+                },
+                "hp": {
+                  "type": "integer",
+                  "description": "ADR-026 §1: current building HP of this attackable tile (main base anchor / territory / stronghold). Absent = full HP (client falls back to maxHp). Populated for occupied/attackable tiles within vision."
+                },
+                "maxHp": {
+                  "type": "integer",
+                  "description": "ADR-026 §1: building max HP = level × SLG_BASE_HP_PER_LEVEL. Client renders the HP bar as hp/maxHp."
                 },
                 "protectedUntil": {
                   "type": "number"
@@ -2502,6 +2568,20 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "baseTroopStock": {
                   "type": "integer",
                   "description": "Troops in the base pool available to distribute to card slots"
+                },
+                "teamState": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "injuredUntil": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      }
+                    }
+                  },
+                  "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
                 }
               }
             }
@@ -2673,6 +2753,20 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "baseTroopStock": {
                   "type": "integer",
                   "description": "Troops in the base pool available to distribute to card slots"
+                },
+                "teamState": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "injuredUntil": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      }
+                    }
+                  },
+                  "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
                 }
               }
             }
@@ -2844,6 +2938,20 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "baseTroopStock": {
                   "type": "integer",
                   "description": "Troops in the base pool available to distribute to card slots"
+                },
+                "teamState": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "injuredUntil": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      }
+                    }
+                  },
+                  "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
                 }
               }
             }
@@ -3015,6 +3123,20 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "baseTroopStock": {
                   "type": "integer",
                   "description": "Troops in the base pool available to distribute to card slots"
+                },
+                "teamState": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "injuredUntil": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      }
+                    }
+                  },
+                  "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
                 }
               }
             }

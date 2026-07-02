@@ -143,13 +143,18 @@ export class TeamsScene implements Scene {
     y += FILL_BTN_H + FILL_BTN_GAP;
 
     // ── Team slot rows ─────────────────────────────────────────────────────
+    const nowTeams = Date.now();
+    const teamState = this.worldView?.teamState ?? {};
     for (let i = 0; i < TEAM_CAP; i++) {
       const id = teamSlotId(i);
       const team = this.teams.find((tm) => tm.id === id);
       const filled = !!team && team.army.length > 0;
+      // ADR-026 §5: a team that lost a defensive wave is injury-locked and cannot defend until healed.
+      const teamInjuredUntil = teamState[id]?.injuredUntil ?? 0;
+      const teamInjured = teamInjuredUntil > nowTeams;
       const rowW = w - PAD * 2;
       const panel = sketchPanel(rowW, ROW_H, {
-        fill: C.paper, border: filled ? C.accent : C.mid, width: filled ? 2 : 1.3,
+        fill: C.paper, border: teamInjured ? C.red : (filled ? C.accent : C.mid), width: filled ? 2 : 1.3,
         seed: seedFor(PAD, y, rowW),
       });
       panel.x = PAD; panel.y = y;
@@ -158,6 +163,14 @@ export class TeamsScene implements Scene {
       const name = txt(team?.name || teamSlotName(i), 14, C.dark, true);
       name.x = PAD + 12; name.y = y + 10;
       this.bodyLayer.addChild(name);
+
+      if (teamInjured) {
+        const secsLeft = Math.ceil((teamInjuredUntil - nowTeams) / 1000);
+        const timeStr = secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
+        const tag = txt(`[${t('roster.injured').replace('{time}', timeStr)}]`, 10, C.red, true);
+        tag.x = name.x + name.width + 8; tag.y = y + 12;
+        this.bodyLayer.addChild(tag);
+      }
 
       if (filled) {
         const committed = this.committedTroops(team!.army);

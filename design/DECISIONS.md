@@ -224,8 +224,12 @@
 
 - **占位数值（DRAFT，攻城值细节另于新会话专议，经济核验前均为占位）**：
   - `SLG_BASE_HP_PER_LEVEL = 100`（主城每级 100 血 ⇒ 30/次约 3~4 次攻破 lv1）。
-  - 「攻城值」是**每张卡的新属性**（与攻击/移速同级，用户 2026-07-02 拍板）；队伍攻城值 = **队内各卡攻城值之和**。占位 `每卡 SLG_SIEGE_VALUE_PER_CARD=10` 统一值（真实逐卡/逐级数值另开新会话设计）。**队伍必有卡 → 攻城值恒 > 0**；唯一「不扣血」情形 = 攻方被全灭（本就判守方胜、不排结算）。
+  - 「攻城值」是**每张卡的新属性**（与攻击/移速同级，用户 2026-07-02 拍板）；队伍攻城值 = **队内各卡攻城值之和**。**队伍必有卡 → 攻城值恒 > 0**；唯一「不扣血」情形 = 攻方被全灭（本就判守方胜、不排结算）。
   - `SLG_SIEGE_DAMAGE_DELAY_MS = 5 min`、`SLG_TEAM_INJURY_MS = 10 min`。
+
+- **实现更新（2026-07-02，任务 #8）**：攻城值已从「每卡统一 10」升级为**逐卡真实属性**。
+  - `CardDef.siegeValueBase` 逐卡定 DRAFT 值（按定位差异化：盾兵/坦克破墙 14 > 步兵 11/Max 12 > 弓手/Mara 8），目录均值 ≈ `SLG_SIEGE_VALUE_PER_CARD` 以保 ADR-026 血量节奏不变；`cardSiegeValue(card) = round(base × (1 + 0.1×(lv-1)))` 逐级放大。`teamSiegeValue(army, cardInv)` 逐卡求和，缺卡（合成/旧测试）回退统一值。**数值仍为 DRAFT，待经济核验调优**（README §0 铁律：只调常数不改公式）。
+  - 契约 + 客户端 UI 已实现（不再后置）：`WorldTileView.hp/maxHp`、`PlayerWorldView.teamState/cardState/baseTroopStock` 下行；`getMe` 补齐序列化；地图建筑血条（受损才显示）+ 攻击弹窗 `world.buildingHp` 数值 + 队伍菜单受伤倒计时。下行沿用 `getMe/getMap` 主动查询（无实时推送）。
 
 - **5 分钟语义澄清**：即「攻方胜利 → 结算伤害」之间的延迟，**不是**再攻免疫窗；同一建筑可叠加多次各自的 5min 计时。
 
@@ -234,8 +238,8 @@
 - **影响**：
   - `@nw/shared`（`slg.ts`：新增 `SLG_BASE_HP_PER_LEVEL`/`SLG_SIEGE_VALUE_PER_CARD`/`SLG_SIEGE_DAMAGE_DELAY_MS`/`SLG_TEAM_INJURY_MS` + `teamSiegeValue()`/`waveSeed()`/`buildingMaxHp()`）**属公共依赖，最先合 main**。
   - `worldsvc`：`db.ts` 新增 `TileDoc.hp`、`PlayerWorldDoc.teamState`、`MarchDoc.teamId`、`SiegeDamageDoc` 集合；`service.ts` 重写 `applySiege` 为波次战 + 建筑血量 + 延迟结算调度 + 队伍受伤 + 攻占；`joinWorld`/`relocateBase`/`passiveRelocate` 初始化主城血量；scheduler 加 `processDueSiegeDamage`。
-  - 契约（`openapi-world.yml`）：`getMe`/tile view 下行建筑血量 + 队伍受伤态。
-  - `client`：血条 + 受伤态 UI（**可后置**）。
+  - 契约（`openapi-world.yml`）：`getMe`/tile view 下行建筑血量 + 队伍受伤态。**（任务 #8 已实现）**
+  - `client`：血条 + 受伤态 UI。**（任务 #8 已实现：`WorldMapScene.drawHpBar` + `TeamsScene` 队伍受伤徽标）**
   - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1 主城行 + §5 围攻章须更新为本模型。
 
 ## ADR-025 SLG 主城 = 真占 3×3=9 格实体（封路 + 一体防守 + 计 9 格） — Accepted — 2026-07-02

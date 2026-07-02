@@ -737,6 +737,10 @@ export interface components {
             ownerName?: string;
             familyId?: string;
             garrison?: number;
+            /** @description ADR-026 §1: current building HP of this attackable tile (main base anchor / territory / stronghold). Absent = full HP (client falls back to maxHp). Populated for occupied/attackable tiles within vision. */
+            hp?: number;
+            /** @description ADR-026 §1: building max HP = level × SLG_BASE_HP_PER_LEVEL. Client renders the HP bar as hp/maxHp. */
+            maxHp?: number;
             protectedUntil?: number;
             /** @description §18 G5 V2：A watchtower has been built on this tile (large-radius persistent vision source). The client renders the tower marker. */
             watchtower?: boolean;
@@ -818,6 +822,10 @@ export interface components {
             };
             /** @description Troops in the base pool available to distribute to card slots */
             baseTroopStock?: number;
+            /** @description Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state. */
+            teamState?: {
+                [key: string]: components["schemas"]["TeamSLGState"];
+            };
         };
         /**
          * @description Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2.
@@ -966,6 +974,10 @@ export interface components {
             injuredUntil?: number | null;
             /** @description Team this card is assigned to */
             teamId?: string | null;
+        };
+        TeamSLGState: {
+            /** @description Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend. */
+            injuredUntil?: number | null;
         };
         ArmyEntry: {
             /** @description CC-3 primary key (character card instance) */

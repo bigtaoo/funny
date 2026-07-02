@@ -53,6 +53,14 @@ components:
           type: string
         garrison:
           type: integer
+        hp:
+          type: integer
+          description: >-
+            ADR-026 §1: current building HP of this attackable tile (main base anchor / territory / stronghold). Absent = full HP (client falls back to maxHp).
+            Populated for occupied/attackable tiles within vision.
+        maxHp:
+          type: integer
+          description: "ADR-026 §1: building max HP = level × SLG_BASE_HP_PER_LEVEL. Client renders the HP bar as hp/maxHp."
         protectedUntil:
           type: number
         watchtower:
@@ -207,6 +215,13 @@ components:
         baseTroopStock:
           type: integer
           description: Troops in the base pool available to distribute to card slots
+        # ADR-026 §5: per-team injury state (team granularity, distinct from CC-3 card-level cardState[].injuredUntil).
+        # Absent when no team is injured. Client renders an injury countdown in the team menu; injured teams never defend.
+        teamState:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/TeamSLGState'
+          description: Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state.
 
     BuildingKey:
       type: string
@@ -480,6 +495,12 @@ components:
         currentTroops: { type: integer, description: Troops currently allocated to this card }
         injuredUntil: { type: integer, nullable: true, description: Unix ms timestamp when injury ends; null = not injured }
         teamId: { type: string, nullable: true, description: Team this card is assigned to }
+
+    # ADR-026 §5: per-team SLG run-time state stored in PlayerWorldDoc.teamState (team granularity).
+    TeamSLGState:
+      type: object
+      properties:
+        injuredUntil: { type: integer, nullable: true, description: Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend. }
 
     # Formation unit (mirrors GarrisonEntry + CC-3 cardInstanceId, G3-2c). Validity of unitType/col/row is checked by the engine levelSchema;
     # initialHp = troops allocated to this unit (= HP, §16.1); cardInstanceId = CC-3 primary key (replaces unitType for new armies).

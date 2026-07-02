@@ -47,6 +47,14 @@ export interface CardDef {
    * [DRAFT → ECONOMY_NUMBERS §6]
    */
   powerWeights: { hp: number; atk: number };
+  /**
+   * 攻城值 (siege value) base at card level 1 — a per-card attribute, same tier as attack / move-speed
+   * (ADR-026, owner decision 2026-07-02). A team's siege value = sum of {@link cardSiegeValue} over its cards;
+   * that value is the delayed building-HP hit dealt after the garrison is cleared. Differentiated by unit
+   * role (wall-breaking tanks > dps > glass-cannon archers); catalogue average ≈ SLG_SIEGE_VALUE_PER_CARD so
+   * ADR-026 building-HP pacing (lv1 = 100 HP ⇒ ~3–4 sieges) is preserved. [DRAFT → economy pass]
+   */
+  siegeValueBase: number;
 }
 
 /**
@@ -66,6 +74,7 @@ export const CARD_DEFS: Record<string, CardDef> = {
     troopCapGrowth: 50,
     skillGrowth: NO_SKILL,
     powerWeights: { hp: 0.4, atk: 0.6 },
+    siegeValueBase: 11, // infantry: solid all-rounder against buildings
   },
   chenshou: {
     id: 'chenshou',
@@ -75,6 +84,7 @@ export const CARD_DEFS: Record<string, CardDef> = {
     troopCapGrowth: 25,
     skillGrowth: NO_SKILL,
     powerWeights: { hp: 0.7, atk: 0.3 },
+    siegeValueBase: 14, // shieldbearer: wall-breaker identity → highest siege value
   },
   suyuan: {
     id: 'suyuan',
@@ -84,6 +94,7 @@ export const CARD_DEFS: Record<string, CardDef> = {
     troopCapGrowth: 25,
     skillGrowth: NO_SKILL,
     powerWeights: { hp: 0.3, atk: 0.7 },
+    siegeValueBase: 8, // archer: glass cannon, weakest at battering structures
   },
 
   // ── Anna faction (Hartmann·西方) ──────────────────────────────────────────────────
@@ -99,6 +110,7 @@ export const CARD_DEFS: Record<string, CardDef> = {
     // Values: [L1=0, L2=0, L3=5, L4=5, L5=10, L6=10, L7=15, L8=15, L9=20]  [DRAFT]
     skillGrowth: [0, 0, 5, 5, 10, 10, 15, 15, 20],
     powerWeights: { hp: 0.4, atk: 0.6 },
+    siegeValueBase: 12, // Max: armored vanguard, above-average siege presence
   },
   lena: {
     id: 'lena',
@@ -110,6 +122,7 @@ export const CARD_DEFS: Record<string, CardDef> = {
     // Values: [L1=0, L2=0, L3=2, L4=2, L5=4, L6=4, L7=6, L8=6, L9=8]  [DRAFT]
     skillGrowth: [0, 0, 2, 2, 4, 4, 6, 6, 8],
     powerWeights: { hp: 0.7, atk: 0.3 },
+    siegeValueBase: 14, // Lena: sentinel tank, wall-breaker tier
   },
   mara: {
     id: 'mara',
@@ -121,6 +134,7 @@ export const CARD_DEFS: Record<string, CardDef> = {
     // Values: [L1=0, L2=0, L3=10, L4=10, L5=15, L6=15, L7=20, L8=20, L9=25]  [DRAFT]
     skillGrowth: [0, 0, 10, 10, 15, 15, 20, 20, 25],
     powerWeights: { hp: 0.3, atk: 0.7 },
+    siegeValueBase: 8, // Mara: marker/dps, low structural damage like archers
   },
 };
 
@@ -244,4 +258,25 @@ export function selectBestCard(
     }
   }
   return best;
+}
+
+// ── Siege value (ADR-026 §4) ────────────────────────────────────────────────────────────
+//
+// 攻城值 is a per-card attribute (same tier as attack / move-speed). A team's siege value is the
+// sum of cardSiegeValue() over its cards; teamSiegeValue() in slg.ts consumes it to compute the
+// delayed building-HP hit after a garrison is cleared. Numbers are DRAFT (economy pass pending);
+// only the formula shape is fixed here (README §0 iron rule #1).
+
+/** Per-level siege-value growth: +10% of base per card level above 1 (mirrors the gentle progression proxy). [DRAFT] */
+const SIEGE_VALUE_GROWTH_PER_LEVEL = 0.1;
+
+/**
+ * A single card's 攻城值 at its current level: `round(siegeValueBase × (1 + 0.1 × (level − 1)))`.
+ * Unknown defId → 0 (defensive; a real card always resolves). Level clamped to 1..9.
+ */
+export function cardSiegeValue(card: CardInstance): number {
+  const def = CARD_DEFS[card.defId];
+  if (!def) return 0;
+  const lv = Math.max(1, Math.min(Math.floor(card.level), 9));
+  return Math.round(def.siegeValueBase * (1 + SIEGE_VALUE_GROWTH_PER_LEVEL * (lv - 1)));
 }

@@ -7,6 +7,8 @@
 //   The same worldId + the same (x,y) always yields the same tile (computable on either end).
 
 import { ErrorCode, type ErrorCode as ErrorCodeT } from './api';
+import { cardSiegeValue } from './cards';
+import type { CardInstance } from './types';
 
 /**
  * worldsvc endpoint error: carries an SLG ErrorCode (httpApi maps it to HTTP via ERROR_HTTP_STATUS).
@@ -1263,10 +1265,11 @@ export const SIEGE_UNIT_HP_STEPS = 4;
 export const SLG_BASE_HP_PER_LEVEL = 100;
 
 /**
- * 攻城值 (siege value) is a NEW per-card attribute, same tier as attack / move-speed (owner decision 2026-07-02).
- * A team's siege value = sum of each of its cards' 攻城值. v1 placeholder: every card contributes this uniform value
- * (real per-card/per-level values are designed in a dedicated session). A real team always has cards → value is always > 0;
- * the only "no building damage" case is the attacker being wiped, which is already a defender win (no hit scheduled). [DRAFT]
+ * 攻城值 (siege value) is a per-card attribute, same tier as attack / move-speed (owner decision 2026-07-02).
+ * A team's siege value = sum of each of its cards' 攻城值 ({@link cardSiegeValue}, resolved from CARD_DEFS + level).
+ * A real team always has cards → value is always > 0; the only "no building damage" case is the attacker being wiped,
+ * which is already a defender win (no hit scheduled). This uniform constant is the FALLBACK for card-less entries
+ * (legacy/synthesized armies used only in tests) and the catalogue average target for per-card tuning. [DRAFT]
  */
 export const SLG_SIEGE_VALUE_PER_CARD = 10;
 
@@ -1283,13 +1286,21 @@ export function buildingMaxHp(level: number): number {
 
 /**
  * A team's siege value = sum of each card's 攻城值 attribute (ADR-026 §4; a per-card stat, same tier as attack/speed).
- * v1 placeholder: each card contributes SLG_SIEGE_VALUE_PER_CARD. Only entries with a cardInstanceId count.
- * Real teams always contain cards → value is always > 0 (legacy card-less synthesized entries, used only in tests, contribute 0).
+ * Only entries with a cardInstanceId count. When `cardInv` is provided, each card's value is resolved per-card/per-level
+ * via {@link cardSiegeValue}; a card whose instance is missing from `cardInv` (and any call omitting `cardInv`, e.g. legacy
+ * tests) falls back to the uniform SLG_SIEGE_VALUE_PER_CARD. Real teams always contain cards → value is always > 0.
  */
-export function teamSiegeValue(army: ReadonlyArray<{ cardInstanceId?: string }>): number {
-  let n = 0;
-  for (const e of army) if (e.cardInstanceId) n++;
-  return n * SLG_SIEGE_VALUE_PER_CARD;
+export function teamSiegeValue(
+  army: ReadonlyArray<{ cardInstanceId?: string }>,
+  cardInv?: Record<string, CardInstance>,
+): number {
+  let total = 0;
+  for (const e of army) {
+    if (!e.cardInstanceId) continue;
+    const card = cardInv?.[e.cardInstanceId];
+    total += card ? cardSiegeValue(card) : SLG_SIEGE_VALUE_PER_CARD;
+  }
+  return total;
 }
 
 /** Deterministic per-wave seed (ADR-026 §3): folds the wave index into the march's siege seed so each wave is uniquely and reproducibly determined. */

@@ -734,6 +734,12 @@ export class WorldMapScene implements Scene {
       g.endFill();
     }
 
+    // ADR-026 §1: building HP bar on attackable buildings under siege. Only drawn while damaged
+    // (hp < maxHp) so full-HP buildings keep the map uncluttered; a depleted bar signals an active siege.
+    if (tile && tile.maxHp && tile.hp != null && tile.hp < tile.maxHp) {
+      this.drawHpBar(g, tile.hp, tile.maxHp, tp);
+    }
+
     if (tile?.allySect) {
       g.lineStyle(2, ALLY_SECT_BORDER, 0.95);
       g.beginFill(0, 0);
@@ -758,6 +764,29 @@ export class WorldMapScene implements Scene {
       ]);
       g.endFill();
     }
+  }
+
+  /**
+   * ADR-026 §1: a small building-HP bar near the bottom of an attackable tile. Green→amber→red by ratio,
+   * so an enemy base being ground down under a siege reads at a glance. Width scales with the tile size.
+   */
+  private drawHpBar(g: PIXI.Graphics, hp: number, maxHp: number, tp: number): void {
+    const ratio = Math.max(0, Math.min(1, hp / maxHp));
+    const barW = tp * 0.7;
+    const barH = Math.max(3, tp * 0.06);
+    const x = (tp - barW) / 2;
+    const y = tp - barH - 3;
+    // Track
+    g.lineStyle(0.6, 0x3a2a1a, 0.8);
+    g.beginFill(0x2a1e12, 0.75);
+    g.drawRect(x, y, barW, barH);
+    g.endFill();
+    // Fill: green (full) → amber (mid) → red (low)
+    const fillColor = ratio > 0.5 ? 0x3aa03a : (ratio > 0.25 ? 0xd8a520 : 0xcc2222);
+    g.lineStyle(0);
+    g.beginFill(fillColor, 0.95);
+    g.drawRect(x, y, barW * ratio, barH);
+    g.endFill();
   }
 
   /**
@@ -1521,7 +1550,9 @@ export class WorldMapScene implements Scene {
       // Scout: no attack, no capture — send a scout to reveal enemy info / defenses then auto-return (scouting is also allowed during a protection window).
       buttons.push({ label: t('world.actScout'), action: () => void this.doScout(tx, ty) });
       buttons.push({ label: '✕', action: () => this.closeModal() });
-      this.showModal([t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`], buttons);
+      const enemyHead = [t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`];
+      if (tile.maxHp && tile.hp != null) enemyHead.push(t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)));
+      this.showModal(enemyHead, buttons);
       return;
     }
 

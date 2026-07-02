@@ -16,7 +16,8 @@ import {
   SLG_MAP_H,
   TROOP_CAP_BASE,
   buildingMaxHp,
-  SLG_SIEGE_VALUE_PER_CARD,
+  teamSiegeValue,
+  cardSiegeValue,
   SLG_SIEGE_DAMAGE_DELAY_MS,
   SLG_TEAM_INJURY_MS,
   type CardInstance,
@@ -161,9 +162,9 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
   });
 
   /** Attacker 'a': join (own base) + set card inventory (fake meta) + card troops. Returns the attacker army entries. */
-  async function setupAttacker(n: number, troops = 60): Promise<TeamTemplate['army']> {
+  async function setupAttacker(n: number, troops = 60, defId = 'lichuang'): Promise<TeamTemplate['army']> {
     await svc.joinWorld(W, 'a', 5, 5);
-    const { inv, army, state } = mkCards('ca', n, troops);
+    const { inv, army, state } = mkCards('ca', n, troops, defId);
     cardInvByAccount['a'] = inv;
     await m.collections.playerWorld.updateOne(
       { _id: playerWorldId(W, 'a') },
@@ -175,7 +176,9 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
   it('no defenders + partial hit: HP reduced by team siege value, no capture, survivors refunded', async () => {
     const tgt = findCoord(20, 5);
     await setupBase(tgt.x, tgt.y, { hp: 100 }); // b has no teams → no defenders
-    const army = await setupAttacker(3);         // siege value = 3 × 10 = 30
+    const army = await setupAttacker(3);         // siege value = sum of per-card 攻城值 (3 × lichuang L1)
+    // Expected damage = the team's real per-card siege value (ADR-026), computed the same way as production.
+    const expectedDamage = teamSiegeValue(army, cardInvByAccount['a']);
 
     await arriveAttack(tgt.x, tgt.y, army);
 
@@ -184,19 +187,38 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
     expect(siege?.outcome).toBe('attacker_win');
     const pending = await m.collections.siegeDamage.findOne({ tile: tileId(W, tgt.x, tgt.y) });
     expect(pending).toBeTruthy();
-    expect(pending!.damage).toBe(3 * SLG_SIEGE_VALUE_PER_CARD);
+    expect(pending!.damage).toBe(expectedDamage);
     expect(pending!.dueAt).toBe(nowMs + SLG_SIEGE_DAMAGE_DELAY_MS);
     // HP not yet touched.
     expect((await m.collections.tiles.findOne({ _id: tileId(W, tgt.x, tgt.y) }))!.hp).toBe(100);
 
-    // Advance past the delay and settle: HP 100 - 30 = 70, base survives, still owned by b.
+    // Advance past the delay and settle: HP reduced by the team's siege value, base survives, still owned by b.
     nowMs += SLG_SIEGE_DAMAGE_DELAY_MS + 1;
     expect(await svc.processDueSiegeDamage()).toBe(1);
     const after = await m.collections.tiles.findOne({ _id: tileId(W, tgt.x, tgt.y) });
-    expect(after!.hp).toBe(70);
+    expect(after!.hp).toBe(100 - expectedDamage);
     expect(after!.ownerId).toBe('b');
     // Pending hit consumed.
     expect(await m.collections.siegeDamage.findOne({ tile: tileId(W, tgt.x, tgt.y) })).toBeNull();
+  });
+
+  it('siege value is per-card: a shieldbearer team dents HP more than an archer team of equal size', async () => {
+    // ADR-026 §4: 攻城值 is a per-card attribute. chenshou (shieldbearer, wall-breaker) > suyuan (archer, glass cannon).
+    const tgt = findCoord(20, 5);
+    await setupBase(tgt.x, tgt.y, { hp: 100 });
+    const shieldArmy = await setupAttacker(3, 60, 'chenshou');
+    const expected = teamSiegeValue(shieldArmy, cardInvByAccount['a']);
+
+    await arriveAttack(tgt.x, tgt.y, shieldArmy);
+    const pending = await m.collections.siegeDamage.findOne({ tile: tileId(W, tgt.x, tgt.y) });
+    expect(pending!.damage).toBe(expected);
+    // Differentiation is real, not the old uniform 10/card: a 3-shieldbearer team out-sieges a 3-archer team.
+    const archerInv = mkCards('cx', 3, 60, 'suyuan').inv;
+    const archerArmy = mkCards('cx', 3, 60, 'suyuan').army;
+    expect(expected).toBeGreaterThan(teamSiegeValue(archerArmy, archerInv));
+    // And the per-card helper scales with level.
+    expect(cardSiegeValue({ id: 'z', defId: 'chenshou', level: 5, xp: 0, gear: {}, locked: false }))
+      .toBeGreaterThan(cardSiegeValue({ id: 'z', defId: 'chenshou', level: 1, xp: 0, gear: {}, locked: false }));
   });
 
   it('HP depleted → forced relocation (old base gone, territory lost, new base + protection shield)', async () => {

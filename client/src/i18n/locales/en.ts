@@ -719,6 +719,7 @@ export const en: Record<TranslationKey, string> = {
   'world.mine': 'My Territory',
   'world.protected': 'Protected ({sec}s)',
   'world.garrison': 'Garrison {n}',
+  'world.buildingHp': 'HP {hp}/{max}',
   'world.center': 'World Center',
   'world.familyKeep': 'Family Keep',
   'world.stronghold': 'Stronghold',

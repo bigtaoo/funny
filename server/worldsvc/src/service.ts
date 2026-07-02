@@ -68,6 +68,7 @@ import {
   type VisionSource,
   SIEGE_TEAM_CAP,
   teamSiegeValue,
+  type CardInstance,
   waveSeed,
   buildingMaxHp,
   SLG_SIEGE_DAMAGE_DELAY_MS,
@@ -130,6 +131,19 @@ export interface SiegeReplayInputs {
   tileLevel: number;
 }
 
+/** Tile types that carry building HP (ADR-026 §1): the siege code writes TileDoc.hp on these; other types have no HP bar. */
+const HP_BEARING_TILE_TYPES: ReadonlySet<TileType> = new Set(['base', 'territory', 'stronghold'] as TileType[]);
+
+/**
+ * ADR-026 §1: HP-bar fields for a tile view. Emits maxHp (= buildingMaxHp(level)) and current hp for HP-bearing
+ * building types only; hp defaults to full when TileDoc.hp is unset. Non-building tiles get no HP fields.
+ */
+function siegeHpView(o: TileDoc): { hp?: number; maxHp?: number } {
+  if (!HP_BEARING_TILE_TYPES.has(o.type)) return {};
+  const maxHp = buildingMaxHp(o.level);
+  return { maxHp, hp: o.hp ?? maxHp };
+}
+
 /** Single-tile view in the viewport (REST response). `mine` indicates whether the tile belongs to the requester; `ownerPublicId`/`ownerName` are the nickname of another player's territory (requires meta to be available). */
 export interface WorldTileView {
   x: number;
@@ -147,6 +161,10 @@ export interface WorldTileView {
   ownerName?: string;
   familyId?: string;
   garrison?: number;
+  /** ADR-026 §1: current building HP (base/territory/stronghold). Omitted = full HP; client falls back to maxHp. */
+  hp?: number;
+  /** ADR-026 §1: building max HP = level × SLG_BASE_HP_PER_LEVEL. Client renders the HP bar as hp/maxHp. */
+  maxHp?: number;
   protectedUntil?: number;
   /** §18 G5 V2: this tile has a watchtower (only exposed for tiles visible to the player) — large-radius persistent vision source; client renders the tower marker. */
   watchtower?: boolean;
@@ -224,6 +242,12 @@ export interface PlayerWorldView {
   buildings?: Partial<Record<BuildingKey, number>>;
   /** Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending); client CityScene renders countdowns. */
   buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: number }[];
+  /** CC-4: per-card SLG run-time state (currentTroops / injuredUntil / teamId). Absent when the player has none. */
+  cardState?: Record<string, CardSLGState>;
+  /** CC-4: base troop pool available to distribute to card slots. */
+  baseTroopStock?: number;
+  /** ADR-026 §5: per-team injury state (team granularity). Present only for teams with active state; client renders an injury countdown in the team menu. */
+  teamState?: Record<string, { injuredUntil?: number }>;
 }
 
 /** March view (REST response / push payload source). */
@@ -678,6 +702,9 @@ export class WorldService {
       ...(doc.buildQueue && doc.buildQueue.length > 0
         ? { buildQueue: doc.buildQueue.map((e) => ({ key: e.key, toLevel: e.toLevel, startAt: e.startAt, completeAt: e.completeAt })) }
         : {}),
+      ...(doc.cardState && Object.keys(doc.cardState).length > 0 ? { cardState: doc.cardState } : {}),
+      ...(doc.baseTroopStock != null ? { baseTroopStock: doc.baseTroopStock } : {}),
+      ...(doc.teamState && Object.keys(doc.teamState).length > 0 ? { teamState: doc.teamState } : {}),
     };
   }
 
@@ -1482,7 +1509,7 @@ export class WorldService {
     if (target.type === 'base') {
       await this.applyBaseSiege(
         m, pw, baseTile, defenderId, defender, inOwnNation,
-        attackerArmy, cardInstances, cardEquipInv, siegeAcademy, t,
+        attackerArmy, cardInstances, cardEquipInv, siegeAcademy, attackerSave?.cardInv ?? {}, t,
       );
       return;
     }
@@ -1525,6 +1552,7 @@ export class WorldService {
     cardInstances: EngineCardInstance[] | undefined,
     cardEquipInv: EngineEquipInv | undefined,
     siegeAcademy: { hp: number; damage: number } | undefined,
+    attackerCardInv: Record<string, CardInstance>,
     t: number,
   ): Promise<void> {
     const { cols } = this.deps;
@@ -1619,7 +1647,7 @@ export class WorldService {
     if (cleared) {
       // Garrison cleared (or no defenders present): schedule the delayed building-HP hit = attacking team's siege value
       // (sum of the team's per-card 攻城值; a real card team is always > 0). Attacker keeps besieging; survivors are refunded at settlement.
-      const damage = teamSiegeValue(m.army ?? []);
+      const damage = teamSiegeValue(m.army ?? [], attackerCardInv);
       const dmg: SiegeDamageDoc = {
         _id: siege._id,
         worldId: m.worldId,
@@ -2357,6 +2385,7 @@ export class WorldService {
       ...(ownerProfile?.displayName ? { ownerName: ownerProfile.displayName } : {}),
       ...(o.familyId ? { familyId: o.familyId } : {}),
       ...(o.garrison ? { garrison: o.garrison } : {}),
+      ...siegeHpView(o),
       ...(o.protectedUntil ? { protectedUntil: o.protectedUntil } : {}),
       ...(o.watchtower ? { watchtower: true } : {}),
     };
