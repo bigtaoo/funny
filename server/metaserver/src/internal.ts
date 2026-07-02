@@ -40,6 +40,7 @@ import { accrueEventTask, adminListEvents, adminCreateEvent, adminUpdateEvent, a
 import { profileOf } from './social.js';
 import { insertSystemMail, bulkInsertSystemMail } from './mail.js';
 import { escrowEquipment, grantEquipment } from './equipment.js';
+import { grantCard } from './cards.js';
 import type { CompTarget, EquipmentInstance, MailAttachmentDoc, CardInstance } from '@nw/shared';
 import { ERROR_HTTP_STATUS } from '@nw/shared';
 
@@ -675,21 +676,10 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
     if (!accountId || !instance?.id) {
       return reply.code(400).send({ ok: false, error: 'accountId + instance required' });
     }
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const doc = await cols.saves.findOne({ _id: accountId });
-      if (!doc) return reply.code(404).send({ ok: false, error: 'save not found', code: 'NOT_FOUND' });
-      const nextCardInv = { ...(doc.save.cardInv ?? {}), [instance.id]: instance };
-      const next = { ...doc.save, rev: doc.save.rev + 1, updatedAt: now(), cardInv: nextCardInv };
-      const res = await cols.saves.findOneAndUpdate(
-        { _id: accountId, rev: doc.rev },
-        { $set: { save: next, rev: next.rev } },
-      );
-      if (res) {
-        log.info('card granted', { accountId, instanceId: instance.id, orderId });
-        return reply.send({ ok: true });
-      }
-    }
-    return reply.code(409).send({ ok: false, error: 'rev conflict, retry', code: 'REV_CONFLICT' });
+    const r = await grantCard(cols, now, accountId, instance);
+    if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send({ ok: false, error: r.error, code: r.code });
+    log.info('card granted', { accountId, instanceId: instance.id, orderId });
+    return reply.send({ ok: true });
   });
 
   // POST /internal/equipment/grant  { accountId, instance, orderId } → { ok }

@@ -41,6 +41,7 @@ import {
 import type { WorldCollections, AuctionDoc } from './db';
 import type { WorldCommercialClient } from './commercialClient';
 import type { WorldMetaClient } from './metaClient';
+import type { WorldMailClient, WorldMailAttachment } from './mailClient';
 
 export interface AuctionView {
   auctionId: string;
@@ -68,7 +69,11 @@ export interface AuctionServiceDeps {
   now: () => number;
   commercial: WorldCommercialClient;
   meta: WorldMetaClient;
+  mail: WorldMailClient;
 }
+
+/** System-mail retention for auction delivery/return items (days) — returned assets must not expire quickly. */
+const AUCTION_MAIL_EXPIRE_DAYS = 30;
 
 /** In-process sequence counter to prevent key collisions when multiple listings are created within the same millisecond. */
 let auctionSeq = 0;
@@ -207,21 +212,38 @@ export class AuctionService {
   }
 
   /**
-   * Delivers the listed item to the target account (buyer on sale / seller on cancel, expiry, or end-of-season reset).
-   * Material → grantMaterial; equipment → grantEquipment (transfers the full instance snapshot). Both are best-effort + orderId-idempotent.
+   * Delivers the listed item to the target account via system mail (escrow-out model, AUCTION_DESIGN):
+   *   buyer on sale (reason 'sold') / seller on cancel, expiry, or end-of-season reset (reason 'returned').
+   * The item does NOT go straight into the inventory — the recipient must claim the mail attachment
+   * (equipment/card carry the full instance snapshot; material carries id+qty).
+   * dispatchKey = orderId → idempotent (each call site passes a stable, unique orderId).
+   * Best-effort: mail unavailable → no-op (same degradation as the previous direct-grant path).
    */
-  private async deliverItem(toAccountId: string, doc: AuctionDoc, orderId: string): Promise<void> {
-    const { meta } = this.deps;
+  private async deliverItem(
+    toAccountId: string,
+    doc: AuctionDoc,
+    orderId: string,
+    reason: 'sold' | 'returned',
+  ): Promise<void> {
+    let attachment: WorldMailAttachment | null = null;
     if (doc.itemType === 'material') {
       const material = doc.item['material'] as string;
-      await meta.grantMaterial(toAccountId, material, doc.qty, orderId);
+      attachment = { kind: 'material', id: material, count: doc.qty };
     } else if (doc.itemType === 'equipment') {
       const inst = equipInstanceOf(doc.item);
-      if (inst) await meta.grantEquipment(toAccountId, inst, orderId);
+      if (inst) attachment = { kind: 'equipment', instance: inst };
     } else if (doc.itemType === 'card') {
       const inst = cardInstanceOf(doc.item);
-      if (inst) await meta.grantCard(toAccountId, inst, orderId);
+      if (inst) attachment = { kind: 'card', instance: inst };
     }
+    if (!attachment) return;
+    // subject/body are i18n keys resolved client-side (same mechanism as season-settlement mail, e.g. 'slg.settle.subject').
+    await this.deps.mail.sendSystemMail(toAccountId, orderId, {
+      subject: `auction.mail.${reason}.subject`,
+      body: `auction.mail.${reason}.body`,
+      attachments: [attachment],
+      expireDays: AUCTION_MAIL_EXPIRE_DAYS,
+    });
   }
 
   // ── F End-of-season freeze: settling/closed worlds reject new listings (buy/cancel/settle are unrestricted) ─────────────
@@ -427,8 +449,8 @@ export class AuctionService {
       throw new SlgError('AUCTION_CLOSED');
     }
 
-    // 3. Deliver item to buyer (material → grant material / equipment → transfer instance)
-    await this.deliverItem(buyerId, doc, `${buyOrderId}:item`);
+    // 3. Deliver item to buyer via system mail (escrow-out: buyer claims the attachment)
+    await this.deliverItem(buyerId, doc, `${buyOrderId}:item`, 'sold');
 
     // 4. Pay seller coins (after tax, best-effort)
     await commercial.grant(doc.sellerId, sellerReceives, `${buyOrderId}:seller`);
@@ -540,8 +562,8 @@ export class AuctionService {
     const sellerReceives = totalPrice - tax;
     const orderId = `auction_settle:${doc._id}`;
 
-    // Deliver item to the winner (material / equipment instance)
-    await this.deliverItem(top.bidderId, doc, `${orderId}:item`);
+    // Deliver item to the winner via system mail (escrow-out: winner claims the attachment)
+    await this.deliverItem(top.bidderId, doc, `${orderId}:item`, 'sold');
     // Pay seller post-tax proceeds
     await commercial.grant(doc.sellerId, sellerReceives, `${orderId}:seller`);
     // G Record sale unit price
@@ -571,8 +593,8 @@ export class AuctionService {
     );
     if (!updated) throw new SlgError('AUCTION_CLOSED');
 
-    // Return item to seller (material / equipment instance)
-    await this.deliverItem(sellerId, doc, `auction_cancel:${auctionId}`);
+    // Return item to seller via system mail (escrow-out: seller claims the attachment to get it back)
+    await this.deliverItem(sellerId, doc, `auction_cancel:${auctionId}`, 'returned');
 
     return docToView(updated);
   }
@@ -610,8 +632,8 @@ export class AuctionService {
       );
       if (!res) continue; // concurrently claimed by another processor, skip
 
-      // Return item to seller (material / equipment instance, best-effort)
-      await this.deliverItem(doc.sellerId, doc, `auction_expire:${doc._id}`);
+      // Return item to seller via system mail (escrow-out: seller claims the attachment to get it back)
+      await this.deliverItem(doc.sellerId, doc, `auction_expire:${doc._id}`, 'returned');
       processed++;
     }
     return processed;
@@ -636,8 +658,8 @@ export class AuctionService {
           { returnDocument: 'after' },
         );
         if (!res) continue;
-        // Return item to seller (material / equipment instance)
-        await this.deliverItem(doc.sellerId, doc, `auction_reset:${doc._id}`);
+        // Return item to seller via system mail (escrow-out: seller claims the attachment to get it back)
+        await this.deliverItem(doc.sellerId, doc, `auction_reset:${doc._id}`, 'returned');
         // Refund escrowed auction bid (if any)
         if ((doc.saleMode ?? 'fixed') === 'auction' && doc.topBid) {
           await commercial.grant(

@@ -1,29 +1,37 @@
 // After P2, only splitAttachments / insertSystemMail / bulkInsertSystemMail remain here.
 // Full mail CRUD (getMail/readMail/deleteMail/claimMailAtomic) has been migrated to socialsvc.
-import type { Collections, MailDoc, MailAttachmentDoc } from '@nw/shared';
+import type { Collections, MailDoc, MailAttachmentDoc, EquipmentInstance, CardInstance } from '@nw/shared';
 import { MAIL_DEFAULT_TTL_SEC } from '@nw/shared';
 
 /**
- * Split attachments by type (sum coins / skin id / item id→quantity / material id→quantity) for delivery by the service.
+ * Split attachments by type for delivery by the service:
+ * sum coins / skin id / item id→quantity / material id→quantity, plus equipment/card instance snapshots
+ * (auction escrow-out delivery — written back to equipmentInv/cardInv by instance.id on claim).
  */
 export function splitAttachments(attachments: MailAttachmentDoc[]): {
   coins: number;
   skins: string[];
   items: Record<string, number>;
   materials: Record<string, number>;
+  equipment: EquipmentInstance[];
+  cards: CardInstance[];
 } {
   let coins = 0;
   const skins: string[] = [];
   const items: Record<string, number> = {};
   const materials: Record<string, number> = {};
+  const equipment: EquipmentInstance[] = [];
+  const cards: CardInstance[] = [];
   for (const a of attachments) {
     const n = Math.max(0, Math.floor(a.count ?? (a.kind === 'coins' ? 0 : 1)));
     if (a.kind === 'coins') coins += n;
     else if (a.kind === 'skin' && a.id) skins.push(a.id);
     else if (a.kind === 'item' && a.id) items[a.id] = (items[a.id] ?? 0) + n;
     else if (a.kind === 'material' && a.id) materials[a.id] = (materials[a.id] ?? 0) + n;
+    else if (a.kind === 'equipment' && a.instance) equipment.push(a.instance as EquipmentInstance);
+    else if (a.kind === 'card' && a.instance) cards.push(a.instance as CardInstance);
   }
-  return { coins, skins, items, materials };
+  return { coins, skins, items, materials, equipment, cards };
 }
 
 export interface SystemMailContent {

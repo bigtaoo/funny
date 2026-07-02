@@ -14,6 +14,7 @@ import { createWorldMongo, type WorldMongo, type AuctionDoc } from '../src/db';
 import { AuctionService } from '../src/auctionService';
 import type { WorldCommercialClient } from '../src/commercialClient';
 import type { WorldMetaClient } from '../src/metaClient';
+import type { WorldMailClient } from '../src/mailClient';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_audit_test';
@@ -46,6 +47,7 @@ describe.skipIf(!mongo)('AuctionService.scanAnomalies e2e', () => {
     async escrowEquipment() { throw new Error('unused'); },
     async grantEquipment() {},
   };
+  const stubMail: WorldMailClient = { available: true, async sendSystemMail() {} };
 
   let svc: AuctionService;
   let nowMs = Date.now();
@@ -55,7 +57,7 @@ describe.skipIf(!mongo)('AuctionService.scanAnomalies e2e', () => {
     await mongo!.collections.auctions.deleteMany({});
     nowMs = Date.now();
     seq = 0;
-    svc = new AuctionService({ cols: mongo!.collections, commercial: stubCommercial, meta: stubMeta, now: () => nowMs });
+    svc = new AuctionService({ cols: mongo!.collections, commercial: stubCommercial, meta: stubMeta, mail: stubMail, now: () => nowMs });
   });
 
   afterAll(async () => {

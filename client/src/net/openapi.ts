@@ -1479,9 +1479,11 @@ export interface components {
         };
         MailAttachmentView: {
             /** @enum {string} */
-            kind: "coins" | "item" | "skin" | "material";
+            kind: "coins" | "item" | "skin" | "material" | "equipment" | "card";
             id?: string;
             count?: number;
+            /** @description Present only for kind=equipment|card — the traded instance snapshot */
+            instance?: components["schemas"]["EquipmentInstance"] | components["schemas"]["CardInstance"];
         };
         MailView: {
             mailId: string;

@@ -170,6 +170,38 @@ describe.skipIf(!mongo)('social mail e2e', () => {
     expect(claim.data.save.inventory.items.scrap ?? 0).toBe(0);
   });
 
+  it('system mail: equipment + card instance attachments (auction escrow-out) claimed back into equipmentInv/cardInv', async () => {
+    const a = await newAccount('mail-inst');
+    await get(a.token, '/save');
+    const equip = { id: 'eq_mail1', defId: 'wp_marker', rarity: 'rare', level: 3, affixes: [{ id: 'm_atk', value: 8 }, { id: 's_hp', value: 5 }] };
+    const card = { id: 'card_mail1', defId: 'unit_scout', level: 4, xp: 12, gear: {}, locked: false };
+    const s = b(await internal('/internal/mail/system/send', {
+      dispatchKey: 'auction_expire:a-1',
+      accountId: a.accountId,
+      subject: 'auction.mail.returned.subject',
+      body: 'auction.mail.returned.body',
+      attachments: [
+        { kind: 'equipment', instance: equip },
+        { kind: 'card', instance: card },
+      ],
+      expireDays: 30,
+    }));
+    expect(s.ok).toBe(true);
+    const mail = b(await get(a.token, '/mail')).data.mail[0];
+    // instance snapshot survives the round-trip (view carries it for client display)
+    expect(mail.attachments.find((x: { kind: string }) => x.kind === 'equipment').instance).toMatchObject({ id: 'eq_mail1', level: 3 });
+
+    const claim = b(await post(a.token, `/mail/${mail.mailId}/claim`, {}));
+    // written back by instance.id, affixes/level intact
+    expect(claim.data.save.equipmentInv.eq_mail1).toMatchObject({ id: 'eq_mail1', defId: 'wp_marker', level: 3 });
+    expect(claim.data.save.equipmentInv.eq_mail1.affixes).toHaveLength(2);
+    expect(claim.data.save.cardInv.card_mail1).toMatchObject({ id: 'card_mail1', defId: 'unit_scout', level: 4 });
+
+    // re-claim → ALREADY_CLAIMED, no duplicate write
+    const reclaim = await post(a.token, `/mail/${mail.mailId}/claim`, {});
+    expect(reclaim.statusCode).toBe(409);
+  });
+
   it('claims a skin attachment into inventory', async () => {
     const a = await newAccount('mail-aaaa');
     await get(a.token, '/save');

@@ -403,8 +403,17 @@ buildSiegeBlueprints(levels, equipped, inv)
 - 赛季重置：**保**装备/材料（养成跨季留存），清赛季资源（粮/铁/木）。
 - **拍卖流转**（SLG_DESIGN §9）：可挂单的装备**带完整状态**（`defId` + 强化等级 + 词条 + 特技）成交转移；赛季资源不可挂。计价 coin、10% 税。
 - **同时挂拍上限 = 5 件**（[ADR-012](DECISIONS.md)，DRAFT [可调]）：单玩家同时在架的挂单数封顶 5，防刷屏/对敲/RMT 洗单 + 控 worldsvc 负载。可做**软变现杠杆**（VIP/付费扩挂拍位，仅 SLG 经济、不碰公平 PvP）。
-- **挂单时效 + 流拍退回**：每个挂单有时效（DRAFT 24–48h），**流拍自动退回库存**。⚠️ 退回时若库存已满 300 → 进**邮件/溢出暂存区**领取，不能凭空消失、也不突破 300 硬上限（与 §3.3 满仓口径一致）。
+- **挂单时效 + 流拍退回（escrow-out 模型，✅ 已落地）**：每个挂单有时效（DRAFT 24–48h）。**放弃"溢出暂存区"方案**——改为统一 escrow-out：挂单时物品即从背包移出（托管），拍卖期间背包不可见、不可用；**所有离开拍卖的物品（成交给买家 / 流拍·取消·季末退卖家）一律通过系统邮件附件下发，玩家领取附件后才回背包**。这样天然规避满仓资损（邮件即持有缓冲，领取时再入库，不突破 300 硬上限），且退回="寄存物取回"的清晰语义。装备/角色卡附件携带**完整实例快照**（词条/强化/暴击随实例走）。实现见下方 §13 实现记录。
 - **反 RMT**：高价/高强化装备成交进 worldsvc 审计流（异常低价大额、对敲、新号秒收高价件），与社交/补偿同一风控面；服务器权威转移，禁止线下私下转移。
+
+#### §13 交割/退回实现记录（2026-07-02，✅）— escrow-out + 系统邮件
+
+放弃"溢出暂存区"，统一为 escrow-out：拍卖物品的**一切出账**（成交给买家 + 流拍/取消/季末退卖家）都经**系统邮件附件**下发，领取后入库。落地：
+
+1. **邮件附件携带实例快照**：`@nw/shared` `MailAttachmentDoc`/`social.ts MailAttachmentView` 与 `contracts/openapi.yml MailAttachmentView` 新增 `kind: 'equipment' | 'card'` + `instance` 字段（携带完整 `EquipmentInstance`/`CardInstance`，词条/暴击/强化/gear 随实例走）。材料仍走 `kind:'material'`。
+2. **领取投递**：metaserver `mail.ts splitAttachments` 增 `equipment`/`cards` 桶；`service.ts claimMail` 领取时按 `instance.id` 写回 `equipmentInv`/`cardInv`（复用 `equipment.ts grantEquipment` + 抽到 `cards.ts` 的 `grantCard`，二者按 id 覆写天然幂等，无 300 上限检查）。领取原子性由 socialsvc `claimMailAtomic` 单发保证。
+3. **worldsvc 出账改邮件**：`auctionService.ts deliverItem` 不再直接 `meta.grant*`，改 `mail.sendSystemMail`（dispatchKey=各调用点已幂等的 orderId，`auction_buy/settle/cancel/expire/reset:*`），附件类型按物料/装备/卡分派；subject/body 用 i18n key（`auction.mail.sold.*`/`auction.mail.returned.*`，客户端解析，同季末结算邮件机制）。`createAuction` 内 escrow 后的**同步失败回滚**仍走直接 grant（挂单未成立的即时回退，非出账语义）。
+4. **客户端**：`FriendsScene` 邮件详情渲染 equipment/card 附件（名称+等级，`mail.attEquip`/`mail.attCard`，三语），领取流程复用既有 `claimMail`（回新 save 刷库存）。
 
 ---
 
@@ -432,7 +441,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 1. **合成 roll 确定性**：实例 id（`eq_${idemKey}`）+ 词条值均由 idempotencyKey 派生（mulberry32 + FNV-1a 种子）。重试/重放产同一件，杜绝"网络重试改命"。主词条按槽位从候选定 1 个（§7.4：weapon→`m_atk`/armor→`m_hp`/trinket→`m_spd` 或 `m_crit` 二选一；单候选槽位不消耗随机流，保证既有 roll 确定性不变），副词条按稀有度从池抽 N 条不重复（common 0 / fine 1 / rare·epic 2，池含 `s_critmult`）。洗练保留实例现有主词条（不因候选随机而翻转），只重洗副词条。数值 DRAFT，权威终点 ECONOMY_NUMBERS §5。
 2. **幂等闸门**：`equipmentIdem` 集合（TTL 7 天）。合成先抢占 idemKey 唯一 _id（dup → 重放首次结果，不二次扣料）；托管按 orderId 记快照（重放返回同实例，防二次移出）；转移按 `instance.id` 覆盖写天然幂等。扣料/移实例走乐观锁 rev 守卫 + 重试（同 internal.ts 材料范式）。
 3. **库存权威 + 拍卖托管语义**：`equipmentInv` 仅 `/equipment/*` + `/internal/equipment/*` 写（PUT /save 不可写，SyncPatch 已收窄）。挂拍 = `escrowEquipment` 移出卖方库存回快照（拍卖单存整件快照）；成交 = `grantEquipment` 转移给买方；撤单/过期/季末 = 退回卖方。**穿戴中（gear 引用）/ locked 拒挂**（`EQUIP_IN_USE`/`EQUIP_LOCKED`）。
-4. **满仓口径**：300 上限只卡 craft（faucet 侧）；**成交转移不卡**（买方有意获得，阻断会资损；满仓溢出转邮件暂存是 §13 SLG 后续）。
+4. **满仓口径**：300 上限只卡 craft（faucet 侧）；**成交/退回不卡**（escrow-out 后一律经系统邮件下发，领取时才入库，邮件即持有缓冲——满仓不会资损、也不突破硬上限，见 §13 实现记录）。
    - ⚠️ **本切片范围**：只交付「合成 → 上拍卖交易」闭环以解锁拍卖行 A。**关卡掉落 faucet + E3 强化/分解 + E4 穿戴 + E5 UI 仍待做**（见上表）。
 
 #### E3 + E4 实现记录（2026-06-21，✅）— 强化/分解 + 穿戴
@@ -518,7 +527,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 - [ ] 装备系统**解锁章节号**（暂定第 2 章，§4）+ 引导脚本，待战役节奏定档。
 - [x] ~~背包上限具体值~~ → **硬上限 300 实例**（ADR-012，§3.3）；逼近上限的引导/清理 UX 待细化。
 - [ ] 分解 70% 返还的"打造基础成本"口径需与 ECONOMY_NUMBERS §5 配方表对齐（§6.3）。
-- [ ] 拍卖挂单时效（24–48h）+ 流拍溢出暂存区的领取 UI（§13）。
+- [x] ~~流拍溢出暂存区的领取 UI~~ → **改为 escrow-out + 系统邮件退回**（放弃暂存区），✅ 已落地（见 §13 实现记录）。剩：拍卖挂单时效（24–48h）落地。
 - [x] ~~装备定义 `defId` 表~~ → 已补 §17。
 
 ---

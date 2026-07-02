@@ -1475,7 +1475,22 @@ function attachmentLabel(a: MailAttachmentView): string {
   if (a.kind === 'coins') return t('mail.attCoins', { n });
   if (a.kind === 'skin') return t('mail.attSkin', { id: a.id ?? '' });
   if (a.kind === 'material') return t('mail.attMaterial', { id: a.id ?? '', n });
+  // equipment/card attachments carry a full instance snapshot (auction escrow-out); show localized name + level.
+  if (a.kind === 'equipment') {
+    return t('mail.attEquip', { name: defDisplayName('equip', a.instance?.defId ?? ''), lvl: a.instance?.level ?? 0 });
+  }
+  if (a.kind === 'card') {
+    return t('mail.attCard', { name: defDisplayName('card', a.instance?.defId ?? ''), lvl: a.instance?.level ?? 0 });
+  }
   return t('mail.attItem', { id: a.id ?? '', n });
+}
+
+/** Localized def display name (`equip.<defId>.name` / `card.<defId>.name`); falls back to the raw defId. */
+function defDisplayName(prefix: 'equip' | 'card', defId: string): string {
+  if (!defId) return '';
+  const key = `${prefix}.${defId}.name` as TranslationKey;
+  const s = t(key);
+  return s === key ? defId : s;
 }
 
 function addErrorKey(e: unknown): TranslationKey {
