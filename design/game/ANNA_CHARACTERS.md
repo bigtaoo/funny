@@ -1,12 +1,13 @@
 # Anna 方三角色设计文档
 
-> 版本 v1.1 · 2026-06-25  
+> 版本 v1.2 · 2026-07-02（新增 Aello/Björn/Lerna 三只怪物，命名+背景+视觉定稿）  
 > 对应引擎定义见 `design/game/CHARACTER_DESIGN.md`；叙事铁律见 `design/product/characters.md`；美术规范见 `design/product/art-direction.md`
 
 > **出图进度**（截至 2026-06-27，三角色全部定稿并接入游戏 ✅）：
 > - **Max** 全身立绘已定稿（朝右 / 全身 / 面罩上翻露脸 / 冷钢蓝水彩）。
 > - **Lena** 全身立绘已定稿（朝右 / 壮实低重心坦克体型 / 链甲+皮革+护腿步兵甲 / 深钴蓝几何打格圆盾 / 战辫无盔 / 短剑插腰）。
 > - **Mara** 全身立绘已定稿（朝右 / 纤细高挑最轻盈 / 皮革无甲+单肩箭筒 / 长弓箭未满 / 腕缠蓝绳 / 松散波浪发 / 眼神望远）。三人完成度有意拉开层次：Max 凌厉、Lena 厚实、Mara 最轻最透（铅笔线最细、水彩最透）。
+> - **Aello（鬼鸟 Harpy）** 全身立绘已定稿（2026-07-02，朝右 / 冷灰蓝单色调水彩 / 缠胸布无甲无武器 / 鹰爪化双腿 / 屈膝半游荡姿态）。生成朝左，人工水平镜像翻转成朝右，做法同 Max/Lena/Mara。已知小瑕疵接受不改：耳朵偏尖（非设定要求）、侧脸为闭眼而非设计稿要求的"冷淡望向侧后方"——缩放到卡面/战场尺寸后不可见，判定可用。
 >
 > **游戏接入状态**（2026-06-27 ✅）：
 > - `.png` 立绘 + `.tao` 骨骼动画已放入 `client/src/assets/`，战场动画路径（`UnitView.ts STICKMAN_ASSETS`）早已接好。
@@ -268,6 +269,219 @@ close-up portrait of young woman hunter with warm open expression and slightly d
 *Negative prompt*:
 ```
 photorealistic, 3D, anime, cold expression, full armor, dark background, fantasy glow, text, watermark, complex accessories, modern hairstyle
+```
+
+---
+
+## Anna 阵营的三只怪物——Aello / Björn / Lerna
+
+> 归属拍板见 [`CHARACTER_DESIGN.md` §7](CHARACTER_DESIGN.md#7-六个-pve-复用兵种的阵营归属讨论中2026-07-02)：鬼鸟 Harpy / 狂战士 Berserker / 裂变兵 Splitter 三个 PvE 复用单位划给 Anna 的笔记本。它们**不是** Hartmann 家族试炼学员——Max/Lena/Mara 三人是「参选的孩子」，这三个是 Anna 在笔记本别处画的**怪物与游荡者**，跟方家的穷奇/獬豸/随军医官一样，是主角阵容之外的"世界background 角色"。
+>
+> **叙事归属与 PvE 波次配置互不干涉**（见 §7.1 关键澄清）：即使陶在 Ch3/Ch4 把它们当敌人打，它们仍然是 Anna 本子里画出来的东西——这正好印证「两家相遇」时陶撞见了对方笔记本里的怪物。
+>
+> 状态：Aello **已出图定稿**（2026-07-02，见下方最终 prompt）；Björn / Lerna 仍是首版命名+背景+视觉方向定稿，未出图。机制数值锚点见 `server/engine/src/config.ts`（Harpy/Berserker/Splitter 三个 blueprint）与 [`PVP_LOADOUT_DESIGN.md`](PVP_LOADOUT_DESIGN.md) §5 费用定标。
+
+### Aello ——「鬼鸟」（Harpy）
+
+**兵种**：飞行骚扰（PvE 敌方 / PvP 高费解锁牌）
+
+#### 神话来源
+
+哈耳庇厄（Harpy）在希腊神话里不是无名怪物——赫西俄德给她们三姐妹起了名字：**Aello**（风暴）、Ocypete（疾风）、Celaeno（幽暗）。她们是宙斯的差使，专司追杀违逆神谕的人，速度快到人类的马都追不上。取 **Aello** 这一个名字，扣住她 `speed 2.2`（全场最快）、飞行绕后的机制身份——她是「风暴」，不是「怪鸟」。
+
+#### 背景故事
+
+Aello 曾经是奥林匹斯的差使，任务是追猎宙斯点名的逃亡者——直到某一次，她追到的人只是个逃出家门的孩子。她没有下手，转身飞走，从此被逐出神谕序列，成了自己猎场之外的游荡者。
+
+Anna 画她时没有给她一个"归宿"：她不站队，不驻防，只在战场边缘游荡，专挑防线上没设箭塔的空隙钻进去——这正是她的机制来源：**飞行**（地面近战摸不到她，只有箭塔/弓手能咬住），出场即高费，因为"无解"本身就要标好价格。
+
+她话很少，因为她已经不属于任何一边的语言了。
+
+**一句话台词**：「我不追你了，但我也不会停下来。」
+
+#### 性格特征
+
+- 疏离，不解释自己的行动逻辑——她自己也未必想清楚了那次为什么手软
+- 对"被追猎的人"有一种说不出口的恻隐，但绝不会承认这是心软
+- 快，永远在动，停下来对她而言等同于被重新编进某个序列
+- 隐藏特征：她记得每一张自己曾经放过的脸，这是她唯一还留着的"神谕档案"
+
+#### 视觉设计方案
+
+**整体气质**：不是少年，是脱序的成年女性猛禽混血——冷、锐、不属于任何阵营的孤高感。铅笔线条比 Max/Lena/Mara 更潦草迅疾，呼应她的速度和游离状态。
+
+**外形描述**：
+- 人形上半身 + 巨大鹰翼后展（翼展远超肩宽，收拢时贴背，飞行时半张）
+- 下肢为鹰爪化的腿部，站立时脚跟离地，随时能起飞的姿态
+- 面部：锐利的成年女性五官，眼神冷淡疏远，不与观者对视（望向侧后方）
+- 发型：短发或束起，被风向后扬起的动态感
+
+**标志性元素**：
+- 羽毛：翼尖到肩部渐变的深浅蓝灰羽毛，笔触快而利，像被风吹过的线条
+- 姿态：微前倾滑翔式，不站得端正——她永远像下一秒就要离开
+- 无武器：她的攻击是鹰爪本身，不持任何道具
+
+**颜色方案**（Anna 方蓝色系，Aello 取风暴灰蓝——三人里最冷最暗）：
+- 主色：风暴灰蓝 `#5A6B7A`（羽翼主色）
+- 高光：冷白 `#C9D2D9`（羽尖、爪部反光）
+- 阴影：暗蓝黑 `#2B333B`（翼下阴影、羽根）
+- 线稿：铅笔灰（比 Max/Lena/Mara 更粗更急促的线条，表现速度感）
+- 水彩晕：淡灰蓝 `#9FAFBC`（皮肤/羽毛过渡区）
+
+#### AI 图生成 Prompt
+
+**最终定稿 Prompt（GPT Image 2，2026-07-02 出图采用）**
+
+用于全身立绘（角色卡用途）。模型对朝向有强烈"朝左偏好"，文字硬掰命中率低——生成后人工水平镜像翻转成朝右即可，不必为方向反复出图（同 Max/Lena/Mara 做法）。
+
+```
+An amateur doodle sketch by a bored talented teenager in the margin of a school notebook — NOT a finished illustration, NOT gallery-quality art, deliberately unpolished with shaky uneven linework and patchy incomplete watercolor that doesn't fully fill the shapes, applied consistently across the ENTIRE figure including the face and torso, not just the wings or legs — nowhere on the body should look more finished or smoothly rendered than anywhere else. Full-length side-profile illustration of a lean adult harpy woman on a plain white notebook page background, crouched in a restless, unsteady half-bent-knee stance with weight shifted forward as if mid-stride or about to leap into flight, not a posed or balanced figure. She has a humanoid torso with sharp, aloof, cold adult female facial features rendered with the same loose sketchy pencil linework and thin patchy watercolor as the rest of her body — no smooth shading on the face or skin, leave some construction lines visible and uncolored there too. Short dark windswept hair blown backward in wild uneven strands, gaze looking off to the side rather than at the viewer. Large feathered wings spread half-open behind her, feather color fading from storm grey-blue (hex 5A6B7A) at the base to pale cold white (hex C9D2D9) at the tips, with deep blue-black (hex 2B333B) shadows underneath — deliberately leave some outer wingtip feathers as bare uncolored pencil outlines, not fully painted in, and let the watercolor washes spill messily outside the linework in places. Keep the whole palette monochrome cool grey-blue, cold white and blue-black only — no warm tan, beige, or skin-tone colors anywhere, including the legs. Bird-like taloned legs replacing human feet, scaled in the same muted cool grey-blue tone as the rest of her, with visible loose cross-hatching pencil strokes on the leg surface. She wears no clothing beyond a simple wrapped chest binding, no armor, no weapons, no props — her only weapon is her own talons. Background is plain clean white paper with faint paper texture, no vignette, no gradient background, no text, no watermark, hand-drawn children's storybook notebook aesthetic, western Greek mythology inspiration (the harpy Aello), gentle picture-book tone, not dark or horror-themed, no blood, no glowing effects, no photorealism, no 3D render, no anime style.
+```
+
+已知小瑕疵（判定可接受，缩放到卡面/战场尺寸不可见）：耳朵偏尖非设定要求；侧脸为闭眼而非"冷淡望向侧后方"。
+
+**Prompt 2 — 俯冲瞬间（技能卡用途，未按新版规范重出，沿用早期方向）**
+```
+harpy woman diving low over a battlefield edge, wings swept back for speed, talons extended forward, motion blur pencil lines trailing off the wingtips, notebook sketch style, storm grey-blue and cold white watercolor palette, dynamic diagonal composition, white vignette background, pencil and watercolor illustration, greek mythology, hand-drawn children's book style
+```
+*Negative prompt*:
+```
+photorealistic, 3D, anime, blood, gore, dark atmosphere, glowing magic effects, text, watermark
+```
+
+---
+
+### Björn ——「狂战士」（Berserker）
+
+**兵种**：残血爆发（PvE 敌方 / PvP 中费解锁牌）
+
+#### 神话来源
+
+"berserker"一词本身就是北欧神话词源——披熊皮（ber-serkr）而战、陷入战狂状态、感觉不到疼痛的战士。这不是怪物，是**人**，是北欧传说里一种真实存在过的战士流派。取名 **Björn**（古诺尔斯语"熊"），直接对应词源本身，不绕弯子。
+
+#### 背景故事
+
+Björn 不是 Hartmann 家族的孩子，他是 Anna 在笔记本边缘画的一个更古老的人——一个信仓「痛感不是停下来的理由」的北境战士。他年轻时输过一场决定性的战斗，输在自己还没伤到浑身是血就先撤了。从那之后，他给自己定了一条规矩：**打到最后一口气之前不准退。**
+
+这正是他的机制来源：**残血狂暴**（HP 低于 40% 时攻速 ×1.5）——他不是越打越弱，是越接近极限，动作越快、越不管不顾。对面如果不能在他跌破血线前解决他，接下来的每一秒都会更难。
+
+Anna 喜欢画他的理由很直接：他和 Max 是两种"不需要别人"的镜像——Max 的不需要是天赋带来的骄傲，Björn 的不需要是九死一生里学出来的规矩。
+
+**一句话台词**：「痛，说明我还没输。」
+
+#### 性格特征
+
+- 沉默，不是话少那种沉默，是把所有情绪都调度成战斗动作的沉默
+- 对"退"这个字有近乎生理性的排斥，哪怕理智告诉他该退
+- 不庆祝胜利，只在乎自己有没有撑到最后——这让他显得冷漠，其实是他没有多余的力气分给别的情绪
+- 隐藏特征：他会在战后独自检查伤口，那是他唯一允许自己安静下来的时刻
+
+#### 视觉设计方案
+
+**整体气质**：成年北境战士，体格远比 Max/Lena/Mara 三人厚重，粗犷、原始，铅笔线条比其他三人更粗重狂野，水彩带一点血色暖调（不是伤口，是他本身的"热"）。
+
+**外形描述**：
+- 皮革护甲外披一整张熊皮（兽头搭在肩后，兽爪垂在胸前），不穿板甲——他信奉的是灵活和痛觉，不是防护
+- 体型：宽肩厚背，手臂线条粗壮，比 Max 高一头，但姿态比骑士更粗野松散
+- 面部：络腮短须，眼神狂热但不失焦，眉骨压得很低
+- 武器：双手巨斧或宽刃战斧，握姿低沉随时能挥出全力一击
+
+**标志性元素**：
+- 熊皮：肩部到背部的整张熊皮兽头，是他"berserker"身份最直白的标志
+- 姿态：微弓身前倾，如猛兽蓄力，重心极低
+- 细节：手臂上有旧战斗留下的浅疤痕（水彩淡淡带过，不做血腥特写）
+
+**颜色方案**（Anna 方蓝色系，Björn 取铁蓝 + 熊皮暖棕——冷底暖裘）：
+- 主色：铁蓝灰 `#4E5C6E`（皮革护甲）
+- 辅色：熊皮暖棕 `#6B4A32`（兽皮、须发）
+- 高光：浅灰白 `#C7CDD2`（斧刃反光、护甲边缘）
+- 阴影：深铁蓝 `#293440`（护甲凹处、熊皮暗部）
+- 水彩暖调点缀：`#8C4B3C`（体表运动时的血色红晕，非伤口）
+
+#### AI 图生成 Prompt
+
+**Prompt 1 — 全身立绘（角色卡用途）**
+```
+A full-length illustration of a burly adult norse warrior shown in clean side profile, broad-shouldered heavyset build far bulkier than a teenager, wearing simple leather armor with a full bearskin cloak draped over his shoulders and the bear's head resting near his shoulder, thick beard, low furrowed brow with an intense but focused gaze, holding a large two-handed battle axe lowered in a crouched ready stance with his weight low and forward. Hand-drawn children's storybook notebook sketch, visible thick bold pencil outlines rougher and heavier than a careful drawing, soft watercolor and marker fill, cool iron blue-grey armor tones around hex 4E5C6E, warm brown bearskin around hex 6B4A32, pale grey-white highlights on the axe blade, deep iron blue shadows in the armor recesses, plain clean white paper background with faint paper texture, norse mythology, gentle picture-book tone. keep it clearly a talented teenager's notebook drawing not professional concept art, visible wobbly pencil construction lines, flat watercolor washes with rough brush edges, simple un-rendered faceted shapes, no smooth digital shading no realistic fur rendering
+```
+*Negative prompt*:
+```
+photorealistic, 3D render, anime, blood, gore, horror, glowing magic effects, ornate armor, modern, text, watermark
+```
+
+**Prompt 2 — 狂暴瞬间（技能卡用途）**
+```
+norse warrior mid-swing with a two-handed axe, bearskin cloak flaring with the motion, intense focused expression, motion lines around the axe head, notebook sketch style, iron blue-grey and warm brown watercolor palette, dynamic low diagonal composition, white vignette background, pencil and watercolor illustration, norse mythology, hand-drawn children's book style
+```
+*Negative prompt*:
+```
+photorealistic, 3D, anime, blood spray, gore, dark atmosphere, glowing effects, text, watermark
+```
+
+---
+
+### Lerna ——「裂变兵」（Splitter）
+
+**兵种**：死亡分裂怪物（PvE 敌方 / PvP 中费解锁牌）
+
+#### 神话来源
+
+死亡后分裂增殖的机制原型只有一个：**勒耳纳的九头蛇（Lernaean Hydra）**——砍下一头会长出两头，这是希腊神话里最直白的"越杀越多"。名字直接取自她的栖息地 **Lerna**（勒耳纳沼泽），和 Aello/Björn 一样，是从神话本体直接借来的名字，不另起人名。
+
+#### 背景故事
+
+Lerna 不是人，Anna 从一开始就没打算把她画成人形——她是笔记本沼泽页角落里的一团东西，安静的时候看起来只是水草缠成的一小簇。没人知道她"本体"有多大，因为她从来没有以完整的样子出现过：每次被打倒，留下的不是尸体，是两个更小、更快的东西从原地钻出来，头也不回地继续往前冲。
+
+这正是她的机制来源：**死亡分裂**——倒下即成两只 Runner 冲出。对付她最蠢的办法就是一次次单点消灭，因为每一次"解决掉"都只是让她换了个更麻烦的形态；真正的答案是范围伤害，一次性把她和她分裂出来的东西一起清场。
+
+Anna 没有给她台词，因为 Lerna 从未展现过能说话的部分。她画她的方式更像画一种天气，而不是画一个角色。
+
+#### 性格特征
+
+- 没有可辨识的"性格"——这是 Anna 刻意的设计：她是现象，不是人物
+- 对她而言"死亡"这个概念不成立，倒下只是换一种存在方式继续前进
+- 唯一近似"意图"的东西是持续不断地扩散、繁殖、逼近，没有目的地，只有方向
+
+#### 视觉设计方案
+
+**整体气质**：**非人形**——刻意不套 Max/Lena/Mara 的少年骨架模板，也不做常规怪兽的四足/双足站姿。参考九头蛇的多头缠绕形态，画成一团水草般纠缠的蛇身簇，安静时收成一小簇，即将行动时头部micro展开。
+
+**外形描述**：
+- 主体是三到五条缠绕交织的细长蛇身，共用一个模糊的根部（不给明确的"躯干"，强调"这不是一个个体，是一团现象"）
+- 每条蛇身末端是小而钝的蛇头，没有锋利獠牙的写实感，更接近孩子画蛇的简化符号（一个圆点当眼睛，一条弧线当嘴）
+- 体表：深浅不一的冷蓝鳞片纹理，用铅笔画细密的鳞片格线，水彩打底不做光泽渲染
+- 没有四肢、没有站姿——她贴地蜿蜒，或蜷成一团静止
+
+**标志性元素**：
+- 分裂暗示：其中一条蛇身末端画得比其他几条更浅更透明，像是"即将长出来"的下一条，暗示机制本身
+- 眼睛：所有蛇头的眼睛都是同一种空洞的圆点，没有情绪、没有焦点方向
+- 底色：整团轮廓边缘用深蓝水彩晕开，像是从沼泽水面探出的一小片阴影
+
+**颜色方案**（Anna 方蓝色系，Lerna 取深蓝绿——三人里最冷最陌生）：
+- 主色：深蓝绿 `#3C5A54`（蛇身鳞片主调）
+- 辅色：沼泽暗绿 `#4A5C3E`（鳞片阴影过渡）
+- 高光：苍白青 `#A8C4B8`（鳞片脊线反光）
+- 阴影：近黑蓝绿 `#1F2E2A`（缠绕交叠处的暗部）
+- 半透明分裂头：浅蓝绿 `#7FA396`（预示"即将分裂"的那一条，透明度更高）
+
+#### AI 图生成 Prompt
+
+**Prompt 1 — 全身立绘（角色卡用途）**
+```
+A creature illustration of a small tangled cluster of three to five slender serpent bodies coiling together from one blurred shared base, shown from the side, each serpent neck ending in a small blunt simplified snake head with a single round dot eye and a simple curved line mouth like a child's drawing of a snake, no limbs, no upright posture, the whole cluster resting low and coiled as if part of it is about to uncoil into motion, one of the serpent tips rendered more pale and translucent than the others as if a new one is about to grow. Hand-drawn children's storybook notebook sketch, visible pencil scale texture drawn as fine cross-hatched lines without realistic gloss, soft watercolor fill, deep teal green scale tones around hex 3C5A54, pale cyan-green highlights along the scale ridges, near-black teal shadows where the bodies overlap, plain clean white paper background with faint paper texture, greek hydra mythology, gentle picture-book tone. keep it clearly a talented teenager's notebook drawing not professional concept art, visible wobbly pencil construction lines, flat watercolor washes with rough brush edges, simple un-rendered shapes, no smooth digital shading no realistic reptile skin rendering
+```
+*Negative prompt*:
+```
+photorealistic, 3D render, anime, horror, blood, gore, humanoid, limbs, fangs, glowing eyes, dark background, text, watermark
+```
+
+**Prompt 2 — 分裂瞬间（技能卡用途）**
+```
+tangled serpent cluster creature at the moment one translucent pale serpent tip splits away from the main coiled body, faint watercolor motion trail behind the splitting tip, notebook sketch style, deep teal green and pale cyan watercolor palette, low coiled composition, white vignette background, pencil and watercolor illustration, hydra mythology, hand-drawn children's book style
+```
+*Negative prompt*:
+```
+photorealistic, 3D, anime, gore, horror, dark atmosphere, glowing magic effects, text, watermark
 ```
 
 ---
