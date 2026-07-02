@@ -6,6 +6,7 @@
 
 import type { CardInstance } from './SaveData';
 import type { EquipmentInstance } from './SaveData';
+import type { EngineCardInstance, UnitType } from '@nw/engine';
 
 export type Faction = 'tao' | 'anna';
 
@@ -90,4 +91,31 @@ export function cardPower(card: CardInstance, equipmentInv: Record<string, Equip
     for (const affix of inst.affixes) equipBonusPct += affix.value;
   }
   return basePower * (1 + equipBonusPct / 100);
+}
+
+/**
+ * Convert the Hero Roster (SaveData.cardInv) into the engine's card-instance shape
+ * (CHARACTER_CARDS_DESIGN §9) for the PvE battle path: resolves each card's unitType
+ * from its defId (via CARD_DEFS) and forwards level + gear. The engine picks the
+ * highest-level card per unit type to build the campaign/siege blueprint, and the
+ * battle-render gear overlay (UnitView) mirrors that same selection so the drawn gear
+ * matches the applied stats. PvP never calls this (hard wall — buildPvpBlueprints has
+ * no card parameter, so card progression / equipment cannot leak into ladder/duel).
+ */
+export function toEngineCardInstances(
+  cardInv: Record<string, CardInstance>,
+): EngineCardInstance[] {
+  const out: EngineCardInstance[] = [];
+  for (const card of Object.values(cardInv)) {
+    const def = CARD_DEFS[card.defId];
+    if (!def) continue; // unknown defId (forward-compat): skip
+    out.push({
+      id: card.id,
+      defId: card.defId,
+      unitType: def.unitType as UnitType,
+      level: card.level,
+      gear: card.gear,
+    });
+  }
+  return out;
 }

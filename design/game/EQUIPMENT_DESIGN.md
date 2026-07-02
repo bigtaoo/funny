@@ -705,3 +705,16 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **美术铁律遵守**：装备本体 glyph（§20.3）与角色立绘叠加（§20.4）不动；新图标全部手绘笔触、平面无渐变，符合 art-direction「三笔语言 + 程序优先」。
 
+### 20.7 实现记录（2026-07-02，✅）— 立绘叠加接通 per-card 数据源 + 战斗接线收尾
+
+背景：§20.4（2026-06-24）落地了战斗内 bone-slot 叠加，但当时读的是旧「`byUnit ∪ global`」loadout。角色卡重构（CHARACTER_CARDS_DESIGN CC-1，2026-07-01）把装备移到 `CardInstance.gear`（per-card），引擎 + 存档 + UI + 测试全迁移，**却漏了客户端战斗入口**：`createAppCore.goCampaign` 仍传旧模型 `unitLevels:{} / equipment:{gear:{},inv}`（`gear` 恒空），从不传 `cardInstances`。后果=引擎实跑 `buildCampaignBlueprints([], undefined)` 裸蓝图，**卡等级/装备对战斗数值零作用**，`UnitView.gearSpecsFor` 读废弃字段 → **立绘永远画不出装备**（旧字段靠对象展开绕过 TS 多余属性检查，编译期无警告）。
+
+落地（纯客户端）：
+- `cardDefs.ts` 新增 `toEngineCardInstances(cardInv)`：`SaveData.cardInv` → `EngineCardInstance[]`，由 defId 经 `CARD_DEFS` 解析 unitType，转发 level + gear。
+- `matchEngine.ts` / `GameScene.ts`：opts 去掉废弃的 `pveUpgrades/unitLevels/equipment(EngineEquipmentInput)`，改 `cardInstances`+`equipmentInv`，一路转发给引擎（数值）与 renderer（叠加）。
+- `createAppCore.goCampaign`：传 `cardInstances: toEngineCardInstances(save.cardInv)` + `equipmentInv: save.equipmentInv`（PvE-only；PvP/tutorial/goGame 不传 → 硬墙不变）。
+- `GameRenderer` / `UnitView`：字段由 `EngineEquipmentInput` 迁到 `cardInstances`+`equipmentInv`；`gearSpecsFor` **镜像引擎选卡规则**（`buildCampaignBlueprints` 同兵种取最高等级卡）后读该卡 per-card gear → `{slot,rarity}`，保证画出的装备与实际生效的词条一致。仍限 `PLAYER_EQUIPPABLE_UNITS`，仍 memoize。
+- 测试 harness `HeadlessAppViews.showGame` 同步转发新字段。
+
+废弃：旧 `byUnit/global` loadout 概念随本切片彻底作废（per-card 取代，穿戴 UI 已在 CC-3 的 CardScene/EquipmentScene）；`EngineEquipmentInput` 仅保留为向后兼容类型别名，新代码不用。验证：client `tsc --noEmit`(含 test) + webpack 生产构建全绿；equipment/hardwall/progression 单测 38 全过。
+

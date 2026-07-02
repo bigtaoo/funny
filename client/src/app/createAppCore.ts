@@ -33,6 +33,7 @@ import { MatchMode } from '../net/proto/transport';
 import { EQUIP_SLOT } from './equipSlot';
 import { genUuid } from '../platform/uuid';
 import type { EquipSlot } from '../game/meta/SaveData';
+import { toEngineCardInstances } from '../game/meta/cardDefs';
 import { defaultPvpDeck, validatePvpDeckClient } from '../game/meta/pvpLoadout';
 import type { ProfileData } from '../render/ProfilePopup';
 import type { AuthOutcome } from '../scenes/LoginScene';
@@ -1468,9 +1469,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       },
     }, {
       level,
-      unitLevels: {},
       equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
-      equipment: { gear: {}, inv: saveManager.get().equipmentInv },
+      // Hero Roster → engine (card level + per-card equipment buff blueprints, §9) and to the
+      // renderer (worn gear drawn on units, §20.4). PvE-only; PvP omits both (hard wall).
+      cardInstances: toEngineCardInstances(saveManager.get().cardInv),
+      equipmentInv: saveManager.get().equipmentInv,
     });
   }
 
