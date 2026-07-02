@@ -43,7 +43,11 @@ npm install
 npm run dev:all             # 起全部进程（dev-up.ps1）
 ```
 
-> **worldsvc e2e 无需 Docker**：`npm test -w @nw/worldsvc` 会经 vitest `globalSetup`（`test/globalSetup.ts`）用 `mongodb-memory-server` 自动起单节点 rs0（首次下载 mongod `7.0.14` 到全局缓存 `~/.cache/mongodb-binaries`，之后离线复用）。设了 `NW_MONGO_URI` 则完全让路给外部 Mongo。适用于 Docker 锁 Windows 模式时跑 SLG e2e。
+> **worldsvc e2e 无需 Docker**：`npm test -w @nw/worldsvc` 会经 vitest `globalSetup`（`test/globalSetup.ts`）用 `mongodb-memory-server` 自动起单节点 rs0（首次下载 mongod `7.0.14` 到全局缓存 `~/.cache/mongodb-binaries`，之后离线复用）。设了 `NW_MONGO_URI` 则完全让路给外部 Mongo。适用于 Docker 锁 Windows 模式时跑 SLG e2e。当前 **203 例全绿**。
+>
+> **socialsvc e2e 无需 Docker（2026-07-02 补齐）**：`npm test -w @nw/socialsvc` 同款骨架，但因 socialsvc 只用单文档原子操作、无事务，起**单机 mongod**（`MongoMemoryServer`，非副本集），mongod 版本同锁 `7.0.14` 共用缓存。覆盖 Family/Friend/Mail 三服务层共 **38 例**（`test/{family,friend,mail}.e2e.test.ts`，内存假 meta/gateway 见 `test/harness.ts`）。详见 `design/game/SOCIAL_SVC_DESIGN.md §6`。
+>
+> **nation-bonus / base-siege e2e 数值漂移修复（2026-07-02）**：ADR-026 攻城值改制 + PvP 锚点重平衡后，`worldsvc/test/{nation-bonus,base-siege}.e2e.test.ts` 里两处硬编码的攻方兵力断言失效（旧「760 破 500」「12 卡碾两波」在新引擎下已不成立）。用探针脚本在真引擎里扫出新阈值后重定：nation-bonus 攻方 760→**815**（破 500、破不了国战加成的 575），base-siege 攻方 12→**20 卡**（清两波单卡波，新临界 16）。纯测试对齐，非引擎改动。
 
 ### 本地全栈模拟（完整：9 进程 + 主客户端 + 3 工具 + mongo + redis）
 

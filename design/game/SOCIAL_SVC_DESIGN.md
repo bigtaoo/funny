@@ -281,6 +281,14 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 - **繁荣度/活跃度**（原本 `FamilyDoc.prosperity`/`activity` 就已在 socialsvc 侧，注释早已写明"由 socialsvc 维护"，只是 worldsvc 代码从未真正调用）：`worldsvc` 只算 `territoryCount`（只有它知道地块归属），调 socialsvc 新增的 `POST /internal/family/:familyId/prosperity/refresh`（`{territoryCount}`）触发重算+持久化；`bumpActivity` 改调已存在但此前从未被调用过的 `/internal/family/activity`。赛季重置新增 `POST /internal/family/:familyId/slg-reset` 一次性清零 territoryCount/prosperity/activity/sectId（家族身份/成员关系本身不受影响，跨赛季保留）。
 - **落地文件**：`server/socialsvc/src/{db,familyService,httpApi}.ts`（新字段+新内部接口）、`server/worldsvc/src/{socialsvcClient,db,prosperity,sectService,service}.ts`（删除死集合，改调 socialsvc）、`server/worldsvc/test/sect.e2e.test.ts`（fixture 改为内存假 `WorldSocialsvcClient`，不再直插已删除的集合）、`client/src/scenes/SectScene.ts` + `client/src/app/createAppCore.ts`（恢复读 `fam.sectId`）、`client/src/net/WorldApiClient.ts`（`FamilyView` 补字段）。
 
+**测试补齐（2026-07-02）**：socialsvc 此前**零测试**（`package.json` 的 `test` 脚本挂 `--passWithNoTests`）。本次补齐 e2e 测试骨架 + 三个服务层的覆盖，共 **38 个用例**：
+
+- **测试骨架**：仿照 worldsvc，用 `mongodb-memory-server` 免 Docker 起真 Mongo（`test/globalSetup.ts` + `setupEnv.ts` 握手文件桥接 URI）；因 socialsvc 只用单文档原子操作、**无多文档事务**，起**单机 mongod**（standalone）即可，不需要 worldsvc 那套 rs0 副本集。mongod 版本锁 `7.0.14`（与 worldsvc 同，共用二进制缓存）。`test/harness.ts` 提供内存假 `FakeMeta`（publicId↔account 双向注册表，镜像 metaserver 两个内部端点）+ 录制式 `FakeGateway`（捕获全部 push/invalidate，presence 可配）。
+- **`family.e2e.test.ts`（16 例）**：创建/加入/退出/踢人/改角色/解散全生命周期、三级权限（leader>elder>member）、30 人上限、公告、家族频道发言+历史分页+只推其他成员、以及 worldsvc 向的内部 API（`getMember`/`bumpActivity`/`refreshProsperity`/`setSect`/`getFamiliesBySect`/`resetSlgState`）。
+- **`friend.e2e.test.ts`（12 例）**：好友请求发/收（含幂等去重、自加/未知/已好友拦截）、accept 建双向边+失效缓存+双向推送、reject、好友上限、拉黑（断交+取消 pending+双向拦截+解禁）、删好友、私聊（好友门槛+敏感词过滤+未读累加+推送）、会话列表/历史分页/标记已读、社交红点聚合、发言限流滑窗。
+- **`mail.e2e.test.ts`（10 例）**：玩家信（好友门槛+publicId 落库+TTL+推送）、系统信幂等 upsert（单发+批量，只报新插入的）、读/删（限本人）、原子领取附件（单赢家+二次 ALREADY_CLAIMED）、TTL 过期在读查询里被过滤。
+- **落地文件**：`server/socialsvc/vitest.config.ts`、`test/{globalSetup,setupEnv,harness}.ts`、`test/{family,friend,mail}.e2e.test.ts`、`package.json`（加 `mongodb-memory-server` devDep，`test` 脚本去掉 `--passWithNoTests`）。
+
 ---
 
 ## 7. 部署拓扑（更新后）

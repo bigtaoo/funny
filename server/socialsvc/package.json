@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit",
     "dev": "node --watch --import tsx src/index.ts",
     "start": "node dist/index.js",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "dependencies": {
     "@nw/shared": "*",
@@ -16,6 +16,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "mongodb-memory-server": "^11.2.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

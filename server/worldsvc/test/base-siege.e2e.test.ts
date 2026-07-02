@@ -262,8 +262,8 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
       { id: 't2', name: 'Guard2', army: [d.army[1]!] },
     ];
     await setupBase(tgt.x, tgt.y, { hp: 100, teams, cardState: d.state });
-    // Overwhelming attacker (12 cards) clears both single-card waves (each wave = team + a minimal engine base).
-    const army = await setupAttacker(12);
+    // Overwhelming attacker (20 cards) clears both single-card waves (each wave = team + a minimal engine base).
+    const army = await setupAttacker(20);
 
     await arriveAttack(tgt.x, tgt.y, army);
 
