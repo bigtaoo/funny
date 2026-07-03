@@ -29,47 +29,63 @@ export interface EloResult {
 
 interface Badge {
   key: string;
+  /** Hand-drawn glyph shown on the badge medallion. */
+  icon: IconKind;
   /** Resolved lazily via t() so the active locale is applied at build time. */
   title: () => string;
   detail: (s: PlayerStats) => string;
+  /** Bare stat number for the medallion (no unit/sentence). */
+  value: (s: PlayerStats) => string;
   score: (s: PlayerStats) => number;
 }
 
 const BADGES: Badge[] = [
   {
     key:    'TOP_DMG',
+    icon:   'swords',
     title:  () => t('badge.topDmg.title'),
     detail: (s) => t('badge.topDmg.detail', { n: s.damageDealtToBase }),
+    value:  (s) => t('badge.topDmg.short', { n: s.damageDealtToBase }),
     score:  (s) => s.damageDealtToBase,
   },
   {
     key:    'IRON_WALL',
+    icon:   'armor',
     title:  () => t('badge.ironWall.title'),
     detail: (s) => t('badge.ironWall.detail', { n: s.damageTakenByBase }),
+    value:  (s) => t('badge.ironWall.short', { n: s.damageTakenByBase }),
     score:  (s) => -s.damageTakenByBase,
   },
   {
     key:    'FLOOD',
+    icon:   'flag',
     title:  () => t('badge.flood.title'),
     detail: (s) => t('badge.flood.detail', { n: s.unitsSent }),
+    value:  (s) => t('badge.flood.short', { n: s.unitsSent }),
     score:  (s) => s.unitsSent,
   },
   {
     key:    'BUILDER',
+    icon:   'castle',
     title:  () => t('badge.builder.title'),
     detail: (s) => t('badge.builder.detail', { n: Math.round(s.buildingSurvivalTicks / 30) }),
+    value:  (s) => t('badge.builder.short', { n: Math.round(s.buildingSurvivalTicks / 30) }),
     score:  (s) => s.buildingSurvivalTicks,
   },
   {
     key:    'PRECISION',
+    icon:   'atkspd',
     title:  () => t('badge.precision.title'),
     detail: (s) => t('badge.precision.detail', { n: s.spellHits }),
+    value:  (s) => t('badge.precision.short', { n: s.spellHits }),
     score:  (s) => s.spellHits,
   },
   {
     key:    'EFFICIENT',
+    icon:   'coin',
     title:  () => t('badge.efficient.title'),
     detail: (s) => t('badge.efficient.detail', { n: s.unitsKilled }),
+    value:  (s) => t('badge.efficient.short', { n: s.unitsKilled }),
     score:  (s) => (s.goldSpent > 0 ? s.unitsKilled / s.goldSpent * 100 : 0),
   },
 ];
@@ -271,8 +287,14 @@ export class ResultScene implements Scene {
     const badges = computeBadges(playerStats);
 
     if (badges.length > 0) {
-      // Hero badge — the top one, shown large with detail text
+      // Hero badge — the top one, shown large: gold glyph + title + detail sentence.
       const hero = badges[0]!;
+      const heroIcon = Math.round(h * 0.11);
+      const glyph = buildIcon(hero.icon, heroIcon, ui.gold);
+      glyph.x = (w - heroIcon) / 2;
+      glyph.y = headerBottom + h * 0.03;
+      this.container.addChild(glyph);
+
       const heroText = new PIXI.Text(hero.title(), {
         fontSize: Math.round(h * 0.045),
         fill: 0x222222,
@@ -280,7 +302,7 @@ export class ResultScene implements Scene {
       });
       heroText.anchor.set(0.5, 0);
       heroText.x = w / 2;
-      heroText.y = headerBottom + h * 0.04;
+      heroText.y = glyph.y + heroIcon + h * 0.008;
       this.container.addChild(heroText);
 
       const heroDetail = new PIXI.Text(`「${hero.detail(playerStats)}」`, {
@@ -293,15 +315,20 @@ export class ResultScene implements Scene {
       heroDetail.y = heroText.y + heroText.height + h * 0.01;
       this.container.addChild(heroDetail);
 
-      // Secondary badges (up to 2 more)
-      let yOff = heroDetail.y + heroDetail.height + h * 0.04;
-      for (let i = 1; i < badges.length; i++) {
-        const badge = badges[i]!;
-        const card  = this.buildBadgeCard(badge, playerStats, w * 0.8);
-        card.x = w / 2 - card.width / 2;
-        card.y = yOff;
-        this.container.addChild(card);
-        yOff += card.height + h * 0.015;
+      // Secondary badges — a centred row of small icon medallions (no text list).
+      const rest = badges.slice(1);
+      if (rest.length > 0) {
+        const cellW = Math.round(w * 0.24);
+        const gap   = Math.round(w * 0.04);
+        const rowW  = cellW * rest.length + gap * (rest.length - 1);
+        const rowX  = (w - rowW) / 2;
+        const rowY  = heroDetail.y + heroDetail.height + h * 0.05;
+        rest.forEach((badge, i) => {
+          const medallion = this.buildBadgeMedallion(badge, playerStats);
+          medallion.x = rowX + i * (cellW + gap) + cellW / 2; // medallion is centred at its origin
+          medallion.y = rowY;
+          this.container.addChild(medallion);
+        });
       }
     } else {
       // No notable stats
@@ -371,11 +398,14 @@ export class ResultScene implements Scene {
         pts.push(pts[0]!, pts[1]!);
         pen.stroke(pts, { color: gold, width: Math.max(1.4, r * 0.13), jitter: 0.35, taper: 0.9, double: false, alpha });
       };
-      star(w * 0.18, h * 0.20, h * 0.045, 0.9);
-      star(w * 0.83, h * 0.16, h * 0.060, 0.95);
-      star(w * 0.74, h * 0.30, h * 0.030, 0.7);
-      star(w * 0.27, h * 0.40, h * 0.034, 0.75);
-      star(w * 0.88, h * 0.45, h * 0.040, 0.8);
+      // Kept in the top band + the far left/right paper margins so they never
+      // float over the central badge/detail column (which reads as "stray").
+      star(w * 0.12, h * 0.16, h * 0.050, 0.9);
+      star(w * 0.88, h * 0.14, h * 0.060, 0.95);
+      star(w * 0.92, h * 0.30, h * 0.032, 0.7);
+      star(w * 0.08, h * 0.34, h * 0.036, 0.75);
+      star(w * 0.90, h * 0.60, h * 0.040, 0.7);
+      star(w * 0.09, h * 0.60, h * 0.032, 0.6);
     } else if (mood === 'loss') {
       // A couple of red cross-out scribbles (echoes the "red-pen" art motif).
       const red = ui.red;
@@ -538,20 +568,42 @@ export class ResultScene implements Scene {
     return root;
   }
 
-  private buildBadgeCard(badge: Badge, stats: PlayerStats, width: number): PIXI.Container {
-    const h   = Math.round(this.h * 0.07);
-    const c   = new PIXI.Container();
-    const gfx = sketchPanel(width, h, { fill: ui.paper, border: ui.line, width: 1.6, seed: seedFor(width, h, badge.score(stats)) });
+  /**
+   * A small vertical badge medallion — glyph over its title over the bare stat
+   * value. The container origin is the horizontal centre / top, so callers set
+   * `.x` to the intended centre and `.y` to the top edge.
+   */
+  private buildBadgeMedallion(badge: Badge, stats: PlayerStats): PIXI.Container {
+    const { h } = this;
+    const c = new PIXI.Container();
 
-    const label = new PIXI.Text(`${badge.title()}  ·  ${badge.detail(stats)}`, {
-      fontSize: Math.round(h * 0.36),
-      fill: 0x333333,
+    const iconSize = Math.round(h * 0.065);
+    const glyph = buildIcon(badge.icon, iconSize, 0x555555);
+    glyph.x = -iconSize / 2;
+    glyph.y = 0;
+    c.addChild(glyph);
+
+    const title = new PIXI.Text(badge.title(), {
+      fontSize: Math.round(h * 0.024),
+      fill: 0x555555,
+      fontFamily: 'monospace',
     });
-    label.anchor.set(0, 0.5);
-    label.x = width * 0.05;
-    label.y = h / 2;
+    title.anchor.set(0.5, 0);
+    title.x = 0;
+    title.y = iconSize + h * 0.008;
+    c.addChild(title);
 
-    c.addChild(gfx, label);
+    const value = new PIXI.Text(badge.value(stats), {
+      fontSize: Math.round(h * 0.03),
+      fill: 0x222222,
+      fontWeight: 'bold',
+      fontFamily: 'monospace',
+    });
+    value.anchor.set(0.5, 0);
+    value.x = 0;
+    value.y = title.y + title.height + h * 0.004;
+    c.addChild(value);
+
     return c;
   }
 }
