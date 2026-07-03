@@ -2102,6 +2102,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -2601,6 +2604,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -3106,6 +3112,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -3609,6 +3618,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "items": {
                         "type": "integer"
                       }
+                    },
+                    "lastClaimedDayKey": {
+                      "type": "string"
                     }
                   }
                 },
@@ -4544,6 +4556,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -5122,6 +5137,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -5732,6 +5750,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -6229,6 +6250,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -6837,6 +6861,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -7341,6 +7368,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -7837,6 +7867,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -8387,6 +8420,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -8931,6 +8967,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -9534,6 +9573,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -9609,6 +9651,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "items": {
                     "type": "integer"
                   }
+                },
+                "lastClaimedDayKey": {
+                  "type": "string"
                 }
               }
             },
@@ -10166,6 +10211,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -10686,6 +10734,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -11237,6 +11288,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -11844,6 +11898,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -12384,6 +12441,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -12883,6 +12943,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -13380,6 +13443,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -13881,6 +13947,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -14421,6 +14490,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -14921,6 +14993,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -16223,6 +16298,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
@@ -17272,6 +17350,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "items": {
                             "type": "integer"
                           }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
                         }
                       }
                     },
