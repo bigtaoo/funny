@@ -880,10 +880,11 @@ export class MetaService {
     });
     if ('error' in out) return out;
 
-    // Card instance grant at level=2 (separate rev loop; compensation coins dropped — [DRAFT: wire commercial])
+    // Card instance grant at level 1 (separate rev loop; compensation coins dropped — [DRAFT: wire commercial]).
+    // Level 1 matches every other card source (starters / auction / gacha, §12); players raise cards via feeding, not the drop tier.
     let latestSave = out.save;
     if (defsToGrant.length > 0) {
-      const cardResult = await grantCards(cols, now, accountId, defsToGrant, 2);
+      const cardResult = await grantCards(cols, now, accountId, defsToGrant);
       if ('error' in cardResult) return cardResult;
       latestSave = cardResult.save;
     }
