@@ -205,17 +205,18 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_l1')).toHaveLength(1);
   });
 
-  // TODO(e2e-triage): S12-C unit-card gacha / unitLevels drift after CC-2 — quarantined; code-vs-test triage (see spawned task).
-  it.skip('gacha unit card pool (S12-C): deduct coins → card goes into cardInventory + derives unitLevels, not treated as a skin', async () => {
+  // Gacha "units" pool still delivers into the (deprecated) cardInventory — this path was NOT migrated to the
+  // Hero Roster cardInv (unlike PvE level drops). The former `unitLevels` derivation was dropped with SaveData v4
+  // (field removed; the engine reads cardInv now), so it is no longer asserted here (cf. the reconciliation test below).
+  it('gacha unit card pool (S12-C): deduct coins → card goes into cardInventory, not treated as a skin', async () => {
     comm.coins.set(accountId, 2000);
     comm.nextResults = [{ itemId: 'archer:3', rarity: 'epic' }]; // epic→T3
     const r = body(
       await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'units', count: 1 } }),
     );
-    // Unit card: duplicate is always false, goes into cardInventory, unitLevels derived (single T3 card → archer=3).
+    // Unit card: duplicate is always false, goes into cardInventory.
     expect(r.data.results[0]).toMatchObject({ itemId: 'archer:3', rarity: 'epic', duplicate: false });
     expect(r.data.save.cardInventory['archer:3']).toBe(1);
-    expect(r.data.save.unitLevels.archer).toBe(3);
     expect(r.data.save.inventory.skins).not.toContain('archer:3'); // never goes into skin inventory
     expect(r.data.save.gacha.pity.units).toBe(1);
     // Draw the same card again → inventory incremented (card collection naturally allows duplicates: no refund, no dedup).
