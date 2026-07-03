@@ -1226,6 +1226,8 @@ export const de: Record<TranslationKey, string> = {
   'battlepass.level': 'St.{n}',
   'battlepass.xpProgress': '{xp} / {total} XP',
   'battlepass.xpToNext': 'Noch {n} XP',
+  'battlepass.xpStatus': '{xp} XP · noch {n} XP',
+  'battlepass.xpEarnHint': 'XP aus Ranglistenspielen: Sieg +{win}, Niederlage +{loss}',
   'battlepass.claim': 'Abholen',
   'battlepass.claimed': 'Erhalten',
   'battlepass.locked': 'Gesperrt',

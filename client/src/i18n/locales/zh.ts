@@ -1236,6 +1236,8 @@ export const zh = {
   'battlepass.level': 'Lv.{n}',
   'battlepass.xpProgress': '{xp} / {total} XP',
   'battlepass.xpToNext': '距下一级 {n} XP',
+  'battlepass.xpStatus': '当前 {xp} XP · 距下一级 {n} XP',
+  'battlepass.xpEarnHint': '打天梯赛获取 XP：胜 +{win}，负 +{loss}',
   'battlepass.claim': '领取',
   'battlepass.claimed': '已领',
   'battlepass.locked': '未解锁',

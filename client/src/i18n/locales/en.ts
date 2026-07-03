@@ -1226,6 +1226,8 @@ export const en: Record<TranslationKey, string> = {
   'battlepass.level': 'Lv.{n}',
   'battlepass.xpProgress': '{xp} / {total} XP',
   'battlepass.xpToNext': '{n} XP to next level',
+  'battlepass.xpStatus': '{xp} XP · {n} XP to next level',
+  'battlepass.xpEarnHint': 'Earn XP from ranked games: win +{win}, loss +{loss}',
   'battlepass.claim': 'Claim',
   'battlepass.claimed': 'Claimed',
   'battlepass.locked': 'Locked',

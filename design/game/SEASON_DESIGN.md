@@ -266,7 +266,7 @@ POST /battlepass/buy                      (JWT) → 下单（commercial）
 
 - **赛季横幅**：大厅/StatsScene 显「赛季 N · 剩余 X 天」（数据来自 save/leaderboard 的 `season`）。
 - **排行榜面板**（新）：Top100 列表（名次/头像/名/称号短标签/段位徽章/ELO）+ 顶部固定「我的名次」行；点行可看资料弹层（复用 `ProfilePopup`）。入口建议大厅或 StatsScene。
-- **战令面板**（新，C 块）：等级进度条 + 双轨奖励轨（免费/付费并列），每档「已领/可领/未达/付费锁」四态；「购买 Pass」按钮（走 commercial）；红点聚合（任一可领）。
+- **战令面板**（新，C 块）：等级进度条 + 双轨奖励轨（免费/付费并列），每档「已领/可领/未达/付费锁」四态；「购买 Pass」按钮（走 commercial）；红点聚合（任一可领）。进度条上标「当前 {xp} XP · 距下一级 {n} XP」，条下一行「打天梯赛获取 XP：胜 +{win}，负 +{loss}」告知来源（满级隐藏），文案 `battlepass.xpStatus` / `battlepass.xpEarnHint`。
 - **赛季结算弹层**：跨季首次登录弹「上赛季 S{N} 你达到 {峰值段位}」+ 奖励摘要 + 新赛季软重置后段位（一次/季）。
 - **i18n**：新增 `season.*` / `leaderboard.*` / `battlepass.*`（中英德三语，**禁韩文**，见 memory）。
 - 离线/未登录：显「登录后查看」（同 StatsScene 既有处理）。
