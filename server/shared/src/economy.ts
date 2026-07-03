@@ -2,7 +2,6 @@
 // meta uses it to list shop items/gacha pools + compute dupe refunds; commercial uses it to run gacha RNG. Same source on both ends avoids drift.
 import type { Rarity } from './types';
 import type { RankId } from './ladder';
-import { UNIT_CARD_POOL_ID, unitCardPoolItems } from './unitCards';
 
 export const RARITY_ORDER: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
 
@@ -79,21 +78,9 @@ export const GACHA_POOLS: GachaPoolDef[] = [
       legendary: ['skin_l1', 'wp_highlighter', 'ar_foil', 'tk_seal', 'max', 'lena', 'mara'],
     },
   },
-  // Unit card pool (S12-C, progression ≠ cosmetics, separate pool): item = cardKey (infantry:1 …), rarity-to-card-level mapping see
-  // unitCards.GACHA_RARITY_TO_CARD_LEVEL (common→T1 … legendary→T4). Delivery side by poolId credits unit cards
-  // (cardInventory + recalculate unitLevels), **bypasses skin dupe refund** (cards naturally duplicate, all credited).
-  // Pricing/pity reuses skin pool placeholder `[adjustable]` (§3.2); dupePolicy is only an openapi top-level compatibility field, not read by unit card delivery.
-  {
-    id: UNIT_CARD_POOL_ID,
-    costSingle: 150,
-    costTen: 1350,
-    pityThreshold: 90,
-    tenFloor: 'epic',
-    softPityStart: SOFT_PITY_START,
-    softPityStep: SOFT_PITY_STEP,
-    dupePolicy: 'coins',
-    itemsByRarity: unitCardPoolItems(),
-  },
+  // NOTE: the separate unit-card gacha pool (`units`/UNIT_CARD_POOL_ID, S12-C) was removed on 2026-07-03 — it surfaced as a
+  // duplicate second "standard" pool tab in the client. Unit-card progression now comes only from PvE level drops
+  // (unitCards.levelCardReward → cardInventory → deriveUnitLevels); character cards are granted from the standard pool above.
 ];
 
 export interface ShopItemDef {

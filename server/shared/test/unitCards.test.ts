@@ -9,8 +9,6 @@ import {
   parseCardKey,
   deriveUnitLevels,
   grantCards,
-  GACHA_RARITY_TO_CARD_LEVEL,
-  unitCardPoolItems,
   levelCardReward,
 } from '../src/unitCards';
 
@@ -93,27 +91,6 @@ describe('grantCards', () => {
     const inv = { 'archer:2': 1 };
     grantCards(inv, { 'archer:2': 1 });
     expect(inv).toEqual({ 'archer:2': 1 });
-  });
-});
-
-// ── gacha pool items ──────────────────────────────────────────────────────────────
-
-describe('unitCardPoolItems', () => {
-  const pool = unitCardPoolItems();
-
-  it('rarity maps to the configured card level', () => {
-    for (const [rarity, level] of Object.entries(GACHA_RARITY_TO_CARD_LEVEL)) {
-      for (const key of pool[rarity as keyof typeof pool]) {
-        expect(parseCardKey(key)!.level).toBe(level);
-      }
-    }
-  });
-
-  it('produces a valid parseable card key for every progressable unit per rarity', () => {
-    for (const rarity of ['common', 'rare', 'epic', 'legendary'] as const) {
-      expect(pool[rarity]).toHaveLength(PROGRESSABLE_UNIT_IDS.length);
-      for (const key of pool[rarity]) expect(parseCardKey(key)).not.toBeNull();
-    }
   });
 });
 

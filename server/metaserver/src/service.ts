@@ -19,7 +19,6 @@ import {
   CARD_DEFS,
   levelCardReward,
   parseCardKey,
-  UNIT_CARD_POOL_ID,
   type CardDef,
   makeDropInstance,
   EQUIPMENT_INV_CAP,
@@ -90,7 +89,6 @@ import type { GatewayClient } from './gatewayClient.js';
 import {
   markDuplicates,
   deliverGrant,
-  deliverCardGrant,
   deliverMailGrant,
   deliverOrder,
   mirrorCoins,
@@ -1841,35 +1839,9 @@ export class MetaService {
       }
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, draw.error));
     }
-    // Delivery is routed by pool type (separate unit card pool, S12-C):
-    //  • Unit card pool → results.itemId is a cardKey; added to cardInventory + unitLevels recomputed (no dupe refund —
-    //    card collecting naturally accepts all duplicates; duplicate is always false for display only).
-    //  • Skin pool → new skins added to inventory.skins (idempotent); duplicate-to-coin conversion deferred to S5 (see economy.ts comment).
-    await getOrCreateSave(cols, accountId, now());
-    if (poolId === UNIT_CARD_POOL_ID) {
-      const cardGrants: Record<string, number> = {};
-      for (const r of draw.results) cardGrants[r.itemId] = (cardGrants[r.itemId] ?? 0) + 1;
-      const save = await deliverCardGrant(
-        cols,
-        accountId,
-        orderId,
-        cardGrants,
-        draw.coinsAfter,
-        { [poolId]: draw.pityAfter },
-        now(),
-      );
-      await commercial.orderDelivered({ orderId });
-      const marked = draw.results.map((r) => ({
-        itemId: r.itemId,
-        rarity: r.rarity,
-        duplicate: false,
-      }));
-      // B5: record daily task "open gacha"; merge retention into the returned save so the client immediately sees task completion.
-      await this.bumpRetentionTask(accountId, 'gacha.draw');
-      const nextRetention1 = accrueRetentionTask(save.retention, 'gacha.draw', now());
-      const saveWithRet1 = nextRetention1 !== save.retention ? { ...save, retention: nextRetention1 } : save;
-      return ok({ save: saveWithRet1, results: marked });
-    }
+    // Skin/standard pool delivery: new skins added to inventory.skins (idempotent); duplicate-to-coin conversion
+    // deferred to S5 (see economy.ts comment). (The separate unit-card pool + its cardInventory delivery branch were
+    // removed on 2026-07-03; unit cards now come only from PvE level drops.)
     const cur = await getOrCreateSave(cols, accountId, now());
     const { newSkins, marked } = markDuplicates(cur.inventory.skins, draw.results);
     const save = await deliverGrant(
