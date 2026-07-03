@@ -507,8 +507,8 @@ export class EquipmentScene implements Scene {
       e.x = tagX; e.y = cy + 9; this.bodyLayer.addChild(e); tagX += e.width + 6;
     }
     if (inst.locked) {
-      const l = txt('🔒', 11, C.mid);
-      l.x = tagX; l.y = cy + 8; this.bodyLayer.addChild(l);
+      const l = buildIcon('lock', 14, C.mid);
+      l.x = tagX; l.y = cy + 7; this.bodyLayer.addChild(l);
     }
 
     // Right side: show "Equip ›" in accent color when unequipped (signals actionability); show "›" quietly when equipped.

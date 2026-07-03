@@ -38,7 +38,9 @@ export type IconKind =
   // Other hub tabs reuse existing glyphs — coins→coin, battlepass→trophy, equipment→armor, collection→book.
   | 'tag' | 'capsule' | 'cards'
   // GachaScene rarity pips + limited-pool marker (standard pool reuses capsule). Tinted per rarity.
-  | 'star';
+  | 'star'
+  // Lock badge: locked cards/equipment/deck slots + battle-pass pass-required tier.
+  | 'lock';
 
 /** Open book — splayed pages over a centre spine, with a couple of text lines. */
 function drawBook(g: PIXI.Graphics, s: number, color: number): void {
@@ -691,6 +693,29 @@ function drawStar(g: PIXI.Graphics, s: number, color: number): void {
   pen.stroke(loop, { color, width: Math.max(1, s * 0.03), jitter: 0.25, taper: 0.95, double: false });
 }
 
+/** Lock (locked badge) — a padlock: arched shackle over a body with a keyhole. */
+function drawLock(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x10c4);
+  const w = Math.max(1.3, s * 0.05);
+  const o = { color, width: w, jitter: 0.35, taper: 0.92, double: false };
+  // Shackle — upper semicircle arching above the body.
+  const cx = s * 0.5, scy = s * 0.47, r = s * 0.15;
+  const arc: { x: number; y: number }[] = [];
+  for (let i = 0; i <= 12; i++) {
+    const a = Math.PI + (Math.PI * i) / 12;
+    arc.push({ x: cx + r * Math.cos(a), y: scy + r * Math.sin(a) });
+  }
+  pen.stroke(arc, { ...o, width: w * 0.85 });
+  // Body — a rounded box.
+  pen.stroke([
+    { x: s * 0.28, y: s * 0.47 }, { x: s * 0.72, y: s * 0.47 },
+    { x: s * 0.72, y: s * 0.80 }, { x: s * 0.28, y: s * 0.80 }, { x: s * 0.28, y: s * 0.47 },
+  ], o);
+  // Keyhole — a small ring with a short slot.
+  pen.circle(cx, s * 0.60, s * 0.045, { ...o, width: w * 0.75 });
+  pen.line(cx, s * 0.62, cx, s * 0.71, { ...o, width: w * 0.75 });
+}
+
 const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
   globe:   drawGlobe,
@@ -724,6 +749,7 @@ const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => voi
   capsule: drawCapsule,
   cards:   drawCards,
   star:    drawStar,
+  lock:    drawLock,
 };
 
 /**

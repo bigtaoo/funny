@@ -480,8 +480,8 @@ export class AuctionScene implements Scene {
       nameLbl.x = 14; nameLbl.y = cy + (ROW_H - 4) / 2 - 8;
       this.bodyLayer.addChild(nameLbl);
       if (locked) {
-        const lk = txt('🔒', 11, C.mid);
-        lk.x = nameLbl.x + nameLbl.width + 6; lk.y = cy + (ROW_H - 4) / 2 - 8;
+        const lk = buildIcon('lock', 14, C.mid);
+        lk.x = nameLbl.x + nameLbl.width + 6; lk.y = cy + (ROW_H - 4) / 2 - 9;
         this.bodyLayer.addChild(lk);
       }
       const hint = txt(t('auction.pickHint'), 11, C.accent, true);

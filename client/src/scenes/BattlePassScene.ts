@@ -336,18 +336,27 @@ export class BattlePassScene implements Scene {
       }
     }
 
-    // State overlay label
-    let stateLbl: string | null = null;
-    if (state === 'claimed') stateLbl = t('battlepass.claimed');
-    else if (state === 'locked') stateLbl = t('battlepass.locked');
-    else if (state === 'pass_required') stateLbl = '🔒';
-    else if (state === 'claimable') stateLbl = t('battlepass.claim');
+    // State overlay — pass_required shows a lock glyph; other states show a text label.
+    // Both anchor to the cell's bottom-right corner.
+    const anchorX = x + w - Math.round(w * 0.05);
+    const anchorY = y + h - Math.round(h * 0.08);
+    if (state === 'pass_required') {
+      const lockSz = Math.round(h * 0.32);
+      const lock = buildIcon('lock', lockSz, C.gold);
+      lock.x = anchorX - lockSz; lock.y = anchorY - lockSz;
+      parent.addChild(lock);
+    } else {
+      let stateLbl: string | null = null;
+      if (state === 'claimed') stateLbl = t('battlepass.claimed');
+      else if (state === 'locked') stateLbl = t('battlepass.locked');
+      else if (state === 'claimable') stateLbl = t('battlepass.claim');
 
-    if (stateLbl) {
-      const stateColor = state === 'claimable' ? C.green : state === 'pass_required' ? C.gold : C.mid;
-      const sl = txt(stateLbl, Math.round(h * 0.34), stateColor, state === 'claimable');
-      sl.anchor.set(1, 1); sl.x = x + w - Math.round(w * 0.05); sl.y = y + h - Math.round(h * 0.08);
-      parent.addChild(sl);
+      if (stateLbl) {
+        const stateColor = state === 'claimable' ? C.green : C.mid;
+        const sl = txt(stateLbl, Math.round(h * 0.34), stateColor, state === 'claimable');
+        sl.anchor.set(1, 1); sl.x = anchorX; sl.y = anchorY;
+        parent.addChild(sl);
+      }
     }
   }
 

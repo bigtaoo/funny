@@ -327,6 +327,17 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 
 至此批③（Tab 导航 / 拍卖 / 抽卡）+ 批②（主城）+ 批①（菜单奖励/属性）覆盖：主城、拍卖、抽卡、Tab 导航、养成/成就侧奖励属性全部去 emoji 图标化。
 
+#### 4.15 锁定徽标统一（2026-07-03，批④）
+
+四处「已锁定」状态各自用 🔒 emoji（拍卖挂单选择器的锁定卡 / 装备行锁定标 / 卡组构建未解锁卡 / 战令 `pass_required` 档）。新增 **1 个** `icons.ts` 字形 `lock`（挂锁：拱形锁梁 + 锁体 + 锁孔），四处统一 `buildIcon('lock', …)`：
+
+- AuctionScene 卡片选择器锁定卡、EquipmentScene 装备行锁定标：行内小锁（14px，左上锚点）。
+- DeckBuilderScene 未解锁卡：卡片右上角锁徽标（右上锚点→左移一个 lockSz）。
+- BattlePassScene `pass_required` 档：格子右下角金锁；原共享文本路径拆成「pass_required 画锁 / 其余画文字」两支，底部右锚点不变。
+- 验证：`tsc --noEmit` + `build:web` 全绿。
+
+**仍可迭代（后续批）**：LeaderboardScene 名次 🥇🥈🥉、WorldMapScene 🔍 缩放 + 瓦片详情弹窗资源 emoji、FriendsScene 邮件附件 🎁、CampaignMap/Stats 的 ★/☆ 文字星（可复用新 `star` 字形）、各弹窗 ✕/✓ 排版符号（低优先，跨端渲染正常）。
+
 ---
 
 ## 5. 战斗内 UI 的联机增量（GameScene/HUD）
