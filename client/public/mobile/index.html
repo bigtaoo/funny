@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover lets the canvas fill under the notch/home indicator; Capacitor
+         ios.contentInset:'always' keeps interactive content inside the safe area. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Nivara</title>
+    <meta name="theme-color" content="#1b3a6b" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #f5f0e8; }
+      canvas { display: block; touch-action: none; }
+      /* Pre-boot placeholder — visible the instant the WKWebView opens, while the JS bundle
+         parses. The PIXI LoadingOverlay takes over for asset preload; the canvas paints over this. */
+      #boot {
+        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        background: #f5f0e8; z-index: -1;
+      }
+      #boot .dot {
+        width: 12px; height: 12px; border-radius: 50%; background: #4a7fb5;
+        animation: boot-pulse 1s ease-in-out infinite;
+      }
+      @keyframes boot-pulse { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }
+    </style>
+  </head>
+  <body>
+    <div id="boot"><span class="dot"></span></div>
+    <canvas id="game-canvas"></canvas>
+  </body>
+</html>
