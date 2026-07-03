@@ -19,6 +19,7 @@ export const zh = {
   'common.syncFailed': '云存档同步失败，进度可能未保存',
   // Unified back-button label (SceneHeader prepends "← " automatically; see UI_DESIGN §3.1).
   'common.back': '返回',
+  'common.close': '关闭',
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   'card.infantry.name': '普通兵',

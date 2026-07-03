@@ -17,6 +17,7 @@ export const en: Record<TranslationKey, string> = {
   'common.syncFailed': 'Cloud save failed — progress may not be saved',
   // Unified back-button label (SceneHeader prepends "← ", see UI_DESIGN §3.1).
   'common.back': 'Back',
+  'common.close': 'Close',
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   'card.infantry.name': 'Infantry',

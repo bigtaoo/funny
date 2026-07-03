@@ -17,6 +17,7 @@ export const de: Record<TranslationKey, string> = {
   'common.syncFailed': 'Cloud-Speichern fehlgeschlagen — Fortschritt evtl. nicht gesichert',
   // Einheitliches Zurück-Label (SceneHeader stellt "← " voran, siehe UI_DESIGN §3.1).
   'common.back': 'Zurück',
+  'common.close': 'Schließen',
 
   // ── Karten ────────────────────────────────────────────────────────────────
   'card.infantry.name': 'Infanterie',

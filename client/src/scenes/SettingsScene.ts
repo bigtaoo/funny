@@ -101,6 +101,8 @@ export class SettingsScene implements Scene {
   // Rename overlay state.
   private renameOpen = false;
   private renameText = '';
+  /** Avatar picker overlay — opened by tapping the profile avatar. */
+  private avatarPickerOpen = false;
   /** Delete-account confirmation overlay (C5-b). */
   private deleteConfirmOpen = false;
   private readonly bt = new BusyTracker();
@@ -214,11 +216,11 @@ export class SettingsScene implements Scene {
     this.drawBackground();
     const tbH = this.drawHeader();
     this.drawProfile(tbH);
-    this.drawAvatarPicker();
     this.drawLanguage();
     if (this.cb.onReplayTutorial) this.drawHelp();
     this.drawAccount();
     if (this.toast) this.drawToast();
+    if (this.avatarPickerOpen) this.drawAvatarPickerOverlay();
     if (this.renameOpen) this.drawRenameOverlay();
     if (this.deleteConfirmOpen) this.drawDeleteConfirm();
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
@@ -256,6 +258,20 @@ export class SettingsScene implements Scene {
     const avatar = buildAvatar(av, this.playerName, 21, this.currentAvatarId);
     avatar.x = cardX; avatar.y = cardY;
     this.container.addChild(avatar);
+
+    // Tapping the avatar opens the picker. A small pencil badge hints it's editable;
+    // only shown when picking is enabled (onSetAvatar present).
+    if (this.cb.onSetAvatar) {
+      const badgeR = Math.round(av * 0.16);
+      const bcx = cardX + av - badgeR, bcy = cardY + av - badgeR;
+      const badge = new PIXI.Graphics();
+      badge.beginFill(C.accent); badge.drawCircle(bcx, bcy, badgeR); badge.endFill();
+      this.container.addChild(badge);
+      const pencil = txt('✎', Math.round(badgeR * 1.4), 0xffffff, true);
+      pencil.anchor.set(0.5, 0.5); pencil.x = bcx; pencil.y = bcy;
+      this.container.addChild(pencil);
+      this.hits.push({ rect: { x: cardX, y: cardY, w: av, h: av }, fn: () => this.openAvatarPicker() });
+    }
 
     const nameX = cardX + av + Math.round(w * 0.04);
     const hasId = !!this.cb.publicId;
@@ -298,27 +314,50 @@ export class SettingsScene implements Scene {
     }
   }
 
-  private drawAvatarPicker(): void {
+  private openAvatarPicker(): void {
+    this.avatarPickerOpen = true;
+    this.toast = null;
+    this.render();
+  }
+
+  private closeAvatarPicker(): void {
+    this.avatarPickerOpen = false;
+    this.render();
+  }
+
+  /** Modal avatar picker — a 2×4 grid of tokens (0-7) inside a sketch panel. */
+  private drawAvatarPickerOverlay(): void {
     const { w, h } = this;
-    const secX = Math.round(w * 0.12);
-    const secY = Math.round(h * 0.44);
+    // Modal: discard base-scene hits so only the overlay's controls are tappable.
+    this.hits = [];
 
-    const label = txt(t('settings.avatar'), Math.round(h * 0.028), C.dark, true);
-    label.anchor.set(0, 0.5); label.x = secX; label.y = secY;
-    this.container.addChild(label);
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.7); dim.drawRect(0, 0, w, h); dim.endFill();
+    this.container.addChild(dim);
 
-    // 2 rows of 4 avatars (0-7). Size scales with h so it fits both portrait + landscape.
-    const avS  = Math.round(h * 0.065);
+    const pw = Math.round(w * 0.8), ph = Math.round(h * 0.52);
+    const px = (w - pw) / 2, py = (h - ph) / 2;
+    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, width: 2.4, seed: 42 });
+    panel.x = px; panel.y = py;
+    this.container.addChild(panel);
+
+    const title = txt(t('settings.avatar'), Math.round(h * 0.03), C.dark, true);
+    title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.03);
+    this.container.addChild(title);
+
+    // 2 rows of 4 avatars, centred in the panel.
     const cols = 4;
-    const totalW = Math.round(w * 0.76);
-    const gap  = Math.round((totalW - cols * avS) / (cols - 1));
-    const rowGap = Math.round(h * 0.012);
-    const gridY = secY + Math.round(h * 0.038);
+    const avS = Math.round(h * 0.09);
+    const gridW = Math.round(pw * 0.82);
+    const gap = Math.round((gridW - cols * avS) / (cols - 1));
+    const rowGap = Math.round(h * 0.03);
+    const gridX = px + Math.round((pw - gridW) / 2);
+    const gridY = py + Math.round(ph * 0.24);
 
     for (let i = 0; i < AVATAR_COUNT; i++) {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const ax = secX + col * (avS + gap);
+      const ax = gridX + col * (avS + gap);
       const ay = gridY + row * (avS + rowGap);
       const id = String(i);
       const selected = this.currentAvatarId === id;
@@ -342,17 +381,30 @@ export class SettingsScene implements Scene {
           fn: () => {
             this.currentAvatarId = id;
             this.cb.onSetAvatar!(id);
-            this.render();
+            this.closeAvatarPicker(); // pick + dismiss
           },
         });
       }
     }
 
+    // Close button.
+    const btnW = Math.round(pw * 0.5), btnH = Math.round(h * 0.06);
+    const bxx = px + (pw - btnW) / 2, byy = py + ph - btnH - Math.round(h * 0.03);
+    const cBox = new PIXI.Graphics();
+    cBox.beginFill(C.dark); cBox.drawRect(bxx, byy, btnW, btnH); cBox.endFill();
+    this.container.addChild(cBox);
+    const cLbl = txt(t('common.close'), Math.round(btnH * 0.36), 0xffffff, true);
+    cLbl.anchor.set(0.5, 0.5); cLbl.x = bxx + btnW / 2; cLbl.y = byy + btnH / 2;
+    this.container.addChild(cLbl);
+    this.hits.push({ rect: { x: bxx, y: byy, w: btnW, h: btnH }, fn: () => this.closeAvatarPicker() });
+
+    // Tap outside panel = close (registered last so specific hits win — first-match-wins).
+    this.hits.push({ rect: { x: 0, y: 0, w, h }, fn: () => this.closeAvatarPicker() });
   }
 
   private drawLanguage(): void {
     const { w, h } = this;
-    const secY = Math.round(h * 0.63);
+    const secY = Math.round(h * 0.48);
     const label = txt(t('settings.language'), Math.round(h * 0.028), C.dark, true);
     label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = secY;
     this.container.addChild(label);
@@ -393,7 +445,7 @@ export class SettingsScene implements Scene {
 
   private drawHelp(): void {
     const { w, h } = this;
-    const secY = Math.round(h * 0.755);
+    const secY = Math.round(h * 0.61);
     const label = txt(t('settings.help'), Math.round(h * 0.028), C.dark, true);
     label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = secY;
     this.container.addChild(label);
@@ -402,7 +454,7 @@ export class SettingsScene implements Scene {
 
   private drawAccount(): void {
     const { w, h } = this;
-    const secY = Math.round(h * 0.83);
+    const secY = Math.round(h * 0.73);
     const label = txt(t('settings.account'), Math.round(h * 0.028), C.dark, true);
     label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = secY;
     this.container.addChild(label);
