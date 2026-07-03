@@ -74,9 +74,18 @@ describe('BATTLEPASS_DEFS', () => {
 
   it('level 30 is the biggest paid payout', () => {
     const l30 = BATTLEPASS_DEFS[29]!;
-    expect(l30.paid!.count).toBe(500);
+    expect(l30.paid!.kind).toBe('coins');
+    expect(l30.paid!.count).toBe(520);
     const others = BATTLEPASS_DEFS.slice(0, 29).map((d) => d.paid!.count);
     expect(Math.max(...others)).toBeLessThan(l30.paid!.count);
+  });
+
+  it('free-track coin total stays under one 10-pull (1,350 coins, §13.3 cap)', () => {
+    const freeCoins = BATTLEPASS_DEFS
+      .filter((d) => d.free!.kind === 'coins')
+      .reduce((s, d) => s + d.free!.count, 0);
+    expect(freeCoins).toBe(960);
+    expect(freeCoins).toBeLessThan(1350);
   });
 });
 

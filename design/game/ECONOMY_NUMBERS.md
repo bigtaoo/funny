@@ -415,8 +415,9 @@ F2P 金币龙头：广告（主力）+ 战斗 / 活动 / 称号 / 任务。
 - **免费轨打满约束**：`BP_MAX_LEVEL × BP_XP_PER_LEVEL / 经验日均 ≈ 42 天`（须满足「正常活跃 F2P 6 周打满免费轨」，`ECONOMY_BALANCE §2.6`）。任务点→XP 系数等其余来源待 [`RETENTION_DESIGN.md`](RETENTION_DESIGN.md) 落地后补（本轮经验仅 ranked 产出，SEASON §13B.0-D1）。
 - **免费轨金币上限**：整季免费轨金币总额须 **< 一次十连**（`ECONOMY_BALANCE §2.6`），并入 §9 月度预算。
 - **付费 Pass 定价**：对标 `ECONOMY_BALANCE §2.2` 小档 ¥6 区间（变现脊梁 + sink）。
-- **免费轨奖励表**（`BATTLEPASS_DEFS`，已落代码）：整 5 级发金币（Lv5/15/25 各 50，Lv10/20/30 里程碑 150/200/300）；其余级发材料（Lv1–9 非 5 倍 → 3 scrap；Lv11–19 非 5 倍 → 1 lead；Lv21–29 非 5 倍 → 1 binding）。材料奖励在 `/battlepass/claim` 响应内与战令领取标记原子写入 `save.materials`。
-- **付费轨奖励表**：逐级 20 金币，Lv10/20/30 各 200/300/500 金币（大里程碑）。
+- **奖励表重规划（`BATTLEPASS_DEFS`，2026-07-03）**：两轨均**递进**——材料档随等级爬升 scrap→lead→binding 且数量渐增；整 5 级里程碑必发金币且逐段增大，收束于 Lv30 的赛季大奖。仅用 `coins` / `material`（claim 路径实发的两类）；不发卡/皮肤（卡会进 PvP 战力、皮肤属变现脊梁，均排除）。数字 `[可调]`：改 `@nw/shared/battlepass.ts` 的 `REWARD_ROWS` → 同步 client `battlepassDefs.ts` → 回写本节。
+  - **免费轨**：里程碑金币 Lv5/10/15/20/25/30 = 60/150/90/220/120/320（**合计 960**，满足「整季 < 一次十连 1,350」上限）；其余级发材料（前段 scrap 2→6、中段 lead 1→4、后段 binding 1→4）。材料在 `/battlepass/claim` 响应内与领取标记原子写入 `save.materials`。
+  - **付费轨**：多数级发金币（变现龙头，逐段 20→50），少数级发更厚材料包（Lv3 scrap5 / Lv7·12 lead / Lv17·22·27 binding 2→4）；里程碑金币 Lv5/10/15/20/25/30 = 60/220/90/320/120/**520**（Lv30 为全轨最大单发）。每级付费金币 ≥ 同级免费。
 
 ### 13.4 可调参数（并入总表口径）
 
