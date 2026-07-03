@@ -11,7 +11,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
@@ -86,6 +86,9 @@ const SECTION_H = 20;  // section divider (Equipped / Bag)
 const CELL_GAP = 12;
 const EQUIP_CELL_H = 92;
 const EQUIP_CELL_W_TARGET = 320;
+// Craft grid: same column sizing as the inventory grid, a bit taller to fit
+// the cost chips + craft button beneath the glyph.
+const CRAFT_CELL_H = 116;
 
 const SLOTS: readonly EquipSlot[] = ['weapon', 'armor', 'trinket'];
 const TRACKED_MATERIALS = ['scrap', 'lead', 'binding'] as const;
@@ -337,8 +340,11 @@ export class EquipmentScene implements Scene {
     });
 
     const entries = this.buildDisplayEntries(instances, equippedIds);
-    const cols = Math.max(1, Math.floor((w - CELL_GAP) / (EQUIP_CELL_W_TARGET + CELL_GAP)));
-    const cellW = (w - CELL_GAP * (cols + 1)) / cols;
+    // Item cells start right of the red margin rule; right pad stays one CELL_GAP.
+    const left = marginLineX(w) + CELL_GAP;
+    const avail = w - left - CELL_GAP;
+    const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (EQUIP_CELL_W_TARGET + CELL_GAP)));
+    const cellW = (avail - CELL_GAP * (cols - 1)) / cols;
 
     // Layout pass: headers span a full row and reset the column cursor; item
     // cells pack left-to-right into `cols` columns. `off` is the vertical
@@ -356,7 +362,7 @@ export class EquipmentScene implements Scene {
         off += SECTION_H;
         continue;
       }
-      const x = CELL_GAP + col * (cellW + CELL_GAP);
+      const x = left + col * (cellW + CELL_GAP);
       placed.push({ kind: 'item', inst: entry.inst, isEquipped: entry.isEquipped, count: entry.count, x, off });
       col++;
       if (col >= cols) { col = 0; off += EQUIP_CELL_H + CELL_GAP; }
@@ -576,47 +582,74 @@ export class EquipmentScene implements Scene {
     const listH = h - listY - 8;
     const full = Object.keys(save.equipmentInv).length >= EQUIPMENT_INV_CAP;
 
-    const totalH = defs.length * ROW_H;
+    // Cells start right of the red margin rule; right pad stays one CELL_GAP.
+    const left = marginLineX(w) + CELL_GAP;
+    const avail = w - left - CELL_GAP;
+    const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (EQUIP_CELL_W_TARGET + CELL_GAP)));
+    const cellW = (avail - CELL_GAP * (cols - 1)) / cols;
+    const rows = Math.ceil(defs.length / cols);
+    const totalH = CELL_GAP + rows * (CRAFT_CELL_H + CELL_GAP);
     this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
-    let cy = listY - this.scrollY;
-    for (const def of defs) {
-      if (cy + ROW_H >= listY && cy <= listY + listH) {
-        this.renderCraftRow(def.defId, cy, save, full);
-      }
-      cy += ROW_H;
-    }
+
+    defs.forEach((def, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = left + col * (cellW + CELL_GAP);
+      const y = listY + CELL_GAP + row * (CRAFT_CELL_H + CELL_GAP) - this.scrollY;
+      if (y + CRAFT_CELL_H < listY || y > listY + listH) return;
+      this.renderCraftCell(def.defId, x, y, cellW, save, full);
+    });
   }
 
-  private renderCraftRow(defId: string, cy: number, save: SaveData, full: boolean): void {
-    const { w } = this;
+  /**
+   * Craft icon-card cell: name +rarity across the top, equipment glyph in a
+   * rarity-bordered frame on the left, cost chips + Craft button on the right.
+   * Mirrors the inventory grid's `renderInstanceCell` visual language.
+   */
+  private renderCraftCell(defId: string, x: number, y: number, cellW: number, save: SaveData, full: boolean): void {
+    const pad = 8;
     const def = getEquipDef(defId)!;
     const color = RARITY_COLOR[def.rarity];
-    const row = sketchPanel(w - 12, ROW_H - 4, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 1, w) });
-    row.x = 6; row.y = cy;
-    this.bodyLayer.addChild(row);
+    const cell = sketchPanel(cellW, CRAFT_CELL_H, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(x, y, cellW) });
+    cell.x = x; cell.y = y;
+    this.bodyLayer.addChild(cell);
 
-    this.addGlyph(def.slot, def.rarity, 32, cy + (ROW_H - 4) / 2, 38, seedFor(cy, 4, w), 1, defId);
-    const tx = 56;
-
+    // Top: name (scaled to fit) + rarity tag.
     const name = txt(this.itemName(defId), 13, C.dark, true);
-    name.x = tx; name.y = cy + 7;
+    name.x = x + pad; name.y = y + pad;
+    if (name.width > cellW - pad * 2 - 60) name.scale.set(Math.min(1, (cellW - pad * 2 - 60) / name.width));
     this.bodyLayer.addChild(name);
-    const rar = txt(t(`equip.rarity.${def.rarity}` as TranslationKey), 10, color, true);
-    rar.x = name.x + name.width + 8; rar.y = cy + 9;
+    const rar = txt(t(`equip.rarity.${def.rarity}` as TranslationKey), 11, color, true);
+    rar.anchor.set(1, 0); rar.x = x + cellW - pad; rar.y = y + pad + 1;
     this.bodyLayer.addChild(rar);
 
+    // Left: glyph in a rarity-bordered frame.
+    const imgBox = CRAFT_CELL_H - (pad + 22) - pad;
+    const imgX = x + pad;
+    const imgY = y + pad + 22;
+    const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: color, seed: seedFor(x, y, imgBox) });
+    frame.x = imgX; frame.y = imgY;
+    this.bodyLayer.addChild(frame);
+    this.addGlyph(def.slot, def.rarity, imgX + imgBox / 2, imgY + imgBox / 2, imgBox - 8, seedFor(x, imgBox, cellW), 1, defId);
+
+    // Right: cost chips (top) + Craft button (bottom).
+    const ax = imgX + imgBox + 12;
     const cost = def.craftCost ?? {};
     const affordable = this.canAffordMaterials(save, cost);
-    this.drawCostChips(this.bodyLayer, tx, cy + 34, cost, null, affordable ? C.mid : C.red, 13);
+    this.drawCostChips(this.bodyLayer, ax, imgY + 10, cost, null, affordable ? C.mid : C.red, 13);
 
     const enabled = affordable && !full && !this.bt.busy;
-    const btn = sketchPanel(60, 28, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(cy, 2, 60) });
-    btn.x = w - 70; btn.y = cy + 12;
+    const btnW = Math.min(80, x + cellW - pad - ax);
+    const btnH = 28;
+    const btnX = x + cellW - pad - btnW;
+    const btnY = y + CRAFT_CELL_H - pad - btnH;
+    const btn = sketchPanel(btnW, btnH, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(x, y, btnW) });
+    btn.x = btnX; btn.y = btnY;
     this.bodyLayer.addChild(btn);
     const bl = txt(t('equip.craftBtn'), 12, enabled ? C.light : C.mid);
-    bl.anchor.set(0.5, 0.5); bl.x = w - 40; bl.y = cy + 26;
+    bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
     this.bodyLayer.addChild(bl);
-    if (enabled) this.hitRects.push({ rect: { x: w - 70, y: cy + 12, w: 60, h: 28 }, action: () => void this.doCraft(defId) });
+    if (enabled) this.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, action: () => void this.doCraft(defId) });
   }
 
   // ── Detail modal (instance: enhance / equip / salvage) ───────────────────────

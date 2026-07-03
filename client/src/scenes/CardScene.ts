@@ -18,7 +18,7 @@ import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
 import {
   ui as C, txt, buildPaperBackground, sketchPanel, seedFor,
-  drawLoadingOverlay, tearDownChildren,
+  drawLoadingOverlay, tearDownChildren, marginLineX,
 } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { buildIcon } from '../render/icons';
@@ -226,8 +226,11 @@ export class CardScene implements Scene {
     }
 
     const sorted = sortCards(cards, save.equipmentInv ?? {});
-    const cols = Math.max(1, Math.floor((w - CELL_GAP) / (CARD_CELL_W_TARGET + CELL_GAP)));
-    const cellW = (w - CELL_GAP * (cols + 1)) / cols;
+    // Start the grid right of the red margin rule; right pad stays one CELL_GAP.
+    const left = marginLineX(w) + CELL_GAP;
+    const avail = w - left - CELL_GAP;
+    const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (CARD_CELL_W_TARGET + CELL_GAP)));
+    const cellW = (avail - CELL_GAP * (cols - 1)) / cols;
     const rows = Math.ceil(sorted.length / cols);
     const totalH = rows * (CARD_CELL_H + CELL_GAP) + CELL_GAP;
     this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
@@ -236,7 +239,7 @@ export class CardScene implements Scene {
     sorted.forEach((card, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const x = CELL_GAP + col * (cellW + CELL_GAP);
+      const x = left + col * (cellW + CELL_GAP);
       const y = listY + CELL_GAP + row * (CARD_CELL_H + CELL_GAP) - this.scrollY;
       if (y + CARD_CELL_H >= listY && y <= listY + listH) {
         this.renderCardCell(card, x, y, cellW, cardState[card.id], now, save);

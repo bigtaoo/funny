@@ -44,9 +44,9 @@ export interface HubTab {
   icon?: IconKind;
 }
 
-/** Standard strip height (5% of design height) — a touch shorter than a full header. */
+/** Standard strip height — a prominent tab bar, roughly on par with the header. */
 export function hubTabsHeight(h: number): number {
-  return Math.round(h * 0.05);
+  return Math.round(h * 0.066);
 }
 
 /**
