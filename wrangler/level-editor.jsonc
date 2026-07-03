@@ -1,0 +1,22 @@
+{
+  // 关卡编辑器 level-editor 的静态托管（Cloudflare Workers static assets），对外 level.gamestao.com。
+  // 纯静态 SPA（无 Worker 脚本、无后端依赖）：webpack production 产出 tools/level-editor/dist，
+  // wrangler deploy -c wrangler/level-editor.jsonc 把 dist 作为静态资源发布。
+  //
+  // 构建 + 手动部署（从仓库根读本文件）：
+  //   cd tools/level-editor && npm ci && npm run build   ← 产出 tools/level-editor/dist
+  //   cd ../.. && npx wrangler deploy -c wrangler/level-editor.jsonc
+  //
+  // routes.custom_domain=true 会自动建 DNS + 边缘证书（橙云代理），首次 deploy 自动建好 level.gamestao.com。
+  // 自动发布：.github/workflows/level-editor-deploy.yml。
+  // 设计：design/product/deploy-cloudflare.md §6、design/tools/level-editor/DESIGN.md
+  "name": "nivara-level-editor",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    "directory": "../tools/level-editor/dist",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    { "pattern": "level.gamestao.com", "custom_domain": true }
+  ]
+}

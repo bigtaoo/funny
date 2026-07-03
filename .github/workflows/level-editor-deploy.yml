@@ -1,0 +1,59 @@
+name: level-editor-deploy
+
+# Auto-publish the level editor level-editor (Worker nivara-level-editor, pure static assets) to Cloudflare.
+# Trigger: push to main touching level-editor-related files, or manual Run from the Actions page.
+# Flow: npm ci → npm run build (webpack production, outputs tools/level-editor/dist) → wrangler deploy.
+# Deployment details: design/product/deploy-cloudflare.md §6, design/tools/level-editor/DESIGN.md.
+#
+# Reuses the ops/client/animator/vfx repo secrets (same CF account; "Edit Cloudflare Workers" token covers all account Workers):
+#   CLOUDFLARE_API_TOKEN   — Requires at least Workers Scripts:Edit (account-level; also works for level-editor, no new token needed)
+#   CLOUDFLARE_ACCOUNT_ID  — Account ID (same value as ops/client/animator/vfx)
+# The level editor is a pure frontend static site with no backend dependencies; no variables need to be injected at build time.
+# routes.custom_domain=true in wrangler/level-editor.jsonc auto-creates DNS + edge cert for level.gamestao.com on first deploy.
+# Enable switch: repo variable LEVEL_EDITOR_DEPLOY_ENABLED = true (job skipped if not set, to avoid red builds before setup is complete).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/level-editor/**'
+      - 'wrangler/level-editor.jsonc'
+      - '.github/workflows/level-editor-deploy.yml'
+  workflow_dispatch: {}
+
+# Only one level-editor deployment runs at a time; new run cancels the old one to prevent concurrent deploy conflicts.
+concurrency:
+  group: level-editor-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Skip the entire job if repo variable LEVEL_EDITOR_DEPLOY_ENABLED is not set to true (avoids red builds before setup is complete).
+    if: ${{ vars.LEVEL_EDITOR_DEPLOY_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/level-editor/package-lock.json
+
+      - name: level-editor install
+        working-directory: tools/level-editor
+        run: npm ci
+
+      # Outputs tools/level-editor/dist (webpack production).
+      - name: level-editor build
+        working-directory: tools/level-editor
+        run: npm run build
+
+      # Run from repo root using -c to specify the level-editor config (assets point to ./tools/level-editor/dist).
+      # Uses npx wrangler directly (not wrangler-action) so errors are visible as-is.
+      - name: deploy to Cloudflare
+        working-directory: .
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx -y wrangler@4.104.0 deploy -c wrangler/level-editor.jsonc
